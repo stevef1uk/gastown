@@ -7,7 +7,9 @@ import (
 	"strings"
 
 	"github.com/steveyegge/gastown/internal/beads"
+	"github.com/steveyegge/gastown/internal/doltserver"
 	"github.com/steveyegge/gastown/internal/rig"
+	"github.com/steveyegge/gastown/internal/workspace"
 )
 
 // RigBeadsCheck verifies that rig identity beads exist for all rigs.
@@ -51,9 +53,22 @@ func (c *RigBeadsCheck) Run(ctx *CheckContext) *CheckResult {
 	})
 	for _, r := range routes {
 		// Extract rig name from path (first component)
-		parts := strings.Split(r.Path, "/")
-		if len(parts) >= 1 && parts[0] != "." {
-			rigName := parts[0]
+		rigName := r.Path
+		if rigName == "." {
+			// For town root, try to get the actual town name from town.json
+			if name, err := workspace.GetTownName(ctx.TownRoot); err == nil {
+				rigName = name
+			} else {
+				rigName = "town" // Fallback
+			}
+		} else {
+			parts := strings.Split(r.Path, "/")
+			if len(parts) >= 1 {
+				rigName = parts[0]
+			}
+		}
+
+		if rigName != "" {
 			prefix := strings.TrimSuffix(r.Prefix, "-")
 			if _, exists := rigSet[rigName]; !exists {
 				rigSet[rigName] = struct {
@@ -108,6 +123,7 @@ func (c *RigBeadsCheck) Run(ctx *CheckContext) *CheckResult {
 }
 
 // Fix creates missing rig identity beads.
+// Fix registers the missing rig identity beads.
 func (c *RigBeadsCheck) Fix(ctx *CheckContext) error {
 	// Load routes to get rig info
 	townBeadsDir := filepath.Join(ctx.TownRoot, ".beads")
@@ -122,9 +138,21 @@ func (c *RigBeadsCheck) Fix(ctx *CheckContext) error {
 		beadsPath string
 	})
 	for _, r := range routes {
-		parts := strings.Split(r.Path, "/")
-		if len(parts) >= 1 && parts[0] != "." {
-			rigName := parts[0]
+		rigName := r.Path
+		if rigName == "." {
+			if name, err := workspace.GetTownName(ctx.TownRoot); err == nil {
+				rigName = name
+			} else {
+				rigName = "hq"
+			}
+		} else {
+			parts := strings.Split(r.Path, "/")
+			if len(parts) >= 1 {
+				rigName = parts[0]
+			}
+		}
+
+		if rigName != "" {
 			prefix := strings.TrimSuffix(r.Prefix, "-")
 			if _, exists := rigSet[rigName]; !exists {
 				rigSet[rigName] = struct {
@@ -139,18 +167,27 @@ func (c *RigBeadsCheck) Fix(ctx *CheckContext) error {
 	}
 
 	if len(rigSet) == 0 {
-		return nil // No rigs to process
+		return nil
 	}
 
-	// Create missing rig identity beads — collect errors instead of failing
-	// on first so one broken rig doesn't block fixes for others.
 	var errs []error
 	for rigName, info := range rigSet {
+		// Ensure metadata is correct before running ANY bd commands (gt-zmy)
+		metadataRigName := rigName
+		if info.beadsPath == "." {
+			metadataRigName = "hq"
+		}
+		_ = doltserver.EnsureMetadata(ctx.TownRoot, metadataRigName)
+
 		rigBeadsPath := filepath.Join(ctx.TownRoot, info.beadsPath)
 		bd := beads.New(rigBeadsPath)
+		bd.Verbose = ctx.Verbose
 
 		// Try to get git URL from rig config
 		rigPath := filepath.Join(ctx.TownRoot, rigName)
+		if info.beadsPath == "." {
+			rigPath = ctx.TownRoot
+		}
 		gitURL := ""
 		if cfg, err := rig.LoadRigConfig(rigPath); err == nil {
 			gitURL = cfg.GitURL

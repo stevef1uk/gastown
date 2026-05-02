@@ -17,6 +17,7 @@ import (
 	"github.com/steveyegge/gastown/internal/beads"
 	"github.com/steveyegge/gastown/internal/session"
 	"github.com/steveyegge/gastown/internal/tmux"
+	"github.com/steveyegge/gastown/internal/natsutil"
 )
 
 // CommandRequest is the JSON request body for /api/run.
@@ -61,6 +62,8 @@ type APIHandler struct {
 	cmdSem chan struct{}
 	// csrfToken is validated on POST requests to prevent cross-site request forgery.
 	csrfToken string
+	// natsClient is used for real-time event streaming via SSE.
+	natsClient *natsutil.Client
 }
 
 const optionsCacheTTL = 30 * time.Second
@@ -70,7 +73,7 @@ const optionsCacheTTL = 30 * time.Second
 const maxConcurrentCommands = 12
 
 // NewAPIHandler creates a new API handler with the given run timeouts and CSRF token.
-func NewAPIHandler(defaultRunTimeout, maxRunTimeout time.Duration, csrfToken string) *APIHandler {
+func NewAPIHandler(defaultRunTimeout, maxRunTimeout time.Duration, csrfToken string, natsClient *natsutil.Client) *APIHandler {
 	if csrfToken == "" {
 		log.Printf("WARNING: APIHandler created with empty CSRF token — POST requests will not be protected")
 	}
@@ -84,6 +87,7 @@ func NewAPIHandler(defaultRunTimeout, maxRunTimeout time.Duration, csrfToken str
 		maxRunTimeout:     maxRunTimeout,
 		cmdSem:            make(chan struct{}, maxConcurrentCommands),
 		csrfToken:         csrfToken,
+		natsClient:        natsClient,
 	}
 }
 
@@ -2099,6 +2103,20 @@ func (h *APIHandler) handleSSE(w http.ResponseWriter, r *http.Request) {
 	// Send keepalive comment every 15 seconds to prevent connection timeouts
 	keepalive := time.NewTicker(15 * time.Second)
 	defer keepalive.Stop()
+
+	// If NATS is available, subscribe to activity events for real-time updates.
+	// This allows the dashboard to update immediately when an agent reports progress,
+	// rather than waiting for the next 2s poll tick.
+	if h.natsClient != nil {
+		sub, err := h.natsClient.SubscribeToActivity(func(event natsutil.ActivityEvent) {
+			// Signal a dashboard update immediately on any activity
+			fmt.Fprintf(w, "event: dashboard-update\ndata: nats-activity\n\n")
+			flusher.Flush()
+		})
+		if err == nil {
+			defer sub.Unsubscribe()
+		}
+	}
 
 	for {
 		select {

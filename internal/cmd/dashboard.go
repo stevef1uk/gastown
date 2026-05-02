@@ -16,6 +16,7 @@ import (
 	"github.com/steveyegge/gastown/internal/doltserver"
 	"github.com/steveyegge/gastown/internal/web"
 	"github.com/steveyegge/gastown/internal/workspace"
+	"github.com/steveyegge/gastown/internal/natsutil"
 )
 
 var (
@@ -88,7 +89,11 @@ func runDashboard(cmd *cobra.Command, args []string) error {
 			fmt.Fprintf(cmd.ErrOrStderr(), "warning: loading town settings: %v (using defaults)\n", loadErr)
 		}
 
-		handler, err = web.NewDashboardMux(fetcher, webCfg)
+		// Try to connect to NATS for real-time updates
+		natsURL := os.Getenv("GT_NATS_URL")
+		natsClient, _ := natsutil.NewClient(natsURL) // ignore error, dashboard works without NATS
+
+		handler, err = web.NewDashboardMux(fetcher, webCfg, natsClient)
 		if err != nil {
 			return fmt.Errorf("creating dashboard handler: %w", err)
 		}

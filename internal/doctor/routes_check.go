@@ -14,13 +14,22 @@ import (
 // Uses ResolveBeadsDir to follow any redirects (e.g., rig/.beads/redirect -> mayor/rig/.beads).
 // Falls back to the default mayor layout path if the resolved path is invalid or escapes the town root.
 func determineRigBeadsPath(townRoot, rigName string) string {
-	defaultPath := rigName + "/mayor/rig"
 	rigPath := filepath.Join(townRoot, rigName)
+
+	// Try canonical mayor layout first if root .beads is missing
+	beadsDir := filepath.Join(rigPath, ".beads")
+	if _, err := os.Stat(beadsDir); os.IsNotExist(err) {
+		mayorBeadsDir := filepath.Join(rigPath, "mayor", "rig", ".beads")
+		if _, err := os.Stat(mayorBeadsDir); err == nil {
+			return rigName + "/mayor/rig"
+		}
+	}
+
 	resolved := beads.ResolveBeadsDir(rigPath)
 
 	rel, err := filepath.Rel(townRoot, resolved)
 	if err != nil {
-		return defaultPath
+		return rigName + "/mayor/rig"
 	}
 
 	// Normalize to forward slashes for consistent string operations on all platforms
@@ -28,7 +37,7 @@ func determineRigBeadsPath(townRoot, rigName string) string {
 
 	// Validate the resolved path stays within the town root
 	if rel == ".." || strings.HasPrefix(rel, "../") {
-		return defaultPath
+		return rigName + "/mayor/rig"
 	}
 
 	return strings.TrimSuffix(rel, "/.beads")
@@ -388,9 +397,13 @@ func (c *RoutesCheck) Fix(ctx *CheckContext) error {
 		canonicalPath := filepath.Join(ctx.TownRoot, rigRoutePath)
 
 		if idx, exists := routeMap[prefix]; exists {
-			// Route exists — only rewrite if current path is redirect-dependent
-			// and canonical target has a real .beads directory (not a redirect).
-			if routes[idx].Path != rigRoutePath && isRedirectDependent(ctx.TownRoot, routes[idx].Path) {
+			// Rewrite if path is suboptimal (redirect-dependent) or invalid
+			pathMissing := false
+			if _, err := os.Stat(filepath.Join(ctx.TownRoot, routes[idx].Path, ".beads")); os.IsNotExist(err) {
+				pathMissing = true
+			}
+
+			if routes[idx].Path != rigRoutePath && (pathMissing || isRedirectDependent(ctx.TownRoot, routes[idx].Path)) {
 				if hasRealBeadsDir(canonicalPath) {
 					routes[idx].Path = rigRoutePath
 					modified = true

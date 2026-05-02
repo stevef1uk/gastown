@@ -796,8 +796,9 @@ func ResolveProcessNames(agentName, command string) []string {
 				return info.ProcessNames
 			}
 		}
-		// Unknown command — use the binary basename itself
-		return []string{cmdBase}
+		// Unknown command — use the binary basename itself plus Claude defaults
+		// as a safe fallback for wrapper scripts.
+		return []string{cmdBase, "node", "claude"}
 	}
 
 	// No command provided, agent not in registry — Claude defaults

@@ -376,6 +376,21 @@ func (m *Manager) AddRig(opts AddRigOptions) (*Rig, error) {
 		return nil, fmt.Errorf("creating rig directory: %w", err)
 	}
 
+	// Create server-side database and ensure metadata.json is correctly
+	// configured BEFORE any bd commands. This prevents bd from
+	// creating/using 'beads_<prefix>' when it should use '<rigName>'
+	// on the centralized server.
+	if !opts.SkipDoltCheck {
+		if _, err := exec.LookPath("dolt"); err == nil {
+			if _, _, err := doltserver.InitRig(m.townRoot, opts.Name); err != nil {
+				fmt.Printf("  Warning: Could not create rig database: %v\n", err)
+			}
+			if err := doltserver.EnsureMetadata(m.townRoot, opts.Name); err != nil {
+				fmt.Printf("  Warning: Could not set Dolt server metadata: %v\n", err)
+			}
+		}
+	}
+
 	// Track cleanup on failure (best-effort cleanup)
 	cleanup := func() { _ = os.RemoveAll(rigPath) }
 	success := false
@@ -546,6 +561,21 @@ func (m *Manager) AddRig(opts AddRigOptions) (*Rig, error) {
 	}
 	fmt.Printf("   ✓ Created mayor clone\n")
 
+	// Create server-side database and ensure metadata.json is correctly
+	// configured BEFORE any bd commands. This prevents bd from
+	// creating/using 'beads_<prefix>' when it should use '<rigName>'
+	// on the centralized server.
+	if !opts.SkipDoltCheck {
+		if _, err := exec.LookPath("dolt"); err == nil {
+			if _, _, err := doltserver.InitRig(m.townRoot, opts.Name); err != nil {
+				fmt.Printf("  Warning: Could not create rig database: %v\n", err)
+			}
+			if err := doltserver.EnsureMetadata(m.townRoot, opts.Name); err != nil {
+				fmt.Printf("  Warning: Could not set Dolt server metadata: %v\n", err)
+			}
+		}
+	}
+
 	// Check if source repo has tracked .beads/ directory.
 	// If so, we need to initialize the database (it doesn't exist after clone since DB files are gitignored).
 	sourceBeadsDir := filepath.Join(mayorRigPath, ".beads")
@@ -625,17 +655,6 @@ func (m *Manager) AddRig(opts AddRigOptions) (*Rig, error) {
 	// Only ~/gt/CLAUDE.md (town-root identity anchor) exists on disk.
 	// Full context is injected ephemerally by `gt prime` at session start.
 
-	// Create server-side database for this rig BEFORE initializing beads.
-	// InitBeads runs bd init --server which writes metadata.json, but the actual
-	// database in .dolt-data/ must exist first for bd config commands to work.
-	if !opts.SkipDoltCheck {
-		if _, err := exec.LookPath("dolt"); err == nil {
-			if _, _, err := doltserver.InitRig(m.townRoot, opts.Name); err != nil {
-				fmt.Printf("  Warning: Could not create rig database: %v\n", err)
-			}
-		}
-	}
-
 	// Initialize beads at rig level BEFORE creating worktrees.
 	// This ensures rig/.beads exists so worktree redirects can point to it.
 	fmt.Printf("  Initializing beads database...\n")
@@ -644,16 +663,10 @@ func (m *Manager) AddRig(opts AddRigOptions) (*Rig, error) {
 	}
 	fmt.Printf("   ✓ Initialized beads (prefix: %s)\n", opts.BeadsPrefix)
 
-	// Ensure metadata.json has dolt_mode=server and dolt_database=<rigName>.
-	// bd init --server sets dolt_mode but not dolt_database. EnsureMetadata
-	// writes both fields so bd connects to the correct centralized database.
-	// This must happen BEFORE setting issue_prefix below, so bd connects to
-	// the correct server-side database (rigName, not beads_<prefix>).
-	if err := doltserver.EnsureMetadata(m.townRoot, opts.Name); err != nil {
-		// Non-fatal: daemon's EnsureAllMetadata self-heals on next startup,
-		// or user can run gt doctor --fix to repair manually.
-		fmt.Printf("  Warning: Could not set Dolt server metadata: %v\n", err)
-		fmt.Printf("  Run 'gt doctor --fix' to repair, or it will self-heal on next daemon start.\n")
+	// Safety-net: drop orphaned beads_<prefix> database if it differs from rigName (gt-sv1h).
+	// InitBeads already does this, but repeat here in case EnsureMetadata path diverges.
+	if orphanDB := "beads_" + opts.BeadsPrefix; orphanDB != opts.Name {
+		_ = doltserver.RemoveDatabase(m.townRoot, orphanDB, true)
 	}
 
 	// Safety-net: drop orphaned beads_<prefix> database if it differs from rigName (gt-sv1h).
@@ -1011,6 +1024,17 @@ func (m *Manager) InitBeads(rigPath, prefix, rigName string) error {
 	// No tracked beads - create local database
 	if err := os.MkdirAll(beadsDir, 0755); err != nil {
 		return err
+	}
+
+	// Ensure metadata.json is correctly configured BEFORE bd init.
+	// This ensures bd connects to the centralized Dolt server database
+	// (rigName) instead of defaulting to 'beads_<prefix>'.
+	if rigName != "" {
+		if err := doltserver.EnsureMetadata(m.townRoot, rigName); err != nil {
+			// Non-fatal: bd init --server will still create metadata.json,
+			// though it may use the wrong database name.
+			fmt.Printf("  Warning: Could not set Dolt server metadata in InitBeads: %v\n", err)
+		}
 	}
 
 	// Build environment with explicit BEADS_DIR to prevent bd from

@@ -174,6 +174,7 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 	d.Register(doctor.NewClaudeBinaryCheck())
 	d.Register(doctor.NewGroqCompoundCheck())
 	d.Register(doctor.NewDoltServerReachableCheck())
+	d.Register(doctor.NewDoltMetadataCheck())
 
 	d.Register(doctor.NewTownGitCheck())
 	d.Register(doctor.NewTownRootBranchCheck())

@@ -32,6 +32,13 @@ func runCmd(timeout time.Duration, name string, args ...string) (*bytes.Buffer, 
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
+	if name == "tmux" {
+		if sock := tmux.GetDefaultSocket(); sock != "" {
+			// Prepend -L <socket> before the tmux command (list-sessions, etc)
+			args = append([]string{"-L", sock}, args...)
+		}
+	}
+
 	cmd := exec.CommandContext(ctx, name, args...)
 	var stdout bytes.Buffer
 	cmd.Stdout = &stdout
@@ -541,7 +548,7 @@ func (f *LiveConvoyFetcher) getSessionActivityForAssignee(assignee string) *time
 func (f *LiveConvoyFetcher) getAllPolecatActivity() *time.Time {
 	// List all tmux sessions matching gt-*-* pattern (polecat sessions)
 	// Format: gt-{rig}-{polecat}
-	stdout, err := runCmd(f.tmuxCmdTimeout, "tmux", "list-sessions", "-F", "#{session_name}|#{session_activity}")
+	stdout, err := runCmd(f.tmuxCmdTimeout, "tmux", "list-sessions", "-F", "#{session_name}|#{window_activity}")
 	if err != nil {
 		return nil
 	}
@@ -566,6 +573,7 @@ func (f *LiveConvoyFetcher) getAllPolecatActivity() *time.Time {
 		if err != nil {
 			continue
 		}
+
 		if identity.Role != session.RolePolecat && identity.Role != session.RoleCrew {
 			continue
 		}
@@ -813,6 +821,7 @@ func (f *LiveConvoyFetcher) FetchWorkers() ([]WorkerRow, error) {
 	var workers []WorkerRow
 	lines := strings.Split(strings.TrimSpace(stdout.String()), "\n")
 
+
 	for _, line := range lines {
 		if line == "" {
 			continue
@@ -829,9 +838,9 @@ func (f *LiveConvoyFetcher) FetchWorkers() ([]WorkerRow, error) {
 		// dependency on global DefaultRegistry initialization (gt-y24).
 		identity, err := session.ParseSessionNameWithRegistry(sessionName, f.registry)
 		if err != nil {
-			log.Printf("dashboard: FetchWorkers: skipping session %q: %v", sessionName, err)
 			continue
 		}
+
 
 		rig := identity.Rig
 
@@ -839,6 +848,7 @@ func (f *LiveConvoyFetcher) FetchWorkers() ([]WorkerRow, error) {
 		if !registeredRigs[rig] {
 			continue
 		}
+
 
 		// Skip non-worker sessions (witness, mayor, deacon, boot)
 		switch identity.Role {
@@ -909,8 +919,8 @@ type assignedIssue struct {
 func (f *LiveConvoyFetcher) getAssignedIssuesMap() map[string]assignedIssue {
 	result := make(map[string]assignedIssue)
 
-	// Query all in_progress issues (these are the ones being worked on)
-	stdout, err := f.runBdCmd(f.townRoot, "list", "--status=in_progress", "--json")
+	// Query all in_progress and hooked issues (these are the ones being worked on)
+	stdout, err := f.runBdCmd(f.townRoot, "list", "--status=in_progress,hooked", "--json")
 	if err != nil {
 		log.Printf("warning: bd list in_progress failed: %v", err)
 		return result
@@ -1542,13 +1552,18 @@ func (f *LiveConvoyFetcher) FetchMayor() (*MayorStatus, error) {
 	mayorSessionName := session.MayorSessionName()
 
 	// Check if mayor tmux session exists
-	stdout, err := fetcherRunCmd(f.tmuxCmdTimeout, "tmux", "list-sessions", "-F", "#{session_name}:#{session_activity}")
+	stdout, err := runCmd(f.tmuxCmdTimeout, "tmux", "list-sessions", "-F", "#{session_name}|#{window_activity}")
 	if err != nil {
-		// tmux not running or no sessions
-		return status, nil
+		log.Printf("dashboard: FetchWorkers: tmux list-sessions failed: %v", err)
+		return nil, nil
 	}
 
 	lines := strings.Split(strings.TrimSpace(stdout.String()), "\n")
+	log.Printf("dashboard: FetchWorkers: found %d tmux sessions", len(lines))
+	if len(lines) > 0 && lines[0] != "" {
+		log.Printf("dashboard: FetchWorkers: first session: %q", lines[0])
+	}
+
 	for _, line := range lines {
 		if strings.HasPrefix(line, mayorSessionName+":") {
 			status.IsAttached = true

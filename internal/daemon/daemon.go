@@ -60,6 +60,7 @@ type Daemon struct {
 	convoyManager *ConvoyManager
 	beadsStores   map[string]beadsdk.Storage
 	doltServer    *DoltServerManager
+	natsServer    *NatsServerManager
 	krcPruner     *KRCPruner
 
 	// disabledPatrols is loaded from town settings (disabled_patrols field).
@@ -259,6 +260,15 @@ func New(config *Config) (*Daemon, error) {
 		}
 	}
 
+	// Initialize NATS server manager if configured
+	var natsServer *NatsServerManager
+	if patrolConfig != nil && patrolConfig.Patrols != nil && patrolConfig.Patrols.NatsServer != nil {
+		natsServer = NewNatsServerManager(config.TownRoot, patrolConfig.Patrols.NatsServer, logger.Printf)
+		if natsServer.IsEnabled() {
+			logger.Printf("NATS server management enabled")
+		}
+	}
+
 	// Propagate Dolt host to process env so bd doesn't fall back to 127.0.0.1
 	// when the server runs on a remote machine (e.g., mini2 over Tailscale).
 	if os.Getenv("BEADS_DOLT_SERVER_HOST") == "" {
@@ -327,6 +337,7 @@ func New(config *Config) (*Daemon, error) {
 		ctx:             ctx,
 		cancel:          cancel,
 		doltServer:      doltServer,
+		natsServer:      natsServer,
 		gtPath:          gtPath,
 		bdPath:          bdPath,
 		restartTracker:  restartTracker,
@@ -408,6 +419,15 @@ func (d *Daemon) Run() (err error) {
 	defer timer.Stop()
 
 	d.logger.Printf("Daemon running, recovery heartbeat interval %v", d.recoveryHeartbeatInterval())
+
+	// Start NATS server if configured
+	if d.natsServer != nil && d.natsServer.IsEnabled() {
+		if err := d.natsServer.Start(); err != nil {
+			d.logger.Printf("Warning: failed to start NATS server: %v", err)
+		} else {
+			d.logger.Println("NATS server started")
+		}
+	}
 
 	// Start feed curator goroutine
 	d.curator = feed.NewCurator(d.config.TownRoot)

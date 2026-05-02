@@ -322,6 +322,7 @@ type Beads struct {
 	beadsDir   string // Optional BEADS_DIR override for cross-database access
 	isolated   bool   // If true, suppress inherited beads env vars (for test isolation)
 	serverPort int    // If set, pass --server-port to bd init and GT_DOLT_PORT to env
+	Verbose    bool
 
 	// store is an optional in-process beadsdk.Storage. When set, methods
 	// bypass the bd subprocess and use the store directly. Follows the
@@ -434,17 +435,26 @@ func (b *Beads) run(args ...string) (_ []byte, retErr error) {
 	// Always explicitly set BEADS_DIR to prevent inherited env vars from
 	// causing prefix mismatches. Use explicit beadsDir if set, otherwise
 	// resolve from working directory.
-	cmd := exec.Command("bd", fullArgs...) //nolint:gosec // G204: bd is a trusted internal tool
+	bdPath, err := exec.LookPath("bd")
+	if err != nil {
+		return nil, fmt.Errorf("beads (bd) binary not found in PATH")
+	}
+
+	cmd := exec.Command(bdPath, fullArgs...) //nolint:gosec // G204: bd is a trusted internal tool
 	util.SetDetachedProcessGroup(cmd)
 	cmd.Dir = b.workDir
-
 	cmd.Env = runEnv
+
+	// Inject fallback issue prefix if known to bypass bd detection bugs (gt-zmy)
+	if prefix := detectPrefix(beadsDir); prefix != "" {
+		cmd.Env = append(cmd.Env, "BEADS_ISSUE_PREFIX="+prefix)
+	}
 	cmd.Env = append(cmd.Env, telemetry.OTELEnvForSubprocess()...)
 
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
-	err := cmd.Run()
+	err = cmd.Run()
 
 	// If bd doesn't support --flat, retry without it. The retry is done here
 	// (not in callers like List) so that InjectFlatForListJSON doesn't re-add

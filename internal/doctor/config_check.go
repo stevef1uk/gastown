@@ -12,6 +12,7 @@ import (
 
 	"github.com/steveyegge/gastown/internal/beads"
 	"github.com/steveyegge/gastown/internal/constants"
+	"github.com/steveyegge/gastown/internal/doltserver"
 )
 
 // SettingsCheck verifies each rig has a settings/ directory.
@@ -634,75 +635,82 @@ func (c *CustomTypesCheck) Run(ctx *CheckContext) *CheckResult {
 		}
 	}
 
-	beadsDir := doctorConfigBeadsDir(ctx)
-	if _, err := os.Stat(beadsDir); os.IsNotExist(err) {
+	rigs := findAllRigs(ctx.TownRoot)
+	// Always include town root
+	rigs = append([]string{ctx.TownRoot}, rigs...)
+
+	// Filter by rig if specified
+	if ctx.RigName != "" {
+		rigs = []string{ctx.RigPath()}
+	}
+
+	var issues []string
+	c.missingTypes = nil
+	c.targetBeadsDir = "" // Clear cache
+
+	requiredTypes := constants.BeadsCustomTypesList()
+	requiredSet := make(map[string]bool)
+	for _, t := range requiredTypes {
+		requiredSet[t] = true
+	}
+
+	for _, rigPath := range rigs {
+		beadsDir := beads.ResolveBeadsDir(rigPath)
+		if _, err := os.Stat(beadsDir); os.IsNotExist(err) {
+			continue
+		}
+
+		// Get current custom types configuration
+		cmd := exec.Command("bd", "config", "get", "types.custom")
+		cmd.Dir = beadsDir
+		cmd.Env = doctorConfigEnv(beadsDir)
+		output, err := cmd.Output()
+		
+		configuredTypes := ""
+		if err == nil {
+			configuredTypes = parseConfigOutput(output)
+		}
+
+		configuredSet := make(map[string]bool)
+		if configuredTypes != "" {
+			for _, t := range strings.Split(configuredTypes, ",") {
+				configuredSet[strings.TrimSpace(t)] = true
+			}
+		}
+
+		var missing []string
+		for _, required := range requiredTypes {
+			if !configuredSet[required] {
+				missing = append(missing, required)
+			}
+		}
+
+		if len(missing) > 0 {
+			relPath, _ := filepath.Rel(ctx.TownRoot, rigPath)
+			if relPath == "." {
+				relPath = "town root"
+			}
+			issues = append(issues, fmt.Sprintf("%s missing types: %s", relPath, strings.Join(missing, ", ")))
+			
+			// For Fix, we'll need to know which beadsDir to update.
+			// Currently c only supports one targetBeadsDir.
+			// I'll update Fix to use the context to re-find all rigs.
+		}
+	}
+
+	if len(issues) == 0 {
 		return &CheckResult{
 			Name:    c.Name(),
 			Status:  StatusOK,
-			Message: "No beads database (skipped)",
+			Message: "All custom types registered across all rigs",
 		}
 	}
-
-	// Get current custom types configuration
-	// Use Output() not CombinedOutput() to avoid capturing bd's stderr messages
-	cmd := exec.Command("bd", "config", "get", "types.custom")
-	cmd.Dir = beadsDir
-	cmd.Env = doctorConfigEnv(beadsDir)
-	output, err := cmd.Output()
-	if err != nil {
-		// If config key doesn't exist, types are not configured
-		c.targetBeadsDir = beadsDir
-		c.missingTypes = constants.BeadsCustomTypesList()
-		return &CheckResult{
-			Name:    c.Name(),
-			Status:  StatusWarning,
-			Message: "Custom types not configured",
-			Details: []string{
-				"Gas Town custom types (agent, role, rig, convoy, slot) are not registered",
-				"This may cause bead creation/validation errors",
-			},
-			FixHint: "Run 'gt doctor --fix' or 'bd config set types.custom \"" + constants.BeadsCustomTypes + "\"'",
-		}
-	}
-
-	// Parse configured types, filtering out bd "Note:" messages that may appear in stdout
-	configuredTypes := parseConfigOutput(output)
-	configuredSet := make(map[string]bool)
-	if configuredTypes != "" {
-		for _, t := range strings.Split(configuredTypes, ",") {
-			configuredSet[strings.TrimSpace(t)] = true
-		}
-	}
-
-	// Check for missing required types
-	var missing []string
-	for _, required := range constants.BeadsCustomTypesList() {
-		if !configuredSet[required] {
-			missing = append(missing, required)
-		}
-	}
-
-	if len(missing) == 0 {
-		return &CheckResult{
-			Name:    c.Name(),
-			Status:  StatusOK,
-			Message: "All custom types registered",
-		}
-	}
-
-	// Cache for Fix
-	c.targetBeadsDir = beadsDir
-	c.missingTypes = missing
 
 	return &CheckResult{
 		Name:    c.Name(),
 		Status:  StatusWarning,
-		Message: fmt.Sprintf("%d custom type(s) missing", len(missing)),
-		Details: []string{
-			fmt.Sprintf("Missing types: %s", strings.Join(missing, ", ")),
-			fmt.Sprintf("Configured: %s", configuredTypes),
-			fmt.Sprintf("Required: %s", constants.BeadsCustomTypes),
-		},
+		Message: fmt.Sprintf("%d rig(s) have missing custom types", len(issues)),
+		Details: issues,
 		FixHint: "Run 'gt doctor --fix' to register missing types",
 	}
 }
@@ -719,38 +727,60 @@ func parseConfigOutput(output []byte) string {
 	return ""
 }
 
-// Fix registers the missing custom types.
+// Fix registers the missing custom types across all rigs.
 func (c *CustomTypesCheck) Fix(ctx *CheckContext) error {
-	getCmd := exec.Command("bd", "config", "get", "types.custom")
-	getCmd.Dir = c.targetBeadsDir
-	getCmd.Env = doctorConfigEnv(c.targetBeadsDir)
-	existingOutput, _ := getCmd.Output()
+	rigs := findAllRigs(ctx.TownRoot)
+	rigs = append([]string{ctx.TownRoot}, rigs...)
+	if ctx.RigName != "" {
+		rigs = []string{ctx.RigPath()}
+	}
 
-	typeSet := make(map[string]bool)
-	if existing := parseConfigOutput(existingOutput); existing != "" {
-		for _, typ := range strings.Split(existing, ",") {
-			typ = strings.TrimSpace(typ)
-			if typ != "" {
-				typeSet[typ] = true
+	requiredTypes := constants.BeadsCustomTypesList()
+
+	for _, rigPath := range rigs {
+		beadsDir := beads.ResolveBeadsDir(rigPath)
+		if _, err := os.Stat(beadsDir); os.IsNotExist(err) {
+			continue
+		}
+
+		// Ensure metadata is correct so bd connects to the right server
+		rigName := filepath.Base(rigPath)
+		if rigPath == ctx.TownRoot {
+			rigName = "hq"
+		}
+		_ = doltserver.EnsureMetadata(ctx.TownRoot, rigName)
+
+		getCmd := exec.Command("bd", "config", "get", "types.custom")
+		getCmd.Dir = beadsDir
+		getCmd.Env = doctorConfigEnv(beadsDir)
+		existingOutput, _ := getCmd.Output()
+
+		typeSet := make(map[string]bool)
+		if existing := parseConfigOutput(existingOutput); existing != "" {
+			for _, typ := range strings.Split(existing, ",") {
+				typ = strings.TrimSpace(typ)
+				if typ != "" {
+					typeSet[typ] = true
+				}
 			}
 		}
-	}
-	for _, typ := range constants.BeadsCustomTypesList() {
-		typeSet[typ] = true
-	}
+		for _, typ := range requiredTypes {
+			typeSet[typ] = true
+		}
 
-	var merged []string
-	for typ := range typeSet {
-		merged = append(merged, typ)
-	}
-	sort.Strings(merged)
+		var merged []string
+		for typ := range typeSet {
+			merged = append(merged, typ)
+		}
+		sort.Strings(merged)
 
-	cmd := exec.Command("bd", "config", "set", "types.custom", strings.Join(merged, ","))
-	cmd.Dir = c.targetBeadsDir
-	cmd.Env = doctorConfigEnv(c.targetBeadsDir)
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("bd config set types.custom: %s", strings.TrimSpace(string(output)))
+		cmd := exec.Command("bd", "config", "set", "types.custom", strings.Join(merged, ","))
+		cmd.Dir = beadsDir
+		cmd.Env = doctorConfigEnv(beadsDir)
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			return fmt.Errorf("bd config set types.custom in %s: %s", rigPath, strings.TrimSpace(string(output)))
+		}
 	}
 	return nil
 }
@@ -785,108 +815,130 @@ func (c *CustomStatusesCheck) Run(ctx *CheckContext) *CheckResult {
 		}
 	}
 
-	beadsDir := doctorConfigBeadsDir(ctx)
-	if _, err := os.Stat(beadsDir); os.IsNotExist(err) {
+	rigs := findAllRigs(ctx.TownRoot)
+	// Always include town root
+	rigs = append([]string{ctx.TownRoot}, rigs...)
+
+	// Filter by rig if specified
+	if ctx.RigName != "" {
+		rigs = []string{ctx.RigPath()}
+	}
+
+	var issues []string
+
+	requiredStatuses := constants.BeadsCustomStatusesList()
+
+	for _, rigPath := range rigs {
+		beadsDir := beads.ResolveBeadsDir(rigPath)
+		if _, err := os.Stat(beadsDir); os.IsNotExist(err) {
+			continue
+		}
+
+		// Get current custom statuses configuration
+		cmd := exec.Command("bd", "config", "get", "status.custom")
+		cmd.Dir = beadsDir
+		cmd.Env = doctorConfigEnv(beadsDir)
+		output, err := cmd.Output()
+
+		configuredStatuses := ""
+		if err == nil {
+			configuredStatuses = parseConfigOutput(output)
+		}
+
+		configuredSet := make(map[string]bool)
+		if configuredStatuses != "" {
+			for _, s := range strings.Split(configuredStatuses, ",") {
+				configuredSet[strings.TrimSpace(s)] = true
+			}
+		}
+
+		var missing []string
+		for _, required := range requiredStatuses {
+			if !configuredSet[required] {
+				missing = append(missing, required)
+			}
+		}
+
+		if len(missing) > 0 {
+			relPath, _ := filepath.Rel(ctx.TownRoot, rigPath)
+			if relPath == "." {
+				relPath = "town root"
+			}
+			issues = append(issues, fmt.Sprintf("%s missing statuses: %s", relPath, strings.Join(missing, ", ")))
+		}
+	}
+
+	if len(issues) == 0 {
 		return &CheckResult{
 			Name:    c.Name(),
 			Status:  StatusOK,
-			Message: "No beads database (skipped)",
+			Message: "All custom statuses registered across all rigs",
 		}
 	}
-
-	// Get current custom statuses configuration
-	cmd := exec.Command("bd", "config", "get", "status.custom")
-	cmd.Dir = beadsDir
-	cmd.Env = doctorConfigEnv(beadsDir)
-	output, err := cmd.Output()
-	if err != nil {
-		c.targetBeadsDir = beadsDir
-		c.missingStatuses = constants.BeadsCustomStatusesList()
-		return &CheckResult{
-			Name:    c.Name(),
-			Status:  StatusWarning,
-			Message: "Custom statuses not configured",
-			Details: []string{
-				"Gas Town custom statuses (staged_ready, staged_warnings) are not registered",
-				"Convoy staging will fail without these statuses",
-			},
-			FixHint: "Run 'gt doctor --fix' or 'bd config set status.custom \"" + constants.BeadsCustomStatuses + "\"'",
-		}
-	}
-
-	configuredStatuses := parseConfigOutput(output)
-	configuredSet := make(map[string]bool)
-	if configuredStatuses != "" {
-		for _, s := range strings.Split(configuredStatuses, ",") {
-			configuredSet[strings.TrimSpace(s)] = true
-		}
-	}
-
-	var missing []string
-	for _, required := range constants.BeadsCustomStatusesList() {
-		if !configuredSet[required] {
-			missing = append(missing, required)
-		}
-	}
-
-	if len(missing) == 0 {
-		return &CheckResult{
-			Name:    c.Name(),
-			Status:  StatusOK,
-			Message: "All custom statuses registered",
-		}
-	}
-
-	c.targetBeadsDir = beadsDir
-	c.missingStatuses = missing
 
 	return &CheckResult{
 		Name:    c.Name(),
 		Status:  StatusWarning,
-		Message: fmt.Sprintf("%d custom status(es) missing", len(missing)),
-		Details: []string{
-			fmt.Sprintf("Missing statuses: %s", strings.Join(missing, ", ")),
-			fmt.Sprintf("Configured: %s", configuredStatuses),
-			fmt.Sprintf("Required: %s", constants.BeadsCustomStatuses),
-		},
+		Message: fmt.Sprintf("%d rig(s) have missing custom statuses", len(issues)),
+		Details: issues,
 		FixHint: "Run 'gt doctor --fix' to register missing statuses",
 	}
 }
 
-// Fix registers the missing custom statuses by merging with existing ones.
+// Fix registers the missing custom statuses across all rigs.
 func (c *CustomStatusesCheck) Fix(ctx *CheckContext) error {
-	// Read existing statuses
-	getCmd := exec.Command("bd", "config", "get", "status.custom")
-	getCmd.Dir = c.targetBeadsDir
-	getCmd.Env = doctorConfigEnv(c.targetBeadsDir)
-	existingOutput, _ := getCmd.Output()
+	rigs := findAllRigs(ctx.TownRoot)
+	rigs = append([]string{ctx.TownRoot}, rigs...)
+	if ctx.RigName != "" {
+		rigs = []string{ctx.RigPath()}
+	}
 
-	// Build merged set
-	statusSet := make(map[string]bool)
-	if existing := parseConfigOutput(existingOutput); existing != "" {
-		for _, s := range strings.Split(existing, ",") {
-			s = strings.TrimSpace(s)
-			if s != "" {
-				statusSet[s] = true
+	requiredStatuses := constants.BeadsCustomStatusesList()
+
+	for _, rigPath := range rigs {
+		beadsDir := beads.ResolveBeadsDir(rigPath)
+		if _, err := os.Stat(beadsDir); os.IsNotExist(err) {
+			continue
+		}
+
+		// Ensure metadata is correct so bd connects to the right server
+		rigName := filepath.Base(rigPath)
+		if rigPath == ctx.TownRoot {
+			rigName = "hq"
+		}
+		_ = doltserver.EnsureMetadata(ctx.TownRoot, rigName)
+
+		getCmd := exec.Command("bd", "config", "get", "status.custom")
+		getCmd.Dir = beadsDir
+		getCmd.Env = doctorConfigEnv(beadsDir)
+		existingOutput, _ := getCmd.Output()
+
+		statusSet := make(map[string]bool)
+		if existing := parseConfigOutput(existingOutput); existing != "" {
+			for _, s := range strings.Split(existing, ",") {
+				s = strings.TrimSpace(s)
+				if s != "" {
+					statusSet[s] = true
+				}
 			}
 		}
-	}
-	for _, s := range constants.BeadsCustomStatusesList() {
-		statusSet[s] = true
-	}
+		for _, s := range requiredStatuses {
+			statusSet[s] = true
+		}
 
-	var merged []string
-	for s := range statusSet {
-		merged = append(merged, s)
-	}
-	sort.Strings(merged)
+		var merged []string
+		for s := range statusSet {
+			merged = append(merged, s)
+		}
+		sort.Strings(merged)
 
-	cmd := exec.Command("bd", "config", "set", "status.custom", strings.Join(merged, ","))
-	cmd.Dir = c.targetBeadsDir
-	cmd.Env = doctorConfigEnv(c.targetBeadsDir)
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("bd config set status.custom: %s", strings.TrimSpace(string(output)))
+		cmd := exec.Command("bd", "config", "set", "status.custom", strings.Join(merged, ","))
+		cmd.Dir = beadsDir
+		cmd.Env = doctorConfigEnv(beadsDir)
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			return fmt.Errorf("bd config set status.custom in %s: %s", rigPath, strings.TrimSpace(string(output)))
+		}
 	}
 	return nil
 }

@@ -128,6 +128,7 @@ Federated work coordination network linking Gas Towns through DoltHub. Rigs post
 - **beads (bd) 0.55.4+** - [github.com/steveyegge/beads](https://github.com/steveyegge/beads)
 - **sqlite3** - for convoy database queries (usually pre-installed on macOS/Linux)
 - **tmux 3.0+** - recommended for full experience
+- **NATS Server** - for real-time dashboard updates (managed automatically via Docker)
 - **Claude Code CLI** (default runtime) - [claude.ai/code](https://claude.ai/code)
 - **Codex CLI** (optional runtime) - [developers.openai.com/codex/cli](https://developers.openai.com/codex/cli)
 - **GitHub Copilot CLI** (optional runtime) - [cli.github.com](https://cli.github.com) (requires Copilot seat)
@@ -239,6 +240,73 @@ gt convoy list
 # 5. Monitor agents
 gt agents
 ```
+
+## Tutorial: Building a Project from Scratch
+
+Gas Town is designed for autonomous software construction. Here is how to take a project from a `SPEC.md` to a working codebase using the **Mountain-Eater** workflow.
+
+### 1. Initialize the Rig
+Add your project repository to Gas Town:
+```bash
+gt rig add my-project https://github.com/user/my-project.git
+```
+
+### 2. Define the Work
+Navigate to the rig directory and create an **Epic** (a high-level goal):
+```bash
+cd my-project
+bd create --title "Build Defender Clone" --type epic
+```
+Take note of the Epic ID (e.g., `my-abc12`).
+
+### 3. Create Tasks
+Break the project down into actionable tasks and link them to the Epic:
+```bash
+bd create --title "Backend: FastAPI setup" --type task --parent my-abc12
+bd create --title "Frontend: Canvas rendering" --type task --parent my-abc12
+```
+
+### 4. Launch the Mountain 🏔️
+Activate the "Mountain-Eater" on your Epic. This tells the system to start autonomous grinding, dispatching tasks to available polecats as capacity allows:
+```bash
+gt mountain my-abc12
+```
+
+### 5. Monitor Progress
+Watch the software being built in real-time:
+```bash
+gt mountain status my-abc12  # Check epic progress
+gt feed --problems           # Monitor agent health
+gt dashboard --open          # Visual overview in browser
+```
+
+## Custom Agent Wrappers
+
+Sometimes you need to inject specific environment variables or use a local LLM proxy. Gas Town supports this via **agent wrappers**.
+
+### Creating a Claude Wrapper
+Create a script (e.g., `claude_wrapper.sh`):
+```bash
+#!/bin/bash
+export ANTHROPIC_BASE_URL="http://your-proxy:11434/v1"
+export CLAUDE_CODE_BYPASS_PERMISSIONS=true
+exec /usr/local/bin/claude "$@"
+```
+Make it executable: `chmod +x claude_wrapper.sh`.
+
+### Registering the Wrapper
+Update your `~/gt/settings/config.json` to use the wrapper:
+```json
+{
+  "agents": {
+    "claude": {
+      "command": "/path/to/claude_wrapper.sh",
+      "args": ["--dangerously-skip-permissions"]
+    }
+  }
+}
+```
+Now all agents slung with `--agent claude` will use your wrapper.
 
 ## Common Workflows
 

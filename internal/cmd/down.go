@@ -20,6 +20,7 @@ import (
 	"github.com/steveyegge/gastown/internal/doltserver"
 	"github.com/steveyegge/gastown/internal/events"
 	"github.com/steveyegge/gastown/internal/git"
+	"github.com/steveyegge/gastown/internal/natsserver"
 	"github.com/steveyegge/gastown/internal/polecat"
 	"github.com/steveyegge/gastown/internal/rig"
 	"github.com/steveyegge/gastown/internal/session"
@@ -342,6 +343,24 @@ func runDown(cmd *cobra.Command, args []string) error {
 			if removed > 0 {
 				printDownStatus("Beads dolt dirs", true, fmt.Sprintf("removed %d", removed))
 			}
+		}
+	}
+
+	// Phase 4d: Stop NATS server (Docker)
+	if downDryRun {
+		if natsserver.IsRunning() {
+			printDownStatus("NATS", true, "would stop")
+		}
+	} else {
+		if natsserver.IsRunning() {
+			if err := natsserver.Stop(); err != nil {
+				printDownStatus("NATS", false, err.Error())
+				allOK = false
+			} else {
+				printDownStatus("NATS", true, "stopped")
+			}
+		} else {
+			printDownStatus("NATS", true, "not running")
 		}
 	}
 

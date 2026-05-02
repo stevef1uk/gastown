@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/steveyegge/gastown/internal/beads"
+	"github.com/steveyegge/gastown/internal/doltserver"
 )
 
 // AgentBeadsCheck verifies that agent beads exist for all agents.
@@ -248,6 +249,16 @@ func (c *AgentBeadsCheck) Fix(ctx *CheckContext) error {
 	// workDir is the rig directory for direct SQL fallback when bd update
 	// fails silently (e.g., legacy prefixes that can't be routed — GH#2127).
 	fixAgentBead := func(bd *beads.Beads, workDir, id, desc string, fields *beads.AgentFields) error {
+		// Ensure metadata is correct before running ANY bd commands, so they
+		// connect to the right centralized database. (gt-zmy)
+		rigName := filepath.Base(workDir)
+		// Resolve the correct name for EnsureMetadata: if workDir is townRoot, use "hq".
+		if workDir == ctx.TownRoot {
+			rigName = "hq"
+		}
+		_ = doltserver.EnsureMetadata(ctx.TownRoot, rigName)
+		bd.Verbose = ctx.Verbose
+
 		// Check issues table first
 		if issue, exists := allAgentBeads[id]; exists {
 			// In issues table — ensure it has the gt:agent label.

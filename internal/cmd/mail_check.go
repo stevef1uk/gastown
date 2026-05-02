@@ -123,7 +123,7 @@ func runMailCheck(cmd *cobra.Command, args []string) error {
 		return NewSilentExit(0)
 	}
 	fmt.Println("No new mail")
-	return NewSilentExit(1)
+	return NewSilentExit(0)
 }
 
 // formatInjectOutput builds the system-reminder text for inject mode.

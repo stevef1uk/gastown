@@ -131,6 +131,7 @@ type PatrolsConfig struct {
 	MainBranchTest         *MainBranchTestConfig          `json:"main_branch_test,omitempty"`
 	QuotaDog               *QuotaDogConfig                `json:"quota_dog,omitempty"`
 	RestartTracker         *RestartTrackerConfig          `json:"restart_tracker,omitempty"`
+	NatsServer             *NatsServerConfig              `json:"nats_server,omitempty"`
 }
 
 // DoltRemotesConfig holds configuration for the dolt_remotes patrol.
@@ -151,6 +152,18 @@ type DoltRemotesConfig struct {
 
 	// Branch is the branch to push (default "main").
 	Branch string `json:"branch,omitempty"`
+}
+
+// NatsServerConfig holds configuration for the NATS server management.
+type NatsServerConfig struct {
+	// Enabled controls whether the NATS server is managed by the daemon.
+	Enabled bool `json:"enabled"`
+
+	// Port is the NATS client port (default 4222).
+	Port int `json:"port,omitempty"`
+
+	// MonitorPort is the NATS monitoring port (default 8222).
+	MonitorPort int `json:"monitor_port,omitempty"`
 }
 
 // DoltBackupConfig holds configuration for the dolt_backup patrol.

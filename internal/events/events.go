@@ -13,6 +13,7 @@ import (
 
 	"github.com/gofrs/flock"
 	"github.com/steveyegge/gastown/internal/workspace"
+	"github.com/steveyegge/gastown/internal/natsutil"
 )
 
 // Event represents an activity event in Gas Town.
@@ -145,7 +146,48 @@ func write(event Event) error {
 		return fmt.Errorf("closing events file: %w", err)
 	}
 
+	// Shadow publish to NATS for real-time dashboard updates.
+	// This is best-effort and should not block or fail the command.
+	publishToNats(event)
+
 	return nil
+}
+
+func publishToNats(event Event) {
+	// Map Event to natsutil.ActivityEvent
+	rig, _ := event.Payload["rig"].(string)
+	if rig == "" {
+		rig = "town" // fallback for global events
+	}
+	agent := event.Actor
+	status := event.Type
+
+	ae := natsutil.ActivityEvent{
+		RigID:   rig,
+		AgentID: agent,
+		Status:  status,
+	}
+	if event.Timestamp != "" {
+		if ts, err := time.Parse(time.RFC3339, event.Timestamp); err == nil {
+			ae.Timestamp = ts
+		}
+	}
+	if ae.Timestamp.IsZero() {
+		ae.Timestamp = time.Now()
+	}
+
+	if b, err := json.Marshal(event.Payload); err == nil {
+		ae.Payload = string(b)
+	}
+
+	// Connect and publish (short-lived connection for CLI commands)
+	url := os.Getenv("GT_NATS_URL")
+	nc, err := natsutil.NewClient(url)
+	if err != nil {
+		return
+	}
+	defer nc.Close()
+	_ = nc.PublishActivity(ae)
 }
 
 // Payload helpers for common event structures.

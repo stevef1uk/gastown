@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/steveyegge/gastown/internal/beads"
+	"github.com/steveyegge/gastown/internal/doltserver"
 )
 
 // PrefixConflictCheck detects duplicate prefixes across rigs in routes.jsonl.
@@ -295,9 +296,15 @@ type realDBPrefixGetter struct{}
 func (r *realDBPrefixGetter) GetDBPrefix(rigPath string) (string, error) {
 	cmd := exec.Command("bd", "config", "get", "issue_prefix")
 	cmd.Dir = rigPath
-	output, err := cmd.Output()
+	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return "", err
+		// If the error is just that the key is missing, return empty string.
+		// bd config get returns exit code 1 and "not found" message if key is missing.
+		outStr := string(output)
+		if strings.Contains(outStr, "not found") || strings.Contains(outStr, "no such key") {
+			return "", nil
+		}
+		return "", fmt.Errorf("bd config get issue_prefix: %s: %w", strings.TrimSpace(outStr), err)
 	}
 	return strings.TrimSpace(string(output)), nil
 }
@@ -413,14 +420,20 @@ func (c *DatabasePrefixCheck) Run(ctx *CheckContext) *CheckResult {
 
 		dbPrefix, err := getter.GetDBPrefix(rigPath)
 		if err != nil {
+			problems = append(problems, fmt.Sprintf("Rig %s: could not query database prefix: %v", route.Path, err))
 			continue
 		}
 
 		routesPrefix := strings.TrimSuffix(route.Prefix, "-")
 
 		if dbPrefix != routesPrefix {
-			problems = append(problems, fmt.Sprintf("Route '%s': routes.jsonl says '%s', database has '%s'",
-				route.Path, routesPrefix, dbPrefix))
+			message := ""
+			if dbPrefix == "" {
+				message = fmt.Sprintf("Rig '%s': database missing issue_prefix (expected %q)", route.Path, routesPrefix)
+			} else {
+				message = fmt.Sprintf("Rig '%s': routes.jsonl says '%s', database has '%s'", route.Path, routesPrefix, dbPrefix)
+			}
+			problems = append(problems, message)
 			c.mismatches = append(c.mismatches, databasePrefixMismatch{
 				rigPath:      route.Path,
 				routesPrefix: routesPrefix,
@@ -462,8 +475,21 @@ func (c *DatabasePrefixCheck) Fix(ctx *CheckContext) error {
 
 	for _, m := range c.mismatches {
 		// Safety: log what we're about to change so corruption is visible (GH#2455)
-		fmt.Fprintf(os.Stderr, "WARNING: database-prefix fix: %s: changing issue_prefix from %q to %q (per routes.jsonl)\n",
-			m.rigPath, m.dbPrefix, m.routesPrefix)
+		if m.dbPrefix == "" {
+			fmt.Fprintf(os.Stderr, "Fixing database-prefix: %s: setting missing issue_prefix to %q (per routes.jsonl)\n",
+				m.rigPath, m.routesPrefix)
+		} else {
+			fmt.Fprintf(os.Stderr, "WARNING: database-prefix fix: %s: changing issue_prefix from %q to %q (per routes.jsonl)\n",
+				m.rigPath, m.dbPrefix, m.routesPrefix)
+		}
+
+		// Ensure metadata is correct before setting prefix, so bd connects to the
+		// right centralized database.
+		rigName := filepath.Base(m.rigPath)
+		if rigName == "." {
+			rigName = "hq"
+		}
+		_ = doltserver.EnsureMetadata(ctx.TownRoot, rigName)
 
 		cmd := exec.Command("bd", "config", "set", "issue_prefix", m.routesPrefix)
 		cmd.Dir = filepath.Join(ctx.TownRoot, m.rigPath)

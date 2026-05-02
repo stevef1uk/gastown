@@ -26,6 +26,7 @@ import (
 	"github.com/steveyegge/gastown/internal/events"
 	"github.com/steveyegge/gastown/internal/mail"
 	"github.com/steveyegge/gastown/internal/mayor"
+	"github.com/steveyegge/gastown/internal/natsserver"
 	"github.com/steveyegge/gastown/internal/polecat"
 	"github.com/steveyegge/gastown/internal/refinery"
 	"github.com/steveyegge/gastown/internal/rig"
@@ -201,14 +202,29 @@ func runUp(cmd *cobra.Command, args []string) error {
 	var deaconResult, mayorResult agentStartResult
 	var prefetchedRigs map[string]*rig.Rig
 	var rigErrors map[string]error
-	var doltOK bool
-	var doltDetail string
+	var doltOK, natsOK bool
+	var doltDetail, natsDetail string
 	var doltSkipped bool
 
 	var startupWg sync.WaitGroup
-	startupWg.Add(5)
+	startupWg.Add(6)
 
-	// 0. Dolt server (if configured)
+	// 0. NATS server (Docker)
+	go func() {
+		defer startupWg.Done()
+		if err := natsserver.Start(natsserver.Config{}); err != nil {
+			natsDetail = err.Error()
+		} else {
+			natsOK = true
+			if natsserver.IsRunning() {
+				natsDetail = "started (port 4222)"
+			} else {
+				natsDetail = "already running"
+			}
+		}
+	}()
+
+	// 1. Dolt server (if configured)
 	go func() {
 		defer startupWg.Done()
 		cfg := doltserver.DefaultConfig(townRoot)
@@ -288,7 +304,12 @@ func runUp(cmd *cobra.Command, args []string) error {
 		_, _ = doltserver.EnsureAllMetadata(townRoot)
 	}
 
-	// Collect Dolt status (if configured)
+	// Collect Dolt and NATS status
+	services = append(services, ServiceStatus{Name: "NATS", Type: "nats", OK: natsOK, Detail: natsDetail})
+	if !natsOK {
+		allOK = false
+	}
+
 	if !doltSkipped {
 		services = append(services, ServiceStatus{Name: "Dolt", Type: "dolt", OK: doltOK, Detail: doltDetail})
 		if !doltOK {

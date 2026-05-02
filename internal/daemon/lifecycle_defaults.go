@@ -61,6 +61,9 @@ func DefaultLifecycleConfig() *DaemonPatrolConfig {
 			Handler: &PatrolConfig{
 				Enabled: true,
 			},
+			NatsServer: &NatsServerConfig{
+				Enabled: true,
+			},
 		},
 	}
 }
@@ -120,6 +123,10 @@ func EnsureLifecycleDefaults(config *DaemonPatrolConfig) bool {
 	}
 	if p.Handler == nil {
 		p.Handler = d.Handler
+		changed = true
+	}
+	if p.NatsServer == nil {
+		p.NatsServer = d.NatsServer
 		changed = true
 	}
 

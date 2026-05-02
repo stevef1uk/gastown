@@ -96,3 +96,5 @@ CLAUDE.local.md
 
 # Fork research notes (private — not for public upstream)
 docs/fork-info/
+doctor_output*.txt\ndoctor_output_fixed*.txt\ndoctor_output_v.txt\nsqldiff\nsqlite.zip\nsqlite3\nsqlite3_analyzer\ntest_dashboard_fetch.go\nflake.lock
+.github/workflows/

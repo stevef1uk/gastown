@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/steveyegge/gastown/internal/config"
+	"github.com/steveyegge/gastown/internal/natsutil"
 )
 
 //go:embed static
@@ -456,7 +457,7 @@ func generateCSRFToken() string {
 
 // NewDashboardMux creates an HTTP handler that serves both the dashboard and API.
 // webCfg may be nil, in which case defaults are used.
-func NewDashboardMux(fetcher ConvoyFetcher, webCfg *config.WebTimeoutsConfig) (http.Handler, error) {
+func NewDashboardMux(fetcher ConvoyFetcher, webCfg *config.WebTimeoutsConfig, natsClient *natsutil.Client) (http.Handler, error) {
 	if webCfg == nil {
 		webCfg = config.DefaultWebTimeoutsConfig()
 	}
@@ -471,7 +472,7 @@ func NewDashboardMux(fetcher ConvoyFetcher, webCfg *config.WebTimeoutsConfig) (h
 
 	defaultRunTimeout := config.ParseDurationOrDefault(webCfg.DefaultRunTimeout, 30*time.Second)
 	maxRunTimeout := config.ParseDurationOrDefault(webCfg.MaxRunTimeout, 60*time.Second)
-	apiHandler := NewAPIHandler(defaultRunTimeout, maxRunTimeout, csrfToken)
+	apiHandler := NewAPIHandler(defaultRunTimeout, maxRunTimeout, csrfToken, natsClient)
 
 	// Create static file server from embedded files
 	staticFS, err := fs.Sub(staticFiles, "static")

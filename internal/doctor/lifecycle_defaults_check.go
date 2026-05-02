@@ -77,6 +77,9 @@ func (c *LifecycleDefaultsCheck) Run(ctx *CheckContext) *CheckResult {
 	if p.ScheduledMaintenance == nil {
 		c.missing = append(c.missing, "scheduled_maintenance")
 	}
+	if p.NatsServer == nil {
+		c.missing = append(c.missing, "nats_server")
+	}
 
 	if len(c.missing) == 0 {
 		return &CheckResult{
