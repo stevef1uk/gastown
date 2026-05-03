@@ -980,7 +980,7 @@ func startPolecatsWithWork(townRoot, rigName string) ([]string, map[string]error
 		return started, errors
 	}
 	t := tmux.NewTmux()
-	polecatMgr := polecat.NewSessionManager(t, r)
+	polecatMgr := polecat.NewSessionManager(session.NewTmuxProvider(t), r)
 
 	for _, entry := range entries {
 		if !entry.IsDir() {

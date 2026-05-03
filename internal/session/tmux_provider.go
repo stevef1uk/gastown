@@ -17,6 +17,12 @@ func NewTmuxProvider(t *tmux.Tmux) *TmuxProvider {
 	return &TmuxProvider{t: t}
 }
 
+// Tmux returns the underlying *tmux.Tmux. Used for tmux-specific operations
+// (theming, hooks, prompt detection) that have no NATS equivalent.
+func (p *TmuxProvider) Tmux() *tmux.Tmux {
+	return p.t
+}
+
 func (p *TmuxProvider) IsAvailable() bool {
 	return p.t.IsAvailable()
 }

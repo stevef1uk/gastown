@@ -15,6 +15,7 @@ import (
 	"github.com/steveyegge/gastown/internal/events"
 	"github.com/steveyegge/gastown/internal/git"
 	"github.com/steveyegge/gastown/internal/polecat"
+	"github.com/steveyegge/gastown/internal/session"
 	"github.com/steveyegge/gastown/internal/rig"
 	"github.com/steveyegge/gastown/internal/style"
 	"github.com/steveyegge/gastown/internal/tmux"
@@ -208,7 +209,7 @@ func SpawnPolecatForSling(rigName string, opts SlingSpawnOptions) (*SpawnedPolec
 				return nil, fmt.Errorf("worktree verification failed for reused %s: %w", polecatName, err)
 			}
 
-			polecatSessMgr := polecat.NewSessionManager(t, r)
+			polecatSessMgr := polecat.NewSessionManager(session.NewTmuxProvider(t), r)
 			sessionName := polecatSessMgr.SessionName(polecatName)
 
 			fmt.Printf("%s Polecat %s reused (idle → working, session start deferred)\n", style.Bold.Render("✓"), polecatName)
@@ -289,7 +290,7 @@ func SpawnPolecatForSling(rigName string, opts SlingSpawnOptions) (*SpawnedPolec
 	}
 
 	// Get session manager for session name (session start is deferred)
-	polecatSessMgr := polecat.NewSessionManager(t, r)
+	polecatSessMgr := polecat.NewSessionManager(session.NewTmuxProvider(t), r)
 	sessionName := polecatSessMgr.SessionName(polecatName)
 
 	fmt.Printf("%s Polecat %s spawned (session start deferred)\n", style.Bold.Render("✓"), polecatName)
@@ -353,7 +354,7 @@ func (s *SpawnedPolecatInfo) StartSession() (string, error) {
 
 	// Start session
 	t := tmux.NewTmux()
-	polecatSessMgr := polecat.NewSessionManager(t, r)
+	polecatSessMgr := polecat.NewSessionManager(session.NewTmuxProvider(t), r)
 
 	fmt.Printf("Starting session for %s/%s...\n", s.RigName, s.PolecatName)
 	startOpts := polecat.SessionStartOptions{

@@ -1525,7 +1525,7 @@ func TestOverflowNameSessionFormat(t *testing.T) {
 	}
 
 	// Create session manager
-	sessMgr := NewSessionManager(nil, r)
+	sessMgr := NewSessionManager(session.NewTmuxProvider(tmux.NewTmux()), r)
 	sessionName := sessMgr.SessionName(overflowName)
 
 	// Verify session name is tr-3, NOT tr-testrig-3
@@ -1976,7 +1976,7 @@ func TestReuseIdlePolecat_KillsLiveSession(t *testing.T) {
 	mgr := NewManager(r, git.NewGit(rigPath), tm)
 
 	// Create a live tmux session (simulates Claude sitting at ❯ after gt done)
-	sessMgr := NewSessionManager(tm, r)
+	sessMgr := NewSessionManager(session.NewTmuxProvider(tm), r)
 	sessionName := sessMgr.SessionName(polecatName)
 	if err := tm.NewSessionWithCommand(sessionName, townRoot, "sleep 300"); err != nil {
 		t.Fatalf("create tmux session: %v", err)
@@ -2060,7 +2060,7 @@ func TestReuseIdlePolecat_KillsStaleSession(t *testing.T) {
 	r := &rig.Rig{Name: rigName, Path: rigPath}
 	mgr := NewManager(r, git.NewGit(rigPath), tm)
 
-	sessMgr := NewSessionManager(tm, r)
+	sessMgr := NewSessionManager(session.NewTmuxProvider(tm), r)
 	sessionName := sessMgr.SessionName(polecatName)
 	if err := tm.NewSessionWithCommand(sessionName, townRoot, "sleep 300"); err != nil {
 		t.Fatalf("create tmux session: %v", err)

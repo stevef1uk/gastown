@@ -208,7 +208,7 @@ func TestManagerDoesNotTreatLiveSessionAsIdle(t *testing.T) {
 		t.Fatalf("create idle agent bead: %v", err)
 	}
 
-	sessionName := NewSessionManager(tm, r).SessionName("toast")
+	sessionName := NewSessionManager(session.NewTmuxProvider(tm), r).SessionName("toast")
 	startLiveSession(t, sessionName)
 
 	p, err := mgr.Get("toast")

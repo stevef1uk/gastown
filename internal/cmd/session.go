@@ -236,7 +236,7 @@ func getSessionManager(rigName string) (*polecat.SessionManager, *rig.Rig, error
 	}
 
 	t := tmux.NewTmux()
-	polecatMgr := polecat.NewSessionManager(t, r)
+	polecatMgr := polecat.NewSessionManager(session.NewTmuxProvider(t), r)
 
 	return polecatMgr, r, nil
 }
@@ -396,7 +396,7 @@ func runSessionList(cmd *cobra.Command, args []string) error {
 	var allSessions []SessionListItem
 
 	for _, r := range rigs {
-		polecatMgr := polecat.NewSessionManager(t, r)
+		polecatMgr := polecat.NewSessionManager(session.NewTmuxProvider(t), r)
 		infos, err := polecatMgr.List()
 		if err != nil {
 			continue

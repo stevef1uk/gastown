@@ -511,7 +511,7 @@ func stopAllPolecats(t *tmux.Tmux, townRoot string, rigNames []string, force boo
 			if err != nil {
 				continue
 			}
-			polecatMgr := polecat.NewSessionManager(t, r)
+			polecatMgr := polecat.NewSessionManager(session.NewTmuxProvider(t), r)
 			infos, err := polecatMgr.ListPolecats()
 			if err != nil {
 				continue
@@ -541,7 +541,7 @@ func stopAllPolecats(t *tmux.Tmux, townRoot string, rigNames []string, force boo
 			continue
 		}
 
-		polecatMgr := polecat.NewSessionManager(t, r)
+		polecatMgr := polecat.NewSessionManager(session.NewTmuxProvider(t), r)
 		infos, err := polecatMgr.ListPolecats()
 		if err != nil {
 			continue

@@ -86,7 +86,7 @@ func TestSessionName(t *testing.T) {
 		Name:     "gastown",
 		Polecats: []string{"Toast"},
 	}
-	m := NewSessionManager(tmux.NewTmux(), r)
+	m := NewSessionManager(session.NewTmuxProvider(tmux.NewTmux()), r)
 
 	name := m.SessionName("Toast")
 	if name != "gt-Toast" {
@@ -100,7 +100,7 @@ func TestSessionManagerPolecatDir(t *testing.T) {
 		Path:     "/home/user/ai/gastown",
 		Polecats: []string{"Toast"},
 	}
-	m := NewSessionManager(tmux.NewTmux(), r)
+	m := NewSessionManager(session.NewTmuxProvider(tmux.NewTmux()), r)
 
 	dir := m.polecatDir("Toast")
 	expected := "/home/user/ai/gastown/polecats/Toast"
@@ -123,7 +123,7 @@ func TestHasPolecat(t *testing.T) {
 		Path:     root,
 		Polecats: []string{"Toast", "Cheedo"},
 	}
-	m := NewSessionManager(tmux.NewTmux(), r)
+	m := NewSessionManager(session.NewTmuxProvider(tmux.NewTmux()), r)
 
 	if !m.hasPolecat("Toast") {
 		t.Error("expected hasPolecat(Toast) = true")
@@ -141,7 +141,7 @@ func TestStartPolecatNotFound(t *testing.T) {
 		Name:     "gastown",
 		Polecats: []string{"Toast"},
 	}
-	m := NewSessionManager(tmux.NewTmux(), r)
+	m := NewSessionManager(session.NewTmuxProvider(tmux.NewTmux()), r)
 
 	err := m.Start("Unknown", SessionStartOptions{})
 	if err == nil {
@@ -156,7 +156,7 @@ func TestIsRunningNoSession(t *testing.T) {
 		Name:     "gastown",
 		Polecats: []string{"Toast"},
 	}
-	m := NewSessionManager(tmux.NewTmux(), r)
+	m := NewSessionManager(session.NewTmuxProvider(tmux.NewTmux()), r)
 
 	running, err := m.IsRunning("Toast")
 	if err != nil {
@@ -182,7 +182,7 @@ func TestSessionManagerListEmpty(t *testing.T) {
 		Name:     "test-rig-unlikely-name",
 		Polecats: []string{},
 	}
-	m := NewSessionManager(tmux.NewTmux(), r)
+	m := NewSessionManager(session.NewTmuxProvider(tmux.NewTmux()), r)
 
 	infos, err := m.List()
 	if err != nil {
@@ -200,7 +200,7 @@ func TestStopNotFound(t *testing.T) {
 		Name:     "test-rig",
 		Polecats: []string{"Toast"},
 	}
-	m := NewSessionManager(tmux.NewTmux(), r)
+	m := NewSessionManager(session.NewTmuxProvider(tmux.NewTmux()), r)
 
 	err := m.Stop("Toast", false)
 	if err != ErrSessionNotFound {
@@ -215,7 +215,7 @@ func TestCaptureNotFound(t *testing.T) {
 		Name:     "test-rig",
 		Polecats: []string{"Toast"},
 	}
-	m := NewSessionManager(tmux.NewTmux(), r)
+	m := NewSessionManager(session.NewTmuxProvider(tmux.NewTmux()), r)
 
 	_, err := m.Capture("Toast", 50)
 	if err != ErrSessionNotFound {
@@ -230,7 +230,7 @@ func TestInjectNotFound(t *testing.T) {
 		Name:     "test-rig",
 		Polecats: []string{"Toast"},
 	}
-	m := NewSessionManager(tmux.NewTmux(), r)
+	m := NewSessionManager(session.NewTmuxProvider(tmux.NewTmux()), r)
 
 	err := m.Inject("Toast", "hello")
 	if err != ErrSessionNotFound {
@@ -360,7 +360,7 @@ func TestEnsureCanonicalSessionBranch_UsesOriginDefaultBranch(t *testing.T) {
 		t.Fatalf("resolve stale HEAD: %v", err)
 	}
 
-	sm := NewSessionManager(tmux.NewTmux(), &rig.Rig{Name: "gastown", Path: workDir})
+	sm := NewSessionManager(session.NewTmuxProvider(tmux.NewTmux()), &rig.Rig{Name: "gastown", Path: workDir})
 	branch := sm.ensureCanonicalSessionBranch(repoGit, "toast", SessionStartOptions{Issue: "gt-9qb"})
 	if !strings.Contains(branch, "/gt-9qb@") {
 		t.Fatalf("fresh session branch = %q, want issue-scoped branch", branch)
@@ -391,7 +391,7 @@ func TestEnsureCanonicalSessionBranch_KeepsCurrentIssueBranch(t *testing.T) {
 		t.Fatalf("checkout current issue branch: %v", err)
 	}
 
-	sm := NewSessionManager(tmux.NewTmux(), &rig.Rig{Name: "gastown", Path: workDir})
+	sm := NewSessionManager(session.NewTmuxProvider(tmux.NewTmux()), &rig.Rig{Name: "gastown", Path: workDir})
 	branch := sm.ensureCanonicalSessionBranch(repoGit, "toast", SessionStartOptions{Issue: "gt-9qb"})
 	if branch != currentBranch {
 		t.Fatalf("ensureCanonicalSessionBranch changed active issue branch: got %q want %q", branch, currentBranch)
@@ -432,7 +432,7 @@ func TestSessionManager_resolveBeadsDir(t *testing.T) {
 		Name: "gastown",
 		Path: rigPath,
 	}
-	m := NewSessionManager(tmux.NewTmux(), r)
+	m := NewSessionManager(session.NewTmuxProvider(tmux.NewTmux()), r)
 
 	polecatWorkDir := filepath.Join(rigPath, "polecats", "Toast")
 
@@ -562,7 +562,7 @@ func TestVerifyStartupNudgeDelivery_IdleAgent(t *testing.T) {
 	time.Sleep(300 * time.Millisecond)
 
 	r := &rig.Rig{Name: "test-rig", Path: t.TempDir()}
-	m := NewSessionManager(tm, r)
+	m := NewSessionManager(session.NewTmuxProvider(tm), r)
 
 	rc := &config.RuntimeConfig{
 		Tmux: &config.RuntimeTmuxConfig{
@@ -601,7 +601,7 @@ func TestVerifyStartupNudgeDelivery_NilConfig(t *testing.T) {
 	requireTmux(t)
 
 	r := &rig.Rig{Name: "test-rig", Path: t.TempDir()}
-	m := NewSessionManager(tmux.NewTmux(), r)
+	m := NewSessionManager(session.NewTmuxProvider(tmux.NewTmux()), r)
 
 	// Should return immediately without error for nil config
 	m.verifyStartupNudgeDelivery("nonexistent-session", nil, "")
@@ -706,7 +706,7 @@ func TestPolecatSlot(t *testing.T) {
 		Path:     rigPath,
 		Polecats: []string{},
 	}
-	sm := NewSessionManager(tmux.NewTmux(), r)
+	sm := NewSessionManager(session.NewTmuxProvider(tmux.NewTmux()), r)
 
 	// No polecats — should return 0
 	if slot := sm.polecatSlot("alpha"); slot != 0 {
