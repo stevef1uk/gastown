@@ -44,8 +44,9 @@ func runNatsWrapper(cmd *cobra.Command, args []string) error {
 	}
 	defer nc.Close()
 
-	// Set up command
-	child := exec.Command(args[0], args[1:]...)
+	// Set up command — wrap with script(1) to provide a PTY for agents like
+	// Claude Code that require a terminal.
+	child := exec.Command("script", append([]string{"-qfec", args[0]}, args[1:]...)...)
 	child.Env = os.Environ()
 
 	stdin, err := child.StdinPipe()

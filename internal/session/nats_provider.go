@@ -21,7 +21,8 @@ type NatsProvider struct {
 	natsURL      string
 	nc           *nats.Conn
 	mu           sync.RWMutex
-	lastActivity map[string]time.Time // sessionID -> last activity timestamp
+	lastActivity map[string]time.Time           // sessionID -> last activity timestamp
+	sessionEnv  map[string]map[string]string // sessionID -> env vars
 }
 
 // NewNatsProvider creates a new NatsProvider.
@@ -45,6 +46,7 @@ func NewNatsProvider(townRoot string, natsURL string) (*NatsProvider, error) {
 		natsURL:      natsURL,
 		nc:           nc,
 		lastActivity: make(map[string]time.Time),
+		sessionEnv:  make(map[string]map[string]string),
 	}, nil
 }
 
@@ -66,6 +68,14 @@ func (p *NatsProvider) recordActivity(sessionID string) {
 
 func (p *NatsProvider) Start(ctx context.Context, sessionID, workDir, command string, env map[string]string) error {
 	p.recordActivity(sessionID)
+
+	// Store env for GetEnvironment calls
+	if len(env) > 0 {
+		p.mu.Lock()
+		p.sessionEnv[sessionID] = env
+		p.mu.Unlock()
+	}
+
 	gtPath, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("finding executable: %w", err)
@@ -154,6 +164,12 @@ func (p *NatsProvider) Stop(ctx context.Context, sessionID string, graceful bool
 	}
 
 	_ = os.Remove(filepath.Join(p.townRoot, ".gt-nats-pids", sessionID))
+
+	// Clean up stored environment
+	p.mu.Lock()
+	delete(p.sessionEnv, sessionID)
+	p.mu.Unlock()
+
 	return nil
 }
 
@@ -193,12 +209,27 @@ func (p *NatsProvider) Inject(ctx context.Context, sessionID string, data string
 }
 
 func (p *NatsProvider) GetEnvironment(ctx context.Context, sessionID string) (map[string]string, error) {
-	// TODO: Implement environment persistence
-	return make(map[string]string), nil
+	p.mu.RLock()
+	env, ok := p.sessionEnv[sessionID]
+	p.mu.RUnlock()
+	if !ok {
+		return make(map[string]string), nil
+	}
+	// Return a copy to prevent external mutation
+	result := make(map[string]string)
+	for k, v := range env {
+		result[k] = v
+	}
+	return result, nil
 }
 
 func (p *NatsProvider) SetEnvironment(ctx context.Context, sessionID, key, value string) error {
-	// For NatsProvider, environment should ideally be set before spawning.
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.sessionEnv[sessionID] == nil {
+		p.sessionEnv[sessionID] = make(map[string]string)
+	}
+	p.sessionEnv[sessionID][key] = value
 	return nil
 }
 

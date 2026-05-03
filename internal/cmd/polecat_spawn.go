@@ -352,9 +352,10 @@ func (s *SpawnedPolecatInfo) StartSession() (string, error) {
 		return "", fmt.Errorf("resolving account: %w", err)
 	}
 
-	// Start session
+	// Start session - use configured transport (NATS if session_transport is set)
 	t := tmux.NewTmux()
-	polecatSessMgr := polecat.NewSessionManager(session.NewTmuxProvider(t), r)
+	sp := session.GetDefaultProvider(townRoot)
+	polecatSessMgr := polecat.NewSessionManager(sp, r)
 
 	fmt.Printf("Starting session for %s/%s...\n", s.RigName, s.PolecatName)
 	startOpts := polecat.SessionStartOptions{
@@ -384,8 +385,12 @@ func (s *SpawnedPolecatInfo) StartSession() (string, error) {
 	} else {
 		runtimeConfig = config.ResolveRoleAgentConfig("polecat", spawnTownRoot, r.Path)
 	}
-	if err := t.WaitForRuntimeReady(s.SessionName, runtimeConfig, 30*time.Second); err != nil {
-		style.PrintWarning("runtime may not be fully ready: %v", err)
+
+	// Only wait for runtime ready when using tmux - NATS sessions handle this differently
+	if _, isTmux := sp.(*session.TmuxProvider); isTmux {
+		if err := t.WaitForRuntimeReady(s.SessionName, runtimeConfig, 30*time.Second); err != nil {
+			style.PrintWarning("runtime may not be fully ready: %v", err)
+		}
 	}
 
 	// Update agent state with retry logic (gt-94llt7: fail-safe Dolt writes).
@@ -408,11 +413,15 @@ func (s *SpawnedPolecatInfo) StartSession() (string, error) {
 
 	// Get pane — if this fails, the session may have died during startup.
 	// Kill the dead session to prevent "session already running" on next attempt (gt-jn40ft).
-	pane, err := getSessionPane(s.SessionName)
-	if err != nil {
-		// Session likely died — clean up the tmux session so it doesn't block re-sling
-		_ = t.KillSession(s.SessionName)
-		return "", fmt.Errorf("getting pane for %s (session likely died during startup): %w", s.SessionName, err)
+	// Skip this check for NATS sessions - they don't have panes
+	var pane string
+	if _, isTmux := sp.(*session.TmuxProvider); isTmux {
+		pane, err = getSessionPane(s.SessionName)
+		if err != nil {
+			// Session likely died — clean up the tmux session so it doesn't block re-sling
+			_ = t.KillSession(s.SessionName)
+			return "", fmt.Errorf("getting pane for %s (session likely died during startup): %w", s.SessionName, err)
+		}
 	}
 
 	s.Pane = pane
