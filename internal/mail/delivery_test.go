@@ -6,19 +6,6 @@ import (
 	"time"
 )
 
-func TestDeliveryAckLabelSequenceOrder(t *testing.T) {
-	at := time.Date(2026, 2, 17, 12, 0, 0, 0, time.UTC)
-	got := DeliveryAckLabelSequence("gastown/worker", at)
-	want := []string{
-		"delivery-acked-by:gastown/worker",
-		"delivery-acked-at:2026-02-17T12:00:00Z",
-		"delivery:acked",
-	}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("DeliveryAckLabelSequence() = %v, want %v", got, want)
-	}
-}
-
 func TestParseDeliveryLabels_CrashAndRetryStates(t *testing.T) {
 	t.Run("pending only", func(t *testing.T) {
 		state, by, at := ParseDeliveryLabels([]string{
@@ -84,10 +71,10 @@ func TestParseDeliveryLabels_CrashAndRetryStates(t *testing.T) {
 	})
 }
 
-func TestDeliveryAckLabelSequenceIdempotent(t *testing.T) {
+func TestDeliveryAckLabelSequence(t *testing.T) {
 	t.Run("no existing labels uses new timestamp", func(t *testing.T) {
 		at := time.Date(2026, 2, 17, 14, 0, 0, 0, time.UTC)
-		got := DeliveryAckLabelSequenceIdempotent("gastown/worker", at, nil)
+		got := DeliveryAckLabelSequence("gastown/worker", at, nil)
 		want := []string{
 			"delivery-acked-by:gastown/worker",
 			"delivery-acked-at:2026-02-17T14:00:00Z",
@@ -106,7 +93,7 @@ func TestDeliveryAckLabelSequenceIdempotent(t *testing.T) {
 		}
 		// Use a different time — should be ignored in favor of existing.
 		at := time.Date(2026, 2, 17, 14, 0, 0, 0, time.UTC)
-		got := DeliveryAckLabelSequenceIdempotent("gastown/worker", at, existing)
+		got := DeliveryAckLabelSequence("gastown/worker", at, existing)
 		want := []string{
 			"delivery-acked-by:gastown/worker",
 			"delivery-acked-at:2026-02-17T12:00:00Z",
@@ -127,7 +114,7 @@ func TestDeliveryAckLabelSequenceIdempotent(t *testing.T) {
 			"delivery:pending",
 		}
 		at := time.Date(2026, 2, 17, 14, 0, 0, 0, time.UTC)
-		got := DeliveryAckLabelSequenceIdempotent("gastown/worker", at, existing)
+		got := DeliveryAckLabelSequence("gastown/worker", at, existing)
 		want := []string{
 			"delivery-acked-by:gastown/worker",
 			"delivery-acked-at:2026-02-17T12:00:00Z",
@@ -146,7 +133,7 @@ func TestDeliveryAckLabelSequenceIdempotent(t *testing.T) {
 		}
 		// Different recipient — should NOT reuse workerA's timestamp.
 		at := time.Date(2026, 2, 17, 14, 0, 0, 0, time.UTC)
-		got := DeliveryAckLabelSequenceIdempotent("gastown/workerB", at, existing)
+		got := DeliveryAckLabelSequence("gastown/workerB", at, existing)
 		want := []string{
 			"delivery-acked-by:gastown/workerB",
 			"delivery-acked-at:2026-02-17T14:00:00Z",
@@ -169,7 +156,7 @@ func TestDeliveryAckLabelSequenceIdempotent(t *testing.T) {
 		}
 		// B retries — must generate a fresh timestamp, not reuse A's t1.
 		at := time.Date(2026, 2, 17, 14, 0, 0, 0, time.UTC)
-		got := DeliveryAckLabelSequenceIdempotent("gastown/workerB", at, existing)
+		got := DeliveryAckLabelSequence("gastown/workerB", at, existing)
 		want := []string{
 			"delivery-acked-by:gastown/workerB",
 			"delivery-acked-at:2026-02-17T14:00:00Z",
@@ -177,6 +164,36 @@ func TestDeliveryAckLabelSequenceIdempotent(t *testing.T) {
 		}
 		if !reflect.DeepEqual(got, want) {
 			t.Fatalf("got %v, want %v", got, want)
+		}
+	})
+}
+
+func TestDeliveryAckLabelsToWriteSkipsExistingLabels(t *testing.T) {
+	at := time.Date(2026, 2, 17, 14, 0, 0, 0, time.UTC)
+
+	t.Run("partial retry only writes missing ack label", func(t *testing.T) {
+		existing := []string{
+			"delivery:pending",
+			"delivery-acked-by:gastown/worker",
+			"delivery-acked-at:2026-02-17T12:00:00Z",
+		}
+		got := deliveryAckLabelsToWrite("gastown/worker", at, existing)
+		want := []string{"delivery:acked"}
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("got %v, want %v", got, want)
+		}
+	})
+
+	t.Run("complete retry writes nothing", func(t *testing.T) {
+		existing := []string{
+			"delivery:pending",
+			"delivery-acked-by:gastown/worker",
+			"delivery-acked-at:2026-02-17T12:00:00Z",
+			"delivery:acked",
+		}
+		got := deliveryAckLabelsToWrite("gastown/worker", at, existing)
+		if len(got) != 0 {
+			t.Fatalf("got %v, want no labels", got)
 		}
 	})
 }

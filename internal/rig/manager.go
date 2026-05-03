@@ -2,6 +2,8 @@ package rig
 
 import (
 	"cmp"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -376,6 +378,18 @@ func (m *Manager) AddRig(opts AddRigOptions) (*Rig, error) {
 		return nil, fmt.Errorf("creating rig directory: %w", err)
 	}
 
+	// Stamp the directory so a stale rollback cannot delete a later,
+	// successful re-add of the same rig path.
+	ownershipStamp, err := newAddOwnershipStamp()
+	if err != nil {
+		_ = os.RemoveAll(rigPath)
+		return nil, fmt.Errorf("generating ownership stamp: %w", err)
+	}
+	if err := writeAddOwnershipStamp(rigPath, ownershipStamp); err != nil {
+		_ = os.RemoveAll(rigPath)
+		return nil, fmt.Errorf("writing ownership stamp: %w", err)
+	}
+
 	// Create server-side database and ensure metadata.json is correctly
 	// configured BEFORE any bd commands. This prevents bd from
 	// creating/using 'beads_<prefix>' when it should use '<rigName>'
@@ -391,8 +405,8 @@ func (m *Manager) AddRig(opts AddRigOptions) (*Rig, error) {
 		}
 	}
 
-	// Track cleanup on failure (best-effort cleanup)
-	cleanup := func() { _ = os.RemoveAll(rigPath) }
+	// Track cleanup on failure, but only if this invocation still owns the path.
+	cleanup := func() { removeRigPathIfOwned(rigPath, ownershipStamp) }
 	success := false
 	defer func() {
 		if !success {
@@ -900,7 +914,67 @@ Use crew for your own workspace. Polecats are for batch work dispatch.
 	}
 
 	success = true
+	// Best-effort cleanup: once the add succeeds, the stamp is no longer needed.
+	_ = clearAddOwnershipStamp(rigPath)
 	return m.loadRig(opts.Name, m.config.Rigs[opts.Name])
+}
+
+// addOwnershipStampFile marks which AddRig invocation currently owns the path.
+const addOwnershipStampFile = ".gt-add-owner"
+
+func newAddOwnershipStamp() (string, error) {
+	var buf [16]byte
+	if _, err := rand.Read(buf[:]); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(buf[:]), nil
+}
+
+func writeAddOwnershipStamp(rigPath, stamp string) error {
+	return os.WriteFile(filepath.Join(rigPath, addOwnershipStampFile), []byte(stamp), 0644)
+}
+
+func readAddOwnershipStamp(rigPath string) string {
+	data, err := os.ReadFile(filepath.Join(rigPath, addOwnershipStampFile))
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(data))
+}
+
+func clearAddOwnershipStamp(rigPath string) error {
+	return os.Remove(filepath.Join(rigPath, addOwnershipStampFile))
+}
+
+// removeRigPathIfOwned only removes a path if this AddRig invocation still owns
+// it. Missing stamps are only removed when the directory is empty, which avoids
+// deleting a later successful re-add that already cleared its own stamp.
+func removeRigPathIfOwned(rigPath, expectedStamp string) {
+	if expectedStamp == "" {
+		_ = os.RemoveAll(rigPath)
+		return
+	}
+
+	onDisk := readAddOwnershipStamp(rigPath)
+	if onDisk == expectedStamp {
+		_ = os.RemoveAll(rigPath)
+		return
+	}
+
+	if onDisk == "" {
+		if entries, err := os.ReadDir(rigPath); err == nil && len(entries) == 0 {
+			_ = os.RemoveAll(rigPath)
+			return
+		}
+		fmt.Fprintf(os.Stderr,
+			"  Warning: skipping rollback of %s because ownership stamp is missing and directory is non-empty (gh#3683 protection)\n",
+			rigPath)
+		return
+	}
+
+	fmt.Fprintf(os.Stderr,
+		"  Warning: skipping rollback of %s because another rig add now owns this path (gh#3683 protection)\n",
+		rigPath)
 }
 
 // verifyRigIdentity checks that metadata.json points to the correct Dolt database
@@ -1086,6 +1160,8 @@ func (m *Manager) InitBeads(rigPath, prefix, rigName string) error {
 	// Without this, bd auto-starts its own server on a random port. (GH #2405)
 	doltCfg := doltserver.DefaultConfig(m.townRoot)
 	initArgs = append(initArgs, "--server-port", strconv.Itoa(doltCfg.Port))
+	// --force ensures bd 1.0+ persists issue_prefix on existing server-side DBs.
+	initArgs = append(initArgs, "--force")
 	cmd := exec.Command("bd", initArgs...)
 	cmd.Dir = rigPath
 	cmd.Env = filteredEnv
@@ -1106,11 +1182,16 @@ func (m *Manager) InitBeads(rigPath, prefix, rigName string) error {
 
 		// Explicitly set issue_prefix config (bd init --prefix may not persist it in newer versions).
 		// Without this, bd create and gt sling fail with "issue_prefix config is missing".
+		// bd >= 1.0.0 rejects this with "cannot be set via 'bd config set'" because init persists
+		// it directly; treat that as already-set rather than a failure.
 		prefixSetCmd := exec.Command("bd", "config", "set", "issue_prefix", prefix)
 		prefixSetCmd.Dir = rigPath
 		prefixSetCmd.Env = filteredEnv
 		if prefixOutput, prefixErr := prefixSetCmd.CombinedOutput(); prefixErr != nil {
-			return fmt.Errorf("bd config set issue_prefix failed: %s", strings.TrimSpace(string(prefixOutput)))
+			out := strings.TrimSpace(string(prefixOutput))
+			if !strings.Contains(out, "cannot be set via") {
+				return fmt.Errorf("bd config set issue_prefix failed: %s", out)
+			}
 		}
 
 		// Drop the orphaned beads_<prefix> database created by bd init (gt-sv1h).

@@ -1,6 +1,7 @@
 package capacity
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -225,6 +226,97 @@ func TestReconstructFromContext_EmptyVars(t *testing.T) {
 	params := ReconstructFromContext(ctx)
 	if params.Vars != nil {
 		t.Errorf("Vars should be nil when ctx.Vars is empty, got %v", params.Vars)
+	}
+}
+
+func TestIsMessagingBead(t *testing.T) {
+	tests := []struct {
+		name   string
+		labels []string
+		want   bool
+	}{
+		{"gt:message alone", []string{"gt:message"}, true},
+		{"gt:handoff alone", []string{"gt:handoff"}, true},
+		{"gt:merge-request alone", []string{"gt:merge-request"}, true},
+		{"gt:message with another label", []string{"gt:message", "from:foo"}, true},
+		{"sling-context label is not messaging", []string{"gt:sling-context"}, false},
+		{"agent label is not messaging", []string{"gt:agent"}, false},
+		{"empty slice", []string{}, false},
+		{"nil slice", nil, false},
+		{"plain work label", []string{"area/dog", "kind/bug"}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := IsMessagingBead(tt.labels); got != tt.want {
+				t.Errorf("IsMessagingBead(%v) = %v, want %v", tt.labels, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestFilterMessagingBeads(t *testing.T) {
+	beads := []PendingBead{
+		{ID: "ctx-1", WorkBeadID: "gt-1", Labels: []string{"area/dog"}},
+		{ID: "ctx-2", WorkBeadID: "hq-1", Labels: []string{"gt:message"}},
+		{ID: "ctx-3", WorkBeadID: "gt-2", Labels: []string{"gt:handoff"}},
+		{ID: "ctx-4", WorkBeadID: "gt-3", Labels: []string{"gt:merge-request"}},
+		{ID: "ctx-5", WorkBeadID: "gt-4", Labels: []string{"kind/bug"}},
+	}
+	kept, removed := FilterMessagingBeads(beads)
+	if len(kept) != 2 {
+		t.Errorf("kept = %d, want 2", len(kept))
+	}
+	if removed != 3 {
+		t.Errorf("removed = %d, want 3", removed)
+	}
+	for _, b := range kept {
+		if IsMessagingBead(b.Labels) {
+			t.Errorf("kept slice contains messaging bead %s", b.ID)
+		}
+	}
+}
+
+func TestPlanDispatch_FiltersMessagingBeads(t *testing.T) {
+	// Mix 3 messaging-labeled beads and 2 plain work beads. PlanDispatch must
+	// keep only the 2 plain beads; Skipped must reflect the 3 messaging skips.
+	candidates := []PendingBead{
+		{ID: "ctx-1", WorkBeadID: "gt-1", Labels: []string{"area/dog"}},
+		{ID: "ctx-2", WorkBeadID: "hq-1", Labels: []string{"gt:message"}},
+		{ID: "ctx-3", WorkBeadID: "gt-2", Labels: []string{"kind/bug"}},
+		{ID: "ctx-4", WorkBeadID: "hq-2", Labels: []string{"gt:handoff"}},
+		{ID: "ctx-5", WorkBeadID: "hq-3", Labels: []string{"gt:merge-request"}},
+	}
+	plan := PlanDispatch(100, 10, candidates)
+	if len(plan.ToDispatch) != 2 {
+		t.Errorf("ToDispatch = %d, want 2 (only plain beads)", len(plan.ToDispatch))
+	}
+	if plan.Skipped < 3 {
+		t.Errorf("Skipped = %d, want >= 3 (messaging skips)", plan.Skipped)
+	}
+	if !strings.Contains(plan.Reason, "messaging-filtered") {
+		t.Errorf("Reason = %q, want to contain %q", plan.Reason, "messaging-filtered")
+	}
+	for _, b := range plan.ToDispatch {
+		if IsMessagingBead(b.Labels) {
+			t.Errorf("ToDispatch contains messaging bead %s", b.ID)
+		}
+	}
+}
+
+func TestPlanDispatch_OnlyMessagingBeads(t *testing.T) {
+	candidates := []PendingBead{
+		{ID: "ctx-1", WorkBeadID: "hq-1", Labels: []string{"gt:message"}},
+		{ID: "ctx-2", WorkBeadID: "hq-2", Labels: []string{"gt:handoff"}},
+	}
+	plan := PlanDispatch(100, 10, candidates)
+	if len(plan.ToDispatch) != 0 {
+		t.Errorf("ToDispatch = %d, want 0", len(plan.ToDispatch))
+	}
+	if plan.Skipped != 2 {
+		t.Errorf("Skipped = %d, want 2", plan.Skipped)
+	}
+	if plan.Reason != "messaging-filtered" {
+		t.Errorf("Reason = %q, want %q", plan.Reason, "messaging-filtered")
 	}
 }
 

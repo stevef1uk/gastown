@@ -693,8 +693,7 @@ func (c *CustomTypesCheck) Run(ctx *CheckContext) *CheckResult {
 			issues = append(issues, fmt.Sprintf("%s missing types: %s", relPath, strings.Join(missing, ", ")))
 			
 			// For Fix, we'll need to know which beadsDir to update.
-			// Currently c only supports one targetBeadsDir.
-			// I'll update Fix to use the context to re-find all rigs.
+			c.targetBeadsDir = beadsDir
 		}
 	}
 
@@ -825,6 +824,8 @@ func (c *CustomStatusesCheck) Run(ctx *CheckContext) *CheckResult {
 	}
 
 	var issues []string
+	c.missingStatuses = nil
+	c.targetBeadsDir = ""
 
 	requiredStatuses := constants.BeadsCustomStatusesList()
 
@@ -865,6 +866,7 @@ func (c *CustomStatusesCheck) Run(ctx *CheckContext) *CheckResult {
 				relPath = "town root"
 			}
 			issues = append(issues, fmt.Sprintf("%s missing statuses: %s", relPath, strings.Join(missing, ", ")))
+			c.targetBeadsDir = beadsDir
 		}
 	}
 

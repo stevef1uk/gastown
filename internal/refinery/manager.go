@@ -206,17 +206,10 @@ func (m *Manager) Start(foreground bool, agentOverride string) error {
 		return fmt.Errorf("building startup command: %w", err)
 	}
 
-	// Generate the GASTA run ID for this refinery session.
-	runID := uuid.New().String()
-
-	// Create session with command directly to avoid send-keys race condition.
-	// See: https://github.com/anthropics/gastown/issues/280
-	if err := t.NewSessionWithCommand(sessionID, refineryRigDir, command); err != nil {
-		return fmt.Errorf("creating tmux session: %w", err)
-	}
-
-	// Set environment variables (non-fatal: session works without these)
-	// Use centralized AgentEnv for consistency across all role startup paths
+	// Compute environment BEFORE creating the session so it can be passed to
+	// tmux via -e flags. Setting env via SetEnvironment after session creation
+	// only affects newly spawned panes — the running pane (and Claude's
+	// subprocesses like bd) keeps its original environment (gt-neycp).
 	envVars := config.AgentEnv(config.AgentEnvConfig{
 		Role:             "refinery",
 		Rig:              m.rig.Name,
@@ -226,15 +219,18 @@ func (m *Manager) Start(foreground bool, agentOverride string) error {
 		SessionName:      sessionID,
 	})
 	envVars = session.MergeRuntimeLivenessEnv(envVars, runtimeConfig)
-
-	// Add refinery-specific flag
 	envVars["GT_REFINERY"] = "1"
 
-	// Set all env vars in tmux session (for debugging) and they'll also be exported to Claude
-	for k, v := range envVars {
-		_ = t.SetEnvironment(sessionID, k, v)
+	// Generate the GASTA run ID for this refinery session.
+	runID := uuid.New().String()
+	envVars["GT_RUN"] = runID
+
+	// Create session with command and env vars via -e flags so the initial
+	// shell — and Claude's subprocesses — inherit them from the start.
+	// See: https://github.com/anthropics/gastown/issues/280 (race condition fix)
+	if err := t.NewSessionWithCommandAndEnv(sessionID, refineryRigDir, command, envVars); err != nil {
+		return fmt.Errorf("creating tmux session: %w", err)
 	}
-	_ = t.SetEnvironment(sessionID, "GT_RUN", runID)
 
 	// Apply theme (non-fatal: theming failure doesn't affect operation)
 	theme := tmux.ResolveSessionTheme(townRoot, m.rig.Name, "refinery", "")
@@ -467,6 +463,7 @@ func (m *Manager) issueToMR(issue *beads.Issue) *MergeRequest {
 		Worker:       fields.Worker,
 		IssueID:      fields.SourceIssue,
 		TargetBranch: target,
+		MergeCommit:  fields.MergeCommit,
 		Status:       MROpen,
 		CreatedAt:    parseTime(issue.CreatedAt),
 	}
@@ -635,6 +632,9 @@ func (m *Manager) PostMerge(idOrBranch string) (*PostMergeResult, error) {
 	// matching how gt done handles closures for the no-MR path.
 	if mr.IssueID != "" {
 		closeReason := fmt.Sprintf("Merged in %s", mr.ID)
+		if mr.MergeCommit != "" {
+			closeReason = fmt.Sprintf("%s\ntarget_branch: %s\ncommit_sha: %s", closeReason, mr.TargetBranch, mr.MergeCommit)
+		}
 		if err := b.ForceCloseWithReason(closeReason, mr.IssueID); err != nil {
 			// Check if already closed (by polecat's gt done) — that's fine
 			if issue, showErr := b.Show(mr.IssueID); showErr == nil && beads.IssueStatus(issue.Status).IsTerminal() {

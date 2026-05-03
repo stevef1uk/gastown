@@ -343,7 +343,17 @@ func ResolveBeadsDirForID(currentBeadsDir, beadID string) string {
 		return currentBeadsDir
 	}
 
-	routes, err := LoadRoutes(currentBeadsDir)
+	routesBeadsDir := currentBeadsDir
+	routes, err := LoadRoutes(routesBeadsDir)
+	if (err != nil || routes == nil) && currentBeadsDir != "" {
+		if townRoot := FindTownRoot(filepath.Dir(currentBeadsDir)); townRoot != "" {
+			townBeadsDir := filepath.Join(townRoot, ".beads")
+			if townBeadsDir != currentBeadsDir {
+				routesBeadsDir = townBeadsDir
+				routes, err = LoadRoutes(routesBeadsDir)
+			}
+		}
+	}
 	if err != nil || routes == nil {
 		return currentBeadsDir
 	}
@@ -351,11 +361,11 @@ func ResolveBeadsDirForID(currentBeadsDir, beadID string) string {
 	for _, r := range routes {
 		if r.Prefix == prefix {
 			if r.Path == "." {
-				return currentBeadsDir // Town-level — already correct
+				return routesBeadsDir
 			}
 			// Rig-level bead — resolve to rig's beads directory.
-			// Derive town root from currentBeadsDir (parent of .beads).
-			townRoot := filepath.Dir(currentBeadsDir)
+			// Derive town root from the routes directory we actually used.
+			townRoot := filepath.Dir(routesBeadsDir)
 			rigDir := filepath.Join(townRoot, r.Path)
 			return ResolveBeadsDir(rigDir)
 		}
@@ -372,7 +382,7 @@ func ResolveBeadsDirForID(currentBeadsDir, beadID string) string {
 // typically indicates the bd create routing resolved to the town-level database
 // instead of the rig's database. Callers should log the warning and continue.
 func ValidateRigPrefix(townRoot, rigName, beadID string) error {
-	expectedPrefix := GetPrefixForRig(townRoot, rigName) // e.g., "gt"
+	expectedPrefix := GetPrefixForRig(townRoot, rigName)           // e.g., "gt"
 	actualPrefix := strings.TrimSuffix(ExtractPrefix(beadID), "-") // e.g., "gt"
 	if actualPrefix == "" {
 		return nil // Can't determine prefix — not an error

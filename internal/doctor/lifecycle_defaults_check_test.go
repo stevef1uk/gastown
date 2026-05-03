@@ -65,9 +65,9 @@ func TestLifecycleDefaultsCheck_MissingPatrols(t *testing.T) {
 	if result.Status != StatusWarning {
 		t.Errorf("expected Warning for partial config, got %s", result.Status)
 	}
-	// Should report 5 missing: compactor_dog, doctor_dog, jsonl_git_backup, dolt_backup, scheduled_maintenance
-	if len(check.missing) != 5 {
-		t.Errorf("expected 5 missing patrols, got %d: %v", len(check.missing), check.missing)
+	// Should report 6 missing: compactor_dog, doctor_dog, jsonl_git_backup, dolt_backup, scheduled_maintenance, nats_server
+	if len(check.missing) != 6 {
+		t.Errorf("expected 6 missing patrols, got %d: %v", len(check.missing), check.missing)
 	}
 }
 

@@ -13,13 +13,13 @@ import (
 // cd commands. See github.com/steveyegge/gastown/issues/1716.
 func BeaconRecipient(role, name, rig string) string {
 	if name != "" && rig != "" {
-		return fmt.Sprintf("%s %s (rig: %s)", role, name, rig)
+		return fmt.Sprintf("%s %s (%s)", role, name, rig)
 	}
 	if name != "" {
 		return fmt.Sprintf("%s %s", role, name)
 	}
 	if rig != "" {
-		return fmt.Sprintf("%s (rig: %s)", role, rig)
+		return fmt.Sprintf("%s (%s)", role, rig)
 	}
 	return role
 }

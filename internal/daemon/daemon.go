@@ -1533,7 +1533,6 @@ func (d *Daemon) checkDeaconHeartbeat() {
 	}
 }
 
-
 // restartStuckDeacon kills a stuck Deacon session and respawns it.
 // Uses RestartTracker for exponential backoff and crash-loop prevention.
 // Notifies via gt-notify (zero token cost) if the notify script exists.
@@ -2683,8 +2682,14 @@ func (d *Daemon) isBeadClosed(beadID string) bool {
 // field (updateAgentHookBead is a no-op). Without this fallback, the idle reaper
 // kills working polecats whose agent bead hook_bead is stale.
 func (d *Daemon) hasAssignedOpenWork(rigName, assignee string) bool {
+	rigDir := beads.GetRigDirForName(d.config.TownRoot, rigName)
+
 	for _, status := range []string{"hooked", "in_progress", "open"} {
-		cmd := exec.Command(d.bdPath, "list", "--rig="+rigName, "--assignee="+assignee, "--status="+status, "--json") //nolint:gosec // G204: args are constructed internally
+		args := []string{"list", "--assignee=" + assignee, "--status=" + status, "--json"}
+		if rigDir != "" {
+			args = append(args, "--repo="+rigDir)
+		}
+		cmd := exec.Command(d.bdPath, args...) //nolint:gosec // G204: args are constructed internally
 		cmd.Dir = d.config.TownRoot
 		cmd.Env = os.Environ()
 		output, err := cmd.Output()
@@ -2714,7 +2719,7 @@ Restart deferred to stuck-agent-dog plugin for context-aware recovery.`,
 	cmd := exec.Command(d.gtPath, "mail", "send", witnessAddr, "-s", subject, "-m", body) //nolint:gosec // G204: args are constructed internally
 	setSysProcAttr(cmd)
 	cmd.Dir = d.config.TownRoot
-	cmd.Env = append(os.Environ(), "BD_ACTOR=daemon")// Identify as daemon, not overseer
+	cmd.Env = append(os.Environ(), "BD_ACTOR=daemon") // Identify as daemon, not overseer
 	if err := cmd.Run(); err != nil {
 		d.logger.Printf("Warning: failed to notify witness of crashed polecat: %v", err)
 	}
@@ -2791,11 +2796,19 @@ func (d *Daemon) reapIdlePolecat(rigName, polecatName string, timeout time.Durat
 		agentBeadID := beads.PolecatBeadIDWithPrefix(prefix, rigName, polecatName)
 		info, err := d.getAgentBeadInfo(agentBeadID)
 		if err != nil {
-			// Agent bead lookup failed — polecat has no provable work.
-			// If heartbeat is stale enough (2x timeout), reap anyway to prevent
-			// indefinite API burn when bead infrastructure is degraded.
-			// But first check if the agent is actually running (GH#3342).
-			if staleDuration >= timeout*2 && !d.tmux.IsAgentRunning(sessionName) {
+			// Agent bead lookup failed — use the authoritative work bead assignee
+			// to determine whether the polecat has real work before reaping.
+			// Bead infrastructure failures (Dolt issues, version mismatches) cause
+			// spurious lookup errors while the polecat is actively working (GH#3342).
+			assignee := fmt.Sprintf("%s/polecats/%s", rigName, polecatName)
+			if d.hasAssignedOpenWork(rigName, assignee) {
+				return
+			}
+			// No assigned work and agent not running — safe to reap.
+			// Use 3x threshold (not 2x) to avoid killing polecats during transient
+			// infrastructure degradation when the agent process is alive but not
+			// detectable (e.g. long thinking sessions, slow process inspection).
+			if staleDuration >= timeout*3 || !d.tmux.IsAgentRunning(sessionName) && staleDuration >= timeout*2 {
 				d.killIdlePolecat(rigName, polecatName, sessionName, staleDuration, timeout, "working-bead-lookup-failed")
 			}
 			return

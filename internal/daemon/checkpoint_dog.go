@@ -3,6 +3,7 @@ package daemon
 import (
 	"bytes"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -109,7 +110,21 @@ func (d *Daemon) checkpointRigPolecats(rigName string) (int, int) {
 			continue
 		}
 
-		workDir := filepath.Join(polecatsDir, polecatName)
+		// Polecat layout: prefer <polecatsDir>/<name>/<rigName>/ (the new
+		// nested layout where the outer <name>/ dir is a container with
+		// per-polecat scaffolding and the inner dir is the actual git
+		// worktree). Fall back to <polecatsDir>/<name>/ for the legacy
+		// flat layout still supported by polecat.Manager. Both candidates
+		// must contain `.git` — never fall back to a parent dir, since
+		// the original bug here was exactly that: an empty <name>/
+		// container caused git to walk up to the top-level workspace's
+		// .git and commit "WIP: checkpoint (auto)" on the workspace's
+		// branch (usually main) instead of the polecat's branch.
+		// (gt-checkpoint-workdir fix.)
+		workDir := resolveCheckpointWorkDir(polecatsDir, polecatName, rigName)
+		if workDir == "" {
+			continue // Neither layout has a usable .git — skip silently.
+		}
 		if d.checkpointWorktree(workDir, rigName, polecatName) {
 			checkpointed++
 		}
@@ -172,6 +187,36 @@ func (d *Daemon) checkpointWorktree(workDir, rigName, polecatName string) bool {
 
 	d.logger.Printf("checkpoint_dog: created WIP checkpoint in %s/%s", rigName, polecatName)
 	return true
+}
+
+// isGitWorktree reports whether the given directory is the root of a git
+// worktree (has its own `.git` file or directory). Used to guard checkpoint
+// commits against the "wrong-dir" failure mode where git operations in a
+// non-worktree directory walk up the filesystem tree and commit on the
+// parent workspace's branch.
+func isGitWorktree(dir string) bool {
+	_, err := os.Stat(filepath.Join(dir, ".git"))
+	return err == nil
+}
+
+// resolveCheckpointWorkDir picks the actual git-worktree directory for a
+// polecat, supporting both the new nested layout (polecats/<name>/<rigName>/)
+// and the legacy flat layout (polecats/<name>/) that polecat.Manager still
+// recognizes for backward compatibility. Returns "" if neither candidate is
+// a git worktree, in which case the caller MUST skip the polecat — never
+// fall back to a parent directory, since git would walk up to the top-level
+// workspace's .git and commit on the wrong branch (this is the bug this
+// helper exists to prevent).
+func resolveCheckpointWorkDir(polecatsDir, polecatName, rigName string) string {
+	nested := filepath.Join(polecatsDir, polecatName, rigName)
+	if isGitWorktree(nested) {
+		return nested
+	}
+	flat := filepath.Join(polecatsDir, polecatName)
+	if isGitWorktree(flat) {
+		return flat
+	}
+	return ""
 }
 
 // runGitCmd executes a git command in the given directory and returns stdout.

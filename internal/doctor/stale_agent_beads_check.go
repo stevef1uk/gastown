@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/steveyegge/gastown/internal/beads"
 	"github.com/steveyegge/gastown/internal/constants"
@@ -73,67 +74,86 @@ func (c *StaleAgentBeadsCheck) Run(ctx *CheckContext) *CheckResult {
 	}
 
 	var stale []string
+	var staleMu sync.Mutex
 
 	// Phase 1: Check known rigs for stale crew/polecat beads.
+	// Run rigs in parallel — each rig spawns 2 bd subprocesses (List +
+	// ListAgentBeadsFromWisps). With 6 rigs sequentially, that's 12 calls;
+	// under Dolt memory pressure each can take 30s of retry, so the check
+	// would block the whole doctor for ~6 minutes. Parallelizing collapses
+	// the wall-clock time to roughly the slowest single rig.
+	// Investigation: dc-1pq8 (forensic report 2026-05-02).
+	var wg sync.WaitGroup
 	for prefix, info := range prefixToRig {
-		rigBeadsPath := filepath.Join(ctx.TownRoot, info.beadsPath)
-		bd := beads.New(rigBeadsPath)
-		rigName := info.name
+		wg.Add(1)
+		go func(prefix string, info rigInfo) {
+			defer wg.Done()
 
-		// Get actual crew workers on disk
-		crewDiskWorkers := listCrewWorkers(ctx.TownRoot, rigName)
-		crewDiskSet := make(map[string]bool, len(crewDiskWorkers))
-		for _, w := range crewDiskWorkers {
-			crewDiskSet[w] = true
-		}
+			rigBeadsPath := filepath.Join(ctx.TownRoot, info.beadsPath)
+			bd := beads.New(rigBeadsPath)
+			rigName := info.name
 
-		// Get actual polecats on disk
-		polecatDiskWorkers := listPolecats(ctx.TownRoot, rigName)
-		polecatDiskSet := make(map[string]bool, len(polecatDiskWorkers))
-		for _, w := range polecatDiskWorkers {
-			polecatDiskSet[w] = true
-		}
+			// Get actual crew workers on disk
+			crewDiskWorkers := listCrewWorkers(ctx.TownRoot, rigName)
+			crewDiskSet := make(map[string]bool, len(crewDiskWorkers))
+			for _, w := range crewDiskWorkers {
+				crewDiskSet[w] = true
+			}
 
-		// Agent bead ID patterns:
-		// Crew:    prefix-rig-crew-name (or prefix-crew-name when prefix == rig)
-		// Polecat: prefix-rig-polecat-name (or prefix-polecat-name when prefix == rig)
-		// Use AgentBeadIDWithPrefix to get the correct prefix, handling the
-		// collapsed form when prefix == rigName (GH#1877).
-		crewPrefix := beads.AgentBeadIDWithPrefix(prefix, rigName, constants.RoleCrew, "") + "-"
-		polecatPrefix := beads.AgentBeadIDWithPrefix(prefix, rigName, constants.RolePolecat, "") + "-"
-		allBeads, err := bd.List(beads.ListOptions{
-			Status:   "open",
-			Priority: -1,
-			Label:    "gt:agent",
-		})
-		if err != nil {
-			continue
-		}
+			// Get actual polecats on disk
+			polecatDiskWorkers := listPolecats(ctx.TownRoot, rigName)
+			polecatDiskSet := make(map[string]bool, len(polecatDiskWorkers))
+			for _, w := range polecatDiskWorkers {
+				polecatDiskSet[w] = true
+			}
 
-		// Also check wisps table for migrated agent beads
-		if wispMap, _ := bd.ListAgentBeadsFromWisps(); len(wispMap) > 0 {
-			for _, w := range wispMap {
-				if w.Status == "open" || w.Status == "in_progress" || w.Status == "hooked" {
-					allBeads = append(allBeads, w)
+			// Agent bead ID patterns:
+			// Crew:    prefix-rig-crew-name (or prefix-crew-name when prefix == rig)
+			// Polecat: prefix-rig-polecat-name (or prefix-polecat-name when prefix == rig)
+			crewPrefix := beads.AgentBeadIDWithPrefix(prefix, rigName, constants.RoleCrew, "") + "-"
+			polecatPrefix := beads.AgentBeadIDWithPrefix(prefix, rigName, constants.RolePolecat, "") + "-"
+			allBeads, err := bd.List(beads.ListOptions{
+				Status:   "open",
+				Priority: -1,
+				Label:    "gt:agent",
+			})
+			if err != nil {
+				return
+			}
+
+			// Also check wisps table for migrated agent beads
+			if wispMap, _ := bd.ListAgentBeadsFromWisps(); len(wispMap) > 0 {
+				for _, w := range wispMap {
+					if w.Status == "open" || w.Status == "in_progress" || w.Status == "hooked" {
+						allBeads = append(allBeads, w)
+					}
 				}
 			}
-		}
 
-		for _, issue := range allBeads {
-			switch {
-			case strings.HasPrefix(issue.ID, crewPrefix):
-				workerName := strings.TrimPrefix(issue.ID, crewPrefix)
-				if workerName != "" && !crewDiskSet[workerName] {
-					stale = append(stale, issue.ID)
-				}
-			case strings.HasPrefix(issue.ID, polecatPrefix):
-				workerName := strings.TrimPrefix(issue.ID, polecatPrefix)
-				if workerName != "" && !polecatDiskSet[workerName] {
-					stale = append(stale, issue.ID)
+			var rigStale []string
+			for _, issue := range allBeads {
+				switch {
+				case strings.HasPrefix(issue.ID, crewPrefix):
+					workerName := strings.TrimPrefix(issue.ID, crewPrefix)
+					if workerName != "" && !crewDiskSet[workerName] {
+						rigStale = append(rigStale, issue.ID)
+					}
+				case strings.HasPrefix(issue.ID, polecatPrefix):
+					workerName := strings.TrimPrefix(issue.ID, polecatPrefix)
+					if workerName != "" && !polecatDiskSet[workerName] {
+						rigStale = append(rigStale, issue.ID)
+					}
 				}
 			}
-		}
+
+			if len(rigStale) > 0 {
+				staleMu.Lock()
+				stale = append(stale, rigStale...)
+				staleMu.Unlock()
+			}
+		}(prefix, info)
 	}
+	wg.Wait()
 
 	// Phase 2: Detect orphaned agent beads from deregistered rigs.
 	// Scan the town beads database for agent beads whose prefix doesn't match

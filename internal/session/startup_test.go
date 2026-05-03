@@ -19,7 +19,7 @@ func TestBeaconRecipient(t *testing.T) {
 			role:    "polecat",
 			agentNm: "rust",
 			rig:     "testrig",
-			want:    "polecat rust (rig: testrig)",
+			want:    "polecat rust (testrig)",
 			wantNot: []string{"/"},
 		},
 		{
@@ -27,7 +27,7 @@ func TestBeaconRecipient(t *testing.T) {
 			role:    "crew",
 			agentNm: "gus",
 			rig:     "gastown",
-			want:    "crew gus (rig: gastown)",
+			want:    "crew gus (gastown)",
 			wantNot: []string{"/"},
 		},
 		{
@@ -35,7 +35,7 @@ func TestBeaconRecipient(t *testing.T) {
 			role:    "witness",
 			agentNm: "",
 			rig:     "gastown",
-			want:    "witness (rig: gastown)",
+			want:    "witness (gastown)",
 			wantNot: []string{"/"},
 		},
 		{
@@ -43,7 +43,7 @@ func TestBeaconRecipient(t *testing.T) {
 			role:    "refinery",
 			agentNm: "",
 			rig:     "myrig",
-			want:    "refinery (rig: myrig)",
+			want:    "refinery (myrig)",
 			wantNot: []string{"/"},
 		},
 		{
@@ -74,7 +74,7 @@ func TestBeaconRecipient(t *testing.T) {
 			role:    "polecat",
 			agentNm: "my-worker",
 			rig:     "prod-rig",
-			want:    "polecat my-worker (rig: prod-rig)",
+			want:    "polecat my-worker (prod-rig)",
 			wantNot: []string{"prod-rig/"},
 		},
 	}
@@ -142,25 +142,25 @@ func TestAgentIdentityBeaconAddress(t *testing.T) {
 		{
 			name:    "witness",
 			id:      AgentIdentity{Role: RoleWitness, Rig: "gastown"},
-			want:    "witness (rig: gastown)",
+			want:    "witness (gastown)",
 			wantNot: []string{"gastown/witness"},
 		},
 		{
 			name:    "refinery",
 			id:      AgentIdentity{Role: RoleRefinery, Rig: "gastown"},
-			want:    "refinery (rig: gastown)",
+			want:    "refinery (gastown)",
 			wantNot: []string{"gastown/refinery"},
 		},
 		{
 			name:    "crew",
 			id:      AgentIdentity{Role: RoleCrew, Rig: "gastown", Name: "max"},
-			want:    "crew max (rig: gastown)",
+			want:    "crew max (gastown)",
 			wantNot: []string{"gastown/crew/max"},
 		},
 		{
 			name:    "polecat",
 			id:      AgentIdentity{Role: RolePolecat, Rig: "gastown", Name: "Toast"},
-			want:    "polecat Toast (rig: gastown)",
+			want:    "polecat Toast (gastown)",
 			wantNot: []string{"gastown/polecats/Toast"},
 		},
 	}
@@ -233,7 +233,7 @@ func TestFormatStartupBeacon(t *testing.T) {
 			},
 			wantSub: []string{
 				"[GAS TOWN]",
-				"crew gus (rig: gastown)",
+				"crew gus (gastown)",
 				"<- deacon",
 				"assigned:gt-abc12",
 				"gt prime --hook",
@@ -269,7 +269,7 @@ func TestFormatStartupBeacon(t *testing.T) {
 			},
 			wantSub: []string{
 				"[GAS TOWN]",
-				"witness (rig: gastown)",
+				"witness (gastown)",
 				"<- self",
 				"handoff",
 				"Check your hook and mail",
@@ -289,7 +289,7 @@ func TestFormatStartupBeacon(t *testing.T) {
 			},
 			wantSub: []string{
 				"[GAS TOWN]",
-				"polecat Toast (rig: gastown)",
+				"polecat Toast (gastown)",
 				"<- witness",
 				"gt-xyz99",
 			},
@@ -317,7 +317,7 @@ func TestFormatStartupBeacon(t *testing.T) {
 			},
 			wantSub: []string{
 				"[GAS TOWN]",
-				"crew fang (rig: beads)",
+				"crew fang (beads)",
 				"<- human",
 				"start",
 			},
@@ -335,7 +335,7 @@ func TestFormatStartupBeacon(t *testing.T) {
 			},
 			wantSub: []string{
 				"[GAS TOWN]",
-				"crew george (rig: gastown)",
+				"crew george (gastown)",
 				"restart",
 			},
 			wantNot: []string{
@@ -353,7 +353,7 @@ func TestFormatStartupBeacon(t *testing.T) {
 			},
 			wantSub: []string{
 				"[GAS TOWN]",
-				"polecat ruby (rig: myrig)",
+				"polecat ruby (myrig)",
 				"gt prime",
 			},
 			wantNot: []string{

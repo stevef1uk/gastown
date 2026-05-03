@@ -3,6 +3,8 @@ package cmd
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -948,6 +950,36 @@ func TestCompactResumeReminder_NonPolecatNoGtDone(t *testing.T) {
 	}
 }
 
+func TestEnsureBeadsRedirect_WitnessCreatesRedirect(t *testing.T) {
+	townRoot := t.TempDir()
+	rigRoot := filepath.Join(townRoot, "testrig")
+	witnessDir := filepath.Join(rigRoot, "witness")
+	mayorBeadsDir := filepath.Join(rigRoot, "mayor", "rig", ".beads")
+	if err := os.MkdirAll(witnessDir, 0755); err != nil {
+		t.Fatalf("mkdir witness dir: %v", err)
+	}
+	if err := os.MkdirAll(mayorBeadsDir, 0755); err != nil {
+		t.Fatalf("mkdir mayor beads dir: %v", err)
+	}
+
+	ctx := RoleContext{
+		Role:     RoleWitness,
+		WorkDir:  witnessDir,
+		TownRoot: townRoot,
+	}
+
+	ensureBeadsRedirect(ctx)
+
+	redirectPath := filepath.Join(witnessDir, ".beads", "redirect")
+	content, err := os.ReadFile(redirectPath)
+	if err != nil {
+		t.Fatalf("read redirect: %v", err)
+	}
+	if got, want := string(content), "../mayor/rig/.beads\n"; got != want {
+		t.Fatalf("redirect content = %q, want %q", got, want)
+	}
+}
+
 // TestOutputRalphLoopDirective_NoSlashCommand verifies that ralph mode emits
 // inline iterative work instructions instead of referencing a nonexistent
 // /ralph-loop slash command. This is the regression test for the ralph-loop
@@ -1004,5 +1036,35 @@ func TestOutputRalphLoopDirective_WithFormula(t *testing.T) {
 	// Should show formula steps (from mol-polecat-work)
 	if !strings.Contains(output, "Formula Checklist") {
 		t.Fatalf("expected formula checklist in ralph output, got:\n%s", output)
+	}
+}
+
+func TestIsBeadNotFound(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"nil", nil, false},
+		{"no issue found lowercase", errors.New("bd: no issue found"), true},
+		{"No issue found cased", errors.New("ERROR: No issue found in DB"), true},
+		{"not found", errors.New("error: not found in beads"), true},
+		{"issue not found phrasing", errors.New("rpc: issue not found"), true},
+		{"connection refused", errors.New("dial tcp: connection refused"), false},
+		{"random error", errors.New("schema mismatch"), false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := isBeadNotFound(tt.err); got != tt.want {
+				t.Errorf("isBeadNotFound(%v) = %v, want %v", tt.err, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestErrHookUnresolvable_IsErrors(t *testing.T) {
+	wrapped := fmt.Errorf("%w: agent=foo hook_bead=hq-igrp", ErrHookUnresolvable)
+	if !errors.Is(wrapped, ErrHookUnresolvable) {
+		t.Fatalf("errors.Is should report wrapped err matches ErrHookUnresolvable")
 	}
 }

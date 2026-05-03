@@ -40,6 +40,44 @@ type SlingContextFields struct {
 // LabelSlingContext is the label used to identify sling context beads.
 const LabelSlingContext = "gt:sling-context"
 
+// Labels that mark inter-agent messaging beads. These are never polecat work
+// and must not be dispatched to rig polecats.
+const (
+	LabelMessage      = "gt:message"
+	LabelHandoff      = "gt:handoff"
+	LabelMergeRequest = "gt:merge-request"
+)
+
+// IsMessagingBead reports whether the bead is an inter-agent communication
+// artifact rather than dispatchable work. Used as a defensive filter in the
+// dispatch pipeline: a bead carrying any of these labels must never be handed
+// to a polecat (gt-el4 / gastownhall/gastown#3800).
+func IsMessagingBead(labels []string) bool {
+	for _, l := range labels {
+		switch l {
+		case LabelMessage, LabelHandoff, LabelMergeRequest:
+			return true
+		}
+	}
+	return false
+}
+
+// FilterMessagingBeads removes messaging-labeled beads from the candidate slice.
+// Returns the filtered slice plus the count of removed beads. Callers should
+// log the skipped beads at debug level so the gap is observable.
+func FilterMessagingBeads(beads []PendingBead) ([]PendingBead, int) {
+	var result []PendingBead
+	removed := 0
+	for _, b := range beads {
+		if IsMessagingBead(b.Labels) {
+			removed++
+			continue
+		}
+		result = append(result, b)
+	}
+	return result, removed
+}
+
 // DispatchPlan is the output of PlanDispatch — what to dispatch and why.
 type DispatchPlan struct {
 	ToDispatch []PendingBead
@@ -86,14 +124,24 @@ func BlockerAware(readyIDs map[string]bool) ReadinessFilter {
 // availableCapacity: free slots (positive = that many slots, <= 0 = no capacity).
 // batchSize: max beads per cycle.
 // ready: beads that passed readiness filtering.
+//
+// Messaging-labeled beads (gt:message / gt:handoff / gt:merge-request) are
+// filtered out defensively before any capacity math runs. They are inter-agent
+// communication artifacts and never dispatchable work; if any survived earlier
+// filtering they must not reach a polecat (gt-el4).
 func PlanDispatch(availableCapacity, batchSize int, ready []PendingBead) DispatchPlan {
+	ready, msgSkipped := FilterMessagingBeads(ready)
+
 	if len(ready) == 0 {
+		if msgSkipped > 0 {
+			return DispatchPlan{Skipped: msgSkipped, Reason: "messaging-filtered"}
+		}
 		return DispatchPlan{Reason: "none"}
 	}
 
 	if availableCapacity <= 0 {
 		return DispatchPlan{
-			Skipped: len(ready),
+			Skipped: len(ready) + msgSkipped,
 			Reason:  "capacity",
 		}
 	}
@@ -115,9 +163,14 @@ func PlanDispatch(availableCapacity, batchSize int, ready []PendingBead) Dispatc
 		reason = "ready"
 	}
 
+	skipped := len(ready) - toDispatch + msgSkipped
+	if msgSkipped > 0 {
+		reason = reason + "+messaging-filtered"
+	}
+
 	return DispatchPlan{
 		ToDispatch: ready[:toDispatch],
-		Skipped:    len(ready) - toDispatch,
+		Skipped:    skipped,
 		Reason:     reason,
 	}
 }

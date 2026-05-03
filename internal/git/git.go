@@ -1370,6 +1370,16 @@ func (g *Git) RemoteBranchExists(remote, branch string) (bool, error) {
 	return out != "", nil
 }
 
+// RemoteBranchTip returns the SHA at refs/heads/<branch> on the remote.
+// An empty SHA with nil error means the branch is missing.
+func (g *Git) RemoteBranchTip(remote, branch string) (string, error) {
+	out, err := g.run("ls-remote", "--heads", remote, branch)
+	if err != nil {
+		return "", err
+	}
+	return parseLSRemoteTip(out, branch), nil
+}
+
 // PushRemoteBranchExists checks if a branch exists on the push target of a remote.
 // With a fork-based or local-bare-repo workflow (pushurl configured), pushes go to
 // the push URL but ls-remote resolves the fetch URL. This method queries the push
@@ -1386,6 +1396,66 @@ func (g *Git) PushRemoteBranchExists(remote, branch string) (bool, error) {
 		return false, err
 	}
 	return out != "", nil
+}
+
+// PushRemoteBranchTip returns the SHA at refs/heads/<branch> on the push target.
+// This mirrors PushRemoteBranchExists: when remote.<name>.pushurl differs from
+// the fetch URL, verification must query the push URL because that is where the
+// preceding git push wrote.
+func (g *Git) PushRemoteBranchTip(remote, branch string) (string, error) {
+	fetchURL, fetchErr := g.RemoteURL(remote)
+	pushURL, pushErr := g.GetPushURL(remote)
+	if fetchErr != nil || pushErr != nil || pushURL == fetchURL {
+		return g.RemoteBranchTip(remote, branch)
+	}
+	return g.RemoteBranchTip(pushURL, branch)
+}
+
+// VerifyPushedCommit verifies that the push target branch tip is exactly commit.
+// gt/refinery callers invoke this immediately after a push, before closing beads
+// or creating downstream merge artifacts. Exact-tip verification catches the
+// dangerous case where git push exits 0 but leaves the remote branch stale.
+func (g *Git) VerifyPushedCommit(remote, branch, commit string) error {
+	commit = strings.TrimSpace(commit)
+	if commit == "" {
+		return fmt.Errorf("verified_push_failed: empty commit for %s/%s", remote, branch)
+	}
+	tip, err := g.PushRemoteBranchTip(remote, branch)
+	if err != nil {
+		return fmt.Errorf("verified_push_failed: unable to read %s/%s: %w", remote, branch, err)
+	}
+	if tip == "" {
+		return fmt.Errorf("verified_push_failed: branch %s/%s missing after push (expected %s)", remote, branch, shortSHA(commit))
+	}
+	if tip != commit {
+		return fmt.Errorf("verified_push_failed: commit %s not on %s/%s (remote tip %s)", shortSHA(commit), remote, branch, shortSHA(tip))
+	}
+	return nil
+}
+
+func parseLSRemoteTip(out, branch string) string {
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		parts := strings.Fields(line)
+		if len(parts) < 2 {
+			continue
+		}
+		if parts[1] == "refs/heads/"+branch {
+			return parts[0]
+		}
+	}
+	return ""
+}
+
+func shortSHA(sha string) string {
+	sha = strings.TrimSpace(sha)
+	if len(sha) > 8 {
+		return sha[:8]
+	}
+	return sha
 }
 
 // RemoteTrackingBranchExists checks if a remote-tracking branch ref exists locally
@@ -1469,6 +1539,15 @@ func (g *Git) IsAncestor(ancestor, descendant string) (bool, error) {
 		return false, err
 	}
 	return true, nil
+}
+
+// Cherry runs `git cherry <upstream> <head>` to list commits on head that are
+// not yet on upstream, comparing by patch-id. Each output line is prefixed with
+// "+ " (patch not on upstream) or "- " (patch already applied upstream, e.g.
+// via squash merge). Used to detect already-merged work that plain ancestor
+// checks miss. See aa-apw.
+func (g *Git) Cherry(upstream, head string) (string, error) {
+	return g.run("cherry", upstream, head)
 }
 
 // WorktreeAdd creates a new worktree at the given path with a new branch.
@@ -1831,6 +1910,67 @@ func (g *Git) StashCount() (int, error) {
 		count++
 	}
 	return count, nil
+}
+
+// StashEntry represents one entry from `git stash list`, scoped to the current branch.
+type StashEntry struct {
+	Ref     string // e.g. "stash@{2}"
+	Message string // e.g. "WIP on main: <hash> <subject>"
+}
+
+// StashListForBranch returns all stash entries belonging to the current branch,
+// ordered as `git stash list` returns them (newest first, i.e. stash@{0} first).
+// Filtering matches StashCount: only entries with ": WIP on <branch>:" or
+// ": On <branch>:" prefixes are returned, since stashes are global to the repo
+// but conceptually belong to the worktree where they were created.
+func (g *Git) StashListForBranch() ([]StashEntry, error) {
+	out, err := g.run("stash", "list")
+	if err != nil {
+		return nil, err
+	}
+	if out == "" {
+		return nil, nil
+	}
+
+	branch, branchErr := g.CurrentBranch()
+	filterByBranch := branchErr == nil && branch != "" && branch != "HEAD"
+	wipPrefix := ": WIP on " + branch + ":"
+	onPrefix := ": On " + branch + ":"
+
+	var entries []StashEntry
+	for _, line := range strings.Split(out, "\n") {
+		if line == "" {
+			continue
+		}
+		if filterByBranch {
+			if !strings.Contains(line, wipPrefix) && !strings.Contains(line, onPrefix) {
+				continue
+			}
+		}
+		// Lines have the form "stash@{N}: <message>"
+		colonIdx := strings.Index(line, ":")
+		if colonIdx <= 0 {
+			continue
+		}
+		entries = append(entries, StashEntry{
+			Ref:     line[:colonIdx],
+			Message: strings.TrimSpace(line[colonIdx+1:]),
+		})
+	}
+	return entries, nil
+}
+
+// StashPop applies the given stash ref to the working tree and drops it on success.
+// Returns an error if the pop has conflicts (working tree is left as-is for manual
+// resolution). Callers should treat conflict errors as "stop, escalate to user".
+func (g *Git) StashPop(ref string) error {
+	if ref == "" {
+		return fmt.Errorf("stash ref required")
+	}
+	if _, err := g.run("stash", "pop", ref); err != nil {
+		return fmt.Errorf("git stash pop %s: %w", ref, err)
+	}
+	return nil
 }
 
 // UnpushedCommits returns the number of commits that are not pushed to the remote.

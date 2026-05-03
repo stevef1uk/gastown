@@ -5,8 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
+	"sync"
+	"time"
 
 	"github.com/gofrs/flock"
 	"github.com/steveyegge/gastown/internal/beads"
@@ -16,6 +19,55 @@ import (
 	"github.com/steveyegge/gastown/internal/scheduler/capacity"
 	"github.com/steveyegge/gastown/internal/style"
 )
+
+// crossRigEscalationDebounce is the minimum interval between cross-rig prefix
+// escalations for the same (rig, prefix) pair. Prevents alert spam when a
+// stuck context keeps re-appearing on every dispatch tick.
+const crossRigEscalationDebounce = time.Hour
+
+// crossRigEscalationState tracks last-escalation timestamps per (rig, prefix).
+// Process-local — debounce resets on daemon restart, which is fine: a new
+// process should be allowed to surface the issue once.
+var (
+	crossRigEscalationMu   sync.Mutex
+	crossRigEscalationLast = map[string]time.Time{}
+)
+
+// crossRigEscalationKey returns the debounce key for a (rig, prefix) pair.
+func crossRigEscalationKey(rig, prefix string) string {
+	return rig + "/" + prefix
+}
+
+// shouldFireCrossRigEscalation reports whether enough time has elapsed since
+// the last escalation for this (rig, prefix) pair to fire a new one. Updates
+// the timestamp on a positive answer.
+func shouldFireCrossRigEscalation(rig, prefix string, now time.Time) bool {
+	crossRigEscalationMu.Lock()
+	defer crossRigEscalationMu.Unlock()
+	key := crossRigEscalationKey(rig, prefix)
+	if last, ok := crossRigEscalationLast[key]; ok && now.Sub(last) < crossRigEscalationDebounce {
+		return false
+	}
+	crossRigEscalationLast[key] = now
+	return true
+}
+
+// resetCrossRigEscalationStateForTest clears the debounce map. Test-only.
+func resetCrossRigEscalationStateForTest() {
+	crossRigEscalationMu.Lock()
+	defer crossRigEscalationMu.Unlock()
+	crossRigEscalationLast = map[string]time.Time{}
+}
+
+// fireCrossRigEscalation invokes `gt escalate` with a MEDIUM severity. Best
+// effort — escalation failure is logged but does not block the dispatch path.
+var fireCrossRigEscalation = func(rig, prefix, beadID string) {
+	msg := fmt.Sprintf("cross-rig dispatch refused: rig=%s prefix=%s bead=%s — see gt-el4", rig, prefix, beadID)
+	cmd := exec.Command("gt", "escalate", "--severity", "medium", "--reason", "cross-rig-prefix", msg)
+	if err := cmd.Run(); err != nil {
+		fmt.Fprintf(os.Stderr, "%s cross-rig escalation failed: %v\n", style.Warning.Render("⚠"), err)
+	}
+}
 
 // maxDispatchFailures is the maximum number of consecutive dispatch failures
 // before a sling context is closed as circuit-broken.
@@ -106,6 +158,28 @@ func dispatchScheduledWork(townRoot, actor string, batchOverride int, dryRun boo
 		},
 		QueryPending: func() ([]capacity.PendingBead, error) {
 			return getReadySlingContexts(townRoot)
+		},
+		Validate: func(b capacity.PendingBead) error {
+			// Cross-rig prefix guard (gt-el4). A bead whose ID prefix does
+			// not match the target rig's registered prefix must not be
+			// dispatched — the polecat would land in a rig DB that cannot
+			// resolve the bead and hang in prime.
+			if b.TargetRig == "" {
+				return nil
+			}
+			rigPath := filepath.Join(townRoot, b.TargetRig)
+			rigPrefix := rigBeadsPrefix(townRoot, rigPath, b.TargetRig)
+			if capacity.AcceptsPrefix(rigPrefix, b.WorkBeadID) {
+				return nil
+			}
+			gotPrefix := capacity.BeadIDPrefix(b.WorkBeadID)
+			fmt.Fprintf(os.Stderr,
+				"%s dispatch_refused reason=cross_rig_prefix bead=%s target_rig=%s rig_prefix=%s bead_prefix=%s\n",
+				style.Warning.Render("⚠"), b.WorkBeadID, b.TargetRig, rigPrefix, gotPrefix)
+			if shouldFireCrossRigEscalation(b.TargetRig, gotPrefix, time.Now()) {
+				fireCrossRigEscalation(b.TargetRig, gotPrefix, b.WorkBeadID)
+			}
+			return capacity.ErrCrossRigPrefix
 		},
 		Execute: func(b capacity.PendingBead) error {
 			result, err := dispatchSingleBead(b, townRoot, actor)
@@ -300,13 +374,14 @@ func cleanupStaleContexts(townRoot string) {
 	}
 }
 
-// beadStatusInfo holds batch-fetched bead status and title.
+// beadStatusInfo holds batch-fetched bead status, title, and labels.
 type beadStatusInfo struct {
 	Status string
 	Title  string
+	Labels []string
 }
 
-// batchFetchBeadInfoByIDs returns a map of bead ID → status+title for specific beads.
+// batchFetchBeadInfoByIDs returns a map of bead ID → status+title+labels for specific beads.
 // Uses `bd show` with multiple IDs per rig directory instead of fetching all beads.
 // This avoids the O(minutes) latency of `bd list --all --json --limit=0` on large repos.
 func batchFetchBeadInfoByIDs(townRoot string, ids []string) map[string]beadStatusInfo {
@@ -330,13 +405,18 @@ func batchFetchBeadInfoByIDs(townRoot string, ids []string) map[string]beadStatu
 			continue
 		}
 		var items []struct {
-			ID     string `json:"id"`
-			Status string `json:"status"`
-			Title  string `json:"title"`
+			ID     string   `json:"id"`
+			Status string   `json:"status"`
+			Title  string   `json:"title"`
+			Labels []string `json:"labels"`
 		}
 		if err := json.Unmarshal(out, &items); err == nil {
 			for _, item := range items {
-				result[item.ID] = beadStatusInfo{Status: item.Status, Title: item.Title}
+				result[item.ID] = beadStatusInfo{
+					Status: item.Status,
+					Title:  item.Title,
+					Labels: item.Labels,
+				}
 			}
 		}
 	}
@@ -363,6 +443,19 @@ func getReadySlingContexts(townRoot string) ([]capacity.PendingBead, error) {
 	if readyErr != nil {
 		return nil, readyErr
 	}
+
+	// 2b. Batch-fetch work bead labels so we can defensively filter messaging
+	// beads (gt:message / gt:handoff / gt:merge-request) that should never be
+	// handed to a polecat. See gt-el4 / gastownhall/gastown#3800.
+	workBeadIDs := make([]string, 0, len(allContexts))
+	for _, ctx := range allContexts {
+		fields := beads.ParseSlingContextFields(ctx.Description)
+		if fields == nil {
+			continue
+		}
+		workBeadIDs = append(workBeadIDs, fields.WorkBeadID)
+	}
+	workBeadInfo := batchFetchBeadInfoByIDs(townRoot, workBeadIDs)
 
 	// 3. Build PendingBead list — pure filtering, no mutations.
 	// Sort by EnqueuedAt for deterministic deduplication: when concurrent
@@ -404,13 +497,23 @@ func getReadySlingContexts(townRoot string) ([]capacity.PendingBead, error) {
 		}
 		seenWork[fields.WorkBeadID] = true
 
+		// Defensive filter: messaging beads (gt:message / gt:handoff /
+		// gt:merge-request) must never reach a rig polecat. Log the skip so
+		// the gap is observable and operators can chase the upstream cause.
+		workLabels := workBeadInfo[fields.WorkBeadID].Labels
+		if capacity.IsMessagingBead(workLabels) {
+			fmt.Fprintf(os.Stderr, "%s dispatch_skip reason=messaging_label bead=%s labels=%v\n",
+				style.Dim.Render("○"), fields.WorkBeadID, workLabels)
+			continue
+		}
+
 		result = append(result, capacity.PendingBead{
 			ID:          ctx.ID,
 			WorkBeadID:  fields.WorkBeadID,
 			Title:       ctx.Title,
 			TargetRig:   fields.TargetRig,
 			Description: ctx.Description,
-			Labels:      ctx.Labels,
+			Labels:      workLabels,
 			Context:     fields,
 		})
 	}

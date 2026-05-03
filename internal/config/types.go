@@ -180,7 +180,7 @@ type WorkerStatusConfig struct {
 // DefaultWorkerStatusConfig returns a WorkerStatusConfig with sensible defaults.
 func DefaultWorkerStatusConfig() *WorkerStatusConfig {
 	return &WorkerStatusConfig{
-		StaleThreshold:          "15m",
+		StaleThreshold:          "5m",
 		StuckThreshold:          "30m",
 		HeartbeatFreshThreshold: "5m",
 		MayorActiveThreshold:    "5m",

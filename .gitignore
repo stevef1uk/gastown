@@ -98,6 +98,3 @@ CLAUDE.local.md
 docs/fork-info/
 doctor_output*.txt\ndoctor_output_fixed*.txt\ndoctor_output_v.txt\nsqldiff\nsqlite.zip\nsqlite3\nsqlite3_analyzer\ntest_dashboard_fetch.go\nflake.lock
 .github/workflows/
-sqldiff
-sqlite3
-sqlite3_analyzer

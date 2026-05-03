@@ -1,6 +1,7 @@
 package git
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -1663,6 +1664,102 @@ func TestStashCount_NoFalsePositiveFromCommitMessage(t *testing.T) {
 	}
 }
 
+// TestStashListForBranch verifies StashListForBranch returns entries scoped
+// to the current branch with parsed Ref/Message fields.
+func TestStashListForBranch(t *testing.T) {
+	t.Parallel()
+	dir := initTestRepo(t)
+	g := NewGit(dir)
+
+	// Empty repo — no stashes
+	entries, err := g.StashListForBranch()
+	if err != nil {
+		t.Fatalf("StashListForBranch (empty): %v", err)
+	}
+	if len(entries) != 0 {
+		t.Errorf("StashListForBranch (empty) = %d entries, want 0", len(entries))
+	}
+
+	// Create two stashes on main
+	for i, content := range []string{"first", "second"} {
+		if err := os.WriteFile(filepath.Join(dir, "f.txt"), []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
+		cmd := exec.Command("git", "add", ".")
+		cmd.Dir = dir
+		_ = cmd.Run()
+		cmd = exec.Command("git", "stash", "push", "-m", fmt.Sprintf("stash-%d", i))
+		cmd.Dir = dir
+		if err := cmd.Run(); err != nil {
+			t.Fatalf("git stash %d: %v", i, err)
+		}
+	}
+
+	entries, err = g.StashListForBranch()
+	if err != nil {
+		t.Fatalf("StashListForBranch: %v", err)
+	}
+	if len(entries) != 2 {
+		t.Errorf("StashListForBranch = %d entries, want 2", len(entries))
+	}
+	// Newest first: stash@{0} is "second", stash@{1} is "first"
+	if entries[0].Ref != "stash@{0}" || entries[1].Ref != "stash@{1}" {
+		t.Errorf("Ref ordering = [%s, %s], want [stash@{0}, stash@{1}]",
+			entries[0].Ref, entries[1].Ref)
+	}
+	if entries[0].Message == "" || entries[1].Message == "" {
+		t.Errorf("Empty messages: [%s, %s]", entries[0].Message, entries[1].Message)
+	}
+}
+
+// TestStashPop verifies StashPop applies and drops a stash, leaving the
+// working tree dirty (so the gt-pvx auto-commit path catches it).
+func TestStashPop(t *testing.T) {
+	t.Parallel()
+	dir := initTestRepo(t)
+	g := NewGit(dir)
+
+	// Create a stash
+	if err := os.WriteFile(filepath.Join(dir, "dirty.txt"), []byte("dirty"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("git", "add", ".")
+	cmd.Dir = dir
+	_ = cmd.Run()
+	cmd = exec.Command("git", "stash", "push", "-m", "popme")
+	cmd.Dir = dir
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("git stash: %v", err)
+	}
+
+	// Confirm one stash exists
+	count, _ := g.StashCount()
+	if count != 1 {
+		t.Fatalf("StashCount before pop = %d, want 1", count)
+	}
+
+	// Pop it
+	if err := g.StashPop("stash@{0}"); err != nil {
+		t.Fatalf("StashPop: %v", err)
+	}
+
+	// Stash should be gone
+	count, _ = g.StashCount()
+	if count != 0 {
+		t.Errorf("StashCount after pop = %d, want 0", count)
+	}
+
+	// Working tree should now have the file (dirty)
+	if _, err := os.Stat(filepath.Join(dir, "dirty.txt")); err != nil {
+		t.Errorf("dirty.txt should exist after pop: %v", err)
+	}
+
+	// Empty ref should error
+	if err := g.StashPop(""); err == nil {
+		t.Error("StashPop(\"\") should error")
+	}
+}
+
 func TestClearPushURL(t *testing.T) {
 	dir := initTestRepo(t)
 	g := NewGit(dir)
@@ -2048,6 +2145,96 @@ func TestPushRemoteBranchExists_NoPushURL(t *testing.T) {
 	}
 	if exists {
 		t.Error("PushRemoteBranchExists should return false for nonexistent branch")
+	}
+}
+
+func TestVerifyPushedCommit(t *testing.T) {
+	localDir, _, _ := initTestRepoWithRemote(t)
+	g := NewGit(localDir)
+
+	if err := g.CreateBranch("polecat/verified-push"); err != nil {
+		t.Fatalf("CreateBranch: %v", err)
+	}
+	if err := g.Checkout("polecat/verified-push"); err != nil {
+		t.Fatalf("Checkout: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(localDir, "verified.txt"), []byte("v1\n"), 0644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if err := g.Add("verified.txt"); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	if err := g.Commit("verified push v1"); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+	v1, err := g.Rev("HEAD")
+	if err != nil {
+		t.Fatalf("Rev v1: %v", err)
+	}
+	if err := g.Push("origin", "polecat/verified-push", false); err != nil {
+		t.Fatalf("Push v1: %v", err)
+	}
+	if err := g.VerifyPushedCommit("origin", "polecat/verified-push", v1); err != nil {
+		t.Fatalf("VerifyPushedCommit v1: %v", err)
+	}
+
+	if err := os.WriteFile(filepath.Join(localDir, "verified.txt"), []byte("v2\n"), 0644); err != nil {
+		t.Fatalf("write v2: %v", err)
+	}
+	if err := g.Add("verified.txt"); err != nil {
+		t.Fatalf("Add v2: %v", err)
+	}
+	if err := g.Commit("verified push v2"); err != nil {
+		t.Fatalf("Commit v2: %v", err)
+	}
+	v2, err := g.Rev("HEAD")
+	if err != nil {
+		t.Fatalf("Rev v2: %v", err)
+	}
+	if err := g.VerifyPushedCommit("origin", "polecat/verified-push", v2); err == nil {
+		t.Fatal("VerifyPushedCommit should fail when remote branch is stale")
+	}
+	if err := g.VerifyPushedCommit("origin", "polecat/missing", v2); err == nil {
+		t.Fatal("VerifyPushedCommit should fail when remote branch is missing")
+	}
+}
+
+func TestVerifyPushedCommitSplitURL(t *testing.T) {
+	localDir, _, _, _ := initTestRepoWithSplitRemote(t)
+	g := NewGit(localDir)
+
+	if err := g.CreateBranch("polecat/verified-split"); err != nil {
+		t.Fatalf("CreateBranch: %v", err)
+	}
+	if err := g.Checkout("polecat/verified-split"); err != nil {
+		t.Fatalf("Checkout: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(localDir, "split.txt"), []byte("split\n"), 0644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if err := g.Add("split.txt"); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	if err := g.Commit("verified split push"); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+	sha, err := g.Rev("HEAD")
+	if err != nil {
+		t.Fatalf("Rev: %v", err)
+	}
+	if err := g.Push("origin", "polecat/verified-split", false); err != nil {
+		t.Fatalf("Push: %v", err)
+	}
+
+	fetchTip, err := g.RemoteBranchTip("origin", "polecat/verified-split")
+	if err != nil {
+		t.Fatalf("RemoteBranchTip: %v", err)
+	}
+	if fetchTip != "" {
+		t.Fatalf("fetch remote should not have split push branch, got %s", fetchTip)
+	}
+	if err := g.VerifyPushedCommit("origin", "polecat/verified-split", sha); err != nil {
+		t.Fatalf("VerifyPushedCommit should query push URL: %v", err)
 	}
 }
 

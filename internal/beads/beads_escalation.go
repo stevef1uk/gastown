@@ -13,22 +13,21 @@ import (
 // EscalationFields holds structured fields for escalation beads.
 // These are stored as "key: value" lines in the description.
 type EscalationFields struct {
-	Severity           string // critical, high, medium, low
-	Reason             string // Why this was escalated
-	Source             string // Source identifier (e.g., plugin:rebuild-gt, patrol:deacon)
-	EscalatedBy        string // Agent address that escalated (e.g., "gastown/Toast")
-	EscalatedAt        string // ISO 8601 timestamp
-	AckedBy            string // Agent that acknowledged (empty if not acked)
-	AckedAt            string // When acknowledged (empty if not acked)
-	ClosedBy           string // Agent that closed (empty if not closed)
-	ClosedReason       string // Resolution reason (empty if not closed)
-	RelatedBead        string // Optional: related bead ID (task, bug, etc.)
-	OriginalSeverity   string // Original severity before any re-escalation
-	ReescalationCount  int    // Number of times this has been re-escalated
-	LastReescalatedAt  string // When last re-escalated (empty if never)
-	LastReescalatedBy  string // Who last re-escalated (empty if never)
+	Severity          string // critical, high, medium, low
+	Reason            string // Why this was escalated
+	Source            string // Source identifier (e.g., plugin:rebuild-gt, patrol:deacon)
+	EscalatedBy       string // Agent address that escalated (e.g., "gastown/Toast")
+	EscalatedAt       string // ISO 8601 timestamp
+	AckedBy           string // Agent that acknowledged (empty if not acked)
+	AckedAt           string // When acknowledged (empty if not acked)
+	ClosedBy          string // Agent that closed (empty if not closed)
+	ClosedReason      string // Resolution reason (empty if not closed)
+	RelatedBead       string // Optional: related bead ID (task, bug, etc.)
+	OriginalSeverity  string // Original severity before any re-escalation
+	ReescalationCount int    // Number of times this has been re-escalated
+	LastReescalatedAt string // When last re-escalated (empty if never)
+	LastReescalatedBy string // Who last re-escalated (empty if never)
 }
-
 
 // FormatEscalationDescription creates a description string from escalation fields.
 func FormatEscalationDescription(title string, fields *EscalationFields) string {
@@ -204,8 +203,9 @@ func (b *Beads) CreateEscalationBead(title string, fields *EscalationFields) (*I
 // AckEscalation acknowledges an escalation bead.
 // Sets acked_by and acked_at fields, adds "acked" label.
 func (b *Beads) AckEscalation(id, ackedBy string) error {
+	target := b.forIssueID(id)
 	// First get current issue to preserve other fields
-	issue, err := b.Show(id)
+	issue, err := target.Show(id)
 	if err != nil {
 		return err
 	}
@@ -223,7 +223,7 @@ func (b *Beads) AckEscalation(id, ackedBy string) error {
 	// Format new description
 	description := FormatEscalationDescription(issue.Title, fields)
 
-	return b.Update(id, UpdateOptions{
+	return target.Update(id, UpdateOptions{
 		Description: &description,
 		AddLabels:   []string{"acked"},
 	})
@@ -232,8 +232,9 @@ func (b *Beads) AckEscalation(id, ackedBy string) error {
 // CloseEscalation closes an escalation bead with a resolution reason.
 // Sets closed_by and closed_reason fields, closes the issue.
 func (b *Beads) CloseEscalation(id, closedBy, reason string) error {
+	target := b.forIssueID(id)
 	// First get current issue to preserve other fields
-	issue, err := b.Show(id)
+	issue, err := target.Show(id)
 	if err != nil {
 		return err
 	}
@@ -252,7 +253,7 @@ func (b *Beads) CloseEscalation(id, closedBy, reason string) error {
 	description := FormatEscalationDescription(issue.Title, fields)
 
 	// Update description first
-	if err := b.Update(id, UpdateOptions{
+	if err := target.Update(id, UpdateOptions{
 		Description: &description,
 		AddLabels:   []string{"resolved"},
 	}); err != nil {
@@ -260,14 +261,14 @@ func (b *Beads) CloseEscalation(id, closedBy, reason string) error {
 	}
 
 	// Close the issue
-	_, err = b.run("close", id, "--reason="+reason)
+	_, err = target.run("close", id, "--reason="+reason)
 	return err
 }
 
 // GetEscalationBead retrieves an escalation bead by ID.
 // Returns nil if not found.
 func (b *Beads) GetEscalationBead(id string) (*Issue, *EscalationFields, error) {
-	issue, err := b.Show(id)
+	issue, err := b.forIssueID(id).Show(id)
 	if err != nil {
 		if errors.Is(err, ErrNotFound) {
 			return nil, nil, nil
@@ -415,7 +416,7 @@ func (b *Beads) ReescalateEscalation(id, reescalatedBy string, maxReescalations 
 	description := FormatEscalationDescription(issue.Title, fields)
 
 	// Update the bead with new description and severity label
-	if err := b.Update(id, UpdateOptions{
+	if err := b.forIssueID(id).Update(id, UpdateOptions{
 		Description:  &description,
 		AddLabels:    []string{"reescalated", "severity:" + newSeverity},
 		RemoveLabels: []string{"severity:" + result.OldSeverity},

@@ -354,8 +354,11 @@ func waitForEventFiles(ctx context.Context, eventDir string) (*AwaitEventResult,
 	for {
 		select {
 		case <-ctx.Done():
-			// Final check for events (race condition safety)
-			events, _ = readPendingEvents(eventDir)
+			// Final check for events (race condition safety). Bound the
+			// read so a stuck filesystem can't prevent us from returning —
+			// the wait has already timed out, and reporting timeout is
+			// more useful than hanging indefinitely on the last read.
+			events = readPendingEventsBounded(ctx, eventDir, 500*time.Millisecond)
 			if len(events) > 0 {
 				return &AwaitEventResult{
 					Reason: "event",
@@ -364,16 +367,63 @@ func waitForEventFiles(ctx context.Context, eventDir string) (*AwaitEventResult,
 			}
 			return &AwaitEventResult{Reason: "timeout"}, nil
 		case <-ticker.C:
-			events, err = readPendingEvents(eventDir)
-			if err != nil {
-				return nil, err
+			// Run readPendingEvents in a goroutine so ctx.Done() can
+			// always interrupt the wait. Without this, a slow/stuck
+			// read (e.g., stalled filesystem, sleeping laptop) would
+			// starve the timeout case until the read returns. This is
+			// the root cause of gt-x2lc: the timeout deadline expired
+			// but waitForEventFiles stayed blocked inside the read.
+			type readRes struct {
+				events []EventFile
+				err    error
 			}
-			if len(events) > 0 {
-				return &AwaitEventResult{
-					Reason: "event",
-					Events: events,
-				}, nil
+			ch := make(chan readRes, 1)
+			go func() {
+				ev, er := readPendingEvents(eventDir)
+				ch <- readRes{events: ev, err: er}
+			}()
+			select {
+			case <-ctx.Done():
+				// Timeout raced with read — abandon the goroutine and
+				// let the outer loop's ctx.Done() case finalize.
+				continue
+			case res := <-ch:
+				if res.err != nil {
+					return nil, res.err
+				}
+				if len(res.events) > 0 {
+					return &AwaitEventResult{
+						Reason: "event",
+						Events: res.events,
+					}, nil
+				}
 			}
+		}
+	}
+}
+
+// readPendingEventsBounded runs readPendingEvents in a goroutine and returns
+// whatever it produces within the given budget, or nil if it doesn't finish.
+// ctx is also honored — whichever deadline fires first wins.
+func readPendingEventsBounded(ctx context.Context, dir string, budget time.Duration) []EventFile {
+	ch := make(chan []EventFile, 1)
+	go func() {
+		events, _ := readPendingEvents(dir)
+		ch <- events
+	}()
+	select {
+	case events := <-ch:
+		return events
+	case <-time.After(budget):
+		return nil
+	case <-ctx.Done():
+		// ctx already done — give the read a tiny grace window so we
+		// don't drop events that were 1ms from arriving.
+		select {
+		case events := <-ch:
+			return events
+		case <-time.After(50 * time.Millisecond):
+			return nil
 		}
 	}
 }

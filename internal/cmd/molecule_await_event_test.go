@@ -371,6 +371,57 @@ func TestWaitForEventFilesNoDeadline(t *testing.T) {
 	}
 }
 
+func TestWaitForEventFilesTimeoutWithPolling(t *testing.T) {
+	// Regression test for gt-x2lc: the ticker-driven poll must honor
+	// ctx cancellation even if events never arrive. Previously the wait
+	// could stall past the deadline if readPendingEvents was slow.
+	dir := t.TempDir()
+
+	deadline := 600 * time.Millisecond
+	ctx, cancel := context.WithTimeout(context.Background(), deadline)
+	defer cancel()
+
+	start := time.Now()
+	result, err := waitForEventFiles(ctx, dir)
+	elapsed := time.Since(start)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Reason != "timeout" {
+		t.Errorf("expected reason 'timeout', got %q", result.Reason)
+	}
+	// Must return close to the deadline, not hang.
+	if elapsed > deadline+2*time.Second {
+		t.Errorf("wait took %v; expected ~%v (ctx.Done not honored?)", elapsed, deadline)
+	}
+}
+
+func TestReadPendingEventsBoundedFinishes(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "a.event"), []byte(`{"type":"X"}`), 0644)
+
+	events := readPendingEventsBounded(context.Background(), dir, 2*time.Second)
+	if len(events) != 1 {
+		t.Errorf("expected 1 event, got %d", len(events))
+	}
+}
+
+func TestReadPendingEventsBoundedCtxDone(t *testing.T) {
+	dir := t.TempDir()
+	// Even when ctx is already done, the bounded read should return
+	// promptly (within the grace window) rather than hang.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	start := time.Now()
+	_ = readPendingEventsBounded(ctx, dir, 5*time.Second)
+	elapsed := time.Since(start)
+	if elapsed > 500*time.Millisecond {
+		t.Errorf("bounded read took %v with cancelled ctx; expected prompt return", elapsed)
+	}
+}
+
 func TestEventFileStruct(t *testing.T) {
 	ef := EventFile{
 		Path:    "/home/gt/events/refinery/12345.event",

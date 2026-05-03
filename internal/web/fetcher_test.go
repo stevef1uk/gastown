@@ -467,7 +467,7 @@ func TestNewAPIHandler_StoresTimeouts(t *testing.T) {
 	defTimeout := 45 * time.Second
 	maxTimeout := 90 * time.Second
 
-	handler := NewAPIHandler(defTimeout, maxTimeout, "test-token")
+	handler := NewAPIHandler(defTimeout, maxTimeout, "test-token", nil)
 	if handler.defaultRunTimeout != defTimeout {
 		t.Errorf("defaultRunTimeout = %v, want %v", handler.defaultRunTimeout, defTimeout)
 	}
@@ -480,7 +480,7 @@ func TestNewAPIHandler_StoresTimeouts(t *testing.T) {
 
 func TestNewDashboardMux_NilConfig(t *testing.T) {
 	mock := &MockConvoyFetcher{}
-	mux, err := NewDashboardMux(mock, nil)
+	mux, err := NewDashboardMux(mock, nil, nil)
 	if err != nil {
 		t.Fatalf("NewDashboardMux(nil config): %v", err)
 	}

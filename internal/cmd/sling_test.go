@@ -806,6 +806,96 @@ exit /b 0
 	}
 }
 
+func TestRunSlingFormulaNoOpWhenSameFormulaAlreadyHooked(t *testing.T) {
+	townRoot := t.TempDir()
+
+	if err := os.MkdirAll(filepath.Join(townRoot, "mayor", "rig"), 0755); err != nil {
+		t.Fatalf("mkdir mayor/rig: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(townRoot, ".beads"), 0755); err != nil {
+		t.Fatalf("mkdir .beads: %v", err)
+	}
+
+	binDir := filepath.Join(townRoot, "bin")
+	if err := os.MkdirAll(binDir, 0755); err != nil {
+		t.Fatalf("mkdir binDir: %v", err)
+	}
+
+	logPath := filepath.Join(townRoot, "bd.log")
+	bdScript := `#!/bin/sh
+set -e
+echo "$PWD|$*" >> "${BD_LOG}"
+cmd="$1"
+shift || true
+case "$cmd" in
+  cook|mol|update)
+    exit 0
+    ;;
+esac
+exit 0
+`
+	bdScriptWindows := `@echo off
+setlocal enableextensions
+echo %CD%^|%*>>"%BD_LOG%"
+set "cmd=%1"
+if "%cmd%"=="cook" exit /b 0
+if "%cmd%"=="mol" exit /b 0
+if "%cmd%"=="update" exit /b 0
+exit /b 0
+`
+	_ = writeBDStub(t, binDir, bdScript, bdScriptWindows)
+
+	t.Setenv("BD_LOG", logPath)
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv(EnvGTRole, "mayor")
+	t.Setenv("GT_POLECAT", "")
+	t.Setenv("GT_CREW", "")
+	t.Setenv("TMUX_PANE", "")
+	t.Setenv("GT_TEST_NO_NUDGE", "1")
+	t.Setenv("GT_TEST_SKIP_HOOK_VERIFY", "1")
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(cwd) })
+	if err := os.Chdir(filepath.Join(townRoot, "mayor", "rig")); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+
+	prevDryRun := slingDryRun
+	prevNoBoot := slingNoBoot
+	prevForce := slingForce
+	prevFindSingleton := findHookedFormulaSingletonFn
+	t.Cleanup(func() {
+		slingDryRun = prevDryRun
+		slingNoBoot = prevNoBoot
+		slingForce = prevForce
+		findHookedFormulaSingletonFn = prevFindSingleton
+	})
+
+	slingDryRun = false
+	slingNoBoot = true
+	slingForce = false
+	findHookedFormulaSingletonFn = func(workDir, targetAgent, formulaName string) (*beads.Issue, error) {
+		return &beads.Issue{ID: "gt-wisp-existing"}, nil
+	}
+
+	if err := runSlingFormula(context.Background(), []string{"mol-anything"}); err != nil {
+		t.Fatalf("runSlingFormula: %v", err)
+	}
+
+	logBytes, err := os.ReadFile(logPath)
+	if err != nil && !os.IsNotExist(err) {
+		t.Fatalf("read bd log: %v", err)
+	}
+	log := string(logBytes)
+
+	if strings.Contains(log, "cook ") || strings.Contains(log, "mol wisp") || strings.Contains(log, "update ") {
+		t.Fatalf("expected same-formula sling to no-op before creating a new wisp, got:\n%s", log)
+	}
+}
+
 // TestSlingFormulaOnBeadPassesFeatureAndIssueVars verifies that when using
 // gt sling <formula> --on <bead>, both --var feature=<title> and --var issue=<beadID>
 // are passed to the bd mol wisp command.
@@ -1192,19 +1282,19 @@ func TestLooksLikeBeadID(t *testing.T) {
 		{"aaaaaa-b", false},     // prefix too long (6 chars)
 
 		// Injection / invalid suffix characters - should return false
-		{"gt-abc;rm -rf /", false},       // shell injection in suffix
-		{"gt-abc$(cmd)", false},          // command substitution in suffix
-		{"gt-abc&bg", false},            // ampersand in suffix
-		{"gt-abc|pipe", false},          // pipe in suffix
-		{"gt-abc`tick`", false},         // backtick in suffix
-		{"gt-abc>redir", false},         // redirect in suffix
-		{"gt-abc<redir", false},         // redirect in suffix
-		{"gt-abc'quote", false},         // single quote in suffix
-		{"gt-abc\"dquote", false},       // double quote in suffix
-		{"gt-abc\\slash", false},        // backslash in suffix
-		{"gt-abc xyz", false},           // space in suffix
-		{"gt-ABC", false},              // uppercase in suffix
-		{"gt-abc/path", false},          // slash in suffix
+		{"gt-abc;rm -rf /", false}, // shell injection in suffix
+		{"gt-abc$(cmd)", false},    // command substitution in suffix
+		{"gt-abc&bg", false},       // ampersand in suffix
+		{"gt-abc|pipe", false},     // pipe in suffix
+		{"gt-abc`tick`", false},    // backtick in suffix
+		{"gt-abc>redir", false},    // redirect in suffix
+		{"gt-abc<redir", false},    // redirect in suffix
+		{"gt-abc'quote", false},    // single quote in suffix
+		{"gt-abc\"dquote", false},  // double quote in suffix
+		{"gt-abc\\slash", false},   // backslash in suffix
+		{"gt-abc xyz", false},      // space in suffix
+		{"gt-ABC", false},          // uppercase in suffix
+		{"gt-abc/path", false},     // slash in suffix
 	}
 
 	for _, tt := range tests {
@@ -1742,6 +1832,60 @@ exit /b 0
 		if !strings.Contains(line, "ENV:BD_DOLT_AUTO_COMMIT=off|") {
 			t.Errorf("bd command missing BD_DOLT_AUTO_COMMIT=off: %s", line)
 		}
+	}
+}
+
+func TestBuildSlingFieldUpdatesIncludesConvoyFields(t *testing.T) {
+	got := buildSlingFieldUpdates(
+		"mayor",
+		"review this",
+		[]string{"feature=test"},
+		"gt-wisp-test",
+		"mol-polecat-work",
+		false,
+		false,
+		"feature=test",
+		"hq-cv-test1",
+		"local",
+		true,
+	)
+
+	if got.ConvoyID != "hq-cv-test1" {
+		t.Fatalf("ConvoyID = %q, want %q", got.ConvoyID, "hq-cv-test1")
+	}
+	if got.MergeStrategy != "local" {
+		t.Fatalf("MergeStrategy = %q, want %q", got.MergeStrategy, "local")
+	}
+	if !got.ConvoyOwned {
+		t.Fatal("ConvoyOwned = false, want true")
+	}
+}
+
+func TestStoreFieldsInBeadConvoyFields(t *testing.T) {
+	t.Setenv("GT_TEST_ATTACHED_MOLECULE_LOG", filepath.Join(t.TempDir(), "mol.log"))
+	logPath := os.Getenv("GT_TEST_ATTACHED_MOLECULE_LOG")
+
+	if err := storeFieldsInBead("gt-test123", beadFieldUpdates{
+		ConvoyID:      "hq-cv-test1",
+		MergeStrategy: "local",
+		ConvoyOwned:   true,
+	}); err != nil {
+		t.Fatalf("storeFieldsInBead: %v", err)
+	}
+
+	body, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("read log: %v", err)
+	}
+	text := string(body)
+	if !strings.Contains(text, "convoy_id: hq-cv-test1") {
+		t.Fatalf("missing convoy_id in description:\n%s", text)
+	}
+	if !strings.Contains(text, "merge_strategy: local") {
+		t.Fatalf("missing merge_strategy in description:\n%s", text)
+	}
+	if !strings.Contains(text, "convoy_owned: true") {
+		t.Fatalf("missing convoy_owned in description:\n%s", text)
 	}
 }
 

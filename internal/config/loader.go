@@ -1239,8 +1239,17 @@ func resolveAgentConfigWithOverrideInternal(townRoot, rigPath, agentOverride str
 	// If an override is requested, validate it exists
 	if agentOverride != "" {
 		var rc *RuntimeConfig
+		// For subcommand-style overrides (e.g. "opencode acp"), prefer the built-in
+		// preset when one exists. Town agent registry overrides often point at wrappers
+		// like gt-opencode, but ACP/subcommand invocations need the underlying runtime
+		// binary and built-in capability metadata.
+		if len(extraArgs) > 0 {
+			if preset, ok := builtinPresets[AgentPreset(agentName)]; ok {
+				rc = runtimeConfigFromAgentInfo(AgentPreset(agentName), preset)
+			}
+		}
 		// Check rig-level custom agents first
-		if rigSettings != nil && rigSettings.Agents != nil {
+		if rc == nil && rigSettings != nil && rigSettings.Agents != nil {
 			if custom, ok := rigSettings.Agents[agentName]; ok && custom != nil {
 				rc = fillRuntimeDefaults(custom)
 			}
@@ -2266,8 +2275,9 @@ func BuildStartupCommand(envVars map[string]string, rigPath, prompt string) stri
 	}
 	// Set GT_PROCESS_NAMES for accurate liveness detection. Custom agents may
 	// shadow built-in preset names (e.g., custom "codex" running "opencode"),
-	// so we resolve process names from both agent name and actual command.
-	processNames := ResolveProcessNames(rc.ResolvedAgent, rc.Command)
+	// or wrap the real binary with a launcher (e.g., `env -u VAR claude ...`).
+	// Pass rc.Args so wrapper-unwrap can find the real binary.
+	processNames := ResolveProcessNames(rc.ResolvedAgent, rc.Command, rc.Args...)
 	resolvedEnv["GT_PROCESS_NAMES"] = strings.Join(processNames, ",")
 	// Merge agent-specific env vars (e.g., OPENCODE_PERMISSION for yolo mode)
 	for k, v := range rc.Env {
@@ -2520,7 +2530,9 @@ func BuildStartupCommandWithAgentOverride(envVars map[string]string, rigPath, pr
 		resolvedEnv["GT_AGENT"] = rc.ResolvedAgent
 	}
 	// Set GT_PROCESS_NAMES for accurate liveness detection of custom agents.
-	processNamesOverride := ResolveProcessNames(agentForProcess, rc.Command)
+	// Pass rc.Args so wrapper-unwrap (env/sudo/nohup wrapping a real binary)
+	// can find the real agent binary.
+	processNamesOverride := ResolveProcessNames(agentForProcess, rc.Command, rc.Args...)
 	resolvedEnv["GT_PROCESS_NAMES"] = strings.Join(processNamesOverride, ",")
 	// Merge agent-specific env vars (e.g., OPENCODE_PERMISSION for yolo mode)
 	for k, v := range rc.Env {

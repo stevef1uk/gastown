@@ -111,3 +111,37 @@ func TestMaxDogPoolSize(t *testing.T) {
 		t.Errorf("maxDogPoolSize = %d, want 4 (matches mol-deacon-patrol pool sizing guideline)", maxDogPoolSize)
 	}
 }
+
+// TestDogTargetsAreNotMistakenForRigs is a regression guard for bead aa-4yf2.
+// The deferred sling path (active when scheduler.max_polecats > 0) rejects
+// targets that are neither rigs nor dogs. When dispatchFeedDog calls
+//
+//	gt sling mol-convoy-feed deacon/dogs --var convoy=<id>
+//
+// the target "deacon/dogs" must be classified as a dog pool target, not
+// fall through to rig-name resolution. Otherwise the deferred path bails
+// with "deferred dispatch requires a rig target" and stranded-convoy
+// auto-feeding breaks.
+//
+// This test locks in the classification invariant that dog pool targets
+// satisfy IsDogTarget (so sling.go can fall them through to direct dispatch).
+func TestDogTargetsAreNotMistakenForRigs(t *testing.T) {
+	// Any classifier-level change that makes one of these stop being a dog
+	// target will break feed-stranded auto-feeding in deferred mode.
+	dogPoolTargets := []string{
+		"deacon/dogs",       // canonical pool target used by dispatchFeedDog
+		"deacon/dogs/alpha", // specific-dog target
+		"dog:",              // shorthand pool target
+		"dog:alpha",         // shorthand specific-dog target
+	}
+
+	for _, target := range dogPoolTargets {
+		t.Run(target, func(t *testing.T) {
+			if _, isDog := IsDogTarget(target); !isDog {
+				t.Fatalf("IsDogTarget(%q) = false — dog pool targets must be "+
+					"recognized so the deferred sling path can fall through "+
+					"to direct dispatch (aa-4yf2 regression)", target)
+			}
+		})
+	}
+}

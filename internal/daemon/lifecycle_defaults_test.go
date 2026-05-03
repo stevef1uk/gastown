@@ -81,6 +81,10 @@ func TestDefaultLifecycleConfig(t *testing.T) {
 	if p.MainBranchTest.TimeoutStr != "10m" {
 		t.Errorf("expected main_branch_test timeout 10m, got %s", p.MainBranchTest.TimeoutStr)
 	}
+
+	if p.NatsServer == nil || !p.NatsServer.Enabled {
+		t.Error("expected nats_server to be enabled")
+	}
 }
 
 func TestEnsureLifecycleDefaults_NilConfig(t *testing.T) {
@@ -166,6 +170,7 @@ func TestEnsureLifecycleDefaults_FullyConfigured(t *testing.T) {
 			ScheduledMaintenance: &ScheduledMaintenanceConfig{Enabled: false, Threshold: &threshold},
 			MainBranchTest:       &MainBranchTestConfig{Enabled: false},
 			Handler:              &PatrolConfig{Enabled: false},
+			NatsServer:           &NatsServerConfig{Enabled: false},
 		},
 	}
 

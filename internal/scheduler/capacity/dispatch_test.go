@@ -279,6 +279,93 @@ func TestDispatchCycle_Run_OnSuccessRetry(t *testing.T) {
 	}
 }
 
+func TestBeadIDPrefix(t *testing.T) {
+	tests := []struct {
+		in, want string
+	}{
+		{"gt-abc", "gt"},
+		{"hq-uejt", "hq"},
+		{"wisp-xyz-123", "wisp"},
+		{"noprefix", ""},
+		{"", ""},
+		{"-leading", ""},
+	}
+	for _, tt := range tests {
+		if got := BeadIDPrefix(tt.in); got != tt.want {
+			t.Errorf("BeadIDPrefix(%q) = %q, want %q", tt.in, got, tt.want)
+		}
+	}
+}
+
+func TestAcceptsPrefix(t *testing.T) {
+	tests := []struct {
+		name, rigPrefix, beadID string
+		want                    bool
+	}{
+		{"matching", "gt", "gt-abc", true},
+		{"mismatched", "gt", "hq-uejt", false},
+		{"empty rig prefix accepts all", "", "hq-uejt", true},
+		{"bead with no prefix vs gt rig", "gt", "barewordbead", false},
+		{"matching wisp", "wisp", "wisp-di92", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := AcceptsPrefix(tt.rigPrefix, tt.beadID); got != tt.want {
+				t.Errorf("AcceptsPrefix(%q, %q) = %v, want %v",
+					tt.rigPrefix, tt.beadID, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestDispatchCycle_Run_ValidateRefusesCrossRigPrefix(t *testing.T) {
+	// Validate returns ErrCrossRigPrefix for `hq-` beads on a `gt`-prefix rig;
+	// Execute must not be called for the refused bead.
+	rigPrefix := "gt"
+	executed := []string{}
+	failureErrs := map[string]error{}
+
+	cycle := &DispatchCycle{
+		AvailableCapacity: func() (int, error) { return 100, nil },
+		QueryPending: func() ([]PendingBead, error) {
+			return []PendingBead{
+				{ID: "ctx-a", WorkBeadID: "gt-abc", TargetRig: "walletui"},
+				{ID: "ctx-b", WorkBeadID: "hq-uejt", TargetRig: "walletui"},
+			}, nil
+		},
+		Validate: func(b PendingBead) error {
+			if !AcceptsPrefix(rigPrefix, b.WorkBeadID) {
+				return ErrCrossRigPrefix
+			}
+			return nil
+		},
+		Execute: func(b PendingBead) error {
+			executed = append(executed, b.WorkBeadID)
+			return nil
+		},
+		OnSuccess: func(b PendingBead) error { return nil },
+		OnFailure: func(b PendingBead, err error) { failureErrs[b.WorkBeadID] = err },
+		BatchSize: 10,
+	}
+
+	report, err := cycle.Run()
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+	if report.Dispatched != 1 {
+		t.Errorf("Dispatched = %d, want 1", report.Dispatched)
+	}
+	if report.Failed != 1 {
+		t.Errorf("Failed = %d, want 1", report.Failed)
+	}
+	if len(executed) != 1 || executed[0] != "gt-abc" {
+		t.Errorf("Execute should run only for gt-abc, got %v", executed)
+	}
+	if !errors.Is(failureErrs["hq-uejt"], ErrCrossRigPrefix) {
+		t.Errorf("OnFailure for hq-uejt err = %v, want ErrCrossRigPrefix", failureErrs["hq-uejt"])
+	}
+}
+
 func TestDispatchCycle_Run_SpawnDelay(t *testing.T) {
 	start := time.Now()
 	cycle := &DispatchCycle{

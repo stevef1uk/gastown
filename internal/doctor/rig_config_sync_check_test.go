@@ -31,6 +31,12 @@ func TestRigConfigSyncCheck_MissingConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// Create town root config.json to avoid "hq missing config" warning
+	townConfig := `{"type": "rig", "version": 1, "name": "hq", "beads": {"prefix": "hq"}}`
+	if err := os.WriteFile(filepath.Join(tmpDir, "config.json"), []byte(townConfig), 0644); err != nil {
+		t.Fatal(err)
+	}
+
 	// Create rig directory WITHOUT config.json
 	rigDir := filepath.Join(tmpDir, "testrig")
 	if err := os.MkdirAll(rigDir, 0755); err != nil {
@@ -75,6 +81,12 @@ func TestRigConfigSyncCheck_FixCreatesConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// Create town root config.json to avoid "hq missing config" warning
+	townConfig := `{"type": "rig", "version": 1, "name": "hq", "beads": {"prefix": "hq"}}`
+	if err := os.WriteFile(filepath.Join(tmpDir, "config.json"), []byte(townConfig), 0644); err != nil {
+		t.Fatal(err)
+	}
+
 	// Create rig directory WITHOUT config.json
 	rigDir := filepath.Join(tmpDir, "testrig")
 	if err := os.MkdirAll(rigDir, 0755); err != nil {
@@ -116,6 +128,9 @@ func TestRigConfigSyncCheck_AllConfigsPresent(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// Install fake bd
+	installFakeBdForDoctorTests(t, tmpDir)
+
 	// Create rigs.json with one rig
 	rigsJSON := `{
 		"version": 1,
@@ -133,22 +148,51 @@ func TestRigConfigSyncCheck_AllConfigsPresent(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Create rig directory WITH config.json
+	// Create town root config.json
+	townCfg := `{
+		"type": "town-settings",
+		"version": 1,
+		"beads": { "prefix": "hq" }
+	}`
+	if err := os.WriteFile(filepath.Join(tmpDir, "config.json"), []byte(townCfg), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create rig directory and config.json
 	rigDir := filepath.Join(tmpDir, "testrig")
-	if err := os.MkdirAll(rigDir, 0755); err != nil {
+	if err := os.MkdirAll(filepath.Join(rigDir, "mayor", "rig", ".beads"), 0755); err != nil {
 		t.Fatal(err)
 	}
 	configJSON := `{
 		"type": "rig",
 		"version": 1,
 		"name": "testrig",
-		"git_url": "https://github.com/test/test.git",
-		"created_at": "2026-03-01T00:00:00Z",
-		"beads": {
-			"prefix": "tr"
-		}
+		"beads": { "prefix": "tr" }
 	}`
 	if err := os.WriteFile(filepath.Join(rigDir, "config.json"), []byte(configJSON), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Mock identity beads for both hq and testrig
+	writeFakeBeadOutput(t, filepath.Join(tmpDir, ".beads"), "hq-rig-hq")
+	writeFakeBeadOutput(t, filepath.Join(rigDir, "mayor", "rig", ".beads"), "tr-rig-testrig")
+
+	// Create metadata.json and config.yaml to avoid warnings
+	metadata := `{"dolt_database": "testrig", "dolt_mode": "server"}`
+	if err := os.WriteFile(filepath.Join(rigDir, "mayor", "rig", ".beads", "metadata.json"), []byte(metadata), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(rigDir, "mayor", "rig", ".beads", "config.yaml"), []byte("issue-prefix: tr\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	hqMetadata := `{"dolt_database": "hq", "dolt_mode": "server"}`
+	if err := os.MkdirAll(filepath.Join(tmpDir, ".beads"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(tmpDir, ".beads", "metadata.json"), []byte(hqMetadata), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(tmpDir, ".beads", "config.yaml"), []byte("issue-prefix: hq\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -158,7 +202,7 @@ func TestRigConfigSyncCheck_AllConfigsPresent(t *testing.T) {
 	result := check.Run(ctx)
 
 	if result.Status != StatusOK {
-		t.Errorf("expected StatusOK, got %v: %s", result.Status, result.Message)
+		t.Errorf("expected StatusOK, got %v: %s\nDetails: %v", result.Status, result.Message, result.Details)
 	}
 }
 
