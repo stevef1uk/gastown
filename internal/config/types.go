@@ -120,6 +120,16 @@ type TownSettings struct {
 	// "main_branch_test", "handler").
 	// Example: ["doctor_dog", "compactor_dog"]
 	DisabledPatrols []string `json:"disabled_patrols,omitempty"`
+
+	// SessionTransport selects the session backend for agent orchestration.
+	// Values: "tmux" (default), "nats".
+	// Can be overridden by GT_SESSION_TRANSPORT environment variable.
+	SessionTransport string `json:"session_transport,omitempty"`
+
+	// NatsURL is the NATS server URL for session transport.
+	// Default: nats.DefaultURL ("nats://127.0.0.1:4222")
+	// Only used when SessionTransport is "nats".
+	NatsURL string `json:"nats_url,omitempty"`
 }
 
 // NewTownSettings creates a new TownSettings with defaults.

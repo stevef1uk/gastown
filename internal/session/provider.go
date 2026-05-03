@@ -6,6 +6,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/steveyegge/gastown/internal/config"
 	"github.com/steveyegge/gastown/internal/tmux"
 )
 
@@ -28,17 +29,40 @@ func WaitForIdle(p Provider, sessionID string, timeout time.Duration) error {
 	return fmt.Errorf("idle detection not supported for this provider")
 }
 
-// GetDefaultProvider returns the default session provider based on environment.
+// GetDefaultProvider returns the default session provider based on environment
+// and town configuration. Resolution order:
+//  1. GT_SESSION_TRANSPORT environment variable
+//  2. Town settings config (session_transport field)
+//  3. Default to tmux
 func GetDefaultProvider(townRoot string) Provider {
-	// If GT_SESSION_TRANSPORT is set to "nats", use NatsProvider
-	if os.Getenv("GT_SESSION_TRANSPORT") == "nats" {
-		p, err := NewNatsProvider(townRoot, "")
-		if err == nil {
-			return p
+	// 1. Environment variable takes highest priority
+	if envTransport := os.Getenv("GT_SESSION_TRANSPORT"); envTransport != "" {
+		if envTransport == "nats" {
+			p, err := NewNatsProvider(townRoot, "")
+			if err == nil {
+				return p
+			}
+		}
+		// Unknown env value falls through to default
+	}
+
+	// 2. Check town settings config
+	if townRoot != "" {
+		if settings, err := config.LoadOrCreateTownSettings(config.TownSettingsPath(townRoot)); err == nil && settings != nil {
+			if settings.SessionTransport == "nats" {
+				natsURL := settings.NatsURL
+				if natsURL == "" {
+					natsURL = os.Getenv("GT_NATS_URL")
+				}
+				p, err := NewNatsProvider(townRoot, natsURL)
+				if err == nil {
+					return p
+				}
+			}
 		}
 	}
 
-	// Default to TmuxProvider for now
+	// 3. Default to TmuxProvider
 	return NewTmuxProvider(tmux.NewTmux())
 }
 
