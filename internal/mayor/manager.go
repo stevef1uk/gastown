@@ -126,24 +126,35 @@ func (m *Manager) Start(agentOverride string) error {
 	return m.StartTMUX(agentOverride)
 }
 
-// StartTMUX starts the mayor session in TMUX mode.
+// StartTMUX starts the mayor session using the configured transport.
+// Respects GT_SESSION_TRANSPORT env var and town settings session_transport field.
 // agentOverride optionally specifies a different agent alias to use.
 func (m *Manager) StartTMUX(agentOverride string) error {
 	if IsACPActive(m.townRoot) {
 		return ErrAlreadyRunning
 	}
 
-	t := tmux.NewTmux()
+	sp := session.GetDefaultProvider(m.townRoot)
+
 	sessionID := m.SessionName()
 
-	// Kill any existing zombie session (tmux alive but agent dead).
-	// Returns error if session is healthy and already running.
-	_, err := session.KillExistingSession(t, sessionID, true)
-	if err != nil {
-		return ErrAlreadyRunning
+	// For tmux transport, kill any existing zombie session before starting.
+	// NATS provider handles its own lifecycle.
+	if _, isTmux := sp.(*session.TmuxProvider); isTmux {
+		t := tmux.NewTmux()
+		_, err := session.KillExistingSession(t, sessionID, true)
+		if err != nil {
+			return ErrAlreadyRunning
+		}
+	} else {
+		// Non-tmux transport: check if already running via provider
+		ctx := context.Background()
+		if running, _ := sp.Exists(ctx, sessionID); running {
+			return ErrAlreadyRunning
+		}
 	}
 
-	// Ensure mayor directory exists (for Claude settings)
+	// Ensure mayor directory exists (for agent settings)
 	mayorDir := m.mayorDir()
 	if err := os.MkdirAll(mayorDir, 0755); err != nil {
 		return fmt.Errorf("creating mayor directory: %w", err)
@@ -158,9 +169,12 @@ func (m *Manager) StartTMUX(agentOverride string) error {
 	}
 
 	// Use unified session lifecycle for config → settings → command → create → env → theme → wait.
-	theme := tmux.ResolveSessionTheme(m.townRoot, "", "mayor", "")
+	var theme *tmux.Theme
+	if _, isTmux := sp.(*session.TmuxProvider); isTmux {
+		theme = tmux.ResolveSessionTheme(m.townRoot, "", "mayor", "")
+	}
 	ctx := context.Background()
-	_, err = session.StartSession(ctx, session.NewTmuxProvider(t), session.SessionConfig{
+	_, err := session.StartSession(ctx, sp, session.SessionConfig{
 		SessionID:        sessionID,
 		WorkDir:          mayorDir,
 		Role:             "mayor",
