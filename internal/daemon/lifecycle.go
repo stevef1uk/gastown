@@ -565,8 +565,11 @@ func (d *Daemon) setSessionEnvironment(ctx context.Context, sessionName string, 
 	}
 
 	// Record agent's pane_id/session_id for diagnostic checks.
-	if pid, err := d.sp.GetMainPID(ctx, sessionName); err == nil {
-		_ = d.sp.SetEnvironment(ctx, sessionName, "GT_PANE_ID", pid)
+	// Use tmux pane ID (not PID) so ZFC liveness checks work correctly.
+	if tp, ok := d.sp.(*session.TmuxProvider); ok {
+		if paneID, err := tp.Tmux().GetPaneID(sessionName); err == nil {
+			_ = d.sp.SetEnvironment(ctx, sessionName, "GT_PANE_ID", paneID)
+		}
 	}
 
 	// Set any custom env vars from role config.

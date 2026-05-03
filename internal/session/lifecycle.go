@@ -282,8 +282,11 @@ func StartSession(ctx context.Context, sp Provider, cfg SessionConfig) (_ *Start
 	}
 
 	// 13. Record agent's pane_id/session_id for diagnostic checks.
-	if pid, err := sp.GetMainPID(ctx, cfg.SessionID); err == nil {
-		_ = sp.SetEnvironment(ctx, cfg.SessionID, "GT_PANE_ID", pid)
+	// Use tmux pane ID (not PID) so ZFC liveness checks work correctly.
+	if tp, ok := sp.(*TmuxProvider); ok {
+		if paneID, err := tp.Tmux().GetPaneID(cfg.SessionID); err == nil {
+			_ = sp.SetEnvironment(ctx, cfg.SessionID, "GT_PANE_ID", paneID)
+		}
 	}
 
 	// 14. Track PID for defense-in-depth orphan cleanup.
