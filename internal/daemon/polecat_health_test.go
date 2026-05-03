@@ -95,7 +95,7 @@ func TestCheckPolecatHealth_SkipsSpawning(t *testing.T) {
 	d := &Daemon{
 		config: &Config{TownRoot: t.TempDir()},
 		logger: log.New(&logBuf, "", 0),
-		tmux:   tmux.NewTmux(),
+		sp:     session.NewTmuxProvider(tmux.NewTmux()),
 		bdPath: bdPath,
 	}
 
@@ -129,7 +129,7 @@ func TestCheckPolecatHealth_DetectsCrashedPolecat(t *testing.T) {
 	d := &Daemon{
 		config: &Config{TownRoot: t.TempDir()},
 		logger: log.New(&logBuf, "", 0),
-		tmux:   tmux.NewTmux(),
+		sp:     session.NewTmuxProvider(tmux.NewTmux()),
 		bdPath: bdPath,
 	}
 
@@ -160,7 +160,7 @@ func TestCheckPolecatHealth_SpawningGuardExpires(t *testing.T) {
 	d := &Daemon{
 		config: &Config{TownRoot: t.TempDir()},
 		logger: log.New(&logBuf, "", 0),
-		tmux:   tmux.NewTmux(),
+		sp:     session.NewTmuxProvider(tmux.NewTmux()),
 		bdPath: bdPath,
 	}
 
@@ -196,7 +196,7 @@ func TestCheckPolecatHealth_DescriptionStateOverridesLegacyDBColumn(t *testing.T
 	d := &Daemon{
 		config: &Config{TownRoot: t.TempDir()},
 		logger: log.New(&logBuf, "", 0),
-		tmux:   tmux.NewTmux(),
+		sp:     session.NewTmuxProvider(tmux.NewTmux()),
 		bdPath: bdPath,
 	}
 
@@ -231,7 +231,7 @@ func TestCheckPolecatHealth_SkipsClosedHookBead(t *testing.T) {
 	d := &Daemon{
 		config: &Config{TownRoot: t.TempDir()},
 		logger: log.New(&logBuf, "", 0),
-		tmux:   tmux.NewTmux(),
+		sp:     session.NewTmuxProvider(tmux.NewTmux()),
 		bdPath: bdPath,
 	}
 
@@ -274,7 +274,7 @@ func TestCheckPolecatHealth_NotifiesWitnessOnCrash(t *testing.T) {
 	d := &Daemon{
 		config: &Config{TownRoot: townRoot},
 		logger: log.New(&logBuf, "", 0),
-		tmux:   tmux.NewTmux(),
+		sp:     session.NewTmuxProvider(tmux.NewTmux()),
 		bdPath: bdPath,
 		gtPath: fakeGt,
 	}
@@ -324,7 +324,7 @@ func TestCheckPolecatHealth_SkipsDonePolecat(t *testing.T) {
 	d := &Daemon{
 		config: &Config{TownRoot: t.TempDir()},
 		logger: log.New(&logBuf, "", 0),
-		tmux:   tmux.NewTmux(),
+		sp:     session.NewTmuxProvider(tmux.NewTmux()),
 		bdPath: bdPath,
 	}
 
@@ -363,7 +363,7 @@ func TestCheckPolecatHealth_SkipsNukedPolecat(t *testing.T) {
 	d := &Daemon{
 		config: &Config{TownRoot: t.TempDir()},
 		logger: log.New(&logBuf, "", 0),
-		tmux:   tmux.NewTmux(),
+		sp:     session.NewTmuxProvider(tmux.NewTmux()),
 		bdPath: bdPath,
 	}
 
@@ -453,7 +453,7 @@ func TestReapIdlePolecat_SkipsWhenBeadLookupFailsButHasWork(t *testing.T) {
 	d := &Daemon{
 		config: &Config{TownRoot: townRoot},
 		logger: log.New(&logBuf, "", 0),
-		tmux:   tmux.NewTmuxWithSocket(""),
+		sp:     session.NewTmuxProvider(tmux.NewTmuxWithSocket("")),
 		bdPath: bdPath,
 	}
 
@@ -497,7 +497,7 @@ func TestReapIdlePolecat_ReapsWhenBeadLookupFailsAndNoWork(t *testing.T) {
 	d := &Daemon{
 		config: &Config{TownRoot: townRoot},
 		logger: log.New(&logBuf, "", 0),
-		tmux:   tmux.NewTmuxWithSocket(""),
+		sp:     session.NewTmuxProvider(tmux.NewTmuxWithSocket("")),
 		bdPath: bdPath,
 	}
 
@@ -550,7 +550,7 @@ func TestReapIdlePolecat_SkipsActiveAgent(t *testing.T) {
 	d := &Daemon{
 		config: &Config{TownRoot: townRoot},
 		logger: log.New(&logBuf, "", 0),
-		tmux:   tmux.NewTmux(),
+		sp:     session.NewTmuxProvider(tmux.NewTmux()),
 		bdPath: bdPath,
 	}
 
@@ -601,7 +601,7 @@ func TestReapIdlePolecat_ReapsIdleNoHook(t *testing.T) {
 	d := &Daemon{
 		config: &Config{TownRoot: townRoot},
 		logger: log.New(&logBuf, "", 0),
-		tmux:   tmux.NewTmuxWithSocket(""),
+		sp:     session.NewTmuxProvider(tmux.NewTmuxWithSocket("")),
 		bdPath: bdPath,
 	}
 

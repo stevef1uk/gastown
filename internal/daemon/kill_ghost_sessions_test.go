@@ -107,7 +107,7 @@ func setupGhostTest(t *testing.T) *ghostTestEnv {
 	d := &Daemon{
 		config: &Config{TownRoot: townRoot},
 		logger: log.New(&logBuf, "", 0),
-		tmux:   tmux.NewTmux(),
+		sp:     session.NewTmuxProvider(tmux.NewTmux()),
 	}
 
 	// Clean registry state after test.

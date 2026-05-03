@@ -15,6 +15,7 @@ import (
 	"github.com/steveyegge/gastown/internal/dog"
 	"github.com/steveyegge/gastown/internal/mail"
 	"github.com/steveyegge/gastown/internal/plugin"
+	"github.com/steveyegge/gastown/internal/session"
 	"github.com/steveyegge/gastown/internal/style"
 	"github.com/steveyegge/gastown/internal/tmux"
 	"github.com/steveyegge/gastown/internal/workspace"
@@ -1167,7 +1168,7 @@ func runDogDispatch(cmd *cobra.Command, args []string) error {
 	// Ensure dog session is running so it can read the mail.
 	// Without this, dispatched work sits in mail with no session to read it.
 	t := tmux.NewTmux()
-	sessMgr := dog.NewSessionManager(t, townRoot, mgr)
+	sessMgr := dog.NewSessionManager(session.NewTmuxProvider(t), townRoot, mgr)
 	sessOpts := dog.SessionStartOptions{
 		WorkDesc: workDesc,
 	}

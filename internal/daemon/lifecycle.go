@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -175,8 +176,9 @@ func (d *Daemon) executeLifecycleAction(request *LifecycleRequest) error {
 		}
 	}
 
-	// Check if session exists (tmux detection still needed for lifecycle actions)
-	running, err := d.tmux.HasSession(sessionName)
+	// Check if session exists (transport-agnostic detection)
+	ctx := context.Background()
+	running, err := d.sp.Exists(ctx, sessionName)
 	if err != nil {
 		return fmt.Errorf("checking session: %w", err)
 	}
@@ -184,9 +186,9 @@ func (d *Daemon) executeLifecycleAction(request *LifecycleRequest) error {
 	switch request.Action {
 	case ActionShutdown:
 		if running {
-			// Use KillSessionWithProcesses to ensure all descendant processes are killed.
-			// This prevents orphan bash processes from Claude's Bash tool surviving session termination.
-			if err := d.tmux.KillSessionWithProcesses(sessionName); err != nil {
+			// Stop the session. If graceful is false (default for Shutdown action here),
+			// it should kill all processes.
+			if err := d.sp.Stop(ctx, sessionName, false); err != nil {
 				return fmt.Errorf("killing session: %w", err)
 			}
 			d.logger.Printf("Killed session %s", sessionName)
@@ -195,8 +197,8 @@ func (d *Daemon) executeLifecycleAction(request *LifecycleRequest) error {
 
 	case ActionCycle, ActionRestart:
 		if running {
-			// Kill the session first - use KillSessionWithProcesses to prevent orphan processes.
-			if err := d.tmux.KillSessionWithProcesses(sessionName); err != nil {
+			// Kill the session first.
+			if err := d.sp.Stop(ctx, sessionName, false); err != nil {
 				return fmt.Errorf("killing session: %w", err)
 			}
 			d.logger.Printf("Killed session %s for restart", sessionName)
@@ -375,9 +377,10 @@ func (d *Daemon) restartSession(sessionName, identity string) error {
 	// the shell might not be ready to receive keystrokes, producing empty windows.
 	startCmd := d.getStartCommand(config, parsed)
 
-	// Create session with command as initial process (replaces EnsureSessionFresh + SendKeys).
-	// EnsureSessionFreshWithCommand kills zombie sessions and creates a new one atomically.
-	if err := d.tmux.EnsureSessionFreshWithCommand(sessionName, workDir, startCmd); err != nil {
+	// Create session with command as initial process.
+	// EnsureSessionFresh kills zombie sessions and creates a new one.
+	ctx := context.Background()
+	if err := d.sp.EnsureSessionFresh(ctx, sessionName, workDir, startCmd, nil); err != nil {
 		if errors.Is(err, tmux.ErrSessionRunning) {
 			d.logger.Printf("Session %s already running with healthy agent, skipping restart", sessionName)
 			return nil
@@ -385,17 +388,20 @@ func (d *Daemon) restartSession(sessionName, identity string) error {
 		return fmt.Errorf("creating session: %w", err)
 	}
 
-	// Set environment variables in tmux session table (for debugging/monitoring tools).
-	d.setSessionEnvironment(sessionName, config, parsed)
+	// Set environment variables (for debugging/monitoring tools).
+	d.setSessionEnvironment(ctx, sessionName, config, parsed)
 
 	// Apply theme (non-fatal: theming failure doesn't affect operation)
-	d.applySessionTheme(sessionName, parsed)
+	d.applySessionTheme(ctx, sessionName, parsed)
 
 	// Wait for Claude to start, then accept startup dialogs if they appear.
-	if err := d.tmux.WaitForCommand(sessionName, constants.SupportedShells, constants.ClaudeStartTimeout); err != nil {
-		// Non-fatal - Claude might still start
+	// This might be provider-specific, but for now we keep it or move it to provider.
+	// NatsProvider doesn't support interactive dialogs yet.
+	if tp, ok := d.sp.(*session.TmuxProvider); ok {
+		if err := tp.WaitForCommand(context.Background(), sessionName, constants.SupportedShells, constants.ClaudeStartTimeout); err == nil {
+			_ = tp.AcceptStartupDialogs(context.Background(), sessionName)
+		}
 	}
-	_ = d.tmux.AcceptStartupDialogs(sessionName)
 	time.Sleep(constants.ShutdownNotifyDelay)
 
 	return nil
@@ -534,9 +540,9 @@ func (d *Daemon) getStartCommand(roleConfig *beads.RoleConfig, parsed *ParsedIde
 	return config.PrependEnv("exec "+runtimeConfig.BuildCommandWithPrompt(prompt), envVars)
 }
 
-// setSessionEnvironment sets environment variables for the tmux session.
+// setSessionEnvironment sets environment variables for the session.
 // Uses centralized AgentEnv for consistency, plus custom env vars from role config if available.
-func (d *Daemon) setSessionEnvironment(sessionName string, roleConfig *beads.RoleConfig, parsed *ParsedIdentity) {
+func (d *Daemon) setSessionEnvironment(ctx context.Context, sessionName string, roleConfig *beads.RoleConfig, parsed *ParsedIdentity) {
 	// Resolve CLAUDE_CONFIG_DIR from accounts.json so daemon-restarted sessions
 	// use the correct account. Mirrors the crew startup path (start.go).
 	accountsPath := constants.MayorAccountsPath(d.config.TownRoot)
@@ -555,12 +561,12 @@ func (d *Daemon) setSessionEnvironment(sessionName string, roleConfig *beads.Rol
 		SessionName:      sessionName,
 	})
 	for k, v := range envVars {
-		_ = d.tmux.SetEnvironment(sessionName, k, v)
+		_ = d.sp.SetEnvironment(ctx, sessionName, k, v)
 	}
 
-	// Record agent's pane_id for ZFC-compliant liveness checks (gt-qmsx).
-	if paneID, err := d.tmux.GetPaneID(sessionName); err == nil {
-		_ = d.tmux.SetEnvironment(sessionName, "GT_PANE_ID", paneID)
+	// Record agent's pane_id/session_id for diagnostic checks.
+	if pid, err := d.sp.GetMainPID(ctx, sessionName); err == nil {
+		_ = d.sp.SetEnvironment(ctx, sessionName, "GT_PANE_ID", pid)
 	}
 
 	// Set any custom env vars from role config.
@@ -572,22 +578,20 @@ func (d *Daemon) setSessionEnvironment(sessionName string, roleConfig *beads.Rol
 				continue
 			}
 			expanded := beads.ExpandRolePattern(v, d.config.TownRoot, parsed.RigName, parsed.AgentName, parsed.RoleType, session.PrefixFor(parsed.RigName))
-			_ = d.tmux.SetEnvironment(sessionName, k, expanded)
+			_ = d.sp.SetEnvironment(ctx, sessionName, k, expanded)
 		}
 	}
 }
 
-// applySessionTheme applies tmux theming to the session.
-func (d *Daemon) applySessionTheme(sessionName string, parsed *ParsedIdentity) {
+// applySessionTheme applies theming to the session.
+func (d *Daemon) applySessionTheme(ctx context.Context, sessionName string, parsed *ParsedIdentity) {
 	rigName := parsed.RigName
 	role := parsed.RoleType
-	worker := parsed.RoleType
 	if role == constants.RoleMayor {
 		rigName = ""
-		worker = "Mayor"
 	}
 	theme := tmux.ResolveSessionTheme(d.config.TownRoot, rigName, role, parsed.AgentName)
-	_ = d.tmux.ConfigureGasTownSession(sessionName, theme, rigName, worker, role)
+	_ = d.sp.Configure(ctx, sessionName, theme)
 }
 
 // syncFailureEscalationThreshold is the default number of consecutive pull failures
@@ -1088,126 +1092,14 @@ func (d *Daemon) checkRigGUPPViolations(rigName string) {
 		sessionName := session.PolecatSessionName(session.PrefixFor(rigName), polecatName)
 
 		// Check if tmux session exists and agent is running
-		if d.tmux.IsAgentAlive(sessionName) {
-			// Session is alive - check if it's been stuck too long
-			updatedAt, err := time.Parse(time.RFC3339, agent.UpdatedAt)
-			if err != nil {
-				continue
-			}
-
-			age := time.Since(updatedAt)
-			if age > GUPPViolationTimeout {
-				d.logger.Printf("GUPP violation: agent %s has hook_bead=%s but hasn't updated in %v (timeout: %v)",
-					agent.ID, agent.HookBead, age.Round(time.Minute), GUPPViolationTimeout)
-
-				// Notify the witness for this rig
-				d.notifyWitnessOfGUPP(rigName, agent.ID, agent.HookBead, age)
-			}
-		}
-	}
-}
-
-// notifyWitnessOfGUPP sends a mail to the rig's witness about a GUPP violation.
-func (d *Daemon) notifyWitnessOfGUPP(rigName, agentID, hookBead string, stuckDuration time.Duration) {
-	witnessAddr := rigName + "/witness"
-	subject := fmt.Sprintf("GUPP_VIOLATION: %s stuck for %v", agentID, stuckDuration.Round(time.Minute))
-	body := fmt.Sprintf(`Agent %s has work on hook but isn't progressing.
-
-hook_bead: %s
-stuck_duration: %v
-
-Action needed: Check if agent is alive and responsive. Consider restarting if stuck.`,
-		agentID, hookBead, stuckDuration.Round(time.Minute))
-
-	cmd := exec.Command(d.gtPath, "mail", "send", witnessAddr, "-s", subject, "-m", body)
-	cmd.Dir = d.config.TownRoot
-	cmd.Env = os.Environ() // Inherit PATH to find gt executable
-	util.SetDetachedProcessGroup(cmd)
-
-	if err := cmd.Run(); err != nil {
-		d.logger.Printf("Warning: failed to notify witness of GUPP violation: %v", err)
-	} else {
-		d.logger.Printf("Notified %s of GUPP violation for %s", witnessAddr, agentID)
-	}
-}
-
-// checkOrphanedWork looks for work assigned to dead agents.
-// Orphaned work needs to be reassigned or the agent needs to be restarted.
-// Per gt-zecmc: derive agent liveness from tmux, not agent_state.
-func (d *Daemon) checkOrphanedWork() {
-	// Check if any rigs are operational before querying agent beads
-	rigs := d.getKnownRigs()
-	hasOperationalRig := false
-	for _, rigName := range rigs {
-		if operational, _ := d.isRigOperational(rigName); operational {
-			hasOperationalRig = true
-			break
-		}
-	}
-
-	// Skip entirely if no rigs are operational (all docked/parked)
-	if !hasOperationalRig {
-		return
-	}
-
-	for _, rigName := range rigs {
-		d.checkRigOrphanedWork(rigName)
-	}
-}
-
-// checkRigOrphanedWork checks polecats in a specific rig for orphaned work.
-func (d *Daemon) checkRigOrphanedWork(rigName string) {
-	// List polecat agent beads (issues + wisps tables)
-	var agents []struct {
-		ID          string   `json:"id"`
-		HookBead    string   `json:"hook_bead"`
-		AgentState  string   `json:"agent_state"`
-		Description string   `json:"description"`
-		Labels      []string `json:"labels"`
-		Type        string   `json:"issue_type"`
-	}
-
-	if err := d.listAgentBeadsJSON(&agents); err != nil {
-		d.logger.Printf("Warning: listing agent beads failed for orphaned work check: %v", err)
-		return
-	}
-
-	// Use the rig's configured prefix (e.g., "gt" for gastown, "bd" for beads)
-	rigPrefix := config.GetRigPrefix(d.config.TownRoot, rigName)
-	// Pattern: <prefix>-<rig>-polecat-<name>
-	prefix := rigPrefix + "-" + rigName + "-polecat-"
-	for _, agent := range agents {
-		// Only check polecats for this rig
-		if !strings.HasPrefix(agent.ID, prefix) {
-			continue
-		}
-
-		// No hooked work = nothing to orphan
-		if agent.HookBead == "" {
-			continue
-		}
-
-		agentState := beads.ResolveAgentState(agent.Description, agent.AgentState)
-
-		// Skip nuked agents — they're intentionally terminated and should not
-		// trigger alerts even if stale hook_bead data remains in the database.
-		if beads.AgentState(agentState) == beads.AgentStateNuked {
-			continue
-		}
-
-		// Check if tmux session is alive (derive state from tmux, not bead)
-		polecatName := strings.TrimPrefix(agent.ID, prefix)
-		sessionName := session.PolecatSessionName(session.PrefixFor(rigName), polecatName)
-
-		// Session running = not orphaned (work is being processed)
-		if d.tmux.IsAgentAlive(sessionName) {
+		if running, _ := d.sp.IsAgentRunning(context.Background(), sessionName); running {
 			continue
 		}
 
 		// TOCTOU guard: re-verify agent state before taking action.
 		// Between the bd list above and now, the agent may have been
 		// restarted or its hook_bead cleared. Re-check both conditions.
-		if d.tmux.IsAgentAlive(sessionName) {
+		if running, _ := d.sp.IsAgentRunning(context.Background(), sessionName); running {
 			continue
 		}
 		currentHookBead := d.getAgentHookBead(agent.ID)

@@ -38,7 +38,6 @@ import (
 	"github.com/steveyegge/gastown/internal/rig"
 	"github.com/steveyegge/gastown/internal/session"
 	"github.com/steveyegge/gastown/internal/telemetry"
-	"github.com/steveyegge/gastown/internal/tmux"
 	"github.com/steveyegge/gastown/internal/util"
 	"github.com/steveyegge/gastown/internal/wisp"
 	"github.com/steveyegge/gastown/internal/witness"
@@ -50,10 +49,10 @@ import (
 // This is recovery-focused: normal wake is handled by feed subscription (bd activity --follow).
 // The daemon is the safety net for dead sessions, GUPP violations, and orphaned work.
 type Daemon struct {
-	config        *Config
-	patrolConfig  *DaemonPatrolConfig
-	tmux          *tmux.Tmux
-	logger        *log.Logger
+	config          *Config
+	patrolConfig    *DaemonPatrolConfig
+	sp              session.Provider
+	logger          *log.Logger
 	ctx           context.Context
 	cancel        context.CancelFunc
 	curator       *feed.Curator
@@ -155,7 +154,7 @@ const beadsModulePath = "github.com/steveyegge/beads"
 var semverPattern = regexp.MustCompile(`v?(\d+\.\d+\.\d+)`)
 
 // New creates a new daemon instance.
-func New(config *Config) (*Daemon, error) {
+func New(config *Config, sp session.Provider) (*Daemon, error) {
 	// Ensure daemon directory exists
 	daemonDir := filepath.Dir(config.LogFile)
 	if err := os.MkdirAll(daemonDir, 0755); err != nil {
@@ -186,9 +185,8 @@ func New(config *Config) (*Daemon, error) {
 	// Also set GT_TOWN_ROOT in tmux global environment so run-shell subprocesses
 	// (e.g., gt cycle next/prev) can find the workspace even when CWD is $HOME.
 	// Non-fatal: tmux server may not be running yet — daemon creates sessions shortly.
-	t := tmux.NewTmux()
-	if err := t.SetGlobalEnvironment("GT_TOWN_ROOT", config.TownRoot); err != nil {
-		logger.Printf("Warning: failed to set GT_TOWN_ROOT in tmux global env: %v", err)
+	if err := sp.SetGlobalEnvironment("GT_TOWN_ROOT", config.TownRoot); err != nil {
+		logger.Printf("Warning: failed to set GT_TOWN_ROOT in session global env: %v", err)
 	}
 
 	// Clear any agent identity vars that leaked into tmux global env.
@@ -197,7 +195,7 @@ func New(config *Config) (*Daemon, error) {
 	// misattributing beads and mail. GH#3006.
 	identityVars := agentconfig.IdentityEnvVars
 	for _, k := range identityVars {
-		_ = t.UnsetGlobalEnvironment(k)
+		_ = sp.UnsetGlobalEnvironment(k)
 	}
 
 	// Load patrol config from mayor/daemon.json, ensuring lifecycle defaults
@@ -332,7 +330,7 @@ func New(config *Config) (*Daemon, error) {
 		config:          config,
 		patrolConfig:    patrolConfig,
 		disabledPatrols: disabledPatrols,
-		tmux:            tmux.NewTmux(),
+		sp:              sp,
 		logger:          logger,
 		ctx:             ctx,
 		cancel:          cancel,
@@ -876,8 +874,7 @@ func (d *Daemon) heartbeat(state *State) {
 	// 10. Check for GUPP violations (agents with work-on-hook not progressing)
 	d.checkGUPPViolations()
 
-	// 11. Check for orphaned work (assigned to dead agents)
-	d.checkOrphanedWork()
+	// 11. (Merged into GUPP check) Orphaned work detection
 
 	// 12. Check polecat session health (proactive crash detection)
 	// This validates tmux sessions are still alive for polecats with work-on-hook
@@ -1249,11 +1246,11 @@ func (d *Daemon) ensureBootRunning() {
 		return
 	}
 
-	b := boot.New(d.config.TownRoot)
+	b := boot.New(d.config.TownRoot, d.sp)
 
 	// Check for degraded mode
 	degraded := os.Getenv("GT_DEGRADED") == "true"
-	if degraded || !d.tmux.IsAvailable() {
+	if degraded || !d.sp.IsAvailable() {
 		// In degraded mode, run mechanical triage directly
 		d.logger.Println("Degraded mode: running mechanical Boot triage")
 		d.runDegradedBootTriage(b)
@@ -1335,7 +1332,7 @@ func (d *Daemon) runDegradedBootTriage(b *boot.Boot) {
 	}
 
 	// Simple check: is Deacon session alive?
-	hasDeacon, err := d.tmux.HasSession(d.getDeaconSessionName())
+	hasDeacon, err := d.sp.Exists(d.ctx, d.getDeaconSessionName())
 	if err != nil {
 		d.logger.Printf("Error checking Deacon session: %v", err)
 		status.LastAction = "error"
@@ -1489,7 +1486,7 @@ func (d *Daemon) checkDeaconHeartbeat() {
 	d.logger.Printf("Deacon heartbeat is stale (%s old), checking session...", age.Round(time.Minute))
 
 	// Check if session exists
-	hasSession, err := d.tmux.HasSession(sessionName)
+	hasSession, err := d.sp.Exists(d.ctx, sessionName)
 	if err != nil {
 		d.logger.Printf("Error checking Deacon session: %v", err)
 		return
@@ -1527,7 +1524,7 @@ func (d *Daemon) checkDeaconHeartbeat() {
 		}
 
 		d.logger.Printf("Deacon stuck for %s - nudging session", age.Round(time.Minute))
-		if err := d.tmux.NudgeSession(sessionName, "HEALTH_CHECK: heartbeat stale, respond to confirm responsiveness"); err != nil {
+		if err := d.sp.Inject(d.ctx, sessionName, "HEALTH_CHECK: heartbeat stale, respond to confirm responsiveness"); err != nil {
 			d.logger.Printf("Error nudging stuck Deacon: %v", err)
 		}
 	}
@@ -1555,7 +1552,7 @@ func (d *Daemon) restartStuckDeacon(sessionName, reason string) {
 
 	// Kill the stuck session
 	d.logger.Printf("Stuck-agent-dog: killing stuck Deacon session %s (reason: %s)", sessionName, reason)
-	if err := d.tmux.KillSession(sessionName); err != nil {
+	if err := d.sp.Stop(d.ctx, sessionName, false); err != nil {
 		d.logger.Printf("Stuck-agent-dog: error killing session %s: %v", sessionName, err)
 		// Continue — session may already be dead
 	}
@@ -1567,7 +1564,7 @@ func (d *Daemon) restartStuckDeacon(sessionName, reason string) {
 	d.ensureDeaconRunning()
 
 	// Verify it came back
-	hasSession, err := d.tmux.HasSession(sessionName)
+	hasSession, err := d.sp.Exists(d.ctx, sessionName)
 	if err != nil || !hasSession {
 		d.logger.Printf("Stuck-agent-dog: FAILED to respawn Deacon after kill")
 		d.notifySlack("admin", "critical", fmt.Sprintf("Deacon restart FAILED — session did not respawn. Reason: %s", reason))
@@ -1634,9 +1631,9 @@ func (d *Daemon) ensureWitnessRunning(rigName string) {
 		// Without this, sessions started before the rig was docked survive until
 		// the next explicit 'gt rig dock' command. (hq-snx61)
 		name := session.WitnessSessionName(session.PrefixFor(rigName))
-		if exists, _ := d.tmux.HasSession(name); exists {
-			d.logger.Printf("Killing leftover witness %s (rig %s)", name, reason)
-			if err := d.tmux.KillSessionWithProcesses(name); err != nil {
+		if exists, _ := d.sp.Exists(d.ctx, name); exists {
+			d.logger.Printf("Mass death cleanup: killing orphan %s", name)
+			if err := d.sp.Stop(d.ctx, name, true); err != nil {
 				d.logger.Printf("Error killing leftover witness %s: %v", name, err)
 			}
 		}
@@ -1694,9 +1691,9 @@ func (d *Daemon) ensureRefineryRunning(rigName string) {
 		// Without this, sessions started before the rig was docked survive until
 		// the next explicit 'gt rig dock' command. (hq-snx61)
 		name := session.RefinerySessionName(session.PrefixFor(rigName))
-		if exists, _ := d.tmux.HasSession(name); exists {
+		if exists, _ := d.sp.Exists(d.ctx, name); exists {
 			d.logger.Printf("Killing leftover refinery %s (rig %s)", name, reason)
-			if err := d.tmux.KillSessionWithProcesses(name); err != nil {
+			if err := d.sp.Stop(d.ctx, name, true); err != nil {
 				d.logger.Printf("Error killing leftover refinery %s: %v", name, err)
 			}
 		}
@@ -1795,8 +1792,8 @@ func (d *Daemon) ensureMayorRunning() {
 
 // isMayorAgentAlive checks if the Mayor's agent process is running in tmux.
 func (d *Daemon) isMayorAgentAlive(mgr *mayor.Manager) bool {
-	t := tmux.NewTmux()
-	return t.IsAgentAlive(mgr.SessionName())
+	alive, _ := d.sp.IsAgentRunning(d.ctx, mgr.SessionName())
+	return alive
 }
 
 // killDeaconSessions kills leftover deacon and boot tmux sessions.
@@ -1804,10 +1801,10 @@ func (d *Daemon) isMayorAgentAlive(mgr *mayor.Manager) bool {
 // running their own patrol loops and spawning agents. (hq-2mstj)
 func (d *Daemon) killDeaconSessions() {
 	for _, name := range []string{session.DeaconSessionName(), session.BootSessionName()} {
-		exists, _ := d.tmux.HasSession(name)
+		exists, _ := d.sp.Exists(d.ctx, name)
 		if exists {
 			d.logger.Printf("Killing leftover %s session (patrol disabled)", name)
-			if err := d.tmux.KillSessionWithProcesses(name); err != nil {
+			if err := d.sp.Stop(d.ctx, name, true); err != nil {
 				d.logger.Printf("Error killing %s session: %v", name, err)
 			}
 		}
@@ -1819,10 +1816,10 @@ func (d *Daemon) killDeaconSessions() {
 func (d *Daemon) killWitnessSessions() {
 	d.rigPool.runPerRig(d.ctx, d.getKnownRigs(), func(ctx context.Context, rigName string) error {
 		name := session.WitnessSessionName(session.PrefixFor(rigName))
-		exists, _ := d.tmux.HasSession(name)
+		exists, _ := d.sp.Exists(d.ctx, name)
 		if exists {
 			d.logger.Printf("Killing leftover %s session (patrol disabled)", name)
-			if err := d.tmux.KillSessionWithProcesses(name); err != nil {
+			if err := d.sp.Stop(d.ctx, name, true); err != nil {
 				d.logger.Printf("Error killing %s session: %v", name, err)
 			}
 		}
@@ -1835,10 +1832,10 @@ func (d *Daemon) killWitnessSessions() {
 func (d *Daemon) killRefinerySessions() {
 	d.rigPool.runPerRig(d.ctx, d.getKnownRigs(), func(ctx context.Context, rigName string) error {
 		name := session.RefinerySessionName(session.PrefixFor(rigName))
-		exists, _ := d.tmux.HasSession(name)
+		exists, _ := d.sp.Exists(d.ctx, name)
 		if exists {
 			d.logger.Printf("Killing leftover %s session (patrol disabled)", name)
-			if err := d.tmux.KillSessionWithProcesses(name); err != nil {
+			if err := d.sp.Stop(d.ctx, name, true); err != nil {
 				d.logger.Printf("Error killing %s session: %v", name, err)
 			}
 		}
@@ -1875,12 +1872,13 @@ func (d *Daemon) killDefaultPrefixGhosts() {
 	// Kill ghost sessions using the default "gt" prefix for patrol roles.
 	for _, role := range []string{"witness", "refinery"} {
 		ghostName := fmt.Sprintf("%s-%s", session.DefaultPrefix, role)
-		exists, _ := d.tmux.HasSession(ghostName)
-		if exists {
-			d.logger.Printf("Killing ghost session %s (default prefix, stale registry artifact)", ghostName)
-			if err := d.tmux.KillSessionWithProcesses(ghostName); err != nil {
-				d.logger.Printf("Error killing ghost session %s: %v", ghostName, err)
-			}
+		exists, _ := d.sp.Exists(d.ctx, ghostName)
+		if !exists {
+			continue
+		}
+		d.logger.Printf("Ghost session cleanup: killing %s", ghostName)
+		if err := d.sp.Stop(d.ctx, ghostName, true); err != nil {
+			d.logger.Printf("Error killing ghost session %s: %v", ghostName, err)
 		}
 	}
 
@@ -1902,21 +1900,22 @@ func (d *Daemon) killDefaultPrefixGhosts() {
 			}
 			polecatName := entry.Name()
 			ghostName := fmt.Sprintf("%s-%s", session.DefaultPrefix, polecatName)
-			exists, _ := d.tmux.HasSession(ghostName)
-			if exists {
-				// Verify the correct session isn't also running (avoid killing legit sessions)
-				correctName := session.PolecatSessionName(rigPrefix, polecatName)
-				correctExists, _ := d.tmux.HasSession(correctName)
-				if !correctExists {
-					// Ghost is the only session — it might be doing real work.
-					// Log but don't kill; the registry reload will prevent new ghosts.
-					d.logger.Printf("Ghost polecat session %s found (should be %s), not killing (may have active work)", ghostName, correctName)
-				} else {
-					// Both exist — ghost is definitely a duplicate, kill it.
-					d.logger.Printf("Killing duplicate ghost polecat session %s (correct session %s exists)", ghostName, correctName)
-					if err := d.tmux.KillSessionWithProcesses(ghostName); err != nil {
-						d.logger.Printf("Error killing ghost session %s: %v", ghostName, err)
-					}
+			exists, _ := d.sp.Exists(d.ctx, ghostName)
+			if !exists {
+				continue
+			}
+			correctName := session.PolecatSessionName(rigPrefix, polecatName)
+			correctExists, _ := d.sp.Exists(d.ctx, correctName)
+			if !correctExists {
+				// Ghost is the only session — it might be doing real work.
+				// Log but don't kill; the registry reload will prevent new ghosts.
+				d.logger.Printf("Ghost polecat session %s found (should be %s), not killing (may have active work)", ghostName, correctName)
+			} else {
+				// Both exist — ghost is definitely a duplicate, kill it.
+				d.logger.Printf("Session divergence cleanup: killing ghost %s (correct %s exists)",
+					ghostName, correctName)
+				if err := d.sp.Stop(d.ctx, ghostName, true); err != nil {
+					d.logger.Printf("Error killing ghost session %s: %v", ghostName, err)
 				}
 			}
 		}
@@ -2496,7 +2495,7 @@ func (d *Daemon) checkPolecatHealth(rigName, polecatName string) {
 	sessionName := session.PolecatSessionName(session.PrefixFor(rigName), polecatName)
 
 	// Check if tmux session exists
-	sessionAlive, err := d.tmux.HasSession(sessionName)
+	sessionAlive, err := d.sp.Exists(d.ctx, sessionName)
 	if err != nil {
 		d.logger.Printf("Error checking session %s: %v", sessionName, err)
 		return
@@ -2580,7 +2579,7 @@ func (d *Daemon) checkPolecatHealth(rigName, polecatName string) {
 	// TOCTOU guard: re-verify session is still dead before restarting.
 	// Between the initial check and now, the session may have been restarted
 	// by another heartbeat cycle, witness, or the polecat itself.
-	sessionRevived, err := d.tmux.HasSession(sessionName)
+	sessionRevived, err := d.sp.Exists(d.ctx, sessionName)
 	if err == nil && sessionRevived {
 		return // Session came back - no restart needed
 	}
@@ -2763,7 +2762,7 @@ func (d *Daemon) reapIdlePolecat(rigName, polecatName string, timeout time.Durat
 	sessionName := session.PolecatSessionName(session.PrefixFor(rigName), polecatName)
 
 	// Only check sessions that are actually alive
-	alive, err := d.tmux.HasSession(sessionName)
+	alive, err := d.sp.Exists(d.ctx, sessionName)
 	if err != nil || !alive {
 		return
 	}
@@ -2808,7 +2807,8 @@ func (d *Daemon) reapIdlePolecat(rigName, polecatName string, timeout time.Durat
 			// Use 3x threshold (not 2x) to avoid killing polecats during transient
 			// infrastructure degradation when the agent process is alive but not
 			// detectable (e.g. long thinking sessions, slow process inspection).
-			if staleDuration >= timeout*3 || !d.tmux.IsAgentRunning(sessionName) && staleDuration >= timeout*2 {
+			running, _ := d.sp.IsAgentRunning(d.ctx, sessionName)
+			if staleDuration >= timeout*3 || !running && staleDuration >= timeout*2 {
 				d.killIdlePolecat(rigName, polecatName, sessionName, staleDuration, timeout, "working-bead-lookup-failed")
 			}
 			return
@@ -2836,7 +2836,8 @@ func (d *Daemon) reapIdlePolecat(rigName, polecatName string, timeout time.Durat
 		// No hooked work + stale heartbeat — but check if the agent process
 		// is still actively running before reaping. A failed gt sling rollback
 		// can clear the hook while the agent is still working (GH#3342).
-		if d.tmux.IsAgentRunning(sessionName) {
+		running, _ := d.sp.IsAgentRunning(d.ctx, sessionName)
+		if running {
 			return
 		}
 		d.killIdlePolecat(rigName, polecatName, sessionName, staleDuration, timeout, "working-no-hook")
@@ -2849,7 +2850,7 @@ func (d *Daemon) killIdlePolecat(rigName, polecatName, sessionName string, idleD
 		rigName, polecatName, reason, idleDuration.Truncate(time.Second), timeout)
 
 	// Kill the tmux session (and all descendant processes)
-	if err := d.tmux.KillSessionWithProcesses(sessionName); err != nil {
+	if err := d.sp.Stop(d.ctx, sessionName, true); err != nil {
 		d.logger.Printf("Warning: failed to kill idle polecat session %s: %v", sessionName, err)
 		return
 	}

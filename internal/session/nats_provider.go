@@ -3,7 +3,6 @@ package session
 import (
 	"context"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -18,12 +17,10 @@ import (
 // NatsProvider implements session.Provider using NATS for coordination
 // and direct OS processes for execution.
 type NatsProvider struct {
-	townRoot    string
-	natsURL     string
-	nc          *nats.Conn
-	mu          sync.RWMutex
-	subscribers map[string]*nats.Subscription
-	stdinPipes  map[string]io.WriteCloser
+	townRoot string
+	natsURL  string
+	nc       *nats.Conn
+	mu       sync.RWMutex
 }
 
 // NewNatsProvider creates a new NatsProvider.
@@ -43,11 +40,9 @@ func NewNatsProvider(townRoot string, natsURL string) (*NatsProvider, error) {
 	}
 
 	return &NatsProvider{
-		townRoot:    townRoot,
-		natsURL:     natsURL,
-		nc:          nc,
-		subscribers: make(map[string]*nats.Subscription),
-		stdinPipes:  make(map[string]io.WriteCloser),
+		townRoot: townRoot,
+		natsURL:  natsURL,
+		nc:       nc,
 	}, nil
 }
 
@@ -57,29 +52,41 @@ func (p *NatsProvider) Close() {
 	}
 }
 
+func (p *NatsProvider) IsAvailable() bool {
+	return p.nc != nil && p.nc.IsConnected()
+}
+
 func (p *NatsProvider) Start(ctx context.Context, sessionID, workDir, command string, env map[string]string) error {
-	// We use a shell to execute the command string
-	cmd := exec.CommandContext(ctx, "bash", "-c", command)
+	gtPath, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("finding executable: %w", err)
+	}
+
+	// Build the nats-wrapper command
+	// gt nats-wrapper --session <id> --nats-url <url> -- <command>
+	wrapperArgs := []string{
+		"nats-wrapper",
+		"--session", sessionID,
+		"--nats-url", p.natsURL,
+		"--",
+		"bash", "-c", command,
+	}
+
+	cmd := exec.CommandContext(ctx, gtPath, wrapperArgs...)
 	cmd.Dir = workDir
 
 	// Set environment variables
+	cmd.Env = os.Environ()
 	if len(env) > 0 {
-		cmd.Env = os.Environ()
 		for k, v := range env {
 			cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", k, v))
 		}
 	}
 
-	// Create stdin pipe for sending commands to the process
-	stdinPipe, err := cmd.StdinPipe()
-	if err != nil {
-		return fmt.Errorf("creating stdin pipe: %w", err)
-	}
-
-	// Create a log file for the session output
+	// Create a log file for the wrapper itself (debug)
 	logDir := filepath.Join(p.townRoot, "logs", "sessions")
 	_ = os.MkdirAll(logDir, 0755)
-	logFile, err := os.Create(filepath.Join(logDir, sessionID+".log"))
+	logFile, err := os.Create(filepath.Join(logDir, sessionID+".wrapper.log"))
 	if err == nil {
 		cmd.Stdout = logFile
 		cmd.Stderr = logFile
@@ -89,55 +96,20 @@ func (p *NatsProvider) Start(ctx context.Context, sessionID, workDir, command st
 	util.SetDetachedProcessGroup(cmd)
 
 	if err := cmd.Start(); err != nil {
-		stdinPipe.Close()
-		return fmt.Errorf("starting process: %w", err)
+		return fmt.Errorf("starting nats-wrapper: %w", err)
 	}
 
 	// Write PID to tracking file
 	pidFile := filepath.Join(p.townRoot, ".gt-nats-pids", sessionID)
 	if err := os.WriteFile(pidFile, []byte(fmt.Sprintf("%d", cmd.Process.Pid)), 0644); err != nil {
 		_ = cmd.Process.Kill()
-		stdinPipe.Close()
 		return fmt.Errorf("writing PID file: %w", err)
 	}
-
-	// Set up NATS subscriber to forward messages to process stdin
-	subject := fmt.Sprintf("gt.nudge.%s", sessionID)
-	sub, err := p.nc.Subscribe(subject, func(msg *nats.Msg) {
-		// Append newline to ensure the command is processed
-		content := string(msg.Data)
-		if !strings.HasSuffix(content, "\n") {
-			content += "\n"
-		}
-		_, _ = stdinPipe.Write([]byte(content))
-	})
-	if err != nil {
-		_ = cmd.Process.Kill()
-		stdinPipe.Close()
-		_ = os.Remove(pidFile)
-		return fmt.Errorf("subscribing to NATS: %w", err)
-	}
-
-	p.mu.Lock()
-	p.subscribers[sessionID] = sub
-	p.stdinPipes[sessionID] = stdinPipe
-	p.mu.Unlock()
 
 	// Start a goroutine to wait for the process and clean up
 	go func() {
 		_ = cmd.Wait()
 		_ = os.Remove(pidFile)
-
-		p.mu.Lock()
-		if sub, ok := p.subscribers[sessionID]; ok {
-			_ = sub.Unsubscribe()
-			delete(p.subscribers, sessionID)
-		}
-		if pipe, ok := p.stdinPipes[sessionID]; ok {
-			_ = pipe.Close()
-			delete(p.stdinPipes, sessionID)
-		}
-		p.mu.Unlock()
 	}()
 
 	return nil
@@ -173,19 +145,6 @@ func (p *NatsProvider) Stop(ctx context.Context, sessionID string, graceful bool
 	}
 
 	_ = os.Remove(filepath.Join(p.townRoot, ".gt-nats-pids", sessionID))
-
-	// Clean up NATS subscriber and stdin pipe
-	p.mu.Lock()
-	if sub, ok := p.subscribers[sessionID]; ok {
-		_ = sub.Unsubscribe()
-		delete(p.subscribers, sessionID)
-	}
-	if pipe, ok := p.stdinPipes[sessionID]; ok {
-		_ = pipe.Close()
-		delete(p.stdinPipes, sessionID)
-	}
-	p.mu.Unlock()
-
 	return nil
 }
 
@@ -218,21 +177,9 @@ func (p *NatsProvider) List(ctx context.Context) ([]string, error) {
 }
 
 func (p *NatsProvider) Inject(ctx context.Context, sessionID string, data string) error {
-	// Append newline to ensure the command is processed
-	if !strings.HasSuffix(data, "\n") {
-		data += "\n"
-	}
-
-	p.mu.RLock()
-	pipe, ok := p.stdinPipes[sessionID]
-	p.mu.RUnlock()
-
-	if !ok {
-		return fmt.Errorf("session %s not found or stdin not available", sessionID)
-	}
-
-	_, err := pipe.Write([]byte(data))
-	return err
+	// Publish to the input subject of the session
+	subject := fmt.Sprintf("gt.session.%s.input", sessionID)
+	return p.nc.Publish(subject, []byte(data))
 }
 
 func (p *NatsProvider) GetEnvironment(ctx context.Context, sessionID string) (map[string]string, error) {
@@ -249,8 +196,47 @@ func (p *NatsProvider) SetRemainOnExit(ctx context.Context, sessionID string, en
 	return nil // Not applicable to direct processes
 }
 
+func (p *NatsProvider) SetGlobalEnvironment(key, value string) error {
+	// TODO: Store global env for future Start calls if needed
+	return nil
+}
+
+func (p *NatsProvider) UnsetGlobalEnvironment(key string) error {
+	return nil
+}
+
 func (p *NatsProvider) Configure(ctx context.Context, sessionID string, cfg any) error {
 	return nil // Not applicable
+}
+
+func (p *NatsProvider) IsAgentRunning(ctx context.Context, id string) (bool, error) {
+	// For NATS provider, we don't yet have a robust way to check if the agent
+	// process is alive other than its heartbeat, but we can check if we have
+	// a PID file for it.
+	return true, nil // Placeholder
+}
+
+func (p *NatsProvider) CleanupOrphanedSessions(isGTSession func(string) bool) (int, error) {
+	return 0, nil // NATS doesn't have "sessions" that outlive processes in the same way
+}
+
+func (p *NatsProvider) EnsureSessionFresh(ctx context.Context, sessionID, workDir, command string, env map[string]string) error {
+	_ = p.Stop(ctx, sessionID, false)
+	return p.Start(ctx, sessionID, workDir, command, env)
+}
+
+func (p *NatsProvider) StopAllSessions(ctx context.Context) error {
+	// Not implemented for NATS yet (would need to kill all local wrapper processes)
+	return nil
+}
+
+func (p *NatsProvider) GetMainPID(ctx context.Context, sessionID string) (string, error) {
+	pidFile := filepath.Join(p.townRoot, ".gt-nats-pids", sessionID)
+	data, err := os.ReadFile(pidFile)
+	if err != nil {
+		return "", fmt.Errorf("reading PID file: %w", err)
+	}
+	return strings.TrimSpace(string(data)), nil
 }
 
 func (p *NatsProvider) getPanePID(name string) (string, error) {
@@ -260,4 +246,73 @@ func (p *NatsProvider) getPanePID(name string) (string, error) {
 		return "", nil
 	}
 	return strings.TrimSpace(string(data)), nil
+}
+
+// IsIdle returns true if the session process exists (no active busy detection yet).
+func (p *NatsProvider) IsIdle(ctx context.Context, sessionID string) (bool, error) {
+	exists, err := p.Exists(ctx, sessionID)
+	if err != nil {
+		return false, err
+	}
+	// For now, consider the session idle if it exists
+	// TODO: Implement real idle detection via NATS heartbeat
+	return exists, nil
+}
+
+// CapturePane returns the last N lines from the session log file.
+func (p *NatsProvider) CapturePane(ctx context.Context, sessionID string, lines int) (string, error) {
+	logFile := filepath.Join(p.townRoot, "logs", "sessions", sessionID+".log")
+	data, err := os.ReadFile(logFile)
+	if err != nil {
+		return "", err
+	}
+
+	allLines := strings.Split(string(data), "\n")
+	if len(allLines) <= lines {
+		return string(data), nil
+	}
+	return strings.Join(allLines[len(allLines)-lines:], "\n"), nil
+}
+
+// AttachSession tails the session log file for terminal parity with tmux attach.
+func (p *NatsProvider) AttachSession(ctx context.Context, sessionID string) error {
+	logFile := filepath.Join(p.townRoot, "logs", "sessions", sessionID+".log")
+
+	// Verify log file exists
+	if _, err := os.Stat(logFile); os.IsNotExist(err) {
+		return fmt.Errorf("no log file for session %s (session may not be running)", sessionID)
+	}
+
+	// Tail the log file: show all existing content and follow new output
+	cmd := exec.CommandContext(ctx, "tail", "-n", "+1", "-f", logFile)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.Stdin = os.Stdin
+
+	return cmd.Run()
+}
+
+// SendKeysDebounced publishes input to the session via NATS.
+func (p *NatsProvider) SendKeysDebounced(ctx context.Context, sessionID string, keys string, debounceMs int) error {
+	// NATS doesn't need debouncing at the transport level;
+	// the caller handles debouncing. Just publish.
+	subject := fmt.Sprintf("gt.session.%s.input", sessionID)
+	return p.nc.Publish(subject, []byte(keys))
+}
+
+// GetSessionInfo returns provider-agnostic session metadata.
+func (p *NatsProvider) GetSessionInfo(ctx context.Context, sessionID string) (*SessionInfo, error) {
+	exists, err := p.Exists(ctx, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	if !exists {
+		return nil, fmt.Errorf("session not found")
+	}
+
+	return &SessionInfo{
+		Name:     sessionID,
+		Windows:  1,
+		Attached: false,
+	}, nil
 }

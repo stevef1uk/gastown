@@ -10,7 +10,6 @@ import (
 	"github.com/steveyegge/gastown/internal/dog"
 	"github.com/steveyegge/gastown/internal/mail"
 	"github.com/steveyegge/gastown/internal/plugin"
-	"github.com/steveyegge/gastown/internal/tmux"
 )
 
 // Dog lifecycle defaults — now config-driven via operational.daemon thresholds.
@@ -49,8 +48,7 @@ func (d *Daemon) handleDogs() {
 	opCfg := d.loadOperationalConfig().GetDaemonConfig()
 
 	mgr := dog.NewManager(d.config.TownRoot, rigsConfig)
-	t := tmux.NewTmux()
-	sm := dog.NewSessionManager(t, d.config.TownRoot, mgr)
+	sm := dog.NewSessionManager(d.sp, d.config.TownRoot, mgr)
 
 	d.cleanupStuckDogs(mgr, sm)
 	d.detectStaleWorkingDogs(mgr, sm, opCfg)
@@ -70,8 +68,7 @@ func (d *Daemon) handleDogsCleanupOnly() {
 	opCfg := d.loadOperationalConfig().GetDaemonConfig()
 
 	mgr := dog.NewManager(d.config.TownRoot, rigsConfig)
-	t := tmux.NewTmux()
-	sm := dog.NewSessionManager(t, d.config.TownRoot, mgr)
+	sm := dog.NewSessionManager(d.sp, d.config.TownRoot, mgr)
 
 	d.cleanupStuckDogs(mgr, sm)
 	d.detectStaleWorkingDogs(mgr, sm, opCfg)

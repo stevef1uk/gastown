@@ -14,6 +14,7 @@ import (
 
 	beadsdk "github.com/steveyegge/beads"
 	"github.com/steveyegge/gastown/internal/deacon"
+	"github.com/steveyegge/gastown/internal/session"
 	"github.com/steveyegge/gastown/internal/tmux"
 )
 
@@ -53,7 +54,7 @@ func newTestDaemonWithStores(t *testing.T, townRoot string, stores map[string]be
 	return &Daemon{
 		config:      &Config{TownRoot: townRoot},
 		logger:      log.New(io.Discard, "", 0),
-		tmux:        tmux.NewTmux(),
+		sp:          session.NewTmuxProvider(tmux.NewTmux()),
 		beadsStores: stores,
 		ctx:         context.Background(),
 	}

@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -101,7 +102,7 @@ func (d *Daemon) checkpointRigPolecats(rigName string) (int, int) {
 		// Check if tmux session is alive — only checkpoint active sessions.
 		// Dead sessions can't benefit from checkpoints.
 		sessionName := session.PolecatSessionName(session.PrefixFor(rigName), polecatName)
-		alive, err := d.tmux.HasSession(sessionName)
+		alive, err := d.sp.Exists(context.Background(), sessionName)
 		if err != nil {
 			d.logger.Printf("checkpoint_dog: error checking session %s: %v", sessionName, err)
 			continue

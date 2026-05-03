@@ -226,7 +226,7 @@ func runDown(cmd *cobra.Command, args []string) error {
 			}
 			continue
 		}
-		stopped, err := session.StopTownSession(t, ts, downForce)
+		stopped, err := session.StopTownSession(session.NewTmuxProvider(t), ts, downForce)
 		if err != nil {
 			printDownStatus(ts.Name, false, err.Error())
 			allOK = false
@@ -683,7 +683,7 @@ func stopSession(t *tmux.Tmux, sessionName string) (bool, error) {
 	// Try graceful shutdown first (Ctrl-C, best-effort interrupt)
 	if !downForce {
 		_ = t.SendKeysRaw(sessionName, "C-c")
-		if session.WaitForSessionExit(t, sessionName, constants.GracefulShutdownTimeout) {
+		if session.WaitForSessionExit(session.NewTmuxProvider(t), sessionName, constants.GracefulShutdownTimeout) {
 			return true, nil // Process exited gracefully
 		}
 	}

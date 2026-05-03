@@ -2,6 +2,7 @@ package session
 
 import (
 	"context"
+	"time"
 
 	"github.com/steveyegge/gastown/internal/tmux"
 )
@@ -16,6 +17,10 @@ func NewTmuxProvider(t *tmux.Tmux) *TmuxProvider {
 	return &TmuxProvider{t: t}
 }
 
+func (p *TmuxProvider) IsAvailable() bool {
+	return p.t.IsAvailable()
+}
+
 func (p *TmuxProvider) Start(ctx context.Context, sessionID, workDir, command string, env map[string]string) error {
 	return p.t.NewSessionWithCommandAndEnv(sessionID, workDir, command, env)
 }
@@ -23,7 +28,7 @@ func (p *TmuxProvider) Start(ctx context.Context, sessionID, workDir, command st
 func (p *TmuxProvider) Stop(ctx context.Context, sessionID string, graceful bool) error {
 	if graceful {
 		// StopSession handles graceful Ctrl-C
-		return StopSession(p.t, sessionID, true)
+		return StopSession(p, sessionID, true)
 	}
 	return p.t.KillSessionWithProcesses(sessionID)
 }
@@ -49,6 +54,14 @@ func (p *TmuxProvider) SetEnvironment(ctx context.Context, sessionID, key, value
 	return p.t.SetEnvironment(sessionID, key, value)
 }
 
+func (p *TmuxProvider) SetGlobalEnvironment(key, value string) error {
+	return p.t.SetGlobalEnvironment(key, value)
+}
+
+func (p *TmuxProvider) UnsetGlobalEnvironment(key string) error {
+	return p.t.UnsetGlobalEnvironment(key)
+}
+
 func (p *TmuxProvider) SetRemainOnExit(ctx context.Context, sessionID string, enabled bool) error {
 	return p.t.SetRemainOnExit(sessionID, enabled)
 }
@@ -61,4 +74,75 @@ func (p *TmuxProvider) Configure(ctx context.Context, sessionID string, cfg any)
 		return p.t.ConfigureGasTownSession(sessionID, theme, "", "", "")
 	}
 	return nil
+}
+
+func (p *TmuxProvider) IsAgentRunning(ctx context.Context, id string) (bool, error) {
+	return p.t.IsAgentAlive(id), nil
+}
+
+func (p *TmuxProvider) CleanupOrphanedSessions(isGTSession func(string) bool) (int, error) {
+	return p.t.CleanupOrphanedSessions(isGTSession)
+}
+
+func (p *TmuxProvider) EnsureSessionFresh(ctx context.Context, sessionID, workDir, command string, env map[string]string) error {
+	return p.t.EnsureSessionFreshWithCommand(sessionID, workDir, command)
+}
+
+func (p *TmuxProvider) StopAllSessions(ctx context.Context) error {
+	return p.t.KillServer()
+}
+
+func (p *TmuxProvider) GetSessionInfo(ctx context.Context, sessionID string) (*SessionInfo, error) {
+	ti, err := p.t.GetSessionInfo(sessionID)
+	if err != nil {
+		return nil, err
+	}
+	// Convert tmux-specific SessionInfo to provider-agnostic SessionInfo
+	return &SessionInfo{
+		Name:         ti.Name,
+		Windows:      ti.Windows,
+		Created:      ti.Created,
+		Attached:     ti.Attached,
+		Activity:     ti.Activity,
+		LastAttached: ti.LastAttached,
+	}, nil
+}
+
+func (p *TmuxProvider) GetMainPID(ctx context.Context, sessionID string) (string, error) {
+	return p.t.GetPanePID(sessionID)
+}
+
+// IsIdle returns true if the tmux session is idle.
+func (p *TmuxProvider) IsIdle(ctx context.Context, sessionID string) (bool, error) {
+	return p.t.IsIdle(sessionID), nil
+}
+
+// CapturePane returns the last N lines from the tmux pane.
+func (p *TmuxProvider) CapturePane(ctx context.Context, sessionID string, lines int) (string, error) {
+	return p.t.CapturePane(sessionID, lines)
+}
+
+// AttachSession attaches to the tmux session.
+func (p *TmuxProvider) AttachSession(ctx context.Context, sessionID string) error {
+	return p.t.AttachSession(sessionID)
+}
+
+// SendKeysDebounced sends keys to the tmux session with debouncing.
+func (p *TmuxProvider) SendKeysDebounced(ctx context.Context, sessionID string, keys string, debounceMs int) error {
+	return p.t.SendKeysDebounced(sessionID, keys, debounceMs)
+}
+
+// WaitForCommand waits for the session's main process to start.
+func (p *TmuxProvider) WaitForCommand(ctx context.Context, sessionID string, excludeCommands []string, timeout time.Duration) error {
+	return p.t.WaitForCommand(sessionID, excludeCommands, timeout)
+}
+
+// AcceptStartupDialogs dismisses startup dialogs in the tmux session.
+func (p *TmuxProvider) AcceptStartupDialogs(ctx context.Context, sessionID string) error {
+	return p.t.AcceptStartupDialogs(sessionID)
+}
+
+// WaitForIdle waits for the session to become idle.
+func (p *TmuxProvider) WaitForIdle(sessionID string, timeout time.Duration) error {
+	return p.t.WaitForIdle(sessionID, timeout)
 }

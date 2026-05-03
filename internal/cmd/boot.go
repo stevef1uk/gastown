@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -105,7 +106,7 @@ func getBootManager() (*boot.Boot, error) {
 		return nil, fmt.Errorf("finding town root: %w", err)
 	}
 
-	return boot.New(townRoot), nil
+	return boot.New(townRoot, session.GetDefaultProvider(townRoot)), nil
 }
 
 func runBootStatus(cmd *cobra.Command, args []string) error {
@@ -290,20 +291,18 @@ func runDegradedTriage(b *boot.Boot) (action, target string, err error) {
 		return "nothing", "shutdown-in-progress", nil
 	}
 
-	tm := b.Tmux()
-
 	// Scan and execute pending death warrants. This is a side effect that runs
 	// before the normal triage decision — warrant execution is mechanical and
 	// does not affect which action runDegradedTriage returns to the caller.
 	if townRoot != "" {
-		executeWarrants(filepath.Join(townRoot, "warrants"), tm)
+		executeWarrants(filepath.Join(townRoot, "warrants"), tmux.NewTmux())
 	}
 
 	// Check if Deacon session exists — the only mechanical check degraded
 	// triage needs. All deeper reasoning (staleness, idle, backoff, progress)
 	// is the Boot agent's job via mol-boot-triage.
 	deaconSession := getDeaconSessionName()
-	hasDeacon, err := tm.HasSession(deaconSession)
+	hasDeacon, err := b.Provider().Exists(context.Background(), deaconSession)
 	if err != nil {
 		return "error", "deacon", fmt.Errorf("checking deacon session: %w", err)
 	}

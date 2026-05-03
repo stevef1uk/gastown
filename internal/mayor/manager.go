@@ -159,7 +159,8 @@ func (m *Manager) StartTMUX(agentOverride string) error {
 
 	// Use unified session lifecycle for config → settings → command → create → env → theme → wait.
 	theme := tmux.ResolveSessionTheme(m.townRoot, "", "mayor", "")
-	_, err = session.StartSession(t, session.SessionConfig{
+	ctx := context.Background()
+	_, err = session.StartSession(ctx, session.NewTmuxProvider(t), session.SessionConfig{
 		SessionID:        sessionID,
 		WorkDir:          mayorDir,
 		Role:             "mayor",

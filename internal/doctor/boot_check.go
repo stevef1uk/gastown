@@ -39,13 +39,13 @@ func (c *BootHealthCheck) Fix(ctx *CheckContext) error {
 	if !c.missingDir {
 		return nil
 	}
-	b := boot.New(ctx.TownRoot)
+	b := boot.New(ctx.TownRoot, session.GetDefaultProvider(ctx.TownRoot))
 	return b.EnsureDir()
 }
 
 // Run checks Boot health: directory, session, status, and marker freshness.
 func (c *BootHealthCheck) Run(ctx *CheckContext) *CheckResult {
-	b := boot.New(ctx.TownRoot)
+	b := boot.New(ctx.TownRoot, session.GetDefaultProvider(ctx.TownRoot))
 	details := []string{}
 
 	// Check 1: Boot directory exists

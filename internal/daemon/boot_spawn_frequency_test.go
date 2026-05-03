@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/steveyegge/gastown/internal/session"
 	"github.com/steveyegge/gastown/internal/tmux"
 )
 
@@ -78,7 +79,7 @@ func TestEnsureBootRunning_DoesNotSpawnEveryTick(t *testing.T) {
 	d := &Daemon{
 		config: &Config{TownRoot: townRoot},
 		logger: log.New(io.Discard, "", 0),
-		tmux:   tmux.NewTmux(),
+		sp:     session.NewTmuxProvider(tmux.NewTmux()),
 	}
 
 	// Simulate two adjacent heartbeats.

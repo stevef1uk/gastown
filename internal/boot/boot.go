@@ -4,7 +4,7 @@
 package boot
 
 import (
-	"github.com/steveyegge/gastown/internal/cli"
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -13,9 +13,9 @@ import (
 	"time"
 
 	"github.com/gofrs/flock"
+	"github.com/steveyegge/gastown/internal/cli"
 	"github.com/steveyegge/gastown/internal/config"
 	"github.com/steveyegge/gastown/internal/session"
-	"github.com/steveyegge/gastown/internal/tmux"
 	"github.com/steveyegge/gastown/internal/util"
 )
 
@@ -39,19 +39,19 @@ type Boot struct {
 	townRoot   string
 	bootDir    string // ~/gt/deacon/dogs/boot/
 	deaconDir  string // ~/gt/deacon/
-	tmux       *tmux.Tmux
+	sp         session.Provider
 	degraded   bool
 	lockHandle *flock.Flock // held during triage execution
 }
 
 // New creates a new Boot manager.
-func New(townRoot string) *Boot {
+func New(townRoot string, sp session.Provider) *Boot {
 	return &Boot{
-		townRoot:  townRoot,
-		bootDir:   filepath.Join(townRoot, "deacon", "dogs", "boot"),
+		townRoot: townRoot,
+		bootDir:  filepath.Join(townRoot, "deacon", "dogs", "boot"),
 		deaconDir: filepath.Join(townRoot, "deacon"),
-		tmux:      tmux.NewTmux(),
-		degraded:  os.Getenv("GT_DEGRADED") == "true",
+		sp:       sp,
+		degraded: os.Getenv("GT_DEGRADED") == "true",
 	}
 }
 
@@ -76,9 +76,9 @@ func (b *Boot) IsRunning() bool {
 	return b.IsSessionAlive()
 }
 
-// IsSessionAlive checks if the Boot tmux session exists.
+// IsSessionAlive checks if the Boot session exists.
 func (b *Boot) IsSessionAlive() bool {
-	has, err := b.tmux.HasSession(session.BootSessionName())
+	has, err := b.sp.Exists(context.Background(), session.BootSessionName())
 	return err == nil && has
 }
 
@@ -168,10 +168,9 @@ func (b *Boot) Spawn(agentOverride string) error {
 
 // spawnTmux spawns Boot in a tmux session.
 func (b *Boot) spawnTmux(agentOverride string) error {
+	ctx := context.Background()
 	// Kill any stale session first (Boot is ephemeral).
-	if b.IsSessionAlive() {
-		_ = b.tmux.KillSessionWithProcesses(session.BootSessionName())
-	}
+	_ = b.sp.Stop(ctx, session.BootSessionName(), false)
 
 	// Ensure boot directory exists (it should have CLAUDE.md with Boot context)
 	if err := b.EnsureDir(); err != nil {
@@ -179,7 +178,7 @@ func (b *Boot) spawnTmux(agentOverride string) error {
 	}
 
 	// Use unified session lifecycle for config → settings → command → create → env.
-	_, err := session.StartSession(b.tmux, session.SessionConfig{
+	_, err := session.StartSession(ctx, b.sp, session.SessionConfig{
 		SessionID: session.BootSessionName(),
 		WorkDir:   b.bootDir,
 		Role:      "boot",
@@ -231,7 +230,7 @@ func (b *Boot) DeaconDir() string {
 	return b.deaconDir
 }
 
-// Tmux returns the tmux manager.
-func (b *Boot) Tmux() *tmux.Tmux {
-	return b.tmux
+// Provider returns the session provider.
+func (b *Boot) Provider() session.Provider {
+	return b.sp
 }

@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 	agentconfig "github.com/steveyegge/gastown/internal/config"
 	"github.com/steveyegge/gastown/internal/daemon"
+	"github.com/steveyegge/gastown/internal/session"
 	"github.com/steveyegge/gastown/internal/style"
 	"github.com/steveyegge/gastown/internal/templates"
 	"github.com/steveyegge/gastown/internal/util"
@@ -379,7 +380,7 @@ func runDaemonRun(cmd *cobra.Command, args []string) error {
 	os.Setenv("BD_ACTOR", "daemon")
 
 	config := daemon.DefaultConfig(townRoot)
-	d, err := daemon.New(config)
+	d, err := daemon.New(config, session.GetDefaultProvider(townRoot))
 	if err != nil {
 		return fmt.Errorf("creating daemon: %w", err)
 	}
