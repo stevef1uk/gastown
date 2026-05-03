@@ -17,10 +17,11 @@ import (
 // NatsProvider implements session.Provider using NATS for coordination
 // and direct OS processes for execution.
 type NatsProvider struct {
-	townRoot string
-	natsURL  string
-	nc       *nats.Conn
-	mu       sync.RWMutex
+	townRoot     string
+	natsURL      string
+	nc           *nats.Conn
+	mu           sync.RWMutex
+	lastActivity map[string]time.Time // sessionID -> last activity timestamp
 }
 
 // NewNatsProvider creates a new NatsProvider.
@@ -40,9 +41,10 @@ func NewNatsProvider(townRoot string, natsURL string) (*NatsProvider, error) {
 	}
 
 	return &NatsProvider{
-		townRoot: townRoot,
-		natsURL:  natsURL,
-		nc:       nc,
+		townRoot:     townRoot,
+		natsURL:      natsURL,
+		nc:           nc,
+		lastActivity: make(map[string]time.Time),
 	}, nil
 }
 
@@ -56,7 +58,14 @@ func (p *NatsProvider) IsAvailable() bool {
 	return p.nc != nil && p.nc.IsConnected()
 }
 
+func (p *NatsProvider) recordActivity(sessionID string) {
+	p.mu.Lock()
+	p.lastActivity[sessionID] = time.Now()
+	p.mu.Unlock()
+}
+
 func (p *NatsProvider) Start(ctx context.Context, sessionID, workDir, command string, env map[string]string) error {
+	p.recordActivity(sessionID)
 	gtPath, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("finding executable: %w", err)
@@ -177,6 +186,7 @@ func (p *NatsProvider) List(ctx context.Context) ([]string, error) {
 }
 
 func (p *NatsProvider) Inject(ctx context.Context, sessionID string, data string) error {
+	p.recordActivity(sessionID)
 	// Publish to the input subject of the session
 	subject := fmt.Sprintf("gt.session.%s.input", sessionID)
 	return p.nc.Publish(subject, []byte(data))
@@ -248,15 +258,28 @@ func (p *NatsProvider) getPanePID(name string) (string, error) {
 	return strings.TrimSpace(string(data)), nil
 }
 
-// IsIdle returns true if the session process exists (no active busy detection yet).
+// IsIdle returns true if the session has had no activity for 30 seconds.
+// Activity is tracked via Start, Inject, and SendKeysDebounced calls.
 func (p *NatsProvider) IsIdle(ctx context.Context, sessionID string) (bool, error) {
 	exists, err := p.Exists(ctx, sessionID)
 	if err != nil {
 		return false, err
 	}
-	// For now, consider the session idle if it exists
-	// TODO: Implement real idle detection via NATS heartbeat
-	return exists, nil
+	if !exists {
+		return false, nil
+	}
+
+	p.mu.RLock()
+	lastAct, ok := p.lastActivity[sessionID]
+	p.mu.RUnlock()
+
+	if !ok {
+		// No activity recorded — assume idle
+		return true, nil
+	}
+
+	// Idle if no activity for 30 seconds
+	return time.Since(lastAct) > 30*time.Second, nil
 }
 
 // CapturePane returns the last N lines from the session log file.
@@ -294,6 +317,7 @@ func (p *NatsProvider) AttachSession(ctx context.Context, sessionID string) erro
 
 // SendKeysDebounced publishes input to the session via NATS.
 func (p *NatsProvider) SendKeysDebounced(ctx context.Context, sessionID string, keys string, debounceMs int) error {
+	p.recordActivity(sessionID)
 	// NATS doesn't need debouncing at the transport level;
 	// the caller handles debouncing. Just publish.
 	subject := fmt.Sprintf("gt.session.%s.input", sessionID)
