@@ -34,6 +34,59 @@ func TestClaudeSettingsCheck_NoSettingsFiles(t *testing.T) {
 	}
 }
 
+func TestClaudeSettingsCheck_NonClaudeAgent(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Write town settings with default_agent=opencode
+	settingsDir := filepath.Join(tmpDir, "settings")
+	os.MkdirAll(settingsDir, 0755)
+	settings := []byte(`{"type":"town-settings","version":1,"default_agent":"opencode"}`)
+	if err := os.WriteFile(filepath.Join(settingsDir, "config.json"), settings, 0644); err != nil {
+		t.Fatalf("failed to write town settings: %v", err)
+	}
+
+	// Create mayor and deacon dirs without .opencode
+	os.MkdirAll(filepath.Join(tmpDir, "mayor"), 0755)
+	os.MkdirAll(filepath.Join(tmpDir, "deacon"), 0755)
+
+	check := NewClaudeSettingsCheck()
+	ctx := &CheckContext{TownRoot: tmpDir}
+
+	result := check.Run(ctx)
+
+	if result.Status != StatusError {
+		t.Errorf("expected StatusError when .opencode dirs missing, got %v", result.Status)
+	}
+	if !strings.Contains(result.Message, "opencode") {
+		t.Errorf("expected message to mention opencode, got %q", result.Message)
+	}
+}
+
+func TestClaudeSettingsCheck_NonClaudeAgent_Ok(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Write town settings with default_agent=opencode
+	settingsDir := filepath.Join(tmpDir, "settings")
+	os.MkdirAll(settingsDir, 0755)
+	settings := []byte(`{"type":"town-settings","version":1,"default_agent":"opencode"}`)
+	if err := os.WriteFile(filepath.Join(settingsDir, "config.json"), settings, 0644); err != nil {
+		t.Fatalf("failed to write town settings: %v", err)
+	}
+
+	// Create mayor and deacon dirs WITH .opencode
+	os.MkdirAll(filepath.Join(tmpDir, "mayor", ".opencode"), 0755)
+	os.MkdirAll(filepath.Join(tmpDir, "deacon", ".opencode"), 0755)
+
+	check := NewClaudeSettingsCheck()
+	ctx := &CheckContext{TownRoot: tmpDir}
+
+	result := check.Run(ctx)
+
+	if result.Status != StatusOK {
+		t.Errorf("expected StatusOK when .opencode dirs present, got %v: %s", result.Status, result.Message)
+	}
+}
+
 // createValidSettings creates a valid settings file with all required elements.
 // The filename should be settings.json for valid tests.
 func createValidSettings(t *testing.T, path string) {

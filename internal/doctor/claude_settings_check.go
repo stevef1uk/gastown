@@ -57,9 +57,28 @@ func NewClaudeSettingsCheck() *ClaudeSettingsCheck {
 	}
 }
 
-// Run checks all Claude settings files for staleness or missing settings.json.
+// Run checks all agent settings files for staleness or missing configuration.
+// Agent-aware: validates Claude Code .claude/settings.json or OpenCode .opencode/plugins/gastown.js
+// depending on the town's default_agent setting.
 func (c *ClaudeSettingsCheck) Run(ctx *CheckContext) *CheckResult {
 	c.staleSettings = nil
+
+	// Determine the configured agent.
+	townSettings, _ := config.LoadOrCreateTownSettings(config.TownSettingsPath(ctx.TownRoot))
+	agentName := "claude"
+	if townSettings != nil && townSettings.DefaultAgent != "" {
+		agentName = townSettings.DefaultAgent
+	}
+	preset := config.GetAgentPresetByName(agentName)
+	configDir := ".claude"
+	if preset != nil && preset.ConfigDir != "" {
+		configDir = preset.ConfigDir
+	}
+
+	// For non-Claude agents, run a simplified check for the agent's config directory.
+	if agentName != "claude" {
+		return c.runNonClaudeCheck(ctx.TownRoot, agentName, configDir)
+	}
 
 	var details []string
 	var hasModifiedFiles bool
@@ -162,6 +181,63 @@ func (c *ClaudeSettingsCheck) Run(ctx *CheckContext) *CheckResult {
 		Message: message,
 		Details: details,
 		FixHint: fixHint,
+	}
+}
+
+// runNonClaudeCheck validates settings for non-Claude agents (e.g. opencode).
+// Checks that the agent's config directory exists and contains expected files.
+func (c *ClaudeSettingsCheck) runNonClaudeCheck(townRoot string, agentName string, configDir string) *CheckResult {
+	var missing []string
+
+	// Check town-level agents
+	for _, role := range []string{"mayor", "deacon"} {
+		roleDir := filepath.Join(townRoot, role, configDir)
+		if !dirExists(roleDir) {
+			if dirExists(filepath.Join(townRoot, role)) {
+				missing = append(missing, fmt.Sprintf("%s/%s: missing %s/ directory", role, configDir, configDir))
+			}
+		}
+	}
+
+	// Check rig-level agents
+	entries, err := os.ReadDir(townRoot)
+	if err == nil {
+		for _, entry := range entries {
+			if !entry.IsDir() {
+				continue
+			}
+			rigName := entry.Name()
+			if rigName == "mayor" || rigName == "deacon" || rigName == "daemon" ||
+				rigName == ".git" || rigName == "docs" || rigName[0] == '.' {
+				continue
+			}
+			rigPath := filepath.Join(townRoot, rigName)
+			for _, role := range []string{"witness", "refinery", "crew", "polecats"} {
+				roleDir := filepath.Join(rigPath, role, configDir)
+				if dirExists(roleDir) {
+					continue
+				}
+				if dirExists(filepath.Join(rigPath, role)) {
+					missing = append(missing, fmt.Sprintf("%s/%s/%s: missing %s/ directory", rigName, role, configDir, configDir))
+				}
+			}
+		}
+	}
+
+	if len(missing) == 0 {
+		return &CheckResult{
+			Name:    c.Name(),
+			Status:  StatusOK,
+			Message: fmt.Sprintf("All %s config directories present", agentName),
+		}
+	}
+
+	return &CheckResult{
+		Name:    c.Name(),
+		Status:  StatusError,
+		Message: fmt.Sprintf("Found %d missing %s config directory(s)", len(missing), agentName),
+		Details: missing,
+		FixHint: fmt.Sprintf("Run 'gt up --restore' to create %s config directories", agentName),
 	}
 }
 
