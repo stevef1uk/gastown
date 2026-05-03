@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -181,10 +182,9 @@ func categorizeSession(name string) *AgentSession {
 	return sess
 }
 
-// getAgentSessions returns all categorized Gas Town sessions from the town socket.
-func getAgentSessions(includePolecats bool) ([]*AgentSession, error) {
-	t := tmux.NewTmux()
-	sessions, err := t.ListSessions()
+// getAgentSessions returns all categorized Gas Town sessions from the provider.
+func getAgentSessions(sp session.Provider, includePolecats bool) ([]*AgentSession, error) {
+	sessions, err := sp.List(context.Background())
 	if err != nil {
 		return nil, err
 	}
@@ -538,7 +538,9 @@ func runAgents(cmd *cobra.Command, args []string) error {
 }
 
 func runAgentsList(cmd *cobra.Command, args []string) error {
-	agents, err := getAgentSessions(agentsAllFlag)
+	townRoot, _ := workspace.FindFromCwd()
+	sp := session.GetDefaultProvider(townRoot)
+	agents, err := getAgentSessions(sp, agentsAllFlag)
 	if err != nil {
 		return fmt.Errorf("listing sessions: %w", err)
 	}

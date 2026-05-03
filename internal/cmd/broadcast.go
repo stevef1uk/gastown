@@ -1,13 +1,14 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/steveyegge/gastown/internal/session"
 	"github.com/steveyegge/gastown/internal/style"
-	"github.com/steveyegge/gastown/internal/tmux"
 	"github.com/steveyegge/gastown/internal/workspace"
 )
 
@@ -51,8 +52,11 @@ func runBroadcast(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("message cannot be empty")
 	}
 
+	townRoot, _ := workspace.FindFromCwd()
+	sp := session.GetDefaultProvider(townRoot)
+
 	// Get all agent sessions (including polecats)
-	agents, err := getAgentSessions(true)
+	agents, err := getAgentSessions(sp, true)
 	if err != nil {
 		return fmt.Errorf("listing sessions: %w", err)
 	}
@@ -102,8 +106,6 @@ func runBroadcast(cmd *cobra.Command, args []string) error {
 	}
 
 	// Send nudges
-	t := tmux.NewTmux()
-	townRoot, _ := workspace.FindFromCwd()
 	var succeeded, failed, skipped int
 	var failures []string
 
@@ -121,7 +123,7 @@ func runBroadcast(cmd *cobra.Command, args []string) error {
 			}
 		}
 
-		if err := t.NudgeSession(agent.Name, message); err != nil {
+		if err := sp.Inject(context.Background(), agent.Name, message); err != nil {
 			failed++
 			failures = append(failures, fmt.Sprintf("%s: %v", agentName, err))
 			fmt.Printf("  %s %s %s\n", style.ErrorPrefix, AgentTypeIcons[agent.Type], agentName)

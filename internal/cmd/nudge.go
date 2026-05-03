@@ -629,8 +629,10 @@ func runNudgeChannel(channelName, message, sender string) error {
 		return fmt.Errorf("nudge channel %q has no members", channelName)
 	}
 
+	sp := session.GetDefaultProvider(townRoot)
+
 	// Get all running sessions for pattern matching
-	agents, err := getAgentSessions(true)
+	agents, err := getAgentSessions(sp, true)
 	if err != nil {
 		return fmt.Errorf("listing sessions: %w", err)
 	}
