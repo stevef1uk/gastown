@@ -50,6 +50,11 @@ const (
 	// to redirect traffic to api.groq.com. GROQ_API_KEY must be set in the shell
 	// environment — it is read dynamically and never stored in config files.
 	AgentGroqCompound AgentPreset = "groq-compound"
+	// AgentGT is the built-in headless Gas Town agent. It is a lightweight
+	// one-shot worker that drains nudges, calls a local LLM via OpenAI-compatible
+	// API, executes shell commands, and exits. Designed for polecats running on
+	// servers without TUI support (no tmux, no interactive terminal).
+	AgentGT AgentPreset = "gt-agent"
 )
 
 // AgentPresetInfo contains the configuration details for an agent preset.
@@ -514,6 +519,23 @@ var builtinPresets = map[AgentPreset]*AgentPresetInfo{
 		ReadyDelayMs:         10000,
 		InstructionsFile:     "CLAUDE.md",
 		HasTurnBoundaryDrain: true,
+	},
+	// AgentGT is the built-in headless agent. It runs as a one-shot worker:
+	// drains nudges, calls LLM, executes commands, calls gt done, and exits.
+	// No TUI, no hooks, no prompt detection — pure automation for servers.
+	AgentGT: {
+		Name:                AgentGT,
+		Command:             "gt-agent",
+		Args:                []string{},
+		ProcessNames:        []string{"gt-agent"},
+		SessionIDEnv:        "",
+		ResumeFlag:          "",
+		ResumeStyle:         "",
+		SupportsHooks:       false,
+		SupportsForkSession: false,
+		PromptMode:          "env",
+		ReadyDelayMs:        1000,
+		InstructionsFile:    "AGENTS.md",
 	},
 }
 
