@@ -9,7 +9,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/nats-io/nats.go"
@@ -263,9 +262,7 @@ func (p *NatsProvider) IsAgentRunning(ctx context.Context, id string) (bool, err
 	if err != nil {
 		return false, nil
 	}
-	// Check if process exists by sending signal 0
-	err = syscall.Kill(pid, 0)
-	return err == nil, nil
+	return processExists(pid), nil
 }
 
 func (p *NatsProvider) CleanupOrphanedSessions(isGTSession func(string) bool) (int, error) {

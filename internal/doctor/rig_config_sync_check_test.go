@@ -2,6 +2,7 @@ package doctor
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 )
@@ -100,6 +101,11 @@ func TestRigConfigSyncCheck_FixCreatesConfig(t *testing.T) {
 
 	if result.Status != StatusWarning {
 		t.Errorf("expected StatusWarning, got %v", result.Status)
+	}
+
+	// Fix requires bd binary — skip if not available in test environment
+	if _, err := exec.LookPath("bd"); err != nil {
+		t.Skip("bd not installed, skipping fix test")
 	}
 
 	// Fix

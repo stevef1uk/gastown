@@ -278,7 +278,7 @@ func TestKillDefaultPrefixGhosts_PolecatDuplicate_Killed(t *testing.T) {
 	if !found {
 		t.Errorf("expected gt-furiosa to be killed (duplicate), kills: %v", kills)
 	}
-	if !strings.Contains(env.logBuf.String(), "Killing duplicate ghost polecat session gt-furiosa") {
+	if !strings.Contains(env.logBuf.String(), "Session divergence cleanup: killing ghost gt-furiosa") {
 		t.Errorf("expected duplicate kill log message, got: %s", env.logBuf.String())
 	}
 }
