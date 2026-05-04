@@ -177,8 +177,9 @@ func run() error {
 
 	fmt.Printf("[gt-agent] Processing %d work item(s)\n", len(workItems))
 
-	// Load context via gt prime
-	primeOut, _ := exec.Command(gtBin, "prime").Output()
+	// Load context via gt prime --hook (enables session ID handling,
+	// agent-ready signaling, and work context injection)
+	primeOut, _ := exec.Command(gtBin, "prime", "--hook").Output()
 
 	// Build system prompt
 	systemPrompt := fmt.Sprintf(`You are a Gas Town agent with role: %s.

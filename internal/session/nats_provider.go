@@ -6,8 +6,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/nats-io/nats.go"
@@ -253,10 +255,17 @@ func (p *NatsProvider) Configure(ctx context.Context, sessionID string, cfg any)
 }
 
 func (p *NatsProvider) IsAgentRunning(ctx context.Context, id string) (bool, error) {
-	// For NATS provider, we don't yet have a robust way to check if the agent
-	// process is alive other than its heartbeat, but we can check if we have
-	// a PID file for it.
-	return true, nil // Placeholder
+	pidStr, err := p.getPanePID(id)
+	if err != nil || pidStr == "" {
+		return false, nil
+	}
+	pid, err := strconv.Atoi(pidStr)
+	if err != nil {
+		return false, nil
+	}
+	// Check if process exists by sending signal 0
+	err = syscall.Kill(pid, 0)
+	return err == nil, nil
 }
 
 func (p *NatsProvider) CleanupOrphanedSessions(isGTSession func(string) bool) (int, error) {

@@ -14,7 +14,6 @@ import (
 	"github.com/gofrs/flock"
 	"github.com/spf13/cobra"
 	"github.com/steveyegge/gastown/internal/config"
-	"github.com/steveyegge/gastown/internal/constants"
 	"github.com/steveyegge/gastown/internal/crew"
 	"github.com/steveyegge/gastown/internal/daemon"
 	"github.com/steveyegge/gastown/internal/doltserver"
@@ -22,10 +21,12 @@ import (
 	"github.com/steveyegge/gastown/internal/git"
 	"github.com/steveyegge/gastown/internal/natsserver"
 	"github.com/steveyegge/gastown/internal/polecat"
+	"github.com/steveyegge/gastown/internal/refinery"
 	"github.com/steveyegge/gastown/internal/rig"
 	"github.com/steveyegge/gastown/internal/session"
 	"github.com/steveyegge/gastown/internal/style"
 	"github.com/steveyegge/gastown/internal/tmux"
+	"github.com/steveyegge/gastown/internal/witness"
 	"github.com/steveyegge/gastown/internal/workspace"
 )
 
@@ -100,10 +101,9 @@ func runDown(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("not in a Gas Town workspace: %w", err)
 	}
 
+	sp := session.GetDefaultProvider(townRoot)
 	t := tmux.NewTmux()
-	if !t.IsAvailable() {
-		return fmt.Errorf("tmux not available (is tmux installed and on PATH?)")
-	}
+	tmuxAvailable := t.IsAvailable()
 
 	// Phase 0: Acquire shutdown lock (skip for dry-run)
 	if !downDryRun {
@@ -130,7 +130,9 @@ func runDown(cmd *cobra.Command, args []string) error {
 		// By default, tmux exits when there are no sessions (exit-empty on).
 		// This ensures the server stays running for subsequent `gt up`.
 		// Ignore errors - if there's no server, nothing to configure.
-		_ = t.SetExitEmpty(false)
+		if tmuxAvailable {
+			_ = t.SetExitEmpty(false)
+		}
 	}
 	allOK := true
 
@@ -140,6 +142,18 @@ func runDown(cmd *cobra.Command, args []string) error {
 	}
 
 	rigs := discoverRigs(townRoot)
+
+	// Load rig config for manager-based session operations
+	var rigMgr *rig.Manager
+	if len(rigs) > 0 {
+		rigsConfigPath := filepath.Join(townRoot, "mayor", "rigs.json")
+		rigsConfig, _ := config.LoadRigsConfig(rigsConfigPath)
+		if rigsConfig == nil {
+			rigsConfig = &config.RigsConfig{Rigs: make(map[string]config.RigEntry)}
+		}
+		g := git.NewGit(townRoot)
+		rigMgr = rig.NewManager(townRoot, rigsConfig, g)
+	}
 
 	// Phase 0.5: Stop polecats if --polecats
 	if downPolecats {
@@ -167,7 +181,7 @@ func runDown(cmd *cobra.Command, args []string) error {
 
 	// Phase 0.6: Stop crew member sessions.
 	// Crew sessions consume tokens and must be stopped during any shutdown.
-	crewStopped := stopAllCrew(t, townRoot, rigs, downDryRun)
+	crewStopped := stopAllCrew(townRoot, rigs, downDryRun)
 	if downDryRun {
 		if crewStopped > 0 {
 			printDownStatus("Crew", true, fmt.Sprintf("%d would stop", crewStopped))
@@ -180,53 +194,68 @@ func runDown(cmd *cobra.Command, args []string) error {
 
 	// Phase 1: Stop refineries
 	for _, rigName := range rigs {
-		sessionName := session.RefinerySessionName(session.PrefixFor(rigName))
+		if rigMgr == nil {
+			continue
+		}
+		r, err := rigMgr.GetRig(rigName)
+		if err != nil {
+			continue
+		}
+		refMgr := refinery.NewManager(r)
 		if downDryRun {
-			if running, _ := t.HasSession(sessionName); running {
+			if running, _ := refMgr.IsRunning(); running {
 				printDownStatus(fmt.Sprintf("Refinery (%s)", rigName), true, "would stop")
 			}
 			continue
 		}
-		wasRunning, err := stopSession(t, sessionName)
-		if err != nil {
+		err = refMgr.Stop()
+		if err == refinery.ErrNotRunning {
+			printDownStatus(fmt.Sprintf("Refinery (%s)", rigName), true, "not running")
+		} else if err != nil {
 			printDownStatus(fmt.Sprintf("Refinery (%s)", rigName), false, err.Error())
 			allOK = false
-		} else if wasRunning {
-			printDownStatus(fmt.Sprintf("Refinery (%s)", rigName), true, "stopped")
 		} else {
-			printDownStatus(fmt.Sprintf("Refinery (%s)", rigName), true, "not running")
+			printDownStatus(fmt.Sprintf("Refinery (%s)", rigName), true, "stopped")
 		}
 	}
 
 	// Phase 2: Stop witnesses
 	for _, rigName := range rigs {
-		sessionName := session.WitnessSessionName(session.PrefixFor(rigName))
+		if rigMgr == nil {
+			continue
+		}
+		r, err := rigMgr.GetRig(rigName)
+		if err != nil {
+			continue
+		}
+		witMgr := witness.NewManager(r)
 		if downDryRun {
-			if running, _ := t.HasSession(sessionName); running {
+			if running, _ := witMgr.IsRunning(); running {
 				printDownStatus(fmt.Sprintf("Witness (%s)", rigName), true, "would stop")
 			}
 			continue
 		}
-		wasRunning, err := stopSession(t, sessionName)
-		if err != nil {
+		err = witMgr.Stop()
+		if err == witness.ErrNotRunning {
+			printDownStatus(fmt.Sprintf("Witness (%s)", rigName), true, "not running")
+		} else if err != nil {
 			printDownStatus(fmt.Sprintf("Witness (%s)", rigName), false, err.Error())
 			allOK = false
-		} else if wasRunning {
-			printDownStatus(fmt.Sprintf("Witness (%s)", rigName), true, "stopped")
 		} else {
-			printDownStatus(fmt.Sprintf("Witness (%s)", rigName), true, "not running")
+			printDownStatus(fmt.Sprintf("Witness (%s)", rigName), true, "stopped")
 		}
 	}
 
 	// Phase 3: Stop town-level sessions (Mayor, Boot, Deacon)
+	ctx := context.Background()
 	for _, ts := range session.TownSessions() {
 		if downDryRun {
-			if running, _ := t.HasSession(ts.SessionID); running {
+			if running, _ := sp.Exists(ctx, ts.SessionID); running {
 				printDownStatus(ts.Name, true, "would stop")
 			}
 			continue
 		}
-		stopped, err := session.StopTownSession(session.NewTmuxProvider(t), ts, downForce)
+		stopped, err := session.StopTownSession(sp, ts, downForce)
 		if err != nil {
 			printDownStatus(ts.Name, false, err.Error())
 			allOK = false
@@ -576,7 +605,7 @@ func stopAllPolecats(townRoot string, rigNames []string, force bool, dryRun bool
 // stopAllCrew stops all crew member sessions across all rigs.
 // Stops are performed in parallel for faster teardown.
 // Returns the number of crew sessions stopped (or would be stopped in dry-run).
-func stopAllCrew(t *tmux.Tmux, townRoot string, rigNames []string, dryRun bool) int {
+func stopAllCrew(townRoot string, rigNames []string, dryRun bool) int {
 	stopped := 0
 
 	rigsConfigPath := filepath.Join(townRoot, "mayor", "rigs.json")
@@ -590,9 +619,8 @@ func stopAllCrew(t *tmux.Tmux, townRoot string, rigNames []string, dryRun bool) 
 
 	// Collect all running crew sessions to stop.
 	type crewTarget struct {
-		rigName   string
-		name      string
-		sessionID string
+		rigName string
+		name    string
 	}
 	var targets []crewTarget
 
@@ -609,8 +637,7 @@ func stopAllCrew(t *tmux.Tmux, townRoot string, rigNames []string, dryRun bool) 
 		}
 
 		for _, worker := range workers {
-			sessionID := crewMgr.SessionName(worker.Name)
-			running, err := t.HasSession(sessionID)
+			running, err := crewMgr.IsRunning(worker.Name)
 			if err != nil || !running {
 				continue
 			}
@@ -620,7 +647,7 @@ func stopAllCrew(t *tmux.Tmux, townRoot string, rigNames []string, dryRun bool) 
 				fmt.Printf("  %s [%s] crew/%s would stop\n", style.Dim.Render("○"), rigName, worker.Name)
 				continue
 			}
-			targets = append(targets, crewTarget{rigName: rigName, name: worker.Name, sessionID: sessionID})
+			targets = append(targets, crewTarget{rigName: rigName, name: worker.Name})
 		}
 	}
 
@@ -641,7 +668,13 @@ func stopAllCrew(t *tmux.Tmux, townRoot string, rigNames []string, dryRun bool) 
 		wg.Add(1)
 		go func(i int, tgt crewTarget) {
 			defer wg.Done()
-			_, err := stopSession(t, tgt.sessionID)
+			r, err := rigMgr.GetRig(tgt.rigName)
+			if err != nil {
+				results[i] = crewResult{rigName: tgt.rigName, name: tgt.name, err: err}
+				return
+			}
+			crewMgr := crew.NewManager(r, g)
+			err = crewMgr.Stop(tgt.name)
 			results[i] = crewResult{rigName: tgt.rigName, name: tgt.name, err: err}
 		}(i, tgt)
 	}
@@ -670,28 +703,7 @@ func printDownStatus(name string, ok bool, detail string) {
 	}
 }
 
-// stopSession gracefully stops a tmux session.
-// Returns (wasRunning, error) - wasRunning is true if session existed and was stopped.
-func stopSession(t *tmux.Tmux, sessionName string) (bool, error) {
-	running, err := t.HasSession(sessionName)
-	if err != nil {
-		return false, err
-	}
-	if !running {
-		return false, nil // Already stopped
-	}
 
-	// Try graceful shutdown first (Ctrl-C, best-effort interrupt)
-	if !downForce {
-		_ = t.SendKeysRaw(sessionName, "C-c")
-		if session.WaitForSessionExit(session.NewTmuxProvider(t), sessionName, constants.GracefulShutdownTimeout) {
-			return true, nil // Process exited gracefully
-		}
-	}
-
-	// Kill the session (with explicit process termination to prevent orphans)
-	return true, t.KillSessionWithProcesses(sessionName)
-}
 
 // acquireShutdownLock prevents concurrent shutdowns.
 // Returns the lock (caller must defer Unlock()) or error if lock held.
