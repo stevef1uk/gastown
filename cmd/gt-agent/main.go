@@ -269,21 +269,8 @@ func run() error {
 		// Load context via gt prime --hook
 		primeOut, _ := exec.Command(gtBin, "prime", "--hook").Output()
 
-		// Build system prompt with state
-		systemPrompt := fmt.Sprintf(`You are a Gas Town agent with role: %s.
-
-You have access to shell commands. Execute work step by step.
-Rules:
-1. Only run commands that are standard Unix utilities or known to exist (git, ls, cat, grep, etc.)
-2. Do NOT invent commands or tools that don't exist
-3. Do NOT run "gt mail inbox" or other status-checking commands — focus on the assigned work
-4. When you need to run a command, output it on a line starting with "CMD: " followed by the shell command
-5. After all commands, output "DONE:" followed by a summary of what was accomplished
-6. If you cannot complete the work, output "DONE: Could not complete because ..."
-7. You are patrol cycle #%d for this agent session.
-
-Context:
-%s`, role, state.PatrolCount, string(primeOut))
+		// Build role-specific system prompt
+		systemPrompt := buildSystemPrompt(role, state.PatrolCount, string(primeOut))
 
 		// Build user prompt from work items
 		userPrompt := "Execute the following work and report results:\n\n"
@@ -331,13 +318,19 @@ Context:
 			fmt.Printf("[gt-agent] Summary: %s\n", summary)
 		}
 
-		// Call gt done
-		fmt.Println("[gt-agent] Calling gt done...")
-		if out, err := exec.Command(gtBin, "done").CombinedOutput(); err != nil {
-			fmt.Fprintf(os.Stderr, "[gt-agent] gt done failed: %v\n%s\n", err, string(out))
-			extraordinary = true
-		} else {
-			fmt.Printf("[gt-agent] gt done: %s\n", strings.TrimSpace(string(out)))
+		// Call role-specific post-work command
+		postCmd := postWorkCommand(role, summary)
+		fmt.Printf("[gt-agent] Calling %s...\n", postCmd)
+		parts := strings.Fields(postCmd)
+		if len(parts) > 0 {
+			cmd := exec.Command(gtBin, parts...)
+			out, err := cmd.CombinedOutput()
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "[gt-agent] %s failed: %v\n%s\n", postCmd, err, string(out))
+				extraordinary = true
+			} else {
+				fmt.Printf("[gt-agent] %s: %s\n", postCmd, strings.TrimSpace(string(out)))
+			}
 		}
 
 		// Mark extraordinary if any error occurred
@@ -361,6 +354,95 @@ Context:
 
 	fmt.Println("[gt-agent] Event loop exited cleanly")
 	return nil
+}
+
+// buildSystemPrompt returns a role-specific system prompt for the LLM.
+func buildSystemPrompt(role string, patrolCount int, primeContext string) string {
+	baseRules := `You have access to shell commands. Execute work step by step.
+Rules:
+1. Only run commands that are standard Unix utilities or known to exist (git, ls, cat, grep, etc.)
+2. Do NOT invent commands or tools that don't exist
+3. When you need to run a command, output it on a line starting with "CMD: " followed by the shell command
+4. After all commands, output "DONE:" followed by a summary of what was accomplished
+5. If you cannot complete the work, output "DONE: Could not complete because ..."
+6. You are patrol cycle #%d for this agent session.`
+
+	switch role {
+	case "deacon":
+		return fmt.Sprintf(`You are a Gas Town DEACON. You execute the mol-deacon-patrol formula to monitor and maintain town health.
+
+%s
+7. Execute ALL patrol formula steps in order. Do NOT skip steps — even "boring" ones.
+8. Run "gt deacon heartbeat" as the FIRST command of every patrol cycle.
+9. Include a step audit in your summary: "Steps: heartbeat OK | inbox OK | orphan-cleanup OK | ..."
+10. Run "gt patrol report --summary '<brief>'" as the LAST command to close the patrol wisp.
+11. If you encounter errors, note them and continue with remaining steps.
+
+Context:
+%s`, fmt.Sprintf(baseRules, patrolCount), primeContext)
+
+	case "witness":
+		return fmt.Sprintf(`You are a Gas Town WITNESS. You monitor polecats and handle lifecycle requests.
+
+%s
+7. Check all polecats with "gt polecat list" and "gt session status".
+8. Nudge stuck polecats toward completion with "gt nudge <rig>/<name> 'message'".
+9. Process LIFECYCLE requests (shutdown, restart) and SPAWN notifications.
+10. Run "gt patrol report --summary '<brief>'" at the end of each cycle.
+11. Do NOT close foreign wisps — only close wisps YOU created.
+
+Context:
+%s`, fmt.Sprintf(baseRules, patrolCount), primeContext)
+
+	case "mayor":
+		return fmt.Sprintf(`You are a Gas Town MAYOR. You coordinate work across all rigs.
+
+%s
+7. Dispatch work with "gt sling <bead-id> <rig>" for code changes.
+8. Monitor convoys with "gt convoy list".
+9. Handle escalations from witnesses.
+10. Undock rigs when work is requested, dock them when idle.
+11. Use "gt nudge" for routine communication, "gt mail send" only for escalations/handoffs.
+
+Context:
+%s`, fmt.Sprintf(baseRules, patrolCount), primeContext)
+
+	case "refinery":
+		return fmt.Sprintf(`You are a Gas Town REFINERY. You process the merge queue.
+
+%s
+7. Check merge queue with "gt refinery queue" or equivalent.
+8. Review and merge approved MRs.
+9. Address CI failures and retry as needed.
+10. Call PostMerge() after successful merges.
+
+Context:
+%s`, fmt.Sprintf(baseRules, patrolCount), primeContext)
+
+	default:
+		// Default: polecat or generic worker
+		return fmt.Sprintf(`You are a Gas Town agent with role: %s.
+
+%s
+7. Focus on the assigned work. Do NOT run status-checking commands unless needed for your task.
+8. Call "gt done" when your work is complete.
+
+Context:
+%s`, role, fmt.Sprintf(baseRules, patrolCount), primeContext)
+	}
+}
+
+// postWorkCommand returns the role-specific command to call after work completes.
+func postWorkCommand(role, summary string) string {
+	switch role {
+	case "deacon", "witness":
+		if summary != "" {
+			return fmt.Sprintf("patrol report --summary %q", summary)
+		}
+		return "patrol report"
+	default:
+		return "done"
+	}
 }
 
 // gatherWork collects nudges, hook, and mail into work items.
