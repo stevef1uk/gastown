@@ -238,10 +238,30 @@ func runUp(cmd *cobra.Command, args []string) error {
 	go func() {
 		defer startupWg.Done()
 		cfg := doltserver.DefaultConfig(townRoot)
+
+		// If data dir is missing (fresh install or after cleanup), create it and
+		// initialize the town database so Dolt can start successfully.
 		if _, err := os.Stat(cfg.DataDir); os.IsNotExist(err) {
-			doltSkipped = true
-			return
+			if err := os.MkdirAll(cfg.DataDir, 0755); err != nil {
+				doltDetail = fmt.Sprintf("creating data dir: %v", err)
+				return
+			}
 		}
+		// Ensure town database exists — without at least one DB Dolt exits immediately.
+		townDB := filepath.Join(cfg.DataDir, "hq")
+		if _, err := os.Stat(filepath.Join(townDB, ".dolt")); os.IsNotExist(err) {
+			if err := os.MkdirAll(townDB, 0755); err != nil {
+				doltDetail = fmt.Sprintf("creating town db dir: %v", err)
+				return
+			}
+			cmd := exec.Command("dolt", "init")
+			cmd.Dir = townDB
+			if output, err := cmd.CombinedOutput(); err != nil {
+				doltDetail = fmt.Sprintf("initializing town db: %v\n%s", err, output)
+				return
+			}
+		}
+
 		running, _, _ := doltserver.IsRunning(townRoot)
 		if running {
 			doltOK = true
