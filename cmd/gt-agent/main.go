@@ -374,17 +374,15 @@ func run() error {
 		// Mark extraordinary if any error occurred
 		if extraordinary {
 			state.ExtraordinaryAction = true
-			fmt.Println("[gt-agent] Extraordinary action detected, will handoff soon")
+			fmt.Println("[gt-agent] Extraordinary action detected in this cycle")
 		}
 
 		// Save state after each cycle
 		_ = saveState(stateFile, state)
 
-		// If extraordinary action, exit after this cycle so daemon respawns fresh
-		if state.ExtraordinaryAction {
-			fmt.Println("[gt-agent] Handoff triggered after extraordinary action")
-			break
-		}
+		// Stay in the loop - don't exit on command errors. The agent should
+		// continuously patrol. Only daemon restart or SIGTERM should stop us.
+		// This prevents crash loop backoffs from rapid exit/restart cycles.
 
 		// Brief pause before next poll cycle
 		time.Sleep(2 * time.Second)
@@ -403,7 +401,9 @@ Rules:
 3. When you need to run a command, output it on a line starting with "CMD: " followed by the shell command
 4. After all commands, output "DONE:" followed by a summary of what was accomplished
 5. If you cannot complete the work, output "DONE: Could not complete because ..."
-6. You are patrol cycle #%d for this agent session.`
+6. You are patrol cycle #%d for this agent session.
+7. NEVER output decorative banners, box-drawing characters (═, █, etc.), or emoji-only lines as commands
+8. ONLY output actual executable shell commands after "CMD: " - text that cannot be run in a shell is not a command`
 
 	switch role {
 	case "deacon":
