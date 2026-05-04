@@ -148,7 +148,7 @@ func runDown(cmd *cobra.Command, args []string) error {
 		} else {
 			fmt.Println("Stopping polecats...")
 		}
-		polecatsStopped := stopAllPolecats(t, townRoot, rigs, downForce, downDryRun)
+		polecatsStopped := stopAllPolecats(townRoot, rigs, downForce, downDryRun)
 		if downDryRun {
 			if polecatsStopped > 0 {
 				printDownStatus("Polecats", true, fmt.Sprintf("%d would stop", polecatsStopped))
@@ -492,7 +492,7 @@ func runDown(cmd *cobra.Command, args []string) error {
 // stopAllPolecats stops all polecat sessions across all rigs.
 // Stops are performed in parallel for faster teardown.
 // Returns the number of polecats stopped (or would be stopped in dry-run).
-func stopAllPolecats(t *tmux.Tmux, townRoot string, rigNames []string, force bool, dryRun bool) int {
+func stopAllPolecats(townRoot string, rigNames []string, force bool, dryRun bool) int {
 	stopped := 0
 
 	// Load rigs config
@@ -504,6 +504,7 @@ func stopAllPolecats(t *tmux.Tmux, townRoot string, rigNames []string, force boo
 
 	g := git.NewGit(townRoot)
 	rigMgr := rig.NewManager(townRoot, rigsConfig, g)
+	sp := session.GetDefaultProvider(townRoot)
 
 	if dryRun {
 		for _, rigName := range rigNames {
@@ -511,7 +512,7 @@ func stopAllPolecats(t *tmux.Tmux, townRoot string, rigNames []string, force boo
 			if err != nil {
 				continue
 			}
-			polecatMgr := polecat.NewSessionManager(session.NewTmuxProvider(t), r)
+			polecatMgr := polecat.NewSessionManager(sp, r)
 			infos, err := polecatMgr.ListPolecats()
 			if err != nil {
 				continue
@@ -541,7 +542,7 @@ func stopAllPolecats(t *tmux.Tmux, townRoot string, rigNames []string, force boo
 			continue
 		}
 
-		polecatMgr := polecat.NewSessionManager(session.NewTmuxProvider(t), r)
+		polecatMgr := polecat.NewSessionManager(sp, r)
 		infos, err := polecatMgr.ListPolecats()
 		if err != nil {
 			continue
