@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -25,7 +26,6 @@ import (
 	"github.com/steveyegge/gastown/internal/rig"
 	"github.com/steveyegge/gastown/internal/session"
 	"github.com/steveyegge/gastown/internal/style"
-	"github.com/steveyegge/gastown/internal/tmux"
 	"github.com/steveyegge/gastown/internal/witness"
 	"github.com/steveyegge/gastown/internal/workspace"
 )
@@ -195,15 +195,15 @@ func runStart(cmd *cobra.Command, args []string) error {
 		fmt.Printf("  %s Could not ensure daemon config: %v\n", style.Dim.Render("○"), err)
 	}
 
-	t := tmux.NewTmux()
-
-	// Clean up orphaned tmux sessions before starting new agents.
-	// This prevents session name conflicts and resource accumulation from
-	// zombie sessions (tmux alive but Claude dead).
-	if cleaned, err := t.CleanupOrphanedSessions(session.IsKnownSession); err != nil {
-		fmt.Printf("  %s Could not clean orphaned sessions: %v\n", style.Dim.Render("○"), err)
-	} else if cleaned > 0 {
-		fmt.Printf("  %s Cleaned up %d orphaned session(s)\n", style.Bold.Render("✓"), cleaned)
+	// Clean up orphaned sessions before starting new agents.
+	// For tmux this prevents session name conflicts; for NATS it's a no-op.
+	sp := session.GetDefaultProvider(townRoot)
+	if tp, ok := sp.(*session.TmuxProvider); ok {
+		if cleaned, err := tp.Tmux().CleanupOrphanedSessions(session.IsKnownSession); err != nil {
+			fmt.Printf("  %s Could not clean orphaned sessions: %v\n", style.Dim.Render("○"), err)
+		} else if cleaned > 0 {
+			fmt.Printf("  %s Cleaned up %d orphaned session(s)\n", style.Bold.Render("✓"), cleaned)
+		}
 	}
 
 	fmt.Printf("Starting Gas Town from %s\n\n", style.Dim.Render(townRoot))
@@ -275,7 +275,7 @@ func runStart(cmd *cobra.Command, args []string) error {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			startConfiguredCrew(t, rigs, townRoot, &mu)
+			startConfiguredCrew(rigs, townRoot, &mu)
 		}()
 	}
 
@@ -419,7 +419,7 @@ func startRefineryForRig(r *rig.Rig) string {
 }
 
 // startConfiguredCrew starts crew members configured in rig settings in parallel.
-func startConfiguredCrew(t *tmux.Tmux, rigs []*rig.Rig, townRoot string, mu *sync.Mutex) {
+func startConfiguredCrew(rigs []*rig.Rig, townRoot string, mu *sync.Mutex) {
 	var wg sync.WaitGroup
 	var startedAny int32 // Use atomic for thread-safe flag
 
@@ -429,7 +429,7 @@ func startConfiguredCrew(t *tmux.Tmux, rigs []*rig.Rig, townRoot string, mu *syn
 			wg.Add(1)
 			go func(r *rig.Rig, crewName string) {
 				defer wg.Done()
-				msg, started := startOrRestartCrewMember(t, r, crewName, townRoot)
+				msg, started := startOrRestartCrewMember(r, crewName, townRoot)
 				mu.Lock()
 				fmt.Print(msg)
 				mu.Unlock()
@@ -450,32 +450,19 @@ func startConfiguredCrew(t *tmux.Tmux, rigs []*rig.Rig, townRoot string, mu *syn
 }
 
 // startOrRestartCrewMember starts or restarts a single crew member and returns a status message.
-// Uses IsAgentAlive for robust zombie detection (checks pane command + descendant processes),
-// and delegates zombie cleanup to crewMgr.Start() which kills the zombie session and recreates
+// Delegates zombie cleanup to crewMgr.Start() which kills the zombie session and recreates
 // it with fresh env vars and runtime settings.
-func startOrRestartCrewMember(t *tmux.Tmux, r *rig.Rig, crewName, townRoot string) (msg string, started bool) {
+func startOrRestartCrewMember(r *rig.Rig, crewName, townRoot string) (msg string, started bool) {
+	sp := session.GetDefaultProvider(townRoot)
 	sessionID := crewSessionName(r.Name, crewName)
-	if running, _ := t.HasSession(sessionID); running {
+	ctx := context.Background()
+
+	if running, _ := sp.Exists(ctx, sessionID); running {
 		// Session exists - check if agent is still alive
-		// Uses descendant process check instead of pane command check,
-		// since crew members launch via bash -c wrappers (see #1315, #1330).
-		if !t.IsAgentAlive(sessionID) {
-			// Agent has exited, restart it
-			// Build startup beacon for predecessor discovery via /resume
-			address := session.BeaconRecipient("crew", crewName, r.Name)
-			beacon := session.FormatStartupBeacon(session.BeaconConfig{
-				Recipient: address,
-				Sender:    "human",
-				Topic:     "restart",
-			})
-			agentCmd := config.BuildCrewStartupCommand(r.Name, crewName, r.Path, beacon)
-			if err := t.SendKeys(sessionID, agentCmd); err != nil {
-				return fmt.Sprintf("  %s %s/%s restart failed: %v\n", style.Dim.Render("○"), r.Name, crewName, err), false
-			}
-			return fmt.Sprintf("  %s %s/%s agent restarted\n", style.Bold.Render("✓"), r.Name, crewName), true
+		if alive, _ := sp.IsAgentRunning(ctx, sessionID); alive {
+			return fmt.Sprintf("  %s %s/%s already running\n", style.Dim.Render("○"), r.Name, crewName), false
 		}
-		// Agent is alive — nothing to do
-		return fmt.Sprintf("  %s %s/%s already running\n", style.Dim.Render("○"), r.Name, crewName), false
+		// Zombie session - crewMgr.Start() will clean it up and start fresh
 	}
 
 	if err := startCrewMember(r.Name, crewName, townRoot); err != nil {
@@ -499,13 +486,13 @@ func discoverAllRigs(townRoot string) ([]*rig.Rig, error) {
 }
 
 func runShutdown(cmd *cobra.Command, args []string) error {
-	t := tmux.NewTmux()
-
-	// Find workspace root for polecat cleanup
+	// Find workspace root for provider selection and polecat cleanup
 	townRoot, _ := workspace.FindFromCwd()
+	sp := session.GetDefaultProvider(townRoot)
+	ctx := context.Background()
 
 	// Collect sessions to show what will be stopped
-	sessions, err := t.ListSessions()
+	sessions, err := sp.List(ctx)
 	if err != nil {
 		return fmt.Errorf("listing sessions: %w", err)
 	}
@@ -552,9 +539,9 @@ func runShutdown(cmd *cobra.Command, args []string) error {
 	}
 
 	if shutdownGraceful {
-		return runGracefulShutdown(t, toStop, townRoot)
+		return runGracefulShutdown(sp, toStop, townRoot)
 	}
-	return runImmediateShutdown(t, toStop, townRoot)
+	return runImmediateShutdown(sp, toStop, townRoot)
 }
 
 // categorizeSessions splits sessions into those to stop and those to preserve.
@@ -600,23 +587,22 @@ func categorizeSessions(sessions []string) (toStop, preserved []string) {
 	return
 }
 
-func runGracefulShutdown(t *tmux.Tmux, gtSessions []string, townRoot string) error {
+func runGracefulShutdown(sp session.Provider, gtSessions []string, townRoot string) error {
 	fmt.Printf("Graceful shutdown of Gas Town (waiting up to %ds)...\n\n", shutdownWait)
 
-	// Phase 1: Send ESC to all agents to interrupt them
-	fmt.Printf("Phase 1: Sending ESC to %d agent(s)...\n", len(gtSessions))
+	// Phase 1 & 2: Send interrupt and shutdown message.
+	// For tmux this uses SendKeysRaw/SendKeys; for NATS we use Inject.
+	fmt.Printf("Phase 1: Sending interrupt to %d agent(s)...\n", len(gtSessions))
 	for _, sess := range gtSessions {
 		fmt.Printf("  %s Interrupting %s\n", style.Bold.Render("→"), sess)
-		_ = t.SendKeysRaw(sess, "Escape") // best-effort interrupt
+		_ = sp.Inject(context.Background(), sess, "\x1b") // best-effort ESC
 	}
 
-	// Phase 2: Send shutdown message asking agents to handoff
 	fmt.Printf("\nPhase 2: Requesting handoff from agents...\n")
-	shutdownMsg := "[SHUTDOWN] Gas Town is shutting down. Please save your state and update your handoff bead, then type /exit or wait to be terminated."
+	shutdownMsg := "[SHUTDOWN] Gas Town is shutting down. Please save your state and update your handoff bead, then type /exit or wait to be terminated.\n"
 	for _, sess := range gtSessions {
-		// Small delay then send the message
 		time.Sleep(constants.ShutdownNotifyDelay)
-		_ = t.SendKeys(sess, shutdownMsg) // best-effort notification
+		_ = sp.Inject(context.Background(), sess, shutdownMsg) // best-effort notification
 	}
 
 	// Phase 3: Wait for agents to complete handoff
@@ -639,12 +625,27 @@ func runGracefulShutdown(t *tmux.Tmux, gtSessions []string, townRoot string) err
 	fmt.Printf("\nPhase 4: Terminating sessions...\n")
 	mayorSession := getMayorSessionName()
 	deaconSession := getDeaconSessionName()
-	stopped := killSessionsInOrder(t, gtSessions, mayorSession, deaconSession)
+	stopped := killSessionsInOrder(sp, gtSessions, mayorSession, deaconSession)
 
+	// Phase 5-8: Same as immediate shutdown
+	finishShutdown(townRoot, stopped)
+	return nil
+}
+
+func runImmediateShutdown(sp session.Provider, gtSessions []string, townRoot string) error {
+	fmt.Println("Shutting down Gas Town...")
+
+	mayorSession := getMayorSessionName()
+	deaconSession := getDeaconSessionName()
+	stopped := killSessionsInOrder(sp, gtSessions, mayorSession, deaconSession)
+
+	finishShutdown(townRoot, stopped)
+	return nil
+}
+
+// finishShutdown performs the common cleanup phases after sessions are stopped.
+func finishShutdown(townRoot string, stopped int) {
 	// Phase 5: Always clean up orphaned Claude processes after killing sessions.
-	// Processes can survive session kills if they caught/ignored SIGHUP or called setsid().
-	// Use the user-specified grace period if --cleanup-orphans was explicitly set,
-	// otherwise use a short default (5s) for the automatic sweep.
 	graceSecs := defaultOrphanGraceSecs
 	if shutdownCleanupOrphans {
 		graceSecs = shutdownCleanupOrphansGrace
@@ -669,52 +670,7 @@ func runGracefulShutdown(t *tmux.Tmux, gtSessions []string, townRoot string) err
 	verifyNoOrphans()
 
 	fmt.Println()
-	fmt.Printf("%s Graceful shutdown complete (%d sessions stopped)\n", style.Bold.Render("✓"), stopped)
-	return nil
-}
-
-func runImmediateShutdown(t *tmux.Tmux, gtSessions []string, townRoot string) error {
-	fmt.Println("Shutting down Gas Town...")
-
-	mayorSession := getMayorSessionName()
-	deaconSession := getDeaconSessionName()
-	stopped := killSessionsInOrder(t, gtSessions, mayorSession, deaconSession)
-
-	// Always clean up orphaned Claude processes after killing sessions.
-	// Processes can survive session kills if they caught/ignored SIGHUP or called setsid().
-	// Use the user-specified grace period if --cleanup-orphans was explicitly set,
-	// otherwise use a short default (5s) for the automatic sweep.
-	graceSecs := defaultOrphanGraceSecs
-	if shutdownCleanupOrphans {
-		graceSecs = shutdownCleanupOrphansGrace
-	}
-	fmt.Println()
-	fmt.Println("Cleaning up orphaned Claude processes...")
-	cleanupOrphanedClaude(graceSecs)
-
-	// Cleanup polecat worktrees and branches
-	if townRoot != "" {
-		fmt.Println()
-		fmt.Println("Cleaning up polecats...")
-		cleanupPolecats(townRoot)
-	}
-
-	// Stop the daemon
-	if townRoot != "" {
-		fmt.Println()
-		fmt.Println("Stopping daemon...")
-		stopDaemonIfRunning(townRoot)
-	}
-
-	// Verify no Claude processes survived
-	fmt.Println()
-	fmt.Println("Verifying shutdown...")
-	verifyNoOrphans()
-
-	fmt.Println()
 	fmt.Printf("%s Gas Town shutdown complete (%d sessions stopped)\n", style.Bold.Render("✓"), stopped)
-
-	return nil
 }
 
 // killSessionsInOrder stops sessions in the correct shutdown order, matching gt down:
@@ -728,9 +684,10 @@ func runImmediateShutdown(t *tmux.Tmux, gtSessions []string, townRoot string) er
 //
 // Returns the count of sessions that were successfully stopped (verified by checking
 // if the session no longer exists after the kill attempt).
-func killSessionsInOrder(t *tmux.Tmux, sessions []string, mayorSession, deaconSession string) int {
+func killSessionsInOrder(sp session.Provider, sessions []string, mayorSession, deaconSession string) int {
 	stopped := 0
 	bootSession := session.BootSessionName()
+	ctx := context.Background()
 
 	// Build a set for O(1) lookup of town-level sessions
 	sessionSet := make(map[string]bool, len(sessions))
@@ -766,18 +723,16 @@ func killSessionsInOrder(t *tmux.Tmux, sessions []string, mayorSession, deaconSe
 	// Helper to kill a session and verify it was stopped
 	killAndVerify := func(sess string) bool {
 		// Check if session exists before attempting to kill
-		exists, _ := t.HasSession(sess)
+		exists, _ := sp.Exists(ctx, sess)
 		if !exists {
 			return false // Session already gone
 		}
 
 		// Attempt to kill the session and its processes
-		_ = t.KillSessionWithProcesses(sess)
+		_ = sp.Stop(ctx, sess, false)
 
-		// Verify the session is actually gone (ignore error, check existence)
-		// KillSessionWithProcesses might return an error even if it successfully
-		// killed the processes and the session auto-closed
-		stillExists, _ := t.HasSession(sess)
+		// Verify the session is actually gone
+		stillExists, _ := sp.Exists(ctx, sess)
 		if !stillExists {
 			fmt.Printf("  %s %s stopped\n", style.Bold.Render("✓"), sess)
 			return true

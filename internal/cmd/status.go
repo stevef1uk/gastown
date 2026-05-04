@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -227,12 +228,14 @@ func resolveAgentDisplay(townRoot string, townSettings *config.TownSettings, rol
 	return alias, info
 }
 
-// detectRuntimeFromSession inspects the actual process tree in a tmux session
+// detectRuntimeFromSession inspects the actual process tree in a session
 // to determine what agent runtime and model are in use.
 func detectRuntimeFromSession(sessionName string) string {
-	// Get the PID of the shell process in the tmux pane
-	t := tmux.NewTmux()
-	pid, err := t.GetPanePID(sessionName)
+	// Try provider-based PID lookup first (works for both tmux and NATS)
+	townRoot, _ := workspace.FindFromCwd()
+	sp := session.GetDefaultProvider(townRoot)
+	ctx := context.Background()
+	pid, err := sp.GetMainPID(ctx, sessionName)
 	if err != nil || pid == "" {
 		return ""
 	}
@@ -663,6 +666,22 @@ func gatherStatus() (TownStatus, error) {
 		sessionWg.Wait()
 	}
 
+	// Also check NATS sessions (for platforms where tmux doesn't work)
+	sp := session.GetDefaultProvider(townRoot)
+	if natsProvider, ok := sp.(*session.NatsProvider); ok {
+		ctx := context.Background()
+		if natsSessions, err := natsProvider.List(ctx); err == nil {
+			for _, s := range natsSessions {
+				if _, exists := allSessions[s]; !exists {
+					// Verify the process is actually alive before marking as running
+					if alive, _ := natsProvider.Exists(ctx, s); alive {
+						allSessions[s] = true
+					}
+				}
+			}
+		}
+	}
+
 	// Discover rigs
 	rigs, err := mgr.DiscoverRigs()
 	if err != nil {
@@ -837,11 +856,13 @@ func gatherStatus() (TownStatus, error) {
 		SessionCount: len(allSessions),
 		Running:      len(allSessions) > 0,
 	}
-	// Resolve socket path: /tmp/tmux-<UID>/<socket>
-	tmuxInfo.SocketPath = filepath.Join(tmux.SocketDir(), socketLabel)
-	if _, err := os.Stat(tmuxInfo.SocketPath); err == nil {
-		tmuxInfo.Running = true
-		tmuxInfo.PID = tmux.NewTmux().ServerPID()
+	// Resolve socket path: /tmp/tmux-<UID>/<socket> (tmux only)
+	if tp, ok := sp.(*session.TmuxProvider); ok {
+		tmuxInfo.SocketPath = filepath.Join(tmux.SocketDir(), socketLabel)
+		if _, err := os.Stat(tmuxInfo.SocketPath); err == nil {
+			tmuxInfo.Running = true
+			tmuxInfo.PID = tp.Tmux().ServerPID()
+		}
 	}
 	status.Tmux = tmuxInfo
 

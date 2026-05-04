@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -613,12 +614,15 @@ func runDogClear(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	// Check for live tmux session
+	// Check for live session
 	if !dogForce {
-		sessionName := fmt.Sprintf("hq-dog-%s", name)
-		tm := tmux.NewTmux()
-		if has, _ := tm.HasSession(sessionName); has {
-			return fmt.Errorf("dog %s has an active session (%s)\nUse --force to clear anyway", name, sessionName)
+		townRoot, _ := workspace.FindFromCwd()
+		if townRoot != "" {
+			sessionName := fmt.Sprintf("hq-dog-%s", name)
+			sp := session.GetDefaultProvider(townRoot)
+			if has, _ := sp.Exists(context.Background(), sessionName); has {
+				return fmt.Errorf("dog %s has an active session (%s)\nUse --force to clear anyway", name, sessionName)
+			}
 		}
 	}
 
@@ -686,32 +690,31 @@ func runDogDone(cmd *cobra.Command, args []string) error {
 
 	fmt.Printf("✓ Dog %s returned to kennel (idle)\n", name)
 
-	// Auto-terminate the tmux session after a short delay.
-	// Dogs run inside tmux sessions (hq-dog-<name>). Without this, the
-	// Claude agent idles at the prompt indefinitely after completing work,
-	// wasting resources until the stale-working detector kills it (2 hours).
+	// Auto-terminate the session after a short delay.
+	// Without this, the Claude agent idles at the prompt indefinitely after
+	// completing work, wasting resources until the stale-working detector kills it.
 	// The delay lets the agent see the success output before termination.
-	//
-	// We disable remain-on-exit first — otherwise kill-session leaves a
-	// dead pane that the deacon's health-check reports as an orphan.
 	sessionID := fmt.Sprintf("hq-dog-%s", name)
-	t := tmux.NewTmux()
-	_ = t.SetRemainOnExit(sessionID, false)
-	fmt.Printf("  Session %s will terminate in 3s\n", sessionID)
-
-	// Kill the tmux session after a short delay using a goroutine.
-	// Previous approach used bash -c "sleep 3 && tmux kill-session" which
-	// fails silently on Windows. The goroutine is cross-platform and uses
-	// the tmux package which handles the socket name automatically.
-	go func() {
-		time.Sleep(3 * time.Second)
-		if err := t.KillSession(sessionID); err != nil {
-			fmt.Fprintf(os.Stderr, "warning: failed to kill session %s: %v\n", sessionID, err)
+	townRoot, _ := workspace.FindFromCwd()
+	if townRoot != "" {
+		sp := session.GetDefaultProvider(townRoot)
+		// Disable remain-on-exit for tmux (prevents dead pane orphans)
+		if tp, ok := sp.(*session.TmuxProvider); ok {
+			_ = tp.Tmux().SetRemainOnExit(sessionID, false)
 		}
-	}()
+		fmt.Printf("  Session %s will terminate in 3s\n", sessionID)
 
-	// Wait for the goroutine to finish (the process will exit after kill).
-	time.Sleep(4 * time.Second)
+		// Kill the session after a short delay using a goroutine.
+		go func() {
+			time.Sleep(3 * time.Second)
+			if err := sp.Stop(context.Background(), sessionID, false); err != nil {
+				fmt.Fprintf(os.Stderr, "warning: failed to kill session %s: %v\n", sessionID, err)
+			}
+		}()
+
+		// Wait for the goroutine to finish (the process will exit after kill).
+		time.Sleep(4 * time.Second)
+	}
 
 	return nil
 }
@@ -818,11 +821,14 @@ func showDogStatus(mgr *dog.Manager, name string) error {
 		}
 	}
 
-	// Check for tmux session
-	sessionName := fmt.Sprintf("hq-dog-%s", name)
-	tm := tmux.NewTmux()
-	if has, _ := tm.HasSession(sessionName); has {
-		fmt.Printf("\nSession: %s (running)\n", sessionName)
+	// Check for session
+	townRoot, _ := workspace.FindFromCwd()
+	if townRoot != "" {
+		sessionName := fmt.Sprintf("hq-dog-%s", name)
+		sp := session.GetDefaultProvider(townRoot)
+		if has, _ := sp.Exists(context.Background(), sessionName); has {
+			fmt.Printf("\nSession: %s (running)\n", sessionName)
+		}
 	}
 
 	return nil
@@ -923,14 +929,56 @@ func dogFormatTimeAgo(t time.Time) string {
 	}
 }
 
+// dogSessionChecker adapts session.Provider to dog.sessionChecker.
+type dogSessionChecker struct {
+	sp session.Provider
+}
+
+func (d *dogSessionChecker) HasSession(name string) (bool, error) {
+	return d.sp.Exists(context.Background(), name)
+}
+
+func (d *dogSessionChecker) KillSession(name string) error {
+	return d.sp.Stop(context.Background(), name, false)
+}
+
+func (d *dogSessionChecker) CheckSessionHealth(sessID string, maxInactivity time.Duration) tmux.ZombieStatus {
+	ctx := context.Background()
+	exists, err := d.sp.Exists(ctx, sessID)
+	if err != nil || !exists {
+		return tmux.SessionDead
+	}
+	alive, err := d.sp.IsAgentRunning(ctx, sessID)
+	if err != nil || !alive {
+		return tmux.AgentDead
+	}
+	// Hung detection is tmux-specific (pane activity). For NATS we skip it.
+	if maxInactivity > 0 {
+		if tp, ok := d.sp.(*session.TmuxProvider); ok {
+			lastActivity, err := tp.Tmux().GetSessionActivity(sessID)
+			if err == nil && !lastActivity.IsZero() {
+				if time.Since(lastActivity) > maxInactivity {
+					return tmux.AgentHung
+				}
+			}
+		}
+	}
+	return tmux.SessionHealthy
+}
+
 func runDogHealthCheck(cmd *cobra.Command, args []string) error {
 	mgr, err := getDogManager()
 	if err != nil {
 		return err
 	}
 
-	tm := tmux.NewTmux()
-	hc := dog.NewHealthChecker(mgr, tm)
+	townRoot, _ := workspace.FindFromCwd()
+	var hc *dog.HealthChecker
+	if townRoot != "" {
+		hc = dog.NewHealthChecker(mgr, &dogSessionChecker{sp: session.GetDefaultProvider(townRoot)})
+	} else {
+		hc = dog.NewHealthChecker(mgr, tmux.NewTmux())
+	}
 
 	var results []dog.DogHealthResult
 
@@ -1167,8 +1215,8 @@ func runDogDispatch(cmd *cobra.Command, args []string) error {
 
 	// Ensure dog session is running so it can read the mail.
 	// Without this, dispatched work sits in mail with no session to read it.
-	t := tmux.NewTmux()
-	sessMgr := dog.NewSessionManager(session.NewTmuxProvider(t), townRoot, mgr)
+	sp := session.GetDefaultProvider(townRoot)
+	sessMgr := dog.NewSessionManager(sp, townRoot, mgr)
 	sessOpts := dog.SessionStartOptions{
 		WorkDesc: workDesc,
 	}

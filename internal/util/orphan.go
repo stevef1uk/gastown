@@ -17,6 +17,17 @@ import (
 	"github.com/steveyegge/gastown/internal/tmux"
 )
 
+// FindPsBinary searches for the ps executable in common system paths.
+// Returns the first found path, or "ps" as a fallback.
+func FindPsBinary() string {
+	for _, path := range []string{"/usr/bin/ps", "/bin/ps"} {
+		if _, err := os.Stat(path); err == nil {
+			return path
+		}
+	}
+	return "ps"
+}
+
 // minOrphanAge is the minimum age (in seconds) a process must be before
 // we consider it orphaned. This prevents race conditions with newly spawned
 // processes and avoids killing legitimate short-lived subagents.
@@ -26,7 +37,7 @@ const minOrphanAge = 60
 // This replaces per-PID pgrep calls, reducing O(N) process spawns to O(1).
 func buildChildMap() map[int][]int {
 	children := make(map[int][]int)
-	out, err := exec.Command("ps", "-eo", "pid,ppid").Output()
+	out, err := exec.Command(FindPsBinary(), "-eo", "pid,ppid").Output()
 	if err != nil {
 		return children
 	}
@@ -335,7 +346,7 @@ func isInGasTownWorkspace(pid int) bool {
 // (VS Code, Cursor, etc.). IDE-launched Claude processes run with TTY "?" but
 // are legitimate — they're controlled by the IDE, not orphaned from dead sessions.
 func isIDEClaudeProcess(pid int) bool {
-	out, err := exec.Command("ps", "-p", strconv.Itoa(pid), "-o", "args=").Output()
+	out, err := exec.Command(FindPsBinary(), "-p", strconv.Itoa(pid), "-o", "args=").Output()
 	if err != nil {
 		return false
 	}
@@ -452,7 +463,7 @@ func FindOrphanedClaudeProcesses() ([]OrphanedProcess, error) {
 	// Use ps to get PID, TTY, command, and elapsed time for all processes
 	// TTY "?" indicates no controlling terminal
 	// etime is elapsed time in [[DD-]HH:]MM:SS format (portable across Linux/macOS)
-	out, err := exec.Command("ps", "-eo", "pid,tty,comm,etime").Output()
+	out, err := exec.Command(FindPsBinary(), "-eo", "pid,tty,comm,etime").Output()
 	if err != nil {
 		return nil, fmt.Errorf("listing processes: %w", err)
 	}
@@ -573,7 +584,7 @@ func FindZombieClaudeProcesses() ([]ZombieProcess, error) {
 	}
 
 	// Use ps to get PID, TTY, command, and elapsed time for all claude processes
-	out, err := exec.Command("ps", "-eo", "pid,tty,comm,etime").Output()
+	out, err := exec.Command(FindPsBinary(), "-eo", "pid,tty,comm,etime").Output()
 	if err != nil {
 		return nil, fmt.Errorf("listing processes: %w", err)
 	}
@@ -884,7 +895,7 @@ func CleanupOrphanedClaudeProcesses() ([]CleanupResult, error) {
 // in any active tmux session (i.e., still safe to signal).
 func isProcessStillOrphaned(pid int) bool {
 	// Re-check the process TTY via ps
-	out, err := exec.Command("ps", "-o", "tty=", "-p", strconv.Itoa(pid)).Output()
+	out, err := exec.Command(FindPsBinary(), "-o", "tty=", "-p", strconv.Itoa(pid)).Output()
 	if err != nil {
 		return false // Process may have exited - not orphaned anymore
 	}

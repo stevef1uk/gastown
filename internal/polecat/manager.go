@@ -2290,17 +2290,28 @@ func (m *Manager) loadFromBeads(name string) (*Polecat, error) {
 }
 
 func (m *Manager) polecatSessionState(name string) (running bool, stale bool) {
-	if m.tmux == nil {
-		return false, false
-	}
-
 	sessionName := session.PolecatSessionName(session.PrefixFor(m.rig.Name), name)
-	running, err := m.tmux.HasSession(sessionName)
-	if err != nil || !running {
-		return false, false
+
+	// Check tmux session first
+	if m.tmux != nil {
+		running, err := m.tmux.HasSession(sessionName)
+		if err == nil && running {
+			return true, NewSessionManager(session.NewTmuxProvider(m.tmux), m.rig).isSessionStale(sessionName)
+		}
 	}
 
-	return true, NewSessionManager(session.NewTmuxProvider(m.tmux), m.rig).isSessionStale(sessionName)
+	// Check NATS session as fallback (for platforms where tmux doesn't work)
+	if m.townRoot != "" {
+		if natsProvider, err := session.NewNatsProvider(m.townRoot, ""); err == nil {
+			defer natsProvider.Close()
+			ctx := context.Background()
+			if exists, err := natsProvider.Exists(ctx, sessionName); err == nil && exists {
+				return true, false
+			}
+		}
+	}
+
+	return false, false
 }
 
 func isCurrentHookedIssueForAssignee(issue *beads.Issue, assignee string) bool {

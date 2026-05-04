@@ -676,8 +676,12 @@ func (m *SessionManager) Stop(polecat string, force bool) error {
 // reporting zombie sessions (tmux alive but Claude dead) as "running".
 func (m *SessionManager) IsRunning(polecat string) (bool, error) {
 	sessionID := m.SessionName(polecat)
-	status := m.tmux().CheckSessionHealth(sessionID, 0)
-	return status == tmux.SessionHealthy, nil
+	// Use provider interface to support both tmux and NATS transports
+	exists, err := m.sp.Exists(context.Background(), sessionID)
+	if err != nil {
+		return false, err
+	}
+	return exists, nil
 }
 
 // Status returns detailed status for a polecat session.

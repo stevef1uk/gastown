@@ -46,8 +46,14 @@ func runNatsWrapper(cmd *cobra.Command, args []string) error {
 
 	// Set up command — wrap with script(1) to provide a PTY for agents like
 	// Claude Code that require a terminal.
-	child := exec.Command("script", append([]string{"-qfec", args[0]}, args[1:]...)...)
-	child.Env = os.Environ()
+	//
+	// CRITICAL: The Go process may have an empty PATH (observed on some platforms
+	// where the parent shell doesn't export PATH to child processes). We must
+	// explicitly search common bin directories for script(1) instead of relying
+	// on exec.LookPath, which uses the process's PATH.
+	scriptPath := findScriptBinary()
+	child := exec.Command(scriptPath, append([]string{"-qfec", args[0]}, args[1:]...)...)
+	child.Env = buildChildEnv()
 
 	stdin, err := child.StdinPipe()
 	if err != nil {
@@ -109,4 +115,41 @@ func (w *natsWriter) Write(p []byte) (n int, err error) {
 		return 0, err
 	}
 	return len(p), nil
+}
+
+// findScriptBinary searches for the script(1) binary in common system
+// directories. This avoids relying on PATH, which may be empty in the Go
+// process when started from certain environments.
+func findScriptBinary() string {
+	candidates := []string{
+		"/usr/bin/script",
+		"/bin/script",
+		"/usr/local/bin/script",
+	}
+	for _, path := range candidates {
+		if _, err := os.Stat(path); err == nil {
+			return path
+		}
+	}
+	// Fallback: let exec.Command resolve it via PATH (will likely fail if
+	// PATH is empty, but preserves the original behavior as last resort).
+	return "script"
+}
+
+// buildChildEnv returns the environment for the child process. If the current
+// process has an empty PATH, it injects a sensible default so that common
+// binaries (bash, env, etc.) can be found by the child.
+func buildChildEnv() []string {
+	env := os.Environ()
+	hasPath := false
+	for _, e := range env {
+		if len(e) >= 5 && e[:5] == "PATH=" {
+			hasPath = true
+			break
+		}
+	}
+	if !hasPath {
+		env = append(env, "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin")
+	}
+	return env
 }

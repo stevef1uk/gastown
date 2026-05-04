@@ -179,8 +179,10 @@ func (p *NatsProvider) Exists(ctx context.Context, sessionID string) (bool, erro
 		return false, nil
 	}
 
-	// Check if process exists
-	cmd := exec.CommandContext(ctx, "ps", "-p", pidStr, "-o", "pid=")
+	// Check if process exists. Use full path to ps since PATH may be empty
+	// in the Go process environment (common when spawned by systemd, tmux,
+	// or other parent processes that don't inherit a full shell environment).
+	cmd := exec.CommandContext(ctx, util.FindPsBinary(), "-p", pidStr, "-o", "pid=")
 	err = cmd.Run()
 	return err == nil, nil
 }

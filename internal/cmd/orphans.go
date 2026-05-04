@@ -708,7 +708,7 @@ type OrphanProcess struct {
 // findOrphanProcesses finds Claude processes with PPID=1 (orphaned)
 func findOrphanProcesses() ([]OrphanProcess, error) {
 	// Run ps to get all processes with PID, PPID, and args
-	cmd := exec.Command("ps", "-eo", "pid,ppid,args")
+	cmd := exec.Command(util.FindPsBinary(), "-eo", "pid,ppid,args")
 	out, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("running ps: %w", err)

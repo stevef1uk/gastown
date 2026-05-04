@@ -342,11 +342,12 @@ func (m *Manager) StartACP(ctx context.Context, agentOverride, rigName string) e
 
 // Stop stops the mayor session.
 func (m *Manager) Stop() error {
-	t := tmux.NewTmux()
+	sp := session.GetDefaultProvider(m.townRoot)
 	sessionID := m.SessionName()
+	ctx := context.Background()
 
 	// Check if session exists
-	running, err := t.HasSession(sessionID)
+	running, err := sp.Exists(ctx, sessionID)
 	if err != nil {
 		return fmt.Errorf("checking session: %w", err)
 	}
@@ -354,12 +355,10 @@ func (m *Manager) Stop() error {
 		return ErrNotRunning
 	}
 
-	// Try graceful shutdown first (best-effort interrupt)
-	_ = t.SendKeysRaw(sessionID, "C-c")
-	time.Sleep(100 * time.Millisecond)
-
-	// Kill the session and all its processes
-	if err := t.KillSessionWithProcesses(sessionID); err != nil {
+	// Stop the session via provider.
+	// For tmux, this kills the session and all its processes.
+	// For NATS, this kills the process group.
+	if err := sp.Stop(ctx, sessionID, false); err != nil {
 		return fmt.Errorf("killing session: %w", err)
 	}
 
@@ -368,16 +367,17 @@ func (m *Manager) Stop() error {
 
 // IsRunning checks if the mayor session is active in TMUX mode.
 func (m *Manager) IsRunning() (bool, error) {
-	t := tmux.NewTmux()
-	return t.HasSession(m.SessionName())
+	sp := session.GetDefaultProvider(m.townRoot)
+	return sp.Exists(context.Background(), m.SessionName())
 }
 
 // Status returns information about the mayor session.
 func (m *Manager) Status() (*tmux.SessionInfo, error) {
-	t := tmux.NewTmux()
+	sp := session.GetDefaultProvider(m.townRoot)
 	sessionID := m.SessionName()
+	ctx := context.Background()
 
-	running, err := t.HasSession(sessionID)
+	running, err := sp.Exists(ctx, sessionID)
 	if err != nil {
 		return nil, fmt.Errorf("checking session: %w", err)
 	}
@@ -385,7 +385,11 @@ func (m *Manager) Status() (*tmux.SessionInfo, error) {
 		return nil, ErrNotRunning
 	}
 
-	return t.GetSessionInfo(sessionID)
+	// For tmux, get detailed session info. For NATS, return minimal info.
+	if tp, ok := sp.(*session.TmuxProvider); ok {
+		return tp.Tmux().GetSessionInfo(sessionID)
+	}
+	return &tmux.SessionInfo{Name: sessionID}, nil
 }
 
 // buildACPStartupPrompt composes the startup prompt used for ACP mayor sessions.
