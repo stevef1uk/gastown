@@ -217,9 +217,11 @@ func (b *Beads) AttachMolecule(pinnedBeadID, moleculeID string) (*Issue, error) 
 		return nil, fmt.Errorf("fetching pinned bead: %w", err)
 	}
 
-	// Only allow pinned beads (permanent records like role definitions)
-	if issue.Status != StatusPinned {
-		return nil, fmt.Errorf("issue %s is not pinned (status: %s)", pinnedBeadID, issue.Status)
+	// Allow pinned or hooked beads. Hooked beads are work assignments that
+	// agents are actively processing — attaching a molecule is part of normal
+	// workflow (e.g., patrol molecules on deacon/witness hooked wisps).
+	if issue.Status != StatusPinned && issue.Status != StatusHooked {
+		return nil, fmt.Errorf("issue %s must be pinned or hooked (status: %s)", pinnedBeadID, issue.Status)
 	}
 
 	// Build attachment fields with current timestamp

@@ -86,41 +86,41 @@ func runPatrolReport(cmd *cobra.Command, args []string) error {
 	if findErr != nil {
 		return fmt.Errorf("finding active patrol: %w", findErr)
 	}
-	if !hasPatrol {
-		return fmt.Errorf("no active patrol found for %s", cfg.RoleName)
-	}
 
-	// Close the current patrol root with the summary
 	b := beads.New(cfg.BeadsDir)
 
-	// Build step audit checklist
-	stepAudit := buildStepAudit(cfg.PatrolMolName, patrolReportSteps)
+	if hasPatrol {
+		// Build step audit checklist
+		stepAudit := buildStepAudit(cfg.PatrolMolName, patrolReportSteps)
 
-	// Update the description with the patrol summary and step audit
-	desc := fmt.Sprintf("Patrol report: %s\n\n%s", patrolReportSummary, stepAudit)
-	if err := b.Update(patrolID, beads.UpdateOptions{
-		Description: &desc,
-	}); err != nil {
-		style.PrintWarning("could not update patrol summary: %v", err)
+		// Update the description with the patrol summary and step audit
+		desc := fmt.Sprintf("Patrol report: %s\n\n%s", patrolReportSummary, stepAudit)
+		if err := b.Update(patrolID, beads.UpdateOptions{
+			Description: &desc,
+		}); err != nil {
+			style.PrintWarning("could not update patrol summary: %v", err)
+		}
+
+		// Print the step audit for visibility
+		fmt.Println(stepAudit)
+
+		// Close all descendant wisps first (recursive), then the patrol root.
+		// Without this, every patrol cycle leaks ~10 orphan wisps into the DB.
+		// If descendants can't be closed, abort so patrol retries next cycle (gt-7lx3).
+		closed, closeDescErr := forceCloseDescendants(b, patrolID)
+		if closeDescErr != nil {
+			return fmt.Errorf("closing descendants of patrol %s (closed %d): %w", patrolID, closed, closeDescErr)
+		}
+
+		// Close the patrol root
+		if err := b.ForceCloseWithReason("patrol cycle complete: "+patrolReportSummary, patrolID); err != nil {
+			return fmt.Errorf("closing patrol %s: %w", patrolID, err)
+		}
+
+		fmt.Printf("%s Closed patrol %s\n", style.Success.Render("✓"), patrolID)
+	} else {
+		fmt.Printf("No active patrol found for %s (creating new one)\n", cfg.RoleName)
 	}
-
-	// Print the step audit for visibility
-	fmt.Println(stepAudit)
-
-	// Close all descendant wisps first (recursive), then the patrol root.
-	// Without this, every patrol cycle leaks ~10 orphan wisps into the DB.
-	// If descendants can't be closed, abort so patrol retries next cycle (gt-7lx3).
-	closed, closeDescErr := forceCloseDescendants(b, patrolID)
-	if closeDescErr != nil {
-		return fmt.Errorf("closing descendants of patrol %s (closed %d): %w", patrolID, closed, closeDescErr)
-	}
-
-	// Close the patrol root
-	if err := b.ForceCloseWithReason("patrol cycle complete: "+patrolReportSummary, patrolID); err != nil {
-		return fmt.Errorf("closing patrol %s: %w", patrolID, err)
-	}
-
-	fmt.Printf("%s Closed patrol %s\n", style.Success.Render("✓"), patrolID)
 
 	// Start next cycle
 	newPatrolID, err := autoSpawnPatrol(cfg)
