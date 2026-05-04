@@ -32,10 +32,9 @@ func (p *TmuxProvider) Start(ctx context.Context, sessionID, workDir, command st
 }
 
 func (p *TmuxProvider) Stop(ctx context.Context, sessionID string, graceful bool) error {
-	if graceful {
-		// StopSession handles graceful Ctrl-C
-		return StopSession(p, sessionID, true)
-	}
+	// Note: graceful shutdown (Ctrl-C + wait) is handled by StopSession in
+	// lifecycle.go BEFORE calling this method. This method should only do
+	// the final session kill to avoid infinite recursion.
 	return p.t.KillSessionWithProcesses(sessionID)
 }
 

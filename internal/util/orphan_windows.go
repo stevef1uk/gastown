@@ -2,57 +2,62 @@
 
 package util
 
+import "errors"
+
+// FindPsBinary on Windows returns a placeholder.
+// Process checking on Windows uses different APIs; this is a stub
+// for cross-compilation compatibility.
+func FindPsBinary() string {
+	return "tasklist"
+}
+
 // OrphanedProcess represents a claude process running without a controlling terminal.
-// On Windows, orphan cleanup is not supported, so this is a stub definition.
 type OrphanedProcess struct {
 	PID      int
 	Cmd      string
-	Age      int    // Age in seconds
-	TownRoot string // Gas Town workspace root, or "" if not in any workspace
+	Age      int
+	TownRoot string
 }
 
 // CleanupResult describes what happened to an orphaned process.
-// On Windows, cleanup is a no-op.
 type CleanupResult struct {
 	Process OrphanedProcess
-	Signal  string // "SIGTERM", "SIGKILL", or "UNKILLABLE"
+	Signal  string
 	Error   error
 }
 
 // ZombieProcess represents a claude process not in any active tmux session.
-// On Windows, zombie cleanup is not supported, so this is a stub definition.
 type ZombieProcess struct {
 	PID      int
 	Cmd      string
-	Age      int    // Age in seconds
-	TTY      string // TTY column from ps
-	TownRoot string // Gas Town workspace root, or "" if not in any workspace
+	Age      int
+	TTY      string
+	TownRoot string
 }
 
 // ZombieCleanupResult describes what happened to a zombie process.
-// On Windows, cleanup is a no-op.
 type ZombieCleanupResult struct {
 	Process ZombieProcess
-	Signal  string // "SIGTERM", "SIGKILL", or "UNKILLABLE"
+	Signal  string
 	Error   error
 }
 
-// FindOrphanedClaudeProcesses is a Windows stub.
+// FindOrphanedClaudeProcesses is a no-op on Windows.
 func FindOrphanedClaudeProcesses() ([]OrphanedProcess, error) {
 	return nil, nil
 }
 
-// CleanupOrphanedClaudeProcesses is a Windows stub.
-func CleanupOrphanedClaudeProcesses() ([]CleanupResult, error) {
-	return nil, nil
-}
-
-// FindZombieClaudeProcesses is a Windows stub.
+// FindZombieClaudeProcesses is a no-op on Windows.
 func FindZombieClaudeProcesses() ([]ZombieProcess, error) {
 	return nil, nil
 }
 
-// CleanupZombieClaudeProcesses is a Windows stub.
+// CleanupZombieClaudeProcesses is a no-op on Windows.
 func CleanupZombieClaudeProcesses() ([]ZombieCleanupResult, error) {
 	return nil, nil
+}
+
+// CleanupOrphanedClaudeProcesses is a no-op on Windows.
+func CleanupOrphanedClaudeProcesses() ([]CleanupResult, error) {
+	return nil, errors.New("orphan cleanup not supported on Windows")
 }
