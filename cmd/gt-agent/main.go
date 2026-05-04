@@ -262,6 +262,9 @@ func run() error {
 		state.IdleCycles = 0
 		state.LastActivity = time.Now()
 		state.PatrolCount++
+		// Reset extraordinary flag at start of each cycle — previous cycle's
+		// errors should not cause infinite handoff loops.
+		state.ExtraordinaryAction = false
 
 		fmt.Printf("[gt-agent] Processing %d work item(s) (patrol #%d)\n",
 			len(workItems), state.PatrolCount)
@@ -302,8 +305,22 @@ func run() error {
 					fmt.Printf("[gt-agent] $ %s\n", cmd)
 					out, err := exec.Command("/bin/sh", "-c", cmd).CombinedOutput()
 					if err != nil {
-						fmt.Fprintf(os.Stderr, "[gt-agent] Error: %v\n%s\n", err, string(out))
-						extraordinary = true
+						// Dolt circuit breaker errors are transient during startup.
+						// Retry once after a short delay before marking as extraordinary.
+						cmdFailed := true
+						if strings.Contains(string(out), "circuit breaker is open") {
+							fmt.Println("[gt-agent] Dolt circuit breaker open, retrying in 5s...")
+							time.Sleep(5 * time.Second)
+							out, err = exec.Command("/bin/sh", "-c", cmd).CombinedOutput()
+							if err == nil {
+								fmt.Printf("[gt-agent] Output (retry OK):\n%s\n", string(out))
+								cmdFailed = false
+							}
+						}
+						if cmdFailed {
+							fmt.Fprintf(os.Stderr, "[gt-agent] Error: %v\n%s\n", err, string(out))
+							extraordinary = true
+						}
 					} else {
 						fmt.Printf("[gt-agent] Output:\n%s\n", string(out))
 					}
@@ -326,11 +343,24 @@ func run() error {
 			cmd := exec.Command(gtBin, parts...)
 			out, err := cmd.CombinedOutput()
 			if err != nil {
+				// Dolt circuit breaker errors are transient during startup.
+				// Retry once after a short delay before marking as extraordinary.
+				if strings.Contains(string(out), "circuit breaker is open") {
+					fmt.Println("[gt-agent] Dolt circuit breaker open, retrying in 5s...")
+					time.Sleep(5 * time.Second)
+					cmd = exec.Command(gtBin, parts...)
+					out, err = cmd.CombinedOutput()
+					if err == nil {
+						fmt.Printf("[gt-agent] %s (retry OK): %s\n", postCmd, strings.TrimSpace(string(out)))
+						goto postCmdSuccess
+					}
+				}
 				fmt.Fprintf(os.Stderr, "[gt-agent] %s failed: %v\n%s\n", postCmd, err, string(out))
 				extraordinary = true
 			} else {
 				fmt.Printf("[gt-agent] %s: %s\n", postCmd, strings.TrimSpace(string(out)))
 			}
+		postCmdSuccess:
 		}
 
 		// Mark extraordinary if any error occurred

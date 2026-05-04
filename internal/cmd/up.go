@@ -195,7 +195,7 @@ func runUp(cmd *cobra.Command, args []string) error {
 		fmt.Printf("%s DND was enabled; reset to normal for current agent\n", style.SuccessPrefix)
 	}
 
-	// Start daemon, deacon, mayor, and rig prefetch in parallel
+	// Start infrastructure services first (sequentially where dependencies exist)
 	var daemonErr error
 	var daemonPID int
 	var deaconResult, mayorResult agentStartResult
@@ -205,23 +205,34 @@ func runUp(cmd *cobra.Command, args []string) error {
 	var doltDetail, natsDetail string
 	var doltSkipped bool
 
-	var startupWg sync.WaitGroup
-	startupWg.Add(6)
-
-	// 0. NATS server (Docker)
-	go func() {
-		defer startupWg.Done()
-		if err := natsserver.Start(natsserver.Config{}); err != nil {
-			natsDetail = err.Error()
-		} else {
+	// 0. NATS server (Docker) — start FIRST and wait for readiness.
+	// The daemon and agents need NATS to be available when they initialize
+	// their session provider. Starting NATS sequentially avoids race conditions.
+	if err := natsserver.Start(natsserver.Config{}); err != nil {
+		// Start may fail if container already exists (Docker exit 125), but
+		// NATS could still be running — check IsRunning before giving up.
+		if natsserver.IsRunning() {
 			natsOK = true
-			if natsserver.IsRunning() {
-				natsDetail = "started (port 4222)"
-			} else {
-				natsDetail = "already running"
-			}
+			natsDetail = "already running"
+		} else {
+			natsDetail = err.Error()
 		}
-	}()
+	} else {
+		natsOK = true
+		if natsserver.IsRunning() {
+			natsDetail = "started (port 4222)"
+		} else {
+			natsDetail = "already running"
+		}
+	}
+	if !natsOK {
+		// Continue anyway — agents will fall back to tmux if NATS is unavailable
+		fmt.Fprintf(os.Stderr, "Warning: NATS not available, agents may use tmux fallback\n")
+	}
+
+	// Start daemon, deacon, mayor, dolt, and rig prefetch in parallel
+	var startupWg sync.WaitGroup
+	startupWg.Add(5)
 
 	// 1. Dolt server (if configured)
 	go func() {
@@ -239,13 +250,17 @@ func runUp(cmd *cobra.Command, args []string) error {
 		}
 		if err := doltserver.Start(townRoot); err != nil {
 			doltDetail = err.Error()
-		} else {
-			doltOK = true
-			doltDetail = fmt.Sprintf("started (port %d)", cfg.Port)
+			return
 		}
+		// Wait for Dolt to actually accept connections before declaring it ready.
+		// Agents (deacon, mayor, witness, refinery) run bd commands on startup
+		// via gt prime → patrol_helpers. Without this gate, they race the server.
+		waitForDoltReady(townRoot)
+		doltOK = true
+		doltDetail = fmt.Sprintf("started (port %d)", cfg.Port)
 	}()
 
-	// 1. Daemon (Go process)
+	// 2. Daemon (Go process)
 	go func() {
 		defer startupWg.Done()
 		if err := ensureDaemon(townRoot); err != nil {
@@ -258,7 +273,7 @@ func runUp(cmd *cobra.Command, args []string) error {
 		}
 	}()
 
-	// 2. Deacon
+	// 3. Deacon
 	go func() {
 		defer startupWg.Done()
 		deaconMgr := deacon.NewManager(townRoot)
@@ -273,7 +288,7 @@ func runUp(cmd *cobra.Command, args []string) error {
 		}
 	}()
 
-	// 3. Mayor
+	// 4. Mayor
 	go func() {
 		defer startupWg.Done()
 		mayorMgr := mayor.NewManager(townRoot)
@@ -290,7 +305,7 @@ func runUp(cmd *cobra.Command, args []string) error {
 		}
 	}()
 
-	// 4. Prefetch rig configs (overlaps with daemon/deacon/mayor startup)
+	// 5. Prefetch rig configs (overlaps with daemon/deacon/mayor startup)
 	go func() {
 		defer startupWg.Done()
 		prefetchedRigs, rigErrors = prefetchRigs(rigs)
