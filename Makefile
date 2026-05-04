@@ -37,6 +37,7 @@ build:
 	go build -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY)-proxy-client ./cmd/gt-proxy-client
 	go build -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY) ./cmd/gt
 	go build -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY)-agent ./cmd/gt-agent
+	go build -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY)-agent-console ./cmd/gt-agent-console
 
 desktop-build:
 	go build -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY_DESKTOP) ./cmd/gt-desktop
@@ -97,6 +98,7 @@ install: check-up-to-date build
 	@rm -f $(INSTALL_DIR)/$(BINARY)
 	@cp $(BUILD_DIR)/$(BINARY) $(INSTALL_DIR)/$(BINARY)
 	@cp $(BUILD_DIR)/$(BINARY)-agent $(INSTALL_DIR)/$(BINARY)-agent
+	@cp $(BUILD_DIR)/$(BINARY)-agent-console $(INSTALL_DIR)/$(BINARY)-agent-console
 	@# Nuke any stale go-install binaries that shadow the canonical location
 	@for bad in $(HOME)/go/bin/$(BINARY) $(HOME)/bin/$(BINARY); do \
 		if [ -f "$$bad" ]; then \

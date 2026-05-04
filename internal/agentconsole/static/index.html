@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gas Town Agent Console</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0d1117;
+            color: #c9d1d9;
+            height: 100vh;
+            overflow: hidden;
+        }
+        .container {
+            display: flex;
+            height: 100vh;
+        }
+        /* Sidebar */
+        .sidebar {
+            width: 280px;
+            background: #161b22;
+            border-right: 1px solid #30363d;
+            display: flex;
+            flex-direction: column;
+        }
+        .sidebar-header {
+            padding: 16px;
+            border-bottom: 1px solid #30363d;
+        }
+        .sidebar-header h1 {
+            font-size: 16px;
+            font-weight: 600;
+            color: #f0f6fc;
+        }
+        .sidebar-header .status {
+            font-size: 12px;
+            color: #8b949e;
+            margin-top: 4px;
+        }
+        .agent-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 8px;
+        }
+        .agent-item {
+            display: flex;
+            align-items: center;
+            padding: 10px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background 0.15s;
+            margin-bottom: 4px;
+        }
+        .agent-item:hover {
+            background: #21262d;
+        }
+        .agent-item.active {
+            background: #1f6feb;
+        }
+        .agent-item.active .agent-name,
+        .agent-item.active .agent-role {
+            color: #fff;
+        }
+        .agent-avatar {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            background: #238636;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            font-weight: 600;
+            margin-right: 12px;
+            flex-shrink: 0;
+        }
+        .agent-item.stopped .agent-avatar {
+            background: #484f58;
+        }
+        .agent-info {
+            flex: 1;
+            min-width: 0;
+        }
+        .agent-name {
+            font-size: 13px;
+            font-weight: 500;
+            color: #f0f6fc;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .agent-role {
+            font-size: 11px;
+            color: #8b949e;
+            margin-top: 2px;
+        }
+        .agent-status {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #238636;
+            flex-shrink: 0;
+        }
+        .agent-item.stopped .agent-status {
+            background: #484f58;
+        }
+        /* Main Content */
+        .main {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            min-width: 0;
+        }
+        .main-header {
+            padding: 16px 20px;
+            border-bottom: 1px solid #30363d;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .main-header h2 {
+            font-size: 16px;
+            font-weight: 600;
+        }
+        .main-header .badge {
+            font-size: 11px;
+            padding: 2px 8px;
+            border-radius: 12px;
+            background: #238636;
+            color: #fff;
+        }
+        .main-header .badge.stopped {
+            background: #484f58;
+        }
+        .chat-container {
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px 20px;
+        }
+        .welcome {
+            text-align: center;
+            padding: 60px 20px;
+            color: #8b949e;
+        }
+        .welcome h3 {
+            font-size: 20px;
+            margin-bottom: 12px;
+            color: #f0f6fc;
+        }
+        .log-entry {
+            font-family: 'SF Mono', Monaco, monospace;
+            font-size: 12px;
+            padding: 6px 0;
+            border-bottom: 1px solid #21262d;
+            color: #8b949e;
+            line-height: 1.5;
+        }
+        .log-entry.system {
+            color: #58a6ff;
+        }
+        .log-entry.error {
+            color: #f85149;
+        }
+        .log-entry.success {
+            color: #3fb950;
+        }
+        .message {
+            margin-bottom: 12px;
+            max-width: 80%;
+        }
+        .message.sent {
+            margin-left: auto;
+        }
+        .message-bubble {
+            padding: 10px 14px;
+            border-radius: 12px;
+            font-size: 13px;
+            line-height: 1.5;
+        }
+        .message.sent .message-bubble {
+            background: #1f6feb;
+            color: #fff;
+            border-bottom-right-radius: 4px;
+        }
+        .message.received .message-bubble {
+            background: #21262d;
+            color: #c9d1d9;
+            border-bottom-left-radius: 4px;
+        }
+        .message-time {
+            font-size: 11px;
+            color: #8b949e;
+            margin-top: 4px;
+            padding: 0 4px;
+        }
+        .input-area {
+            padding: 12px 20px;
+            border-top: 1px solid #30363d;
+            display: flex;
+            gap: 10px;
+            background: #161b22;
+        }
+        .input-area input {
+            flex: 1;
+            padding: 10px 14px;
+            border: 1px solid #30363d;
+            border-radius: 6px;
+            background: #0d1117;
+            color: #c9d1d9;
+            font-size: 13px;
+            outline: none;
+        }
+        .input-area input:focus {
+            border-color: #1f6feb;
+        }
+        .input-area button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 6px;
+            background: #1f6feb;
+            color: #fff;
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background 0.15s;
+        }
+        .input-area button:hover {
+            background: #388bfd;
+        }
+        .input-area button:disabled {
+            background: #484f58;
+            cursor: not-allowed;
+        }
+        .refresh-btn {
+            padding: 4px 10px;
+            border: 1px solid #30363d;
+            border-radius: 4px;
+            background: transparent;
+            color: #8b949e;
+            font-size: 11px;
+            cursor: pointer;
+        }
+        .refresh-btn:hover {
+            color: #f0f6fc;
+            border-color: #8b949e;
+        }
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: #8b949e;
+        }
+        .agent-details {
+            padding: 12px 20px;
+            background: #161b22;
+            border-bottom: 1px solid #30363d;
+            font-size: 12px;
+            color: #8b949e;
+        }
+        .agent-details span {
+            margin-right: 16px;
+        }
+        .agent-details .label {
+            color: #484f58;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="sidebar">
+            <div class="sidebar-header">
+                <h1>Gas Town Agents</h1>
+                <div class="status" id="system-status">Loading...</div>
+            </div>
+            <div class="agent-list" id="agent-list"></div>
+        </div>
+        <div class="main">
+            <div class="main-header" id="main-header">
+                <h2>Select an agent</h2>
+            </div>
+            <div class="agent-details" id="agent-details" style="display:none"></div>
+            <div class="chat-container" id="chat-container">
+                <div class="welcome">
+                    <h3>Welcome to Agent Console</h3>
+                    <p>Select an agent from the sidebar to view activity and send messages.</p>
+                </div>
+            </div>
+            <div class="input-area" id="input-area" style="display:none">
+                <input type="text" id="message-input" placeholder="Type a message to send via NATS..." />
+                <button id="send-btn" onclick="sendMessage()">Send</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentAgent = null;
+        let eventSource = null;
+        let agents = [];
+
+        // Load agents on startup
+        async function loadAgents() {
+            try {
+                const res = await fetch('/api/agents');
+                agents = await res.json();
+                renderAgentList();
+                updateSystemStatus();
+            } catch (err) {
+                console.error('Failed to load agents:', err);
+                document.getElementById('system-status').textContent = 'Error loading agents';
+            }
+        }
+
+        function renderAgentList() {
+            const list = document.getElementById('agent-list');
+            list.innerHTML = '';
+            agents.forEach(agent => {
+                const item = document.createElement('div');
+                item.className = 'agent-item' + (agent.status === 'stopped' ? ' stopped' : '');
+                if (currentAgent && currentAgent.id === agent.id) {
+                    item.classList.add('active');
+                }
+                const icon = agent.role === 'deacon' ? 'D' : 
+                            agent.role === 'mayor' ? 'M' :
+                            agent.role === 'witness' ? 'W' :
+                            agent.role === 'refinery' ? 'R' : 'A';
+                item.innerHTML = `
+                    <div class="agent-avatar">${icon}</div>
+                    <div class="agent-info">
+                        <div class="agent-name">${agent.name}</div>
+                        <div class="agent-role">${agent.role} ${agent.agent_type ? `(${agent.agent_type})` : ''}</div>
+                    </div>
+                    <div class="agent-status"></div>
+                `;
+                item.onclick = () => selectAgent(agent);
+                list.appendChild(item);
+            });
+        }
+
+        function updateSystemStatus() {
+            const running = agents.filter(a => a.status === 'running').length;
+            document.getElementById('system-status').textContent = 
+                `${running}/${agents.length} agents running`;
+        }
+
+        async function selectAgent(agent) {
+            currentAgent = agent;
+            renderAgentList();
+
+            document.getElementById('main-header').innerHTML = `
+                <h2>${agent.name}</h2>
+                <span class="badge ${agent.status === 'stopped' ? 'stopped' : ''}">${agent.status}</span>
+                <button class="refresh-btn" onclick="refreshAgent()">Refresh</button>
+            `;
+
+            document.getElementById('agent-details').style.display = 'block';
+            document.getElementById('agent-details').innerHTML = `
+                <span><span class="label">Role:</span> ${agent.role}</span>
+                <span><span class="label">Type:</span> ${agent.agent_type}</span>
+                <span><span class="label">PID:</span> ${agent.pid || 'N/A'}</span>
+                <span><span class="label">Activity:</span> ${agent.activity || 'Idle'}</span>
+            `;
+
+            document.getElementById('input-area').style.display = 'flex';
+            document.getElementById('message-input').disabled = agent.status === 'stopped';
+            document.getElementById('send-btn').disabled = agent.status === 'stopped';
+
+            // Load logs
+            await loadAgentLogs(agent.id);
+
+            // Start SSE stream
+            startStream(agent.id);
+        }
+
+        async function loadAgentLogs(agentId) {
+            try {
+                const res = await fetch(`/api/agents/${agentId}/logs`);
+                const data = await res.json();
+                renderLogs(data.logs);
+            } catch (err) {
+                console.error('Failed to load logs:', err);
+            }
+        }
+
+        function renderLogs(logs) {
+            const container = document.getElementById('chat-container');
+            container.innerHTML = '';
+            if (!logs || logs.length === 0) {
+                container.innerHTML = '<div class="empty-state">No activity logs yet</div>';
+                return;
+            }
+            logs.forEach(log => {
+                const entry = document.createElement('div');
+                entry.className = 'log-entry';
+                if (log.includes('Error') || log.includes('failed')) {
+                    entry.classList.add('error');
+                } else if (log.includes('success') || log.includes('OK')) {
+                    entry.classList.add('success');
+                } else if (log.includes('Starting') || log.includes('Session')) {
+                    entry.classList.add('system');
+                }
+                entry.textContent = log;
+                container.appendChild(entry);
+            });
+            container.scrollTop = container.scrollHeight;
+        }
+
+        function startStream(agentId) {
+            if (eventSource) {
+                eventSource.close();
+            }
+            eventSource = new EventSource(`/api/agents/${agentId}/stream`);
+            eventSource.onmessage = (e) => {
+                try {
+                    const data = JSON.parse(e.data);
+                    if (Array.isArray(data)) {
+                        data.forEach(log => appendLog(log));
+                    } else {
+                        appendLog(JSON.stringify(data));
+                    }
+                } catch (err) {
+                    appendLog(e.data);
+                }
+            };
+        }
+
+        function appendLog(text) {
+            const container = document.getElementById('chat-container');
+            const entry = document.createElement('div');
+            entry.className = 'log-entry';
+            if (text.includes('Error') || text.includes('failed')) {
+                entry.classList.add('error');
+            }
+            entry.textContent = text;
+            container.appendChild(entry);
+            container.scrollTop = container.scrollHeight;
+        }
+
+        async function sendMessage() {
+            const input = document.getElementById('message-input');
+            const message = input.value.trim();
+            if (!message || !currentAgent) return;
+
+            // Show sent message
+            const container = document.getElementById('chat-container');
+            const msgDiv = document.createElement('div');
+            msgDiv.className = 'message sent';
+            msgDiv.innerHTML = `
+                <div class="message-bubble">${message}</div>
+                <div class="message-time">${new Date().toLocaleTimeString()}</div>
+            `;
+            container.appendChild(msgDiv);
+            container.scrollTop = container.scrollHeight;
+
+            input.value = '';
+
+            try {
+                const res = await fetch(`/api/agents/${currentAgent.id}/message`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message })
+                });
+                const data = await res.json();
+                if (data.status === 'sent' || data.status === 'queued') {
+                    appendLog(`[system] Message ${data.status} via ${data.via} (agent will process on next cycle)`);
+                } else {
+                    appendLog(`[error] Failed to send: ${JSON.stringify(data)}`);
+                }
+            } catch (err) {
+                appendLog(`[error] ${err.message}`);
+            }
+        }
+
+        function refreshAgent() {
+            if (currentAgent) {
+                selectAgent(currentAgent);
+            }
+        }
+
+        // Allow Enter key to send
+        document.getElementById('message-input').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') sendMessage();
+        });
+
+        // Auto-refresh agent list every 10 seconds
+        setInterval(loadAgents, 10000);
+
+        // Initial load
+        loadAgents();
+    </script>
+</body>
+</html>

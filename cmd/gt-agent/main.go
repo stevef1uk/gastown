@@ -173,8 +173,12 @@ func run() error {
 
 	// Determine session name for nudge queue
 	sessionName := os.Getenv("GT_SESSION_NAME")
-	if sessionName == "" && rig != "" && polecat != "" {
-		sessionName = fmt.Sprintf("gt-%s-%s", rig, polecat)
+	if sessionName == "" {
+		if rig != "" && polecat != "" {
+			sessionName = fmt.Sprintf("gt-%s-%s", rig, polecat)
+		} else if role == "mayor" || role == "deacon" {
+			sessionName = fmt.Sprintf("hq-%s", role)
+		}
 	}
 
 	// Locate gt binary
