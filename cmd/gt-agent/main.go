@@ -337,7 +337,11 @@ func run() error {
 
 		// Call role-specific post-work command
 		postCmd := postWorkCommand(role, summary)
-		fmt.Printf("[gt-agent] Calling %s...\n", postCmd)
+		if postCmd == "" {
+			fmt.Println("[gt-agent] No post-work command for this role")
+		} else {
+			fmt.Printf("[gt-agent] Calling %s...\n", postCmd)
+		}
 		parts := strings.Fields(postCmd)
 		if len(parts) > 0 {
 			cmd := exec.Command(gtBin, parts...)
@@ -470,8 +474,11 @@ func postWorkCommand(role, summary string) string {
 			summary = "Patrol cycle complete"
 		}
 		return fmt.Sprintf("patrol report --summary %q", summary)
-	default:
+	case "polecat":
 		return "done"
+	default:
+		// Mayor, refinery, crew: no post-work command needed
+		return ""
 	}
 }
 
