@@ -436,10 +436,10 @@ Context:
 func postWorkCommand(role, summary string) string {
 	switch role {
 	case "deacon", "witness":
-		if summary != "" {
-			return fmt.Sprintf("patrol report --summary %q", summary)
+		if summary == "" {
+			summary = "Patrol cycle complete"
 		}
-		return "patrol report"
+		return fmt.Sprintf("patrol report --summary %q", summary)
 	default:
 		return "done"
 	}

@@ -54,7 +54,9 @@ func GetDefaultProvider(townRoot string) Provider {
 				if natsURL == "" {
 					natsURL = os.Getenv("GT_NATS_URL")
 				}
-				p, err := NewNatsProvider(townRoot, natsURL)
+				// Retry with backoff: NATS may still be starting when gt up
+				// launches the daemon in parallel.
+				p, err := newNatsProviderWithRetry(townRoot, natsURL, 5, 2*time.Second)
 				if err == nil {
 					return p
 				}
@@ -64,6 +66,24 @@ func GetDefaultProvider(townRoot string) Provider {
 
 	// 3. Default to TmuxProvider
 	return NewTmuxProvider(tmux.NewTmux())
+}
+
+// newNatsProviderWithRetry attempts to create a NatsProvider with retries.
+// This handles the race condition where gt up starts NATS and the daemon
+// in parallel goroutines.
+func newNatsProviderWithRetry(townRoot, natsURL string, maxRetries int, delay time.Duration) (*NatsProvider, error) {
+	var p *NatsProvider
+	var err error
+	for i := 0; i <= maxRetries; i++ {
+		p, err = NewNatsProvider(townRoot, natsURL)
+		if err == nil {
+			return p, nil
+		}
+		if i < maxRetries {
+			time.Sleep(delay)
+		}
+	}
+	return nil, err
 }
 
 // Provider abstracts session management operations.

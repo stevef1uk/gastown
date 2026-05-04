@@ -520,6 +520,37 @@ func disableCurrentAgentDND(townRoot string) (bool, error) {
 	return true, nil
 }
 
+// expandGoBinPath returns an updated environment slice with PATH expanded
+// to include the user's go/bin directory so that dolt, bd, and other
+// Go-installed tools are available to the daemon and its spawned agents.
+func expandGoBinPath() []string {
+	home, _ := os.UserHomeDir()
+	goBin := "/usr/local/go/bin"
+	if home != "" {
+		goBin = filepath.Join(home, "go/bin") + ":" + goBin
+	}
+
+	pathEnv := os.Getenv("PATH")
+	if pathEnv == "" {
+		pathEnv = "/usr/local/bin:/usr/bin:/bin"
+	}
+
+	newPath := goBin + ":/usr/local/bin:/usr/bin:/bin:/sbin"
+	if !strings.Contains(pathEnv, goBin) {
+		newPath = newPath + ":" + pathEnv
+	}
+
+	// Replace existing PATH in os.Environ() to avoid duplicates
+	env := os.Environ()
+	for i, e := range env {
+		if strings.HasPrefix(e, "PATH=") {
+			env[i] = "PATH=" + newPath
+			return env
+		}
+	}
+	return append(env, "PATH="+newPath)
+}
+
 // ensureDaemon starts the daemon if not running.
 func ensureDaemon(townRoot string) error {
 	// GH#2656: Don't restart the daemon while gt down is running.
@@ -565,6 +596,10 @@ func ensureDaemon(townRoot string) error {
 	cmd.Stdout = nil
 	cmd.Stderr = nil
 	util.SetDetachedProcessGroup(cmd)
+
+	// Ensure daemon inherits a complete PATH including go/bin for dolt, bd, etc.
+	// The daemon spawns agents which inherit its environment.
+	cmd.Env = expandGoBinPath()
 
 	if err := cmd.Start(); err != nil {
 		return err
