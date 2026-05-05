@@ -1081,12 +1081,15 @@ func outputStatusText(w io.Writer, status TownStatus) error {
 
 	// Role icons - uses centralized emojis from constants package
 	roleIcons := map[string]string{
-		constants.RoleMayor:    constants.EmojiMayor,
-		constants.RoleDeacon:   constants.EmojiDeacon,
-		constants.RoleWitness:  constants.EmojiWitness,
-		constants.RoleRefinery: constants.EmojiRefinery,
-		constants.RoleCrew:     constants.EmojiCrew,
-		constants.RolePolecat:  constants.EmojiPolecat,
+		constants.RoleMayor:     constants.EmojiMayor,
+		constants.RoleDeacon:    constants.EmojiDeacon,
+		constants.RolePlanner:   constants.EmojiPlanner,
+		constants.RoleWitness:   constants.EmojiWitness,
+		constants.RoleRefinery:  constants.EmojiRefinery,
+		constants.RoleArchitect: constants.EmojiArchitect,
+		constants.RoleQA:        constants.EmojiQA,
+		constants.RoleCrew:      constants.EmojiCrew,
+		constants.RolePolecat:   constants.EmojiPolecat,
 		// Legacy names for backwards compatibility
 		"coordinator":  constants.EmojiMayor,
 		"health-check": constants.EmojiDeacon,
@@ -1122,13 +1125,17 @@ func outputStatusText(w io.Writer, status TownStatus) error {
 		fmt.Fprintf(w, "─── %s ───────────────────────────────────────────\n\n", style.Bold.Render(r.Name+"/"))
 
 		// Group agents by role
-		var witnesses, refineries, crews, polecats []AgentRuntime
+		var witnesses, refineries, architects, qas, crews, polecats []AgentRuntime
 		for _, agent := range r.Agents {
 			switch agent.Role {
 			case constants.RoleWitness:
 				witnesses = append(witnesses, agent)
 			case constants.RoleRefinery:
 				refineries = append(refineries, agent)
+			case constants.RoleArchitect:
+				architects = append(architects, agent)
+			case constants.RoleQA:
+				qas = append(qas, agent)
 			case constants.RoleCrew:
 				crews = append(crews, agent)
 			case constants.RolePolecat:
@@ -1181,6 +1188,36 @@ func outputStatusText(w io.Writer, status TownStatus) error {
 			}
 		}
 
+		// Architect
+		if len(architects) > 0 {
+			if statusVerbose {
+				fmt.Fprintf(w, "%s %s\n", roleIcons[constants.RoleArchitect], style.Bold.Render("Architect"))
+				for _, agent := range architects {
+					renderAgentDetails(w, agent, "   ", r.Hooks, status.Location)
+				}
+				fmt.Fprintln(w)
+			} else {
+				for _, agent := range architects {
+					renderAgentCompact(w, agent, roleIcons[constants.RoleArchitect]+" ", r.Hooks, status.Location)
+				}
+			}
+		}
+
+		// QA
+		if len(qas) > 0 {
+			if statusVerbose {
+				fmt.Fprintf(w, "%s %s\n", roleIcons[constants.RoleQA], style.Bold.Render("QA"))
+				for _, agent := range qas {
+					renderAgentDetails(w, agent, "   ", r.Hooks, status.Location)
+				}
+				fmt.Fprintln(w)
+			} else {
+				for _, agent := range qas {
+					renderAgentCompact(w, agent, roleIcons[constants.RoleQA]+" ", r.Hooks, status.Location)
+				}
+			}
+		}
+
 		// Crew
 		if len(crews) > 0 {
 			if statusVerbose {
@@ -1214,7 +1251,7 @@ func outputStatusText(w io.Writer, status TownStatus) error {
 		}
 
 		// No agents
-		if len(witnesses) == 0 && len(refineries) == 0 && len(crews) == 0 && len(polecats) == 0 {
+		if len(witnesses) == 0 && len(refineries) == 0 && len(architects) == 0 && len(qas) == 0 && len(crews) == 0 && len(polecats) == 0 {
 			fmt.Fprintf(w, "   %s\n", style.Dim.Render("(no agents)"))
 		}
 		fmt.Fprintln(w)

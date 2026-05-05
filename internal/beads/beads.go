@@ -488,12 +488,7 @@ func (b *Beads) run(args ...string) (_ []byte, retErr error) {
 	// Always explicitly set BEADS_DIR to prevent inherited env vars from
 	// causing prefix mismatches. Use explicit beadsDir if set, otherwise
 	// resolve from working directory.
-	bdPath, err := exec.LookPath("bd")
-	if err != nil {
-		return nil, fmt.Errorf("beads (bd) binary not found in PATH")
-	}
-
-	cmd := exec.Command(bdPath, fullArgs...) //nolint:gosec // G204: bd is a trusted internal tool
+	cmd := exec.CommandContext(ctx, "bd", fullArgs...) //nolint:gosec // G204: bd is a trusted internal tool
 	util.SetDetachedProcessGroup(cmd)
 	cmd.Dir = b.workDir
 	cmd.Env = runEnv
@@ -507,7 +502,7 @@ func (b *Beads) run(args ...string) (_ []byte, retErr error) {
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
-	err = cmd.Run()
+	err := cmd.Run()
 
 	// If bd doesn't support --flat, retry without it. The retry is done here
 	// (not in callers like List) so that InjectFlatForListJSON doesn't re-add

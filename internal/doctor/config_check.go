@@ -578,8 +578,8 @@ func findAllRigs(townRoot string) []string {
 
 		rigPath := filepath.Join(townRoot, name)
 
-		// Check if this looks like a rig (has crew/, polecats/, witness/, or refinery/)
-		markers := []string{"crew", "polecats", "witness", "refinery"}
+		// Check if this looks like a rig (has crew/, polecats/, witness/, refinery/, architect/, or qa/)
+		markers := []string{"crew", "polecats", "witness", "refinery", "architect", "qa"}
 		for _, marker := range markers {
 			if _, err := os.Stat(filepath.Join(rigPath, marker)); err == nil {
 				rigs = append(rigs, rigPath)

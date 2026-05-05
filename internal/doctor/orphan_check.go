@@ -265,7 +265,7 @@ func (c *OrphanSessionCheck) isValidSession(sess string, validRigs []string, may
 
 	// witness, refinery, crew, and polecat are all valid roles
 	switch identity.Role {
-	case session.RoleWitness, session.RoleRefinery, session.RoleCrew, session.RolePolecat:
+	case session.RoleWitness, session.RoleRefinery, session.RoleArchitect, session.RoleQA, session.RoleCrew, session.RolePolecat:
 		return true
 	}
 

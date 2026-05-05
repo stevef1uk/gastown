@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -400,10 +401,10 @@ func runUp(cmd *cobra.Command, args []string) error {
 		services = append(services, orphanServices...)
 	}
 
-	// 5 & 6. Witnesses and Refineries (using prefetched rigs)
-	witnessResults, refineryResults := startRigAgentsWithPrefetch(rigs, prefetchedRigs, rigErrors)
+	// 5 & 6. Witnesses, Refineries, Architects, and QAs (using prefetched rigs)
+	witnessResults, refineryResults, architectResults, qaResults := startRigAgentsWithPrefetch(rigs, prefetchedRigs, rigErrors)
 
-	// Collect results in order: all witnesses first, then all refineries
+	// Collect results in order: all witnesses first, then all refineries, then architects, then qa
 	for _, rigName := range rigs {
 		if result, ok := witnessResults[rigName]; ok {
 			services = append(services, ServiceStatus{Name: result.name, Type: constants.RoleWitness, Rig: rigName, OK: result.ok, Detail: result.detail})
@@ -415,6 +416,22 @@ func runUp(cmd *cobra.Command, args []string) error {
 	for _, rigName := range rigs {
 		if result, ok := refineryResults[rigName]; ok {
 			services = append(services, ServiceStatus{Name: result.name, Type: constants.RoleRefinery, Rig: rigName, OK: result.ok, Detail: result.detail})
+			if !result.ok {
+				allOK = false
+			}
+		}
+	}
+	for _, rigName := range rigs {
+		if result, ok := architectResults[rigName]; ok {
+			services = append(services, ServiceStatus{Name: result.name, Type: constants.RoleArchitect, Rig: rigName, OK: result.ok, Detail: result.detail})
+			if !result.ok {
+				allOK = false
+			}
+		}
+	}
+	for _, rigName := range rigs {
+		if result, ok := qaResults[rigName]; ok {
+			services = append(services, ServiceStatus{Name: result.name, Type: constants.RoleQA, Rig: rigName, OK: result.ok, Detail: result.detail})
 			if !result.ok {
 				allOK = false
 			}
@@ -477,6 +494,8 @@ func runUp(cmd *cobra.Command, args []string) error {
 		for _, rigName := range rigs {
 			startedServices = append(startedServices, fmt.Sprintf("%s/witness", rigName))
 			startedServices = append(startedServices, fmt.Sprintf("%s/refinery", rigName))
+			startedServices = append(startedServices, fmt.Sprintf("%s/architect", rigName))
+			startedServices = append(startedServices, fmt.Sprintf("%s/qa", rigName))
 		}
 		_ = events.LogFeed(events.TypeBoot, "gt", events.BootPayload("town", startedServices))
 	}
@@ -702,24 +721,26 @@ func prefetchRigs(rigNames []string) (map[string]*rig.Rig, map[string]error) {
 
 // agentTask represents a unit of work for the agent worker pool.
 type agentTask struct {
-	rigName   string
-	rigObj    *rig.Rig
-	isWitness bool // true for witness, false for refinery
+	rigName string
+	rigObj  *rig.Rig
+	role    string // "witness", "refinery", "architect", "qa"
 }
 
 // agentResultMsg carries result back from worker to collector.
 type agentResultMsg struct {
-	rigName   string
-	isWitness bool
-	result    agentStartResult
+	rigName string
+	role    string
+	result  agentStartResult
 }
 
-// startRigAgentsWithPrefetch starts all Witnesses and Refineries using pre-loaded rig configs.
+// startRigAgentsWithPrefetch starts all Witnesses, Refineries, Architects, and QAs using pre-loaded rig configs.
 // Uses a worker pool with fixed goroutine count to limit concurrency and reduce overhead.
-func startRigAgentsWithPrefetch(rigNames []string, prefetchedRigs map[string]*rig.Rig, rigErrors map[string]error) (witnessResults, refineryResults map[string]agentStartResult) {
+func startRigAgentsWithPrefetch(rigNames []string, prefetchedRigs map[string]*rig.Rig, rigErrors map[string]error) (witnessResults, refineryResults, architectResults, qaResults map[string]agentStartResult) {
 	n := len(rigNames)
 	witnessResults = make(map[string]agentStartResult, n)
 	refineryResults = make(map[string]agentStartResult, n)
+	architectResults = make(map[string]agentStartResult, n)
+	qaResults = make(map[string]agentStartResult, n)
 
 	if n == 0 {
 		return
@@ -738,9 +759,19 @@ func startRigAgentsWithPrefetch(rigNames []string, prefetchedRigs map[string]*ri
 			ok:     false,
 			detail: errDetail,
 		}
+		architectResults[rigName] = agentStartResult{
+			name:   "Architect (" + rigName + ")",
+			ok:     false,
+			detail: errDetail,
+		}
+		qaResults[rigName] = agentStartResult{
+			name:   "QA (" + rigName + ")",
+			ok:     false,
+			detail: errDetail,
+		}
 	}
 
-	numTasks := len(prefetchedRigs) * 2 // witness + refinery per rig
+	numTasks := len(prefetchedRigs) * 4 // witness + refinery + architect + qa per rig
 	if numTasks == 0 {
 		return
 	}
@@ -762,15 +793,20 @@ func startRigAgentsWithPrefetch(rigNames []string, prefetchedRigs map[string]*ri
 			defer wg.Done()
 			for task := range tasks {
 				var result agentStartResult
-				if task.isWitness {
+				switch task.role {
+				case constants.RoleWitness:
 					result = upStartWitness(task.rigName, task.rigObj)
-				} else {
+				case constants.RoleRefinery:
 					result = upStartRefinery(task.rigName, task.rigObj)
+				case constants.RoleArchitect:
+					result = upStartArchitect(task.rigName, task.rigObj)
+				case constants.RoleQA:
+					result = upStartQA(task.rigName, task.rigObj)
 				}
 				results <- agentResultMsg{
-					rigName:   task.rigName,
-					isWitness: task.isWitness,
-					result:    result,
+					rigName: task.rigName,
+					role:    task.role,
+					result:  result,
 				}
 			}
 		}()
@@ -778,8 +814,10 @@ func startRigAgentsWithPrefetch(rigNames []string, prefetchedRigs map[string]*ri
 
 	// Enqueue all tasks
 	for rigName, r := range prefetchedRigs {
-		tasks <- agentTask{rigName: rigName, rigObj: r, isWitness: true}
-		tasks <- agentTask{rigName: rigName, rigObj: r, isWitness: false}
+		tasks <- agentTask{rigName: rigName, rigObj: r, role: constants.RoleWitness}
+		tasks <- agentTask{rigName: rigName, rigObj: r, role: constants.RoleRefinery}
+		tasks <- agentTask{rigName: rigName, rigObj: r, role: constants.RoleArchitect}
+		tasks <- agentTask{rigName: rigName, rigObj: r, role: constants.RoleQA}
 	}
 	close(tasks)
 
@@ -791,10 +829,15 @@ func startRigAgentsWithPrefetch(rigNames []string, prefetchedRigs map[string]*ri
 
 	// Collect results - no locking needed, single goroutine collects
 	for msg := range results {
-		if msg.isWitness {
+		switch msg.role {
+		case constants.RoleWitness:
 			witnessResults[msg.rigName] = msg.result
-		} else {
+		case constants.RoleRefinery:
 			refineryResults[msg.rigName] = msg.result
+		case constants.RoleArchitect:
+			architectResults[msg.rigName] = msg.result
+		case constants.RoleQA:
+			qaResults[msg.rigName] = msg.result
 		}
 	}
 
@@ -851,6 +894,92 @@ func upStartRefinery(rigName string, r *rig.Rig) agentStartResult {
 		return agentStartResult{name: name, ok: false, detail: err.Error()}
 	}
 	return agentStartResult{name: name, ok: true, detail: mgr.SessionName()}
+}
+
+// upStartArchitect starts an architect for the given rig and returns a result struct.
+// Respects parked/docked status - skips starting if rig is not operational.
+func upStartArchitect(rigName string, r *rig.Rig) agentStartResult {
+	name := "Architect (" + rigName + ")"
+
+	if !r.GetBoolConfig("auto_start_on_up") && !r.GetBoolConfig("auto_start_on_boot") {
+		townRoot := filepath.Dir(r.Path)
+		if blocked, reason := IsRigParkedOrDocked(townRoot, rigName); blocked {
+			return agentStartResult{name: name, ok: true, detail: fmt.Sprintf("skipped (rig %s)", reason)}
+		}
+	}
+
+	sessionID := session.ArchitectSessionName(session.PrefixFor(rigName))
+	architectDir := filepath.Join(r.Path, constants.DirArchitect)
+	if err := os.MkdirAll(architectDir, 0755); err != nil {
+		return agentStartResult{name: name, ok: false, detail: err.Error()}
+	}
+
+	townRoot := filepath.Dir(r.Path)
+	sp := session.GetDefaultProvider(townRoot)
+	ctx := context.Background()
+
+	if running, _ := sp.Exists(ctx, sessionID); running {
+		return agentStartResult{name: name, ok: true, detail: sessionID}
+	}
+
+	_, err := session.StartSession(ctx, sp, session.SessionConfig{
+		SessionID:    sessionID,
+		WorkDir:      architectDir,
+		Role:         constants.RoleArchitect,
+		TownRoot:     townRoot,
+		RigPath:      r.Path,
+		RigName:      rigName,
+		Beacon:       session.BeaconConfig{Recipient: "architect", Sender: "daemon", Topic: "startup"},
+		WaitForAgent: false,
+		AutoRespawn:  true,
+	})
+	if err != nil {
+		return agentStartResult{name: name, ok: false, detail: err.Error()}
+	}
+	return agentStartResult{name: name, ok: true, detail: sessionID}
+}
+
+// upStartQA starts a qa agent for the given rig and returns a result struct.
+// Respects parked/docked status - skips starting if rig is not operational.
+func upStartQA(rigName string, r *rig.Rig) agentStartResult {
+	name := "QA (" + rigName + ")"
+
+	if !r.GetBoolConfig("auto_start_on_up") && !r.GetBoolConfig("auto_start_on_boot") {
+		townRoot := filepath.Dir(r.Path)
+		if blocked, reason := IsRigParkedOrDocked(townRoot, rigName); blocked {
+			return agentStartResult{name: name, ok: true, detail: fmt.Sprintf("skipped (rig %s)", reason)}
+		}
+	}
+
+	sessionID := session.QASessionName(session.PrefixFor(rigName))
+	qaDir := filepath.Join(r.Path, constants.DirQA)
+	if err := os.MkdirAll(qaDir, 0755); err != nil {
+		return agentStartResult{name: name, ok: false, detail: err.Error()}
+	}
+
+	townRoot := filepath.Dir(r.Path)
+	sp := session.GetDefaultProvider(townRoot)
+	ctx := context.Background()
+
+	if running, _ := sp.Exists(ctx, sessionID); running {
+		return agentStartResult{name: name, ok: true, detail: sessionID}
+	}
+
+	_, err := session.StartSession(ctx, sp, session.SessionConfig{
+		SessionID:    sessionID,
+		WorkDir:      qaDir,
+		Role:         constants.RoleQA,
+		TownRoot:     townRoot,
+		RigPath:      r.Path,
+		RigName:      rigName,
+		Beacon:       session.BeaconConfig{Recipient: "qa", Sender: "daemon", Topic: "startup"},
+		WaitForAgent: false,
+		AutoRespawn:  true,
+	})
+	if err != nil {
+		return agentStartResult{name: name, ok: false, detail: err.Error()}
+	}
+	return agentStartResult{name: name, ok: true, detail: sessionID}
 }
 
 // discoverRigs finds all rigs in the town.

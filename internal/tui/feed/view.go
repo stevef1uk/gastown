@@ -284,7 +284,7 @@ func (m *Model) renderTree() string {
 		byRole := m.groupAgentsByRole(rig.Agents)
 
 		// Render each role group
-		roleOrder := []string{"mayor", "witness", "refinery", "deacon", "crew", "polecat"}
+		roleOrder := []string{"mayor", "planner", "witness", "refinery", "architect", "qa", "deacon", "crew", "polecat"}
 		for _, role := range roleOrder {
 			agents, ok := byRole[role]
 			if !ok || len(agents) == 0 {

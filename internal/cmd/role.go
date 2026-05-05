@@ -209,7 +209,7 @@ func GetRoleWithContext(cwd, townRoot string) (RoleInfo, error) {
 
 		// If env is incomplete (missing rig/polecat for roles that need them),
 		// fill gaps from cwd detection and mark as incomplete
-		needsRig := parsedRole == RoleWitness || parsedRole == RoleRefinery || parsedRole == RolePolecat || parsedRole == RoleCrew
+		needsRig := parsedRole == RoleWitness || parsedRole == RoleRefinery || parsedRole == RoleArchitect || parsedRole == RoleQA || parsedRole == RolePolecat || parsedRole == RoleCrew
 		needsPolecat := parsedRole == RolePolecat || parsedRole == RoleCrew || parsedRole == RoleDog
 
 		if needsRig && info.Rig == "" && cwdCtx.Rig != "" {
@@ -286,6 +286,12 @@ func detectRole(cwd, townRoot string) RoleInfo {
 		return ctx
 	}
 
+	// Check for planner role: planner/
+	if len(parts) >= 1 && parts[0] == "planner" {
+		ctx.Role = RolePlanner
+		return ctx
+	}
+
 	// Check for deacon role: deacon/
 	if len(parts) >= 1 && parts[0] == "deacon" {
 		ctx.Role = RoleDeacon
@@ -314,6 +320,18 @@ func detectRole(cwd, townRoot string) RoleInfo {
 	// Check for refinery: <rig>/refinery/rig/
 	if len(parts) >= 2 && parts[1] == "refinery" {
 		ctx.Role = RoleRefinery
+		return ctx
+	}
+
+	// Check for architect: <rig>/architect/
+	if len(parts) >= 2 && parts[1] == "architect" {
+		ctx.Role = RoleArchitect
+		return ctx
+	}
+
+	// Check for qa: <rig>/qa/
+	if len(parts) >= 2 && parts[1] == "qa" {
+		ctx.Role = RoleQA
 		return ctx
 	}
 
@@ -355,6 +373,8 @@ func parseRoleString(s string) (Role, string, string) {
 		return RoleBoot, "", ""
 	case "dog":
 		return RoleDog, "", ""
+	case constants.RolePlanner:
+		return RolePlanner, "", ""
 	}
 
 	// Compound roles: rig/role or rig/polecats/name or rig/crew/name
@@ -377,6 +397,10 @@ func parseRoleString(s string) (Role, string, string) {
 		return RoleWitness, rig, ""
 	case constants.RoleRefinery:
 		return RoleRefinery, rig, ""
+	case constants.RoleArchitect:
+		return RoleArchitect, rig, ""
+	case constants.RoleQA:
+		return RoleQA, rig, ""
 	case "polecats":
 		if len(parts) >= 3 {
 			return RolePolecat, rig, parts[2]
@@ -405,6 +429,8 @@ func (info RoleInfo) ActorString() string {
 		return "mayor"
 	case RoleDeacon:
 		return "deacon"
+	case RolePlanner:
+		return "planner"
 	case RoleWitness:
 		if info.Rig != "" {
 			return fmt.Sprintf("%s/witness", info.Rig)
@@ -415,6 +441,16 @@ func (info RoleInfo) ActorString() string {
 			return fmt.Sprintf("%s/refinery", info.Rig)
 		}
 		return "refinery"
+	case RoleArchitect:
+		if info.Rig != "" {
+			return fmt.Sprintf("%s/architect", info.Rig)
+		}
+		return "architect"
+	case RoleQA:
+		if info.Rig != "" {
+			return fmt.Sprintf("%s/qa", info.Rig)
+		}
+		return "qa"
 	case RolePolecat:
 		if info.Rig != "" && info.Polecat != "" {
 			return fmt.Sprintf("%s/polecats/%s", info.Rig, info.Polecat)
@@ -439,6 +475,8 @@ func getRoleHome(role Role, rig, polecat, townRoot string) string {
 		return filepath.Join(townRoot, "mayor")
 	case RoleDeacon:
 		return filepath.Join(townRoot, "deacon")
+	case RolePlanner:
+		return filepath.Join(townRoot, "planner")
 	case RoleWitness:
 		if rig == "" {
 			return ""
@@ -449,6 +487,16 @@ func getRoleHome(role Role, rig, polecat, townRoot string) string {
 			return ""
 		}
 		return filepath.Join(townRoot, rig, "refinery", "rig")
+	case RoleArchitect:
+		if rig == "" {
+			return ""
+		}
+		return filepath.Join(townRoot, rig, "architect")
+	case RoleQA:
+		if rig == "" {
+			return ""
+		}
+		return filepath.Join(townRoot, rig, "qa")
 	case RolePolecat:
 		if rig == "" || polecat == "" {
 			return ""
@@ -608,8 +656,11 @@ func runRoleList(cmd *cobra.Command, args []string) error {
 	}{
 		{RoleMayor, "Global coordinator at mayor/"},
 		{RoleDeacon, "Background supervisor daemon"},
+		{RolePlanner, "Town-level task planner"},
 		{RoleWitness, "Per-rig polecat lifecycle manager"},
 		{RoleRefinery, "Per-rig merge queue processor"},
+		{RoleArchitect, "Per-rig architecture and technology decisions"},
+		{RoleQA, "Per-rig code quality and standards review"},
 		{RolePolecat, "Worker with persistent identity, ephemeral sessions"},
 		{RoleCrew, "Persistent worker with own worktree"},
 	}

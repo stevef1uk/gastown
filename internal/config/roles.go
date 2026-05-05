@@ -107,17 +107,17 @@ func (d Duration) String() string {
 
 // AllRoles returns the list of all known role names.
 func AllRoles() []string {
-	return []string{"mayor", "deacon", "dog", "witness", "refinery", "polecat", "crew"}
+	return []string{"mayor", "deacon", "planner", "dog", "witness", "refinery", "architect", "qa", "polecat", "crew"}
 }
 
 // TownRoles returns roles that operate at town scope.
 func TownRoles() []string {
-	return []string{"mayor", "deacon", "dog"}
+	return []string{"mayor", "deacon", "planner", "dog"}
 }
 
 // RigRoles returns roles that operate at rig scope.
 func RigRoles() []string {
-	return []string{"witness", "refinery", "polecat", "crew"}
+	return []string{"witness", "refinery", "architect", "qa", "polecat", "crew"}
 }
 
 // isValidRoleName checks if the given name is a known role.

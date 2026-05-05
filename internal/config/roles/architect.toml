@@ -1,0 +1,23 @@
+# Architect role definition
+# Per-rig architecture and technology decision agent. One per rig.
+
+role = "architect"
+scope = "rig"
+nudge = "Check for architecture review requests or SPEC analysis assignments, then execute."
+prompt_template = "architect.md.tmpl"
+
+[session]
+pattern = "{prefix}-architect"
+work_dir = "{town}/{rig}/architect"
+needs_pre_sync = false
+start_command = "gt-agent"
+
+[env]
+GT_ROLE = "{rig}/architect"
+GT_SCOPE = "rig"
+
+[health]
+ping_timeout = "30s"
+consecutive_failures = 3
+kill_cooldown = "5m"
+stuck_threshold = "1h"

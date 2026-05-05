@@ -10,19 +10,22 @@ import (
 type Role string
 
 const (
-	RoleMayor    Role = "mayor"
-	RoleDeacon   Role = "deacon"
-	RoleOverseer Role = "overseer"
-	RoleWitness  Role = "witness"
-	RoleRefinery Role = "refinery"
-	RoleCrew     Role = "crew"
-	RolePolecat  Role = "polecat"
-	RoleDog      Role = "dog"
+	RoleMayor     Role = "mayor"
+	RoleDeacon    Role = "deacon"
+	RolePlanner   Role = "planner"
+	RoleOverseer  Role = "overseer"
+	RoleWitness   Role = "witness"
+	RoleRefinery  Role = "refinery"
+	RoleArchitect Role = "architect"
+	RoleQA        Role = "qa"
+	RoleCrew      Role = "crew"
+	RolePolecat   Role = "polecat"
+	RoleDog       Role = "dog"
 )
 
-// AgentIdentity represents a parsed Gas Town agent identity.
-type AgentIdentity struct {
-	Role   Role   // mayor, deacon, witness, refinery, crew, polecat, dog
+	// AgentIdentity represents a parsed Gas Town agent identity.
+	type AgentIdentity struct {
+		Role   Role   // mayor, deacon, planner, witness, refinery, crew, polecat, dog
 	Rig    string // rig name (empty for mayor/deacon/dog)
 	Name   string // crew/polecat/dog name (empty for mayor/deacon/witness/refinery)
 	Prefix string // beads prefix for rig-level agents (e.g., "gt", "bd", "hop")
@@ -40,6 +43,9 @@ func ParseAddress(address string) (*AgentIdentity, error) {
 	}
 	if address == string(RoleDeacon) || address == string(RoleDeacon)+"/" {
 		return &AgentIdentity{Role: RoleDeacon}, nil
+	}
+	if address == string(RolePlanner) || address == string(RolePlanner)+"/" {
+		return &AgentIdentity{Role: RolePlanner}, nil
 	}
 	if address == "overseer" {
 		return nil, fmt.Errorf("overseer has no session")
@@ -61,6 +67,10 @@ func ParseAddress(address string) (*AgentIdentity, error) {
 			return &AgentIdentity{Role: RoleWitness, Rig: rig, Prefix: prefix}, nil
 		case string(RoleRefinery):
 			return &AgentIdentity{Role: RoleRefinery, Rig: rig, Prefix: prefix}, nil
+		case string(RoleArchitect):
+			return &AgentIdentity{Role: RoleArchitect, Rig: rig, Prefix: prefix}, nil
+		case string(RoleQA):
+			return &AgentIdentity{Role: RoleQA, Rig: rig, Prefix: prefix}, nil
 		case string(RoleCrew), "polecats":
 			return nil, fmt.Errorf("invalid address %q", address)
 		default:
@@ -120,6 +130,8 @@ func ParseSessionNameWithRegistry(session string, registry *PrefixRegistry) (*Ag
 			return &AgentIdentity{Role: RoleMayor}, nil
 		case string(RoleDeacon):
 			return &AgentIdentity{Role: RoleDeacon}, nil
+		case string(RolePlanner):
+			return &AgentIdentity{Role: RolePlanner}, nil
 		case "boot":
 			return &AgentIdentity{Role: RoleDeacon, Name: "boot"}, nil
 		case "overseer":
@@ -156,6 +168,16 @@ func ParseSessionNameWithRegistry(session string, registry *PrefixRegistry) (*Ag
 		return &AgentIdentity{Role: RoleRefinery, Rig: rig, Prefix: prefix}, nil
 	}
 
+	// Check for architect (suffix marker)
+	if rest == string(RoleArchitect) {
+		return &AgentIdentity{Role: RoleArchitect, Rig: rig, Prefix: prefix}, nil
+	}
+
+	// Check for qa (suffix marker)
+	if rest == string(RoleQA) {
+		return &AgentIdentity{Role: RoleQA, Rig: rig, Prefix: prefix}, nil
+	}
+
 	// Check for crew (marker in rest)
 	if strings.HasPrefix(rest, "crew-") {
 		name := rest[5:] // len("crew-") = 5
@@ -183,12 +205,18 @@ func (a *AgentIdentity) SessionName() string {
 			return BootSessionName()
 		}
 		return DeaconSessionName()
+	case RolePlanner:
+		return PlannerSessionName()
 	case RoleOverseer:
 		return OverseerSessionName()
 	case RoleWitness:
 		return WitnessSessionName(a.prefix())
 	case RoleRefinery:
 		return RefinerySessionName(a.prefix())
+	case RoleArchitect:
+		return ArchitectSessionName(a.prefix())
+	case RoleQA:
+		return QASessionName(a.prefix())
 	case RoleCrew:
 		return CrewSessionName(a.prefix(), a.Name)
 	case RolePolecat:
@@ -226,12 +254,18 @@ func (a *AgentIdentity) BeaconAddress() string {
 		return "mayor"
 	case RoleDeacon:
 		return "deacon"
+	case RolePlanner:
+		return "planner"
 	case RoleOverseer:
 		return "overseer"
 	case RoleWitness:
 		return BeaconRecipient("witness", "", a.Rig)
 	case RoleRefinery:
 		return BeaconRecipient("refinery", "", a.Rig)
+	case RoleArchitect:
+		return BeaconRecipient("architect", "", a.Rig)
+	case RoleQA:
+		return BeaconRecipient("qa", "", a.Rig)
 	case RoleCrew:
 		return BeaconRecipient("crew", a.Name, a.Rig)
 	case RolePolecat:
@@ -257,12 +291,18 @@ func (a *AgentIdentity) Address() string {
 		return "mayor"
 	case RoleDeacon:
 		return "deacon"
+	case RolePlanner:
+		return "planner"
 	case RoleOverseer:
 		return "overseer"
 	case RoleWitness:
 		return fmt.Sprintf("%s/witness", a.Rig)
 	case RoleRefinery:
 		return fmt.Sprintf("%s/refinery", a.Rig)
+	case RoleArchitect:
+		return fmt.Sprintf("%s/architect", a.Rig)
+	case RoleQA:
+		return fmt.Sprintf("%s/qa", a.Rig)
 	case RoleCrew:
 		return fmt.Sprintf("%s/crew/%s", a.Rig, a.Name)
 	case RolePolecat:

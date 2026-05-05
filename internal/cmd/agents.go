@@ -25,8 +25,11 @@ type AgentType int
 const (
 	AgentMayor AgentType = iota
 	AgentDeacon
+	AgentPlanner
 	AgentWitness
 	AgentRefinery
+	AgentArchitect
+	AgentQA
 	AgentCrew
 	AgentPolecat
 	AgentPersonal // Non-GT session (user's terminal session)
@@ -44,33 +47,41 @@ type AgentSession struct {
 
 // AgentTypeColors maps agent types to tmux color codes.
 var AgentTypeColors = map[AgentType]string{
-	AgentMayor:    "#[fg=red,bold]",
-	AgentDeacon:   "#[fg=yellow,bold]",
-	AgentWitness:  "#[fg=cyan]",
-	AgentRefinery: "#[fg=blue]",
-	AgentCrew:     "#[fg=green]",
-	AgentPolecat:  "#[fg=white,dim]",
-	AgentPersonal: "#[fg=magenta]",
-	AgentTest:     "#[fg=yellow,dim]",
+	AgentMayor:     "#[fg=red,bold]",
+	AgentDeacon:    "#[fg=yellow,bold]",
+	AgentPlanner:   "#[fg=purple,bold]",
+	AgentWitness:   "#[fg=cyan]",
+	AgentRefinery:  "#[fg=blue]",
+	AgentArchitect: "#[fg=orange]",
+	AgentQA:        "#[fg=magenta]",
+	AgentCrew:      "#[fg=green]",
+	AgentPolecat:   "#[fg=white,dim]",
+	AgentPersonal:  "#[fg=magenta]",
+	AgentTest:      "#[fg=yellow,dim]",
 }
 
 // rigTypeOrder defines the display order of rig-level agent types.
 var rigTypeOrder = map[AgentType]int{
-	AgentRefinery: 0,
-	AgentWitness:  1,
-	AgentCrew:     2,
-	AgentPolecat:  3,
+	AgentArchitect: 0,
+	AgentQA:        1,
+	AgentRefinery:  2,
+	AgentWitness:   3,
+	AgentCrew:      4,
+	AgentPolecat:   5,
 }
 
 // AgentTypeIcons maps agent types to display icons.
 // Uses centralized emojis from constants package.
 var AgentTypeIcons = map[AgentType]string{
-	AgentMayor:    constants.EmojiMayor,
-	AgentDeacon:   constants.EmojiDeacon,
-	AgentWitness:  constants.EmojiWitness,
-	AgentRefinery: constants.EmojiRefinery,
-	AgentCrew:     constants.EmojiCrew,
-	AgentPolecat:  constants.EmojiPolecat,
+	AgentMayor:     constants.EmojiMayor,
+	AgentDeacon:    constants.EmojiDeacon,
+	AgentPlanner:   constants.EmojiPlanner,
+	AgentWitness:   constants.EmojiWitness,
+	AgentRefinery:  constants.EmojiRefinery,
+	AgentArchitect: constants.EmojiArchitect,
+	AgentQA:        constants.EmojiQA,
+	AgentCrew:      constants.EmojiCrew,
+	AgentPolecat:   constants.EmojiPolecat,
 }
 
 var agentsCmd = &cobra.Command{
@@ -165,10 +176,16 @@ func categorizeSession(name string) *AgentSession {
 		sess.Type = AgentMayor
 	case session.RoleDeacon:
 		sess.Type = AgentDeacon
+	case session.RolePlanner:
+		sess.Type = AgentPlanner
 	case session.RoleWitness:
 		sess.Type = AgentWitness
 	case session.RoleRefinery:
 		sess.Type = AgentRefinery
+	case session.RoleArchitect:
+		sess.Type = AgentArchitect
+	case session.RoleQA:
+		sess.Type = AgentQA
 	case session.RoleCrew:
 		sess.Type = AgentCrew
 	case session.RolePolecat:
@@ -380,10 +397,16 @@ func (a *AgentSession) displayLabel() string {
 		return fmt.Sprintf("%s%s Mayor#[default]", color, icon)
 	case AgentDeacon:
 		return fmt.Sprintf("%s%s Deacon#[default]", color, icon)
+	case AgentPlanner:
+		return fmt.Sprintf("%s%s Planner#[default]", color, icon)
 	case AgentWitness:
 		return fmt.Sprintf("%s%s %s/witness#[default]", color, icon, a.Rig)
 	case AgentRefinery:
 		return fmt.Sprintf("%s%s %s/refinery#[default]", color, icon, a.Rig)
+	case AgentArchitect:
+		return fmt.Sprintf("%s%s %s/architect#[default]", color, icon, a.Rig)
+	case AgentQA:
+		return fmt.Sprintf("%s%s %s/qa#[default]", color, icon, a.Rig)
 	case AgentCrew:
 		return fmt.Sprintf("%s%s %s/crew/%s#[default]", color, icon, a.Rig, a.AgentName)
 	case AgentPolecat:
@@ -567,10 +590,16 @@ func runAgentsList(cmd *cobra.Command, args []string) error {
 			fmt.Printf("  %s Mayor\n", icon)
 		case AgentDeacon:
 			fmt.Printf("  %s Deacon\n", icon)
+		case AgentPlanner:
+			fmt.Printf("  %s Planner\n", icon)
 		case AgentWitness:
 			fmt.Printf("  %s witness\n", icon)
 		case AgentRefinery:
 			fmt.Printf("  %s refinery\n", icon)
+		case AgentArchitect:
+			fmt.Printf("  %s architect\n", icon)
+		case AgentQA:
+			fmt.Printf("  %s qa\n", icon)
 		case AgentCrew:
 			fmt.Printf("  %s crew/%s\n", icon, agent.AgentName)
 		case AgentPolecat:

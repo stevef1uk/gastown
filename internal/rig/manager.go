@@ -390,21 +390,6 @@ func (m *Manager) AddRig(opts AddRigOptions) (*Rig, error) {
 		return nil, fmt.Errorf("writing ownership stamp: %w", err)
 	}
 
-	// Create server-side database and ensure metadata.json is correctly
-	// configured BEFORE any bd commands. This prevents bd from
-	// creating/using 'beads_<prefix>' when it should use '<rigName>'
-	// on the centralized server.
-	if !opts.SkipDoltCheck {
-		if _, err := exec.LookPath("dolt"); err == nil {
-			if _, _, err := doltserver.InitRig(m.townRoot, opts.Name); err != nil {
-				fmt.Printf("  Warning: Could not create rig database: %v\n", err)
-			}
-			if err := doltserver.EnsureMetadata(m.townRoot, opts.Name); err != nil {
-				fmt.Printf("  Warning: Could not set Dolt server metadata: %v\n", err)
-			}
-		}
-	}
-
 	// Track cleanup on failure, but only if this invocation still owns the path.
 	cleanup := func() { removeRigPathIfOwned(rigPath, ownershipStamp) }
 	success := false
@@ -799,6 +784,18 @@ Use crew for your own workspace. Polecats are for batch work dispatch.
 	}
 	// NOTE: Witness hooks are installed by witness/manager.go:Start() via EnsureSettingsForRole.
 	// No need to create patrol hooks here — agents self-install at startup.
+
+	// Create architect directory (no clone needed)
+	architectPath := filepath.Join(rigPath, constants.DirArchitect)
+	if err := os.MkdirAll(architectPath, 0755); err != nil {
+		return nil, fmt.Errorf("creating architect dir: %w", err)
+	}
+
+	// Create qa directory (no clone needed)
+	qaPath := filepath.Join(rigPath, constants.DirQA)
+	if err := os.MkdirAll(qaPath, 0755); err != nil {
+		return nil, fmt.Errorf("creating qa dir: %w", err)
+	}
 
 	// Create polecats directory with agent settings scaffold.
 	// Settings are passed to the agent via --settings flag (Claude) or installed

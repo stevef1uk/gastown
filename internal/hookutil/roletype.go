@@ -14,7 +14,7 @@ import "github.com/steveyegge/gastown/internal/constants"
 // cursor, etc.) and the runtime fallback logic.
 func IsAutonomousRole(role string) bool {
 	switch role {
-	case constants.RolePolecat, constants.RoleWitness, constants.RoleRefinery, constants.RoleDeacon, "boot":
+	case constants.RolePolecat, constants.RoleWitness, constants.RoleRefinery, constants.RoleArchitect, constants.RoleQA, constants.RoleDeacon, "boot":
 		return true
 	default:
 		return false

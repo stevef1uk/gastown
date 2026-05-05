@@ -123,6 +123,15 @@ const (
 	// DirWitness is the directory containing witness state.
 	DirWitness = "witness"
 
+	// DirPlanner is the directory containing planner state.
+	DirPlanner = "planner"
+
+	// DirArchitect is the directory containing architect state.
+	DirArchitect = "architect"
+
+	// DirQA is the directory containing qa state.
+	DirQA = "qa"
+
 	// DirRig is the subdirectory containing the actual git clone.
 	DirRig = "rig"
 
@@ -239,6 +248,9 @@ const (
 	// RoleMayor is the mayor agent role.
 	RoleMayor = "mayor"
 
+	// RolePlanner is the planner agent role.
+	RolePlanner = "planner"
+
 	// RoleWitness is the witness agent role.
 	RoleWitness = "witness"
 
@@ -256,6 +268,12 @@ const (
 
 	// RoleBoot is the boot watchdog role (modeled as a deacon dog).
 	RoleBoot = "boot"
+
+	// RoleArchitect is the architect agent role (per-rig).
+	RoleArchitect = "architect"
+
+	// RoleQA is the qa agent role (per-rig).
+	RoleQA = "qa"
 )
 
 // Role emojis - centralized for easy customization.
@@ -266,6 +284,9 @@ const (
 
 	// EmojiDeacon is the deacon emoji (wolf in the engine room).
 	EmojiDeacon = "🐺"
+
+	// EmojiPlanner is the planner emoji (architect).
+	EmojiPlanner = "📐"
 
 	// EmojiWitness is the witness emoji (watchful owl).
 	EmojiWitness = "🦉"
@@ -281,6 +302,12 @@ const (
 
 	// EmojiBoot is the boot watchdog emoji (dog).
 	EmojiBoot = "🐾"
+
+	// EmojiArchitect is the architect emoji (building).
+	EmojiArchitect = "🏗️"
+
+	// EmojiQA is the qa emoji (magnifying glass).
+	EmojiQA = "🔍"
 )
 
 // Molecule formula names for patrol and dog workflows.
@@ -333,6 +360,8 @@ func RoleEmoji(role string) string {
 		return EmojiMayor
 	case RoleDeacon:
 		return EmojiDeacon
+	case RolePlanner:
+		return EmojiPlanner
 	case RoleWitness:
 		return EmojiWitness
 	case RoleRefinery:
@@ -343,6 +372,10 @@ func RoleEmoji(role string) string {
 		return EmojiPolecat
 	case RoleBoot:
 		return EmojiBoot
+	case RoleArchitect:
+		return EmojiArchitect
+	case RoleQA:
+		return EmojiQA
 	default:
 		return "❓"
 	}

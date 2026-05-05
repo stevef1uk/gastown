@@ -23,6 +23,12 @@ func DeaconSessionName() string {
 	return HQPrefix + "deacon"
 }
 
+// PlannerSessionName returns the session name for the Planner agent.
+// One planner per machine - multi-town requires containers/VMs for isolation.
+func PlannerSessionName() string {
+	return HQPrefix + "planner"
+}
+
 // WitnessSessionName returns the session name for a rig's Witness agent.
 // rigPrefix is the rig's beads prefix (e.g., "gt" for gastown, "bd" for beads).
 func WitnessSessionName(rigPrefix string) string {
@@ -33,6 +39,18 @@ func WitnessSessionName(rigPrefix string) string {
 // rigPrefix is the rig's beads prefix (e.g., "gt" for gastown, "bd" for beads).
 func RefinerySessionName(rigPrefix string) string {
 	return fmt.Sprintf("%s-refinery", rigPrefix)
+}
+
+// ArchitectSessionName returns the session name for a rig's Architect agent.
+// rigPrefix is the rig's beads prefix (e.g., "gt" for gastown, "bd" for beads).
+func ArchitectSessionName(rigPrefix string) string {
+	return fmt.Sprintf("%s-architect", rigPrefix)
+}
+
+// QASessionName returns the session name for a rig's QA agent.
+// rigPrefix is the rig's beads prefix (e.g., "gt" for gastown, "bd" for beads).
+func QASessionName(rigPrefix string) string {
+	return fmt.Sprintf("%s-qa", rigPrefix)
 }
 
 // CrewSessionName returns the session name for a crew worker in a rig.

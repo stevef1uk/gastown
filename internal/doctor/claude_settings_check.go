@@ -212,7 +212,7 @@ func (c *ClaudeSettingsCheck) runNonClaudeCheck(townRoot string, agentName strin
 				continue
 			}
 			rigPath := filepath.Join(townRoot, rigName)
-			for _, role := range []string{"witness", "refinery", "crew", "polecats"} {
+			for _, role := range []string{"witness", "refinery", "architect", "qa", "crew", "polecats"} {
 				roleDir := filepath.Join(rigPath, role, configDir)
 				if dirExists(roleDir) {
 					continue
@@ -469,6 +469,72 @@ func (c *ClaudeSettingsCheck) findSettingsFiles(townRoot string) []staleSettings
 						})
 					}
 				}
+			}
+		}
+
+		// Check for architect settings
+		architectDir := filepath.Join(rigPath, "architect")
+		if dirExists(architectDir) {
+			architectCorrectSettings := filepath.Join(architectDir, ".claude", "settings.json")
+			if fileExists(architectCorrectSettings) {
+				files = append(files, staleSettingsInfo{
+					path:        architectCorrectSettings,
+					agentType:   "architect",
+					rigName:     rigName,
+					sessionName: session.ArchitectSessionName(session.PrefixFor(rigName)),
+				})
+			} else {
+				files = append(files, staleSettingsInfo{
+					path:        architectCorrectSettings,
+					agentType:   "architect",
+					rigName:     rigName,
+					sessionName: session.ArchitectSessionName(session.PrefixFor(rigName)),
+					missingFile: true,
+				})
+			}
+			architectParentStaleLocal := filepath.Join(architectDir, ".claude", "settings.local.json")
+			if fileExists(architectParentStaleLocal) {
+				files = append(files, staleSettingsInfo{
+					path:          architectParentStaleLocal,
+					agentType:     "architect",
+					rigName:       rigName,
+					sessionName:   session.ArchitectSessionName(session.PrefixFor(rigName)),
+					wrongLocation: true,
+					missing:       []string{"stale settings.local.json (settings now in architect/.claude/settings.json)"},
+				})
+			}
+		}
+
+		// Check for qa settings
+		qaDir := filepath.Join(rigPath, "qa")
+		if dirExists(qaDir) {
+			qaCorrectSettings := filepath.Join(qaDir, ".claude", "settings.json")
+			if fileExists(qaCorrectSettings) {
+				files = append(files, staleSettingsInfo{
+					path:        qaCorrectSettings,
+					agentType:   "qa",
+					rigName:     rigName,
+					sessionName: session.QASessionName(session.PrefixFor(rigName)),
+				})
+			} else {
+				files = append(files, staleSettingsInfo{
+					path:        qaCorrectSettings,
+					agentType:   "qa",
+					rigName:     rigName,
+					sessionName: session.QASessionName(session.PrefixFor(rigName)),
+					missingFile: true,
+				})
+			}
+			qaParentStaleLocal := filepath.Join(qaDir, ".claude", "settings.local.json")
+			if fileExists(qaParentStaleLocal) {
+				files = append(files, staleSettingsInfo{
+					path:          qaParentStaleLocal,
+					agentType:     "qa",
+					rigName:       rigName,
+					sessionName:   session.QASessionName(session.PrefixFor(rigName)),
+					wrongLocation: true,
+					missing:       []string{"stale settings.local.json (settings now in qa/.claude/settings.json)"},
+				})
 			}
 		}
 
@@ -842,7 +908,8 @@ func (c *ClaudeSettingsCheck) Fix(ctx *CheckContext) error {
 		// Crew and polecats are spawned on-demand and won't auto-restart anyway.
 		if ctx.RestartSessions {
 			if sf.agentType == "witness" || sf.agentType == "refinery" ||
-				sf.agentType == "deacon" || sf.agentType == "mayor" {
+				sf.agentType == "architect" || sf.agentType == "qa" ||
+				sf.agentType == "deacon" || sf.agentType == "mayor" || sf.agentType == "planner" {
 				running, _ := t.HasSession(sf.sessionName)
 				if running {
 					// Cycle the agent by killing and letting gt up restart it.

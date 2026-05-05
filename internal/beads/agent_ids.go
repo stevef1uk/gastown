@@ -32,6 +32,12 @@ func DeaconBeadIDTown() string {
 	return TownBeadsPrefix + "-deacon"
 }
 
+// PlannerBeadIDTown returns the Planner agent bead ID for town-level beads.
+// This uses the "hq-" prefix for town-level storage.
+func PlannerBeadIDTown() string {
+	return TownBeadsPrefix + "-planner"
+}
+
 // DogBeadIDTown returns a Dog agent bead ID for town-level beads.
 // Dogs are town-level agents, so they follow the pattern: hq-dog-<name>
 func DogBeadIDTown(name string) string {
@@ -44,21 +50,24 @@ func DogBeadIDTown(name string) string {
 var ValidAgentRoles = []string{
 	constants.RoleMayor,    // Town-level: gt-mayor
 	constants.RoleDeacon,   // Town-level: gt-deacon
+	constants.RolePlanner,  // Town-level: gt-planner
 	"dog",                  // Town-level with name: gt-dog-<name>
 	constants.RoleWitness,  // Per-rig: gt-<rig>-witness
 	constants.RoleRefinery, // Per-rig: gt-<rig>-refinery
+	constants.RoleArchitect, // Per-rig: gt-<rig>-architect
+	constants.RoleQA,       // Per-rig: gt-<rig>-qa
 	constants.RoleCrew,    // Per-rig with name: gt-<rig>-crew-<name>
 	constants.RolePolecat, // Per-rig with name: gt-<rig>-polecat-<name>
 }
 
 // TownLevelRoles are agent roles that don't have a rig.
-var TownLevelRoles = []string{constants.RoleMayor, constants.RoleDeacon}
+var TownLevelRoles = []string{constants.RoleMayor, constants.RoleDeacon, constants.RolePlanner}
 
 // TownLevelNamedRoles are town-level agent roles that include a name.
 var TownLevelNamedRoles = []string{"dog"}
 
 // RigLevelRoles are agent roles that have a rig but no name.
-var RigLevelRoles = []string{constants.RoleWitness, constants.RoleRefinery}
+var RigLevelRoles = []string{constants.RoleWitness, constants.RoleRefinery, constants.RoleArchitect, constants.RoleQA}
 
 // NamedRoles are agent roles that include a worker name (rig-level).
 var NamedRoles = []string{constants.RoleCrew, constants.RolePolecat}
@@ -339,6 +348,26 @@ func RefineryBeadID(rig string) string {
 	return RefineryBeadIDWithPrefix("gt", rig)
 }
 
+// ArchitectBeadIDWithPrefix returns the Architect agent bead ID for a rig using the specified prefix.
+func ArchitectBeadIDWithPrefix(prefix, rig string) string {
+	return AgentBeadIDWithPrefix(prefix, rig, constants.RoleArchitect, "")
+}
+
+// ArchitectBeadIDRig returns the Architect agent bead ID for a rig using "gt" prefix.
+func ArchitectBeadIDRig(rig string) string {
+	return ArchitectBeadIDWithPrefix("gt", rig)
+}
+
+// QABeadIDWithPrefix returns the QA agent bead ID for a rig using the specified prefix.
+func QABeadIDWithPrefix(prefix, rig string) string {
+	return AgentBeadIDWithPrefix(prefix, rig, constants.RoleQA, "")
+}
+
+// QABeadIDRig returns the QA agent bead ID for a rig using "gt" prefix.
+func QABeadIDRig(rig string) string {
+	return QABeadIDWithPrefix("gt", rig)
+}
+
 // CrewBeadIDWithPrefix returns a Crew worker agent bead ID using the specified prefix.
 func CrewBeadIDWithPrefix(prefix, rig, name string) string {
 	return AgentBeadIDWithPrefix(prefix, rig, constants.RoleCrew, name)
@@ -464,7 +493,7 @@ func IsAgentSessionBead(beadID string) bool {
 	}
 	// Known agent roles
 	switch role {
-	case constants.RoleMayor, constants.RoleDeacon, constants.RoleWitness, constants.RoleRefinery, constants.RoleCrew, constants.RolePolecat, "dog":
+	case constants.RoleMayor, constants.RoleDeacon, constants.RolePlanner, constants.RoleWitness, constants.RoleRefinery, constants.RoleArchitect, constants.RoleQA, constants.RoleCrew, constants.RolePolecat, "dog":
 		return true
 	default:
 		return false

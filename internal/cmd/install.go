@@ -311,6 +311,19 @@ func runInstall(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	// Create planner directory and settings (planner runs from ~/gt/planner/)
+	plannerDir := filepath.Join(absPath, constants.DirPlanner)
+	if err := os.MkdirAll(plannerDir, 0755); err != nil {
+		fmt.Printf("   %s Could not create planner directory: %v\n", style.Dim.Render("⚠"), err)
+	} else {
+		plannerRuntimeConfig := config.ResolveRoleAgentConfig("planner", absPath, plannerDir)
+		if err := runtime.EnsureSettingsForRole(plannerDir, plannerDir, "planner", plannerRuntimeConfig); err != nil {
+			fmt.Printf("   %s Could not create planner settings: %v\n", style.Dim.Render("⚠"), err)
+		} else {
+			fmt.Printf("   ✓ Created planner/.claude/settings.json\n")
+		}
+	}
+
 	// Create boot directory (deacon/dogs/boot/) for Boot watchdog.
 	// This avoids gt doctor warning on fresh install.
 	bootDir := filepath.Join(deaconDir, "dogs", "boot")
@@ -836,6 +849,11 @@ func initTownAgentBeads(townPath string) error {
 			id:       beads.DeaconBeadIDTown(),
 			roleType: "deacon",
 			title:    "Deacon (daemon beacon) - receives mechanical heartbeats, runs town plugins and monitoring.",
+		},
+		{
+			id:       beads.PlannerBeadIDTown(),
+			roleType: "planner",
+			title:    "Planner - breaks down SPECs into actionable tasks for polecats.",
 		},
 	}
 

@@ -22,6 +22,15 @@ func TestDeaconSessionName(t *testing.T) {
 	}
 }
 
+func TestPlannerSessionName(t *testing.T) {
+	// Planner session name is now fixed (one per machine), uses HQ prefix
+	want := "hq-planner"
+	got := PlannerSessionName()
+	if got != want {
+		t.Errorf("PlannerSessionName() = %q, want %q", got, want)
+	}
+}
+
 func TestOverseerSessionName(t *testing.T) {
 	want := "hq-overseer"
 	got := OverseerSessionName()
@@ -105,6 +114,44 @@ func TestPolecatSessionName(t *testing.T) {
 			got := PolecatSessionName(tt.rigPrefix, tt.name)
 			if got != tt.want {
 				t.Errorf("PolecatSessionName(%q, %q) = %q, want %q", tt.rigPrefix, tt.name, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestArchitectSessionName(t *testing.T) {
+	tests := []struct {
+		rigPrefix string
+		want      string
+	}{
+		{"gt", "gt-architect"},
+		{"bd", "bd-architect"},
+		{"hop", "hop-architect"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.rigPrefix, func(t *testing.T) {
+			got := ArchitectSessionName(tt.rigPrefix)
+			if got != tt.want {
+				t.Errorf("ArchitectSessionName(%q) = %q, want %q", tt.rigPrefix, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestQASessionName(t *testing.T) {
+	tests := []struct {
+		rigPrefix string
+		want      string
+	}{
+		{"gt", "gt-qa"},
+		{"bd", "bd-qa"},
+		{"hop", "hop-qa"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.rigPrefix, func(t *testing.T) {
+			got := QASessionName(tt.rigPrefix)
+			if got != tt.want {
+				t.Errorf("QASessionName(%q) = %q, want %q", tt.rigPrefix, got, tt.want)
 			}
 		})
 	}

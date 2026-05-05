@@ -165,9 +165,13 @@ func (c *AgentBeadsCheck) Run(ctx *CheckContext) *CheckResult {
 		// Check rig-specific agents (using canonical naming: prefix-rig-role-name)
 		witnessID := beads.WitnessBeadIDWithPrefix(prefix, rigName)
 		refineryID := beads.RefineryBeadIDWithPrefix(prefix, rigName)
+		architectID := beads.ArchitectBeadIDWithPrefix(prefix, rigName)
+		qaID := beads.QABeadIDWithPrefix(prefix, rigName)
 
 		checkAgentBead(witnessID)
 		checkAgentBead(refineryID)
+		checkAgentBead(architectID)
+		checkAgentBead(qaID)
 
 		// Check crew worker agents
 		crewWorkers := listCrewWorkers(ctx.TownRoot, rigName)
@@ -402,6 +406,22 @@ func (c *AgentBeadsCheck) Fix(ctx *CheckContext) error {
 		if err := fixAgentBead(bd, rigBeadsPath, refineryID,
 			fmt.Sprintf("Refinery for %s - processes merge queue.", rigName),
 			&beads.AgentFields{RoleType: "refinery", Rig: rigName, AgentState: "idle"},
+		); err != nil {
+			errs = append(errs, err)
+		}
+
+		architectID := beads.ArchitectBeadIDWithPrefix(prefix, rigName)
+		if err := fixAgentBead(bd, rigBeadsPath, architectID,
+			fmt.Sprintf("Architect for %s - defines architecture and technology stack.", rigName),
+			&beads.AgentFields{RoleType: "architect", Rig: rigName, AgentState: "idle"},
+		); err != nil {
+			errs = append(errs, err)
+		}
+
+		qaID := beads.QABeadIDWithPrefix(prefix, rigName)
+		if err := fixAgentBead(bd, rigBeadsPath, qaID,
+			fmt.Sprintf("QA for %s - reviews code quality and standards.", rigName),
+			&beads.AgentFields{RoleType: "qa", Rig: rigName, AgentState: "idle"},
 		); err != nil {
 			errs = append(errs, err)
 		}

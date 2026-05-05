@@ -153,7 +153,7 @@ func (r *Resolver) validateAgentAddress(address string) error {
 	// Well-known rig-level singletons (rig/witness, rig/refinery)
 	if len(parts) == 2 {
 		switch parts[1] {
-		case constants.RoleWitness, constants.RoleRefinery:
+		case constants.RoleWitness, constants.RoleRefinery, constants.RoleArchitect, constants.RoleQA:
 			return nil
 		}
 	}
@@ -487,7 +487,7 @@ func AgentBeadIDToAddress(id string) string {
 	// Scan from right for known role markers
 	for i := len(parts) - 1; i >= 1; i-- {
 		switch parts[i] {
-		case constants.RoleWitness, constants.RoleRefinery:
+		case constants.RoleWitness, constants.RoleRefinery, constants.RoleArchitect, constants.RoleQA:
 			// Singleton role: rig is everything before the role
 			rig := strings.Join(parts[:i], "-")
 			return rig + "/" + parts[i]

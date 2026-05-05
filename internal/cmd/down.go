@@ -142,6 +142,7 @@ func runDown(cmd *cobra.Command, args []string) error {
 	}
 
 	rigs := discoverRigs(townRoot)
+	ctx := context.Background()
 
 	// Load rig config for manager-based session operations
 	var rigMgr *rig.Manager
@@ -219,6 +220,46 @@ func runDown(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	// Phase 1b: Stop architects
+	for _, rigName := range rigs {
+		sessionName := session.ArchitectSessionName(session.PrefixFor(rigName))
+		if downDryRun {
+			if running, _ := t.HasSession(sessionName); running {
+				printDownStatus(fmt.Sprintf("Architect (%s)", rigName), true, "would stop")
+			}
+			continue
+		}
+		wasRunning, err := stopSession(t, sessionName)
+		if err != nil {
+			printDownStatus(fmt.Sprintf("Architect (%s)", rigName), false, err.Error())
+			allOK = false
+		} else if wasRunning {
+			printDownStatus(fmt.Sprintf("Architect (%s)", rigName), true, "stopped")
+		} else {
+			printDownStatus(fmt.Sprintf("Architect (%s)", rigName), true, "not running")
+		}
+	}
+
+	// Phase 1c: Stop qa agents
+	for _, rigName := range rigs {
+		sessionName := session.QASessionName(session.PrefixFor(rigName))
+		if downDryRun {
+			if running, _ := t.HasSession(sessionName); running {
+				printDownStatus(fmt.Sprintf("QA (%s)", rigName), true, "would stop")
+			}
+			continue
+		}
+		wasRunning, err := stopSession(t, sessionName)
+		if err != nil {
+			printDownStatus(fmt.Sprintf("QA (%s)", rigName), false, err.Error())
+			allOK = false
+		} else if wasRunning {
+			printDownStatus(fmt.Sprintf("QA (%s)", rigName), true, "stopped")
+		} else {
+			printDownStatus(fmt.Sprintf("QA (%s)", rigName), true, "not running")
+		}
+	}
+
 	// Phase 2: Stop witnesses
 	for _, rigName := range rigs {
 		if rigMgr == nil {
@@ -247,7 +288,6 @@ func runDown(cmd *cobra.Command, args []string) error {
 	}
 
 	// Phase 3: Stop town-level sessions (Mayor, Boot, Deacon)
-	ctx := context.Background()
 	for _, ts := range session.TownSessions() {
 		if downDryRun {
 			if running, _ := sp.Exists(ctx, ts.SessionID); running {
@@ -527,6 +567,19 @@ func runDown(cmd *cobra.Command, args []string) error {
 	}
 
 	return nil
+}
+
+// stopSession gracefully stops a tmux session.
+// Returns (wasRunning, error) - wasRunning is true if session existed and was stopped.
+func stopSession(t *tmux.Tmux, sessionName string) (bool, error) {
+	running, err := t.HasSession(sessionName)
+	if err != nil {
+		return false, err
+	}
+	if !running {
+		return false, nil
+	}
+	return true, t.KillSessionWithProcesses(sessionName)
 }
 
 // stopAllPolecats stops all polecat sessions across all rigs.

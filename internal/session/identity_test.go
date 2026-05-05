@@ -32,7 +32,7 @@ func TestParseSessionName(t *testing.T) {
 		wantPrefix string
 		wantErr    bool
 	}{
-		// Town-level roles (hq-mayor, hq-deacon)
+		// Town-level roles (hq-mayor, hq-deacon, hq-planner)
 		{
 			name:     "mayor",
 			session:  "hq-mayor",
@@ -42,6 +42,11 @@ func TestParseSessionName(t *testing.T) {
 			name:     "deacon",
 			session:  "hq-deacon",
 			wantRole: RoleDeacon,
+		},
+		{
+			name:     "planner",
+			session:  "hq-planner",
+			wantRole: RolePlanner,
 		},
 		{
 			name:     "boot",
@@ -134,6 +139,38 @@ func TestParseSessionName(t *testing.T) {
 			wantRole:   RoleRefinery,
 			wantRig:    "my-project",
 			wantPrefix: "mp",
+		},
+
+		// Architect (new format: <prefix>-architect)
+		{
+			name:       "architect gastown",
+			session:    "gt-architect",
+			wantRole:   RoleArchitect,
+			wantRig:    "gastown",
+			wantPrefix: "gt",
+		},
+		{
+			name:       "architect beads",
+			session:    "bd-architect",
+			wantRole:   RoleArchitect,
+			wantRig:    "beads",
+			wantPrefix: "bd",
+		},
+
+		// QA (new format: <prefix>-qa)
+		{
+			name:       "qa gastown",
+			session:    "gt-qa",
+			wantRole:   RoleQA,
+			wantRig:    "gastown",
+			wantPrefix: "gt",
+		},
+		{
+			name:       "qa beads",
+			session:    "bd-qa",
+			wantRole:   RoleQA,
+			wantRig:    "beads",
+			wantPrefix: "bd",
 		},
 
 		// Crew (new format: <prefix>-crew-<name>)
@@ -262,6 +299,11 @@ func TestAgentIdentity_SessionName(t *testing.T) {
 			want:     "hq-deacon",
 		},
 		{
+			name:     "planner",
+			identity: AgentIdentity{Role: RolePlanner},
+			want:     "hq-planner",
+		},
+		{
 			name:     "boot",
 			identity: AgentIdentity{Role: RoleDeacon, Name: "boot"},
 			want:     "hq-boot",
@@ -275,6 +317,16 @@ func TestAgentIdentity_SessionName(t *testing.T) {
 			name:     "refinery",
 			identity: AgentIdentity{Role: RoleRefinery, Rig: "beads", Prefix: "bd"},
 			want:     "bd-refinery",
+		},
+		{
+			name:     "architect",
+			identity: AgentIdentity{Role: RoleArchitect, Rig: "gastown", Prefix: "gt"},
+			want:     "gt-architect",
+		},
+		{
+			name:     "qa",
+			identity: AgentIdentity{Role: RoleQA, Rig: "beads", Prefix: "bd"},
+			want:     "bd-qa",
 		},
 		{
 			name:     "crew",
@@ -324,6 +376,11 @@ func TestAgentIdentity_Address(t *testing.T) {
 			want:     "deacon",
 		},
 		{
+			name:     "planner",
+			identity: AgentIdentity{Role: RolePlanner},
+			want:     "planner",
+		},
+		{
 			name:     "witness",
 			identity: AgentIdentity{Role: RoleWitness, Rig: "gastown", Prefix: "gt"},
 			want:     "gastown/witness",
@@ -332,6 +389,16 @@ func TestAgentIdentity_Address(t *testing.T) {
 			name:     "refinery",
 			identity: AgentIdentity{Role: RoleRefinery, Rig: "my-project", Prefix: "mp"},
 			want:     "my-project/refinery",
+		},
+		{
+			name:     "architect",
+			identity: AgentIdentity{Role: RoleArchitect, Rig: "gastown", Prefix: "gt"},
+			want:     "gastown/architect",
+		},
+		{
+			name:     "qa",
+			identity: AgentIdentity{Role: RoleQA, Rig: "beads", Prefix: "bd"},
+			want:     "beads/qa",
 		},
 		{
 			name:     "crew",
@@ -369,9 +436,12 @@ func TestParseSessionName_RoundTrip(t *testing.T) {
 	sessions := []string{
 		"hq-mayor",
 		"hq-deacon",
+		"hq-planner",
 		"hq-dog-alpha",
 		"gt-witness",
 		"bd-refinery",
+		"gt-architect",
+		"bd-qa",
 		"gt-crew-max",
 		"gt-morsov",
 		"hop-ostrom",
@@ -409,8 +479,13 @@ func TestParseAddress(t *testing.T) {
 		},
 		{
 			name:    "deacon",
-			address: "deacon",
+			address: "deacon/",
 			want:    AgentIdentity{Role: RoleDeacon},
+		},
+		{
+			name:    "planner",
+			address: "planner",
+			want:    AgentIdentity{Role: RolePlanner},
 		},
 		{
 			name:    "witness",
@@ -421,6 +496,16 @@ func TestParseAddress(t *testing.T) {
 			name:    "refinery",
 			address: "rig-a/refinery",
 			want:    AgentIdentity{Role: RoleRefinery, Rig: "rig-a", Prefix: PrefixFor("rig-a")},
+		},
+		{
+			name:    "architect",
+			address: "gastown/architect",
+			want:    AgentIdentity{Role: RoleArchitect, Rig: "gastown", Prefix: PrefixFor("gastown")},
+		},
+		{
+			name:    "qa",
+			address: "beads/qa",
+			want:    AgentIdentity{Role: RoleQA, Rig: "beads", Prefix: PrefixFor("beads")},
 		},
 		{
 			name:    "crew",

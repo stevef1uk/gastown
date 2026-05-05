@@ -76,7 +76,7 @@ var nudgeCmd = &cobra.Command{
 	Long: `Universal messaging API for Gas Town worker-to-worker communication.
 
 Delivers a message to any worker's Claude Code session: polecats, crew,
-witness, refinery, mayor, or deacon.
+witness, refinery, architect, qa, mayor, deacon, or planner.
 
 Delivery modes (--mode):
   wait-idle  Wait for agent to become idle (prompt visible), then deliver
@@ -98,10 +98,13 @@ This is the ONLY way to send messages to Claude sessions.
 Do not use raw tmux send-keys elsewhere.
 
 Role shortcuts (expand to session names):
-  mayor     Maps to gt-mayor
-  deacon    Maps to gt-deacon
-  witness   Maps to gt-<rig>-witness (uses current rig)
-  refinery  Maps to gt-<rig>-refinery (uses current rig)
+  mayor      Maps to hq-mayor
+  deacon     Maps to hq-deacon
+  planner    Maps to hq-planner
+  witness    Maps to gt-<rig>-witness (uses current rig)
+  refinery   Maps to gt-<rig>-refinery (uses current rig)
+  architect  Maps to gt-<rig>-architect (uses current rig)
+  qa         Maps to gt-<rig>-qa (uses current rig)
 
 Channel syntax:
   channel:<name>  Nudges all members of a named channel defined in
@@ -117,6 +120,8 @@ Examples:
   gt nudge greenplace/alpha -m "What's your status?"
   gt nudge mayor "Status update requested"
   gt nudge witness "Check polecat health"
+  gt nudge architect "Review the SPEC"
+  gt nudge qa "Code review needed"
   gt nudge deacon session-started
   gt nudge channel:workers "New priority work available"
 
@@ -400,6 +405,10 @@ func runNudge(cmd *cobra.Command, args []string) (retErr error) {
 			sender = fmt.Sprintf("%s/witness", roleInfo.Rig)
 		case RoleRefinery:
 			sender = fmt.Sprintf("%s/refinery", roleInfo.Rig)
+		case RoleArchitect:
+			sender = fmt.Sprintf("%s/architect", roleInfo.Rig)
+		case RoleQA:
+			sender = fmt.Sprintf("%s/qa", roleInfo.Rig)
 		case RoleDeacon:
 			sender = constants.RoleDeacon
 		default:
@@ -439,7 +448,9 @@ func runNudge(cmd *cobra.Command, args []string) (retErr error) {
 	switch target {
 	case constants.RoleMayor:
 		target = session.MayorSessionName()
-	case constants.RoleWitness, constants.RoleRefinery:
+	case constants.RolePlanner:
+		target = session.PlannerSessionName()
+	case constants.RoleWitness, constants.RoleRefinery, constants.RoleArchitect, constants.RoleQA:
 		// These need the current rig
 		roleInfo, err := GetRole()
 		if err != nil {
@@ -449,10 +460,15 @@ func runNudge(cmd *cobra.Command, args []string) (retErr error) {
 			return fmt.Errorf("cannot determine rig for %s shortcut (not in a rig context)", target)
 		}
 		rigPrefix := session.PrefixFor(roleInfo.Rig)
-		if target == constants.RoleWitness {
+		switch target {
+		case constants.RoleWitness:
 			target = session.WitnessSessionName(rigPrefix)
-		} else {
+		case constants.RoleRefinery:
 			target = session.RefinerySessionName(rigPrefix)
+		case constants.RoleArchitect:
+			target = session.ArchitectSessionName(rigPrefix)
+		case constants.RoleQA:
+			target = session.QASessionName(rigPrefix)
 		}
 	}
 
@@ -756,6 +772,14 @@ func resolveNudgePattern(pattern string, agents []*AgentSession) []string {
 			if agent.Type != AgentRefinery {
 				continue
 			}
+		} else if targetPattern == constants.RoleArchitect {
+			if agent.Type != AgentArchitect {
+				continue
+			}
+		} else if targetPattern == constants.RoleQA {
+			if agent.Type != AgentQA {
+				continue
+			}
 		} else {
 			// Assume it's a polecat name (legacy short format)
 			if agent.Type != AgentPolecat || agent.AgentName != targetPattern {
@@ -816,10 +840,16 @@ func sessionNameToAddress(sessionName string) string {
 		return constants.RoleMayor
 	case session.RoleDeacon:
 		return constants.RoleDeacon
+	case session.RolePlanner:
+		return constants.RolePlanner
 	case session.RoleWitness:
 		return fmt.Sprintf("%s/witness", identity.Rig)
 	case session.RoleRefinery:
 		return fmt.Sprintf("%s/refinery", identity.Rig)
+	case session.RoleArchitect:
+		return fmt.Sprintf("%s/architect", identity.Rig)
+	case session.RoleQA:
+		return fmt.Sprintf("%s/qa", identity.Rig)
 	case session.RoleCrew:
 		return fmt.Sprintf("%s/crew/%s", identity.Rig, identity.Name)
 	case session.RolePolecat:
@@ -844,6 +874,8 @@ func addressToAgentBeadID(address string) string {
 		return session.MayorSessionName()
 	case constants.RoleDeacon:
 		return session.DeaconSessionName()
+	case constants.RolePlanner:
+		return session.PlannerSessionName()
 	}
 
 	// Parse rig/role format
@@ -864,6 +896,10 @@ func addressToAgentBeadID(address string) string {
 		return session.WitnessSessionName(session.PrefixFor(rig))
 	case constants.RoleRefinery:
 		return session.RefinerySessionName(session.PrefixFor(rig))
+	case constants.RoleArchitect:
+		return session.ArchitectSessionName(session.PrefixFor(rig))
+	case constants.RoleQA:
+		return session.QASessionName(session.PrefixFor(rig))
 	default:
 		// Assume polecat
 		if strings.HasPrefix(role, "crew/") {

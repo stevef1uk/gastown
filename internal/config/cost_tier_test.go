@@ -413,12 +413,15 @@ func TestGetCurrentTier(t *testing.T) {
 		settings := NewTownSettings()
 		// Set RoleAgents matching economy tier but without CostTier field
 		settings.RoleAgents = map[string]string{
-			"mayor":    "claude-sonnet",
-			"deacon":   "claude-haiku",
-			"witness":  "claude-sonnet",
-			"refinery": "claude-sonnet",
-			"boot":     "claude-haiku",
-			"dog":      "claude-haiku",
+			"mayor":     "claude-sonnet",
+			"deacon":    "claude-haiku",
+			"planner":   "claude-sonnet",
+			"witness":   "claude-sonnet",
+			"refinery":  "claude-sonnet",
+			"architect": "claude-sonnet",
+			"qa":        "claude-sonnet",
+			"boot":      "claude-haiku",
+			"dog":       "claude-haiku",
 		}
 		if got := GetCurrentTier(settings); got != "economy" {
 			t.Errorf("GetCurrentTier = %q, want %q (inferred)", got, "economy")
@@ -461,12 +464,15 @@ func TestTierRolesMatch(t *testing.T) {
 	t.Run("economy tier matches", func(t *testing.T) {
 		t.Parallel()
 		actual := map[string]string{
-			"mayor":    "claude-sonnet",
-			"deacon":   "claude-haiku",
-			"witness":  "claude-sonnet",
-			"refinery": "claude-sonnet",
-			"boot":     "claude-haiku",
-			"dog":      "claude-haiku",
+			"mayor":     "claude-sonnet",
+			"deacon":    "claude-haiku",
+			"planner":   "claude-sonnet",
+			"witness":   "claude-sonnet",
+			"refinery":  "claude-sonnet",
+			"architect": "claude-sonnet",
+			"qa":        "claude-sonnet",
+			"boot":      "claude-haiku",
+			"dog":       "claude-haiku",
 		}
 		expected := CostTierRoleAgents(TierEconomy)
 		if !tierRolesMatch(actual, expected) {

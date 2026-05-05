@@ -44,6 +44,33 @@ func TestDogBeadIDTown(t *testing.T) {
 	}
 }
 
+// TestPlannerBeadIDTown tests the town-level Planner bead ID.
+func TestPlannerBeadIDTown(t *testing.T) {
+	got := PlannerBeadIDTown()
+	want := "hq-planner"
+	if got != want {
+		t.Errorf("PlannerBeadIDTown() = %q, want %q", got, want)
+	}
+}
+
+// TestArchitectBeadIDRig tests the rig-level Architect bead ID.
+func TestArchitectBeadIDRig(t *testing.T) {
+	got := ArchitectBeadIDRig("gastown")
+	want := "gt-gastown-architect"
+	if got != want {
+		t.Errorf("ArchitectBeadIDRig(%q) = %q, want %q", "gastown", got, want)
+	}
+}
+
+// TestQABeadIDRig tests the rig-level QA bead ID.
+func TestQABeadIDRig(t *testing.T) {
+	got := QABeadIDRig("gastown")
+	want := "gt-gastown-qa"
+	if got != want {
+		t.Errorf("QABeadIDRig(%q) = %q, want %q", "gastown", got, want)
+	}
+}
+
 // TestAgentBeadIDWithPrefix tests agent bead ID generation, including dedup when prefix == rig.
 func TestAgentBeadIDWithPrefix(t *testing.T) {
 	tests := []struct {
@@ -59,10 +86,14 @@ func TestAgentBeadIDWithPrefix(t *testing.T) {
 		{"rig witness", "gt", "gastown", "witness", "", "gt-gastown-witness"},
 		{"rig polecat", "gt", "gastown", "polecat", "nux", "gt-gastown-polecat-nux"},
 		{"rig crew", "bd", "beads", "crew", "dave", "bd-beads-crew-dave"},
+		{"rig architect", "gt", "gastown", "architect", "", "gt-gastown-architect"},
+		{"rig qa", "bd", "beads", "qa", "", "bd-beads-qa"},
 
 		// Collapsed cases (prefix == rig) — should NOT stutter
 		{"dedup witness", "ff", "ff", "witness", "", "ff-witness"},
 		{"dedup refinery", "ff", "ff", "refinery", "", "ff-refinery"},
+		{"dedup architect", "ff", "ff", "architect", "", "ff-architect"},
+		{"dedup qa", "ff", "ff", "qa", "", "ff-qa"},
 		{"dedup polecat", "ff", "ff", "polecat", "nux", "ff-polecat-nux"},
 		{"dedup crew", "ff", "ff", "crew", "dave", "ff-crew-dave"},
 		{"dedup bd-beads", "bd", "bd", "witness", "", "bd-witness"},
@@ -98,6 +129,8 @@ func TestValidateAgentID(t *testing.T) {
 		// Per-rig agents (canonical format: gt-<rig>-<role>)
 		{"valid witness gastown", "gt-gastown-witness", false, ""},
 		{"valid refinery beads", "gt-beads-refinery", false, ""},
+		{"valid architect gastown", "gt-gastown-architect", false, ""},
+		{"valid qa beads", "gt-beads-qa", false, ""},
 
 		// Named agents (canonical format: gt-<rig>-<role>-<name>)
 		{"valid polecat", "gt-gastown-polecat-nux", false, ""},
@@ -133,6 +166,8 @@ func TestValidateAgentID(t *testing.T) {
 		// Collapsed form: rig-level role without rig (prefix == rig)
 		{"collapsed witness", "gt-witness", false, ""},
 		{"collapsed refinery", "gt-refinery", false, ""},
+		{"collapsed architect", "ff-architect", false, ""},
+		{"collapsed qa", "ff-qa", false, ""},
 		{"collapsed polecat", "ff-polecat-nux", false, ""},
 		{"collapsed crew", "ff-crew-dave", false, ""},
 
@@ -149,9 +184,11 @@ func TestValidateAgentID(t *testing.T) {
 		{"polecat named crew", "gt-gastown-polecat-crew", false, ""},
 		{"crew named polecat", "gt-gastown-crew-polecat", false, ""},
 
-		// Invalid: witness/refinery with extra parts (no named role to the left)
+		// Invalid: witness/refinery/architect/qa with extra parts (no named role to the left)
 		{"witness with name", "gt-gastown-witness-extra", true, "cannot have name suffix"},
 		{"refinery with name", "gt-beads-refinery-extra", true, "cannot have name suffix"},
+		{"architect with name", "gt-gastown-architect-extra", true, "cannot have name suffix"},
+		{"qa with name", "gt-beads-qa-extra", true, "cannot have name suffix"},
 
 		// Invalid: empty components
 		{"empty after prefix", "gt-", true, "must include content after prefix"},
@@ -232,10 +269,14 @@ func TestAgentBeadIDRoundTrip(t *testing.T) {
 		{"normal witness", "gt", "gastown", "witness", ""},
 		{"normal polecat", "gt", "gastown", "polecat", "nux"},
 		{"normal crew", "bd", "beads", "crew", "dave"},
+		{"normal architect", "gt", "gastown", "architect", ""},
+		{"normal qa", "bd", "beads", "qa", ""},
 
 		// Collapsed cases (prefix == rig)
 		{"collapsed witness", "ff", "ff", "witness", ""},
 		{"collapsed refinery", "ff", "ff", "refinery", ""},
+		{"collapsed architect", "ff", "ff", "architect", ""},
+		{"collapsed qa", "ff", "ff", "qa", ""},
 		{"collapsed polecat", "ff", "ff", "polecat", "nux"},
 		{"collapsed crew", "ff", "ff", "crew", "dave"},
 	}

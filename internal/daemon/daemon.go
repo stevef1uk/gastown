@@ -849,6 +849,30 @@ func (d *Daemon) heartbeat(state *State) {
 		d.killRefinerySessions()
 	}
 
+	// 5.5. Ensure Architects are running for all rigs (restart if dead)
+	if d.isPatrolActive("architect") {
+		if p := d.checkPressure("architect"); !p.OK {
+			d.logger.Printf("Deferring architect spawn: %s", p.Reason)
+		} else {
+			d.ensureArchitectsRunning()
+		}
+	} else {
+		d.logger.Printf("Architect patrol disabled in config, skipping")
+		d.killArchitectSessions()
+	}
+
+	// 5.6. Ensure QAs are running for all rigs (restart if dead)
+	if d.isPatrolActive("qa") {
+		if p := d.checkPressure("qa"); !p.OK {
+			d.logger.Printf("Deferring qa spawn: %s", p.Reason)
+		} else {
+			d.ensureQAsRunning()
+		}
+	} else {
+		d.logger.Printf("QA patrol disabled in config, skipping")
+		d.killQASessions()
+	}
+
 	// 6. Ensure Mayor is running (restart if dead)
 	d.ensureMayorRunning()
 
@@ -1747,6 +1771,106 @@ func (d *Daemon) ensureRefineryRunning(rigName string) {
 	d.logger.Printf("Refinery session for %s started successfully", rigName)
 }
 
+// ensureArchitectsRunning ensures architects are running for configured rigs.
+func (d *Daemon) ensureArchitectsRunning() {
+	rigs := d.getPatrolRigs("architect")
+	d.rigPool.runPerRig(d.ctx, rigs, func(ctx context.Context, rigName string) error {
+		d.ensureArchitectRunning(rigName)
+		return nil
+	})
+}
+
+// ensureArchitectRunning ensures the architect for a specific rig is running.
+func (d *Daemon) ensureArchitectRunning(rigName string) {
+	if operational, reason := d.isRigOperational(rigName); !operational {
+		d.logger.Printf("Skipping architect auto-start for %s: %s", rigName, reason)
+		name := session.ArchitectSessionName(session.PrefixFor(rigName))
+		if exists, _ := d.sp.Exists(d.ctx, name); exists {
+			d.logger.Printf("Killing leftover architect %s (rig %s)", name, reason)
+			_ = d.sp.Stop(d.ctx, name, true)
+		}
+		return
+	}
+
+	sessionID := session.ArchitectSessionName(session.PrefixFor(rigName))
+	architectDir := filepath.Join(d.config.TownRoot, rigName, constants.DirArchitect)
+	_ = os.MkdirAll(architectDir, 0755)
+
+	if running, _ := d.sp.Exists(d.ctx, sessionID); running {
+		return
+	}
+
+	_, err := session.StartSession(d.ctx, d.sp, session.SessionConfig{
+		SessionID:    sessionID,
+		WorkDir:      architectDir,
+		Role:         constants.RoleArchitect,
+		TownRoot:     d.config.TownRoot,
+		RigPath:      filepath.Join(d.config.TownRoot, rigName),
+		RigName:      rigName,
+		Beacon:       session.BeaconConfig{Recipient: "architect", Sender: "daemon", Topic: "patrol"},
+		WaitForAgent: false,
+		AutoRespawn:  true,
+	})
+	if err != nil {
+		d.logger.Printf("Error starting architect for %s: %v", rigName, err)
+		return
+	}
+
+	d.metrics.recordRestart(d.ctx, "architect")
+	telemetry.RecordDaemonRestart(d.ctx, "architect-"+rigName)
+	d.logger.Printf("Architect session for %s started successfully", rigName)
+}
+
+// ensureQAsRunning ensures qa agents are running for configured rigs.
+func (d *Daemon) ensureQAsRunning() {
+	rigs := d.getPatrolRigs("qa")
+	d.rigPool.runPerRig(d.ctx, rigs, func(ctx context.Context, rigName string) error {
+		d.ensureQARunning(rigName)
+		return nil
+	})
+}
+
+// ensureQARunning ensures the qa agent for a specific rig is running.
+func (d *Daemon) ensureQARunning(rigName string) {
+	if operational, reason := d.isRigOperational(rigName); !operational {
+		d.logger.Printf("Skipping qa auto-start for %s: %s", rigName, reason)
+		name := session.QASessionName(session.PrefixFor(rigName))
+		if exists, _ := d.sp.Exists(d.ctx, name); exists {
+			d.logger.Printf("Killing leftover qa %s (rig %s)", name, reason)
+			_ = d.sp.Stop(d.ctx, name, true)
+		}
+		return
+	}
+
+	sessionID := session.QASessionName(session.PrefixFor(rigName))
+	qaDir := filepath.Join(d.config.TownRoot, rigName, constants.DirQA)
+	_ = os.MkdirAll(qaDir, 0755)
+
+	if running, _ := d.sp.Exists(d.ctx, sessionID); running {
+		return
+	}
+
+	_, err := session.StartSession(d.ctx, d.sp, session.SessionConfig{
+		SessionID:    sessionID,
+		WorkDir:      qaDir,
+		Role:         constants.RoleQA,
+		TownRoot:     d.config.TownRoot,
+		RigPath:      filepath.Join(d.config.TownRoot, rigName),
+		RigName:      rigName,
+		Beacon:       session.BeaconConfig{Recipient: "qa", Sender: "daemon", Topic: "patrol"},
+		WaitForAgent: false,
+		AutoRespawn:  true,
+	})
+	if err != nil {
+		d.logger.Printf("Error starting qa for %s: %v", rigName, err)
+		return
+	}
+
+	d.metrics.recordRestart(d.ctx, "qa")
+	telemetry.RecordDaemonRestart(d.ctx, "qa-"+rigName)
+	d.logger.Printf("QA session for %s started successfully", rigName)
+}
+
 // ensureMayorRunning ensures the Mayor is running.
 // Uses mayor.Manager for consistent startup behavior.
 // If the tmux session exists but the agent is dead (zombie), the daemon
@@ -1836,6 +1960,38 @@ func (d *Daemon) killRefinerySessions() {
 		if exists {
 			d.logger.Printf("Killing leftover %s session (patrol disabled)", name)
 			if err := d.sp.Stop(d.ctx, name, true); err != nil {
+				d.logger.Printf("Error killing %s session: %v", name, err)
+			}
+		}
+		return nil
+	})
+}
+
+// killArchitectSessions kills leftover architect tmux sessions for all rigs.
+// Called when the architect patrol is disabled.
+func (d *Daemon) killArchitectSessions() {
+	d.rigPool.runPerRig(d.ctx, d.getKnownRigs(), func(ctx context.Context, rigName string) error {
+		name := session.ArchitectSessionName(session.PrefixFor(rigName))
+		exists, _ := d.sp.Exists(ctx, name)
+		if exists {
+			d.logger.Printf("Killing leftover %s session (patrol disabled)", name)
+			if err := d.sp.Stop(ctx, name, true); err != nil {
+				d.logger.Printf("Error killing %s session: %v", name, err)
+			}
+		}
+		return nil
+	})
+}
+
+// killQASessions kills leftover qa tmux sessions for all rigs.
+// Called when the qa patrol is disabled.
+func (d *Daemon) killQASessions() {
+	d.rigPool.runPerRig(d.ctx, d.getKnownRigs(), func(ctx context.Context, rigName string) error {
+		name := session.QASessionName(session.PrefixFor(rigName))
+		exists, _ := d.sp.Exists(ctx, name)
+		if exists {
+			d.logger.Printf("Killing leftover %s session (patrol disabled)", name)
+			if err := d.sp.Stop(ctx, name, true); err != nil {
 				d.logger.Printf("Error killing %s session: %v", name, err)
 			}
 		}

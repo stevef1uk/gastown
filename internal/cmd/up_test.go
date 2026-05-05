@@ -87,7 +87,7 @@ func TestSemaphoreLimitsConcurrency(t *testing.T) {
 
 func TestStartRigAgentsWithPrefetch_EmptyRigs(t *testing.T) {
 	// Test with empty inputs
-	witnessResults, refineryResults := startRigAgentsWithPrefetch(
+	witnessResults, refineryResults, architectResults, qaResults := startRigAgentsWithPrefetch(
 		[]string{},
 		make(map[string]*rig.Rig),
 		make(map[string]error),
@@ -99,6 +99,12 @@ func TestStartRigAgentsWithPrefetch_EmptyRigs(t *testing.T) {
 	if len(refineryResults) != 0 {
 		t.Errorf("refineryResults should be empty, got %d entries", len(refineryResults))
 	}
+	if len(architectResults) != 0 {
+		t.Errorf("architectResults should be empty, got %d entries", len(architectResults))
+	}
+	if len(qaResults) != 0 {
+		t.Errorf("qaResults should be empty, got %d entries", len(qaResults))
+	}
 }
 
 func TestStartRigAgentsWithPrefetch_RecordsErrors(t *testing.T) {
@@ -107,7 +113,7 @@ func TestStartRigAgentsWithPrefetch_RecordsErrors(t *testing.T) {
 		"badrig": fmt.Errorf("rig not found"),
 	}
 
-	witnessResults, refineryResults := startRigAgentsWithPrefetch(
+	witnessResults, refineryResults, architectResults, qaResults := startRigAgentsWithPrefetch(
 		[]string{"badrig"},
 		make(map[string]*rig.Rig),
 		rigErrors,
@@ -129,6 +135,24 @@ func TestStartRigAgentsWithPrefetch_RecordsErrors(t *testing.T) {
 		t.Error("refineryResults should have badrig entry")
 	} else if result.ok {
 		t.Error("badrig refinery result should not be ok")
+	}
+
+	if len(architectResults) != 1 {
+		t.Errorf("architectResults should have 1 entry, got %d", len(architectResults))
+	}
+	if result, ok := architectResults["badrig"]; !ok {
+		t.Error("architectResults should have badrig entry")
+	} else if result.ok {
+		t.Error("badrig architect result should not be ok")
+	}
+
+	if len(qaResults) != 1 {
+		t.Errorf("qaResults should have 1 entry, got %d", len(qaResults))
+	}
+	if result, ok := qaResults["badrig"]; !ok {
+		t.Error("qaResults should have badrig entry")
+	} else if result.ok {
+		t.Error("badrig qa result should not be ok")
 	}
 }
 

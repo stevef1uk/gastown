@@ -141,7 +141,7 @@ func parseRigOpsSession(sess string) string {
 		return ""
 	}
 	switch identity.Role {
-	case sessionpkg.RoleWitness, sessionpkg.RoleRefinery, sessionpkg.RolePolecat:
+	case sessionpkg.RoleWitness, sessionpkg.RoleRefinery, sessionpkg.RoleArchitect, sessionpkg.RoleQA, sessionpkg.RolePolecat:
 		return identity.Rig
 	}
 	return ""

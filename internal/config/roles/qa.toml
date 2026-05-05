@@ -1,0 +1,23 @@
+# QA role definition
+# Per-rig code quality and testing review agent. One per rig.
+
+role = "qa"
+scope = "rig"
+nudge = "Check for code review assignments, test results, or quality gates, then execute."
+prompt_template = "qa.md.tmpl"
+
+[session]
+pattern = "{prefix}-qa"
+work_dir = "{town}/{rig}/qa"
+needs_pre_sync = false
+start_command = "gt-agent"
+
+[env]
+GT_ROLE = "{rig}/qa"
+GT_SCOPE = "rig"
+
+[health]
+ping_timeout = "30s"
+consecutive_failures = 3
+kill_cooldown = "5m"
+stuck_threshold = "1h"

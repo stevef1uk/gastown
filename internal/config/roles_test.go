@@ -64,6 +64,20 @@ func TestLoadBuiltinRoleDefinition(t *testing.T) {
 			wantPattern:   "gt-dog-{name}",
 			wantPreSync:   false,
 		},
+		{
+			name:          "architect",
+			role:          "architect",
+			wantScope:     "rig",
+			wantPattern:   "{prefix}-architect",
+			wantPreSync:   false,
+		},
+		{
+			name:          "qa",
+			role:          "qa",
+			wantScope:     "rig",
+			wantPattern:   "{prefix}-qa",
+			wantPreSync:   false,
+		},
 	}
 
 	for _, tt := range tests {
@@ -117,18 +131,21 @@ func TestLoadRoleDefinition_UnknownRole(t *testing.T) {
 
 func TestAllRoles(t *testing.T) {
 	roles := AllRoles()
-	if len(roles) != 7 {
-		t.Errorf("AllRoles() returned %d roles, want 7", len(roles))
+	if len(roles) != 10 {
+		t.Errorf("AllRoles() returned %d roles, want 10", len(roles))
 	}
 
 	expected := map[string]bool{
-		"mayor":    true,
-		"deacon":   true,
-		"dog":      true,
-		"witness":  true,
-		"refinery": true,
-		"polecat":  true,
-		"crew":     true,
+		"mayor":     true,
+		"deacon":    true,
+		"planner":   true,
+		"dog":       true,
+		"witness":   true,
+		"refinery":  true,
+		"architect": true,
+		"qa":        true,
+		"polecat":   true,
+		"crew":      true,
 	}
 
 	for _, r := range roles {
@@ -140,8 +157,21 @@ func TestAllRoles(t *testing.T) {
 
 func TestTownRoles(t *testing.T) {
 	roles := TownRoles()
-	if len(roles) != 3 {
-		t.Errorf("TownRoles() returned %d roles, want 3", len(roles))
+	if len(roles) != 4 {
+		t.Errorf("TownRoles() returned %d roles, want 4", len(roles))
+	}
+
+	expected := map[string]bool{
+		"mayor":   true,
+		"deacon":  true,
+		"planner": true,
+		"dog":     true,
+	}
+
+	for _, r := range roles {
+		if !expected[r] {
+			t.Errorf("unexpected role %q in TownRoles()", r)
+		}
 	}
 
 	for _, r := range roles {
@@ -157,11 +187,23 @@ func TestTownRoles(t *testing.T) {
 
 func TestRigRoles(t *testing.T) {
 	roles := RigRoles()
-	if len(roles) != 4 {
-		t.Errorf("RigRoles() returned %d roles, want 4", len(roles))
+	if len(roles) != 6 {
+		t.Errorf("RigRoles() returned %d roles, want 6", len(roles))
+	}
+
+	expected := map[string]bool{
+		"witness":   true,
+		"refinery":  true,
+		"architect": true,
+		"qa":        true,
+		"polecat":   true,
+		"crew":      true,
 	}
 
 	for _, r := range roles {
+		if !expected[r] {
+			t.Errorf("unexpected role %q in RigRoles()", r)
+		}
 		def, err := loadBuiltinRoleDefinition(r)
 		if err != nil {
 			t.Fatalf("loadBuiltinRoleDefinition(%s) error: %v", r, err)
