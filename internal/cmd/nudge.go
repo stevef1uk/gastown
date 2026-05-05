@@ -546,7 +546,14 @@ func runNudge(cmd *cobra.Command, args []string) (retErr error) {
 		// Without this, queue mode silently succeeds for nonexistent sessions —
 		// the file is written but never drained.
 		// ACP sessions are always allowed as they use queue mode.
-		if nudgeModeFlag != NudgeModeImmediate && !hasACPSessionByName(townRoot, sessionName) {
+		//
+		// Exception: NATS transport sessions are ephemeral — they only "exist"
+		// while the agent process is running. An idle NATS agent (e.g. Mayor
+		// between patrol cycles) will fail this check even though the nudge
+		// queue file is a valid delivery mechanism that will be drained on the
+		// agent's next wake. Skip the guard for non-tmux providers. (gt-nudge-nats)
+		_, isTmux := sp.(*session.TmuxProvider)
+		if isTmux && nudgeModeFlag != NudgeModeImmediate && !hasACPSessionByName(townRoot, sessionName) {
 			exists, err := sp.Exists(ctx, sessionName)
 			if err != nil {
 				return fmt.Errorf("checking session: %w", err)
@@ -573,7 +580,12 @@ func runNudge(cmd *cobra.Command, args []string) (retErr error) {
 		// Check for ACP session - ACP agents don't have tmux sessions but can receive nudges via queue
 		hasACP := hasACPSessionByName(townRoot, target)
 
-		if !hasACP {
+		// For NATS transport, skip the existence check in queue/wait-idle modes.
+		// NATS sessions are ephemeral and only "exist" while the agent is running;
+		// an idle agent would incorrectly fail this check. The nudge queue file
+		// is the correct delivery mechanism for idle NATS agents. (gt-nudge-nats)
+		_, isTmuxProvider := sp.(*session.TmuxProvider)
+		if !hasACP && (isTmuxProvider || nudgeModeFlag == NudgeModeImmediate) {
 			exists, err := sp.Exists(ctx, target)
 			if err != nil {
 				return fmt.Errorf("checking session: %w", err)
