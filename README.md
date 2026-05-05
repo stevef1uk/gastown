@@ -866,6 +866,55 @@ For deeper technical details, see the design docs in `docs/`:
 | Hooks | [docs/HOOKS.md](docs/HOOKS.md) |
 | Installation guide | [docs/INSTALLING.md](docs/INSTALLING.md) |
 
+## Workspace Cleanup and Recovery
+
+If you need to start fresh with a clean workspace while preserving your town configuration, use the provided cleanup script:
+
+```bash
+# Interactive cleanup (asks for confirmation)
+./scripts/clean-gastown.sh ~/gt
+
+# Non-interactive cleanup (dangerous!)
+./scripts/clean-gastown.sh --force ~/gt
+```
+
+**What the script deletes:**
+- All running agent processes (gt-agent, nats-wrapper)
+- Rig directories and their contents
+- Dolt databases (`.dolt-data/`)
+- Agent state files (`gt-agent-state.json`)
+- Session logs, events, and runtime artifacts
+- Beads cache (`.beads/`)
+
+**What the script preserves:**
+- `config.json` (town configuration)
+- `settings/` (agent and transport settings)
+- `.git/` repository
+- `CLAUDE.md` / `AGENTS.md`
+
+### ⚠️ Critical: Dolt Database Recovery
+
+**Never manually delete `.dolt-data/`**. The beads issue tracker stores all work state in Dolt databases. If databases are deleted:
+
+1. **Agent beads cannot be created** — `gt doctor` will report missing agent/rig beads
+2. **All issue history is lost** — convoys, tasks, epics, wisps
+3. **`gt doctor --fix` cannot recreate beads** without a running Dolt server
+
+**If databases are accidentally deleted:**
+
+```bash
+# Re-initialize Dolt databases (safe)
+gt dolt init
+
+# Then re-run install to recreate missing config files
+gt install --force ~/gt
+
+# Verify everything is healthy
+gt doctor
+```
+
+**If you need a completely clean town**, it's safer to delete the entire `~/gt` directory and re-run `gt install ~/gt --git` than to manually delete individual subdirectories.
+
 ## Troubleshooting
 
 ### Agents lose connection
