@@ -27,11 +27,27 @@ type AgentState struct {
 }
 
 const (
-	baseSleep        = 30 * time.Second
-	maxSleep         = 15 * time.Minute
-	maxIdleCycles    = 20 // exit after 20 idle cycles (~5-30min depending on backoff)
-	stateFileName    = "gt-agent-state.json"
+	baseSleep     = 30 * time.Second
+	maxSleep      = 5 * time.Minute // cap at 5 min — never wait longer than this
+	maxIdleCycles = 20              // exit after 20 idle cycles (~5-30min depending on backoff)
+	stateFileName = "gt-agent-state.json"
 )
+
+// permanentAgents are roles that should never exit due to idle cycles.
+// They run continuously and wait for work (Mayor, Deacon, Witness, Refinery).
+// Polecats and crew workers exit when idle since they are task-specific.
+var permanentAgents = map[string]bool{
+	"mayor":     true,
+	"deacon":    true,
+	"witness":   true,
+	"refinery":  true,
+	"deacon/boot": true, // boot is a deacon variant
+}
+
+// isPermanentAgent returns true if the role should never exit on idle cycles.
+func isPermanentAgent(role string) bool {
+	return permanentAgents[role]
+}
 
 var (
 	shutdownRequested bool
@@ -251,10 +267,17 @@ func run() error {
 			fmt.Printf("[gt-agent] No work (idle_cycle=%d), sleeping %s\n",
 				state.IdleCycles, sleep)
 
-			if state.IdleCycles >= maxIdleCycles {
+			// Permanent agents (Mayor, Deacon, Witness, Refinery) never exit
+			// due to idle cycles. They run continuously and wait for work.
+			// Only polecats and crew workers exit when idle.
+			if !isPermanentAgent(role) && state.IdleCycles >= maxIdleCycles {
 				fmt.Println("[gt-agent] Max idle cycles reached, exiting")
 				_ = saveState(stateFile, state)
 				return nil
+			}
+			if isPermanentAgent(role) && state.IdleCycles >= maxIdleCycles {
+				fmt.Println("[gt-agent] Permanent agent staying alive (no work, continuing patrol)")
+				state.IdleCycles = 0 // reset to keep sleep duration reasonable
 			}
 
 			_ = saveState(stateFile, state)
