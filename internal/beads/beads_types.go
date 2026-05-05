@@ -281,10 +281,8 @@ func EnsureCustomStatuses(beadsDir string) error {
 }
 
 // prefixRe validates beads prefix format. Must start with a letter, contain only
-// alphanumerics and hyphens, max 20 chars.
-// NOTE: This MUST stay in sync with beadsPrefixRegexp in internal/rig/manager.go.
-// Both exist because rig/manager.go cannot import internal/beads (circular dep).
-var prefixRe = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9-]{0,19}$`)
+// alphanumerics, hyphens and dots, max 20 chars.
+var prefixRe = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9.-]{0,19}$`)
 
 // ensureDatabaseInitialized checks if a beads database exists and initializes it if needed.
 // This handles the case where a rig was added but the database was never created,
@@ -351,6 +349,9 @@ func ensureDatabaseInitialized(beadsDir string) error {
 	cmd.Dir = parentDir
 	util.SetDetachedProcessGroup(cmd)
 	initEnv := append(stripEnvPrefixes(os.Environ(), "BEADS_DIR=", "BEADS_DB=", "BEADS_DOLT_SERVER_DATABASE="), "BEADS_DIR="+beadsDir)
+	// Prevent bd from traversing up to the town root's .git directory, which
+	// causes it to incorrectly abort if the town has a database.
+	initEnv = append(initEnv, "GIT_CEILING_DIRECTORIES="+parentDir)
 	if dbEnv := DatabaseEnv(beadsDir); dbEnv != "" {
 		initEnv = append(initEnv, dbEnv)
 	}
