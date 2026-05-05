@@ -1,0 +1,40 @@
+2026/05/05 22:54:51 Warning: failed to set GT_TOWN_ROOT in session global env: no tmux server running
+2026/05/05 22:54:51 Loaded patrol config from /home/stevef/dev/freeride/gastown/mayor/daemon.json
+2026/05/05 22:54:51 Set GT_DOLT_PORT=3307 from Dolt config (fallback)
+2026/05/05 22:54:51 NATS server management enabled
+2026/05/05 22:54:51 Daemon starting (PID 94093)
+2026/05/05 22:54:51 Daemon running, recovery heartbeat interval 3m0s
+2026/05/05 22:54:51 NATS server started
+2026/05/05 22:54:51 Feed curator started
+2026/05/05 22:54:51 Convoy: opened 1 beads store(s): [hq]
+2026/05/05 22:54:51 Convoy manager started
+2026/05/05 22:54:51 KRC pruner started
+2026/05/05 22:54:51 Dolt backup ticker started (interval 15m0s)
+2026/05/05 22:54:51 JSONL git backup ticker started (interval 15m0s)
+2026/05/05 22:54:51 Wisp reaper ticker started (interval 30m0s)
+2026/05/05 22:54:51 Doctor dog ticker started (interval 5m0s)
+2026/05/05 22:54:51 Compactor dog ticker started (interval 24h0m0s)
+2026/05/05 22:54:51 Checkpoint dog ticker started (interval 10m0s)
+2026/05/05 22:54:51 Scheduled maintenance ticker started (check interval 5m0s, window 03:00)
+2026/05/05 22:54:51 Main branch test ticker started (interval 30m0s)
+2026/05/05 22:54:51 Heartbeat starting (recovery-focused)
+2026/05/05 22:54:51 Convoy: stranded scan failed: ⚠️  WARNING: Town root is on branch 'pr/qa-features' (should be 'main')
+2026/05/05 22:55:01 Convoy: running startup sweep for stranded convoys
+2026/05/05 22:55:08 Deacon started successfully
+2026/05/05 22:55:08 Spawning Boot for triage...
+2026/05/05 22:55:08 Boot spawned successfully
+2026/05/05 22:55:08 Deacon started 0s ago, awaiting first heartbeat...
+2026/05/05 22:55:09 Planner session started successfully
+2026/05/05 22:55:26 Mayor started successfully
+2026/05/05 22:55:29 Scheduler dispatch: 
+⚠️  WARNING: Town root is on branch 'pr/qa-features' (should be 'main')
+   This can cause gt commands to fail. Run: gt doctor --fix
+
+2026/05/05 22:55:29 Heartbeat complete (#1)
+2026/05/05 22:55:29 Received signal terminated, shutting down
+2026/05/05 22:55:29 Daemon shutting down
+2026/05/05 22:55:29 Feed curator stopped
+2026/05/05 22:55:29 Convoy: closed beads store (hq)
+2026/05/05 22:55:29 Convoy manager stopped
+2026/05/05 22:55:29 KRC pruner stopped
+2026/05/05 22:55:29 Daemon stopped

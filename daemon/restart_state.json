@@ -1,0 +1,10 @@
+{
+  "agents": {
+    "deacon": {
+      "last_restart": "2026-05-05T22:55:08.606683903+02:00",
+      "restart_count": 1,
+      "backoff_until": "2026-05-05T22:55:38.606683903+02:00",
+      "crash_loop_since": "0001-01-01T00:00:00Z"
+    }
+  }
+}

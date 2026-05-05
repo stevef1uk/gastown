@@ -9,9 +9,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
-	"runtime"
 	"sync"
 	"syscall"
 	"time"
@@ -760,38 +760,41 @@ func startRigAgentsWithPrefetch(rigNames []string, prefetchedRigs map[string]*ri
 	// Record errors for rigs that failed to load
 	for rigName, err := range rigErrors {
 		errDetail := err.Error()
-		witnessResults[rigName] = agentStartResult{
-			name:   "Witness (" + rigName + ")",
-			ok:     false,
-			detail: errDetail,
-		}
-		refineryResults[rigName] = agentStartResult{
-			name:   "Refinery (" + rigName + ")",
-			ok:     false,
-			detail: errDetail,
-		}
-		architectResults[rigName] = agentStartResult{
-			name:   "Architect (" + rigName + ")",
-			ok:     false,
-			detail: errDetail,
-		}
-		qaResults[rigName] = agentStartResult{
-			name:   "QA (" + rigName + ")",
-			ok:     false,
-			detail: errDetail,
-		}
+		witnessResults[rigName] = agentStartResult{name: "Witness (" + rigName + ")", ok: false, detail: errDetail}
+		refineryResults[rigName] = agentStartResult{name: "Refinery (" + rigName + ")", ok: false, detail: errDetail}
+		architectResults[rigName] = agentStartResult{name: "Architect (" + rigName + ")", ok: false, detail: errDetail}
+		qaResults[rigName] = agentStartResult{name: "QA (" + rigName + ")", ok: false, detail: errDetail}
 	}
 
-	numTasks := len(prefetchedRigs) * 4 // witness + refinery + architect + qa per rig
-	if numTasks == 0 {
+	if len(prefetchedRigs) == 0 {
 		return
 	}
 
-	// Task channel and result channel
+	witnessResults = startRigAgentPhase(rigNames, prefetchedRigs, constants.RoleWitness)
+	refineryResults = startRigAgentPhase(rigNames, prefetchedRigs, constants.RoleRefinery)
+	architectResults = startRigAgentPhase(rigNames, prefetchedRigs, constants.RoleArchitect)
+
+	for rigName, r := range prefetchedRigs {
+		if archResult, ok := architectResults[rigName]; ok && !archResult.ok {
+			qaResults[rigName] = agentStartResult{name: "QA (" + rigName + ")", ok: false, detail: "skipped (architect startup failed)"}
+			continue
+		}
+		qaResults[rigName] = upStartQA(rigName, r)
+	}
+
+	return
+}
+
+func startRigAgentPhase(rigNames []string, prefetchedRigs map[string]*rig.Rig, role string) map[string]agentStartResult {
+	resultsMap := make(map[string]agentStartResult, len(rigNames))
+	numTasks := len(prefetchedRigs)
+	if numTasks == 0 {
+		return resultsMap
+	}
+
 	tasks := make(chan agentTask, numTasks)
 	results := make(chan agentResultMsg, numTasks)
 
-	// Start fixed worker pool (bounded by maxConcurrentAgentStarts)
 	numWorkers := maxConcurrentAgentStarts
 	if numTasks < numWorkers {
 		numWorkers = numTasks
@@ -814,45 +817,26 @@ func startRigAgentsWithPrefetch(rigNames []string, prefetchedRigs map[string]*ri
 				case constants.RoleQA:
 					result = upStartQA(task.rigName, task.rigObj)
 				}
-				results <- agentResultMsg{
-					rigName: task.rigName,
-					role:    task.role,
-					result:  result,
-				}
+				results <- agentResultMsg{rigName: task.rigName, role: task.role, result: result}
 			}
 		}()
 	}
 
-	// Enqueue all tasks
 	for rigName, r := range prefetchedRigs {
-		tasks <- agentTask{rigName: rigName, rigObj: r, role: constants.RoleWitness}
-		tasks <- agentTask{rigName: rigName, rigObj: r, role: constants.RoleRefinery}
-		tasks <- agentTask{rigName: rigName, rigObj: r, role: constants.RoleArchitect}
-		tasks <- agentTask{rigName: rigName, rigObj: r, role: constants.RoleQA}
+		tasks <- agentTask{rigName: rigName, rigObj: r, role: role}
 	}
 	close(tasks)
 
-	// Close results channel when workers are done
 	go func() {
 		wg.Wait()
 		close(results)
 	}()
 
-	// Collect results - no locking needed, single goroutine collects
 	for msg := range results {
-		switch msg.role {
-		case constants.RoleWitness:
-			witnessResults[msg.rigName] = msg.result
-		case constants.RoleRefinery:
-			refineryResults[msg.rigName] = msg.result
-		case constants.RoleArchitect:
-			architectResults[msg.rigName] = msg.result
-		case constants.RoleQA:
-			qaResults[msg.rigName] = msg.result
-		}
+		resultsMap[msg.rigName] = msg.result
 	}
 
-	return
+	return resultsMap
 }
 
 // upStartWitness starts a witness for the given rig and returns a result struct.
@@ -1326,4 +1310,3 @@ func recoverOrphanedBeads(townRoot string, rigs []string, prefetchedRigs map[str
 
 	return services
 }
-
