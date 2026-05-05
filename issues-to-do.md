@@ -9,7 +9,7 @@ I've completed a thorough exploration of the three new agent roles in the `pr/qa
 - [x] Strengthen QA acceptance criteria guidance in `gastown/internal/templates/roles/qa.md.tmpl`
 - [x] Add Planner wait-for-Architect guidance and spec reference requirements in `gastown/internal/templates/roles/planner.md.tmpl`
 - [x] Add ADR storage guidance to `gastown/internal/templates/roles/architect.md.tmpl`
-- [ ] Add Planner/Architect readiness enforcement beyond documentation
+- [x] Add Planner/Architect readiness enforcement beyond documentation
 - [ ] Add unified progress status bead concept
 - [ ] Add mandatory code coverage/security threshold enforcement for QA
 

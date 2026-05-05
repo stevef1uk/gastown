@@ -925,7 +925,9 @@ func upStartArchitect(rigName string, r *rig.Rig) agentStartResult {
 		RigPath:      r.Path,
 		RigName:      rigName,
 		Beacon:       session.BeaconConfig{Recipient: "architect", Sender: "daemon", Topic: "startup"},
-		WaitForAgent: false,
+		WaitForAgent: true,
+		WaitFatal:    true,
+		ReadyDelay:   true,
 		AutoRespawn:  true,
 	})
 	if err != nil {
@@ -968,7 +970,9 @@ func upStartQA(rigName string, r *rig.Rig) agentStartResult {
 		RigPath:      r.Path,
 		RigName:      rigName,
 		Beacon:       session.BeaconConfig{Recipient: "qa", Sender: "daemon", Topic: "startup"},
-		WaitForAgent: false,
+		WaitForAgent: true,
+		WaitFatal:    true,
+		ReadyDelay:   true,
 		AutoRespawn:  true,
 	})
 	if err != nil {
@@ -999,7 +1003,9 @@ func upStartPlanner(townRoot string) agentStartResult {
 		Role:         constants.RolePlanner,
 		TownRoot:     townRoot,
 		Beacon:       session.BeaconConfig{Recipient: "planner", Sender: "daemon", Topic: "startup"},
-		WaitForAgent: false,
+		WaitForAgent: true,
+		WaitFatal:    true,
+		ReadyDelay:   true,
 		AutoRespawn:  true,
 	})
 	if err != nil {
