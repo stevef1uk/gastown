@@ -382,7 +382,7 @@ fi
 # ─── Phase 11: Clean role directories ────────────────────────────────
 
 log_info "Cleaning role directories..."
-for role_dir in mayor deacon; do
+for role_dir in mayor deacon planner; do
     if [[ -d "$TOWN_ROOT/$role_dir" ]]; then
         # Only delete runtime/state contents, preserve configs
         find "$TOWN_ROOT/$role_dir" -mindepth 1 -maxdepth 1 \
