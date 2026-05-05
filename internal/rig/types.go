@@ -39,6 +39,12 @@ type Rig struct {
 	// HasRefinery indicates if the rig has a refinery agent.
 	HasRefinery bool `json:"has_refinery"`
 
+	// HasPlanner indicates if the rig has a planner agent.
+	HasPlanner bool `json:"has_planner"`
+
+	// HasQA indicates if the rig has a QA agent.
+	HasQA bool `json:"has_qa"`
+
 	// HasMayor indicates if the rig has a mayor clone.
 	HasMayor bool `json:"has_mayor"`
 }

@@ -16,7 +16,6 @@ import (
 
 	"github.com/steveyegge/gastown/internal/beads"
 	"github.com/steveyegge/gastown/internal/session"
-	"github.com/steveyegge/gastown/internal/tmux"
 	"github.com/steveyegge/gastown/internal/natsutil"
 )
 
@@ -64,6 +63,10 @@ type APIHandler struct {
 	csrfToken string
 	// natsClient is used for real-time event streaming via SSE.
 	natsClient *natsutil.Client
+	// townRoot is the root directory of the Gas Town workspace.
+	townRoot string
+	// sp is the session provider for the current transport (Tmux, NATS).
+	sp session.Provider
 }
 
 const optionsCacheTTL = 30 * time.Second
@@ -73,13 +76,16 @@ const optionsCacheTTL = 30 * time.Second
 const maxConcurrentCommands = 12
 
 // NewAPIHandler creates a new API handler with the given run timeouts and CSRF token.
-func NewAPIHandler(defaultRunTimeout, maxRunTimeout time.Duration, csrfToken string, natsClient *natsutil.Client) *APIHandler {
+func NewAPIHandler(townRoot string, sp session.Provider, defaultRunTimeout, maxRunTimeout time.Duration, csrfToken string, natsClient *natsutil.Client) *APIHandler {
 	if csrfToken == "" {
 		log.Printf("WARNING: APIHandler created with empty CSRF token — POST requests will not be protected")
 	}
 	// Use PATH lookup for gt binary. Do NOT use os.Executable() here - during
 	// tests it returns the test binary, causing fork bombs when executed.
 	workDir, _ := os.Getwd()
+	if sp == nil {
+		sp = session.GetDefaultProvider(townRoot)
+	}
 	return &APIHandler{
 		gtPath:            "gt",
 		workDir:           workDir,
@@ -88,9 +94,17 @@ func NewAPIHandler(defaultRunTimeout, maxRunTimeout time.Duration, csrfToken str
 		cmdSem:            make(chan struct{}, maxConcurrentCommands),
 		csrfToken:         csrfToken,
 		natsClient:        natsClient,
+		townRoot:          townRoot,
+		sp:                sp,
 	}
 }
 
+func (h *APIHandler) provider() session.Provider {
+	if h.sp == nil {
+		return session.GetDefaultProvider(h.townRoot)
+	}
+	return h.sp
+}
 // ServeHTTP routes API requests to the appropriate handler.
 func (h *APIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// No CORS headers — the dashboard is served from the same origin.
@@ -931,6 +945,7 @@ func parseCrewListOutput(output string) []string {
 }
 
 // parseAgentsFromStatus extracts agents with status from "gt status --json" output.
+// Includes both town-level agents (status.agents) and rig-level agents (status.rigs[].agents).
 func parseAgentsFromStatus(jsonStr string) []OptionItem {
 	var status struct {
 		Agents []struct {
@@ -938,6 +953,13 @@ func parseAgentsFromStatus(jsonStr string) []OptionItem {
 			Running bool   `json:"running"`
 			State   string `json:"state"`
 		} `json:"agents"`
+		Rigs []struct {
+			Agents []struct {
+				Name    string `json:"name"`
+				Running bool   `json:"running"`
+				State   string `json:"state"`
+			} `json:"agents"`
+		} `json:"rigs"`
 	}
 
 	if err := json.Unmarshal([]byte(jsonStr), &status); err != nil {
@@ -945,6 +967,7 @@ func parseAgentsFromStatus(jsonStr string) []OptionItem {
 	}
 
 	var agents []OptionItem
+	// Add town-level agents (mayor, deacon, planner)
 	for _, a := range status.Agents {
 		state := a.State
 		if state == "" {
@@ -959,6 +982,24 @@ func parseAgentsFromStatus(jsonStr string) []OptionItem {
 			Status:  state,
 			Running: a.Running,
 		})
+	}
+	// Add rig-level agents (witness, refinery, architect, qa, crew, polecats)
+	for _, rig := range status.Rigs {
+		for _, a := range rig.Agents {
+			state := a.State
+			if state == "" {
+				if a.Running {
+					state = "running"
+				} else {
+					state = "stopped"
+				}
+			}
+			agents = append(agents, OptionItem{
+				Name:    a.Name,
+				Status:  state,
+				Running: a.Running,
+			})
+		}
 	}
 	return agents
 }
@@ -1760,75 +1801,59 @@ func (h *APIHandler) handleCrew(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(resp)
 }
 
-// detectCrewState determines crew member state from tmux session.
+// detectCrewState determines crew member state from session provider.
 // Returns: state (spinning/finished/questions/ready), lastActive string, session status
 func (h *APIHandler) detectCrewState(ctx context.Context, sessionName, hook string) (string, string, string) {
-	// Check if tmux session exists and get activity
-	cmd := tmux.BuildCommandContext(ctx, "list-sessions", "-F", "#{session_name}|#{window_activity}|#{session_attached}")
-	var stdout bytes.Buffer
-	cmd.Stdout = &stdout
-	if err := cmd.Run(); err != nil {
-		// tmux not running - crew is ready (no session)
+	// Check if session exists via provider
+	info, err := h.provider().GetSessionInfo(ctx, sessionName)
+	if err != nil {
+		// Session not found or provider error - crew is ready (no session)
 		return "ready", "", "none"
 	}
 
-	// Find our session
-	lines := strings.Split(strings.TrimSpace(stdout.String()), "\n")
-	for _, line := range lines {
-		parts := strings.Split(line, "|")
-		if len(parts) < 3 || parts[0] != sessionName {
-			continue
-		}
-
-		// Found session
-		var activityUnix int64
-		if _, err := fmt.Sscanf(parts[1], "%d", &activityUnix); err != nil {
-			continue
-		}
-		attached := parts[2] == "1"
-
-		sessionStatus := "detached"
-		if attached {
-			sessionStatus = "attached"
-		}
-
-		// Calculate activity age
-		activityAge := time.Since(time.Unix(activityUnix, 0))
-		lastActive := formatTimestamp(time.Unix(activityUnix, 0))
-
-		// Check if Claude is running in the session
-		isClaudeRunning := h.isClaudeRunningInSession(ctx, sessionName)
-
-		// Determine state based on activity and Claude status
-		state := determineCrewState(activityAge, isClaudeRunning, hook)
-
-		// Check for questions if state is potentially finished
-		if state == "finished" || (state == "ready" && hook != "") {
-			if h.hasQuestionInPane(ctx, sessionName) {
-				state = "questions"
-			}
-		}
-
-		return state, lastActive, sessionStatus
+	sessionStatus := "detached"
+	if info.Attached {
+		sessionStatus = "attached"
 	}
 
-	// Session not found
-	return "ready", "", "none"
+	// Calculate activity age
+	var activityAge time.Duration
+	lastActive := ""
+	if info.Activity != "" {
+		var activityUnix int64
+		if _, err := fmt.Sscanf(info.Activity, "%d", &activityUnix); err == nil {
+			activityAge = time.Since(time.Unix(activityUnix, 0))
+			lastActive = formatTimestamp(time.Unix(activityUnix, 0))
+		}
+	}
+
+	// Check if Claude is running in the session
+	isClaudeRunning := h.isClaudeRunningInSession(ctx, sessionName)
+
+	// Determine state based on activity and Claude status
+	state := determineCrewState(activityAge, isClaudeRunning, hook)
+
+	// Check for questions if state is potentially finished
+	if state == "finished" || (state == "ready" && hook != "") {
+		if h.hasQuestionInPane(ctx, sessionName) {
+			state = "questions"
+		}
+	}
+
+	return state, lastActive, sessionStatus
 }
 
 // isClaudeRunningInSession checks if Claude/agent is actively running.
 func (h *APIHandler) isClaudeRunningInSession(ctx context.Context, sessionName string) bool {
-	// Target pane 0 explicitly (:0.0) to avoid false positives from
-	// user-created split panes running shells or other commands.
-	cmd := exec.CommandContext(ctx, "tmux", "display-message", "-t", sessionName+":0.0", "-p", "#{pane_current_command}")
-	var stdout bytes.Buffer
-	cmd.Stdout = &stdout
-	if err := cmd.Run(); err != nil {
+	// For transport-agnostic check, we capture the pane and check the content.
+	// Tmux provider has GetMainPID which could also be used, but pane capture
+	// is more reliable across different shells/wrappers.
+	stdout, err := h.provider().CapturePane(ctx, sessionName, 5)
+	if err != nil {
 		return false
 	}
 
-	output := strings.TrimSpace(stdout.String())
-	return paneCurrentCommandIsAgent(output)
+	return paneCurrentCommandIsAgent(stdout) || strings.Contains(strings.ToLower(stdout), "claude")
 }
 
 // paneCurrentCommandIsAgent returns true if tmux #{pane_current_command} names a known
@@ -1850,15 +1875,13 @@ func paneCurrentCommandIsAgent(output string) bool {
 
 // hasQuestionInPane checks the last output for question indicators.
 func (h *APIHandler) hasQuestionInPane(ctx context.Context, sessionName string) bool {
-	cmd := exec.CommandContext(ctx, "tmux", "capture-pane", "-t", sessionName, "-p", "-J")
-	var stdout bytes.Buffer
-	cmd.Stdout = &stdout
-	if err := cmd.Run(); err != nil {
+	stdout, err := h.provider().CapturePane(ctx, sessionName, 10)
+	if err != nil {
 		return false
 	}
 
 	// Get last few lines
-	lines := strings.Split(strings.TrimSpace(stdout.String()), "\n")
+	lines := strings.Split(strings.TrimSpace(stdout), "\n")
 	lastLines := ""
 	if len(lines) > 10 {
 		lastLines = strings.Join(lines[len(lines)-10:], "\n")
@@ -2011,29 +2034,24 @@ func (h *APIHandler) handleSessionPreview(w http.ResponseWriter, r *http.Request
 		}
 	}
 
-	// Run tmux capture-pane to get the last 30 lines
-	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
+	// Run capture-pane via provider
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "tmux", "capture-pane", "-t", sessionName, "-p", "-J", "-S", "-30")
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	err := cmd.Run()
+	stdout, err := h.provider().CapturePane(ctx, sessionName, 30)
 	if err != nil {
 		if ctx.Err() == context.DeadlineExceeded {
-			h.sendError(w, "tmux capture-pane timed out", http.StatusGatewayTimeout)
+			h.sendError(w, "session capture timed out", http.StatusGatewayTimeout)
 			return
 		}
-		h.sendError(w, "Failed to capture pane: "+stderr.String(), http.StatusInternalServerError)
+		h.sendError(w, "Failed to capture session: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(SessionPreviewResponse{
 		Session:   sessionName,
-		Content:   stdout.String(),
+		Content:   stdout,
 		Timestamp: time.Now().Format(time.RFC3339),
 	})
 }

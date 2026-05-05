@@ -17,6 +17,7 @@ import (
 	"github.com/steveyegge/gastown/internal/web"
 	"github.com/steveyegge/gastown/internal/workspace"
 	"github.com/steveyegge/gastown/internal/natsutil"
+	"github.com/steveyegge/gastown/internal/session"
 )
 
 var (
@@ -75,6 +76,12 @@ func runDashboard(cmd *cobra.Command, args []string) error {
 		// to the actual Dolt SQL server, not the dashboard's HTTP listen port.
 		// Without this, inherited env vars could point bd at the wrong port.
 		ensureDoltPortEnv(townRoot)
+
+		// Initialize session prefix registry and agent registry from town root.
+		// (gt-z9xk: ensure dashboard sees all rigs)
+		if err := session.InitRegistry(townRoot); err != nil {
+			fmt.Fprintf(cmd.ErrOrStderr(), "warning: failed to initialize town registry: %v\n", err)
+		}
 
 		fetcher, fetchErr := web.NewLiveConvoyFetcher()
 		if fetchErr != nil {

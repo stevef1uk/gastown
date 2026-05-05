@@ -2,6 +2,7 @@
 /gt
 /gt-proxy-server
 /gt-proxy-client
+gt-agent-console
 *.exe
 gt-agent
 # Build

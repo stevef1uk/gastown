@@ -303,7 +303,7 @@ func IsKnownSession(sess string) bool {
 	if strings.HasPrefix(sess, HQPrefix) {
 		return true
 	}
-	return DefaultRegistry().HasPrefix(sess)
+	return HasKnownPrefix(sess)
 }
 
 // matchPrefix finds the prefix in a session name suffix using the registry.

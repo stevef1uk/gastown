@@ -265,7 +265,7 @@ func TestExpandHomePath(t *testing.T) {
 // real binaries (e.g., via gastown-docker).
 
 func TestHandler_MailRead_InvalidID(t *testing.T) {
-	handler := NewAPIHandler(30*time.Second, 60*time.Second, "test-token", nil)
+	handler := NewAPIHandler("/tmp/town", nil, 30*time.Second, 60*time.Second, "test-token", nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/mail/read?id=--inject", nil)
 	w := httptest.NewRecorder()
@@ -277,7 +277,7 @@ func TestHandler_MailRead_InvalidID(t *testing.T) {
 }
 
 func TestHandler_MailSend_InvalidRecipient(t *testing.T) {
-	handler := NewAPIHandler(30*time.Second, 60*time.Second, "test-token", nil)
+	handler := NewAPIHandler("/tmp/town", nil, 30*time.Second, 60*time.Second, "test-token", nil)
 
 	body := `{"to": "--flag", "subject": "test"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/mail/send", bytes.NewBufferString(body))
@@ -318,7 +318,7 @@ func TestHandler_MailSend_ValidAgentPath(t *testing.T) {
 }
 
 func TestHandler_MailSend_OversizedSubject(t *testing.T) {
-	handler := NewAPIHandler(30*time.Second, 60*time.Second, "test-token", nil)
+	handler := NewAPIHandler("/tmp/town", nil, 30*time.Second, 60*time.Second, "test-token", nil)
 
 	payload := map[string]interface{}{
 		"to":      "alice",
@@ -337,7 +337,7 @@ func TestHandler_MailSend_OversizedSubject(t *testing.T) {
 }
 
 func TestHandler_IssueShow_InvalidID(t *testing.T) {
-	handler := NewAPIHandler(30*time.Second, 60*time.Second, "test-token", nil)
+	handler := NewAPIHandler("/tmp/town", nil, 30*time.Second, 60*time.Second, "test-token", nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/issues/show?id=--help", nil)
 	w := httptest.NewRecorder()
@@ -349,7 +349,7 @@ func TestHandler_IssueShow_InvalidID(t *testing.T) {
 }
 
 func TestHandler_PRShow_InvalidNumber(t *testing.T) {
-	handler := NewAPIHandler(30*time.Second, 60*time.Second, "test-token", nil)
+	handler := NewAPIHandler("/tmp/town", nil, 30*time.Second, 60*time.Second, "test-token", nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/pr/show?repo=owner/repo&number=abc", nil)
 	w := httptest.NewRecorder()
@@ -361,7 +361,7 @@ func TestHandler_PRShow_InvalidNumber(t *testing.T) {
 }
 
 func TestHandler_PRShow_InvalidURL(t *testing.T) {
-	handler := NewAPIHandler(30*time.Second, 60*time.Second, "test-token", nil)
+	handler := NewAPIHandler("/tmp/town", nil, 30*time.Second, 60*time.Second, "test-token", nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/pr/show?url=--evil", nil)
 	w := httptest.NewRecorder()
@@ -509,7 +509,7 @@ func TestSetupHandler_CheckWorkspace_TraversalPath(t *testing.T) {
 }
 
 func TestHandler_IssueShow_MalformedExternalPrefix(t *testing.T) {
-	handler := NewAPIHandler(30*time.Second, 60*time.Second, "test-token", nil)
+	handler := NewAPIHandler("/tmp/town", nil, 30*time.Second, 60*time.Second, "test-token", nil)
 
 	// external:foo (only 2 parts) should get a specific error, not generic "Invalid issue ID".
 	req := httptest.NewRequest(http.MethodGet, "/api/issues/show?id=external:foo", nil)
@@ -530,7 +530,7 @@ func TestHandler_IssueShow_MalformedExternalPrefix(t *testing.T) {
 }
 
 func TestHandler_IssueShow_ExternalWithExtraColons(t *testing.T) {
-	handler := NewAPIHandler(30*time.Second, 60*time.Second, "test-token", nil)
+	handler := NewAPIHandler("/tmp/town", nil, 30*time.Second, 60*time.Second, "test-token", nil)
 
 	// SplitN(":", 3) puts "id:with:colons" in parts[2]. isValidID rejects colons.
 	req := httptest.NewRequest(http.MethodGet, "/api/issues/show?id=external:prefix:id:with:colons", nil)
@@ -551,7 +551,7 @@ func TestHandler_IssueShow_ExternalWithExtraColons(t *testing.T) {
 }
 
 func TestHandler_MailSend_NullByteSubject(t *testing.T) {
-	handler := NewAPIHandler(30*time.Second, 60*time.Second, "test-token", nil)
+	handler := NewAPIHandler("/tmp/town", nil, 30*time.Second, 60*time.Second, "test-token", nil)
 
 	body := `{"to": "alice", "subject": "test\u0000inject"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/mail/send", bytes.NewBufferString(body))
@@ -584,7 +584,7 @@ func TestHandler_IssueCreate_FlagTitle(t *testing.T) {
 }
 
 func TestHandler_SessionPreview_MissingParam(t *testing.T) {
-	handler := NewAPIHandler(30*time.Second, 60*time.Second, "test-token", nil)
+	handler := NewAPIHandler("/tmp/town", nil, 30*time.Second, 60*time.Second, "test-token", nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/session/preview", nil)
 	w := httptest.NewRecorder()
@@ -596,7 +596,7 @@ func TestHandler_SessionPreview_MissingParam(t *testing.T) {
 }
 
 func TestHandler_SessionPreview_InvalidPrefix(t *testing.T) {
-	handler := NewAPIHandler(30*time.Second, 60*time.Second, "test-token", nil)
+	handler := NewAPIHandler("/tmp/town", nil, 30*time.Second, 60*time.Second, "test-token", nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/session/preview?session=evil-session", nil)
 	w := httptest.NewRecorder()
@@ -608,7 +608,7 @@ func TestHandler_SessionPreview_InvalidPrefix(t *testing.T) {
 }
 
 func TestHandler_SessionPreview_InvalidChars(t *testing.T) {
-	handler := NewAPIHandler(30*time.Second, 60*time.Second, "test-token", nil)
+	handler := NewAPIHandler("/tmp/town", nil, 30*time.Second, 60*time.Second, "test-token", nil)
 
 	// Session name with shell metacharacters should be rejected
 	req := httptest.NewRequest(http.MethodGet, "/api/session/preview?session=gt-evil;rm+-rf+/", nil)

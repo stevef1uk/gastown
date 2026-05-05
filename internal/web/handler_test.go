@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/steveyegge/gastown/internal/activity"
+	"github.com/steveyegge/gastown/internal/session"
 )
 
 // Test error for simulating fetch failures
@@ -89,6 +90,14 @@ func (m *MockConvoyFetcher) FetchIssues() ([]IssueRow, error) {
 
 func (m *MockConvoyFetcher) FetchActivity() ([]ActivityRow, error) {
 	return m.Activity, nil
+}
+
+func (m *MockConvoyFetcher) GetTownRoot() string {
+	return "/tmp/town"
+}
+
+func (m *MockConvoyFetcher) GetProvider() session.Provider {
+	return nil
 }
 
 func TestConvoyHandler_RendersTemplate(t *testing.T) {
@@ -1060,6 +1069,14 @@ func (m *MockConvoyFetcherWithErrors) FetchActivity() ([]ActivityRow, error) {
 	return nil, nil
 }
 
+func (m *MockConvoyFetcherWithErrors) GetTownRoot() string {
+	return "/tmp/town"
+}
+
+func (m *MockConvoyFetcherWithErrors) GetProvider() session.Provider {
+	return nil
+}
+
 // TestConvoyHandler_TemplateErrorReturns500 verifies that template execution errors
 // return a proper 500 status code, not 200 (which would happen if we wrote directly
 // to the ResponseWriter and it failed mid-execution).
@@ -1222,6 +1239,14 @@ func (m *CountingMockFetcher) FetchMayor() (*MayorStatus, error)   { return m.in
 func (m *CountingMockFetcher) FetchIssues() ([]IssueRow, error)    { return m.inner.FetchIssues() }
 func (m *CountingMockFetcher) FetchActivity() ([]ActivityRow, error) {
 	return m.inner.FetchActivity()
+}
+
+func (m *CountingMockFetcher) GetTownRoot() string {
+	return "/tmp/town"
+}
+
+func (m *CountingMockFetcher) GetProvider() session.Provider {
+	return nil
 }
 
 func TestConvoyHandler_NonFatalErrors(t *testing.T) {

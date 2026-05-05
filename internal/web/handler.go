@@ -15,6 +15,7 @@ import (
 
 	"github.com/steveyegge/gastown/internal/config"
 	"github.com/steveyegge/gastown/internal/natsutil"
+	"github.com/steveyegge/gastown/internal/session"
 )
 
 //go:embed static
@@ -36,6 +37,8 @@ type ConvoyFetcher interface {
 	FetchMayor() (*MayorStatus, error)
 	FetchIssues() ([]IssueRow, error)
 	FetchActivity() ([]ActivityRow, error)
+	GetTownRoot() string
+	GetProvider() session.Provider
 }
 
 // expandCacheEntry holds a cached expanded-view response.
@@ -472,7 +475,7 @@ func NewDashboardMux(fetcher ConvoyFetcher, webCfg *config.WebTimeoutsConfig, na
 
 	defaultRunTimeout := config.ParseDurationOrDefault(webCfg.DefaultRunTimeout, 30*time.Second)
 	maxRunTimeout := config.ParseDurationOrDefault(webCfg.MaxRunTimeout, 60*time.Second)
-	apiHandler := NewAPIHandler(defaultRunTimeout, maxRunTimeout, csrfToken, natsClient)
+	apiHandler := NewAPIHandler(fetcher.GetTownRoot(), fetcher.GetProvider(), defaultRunTimeout, maxRunTimeout, csrfToken, natsClient)
 
 	// Create static file server from embedded files
 	staticFS, err := fs.Sub(staticFiles, "static")

@@ -497,9 +497,18 @@ func (p *NatsProvider) GetSessionInfo(ctx context.Context, sessionID string) (*S
 		return nil, fmt.Errorf("session not found")
 	}
 
-	return &SessionInfo{
+	info := &SessionInfo{
 		Name:     sessionID,
 		Windows:  1,
 		Attached: false,
-	}, nil
+	}
+
+	// Use PID file mtime as a proxy for activity/start time
+	if pidFile := filepath.Join(p.townRoot, ".gt-nats-pids", sessionID); pidFile != "" {
+		if st, err := os.Stat(pidFile); err == nil {
+			info.Activity = fmt.Sprintf("%d", st.ModTime().Unix())
+		}
+	}
+
+	return info, nil
 }

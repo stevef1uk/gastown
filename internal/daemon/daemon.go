@@ -2275,8 +2275,11 @@ func (d *Daemon) isRigOperational(rigName string) (bool, string) {
 	}
 
 	rigBeadID := fmt.Sprintf("%s-rig-%s", prefix, rigName)
-	rigBeadsDir := beads.ResolveBeadsDir(rigPath)
-	bd := beads.NewWithBeadsDir(rigPath, rigBeadsDir)
+	rigBeadsDir := doltserver.FindRigBeadsDir(d.config.TownRoot, rigName)
+	if rigBeadsDir == "" {
+		rigBeadsDir = beads.ResolveBeadsDir(rigPath)
+	}
+	bd := beads.New(rigBeadsDir)
 	if issue, err := bd.Show(rigBeadID); err == nil {
 		for _, label := range issue.Labels {
 			if label == "status:docked" {

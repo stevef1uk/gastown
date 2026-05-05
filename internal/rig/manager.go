@@ -241,13 +241,13 @@ func (m *Manager) loadRig(name string, entry config.RigEntry) (*Rig, error) {
 	// Check for witness (witnesses don't have clones, just the witness directory)
 	witnessPath := filepath.Join(rigPath, "witness")
 	if info, err := os.Stat(witnessPath); err == nil && info.IsDir() {
-		rig.HasWitness = true
-	}
+	rig.HasWitness = true
 
-	// Check for refinery
-	refineryPath := filepath.Join(rigPath, "refinery", "rig")
-	if _, err := os.Stat(refineryPath); err == nil {
-		rig.HasRefinery = true
+	rig.HasRefinery = true
+
+	rig.HasPlanner = true
+
+	rig.HasQA = true
 	}
 
 	// Check for mayor clone
@@ -1418,9 +1418,9 @@ func splitCamelCase(s string) []string {
 // detectBeadsPrefixFromConfig reads the issue prefix from a beads config.yaml file.
 // Returns empty string if the file doesn't exist or doesn't contain a prefix.
 //
-// beadsPrefixRegexp validates beads prefix format: alphanumeric, may contain hyphens,
+// beadsPrefixRegexp validates beads prefix format: alphanumeric, may contain hyphens and dots,
 // must start with letter, max 20 chars. Prevents shell injection via config files.
-var beadsPrefixRegexp = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9-]{0,19}$`)
+var beadsPrefixRegexp = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9.-]{0,19}$`)
 
 // isValidBeadsPrefix checks if a prefix is safe for use in shell commands.
 // Prefixes must be alphanumeric (with optional hyphens), start with a letter,

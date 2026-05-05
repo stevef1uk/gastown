@@ -15,6 +15,7 @@ import (
 
 	"github.com/nats-io/nats.go"
 	"github.com/steveyegge/gastown/internal/nudge"
+	"github.com/steveyegge/gastown/internal/session"
 )
 
 // Agent represents a Gas Town agent (deacon, mayor, witness, refinery, crew, polecat).
@@ -44,6 +45,11 @@ func NewServer(townRoot string) (*Server, error) {
 	s := &Server{
 		townRoot: townRoot,
 		natsSubs: make(map[string]*nats.Subscription),
+	}
+
+	// Initialize session registry so rigs and prefixes are resolved correctly (gt-z9xk)
+	if err := session.InitRegistry(townRoot); err != nil {
+		fmt.Fprintf(os.Stderr, "[agent-console] Warning: failed to initialize town registry: %v\n", err)
 	}
 
 	// Try to connect to NATS
@@ -264,54 +270,60 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 func (s *Server) discoverAgents() []Agent {
 	var agents []Agent
 
-	// Check for town-level agents (mayor, deacon)
-	for _, role := range []string{"mayor", "deacon"} {
+	// Check for town-level agents (mayor, deacon, planner)
+	// These use the 'hq-' prefix and live at the town root.
+	for _, role := range []string{"mayor", "deacon", "planner"} {
 		a := s.inspectAgent(role, "", role)
+		// Include if running, or if the role directory exists (signals it's part of the town)
 		if a.Status != "stopped" || fileExists(filepath.Join(s.townRoot, role)) {
 			agents = append(agents, a)
 		}
 	}
 
-	// Check for rig-level agents (witness, refinery, crew, polecats)
-	rigsDir := filepath.Join(s.townRoot, "mayor", "rigs.json")
-	if data, err := os.ReadFile(rigsDir); err == nil {
-		var rigs struct {
-			Rigs map[string]struct {
-				Beads struct {
-					Prefix string `json:"prefix"`
-				} `json:"beads"`
-			} `json:"rigs"`
-		}
-		if json.Unmarshal(data, &rigs) == nil {
-			for rigName := range rigs.Rigs {
-				for _, role := range []string{"witness", "refinery"} {
-					id := fmt.Sprintf("%s-%s", rigs.Rigs[rigName].Beads.Prefix, role)
-					a := s.inspectAgent(id, rigName, role)
+	// Use the session package's registry to find all rigs (handles rigs.json location fallback)
+	registry := session.DefaultRegistry()
+	for rigName := range registry.AllRigs() {
+		// Check rig-specific agents (Witness, Refinery, Architect, QA)
+		prefix := registry.PrefixForRig(rigName)
+		
+		// Witness
+		witnessID := session.WitnessSessionName(prefix)
+		agents = append(agents, s.inspectAgent(witnessID, rigName, "witness"))
+		
+		// Refinery
+		refineryID := session.RefinerySessionName(prefix)
+		agents = append(agents, s.inspectAgent(refineryID, rigName, "refinery"))
+		
+		// Architect
+		architectID := session.ArchitectSessionName(prefix)
+		agents = append(agents, s.inspectAgent(architectID, rigName, "architect"))
+		
+		// QA
+		qaID := session.QASessionName(prefix)
+		agents = append(agents, s.inspectAgent(qaID, rigName, "qa"))
+
+		// Check crew
+		crewDir := filepath.Join(s.townRoot, rigName, "crew")
+		if entries, err := os.ReadDir(crewDir); err == nil {
+			for _, e := range entries {
+				if e.IsDir() && !strings.HasPrefix(e.Name(), ".") {
+					id := session.CrewSessionName(prefix, e.Name())
+					a := s.inspectAgent(id, rigName, "crew")
+					a.Name = e.Name() // Override name with worker name
 					agents = append(agents, a)
 				}
-				// Check crew
-				crewDir := filepath.Join(s.townRoot, rigName, "crew")
-				if entries, err := os.ReadDir(crewDir); err == nil {
-					for _, e := range entries {
-						if e.IsDir() && !strings.HasPrefix(e.Name(), ".") {
-							id := fmt.Sprintf("%s-crew-%s", rigs.Rigs[rigName].Beads.Prefix, e.Name())
-							a := s.inspectAgent(id, rigName, "crew")
-							a.Name = e.Name()
-							agents = append(agents, a)
-						}
-					}
-				}
-				// Check polecats
-				polecatDir := filepath.Join(s.townRoot, rigName, "polecats")
-				if entries, err := os.ReadDir(polecatDir); err == nil {
-					for _, e := range entries {
-						if e.IsDir() && !strings.HasPrefix(e.Name(), ".") {
-							id := fmt.Sprintf("%s-polecat-%s", rigs.Rigs[rigName].Beads.Prefix, e.Name())
-							a := s.inspectAgent(id, rigName, "polecat")
-							a.Name = e.Name()
-							agents = append(agents, a)
-						}
-					}
+			}
+		}
+
+		// Check polecats
+		polecatDir := filepath.Join(s.townRoot, rigName, "polecats")
+		if entries, err := os.ReadDir(polecatDir); err == nil {
+			for _, e := range entries {
+				if e.IsDir() && !strings.HasPrefix(e.Name(), ".") {
+					id := session.PolecatSessionName(prefix, e.Name())
+					a := s.inspectAgent(id, rigName, "polecat")
+					a.Name = e.Name() // Override name with worker name
+					agents = append(agents, a)
 				}
 			}
 		}
@@ -321,38 +333,11 @@ func (s *Server) discoverAgents() []Agent {
 }
 
 // inspectAgent checks the status of a specific agent.
-func (s *Server) inspectAgent(id, rig, role string) Agent {
+func (s *Server) inspectAgent(sessionName, rig, role string) Agent {
 	a := Agent{
-		ID:   id,
+		ID:   sessionName,
 		Role: role,
-		Name: id,
-	}
-
-	// Check if agent process is running
-	var sessionName string
-	if rig == "" {
-		sessionName = fmt.Sprintf("hq-%s", role)
-	} else {
-		prefix := ""
-		if data, err := os.ReadFile(filepath.Join(s.townRoot, "mayor", "rigs.json")); err == nil {
-			var rigs struct {
-				Rigs map[string]struct {
-					Beads struct {
-						Prefix string `json:"prefix"`
-					} `json:"beads"`
-				} `json:"rigs"`
-			}
-			if json.Unmarshal(data, &rigs) == nil {
-				prefix = rigs.Rigs[rig].Beads.Prefix
-			}
-		}
-		sessionName = fmt.Sprintf("%s-%s", prefix, role)
-		if role == "polecat" || role == "crew" {
-			parts := strings.Split(id, "-")
-			if len(parts) >= 3 {
-				sessionName = fmt.Sprintf("%s-%s-%s", prefix, role, strings.Join(parts[2:], "-"))
-			}
-		}
+		Name: sessionName, // Default to session name, overridden for crew/polecat
 	}
 
 	// Try to find the process
@@ -366,6 +351,14 @@ func (s *Server) inspectAgent(id, rig, role string) Agent {
 		}
 	} else {
 		a.Status = "stopped"
+		// For stopped agents, use the PID file's mod time as the "Last Run" time
+		for _, pidName := range []string{sessionName, sessionName + ".pid"} {
+			pidFile := filepath.Join(s.townRoot, ".gt-nats-pids", pidName)
+			if stat, err := os.Stat(pidFile); err == nil {
+				a.Since = stat.ModTime()
+				break
+			}
+		}
 	}
 
 	// Read agent type from config
@@ -406,20 +399,17 @@ func (s *Server) findAgentPID(sessionName string) int {
 	}
 
 	// Fallback 1: search for gt-agent processes matching the role name
-	// in the process title. The title contains the role (mayor, deacon,
-	// witness, refinery) but NOT the session prefix.
+	// in the process title.
 	role := sessionName
-	if strings.HasPrefix(sessionName, "hq-") {
-		role = strings.TrimPrefix(sessionName, "hq-")
-	} else if strings.Contains(sessionName, "-") {
-		// Rig agents: de-witness -> witness, de-refinery -> refinery
+	if strings.Contains(sessionName, "-") {
 		parts := strings.Split(sessionName, "-")
-		if len(parts) >= 2 {
-			role = parts[1]
-		}
+		// hq-deacon -> deacon
+		// hq-qsq-witness -> witness
+		role = parts[len(parts)-1]
 	}
 
-	// Search for gt-agent processes with this role in the title
+	// Search for gt-agent processes with this role in the title.
+	// Pattern is purposely broad to match regardless of session prefix.
 	searchTerm := fmt.Sprintf("gt-agent.*%s", role)
 	cmd := exec.Command("pgrep", "-a", "-f", searchTerm)
 	out, _ := cmd.Output()
@@ -436,13 +426,19 @@ func (s *Server) findAgentPID(sessionName string) int {
 		if err != nil {
 			continue
 		}
+		// Also verify that the full command line contains the session name
+		// to avoid matching other sessions of the same role.
+		if !strings.Contains(line, sessionName) {
+			continue
+		}
+
 		// Verify this process's cwd is inside the town root
 		// (prevents matching gt-agent processes from other towns)
-		cwd, err := os.Readlink(filepath.Join("/proc", fields[0], "cwd"))
+		procCwd, err := os.Readlink(filepath.Join("/proc", fields[0], "cwd"))
 		if err != nil {
 			continue
 		}
-		if strings.HasPrefix(cwd, s.townRoot) {
+		if strings.HasPrefix(procCwd, s.townRoot) {
 			return pid
 		}
 	}

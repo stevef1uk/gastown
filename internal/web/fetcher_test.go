@@ -2,6 +2,7 @@ package web
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -13,6 +14,7 @@ import (
 	"github.com/steveyegge/gastown/internal/activity"
 	"github.com/steveyegge/gastown/internal/config"
 	"github.com/steveyegge/gastown/internal/constants"
+	"github.com/steveyegge/gastown/internal/session"
 )
 
 func TestCalculateWorkStatus(t *testing.T) {
@@ -467,7 +469,7 @@ func TestNewAPIHandler_StoresTimeouts(t *testing.T) {
 	defTimeout := 45 * time.Second
 	maxTimeout := 90 * time.Second
 
-	handler := NewAPIHandler(defTimeout, maxTimeout, "test-token", nil)
+	handler := NewAPIHandler("/tmp/town", nil, defTimeout, maxTimeout, "test-token", nil)
 	if handler.defaultRunTimeout != defTimeout {
 		t.Errorf("defaultRunTimeout = %v, want %v", handler.defaultRunTimeout, defTimeout)
 	}
@@ -824,6 +826,17 @@ func TestFetchMayor_UsesResolvedRuntime(t *testing.T) {
 		townRoot:             t.TempDir(),
 		mayorActiveThreshold: 24 * time.Hour,
 		tmuxCmdTimeout:       time.Second,
+		sp: &MockProvider{
+			ExistsFunc: func(ctx context.Context, sessionID string) (bool, error) {
+				return sessionID == "hq-mayor", nil
+			},
+			GetSessionInfoFunc: func(ctx context.Context, sessionID string) (*session.SessionInfo, error) {
+				return &session.SessionInfo{Name: sessionID, Activity: "1731328320"}, nil
+			},
+			GetEnvironmentFunc: func(ctx context.Context, sessionID string) (map[string]string, error) {
+				return map[string]string{"GT_AGENT": "codex"}, nil
+			},
+		},
 	}
 
 	status, err := f.FetchMayor()
@@ -844,9 +857,6 @@ func TestFetchMayor_UsesResolvedRuntime(t *testing.T) {
 	}
 }
 
-// TestFetchHealth_DeaconHeartbeatFieldName verifies that FetchHealth reads the
-// "timestamp" field written by heartbeat.go, not the old "last_heartbeat" field
-// that caused dashboard to always show "no timestamp". (GH#2989)
 func TestFetchHealth_DeaconHeartbeatFieldName(t *testing.T) {
 	townRoot := t.TempDir()
 	deaconDir := filepath.Join(townRoot, "deacon")
@@ -872,7 +882,6 @@ func TestFetchHealth_DeaconHeartbeatFieldName(t *testing.T) {
 		t.Fatalf("FetchHealth: %v", err)
 	}
 
-	// DeaconHeartbeat must NOT be "no timestamp" — the field was read correctly.
 	if health.DeaconHeartbeat == "no timestamp" {
 		t.Fatal("DeaconHeartbeat = \"no timestamp\": JSON field name mismatch (GH#2989)")
 	}
@@ -880,7 +889,6 @@ func TestFetchHealth_DeaconHeartbeatFieldName(t *testing.T) {
 		t.Fatal("DeaconHeartbeat = \"no heartbeat\": heartbeat file was not read")
 	}
 
-	// Cycle and agent counts should be populated.
 	if health.DeaconCycle != 42 {
 		t.Errorf("DeaconCycle = %d, want 42", health.DeaconCycle)
 	}
@@ -891,8 +899,29 @@ func TestFetchHealth_DeaconHeartbeatFieldName(t *testing.T) {
 		t.Errorf("UnhealthyAgents = %d, want 1", health.UnhealthyAgents)
 	}
 
-	// Heartbeat should be considered fresh (written just now).
 	if !health.HeartbeatFresh {
 		t.Error("HeartbeatFresh = false for a just-written heartbeat")
 	}
+}
+
+type MockProvider struct {
+	session.Provider
+	ExistsFunc func(ctx context.Context, sessionID string) (bool, error)
+	GetSessionInfoFunc func(ctx context.Context, sessionID string) (*session.SessionInfo, error)
+	GetEnvironmentFunc func(ctx context.Context, sessionID string) (map[string]string, error)
+}
+
+func (m *MockProvider) Exists(ctx context.Context, sessionID string) (bool, error) {
+	if m.ExistsFunc != nil { return m.ExistsFunc(ctx, sessionID) }
+	return false, nil
+}
+
+func (m *MockProvider) GetSessionInfo(ctx context.Context, sessionID string) (*session.SessionInfo, error) {
+	if m.GetSessionInfoFunc != nil { return m.GetSessionInfoFunc(ctx, sessionID) }
+	return &session.SessionInfo{}, nil
+}
+
+func (m *MockProvider) GetEnvironment(ctx context.Context, sessionID string) (map[string]string, error) {
+	if m.GetEnvironmentFunc != nil { return m.GetEnvironmentFunc(ctx, sessionID) }
+	return make(map[string]string), nil
 }

@@ -247,7 +247,7 @@ func TestParseCommandArgs(t *testing.T) {
 }
 
 func TestAPIHandler_Commands(t *testing.T) {
-	handler := NewAPIHandler(30*time.Second, 60*time.Second, "test-token", nil)
+	handler := NewAPIHandler("/tmp/town", nil, 30*time.Second, 60*time.Second, "test-token", nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/commands", nil)
 	w := httptest.NewRecorder()
@@ -293,7 +293,7 @@ func TestAPIHandler_Commands(t *testing.T) {
 }
 
 func TestAPIHandler_Run_BlockedCommand(t *testing.T) {
-	handler := NewAPIHandler(30*time.Second, 60*time.Second, "test-token", nil)
+	handler := NewAPIHandler("/tmp/town", nil, 30*time.Second, 60*time.Second, "test-token", nil)
 
 	body := `{"command": "delete everything"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/run", bytes.NewBufferString(body))
@@ -321,7 +321,7 @@ func TestAPIHandler_Run_BlockedCommand(t *testing.T) {
 }
 
 func TestAPIHandler_Run_InvalidJSON(t *testing.T) {
-	handler := NewAPIHandler(30*time.Second, 60*time.Second, "test-token", nil)
+	handler := NewAPIHandler("/tmp/town", nil, 30*time.Second, 60*time.Second, "test-token", nil)
 
 	body := `{invalid json}`
 	req := httptest.NewRequest(http.MethodPost, "/api/run", bytes.NewBufferString(body))
@@ -337,7 +337,7 @@ func TestAPIHandler_Run_InvalidJSON(t *testing.T) {
 }
 
 func TestAPIHandler_Run_EmptyCommand(t *testing.T) {
-	handler := NewAPIHandler(30*time.Second, 60*time.Second, "test-token", nil)
+	handler := NewAPIHandler("/tmp/town", nil, 30*time.Second, 60*time.Second, "test-token", nil)
 
 	body := `{"command": ""}`
 	req := httptest.NewRequest(http.MethodPost, "/api/run", bytes.NewBufferString(body))
@@ -353,7 +353,7 @@ func TestAPIHandler_Run_EmptyCommand(t *testing.T) {
 }
 
 func TestAPIHandler_Run_MissingCSRFToken(t *testing.T) {
-	handler := NewAPIHandler(30*time.Second, 60*time.Second, "test-token", nil)
+	handler := NewAPIHandler("/tmp/town", nil, 30*time.Second, 60*time.Second, "test-token", nil)
 
 	body := `{"command": "status"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/run", bytes.NewBufferString(body))
@@ -380,7 +380,7 @@ func TestAPIHandler_Run_MissingCSRFToken(t *testing.T) {
 }
 
 func TestAPIHandler_Run_WrongCSRFToken(t *testing.T) {
-	handler := NewAPIHandler(30*time.Second, 60*time.Second, "test-token", nil)
+	handler := NewAPIHandler("/tmp/town", nil, 30*time.Second, 60*time.Second, "test-token", nil)
 
 	body := `{"command": "status"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/run", bytes.NewBufferString(body))
@@ -396,7 +396,7 @@ func TestAPIHandler_Run_WrongCSRFToken(t *testing.T) {
 }
 
 func TestAPIHandler_Run_ConfirmRequired(t *testing.T) {
-	handler := NewAPIHandler(30*time.Second, 60*time.Second, "test-token", nil)
+	handler := NewAPIHandler("/tmp/town", nil, 30*time.Second, 60*time.Second, "test-token", nil)
 
 	// "mail send" requires Confirm: true in AllowedCommands
 	body := `{"command": "mail send alice -s test -m hello"}`
@@ -421,7 +421,7 @@ func TestAPIHandler_Run_ConfirmRequired(t *testing.T) {
 }
 
 func TestAPIHandler_NotFound(t *testing.T) {
-	handler := NewAPIHandler(30*time.Second, 60*time.Second, "test-token", nil)
+	handler := NewAPIHandler("/tmp/town", nil, 30*time.Second, 60*time.Second, "test-token", nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/unknown", nil)
 	w := httptest.NewRecorder()
@@ -462,6 +462,8 @@ func TestAPIHandler_Crew(t *testing.T) {
 		maxRunTimeout:     10 * time.Second,
 		cmdSem:            make(chan struct{}, maxConcurrentCommands),
 		csrfToken:         "test-token",
+		townRoot:          "/tmp/town",
+		sp:                nil,
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "/api/crew", nil)
@@ -495,6 +497,8 @@ func TestAPIHandler_Ready(t *testing.T) {
 		maxRunTimeout:     10 * time.Second,
 		cmdSem:            make(chan struct{}, maxConcurrentCommands),
 		csrfToken:         "test-token",
+		townRoot:          "/tmp/town",
+		sp:                nil,
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "/api/ready", nil)
@@ -521,7 +525,7 @@ func TestAPIHandler_Ready(t *testing.T) {
 }
 
 func TestAPIHandler_IssueCreate_MissingTitle(t *testing.T) {
-	handler := NewAPIHandler(30*time.Second, 60*time.Second, "test-token", nil)
+	handler := NewAPIHandler("/tmp/town", nil, 30*time.Second, 60*time.Second, "test-token", nil)
 
 	body := `{"title": ""}`
 	req := httptest.NewRequest(http.MethodPost, "/api/issues/create", bytes.NewBufferString(body))
@@ -537,7 +541,7 @@ func TestAPIHandler_IssueCreate_MissingTitle(t *testing.T) {
 }
 
 func TestAPIHandler_IssueCreate_InvalidTitle(t *testing.T) {
-	handler := NewAPIHandler(30*time.Second, 60*time.Second, "test-token", nil)
+	handler := NewAPIHandler("/tmp/town", nil, 30*time.Second, 60*time.Second, "test-token", nil)
 
 	tests := []struct {
 		name  string
@@ -569,7 +573,7 @@ func TestAPIHandler_IssueCreate_InvalidTitle(t *testing.T) {
 }
 
 func TestAPIHandler_IssueCreate_InvalidDescription(t *testing.T) {
-	handler := NewAPIHandler(30*time.Second, 60*time.Second, "test-token", nil)
+	handler := NewAPIHandler("/tmp/town", nil, 30*time.Second, 60*time.Second, "test-token", nil)
 
 	payload := map[string]interface{}{
 		"title":       "Valid title",
@@ -589,7 +593,7 @@ func TestAPIHandler_IssueCreate_InvalidDescription(t *testing.T) {
 }
 
 func TestAPIHandler_IssueCreate_InvalidJSON(t *testing.T) {
-	handler := NewAPIHandler(30*time.Second, 60*time.Second, "test-token", nil)
+	handler := NewAPIHandler("/tmp/town", nil, 30*time.Second, 60*time.Second, "test-token", nil)
 
 	body := `{not valid json}`
 	req := httptest.NewRequest(http.MethodPost, "/api/issues/create", bytes.NewBufferString(body))
@@ -856,7 +860,7 @@ func TestParseIssueShowJSON_InvalidInputs(t *testing.T) {
 }
 
 func TestAPIHandler_SSE_ContentType(t *testing.T) {
-	handler := NewAPIHandler(30*time.Second, 60*time.Second, "test-token", nil)
+	handler := NewAPIHandler("/tmp/town", nil, 30*time.Second, 60*time.Second, "test-token", nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/events", nil)
 	// Cancel context quickly so the SSE handler returns instead of blocking

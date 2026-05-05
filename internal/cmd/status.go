@@ -147,6 +147,8 @@ type RigStatus struct {
 	CrewCount    int             `json:"crew_count"`
 	HasWitness   bool            `json:"has_witness"`
 	HasRefinery  bool            `json:"has_refinery"`
+	HasPlanner   bool            `json:"has_planner"`
+	HasQA        bool            `json:"has_qa"`
 	Hooks        []AgentHookInfo `json:"hooks,omitempty"`
 	Agents       []AgentRuntime  `json:"agents,omitempty"` // Runtime state of all agents in rig
 	MQ           *MQSummary      `json:"mq,omitempty"`     // Merge queue summary
@@ -177,6 +179,7 @@ type StatusSum struct {
 	CrewCount     int `json:"crew_count"`
 	WitnessCount  int `json:"witness_count"`
 	RefineryCount int `json:"refinery_count"`
+	PlannerCount  int `json:"planner_count"`
 	ActiveHooks   int `json:"active_hooks"`
 }
 
@@ -888,13 +891,15 @@ func gatherStatus() (TownStatus, error) {
 		go func(idx int, r *rig.Rig) {
 			defer wg.Done()
 
-			rs := RigStatus{
-				Name:         r.Name,
-				Polecats:     r.Polecats,
-				PolecatCount: len(r.Polecats),
-				HasWitness:   r.HasWitness,
-				HasRefinery:  r.HasRefinery,
-			}
+		rs := RigStatus{
+			Name:         r.Name,
+			Polecats:     r.Polecats,
+			PolecatCount: len(r.Polecats),
+			HasWitness:   r.HasWitness,
+			HasRefinery:  r.HasRefinery,
+			HasPlanner:   r.HasPlanner,
+			HasQA:        r.HasQA,
+		}
 
 			// Count crew workers
 			crewGit := git.NewGit(r.Path)
@@ -982,6 +987,9 @@ func gatherStatus() (TownStatus, error) {
 		}
 		if rs.HasRefinery {
 			status.Summary.RefineryCount++
+		}
+		if rs.HasPlanner {
+			status.Summary.PlannerCount++
 		}
 	}
 	status.Summary.RigCount = len(rigs)
@@ -1658,7 +1666,7 @@ func discoverGlobalAgents(townRoot string, allSessions map[string]bool, allAgent
 	deaconSession := getDeaconSessionName()
 
 	// Define agents to discover
-	// Note: Mayor and Deacon are town-level agents with hq- prefix bead IDs
+	// Note: Mayor, Deacon, and Planner are town-level agents with hq- prefix bead IDs
 	agentDefs := []struct {
 		name    string
 		address string
@@ -1666,8 +1674,9 @@ func discoverGlobalAgents(townRoot string, allSessions map[string]bool, allAgent
 		role    string
 		beadID  string
 	}{
-		{constants.RoleMayor, constants.RoleMayor + "/", mayorSession, "coordinator", beads.MayorBeadIDTown()},
-		{constants.RoleDeacon, constants.RoleDeacon + "/", deaconSession, "health-check", beads.DeaconBeadIDTown()},
+		{constants.RoleMayor, constants.RoleMayor + "/", mayorSession, constants.RoleMayor, beads.MayorBeadIDTown()},
+		{constants.RoleDeacon, constants.RoleDeacon + "/", deaconSession, constants.RoleDeacon, beads.DeaconBeadIDTown()},
+		{constants.RolePlanner, constants.RolePlanner + "/", session.PlannerSessionName(), constants.RolePlanner, beads.PlannerBeadIDTown()},
 	}
 
 	agents := make([]AgentRuntime, len(agentDefs))
@@ -1829,6 +1838,30 @@ func discoverRigAgents(allSessions map[string]bool, r *rig.Rig, crews []string, 
 			session: session.RefinerySessionName(session.PrefixFor(r.Name)),
 			role:    constants.RoleRefinery,
 			beadID:  beads.RefineryBeadIDWithPrefix(prefix, r.Name),
+		})
+	}
+
+	// Architect (per-rig)
+	architectDir := filepath.Join(r.Path, "architect")
+	if _, err := os.Stat(architectDir); err == nil {
+		defs = append(defs, agentDef{
+			name:    constants.RoleArchitect,
+			address: r.Name + "/architect",
+			session: session.ArchitectSessionName(session.PrefixFor(r.Name)),
+			role:    constants.RoleArchitect,
+			beadID:  beads.ArchitectBeadIDWithPrefix(prefix, r.Name),
+		})
+	}
+
+	// QA (per-rig)
+	qaDir := filepath.Join(r.Path, "qa")
+	if _, err := os.Stat(qaDir); err == nil {
+		defs = append(defs, agentDef{
+			name:    constants.RoleQA,
+			address: r.Name + "/qa",
+			session: session.QASessionName(session.PrefixFor(r.Name)),
+			role:    constants.RoleQA,
+			beadID:  beads.QABeadIDWithPrefix(prefix, r.Name),
 		})
 	}
 

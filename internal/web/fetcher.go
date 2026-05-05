@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -19,7 +20,6 @@ import (
 	"github.com/steveyegge/gastown/internal/config"
 	"github.com/steveyegge/gastown/internal/constants"
 	"github.com/steveyegge/gastown/internal/session"
-	"github.com/steveyegge/gastown/internal/tmux"
 	"github.com/steveyegge/gastown/internal/workspace"
 )
 
@@ -32,12 +32,6 @@ func runCmd(timeout time.Duration, name string, args ...string) (*bytes.Buffer, 
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	if name == "tmux" {
-		if sock := tmux.GetDefaultSocket(); sock != "" {
-			// Prepend -L <socket> before the tmux command (list-sessions, etc)
-			args = append([]string{"-L", sock}, args...)
-		}
-	}
 
 	cmd := exec.CommandContext(ctx, name, args...)
 	var stdout bytes.Buffer
@@ -53,9 +47,8 @@ func runCmd(timeout time.Duration, name string, args ...string) (*bytes.Buffer, 
 }
 
 var fetcherRunCmd = runCmd
-var fetcherGetSessionEnv = func(sessionName, key string) (string, error) {
-	return tmux.NewTmux().GetEnvironment(sessionName, key)
-}
+var fetcherGetSessionEnv func(sessionName, key string) (string, error)
+
 
 // runBdCmd executes a bd command with the configured cmdTimeout in the specified beads directory.
 func (f *LiveConvoyFetcher) runBdCmd(beadsDir string, args ...string) (*bytes.Buffer, error) {
@@ -134,6 +127,12 @@ func (cb *fetchCircuitBreaker) recordSuccess() {
 }
 
 // LiveConvoyFetcher fetches convoy data from beads.
+func (f *LiveConvoyFetcher) provider() session.Provider {
+	if f.sp == nil {
+		return session.GetDefaultProvider(f.townRoot)
+	}
+	return f.sp
+}
 type LiveConvoyFetcher struct {
 	townRoot  string
 	townBeads string
@@ -161,6 +160,9 @@ type LiveConvoyFetcher struct {
 	// Circuit breaker for FetchConvoys — prevents process storms when
 	// bd list --type=convoy fails persistently (e.g., schema mismatch).
 	convoyBreaker fetchCircuitBreaker
+
+	// sp is the session provider for the current transport (Tmux, NATS).
+	sp session.Provider
 }
 
 // NewLiveConvoyFetcher creates a fetcher for the current workspace.
@@ -204,6 +206,7 @@ func NewLiveConvoyFetcher() (*LiveConvoyFetcher, error) {
 		stuckThreshold:          config.ParseDurationOrDefault(workerCfg.StuckThreshold, constants.GUPPViolationTimeout),
 		heartbeatFreshThreshold: config.ParseDurationOrDefault(workerCfg.HeartbeatFreshThreshold, 5*time.Minute),
 		mayorActiveThreshold:    config.ParseDurationOrDefault(workerCfg.MayorActiveThreshold, 5*time.Minute),
+		sp:                      session.GetDefaultProvider(townRoot),
 	}, nil
 }
 
@@ -514,27 +517,16 @@ func (f *LiveConvoyFetcher) getSessionActivityForAssignee(assignee string) *time
 	// Construct session name
 	sessionName := session.PolecatSessionName(session.PrefixFor(rig), polecat)
 
-	// Query tmux for session activity
-	// Format: session_activity returns unix timestamp
-	stdout, err := runCmd(f.tmuxCmdTimeout, "tmux", "list-sessions", "-F", "#{session_name}|#{session_activity}",
-		"-f", fmt.Sprintf("#{==:#{session_name},%s}", sessionName))
-	if err != nil {
-		return nil
-	}
-
-	output := strings.TrimSpace(stdout.String())
-	if output == "" {
-		return nil
-	}
-
-	// Parse output: "gt-roxas-dag|1704312345"
-	outputParts := strings.Split(output, "|")
-	if len(outputParts) < 2 {
+	// Query provider for session info
+	ctx, cancel := context.WithTimeout(context.Background(), f.tmuxCmdTimeout)
+	defer cancel()
+	info, err := f.provider().GetSessionInfo(ctx, sessionName)
+	if err != nil || info.Activity == "" {
 		return nil
 	}
 
 	var activityUnix int64
-	if _, err := fmt.Sscanf(outputParts[1], "%d", &activityUnix); err != nil || activityUnix == 0 {
+	if _, err := fmt.Sscanf(info.Activity, "%d", &activityUnix); err != nil || activityUnix == 0 {
 		return nil
 	}
 
@@ -546,26 +538,15 @@ func (f *LiveConvoyFetcher) getSessionActivityForAssignee(assignee string) *time
 // This is used as a fallback when no specific assignee activity can be determined.
 // Returns nil if no polecat sessions are running.
 func (f *LiveConvoyFetcher) getAllPolecatActivity() *time.Time {
-	// List all tmux sessions matching gt-*-* pattern (polecat sessions)
-	// Format: gt-{rig}-{polecat}
-	stdout, err := runCmd(f.tmuxCmdTimeout, "tmux", "list-sessions", "-F", "#{session_name}|#{window_activity}")
+	ctx, cancel := context.WithTimeout(context.Background(), f.tmuxCmdTimeout)
+	defer cancel()
+	sessions, err := f.provider().List(ctx)
 	if err != nil {
 		return nil
 	}
 
 	var mostRecent time.Time
-	for _, line := range strings.Split(stdout.String(), "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-
-		parts := strings.Split(line, "|")
-		if len(parts) < 2 {
-			continue
-		}
-
-		sessionName := parts[0]
+	for _, sessionName := range sessions {
 		// Check if it's a polecat or crew session (skip infrastructure roles).
 		// Use the fetcher's own registry to avoid dependency on global
 		// DefaultRegistry initialization (gt-y24).
@@ -578,8 +559,13 @@ func (f *LiveConvoyFetcher) getAllPolecatActivity() *time.Time {
 			continue
 		}
 
+		info, err := f.provider().GetSessionInfo(ctx, sessionName)
+		if err != nil || info.Activity == "" {
+			continue
+		}
+
 		var activityUnix int64
-		if _, err := fmt.Sscanf(parts[1], "%d", &activityUnix); err != nil || activityUnix == 0 {
+		if _, err := fmt.Sscanf(info.Activity, "%d", &activityUnix); err != nil || activityUnix == 0 {
 			continue
 		}
 
@@ -808,10 +794,12 @@ func (f *LiveConvoyFetcher) FetchWorkers() ([]WorkerRow, error) {
 	// Pre-fetch assigned issues map: assignee -> (issueID, title)
 	assignedIssues := f.getAssignedIssuesMap()
 
-	// Query all tmux sessions with window_activity for more accurate timing
-	stdout, err := runCmd(f.tmuxCmdTimeout, "tmux", "list-sessions", "-F", "#{session_name}|#{window_activity}")
+	// Query all sessions via the provider for accurate transport-agnostic discovery
+	ctx, cancel := context.WithTimeout(context.Background(), f.tmuxCmdTimeout)
+	defer cancel()
+	sessions, err := f.provider().List(ctx)
 	if err != nil {
-		// tmux not running or no sessions
+		// No sessions or provider error
 		return nil, nil
 	}
 
@@ -819,20 +807,8 @@ func (f *LiveConvoyFetcher) FetchWorkers() ([]WorkerRow, error) {
 	mergeQueueCount := f.getMergeQueueCount()
 
 	var workers []WorkerRow
-	lines := strings.Split(strings.TrimSpace(stdout.String()), "\n")
 
-
-	for _, line := range lines {
-		if line == "" {
-			continue
-		}
-
-		parts := strings.Split(line, "|")
-		if len(parts) < 2 {
-			continue
-		}
-
-		sessionName := parts[0]
+	for _, sessionName := range sessions {
 
 		// Parse session name using the fetcher's own registry to avoid
 		// dependency on global DefaultRegistry initialization (gt-y24).
@@ -861,14 +837,31 @@ func (f *LiveConvoyFetcher) FetchWorkers() ([]WorkerRow, error) {
 		agentType := constants.RolePolecat // Default for ephemeral sessions (polecats, crew)
 		if identity.Role == session.RoleRefinery {
 			agentType = constants.RoleRefinery
+		} else if identity.Role == session.RoleArchitect {
+			agentType = constants.RoleArchitect
+		} else if identity.Role == session.RoleQA {
+			agentType = constants.RoleQA
+		}
+
+		// Query session info for activity
+		info, err := f.provider().GetSessionInfo(ctx, sessionName)
+		if err != nil {
+			continue
 		}
 
 		// Parse activity timestamp
-		var activityUnix int64
-		if _, err := fmt.Sscanf(parts[1], "%d", &activityUnix); err != nil || activityUnix == 0 {
-			continue
+		var activityTime time.Time
+		if info.Activity != "" {
+			var activityUnix int64
+			if _, err := fmt.Sscanf(info.Activity, "%d", &activityUnix); err == nil && activityUnix > 0 {
+				activityTime = time.Unix(activityUnix, 0)
+			}
 		}
-		activityTime := time.Unix(activityUnix, 0)
+
+		// If no activity info, use creation time or fallback to now
+		if activityTime.IsZero() {
+			activityTime = time.Now()
+		}
 		activityAge := time.Since(activityTime)
 
 		// Get status hint - special handling for refinery
@@ -974,13 +967,15 @@ func calculateWorkerWorkStatus(activityAge time.Duration, issueID, workerName st
 
 // getWorkerStatusHint captures the last non-empty line from a worker's pane.
 func (f *LiveConvoyFetcher) getWorkerStatusHint(sessionName string) string {
-	stdout, err := runCmd(f.tmuxCmdTimeout, "tmux", "capture-pane", "-t", sessionName, "-p", "-J")
+	ctx, cancel := context.WithTimeout(context.Background(), f.tmuxCmdTimeout)
+	defer cancel()
+	stdout, err := f.provider().CapturePane(ctx, sessionName, 1)
 	if err != nil {
 		return ""
 	}
 
 	// Get last non-empty line
-	lines := strings.Split(stdout.String(), "\n")
+	lines := strings.Split(stdout, "\n")
 	for i := len(lines) - 1; i >= 0; i-- {
 		line := strings.TrimSpace(lines[i])
 		if line != "" {
@@ -1014,15 +1009,7 @@ func (f *LiveConvoyFetcher) getRefineryStatusHint(mergeQueueCount int) string {
 	return fmt.Sprintf("Processing %d PRs", mergeQueueCount)
 }
 
-// parseActivityTimestamp parses a Unix timestamp string from tmux.
-// Returns (0, false) for invalid or zero timestamps.
-func parseActivityTimestamp(s string) (int64, bool) {
-	var unix int64
-	if _, err := fmt.Sscanf(s, "%d", &unix); err != nil || unix <= 0 {
-		return 0, false
-	}
-	return unix, true
-}
+
 
 // FetchMail fetches recent mail messages from the beads database.
 func (f *LiveConvoyFetcher) FetchMail() ([]MailRow, error) {
@@ -1433,22 +1420,16 @@ func (f *LiveConvoyFetcher) FetchQueues() ([]QueueRow, error) {
 
 // FetchSessions returns active tmux sessions with role detection.
 func (f *LiveConvoyFetcher) FetchSessions() ([]SessionRow, error) {
-	// List tmux sessions
-	stdout, err := fetcherRunCmd(f.tmuxCmdTimeout, "tmux", "list-sessions", "-F", "#{session_name}:#{session_activity}")
+	// List sessions via the provider
+	ctx, cancel := context.WithTimeout(context.Background(), f.tmuxCmdTimeout)
+	defer cancel()
+	sessions, err := f.provider().List(ctx)
 	if err != nil {
-		return nil, nil // tmux not running or no sessions
+		return nil, nil // No sessions or provider error
 	}
 
 	var rows []SessionRow
-	for _, line := range strings.Split(strings.TrimSpace(stdout.String()), "\n") {
-		if line == "" {
-			continue
-		}
-
-		// SplitN always returns >= 1 element; parts[0] is safe unconditionally
-		parts := strings.SplitN(line, ":", 2)
-		name := parts[0]
-
+	for _, name := range sessions {
 		// Only include Gas Town sessions
 		if !session.IsKnownSession(name) {
 			continue
@@ -1459,9 +1440,10 @@ func (f *LiveConvoyFetcher) FetchSessions() ([]SessionRow, error) {
 			IsAlive: true, // Session exists
 		}
 
-		// Parse activity timestamp
-		if len(parts) > 1 {
-			if ts, ok := parseActivityTimestamp(parts[1]); ok && ts > 0 {
+		// Get activity info
+		if info, err := f.provider().GetSessionInfo(ctx, name); err == nil && info.Activity != "" {
+			var ts int64
+			if _, err := fmt.Sscanf(info.Activity, "%d", &ts); err == nil && ts > 0 {
 				row.Activity = formatTimestamp(time.Unix(ts, 0))
 			}
 		}
@@ -1551,55 +1533,61 @@ func (f *LiveConvoyFetcher) FetchMayor() (*MayorStatus, error) {
 	// Get the actual mayor session name (e.g., "hq-mayor")
 	mayorSessionName := session.MayorSessionName()
 
-	// Check if mayor tmux session exists
-	stdout, err := fetcherRunCmd(f.tmuxCmdTimeout, "tmux", "list-sessions", "-F", "#{session_name}|#{window_activity}")
-	if err != nil {
-		log.Printf("dashboard: FetchWorkers: tmux list-sessions failed: %v", err)
-		return nil, nil
+	// Check if mayor session exists via the provider
+	ctx, cancel := context.WithTimeout(context.Background(), f.tmuxCmdTimeout)
+	defer cancel()
+	exists, err := f.provider().Exists(ctx, mayorSessionName)
+	if err != nil || !exists {
+		return status, nil
 	}
 
-	lines := strings.Split(strings.TrimSpace(stdout.String()), "\n")
-	log.Printf("dashboard: FetchWorkers: found %d tmux sessions", len(lines))
-	if len(lines) > 0 && lines[0] != "" {
-		log.Printf("dashboard: FetchWorkers: first session: %q", lines[0])
-	}
+	status.IsAttached = true
+	status.SessionName = mayorSessionName
 
-	for _, line := range lines {
-		if strings.HasPrefix(line, mayorSessionName+":") {
-			status.IsAttached = true
-			status.SessionName = mayorSessionName
-
-			// Parse activity timestamp
-			parts := strings.SplitN(line, ":", 2)
-			if len(parts) == 2 {
-				if activityTs, ok := parseActivityTimestamp(parts[1]); ok {
-					age := time.Since(time.Unix(activityTs, 0))
-					status.LastActivity = formatTimestamp(time.Unix(activityTs, 0))
-					status.IsActive = age < f.mayorActiveThreshold
-				}
-			}
-			break
+	// Get activity info
+	if info, err := f.provider().GetSessionInfo(ctx, mayorSessionName); err == nil && info.Activity != "" {
+		var activityUnix int64
+		if _, err := fmt.Sscanf(info.Activity, "%d", &activityUnix); err == nil && activityUnix > 0 {
+			activityTime := time.Unix(activityUnix, 0)
+			age := time.Since(activityTime)
+			status.LastActivity = formatTimestamp(activityTime)
+			status.IsActive = age < f.mayorActiveThreshold
 		}
 	}
 
-	if status.IsAttached {
-		status.Runtime = f.resolveMayorRuntime(mayorSessionName)
-	}
-
+	status.Runtime = f.resolveMayorRuntime(mayorSessionName)
 	return status, nil
 }
 
 func (f *LiveConvoyFetcher) resolveMayorRuntime(sessionName string) string {
-	if agentName, err := fetcherGetSessionEnv(sessionName, "GT_AGENT"); err == nil && strings.TrimSpace(agentName) != "" {
-		agentName = strings.TrimSpace(agentName)
-		rc, _, resolveErr := config.ResolveAgentConfigWithOverride(f.townRoot, "", agentName)
-		if resolveErr == nil {
-			return runtimeLabelForRuntimeConfig(rc, agentName)
+	if fetcherGetSessionEnv != nil {
+		if agentName, err := fetcherGetSessionEnv(sessionName, "GT_AGENT"); err == nil && strings.TrimSpace(agentName) != "" {
+			agentName = strings.TrimSpace(agentName)
+			rc, _, resolveErr := config.ResolveAgentConfigWithOverride(f.townRoot, "", agentName)
+			if resolveErr == nil {
+				return runtimeLabelForRuntimeConfig(rc, agentName)
+			}
+			if roleRC := config.ResolveRoleAgentConfig(constants.RoleMayor, f.townRoot, ""); roleRC != nil && strings.TrimSpace(roleRC.ResolvedAgent) == agentName {
+				return runtimeLabelForRuntimeConfig(roleRC, agentName)
+			}
+			return agentName
 		}
-		if roleRC := config.ResolveRoleAgentConfig(constants.RoleMayor, f.townRoot, ""); roleRC != nil && strings.TrimSpace(roleRC.ResolvedAgent) == agentName {
-			return runtimeLabelForRuntimeConfig(roleRC, agentName)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), f.tmuxCmdTimeout)
+	defer cancel()
+	if env, err := f.provider().GetEnvironment(ctx, sessionName); err == nil {
+		if agentName, ok := env["GT_AGENT"]; ok && strings.TrimSpace(agentName) != "" {
+			agentName = strings.TrimSpace(agentName)
+			rc, _, resolveErr := config.ResolveAgentConfigWithOverride(f.townRoot, "", agentName)
+			if resolveErr == nil {
+				return runtimeLabelForRuntimeConfig(rc, agentName)
+			}
+			if roleRC := config.ResolveRoleAgentConfig(constants.RoleMayor, f.townRoot, ""); roleRC != nil && strings.TrimSpace(roleRC.ResolvedAgent) == agentName {
+				return runtimeLabelForRuntimeConfig(roleRC, agentName)
+			}
+			return agentName
 		}
-		return agentName
 	}
 
 	return runtimeLabelForRuntimeConfig(config.ResolveRoleAgentConfig(constants.RoleMayor, f.townRoot, ""), "")
@@ -1956,4 +1944,26 @@ func eventSummary(eventType, actor string, payload map[string]interface{}) strin
 	default:
 		return eventType
 	}
+}
+
+// GetTownRoot returns the root directory of the Gas Town workspace.
+func (f *LiveConvoyFetcher) GetTownRoot() string {
+	return f.townRoot
+}
+
+// GetProvider returns the session provider for the fetcher.
+func (f *LiveConvoyFetcher) GetProvider() session.Provider {
+	return f.sp
+}
+
+// parseActivityTimestamp parses a Unix timestamp string.
+func parseActivityTimestamp(s string) (int64, bool) {
+	if s == "" {
+		return 0, false
+	}
+	t, err := strconv.ParseInt(s, 10, 64)
+	if err != nil || t <= 0 {
+		return 0, false
+	}
+	return t, true
 }

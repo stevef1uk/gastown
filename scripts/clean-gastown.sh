@@ -119,8 +119,9 @@ fi
 # Find rig directories from rigs.json
 RIG_NAMES=()
 if [[ -f "$TOWN_ROOT/rigs.json" ]]; then
-    # Simple JSON extraction - look for rig keys
-    RIG_NAMES=($(cat "$TOWN_ROOT/rigs.json" | grep -oP '"\K[^"]+(?=":\s*\{)' 2>/dev/null || true))
+    # Try python3 for robust JSON parsing, fall back to grep
+    RIG_NAMES=($(python3 -c "import json; d=json.load(open('$TOWN_ROOT/rigs.json')); print(' '.join(d.get('rigs', {}).keys()))" 2>/dev/null || \
+                 cat "$TOWN_ROOT/rigs.json" | grep -oP '"\K[^"]+(?=":\s*\{)' | grep -vE "^(rigs|beads|version)$" 2>/dev/null || true))
 fi
 
 # Find agent state files
@@ -133,6 +134,41 @@ if command -v dolt &>/dev/null && [[ -d "$TOWN_ROOT/.dolt-data/hq" ]]; then
     DOLT_ISSUES=$(cd "$TOWN_ROOT/.dolt-data/hq" && dolt sql -q "SELECT COUNT(*) FROM issues;" 2>/dev/null | tail -1 || echo "0")
     DOLT_WISPS=$(cd "$TOWN_ROOT/.dolt-data/hq" && dolt sql -q "SELECT COUNT(*) FROM wisps;" 2>/dev/null | tail -1 || echo "0")
 fi
+
+# Find stray beads directories
+STRAY_BEADS=()
+[[ -d "$HOME/.beads" ]] && STRAY_BEADS+=("$HOME/.beads")
+[[ -d "$HOME/gt/.beads" ]] && STRAY_BEADS+=("$HOME/gt/.beads")
+
+# Find unregistered rig directories in TOWN_ROOT
+UNREGISTERED_RIGS=()
+for d in "$TOWN_ROOT"/*/; do
+    [[ -d "$d" ]] || continue
+    name=$(basename "$d")
+    # Skip known infrastructure dirs
+    [[ "$name" =~ ^(logs|daemon|mayor|deacon|planner|settings|static|templates|bin|cmd|internal|scripts|vendor)$ ]] && continue
+    [[ "$name" =~ ^(\.git|\.dolt-data|\.beads|\.runtime|\.gt-nats-pids|\.github|\.vscode)$ ]] && continue
+    
+    # Check if it's in RIG_NAMES
+    is_registered=false
+    for r in "${RIG_NAMES[@]}"; do
+        if [[ "$name" == "$r" ]]; then
+            is_registered=true
+            break
+        fi
+    done
+    
+    if [[ "$is_registered" == false ]]; then
+        # Check if it looks like a rig (contains .beads, gt-agent-state.json, or rigs.json)
+        if [[ -d "$d/.beads" || -f "$d/gt-agent-state.json" || -f "$d/rigs.json" ]]; then
+            UNREGISTERED_RIGS+=("$name")
+        fi
+    fi
+done
+
+# Find global Dolt data
+GLOBAL_DOLT_DATA=""
+[[ -d "$HOME/.dolt-data" ]] && GLOBAL_DOLT_DATA="$HOME/.dolt-data"
 
 # ─── Phase 1: Preview ────────────────────────────────────────────────
 
@@ -171,6 +207,14 @@ else
     echo "    • (none found in rigs.json)"
 fi
 
+if [[ ${#UNREGISTERED_RIGS[@]} -gt 0 ]]; then
+    echo ""
+    echo "  Unregistered rigs (dirs in town root that look like rigs but aren't in rigs.json):"
+    for rig in "${UNREGISTERED_RIGS[@]}"; do
+        echo "    • ${rig}/"
+    done
+fi
+
 echo ""
 echo "  Agent state files to delete:"
 if [[ ${#AGENT_STATES[@]} -gt 0 ]]; then
@@ -190,6 +234,15 @@ echo "  Other artifacts to delete:"
 [[ -d "$TOWN_ROOT/logs" ]]          && echo "    • logs/           (session wrapper logs)"
 [[ -f "$TOWN_ROOT/.events.jsonl" ]] && echo "    • .events.jsonl   (event log)"
 [[ -f "$TOWN_ROOT/gt-agent-state.json" ]] && echo "    • gt-agent-state.json (root agent state)"
+
+if [[ ${#STRAY_BEADS[@]} -gt 0 || -n "$GLOBAL_DOLT_DATA" ]]; then
+    echo ""
+    echo "  Stray global directories:"
+    for d in "${STRAY_BEADS[@]}"; do
+        echo "    • ${d}  (global beads cache)"
+    done
+    [[ -n "$GLOBAL_DOLT_DATA" ]] && echo "    • ${GLOBAL_DOLT_DATA}  (global dolt data)"
+fi
 
 echo ""
 echo "  Files to RESET (keep file, empty contents):"
@@ -259,6 +312,13 @@ if [[ -n "$DAEMON_PID" ]]; then
     log_ok "Stopped daemon (PID $DAEMON_PID)"
 fi
 
+# Nuclear option for all related processes
+log_info "Cleaning up all remaining gt, bd, and dolt processes..."
+pkill -f "gt " 2>/dev/null || true
+pkill -f "bd " 2>/dev/null || true
+pkill -f "dolt " 2>/dev/null || true
+log_ok "Sent SIGTERM to all gt, bd, and dolt processes"
+
 # Stop dolt if running
 DOLT_PID=""
 if [[ -f "$TOWN_ROOT/.dolt-data/.dolt/dolt.pid" ]]; then
@@ -287,6 +347,14 @@ if [[ $DELETED_RIGS -eq 0 ]]; then
     log_warn "No rig directories found to delete"
 fi
 
+if [[ ${#UNREGISTERED_RIGS[@]} -gt 0 ]]; then
+    log_info "Deleting unregistered rig directories..."
+    for rig in "${UNREGISTERED_RIGS[@]}"; do
+        rm -rf "$TOWN_ROOT/$rig"
+        log_ok "Deleted unregistered rig: ${rig}/"
+    done
+fi
+
 # ─── Phase 4: Delete Dolt Databases ──────────────────────────────────
 
 log_info "Resetting Dolt databases..."
@@ -305,6 +373,20 @@ if [[ -d "$TOWN_ROOT/.beads" ]]; then
     log_ok "Deleted .beads/"
 else
     log_warn "No .beads/ found"
+fi
+
+if [[ ${#STRAY_BEADS[@]} -gt 0 ]]; then
+    log_info "Cleaning up stray beads directories..."
+    for d in "${STRAY_BEADS[@]}"; do
+        rm -rf "$d"
+        log_ok "Deleted ${d}"
+    done
+fi
+
+if [[ -n "$GLOBAL_DOLT_DATA" ]]; then
+    log_info "Cleaning up global dolt data..."
+    rm -rf "$GLOBAL_DOLT_DATA"
+    log_ok "Deleted ${GLOBAL_DOLT_DATA}"
 fi
 
 # ─── Phase 6: Delete Agent State Files ───────────────────────────────
