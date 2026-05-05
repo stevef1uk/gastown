@@ -339,6 +339,14 @@ func run() error {
 			fmt.Printf("[gt-agent] Summary: %s\n", summary)
 		}
 
+		// Override LLM-generated DONE if commands actually failed.
+		// The LLM predicts DONE before seeing real command output, so it
+		// often claims success despite errors. We correct this here.
+		if extraordinary && summary != "" && !strings.Contains(summary, "failed") && !strings.Contains(summary, "error") && !strings.Contains(summary, "could not") {
+			summary = "Could not complete: one or more commands failed. Check the output above for details."
+			fmt.Printf("[gt-agent] Corrected summary (commands failed): %s\n", summary)
+		}
+
 		// Call role-specific post-work command
 		postCmd := postWorkCommand(role, summary)
 		if postCmd == "" {
@@ -403,7 +411,12 @@ Rules:
 5. If you cannot complete the work, output "DONE: Could not complete because ..."
 6. You are patrol cycle #%d for this agent session.
 7. NEVER output decorative banners, box-drawing characters (═, █, etc.), or emoji-only lines as commands
-8. ONLY output actual executable shell commands after "CMD: " - text that cannot be run in a shell is not a command`
+8. ONLY output actual executable shell commands after "CMD: " - text that cannot be run in a shell is not a command
+9. VERIFY command success before proceeding: if a CMD fails, STOP and report the failure in DONE. Do NOT silently continue.
+10. Do NOT guess command flags or filenames. If unsure, use "ls" to verify paths or "<command> --help" to check flags first.
+11. Filenames are case-sensitive. Verify exact case with "ls" before referencing files.
+12. Do NOT claim success in DONE if any step failed. Report partial or full failure honestly.
+13. IMPORTANT: Your working directory is <town_root>/<role>/. For example, the mayor runs from ~/gt/mayor/. To access files in other directories (e.g., rig directories), use absolute paths or "../". NEVER assume you are in the town root.`
 
 	switch role {
 	case "deacon":
@@ -436,11 +449,14 @@ Context:
 		return fmt.Sprintf(`You are a Gas Town MAYOR. You coordinate work across all rigs.
 
 %s
-7. Dispatch work with "gt sling <bead-id> <rig>" for code changes.
+7. Dispatch work with "gt sling <bead-id> <rig>" for code changes. Only sling EXISTING beads — never make up bead IDs.
 8. Monitor convoys with "gt convoy list".
 9. Handle escalations from witnesses.
 10. Undock rigs when work is requested, dock them when idle.
 11. Use "gt nudge" for routine communication, "gt mail send" only for escalations/handoffs.
+12. Before creating beads/issues, verify the correct bd command syntax with "bd create --help". bd does NOT have a --rig flag.
+13. Before slinging work, verify the bead exists with "bd show <id>".
+14. You run from the mayor/ subdirectory. Use absolute paths (e.g., "/home/stevef/gt/defender/crew/steve/SPEC.md") or "../" to access files outside mayor/.
 
 Context:
 %s`, fmt.Sprintf(baseRules, patrolCount), primeContext)

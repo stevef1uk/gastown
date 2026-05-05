@@ -432,7 +432,18 @@ func runDown(cmd *cobra.Command, args []string) error {
 			fmt.Printf("  PID cleanup warning: %s\n", e)
 		}
 
-		fmt.Println("Cleaning up orphaned Claude processes...")
+		// Kill NATS wrapper / gt-agent processes that survived session teardown.
+		// The NATS provider stores PIDs in .gt-nats-pids/ separately from the
+		// tmux PID tracking in .runtime/pids/.
+		natsKilled, natsErrs := session.KillNatsPIDs(townRoot)
+		if natsKilled > 0 {
+			fmt.Printf("  Killed %d NATS orphan process(es)\n", natsKilled)
+		}
+		for _, e := range natsErrs {
+			fmt.Printf("  NATS PID cleanup warning: %s\n", e)
+		}
+
+		fmt.Println("Cleaning up orphaned agent processes...")
 		cleanupOrphanedClaude(defaultDownOrphanGraceSecs)
 
 		time.Sleep(500 * time.Millisecond)
@@ -810,7 +821,7 @@ func findOrphanedClaudeProcesses(townRoot string) []int {
 		// Only consider known Gas Town process names
 		comm := strings.ToLower(fields[1])
 		switch comm {
-		case "claude", "claude-code", "codex", "opencode", "cursor-agent", "agent", "copilot", "node":
+		case "claude", "claude-code", "codex", "opencode", "cursor-agent", "agent", "copilot", "node", "gt-agent":
 			// Potential Gas Town process
 		default:
 			continue
@@ -819,8 +830,12 @@ func findOrphanedClaudeProcesses(townRoot string) []int {
 		// Verify the process's command line references the town root.
 		// This filters out unrelated node processes (VS Code, web servers, etc.)
 		// whose command lines won't contain the Gas Town directory path.
+		//
+		// Exception: gt-agent processes don't have the town root in their argv
+		// (they receive it via env var), but they always contain "[GAS TOWN]"
+		// in their command line.
 		args := strings.Join(fields[2:], " ")
-		if strings.Contains(args, townRoot) {
+		if strings.Contains(args, townRoot) || (comm == "gt-agent" && strings.Contains(args, "[GAS TOWN]")) {
 			orphaned = append(orphaned, pid)
 		}
 	}

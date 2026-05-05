@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/nats-io/nats.go"
@@ -142,10 +143,10 @@ func (p *NatsProvider) Stop(ctx context.Context, sessionID string, graceful bool
 	}
 
 	if pidStr != "" {
+		pid, _ := strconv.Atoi(pidStr)
 		if graceful {
-			// Try graceful kill first
-			killCmd := exec.Command("kill", "-TERM", "-"+pidStr)
-			_ = killCmd.Run()
+			// Try graceful kill first — signal the entire tree
+			_ = signalProcessTree(pid, syscall.SIGTERM)
 			// Wait a bit for graceful shutdown
 			select {
 			case <-time.After(5 * time.Second):
@@ -155,14 +156,16 @@ func (p *NatsProvider) Stop(ctx context.Context, sessionID string, graceful bool
 			}
 		}
 
-		// Kill the process group
-		killCmd := exec.Command("kill", "-9", "-"+pidStr)
-		_ = killCmd.Run()
-
-		// Also try individual PID just in case
-		killCmd = exec.Command("kill", "-9", pidStr)
-		_ = killCmd.Run()
+		// Force-kill the entire process tree. The wrapper spawns `script(1)`
+		// which allocates a new PTY and creates its own process group, so
+		// killing the wrapper's process group is insufficient.
+		_ = killProcessTree(pid)
 	}
+
+	// Fallback: the wrapper may have already exited (releasing its children
+	// to init), or `script` created a new session that outlived the wrapper.
+	// Kill any surviving gt-agent processes whose cwd is inside this town.
+	_ = killAgentBySessionID(sessionID, p.townRoot)
 
 	_ = os.Remove(filepath.Join(p.townRoot, ".gt-nats-pids", sessionID))
 
@@ -172,6 +175,127 @@ func (p *NatsProvider) Stop(ctx context.Context, sessionID string, graceful bool
 	p.mu.Unlock()
 
 	return nil
+}
+
+// killAgentBySessionID finds and kills gt-agent processes that belong to
+// this town. This is a fallback for when the wrapper process tree kill
+// fails (e.g., wrapper already dead, children reparented).
+func killAgentBySessionID(sessionID, townRoot string) error {
+	// Find all gt-agent processes and check their cwd. gt-agent processes
+	// run from subdirectories of the town root (e.g., ~/gt/mayor/,
+	// ~/gt/defender/witness/), so we can identify town membership by cwd.
+	out, err := exec.Command("pgrep", "-a", "-f", "gt-agent.*\\[GAS TOWN\\]").Output()
+	if err != nil {
+		return err // No gt-agent processes
+	}
+
+	absTownRoot, _ := filepath.Abs(townRoot)
+	if absTownRoot == "" {
+		absTownRoot = townRoot
+	}
+
+	for _, line := range strings.Split(string(out), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
+			continue
+		}
+		pid, err := strconv.Atoi(fields[0])
+		if err != nil {
+			continue
+		}
+
+		// Check cwd via /proc — only kill if inside this town
+		cwd, cwdErr := os.Readlink(fmt.Sprintf("/proc/%d/cwd", pid))
+		if cwdErr != nil {
+			continue
+		}
+		absCwd, _ := filepath.Abs(cwd)
+		if absCwd == "" {
+			absCwd = cwd
+		}
+
+		// Match if cwd is within the town root
+		if !strings.HasPrefix(absCwd, absTownRoot+string(filepath.Separator)) && absCwd != absTownRoot {
+			continue
+		}
+
+		_ = killProcessTree(pid)
+	}
+	return nil
+}
+
+// killProcessTree recursively kills a process and all its descendants.
+// Uses /proc/<pid>/task/<tid>/children on Linux (reliable) and falls
+// back to pgrep -P <pid> on other platforms.
+func killProcessTree(pid int) error {
+	pids := collectDescendants(pid)
+	// Kill children first (bottom-up) so parents don't respawn
+	for i := len(pids) - 1; i >= 0; i-- {
+		p := pids[i]
+		_ = syscall.Kill(p, syscall.SIGKILL)
+	}
+	return nil
+}
+
+// signalProcessTree sends a signal to a process and all its descendants.
+func signalProcessTree(pid int, sig syscall.Signal) error {
+	pids := collectDescendants(pid)
+	for _, p := range pids {
+		_ = syscall.Kill(p, sig)
+	}
+	return nil
+}
+
+// collectDescendants returns a slice of PIDs starting with the root PID
+// followed by all descendants in breadth-first order.
+func collectDescendants(root int) []int {
+	var result []int
+	queue := []int{root}
+	for len(queue) > 0 {
+		pid := queue[0]
+		queue = queue[1:]
+		result = append(result, pid)
+		children := getChildPIDs(pid)
+		queue = append(queue, children...)
+	}
+	return result
+}
+
+// getChildPIDs returns the immediate child PIDs of a process.
+func getChildPIDs(pid int) []int {
+	// Try Linux /proc interface first (fastest, most reliable)
+	childrenFile := fmt.Sprintf("/proc/%d/task/%d/children", pid, pid)
+	if data, err := os.ReadFile(childrenFile); err == nil {
+		fields := strings.Fields(string(data))
+		var children []int
+		for _, f := range fields {
+			if cpid, err := strconv.Atoi(f); err == nil {
+				children = append(children, cpid)
+			}
+		}
+		return children
+	}
+
+	// Fallback: pgrep -P (works on most Unix systems)
+	out, err := exec.Command("pgrep", "-P", strconv.Itoa(pid)).Output()
+	if err != nil {
+		return nil
+	}
+	var children []int
+	for _, line := range strings.Split(string(out), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		if cpid, err := strconv.Atoi(line); err == nil {
+			children = append(children, cpid)
+		}
+	}
+	return children
 }
 
 func (p *NatsProvider) Exists(ctx context.Context, sessionID string) (bool, error) {

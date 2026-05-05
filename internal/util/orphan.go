@@ -420,7 +420,7 @@ func parseEtime(etime string) (int, error) {
 // TTY-less orphan / zombie cleanup (matches internal/config agent presets).
 func isAgentOrphanCommName(cmdLower string) bool {
 	switch cmdLower {
-	case "claude", "claude-code", "codex", "opencode", "cursor-agent", "agent", "copilot":
+	case "claude", "claude-code", "codex", "opencode", "cursor-agent", "agent", "copilot", "gt-agent":
 		return true
 	default:
 		return false

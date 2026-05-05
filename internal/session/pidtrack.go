@@ -176,6 +176,63 @@ func parseTrackedPID(value string) (trackedPID, error) {
 	return record, nil
 }
 
+// KillNatsPIDs reads PID files from the NATS PID directory and kills any
+// processes that are still running. This is the NATS-provider counterpart
+// to KillTrackedPIDs.
+func KillNatsPIDs(townRoot string) (killed int, errSessions []string) {
+	natsPidDir := filepath.Join(townRoot, ".gt-nats-pids")
+	entries, err := os.ReadDir(natsPidDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return 0, nil
+		}
+		return 0, []string{fmt.Sprintf("read nats pids dir: %v", err)}
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+
+		sessionID := entry.Name()
+		path := filepath.Join(natsPidDir, entry.Name())
+
+		data, err := os.ReadFile(path)
+		if err != nil {
+			errSessions = append(errSessions, fmt.Sprintf("%s: read error: %v", sessionID, err))
+			continue
+		}
+
+		pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
+		if err != nil {
+			_ = os.Remove(path)
+			continue
+		}
+
+		proc, err := os.FindProcess(pid)
+		if err != nil {
+			_ = os.Remove(path)
+			continue
+		}
+
+		if err := proc.Signal(syscall.Signal(0)); err != nil {
+			_ = os.Remove(path)
+			continue
+		}
+
+		// Process is alive — SIGKILL (orphan cleanup is forceful)
+		if err := proc.Signal(syscall.SIGKILL); err != nil {
+			errSessions = append(errSessions, fmt.Sprintf("%s (PID %d): SIGKILL failed: %v", sessionID, pid, err))
+		} else {
+			killed++
+		}
+
+		_ = os.Remove(path)
+	}
+
+	return killed, errSessions
+}
+
 // processStartTime returns the start time of a process via ps(1).
 // This works on Linux and macOS. On Windows (or minimal containers without ps),
 // the call will fail and callers degrade gracefully to PID-only tracking.
