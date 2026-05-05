@@ -1,10 +1,10 @@
 # Gas Town
 
-**Multi-agent orchestration system for Claude Code, GitHub Copilot, and other AI agents with persistent work tracking**
+**Multi-agent orchestration system with persistent work tracking — headless AI agents via NATS, web console, and git-backed hooks**
 
 ## Overview
 
-Gas Town is a workspace manager that lets you coordinate multiple AI coding agents (Claude Code, GitHub Copilot, Codex, Gemini, and others) working on different tasks. Instead of losing context when agents restart, Gas Town persists work state in git-backed hooks, enabling reliable multi-agent workflows.
+Gas Town is a workspace manager that coordinates multiple AI coding agents working on different tasks. Agents run headlessly via the built-in `gt-agent` binary (or Claude Code, Copilot, etc.) connected through NATS messaging. Instead of losing context when agents restart, Gas Town persists work state in git-backed hooks, enabling reliable multi-agent workflows.
 
 ### What Problem Does This Solve?
 
@@ -19,17 +19,28 @@ Gas Town is a workspace manager that lets you coordinate multiple AI coding agen
 
 ```mermaid
 graph TB
-    Mayor[The Mayor<br/>AI Coordinator]
+    Mayor[The Mayor<br/>gt-agent via NATS]
+    Deacon[Deacon<br/>Patrol agent]
+    Console[Agent Console<br/>Web UI :8081]
     Town[Town Workspace<br/>~/gt/]
+    NATS[NATS Server<br/>nats://localhost:4222]
 
+    Console --> NATS
+    Mayor --> NATS
+    Deacon --> NATS
     Town --> Mayor
+    Town --> Deacon
     Town --> Rig1[Rig: Project A]
     Town --> Rig2[Rig: Project B]
 
-    Rig1 --> Crew1[Crew Member<br/>Your workspace]
+    Rig1 --> Witness1[Witness<br/>gt-agent]
+    Rig1 --> Refinery1[Refinery<br/>gt-agent]
+    Rig1 --> Crew1[Crew Member]
     Rig1 --> Hooks1[Hooks<br/>Persistent storage]
     Rig1 --> Polecats1[Polecats<br/>Worker agents]
 
+    Rig2 --> Witness2[Witness<br/>gt-agent]
+    Rig2 --> Refinery2[Refinery<br/>gt-agent]
     Rig2 --> Crew2[Crew Member]
     Rig2 --> Hooks2[Hooks]
     Rig2 --> Polecats2[Polecats]
@@ -38,6 +49,8 @@ graph TB
     Hooks2 -.git worktree.-> GitRepo2[Git Repository]
 
     style Mayor fill:#e1f5ff,color:#000000
+    style Deacon fill:#e1f5ff,color:#000000
+    style Console fill:#ffe1e1,color:#000000
     style Town fill:#f0f0f0,color:#000000
     style Rig1 fill:#fff4e1,color:#000000
     style Rig2 fill:#fff4e1,color:#000000
@@ -47,7 +60,9 @@ graph TB
 
 ### The Mayor 🎩
 
-Your primary AI coordinator. The Mayor is a Claude Code instance with full context about your workspace, projects, and agents. **Start here** - just tell the Mayor what you want to accomplish.
+Your primary AI coordinator. The Mayor runs as a headless `gt-agent` process (or Claude Code, Copilot, etc.) with full context about your workspace, projects, and agents. **Start here** - just tell the Mayor what you want to accomplish.
+
+All town-level and rig-level agents now run via `gt-agent`, a long-lived headless binary that polls for work, calls an LLM, executes shell commands, and reports results. No terminal UI required.
 
 ### Town 🏘️
 
@@ -127,11 +142,14 @@ Federated work coordination network linking Gas Towns through DoltHub. Rigs post
 - **Dolt 1.82.4+** - `brew install dolt` on macOS, or see [github.com/dolthub/dolt](https://github.com/dolthub/dolt)
 - **beads (bd) 0.55.4+** - installed by `brew install gastown`, or see [github.com/steveyegge/beads](https://github.com/steveyegge/beads)
 - **sqlite3** - for convoy database queries (usually pre-installed on macOS/Linux)
-- **tmux 3.0+** - recommended for full experience
-- **NATS Server** - for real-time dashboard updates (managed automatically via Docker)
-- **Claude Code CLI** (default runtime) - [claude.ai/code](https://claude.ai/code)
-- **Codex CLI** (optional runtime) - [developers.openai.com/codex/cli](https://developers.openai.com/codex/cli)
-- **GitHub Copilot CLI** (optional runtime) - [cli.github.com](https://cli.github.com) (requires Copilot seat)
+- **NATS Server** - session transport (managed automatically via Docker on `gt up`)
+- **LLM endpoint** - OpenAI-compatible API (default: `http://localhost:11434/v1/chat/completions` via Ollama)
+
+**Optional:**
+- **tmux 3.0+** - legacy session transport (set `"session_transport": "tmux"` in `settings/config.json`)
+- **Claude Code CLI** - alternative agent runtime (set agent to `claude` in settings)
+- **Codex CLI** - alternative agent runtime
+- **GitHub Copilot CLI** - alternative agent runtime (requires Copilot seat)
 
 ### Setup (Docker-Compose below)
 
@@ -166,8 +184,15 @@ gt rig add myproject https://github.com/you/repo.git
 gt crew add yourname --rig myproject
 cd myproject/crew/yourname
 
-# Start the Mayor session (your main interface)
-gt mayor attach
+# Start all services (NATS, Dolt, daemon, agents)
+gt up
+
+# Open the agent console in another terminal
+gt-agent-console
+# Then visit http://localhost:8081
+
+# Send a nudge to the Mayor from the command line
+gt nudge mayor "Set up the project and create initial issues"
 ```
 
 ### Docker Compose
@@ -176,7 +201,8 @@ gt mayor attach
 export GIT_USER="<your name>"
 export GIT_EMAIL="<your email>"
 export FOLDER="/Users/you/code"
-export DASHBOARD_PORT=8080  # optional, host port for the web dashboard
+export DASHBOARD_PORT=8080   # optional, host port for the convoy dashboard
+export CONSOLE_PORT=8081     # optional, host port for the agent console
 
 docker compose build              # only needed on first run or after code changes
 docker compose up -d
@@ -430,7 +456,33 @@ gt convoy show
 
 ## Runtime Configuration
 
-Gas Town supports multiple AI coding runtimes. Per-rig runtime settings are in `settings/config.json`.
+Gas Town supports multiple AI coding runtimes. The default is the built-in
+`gt-agent` headless binary. Per-rig runtime settings are in `settings/config.json`.
+
+### Default: gt-agent (headless)
+
+```json
+{
+  "session_transport": "nats",
+  "default_agent": "gt-agent",
+  "role_agents": {
+    "mayor": "gt-agent",
+    "deacon": "gt-agent",
+    "witness": "gt-agent",
+    "refinery": "gt-agent",
+    "crew": "gt-agent",
+    "polecat": "gt-agent"
+  }
+}
+```
+
+`gt-agent` is a long-lived headless binary that:
+- Polls for nudges, hook work, and mail
+- Calls an LLM (configurable via `LLM_ENDPOINT` env var)
+- Executes shell commands and reports results
+- Runs continuously until `gt down` or SIGTERM
+
+### Alternative: Claude Code, Codex, Copilot
 
 ```json
 {
@@ -537,7 +589,7 @@ Gas Town includes built-in formulas for common workflows. See `internal/formula/
 
 ## Activity Feed
 
-`gt feed` launches an interactive terminal dashboard for monitoring all agent activity in real-time. It combines beads activity, agent events, and merge queue updates into a three-panel TUI:
+`gt feed` launches an interactive terminal dashboard for monitoring all agent activity in real-time. It combines beads activity, agent events, and merge queue updates into a three-panel TUI. This is an alternative to the web-based Agent Console (`gt-agent-console` on port 8081):
 
 - **Agent Tree** - Hierarchical view of all agents grouped by rig and role
 - **Convoy Panel** - In-progress and recently-landed convoys
@@ -563,15 +615,46 @@ Press `p` in `gt feed` (or start with `gt feed --problems`) to toggle the proble
 |-------|-----------|
 | **GUPP Violation** | Hooked work with no progress for an extended period |
 | **Stalled** | Hooked work with reduced progress |
-| **Zombie** | Dead tmux session |
+| **Zombie** | Dead agent process (gt-agent or tmux session) |
 | **Working** | Active, progressing normally |
 | **Idle** | No hooked work |
 
 **Intervention keys** (in problems view): `n` to nudge the selected agent, `h` to handoff (refresh context).
 
+## Agent Console 🖥️
+
+The **Agent Console** is a web-based UI for monitoring and interacting with your
+Gas Town agents. It runs on port **8081** by default and provides real-time
+visibility into agent status, activity logs, and nudge queue messaging.
+
+```bash
+# Start the agent console (default port 8081)
+gt-agent-console
+
+# Start on a custom port
+GT_AGENT_CONSOLE_PORT=3000 gt-agent-console
+
+# Bind to all interfaces (default is 127.0.0.1)
+GT_AGENT_CONSOLE_BIND=0.0.0.0 gt-agent-console
+```
+
+Open http://localhost:8081 in your browser to see:
+
+- **Agent list** — All agents (Mayor, Deacon, Witness, Refinery, Crew) with live status
+- **Activity logs** — Per-agent wrapper logs showing patrol cycles and command output
+- **Real-time streaming** — SSE stream for live log updates
+- **Send nudges** — Type messages directly to any agent's nudge queue
+
+The console is especially useful for debugging agent behavior: you can watch the
+Mayor's log in real-time as it processes your nudges, or send a corrective
+message when an agent gets stuck.
+
+> **Note:** Agents run headlessly via `gt-agent` and NATS. The console does not
+> start or stop agents — use `gt up` / `gt down` for that.
+
 ## Dashboard
 
-Gas Town includes a web dashboard for monitoring your workspace. The dashboard
+Gas Town includes a convoy dashboard for monitoring work tracking. The dashboard
 must be run from inside a Gas Town workspace (HQ) directory.
 
 ```bash
@@ -585,20 +668,22 @@ gt dashboard --port 3000
 gt dashboard --open
 ```
 
-The dashboard gives you a single-page overview of everything happening in your
-workspace: agents, convoys, hooks, queues, issues, and escalations. It
-auto-refreshes via htmx and includes a command palette for running gt commands
-directly from the browser.
+The dashboard gives you a single-page overview of convoys, hooks, queues,
+issues, and escalations. It auto-refreshes via htmx and includes a command
+palette for running gt commands directly from the browser.
 
 ## Monitoring & Health
 
 Gas Town uses a three-tier watchdog chain to keep agents healthy at scale:
 
 ```
-Daemon (Go process) ← heartbeat every 3 min
-    └── Boot (AI agent) ← intelligent triage
-        └── Deacon (AI agent) ← continuous patrol
-            └── Witnesses & Refineries ← per-rig agents
+Daemon (Go process) ← manages NATS sessions
+    ├── Mayor (gt-agent) ← work coordination
+    ├── Deacon (gt-agent) ← health patrols
+    ├── Boot (gt-agent) ← startup triage
+    └── Per-rig:
+        ├── Witness (gt-agent) ← polecat monitoring
+        └── Refinery (gt-agent) ← merge queue
 ```
 
 ### Witness (Per-Rig)
