@@ -66,11 +66,20 @@ var qaApproveCmd = &cobra.Command{
 	RunE:  runQAApprove,
 }
 
+var qaReviewCmd = &cobra.Command{
+	Use:   "review <task-id>",
+	Short: "Review a task and inspect acceptance criteria",
+	Long:  `Display the selected task, acceptance criteria status, and QA review guidance.`,
+	Args:  cobra.ExactArgs(1),
+	RunE:  runQAReview,
+}
+
 var qaDefectDescription string
 var qaDefectPriority int
 var qaDefectRig string
 var qaApproveRig string
 var qaApproveMessage string
+var qaReviewRig string
 
 var qaAttachCmd = &cobra.Command{
 	Use:     "attach [rig]",
@@ -86,6 +95,7 @@ func init() {
 	qaCmd.AddCommand(qaStopCmd)
 	qaCmd.AddCommand(qaDefectCmd)
 	qaCmd.AddCommand(qaApproveCmd)
+	qaCmd.AddCommand(qaReviewCmd)
 	qaCmd.AddCommand(qaAttachCmd)
 
 	qaDefectCmd.Flags().StringVar(&qaDefectRig, "rig", "", "Target rig for the defect")
@@ -93,6 +103,7 @@ func init() {
 	qaDefectCmd.Flags().IntVar(&qaDefectPriority, "priority", 1, "Priority for the defect")
 	qaApproveCmd.Flags().StringVar(&qaApproveRig, "rig", "", "Target rig for the approval")
 	qaApproveCmd.Flags().StringVar(&qaApproveMessage, "message", "QA review passed", "Approval message body")
+	qaReviewCmd.Flags().StringVar(&qaReviewRig, "rig", "", "Target rig for the review")
 
 	rootCmd.AddCommand(qaCmd)
 }
@@ -180,6 +191,64 @@ func runQAAttach(cmd *cobra.Command, args []string) error {
 	return attachToTmuxSession(sessionID)
 }
 
+func runQAReview(cmd *cobra.Command, args []string) error {
+	taskID := args[0]
+
+	townRoot, err := workspace.FindFromCwdOrError()
+	if err != nil {
+		return fmt.Errorf("not in a Gas Town workspace: %w", err)
+	}
+
+	rigName := qaReviewRig
+	if rigName == "" {
+		rigName, err = inferRigFromCwd(townRoot)
+		if err != nil {
+			return fmt.Errorf("could not determine rig: %w\nUse --rig if you are not in the rig workspace", err)
+		}
+	}
+
+	_, r, err := getRig(rigName)
+	if err != nil {
+		return err
+	}
+
+	bd := beads.NewWithBeadsDir(r.Path, filepath.Join(r.Path, ".beads"))
+	issue, err := bd.Show(taskID)
+	if err != nil {
+		return fmt.Errorf("reading task %s: %w", taskID, err)
+	}
+
+	fmt.Printf("ID: %s\n", issue.ID)
+	fmt.Printf("Title: %s\n", issue.Title)
+	fmt.Printf("Status: %s\n", issue.Status)
+	fmt.Printf("Type: %s\n", issue.Type)
+	fmt.Printf("Priority: %d\n", issue.Priority)
+	fmt.Printf("Assignee: %s\n", issue.Assignee)
+	fmt.Printf("Parent: %s\n", issue.Parent)
+	fmt.Printf("Labels: %s\n", strings.Join(issue.Labels, ", "))
+
+	if issue.AcceptanceCriteria != "" {
+		fmt.Println("\nAcceptance Criteria:")
+		for _, line := range strings.Split(issue.AcceptanceCriteria, "\n") {
+			fmt.Printf("  %s\n", line)
+		}
+		unchecked := beads.HasUncheckedCriteria(issue)
+		if unchecked > 0 {
+			fmt.Printf("\nWARNING: %d acceptance criteria item(s) remain unchecked.\n", unchecked)
+		} else {
+			fmt.Printf("\nAll acceptance criteria appear checked.\n")
+		}
+	} else {
+		fmt.Println("\nAcceptance Criteria: none")
+	}
+
+	fmt.Println("\nNext steps:")
+	fmt.Println("  gt qa approve <task-id>     # Approve for refinement")
+	fmt.Println("  gt qa defect <task-id> ...  # File a QA defect")
+	fmt.Println("  gt nudge <rig>/architect ... # Ask the architect if unsure")
+	return nil
+}
+
 func runQADefect(cmd *cobra.Command, args []string) error {
 	taskID := args[0]
 	summary := strings.Join(args[1:], " ")
@@ -242,6 +311,17 @@ func runQAApprove(cmd *cobra.Command, args []string) error {
 	_, r, err := getRig(rigName)
 	if err != nil {
 		return err
+	}
+
+	bd := beads.NewWithBeadsDir(r.Path, filepath.Join(r.Path, ".beads"))
+	issue, err := bd.Show(taskID)
+	if err != nil {
+		return fmt.Errorf("reading task %s: %w", taskID, err)
+	}
+	if !beads.HasLabel(issue, "gt:qa-approved") {
+		if err := bd.Update(taskID, beads.UpdateOptions{AddLabels: []string{"gt:qa-approved"}}); err != nil {
+			return fmt.Errorf("marking QA approval: %w", err)
+		}
 	}
 
 	qaDir := filepath.Join(r.Path, constants.DirQA)

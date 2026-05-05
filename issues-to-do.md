@@ -5,6 +5,7 @@ I've completed a thorough exploration of the three new agent roles in the `pr/qa
 ## Implementation Progress
 - [x] Add explicit QA defect workflow support in `gastown/internal/cmd/qa.go`
 - [x] Add QA approval notification support to Refinery in `gastown/internal/cmd/qa.go`
+- [x] Add explicit QA review command and approval label tracking in `gastown/internal/cmd/qa.go`
 - [x] Strengthen QA acceptance criteria guidance in `gastown/internal/templates/roles/qa.md.tmpl`
 - [x] Add Planner wait-for-Architect guidance and spec reference requirements in `gastown/internal/templates/roles/planner.md.tmpl`
 - [x] Add ADR storage guidance to `gastown/internal/templates/roles/architect.md.tmpl`
