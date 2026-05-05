@@ -2247,12 +2247,9 @@ func (d *Daemon) getPatrolRigs(patrol string) []string {
 func (d *Daemon) isRigOperational(rigName string) (bool, string) {
 	cfg := wisp.NewConfig(d.config.TownRoot, rigName)
 
-	// Warn if wisp config is missing - parked/docked state may have been lost
-	if _, err := os.Stat(cfg.ConfigPath()); os.IsNotExist(err) {
-		d.logger.Printf("Warning: no wisp config for %s - parked state may have been lost", rigName)
-	}
-
-	// Check wisp layer first (local/ephemeral overrides)
+	// Check wisp layer first (local/ephemeral overrides).
+	// Note: Config.GetString returns "" if the config file is missing,
+	// which correctly defaults to "not parked/docked".
 	status := cfg.GetString("status")
 	switch status {
 	case "parked":
