@@ -3,8 +3,13 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"path/filepath"
+	"strings"
 
 	"github.com/spf13/cobra"
+	"github.com/steveyegge/gastown/internal/beads"
+	"github.com/steveyegge/gastown/internal/constants"
+	"github.com/steveyegge/gastown/internal/mail"
 	"github.com/steveyegge/gastown/internal/session"
 	"github.com/steveyegge/gastown/internal/style"
 	"github.com/steveyegge/gastown/internal/workspace"
@@ -42,6 +47,31 @@ var qaStopCmd = &cobra.Command{
 	RunE:  runQAStop,
 }
 
+var qaDefectCmd = &cobra.Command{
+	Use:   "defect <task-id> <summary>",
+	Short: "Create a QA defect linked to an implementation task",
+	Long: `Create a bug from a QA review and link it to the original task.
+The defect is created in the rig's beads database and can be assigned back to the implementation owner.
+Use --description to provide more details.
+`,
+	Args: cobra.MinimumNArgs(2),
+	RunE: runQADefect,
+}
+
+var qaApproveCmd = &cobra.Command{
+	Use:   "approve <task-id>",
+	Short: "Approve a task and notify the refinery",
+	Long:  `Mark a review as passed and send the approval notice to the rig's refinery.`,
+	Args:  cobra.ExactArgs(1),
+	RunE:  runQAApprove,
+}
+
+var qaDefectDescription string
+var qaDefectPriority int
+var qaDefectRig string
+var qaApproveRig string
+var qaApproveMessage string
+
 var qaAttachCmd = &cobra.Command{
 	Use:     "attach [rig]",
 	Aliases: []string{"at"},
@@ -54,7 +84,16 @@ var qaAttachCmd = &cobra.Command{
 func init() {
 	qaCmd.AddCommand(qaStartCmd)
 	qaCmd.AddCommand(qaStopCmd)
+	qaCmd.AddCommand(qaDefectCmd)
+	qaCmd.AddCommand(qaApproveCmd)
 	qaCmd.AddCommand(qaAttachCmd)
+
+	qaDefectCmd.Flags().StringVar(&qaDefectRig, "rig", "", "Target rig for the defect")
+	qaDefectCmd.Flags().StringVar(&qaDefectDescription, "description", "", "Detailed defect description")
+	qaDefectCmd.Flags().IntVar(&qaDefectPriority, "priority", 1, "Priority for the defect")
+	qaApproveCmd.Flags().StringVar(&qaApproveRig, "rig", "", "Target rig for the approval")
+	qaApproveCmd.Flags().StringVar(&qaApproveMessage, "message", "QA review passed", "Approval message body")
+
 	rootCmd.AddCommand(qaCmd)
 }
 
@@ -76,7 +115,7 @@ func runQAStart(cmd *cobra.Command, args []string) error {
 	} else {
 		fmt.Printf("%s QA started for %s\n", style.Bold.Render("✓"), rigName)
 	}
-	fmt.Printf("  %s\n", style.Dim.Render("Use 'gt qa attach " + rigName + "' to connect"))
+	fmt.Printf("  %s\n", style.Dim.Render("Use 'gt qa attach "+rigName+"' to connect"))
 	return nil
 }
 
@@ -139,4 +178,87 @@ func runQAAttach(cmd *cobra.Command, args []string) error {
 	}
 
 	return attachToTmuxSession(sessionID)
+}
+
+func runQADefect(cmd *cobra.Command, args []string) error {
+	taskID := args[0]
+	summary := strings.Join(args[1:], " ")
+
+	townRoot, err := workspace.FindFromCwdOrError()
+	if err != nil {
+		return fmt.Errorf("not in a Gas Town workspace: %w", err)
+	}
+
+	rigName := qaDefectRig
+	if rigName == "" {
+		rigName, err = inferRigFromCwd(townRoot)
+		if err != nil {
+			return fmt.Errorf("could not determine rig: %w\nUse --rig if you are not in the rig workspace", err)
+		}
+	}
+
+	_, r, err := getRig(rigName)
+	if err != nil {
+		return err
+	}
+
+	bd := beads.NewWithBeadsDir(r.Path, filepath.Join(r.Path, ".beads"))
+	description := qaDefectDescription
+	if description == "" {
+		description = fmt.Sprintf("QA defect linked to task %s: %s", taskID, summary)
+	}
+
+	issue, err := bd.Create(beads.CreateOptions{
+		Title:       fmt.Sprintf("QA defect: %s", summary),
+		Labels:      []string{"gt:bug"},
+		Parent:      taskID,
+		Priority:    qaDefectPriority,
+		Description: description,
+	})
+	if err != nil {
+		return fmt.Errorf("creating QA defect: %w", err)
+	}
+
+	fmt.Printf("%s QA defect created: %s\n", style.Bold.Render("✓"), issue.ID)
+	return nil
+}
+
+func runQAApprove(cmd *cobra.Command, args []string) error {
+	taskID := args[0]
+
+	townRoot, err := workspace.FindFromCwdOrError()
+	if err != nil {
+		return fmt.Errorf("not in a Gas Town workspace: %w", err)
+	}
+
+	rigName := qaApproveRig
+	if rigName == "" {
+		rigName, err = inferRigFromCwd(townRoot)
+		if err != nil {
+			return fmt.Errorf("could not determine rig: %w\nUse --rig if you are not in the rig workspace", err)
+		}
+	}
+
+	_, r, err := getRig(rigName)
+	if err != nil {
+		return err
+	}
+
+	qaDir := filepath.Join(r.Path, constants.DirQA)
+	router := mail.NewRouterWithTownRoot(qaDir, townRoot)
+
+	subject := fmt.Sprintf("QA: PASS %s", taskID)
+	message := qaApproveMessage
+	if message == "" {
+		message = "QA review passed. Ready for refinery processing."
+	}
+
+	msg := mail.NewMessage("qa", fmt.Sprintf("%s/refinery", rigName), subject, message)
+	if err := router.Send(msg); err != nil {
+		return fmt.Errorf("sending QA approval: %w", err)
+	}
+	router.WaitPendingNotifications()
+
+	fmt.Printf("%s QA approval sent to %s/refinery for %s\n", style.Bold.Render("✓"), rigName, taskID)
+	return nil
 }

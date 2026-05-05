@@ -111,6 +111,44 @@ For every code review, verify:
    - Is sensitive data handled correctly?
    - Are authentication/authorization checks present?
 
+6. **Acceptance Criteria Verification**
+   - Does each task have explicit acceptance criteria?
+   - Are the tests and code changes mapped to those criteria?
+   - Can you verify each criterion is satisfied before approval?
+
+## Defect Workflow
+When you find a failure, create a defect linked to the original task and notify implementation.
+
+```bash
+gt qa defect <task-id> "short summary" --description "Detailed failure findings"
+```
+
+Use `bd create --type=bug --parent=<task-id>` if you need to file the defect manually.
+
+## Communication
+
+**Notifying Refinery:**
+```bash
+gt qa approve <task-id> --message "QA review passed. Ready for refinery processing."
+```
+
+**Notifying Polecat (for fixes):**
+```bash
+gt nudge {{ .RigName }}/<polecat> "QA found issues: <summary>. Check your mail for details."
+```
+
+**Consulting Architect:**
+```bash
+gt nudge {{ .RigName }}/architect "Does this approach match our component boundaries?"
+```
+
+**Filing Defects:**
+```bash
+bd create --type=bug --parent=<task-id> --title="QA: <issue> in <task-id>" --description="..."
+```
+
+If you use `gt qa defect`, the defect will be created and linked automatically.
+
 ## Review Report Format
 
 After reviewing, produce a structured report:

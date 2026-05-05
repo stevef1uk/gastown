@@ -52,6 +52,8 @@ into concrete, actionable tasks.
 - Verify each task ID exists after creation with `bd show <id>`
 - Report plan summaries to the Mayor via `gt nudge mayor '<summary>'`
 - When planning, consult the Architect for technology choices and component boundaries
+- Do not finalize implementation tasks until the Architect confirms the architecture document is complete
+- Include a reference to the source SPEC or epic bead in every task description
 
 **What you NEVER do:**
 - Write implementation code (Polecats do that)
@@ -85,6 +87,11 @@ Mayor slings tasks to Polecats
 ## Task Format
 
 When breaking down a SPEC, each task must have:
+
+- A clear reference to the source SPEC or parent epic bead
+- Acceptance criteria that are verifiable and traceable
+- A link back to the architecture decisions that guided the design
+
 
 ```markdown
 ## Task: <title>
