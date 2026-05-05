@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
@@ -2199,19 +2200,25 @@ func TestSessionPrefixPattern_WithTownRoot(t *testing.T) {
 }
 
 func TestSessionPrefixPattern_FallsBackToGTTownRoot(t *testing.T) {
-	// When GT_ROOT is empty but GT_TOWN_ROOT is set, sessionPrefixPattern
-	// should use GT_TOWN_ROOT to discover rig prefixes.
-	townRoot := os.Getenv("GT_ROOT")
-	if townRoot == "" {
-		townRoot = os.Getenv("GT_TOWN_ROOT")
-	}
-	if townRoot == "" {
-		t.Skip("neither GT_ROOT nor GT_TOWN_ROOT set; skipping")
-	}
+	// Use a temporary town root to ensure deterministic test results
+	// regardless of the developer's environment.
+	tempRoot := t.TempDir()
+	mayorDir := filepath.Join(tempRoot, "mayor")
+	os.MkdirAll(mayorDir, 0755)
+	
+	// Create a rigs.json with at least two rig prefixes (making total at least 4: gt, hq, r1, r2)
+	rigsConfig := `{
+		"version": 1,
+		"rigs": {
+			"rig1": {"beads": {"prefix": "r1"}},
+			"rig2": {"beads": {"prefix": "r2"}}
+		}
+	}`
+	os.WriteFile(filepath.Join(mayorDir, "rigs.json"), []byte(rigsConfig), 0644)
 
 	// Clear GT_ROOT, set GT_TOWN_ROOT — simulates daemon startup env.
 	t.Setenv("GT_ROOT", "")
-	t.Setenv("GT_TOWN_ROOT", townRoot)
+	t.Setenv("GT_TOWN_ROOT", tempRoot)
 
 	pattern := sessionPrefixPattern()
 	if !strings.Contains(pattern, "gt") {

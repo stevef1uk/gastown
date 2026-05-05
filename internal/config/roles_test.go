@@ -78,6 +78,13 @@ func TestLoadBuiltinRoleDefinition(t *testing.T) {
 			wantPattern:   "{prefix}-qa",
 			wantPreSync:   false,
 		},
+		{
+			name:          "planner",
+			role:          "planner",
+			wantScope:     "town",
+			wantPattern:   "hq-planner",
+			wantPreSync:   false,
+		},
 	}
 
 	for _, tt := range tests {

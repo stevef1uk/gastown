@@ -32,6 +32,9 @@ func TestBuildBdInitArgs_AlwaysIncludesServerPort(t *testing.T) {
 	if args[5] != "3307" {
 		t.Fatalf("expected default port 3307, got %q", args[5])
 	}
+	if args[6] != "--force" {
+		t.Fatalf("expected args[6] = --force, got %q", args[6])
+	}
 }
 
 func TestBuildBdInitArgs_RespectsGTDoltPortEnv(t *testing.T) {
