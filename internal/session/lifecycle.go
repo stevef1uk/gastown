@@ -426,7 +426,6 @@ func MergeRuntimeLivenessEnv(envVars map[string]string, runtimeConfig *config.Ru
 			}
 			processNames = config.ResolveProcessNames(agentForLookup, commandForLookup, argsForLookup...)
 		}
-
 		if len(processNames) > 0 {
 			envVars["GT_PROCESS_NAMES"] = strings.Join(processNames, ",")
 		}
