@@ -387,26 +387,62 @@ func (s *Server) inspectAgent(id, rig, role string) Agent {
 }
 
 // findAgentPID finds the PID of an agent by its session name.
+// For NATS-based gt-agent processes, the session name is NOT in the
+// command line (it's passed via env var). We must search for gt-agent
+// processes and match them by role name in the title string.
 func (s *Server) findAgentPID(sessionName string) int {
-	// Check wrapper PID files
-	pidFile := filepath.Join(s.townRoot, ".gt-nats-pids", sessionName+".pid")
-	if data, err := os.ReadFile(pidFile); err == nil {
-		if pid, err := strconv.Atoi(strings.TrimSpace(string(data))); err == nil {
-			// Verify process exists
-			if _, err := os.Stat(filepath.Join("/proc", strconv.Itoa(pid))); err == nil {
-				return pid
+	// Check wrapper PID files. NATS provider writes to sessionID (no .pid
+	// extension), but legacy code may use .pid — check both.
+	for _, pidName := range []string{sessionName, sessionName + ".pid"} {
+		pidFile := filepath.Join(s.townRoot, ".gt-nats-pids", pidName)
+		if data, err := os.ReadFile(pidFile); err == nil {
+			if pid, err := strconv.Atoi(strings.TrimSpace(string(data))); err == nil {
+				// Verify process exists
+				if _, err := os.Stat(filepath.Join("/proc", strconv.Itoa(pid))); err == nil {
+					return pid
+				}
 			}
 		}
 	}
 
-	// Fallback: search processes
-	cmd := exec.Command("pgrep", "-f", sessionName)
+	// Fallback 1: search for gt-agent processes matching the role name
+	// in the process title. The title contains the role (mayor, deacon,
+	// witness, refinery) but NOT the session prefix.
+	role := sessionName
+	if strings.HasPrefix(sessionName, "hq-") {
+		role = strings.TrimPrefix(sessionName, "hq-")
+	} else if strings.Contains(sessionName, "-") {
+		// Rig agents: de-witness -> witness, de-refinery -> refinery
+		parts := strings.Split(sessionName, "-")
+		if len(parts) >= 2 {
+			role = parts[1]
+		}
+	}
+
+	// Search for gt-agent processes with this role in the title
+	searchTerm := fmt.Sprintf("gt-agent.*%s", role)
+	cmd := exec.Command("pgrep", "-a", "-f", searchTerm)
 	out, _ := cmd.Output()
 	for _, line := range strings.Split(string(out), "\n") {
+		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
 		}
-		if pid, err := strconv.Atoi(strings.TrimSpace(line)); err == nil {
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
+			continue
+		}
+		pid, err := strconv.Atoi(fields[0])
+		if err != nil {
+			continue
+		}
+		// Verify this process's cwd is inside the town root
+		// (prevents matching gt-agent processes from other towns)
+		cwd, err := os.Readlink(filepath.Join("/proc", fields[0], "cwd"))
+		if err != nil {
+			continue
+		}
+		if strings.HasPrefix(cwd, s.townRoot) {
 			return pid
 		}
 	}
