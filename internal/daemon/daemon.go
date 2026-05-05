@@ -873,6 +873,18 @@ func (d *Daemon) heartbeat(state *State) {
 		d.killQASessions()
 	}
 
+	// 5.7. Ensure Planner is running (restart if dead)
+	if d.isPatrolActive("planner") {
+		if p := d.checkPressure("planner"); !p.OK {
+			d.logger.Printf("Deferring planner spawn: %s", p.Reason)
+		} else {
+			d.ensurePlannerRunning()
+		}
+	} else {
+		d.logger.Printf("Planner patrol disabled in config, skipping")
+		d.killPlannerSessions()
+	}
+
 	// 6. Ensure Mayor is running (restart if dead)
 	d.ensureMayorRunning()
 
@@ -1870,6 +1882,36 @@ func (d *Daemon) ensureQARunning(rigName string) {
 	telemetry.RecordDaemonRestart(d.ctx, "qa-"+rigName)
 	d.logger.Printf("QA session for %s started successfully", rigName)
 }
+
+// ensurePlannerRunning ensures the town-level planner is running.
+func (d *Daemon) ensurePlannerRunning() {
+	sessionID := session.PlannerSessionName()
+	plannerDir := filepath.Join(d.config.TownRoot, constants.DirPlanner)
+	_ = os.MkdirAll(plannerDir, 0755)
+
+	if running, _ := d.sp.Exists(d.ctx, sessionID); running {
+		return
+	}
+
+	_, err := session.StartSession(d.ctx, d.sp, session.SessionConfig{
+		SessionID:    sessionID,
+		WorkDir:      plannerDir,
+		Role:         constants.RolePlanner,
+		TownRoot:     d.config.TownRoot,
+		Beacon:       session.BeaconConfig{Recipient: "planner", Sender: "daemon", Topic: "patrol"},
+		WaitForAgent: false,
+		AutoRespawn:  true,
+	})
+	if err != nil {
+		d.logger.Printf("Error starting planner: %v", err)
+		return
+	}
+
+	d.metrics.recordRestart(d.ctx, "planner")
+	telemetry.RecordDaemonRestart(d.ctx, "planner")
+	d.logger.Printf("Planner session started successfully")
+}
+
 
 // ensureMayorRunning ensures the Mayor is running.
 // Uses mayor.Manager for consistent startup behavior.
@@ -3107,5 +3149,17 @@ func (d *Daemon) dispatchQueuedWork() {
 		d.logger.Printf("Scheduler dispatch failed: %v (output: %s)", err, string(out))
 	} else if len(out) > 0 {
 		d.logger.Printf("Scheduler dispatch: %s", string(out))
+	}
+}
+
+// killPlannerSessions kills leftover planner tmux session.
+func (d *Daemon) killPlannerSessions() {
+	name := session.PlannerSessionName()
+	exists, _ := d.sp.Exists(d.ctx, name)
+	if exists {
+		d.logger.Printf("Killing leftover %s session (patrol disabled)", name)
+		if err := d.sp.Stop(d.ctx, name, true); err != nil {
+			d.logger.Printf("Error killing %s session: %v", name, err)
+		}
 	}
 }

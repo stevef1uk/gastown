@@ -231,9 +231,9 @@ func runUp(cmd *cobra.Command, args []string) error {
 		fmt.Fprintf(os.Stderr, "Warning: NATS not available, agents may use tmux fallback\n")
 	}
 
-	// Start daemon, deacon, mayor, dolt, and rig prefetch in parallel
+	// Start daemon, deacon, mayor, planner, dolt, and rig prefetch in parallel
 	var startupWg sync.WaitGroup
-	startupWg.Add(5)
+	startupWg.Add(6)
 
 	// 1. Dolt server (if configured)
 	go func() {
@@ -326,6 +326,13 @@ func runUp(cmd *cobra.Command, args []string) error {
 		}
 	}()
 
+	// 4.5. Planner
+	var plannerResult agentStartResult
+	go func() {
+		defer startupWg.Done()
+		plannerResult = upStartPlanner(townRoot)
+	}()
+
 	// 5. Prefetch rig configs (overlaps with daemon/deacon/mayor startup)
 	go func() {
 		defer startupWg.Done()
@@ -367,6 +374,10 @@ func runUp(cmd *cobra.Command, args []string) error {
 	}
 	services = append(services, ServiceStatus{Name: mayorResult.name, Type: constants.RoleMayor, OK: mayorResult.ok, Detail: mayorResult.detail})
 	if !mayorResult.ok {
+		allOK = false
+	}
+	services = append(services, ServiceStatus{Name: plannerResult.name, Type: constants.RolePlanner, OK: plannerResult.ok, Detail: plannerResult.detail})
+	if !plannerResult.ok {
 		allOK = false
 	}
 
@@ -973,6 +984,37 @@ func upStartQA(rigName string, r *rig.Rig) agentStartResult {
 		RigPath:      r.Path,
 		RigName:      rigName,
 		Beacon:       session.BeaconConfig{Recipient: "qa", Sender: "daemon", Topic: "startup"},
+		WaitForAgent: false,
+		AutoRespawn:  true,
+	})
+	if err != nil {
+		return agentStartResult{name: name, ok: false, detail: err.Error()}
+	}
+	return agentStartResult{name: name, ok: true, detail: sessionID}
+}
+
+// upStartPlanner starts a planner and returns a result struct.
+func upStartPlanner(townRoot string) agentStartResult {
+	name := "Planner"
+	sessionID := session.PlannerSessionName()
+	plannerDir := filepath.Join(townRoot, constants.DirPlanner)
+	if err := os.MkdirAll(plannerDir, 0755); err != nil {
+		return agentStartResult{name: name, ok: false, detail: err.Error()}
+	}
+
+	sp := session.GetDefaultProvider(townRoot)
+	ctx := context.Background()
+
+	if running, _ := sp.Exists(ctx, sessionID); running {
+		return agentStartResult{name: name, ok: true, detail: sessionID}
+	}
+
+	_, err := session.StartSession(ctx, sp, session.SessionConfig{
+		SessionID:    sessionID,
+		WorkDir:      plannerDir,
+		Role:         constants.RolePlanner,
+		TownRoot:     townRoot,
+		Beacon:       session.BeaconConfig{Recipient: "planner", Sender: "daemon", Topic: "startup"},
 		WaitForAgent: false,
 		AutoRespawn:  true,
 	})
