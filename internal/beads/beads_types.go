@@ -64,8 +64,13 @@ func ResolveRoutingTarget(townRoot, beadID, fallbackDir string) string {
 		return fallbackDir
 	}
 
+	// Load routes to get the most accurate prefix mapping
+	beadsDir := GetTownBeadsPath(townRoot)
+	routes, _ := LoadRoutes(beadsDir)
+
 	// Extract prefix from bead ID (e.g., "gt-gastown-polecat-Toast" -> "gt-")
-	prefix := ExtractPrefix(beadID)
+	// Use route-aware extraction to handle complex prefixes (hq-qsq.-)
+	prefix := ExtractPrefixWithRoutes(beadID, routes)
 	if prefix == "" {
 		return fallbackDir
 	}
@@ -78,7 +83,7 @@ func ResolveRoutingTarget(townRoot, beadID, fallbackDir string) string {
 	}
 
 	// Resolve redirects and get final beads directory
-	beadsDir := ResolveBeadsDir(rigPath)
+	beadsDir = ResolveBeadsDir(rigPath)
 	if beadsDir == "" {
 		fmt.Fprintf(os.Stderr, "Warning: could not resolve beads dir for rig %s (bead %s), falling back to %s\n", rigPath, beadID, fallbackDir)
 		return fallbackDir

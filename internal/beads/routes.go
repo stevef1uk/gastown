@@ -247,19 +247,47 @@ func FindConflictingPrefixes(beadsDir string) (map[string][]string, error) {
 
 // ExtractPrefix extracts the prefix from a bead ID.
 // For example, "ap-qtsup.16" returns "ap-", "hq-cv-abc" returns "hq-".
-// Returns empty string if no valid prefix found (empty input, no hyphen,
-// or hyphen at position 0 which would indicate an invalid prefix).
+// If multiple hyphens are present, it tries to match the longest prefix
+// known in the routes.
 func ExtractPrefix(beadID string) string {
 	if beadID == "" {
 		return ""
 	}
 
+	// Legacy behavior: stop at first hyphen.
+	// We'll keep this as the base case, but we should really be checking
+	// against routes if we want to handle complex prefixes like hq-qsq.
 	idx := strings.Index(beadID, "-")
 	if idx <= 0 {
 		return ""
 	}
 
 	return beadID[:idx+1]
+}
+
+// ExtractPrefixWithRoutes extracts the prefix from a bead ID by matching
+// against the known routes in routes.jsonl. This is the only way to correctly
+// disambiguate prefixes that contain hyphens (e.g., "hq-qsq.-" vs "hq-").
+func ExtractPrefixWithRoutes(beadID string, routes []Route) string {
+	if beadID == "" {
+		return ""
+	}
+
+	longest := ""
+	for _, r := range routes {
+		if strings.HasPrefix(beadID, r.Prefix) {
+			if len(r.Prefix) > len(longest) {
+				longest = r.Prefix
+			}
+		}
+	}
+
+	if longest != "" {
+		return longest
+	}
+
+	// Fallback to simple extraction
+	return ExtractPrefix(beadID)
 }
 
 // GetRigPathForPrefix returns the rig path for a given bead ID prefix.
@@ -338,7 +366,8 @@ func GetRigNameForPrefix(townRoot, prefix string) string {
 // rig via routes.jsonl, the resolved rig's beads directory is returned.
 // Returns currentBeadsDir if no routing is needed or prefix can't be resolved.
 func ResolveBeadsDirForID(currentBeadsDir, beadID string) string {
-	prefix := ExtractPrefix(beadID)
+	routes, _ := LoadRoutes(currentBeadsDir)
+	prefix := ExtractPrefixWithRoutes(beadID, routes)
 	if prefix == "" {
 		return currentBeadsDir
 	}

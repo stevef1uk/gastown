@@ -223,7 +223,8 @@ func (b *Beads) CreateAgentBead(id, title string, fields *AgentFields) (*Issue, 
 	// a routed BEADS_DIR can double-stack the path for imported rigs.
 	target := b
 	townRoot := b.getTownRoot()
-	if townRoot != "" && ExtractPrefix(id) != "" {
+	routes, _ := LoadRoutes(GetTownBeadsPath(townRoot))
+	if townRoot != "" && ExtractPrefixWithRoutes(id, routes) != "" {
 		target = NewWithBeadsDir(townRoot, filepath.Join(townRoot, ".beads"))
 	}
 
