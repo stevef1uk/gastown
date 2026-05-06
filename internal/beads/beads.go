@@ -928,7 +928,9 @@ func stripStdoutWarnings(data []byte) []byte {
 	var cleaned [][]byte
 	stripped := false
 	for _, line := range lines {
-		if bytes.HasPrefix(bytes.TrimSpace(line), []byte("warning:")) {
+		trimmed := bytes.TrimSpace(line)
+		lower := bytes.ToLower(trimmed)
+		if bytes.HasPrefix(lower, []byte("warning:")) || bytes.HasPrefix(lower, []byte("note:")) {
 			stripped = true
 			continue
 		}

@@ -172,6 +172,7 @@ func (c *RigConfigSyncCheck) Run(ctx *CheckContext) *CheckResult {
 			beadsDir = filepath.Join(rigPath, ".beads")
 		}
 
+		metadataPath := filepath.Join(beadsDir, "metadata.json")
 		if _, err := os.Stat(beadsDir); os.IsNotExist(err) {
 			details = append(details, fmt.Sprintf("Rig %s is missing .beads directory at %s", rigName, beadsDir))
 			c.missingDoltDB = append(c.missingDoltDB, info)
@@ -181,7 +182,9 @@ func (c *RigConfigSyncCheck) Run(ctx *CheckContext) *CheckResult {
 			// Check issue-prefix in config.yaml
 			configYamlPath := filepath.Join(beadsDir, "config.yaml")
 			if data, err := os.ReadFile(configYamlPath); err == nil {
-				if !strings.Contains(string(data), "issue-prefix:") && expectedPrefix != "" {
+				// Check for both issue-prefix: and issue_prefix: (bd supports both)
+				hasPrefix := strings.Contains(string(data), "issue-prefix:") || strings.Contains(string(data), "issue_prefix:")
+				if !hasPrefix && expectedPrefix != "" {
 					c.missingPrefixCfg = append(c.missingPrefixCfg, info)
 					details = append(details, fmt.Sprintf("Rig %s .beads/config.yaml missing issue-prefix", rigName))
 				}
@@ -191,7 +194,6 @@ func (c *RigConfigSyncCheck) Run(ctx *CheckContext) *CheckResult {
 			}
 
 			// Check metadata.json for Dolt database
-			metadataPath := filepath.Join(beadsDir, "metadata.json")
 			if _, err := os.Stat(metadataPath); os.IsNotExist(err) {
 				details = append(details, fmt.Sprintf("Rig %s is missing .beads/metadata.json", rigName))
 				c.missingDoltDB = append(c.missingDoltDB, info)
