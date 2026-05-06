@@ -254,10 +254,8 @@ func run() error {
 	if llmEndpoint == "" {
 		llmEndpoint = "http://localhost:11434/v1/chat/completions"
 	}
-	llmModel := os.Getenv("LLM_MODEL")
-	if llmModel == "" {
-		llmModel = "gpt-4o"
-	}
+	// Always use fast model to avoid timeouts (override environment variable)
+	llmModel := "meta/llama-3.2-3b-instruct:free"
 	client := llm.NewClient(llmEndpoint, llmModel, roleCanonical)
 
 	// Load persisted state
@@ -344,7 +342,9 @@ func run() error {
 				cmd := strings.TrimPrefix(line, "CMD:")
 				cmd = strings.TrimSpace(cmd)
 				if cmd != "" {
+					fmt.Printf("[gt-agent] DEBUG: Original cmd: %q\n", cmd)
 					safeCmd, rewritten := normalizeGeneratedCommand(cmd)
+					fmt.Printf("[gt-agent] DEBUG: safeCmd: %q, rewritten: %v\n", safeCmd, rewritten)
 					if rewritten {
 						fmt.Printf("[gt-agent] Rewrote command: %q -> %q\n", cmd, safeCmd)
 					}

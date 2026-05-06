@@ -24,7 +24,7 @@ func NewClient(endpoint, model, role string) *Client {
 		endpoint: endpoint,
 		model:    model,
 		role:     role,
-		client:   &http.Client{Timeout: 120 * time.Second},
+		client:   &http.Client{Timeout: 300 * time.Second},
 	}
 }
 
