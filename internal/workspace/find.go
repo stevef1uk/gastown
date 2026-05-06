@@ -75,10 +75,20 @@ func FindOrError(startDir string) (string, error) {
 	return root, nil
 }
 
-// FindFromCwd locates the town root from the current working directory.
-// It prioritizes GT_TOWN_ROOT and GT_ROOT environment variables if set.
 func FindFromCwd() (string, error) {
-	// Priority 1: Environment variables (set by shell integration or session manager)
+	// Priority 1: Walk up from CWD. This ensures that if we are currently
+	// inside a workspace, we use it, even if GT_ROOT points elsewhere.
+	// This is critical for tests (which run in temp dirs) and for users
+	// who manage multiple towns.
+	cwd, err := os.Getwd()
+	if err == nil {
+		if root, err := Find(cwd); err == nil && root != "" {
+			return root, nil
+		}
+	}
+
+	// Priority 2: Environment variables (set by shell integration or session manager)
+	// This allows running commands from outside the workspace.
 	for _, envName := range []string{"GT_TOWN_ROOT", "GT_ROOT"} {
 		if townRoot := os.Getenv(envName); townRoot != "" {
 			// Verify it's actually a workspace
@@ -88,12 +98,7 @@ func FindFromCwd() (string, error) {
 		}
 	}
 
-	// Priority 2: Walk up from CWD
-	cwd, err := os.Getwd()
-	if err != nil {
-		return "", fmt.Errorf("getting current directory: %w", err)
-	}
-	return Find(cwd)
+	return "", ErrNotFound
 }
 
 // FindFromCwdOrError is like FindFromCwd but returns an error if not found.
