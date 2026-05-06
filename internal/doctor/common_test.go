@@ -54,6 +54,29 @@ case "$1:$2:$3" in
       exit 1
     fi
     ;;
+  create:*:*)
+    # Handle bd create --json --id=...
+    id=""
+    case "$*" in
+      *--id=*)
+        # Extract ID from --id=value or --id value
+        for arg in "$@"; do
+          case "$arg" in
+            --id=*) id="${arg#--id=}" ;;
+          esac
+        done
+        ;;
+    esac
+    if [ -n "$id" ]; then
+      echo "{\"id\": \"$id\", \"status\": \"open\", \"labels\": [\"gt:rig\"]}" > "$target/show-$id.json"
+    fi
+    case "$*" in
+      *--json*)
+        echo "{\"id\": \"${id:-created-id}\", \"status\": \"open\"}"
+        ;;
+    esac
+    exit 0
+    ;;
   *)
     # Fallback for other commands used in Fix
     exit 0
