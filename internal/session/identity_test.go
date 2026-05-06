@@ -128,14 +128,14 @@ func TestParseSessionName(t *testing.T) {
 		// Refinery (new format: <prefix>-<rig>-refinery)
 		{
 			name:       "refinery gastown",
-			session:    "gt-gastown-refinery",
+			session:    "hq-gt-gastown-refinery",
 			wantRole:   RoleRefinery,
 			wantRig:    "gastown",
 			wantPrefix: "gt",
 		},
 		{
 			name:       "refinery multi-word prefix",
-			session:    "mp-refinery",
+			session:    "hq-mp-refinery",
 			wantRole:   RoleRefinery,
 			wantRig:    "my-project",
 			wantPrefix: "mp",
@@ -151,7 +151,7 @@ func TestParseSessionName(t *testing.T) {
 		},
 		{
 			name:       "architect beads",
-			session:    "bd-architect",
+			session:    "hq-bd-architect",
 			wantRole:   RoleArchitect,
 			wantRig:    "beads",
 			wantPrefix: "bd",
@@ -167,7 +167,7 @@ func TestParseSessionName(t *testing.T) {
 		},
 		{
 			name:       "qa beads",
-			session:    "bd-qa",
+			session:    "hq-bd-qa",
 			wantRole:   RoleQA,
 			wantRig:    "beads",
 			wantPrefix: "bd",
@@ -311,12 +311,12 @@ func TestAgentIdentity_SessionName(t *testing.T) {
 		{
 			name:     "witness",
 			identity: AgentIdentity{Role: RoleWitness, Rig: "gastown", Prefix: "gt"},
-			want:     "gt-gastown-witness",
+			want:     "hq-gt-gastown-witness",
 		},
 		{
 			name:     "refinery",
 			identity: AgentIdentity{Role: RoleRefinery, Rig: "beads", Prefix: "bd"},
-			want:     "bd-beads-refinery",
+			want:     "hq-bd-beads-refinery",
 		},
 		{
 			name:     "architect",
@@ -438,8 +438,8 @@ func TestParseSessionName_RoundTrip(t *testing.T) {
 		"hq-deacon",
 		"hq-planner",
 		"hq-dog-alpha",
-		"gt-gastown-witness",
-		"bd-beads-refinery",
+		"hq-gt-gastown-witness",
+		"hq-bd-beads-refinery",
 		"hq-gt-gastown-architect",
 		"hq-bd-beads-qa",
 		"gt-crew-max",

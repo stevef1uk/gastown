@@ -35,7 +35,7 @@ func PlannerSessionName() string {
 // rigName is the name of the rig (e.g., "testgt1").
 func WitnessSessionName(rigPrefix, rigName string) string {
 	prefix := rigPrefix
-	if !strings.HasPrefix(prefix, HQPrefix) {
+	if !strings.HasPrefix(prefix, HQPrefix) && prefix != "hq" {
 		prefix = HQPrefix + prefix
 	}
 	if rigName == "" || rigName == rigPrefix {
@@ -54,7 +54,7 @@ func WitnessSessionNameForRig(rigName string) string {
 // rigName is the name of the rig (e.g., "testgt1").
 func RefinerySessionName(rigPrefix, rigName string) string {
 	prefix := rigPrefix
-	if !strings.HasPrefix(prefix, HQPrefix) {
+	if !strings.HasPrefix(prefix, HQPrefix) && prefix != "hq" {
 		prefix = HQPrefix + prefix
 	}
 	if rigName == "" || rigName == rigPrefix {
@@ -71,7 +71,7 @@ func RefinerySessionNameForRig(rigName string) string {
 // ArchitectSessionName returns the session name for a rig's Architect agent.
 func ArchitectSessionName(rigPrefix, rigName string) string {
 	prefix := rigPrefix
-	if !strings.HasPrefix(prefix, HQPrefix) {
+	if !strings.HasPrefix(prefix, HQPrefix) && prefix != "hq" {
 		prefix = HQPrefix + prefix
 	}
 	if rigName == "" || rigName == rigPrefix {
@@ -83,7 +83,7 @@ func ArchitectSessionName(rigPrefix, rigName string) string {
 // QASessionName returns the session name for a rig's QA agent.
 func QASessionName(rigPrefix, rigName string) string {
 	prefix := rigPrefix
-	if !strings.HasPrefix(prefix, HQPrefix) {
+	if !strings.HasPrefix(prefix, HQPrefix) && prefix != "hq" {
 		prefix = HQPrefix + prefix
 	}
 	if rigName == "" || rigName == rigPrefix {

@@ -191,6 +191,14 @@ func AgentEnv(cfg AgentEnvConfig) map[string]string {
 	// See: https://github.com/steveyegge/beads/issues/2241
 	env["BD_BACKUP_ENABLED"] = "false"
 
+	// Set BD and GT_BD to "gt bd" to redirect standalone bd calls to the 
+	// Gas Town routing-aware wrapper. This ensures that agents calling 
+	// "bd mol current mol-witness-patrol" from within a rig correctly 
+	// resolve to the town-level .beads directory.
+	env["BD"] = "gt bd"
+	env["GT_BD"] = "gt bd"
+
+
 	// Clear NODE_OPTIONS to prevent debugger flags (e.g., --inspect from VSCode)
 	// from being inherited through tmux into Claude's Node.js runtime.
 	// This is the PRIMARY guard: setting it here (the single source of truth

@@ -91,8 +91,38 @@ func init() {
 	beadCmd.AddCommand(beadMoveCmd)
 	beadCmd.AddCommand(beadShowCmd)
 	beadCmd.AddCommand(beadReadCmd)
+	beadCmd.AddCommand(beadMolCmd)
 	rootCmd.AddCommand(beadCmd)
 }
+
+var beadMolCmd = &cobra.Command{
+	Use:                "mol <subcommand> [args]",
+	Short:              "Molecule commands (routes by prefix)",
+	DisableFlagParsing: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return runBeadMolProxy(cmd, args)
+	},
+}
+
+func runBeadMolProxy(cmd *cobra.Command, args []string) error {
+	if len(args) == 0 {
+		return BdCmd("mol", "--help").Run()
+	}
+
+	// Look for a molecule ID or bead ID in the arguments to use for routing.
+	// Molecule commands often take an ID as the second argument: bd mol current <id>
+	var routingID string
+	if len(args) >= 2 && !strings.HasPrefix(args[1], "-") {
+		routingID = args[1]
+	}
+
+	c := BdCmd(append([]string{"mol"}, args...)...)
+	if routingID != "" {
+		c.Dir(resolveBeadDir(routingID)).StripBeadsDir()
+	}
+	return c.Run()
+}
+
 
 // moveBeadInfo holds the essential fields we need to copy when moving beads
 type moveBeadInfo struct {

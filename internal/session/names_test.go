@@ -45,10 +45,10 @@ func TestWitnessSessionName(t *testing.T) {
 		rigName   string
 		want      string
 	}{
-		{"gt", "gastown", "gt-gastown-witness"},
-		{"bd", "beads", "bd-beads-witness"},
-		{"hop", "greenplace", "hop-greenplace-witness"},
-		{"gt", "", "gt-witness"}, // compatibility case
+		{"gt", "gastown", "hq-gt-gastown-witness"},
+		{"bd", "beads", "hq-bd-beads-witness"},
+		{"hop", "greenplace", "hq-hop-greenplace-witness"},
+		{"gt", "", "hq-gt-witness"}, // compatibility case
 	}
 	for _, tt := range tests {
 		t.Run(tt.rigPrefix+"/"+tt.rigName, func(t *testing.T) {
@@ -66,9 +66,9 @@ func TestRefinerySessionName(t *testing.T) {
 		rigName   string
 		want      string
 	}{
-		{"gt", "gastown", "gt-gastown-refinery"},
-		{"bd", "beads", "bd-beads-refinery"},
-		{"hop", "greenplace", "hop-greenplace-refinery"},
+		{"gt", "gastown", "hq-gt-gastown-refinery"},
+		{"bd", "beads", "hq-bd-beads-refinery"},
+		{"hop", "greenplace", "hq-hop-greenplace-refinery"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.rigPrefix+"/"+tt.rigName, func(t *testing.T) {

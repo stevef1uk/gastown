@@ -107,10 +107,10 @@ func (p *NatsProvider) Start(ctx context.Context, sessionID, workDir, command st
 		}
 	}
 
-	// Create a log file for the wrapper itself (debug)
+	// Create a log file for the session
 	logDir := filepath.Join(p.townRoot, "logs", "sessions")
 	_ = os.MkdirAll(logDir, 0755)
-	logFile, err := os.Create(filepath.Join(logDir, sessionID+".wrapper.log"))
+	logFile, err := os.Create(filepath.Join(logDir, sessionID+".log"))
 	if err == nil {
 		cmd.Stdout = logFile
 		cmd.Stderr = logFile

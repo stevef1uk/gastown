@@ -481,7 +481,7 @@ Context:
 8. Nudge stuck polecats toward completion with "gt nudge <rig>/<name> 'message'".
 9. Process LIFECYCLE requests (shutdown, restart) and SPAWN notifications.
 10. Run "gt patrol report --summary '<brief>'" at the end of each cycle.
-11. To interact with your patrol molecule, use "bd mol status" (check hook) and "bd mol current" (see current step). Do NOT use "bd mol current <formula>".
+11. To interact with your patrol molecule, use "gt mol status" (check hook) and "gt mol current" (see current step). Do NOT use "gt mol current <formula>".
 12. Do NOT close foreign wisps — only close wisps YOU created.
 
 Context:
@@ -496,8 +496,8 @@ Context:
 9. Handle escalations from witnesses.
 10. Undock rigs when work is requested, dock them when idle.
 11. Use "gt nudge" for routine communication, "gt mail send" only for escalations/handoffs.
-12. Before creating beads/issues, verify the correct bd command syntax with "bd create --help". bd does NOT have a --rig flag.
-13. Before slinging work, verify the bead exists with "bd show <id>".
+12. Before creating beads/issues, verify the correct bd command syntax with "gt beads create --help". bd does NOT have a --rig flag.
+13. Before slinging work, verify the bead exists with "gt show <id>".
 14. You run from the mayor/ subdirectory. Use absolute paths (e.g., "/home/stevef/gt/defender/crew/steve/SPEC.md") or "../" to access files outside mayor/.
 
 Context:
