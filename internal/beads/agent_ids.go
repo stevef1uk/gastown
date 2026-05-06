@@ -414,6 +414,18 @@ func ParseAgentBeadID(id string) (rig, role, name string, ok bool) {
 		return "", "", "", false
 	}
 
+	// If prefix is 'hq' (town-level storage), the first part of the rest
+	// might be a rig prefix (e.g., hq-gt-gastown-witness). Strip it to
+	// ensure the rig name is parsed correctly.
+	if prefix == TownBeadsPrefix && len(parts) > 1 {
+		// Only strip if first part looks like a prefix (2-3 chars)
+		// and isn't a role keyword (like 'dog' or 'mayor').
+		p0 := parts[0]
+		if len(p0) >= 2 && len(p0) <= 3 && !isValidRole(p0) {
+			parts = parts[1:]
+		}
+	}
+
 	// Single part: town-level role (gt-mayor) or collapsed rig-level (ff-witness)
 	if len(parts) == 1 {
 		r := parts[0]
