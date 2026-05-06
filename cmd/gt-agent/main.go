@@ -255,7 +255,7 @@ func run() error {
 		llmEndpoint = "http://localhost:11434/v1/chat/completions"
 	}
 	llmTimeoutStr := os.Getenv("LLM_TIMEOUT")
-	llmTimeout := 300 * time.Second
+	llmTimeout := 600 * time.Second
 	if llmTimeoutStr != "" {
 		if d, err := time.ParseDuration(llmTimeoutStr); err == nil {
 			llmTimeout = d
@@ -483,11 +483,8 @@ func canonicalRole(role string) string {
 // safe canonical forms to avoid guaranteed molecule lookup failures.
 func normalizeGeneratedCommand(cmd string) (string, bool) {
 	trimmed := strings.TrimSpace(cmd)
-	if strings.HasPrefix(trimmed, "bd mol current ") {
-		arg := strings.TrimSpace(strings.TrimPrefix(trimmed, "bd mol current "))
-		if strings.HasPrefix(arg, "mol-") {
-			return "gt mol current", true
-		}
+	if strings.HasPrefix(trimmed, "bd mol current") {
+		return "gt mol current", true
 	}
 	return cmd, false
 }
@@ -530,7 +527,8 @@ Run an abbreviated patrol with these rules:
 - check-timer-gates: Skip entirely.
 - check-swarm: Skip entirely.
 - patrol-cleanup: Skip entirely.
-- context-check: Quick self-assessment only (one sentence).`
+- context-check: Quick self-assessment only (one sentence).
+- loop-or-exit: Normal (await-signal as usual).`
 		}
 
 		return fmt.Sprintf(`You are a Gas Town %s. You execute a LINEAR patrol:
