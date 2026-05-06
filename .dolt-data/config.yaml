@@ -1,0 +1,20 @@
+# Dolt SQL server configuration — managed by Gas Town (gt dolt start)
+# Do not edit manually; changes are overwritten on each server start.
+# To customize, set Gas Town environment variables:
+#   GT_DOLT_PORT, GT_DOLT_HOST, GT_DOLT_USER, GT_DOLT_PASSWORD, GT_DOLT_LOGLEVEL
+
+log_level: warning
+
+listener:
+  port: 3307
+  max_connections: 1000
+  read_timeout_millis: 300000
+  write_timeout_millis: 300000
+
+data_dir: "/home/stevef/dev/freeride/gastown/.dolt-data"
+
+behavior:
+  dolt_transaction_commit: false
+  auto_gc_behavior:
+    enable: true
+    archive_level: 1

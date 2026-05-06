@@ -10,8 +10,8 @@ I've completed a thorough exploration of the three new agent roles in the `pr/qa
 - [x] Add Planner wait-for-Architect guidance and spec reference requirements in `gastown/internal/templates/roles/planner.md.tmpl`
 - [x] Add ADR storage guidance to `gastown/internal/templates/roles/architect.md.tmpl`
 - [x] Add Planner/Architect readiness enforcement beyond documentation
-- [ ] Add unified progress status bead concept
-- [ ] Add mandatory code coverage/security threshold enforcement for QA
+- [x] Add unified progress status bead concept
+- [x] Add mandatory code coverage/security threshold enforcement for QA
 
 ---
 
@@ -223,4 +223,40 @@ Mayor can query `bd show --type=status --parent=<spec-id>` to see progress.
 
 ---
 
-**Session notes saved to session memory for reference.**
+## ✅ Final Implementation: QA Coverage/Security Enforcement
+
+**Added mandatory code coverage and security threshold enforcement to QA approval process:**
+
+### Code Coverage Checks
+- Added `--min-coverage` flag (default: 80.0%) to `gt qa approve`
+- Validates coverage reports exist before approval
+- Checks for common coverage file locations (coverage/, target/site/jacoco/, htmlcov/)
+- Fails approval if coverage requirements not met
+
+### Security Compliance Checks  
+- Added `--require-security` flag to `gt qa approve`
+- Auto-detects security-sensitive code patterns (auth, database, API, network)
+- Requires security review documentation for sensitive tasks
+- Checks for security review artifacts (security-review.md, SECURITY.md, .security)
+
+### Implementation Details
+- **File**: `gastown/internal/cmd/qa.go`
+- **Functions**: `checkCodeCoverage()`, `checkSecurityCompliance()`
+- **Validation**: Runs before QA approval label is applied
+- **Error Handling**: Clear error messages for missing coverage/security requirements
+
+**Usage Examples:**
+```bash
+# Standard approval with 80% coverage minimum
+gt qa approve gt-task-123
+
+# Require security review for sensitive task
+gt qa approve gt-task-456 --require-security
+
+# Custom coverage threshold
+gt qa approve gt-task-789 --min-coverage 90.0
+```
+
+---
+
+**All critical QA workflow gaps have been addressed. The system now enforces quality standards automatically.**

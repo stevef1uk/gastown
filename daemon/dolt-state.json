@@ -1,0 +1,10 @@
+{
+  "running": true,
+  "pid": 2977780,
+  "port": 3307,
+  "started_at": "2026-05-06T05:52:49.524852724+02:00",
+  "data_dir": "/home/stevef/dev/freeride/gastown/.dolt-data",
+  "databases": [
+    "hq"
+  ]
+}

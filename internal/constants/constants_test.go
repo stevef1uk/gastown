@@ -30,7 +30,7 @@ func TestRoleEmoji(t *testing.T) {
 
 func TestBeadsCustomTypesList(t *testing.T) {
 	types := BeadsCustomTypesList()
-	expected := []string{"agent", "role", "rig", "convoy", "slot", "queue", "event", "message", "molecule", "gate", "merge-request"}
+	expected := []string{"agent", "role", "rig", "convoy", "slot", "queue", "event", "message", "molecule", "gate", "merge-request", "progress"}
 
 	if len(types) != len(expected) {
 		t.Fatalf("BeadsCustomTypesList() returned %d items, want %d", len(types), len(expected))
@@ -38,6 +38,20 @@ func TestBeadsCustomTypesList(t *testing.T) {
 	for i, typ := range types {
 		if typ != expected[i] {
 			t.Errorf("BeadsCustomTypesList()[%d] = %q, want %q", i, typ, expected[i])
+		}
+	}
+}
+
+func TestBeadsCustomStatusesList(t *testing.T) {
+	statuses := BeadsCustomStatusesList()
+	expected := []string{"staged_ready", "staged_warnings", "spec_received", "planning_complete", "arch_review_complete", "implementation_done", "qa_approved", "ready_for_merge"}
+
+	if len(statuses) != len(expected) {
+		t.Fatalf("BeadsCustomStatusesList() returned %d items, want %d", len(statuses), len(expected))
+	}
+	for i, status := range statuses {
+		if status != expected[i] {
+			t.Errorf("BeadsCustomStatusesList()[%d] = %q, want %q", i, status, expected[i])
 		}
 	}
 }

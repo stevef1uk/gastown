@@ -1200,6 +1200,11 @@ func runDone(cmd *cobra.Command, args []string) (retErr error) {
 				goto notifyWitness
 			}
 
+			// Update progress status to ready for merge
+			if err := bd.UpdateProgressStatus(issueID, "ready_for_merge"); err != nil {
+				style.PrintWarning("failed to update progress status: %v", err)
+			}
+
 			// gt-gpy: Validate that the MR bead landed in the rig's database.
 			// If the source bead has a cross-rig prefix (e.g., hq-), the routing
 			// could still resolve to the wrong database despite Rig: rigName.
