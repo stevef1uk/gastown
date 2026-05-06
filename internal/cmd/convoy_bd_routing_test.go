@@ -245,6 +245,9 @@ case "$1" in
     echo '[{"id":"hq-cv-test"}]'
     ;;
   init|config)
+    if [ "$1" = "config" ] && [ "$2" = "get" ]; then
+      echo "agent,role,rig,convoy,slot,queue,event,message,molecule,gate,merge-request"
+    fi
     exit 0
     ;;
   *)
