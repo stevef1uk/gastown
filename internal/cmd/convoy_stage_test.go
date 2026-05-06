@@ -1460,6 +1460,9 @@ func TestDetectWarnings_ParkedRig(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(townRoot, ".beads"), 0o755); err != nil {
 		t.Fatalf("failed to create .beads: %v", err)
 	}
+	if err := os.MkdirAll(filepath.Join(townRoot, "mayor"), 0o755); err != nil {
+		t.Fatalf("failed to create mayor: %v", err)
+	}
 	oldDir, _ := os.Getwd()
 	if err := os.Chdir(townRoot); err != nil {
 		t.Fatalf("failed to chdir: %v", err)
@@ -1506,6 +1509,9 @@ func TestDetectWarnings_DockedRig(t *testing.T) {
 	townRoot := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(townRoot, ".beads"), 0o755); err != nil {
 		t.Fatalf("failed to create .beads: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(townRoot, "mayor"), 0o755); err != nil {
+		t.Fatalf("failed to create mayor: %v", err)
 	}
 	oldDir, _ := os.Getwd()
 	if err := os.Chdir(townRoot); err != nil {
