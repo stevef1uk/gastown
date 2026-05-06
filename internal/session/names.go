@@ -3,6 +3,7 @@ package session
 
 import (
 	"fmt"
+	"strings"
 )
 
 // DefaultPrefix is the default beads prefix used when no rig-specific prefix is known.
@@ -60,23 +61,27 @@ func RefinerySessionNameForRig(rigName string) string {
 }
 
 // ArchitectSessionName returns the session name for a rig's Architect agent.
-// rigPrefix is the rig's beads prefix (e.g., "gt" for gastown, "bd" for beads).
-// rigName is the name of the rig (e.g., "testgt1").
 func ArchitectSessionName(rigPrefix, rigName string) string {
-	if rigName == "" || rigName == rigPrefix {
-		return fmt.Sprintf("%s-architect", rigPrefix)
+	prefix := rigPrefix
+	if !strings.HasPrefix(prefix, HQPrefix) {
+		prefix = HQPrefix + prefix
 	}
-	return fmt.Sprintf("%s-%s-architect", rigPrefix, rigName)
+	if rigName == "" || rigName == rigPrefix {
+		return fmt.Sprintf("%s-architect", prefix)
+	}
+	return fmt.Sprintf("%s-%s-architect", prefix, rigName)
 }
 
 // QASessionName returns the session name for a rig's QA agent.
-// rigPrefix is the rig's beads prefix (e.g., "gt" for gastown, "bd" for beads).
-// rigName is the name of the rig (e.g., "testgt1").
 func QASessionName(rigPrefix, rigName string) string {
-	if rigName == "" || rigName == rigPrefix {
-		return fmt.Sprintf("%s-qa", rigPrefix)
+	prefix := rigPrefix
+	if !strings.HasPrefix(prefix, HQPrefix) {
+		prefix = HQPrefix + prefix
 	}
-	return fmt.Sprintf("%s-%s-qa", rigPrefix, rigName)
+	if rigName == "" || rigName == rigPrefix {
+		return fmt.Sprintf("%s-qa", prefix)
+	}
+	return fmt.Sprintf("%s-%s-qa", prefix, rigName)
 }
 
 // CrewSessionName returns the session name for a crew worker in a rig.

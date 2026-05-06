@@ -879,9 +879,11 @@ func outputAutonomousDirective(ctx RoleContext, hookedBead *beads.Issue, hasMole
 		fmt.Println("2. This bead has an ATTACHED MOLECULE (formula workflow)")
 		fmt.Println("3. Work through molecule steps in order - see CURRENT STEP below")
 		fmt.Println("4. Close each step with `bd close <step-id>`, then check `bd mol current` for next step")
+		fmt.Println("   Note: Valid statuses are open, in_progress, blocked, deferred, closed. DO NOT use 'started'.")
 	} else {
 		fmt.Printf("2. Then IMMEDIATELY run: `bd show %s`\n", hookedBead.ID)
 		fmt.Println("3. Begin execution - no waiting for user input")
+		fmt.Println("   Note: Valid statuses are open, in_progress, blocked, deferred, closed. DO NOT use 'started'.")
 	}
 
 	// Polecats MUST call gt done — this is the single most important instruction.

@@ -76,10 +76,6 @@ func FindOrError(startDir string) (string, error) {
 }
 
 func FindFromCwd() (string, error) {
-	// Priority 1: Walk up from CWD. This ensures that if we are currently
-	// inside a workspace, we use it, even if GT_ROOT points elsewhere.
-	// This is critical for tests (which run in temp dirs) and for users
-	// who manage multiple towns.
 	cwd, err := os.Getwd()
 	if err == nil {
 		if root, err := Find(cwd); err == nil && root != "" {
@@ -87,11 +83,8 @@ func FindFromCwd() (string, error) {
 		}
 	}
 
-	// Priority 2: Environment variables (set by shell integration or session manager)
-	// This allows running commands from outside the workspace.
 	for _, envName := range []string{"GT_TOWN_ROOT", "GT_ROOT"} {
 		if townRoot := os.Getenv(envName); townRoot != "" {
-			// Verify it's actually a workspace
 			if ok, _ := IsWorkspace(townRoot); ok {
 				return townRoot, nil
 			}
@@ -131,25 +124,30 @@ func FindFromCwdWithFallback() (townRoot string, cwd string, err error) {
 }
 
 // IsWorkspace checks if the given directory is a Gas Town workspace root.
-// A directory is a workspace if it has a primary marker (mayor/town.json)
-// or a secondary marker (mayor/ directory).
 func IsWorkspace(dir string) (bool, error) {
 	absDir, err := filepath.Abs(dir)
 	if err != nil {
 		return false, fmt.Errorf("resolving path: %w", err)
 	}
 
-	// Check for primary marker (mayor/town.json)
+	// Check for the primary marker (mayor/town.json)
 	primaryPath := filepath.Join(absDir, PrimaryMarker)
 	if _, err := os.Stat(primaryPath); err == nil {
 		return true, nil
 	}
 
-	// Check for secondary marker (mayor/ directory)
+	// Fallback to secondary marker (mayor/ directory) ONLY if it contains rig data
+	// or other town-specific markers, to avoid matching Go packages.
 	secondaryPath := filepath.Join(absDir, SecondaryMarker)
 	info, err := os.Stat(secondaryPath)
 	if err == nil && info.IsDir() {
-		return true, nil
+		// If it's a directory named "mayor", check if it contains rigs.json or town.json
+		if _, err := os.Stat(filepath.Join(secondaryPath, "rigs.json")); err == nil {
+			return true, nil
+		}
+		if _, err := os.Stat(filepath.Join(secondaryPath, "town.json")); err == nil {
+			return true, nil
+		}
 	}
 
 	return false, nil

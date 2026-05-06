@@ -1351,6 +1351,10 @@ func renderAgentDetails(w io.Writer, agent AgentRuntime, indent string, hooks []
 				agentBeadID = beads.WitnessBeadIDWithPrefix(prefix, rig)
 			} else if parts[1] == constants.RoleRefinery {
 				agentBeadID = beads.RefineryBeadIDWithPrefix(prefix, rig)
+			} else if parts[1] == constants.RoleArchitect {
+				agentBeadID = beads.ArchitectBeadIDWithPrefix(prefix, rig)
+			} else if parts[1] == constants.RoleQA {
+				agentBeadID = beads.QABeadIDWithPrefix(prefix, rig)
 			} else if len(parts) == 2 {
 				// polecat: rig/name
 				agentBeadID = beads.PolecatBeadIDWithPrefix(prefix, rig, parts[1])
