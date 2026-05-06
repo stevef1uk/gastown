@@ -26,6 +26,7 @@ type RigConfigSyncCheck struct {
 	missingRigBeads  []rigBeadInfo     // Rigs missing identity beads
 	missingDoltDB    []rigCheckInfo    // Rigs missing Dolt database
 	missingPrefixCfg []rigCheckInfo    // Rigs missing issue-prefix in config.yaml
+	missingPrefixDB  []rigCheckInfo    // Rigs missing issue-prefix in Dolt database
 	dbNameMismatches []dbMismatch      // Dolt database name doesn't match prefix
 }
 
@@ -88,6 +89,7 @@ func (c *RigConfigSyncCheck) Run(ctx *CheckContext) *CheckResult {
 	c.missingRigBeads = nil
 	c.missingDoltDB = nil
 	c.missingPrefixCfg = nil
+	c.missingPrefixDB = nil
 	c.dbNameMismatches = nil
 	var details []string
 	var rigsToCheck []rigCheckInfo
@@ -221,6 +223,32 @@ func (c *RigConfigSyncCheck) Run(ctx *CheckContext) *CheckResult {
 			}
 		}
 
+		// Check issue_prefix in Dolt database if metadata.json exists
+		if _, err := os.Stat(metadataPath); err == nil {
+			bd := beads.NewWithBeadsDir(rigPath, beadsDir)
+			// Query the config table directly. If missing or empty, it's an issue.
+			out, err := bd.SQL("select value from config where `key` = 'issue_prefix'")
+			if err == nil {
+				var rows []struct {
+					Value string `json:"value"`
+				}
+				if err := json.Unmarshal(out, &rows); err == nil {
+					if len(rows) == 0 || rows[0].Value == "" {
+						c.missingPrefixDB = append(c.missingPrefixDB, info)
+						details = append(details, fmt.Sprintf("Rig %s database is missing issue_prefix in config table", rigName))
+					}
+				}
+			} else {
+				// If table doesn't exist or SQL fails, we treat it as missing prefix config
+				// unless it's a connection error which is handled by other checks.
+				errStr := err.Error()
+				if strings.Contains(errStr, "not found") || strings.Contains(errStr, "config") {
+					c.missingPrefixDB = append(c.missingPrefixDB, info)
+					details = append(details, fmt.Sprintf("Rig %s database is missing config table or issue_prefix", rigName))
+				}
+			}
+		}
+
 		// Check for rig identity bead
 		rigBeadID := beads.RigBeadIDWithPrefix(expectedPrefix, rigName)
 		bd := beads.NewWithBeadsDir(rigPath, beadsDir)
@@ -239,7 +267,7 @@ func (c *RigConfigSyncCheck) Run(ctx *CheckContext) *CheckResult {
 	}
 
 	// Check for summary
-	issueCount := len(c.missingConfig) + len(c.prefixMismatches) + len(c.missingRigBeads) + len(c.missingDoltDB) + len(c.missingPrefixCfg) + len(c.dbNameMismatches)
+	issueCount := len(c.missingConfig) + len(c.prefixMismatches) + len(c.missingRigBeads) + len(c.missingDoltDB) + len(c.missingPrefixCfg) + len(c.missingPrefixDB) + len(c.dbNameMismatches)
 	if issueCount == 0 {
 		return &CheckResult{
 			Name:    c.Name(),
@@ -262,7 +290,10 @@ func (c *RigConfigSyncCheck) Run(ctx *CheckContext) *CheckResult {
 		parts = append(parts, fmt.Sprintf("%d missing Dolt DB(s)", len(c.missingDoltDB)))
 	}
 	if len(c.missingPrefixCfg) > 0 {
-		parts = append(parts, fmt.Sprintf("%d missing issue-prefix", len(c.missingPrefixCfg)))
+		parts = append(parts, fmt.Sprintf("%d missing issue-prefix (yaml)", len(c.missingPrefixCfg)))
+	}
+	if len(c.missingPrefixDB) > 0 {
+		parts = append(parts, fmt.Sprintf("%d missing issue-prefix (db)", len(c.missingPrefixDB)))
 	}
 	if len(c.dbNameMismatches) > 0 {
 		parts = append(parts, fmt.Sprintf("%d DB name mismatch(es)", len(c.dbNameMismatches)))
@@ -345,6 +376,32 @@ func (c *RigConfigSyncCheck) Fix(ctx *CheckContext) error {
 		// If metadata.json exists but config.yaml is missing, we already created config.yaml above.
 		if _, err := os.Stat(configYamlPath); os.IsNotExist(err) {
 			_ = os.WriteFile(configYamlPath, []byte("issue-prefix: "+info.prefix+"\n"), 0644)
+		}
+	}
+
+	// Fix missing issue-prefix in Dolt database
+	for _, info := range c.missingPrefixDB {
+		prefix := info.prefix
+		if prefix == "" {
+			prefix = "hq"
+		}
+		// Ensure prefix doesn't have trailing dash for the DB config value
+		dbPrefix := strings.TrimSuffix(prefix, "-")
+
+		beadsDir := filepath.Join(info.path, "mayor", "rig", ".beads")
+		if info.isTownRoot {
+			beadsDir = filepath.Join(info.path, ".beads")
+		}
+
+		bd := beads.NewWithBeadsDir(info.path, beadsDir)
+
+		// 1. Ensure config table exists
+		_, _ = bd.SQL("create table if not exists config (`key` varchar(255) primary key, `value` varchar(255))")
+
+		// 2. Insert or update issue_prefix
+		query := fmt.Sprintf("replace into config (`key`, `value`) values ('issue_prefix', '%s')", dbPrefix)
+		if _, err := bd.SQL(query); err != nil {
+			return fmt.Errorf("could not set issue_prefix in database for %s: %w", info.name, err)
 		}
 	}
 

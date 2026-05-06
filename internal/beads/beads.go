@@ -587,6 +587,12 @@ func (b *Beads) Run(args ...string) ([]byte, error) {
 	return b.run(args...)
 }
 
+// SQL executes a SQL query on the beads database.
+// This uses bd sql --json and returns the JSON output.
+func (b *Beads) SQL(query string) ([]byte, error) {
+	return b.run("sql", "--json", query)
+}
+
 // wrapError wraps bd errors with context.
 // ZFC: Avoid parsing stderr to make decisions. Transport errors to agents instead.
 // Exception: ErrNotInstalled (exec.ErrNotFound) and ErrNotFound (issue lookup) are
