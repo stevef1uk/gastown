@@ -48,7 +48,7 @@ func setupTestManager(t *testing.T) (*Manager, string) {
 func TestManager_SessionName(t *testing.T) {
 	mgr, _ := setupTestManager(t)
 
-	want := "hq-xut-testrig-refinery"
+	want := "xut-testrig-refinery"
 	got := mgr.SessionName()
 	if got != want {
 		t.Errorf("SessionName() = %s, want %s", got, want)
