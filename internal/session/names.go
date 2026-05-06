@@ -34,10 +34,14 @@ func PlannerSessionName() string {
 // rigPrefix is the rig's beads prefix (e.g., "gt" for gastown, "bd" for beads).
 // rigName is the name of the rig (e.g., "testgt1").
 func WitnessSessionName(rigPrefix, rigName string) string {
-	if rigName == "" || rigName == rigPrefix {
-		return fmt.Sprintf("%s-witness", rigPrefix)
+	prefix := rigPrefix
+	if !strings.HasPrefix(prefix, HQPrefix) {
+		prefix = HQPrefix + prefix
 	}
-	return fmt.Sprintf("%s-%s-witness", rigPrefix, rigName)
+	if rigName == "" || rigName == rigPrefix {
+		return fmt.Sprintf("%s-witness", prefix)
+	}
+	return fmt.Sprintf("%s-%s-witness", prefix, rigName)
 }
 
 // WitnessSessionNameForRig returns the session name for a rig's Witness agent by rig name.
@@ -49,10 +53,14 @@ func WitnessSessionNameForRig(rigName string) string {
 // rigPrefix is the rig's beads prefix (e.g., "gt" for gastown, "bd" for beads).
 // rigName is the name of the rig (e.g., "testgt1").
 func RefinerySessionName(rigPrefix, rigName string) string {
-	if rigName == "" || rigName == rigPrefix {
-		return fmt.Sprintf("%s-refinery", rigPrefix)
+	prefix := rigPrefix
+	if !strings.HasPrefix(prefix, HQPrefix) {
+		prefix = HQPrefix + prefix
 	}
-	return fmt.Sprintf("%s-%s-refinery", rigPrefix, rigName)
+	if rigName == "" || rigName == rigPrefix {
+		return fmt.Sprintf("%s-refinery", prefix)
+	}
+	return fmt.Sprintf("%s-%s-refinery", prefix, rigName)
 }
 
 // RefinerySessionNameForRig returns the session name for a rig's Refinery agent by rig name.

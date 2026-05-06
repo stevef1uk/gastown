@@ -118,8 +118,23 @@ type SessionInfo struct {
 // SessionName generates the tmux session name for a polecat.
 // Validates that the polecat name doesn't contain the rig prefix to prevent
 // double-prefix bugs (e.g., "gt-gastown_manager-gastown_manager-142").
-func (m *SessionManager) SessionName(polecat string) string {
-	sessionName := session.PolecatSessionName(session.PrefixFor(m.rig.Name), polecat)
+func (m *SessionManager) SessionName(polecatName string) string {
+	prefix := session.PrefixFor(m.rig.Name)
+	var sessionName string
+
+	// Use specialized naming for rig-level preset agents
+	switch polecatName {
+	case "witness", m.rig.Name+"-witness":
+		sessionName = session.WitnessSessionName(prefix, m.rig.Name)
+	case "refinery", m.rig.Name+"-refinery":
+		sessionName = session.RefinerySessionName(prefix, m.rig.Name)
+	case "architect", m.rig.Name+"-architect":
+		sessionName = session.ArchitectSessionName(prefix, m.rig.Name)
+	case "qa", m.rig.Name+"-qa":
+		sessionName = session.QASessionName(prefix, m.rig.Name)
+	default:
+		sessionName = session.PolecatSessionName(prefix, polecatName)
+	}
 
 	// Validate session name format to detect double-prefix bugs
 	if err := validateSessionName(sessionName, m.rig.Name); err != nil {
@@ -147,6 +162,13 @@ func validateSessionName(sessionName, rigName string) error {
 	// Check if name part starts with rig name followed by hyphen
 	// This indicates overflow name included rig prefix: gt-<rig>-<rig>-N
 	if strings.HasPrefix(namePart, rigName+"-") {
+		// Allow canonical preset agent naming: <rig>-witness, <rig>-refinery, etc.
+		suffix := strings.TrimPrefix(namePart, rigName+"-")
+		switch suffix {
+		case "witness", "refinery", "architect", "qa":
+			return nil
+		}
+
 		return fmt.Errorf("double-prefix detected: %s (expected format: gt-%s-<name>)",
 			sessionName, rigName)
 	}
