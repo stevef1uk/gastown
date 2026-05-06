@@ -275,21 +275,37 @@ func findAgentCmdline(panePid string) string {
 		if isAgentCmdline(childCmd) {
 			return childCmd
 		}
-		// Check grandchildren (cgroup-wrap → agent)
-		gcPath := "/proc/" + childPid + "/task/" + childPid + "/children"
-		gcBytes, err := os.ReadFile(gcPath)
-		if err != nil {
-			continue
-		}
-		for _, gcPid := range strings.Fields(string(gcBytes)) {
-			gcCmd := readCmdline(gcPid)
-			if isAgentCmdline(gcCmd) {
-				return gcCmd
-			}
+		// Check descendants recursively (to handle nats-wrapper -> script -> agent)
+		if desc := findAgentDescendant(childPid, 2); desc != "" {
+			return desc
 		}
 	}
 
 	return cmdline // return pane process cmdline as fallback
+}
+
+// findAgentDescendant searches for an agent process in the descendant tree
+// up to a certain depth.
+func findAgentDescendant(pid string, depth int) string {
+	if depth <= 0 {
+		return ""
+	}
+	childrenPath := "/proc/" + pid + "/task/" + pid + "/children"
+	childrenBytes, err := os.ReadFile(childrenPath)
+	if err != nil {
+		return ""
+	}
+	children := strings.Fields(string(childrenBytes))
+	for _, childPid := range children {
+		cmd := readCmdline(childPid)
+		if isAgentCmdline(cmd) {
+			return cmd
+		}
+		if desc := findAgentDescendant(childPid, depth-1); desc != "" {
+			return desc
+		}
+	}
+	return ""
 }
 
 // isAgentCmdline returns true if the cmdline contains a known agent,
@@ -675,11 +691,15 @@ func gatherStatus() (TownStatus, error) {
 		ctx := context.Background()
 		if natsSessions, err := natsProvider.List(ctx); err == nil {
 			for _, s := range natsSessions {
-				if _, exists := allSessions[s]; !exists {
-					// Verify the process is actually alive before marking as running
-					if alive, _ := natsProvider.Exists(ctx, s); alive {
-						allSessions[s] = true
-					}
+				// Verify the process is actually alive before marking as running
+				if alive, _ := natsProvider.Exists(ctx, s); alive {
+					// If NATS says it's alive, it's alive! This correctly handles
+					// the case where a stale tmux session with the same name exists.
+					allSessions[s] = true
+				} else if _, exists := allSessions[s]; !exists {
+					// Only set to false if it doesn't exist already (don't overwrite
+					// a true from tmux, though NATS is usually the source of truth now).
+					allSessions[s] = false
 				}
 			}
 		}
@@ -1070,11 +1090,22 @@ func outputStatusText(w io.Writer, status TownStatus) error {
 				parts = append(parts, fmt.Sprintf("dolt %s", style.Dim.Render(fmt.Sprintf("(stopped, :%d)", status.Dolt.Port))))
 			}
 		}
+		// Only show tmux if it's the active provider or has sessions
 		if status.Tmux != nil {
-			if status.Tmux.Running {
-				parts = append(parts, fmt.Sprintf("tmux %s", style.Dim.Render(fmt.Sprintf("(-L %s, PID %d, %d sessions, %s)", status.Tmux.Socket, status.Tmux.PID, status.Tmux.SessionCount, status.Tmux.SocketPath))))
-			} else {
-				parts = append(parts, fmt.Sprintf("tmux %s", style.Dim.Render(fmt.Sprintf("(-L %s, no server)", status.Tmux.Socket))))
+			sp := session.GetDefaultProvider(status.Location)
+			showTmux := false
+			if _, ok := sp.(*session.TmuxProvider); ok {
+				showTmux = true
+			} else if status.Tmux.SessionCount > 0 && status.Tmux.Running {
+				showTmux = true
+			}
+
+			if showTmux {
+				if status.Tmux.Running {
+					parts = append(parts, fmt.Sprintf("tmux %s", style.Dim.Render(fmt.Sprintf("(-L %s, PID %d, %d sessions, %s)", status.Tmux.Socket, status.Tmux.PID, status.Tmux.SessionCount, status.Tmux.SocketPath))))
+				} else {
+					parts = append(parts, fmt.Sprintf("tmux %s", style.Dim.Render(fmt.Sprintf("(-L %s, no server)", status.Tmux.Socket))))
+				}
 			}
 		}
 		if status.ACP != nil {
