@@ -78,6 +78,10 @@ func ResolveRoutingTarget(townRoot, beadID, fallbackDir string) string {
 	// Look up rig path for this prefix
 	rigPath := GetRigPathForPrefix(townRoot, prefix)
 	if rigPath == "" {
+		// Town-level prefixes (hq-, mol-) resolve to the town beads directory
+		if prefix == "hq-" || prefix == "mol-" {
+			return GetTownBeadsPath(townRoot)
+		}
 		fmt.Fprintf(os.Stderr, "Warning: no route found for prefix %q (bead %s), falling back to %s\n", prefix, beadID, fallbackDir)
 		return fallbackDir
 	}

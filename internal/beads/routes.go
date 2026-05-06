@@ -400,6 +400,15 @@ func ResolveBeadsDirForID(currentBeadsDir, beadID string) string {
 		}
 	}
 
+	// Not found in rig routes — check for town-level prefixes (hq-, mol-).
+	// These always resolve to the town beads directory unless overridden by a rig route.
+	if prefix == "hq-" || prefix == "mol-" {
+		// If we haven't already resolved to townBeadsDir, do it now.
+		if townRoot := FindTownRoot(filepath.Dir(currentBeadsDir)); townRoot != "" {
+			return filepath.Join(townRoot, ".beads")
+		}
+	}
+
 	return currentBeadsDir
 }
 
