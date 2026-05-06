@@ -260,9 +260,12 @@ func runHook(_ *cobra.Command, args []string) error {
 	}
 
 	// Find town root - needed for bd routing and agent bead updates
-	townRoot, err := workspace.FindFromCwd()
-	if err != nil {
-		return fmt.Errorf("finding town root: %w", err)
+	townRoot := os.Getenv("GT_ROOT")
+	if townRoot == "" {
+		townRoot, _ = workspace.FindFromCwd()
+	}
+	if townRoot == "" {
+		return fmt.Errorf("finding town root: not in a workspace")
 	}
 	townBeadsDir := filepath.Join(townRoot, ".beads")
 
@@ -403,7 +406,11 @@ func runHook(_ *cobra.Command, args []string) error {
 	// Emit a propulsion signal if the target is the mayor.
 	// This allows the ACP propeller to react to hook changes event-driven.
 	if agentID == "mayor/" {
-		if townRoot, err := workspace.FindFromCwd(); err == nil && townRoot != "" {
+		townRoot := os.Getenv("GT_ROOT")
+		if townRoot == "" {
+			townRoot, _ = workspace.FindFromCwd()
+		}
+		if townRoot != "" {
 			session := "hq-mayor"
 			message := fmt.Sprintf("Hook updated: attached bead %s", beadID)
 			_ = nudge.Enqueue(townRoot, session, nudge.QueuedNudge{
@@ -490,7 +497,11 @@ func runHookShow(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("not in a beads workspace: %w", err)
 	}
 	if len(args) > 0 && !isTownLevelRole(target) {
-		townRoot, townErr := workspace.FindFromCwd()
+		townRoot := os.Getenv("GT_ROOT")
+		var townErr error
+		if townRoot == "" {
+			townRoot, townErr = workspace.FindFromCwd()
+		}
 		if townErr == nil && townRoot != "" {
 			agentBeadID := agentIDToBeadID(target, townRoot)
 			if agentBeadID != "" {
@@ -658,5 +669,9 @@ func sessionNameToCanonicalAddress(sessionName, targetHint string) (string, bool
 
 // findTownRoot finds the Gas Town root directory.
 func findTownRoot() (string, error) {
+	townRoot := os.Getenv("GT_ROOT")
+	if townRoot != "" {
+		return townRoot, nil
+	}
 	return workspace.FindFromCwd()
 }

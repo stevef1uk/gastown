@@ -322,9 +322,9 @@ func runMoleculeStatus(cmd *cobra.Command, args []string) error {
 	}
 
 	// Find town root
-	townRoot, err := workspace.FindFromCwd()
-	if err != nil {
-		return fmt.Errorf("finding workspace: %w", err)
+	townRoot := os.Getenv("GT_ROOT")
+	if townRoot == "" {
+		townRoot, _ = workspace.FindFromCwd()
 	}
 	if townRoot == "" {
 		return fmt.Errorf("not in a Gas Town workspace")
@@ -948,9 +948,9 @@ func runMoleculeCurrent(cmd *cobra.Command, args []string) error {
 	}
 
 	// Find town root
-	townRoot, err := workspace.FindFromCwd()
-	if err != nil {
-		return fmt.Errorf("finding workspace: %w", err)
+	townRoot := os.Getenv("GT_ROOT")
+	if townRoot == "" {
+		townRoot, _ = workspace.FindFromCwd()
 	}
 	if townRoot == "" {
 		return fmt.Errorf("not in a Gas Town workspace")
