@@ -843,11 +843,10 @@ func startRigAgentPhase(rigNames []string, prefetchedRigs map[string]*rig.Rig, r
 // Respects parked/docked status - skips starting if rig is not operational.
 func upStartWitness(rigName string, r *rig.Rig) agentStartResult {
 	name := "Witness (" + rigName + ")"
+	rigPrefix := session.PrefixFor(rigName)
+	sessionID := session.WitnessSessionName(rigPrefix, rigName)
 
 	// Check if rig is parked or docked (wisp + bead labels).
-	// Skip the check if auto_start_on_up is set — that overrides dock status.
-	// Also check deprecated auto_start_on_boot for backwards compatibility with
-	// rigs that still have the old key in their config.
 	if !r.GetBoolConfig("auto_start_on_up") && !r.GetBoolConfig("auto_start_on_boot") {
 		townRoot := filepath.Dir(r.Path)
 		if blocked, reason := IsRigParkedOrDocked(townRoot, rigName); blocked {
@@ -858,22 +857,21 @@ func upStartWitness(rigName string, r *rig.Rig) agentStartResult {
 	mgr := witness.NewManager(r)
 	if err := mgr.Start(false, "", nil); err != nil {
 		if err == witness.ErrAlreadyRunning {
-			return agentStartResult{name: name, ok: true, detail: mgr.SessionName()}
+			return agentStartResult{name: name, ok: true, detail: sessionID}
 		}
 		return agentStartResult{name: name, ok: false, detail: err.Error()}
 	}
-	return agentStartResult{name: name, ok: true, detail: mgr.SessionName()}
+	return agentStartResult{name: name, ok: true, detail: sessionID}
 }
 
 // upStartRefinery starts a refinery for the given rig and returns a result struct.
 // Respects parked/docked status - skips starting if rig is not operational.
 func upStartRefinery(rigName string, r *rig.Rig) agentStartResult {
 	name := "Refinery (" + rigName + ")"
+	rigPrefix := session.PrefixFor(rigName)
+	sessionID := session.RefinerySessionName(rigPrefix, rigName)
 
 	// Check if rig is parked or docked (wisp + bead labels).
-	// Skip the check if auto_start_on_up is set — that overrides dock status.
-	// Also check deprecated auto_start_on_boot for backwards compatibility with
-	// rigs that still have the old key in their config.
 	if !r.GetBoolConfig("auto_start_on_up") && !r.GetBoolConfig("auto_start_on_boot") {
 		townRoot := filepath.Dir(r.Path)
 		if blocked, reason := IsRigParkedOrDocked(townRoot, rigName); blocked {
@@ -884,11 +882,11 @@ func upStartRefinery(rigName string, r *rig.Rig) agentStartResult {
 	mgr := refinery.NewManager(r)
 	if err := mgr.Start(false, ""); err != nil {
 		if err == refinery.ErrAlreadyRunning {
-			return agentStartResult{name: name, ok: true, detail: mgr.SessionName()}
+			return agentStartResult{name: name, ok: true, detail: sessionID}
 		}
 		return agentStartResult{name: name, ok: false, detail: err.Error()}
 	}
-	return agentStartResult{name: name, ok: true, detail: mgr.SessionName()}
+	return agentStartResult{name: name, ok: true, detail: sessionID}
 }
 
 // upStartArchitect starts an architect for the given rig and returns a result struct.

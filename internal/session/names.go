@@ -33,10 +33,7 @@ func PlannerSessionName() string {
 // rigPrefix is the rig's beads prefix (e.g., "gt" for gastown, "bd" for beads).
 // rigName is the name of the rig (e.g., "testgt1").
 func WitnessSessionName(rigPrefix, rigName string) string {
-	if rigName == "" || rigName == rigPrefix {
-		return fmt.Sprintf("%s-witness", rigPrefix)
-	}
-	return fmt.Sprintf("%s-%s-witness", rigPrefix, rigName)
+	return fmt.Sprintf("%s-witness", rigPrefix)
 }
 
 // WitnessSessionNameForRig returns the session name for a rig's Witness agent by rig name.
@@ -48,10 +45,7 @@ func WitnessSessionNameForRig(rigName string) string {
 // rigPrefix is the rig's beads prefix (e.g., "gt" for gastown, "bd" for beads).
 // rigName is the name of the rig (e.g., "testgt1").
 func RefinerySessionName(rigPrefix, rigName string) string {
-	if rigName == "" || rigName == rigPrefix {
-		return fmt.Sprintf("%s-refinery", rigPrefix)
-	}
-	return fmt.Sprintf("%s-%s-refinery", rigPrefix, rigName)
+	return fmt.Sprintf("%s-refinery", rigPrefix)
 }
 
 // RefinerySessionNameForRig returns the session name for a rig's Refinery agent by rig name.
@@ -63,20 +57,14 @@ func RefinerySessionNameForRig(rigName string) string {
 // rigPrefix is the rig's beads prefix (e.g., "gt" for gastown, "bd" for beads).
 // rigName is the name of the rig (e.g., "testgt1").
 func ArchitectSessionName(rigPrefix, rigName string) string {
-	if rigName == "" || rigName == rigPrefix {
-		return fmt.Sprintf("%s-architect", rigPrefix)
-	}
-	return fmt.Sprintf("%s-%s-architect", rigPrefix, rigName)
+	return fmt.Sprintf("%s-architect", rigPrefix)
 }
 
 // QASessionName returns the session name for a rig's QA agent.
 // rigPrefix is the rig's beads prefix (e.g., "gt" for gastown, "bd" for beads).
 // rigName is the name of the rig (e.g., "testgt1").
 func QASessionName(rigPrefix, rigName string) string {
-	if rigName == "" || rigName == rigPrefix {
-		return fmt.Sprintf("%s-qa", rigPrefix)
-	}
-	return fmt.Sprintf("%s-%s-qa", rigPrefix, rigName)
+	return fmt.Sprintf("%s-qa", rigPrefix)
 }
 
 // CrewSessionName returns the session name for a crew worker in a rig.

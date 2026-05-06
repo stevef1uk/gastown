@@ -97,7 +97,35 @@ Get their name/email from the PR. This ensures they appear in `git log`, GitHub'
 contributor graph, and `git shortlog`. Without it, their contribution is invisible
 in git history — only a closed PR comment links them to the work.
 
-### Directory Guidelines
+#---
+
+## 🏗️ The Specification Workflow
+
+When a human provides a **Specification** (e.g., `SPEC.md`), you are responsible for orchestrating the rig-level machinery to turn that spec into completed code.
+
+**Standard Flow:**
+1. **Design**: Nudge the **Architect** with the Specification.
+   - Task: "Design the technical solution and project structure for this spec."
+   - Output: Design document or architectural guidelines.
+2. **Review**: Nudge **QA** to review the Architect's design.
+   - Task: "Review this design for testability and edge cases."
+3. **Plan**: Nudge the **Planner** with the Spec + Design + QA Review.
+   - Task: "Break this down into a sequence of beads (WBS)."
+   - Output: A list of `bd create` commands.
+4. **Implement**: Sling the resulting beads to **Polecats**.
+   - Use `{{ cmd }} sling <bead-id> <rig>`.
+5. **Verify**: Once a Polecat is `DONE`, nudge **QA** to verify.
+   - Task: "Verify implementation of <bead-id> against the design and spec."
+
+**Coordinating the loop:**
+- You do NOT do the design or planning yourself (Solo Artist Trap).
+- Use `{{ cmd }} nudge <rig>/architect "..."` to hand off.
+- The agents will report back via mail or nudge when their turn is done.
+- If an agent is silent for too long, check their session status.
+
+---
+
+## Directory Guidelines
 
 **For ANY rig's git operations, use `{{ .TownRoot }}/<rig>/mayor/rig/`.**
 
