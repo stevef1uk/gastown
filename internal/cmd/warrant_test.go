@@ -188,10 +188,10 @@ func TestTargetToSessionName(t *testing.T) {
 		{"deacon/dogs", true, ""},
 		{"deacon/dogs/alpha", false, "hq-dog-alpha"},
 		{"gastown/crew/bob", false, "gt-crew-bob"},
-		{"gastown/witness", false, "gt-gastown-witness"},
-		{"gastown/refinery", false, "gt-gastown-refinery"},
-		{"beads/witness", false, "bd-beads-witness"},
-		{"beads/refinery", false, "bd-beads-refinery"},
+		{"gastown/witness", false, "hq-gt-gastown-witness"},
+		{"gastown/refinery", false, "hq-gt-gastown-refinery"},
+		{"beads/witness", false, "hq-bd-beads-witness"},
+		{"beads/refinery", false, "hq-bd-beads-refinery"},
 		{"unknownrig/something/else", false, "gt-unknownrig-something-else"},
 	}
 
