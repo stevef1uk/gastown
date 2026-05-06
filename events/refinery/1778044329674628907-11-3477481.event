@@ -1,0 +1,9 @@
+{
+  "channel": "refinery",
+  "payload": {
+    "message": "test message",
+    "source": "sling"
+  },
+  "timestamp": "2026-05-06T07:12:09+02:00",
+  "type": "MQ_SUBMIT"
+}

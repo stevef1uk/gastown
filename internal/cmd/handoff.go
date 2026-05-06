@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -1656,6 +1657,11 @@ func cleanupMoleculeOnHandoff() {
 // Crew and mayor roles are exempt — they hand off on human request,
 // not on patrol loops, so the cooldown just gets in the way.
 func enforceHandoffCooldown() {
+	// Skip cooldown in tests to avoid 2-minute delays (GH#1965)
+	if strings.HasSuffix(os.Args[0], ".test") || flag.Lookup("test.v") != nil {
+		return
+	}
+
 	if role := os.Getenv("GT_ROLE"); role != "" {
 		parsed, _, _ := parseRoleString(role)
 		switch parsed {
