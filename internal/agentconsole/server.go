@@ -270,13 +270,23 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 func (s *Server) discoverAgents() []Agent {
 	var agents []Agent
 
-	// Check for town-level agents (mayor, deacon, planner)
+	// Dynamically discover town-level agents from PID files.
 	// These use the 'hq-' prefix and live at the town root.
-	for _, role := range []string{"mayor", "deacon", "planner"} {
-		a := s.inspectAgent(role, "", role)
-		// Include if running, or if the role directory exists (signals it's part of the town)
-		if a.Status != "stopped" || fileExists(filepath.Join(s.townRoot, role)) {
-			agents = append(agents, a)
+	// Any PID file matching 'hq-<role>' (no additional dashes) is a town-level agent.
+	pidDir := filepath.Join(s.townRoot, ".gt-nats-pids")
+	if entries, err := os.ReadDir(pidDir); err == nil {
+		for _, entry := range entries {
+			if entry.IsDir() {
+				continue
+			}
+			name := entry.Name()
+			// Match town-level pattern: hq-<role> (exactly one dash after hq)
+			if strings.HasPrefix(name, "hq-") && !strings.Contains(name[len("hq-"):], "-") {
+				role := name[len("hq-"):]
+				sessionName := name // PID file name is the session name
+				a := s.inspectAgent(sessionName, "", role)
+				agents = append(agents, a)
+			}
 		}
 	}
 

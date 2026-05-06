@@ -371,6 +371,12 @@ func (d *Daemon) restartSession(sessionName, identity string) error {
 		d.syncWorkspace(workDir)
 	}
 
+	// Auto-create patrol wisp if needed (ensures mol-<role>-patrol exists)
+	if err := d.ensurePatrolWisp(parsed, workDir); err != nil {
+		d.logger.Printf("Warning: failed to ensure patrol wisp for %s: %v", identity, err)
+		// Non-fatal: agent will still start, may recover on next cycle
+	}
+
 	// Build startup command BEFORE creating the session so we can use
 	// NewSessionWithCommand (command as initial pane process). This eliminates
 	// the race condition in the old EnsureSessionFresh + SendKeys pattern where
@@ -404,6 +410,44 @@ func (d *Daemon) restartSession(sessionName, identity string) error {
 	}
 	time.Sleep(constants.ShutdownNotifyDelay)
 
+	return nil
+}
+
+// ensurePatrolWisp ensures the patrol molecule wisp exists for patrol agents.
+// For roles that use mol-<role>-patrol (witness, deacon, mayor, refinery),
+// this checks if the wisp exists and creates it if not.
+// This prevents "molecule not found" errors when the agent starts.
+func (d *Daemon) ensurePatrolWisp(parsed *ParsedIdentity, workDir string) error {
+	// Only patrol agents need this check
+	role := parsed.RoleType
+	if role != constants.RoleWitness && role != constants.RoleDeacon && role != constants.RoleMayor && role != constants.RoleRefinery {
+		return nil
+	}
+
+	// Construct formula name: mol-<role>-patrol
+	formulaName := fmt.Sprintf("mol-%s-patrol", role)
+
+	// Check if wisp already exists using bd mol current
+	checkCmd := exec.Command(d.bdPath, "mol", "current", formulaName)
+	checkCmd.Dir = workDir
+	if err := checkCmd.Run(); err == nil {
+		// Wisp already exists
+		d.logger.Printf("Patrol wisp %s already exists", formulaName)
+		return nil
+	}
+
+	// Wisp doesn't exist, create it using bd mol wisp
+	d.logger.Printf("Creating patrol wisp %s for %s", formulaName, role)
+	createCmd := exec.Command(d.bdPath, "mol", "wisp", formulaName)
+	createCmd.Dir = workDir
+	createCmd.Env = os.Environ()
+
+	output, err := createCmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("creating patrol wisp %s: %w (output: %s)", formulaName, err, string(output))
+	}
+
+	d.logger.Printf("Successfully created patrol wisp %s", formulaName)
 	return nil
 }
 
