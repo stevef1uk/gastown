@@ -475,12 +475,12 @@ func TestCheckAll_TownLevelAgent(t *testing.T) {
 // TestCheckAll_RigSingleton tests detection of rig-level singletons (witness, refinery)
 func TestCheckAll_RigSingleton(t *testing.T) {
 	mock := newMockHealthSource()
-	mock.agents["hq-gt-gastown-witness"] = &beads.Issue{
-		ID:        "hq-gt-gastown-witness",
+	mock.agents["gt-gastown-witness"] = &beads.Issue{
+		ID:        "gt-gastown-witness",
 		HookBead:  "",
 		UpdatedAt: time.Now().Add(-1 * time.Minute).Format(time.RFC3339),
 	}
-	mock.sessions["hq-gt-gastown-witness"] = true
+	mock.sessions["gt-gastown-witness"] = true
 
 	detector := NewStuckDetectorWithSource(mock)
 	agents, err := detector.CheckAll()
@@ -497,8 +497,8 @@ func TestCheckAll_RigSingleton(t *testing.T) {
 	if agents[0].Rig != "gastown" {
 		t.Errorf("expected rig 'gastown', got %q", agents[0].Rig)
 	}
-	if agents[0].SessionID != "hq-gt-gastown-witness" {
-		t.Errorf("expected session 'hq-gt-gastown-witness', got %q", agents[0].SessionID)
+	if agents[0].SessionID != "gt-gastown-witness" {
+		t.Errorf("expected session 'gt-gastown-witness', got %q", agents[0].SessionID)
 	}
 }
 
@@ -543,8 +543,8 @@ func TestDeriveSessionName(t *testing.T) {
 	}{
 		{"mayor", "", "mayor", "", "hq-mayor"},
 		{"deacon", "", "deacon", "", "hq-deacon"},
-		{"witness", "gastown", "witness", "", "hq-gt-gastown-witness"},
-		{"refinery", "gastown", "refinery", "", "hq-gt-gastown-refinery"},
+		{"witness", "gastown", "witness", "", "gt-gastown-witness"},
+		{"refinery", "gastown", "refinery", "", "gt-gastown-refinery"},
 		{"crew", "gastown", "crew", "joe", "gt-crew-joe"},
 		{"polecat", "gastown", "polecat", "Toast", "gt-Toast"},
 	}

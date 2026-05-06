@@ -206,9 +206,9 @@ func TestIdentityToSession_Witness(t *testing.T) {
 		identity string
 		expected string
 	}{
-		{"gastown-witness", "hq-gt-gastown-witness"},
-		{"myrig-witness", "hq-gt-myrig-witness"},
-		{"my-rig-name-witness", "hq-gt-my-rig-name-witness"},
+		{"gastown-witness", "gt-gastown-witness"},
+		{"myrig-witness", "gt-myrig-witness"},
+		{"my-rig-name-witness", "gt-my-rig-name-witness"},
 	}
 
 	for _, tc := range tests {
@@ -234,9 +234,9 @@ func TestIdentityToSession_WitnessWithPrefix(t *testing.T) {
 		identity string
 		expected string
 	}{
-		{"gastown-witness", "hq-gt-gastown-witness"},
-		{"beads-witness", "hq-bd-beads-witness"},
-		{"unknown-witness", "hq-gt-unknown-witness"}, // unknown rig falls back to DefaultPrefix
+		{"gastown-witness", "gt-gastown-witness"},
+		{"beads-witness", "bd-beads-witness"},
+		{"unknown-witness", "gt-unknown-witness"}, // unknown rig falls back to DefaultPrefix
 	}
 
 	for _, tc := range tests {
