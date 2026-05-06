@@ -64,6 +64,12 @@ func TestRigConfigSyncCheck_FixCreatesConfig(t *testing.T) {
 	if err := os.MkdirAll(mayorDir, 0755); err != nil {
 		t.Fatal(err)
 	}
+	// Create town.json
+	townConfigJSON := `{"type": "town", "version": 1, "name": "hq"}`
+	if err := os.WriteFile(filepath.Join(mayorDir, "town.json"), []byte(townConfigJSON), 0644); err != nil {
+		t.Fatal(err)
+	}
+
 
 	// Create rigs.json with one rig
 	rigsJSON := `{

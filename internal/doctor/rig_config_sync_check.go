@@ -106,7 +106,7 @@ func (c *RigConfigSyncCheck) Run(ctx *CheckContext) *CheckResult {
 	}
 	// Add town root rig
 	townName, err := workspace.GetTownName(ctx.TownRoot)
-	if err != nil {
+	if err != nil || townName == "" {
 		townName = "hq"
 	}
 	rigsToCheck = append(rigsToCheck, rigCheckInfo{
@@ -433,8 +433,12 @@ func (c *RigConfigSyncCheck) Fix(ctx *CheckContext) error {
 		}
 		
 		rigName := info.name
-		if !info.isTownRoot {
-			rigName = filepath.Base(info.path)
+		if rigName == "" {
+			if info.isTownRoot {
+				rigName = "hq"
+			} else {
+				rigName = filepath.Base(info.path)
+			}
 		}
 		_ = doltserver.EnsureMetadata(ctx.TownRoot, rigName)
 	}
