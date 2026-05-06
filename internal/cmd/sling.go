@@ -267,9 +267,13 @@ func runSling(cmd *cobra.Command, args []string) (retErr error) {
 
 	// Get town root early - needed for BEADS_DIR when running bd commands
 	// This ensures hq-* beads are accessible even when running from polecat worktree
-	townRoot, err := workspace.FindFromCwd()
-	if err != nil {
-		return fmt.Errorf("finding town root: %w", err)
+	townRoot := os.Getenv("GT_ROOT")
+	if townRoot == "" {
+		var err error
+		townRoot, err = workspace.FindFromCwd()
+		if err != nil {
+			return fmt.Errorf("finding town root: %w", err)
+		}
 	}
 	townBeadsDir := filepath.Join(townRoot, ".beads")
 

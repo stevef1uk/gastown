@@ -19,7 +19,10 @@ var resolveTargetAgentFn = resolveTargetAgent
 // resolveTargetAgent converts a target spec to agent ID, pane, and hook root.
 func resolveTargetAgent(target string) (agentID string, pane string, hookRoot string, err error) {
 	ctx := context.Background()
-	townRoot, _ := workspace.FindFromCwd()
+	townRoot := os.Getenv("GT_ROOT")
+	if townRoot == "" {
+		townRoot, _ = workspace.FindFromCwd()
+	}
 	provider := session.GetDefaultProvider(townRoot)
 
 	// First resolve to session name
@@ -204,6 +207,9 @@ func resolveTarget(target string, opts ResolveTargetOptions) (*ResolvedTarget, e
 	if rigName, isRig := IsRigName(target); isRig {
 		// Check if rig is parked or docked before dispatching (gt-4owfd.1, gt-11y)
 		townRoot := opts.TownRoot
+		if townRoot == "" {
+			townRoot = os.Getenv("GT_ROOT")
+		}
 		if townRoot == "" {
 			townRoot, _ = workspace.FindFromCwd()
 		}
