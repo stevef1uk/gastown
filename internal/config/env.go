@@ -181,6 +181,11 @@ func AgentEnv(cfg AgentEnvConfig) map[string]string {
 		env["GT_AGENT"] = cfg.Agent
 	}
 
+	// Set LLM_MODEL to a fast default to avoid timeouts.
+	// The 70b model is too slow from some regions (e.g., UK).
+	// Override with LLM_MODEL env var if user wants a different model.
+	env["LLM_MODEL"] = "meta/llama-3.2-3b-instruct:free"
+
 	// Disable bd's per-repo JSONL auto-backup for all Gas Town agents.
 	// bd auto-enables backup when a git remote exists, then force-adds
 	// .beads/backup/ files (bypassing .gitignore) and commits/pushes them

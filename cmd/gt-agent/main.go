@@ -254,9 +254,16 @@ func run() error {
 	if llmEndpoint == "" {
 		llmEndpoint = "http://localhost:11434/v1/chat/completions"
 	}
+	llmTimeoutStr := os.Getenv("LLM_TIMEOUT")
+	llmTimeout := 300 * time.Second
+	if llmTimeoutStr != "" {
+		if d, err := time.ParseDuration(llmTimeoutStr); err == nil {
+			llmTimeout = d
+		}
+	}
 	// Always use fast model to avoid timeouts (override environment variable)
 	llmModel := "meta/llama-3.2-3b-instruct:free"
-	client := llm.NewClient(llmEndpoint, llmModel, roleCanonical)
+	client := llm.NewClient(llmEndpoint, llmModel, roleCanonical, llmTimeout)
 
 	// Load persisted state
 	stateFile := statePath(townRoot, role, rig, polecat)
@@ -274,28 +281,34 @@ func run() error {
 		// Gather work from all sources
 		workItems := gatherWork(gtBin, townRoot, sessionName)
 
+		effortLevel := "full"
 		if len(workItems) == 0 {
-			state.IdleCycles++
-			sleep := sleepDuration(state.IdleCycles)
-			fmt.Printf("[gt-agent] No work (idle_cycle=%d), sleeping %s\n",
-				state.IdleCycles, sleep)
+			if !isPermanentAgent(role) {
+				state.IdleCycles++
+				sleep := sleepDuration(state.IdleCycles)
+				fmt.Printf("[gt-agent] No work (idle_cycle=%d), sleeping %s\n",
+					state.IdleCycles, sleep)
 
-			// Permanent agents (Mayor, Deacon, Witness, Refinery) never exit
-			// due to idle cycles. They run continuously and wait for work.
-			// Only polecats and crew workers exit when idle.
-			if !isPermanentAgent(role) && state.IdleCycles >= maxIdleCycles {
-				fmt.Println("[gt-agent] Max idle cycles reached, exiting")
+				if state.IdleCycles >= maxIdleCycles {
+					fmt.Println("[gt-agent] Max idle cycles reached, exiting")
+					_ = saveState(stateFile, state)
+					return nil
+				}
 				_ = saveState(stateFile, state)
-				return nil
-			}
-			if isPermanentAgent(role) && state.IdleCycles >= maxIdleCycles {
-				fmt.Println("[gt-agent] Permanent agent staying alive (no work, continuing patrol)")
-				state.IdleCycles = 0 // reset to keep sleep duration reasonable
+				time.Sleep(sleep)
+				continue
 			}
 
-			_ = saveState(stateFile, state)
-			time.Sleep(sleep)
-			continue
+			// Permanent agents use gt mol await-signal for effort tuning
+			fmt.Println("[gt-agent] No immediate work, awaiting signal...")
+			effortLevel = callAwaitSignal(gtBin, sessionName)
+			
+			// Re-gather work after signal (or timeout)
+			workItems = gatherWork(gtBin, townRoot, sessionName)
+			if len(workItems) == 0 {
+				// Routine patrol cycle on timeout
+				workItems = append(workItems, "Perform a routine patrol cycle.")
+			}
 		}
 
 		// Reset idle counter when work is found
@@ -313,7 +326,7 @@ func run() error {
 		primeOut, _ := exec.Command(gtBin, "prime", "--hook").Output()
 
 		// Build role-specific system prompt
-		systemPrompt := buildSystemPrompt(roleCanonical, state.PatrolCount, string(primeOut))
+		systemPrompt := buildSystemPrompt(roleCanonical, state.PatrolCount, string(primeOut), effortLevel)
 
 		// Build user prompt from work items
 		userPrompt := "Execute the following work and report results:\n\n"
@@ -480,7 +493,7 @@ func normalizeGeneratedCommand(cmd string) (string, bool) {
 }
 
 // buildSystemPrompt returns a role-specific system prompt for the LLM.
-func buildSystemPrompt(role string, patrolCount int, primeContext string) string {
+func buildSystemPrompt(role string, patrolCount int, primeContext, effortLevel string) string {
 	baseRules := `You have access to shell commands. Execute work step by step.
 Rules:
 1. Only run commands that are standard Unix utilities or known to exist (git, ls, cat, grep, etc.)
@@ -489,41 +502,54 @@ Rules:
 4. After all commands, output "DONE:" followed by a summary of what was accomplished
 5. If you cannot complete the work, output "DONE: Could not complete because ..."
 6. You are patrol cycle #%d for this agent session.
-7. NEVER output decorative banners, box-drawing characters (═, █, etc.), or emoji-only lines as commands
-8. ONLY output actual executable shell commands after "CMD: " - text that cannot be run in a shell is not a command
-9. VERIFY command success before proceeding: if a CMD fails, STOP and report the failure in DONE. Do NOT silently continue.
-10. Do NOT guess command flags or filenames. If unsure, use "ls" to verify paths or "<command> --help" to check flags first.
-11. Filenames are case-sensitive. Verify exact case with "ls" before referencing files.
-12. Do NOT claim success in DONE if any step failed. Report partial or full failure honestly.
-13. IMPORTANT: Your working directory is <town_root>/<role>/. For example, the mayor runs from ~/gt/mayor/. To access files in other directories (e.g., rig directories), use absolute paths or "../". NEVER assume you are in the town root.`
+7. EFFORT LEVEL: %s
+8. NEVER output decorative banners, box-drawing characters (═, █, etc.), or emoji-only lines as commands
+9. ONLY output actual executable shell commands after "CMD: " - text that cannot be run in a shell is not a command
+10. VERIFY command success before proceeding: if a CMD fails, STOP and report the failure in DONE. Do NOT silently continue.
+11. Do NOT guess command flags or filenames. If unsure, use "ls" to verify paths or "<command> --help" to check flags first.
+12. Filenames are case-sensitive. Verify exact case with "ls" before referencing files.
+13. Do NOT claim success in DONE if any step failed. Report partial or full failure honestly.
+14. IMPORTANT: Your working directory is <town_root>/<role>/. For example, the mayor runs from ~/gt/mayor/. To access files in other directories (e.g., rig directories), use absolute paths or "../". NEVER assume you are in the town root.`
 
 	switch role {
-	case "deacon":
-		return fmt.Sprintf(`You are a Gas Town DEACON. You execute the mol-deacon-patrol formula to monitor and maintain town health.
+	case "deacon", "witness":
+		roleName := "DEACON"
+		if role == "witness" {
+			roleName = "WITNESS"
+		}
+		
+		effortInstruction := ""
+		if effortLevel == "abbreviated" {
+			effortInstruction = `
+### ABBREVIATED PATROL MODE (EFFORT: reduced)
+Run an abbreviated patrol with these rules:
+- inbox-check: Run "gt mail drain" only. Skip individual message processing unless drain reports new HELP messages.
+- process-cleanups: Skip entirely (say "Abbreviated: skipping cleanups").
+- check-refinery: Quick "gt session status" checks only. Skip queue health analysis and deacon health.
+- survey-workers: Run "gt patrol scan --notify" only. Skip orphaned bead detection.
+- check-timer-gates: Skip entirely.
+- check-swarm: Skip entirely.
+- patrol-cleanup: Skip entirely.
+- context-check: Quick self-assessment only (one sentence).`
+		}
+
+		return fmt.Sprintf(`You are a Gas Town %s. You execute a LINEAR patrol:
+inbox-check ─► process-cleanups ─► check-refinery ─► survey-workers ─► check-timer-gates ─► check-swarm ─► patrol-cleanup ─► context-check ─► loop-or-exit
 
 %s
-7. Execute ALL patrol formula steps in order. Do NOT skip steps — even "boring" ones.
-8. Run "gt deacon heartbeat" as the FIRST command of every patrol cycle.
-9. Include a step audit in your summary: "Steps: heartbeat OK | inbox OK | orphan-cleanup OK | ..."
-10. Run "gt patrol report --summary '<brief>'" as the LAST command to close the patrol wisp.
-11. If you encounter errors, note them and continue with remaining steps.
-
-Context:
-%s`, fmt.Sprintf(baseRules, patrolCount), primeContext)
-
-	case "witness":
-		return fmt.Sprintf(`You are a Gas Town WITNESS. You monitor polecats and handle lifecycle requests. You execute the mol-witness-patrol formula for per-rig worker monitoring.
-
+15. Beads over mail: survey-workers discovers completion state from agent bead metadata (gt-w0br); inbox-check POLECAT_DONE is fallback only.
+16. Persistent by default: Clean polecats go idle, sandbox preserved for reuse (gt-4ac).
+17. Cleanup wisps for merge tracking: Created when MR is pending in refinery.
+18. Task tool for parallelism: Subagents inspect polecats, not molecule arms.
+19. Swim lane discipline: Only close wisps YOU created. Wisp lifecycle for non-witness wisps is the reaper Dog's job. Report orphaned foreign wisps — never close them.
+20. Execute ALL patrol formula steps in order. Do NOT skip steps unless in abbreviated mode.
+21. Run "gt %s heartbeat" as the FIRST command of every patrol cycle.
+22. Include a step audit in your summary: "Steps: heartbeat OK | inbox OK | orphan-cleanup OK | ..."
+23. Run "gt patrol report --summary '<brief>'" as the LAST command to close the patrol wisp.
 %s
-7. Check all polecats with "gt polecat list" and "gt session status".
-8. Nudge stuck polecats toward completion with "gt nudge <rig>/<name> 'message'".
-9. Process LIFECYCLE requests (shutdown, restart) and SPAWN notifications.
-10. Run "gt patrol report --summary '<brief>'" at the end of each cycle.
-11. To interact with your patrol molecule, use "gt mol status" (check hook) and "gt mol current" (see current step). Do NOT use "gt mol current <formula>".
-12. Do NOT close foreign wisps — only close wisps YOU created.
 
 Context:
-%s`, fmt.Sprintf(baseRules, patrolCount), primeContext)
+%s`, roleName, fmt.Sprintf(baseRules, patrolCount, effortLevel), strings.ToLower(roleName), effortInstruction, primeContext)
 
 	case "mayor":
 		return fmt.Sprintf(`You are a Gas Town MAYOR. You coordinate work across all rigs.
@@ -558,11 +584,11 @@ Context:
 		return fmt.Sprintf(`You are a Gas Town agent with role: %s.
 
 %s
-7. Focus on the assigned work. Do NOT run status-checking commands unless needed for your task.
-8. Call "gt done" when your work is complete.
+15. Focus on the assigned work. Do NOT run status-checking commands unless needed for your task.
+16. Call "gt done" when your work is complete.
 
 Context:
-%s`, role, fmt.Sprintf(baseRules, patrolCount), primeContext)
+%s`, role, fmt.Sprintf(baseRules, patrolCount, effortLevel), primeContext)
 	}
 }
 
@@ -616,4 +642,19 @@ func gatherWork(gtBin, townRoot, sessionName string) []string {
 	}
 
 	return workItems
+}
+
+// callAwaitSignal calls gt mol await-signal and returns the effort level.
+func callAwaitSignal(gtBin, agentBead string) string {
+	args := []string{"mol", "await-signal", "--agent-bead", agentBead,
+		"--backoff-base", "30s", "--backoff-mult", "2", "--backoff-max", "15m"}
+	
+	cmd := exec.Command(gtBin, args...)
+	out, _ := cmd.CombinedOutput()
+	output := string(out)
+	
+	if strings.Contains(output, "EFFORT: reduced") {
+		return "abbreviated"
+	}
+	return "full"
 }

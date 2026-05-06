@@ -19,12 +19,15 @@ type Client struct {
 }
 
 // NewClient creates a new LLM client.
-func NewClient(endpoint, model, role string) *Client {
+func NewClient(endpoint, model, role string, timeout time.Duration) *Client {
+	if timeout <= 0 {
+		timeout = 300 * time.Second
+	}
 	return &Client{
 		endpoint: endpoint,
 		model:    model,
 		role:     role,
-		client:   &http.Client{Timeout: 300 * time.Second},
+		client:   &http.Client{Timeout: timeout},
 	}
 }
 
