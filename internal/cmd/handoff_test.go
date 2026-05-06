@@ -753,6 +753,7 @@ func TestRecordHandoffTime(t *testing.T) {
 // - Cooldown triggers when last handoff was recent
 // - No cooldown when enough time has passed
 func TestEnforceHandoffCooldown(t *testing.T) {
+	t.Setenv("GT_FORCE_HANDOFF_COOLDOWN", "true")
 	t.Run("no cooldown without previous handoff", func(t *testing.T) {
 		t.Setenv("GT_ROLE", "")
 		tmpDir := t.TempDir()
