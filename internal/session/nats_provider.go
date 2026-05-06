@@ -2,6 +2,7 @@ package session
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -418,12 +419,43 @@ func (p *NatsProvider) EnsureSessionFresh(ctx context.Context, sessionID, workDi
 }
 
 func (p *NatsProvider) WaitForRuntimeReady(ctx context.Context, sessionID string, rc *config.RuntimeConfig, timeout time.Duration) error {
-	// For NATS, we don't have prompt-based detection yet.
-	// We just check if the agent is running.
-	running, _ := p.IsAgentRunning(ctx, sessionID)
-	if !running {
-		return fmt.Errorf("agent not running")
+	deadlineCtx := ctx
+	cancel := func() {}
+	if timeout > 0 {
+		deadlineCtx, cancel = context.WithTimeout(ctx, timeout)
 	}
+	defer cancel()
+
+	// Wait for the wrapped process to appear.
+	for {
+		running, _ := p.IsAgentRunning(deadlineCtx, sessionID)
+		if running {
+			break
+		}
+		select {
+		case <-deadlineCtx.Done():
+			return fmt.Errorf("agent not running")
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
+
+	// Honor the shared runtime delay floor used by startup fallback.
+	// NATS does not support prompt-based readiness detection yet, so delay
+	// is our only transport-agnostic readiness gate.
+	if rc != nil && rc.Tmux != nil && rc.Tmux.ReadyDelayMs > 0 {
+		delay := time.Duration(rc.Tmux.ReadyDelayMs) * time.Millisecond
+		timer := time.NewTimer(delay)
+		defer timer.Stop()
+		select {
+		case <-deadlineCtx.Done():
+			if errors.Is(deadlineCtx.Err(), context.DeadlineExceeded) {
+				return fmt.Errorf("runtime ready timeout after %s", timeout)
+			}
+			return deadlineCtx.Err()
+		case <-timer.C:
+		}
+	}
+
 	return nil
 }
 

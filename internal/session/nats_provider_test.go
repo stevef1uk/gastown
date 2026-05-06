@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/steveyegge/gastown/internal/config"
 	"github.com/steveyegge/gastown/internal/tmux"
 )
 
@@ -449,5 +450,49 @@ func TestProviderInterface_Consistency(t *testing.T) {
 			_, _ = tc.p.GetMainPID(ctx, sessionID)
 			_, _ = tc.p.CleanupOrphanedSessions(func(string) bool { return true })
 		})
+	}
+}
+
+func TestNatsProvider_WaitForRuntimeReady_HonorsDelay(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("NATS provider not supported on Windows")
+	}
+
+	tmpDir := t.TempDir()
+	p, err := NewNatsProvider(tmpDir, "")
+	if err != nil {
+		t.Skipf("NATS not available: %v", err)
+	}
+	defer p.Close()
+
+	ctx := context.Background()
+	sessionID := "test-ready-delay-session"
+	if err := p.Start(ctx, sessionID, tmpDir, "sleep 60", nil); err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+	defer p.Stop(ctx, sessionID, false)
+
+	rc := &config.RuntimeConfig{Tmux: &config.RuntimeTmuxConfig{ReadyDelayMs: 200}}
+	start := time.Now()
+	if err := p.WaitForRuntimeReady(ctx, sessionID, rc, 2*time.Second); err != nil {
+		t.Fatalf("WaitForRuntimeReady failed: %v", err)
+	}
+	if elapsed := time.Since(start); elapsed < 200*time.Millisecond {
+		t.Fatalf("WaitForRuntimeReady elapsed %v, want >= 200ms", elapsed)
+	}
+}
+
+func TestNatsProvider_WaitForRuntimeReady_TimesOutWhenNotRunning(t *testing.T) {
+	tmpDir := t.TempDir()
+	p, err := NewNatsProvider(tmpDir, "")
+	if err != nil {
+		t.Skipf("NATS not available: %v", err)
+	}
+	defer p.Close()
+
+	ctx := context.Background()
+	err = p.WaitForRuntimeReady(ctx, "missing-session", nil, 200*time.Millisecond)
+	if err == nil {
+		t.Fatal("WaitForRuntimeReady should fail for non-running session")
 	}
 }
