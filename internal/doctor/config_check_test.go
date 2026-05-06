@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 
@@ -678,8 +679,11 @@ func TestCustomStatusesCheck_UsesRigScopedBeadsDir(t *testing.T) {
 		t.Fatalf("Fix failed: %v", err)
 	}
 
-	if got := readConfigCheckFile(t, rigBeadsDir, "status.custom"); got != "queued,"+constants.BeadsCustomStatuses {
-		t.Fatalf("rig status.custom = %q", got)
+	merged := append(strings.Split(constants.BeadsCustomStatuses, ","), "queued")
+	sort.Strings(merged)
+	want := strings.Join(merged, ",")
+	if got := readConfigCheckFile(t, rigBeadsDir, "status.custom"); got != want {
+		t.Fatalf("rig status.custom = %q, want %q", got, want)
 	}
 	if got := readConfigCheckFile(t, townBeadsDir, "status.custom"); got != constants.BeadsCustomStatuses {
 		t.Fatalf("town status.custom changed unexpectedly: %q", got)

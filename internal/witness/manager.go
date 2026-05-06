@@ -59,7 +59,7 @@ func (m *Manager) IsHealthy(maxInactivity time.Duration) tmux.ZombieStatus {
 
 // SessionName returns the session name for this witness.
 func (m *Manager) SessionName() string {
-	return session.WitnessSessionName(session.PrefixFor(m.rig.Name))
+	return session.WitnessSessionName(session.PrefixFor(m.rig.Name), m.rig.Name)
 }
 
 // Status returns information about the witness session.

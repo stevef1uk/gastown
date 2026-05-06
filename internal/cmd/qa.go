@@ -126,7 +126,7 @@ func runQAStart(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("starting QA: %s", result.detail)
 	}
 
-	if result.detail == session.QASessionName(session.PrefixFor(rigName)) {
+	if result.detail == session.QASessionName(session.PrefixFor(rigName), rigName) {
 		fmt.Printf("%s QA is already running for %s\n", style.Dim.Render("⚠"), rigName)
 	} else {
 		fmt.Printf("%s QA started for %s\n", style.Bold.Render("✓"), rigName)
@@ -142,7 +142,7 @@ func runQAStop(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	sessionID := session.QASessionName(session.PrefixFor(rigName))
+	sessionID := session.QASessionName(session.PrefixFor(rigName), rigName)
 	sp := session.GetDefaultProvider(townRoot)
 	ctx := context.Background()
 
@@ -183,7 +183,7 @@ func runQAAttach(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	sessionID := session.QASessionName(session.PrefixFor(rigName))
+	sessionID := session.QASessionName(session.PrefixFor(rigName), rigName)
 	sp := session.GetDefaultProvider(townRoot)
 	ctx := context.Background()
 

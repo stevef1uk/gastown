@@ -51,7 +51,7 @@ func TestDeriveSessionName(t *testing.T) {
 				"GT_ROLE": "witness",
 				"GT_RIG":  "gastown",
 			},
-			expected: "gt-witness",
+			expected: "gt-gastown-witness",
 		},
 		{
 			name: "refinery session",
@@ -59,7 +59,7 @@ func TestDeriveSessionName(t *testing.T) {
 				"GT_ROLE": "refinery",
 				"GT_RIG":  "gastown",
 			},
-			expected: "gt-refinery",
+			expected: "gt-gastown-refinery",
 		},
 		{
 			name: "mayor session",
@@ -108,7 +108,7 @@ func TestDeriveSessionName(t *testing.T) {
 				"GT_RIG":     "gastown",
 				"GT_POLECAT": "toast",
 			},
-			expected: "gt-witness",
+			expected: "gt-gastown-witness",
 		},
 		{
 			name: "compound refinery with stale GT_POLECAT is NOT polecat session",
@@ -117,7 +117,7 @@ func TestDeriveSessionName(t *testing.T) {
 				"GT_RIG":     "gastown",
 				"GT_POLECAT": "toast",
 			},
-			expected: "gt-refinery",
+			expected: "gt-gastown-refinery",
 		},
 		{
 			name: "compound crew with stale GT_POLECAT is NOT polecat session",

@@ -96,6 +96,7 @@ func TestRigConfigSyncCheck_FixCreatesConfig(t *testing.T) {
 
 	// Run check and fix
 	ctx := &CheckContext{TownRoot: tmpDir}
+	installFakeBdForDoctorTests(t, tmpDir)
 	check := NewRigConfigSyncCheck()
 	result := check.Run(ctx)
 

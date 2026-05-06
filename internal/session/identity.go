@@ -158,24 +158,19 @@ func ParseSessionNameWithRegistry(session string, registry *PrefixRegistry) (*Ag
 
 	rig := registry.RigForPrefix(prefix)
 
-	// Check for witness (suffix marker)
-	if rest == string(RoleWitness) {
-		return &AgentIdentity{Role: RoleWitness, Rig: rig, Prefix: prefix}, nil
-	}
-
-	// Check for refinery (suffix marker)
-	if rest == string(RoleRefinery) {
-		return &AgentIdentity{Role: RoleRefinery, Rig: rig, Prefix: prefix}, nil
-	}
-
-	// Check for architect (suffix marker)
-	if rest == string(RoleArchitect) {
-		return &AgentIdentity{Role: RoleArchitect, Rig: rig, Prefix: prefix}, nil
-	}
-
-	// Check for qa (suffix marker)
-	if rest == string(RoleQA) {
-		return &AgentIdentity{Role: RoleQA, Rig: rig, Prefix: prefix}, nil
+	// In the new format, rest might be "rigName-role"
+	// Roles: witness, refinery, architect, qa
+	for _, role := range []Role{RoleWitness, RoleRefinery, RoleArchitect, RoleQA} {
+		roleStr := string(role)
+		if rest == roleStr {
+			// Compatibility case: gt-witness
+			return &AgentIdentity{Role: role, Rig: rig, Prefix: prefix}, nil
+		}
+		if strings.HasSuffix(rest, "-"+roleStr) {
+			// New format: gt-gastown-witness
+			parsedRig := strings.TrimSuffix(rest, "-"+roleStr)
+			return &AgentIdentity{Role: role, Rig: parsedRig, Prefix: prefix}, nil
+		}
 	}
 
 	// Check for crew (marker in rest)
@@ -210,13 +205,13 @@ func (a *AgentIdentity) SessionName() string {
 	case RoleOverseer:
 		return OverseerSessionName()
 	case RoleWitness:
-		return WitnessSessionName(a.prefix())
+		return WitnessSessionName(a.prefix(), a.Rig)
 	case RoleRefinery:
-		return RefinerySessionName(a.prefix())
+		return RefinerySessionName(a.prefix(), a.Rig)
 	case RoleArchitect:
-		return ArchitectSessionName(a.prefix())
+		return ArchitectSessionName(a.prefix(), a.Rig)
 	case RoleQA:
-		return QASessionName(a.prefix())
+		return QASessionName(a.prefix(), a.Rig)
 	case RoleCrew:
 		return CrewSessionName(a.prefix(), a.Name)
 	case RolePolecat:

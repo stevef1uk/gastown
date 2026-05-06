@@ -62,7 +62,7 @@ func (m *Manager) SetOutput(w io.Writer) {
 
 // SessionName returns the tmux session name for this refinery.
 func (m *Manager) SessionName() string {
-	return session.RefinerySessionName(session.PrefixFor(m.rig.Name))
+	return session.RefinerySessionName(session.PrefixFor(m.rig.Name), m.rig.Name)
 }
 
 // IsRunning checks if the refinery session is active and healthy.

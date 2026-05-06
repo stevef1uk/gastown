@@ -1666,7 +1666,7 @@ func (d *Daemon) ensureWitnessRunning(rigName string) {
 		// Kill leftover witness session if rig is not operational (docked/parked).
 		// Without this, sessions started before the rig was docked survive until
 		// the next explicit 'gt rig dock' command. (hq-snx61)
-		name := session.WitnessSessionName(session.PrefixFor(rigName))
+		name := session.WitnessSessionName(session.PrefixFor(rigName), rigName)
 		if exists, _ := d.sp.Exists(d.ctx, name); exists {
 			d.logger.Printf("Mass death cleanup: killing orphan %s", name)
 			if err := d.sp.Stop(d.ctx, name, true); err != nil {
@@ -1726,7 +1726,7 @@ func (d *Daemon) ensureRefineryRunning(rigName string) {
 		// Kill leftover refinery session if rig is not operational (docked/parked).
 		// Without this, sessions started before the rig was docked survive until
 		// the next explicit 'gt rig dock' command. (hq-snx61)
-		name := session.RefinerySessionName(session.PrefixFor(rigName))
+		name := session.RefinerySessionName(session.PrefixFor(rigName), rigName)
 		if exists, _ := d.sp.Exists(d.ctx, name); exists {
 			d.logger.Printf("Killing leftover refinery %s (rig %s)", name, reason)
 			if err := d.sp.Stop(d.ctx, name, true); err != nil {
@@ -1796,7 +1796,7 @@ func (d *Daemon) ensureArchitectsRunning() {
 func (d *Daemon) ensureArchitectRunning(rigName string) {
 	if operational, reason := d.isRigOperational(rigName); !operational {
 		d.logger.Printf("Skipping architect auto-start for %s: %s", rigName, reason)
-		name := session.ArchitectSessionName(session.PrefixFor(rigName))
+		name := session.ArchitectSessionName(session.PrefixFor(rigName), rigName)
 		if exists, _ := d.sp.Exists(d.ctx, name); exists {
 			d.logger.Printf("Killing leftover architect %s (rig %s)", name, reason)
 			_ = d.sp.Stop(d.ctx, name, true)
@@ -1804,7 +1804,7 @@ func (d *Daemon) ensureArchitectRunning(rigName string) {
 		return
 	}
 
-	sessionID := session.ArchitectSessionName(session.PrefixFor(rigName))
+	sessionID := session.ArchitectSessionName(session.PrefixFor(rigName), rigName)
 	architectDir := filepath.Join(d.config.TownRoot, rigName, constants.DirArchitect)
 	_ = os.MkdirAll(architectDir, 0755)
 
@@ -1846,7 +1846,7 @@ func (d *Daemon) ensureQAsRunning() {
 func (d *Daemon) ensureQARunning(rigName string) {
 	if operational, reason := d.isRigOperational(rigName); !operational {
 		d.logger.Printf("Skipping qa auto-start for %s: %s", rigName, reason)
-		name := session.QASessionName(session.PrefixFor(rigName))
+		name := session.QASessionName(session.PrefixFor(rigName), rigName)
 		if exists, _ := d.sp.Exists(d.ctx, name); exists {
 			d.logger.Printf("Killing leftover qa %s (rig %s)", name, reason)
 			_ = d.sp.Stop(d.ctx, name, true)
@@ -1854,7 +1854,7 @@ func (d *Daemon) ensureQARunning(rigName string) {
 		return
 	}
 
-	sessionID := session.QASessionName(session.PrefixFor(rigName))
+	sessionID := session.QASessionName(session.PrefixFor(rigName), rigName)
 	qaDir := filepath.Join(d.config.TownRoot, rigName, constants.DirQA)
 	_ = os.MkdirAll(qaDir, 0755)
 
@@ -1981,7 +1981,7 @@ func (d *Daemon) killDeaconSessions() {
 // Called when the witness patrol is disabled. (hq-2mstj)
 func (d *Daemon) killWitnessSessions() {
 	d.rigPool.runPerRig(d.ctx, d.getKnownRigs(), func(ctx context.Context, rigName string) error {
-		name := session.WitnessSessionName(session.PrefixFor(rigName))
+		name := session.WitnessSessionName(session.PrefixFor(rigName), rigName)
 		exists, _ := d.sp.Exists(d.ctx, name)
 		if exists {
 			d.logger.Printf("Killing leftover %s session (patrol disabled)", name)
@@ -1997,7 +1997,7 @@ func (d *Daemon) killWitnessSessions() {
 // Called when the refinery patrol is disabled. (hq-2mstj)
 func (d *Daemon) killRefinerySessions() {
 	d.rigPool.runPerRig(d.ctx, d.getKnownRigs(), func(ctx context.Context, rigName string) error {
-		name := session.RefinerySessionName(session.PrefixFor(rigName))
+		name := session.RefinerySessionName(session.PrefixFor(rigName), rigName)
 		exists, _ := d.sp.Exists(d.ctx, name)
 		if exists {
 			d.logger.Printf("Killing leftover %s session (patrol disabled)", name)
@@ -2013,7 +2013,7 @@ func (d *Daemon) killRefinerySessions() {
 // Called when the architect patrol is disabled.
 func (d *Daemon) killArchitectSessions() {
 	d.rigPool.runPerRig(d.ctx, d.getKnownRigs(), func(ctx context.Context, rigName string) error {
-		name := session.ArchitectSessionName(session.PrefixFor(rigName))
+		name := session.ArchitectSessionName(session.PrefixFor(rigName), rigName)
 		exists, _ := d.sp.Exists(ctx, name)
 		if exists {
 			d.logger.Printf("Killing leftover %s session (patrol disabled)", name)
@@ -2029,7 +2029,7 @@ func (d *Daemon) killArchitectSessions() {
 // Called when the qa patrol is disabled.
 func (d *Daemon) killQASessions() {
 	d.rigPool.runPerRig(d.ctx, d.getKnownRigs(), func(ctx context.Context, rigName string) error {
-		name := session.QASessionName(session.PrefixFor(rigName))
+		name := session.QASessionName(session.PrefixFor(rigName), rigName)
 		exists, _ := d.sp.Exists(ctx, name)
 		if exists {
 			d.logger.Printf("Killing leftover %s session (patrol disabled)", name)

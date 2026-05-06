@@ -222,7 +222,7 @@ func runDown(cmd *cobra.Command, args []string) error {
 
 	// Phase 1b: Stop architects
 	for _, rigName := range rigs {
-		sessionName := session.ArchitectSessionName(session.PrefixFor(rigName))
+		sessionName := session.ArchitectSessionName(session.PrefixFor(rigName), rigName)
 		if downDryRun {
 			if running, _ := t.HasSession(sessionName); running {
 				printDownStatus(fmt.Sprintf("Architect (%s)", rigName), true, "would stop")
@@ -242,7 +242,7 @@ func runDown(cmd *cobra.Command, args []string) error {
 
 	// Phase 1c: Stop qa agents
 	for _, rigName := range rigs {
-		sessionName := session.QASessionName(session.PrefixFor(rigName))
+		sessionName := session.QASessionName(session.PrefixFor(rigName), rigName)
 		if downDryRun {
 			if running, _ := t.HasSession(sessionName); running {
 				printDownStatus(fmt.Sprintf("QA (%s)", rigName), true, "would stop")

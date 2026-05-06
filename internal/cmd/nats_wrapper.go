@@ -111,9 +111,11 @@ type natsWriter struct {
 }
 
 func (w *natsWriter) Write(p []byte) (n int, err error) {
-	if err := w.nc.Publish(w.subject, p); err != nil {
-		return 0, err
-	}
+	// Best-effort publish to NATS. If it fails, we still return success to the
+	// caller (the child process) so that it doesn't crash on a broken pipe.
+	// The local os.Stdout/os.Stderr (which goes to the wrapper log file)
+	// will still be written by the MultiWriter.
+	_ = w.nc.Publish(w.subject, p)
 	return len(p), nil
 }
 

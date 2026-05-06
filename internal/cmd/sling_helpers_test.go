@@ -39,13 +39,13 @@ func TestNudgeRefinerySessionName(t *testing.T) {
 			name:        "simple rig name",
 			rigName:     "gastown",
 			message:     "MERGE_READY received - check inbox for pending work",
-			wantSession: "gt-refinery",
+			wantSession: "gt-gastown-refinery",
 		},
 		{
 			name:        "hyphenated rig name",
 			rigName:     "my-project",
 			message:     "MERGE_READY received - check inbox for pending work",
-			wantSession: "mp-refinery",
+			wantSession: "mp-my-project-refinery",
 		},
 	}
 

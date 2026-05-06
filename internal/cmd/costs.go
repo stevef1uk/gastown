@@ -1082,9 +1082,9 @@ func deriveSessionName() string {
 		prefix := session.PrefixFor(rig)
 		switch parsedRole {
 		case RoleWitness:
-			return session.WitnessSessionName(prefix)
+			return session.WitnessSessionName(prefix, rig)
 		case RoleRefinery:
-			return session.RefinerySessionName(prefix)
+			return session.RefinerySessionName(prefix, rig)
 		}
 	}
 

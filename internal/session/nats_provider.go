@@ -239,16 +239,20 @@ func killProcessTree(pid int) error {
 	// Kill children first (bottom-up) so parents don't respawn
 	for i := len(pids) - 1; i >= 0; i-- {
 		p := pids[i]
-		_ = syscall.Kill(p, syscall.SIGKILL)
+		if proc, err := os.FindProcess(p); err == nil {
+			_ = proc.Kill()
+		}
 	}
 	return nil
 }
 
 // signalProcessTree sends a signal to a process and all its descendants.
-func signalProcessTree(pid int, sig syscall.Signal) error {
+func signalProcessTree(pid int, sig os.Signal) error {
 	pids := collectDescendants(pid)
 	for _, p := range pids {
-		_ = syscall.Kill(p, sig)
+		if proc, err := os.FindProcess(p); err == nil {
+			_ = proc.Signal(sig)
+		}
 	}
 	return nil
 }

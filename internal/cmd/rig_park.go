@@ -96,7 +96,7 @@ func parkOneRig(rigName string) error {
 	t := tmux.NewTmux()
 
 	// Stop witness if running
-	witnessSession := session.WitnessSessionName(session.PrefixFor(rigName))
+	witnessSession := session.WitnessSessionName(session.PrefixFor(rigName), rigName)
 	witnessRunning, _ := t.HasSession(witnessSession)
 	if witnessRunning {
 		fmt.Printf("  Stopping witness...\n")
@@ -109,7 +109,7 @@ func parkOneRig(rigName string) error {
 	}
 
 	// Stop refinery if running
-	refinerySession := session.RefinerySessionName(session.PrefixFor(rigName))
+	refinerySession := session.RefinerySessionName(session.PrefixFor(rigName), rigName)
 	refineryRunning, _ := t.HasSession(refinerySession)
 	if refineryRunning {
 		fmt.Printf("  Stopping refinery...\n")

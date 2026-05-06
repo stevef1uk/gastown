@@ -638,14 +638,14 @@ func resolveRoleToSession(role string) (string, error) {
 		if rig == "" {
 			return "", fmt.Errorf("cannot determine rig - set GT_RIG or run from rig context")
 		}
-		return session.WitnessSessionName(session.PrefixFor(rig)), nil
+		return session.WitnessSessionName(session.PrefixFor(rig), rig), nil
 
 	case constants.RoleRefinery, "ref":
 		rig := os.Getenv("GT_RIG")
 		if rig == "" {
 			return "", fmt.Errorf("cannot determine rig - set GT_RIG or run from rig context")
 		}
-		return session.RefinerySessionName(session.PrefixFor(rig)), nil
+		return session.RefinerySessionName(session.PrefixFor(rig), rig), nil
 
 	default:
 		// Assume it's a direct session name (e.g., gt-gastown-crew-max)
@@ -686,9 +686,9 @@ func resolvePathToSession(path string) (string, error) {
 		// Check for known roles first
 		switch secondLower {
 		case constants.RoleWitness:
-			return session.WitnessSessionName(session.PrefixFor(rig)), nil
+			return session.WitnessSessionName(session.PrefixFor(rig), rig), nil
 		case constants.RoleRefinery:
-			return session.RefinerySessionName(session.PrefixFor(rig)), nil
+			return session.RefinerySessionName(session.PrefixFor(rig), rig), nil
 		case constants.RoleCrew:
 			// Just "<rig>/crew" without a name - need more info
 			return "", fmt.Errorf("crew path requires name: %s/crew/<name>", rig)

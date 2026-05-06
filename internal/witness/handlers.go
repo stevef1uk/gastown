@@ -675,7 +675,7 @@ func findMRBeadForBranch(bd *BdCli, workDir, branch string) string {
 // agent is busy, text buffers in tmux and is processed at next prompt.
 func nudgeRefinery(townRoot, rigName string) error {
 	initRegistryFromTownRoot(townRoot)
-	sessionName := session.RefinerySessionName(session.PrefixFor(rigName))
+	sessionName := session.RefinerySessionName(session.PrefixFor(rigName), rigName)
 
 	// Check if refinery is running
 	t := tmux.NewTmux()

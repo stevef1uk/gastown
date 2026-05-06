@@ -903,7 +903,7 @@ func upStartArchitect(rigName string, r *rig.Rig) agentStartResult {
 		}
 	}
 
-	sessionID := session.ArchitectSessionName(session.PrefixFor(rigName))
+	sessionID := session.ArchitectSessionName(session.PrefixFor(rigName), rigName)
 	architectDir := filepath.Join(r.Path, constants.DirArchitect)
 	if err := os.MkdirAll(architectDir, 0755); err != nil {
 		return agentStartResult{name: name, ok: false, detail: err.Error()}
@@ -948,7 +948,7 @@ func upStartQA(rigName string, r *rig.Rig) agentStartResult {
 		}
 	}
 
-	sessionID := session.QASessionName(session.PrefixFor(rigName))
+	sessionID := session.QASessionName(session.PrefixFor(rigName), rigName)
 	qaDir := filepath.Join(r.Path, constants.DirQA)
 	if err := os.MkdirAll(qaDir, 0755); err != nil {
 		return agentStartResult{name: name, ok: false, detail: err.Error()}

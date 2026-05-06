@@ -287,19 +287,19 @@ func (s *Server) discoverAgents() []Agent {
 		prefix := registry.PrefixForRig(rigName)
 		
 		// Witness
-		witnessID := session.WitnessSessionName(prefix)
+		witnessID := session.WitnessSessionName(prefix, rigName)
 		agents = append(agents, s.inspectAgent(witnessID, rigName, "witness"))
 		
 		// Refinery
-		refineryID := session.RefinerySessionName(prefix)
+		refineryID := session.RefinerySessionName(prefix, rigName)
 		agents = append(agents, s.inspectAgent(refineryID, rigName, "refinery"))
 		
 		// Architect
-		architectID := session.ArchitectSessionName(prefix)
+		architectID := session.ArchitectSessionName(prefix, rigName)
 		agents = append(agents, s.inspectAgent(architectID, rigName, "architect"))
 		
 		// QA
-		qaID := session.QASessionName(prefix)
+		qaID := session.QASessionName(prefix, rigName)
 		agents = append(agents, s.inspectAgent(qaID, rigName, "qa"))
 
 		// Check crew

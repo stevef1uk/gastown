@@ -71,7 +71,7 @@ func runArchitectStart(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("starting architect: %s", result.detail)
 	}
 
-	if result.detail == session.ArchitectSessionName(session.PrefixFor(rigName)) {
+	if result.detail == session.ArchitectSessionName(session.PrefixFor(rigName), rigName) {
 		fmt.Printf("%s Architect is already running for %s\n", style.Dim.Render("⚠"), rigName)
 	} else {
 		fmt.Printf("%s Architect started for %s\n", style.Bold.Render("✓"), rigName)
@@ -87,7 +87,7 @@ func runArchitectStop(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	sessionID := session.ArchitectSessionName(session.PrefixFor(rigName))
+	sessionID := session.ArchitectSessionName(session.PrefixFor(rigName), rigName)
 	sp := session.GetDefaultProvider(townRoot)
 	ctx := context.Background()
 
@@ -128,7 +128,7 @@ func runArchitectAttach(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	sessionID := session.ArchitectSessionName(session.PrefixFor(rigName))
+	sessionID := session.ArchitectSessionName(session.PrefixFor(rigName), rigName)
 	sp := session.GetDefaultProvider(townRoot)
 	ctx := context.Background()
 

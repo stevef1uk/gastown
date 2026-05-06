@@ -1327,7 +1327,7 @@ func renderAgentDetails(w io.Writer, agent AgentRuntime, indent string, hooks []
 		}
 	}
 
-	fmt.Fprintf(w, "%s%s %s%s\n", indent, style.Dim.Render(agentBeadID), statusStr, stateInfo)
+	fmt.Fprintf(w, "%s%s [%s] %s%s\n", indent, style.Dim.Render(agentBeadID), agent.Session, statusStr, stateInfo)
 
 	// Line 2: Agent runtime info
 	if agent.AgentInfo != "" {
@@ -1836,7 +1836,7 @@ func discoverRigAgents(allSessions map[string]bool, r *rig.Rig, crews []string, 
 		defs = append(defs, agentDef{
 			name:    constants.RoleRefinery,
 			address: r.Name + "/refinery",
-			session: session.RefinerySessionName(session.PrefixFor(r.Name)),
+			session: session.RefinerySessionName(session.PrefixFor(r.Name), r.Name),
 			role:    constants.RoleRefinery,
 			beadID:  beads.RefineryBeadIDWithPrefix(prefix, r.Name),
 		})
@@ -1848,7 +1848,7 @@ func discoverRigAgents(allSessions map[string]bool, r *rig.Rig, crews []string, 
 		defs = append(defs, agentDef{
 			name:    constants.RoleArchitect,
 			address: r.Name + "/architect",
-			session: session.ArchitectSessionName(session.PrefixFor(r.Name)),
+			session: session.ArchitectSessionName(session.PrefixFor(r.Name), r.Name),
 			role:    constants.RoleArchitect,
 			beadID:  beads.ArchitectBeadIDWithPrefix(prefix, r.Name),
 		})
@@ -1860,7 +1860,7 @@ func discoverRigAgents(allSessions map[string]bool, r *rig.Rig, crews []string, 
 		defs = append(defs, agentDef{
 			name:    constants.RoleQA,
 			address: r.Name + "/qa",
-			session: session.QASessionName(session.PrefixFor(r.Name)),
+			session: session.QASessionName(session.PrefixFor(r.Name), r.Name),
 			role:    constants.RoleQA,
 			beadID:  beads.QABeadIDWithPrefix(prefix, r.Name),
 		})

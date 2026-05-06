@@ -46,7 +46,13 @@ var permanentAgents = map[string]bool{
 
 // isPermanentAgent returns true if the role should never exit on idle cycles.
 func isPermanentAgent(role string) bool {
-	return permanentAgents[role]
+	if permanentAgents[role] {
+		return true
+	}
+	// Also check for rig-specific roles like "testgt1/witness"
+	parts := strings.Split(role, "/")
+	last := parts[len(parts)-1]
+	return permanentAgents[last]
 }
 
 var (
@@ -251,7 +257,7 @@ func run() error {
 	if llmModel == "" {
 		llmModel = "gpt-4o"
 	}
-	client := llm.NewClient(llmEndpoint, llmModel)
+	client := llm.NewClient(llmEndpoint, llmModel, role)
 
 	// Load persisted state
 	stateFile := statePath(townRoot, role, rig, polecat)
@@ -355,6 +361,10 @@ func run() error {
 						if cmdFailed {
 							fmt.Fprintf(os.Stderr, "[gt-agent] Error: %v\n%s\n", err, string(out))
 							extraordinary = true
+							// CRITICAL: Stop executing subsequent commands if one fails.
+							// Models like Llama-3.3 will hallucinate the entire script. If step 1 fails,
+							// executing step 2 is dangerous and guaranteed to fail or corrupt state.
+							break
 						}
 					} else {
 						fmt.Printf("[gt-agent] Output:\n%s\n", string(out))

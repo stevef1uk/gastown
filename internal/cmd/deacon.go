@@ -1027,9 +1027,9 @@ func agentAddressToIDs(address string) (beadID, sessionName string, err error) {
 		rig, role := parts[0], parts[1]
 		switch role {
 		case constants.RoleWitness:
-			return session.WitnessSessionName(session.PrefixFor(rig)), session.WitnessSessionName(session.PrefixFor(rig)), nil
+			return session.WitnessSessionName(session.PrefixFor(rig), rig), session.WitnessSessionName(session.PrefixFor(rig), rig), nil
 		case constants.RoleRefinery:
-			return session.RefinerySessionName(session.PrefixFor(rig)), session.RefinerySessionName(session.PrefixFor(rig)), nil
+			return session.RefinerySessionName(session.PrefixFor(rig), rig), session.RefinerySessionName(session.PrefixFor(rig), rig), nil
 		default:
 			return "", "", fmt.Errorf("unknown role: %s", role)
 		}

@@ -1826,9 +1826,9 @@ func addressToAgentBeadID(address string) string {
 
 	switch {
 	case target == constants.RoleWitness:
-		return session.WitnessSessionName(rigPrefix)
+		return session.WitnessSessionName(rigPrefix, rig)
 	case target == constants.RoleRefinery:
-		return session.RefinerySessionName(rigPrefix)
+		return session.RefinerySessionName(rigPrefix, rig)
 	case strings.HasPrefix(target, "crew/"):
 		crewName := strings.TrimPrefix(target, "crew/")
 		return session.CrewSessionName(rigPrefix, crewName)
@@ -1886,10 +1886,10 @@ func AddressToSessionIDs(address string) []string {
 
 	// Special cases that don't need crew variant
 	if target == constants.RoleWitness {
-		return []string{session.WitnessSessionName(rigPrefix)}
+		return []string{session.WitnessSessionName(rigPrefix, rig)}
 	}
 	if target == constants.RoleRefinery {
-		return []string{session.RefinerySessionName(rigPrefix)}
+		return []string{session.RefinerySessionName(rigPrefix, rig)}
 	}
 
 	// For normalized addresses like "gastown/holden", try both:

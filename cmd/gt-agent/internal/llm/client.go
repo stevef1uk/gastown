@@ -14,14 +14,16 @@ import (
 type Client struct {
 	endpoint string
 	model    string
+	role     string
 	client   *http.Client
 }
 
 // NewClient creates a new LLM client.
-func NewClient(endpoint, model string) *Client {
+func NewClient(endpoint, model, role string) *Client {
 	return &Client{
 		endpoint: endpoint,
 		model:    model,
+		role:     role,
 		client:   &http.Client{Timeout: 120 * time.Second},
 	}
 }
@@ -63,6 +65,9 @@ func (c *Client) Complete(ctx context.Context, systemPrompt, userPrompt string) 
 	}
 
 	req.Header.Set("Content-Type", "application/json")
+	if c.role != "" {
+		req.Header.Set("X-GasTown-Role", c.role)
+	}
 
 	resp, err := c.client.Do(req)
 	if err != nil {

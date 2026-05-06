@@ -503,8 +503,7 @@ func runRefineryAttach(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Session name follows the same pattern as refinery manager
-	sessionID := session.RefinerySessionName(session.PrefixFor(rigName))
+	sessionID := session.RefinerySessionName(session.PrefixFor(rigName), rigName)
 
 	// Check if session exists
 	t := tmux.NewTmux()

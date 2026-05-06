@@ -496,7 +496,7 @@ func runWitnessStatusLine(t *tmux.Tmux, rigName string) error {
 
 	// Get town root from witness pane's working directory
 	var townRoot string
-	sessionName := session.WitnessSessionName(session.PrefixFor(rigName))
+	sessionName := session.WitnessSessionName(session.PrefixFor(rigName), rigName)
 	paneDir, err := t.GetPaneWorkDir(sessionName)
 	if err == nil && paneDir != "" {
 		townRoot, _ = workspace.Find(paneDir)
@@ -568,7 +568,7 @@ func runRefineryStatusLine(t *tmux.Tmux, rigName string) error {
 
 	// Get town root from refinery pane's working directory
 	var townRoot string
-	sessionName := session.RefinerySessionName(session.PrefixFor(rigName))
+	sessionName := session.RefinerySessionName(session.PrefixFor(rigName), rigName)
 	paneDir, err := t.GetPaneWorkDir(sessionName)
 	if err == nil && paneDir != "" {
 		townRoot, _ = workspace.Find(paneDir)

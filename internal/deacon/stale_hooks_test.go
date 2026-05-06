@@ -14,8 +14,8 @@ func TestAssigneeToSessionName(t *testing.T) {
 	}{
 		{"deacon", "hq-deacon"},
 		{"mayor", "hq-mayor"},
-		{"gastown/witness", "gt-witness"},
-		{"gastown/refinery", "gt-refinery"},
+		{"gastown/witness", "gt-gastown-witness"},
+		{"gastown/refinery", "gt-gastown-refinery"},
 		{"gastown/polecats/max", "gt-max"},
 		{"gastown/crew/joe", "gt-crew-joe"},
 		{"", ""},

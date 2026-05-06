@@ -662,7 +662,7 @@ func wakeRigAgents(rigName string) {
 	// No cooperative queue — idle agents never call Drain(), so queued
 	// nudges would be stuck forever. Direct delivery is safe: if the
 	// agent is busy, text buffers in tmux and is processed at next prompt.
-	witnessSession := session.WitnessSessionName(session.PrefixFor(rigName))
+	witnessSession := session.WitnessSessionName(session.PrefixFor(rigName), rigName)
 	t := tmux.NewTmux()
 	if err := t.NudgeSession(witnessSession, "Polecat dispatched - check for work"); err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: failed to nudge witness %s: %v\n", witnessSession, err)
@@ -673,7 +673,7 @@ func wakeRigAgents(rigName string) {
 // Replaces POLECAT_DONE mail — nudges are free (no Dolt commit).
 // Uses immediate delivery: sends directly to the tmux pane.
 func nudgeWitness(rigName, message string) {
-	witnessSession := session.WitnessSessionName(session.PrefixFor(rigName))
+	witnessSession := session.WitnessSessionName(session.PrefixFor(rigName), rigName)
 
 	// Test hook: log nudge for test observability
 	if logPath := os.Getenv("GT_TEST_NUDGE_LOG"); logPath != "" {
@@ -707,7 +707,7 @@ func nudgeWitness(rigName, message string) {
 // nudges would be stuck forever. Direct delivery is safe: if the
 // agent is busy, text buffers in tmux and is processed at next prompt.
 func nudgeRefinery(rigName, message string) {
-	refinerySession := session.RefinerySessionName(session.PrefixFor(rigName))
+	refinerySession := session.RefinerySessionName(session.PrefixFor(rigName), rigName)
 
 	// Test hook: log nudge for test observability (same pattern as GT_TEST_ATTACHED_MOLECULE_LOG)
 	if logPath := os.Getenv("GT_TEST_NUDGE_LOG"); logPath != "" {

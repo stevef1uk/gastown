@@ -326,9 +326,9 @@ func (d *Daemon) identityToSession(identity string) string {
 	case constants.RoleDeacon:
 		return session.DeaconSessionName()
 	case constants.RoleWitness:
-		return session.WitnessSessionName(session.PrefixFor(parsed.RigName))
+		return session.WitnessSessionName(session.PrefixFor(parsed.RigName), parsed.RigName)
 	case constants.RoleRefinery:
-		return session.RefinerySessionName(session.PrefixFor(parsed.RigName))
+		return session.RefinerySessionName(session.PrefixFor(parsed.RigName), parsed.RigName)
 	case constants.RoleCrew:
 		return session.CrewSessionName(session.PrefixFor(parsed.RigName), parsed.AgentName)
 	case constants.RolePolecat:

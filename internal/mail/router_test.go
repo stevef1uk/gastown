@@ -185,8 +185,8 @@ func TestAddressToSessionIDs(t *testing.T) {
 		{"deacon", []string{"hq-deacon"}},
 
 		// Rig singletons - single session (no crew/polecat ambiguity)
-		{"gastown/refinery", []string{"gt-refinery"}},
-		{"beads/witness", []string{"bd-witness"}},
+		{"gastown/refinery", []string{"gt-gastown-refinery"}},
+		{"beads/witness", []string{"bd-beads-witness"}},
 
 		// Ambiguous addresses - try both crew and polecat variants
 		{"gastown/Toast", []string{"gt-crew-Toast", "gt-Toast"}},
@@ -1359,12 +1359,12 @@ func TestAddressToAgentBeadID(t *testing.T) {
 		{
 			name:     "witness",
 			address:  "gastown/witness",
-			expected: "gt-witness",
+			expected: "gt-gastown-witness",
 		},
 		{
 			name:     "refinery",
 			address:  "gastown/refinery",
-			expected: "gt-refinery",
+			expected: "gt-gastown-refinery",
 		},
 		{
 			name:     "crew member",

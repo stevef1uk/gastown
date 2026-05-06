@@ -462,13 +462,13 @@ func runNudge(cmd *cobra.Command, args []string) (retErr error) {
 		rigPrefix := session.PrefixFor(roleInfo.Rig)
 		switch target {
 		case constants.RoleWitness:
-			target = session.WitnessSessionName(rigPrefix)
+			target = session.WitnessSessionName(rigPrefix, roleInfo.Rig)
 		case constants.RoleRefinery:
-			target = session.RefinerySessionName(rigPrefix)
+			target = session.RefinerySessionName(rigPrefix, roleInfo.Rig)
 		case constants.RoleArchitect:
-			target = session.ArchitectSessionName(rigPrefix)
+			target = session.ArchitectSessionName(rigPrefix, roleInfo.Rig)
 		case constants.RoleQA:
-			target = session.QASessionName(rigPrefix)
+			target = session.QASessionName(rigPrefix, roleInfo.Rig)
 		}
 	}
 
@@ -905,13 +905,13 @@ func addressToAgentBeadID(address string) string {
 
 	switch role {
 	case constants.RoleWitness:
-		return session.WitnessSessionName(session.PrefixFor(rig))
+		return session.WitnessSessionName(session.PrefixFor(rig), rig)
 	case constants.RoleRefinery:
-		return session.RefinerySessionName(session.PrefixFor(rig))
+		return session.RefinerySessionName(session.PrefixFor(rig), rig)
 	case constants.RoleArchitect:
-		return session.ArchitectSessionName(session.PrefixFor(rig))
+		return session.ArchitectSessionName(session.PrefixFor(rig), rig)
 	case constants.RoleQA:
-		return session.QASessionName(session.PrefixFor(rig))
+		return session.QASessionName(session.PrefixFor(rig), rig)
 	default:
 		// Assume polecat
 		if strings.HasPrefix(role, "crew/") {
