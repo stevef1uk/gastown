@@ -45,10 +45,10 @@ func TestWitnessSessionName(t *testing.T) {
 		rigName   string
 		want      string
 	}{
-		{"gt", "gastown", "hq-gt-gastown-witness"},
-		{"bd", "beads", "hq-bd-beads-witness"},
-		{"hop", "greenplace", "hq-hop-greenplace-witness"},
-		{"gt", "", "hq-gt-witness"}, // compatibility case
+		{"gt", "gastown", "gt-gastown-witness"},
+		{"bd", "beads", "bd-beads-witness"},
+		{"hop", "greenplace", "hop-greenplace-witness"},
+		{"gt", "", "gt-witness"}, // compatibility case
 	}
 	for _, tt := range tests {
 		t.Run(tt.rigPrefix+"/"+tt.rigName, func(t *testing.T) {
@@ -66,9 +66,9 @@ func TestRefinerySessionName(t *testing.T) {
 		rigName   string
 		want      string
 	}{
-		{"gt", "gastown", "hq-gt-gastown-refinery"},
-		{"bd", "beads", "hq-bd-beads-refinery"},
-		{"hop", "greenplace", "hq-hop-greenplace-refinery"},
+		{"gt", "gastown", "gt-gastown-refinery"},
+		{"bd", "beads", "bd-beads-refinery"},
+		{"hop", "greenplace", "hop-greenplace-refinery"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.rigPrefix+"/"+tt.rigName, func(t *testing.T) {
@@ -127,9 +127,9 @@ func TestArchitectSessionName(t *testing.T) {
 		rigName   string
 		want      string
 	}{
-		{"gt", "gastown", "hq-gt-gastown-architect"},
-		{"bd", "beads", "hq-bd-beads-architect"},
-		{"hop", "greenplace", "hq-hop-greenplace-architect"},
+		{"gt", "gastown", "gt-gastown-architect"},
+		{"bd", "beads", "bd-beads-architect"},
+		{"hop", "greenplace", "hop-greenplace-architect"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.rigPrefix+"/"+tt.rigName, func(t *testing.T) {
@@ -147,9 +147,9 @@ func TestQASessionName(t *testing.T) {
 		rigName   string
 		want      string
 	}{
-		{"gt", "gastown", "hq-gt-gastown-qa"},
-		{"bd", "beads", "hq-bd-beads-qa"},
-		{"hop", "greenplace", "hq-hop-greenplace-qa"},
+		{"gt", "gastown", "gt-gastown-qa"},
+		{"bd", "beads", "bd-beads-qa"},
+		{"hop", "greenplace", "hop-greenplace-qa"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.rigPrefix+"/"+tt.rigName, func(t *testing.T) {

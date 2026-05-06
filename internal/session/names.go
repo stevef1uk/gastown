@@ -3,7 +3,6 @@ package session
 
 import (
 	"fmt"
-	"strings"
 )
 
 // DefaultPrefix is the default beads prefix used when no rig-specific prefix is known.
@@ -35,9 +34,6 @@ func PlannerSessionName() string {
 // rigName is the name of the rig (e.g., "testgt1").
 func WitnessSessionName(rigPrefix, rigName string) string {
 	prefix := rigPrefix
-	if !strings.HasPrefix(prefix, HQPrefix) && prefix != "hq" {
-		prefix = HQPrefix + prefix
-	}
 	if rigName == "" || rigName == rigPrefix {
 		return fmt.Sprintf("%s-witness", prefix)
 	}
@@ -54,9 +50,6 @@ func WitnessSessionNameForRig(rigName string) string {
 // rigName is the name of the rig (e.g., "testgt1").
 func RefinerySessionName(rigPrefix, rigName string) string {
 	prefix := rigPrefix
-	if !strings.HasPrefix(prefix, HQPrefix) && prefix != "hq" {
-		prefix = HQPrefix + prefix
-	}
 	if rigName == "" || rigName == rigPrefix {
 		return fmt.Sprintf("%s-refinery", prefix)
 	}
@@ -71,9 +64,6 @@ func RefinerySessionNameForRig(rigName string) string {
 // ArchitectSessionName returns the session name for a rig's Architect agent.
 func ArchitectSessionName(rigPrefix, rigName string) string {
 	prefix := rigPrefix
-	if !strings.HasPrefix(prefix, HQPrefix) && prefix != "hq" {
-		prefix = HQPrefix + prefix
-	}
 	if rigName == "" || rigName == rigPrefix {
 		return fmt.Sprintf("%s-architect", prefix)
 	}
@@ -83,9 +73,6 @@ func ArchitectSessionName(rigPrefix, rigName string) string {
 // QASessionName returns the session name for a rig's QA agent.
 func QASessionName(rigPrefix, rigName string) string {
 	prefix := rigPrefix
-	if !strings.HasPrefix(prefix, HQPrefix) && prefix != "hq" {
-		prefix = HQPrefix + prefix
-	}
 	if rigName == "" || rigName == rigPrefix {
 		return fmt.Sprintf("%s-qa", prefix)
 	}
