@@ -427,22 +427,35 @@ func (d *Daemon) ensurePatrolWisp(parsed *ParsedIdentity, workDir string) error 
 	// Construct formula name: mol-<role>-patrol
 	formulaName := fmt.Sprintf("mol-%s-patrol", role)
 
-	// Check if wisp already exists using bd mol current
-	checkCmd := exec.Command(d.bdPath, "mol", "current", formulaName)
+	// Check if formula exists using bd mol show (checks formula, not wisp)
+	checkCmd := exec.Command(d.bdPath, "mol", "show", formulaName)
 	checkCmd.Dir = workDir
-	if err := checkCmd.Run(); err == nil {
-		// Wisp already exists
-		d.logger.Printf("Patrol wisp %s already exists", formulaName)
+	checkCmd.Env = os.Environ()
+	if err := checkCmd.Run(); err != nil {
+		// Formula doesn't exist, nothing to create
+		d.logger.Printf("Patrol formula %s not found, skipping wisp creation", formulaName)
 		return nil
 	}
 
-	// Wisp doesn't exist, create it using bd mol wisp
+	// Check if wisp already exists by looking for it in the wisp list
+	// bd mol current shows the current wisp (no arguments)
+	currentCmd := exec.Command(d.bdPath, "mol", "current")
+	currentCmd.Dir = workDir
+	currentCmd.Env = os.Environ()
+	output, err := currentCmd.Output()
+	if err == nil && strings.Contains(string(output), formulaName) {
+		// Wisp already exists and is current
+		d.logger.Printf("Patrol wisp %s already current", formulaName)
+		return nil
+	}
+
+	// Wisp doesn't exist or isn't current, create it using bd mol wisp
 	d.logger.Printf("Creating patrol wisp %s for %s", formulaName, role)
 	createCmd := exec.Command(d.bdPath, "mol", "wisp", formulaName)
 	createCmd.Dir = workDir
 	createCmd.Env = os.Environ()
 
-	output, err := createCmd.CombinedOutput()
+	output, err = createCmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("creating patrol wisp %s: %w (output: %s)", formulaName, err, string(output))
 	}
