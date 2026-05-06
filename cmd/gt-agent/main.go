@@ -182,6 +182,7 @@ func run() error {
 	if role == "" {
 		role = "worker"
 	}
+	roleCanonical := canonicalRole(role)
 	rig := os.Getenv("GT_RIG")
 	polecat := os.Getenv("GT_POLECAT")
 	townRoot := os.Getenv("GT_ROOT")
@@ -201,13 +202,13 @@ func run() error {
 	if sessionName == "" {
 		if rig != "" && polecat != "" {
 			sessionName = fmt.Sprintf("gt-%s-%s", rig, polecat)
-		} else if role == "mayor" || role == "deacon" || role == "witness" || role == "refinery" {
+		} else if roleCanonical == "mayor" || roleCanonical == "deacon" || roleCanonical == "witness" || roleCanonical == "refinery" {
 			// For rig-level roles, use the prefix if known
 			prefix := rig
 			if prefix == "" {
 				prefix = "hq"
 			}
-			sessionName = fmt.Sprintf("%s-%s", prefix, role)
+			sessionName = fmt.Sprintf("%s-%s", prefix, roleCanonical)
 		}
 	}
 
@@ -257,7 +258,7 @@ func run() error {
 	if llmModel == "" {
 		llmModel = "gpt-4o"
 	}
-	client := llm.NewClient(llmEndpoint, llmModel, role)
+	client := llm.NewClient(llmEndpoint, llmModel, roleCanonical)
 
 	// Load persisted state
 	stateFile := statePath(townRoot, role, rig, polecat)
@@ -314,7 +315,7 @@ func run() error {
 		primeOut, _ := exec.Command(gtBin, "prime", "--hook").Output()
 
 		// Build role-specific system prompt
-		systemPrompt := buildSystemPrompt(role, state.PatrolCount, string(primeOut))
+		systemPrompt := buildSystemPrompt(roleCanonical, state.PatrolCount, string(primeOut))
 
 		// Build user prompt from work items
 		userPrompt := "Execute the following work and report results:\n\n"
@@ -343,8 +344,12 @@ func run() error {
 				cmd := strings.TrimPrefix(line, "CMD:")
 				cmd = strings.TrimSpace(cmd)
 				if cmd != "" {
-					fmt.Printf("[gt-agent] $ %s\n", cmd)
-					out, err := exec.Command("/bin/sh", "-c", cmd).CombinedOutput()
+					safeCmd, rewritten := normalizeGeneratedCommand(cmd)
+					if rewritten {
+						fmt.Printf("[gt-agent] Rewrote command: %q -> %q\n", cmd, safeCmd)
+					}
+					fmt.Printf("[gt-agent] $ %s\n", safeCmd)
+					out, err := exec.Command("/bin/sh", "-c", safeCmd).CombinedOutput()
 					if err != nil {
 						// Dolt circuit breaker errors are transient during startup.
 						// Retry once after a short delay before marking as extraordinary.
@@ -352,7 +357,7 @@ func run() error {
 						if strings.Contains(string(out), "circuit breaker is open") {
 							fmt.Println("[gt-agent] Dolt circuit breaker open, retrying in 5s...")
 							time.Sleep(5 * time.Second)
-							out, err = exec.Command("/bin/sh", "-c", cmd).CombinedOutput()
+							out, err = exec.Command("/bin/sh", "-c", safeCmd).CombinedOutput()
 							if err == nil {
 								fmt.Printf("[gt-agent] Output (retry OK):\n%s\n", string(out))
 								cmdFailed = false
@@ -389,7 +394,7 @@ func run() error {
 		}
 
 		// Call role-specific post-work command
-		postCmd := postWorkCommand(role, summary)
+		postCmd := postWorkCommand(roleCanonical, summary)
 		if postCmd == "" {
 			fmt.Println("[gt-agent] No post-work command for this role")
 		} else {
@@ -439,6 +444,39 @@ func run() error {
 
 	fmt.Println("[gt-agent] Event loop exited cleanly")
 	return nil
+}
+
+// canonicalRole maps rig-qualified or compound GT_ROLE values to the base role
+// used by prompting and post-work logic.
+func canonicalRole(role string) string {
+	r := strings.TrimSpace(role)
+	if r == "" {
+		return "worker"
+	}
+	if strings.Contains(r, "/polecats/") {
+		return "polecat"
+	}
+	if strings.Contains(r, "/crew/") {
+		return "crew"
+	}
+	parts := strings.Split(r, "/")
+	if len(parts) > 1 {
+		return parts[len(parts)-1]
+	}
+	return r
+}
+
+// normalizeGeneratedCommand rewrites known-invalid LLM command patterns into
+// safe canonical forms to avoid guaranteed molecule lookup failures.
+func normalizeGeneratedCommand(cmd string) (string, bool) {
+	trimmed := strings.TrimSpace(cmd)
+	if strings.HasPrefix(trimmed, "bd mol current ") {
+		arg := strings.TrimSpace(strings.TrimPrefix(trimmed, "bd mol current "))
+		if strings.HasPrefix(arg, "mol-") {
+			return "gt mol current", true
+		}
+	}
+	return cmd, false
 }
 
 // buildSystemPrompt returns a role-specific system prompt for the LLM.

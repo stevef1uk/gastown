@@ -212,3 +212,42 @@ func TestWorkItemFormatting(t *testing.T) {
 		t.Error("Prompt should contain formatted hook")
 	}
 }
+
+func TestCanonicalRole(t *testing.T) {
+	tests := []struct {
+		in   string
+		want string
+	}{
+		{"witness", "witness"},
+		{"testgt1/witness", "witness"},
+		{"testgt1/refinery", "refinery"},
+		{"testgt1/polecats/rictus", "polecat"},
+		{"testgt1/crew/alice", "crew"},
+		{"deacon/boot", "boot"},
+		{"", "worker"},
+	}
+	for _, tt := range tests {
+		if got := canonicalRole(tt.in); got != tt.want {
+			t.Errorf("canonicalRole(%q) = %q, want %q", tt.in, got, tt.want)
+		}
+	}
+}
+
+func TestNormalizeGeneratedCommand(t *testing.T) {
+	tests := []struct {
+		in      string
+		want    string
+		changed bool
+	}{
+		{"bd mol current mol-witness-patrol", "gt mol current", true},
+		{"bd mol current hq-wisp-abc123", "bd mol current hq-wisp-abc123", false},
+		{"gt mol current", "gt mol current", false},
+	}
+	for _, tt := range tests {
+		got, changed := normalizeGeneratedCommand(tt.in)
+		if got != tt.want || changed != tt.changed {
+			t.Errorf("normalizeGeneratedCommand(%q) = (%q, %v), want (%q, %v)",
+				tt.in, got, changed, tt.want, tt.changed)
+		}
+	}
+}
