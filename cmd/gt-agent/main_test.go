@@ -240,7 +240,7 @@ func TestNormalizeGeneratedCommand(t *testing.T) {
 		changed bool
 	}{
 		{"bd mol current mol-witness-patrol", "gt mol current", true},
-		{"bd mol current hq-wisp-abc123", "bd mol current hq-wisp-abc123", false},
+		{"bd mol current hq-wisp-abc123", "gt mol current", true},
 		{"gt mol current", "gt mol current", false},
 	}
 	for _, tt := range tests {
