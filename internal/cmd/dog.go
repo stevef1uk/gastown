@@ -699,9 +699,7 @@ func runDogDone(cmd *cobra.Command, args []string) error {
 	if townRoot != "" {
 		sp := session.GetDefaultProvider(townRoot)
 		// Disable remain-on-exit for tmux (prevents dead pane orphans)
-		if tp, ok := sp.(*session.TmuxProvider); ok {
-			_ = tp.Tmux().SetRemainOnExit(sessionID, false)
-		}
+			_ = sp.SetRemainOnExit(context.Background(), sessionID, false)
 		fmt.Printf("  Session %s will terminate in 3s\n", sessionID)
 
 		// Kill the session after a short delay using a goroutine.
@@ -954,12 +952,10 @@ func (d *dogSessionChecker) CheckSessionHealth(sessID string, maxInactivity time
 	}
 	// Hung detection is tmux-specific (pane activity). For NATS we skip it.
 	if maxInactivity > 0 {
-		if tp, ok := d.sp.(*session.TmuxProvider); ok {
-			lastActivity, err := tp.Tmux().GetSessionActivity(sessID)
-			if err == nil && !lastActivity.IsZero() {
-				if time.Since(lastActivity) > maxInactivity {
-					return tmux.AgentHung
-				}
+		lastActivity, err := d.sp.GetLastActivity(context.Background(), sessID)
+		if err == nil && !lastActivity.IsZero() {
+			if time.Since(lastActivity) > maxInactivity {
+				return tmux.AgentHung
 			}
 		}
 	}

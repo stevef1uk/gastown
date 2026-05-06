@@ -52,18 +52,9 @@ func (m *Manager) IsRunning() (bool, error) {
 	return sp.Exists(context.Background(), m.SessionName())
 }
 
-// IsHealthy checks if the witness is running and has been active recently.
-// For tmux, checks session health. For NATS, just checks process existence.
 func (m *Manager) IsHealthy(maxInactivity time.Duration) tmux.ZombieStatus {
 	sp := session.GetDefaultProvider(m.townRoot())
-	if tp, ok := sp.(*session.TmuxProvider); ok {
-		return tp.Tmux().CheckSessionHealth(m.SessionName(), maxInactivity)
-	}
-	// NATS: basic process existence check
-	if running, _ := sp.Exists(context.Background(), m.SessionName()); running {
-		return tmux.SessionHealthy
-	}
-	return tmux.SessionDead
+	return sp.CheckSessionHealth(context.Background(), m.SessionName(), maxInactivity)
 }
 
 // SessionName returns the session name for this witness.
@@ -204,17 +195,16 @@ func (m *Manager) Start(foreground bool, agentOverride string, envOverrides []st
 		}
 	}
 
-	// For tmux: run startup fallback and deliver prompt
-	if tp, ok := sp.(*session.TmuxProvider); ok {
-		runtimeConfig := config.ResolveRoleAgentConfig("witness", townRoot, m.rig.Path)
-		_ = runtime.RunStartupFallback(tp.Tmux(), sessionID, "witness", runtimeConfig)
-		initialPrompt := session.BuildStartupPrompt(session.BeaconConfig{
-			Recipient: session.BeaconRecipient("witness", "", m.rig.Name),
-			Sender:    "deacon",
-			Topic:     "patrol",
-		}, "Run `gt prime --hook` and begin patrol.")
-		_ = runtime.DeliverStartupPromptFallback(tp.Tmux(), sessionID, initialPrompt, runtimeConfig, constants.ClaudeStartTimeout)
-	}
+	// Run startup fallback and deliver prompt (transport-agnostic).
+	// For NATS, this enqueues the prompt; for tmux, it sends keys when idle.
+	runtimeConfig := config.ResolveRoleAgentConfig("witness", townRoot, m.rig.Path)
+	_ = runtime.RunStartupFallback(ctx, sp, sessionID, "witness", runtimeConfig)
+	initialPrompt := session.BuildStartupPrompt(session.BeaconConfig{
+		Recipient: session.BeaconRecipient("witness", "", m.rig.Name),
+		Sender:    "deacon",
+		Topic:     "patrol",
+	}, "Run `gt prime --hook` and begin patrol.")
+	_ = runtime.DeliverStartupPromptFallback(ctx, sp, sessionID, initialPrompt, runtimeConfig, constants.ClaudeStartTimeout)
 
 	// Generate a run ID for logging/telemetry
 	runID := uuid.New().String()
@@ -227,7 +217,6 @@ func (m *Manager) Start(foreground bool, agentOverride string, envOverrides []st
 	}
 
 	// Record the agent instantiation event (GASTA root span).
-	runtimeConfig := config.ResolveRoleAgentConfig("witness", townRoot, m.rig.Path)
 	session.RecordAgentInstantiateFromDir(context.Background(), runID, runtimeConfig.ResolvedAgent,
 		"witness", "witness", sessionID, m.rig.Name, townRoot, "", witnessDir)
 

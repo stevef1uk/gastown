@@ -1216,16 +1216,6 @@ func runPolecatGC(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// splitLines splits a string into non-empty lines.
-func splitLines(s string) []string {
-	var lines []string
-	for _, line := range strings.Split(s, "\n") {
-		if line != "" {
-			lines = append(lines, line)
-		}
-	}
-	return lines
-}
 
 func runPolecatNuke(cmd *cobra.Command, args []string) error {
 	targets, err := resolvePolecatTargets(args, polecatNukeAll)

@@ -13,6 +13,9 @@ import (
 	"time"
 
 	"github.com/nats-io/nats.go"
+	"github.com/steveyegge/gastown/internal/config"
+	"github.com/steveyegge/gastown/internal/nudge"
+	"github.com/steveyegge/gastown/internal/tmux"
 	"github.com/steveyegge/gastown/internal/util"
 )
 
@@ -335,6 +338,18 @@ func (p *NatsProvider) Inject(ctx context.Context, sessionID string, data string
 	return p.nc.Publish(subject, []byte(data))
 }
 
+func (p *NatsProvider) NudgeSession(ctx context.Context, sessionID, message string) error {
+	p.recordActivity(sessionID)
+	// For NATS, we use the nudge queue to ensure delivery even if the agent
+	// is busy or not yet ready for direct input.
+	return nudge.Enqueue(p.townRoot, sessionID, nudge.QueuedNudge{
+		Sender:    "system",
+		Message:   message,
+		Priority:  nudge.PriorityUrgent,
+		Timestamp: time.Now(),
+	})
+}
+
 func (p *NatsProvider) GetEnvironment(ctx context.Context, sessionID string) (map[string]string, error) {
 	p.mu.RLock()
 	env, ok := p.sessionEnv[sessionID]
@@ -398,6 +413,43 @@ func (p *NatsProvider) EnsureSessionFresh(ctx context.Context, sessionID, workDi
 	return p.Start(ctx, sessionID, workDir, command, env)
 }
 
+func (p *NatsProvider) WaitForRuntimeReady(ctx context.Context, sessionID string, rc *config.RuntimeConfig, timeout time.Duration) error {
+	// For NATS, we don't have prompt-based detection yet.
+	// We just check if the agent is running.
+	running, _ := p.IsAgentRunning(ctx, sessionID)
+	if !running {
+		return fmt.Errorf("agent not running")
+	}
+	return nil
+}
+
+func (p *NatsProvider) CheckSessionHealth(ctx context.Context, sessionID string, maxInactivity time.Duration) tmux.ZombieStatus {
+	exists, _ := p.Exists(ctx, sessionID)
+	if !exists {
+		return tmux.SessionDead
+	}
+
+	p.mu.RLock()
+	lastAct, ok := p.lastActivity[sessionID]
+	p.mu.RUnlock()
+
+	if ok && time.Since(lastAct) > maxInactivity {
+		return tmux.AgentHung
+	}
+
+	return tmux.SessionHealthy
+}
+
+func (p *NatsProvider) GetLastActivity(ctx context.Context, sessionID string) (time.Time, error) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	lastAct, ok := p.lastActivity[sessionID]
+	if !ok {
+		return time.Time{}, fmt.Errorf("no activity recorded for session %s", sessionID)
+	}
+	return lastAct, nil
+}
+
 func (p *NatsProvider) StopAllSessions(ctx context.Context) error {
 	// Not implemented for NATS yet (would need to kill all local wrapper processes)
 	return nil
@@ -410,6 +462,23 @@ func (p *NatsProvider) GetMainPID(ctx context.Context, sessionID string) (string
 		return "", fmt.Errorf("reading PID file: %w", err)
 	}
 	return strings.TrimSpace(string(data)), nil
+}
+
+func (p *NatsProvider) GetServerPID(ctx context.Context) (int, error) {
+	return 0, nil // No local server PID for NATS
+}
+
+func (p *NatsProvider) GetWorkDir(ctx context.Context, sessionID string) (string, error) {
+	pid, err := p.GetMainPID(ctx, sessionID)
+	if err != nil {
+		return "", err
+	}
+	// On Linux, we can get the cwd of a process from /proc/<pid>/cwd
+	cwd, err := os.Readlink(fmt.Sprintf("/proc/%s/cwd", pid))
+	if err != nil {
+		return "", fmt.Errorf("reading /proc/%s/cwd: %w", pid, err)
+	}
+	return cwd, nil
 }
 
 func (p *NatsProvider) getPanePID(name string) (string, error) {

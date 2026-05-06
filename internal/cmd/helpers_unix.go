@@ -3,6 +3,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -10,37 +11,46 @@ import (
 	"syscall"
 
 	"github.com/steveyegge/gastown/internal/config"
+	"github.com/steveyegge/gastown/internal/session"
 	"github.com/steveyegge/gastown/internal/tmux"
+	"github.com/steveyegge/gastown/internal/workspace"
 )
 
-// attachToTmuxSession attaches to a tmux session.
-// If already inside tmux, uses switch-client instead of attach-session.
-// Uses syscall.Exec to replace the Go process with tmux for direct terminal
-// control, and passes -u for UTF-8 support regardless of locale settings.
-// See: https://github.com/steveyegge/gastown/issues/1219
+// attachToTmuxSession attaches to a session (tmux or NATS).
 func attachToTmuxSession(sessionID string) error {
-	tmuxPath, err := exec.LookPath("tmux")
-	if err != nil {
-		return fmt.Errorf("tmux not found: %w", err)
+	townRoot, _ := workspace.FindFromCwd()
+	sp := session.GetDefaultProvider(townRoot)
+
+	// For TmuxProvider, we use the existing syscall.Exec logic to replace
+	// the current process with tmux for direct terminal control.
+	if _, ok := sp.(*session.TmuxProvider); ok {
+		tmuxPath, err := exec.LookPath("tmux")
+		if err != nil {
+			return fmt.Errorf("tmux not found: %w", err)
+		}
+
+		// Base args with UTF-8 and socket support
+		baseArgs := []string{"tmux", "-u"}
+		if socket := tmux.GetDefaultSocket(); socket != "" {
+			baseArgs = append(baseArgs, "-L", socket)
+		}
+
+		var args []string
+		if isInSameTmuxSocket() {
+			// Same tmux socket: switch to the target session
+			args = append(baseArgs, "switch-client", "-t", sessionID)
+		} else {
+			// Outside tmux or different socket: attach to the session
+			args = append(baseArgs, "attach-session", "-t", sessionID)
+		}
+
+		// Replace the Go process with tmux for direct terminal control
+		return syscall.Exec(tmuxPath, args, os.Environ())
 	}
 
-	// Base args with UTF-8 and socket support
-	baseArgs := []string{"tmux", "-u"}
-	if socket := tmux.GetDefaultSocket(); socket != "" {
-		baseArgs = append(baseArgs, "-L", socket)
-	}
-
-	var args []string
-	if isInSameTmuxSocket() {
-		// Same tmux socket: switch to the target session
-		args = append(baseArgs, "switch-client", "-t", sessionID)
-	} else {
-		// Outside tmux or different socket: attach to the session
-		args = append(baseArgs, "attach-session", "-t", sessionID)
-	}
-
-	// Replace the Go process with tmux for direct terminal control
-	return syscall.Exec(tmuxPath, args, os.Environ())
+	// For other providers (NATS), use the provider's AttachSession implementation
+	// which typically tails logs.
+	return sp.AttachSession(context.Background(), sessionID)
 }
 
 // execAgent execs the configured agent, replacing the current process.

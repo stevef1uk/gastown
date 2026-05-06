@@ -2,6 +2,7 @@
 package runtime
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strings"
@@ -12,7 +13,6 @@ import (
 	"github.com/steveyegge/gastown/internal/hooks"
 	"github.com/steveyegge/gastown/internal/hookutil"
 	"github.com/steveyegge/gastown/internal/templates/commands"
-	"github.com/steveyegge/gastown/internal/tmux"
 )
 
 // EnsureSettingsForRole provisions all agent-specific configuration for a role.
@@ -57,8 +57,8 @@ func EnsureSettingsForRole(settingsDir, workDir, role string, rc *config.Runtime
 }
 
 type startupPromptSession interface {
-	NudgeSession(sessionID, message string) error
-	WaitForRuntimeReady(sessionID string, rc *config.RuntimeConfig, timeout time.Duration) error
+	NudgeSession(ctx context.Context, sessionID, message string) error
+	WaitForRuntimeReady(ctx context.Context, sessionID string, rc *config.RuntimeConfig, timeout time.Duration) error
 }
 
 // SessionIDFromEnv returns the runtime session ID, if present.
@@ -103,11 +103,11 @@ func StartupFallbackCommands(role string, rc *config.RuntimeConfig) []string {
 	return []string{command}
 }
 
-// RunStartupFallback sends the startup fallback commands via tmux.
-func RunStartupFallback(t *tmux.Tmux, sessionID, role string, rc *config.RuntimeConfig) error {
+// RunStartupFallback sends the startup fallback commands.
+func RunStartupFallback(ctx context.Context, t startupPromptSession, sessionID, role string, rc *config.RuntimeConfig) error {
 	commands := StartupFallbackCommands(role, rc)
 	for _, cmd := range commands {
-		if err := t.NudgeSession(sessionID, cmd); err != nil {
+		if err := t.NudgeSession(ctx, sessionID, cmd); err != nil {
 			return err
 		}
 	}
@@ -212,6 +212,7 @@ func GetStartupPromptFallback(rc *config.RuntimeConfig) StartupPromptFallback {
 // DeliverStartupPromptFallback sends the startup prompt via nudge for runtimes
 // that cannot accept the prompt as a CLI argument.
 func DeliverStartupPromptFallback(
+	ctx context.Context,
 	t startupPromptSession,
 	sessionID, prompt string,
 	rc *config.RuntimeConfig,
@@ -223,12 +224,12 @@ func DeliverStartupPromptFallback(
 	}
 
 	if fallback.DelayMs > 0 {
-		if err := t.WaitForRuntimeReady(sessionID, RuntimeConfigWithMinDelay(rc, fallback.DelayMs), timeout); err != nil {
+		if err := t.WaitForRuntimeReady(ctx, sessionID, RuntimeConfigWithMinDelay(rc, fallback.DelayMs), timeout); err != nil {
 			return fmt.Errorf("waiting for startup prompt fallback: %w", err)
 		}
 	}
 
-	if err := t.NudgeSession(sessionID, prompt); err != nil {
+	if err := t.NudgeSession(ctx, sessionID, prompt); err != nil {
 		return fmt.Errorf("nudging startup prompt fallback: %w", err)
 	}
 	return nil

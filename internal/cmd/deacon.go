@@ -16,7 +16,6 @@ import (
 	"github.com/steveyegge/gastown/internal/deacon"
 	"github.com/steveyegge/gastown/internal/session"
 	"github.com/steveyegge/gastown/internal/style"
-	"github.com/steveyegge/gastown/internal/tmux"
 	"github.com/steveyegge/gastown/internal/util"
 	"github.com/steveyegge/gastown/internal/workspace"
 )
@@ -550,10 +549,11 @@ type HeartbeatStatus struct {
 }
 
 func runDeaconStatus(cmd *cobra.Command, args []string) error {
-	t := tmux.NewTmux()
+	townRoot, _ := workspace.FindFromCwdOrError()
+	sp := session.GetDefaultProvider(townRoot)
 
 	sessionName := getDeaconSessionName()
-	townRoot, _ := workspace.FindFromCwdOrError()
+	ctx := context.Background()
 
 	// Gather state
 	paused := false
@@ -566,7 +566,7 @@ func runDeaconStatus(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	running, err := t.HasSession(sessionName)
+	running, err := sp.Exists(ctx, sessionName)
 	if err != nil {
 		return fmt.Errorf("checking session: %w", err)
 	}
@@ -615,7 +615,7 @@ func runDeaconStatus(cmd *cobra.Command, args []string) error {
 
 	if running {
 		// Get session info for more details
-		info, err := t.GetSessionInfo(sessionName)
+		info, err := sp.GetSessionInfo(ctx, sessionName)
 		if err == nil {
 			status := "detached"
 			if info.Attached {
@@ -667,11 +667,13 @@ func runDeaconStatus(cmd *cobra.Command, args []string) error {
 }
 
 func runDeaconRestart(cmd *cobra.Command, args []string) error {
-	t := tmux.NewTmux()
+	townRoot, _ := workspace.FindFromCwdOrError()
+	sp := session.GetDefaultProvider(townRoot)
 
 	sessionName := getDeaconSessionName()
+	ctx := context.Background()
 
-	running, err := t.HasSession(sessionName)
+	running, err := sp.Exists(ctx, sessionName)
 	if err != nil {
 		return fmt.Errorf("checking session: %w", err)
 	}
@@ -679,9 +681,8 @@ func runDeaconRestart(cmd *cobra.Command, args []string) error {
 	fmt.Println("Restarting Deacon...")
 
 	if running {
-		// Kill existing session.
-		// Use KillSessionWithProcesses to ensure all descendant processes are killed.
-		if err := t.KillSessionWithProcesses(sessionName); err != nil {
+		// Kill existing session via provider.
+		if err := sp.Stop(ctx, sessionName, false); err != nil {
 			style.PrintWarning("failed to kill session: %v", err)
 		}
 	}
@@ -766,10 +767,11 @@ func runDeaconHealthCheck(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("invalid agent address: %w", err)
 	}
 
-	t := tmux.NewTmux()
+	sp := session.GetDefaultProvider(townRoot)
+	ctx := context.Background()
 
 	// Check if session exists
-	exists, err := t.HasSession(sessionName)
+	exists, err := sp.Exists(ctx, sessionName)
 	if err != nil {
 		return fmt.Errorf("checking session: %w", err)
 	}
@@ -781,12 +783,12 @@ func runDeaconHealthCheck(cmd *cobra.Command, args []string) error {
 	// Record ping
 	agentState.RecordPing()
 
-	// Send health check nudge via immediate delivery (not queued).
+	// Send health check nudge.
 	// Health checks MUST interrupt to test liveness — queued delivery would
 	// defer until the next turn boundary, causing the 30s timeout to expire
 	// and producing false negatives that kill healthy agents.
 	healthMsg := "HEALTH_CHECK: respond with any action to confirm responsiveness"
-	if err := t.NudgeSession(sessionName, healthMsg); err != nil {
+	if err := sp.Inject(ctx, sessionName, healthMsg); err != nil {
 		return fmt.Errorf("sending health check nudge: %w", err)
 	}
 
@@ -799,12 +801,12 @@ func runDeaconHealthCheck(cmd *cobra.Command, args []string) error {
 		baselineTime = time.Now()
 	}
 
-	// Also capture baseline tmux session activity time.
+	// Also capture baseline session activity time.
 	// This is the secondary response signal: if the session shows new output
 	// after our nudge, the agent is alive and processing — even if it hasn't
 	// updated its bead (e.g., witness agents that respond in prose rather than
 	// via a structured bead-update channel).
-	baselineActivity, activityErr := t.GetSessionActivity(sessionName)
+	baselineActivity, activityErr := sp.GetLastActivity(ctx, sessionName)
 
 	fmt.Printf("%s Sent HEALTH_CHECK to %s, waiting %s...\n",
 		style.Bold.Render("→"), agent, healthCheckTimeout)
@@ -831,12 +833,12 @@ func runDeaconHealthCheck(cmd *cobra.Command, args []string) error {
 				goto Done
 			}
 
-			// Secondary signal: tmux session activity (prose/command response)
+			// Secondary signal: session activity (prose/command response)
 			// Agents like the Witness respond to HEALTH_CHECK by running commands
 			// in their session, producing output, but may not update their bead.
 			// Session activity is a reliable liveness signal for these agents.
 			if activityErr == nil {
-				newActivity, err := t.GetSessionActivity(sessionName)
+				newActivity, err := sp.GetLastActivity(ctx, sessionName)
 				if err == nil && newActivity.After(baselineActivity) {
 					responded = true
 					goto Done
@@ -905,10 +907,11 @@ func runDeaconForceKill(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("invalid agent address: %w", err)
 	}
 
-	t := tmux.NewTmux()
+	sp := session.GetDefaultProvider(townRoot)
+	ctx := context.Background()
 
 	// Check if session exists
-	exists, err := t.HasSession(sessionName)
+	exists, err := sp.Exists(ctx, sessionName)
 	if err != nil {
 		return fmt.Errorf("checking session: %w", err)
 	}
@@ -929,10 +932,9 @@ func runDeaconForceKill(cmd *cobra.Command, args []string) error {
 	mailBody := fmt.Sprintf("Deacon detected %s as unresponsive.\nReason: %s\nAction: force-killing session", agent, reason)
 	sendMail(townRoot, agent, "FORCE_KILL: unresponsive", mailBody)
 
-	// Step 2: Kill the tmux session.
-	// Use KillSessionWithProcesses to ensure all descendant processes are killed.
-	fmt.Printf("%s Killing tmux session %s...\n", style.Dim.Render("2."), sessionName)
-	if err := t.KillSessionWithProcesses(sessionName); err != nil {
+	// Step 2: Kill the session via provider.
+	fmt.Printf("%s Killing session %s...\n", style.Dim.Render("2."), sessionName)
+	if err := sp.Stop(ctx, sessionName, false); err != nil {
 		return fmt.Errorf("killing session: %w", err)
 	}
 

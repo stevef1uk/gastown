@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -188,28 +189,8 @@ func runHandoff(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Use a socket-aware Tmux for pane operations. The calling process may be
-	// on a different tmux server than the town socket (e.g., default socket).
-	// For self-handoff, pane operations (clear-history, respawn-pane) must target
-	// the caller's own server. SocketFromEnv() reads $TMUX to find the right one.
-	callerSocket := tmux.SocketFromEnv()
-	t := tmux.NewTmuxWithSocket(callerSocket)
-	// Town-socket Tmux for session-level queries (getSessionPane, etc.)
-	townTmux := tmux.NewTmux()
-	_ = townTmux // used later for remote handoff
-
-	// Verify we're in tmux
-	if !tmux.IsInsideTmux() {
-		return fmt.Errorf("not running in tmux - cannot hand off")
-	}
-
-	pane := os.Getenv("TMUX_PANE")
-	if pane == "" {
-		return fmt.Errorf("TMUX_PANE not set - cannot hand off")
-	}
-
-	// Get current session name from GT_ROLE (preferred) or tmux display-message.
-	currentSession, err := getCurrentTmuxSession()
+	// Get current session name from GT_SESSION (NATS/latest), GT_ROLE (preferred) or tmux display-message.
+	currentSession, err := getCurrentSessionName()
 	if err != nil {
 		return fmt.Errorf("getting session name: %w", err)
 	}
@@ -253,12 +234,15 @@ func runHandoff(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	townRoot, _ := workspace.FindFromCwd()
+	sp := session.GetDefaultProvider(townRoot)
+
 	// If handing off a different session, we need to find its pane and respawn there.
-	// Remote sessions live on the town socket, so use townTmux for their operations.
+	// Remote sessions live on the town socket, so use sp for their operations.
 	if targetSession != currentSession {
-		// Update tmux session env before respawn (not during dry-run — see below)
-		updateSessionEnvForHandoff(townTmux, targetSession, "")
-		return handoffRemoteSession(townTmux, targetSession, restartCmd)
+		// Update session env before respawn (not during dry-run — see below)
+		updateSessionEnvForHandoff(sp, targetSession, "")
+		return handoffRemoteSession(sp, targetSession, restartCmd)
 	}
 
 	// Close any in-progress molecule steps before cycling (gt-e26g).
@@ -279,17 +263,20 @@ func runHandoff(cmd *cobra.Command, args []string) error {
 		if handoffSubject != "" || handoffMessage != "" {
 			fmt.Printf("Would send handoff mail: subject=%q (auto-hooked)\n", handoffSubject)
 		}
-		fmt.Printf("Would execute: tmux clear-history -t %s\n", pane)
-		fmt.Printf("Would execute: tmux respawn-pane -k -t %s %s\n", pane, restartCmd)
+		// For tmux providers, show tmux commands. For others, show generic respawn.
+		if _, ok := sp.(*session.TmuxProvider); ok {
+			pane, _ := getSessionPane(targetSession)
+			fmt.Printf("Would execute: tmux clear-history -t %s\n", pane)
+			fmt.Printf("Would execute: tmux respawn-pane -k -t %s %s\n", pane, restartCmd)
+		} else {
+			fmt.Printf("Would respawn session %s with command: %s\n", targetSession, restartCmd)
+		}
 		return nil
 	}
 
-	// Update tmux session environment for liveness detection.
-	// IsAgentAlive reads GT_PROCESS_NAMES via tmux show-environment (session env),
-	// not from shell exports. The restart command sets shell exports for the child
-	// process, but we must also update the session env so liveness checks work.
-	// Placed after the dry-run guard to avoid mutating session state during dry-run.
-	updateSessionEnvForHandoff(t, currentSession, "")
+	// Update session environment for liveness detection.
+	// IsAgentAlive reads GT_PROCESS_NAMES via session provider.
+	updateSessionEnvForHandoff(sp, targetSession, "")
 
 	// Send handoff mail to self (defaults applied inside sendHandoffMail).
 	// The mail is auto-hooked so the next session picks it up.
@@ -321,9 +308,14 @@ func runHandoff(cmd *cobra.Command, args []string) error {
 	// "Discover, don't track" principle: reality is truth, state is derived.
 
 	// Clear scrollback history before respawn (resets copy-mode from [0/N] to [0/0])
-	if err := t.ClearHistory(pane); err != nil {
-		// Non-fatal - continue with respawn even if clear fails
-		style.PrintWarning("could not clear history: %v", err)
+	// This is a best-effort tmux-specific optimization.
+	if tp, ok := sp.(*session.TmuxProvider); ok {
+		pane, _ := getSessionPane(targetSession)
+		t := tp.Tmux()
+		if err := t.ClearHistory(pane); err != nil {
+			// Non-fatal - continue with respawn even if clear fails
+			style.PrintWarning("could not clear history: %v", err)
+		}
 	}
 
 	// Write handoff marker for successor detection (prevents handoff loop bug).
@@ -338,6 +330,20 @@ func runHandoff(cmd *cobra.Command, args []string) error {
 
 	// Record handoff time for cooldown enforcement (gt-058d).
 	recordHandoffTime()
+
+	// For NATS, EnsureSessionFresh is sufficient.
+	if _, ok := sp.(*session.NatsProvider); ok {
+		workDir, _ := os.Getwd()
+		return sp.EnsureSessionFresh(context.Background(), targetSession, workDir, restartCmd, nil)
+	}
+
+	// Tmux specific self-handoff logic
+	tp, ok := sp.(*session.TmuxProvider)
+	if !ok {
+		return fmt.Errorf("provider does not support self-handoff")
+	}
+	t := tp.Tmux()
+	pane, _ := getSessionPane(targetSession)
 
 	// Set remain-on-exit so the pane survives process death during handoff.
 	// Without this, killing processes causes tmux to destroy the pane before
@@ -416,10 +422,8 @@ func runHandoffAuto() error {
 		_ = os.MkdirAll(runtimeDir, 0755)
 		markerPath := filepath.Join(runtimeDir, constants.FileHandoffMarker)
 		sessionName := "auto-handoff"
-		if tmux.IsInsideTmux() {
-			if name, err := getCurrentTmuxSession(); err == nil {
-				sessionName = name
-			}
+		if name, err := getCurrentSessionName(); err == nil {
+			sessionName = name
 		}
 		_ = os.WriteFile(markerPath, []byte(sessionName), 0644)
 	}
@@ -486,7 +490,7 @@ func runHandoffCycle() error {
 		return runHandoffAuto()
 	}
 
-	currentSession, err := getCurrentTmuxSession()
+	currentSession, err := getCurrentSessionName()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "handoff --cycle: could not get session: %v, falling back to state-save only\n", err)
 		handoffMessage = message
@@ -589,34 +593,6 @@ func runHandoffCycle() error {
 
 	// Respawn pane — this atomically kills current process and starts fresh
 	return t.RespawnPane(pane, restartCmd)
-}
-
-// getCurrentTmuxSession returns the current tmux session name.
-func getCurrentTmuxSession() (string, error) {
-	// Prefer GT_ROLE for session resolution. BuildCommand uses -L <town-socket>,
-	// but the calling process may live on the default socket (e.g., Claude Code
-	// spawned by tmux on the default server). In that case, display-message on
-	// the town socket returns an arbitrary session (often hq-boot) instead of
-	// the caller's actual session.
-	if role := os.Getenv("GT_ROLE"); role != "" {
-		resolved, err := resolveRoleToSession(role)
-		if err == nil && resolved != "" {
-			return resolved, nil
-		}
-		// Fall through to tmux detection if role resolution fails
-	}
-
-	// Use TMUX_PANE for targeted display-message to avoid returning an
-	// arbitrary session when multiple sessions share the town socket.
-	pane := os.Getenv("TMUX_PANE")
-	if pane == "" {
-		return "", fmt.Errorf("TMUX_PANE not set")
-	}
-	out, err := tmux.BuildCommand("display-message", "-t", pane, "-p", "#{session_name}").Output()
-	if err != nil {
-		return "", err
-	}
-	return strings.TrimSpace(string(out)), nil
 }
 
 // resolveRoleToSession converts a role name or path to a tmux session name.
@@ -981,18 +957,20 @@ func buildRestartCommandWithOpts(sessionName string, opts buildRestartCommandOpt
 // updateSessionEnvForHandoff updates the tmux session environment with the
 // agent name and process names for liveness detection. IsAgentAlive reads
 // GT_PROCESS_NAMES from the tmux session env (via tmux show-environment), not
-// from shell exports in the pane. Without this, post-handoff liveness checks
-// would use stale values from the previous agent.
-func updateSessionEnvForHandoff(t *tmux.Tmux, sessionName, agentOverride string) {
+// from shell exports in the pane. Without this, post-handoff
+func updateSessionEnvForHandoff(sp session.Provider, sessionName, agentOverride string) {
 	// Resolve current agent using the same priority as buildRestartCommandWithAgent
 	var currentAgent string
+	ctx := context.Background()
 	if agentOverride != "" {
 		currentAgent = agentOverride
 	} else {
 		currentAgent = os.Getenv("GT_AGENT")
 		if currentAgent == "" {
-			if val, err := t.GetEnvironment(sessionName, "GT_AGENT"); err == nil && val != "" {
-				currentAgent = val
+			if env, err := sp.GetEnvironment(ctx, sessionName); err == nil {
+				if val, ok := env["GT_AGENT"]; ok && val != "" {
+					currentAgent = val
+				}
 			}
 		}
 	}
@@ -1002,7 +980,7 @@ func updateSessionEnvForHandoff(t *tmux.Tmux, sessionName, agentOverride string)
 	}
 
 	// Update GT_AGENT in session env
-	_ = t.SetEnvironment(sessionName, "GT_AGENT", currentAgent)
+	_ = sp.SetEnvironment(ctx, sessionName, "GT_AGENT", currentAgent)
 
 	// Resolve and update GT_PROCESS_NAMES in session env
 	// When switching agents, recompute from config. When preserving, use env value.
@@ -1022,18 +1000,20 @@ func updateSessionEnvForHandoff(t *tmux.Tmux, sessionName, agentOverride string)
 				processNames = strings.Join(resolved, ",")
 			}
 		}
-	}
-	if processNames == "" {
-		// Preserve existing value or compute from current agent
-		if pn := os.Getenv("GT_PROCESS_NAMES"); pn != "" {
-			processNames = pn
-		} else {
-			resolved := config.ResolveProcessNames(currentAgent, "")
-			processNames = strings.Join(resolved, ",")
+	} else {
+		processNames = os.Getenv("GT_PROCESS_NAMES")
+		if processNames == "" {
+			if env, err := sp.GetEnvironment(ctx, sessionName); err == nil {
+				if val, ok := env["GT_PROCESS_NAMES"]; ok && val != "" {
+					processNames = val
+				}
+			}
 		}
 	}
 
-	_ = t.SetEnvironment(sessionName, "GT_PROCESS_NAMES", processNames)
+	if processNames != "" {
+		_ = sp.SetEnvironment(ctx, sessionName, "GT_PROCESS_NAMES", processNames)
+	}
 }
 
 // sessionWorkDir returns the correct working directory for a session.
@@ -1150,9 +1130,10 @@ func detectTownRootFromCwd() string {
 }
 
 // handoffRemoteSession respawns a different session and optionally switches to it.
-func handoffRemoteSession(t *tmux.Tmux, targetSession, restartCmd string) error {
+func handoffRemoteSession(sp session.Provider, targetSession, restartCmd string) error {
+	ctx := context.Background()
 	// Check if target session exists
-	exists, err := t.HasSession(targetSession)
+	exists, err := sp.Exists(ctx, targetSession)
 	if err != nil {
 		return fmt.Errorf("checking session: %w", err)
 	}
@@ -1160,22 +1141,34 @@ func handoffRemoteSession(t *tmux.Tmux, targetSession, restartCmd string) error 
 		return fmt.Errorf("session '%s' not found - is the agent running?", targetSession)
 	}
 
-	// Get the pane ID for the target session
-	targetPane, err := getSessionPane(targetSession)
-	if err != nil {
-		return fmt.Errorf("getting target pane: %w", err)
-	}
-
 	fmt.Printf("%s Handing off %s...\n", style.Bold.Render("🤝"), targetSession)
 
 	// Dry run mode
 	if handoffDryRun {
-		fmt.Printf("Would execute: tmux clear-history -t %s\n", targetPane)
-		fmt.Printf("Would execute: tmux respawn-pane -k -t %s %s\n", targetPane, restartCmd)
-		if handoffWatch {
-			fmt.Printf("Would execute: tmux switch-client -t %s\n", targetSession)
-		}
+		fmt.Printf("Would execute: session restart %s with %s\n", targetSession, restartCmd)
 		return nil
+	}
+
+	// For NATS, EnsureSessionFresh is sufficient and handles PID cleanup.
+	if _, ok := sp.(*session.NatsProvider); ok {
+		workDir, _ := sp.GetWorkDir(ctx, targetSession)
+		if workDir == "" {
+			townRoot := detectTownRootFromCwd()
+			workDir = townRoot
+		}
+		return sp.EnsureSessionFresh(ctx, targetSession, workDir, restartCmd, nil)
+	}
+
+	// Tmux specific remote handoff logic
+	tp, ok := sp.(*session.TmuxProvider)
+	if !ok {
+		return fmt.Errorf("provider does not support remote handoff")
+	}
+	t := tp.Tmux()
+
+	targetPane, err := getSessionPane(targetSession)
+	if err != nil {
+		return fmt.Errorf("getting target pane: %w", err)
 	}
 
 	// Set remain-on-exit so the pane survives process death during handoff.

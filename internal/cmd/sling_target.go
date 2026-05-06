@@ -1,12 +1,12 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strings"
 
 	"github.com/steveyegge/gastown/internal/session"
-	"github.com/steveyegge/gastown/internal/tmux"
 	"github.com/steveyegge/gastown/internal/workspace"
 )
 
@@ -18,24 +18,30 @@ var resolveTargetAgentFn = resolveTargetAgent
 
 // resolveTargetAgent converts a target spec to agent ID, pane, and hook root.
 func resolveTargetAgent(target string) (agentID string, pane string, hookRoot string, err error) {
+	ctx := context.Background()
+	townRoot, _ := workspace.FindFromCwd()
+	provider := session.GetDefaultProvider(townRoot)
+
 	// First resolve to session name
 	sessionName, err := resolveRoleToSession(target)
 	if err != nil {
 		return "", "", "", err
 	}
 
-	// Convert session name to agent ID format (this doesn't require tmux)
+	// Convert session name to agent ID format
 	agentID = sessionToAgentID(sessionName)
 
-	// Get the pane for that session
-	pane, err = getSessionPane(sessionName)
-	if err != nil {
-		return "", "", "", fmt.Errorf("getting pane for %s: %w", sessionName, err)
+	// Get session info from provider
+	if _, err := provider.GetSessionInfo(ctx, sessionName); err != nil {
+		return "", "", "", fmt.Errorf("getting session info for %s: %w", sessionName, err)
 	}
 
+	// For NATS, there is no "pane", but we return the session name as a placeholder
+	// to satisfy the nudge delivery requirements.
+	pane = sessionName
+
 	// Get the target's working directory for hook storage
-	t := tmux.NewTmux()
-	hookRoot, err = t.GetPaneWorkDir(sessionName)
+	hookRoot, err = provider.GetWorkDir(ctx, sessionName)
 	if err != nil {
 		return "", "", "", fmt.Errorf("getting working dir for %s: %w", sessionName, err)
 	}

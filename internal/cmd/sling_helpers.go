@@ -455,9 +455,21 @@ func injectStartPrompt(pane, beadID, subject, args string) error {
 		prompt = fmt.Sprintf("Work slung: %s. Start working on it now - run `"+cli.Name()+" hook` to see the hook, then begin.", beadID)
 	}
 
-	// Use the reliable nudge pattern (same as gt nudge / tmux.NudgeSession)
-	t := tmux.NewTmux()
-	return t.NudgePane(pane, prompt)
+	townRoot, _ := workspace.FindFromCwd()
+	sp := session.GetDefaultProvider(townRoot)
+
+	// Identify sender for message prefix
+	sender := detectActor()
+
+	// Use the transport-agnostic deliverNudge.
+	// Since we are in internal/cmd, we can just call it directly.
+	// We use "immediate" mode for start prompts to ensure they land,
+	// but deliverNudge will force "queue" for NATS anyway.
+	origMode := nudgeModeFlag
+	nudgeModeFlag = NudgeModeImmediate
+	defer func() { nudgeModeFlag = origMode }()
+
+	return deliverNudge(sp, townRoot, pane, prompt, sender)
 }
 
 // getSessionFromPane extracts session name from a pane target.

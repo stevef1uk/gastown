@@ -1,6 +1,7 @@
 package runtime
 
 import (
+	"context"
 	"os"
 	"testing"
 	"time"
@@ -16,7 +17,7 @@ type fakeStartupPromptSession struct {
 	nudgeErr  error
 }
 
-func (f *fakeStartupPromptSession) NudgeSession(_ string, message string) error {
+func (f *fakeStartupPromptSession) NudgeSession(_ context.Context, _ string, message string) error {
 	if f.nudgeErr != nil {
 		return f.nudgeErr
 	}
@@ -24,7 +25,7 @@ func (f *fakeStartupPromptSession) NudgeSession(_ string, message string) error 
 	return nil
 }
 
-func (f *fakeStartupPromptSession) WaitForRuntimeReady(_ string, rc *config.RuntimeConfig, _ time.Duration) error {
+func (f *fakeStartupPromptSession) WaitForRuntimeReady(_ context.Context, _ string, rc *config.RuntimeConfig, _ time.Duration) error {
 	f.waitCalls++
 	f.waitRC = rc
 	return f.waitErr
@@ -456,7 +457,7 @@ func TestDeliverStartupPromptFallback_NoPromptWaitsAndNudges(t *testing.T) {
 	}
 	tm := &fakeStartupPromptSession{}
 
-	err := DeliverStartupPromptFallback(tm, "sess-1", "begin patrol", rc, 30*time.Second)
+	err := DeliverStartupPromptFallback(context.Background(), tm, "sess-1", "begin patrol", rc, 30*time.Second)
 	if err != nil {
 		t.Fatalf("DeliverStartupPromptFallback() error = %v", err)
 	}
@@ -486,7 +487,7 @@ func TestDeliverStartupPromptFallback_WithPromptNoOp(t *testing.T) {
 	}
 	tm := &fakeStartupPromptSession{}
 
-	err := DeliverStartupPromptFallback(tm, "sess-1", "begin patrol", rc, 30*time.Second)
+	err := DeliverStartupPromptFallback(context.Background(), tm, "sess-1", "begin patrol", rc, 30*time.Second)
 	if err != nil {
 		t.Fatalf("DeliverStartupPromptFallback() error = %v", err)
 	}
@@ -507,7 +508,7 @@ func TestDeliverStartupPromptFallback_WaitError(t *testing.T) {
 	}
 	tm := &fakeStartupPromptSession{waitErr: os.ErrDeadlineExceeded}
 
-	err := DeliverStartupPromptFallback(tm, "sess-1", "begin patrol", rc, 30*time.Second)
+	err := DeliverStartupPromptFallback(context.Background(), tm, "sess-1", "begin patrol", rc, 30*time.Second)
 	if err == nil {
 		t.Fatal("DeliverStartupPromptFallback() error = nil, want non-nil")
 	}

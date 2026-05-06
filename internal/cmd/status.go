@@ -860,11 +860,12 @@ func gatherStatus() (TownStatus, error) {
 		Running:      len(allSessions) > 0,
 	}
 	// Resolve socket path: /tmp/tmux-<UID>/<socket> (tmux only)
-	if tp, ok := sp.(*session.TmuxProvider); ok {
+	if _, ok := sp.(*session.TmuxProvider); ok {
 		tmuxInfo.SocketPath = filepath.Join(tmux.SocketDir(), socketLabel)
 		if _, err := os.Stat(tmuxInfo.SocketPath); err == nil {
 			tmuxInfo.Running = true
-			tmuxInfo.PID = tp.Tmux().ServerPID()
+			pid, _ := sp.GetServerPID(context.Background())
+			tmuxInfo.PID = pid
 		}
 	}
 	status.Tmux = tmuxInfo

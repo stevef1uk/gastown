@@ -317,7 +317,7 @@ func handleStepContinue(cwd, townRoot string, nextStep *beads.Issue, dryRun bool
 	}
 
 	// Get current session for restart command
-	currentSession, err := getCurrentTmuxSession()
+	currentSession, err := getCurrentSessionName()
 	if err != nil {
 		return fmt.Errorf("getting session name: %w", err)
 	}

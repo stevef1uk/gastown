@@ -3265,7 +3265,14 @@ func (t *Tmux) EnableMouseMode(session string) error {
 // IsInsideTmux checks if the current process is running inside a tmux session.
 // This is detected by the presence of the TMUX environment variable.
 func IsInsideTmux() bool {
-	return os.Getenv("TMUX") != ""
+	if os.Getenv("TMUX") != "" {
+		return true
+	}
+	// If GT_SESSION is set and transport is NATS, we are "inside" a session.
+	if os.Getenv("GT_SESSION") != "" && os.Getenv("GT_SESSION_TRANSPORT") == "nats" {
+		return true
+	}
+	return false
 }
 
 // SetMailClickBinding configures left-click on status-right to show mail preview.

@@ -1,4 +1,13 @@
 {
   "version": 1,
-  "rigs": {}
+  "rigs": {
+    "testgt1": {
+      "git_url": "https://github.com/stevef1uk/testgt1",
+      "added_at": "2026-05-06T06:30:25.648610007+02:00",
+      "beads": {
+        "repo": "",
+        "prefix": "te"
+      }
+    }
+  }
 }

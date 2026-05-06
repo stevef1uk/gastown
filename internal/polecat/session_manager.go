@@ -559,7 +559,7 @@ func (m *SessionManager) Start(polecat string, opts SessionStartOptions) error {
 			// Promptless runtimes need the full startup prompt delivered via nudge so
 			// the agent sees both the beacon and the initial work instructions.
 			debugSession("DeliverStartupPromptFallback",
-				runtime.DeliverStartupPromptFallback(m.tmux(), sessionID, startupPromptFallback, runtimeConfig, constants.ClaudeStartTimeout))
+				runtime.DeliverStartupPromptFallback(context.Background(), m.sp, sessionID, startupPromptFallback, runtimeConfig, constants.ClaudeStartTimeout))
 		} else {
 			if fallbackInfo.StartupNudgeDelayMs > 0 {
 				// Wait for agent to finish processing the beacon + gt prime before sending
@@ -587,7 +587,7 @@ func (m *SessionManager) Start(polecat string, opts SessionStartOptions) error {
 		}
 
 		// Legacy fallback for other startup paths (non-fatal)
-		_ = runtime.RunStartupFallback(m.tmux(), sessionID, "polecat", runtimeConfig)
+		_ = runtime.RunStartupFallback(context.Background(), m.sp, sessionID, "polecat", runtimeConfig)
 	}
 
 	// Verify session survived startup - if the command crashed, the session may have died.

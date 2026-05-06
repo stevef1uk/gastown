@@ -304,7 +304,7 @@ func runFeedInWindow(workDir string, bdArgs []string) error {
 	t := tmux.NewTmux()
 
 	// Get current session name
-	sessionName, err := getCurrentTmuxSession()
+	sessionName, err := getCurrentSessionName()
 	if err != nil {
 		return fmt.Errorf("getting current session: %w", err)
 	}

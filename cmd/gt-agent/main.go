@@ -188,12 +188,20 @@ func run() error {
 	}
 
 	// Determine session name for nudge queue
-	sessionName := os.Getenv("GT_SESSION_NAME")
+	sessionName := os.Getenv("GT_SESSION")
+	if sessionName == "" {
+		sessionName = os.Getenv("GT_SESSION_NAME")
+	}
 	if sessionName == "" {
 		if rig != "" && polecat != "" {
 			sessionName = fmt.Sprintf("gt-%s-%s", rig, polecat)
-		} else if role == "mayor" || role == "deacon" {
-			sessionName = fmt.Sprintf("hq-%s", role)
+		} else if role == "mayor" || role == "deacon" || role == "witness" || role == "refinery" {
+			// For rig-level roles, use the prefix if known
+			prefix := rig
+			if prefix == "" {
+				prefix = "hq"
+			}
+			sessionName = fmt.Sprintf("%s-%s", prefix, role)
 		}
 	}
 
@@ -456,14 +464,15 @@ Context:
 %s`, fmt.Sprintf(baseRules, patrolCount), primeContext)
 
 	case "witness":
-		return fmt.Sprintf(`You are a Gas Town WITNESS. You monitor polecats and handle lifecycle requests.
+		return fmt.Sprintf(`You are a Gas Town WITNESS. You monitor polecats and handle lifecycle requests. You execute the mol-witness-patrol formula for per-rig worker monitoring.
 
 %s
 7. Check all polecats with "gt polecat list" and "gt session status".
 8. Nudge stuck polecats toward completion with "gt nudge <rig>/<name> 'message'".
 9. Process LIFECYCLE requests (shutdown, restart) and SPAWN notifications.
 10. Run "gt patrol report --summary '<brief>'" at the end of each cycle.
-11. Do NOT close foreign wisps — only close wisps YOU created.
+11. To interact with your patrol molecule, use "bd mol status" (check hook) and "bd mol current" (see current step). Do NOT use "bd mol current <formula>".
+12. Do NOT close foreign wisps — only close wisps YOU created.
 
 Context:
 %s`, fmt.Sprintf(baseRules, patrolCount), primeContext)

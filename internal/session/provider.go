@@ -108,6 +108,11 @@ type Provider interface {
 	// Inject sends input (e.g. keystrokes or commands) to an active session.
 	Inject(ctx context.Context, sessionID string, data string) error
 
+	// NudgeSession delivers a message to the session in a non-destructive way.
+	// For tmux, this sends keys if the session is idle.
+	// For NATS, this typically enqueues a nudge for the agent to pick up.
+	NudgeSession(ctx context.Context, sessionID, message string) error
+
 	// GetEnvironment returns the environment variables for a running session.
 	GetEnvironment(ctx context.Context, sessionID string) (map[string]string, error)
 
@@ -132,6 +137,11 @@ type Provider interface {
 	// IsAgentRunning checks if the agent process is actively running in the session.
 	IsAgentRunning(ctx context.Context, id string) (bool, error)
 
+	// WaitForRuntimeReady waits for the agent to be ready for input.
+	// For tmux, this detects the shell prompt.
+	// For other providers, this might be a no-op or use a different signal.
+	WaitForRuntimeReady(ctx context.Context, sessionID string, rc *config.RuntimeConfig, timeout time.Duration) error
+
 	// CleanupOrphanedSessions scans for zombie sessions and kills them.
 	CleanupOrphanedSessions(isGTSession func(string) bool) (int, error)
 
@@ -140,6 +150,10 @@ type Provider interface {
 
 	// GetMainPID returns the PID of the main process in the session.
 	GetMainPID(ctx context.Context, sessionID string) (string, error)
+
+	// GetServerPID returns the PID of the session provider server (e.g. tmux server).
+	// Returns 0 if not applicable or not running.
+	GetServerPID(ctx context.Context) (int, error)
 
 	// --- Interactive Methods (for monitoring and control) ---
 
@@ -158,4 +172,13 @@ type Provider interface {
 
 	// GetSessionInfo returns provider-agnostic session metadata.
 	GetSessionInfo(ctx context.Context, sessionID string) (*SessionInfo, error)
+
+	// GetWorkDir returns the current working directory of the session.
+	GetWorkDir(ctx context.Context, sessionID string) (string, error)
+
+	// CheckSessionHealth checks if the session is running and healthy.
+	CheckSessionHealth(ctx context.Context, sessionID string, maxInactivity time.Duration) tmux.ZombieStatus
+
+	// GetLastActivity returns the time of the last recorded activity in the session.
+	GetLastActivity(ctx context.Context, sessionID string) (time.Time, error)
 }

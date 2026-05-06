@@ -99,9 +99,9 @@ func cycleToSession(direction int, sessionOverride, clientOverride string) error
 	session := sessionOverride
 	if session == "" {
 		var err error
-		session, err = getCurrentTmuxSession()
+		session, err = getCurrentSessionName()
 		if err != nil {
-			return nil // Not in tmux, nothing to do
+			return nil // Not in session, nothing to do
 		}
 	}
 
@@ -157,7 +157,7 @@ func resolveCurrentSession(override string) (string, error) {
 	if override != "" {
 		return override, nil
 	}
-	return getCurrentTmuxSession()
+	return getCurrentSessionName()
 }
 
 // cycleInGroup cycles between sessions in a sorted group.

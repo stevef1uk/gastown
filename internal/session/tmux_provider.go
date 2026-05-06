@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/steveyegge/gastown/internal/config"
 	"github.com/steveyegge/gastown/internal/tmux"
 )
 
@@ -48,6 +49,10 @@ func (p *TmuxProvider) List(ctx context.Context) ([]string, error) {
 
 func (p *TmuxProvider) Inject(ctx context.Context, sessionID string, data string) error {
 	return p.t.SendKeysRaw(sessionID, data)
+}
+
+func (p *TmuxProvider) NudgeSession(ctx context.Context, sessionID, message string) error {
+	return p.t.NudgeSession(sessionID, message)
 }
 
 func (p *TmuxProvider) GetEnvironment(ctx context.Context, sessionID string) (map[string]string, error) {
@@ -117,6 +122,14 @@ func (p *TmuxProvider) GetMainPID(ctx context.Context, sessionID string) (string
 	return p.t.GetPanePID(sessionID)
 }
 
+func (p *TmuxProvider) GetServerPID(ctx context.Context) (int, error) {
+	return p.t.ServerPID(), nil
+}
+
+func (p *TmuxProvider) GetWorkDir(ctx context.Context, sessionID string) (string, error) {
+	return p.t.GetPaneWorkDir(sessionID)
+}
+
 // IsIdle returns true if the tmux session is idle.
 func (p *TmuxProvider) IsIdle(ctx context.Context, sessionID string) (bool, error) {
 	return p.t.IsIdle(sessionID), nil
@@ -150,4 +163,17 @@ func (p *TmuxProvider) AcceptStartupDialogs(ctx context.Context, sessionID strin
 // WaitForIdle waits for the session to become idle.
 func (p *TmuxProvider) WaitForIdle(sessionID string, timeout time.Duration) error {
 	return p.t.WaitForIdle(sessionID, timeout)
+}
+
+// WaitForRuntimeReady waits for the agent to be ready for input.
+func (p *TmuxProvider) WaitForRuntimeReady(ctx context.Context, sessionID string, rc *config.RuntimeConfig, timeout time.Duration) error {
+	return p.t.WaitForRuntimeReady(sessionID, rc, timeout)
+}
+
+func (p *TmuxProvider) CheckSessionHealth(ctx context.Context, sessionID string, maxInactivity time.Duration) tmux.ZombieStatus {
+	return p.t.CheckSessionHealth(sessionID, maxInactivity)
+}
+
+func (p *TmuxProvider) GetLastActivity(ctx context.Context, sessionID string) (time.Time, error) {
+	return p.t.GetSessionActivity(sessionID)
 }
