@@ -379,3 +379,113 @@ reference with examples and design rationale.
 - [directives-and-overlays.md](directives-and-overlays.md) - Directives and overlays reference
 - [molecules.md](../concepts/molecules.md) - Workflow molecules
 - [identity.md](../concepts/identity.md) - Agent identity and BD_ACTOR
+- [architecture_stressed.md](architecture_stressed.md) - Detailed stressed architecture diagram
+
+## Stressed Multi-Agent Architecture
+
+For high-throughput, multi-rig environments, Gas Town employs an intelligent orchestration layer powered by **NATS** and the **Freeride Proxy**.
+
+```mermaid
+%%{init: {
+  'theme': 'dark',
+  'themeVariables': {
+    'primaryColor': '#1a1a2e',
+    'primaryTextColor': '#e94560',
+    'primaryBorderColor': '#e94560',
+    'lineColor': '#0f3460',
+    'secondaryColor': '#16213e',
+    'tertiaryColor': '#0f3460'
+  }
+}}%%
+
+graph LR
+    subgraph Users ["👨‍💻 Human Command (Crew)"]
+        H1[Developer A]
+        H2[Developer B]
+    end
+
+    subgraph Command ["⚖️ Orchestration (Town)"]
+        Mayor[Mayor<br/>Coordinator]
+        Deacon[Deacon<br/>Daemon/Watchdog]
+    end
+
+    subgraph Events ["📡 Messaging (NATS)"]
+        NATS((NATS Server))
+        subgraph Topics ["NATS Streams"]
+            T_Input[session.input]
+            T_Log[session.log]
+        end
+    end
+
+    subgraph Execution ["⚙️ Execution Layer (gt-agent)"]
+        GTA[gt-agent Binary]
+        Wrapper[NATS Wrapper]
+    end
+
+    subgraph Intelligence ["🧠 Intelligence (Freeride Proxy)"]
+        Proxy[Freeride Proxy]
+        
+        subgraph Providers ["LLM Providers"]
+            NVIDIA[NVIDIA NIM]
+            Ollama[Ollama Cloud]
+            OR[OpenRouter]
+        end
+    end
+
+    subgraph Rigs ["🏗️ Rig Execution Plane"]
+        subgraph Alpha ["Rig: alpha"]
+            Arch_A[Architect]
+            Plan_A[Planner]
+            QA_A[QA]
+            PC_A[Polecats]
+        end
+    end
+
+    subgraph Storage ["🗄️ Storage (Dolt)"]
+        Dolt[Dolt SQL Server]
+        HQ_DB[(hq_beads)]
+        RIG_DB[(rig_beads)]
+    end
+
+    %% Flow
+    H1 -->|gt up| Mayor
+    Mayor -->|gt sling| Arch_A
+    Arch_A -->|exec| GTA
+    GTA -->|wrap| Wrapper
+    Wrapper <--> NATS
+    
+    GTA -->|query| Proxy
+    Proxy --> NVIDIA
+    Proxy --> Ollama
+    Proxy --> OR
+
+    GTA -->|beads| Dolt
+    Dolt --> HQ_DB
+    Dolt --> RIG_DB
+
+    %% Styling
+    classDef high fill:#e94560,stroke:#fff,stroke-width:2px,color:#fff;
+    classDef proxy fill:#0f3460,stroke:#e94560,stroke-width:2px,color:#fff;
+    classDef storage fill:#16213e,stroke:#4ecca3,stroke-width:2px,color:#fff;
+    classDef engine fill:#533483,stroke:#fff,stroke-width:2px,color:#fff;
+
+    class Arch_A,Plan_A,QA_A high;
+    class Proxy,NVIDIA,Ollama,OR proxy;
+    class Dolt,HQ_DB,RIG_DB storage;
+    class GTA,Wrapper engine;
+```
+
+### Key Components Under Stress
+
+#### 1. The Freeride Proxy (Intelligent Load Balancing)
+The Proxy acts as the brain's gateway, managing high-throughput requests from dozens of concurrent agents. It performs provider sharding (Ollama Cloud for complex reasoning, NVIDIA NIM for fast tasks) and transparent fallback to OpenRouter.
+
+#### 2. NATS Event Plane & gt-agent
+*   **gt-agent**: The universal execution engine for all roles (Planner, Architect, QA).
+*   **NATS Wrapper**: Encapsulates the agent process, bridging I/O to NATS for low-latency session management.
+*   **Session Virtualization**: Enables spawning hundreds of agents without tmux overhead.
+
+#### 3. Strategic Roles
+*   **Planner**: Strategic task decomposition.
+*   **Architect**: SPEC analysis and design enforcement.
+*   **QA**: Final verification gatekeeper.

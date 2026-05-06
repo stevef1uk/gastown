@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -203,6 +204,13 @@ func StartSession(ctx context.Context, sp Provider, cfg SessionConfig) (_ *Start
 		SessionName:      cfg.SessionID,
 	})
 	envVars = MergeRuntimeLivenessEnv(envVars, runtimeConfig)
+	// Ensure bd commands can always resolve a beads workspace, even in freshly
+	// initialized towns that have not added BEADS_DIR to agent env config yet.
+	if cfg.TownRoot != "" {
+		if _, ok := envVars["BEADS_DIR"]; !ok {
+			envVars["BEADS_DIR"] = filepath.Join(cfg.TownRoot, ".beads")
+		}
+	}
 	envVars["GT_RUN"] = runID
 	for k, v := range cfg.ExtraEnv {
 		envVars[k] = v

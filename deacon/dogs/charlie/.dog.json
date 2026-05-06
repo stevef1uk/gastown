@@ -1,0 +1,12 @@
+{
+  "name": "charlie",
+  "state": "working",
+  "last_active": "2026-05-06T10:14:14.798800256+02:00",
+  "work": "mol-dog-reaper",
+  "work_started_at": "2026-05-06T10:13:57.818727631+02:00",
+  "worktrees": {
+    "testgt1": "/home/stevef/dev/freeride/gastown/deacon/dogs/charlie/testgt1"
+  },
+  "created_at": "2026-05-06T10:13:57.818604789+02:00",
+  "updated_at": "2026-05-06T10:14:14.798800336+02:00"
+}
