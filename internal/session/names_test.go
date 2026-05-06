@@ -127,9 +127,9 @@ func TestArchitectSessionName(t *testing.T) {
 		rigName   string
 		want      string
 	}{
-		{"gt", "gastown", "gt-gastown-architect"},
-		{"bd", "beads", "bd-beads-architect"},
-		{"hop", "greenplace", "hop-greenplace-architect"},
+		{"gt", "gastown", "hq-gt-gastown-architect"},
+		{"bd", "beads", "hq-bd-beads-architect"},
+		{"hop", "greenplace", "hq-hop-greenplace-architect"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.rigPrefix+"/"+tt.rigName, func(t *testing.T) {
@@ -147,9 +147,9 @@ func TestQASessionName(t *testing.T) {
 		rigName   string
 		want      string
 	}{
-		{"gt", "gastown", "gt-gastown-qa"},
-		{"bd", "beads", "bd-beads-qa"},
-		{"hop", "greenplace", "hop-greenplace-qa"},
+		{"gt", "gastown", "hq-gt-gastown-qa"},
+		{"bd", "beads", "hq-bd-beads-qa"},
+		{"hop", "greenplace", "hq-hop-greenplace-qa"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.rigPrefix+"/"+tt.rigName, func(t *testing.T) {

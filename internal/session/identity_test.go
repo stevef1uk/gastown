@@ -144,7 +144,7 @@ func TestParseSessionName(t *testing.T) {
 		// Architect (new format: <prefix>-<rig>-architect)
 		{
 			name:       "architect gastown",
-			session:    "gt-gastown-architect",
+			session:    "hq-gt-gastown-architect",
 			wantRole:   RoleArchitect,
 			wantRig:    "gastown",
 			wantPrefix: "gt",
@@ -160,7 +160,7 @@ func TestParseSessionName(t *testing.T) {
 		// QA (new format: <prefix>-<rig>-qa)
 		{
 			name:       "qa gastown",
-			session:    "gt-gastown-qa",
+			session:    "hq-gt-gastown-qa",
 			wantRole:   RoleQA,
 			wantRig:    "gastown",
 			wantPrefix: "gt",
@@ -321,12 +321,12 @@ func TestAgentIdentity_SessionName(t *testing.T) {
 		{
 			name:     "architect",
 			identity: AgentIdentity{Role: RoleArchitect, Rig: "gastown", Prefix: "gt"},
-			want:     "gt-gastown-architect",
+			want:     "hq-gt-gastown-architect",
 		},
 		{
 			name:     "qa",
 			identity: AgentIdentity{Role: RoleQA, Rig: "beads", Prefix: "bd"},
-			want:     "bd-beads-qa",
+			want:     "hq-bd-beads-qa",
 		},
 		{
 			name:     "crew",
@@ -440,8 +440,8 @@ func TestParseSessionName_RoundTrip(t *testing.T) {
 		"hq-dog-alpha",
 		"gt-gastown-witness",
 		"bd-beads-refinery",
-		"gt-gastown-architect",
-		"bd-beads-qa",
+		"hq-gt-gastown-architect",
+		"hq-bd-beads-qa",
 		"gt-crew-max",
 		"gt-morsov",
 		"hop-ostrom",

@@ -2,6 +2,7 @@
 package session
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 )
@@ -114,6 +115,12 @@ func ParseSessionName(session string) (*AgentIdentity, error) {
 // ParseSessionNameWithRegistry parses a tmux session name using a specific registry.
 // If registry is nil, an empty registry is used (prefix will not resolve to rig name).
 func ParseSessionNameWithRegistry(session string, registry *PrefixRegistry) (*AgentIdentity, error) {
+	if session == "" {
+		return nil, errors.New("empty session name")
+	}
+
+	var prefix, rest, rig string
+
 	if registry == nil {
 		registry = NewPrefixRegistry()
 	}
@@ -145,18 +152,36 @@ func ParseSessionNameWithRegistry(session string, registry *PrefixRegistry) (*Ag
 				}
 				return &AgentIdentity{Role: RoleDog, Name: name}, nil
 			}
+
+			// Try matching rig-level roles with the hq- prefix already stripped.
+			if p, r, ok := registry.matchPrefix(suffix); ok {
+				prefix = p
+				rest = r
+				rig = registry.RigForPrefix(prefix)
+				goto parseRigRole
+			}
 			// Fall through to rig-level parsing — "hq" may be a rig prefix.
 		}
 	}
 
 	// Rig-level roles: <prefix>-<rest>
 	// Use registry to identify the prefix boundary
-	prefix, rest, _ := registry.matchPrefix(session)
+	{
+		p, r, ok := registry.matchPrefix(session)
+		if !ok {
+			return nil, fmt.Errorf("invalid session name %q: cannot determine prefix", session)
+		}
+		prefix = p
+		rest = r
+		rig = registry.RigForPrefix(prefix)
+	}
+
+parseRigRole:
 	if prefix == "" || rest == "" {
 		return nil, fmt.Errorf("invalid session name %q: cannot determine prefix", session)
 	}
 
-	rig := registry.RigForPrefix(prefix)
+	rig = registry.RigForPrefix(prefix)
 
 	// In the new format, rest might be "rigName-role"
 	// Roles: witness, refinery, architect, qa
