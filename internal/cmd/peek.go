@@ -7,7 +7,6 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/steveyegge/gastown/internal/session"
-	"github.com/steveyegge/gastown/internal/tmux"
 	"github.com/steveyegge/gastown/internal/workspace"
 )
 
@@ -72,12 +71,12 @@ func runPeek(cmd *cobra.Command, args []string) error {
 		"hq/boot":   "hq-boot",
 	}
 	if sessionName, ok := townAgentSessions[address]; ok {
-		_, err := workspace.FindFromCwdOrError()
+		root, err := workspace.FindFromCwdOrError()
 		if err != nil {
 			return fmt.Errorf("not in a Gas Town workspace: %w", err)
 		}
-		t := tmux.NewTmux()
-		output, err := t.CapturePane(sessionName, lines)
+		sp := session.GetDefaultProvider(root)
+		output, err := sp.CapturePane(cmd.Context(), sessionName, lines)
 		if err != nil {
 			return fmt.Errorf("capturing %s: %w", address, err)
 		}

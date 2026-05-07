@@ -17,7 +17,6 @@ import (
 	"github.com/steveyegge/gastown/internal/session"
 	"github.com/steveyegge/gastown/internal/style"
 	"github.com/steveyegge/gastown/internal/suggest"
-	"github.com/steveyegge/gastown/internal/tmux"
 	"github.com/steveyegge/gastown/internal/townlog"
 	"github.com/steveyegge/gastown/internal/workspace"
 )
@@ -345,10 +344,9 @@ func runSessionAttach(cmd *cobra.Command, args []string) error {
 		return polecat.ErrSessionNotFound
 	}
 
-	// Hand the terminal off to tmux via syscall.Exec so tmux inherits our
-	// controlling TTY directly. Running tmux as a subprocess with buffered
-	// stdio triggers "open terminal failed: not a terminal".
-	return attachToTmuxSession(polecatMgr.SessionName(polecatName))
+	// Hand the terminal off to the session provider. For tmux this is a
+	// syscall.Exec(tmux attach); for NATS it's a tail -f on the log.
+	return polecatMgr.Attach(polecatName)
 }
 
 // SessionListItem represents a session in list output.
@@ -664,7 +662,7 @@ func runSessionCheck(cmd *cobra.Command, args []string) error {
 
 	fmt.Printf("%s Session Health Check\n\n", style.Bold.Render("🔍"))
 
-	t := tmux.NewTmux()
+	sp := session.GetDefaultProvider(townRoot)
 	totalChecked := 0
 	totalHealthy := 0
 	totalCrashed := 0
@@ -688,7 +686,7 @@ func runSessionCheck(cmd *cobra.Command, args []string) error {
 			totalChecked++
 
 			// Check if session exists
-			running, err := t.HasSession(sessionName)
+			running, err := sp.Exists(cmd.Context(), sessionName)
 			if err != nil {
 				fmt.Printf("  %s %s/%s: %s\n", style.Bold.Render("⚠"), r.Name, polecatName, style.Dim.Render("error checking session"))
 				continue

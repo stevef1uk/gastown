@@ -15,7 +15,6 @@ import (
 	"github.com/steveyegge/gastown/internal/deacon"
 	"github.com/steveyegge/gastown/internal/session"
 	"github.com/steveyegge/gastown/internal/style"
-	"github.com/steveyegge/gastown/internal/tmux"
 	"github.com/steveyegge/gastown/internal/workspace"
 )
 
@@ -295,7 +294,7 @@ func runDegradedTriage(b *boot.Boot) (action, target string, err error) {
 	// before the normal triage decision — warrant execution is mechanical and
 	// does not affect which action runDegradedTriage returns to the caller.
 	if townRoot != "" {
-		executeWarrants(filepath.Join(townRoot, "warrants"), tmux.NewTmux())
+		executeWarrants(filepath.Join(townRoot, "warrants"), b.Provider())
 	}
 
 	// Check if Deacon session exists — the only mechanical check degraded
@@ -331,7 +330,7 @@ func runDegradedTriage(b *boot.Boot) (action, target string, err error) {
 // It is called as a side effect during degraded triage, before the normal
 // Deacon health decision is made. Errors are non-fatal: a failed execution is
 // logged and skipped rather than aborting triage.
-func executeWarrants(warrantDir string, tm *tmux.Tmux) {
+func executeWarrants(warrantDir string, sp session.Provider) {
 	entries, err := os.ReadDir(warrantDir)
 	if err != nil {
 		if !os.IsNotExist(err) {
@@ -362,7 +361,7 @@ func executeWarrants(warrantDir string, tm *tmux.Tmux) {
 			continue
 		}
 
-		if err := executeOneWarrant(&w, path, tm); err != nil {
+		if err := executeOneWarrant(&w, path, sp); err != nil {
 			fmt.Printf("Warning: executing warrant for %s: %v\n", w.Target, err)
 			continue
 		}

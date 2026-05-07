@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/steveyegge/gastown/internal/session"
 	"github.com/steveyegge/gastown/internal/tmux"
 )
 
@@ -78,8 +79,8 @@ func TestExecuteWarrants_MarksPendingAsExecuted(t *testing.T) {
 	}
 	writeTestWarrant(t, warrantDir, pending)
 
-	tm := tmux.NewTmux()
-	executeWarrants(warrantDir, tm)
+	sp := session.NewTmuxProvider(tmux.NewTmux())
+	executeWarrants(warrantDir, sp)
 
 	result := readTestWarrant(t, warrantDir, pending.Target)
 	if !result.Executed {
@@ -109,8 +110,8 @@ func TestExecuteWarrants_SkipsAlreadyExecuted(t *testing.T) {
 	}
 	writeTestWarrant(t, warrantDir, done)
 
-	tm := tmux.NewTmux()
-	executeWarrants(warrantDir, tm)
+	sp := session.NewTmuxProvider(tmux.NewTmux())
+	executeWarrants(warrantDir, sp)
 
 	result := readTestWarrant(t, warrantDir, done.Target)
 	if !result.Executed {
@@ -125,17 +126,17 @@ func TestExecuteWarrants_SkipsAlreadyExecuted(t *testing.T) {
 // TestExecuteWarrants_MissingDir verifies that executeWarrants handles a
 // missing warrants directory gracefully (no panic, no error).
 func TestExecuteWarrants_MissingDir(t *testing.T) {
-	tm := tmux.NewTmux()
+	sp := session.NewTmuxProvider(tmux.NewTmux())
 	missingDir := filepath.Join(t.TempDir(), "does-not-exist")
-	executeWarrants(missingDir, tm) // should not panic
+	executeWarrants(missingDir, sp) // should not panic
 }
 
 // TestExecuteWarrants_EmptyDir verifies that executeWarrants handles an
 // empty warrants directory gracefully.
 func TestExecuteWarrants_EmptyDir(t *testing.T) {
 	warrantDir := t.TempDir()
-	tm := tmux.NewTmux()
-	executeWarrants(warrantDir, tm) // should not panic
+	sp := session.NewTmuxProvider(tmux.NewTmux())
+	executeWarrants(warrantDir, sp) // should not panic
 }
 
 // TestExecuteWarrants_IgnoresNonWarrantFiles verifies that non-.warrant.json
@@ -145,6 +146,6 @@ func TestExecuteWarrants_IgnoresNonWarrantFiles(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(warrantDir, "readme.txt"), []byte("ignore me"), 0644); err != nil {
 		t.Fatalf("writing test file: %v", err)
 	}
-	tm := tmux.NewTmux()
-	executeWarrants(warrantDir, tm) // should not panic or error
+	sp := session.NewTmuxProvider(tmux.NewTmux())
+	executeWarrants(warrantDir, sp) // should not panic or error
 }
