@@ -231,9 +231,9 @@ func runUp(cmd *cobra.Command, args []string) error {
 		fmt.Fprintf(os.Stderr, "Warning: NATS not available, agents may use tmux fallback\n")
 	}
 
-	// Start daemon, deacon, mayor, planner, dolt, and rig prefetch in parallel
+	// Start daemon, deacon, mayor, planner, mechanic, dolt, and rig prefetch in parallel
 	var startupWg sync.WaitGroup
-	startupWg.Add(6)
+	startupWg.Add(7)
 
 	// 1. Dolt server (if configured)
 	go func() {
@@ -333,6 +333,13 @@ func runUp(cmd *cobra.Command, args []string) error {
 		plannerResult = upStartPlanner(townRoot)
 	}()
 
+	// 4.6. Mechanic
+	var mechanicResult agentStartResult
+	go func() {
+		defer startupWg.Done()
+		mechanicResult = upStartMechanic(townRoot)
+	}()
+
 	// 5. Prefetch rig configs (overlaps with daemon/deacon/mayor startup)
 	go func() {
 		defer startupWg.Done()
@@ -378,6 +385,10 @@ func runUp(cmd *cobra.Command, args []string) error {
 	}
 	services = append(services, ServiceStatus{Name: plannerResult.name, Type: constants.RolePlanner, OK: plannerResult.ok, Detail: plannerResult.detail})
 	if !plannerResult.ok {
+		allOK = false
+	}
+	services = append(services, ServiceStatus{Name: mechanicResult.name, Type: constants.RoleMechanic, OK: mechanicResult.ok, Detail: mechanicResult.detail})
+	if !mechanicResult.ok {
 		allOK = false
 	}
 
@@ -501,7 +512,7 @@ func runUp(cmd *cobra.Command, args []string) error {
 
 	// Log boot event for both JSON and text paths
 	if allOK {
-		startedServices := []string{"dolt", "daemon", "deacon", "mayor"}
+		startedServices := []string{"dolt", "daemon", "deacon", "mayor", "planner", "mechanic"}
 		for _, rigName := range rigs {
 			startedServices = append(startedServices, fmt.Sprintf("%s/witness", rigName))
 			startedServices = append(startedServices, fmt.Sprintf("%s/refinery", rigName))
@@ -1313,4 +1324,38 @@ func recoverOrphanedBeads(townRoot string, rigs []string, prefetchedRigs map[str
 	router.WaitPendingNotifications()
 
 	return services
+}
+
+// upStartMechanic starts a mechanic and returns a result struct.
+func upStartMechanic(townRoot string) agentStartResult {
+	name := "Mechanic"
+	sessionID := session.MechanicSessionName()
+	mechanicDir := filepath.Join(townRoot, constants.DirMechanic)
+	if err := os.MkdirAll(mechanicDir, 0755); err != nil {
+		return agentStartResult{name: name, ok: false, detail: err.Error()}
+	}
+
+	sp := session.GetDefaultProvider(townRoot)
+	ctx := context.Background()
+
+	if running, _ := sp.Exists(ctx, sessionID); running {
+		return agentStartResult{name: name, ok: true, detail: sessionID}
+	}
+
+	_, err := session.StartSession(ctx, sp, session.SessionConfig{
+		SessionID:    sessionID,
+		WorkDir:      mechanicDir,
+		Role:         constants.RoleMechanic,
+		TownRoot:     townRoot,
+		Beacon:       session.BeaconConfig{Recipient: "mechanic", Sender: "daemon", Topic: "startup"},
+		WaitForAgent: true,
+		WaitFatal:    true,
+		ReadyDelay:   true,
+		AutoRespawn:  true,
+	})
+	if err != nil {
+		return agentStartResult{name: name, ok: false, detail: err.Error()}
+	}
+
+	return agentStartResult{name: name, ok: true, detail: sessionID}
 }

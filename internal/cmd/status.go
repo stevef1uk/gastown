@@ -1130,6 +1130,7 @@ func outputStatusText(w io.Writer, status TownStatus) error {
 		constants.RoleQA:        constants.EmojiQA,
 		constants.RoleCrew:      constants.EmojiCrew,
 		constants.RolePolecat:   constants.EmojiPolecat,
+		constants.RoleMechanic:  constants.EmojiMechanic,
 		// Legacy names for backwards compatibility
 		"coordinator":  constants.EmojiMayor,
 		"health-check": constants.EmojiDeacon,
@@ -1713,6 +1714,7 @@ func discoverGlobalAgents(townRoot string, allSessions map[string]bool, allAgent
 		{constants.RoleMayor, constants.RoleMayor + "/", mayorSession, constants.RoleMayor, beads.MayorBeadIDTown()},
 		{constants.RoleDeacon, constants.RoleDeacon + "/", deaconSession, constants.RoleDeacon, beads.DeaconBeadIDTown()},
 		{constants.RolePlanner, constants.RolePlanner + "/", session.PlannerSessionName(), constants.RolePlanner, beads.PlannerBeadIDTown()},
+		{constants.RoleMechanic, constants.RoleMechanic + "/", session.MechanicSessionName(), constants.RoleMechanic, beads.MechanicBeadIDTown()},
 	}
 
 	agents := make([]AgentRuntime, len(agentDefs))

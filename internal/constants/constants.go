@@ -131,6 +131,9 @@ const (
 
 	// DirQA is the directory containing qa state.
 	DirQA = "qa"
+ 
+	// DirMechanic is the directory containing mechanic state.
+	DirMechanic = "mechanic"
 
 	// DirRig is the subdirectory containing the actual git clone.
 	DirRig = "rig"
@@ -280,6 +283,9 @@ const (
 
 	// RoleQA is the qa agent role (per-rig).
 	RoleQA = "qa"
+
+	// RoleMechanic is the mechanic agent role (town-level).
+	RoleMechanic = "mechanic"
 )
 
 // Role emojis - centralized for easy customization.
@@ -314,6 +320,9 @@ const (
 
 	// EmojiQA is the qa emoji (magnifying glass).
 	EmojiQA = "🔍"
+
+	// EmojiMechanic is the mechanic emoji (wrench).
+	EmojiMechanic = "🔧"
 )
 
 // Molecule formula names for patrol and dog workflows.
@@ -382,6 +391,8 @@ func RoleEmoji(role string) string {
 		return EmojiArchitect
 	case RoleQA:
 		return EmojiQA
+	case RoleMechanic:
+		return EmojiMechanic
 	default:
 		return "❓"
 	}

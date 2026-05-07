@@ -29,6 +29,12 @@ func PlannerSessionName() string {
 	return HQPrefix + "planner"
 }
 
+// MechanicSessionName returns the session name for the Mechanic agent.
+// One mechanic per machine - multi-town requires containers/VMs for isolation.
+func MechanicSessionName() string {
+	return HQPrefix + "mechanic"
+}
+
 // WitnessSessionName returns the session name for a rig's Witness agent.
 // rigPrefix is the rig's beads prefix (e.g., "gt" for gastown, "bd" for beads).
 // rigName is the name of the rig (e.g., "testgt1").
