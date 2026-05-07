@@ -32,6 +32,9 @@ type AgentEnvConfig struct {
 	// Rig is the rig name (empty for town-level agents like mayor/deacon)
 	Rig string
 
+	// RigPath is the rig directory path (empty for town-level agents)
+	RigPath string
+
 	// AgentName is the specific agent name (empty for singletons like witness/refinery)
 	// For polecats, this is the polecat name. For crew, this is the crew member name.
 	AgentName string
@@ -141,6 +144,23 @@ func AgentEnv(cfg AgentEnvConfig) map[string]string {
 			env["BD_ACTOR"] = "dog"
 			env["GIT_AUTHOR_NAME"] = "dog"
 		}
+
+	case constants.RolePlanner:
+		env["GT_ROLE"] = constants.RolePlanner
+		env["BD_ACTOR"] = constants.RolePlanner
+		env["GIT_AUTHOR_NAME"] = constants.RolePlanner
+
+	case constants.RoleArchitect:
+		env["GT_ROLE"] = fmt.Sprintf("%s/architect", cfg.Rig)
+		env["GT_RIG"] = cfg.Rig
+		env["BD_ACTOR"] = fmt.Sprintf("%s/architect", cfg.Rig)
+		env["GIT_AUTHOR_NAME"] = fmt.Sprintf("%s/architect", cfg.Rig)
+
+	case constants.RoleQA:
+		env["GT_ROLE"] = fmt.Sprintf("%s/qa", cfg.Rig)
+		env["GT_RIG"] = cfg.Rig
+		env["BD_ACTOR"] = fmt.Sprintf("%s/qa", cfg.Rig)
+		env["GIT_AUTHOR_NAME"] = fmt.Sprintf("%s/qa", cfg.Rig)
 	}
 
 	// Only set GT_ROOT if provided
@@ -151,6 +171,16 @@ func AgentEnv(cfg AgentEnvConfig) map[string]string {
 		// This stops accidental commits to the umbrella when running git commands from
 		// intermediate directories (e.g., polecats/) that don't have their own .git.
 		env["GIT_CEILING_DIRECTORIES"] = cfg.TownRoot
+
+		// Set BEADS_DIR, prioritizing rig-specific path if it exists.
+		beadsDir := filepath.Join(cfg.TownRoot, ".beads")
+		if cfg.RigPath != "" {
+			rigBeadsDir := filepath.Join(cfg.RigPath, ".beads")
+			if _, err := os.Stat(rigBeadsDir); err == nil {
+				beadsDir = rigBeadsDir
+			}
+		}
+		env["BEADS_DIR"] = beadsDir
 	}
 
 	// Set BEADS_AGENT_NAME for polecat/crew (uses same format as BD_ACTOR)

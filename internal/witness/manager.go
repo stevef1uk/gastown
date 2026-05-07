@@ -169,6 +169,7 @@ func (m *Manager) Start(foreground bool, agentOverride string, envOverrides []st
 		WorkDir:          witnessDir,
 		Role:             "witness",
 		RigName:          m.rig.Name,
+		RigPath:          m.rig.Path,
 		TownRoot:         townRoot,
 		RuntimeConfigDir: runtimeConfigDir,
 		AgentOverride:    agentOverride,

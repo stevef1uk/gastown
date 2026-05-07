@@ -503,6 +503,7 @@ func (m *SessionManager) Start(polecat string, opts SessionStartOptions) error {
 	envVars := config.AgentEnv(config.AgentEnvConfig{
 		Role:             "polecat",
 		Rig:              m.rig.Name,
+		RigPath:          m.rig.Path,
 		AgentName:        polecat,
 		TownRoot:         townRoot,
 		RuntimeConfigDir: opts.RuntimeConfigDir,

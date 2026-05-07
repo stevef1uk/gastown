@@ -709,9 +709,14 @@ func runRoleEnv(cmd *cobra.Command, args []string) error {
 	}
 
 	// Get canonical env vars from shared source of truth
+	rigPath := ""
+	if info.Rig != "" {
+		rigPath = filepath.Join(townRoot, info.Rig)
+	}
 	envVars := config.AgentEnv(config.AgentEnvConfig{
 		Role:      string(info.Role),
 		Rig:       info.Rig,
+		RigPath:   rigPath,
 		AgentName: info.Polecat,
 		TownRoot:  townRoot,
 	})

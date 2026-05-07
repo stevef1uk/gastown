@@ -447,9 +447,14 @@ func repairSessionEnv(ctx RoleContext, roleInfo RoleInfo) {
 		agentName = roleInfo.Polecat
 	}
 
+	rigPath := ""
+	if ctx.Rig != "" {
+		rigPath = filepath.Join(ctx.TownRoot, ctx.Rig)
+	}
 	envVars := config.AgentEnv(config.AgentEnvConfig{
 		Role:        string(ctx.Role),
 		Rig:         ctx.Rig,
+		RigPath:     rigPath,
 		AgentName:   agentName,
 		TownRoot:    ctx.TownRoot,
 		SessionName: session,

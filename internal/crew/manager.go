@@ -729,6 +729,7 @@ func (m *Manager) Start(name string, opts StartOptions) error {
 	envVars := config.AgentEnv(config.AgentEnvConfig{
 		Role:             "crew",
 		Rig:              m.rig.Name,
+		RigPath:          m.rig.Path,
 		AgentName:        name,
 		TownRoot:         townRoot,
 		RuntimeConfigDir: opts.ClaudeConfigDir,

@@ -589,6 +589,7 @@ func (d *Daemon) getStartCommand(roleConfig *beads.RoleConfig, parsed *ParsedIde
 	envVars := config.AgentEnv(config.AgentEnvConfig{
 		Role:         parsed.RoleType,
 		Rig:          parsed.RigName,
+		RigPath:      rigPath,
 		AgentName:    parsed.AgentName,
 		TownRoot:     d.config.TownRoot,
 		SessionIDEnv: sessionIDEnv,
@@ -608,10 +609,15 @@ func (d *Daemon) setSessionEnvironment(ctx context.Context, sessionName string, 
 		runtimeConfigDir = os.Getenv("CLAUDE_CONFIG_DIR")
 	}
 
+	rigPath := ""
+	if parsed.RigName != "" {
+		rigPath = filepath.Join(d.config.TownRoot, parsed.RigName)
+	}
 	// Use centralized AgentEnv for base environment variables
 	envVars := config.AgentEnv(config.AgentEnvConfig{
 		Role:             parsed.RoleType,
 		Rig:              parsed.RigName,
+		RigPath:          rigPath,
 		AgentName:        parsed.AgentName,
 		TownRoot:         d.config.TownRoot,
 		RuntimeConfigDir: runtimeConfigDir,

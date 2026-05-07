@@ -647,6 +647,23 @@ func resolveRoleToSession(role string) (string, error) {
 		}
 		return session.RefinerySessionName(session.PrefixFor(rig), rig), nil
 
+	case constants.RoleArchitect, "arc":
+		rig := os.Getenv("GT_RIG")
+		if rig == "" {
+			return "", fmt.Errorf("cannot determine rig - set GT_RIG or run from rig context")
+		}
+		return session.ArchitectSessionName(session.PrefixFor(rig), rig), nil
+
+	case constants.RoleQA:
+		rig := os.Getenv("GT_RIG")
+		if rig == "" {
+			return "", fmt.Errorf("cannot determine rig - set GT_RIG or run from rig context")
+		}
+		return session.QASessionName(session.PrefixFor(rig), rig), nil
+
+	case constants.RolePlanner:
+		return session.PlannerSessionName(), nil
+
 	default:
 		// Assume it's a direct session name (e.g., gt-gastown-crew-max)
 		return role, nil
@@ -689,6 +706,10 @@ func resolvePathToSession(path string) (string, error) {
 			return session.WitnessSessionName(session.PrefixFor(rig), rig), nil
 		case constants.RoleRefinery:
 			return session.RefinerySessionName(session.PrefixFor(rig), rig), nil
+		case constants.RoleArchitect:
+			return session.ArchitectSessionName(session.PrefixFor(rig), rig), nil
+		case constants.RoleQA:
+			return session.QASessionName(session.PrefixFor(rig), rig), nil
 		case constants.RoleCrew:
 			// Just "<rig>/crew" without a name - need more info
 			return "", fmt.Errorf("crew path requires name: %s/crew/<name>", rig)

@@ -188,6 +188,7 @@ func runCrewAt(cmd *cobra.Command, args []string) error {
 		envVars := config.AgentEnv(config.AgentEnvConfig{
 			Role:             "crew",
 			Rig:              r.Name,
+			RigPath:          r.Path,
 			AgentName:        name,
 			TownRoot:         townRoot,
 			RuntimeConfigDir: claudeConfigDir,
@@ -235,6 +236,7 @@ func runCrewAt(cmd *cobra.Command, args []string) error {
 		startupCmd, err := config.BuildStartupCommandFromConfig(config.AgentEnvConfig{
 			Role:        "crew",
 			Rig:         r.Name,
+			RigPath:     r.Path,
 			AgentName:   name,
 			TownRoot:    townRoot,
 			Prompt:      beacon,
@@ -272,6 +274,7 @@ func runCrewAt(cmd *cobra.Command, args []string) error {
 			restartEnv := config.AgentEnv(config.AgentEnvConfig{
 				Role:             "crew",
 				Rig:              r.Name,
+				RigPath:          r.Path,
 				AgentName:        name,
 				TownRoot:         townRoot,
 				RuntimeConfigDir: claudeConfigDir,

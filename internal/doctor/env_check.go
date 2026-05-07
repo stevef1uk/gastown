@@ -2,6 +2,7 @@ package doctor
 
 import (
 	"fmt"
+	"path/filepath"
 
 	"github.com/steveyegge/gastown/internal/config"
 	"github.com/steveyegge/gastown/internal/session"
@@ -131,9 +132,14 @@ func (c *EnvVarsCheck) Run(ctx *CheckContext) *CheckResult {
 		}
 
 		// Get expected env vars based on role
+		rigPath := ""
+		if identity.Rig != "" {
+			rigPath = filepath.Join(ctx.TownRoot, identity.Rig)
+		}
 		expected := config.AgentEnv(config.AgentEnvConfig{
 			Role:      role,
 			Rig:       identity.Rig,
+			RigPath:   rigPath,
 			AgentName: identity.Name,
 			TownRoot:  ctx.TownRoot,
 		})
@@ -162,7 +168,10 @@ func (c *EnvVarsCheck) Run(ctx *CheckContext) *CheckResult {
 
 		// Check for BEADS_DIR - this breaks routing-based lookups
 		if beadsDir, exists := actual["BEADS_DIR"]; exists && beadsDir != "" {
-			beadsDirWarnings = append(beadsDirWarnings, fmt.Sprintf("%s: BEADS_DIR=%q (breaks prefix routing)", sess, beadsDir))
+			// Suppress warning if BEADS_DIR matches what AgentEnv expects (rig-specific path)
+			if expectedBeadsDir, ok := expected["BEADS_DIR"]; !ok || beadsDir != expectedBeadsDir {
+				beadsDirWarnings = append(beadsDirWarnings, fmt.Sprintf("%s: BEADS_DIR=%q (breaks prefix routing)", sess, beadsDir))
+			}
 		}
 	}
 
@@ -238,9 +247,14 @@ func (c *EnvVarsCheck) Fix(ctx *CheckContext) error {
 			role = "boot"
 		}
 
+		rigPath := ""
+		if identity.Rig != "" {
+			rigPath = filepath.Join(ctx.TownRoot, identity.Rig)
+		}
 		expected := config.AgentEnv(config.AgentEnvConfig{
 			Role:      role,
 			Rig:       identity.Rig,
+			RigPath:   rigPath,
 			AgentName: identity.Name,
 			TownRoot:  ctx.TownRoot,
 		})
