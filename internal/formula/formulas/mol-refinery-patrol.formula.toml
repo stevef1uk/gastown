@@ -42,7 +42,7 @@ fixes the code in-place and resubmits the MR without losing context.
 
 ## CRITICAL: Read Step Instructions Before Acting
 
-Before executing ANY step, you MUST run `bd show <step-id>` and read the full
+Before executing ANY step, you MUST run `bd show [step-id]` and read the full
 description. Steps contain **Config:** values that override default behavior.
 If a config says to skip, you skip. If it specifies a command, you use that
 exact command — not your own assumption. Do NOT guess what a step requires
@@ -71,7 +71,7 @@ source of truth.
 
 ## Target Resolution Rule
 
-When instructions reference `<rebase-target>`, `<merge-target>`, or `<verification-target>`,
+When instructions reference `[rebase-target]`, `[merge-target]`, or `[verification-target]`,
 resolve that placeholder with this rule:
 
 - If integration_branch_refinery_enabled = "true": use MR target when present, otherwise {{target_branch}}.
@@ -80,7 +80,7 @@ resolve that placeholder with this rule:
 ## FORBIDDEN Actions
 
 - FORBIDDEN: Landing integration branches to the default branch via raw git commands (`git merge`, `git push`).
-  Integration branches may ONLY be landed via `gt mq integration land <epic-id>`.
+  Integration branches may ONLY be landed via `gt mq integration land [epic-id]`.
   This applies regardless of `auto_land` configuration. The pre-push hook enforces this.
 
 ## Step Execution Order
@@ -205,10 +205,10 @@ A polecat's work is ready for merge. Extract details and track for processing.
 
 ```bash
 # Parse MERGE_READY message body:
-# Branch: <branch>
-# Issue: <issue-id>
-# Polecat: <polecat-name>
-# MR: <mr-bead-id>
+# Branch: [branch]
+# Issue: [issue-id]
+# Polecat: [polecat-name]
+# MR: [mr-bead-id]
 # Verified: clean git state, issue closed
 
 # Track in your merge queue for this patrol cycle:
@@ -227,21 +227,21 @@ Mark as read. The work will be processed in queue-scan/process-branch.
 **PATROL: Wake up**:
 Witness detected MRs waiting but refinery idle. Acknowledge and archive:
 ```bash
-gt mail archive <message-id>
+gt mail archive [message-id]
 ```
 
 **HELP / Blocked**:
 Assess and respond. If you can't help, escalate to Mayor.
 Archive after handling:
 ```bash
-gt mail archive <message-id>
+gt mail archive [message-id]
 ```
 
 **HANDOFF**:
 Read predecessor context. Check for in-flight merges.
 Archive after absorbing context:
 ```bash
-gt mail archive <message-id>
+gt mail archive [message-id]
 ```
 
 **Hygiene principle**: Archive messages after they're fully processed.
@@ -256,7 +256,7 @@ Check the beads merge queue - this is the SOURCE OF TRUTH for pending merges.
 
 ```bash
 git fetch --prune origin
-gt mq list <rig>
+gt mq list [rig]
 ```
 
 The beads MQ tracks all pending merge requests. Do NOT rely on `git branch -r | grep polecat`
@@ -266,11 +266,11 @@ If queue empty, skip to "check-integration-branches" step.
 
 For each MR in the queue, verify the branch still exists:
 ```bash
-git branch -r | grep <branch>
+git branch -r | grep [branch]
 ```
 
 If branch doesn't exist for a queued MR:
-- Close the MR bead: `bd close <mr-id> --reason "Branch no longer exists"`
+- Close the MR bead: `bd close [mr-id] --reason "Branch no longer exists"`
 - Remove from processing queue
 
 Track verified MR list for this cycle."""
@@ -287,7 +287,7 @@ Pick next branch from queue. Attempt mechanical rebase on the MR's effective tar
 
 **Step 0: Determine rebase target (must match merge target)**
 
-Resolve `<rebase-target>` using the **Target Resolution Rule** above.
+Resolve `[rebase-target]` using the **Target Resolution Rule** above.
 Do NOT hardcode `main` unless `main` is actually the resolved MR target.
 
 **Step 0.5: Verify branch still exists (race-condition guard)**
@@ -295,18 +295,18 @@ Do NOT hardcode `main` unless `main` is actually the resolved MR target.
 Branches can disappear between queue-scan and here (e.g. cherry-picked to target directly).
 
 ```bash
-git ls-remote --exit-code origin refs/heads/<polecat-branch>
+git ls-remote --exit-code origin refs/heads/[polecat-branch]
 ```
 
 If the branch no longer exists (exit code non-zero):
-- Close the MR bead: `bd close <mr-id> --reason "Branch no longer exists"`
-- Archive the MERGE_READY mail: `gt mail archive <message-id>`
+- Close the MR bead: `bd close [mr-id] --reason "Branch no longer exists"`
+- Archive the MERGE_READY mail: `gt mail archive [message-id]`
 - Skip to loop-check — do NOT treat as a merge failure, do NOT nudge the polecat
 
 **Step 1: Checkout and attempt rebase**
 ```bash
-git checkout -b temp origin/<polecat-branch>
-git rebase origin/<rebase-target>
+git checkout -b temp origin/[polecat-branch]
+git rebase origin/[rebase-target]
 ```
 
 **Step 2: Check rebase result**
@@ -336,27 +336,27 @@ git rebase --abort
 2. **Record conflict metadata**:
 ```bash
 # Capture target SHA for reference
-TARGET_SHA=$(git rev-parse origin/<rebase-target>)
-BRANCH_SHA=$(git rev-parse origin/<polecat-branch>)
+TARGET_SHA=$(git rev-parse origin/[rebase-target])
+BRANCH_SHA=$(git rev-parse origin/[polecat-branch])
 ```
 
 3. **Create conflict-resolution task**:
 ```bash
 bd create --type=task --priority=1 \
-  --title="Resolve merge conflicts: <original-issue-title>" \
+  --title="Resolve merge conflicts: [original-issue-title]" \
   --description="## Conflict Resolution Required
 
-Original MR: <mr-bead-id>
-Branch: <polecat-branch>
-Original Issue: <issue-id>
-Conflict with target <rebase-target> at: ${TARGET_SHA}
+Original MR: [mr-bead-id]
+Branch: [polecat-branch]
+Original Issue: [issue-id]
+Conflict with target [rebase-target] at: ${TARGET_SHA}
 Branch SHA: ${BRANCH_SHA}
 
 ## Instructions
 1. Clone/checkout the branch
-2. Rebase on target: git rebase origin/<rebase-target>
+2. Rebase on target: git rebase origin/[rebase-target]
 3. Resolve conflicts
-4. Force push: git push -f origin <branch>
+4. Force push: git push -f origin [branch]
 5. Close this task when done
 
 The MR will be re-queued for processing after conflicts are resolved."
@@ -473,9 +473,9 @@ Record the quality review result. This is fail-open: if the command fails,
 log the error and continue — never block the merge.
 
 ```bash
-bd create "quality-review: Score <score>, <recommendation>" -t chore --ephemeral \\
-  -l type:plugin-run,plugin:quality-review-result,worker:<polecat-name>,rig:<rig-name>,score:<score>,recommendation:<approve|request_changes>,result:success \\
-  -d "Score: <score>, <recommendation>. Issues: <count> (<summary>)" \\
+bd create "quality-review: Score [score], [recommendation]" -t chore --ephemeral \\
+  -l type:plugin-run,plugin:quality-review-result,worker:[polecat-name],rig:[rig-name],score:[score],recommendation:[approve|request_changes],result:success \\
+  -d "Score: [score], [recommendation]. Issues: [count] ([summary])" \\
   --silent 2>/dev/null || true
 ```
 
@@ -504,22 +504,22 @@ If any check or test FAILED:
    - Abort merge (clean up temp branch)
    - **Send FIX_NEEDED directly to the polecat** (event-driven lifecycle):
      ```bash
-     gt mail send <rig>/polecats/<polecat-name> -s "FIX_NEEDED <polecat-name>" --stdin <<'BODY'
-     Branch: <branch>
-     Issue: <issue-id>
-     Polecat: <polecat-name>
-     Rig: <rig>
-     Target: <target-branch>
+     gt mail send [rig]/polecats/[polecat-name] -s "FIX_NEEDED [polecat-name]" --stdin <<'BODY'
+     Branch: [branch]
+     Issue: [issue-id]
+     Polecat: [polecat-name]
+     Rig: [rig]
+     Target: [target-branch]
      Failed-At: $(date -u +%Y-%m-%dT%H:%M:%SZ)
-     Failure-Type: <tests|build|lint|typecheck>
+     Failure-Type: [tests|build|lint|typecheck]
      Error: <failure description/output>
-     MR-Bead-ID: <mr-bead-id>
+     MR-Bead-ID: [mr-bead-id]
      Attempt-Number: <N>
      BODY
      ```
    - **Update the bead** with failure details so they survive session death:
      ```bash
-     bd update <issue-id> --notes "Merge failure (attempt <N>): <failure-type> - <error summary>"
+     bd update [issue-id] --notes "Merge failure (attempt <N>): [failure-type] - [error summary]"
      ```
    - **Do NOT close the MR bead** — the polecat will resubmit
    - **Do NOT delete the branch** — the polecat needs it for the fix
@@ -535,11 +535,11 @@ If any check or test FAILED:
 3. If pre-existing on the target branch:
    - **DUPLICATE CHECK (MANDATORY)**: Before filing a new bug, search for existing open bugs:
      ```bash
-     bd search "<failure description>" --status open --label gt:bug --limit 5
+     bd search "[failure description]" --status open --label gt:bug --limit 5
      ```
      If an existing open bug covers the same failure, do NOT create a duplicate.
      Instead, note the existing bead ID and proceed.
-   - Only if NO existing bug matches: bd create --type=bug --priority=1 --title="Pre-existing failure: <description>"
+   - Only if NO existing bug matches: bd create --type=bug --priority=1 --title="Pre-existing failure: [description]"
    - FORBIDDEN: Writing code to fix quality check or test failures. You merge branches, you do not develop.
    - Proceed with the merge if the failure is pre-existing (not caused by the branch).
 
@@ -573,14 +573,14 @@ Merge and push. CRITICAL: Notifications come IMMEDIATELY after push.
 
 **Step 1: Merge (strategy-dependent)**
 
-Determine `<merge-target>` using the **Target Resolution Rule** above.
+Determine `[merge-target]` using the **Target Resolution Rule** above.
 
 **If merge_strategy = "direct" (default):**
 
 ```bash
-git checkout <merge-target>
+git checkout [merge-target]
 git merge --ff-only temp
-git push origin <merge-target>
+git push origin [merge-target]
 ```
 
 **Step 1.5 (direct only): VERIFY PUSH SUCCEEDED (CRITICAL - PATCH-003)**
@@ -588,8 +588,8 @@ git push origin <merge-target>
 Push can fail silently (network, auth, hooks). IMMEDIATELY verify:
 ```bash
 git fetch origin
-LOCAL_SHA=$(git rev-parse <merge-target>)
-REMOTE_SHA=$(git rev-parse origin/<merge-target>)
+LOCAL_SHA=$(git rev-parse [merge-target])
+REMOTE_SHA=$(git rev-parse origin/[merge-target])
 echo "Local:  $LOCAL_SHA"
 echo "Remote: $REMOTE_SHA"
 ```
@@ -604,7 +604,7 @@ cause GitHub to auto-close the PR as "closed" (not "merged"), destroying
 the PR audit trail and making it appear that work was rejected.
 
 ```bash
-OPEN_PR=$(gh pr list --head <polecat-branch> --state open --json number --limit 1 2>/dev/null || echo "[]")
+OPEN_PR=$(gh pr list --head [polecat-branch] --state open --json number --limit 1 2>/dev/null || echo "[]")
 if [ "$OPEN_PR" != "[]" ] && [ "$OPEN_PR" != "" ]; then
   echo "Open PR found on branch — will use --skip-branch-delete in post-merge"
   # Set flag for Step 3 (post-merge cleanup) to skip branch deletion
@@ -631,20 +631,20 @@ Push the rebased branch and create a GitHub PR instead of direct merge.
 ```bash
 # Push the rebased polecat branch (force-push since we rebased)
 git checkout temp
-git push origin temp:refs/heads/<polecat-branch> --force-with-lease
+git push origin temp:refs/heads/[polecat-branch] --force-with-lease
 
 # Create the PR using bead metadata for title/description
 PR_URL=$(gh pr create \
-  --base <merge-target> \
-  --head <polecat-branch> \
-  --title "<issue-title> (<issue-id>)" \
+  --base [merge-target] \
+  --head [polecat-branch] \
+  --title "[issue-title] ([issue-id])" \
   --body "## Summary
 
 Automated merge from polecat branch.
 
-- **Issue**: <issue-id>
-- **Polecat**: <polecat-name>
-- **Branch**: <polecat-branch>
+- **Issue**: [issue-id]
+- **Polecat**: [polecat-name]
+- **Branch**: [polecat-branch]
 - **Tests**: Passed (verified by refinery)
 
 ---
@@ -655,13 +655,13 @@ echo "PR created: $PR_URL"
 If the PR already exists for this branch, `gh pr create` will fail. In that case,
 find the existing PR:
 ```bash
-PR_URL=$(gh pr view <polecat-branch> --json url -q '.url')
+PR_URL=$(gh pr view [polecat-branch] --json url -q '.url')
 ```
 
 **Step 1.5 (pr only): VERIFY PR CREATED**
 
 ```bash
-gh pr view <polecat-branch> --json url,state -q '.url + " " + .state'
+gh pr view [polecat-branch] --json url,state -q '.url + " " + .state'
 ```
 
 If the PR was not created or is in an unexpected state, debug and retry.
@@ -675,16 +675,16 @@ If the PR was not created or is in an unexpected state, debug and retry.
 REPO_URL=$(git remote get-url origin | sed 's/.*github.com[:/]\\(.*\\)\\.git/\\1/')
 
 # Wait for CI checks (timeout 15 minutes)
-gh pr checks <polecat-branch> --repo "$REPO_URL" --watch --fail-fast
+gh pr checks [polecat-branch] --repo "$REPO_URL" --watch --fail-fast
 ```
 
 **If CI checks FAIL:**
 Do NOT merge. Send FIX_NEEDED back to the polecat:
 ```bash
-FAILURE_OUTPUT=$(gh pr checks <polecat-branch> --repo "$REPO_URL" 2>&1)
-gt mail send <rig>/polecats/<polecat-name> -s "FIX_NEEDED <polecat-name>" --stdin <<'BODY'
-Branch: <branch>
-Issue: <issue-id>
+FAILURE_OUTPUT=$(gh pr checks [polecat-branch] --repo "$REPO_URL" 2>&1)
+gt mail send [rig]/polecats/[polecat-name] -s "FIX_NEEDED [polecat-name]" --stdin <<'BODY'
+Branch: [branch]
+Issue: [issue-id]
 PR: ${PR_URL}
 Failure-Type: ci-checks
 Error: $FAILURE_OUTPUT
@@ -702,7 +702,7 @@ Plain review comments (COMMENTED) are NOT approval. Only an explicit
 "APPROVED" reviewDecision allows the merge to proceed.
 
 ```bash
-REVIEW_DECISION=$(gh pr view <polecat-branch> --repo "$REPO_URL" --json reviewDecision -q '.reviewDecision')
+REVIEW_DECISION=$(gh pr view [polecat-branch] --repo "$REPO_URL" --json reviewDecision -q '.reviewDecision')
 echo "Review decision: $REVIEW_DECISION"
 ```
 
@@ -714,9 +714,9 @@ echo "Review decision: $REVIEW_DECISION"
 
 **If CHANGES_REQUESTED:**
 ```bash
-gt mail send <rig>/polecats/<polecat-name> -s "FIX_NEEDED <polecat-name>" --stdin <<'BODY'
-Branch: <branch>
-Issue: <issue-id>
+gt mail send [rig]/polecats/[polecat-name] -s "FIX_NEEDED [polecat-name]" --stdin <<'BODY'
+Branch: [branch]
+Issue: [issue-id]
 PR: ${PR_URL}
 Failure-Type: review-rejected
 Error: Reviewer requested changes on the PR. Address the review feedback and resubmit.
@@ -734,7 +734,7 @@ Clean up temp branch and skip to loop-check.
 **If APPROVED:**
 Merge the PR:
 ```bash
-gh pr merge <polecat-branch> --repo "$REPO_URL" --merge --delete-branch
+gh pr merge [polecat-branch] --repo "$REPO_URL" --merge --delete-branch
 ```
 
 If merge fails (conflict, branch protection), debug and retry.
@@ -747,15 +747,15 @@ RIGHT NOW, before any cleanup, send MERGED mail to Witness.
 
 **If merge_strategy = "direct":**
 ```bash
-gt mail send <rig>/witness -s "MERGED <polecat-name>" -m "Branch: <branch>
-Issue: <issue-id>
+gt mail send [rig]/witness -s "MERGED [polecat-name]" -m "Branch: [branch]
+Issue: [issue-id]
 Merged-At: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 ```
 
 **If merge_strategy = "pr":**
 ```bash
-gt mail send <rig>/witness -s "MERGED <polecat-name>" -m "Branch: <branch>
-Issue: <issue-id>
+gt mail send [rig]/witness -s "MERGED [polecat-name]" -m "Branch: [branch]
+Issue: [issue-id]
 PR: ${PR_URL}
 Merged-At: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 ```
@@ -775,13 +775,13 @@ deleting the remote polecat branch (respects delete_merged_branches config):
 # If an open PR was detected in Step 1.6 (direct) or merge_strategy=pr,
 # pass --skip-branch-delete to avoid auto-closing the PR via head_ref_delete.
 # Otherwise, omit the flag.
-gt mq post-merge <rig> <mr-bead-id>            # normal (no open PR)
-gt mq post-merge <rig> <mr-bead-id> --skip-branch-delete  # open PR exists
+gt mq post-merge [rig] [mr-bead-id]            # normal (no open PR)
+gt mq post-merge [rig] [mr-bead-id] --skip-branch-delete  # open PR exists
 ```
 
 The MR bead ID was in the MERGE_READY message or find via:
 ```bash
-bd list --type=merge-request --status=open | grep <polecat-name>
+bd list --type=merge-request --status=open | grep [polecat-name]
 ```
 
 Verify the command output shows all steps succeeded (✓ for each).
@@ -793,7 +793,7 @@ prevents branch deletion when an open PR is detected in direct merge mode.
 
 **Step 4: Archive the MERGE_READY mail (REQUIRED)**
 ```bash
-gt mail archive <merge-ready-message-id>
+gt mail archive [merge-ready-message-id]
 ```
 The message ID was tracked when you processed inbox-check.
 
@@ -882,8 +882,8 @@ Read the two config values above, then:
   to run `gt mq integration land` manually. Respect this boundary unconditionally.
 - If BOTH are "true":
   1. `bd list --type=epic --status=open` to find epics
-  2. `gt mq integration status <epic-id>` for each epic
-  3. If `ready_to_land: true`: run `gt mq integration land <epic-id>`
+  2. `gt mq integration status [epic-id]` for each epic
+  3. If `ready_to_land: true`: run `gt mq integration land [epic-id]`
   4. If `ready_to_land: false`: do nothing, epic work is incomplete
   Never land partial epics — ALL children must be closed first."""
 
@@ -945,7 +945,7 @@ Look for messages that were processed but not archived:
 
 ```bash
 # For each stale message found:
-gt mail archive <message-id>
+gt mail archive [message-id]
 ```
 
 **Step 3: Check for orphaned MR beads**
@@ -956,13 +956,13 @@ bd list --type=merge-request --status=open
 ```
 
 For each open MR bead:
-1. Check if branch exists: `git ls-remote origin refs/heads/<branch>`
-2. Determine `<merge-target>` using the **Target Resolution Rule** above.
-3. If branch is gone, pick `<verification-target>`:
-   - If `origin/<merge-target>` exists, use `<merge-target>`.
-   - If `origin/<merge-target>` is missing (e.g. deleted integration branch), use `{{target_branch}}`.
-4. Verify landed work: `git log origin/<verification-target> --oneline | grep "<source_issue>"`
-5. If work found → close MR with reason "Merged (verified on <verification-target>; merge target was <merge-target>)"
+1. Check if branch exists: `git ls-remote origin refs/heads/[branch]`
+2. Determine `[merge-target]` using the **Target Resolution Rule** above.
+3. If branch is gone, pick `[verification-target]`:
+   - If `origin/[merge-target]` exists, use `[merge-target]`.
+   - If `origin/[merge-target]` is missing (e.g. deleted integration branch), use `{{target_branch}}`.
+4. Verify landed work: `git log origin/[verification-target] --oneline | grep "[source_issue]"`
+5. If work found → close MR with reason "Merged (verified on [verification-target]; merge target was [merge-target])"
 6. If work NOT found → investigate before closing:
    - Check source_issue validity (should be gt-xxxxx, not branch name)
    - Search reflog/dangling commits if possible
@@ -983,11 +983,11 @@ End of patrol cycle decision. Use the signals from context-check to decide.
 
 **If you decide to continue patrolling:**
 
-Resolve your agent bead ID for this patrol cycle. You MUST replace `<YOUR_RIG>` below with your actual rig name (e.g., `beads`, `town`) before running:
+Resolve your agent bead ID for this patrol cycle. You MUST replace `[YOUR_RIG]` below with your actual rig name (e.g., `beads`, `town`) before running:
 ```bash
-bd list --label=gt:agent --desc-contains="role_type: refinery" --json | jq -r '.[] | select(.status != "closed") | select(.description | test("(?m)^\\\\s*rig: <YOUR_RIG>\\\\s*$")) | .id'
+bd list --label=gt:agent --desc-contains="role_type: refinery" --json | jq -r '.[] | select(.status != "closed") | select(.description | test("(?m)^\\\\s*rig: [YOUR_RIG]\\\\s*$")) | .id'
 ```
-This must return exactly one bead ID. If it returns zero results, STOP and report an error — verify you substituted `<YOUR_RIG>` correctly. If it returns multiple results, STOP and report an error — manual disambiguation is required. Use the single resolved bead ID as YOUR_AGENT_BEAD in the commands below.
+This must return exactly one bead ID. If it returns zero results, STOP and report an error — verify you substituted `[YOUR_RIG]` correctly. If it returns multiple results, STOP and report an error — manual disambiguation is required. Use the single resolved bead ID as YOUR_AGENT_BEAD in the commands below.
 
 Then use await-event to subscribe to the refinery event channel with exponential backoff:
 
