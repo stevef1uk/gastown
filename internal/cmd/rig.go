@@ -610,28 +610,8 @@ func runRigAdd(cmd *cobra.Command, args []string) error {
 			fmt.Printf("  Created rig identity bead: %s\n", rigBeadID)
 		}
 
-		// Create agent beads for the rig (witness, refinery)
-		// This ensures they exist before the daemon tries to start them
-		prefix := newRig.Config.Prefix
-		witnessID := beads.WitnessBeadIDWithPrefix(prefix, name)
-		if _, err := bd.CreateAgentBead(witnessID,
-			fmt.Sprintf("Witness for %s - monitors polecat health and progress.", name),
-			&beads.AgentFields{RoleType: "witness", Rig: name, AgentState: "idle"},
-		); err != nil {
-			fmt.Printf("  %s Could not create witness agent bead: %v\n", style.Warning.Render("!"), err)
-		} else {
-			fmt.Printf("  Created agent bead: %s\n", witnessID)
-		}
-
-		refineryID := beads.RefineryBeadIDWithPrefix(prefix, name)
-		if _, err := bd.CreateAgentBead(refineryID,
-			fmt.Sprintf("Refinery for %s - processes merge queue.", name),
-			&beads.AgentFields{RoleType: "refinery", Rig: name, AgentState: "idle"},
-		); err != nil {
-			fmt.Printf("  %s Could not create refinery agent bead: %v\n", style.Warning.Render("!"), err)
-		} else {
-			fmt.Printf("  Created agent bead: %s\n", refineryID)
-		}
+		// Agent beads (witness, refinery, architect, qa) are now automatically 
+		// created by mgr.AddRig -> initAgentBeads during rig creation.
 	}
 
 	// Auto-assign a namepool theme that doesn't collide with other rigs (gas-21k).

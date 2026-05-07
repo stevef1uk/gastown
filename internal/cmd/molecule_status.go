@@ -553,10 +553,16 @@ func buildAgentIdentity(ctx RoleContext) string {
 		return "deacon/"
 	case RoleBoot:
 		return "deacon/boot"
+	case RolePlanner:
+		return "planner/"
 	case RoleWitness:
 		return ctx.Rig + "/witness"
 	case RoleRefinery:
 		return ctx.Rig + "/refinery"
+	case RoleArchitect:
+		return ctx.Rig + "/architect"
+	case RoleQA:
+		return ctx.Rig + "/qa"
 	case RolePolecat:
 		return ctx.Rig + "/polecats/" + ctx.Polecat
 	case RoleCrew:

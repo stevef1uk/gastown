@@ -68,7 +68,7 @@ func sessionToAgentID(sessionName string) string {
 func canonicalAssigneeAddress(identity *session.AgentIdentity) string {
 	addr := identity.Address()
 	switch identity.Role {
-	case session.RoleMayor, session.RoleDeacon:
+	case session.RoleMayor, session.RoleDeacon, session.RolePlanner:
 		if !strings.HasSuffix(addr, "/") {
 			return addr + "/"
 		}
@@ -90,12 +90,18 @@ func resolveSelfTarget() (agentID string, pane string, hookRoot string, err erro
 		agentID = "mayor/"
 	case RoleDeacon:
 		agentID = "deacon/"
+	case RolePlanner:
+		agentID = "planner/"
 	case RoleBoot:
 		agentID = "deacon/boot"
 	case RoleWitness:
 		agentID = fmt.Sprintf("%s/witness", roleInfo.Rig)
 	case RoleRefinery:
 		agentID = fmt.Sprintf("%s/refinery", roleInfo.Rig)
+	case RoleArchitect:
+		agentID = fmt.Sprintf("%s/architect", roleInfo.Rig)
+	case RoleQA:
+		agentID = fmt.Sprintf("%s/qa", roleInfo.Rig)
 	case RolePolecat:
 		agentID = fmt.Sprintf("%s/polecats/%s", roleInfo.Rig, roleInfo.Polecat)
 	case RoleCrew:

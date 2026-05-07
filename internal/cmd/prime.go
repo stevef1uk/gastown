@@ -1060,6 +1060,12 @@ func buildRoleAnnouncement(ctx RoleContext) string {
 		return fmt.Sprintf("%s Polecat %s, checking in.", ctx.Rig, ctx.Polecat)
 	case RoleCrew:
 		return fmt.Sprintf("%s Crew %s, checking in.", ctx.Rig, ctx.Polecat)
+	case RolePlanner:
+		return "Planner, checking in."
+	case RoleArchitect:
+		return fmt.Sprintf("%s Architect, checking in.", ctx.Rig)
+	case RoleQA:
+		return fmt.Sprintf("%s QA, checking in.", ctx.Rig)
 	default:
 		return "Agent, checking in."
 	}
@@ -1092,6 +1098,12 @@ func getAgentIdentity(ctx RoleContext) string {
 		return fmt.Sprintf("%s/witness", ctx.Rig)
 	case RoleRefinery:
 		return fmt.Sprintf("%s/refinery", ctx.Rig)
+	case RolePlanner:
+		return "planner"
+	case RoleArchitect:
+		return fmt.Sprintf("%s/architect", ctx.Rig)
+	case RoleQA:
+		return fmt.Sprintf("%s/qa", ctx.Rig)
 	default:
 		return ""
 	}
@@ -1184,6 +1196,20 @@ func getAgentBeadID(ctx RoleContext) string {
 			return beads.CrewBeadIDWithPrefix(prefix, ctx.Rig, ctx.Polecat)
 		}
 		return ""
+	case RolePlanner:
+		return beads.PlannerBeadIDTown()
+	case RoleArchitect:
+		if ctx.Rig != "" {
+			prefix := beads.GetPrefixForRig(ctx.TownRoot, ctx.Rig)
+			return beads.ArchitectBeadIDWithPrefix(prefix, ctx.Rig)
+		}
+		return ""
+	case RoleQA:
+		if ctx.Rig != "" {
+			prefix := beads.GetPrefixForRig(ctx.TownRoot, ctx.Rig)
+			return beads.QABeadIDWithPrefix(prefix, ctx.Rig)
+		}
+		return ""
 	default:
 		return ""
 	}
@@ -1194,7 +1220,8 @@ func getAgentBeadID(ctx RoleContext) string {
 // Uses the shared SetupRedirect helper which handles both tracked and local beads.
 func ensureBeadsRedirect(ctx RoleContext) {
 	// Only applies to worktree-based roles that use shared beads
-	if ctx.Role != RoleCrew && ctx.Role != RolePolecat && ctx.Role != RoleRefinery && ctx.Role != RoleWitness {
+	if ctx.Role != RoleCrew && ctx.Role != RolePolecat && ctx.Role != RoleRefinery && ctx.Role != RoleWitness &&
+		ctx.Role != RoleArchitect && ctx.Role != RoleQA {
 		return
 	}
 

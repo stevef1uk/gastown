@@ -211,20 +211,23 @@ func (b *Beads) CreateAgentBead(id, title string, fields *AgentFields) (*Issue, 
 
 	// Resolve where this bead will actually be written (handles multi-repo routing)
 	targetDir := ResolveRoutingTarget(b.getTownRoot(), id, b.getResolvedBeadsDir())
-
 	// Ensure target database has custom types configured.
 	// This is cached (sentinel file + in-memory) so repeated calls are fast.
 	// On fresh rigs, this may fail if the database can't be initialized.
 	// Don't bail out — try the bd create calls anyway (GH#1769).
 	_ = EnsureCustomTypes(targetDir)
 
-	// For routed cross-rig bead IDs, run bd from the town root so bd's own
-	// prefix router resolves the target once. Running from a rig worktree with
-	// a routed BEADS_DIR can double-stack the path for imported rigs.
+	// Determine the best Beads instance to use for creation.
+	// 1. Start with current instance.
 	target := b
+
+	// 2. If the bead ID routes to a different database, use the town-level 
+	// instance so bd's own prefix router can resolve the target.
+	// This handles multi-repo routing scenarios and prevents "double-stacking"
+	// paths for imported rigs (GH#1424).
 	townRoot := b.getTownRoot()
 	routes, _ := LoadRoutes(GetTownBeadsPath(townRoot))
-	if townRoot != "" && ExtractPrefixWithRoutes(id, routes) != "" {
+	if targetDir != b.getResolvedBeadsDir() && townRoot != "" && ExtractPrefixWithRoutes(id, routes) != "" {
 		target = NewWithBeadsDir(townRoot, filepath.Join(townRoot, ".beads"))
 	}
 
@@ -247,14 +250,6 @@ func (b *Beads) CreateAgentBead(id, title string, fields *AgentFields) (*Issue, 
 			a = append(a, "--actor="+actor)
 		}
 		return a
-	}
-
-	// Create agent bead in the target database. Use a routed Beads instance
-	// when the bead's prefix routes to a different rig than our own database.
-	// Without this, agent beads for rig polecats (e.g., be-beads-polecat-rust)
-	// would be created in the wrong database, failing type validation.
-	if targetDir != b.getResolvedBeadsDir() {
-		target = NewWithBeadsDir(filepath.Dir(targetDir), targetDir)
 	}
 
 	out, err := target.run(buildArgs()...)

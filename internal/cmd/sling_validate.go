@@ -7,10 +7,12 @@ import (
 
 // knownRoles lists valid second-segment roles in path-style sling targets.
 var knownRoles = map[string]bool{
-	"polecats": true,
-	"crew":     true,
-	"witness":  true,
-	"refinery": true,
+	"polecats":  true,
+	"crew":      true,
+	"witness":   true,
+	"refinery":  true,
+	"architect": true,
+	"qa":        true,
 }
 
 // ValidateTarget performs lightweight pre-checks on a sling target string,
@@ -43,7 +45,10 @@ func ValidateTarget(target string) error {
 				"  <rig>/crew/<name>      crew worker\n"+
 				"  <rig>/witness          rig witness\n"+
 				"  <rig>/refinery         rig refinery\n"+
+				"  <rig>/architect        rig architect\n"+
+				"  <rig>/qa               rig qa\n"+
 				"  deacon/dogs            dog pool\n"+
+				"  planner                town planner\n"+
 				"  mayor                  town mayor",
 				target, i)
 		}
@@ -55,10 +60,11 @@ func ValidateTarget(target string) error {
 		return nil
 	}
 
-	// Mayor has no sub-agents.
-	if strings.ToLower(parts[0]) == "mayor" {
-		return fmt.Errorf("invalid target %q: mayor does not have sub-agents\n"+
-			"Use 'mayor' to target the mayor directly", target)
+	// Mayor and Planner have no sub-agents.
+	first := strings.ToLower(parts[0])
+	if first == "mayor" || first == "planner" {
+		return fmt.Errorf("invalid target %q: %s does not have sub-agents\n"+
+			"Use %q to target directly", target, first, first)
 	}
 
 	// Path targets: parts[0] = rig, parts[1] = role or shorthand name.
@@ -69,8 +75,8 @@ func ValidateTarget(target string) error {
 		role := strings.ToLower(parts[1])
 		if knownRoles[role] {
 			// Known role: apply role-specific constraints.
-			if role == "witness" || role == "refinery" {
-				// Witness and refinery are singleton roles — no sub-agents.
+			if role == "witness" || role == "refinery" || role == "architect" || role == "qa" {
+				// Singleton roles — no sub-agents.
 				if len(parts) > 2 {
 					return fmt.Errorf("invalid target %q: %s does not have named sub-agents\n"+
 						"Usage: %s/%s", target, role, parts[0], role)
@@ -97,8 +103,10 @@ func ValidateTarget(target string) error {
 				"  %s/crew/<name>      crew worker\n"+
 				"  %s/witness          rig witness\n"+
 				"  %s/refinery         rig refinery\n"+
+				"  %s/architect        rig architect\n"+
+				"  %s/qa               rig qa\n"+
 				"Or use just %q to target by name shorthand",
-				target, parts[1], parts[0], parts[0], parts[0], parts[0], parts[0])
+				target, parts[1], parts[0], parts[0], parts[0], parts[0], parts[0], parts[0], parts[0])
 		}
 		// else: 2-segment with unknown role → polecat/crew shorthand, let resolveTarget handle.
 	}

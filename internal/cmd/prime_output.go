@@ -44,6 +44,12 @@ func outputPrimeContext(ctx RoleContext) (string, error) {
 		roleName = constants.RoleWitness
 	case RoleRefinery:
 		roleName = constants.RoleRefinery
+	case RolePlanner:
+		roleName = constants.RolePlanner
+	case RoleArchitect:
+		roleName = constants.RoleArchitect
+	case RoleQA:
+		roleName = constants.RoleQA
 	case RolePolecat:
 		roleName = constants.RolePolecat
 	case RoleCrew:
@@ -165,6 +171,12 @@ func outputPrimeContextFallback(ctx RoleContext) {
 		outputWitnessContext(ctx)
 	case RoleRefinery:
 		outputRefineryContext(ctx)
+	case RolePlanner:
+		outputPlannerContext(ctx)
+	case RoleArchitect:
+		outputArchitectContext(ctx)
+	case RoleQA:
+		outputQAContext(ctx)
 	case RolePolecat:
 		outputPolecatContext(ctx)
 	case RoleCrew:
@@ -334,10 +346,64 @@ func outputUnknownContext(ctx RoleContext) {
 	fmt.Println("- `<rig>/polecats/<name>/` - Polecat role")
 	fmt.Println("- `<rig>/witness/rig/` - Witness role")
 	fmt.Println("- `<rig>/refinery/rig/` - Refinery role")
+	fmt.Println("- `<rig>/architect/` - Architect role")
+	fmt.Println("- `<rig>/qa/` - QA role")
 	fmt.Println("- `mayor/` or `<rig>/mayor/` - Mayor role")
+	fmt.Println("- `planner/` - Planner role")
 	fmt.Println("- Town root is neutral (set GT_ROLE or cd into a role directory)")
 	fmt.Println()
 	fmt.Printf("Town root: %s\n", style.Dim.Render(ctx.TownRoot))
+}
+
+func outputPlannerContext(ctx RoleContext) {
+	fmt.Printf("%s\n\n", style.Bold.Render("# Planner Context"))
+	fmt.Println("You are the **Planner** - the town-level task architect.")
+	fmt.Println()
+	fmt.Println("## Responsibilities")
+	fmt.Println("- Receive high-level specs from the Mayor")
+	fmt.Println("- Decompose work into actionable beads")
+	fmt.Println("- Maintain the town-level task backlog")
+	fmt.Println("- Coordinate with Rigs to ensure plan feasibility")
+	fmt.Println()
+	fmt.Println("## Key Commands")
+	fmt.Println("- `bd create \"title\"` - Create new task beads")
+	fmt.Println("- `bd mol wisp` - Attach workflows to beads")
+	fmt.Println("- `bd list` - View current backlog")
+	fmt.Println()
+	outputCommandQuickReference(ctx)
+	fmt.Printf("Town root: %s\n", style.Dim.Render(ctx.TownRoot))
+}
+
+func outputArchitectContext(ctx RoleContext) {
+	fmt.Printf("%s\n\n", style.Bold.Render("# Architect Context"))
+	fmt.Printf("You are the **Architect** for rig: %s\n\n", style.Bold.Render(ctx.Rig))
+	fmt.Println("## Responsibilities")
+	fmt.Println("- Review rig-level technical designs")
+	fmt.Println("- Ensure architectural consistency within the rig")
+	fmt.Println("- Advise on technology choices and implementation patterns")
+	fmt.Println()
+	fmt.Println("## Key Commands")
+	fmt.Println("- `bd list` - Check for design review beads")
+	fmt.Println("- `bd show <id>` - Review specific design task")
+	fmt.Println()
+	outputCommandQuickReference(ctx)
+	fmt.Printf("Rig: %s\n", style.Dim.Render(ctx.Rig))
+}
+
+func outputQAContext(ctx RoleContext) {
+	fmt.Printf("%s\n\n", style.Bold.Render("# QA Context"))
+	fmt.Printf("You are the **QA** for rig: %s\n\n", style.Bold.Render(ctx.Rig))
+	fmt.Println("## Responsibilities")
+	fmt.Println("- Review code quality and standards compliance")
+	fmt.Println("- Approve or reject work before it lands in main")
+	fmt.Println("- Ensure test coverage and correctness")
+	fmt.Println()
+	fmt.Println("## Key Commands")
+	fmt.Println("- `bd list` - Check for QA review beads")
+	fmt.Println("- `bd close <id>` - Approve/Close QA bead")
+	fmt.Println()
+	outputCommandQuickReference(ctx)
+	fmt.Printf("Rig: %s\n", style.Dim.Render(ctx.Rig))
 }
 
 // outputCommandQuickReference outputs a compact role-aware cheatsheet of commonly
@@ -411,6 +477,20 @@ func outputCommandQuickReference(ctx RoleContext) {
 		fmt.Printf("| Run triage | `%s boot triage` | ~~gt deacon heartbeat~~ (that's Deacon's job) |\n", c)
 		fmt.Printf("| Check Deacon health | `%s deacon status` | ~~gt status~~ (town-wide, not Deacon-specific) |\n", c)
 		fmt.Printf("| Nudge the Deacon | `%s nudge deacon \"msg\"` | ~~tmux send-keys~~ (unreliable) |\n", c)
+
+	case RolePlanner:
+		fmt.Println("| Want to... | Correct command | Common mistake |")
+		fmt.Println("|------------|----------------|----------------|")
+		fmt.Println("| Create a plan | `bd create \"title\"` | ~~gt plan create~~ (not a command) |")
+		fmt.Println("| Attach workflow | `bd mol wisp <id> <formula>` | ~~gt hook attach~~ (different use case) |")
+		fmt.Printf("| Message Mayor | `%s nudge mayor \"msg\"` | |\n", c)
+
+	case RoleArchitect, RoleQA:
+		fmt.Println("| Want to... | Correct command | Common mistake |")
+		fmt.Println("|------------|----------------|----------------|")
+		fmt.Println("| Complete review | `bd close <id>` | ~~bd complete~~ (not a command) |")
+		fmt.Printf("| Message polecat | `%s nudge %s/<name> \"msg\"` | |\n", c, ctx.Rig)
+		fmt.Printf("| Escalate issue | `%s escalate \"desc\"` | |\n", c)
 	}
 
 	fmt.Println()
@@ -585,6 +665,31 @@ func outputStartupDirective(ctx RoleContext) {
 		fmt.Println("1. Run `" + cli.Name() + " prime` (loads full context)")
 		fmt.Println("2. Run `" + cli.Name() + " boot triage` immediately")
 		fmt.Println("3. When triage completes, exit cleanly")
+	case RolePlanner:
+		fmt.Println()
+		fmt.Println("---")
+		fmt.Println()
+		fmt.Println("**STARTUP PROTOCOL**: You are the Planner. Please:")
+		fmt.Println("1. Run `" + cli.Name() + " prime` (loads full context, mail, and pending work)")
+		fmt.Println("2. Announce: \"Planner, checking in.\"")
+		fmt.Println("3. Check for planning beads on your hook: `" + cli.Name() + " hook`")
+		fmt.Println("4. If no hook, check mail: `" + cli.Name() + " mail inbox`")
+	case RoleArchitect:
+		fmt.Println()
+		fmt.Println("---")
+		fmt.Println()
+		fmt.Println("**STARTUP PROTOCOL**: You are the Architect. Please:")
+		fmt.Println("1. Run `" + cli.Name() + " prime` (loads full context, mail, and pending work)")
+		fmt.Println("2. Announce: \"" + ctx.Rig + " Architect, checking in.\"")
+		fmt.Println("3. Check for design beads on your hook: `" + cli.Name() + " hook`")
+	case RoleQA:
+		fmt.Println()
+		fmt.Println("---")
+		fmt.Println()
+		fmt.Println("**STARTUP PROTOCOL**: You are QA. Please:")
+		fmt.Println("1. Run `" + cli.Name() + " prime` (loads full context, mail, and pending work)")
+		fmt.Println("2. Announce: \"" + ctx.Rig + " QA, checking in.\"")
+		fmt.Println("3. Check for review beads on your hook: `" + cli.Name() + " hook`")
 	}
 }
 

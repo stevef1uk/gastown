@@ -418,7 +418,11 @@ func TestCreateAgentBead_UsesTownRootForCrossRigRoutes(t *testing.T) {
 	logPath := filepath.Join(townRoot, "bd.log")
 	installMockBDCreateRecorder(t, logPath)
 
-	workerDir := filepath.Join(townRoot, "imported", "mayor", "rig")
+	// Initialize bd with a different rig to force a cross-rig route.
+	workerDir := filepath.Join(townRoot, "other-rig")
+	if err := os.MkdirAll(filepath.Join(workerDir, ".beads"), 0755); err != nil {
+		t.Fatalf("mkdir %s: %v", workerDir, err)
+	}
 	bd := NewWithBeadsDir(workerDir, filepath.Join(workerDir, ".beads"))
 
 	issue, err := bd.CreateAgentBead("pt-imported-polecat-shiny", "shiny", &AgentFields{

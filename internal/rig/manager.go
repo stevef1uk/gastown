@@ -1264,6 +1264,18 @@ func (m *Manager) initAgentBeads(rigPath, rigName, prefix string) error {
 			rig:      rigName,
 			desc:     fmt.Sprintf("Refinery for %s - processes merge queue.", rigName),
 		},
+		{
+			id:       beads.ArchitectBeadIDWithPrefix(prefix, rigName),
+			roleType: "architect",
+			rig:      rigName,
+			desc:     fmt.Sprintf("Architect for %s - manages high-level design and architecture.", rigName),
+		},
+		{
+			id:       beads.QABeadIDWithPrefix(prefix, rigName),
+			roleType: "qa",
+			rig:      rigName,
+			desc:     fmt.Sprintf("QA for %s - verifies work and ensures quality.", rigName),
+		},
 	}
 
 	// Note: Mayor and Deacon are now created by gt install in town beads.
