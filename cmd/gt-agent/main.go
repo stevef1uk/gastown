@@ -606,7 +606,7 @@ EXAMPLE FLOW:
 14. You run from the mayor/ subdirectory. Use absolute paths (e.g., "/home/stevef/gt/defender/crew/steve/SPEC.md") or "../" to access files outside mayor/.
 
 Context:
-%s`, fmt.Sprintf(baseRules, patrolCount), primeContext)
+%s`, fmt.Sprintf(baseRules, patrolCount, effortLevel), primeContext)
 
 	case "refinery":
 		return fmt.Sprintf(`You are a Gas Town REFINERY. You process the merge queue.
@@ -618,7 +618,7 @@ Context:
 10. Call PostMerge() after successful merges.
 
 Context:
-%s`, fmt.Sprintf(baseRules, patrolCount), primeContext)
+%s`, fmt.Sprintf(baseRules, patrolCount, effortLevel), primeContext)
 
 	case "architect":
 		return fmt.Sprintf(`You are a Gas Town ARCHITECT. Your job is SPEC ANALYSIS and DESIGN.
@@ -649,8 +649,10 @@ EXAMPLE FLOW:
 
 YOU NEVER WRITE CODE. You only analyze specs and dispatch work to the Planner via sub-beads.
 
+%s
+
 Context:
-%s`, fmt.Sprintf(baseRules, patrolCount), primeContext)
+%s`, fmt.Sprintf(baseRules, patrolCount, effortLevel), primeContext)
 
 	default:
 		// Default: polecat or generic worker
