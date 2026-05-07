@@ -58,6 +58,8 @@ func outputPrimeContext(ctx RoleContext) (string, error) {
 		roleName = "boot"
 	case RoleDog:
 		roleName = "dog"
+	case RoleMechanic:
+		roleName = constants.RoleMechanic
 	default:
 		// Unknown role - use fallback
 		outputPrimeContextFallback(ctx)
@@ -183,6 +185,8 @@ func outputPrimeContextFallback(ctx RoleContext) {
 		outputCrewContext(ctx)
 	case RoleBoot:
 		outputBootContext(ctx)
+	case RoleMechanic:
+		outputMechanicContext(ctx)
 	default:
 		outputUnknownContext(ctx)
 	}
@@ -406,6 +410,23 @@ func outputQAContext(ctx RoleContext) {
 	fmt.Printf("Rig: %s\n", style.Dim.Render(ctx.Rig))
 }
 
+func outputMechanicContext(ctx RoleContext) {
+	fmt.Printf("%s\n\n", style.Bold.Render("# Mechanic Context"))
+	fmt.Println("You are the **Mechanic** - the town-level repair agent.")
+	fmt.Println()
+	fmt.Println("## Responsibilities")
+	fmt.Println("- Monitor session logs for stalled agents")
+	fmt.Println("- Apply environmental shims (symlinks, path corrections)")
+	fmt.Println("- Nudge agents to resume progress after repairs")
+	fmt.Println()
+	fmt.Println("## Key Commands")
+	fmt.Println("- `bd list` - Check for patrol beads")
+	fmt.Println("- `ls -t " + ctx.TownRoot + "/logs/sessions/*.log` - Find recent logs")
+	fmt.Println()
+	outputCommandQuickReference(ctx)
+	fmt.Printf("Town root: %s\n", style.Dim.Render(ctx.TownRoot))
+}
+
 // outputCommandQuickReference outputs a compact role-aware cheatsheet of commonly
 // confused commands. This helps agents avoid guessing wrong commands.
 func outputCommandQuickReference(ctx RoleContext) {
@@ -491,6 +512,13 @@ func outputCommandQuickReference(ctx RoleContext) {
 		fmt.Println("| Complete review | `bd close <id>` | ~~bd complete~~ (not a command) |")
 		fmt.Printf("| Message polecat | `%s nudge %s/<name> \"msg\"` | |\n", c, ctx.Rig)
 		fmt.Printf("| Escalate issue | `%s escalate \"desc\"` | |\n", c)
+
+	case RoleMechanic:
+		fmt.Println("| Want to... | Correct command | Common mistake |")
+		fmt.Println("|------------|----------------|----------------|")
+		fmt.Println("| Scan logs | `ls -t " + ctx.TownRoot + "/logs/sessions/*.log` | ~~tail -f logs/*~~ (too noisy) |")
+		fmt.Printf("| Nudge stalled agent | `%s nudge <target> \"msg\"` | |\n", c)
+		fmt.Println("| Create symlink | `ln -s <real> <hallucinated>` | |")
 	}
 
 	fmt.Println()
@@ -690,6 +718,16 @@ func outputStartupDirective(ctx RoleContext) {
 		fmt.Println("1. Run `" + cli.Name() + " prime` (loads full context, mail, and pending work)")
 		fmt.Println("2. Announce: \"" + ctx.Rig + " QA, checking in.\"")
 		fmt.Println("3. Check for review beads on your hook: `" + cli.Name() + " hook`")
+	case RoleMechanic:
+		fmt.Println()
+		fmt.Println("---")
+		fmt.Println()
+		fmt.Println("**STARTUP PROTOCOL**: You are the Mechanic. Please:")
+		fmt.Println("1. Run `" + cli.Name() + " prime` (loads full context, mail, and pending work)")
+		fmt.Println("2. Announce: \"Mechanic, checking in.\"")
+		fmt.Println("3. Check for patrol beads on your hook: `" + cli.Name() + " hook`")
+		fmt.Println("4. If no hook, check mail: `" + cli.Name() + " mail inbox`")
+		fmt.Println("5. Start patrolling session logs for stalled agents.")
 	}
 }
 

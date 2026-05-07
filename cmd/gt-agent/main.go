@@ -205,7 +205,7 @@ func run() error {
 	if sessionName == "" {
 		if rig != "" && polecat != "" {
 			sessionName = fmt.Sprintf("gt-%s-%s", rig, polecat)
-		} else if roleCanonical == "mayor" || roleCanonical == "deacon" || roleCanonical == "witness" || roleCanonical == "refinery" {
+		} else if roleCanonical == "mayor" || roleCanonical == "deacon" || roleCanonical == "witness" || roleCanonical == "refinery" || roleCanonical == "planner" || roleCanonical == "mechanic" || roleCanonical == "architect" || roleCanonical == "qa" {
 			// For rig-level roles, use the prefix if known
 			prefix := rig
 			if prefix == "" {
@@ -264,8 +264,10 @@ func run() error {
 			llmTimeout = d
 		}
 	}
-	// Always use fast model to avoid timeouts (override environment variable)
-	llmModel := "meta-llama/llama-3.2-3b-instruct:free"
+	llmModel := os.Getenv("LLM_MODEL")
+	if llmModel == "" {
+		llmModel = "meta-llama/llama-3.2-3b-instruct:free"
+	}
 	client := llm.NewClient(llmEndpoint, llmModel, roleCanonical, llmTimeout)
 
 	// Load persisted state
@@ -659,28 +661,34 @@ Context:
 	case "mechanic":
 		return fmt.Sprintf(`You are a Gas Town MECHANIC. Your job is to FIX AGENT HALLUCINATIONS.
 
+Gas Town is a steam engine. You are the oil and the wrench.
 System throughput often stalls because agents are literal-minded and hallucinate
 file paths or miss case-sensitivity. Your job is to monitor their struggle and
 apply **Environmental Shims** to get them moving again.
 
-**Your patrol behavior:**
-1. Scan %s/logs/sessions/ for recently updated logs.
-2. Analyze the last 100 lines of "typescript" for any agent showing:
-   - Extraordinary action detected (retry #3+)
-   - exit status 1 or exit status 128
-   - No such file or directory or Not a directory
-   - prefix mismatch
-3. If an agent is stuck:
-   - DIAGNOSE: What path is it guessing? What is the REAL path?
-   - REPAIR: Create a symlink, mkdir, or align the config.
-   - NUDGE: Tell the agent what you fixed so it can proceed.
+## 🕵️ Patrol Protocol (Run every cycle)
+
+1. **ALWAYS** start by listing the most recently updated logs:
+   CMD: ls -rt %s/logs/sessions/ | grep -v hq-mechanic.log | tail -n 5
+2. **ALWAYS** tail the top 2-3 most active logs (especially Architect/Planner) to look for stalls:
+   CMD: tail -n 100 %s/logs/sessions/<log-file>
+3. **Look for these stall indicators**:
+   - "Extraordinary action detected (retry #3+)"
+   - "exit status 1" or "exit status 128"
+   - "No such file or directory" or "Not a directory"
+   - "prefix mismatch"
+4. **If a stall is detected**:
+   - DIAGNOSE: Find the real path vs. the hallucinated path.
+   - REPAIR: Create a symlink (ln -sf <real> <hallucinated>) or mkdir.
+   - NUDGE: gt nudge <target> "I fixed the path for you."
+5. If no stalls found, check your own mail: gt mail inbox
 
 You are the oil and the wrench. Keep the engine running.
 
 %s
 
 Context:
-%s`, os.Getenv("GT_ROOT"), fmt.Sprintf(baseRules, patrolCount, effortLevel), primeContext)
+%s`, os.Getenv("GT_ROOT"), os.Getenv("GT_ROOT"), fmt.Sprintf(baseRules, patrolCount, effortLevel), primeContext)
 
 	default:
 		// Default: polecat or generic worker

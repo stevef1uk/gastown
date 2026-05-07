@@ -455,6 +455,8 @@ func runNudge(cmd *cobra.Command, args []string) (retErr error) {
 		target = session.MayorSessionName()
 	case constants.RolePlanner:
 		target = session.PlannerSessionName()
+	case constants.RoleMechanic:
+		target = session.MechanicSessionName()
 	case constants.RoleWitness, constants.RoleRefinery, constants.RoleArchitect, constants.RoleQA:
 		// These need the current rig
 		roleInfo, err := GetRole()
