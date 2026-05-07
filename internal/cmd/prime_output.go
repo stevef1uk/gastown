@@ -187,6 +187,8 @@ func outputPrimeContextFallback(ctx RoleContext) {
 		outputBootContext(ctx)
 	case RoleMechanic:
 		outputMechanicContext(ctx)
+	case RoleDog:
+		outputDogContext(ctx)
 	default:
 		outputUnknownContext(ctx)
 	}
@@ -422,6 +424,18 @@ func outputMechanicContext(ctx RoleContext) {
 	fmt.Println("## Key Commands")
 	fmt.Println("- `bd list` - Check for patrol beads")
 	fmt.Println("- `ls -t " + ctx.TownRoot + "/logs/sessions/*.log` - Find recent logs")
+	fmt.Println()
+	outputCommandQuickReference(ctx)
+	fmt.Printf("Town root: %s\n", style.Dim.Render(ctx.TownRoot))
+}
+
+func outputDogContext(ctx RoleContext) {
+	fmt.Printf("%s\n\n", style.Bold.Render("# Dog Context"))
+	fmt.Printf("You are dog **%s** - a town-level task worker.\n\n", style.Bold.Render(ctx.Polecat))
+	fmt.Println("## Responsibilities")
+	fmt.Println("- Execute assigned tasks from the Deacon")
+	fmt.Println("- Use standard worker protocol (GUPP)")
+	fmt.Println("- Check in frequently")
 	fmt.Println()
 	outputCommandQuickReference(ctx)
 	fmt.Printf("Town root: %s\n", style.Dim.Render(ctx.TownRoot))

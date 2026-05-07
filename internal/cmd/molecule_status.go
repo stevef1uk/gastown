@@ -99,6 +99,10 @@ func buildAgentBeadID(identity string, role Role, townRoot string) string {
 	case RoleBoot:
 		// Boot is a deacon dog — uses town-level dog bead ID
 		return beads.DogBeadIDTown("boot")
+	case RoleMechanic:
+		return beads.MechanicBeadIDTown()
+	case RolePlanner:
+		return beads.PlannerBeadIDTown()
 	default:
 		return ""
 	}
@@ -349,6 +353,7 @@ func runMoleculeStatus(cmd *cobra.Command, args []string) error {
 			roleCtx, _ = GetRoleWithContext(cwd, townRoot)
 		}
 		target = buildAgentIdentity(roleCtx)
+		fmt.Fprintf(os.Stderr, "DEBUG: target=%q role=%q\n", target, roleCtx.Role)
 		if target == "" {
 			return fmt.Errorf("cannot determine agent identity (role: %s)", roleCtx.Role)
 		}
@@ -572,6 +577,8 @@ func buildAgentIdentity(ctx RoleContext) string {
 			return ""
 		}
 		return "deacon/dogs/" + ctx.Polecat
+	case RoleMechanic:
+		return "mechanic/"
 	default:
 		return ""
 	}

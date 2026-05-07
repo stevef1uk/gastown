@@ -297,6 +297,12 @@ func detectRole(cwd, townRoot string) RoleInfo {
 		ctx.Role = RoleDeacon
 		return ctx
 	}
+	
+	// Check for mechanic role: mechanic/
+	if len(parts) >= 1 && parts[0] == "mechanic" {
+		ctx.Role = RoleMechanic
+		return ctx
+	}
 
 	// At this point, first part should be a rig name
 	if len(parts) < 1 {
@@ -375,6 +381,8 @@ func parseRoleString(s string) (Role, string, string) {
 		return RoleDog, "", ""
 	case constants.RolePlanner:
 		return RolePlanner, "", ""
+	case constants.RoleMechanic:
+		return RoleMechanic, "", ""
 	}
 
 	// Compound roles: rig/role or rig/polecats/name or rig/crew/name
@@ -431,6 +439,8 @@ func (info RoleInfo) ActorString() string {
 		return "deacon"
 	case RolePlanner:
 		return "planner"
+	case RoleMechanic:
+		return "mechanic"
 	case RoleWitness:
 		if info.Rig != "" {
 			return fmt.Sprintf("%s/witness", info.Rig)
@@ -477,6 +487,8 @@ func getRoleHome(role Role, rig, polecat, townRoot string) string {
 		return filepath.Join(townRoot, "deacon")
 	case RolePlanner:
 		return filepath.Join(townRoot, "planner")
+	case RoleMechanic:
+		return filepath.Join(townRoot, "mechanic")
 	case RoleWitness:
 		if rig == "" {
 			return ""
@@ -657,6 +669,7 @@ func runRoleList(cmd *cobra.Command, args []string) error {
 		{RoleMayor, "Global coordinator at mayor/"},
 		{RoleDeacon, "Background supervisor daemon"},
 		{RolePlanner, "Town-level task planner"},
+		{RoleMechanic, "Global infrastructure repair agent"},
 		{RoleWitness, "Per-rig polecat lifecycle manager"},
 		{RoleRefinery, "Per-rig merge queue processor"},
 		{RoleArchitect, "Per-rig architecture and technology decisions"},

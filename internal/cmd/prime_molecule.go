@@ -243,8 +243,20 @@ func truncateDescription(desc string, maxLen int) string {
 
 // outputMoleculeContext checks if the agent is working on a molecule step and shows progress.
 func outputMoleculeContext(ctx RoleContext) {
-	// Applies to polecats, crew workers, deacon, witness, and refinery
-	if ctx.Role != RolePolecat && ctx.Role != RoleCrew && ctx.Role != RoleDeacon && ctx.Role != RoleWitness && ctx.Role != RoleRefinery && ctx.Role != RoleArchitect && ctx.Role != RoleQA {
+	// Applies to polecats, crew workers, deacon, witness, refinery, architect, qa, mechanic, planner
+	if ctx.Role != RolePolecat && ctx.Role != RoleCrew && ctx.Role != RoleDeacon && ctx.Role != RoleWitness && ctx.Role != RoleRefinery && ctx.Role != RoleArchitect && ctx.Role != RoleQA && ctx.Role != RoleMechanic && ctx.Role != RolePlanner {
+		return
+	}
+
+	// For Mechanic, use special patrol molecule handling
+	if ctx.Role == RoleMechanic {
+		outputMechanicPatrolContext(ctx)
+		return
+	}
+
+	// For Planner, use special patrol molecule handling
+	if ctx.Role == RolePlanner {
+		outputPlannerPatrolContext(ctx)
 		return
 	}
 
@@ -346,6 +358,47 @@ func outputRefineryPatrolContext(ctx RoleContext) {
 	}
 	outputPatrolContext(cfg)
 	showFormulaStepsFull(constants.MolRefineryPatrol, ctx.TownRoot, ctx.Rig, cfg.ExtraVars)
+}
+
+// outputMechanicPatrolContext shows patrol molecule status for the Mechanic.
+// Mechanic uses wisps for patrol cycles to monitor session logs.
+func outputMechanicPatrolContext(ctx RoleContext) {
+	cfg := PatrolConfig{
+		RoleName:      "mechanic",
+		PatrolMolName: constants.MolMechanicPatrol,
+		BeadsDir:      ctx.TownRoot,
+		Assignee:      "mechanic",
+		HeaderEmoji:   "🔧",
+		HeaderTitle:   "Mechanic Patrol Status",
+		WorkLoopSteps: []string{
+			"Scan recent logs for stalls: `ls -t " + ctx.TownRoot + "/logs/sessions/*.log`",
+			"Apply repairs (symlinks, config fixes)",
+			"Nudge agents after repairs: `gt nudge <target> \"<msg>\"`",
+			"Report cycle completion: `gt patrol report`",
+		},
+	}
+	outputPatrolContext(cfg)
+	showFormulaSteps(constants.MolMechanicPatrol, "Patrol Steps", ctx.TownRoot, ctx.Rig)
+}
+
+// outputPlannerPatrolContext shows patrol molecule status for the Planner.
+func outputPlannerPatrolContext(ctx RoleContext) {
+	cfg := PatrolConfig{
+		RoleName:      "planner",
+		PatrolMolName: constants.MolPlannerPatrol,
+		BeadsDir:      ctx.TownRoot,
+		Assignee:      "planner",
+		HeaderEmoji:   "📋",
+		HeaderTitle:   "Planner Patrol Status",
+		WorkLoopSteps: []string{
+			"Review incoming specs from Mayor",
+			"Decompose into beads: `bd create` / `bd mol wisp` / `bd bond` / `bd sling` ",
+			"Maintain town-level backlog: `bd list` ",
+			"Report cycle completion: `gt patrol report` ",
+		},
+	}
+	outputPatrolContext(cfg)
+	showFormulaSteps(constants.MolPlannerPatrol, "Patrol Steps", ctx.TownRoot, ctx.Rig)
 }
 
 // buildWitnessPatrolVars returns --var key=value strings for the witness

@@ -68,7 +68,7 @@ func sessionToAgentID(sessionName string) string {
 func canonicalAssigneeAddress(identity *session.AgentIdentity) string {
 	addr := identity.Address()
 	switch identity.Role {
-	case session.RoleMayor, session.RoleDeacon, session.RolePlanner:
+	case session.RoleMayor, session.RoleDeacon, session.RolePlanner, "mechanic":
 		if !strings.HasSuffix(addr, "/") {
 			return addr + "/"
 		}
@@ -82,6 +82,7 @@ func resolveSelfTarget() (agentID string, pane string, hookRoot string, err erro
 	if err != nil {
 		return "", "", "", fmt.Errorf("detecting role: %w", err)
 	}
+	fmt.Fprintf(os.Stderr, "DEBUG: role=%q\n", roleInfo.Role)
 
 	// Build agent identity from role
 	// Town-level agents use trailing slash to match addressToIdentity() normalization
@@ -106,6 +107,8 @@ func resolveSelfTarget() (agentID string, pane string, hookRoot string, err erro
 		agentID = fmt.Sprintf("%s/polecats/%s", roleInfo.Rig, roleInfo.Polecat)
 	case RoleCrew:
 		agentID = fmt.Sprintf("%s/crew/%s", roleInfo.Rig, roleInfo.Polecat)
+	case RoleMechanic:
+		agentID = "mechanic/"
 	case RoleDog:
 		agentID = fmt.Sprintf("deacon/dogs/%s", roleInfo.Polecat)
 	default:

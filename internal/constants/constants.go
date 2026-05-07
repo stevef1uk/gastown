@@ -338,6 +338,12 @@ const (
 	// MolRefineryPatrol is the refinery patrol formula name.
 	MolRefineryPatrol = "mol-refinery-patrol"
 
+	// MolMechanicPatrol is the mechanic patrol formula name.
+	MolMechanicPatrol = "mol-mechanic-patrol"
+
+	// MolPlannerPatrol is the planner patrol formula name.
+	MolPlannerPatrol = "mol-planner-patrol"
+
 	// MolDogReaper is the wisp reaper dog formula name.
 	MolDogReaper = "mol-dog-reaper"
 

@@ -1106,6 +1106,13 @@ func getAgentIdentity(ctx RoleContext) string {
 		return fmt.Sprintf("%s/architect", ctx.Rig)
 	case RoleQA:
 		return fmt.Sprintf("%s/qa", ctx.Rig)
+	case RoleMechanic:
+		return "mechanic"
+	case RoleDog:
+		if ctx.Polecat != "" {
+			return "deacon/dogs/" + ctx.Polecat
+		}
+		return "dog"
 	default:
 		return ""
 	}
