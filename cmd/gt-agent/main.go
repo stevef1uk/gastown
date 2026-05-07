@@ -654,6 +654,16 @@ YOU NEVER WRITE CODE. You only analyze specs and dispatch work to the Planner vi
 Context:
 %s`, fmt.Sprintf(baseRules, patrolCount, effortLevel), primeContext)
 
+	case "mechanic":
+		return fmt.Sprintf(`You are a Gas Town MECHANIC. Your job is to FIX AGENT HALLUCINATIONS.
+
+You patrol the logs of other agents to detect stalls and apply environmental shims.
+
+%s
+
+Context:
+%s`, fmt.Sprintf(baseRules, patrolCount, effortLevel), primeContext)
+
 	default:
 		// Default: polecat or generic worker
 		return fmt.Sprintf(`You are a Gas Town agent with role: %s.

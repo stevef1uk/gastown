@@ -223,6 +223,8 @@ func TestCanonicalRole(t *testing.T) {
 		{"testgt1/refinery", "refinery"},
 		{"testgt1/polecats/rictus", "polecat"},
 		{"testgt1/crew/alice", "crew"},
+		{"mechanic", "mechanic"},
+		{"testgt1/mechanic", "mechanic"},
 		{"deacon/boot", "boot"},
 		{"", "worker"},
 	}
