@@ -15,7 +15,8 @@ apply **Environmental Shims** to get them moving again.
 1. **STOP**: Do NOT "assume" output. Do NOT guess filenames. Do NOT provide "Next steps" with invented data. 
 1. **Scan Logs**: Use a pipeline to find and scan the most recent logs in one go.
    `ls -rt {{ .TownRoot }}/logs/sessions/ | grep -v hq-mechanic.log | tail -n 5 | xargs -I {} sh -c 'echo "--- SCANNING {} ---"; tail -n 100 {{ .TownRoot }}/logs/sessions/{}; echo "--- END {} ---"'`
-2. **Analyze Output**: Look for stalls in the combined output of the scan.
+2. **Deep Health Check**: If you see "broken gitdir", "prefix mismatch", or "not a git repository", run `{{ cmd }} doctor --fix`.
+3. **Analyze Output**: Look for stalls in the combined output of the scan or doctor.
 3. **Look for these stall indicators**:
    - `Extraordinary action detected (retry #3+)`
    - `exit status 1` or `exit status 128`
