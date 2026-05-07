@@ -150,6 +150,11 @@ func AgentEnv(cfg AgentEnvConfig) map[string]string {
 		env["BD_ACTOR"] = constants.RolePlanner
 		env["GIT_AUTHOR_NAME"] = constants.RolePlanner
 
+	case constants.RoleMechanic:
+		env["GT_ROLE"] = constants.RoleMechanic
+		env["BD_ACTOR"] = constants.RoleMechanic
+		env["GIT_AUTHOR_NAME"] = constants.RoleMechanic
+
 	case constants.RoleArchitect:
 		env["GT_ROLE"] = fmt.Sprintf("%s/architect", cfg.Rig)
 		env["GT_RIG"] = cfg.Rig

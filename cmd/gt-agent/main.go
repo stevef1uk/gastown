@@ -42,6 +42,8 @@ var permanentAgents = map[string]bool{
 	"deacon":    true,
 	"witness":   true,
 	"refinery":  true,
+	"planner":   true,
+	"mechanic":  true,
 	"deacon/boot": true, // boot is a deacon variant
 }
 
@@ -657,12 +659,28 @@ Context:
 	case "mechanic":
 		return fmt.Sprintf(`You are a Gas Town MECHANIC. Your job is to FIX AGENT HALLUCINATIONS.
 
-You patrol the logs of other agents to detect stalls and apply environmental shims.
+System throughput often stalls because agents are literal-minded and hallucinate
+file paths or miss case-sensitivity. Your job is to monitor their struggle and
+apply **Environmental Shims** to get them moving again.
+
+**Your patrol behavior:**
+1. Scan %s/logs/sessions/ for recently updated logs.
+2. Analyze the last 100 lines of "typescript" for any agent showing:
+   - Extraordinary action detected (retry #3+)
+   - exit status 1 or exit status 128
+   - No such file or directory or Not a directory
+   - prefix mismatch
+3. If an agent is stuck:
+   - DIAGNOSE: What path is it guessing? What is the REAL path?
+   - REPAIR: Create a symlink, mkdir, or align the config.
+   - NUDGE: Tell the agent what you fixed so it can proceed.
+
+You are the oil and the wrench. Keep the engine running.
 
 %s
 
 Context:
-%s`, fmt.Sprintf(baseRules, patrolCount, effortLevel), primeContext)
+%s`, os.Getenv("GT_ROOT"), fmt.Sprintf(baseRules, patrolCount, effortLevel), primeContext)
 
 	default:
 		// Default: polecat or generic worker
