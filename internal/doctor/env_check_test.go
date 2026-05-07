@@ -44,9 +44,14 @@ const testTownRoot = "/town"
 
 // expectedEnv generates expected env vars matching what the check generates.
 func expectedEnv(role, rig, agentName string) map[string]string {
+	rigPath := ""
+	if rig != "" {
+		rigPath = testTownRoot + "/" + rig
+	}
 	return config.AgentEnv(config.AgentEnvConfig{
 		Role:      role,
 		Rig:       rig,
+		RigPath:   rigPath,
 		AgentName: agentName,
 		TownRoot:  testTownRoot,
 	})
@@ -419,13 +424,18 @@ func TestEnvVarsCheck_MissingEmptyExpectedIsOK(t *testing.T) {
 
 func TestEnvVarsCheck_BeadsDirWarning(t *testing.T) {
 	setupEnvTestRegistry(t)
-	// BEADS_DIR being set breaks prefix-based routing
+	// BEADS_DIR being set to WRONG value should warn
 	expected := expectedEnv("witness", "myrig", "")
-	expected["BEADS_DIR"] = "/some/path/.beads" // This shouldn't be set!
+	actual := make(map[string]string)
+	for k, v := range expected {
+		actual[k] = v
+	}
+	actual["BEADS_DIR"] = "/wrong/path/.beads"
+
 	reader := &mockEnvReader{
 		sessions: []string{"mr-witness"},
 		sessionEnvs: map[string]map[string]string{
-			"mr-witness": expected,
+			"mr-witness": actual,
 		},
 	}
 	check := NewEnvVarsCheckWithReader(reader)
@@ -437,16 +447,12 @@ func TestEnvVarsCheck_BeadsDirWarning(t *testing.T) {
 	if !strings.Contains(result.Message, "BEADS_DIR") {
 		t.Errorf("Message should mention BEADS_DIR, got: %q", result.Message)
 	}
-	if !strings.Contains(result.FixHint, "gt shutdown") {
-		t.Errorf("FixHint should mention restart, got: %q", result.FixHint)
-	}
 }
 
-func TestEnvVarsCheck_BeadsDirEmptyIsOK(t *testing.T) {
+func TestEnvVarsCheck_BeadsDirCorrectIsOK(t *testing.T) {
 	setupEnvTestRegistry(t)
-	// Empty BEADS_DIR should not warn
+	// Correct BEADS_DIR should be OK
 	expected := expectedEnv("witness", "myrig", "")
-	expected["BEADS_DIR"] = "" // Empty is fine
 	reader := &mockEnvReader{
 		sessions: []string{"mr-witness"},
 		sessionEnvs: map[string]map[string]string{
@@ -457,7 +463,7 @@ func TestEnvVarsCheck_BeadsDirEmptyIsOK(t *testing.T) {
 	result := check.Run(testCtx())
 
 	if result.Status != StatusOK {
-		t.Errorf("Status = %v, want StatusOK for empty BEADS_DIR", result.Status)
+		t.Errorf("Status = %v, want StatusOK for correct BEADS_DIR", result.Status)
 	}
 }
 
@@ -466,7 +472,7 @@ func TestEnvVarsCheck_BeadsDirMultipleSessions(t *testing.T) {
 	// Multiple sessions, only one has BEADS_DIR
 	witnessEnv := expectedEnv("witness", "myrig", "")
 	polecatEnv := expectedEnv("polecat", "myrig", "Toast")
-	polecatEnv["BEADS_DIR"] = "/bad/path" // This shouldn't be set!
+	polecatEnv["BEADS_DIR"] = "/bad/path" // Mismatch with expected value
 
 	reader := &mockEnvReader{
 		sessions: []string{"mr-witness", "mr-Toast"},
