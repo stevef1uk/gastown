@@ -24,6 +24,7 @@ type AgentState struct {
 	ExtraordinaryAction bool      `json:"extraordinary_action"`
 	LastActivity        time.Time `json:"last_activity"`
 	IdleCycles          int       `json:"idle_cycles"`
+	CmdRetryCount       int       `json:"cmd_retry_count"` // consecutive extraordinary retries
 }
 
 const (
@@ -345,6 +346,13 @@ func run() error {
 			continue
 		}
 
+		// DEBUG: Log LLM response
+		debugLen := len(response)
+		if debugLen > 500 {
+			debugLen = 500
+		}
+		fmt.Printf("[gt-agent] LLM response (%d chars):\n%s\n---\n", len(response), response[:debugLen])
+
 		// Parse and execute commands
 		lines := strings.Split(response, "\n")
 		var summary string
@@ -441,7 +449,24 @@ func run() error {
 		// Mark extraordinary if any error occurred
 		if extraordinary {
 			state.ExtraordinaryAction = true
-			fmt.Println("[gt-agent] Extraordinary action detected in this cycle")
+			state.CmdRetryCount++
+			fmt.Printf("[gt-agent] Extraordinary action detected in this cycle (retry #%d)\n", state.CmdRetryCount)
+
+			// After 5 consecutive extraordinary cycles, try to recover
+			if state.CmdRetryCount >= 5 {
+				fmt.Printf("[gt-agent] WARNING: 5 consecutive extraordinary cycles detected. Attempting recovery...\n")
+				recoverCmd := fmt.Sprintf("gt hook clear --force 2>/dev/null; gt mail archive --stale 2>/dev/null; echo RECOVERED")
+				out, err := exec.Command("/bin/sh", "-c", recoverCmd).CombinedOutput()
+				if err == nil || strings.Contains(string(out), "RECOVERED") {
+					fmt.Printf("[gt-agent] Recovery: cleared hook and archived stale mail\n")
+					state.CmdRetryCount = 0
+				} else {
+					fmt.Printf("[gt-agent] Recovery failed, will retry next cycle\n")
+				}
+			}
+		} else {
+			// Reset retry count on successful cycle
+			state.CmdRetryCount = 0
 		}
 
 		// Save state after each cycle
@@ -554,6 +579,22 @@ Context:
 	case "mayor":
 		return fmt.Sprintf(`You are a Gas Town MAYOR. You coordinate work across all rigs.
 
+WORKFLOW - FOLLOW THIS EXACTLY:
+1. Check your hook: gt hook (shows assigned work with bead ID)
+2. For code implementation work: sling to Architect for spec analysis
+   gt sling <bead-id> <rig>/architect --no-convoy
+3. Monitor hook until Architect completes analysis
+4. Architect will create sub-beads and dispatch to Planner
+5. Reply to user when work is complete
+
+IMPORTANT: Do NOT read mail messages unless specifically asked. The hook tells you what to do.
+
+EXAMPLE FLOW:
+- Hook shows: hq-abc "Implement auth system"
+- Mayor slings to Architect: gt sling hq-abc testgt1/architect --no-convoy
+- Architect reads SPEC, creates sub-beads, slings to Planner
+- Architect reports back to Mayor when complete
+
 %s
 7. Dispatch work with "gt sling <bead-id> <rig>" for code changes. Only sling EXISTING beads — never make up bead IDs.
 8. Monitor convoys with "gt convoy list".
@@ -575,6 +616,38 @@ Context:
 8. Review and merge approved MRs.
 9. Address CI failures and retry as needed.
 10. Call PostMerge() after successful merges.
+
+Context:
+%s`, fmt.Sprintf(baseRules, patrolCount), primeContext)
+
+	case "architect":
+		return fmt.Sprintf(`You are a Gas Town ARCHITECT. Your job is SPEC ANALYSIS and DESIGN.
+
+WORKFLOW - FOLLOW THIS EXACTLY:
+1. Check your hook: gt hook (contains work assignment with SPEC path in attached_molecule or message)
+2. Extract the SPEC path from the hook - it could be named anything (SPEC.md, SimpleSpec.md, requirements.md, etc.)
+3. Read the SPEC file from the actual path provided
+4. Analyze the requirements and break into IMPLEMENTATION STEPS
+5. Create SUB-BEADS for each step using: bd create --parent <parent-bead-id> --title "Step X: <description>" --type task
+6. Sling each sub-bead to the Planner: gt sling <sub-bead-id> planner
+7. Do NOT try to sling the same bead you are hooked to - create NEW beads
+8. Monitor your hook until all work is complete
+
+IMPORTANT: You CANNOT sling the bead you are hooked to. You MUST create child beads.
+
+EXAMPLE FLOW:
+- Hooked with: hq-abc "Implement auth system" (attached_molecule contains path to SPEC)
+- Run: gt hook to see the attached molecule/spec path
+- Read SPEC at the ACTUAL path from hook (e.g., /path/to/SPEC.md, /path/to/requirements.md, etc.)
+- Create sub-beads:
+  bd create --parent hq-abc --title "Step 1: Create user table schema" --type task
+  bd create --parent hq-abc --title "Step 2: Implement login endpoint" --type task
+- Sling sub-beads to Planner:
+  gt sling <step1-bead> planner
+  gt sling <step2-bead> planner
+- Reply to Mayor when all sub-beads are dispatched
+
+YOU NEVER WRITE CODE. You only analyze specs and dispatch work to the Planner via sub-beads.
 
 Context:
 %s`, fmt.Sprintf(baseRules, patrolCount), primeContext)

@@ -404,6 +404,7 @@ func setupPrimeSession(ctx RoleContext, roleInfo RoleInfo) error {
 	}
 	if !roleInfo.Mismatch {
 		ensureBeadsRedirect(ctx)
+		ensureBeadsConfig(ctx)
 	}
 	repairSessionEnv(ctx, roleInfo)
 	// Only emit session_start when gt prime is running as a SessionStart or
@@ -1233,6 +1234,25 @@ func ensureBeadsRedirect(ctx RoleContext) {
 
 	// Use shared helper - silently ignore errors during prime
 	_ = beads.SetupRedirect(ctx.TownRoot, ctx.WorkDir)
+}
+
+func ensureBeadsConfig(ctx RoleContext) {
+	// Ensure beads.role is set if we're in a git-tracked directory.
+	// This prevents "role not configured" warnings and errors during bd operations.
+	// Check local config first, then fall back to setting it if missing.
+	cmd := exec.Command("git", "config", "beads.role")
+	cmd.Dir = ctx.WorkDir
+	if err := cmd.Run(); err != nil {
+		// Not set locally. Check if we're even in a git repo.
+		checkCmd := exec.Command("git", "rev-parse", "--is-inside-work-tree")
+		checkCmd.Dir = ctx.WorkDir
+		if err := checkCmd.Run(); err == nil {
+			// Inside a work tree, set beads.role to contributor as a safe default.
+			setCmd := exec.Command("git", "config", "beads.role", "contributor")
+			setCmd.Dir = ctx.WorkDir
+			_ = setCmd.Run()
+		}
+	}
 }
 
 // injectWorkContext extracts the current work context (rig, bead, molecule) from the
