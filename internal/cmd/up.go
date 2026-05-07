@@ -412,6 +412,18 @@ func runUp(cmd *cobra.Command, args []string) error {
 		if doltCfg.Host != "" {
 			os.Setenv("BEADS_DOLT_SERVER_HOST", doltCfg.Host)
 		}
+
+		// Propagate session transport to subsequently spawned agents.
+		// Without this, agents use the default (tmux) even when town is
+		// configured for NATS.
+		if settings, err := config.LoadOrCreateTownSettings(config.TownSettingsPath(townRoot)); err == nil && settings != nil {
+			if settings.SessionTransport != "" {
+				os.Setenv("GT_SESSION_TRANSPORT", settings.SessionTransport)
+			}
+			if settings.NatsURL != "" {
+				os.Setenv("GT_NATS_URL", settings.NatsURL)
+			}
+		}
 	}
 
 	// Orphaned bead recovery: detect beads stuck in hooked/in_progress status
