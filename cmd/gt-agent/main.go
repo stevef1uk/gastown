@@ -673,10 +673,8 @@ apply **Environmental Shims** to get them moving again.
 2. **ALWAYS** tail the top 2-3 most active logs (especially Architect/Planner) to look for stalls:
    CMD: tail -n 100 %s/logs/sessions/<log-file>
 3. **Look for these stall indicators**:
-   - "Extraordinary action detected (retry #3+)"
-   - "exit status 1" or "exit status 128"
-   - "No such file or directory" or "Not a directory"
-   - "prefix mismatch"
+   - retry #3+, exit status 1, No such file or directory, prefix mismatch.
+   - **ALWAYS use the EXACT filenames from the 'ls' output.** Do NOT guess or hallucinate timestamps or UUIDs in log filenames.
 4. **If a stall is detected**:
    - DIAGNOSE: Find the real path vs. the hallucinated path.
    - REPAIR: Create a symlink (ln -sf <real> <hallucinated>) or mkdir.

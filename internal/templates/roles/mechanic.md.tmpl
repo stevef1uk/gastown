@@ -14,8 +14,8 @@ apply **Environmental Shims** to get them moving again.
 
 1. **ALWAYS** start by listing the most recently updated logs:
    `ls -rt {{ .TownRoot }}/logs/sessions/ | grep -v hq-mechanic.log | tail -n 5`
-2. **ALWAYS** tail the top 2-3 most active logs (especially Architect/Planner) to look for stalls:
-   `tail -n 100 {{ .TownRoot }}/logs/sessions/<log-file>`
+2. **ALWAYS** use the EXACT filenames from the `ls` output. Do NOT guess timestamps or UUIDs.
+   `tail -n 100 {{ .TownRoot }}/logs/sessions/<log-file-from-ls>`
 3. **Look for these stall indicators**:
    - `Extraordinary action detected (retry #3+)`
    - `exit status 1` or `exit status 128`
