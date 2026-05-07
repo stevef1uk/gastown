@@ -703,6 +703,11 @@ func initTownBeads(townPath string) error {
 		return fmt.Errorf("bd init succeeded but .beads directory not created (check bd daemon interference)")
 	}
 
+	// Ensure correct permissions for Dolt compatibility
+	if err := os.Chmod(beadsDir, 0700); err != nil {
+		fmt.Printf("   %s Warning: Could not set .beads directory permissions to 0700: %v\n", style.Dim.Render("⚠"), err)
+	}
+
 	// Ensure metadata.json has dolt_database set (EnsureMetadata fills missing
 	// values but does not overwrite existing ones).
 	if err := doltserver.EnsureMetadata(townPath, "hq"); err != nil {
