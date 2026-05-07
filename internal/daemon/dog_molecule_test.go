@@ -91,6 +91,16 @@ func TestParseChildrenJSON(t *testing.T) {
 			wantCount: 0,
 		},
 		{
+			name:      "map with extra metadata fields",
+			input:     `{"hq-wisp-abc":[],"schema_version":1}`,
+			wantCount: 0,
+		},
+		{
+			name:      "map with children and extra fields",
+			input:     `{"hq-wisp-abc":[{"id":"a","title":"X","status":"open"}],"schema_version":1}`,
+			wantCount: 1,
+		},
+		{
 			name:      "empty array",
 			input:     `[]`,
 			wantCount: 0,

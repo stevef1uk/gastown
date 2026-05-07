@@ -241,6 +241,7 @@ type childInfo struct {
 // parseChildrenJSON parses the output of `bd show <id> --children --json`.
 // bd returns a map keyed by parent ID: {"hq-wisp-abc": [{...}, ...]}.
 // For forward compatibility, a bare array is also accepted.
+// Handles extra metadata fields (e.g., "schema_version") that newer bd versions add.
 func parseChildrenJSON(raw string) ([]childInfo, error) {
 	data := []byte(raw)
 
@@ -249,10 +250,16 @@ func parseChildrenJSON(raw string) ([]childInfo, error) {
 		return arr, nil
 	}
 
-	var wrapped map[string][]childInfo
+	// Try map with flexible values (handles extra fields like schema_version).
+	// Use json.RawMessage for values so we can unmarshal them separately.
+	var wrapped map[string]json.RawMessage
 	if err := json.Unmarshal(data, &wrapped); err == nil {
-		for _, children := range wrapped {
-			return children, nil
+		// Find the first array value and unmarshal it.
+		// Keys are typically wisp IDs like "hq-wisp-abc".
+		for _, rawChildren := range wrapped {
+			if err := json.Unmarshal(rawChildren, &arr); err == nil {
+				return arr, nil
+			}
 		}
 		return nil, nil
 	}

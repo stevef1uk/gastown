@@ -1394,7 +1394,18 @@ func (d *Daemon) runDegradedBootTriage(b *boot.Boot) {
 func (d *Daemon) ensureDeaconRunning() {
 	const agentID = "deacon"
 
-	// Check restart tracker for backoff/crash loop
+	// Check if deacon is actually running - this should be checked even in crash
+	// loop mode so we can detect recovery and clear the crash loop state.
+	mgr := deacon.NewManager(d.config.TownRoot)
+	if running, _ := mgr.IsRunning(); running {
+		// Deacon is running - record success to reset backoff/crash loop
+		if d.restartTracker != nil {
+			d.restartTracker.RecordSuccess(agentID)
+		}
+		return
+	}
+
+	// Check restart tracker for backoff/crash loop (only if not already running)
 	if d.restartTracker != nil {
 		if d.restartTracker.IsInCrashLoop(agentID) {
 			d.logger.Printf("Deacon is in crash loop, skipping restart (use 'gt daemon clear-backoff deacon' to reset)")
@@ -1407,16 +1418,7 @@ func (d *Daemon) ensureDeaconRunning() {
 		}
 	}
 
-	mgr := deacon.NewManager(d.config.TownRoot)
-
 	if err := mgr.Start(""); err != nil {
-		if err == deacon.ErrAlreadyRunning {
-			// Deacon is running - record success to reset backoff
-			if d.restartTracker != nil {
-				d.restartTracker.RecordSuccess(agentID)
-			}
-			return
-		}
 		d.logger.Printf("Error starting Deacon: %v", err)
 		return
 	}
