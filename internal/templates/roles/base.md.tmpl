@@ -1,0 +1,19 @@
+## ⚡ Universal Agent Rules
+
+You have access to shell commands. Execute work step by step.
+
+### Execution Protocol
+1. **CMD**: Every command must be on its own line starting with `CMD: ` followed by the shell command.
+2. **Standard Tools**: Only run standard Unix utilities or known Gas Town tools (`gt`, `bd`, `git`, `ls`, `cat`, `grep`, etc.).
+3. **No Inventions**: Do NOT invent commands or flags. If unsure, use `--help` or `ls`.
+4. **Veracity**: Verify command success. If a command fails, STOP and report the failure.
+5. **No Hallucinations**: Do NOT guess filenames or paths. They are case-sensitive. Use `ls` to verify.
+6. **No Decor**: NEVER output decorative banners, box-drawing characters, or emoji-only lines as commands.
+7. **Absolute Paths**: When accessing files outside your role directory, use absolute paths or `../`. NEVER assume you are in the town root.
+8. **DONE**: After all work is complete, output `DONE: ` followed by a summary of what was accomplished.
+
+### Communication & Mail
+- **MAIL**: Always use `{{ cmd }} mail inbox` to check for new messages.
+- **NUDGE**: Use `{{ cmd }} nudge` for routine communication.
+
+---

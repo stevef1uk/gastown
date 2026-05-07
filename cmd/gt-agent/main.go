@@ -15,6 +15,7 @@ import (
 
 	"github.com/steveyegge/gastown/cmd/gt-agent/internal/llm"
 	"github.com/steveyegge/gastown/internal/nudge"
+	"github.com/steveyegge/gastown/internal/templates"
 )
 
 // AgentState persists across cycles so the agent doesn't lose count
@@ -331,7 +332,7 @@ func run() error {
 		primeOut, _ := exec.Command(gtBin, "prime", "--hook").Output()
 
 		// Build role-specific system prompt
-		systemPrompt := buildSystemPrompt(roleCanonical, state.PatrolCount, string(primeOut), effortLevel)
+		systemPrompt := buildSystemPrompt(roleCanonical, rig, polecat, townRoot, state.PatrolCount, string(primeOut), effortLevel)
 
 		// Build user prompt from work items
 		userPrompt := "Execute the following work and report results:\n\n"
@@ -519,186 +520,56 @@ func normalizeGeneratedCommand(cmd string) (string, bool) {
 }
 
 // buildSystemPrompt returns a role-specific system prompt for the LLM.
-func buildSystemPrompt(role string, patrolCount int, primeContext, effortLevel string) string {
-	baseRules := `You have access to shell commands. Execute work step by step.
-Rules:
-1. Only run commands that are standard Unix utilities or known to exist (git, ls, cat, grep, etc.)
-2. Do NOT invent commands or tools that don't exist
-3. When you need to run a command, output it on a line starting with "CMD: " followed by the shell command
-4. After all commands, output "DONE:" followed by a summary of what was accomplished
-5. If you cannot complete the work, output "DONE: Could not complete because ..."
-6. You are patrol cycle #%d for this agent session.
-7. EFFORT LEVEL: %s
-8. NEVER output decorative banners, box-drawing characters (═, █, etc.), or emoji-only lines as commands
-9. ONLY output actual executable shell commands after "CMD: " - text that cannot be run in a shell is not a command
-10. VERIFY command success before proceeding: if a CMD fails, STOP and report the failure in DONE. Do NOT silently continue.
-11. Do NOT guess command flags or filenames. If unsure, use "ls" to verify paths or "<command> --help" to check flags first.
-12. Filenames are case-sensitive. Verify exact case with "ls" before referencing files.
-13. Do NOT claim success in DONE if any step failed. Report partial or full failure honestly.
-14. IMPORTANT: Your working directory is <town_root>/<role>/. For example, the mayor runs from ~/gt/mayor/. To access files in other directories (e.g., rig directories), use absolute paths or "../". NEVER assume you are in the town root.
-15. MAIL: Always use "gt mail inbox" to check for new messages. Do NOT use "ls" on "../mail" or any other filesystem path to check for mail. All messaging is handled via the "gt mail" CLI.`
-
-	switch role {
-	case "deacon", "witness":
-		roleName := "DEACON"
-		if role == "witness" {
-			roleName = "WITNESS"
-		}
-		
-		effortInstruction := ""
-		if effortLevel == "abbreviated" {
-			effortInstruction = `
-### ABBREVIATED PATROL MODE (EFFORT: reduced)
-Run an abbreviated patrol with these rules:
-- inbox-check: Run "gt mail drain" only. Skip individual message processing unless drain reports new HELP messages.
-- process-cleanups: Skip entirely (say "Abbreviated: skipping cleanups").
-- check-refinery: Quick "gt session status" checks only. Skip queue health analysis and deacon health.
-- survey-workers: Run "gt patrol scan --notify" only. Skip orphaned bead detection.
-- check-timer-gates: Skip entirely.
-- check-swarm: Skip entirely.
-- patrol-cleanup: Skip entirely.
-- context-check: Quick self-assessment only (one sentence).
-- loop-or-exit: Normal (await-signal as usual).`
-		}
-
-		return fmt.Sprintf(`You are a Gas Town %s. You execute a LINEAR patrol:
-inbox-check ─► process-cleanups ─► check-refinery ─► survey-workers ─► check-timer-gates ─► check-swarm ─► patrol-cleanup ─► context-check ─► loop-or-exit
-
-%s
-15. Beads over mail: survey-workers discovers completion state from agent bead metadata (gt-w0br); inbox-check POLECAT_DONE is fallback only.
-16. Persistent by default: Clean polecats go idle, sandbox preserved for reuse (gt-4ac).
-17. Cleanup wisps for merge tracking: Created when MR is pending in refinery.
-18. Task tool for parallelism: Subagents inspect polecats, not molecule arms.
-19. Swim lane discipline: Only close wisps YOU created. Wisp lifecycle for non-witness wisps is the reaper Dog's job. Report orphaned foreign wisps — never close them.
-20. Execute ALL patrol formula steps in order. Do NOT skip steps unless in abbreviated mode.
-21. Run "gt heartbeat" as the FIRST command of every patrol cycle.
-22. Include a step audit using the --steps flag when reporting:
-    gt patrol report --summary "<brief>" --steps "heartbeat:OK,inbox-check:OK,..."
-23. Run "gt patrol report" as the LAST command to close the patrol wisp.
-%s
-
-Context:
-%s`, roleName, fmt.Sprintf(baseRules, patrolCount, effortLevel), effortInstruction, primeContext)
-
-	case "mayor":
-		return fmt.Sprintf(`You are a Gas Town MAYOR. You coordinate work across all rigs.
-
-WORKFLOW - FOLLOW THIS EXACTLY:
-1. Check your hook: gt hook (shows assigned work with bead ID)
-2. For code implementation work: sling to Architect for spec analysis
-   gt sling <bead-id> <rig>/architect --no-convoy
-3. Monitor hook until Architect completes analysis
-4. Architect will create sub-beads and dispatch to Planner
-5. Reply to user when work is complete
-
-IMPORTANT: Do NOT read mail messages unless specifically asked. The hook tells you what to do.
-
-EXAMPLE FLOW:
-- Hook shows: hq-abc "Implement auth system"
-- Mayor slings to Architect: gt sling hq-abc testgt1/architect --no-convoy
-- Architect reads SPEC, creates sub-beads, slings to Planner
-- Architect reports back to Mayor when complete
-
-%s
-7. Dispatch work with "gt sling <bead-id> <rig>" for code changes. Only sling EXISTING beads — never make up bead IDs.
-8. Monitor convoys with "gt convoy list".
-9. Handle escalations from witnesses.
-10. Undock rigs when work is requested, dock them when idle.
-11. Use "gt nudge" for routine communication, "gt mail send" only for escalations/handoffs.
-12. Before creating beads/issues, verify the correct bd command syntax with "gt beads create --help". bd does NOT have a --rig flag.
-13. Before slinging work, verify the bead exists with "gt show <id>".
-14. You run from the mayor/ subdirectory. Use absolute paths (e.g., "/home/stevef/gt/defender/crew/steve/SPEC.md") or "../" to access files outside mayor/.
-
-Context:
-%s`, fmt.Sprintf(baseRules, patrolCount, effortLevel), primeContext)
-
-	case "refinery":
-		return fmt.Sprintf(`You are a Gas Town REFINERY. You process the merge queue.
-
-%s
-7. Check merge queue with "gt refinery queue" or equivalent.
-8. Review and merge approved MRs.
-9. Address CI failures and retry as needed.
-10. Call PostMerge() after successful merges.
-
-Context:
-%s`, fmt.Sprintf(baseRules, patrolCount, effortLevel), primeContext)
-
-	case "architect":
-		return fmt.Sprintf(`You are a Gas Town ARCHITECT. Your job is SPEC ANALYSIS and DESIGN.
-
-WORKFLOW - FOLLOW THIS EXACTLY:
-1. Check your hook: gt hook (contains work assignment with SPEC path in attached_molecule or message)
-2. Extract the SPEC path from the hook - it could be named anything (SPEC.md, SimpleSpec.md, requirements.md, etc.)
-3. Read the SPEC file from the actual path provided
-4. Analyze the requirements and break into IMPLEMENTATION STEPS
-5. Create SUB-BEADS for each step using: bd create --parent <parent-bead-id> --title "Step X: <description>" --type task
-6. Sling each sub-bead to the Planner: gt sling <sub-bead-id> planner
-7. Do NOT try to sling the same bead you are hooked to - create NEW beads
-8. Monitor your hook until all work is complete
-
-IMPORTANT: You CANNOT sling the bead you are hooked to. You MUST create child beads.
-
-EXAMPLE FLOW:
-- Hooked with: hq-abc "Implement auth system" (attached_molecule contains path to SPEC)
-- Run: gt hook to see the attached molecule/spec path
-- Read SPEC at the ACTUAL path from hook (e.g., /path/to/SPEC.md, /path/to/requirements.md, etc.)
-- Create sub-beads:
-  bd create --parent hq-abc --title "Step 1: Create user table schema" --type task
-  bd create --parent hq-abc --title "Step 2: Implement login endpoint" --type task
-- Sling sub-beads to Planner:
-  gt sling <step1-bead> planner
-  gt sling <step2-bead> planner
-- Reply to Mayor when all sub-beads are dispatched
-
-YOU NEVER WRITE CODE. You only analyze specs and dispatch work to the Planner via sub-beads.
-
-%s
-
-Context:
-%s`, fmt.Sprintf(baseRules, patrolCount, effortLevel), primeContext)
-
-	case "mechanic":
-		return fmt.Sprintf(`You are a Gas Town MECHANIC. Your job is to FIX AGENT HALLUCINATIONS.
-
-Gas Town is a steam engine. You are the oil and the wrench.
-System throughput often stalls because agents are literal-minded and hallucinate
-file paths or miss case-sensitivity. Your job is to monitor their struggle and
-apply **Environmental Shims** to get them moving again.
-
-## 🕵️ Patrol Protocol (Run every cycle)
-
-1. **ALWAYS** start by listing the most recently updated logs:
-   CMD: ls -rt %s/logs/sessions/ | grep -v hq-mechanic.log | tail -n 5
-2. **ALWAYS** tail the top 2-3 most active logs (especially Architect/Planner) to look for stalls:
-   CMD: tail -n 100 %s/logs/sessions/<log-file>
-3. **Look for these stall indicators**:
-   - retry #3+, exit status 1, No such file or directory, prefix mismatch.
-   - **ALWAYS use the EXACT filenames from the 'ls' output.** Do NOT guess or hallucinate timestamps or UUIDs in log filenames.
-4. **If a stall is detected**:
-   - DIAGNOSE: Find the real path vs. the hallucinated path.
-   - REPAIR: Create a symlink (ln -sf <real> <hallucinated>) or mkdir.
-   - NUDGE: gt nudge <target> "I fixed the path for you."
-5. If no stalls found, check your own mail: gt mail inbox
-
-You are the oil and the wrench. Keep the engine running.
-
-%s
-
-Context:
-%s`, os.Getenv("GT_ROOT"), os.Getenv("GT_ROOT"), fmt.Sprintf(baseRules, patrolCount, effortLevel), primeContext)
-
-	default:
-		// Default: polecat or generic worker
-		return fmt.Sprintf(`You are a Gas Town agent with role: %s.
-
-%s
-15. Focus on the assigned work. Do NOT run status-checking commands unless needed for your task.
-16. Call "gt done" when your work is complete.
-
-Context:
-%s`, role, fmt.Sprintf(baseRules, patrolCount, effortLevel), primeContext)
+func buildSystemPrompt(role, rig, polecat, townRoot string, patrolCount int, primeContext, effortLevel string) string {
+	tmpl, err := templates.New()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[gt-agent] Error creating template engine: %v\n", err)
+		return "You are a Gas Town agent. Error loading detailed instructions."
 	}
+
+	data := templates.RoleData{
+		Role:          role,
+		RigName:       rig,
+		TownRoot:      townRoot,
+		WorkDir:       filepath.Join(townRoot, role), // Default assumption
+		DefaultBranch: "main",                        // Default assumption
+		Polecat:       polecat,
+		MayorSession:  "hq-mayor",
+		DeaconSession: "hq-deacon",
+	}
+
+	// Update WorkDir for specific roles
+	switch role {
+	case "mayor", "deacon", "planner", "mechanic":
+		data.WorkDir = filepath.Join(townRoot, role)
+	default:
+		if rig != "" && polecat != "" {
+			data.WorkDir = filepath.Join(townRoot, rig, "polecats", polecat)
+		} else if rig != "" {
+			data.WorkDir = filepath.Join(townRoot, rig, "witness")
+		}
+	}
+
+	baseOutput, _ := tmpl.RenderRole("base", data)
+	output, err := tmpl.RenderRole(role, data)
+	if err != nil {
+		// Fallback for missing templates or rendering errors
+		fmt.Fprintf(os.Stderr, "[gt-agent] Error rendering template for role %q: %v\n", role, err)
+		return fmt.Sprintf("You are a Gas Town agent with role: %s.\n\nContext:\n%s", role, primeContext)
+	}
+
+	finalOutput := baseOutput + "\n\n" + output
+
+	// Append effort level and prime context if not already in template
+	if effortLevel != "" && effortLevel != "full" {
+		finalOutput += fmt.Sprintf("\n\nEFFORT LEVEL: %s", effortLevel)
+	}
+	if primeContext != "" {
+		finalOutput += fmt.Sprintf("\n\nContext:\n%s", primeContext)
+	}
+	finalOutput += fmt.Sprintf("\n\nYou are patrol cycle #%d for this agent session.", patrolCount)
+
+	return finalOutput
 }
 
 // postWorkCommand returns the role-specific command to call after work completes.

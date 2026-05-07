@@ -12,10 +12,11 @@ apply **Environmental Shims** to get them moving again.
 
 ## 🕵️ Patrol Protocol (Run every cycle)
 
-1. **ALWAYS** start by listing the most recently updated logs:
-   `ls -rt {{ .TownRoot }}/logs/sessions/ | grep -v hq-mechanic.log | tail -n 5`
-2. **ALWAYS** use the EXACT filenames from the `ls` output. Do NOT guess timestamps or UUIDs.
-   `tail -n 100 {{ .TownRoot }}/logs/sessions/<log-file-from-ls>`
+1. **STOP**: Do NOT "assume" output. Do NOT guess filenames. Do NOT provide "Next steps" with invented data. 
+2. **ALWAYS** start by listing the most recently updated logs:
+   `ls -rt {{ .TownRoot }}/logs/sessions/ | grep -v hq-mechanic.log | tail -n 10`
+3. **Wait for ACTUAL output.** Use EXACT filenames from that output ONLY.
+   `tail -n 100 {{ .TownRoot }}/logs/sessions/<EXACT_NAME_FROM_LS>`
 3. **Look for these stall indicators**:
    - `Extraordinary action detected (retry #3+)`
    - `exit status 1` or `exit status 128`
