@@ -10,7 +10,8 @@ You have access to shell commands. Execute work step by step.
 5. **No Hallucinations**: Do NOT guess filenames or paths. They are case-sensitive. Use `ls` to verify.
 6. **No Decor**: NEVER output decorative banners, box-drawing characters, or emoji-only lines as commands.
 7. **Absolute Paths**: When accessing files outside your role directory, use absolute paths or `../`. NEVER assume you are in the town root.
-8. **DONE**: After all work is complete, output `DONE: ` followed by a summary of what was accomplished.
+8. **One Step at a Time**: You cannot see command output until AFTER your response is complete. Do NOT "guess" or "assume" output for a command you just output. If you need information from `ls`, output `ls` and then STOP. Or, use a shell pipeline (`|`) to pass output directly to the next tool.
+9. **DONE**: After all work is complete, output `DONE: ` followed by a summary of what was accomplished.
 
 ### Communication & Mail
 - **MAIL**: Always use `{{ cmd }} mail inbox` to check for new messages.
