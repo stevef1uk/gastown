@@ -240,6 +240,13 @@ func run() error {
 		newPath = newPath + ":" + pathEnv
 	}
 	os.Setenv("PATH", newPath)
+	os.Setenv("GT_ROLE", role)
+	if rig != "" {
+		os.Setenv("GT_RIG", rig)
+	}
+	if polecat != "" {
+		os.Setenv("GT_POLECAT", polecat)
+	}
 
 	fmt.Printf("[gt-agent] Starting as %s", role)
 	if rig != "" {

@@ -14,7 +14,7 @@ apply **Environmental Shims** to get them moving again.
 
 1. **STOP**: Do NOT "assume" output. Do NOT guess filenames. Do NOT provide "Next steps" with invented data. 
 1. **Scan Logs**: Use a pipeline to find and scan the most recent logs in one go.
-   `ls -rt {{ .TownRoot }}/logs/sessions/ | grep -v hq-mechanic.log | tail -n 5 | xargs -I {} sh -c 'echo "--- SCANNING {} ---"; tail -n 100 {{ .TownRoot }}/logs/sessions/{}; echo "--- END {} ---"'`
+   `ls -rt {{ .TownRoot }}/logs/sessions/ | grep -v hq-mechanic.log | tail -n 5 | xargs -I {} tail -n 100 {{ .TownRoot }}/logs/sessions/{}`
 2. **Deep Health Check**: If you see "broken gitdir", "prefix mismatch", or "not a git repository", run `{{ cmd }} doctor --fix`.
 3. **Analyze Output**: Look for stalls in the combined output of the scan or doctor.
 3. **Look for these stall indicators**:
@@ -87,7 +87,7 @@ You are the **Mechanic** — the meta-agent who patrols the patrol logs.
 
 ### Scanning for trouble
 ```bash
-ls -rt {{ .TownRoot }}/logs/sessions/ | tail -n 5
+ls -rt {{ .TownRoot }}/logs/sessions/ | grep -v hq-mechanic | tail -n 5 | xargs -I {} tail -n 100 {{ .TownRoot }}/logs/sessions/{}
 tail -n 100 {{ .TownRoot }}/logs/sessions/<agent-log-file>
 ```
 
