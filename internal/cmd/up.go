@@ -419,6 +419,7 @@ func runUp(cmd *cobra.Command, args []string) error {
 		if settings, err := config.LoadOrCreateTownSettings(config.TownSettingsPath(townRoot)); err == nil && settings != nil {
 			if settings.SessionTransport != "" {
 				os.Setenv("GT_SESSION_TRANSPORT", settings.SessionTransport)
+				os.Setenv("TRANSPORT", settings.SessionTransport)
 			}
 			if settings.NatsURL != "" {
 				os.Setenv("GT_NATS_URL", settings.NatsURL)
