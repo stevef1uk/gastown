@@ -4,7 +4,7 @@
 /gt-proxy-client
 gt-agent-console
 *.exe
-gt-agent
+/gt-agent
 # Build
 /dist/
 /build/

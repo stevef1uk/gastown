@@ -506,7 +506,8 @@ Rules:
 11. Do NOT guess command flags or filenames. If unsure, use "ls" to verify paths or "<command> --help" to check flags first.
 12. Filenames are case-sensitive. Verify exact case with "ls" before referencing files.
 13. Do NOT claim success in DONE if any step failed. Report partial or full failure honestly.
-14. IMPORTANT: Your working directory is <town_root>/<role>/. For example, the mayor runs from ~/gt/mayor/. To access files in other directories (e.g., rig directories), use absolute paths or "../". NEVER assume you are in the town root.`
+14. IMPORTANT: Your working directory is <town_root>/<role>/. For example, the mayor runs from ~/gt/mayor/. To access files in other directories (e.g., rig directories), use absolute paths or "../". NEVER assume you are in the town root.
+15. MAIL: Always use "gt mail inbox" to check for new messages. Do NOT use "ls" on "../mail" or any other filesystem path to check for mail. All messaging is handled via the "gt mail" CLI.`
 
 	switch role {
 	case "deacon", "witness":
