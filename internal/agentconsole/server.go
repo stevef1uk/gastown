@@ -458,17 +458,24 @@ func (s *Server) findAgentPID(sessionName string) int {
 // detectAgentType determines what agent binary is used.
 func (s *Server) detectAgentType(sessionName string) string {
 	// Check wrapper log for agent type
-	logFile := filepath.Join(s.townRoot, "logs", "sessions", sessionName+".wrapper.log")
-	if data, err := os.ReadFile(logFile); err == nil {
-		content := string(data)
-		if strings.Contains(content, "gt-agent") {
-			return "gt-agent"
-		}
-		if strings.Contains(content, "opencode") {
-			return "opencode"
-		}
-		if strings.Contains(content, "claude") {
-			return "claude"
+	logDir := filepath.Join(s.townRoot, "logs", "sessions")
+	logPaths := []string{
+		filepath.Join(logDir, sessionName+".log"),
+		filepath.Join(logDir, sessionName+".wrapper.log"),
+	}
+
+	for _, path := range logPaths {
+		if data, err := os.ReadFile(path); err == nil {
+			content := string(data)
+			if strings.Contains(content, "gt-agent") {
+				return "gt-agent"
+			}
+			if strings.Contains(content, "opencode") {
+				return "opencode"
+			}
+			if strings.Contains(content, "claude") {
+				return "claude"
+			}
 		}
 	}
 
@@ -489,8 +496,22 @@ func (s *Server) detectAgentType(sessionName string) string {
 
 // readAgentLogs reads the last N lines from an agent's wrapper log.
 func (s *Server) readAgentLogs(sessionName string, n int) []string {
-	logFile := filepath.Join(s.townRoot, "logs", "sessions", sessionName+".wrapper.log")
-	data, err := os.ReadFile(logFile)
+	// Try both .log (NATS) and .wrapper.log (Tmux)
+	logDir := filepath.Join(s.townRoot, "logs", "sessions")
+	logPaths := []string{
+		filepath.Join(logDir, sessionName+".log"),
+		filepath.Join(logDir, sessionName+".wrapper.log"),
+	}
+
+	var data []byte
+	var err error
+	for _, path := range logPaths {
+		data, err = os.ReadFile(path)
+		if err == nil {
+			break
+		}
+	}
+
 	if err != nil {
 		return nil
 	}

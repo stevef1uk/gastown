@@ -1047,7 +1047,8 @@ func runSling(cmd *cobra.Command, args []string) (retErr error) {
 // Returns an error if the bead belongs to a different rig than the target polecat.
 // Town-root beads (hq-*) are rejected — tasks must be created in the target rig.
 func checkCrossRigGuard(beadID, targetAgent, townRoot string) error {
-	beadPrefix := beads.ExtractPrefix(beadID)
+	routes, _ := beads.LoadRoutes(filepath.Join(townRoot, ".beads"))
+	beadPrefix := beads.ExtractPrefixWithRoutes(beadID, routes)
 	if beadPrefix == "" {
 		return nil // Can't determine prefix, skip check
 	}

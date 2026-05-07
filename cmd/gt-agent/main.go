@@ -262,7 +262,7 @@ func run() error {
 		}
 	}
 	// Always use fast model to avoid timeouts (override environment variable)
-	llmModel := "meta/llama-3.2-3b-instruct:free"
+	llmModel := "meta-llama/llama-3.2-3b-instruct:free"
 	client := llm.NewClient(llmEndpoint, llmModel, roleCanonical, llmTimeout)
 
 	// Load persisted state
@@ -541,13 +541,14 @@ inbox-check ─► process-cleanups ─► check-refinery ─► survey-workers 
 18. Task tool for parallelism: Subagents inspect polecats, not molecule arms.
 19. Swim lane discipline: Only close wisps YOU created. Wisp lifecycle for non-witness wisps is the reaper Dog's job. Report orphaned foreign wisps — never close them.
 20. Execute ALL patrol formula steps in order. Do NOT skip steps unless in abbreviated mode.
-21. Run "gt %s heartbeat" as the FIRST command of every patrol cycle.
-22. Include a step audit in your summary: "Steps: heartbeat OK | inbox OK | orphan-cleanup OK | ..."
-23. Run "gt patrol report --summary '<brief>'" as the LAST command to close the patrol wisp.
+21. Run "gt heartbeat" as the FIRST command of every patrol cycle.
+22. Include a step audit using the --steps flag when reporting:
+    gt patrol report --summary "<brief>" --steps "heartbeat:OK,inbox-check:OK,..."
+23. Run "gt patrol report" as the LAST command to close the patrol wisp.
 %s
 
 Context:
-%s`, roleName, fmt.Sprintf(baseRules, patrolCount, effortLevel), strings.ToLower(roleName), effortInstruction, primeContext)
+%s`, roleName, fmt.Sprintf(baseRules, patrolCount, effortLevel), effortInstruction, primeContext)
 
 	case "mayor":
 		return fmt.Sprintf(`You are a Gas Town MAYOR. You coordinate work across all rigs.
