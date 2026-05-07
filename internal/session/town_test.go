@@ -7,12 +7,12 @@ import (
 func TestTownSessions(t *testing.T) {
 	sessions := TownSessions()
 
-	if len(sessions) != 4 {
-		t.Errorf("TownSessions() returned %d sessions, want 4", len(sessions))
+	if len(sessions) != 5 {
+		t.Errorf("TownSessions() returned %d sessions, want 5", len(sessions))
 	}
 
-	// Verify order is correct (Mayor, Planner, Boot, Deacon)
-	expectedOrder := []string{"Mayor", "Planner", "Boot", "Deacon"}
+	// Verify order is correct (Mayor, Planner, Mechanic, Boot, Deacon)
+	expectedOrder := []string{"Mayor", "Planner", "Mechanic", "Boot", "Deacon"}
 	for i, s := range sessions {
 		if s.Name != expectedOrder[i] {
 			t.Errorf("TownSessions()[%d].Name = %q, want %q", i, s.Name, expectedOrder[i])
@@ -87,10 +87,13 @@ func TestTownSession_ShutdownOrder(t *testing.T) {
 	if sessions[1].Name != "Planner" {
 		t.Errorf("Second session should be Planner, got %q", sessions[1].Name)
 	}
-	if sessions[2].Name != "Boot" {
-		t.Errorf("Third session should be Boot, got %q", sessions[2].Name)
+	if sessions[2].Name != "Mechanic" {
+		t.Errorf("Third session should be Mechanic, got %q", sessions[2].Name)
 	}
-	if sessions[3].Name != "Deacon" {
-		t.Errorf("Fourth session should be Deacon, got %q", sessions[3].Name)
+	if sessions[3].Name != "Boot" {
+		t.Errorf("Fourth session should be Boot, got %q", sessions[3].Name)
+	}
+	if sessions[4].Name != "Deacon" {
+		t.Errorf("Fifth session should be Deacon, got %q", sessions[4].Name)
 	}
 }
