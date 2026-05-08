@@ -311,6 +311,10 @@ func (s *Server) discoverAgents() []Agent {
 		// QA
 		qaID := session.QASessionName(prefix, rigName)
 		agents = append(agents, s.inspectAgent(qaID, rigName, "qa"))
+		
+		// Mechanic (rig-bound version)
+		mechanicID := session.MechanicSessionNameForRig(rigName)
+		agents = append(agents, s.inspectAgent(mechanicID, rigName, "mechanic"))
 
 		// Check crew
 		crewDir := filepath.Join(s.townRoot, rigName, "crew")
@@ -347,6 +351,7 @@ func (s *Server) inspectAgent(sessionName, rig, role string) Agent {
 	a := Agent{
 		ID:   sessionName,
 		Role: role,
+		Rig:  rig,
 		Name: sessionName, // Default to session name, overridden for crew/polecat
 	}
 

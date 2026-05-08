@@ -35,6 +35,15 @@ func MechanicSessionName() string {
 	return HQPrefix + "mechanic"
 }
 
+// MechanicSessionNameForRig returns the session name for a rig's Mechanic agent.
+func MechanicSessionNameForRig(rigName string) string {
+	prefix := PrefixFor(rigName)
+	if rigName == "" || rigName == prefix {
+		return fmt.Sprintf("%s-mechanic", prefix)
+	}
+	return fmt.Sprintf("%s-%s-mechanic", prefix, rigName)
+}
+
 // WitnessSessionName returns the session name for a rig's Witness agent.
 // rigPrefix is the rig's beads prefix (e.g., "gt" for gastown, "bd" for beads).
 // rigName is the name of the rig (e.g., "testgt1").

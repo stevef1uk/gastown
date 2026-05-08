@@ -872,6 +872,18 @@ func (d *Daemon) heartbeat(state *State) {
 		d.logger.Printf("QA patrol disabled in config, skipping")
 		d.killQASessions()
 	}
+	
+	// 5.6.5. Ensure Mechanics are running for all rigs (restart if dead)
+	if d.isPatrolActive("mechanic") {
+		if p := d.checkPressure("mechanic"); !p.OK {
+			d.logger.Printf("Deferring mechanic spawn: %s", p.Reason)
+		} else {
+			d.ensureMechanicsRunning()
+		}
+	} else {
+		d.logger.Printf("Mechanic patrol disabled in config, skipping")
+		d.killMechanicSessions()
+	}
 
 	// 5.7. Ensure Planner is running (restart if dead)
 	if d.isPatrolActive("planner") {
@@ -1738,23 +1750,6 @@ func (d *Daemon) ensureRefineryRunning(rigName string) {
 		return
 	}
 
-	// Event gate: don't spawn a new Claude session when there's nothing to process.
-	// If a refinery session is already running, Start() returns ErrAlreadyRunning (cheap).
-	// But spawning a NEW session with an empty queue burns API credits for nothing.
-	// The refinery formula uses await-event internally, so it will wake when events appear.
-	if !d.hasPendingEvents("refinery") {
-		// Check if session already exists before skipping — let running sessions continue
-		r := &rig.Rig{
-			Name: rigName,
-			Path: filepath.Join(d.config.TownRoot, rigName),
-		}
-		mgr := refinery.NewManager(r)
-		if running, _ := mgr.IsRunning(); !running {
-			d.logger.Printf("No pending refinery events and no session running for %s, skipping spawn", rigName)
-			return
-		}
-	}
-
 	// Manager.Start() handles: zombie detection, session creation, env vars, theming,
 	// WaitForClaudeReady, and crucially - startup/propulsion nudges (GUPP).
 	// It returns ErrAlreadyRunning if Claude is already running in tmux.
@@ -1885,6 +1880,58 @@ func (d *Daemon) ensureQARunning(rigName string) {
 	d.logger.Printf("QA session for %s started successfully", rigName)
 }
 
+// ensureMechanicsRunning ensures mechanic agents are running for configured rigs.
+func (d *Daemon) ensureMechanicsRunning() {
+	rigs := d.getPatrolRigs("mechanic")
+	d.rigPool.runPerRig(d.ctx, rigs, func(ctx context.Context, rigName string) error {
+		d.ensureMechanicRunning(rigName)
+		return nil
+	})
+}
+
+// ensureMechanicRunning ensures the mechanic agent for a specific rig is running.
+func (d *Daemon) ensureMechanicRunning(rigName string) {
+	if operational, reason := d.isRigOperational(rigName); !operational {
+		d.logger.Printf("Skipping mechanic auto-start for %s: %s", rigName, reason)
+		name := session.MechanicSessionNameForRig(rigName)
+		if exists, _ := d.sp.Exists(d.ctx, name); exists {
+			d.logger.Printf("Killing leftover mechanic %s (rig %s)", name, reason)
+			_ = d.sp.Stop(d.ctx, name, true)
+		}
+		return
+	}
+
+	sessionID := session.MechanicSessionNameForRig(rigName)
+	mechanicDir := filepath.Join(d.config.TownRoot, rigName, constants.DirMechanic)
+	if _, err := os.Stat(mechanicDir); os.IsNotExist(err) {
+		return // Not all rigs have a mechanic
+	}
+
+	if running, _ := d.sp.Exists(d.ctx, sessionID); running {
+		return
+	}
+
+	_, err := session.StartSession(d.ctx, d.sp, session.SessionConfig{
+		SessionID:    sessionID,
+		WorkDir:      mechanicDir,
+		Role:         constants.RoleMechanic,
+		TownRoot:     d.config.TownRoot,
+		RigPath:      filepath.Join(d.config.TownRoot, rigName),
+		RigName:      rigName,
+		Beacon:       session.BeaconConfig{Recipient: "mechanic", Sender: "daemon", Topic: "patrol"},
+		WaitForAgent: false,
+		AutoRespawn:  true,
+	})
+	if err != nil {
+		d.logger.Printf("Error starting mechanic for %s: %v", rigName, err)
+		return
+	}
+
+	d.metrics.recordRestart(d.ctx, "mechanic")
+	telemetry.RecordDaemonRestart(d.ctx, "mechanic-"+rigName)
+	d.logger.Printf("Mechanic session for %s started successfully", rigName)
+}
+
 // ensurePlannerRunning ensures the town-level planner is running.
 func (d *Daemon) ensurePlannerRunning() {
 	sessionID := session.PlannerSessionName()
@@ -2000,6 +2047,22 @@ func (d *Daemon) killWitnessSessions() {
 func (d *Daemon) killRefinerySessions() {
 	d.rigPool.runPerRig(d.ctx, d.getKnownRigs(), func(ctx context.Context, rigName string) error {
 		name := session.RefinerySessionName(session.PrefixFor(rigName), rigName)
+		exists, _ := d.sp.Exists(d.ctx, name)
+		if exists {
+			d.logger.Printf("Killing leftover %s session (patrol disabled)", name)
+			if err := d.sp.Stop(d.ctx, name, true); err != nil {
+				d.logger.Printf("Error killing %s session: %v", name, err)
+			}
+		}
+		return nil
+	})
+}
+
+// killMechanicSessions kills leftover mechanic tmux sessions for all rigs.
+// Called when the mechanic patrol is disabled. (hq-2mstj)
+func (d *Daemon) killMechanicSessions() {
+	d.rigPool.runPerRig(d.ctx, d.getKnownRigs(), func(ctx context.Context, rigName string) error {
+		name := session.MechanicSessionNameForRig(rigName)
 		exists, _ := d.sp.Exists(d.ctx, name)
 		if exists {
 			d.logger.Printf("Killing leftover %s session (patrol disabled)", name)

@@ -355,6 +355,16 @@ func RefineryBeadID(rig string) string {
 	return RefineryBeadIDWithPrefix("gt", rig)
 }
 
+// MechanicBeadIDWithPrefix returns the Mechanic agent bead ID for a rig using the specified prefix.
+func MechanicBeadIDWithPrefix(prefix, rig string) string {
+	return AgentBeadIDWithPrefix(prefix, rig, constants.RoleMechanic, "")
+}
+
+// MechanicBeadIDRig returns the Mechanic agent bead ID for a rig using "gt" prefix.
+func MechanicBeadIDRig(rig string) string {
+	return MechanicBeadIDWithPrefix("gt", rig)
+}
+
 // ArchitectBeadIDWithPrefix returns the Architect agent bead ID for a rig using the specified prefix.
 func ArchitectBeadIDWithPrefix(prefix, rig string) string {
 	return AgentBeadIDWithPrefix(prefix, rig, constants.RoleArchitect, "")

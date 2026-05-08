@@ -178,17 +178,49 @@ func sleepDuration(idleCycles int) time.Duration {
 	return d
 }
 
+type agentIdentityFile struct {
+	Role string `json:"role"`
+	Rig  string `json:"rig"`
+	Name string `json:"name"`
+}
+
+func loadAgentFile(path string) *agentIdentityFile {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	var f agentIdentityFile
+	if err := json.Unmarshal(data, &f); err != nil {
+		return nil
+	}
+	return &f
+}
+
 func run() error {
 	ctx := context.Background()
 
-	// Read identity from environment
+	// Read identity from environment, then override with .gt-agent if present
 	role := os.Getenv("GT_ROLE")
+	rig := os.Getenv("GT_RIG")
+	polecat := os.Getenv("GT_POLECAT")
+	
+	if identity := loadAgentFile(".gt-agent"); identity != nil {
+		if identity.Role != "" {
+			role = identity.Role
+		}
+		if identity.Rig != "" {
+			rig = identity.Rig
+		}
+		if identity.Name != "" && role == "polecat" {
+			polecat = identity.Name
+		}
+	}
+
 	if role == "" {
 		role = "worker"
 	}
 	roleCanonical := canonicalRole(role)
-	rig := os.Getenv("GT_RIG")
-	polecat := os.Getenv("GT_POLECAT")
+
 	townRoot := os.Getenv("GT_ROOT")
 	if townRoot == "" {
 		var err error

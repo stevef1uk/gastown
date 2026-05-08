@@ -47,45 +47,51 @@
         .agent-item {
             display: flex;
             align-items: center;
-            padding: 10px 12px;
-            border-radius: 6px;
+            padding: 12px 16px;
+            border-radius: 12px;
             cursor: pointer;
-            transition: background 0.15s;
-            margin-bottom: 4px;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            margin-bottom: 8px;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.05);
         }
         .agent-item:hover {
-            background: #21262d;
+            background: rgba(255, 255, 255, 0.08);
+            transform: translateX(4px);
         }
         .agent-item.active {
-            background: #1f6feb;
-        }
-        .agent-item.active .agent-name,
-        .agent-item.active .agent-role {
-            color: #fff;
+            background: rgba(31, 111, 235, 0.15);
+            border-color: #1f6feb;
         }
         .agent-avatar {
-            width: 32px;
-            height: 32px;
-            border-radius: 50%;
-            background: #238636;
+            width: 36px;
+            height: 36px;
+            border-radius: 10px;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 14px;
-            font-weight: 600;
-            margin-right: 12px;
+            font-size: 16px;
+            font-weight: 700;
+            margin-right: 14px;
             flex-shrink: 0;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+            color: #fff;
+            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+        }
+        .agent-item.stopped {
+            opacity: 0.6;
         }
         .agent-item.stopped .agent-avatar {
-            background: #484f58;
+            background: #30363d !important;
+            box-shadow: none;
         }
         .agent-info {
             flex: 1;
             min-width: 0;
         }
         .agent-name {
-            font-size: 13px;
-            font-weight: 500;
+            font-size: 14px;
+            font-weight: 600;
             color: #f0f6fc;
             white-space: nowrap;
             overflow: hidden;
@@ -93,18 +99,24 @@
         }
         .agent-role {
             font-size: 11px;
+            font-weight: 500;
             color: #8b949e;
             margin-top: 2px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
         }
         .agent-status {
-            width: 8px;
-            height: 8px;
+            width: 10px;
+            height: 10px;
             border-radius: 50%;
-            background: #238636;
+            background: #3fb950;
             flex-shrink: 0;
+            box-shadow: 0 0 10px rgba(63, 185, 80, 0.5);
+            border: 2px solid #0d1117;
         }
         .agent-item.stopped .agent-status {
             background: #484f58;
+            box-shadow: none;
         }
         /* Main Content */
         .main {
@@ -272,6 +284,11 @@
             <div class="sidebar-header">
                 <h1>Gas Town Agents</h1>
                 <div class="status" id="system-status">Loading...</div>
+                <div style="margin-top: 12px;">
+                    <select id="rig-filter" onchange="renderAgentList()" style="width: 100%; padding: 6px; border-radius: 4px; background: #0d1117; color: #c9d1d9; border: 1px solid #30363d; font-size: 12px;">
+                        <option value="all">All Rigs</option>
+                    </select>
+                </div>
             </div>
             <div class="agent-list" id="agent-list"></div>
         </div>
@@ -303,6 +320,7 @@
             try {
                 const res = await fetch('/api/agents');
                 agents = await res.json();
+                updateRigFilter();
                 renderAgentList();
                 updateSystemStatus();
             } catch (err) {
@@ -311,30 +329,97 @@
             }
         }
 
+        function updateRigFilter() {
+            const filter = document.getElementById('rig-filter');
+            const current = filter.value;
+            const rigs = new Set();
+            agents.forEach(a => {
+                if (a.rig) rigs.add(a.rig);
+            });
+            
+            filter.innerHTML = '<option value="all">All Rigs</option>';
+            Array.from(rigs).sort().forEach(rig => {
+                const opt = document.createElement('option');
+                opt.value = rig;
+                opt.textContent = rig;
+                filter.appendChild(opt);
+            });
+            filter.value = current;
+        }
+
         function renderAgentList() {
             const list = document.getElementById('agent-list');
             list.innerHTML = '';
+            
+            const filterValue = document.getElementById('rig-filter').value;
+            
+            // Group agents by rig
+            const groups = {};
             agents.forEach(agent => {
-                const item = document.createElement('div');
-                item.className = 'agent-item' + (agent.status === 'stopped' ? ' stopped' : '');
-                if (currentAgent && currentAgent.id === agent.id) {
-                    item.classList.add('active');
+                const rig = agent.rig || 'Town';
+                
+                // Filtering: show if 'all' OR if it matches the rig OR it's a Town agent
+                if (filterValue !== 'all' && rig !== 'Town' && rig !== filterValue) {
+                    return;
                 }
-                const icon = agent.role === 'deacon' ? 'D' : 
-                            agent.role === 'mayor' ? 'M' :
-                            agent.role === 'witness' ? 'W' :
-                            agent.role === 'refinery' ? 'R' : 'A';
-                item.innerHTML = `
-                    <div class="agent-avatar">${icon}</div>
-                    <div class="agent-info">
-                        <div class="agent-name">${agent.name}</div>
-                        <div class="agent-role">${agent.role} ${agent.agent_type ? `(${agent.agent_type})` : ''}</div>
-                    </div>
-                    <div class="agent-status"></div>
-                `;
-                item.onclick = () => selectAgent(agent);
-                list.appendChild(item);
+                
+                if (!groups[rig]) groups[rig] = [];
+                groups[rig].push(agent);
             });
+
+            // Sort rigs: Town first, then others
+            const sortedRigs = Object.keys(groups).sort((a, b) => {
+                if (a === 'Town') return -1;
+                if (b === 'Town') return 1;
+                return a.localeCompare(b);
+            });
+
+            sortedRigs.forEach(rig => {
+                const rigHeader = document.createElement('div');
+                rigHeader.style = 'font-size: 11px; font-weight: 700; text-transform: uppercase; color: #484f58; padding: 12px 12px 4px; border-top: 1px solid #21262d; margin-top: 8px;';
+                rigHeader.textContent = rig;
+                list.appendChild(rigHeader);
+
+                groups[rig].forEach(agent => {
+                    const item = document.createElement('div');
+                    item.className = 'agent-item' + (agent.status === 'stopped' ? ' stopped' : '');
+                    if (currentAgent && currentAgent.id === agent.id) {
+                        item.classList.add('active');
+                    }
+                    const icon = agent.role === 'deacon' ? 'D' : 
+                                agent.role === 'mayor' ? 'M' :
+                                agent.role === 'witness' ? 'W' :
+                                agent.role === 'refinery' ? 'R' :
+                                agent.role === 'mechanic' ? 'X' :
+                                agent.role === 'planner' ? 'P' :
+                                agent.role === 'architect' ? 'A' :
+                                agent.role === 'qa' ? 'Q' : '•';
+                    item.innerHTML = `
+                        <div class="agent-avatar" style="background: ${getRoleColor(agent.role)}">${icon}</div>
+                        <div class="agent-info">
+                            <div class="agent-name">${agent.name}</div>
+                            <div class="agent-role">${agent.role} ${agent.agent_type ? `(${agent.agent_type})` : ''}</div>
+                        </div>
+                        <div class="agent-status"></div>
+                    `;
+                    item.onclick = () => selectAgent(agent);
+                    list.appendChild(item);
+                });
+            });
+        }
+
+        function getRoleColor(role) {
+            switch(role) {
+                case 'mayor': return 'linear-gradient(135deg, #4f46e5, #3b82f6)';    // Indigo/Blue
+                case 'deacon': return 'linear-gradient(135deg, #7c3aed, #a855f7)';   // Violet/Purple
+                case 'planner': return 'linear-gradient(135deg, #059669, #10b981)';  // Teal/Emerald
+                case 'witness': return 'linear-gradient(135deg, #2563eb, #60a5fa)';  // Blue/Sky
+                case 'refinery': return 'linear-gradient(135deg, #4b5563, #9ca3af)'; // Slate/Gray
+                case 'architect': return 'linear-gradient(135deg, #ea580c, #f97316)'; // Orange
+                case 'qa': return 'linear-gradient(135deg, #db2777, #f472b6)';        // Pink/Rose
+                case 'mechanic': return 'linear-gradient(135deg, #0891b2, #22d3ee)';  // Cyan
+                default: return 'linear-gradient(135deg, #238636, #2ea043)';
+            }
         }
 
         function updateSystemStatus() {

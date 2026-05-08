@@ -231,9 +231,9 @@ func runUp(cmd *cobra.Command, args []string) error {
 		fmt.Fprintf(os.Stderr, "Warning: NATS not available, agents may use tmux fallback\n")
 	}
 
-	// Start daemon, deacon, mayor, planner, mechanic, dolt, and rig prefetch in parallel
+	// Start daemon, deacon, mayor, planner, and rig prefetch in parallel
 	var startupWg sync.WaitGroup
-	startupWg.Add(7)
+	startupWg.Add(6)
 
 	// 1. Dolt server (if configured)
 	go func() {
@@ -333,13 +333,6 @@ func runUp(cmd *cobra.Command, args []string) error {
 		plannerResult = upStartPlanner(townRoot)
 	}()
 
-	// 4.6. Mechanic
-	var mechanicResult agentStartResult
-	go func() {
-		defer startupWg.Done()
-		mechanicResult = upStartMechanic(townRoot)
-	}()
-
 	// 5. Prefetch rig configs (overlaps with daemon/deacon/mayor startup)
 	go func() {
 		defer startupWg.Done()
@@ -387,10 +380,6 @@ func runUp(cmd *cobra.Command, args []string) error {
 	if !plannerResult.ok {
 		allOK = false
 	}
-	services = append(services, ServiceStatus{Name: mechanicResult.name, Type: constants.RoleMechanic, OK: mechanicResult.ok, Detail: mechanicResult.detail})
-	if !mechanicResult.ok {
-		allOK = false
-	}
 
 	// Ensure Dolt server is fully ready before starting agents that depend on it.
 	// Witnesses and refineries run bd commands on startup (via gt prime → patrol_helpers)
@@ -436,8 +425,8 @@ func runUp(cmd *cobra.Command, args []string) error {
 		services = append(services, orphanServices...)
 	}
 
-	// 5 & 6. Witnesses, Refineries, Architects, and QAs (using prefetched rigs)
-	witnessResults, refineryResults, architectResults, qaResults := startRigAgentsWithPrefetch(rigs, prefetchedRigs, rigErrors)
+	// 5 & 6. Witnesses, Refineries, Architects, QAs, and Mechanics (using prefetched rigs)
+	witnessResults, refineryResults, architectResults, qaResults, mechanicResults := startRigAgentsWithPrefetch(rigs, prefetchedRigs, rigErrors)
 
 	// Collect results in order: all witnesses first, then all refineries, then architects, then qa
 	for _, rigName := range rigs {
@@ -467,6 +456,14 @@ func runUp(cmd *cobra.Command, args []string) error {
 	for _, rigName := range rigs {
 		if result, ok := qaResults[rigName]; ok {
 			services = append(services, ServiceStatus{Name: result.name, Type: constants.RoleQA, Rig: rigName, OK: result.ok, Detail: result.detail})
+			if !result.ok {
+				allOK = false
+			}
+		}
+	}
+	for _, rigName := range rigs {
+		if result, ok := mechanicResults[rigName]; ok {
+			services = append(services, ServiceStatus{Name: result.name, Type: constants.RoleMechanic, Rig: rigName, OK: result.ok, Detail: result.detail})
 			if !result.ok {
 				allOK = false
 			}
@@ -768,9 +765,9 @@ type agentResultMsg struct {
 	result  agentStartResult
 }
 
-// startRigAgentsWithPrefetch starts all Witnesses, Refineries, Architects, and QAs using pre-loaded rig configs.
+// startRigAgentsWithPrefetch starts all Witnesses, Refineries, Architects, QAs, and Mechanics using pre-loaded rig configs.
 // Uses a worker pool with fixed goroutine count to limit concurrency and reduce overhead.
-func startRigAgentsWithPrefetch(rigNames []string, prefetchedRigs map[string]*rig.Rig, rigErrors map[string]error) (witnessResults, refineryResults, architectResults, qaResults map[string]agentStartResult) {
+func startRigAgentsWithPrefetch(rigNames []string, prefetchedRigs map[string]*rig.Rig, rigErrors map[string]error) (witnessResults, refineryResults, architectResults, qaResults, mechanicResults map[string]agentStartResult) {
 	n := len(rigNames)
 	witnessResults = make(map[string]agentStartResult, n)
 	refineryResults = make(map[string]agentStartResult, n)
@@ -798,6 +795,8 @@ func startRigAgentsWithPrefetch(rigNames []string, prefetchedRigs map[string]*ri
 	refineryResults = startRigAgentPhase(rigNames, prefetchedRigs, constants.RoleRefinery)
 	architectResults = startRigAgentPhase(rigNames, prefetchedRigs, constants.RoleArchitect)
 
+	mechanicResults = startRigAgentPhase(rigNames, prefetchedRigs, constants.RoleMechanic)
+	
 	for rigName, r := range prefetchedRigs {
 		if archResult, ok := architectResults[rigName]; ok && !archResult.ok {
 			qaResults[rigName] = agentStartResult{name: "QA (" + rigName + ")", ok: false, detail: "skipped (architect startup failed)"}
@@ -806,7 +805,7 @@ func startRigAgentsWithPrefetch(rigNames []string, prefetchedRigs map[string]*ri
 		qaResults[rigName] = upStartQA(rigName, r)
 	}
 
-	return
+	return witnessResults, refineryResults, architectResults, qaResults, mechanicResults
 }
 
 func startRigAgentPhase(rigNames []string, prefetchedRigs map[string]*rig.Rig, role string) map[string]agentStartResult {
@@ -840,6 +839,8 @@ func startRigAgentPhase(rigNames []string, prefetchedRigs map[string]*rig.Rig, r
 					result = upStartArchitect(task.rigName, task.rigObj)
 				case constants.RoleQA:
 					result = upStartQA(task.rigName, task.rigObj)
+				case constants.RoleMechanic:
+					result = upStartRigMechanic(task.rigName, task.rigObj)
 				}
 				results <- agentResultMsg{rigName: task.rigName, role: task.role, result: result}
 			}
@@ -1339,7 +1340,47 @@ func recoverOrphanedBeads(townRoot string, rigs []string, prefetchedRigs map[str
 	return services
 }
 
-// upStartMechanic starts a mechanic and returns a result struct.
+// upStartRigMechanic starts a mechanic for a specific rig and returns a result struct.
+func upStartRigMechanic(rigName string, r *rig.Rig) agentStartResult {
+	name := "Mechanic (" + rigName + ")"
+	
+	mechanicDir := filepath.Join(r.Path, constants.DirMechanic)
+	if _, err := os.Stat(mechanicDir); os.IsNotExist(err) {
+		// If the directory doesn't exist, we skip it (not all rigs have a mechanic)
+		return agentStartResult{name: name, ok: true, detail: "not configured (no directory)"}
+	}
+
+	sessionID := session.MechanicSessionNameForRig(rigName)
+	townRoot := filepath.Dir(r.Path)
+	sp := session.GetDefaultProvider(townRoot)
+	ctx := context.Background()
+
+	if running, _ := sp.Exists(ctx, sessionID); running {
+		return agentStartResult{name: name, ok: true, detail: sessionID}
+	}
+
+	_, err := session.StartSession(ctx, sp, session.SessionConfig{
+		SessionID:    sessionID,
+		WorkDir:      mechanicDir,
+		Role:         constants.RoleMechanic,
+		TownRoot:     townRoot,
+		RigPath:      r.Path,
+		RigName:      rigName,
+		Beacon:       session.BeaconConfig{Recipient: "mechanic", Sender: "daemon", Topic: "startup"},
+		WaitForAgent: true,
+		WaitFatal:    true,
+		ReadyDelay:   true,
+		AutoRespawn:  true,
+	})
+	if err != nil {
+		return agentStartResult{name: name, ok: false, detail: err.Error()}
+	}
+
+	return agentStartResult{name: name, ok: true, detail: sessionID}
+}
+
+// upStartMechanic starts a shared mechanic and returns a result struct.
+// (Retained for backward compatibility if /home/stevef/gt/mechanic still exists)
 func upStartMechanic(townRoot string) agentStartResult {
 	name := "Mechanic"
 	sessionID := session.MechanicSessionName()

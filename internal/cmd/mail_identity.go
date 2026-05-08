@@ -122,6 +122,9 @@ func detectSenderFromRole(role string) string {
 	case constants.RolePlanner:
 		return "planner/"
 	case constants.RoleMechanic:
+		if rig != "" {
+			return fmt.Sprintf("%s/mechanic", rig)
+		}
 		return "mechanic/"
 	case constants.RoleArchitect:
 		if rig != "" {
@@ -325,6 +328,9 @@ func identityFromAgentFile(parsed agentIdentityFile) string {
 	case constants.RolePlanner:
 		return "planner/"
 	case constants.RoleMechanic:
+		if rig != "" {
+			return fmt.Sprintf("%s/mechanic", rig)
+		}
 		return "mechanic/"
 	case constants.RoleCrew:
 		if rig != "" && name != "" {

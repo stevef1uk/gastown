@@ -130,6 +130,9 @@ type PatrolsConfig struct {
 	ScheduledMaintenance   *ScheduledMaintenanceConfig    `json:"scheduled_maintenance,omitempty"`
 	MainBranchTest         *MainBranchTestConfig          `json:"main_branch_test,omitempty"`
 	QuotaDog               *QuotaDogConfig                `json:"quota_dog,omitempty"`
+	Architect              *PatrolConfig                  `json:"architect,omitempty"`
+	QA                     *PatrolConfig                  `json:"qa,omitempty"`
+	Mechanic               *PatrolConfig                  `json:"mechanic,omitempty"`
 	RestartTracker         *RestartTrackerConfig          `json:"restart_tracker,omitempty"`
 	NatsServer             *NatsServerConfig              `json:"nats_server,omitempty"`
 }
@@ -339,6 +342,18 @@ func IsPatrolEnabled(config *DaemonPatrolConfig, patrol string) bool {
 		if config.Patrols.Deacon != nil {
 			return config.Patrols.Deacon.Enabled
 		}
+	case constants.RoleArchitect:
+		if config.Patrols.Architect != nil {
+			return config.Patrols.Architect.Enabled
+		}
+	case constants.RoleQA:
+		if config.Patrols.QA != nil {
+			return config.Patrols.QA.Enabled
+		}
+	case constants.RoleMechanic:
+		if config.Patrols.Mechanic != nil {
+			return config.Patrols.Mechanic.Enabled
+		}
 	case "handler":
 		if config.Patrols.Handler != nil {
 			return config.Patrols.Handler.Enabled
@@ -354,13 +369,21 @@ func GetPatrolRigs(config *DaemonPatrolConfig, patrol string) []string {
 	}
 
 	switch patrol {
-	case constants.RoleRefinery:
-		if config.Patrols.Refinery != nil {
-			return config.Patrols.Refinery.Rigs
-		}
 	case constants.RoleWitness:
 		if config.Patrols.Witness != nil {
 			return config.Patrols.Witness.Rigs
+		}
+	case constants.RoleArchitect:
+		if config.Patrols.Architect != nil {
+			return config.Patrols.Architect.Rigs
+		}
+	case constants.RoleQA:
+		if config.Patrols.QA != nil {
+			return config.Patrols.QA.Rigs
+		}
+	case constants.RoleMechanic:
+		if config.Patrols.Mechanic != nil {
+			return config.Patrols.Mechanic.Rigs
 		}
 	}
 	return nil // All rigs

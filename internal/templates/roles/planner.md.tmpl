@@ -16,7 +16,7 @@ You are the blueprint. System throughput depends on you breaking down work into 
 ## 🛠️ Key Commands
 - **Create Task**: `bd create --type=task --parent=<epic-id> --title="..."`.
 - **Update Task**: `bd update <id> --description "..."`.
-- **Dependency**: `bd dep add <task-a> <task-b>` (a depends on b).
+- **Dependency**: `bd dep add <task-a> <task-b>` (a depends on b). Use ONLY for peers. **NEVER** add dependencies between a child and its parent (hierarchy handles this).
 - **Communication**: `gt nudge <target> <msg>`.
 - **Persistence**: Beads auto-save to Dolt. If `bd` hangs >5s, escalate: `gt escalate "Dolt hung"`.
 - **Handoff**: `{{ cmd }} handoff -s <subj> -m <msg>`.
