@@ -663,8 +663,8 @@ func wakeRigAgents(rigName string) {
 	// nudges would be stuck forever. Direct delivery is safe: if the
 	// agent is busy, text buffers in tmux and is processed at next prompt.
 	witnessSession := session.WitnessSessionName(session.PrefixFor(rigName), rigName)
-	t := tmux.NewTmux()
-	if err := t.NudgeSession(witnessSession, "Polecat dispatched - check for work"); err != nil {
+	sp := session.GetDefaultProvider(townRoot)
+	if err := sp.NudgeSession(context.Background(), witnessSession, "Polecat dispatched - check for work", "sling"); err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: failed to nudge witness %s: %v\n", witnessSession, err)
 	}
 }
@@ -695,8 +695,8 @@ func nudgeWitness(rigName, message string) {
 		})
 	}
 
-	t := tmux.NewTmux()
-	if err := t.NudgeSession(witnessSession, message); err != nil {
+	sp := session.GetDefaultProvider(townRoot)
+	if err := sp.NudgeSession(context.Background(), witnessSession, message, "sling"); err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: failed to nudge witness %s: %v\n", witnessSession, err)
 	}
 }
@@ -730,8 +730,8 @@ func nudgeRefinery(rigName, message string) {
 		})
 	}
 
-	t := tmux.NewTmux()
-	if err := t.NudgeSession(refinerySession, message); err != nil {
+	sp := session.GetDefaultProvider(townRoot)
+	if err := sp.NudgeSession(context.Background(), refinerySession, message, "sling"); err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: failed to nudge refinery %s: %v\n", refinerySession, err)
 	}
 }

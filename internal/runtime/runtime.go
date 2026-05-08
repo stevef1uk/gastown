@@ -57,7 +57,7 @@ func EnsureSettingsForRole(settingsDir, workDir, role string, rc *config.Runtime
 }
 
 type startupPromptSession interface {
-	NudgeSession(ctx context.Context, sessionID, message string) error
+	NudgeSession(ctx context.Context, sessionID, message, sender string) error
 	WaitForRuntimeReady(ctx context.Context, sessionID string, rc *config.RuntimeConfig, timeout time.Duration) error
 }
 
@@ -107,7 +107,7 @@ func StartupFallbackCommands(role string, rc *config.RuntimeConfig) []string {
 func RunStartupFallback(ctx context.Context, t startupPromptSession, sessionID, role string, rc *config.RuntimeConfig) error {
 	commands := StartupFallbackCommands(role, rc)
 	for _, cmd := range commands {
-		if err := t.NudgeSession(ctx, sessionID, cmd); err != nil {
+		if err := t.NudgeSession(ctx, sessionID, cmd, "runtime"); err != nil {
 			return err
 		}
 	}
@@ -229,7 +229,7 @@ func DeliverStartupPromptFallback(
 		}
 	}
 
-	if err := t.NudgeSession(ctx, sessionID, prompt); err != nil {
+	if err := t.NudgeSession(ctx, sessionID, prompt, "runtime"); err != nil {
 		return fmt.Errorf("nudging startup prompt fallback: %w", err)
 	}
 	return nil

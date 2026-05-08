@@ -73,7 +73,7 @@ func (m *mockProvider) IsIdle(ctx context.Context, sessionID string) (bool, erro
 func (m *mockProvider) IsAgentRunning(ctx context.Context, sessionID string) (bool, error) { return true, nil }
 func (m *mockProvider) CleanupOrphanedSessions(isGTSession func(string) bool) (int, error) { return 0, nil }
 func (m *mockProvider) StopAllSessions(ctx context.Context) error { return nil }
-func (m *mockProvider) NudgeSession(ctx context.Context, sessionID, message string) error { return nil }
+func (m *mockProvider) NudgeSession(ctx context.Context, sessionID, message, sender string) error { return nil }
 func (m *mockProvider) WaitForRuntimeReady(ctx context.Context, sessionID string, rc *config.RuntimeConfig, timeout time.Duration) error {
 	return nil
 }

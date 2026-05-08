@@ -65,7 +65,7 @@ func GetDefaultProvider(townRoot string) Provider {
 	}
 
 	// 3. Default to TmuxProvider
-	return NewTmuxProvider(tmux.NewTmux())
+	return NewTmuxProvider(tmux.NewTmux(), townRoot)
 }
 
 // newNatsProviderWithRetry attempts to create a NatsProvider with retries.
@@ -111,7 +111,7 @@ type Provider interface {
 	// NudgeSession delivers a message to the session in a non-destructive way.
 	// For tmux, this sends keys if the session is idle.
 	// For NATS, this typically enqueues a nudge for the agent to pick up.
-	NudgeSession(ctx context.Context, sessionID, message string) error
+	NudgeSession(ctx context.Context, sessionID, message, sender string) error
 
 	// GetEnvironment returns the environment variables for a running session.
 	GetEnvironment(ctx context.Context, sessionID string) (map[string]string, error)

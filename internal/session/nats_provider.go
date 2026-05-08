@@ -343,16 +343,31 @@ func (p *NatsProvider) Inject(ctx context.Context, sessionID string, data string
 	return p.nc.Publish(subject, []byte(data))
 }
 
-func (p *NatsProvider) NudgeSession(ctx context.Context, sessionID, message string) error {
+func (p *NatsProvider) NudgeSession(ctx context.Context, sessionID, message, sender string) error {
 	p.recordActivity(sessionID)
-	// For NATS, we use the nudge queue to ensure delivery even if the agent
-	// is busy or not yet ready for direct input.
-	return nudge.Enqueue(p.townRoot, sessionID, nudge.QueuedNudge{
-		Sender:    "system",
+
+	// 1. Direct delivery via NATS input subject.
+	// This provides immediate injection for agents wrapped in nats-wrapper
+	// (e.g. Claude Code).
+	if p.nc != nil {
+		inputSubject := fmt.Sprintf("gt.session.%s.input", sessionID)
+		prefixed := fmt.Sprintf("\n[from %s] %s\n", sender, message)
+		_ = p.nc.Publish(inputSubject, []byte(prefixed))
+	}
+
+	// 2. Cooperative delivery via nudge queue.
+	// gt-agent (Mayor, Architect, etc.) drains this queue at the start of
+	// each patrol cycle.
+	if err := nudge.Enqueue(p.townRoot, sessionID, nudge.QueuedNudge{
+		Sender:    sender,
 		Message:   message,
 		Priority:  nudge.PriorityUrgent,
 		Timestamp: time.Now(),
-	})
+	}); err != nil {
+		return fmt.Errorf("queuing nudge: %w", err)
+	}
+
+	return nil
 }
 
 func (p *NatsProvider) GetEnvironment(ctx context.Context, sessionID string) (map[string]string, error) {

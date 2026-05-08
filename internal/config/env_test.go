@@ -18,7 +18,7 @@ func TestAgentEnv_Mayor(t *testing.T) {
 	assertEnv(t, env, "BD_ACTOR", "mayor")
 	assertEnv(t, env, "GIT_AUTHOR_NAME", "mayor")
 	assertEnv(t, env, "GT_ROOT", "/town")
-	assertEnv(t, env, "GIT_CEILING_DIRECTORIES", "/town") // prevents git walking to umbrella
+	assertNotSet(t, env, "GIT_CEILING_DIRECTORIES")
 	assertEnv(t, env, "NODE_OPTIONS", "")                  // cleared to prevent debugger inheritance
 	assertEnv(t, env, "CLAUDECODE", "")                    // cleared to prevent nested session detection
 	assertNotSet(t, env, "GT_RIG")

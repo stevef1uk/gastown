@@ -17,7 +17,7 @@ type fakeStartupPromptSession struct {
 	nudgeErr  error
 }
 
-func (f *fakeStartupPromptSession) NudgeSession(_ context.Context, _ string, message string) error {
+func (f *fakeStartupPromptSession) NudgeSession(_ context.Context, _ string, message, sender string) error {
 	if f.nudgeErr != nil {
 		return f.nudgeErr
 	}

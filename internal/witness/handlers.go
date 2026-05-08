@@ -1,6 +1,7 @@
 package witness
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -216,10 +217,8 @@ func HandlePolecatDoneFromBead(bd *BdCli, workDir, rigName, polecatName string, 
 			mayorMsg := fmt.Sprintf("PUSH_FAILED: polecat=%s branch=%s issue=%s — branch not on origin, possible work loss",
 				polecatName, payload.Branch, payload.IssueID)
 			mayorSession := session.MayorSessionName()
-			t := tmux.NewTmux()
-			if running, err := t.HasSession(mayorSession); err == nil && running {
-				_ = t.NudgeSession(mayorSession, mayorMsg)
-			}
+			sp := session.GetDefaultProvider(townRoot)
+			_ = sp.NudgeSession(context.Background(), mayorSession, mayorMsg, "witness")
 		}
 		return result
 	}
@@ -456,8 +455,8 @@ func HandleMergeFailed(workDir, rigName string, msg *mail.Message, router *mail.
 	sessionName := session.PolecatSessionName(session.PrefixFor(rigName), payload.PolecatName)
 	nudgeMsg := fmt.Sprintf("MERGE_FAILED: branch=%s issue=%s type=%s error=%s — fix and resubmit with 'gt done'",
 		payload.Branch, payload.IssueID, payload.FailureType, payload.Error)
-	t := tmux.NewTmux()
-	if err := t.NudgeSession(sessionName, nudgeMsg); err != nil {
+	sp := session.GetDefaultProvider(workDirToTownRoot(workDir))
+	if err := sp.NudgeSession(context.Background(), sessionName, nudgeMsg, "witness"); err != nil {
 		result.Error = fmt.Errorf("nudging polecat about failure: %w", err)
 		return result
 	}
@@ -676,25 +675,12 @@ func findMRBeadForBranch(bd *BdCli, workDir, branch string) string {
 func nudgeRefinery(townRoot, rigName string) error {
 	initRegistryFromTownRoot(townRoot)
 	sessionName := session.RefinerySessionName(session.PrefixFor(rigName), rigName)
-
-	// Check if refinery is running
-	t := tmux.NewTmux()
-	running, err := t.HasSession(sessionName)
-	if err != nil {
-		return fmt.Errorf("checking refinery session: %w", err)
-	}
-
-	if !running {
-		// Refinery not running - daemon will start it on next heartbeat.
-		// MR beads are discoverable from the merge queue.
-		return nil
-	}
-
-	// Immediate delivery: send directly to tmux pane.
+	sp := session.GetDefaultProvider(townRoot)
+	// Immediate delivery: send directly to the agent (via tmux or NATS).
 	// No cooperative queue — idle agents never call Drain(), so queued
 	// nudges would be stuck forever. Direct delivery is safe: if the
-	// agent is busy, text buffers in tmux and is processed at next prompt.
-	return t.NudgeSession(sessionName, "New MR available - check merge queue for pending work")
+	// agent is busy, text buffers in tmux/NATS and is processed at next prompt.
+	return sp.NudgeSession(context.Background(), sessionName, "New MR available - check merge queue for pending work", "witness")
 }
 
 // notifyMayorSlotOpen nudges the Mayor that a polecat slot is now open.
@@ -718,12 +704,10 @@ func notifyMayorSlotOpen(workDir, rigName, polecatName, exitType string) {
 
 	// Try nudge first — lightweight, no Dolt commit.
 	mayorSession := session.MayorSessionName()
-	t := tmux.NewTmux()
-	if running, err := t.HasSession(mayorSession); err == nil && running {
-		msg := fmt.Sprintf("SLOT_OPEN: %s/%s completed (exit=%s) — slot available. Run `gt polecat list` to verify and sling next bead.", rigName, polecatName, exitType)
-		if err := t.NudgeSession(mayorSession, msg); err == nil {
-			return // Nudge delivered — no mail needed.
-		}
+	sp := session.GetDefaultProvider(townRoot)
+	msg := fmt.Sprintf("SLOT_OPEN: %s/%s completed (exit=%s) — slot available. Run `gt polecat list` to verify and sling next bead.", rigName, polecatName, exitType)
+	if err := sp.NudgeSession(context.Background(), mayorSession, msg, "witness"); err == nil {
+		return // Nudge delivered — no mail needed.
 	}
 
 	// Nudge failed or Mayor not in tmux (e.g., ACP/Claude Code session).
@@ -755,8 +739,8 @@ func EscalateRecoveryNeeded(workDir, rigName string, payload *RecoveryPayload) (
 	sessionName := session.DeaconSessionName()
 	nudgeMsg := fmt.Sprintf("RECOVERY_NEEDED: %s/%s cleanup_status=%s branch=%s issue=%s detected=%s — coordinate recovery before authorizing cleanup",
 		rigName, payload.PolecatName, payload.CleanupStatus, payload.Branch, payload.IssueID, payload.DetectedAt.Format(time.RFC3339))
-	t := tmux.NewTmux()
-	if err := t.NudgeSession(sessionName, nudgeMsg); err != nil {
+	sp := session.GetDefaultProvider(workDirToTownRoot(workDir))
+	if err := sp.NudgeSession(context.Background(), sessionName, nudgeMsg, "witness"); err != nil {
 		return "", fmt.Errorf("nudging deacon about recovery: %w", err)
 	}
 	return "nudge", nil

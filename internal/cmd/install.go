@@ -768,14 +768,19 @@ func initTownBeads(townPath string) error {
 
 	// Ensure routes.jsonl has an explicit town-level mapping for hq-* beads.
 	// This keeps hq-* operations stable even when invoked from rig worktrees.
-	if err := beads.AppendRoute(townPath, beads.Route{Prefix: "hq-", Path: "."}); err != nil {
+	hqPath := "."
+	if len(doltserver.HasServerModeMetadata(townPath)) > 0 {
+		hqPath = "../.dolt-data/hq"
+	}
+
+	if err := beads.AppendRoute(townPath, beads.Route{Prefix: "hq-", Path: hqPath}); err != nil {
 		// Non-fatal: routing still works in many contexts, but explicit mapping is preferred.
 		fmt.Printf("   %s Could not update routes.jsonl: %v\n", style.Dim.Render("⚠"), err)
 	}
 
 	// Register hq-cv- prefix for convoy beads (auto-created by gt sling).
 	// Convoys use hq-cv-* IDs for visual distinction from other town beads.
-	if err := beads.AppendRoute(townPath, beads.Route{Prefix: "hq-cv-", Path: "."}); err != nil {
+	if err := beads.AppendRoute(townPath, beads.Route{Prefix: "hq-cv-", Path: hqPath}); err != nil {
 		fmt.Printf("   %s Could not register convoy prefix: %v\n", style.Dim.Render("⚠"), err)
 	}
 

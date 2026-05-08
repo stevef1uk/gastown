@@ -209,7 +209,7 @@ func SpawnPolecatForSling(rigName string, opts SlingSpawnOptions) (*SpawnedPolec
 				return nil, fmt.Errorf("worktree verification failed for reused %s: %w", polecatName, err)
 			}
 
-			polecatSessMgr := polecat.NewSessionManager(session.NewTmuxProvider(t), r)
+			polecatSessMgr := polecat.NewSessionManager(session.NewTmuxProvider(t, townRoot), r)
 			sessionName := polecatSessMgr.SessionName(polecatName)
 
 			fmt.Printf("%s Polecat %s reused (idle → working, session start deferred)\n", style.Bold.Render("✓"), polecatName)
@@ -290,7 +290,7 @@ func SpawnPolecatForSling(rigName string, opts SlingSpawnOptions) (*SpawnedPolec
 	}
 
 	// Get session manager for session name (session start is deferred)
-	polecatSessMgr := polecat.NewSessionManager(session.NewTmuxProvider(t), r)
+	polecatSessMgr := polecat.NewSessionManager(session.NewTmuxProvider(t, townRoot), r)
 	sessionName := polecatSessMgr.SessionName(polecatName)
 
 	fmt.Printf("%s Polecat %s spawned (session start deferred)\n", style.Bold.Render("✓"), polecatName)

@@ -1607,6 +1607,24 @@ func (r *Router) notifyRecipient(msg *Message) error {
 		return nil // Unable to determine session ID
 	}
 
+	return r.deliverMailToSessions(msg, sessionIDs)
+}
+
+func (r *Router) deliverMailToSessions(msg *Message, sessionIDs []string) error {
+	sp := session.GetDefaultProvider(r.townRoot)
+	if _, isTmux := sp.(*session.TmuxProvider); !isTmux {
+		// For non-tmux providers (NATS, ACP), we use the provider's NudgeSession
+		// implementation directly. It handles transport-specific delivery
+		// (e.g. NATS publish) plus cooperative queuing for idle agents.
+		notification := formatNotificationMessage(msg)
+		for _, sessionID := range sessionIDs {
+			_ = sp.NudgeSession(context.Background(), sessionID, notification, msg.From)
+			r.enqueueReplyReminder(msg, sessionID)
+		}
+		return nil
+	}
+
+	// Tmux-specific delivery logic with Wait-Idle support
 	timeout := r.IdleNotifyTimeout
 	if timeout == 0 {
 		timeout = DefaultIdleNotifyTimeout

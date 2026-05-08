@@ -3,8 +3,10 @@ package session
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -168,6 +170,13 @@ func StartSession(ctx context.Context, sp Provider, cfg SessionConfig) (_ *Start
 	}
 	if err := runtime.EnsureSettingsForRole(settingsDir, cfg.WorkDir, cfg.Role, runtimeConfig); err != nil {
 		return nil, fmt.Errorf("ensuring runtime settings: %w", err)
+	}
+
+	// 2.5. Write .gt-agent identity file so the agent knows its role/rig on startup.
+	// This prevents agents from defaulting to "worker" identity when started from
+	// deep subdirectories (e.g. within a rig).
+	if err := ensureAgentIdentityFile(cfg); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: could not write .gt-agent identity file: %v\n", err)
 	}
 
 	// 3. Build startup command if not provided.
@@ -483,4 +492,28 @@ func buildCommand(cfg SessionConfig, prompt string) (string, error) {
 // Some roles use this instead of the runtime's ready delay.
 func ShutdownDelay() time.Duration {
 	return constants.ShutdownNotifyDelay
+}
+
+// ensureAgentIdentityFile writes a JSON file identifying the agent's role and rig.
+// This is read by gt-agent on startup to resolve its identity.
+func ensureAgentIdentityFile(cfg SessionConfig) error {
+	type agentIdentityFile struct {
+		Role string `json:"role"`
+		Rig  string `json:"rig,omitempty"`
+		Name string `json:"name,omitempty"`
+	}
+
+	id := agentIdentityFile{
+		Role: cfg.Role,
+		Rig:  cfg.RigName,
+		Name: cfg.AgentName,
+	}
+
+	data, err := json.MarshalIndent(id, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	path := filepath.Join(cfg.WorkDir, ".gt-agent")
+	return os.WriteFile(path, data, 0644)
 }

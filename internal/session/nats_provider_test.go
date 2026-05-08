@@ -423,7 +423,7 @@ func TestProviderInterface_Consistency(t *testing.T) {
 		providers = append(providers, struct {
 			name string
 			p    Provider
-		}{"tmux", NewTmuxProvider(tmux.NewTmux())})
+		}{"tmux", NewTmuxProvider(tmux.NewTmux(), tmpDir)})
 	}
 
 	// Add NATS if available

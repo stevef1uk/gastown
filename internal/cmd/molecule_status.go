@@ -33,6 +33,7 @@ import (
 // If role is unknown, it tries to infer from the identity string.
 // townRoot is needed to look up the rig's configured prefix.
 func buildAgentBeadID(identity string, role Role, townRoot string) string {
+	identity = strings.TrimSuffix(identity, "/")
 	parts := strings.Split(identity, "/")
 
 	// Helper to get prefix for a rig

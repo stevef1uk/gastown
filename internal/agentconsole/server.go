@@ -14,7 +14,7 @@ import (
 	"sync"
 
 	"github.com/nats-io/nats.go"
-	"github.com/steveyegge/gastown/internal/nudge"
+	"github.com/steveyegge/gastown/internal/events"
 	"github.com/steveyegge/gastown/internal/session"
 )
 
@@ -139,20 +139,20 @@ func (s *Server) handleSendMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Use nudge.Enqueue directly — bypasses gt nudge session validation
-	// which fails for NATS-based agents. The agent picks up queued nudges
-	// via nudge.Drain() on its next cycle.
+	// Use the transport-aware session provider to deliver the nudge.
+	// This ensures it works for both Tmux and NATS providers, and
+	// correctly logs to the activity feed to wake up idle agents.
+	sp := session.GetDefaultProvider(s.townRoot)
 	sessionName := s.agentIDToSessionName(id)
-	err := nudge.Enqueue(s.townRoot, sessionName, nudge.QueuedNudge{
-		Sender:    "overseer (web console)",
-		Message:   req.Message,
-		Priority:  nudge.PriorityNormal,
-		Timestamp: time.Now(),
-	})
+	sender := "overseer (web console)"
+	err := sp.NudgeSession(r.Context(), sessionName, req.Message, sender)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("failed to queue nudge: %v", err), http.StatusInternalServerError)
+		http.Error(w, fmt.Sprintf("failed to deliver nudge: %v", err), http.StatusInternalServerError)
 		return
 	}
+
+	// Log to activity feed so idle agents wake up immediately
+	_ = events.LogFeed(events.TypeNudge, sender, events.NudgePayload("", sessionName, req.Message))
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "queued", "via": "nudge", "session": sessionName})

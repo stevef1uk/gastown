@@ -167,16 +167,12 @@ func deliverNudge(sp session.Provider, townRoot, sessionName, message, sender st
 		mode = NudgeModeQueue
 	}
 
-	// NATS provider doesn't support direct pane injection (WaitForIdle,
-	// NudgeSessionWithOpts). Force queue mode for non-tmux transports.
+	// For non-tmux providers (NATS, ACP), we use the provider's NudgeSession
+	// implementation directly. It handles the transport-specific logic for both
+	// immediate and cooperative delivery.
 	if _, isTmux := sp.(*session.TmuxProvider); !isTmux {
-		mode = NudgeModeQueue
+		return sp.NudgeSession(context.Background(), sessionName, message, sender)
 	}
-
-	// For direct tmux delivery, prefix with sender attribution.
-	// Queue-based delivery stores Sender as a separate field and
-	// FormatForInjection adds the prefix, so we must NOT double-prefix.
-	prefixedMessage := fmt.Sprintf("[from %s] %s", sender, message)
 
 	switch mode {
 	case NudgeModeQueue:
@@ -249,16 +245,7 @@ func deliverNudge(sp session.Provider, townRoot, sessionName, message, sender st
 		return nil
 
 	default: // NudgeModeImmediate
-		// Only reachable for tmux provider.
-		tp := sp.(*session.TmuxProvider)
-		t := tp.Tmux()
-		opts := tmux.NudgeOpts{TownRoot: townRoot}
-		if agentName, err := t.GetEnvironment(sessionName, "GT_AGENT"); err == nil && agentName != "" {
-			if preset := config.GetAgentPresetByName(agentName); preset != nil && preset.EscapeCancelsRequest {
-				opts.SkipEscape = true
-			}
-		}
-		return t.NudgeSessionWithOpts(sessionName, prefixedMessage, opts)
+		return sp.NudgeSession(context.Background(), sessionName, message, sender)
 	}
 }
 

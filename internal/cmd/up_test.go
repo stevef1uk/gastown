@@ -87,7 +87,7 @@ func TestSemaphoreLimitsConcurrency(t *testing.T) {
 
 func TestStartRigAgentsWithPrefetch_EmptyRigs(t *testing.T) {
 	// Test with empty inputs
-	witnessResults, refineryResults, architectResults, qaResults := startRigAgentsWithPrefetch(
+	witnessResults, refineryResults, architectResults, qaResults, _ := startRigAgentsWithPrefetch(
 		[]string{},
 		make(map[string]*rig.Rig),
 		make(map[string]error),
@@ -113,7 +113,7 @@ func TestStartRigAgentsWithPrefetch_RecordsErrors(t *testing.T) {
 		"badrig": fmt.Errorf("rig not found"),
 	}
 
-	witnessResults, refineryResults, architectResults, qaResults := startRigAgentsWithPrefetch(
+	witnessResults, refineryResults, architectResults, qaResults, mechanicResults := startRigAgentsWithPrefetch(
 		[]string{"badrig"},
 		make(map[string]*rig.Rig),
 		rigErrors,
@@ -153,6 +153,11 @@ func TestStartRigAgentsWithPrefetch_RecordsErrors(t *testing.T) {
 		t.Error("qaResults should have badrig entry")
 	} else if result.ok {
 		t.Error("badrig qa result should not be ok")
+	}
+
+	if len(mechanicResults) != 0 {
+		// Mechanic results currently only populated for successful rigs
+		t.Errorf("mechanicResults should be empty for badrig, got %d entries", len(mechanicResults))
 	}
 }
 

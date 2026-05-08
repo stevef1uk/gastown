@@ -3,6 +3,7 @@ package session
 import (
 	"context"
 	"time"
+	"fmt"
 
 	"github.com/steveyegge/gastown/internal/config"
 	"github.com/steveyegge/gastown/internal/tmux"
@@ -10,12 +11,13 @@ import (
 
 // TmuxProvider implements the Provider interface using tmux.
 type TmuxProvider struct {
-	t *tmux.Tmux
+	t        *tmux.Tmux
+	townRoot string
 }
 
 // NewTmuxProvider creates a new TmuxProvider.
-func NewTmuxProvider(t *tmux.Tmux) *TmuxProvider {
-	return &TmuxProvider{t: t}
+func NewTmuxProvider(t *tmux.Tmux, townRoot string) *TmuxProvider {
+	return &TmuxProvider{t: t, townRoot: townRoot}
 }
 
 // Tmux returns the underlying *tmux.Tmux. Used for tmux-specific operations
@@ -51,8 +53,18 @@ func (p *TmuxProvider) Inject(ctx context.Context, sessionID string, data string
 	return p.t.SendKeysRaw(sessionID, data)
 }
 
-func (p *TmuxProvider) NudgeSession(ctx context.Context, sessionID, message string) error {
-	return p.t.NudgeSession(sessionID, message)
+func (p *TmuxProvider) NudgeSession(ctx context.Context, sessionID, message, sender string) error {
+	prefixed := fmt.Sprintf("[from %s] %s", sender, message)
+	opts := tmux.NudgeOpts{TownRoot: p.townRoot}
+
+	// Auto-detect SkipEscape based on agent preset
+	if agentName, err := p.t.GetEnvironment(sessionID, "GT_AGENT"); err == nil && agentName != "" {
+		if preset := config.GetAgentPresetByName(agentName); preset != nil && preset.EscapeCancelsRequest {
+			opts.SkipEscape = true
+		}
+	}
+
+	return p.t.NudgeSessionWithOpts(sessionID, prefixed, opts)
 }
 
 func (p *TmuxProvider) GetEnvironment(ctx context.Context, sessionID string) (map[string]string, error) {

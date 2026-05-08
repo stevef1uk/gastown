@@ -79,7 +79,7 @@ func TestEnsureBootRunning_DoesNotSpawnEveryTick(t *testing.T) {
 	d := &Daemon{
 		config: &Config{TownRoot: townRoot},
 		logger: log.New(io.Discard, "", 0),
-		sp:     session.NewTmuxProvider(tmux.NewTmux()),
+		sp:     session.NewTmuxProvider(tmux.NewTmux(), townRoot),
 	}
 
 	// Simulate two adjacent heartbeats.

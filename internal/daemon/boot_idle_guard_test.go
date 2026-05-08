@@ -54,7 +54,7 @@ func newTestDaemonWithStores(t *testing.T, townRoot string, stores map[string]be
 	return &Daemon{
 		config:      &Config{TownRoot: townRoot},
 		logger:      log.New(io.Discard, "", 0),
-		sp:          session.NewTmuxProvider(tmux.NewTmux()),
+		sp:          session.NewTmuxProvider(tmux.NewTmux(), townRoot),
 		beadsStores: stores,
 		ctx:         context.Background(),
 	}

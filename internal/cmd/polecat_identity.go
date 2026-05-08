@@ -264,7 +264,7 @@ func runPolecatIdentityList(cmd *cobra.Command, args []string) error {
 	rigName := args[0]
 
 	// Get rig
-	_, r, err := getRig(rigName)
+	townRoot, r, err := getRig(rigName)
 	if err != nil {
 		return err
 	}
@@ -279,7 +279,7 @@ func runPolecatIdentityList(cmd *cobra.Command, args []string) error {
 	// Filter for polecat beads in this rig
 	identities := []IdentityInfo{} // Initialize to empty slice (not nil) for JSON
 	t := tmux.NewTmux()
-	polecatMgr := polecat.NewSessionManager(session.NewTmuxProvider(t), r)
+	polecatMgr := polecat.NewSessionManager(session.NewTmuxProvider(t, townRoot), r)
 
 	for id, issue := range agentBeads {
 		// Parse the bead ID to check if it's a polecat for this rig
@@ -380,7 +380,7 @@ func runPolecatIdentityShow(cmd *cobra.Command, args []string) error {
 	polecatName := args[1]
 
 	// Get rig
-	_, r, err := getRig(rigName)
+	townRoot, r, err := getRig(rigName)
 	if err != nil {
 		return err
 	}
@@ -396,9 +396,8 @@ func runPolecatIdentityShow(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("identity bead %s not found", beadID)
 	}
 
-	// Check worktree and session
 	t := tmux.NewTmux()
-	polecatMgr := polecat.NewSessionManager(session.NewTmuxProvider(t), r)
+	polecatMgr := polecat.NewSessionManager(session.NewTmuxProvider(t, townRoot), r)
 	mgr := polecat.NewManager(r, nil, t)
 
 	worktreeExists := false
@@ -559,7 +558,7 @@ func runPolecatIdentityRename(cmd *cobra.Command, args []string) error {
 	}
 
 	// Get rig
-	_, r, err := getRig(rigName)
+	townRoot, r, err := getRig(rigName)
 	if err != nil {
 		return err
 	}
@@ -583,9 +582,8 @@ func runPolecatIdentityRename(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("identity bead %s already exists", newBeadID)
 	}
 
-	// Safety check: no active session
 	t := tmux.NewTmux()
-	polecatMgr := polecat.NewSessionManager(session.NewTmuxProvider(t), r)
+	polecatMgr := polecat.NewSessionManager(session.NewTmuxProvider(t, townRoot), r)
 	running, _ := polecatMgr.IsRunning(oldName)
 	if running {
 		return fmt.Errorf("cannot rename: polecat session %s is running", oldName)
@@ -630,7 +628,7 @@ func runPolecatIdentityRemove(cmd *cobra.Command, args []string) error {
 	polecatName := args[1]
 
 	// Get rig
-	_, r, err := getRig(rigName)
+	townRoot, r, err := getRig(rigName)
 	if err != nil {
 		return err
 	}
@@ -656,7 +654,7 @@ func runPolecatIdentityRemove(cmd *cobra.Command, args []string) error {
 
 		// Check for active session
 		t := tmux.NewTmux()
-		polecatMgr := polecat.NewSessionManager(session.NewTmuxProvider(t), r)
+		polecatMgr := polecat.NewSessionManager(session.NewTmuxProvider(t, townRoot), r)
 		running, _ := polecatMgr.IsRunning(polecatName)
 		if running {
 			reasons = append(reasons, "session is running")

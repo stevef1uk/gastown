@@ -838,6 +838,13 @@ Use crew for your own workspace. Polecats are for batch work dispatch.
 		if _, err := os.Stat(mayorRigBeads); err == nil {
 			routePath = opts.Name + "/mayor/rig"
 		}
+
+		// If Dolt server mode is active, route to the centralized .dolt-data directory.
+		// (gh#4212): All new rigs should share the central Dolt environment.
+		if len(doltserver.HasServerModeMetadata(m.townRoot)) > 0 {
+			routePath = "../.dolt-data/" + opts.Name
+		}
+
 		route := beads.Route{
 			Prefix: opts.BeadsPrefix + "-",
 			Path:   routePath,

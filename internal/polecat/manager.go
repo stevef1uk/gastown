@@ -2296,7 +2296,7 @@ func (m *Manager) polecatSessionState(name string) (running bool, stale bool) {
 	if m.tmux != nil {
 		running, err := m.tmux.HasSession(sessionName)
 		if err == nil && running {
-			return true, NewSessionManager(session.NewTmuxProvider(m.tmux), m.rig).isSessionStale(sessionName)
+			return true, NewSessionManager(session.NewTmuxProvider(m.tmux, m.townRoot), m.rig).isSessionStale(sessionName)
 		}
 	}
 
