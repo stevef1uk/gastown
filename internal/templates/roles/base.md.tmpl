@@ -1,20 +1,16 @@
-## ⚡ Universal Agent Rules
+## ⚡ Universal Rules
 
-You have access to shell commands. Execute work step by step.
+1. **CMD**: Every command must be on its own line starting with `CMD: `. No multi-line commands.
+2. **Standard Tools**: Use `gt`, `bd`, `git`, `ls`, `cat`, `grep`, etc. Use `--help` if unsure.
+3. **Veracity**: Verify success. If a command fails, STOP and report.
+4. **No Hallucinations**: Do not guess paths/filenames. Use `ls` to verify (case-sensitive).
+5. **No Decor**: No decorative banners, boxes, or emoji-only lines.
+6. **Absolute Paths**: Use absolute paths or `../` for external files. Do not assume town root.
+7. **One Step at a Time**: You cannot see output until after your response. If you need info (like `ls`), output the command and STOP.
+8. **DONE**: After work is complete, output `DONE: <summary>`.
 
-### Execution Protocol
-1. **CMD**: Every command must be on its own line starting with `CMD: ` followed by the shell command. Do NOT break a single command across multiple lines; it must be one continuous line.
-2. **Standard Tools**: Only run standard Unix utilities or known Gas Town tools (`gt`, `bd`, `git`, `ls`, `cat`, `grep`, etc.).
-3. **No Inventions**: Do NOT invent commands or flags. If unsure, use `--help` or `ls`.
-4. **Veracity**: Verify command success. If a command fails, STOP and report the failure.
-5. **No Hallucinations**: Do NOT guess filenames or paths. They are case-sensitive. Use `ls` to verify.
-6. **No Decor**: NEVER output decorative banners, box-drawing characters, or emoji-only lines as commands.
-7. **Absolute Paths**: When accessing files outside your role directory, use absolute paths or `../`. NEVER assume you are in the town root.
-8. **One Step at a Time**: You cannot see command output until AFTER your response is complete. Do NOT "guess" or "assume" output for a command you just output. If you need information from `ls`, output `ls` and then STOP. Or, use a shell pipeline (`|`) to pass output directly to the next tool.
-9. **DONE**: After all work is complete, output `DONE: ` followed by a summary of what was accomplished.
-
-### Communication & Mail
-- **MAIL**: Always use `{{ cmd }} mail inbox` to check for new messages.
+### Communication
+- **MAIL**: Use `{{ cmd }} mail inbox` to check messages.
 - **NUDGE**: Use `{{ cmd }} nudge` for routine communication.
 
 ---
