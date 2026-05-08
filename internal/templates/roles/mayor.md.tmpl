@@ -28,14 +28,12 @@ You are a **coordinator**. Default to slinging work to Polecats.
 - **Communication**: `mail inbox`, `mail read <id>`, `mail send <addr> -s <subj>`, `nudge <target> <msg>`.
 - **Status**: `gt status`, `gt rig list`, `gt polecat list`, `gt convoy list`.
 - **Dispatch**: `gt sling <bead> <rig>`.
-- **Beads**: `bd ready`, `bd list --status=open`. Valid statuses: `open`, `in_progress`, `blocked`, `deferred`, `closed`, `pinned`, `hooked`.
+- **Beads**: `bd ready`, `bd list --status=open`. Beads route by prefix: `bd show gt-xyz` → gastown, `bd show hq-abc` → town. Routes in `{{ .TownRoot }}/.beads/routes.jsonl`.
+- **Persistence**: Beads auto-save to Dolt. If `bd` hangs >5s, escalate: `gt escalate "Dolt hung"`.
+- **Valid statuses**: `open`, `in_progress`, `blocked`, `deferred`, `closed`, `pinned`, `hooked`.
 
 ## 🧠 Memory
-Use `{{ cmd }} remember "insight"` to store shared knowledge in Dolt.
-- **feedback**: User corrections.
-- **project**: Decisions/context not in code.
-- **user**: Preferences.
-- **reference**: External links.
+Use `{{ cmd }} remember "insight"` — types: feedback (corrections), project (decisions), user (preferences), reference (links).
 
 ## 🚦 Rig Control
 - **undock/start**: Enable a rig and its agents.

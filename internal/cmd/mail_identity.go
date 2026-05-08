@@ -119,6 +119,20 @@ func detectSenderFromRole(role string) string {
 		return "mayor/"
 	case constants.RoleDeacon:
 		return "deacon/"
+	case constants.RolePlanner:
+		return "planner/"
+	case constants.RoleMechanic:
+		return "mechanic/"
+	case constants.RoleArchitect:
+		if rig != "" {
+			return fmt.Sprintf("%s/architect", rig)
+		}
+		return detectSenderFromCwd()
+	case constants.RoleQA:
+		if rig != "" {
+			return fmt.Sprintf("%s/qa", rig)
+		}
+		return detectSenderFromCwd()
 	case constants.RolePolecat:
 		polecat := os.Getenv("GT_POLECAT")
 		if rig != "" && polecat != "" {
@@ -217,6 +231,34 @@ func detectSenderFromCwd() string {
 		}
 	}
 
+	// If in a rig's architect directory, extract address (format: rig/architect)
+	if strings.Contains(cwd, "/architect") {
+		parts := strings.Split(cwd, "/architect")
+		if len(parts) >= 1 {
+			rigName := filepath.Base(parts[0])
+			return fmt.Sprintf("%s/architect", rigName)
+		}
+	}
+
+	// If in a rig's qa directory, extract address (format: rig/qa)
+	if strings.Contains(cwd, "/qa") {
+		parts := strings.Split(cwd, "/qa")
+		if len(parts) >= 1 {
+			rigName := filepath.Base(parts[0])
+			return fmt.Sprintf("%s/qa", rigName)
+		}
+	}
+
+	// If in the town's planner directory
+	if strings.Contains(cwd, "/planner") {
+		return "planner/"
+	}
+
+	// If in the town's mechanic directory
+	if strings.Contains(cwd, "/mechanic") {
+		return "mechanic/"
+	}
+
 	// If in the town's mayor directory
 	if strings.Contains(cwd, "/mayor") {
 		return "mayor"
@@ -272,6 +314,18 @@ func identityFromAgentFile(parsed agentIdentityFile) string {
 		if rig != "" {
 			return fmt.Sprintf("%s/refinery", rig)
 		}
+	case constants.RoleArchitect:
+		if rig != "" {
+			return fmt.Sprintf("%s/architect", rig)
+		}
+	case constants.RoleQA:
+		if rig != "" {
+			return fmt.Sprintf("%s/qa", rig)
+		}
+	case constants.RolePlanner:
+		return "planner/"
+	case constants.RoleMechanic:
+		return "mechanic/"
 	case constants.RoleCrew:
 		if rig != "" && name != "" {
 			return fmt.Sprintf("%s/crew/%s", rig, name)

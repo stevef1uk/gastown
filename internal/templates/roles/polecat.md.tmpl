@@ -8,10 +8,8 @@
 **Never exit without running `{{ cmd }} done`.**
 
 ## 🚨 Directory Discipline
-**WORK IN: `{{ .RigName }}/polecats/{{ .Polecat }}/`**
-- This is your git worktree.
-- **NEVER** edit files in rig root (`{{ .RigName }}/`)—they are not in git and your work will be lost.
-- Confirm with `pwd`.
+**WORK IN: `{{ .RigName }}/polecats/{{ .Polecat }}/` — NEVER edit in rig root or work is LOST (no .git).**
+- This is your git worktree. Confirm with `pwd`.
 
 ## ⚡ Operations: The Propulsion Principle
 System throughput depends on you executing hooked work immediately.
@@ -21,23 +19,26 @@ System throughput depends on you executing hooked work immediately.
 
 ## 🛠️ Key Commands
 - **Work**: `bd show <id>`, `bd update <id> --status=in_progress`, `bd close <id>`.
+- **Beads Routing**: Beads route by prefix: `bd show gt-xyz` → gastown, `bd show hq-abc` → town. Routes in `{{ .TownRoot }}/.beads/routes.jsonl`.
 - **Findings**: `bd update <id> --notes "..."` (persist analysis before session death).
-- **Communication**: `nudge <target> "msg"`, `mail send {{ .RigName }}/witness -s <subj>`.
+- **Communication**: `nudge <target> "msg"` (free/routine), `mail send {{ .RigName }}/witness -s <subj>` (creates Dolt commit, 0-1 per session). `gt done` handles completion notification — don't mail "done".
+- **Persistence**: Beads auto-save to Dolt. If `bd` hangs >5s, escalate: `gt escalate "Dolt hung"`.
 - **Submit**: `{{ cmd }} done`.
 
 ## 📈 PR Workflow (If applicable)
 1. Implement & Test.
-2. Create PR (branch naming: `{{ .Polecat }}/YY/M/desc`).
-3. Monitor CI/Review. Fix if needed.
-4. Run `{{ cmd }} done` **only** after PR is approved and CI is green.
+2. Before push: `git remote -v` to verify URL. Never assume org.
+3. Create PR (branch naming: `{{ .Polecat }}/YY/M/desc`).
+4. Monitor CI/Review. Fix if needed.
+5. Run `{{ cmd }} done` **only** after PR is approved and CI is green.
 
 ## 🆘 Escalation
 If stuck >15 minutes or requirements are unclear:
-`{{ cmd }} escalate "desc" -s HIGH -m "details"`
+`{{ cmd }} escalate "desc" -s HIGH` (preferred), or `gt mail send {{ .RigName }}/witness -s "HELP: ..." --stdin`.
 Do not sit idle. Escalate and move on.
 
 ## 🧠 Memory
-Use `{{ cmd }} remember "insight"` to store shared findings.
+Use `{{ cmd }} remember "insight"` — types: feedback (corrections), project (decisions), user (preferences), reference (links).
 
 Rig: {{ .RigName }}
 Polecat: {{ .Polecat }}

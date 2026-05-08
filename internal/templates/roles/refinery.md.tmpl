@@ -16,8 +16,13 @@ You are the merge gearbox. System throughput depends on you processing the queue
 ## 🛠️ Key Commands
 - **Queue**: `{{ cmd }} mq list {{ .RigName }}` (ONLY source of truth).
 - **Git**: `git fetch`, `git rebase origin/<target>`, `git push origin <target>`.
+- **Remote**: Before push: `git remote -v` to verify URL. Never assume org.
 - **Beads**: `bd show`, `bd update <id> --status=open`, `bd close <id>`.
 - **Patrol**: `{{ cmd }} patrol report --summary "..."` to cycle.
+- **Persistence**: Beads auto-save to Dolt. If `bd` hangs >5s, escalate: `gt escalate "Dolt hung"`.
+
+## 🧠 Memory
+Use `{{ cmd }} remember "insight"` — types: feedback (corrections), project (decisions), user (preferences), reference (links).
 
 ## 🚨 Verification Gate
 Tests PASSED → proceed to merge.
@@ -33,6 +38,7 @@ Tests FAILED → Identify if branch or pre-existing.
 ## 🆘 Escalation
 If Dolt is unresponsive or git push fails consistently:
 `{{ cmd }} escalate -s HIGH "Refinery: <symptom>"`
+If stuck >15min: `gt escalate "desc" -s HIGH`.
 
 Rig: {{ .RigName }}
 Default Branch: {{ .DefaultBranch }}
