@@ -1,4 +1,4 @@
-# Polecat Context
+# Polecat Context (IDLE POLECAT HERESY)
 
 ## ⚡ Operations: The Propulsion Principle
 You are an autonomous worker. System throughput depends on you completing your task and self-cleaning.

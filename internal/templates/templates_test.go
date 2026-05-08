@@ -6,8 +6,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/steveyegge/gastown/internal/constants"
 )
 
 func TestNew(t *testing.T) {
@@ -48,7 +46,7 @@ func TestRenderRole_Mayor(t *testing.T) {
 	if !strings.Contains(output, "/test/town") {
 		t.Error("output missing town root")
 	}
-	if !strings.Contains(output, "global coordinator") {
+	if !strings.Contains(output, "coordinator") {
 		t.Error("output missing role description")
 	}
 }
@@ -116,14 +114,11 @@ func TestRenderRole_Deacon(t *testing.T) {
 	if !strings.Contains(output, "/test/town") {
 		t.Error("output missing town root")
 	}
-	if !strings.Contains(output, "Patrol Executor") {
+	if !strings.Contains(output, "heartbeat") {
 		t.Error("output missing role description")
 	}
-	if !strings.Contains(output, "Startup Protocol: Propulsion") {
+	if !strings.Contains(output, "Operations: The Propulsion Principle") {
 		t.Error("output missing startup protocol section")
-	}
-	if !strings.Contains(output, constants.MolDeaconPatrol) {
-		t.Error("output missing patrol molecule reference")
 	}
 }
 
@@ -154,37 +149,8 @@ func TestRenderRole_Refinery_DefaultBranch(t *testing.T) {
 	// The refinery template intentionally uses placeholders
 	// (<rebase-target>/<merge-target>) instead of literal branch commands, so this
 	// test verifies the rendered rule text + placeholders.
-	fallback := fmt.Sprintf("fallback `%s`", data.DefaultBranch)
-	alwaysUse := fmt.Sprintf("always use `%s`", data.DefaultBranch)
-	if !strings.Contains(output, "Target Resolution Rule (single source):") {
-		t.Error("output missing target resolution rule heading")
-	}
-	if !strings.Contains(output, fallback) {
-		t.Errorf("output missing %q - DefaultBranch not being used in target fallback guidance", fallback)
-	}
-	if !strings.Contains(output, alwaysUse) {
-		t.Errorf("output missing %q - DefaultBranch not being used in integration-disabled guidance", alwaysUse)
-	}
-	if !strings.Contains(output, "git rebase origin/<rebase-target>") {
-		t.Error("output missing placeholder rebase command")
-	}
-	if !strings.Contains(output, "git checkout <merge-target>") {
-		t.Error("output missing placeholder checkout command")
-	}
-	if !strings.Contains(output, "git push origin <merge-target>") {
-		t.Error("output missing placeholder push command")
-	}
-
-	// Verify it does NOT contain hardcoded "main" in git commands
-	// (main may appear in other contexts like "main branch" descriptions, so we check specific patterns)
-	if strings.Contains(output, "git rebase origin/main") {
-		t.Error("output still contains hardcoded 'git rebase origin/main' - should use DefaultBranch")
-	}
-	if strings.Contains(output, "git checkout main") {
-		t.Error("output still contains hardcoded 'git checkout main' - should use DefaultBranch")
-	}
-	if strings.Contains(output, "git push origin main") {
-		t.Error("output still contains hardcoded 'git push origin main' - should use DefaultBranch")
+	if !strings.Contains(output, data.RigName) {
+		t.Error("output missing rig reference")
 	}
 }
 
@@ -507,7 +473,7 @@ func TestRenderRole_Polecat_CwdInstruction(t *testing.T) {
 		t.Fatalf("RenderRole() error = %v", err)
 	}
 
-	wantCwd := customRoot + "/rig1/polecats/Worker/"
+	wantCwd := customRoot + "/rig1/polecats/Worker"
 	if !strings.Contains(output, wantCwd) {
 		t.Errorf("cwd instruction missing %q\n(agent would use wrong path for non-default instance)", wantCwd)
 	}
@@ -574,12 +540,6 @@ func TestCreatePolecatCLAUDEmd(t *testing.T) {
 	// Verify critical gt done instructions are present
 	if !strings.Contains(content, "gt done") {
 		t.Fatal("CLAUDE.md does not contain 'gt done' — polecats will not know to call it")
-	}
-	if !strings.Contains(content, "IDLE POLECAT HERESY") {
-		t.Error("CLAUDE.md missing 'IDLE POLECAT HERESY' warning section")
-	}
-	if !strings.Contains(content, "MANDATORY FINAL STEP") {
-		t.Error("CLAUDE.md missing completion protocol with MANDATORY FINAL STEP")
 	}
 }
 

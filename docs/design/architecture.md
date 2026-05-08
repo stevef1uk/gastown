@@ -39,9 +39,13 @@ the agent's scope.
 | Mayor | Town | `~/gt/.beads/` | `hq-mayor` |
 | Deacon | Town | `~/gt/.beads/` | `hq-deacon` |
 | Boot | Town | `~/gt/.beads/` | `hq-boot` |
+| Planner | Town | `~/gt/.beads/` | `hq-planner` |
+| Mechanic | Town | `~/gt/.beads/` | `hq-mechanic` |
 | Dogs | Town | `~/gt/.beads/` | `hq-dog-<name>` |
 | Witness | Rig | `<rig>/.beads/` | `<prefix>-<rig>-witness` |
 | Refinery | Rig | `<rig>/.beads/` | `<prefix>-<rig>-refinery` |
+| Architect | Rig | `<rig>/.beads/` | `<prefix>-<rig>-architect` |
+| QA | Rig | `<rig>/.beads/` | `<prefix>-<rig>-qa` |
 | Polecats | Rig | `<rig>/.beads/` | `<prefix>-<rig>-polecat-<name>` |
 | Crew | Rig | `<rig>/.beads/` | `<prefix>-<rig>-crew-<name>` |
 
@@ -51,8 +55,12 @@ Role beads are global templates stored in town beads with `hq-` prefix:
 - `hq-mayor-role` - Mayor role definition
 - `hq-deacon-role` - Deacon role definition
 - `hq-boot-role` - Boot role definition
+- `hq-planner-role` - Planner role definition
+- `hq-mechanic-role` - Mechanic role definition
 - `hq-witness-role` - Witness role definition
 - `hq-refinery-role` - Refinery role definition
+- `hq-architect-role` - Architect role definition
+- `hq-qa-role` - QA role definition
 - `hq-polecat-role` - Polecat role definition
 - `hq-crew-role` - Crew role definition
 - `hq-dog-role` - Dog role definition
@@ -68,6 +76,8 @@ Each agent bead references its role bead via the `role_bead` field.
 | **Mayor** | Global coordinator, handles cross-rig communication and escalations | Persistent |
 | **Deacon** | Daemon beacon — receives heartbeats, runs plugins and monitoring | Persistent |
 | **Boot** | Deacon watchdog — spawned by daemon for triage decisions when Deacon is down | Ephemeral |
+| **Planner** | Strategic task decomposition and bead creation | Persistent |
+| **Mechanic** | Global infrastructure repair agent — scans logs and auto-fixes system issues | Persistent |
 | **Dogs** | Long-running workers for cross-rig batch work | Variable |
 
 ### Rig-Level Agents (Per-Project)
@@ -76,6 +86,8 @@ Each agent bead references its role bead via the `role_bead` field.
 |-------|------|-------------|
 | **Witness** | Monitors polecat health, handles nudging and cleanup | Persistent |
 | **Refinery** | Processes merge queue, runs verification | Persistent |
+| **Architect** | SPEC analysis, design enforcement, and technical architecture | Persistent |
+| **QA** | Final verification gatekeeper — reviews code quality and standards | Persistent |
 | **Polecats** | Workers with persistent identity, assigned to specific issues | Persistent identity, ephemeral sessions |
 | **Crew** | Human workspaces — full git clones, user-managed lifecycle | Persistent |
 
@@ -98,6 +110,8 @@ Each agent bead references its role bead via the `role_bead` field.
 ├── deacon/                     Deacon workspace
 │   └── dogs/<name>/            Dog worker directories
 ├── mayor/                      Mayor agent home
+├── planner/                    Planner agent home
+├── mechanic/                   Mechanic agent home
 │   ├── town.json               Town configuration
 │   ├── rigs.json               Rig registry
 │   ├── daemon.json             Daemon patrol config
@@ -121,6 +135,8 @@ Each agent bead references its role bead via the `role_bead` field.
     │   └── .beads/             Rig-level beads (redirected to Dolt)
     ├── refinery/               Refinery agent home
     │   └── rig/                Worktree from mayor/rig
+    ├── architect/              Architect agent home
+    ├── qa/                     QA agent home
     ├── witness/                Witness agent home (no clone)
     ├── crew/                   Crew parent
     │   └── <name>/             Human workspaces (full clones)
