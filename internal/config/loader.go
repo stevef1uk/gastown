@@ -2364,7 +2364,6 @@ func BuildStartupCommand(envVars map[string]string, rigPath, prompt string) stri
 			cmd += rc.BuildCommand()
 		}
 	}
-
 	return cmd
 }
 
@@ -2627,6 +2626,7 @@ func BuildAgentStartupCommand(role, rig, townRoot, rigPath, prompt string) strin
 	envVars := AgentEnv(AgentEnvConfig{
 		Role:     role,
 		Rig:      rig,
+		RigPath:  rigPath,
 		TownRoot: townRoot,
 		Prompt:   prompt,
 	})
@@ -2638,6 +2638,7 @@ func BuildAgentStartupCommandWithAgentOverride(role, rig, townRoot, rigPath, pro
 	envVars := AgentEnv(AgentEnvConfig{
 		Role:     role,
 		Rig:      rig,
+		RigPath:  rigPath,
 		TownRoot: townRoot,
 		Prompt:   prompt,
 	})
