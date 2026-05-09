@@ -154,7 +154,7 @@ func (c *IdentityCollisionCheck) Run(ctx *CheckContext) *CheckResult {
 }
 
 func (c *IdentityCollisionCheck) Fix(ctx *CheckContext) error {
-	cleaned, err := lock.CleanStaleLocks(ctx.TownRoot)
+	cleaned, err := lock.CleanStaleLocks(ctx.TownRoot, tmux.GetDefaultSocket())
 	if err != nil {
 		return fmt.Errorf("cleaning stale locks: %w", err)
 	}

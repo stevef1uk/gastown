@@ -1583,6 +1583,12 @@ func TestValidateRecipientFilesystemFallbackWithRouteErrors(t *testing.T) {
 func createNotifyTestSession(t *testing.T, townRoot, sessionName string) {
 	t.Helper()
 	sp := session.GetDefaultProvider(townRoot)
+	
+	// Skip if no session provider available
+	if !sp.IsAvailable() {
+		t.Skip("no session provider available (NATs not running)")
+	}
+	
 	ctx := context.Background()
 
 	// Use cat to simulate an idle session.

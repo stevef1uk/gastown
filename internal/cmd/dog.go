@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/steveyegge/gastown/internal/beads"
 	"github.com/steveyegge/gastown/internal/config"
+	"github.com/steveyegge/gastown/internal/constants"
 	"github.com/steveyegge/gastown/internal/dog"
 	"github.com/steveyegge/gastown/internal/mail"
 	"github.com/steveyegge/gastown/internal/plugin"
@@ -940,26 +941,26 @@ func (d *dogSessionChecker) KillSession(name string) error {
 	return d.sp.Stop(context.Background(), name, false)
 }
 
-func (d *dogSessionChecker) CheckSessionHealth(sessID string, maxInactivity time.Duration) tmux.ZombieStatus {
+func (d *dogSessionChecker) CheckSessionHealth(sessID string, maxInactivity time.Duration) constants.ZombieStatus {
 	ctx := context.Background()
 	exists, err := d.sp.Exists(ctx, sessID)
 	if err != nil || !exists {
-		return tmux.SessionDead
+		return constants.SessionDead
 	}
 	alive, err := d.sp.IsAgentRunning(ctx, sessID)
 	if err != nil || !alive {
-		return tmux.AgentDead
+		return constants.AgentDead
 	}
 	// Hung detection is tmux-specific (pane activity). For NATS we skip it.
 	if maxInactivity > 0 {
 		lastActivity, err := d.sp.GetLastActivity(context.Background(), sessID)
 		if err == nil && !lastActivity.IsZero() {
 			if time.Since(lastActivity) > maxInactivity {
-				return tmux.AgentHung
+				return constants.AgentHung
 			}
 		}
 	}
-	return tmux.SessionHealthy
+	return constants.SessionHealthy
 }
 
 func runDogHealthCheck(cmd *cobra.Command, args []string) error {

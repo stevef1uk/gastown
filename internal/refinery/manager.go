@@ -72,15 +72,15 @@ func (m *Manager) IsRunning() (bool, error) {
 }
 
 // IsHealthy checks if the refinery is running and has been active recently.
-func (m *Manager) IsHealthy(maxInactivity time.Duration) tmux.ZombieStatus {
+func (m *Manager) IsHealthy(maxInactivity time.Duration) constants.ZombieStatus {
 	sp := session.GetDefaultProvider(m.townRoot())
 	if tp, ok := sp.(*session.TmuxProvider); ok {
 		return tp.Tmux().CheckSessionHealth(m.SessionName(), maxInactivity)
 	}
 	if running, _ := sp.Exists(context.Background(), m.SessionName()); running {
-		return tmux.SessionHealthy
+		return constants.SessionHealthy
 	}
-	return tmux.SessionDead
+	return constants.SessionDead
 }
 
 // Status returns information about the refinery session.

@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/steveyegge/gastown/internal/config"
-	"github.com/steveyegge/gastown/internal/tmux"
+	"github.com/steveyegge/gastown/internal/constants"
 )
 
 var (
@@ -15,6 +15,7 @@ var (
 	ErrSessionExists   = fmt.Errorf("session already exists")
 	ErrSessionNotFound = fmt.Errorf("session not found")
 )
+
 
 // SessionInfo holds provider-agnostic information about a session.
 type SessionInfo struct {
@@ -39,7 +40,7 @@ func WaitForIdle(p Provider, sessionID string, timeout time.Duration) error {
 // and town configuration. Resolution order:
 //  1. GT_SESSION_TRANSPORT environment variable
 //  2. Town settings config (session_transport field)
-//  3. Default to tmux
+//  3. Default to NATS (tmux still available via explicit selection)
 func GetDefaultProvider(townRoot string) Provider {
 	// 1. Environment variable takes highest priority
 	if envTransport := os.Getenv("GT_SESSION_TRANSPORT"); envTransport != "" {
@@ -70,8 +71,67 @@ func GetDefaultProvider(townRoot string) Provider {
 		}
 	}
 
-	// 3. Default to TmuxProvider
-	return NewTmuxProvider(tmux.NewTmux(), townRoot)
+	// 3. Default to NatsProvider
+	// Try to connect to NATS, fall back to error if unavailable
+	p, err := NewNatsProvider(townRoot, os.Getenv("GT_NATS_URL"))
+	if err != nil {
+		// NATS unavailable - return a stub that reports unavailability
+		// This allows callers to handle the error gracefully
+		return &stubProvider{err: err}
+	}
+	return p
+}
+
+// stubProvider is a fallback provider when neither tmux nor NATS is available.
+type stubProvider struct {
+	err error
+}
+
+func (s *stubProvider) IsAvailable() bool                           { return false }
+func (s *stubProvider) Start(ctx context.Context, sessionID, workDir, command string, env map[string]string) error {
+	return fmt.Errorf("no session provider available: %w", s.err)
+}
+func (s *stubProvider) Stop(ctx context.Context, sessionID string, graceful bool) error { return nil }
+func (s *stubProvider) Exists(ctx context.Context, sessionID string) (bool, error) { return false, nil }
+func (s *stubProvider) List(ctx context.Context) ([]string, error)                { return nil, nil }
+func (s *stubProvider) Inject(ctx context.Context, sessionID, data string) error   { return fmt.Errorf("no session provider") }
+func (s *stubProvider) NudgeSession(ctx context.Context, sessionID, message, sender string) error {
+	return fmt.Errorf("no session provider")
+}
+func (s *stubProvider) GetEnvironment(ctx context.Context, sessionID string) (map[string]string, error) { return nil, nil }
+func (s *stubProvider) SetEnvironment(ctx context.Context, sessionID, key, value string) error { return nil }
+func (s *stubProvider) UnsetEnvironment(ctx context.Context, sessionID, key string) error { return nil }
+func (s *stubProvider) SetGlobalEnvironment(key, value string) error                       { return nil }
+func (s *stubProvider) UnsetGlobalEnvironment(key string) error                           { return nil }
+func (s *stubProvider) SetRemainOnExit(ctx context.Context, sessionID string, enabled bool) error { return nil }
+func (s *stubProvider) Configure(ctx context.Context, sessionID string, cfg any) error      { return nil }
+func (s *stubProvider) EnsureSessionFresh(ctx context.Context, sessionID, workDir, command string, env map[string]string) error {
+	return fmt.Errorf("no session provider")
+}
+func (s *stubProvider) IsAgentRunning(ctx context.Context, id string) (bool, error) { return false, nil }
+func (s *stubProvider) WaitForRuntimeReady(ctx context.Context, sessionID string, rc *config.RuntimeConfig, timeout time.Duration) error {
+	return fmt.Errorf("no session provider")
+}
+func (s *stubProvider) CleanupOrphanedSessions(isGTSession func(string) bool) (int, error) { return 0, nil }
+func (s *stubProvider) StopAllSessions(ctx context.Context) error                          { return nil }
+func (s *stubProvider) GetMainPID(ctx context.Context, sessionID string) (string, error)    { return "", nil }
+func (s *stubProvider) GetServerPID(ctx context.Context) (int, error)                     { return 0, nil }
+func (s *stubProvider) IsIdle(ctx context.Context, sessionID string) (bool, error)          { return true, nil }
+func (s *stubProvider) CapturePane(ctx context.Context, sessionID string, lines int) (string, error) { return "", nil }
+func (s *stubProvider) AttachSession(ctx context.Context, sessionID string) error           { return fmt.Errorf("no session provider") }
+func (s *stubProvider) SendKeysDebounced(ctx context.Context, sessionID string, keys string, debounceMs int) error {
+	return fmt.Errorf("no session provider")
+}
+func (s *stubProvider) GetSessionInfo(ctx context.Context, sessionID string) (*SessionInfo, error) { return nil, nil }
+func (s *stubProvider) GetWorkDir(ctx context.Context, sessionID string) (string, error)   { return "", nil }
+func (s *stubProvider) CheckSessionHealth(ctx context.Context, sessionID string, maxInactivity time.Duration) constants.ZombieStatus {
+	return constants.SessionDead
+}
+func (s *stubProvider) SendNotificationBanner(ctx context.Context, sessionID, from, subject string) error {
+	return fmt.Errorf("no session provider")
+}
+func (s *stubProvider) GetLastActivity(ctx context.Context, sessionID string) (time.Time, error) {
+	return time.Time{}, nil
 }
 
 // newNatsProviderWithRetry attempts to create a NatsProvider with retries.
@@ -124,6 +184,9 @@ type Provider interface {
 
 	// SetEnvironment sets an environment variable in a running session.
 	SetEnvironment(ctx context.Context, sessionID, key, value string) error
+
+	// UnsetEnvironment removes an environment variable from a running session.
+	UnsetEnvironment(ctx context.Context, sessionID, key string) error
 
 	// SetGlobalEnvironment sets an environment variable for all future sessions.
 	SetGlobalEnvironment(key, value string) error
@@ -183,7 +246,7 @@ type Provider interface {
 	GetWorkDir(ctx context.Context, sessionID string) (string, error)
 
 	// CheckSessionHealth checks if the session is running and healthy.
-	CheckSessionHealth(ctx context.Context, sessionID string, maxInactivity time.Duration) tmux.ZombieStatus
+	CheckSessionHealth(ctx context.Context, sessionID string, maxInactivity time.Duration) constants.ZombieStatus
 
 	// SendNotificationBanner sends a visible notification banner to the session.
 	// For tmux, this is a visible top-of-pane banner.

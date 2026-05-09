@@ -15,8 +15,8 @@ import (
 
 	"github.com/nats-io/nats.go"
 	"github.com/steveyegge/gastown/internal/config"
+	"github.com/steveyegge/gastown/internal/constants"
 	"github.com/steveyegge/gastown/internal/nudge"
-	"github.com/steveyegge/gastown/internal/tmux"
 	"github.com/steveyegge/gastown/internal/util"
 )
 
@@ -408,6 +408,17 @@ func (p *NatsProvider) UnsetGlobalEnvironment(key string) error {
 	return nil
 }
 
+// UnsetEnvironment removes an environment variable from a session.
+// For NATS, we just delete it from the session's environment map.
+func (p *NatsProvider) UnsetEnvironment(ctx context.Context, sessionID, key string) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.sessionEnv[sessionID] != nil {
+		delete(p.sessionEnv[sessionID], key)
+	}
+	return nil
+}
+
 func (p *NatsProvider) Configure(ctx context.Context, sessionID string, cfg any) error {
 	return nil // Not applicable
 }
@@ -474,10 +485,10 @@ func (p *NatsProvider) WaitForRuntimeReady(ctx context.Context, sessionID string
 	return nil
 }
 
-func (p *NatsProvider) CheckSessionHealth(ctx context.Context, sessionID string, maxInactivity time.Duration) tmux.ZombieStatus {
+func (p *NatsProvider) CheckSessionHealth(ctx context.Context, sessionID string, maxInactivity time.Duration) constants.ZombieStatus {
 	exists, _ := p.Exists(ctx, sessionID)
 	if !exists {
-		return tmux.SessionDead
+		return constants.SessionDead
 	}
 
 	p.mu.RLock()
@@ -485,10 +496,10 @@ func (p *NatsProvider) CheckSessionHealth(ctx context.Context, sessionID string,
 	p.mu.RUnlock()
 
 	if ok && time.Since(lastAct) > maxInactivity {
-		return tmux.AgentHung
+		return constants.AgentHung
 	}
 
-	return tmux.SessionHealthy
+	return constants.SessionHealthy
 }
 
 func (p *NatsProvider) GetLastActivity(ctx context.Context, sessionID string) (time.Time, error) {

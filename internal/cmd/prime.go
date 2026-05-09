@@ -18,10 +18,10 @@ import (
 	"github.com/steveyegge/gastown/internal/cli"
 	"github.com/steveyegge/gastown/internal/config"
 	"github.com/steveyegge/gastown/internal/lock"
+	"github.com/steveyegge/gastown/internal/session"
 	"github.com/steveyegge/gastown/internal/state"
 	"github.com/steveyegge/gastown/internal/style"
 	"github.com/steveyegge/gastown/internal/telemetry"
-	"github.com/steveyegge/gastown/internal/tmux"
 	"github.com/steveyegge/gastown/internal/workspace"
 )
 
@@ -39,6 +39,9 @@ var primeHookSource string
 // primeHandoffReason stores the reason from the handoff marker (e.g., "compaction").
 // Set by checkHandoffMarker when a marker with a reason field is found.
 var primeHandoffReason string
+
+// sessionProvider is the cached session provider for this process.
+var sessionProvider session.Provider
 
 // Role represents a detected agent role.
 type Role string
@@ -130,6 +133,9 @@ func runPrime(cmd *cobra.Command, args []string) (retErr error) {
 	if townRoot == "" {
 		return nil // Silent exit - not in workspace and not enabled
 	}
+
+	// Initialize session provider for transport-agnostic session operations
+	sessionProvider = session.GetDefaultProvider(townRoot)
 
 	if primeHookMode {
 		handlePrimeHookMode(townRoot, cwd)
@@ -348,19 +354,17 @@ func hookSessionBeaconLines(sessionID, source string) []string {
 	return lines
 }
 
-// signalAgentReady sets GT_AGENT_READY=1 in the current tmux session environment.
+// signalAgentReady sets GT_AGENT_READY=1 in the current session environment.
 // Called from the agent's SessionStart hook to signal that the agent has started.
 // WaitForCommand polls for this variable as a ZFC-compliant alternative to
 // probing the process tree via IsAgentAlive.
-// Uses ResolveCurrentSession to find our session on the town socket — raw
-// exec.Command("tmux", ...) would use the default socket and miss the gastown server.
+// Uses session.ResolveCurrentSession to find our session on the town socket.
 func signalAgentReady() {
-	t := tmux.NewTmux()
-	name, err := t.ResolveCurrentSession()
+	name, err := session.ResolveCurrentSession(sessionProvider)
 	if err != nil || name == "" {
 		return
 	}
-	_ = t.SetEnvironment(name, tmux.EnvAgentReady, "1")
+	_ = sessionProvider.SetEnvironment(context.Background(), name, "GT_AGENT_READY", "1")
 }
 
 // isCompactResume returns true if the current prime is running after compaction or resume.
@@ -419,22 +423,18 @@ func setupPrimeSession(ctx RoleContext, roleInfo RoleInfo) error {
 	return nil
 }
 
-// repairSessionEnv checks if the tmux session is missing identity env vars
+// repairSessionEnv checks if the session is missing identity env vars
 // and re-injects them from the current role context. This self-heals sessions
 // that were created through non-standard paths or older gt versions. GH#3006.
 func repairSessionEnv(ctx RoleContext, roleInfo RoleInfo) {
-	if os.Getenv("TMUX") == "" {
-		return
-	}
-
-	t := tmux.NewTmux()
-	session, err := t.ResolveCurrentSession()
-	if err != nil || session == "" {
-		return
-	}
-
 	// Quick check: if GT_ROLE is already set in the session env, assume healthy.
-	if _, err := t.GetEnvironment(session, "GT_ROLE"); err == nil {
+	sessionID, err := session.ResolveCurrentSession(sessionProvider)
+	if err != nil || sessionID == "" {
+		return
+	}
+
+	env, _ := sessionProvider.GetEnvironment(context.Background(), sessionID)
+	if _, ok := env["GT_ROLE"]; ok {
 		return
 	}
 
@@ -459,7 +459,7 @@ func repairSessionEnv(ctx RoleContext, roleInfo RoleInfo) {
 		RigPath:     rigPath,
 		AgentName:   agentName,
 		TownRoot:    ctx.TownRoot,
-		SessionName: session,
+		SessionName: sessionID,
 	})
 
 	// Only inject identity-related vars that are missing, not the full AgentEnv
@@ -478,17 +478,18 @@ func repairSessionEnv(ctx RoleContext, roleInfo RoleInfo) {
 		if !identitySet[k] {
 			continue
 		}
-		if _, err := t.GetEnvironment(session, k); err == nil {
+		env, _ := sessionProvider.GetEnvironment(context.Background(), sessionID)
+		if _, ok := env[k]; ok {
 			continue // already set at session level
 		}
-		if err := t.SetEnvironment(session, k, v); err == nil {
+		if err := sessionProvider.SetEnvironment(context.Background(), sessionID, k, v); err == nil {
 			repaired++
 		}
 	}
 
 	if repaired > 0 {
 		fmt.Printf("\n%s Injected %d missing identity vars into session %s\n",
-			style.Bold.Render("⚠️  SESSION ENV REPAIR:"), repaired, session)
+			style.Bold.Render("⚠️  SESSION ENV REPAIR:"), repaired, sessionID)
 		// Also set in the current process so this prime run uses the correct identity.
 		for k, v := range envVars {
 			if identitySet[k] {
@@ -1300,7 +1301,7 @@ func injectWorkContext(ctx RoleContext, hookedBead *beads.Issue) {
 }
 
 // setTmuxWorkContext writes GT_WORK_RIG, GT_WORK_BEAD, GT_WORK_MOL into the current
-// tmux session environment. Future processes spawned in the session (e.g. a new
+// session environment. Future processes spawned in the session (e.g. a new
 // Claude Code instance after handoff/compaction) will inherit these values automatically.
 // Empty values unset the variable in the session env to prevent stale context leaking
 // across prime cycles. No-op when not running inside a tmux session.
@@ -1308,24 +1309,29 @@ func setTmuxWorkContext(workRig, workBead, workMol string) {
 	if os.Getenv("TMUX") == "" {
 		return
 	}
-	out, err := exec.Command("tmux", "display-message", "-p", "#{session_name}").Output()
-	if err != nil {
+
+	// Get current session ID using transport-agnostic resolution
+	sessionID, err := session.ResolveCurrentSession(sessionProvider)
+	if err != nil || sessionID == "" {
 		return
 	}
-	session := strings.TrimSpace(string(out))
-	if session == "" {
-		return
-	}
-	setOrUnset := func(key, value string) {
-		if value != "" {
-			_ = exec.Command("tmux", "set-environment", "-t", session, key, value).Run()
-		} else {
-			_ = exec.Command("tmux", "set-environment", "-u", "-t", session, key).Run()
+
+	// If we're using tmux provider, use its tmux client for exact behavior
+	if tp, ok := sessionProvider.(*session.TmuxProvider); ok {
+		t := tp.Tmux()
+		setOrUnset := func(key, value string) {
+			if value != "" {
+				_ = t.SetEnvironment(sessionID, key, value)
+			} else {
+				_ = t.UnsetEnvironment(sessionID, key)
+			}
 		}
+		setOrUnset("GT_WORK_RIG", workRig)
+		setOrUnset("GT_WORK_BEAD", workBead)
+		setOrUnset("GT_WORK_MOL", workMol)
 	}
-	setOrUnset("GT_WORK_RIG", workRig)
-	setOrUnset("GT_WORK_BEAD", workBead)
-	setOrUnset("GT_WORK_MOL", workMol)
+	// For non-tmux providers (like NATS), this is a no-op since they don't
+	// support mutable session environment variables in the same way.
 }
 
 // checkPendingEscalations queries for open escalation beads and displays them prominently.

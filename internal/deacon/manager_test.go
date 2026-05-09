@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/steveyegge/gastown/internal/config"
+	"github.com/steveyegge/gastown/internal/constants"
 	"github.com/steveyegge/gastown/internal/session"
 	"github.com/steveyegge/gastown/internal/tmux"
 )
@@ -19,7 +20,7 @@ type mockProvider struct {
 	stopErr       error
 	listResult    []string
 	listErr       error
-	sessionInfo   *tmux.SessionInfo
+	sessionInfo   *session.SessionInfo
 	sessionInfoErr error
 
 	// Call tracking
@@ -77,14 +78,17 @@ func (m *mockProvider) NudgeSession(ctx context.Context, sessionID, message, sen
 func (m *mockProvider) WaitForRuntimeReady(ctx context.Context, sessionID string, rc *config.RuntimeConfig, timeout time.Duration) error {
 	return nil
 }
-func (m *mockProvider) CheckSessionHealth(ctx context.Context, sessionID string, maxInactivity time.Duration) tmux.ZombieStatus {
-	return tmux.SessionHealthy
+func (m *mockProvider) CheckSessionHealth(ctx context.Context, sessionID string, maxInactivity time.Duration) constants.ZombieStatus {
+	return constants.SessionHealthy
 }
 func (m *mockProvider) GetLastActivity(ctx context.Context, sessionID string) (time.Time, error) {
 	return time.Time{}, nil
 }
 func (m *mockProvider) GetWorkDir(ctx context.Context, sessionID string) (string, error) {
 	return "", nil
+}
+func (m *mockProvider) SendNotificationBanner(ctx context.Context, sessionID, from, subject string) error {
+	return nil
 }
 
 func newTestManager(townRoot string, mock *mockProvider) *Manager {

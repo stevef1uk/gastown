@@ -4,13 +4,13 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/steveyegge/gastown/internal/tmux"
+	"github.com/steveyegge/gastown/internal/constants"
 )
 
 // sessionChecker abstracts the tmux health-check methods needed by the
 // health checker.  Satisfied by *tmux.Tmux; mockable in tests.
 type sessionChecker interface {
-	CheckSessionHealth(session string, maxInactivity time.Duration) tmux.ZombieStatus
+	CheckSessionHealth(session string, maxInactivity time.Duration) constants.ZombieStatus
 	HasSession(name string) (bool, error)
 	KillSession(name string) error
 }
@@ -62,7 +62,7 @@ func (hc *HealthChecker) Check(d *Dog, maxInactivity time.Duration, autoClear bo
 		result.SessionStatus = status.String()
 
 		switch status {
-		case tmux.SessionDead:
+		case constants.SessionDead:
 			// Zombie: state says working but session is gone.
 			result.NeedsAttention = true
 			result.Recommendation = "zombie: session dead but state=working"
@@ -73,7 +73,7 @@ func (hc *HealthChecker) Check(d *Dog, maxInactivity time.Duration, autoClear bo
 				}
 			}
 
-		case tmux.AgentDead:
+		case constants.AgentDead:
 			// Zombie: session exists but agent process died.
 			result.NeedsAttention = true
 			result.Recommendation = "zombie: agent dead in session"
@@ -85,7 +85,7 @@ func (hc *HealthChecker) Check(d *Dog, maxInactivity time.Duration, autoClear bo
 				}
 			}
 
-		case tmux.AgentHung:
+		case constants.AgentHung:
 			// Hung: process alive but no tmux activity for maxInactivity.
 			// If autoClear is on, kill and reclaim — the dog almost certainly
 			// finished its work but failed to call `gt dog done`.

@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 	"fmt"
+	"github.com/steveyegge/gastown/internal/constants"
 
 	"github.com/steveyegge/gastown/internal/config"
 	"github.com/steveyegge/gastown/internal/tmux"
@@ -78,6 +79,10 @@ func (p *TmuxProvider) GetEnvironment(ctx context.Context, sessionID string) (ma
 
 func (p *TmuxProvider) SetEnvironment(ctx context.Context, sessionID, key, value string) error {
 	return p.t.SetEnvironment(sessionID, key, value)
+}
+
+func (p *TmuxProvider) UnsetEnvironment(ctx context.Context, sessionID, key string) error {
+	return p.t.UnsetEnvironment(sessionID, key)
 }
 
 func (p *TmuxProvider) SetGlobalEnvironment(key, value string) error {
@@ -186,7 +191,7 @@ func (p *TmuxProvider) WaitForRuntimeReady(ctx context.Context, sessionID string
 	return p.t.WaitForRuntimeReady(sessionID, rc, timeout)
 }
 
-func (p *TmuxProvider) CheckSessionHealth(ctx context.Context, sessionID string, maxInactivity time.Duration) tmux.ZombieStatus {
+func (p *TmuxProvider) CheckSessionHealth(ctx context.Context, sessionID string, maxInactivity time.Duration) constants.ZombieStatus {
 	return p.t.CheckSessionHealth(sessionID, maxInactivity)
 }
 

@@ -104,7 +104,52 @@ const (
 	// it's considered hung. Overridable per-role via RoleHealthConfig.
 	// Configurable via operational.session.hung_session_threshold.
 	HungSessionThreshold = 30 * time.Minute
+
+	// EnvAgentReady is the session environment variable set by the agent's
+	// SessionStart hook to signal that the agent has started.
+	// Used by WaitForCommand as a ZFC-compliant fallback for detecting wrapped
+	// agents (e.g. agents wrapped in shell scripts) where pane_current_command
+	// may not reflect the actual agent process.
+	EnvAgentReady = "GT_AGENT_READY"
 )
+
+// ZombieStatus describes the liveness state of an agent session.
+// This is transport-agnostic and can be used by any session provider.
+type ZombieStatus int
+
+const (
+	// SessionHealthy means the session exists and the agent process is alive.
+	SessionHealthy ZombieStatus = iota
+	// SessionDead means the session does not exist.
+	SessionDead
+	// AgentDead means the session exists but the agent process has died.
+	AgentDead
+	// AgentHung means the session and agent process exist but there has
+	// been no activity for longer than the specified threshold.
+	AgentHung
+)
+
+// String returns a human-readable label for the zombie status.
+func (z ZombieStatus) String() string {
+	switch z {
+	case SessionHealthy:
+		return "healthy"
+	case SessionDead:
+		return "session-dead"
+	case AgentDead:
+		return "agent-dead"
+	case AgentHung:
+		return "agent-hung"
+	default:
+		return "unknown"
+	}
+}
+
+// IsZombie returns true if the status represents a zombie (any non-healthy state
+// where the session exists but the agent is dead or hung).
+func (z ZombieStatus) IsZombie() bool {
+	return z == AgentDead || z == AgentHung
+}
 
 // Directory names within a Gas Town workspace.
 const (

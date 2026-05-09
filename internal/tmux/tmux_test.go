@@ -10,7 +10,9 @@ import (
 	"strings"
 	"testing"
 	"time"
-)
+ 
+ 	"github.com/steveyegge/gastown/internal/constants"
+ )
 
 func hasTmux() bool {
 	_, err := exec.LookPath("tmux")
@@ -2240,14 +2242,14 @@ func TestSessionPrefixPattern_FallsBackToGTTownRoot(t *testing.T) {
 func TestZombieStatusString(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
-		status   ZombieStatus
+		status   constants.ZombieStatus
 		expected string
 		zombie   bool
 	}{
-		{SessionHealthy, "healthy", false},
-		{SessionDead, "session-dead", false},
-		{AgentDead, "agent-dead", true},
-		{AgentHung, "agent-hung", true},
+		{constants.SessionHealthy, "healthy", false},
+		{constants.SessionDead, "session-dead", false},
+		{constants.AgentDead, "agent-dead", true},
+		{constants.AgentHung, "agent-hung", true},
 	}
 
 	for _, tc := range tests {
@@ -2263,7 +2265,7 @@ func TestZombieStatusString(t *testing.T) {
 func TestCheckSessionHealth_NonexistentSession(t *testing.T) {
 	tm := newTestTmux(t)
 	status := tm.CheckSessionHealth("nonexistent-session-xyz", 0)
-	if status != SessionDead {
+	if status != constants.SessionDead {
 		t.Errorf("CheckSessionHealth(nonexistent) = %v, want SessionDead", status)
 	}
 }
@@ -2280,9 +2282,9 @@ func TestCheckSessionHealth_ZombieSession(t *testing.T) {
 	// Wait for shell to start
 	time.Sleep(200 * time.Millisecond)
 
-	// Session exists but no agent process → AgentDead
+	// Session exists but no agent process → constants.AgentDead
 	status := tm.CheckSessionHealth(sessionName, 0)
-	if status != AgentDead {
+	if status != constants.AgentDead {
 		t.Errorf("CheckSessionHealth(shell-only) = %v, want AgentDead", status)
 	}
 }
@@ -2300,9 +2302,9 @@ func TestCheckSessionHealth_ActivityCheck(t *testing.T) {
 
 	// With no maxInactivity (0), activity is not checked.
 	// The session has a non-shell process running (sleep), but it won't
-	// match any agent process names, so IsAgentAlive returns false → AgentDead.
+	// match any agent process names, so IsAgentAlive returns false → constants.AgentDead.
 	status := tm.CheckSessionHealth(sessionName, 0)
-	if status != AgentDead {
+	if status != constants.AgentDead {
 		// sleep is not an agent process, so this is expected
 		t.Logf("Status with sleep process: %v (expected AgentDead since sleep != agent)", status)
 	}

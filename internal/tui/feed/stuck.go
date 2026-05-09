@@ -341,5 +341,5 @@ func (s *defaultHealthSource) IsSessionAlive(sessionName string) (bool, error) {
 	// HasSession alone misses zombie sessions where tmux is alive
 	// but Claude has crashed inside the pane.
 	status := s.tmux.CheckSessionHealth(sessionName, 0)
-	return status == tmux.SessionHealthy, nil
+	return status == constants.SessionHealthy, nil
 }

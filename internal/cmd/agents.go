@@ -677,7 +677,7 @@ func runAgentsFix(cmd *cobra.Command, args []string) error {
 	}
 
 	// Clean stale locks
-	cleaned, err := lock.CleanStaleLocks(townRoot)
+	cleaned, err := lock.CleanStaleLocks(townRoot, tmux.GetDefaultSocket())
 	if err != nil {
 		return fmt.Errorf("cleaning stale locks: %w", err)
 	}

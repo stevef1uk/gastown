@@ -4,28 +4,30 @@ import (
 	"testing"
 	"time"
 
+	"github.com/steveyegge/gastown/internal/constants"
 	"github.com/steveyegge/gastown/internal/tmux"
 )
 
 // mockSessionChecker implements sessionChecker for testing.
 type mockSessionChecker struct {
-	healthResults  map[string]tmux.ZombieStatus // session -> status
-	sessionsAlive  map[string]bool              // session -> exists
+	healthResults  map[string]constants.ZombieStatus // session -> status
+	sessionsAlive  map[string]bool                 // session -> exists
 	killedSessions []string
 }
 
 func newMockChecker() *mockSessionChecker {
 	return &mockSessionChecker{
-		healthResults: make(map[string]tmux.ZombieStatus),
+		healthResults: make(map[string]constants.ZombieStatus),
 		sessionsAlive: make(map[string]bool),
+		killedSessions: []string{},
 	}
 }
 
-func (m *mockSessionChecker) CheckSessionHealth(session string, _ time.Duration) tmux.ZombieStatus {
+func (m *mockSessionChecker) CheckSessionHealth(session string, _ time.Duration) constants.ZombieStatus {
 	if s, ok := m.healthResults[session]; ok {
 		return s
 	}
-	return tmux.SessionDead
+	return constants.SessionDead
 }
 
 func (m *mockSessionChecker) HasSession(name string) (bool, error) {
@@ -77,7 +79,7 @@ func TestHealth_WorkingDog_Healthy(t *testing.T) {
 	})
 
 	mc := newMockChecker()
-	mc.healthResults["hq-dog-alpha"] = tmux.SessionHealthy
+	mc.healthResults["hq-dog-alpha"] = constants.SessionHealthy
 	hc := NewHealthChecker(m, mc)
 
 	d, _ := m.Get("alpha")
@@ -108,7 +110,7 @@ func TestHealth_Zombie_SessionDead(t *testing.T) {
 	})
 
 	mc := newMockChecker()
-	mc.healthResults["hq-dog-alpha"] = tmux.SessionDead
+	mc.healthResults["hq-dog-alpha"] = constants.SessionDead
 	hc := NewHealthChecker(m, mc)
 
 	d, _ := m.Get("alpha")
@@ -132,7 +134,7 @@ func TestHealth_Zombie_AgentDead(t *testing.T) {
 	})
 
 	mc := newMockChecker()
-	mc.healthResults["hq-dog-alpha"] = tmux.AgentDead
+	mc.healthResults["hq-dog-alpha"] = constants.AgentDead
 	hc := NewHealthChecker(m, mc)
 
 	d, _ := m.Get("alpha")
@@ -160,7 +162,7 @@ func TestHealth_Hung_ReportOnly(t *testing.T) {
 	})
 
 	mc := newMockChecker()
-	mc.healthResults["hq-dog-alpha"] = tmux.AgentHung
+	mc.healthResults["hq-dog-alpha"] = constants.AgentHung
 	hc := NewHealthChecker(m, mc)
 
 	d, _ := m.Get("alpha")
@@ -187,7 +189,7 @@ func TestHealth_Hung_AutoCleared(t *testing.T) {
 	})
 
 	mc := newMockChecker()
-	mc.healthResults["hq-dog-alpha"] = tmux.AgentHung
+	mc.healthResults["hq-dog-alpha"] = constants.AgentHung
 	hc := NewHealthChecker(m, mc)
 
 	d, _ := m.Get("alpha")
@@ -224,7 +226,7 @@ func TestHealth_AutoClear_SessionDead(t *testing.T) {
 	})
 
 	mc := newMockChecker()
-	mc.healthResults["hq-dog-alpha"] = tmux.SessionDead
+	mc.healthResults["hq-dog-alpha"] = constants.SessionDead
 	hc := NewHealthChecker(m, mc)
 
 	d, _ := m.Get("alpha")
@@ -254,7 +256,7 @@ func TestHealth_AutoClear_AgentDead(t *testing.T) {
 	})
 
 	mc := newMockChecker()
-	mc.healthResults["hq-dog-alpha"] = tmux.AgentDead
+	mc.healthResults["hq-dog-alpha"] = constants.AgentDead
 	hc := NewHealthChecker(m, mc)
 
 	d, _ := m.Get("alpha")
@@ -343,7 +345,7 @@ func TestHealth_WorkDuration_ZeroStartedAt(t *testing.T) {
 	})
 
 	mc := newMockChecker()
-	mc.healthResults["hq-dog-alpha"] = tmux.SessionHealthy
+	mc.healthResults["hq-dog-alpha"] = constants.SessionHealthy
 	hc := NewHealthChecker(m, mc)
 
 	d, _ := m.Get("alpha")
@@ -373,7 +375,7 @@ func TestHealth_CheckAll_MultipleDogs(t *testing.T) {
 	})
 
 	mc := newMockChecker()
-	mc.healthResults["hq-dog-beta"] = tmux.SessionDead // zombie
+	mc.healthResults["hq-dog-beta"] = constants.SessionDead // zombie
 	hc := NewHealthChecker(m, mc)
 
 	results, err := hc.CheckAll(30*time.Minute, false)

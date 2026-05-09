@@ -52,7 +52,7 @@ func (m *Manager) IsRunning() (bool, error) {
 	return sp.Exists(context.Background(), m.SessionName())
 }
 
-func (m *Manager) IsHealthy(maxInactivity time.Duration) tmux.ZombieStatus {
+func (m *Manager) IsHealthy(maxInactivity time.Duration) constants.ZombieStatus {
 	sp := session.GetDefaultProvider(m.townRoot())
 	return sp.CheckSessionHealth(context.Background(), m.SessionName(), maxInactivity)
 }

@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/steveyegge/gastown/internal/tmux"
 )
 
 func TestNew(t *testing.T) {
@@ -432,7 +431,7 @@ func TestCleanStaleLocks(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cleaned, err := CleanStaleLocks(tmpDir)
+	cleaned, err := CleanStaleLocks(tmpDir, "")
 	if err != nil {
 		t.Fatalf("CleanStaleLocks() error = %v", err)
 	}
@@ -473,7 +472,7 @@ func TestGetActiveTmuxSessions(t *testing.T) {
 		return &mockCmd{output: []byte("session1:$1\nsession2:$2\n")}
 	}
 
-	sessions := getActiveTmuxSessions()
+	sessions := getActiveTmuxSessions("")
 
 	// Should contain session names and IDs
 	expected := map[string]bool{
@@ -493,15 +492,9 @@ func TestGetActiveTmuxSessions(t *testing.T) {
 }
 
 func TestGetActiveTmuxSessionsUsesSocket(t *testing.T) {
-	// Save and restore execCommand and tmux socket
+	// Save and restore execCommand
 	origExecCommand := execCommand
 	defer func() { execCommand = origExecCommand }()
-
-	origSocket := tmux.GetDefaultSocket()
-	defer tmux.SetDefaultSocket(origSocket)
-
-	// Set a custom socket name
-	tmux.SetDefaultSocket("test-town")
 
 	var capturedArgs []string
 	execCommand = func(name string, args ...string) interface{ Output() ([]byte, error) } {
@@ -509,7 +502,7 @@ func TestGetActiveTmuxSessionsUsesSocket(t *testing.T) {
 		return &mockCmd{output: []byte("")}
 	}
 
-	getActiveTmuxSessions()
+	getActiveTmuxSessions("test-town")
 
 	// Verify -L flag was included with the correct socket
 	foundSocket := false

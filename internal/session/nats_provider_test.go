@@ -383,9 +383,9 @@ func TestGetDefaultProvider_EnvOverride(t *testing.T) {
 	}
 }
 
-// TestGetDefaultProvider_DefaultTmux verifies default is TmuxProvider when
-// no settings specify nats.
-func TestGetDefaultProvider_DefaultTmux(t *testing.T) {
+// TestGetDefaultProvider_DefaultNats verifies default is NatsProvider when
+// no settings specify tmux.
+func TestGetDefaultProvider_DefaultNats(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	// Clear env override
@@ -393,14 +393,15 @@ func TestGetDefaultProvider_DefaultTmux(t *testing.T) {
 	os.Unsetenv("GT_SESSION_TRANSPORT")
 	defer os.Setenv("GT_SESSION_TRANSPORT", oldEnv)
 
-	// No settings file - should default to tmux
+	// No NATS running should return stub provider
 	p := GetDefaultProvider(tmpDir)
 	if p == nil {
 		t.Fatal("GetDefaultProvider returned nil")
 	}
 
-	if _, ok := p.(*TmuxProvider); !ok {
-		t.Errorf("Expected TmuxProvider by default, got %T", p)
+	// Without NATS running, should return stub provider that reports unavailable
+	if p.IsAvailable() {
+		t.Errorf("Expected unavailable provider when NATS not running, got available: %T", p)
 	}
 }
 

@@ -189,12 +189,6 @@ type Tmux struct {
 // "no server running" error instead of silently connecting to the wrong server.
 const noTownSocket = "gt-no-town-socket"
 
-// EnvAgentReady is the tmux session environment variable set by the agent's
-// SessionStart hook (gt prime --hook) to signal that the agent has started.
-// Used by WaitForCommand as a ZFC-compliant fallback for detecting wrapped
-// agents (where pane_current_command remains a shell). See gt-sk5u.
-const EnvAgentReady = "GT_AGENT_READY"
-
 // NewTmux creates a new Tmux wrapper using the initialized town socket.
 // Falls back to GT_TOWN_SOCKET env var (set by cross-socket tmux bindings).
 // Empty socket means use the default tmux server.
@@ -2146,42 +2140,6 @@ func (t *Tmux) GetSessionActivity(session string) (time.Time, error) {
 	return time.Unix(timestamp, 0), nil
 }
 
-// ZombieStatus describes the liveness state of a tmux agent session.
-type ZombieStatus int
-
-const (
-	// SessionHealthy means the session exists and the agent process is alive.
-	SessionHealthy ZombieStatus = iota
-	// SessionDead means the tmux session does not exist.
-	SessionDead
-	// AgentDead means the tmux session exists but the agent process has died.
-	AgentDead
-	// AgentHung means the tmux session and agent process exist but there has
-	// been no tmux activity for longer than the specified threshold.
-	AgentHung
-)
-
-// String returns a human-readable label for the zombie status.
-func (z ZombieStatus) String() string {
-	switch z {
-	case SessionHealthy:
-		return "healthy"
-	case SessionDead:
-		return "session-dead"
-	case AgentDead:
-		return "agent-dead"
-	case AgentHung:
-		return "agent-hung"
-	default:
-		return "unknown"
-	}
-}
-
-// IsZombie returns true if the status represents a zombie (any non-healthy state
-// where the session exists but the agent is dead or hung).
-func (z ZombieStatus) IsZombie() bool {
-	return z == AgentDead || z == AgentHung
-}
 
 // CheckSessionHealth determines the health status of an agent session.
 // It performs three levels of checking:
@@ -2194,30 +2152,27 @@ func (z ZombieStatus) IsZombie() bool {
 // liveness). A reasonable default for production is 10-15 minutes.
 //
 // This is the preferred unified method for zombie detection across all agent types.
-func (t *Tmux) CheckSessionHealth(session string, maxInactivity time.Duration) ZombieStatus {
+func (t *Tmux) CheckSessionHealth(sessionName string, maxInactivity time.Duration) constants.ZombieStatus {
 	// Level 1: Does the tmux session exist?
-	alive, err := t.HasSession(session)
+	alive, err := t.HasSession(sessionName)
 	if err != nil || !alive {
-		return SessionDead
+		return constants.SessionDead
 	}
 
 	// Level 2: Is the agent process running inside the session?
-	if !t.IsAgentAlive(session) {
-		return AgentDead
+	if !t.IsAgentAlive(sessionName) {
+		return constants.AgentDead
 	}
 
-	// Level 3: Has there been recent activity? (optional)
+	// Level 3: Check for activity staleness
 	if maxInactivity > 0 {
-		lastActivity, err := t.GetSessionActivity(session)
-		if err == nil && !lastActivity.IsZero() {
-			if time.Since(lastActivity) > maxInactivity {
-				return AgentHung
-			}
+		activity, err := t.GetSessionActivity(sessionName)
+		if err == nil && !activity.IsZero() && time.Since(activity) > maxInactivity {
+			return constants.AgentHung
 		}
-		// On error or zero time, skip activity check — don't false-positive
 	}
 
-	return SessionHealthy
+	return constants.SessionHealthy
 }
 
 // processMatchesNames checks if a process's binary name matches any of the given names.
@@ -2426,6 +2381,12 @@ func parentPID(pid int) (int, error) {
 // SetEnvironment sets an environment variable in the session.
 func (t *Tmux) SetEnvironment(session, key, value string) error {
 	_, err := t.run("set-environment", "-t", session, key, value)
+	return err
+}
+
+// UnsetEnvironment removes an environment variable from the session.
+func (t *Tmux) UnsetEnvironment(session, key string) error {
+	_, err := t.run("set-environment", "-u", "-t", session, key)
 	return err
 }
 
@@ -2763,7 +2724,7 @@ func (t *Tmux) WaitForCommand(session string, excludeCommands []string, timeout 
 	// agent runs. The agent's SessionStart hook (gt prime --hook) sets this
 	// to "1" once the agent is running. Unsetting here ensures we only detect
 	// the NEW agent, not a leftover from a previous run.
-	_, _ = t.run("set-environment", "-u", "-t", session, EnvAgentReady)
+	_, _ = t.run("set-environment", "-u", "-t", session, constants.EnvAgentReady)
 
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
@@ -2786,7 +2747,7 @@ func (t *Tmux) WaitForCommand(session string, excludeCommands []string, timeout 
 		// ZFC fallback: check if the agent signaled readiness via its startup
 		// hook. This replaces process-tree descendant probing (IsAgentAlive)
 		// for wrapped agents where pane_current_command remains a shell.
-		if ready, err := t.GetEnvironment(session, EnvAgentReady); err == nil && ready == "1" {
+		if ready, err := t.GetEnvironment(session, constants.EnvAgentReady); err == nil && ready == "1" {
 			return nil
 		}
 		time.Sleep(constants.PollInterval)
