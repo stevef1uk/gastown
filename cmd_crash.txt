@@ -3691,3 +3691,5 @@ Watching test-session for idle (up to 500ms)...
 === RUN   TestFindActivePatrolZeroChildren
 --- PASS: TestFindActivePatrolZeroChildren (0.85s)
 === RUN   TestFindActivePatrolMultiple
+--- PASS: TestFindActivePatrolMultiple (2.42s)
+=== RUN   TestFindActivePatrol_StaleCleanupCapped
