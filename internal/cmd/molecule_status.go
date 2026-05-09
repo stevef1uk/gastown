@@ -104,6 +104,16 @@ func buildAgentBeadID(identity string, role Role, townRoot string) string {
 		return beads.MechanicBeadIDTown()
 	case RolePlanner:
 		return beads.PlannerBeadIDTown()
+	case RoleArchitect:
+		if len(parts) >= 1 {
+			return beads.ArchitectBeadIDWithPrefix(getPrefix(parts[0]), parts[0])
+		}
+		return ""
+	case RoleQA:
+		if len(parts) >= 1 {
+			return beads.QABeadIDWithPrefix(getPrefix(parts[0]), parts[0])
+		}
+		return ""
 	default:
 		return ""
 	}
@@ -982,37 +992,80 @@ func runMoleculeCurrent(cmd *cobra.Command, args []string) error {
 	}
 
 	// Find beads directory
-	workDir, err := findLocalBeadsDir()
+	workDir, err := findBeadsWorkDirForAgent(target, townRoot)
 	if err != nil {
-		return fmt.Errorf("not in a beads workspace: %w", err)
+		return fmt.Errorf("resolving beads workspace: %w", err)
 	}
 
 	b := beads.New(workDir)
-
-	// Extract role from target for handoff bead lookup
-	role := extractRoleFromIdentity(target)
-
-	// Find handoff bead for this identity
-	handoff, err := b.FindHandoffBead(role)
-	if err != nil {
-		return fmt.Errorf("finding handoff bead: %w", err)
-	}
 
 	// Build current info
 	info := MoleculeCurrentInfo{
 		Identity: target,
 	}
 
-	if handoff == nil {
+	// Strategy: Find the work bead. We check two places:
+	// 1. Authoritative: Any bead explicitly hooked/in-progress assigned to this agent.
+	// 2. Legacy: The "Handoff" bead for this role (pinned workqueue pattern).
+	var currentBead *beads.Issue
+	currentB := b
+
+	// 1. Check for hooked/in-progress beads assigned to target (Sling workflow)
+	hookedBeads, _ := b.List(beads.ListOptions{
+		Status:   beads.StatusHooked,
+		Assignee: target,
+		Priority: -1,
+	})
+	if len(hookedBeads) == 0 {
+		hookedBeads, _ = b.List(beads.ListOptions{
+			Status:   "in_progress",
+			Assignee: target,
+			Priority: -1,
+		})
+	}
+
+	// Town-level fallback for rig agents: work slung from HQ
+	if len(hookedBeads) == 0 && !isTownLevelRole(target) && townRoot != "" {
+		townB := beads.New(filepath.Join(townRoot, ".beads"))
+		if townHooked, err := townB.List(beads.ListOptions{
+			Status:   beads.StatusHooked,
+			Assignee: target,
+			Priority: -1,
+		}); err == nil && len(townHooked) > 0 {
+			hookedBeads = townHooked
+			currentB = townB
+		} else if townIP, err := townB.List(beads.ListOptions{
+			Status:   "in_progress",
+			Assignee: target,
+			Priority: -1,
+		}); err == nil && len(townIP) > 0 {
+			hookedBeads = townIP
+			currentB = townB
+		}
+	}
+
+	if len(hookedBeads) > 0 {
+		currentBead = hookedBeads[0]
+	}
+
+	// 2. Fallback to Handoff bead (Legacy workflow)
+	if currentBead == nil {
+		role := extractRoleFromIdentity(target)
+		handoff, _ := b.FindHandoffBead(role)
+		if handoff != nil {
+			currentBead = handoff
+			info.HandoffID = handoff.ID
+			info.HandoffTitle = handoff.Title
+		}
+	}
+
+	if currentBead == nil {
 		info.Status = "naked"
 		return outputMoleculeCurrent(info)
 	}
 
-	info.HandoffID = handoff.ID
-	info.HandoffTitle = handoff.Title
-
-	// Check for attached molecule
-	attachment := beads.ParseAttachmentFields(handoff)
+	// Check for attached molecule on the discovered bead
+	attachment := beads.ParseAttachmentFields(currentBead)
 	if attachment == nil || attachment.AttachedMolecule == "" {
 		info.Status = "naked"
 		return outputMoleculeCurrent(info)
@@ -1021,7 +1074,7 @@ func runMoleculeCurrent(cmd *cobra.Command, args []string) error {
 	info.MoleculeID = attachment.AttachedMolecule
 
 	// Get the molecule root to find its title and children
-	molRoot, err := b.Show(attachment.AttachedMolecule)
+	molRoot, err := currentB.Show(attachment.AttachedMolecule)
 	if err != nil {
 		// Molecule not found - might be a template ID, still report what we have
 		info.Status = "working"
@@ -1031,11 +1084,18 @@ func runMoleculeCurrent(cmd *cobra.Command, args []string) error {
 	info.MoleculeTitle = molRoot.Title
 
 	// Find all children (steps) of the molecule root
-	children, err := b.List(beads.ListOptions{
+	listOpts := beads.ListOptions{
 		Parent:   attachment.AttachedMolecule,
 		Status:   "all",
 		Priority: -1,
-	})
+	}
+
+	// If the molecule ID looks like a wisp, we must query the ephemeral table
+	if strings.HasPrefix(attachment.AttachedMolecule, "wisp-") || strings.HasPrefix(attachment.AttachedMolecule, "hq-wisp-") {
+		listOpts.Ephemeral = true
+	}
+
+	children, err := currentB.List(listOpts)
 	if err != nil {
 		// No steps - just an issue, not a molecule instance
 		info.Status = "working"
@@ -1065,7 +1125,7 @@ func runMoleculeCurrent(cmd *cobra.Command, args []string) error {
 	// bd list doesn't return dependencies, but bd show does.
 	var openStepsMap map[string]*beads.Issue
 	if len(openStepIDs) > 0 {
-		openStepsMap, _ = b.ShowMultiple(openStepIDs)
+		openStepsMap, _ = currentB.ShowMultiple(openStepIDs)
 		if openStepsMap == nil {
 			openStepsMap = make(map[string]*beads.Issue)
 		}

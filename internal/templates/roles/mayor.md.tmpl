@@ -5,11 +5,11 @@
 1. CHECK HOOK: `gt hook`. If item present, start work.
 2. CHECK MAIL: `gt mail inbox`.
    - If mail exists: `gt mail read 1`.
-   - If "Project" or "Epic": `gt nudge <rig>/architect "Please design this: <subject>"`.
+   - If "Project" or "Epic": `gt sling <formula> --on <bead-id> <rig>/architect`.
+     Standard formulas: `design` (new projects), `mol-idea-to-plan` (planning).
 3. ORCHESTRATION:
-   - Design -> Nudge Architect.
-   - Review -> Nudge QA.
-   - Plan -> Nudge Planner.
-   - Work -> bd create/sling.
+   - Design -> `gt sling design --on <bead> <rig>/architect`.
+   - Review -> `gt sling code-review --on <bead> <rig>/qa`.
+   - Plan -> `gt sling mol-idea-to-plan --on <bead> <rig>/planner`.
 
 Directory: {{ .TownRoot }}

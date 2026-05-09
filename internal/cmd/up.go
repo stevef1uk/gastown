@@ -326,11 +326,16 @@ func runUp(cmd *cobra.Command, args []string) error {
 		}
 	}()
 
-	// 4.5. Planner
-	var plannerResult agentStartResult
+	// 4.5. Planner and Mechanic
+	var plannerResult, mechanicResult agentStartResult
 	go func() {
 		defer startupWg.Done()
 		plannerResult = upStartPlanner(townRoot)
+	}()
+	startupWg.Add(1)
+	go func() {
+		defer startupWg.Done()
+		mechanicResult = upStartMechanic(townRoot)
 	}()
 
 	// 5. Prefetch rig configs (overlaps with daemon/deacon/mayor startup)
@@ -378,6 +383,10 @@ func runUp(cmd *cobra.Command, args []string) error {
 	}
 	services = append(services, ServiceStatus{Name: plannerResult.name, Type: constants.RolePlanner, OK: plannerResult.ok, Detail: plannerResult.detail})
 	if !plannerResult.ok {
+		allOK = false
+	}
+	services = append(services, ServiceStatus{Name: mechanicResult.name, Type: constants.RoleMechanic, OK: mechanicResult.ok, Detail: mechanicResult.detail})
+	if !mechanicResult.ok {
 		allOK = false
 	}
 
@@ -1345,9 +1354,8 @@ func upStartRigMechanic(rigName string, r *rig.Rig) agentStartResult {
 	name := "Mechanic (" + rigName + ")"
 	
 	mechanicDir := filepath.Join(r.Path, constants.DirMechanic)
-	if _, err := os.Stat(mechanicDir); os.IsNotExist(err) {
-		// If the directory doesn't exist, we skip it (not all rigs have a mechanic)
-		return agentStartResult{name: name, ok: true, detail: "not configured (no directory)"}
+	if err := os.MkdirAll(mechanicDir, 0755); err != nil {
+		return agentStartResult{name: name, ok: false, detail: err.Error()}
 	}
 
 	sessionID := session.MechanicSessionNameForRig(rigName)

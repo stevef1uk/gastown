@@ -30,6 +30,7 @@ const (
 	AgentRefinery
 	AgentArchitect
 	AgentQA
+	AgentMechanic
 	AgentCrew
 	AgentPolecat
 	AgentPersonal // Non-GT session (user's terminal session)
@@ -54,6 +55,7 @@ var AgentTypeColors = map[AgentType]string{
 	AgentRefinery:  "#[fg=blue]",
 	AgentArchitect: "#[fg=cyan,bold]",
 	AgentQA:        "#[fg=green,bold]",
+	AgentMechanic:  "#[fg=cyan]",
 	AgentCrew:      "#[fg=green]",
 	AgentPolecat:   "#[fg=white,dim]",
 	AgentPersonal:  "#[fg=magenta]",
@@ -66,8 +68,9 @@ var rigTypeOrder = map[AgentType]int{
 	AgentQA:        1,
 	AgentRefinery:  2,
 	AgentWitness:   3,
-	AgentCrew:      4,
-	AgentPolecat:   5,
+	AgentMechanic:  4,
+	AgentCrew:      5,
+	AgentPolecat:   6,
 }
 
 // AgentTypeIcons maps agent types to display icons.
@@ -80,6 +83,7 @@ var AgentTypeIcons = map[AgentType]string{
 	AgentRefinery:  constants.EmojiRefinery,
 	AgentArchitect: constants.EmojiArchitect,
 	AgentQA:        constants.EmojiQA,
+	AgentMechanic:  constants.EmojiMechanic,
 	AgentCrew:      constants.EmojiCrew,
 	AgentPolecat:   constants.EmojiPolecat,
 }
@@ -186,6 +190,8 @@ func categorizeSession(name string) *AgentSession {
 		sess.Type = AgentArchitect
 	case session.RoleQA:
 		sess.Type = AgentQA
+	case session.RoleMechanic:
+		sess.Type = AgentMechanic
 	case session.RoleCrew:
 		sess.Type = AgentCrew
 	case session.RolePolecat:
@@ -600,6 +606,8 @@ func runAgentsList(cmd *cobra.Command, args []string) error {
 			fmt.Printf("  %s architect\n", icon)
 		case AgentQA:
 			fmt.Printf("  %s qa\n", icon)
+		case AgentMechanic:
+			fmt.Printf("  %s mechanic\n", icon)
 		case AgentCrew:
 			fmt.Printf("  %s crew/%s\n", icon, agent.AgentName)
 		case AgentPolecat:

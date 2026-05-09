@@ -19,6 +19,7 @@ const (
 	RoleRefinery  Role = "refinery"
 	RoleArchitect Role = "architect"
 	RoleQA        Role = "qa"
+	RoleMechanic  Role = "mechanic"
 	RoleCrew      Role = "crew"
 	RolePolecat   Role = "polecat"
 	RoleDog       Role = "dog"
@@ -47,6 +48,9 @@ func ParseAddress(address string) (*AgentIdentity, error) {
 	}
 	if address == string(RolePlanner) || address == string(RolePlanner)+"/" {
 		return &AgentIdentity{Role: RolePlanner}, nil
+	}
+	if address == string(RoleMechanic) || address == string(RoleMechanic)+"/" {
+		return &AgentIdentity{Role: RoleMechanic}, nil
 	}
 	if address == "overseer" {
 		return nil, fmt.Errorf("overseer has no session")
@@ -139,6 +143,8 @@ func ParseSessionNameWithRegistry(session string, registry *PrefixRegistry) (*Ag
 			return &AgentIdentity{Role: RoleDeacon}, nil
 		case string(RolePlanner):
 			return &AgentIdentity{Role: RolePlanner}, nil
+		case string(RoleMechanic):
+			return &AgentIdentity{Role: RoleMechanic}, nil
 		case "boot":
 			return &AgentIdentity{Role: RoleDeacon, Name: "boot"}, nil
 		case "overseer":
@@ -184,8 +190,8 @@ parseRigRole:
 	rig = registry.RigForPrefix(prefix)
 
 	// In the new format, rest might be "rigName-role"
-	// Roles: witness, refinery, architect, qa
-	for _, role := range []Role{RoleWitness, RoleRefinery, RoleArchitect, RoleQA} {
+	// Roles: witness, refinery, architect, qa, mechanic
+	for _, role := range []Role{RoleWitness, RoleRefinery, RoleArchitect, RoleQA, RoleMechanic} {
 		roleStr := string(role)
 		if rest == roleStr {
 			// Compatibility case: gt-witness
@@ -237,6 +243,11 @@ func (a *AgentIdentity) SessionName() string {
 		return ArchitectSessionName(a.prefix(), a.Rig)
 	case RoleQA:
 		return QASessionName(a.prefix(), a.Rig)
+	case RoleMechanic:
+		if a.Rig == "" {
+			return MechanicSessionName()
+		}
+		return MechanicSessionNameForRig(a.Rig)
 	case RoleCrew:
 		return CrewSessionName(a.prefix(), a.Name)
 	case RolePolecat:

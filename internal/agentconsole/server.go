@@ -275,6 +275,9 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 
 // discoverAgents finds all agents in the workspace.
 func (s *Server) discoverAgents() []Agent {
+	// Re-initialize registry to pick up new rigs (gt-z9xk)
+	_ = session.InitRegistry(s.townRoot)
+
 	var agents []Agent
 
 	// Dynamically discover town-level agents from PID files.
