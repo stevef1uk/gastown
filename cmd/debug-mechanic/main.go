@@ -13,7 +13,7 @@ import (
 )
 
 func main() {
-	fmt.Println("=== Mechanic Agent LLM Test ===\n")
+	fmt.Println("=== Mechanic Agent LLM Test ===")
 
 	apiKey := os.Getenv("OPENAI_API_KEY")
 	if apiKey == "" {
