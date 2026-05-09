@@ -1156,3 +1156,218 @@ Convoy created: hq-cv-666hc (status: staged_warnings)
   1      gt-t2           Task Two                       gastown      —
 
   2 tasks across 1 waves (max parallelism: 2 in wave 1)
+Convoy created: hq-cv-jxp3c (status: staged_ready)
+--- PASS: TestLaunchAsAlias_TaskListInput (7.28s)
+=== RUN   TestTransitionConvoyToOpen_SkipsReanalysis
+--- PASS: TestTransitionConvoyToOpen_SkipsReanalysis (0.00s)
+=== RUN   TestDispatchWave1_AllDispatched
+--- PASS: TestDispatchWave1_AllDispatched (0.00s)
+=== RUN   TestDispatchWave1_ContinuesOnFailure
+--- PASS: TestDispatchWave1_ContinuesOnFailure (0.00s)
+=== RUN   TestRenderLaunchOutput_ConvoyIDAndMonitor
+--- PASS: TestRenderLaunchOutput_ConvoyIDAndMonitor (0.00s)
+=== RUN   TestRenderLaunchOutput_DispatchedTasksWithRig
+--- PASS: TestRenderLaunchOutput_DispatchedTasksWithRig (0.00s)
+=== RUN   TestRenderLaunchOutput_TUIHint
+--- PASS: TestRenderLaunchOutput_TUIHint (0.00s)
+=== RUN   TestRenderLaunchOutput_DaemonExplanation
+--- PASS: TestRenderLaunchOutput_DaemonExplanation (0.00s)
+=== RUN   TestRenderLaunchOutput_Snapshot
+--- PASS: TestRenderLaunchOutput_Snapshot (0.00s)
+=== RUN   TestDispatchWave1_EndToEnd
+--- PASS: TestDispatchWave1_EndToEnd (0.01s)
+=== RUN   TestCollectConvoyBeads_ExternalTrackedIDs
+--- PASS: TestCollectConvoyBeads_ExternalTrackedIDs (0.00s)
+=== RUN   TestRandomDAG_AcyclicIsAcyclic
+--- PASS: TestRandomDAG_AcyclicIsAcyclic (0.00s)
+=== RUN   TestRandomDAG_CyclicHasCycle
+--- PASS: TestRandomDAG_CyclicHasCycle (0.00s)
+=== RUN   TestRandomDAG_WavesTerminate
+--- PASS: TestRandomDAG_WavesTerminate (0.00s)
+=== RUN   TestRandomDAG_Deterministic
+--- PASS: TestRandomDAG_Deterministic (0.00s)
+=== RUN   TestRandomDAG_SeedLoggedOnFailure
+--- PASS: TestRandomDAG_SeedLoggedOnFailure (0.00s)
+=== RUN   TestProperty_WaveComputationTerminates
+--- PASS: TestProperty_WaveComputationTerminates (0.00s)
+=== RUN   TestProperty_EveryTaskInExactlyOneWave
+--- PASS: TestProperty_EveryTaskInExactlyOneWave (0.00s)
+=== RUN   TestProperty_NoTaskBeforeBlocker
+--- PASS: TestProperty_NoTaskBeforeBlocker (0.00s)
+=== RUN   TestProperty_CycleAlwaysDetectedInCyclicDAGs
+--- PASS: TestProperty_CycleAlwaysDetectedInCyclicDAGs (0.00s)
+=== RUN   TestProperty_DeterministicWaveAssignment
+--- PASS: TestProperty_DeterministicWaveAssignment (0.01s)
+=== RUN   TestProperty_ParentChildDoesNotAffectWaves
+--- PASS: TestProperty_ParentChildDoesNotAffectWaves (0.00s)
+=== RUN   TestConvoyResolveBeadsDir_RegressionEmptyConvoy
+=== RUN   TestConvoyResolveBeadsDir_RegressionEmptyConvoy/getTownBeadsDir_returns_workspace_root_not_beads_dir
+=== RUN   TestConvoyResolveBeadsDir_RegressionEmptyConvoy/without_ResolveBeadsDir_sentinel_goes_to_wrong_location
+=== RUN   TestConvoyResolveBeadsDir_RegressionEmptyConvoy/ResolveBeadsDir_fixes_the_path_before_EnsureCustomTypes
+=== RUN   TestConvoyResolveBeadsDir_RegressionEmptyConvoy/ResolveBeadsDir_fixes_the_path_before_EnsureCustomStatuses
+--- PASS: TestConvoyResolveBeadsDir_RegressionEmptyConvoy (0.00s)
+    --- PASS: TestConvoyResolveBeadsDir_RegressionEmptyConvoy/getTownBeadsDir_returns_workspace_root_not_beads_dir (0.00s)
+    --- PASS: TestConvoyResolveBeadsDir_RegressionEmptyConvoy/without_ResolveBeadsDir_sentinel_goes_to_wrong_location (0.00s)
+    --- PASS: TestConvoyResolveBeadsDir_RegressionEmptyConvoy/ResolveBeadsDir_fixes_the_path_before_EnsureCustomTypes (0.00s)
+    --- PASS: TestConvoyResolveBeadsDir_RegressionEmptyConvoy/ResolveBeadsDir_fixes_the_path_before_EnsureCustomStatuses (0.00s)
+=== RUN   TestResolveBeadsDir_WorkspaceRootVsBeadsDir
+=== RUN   TestResolveBeadsDir_WorkspaceRootVsBeadsDir/workspace_root_gets_.beads_appended
+=== RUN   TestResolveBeadsDir_WorkspaceRootVsBeadsDir/already_.beads_path_is_normalized
+--- PASS: TestResolveBeadsDir_WorkspaceRootVsBeadsDir (0.00s)
+    --- PASS: TestResolveBeadsDir_WorkspaceRootVsBeadsDir/workspace_root_gets_.beads_appended (0.00s)
+    --- PASS: TestResolveBeadsDir_WorkspaceRootVsBeadsDir/already_.beads_path_is_normalized (0.00s)
+=== RUN   TestResolveBeadsDir_WithRedirect
+--- PASS: TestResolveBeadsDir_WithRedirect (0.00s)
+=== RUN   TestConvoyCreate_SentinelPlacement
+--- PASS: TestConvoyCreate_SentinelPlacement (0.00s)
+=== RUN   TestConvoyStage_CrossRigWaves
+--- PASS: TestConvoyStage_CrossRigWaves (0.00s)
+=== RUN   TestDetectCycles_Simple2NodeCycle
+--- PASS: TestDetectCycles_Simple2NodeCycle (0.00s)
+=== RUN   TestDetectCycles_NoCycleLinearChain
+--- PASS: TestDetectCycles_NoCycleLinearChain (0.00s)
+=== RUN   TestDetectCycles_SelfLoop
+--- PASS: TestDetectCycles_SelfLoop (0.00s)
+=== RUN   TestDetectCycles_DiamondNoCycle
+--- PASS: TestDetectCycles_DiamondNoCycle (0.00s)
+=== RUN   TestDetectCycles_LongChainWithBackEdge
+--- PASS: TestDetectCycles_LongChainWithBackEdge (0.00s)
+=== RUN   TestComputeWaves_AllIndependent
+--- PASS: TestComputeWaves_AllIndependent (0.00s)
+=== RUN   TestComputeWaves_LinearChain
+--- PASS: TestComputeWaves_LinearChain (0.00s)
+=== RUN   TestComputeWaves_Diamond
+--- PASS: TestComputeWaves_Diamond (0.00s)
+=== RUN   TestComputeWaves_MixedParallelSerial
+--- PASS: TestComputeWaves_MixedParallelSerial (0.00s)
+=== RUN   TestComputeWaves_ExcludesEpics
+--- PASS: TestComputeWaves_ExcludesEpics (0.00s)
+=== RUN   TestComputeWaves_ExcludesNonSlingable
+--- PASS: TestComputeWaves_ExcludesNonSlingable (0.00s)
+=== RUN   TestComputeWaves_DecisionBlocksTask
+--- PASS: TestComputeWaves_DecisionBlocksTask (0.00s)
+=== RUN   TestComputeWaves_ClosedDecisionDoesNotBlock
+--- PASS: TestComputeWaves_ClosedDecisionDoesNotBlock (0.00s)
+=== RUN   TestComputeWaves_ParentChildNotExecution
+--- PASS: TestComputeWaves_ParentChildNotExecution (0.00s)
+=== RUN   TestComputeWaves_EmptyDAG
+--- PASS: TestComputeWaves_EmptyDAG (0.00s)
+=== RUN   TestComputeWaves_GatedByDecision
+--- PASS: TestComputeWaves_GatedByDecision (0.00s)
+=== RUN   TestComputeWaves_GatedTransitive
+--- PASS: TestComputeWaves_GatedTransitive (0.00s)
+=== RUN   TestComputeWaves_ResolvedDecision
+--- PASS: TestComputeWaves_ResolvedDecision (0.00s)
+=== RUN   TestComputeWaves_TombstoneDecision
+--- PASS: TestComputeWaves_TombstoneDecision (0.00s)
+=== RUN   TestComputeWaves_GatedByEpic
+--- PASS: TestComputeWaves_GatedByEpic (0.00s)
+=== RUN   TestComputeWaves_AllGated
+--- PASS: TestComputeWaves_AllGated (0.00s)
+=== RUN   TestBuildConvoyDAG_MergeBlocks
+--- PASS: TestBuildConvoyDAG_MergeBlocks (0.00s)
+=== RUN   TestDetectOrphans_DecisionGatedNotOrphan
+--- PASS: TestDetectOrphans_DecisionGatedNotOrphan (0.00s)
+=== RUN   TestConvoyStageInput_EmptyArgs
+--- PASS: TestConvoyStageInput_EmptyArgs (0.00s)
+=== RUN   TestConvoyStageInput_FlagLikeArg
+--- PASS: TestConvoyStageInput_FlagLikeArg (0.00s)
+=== RUN   TestConvoyStageInput_ValidSingleArg
+--- PASS: TestConvoyStageInput_ValidSingleArg (0.00s)
+=== RUN   TestConvoyStageInput_ValidMultipleArgs
+--- PASS: TestConvoyStageInput_ValidMultipleArgs (0.00s)
+=== RUN   TestConvoyStageInput_ClassifyEpic
+--- PASS: TestConvoyStageInput_ClassifyEpic (0.00s)
+=== RUN   TestConvoyStageInput_ClassifyConvoy
+--- PASS: TestConvoyStageInput_ClassifyConvoy (0.00s)
+=== RUN   TestConvoyStageInput_ClassifyTask
+--- PASS: TestConvoyStageInput_ClassifyTask (0.00s)
+=== RUN   TestConvoyStageInput_MixedTypes
+--- PASS: TestConvoyStageInput_MixedTypes (0.00s)
+=== RUN   TestConvoyStageInput_MultipleEpicsError
+--- PASS: TestConvoyStageInput_MultipleEpicsError (0.00s)
+=== RUN   TestConvoyStageInput_SingleEpicOK
+--- PASS: TestConvoyStageInput_SingleEpicOK (0.00s)
+=== RUN   TestConvoyStageInput_MultipleTasksOK
+--- PASS: TestConvoyStageInput_MultipleTasksOK (0.00s)
+=== RUN   TestBuildDAG_BlocksCreateEdges
+--- PASS: TestBuildDAG_BlocksCreateEdges (0.00s)
+=== RUN   TestBuildDAG_ConditionalBlocksCreateEdges
+--- PASS: TestBuildDAG_ConditionalBlocksCreateEdges (0.00s)
+=== RUN   TestBuildDAG_WaitsForCreateEdges
+--- PASS: TestBuildDAG_WaitsForCreateEdges (0.00s)
+=== RUN   TestBuildDAG_ParentChildNoExecutionEdge
+--- PASS: TestBuildDAG_ParentChildNoExecutionEdge (0.00s)
+=== RUN   TestBuildDAG_RelatedTracksIgnored
+--- PASS: TestBuildDAG_RelatedTracksIgnored (0.00s)
+=== RUN   TestEpicWalk_CollectsAllDescendants
+--- PASS: TestEpicWalk_CollectsAllDescendants (0.01s)
+=== RUN   TestEpicWalk_NonexistentBeadErrors
+--- PASS: TestEpicWalk_NonexistentBeadErrors (0.00s)
+=== RUN   TestTaskListWalk_AnalyzesOnlyGiven
+--- PASS: TestTaskListWalk_AnalyzesOnlyGiven (0.00s)
+=== RUN   TestConvoyWalk_ReadsTrackedBeads
+--- PASS: TestConvoyWalk_ReadsTrackedBeads (0.00s)
+=== RUN   TestEpicWalk_CollectsDeps
+--- PASS: TestEpicWalk_CollectsDeps (0.01s)
+=== RUN   TestRenderWaveTable_IncludesBlockers
+--- PASS: TestRenderWaveTable_IncludesBlockers (0.00s)
+=== RUN   TestRenderWaveTable_SummaryLine
+--- PASS: TestRenderWaveTable_SummaryLine (0.00s)
+=== RUN   TestRenderWaveTable_Empty
+--- PASS: TestRenderWaveTable_Empty (0.00s)
+=== RUN   TestRenderWaveTable_MultipleRigs
+--- PASS: TestRenderWaveTable_MultipleRigs (0.00s)
+=== RUN   TestRenderWaveTable_UTF8Truncation
+--- PASS: TestRenderWaveTable_UTF8Truncation (0.00s)
+=== RUN   TestCategorize_CycleIsError
+--- PASS: TestCategorize_CycleIsError (0.00s)
+=== RUN   TestCategorize_NoRigIsError
+--- PASS: TestCategorize_NoRigIsError (0.00s)
+=== RUN   TestChooseStatus_Ready
+--- PASS: TestChooseStatus_Ready (0.00s)
+=== RUN   TestChooseStatus_Warnings
+--- PASS: TestChooseStatus_Warnings (0.00s)
+=== RUN   TestChooseStatus_Errors
+--- PASS: TestChooseStatus_Errors (0.00s)
+=== RUN   TestRenderErrors_IncludesFixAndIDs
+--- PASS: TestRenderErrors_IncludesFixAndIDs (0.00s)
+=== RUN   TestErrorDetection_CycleDetected
+--- PASS: TestErrorDetection_CycleDetected (0.00s)
+=== RUN   TestErrorDetection_NoRig
+--- PASS: TestErrorDetection_NoRig (0.00s)
+=== RUN   TestErrorDetection_Clean
+--- PASS: TestErrorDetection_Clean (0.00s)
+=== RUN   TestRenderDAGTree_TaskListFlat
+--- PASS: TestRenderDAGTree_TaskListFlat (0.00s)
+=== RUN   TestRenderDAGTree_EpicTree
+--- PASS: TestRenderDAGTree_EpicTree (0.00s)
+=== RUN   TestRenderDAGTree_NodeInfo
+--- PASS: TestRenderDAGTree_NodeInfo (0.00s)
+=== RUN   TestRenderDAGTree_BlockedShowsBlockers
+--- PASS: TestRenderDAGTree_BlockedShowsBlockers (0.00s)
+=== RUN   TestRenderDAGTree_NestedEpic
+--- PASS: TestRenderDAGTree_NestedEpic (0.00s)
+=== RUN   TestRenderDAGTree_OutputOrdering
+--- PASS: TestRenderDAGTree_OutputOrdering (0.00s)
+=== RUN   TestDetectWarnings_ParkedRig
+--- PASS: TestDetectWarnings_ParkedRig (0.00s)
+=== RUN   TestDetectWarnings_DockedRig
+--- PASS: TestDetectWarnings_DockedRig (0.00s)
+=== RUN   TestDetectWarnings_OrphanEpicInput
+--- PASS: TestDetectWarnings_OrphanEpicInput (0.00s)
+=== RUN   TestDetectWarnings_MissingBranch
+--- PASS: TestDetectWarnings_MissingBranch (0.00s)
+=== RUN   TestDetectWarnings_CrossRig
+--- PASS: TestDetectWarnings_CrossRig (0.00s)
+=== RUN   TestDetectWarnings_Capacity
+--- PASS: TestDetectWarnings_Capacity (0.00s)
+=== RUN   TestDetectWarnings_NoOrphansForTaskList
+--- PASS: TestDetectWarnings_NoOrphansForTaskList (0.00s)
+=== RUN   TestRenderWarnings_Format
+--- PASS: TestRenderWarnings_Format (0.00s)
+=== RUN   TestDetectWarnings_Clean
+--- PASS: TestDetectWarnings_Clean (0.00s)
+=== RUN   TestRenderWarnings_Empty
+--- PASS: TestRenderWarnings_Empty (0.00s)
+=== RUN   TestCreateStagedConvoy_CleanReady
