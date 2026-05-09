@@ -2237,3 +2237,91 @@ Use "gt escalate [command] --help" for more information about a command.
 ⚠ Warning: rigs.json not found (checked mayor/rigs.json and town root). PrefixRegistry is empty — session parsing will fail. Run 'gt doctor' or restore rigs.json.
 ⚠ gt binary is 16 commits behind (built from 19b657d9, repo at e1c9015e1762)
     → Run 'make install' in gastown repo to update
+Warning: couldn't set done-intent label on gt-gastown-polecat-max: bd update gt-gastown-polecat-max --add-label=done-intent:DEFERRED:1778322780: Warning: dolt_server_port in metadata.json is deprecated (can cause cross-project data leakage).
+  The port file (.beads/dolt-server.port) is now the primary source.
+  Remove dolt_server_port from .beads/metadata.json to silence this warning.
+Warning: dolt_server_port in metadata.json is deprecated (can cause cross-project data leakage).
+  The port file (.beads/dolt-server.port) is now the primary source.
+  Remove dolt_server_port from .beads/metadata.json to silence this warning.
+Error: failed to open database: Dolt server unreachable at 127.0.0.1:3307 and auto-start failed: Dolt server is not running on port 3307, and auto-start is suppressed because the server is externally managed (dolt.auto-start: false or explicit port configured).
+
+Start the external server, or enable auto-start to allow bd to manage the server.
+  To start manually: bd dolt start
+  To check status: bd dolt status
+
+To start manually: bd dolt start
+To disable auto-start: set dolt.auto-start: false in .beads/config.yaml
+⚠ Warning: could not write completion metadata to agent bead: bd show gt-gastown-polecat-max --json: Warning: dolt_server_port in metadata.json is deprecated (can cause cross-project data leakage).
+  The port file (.beads/dolt-server.port) is now the primary source.
+  Remove dolt_server_port from .beads/metadata.json to silence this warning.
+Warning: dolt_server_port in metadata.json is deprecated (can cause cross-project data leakage).
+  The port file (.beads/dolt-server.port) is now the primary source.
+  Remove dolt_server_port from .beads/metadata.json to silence this warning.
+{
+  "error": "failed to open database: Dolt server unreachable at 127.0.0.1:3307 and auto-start failed: Dolt server is not running on port 3307, and auto-start is suppressed because the server is externally managed (dolt.auto-start: false or explicit port configured).\n\nStart the external server, or enable auto-start to allow bd to manage the server.\n  To start manually: bd dolt start\n  To check status: bd dolt status\n\nTo start manually: bd dolt start\nTo disable auto-start: set dolt.auto-start: false in .beads/config.yaml",
+  "schema_version": 1
+}
+Warning: failed to nudge witness gt-gastown-witness: no tmux server running
+Warning: couldn't write checkpoint witness-notified on gt-gastown-polecat-max: bd update gt-gastown-polecat-max --add-label=done-cp:witness-notified:ok:1778322780: Warning: dolt_server_port in metadata.json is deprecated (can cause cross-project data leakage).
+  The port file (.beads/dolt-server.port) is now the primary source.
+  Remove dolt_server_port from .beads/metadata.json to silence this warning.
+Warning: dolt_server_port in metadata.json is deprecated (can cause cross-project data leakage).
+  The port file (.beads/dolt-server.port) is now the primary source.
+  Remove dolt_server_port from .beads/metadata.json to silence this warning.
+Error: failed to open database: Dolt server unreachable at 127.0.0.1:3307 and auto-start failed: Dolt server is not running on port 3307, and auto-start is suppressed because the server is externally managed (dolt.auto-start: false or explicit port configured).
+
+Start the external server, or enable auto-start to allow bd to manage the server.
+  To start manually: bd dolt start
+  To check status: bd dolt status
+
+To start manually: bd dolt start
+To disable auto-start: set dolt.auto-start: false in .beads/config.yaml
+Warning: couldn't clear hook_bead on gt-gastown-polecat-max: bd show gt-gastown-polecat-max --json: Warning: dolt_server_port in metadata.json is deprecated (can cause cross-project data leakage).
+  The port file (.beads/dolt-server.port) is now the primary source.
+  Remove dolt_server_port from .beads/metadata.json to silence this warning.
+Warning: dolt_server_port in metadata.json is deprecated (can cause cross-project data leakage).
+  The port file (.beads/dolt-server.port) is now the primary source.
+  Remove dolt_server_port from .beads/metadata.json to silence this warning.
+{
+  "error": "failed to open database: Dolt server unreachable at 127.0.0.1:3307 and auto-start failed: Dolt server is not running on port 3307, and auto-start is suppressed because the server is externally managed (dolt.auto-start: false or explicit port configured).\n\nStart the external server, or enable auto-start to allow bd to manage the server.\n  To start manually: bd dolt start\n  To check status: bd dolt status\n\nTo start manually: bd dolt start\nTo disable auto-start: set dolt.auto-start: false in .beads/config.yaml",
+  "schema_version": 1
+}
+Warning: wisp purge failed: bd purge --force --quiet: Warning: dolt_server_port in metadata.json is deprecated (can cause cross-project data leakage).
+  The port file (.beads/dolt-server.port) is now the primary source.
+  Remove dolt_server_port from .beads/metadata.json to silence this warning.
+Warning: dolt_server_port in metadata.json is deprecated (can cause cross-project data leakage).
+  The port file (.beads/dolt-server.port) is now the primary source.
+  Remove dolt_server_port from .beads/metadata.json to silence this warning.
+Error: failed to open database: Dolt server unreachable at 127.0.0.1:3307 and auto-start failed: Dolt server is not running on port 3307, and auto-start is suppressed because the server is externally managed (dolt.auto-start: false or explicit port configured).
+
+Start the external server, or enable auto-start to allow bd to manage the server.
+  To start manually: bd dolt start
+  To check status: bd dolt status
+
+To start manually: bd dolt start
+To disable auto-start: set dolt.auto-start: false in .beads/config.yaml
+Warning: couldn't set agent gt-gastown-polecat-max to idle: bd show gt-gastown-polecat-max --json: Warning: dolt_server_port in metadata.json is deprecated (can cause cross-project data leakage).
+  The port file (.beads/dolt-server.port) is now the primary source.
+  Remove dolt_server_port from .beads/metadata.json to silence this warning.
+Warning: dolt_server_port in metadata.json is deprecated (can cause cross-project data leakage).
+  The port file (.beads/dolt-server.port) is now the primary source.
+  Remove dolt_server_port from .beads/metadata.json to silence this warning.
+{
+  "error": "failed to open database: Dolt server unreachable at 127.0.0.1:3307 and auto-start failed: Dolt server is not running on port 3307, and auto-start is suppressed because the server is externally managed (dolt.auto-start: false or explicit port configured).\n\nStart the external server, or enable auto-start to allow bd to manage the server.\n  To start manually: bd dolt start\n  To check status: bd dolt status\n\nTo start manually: bd dolt start\nTo disable auto-start: set dolt.auto-start: false in .beads/config.yaml",
+  "schema_version": 1
+}
+Warning: couldn't update agent gt-gastown-polecat-max cleanup status: bd show gt-gastown-polecat-max --json: Warning: dolt_server_port in metadata.json is deprecated (can cause cross-project data leakage).
+  The port file (.beads/dolt-server.port) is now the primary source.
+  Remove dolt_server_port from .beads/metadata.json to silence this warning.
+Warning: dolt_server_port in metadata.json is deprecated (can cause cross-project data leakage).
+  The port file (.beads/dolt-server.port) is now the primary source.
+  Remove dolt_server_port from .beads/metadata.json to silence this warning.
+{
+  "error": "failed to open database: Dolt server unreachable at 127.0.0.1:3307 and auto-start failed: Dolt server is not running on port 3307, and auto-start is suppressed because the server is externally managed (dolt.auto-start: false or explicit port configured).\n\nStart the external server, or enable auto-start to allow bd to manage the server.\n  To start manually: bd dolt start\n  To check status: bd dolt status\n\nTo start manually: bd dolt start\nTo disable auto-start: set dolt.auto-start: false in .beads/config.yaml",
+  "schema_version": 1
+}
+⚠ Warning: uncommitted changes still present — skipping worktree sync to preserve work
+=== RUN   TestHandoffPolecatEnvCheck/compound_polecat_role_is_redirected
+⚠ Warning: rigs.json not found (checked mayor/rigs.json and town root). PrefixRegistry is empty — session parsing will fail. Run 'gt doctor' or restore rigs.json.
+⚠ gt binary is 17 commits behind (built from 19b657d9, repo at 106bddf66574)
+    → Run 'make install' in gastown repo to update
