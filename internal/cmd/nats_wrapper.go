@@ -153,5 +153,10 @@ func buildChildEnv() []string {
 	if !hasPath {
 		env = append(env, "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin")
 	}
+
+	// Inject session ID so that gt prime (and others) can find the current session
+	// without relying on tmux-specific environment detection.
+	env = append(env, "GT_SESSION_ID="+natsWrapperSessionID)
+
 	return env
 }

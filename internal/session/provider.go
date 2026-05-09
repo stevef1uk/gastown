@@ -10,6 +10,12 @@ import (
 	"github.com/steveyegge/gastown/internal/tmux"
 )
 
+var (
+	ErrNoServer        = fmt.Errorf("no session server running")
+	ErrSessionExists   = fmt.Errorf("session already exists")
+	ErrSessionNotFound = fmt.Errorf("session not found")
+)
+
 // SessionInfo holds provider-agnostic information about a session.
 type SessionInfo struct {
 	Name         string
@@ -179,6 +185,28 @@ type Provider interface {
 	// CheckSessionHealth checks if the session is running and healthy.
 	CheckSessionHealth(ctx context.Context, sessionID string, maxInactivity time.Duration) tmux.ZombieStatus
 
+	// SendNotificationBanner sends a visible notification banner to the session.
+	// For tmux, this is a visible top-of-pane banner.
+	// For other providers, it may fall back to a standard nudge.
+	SendNotificationBanner(ctx context.Context, sessionID, from, subject string) error
+
 	// GetLastActivity returns the time of the last recorded activity in the session.
 	GetLastActivity(ctx context.Context, sessionID string) (time.Time, error)
+}
+
+// ResolveCurrentSession returns the ID of the current session by checking
+// transport-specific signals (GT_SESSION_ID env var, TMUX env var, etc.).
+func ResolveCurrentSession(sp Provider) (string, error) {
+	// 1. Check for explicit session ID in environment (set by nats-wrapper or manual)
+	if id := os.Getenv("GT_SESSION_ID"); id != "" {
+		return id, nil
+	}
+
+	// 2. Provider-specific detection
+	// For tmux, this detects the current pane's session.
+	if tp, ok := sp.(*TmuxProvider); ok {
+		return tp.Tmux().ResolveCurrentSession()
+	}
+
+	return "", nil
 }

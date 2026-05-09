@@ -361,7 +361,7 @@ func (p *NatsProvider) NudgeSession(ctx context.Context, sessionID, message, sen
 	if err := nudge.Enqueue(p.townRoot, sessionID, nudge.QueuedNudge{
 		Sender:    sender,
 		Message:   message,
-		Priority:  nudge.PriorityUrgent,
+		Priority:  nudge.PriorityNormal,
 		Timestamp: time.Now(),
 	}); err != nil {
 		return fmt.Errorf("queuing nudge: %w", err)
@@ -608,6 +608,11 @@ func (p *NatsProvider) SendKeysDebounced(ctx context.Context, sessionID string, 
 }
 
 // GetSessionInfo returns provider-agnostic session metadata.
+func (p *NatsProvider) SendNotificationBanner(ctx context.Context, sessionID, from, subject string) error {
+	msg := fmt.Sprintf("📬 NEW MAIL from %s: %s", from, subject)
+	return p.NudgeSession(ctx, sessionID, msg, "system")
+}
+
 func (p *NatsProvider) GetSessionInfo(ctx context.Context, sessionID string) (*SessionInfo, error) {
 	exists, err := p.Exists(ctx, sessionID)
 	if err != nil {

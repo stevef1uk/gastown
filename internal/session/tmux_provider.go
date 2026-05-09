@@ -67,6 +67,10 @@ func (p *TmuxProvider) NudgeSession(ctx context.Context, sessionID, message, sen
 	return p.t.NudgeSessionWithOpts(sessionID, prefixed, opts)
 }
 
+func (p *TmuxProvider) SendNotificationBanner(ctx context.Context, sessionID, from, subject string) error {
+	return p.t.SendNotificationBanner(sessionID, from, subject)
+}
+
 func (p *TmuxProvider) GetEnvironment(ctx context.Context, sessionID string) (map[string]string, error) {
 	// Tmux doesn't expose full env, return empty map for now
 	return make(map[string]string), nil

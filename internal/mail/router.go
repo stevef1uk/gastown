@@ -17,7 +17,6 @@ import (
 	"github.com/steveyegge/gastown/internal/nudge"
 	"github.com/steveyegge/gastown/internal/session"
 	"github.com/steveyegge/gastown/internal/telemetry"
-	"github.com/steveyegge/gastown/internal/tmux"
 	"github.com/steveyegge/gastown/internal/workspace"
 )
 
@@ -41,7 +40,6 @@ const DefaultIdleNotifyTimeout = 3 * time.Second
 type Router struct {
 	workDir  string // fallback directory to run bd commands in
 	townRoot string // town root directory (e.g., ~/gt)
-	tmux     *tmux.Tmux
 
 	// IdleNotifyTimeout controls how long to wait for a session to become
 	// idle before falling back to a queued nudge. Zero uses the default.
@@ -60,7 +58,6 @@ func NewRouter(workDir string) *Router {
 	return &Router{
 		workDir:  workDir,
 		townRoot: townRoot,
-		tmux:     tmux.NewTmux(),
 	}
 }
 
@@ -69,7 +66,6 @@ func NewRouterWithTownRoot(workDir, townRoot string) *Router {
 	return &Router{
 		workDir:  workDir,
 		townRoot: townRoot,
-		tmux:     tmux.NewTmux(),
 	}
 }
 
@@ -1580,7 +1576,7 @@ func (r *Router) GetMailbox(address string) (*Mailbox, error) {
 	return NewMailboxFromAddress(address, workDir), nil
 }
 
-// notifyRecipient sends a notification to a recipient's tmux session.
+// notifyRecipient sends a notification to a recipient's session.
 //
 // Notification strategy (idle-aware):
 //  1. If the session is idle (prompt visible), send an immediate nudge.
@@ -1612,62 +1608,42 @@ func (r *Router) notifyRecipient(msg *Message) error {
 
 func (r *Router) deliverMailToSessions(msg *Message, sessionIDs []string) error {
 	sp := session.GetDefaultProvider(r.townRoot)
-	if _, isTmux := sp.(*session.TmuxProvider); !isTmux {
-		// For non-tmux providers (NATS, ACP), we use the provider's NudgeSession
-		// implementation directly. It handles transport-specific delivery
-		// (e.g. NATS publish) plus cooperative queuing for idle agents.
-		notification := formatNotificationMessage(msg)
-		for _, sessionID := range sessionIDs {
-			_ = sp.NudgeSession(context.Background(), sessionID, notification, msg.From)
-			r.enqueueReplyReminder(msg, sessionID)
-		}
-		return nil
-	}
 
-	// Tmux-specific delivery logic with Wait-Idle support
+	// Determine notification timeout
 	timeout := r.IdleNotifyTimeout
 	if timeout == 0 {
 		timeout = DefaultIdleNotifyTimeout
 	}
 
 	// Try each possible session ID until we find one that exists.
-	// This handles the ambiguity where canonical addresses (rig/name) don't
-	// distinguish between crew workers (gt-rig-crew-name) and polecats (gt-rig-name).
 	for _, sessionID := range sessionIDs {
-		hasSession, err := r.tmux.HasSession(sessionID)
-		if err != nil || !hasSession {
+		exists, err := sp.Exists(context.Background(), sessionID)
+		if err != nil || !exists {
 			continue
 		}
 
 		// Overseer is a human operator - use a visible banner instead of NudgeSession
-		// (which types into Claude's input and would disrupt the human's terminal).
+		// (which might type into the user's terminal).
 		if msg.To == "overseer" {
-			return r.tmux.SendNotificationBanner(sessionID, msg.From, msg.Subject)
+			return sp.SendNotificationBanner(context.Background(), sessionID, msg.From, msg.Subject)
 		}
 
 		notification := formatNotificationMessage(msg)
 		priority := nudgePriorityForMailPriority(msg.Priority)
 
 		// Wait-idle-first delivery: try direct nudge if the agent is idle,
-		// fall back to cooperative queue if busy. WaitForIdle requires 2
-		// consecutive idle polls (prompt visible + no "esc to interrupt"
-		// in the status bar) to distinguish genuine idle from brief
-		// inter-tool-call gaps. See: https://github.com/steveyegge/gastown/issues/2032
-		waitErr := r.tmux.WaitForIdle(sessionID, timeout)
+		// fall back to cooperative queue if busy.
+		waitErr := session.WaitForIdle(sp, sessionID, timeout)
 		if waitErr == nil {
 			// Agent is idle — deliver directly for immediate wakeup.
-			if err := r.tmux.NudgeSession(sessionID, notification); err == nil {
+			if err := sp.NudgeSession(context.Background(), sessionID, notification, msg.From); err == nil {
 				r.enqueueReplyReminder(msg, sessionID)
 				return nil
-			} else if errors.Is(err, tmux.ErrSessionNotFound) {
+			} else if errors.Is(err, session.ErrSessionNotFound) {
 				continue
-			} else if errors.Is(err, tmux.ErrNoServer) {
-				return nil
 			}
-		} else if errors.Is(waitErr, tmux.ErrSessionNotFound) {
+		} else if errors.Is(waitErr, session.ErrSessionNotFound) {
 			continue
-		} else if errors.Is(waitErr, tmux.ErrNoServer) {
-			return nil
 		} else if r.townRoot != "" {
 			// Timeout (agent busy) — queue for cooperative delivery
 			// at the next turn boundary.
@@ -1685,14 +1661,14 @@ func (r *Router) deliverMailToSessions(msg *Message, sessionIDs []string) error 
 			return nil
 		}
 		// No town root available — last resort direct delivery.
-		err = r.tmux.NudgeSession(sessionID, notification)
+		err = sp.NudgeSession(context.Background(), sessionID, notification, msg.From)
 		if err == nil {
 			r.enqueueReplyReminder(msg, sessionID)
 		}
 		return err
 	}
-	// No tmux session found - enqueue nudge for ACP/propeller delivery
-	// This handles headless ACP mode where there's no tmux session
+
+	// No active session found - enqueue nudge for background agents (e.g. headless ACP)
 	if r.townRoot != "" && len(sessionIDs) > 0 {
 		notification := formatNotificationMessage(msg)
 		return nudge.Enqueue(r.townRoot, sessionIDs[0], nudge.QueuedNudge{
@@ -1793,7 +1769,7 @@ func (r *Router) ClearReplyReminders(address, threadID string) error {
 }
 
 // IsRecipientMuted checks if a mail recipient has DND/muted notifications enabled.
-// Returns true if the recipient is muted and should not receive tmux nudges.
+// Returns true if the recipient is muted and should not receive session nudges.
 // Fails open (returns false) if the agent bead cannot be found or the town root is not set.
 func (r *Router) IsRecipientMuted(address string) bool {
 	if r.townRoot == "" {
@@ -1803,7 +1779,7 @@ func (r *Router) IsRecipientMuted(address string) bool {
 }
 
 // isRecipientMuted checks if a mail recipient has DND/muted notifications enabled.
-// Returns true if the recipient is muted and should not receive tmux nudges.
+// Returns true if the recipient is muted and should not receive session nudges.
 // Fails open (returns false) if the agent bead cannot be found.
 func (r *Router) isRecipientMuted(address string) bool {
 	agentBeadID := addressToAgentBeadID(address)
@@ -1858,7 +1834,7 @@ func addressToAgentBeadID(address string) string {
 	}
 }
 
-// AddressToSessionIDs converts a mail address to possible tmux session IDs.
+// AddressToSessionIDs converts a mail address to possible session IDs.
 // Returns multiple candidates since the canonical address format (rig/name)
 // doesn't distinguish between crew workers (gt-rig-crew-name) and polecats
 // (gt-rig-name). The caller should try each and use the one that exists.
