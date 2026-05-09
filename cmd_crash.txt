@@ -1371,3 +1371,869 @@ Convoy created: hq-cv-jxp3c (status: staged_ready)
 === RUN   TestRenderWarnings_Empty
 --- PASS: TestRenderWarnings_Empty (0.00s)
 === RUN   TestCreateStagedConvoy_CleanReady
+--- PASS: TestCreateStagedConvoy_CleanReady (7.62s)
+=== RUN   TestCreateStagedConvoy_TracksOnlySlingable
+--- PASS: TestCreateStagedConvoy_TracksOnlySlingable (7.62s)
+=== RUN   TestCreateStagedConvoy_DescriptionFormat
+--- PASS: TestCreateStagedConvoy_DescriptionFormat (7.48s)
+=== RUN   TestCreateStagedConvoy_IDFormat
+--- PASS: TestCreateStagedConvoy_IDFormat (7.35s)
+=== RUN   TestRestageConvoy_UpdatesInPlace
+--- PASS: TestRestageConvoy_UpdatesInPlace (0.00s)
+=== RUN   TestRestageConvoy_DetectionLogic
+--- PASS: TestRestageConvoy_DetectionLogic (0.00s)
+=== RUN   TestRestageConvoy_UpdatesStatusToWarnings
+--- PASS: TestRestageConvoy_UpdatesStatusToWarnings (0.00s)
+=== RUN   TestJSONOutput_ValidWithAllFields
+--- PASS: TestJSONOutput_ValidWithAllFields (0.00s)
+=== RUN   TestJSONOutput_ErrorsPopulatedOnCycle
+--- PASS: TestJSONOutput_ErrorsPopulatedOnCycle (0.00s)
+=== RUN   TestJSONOutput_ConvoyIDEmptyOnErrors
+--- PASS: TestJSONOutput_ConvoyIDEmptyOnErrors (0.00s)
+=== RUN   TestJSONFlag_RegisteredOnCommand
+--- PASS: TestJSONFlag_RegisteredOnCommand (0.00s)
+=== RUN   TestJSONOutput_NoHumanReadableText
+--- PASS: TestJSONOutput_NoHumanReadableText (7.62s)
+=== RUN   TestJSONOutput_ErrorsReturnNonZeroExit
+--- PASS: TestJSONOutput_ErrorsReturnNonZeroExit (0.00s)
+=== RUN   TestJSONOutput_FullStructureSnapshot
+--- PASS: TestJSONOutput_FullStructureSnapshot (0.00s)
+=== RUN   TestBuildTreeJSON_FlatInput
+--- PASS: TestBuildTreeJSON_FlatInput (0.00s)
+=== RUN   TestBuildTreeJSON_EpicInput
+--- PASS: TestBuildTreeJSON_EpicInput (0.00s)
+=== RUN   TestBuildFindingsJSON_Empty
+--- PASS: TestBuildFindingsJSON_Empty (0.00s)
+=== RUN   TestBuildWavesJSON_TaskDetails
+--- PASS: TestBuildWavesJSON_TaskDetails (0.00s)
+=== RUN   TestAppendValidationWave_CreatesCapstoneWave
+--- PASS: TestAppendValidationWave_CreatesCapstoneWave (0.00s)
+=== RUN   TestAppendValidationWave_NoSlingableBeads
+--- PASS: TestAppendValidationWave_NoSlingableBeads (0.00s)
+=== RUN   TestStrandedScanExcludesStagedConvoys
+--- PASS: TestStrandedScanExcludesStagedConvoys (0.00s)
+=== RUN   TestStrandedScanQueryShape
+--- PASS: TestStrandedScanQueryShape (0.00s)
+=== RUN   TestIsReadyIssue_BlockingAndStatus
+=== RUN   TestIsReadyIssue_BlockingAndStatus/closed_issue_never_ready
+=== RUN   TestIsReadyIssue_BlockingAndStatus/blocked_open_issue_not_ready
+=== RUN   TestIsReadyIssue_BlockingAndStatus/open_unassigned_issue_ready
+=== RUN   TestIsReadyIssue_BlockingAndStatus/non-open_unassigned_issue_treated_ready_for_recovery
+--- PASS: TestIsReadyIssue_BlockingAndStatus (0.00s)
+    --- PASS: TestIsReadyIssue_BlockingAndStatus/closed_issue_never_ready (0.00s)
+    --- PASS: TestIsReadyIssue_BlockingAndStatus/blocked_open_issue_not_ready (0.00s)
+    --- PASS: TestIsReadyIssue_BlockingAndStatus/open_unassigned_issue_ready (0.00s)
+    --- PASS: TestIsReadyIssue_BlockingAndStatus/non-open_unassigned_issue_treated_ready_for_recovery (0.00s)
+=== RUN   TestApplyFreshIssueDetails_SetsBlockedFlag
+--- PASS: TestApplyFreshIssueDetails_SetsBlockedFlag (0.00s)
+=== RUN   TestIssueDetailsIsBlocked
+=== RUN   TestIssueDetailsIsBlocked/blocked_by_count_marks_blocked
+=== RUN   TestIssueDetailsIsBlocked/blocked_by_list_marks_blocked
+=== RUN   TestIssueDetailsIsBlocked/open_blocks_dependency_marks_blocked
+=== RUN   TestIssueDetailsIsBlocked/closed_blocks_dependency_does_not_mark_blocked
+=== RUN   TestIssueDetailsIsBlocked/non-blocking_dependency_does_not_mark_blocked
+--- PASS: TestIssueDetailsIsBlocked (0.00s)
+    --- PASS: TestIssueDetailsIsBlocked/blocked_by_count_marks_blocked (0.00s)
+    --- PASS: TestIssueDetailsIsBlocked/blocked_by_list_marks_blocked (0.00s)
+    --- PASS: TestIssueDetailsIsBlocked/open_blocks_dependency_marks_blocked (0.00s)
+    --- PASS: TestIssueDetailsIsBlocked/closed_blocks_dependency_does_not_mark_blocked (0.00s)
+    --- PASS: TestIssueDetailsIsBlocked/non-blocking_dependency_does_not_mark_blocked (0.00s)
+=== RUN   TestIsSlingableBead
+=== RUN   TestIsSlingableBead/rig_bead_is_slingable
+=== RUN   TestIsSlingableBead/another_rig_bead_is_slingable
+=== RUN   TestIsSlingableBead/town-level_bead_not_slingable
+=== RUN   TestIsSlingableBead/town-level_convoy_not_slingable
+=== RUN   TestIsSlingableBead/unknown_prefix_not_slingable
+=== RUN   TestIsSlingableBead/no_prefix_assumes_slingable
+=== RUN   TestIsSlingableBead/empty_ID_assumes_slingable
+--- PASS: TestIsSlingableBead (0.00s)
+    --- PASS: TestIsSlingableBead/rig_bead_is_slingable (0.00s)
+    --- PASS: TestIsSlingableBead/another_rig_bead_is_slingable (0.00s)
+    --- PASS: TestIsSlingableBead/town-level_bead_not_slingable (0.00s)
+    --- PASS: TestIsSlingableBead/town-level_convoy_not_slingable (0.00s)
+    --- PASS: TestIsSlingableBead/unknown_prefix_not_slingable (0.00s)
+    --- PASS: TestIsSlingableBead/no_prefix_assumes_slingable (0.00s)
+    --- PASS: TestIsSlingableBead/empty_ID_assumes_slingable (0.00s)
+=== RUN   TestDagBuilder_BasicSetup
+--- PASS: TestDagBuilder_BasicSetup (0.00s)
+=== RUN   TestDagBuilder_EpicWithChildren
+--- PASS: TestDagBuilder_EpicWithChildren (0.00s)
+=== RUN   TestWaveAssert_BasicUsage
+--- PASS: TestWaveAssert_BasicUsage (0.00s)
+=== RUN   TestWaveAssert_WrongWaveFails
+--- PASS: TestWaveAssert_WrongWaveFails (0.00s)
+=== RUN   TestWaveAssert_EmptyWaves
+--- PASS: TestWaveAssert_EmptyWaves (0.00s)
+=== RUN   TestWaveAssert_Integration_WithComputeWaves
+--- PASS: TestWaveAssert_Integration_WithComputeWaves (0.00s)
+=== RUN   TestEnsureKnownConvoyStatus
+=== PAUSE TestEnsureKnownConvoyStatus
+=== RUN   TestValidateConvoyStatusTransition
+=== PAUSE TestValidateConvoyStatusTransition
+=== RUN   TestEnsureKnownConvoyStatus_Staged
+=== PAUSE TestEnsureKnownConvoyStatus_Staged
+=== RUN   TestValidateConvoyStatusTransition_Staged
+=== PAUSE TestValidateConvoyStatusTransition_Staged
+=== RUN   TestDeriveSessionName
+=== RUN   TestDeriveSessionName/polecat_session
+=== RUN   TestDeriveSessionName/crew_session
+=== RUN   TestDeriveSessionName/witness_session
+=== RUN   TestDeriveSessionName/refinery_session
+=== RUN   TestDeriveSessionName/mayor_session
+=== RUN   TestDeriveSessionName/deacon_session
+=== RUN   TestDeriveSessionName/mayor_session_without_GT_TOWN
+=== RUN   TestDeriveSessionName/deacon_session_without_GT_TOWN
+=== RUN   TestDeriveSessionName/mayor_with_stale_GT_POLECAT_is_NOT_polecat_session
+=== RUN   TestDeriveSessionName/compound_witness_with_stale_GT_POLECAT_is_NOT_polecat_session
+=== RUN   TestDeriveSessionName/compound_refinery_with_stale_GT_POLECAT_is_NOT_polecat_session
+=== RUN   TestDeriveSessionName/compound_crew_with_stale_GT_POLECAT_is_NOT_polecat_session
+=== RUN   TestDeriveSessionName/compound_polecat_role_uses_GT_POLECAT_for_session_name
+=== RUN   TestDeriveSessionName/no_env_vars
+--- PASS: TestDeriveSessionName (0.00s)
+    --- PASS: TestDeriveSessionName/polecat_session (0.00s)
+    --- PASS: TestDeriveSessionName/crew_session (0.00s)
+    --- PASS: TestDeriveSessionName/witness_session (0.00s)
+    --- PASS: TestDeriveSessionName/refinery_session (0.00s)
+    --- PASS: TestDeriveSessionName/mayor_session (0.00s)
+    --- PASS: TestDeriveSessionName/deacon_session (0.00s)
+    --- PASS: TestDeriveSessionName/mayor_session_without_GT_TOWN (0.00s)
+    --- PASS: TestDeriveSessionName/deacon_session_without_GT_TOWN (0.00s)
+    --- PASS: TestDeriveSessionName/mayor_with_stale_GT_POLECAT_is_NOT_polecat_session (0.00s)
+    --- PASS: TestDeriveSessionName/compound_witness_with_stale_GT_POLECAT_is_NOT_polecat_session (0.00s)
+    --- PASS: TestDeriveSessionName/compound_refinery_with_stale_GT_POLECAT_is_NOT_polecat_session (0.00s)
+    --- PASS: TestDeriveSessionName/compound_crew_with_stale_GT_POLECAT_is_NOT_polecat_session (0.00s)
+    --- PASS: TestDeriveSessionName/compound_polecat_role_uses_GT_POLECAT_for_session_name (0.00s)
+    --- PASS: TestDeriveSessionName/no_env_vars (0.00s)
+=== RUN   TestRunCostsRecord_NoSession_ReturnsNil
+--- PASS: TestRunCostsRecord_NoSession_ReturnsNil (0.00s)
+=== RUN   TestCostDigestPayload_ExcludesSessions
+--- PASS: TestCostDigestPayload_ExcludesSessions (0.00s)
+=== RUN   TestGetClaudeProjectDir_Default
+--- PASS: TestGetClaudeProjectDir_Default (0.00s)
+=== RUN   TestGetClaudeProjectDir_RespectsEnvVar
+--- PASS: TestGetClaudeProjectDir_RespectsEnvVar (0.00s)
+=== RUN   TestQuerySessionEvents_FindsEventsFromAllLocations
+    costs_workdir_test.go:30: bd CLI 0.47.2 bug: database writes don't commit
+--- SKIP: TestQuerySessionEvents_FindsEventsFromAllLocations (0.00s)
+=== RUN   TestUpsertCrewAgentBead
+=== RUN   TestUpsertCrewAgentBead/uses_create_or_reopen_with_canonical_crew_metadata
+=== RUN   TestUpsertCrewAgentBead/propagates_upsert_errors
+--- PASS: TestUpsertCrewAgentBead (0.00s)
+    --- PASS: TestUpsertCrewAgentBead/uses_create_or_reopen_with_canonical_crew_metadata (0.00s)
+    --- PASS: TestUpsertCrewAgentBead/propagates_upsert_errors (0.00s)
+=== RUN   TestCrewSessionName
+=== RUN   TestCrewSessionName/basic
+=== RUN   TestCrewSessionName/beads_rig
+--- PASS: TestCrewSessionName (0.00s)
+    --- PASS: TestCrewSessionName/basic (0.00s)
+    --- PASS: TestCrewSessionName/beads_rig (0.00s)
+=== RUN   TestParseCrewSessionName
+    crew_helpers_test.go:43: parseCrewSessionName("gt-crew-tester") returned ok=false (no PrefixRegistry in test context)
+--- SKIP: TestParseCrewSessionName (0.00s)
+=== RUN   TestParseCrewSessionName_Invalid
+=== RUN   TestParseCrewSessionName_Invalid/empty
+=== RUN   TestParseCrewSessionName_Invalid/random
+=== RUN   TestParseCrewSessionName_Invalid/no_crew_marker
+--- PASS: TestParseCrewSessionName_Invalid (0.00s)
+    --- PASS: TestParseCrewSessionName_Invalid/empty (0.00s)
+    --- PASS: TestParseCrewSessionName_Invalid/random (0.00s)
+    --- PASS: TestParseCrewSessionName_Invalid/no_crew_marker (0.00s)
+=== RUN   TestRunCrewList_PositionalRigArg
+=== RUN   TestRunCrewList_PositionalRigArg/positional_arg_sets_rig_filter
+=== RUN   TestRunCrewList_PositionalRigArg/positional_arg_conflicts_with_--rig_flag
+=== RUN   TestRunCrewList_PositionalRigArg/positional_arg_with_--all_errors
+--- PASS: TestRunCrewList_PositionalRigArg (0.00s)
+    --- PASS: TestRunCrewList_PositionalRigArg/positional_arg_sets_rig_filter (0.00s)
+    --- PASS: TestRunCrewList_PositionalRigArg/positional_arg_conflicts_with_--rig_flag (0.00s)
+    --- PASS: TestRunCrewList_PositionalRigArg/positional_arg_with_--all_errors (0.00s)
+=== RUN   TestRunCrewList_AllWithRigErrors
+--- PASS: TestRunCrewList_AllWithRigErrors (0.00s)
+=== RUN   TestRunCrewList_AllAggregatesJSON
+--- PASS: TestRunCrewList_AllAggregatesJSON (0.01s)
+=== RUN   TestRunCrewStatus_NoArgsAggregatesJSONAcrossAllRigs
+--- PASS: TestRunCrewStatus_NoArgsAggregatesJSONAcrossAllRigs (0.01s)
+=== RUN   TestRunCrewStatus_RigFlagFiltersJSONFromTownRoot
+--- PASS: TestRunCrewStatus_RigFlagFiltersJSONFromTownRoot (0.00s)
+=== RUN   TestReadDaemonStartupFailure
+--- PASS: TestReadDaemonStartupFailure (0.00s)
+=== RUN   TestReadDaemonStartupFailure_MissingPIDReturnsEmpty
+--- PASS: TestReadDaemonStartupFailure_MissingPIDReturnsEmpty (0.00s)
+=== RUN   TestDashboardCmd_FlagsExist
+--- PASS: TestDashboardCmd_FlagsExist (0.00s)
+=== RUN   TestDashboardCmd_IsRegistered
+--- PASS: TestDashboardCmd_IsRegistered (0.00s)
+=== RUN   TestDashboardCmd_HasCorrectGroup
+--- PASS: TestDashboardCmd_HasCorrectGroup (0.00s)
+=== RUN   TestDashboardCmd_RequiresWorkspace
+--- PASS: TestDashboardCmd_RequiresWorkspace (0.00s)
+=== RUN   TestEnsureDoltPortEnv_ReadsStateFile
+--- PASS: TestEnsureDoltPortEnv_ReadsStateFile (0.00s)
+=== RUN   TestEnsureDoltPortEnv_FallsBackToDefault
+--- PASS: TestEnsureDoltPortEnv_FallsBackToDefault (0.00s)
+=== RUN   TestEnsureDoltPortEnv_OverridesWrongPort
+--- PASS: TestEnsureDoltPortEnv_OverridesWrongPort (0.00s)
+=== RUN   TestDeaconStatusJSON_Schema
+--- PASS: TestDeaconStatusJSON_Schema (0.00s)
+=== RUN   TestDeaconStatusJSON_NoHeartbeat
+--- PASS: TestDeaconStatusJSON_NoHeartbeat (0.00s)
+=== RUN   TestDeaconStatusJSON_Roundtrip
+--- PASS: TestDeaconStatusJSON_Roundtrip (0.00s)
+=== RUN   TestDeaconStatusJSON_FreshnessStates
+=== RUN   TestDeaconStatusJSON_FreshnessStates/fresh_heartbeat
+=== RUN   TestDeaconStatusJSON_FreshnessStates/stale_heartbeat
+=== RUN   TestDeaconStatusJSON_FreshnessStates/very_stale_heartbeat
+=== RUN   TestDeaconStatusJSON_FreshnessStates/no_heartbeat_(very_stale)
+--- PASS: TestDeaconStatusJSON_FreshnessStates (0.00s)
+    --- PASS: TestDeaconStatusJSON_FreshnessStates/fresh_heartbeat (0.00s)
+    --- PASS: TestDeaconStatusJSON_FreshnessStates/stale_heartbeat (0.00s)
+    --- PASS: TestDeaconStatusJSON_FreshnessStates/very_stale_heartbeat (0.00s)
+    --- PASS: TestDeaconStatusJSON_FreshnessStates/no_heartbeat_(very_stale) (0.00s)
+=== RUN   TestDeaconStatusJSON_LastActionOmitEmpty
+--- PASS: TestDeaconStatusJSON_LastActionOmitEmpty (0.00s)
+=== RUN   TestAddressToAgentBeadID
+=== RUN   TestAddressToAgentBeadID/mayor
+=== RUN   TestAddressToAgentBeadID/deacon
+=== RUN   TestAddressToAgentBeadID/gastown/witness
+=== RUN   TestAddressToAgentBeadID/gastown/refinery
+=== RUN   TestAddressToAgentBeadID/gastown/alpha
+=== RUN   TestAddressToAgentBeadID/gastown/crew/max
+=== RUN   TestAddressToAgentBeadID/gastown/polecats/alpha
+=== RUN   TestAddressToAgentBeadID/beads/polecats/beta
+=== RUN   TestAddressToAgentBeadID/beads/witness
+=== RUN   TestAddressToAgentBeadID/beads/beta
+=== RUN   TestAddressToAgentBeadID/invalid
+=== RUN   TestAddressToAgentBeadID/#00
+--- PASS: TestAddressToAgentBeadID (0.00s)
+    --- PASS: TestAddressToAgentBeadID/mayor (0.00s)
+    --- PASS: TestAddressToAgentBeadID/deacon (0.00s)
+    --- PASS: TestAddressToAgentBeadID/gastown/witness (0.00s)
+    --- PASS: TestAddressToAgentBeadID/gastown/refinery (0.00s)
+    --- PASS: TestAddressToAgentBeadID/gastown/alpha (0.00s)
+    --- PASS: TestAddressToAgentBeadID/gastown/crew/max (0.00s)
+    --- PASS: TestAddressToAgentBeadID/gastown/polecats/alpha (0.00s)
+    --- PASS: TestAddressToAgentBeadID/beads/polecats/beta (0.00s)
+    --- PASS: TestAddressToAgentBeadID/beads/witness (0.00s)
+    --- PASS: TestAddressToAgentBeadID/beads/beta (0.00s)
+    --- PASS: TestAddressToAgentBeadID/invalid (0.00s)
+    --- PASS: TestAddressToAgentBeadID/#00 (0.00s)
+=== RUN   TestDetectDogNameFromPath
+=== RUN   TestDetectDogNameFromPath/dog_worktree_root
+=== RUN   TestDetectDogNameFromPath/dog_rig_worktree
+=== RUN   TestDetectDogNameFromPath/deep_path_in_dog_worktree
+=== RUN   TestDetectDogNameFromPath/hyphenated_dog_name
+=== RUN   TestDetectDogNameFromPath/numeric_dog_name
+=== RUN   TestDetectDogNameFromPath/not_a_dog_path_-_polecat
+=== RUN   TestDetectDogNameFromPath/not_a_dog_path_-_crew
+=== RUN   TestDetectDogNameFromPath/deacon_but_not_dogs_directory
+=== RUN   TestDetectDogNameFromPath/dogs_without_deacon_parent
+=== RUN   TestDetectDogNameFromPath/empty_path
+=== RUN   TestDetectDogNameFromPath/root_path
+--- PASS: TestDetectDogNameFromPath (0.00s)
+    --- PASS: TestDetectDogNameFromPath/dog_worktree_root (0.00s)
+    --- PASS: TestDetectDogNameFromPath/dog_rig_worktree (0.00s)
+    --- PASS: TestDetectDogNameFromPath/deep_path_in_dog_worktree (0.00s)
+    --- PASS: TestDetectDogNameFromPath/hyphenated_dog_name (0.00s)
+    --- PASS: TestDetectDogNameFromPath/numeric_dog_name (0.00s)
+    --- PASS: TestDetectDogNameFromPath/not_a_dog_path_-_polecat (0.00s)
+    --- PASS: TestDetectDogNameFromPath/not_a_dog_path_-_crew (0.00s)
+    --- PASS: TestDetectDogNameFromPath/deacon_but_not_dogs_directory (0.00s)
+    --- PASS: TestDetectDogNameFromPath/dogs_without_deacon_parent (0.00s)
+    --- PASS: TestDetectDogNameFromPath/empty_path (0.00s)
+    --- PASS: TestDetectDogNameFromPath/root_path (0.00s)
+=== RUN   TestDogDone_AlreadyIdle
+--- PASS: TestDogDone_AlreadyIdle (0.00s)
+=== RUN   TestDogDone_WorkingToIdle
+--- PASS: TestDogDone_WorkingToIdle (0.00s)
+=== RUN   TestDogDone_NotFound
+--- PASS: TestDogDone_NotFound (0.00s)
+=== RUN   TestDogClear_WorkingToIdle
+--- PASS: TestDogClear_WorkingToIdle (0.00s)
+=== RUN   TestDogClear_AlreadyIdle
+--- PASS: TestDogClear_AlreadyIdle (0.00s)
+=== RUN   TestDogClear_NotFound
+--- PASS: TestDogClear_NotFound (0.00s)
+=== RUN   TestSplitPath
+=== RUN   TestSplitPath//Users/user/gt/deacon/dogs/alpha
+=== RUN   TestSplitPath//a/b/c
+=== RUN   TestSplitPath/relative/path
+=== RUN   TestSplitPath//
+--- PASS: TestSplitPath (0.00s)
+    --- PASS: TestSplitPath//Users/user/gt/deacon/dogs/alpha (0.00s)
+    --- PASS: TestSplitPath//a/b/c (0.00s)
+    --- PASS: TestSplitPath/relative/path (0.00s)
+    --- PASS: TestSplitPath// (0.00s)
+=== RUN   TestDogFormatTimeAgo
+=== RUN   TestDogFormatTimeAgo/just_now
+=== RUN   TestDogFormatTimeAgo/1_minute_ago
+=== RUN   TestDogFormatTimeAgo/5_minutes_ago
+=== RUN   TestDogFormatTimeAgo/1_hour_ago
+=== RUN   TestDogFormatTimeAgo/3_hours_ago
+=== RUN   TestDogFormatTimeAgo/1_day_ago
+=== RUN   TestDogFormatTimeAgo/5_days_ago
+--- PASS: TestDogFormatTimeAgo (0.00s)
+    --- PASS: TestDogFormatTimeAgo/just_now (0.00s)
+    --- PASS: TestDogFormatTimeAgo/1_minute_ago (0.00s)
+    --- PASS: TestDogFormatTimeAgo/5_minutes_ago (0.00s)
+    --- PASS: TestDogFormatTimeAgo/1_hour_ago (0.00s)
+    --- PASS: TestDogFormatTimeAgo/3_hours_ago (0.00s)
+    --- PASS: TestDogFormatTimeAgo/1_day_ago (0.00s)
+    --- PASS: TestDogFormatTimeAgo/5_days_ago (0.00s)
+=== RUN   TestDogFormatTimeAgo_ZeroTime
+--- PASS: TestDogFormatTimeAgo_ZeroTime (0.00s)
+=== RUN   TestDirSizeHuman
+--- PASS: TestDirSizeHuman (0.00s)
+=== RUN   TestDirSizeHuman_NonexistentDir
+--- PASS: TestDirSizeHuman_NonexistentDir (0.00s)
+=== RUN   TestDoneCloseDescendantsWithChildren
+Closed 2 molecule step(s) for gt-wisp-xyz
+--- PASS: TestDoneCloseDescendantsWithChildren (0.01s)
+=== RUN   TestDoneCloseDescendantsNoChildren
+--- PASS: TestDoneCloseDescendantsNoChildren (0.01s)
+=== RUN   TestDoneCloseDescendantsSomeAlreadyClosed
+Closed 1 molecule step(s) for gt-wisp-xyz
+--- PASS: TestDoneCloseDescendantsSomeAlreadyClosed (0.01s)
+=== RUN   TestDoneCloseDescendantsDeeplyNested
+Closed 2 molecule step(s) for gt-wisp-xyz
+--- PASS: TestDoneCloseDescendantsDeeplyNested (0.01s)
+=== RUN   TestDoneCloseDescendantsNoMoleculeAttached
+--- PASS: TestDoneCloseDescendantsNoMoleculeAttached (0.01s)
+=== RUN   TestCloseDescendantsHandlesListError
+⚠ Warning: closing descendants of gt-wisp-xyz: listing children of gt-wisp-xyz: bd list --json --status=all --priority=0 --parent=gt-wisp-xyz --limit=0 --flat: Error: database locked
+--- PASS: TestCloseDescendantsHandlesListError (0.01s)
+=== RUN   TestCloseDescendantsMoleculeNotFound
+Warning: couldn't close attached molecule gt-wisp-xyz: bd close gt-wisp-xyz --reason=done --force: exit status 1
+    done_closeDescendants_test.go:1008: Note: closes.log exists with content: gt-wisp-xyz
+--- PASS: TestCloseDescendantsMoleculeNotFound (0.00s)
+=== RUN   TestDoneContaminationBaseRef
+=== RUN   TestDoneContaminationBaseRef/defaults_to_rig_branch
+=== RUN   TestDoneContaminationBaseRef/uses_explicit_target_branch
+=== RUN   TestDoneContaminationBaseRef/avoids_double_origin_prefix
+--- PASS: TestDoneContaminationBaseRef (0.00s)
+    --- PASS: TestDoneContaminationBaseRef/defaults_to_rig_branch (0.00s)
+    --- PASS: TestDoneContaminationBaseRef/uses_explicit_target_branch (0.00s)
+    --- PASS: TestDoneContaminationBaseRef/avoids_double_origin_prefix (0.00s)
+=== RUN   TestDoneUsesResolveBeadsDir
+=== RUN   TestDoneUsesResolveBeadsDir/redirect_followed_from_polecat_directory
+=== RUN   TestDoneUsesResolveBeadsDir/redirect_not_present_uses_local_beads
+--- PASS: TestDoneUsesResolveBeadsDir (0.00s)
+    --- PASS: TestDoneUsesResolveBeadsDir/redirect_followed_from_polecat_directory (0.00s)
+    --- PASS: TestDoneUsesResolveBeadsDir/redirect_not_present_uses_local_beads (0.00s)
+=== RUN   TestDoneBeadsInitWithoutRedirect
+--- PASS: TestDoneBeadsInitWithoutRedirect (0.00s)
+=== RUN   TestDoneBeadsInitBothCodePaths
+=== RUN   TestDoneBeadsInitBothCodePaths/ExitCompleted_path_uses_ResolveBeadsDir
+=== RUN   TestDoneBeadsInitBothCodePaths/ExitPhaseComplete_path_uses_ResolveBeadsDir
+--- PASS: TestDoneBeadsInitBothCodePaths (0.00s)
+    --- PASS: TestDoneBeadsInitBothCodePaths/ExitCompleted_path_uses_ResolveBeadsDir (0.00s)
+    --- PASS: TestDoneBeadsInitBothCodePaths/ExitPhaseComplete_path_uses_ResolveBeadsDir (0.00s)
+=== RUN   TestDoneRedirectChain
+--- PASS: TestDoneRedirectChain (0.00s)
+=== RUN   TestDoneEmptyRedirectFallback
+--- PASS: TestDoneEmptyRedirectFallback (0.00s)
+=== RUN   TestDoneCircularRedirectProtection
+Warning: circular redirect detected in /tmp/TestDoneCircularRedirectProtection3234721122/001/.beads/redirect (points to itself), ignoring redirect
+--- PASS: TestDoneCircularRedirectProtection (0.00s)
+=== RUN   TestFindHookedBeadForAgent
+    done_test.go:263: bd CLI 0.47.2 bug: database writes don't commit
+--- SKIP: TestFindHookedBeadForAgent (0.00s)
+=== RUN   TestIsPolecatActor
+=== RUN   TestIsPolecatActor/testrig/polecats/furiosa
+=== RUN   TestIsPolecatActor/testrig/polecats/nux
+=== RUN   TestIsPolecatActor/myrig/polecats/witness
+=== RUN   TestIsPolecatActor/gastown/crew/george
+=== RUN   TestIsPolecatActor/gastown/crew/max
+=== RUN   TestIsPolecatActor/testrig/witness
+=== RUN   TestIsPolecatActor/testrig/deacon
+=== RUN   TestIsPolecatActor/testrig/mayor
+=== RUN   TestIsPolecatActor/gastown/refinery
+=== RUN   TestIsPolecatActor/#00
+=== RUN   TestIsPolecatActor/single
+=== RUN   TestIsPolecatActor/polecats/name
+--- PASS: TestIsPolecatActor (0.00s)
+    --- PASS: TestIsPolecatActor/testrig/polecats/furiosa (0.00s)
+    --- PASS: TestIsPolecatActor/testrig/polecats/nux (0.00s)
+    --- PASS: TestIsPolecatActor/myrig/polecats/witness (0.00s)
+    --- PASS: TestIsPolecatActor/gastown/crew/george (0.00s)
+    --- PASS: TestIsPolecatActor/gastown/crew/max (0.00s)
+    --- PASS: TestIsPolecatActor/testrig/witness (0.00s)
+    --- PASS: TestIsPolecatActor/testrig/deacon (0.00s)
+    --- PASS: TestIsPolecatActor/testrig/mayor (0.00s)
+    --- PASS: TestIsPolecatActor/gastown/refinery (0.00s)
+    --- PASS: TestIsPolecatActor/#00 (0.00s)
+    --- PASS: TestIsPolecatActor/single (0.00s)
+    --- PASS: TestIsPolecatActor/polecats/name (0.00s)
+=== RUN   TestDoneIntentLabelFormat
+=== RUN   TestDoneIntentLabelFormat/COMPLETED
+=== RUN   TestDoneIntentLabelFormat/ESCALATED
+=== RUN   TestDoneIntentLabelFormat/DEFERRED
+=== RUN   TestDoneIntentLabelFormat/PHASE_COMPLETE
+--- PASS: TestDoneIntentLabelFormat (0.00s)
+    --- PASS: TestDoneIntentLabelFormat/COMPLETED (0.00s)
+    --- PASS: TestDoneIntentLabelFormat/ESCALATED (0.00s)
+    --- PASS: TestDoneIntentLabelFormat/DEFERRED (0.00s)
+    --- PASS: TestDoneIntentLabelFormat/PHASE_COMPLETE (0.00s)
+=== RUN   TestClearDoneIntentLabel
+--- PASS: TestClearDoneIntentLabel (0.00s)
+=== RUN   TestNukeGateGuardLogic
+=== RUN   TestNukeGateGuardLogic/completed+push-ok+mr-ok
+=== RUN   TestNukeGateGuardLogic/completed+push-failed+mr-ok
+=== RUN   TestNukeGateGuardLogic/completed+push-ok+mr-failed
+=== RUN   TestNukeGateGuardLogic/completed+push-failed+mr-failed
+=== RUN   TestNukeGateGuardLogic/escalated+push-ok+mr-ok
+=== RUN   TestNukeGateGuardLogic/deferred+push-ok+mr-ok
+=== RUN   TestNukeGateGuardLogic/escalated+push-failed+mr-failed
+--- PASS: TestNukeGateGuardLogic (0.00s)
+    --- PASS: TestNukeGateGuardLogic/completed+push-ok+mr-ok (0.00s)
+    --- PASS: TestNukeGateGuardLogic/completed+push-failed+mr-ok (0.00s)
+    --- PASS: TestNukeGateGuardLogic/completed+push-ok+mr-failed (0.00s)
+    --- PASS: TestNukeGateGuardLogic/completed+push-failed+mr-failed (0.00s)
+    --- PASS: TestNukeGateGuardLogic/escalated+push-ok+mr-ok (0.00s)
+    --- PASS: TestNukeGateGuardLogic/deferred+push-ok+mr-ok (0.00s)
+    --- PASS: TestNukeGateGuardLogic/escalated+push-failed+mr-failed (0.00s)
+=== RUN   TestSessionKillGateGuardLogic
+=== RUN   TestSessionKillGateGuardLogic/push-ok+mr-ok
+=== RUN   TestSessionKillGateGuardLogic/push-failed+mr-ok
+=== RUN   TestSessionKillGateGuardLogic/push-ok+mr-failed
+=== RUN   TestSessionKillGateGuardLogic/push-failed+mr-failed
+--- PASS: TestSessionKillGateGuardLogic (0.00s)
+    --- PASS: TestSessionKillGateGuardLogic/push-ok+mr-ok (0.00s)
+    --- PASS: TestSessionKillGateGuardLogic/push-failed+mr-ok (0.00s)
+    --- PASS: TestSessionKillGateGuardLogic/push-ok+mr-failed (0.00s)
+    --- PASS: TestSessionKillGateGuardLogic/push-failed+mr-failed (0.00s)
+=== RUN   TestMRVerificationSetsMRFailed
+=== RUN   TestMRVerificationSetsMRFailed/create_succeeds_+_show_succeeds_→_mrFailed=false
+=== RUN   TestMRVerificationSetsMRFailed/create_fails_→_mrFailed=true_(existing_behavior)
+=== RUN   TestMRVerificationSetsMRFailed/create_succeeds_+_show_fails_→_mrFailed=true_(GH#1945_fix)
+=== RUN   TestMRVerificationSetsMRFailed/create_succeeds_+_show_returns_nil_→_mrFailed=true_(GH#1945_fix)
+--- PASS: TestMRVerificationSetsMRFailed (0.00s)
+    --- PASS: TestMRVerificationSetsMRFailed/create_succeeds_+_show_succeeds_→_mrFailed=false (0.00s)
+    --- PASS: TestMRVerificationSetsMRFailed/create_fails_→_mrFailed=true_(existing_behavior) (0.00s)
+    --- PASS: TestMRVerificationSetsMRFailed/create_succeeds_+_show_fails_→_mrFailed=true_(GH#1945_fix) (0.00s)
+    --- PASS: TestMRVerificationSetsMRFailed/create_succeeds_+_show_returns_nil_→_mrFailed=true_(GH#1945_fix) (0.00s)
+=== RUN   TestMRBeadCreationUsesRig
+=== RUN   TestMRBeadCreationUsesRig/same-rig_bead:_rig_is_still_set
+=== RUN   TestMRBeadCreationUsesRig/cross-rig_hq-_bead:_MR_must_land_in_polecat_rig
+=== RUN   TestMRBeadCreationUsesRig/cross-rig_en-_bead:_MR_must_land_in_polecat_rig
+--- PASS: TestMRBeadCreationUsesRig (0.00s)
+    --- PASS: TestMRBeadCreationUsesRig/same-rig_bead:_rig_is_still_set (0.00s)
+    --- PASS: TestMRBeadCreationUsesRig/cross-rig_hq-_bead:_MR_must_land_in_polecat_rig (0.00s)
+    --- PASS: TestMRBeadCreationUsesRig/cross-rig_en-_bead:_MR_must_land_in_polecat_rig (0.00s)
+=== RUN   TestDeferredKillNotOnValidationError
+--- PASS: TestDeferredKillNotOnValidationError (0.00s)
+=== RUN   TestBranchDetectionGuard
+=== RUN   TestBranchDetectionGuard/cwd_available_-_uses_git_CurrentBranch
+=== RUN   TestBranchDetectionGuard/cwd_unavailable_+_GT_BRANCH_set_-_uses_env_var
+=== RUN   TestBranchDetectionGuard/cwd_unavailable_+_GT_BRANCH_empty_-_returns_error
+--- PASS: TestBranchDetectionGuard (0.00s)
+    --- PASS: TestBranchDetectionGuard/cwd_available_-_uses_git_CurrentBranch (0.00s)
+    --- PASS: TestBranchDetectionGuard/cwd_unavailable_+_GT_BRANCH_set_-_uses_env_var (0.00s)
+    --- PASS: TestBranchDetectionGuard/cwd_unavailable_+_GT_BRANCH_empty_-_returns_error (0.00s)
+=== RUN   TestBranchDetectionCleanupOnError
+--- PASS: TestBranchDetectionCleanupOnError (0.00s)
+=== RUN   TestConvoyMergeStrategyBranching
+=== RUN   TestConvoyMergeStrategyBranching/mr_strategy_-_normal_push_and_MR
+=== RUN   TestConvoyMergeStrategyBranching/empty_strategy_-_defaults_to_mr_behavior
+=== RUN   TestConvoyMergeStrategyBranching/direct_strategy_-_push_to_main,_no_MR
+=== RUN   TestConvoyMergeStrategyBranching/local_strategy_-_no_push,_no_MR
+--- PASS: TestConvoyMergeStrategyBranching (0.00s)
+    --- PASS: TestConvoyMergeStrategyBranching/mr_strategy_-_normal_push_and_MR (0.00s)
+    --- PASS: TestConvoyMergeStrategyBranching/empty_strategy_-_defaults_to_mr_behavior (0.00s)
+    --- PASS: TestConvoyMergeStrategyBranching/direct_strategy_-_push_to_main,_no_MR (0.00s)
+    --- PASS: TestConvoyMergeStrategyBranching/local_strategy_-_no_push,_no_MR (0.00s)
+=== RUN   TestConvoyMergeStrategyNotification
+=== RUN   TestConvoyMergeStrategyNotification/direct_strategy_included
+=== RUN   TestConvoyMergeStrategyNotification/local_strategy_included
+=== RUN   TestConvoyMergeStrategyNotification/mr_strategy_excluded
+=== RUN   TestConvoyMergeStrategyNotification/empty_strategy_excluded
+--- PASS: TestConvoyMergeStrategyNotification (0.00s)
+    --- PASS: TestConvoyMergeStrategyNotification/direct_strategy_included (0.00s)
+    --- PASS: TestConvoyMergeStrategyNotification/local_strategy_included (0.00s)
+    --- PASS: TestConvoyMergeStrategyNotification/mr_strategy_excluded (0.00s)
+    --- PASS: TestConvoyMergeStrategyNotification/empty_strategy_excluded (0.00s)
+=== RUN   TestConvoyMergeFromFields
+=== RUN   TestConvoyMergeFromFields/direct_strategy
+=== RUN   TestConvoyMergeFromFields/mr_strategy
+=== RUN   TestConvoyMergeFromFields/local_strategy
+=== RUN   TestConvoyMergeFromFields/no_merge_field
+=== RUN   TestConvoyMergeFromFields/empty_description
+=== RUN   TestConvoyMergeFromFields/merge_in_middle_of_description
+--- PASS: TestConvoyMergeFromFields (0.00s)
+    --- PASS: TestConvoyMergeFromFields/direct_strategy (0.00s)
+    --- PASS: TestConvoyMergeFromFields/mr_strategy (0.00s)
+    --- PASS: TestConvoyMergeFromFields/local_strategy (0.00s)
+    --- PASS: TestConvoyMergeFromFields/no_merge_field (0.00s)
+    --- PASS: TestConvoyMergeFromFields/empty_description (0.00s)
+    --- PASS: TestConvoyMergeFromFields/merge_in_middle_of_description (0.00s)
+=== RUN   TestDoneCheckpointLabelFormat
+=== RUN   TestDoneCheckpointLabelFormat/pushed
+=== RUN   TestDoneCheckpointLabelFormat/mr-created
+=== RUN   TestDoneCheckpointLabelFormat/witness-notified
+--- PASS: TestDoneCheckpointLabelFormat (0.00s)
+    --- PASS: TestDoneCheckpointLabelFormat/pushed (0.00s)
+    --- PASS: TestDoneCheckpointLabelFormat/mr-created (0.00s)
+    --- PASS: TestDoneCheckpointLabelFormat/witness-notified (0.00s)
+=== RUN   TestReadDoneCheckpoints
+=== RUN   TestReadDoneCheckpoints/no_checkpoints
+=== RUN   TestReadDoneCheckpoints/push_checkpoint_only
+=== RUN   TestReadDoneCheckpoints/multiple_checkpoints
+=== RUN   TestReadDoneCheckpoints/all_checkpoints
+=== RUN   TestReadDoneCheckpoints/mixed_with_done-intent_and_other_labels
+--- PASS: TestReadDoneCheckpoints (0.00s)
+    --- PASS: TestReadDoneCheckpoints/no_checkpoints (0.00s)
+    --- PASS: TestReadDoneCheckpoints/push_checkpoint_only (0.00s)
+    --- PASS: TestReadDoneCheckpoints/multiple_checkpoints (0.00s)
+    --- PASS: TestReadDoneCheckpoints/all_checkpoints (0.00s)
+    --- PASS: TestReadDoneCheckpoints/mixed_with_done-intent_and_other_labels (0.00s)
+=== RUN   TestClearDoneCheckpoints
+--- PASS: TestClearDoneCheckpoints (0.00s)
+=== RUN   TestCheckpointResumeSkipsPush
+=== RUN   TestCheckpointResumeSkipsPush/no_checkpoints_-_push_runs_normally
+=== RUN   TestCheckpointResumeSkipsPush/push_checkpoint_exists_-_skip_push
+=== RUN   TestCheckpointResumeSkipsPush/push_and_MR_checkpoints_-_skip_push
+--- PASS: TestCheckpointResumeSkipsPush (0.00s)
+    --- PASS: TestCheckpointResumeSkipsPush/no_checkpoints_-_push_runs_normally (0.00s)
+    --- PASS: TestCheckpointResumeSkipsPush/push_checkpoint_exists_-_skip_push (0.00s)
+    --- PASS: TestCheckpointResumeSkipsPush/push_and_MR_checkpoints_-_skip_push (0.00s)
+=== RUN   TestCheckpointNilMapSafe
+--- PASS: TestCheckpointNilMapSafe (0.00s)
+=== RUN   TestConvoyInfoFallbackChain
+=== RUN   TestConvoyInfoFallbackChain/attachment_fields_provide_convoy_info
+=== RUN   TestConvoyInfoFallbackChain/attachment_fields_empty,_dep_lookup_succeeds
+=== RUN   TestConvoyInfoFallbackChain/both_nil_-_no_convoy
+=== RUN   TestConvoyInfoFallbackChain/attachment_has_convoy,_dep_also_has_(attachment_wins)
+--- PASS: TestConvoyInfoFallbackChain (0.00s)
+    --- PASS: TestConvoyInfoFallbackChain/attachment_fields_provide_convoy_info (0.00s)
+    --- PASS: TestConvoyInfoFallbackChain/attachment_fields_empty,_dep_lookup_succeeds (0.00s)
+    --- PASS: TestConvoyInfoFallbackChain/both_nil_-_no_convoy (0.00s)
+    --- PASS: TestConvoyInfoFallbackChain/attachment_has_convoy,_dep_also_has_(attachment_wins) (0.00s)
+=== RUN   TestHookedBeadCloseNotRestrictedToHookedStatus
+=== RUN   TestHookedBeadCloseNotRestrictedToHookedStatus/status_hooked_→_close
+=== RUN   TestHookedBeadCloseNotRestrictedToHookedStatus/status_in_progress_→_close
+=== RUN   TestHookedBeadCloseNotRestrictedToHookedStatus/status_open_→_close
+=== RUN   TestHookedBeadCloseNotRestrictedToHookedStatus/status_blocked_→_close
+=== RUN   TestHookedBeadCloseNotRestrictedToHookedStatus/status_closed_→_skip_(terminal)
+=== RUN   TestHookedBeadCloseNotRestrictedToHookedStatus/status_tombstone_→_skip_(terminal)
+--- PASS: TestHookedBeadCloseNotRestrictedToHookedStatus (0.00s)
+    --- PASS: TestHookedBeadCloseNotRestrictedToHookedStatus/status_hooked_→_close (0.00s)
+    --- PASS: TestHookedBeadCloseNotRestrictedToHookedStatus/status_in_progress_→_close (0.00s)
+    --- PASS: TestHookedBeadCloseNotRestrictedToHookedStatus/status_open_→_close (0.00s)
+    --- PASS: TestHookedBeadCloseNotRestrictedToHookedStatus/status_blocked_→_close (0.00s)
+    --- PASS: TestHookedBeadCloseNotRestrictedToHookedStatus/status_closed_→_skip_(terminal) (0.00s)
+    --- PASS: TestHookedBeadCloseNotRestrictedToHookedStatus/status_tombstone_→_skip_(terminal) (0.00s)
+=== RUN   TestPushSubmoduleChanges_Integration
+Pushing submodule libs/sub (5209c13)...
+✓ Submodule libs/sub pushed
+--- PASS: TestPushSubmoduleChanges_Integration (0.10s)
+=== RUN   TestPushSubmoduleChanges_NoSubmodules
+--- PASS: TestPushSubmoduleChanges_NoSubmodules (0.03s)
+=== RUN   TestAutoCommitSafetyNet
+=== RUN   TestAutoCommitSafetyNet/detects_uncommitted_new_files
+=== RUN   TestAutoCommitSafetyNet/auto-commit_preserves_work
+=== RUN   TestAutoCommitSafetyNet/runtime-only_changes_skip_auto-commit
+--- PASS: TestAutoCommitSafetyNet (0.03s)
+    --- PASS: TestAutoCommitSafetyNet/detects_uncommitted_new_files (0.00s)
+    --- PASS: TestAutoCommitSafetyNet/auto-commit_preserves_work (0.01s)
+    --- PASS: TestAutoCommitSafetyNet/runtime-only_changes_skip_auto-commit (0.00s)
+=== RUN   TestSyncGuardWithUncommittedChanges
+--- PASS: TestSyncGuardWithUncommittedChanges (0.01s)
+=== RUN   TestCleanupLegacyDefaultSocket_SkipsWhenOnDefaultSocket
+--- PASS: TestCleanupLegacyDefaultSocket_SkipsWhenOnDefaultSocket (0.00s)
+=== RUN   TestCleanupLegacyDefaultSocket_SkipsWhenSocketIsDefault
+--- PASS: TestCleanupLegacyDefaultSocket_SkipsWhenSocketIsDefault (0.00s)
+=== RUN   TestCleanupLegacyDefaultSocket_CleansGastownSessions
+--- PASS: TestCleanupLegacyDefaultSocket_CleansGastownSessions (0.00s)
+=== RUN   TestCleanupLegacyDefaultSocket_IgnoresNonGastownSessions
+--- PASS: TestCleanupLegacyDefaultSocket_IgnoresNonGastownSessions (0.00s)
+=== RUN   TestCleanupLegacyDefaultSocket_NoDefaultServer
+--- PASS: TestCleanupLegacyDefaultSocket_NoDefaultServer (0.00s)
+=== RUN   TestCountLegacyDefaultSocket_SkipsWhenOnDefault
+--- PASS: TestCountLegacyDefaultSocket_SkipsWhenOnDefault (0.00s)
+=== RUN   TestCountLegacyDefaultSocket_CountsGastownOnly
+--- PASS: TestCountLegacyDefaultSocket_CountsGastownOnly (0.00s)
+=== RUN   TestCleanupLegacyBaseSocket_SkipsWhenSameSocket
+--- PASS: TestCleanupLegacyBaseSocket_SkipsWhenSameSocket (0.00s)
+=== RUN   TestCleanupLegacyBaseSocket_CleansOldSessions
+--- PASS: TestCleanupLegacyBaseSocket_CleansOldSessions (0.00s)
+=== RUN   TestCountLegacyBaseSocket_SkipsWhenSame
+--- PASS: TestCountLegacyBaseSocket_SkipsWhenSame (0.00s)
+=== RUN   TestCountLegacyBaseSocket_CountsCorrectly
+--- PASS: TestCountLegacyBaseSocket_CountsCorrectly (0.00s)
+=== RUN   TestIsProcessRunning_CurrentProcess
+--- PASS: TestIsProcessRunning_CurrentProcess (0.00s)
+=== RUN   TestIsProcessRunning_InvalidPID
+--- PASS: TestIsProcessRunning_InvalidPID (0.00s)
+=== RUN   TestIsProcessRunning_MaxPID
+--- PASS: TestIsProcessRunning_MaxPID (0.00s)
+=== RUN   TestSilentExitError_Error
+=== RUN   TestSilentExitError_Error/zero_code
+=== RUN   TestSilentExitError_Error/success_code
+=== RUN   TestSilentExitError_Error/error_code
+=== RUN   TestSilentExitError_Error/custom_code
+--- PASS: TestSilentExitError_Error (0.00s)
+    --- PASS: TestSilentExitError_Error/zero_code (0.00s)
+    --- PASS: TestSilentExitError_Error/success_code (0.00s)
+    --- PASS: TestSilentExitError_Error/error_code (0.00s)
+    --- PASS: TestSilentExitError_Error/custom_code (0.00s)
+=== RUN   TestNewSilentExit
+=== RUN   TestNewSilentExit/code_0
+=== RUN   TestNewSilentExit/code_1
+=== RUN   TestNewSilentExit/code_2
+=== RUN   TestNewSilentExit/code_127
+--- PASS: TestNewSilentExit (0.00s)
+    --- PASS: TestNewSilentExit/code_0 (0.00s)
+    --- PASS: TestNewSilentExit/code_1 (0.00s)
+    --- PASS: TestNewSilentExit/code_2 (0.00s)
+    --- PASS: TestNewSilentExit/code_127 (0.00s)
+=== RUN   TestIsSilentExit
+=== RUN   TestIsSilentExit/nil_error
+=== RUN   TestIsSilentExit/silent_exit_code_0
+=== RUN   TestIsSilentExit/silent_exit_code_1
+=== RUN   TestIsSilentExit/silent_exit_code_2
+=== RUN   TestIsSilentExit/other_error
+=== RUN   TestIsSilentExit/wrapped_silent_exit
+--- PASS: TestIsSilentExit (0.00s)
+    --- PASS: TestIsSilentExit/nil_error (0.00s)
+    --- PASS: TestIsSilentExit/silent_exit_code_0 (0.00s)
+    --- PASS: TestIsSilentExit/silent_exit_code_1 (0.00s)
+    --- PASS: TestIsSilentExit/silent_exit_code_2 (0.00s)
+    --- PASS: TestIsSilentExit/other_error (0.00s)
+    --- PASS: TestIsSilentExit/wrapped_silent_exit (0.00s)
+=== RUN   TestSilentExitError_Is
+--- PASS: TestSilentExitError_Is (0.00s)
+=== RUN   TestGetNextSeverity
+=== RUN   TestGetNextSeverity/low
+=== RUN   TestGetNextSeverity/medium
+=== RUN   TestGetNextSeverity/high
+=== RUN   TestGetNextSeverity/critical
+=== RUN   TestGetNextSeverity/unknown
+=== RUN   TestGetNextSeverity/#00
+--- PASS: TestGetNextSeverity (0.00s)
+    --- PASS: TestGetNextSeverity/low (0.00s)
+    --- PASS: TestGetNextSeverity/medium (0.00s)
+    --- PASS: TestGetNextSeverity/high (0.00s)
+    --- PASS: TestGetNextSeverity/critical (0.00s)
+    --- PASS: TestGetNextSeverity/unknown (0.00s)
+    --- PASS: TestGetNextSeverity/#00 (0.00s)
+=== RUN   TestExtractMailTargetsFromActions
+=== RUN   TestExtractMailTargetsFromActions/empty_actions
+=== RUN   TestExtractMailTargetsFromActions/nil_actions
+=== RUN   TestExtractMailTargetsFromActions/no_mail_actions
+=== RUN   TestExtractMailTargetsFromActions/single_mail_target
+=== RUN   TestExtractMailTargetsFromActions/multiple_mail_targets
+=== RUN   TestExtractMailTargetsFromActions/mail_prefix_with_empty_target_ignored
+=== RUN   TestExtractMailTargetsFromActions/mixed_actions
+--- PASS: TestExtractMailTargetsFromActions (0.00s)
+    --- PASS: TestExtractMailTargetsFromActions/empty_actions (0.00s)
+    --- PASS: TestExtractMailTargetsFromActions/nil_actions (0.00s)
+    --- PASS: TestExtractMailTargetsFromActions/no_mail_actions (0.00s)
+    --- PASS: TestExtractMailTargetsFromActions/single_mail_target (0.00s)
+    --- PASS: TestExtractMailTargetsFromActions/multiple_mail_targets (0.00s)
+    --- PASS: TestExtractMailTargetsFromActions/mail_prefix_with_empty_target_ignored (0.00s)
+    --- PASS: TestExtractMailTargetsFromActions/mixed_actions (0.00s)
+=== RUN   TestExecuteExternalActionsReportsWarningsAndFailures
+⚠ Warning: email action 'email:human' skipped: contacts.human_email not configured in settings/escalation.json
+  📝 Logged to escalation log
+--- PASS: TestExecuteExternalActionsReportsWarningsAndFailures (0.00s)
+=== RUN   TestDeliveryStatusJSONContainsPartialFailure
+--- PASS: TestDeliveryStatusJSONContainsPartialFailure (0.00s)
+=== RUN   TestDeliveryStatusJSONContainsSuccessfulMailPathDetails
+--- PASS: TestDeliveryStatusJSONContainsSuccessfulMailPathDetails (0.00s)
+=== RUN   TestSeverityEmoji
+=== RUN   TestSeverityEmoji/critical
+=== RUN   TestSeverityEmoji/high
+=== RUN   TestSeverityEmoji/medium
+=== RUN   TestSeverityEmoji/low
+=== RUN   TestSeverityEmoji/unknown
+=== RUN   TestSeverityEmoji/#00
+--- PASS: TestSeverityEmoji (0.00s)
+    --- PASS: TestSeverityEmoji/critical (0.00s)
+    --- PASS: TestSeverityEmoji/high (0.00s)
+    --- PASS: TestSeverityEmoji/medium (0.00s)
+    --- PASS: TestSeverityEmoji/low (0.00s)
+    --- PASS: TestSeverityEmoji/unknown (0.00s)
+    --- PASS: TestSeverityEmoji/#00 (0.00s)
+=== RUN   TestFormatRelativeTime
+=== RUN   TestFormatRelativeTime/just_now
+=== RUN   TestFormatRelativeTime/1_minute_ago
+=== RUN   TestFormatRelativeTime/multiple_minutes_ago
+=== RUN   TestFormatRelativeTime/1_hour_ago
+=== RUN   TestFormatRelativeTime/multiple_hours_ago
+=== RUN   TestFormatRelativeTime/1_day_ago
+=== RUN   TestFormatRelativeTime/multiple_days_ago
+=== RUN   TestFormatRelativeTime/invalid_timestamp_returns_raw
+=== RUN   TestFormatRelativeTime/empty_timestamp_returns_raw
+--- PASS: TestFormatRelativeTime (0.00s)
+    --- PASS: TestFormatRelativeTime/just_now (0.00s)
+    --- PASS: TestFormatRelativeTime/1_minute_ago (0.00s)
+    --- PASS: TestFormatRelativeTime/multiple_minutes_ago (0.00s)
+    --- PASS: TestFormatRelativeTime/1_hour_ago (0.00s)
+    --- PASS: TestFormatRelativeTime/multiple_hours_ago (0.00s)
+    --- PASS: TestFormatRelativeTime/1_day_ago (0.00s)
+    --- PASS: TestFormatRelativeTime/multiple_days_ago (0.00s)
+    --- PASS: TestFormatRelativeTime/invalid_timestamp_returns_raw (0.00s)
+    --- PASS: TestFormatRelativeTime/empty_timestamp_returns_raw (0.00s)
+=== RUN   TestFormatEscalationMailBody
+=== RUN   TestFormatEscalationMailBody/basic_escalation
+=== RUN   TestFormatEscalationMailBody/with_related_bead
+=== RUN   TestFormatEscalationMailBody/no_reason
+--- PASS: TestFormatEscalationMailBody (0.00s)
+    --- PASS: TestFormatEscalationMailBody/basic_escalation (0.00s)
+    --- PASS: TestFormatEscalationMailBody/with_related_bead (0.00s)
+    --- PASS: TestFormatEscalationMailBody/no_reason (0.00s)
+=== RUN   TestFormatReescalationMailBody
+--- PASS: TestFormatReescalationMailBody (0.00s)
+=== RUN   TestDetectSenderFallback
+=== RUN   TestDetectSenderFallback/BD_ACTOR_takes_priority
+=== RUN   TestDetectSenderFallback/GT_ROLE_used_when_BD_ACTOR_empty
+=== RUN   TestDetectSenderFallback/empty_when_both_unset
+--- PASS: TestDetectSenderFallback (0.00s)
+    --- PASS: TestDetectSenderFallback/BD_ACTOR_takes_priority (0.00s)
+    --- PASS: TestDetectSenderFallback/GT_ROLE_used_when_BD_ACTOR_empty (0.00s)
+    --- PASS: TestDetectSenderFallback/empty_when_both_unset (0.00s)
+=== RUN   TestExecuteExternalActions
+=== RUN   TestExecuteExternalActions/no_external_actions
+=== RUN   TestExecuteExternalActions/email_action_without_contact
+⚠ Warning: email action 'email:human' skipped: contacts.human_email not configured in settings/escalation.json
+=== RUN   TestExecuteExternalActions/email_action_with_contact
+⚠ Warning: email action 'email:human' skipped: contacts.smtp_host not configured in settings/escalation.json
+=== RUN   TestExecuteExternalActions/sms_action_without_contact
+⚠ Warning: sms action 'sms:human' skipped: contacts.human_sms not configured in settings/escalation.json
+=== RUN   TestExecuteExternalActions/sms_action_with_contact
+⚠ Warning: sms action 'sms:human' skipped: contacts.sms_webhook not configured in settings/escalation.json
+=== RUN   TestExecuteExternalActions/slack_action_without_webhook
+⚠ Warning: slack action skipped: contacts.slack_webhook not configured in settings/escalation.json
+=== RUN   TestExecuteExternalActions/slack_action_with_webhook
+  💬 Posted to Slack
+=== RUN   TestExecuteExternalActions/log_action
+  📝 Logged to escalation log
+=== RUN   TestExecuteExternalActions/all_external_actions_combined
+⚠ Warning: email action 'email:human' skipped: contacts.smtp_host not configured in settings/escalation.json
+⚠ Warning: sms action 'sms:human' skipped: contacts.sms_webhook not configured in settings/escalation.json
+⚠ Warning: slack post failed: slack webhook returned 429: 
+  📝 Logged to escalation log
+=== RUN   TestExecuteExternalActions/empty_actions
+--- PASS: TestExecuteExternalActions (1.17s)
+    --- PASS: TestExecuteExternalActions/no_external_actions (0.00s)
+    --- PASS: TestExecuteExternalActions/email_action_without_contact (0.00s)
+    --- PASS: TestExecuteExternalActions/email_action_with_contact (0.00s)
+    --- PASS: TestExecuteExternalActions/sms_action_without_contact (0.00s)
+    --- PASS: TestExecuteExternalActions/sms_action_with_contact (0.00s)
+    --- PASS: TestExecuteExternalActions/slack_action_without_webhook (0.00s)
+    --- PASS: TestExecuteExternalActions/slack_action_with_webhook (0.95s)
+    --- PASS: TestExecuteExternalActions/log_action (0.00s)
+    --- PASS: TestExecuteExternalActions/all_external_actions_combined (0.22s)
+    --- PASS: TestExecuteExternalActions/empty_actions (0.00s)
+=== RUN   TestWriteEscalationLog
+--- PASS: TestWriteEscalationLog (0.00s)
+=== RUN   TestRunEscalateValidation
+=== RUN   TestRunEscalateValidation/stdin_and_reason_conflict
+=== RUN   TestRunEscalateValidation/no_args_shows_help
+Create and manage escalations for critical issues.
+
+The escalation system provides severity-based routing for issues that need
+human or mayor attention. Escalations are tracked as beads with gt:escalation label.
+
+SEVERITY LEVELS:
+  critical  (P0) Immediate attention required
+  high      (P1) Urgent, needs attention soon
+  medium    (P2) Standard escalation (default)
+  low       (P3) Informational, can wait
+
+WORKFLOW:
+  1. Agent encounters blocking issue
+  2. Runs: gt escalate "Description" --severity high --reason "details"
+  3. Escalation is routed based on settings/escalation.json
+  4. Recipient acknowledges with: gt escalate ack <id>
+  5. After resolution: gt escalate close <id> --reason "fixed"
+
+CONFIGURATION:
+  Routing is configured in ~/gt/settings/escalation.json:
+  - routes: Map severity to action lists (bead, mail:mayor, email:human, sms:human)
+  - contacts: Human email/SMS for external notifications
+  - stale_threshold: When unacked escalations are re-escalated (default: 4h)
+  - max_reescalations: How many times to bump severity (default: 2)
+
+Examples:
+  gt escalate "Build failing" --severity critical --reason "CI blocked"
+  gt escalate "Need API credentials" --severity high --source "plugin:rebuild-gt"
+  gt escalate "Code review requested" --reason "PR #123 ready"
+  gt escalate list                          # Show open escalations
+  gt escalate ack hq-abc123                 # Acknowledge
+  gt escalate close hq-abc123 --reason "Fixed in commit abc"
+  gt escalate stale                         # Re-escalate stale escalations
+
+Usage:
+  gt escalate [description] [flags]
+  gt escalate [command]
+
+Available Commands:
+  ack         Acknowledge an escalation
+  close       Close a resolved escalation
+  list        List open escalations
+  show        Show details of an escalation
+  stale       Re-escalate stale unacknowledged escalations
+
+Flags:
+  -n, --dry-run           Show what would be done without executing
+      --json              Output as JSON
+  -r, --reason string     Detailed reason for escalation
+      --related string    Related bead ID (task, bug, etc.)
+  -s, --severity string   Severity level: critical, high, medium, low (default "medium")
+      --source string     Source identifier (e.g., plugin:rebuild-gt, patrol:deacon)
+      --stdin             Read reason from stdin (avoids shell quoting issues)
+
+Use "gt escalate [command] --help" for more information about a command.
+=== RUN   TestRunEscalateValidation/invalid_severity
+--- PASS: TestRunEscalateValidation (0.00s)
+    --- PASS: TestRunEscalateValidation/stdin_and_reason_conflict (0.00s)
+    --- PASS: TestRunEscalateValidation/no_args_shows_help (0.00s)
+    --- PASS: TestRunEscalateValidation/invalid_severity (0.00s)
+=== RUN   TestFormatEscalationMailBodyNeutralSubjectStillCarriesStructuredBody
+--- PASS: TestFormatEscalationMailBodyNeutralSubjectStillCarriesStructuredBody (0.00s)
+=== RUN   TestGetNextSeverityMatchesConfig
+--- PASS: TestGetNextSeverityMatchesConfig (0.00s)
+=== RUN   TestResolveFormulaLegAgent_Precedence
+=== PAUSE TestResolveFormulaLegAgent_Precedence
+=== RUN   TestHandoffStdinFlag
+=== RUN   TestHandoffStdinFlag/errors_when_both_stdin_and_message_provided
+--- PASS: TestHandoffStdinFlag (0.00s)
+    --- PASS: TestHandoffStdinFlag/errors_when_both_stdin_and_message_provided (0.00s)
+=== RUN   TestSessionWorkDir
+=== RUN   TestSessionWorkDir/mayor_runs_from_mayor_subdirectory
+=== RUN   TestSessionWorkDir/deacon_runs_from_deacon_subdirectory
+=== RUN   TestSessionWorkDir/crew_runs_from_crew_subdirectory
+=== RUN   TestSessionWorkDir/witness_runs_from_witness_directory
+=== RUN   TestSessionWorkDir/refinery_runs_from_refinery/rig_directory
+--- PASS: TestSessionWorkDir (0.00s)
+    --- PASS: TestSessionWorkDir/mayor_runs_from_mayor_subdirectory (0.00s)
+    --- PASS: TestSessionWorkDir/deacon_runs_from_deacon_subdirectory (0.00s)
+    --- PASS: TestSessionWorkDir/crew_runs_from_crew_subdirectory (0.00s)
+    --- PASS: TestSessionWorkDir/witness_runs_from_witness_directory (0.00s)
+    --- PASS: TestSessionWorkDir/refinery_runs_from_refinery/rig_directory (0.00s)
+=== RUN   TestBuildRestartCommand_UsesRoleAgentsWhenNoAgentOverride
+--- PASS: TestBuildRestartCommand_UsesRoleAgentsWhenNoAgentOverride (0.00s)
+=== RUN   TestBuildRestartCommandWithOpts_ContinuePrompt
+=== RUN   TestBuildRestartCommandWithOpts_ContinuePrompt/custom_ContinuePrompt_overrides_default
+=== RUN   TestBuildRestartCommandWithOpts_ContinuePrompt/empty_ContinuePrompt_falls_back_to_default
+=== RUN   TestBuildRestartCommandWithOpts_ContinuePrompt/ContinueSession_false_uses_beacon
+--- PASS: TestBuildRestartCommandWithOpts_ContinuePrompt (0.00s)
+    --- PASS: TestBuildRestartCommandWithOpts_ContinuePrompt/custom_ContinuePrompt_overrides_default (0.00s)
+    --- PASS: TestBuildRestartCommandWithOpts_ContinuePrompt/empty_ContinuePrompt_falls_back_to_default (0.00s)
+    --- PASS: TestBuildRestartCommandWithOpts_ContinuePrompt/ContinueSession_false_uses_beacon (0.00s)
+=== RUN   TestDetectTownRootFromCwd_EnvFallback
+=== RUN   TestDetectTownRootFromCwd_EnvFallback/uses_GT_TOWN_ROOT_when_cwd_detection_fails
+=== RUN   TestDetectTownRootFromCwd_EnvFallback/uses_GT_ROOT_when_GT_TOWN_ROOT_not_set
+=== RUN   TestDetectTownRootFromCwd_EnvFallback/prefers_GT_TOWN_ROOT_over_GT_ROOT
+=== RUN   TestDetectTownRootFromCwd_EnvFallback/ignores_invalid_GT_TOWN_ROOT
+=== RUN   TestDetectTownRootFromCwd_EnvFallback/uses_secondary_marker_when_primary_missing
+--- PASS: TestDetectTownRootFromCwd_EnvFallback (0.00s)
+    --- PASS: TestDetectTownRootFromCwd_EnvFallback/uses_GT_TOWN_ROOT_when_cwd_detection_fails (0.00s)
+    --- PASS: TestDetectTownRootFromCwd_EnvFallback/uses_GT_ROOT_when_GT_TOWN_ROOT_not_set (0.00s)
+    --- PASS: TestDetectTownRootFromCwd_EnvFallback/prefers_GT_TOWN_ROOT_over_GT_ROOT (0.00s)
+    --- PASS: TestDetectTownRootFromCwd_EnvFallback/ignores_invalid_GT_TOWN_ROOT (0.00s)
+    --- PASS: TestDetectTownRootFromCwd_EnvFallback/uses_secondary_marker_when_primary_missing (0.00s)
+=== RUN   TestHandoffPolecatEnvCheck
+=== RUN   TestHandoffPolecatEnvCheck/bare_polecat_role_is_redirected
+⚠ Warning: rigs.json not found (checked mayor/rigs.json and town root). PrefixRegistry is empty — session parsing will fail. Run 'gt doctor' or restore rigs.json.
+⚠ gt binary is 16 commits behind (built from 19b657d9, repo at e1c9015e1762)
+    → Run 'make install' in gastown repo to update
