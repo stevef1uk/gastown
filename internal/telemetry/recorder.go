@@ -36,8 +36,10 @@ func WithRunID(ctx context.Context, runID string) context.Context {
 // environment variable so that subprocess telemetry (bd, mail, …) is
 // correlated even when the ctx has no injected run ID.
 func RunIDFromCtx(ctx context.Context) string {
-	if v, ok := ctx.Value(runIDKey{}).(string); ok && v != "" {
-		return v
+	if ctx != nil {
+		if v, ok := ctx.Value(runIDKey{}).(string); ok && v != "" {
+			return v
+		}
 	}
 	return os.Getenv("GT_RUN")
 }
