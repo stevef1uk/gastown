@@ -2108,25 +2108,15 @@ exit /b 0
 	})
 	slingForce = false
 	slingNoConvoy = true
-	slingDryRun = true // dry-run to avoid side effects from resolveTarget
-
-	// Capture stdout to verify the "auto-forcing re-sling" message is printed.
-	origStdout := os.Stdout
-	r, w, _ := os.Pipe()
-	os.Stdout = w
-	t.Cleanup(func() { os.Stdout = origStdout })
+	slingDryRun = true // dry-run to avoid side effects from resolve
 
 	// Sling with matching target but dead agent — should NOT no-op.
 	// The auto-force path proceeds into resolveTarget which will fail
 	// because the polecat doesn't exist in tmux. Use a unique name that
 	// will never collide with a real running polecat session.
-	err = runSling(nil, []string{"gt-test456", "gastown/polecats/test-dead-polecat-xxxx"})
-
-	w.Close()
-	os.Stdout = origStdout
-	var captured bytes.Buffer
-	_, _ = captured.ReadFrom(r)
-	stdout := captured.String()
+	stdout := captureStdout(t, func() {
+		err = runSling(nil, []string{"gt-test456", "gastown/polecats/test-dead-polecat-xxxx"})
+	})
 
 	if err != nil {
 		t.Fatalf("expected nil error from runSling (bypassing idempotency), got: %v", err)
@@ -2598,18 +2588,9 @@ exit /b 0
 			slingNoConvoy = true
 
 			// Capture stdout
-			origStdout := os.Stdout
-			r, w, _ := os.Pipe()
-			os.Stdout = w
-			t.Cleanup(func() { os.Stdout = origStdout })
-
-			err = runSling(nil, []string{"gt-abc123", tt.target})
-
-			w.Close()
-			os.Stdout = origStdout
-			var captured bytes.Buffer
-			_, _ = captured.ReadFrom(r)
-			stdout := captured.String()
+			stdout := captureStdout(t, func() {
+				err = runSling(nil, []string{"gt-abc123", tt.target})
+			})
 
 			if err != nil {
 				t.Fatalf("runSling: %v", err)
