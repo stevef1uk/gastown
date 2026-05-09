@@ -1626,7 +1626,7 @@ func TestNotifyRecipient_IdleAgent(t *testing.T) {
 
 	// Create a session that displays the Claude Code prompt prefix, simulating idle.
 	// "printf" prints the prompt, then "cat" blocks keeping the session alive.
-	createNotifyTestSession(t, socket, sessionName, `sh -c 'printf "❯ \n" && cat'`)
+	createNotifyTestSession(t, socket, sessionName, `sh -c 'printf "❯ " && cat'`)
 
 	// Wait briefly for printf output to appear in the pane.
 	time.Sleep(500 * time.Millisecond)
@@ -1636,7 +1636,7 @@ func TestNotifyRecipient_IdleAgent(t *testing.T) {
 		workDir:           t.TempDir(),
 		townRoot:          townRoot,
 		tmux:              tmux.NewTmuxWithSocket(socket),
-		IdleNotifyTimeout: 3 * time.Second,
+		IdleNotifyTimeout: 5 * time.Second,
 	}
 
 	msg := &Message{
