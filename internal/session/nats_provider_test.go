@@ -374,6 +374,10 @@ func TestGetDefaultProvider_NatsFromSettings(t *testing.T) {
 	os.Unsetenv("GT_SESSION_TRANSPORT")
 	defer os.Setenv("GT_SESSION_TRANSPORT", oldEnv)
 
+	oldNats := os.Getenv("GT_NATS_URL")
+	os.Setenv("GT_NATS_URL", "nats://localhost:1") // Use invalid port to ensure failure
+	defer os.Setenv("GT_NATS_URL", oldNats)
+
 	p := GetDefaultProvider(tmpDir)
 	if p == nil {
 		t.Fatal("GetDefaultProvider returned nil")
@@ -413,10 +417,14 @@ func TestGetDefaultProvider_EnvOverride(t *testing.T) {
 func TestGetDefaultProvider_DefaultNats(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	// Clear env override
+	// Clear env overrides
 	oldEnv := os.Getenv("GT_SESSION_TRANSPORT")
 	os.Unsetenv("GT_SESSION_TRANSPORT")
 	defer os.Setenv("GT_SESSION_TRANSPORT", oldEnv)
+
+	oldNats := os.Getenv("GT_NATS_URL")
+	os.Setenv("GT_NATS_URL", "nats://localhost:1") // Use invalid port to ensure failure
+	defer os.Setenv("GT_NATS_URL", oldNats)
 
 	// No NATS running should return stub provider
 	p := GetDefaultProvider(tmpDir)
