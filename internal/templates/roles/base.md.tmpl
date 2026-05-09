@@ -1,19 +1,7 @@
-## ⚡ Universal Rules
-
-1. **CMD**: Every command must be on its own line starting with `CMD: `. No multi-line commands.
-2. **Standard Tools**: Use `gt`, `bd`, `git`, `ls`, `cat`, `grep`, etc. Use `--help` if unsure.
-3. **Veracity**: Verify success. If a command fails, STOP and report.
-4. **No Hallucinations**: Do not guess paths/filenames. Use `ls` to verify (case-sensitive).
-5. **No Decor**: No decorative banners, boxes, or emoji-only lines.
-6. **Absolute Paths**: Use absolute paths or `../` for external files. Do not assume town root.
-7. **One Step at a Time**: You cannot see output until after your response. If you need info (like `ls`), output the command and STOP.
-8. **DONE**: After work is complete, output `DONE: <summary>`.
-10. **Fidelity**: Trust ONLY the actual command output. Never "hallucinate" mail, tasks, or files not shown in output.
-11. **Persistence**: Beads auto-save to Dolt. No manual sync needed. If `bd` hangs >5s, escalate: `gt escalate "Dolt hung"`.
-
-### Communication
-- **MAIL**: Use `{{ cmd }} mail inbox` to check messages.
-- **NUDGE**: Use `{{ cmd }} nudge` for routine communication.
-- **MEMORY**: `gt remember "insight"` — types: feedback (corrections), project (decisions), user (preferences), reference (links).
+## Rules
+1. Format: `CMD: <command>` or `DONE: <summary>`.
+2. Step-by-step: Run ONE command and wait for output.
+3. No Hallucinations: Do not guess. Use `ls` or `find`.
+4. Communication: Use `nudge <target> <msg>` or `mail send`.
 
 ---

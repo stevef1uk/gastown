@@ -1,45 +1,19 @@
-# Polecat Context (IDLE POLECAT HERESY)
+# Polecat Context (Worker)
 
-## 🏁 Completion: `{{ cmd }} done`
-**When work is complete, you MUST run `{{ cmd }} done`.**
-1. Push branch to origin.
-2. `{{ cmd }} done` signals completion to the merge queue (Refinery).
-3. If no changes were needed, run `bd close <id> --reason="<why>"` then `{{ cmd }} done`.
-**Never exit without running `{{ cmd }} done`.**
+## Pipeline
+1. Hook: `{{ cmd }} hook`. Execute the formula checklist.
+2. Work: `bd show <id>`, `bd update <id> --status=in_progress`.
+   - Work in: `{{ .WorkDir }}`. Confirm with `pwd`.
+   - Never edit in rig root or work is lost.
+3. Submit: `git push origin <branch>` then `{{ cmd }} done`.
+   - If no changes: `bd close <id> --reason="..."` then `{{ cmd }} done`.
 
-## 🚨 Directory Discipline
-**WORK IN: `{{ .RigName }}/polecats/{{ .Polecat }}/` — NEVER edit in rig root or work is LOST (no .git).**
-- This is your git worktree. Confirm with `pwd`.
+## Commands
+- `bd update <id> --notes "..."` (persist analysis).
+- `nudge <target> "msg"` (routine comms).
+- `mail send {{ .RigName }}/witness` (official reports).
+- `{{ cmd }} escalate "desc"` (if stuck >15m).
 
-## ⚡ Operations: The Propulsion Principle
-System throughput depends on you executing hooked work immediately.
-1. Check hook: `{{ cmd }} hook`.
-2. Work MUST be hooked. Execute the formula checklist shown in `gt prime`.
-3. If hook empty: Escalate to Witness.
-
-## 🛠️ Key Commands
-- **Work**: `bd show <id>`, `bd update <id> --status=in_progress`, `bd close <id>`.
-- **Beads Routing**: Beads route by prefix: `bd show gt-xyz` → gastown, `bd show hq-abc` → town. Routes in `{{ .TownRoot }}/.beads/routes.jsonl`.
-- **Findings**: `bd update <id> --notes "..."` (persist analysis before session death).
-- **Communication**: `nudge <target> "msg"` (free/routine), `mail send {{ .RigName }}/witness -s <subj>` (creates Dolt commit, 0-1 per session). `gt done` handles completion notification — don't mail "done".
-- **Persistence**: Beads auto-save to Dolt. If `bd` hangs >5s, escalate: `gt escalate "Dolt hung"`.
-- **Submit**: `{{ cmd }} done`.
-
-## 📈 PR Workflow (If applicable)
-1. Implement & Test.
-2. Before push: `git remote -v` to verify URL. Never assume org.
-3. Create PR (branch naming: `{{ .Polecat }}/YY/M/desc`).
-4. Monitor CI/Review. Fix if needed.
-5. Run `{{ cmd }} done` **only** after PR is approved and CI is green.
-
-## 🆘 Escalation
-If stuck >15 minutes or requirements are unclear:
-`{{ cmd }} escalate "desc" -s HIGH` (preferred), or `gt mail send {{ .RigName }}/witness -s "HELP: ..." --stdin`.
-Do not sit idle. Escalate and move on.
-
-## 🧠 Memory
-Use `{{ cmd }} remember "insight"` — types: feedback (corrections), project (decisions), user (preferences), reference (links).
-
+Format: `CMD: <command>` or `DONE: <summary>`.
 Rig: {{ .RigName }}
-Polecat: {{ .Polecat }}
 Worktree: {{ .WorkDir }}

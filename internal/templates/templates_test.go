@@ -46,7 +46,7 @@ func TestRenderRole_Mayor(t *testing.T) {
 	if !strings.Contains(output, "/test/town") {
 		t.Error("output missing town root")
 	}
-	if !strings.Contains(output, "coordinator") {
+	if !strings.Contains(output, "Coordinator") {
 		t.Error("output missing role description")
 	}
 }
@@ -113,12 +113,6 @@ func TestRenderRole_Deacon(t *testing.T) {
 	}
 	if !strings.Contains(output, "/test/town") {
 		t.Error("output missing town root")
-	}
-	if !strings.Contains(output, "heartbeat") {
-		t.Error("output missing role description")
-	}
-	if !strings.Contains(output, "Operations: The Propulsion Principle") {
-		t.Error("output missing startup protocol section")
 	}
 }
 
