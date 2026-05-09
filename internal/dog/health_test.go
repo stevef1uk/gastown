@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/steveyegge/gastown/internal/constants"
-	"github.com/steveyegge/gastown/internal/tmux"
 )
 
 // mockSessionChecker implements sessionChecker for testing.
