@@ -274,6 +274,14 @@ func resolveTarget(target string, opts ResolveTargetOptions) (*ResolvedTarget, e
 						return nil, err
 					}
 				}
+
+				if opts.DryRun {
+					fmt.Printf("Target polecat has no active session, would spawn fresh polecat in rig '%s'\n", rigName)
+					result.Agent = fmt.Sprintf("%s/polecats/<new>", rigName)
+					result.Pane = "<new-pane>"
+					return result, nil
+				}
+
 				fmt.Printf("Target polecat has no active session, spawning fresh polecat in rig '%s'...\n", rigName)
 				spawnOpts := SlingSpawnOptions{
 					Force:      opts.Force,

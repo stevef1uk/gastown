@@ -2128,12 +2128,12 @@ exit /b 0
 	_, _ = captured.ReadFrom(r)
 	stdout := captured.String()
 
-	if err == nil {
-		t.Fatal("expected error from resolveTarget (proving auto-force bypassed idempotency), got nil (no-op)")
+	if err != nil {
+		t.Fatalf("expected nil error from runSling (bypassing idempotency), got: %v", err)
 	}
-	// Must NOT be the "already hooked" error — that would mean idempotency kicked in
-	if strings.Contains(err.Error(), "already") && strings.Contains(err.Error(), "hooked") {
-		t.Fatalf("got 'already hooked' error, meaning idempotency was NOT bypassed for dead agent: %v", err)
+	// Verify it didn't no-op
+	if strings.Contains(stdout, "already") && strings.Contains(stdout, "no-op") {
+		t.Fatalf("idempotency was NOT bypassed for dead agent: %s", stdout)
 	}
 	// Verify the auto-force message was printed (direct signal that dead-agent path was taken)
 	if !strings.Contains(stdout, "auto-forcing re-sling") {

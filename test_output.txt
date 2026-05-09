@@ -1,0 +1,17 @@
+=== RUN   TestSlingDeadAgentBypassesIdempotency
+    sling_test.go:2136: idempotency was NOT bypassed for dead agent: ⚠ Hooked agent gastown/polecats/test-dead-polecat-xxxx has no active session, auto-forcing re-sling...
+        Target polecat has no active session, would spawn fresh polecat in rig 'gastown'
+        🎯 Slinging gt-test456 to gastown/polecats/<new>...
+        ⚠ Bead already hooked to gastown/polecats/test-dead-polecat-xxxx, forcing reassignment...
+        Warning: Could not send shutdown to witness: ensuring custom types: beads directory does not exist: /tmp/TestSlingDeadAgentBypassesIdempotency2178298897/001/.beads
+          Auto-applying mol-polecat-work for polecat work...
+        Would instantiate formula mol-polecat-work:
+          1. bd cook mol-polecat-work
+          2. bd mol wisp mol-polecat-work --var feature="Test issue" --var issue="gt-test456"
+          3. bd mol bond <wisp-root> gt-test456
+          4. bd update <compound-root> --status=hooked --assignee=gastown/polecats/<new>
+        Would inject start prompt to pane: <new-pane>
+--- FAIL: TestSlingDeadAgentBypassesIdempotency (0.00s)
+FAIL
+FAIL	github.com/steveyegge/gastown/internal/cmd	0.044s
+FAIL

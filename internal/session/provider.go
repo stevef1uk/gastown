@@ -122,7 +122,9 @@ func (s *stubProvider) AttachSession(ctx context.Context, sessionID string) erro
 func (s *stubProvider) SendKeysDebounced(ctx context.Context, sessionID string, keys string, debounceMs int) error {
 	return fmt.Errorf("no session provider")
 }
-func (s *stubProvider) GetSessionInfo(ctx context.Context, sessionID string) (*SessionInfo, error) { return nil, nil }
+func (s *stubProvider) GetSessionInfo(ctx context.Context, sessionID string) (*SessionInfo, error) {
+	return nil, fmt.Errorf("no session provider available: %w", s.err)
+}
 func (s *stubProvider) GetWorkDir(ctx context.Context, sessionID string) (string, error)   { return "", nil }
 func (s *stubProvider) CheckSessionHealth(ctx context.Context, sessionID string, maxInactivity time.Duration) constants.ZombieStatus {
 	return constants.SessionDead

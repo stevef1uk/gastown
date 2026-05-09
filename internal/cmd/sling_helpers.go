@@ -1042,7 +1042,7 @@ func resolveFormulaToTempFile(formulaName string) (resolved string, cleanup func
 // isHookedAgentDeadFn is a seam for tests. Production uses isHookedAgentDead.
 var isHookedAgentDeadFn = isHookedAgentDead
 
-// isHookedAgentDead checks if the tmux session for a hooked assignee is dead.
+// isHookedAgentDead checks if the session for a hooked assignee is dead.
 // Used by sling to auto-force re-sling when the previous agent has no active session (gt-pqf9x).
 // Returns true if the session is confirmed dead. Returns false if alive or if we
 // can't determine liveness (conservative: don't auto-force on uncertainty).
@@ -1051,13 +1051,12 @@ func isHookedAgentDead(assignee string) bool {
 	if sessionName == "" {
 		return false // Unknown format, can't determine
 	}
-	t := tmux.NewTmux()
-	alive, err := t.HasSession(sessionName)
-	if err != nil {
-		return false // tmux not available or error, be conservative
-	}
-	return !alive
+	townRoot, _ := workspace.FindFromCwd()
+	provider := session.GetDefaultProvider(townRoot)
+	status := provider.CheckSessionHealth(context.Background(), sessionName, constants.HungSessionThreshold)
+	return status == constants.SessionDead
 }
+
 
 // hookBeadWithRetry hooks a bead to a target agent with exponential backoff retry
 // and post-hook verification. This ensures the hook sticks even under Dolt concurrency.
