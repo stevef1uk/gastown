@@ -3,6 +3,7 @@ package doctor
 import (
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -58,8 +59,15 @@ func (c *StaleAgentBeadsCheck) Run(ctx *CheckContext) *CheckResult {
 	knownPrefixes := make(map[string]bool) // all known prefixes including town-level
 	for _, r := range routes {
 		parts := strings.Split(r.Path, "/")
-		if len(parts) >= 1 && parts[0] != "." {
+		if len(parts) >= 1 && parts[0] != "." && parts[0] != ".." {
 			rigName := parts[0]
+
+			// Validate rig directory
+			rigPath := filepath.Join(ctx.TownRoot, rigName)
+			if info, err := os.Stat(rigPath); err != nil || !info.IsDir() {
+				continue
+			}
+
 			prefix := strings.TrimSuffix(r.Prefix, "-")
 			prefixToRig[prefix] = rigInfo{
 				name:      rigName,
@@ -67,7 +75,8 @@ func (c *StaleAgentBeadsCheck) Run(ctx *CheckContext) *CheckResult {
 			}
 			knownPrefixes[prefix] = true
 		} else {
-			// Town-level route (path ".") — track prefix but don't add to prefixToRig
+			// Town-level route (path ".") or data-dir route (path starts with "..")
+			// track prefix but don't add to prefixToRig
 			prefix := strings.TrimSuffix(r.Prefix, "-")
 			knownPrefixes[prefix] = true
 		}
@@ -306,7 +315,15 @@ func (c *StaleAgentBeadsCheck) Fix(ctx *CheckContext) error {
 	prefixToPath := make(map[string]string)
 	for _, r := range routes {
 		parts := strings.Split(r.Path, "/")
-		if len(parts) >= 1 && parts[0] != "." {
+		if len(parts) >= 1 && parts[0] != "." && parts[0] != ".." {
+			rigName := parts[0]
+
+			// Validate rig directory
+			rigPath := filepath.Join(ctx.TownRoot, rigName)
+			if info, err := os.Stat(rigPath); err != nil || !info.IsDir() {
+				continue
+			}
+
 			prefix := strings.TrimSuffix(r.Prefix, "-")
 			prefixToPath[prefix] = filepath.Join(ctx.TownRoot, r.Path)
 		}

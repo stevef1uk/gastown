@@ -332,21 +332,51 @@ func (c *RoutesCheck) Fix(ctx *CheckContext) error {
 		routeMap[r.Prefix] = i
 	}
 
-	// Ensure town root route exists (hq- -> .)
-	// This is normally created by gt install but may be missing if routes.jsonl was corrupted
+	// Ensure town root route exists (hq- -> .) and is correct
+	// This is normally created by gt install but may be missing or incorrect if routes.jsonl was corrupted
 	modified := false
-	if _, exists := routeMap["hq-"]; !exists {
+	if idx, exists := routeMap["hq-"]; !exists {
 		routeMap["hq-"] = len(routes)
 		routes = append(routes, beads.Route{Prefix: "hq-", Path: "."})
 		modified = true
+	} else if routes[idx].Path != "." {
+		// Correct incorrect hq- route (e.g. pointing to .dolt-data directly)
+		routes[idx].Path = "."
+		modified = true
 	}
 
-	// Ensure convoy route exists (hq-cv- -> .)
+	// Ensure convoy route exists (hq-cv- -> .) and is correct
 	// Convoys use hq-cv-* IDs for visual distinction from other town beads
-	if _, exists := routeMap["hq-cv-"]; !exists {
+	if idx, exists := routeMap["hq-cv-"]; !exists {
 		routeMap["hq-cv-"] = len(routes)
 		routes = append(routes, beads.Route{Prefix: "hq-cv-", Path: "."})
 		modified = true
+	} else if routes[idx].Path != "." {
+		routes[idx].Path = "."
+		modified = true
+	}
+
+	// Remove invalid routes (paths that don't exist)
+	var validRoutes []beads.Route
+	for _, r := range routes {
+		if r.Path == "." {
+			validRoutes = append(validRoutes, r)
+			continue
+		}
+
+		rigPath := filepath.Join(ctx.TownRoot, r.Path)
+		if _, err := os.Stat(rigPath); err == nil {
+			validRoutes = append(validRoutes, r)
+		} else {
+			modified = true
+		}
+	}
+	routes = validRoutes
+
+	// Rebuild routeMap after removal
+	routeMap = make(map[string]int)
+	for i, r := range routes {
+		routeMap[r.Prefix] = i
 	}
 
 	// Load rigs registry

@@ -3,6 +3,7 @@ package doctor
 import (
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -63,13 +64,27 @@ func (c *RigBeadsCheck) Run(ctx *CheckContext) *CheckResult {
 			}
 		} else {
 			parts := strings.Split(r.Path, "/")
-			if len(parts) >= 1 {
+			if len(parts) >= 1 && parts[0] != "." && parts[0] != ".." {
 				rigName = parts[0]
+			} else {
+				continue // Skip ".." or malformed paths
+			}
+		}
+
+		// Validate that the rig directory actually exists (except for town root "." which we already resolved)
+		if r.Path != "." {
+			rigPath := filepath.Join(ctx.TownRoot, rigName)
+			if info, err := os.Stat(rigPath); err != nil || !info.IsDir() {
+				continue
 			}
 		}
 
 		if rigName != "" {
 			prefix := strings.TrimSuffix(r.Prefix, "-")
+			// Exclude town-level prefix "hq" from rig identity checks.
+			if prefix == "hq" {
+				continue
+			}
 			if _, exists := rigSet[rigName]; !exists {
 				rigSet[rigName] = struct {
 					prefix    string
@@ -147,13 +162,27 @@ func (c *RigBeadsCheck) Fix(ctx *CheckContext) error {
 			}
 		} else {
 			parts := strings.Split(r.Path, "/")
-			if len(parts) >= 1 {
+			if len(parts) >= 1 && parts[0] != "." && parts[0] != ".." {
 				rigName = parts[0]
+			} else {
+				continue
+			}
+		}
+
+		// Validate rig directory
+		if r.Path != "." {
+			rigPath := filepath.Join(ctx.TownRoot, rigName)
+			if info, err := os.Stat(rigPath); err != nil || !info.IsDir() {
+				continue
 			}
 		}
 
 		if rigName != "" {
 			prefix := strings.TrimSuffix(r.Prefix, "-")
+			// Exclude town-level prefix "hq"
+			if prefix == "hq" {
+				continue
+			}
 			if _, exists := rigSet[rigName]; !exists {
 				rigSet[rigName] = struct {
 					prefix    string

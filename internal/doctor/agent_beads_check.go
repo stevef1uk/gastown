@@ -62,12 +62,27 @@ func (c *AgentBeadsCheck) Run(ctx *CheckContext) *CheckResult {
 	for _, r := range routes {
 		// Extract rig name from path (first component)
 		parts := strings.Split(r.Path, "/")
-		if len(parts) >= 1 && parts[0] != "." {
+		if len(parts) >= 1 && parts[0] != "." && parts[0] != ".." {
 			rigName := parts[0]
 			if ctx.RigName != "" && rigName != ctx.RigName {
 				continue
 			}
+
+			// Validate that the rig directory actually exists before assuming it's a rig.
+			// This prevents false positives from manual routes that point directly
+			// to .dolt-data or other non-rig locations. (gt-zmy)
+			rigPath := filepath.Join(ctx.TownRoot, rigName)
+			if info, err := os.Stat(rigPath); err != nil || !info.IsDir() {
+				continue
+			}
+
 			prefix := strings.TrimSuffix(r.Prefix, "-")
+			// Exclude town-level prefix "hq" from rig-level agent checks.
+			// HQ agents (mayor, deacon, planner) are checked separately.
+			if prefix == "hq" {
+				continue
+			}
+
 			prefixToRig[prefix] = rigInfo{
 				name:      rigName,
 				beadsPath: r.Path, // Use the full route path
