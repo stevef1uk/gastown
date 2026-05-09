@@ -520,7 +520,12 @@ func runMoleculeStatus(cmd *cobra.Command, args []string) error {
 
 	// Determine next action if no work is slung
 	if !status.HasWork {
-		status.NextAction = "Check inbox for work assignments: gt mail inbox"
+		// For mechanic role, patrol logs instead of checking mail
+		if status.Role == "mechanic" || strings.Contains(status.Target, "/mechanic") {
+			status.NextAction = "Patrol logs: scan for errors in /home/stevef/gt/logs/sessions/"
+		} else {
+			status.NextAction = "Check inbox for work assignments: gt mail inbox"
+		}
 	} else if status.AttachedMolecule == "" && status.AttachedFormula == "" {
 		status.NextAction = "Attach a molecule to start work: gt mol attach <bead-id> <molecule-id>"
 	} else if status.AttachedFormula != "" && status.NextAction == "" && status.PinnedBead != nil {

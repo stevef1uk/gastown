@@ -737,11 +737,11 @@ func outputStartupDirective(ctx RoleContext) {
 		fmt.Println("---")
 		fmt.Println()
 		fmt.Println("**STARTUP PROTOCOL**: You are the Mechanic. Please:")
-		fmt.Println("1. Run `" + cli.Name() + " prime` (loads full context, mail, and pending work)")
-		fmt.Println("2. Announce: \"Mechanic, checking in.\"")
-		fmt.Println("3. Check for patrol beads on your hook: `" + cli.Name() + " hook`")
-		fmt.Println("4. If no hook, check mail: `" + cli.Name() + " mail inbox`")
-		fmt.Println("5. Start patrolling session logs for stalled agents.")
+		fmt.Println("1. Run `" + cli.Name() + " prime` (loads full context and pending work)")
+		fmt.Println("2. Check hook status: `" + cli.Name() + " hook status`")
+		fmt.Println("3. If no hook work, scan logs: `ls -rt /home/stevef/gt/logs/sessions/*.log | head -5`")
+		fmt.Println("4. Fix any errors found, then nudge affected agents")
+		fmt.Println("5. Sleep 30 seconds and repeat patrol cycle")
 	}
 }
 

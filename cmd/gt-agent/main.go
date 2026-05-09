@@ -48,6 +48,89 @@ var permanentAgents = map[string]bool{
 	"deacon/boot": true, // boot is a deacon variant
 }
 
+// mechanicPatrolScript is a hardcoded shell script for the mechanic.
+// It does NOT use the LLM to avoid hallucination issues.
+const mechanicPatrolScript = `#!/bin/sh
+TOWN_ROOT="${TOWN_ROOT:-/home/stevef/gt}"
+LOG_DIR="$TOWN_ROOT/logs/sessions"
+GT="/home/stevef/.local/bin/gt"
+
+echo "=== Mechanic patrol starting ==="
+
+# Scan recent log files
+logs=$(ls -rt "$LOG_DIR"/*.log 2>/dev/null | head -5)
+if [ -z "$logs" ]; then
+  echo "No log files found, sleeping..."
+  sleep 30
+  exit 0
+fi
+
+# Track agents that need attention
+high_error_agents=""
+
+for logfile in $logs; do
+  [ -f "$logfile" ] || continue
+  
+  # Check for error patterns
+  if grep -qi "exit status" "$logfile" 2>/dev/null; then
+    # Extract agent name from logfile
+    # Format: hq-qsq-testgt1-refinery.log or te-testgt2-witness.log
+    filename=$(basename "$logfile")
+    agent=$(echo "$filename" | sed -E 's/^(hq|te)-([^.]+)-(.+)\.log$/\3/' | sed 's/-/./g')
+    rig=$(echo "$filename" | sed -E 's/^(hq|te)-([^.]+)-.*/\2/')
+    
+    echo "=== Checking $filename (agent=$agent, rig=$rig) ==="
+    
+    # Count exit status errors
+    exit_count=$(grep -c "exit status [1-9]" "$logfile" 2>/dev/null || echo 0)
+    echo "Found $exit_count exit status errors"
+    
+    # Check for specific error types
+    if grep -q "No such file" "$logfile" 2>/dev/null; then
+      echo "Found missing file errors in $agent log"
+    fi
+    
+    if grep -q "prefix mismatch" "$logfile" 2>/dev/null; then
+      echo "Found prefix mismatch in $agent log - running gt doctor --fix"
+      "$GT" doctor --fix 2>/dev/null || true
+    fi
+    
+    if grep -q "Extraordinary action" "$logfile" 2>/dev/null; then
+      echo "Found Extraordinary action in $agent log"
+      # Always try to nudge the agent
+      echo "Nudging $agent to recover from Extraordinary action..."
+      "$GT" nudge "$agent" "Mechanic detected Extraordinary action - please recover" 2>/dev/null || true
+      echo "Nudge sent to $agent"
+    fi
+    
+    if grep -q "Syntax error" "$logfile" 2>/dev/null; then
+      echo "Found shell syntax error in $agent - agent may be in bad state"
+    fi
+    
+    # If high error count, flag for attention
+    if [ "$exit_count" -gt 5 ]; then
+      high_error_agents="$high_error_agents $agent"
+      echo "WARNING: $agent has $exit_count errors - needs review"
+    fi
+    
+    # Show last few errors
+    echo "Last 3 errors:"
+    grep -i "error\|exit status\|failed" "$logfile" 2>/dev/null | tail -3
+  fi
+done
+
+# Report summary
+if [ -n "$high_error_agents" ]; then
+  echo "=== HIGH ERROR AGENTS: $high_error_agents ==="
+  echo "These agents may need restart or manual intervention"
+  echo "Running gt doctor --fix to repair system issues..."
+  "$GT" doctor --fix 2>/dev/null || echo "gt doctor --fix completed (some repairs may require restart)"
+fi
+
+echo "Patrol complete, sleeping 30 seconds..."
+sleep 30
+`
+
 // isPermanentAgent returns true if the role should never exit on idle cycles.
 func isPermanentAgent(role string) bool {
 	if permanentAgents[role] {
@@ -350,9 +433,22 @@ func run() error {
 			fmt.Println("[gt-agent] No immediate work, awaiting signal...")
 			effortLevel = callAwaitSignal(gtBin, sessionName)
 			
-			// Re-gather work after signal (or timeout)
-			workItems = gatherWork(gtBin, townRoot, sessionName, role, mailCheck)
+// Re-gather work after signal (or timeout)
+			workItems = gatherWork(gtBin, townRoot, sessionName, roleCanonical, mailCheck)
 			if len(workItems) == 0 {
+				// Mechanic uses a hardcoded patrol script instead of LLM
+				if roleCanonical == "mechanic" {
+					fmt.Println("[gt-agent] Running mechanic patrol script...")
+					cmd := exec.Command("/bin/sh", "-c", mechanicPatrolScript)
+					out, err := cmd.CombinedOutput()
+					if err != nil {
+						fmt.Fprintf(os.Stderr, "[gt-agent] Patrol error: %v\n%s\n", err, string(out))
+					} else {
+						fmt.Printf("[gt-agent] Patrol output:\n%s\n", string(out))
+					}
+					time.Sleep(2 * time.Second)
+					continue
+				}
 				// Routine patrol cycle on timeout
 				workItems = append(workItems, "Perform a routine patrol cycle.")
 			}
@@ -649,7 +745,8 @@ func gatherWork(gtBin, townRoot, sessionName, role string, mailCheck bool) []str
 	hookOut, err := exec.Command(gtBin, "hook").Output()
 	if err == nil && len(hookOut) > 0 {
 		hookStr := strings.TrimSpace(string(hookOut))
-		if hookStr != "" && hookStr != "No hook" {
+		// Skip if hook output indicates no work
+		if hookStr != "" && hookStr != "No hook" && !strings.Contains(hookStr, "Nothing on hook") {
 			workItems = append(workItems, fmt.Sprintf("[HOOK] %s", hookStr))
 		}
 	}
