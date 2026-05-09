@@ -1,0 +1,36 @@
+description = "Mechanic patrol loop for system repair.\n\nThe Mechanic monitors logs for stalled agents and applies fixes.\nDO NOT check mail inbox - it's not your job.\n\n## Your Pipeline\n1. Check hook: gt hook status\n2. If work on hook: EXECUTE it\n3. If no hook work: Run patrol loop\n4. Loop with 30s sleep between cycles\n\n## Error Patterns to Fix\n- exit status 1 → check what failed, fix it\n- No such file → create symlink: ln -sf <actual> <hallucinated>\n- prefix mismatch → run gt doctor --fix\n\n## After Fix\nNudge the affected agent: gt nudge <target> \"Fixed: <what you fixed>\"\n"
+formula = 'mol-mechanic-patrol'
+version = 1
+
+[vars]
+[vars.rig]
+description = "Name of the rig this mechanic belongs to"
+default = "testgt2"
+
+[vars.town_root]
+description = "Town root directory"
+default = "/home/stevef/gt"
+
+[[steps]]
+id = 'check-hook'
+title = 'Check for work on hook'
+
+[[steps]]
+id = 'scan-logs'
+title = 'Scan session logs for errors'
+needs = ['check-hook']
+
+[[steps]]
+id = 'fix-issues'
+title = 'Apply repairs and shims'
+needs = ['scan-logs']
+
+[[steps]]
+id = 'nudge-agents'
+title = 'Nudge fixed agents'
+needs = ['fix-issues']
+
+[[steps]]
+id = 'report-cycle'
+title = 'Report and sleep'
+needs = ['nudge-agents']
