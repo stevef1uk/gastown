@@ -22,55 +22,23 @@ import (
 	"github.com/steveyegge/gastown/internal/workspace"
 )
 
-// outputPrimeContext outputs the role-specific context using templates or fallback.
-// Returns the rendered template content (empty string when using fallback path).
+// outputPrimeContext outputs the role-specific context using templates.
+// Agent instructions come from templates only - no hardcoded fallback.
 func outputPrimeContext(ctx RoleContext) (string, error) {
-	// Try to use templates first
 	tmpl, err := templates.New()
 	if err != nil {
-		// Fall back to hardcoded output if templates fail
-		outputPrimeContextFallback(ctx)
-		return "", nil
+		return "", fmt.Errorf("templates init failed: %w", err)
 	}
 
 	// Map role to template name
-	var roleName string
-	switch ctx.Role {
-	case RoleMayor:
-		roleName = constants.RoleMayor
-	case RoleDeacon:
-		roleName = constants.RoleDeacon
-	case RoleWitness:
-		roleName = constants.RoleWitness
-	case RoleRefinery:
-		roleName = constants.RoleRefinery
-	case RolePlanner:
-		roleName = constants.RolePlanner
-	case RoleArchitect:
-		roleName = constants.RoleArchitect
-	case RoleQA:
-		roleName = constants.RoleQA
-	case RolePolecat:
-		roleName = constants.RolePolecat
-	case RoleCrew:
-		roleName = constants.RoleCrew
-	case RoleBoot:
-		roleName = "boot"
-	case RoleDog:
-		roleName = "dog"
-	case RoleMechanic:
-		roleName = constants.RoleMechanic
-	default:
-		// Unknown role - use fallback
-		outputPrimeContextFallback(ctx)
-		return "", nil
+	roleName := roleToTemplateName(ctx.Role)
+	if roleName == "" {
+		return "", fmt.Errorf("unknown role: %v", ctx.Role)
 	}
 
 	// Build template data
-	// Get town name for session names
 	townName, _ := workspace.GetTownName(ctx.TownRoot)
 
-	// Get default branch from rig config (default to "main" if not set)
 	defaultBranch := "main"
 	if ctx.Rig != "" && ctx.TownRoot != "" {
 		rigPath := filepath.Join(ctx.TownRoot, ctx.Rig)
@@ -87,7 +55,7 @@ func outputPrimeContext(ctx RoleContext) (string, error) {
 		WorkDir:       ctx.WorkDir,
 		DefaultBranch: defaultBranch,
 		Polecat:       ctx.Polecat,
-		DogName:       ctx.Polecat, // ctx.Polecat holds the dog name for RoleDog
+		DogName:       ctx.Polecat,
 		MayorSession:  session.MayorSessionName(),
 		DeaconSession: session.DeaconSessionName(),
 	}
@@ -100,6 +68,38 @@ func outputPrimeContext(ctx RoleContext) (string, error) {
 
 	fmt.Print(output)
 	return output, nil
+}
+
+// roleToTemplateName maps Role enum to template filename (without .md.tmpl extension)
+func roleToTemplateName(role Role) string {
+	switch role {
+	case RoleMayor:
+		return constants.RoleMayor
+	case RoleDeacon:
+		return constants.RoleDeacon
+	case RoleWitness:
+		return constants.RoleWitness
+	case RoleRefinery:
+		return constants.RoleRefinery
+	case RolePlanner:
+		return constants.RolePlanner
+	case RoleArchitect:
+		return constants.RoleArchitect
+	case RoleQA:
+		return constants.RoleQA
+	case RolePolecat:
+		return constants.RolePolecat
+	case RoleCrew:
+		return constants.RoleCrew
+	case RoleBoot:
+		return "boot"
+	case RoleDog:
+		return "dog"
+	case RoleMechanic:
+		return constants.RoleMechanic
+	default:
+		return ""
+	}
 }
 
 // outputRoleDirectives loads and emits operator-provided role directives.
