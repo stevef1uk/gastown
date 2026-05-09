@@ -324,7 +324,9 @@ func run() error {
 		}
 
 		// Gather work from all sources
-		workItems := gatherWork(gtBin, townRoot, sessionName)
+		// Mechanic doesn't check mail - it patrols logs instead
+		mailCheck := role != "mechanic"
+		workItems := gatherWork(gtBin, townRoot, sessionName, role, mailCheck)
 
 		effortLevel := "full"
 		if len(workItems) == 0 {
@@ -349,7 +351,7 @@ func run() error {
 			effortLevel = callAwaitSignal(gtBin, sessionName)
 			
 			// Re-gather work after signal (or timeout)
-			workItems = gatherWork(gtBin, townRoot, sessionName)
+			workItems = gatherWork(gtBin, townRoot, sessionName, role, mailCheck)
 			if len(workItems) == 0 {
 				// Routine patrol cycle on timeout
 				workItems = append(workItems, "Perform a routine patrol cycle.")
@@ -628,7 +630,8 @@ func postWorkCommand(role, summary string) string {
 }
 
 // gatherWork collects nudges, hook, and mail into work items.
-func gatherWork(gtBin, townRoot, sessionName string) []string {
+// mailCheck controls whether to include mail (skip for Mechanic).
+func gatherWork(gtBin, townRoot, sessionName, role string, mailCheck bool) []string {
 	var workItems []string
 
 	// 1. Drain nudge queue
@@ -651,12 +654,14 @@ func gatherWork(gtBin, townRoot, sessionName string) []string {
 		}
 	}
 
-	// 3. Check mail
-	mailOut, err := exec.Command(gtBin, "mail", "check", "--inject").Output()
-	if err == nil && len(mailOut) > 0 {
-		mailStr := strings.TrimSpace(string(mailOut))
-		if mailStr != "" {
-			workItems = append(workItems, fmt.Sprintf("[MAIL] %s", mailStr))
+	// 3. Check mail ONLY for roles that need it
+	if mailCheck {
+		mailOut, err := exec.Command(gtBin, "mail", "check", "--inject").Output()
+		if err == nil && len(mailOut) > 0 {
+			mailStr := strings.TrimSpace(string(mailOut))
+			if mailStr != "" {
+				workItems = append(workItems, fmt.Sprintf("[MAIL] %s", mailStr))
+			}
 		}
 	}
 
