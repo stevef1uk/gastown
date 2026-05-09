@@ -56,9 +56,9 @@ func runMoleculeBurn(cmd *cobra.Command, args []string) (retErr error) {
 	}
 
 	// Find beads directory
-	workDir, err := findLocalBeadsDir()
+	workDir, err := findBeadsWorkDirForAgent(target, townRoot)
 	if err != nil {
-		return fmt.Errorf("not in a beads workspace: %w", err)
+		return fmt.Errorf("resolving beads workspace: %w", err)
 	}
 
 	b := beads.New(workDir)
@@ -190,9 +190,9 @@ func runMoleculeSquash(cmd *cobra.Command, args []string) (retErr error) {
 	}
 
 	// Find beads directory
-	workDir, err := findLocalBeadsDir()
+	workDir, err := findBeadsWorkDirForAgent(target, townRoot)
 	if err != nil {
-		return fmt.Errorf("not in a beads workspace: %w", err)
+		return fmt.Errorf("resolving beads workspace: %w", err)
 	}
 
 	b := beads.New(workDir)

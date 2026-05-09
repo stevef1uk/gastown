@@ -133,16 +133,16 @@ func init() {
 }
 
 func runMoleculeAwaitSignal(cmd *cobra.Command, args []string) error {
-	// Find beads directory (rig-local for bead operations)
-	workDir, err := findLocalBeadsDir()
-	if err != nil {
-		return fmt.Errorf("not in a beads workspace: %w", err)
-	}
-
 	// Find town root for events file (events are always at <townRoot>/.events.jsonl)
 	townRoot, err := workspace.FindFromCwdOrError()
 	if err != nil {
 		return fmt.Errorf("not in a Gas Town workspace: %w", err)
+	}
+
+	// Find beads directory (rig-local for bead operations)
+	workDir, err := findBeadsWorkDirForID(awaitSignalAgentBead, townRoot)
+	if err != nil {
+		return fmt.Errorf("not in a beads workspace: %w", err)
 	}
 
 	beadsDir := beads.ResolveBeadsDir(workDir)

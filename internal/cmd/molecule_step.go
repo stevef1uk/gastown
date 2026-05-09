@@ -81,10 +81,10 @@ func runMoleculeStepDone(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("not in a Gas Town workspace")
 	}
 
-	// Find beads directory
-	workDir, err := findLocalBeadsDir()
+	// Resolve the correct beads database for this step ID
+	workDir, err := findBeadsWorkDirForID(stepID, townRoot)
 	if err != nil {
-		return fmt.Errorf("not in a beads workspace: %w", err)
+		return fmt.Errorf("resolving beads workspace: %w", err)
 	}
 
 	b := beads.New(workDir)
@@ -461,7 +461,7 @@ func handleMoleculeComplete(cwd, townRoot, moleculeID string, dryRun bool) error
 	}
 
 	// Unpin the molecule bead (set status to open, will be closed by gt done or manually)
-	workDir, err := findLocalBeadsDir()
+	workDir, err := findBeadsWorkDirForAgent(agentID, townRoot)
 	if err == nil {
 		b := beads.New(workDir)
 		pinnedBeads, err := b.List(beads.ListOptions{

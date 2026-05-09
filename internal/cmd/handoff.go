@@ -1627,7 +1627,7 @@ func cleanupMoleculeOnHandoff() {
 		return
 	}
 
-	workDir, err := findLocalBeadsDir()
+	workDir, err := findBeadsWorkDirForAgent(agentID, townRoot)
 	if err != nil {
 		return
 	}

@@ -72,7 +72,7 @@ func runMoleculeAttachFromMail(cmd *cobra.Command, args []string) error {
 	}
 
 	// Find local beads directory
-	workDir, err := findLocalBeadsDir()
+	workDir, err := findBeadsWorkDirForAgent(agentIdentity, townRoot)
 	if err != nil {
 		return fmt.Errorf("not in a beads workspace: %w", err)
 	}

@@ -14,9 +14,38 @@ import (
 func runMoleculeAttach(cmd *cobra.Command, args []string) error {
 	var pinnedBeadID, moleculeID string
 
-	workDir, err := findLocalBeadsDir()
+	cwd, err := os.Getwd()
 	if err != nil {
-		return fmt.Errorf("not in a beads workspace: %w", err)
+		return fmt.Errorf("getting current directory: %w", err)
+	}
+
+	townRoot, _ := workspace.FindFromCwd()
+	// Fallback to env if FindFromCwd fails (common in tests)
+	if townRoot == "" {
+		townRoot = os.Getenv("GT_TOWN_ROOT")
+		if townRoot == "" {
+			townRoot = os.Getenv("GT_ROOT")
+		}
+	}
+
+	// Detect role early for correct beads directory resolution
+	var target string
+	roleInfo, err := GetRoleWithContext(cwd, townRoot)
+	if err == nil {
+		roleCtx := RoleContext{
+			Role:     roleInfo.Role,
+			Rig:      roleInfo.Rig,
+			Polecat:  roleInfo.Polecat,
+			TownRoot: townRoot,
+			WorkDir:  cwd,
+		}
+		target = buildAgentIdentity(roleCtx)
+	}
+
+	// Resolve the correct beads database for this agent
+	workDir, err := findBeadsWorkDirForAgent(target, townRoot)
+	if err != nil {
+		return fmt.Errorf("resolving beads workspace: %w", err)
 	}
 
 	b := beads.New(workDir)
@@ -30,33 +59,8 @@ func runMoleculeAttach(cmd *cobra.Command, args []string) error {
 		// Find the agent's pinned handoff bead (same pattern as mol burn/squash)
 		moleculeID = args[0]
 
-		cwd, err := os.Getwd()
-		if err != nil {
-			return fmt.Errorf("getting current directory: %w", err)
-		}
-
-		townRoot, err := workspace.FindFromCwd()
-		if err != nil {
-			return fmt.Errorf("finding workspace: %w", err)
-		}
-		if townRoot == "" {
-			return fmt.Errorf("not in a Gas Town workspace")
-		}
-
-		roleInfo, err := GetRoleWithContext(cwd, townRoot)
-		if err != nil {
-			return fmt.Errorf("detecting role: %w", err)
-		}
-		roleCtx := RoleContext{
-			Role:     roleInfo.Role,
-			Rig:      roleInfo.Rig,
-			Polecat:  roleInfo.Polecat,
-			TownRoot: townRoot,
-			WorkDir:  cwd,
-		}
-		target := buildAgentIdentity(roleCtx)
 		if target == "" {
-			return fmt.Errorf("cannot determine agent identity (role: %s)", roleCtx.Role)
+			return fmt.Errorf("cannot determine agent identity (role: %s)", roleInfo.Role)
 		}
 
 		role := extractRoleFromIdentity(target)

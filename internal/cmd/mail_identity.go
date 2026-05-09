@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/steveyegge/gastown/internal/beads"
 	"github.com/steveyegge/gastown/internal/constants"
 	"github.com/steveyegge/gastown/internal/workspace"
 )
@@ -74,6 +75,71 @@ func findLocalBeadsDir() (string, error) {
 	}
 
 	return "", fmt.Errorf("no .beads directory found")
+}
+
+// findBeadsWorkDirForAgent resolves the beads workspace directory for an agent.
+// Town-level agents (Mayor, Deacon, Planner, Mechanic) always use the town root.
+// Rig-level agents (Witness, Refinery, Polecat, Crew) use local discovery,
+// falling back to the town root if needed.
+//
+// The returned path is the parent of the .beads directory, suitable for beads.New().
+func findBeadsWorkDirForAgent(agentID string, townRoot string) (string, error) {
+	if isTownLevelRole(agentID) && townRoot != "" {
+		return townRoot, nil
+	}
+
+	// If we have a town root and the agent ID contains a rig prefix,
+	// resolve to that rig's database. This ensures remote targets (e.g. from
+	// gt hook show <rig/agent>) are queried from the correct database.
+	if townRoot != "" && strings.Contains(agentID, "/") {
+		agentBeadID := agentIDToBeadID(agentID, townRoot)
+		if agentBeadID != "" {
+			rigName := strings.Split(agentID, "/")[0]
+			var fallbackPath string
+			if rigName == "mayor" || rigName == "deacon" {
+				fallbackPath = townRoot
+			} else {
+				fallbackPath = filepath.Join(townRoot, rigName)
+			}
+			resolvedDir := beads.ResolveHookDir(townRoot, agentBeadID, fallbackPath)
+			if resolvedDir != "" {
+				return filepath.Dir(resolvedDir), nil
+			}
+		}
+	}
+
+	// For rig-level agents, use local discovery (respects redirects and BEADS_DIR)
+	workDir, err := findLocalBeadsDir()
+	if err != nil {
+		// If not in a beads workspace, fall back to town root if we have one
+		if townRoot != "" {
+			return townRoot, nil
+		}
+		return "", err
+	}
+
+	return workDir, nil
+}
+
+// findBeadsWorkDirForID resolves the beads workspace directory for a specific bead ID.
+// Uses prefix-based routing to determine which rig or town database owns the bead.
+func findBeadsWorkDirForID(beadID string, townRoot string) (string, error) {
+	// Start with local discovery
+	workDir, err := findLocalBeadsDir()
+	if err != nil {
+		if townRoot != "" {
+			workDir = townRoot
+		} else {
+			return "", err
+		}
+	}
+
+	// Resolve actual beads directory based on ID prefix
+	currentBeadsDir := filepath.Join(workDir, ".beads")
+	resolvedBeadsDir := beads.ResolveBeadsDirForID(currentBeadsDir, beadID)
+
+	// Return the parent of .beads
+	return filepath.Dir(resolvedBeadsDir), nil
 }
 
 // detectSender determines the current context's address.

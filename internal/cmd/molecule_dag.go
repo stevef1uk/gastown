@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/steveyegge/gastown/internal/beads"
 	"github.com/steveyegge/gastown/internal/style"
+	"github.com/steveyegge/gastown/internal/workspace"
 )
 
 // DAGNode represents a node in the dependency graph.
@@ -69,9 +70,11 @@ func init() {
 func runMoleculeDag(cmd *cobra.Command, args []string) error {
 	rootID := args[0]
 
-	workDir, err := findLocalBeadsDir()
+	townRoot, _ := workspace.FindFromCwd()
+
+	workDir, err := findBeadsWorkDirForID(rootID, townRoot)
 	if err != nil {
-		return fmt.Errorf("not in a beads workspace: %w", err)
+		return fmt.Errorf("resolving beads workspace: %w", err)
 	}
 
 	b := beads.New(workDir)
