@@ -1408,7 +1408,7 @@ func (d *Daemon) ensureDeaconRunning() {
 
 	// Check if deacon is actually running - this should be checked even in crash
 	// loop mode so we can detect recovery and clear the crash loop state.
-	mgr := deacon.NewManager(d.config.TownRoot)
+	mgr := deacon.NewManagerWithProvider(d.config.TownRoot, d.sp)
 	if running, _ := mgr.IsRunning(); running {
 		// Deacon is running - record success to reset backoff/crash loop
 		if d.restartTracker != nil {

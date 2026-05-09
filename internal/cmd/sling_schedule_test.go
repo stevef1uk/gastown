@@ -22,6 +22,11 @@ func TestAreScheduledFailClosed(t *testing.T) {
 	defer func() { _ = os.Chdir(origDir) }()
 
 	requestedIDs := []string{"bead-1", "bead-2", "bead-3"}
+	
+	// Ensure we don't pick up a town root from the environment
+	t.Setenv("GT_TOWN_ROOT", "")
+	t.Setenv("GT_ROOT", "")
+
 	result := areScheduled(requestedIDs)
 
 	// All IDs should appear as scheduled (fail closed)

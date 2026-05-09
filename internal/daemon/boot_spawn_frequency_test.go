@@ -47,6 +47,7 @@ fi
 
 # Keep session checks simple for this regression repro: no existing boot session.
 if [[ "$cmd" == "has-session" ]]; then
+  echo "can't find session" >&2
   exit 1
 fi
 

@@ -27,9 +27,14 @@ type Manager struct {
 
 // NewManager creates a new deacon manager for a town.
 func NewManager(townRoot string) *Manager {
+	return NewManagerWithProvider(townRoot, session.GetDefaultProvider(townRoot))
+}
+
+// NewManagerWithProvider creates a new deacon manager with a specific provider.
+func NewManagerWithProvider(townRoot string, sp session.Provider) *Manager {
 	return &Manager{
 		townRoot: townRoot,
-		sp:       session.GetDefaultProvider(townRoot),
+		sp:       sp,
 	}
 }
 

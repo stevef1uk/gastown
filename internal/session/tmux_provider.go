@@ -39,7 +39,7 @@ func (p *TmuxProvider) Start(ctx context.Context, opts StartOptions) error {
 	}
 
 	if opts.Theme != nil {
-		if theme, ok := opts.Theme.(*tmux.Theme); ok {
+		if theme, ok := opts.Theme.(*tmux.Theme); ok && theme != nil {
 			// Apply theme (non-blocking, non-fatal)
 			_ = p.t.ApplyTheme(opts.SessionID, *theme)
 		}
