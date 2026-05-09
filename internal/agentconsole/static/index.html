@@ -319,6 +319,9 @@
         async function loadAgents() {
             try {
                 const res = await fetch('/api/agents');
+                if (!res.ok) {
+                    throw new Error(`Server returned ${res.status}: ${res.statusText}`);
+                }
                 agents = await res.json();
                 updateRigFilter();
                 renderAgentList();
@@ -326,6 +329,7 @@
             } catch (err) {
                 console.error('Failed to load agents:', err);
                 document.getElementById('system-status').textContent = 'Error loading agents';
+                appendLog(`[error] Failed to load agents: ${err.message}`);
             }
         }
 
@@ -460,10 +464,20 @@
         async function loadAgentLogs(agentId) {
             try {
                 const res = await fetch(`/api/agents/${agentId}/logs`);
+                if (!res.ok) {
+                    const text = await res.text();
+                    try {
+                        const errData = JSON.parse(text);
+                        throw new Error(errData.error || text);
+                    } catch (e) {
+                        throw new Error(text || `Server returned ${res.status}`);
+                    }
+                }
                 const data = await res.json();
                 renderLogs(data.logs);
             } catch (err) {
                 console.error('Failed to load logs:', err);
+                appendLog(`[error] Failed to load logs: ${err.message}`);
             }
         }
 
@@ -496,14 +510,19 @@
             }
             eventSource = new EventSource(`/api/agents/${agentId}/stream`);
             eventSource.onmessage = (e) => {
+                if (!e.data) return;
                 try {
+                    // Try to parse as JSON first
                     const data = JSON.parse(e.data);
                     if (Array.isArray(data)) {
                         data.forEach(log => appendLog(log));
+                    } else if (typeof data === 'object' && data.error) {
+                        appendLog(`[error] ${data.error}`);
                     } else {
                         appendLog(JSON.stringify(data));
                     }
                 } catch (err) {
+                    // Fallback to raw text if not JSON
                     appendLog(e.data);
                 }
             };
@@ -545,11 +564,23 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ message })
                 });
-                const data = await res.json();
-                if (data.status === 'sent' || data.status === 'queued') {
-                    appendLog(`[system] Message ${data.status} via ${data.via} (agent will process on next cycle)`);
+                
+                const text = await res.text();
+                let data;
+                try {
+                    data = JSON.parse(text);
+                } catch (e) {
+                    data = { error: text };
+                }
+
+                if (res.ok) {
+                    if (data.status === 'sent' || data.status === 'queued') {
+                        appendLog(`[system] Message ${data.status} via ${data.via} (agent will process on next cycle)`);
+                    } else {
+                        appendLog(`[system] Message response: ${JSON.stringify(data)}`);
+                    }
                 } else {
-                    appendLog(`[error] Failed to send: ${JSON.stringify(data)}`);
+                    appendLog(`[error] Failed to send: ${data.error || text || res.statusText}`);
                 }
             } catch (err) {
                 appendLog(`[error] ${err.message}`);

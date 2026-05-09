@@ -21,7 +21,7 @@ func runMoleculeAttach(cmd *cobra.Command, args []string) error {
 
 	b := beads.New(workDir)
 
-	if len(args) == 2 {
+	if len(args) >= 2 {
 		// Explicit: gt mol attach <pinned-bead-id> <molecule-id>
 		pinnedBeadID = args[0]
 		moleculeID = args[1]

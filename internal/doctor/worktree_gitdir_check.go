@@ -267,9 +267,16 @@ func (c *WorktreeGitdirCheck) inferCorrectedBareRepo(staleBareRepoPath string) s
 	staleRigDir := filepath.Dir(staleBareRepoPath)
 	rigName := filepath.Base(staleRigDir)
 
+	// Check standard path
 	candidate := filepath.Join(c.townRoot, rigName, ".repo.git")
 	if _, err := os.Stat(candidate); err == nil {
 		return candidate
+	}
+
+	// Check for .safe renamed rig (gt-fmnml)
+	safeCandidate := filepath.Join(c.townRoot, rigName+".safe", ".repo.git")
+	if _, err := os.Stat(safeCandidate); err == nil {
+		return safeCandidate
 	}
 
 	return ""

@@ -76,7 +76,7 @@ pinned bead ID is auto-detected from the current agent's hook.
 Examples:
   gt molecule attach gt-abc mol-xyz  # Explicit pinned bead
   gt molecule attach mol-xyz         # Auto-detect from cwd`,
-	Args: cobra.RangeArgs(1, 2),
+	Args: cobra.MinimumNArgs(1),
 	RunE: runMoleculeAttach,
 }
 

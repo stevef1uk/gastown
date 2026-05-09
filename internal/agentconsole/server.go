@@ -94,6 +94,13 @@ func (s *Server) handleAgents(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(agents)
 }
 
+// writeJSONError sends a JSON error response.
+func (s *Server) writeJSONError(w http.ResponseWriter, msg string, code int) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(code)
+	json.NewEncoder(w).Encode(map[string]string{"error": msg})
+}
+
 // handleAgentDetail returns details for a specific agent.
 func (s *Server) handleAgentDetail(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
@@ -113,13 +120,13 @@ func (s *Server) handleAgentDetail(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	http.Error(w, "agent not found", http.StatusNotFound)
+	s.writeJSONError(w, "agent not found", http.StatusNotFound)
 }
 
 // handleSendMessage sends a nudge to an agent via NATS.
 func (s *Server) handleSendMessage(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		s.writeJSONError(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
@@ -135,7 +142,7 @@ func (s *Server) handleSendMessage(w http.ResponseWriter, r *http.Request) {
 		Message string `json:"message"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		s.writeJSONError(w, "invalid JSON", http.StatusBadRequest)
 		return
 	}
 
@@ -147,7 +154,7 @@ func (s *Server) handleSendMessage(w http.ResponseWriter, r *http.Request) {
 	sender := "overseer (web console)"
 	err := sp.NudgeSession(r.Context(), sessionName, req.Message, sender)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("failed to deliver nudge: %v", err), http.StatusInternalServerError)
+		s.writeJSONError(w, fmt.Sprintf("failed to deliver nudge: %v", err), http.StatusInternalServerError)
 		return
 	}
 
@@ -194,7 +201,7 @@ func (s *Server) handleAgentStream(w http.ResponseWriter, r *http.Request) {
 
 	flusher, ok := w.(http.Flusher)
 	if !ok {
-		http.Error(w, "streaming not supported", http.StatusInternalServerError)
+		s.writeJSONError(w, "streaming not supported", http.StatusInternalServerError)
 		return
 	}
 
