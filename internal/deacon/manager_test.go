@@ -10,7 +10,6 @@ import (
 	"github.com/steveyegge/gastown/internal/config"
 	"github.com/steveyegge/gastown/internal/constants"
 	"github.com/steveyegge/gastown/internal/session"
-	"github.com/steveyegge/gastown/internal/tmux"
 )
 
 // mockProvider implements session.Provider for testing.
@@ -54,6 +53,9 @@ func (m *mockProvider) GetEnvironment(ctx context.Context, sessionID string) (ma
 	return nil, nil
 }
 func (m *mockProvider) SetEnvironment(ctx context.Context, sessionID, key, value string) error { return nil }
+func (m *mockProvider) UnsetEnvironment(ctx context.Context, sessionID, key string) error {
+	return nil
+}
 func (m *mockProvider) SetGlobalEnvironment(key, value string) error { return nil }
 func (m *mockProvider) UnsetGlobalEnvironment(key string) error { return nil }
 func (m *mockProvider) SetRemainOnExit(ctx context.Context, sessionID string, enabled bool) error { return nil }
