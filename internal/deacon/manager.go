@@ -74,7 +74,7 @@ func (m *Manager) Start(agentOverride string) error {
 		theme = tmux.ResolveSessionTheme(m.townRoot, "", "deacon", "")
 	}
 
-	_, err := session.StartSession(ctx, sp, session.SessionConfig{
+	_, err := session.StartSession(ctx, sp, &session.SessionConfig{
 		SessionID:   sessionID,
 		WorkDir:     deaconDir,
 		Role:        "deacon",

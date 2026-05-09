@@ -25,6 +25,16 @@ type SessionInfo struct {
 	Attached     bool
 	Activity     string // Last activity time
 	LastAttached string // Last time the session was attached
+	PID          int    // Principal process ID (e.g. tmux pane PID or NATS worker PID)
+}
+
+// StartOptions configures how a session is started.
+type StartOptions struct {
+	SessionID string
+	WorkDir   string
+	Command   string
+	Env       map[string]string
+	Theme     any // Provider-specific theme (e.g. *tmux.Theme)
 }
 
 // WaitForIdle waits for a session to become idle using provider-specific detection.
@@ -88,7 +98,7 @@ type stubProvider struct {
 }
 
 func (s *stubProvider) IsAvailable() bool                           { return false }
-func (s *stubProvider) Start(ctx context.Context, sessionID, workDir, command string, env map[string]string) error {
+func (s *stubProvider) Start(ctx context.Context, opts StartOptions) error {
 	return fmt.Errorf("no session provider available: %w", s.err)
 }
 func (s *stubProvider) Stop(ctx context.Context, sessionID string, graceful bool) error { return nil }
@@ -105,8 +115,8 @@ func (s *stubProvider) SetGlobalEnvironment(key, value string) error            
 func (s *stubProvider) UnsetGlobalEnvironment(key string) error                           { return nil }
 func (s *stubProvider) SetRemainOnExit(ctx context.Context, sessionID string, enabled bool) error { return nil }
 func (s *stubProvider) Configure(ctx context.Context, sessionID string, cfg any) error      { return nil }
-func (s *stubProvider) EnsureSessionFresh(ctx context.Context, sessionID, workDir, command string, env map[string]string) error {
-	return fmt.Errorf("no session provider")
+func (s *stubProvider) EnsureSessionFresh(ctx context.Context, opts StartOptions) error {
+	return fmt.Errorf("no session provider available: %w", s.err)
 }
 func (s *stubProvider) IsAgentRunning(ctx context.Context, id string) (bool, error) { return false, nil }
 func (s *stubProvider) WaitForRuntimeReady(ctx context.Context, sessionID string, rc *config.RuntimeConfig, timeout time.Duration) error {
@@ -161,8 +171,8 @@ type Provider interface {
 	// IsAvailable returns true if the session provider is ready for use.
 	IsAvailable() bool
 
-	// Start starts a new session with the given command and environment.
-	Start(ctx context.Context, sessionID, workDir, command string, env map[string]string) error
+	// Start starts a new session with the given options.
+	Start(ctx context.Context, opts StartOptions) error
 
 	// Stop stops an existing session with optional graceful shutdown.
 	Stop(ctx context.Context, sessionID string, graceful bool) error
@@ -203,7 +213,7 @@ type Provider interface {
 	Configure(ctx context.Context, sessionID string, cfg any) error
 
 	// EnsureSessionFresh ensures that a session is fresh (kills existing if needed).
-	EnsureSessionFresh(ctx context.Context, sessionID, workDir, command string, env map[string]string) error
+	EnsureSessionFresh(ctx context.Context, opts StartOptions) error
 
 	// IsAgentRunning checks if the agent process is actively running in the session.
 	IsAgentRunning(ctx context.Context, id string) (bool, error)

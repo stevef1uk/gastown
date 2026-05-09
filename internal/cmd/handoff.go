@@ -332,10 +332,14 @@ func runHandoff(cmd *cobra.Command, args []string) error {
 	// Record handoff time for cooldown enforcement (gt-058d).
 	recordHandoffTime()
 
-	// For NATS, EnsureSessionFresh is sufficient.
 	if _, ok := sp.(*session.NatsProvider); ok {
 		workDir, _ := os.Getwd()
-		return sp.EnsureSessionFresh(context.Background(), targetSession, workDir, restartCmd, nil)
+		return sp.EnsureSessionFresh(context.Background(), session.StartOptions{
+			SessionID: targetSession,
+			WorkDir:   workDir,
+			Command:   restartCmd,
+			Env:       nil,
+		})
 	}
 
 	// Tmux specific self-handoff logic
@@ -1178,7 +1182,14 @@ func handoffRemoteSession(sp session.Provider, targetSession, restartCmd string)
 			townRoot := detectTownRootFromCwd()
 			workDir = townRoot
 		}
-		return sp.EnsureSessionFresh(ctx, targetSession, workDir, restartCmd, nil)
+		if err := sp.EnsureSessionFresh(ctx, session.StartOptions{
+			SessionID: targetSession,
+			WorkDir:   workDir,
+			Command:   restartCmd,
+			Env:       nil,
+		}); err != nil {
+			return err
+		}
 	}
 
 	// Tmux specific remote handoff logic

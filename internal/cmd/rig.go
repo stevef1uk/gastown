@@ -2,6 +2,7 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -27,7 +28,6 @@ import (
 	"github.com/steveyegge/gastown/internal/session"
 	"github.com/steveyegge/gastown/internal/style"
 	"github.com/steveyegge/gastown/internal/suggest"
-	"github.com/steveyegge/gastown/internal/tmux"
 	"github.com/steveyegge/gastown/internal/wisp"
 	"github.com/steveyegge/gastown/internal/witness"
 	"github.com/steveyegge/gastown/internal/workspace"
@@ -730,7 +730,7 @@ func runRigList(cmd *cobra.Command, args []string) error {
 	// Create rig manager to get details
 	g := git.NewGit(townRoot)
 	mgr := rig.NewManager(townRoot, rigsConfig, g)
-	t := tmux.NewTmux()
+	sp := session.GetDefaultProvider(townRoot)
 
 	type rigInfo struct {
 		Name        string `json:"name"`
@@ -758,9 +758,9 @@ func runRigList(cmd *cobra.Command, args []string) error {
 		opState, _ := getRigOperationalState(townRoot, name)
 
 		witnessSession := session.WitnessSessionName(prefix, name)
+		witnessRunning, _ := sp.Exists(context.Background(), witnessSession)
 		refinerySession := session.RefinerySessionName(prefix, name)
-		witnessRunning, _ := t.HasSession(witnessSession)
-		refineryRunning, _ := t.HasSession(refinerySession)
+		refineryRunning, _ := sp.Exists(context.Background(), refinerySession)
 
 		witnessStatus := "stopped"
 		if witnessRunning {
@@ -852,7 +852,7 @@ func runRigMenu(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("no rigs configured")
 	}
 
-	t := tmux.NewTmux()
+	sp := session.GetDefaultProvider(townRoot)
 
 	type menuRig struct {
 		name     string
@@ -869,8 +869,8 @@ func runRigMenu(cmd *cobra.Command, args []string) error {
 
 		witnessSession := session.WitnessSessionName(prefix, name)
 		refinerySession := session.RefinerySessionName(prefix, name)
-		hasWitness, _ := t.HasSession(witnessSession)
-		hasRefinery, _ := t.HasSession(refinerySession)
+		hasWitness, _ := sp.Exists(context.Background(), witnessSession)
+		hasRefinery, _ := sp.Exists(context.Background(), refinerySession)
 
 		led := GetRigLED(hasWitness, hasRefinery, opState)
 		rigs = append(rigs, menuRig{
@@ -982,8 +982,8 @@ func runRigRemove(cmd *cobra.Command, args []string) error {
 	mgr := rig.NewManager(townRoot, rigsConfig, g)
 
 	// Check for running tmux sessions before removing
-	t := tmux.NewTmux()
-	sessions, sessErr := findRigSessions(t, name)
+	sp := session.GetDefaultProvider(townRoot)
+	sessions, sessErr := findRigSessions(sp, name)
 	if sessErr != nil {
 		if !rigRemoveForce {
 			return fmt.Errorf("could not verify session state for rig %s: %w (use --force to skip check)", name, sessErr)
@@ -1006,18 +1006,8 @@ func runRigRemove(cmd *cobra.Command, args []string) error {
 
 		// --force: kill all rig sessions (WARNING: may lose uncommitted work)
 		fmt.Printf("Killing %d tmux session(s) for rig %s...\n", len(sessions), name)
-		var killErrors []string
 		for _, s := range sessions {
-			if err := t.KillSessionWithProcesses(s); err != nil {
-				fmt.Printf("  %s Failed to kill session %s: %v\n", style.Warning.Render("!"), s, err)
-				killErrors = append(killErrors, s)
-			} else {
-				fmt.Printf("  Killed %s\n", s)
-			}
-		}
-		if len(killErrors) > 0 {
-			return fmt.Errorf("aborting remove: failed to kill %d session(s) (%s); rig left registered to avoid orphaned sessions",
-				len(killErrors), strings.Join(killErrors, ", "))
+			_ = sp.Stop(context.Background(), s, false)
 		}
 	}
 
@@ -1074,14 +1064,23 @@ func runRigRemove(cmd *cobra.Command, args []string) error {
 // Non-fatal: failure only means existing sessions need a restart to pick up the
 // new prefix.
 func refreshCycleBindingsOnExistingSessions() {
-	t := tmux.NewTmux()
-	sessions, err := t.ListSessions()
+	townRoot, err := workspace.FindFromCwdOrError()
+	if err != nil {
+		return
+	}
+	sp := session.GetDefaultProvider(townRoot)
+	tp, ok := sp.(*session.TmuxProvider)
+	if !ok {
+		return
+	}
+
+	sessions, err := tp.List(context.Background())
 	if err != nil || len(sessions) == 0 {
 		return
 	}
 	// Refresh bindings using any existing session as context.
 	// SetCycleBindings' stale-pattern check will detect the mismatch and re-bind.
-	_ = t.SetCycleBindings(sessions[0])
+	_ = tp.Tmux().SetCycleBindings(sessions[0])
 }
 
 func runRigAdopt(_ *cobra.Command, args []string) error {
@@ -1410,7 +1409,7 @@ func runRigReset(cmd *cobra.Command, args []string) error {
 
 	// Reset stale in_progress issues
 	if resetAll || rigResetStale {
-		if err := runResetStale(rigBd, rigResetDryRun); err != nil {
+		if err := runResetStale(townRoot, rigBd, rigResetDryRun); err != nil {
 			return fmt.Errorf("resetting stale issues: %w", err)
 		}
 	}
@@ -1419,8 +1418,8 @@ func runRigReset(cmd *cobra.Command, args []string) error {
 }
 
 // runResetStale resets in_progress issues whose assigned agent no longer has a session.
-func runResetStale(bd *beads.Beads, dryRun bool) error {
-	t := tmux.NewTmux()
+func runResetStale(townRoot string, bd *beads.Beads, dryRun bool) error {
+	sp := session.GetDefaultProvider(townRoot)
 
 	// Get all in_progress issues
 	issues, err := bd.List(beads.ListOptions{
@@ -1451,7 +1450,7 @@ func runResetStale(bd *beads.Beads, dryRun bool) error {
 		}
 
 		// Check if session exists
-		hasSession, err := t.HasSession(sessionName)
+		hasSession, err := sp.Exists(context.Background(), sessionName)
 		if err != nil {
 			// tmux error, skip this one
 			continue
@@ -1585,13 +1584,12 @@ func runRigBoot(cmd *cobra.Command, args []string) error {
 	var started []string
 	var skipped []string
 
-	t := tmux.NewTmux()
+	sp := session.GetDefaultProvider(townRoot)
 
 	// 1. Start the witness
 	// Check actual tmux session, not state file (may be stale)
 	witnessSession := session.WitnessSessionName(session.PrefixFor(rigName), rigName)
-	witnessRunning, _ := t.HasSession(witnessSession)
-	if witnessRunning {
+	if running, _ := sp.Exists(context.Background(), witnessSession); running {
 		skipped = append(skipped, "witness (already running)")
 	} else {
 		fmt.Printf("  Starting witness...\n")
@@ -1610,8 +1608,7 @@ func runRigBoot(cmd *cobra.Command, args []string) error {
 	// 2. Start the refinery
 	// Check actual tmux session, not state file (may be stale)
 	refinerySession := session.RefinerySessionName(session.PrefixFor(rigName), rigName)
-	refineryRunning, _ := t.HasSession(refinerySession)
-	if refineryRunning {
+	if running, _ := sp.Exists(context.Background(), refinerySession); running {
 		skipped = append(skipped, "refinery (already running)")
 	} else {
 		fmt.Printf("  Starting refinery...\n")
@@ -1649,7 +1646,7 @@ func runRigStart(cmd *cobra.Command, args []string) error {
 
 	g := git.NewGit(townRoot)
 	rigMgr := rig.NewManager(townRoot, rigsConfig, g)
-	t := tmux.NewTmux()
+	sp := session.GetDefaultProvider(townRoot)
 
 	var successRigs []string
 	var failedRigs []string
@@ -1677,7 +1674,7 @@ func runRigStart(cmd *cobra.Command, args []string) error {
 
 		// 1. Start the witness
 		witnessSession := session.WitnessSessionName(session.PrefixFor(rigName), rigName)
-		witnessRunning, _ := t.HasSession(witnessSession)
+		witnessRunning, _ := sp.Exists(context.Background(), witnessSession)
 		if witnessRunning {
 			skipped = append(skipped, "witness")
 		} else {
@@ -1697,7 +1694,7 @@ func runRigStart(cmd *cobra.Command, args []string) error {
 
 		// 2. Start the refinery
 		refinerySession := session.RefinerySessionName(session.PrefixFor(rigName), rigName)
-		refineryRunning, _ := t.HasSession(refinerySession)
+		refineryRunning, _ := sp.Exists(context.Background(), refinerySession)
 		if refineryRunning {
 			skipped = append(skipped, "refinery")
 		} else {
@@ -1772,8 +1769,8 @@ func runRigShutdown(cmd *cobra.Command, args []string) error {
 	var errors []string
 
 	// 1. Stop all polecat sessions
-	t := tmux.NewTmux()
-	polecatMgr := polecat.NewSessionManager(session.NewTmuxProvider(t, townRoot), r)
+	sp := session.GetDefaultProvider(townRoot)
+	polecatMgr := polecat.NewSessionManager(sp, r)
 	infos, err := polecatMgr.ListPolecats()
 	if err == nil && len(infos) > 0 {
 		fmt.Printf("  Stopping %d polecat session(s)...\n", len(infos))
@@ -1861,7 +1858,7 @@ func runRigStatus(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	t := tmux.NewTmux()
+	sp := session.GetDefaultProvider(townRoot)
 
 	// Header
 	fmt.Printf("%s\n", style.Bold.Render(rigName))
@@ -1911,7 +1908,7 @@ func runRigStatus(cmd *cobra.Command, args []string) error {
 
 	// Polecats list (involves per-polecat beads + git queries)
 	polecatGit := git.NewGit(r.Path)
-	polecatMgr := polecat.NewManager(r, polecatGit, t)
+	polecatMgr := polecat.NewManager(r, polecatGit, sp)
 	var polecats []*polecat.Polecat
 	var polecatsErr error
 	dataWg.Add(1)
@@ -1958,7 +1955,7 @@ func runRigStatus(cmd *cobra.Command, args []string) error {
 			go func(idx int, p *polecat.Polecat) {
 				defer sessionWg.Done()
 				sessionName := session.PolecatSessionName(session.PrefixFor(rigName), p.Name)
-				pInfos[idx].hasSession, _ = t.HasSession(sessionName)
+				pInfos[idx].hasSession, _ = sp.Exists(context.Background(), sessionName)
 			}(i, p)
 		}
 	}
@@ -1971,7 +1968,7 @@ func runRigStatus(cmd *cobra.Command, args []string) error {
 			go func(idx int, w *crew.CrewWorker) {
 				defer sessionWg.Done()
 				sessionName := crewSessionName(rigName, w.Name)
-				cInfos[idx].hasSession, _ = t.HasSession(sessionName)
+				cInfos[idx].hasSession, _ = sp.Exists(context.Background(), sessionName)
 				crewGit := git.NewGit(w.ClonePath)
 				cInfos[idx].branch, _ = crewGit.CurrentBranch()
 				gitStatus, _ := crewGit.Status()
@@ -2108,8 +2105,8 @@ func runRigStop(cmd *cobra.Command, args []string) error {
 		var errors []string
 
 		// 1. Stop all polecat sessions
-		t := tmux.NewTmux()
-		polecatMgr := polecat.NewSessionManager(session.NewTmuxProvider(t, townRoot), r)
+		sp := session.GetDefaultProvider(townRoot)
+		polecatMgr := polecat.NewSessionManager(sp, r)
 		infos, err := polecatMgr.ListPolecats()
 		if err == nil && len(infos) > 0 {
 			fmt.Printf("  Stopping %d polecat session(s)...\n", len(infos))
@@ -2181,7 +2178,7 @@ func runRigRestart(cmd *cobra.Command, args []string) error {
 
 	g := git.NewGit(townRoot)
 	rigMgr := rig.NewManager(townRoot, rigsConfig, g)
-	t := tmux.NewTmux()
+	sp := session.GetDefaultProvider(townRoot)
 
 	// Track results
 	var succeeded []string
@@ -2210,8 +2207,7 @@ func runRigRestart(cmd *cobra.Command, args []string) error {
 		// === STOP PHASE ===
 		fmt.Printf("  Stopping...\n")
 
-		// 1. Stop all polecat sessions
-		polecatMgr := polecat.NewSessionManager(session.NewTmuxProvider(t, townRoot), r)
+		polecatMgr := polecat.NewSessionManager(sp, r)
 		infos, err := polecatMgr.ListPolecats()
 		if err == nil && len(infos) > 0 {
 			fmt.Printf("    Stopping %d polecat session(s)...\n", len(infos))
@@ -2255,7 +2251,7 @@ func runRigRestart(cmd *cobra.Command, args []string) error {
 
 		// 1. Start the witness
 		witnessSession := session.WitnessSessionName(session.PrefixFor(rigName), rigName)
-		witnessRunning, _ := t.HasSession(witnessSession)
+		witnessRunning, _ := sp.Exists(context.Background(), witnessSession)
 		if witnessRunning {
 			skipped = append(skipped, "witness")
 		} else {
@@ -2274,7 +2270,7 @@ func runRigRestart(cmd *cobra.Command, args []string) error {
 
 		// 2. Start the refinery
 		refinerySession := session.RefinerySessionName(session.PrefixFor(rigName), rigName)
-		refineryRunning, _ := t.HasSession(refinerySession)
+		refineryRunning, _ := sp.Exists(context.Background(), refinerySession)
 		if refineryRunning {
 			skipped = append(skipped, "refinery")
 		} else {
@@ -2406,9 +2402,9 @@ func syncRigHooks(townRoot, rigName string) error {
 // findRigSessions returns all tmux sessions belonging to the given rig.
 // All rig sessions share the "<rigPrefix>-" prefix, so this catches witness,
 // refinery, polecat, and crew sessions in one pass.
-func findRigSessions(t *tmux.Tmux, rigName string) ([]string, error) {
+func findRigSessions(sp session.Provider, rigName string) ([]string, error) {
 	prefix := session.PrefixFor(rigName) + "-"
-	all, err := t.ListSessions()
+	all, err := sp.List(context.Background())
 	if err != nil {
 		return nil, fmt.Errorf("listing tmux sessions: %w", err)
 	}

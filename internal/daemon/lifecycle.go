@@ -386,7 +386,12 @@ func (d *Daemon) restartSession(sessionName, identity string) error {
 	// Create session with command as initial process.
 	// EnsureSessionFresh kills zombie sessions and creates a new one.
 	ctx := context.Background()
-	if err := d.sp.EnsureSessionFresh(ctx, sessionName, workDir, startCmd, nil); err != nil {
+	if err := d.sp.EnsureSessionFresh(ctx, session.StartOptions{
+		SessionID: sessionName,
+		WorkDir:   workDir,
+		Command:   startCmd,
+		Env:       nil,
+	}); err != nil {
 		if errors.Is(err, tmux.ErrSessionRunning) {
 			d.logger.Printf("Session %s already running with healthy agent, skipping restart", sessionName)
 			return nil

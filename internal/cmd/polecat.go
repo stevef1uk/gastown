@@ -17,7 +17,6 @@ import (
 	"github.com/steveyegge/gastown/internal/session"
 	"github.com/steveyegge/gastown/internal/rig"
 	"github.com/steveyegge/gastown/internal/style"
-	"github.com/steveyegge/gastown/internal/tmux"
 	"github.com/steveyegge/gastown/internal/util"
 	"github.com/steveyegge/gastown/internal/workspace"
 )
@@ -419,8 +418,9 @@ func getPolecatManager(rigName string) (*polecat.Manager, *rig.Rig, error) {
 	}
 
 	polecatGit := git.NewGit(r.Path)
-	t := tmux.NewTmux()
-	mgr := polecat.NewManager(r, polecatGit, t)
+	townRoot, _ := workspace.FindFromCwd()
+	sp := session.GetDefaultProvider(townRoot)
+	mgr := polecat.NewManager(r, polecatGit, sp)
 
 	return mgr, r, nil
 }
@@ -447,17 +447,15 @@ func runPolecatList(cmd *cobra.Command, args []string) error {
 		rigs = []*rig.Rig{r}
 	}
 
-	// Collect polecats from all rigs
-	t := tmux.NewTmux()
-	allPolecats := make([]PolecatListItem, 0)
-
 	// Use the configured session provider (NATS or tmux) for session state checks
 	townRoot, _ := workspace.FindFromCwd()
 	sp := session.GetDefaultProvider(townRoot)
 
+	allPolecats := make([]PolecatListItem, 0)
+
 	for _, r := range rigs {
 		polecatGit := git.NewGit(r.Path)
-		mgr := polecat.NewManager(r, polecatGit, t)
+		mgr := polecat.NewManager(r, polecatGit, sp)
 		polecatMgr := polecat.NewSessionManager(sp, r)
 
 		polecats, err := mgr.List()

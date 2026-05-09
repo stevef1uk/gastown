@@ -34,7 +34,12 @@ func TestNatsProvider_PIDLifecycle(t *testing.T) {
 	sessionID := "test-session-" + strconv.Itoa(int(time.Now().UnixNano()))
 
 	// Start a long-running sleep process
-	err = p.Start(ctx, sessionID, tmpDir, "sleep 60", nil)
+	err = p.Start(ctx, StartOptions{
+		SessionID: sessionID,
+		WorkDir:   tmpDir,
+		Command:   "sleep 60",
+		Env:       nil,
+	})
 	if err != nil {
 		t.Fatalf("Start failed: %v", err)
 	}
@@ -150,7 +155,12 @@ func TestNatsProvider_ListSessions(t *testing.T) {
 
 	// Start a session
 	sessionID := "test-list-session"
-	err = p.Start(ctx, sessionID, tmpDir, "sleep 60", nil)
+	err = p.Start(ctx, StartOptions{
+		SessionID: sessionID,
+		WorkDir:   tmpDir,
+		Command:   "sleep 60",
+		Env:       nil,
+	})
 	if err != nil {
 		t.Fatalf("Start failed: %v", err)
 	}
@@ -209,7 +219,12 @@ func TestNatsProvider_GetMainPID(t *testing.T) {
 	}
 
 	// Start a session
-	err = p.Start(ctx, sessionID, tmpDir, "sleep 60", nil)
+	err = p.Start(ctx, StartOptions{
+		SessionID: sessionID,
+		WorkDir:   tmpDir,
+		Command:   "sleep 60",
+		Env:       nil,
+	})
 	if err != nil {
 		t.Fatalf("Start failed: %v", err)
 	}
@@ -259,7 +274,12 @@ func TestNatsProvider_IsIdle(t *testing.T) {
 	}
 
 	// Start session
-	err = p.Start(ctx, sessionID, tmpDir, "sleep 60", nil)
+	err = p.Start(ctx, StartOptions{
+		SessionID: sessionID,
+		WorkDir:   tmpDir,
+		Command:   "sleep 60",
+		Env:       nil,
+	})
 	if err != nil {
 		t.Fatalf("Start failed: %v", err)
 	}
@@ -309,7 +329,12 @@ func TestNatsProvider_GetSessionInfo(t *testing.T) {
 	}
 
 	// Start session
-	err = p.Start(ctx, sessionID, tmpDir, "sleep 60", nil)
+	err = p.Start(ctx, StartOptions{
+		SessionID: sessionID,
+		WorkDir:   tmpDir,
+		Command:   "sleep 60",
+		Env:       nil,
+	})
 	if err != nil {
 		t.Fatalf("Start failed: %v", err)
 	}
@@ -468,7 +493,12 @@ func TestNatsProvider_WaitForRuntimeReady_HonorsDelay(t *testing.T) {
 
 	ctx := context.Background()
 	sessionID := "test-ready-delay-session"
-	if err := p.Start(ctx, sessionID, tmpDir, "sleep 60", nil); err != nil {
+	if err = p.Start(ctx, StartOptions{
+		SessionID: sessionID,
+		WorkDir:   tmpDir,
+		Command:   "true",
+		Env:       nil,
+	}); err != nil {
 		t.Fatalf("Start failed: %v", err)
 	}
 	defer p.Stop(ctx, sessionID, false)

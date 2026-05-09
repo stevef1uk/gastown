@@ -28,7 +28,6 @@ import (
 	"github.com/steveyegge/gastown/internal/style"
 	"github.com/steveyegge/gastown/internal/telemetry"
 	"github.com/steveyegge/gastown/internal/templates"
-	"github.com/steveyegge/gastown/internal/tmux"
 	"github.com/steveyegge/gastown/internal/util"
 )
 
@@ -137,12 +136,12 @@ type Manager struct {
 	git      *git.Git
 	beads    *beads.Beads
 	namePool *NamePool
-	tmux     *tmux.Tmux
+	provider session.Provider
 	townRoot string // Computed once at construction; used by agentBeadID for deterministic IDs
 }
 
 // NewManager creates a new polecat manager.
-func NewManager(r *rig.Rig, g *git.Git, t *tmux.Tmux) *Manager {
+func NewManager(r *rig.Rig, g *git.Git, p session.Provider) *Manager {
 	// Use the resolved beads directory to find where bd commands should run.
 	// For tracked beads: rig/.beads/redirect -> mayor/rig/.beads, so use mayor/rig
 	// For local beads: rig/.beads is the database, so use rig root
@@ -195,7 +194,7 @@ func NewManager(r *rig.Rig, g *git.Git, t *tmux.Tmux) *Manager {
 		git:      g,
 		beads:    beads.NewWithBeadsDir(beadsPath, resolvedBeads),
 		namePool: pool,
-		tmux:     t,
+		provider: p,
 		townRoot: townRoot,
 	}
 }
@@ -680,10 +679,10 @@ func (m *Manager) AllocateAndAdd(opts AddOptions) (string, *Polecat, error) {
 	}
 
 	// Kill any lingering tmux session for this name (gt-pqf9x)
-	if m.tmux != nil {
+	if m.provider != nil {
 		sessionName := session.PolecatSessionName(session.PrefixFor(m.rig.Name), name)
-		if alive, _ := m.tmux.HasSession(sessionName); alive {
-			_ = m.tmux.KillSessionWithProcesses(sessionName)
+		if alive, _ := m.provider.Exists(context.Background(), sessionName); alive {
+			_ = m.provider.Stop(context.Background(), sessionName, false)
 		}
 	}
 
@@ -1347,10 +1346,10 @@ func (m *Manager) AllocateName() (string, error) {
 	// can be allocated after its directory was cleaned up while the tmux session
 	// lingers (race between cleanup and allocation). This extra check ensures
 	// no stale session blocks the new polecat's session creation.
-	if m.tmux != nil {
+	if m.provider != nil {
 		sessionName := session.PolecatSessionName(session.PrefixFor(m.rig.Name), name)
-		if alive, _ := m.tmux.HasSession(sessionName); alive {
-			_ = m.tmux.KillSessionWithProcesses(sessionName)
+		if alive, _ := m.provider.Exists(context.Background(), sessionName); alive {
+			_ = m.provider.Stop(context.Background(), sessionName, false)
 		}
 	}
 
@@ -1587,7 +1586,7 @@ func (m *Manager) ReuseIdlePolecat(name string, opts AddOptions) (*Polecat, erro
 	// new work undiscovered.
 	if running, _ := m.polecatSessionState(name); running {
 		sessionName := session.PolecatSessionName(session.PrefixFor(m.rig.Name), name)
-		if err := m.tmux.KillSessionWithProcesses(sessionName); err != nil {
+		if err := m.provider.Stop(context.Background(), sessionName, false); err != nil {
 			return nil, fmt.Errorf("killing existing session %s for reuse: %w", sessionName, err)
 		}
 		// Remove stale heartbeat so SessionManager.Start doesn't see leftover data.
@@ -1747,13 +1746,12 @@ func (m *Manager) reconcilePoolInternal() {
 
 	// Get names with tmux sessions
 	var namesWithSessions []string
-	if m.tmux != nil {
-		poolNames := m.namePool.getNames()
-		for _, name := range poolNames {
-			sessionName := session.PolecatSessionName(session.PrefixFor(m.rig.Name), name)
-			hasSession, _ := m.tmux.HasSession(sessionName)
-			if hasSession {
-				namesWithSessions = append(namesWithSessions, name)
+	if m.provider != nil {
+		sessions, _ := m.provider.List(context.Background())
+		prefix := session.PrefixFor(m.rig.Name) + "-"
+		for _, s := range sessions {
+			if strings.HasPrefix(s, prefix) {
+				namesWithSessions = append(namesWithSessions, strings.TrimPrefix(s, prefix))
 			}
 		}
 	}
@@ -1784,17 +1782,17 @@ func (m *Manager) ReconcilePoolWith(namesWithDirs, namesWithSessions []string) {
 	// - No directory: orphan session, always kill (worktree was removed but tmux lingered)
 	// - Has directory but dead process: stale session from crashed startup (gt-jn40ft)
 	// Use KillSessionWithProcesses to ensure all descendant processes are killed.
-	if m.tmux != nil {
+	if m.provider != nil {
 		townRoot := filepath.Dir(m.rig.Path)
 		for _, name := range namesWithSessions {
 			sessionName := session.PolecatSessionName(session.PrefixFor(m.rig.Name), name)
 			if !dirSet[name] {
 				// Orphan: session exists but no directory
-				_ = m.tmux.KillSessionWithProcesses(sessionName)
+				_ = m.provider.Stop(context.Background(), sessionName, false)
 				RemoveSessionHeartbeat(townRoot, sessionName)
-			} else if isSessionProcessDead(m.tmux, sessionName, townRoot) {
+			} else if isSessionProcessDead(m.provider, sessionName, townRoot) {
 				// Stale: directory exists but session's process has died
-				_ = m.tmux.KillSessionWithProcesses(sessionName)
+				_ = m.provider.Stop(context.Background(), sessionName, false)
 				RemoveSessionHeartbeat(townRoot, sessionName)
 			}
 		}
@@ -1819,7 +1817,7 @@ func (m *Manager) ReconcilePoolWith(namesWithDirs, namesWithSessions []string) {
 //
 // Returns true only when we can confirm the process is dead, not on transient
 // failures (gt-kncti: permission denied false positives).
-func isSessionProcessDead(t *tmux.Tmux, sessionName string, townRoot string) bool {
+func isSessionProcessDead(p session.Provider, sessionName string, townRoot string) bool {
 	// Primary: heartbeat-based liveness check (gt-qjtq ZFC fix).
 	if townRoot != "" {
 		stale, exists := IsSessionHeartbeatStale(townRoot, sessionName)
@@ -1830,27 +1828,23 @@ func isSessionProcessDead(t *tmux.Tmux, sessionName string, townRoot string) boo
 	}
 
 	// Fallback: PID signal probing (legacy, for sessions without heartbeat support).
-	pidStr, err := t.GetPanePID(sessionName)
+	info, err := p.GetSessionInfo(context.Background(), sessionName)
 	if err != nil {
-		// Tmux query failed — could be permission denied, server busy, etc.
+		// Provider query failed — could be permission denied, server busy, etc.
 		// Don't assume dead; let a future cycle retry.
 		return false
 	}
-	if pidStr == "" {
+	if info == nil || info.PID == 0 {
 		// No PID means no process — session is dead.
 		return true
 	}
-	pid, err := strconv.Atoi(pidStr)
-	if err != nil {
-		// Got a non-numeric PID — shouldn't happen, but don't kill.
-		return false
-	}
-	p, err := os.FindProcess(pid)
+	pid := info.PID
+	proc, err := os.FindProcess(pid)
 	if err != nil {
 		return true
 	}
 	// On Unix, Signal(0) checks if process exists without sending a signal
-	if err := p.Signal(syscall.Signal(0)); err != nil {
+	if err := proc.Signal(syscall.Signal(0)); err != nil {
 		return true
 	}
 	return false
@@ -2188,7 +2182,7 @@ func (m *Manager) loadFromBeads(name string) (*Polecat, error) {
 	// When tmux is nil (e.g., no tmux available or in tests), we cannot determine
 	// session state, so we must NOT assume the session is dead — default to alive.
 	sessionRunning, sessionStale := m.polecatSessionState(name)
-	sessionDead := m.tmux != nil && (!sessionRunning || sessionStale)
+	sessionDead := m.provider != nil && (!sessionRunning || sessionStale)
 
 	// Primary source: the work bead itself (status=hooked + assignee).
 	// This is the direct-tracking model introduced in hq-l6mm5.
@@ -2293,10 +2287,9 @@ func (m *Manager) polecatSessionState(name string) (running bool, stale bool) {
 	sessionName := session.PolecatSessionName(session.PrefixFor(m.rig.Name), name)
 
 	// Check tmux session first
-	if m.tmux != nil {
-		running, err := m.tmux.HasSession(sessionName)
-		if err == nil && running {
-			return true, NewSessionManager(session.NewTmuxProvider(m.tmux, m.townRoot), m.rig).isSessionStale(sessionName)
+	if m.provider != nil {
+		if alive, _ := m.provider.Exists(context.Background(), sessionName); alive {
+			return true, NewSessionManager(m.provider, m.rig).isSessionStale(sessionName)
 		}
 	}
 
@@ -2438,7 +2431,9 @@ func (m *Manager) DetectStalePolecats(threshold int) ([]*StalenessInfo, error) {
 		// Check for active tmux session
 		// Session name follows pattern: gt-<rig>-<polecat>
 		sessionName := session.PolecatSessionName(session.PrefixFor(m.rig.Name), p.Name)
-		info.HasActiveSession = checkTmuxSession(sessionName)
+		if m.provider != nil {
+			info.HasActiveSession, _ = m.provider.Exists(context.Background(), sessionName)
+		}
 
 		// Check how far behind main
 		polecatGit := git.NewGit(p.ClonePath)
@@ -2465,12 +2460,6 @@ func (m *Manager) DetectStalePolecats(threshold int) ([]*StalenessInfo, error) {
 	return results, nil
 }
 
-// checkTmuxSession checks if a tmux session exists.
-func checkTmuxSession(sessionName string) bool {
-	// Use has-session command which returns 0 if session exists
-	cmd := tmux.BuildCommand("has-session", "-t", sessionName)
-	return cmd.Run() == nil
-}
 
 // countCommitsBehind counts how many commits a worktree is behind origin/<defaultBranch>.
 func countCommitsBehind(g *git.Git, defaultBranch string) int {

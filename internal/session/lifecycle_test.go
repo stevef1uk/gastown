@@ -8,7 +8,7 @@ import (
 )
 
 func TestStartSession_RequiresSessionID(t *testing.T) {
-	_, err := StartSession(context.Background(), nil, SessionConfig{
+	_, err := StartSession(context.Background(), nil, &SessionConfig{
 		WorkDir: "/tmp",
 		Role:    "polecat",
 	})
@@ -21,7 +21,7 @@ func TestStartSession_RequiresSessionID(t *testing.T) {
 }
 
 func TestStartSession_RequiresWorkDir(t *testing.T) {
-	_, err := StartSession(context.Background(), nil, SessionConfig{
+	_, err := StartSession(context.Background(), nil, &SessionConfig{
 		SessionID: "gt-test",
 		Role:      "polecat",
 	})
@@ -34,7 +34,7 @@ func TestStartSession_RequiresWorkDir(t *testing.T) {
 }
 
 func TestStartSession_RequiresRole(t *testing.T) {
-	_, err := StartSession(context.Background(), nil, SessionConfig{
+	_, err := StartSession(context.Background(), nil, &SessionConfig{
 		SessionID: "gt-test",
 		WorkDir:   "/tmp",
 	})

@@ -940,7 +940,7 @@ func upStartArchitect(rigName string, r *rig.Rig) agentStartResult {
 		return agentStartResult{name: name, ok: true, detail: sessionID}
 	}
 
-	_, err := session.StartSession(ctx, sp, session.SessionConfig{
+	_, err := session.StartSession(ctx, sp, &session.SessionConfig{
 		SessionID:    sessionID,
 		WorkDir:      architectDir,
 		Role:         constants.RoleArchitect,
@@ -985,7 +985,7 @@ func upStartQA(rigName string, r *rig.Rig) agentStartResult {
 		return agentStartResult{name: name, ok: true, detail: sessionID}
 	}
 
-	_, err := session.StartSession(ctx, sp, session.SessionConfig{
+	_, err := session.StartSession(ctx, sp, &session.SessionConfig{
 		SessionID:    sessionID,
 		WorkDir:      qaDir,
 		Role:         constants.RoleQA,
@@ -1020,7 +1020,7 @@ func upStartPlanner(townRoot string) agentStartResult {
 		return agentStartResult{name: name, ok: true, detail: sessionID}
 	}
 
-	_, err := session.StartSession(ctx, sp, session.SessionConfig{
+	_, err := session.StartSession(ctx, sp, &session.SessionConfig{
 		SessionID:    sessionID,
 		WorkDir:      plannerDir,
 		Role:         constants.RolePlanner,
@@ -1359,7 +1359,7 @@ func upStartRigMechanic(rigName string, r *rig.Rig) agentStartResult {
 		return agentStartResult{name: name, ok: true, detail: sessionID}
 	}
 
-	_, err := session.StartSession(ctx, sp, session.SessionConfig{
+	_, err := session.StartSession(ctx, sp, &session.SessionConfig{
 		SessionID:    sessionID,
 		WorkDir:      mechanicDir,
 		Role:         constants.RoleMechanic,
@@ -1396,7 +1396,7 @@ func upStartMechanic(townRoot string) agentStartResult {
 		return agentStartResult{name: name, ok: true, detail: sessionID}
 	}
 
-	_, err := session.StartSession(ctx, sp, session.SessionConfig{
+	_, err := session.StartSession(ctx, sp, &session.SessionConfig{
 		SessionID:    sessionID,
 		WorkDir:      mechanicDir,
 		Role:         constants.RoleMechanic,

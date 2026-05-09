@@ -164,7 +164,7 @@ func (m *Manager) Start(foreground bool, agentOverride string, envOverrides []st
 		theme = tmux.ResolveSessionTheme(townRoot, m.rig.Name, "witness", "")
 	}
 
-	_, err = session.StartSession(ctx, sp, session.SessionConfig{
+	_, err = session.StartSession(ctx, sp, &session.SessionConfig{
 		SessionID:        sessionID,
 		WorkDir:          witnessDir,
 		Role:             "witness",

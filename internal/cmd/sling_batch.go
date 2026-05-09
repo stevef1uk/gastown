@@ -13,8 +13,8 @@ import (
 	"github.com/steveyegge/gastown/internal/git"
 	"github.com/steveyegge/gastown/internal/polecat"
 	"github.com/steveyegge/gastown/internal/rig"
+	"github.com/steveyegge/gastown/internal/session"
 	"github.com/steveyegge/gastown/internal/style"
-	"github.com/steveyegge/gastown/internal/tmux"
 	"github.com/steveyegge/gastown/internal/workspace"
 )
 
@@ -241,8 +241,8 @@ func cleanupSpawnedPolecat(spawnInfo *SpawnedPolecatInfo, rigName, convoyID stri
 		return
 	}
 	polecatGit := git.NewGit(r.Path)
-	t := tmux.NewTmux()
-	polecatMgr := polecat.NewManager(r, polecatGit, t)
+	sp := session.GetDefaultProvider(townRoot)
+	polecatMgr := polecat.NewManager(r, polecatGit, sp)
 	if err := polecatMgr.Remove(spawnInfo.PolecatName, true); err != nil {
 		fmt.Printf("  %s Could not clean up orphaned polecat %s: %v\n",
 			style.Dim.Render("Warning:"), spawnInfo.PolecatName, err)

@@ -836,7 +836,12 @@ func (m *Manager) Start(name string, opts StartOptions) error {
 	}
 
 	// Create session with command and env vars via provider.
-	if err := sp.Start(ctx, sessionID, worker.ClonePath, claudeCmd, envVars); err != nil {
+	if err := sp.Start(ctx, session.StartOptions{
+		SessionID: sessionID,
+		WorkDir:   worker.ClonePath,
+		Command:   claudeCmd,
+		Env:       envVars,
+	}); err != nil {
 		return fmt.Errorf("creating session: %w", err)
 	}
 

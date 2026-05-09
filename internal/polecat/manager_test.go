@@ -1973,7 +1973,7 @@ func TestReuseIdlePolecat_KillsLiveSession(t *testing.T) {
 
 	tm := tmux.NewTmux()
 	r := &rig.Rig{Name: rigName, Path: rigPath}
-	mgr := NewManager(r, git.NewGit(rigPath), tm)
+	mgr := NewManager(r, git.NewGit(rigPath), session.NewTmuxProvider(tm, townRoot))
 
 	// Create a live tmux session (simulates Claude sitting at ❯ after gt done)
 	sessMgr := NewSessionManager(session.NewTmuxProvider(tm, rigPath), r)
@@ -2058,7 +2058,7 @@ func TestReuseIdlePolecat_KillsStaleSession(t *testing.T) {
 
 	tm := tmux.NewTmux()
 	r := &rig.Rig{Name: rigName, Path: rigPath}
-	mgr := NewManager(r, git.NewGit(rigPath), tm)
+	mgr := NewManager(r, git.NewGit(rigPath), session.NewTmuxProvider(tm, townRoot))
 
 	sessMgr := NewSessionManager(session.NewTmuxProvider(tm, rigPath), r)
 	sessionName := sessMgr.SessionName(polecatName)
@@ -2126,7 +2126,7 @@ func TestReuseIdlePolecat_NoSessionNoop(t *testing.T) {
 
 	tm := tmux.NewTmux()
 	r := &rig.Rig{Name: rigName, Path: rigPath}
-	mgr := NewManager(r, git.NewGit(rigPath), tm)
+	mgr := NewManager(r, git.NewGit(rigPath), session.NewTmuxProvider(tm, townRoot))
 
 	// No tmux session, no heartbeat — the common idle case
 	_, reuseErr := mgr.ReuseIdlePolecat(polecatName, AddOptions{})

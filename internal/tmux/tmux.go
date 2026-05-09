@@ -2317,7 +2317,7 @@ func (t *Tmux) CapturePaneLines(session string, lines int) ([]string, error) {
 
 // AttachSession attaches to an existing session.
 // Note: This replaces the current process with tmux attach.
-func (t *Tmux) AttachSession(session string) error {
+func (t *Tmux) AttachSession(ctx context.Context, session string) error {
 	_, err := t.run("attach-session", "-t", session)
 	return err
 }

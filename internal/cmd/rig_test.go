@@ -83,6 +83,7 @@ func TestFindRigSessions(t *testing.T) {
 	setupRigTestRegistry(t)
 
 	tm := tmux.NewTmux()
+tmuxProvider := session.NewTmuxProvider(tm, "")
 
 	// Create sessions that match our test rig prefix (zztr- for testrig1223)
 	matching := []string{
@@ -105,7 +106,7 @@ func TestFindRigSessions(t *testing.T) {
 		}
 	}()
 
-	got, err := findRigSessions(tm, "testrig1223")
+	got, err := findRigSessions(tmuxProvider, "testrig1223")
 	if err != nil {
 		t.Fatalf("findRigSessions: %v", err)
 	}
@@ -146,7 +147,8 @@ func TestFindRigSessions_NoSessions(t *testing.T) {
 	defer session.SetDefaultRegistry(old)
 
 	tm := tmux.NewTmux()
-	got, err := findRigSessions(tm, "nonexistentrig999")
+tmuxProvider := session.NewTmuxProvider(tm, "")
+	got, err := findRigSessions(tmuxProvider, "nonexistentrig999")
 	if err != nil {
 		t.Fatalf("findRigSessions: %v", err)
 	}

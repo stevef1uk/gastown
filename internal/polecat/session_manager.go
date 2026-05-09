@@ -54,15 +54,6 @@ func NewSessionManager(sp session.Provider, r *rig.Rig) *SessionManager {
 	}
 }
 
-// tmux returns the underlying *tmux.Tmux if using TmuxProvider, nil otherwise.
-// Used for tmux-specific operations (theming, hooks, prompt detection) that have
-// no NATS equivalent.
-func (m *SessionManager) tmux() *tmux.Tmux {
-	if tp, ok := m.sp.(*session.TmuxProvider); ok {
-		return tp.Tmux()
-	}
-	return nil
-}
 
 // SessionStartOptions configures polecat session startup.
 type SessionStartOptions struct {
@@ -531,10 +522,12 @@ func (m *SessionManager) Start(polecat string, opts SessionStartOptions) error {
 		envVars[runtimeConfig.Session.ConfigDirEnv] = opts.RuntimeConfigDir
 	}
 
-	// Create session with command and env vars via -e flags so the initial
-	// shell — and Claude's subprocesses (notably bd) — inherit them from the start.
-	// See: https://github.com/anthropics/gastown/issues/280 (race condition fix)
-	if err := m.sp.Start(context.Background(), sessionID, workDir, command, envVars); err != nil {
+	if err := m.sp.Start(context.Background(), session.StartOptions{
+		SessionID: sessionID,
+		WorkDir:   workDir,
+		Command:   command,
+		Env:       envVars,
+	}); err != nil {
 		return fmt.Errorf("creating session: %w", err)
 	}
 
@@ -554,30 +547,32 @@ func (m *SessionManager) Start(polecat string, opts SessionStartOptions) error {
 	}
 
 	// Apply theme (non-fatal) - only for tmux provider
-	if m.tmux() != nil {
+	if tp, ok := m.sp.(*session.TmuxProvider); ok {
+		t := tp.Tmux()
 		theme := tmux.ResolveSessionTheme(townRoot, m.rig.Name, "polecat", polecat)
-		debugSession("ConfigureGasTownSession", m.tmux().ConfigureGasTownSession(sessionID, theme, m.rig.Name, polecat, "polecat"))
+		debugSession("ConfigureGasTownSession", t.ConfigureGasTownSession(sessionID, theme, m.rig.Name, polecat, "polecat"))
 
 		// Set pane-died hook for crash detection (non-fatal)
 		agentID := fmt.Sprintf("%s/%s", m.rig.Name, polecat)
-		debugSession("SetPaneDiedHook", m.tmux().SetPaneDiedHook(sessionID, agentID))
+		debugSession("SetPaneDiedHook", t.SetPaneDiedHook(sessionID, agentID))
 
 		// Wait for Claude to start (non-fatal)
-		debugSession("WaitForCommand", m.tmux().WaitForCommand(sessionID, constants.SupportedShells, constants.ClaudeStartTimeout))
+		debugSession("WaitForCommand", t.WaitForCommand(sessionID, constants.SupportedShells, constants.ClaudeStartTimeout))
 
 		// Accept startup dialogs (workspace trust + bypass permissions) if they appear
-		debugSession("AcceptStartupDialogs", m.tmux().AcceptStartupDialogs(sessionID))
+		debugSession("AcceptStartupDialogs", t.AcceptStartupDialogs(sessionID))
 
 		// Wait for runtime to be fully ready at the prompt (not just started).
 		// Uses prompt-based polling for agents with ReadyPromptPrefix (e.g., Claude "❯ "),
 		// falling back to ReadyDelayMs sleep for agents without prompt detection.
-		debugSession("WaitForRuntimeReady", m.tmux().WaitForRuntimeReady(sessionID, runtimeConfig, constants.ClaudeStartTimeout))
+		debugSession("WaitForRuntimeReady", t.WaitForRuntimeReady(sessionID, runtimeConfig, constants.ClaudeStartTimeout))
 	}
 
 	// Handle fallback nudges for non-hook agents.
 	// See StartupFallbackInfo in runtime package for the fallback matrix.
 	// Only for tmux provider - NATS sessions handle differently
-	if m.tmux() != nil {
+	if tp, ok := m.sp.(*session.TmuxProvider); ok {
+		t := tp.Tmux()
 		if fallbackInfo.SendBeaconNudge {
 			// Promptless runtimes need the full startup prompt delivered via nudge so
 			// the agent sees both the beacon and the initial work instructions.
@@ -589,7 +584,7 @@ func (m *SessionManager) Start(polecat string, opts SessionStartOptions) error {
 				// work instructions. Prompt-capable runtimes already got the beacon as the
 				// initial CLI prompt, so they only need the delayed startup nudge here.
 				primeWaitRC := runtime.RuntimeConfigWithMinDelay(runtimeConfig, fallbackInfo.StartupNudgeDelayMs)
-				debugSession("WaitForPrimeReady", m.tmux().WaitForRuntimeReady(sessionID, primeWaitRC, constants.ClaudeStartTimeout))
+				debugSession("WaitForPrimeReady", t.WaitForRuntimeReady(sessionID, primeWaitRC, constants.ClaudeStartTimeout))
 			}
 
 			if fallbackInfo.SendStartupNudge {
@@ -636,8 +631,8 @@ func (m *SessionManager) Start(polecat string, opts SessionStartOptions) error {
 	}
 
 	// Track PID for defense-in-depth orphan cleanup (non-fatal) - only for tmux
-	if m.tmux() != nil {
-		_ = session.TrackSessionPID(townRoot, sessionID, m.tmux())
+	if tp, ok := m.sp.(*session.TmuxProvider); ok {
+		_ = session.TrackSessionPID(townRoot, sessionID, tp.Tmux())
 	}
 
 	// Touch initial heartbeat so liveness detection works from the start (gt-qjtq).
@@ -664,7 +659,7 @@ func (m *SessionManager) Start(polecat string, opts SessionStartOptions) error {
 // This happens when the agent crashes during startup but tmux keeps the dead pane.
 // Delegates to isSessionProcessDead to avoid duplicating process-check logic (gt-qgzj1h).
 func (m *SessionManager) isSessionStale(sessionID string) bool {
-	return isSessionProcessDead(m.tmux(), sessionID, filepath.Dir(m.rig.Path))
+	return isSessionProcessDead(m.sp, sessionID, filepath.Dir(m.rig.Path))
 }
 
 // Stop terminates a polecat session.

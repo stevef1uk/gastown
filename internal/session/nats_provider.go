@@ -72,7 +72,12 @@ func (p *NatsProvider) recordActivity(sessionID string) {
 	p.mu.Unlock()
 }
 
-func (p *NatsProvider) Start(ctx context.Context, sessionID, workDir, command string, env map[string]string) error {
+func (p *NatsProvider) Start(ctx context.Context, opts StartOptions) error {
+	// NATS doesn't support themes, ignore opts.Theme
+	return p.startInternal(ctx, opts.SessionID, opts.WorkDir, opts.Command, opts.Env)
+}
+
+func (p *NatsProvider) startInternal(ctx context.Context, sessionID, workDir, command string, env map[string]string) error {
 	p.recordActivity(sessionID)
 
 	// Store env for GetEnvironment calls
@@ -439,9 +444,9 @@ func (p *NatsProvider) CleanupOrphanedSessions(isGTSession func(string) bool) (i
 	return 0, nil // NATS doesn't have "sessions" that outlive processes in the same way
 }
 
-func (p *NatsProvider) EnsureSessionFresh(ctx context.Context, sessionID, workDir, command string, env map[string]string) error {
-	_ = p.Stop(ctx, sessionID, false)
-	return p.Start(ctx, sessionID, workDir, command, env)
+func (p *NatsProvider) EnsureSessionFresh(ctx context.Context, opts StartOptions) error {
+	_ = p.Stop(ctx, opts.SessionID, false)
+	return p.Start(ctx, opts)
 }
 
 func (p *NatsProvider) WaitForRuntimeReady(ctx context.Context, sessionID string, rc *config.RuntimeConfig, timeout time.Duration) error {
@@ -633,18 +638,18 @@ func (p *NatsProvider) GetSessionInfo(ctx context.Context, sessionID string) (*S
 		return nil, fmt.Errorf("session not found")
 	}
 
-	info := &SessionInfo{
+	pidStr, _ := p.getPanePID(sessionID)
+	pid, _ := strconv.Atoi(pidStr)
+
+	p.mu.RLock()
+	lastAct := p.lastActivity[sessionID]
+	p.mu.RUnlock()
+
+	return &SessionInfo{
 		Name:     sessionID,
 		Windows:  1,
 		Attached: false,
-	}
-
-	// Use PID file mtime as a proxy for activity/start time
-	if pidFile := filepath.Join(p.townRoot, ".gt-nats-pids", sessionID); pidFile != "" {
-		if st, err := os.Stat(pidFile); err == nil {
-			info.Activity = fmt.Sprintf("%d", st.ModTime().Unix())
-		}
-	}
-
-	return info, nil
+		Activity: lastAct.Format(time.RFC3339),
+		PID:      pid,
+	}, nil
 }

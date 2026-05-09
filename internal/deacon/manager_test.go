@@ -28,14 +28,12 @@ type mockProvider struct {
 }
 
 type sessionStartCall struct {
-	sessionID string
-	workDir   string
-	command   string
+	opts session.StartOptions
 }
 
 func (m *mockProvider) IsAvailable() bool { return true }
-func (m *mockProvider) Start(ctx context.Context, sessionID, workDir, command string, env map[string]string) error {
-	m.startCalls = append(m.startCalls, sessionStartCall{sessionID, workDir, command})
+func (m *mockProvider) Start(ctx context.Context, opts session.StartOptions) error {
+	m.startCalls = append(m.startCalls, sessionStartCall{opts})
 	return nil
 }
 func (m *mockProvider) Stop(ctx context.Context, sessionID string, graceful bool) error {
@@ -60,9 +58,6 @@ func (m *mockProvider) SetGlobalEnvironment(key, value string) error { return ni
 func (m *mockProvider) UnsetGlobalEnvironment(key string) error { return nil }
 func (m *mockProvider) SetRemainOnExit(ctx context.Context, sessionID string, enabled bool) error { return nil }
 func (m *mockProvider) Configure(ctx context.Context, sessionID string, cfg any) error { return nil }
-func (m *mockProvider) EnsureSessionFresh(ctx context.Context, sessionID, workDir, command string, env map[string]string) error {
-	return nil
-}
 func (m *mockProvider) GetMainPID(ctx context.Context, sessionID string) (string, error) { return "", nil }
 func (m *mockProvider) GetServerPID(ctx context.Context) (int, error) { return 0, nil }
 func (m *mockProvider) GetSessionInfo(ctx context.Context, sessionID string) (*session.SessionInfo, error) {
@@ -77,6 +72,9 @@ func (m *mockProvider) IsAgentRunning(ctx context.Context, sessionID string) (bo
 func (m *mockProvider) CleanupOrphanedSessions(isGTSession func(string) bool) (int, error) { return 0, nil }
 func (m *mockProvider) StopAllSessions(ctx context.Context) error { return nil }
 func (m *mockProvider) NudgeSession(ctx context.Context, sessionID, message, sender string) error { return nil }
+func (m *mockProvider) EnsureSessionFresh(ctx context.Context, opts session.StartOptions) error {
+	return nil
+}
 func (m *mockProvider) WaitForRuntimeReady(ctx context.Context, sessionID string, rc *config.RuntimeConfig, timeout time.Duration) error {
 	return nil
 }

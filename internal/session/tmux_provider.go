@@ -2,6 +2,7 @@ package session
 
 import (
 	"context"
+	"strconv"
 	"time"
 	"fmt"
 	"github.com/steveyegge/gastown/internal/constants"
@@ -31,8 +32,19 @@ func (p *TmuxProvider) IsAvailable() bool {
 	return p.t.IsAvailable()
 }
 
-func (p *TmuxProvider) Start(ctx context.Context, sessionID, workDir, command string, env map[string]string) error {
-	return p.t.NewSessionWithCommandAndEnv(sessionID, workDir, command, env)
+func (p *TmuxProvider) Start(ctx context.Context, opts StartOptions) error {
+	err := p.t.NewSessionWithCommandAndEnv(opts.SessionID, opts.WorkDir, opts.Command, opts.Env)
+	if err != nil {
+		return err
+	}
+
+	if opts.Theme != nil {
+		if theme, ok := opts.Theme.(*tmux.Theme); ok {
+			// Apply theme (non-blocking, non-fatal)
+			_ = p.t.ApplyTheme(opts.SessionID, *theme)
+		}
+	}
+	return nil
 }
 
 func (p *TmuxProvider) Stop(ctx context.Context, sessionID string, graceful bool) error {
@@ -115,8 +127,18 @@ func (p *TmuxProvider) CleanupOrphanedSessions(isGTSession func(string) bool) (i
 	return p.t.CleanupOrphanedSessions(isGTSession)
 }
 
-func (p *TmuxProvider) EnsureSessionFresh(ctx context.Context, sessionID, workDir, command string, env map[string]string) error {
-	return p.t.EnsureSessionFreshWithCommand(sessionID, workDir, command)
+func (p *TmuxProvider) EnsureSessionFresh(ctx context.Context, opts StartOptions) error {
+	// Note: p.t.EnsureSessionFresh doesn't support theme, but we can call it then apply theme
+	err := p.t.EnsureSessionFreshWithCommandAndEnv(opts.SessionID, opts.WorkDir, opts.Command, opts.Env)
+	if err != nil {
+		return err
+	}
+	if opts.Theme != nil {
+		if theme, ok := opts.Theme.(*tmux.Theme); ok {
+			_ = p.t.ApplyTheme(opts.SessionID, *theme)
+		}
+	}
+	return nil
 }
 
 func (p *TmuxProvider) StopAllSessions(ctx context.Context) error {
@@ -129,6 +151,9 @@ func (p *TmuxProvider) GetSessionInfo(ctx context.Context, sessionID string) (*S
 		return nil, err
 	}
 	// Convert tmux-specific SessionInfo to provider-agnostic SessionInfo
+	pidStr, _ := p.t.GetPanePID(sessionID)
+	pid, _ := strconv.Atoi(pidStr)
+
 	return &SessionInfo{
 		Name:         ti.Name,
 		Windows:      ti.Windows,
@@ -136,6 +161,7 @@ func (p *TmuxProvider) GetSessionInfo(ctx context.Context, sessionID string) (*S
 		Attached:     ti.Attached,
 		Activity:     ti.Activity,
 		LastAttached: ti.LastAttached,
+		PID:          pid,
 	}, nil
 }
 
@@ -163,7 +189,7 @@ func (p *TmuxProvider) CapturePane(ctx context.Context, sessionID string, lines 
 
 // AttachSession attaches to the tmux session.
 func (p *TmuxProvider) AttachSession(ctx context.Context, sessionID string) error {
-	return p.t.AttachSession(sessionID)
+	return p.t.AttachSession(ctx, sessionID)
 }
 
 // SendKeysDebounced sends keys to the tmux session with debouncing.

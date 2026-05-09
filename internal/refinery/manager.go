@@ -156,7 +156,7 @@ func (m *Manager) Start(foreground bool, agentOverride string) error {
 
 	extraEnv := map[string]string{"GT_REFINERY": "1"}
 
-	_, err := session.StartSession(ctx, sp, session.SessionConfig{
+	_, err := session.StartSession(ctx, sp, &session.SessionConfig{
 		SessionID:        sessionID,
 		WorkDir:          refineryRigDir,
 		Role:             "refinery",

@@ -1809,7 +1809,7 @@ func (d *Daemon) ensureArchitectRunning(rigName string) {
 		return
 	}
 
-	_, err := session.StartSession(d.ctx, d.sp, session.SessionConfig{
+	_, err := session.StartSession(d.ctx, d.sp, &session.SessionConfig{
 		SessionID:    sessionID,
 		WorkDir:      architectDir,
 		Role:         constants.RoleArchitect,
@@ -1859,7 +1859,7 @@ func (d *Daemon) ensureQARunning(rigName string) {
 		return
 	}
 
-	_, err := session.StartSession(d.ctx, d.sp, session.SessionConfig{
+	_, err := session.StartSession(d.ctx, d.sp, &session.SessionConfig{
 		SessionID:    sessionID,
 		WorkDir:      qaDir,
 		Role:         constants.RoleQA,
@@ -1911,7 +1911,7 @@ func (d *Daemon) ensureMechanicRunning(rigName string) {
 		return
 	}
 
-	_, err := session.StartSession(d.ctx, d.sp, session.SessionConfig{
+	_, err := session.StartSession(d.ctx, d.sp, &session.SessionConfig{
 		SessionID:    sessionID,
 		WorkDir:      mechanicDir,
 		Role:         constants.RoleMechanic,
@@ -1942,7 +1942,7 @@ func (d *Daemon) ensurePlannerRunning() {
 		return
 	}
 
-	_, err := session.StartSession(d.ctx, d.sp, session.SessionConfig{
+	_, err := session.StartSession(d.ctx, d.sp, &session.SessionConfig{
 		SessionID:    sessionID,
 		WorkDir:      plannerDir,
 		Role:         constants.RolePlanner,

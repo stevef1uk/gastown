@@ -141,9 +141,7 @@ func (m *Manager) StartTMUX(agentOverride string) error {
 	// For tmux transport, kill any existing zombie session before starting.
 	// NATS provider handles its own lifecycle.
 	if _, isTmux := sp.(*session.TmuxProvider); isTmux {
-		t := tmux.NewTmux()
-		_, err := session.KillExistingSession(t, sessionID, true)
-		if err != nil {
+		if _, err := session.KillExistingSession(context.Background(), sp, sessionID, true); err != nil {
 			return ErrAlreadyRunning
 		}
 	} else {
@@ -174,7 +172,7 @@ func (m *Manager) StartTMUX(agentOverride string) error {
 		theme = tmux.ResolveSessionTheme(m.townRoot, "", "mayor", "")
 	}
 	ctx := context.Background()
-	_, err := session.StartSession(ctx, sp, session.SessionConfig{
+	_, err := session.StartSession(ctx, sp, &session.SessionConfig{
 		SessionID:        sessionID,
 		WorkDir:          mayorDir,
 		Role:             "mayor",

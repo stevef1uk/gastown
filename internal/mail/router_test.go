@@ -1592,7 +1592,12 @@ func createNotifyTestSession(t *testing.T, townRoot, sessionName string) {
 	ctx := context.Background()
 
 	// Use cat to simulate an idle session.
-	if err := sp.Start(ctx, sessionName, t.TempDir(), "cat", nil); err != nil {
+	if err := sp.Start(ctx, session.StartOptions{
+		SessionID: sessionName,
+		WorkDir:   t.TempDir(),
+		Command:   "cat",
+		Env:       nil,
+	}); err != nil {
 		t.Fatalf("failed to create test session %q: %v", sessionName, err)
 	}
 

@@ -2,6 +2,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -18,7 +19,6 @@ import (
 	"github.com/steveyegge/gastown/internal/session"
 	"github.com/steveyegge/gastown/internal/rig"
 	"github.com/steveyegge/gastown/internal/style"
-	"github.com/steveyegge/gastown/internal/tmux"
 	"github.com/steveyegge/gastown/internal/witness"
 	"github.com/steveyegge/gastown/internal/workspace"
 )
@@ -82,10 +82,10 @@ func SpawnPolecatForSling(rigName string, opts SlingSpawnOptions) (*SpawnedPolec
 		return nil, fmt.Errorf("rig '%s' not found", rigName)
 	}
 
-	// Get polecat manager (with tmux for session-aware allocation)
+	// Get polecat manager (with session provider for session-aware allocation)
 	polecatGit := git.NewGit(r.Path)
-	t := tmux.NewTmux()
-	polecatMgr := polecat.NewManager(r, polecatGit, t)
+	provider := session.GetDefaultProvider(townRoot)
+	polecatMgr := polecat.NewManager(r, polecatGit, provider)
 
 	// Pre-spawn Dolt health check (gt-94llt7): verify Dolt is reachable before
 	// allocating a polecat. Prevents orphaned polecats when Dolt is down.
@@ -209,7 +209,7 @@ func SpawnPolecatForSling(rigName string, opts SlingSpawnOptions) (*SpawnedPolec
 				return nil, fmt.Errorf("worktree verification failed for reused %s: %w", polecatName, err)
 			}
 
-			polecatSessMgr := polecat.NewSessionManager(session.NewTmuxProvider(t, townRoot), r)
+			polecatSessMgr := polecat.NewSessionManager(provider, r)
 			sessionName := polecatSessMgr.SessionName(polecatName)
 
 			fmt.Printf("%s Polecat %s reused (idle → working, session start deferred)\n", style.Bold.Render("✓"), polecatName)
@@ -290,7 +290,7 @@ func SpawnPolecatForSling(rigName string, opts SlingSpawnOptions) (*SpawnedPolec
 	}
 
 	// Get session manager for session name (session start is deferred)
-	polecatSessMgr := polecat.NewSessionManager(session.NewTmuxProvider(t, townRoot), r)
+	polecatSessMgr := polecat.NewSessionManager(provider, r)
 	sessionName := polecatSessMgr.SessionName(polecatName)
 
 	fmt.Printf("%s Polecat %s spawned (session start deferred)\n", style.Bold.Render("✓"), polecatName)
@@ -353,7 +353,6 @@ func (s *SpawnedPolecatInfo) StartSession() (string, error) {
 	}
 
 	// Start session - use configured transport (NATS if session_transport is set)
-	t := tmux.NewTmux()
 	sp := session.GetDefaultProvider(townRoot)
 	polecatSessMgr := polecat.NewSessionManager(sp, r)
 
@@ -388,7 +387,7 @@ func (s *SpawnedPolecatInfo) StartSession() (string, error) {
 
 	// Only wait for runtime ready when using tmux - NATS sessions handle this differently
 	if _, isTmux := sp.(*session.TmuxProvider); isTmux {
-		if err := t.WaitForRuntimeReady(s.SessionName, runtimeConfig, 30*time.Second); err != nil {
+		if err := sp.WaitForRuntimeReady(context.Background(), s.SessionName, runtimeConfig, 30*time.Second); err != nil {
 			style.PrintWarning("runtime may not be fully ready: %v", err)
 		}
 	}
@@ -400,7 +399,7 @@ func (s *SpawnedPolecatInfo) StartSession() (string, error) {
 	// monitoring visibility, not correctness. Compare with createAgentBeadWithRetry
 	// which fails hard because a polecat without an agent bead is untrackable.
 	polecatGit := git.NewGit(r.Path)
-	polecatMgr := polecat.NewManager(r, polecatGit, t)
+	polecatMgr := polecat.NewManager(r, polecatGit, sp)
 	if err := polecatMgr.SetAgentStateWithRetry(s.PolecatName, "working"); err != nil {
 		style.PrintWarning("could not update agent state after retries: %v", err)
 	}
@@ -419,7 +418,7 @@ func (s *SpawnedPolecatInfo) StartSession() (string, error) {
 		pane, err = getSessionPane(s.SessionName)
 		if err != nil {
 			// Session likely died — clean up the tmux session so it doesn't block re-sling
-			_ = t.KillSession(s.SessionName)
+			_ = sp.Stop(context.Background(), s.SessionName, false)
 			return "", fmt.Errorf("getting pane for %s (session likely died during startup): %w", s.SessionName, err)
 		}
 	}

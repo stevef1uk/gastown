@@ -112,6 +112,9 @@ type SessionConfig struct {
 
 	// VerifySurvived checks that the session is still alive after startup.
 	VerifySurvived bool
+
+	// OnStart is called after the session is created and tracked.
+	OnStart func(p Provider)
 }
 
 // StartResult contains the results of session startup.
@@ -128,28 +131,26 @@ type StartResult struct {
 	RunID string
 }
 
-// StartSession creates a tmux session following the standard Gas Town lifecycle.
+// StartSession creates a session following the standard Gas Town lifecycle.
 //
 // The lifecycle handles:
 //  1. Resolve runtime config for the role
 //  2. Ensure settings/plugins exist for the agent
 //  3. Build startup command (if not provided)
-//  4. Create tmux session with command
+//  4. Create session with command
 //  5. Set environment variables (standard + extra)
 //  6. Apply theme (if configured)
 //  7. Optional post-start: wait for agent, accept bypass, ready delay,
 //     auto-respawn, PID tracking, verify survived
-//
-// Role-specific concerns (issue validation, fallback nudges, pane-died hooks,
-// crew cycle bindings, etc.) should be handled by the caller before/after
-// calling StartSession.
-func StartSession(ctx context.Context, sp Provider, cfg SessionConfig) (_ *StartResult, retErr error) {
+func StartSession(ctx context.Context, p Provider, cfg *SessionConfig) (*StartResult, error) {
 	// Generate the GASTA run ID — the root identifier for all telemetry emitted
 	// by this agent session and its subprocesses (bd, mail, …).
 	runID := uuid.New().String()
 	ctx = telemetry.WithRunID(ctx, runID)
 
+	var retErr error
 	defer func() { telemetry.RecordSessionStart(ctx, cfg.SessionID, cfg.Role, retErr) }()
+
 	if cfg.SessionID == "" {
 		return nil, fmt.Errorf("SessionID is required")
 	}
@@ -158,6 +159,11 @@ func StartSession(ctx context.Context, sp Provider, cfg SessionConfig) (_ *Start
 	}
 	if cfg.Role == "" {
 		return nil, fmt.Errorf("Role is required")
+	}
+
+	// 0. Ensure stale session is gone
+	if _, err := KillExistingSession(ctx, p, cfg.SessionID, true); err != nil {
+		return nil, fmt.Errorf("cleaning existing session: %w", err)
 	}
 
 	// 1. Resolve runtime config.
@@ -172,19 +178,17 @@ func StartSession(ctx context.Context, sp Provider, cfg SessionConfig) (_ *Start
 		return nil, fmt.Errorf("ensuring runtime settings: %w", err)
 	}
 
-	// 2.5. Write .gt-agent identity file so the agent knows its role/rig on startup.
-	// This prevents agents from defaulting to "worker" identity when started from
-	// deep subdirectories (e.g. within a rig).
-	if err := ensureAgentIdentityFile(cfg); err != nil {
+	// 2.5. Write .gt-agent identity file.
+	if err := ensureAgentIdentityFile(*cfg); err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: could not write .gt-agent identity file: %v\n", err)
 	}
 
 	// 3. Build startup command if not provided.
 	command := cfg.Command
 	if command == "" {
-		prompt := buildPrompt(cfg)
+		prompt := buildPrompt(*cfg)
 		var err error
-		command, err = buildCommand(cfg, prompt)
+		command, err = buildCommand(*cfg, prompt)
 		if err != nil {
 			return nil, fmt.Errorf("building startup command: %w", err)
 		}
@@ -197,11 +201,7 @@ func StartSession(ctx context.Context, sp Provider, cfg SessionConfig) (_ *Start
 		})
 	}
 
-	// 4. Compute environment variables BEFORE creating the session so they
-	// can be passed via tmux -e flags. Setting env via SetEnvironment after
-	// session creation only affects newly spawned panes — the running pane
-	// (and any subprocess the agent spawns, e.g. bd) keeps its original
-	// environment (gt-neycp).
+	// 4. Compute environment variables.
 	envVars := config.AgentEnv(config.AgentEnvConfig{
 		Role:             cfg.Role,
 		Rig:              cfg.RigName,
@@ -218,26 +218,26 @@ func StartSession(ctx context.Context, sp Provider, cfg SessionConfig) (_ *Start
 		envVars[k] = v
 	}
 
-	// 5. Create session with command and env vars via provider.
-	if err := sp.Start(ctx, cfg.SessionID, cfg.WorkDir, command, envVars); err != nil {
+	// 4. Create session with command and env vars
+	opts := StartOptions{
+		SessionID: cfg.SessionID,
+		WorkDir:   cfg.WorkDir,
+		Command:   command,
+		Env:       envVars,
+		Theme:     cfg.Theme,
+	}
+	if err := p.Start(ctx, opts); err != nil {
 		return nil, fmt.Errorf("creating session: %w", err)
 	}
 
-	// 6. Set remain-on-exit immediately if requested (before anything else can fail).
+	// 5. Set remain-on-exit immediately if requested.
 	if cfg.RemainOnExit {
-		_ = sp.SetRemainOnExit(ctx, cfg.SessionID, true)
+		_ = p.SetRemainOnExit(ctx, cfg.SessionID, true)
 	}
 
-	// 7. Apply theme.
-	if cfg.Theme != nil {
-		_ = sp.Configure(ctx, cfg.SessionID, cfg.Theme)
-	}
-
-	// 8. Wait for agent to start.
-	// This might be provider-specific. TmuxProvider handles this via WaitForCommand.
-	// For other providers, we might skip or use a different mechanism.
+	// 6. Wait for agent to start.
 	if cfg.WaitForAgent {
-		if tp, ok := sp.(*TmuxProvider); ok {
+		if tp, ok := p.(*TmuxProvider); ok {
 			if err := tp.t.WaitForCommand(cfg.SessionID, constants.SupportedShells, constants.ClaudeStartTimeout); err != nil {
 				if cfg.WaitFatal {
 					_ = tp.t.KillSessionWithProcesses(cfg.SessionID)
@@ -247,76 +247,72 @@ func StartSession(ctx context.Context, sp Provider, cfg SessionConfig) (_ *Start
 		}
 	}
 
-	// 9. Auto-respawn hook.
+	// 7. Auto-respawn hook.
 	if cfg.AutoRespawn {
-		if tp, ok := sp.(*TmuxProvider); ok {
+		if tp, ok := p.(*TmuxProvider); ok {
 			if err := tp.t.SetAutoRespawnHook(cfg.SessionID); err != nil {
 				fmt.Printf("warning: failed to set auto-respawn hook for %s: %v\n", cfg.Role, err)
 			}
 		}
 	}
 
-	// 10. Accept startup dialogs (workspace trust + bypass permissions).
+	// 8. Accept startup dialogs.
 	if cfg.AcceptBypass {
-		if tp, ok := sp.(*TmuxProvider); ok {
+		if tp, ok := p.(*TmuxProvider); ok {
 			_ = tp.t.AcceptStartupDialogs(cfg.SessionID)
 		}
 	}
 
-	// 11. Ready delay: wait for agent to be fully ready at the prompt.
+	// 9. Ready delay.
 	if cfg.ReadyDelay {
-		if tp, ok := sp.(*TmuxProvider); ok {
+		if tp, ok := p.(*TmuxProvider); ok {
 			if err := tp.t.WaitForRuntimeReady(cfg.SessionID, runtimeConfig, constants.ClaudeStartTimeout); err != nil {
 				fmt.Fprintf(os.Stderr, "Warning: agent readiness detection timed out for %s: %v\n", cfg.SessionID, err)
 			}
 		} else {
-			// NATS doesn't have prompt-based detection yet, but we check if agent is running.
-			running, _ := sp.IsAgentRunning(ctx, cfg.SessionID)
+			running, _ := p.IsAgentRunning(ctx, cfg.SessionID)
 			if !running {
 				fmt.Fprintf(os.Stderr, "Warning: agent not running for %s\n", cfg.SessionID)
 			}
 		}
 	}
 
-	// 12. Verify session survived startup.
+	// 10. Verify session survived startup.
 	if cfg.VerifySurvived {
-		running, err := sp.Exists(ctx, cfg.SessionID)
+		running, err := p.Exists(ctx, cfg.SessionID)
 		if err != nil {
-			// Clean up session on verification error to prevent orphan
-			_ = sp.Stop(ctx, cfg.SessionID, false)
+			_ = p.Stop(ctx, cfg.SessionID, false)
 			return nil, fmt.Errorf("verifying session: %w", err)
 		}
 		if !running {
-			return nil, fmt.Errorf("session %s died during startup (agent command may have failed)", cfg.SessionID)
+			return nil, fmt.Errorf("session %s died during startup", cfg.SessionID)
 		}
 	}
 
-	// 13. Record agent's pane_id/session_id for diagnostic checks.
-	// Use tmux pane ID (not PID) so ZFC liveness checks work correctly.
-	if tp, ok := sp.(*TmuxProvider); ok {
+	// 11. Set GT_PANE_ID
+	if tp, ok := p.(*TmuxProvider); ok {
 		if paneID, err := tp.Tmux().GetPaneID(cfg.SessionID); err == nil {
-			_ = sp.SetEnvironment(ctx, cfg.SessionID, "GT_PANE_ID", paneID)
+			_ = p.SetEnvironment(ctx, cfg.SessionID, "GT_PANE_ID", paneID)
 		}
 	}
 
-	// 14. Track PID for defense-in-depth orphan cleanup.
-	if cfg.TrackPID && cfg.TownRoot != "" {
-		if tp, ok := sp.(*TmuxProvider); ok {
-			_ = TrackSessionPID(cfg.TownRoot, cfg.SessionID, tp.t)
-		}
+	// 12. Track PID for defense-in-depth orphan cleanup (non-fatal)
+	if tp, ok := p.(*TmuxProvider); ok {
+		_ = TrackSessionPID(cfg.TownRoot, cfg.SessionID, tp.Tmux())
 	}
 
-	// 14. Stream agent conversation events to VictoriaLogs (opt-in).
-	// Reads ~/.claude/projects/<hash>/<session>.jsonl and emits agent.event logs.
-	// Non-fatal: observability failures must never block agent startup.
+	// 13. Stream agent conversation events to VictoriaLogs (opt-in).
 	if os.Getenv("GT_LOG_AGENT_OUTPUT") == "true" && os.Getenv("GT_OTEL_LOGS_URL") != "" {
 		if err := ActivateAgentLogging(cfg.SessionID, cfg.WorkDir, runID); err != nil {
 			fmt.Fprintf(os.Stderr, "warning: agent log watcher setup failed for %s: %v\n", cfg.SessionID, err)
 		}
 	}
 
-	// Record the agent instantiation event (GASTA root span).
-	// Done after session creation so we only emit on success.
+	// 14. Record agent instantiation event
+	if cfg.OnStart != nil {
+		cfg.OnStart(p)
+	}
+
 	RecordAgentInstantiateFromDir(ctx, runID, runtimeConfig.ResolvedAgent,
 		cfg.Role, cfg.AgentName, cfg.SessionID, cfg.RigName, cfg.TownRoot, "", cfg.WorkDir)
 
@@ -324,9 +320,7 @@ func StartSession(ctx context.Context, sp Provider, cfg SessionConfig) (_ *Start
 }
 
 // RecordAgentInstantiateFromDir resolves the git branch/commit from workDir and
-// emits the agent.instantiate root telemetry event. resolvedAgent defaults to
-// "claudecode" when empty. Use this instead of calling telemetry.RecordAgentInstantiate
-// directly to avoid duplicating the agentType/git-lookup boilerplate.
+// emits the agent.instantiate root telemetry event.
 func RecordAgentInstantiateFromDir(ctx context.Context, runID, resolvedAgent, role, agentName, sessionID, rigName, townRoot, issueID, workDir string) {
 	agentType := resolvedAgent
 	if agentType == "" {
@@ -356,9 +350,6 @@ func RecordAgentInstantiateFromDir(ctx context.Context, runID, resolvedAgent, ro
 }
 
 // StopSession stops a session with optional graceful shutdown.
-//
-// If graceful is true, sends Ctrl-C first and waits for the session to exit
-// before force-killing. This allows the agent to clean up.
 func StopSession(p Provider, sessionID string, graceful bool) error {
 	ctx := context.Background()
 	running, err := p.Exists(ctx, sessionID)
@@ -374,8 +365,6 @@ func StopSession(p Provider, sessionID string, graceful bool) error {
 		WaitForSessionExit(p, sessionID, constants.GracefulShutdownTimeout)
 	}
 
-	// Kill any detached agent-log watcher for this session before tearing down
-	// the session, to avoid orphan processes accumulating over time.
 	DeactivateAgentLogging(sessionID)
 
 	if err := p.Stop(ctx, sessionID, true); err != nil {
@@ -397,12 +386,7 @@ func mapKeysSorted(m map[string]string) []string {
 	return keys
 }
 
-// MergeRuntimeLivenessEnv ensures liveness-critical env vars are present in the
-// tmux session environment table, even when agent resolution came from
-// workspace/default settings rather than an explicit --agent override.
-//
-// Call this after config.AgentEnv() to add GT_AGENT and GT_PROCESS_NAMES
-// before writing env vars to the tmux session via SetEnvironment.
+// MergeRuntimeLivenessEnv ensures liveness-critical env vars are present.
 func MergeRuntimeLivenessEnv(envVars map[string]string, runtimeConfig *config.RuntimeConfig) map[string]string {
 	if envVars == nil {
 		envVars = make(map[string]string)
@@ -425,10 +409,6 @@ func MergeRuntimeLivenessEnv(envVars map[string]string, runtimeConfig *config.Ru
 			argsForLookup := runtimeConfig.Args
 			if existing, ok := envVars["GT_AGENT"]; ok && existing != "" {
 				agentForLookup = existing
-				// When GT_AGENT was set by AgentOverride (differs from the
-				// workspace-resolved agent), the runtimeConfig.Command/Args
-				// belong to the workspace agent, not the override. Pass empty
-				// command so ResolveProcessNames uses the preset's own command.
 				if existing != runtimeConfig.ResolvedAgent {
 					commandForLookup = ""
 					argsForLookup = nil
@@ -444,27 +424,27 @@ func MergeRuntimeLivenessEnv(envVars map[string]string, runtimeConfig *config.Ru
 	return envVars
 }
 
-// KillExistingSession kills an existing session if one is found.
-// Returns true if a session was killed.
-//
-// If checkAlive is true, only kills zombie sessions (tmux alive but agent dead).
-// If the session exists and the agent is alive, returns ErrAlreadyRunning.
-// If checkAlive is false, kills any existing session unconditionally.
-func KillExistingSession(t *tmux.Tmux, sessionID string, checkAlive bool) (bool, error) {
-	running, err := t.HasSession(sessionID)
+// KillExistingSession terminates a session if it exists.
+// If checkAlive is true, only kills zombie sessions (transport alive but agent dead).
+func KillExistingSession(ctx context.Context, p Provider, sessionID string, checkAlive bool) (bool, error) {
+	exists, err := p.Exists(ctx, sessionID)
 	if err != nil {
 		return false, fmt.Errorf("checking session: %w", err)
 	}
-	if !running {
+	if !exists {
 		return false, nil
 	}
 
-	if checkAlive && t.IsAgentAlive(sessionID) {
-		return false, fmt.Errorf("session already running: %s", sessionID)
+	if checkAlive {
+		alive, err := p.IsAgentRunning(ctx, sessionID)
+		if err == nil && alive {
+			return false, nil // Session is healthy, don't kill
+		}
 	}
 
-	if err := t.KillSessionWithProcesses(sessionID); err != nil {
-		return false, fmt.Errorf("killing session %s: %w", sessionID, err)
+	// Kill it
+	if err := p.Stop(ctx, sessionID, true); err != nil {
+		return true, fmt.Errorf("killing session: %w", err)
 	}
 
 	return true, nil

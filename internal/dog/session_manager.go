@@ -112,7 +112,7 @@ func (m *SessionManager) Start(dogName string, opts SessionStartOptions) error {
 
 	// Use unified session lifecycle.
 	theme := tmux.DogTheme()
-	_, err := session.StartSession(ctx, m.sp, session.SessionConfig{
+	_, err := session.StartSession(ctx, m.sp, &session.SessionConfig{
 		SessionID: sessionID,
 		WorkDir:   kennelDir,
 		Role:      "dog",
