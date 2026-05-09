@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"path/filepath"
@@ -16,15 +17,6 @@ import (
 	"github.com/steveyegge/gastown/internal/session"
 	"github.com/steveyegge/gastown/internal/tmux"
 )
-
-type testWriter struct {
-	t *testing.T
-}
-
-func (w *testWriter) Write(p []byte) (n int, err error) {
-	w.t.Log(strings.TrimSpace(string(p)))
-	return len(p), nil
-}
 
 // searchStorage is a minimal Storage stub for hasActiveWork tests.
 // Embeds beadsdk.Storage to satisfy the full interface without implementing
@@ -61,7 +53,7 @@ func newTestDaemonWithStores(t *testing.T, townRoot string, stores map[string]be
 	t.Helper()
 	return &Daemon{
 		config:      &Config{TownRoot: townRoot},
-		logger:      log.New(&testWriter{t}, "", 0),
+		logger:      log.New(io.Discard, "", 0),
 		sp:          session.NewTmuxProvider(tmux.NewTmux(), townRoot),
 		beadsStores: stores,
 		ctx:         context.Background(),
@@ -133,7 +125,7 @@ func TestHasActiveWork(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			d := &Daemon{
 				config:      &Config{TownRoot: t.TempDir()},
-				logger:      log.New(&testWriter{t}, "", 0),
+				logger:      log.New(io.Discard, "", 0),
 				beadsStores: tc.stores,
 				ctx:         context.Background(),
 			}
