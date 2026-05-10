@@ -1,0 +1,22 @@
+?   	github.com/steveyegge/gastown	[no test files]
+?   	github.com/steveyegge/gastown/cmd/debug-mechanic	[no test files]
+?   	github.com/steveyegge/gastown/cmd/debug-mechanic/llm	[no test files]
+ok  	github.com/steveyegge/gastown/cmd/gt	3.886s
+ok  	github.com/steveyegge/gastown/cmd/gt-agent	0.007s
+?   	github.com/steveyegge/gastown/cmd/gt-agent/internal/llm	[no test files]
+?   	github.com/steveyegge/gastown/cmd/gt-agent-console	[no test files]
+?   	github.com/steveyegge/gastown/cmd/gt-proxy-client	[no test files]
+ok  	github.com/steveyegge/gastown/cmd/gt-proxy-server	0.006s
+ok  	github.com/steveyegge/gastown/internal/acp	3.462s
+ok  	github.com/steveyegge/gastown/internal/activity	0.004s
+ok  	github.com/steveyegge/gastown/internal/agent	0.010s
+ok  	github.com/steveyegge/gastown/internal/agent/provider	0.015s
+?   	github.com/steveyegge/gastown/internal/agentconsole	[no test files]
+ok  	github.com/steveyegge/gastown/internal/agentlog	0.012s
+ok  	github.com/steveyegge/gastown/internal/atomicfile	0.021s
+ok  	github.com/steveyegge/gastown/internal/beads	8.336s
+ok  	github.com/steveyegge/gastown/internal/bitbucket	0.018s
+ok  	github.com/steveyegge/gastown/internal/boot	0.035s
+ok  	github.com/steveyegge/gastown/internal/channelevents	0.008s
+ok  	github.com/steveyegge/gastown/internal/checkpoint	0.698s
+ok  	github.com/steveyegge/gastown/internal/cli	0.006s
