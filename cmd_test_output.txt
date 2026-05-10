@@ -2253,3 +2253,38 @@ Warning: couldn't update agent gt-gastown-polecat-max cleanup status: issue not 
 ⚠ Warning: rigs.json not found (checked mayor/rigs.json and town root). PrefixRegistry is empty — session parsing will fail. Run 'gt doctor' or restore rigs.json.
 ⚠ gt binary is 2 commits behind (built from bc211905, repo at dff2a90bfe8d)
     → Run 'make install' in gastown repo to update
+Warning: couldn't set done-intent label on gt-gastown-polecat-Toast: issue not found
+⚠ Warning: could not write completion metadata to agent bead: issue not found
+Warning: failed to nudge witness gt-gastown-witness: queuing nudge: nudge queue for gt-gastown-witness is full (50/50 pending)
+Warning: couldn't write checkpoint witness-notified on gt-gastown-polecat-Toast: issue not found
+Warning: couldn't clear hook_bead on gt-gastown-polecat-Toast: issue not found
+Warning: wisp purge failed: issue not found
+Warning: couldn't set agent gt-gastown-polecat-Toast to idle: issue not found
+Warning: couldn't update agent gt-gastown-polecat-Toast cleanup status: issue not found
+⚠ Warning: uncommitted changes still present — skipping worktree sync to preserve work
+=== RUN   TestHandoffPolecatEnvCheck/mayor_with_stale_GT_POLECAT_is_NOT_redirected
+⚠ workspace has uncommitted work: 1 uncommitted change(s), 14 unpushed commit(s)
+⚠   modified: md_test_output.txt
+⚠   14 unpushed commit(s) — run 'git push' before handoff
+  (use --no-git-check to suppress this warning)
+DEBUG: role="mayor"
+The session was NOT respawned. Fix the issue and retry 'gt handoff'.
+=== RUN   TestHandoffPolecatEnvCheck/compound_witness_with_stale_GT_POLECAT_is_NOT_redirected
+⚠ workspace has uncommitted work: 1 uncommitted change(s), 14 unpushed commit(s)
+⚠   modified: md_test_output.txt
+⚠   14 unpushed commit(s) — run 'git push' before handoff
+  (use --no-git-check to suppress this warning)
+=== RUN   TestHandoffPolecatEnvCheck/crew_with_stale_GT_POLECAT_is_NOT_redirected
+⚠ workspace has uncommitted work: 1 uncommitted change(s), 14 unpushed commit(s)
+⚠   modified: md_test_output.txt
+⚠   14 unpushed commit(s) — run 'git push' before handoff
+  (use --no-git-check to suppress this warning)
+=== RUN   TestHandoffPolecatEnvCheck/compound_crew_with_stale_GT_POLECAT_is_NOT_redirected
+⚠ workspace has uncommitted work: 1 uncommitted change(s), 14 unpushed commit(s)
+⚠   modified: md_test_output.txt
+⚠   14 unpushed commit(s) — run 'git push' before handoff
+  (use --no-git-check to suppress this warning)
+=== RUN   TestHandoffPolecatEnvCheck/no_GT_ROLE_with_GT_POLECAT_set_is_redirected
+⚠ Warning: rigs.json not found (checked mayor/rigs.json and town root). PrefixRegistry is empty — session parsing will fail. Run 'gt doctor' or restore rigs.json.
+⚠ gt binary is 3 commits behind (built from bc211905, repo at 151d10c98cdc)
+    → Run 'make install' in gastown repo to update
