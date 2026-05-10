@@ -2240,3 +2240,16 @@ Use "gt escalate [command] --help" for more information about a command.
 ⚠ Warning: rigs.json not found (checked mayor/rigs.json and town root). PrefixRegistry is empty — session parsing will fail. Run 'gt doctor' or restore rigs.json.
 ⚠ gt binary is 1 commits behind (built from bc211905, repo at 7c230e350242)
     → Run 'make install' in gastown repo to update
+Warning: couldn't set done-intent label on gt-gastown-polecat-max: issue not found
+⚠ Warning: could not write completion metadata to agent bead: issue not found
+Warning: failed to nudge witness gt-gastown-witness: queuing nudge: nudge queue for gt-gastown-witness is full (50/50 pending)
+Warning: couldn't write checkpoint witness-notified on gt-gastown-polecat-max: issue not found
+Warning: couldn't clear hook_bead on gt-gastown-polecat-max: issue not found
+Warning: wisp purge failed: issue not found
+Warning: couldn't set agent gt-gastown-polecat-max to idle: issue not found
+Warning: couldn't update agent gt-gastown-polecat-max cleanup status: issue not found
+⚠ Warning: uncommitted changes still present — skipping worktree sync to preserve work
+=== RUN   TestHandoffPolecatEnvCheck/compound_polecat_role_is_redirected
+⚠ Warning: rigs.json not found (checked mayor/rigs.json and town root). PrefixRegistry is empty — session parsing will fail. Run 'gt doctor' or restore rigs.json.
+⚠ gt binary is 2 commits behind (built from bc211905, repo at dff2a90bfe8d)
+    → Run 'make install' in gastown repo to update
