@@ -188,29 +188,33 @@ func init() {
 
 // runFormulaList delegates to bd formula list
 func runFormulaList(cmd *cobra.Command, args []string) error {
+	townRoot, _ := workspace.FindFromCwd()
 	bdArgs := []string{"formula", "list"}
 	if formulaListJSON {
 		bdArgs = append(bdArgs, "--json")
 	}
 
-	bdCmd := exec.Command("bd", bdArgs...)
-	bdCmd.Stdout = os.Stdout
-	bdCmd.Stderr = os.Stderr
-	return bdCmd.Run()
+	return BdCmd(bdArgs...).
+		WithGTRoot(townRoot).
+		Stdout(os.Stdout).
+		Stderr(os.Stderr).
+		Run()
 }
 
 // runFormulaShow delegates to bd formula show
 func runFormulaShow(cmd *cobra.Command, args []string) error {
+	townRoot, _ := workspace.FindFromCwd()
 	formulaName := args[0]
 	bdArgs := []string{"formula", "show", formulaName}
 	if formulaShowJSON {
 		bdArgs = append(bdArgs, "--json")
 	}
 
-	bdCmd := exec.Command("bd", bdArgs...)
-	bdCmd.Stdout = os.Stdout
-	bdCmd.Stderr = os.Stderr
-	return bdCmd.Run()
+	return BdCmd(bdArgs...).
+		WithGTRoot(townRoot).
+		Stdout(os.Stdout).
+		Stderr(os.Stderr).
+		Run()
 }
 
 // runFormulaRun executes a formula by spawning a convoy of polecats.

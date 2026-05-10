@@ -162,32 +162,6 @@ func runDone(cmd *cobra.Command, args []string) (retErr error) {
 		return fmt.Errorf("cannot determine current rig (working directory may be deleted)")
 	}
 
-	// Guard: Check for implementation commits - prevent gt done without actual work
-	// Skip this check for deferred exits (which are valid for report-only tasks)
-	if exitType == ExitCompleted && cwd != "" {
-		// Check if there are any commits beyond the auto-save safety net
-		cmd := exec.Command("git", "log", "--oneline", "-3")
-		cmd.Dir = cwd
-		out, err := cmd.CombinedOutput()
-		if err == nil {
-			logLines := strings.Split(string(out), "\n")
-			hasRealCommit := false
-			for _, line := range logLines {
-				// Check for commits that are NOT auto-save safety net commits
-				if strings.Contains(line, "auto-save") || strings.Contains(line, "safety net") {
-					continue
-				}
-				if strings.TrimSpace(line) != "" {
-					hasRealCommit = true
-					break
-				}
-			}
-			if !hasRealCommit {
-				return fmt.Errorf("cannot complete: no implementation commits found. You must do the actual work before calling gt done.\n- Implement the solution as described in your assigned bead\n- Write code, tests, or documentation\n- Commit your changes with meaningful commit messages\n- Then call gt done")
-			}
-		}
-	}
-
 	// When gt is invoked via shell alias (cd ~/gt && gt), or when Claude Code
 	// resets the shell CWD to mayor/rig, cwd is NOT the polecat's worktree.
 	// Detect and reconstruct actual path.
@@ -421,6 +395,22 @@ func runDone(cmd *cobra.Command, args []string) (retErr error) {
 					fmt.Printf("  This auto-save prevents work loss.\n\n")
 					doneCleanupStatus = "unpushed" // Update status — changes are now committed but not pushed
 				}
+			}
+		}
+	}
+
+	// Guard: Check for implementation commits - prevent gt done without actual work
+	// This check runs AFTER the auto-save safety net to catch "sleepwalking" polecats
+	// that run gt done without implementing anything (just triggering auto-save)
+	// Only check the TOP commit - if it's just auto-save, the polecat didn't do real work
+	if exitType == ExitCompleted && cwd != "" {
+		cmd := exec.Command("git", "log", "--oneline", "-1")
+		cmd.Dir = cwd
+		out, err := cmd.CombinedOutput()
+		if err == nil {
+			topCommit := strings.TrimSpace(string(out))
+			if strings.Contains(topCommit, "auto-save") || strings.Contains(topCommit, "safety net") || strings.Contains(topCommit, "gt-pvx") {
+				return fmt.Errorf("cannot complete: no implementation commits found. Your only commit is an auto-save safety net.\n\nThis means you ran gt done without actually implementing anything.\n\nTo complete this task:\n1. Read your assigned bead: bd show <issue-id>\n2. Read the SPEC.md in your worktree\n3. Create the required files (main.py, requirements.txt, tests, etc.)\n4. Test your implementation works\n5. Commit: git add -A && git commit -m 'feat: implementation (<issue-id>)'\n6. Then run: gt done\n\nThe system REQUIRES actual code changes - auto-save commits don't count as work.")
 			}
 		}
 	}

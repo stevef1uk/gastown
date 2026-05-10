@@ -1,0 +1,11 @@
+description = "Standard polecat workflow with TDD: extends mol-polecat-work, expands the implement step with a red-green-refactor cycle."
+formula = "mol-polecat-work-tdd"
+type = "workflow"
+version = 1
+extends = ["mol-polecat-work"]
+
+[compose]
+
+[[compose.expand]]
+target = "implement"
+with = "tdd-cycle"

@@ -16,6 +16,7 @@ type bdCmd struct {
 	args       []string
 	dir        string
 	env        []string
+	stdout     io.Writer
 	stderr     io.Writer
 	autoCommit bool
 	gtRoot     string
@@ -34,6 +35,7 @@ func BdCmd(args ...string) *bdCmd {
 	return &bdCmd{
 		args:   args,
 		env:    os.Environ(),
+		stdout: os.Stdout,
 		stderr: os.Stderr,
 	}
 }
@@ -81,6 +83,13 @@ func (b *bdCmd) StripBeadsDir() *bdCmd {
 // Defaults to os.Stderr if not set.
 func (b *bdCmd) Stderr(w io.Writer) *bdCmd {
 	b.stderr = w
+	return b
+}
+
+// Stdout sets the stdout writer for the command.
+// Defaults to os.Stdout if not set.
+func (b *bdCmd) Stdout(w io.Writer) *bdCmd {
+	b.stdout = w
 	return b
 }
 
@@ -135,6 +144,7 @@ func (b *bdCmd) Build() *exec.Cmd {
 	cmd := exec.Command("bd", args...)
 	cmd.Dir = b.dir
 	cmd.Env = b.buildEnv()
+	cmd.Stdout = b.stdout
 	cmd.Stderr = b.stderr
 	return cmd
 }

@@ -44,6 +44,52 @@ The formula checklist (shown by `gt prime`) defines YOUR workflow. Steps:
 If you call gt done before implementing the solution, you are failing your assignment.
 The formula exists to ensure work is actually done, not just attempted.
 
+**IMPORTANT: Your user prompt tells you to "Execute the following work". This means you must actually create files and commit them, not just run gt prime and gt done!**
+
+### 🚨 IMPLEMENTATION MEANS CREATING FILES 🚨
+
+**"Implement" is NOT complete until you have:**
+- Created the required files (main.py, requirements.txt, etc.)
+- Written tests in the tests/ directory
+- Run the tests and verified they pass
+- Committed all changes with `git commit`
+
+**If you have NOT created any files, you have NOT implemented anything!**
+
+Example workflow (for a FastAPI backend):
+```bash
+# 1. Create the directory structure
+mkdir -p defender/backend
+
+# 2. Create the implementation file
+cat > defender/backend/main.py << 'EOF'
+# ... implementation code ...
+EOF
+
+# 3. Create requirements.txt
+cat > defender/backend/requirements.txt << 'EOF'
+fastapi
+uvicorn
+httpx
+pytest
+EOF
+
+# 4. Create tests
+mkdir -p defender/backend/tests
+cat > defender/backend/tests/test_main.py << 'EOF'
+# ... test code ...
+EOF
+
+# 5. Run tests
+cd defender/backend && pip install -r requirements.txt && pytest tests/
+
+# 6. Commit
+git add .
+git commit -m "feat: implement FastAPI backend (te-za4)"
+```
+
+**Calling gt done WITHOUT creating files is a SYSTEM FAILURE.**
+
 ---
 
 ## 🚨 SINGLE-TASK FOCUS 🚨

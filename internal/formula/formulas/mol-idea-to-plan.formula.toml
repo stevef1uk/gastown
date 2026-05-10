@@ -697,7 +697,8 @@ cat .designs/<design-id>/design-doc.md
 
 For each task/phase in the plan, create a bead:
 ```bash
-bd create "Task title" --type=task --description="
+# Use --formula mol-polecat-work-tdd for implementation/code tasks
+bd create "Task title" --type=task --formula mol-polecat-work-tdd --description="
 ## Context
 From: {{problem}} implementation plan
 

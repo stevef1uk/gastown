@@ -101,9 +101,13 @@ func findBeadsWorkDirForAgent(agentID string, townRoot string) (string, error) {
 			} else {
 				fallbackPath = filepath.Join(townRoot, rigName)
 			}
-			resolvedDir := beads.ResolveHookDir(townRoot, agentBeadID, fallbackPath)
+			var resolvedDir string
+			if agentBeadID == "" {
+				resolvedDir = townRoot
+			} else {
+				resolvedDir = beads.ResolveHookDir(townRoot, agentBeadID, fallbackPath)
+			}
 			if resolvedDir != "" {
-				// Use resolvedDir directly - it's the rig path (not a file to get parent of)
 				return resolvedDir, nil
 			}
 		}

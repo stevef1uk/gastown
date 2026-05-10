@@ -614,6 +614,8 @@ func agentIDToBeadID(agentID, townRoot string) string {
 	prefix := beads.GetPrefixForRig(townRoot, rig)
 
 	switch {
+	case len(parts) == 2 && (parts[1] == "architect" || parts[1] == "qa"):
+		return ""
 	case len(parts) == 2 && parts[1] == "witness":
 		return beads.WitnessBeadIDWithPrefix(prefix, rig)
 	case len(parts) == 2 && parts[1] == "refinery":

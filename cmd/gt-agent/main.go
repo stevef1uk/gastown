@@ -43,8 +43,10 @@ var permanentAgents = map[string]bool{
 	"deacon":    true,
 	"witness":   true,
 	"refinery":  true,
-	"planner":   true,
-	"mechanic":  true,
+	"planner":     true,
+	"mechanic":    true,
+	"architect":   true,
+	"qa":          true,
 	"deacon/boot": true, // boot is a deacon variant
 }
 
@@ -57,10 +59,12 @@ GT="/home/stevef/.local/bin/gt"
 
 echo "=== Mechanic patrol starting ==="
 
-# Scan recent log files
-logs=$(ls -rt "$LOG_DIR"/*.log 2>/dev/null | head -5)
+# Only check logs from the current rig (testgt2) - skip old rigs
+# Also skip logs older than 1 hour to avoid stale sessions
+current_rig="${RIG:-testgt2}"
+logs=$(find "$LOG_DIR" -maxdepth 1 -name "*.log" -mmin -60 -name "*$current_rig*" -type f 2>/dev/null | sort -r -t '-' -k3 | head -5)
 if [ -z "$logs" ]; then
-  echo "No log files found, sleeping..."
+  echo "No recent log files found for rig $current_rig, sleeping..."
   sleep 30
   exit 0
 fi
@@ -97,10 +101,11 @@ for logfile in $logs; do
     
     if grep -q "Extraordinary action" "$logfile" 2>/dev/null; then
       echo "Found Extraordinary action in $agent log"
-      # Always try to nudge the agent
-      echo "Nudging $agent to recover from Extraordinary action..."
-      "$GT" nudge "$agent" "Mechanic detected Extraordinary action - please recover" 2>/dev/null || true
-      echo "Nudge sent to $agent"
+      # Always try to nudge the agent - include rig prefix
+      target="$rig/$agent"
+      echo "Nudging $target to recover from Extraordinary action..."
+      "$GT" nudge "$target" "Mechanic detected Extraordinary action - please recover" 2>/dev/null || true
+      echo "Nudge sent to $target"
     fi
     
     if grep -q "Syntax error" "$logfile" 2>/dev/null; then

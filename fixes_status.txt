@@ -68,3 +68,43 @@ Fix the end-to-end Gas Town flow where a spec can be handed to agents who autono
 ## Next Steps
 - Test full end-to-end flow with a real implementation task
 - Verify polecat follows formula steps in order (load-context → implement → commit → gt done)
+
+## Additional Issues Found
+
+### 8. Mechanic Nudge Missing Rig Prefix (FIXED)
+- **File**: cmd/gt-agent/main.go (mechanicPatrolScript)
+- **Issue**: Mechanic nudges agents without rig prefix (e.g., "architect" instead of "testgt2/architect")
+- **Fix**: Changed nudge to use "$rig/$agent" format
+- **Status**: Fixed
+
+### 9. Mechanic Scanning Stale Logs (FIXED)
+- **File**: cmd/gt-agent/main.go (mechanicPatrolScript)
+- **Issue**: Mechanic scans old logs from different rigs (e.g., hq-qsq-testgt1 from May 7)
+- **Fix**: Added filtering to only check logs from current rig and skip logs older than 60 minutes
+- **Status**: Fixed
+
+### 10. Polecat Template Improved (FIXED)
+- **File**: templates/polecat-CLAUDE.md, internal/templates/polecat-CLAUDE.md
+- **Issue**: Polecat not implementing - jumping straight to gt done after gt prime
+- **Fix**: Added explicit "IMPLEMENTATION MEANS CREATING FILES" section with concrete example workflow
+- **Status**: Fixed
+
+### 11. gt done Guard Blocks Auto-Save Only Commits (FIXED)
+- **File**: internal/cmd/done.go
+- **Issue**: Polecat could gt done with only auto-save commits (no real implementation)
+- **Fix**: Check top commit after auto-save - if only auto-save, block completion with clear instructions
+- **Status**: Working - polecat now gets blocked and retries
+
+### 12. Model Selection Issue (EXPERIMENT 1)
+- **Symptom**: Polecat uses 11B model instead of 70B
+- **Root Cause**: freeride proxy selecting model based on candidates, X-GasTown-Role header may not be reaching freeride
+- **Evidence**: freeride_live.log shows "meta/llama-3.2-11b-vision-instruct" being used
+- **Fix**: Debug X-GasTown-Role header in gt-agent LLM client
+
+### 13. Retry Limit + Escalation (EXPERIMENT 2)
+- **Symptom**: Polecat stuck in infinite retry loop when blocked by gt done guard
+- **Fix**: Add max retries (e.g., 5) then escalate to witness with details
+
+### 14. More Aggressive Template (EXPERIMENT 4)
+- **Symptom**: LLM doesn't understand it needs to implement - just runs gt prime then gt done
+- **Fix**: Add explicit step-by-step workflow directly in template user-facing section
