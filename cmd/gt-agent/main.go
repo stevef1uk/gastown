@@ -684,6 +684,14 @@ func normalizeGeneratedCommand(cmd string) (string, bool) {
 	if strings.HasPrefix(trimmed, "bd mol current") {
 		return "gt mol current", true
 	}
+
+	// 4. Reject commands containing unreplaced placeholders like <bead-id> or <epic-id>
+	if strings.Contains(trimmed, "<") && strings.Contains(trimmed, ">") {
+		// Log it so the user can see why it failed
+		fmt.Fprintf(os.Stderr, "[gt-agent] ⚠ REJECTED hallucinatory command with placeholders: %q\n", trimmed)
+		return "", false 
+	}
+
 	return trimmed, rewritten
 }
 

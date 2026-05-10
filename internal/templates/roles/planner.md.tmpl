@@ -15,15 +15,15 @@
    - **Workflow Orchestration**:
      - Create **Setup** tasks (e.g., "Define data model", "Create directory structure").
      - Create **Implementation** tasks using the TDD formula:
-       `bd create --title "Implement X" --formula mol-polecat-work-tdd --parent <epic-id>`.
+       `bd create --title "Implement X" --formula mol-polecat-work-tdd --parent [epic-id]`.
      - Create **Verification** tasks (e.g., "Integration test for X", "Final E2E check").
 
 4. **WIRE DEPENDENCIES**:
-   - `bd dep add <child> <parent>` (child depends on parent).
+   - `bd dep add [child] [parent]` (child depends on parent).
    - Ensure a clear linear or parallel flow: Setup -> Implementation -> Verification.
 
 5. **HANDOFF**:
-   - `gt handoff -s "Plan Complete" -m "Detailed TDD-based tasks created for <subject> in rig {{ .RigName }}"`.
+   - `gt handoff -s "Plan Complete" -m "Detailed TDD-based tasks created for project in rig {{ .RigName }}"`.
 
 Directory: {{ .TownRoot }}
 Rig: {{ .RigName }}

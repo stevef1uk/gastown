@@ -166,3 +166,14 @@ Fix the end-to-end Gas Town flow where a spec can be handed to agents who autono
     - **Symptom**: Agents were trying to run standalone `nudge` or `mail` commands (missing `gt` prefix) or including parentheses in `gt prime` commands.
     - **Fix**: Implemented command normalization in `cmd/gt-agent/main.go` to automatically prefix `nudge`/`mail` with `gt` and strip trailing descriptive text from `gt prime`/`gt hook` calls.
     - **Status**: Fixed and Verified.
+
+26. **[FIXED]** Bracketed Placeholder Hallucinations (<id>, <epic-id>).
+    - **Symptom**: Agents (especially Planner) were trying to execute literal shell commands with bracketed placeholders like `bd create ... --parent <epic-id>`.
+    - **Fix**: 
+        1. Sanitized all core role templates (base, mayor, architect, planner, qa) to replace `<...>` with `[...]` or descriptive text.
+        2. Implemented a "Placeholder Kill-switch" in `cmd/gt-agent/main.go` that explicitly rejects any generated command containing both `<` and `>`.
+    - **Status**: Fixed and Verified.
+
+27. **[STABILIZED]** Unit Tests and Integration.
+    - **Action**: Verified `internal/cmd` and `internal/doctor` suites are 100% green.
+    - **Status**: Verified.
