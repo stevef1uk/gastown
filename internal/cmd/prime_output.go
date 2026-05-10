@@ -590,6 +590,16 @@ func outputHandoffContent(ctx RoleContext) {
 // outputStartupDirective outputs role-specific instructions for the agent.
 // This tells agents like Mayor to announce themselves on startup.
 func outputStartupDirective(ctx RoleContext) {
+	fmt.Println()
+	fmt.Println("---")
+	fmt.Println()
+	fmt.Println("CRITICAL: You are an autonomous agent in a multi-turn loop.")
+	fmt.Println("Rules for EVERY response:")
+	fmt.Println("1. Output exactly ONE command using the format: CMD: [command]")
+	fmt.Println("2. STOP immediately after the command. DO NOT simulate the terminal output.")
+	fmt.Println("3. DO NOT simulate subsequent turns or additional commands.")
+	fmt.Println("4. If no command is needed, explain why and wait.")
+
 	switch ctx.Role {
 	case RoleMayor:
 		fmt.Println()
@@ -727,9 +737,6 @@ func outputStartupDirective(ctx RoleContext) {
 		fmt.Println("2. Check for review beads on your hook: `" + cli.Name() + " hook`")
 		fmt.Println("3. If no hook, check mail: `" + cli.Name() + " mail inbox`. If unread → `gt mail read [id]`")
 	case RoleMechanic:
-		fmt.Println()
-		fmt.Println("---")
-		fmt.Println()
 		fmt.Println("**STARTUP PROTOCOL**: You are the Mechanic. Please:")
 		fmt.Println("1. Run `" + cli.Name() + " prime` (loads full context and pending work)")
 		fmt.Println("2. Check hook status: `" + cli.Name() + " hook status`")
