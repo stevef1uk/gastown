@@ -692,6 +692,11 @@ func normalizeGeneratedCommand(cmd string) (string, bool) {
 		return "", false 
 	}
 
+	// 5. Handle "checking in" announcements as NOPs (frequently hallucinated from Startup Protocol)
+	if strings.Contains(trimmed, "checking in") {
+		return "true", true // 'true' is a shell NOP that exits 0
+	}
+
 	return trimmed, rewritten
 }
 

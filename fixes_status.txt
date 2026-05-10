@@ -177,3 +177,10 @@ Fix the end-to-end Gas Town flow where a spec can be handed to agents who autono
 27. **[STABILIZED]** Unit Tests and Integration.
     - **Action**: Verified `internal/cmd` and `internal/doctor` suites are 100% green.
     - **Status**: Verified.
+
+28. **[FIXED]** Announcement Hallucinations ("Mayor, checking in.").
+    - **Symptom**: Agents were trying to execute their startup greetings as literal shell commands.
+    - **Fix**: 
+        1. Removed all "Announce" instructions from the Startup Protocol in `internal/cmd/prime_output.go`.
+        2. Updated `normalizeGeneratedCommand` in `cmd/gt-agent/main.go` to treat "checking in" strings as shell NOPs (`true`) to safely ignore them if they still occur.
+    - **Status**: Fixed and Verified.
