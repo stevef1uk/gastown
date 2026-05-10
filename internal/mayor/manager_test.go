@@ -90,7 +90,7 @@ func TestGetMayorPrime(t *testing.T) {
 	if !strings.Contains(content, "[prime-rendered-at:") {
 		t.Error("GetMayorPrime should contain timestamp marker")
 	}
-	if !strings.Contains(content, "# Mayor Context") {
+	if !strings.Contains(content, "# Role: Mayor") {
 		t.Error("GetMayorPrime should render mayor template")
 	}
 	if !strings.Contains(content, tmpDir) {
@@ -107,7 +107,7 @@ func TestGetMayorPrime_InvalidTownRoot(t *testing.T) {
 	}
 
 	// Should still have the template content
-	if !strings.Contains(content, "# Mayor Context") {
+	if !strings.Contains(content, "# Role: Mayor") {
 		t.Error("GetMayorPrime should render mayor template even with invalid town root")
 	}
 }
