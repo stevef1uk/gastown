@@ -1704,8 +1704,6 @@ func (b *Beads) IsBeadsRepo() bool {
 // for crew workers. This is the fallback if the SessionStart hook fails.
 const primeContent = `# Gas Town Worker Context
 
-> **Context Recovery**: Run ` + "`gt prime`" + ` for full context after compaction or new session.
-
 ## The Propulsion Principle (GUPP)
 
 **If you find work on your hook, YOU RUN IT.**
@@ -1728,7 +1726,6 @@ This is physics, not politeness. Gas Town is a steam engine - you are a piston.
 
 ## Key Commands
 
-- ` + "`gt prime`" + ` - Get full role context (run after compaction)
 - ` + "`gt mol status`" + ` - Check your hooked work
 - ` + "`gt mail inbox`" + ` - Check for messages
 - ` + "`bd ready`" + ` - Find available work (no blockers)
