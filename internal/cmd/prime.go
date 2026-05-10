@@ -888,7 +888,7 @@ func outputAutonomousDirective(ctx RoleContext, hookedBead *beads.Issue, hasMole
 		fmt.Println("3. If there are formula steps listed below, use them as a checklist. Otherwise, follow your role's standard instructions.")
 		fmt.Println("4. You do NOT need to run `bd close` or `bd mol current`. The steps are a checklist for your session.")
 	} else {
-		fmt.Printf("2. Then IMMEDIATELY run: `gt sling %s` to begin project orchestration.\n", hookedBead.ID)
+		fmt.Printf("2. Then IMMEDIATELY run: `gt sling %s --formula shiny` to begin project orchestration.\n", hookedBead.ID)
 		fmt.Println("3. Begin execution - no waiting for user input")
 		fmt.Println("   Note: Valid statuses are open, in_progress, blocked, deferred, closed. DO NOT use 'started'.")
 	}
