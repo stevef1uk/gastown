@@ -681,6 +681,15 @@ func normalizeGeneratedCommand(cmd string) (string, bool) {
 	if strings.HasPrefix(trimmed, "mail ") {
 		return "gt " + trimmed, true
 	}
+	if strings.HasPrefix(trimmed, "bd show") {
+		return "gt " + trimmed, true
+	}
+	if strings.HasPrefix(trimmed, "bd read") {
+		return "gt " + trimmed, true
+	}
+	if strings.HasPrefix(trimmed, "bd update") {
+		return "gt " + trimmed, true
+	}
 	if strings.HasPrefix(trimmed, "bd mol current") {
 		return "gt mol current", true
 	}
