@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/steveyegge/gastown/internal/beadredirect"
 	"github.com/steveyegge/gastown/internal/constants"
 )
 
@@ -180,9 +181,11 @@ func AgentEnv(cfg AgentEnvConfig) map[string]string {
 		}
 
 		// Set BEADS_DIR, prioritizing rig-specific path if it exists.
-		beadsDir := filepath.Join(cfg.TownRoot, ".beads")
+		// Always resolve redirects so bd subprocesses get the final database directory.
+		// bd CLI warns and fails if BEADS_DIR itself is a redirect (GH#2931).
+		beadsDir := beadredirect.ResolveBeadsDir(cfg.TownRoot)
 		if cfg.RigPath != "" {
-			rigBeadsDir := filepath.Join(cfg.RigPath, ".beads")
+			rigBeadsDir := beadredirect.ResolveBeadsDir(cfg.RigPath)
 			if _, err := os.Stat(rigBeadsDir); err == nil {
 				beadsDir = rigBeadsDir
 			}

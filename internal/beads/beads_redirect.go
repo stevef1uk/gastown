@@ -7,105 +7,19 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/steveyegge/gastown/internal/beadredirect"
 )
 
 // ResolveBeadsDir returns the actual beads directory, following any redirect.
-// If workDir/.beads/redirect exists, it reads the redirect path and resolves it
-// relative to workDir (not the .beads directory). Otherwise, returns workDir/.beads.
-//
-// This is essential for crew workers and polecats that use shared beads via redirect.
-// The redirect file contains a relative path like "../../mayor/rig/.beads".
-//
-// Example: if we're at crew/max/ and .beads/redirect contains "../../mayor/rig/.beads",
-// the redirect is resolved from crew/max/ (not crew/max/.beads/), giving us
-// mayor/rig/.beads at the rig root level.
-//
-// Circular redirect detection: If the resolved path equals the original beads directory,
-// this indicates an errant redirect file that should be removed. The function logs a
-// warning and returns the original beads directory.
+// Delegated to beadredirect.ResolveBeadsDir to avoid circular dependencies.
 func ResolveBeadsDir(workDir string) string {
-	if filepath.Base(workDir) == ".beads" {
-		workDir = filepath.Dir(workDir)
-	}
-	beadsDir := filepath.Join(workDir, ".beads")
-	redirectPath := filepath.Join(beadsDir, "redirect")
-
-	// Check for redirect file
-	data, err := os.ReadFile(redirectPath) //nolint:gosec // G304: path is constructed internally
-	if err != nil {
-		// No redirect, use local .beads
-		return beadsDir
-	}
-
-	// Read and clean the redirect path
-	redirectTarget := strings.TrimSpace(string(data))
-	if redirectTarget == "" {
-		return beadsDir
-	}
-
-	// Resolve redirect target. Absolute paths are used as-is;
-	// relative paths are resolved from workDir.
-	var resolved string
-	if filepath.IsAbs(redirectTarget) {
-		resolved = filepath.Clean(redirectTarget)
-	} else {
-		resolved = filepath.Clean(filepath.Join(workDir, redirectTarget))
-	}
-
-	// Detect circular redirects: if resolved path equals original beads dir,
-	// this is an errant redirect file (e.g., redirect in mayor/rig/.beads pointing to itself)
-	if resolved == beadsDir {
-		fmt.Fprintf(os.Stderr, "Warning: circular redirect detected in %s (points to itself), ignoring redirect\n", redirectPath)
-		// Remove the errant redirect file to prevent future warnings
-		if err := os.Remove(redirectPath); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: could not remove errant redirect file: %v\n", err)
-		}
-		return beadsDir
-	}
-
-	// Follow redirect chains (e.g., crew/.beads -> rig/.beads -> mayor/rig/.beads)
-	// This is intentional for the rig-level redirect architecture.
-	// Limit depth to prevent infinite loops from misconfigured redirects.
-	return resolveBeadsDirWithDepth(resolved, 3)
+	return beadredirect.ResolveBeadsDir(workDir)
 }
 
 // resolveBeadsDirWithDepth follows redirect chains with a depth limit.
 func resolveBeadsDirWithDepth(beadsDir string, maxDepth int) string {
-	if maxDepth <= 0 {
-		fmt.Fprintf(os.Stderr, "Warning: redirect chain too deep at %s, stopping\n", beadsDir)
-		return beadsDir
-	}
-
-	redirectPath := filepath.Join(beadsDir, "redirect")
-	data, err := os.ReadFile(redirectPath) //nolint:gosec // G304: path is constructed internally
-	if err != nil {
-		// No redirect, this is the final destination
-		return beadsDir
-	}
-
-	redirectTarget := strings.TrimSpace(string(data))
-	if redirectTarget == "" {
-		return beadsDir
-	}
-
-	// Resolve redirect target. Absolute paths are used as-is;
-	// relative paths are resolved from parent of beadsDir.
-	workDir := filepath.Dir(beadsDir)
-	var resolved string
-	if filepath.IsAbs(redirectTarget) {
-		resolved = filepath.Clean(redirectTarget)
-	} else {
-		resolved = filepath.Clean(filepath.Join(workDir, redirectTarget))
-	}
-
-	// Detect circular redirect
-	if resolved == beadsDir {
-		fmt.Fprintf(os.Stderr, "Warning: circular redirect detected in %s, stopping\n", redirectPath)
-		return beadsDir
-	}
-
-	// Recursively follow
-	return resolveBeadsDirWithDepth(resolved, maxDepth-1)
+	return beadredirect.ResolveBeadsDirWithDepth(beadsDir, maxDepth)
 }
 
 // cleanBeadsRuntimeFiles removes gitignored runtime files from a .beads directory

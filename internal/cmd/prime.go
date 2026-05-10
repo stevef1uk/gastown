@@ -1023,8 +1023,11 @@ func outputRalphLoopDirective(ctx RoleContext, attachment *beads.AttachmentField
 // outputBeadPreview runs `bd show` and displays a truncated preview of the bead.
 func outputBeadPreview(hookedBead *beads.Issue) {
 	fmt.Println("**Bead details:**")
-	cmd := exec.Command("bd", "show", hookedBead.ID)
-	cmd.Env = os.Environ()
+	cmd := BdCmd("show", hookedBead.ID).
+		Dir(resolveBeadDir(hookedBead.ID)).
+		StripBeadsDir().
+		Build()
+
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr

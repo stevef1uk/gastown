@@ -556,6 +556,10 @@ func run() error {
 					} else {
 						fmt.Printf("[gt-agent] Output:\n%s\n", string(out))
 					}
+					// CRITICAL: Only execute ONE command per turn. This forces the agent to
+					// see the real output of every step before choosing the next one,
+					// which prevents hallucination-driven cascading failures.
+					break
 				}
 			} else if strings.HasPrefix(line, "DONE:") {
 				summary = strings.TrimPrefix(line, "DONE:")
