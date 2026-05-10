@@ -259,3 +259,21 @@ Fix the end-to-end Gas Town flow where a spec can be handed to agents who autono
         1. Updated `internal/templates/roles/base.md.tmpl` and `internal/templates/roles/mayor.md.tmpl` to explicitly mandate `gt mail read [id]` when unread mail is present.
         2. Updated the hardcoded **STARTUP PROTOCOL** in `internal/cmd/prime_output.go` for all roles to include the same `gt mail read` instruction.
     - **Status**: Fixed and installed.
+
+### 41. [FIXED] Cross-Rig Bead Resolution in `gt prime`
+- **File**: internal/cmd/prime.go
+- **Issue**: Agents in rig-specific environments (like `testgt2/architect`) could not resolve town-level beads (e.g., `hq-*`), leading to "no issue found" errors during `gt prime`.
+- **Fix**: Updated `outputBeadPreview` to use `resolveBeadDir` and `StripBeadsDir()` to explicitly bypass rig-specific environment shadowing when fetching bead details from the global town database.
+- **Status**: Fixed and Verified.
+
+### 42. [FIXED] Terminated Recursive Priming Loops
+- **Files**: internal/cmd/prime_output.go, internal/beads/beads.go, internal/templates/roles/architect.md.tmpl
+- **Issue**: Agents were entering infinite "prime-startup-prime" loops because their startup instructions included a mandate to run `gt prime`—which triggered the instruction print-out itself.
+- **Fix**: Pruned the "Run `gt prime`" directive from startup protocols across all templates and hardcoded constants.
+- **Status**: Fixed and Verified.
+
+### 43. [FIXED] Resolved `bd show` / `bd ready` Loops
+- **File**: internal/cmd/prime.go
+- **Issue**: Agents were repeatedly running `bd show` or `bd ready` instead of proceeding to actionable work, even when bead details were already previewed in `gt prime`.
+- **Fix**: Updated `outputAutonomousDirective` to replace the rigid "IMMEDIATELY run: bd show" with a direct instruction to run `gt sling [id] --formula shiny` for project beads.
+- **Status**: Fixed and Verified.
