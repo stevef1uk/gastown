@@ -2058,6 +2058,10 @@ func isGasTownRuntimePath(path string) bool {
 		".logs/", ".logs\\",
 		"__pycache__/", "__pycache__\\",
 	}
+	// Also filter polecat-generated CLAUDE.md (runtime file, not actual work)
+	if path == "CLAUDE.md" {
+		return true
+	}
 	for _, prefix := range prefixes {
 		if strings.HasPrefix(path, prefix) || strings.Contains(path, "/"+prefix) {
 			return true

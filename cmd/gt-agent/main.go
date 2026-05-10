@@ -650,10 +650,24 @@ func canonicalRole(role string) string {
 // safe canonical forms to avoid guaranteed molecule lookup failures.
 func normalizeGeneratedCommand(cmd string) (string, bool) {
 	trimmed := strings.TrimSpace(cmd)
+	rewritten := false
+
+	// Models often wrap commands in backticks (e.g. `gt prime`)
+	if strings.HasPrefix(trimmed, "`") && strings.HasSuffix(trimmed, "`") {
+		trimmed = strings.Trim(trimmed, "`")
+		rewritten = true
+	}
+
+	// Ensure mkdir is idempotent to avoid exit status 1 on existing dirs
+	if strings.HasPrefix(trimmed, "mkdir ") && !strings.Contains(trimmed, " -p") {
+		trimmed = strings.Replace(trimmed, "mkdir ", "mkdir -p ", 1)
+		rewritten = true
+	}
+
 	if strings.HasPrefix(trimmed, "bd mol current") {
 		return "gt mol current", true
 	}
-	return cmd, false
+	return trimmed, rewritten
 }
 
 // buildSystemPrompt returns a role-specific system prompt for the LLM.

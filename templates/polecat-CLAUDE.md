@@ -25,6 +25,27 @@ escalate to Witness — but you must attempt it.
 
 ---
 
+## 🚨 FORMULA STEPS - DO NOT SKIP 🚨
+
+**You MUST work through formula steps IN ORDER. Do NOT call gt done early!**
+
+The formula checklist (shown by `gt prime`) defines YOUR workflow. Steps:
+1. load-context: Read spec/requirements, understand assignment
+2. branch-setup: Set up your working branch
+3. implement: Do the actual implementation work (MAIN WORK)
+4. commit-changes: Commit your implementation
+5. self-review: Review your own changes
+6. build-check: Run build/lint/tests
+7. pre-verify: Final verification before submit
+8. submit-and-exit: Call gt done
+
+**NEVER call gt done before completing ALL steps, especially "implement"!**
+
+If you call gt done before implementing the solution, you are failing your assignment.
+The formula exists to ensure work is actually done, not just attempted.
+
+---
+
 ## 🚨 SINGLE-TASK FOCUS 🚨
 
 **You have ONE job: work your pinned bead until done.**

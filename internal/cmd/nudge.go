@@ -410,11 +410,13 @@ func runNudge(cmd *cobra.Command, args []string) (retErr error) {
 	}
 
 	// Check DND status for target (unless force flag or channel target)
-	// Prefer GT_ROOT environment variable (set by agents) over workspace detection.
-	// This ensures nudges from agents use the actual town root, not the source repo.
-	townRoot := os.Getenv("GT_ROOT")
+	// Find town root - prioritize GT_TOWN_ROOT (set by daemon), then CWD detection, then GT_ROOT
+	townRoot := os.Getenv("GT_TOWN_ROOT")
 	if townRoot == "" {
 		townRoot, _ = workspace.FindFromCwd()
+	}
+	if townRoot == "" {
+		townRoot = os.Getenv("GT_ROOT")
 	}
 	if townRoot != "" {
 		// Initialize tmux socket and prefix registry so NewTmux() connects

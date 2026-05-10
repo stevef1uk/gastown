@@ -259,10 +259,13 @@ func runHook(_ *cobra.Command, args []string) error {
 		}
 	}
 
-	// Find town root - needed for bd routing and agent bead updates
-	townRoot := os.Getenv("GT_ROOT")
+	// Find town root - prioritize GT_TOWN_ROOT (set by daemon), then CWD detection, then GT_ROOT
+	townRoot := os.Getenv("GT_TOWN_ROOT")
 	if townRoot == "" {
 		townRoot, _ = workspace.FindFromCwd()
+	}
+	if townRoot == "" {
+		townRoot = os.Getenv("GT_ROOT")
 	}
 	if townRoot == "" {
 		return fmt.Errorf("finding town root: not in a workspace")
@@ -406,9 +409,12 @@ func runHook(_ *cobra.Command, args []string) error {
 	// Emit a propulsion signal if the target is the mayor.
 	// This allows the ACP propeller to react to hook changes event-driven.
 	if agentID == "mayor/" {
-		townRoot := os.Getenv("GT_ROOT")
+		townRoot := os.Getenv("GT_TOWN_ROOT")
 		if townRoot == "" {
 			townRoot, _ = workspace.FindFromCwd()
+		}
+		if townRoot == "" {
+			townRoot = os.Getenv("GT_ROOT")
 		}
 		if townRoot != "" {
 			session := "hq-mayor"
@@ -649,10 +655,15 @@ func sessionNameToCanonicalAddress(sessionName, targetHint string) (string, bool
 }
 
 // findTownRoot finds the Gas Town root directory.
+// Priority: GT_TOWN_ROOT (set by daemon), then CWD detection, then GT_ROOT
 func findTownRoot() (string, error) {
-	townRoot := os.Getenv("GT_ROOT")
+	townRoot := os.Getenv("GT_TOWN_ROOT")
 	if townRoot != "" {
 		return townRoot, nil
 	}
-	return workspace.FindFromCwd()
+	townRoot, _ = workspace.FindFromCwd()
+	if townRoot != "" {
+		return townRoot, nil
+	}
+	return os.Getenv("GT_ROOT"), nil
 }

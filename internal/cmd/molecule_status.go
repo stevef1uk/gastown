@@ -336,10 +336,13 @@ func runMoleculeStatus(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("getting current directory: %w", err)
 	}
 
-	// Find town root
-	townRoot := os.Getenv("GT_ROOT")
+	// Find town root - prioritize GT_TOWN_ROOT (set by daemon), then CWD detection, then GT_ROOT
+	townRoot := os.Getenv("GT_TOWN_ROOT")
 	if townRoot == "" {
 		townRoot, _ = workspace.FindFromCwd()
+	}
+	if townRoot == "" {
+		townRoot = os.Getenv("GT_ROOT")
 	}
 	if townRoot == "" {
 		return fmt.Errorf("not in a Gas Town workspace")

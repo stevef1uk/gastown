@@ -1,0 +1,70 @@
+# Gas Town Fixes Status
+Last updated: 2026-05-10
+
+## Goal
+Fix the end-to-end Gas Town flow where a spec can be handed to agents who autonomously implement it.
+
+## Constraints
+- Use GT_SESSION_TRANSPORT=nats
+- Rig: testgt2
+- If code changes in /home/stevef/dev/freeride/gastown: run gt down, then make install in gastown, then gt up in /home/stevef/gt
+
+## Completed Fixes
+
+### 1. GT_TOWN_ROOT Priority Bug
+- **Files**: molecule_status.go, hook.go (3 places), molecule_attach.go, nudge.go
+- **Issue**: GT_ROOT was taking priority over GT_TOWN_ROOT, breaking identity detection
+- **Fix**: Changed detection order to prioritize GT_TOWN_ROOT (set by daemon) over GT_ROOT
+- **Symptom**: "No work" issue - GT_ROOT was set to /home/stevef/dev/freeride instead of /home/stevef/gt
+
+### 2. Hook Directory Resolution Bug
+- **File**: mail_identity.go
+- **Issue**: Incorrect filepath.Dir() call on rig path, returning wrong directory
+- **Fix**: Removed filepath.Dir() call, returning resolvedDir directly
+- **Symptom**: Session identity resolution failures
+
+### 3. CLAUDE.md Runtime Path Filter
+- **File**: git.go
+- **Issue**: CLAUDE.md in runtime path causing false positives on uncommitted changes
+- **Fix**: Added CLAUDE.md to runtime path filter
+
+### 4. gt done Guard
+- **File**: done.go
+- **Issue**: Polecats calling gt done without implementing anything
+- **Fix**: Added code-level guard that blocks completion if only auto-save commits exist (requires real implementation commits)
+
+### 5. Polecat Formula Steps
+- **File**: templates/polecat-CLAUDE.md
+- **Issue**: Polecats skipping formula steps
+- **Fix**: Added "FORMULA STEPS - DO NOT SKIP" section to template
+
+### 6. Built and Installed
+- **Action**: Ran make install with SKIP_UPDATE_CHECK=1
+- **Result**: Installed gt binary v1.0.1-318-g8240de7a-dirty
+
+### 7. Service Restart
+- **Action**: Ran gt down (stopped all services) and gt up (restarted all services)
+- **Result**: All services running: NATS, Dolt (port 3307), Daemon, Deacon, Mayor, Planner, Mechanic, Witness, Refinery, Architect, QA
+
+## Verification
+- Polecat sessions start correctly
+- Identity resolves correctly (testgt2/polecats/rust)
+- Hook shows work
+- Task created → slung to polecat → polecat sees work → gt done requires implementation commit
+
+## Mechanic Patrol
+- Mechanic searches ALL session logs in /home/stevef/gt/logs/sessions/*.log including polecats
+- Searches for "Extraordinary action" pattern and nudges affected agent
+
+## Relevant Files
+- /home/stevef/dev/freeride/gastown/internal/cmd/molecule_status.go
+- /home/stevef/dev/freeride/gastown/internal/cmd/hook.go
+- /home/stevef/dev/freeride/gastown/internal/cmd/mail_identity.go
+- /home/stevef/dev/freeride/gastown/internal/cmd/done.go
+- /home/stevef/dev/freeride/gastown/internal/cmd/git.go
+- /home/stevef/dev/freeride/gastown/templates/polecat-CLAUDE.md
+- /home/stevef/gt/logs/sessions/: Session logs for debugging agent behavior
+
+## Next Steps
+- Test full end-to-end flow with a real implementation task
+- Verify polecat follows formula steps in order (load-context → implement → commit → gt done)

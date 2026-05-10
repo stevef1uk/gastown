@@ -162,6 +162,32 @@ func runDone(cmd *cobra.Command, args []string) (retErr error) {
 		return fmt.Errorf("cannot determine current rig (working directory may be deleted)")
 	}
 
+	// Guard: Check for implementation commits - prevent gt done without actual work
+	// Skip this check for deferred exits (which are valid for report-only tasks)
+	if exitType == ExitCompleted && cwd != "" {
+		// Check if there are any commits beyond the auto-save safety net
+		cmd := exec.Command("git", "log", "--oneline", "-3")
+		cmd.Dir = cwd
+		out, err := cmd.CombinedOutput()
+		if err == nil {
+			logLines := strings.Split(string(out), "\n")
+			hasRealCommit := false
+			for _, line := range logLines {
+				// Check for commits that are NOT auto-save safety net commits
+				if strings.Contains(line, "auto-save") || strings.Contains(line, "safety net") {
+					continue
+				}
+				if strings.TrimSpace(line) != "" {
+					hasRealCommit = true
+					break
+				}
+			}
+			if !hasRealCommit {
+				return fmt.Errorf("cannot complete: no implementation commits found. You must do the actual work before calling gt done.\n- Implement the solution as described in your assigned bead\n- Write code, tests, or documentation\n- Commit your changes with meaningful commit messages\n- Then call gt done")
+			}
+		}
+	}
+
 	// When gt is invoked via shell alias (cd ~/gt && gt), or when Claude Code
 	// resets the shell CWD to mayor/rig, cwd is NOT the polecat's worktree.
 	// Detect and reconstruct actual path.

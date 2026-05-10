@@ -19,13 +19,13 @@ func runMoleculeAttach(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("getting current directory: %w", err)
 	}
 
-	townRoot, _ := workspace.FindFromCwd()
-	// Fallback to env if FindFromCwd fails (common in tests)
+	// Find town root - prioritize GT_TOWN_ROOT (set by daemon), then CWD detection, then GT_ROOT
+	townRoot := os.Getenv("GT_TOWN_ROOT")
 	if townRoot == "" {
-		townRoot = os.Getenv("GT_TOWN_ROOT")
-		if townRoot == "" {
-			townRoot = os.Getenv("GT_ROOT")
-		}
+		townRoot, _ = workspace.FindFromCwd()
+	}
+	if townRoot == "" {
+		townRoot = os.Getenv("GT_ROOT")
 	}
 
 	// Detect role early for correct beads directory resolution
