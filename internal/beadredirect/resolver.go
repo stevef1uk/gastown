@@ -33,7 +33,8 @@ func ResolveBeadsDir(workDir string) string {
 	}
 
 	if resolved == beadsDir {
-		fmt.Fprintf(os.Stderr, "Warning: circular redirect detected in %s, ignoring redirect\n", redirectPath)
+		fmt.Fprintf(os.Stderr, "Warning: circular redirect detected in %s, ignoring redirect and removing stale file\n", redirectPath)
+		_ = os.Remove(redirectPath)
 		return beadsDir
 	}
 
@@ -67,7 +68,8 @@ func ResolveBeadsDirWithDepth(beadsDir string, maxDepth int) string {
 	}
 
 	if resolved == beadsDir {
-		fmt.Fprintf(os.Stderr, "Warning: circular redirect detected in %s, stopping\n", redirectPath)
+		fmt.Fprintf(os.Stderr, "Warning: circular redirect detected in %s, stopping and removing stale file\n", redirectPath)
+		_ = os.Remove(redirectPath)
 		return beadsDir
 	}
 
