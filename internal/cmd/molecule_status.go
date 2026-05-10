@@ -522,7 +522,7 @@ func runMoleculeStatus(cmd *cobra.Command, args []string) error {
 			status.NextAction = "Check inbox for work assignments: gt mail inbox"
 		}
 	} else if status.AttachedFormula != "" && status.NextAction == "" && status.PinnedBead != nil {
-		status.NextAction = "Show the workflow steps: gt prime or bd mol current " + status.PinnedBead.ID
+		status.NextAction = "Read your formula checklist and BEGIN WORK."
 	}
 
 	// JSON output
