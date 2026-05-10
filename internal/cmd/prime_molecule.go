@@ -167,17 +167,17 @@ func showFormulaSteps(formulaName, label, townRoot, rigName string, extraVars ..
 // Used for polecat work formulas where step details are the primary instructions.
 // townRoot and rigName are used to load formula overlays (operator customizations).
 // extraVars is an optional list of "key=value" overrides substituted into step descriptions.
-func showFormulaStepsFull(formulaName, townRoot, rigName string, extraVars ...[]string) {
+func showFormulaStepsFull(formulaName, townRoot, rigName string, extraVars ...[]string) bool {
 	content, err := formula.ResolveFormulaContent(formulaName, townRoot, rigName)
 	if err != nil {
 		style.PrintWarning("could not load formula %s: %v", formulaName, err)
-		return
+		return false
 	}
 
 	f, err := formula.Parse(content)
 	if err != nil {
 		style.PrintWarning("could not parse formula %s: %v", formulaName, err)
-		return
+		return false
 	}
 
 	// Build search paths for formula resolution (rig-level > town-level > embedded).
@@ -193,11 +193,11 @@ func showFormulaStepsFull(formulaName, townRoot, rigName string, extraVars ...[]
 	f, err = formula.Resolve(f, searchPaths)
 	if err != nil {
 		style.PrintWarning("could not resolve formula %s: %v", formulaName, err)
-		return
+		return false
 	}
 
 	if len(f.Steps) == 0 {
-		return
+		return false
 	}
 
 	// Apply formula overlays if townRoot is available.
@@ -219,6 +219,7 @@ func showFormulaStepsFull(formulaName, townRoot, rigName string, extraVars ...[]
 			fmt.Println()
 		}
 	}
+	return true
 }
 
 // buildFormulaVarMap builds a map of variable name → value for substitution.

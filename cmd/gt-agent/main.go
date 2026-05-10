@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"syscall"
@@ -39,16 +40,25 @@ const (
 // They run continuously and wait for work (Mayor, Deacon, Witness, Refinery).
 // Polecats and crew workers exit when idle since they are task-specific.
 var permanentAgents = map[string]bool{
-	"mayor":     true,
-	"deacon":    true,
-	"witness":   true,
-	"refinery":  true,
+	"mayor":       true,
+	"deacon":      true,
+	"witness":     true,
+	"refinery":    true,
 	"planner":     true,
 	"mechanic":    true,
 	"architect":   true,
 	"qa":          true,
 	"deacon/boot": true, // boot is a deacon variant
 }
+
+var lastBeadID string
+var lastMoleculeID string
+var lastStepID string
+var lastStepShort string
+var stepIDRe = regexp.MustCompile(`[a-z0-9_-]+/[a-z0-9_-]+/step-[0-9]+`)
+var jsonStepRe = regexp.MustCompile(`"step_id"\s*:\s*"([^"]+)"`)
+var gtBinaryPath string
+var agentTownRoot string
 
 // mechanicPatrolScript is a hardcoded shell script for the mechanic.
 // It does NOT use the LLM to avoid hallucination issues.
@@ -291,7 +301,7 @@ func run() error {
 	role := os.Getenv("GT_ROLE")
 	rig := os.Getenv("GT_RIG")
 	polecat := os.Getenv("GT_POLECAT")
-	
+
 	if identity := loadAgentFile(".gt-agent"); identity != nil {
 		if identity.Role != "" {
 			role = identity.Role
@@ -317,6 +327,7 @@ func run() error {
 			return fmt.Errorf("cannot determine town root: %w", err)
 		}
 	}
+	agentTownRoot = townRoot
 
 	// Determine session name for nudge queue
 	sessionName := os.Getenv("GT_SESSION")
@@ -338,6 +349,7 @@ func run() error {
 
 	// Locate gt binary
 	gtBin := findGT()
+	gtBinaryPath = gtBin
 	gtDir := filepath.Dir(gtBin)
 
 	// Ensure PATH includes gt and common binary directories
@@ -437,8 +449,8 @@ func run() error {
 			// Permanent agents use gt mol await-signal for effort tuning
 			fmt.Println("[gt-agent] No immediate work, awaiting signal...")
 			effortLevel = callAwaitSignal(gtBin, sessionName)
-			
-// Re-gather work after signal (or timeout)
+
+			// Re-gather work after signal (or timeout)
 			workItems = gatherWork(gtBin, townRoot, sessionName, roleCanonical, mailCheck)
 			if len(workItems) == 0 {
 				// Mechanic uses a hardcoded patrol script instead of LLM
@@ -518,6 +530,7 @@ func run() error {
 					}
 					fmt.Printf("[gt-agent] $ %s\n", safeCmd)
 					out, err := exec.Command("/bin/sh", "-c", safeCmd).CombinedOutput()
+					recordMoleculeState(safeCmd, string(out))
 					if err != nil {
 						// Dolt circuit breaker errors are transient during startup.
 						// Retry once after a short delay before marking as extraordinary.
@@ -526,6 +539,7 @@ func run() error {
 							fmt.Println("[gt-agent] Dolt circuit breaker open, retrying in 5s...")
 							time.Sleep(5 * time.Second)
 							out, err = exec.Command("/bin/sh", "-c", safeCmd).CombinedOutput()
+							recordMoleculeState(safeCmd, string(out))
 							if err == nil {
 								fmt.Printf("[gt-agent] Output (retry OK):\n%s\n", string(out))
 								cmdFailed = false
@@ -669,36 +683,62 @@ func normalizeGeneratedCommand(cmd string) (string, bool) {
 		rewritten = true
 	}
 
-	if strings.HasPrefix(trimmed, "gt prime") {
+	if hasCommandPrefix(trimmed, "gt prime") {
 		return "gt prime", true
 	}
-	if strings.HasPrefix(trimmed, "gt hook") {
+	if hasCommandPrefix(trimmed, "gt hook") {
 		return "gt hook", true
 	}
-	if strings.HasPrefix(trimmed, "nudge ") {
+	if hasCommandPrefix(trimmed, "nudge") {
 		return "gt " + trimmed, true
 	}
-	if strings.HasPrefix(trimmed, "mail ") {
+	if hasCommandPrefix(trimmed, "mail") {
 		return "gt " + trimmed, true
 	}
-	if strings.HasPrefix(trimmed, "bd show") {
+	if hasCommandPrefix(trimmed, "bd show") {
 		return "gt " + trimmed, true
 	}
-	if strings.HasPrefix(trimmed, "bd read") {
+	if hasCommandPrefix(trimmed, "bd read") {
 		return "gt " + trimmed, true
 	}
-	if strings.HasPrefix(trimmed, "bd update") {
+	if hasCommandPrefix(trimmed, "bd update") {
 		return "gt " + trimmed, true
 	}
-	if strings.HasPrefix(trimmed, "bd mol current") {
-		return "gt mol current", true
+	if hasCommandPrefix(trimmed, "bd mol current") {
+		return rewriteMolCurrent(trimmed), true
+	}
+	if strings.HasPrefix(trimmed, "bd close ") {
+		args := strings.Fields(trimmed)[2:]
+		isShortcut := false
+		for _, arg := range args {
+			if isNumeric(arg) || strings.HasPrefix(arg, "step-") {
+				isShortcut = true
+				break
+			}
+		}
+		if isShortcut {
+			if lastStepID != "" {
+				rewritten = true
+				trimmed = prependBeadToStep(trimmed)
+			} else {
+				fmt.Fprintf(os.Stderr, "[gt-agent] ⚠ REJECTED shortcut close command %q because no step is currently active (molecule may be naked)\n", trimmed)
+				return "true", true
+			}
+		}
+	}
+	if hasInvalidMolExecute(trimmed) {
+		fmt.Fprintf(os.Stderr, "[gt-agent] ⚠ REJECTED hallucinatory mol execute command: %q\n", trimmed)
+		return "true", true
 	}
 
-	// 4. Reject commands containing unreplaced placeholders like <bead-id> or <epic-id>
-	if strings.Contains(trimmed, "<") && strings.Contains(trimmed, ">") {
+	// 4. Reject commands containing unreplaced placeholders like <bead-id>, [bead], or [rig].
+	if containsPlaceholder(trimmed) {
 		// Log it so the user can see why it failed
 		fmt.Fprintf(os.Stderr, "[gt-agent] ⚠ REJECTED hallucinatory command with placeholders: %q\n", trimmed)
-		return "", false 
+		return "true", true
+	}
+	if hasInvalidSlingOnBead(trimmed) {
+		return "true", true
 	}
 
 	// 5. Handle "checking in" announcements as NOPs (frequently hallucinated from Startup Protocol)
@@ -707,6 +747,174 @@ func normalizeGeneratedCommand(cmd string) (string, bool) {
 	}
 
 	return trimmed, rewritten
+}
+
+func hasCommandPrefix(cmd, prefix string) bool {
+	if cmd == prefix {
+		return true
+	}
+	return strings.HasPrefix(cmd, prefix+" ")
+}
+
+func rewriteMolCurrent(cmd string) string {
+	parts := strings.Fields(cmd)
+	args := parts[3:]
+	if len(args) > 0 && args[len(args)-1] == "--json" {
+		return "gt mol current " + strings.Join(args, " ")
+	}
+	if len(args) == 0 {
+		return "gt mol current --json"
+	}
+	return fmt.Sprintf("gt mol current %s --json", strings.Join(args, " "))
+}
+
+func containsPlaceholder(cmd string) bool {
+	if strings.Contains(cmd, "<") && strings.Contains(cmd, ">") {
+		return true
+	}
+	for _, placeholder := range []string{
+		"[bead]",
+		"[bead-id]",
+		"[command]",
+		"[epic-id]",
+		"[id]",
+		"[msg]",
+		"[parent]",
+		"[rig]",
+		"[summary]",
+		"[target]",
+		"[task-id]",
+	} {
+		if strings.Contains(cmd, placeholder) {
+			return true
+		}
+	}
+	return false
+}
+
+func hasInvalidSlingOnBead(cmd string) bool {
+	if !hasCommandPrefix(cmd, "gt sling") {
+		return false
+	}
+	beadID := extractSlingOnBeadID(cmd)
+	if beadID == "" {
+		return false
+	}
+	if !looksLikeBeadID(beadID) {
+		fmt.Fprintf(os.Stderr, "[gt-agent] ⚠ REJECTED hallucinatory sling command (invalid bead id): %q\n", beadID)
+		return true
+	}
+	if ok, reason := beadExists(beadID); !ok {
+		reason = strings.TrimSpace(reason)
+		if reason == "" {
+			reason = "bd show failed"
+		}
+		fmt.Fprintf(os.Stderr, "[gt-agent] ⚠ REJECTED hallucinatory sling command for missing bead %q: %s (cmd=%q)\n", beadID, reason, cmd)
+		return true
+	}
+	return false
+}
+
+func extractSlingOnBeadID(cmd string) string {
+	parts := strings.Fields(cmd)
+	for i, part := range parts {
+		if part == "--on" && i+1 < len(parts) {
+			return trimQuotes(parts[i+1])
+		}
+		if strings.HasPrefix(part, "--on=") {
+			return trimQuotes(strings.TrimPrefix(part, "--on="))
+		}
+	}
+	return ""
+}
+
+func trimQuotes(value string) string {
+	if len(value) >= 2 {
+		first := value[0]
+		last := value[len(value)-1]
+		if (first == '"' && last == '"') || (first == '\'' && last == '\'') {
+			return value[1 : len(value)-1]
+		}
+	}
+	return value
+}
+
+func beadExists(beadID string) (bool, string) {
+	if gtBinaryPath == "" {
+		return true, ""
+	}
+	cmd := exec.Command(gtBinaryPath, "bead", "show", beadID, "--json")
+	if agentTownRoot != "" {
+		cmd.Dir = agentTownRoot
+	}
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return false, string(out)
+	}
+	return true, ""
+}
+
+func looksLikeBeadID(id string) bool {
+	if !strings.Contains(id, "-") {
+		return false
+	}
+	for _, r := range id {
+		if r == '-' || (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+func updateLastBeadID(cmd string) {
+	parts := strings.Fields(cmd)
+	if len(parts) < 4 {
+		return
+	}
+	candidate := parts[3]
+	if slash := strings.Index(candidate, "/"); slash != -1 {
+		candidate = candidate[:slash]
+	}
+	if strings.HasPrefix(candidate, "te-") {
+		lastBeadID = candidate
+	}
+}
+
+func prependBeadToStep(cmd string) string {
+	if lastStepID == "" {
+		return cmd
+	}
+	parts := strings.Fields(cmd)
+	if len(parts) == 0 {
+		return cmd
+	}
+	for i, field := range parts {
+		if strings.HasPrefix(field, "step-") || isNumeric(field) {
+			parts[i] = lastStepID
+			break
+		}
+	}
+	return strings.Join(parts, " ")
+}
+
+func isNumeric(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+func hasInvalidMolExecute(cmd string) bool {
+	if !hasCommandPrefix(cmd, "gt mol execute") {
+		return false
+	}
+	return strings.Contains(cmd, " --on ")
 }
 
 // buildSystemPrompt returns a role-specific system prompt for the LLM.
@@ -816,15 +1024,57 @@ func gatherWork(gtBin, townRoot, sessionName, role string, mailCheck bool) []str
 	return workItems
 }
 
+func recordMoleculeState(cmd, output string) {
+	if !strings.Contains(cmd, "gt mol current") {
+		return
+	}
+	id := parseMoleculeID(output)
+	if id != "" {
+		lastMoleculeID = id
+	}
+	if step := parseCurrentStepID(output); step != "" {
+		lastStepID = step
+	}
+}
+
+func parseMoleculeID(output string) string {
+	for _, line := range strings.Split(output, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "Molecule:") {
+			parts := strings.Fields(trimmed)
+			if len(parts) >= 2 {
+				return parts[1]
+			}
+		}
+	}
+	return ""
+}
+
+func parseCurrentStepID(output string) string {
+	if match := jsonStepRe.FindStringSubmatch(output); len(match) == 2 {
+		return match[1]
+	}
+	for _, line := range strings.Split(output, "\n") {
+		trimmed := strings.TrimSpace(line)
+		lower := strings.ToLower(trimmed)
+		if strings.Contains(lower, "current step") || strings.Contains(lower, "step:") {
+			if m := stepIDRe.FindString(trimmed); m != "" {
+				return m
+			}
+		}
+	}
+	return ""
+}
+
 // callAwaitSignal calls gt mol await-signal and returns the effort level.
 func callAwaitSignal(gtBin, agentBead string) string {
 	args := []string{"mol", "await-signal", "--agent-bead", agentBead,
 		"--backoff-base", "30s", "--backoff-mult", "2", "--backoff-max", "15m"}
-	
+
 	cmd := exec.Command(gtBin, args...)
 	out, _ := cmd.CombinedOutput()
 	output := string(out)
-	
+
 	if strings.Contains(output, "EFFORT: reduced") {
 		return "abbreviated"
 	}

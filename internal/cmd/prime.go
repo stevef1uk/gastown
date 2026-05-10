@@ -885,9 +885,8 @@ func outputAutonomousDirective(ctx RoleContext, hookedBead *beads.Issue, hasMole
 
 	if hasMolecule {
 		fmt.Println("2. This bead has an ATTACHED MOLECULE (formula workflow)")
-		fmt.Println("3. Work through molecule steps in order - see CURRENT STEP below")
-		fmt.Println("4. Close each step with `bd close <step-id>`, then check `bd mol current` for next step")
-		fmt.Println("   Note: Valid statuses are open, in_progress, blocked, deferred, closed. DO NOT use 'started'.")
+		fmt.Println("3. If there are formula steps listed below, use them as a checklist. Otherwise, follow your role's standard instructions.")
+		fmt.Println("4. You do NOT need to run `bd close` or `bd mol current`. The steps are a checklist for your session.")
 	} else {
 		fmt.Printf("2. Then IMMEDIATELY run: `bd show %s`\n", hookedBead.ID)
 		fmt.Println("3. Begin execution - no waiting for user input")
@@ -909,7 +908,7 @@ func outputAutonomousDirective(ctx RoleContext, hookedBead *beads.Issue, hasMole
 	fmt.Println("- Describe what you're going to do")
 	fmt.Println("- Check mail first (hook takes priority)")
 	if hasMolecule {
-		fmt.Println("- Skip molecule steps or work on the base bead directly")
+		fmt.Println("- Skip molecule steps or work on the base bead directly (unless the formula has no steps)")
 	}
 	if ctx.Role == RolePolecat {
 		fmt.Printf("- Sit idle after committing (run `%s done`)\n", cli.Name())
@@ -967,11 +966,14 @@ func outputMoleculeWorkflow(ctx RoleContext, attachment *beads.AttachmentFields)
 
 	// Show inline formula steps from the embedded binary (root-only: no child wisps to query).
 	if attachment.AttachedFormula != "" {
-		showFormulaStepsFull(attachment.AttachedFormula, ctx.TownRoot, ctx.Rig, strings.Split(attachment.FormulaVars, "\n"))
-		fmt.Println()
-		fmt.Printf("%s\n", style.Bold.Render("Work through ALL steps above, including submit and cleanup."))
-		fmt.Println("The base bead is your assignment. The formula steps define your workflow.")
-		fmt.Printf("\n%s\n", style.Bold.Render("REQUIRED: When all steps complete, run `"+cli.Name()+" done` to submit to the merge queue. Do NOT stop after implementation — the formula has submit steps you must follow."))
+		hasSteps := showFormulaStepsFull(attachment.AttachedFormula, ctx.TownRoot, ctx.Rig, strings.Split(attachment.FormulaVars, "\n"))
+		if hasSteps {
+			fmt.Println()
+			fmt.Println("The base bead is your assignment. The formula steps define your workflow.")
+			if strings.Contains(string(ctx.Role), "polecat") {
+				fmt.Printf("\n%s\n", style.Bold.Render("REQUIRED: When all steps complete, run `"+cli.Name()+" done` to submit to the merge queue. Do NOT stop after implementation — the formula has submit steps you must follow."))
+			}
+		}
 		return
 	}
 

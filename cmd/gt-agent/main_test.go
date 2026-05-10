@@ -241,9 +241,15 @@ func TestNormalizeGeneratedCommand(t *testing.T) {
 		want    string
 		changed bool
 	}{
-		{"bd mol current mol-witness-patrol", "gt mol current", true},
-		{"bd mol current hq-wisp-abc123", "gt mol current", true},
+		{"bd mol current mol-witness-patrol", "gt mol current mol-witness-patrol --json", true},
+		{"bd mol current hq-wisp-abc123", "gt mol current hq-wisp-abc123 --json", true},
+		{"bd ready", "bd ready", false},
 		{"gt mol current", "gt mol current", false},
+		{"gt sling design --on [bead] [rig]/architect", "true", true},
+		{"gt sling design --on <bead-id> testgt2/architect", "true", true},
+		{"gt sling design --on MOL-1234 Rig-Alpha/architect", "true", true},
+		{"gt sling design --on te-ybw testgt2/architect", "gt sling design --on te-ybw testgt2/architect", false},
+		{"gt mol execute --on mol-idea-9012", "true", true},
 	}
 	for _, tt := range tests {
 		got, changed := normalizeGeneratedCommand(tt.in)
@@ -251,5 +257,28 @@ func TestNormalizeGeneratedCommand(t *testing.T) {
 			t.Errorf("normalizeGeneratedCommand(%q) = (%q, %v), want (%q, %v)",
 				tt.in, got, changed, tt.want, tt.changed)
 		}
+	}
+}
+
+func TestNormalizeStepRewrite(t *testing.T) {
+	lastBeadID = ""
+	lastStepID = "te-5c1"
+	got, changed := normalizeGeneratedCommand("bd close step-1")
+	if got != "bd close te-5c1" || !changed {
+		t.Fatalf("unexpected rewrite for bd close step-1: got %q changed=%v", got, changed)
+	}
+
+	lastBeadID = ""
+	lastStepID = ""
+	got, changed = normalizeGeneratedCommand("bd close step-2")
+	if got != "true" || !changed {
+		t.Fatalf("bd close step-2 with empty lastStepID should be rejected as 'true': got %q changed=%v", got, changed)
+	}
+
+	lastBeadID = ""
+	lastStepID = "te-5c2"
+	got, changed = normalizeGeneratedCommand("bd close 2")
+	if got != "bd close te-5c2" || !changed {
+		t.Fatalf("unexpected rewrite for bd close 2: got %q changed=%v", got, changed)
 	}
 }

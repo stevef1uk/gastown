@@ -2,13 +2,20 @@ package main
 
 import (
 	"fmt"
-	"os/exec"
 	"github.com/steveyegge/gastown/internal/session"
 	"github.com/steveyegge/gastown/internal/tmux"
+	"os"
+	"os/exec"
 )
 
 func main() {
-	townRoot := "/home/stevef/dev/freeride/gt"
+	townRoot := os.Getenv("GT_HOME")
+	if townRoot == "" {
+		townRoot = os.Getenv("GT_TOWN_ROOT")
+	}
+	if townRoot == "" {
+		townRoot = "/home/stevef/gt"
+	}
 	fmt.Printf("Town Root: %s\n", townRoot)
 
 	// Initialize registry (as gt command does)
