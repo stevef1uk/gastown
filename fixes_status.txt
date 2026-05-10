@@ -277,3 +277,17 @@ Fix the end-to-end Gas Town flow where a spec can be handed to agents who autono
 - **Issue**: Agents were repeatedly running `bd show` or `bd ready` instead of proceeding to actionable work, even when bead details were already previewed in `gt prime`.
 - **Fix**: Updated `outputAutonomousDirective` to replace the rigid "IMMEDIATELY run: bd show" with a direct instruction to run `gt sling [id] --formula shiny` for project beads.
 - **Status**: Fixed and Verified.
+
+### 44. [FIXED] `gt sling --formula` Ignored for Non-Polecat Targets
+- **File**: `internal/cmd/sling.go`
+- **Issue**: When slinging a bead to a coordinator (e.g., `mayor/` or `architect/`), the `--formula` flag was being ignored because the logic was hardcoded to only apply formulas automatically to polecat targets. This prevented the Architect from starting the "shiny" workflow.
+- **Fix**: Initialized the `formulaName` variable from the `slingFormula` flag at the start of `runSling`, ensuring explicit formulas are respected for all target roles.
+- **Status**: Fixed, Verified, and Installed.
+
+### 45. [FIXED] Database Selector Pollution in `BdCmd`
+- **Files**: `internal/cmd/sling.go`, `internal/cmd/sling_helpers.go`
+- **Issue**: Agents slinging beads from a rig environment (like `testgt2/witness`) would fail to bond formulas to town-level beads (`hq-*`) because `bd` would inherit the rig's `BEADS_DIR` environment variable, ignoring the working directory routing.
+- **Fix**: 
+    1. Applied `.StripBeadsDir()` to all `BdCmd` calls in `sling_helpers.go` to ensure `bd` resolves the database correctly from its working directory.
+    2. Migrated legacy `exec.Command("bd", ...)` calls in `sling.go` to the unified `BdCmd` builder to benefit from `StripBeadsDir()` and consistent environment management.
+- **Status**: Fixed and Verified.
