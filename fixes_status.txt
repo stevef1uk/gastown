@@ -155,3 +155,14 @@ Fix the end-to-end Gas Town flow where a spec can be handed to agents who autono
     - **Action**: Nuclear shutdown and removal of `testgt2` rig; reset town beads to OPEN.
     - **Verification**: Full unit test suite is 100% green.
     - **Status**: Ready for new trials.
+
+24. **[FIXED]** Agent Command Hallucinations (gt done / gt mol attach).
+    - **Symptom**: Mayor/Planner/Architect were trying to run `gt done` or `gt mol attach <bead-id>`.
+    - **Root Cause**: Global `PRIME.md` template included a "Session Close Protocol" meant for polecats only, and `gt mol status` included placeholder instructions for missing molecules.
+    - **Fix**: Removed "Session Close Protocol" from global `PRIME.md` (polecats get it via `polecat-CLAUDE.md`). Removed placeholder instructions from `internal/cmd/molecule_status.go`. Deleted all existing `PRIME.md` files to force re-provisioning.
+    - **Status**: Fixed and Verified.
+
+25. **[FIXED]** Agent Command Failures (nudge/mail/prime).
+    - **Symptom**: Agents were trying to run standalone `nudge` or `mail` commands (missing `gt` prefix) or including parentheses in `gt prime` commands.
+    - **Fix**: Implemented command normalization in `cmd/gt-agent/main.go` to automatically prefix `nudge`/`mail` with `gt` and strip trailing descriptive text from `gt prime`/`gt hook` calls.
+    - **Status**: Fixed and Verified.

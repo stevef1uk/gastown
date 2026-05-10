@@ -1732,17 +1732,6 @@ This is physics, not politeness. Gas Town is a steam engine - you are a piston.
 - ` + "`gt mol status`" + ` - Check your hooked work
 - ` + "`gt mail inbox`" + ` - Check for messages
 - ` + "`bd ready`" + ` - Find available work (no blockers)
-
-## Session Close Protocol
-
-Before signaling completion:
-1. git status (check what changed)
-2. git add <files> (stage code changes)
-3. git commit -m "..." (commit code)
-4. git push (push to remote)
-5. ` + "`gt done`" + ` (submit to merge queue and exit)
-
-**Polecats MUST call ` + "`gt done`" + ` - this submits work and exits the session.**
 `
 
 // ProvisionPrimeMD writes the Gas Town PRIME.md file to the specified beads directory.

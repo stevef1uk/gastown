@@ -669,6 +669,18 @@ func normalizeGeneratedCommand(cmd string) (string, bool) {
 		rewritten = true
 	}
 
+	if strings.HasPrefix(trimmed, "gt prime") {
+		return "gt prime", true
+	}
+	if strings.HasPrefix(trimmed, "gt hook") {
+		return "gt hook", true
+	}
+	if strings.HasPrefix(trimmed, "nudge ") {
+		return "gt " + trimmed, true
+	}
+	if strings.HasPrefix(trimmed, "mail ") {
+		return "gt " + trimmed, true
+	}
 	if strings.HasPrefix(trimmed, "bd mol current") {
 		return "gt mol current", true
 	}
