@@ -523,7 +523,7 @@ func runSling(cmd *cobra.Command, args []string) (retErr error) {
 
 	// Determine mode based on flags and argument types
 	var beadID string
-	var formulaName string
+	var formulaName string = slingFormula
 	attachedMoleculeID := ""
 
 	if slingOnTarget != "" {

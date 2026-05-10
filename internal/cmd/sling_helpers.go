@@ -780,6 +780,7 @@ func InstantiateFormulaOnBead(ctx context.Context, formulaName, beadID, title, h
 	if !skipCook {
 		if err := BdCmd("cook", formulaName).
 			Dir(formulaWorkDir).
+			StripBeadsDir().
 			WithGTRoot(townRoot).
 			Run(); err != nil {
 			// Retry with embedded formula
@@ -790,6 +791,7 @@ func InstantiateFormulaOnBead(ctx context.Context, formulaName, beadID, title, h
 			if resolvedFormula != formulaName {
 				if retryErr := BdCmd("cook", resolvedFormula).
 					Dir(formulaWorkDir).
+					StripBeadsDir().
 					WithGTRoot(townRoot).
 					Run(); retryErr != nil {
 					telemetry.RecordMolCook(ctx, formulaName, retryErr)
@@ -821,6 +823,7 @@ func InstantiateFormulaOnBead(ctx context.Context, formulaName, beadID, title, h
 	wispArgs = append(wispArgs, "--json")
 	wispOut, err := BdCmd(wispArgs...).
 		Dir(formulaWorkDir).
+		StripBeadsDir().
 		WithAutoCommit().
 		WithGTRoot(townRoot).
 		Output()
@@ -999,6 +1002,7 @@ func ensureFormulaRequiredVars(formulaName string, vars []string) []string {
 func CookFormula(formulaName, workDir, townRoot string) error {
 	err := BdCmd("cook", formulaName).
 		Dir(workDir).
+		StripBeadsDir().
 		WithGTRoot(townRoot).
 		Run()
 	if err == nil {
@@ -1014,6 +1018,7 @@ func CookFormula(formulaName, workDir, townRoot string) error {
 	}
 	return BdCmd("cook", resolved).
 		Dir(workDir).
+		StripBeadsDir().
 		WithGTRoot(townRoot).
 		Run()
 }
@@ -1074,6 +1079,7 @@ func hookBeadWithRetry(beadID, targetAgent, hookDir string) error {
 	for attempt := 1; attempt <= maxRetries; attempt++ {
 		err := BdCmd("update", beadID, "--status=hooked", "--assignee="+targetAgent).
 			Dir(hookDir).
+			StripBeadsDir().
 			Run()
 		if err != nil {
 			lastErr = err
