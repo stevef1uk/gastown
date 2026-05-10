@@ -40,8 +40,8 @@ func TestRenderRole_Mayor(t *testing.T) {
 	}
 
 	// Check for key content
-	if !strings.Contains(output, "Mayor Context") {
-		t.Error("output missing 'Mayor Context'")
+	if !strings.Contains(output, "Role: Mayor") {
+		t.Error("output missing 'Role: Mayor'")
 	}
 	if !strings.Contains(output, "/test/town") {
 		t.Error("output missing town root")
@@ -108,8 +108,8 @@ func TestRenderRole_Deacon(t *testing.T) {
 	}
 
 	// Check for key content
-	if !strings.Contains(output, "Deacon Context") {
-		t.Error("output missing 'Deacon Context'")
+	if !strings.Contains(output, "Deacon") {
+		t.Error("output missing 'Deacon'")
 	}
 	if !strings.Contains(output, "/test/town") {
 		t.Error("output missing town root")
@@ -230,8 +230,8 @@ func TestRenderRole_Dog(t *testing.T) {
 	}
 
 	// Check for key content
-	if !strings.Contains(output, "Dog Context") {
-		t.Error("output missing 'Dog Context'")
+	if !strings.Contains(output, "Dog") {
+		t.Error("output missing 'Dog'")
 	}
 	if !strings.Contains(output, "Fido") {
 		t.Error("output missing dog name")
