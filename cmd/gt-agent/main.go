@@ -763,13 +763,10 @@ func hasCommandPrefix(cmd, prefix string) bool {
 func rewriteMolCurrent(cmd string) string {
 	parts := strings.Fields(cmd)
 	args := parts[3:]
-	if len(args) > 0 && args[len(args)-1] == "--json" {
-		return "gt mol current " + strings.Join(args, " ")
-	}
 	if len(args) == 0 {
-		return "gt mol current --json"
+		return "gt mol current"
 	}
-	return fmt.Sprintf("gt mol current %s --json", strings.Join(args, " "))
+	return fmt.Sprintf("gt mol current %s", strings.Join(args, " "))
 }
 
 func containsPlaceholder(cmd string) bool {

@@ -241,8 +241,8 @@ func TestNormalizeGeneratedCommand(t *testing.T) {
 		want    string
 		changed bool
 	}{
-		{"bd mol current mol-witness-patrol", "gt mol current mol-witness-patrol --json", true},
-		{"bd mol current hq-wisp-abc123", "gt mol current hq-wisp-abc123 --json", true},
+		{"bd mol current mol-witness-patrol", "gt mol current mol-witness-patrol", true},
+		{"bd mol current hq-wisp-abc123", "gt mol current hq-wisp-abc123", true},
 		{"bd ready", "bd ready", false},
 		{"gt mol current", "gt mol current", false},
 		{"gt sling design --on [bead] [rig]/architect", "true", true},
