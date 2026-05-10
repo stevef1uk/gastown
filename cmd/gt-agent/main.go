@@ -736,8 +736,6 @@ func postWorkCommand(role, summary string) string {
 			summary = "Patrol cycle complete"
 		}
 		return fmt.Sprintf("patrol report --summary %q", summary)
-	case "polecat":
-		return "done"
 	default:
 		// Mayor, refinery, crew: no post-work command needed
 		return ""

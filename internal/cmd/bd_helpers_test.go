@@ -123,9 +123,19 @@ func TestBdCmd_DefaultStderr(t *testing.T) {
 	bdc := BdCmd("list")
 	cmd := bdc.Build()
 
-	// Verify default stderr is os.Stderr
-	if cmd.Stderr != os.Stderr {
-		t.Error("Default Stderr should be os.Stderr")
+	// Verify default stderr is nil in Build
+	if cmd.Stderr != nil {
+		t.Error("Default Stderr should be nil in Build()")
+	}
+}
+
+func TestBdCmd_DefaultStdout(t *testing.T) {
+	bdc := BdCmd("list")
+	cmd := bdc.Build()
+
+	// Verify default stdout is nil in Build
+	if cmd.Stdout != nil {
+		t.Error("Default Stdout should be nil in Build()")
 	}
 }
 
@@ -209,9 +219,8 @@ func TestBdCmd_WithAutoCommit_OverridesParentOff(t *testing.T) {
 	baseEnv := []string{"PATH=/usr/bin", "BD_DOLT_AUTO_COMMIT=off", "HOME=/home/user"}
 
 	bdc := &bdCmd{
-		args:   []string{"show", "id"},
-		env:    baseEnv,
-		stderr: os.Stderr,
+		args: []string{"show", "id"},
+		env:  baseEnv,
 	}
 	bdc.WithAutoCommit()
 	cmd := bdc.Build()
@@ -240,9 +249,8 @@ func TestBdCmd_MultipleAutoCommit_DedupRemovesOld(t *testing.T) {
 	baseEnv := []string{"BD_DOLT_AUTO_COMMIT=off"}
 
 	bdc := &bdCmd{
-		args:   []string{"show", "id"},
-		env:    baseEnv,
-		stderr: os.Stderr,
+		args: []string{"show", "id"},
+		env:  baseEnv,
 	}
 	bdc.WithAutoCommit()
 	cmd := bdc.Build()
@@ -311,9 +319,8 @@ func TestBdCmd_AllCombinations(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			bdc := &bdCmd{
-				args:   []string{"show", "id"},
-				env:    append([]string{}, baseEnv...), // Copy to avoid mutation
-				stderr: os.Stderr,
+				args: []string{"show", "id"},
+				env:  append([]string{}, baseEnv...), // Copy to avoid mutation
 			}
 
 			if tt.autoCommit {
@@ -384,9 +391,8 @@ func TestBdCmd_EnvImmutability(t *testing.T) {
 	originalLen := len(baseEnv)
 
 	bdc := &bdCmd{
-		args:   []string{"show", "id"},
-		env:    baseEnv,
-		stderr: os.Stderr,
+		args: []string{"show", "id"},
+		env:  baseEnv,
 	}
 	bdc.WithAutoCommit().WithGTRoot("/town")
 
@@ -419,9 +425,8 @@ func TestBdCmd_WithBeadsDir_OverridesInherited(t *testing.T) {
 	baseEnv := []string{"PATH=/usr/bin", "BEADS_DIR=/town/.beads", "HOME=/home/user"}
 
 	bdc := &bdCmd{
-		args:   []string{"mol", "wisp", "create", "proto-id"},
-		env:    baseEnv,
-		stderr: os.Stderr,
+		args: []string{"mol", "wisp", "create", "proto-id"},
+		env:  baseEnv,
 	}
 	bdc.WithBeadsDir("/town/rig/mayor/rig/.beads")
 	cmd := bdc.Build()
@@ -469,9 +474,8 @@ func TestBdCmd_StripBeadsDir_RemovesInherited(t *testing.T) {
 	// StripBeadsDir should remove inherited BEADS_DIR from the environment
 	// so that bd discovers the database from Dir() instead (GH#2126).
 	bdc := &bdCmd{
-		args:   []string{"show", "myproject-abc", "--json"},
-		env:    []string{"PATH=/usr/bin", "BEADS_DIR=/town/.beads", "HOME=/home/user"},
-		stderr: os.Stderr,
+		args: []string{"show", "myproject-abc", "--json"},
+		env:  []string{"PATH=/usr/bin", "BEADS_DIR=/town/.beads", "HOME=/home/user"},
 	}
 	bdc.Dir("/town/myproject/mayor/rig").StripBeadsDir()
 	cmd := bdc.Build()
@@ -490,9 +494,8 @@ func TestBdCmd_StripBeadsDir_RemovesInherited(t *testing.T) {
 func TestBdCmd_StripBeadsDir_NoOpWhenAbsent(t *testing.T) {
 	// StripBeadsDir should be harmless when BEADS_DIR is not set.
 	bdc := &bdCmd{
-		args:   []string{"show", "hq-abc"},
-		env:    []string{"PATH=/usr/bin", "HOME=/home/user"},
-		stderr: os.Stderr,
+		args: []string{"show", "hq-abc"},
+		env:  []string{"PATH=/usr/bin", "HOME=/home/user"},
 	}
 	bdc.Dir("/town").StripBeadsDir()
 	cmd := bdc.Build()

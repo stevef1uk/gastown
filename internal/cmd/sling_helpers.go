@@ -264,11 +264,11 @@ func verifyBeadExists(beadID string) error {
 // getBeadInfo returns status and assignee for a bead.
 // Resolves the rig directory from the bead's prefix for correct dolt access.
 func getBeadInfo(beadID string) (*beadInfo, error) {
-	out, err := BdCmd("show", beadID, "--json", "--allow-stale").
+	b := BdCmd("show", beadID, "--json", "--allow-stale").
 		Dir(resolveBeadDir(beadID)).
 		StripBeadsDir().
-		Stderr(io.Discard).
-		Output()
+		Stderr(io.Discard)
+	out, err := b.Output()
 	if err != nil {
 		return nil, fmt.Errorf("bead '%s' not found", beadID)
 	}

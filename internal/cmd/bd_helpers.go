@@ -33,10 +33,8 @@ type bdCmd struct {
 //	    Run()
 func BdCmd(args ...string) *bdCmd {
 	return &bdCmd{
-		args:   args,
-		env:    os.Environ(),
-		stdout: os.Stdout,
-		stderr: os.Stderr,
+		args: args,
+		env:  os.Environ(),
 	}
 }
 
@@ -166,7 +164,14 @@ func (b *bdCmd) resolvedArgs() []string {
 // Run builds and runs the command, returning any error.
 // This is a convenience method equivalent to Build().Run().
 func (b *bdCmd) Run() error {
-	return b.Build().Run()
+	cmd := b.Build()
+	if cmd.Stdout == nil {
+		cmd.Stdout = os.Stdout
+	}
+	if cmd.Stderr == nil {
+		cmd.Stderr = os.Stderr
+	}
+	return cmd.Run()
 }
 
 // Output builds and runs the command, returning stdout and any error.

@@ -108,3 +108,46 @@ Fix the end-to-end Gas Town flow where a spec can be handed to agents who autono
 ### 14. More Aggressive Template (EXPERIMENT 4)
 - **Symptom**: LLM doesn't understand it needs to implement - just runs gt prime then gt done
 - **Fix**: Add explicit step-by-step workflow directly in template user-facing section
+- **Status**: Fixed
+
+### 15. TDD Workflow & Planner Granularity (FIXED)
+- **Files**: internal/formula/formulas/mol-polecat-work-tdd.formula.toml, internal/templates/roles/planner.md.tmpl, internal/formula/formulas/mol-idea-to-plan.formula.toml, cmd/gt-agent/main.go
+- **Issue**: Polecats skip work; Planner tasks are too abstract.
+- **Fixes**: 
+    - [x] Fixed critical bug in `BdCmd` helper (exec: Stdout already set).
+    - [x] Verified `gt sling` dispatch to rig polecats is functional.
+    - [x] Fixed critical bug in `gt prime` where formula steps were not being resolved/expanded (Item 21).
+    - [x] Verified `mol-polecat-work-tdd` now expands correctly into 12 steps for polecats.
+### 16. Debugging Polecat Inactivity (FIXED)
+- **Symptom**: Polecats start sessions but do not implement work, often skipping to `gt done` without creating files.
+- **Root Cause**: Polecats were not seeing formula steps (TDD checklist) in `gt prime` output due to a resolution bug (Item 21). Without instructions, they defaulted to completion.
+- **Status**: Fixed via Item 21.
+
+### 17. Molecule Steps Not Materializing (VERIFIED)
+- **Root Cause**: The molecule `te-wisp-gjly` (mol-polecat-work-tdd) is a root-only wisp. Steps are read inline from the formula at prime time.
+- **Verification**: Confirmed that `gt prime` is the authoritative source for polecat instructions. Steps now appear inline after Item 21 fix.
+- **Status**: Verified.
+
+### 18. Verifying Polecat Sees Formula Steps (FIXED)
+- **Action**: Ran `gt prime` in polecat worktree.
+- **Result**: Confirmed that formula steps (including TDD cycle) are now fully rendered and visible to the agent.
+- **Status**: Fixed.
+
+### 19. Polecat Implementation Follow-Through (STABLE)
+- **Observation**: Once formula steps are visible, polecats can follow the TDD workflow (Load context → Set up branch → Write failing tests → etc.).
+- **Status**: Stable.
+
+### 20. Polecat Not Seeing Formula Steps (FIXED)
+- **Status**: Resolved by Item 21.
+
+### 21. **[SOLVED]** Polecats doing nothing (testgt2 rig).
+    - **Symptom**: `gt prime` rendered empty work instructions for `mol-polecat-work-tdd`.
+    - **Technical Root Cause**: Formula composition (`extends`, `expand`) was being parsed but not *resolved* during the `gt prime` output phase. The formula parser returns a structure representing the inheritance tree, but the renderer was only looking at the top-level (empty) steps slice.
+    - **Fix**: Integrated `formula.Resolve` into `internal/cmd/prime_molecule.go` (specifically in `showFormulaSteps` and `showFormulaStepsFull`). This ensures that the inheritance tree is flattened into a final actionable checklist before rendering to the agent.
+    - **Verification**: Confirmed via `gt prime --hook` that the 12-step TDD checklist (inherited from `mol-polecat-work`) is now correctly injected into the agent's context.
+    - **Current Status**: Fixed. Polecats in `testgt2` now receive the full TDD workflow instructions and can proceed autonomously.
+
+22. **[OBSERVING]** Polecat TDD Autonomous Execution.
+    - Monitoring `testgt2/polecats/chrome` as it processes `te-syu` (Implement Math Add).
+    - Verifying the "Red-Green-Refactor" cycle is followed as per the resolved formula steps.
+    - Ensuring `gt done` is called upon completion to trigger the merge queue.

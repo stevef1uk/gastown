@@ -125,6 +125,22 @@ func showFormulaSteps(formulaName, label, townRoot, rigName string, extraVars ..
 		return
 	}
 
+	// Build search paths for formula resolution (rig-level > town-level > embedded).
+	var searchPaths []string
+	if townRoot != "" {
+		if rigName != "" {
+			searchPaths = append(searchPaths, filepath.Join(townRoot, rigName, ".beads", "formulas"))
+		}
+		searchPaths = append(searchPaths, filepath.Join(townRoot, ".beads", "formulas"))
+	}
+
+	// Resolve formula (merges extends and applies composition rules).
+	f, err = formula.Resolve(f, searchPaths)
+	if err != nil {
+		style.PrintWarning("could not resolve formula %s: %v", formulaName, err)
+		return
+	}
+
 	if len(f.Steps) == 0 {
 		return
 	}
@@ -161,6 +177,22 @@ func showFormulaStepsFull(formulaName, townRoot, rigName string, extraVars ...[]
 	f, err := formula.Parse(content)
 	if err != nil {
 		style.PrintWarning("could not parse formula %s: %v", formulaName, err)
+		return
+	}
+
+	// Build search paths for formula resolution (rig-level > town-level > embedded).
+	var searchPaths []string
+	if townRoot != "" {
+		if rigName != "" {
+			searchPaths = append(searchPaths, filepath.Join(townRoot, rigName, ".beads", "formulas"))
+		}
+		searchPaths = append(searchPaths, filepath.Join(townRoot, ".beads", "formulas"))
+	}
+
+	// Resolve formula (merges extends and applies composition rules).
+	f, err = formula.Resolve(f, searchPaths)
+	if err != nil {
+		style.PrintWarning("could not resolve formula %s: %v", formulaName, err)
 		return
 	}
 
