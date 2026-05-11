@@ -372,10 +372,29 @@ Fix the end-to-end Gas Town flow where a spec can be handed to agents who autono
     - `TestParseArchitect`: Fixed by manually registering the `te` prefix in the `PrefixRegistry` during the test, as the test environment does not initialize the global registry.
 - [x] **Full Test Suite Green**: Confirmed `go test ./...` is 100% passing across all packages.
 
+### 55. [FIXED] `gt formula run` Hardcoded "gastown" Rig Default
+- **Files**: `internal/cmd/formula.go`, `internal/cmd/synthesis.go`
+- **Issue**: `gt formula run` (and `gt synthesis start`) were hardcoded to default to the "gastown" rig when not invoked from a rig directory. This caused the Planner (which lives in the town root) to sling workflows to a non-existent "gastown" rig instead of the active rig (e.g., `testgt2`).
+- **Fix**: Implemented `detectDefaultRig` helper that dynamically picks the first available rig from `rigs.json` if no rig is specified and the agent is not in a rig directory.
+- **Status**: Fixed and Installed.
+
+### 56. [FIXED] Planner and Mechanic Patrol Support
+- **Files**: `internal/cmd/patrol_new.go`, `internal/cmd/patrol_report.go`
+- **Issue**: `gt patrol new` and `gt patrol report` explicitly blocked the Planner and Mechanic roles, even though `gt prime` suggested these commands to them. This caused agents to loop on unsupported commands.
+- **Fix**: Added `planner` and `mechanic` roles to the supported list for both commands.
+- **Status**: Fixed and Installed.
+
+### 57. [FIXED] Planner Patrol Loop Suppression
+- **Files**: `internal/cmd/prime.go`, `internal/cmd/prime_molecule.go`
+- **Issue**: The Planner was unconditionally shown patrol instructions (including `gt patrol report`) even when it had real project work (e.g., `shiny`) assigned on its hook. This confused the agent and sometimes blocked project instructions from being seen.
+- **Fix**: Updated `outputMoleculeContext` to accept `hookedBead` and skip patrol instructions if any work is already hooked.
+- **Status**: Fixed and Installed.
+
 ### [2026-05-11] Current State & Accomplishments
-- **Status**: **STABLE & AUTONOMOUS**. The "Hello API" project has successfully traversed Design (Architect) and Planning (Planner) and is now in Implementation.
+- **Status**: **STABLE & AUTONOMOUS**.
 - **Accomplishments**:
+    - **Rig Detection Fixed**: Town-level agents (Planner, Mayor) can now trigger formula-based workflows without manually specifying `--rig`.
+    - **Patrol System Unified**: Planner and Mechanic now have full support for the `gt patrol` lifecycle, and patrol loops are suppressed when project work is active.
     - **E2E Flow Verified**: Architect -> Mayor -> Planner -> Mayor handoff loop is functional.
-    - **High-Capacity Brains**: Architect, Mayor, and Planner are all confirmed to be using 70B+ models (Mistral-Nemotron, Nemotron-120B) for reliable reasoning.
-    - **Performance**: Dolt responsiveness is restored; agent patrols are completing sub-minute cycles.
+    - **High-Capacity Brains**: Architect, Mayor, and Planner are all confirmed to be using 70B+ models for reliable reasoning.
     - **Autonomous Signal Delivery**: NATS transport is reliably delivering signals between town and rig agents.

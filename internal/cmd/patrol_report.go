@@ -77,6 +77,20 @@ func runPatrolReport(cmd *cobra.Command, args []string) error {
 			Assignee:      roleInfo.Rig + "/refinery",
 			ExtraVars:     buildRefineryPatrolVars(roleInfo),
 		}
+	case RolePlanner:
+		cfg = PatrolConfig{
+			RoleName:      "planner",
+			PatrolMolName: constants.MolPlannerPatrol,
+			BeadsDir:      roleInfo.TownRoot,
+			Assignee:      "planner",
+		}
+	case RoleMechanic:
+		cfg = PatrolConfig{
+			RoleName:      "mechanic",
+			PatrolMolName: constants.MolMechanicPatrol,
+			BeadsDir:      roleInfo.TownRoot,
+			Assignee:      "mechanic",
+		}
 	default:
 		return fmt.Errorf("unsupported role for patrol report: %q", roleName)
 	}

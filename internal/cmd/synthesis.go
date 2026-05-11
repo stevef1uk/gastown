@@ -205,7 +205,9 @@ func runSynthesisStart(cmd *cobra.Command, args []string) error {
 			}
 		}
 		if targetRig == "" {
-			targetRig = "gastown"
+			// Try the first available rig if detection fails
+			rigName, _ := detectDefaultRig(townRoot)
+			targetRig = rigName
 		}
 	}
 

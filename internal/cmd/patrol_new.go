@@ -29,7 +29,7 @@ Examples:
 }
 
 func init() {
-	patrolNewCmd.Flags().StringVar(&patrolNewRole, "role", "", "Role override (deacon, witness, refinery)")
+	patrolNewCmd.Flags().StringVar(&patrolNewRole, "role", "", "Role override (deacon, witness, refinery, planner, mechanic)")
 }
 
 func runPatrolNew(cmd *cobra.Command, args []string) error {
@@ -71,8 +71,22 @@ func runPatrolNew(cmd *cobra.Command, args []string) error {
 			Assignee:      roleInfo.Rig + "/refinery",
 			ExtraVars:     buildRefineryPatrolVars(roleInfo),
 		}
+	case RolePlanner:
+		cfg = PatrolConfig{
+			RoleName:      "planner",
+			PatrolMolName: constants.MolPlannerPatrol,
+			BeadsDir:      roleInfo.TownRoot,
+			Assignee:      "planner",
+		}
+	case RoleMechanic:
+		cfg = PatrolConfig{
+			RoleName:      "mechanic",
+			PatrolMolName: constants.MolMechanicPatrol,
+			BeadsDir:      roleInfo.TownRoot,
+			Assignee:      "mechanic",
+		}
 	default:
-		return fmt.Errorf("unsupported role for patrol: %q (expected deacon, witness, or refinery)", roleName)
+		return fmt.Errorf("unsupported role for patrol: %q (expected deacon, witness, refinery, planner, or mechanic)", roleName)
 	}
 
 	// Create and hook the wisp

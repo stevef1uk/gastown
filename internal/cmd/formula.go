@@ -235,10 +235,9 @@ func runFormulaRun(cmd *cobra.Command, args []string) error {
 					rigPath = r.Path
 				}
 			}
-			// If we still don't have a target rig but have townRoot, use gastown
+			// If we still don't have a target rig but have townRoot, use the first available rig
 			if targetRig == "" {
-				targetRig = "gastown"
-				rigPath = filepath.Join(townRoot, "gastown")
+				targetRig, rigPath = detectDefaultRig(townRoot)
 			}
 		} else {
 			// No town root found, fall back to gastown without rigPath
@@ -1335,4 +1334,18 @@ func promptYesNo(question string) bool {
 	answer, _ := reader.ReadString('\n')
 	answer = strings.TrimSpace(strings.ToLower(answer))
 	return answer == "y" || answer == "yes"
+}
+// detectDefaultRig attempts to find a suitable default rig when one isn't specified
+// or detectable from the current directory. It picks the first rig from rigs.json
+// if available, otherwise falls back to "gastown".
+func detectDefaultRig(townRoot string) (name, path string) {
+	rigsConfigPath := filepath.Join(townRoot, "mayor", "rigs.json")
+	rigsConfig, err := config.LoadRigsConfig(rigsConfigPath)
+	if err == nil && rigsConfig != nil && len(rigsConfig.Rigs) > 0 {
+		// Pick the first available rig from the map.
+		for name := range rigsConfig.Rigs {
+			return name, filepath.Join(townRoot, name)
+		}
+	}
+	return "gastown", filepath.Join(townRoot, "gastown")
 }

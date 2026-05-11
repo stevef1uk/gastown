@@ -260,6 +260,273 @@ func TestNormalizeGeneratedCommand(t *testing.T) {
 	}
 }
 
+// TestParseLLMResponse covers the production CMD-block parser
+// (parseLLMResponse in main.go). The regression these tests guard against
+// is the architect handoff bug where prose lines between two CMD: markers
+// were being concatenated into the first command and the second command
+// inherited the trailing markdown fence.
+func TestParseLLMResponse(t *testing.T) {
+	tests := []struct {
+		name         string
+		input        string
+		wantCmds     []string
+		wantDone     string
+		wantHallucinated bool
+	}{
+		{
+			name:     "simple single command",
+			input:    "CMD: echo hello\nDONE: ok",
+			wantCmds: []string{"echo hello"},
+			wantDone: "ok",
+		},
+		{
+			name:     "multiple bare commands",
+			input:    "CMD: git status\nCMD: git add .\nDONE: staged",
+			wantCmds: []string{"git status", "git add ."},
+			wantDone: "staged",
+		},
+		{
+			name:     "empty CMD: line ignored",
+			input:    "CMD:\nCMD: echo test\nDONE: done",
+			wantCmds: []string{"echo test"},
+			wantDone: "done",
+		},
+		{
+			name: "architect handoff bug: prose between two CMDs is NOT swallowed",
+			input: "CMD: printf '# Architecture\\n' > arch.md\n\n" +
+				"### Step 2: Implement the Feature\n\n" +
+				"Since the role is Architect and not Polecat, we do not implement.\n\n" +
+				"### Step 4: Handoff to Mayor\n\n" +
+				"```bash\n" +
+				"CMD: gt handoff mayor -s \"Architecture Ready\" -m \"design done\"\n" +
+				"```\n\n" +
+				"Please note: the mail inbox check is secondary.\n",
+			wantCmds: []string{
+				"printf '# Architecture\\n' > arch.md",
+				"gt handoff mayor -s \"Architecture Ready\" -m \"design done\"",
+			},
+		},
+		{
+			name: "CMD inside ```bash fence on its own line",
+			input: "```bash\n" +
+				"CMD: ls -la\n" +
+				"```\n",
+			wantCmds: []string{"ls -la"},
+		},
+		{
+			name:     "CMD: with leading ```bash on the same line",
+			input:    "CMD: ```bash echo hi```",
+			wantCmds: []string{"echo hi"},
+		},
+		{
+			name: "markdown heading after CMD does not bleed into command",
+			input: "CMD: gt hook\n" +
+				"### Now check inbox\n" +
+				"This part is prose.\n",
+			wantCmds: []string{"gt hook"},
+		},
+		{
+			name: "heredoc with EOF terminator is captured verbatim",
+			input: "CMD: cat <<'EOF' > /tmp/note\n" +
+				"line one\n" +
+				"line two\n" +
+				"EOF\n" +
+				"DONE: wrote file",
+			wantCmds: []string{
+				"cat <<'EOF' > /tmp/note\nline one\nline two\nEOF",
+			},
+			wantDone: "wrote file",
+		},
+		{
+			name: "heredoc without terminator is discarded",
+			input: "CMD: cat <<EOF > /tmp/note\n" +
+				"line one\n" +
+				"line two\n",
+			wantCmds: nil,
+		},
+		{
+			name: "hallucinated Output: is rejected",
+			input: "CMD: gt hook\n" +
+				"Output: fake terminal output\n" +
+				"CMD: gt mail inbox\n",
+			wantHallucinated: true,
+		},
+		{
+			name: "DONE: captured even without commands",
+			input: "DONE: nothing to do",
+			wantDone: "nothing to do",
+		},
+		{
+			name: "interleaved commands and prose only keep commands",
+			input: "Let me think about this.\n" +
+				"\n" +
+				"CMD: gt prime\n" +
+				"\n" +
+				"Now I should check the hook.\n" +
+				"\n" +
+				"CMD: gt hook\n" +
+				"\n" +
+				"DONE: primed and checked hook",
+			wantCmds: []string{"gt prime", "gt hook"},
+			wantDone: "primed and checked hook",
+		},
+		{
+			name: "trailing ``` on CMD line is stripped",
+			input: "CMD: echo done```",
+			wantCmds: []string{"echo done"},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			gotCmds, gotDone, gotHallucinated := parseLLMResponse(tc.input)
+			if gotHallucinated != tc.wantHallucinated {
+				t.Fatalf("hallucinated = %v, want %v", gotHallucinated, tc.wantHallucinated)
+			}
+			if tc.wantHallucinated {
+				return
+			}
+			if len(gotCmds) != len(tc.wantCmds) {
+				t.Fatalf("got %d commands, want %d\n  got:  %#v\n  want: %#v",
+					len(gotCmds), len(tc.wantCmds), gotCmds, tc.wantCmds)
+			}
+			for i := range gotCmds {
+				if gotCmds[i] != tc.wantCmds[i] {
+					t.Errorf("cmd[%d] = %q, want %q", i, gotCmds[i], tc.wantCmds[i])
+				}
+			}
+			if gotDone != tc.wantDone {
+				t.Errorf("done = %q, want %q", gotDone, tc.wantDone)
+			}
+		})
+	}
+}
+
+func TestDetectHeredocTerm(t *testing.T) {
+	tests := []struct {
+		in   string
+		want string
+	}{
+		{"cat <<EOF", "EOF"},
+		{"cat <<'EOF'", "EOF"},
+		{"cat << \"EOF\"", "EOF"},
+		{"cat <<-EOF", "EOF"},
+		{"cat <<'EOF' > file.md", "EOF"},
+		{"cat <<EOF | tee out.log", "EOF"},
+		{"echo hello", ""},
+		{"printf '<<EOF'", "EOF"}, // false positive we accept; printf body is rare
+		{"gt mail send mayor -s 'x' -m 'y'", ""},
+	}
+	for _, tc := range tests {
+		if got := detectHeredocTerm(tc.in); got != tc.want {
+			t.Errorf("detectHeredocTerm(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
+func TestHasInvalidPatrolCommand(t *testing.T) {
+	tests := []struct {
+		in   string
+		want bool
+	}{
+		// Real patrol verbs — must be accepted.
+		{"gt patrol new", false},
+		{"gt patrol new --role planner", false},
+		{"gt patrol report --summary \"ok\"", false},
+		{"gt patrol scan", false},
+		{"gt patrol digest", false},
+		{"gt patrol", false}, // bare `gt patrol` prints help; let the CLI handle it
+		{"gt patrol --help", false},
+
+		// Planner hallucinations from the logs.
+		{"gt patrolling mol-planner-patrol cycle 24", true},
+		{"gt patrol start mol-planner-patrol -c 24", true},
+		{"gt patrol cycle 24", true},
+		{"gt patrol loop", true},
+		{"gt patrol new mol-planner-patrol -f https://example/x.yml", true},
+		{"gt patrol new --httpf \"https://example/x.yml\"", true},
+		{"gt patrol new mol-planner-patrol -c 24", true},
+
+		// Unrelated commands left alone.
+		{"gt prime", false},
+		{"gt hook", false},
+		{"echo patrol", false},
+	}
+	for _, tc := range tests {
+		if got := hasInvalidPatrolCommand(tc.in); got != tc.want {
+			t.Errorf("hasInvalidPatrolCommand(%q) = %v, want %v", tc.in, got, tc.want)
+		}
+	}
+}
+
+func TestHasInvalidShinyFormula(t *testing.T) {
+	tests := []struct {
+		cmd  string
+		role string
+		want bool
+	}{
+		// Witness slinging shiny on its own bead — the actual bug.
+		{"gt sling hq-wisp-u0z1r --formula shiny", "witness", true},
+		{"gt sling hq-wisp-abc --formula shiny", "refinery", true},
+		{"gt sling te-foo --formula shiny", "mechanic", true},
+		{"gt sling te-foo --formula shiny", "qa", true},
+		{"gt sling te-foo --formula shiny", "planner", true},
+
+		// Mayor and Architect are legitimate sources of shiny.
+		{"gt sling te-foo --formula shiny", "mayor", false},
+		{"gt sling te-foo --formula shiny", "architect", false},
+		{"gt sling te-foo --formula shiny", "polecat", false},
+		{"gt sling te-foo --formula shiny", "crew", false},
+
+		// Other formulas are fine for any role.
+		{"gt sling te-foo --formula mol-polecat-work", "witness", false},
+		{"gt sling te-foo --formula mol-witness-patrol", "witness", false},
+
+		// Non-sling commands not touched.
+		{"gt hook", "witness", false},
+		{"shiny --formula shiny", "witness", false}, // not a `gt sling`
+
+		// Quoted formula name still resolved.
+		{"gt sling te-foo --formula \"shiny\"", "witness", true},
+		{"gt sling te-foo --formula 'shiny'", "witness", true},
+	}
+	for _, tc := range tests {
+		if got := hasInvalidShinyFormula(tc.cmd, tc.role); got != tc.want {
+			t.Errorf("hasInvalidShinyFormula(%q, %q) = %v, want %v",
+				tc.cmd, tc.role, got, tc.want)
+		}
+	}
+}
+
+// TestNormalizeRejectsWitnessShinyAndBadPatrol verifies the two new
+// rejection paths fire correctly through the top-level normalizer.
+func TestNormalizeRejectsWitnessShinyAndBadPatrol(t *testing.T) {
+	defer func(prev string) { currentRole = prev }(currentRole)
+
+	currentRole = "witness"
+	got, changed := normalizeGeneratedCommand("gt sling hq-wisp-u0z1r --formula shiny")
+	if got != "true" || !changed {
+		t.Errorf("witness shiny: got (%q, %v), want (\"true\", true)", got, changed)
+	}
+
+	currentRole = "mayor"
+	got, changed = normalizeGeneratedCommand("gt sling hq-wisp-foo --formula shiny")
+	if got != "gt sling hq-wisp-foo --formula shiny" || changed {
+		t.Errorf("mayor shiny should pass through: got (%q, %v)", got, changed)
+	}
+
+	currentRole = "planner"
+	got, changed = normalizeGeneratedCommand("gt patrolling mol-planner-patrol cycle 24")
+	if got != "true" || !changed {
+		t.Errorf("planner patrolling: got (%q, %v), want (\"true\", true)", got, changed)
+	}
+
+	got, changed = normalizeGeneratedCommand("gt patrol new")
+	if got != "gt patrol new" || changed {
+		t.Errorf("valid `gt patrol new` should pass through: got (%q, %v)", got, changed)
+	}
+}
+
 func TestNormalizeStepRewrite(t *testing.T) {
 	lastBeadID = ""
 	lastStepID = "te-5c1"

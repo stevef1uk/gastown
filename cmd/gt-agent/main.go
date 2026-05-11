@@ -55,6 +55,11 @@ var lastBeadID string
 var lastMoleculeID string
 var lastStepID string
 var lastStepShort string
+// currentRole is the canonical role (witness, refinery, planner, mayor, etc.)
+// for this gt-agent process. It is set once at startup and is read by
+// command-normalization guards so they can refuse role-inappropriate
+// invocations (e.g. a witness slinging the `shiny` engineering formula).
+var currentRole string
 var stepIDRe = regexp.MustCompile(`[a-z0-9_-]+/[a-z0-9_-]+/step-[0-9]+`)
 var jsonStepRe = regexp.MustCompile(`"step_id"\s*:\s*"([^"]+)"`)
 var gtBinaryPath string
@@ -316,6 +321,7 @@ func run() error {
 		role = "worker"
 	}
 	roleCanonical := canonicalRole(role)
+	currentRole = roleCanonical
 
 	townRoot := os.Getenv("GT_ROOT")
 	if townRoot == "" {
@@ -520,61 +526,15 @@ func run() error {
 			recordMoleculeState("LLM RESPONSE", response)
 			messages = append(messages, llm.Message{Role: "assistant", Content: response})
 
-			// Parse commands and summary
-			lines := strings.Split(response, "\n")
-			var cmdBlocks []string
-			var currentCmdLines []string
-			var inCmdBlock bool
-			hallucinated := false
-
-			for _, line := range lines {
-				trimmed := strings.TrimSpace(line)
-				if strings.HasPrefix(trimmed, "Output:") {
-					fmt.Println("[gt-agent] \u26a0 REJECTED hallucinated output.")
-					hallucinated = true
-					break
-				}
-				if strings.HasPrefix(trimmed, "CMD:") {
-					if len(currentCmdLines) > 0 {
-						cmdBlocks = append(cmdBlocks, strings.Join(currentCmdLines, "\n"))
-						currentCmdLines = nil
-					}
-					cmd := strings.TrimPrefix(trimmed, "CMD:")
-					cmd = strings.TrimSpace(cmd)
-					if strings.HasPrefix(cmd, "```") {
-						cmd = strings.TrimPrefix(cmd, "```")
-						cmd = strings.TrimPrefix(cmd, "bash")
-						cmd = strings.TrimPrefix(cmd, "sh")
-						cmd = strings.TrimSpace(cmd)
-					}
-					if cmd != "" {
-						currentCmdLines = append(currentCmdLines, cmd)
-						inCmdBlock = true
-					}
-				} else if inCmdBlock {
-					if strings.HasPrefix(trimmed, "DONE:") {
-						summary = strings.TrimSpace(strings.TrimPrefix(trimmed, "DONE:"))
-						cmdBlocks = append(cmdBlocks, strings.Join(currentCmdLines, "\n"))
-						currentCmdLines = nil
-						inCmdBlock = false
-						break
-					}
-					if trimmed == "```" || trimmed == "---" {
-						continue
-					}
-					currentCmdLines = append(currentCmdLines, line)
-				} else if strings.HasPrefix(trimmed, "DONE:") {
-					summary = strings.TrimSpace(strings.TrimPrefix(trimmed, "DONE:"))
-				}
+			cmdBlocks, doneSummary, hallucinated := parseLLMResponse(response)
+			if doneSummary != "" {
+				summary = doneSummary
 			}
 
 			if hallucinated {
+				fmt.Println("[gt-agent] \u26a0 REJECTED hallucinated output.")
 				messages = append(messages, llm.Message{Role: "user", Content: "ERROR: Do not simulate 'Output:'. Output 'CMD: [command]' and STOP. The system will provide the output."})
 				continue
-			}
-
-			if len(currentCmdLines) > 0 {
-				cmdBlocks = append(cmdBlocks, strings.Join(currentCmdLines, "\n"))
 			}
 
 			if len(cmdBlocks) == 0 {
@@ -720,6 +680,114 @@ func run() error {
 
 // canonicalRole maps rig-qualified or compound GT_ROLE values to the base role
 // used by prompting and post-work logic.
+// heredocStartRE matches a shell heredoc opener like `<<EOF`, `<< 'EOF'`,
+// `<<-"EOF"`, optionally followed by additional shell syntax such as a
+// redirection (`> file`) or pipe.
+//
+// We capture the terminator so the parser knows when to close the block.
+var heredocStartRE = regexp.MustCompile(`<<-?\s*['"]?([A-Za-z_][A-Za-z0-9_]*)['"]?`)
+
+// parseLLMResponse extracts CMD blocks and a DONE summary from an LLM
+// response. It returns:
+//   - cmds: the list of commands the agent should execute, in order
+//   - doneSummary: the text after the first "DONE:" marker (if any)
+//   - hallucinated: true if the model tried to simulate "Output:" itself,
+//     in which case the caller should reject the response and re-prompt
+//
+// Parsing rules (intentionally conservative so prose interleaved between
+// commands does NOT bleed into the previous command):
+//
+//  1. A line beginning with "CMD:" starts (and, in the simple case, ends)
+//     a command on that single line.
+//  2. Markdown fences on the CMD: line (```bash, ```sh, ```) are stripped
+//     from both ends.
+//  3. If the CMD's text opens a heredoc (e.g. `cat <<'EOF' > file`), the
+//     parser switches to heredoc mode and collects subsequent lines
+//     verbatim until it sees a line whose trimmed contents equal the
+//     heredoc terminator. A heredoc without a terminator is dropped (we
+//     prefer no execution over executing prose).
+//  4. While NOT in a heredoc, every other kind of line (prose, markdown
+//     headings, closing fences, blank lines, "Note:" sentences, etc.)
+//     simply ends the current command. They are never appended to it.
+//  5. A line beginning with "Output:" outside a heredoc means the model
+//     hallucinated a terminal session. We abort parsing and signal the
+//     caller to re-prompt.
+//  6. A line beginning with "DONE:" outside a heredoc captures the
+//     trailing summary.
+func parseLLMResponse(response string) (cmds []string, doneSummary string, hallucinated bool) {
+	lines := strings.Split(response, "\n")
+
+	var heredocBuf []string
+	var heredocTerm string // empty => not currently inside a heredoc
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+
+		// Heredoc body: collect everything verbatim until terminator.
+		if heredocTerm != "" {
+			heredocBuf = append(heredocBuf, line)
+			if trimmed == heredocTerm {
+				cmds = append(cmds, strings.Join(heredocBuf, "\n"))
+				heredocBuf = nil
+				heredocTerm = ""
+			}
+			continue
+		}
+
+		if strings.HasPrefix(trimmed, "Output:") {
+			hallucinated = true
+			return nil, "", true
+		}
+
+		if strings.HasPrefix(trimmed, "CMD:") {
+			cmd := strings.TrimSpace(strings.TrimPrefix(trimmed, "CMD:"))
+
+			// Strip a leading markdown fence on the same line as CMD:.
+			if strings.HasPrefix(cmd, "```") {
+				cmd = strings.TrimPrefix(cmd, "```")
+				cmd = strings.TrimPrefix(cmd, "bash")
+				cmd = strings.TrimPrefix(cmd, "sh")
+				cmd = strings.TrimSpace(cmd)
+			}
+			// Strip a trailing markdown fence if the model closed on the same line.
+			cmd = strings.TrimSuffix(cmd, "```")
+			cmd = strings.TrimSpace(cmd)
+
+			if cmd == "" {
+				continue
+			}
+
+			if term := detectHeredocTerm(cmd); term != "" {
+				heredocBuf = []string{cmd}
+				heredocTerm = term
+				continue
+			}
+
+			cmds = append(cmds, cmd)
+			continue
+		}
+
+		if strings.HasPrefix(trimmed, "DONE:") && doneSummary == "" {
+			doneSummary = strings.TrimSpace(strings.TrimPrefix(trimmed, "DONE:"))
+		}
+	}
+
+	// An unterminated heredoc is discarded on purpose — we do not want to
+	// execute a fragment that might contain prose.
+	return cmds, doneSummary, false
+}
+
+// detectHeredocTerm returns the heredoc terminator word if cmd opens a
+// heredoc (e.g. `cat <<EOF`, `cat << 'EOF' > file.md`). Otherwise it
+// returns an empty string.
+func detectHeredocTerm(cmd string) string {
+	m := heredocStartRE.FindStringSubmatch(cmd)
+	if len(m) == 2 {
+		return m[1]
+	}
+	return ""
+}
+
 func canonicalRole(role string) string {
 	r := strings.TrimSpace(role)
 	if r == "" {
@@ -807,6 +875,14 @@ func normalizeGeneratedCommand(cmd string) (string, bool) {
 		fmt.Fprintf(os.Stderr, "[gt-agent] ⚠ REJECTED hallucinatory mol execute command: %q\n", trimmed)
 		return "true", true
 	}
+	if hasInvalidPatrolCommand(trimmed) {
+		fmt.Fprintf(os.Stderr, "[gt-agent] ⚠ REJECTED hallucinatory patrol command: %q\n", trimmed)
+		return "true", true
+	}
+	if hasInvalidShinyFormula(trimmed, currentRole) {
+		fmt.Fprintf(os.Stderr, "[gt-agent] ⚠ REJECTED inappropriate `--formula shiny` sling for role %q: %q\n", currentRole, trimmed)
+		return "true", true
+	}
 
 	// 4. Reject commands containing unreplaced placeholders like <bead-id>, [bead], or [rig].
 	if containsPlaceholder(trimmed) {
@@ -863,6 +939,90 @@ func containsPlaceholder(cmd string) bool {
 	} {
 		if strings.Contains(cmd, placeholder) {
 			return true
+		}
+	}
+	return false
+}
+
+// validPatrolVerbs lists the subcommands `gt patrol` actually accepts.
+// Anything else (e.g. `gt patrol start`, `gt patrolling …`) is a model
+// hallucination and should be NOP'd rather than executed against the CLI.
+var validPatrolVerbs = map[string]bool{
+	"new":    true,
+	"report": true,
+	"scan":   true,
+	"digest": true,
+}
+
+// hasInvalidPatrolCommand returns true for `gt patrol*` invocations the
+// CLI cannot satisfy: unknown verbs (`start`, `cycle`, `loop`) and the
+// invented `gt patrolling …` form that the planner has been generating.
+// A bare `gt patrol` (which prints help) is left alone so the agent can
+// learn the right syntax from stderr.
+func hasInvalidPatrolCommand(cmd string) bool {
+	trimmed := strings.TrimSpace(cmd)
+	parts := strings.Fields(trimmed)
+	if len(parts) < 2 || parts[0] != "gt" {
+		return false
+	}
+	// `gt patrolling …` is never a real command.
+	if parts[1] == "patrolling" {
+		return true
+	}
+	if parts[1] != "patrol" {
+		return false
+	}
+	if len(parts) < 3 {
+		// `gt patrol` alone is fine — prints help.
+		return false
+	}
+	verb := parts[2]
+	if strings.HasPrefix(verb, "-") {
+		// `gt patrol --help`, `gt patrol -h`, etc. — let the CLI handle it.
+		return false
+	}
+	if !validPatrolVerbs[verb] {
+		return true
+	}
+	// Catch the recurring `gt patrol new -f <url>` / `--httpf` /
+	// `-c <n>` hallucinations. `gt patrol new` only accepts --role.
+	if verb == "new" {
+		for _, p := range parts[3:] {
+			switch p {
+			case "-f", "--file", "--httpf", "-c", "--cycle":
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// shinyRestrictedRoles are the roles that should never kick off the
+// `shiny` engineering formula (design → implement → review → test →
+// submit). Patrol/governor roles slung shiny at their own patrol bead
+// is the recurring witness/refinery hallucination this guard catches.
+var shinyRestrictedRoles = map[string]bool{
+	"witness":  true,
+	"refinery": true,
+	"mechanic": true,
+	"qa":       true,
+	"planner":  true,
+}
+
+// hasInvalidShinyFormula returns true when a role that has no business
+// running the `shiny` engineering workflow tries to `gt sling … --formula
+// shiny …`. Only Mayor / Architect / Crew / Polecats should ever do that.
+func hasInvalidShinyFormula(cmd, role string) bool {
+	if !hasCommandPrefix(cmd, "gt sling") {
+		return false
+	}
+	parts := strings.Fields(cmd)
+	for i, p := range parts {
+		if p != "--formula" || i+1 >= len(parts) {
+			continue
+		}
+		if trimQuotes(parts[i+1]) == "shiny" {
+			return shinyRestrictedRoles[role]
 		}
 	}
 	return false

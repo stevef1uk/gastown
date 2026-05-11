@@ -275,9 +275,16 @@ func truncateDescription(desc string, maxLen int) string {
 }
 
 // outputMoleculeContext checks if the agent is working on a molecule step and shows progress.
-func outputMoleculeContext(ctx RoleContext) {
+func outputMoleculeContext(ctx RoleContext, hookedBead *beads.Issue) {
 	// Applies to polecats, crew workers, deacon, witness, refinery, architect, qa, mechanic, planner
 	if ctx.Role != RolePolecat && ctx.Role != RoleCrew && ctx.Role != RoleDeacon && ctx.Role != RoleWitness && ctx.Role != RoleRefinery && ctx.Role != RoleArchitect && ctx.Role != RoleQA && ctx.Role != RoleMechanic && ctx.Role != RolePlanner {
+		return
+	}
+
+	// If the agent has real work hooked, skip the generic patrol context.
+	// This prevents coordinators (Planner, Mechanic) from getting stuck in
+	// patrol loops when they have specific tasks assigned.
+	if hookedBead != nil {
 		return
 	}
 

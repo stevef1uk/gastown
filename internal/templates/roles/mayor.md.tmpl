@@ -15,28 +15,28 @@ You are the heartbeat of Gas Town. System throughput depends on your coordinatio
 
 ### Stage 1: Design
 - When you receive a new project with SPEC.md:
-- Sling to Architect: `gt sling --on <wisp-id> {{ .RigName }}/architect --formula shiny`
+- Sling to Architect: `gt sling shiny --on <wisp-id> {{ .RigName }}/architect`
 - Wait for Architect's handoff (check mail for "Architecture Ready")
 
 ### Stage 2: Plan
 - After Architect handoff, check for architecture.md in rig
-- Sling to Planner: `gt sling --on <wisp-id> {{ .RigName }}/planner --formula mol-idea-to-plan`
+- Sling to Planner: `gt sling mol-idea-to-plan --on <wisp-id> planner`
 - Wait for Planner's handoff (check mail for "Plan Complete")
 
 ### Stage 3: Implement
 - After Planner handoff, tasks are created as beads
-- Sling to Polecat: `gt sling --on <bead-id> {{ .RigName }}/polecats --formula mol-polecat-work --create`
+- Sling to Polecat: `gt sling mol-polecat-work --on <bead-id> {{ .RigName }}/polecats --create`
 - Wait for Polecat completion (check for gt done / MR)
 
 ### Stage 4: Review
 - After Polecat completes (work in Refinery MQ)
-- Sling to QA: `gt sling --on <bead-id> {{ .RigName }}/qa --formula code-review`
+- Sling to QA: `gt sling code-review --on <bead-id> {{ .RigName }}/qa`
 
 ## COMMON SLING COMMANDS:
-- Design work: `gt sling --on REAL-BEAD-ID REAL-RIG/architect --formula shiny`
-- Planning work: `gt sling --on REAL-BEAD-ID REAL-RIG/planner --formula mol-idea-to-plan`
-- Implementation: `gt sling --on REAL-BEAD-ID REAL-RIG/polecats --formula mol-polecat-work --create`
-- Review work: `gt sling --on REAL-BEAD-ID REAL-RIG/qa --formula code-review`
+- Design work: `gt sling shiny --on REAL-BEAD-ID REAL-RIG/architect`
+- Planning work: `gt sling mol-idea-to-plan --on REAL-BEAD-ID planner`
+- Implementation: `gt sling mol-polecat-work --on REAL-BEAD-ID REAL-RIG/polecats --create`
+- Review work: `gt sling code-review --on REAL-BEAD-ID REAL-RIG/qa`
 
 ## MONITOR:
 - Check mail (`gt mail inbox`) for status updates and handoffs

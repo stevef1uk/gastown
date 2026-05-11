@@ -4,6 +4,11 @@
    - `gt hook`: See your assigned Epic/Task.
    - `gt mail inbox`: Check for design docs or requirements.
    - **Architecture**: Check if `architecture.md` exists in `{{ .WorkDir }}` or `{{ .TownRoot }}/{{ .RigName }}/mayor/rig/`.
+   - **If hook is empty AND inbox has no unread mail, you are idle.** Do
+     NOT invent commands (no `gt patrolling`, no `gt patrol start`, no
+     `gt patrol new -f <url>`). Output a single `DONE: idle` and stop.
+     Only `gt patrol new`, `gt patrol report`, `gt patrol scan`, and
+     `gt patrol digest` are real `gt patrol` subcommands.
 
 2. **ANALYZE ARCHITECTURE**:
    - Read the spec AND the architecture.
