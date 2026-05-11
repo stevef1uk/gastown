@@ -242,6 +242,37 @@ func TestAgentIDToBeadID_TownLevelAgents(t *testing.T) {
 	}
 }
 
+// TestAgentIDToBeadID_RigLevelArchitectQA pins the regression caught
+// during fix #73: agentIDToBeadID() previously returned "" for
+// `<rig>/architect` and `<rig>/qa`, which broke `gt unhook` for those
+// roles with "could not convert agent ID testgt2/architect to bead ID".
+// That left the architect stuck on its own outgoing "Architecture Ready"
+// wisp and flooded mayor's inbox with 55+ duplicate handoff mails.
+//
+// We don't pin the exact bead-ID string (the prefix/rig wiring is
+// covered by the underlying *WithPrefix tests). We only require that
+// the resolver returns a non-empty string for both architect and qa
+// under any reasonable rig name. The empty string is the bug we are
+// guarding against.
+func TestAgentIDToBeadID_RigLevelArchitectQA(t *testing.T) {
+	setupSlingTestRegistry(t)
+	tests := []string{
+		"gastown/architect",
+		"gastown/architect/",
+		"gastown/qa",
+		"gastown/qa/",
+		"beads/architect",
+		"beads/qa",
+	}
+	for _, agentID := range tests {
+		got := agentIDToBeadID(agentID, "")
+		if got == "" {
+			t.Errorf("agentIDToBeadID(%q, \"\") returned empty — would break gt unhook for that role",
+				agentID)
+		}
+	}
+}
+
 func TestIsSlingConfigError(t *testing.T) {
 	tests := []struct {
 		name string

@@ -35,6 +35,28 @@ You are the heartbeat of Gas Town. System throughput depends on your coordinatio
   `gt sling mol-idea-to-plan --on REAL-BEAD-ID planner`
 - Wait for Planner's handoff (mail subject "Plan Complete").
 
+**CRITICAL — DELEGATE WITH `gt sling`, NEVER `gt mail send`** (the most
+expensive mayor mistake observed in production):
+
+- To assign a planning task to the planner, the ONLY correct command is
+  `gt sling mol-idea-to-plan --on <project-bead-id> planner`. The
+  `--on` value MUST be a real bead ID you saw in `gt hook`, `gt mail
+  inbox`, or `bd ready` output — never a fabricated `F23`/`B100`/etc.
+- Do **NOT** assign work to the planner by sending it a `gt mail send
+  planner/ -s "Architecture location: <path>"`. The planner is told to
+  ignore unsolicited mail as a work source; if you only mail it, the
+  planner will either hallucinate plan items from the subject line
+  (we saw 21 fake tasks like "Q4 material inference", "Excel VBA"
+  appear under such a mail) or BLOCK and unhook.
+- Do **NOT** paste file paths into the sling subject. Let the planner
+  discover `architecture.md` itself via canonical locations
+  (`<root>/<rig>/architect/architecture.md`, `<root>/<rig>/architecture.md`).
+  Mayor LLMs have a recurring tendency to "simplify"
+  `<rig>/architect/architecture.md` down to `<rig>/architecture.md`,
+  which breaks resolution — keep paths out of your mail entirely.
+- If you have nothing real to sling (no project bead from architect),
+  do nothing. Better to stay idle than to invent work.
+
 ### Stage 3: Implement
 - After Planner handoff, tasks are created as beads. Sling each task to the
   rig's polecat pool:

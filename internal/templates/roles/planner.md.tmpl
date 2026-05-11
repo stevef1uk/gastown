@@ -3,12 +3,62 @@
 1. **LOAD CONTEXT**:
    - `gt hook`: See your assigned Epic/Task.
    - `gt mail inbox`: Check for design docs or requirements.
-   - **Architecture**: Check if `architecture.md` exists in `{{ .WorkDir }}` or `{{ .TownRoot }}/{{ .RigName }}/mayor/rig/`.
+   - **Architecture**: locate the real `architecture.md` (see step 1a below).
    - **If hook is empty AND inbox has no unread mail, you are idle.** Do
      NOT invent commands (no `gt patrolling`, no `gt patrol start`, no
      `gt patrol new -f <url>`). Output a single `DONE: idle` and stop.
      Only `gt patrol new`, `gt patrol report`, `gt patrol scan`, and
      `gt patrol digest` are real `gt patrol` subcommands.
+
+1a. **FIND THE REAL ARCHITECTURE FILE — DO NOT CREATE STUBS**:
+
+   Upstream agents (mayor, architect) sometimes pass a slightly wrong path
+   in their mail (e.g. `/<root>/<rig>/architecture.md` when the file is
+   actually at `/<root>/<rig>/architect/architecture.md`). Resolve this
+   ROBUSTLY before you do anything else:
+
+   a) If the bead description or the assigning mail gives an ABSOLUTE
+      path, try that path first: `test -s <path> && cat <path>`.
+
+   b) If that path is missing OR is a stub (size <200 bytes / contains
+      "Awaiting content"), search CANONICAL fallback locations under
+      each known rig (you are town-level, so you have no rig of your
+      own — get rig names from `cat {{ .TownRoot }}/rigs.json` or the
+      bead description, and search under each).
+
+      For a rig `<RIG>`, the canonical search order is:
+        1. `{{ .TownRoot }}/<RIG>/architect/architecture.md`
+        2. `{{ .TownRoot }}/<RIG>/architecture.md`
+        3. `{{ .TownRoot }}/<RIG>/mayor/rig/architecture.md`
+
+      Copy-pasteable shell one-liner (auto-iterates over every rig in
+      `rigs.json`, so it works regardless of which rig the bead lives in):
+      ```
+      for rig in $(jq -r 'keys[]' {{ .TownRoot }}/rigs.json 2>/dev/null); do for p in {{ .TownRoot }}/$rig/architect/architecture.md {{ .TownRoot }}/$rig/architecture.md {{ .TownRoot }}/$rig/mayor/rig/architecture.md; do if [ -s "$p" ] && ! grep -q "Awaiting content" "$p"; then echo "FOUND:$p"; cat "$p"; break 2; fi; done; done
+      ```
+
+      **DO NOT** use bare `{{ .TownRoot }}//architect/architecture.md`
+      with an empty rig segment — that path is town-root and is almost
+      always either nonexistent or stale fixture content, NOT the real
+      architecture for the project you are planning.
+
+   c) **NEVER create `architecture.md` yourself.** That is the architect's
+      job. If you create a stub at the bad path you make the bug
+      permanent: the next planner cycle will "find" your stub and plan
+      against an empty file. This is exactly how we ended up with 21+
+      hallucinated tasks (Q4 material inference, Excel VBA, etc.) on
+      `hq-wisp-zvlv` — there was no real architecture, only a 58-byte
+      placeholder that you generated.
+
+   d) If NONE of the canonical locations have real architecture content,
+      you are BLOCKED. Do this and stop:
+        `gt mail send mayor/ -s "BLOCKED: architecture missing" -m "Searched <list paths>, all missing or stub. Cannot plan without real architecture."`
+        `gt nudge mayor "Blocked on missing architecture"`
+        `gt unhook`
+      Then emit `DONE: blocked - architecture missing` and stop. Do NOT
+      invent plan items, do NOT create child beads, do NOT call
+      `bd create` — without real architecture content there is nothing
+      to plan.
 
 2. **HARD RULES — NO HALLUCINATIONS**:
    - **NEVER invent bead/task IDs.** Real Gas Town bead IDs look like

@@ -1059,6 +1059,23 @@ func normalizeGeneratedCommand(cmd string) (string, bool) {
 		fmt.Fprintf(os.Stderr, "[gt-agent] ⚠ REJECTED hallucinatory command with placeholders: %q\n", trimmed)
 		return "true", true
 	}
+
+	// 4a. Reject heredocs writing important design/spec files with empty or
+	// placeholder-only bodies. The architect template (and others) instruct
+	// the LLM to write `cat > .../architecture.md <<'EOF' ... EOF` with the
+	// `...` replaced by real content. Observed in production: the LLM took
+	// `...` literally (or omitted the body entirely) and overwrote a real
+	// 157-byte architecture spec with a 0-byte file. From outside there is
+	// no recovery — the spec is just gone.
+	//
+	// Block at the agent layer: if the heredoc target is a known content
+	// file (architecture.md, design.md, plan.md, SPEC.md) and the heredoc
+	// body is empty, whitespace-only, or contains only literal placeholder
+	// tokens (`...`, `<INSERT-...>`, `<TODO>`), reject the command.
+	if isEmptyContentFileHeredoc(trimmed) {
+		fmt.Fprintf(os.Stderr, "[gt-agent] ⚠ REJECTED heredoc writing an empty/placeholder-only body to a content file: %q\n", trimmed)
+		return "true", true
+	}
 	if hasInvalidSlingOnBead(trimmed) {
 		return "true", true
 	}
@@ -1206,6 +1223,116 @@ var placeholderRe = regexp.MustCompile(`<[a-zA-Z0-9_-]+>`)
 // We deliberately require at least one underscore so we don't trample
 // legitimate shell uses of `[foo]` (test brackets, array access, etc.).
 var snakeBracketPlaceholderRe = regexp.MustCompile(`\[[A-Za-z][A-Za-z0-9]*(?:_[A-Za-z0-9]+)+\]`)
+
+// contentFileHeredocOpenRE matches just the OPENING of a heredoc whose
+// redirect target is a known content file the agents must never overwrite
+// with an empty or placeholder-only body. Captures:
+//
+//	[1] the heredoc delimiter (e.g. EOF, MARK, END)
+//
+// We only match the basename of the file (architecture.md, design.md,
+// plan.md, SPEC.md, README.md) so any path prefix is accepted.
+//
+// Go's RE2 engine does not support backreferences, so we deliberately
+// match only the opening here and locate the closing delimiter with a
+// separate string scan in isEmptyContentFileHeredoc.
+var contentFileHeredocOpenRE = regexp.MustCompile(
+	`cat\s*>\s*\S*?(?:architecture|design|plan|SPEC|README)\.md\s*<<-?\s*['"]?([A-Za-z0-9_]+)['"]?\s*\n`,
+)
+
+// heredocBodyIsPlaceholder returns true if `body` contains nothing
+// substantive — only whitespace, only the literal ellipsis `...`, or only
+// unreplaced template placeholders like `<INSERT-…>`, `<TODO>`, or
+// `<FIXME>`. Reject such heredocs at the agent layer so an LLM that
+// pastes the placeholder verbatim cannot blow away a real spec file.
+func heredocBodyIsPlaceholder(body string) bool {
+	// Empty / whitespace-only body.
+	stripped := strings.TrimSpace(body)
+	if stripped == "" {
+		return true
+	}
+	// Body is just literal `...` (with optional surrounding whitespace).
+	if stripped == "..." {
+		return true
+	}
+	// Strip every line that is empty, a placeholder marker, or pure `...`.
+	// If nothing of substance remains, the body is effectively empty.
+	placeholderLineRE := regexp.MustCompile(`^\s*(?:\.\.\.|#?\s*<\s*(?:INSERT[-_A-Za-z0-9]*|TODO|FIXME|PLACEHOLDER|YOUR[-_A-Za-z0-9]*)\s*[^>]*>\s*)\s*$`)
+	var substantive int
+	for _, line := range strings.Split(body, "\n") {
+		t := strings.TrimSpace(line)
+		if t == "" {
+			continue
+		}
+		if placeholderLineRE.MatchString(line) {
+			continue
+		}
+		// Markdown headings alone (e.g. `## API`) are not substantive content
+		// without any following prose. They count, but only weakly — require
+		// at least one non-heading non-placeholder line OR a heading >40
+		// chars in total. This avoids accepting `## API\n## Data Model` etc.
+		// as "real architecture".
+		if strings.HasPrefix(t, "#") && len(t) < 40 {
+			continue
+		}
+		substantive++
+	}
+	return substantive == 0
+}
+
+// isEmptyContentFileHeredoc returns true for a shell command that writes
+// an empty or placeholder-only heredoc to a known content file
+// (architecture.md / design.md / plan.md / SPEC.md / README.md).
+//
+// Implementation: locate every heredoc opening with contentFileHeredocOpenRE,
+// then scan forward from end-of-line to find the matching closing
+// delimiter (a line that, after trimming whitespace, equals the captured
+// delimiter exactly). Return true if any such heredoc has a
+// placeholder-only body per heredocBodyIsPlaceholder. We scan every
+// occurrence because a chained command (`cat > a.md <<EOF ... EOF; cat
+// > b.md <<EOF ... EOF`) might write multiple content files in one shell
+// invocation.
+func isEmptyContentFileHeredoc(cmd string) bool {
+	locs := contentFileHeredocOpenRE.FindAllStringSubmatchIndex(cmd, -1)
+	for _, loc := range locs {
+		// loc[0]:loc[1] is the full match (the heredoc opening line).
+		// loc[2]:loc[3] is the captured delimiter.
+		delim := cmd[loc[2]:loc[3]]
+		bodyStart := loc[1] // first char after the opening's trailing newline
+		// Find the closing delimiter. It must appear at the start of a line
+		// (allowing leading whitespace for `<<-` style heredocs) and be the
+		// entire line after trimming.
+		closeIdx := -1
+		// We scan line by line from bodyStart.
+		offset := bodyStart
+		for offset < len(cmd) {
+			nl := strings.IndexByte(cmd[offset:], '\n')
+			var line string
+			if nl < 0 {
+				line = cmd[offset:]
+			} else {
+				line = cmd[offset : offset+nl]
+			}
+			if strings.TrimSpace(line) == delim {
+				closeIdx = offset
+				break
+			}
+			if nl < 0 {
+				break
+			}
+			offset += nl + 1
+		}
+		if closeIdx < 0 {
+			// Unterminated heredoc — don't reject; let the shell error out.
+			continue
+		}
+		body := cmd[bodyStart:closeIdx]
+		if heredocBodyIsPlaceholder(body) {
+			return true
+		}
+	}
+	return false
+}
 
 func containsPlaceholder(cmd string) bool {
 	if placeholderRe.MatchString(cmd) {

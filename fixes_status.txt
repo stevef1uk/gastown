@@ -534,6 +534,63 @@ Fix the end-to-end Gas Town flow where a spec can be handed to agents who autono
 - **Tests**: 6 new `TestHasInvalidPatrolCommand` subtests covering the four bogus flags and two valid forms; new `TestNormalizeRewritesGdTypo` with 6 cases.
 - **Status**: Fixed and deployed.
 
+### 73. [FIXED] `agentIDToBeadID` returns "" for `<rig>/architect` and `<rig>/qa`; planner template has empty `{{ .RigName }}`
+- **Files**: `internal/cmd/sling_helpers.go`, `internal/cmd/sling_helpers_test.go`, `internal/templates/roles/planner.md.tmpl`
+- **Issue**: Two sibling bugs uncovered while watching fix #70 land in production:
+    1. **`agentIDToBeadID` had an explicit "I don't handle this" branch** for architect/qa:
+       ```go
+       case len(parts) == 2 && (parts[1] == "architect" || parts[1] == "qa"):
+           return ""
+       ```
+       That dead branch presumably dated from before `ArchitectBeadIDWithPrefix` / `QABeadIDWithPrefix` existed. Now both functions exist (see `internal/beads/agent_ids.go:368-385`) but nothing routed to them. Live consequence: architect emitted `Summary: architecture handed off to mayor` cleanly, the auto-unhook fired, but `gt unhook` then died with `Error: could not convert agent ID testgt2/architect to bead ID`. Architect stayed hooked on its own outgoing `hq-wisp-6k4y "Architecture Ready"` wisp and re-mailed mayor every patrol — observed 55 duplicate "Architecture Ready" entries in mayor's inbox.
+    2. **Planner template hard-coded `{{ .RigName }}`** in canonical search paths, but the planner is a **town-level** agent so `.RigName` is empty. The deployed one-liner expanded to `/home/stevef/gt//architect/architecture.md` (double slash) and resolved against the town root by accident.
+- **Fix**:
+    1. **`agentIDToBeadID`**: routed `<rig>/architect` to `beads.ArchitectBeadIDWithPrefix(prefix, rig)` and `<rig>/qa` to `beads.QABeadIDWithPrefix(prefix, rig)` (same shape as the witness/refinery cases right below). Dead `return ""` removed.
+    2. **Planner template §1a (canonical search)**: rewritten to iterate over every rig in `rigs.json` instead of substituting the planner's own (empty) rig. The new copy-paste one-liner is:
+       ```bash
+       for rig in $(jq -r 'keys[]' {{ .TownRoot }}/rigs.json 2>/dev/null); do
+         for p in {{ .TownRoot }}/$rig/architect/architecture.md \
+                  {{ .TownRoot }}/$rig/architecture.md \
+                  {{ .TownRoot }}/$rig/mayor/rig/architecture.md; do
+           if [ -s "$p" ] && ! grep -q "Awaiting content" "$p"; then
+             echo "FOUND:$p"; cat "$p"; break 2
+           fi
+         done
+       done
+       ```
+       Hard rule added: do NOT use `{{ .TownRoot }}//architect/architecture.md` (empty rig segment) — town root is stale-fixture territory.
+- **Tests**: new `TestAgentIDToBeadID_RigLevelArchitectQA` covering `<rig>/architect`, `<rig>/qa` (both with and without trailing slash, multiple rigs); explicitly checks for non-empty return because empty was the bug.
+- **Status**: Fixed and deployed. Architect's stuck `hq-wisp-6k4y` hook cleared by `gt down`/`gt up`; mayor's 55 duplicate "Architecture Ready" mails still in inbox, can be archived with `gt mail archive --stale`.
+
+### 72. [FIXED] Mayor strips `architect/` from architecture path; Planner stubs the file and hallucinates 21+ tasks
+- **Files**: `internal/templates/roles/architect.md.tmpl`, `internal/templates/roles/planner.md.tmpl`, `internal/templates/roles/mayor.md.tmpl`
+- **Issue**: Three cascading bugs in one observed pathology on `hq-wisp-zvlv`:
+    1. **Mayor used `gt mail send` instead of `gt sling`** to delegate planning. The wisp had `msg-type:notification` label and Subject `Architecture location: /home/stevef/gt/testgt2/architecture.md`. There was no `mol-idea-to-plan` formula behind it; mayor manually crafted a notification mail and the planner treated it as work.
+    2. **Mayor stripped `architect/` from the architecture path.** Architect's outgoing mail said `architecture.md created at /home/stevef/gt/testgt2/architect/architecture.md` (correct). Mayor's outgoing wisp said `Architecture location: /home/stevef/gt/testgt2/architecture.md` (wrong — missing `architect/` segment). Classic LLM "path simplification".
+    3. **Planner created a 58-byte stub at the bad path** ("Architecture file created. Awaiting content for analysis.") to "fix" the missing file, then planned 21 child tasks against the stub. The children were pure hallucinations (e.g. `hq-wisp-zvlv.1` "Setup Q4 material inference directory structure", `.5` "Integrate material VBA with Excel 2023", `.4` "QA protocol for material classifications") with no relation to the real FastAPI Hello World spec — the planner invented an entire fictitious project from the subject line of a notification mail.
+- **Fix (defense-in-depth across all three layers)**:
+    1. **Architect template**: writes `architecture.md` to BOTH canonical locations (`{{ .WorkDir }}/architecture.md` AND `{{ .TownRoot }}/{{ .RigName }}/architecture.md`) and quotes both paths in its handoff mail. Even if mayor strips the subdir, the rig-root path resolves to the real spec.
+    2. **Planner template (the biggest change)**: new section **1a. FIND THE REAL ARCHITECTURE FILE — DO NOT CREATE STUBS**:
+       - Try the absolute path from the bead first.
+       - If missing OR stub (size <200 bytes OR contains "Awaiting content"), search canonical fallbacks in order: `<rig>/architect/architecture.md` → `<rig>/architecture.md` → `<rig>/mayor/rig/architecture.md` → `<workdir>/architecture.md`.
+       - Includes a copy-pasteable shell one-liner the model can run verbatim.
+       - **Hard rule: NEVER create `architecture.md` yourself.** Documented inline with the actual observed pathology (the 21 fake tasks).
+       - If none found, mail mayor "BLOCKED: architecture missing", unhook, emit `DONE: blocked - architecture missing`, stop. No fake child beads.
+    3. **Mayor template**: new "CRITICAL — DELEGATE WITH `gt sling`, NEVER `gt mail send`" block. Spells out that `gt sling mol-idea-to-plan --on <bead-id> planner` is the ONLY correct way; `gt mail send planner/ -s "Architecture location: ..."` is forbidden; paths must not be pasted into subject/body (let planner discover); idle is preferable to inventing work.
+- **Status**: Fixed and deployed. Cleanup of `hq-wisp-zvlv` stub + 21 fake children left to operator (these are inert and harmless once mayor stops re-mailing the wrong path).
+
+### 71. [FIXED] `agentIDToBeadID` doesn't know about planner/mechanic — breaks `gt unhook` for town-level singletons
+- **Files**: `internal/cmd/sling_helpers.go`, `internal/cmd/sling_helpers_test.go`
+- **Issue**: Discovered while verifying fix #70 live. `gt unhook` (and `gt hook clear`, `gt unsling`) was failing for the planner with:
+  ```
+  Error: could not convert agent ID planner/ to bead ID
+  ```
+  Root cause in `agentIDToBeadID(agentID, townRoot)`: it had hand-rolled cases only for `mayor` and `deacon`. Anything else fell through to the path-split, which for the bare string `planner` produced `len(parts) < 2` and returned "". `resolveSelfTarget()` returns `planner/` for the town-level planner singleton, so the lookup always failed. Same bug affected mechanic.
+- **Symptom**: fix #70's auto-unhook fired correctly (log line `Handoff-style role finished — auto-unhooking...`) but the actual `gt unhook` exec'd by gt-agent immediately died with the above error. The hook didn't clear, and the cycle's "Extraordinary action detected" set up the next loop to repeat.
+- **Fix**: Extended `agentIDToBeadID`'s town-level switch to also cover `planner` → `beads.PlannerBeadIDTown()` and `mechanic` → `beads.MechanicBeadIDTown()` (matching the four town-level singletons already known to `internal/cmd/status.go` and `internal/doctor/agent_beads_check.go`). Comment added so the next person adding a town-level agent remembers to update this table.
+- **Tests**: `TestAgentIDToBeadID_TownLevelAgents` pins all four singletons (`mayor`, `deacon`, `planner`, `mechanic`) both with and without the trailing slash that `resolveSelfTarget` returns.
+- **Status**: Fixed and deployed.
+
 ### 70. [FIXED] Planner/Architect/QA loop on the same bead forever (hook never clears after handoff)
 - **Files**: `cmd/gt-agent/main.go`, `cmd/gt-agent/main_test.go`, `internal/templates/roles/planner.md.tmpl`, `internal/templates/roles/architect.md.tmpl`, `internal/templates/roles/qa.md.tmpl`
 - **Issue**: Single-shot roles (planner / architect / qa) all share a "do-once, hand off, stop" contract. But nothing ever cleared their hook after handoff. Concrete observed state on `hq-bbn` "Plan FastAPI Hello World":

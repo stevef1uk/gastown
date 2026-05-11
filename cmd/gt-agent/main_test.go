@@ -688,6 +688,120 @@ func TestHasInvalidPatrolCommand(t *testing.T) {
 	}
 }
 
+// TestIsEmptyContentFileHeredoc pins fix #74: reject heredoc writes
+// that would blow away a content file (architecture.md, design.md,
+// plan.md, SPEC.md, README.md) with an empty or placeholder-only body.
+//
+// The original symptom: an LLM rendered the architect template's
+// `cat > .../architecture.md <<'EOF' ... EOF` literally, with `...` as
+// the heredoc body. The redirection ran successfully and overwrote a
+// 157-byte architecture spec with 0 bytes. The pipeline then stalled
+// silently because the planner had nothing real to plan against.
+func TestIsEmptyContentFileHeredoc(t *testing.T) {
+	tests := []struct {
+		name string
+		cmd  string
+		want bool
+	}{
+		{
+			name: "empty heredoc body to architecture.md",
+			cmd:  "cat > /home/stevef/gt/testgt2/architect/architecture.md <<'EOF'\nEOF",
+			want: true,
+		},
+		{
+			name: "literal '...' heredoc body",
+			cmd:  "cat > /home/stevef/gt/testgt2/architecture.md <<'EOF'\n...\nEOF",
+			want: true,
+		},
+		{
+			name: "INSERT-REAL-ARCHITECTURE-HERE placeholder body",
+			cmd: "cat > /home/stevef/gt/testgt2/architect/architecture.md <<'EOF'\n" +
+				"# Architecture: Foo\n" +
+				"## API\n" +
+				"<INSERT-REAL-ARCHITECTURE-HERE — endpoints>\n" +
+				"## Data Model\n" +
+				"<INSERT-REAL-ARCHITECTURE-HERE — entities>\n" +
+				"EOF",
+			want: true,
+		},
+		{
+			name: "TODO-only placeholder body",
+			cmd: "cat > /tmp/design.md <<'EOF'\n" +
+				"<TODO: fill in>\n" +
+				"<TODO>\n" +
+				"EOF",
+			want: true,
+		},
+		{
+			name: "real architecture body — must NOT be rejected",
+			cmd: "cat > /home/stevef/gt/testgt2/architect/architecture.md <<'EOF'\n" +
+				"# Architecture: Hello API\n\n" +
+				"## API\n" +
+				"- GET / returns a JSON greeting with status 200\n" +
+				"- POST /echo returns the request body verbatim\n\n" +
+				"## Data Model\n" +
+				"- No persistence; stateless service\n\n" +
+				"## Components\n" +
+				"- FastAPI app in main.py\n" +
+				"- requirements.txt with fastapi and uvicorn pinned\n" +
+				"EOF",
+			want: false,
+		},
+		{
+			name: "real but short body (<200 bytes) still substantive",
+			cmd: "cat > /tmp/plan.md <<'EOF'\n" +
+				"Implement endpoint, add test, commit.\n" +
+				"EOF",
+			want: false,
+		},
+		{
+			name: "unquoted EOF heredoc, real body",
+			cmd: "cat > /tmp/README.md <<EOF\n" +
+				"Project does X by calling service Y.\n" +
+				"EOF",
+			want: false,
+		},
+		{
+			name: "non-content-file heredoc — out of scope, must NOT be rejected",
+			cmd:  "cat > /tmp/scratch.txt <<'EOF'\n...\nEOF",
+			want: false,
+		},
+		{
+			name: "not a heredoc at all — out of scope",
+			cmd:  "echo hello > /home/stevef/gt/testgt2/architecture.md",
+			want: false,
+		},
+		{
+			name: "headings-only body is NOT substantive (would produce a useless skeleton)",
+			cmd: "cat > /tmp/architecture.md <<'EOF'\n" +
+				"# Architecture\n" +
+				"## API\n" +
+				"## Data Model\n" +
+				"## Components\n" +
+				"EOF",
+			want: true,
+		},
+		{
+			name: "mixed placeholder + real content — accept (LLM at least tried)",
+			cmd: "cat > /tmp/architecture.md <<'EOF'\n" +
+				"# Architecture: Hello API\n" +
+				"## API\n" +
+				"- GET / returns JSON {\"hello\": \"world\"} with 200 OK.\n" +
+				"## Data Model\n" +
+				"<INSERT-REAL-ARCHITECTURE-HERE>\n" +
+				"EOF",
+			want: false,
+		},
+	}
+	for _, tc := range tests {
+		got := isEmptyContentFileHeredoc(tc.cmd)
+		if got != tc.want {
+			t.Errorf("[%s] isEmptyContentFileHeredoc() = %v, want %v\n  cmd:\n%s",
+				tc.name, got, tc.want, tc.cmd)
+		}
+	}
+}
+
 // TestShouldAutoUnhookAfterHandoff covers the safety-net that
 // auto-clears the hook for planner/architect/qa after a clean handoff.
 func TestShouldAutoUnhookAfterHandoff(t *testing.T) {
