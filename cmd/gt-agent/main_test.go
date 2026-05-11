@@ -375,6 +375,66 @@ func TestParseLLMResponse(t *testing.T) {
 			input: "CMD: echo done```",
 			wantCmds: []string{"echo done"},
 		},
+		{
+			// Regression: planner emitted CMDs with a same-line markdown
+			// rationale paragraph like `CMD: bd search "F23" --status "open" **Rationale for Change:**`.
+			// The `**...**` block must be stripped before execution.
+			name:     "trailing markdown bold prose on CMD line is stripped",
+			input:    `CMD: bd search "F23" --priority-max "P0" --status "open" **Rationale for Command Change:**`,
+			wantCmds: []string{`bd search "F23" --priority-max "P0" --status "open"`},
+		},
+		{
+			name:     "trailing markdown bold followed by more prose is stripped",
+			input:    `CMD: gt mail inbox **Note:** check unread first`,
+			wantCmds: []string{"gt mail inbox"},
+		},
+		{
+			// Glob `**/*.go` does NOT have whitespace+`**...**` so should be preserved.
+			name:     "shell globstar **/* is preserved",
+			input:    "CMD: ls -la **/*.go",
+			wantCmds: []string{"ls -la **/*.go"},
+		},
+		{
+			name: "trailing markdown bold with multiple **bold** segments strips from first",
+			input: "CMD: gt status --json **first bold** more prose **second bold** trailing",
+			wantCmds: []string{"gt status --json"},
+		},
+		{
+			// Regression for the `gd patrol report` typo we observed in
+			// the live planner log. The full parser is just collecting
+			// the command verbatim — normalization to gt happens later in
+			// normalizeGeneratedCommand.
+			name:     "gd typo passes through parser unchanged",
+			input:    "CMD: gd patrol report --summary hi",
+			wantCmds: []string{"gd patrol report --summary hi"},
+		},
+		{
+			// Regression: planner emitted multiple commands crammed
+			// onto a single line with embedded `CMD:` markers, which
+			// the parser previously treated as one command.
+			name:     "inline CMD: markers split into separate commands",
+			input:    `CMD: bd update hq-bbn --priority 2 CMD: gt mail send mayor/ -s "ready" -m "go" CMD: gt nudge mayor "check inbox"`,
+			wantCmds: []string{
+				"bd update hq-bbn --priority 2",
+				`gt mail send mayor/ -s "ready" -m "go"`,
+				`gt nudge mayor "check inbox"`,
+			},
+		},
+		{
+			// Inline CMD: ... CMD: DONE: handed off — the trailing DONE:
+			// segment should populate doneSummary, not be executed.
+			name:     "inline CMD: trailing DONE: is captured as summary",
+			input:    `CMD: gt nudge mayor "go" CMD: DONE: handed off to mayor`,
+			wantCmds: []string{`gt nudge mayor "go"`},
+			wantDone: "handed off to mayor",
+		},
+		{
+			// Negative test: a real argument that contains the substring
+			// "CMD:" (without a leading space) must NOT split.
+			name:     "non-leading CMD: in argument is preserved",
+			input:    `CMD: echo "prefixCMD:notamarker"`,
+			wantCmds: []string{`echo "prefixCMD:notamarker"`},
+		},
 	}
 
 	for _, tc := range tests {
@@ -424,6 +484,166 @@ func TestDetectHeredocTerm(t *testing.T) {
 	}
 }
 
+func TestRewriteHandoffToMail(t *testing.T) {
+	tests := []struct {
+		name    string
+		in      string
+		want    string
+		wantOk  bool
+	}{
+		{
+			name:   "architect handoff to mayor with subject and message",
+			in:     `gt handoff mayor -s "Architecture Ready" -m "Design complete. ready for planning."`,
+			want:   `gt mail send mayor/ -s "Architecture Ready" -m "Design complete. ready for planning."`,
+			wantOk: true,
+		},
+		{
+			name:   "planner handoff with --yes flag is dropped",
+			in:     `gt handoff mayor -s "Plan Complete" -m "tasks created" -y`,
+			want:   `gt mail send mayor/ -s "Plan Complete" -m "tasks created"`,
+			wantOk: true,
+		},
+		{
+			name:   "trailing slash on role is normalized",
+			in:     `gt handoff mayor/ -s "X" -m "Y"`,
+			want:   `gt mail send mayor/ -s X -m Y`,
+			wantOk: true,
+		},
+		{
+			name:   "qa to mayor",
+			in:     `gt handoff mayor -s "QA Complete" -m "Review finished"`,
+			want:   `gt mail send mayor/ -s "QA Complete" -m "Review finished"`,
+			wantOk: true,
+		},
+		{
+			name:   "long-form flags",
+			in:     `gt handoff mayor --subject "Plan Complete" --message "tasks created"`,
+			want:   `gt mail send mayor/ -s "Plan Complete" -m "tasks created"`,
+			wantOk: true,
+		},
+		{
+			name:   "no -s/-m still rewrites (mail without body)",
+			in:     `gt handoff mayor`,
+			want:   `gt mail send mayor/`,
+			wantOk: true,
+		},
+		{
+			name:   "handoff to bead is left alone",
+			in:     `gt handoff hq-wisp-abc -s "X" -m "Y"`,
+			want:   "",
+			wantOk: false,
+		},
+		{
+			name:   "non-handoff command unchanged",
+			in:     `gt mail send mayor -s "X"`,
+			want:   "",
+			wantOk: false,
+		},
+		{
+			name:   "self-handoff with no role (just `gt handoff`) is left alone",
+			in:     `gt handoff`,
+			want:   "",
+			wantOk: false,
+		},
+		{
+			name:   "unknown role left alone",
+			in:     `gt handoff some-unknown-role -s X -m Y`,
+			want:   "",
+			wantOk: false,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, ok := rewriteHandoffToMail(tc.in)
+			if ok != tc.wantOk {
+				t.Fatalf("ok = %v, want %v (got %q)", ok, tc.wantOk, got)
+			}
+			if !tc.wantOk {
+				return
+			}
+			if got != tc.want {
+				t.Errorf("got  %q\nwant %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestNormalizeRewritesArchitectHandoff verifies the end-to-end normalizer
+// path rewrites the exact command the architect produced in production.
+func TestNormalizeRewritesArchitectHandoff(t *testing.T) {
+	const in = `gt handoff mayor -s "Architecture Ready" -m "Design complete. architecture.md created at /home/stevef/gt/testgt2/architect/architecture.md. Ready for implementation."`
+	want := `gt mail send mayor/ -s "Architecture Ready" -m "Design complete. architecture.md created at /home/stevef/gt/testgt2/architect/architecture.md. Ready for implementation."`
+	got, changed := normalizeGeneratedCommand(in)
+	if !changed {
+		t.Fatalf("expected rewrite; got unchanged %q", got)
+	}
+	if got != want {
+		t.Errorf("got  %q\nwant %q", got, want)
+	}
+}
+
+func TestContainsPlaceholder_SnakeBracket(t *testing.T) {
+	tests := []struct {
+		in   string
+		want bool
+	}{
+		// Snake-case-style hallucinations that bypassed the old guard.
+		{"[command_for_item_X]", true},
+		{"echo [task_name]", true},
+		{"gt sling [bead_id] testgt2/architect", true},
+		{"cp [src_file] [dest_file]", true},
+		{"foo [a_b_c]", true},
+
+		// Real shell uses with single-word brackets — must NOT trigger.
+		{"if [ -f /tmp/x ]; then echo hi; fi", false},
+		{"arr=(a b c); echo ${arr[0]}", false},
+		{"echo [foo]", false},        // single word, no underscore — leave alone
+		{"echo [REAL-RIG]", false},   // hyphenated literal — leave alone
+
+		// Existing allowlisted placeholders still trigger via earlier rules.
+		{"gt sling --on [bead]", true},
+		{"gt sling --on [bead-id]", true},
+	}
+	for _, tc := range tests {
+		if got := containsPlaceholder(tc.in); got != tc.want {
+			t.Errorf("containsPlaceholder(%q) = %v, want %v", tc.in, got, tc.want)
+		}
+	}
+}
+
+func TestHasInvalidSlingTarget(t *testing.T) {
+	tests := []struct {
+		in   string
+		want bool
+	}{
+		// The actual mayor hallucinations from production logs.
+		{"gt sling shiny --on hq-wisp-abc /architect", true},
+		{"gt sling mol-polecat-work --on hq-wisp-r9ag /polecats --create", true},
+		{"gt sling code-review --on hq-wisp-x /qa", true},
+
+		// Valid commands must pass through.
+		{"gt sling shiny --on hq-wisp-abc testgt2/architect", false},
+		{"gt sling mol-polecat-work --on hq-wisp-r9ag testgt2/polecats --create", false},
+		{"gt sling mol-idea-to-plan --on hq-wisp-abc planner", false},
+		{"gt sling hq-wisp-abc testgt2", false},
+		{"gt sling hq-wisp-abc", false},
+		{"gt sling", false},
+
+		// Non-sling commands not touched.
+		{"gt hook", false},
+		{"gt handoff mayor", false},
+
+		// Flag values with slashes are NOT positional, must not trigger.
+		{"gt sling --on hq-wisp-x --base-branch release/v2 testgt2/architect", false},
+		{"gt sling --formula shiny --on hq-wisp-x testgt2/architect", false},
+	}
+	for _, tc := range tests {
+		if got := hasInvalidSlingTarget(tc.in); got != tc.want {
+			t.Errorf("hasInvalidSlingTarget(%q) = %v, want %v", tc.in, got, tc.want)
+		}
+	}
+}
+
 func TestHasInvalidPatrolCommand(t *testing.T) {
 	tests := []struct {
 		in   string
@@ -451,10 +671,201 @@ func TestHasInvalidPatrolCommand(t *testing.T) {
 		{"gt prime", false},
 		{"gt hook", false},
 		{"echo patrol", false},
+
+		// `gt patrol report` flag-level hallucinations from the planner.
+		// Real flags are only --summary/-s, --steps, and --help/-h.
+		{`gt patrol report --incident hq-bbn.3 --summary "x"`, true},
+		{`gt patrol report --status "stalled" --summary "x"`, true},
+		{`gt patrol report --recommendation "wait" --summary "x"`, true},
+		{`gt patrol report --sirius Andrew --summary "x"`, true},
+		{`gt patrol report --summary=ok`, false},
+		{`gt patrol report --summary "ok" --steps "x:y"`, false},
 	}
 	for _, tc := range tests {
 		if got := hasInvalidPatrolCommand(tc.in); got != tc.want {
 			t.Errorf("hasInvalidPatrolCommand(%q) = %v, want %v", tc.in, got, tc.want)
+		}
+	}
+}
+
+// TestShouldAutoUnhookAfterHandoff covers the safety-net that
+// auto-clears the hook for planner/architect/qa after a clean handoff.
+func TestShouldAutoUnhookAfterHandoff(t *testing.T) {
+	tests := []struct {
+		role    string
+		summary string
+		want    bool
+	}{
+		// Planner happy paths.
+		{"planner", "handed off to mayor", true},
+		{"planner", "Handed off to mayor", true},
+		{"planner", "Plan Complete - 5 tasks created", true},
+		{"planner", "plan ready, mailed mayor", true},
+
+		// Architect happy paths.
+		{"architect", "architecture ready", true},
+		{"architect", "design complete - architecture.md created", true},
+		{"architect", "handed off to mayor", true},
+
+		// QA happy paths.
+		{"qa", "qa complete", true},
+		{"qa", "review complete", true},
+
+		// Negative summaries must NOT unhook.
+		{"planner", "Unable to Proceed - missing architecture file", false},
+		{"planner", "investigating missing file", false},
+		{"planner", "blocked by upstream", false},
+		{"planner", "Plan in progress", false},
+		{"architect", "design failed: missing requirements", false},
+		{"qa", "review failed: critical defects", false},
+
+		// Empty summary never unhooks.
+		{"planner", "", false},
+		{"architect", "", false},
+
+		// Non-handoff roles must NEVER auto-unhook regardless of summary.
+		{"mayor", "handed off to polecat", false},
+		{"witness", "patrol cycle completed successfully", false},
+		{"refinery", "merge cycle finished", false},
+		{"mechanic", "patrol complete", false},
+		{"deacon", "review complete", false},
+		{"polecat", "handed off to mayor", false},
+		{"crew", "design complete", false},
+
+		// Unknown / empty role.
+		{"", "handed off to mayor", false},
+		{"some-future-role", "handed off to mayor", false},
+	}
+	for _, tc := range tests {
+		got := shouldAutoUnhookAfterHandoff(tc.role, tc.summary)
+		if got != tc.want {
+			t.Errorf("shouldAutoUnhookAfterHandoff(%q, %q) = %v, want %v",
+				tc.role, tc.summary, got, tc.want)
+		}
+	}
+}
+
+// TestNormalizePreservesGtHookSubcommands ensures the normalizer
+// does NOT clobber real `gt hook` subcommands (`show`, `attach`,
+// `detach`, `clear`, `status`). A previous over-eager rewrite
+// collapsed every `gt hook …` to bare `gt hook`, which broke the
+// mayor's `gt hook attach <wisp>` calls.
+func TestNormalizePreservesGtHookSubcommands(t *testing.T) {
+	tests := []struct {
+		in      string
+		wantOut string
+	}{
+		// Real subcommands must pass through verbatim.
+		{"gt hook show planner", "gt hook show planner"},
+		{"gt hook show testgt2/witness", "gt hook show testgt2/witness"},
+		{"gt hook attach hq-wisp-5zi3", "gt hook attach hq-wisp-5zi3"},
+		{"gt hook detach hq-abc", "gt hook detach hq-abc"},
+		{"gt hook clear", "gt hook clear"},
+		{"gt hook status", "gt hook status"},
+
+		// Bare gt hook is left as-is.
+		{"gt hook", "gt hook"},
+
+		// Unknown trailing args (hallucination) collapse to bare.
+		{"gt hook fooBarbaz", "gt hook"},
+	}
+	for _, tc := range tests {
+		got, _ := normalizeGeneratedCommand(tc.in)
+		if got != tc.wantOut {
+			t.Errorf("normalize(%q): got %q, want %q", tc.in, got, tc.wantOut)
+		}
+	}
+}
+
+// TestRewriteBareRigPolecats covers the recurring mayor mistake where
+// the sling target is `<rig>/polecats` (no specific polecat name).
+// The CLI rejects this; we rewrite to bare `<rig>` for auto-spawn.
+func TestRewriteBareRigPolecats(t *testing.T) {
+	tests := []struct {
+		in       string
+		wantOut  string
+		wantOK   bool
+	}{
+		// The actual mayor mistake: bare <rig>/polecats target.
+		{
+			"gt sling mol-polecat-work --on hq-bbn testgt2/polecats --create",
+			"gt sling mol-polecat-work --on hq-bbn testgt2 --create",
+			true,
+		},
+		{
+			"gt sling hq-abc testgt2/polecats",
+			"gt sling hq-abc testgt2",
+			true,
+		},
+
+		// A specific polecat name MUST be preserved.
+		{
+			"gt sling hq-abc testgt2/polecats/toast",
+			"gt sling hq-abc testgt2/polecats/toast",
+			false,
+		},
+
+		// Plain rig target needs no rewrite.
+		{
+			"gt sling hq-abc testgt2",
+			"gt sling hq-abc testgt2",
+			false,
+		},
+
+		// Non-sling commands are untouched.
+		{
+			"gt hook show testgt2/polecats",
+			"gt hook show testgt2/polecats",
+			false,
+		},
+
+		// Flag values that look like rig/polecats must not be rewritten.
+		{
+			`gt sling hq-abc testgt2 --message "see testgt2/polecats for context"`,
+			`gt sling hq-abc testgt2 --message "see testgt2/polecats for context"`,
+			false,
+		},
+	}
+	for _, tc := range tests {
+		got, ok := rewriteBareRigPolecats(tc.in)
+		if got != tc.wantOut {
+			t.Errorf("rewriteBareRigPolecats(%q): got %q, want %q", tc.in, got, tc.wantOut)
+		}
+		if ok != tc.wantOK {
+			t.Errorf("rewriteBareRigPolecats(%q): ok=%v, want %v", tc.in, ok, tc.wantOK)
+		}
+	}
+}
+
+// TestNormalizeRewritesGdTypo covers the recurring `gd …` typo: there is
+// no `gd` binary on the agent PATH, but the model frequently types it
+// when it means `gt`. The normalizer must rewrite the leading `gd ` to
+// `gt ` so the right CLI is invoked instead of failing with
+// `gd: not found`.
+func TestNormalizeRewritesGdTypo(t *testing.T) {
+	tests := []struct {
+		in       string
+		wantOut  string
+		rewrite  bool
+	}{
+		{`gd patrol report --summary x`, `gt patrol report --summary x`, true},
+		{`gd hook`, `gt hook`, true},
+		{`gd bd show hq-abc`, `gt bd show hq-abc`, true},
+
+		// Don't touch lookalikes that are real commands.
+		{`gt patrol report --summary x`, `gt patrol report --summary x`, false},
+		{`echo gd`, `echo gd`, false},
+		{`grep gd file`, `grep gd file`, false},
+	}
+	for _, tc := range tests {
+		got, gotRewrite := normalizeGeneratedCommand(tc.in)
+		// Some inputs hit downstream normalizers too (e.g. `gt hook`
+		// collapses to `gt hook`). Just check the leading rewrite.
+		if !strings.HasPrefix(got, strings.SplitN(tc.wantOut, " ", 2)[0]) {
+			t.Errorf("normalize(%q): leading verb wrong, got %q", tc.in, got)
+		}
+		if tc.rewrite && !gotRewrite {
+			t.Errorf("normalize(%q): expected rewritten=true", tc.in)
 		}
 	}
 }

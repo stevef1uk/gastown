@@ -74,12 +74,11 @@ GT="/home/stevef/.local/bin/gt"
 
 echo "=== Mechanic patrol starting ==="
 
-# Only check logs from the current rig (testgt2) - skip old rigs
-# Also skip logs older than 1 hour to avoid stale sessions
-current_rig="${RIG:-testgt2}"
-logs=$(find "$LOG_DIR" -maxdepth 1 -name "*.log" -mmin -60 -name "*$current_rig*" -type f 2>/dev/null | sort -r -t '-' -k3 | head -5)
+# Mechanic is town-level: scan ALL recent agent logs (town + every rig).
+# Limit to logs touched in the last 60 minutes so we ignore stale sessions.
+logs=$(find "$LOG_DIR" -maxdepth 1 -name "*.log" -mmin -60 -type f 2>/dev/null | sort -r | head -20)
 if [ -z "$logs" ]; then
-  echo "No recent log files found for rig $current_rig, sleeping..."
+  echo "No recent log files found in $LOG_DIR, sleeping..."
   sleep 30
   exit 0
 fi
@@ -432,6 +431,33 @@ func run() error {
 		mailCheck := role != "mechanic"
 		workItems := gatherWork(gtBin, townRoot, sessionName, role, mailCheck)
 
+		// Mechanic short-circuit: always run the deterministic patrol script,
+		// regardless of nudges or pending work items. Mechanic has no LLM
+		// system prompt and other agents' nudges (e.g. "Mechanic detected
+		// Extraordinary action - please recover") are telling it to scan
+		// logs, not to chat with an LLM. Without this short-circuit, any
+		// nudge in the queue drops mechanic into the LLM path where it
+		// hangs forever with no template guidance.
+		if roleCanonical == "mechanic" {
+			state.IdleCycles = 0
+			state.LastActivity = time.Now()
+			state.PatrolCount++
+			state.ExtraordinaryAction = false
+			fmt.Printf("[gt-agent] Processing %d work item(s) (patrol #%d)\n",
+				len(workItems), state.PatrolCount)
+			fmt.Println("[gt-agent] Running mechanic patrol script...")
+			cmd := exec.Command("/bin/sh", "-c", mechanicPatrolScript)
+			out, err := cmd.CombinedOutput()
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "[gt-agent] Patrol error: %v\n%s\n", err, string(out))
+			} else {
+				fmt.Printf("[gt-agent] Patrol output:\n%s\n", string(out))
+			}
+			_ = saveState(stateFile, state)
+			time.Sleep(2 * time.Second)
+			continue
+		}
+
 		effortLevel := "full"
 		if len(workItems) == 0 {
 			if !isPermanentAgent(role) {
@@ -457,19 +483,6 @@ func run() error {
 			// Re-gather work after signal (or timeout)
 			workItems = gatherWork(gtBin, townRoot, sessionName, roleCanonical, mailCheck)
 			if len(workItems) == 0 {
-				// Mechanic uses a hardcoded patrol script instead of LLM
-				if roleCanonical == "mechanic" {
-					fmt.Println("[gt-agent] Running mechanic patrol script...")
-					cmd := exec.Command("/bin/sh", "-c", mechanicPatrolScript)
-					out, err := cmd.CombinedOutput()
-					if err != nil {
-						fmt.Fprintf(os.Stderr, "[gt-agent] Patrol error: %v\n%s\n", err, string(out))
-					} else {
-						fmt.Printf("[gt-agent] Patrol output:\n%s\n", string(out))
-					}
-					time.Sleep(2 * time.Second)
-					continue
-				}
 				// Routine patrol cycle on timeout
 				workItems = append(workItems, "Perform a routine patrol cycle.")
 			}
@@ -640,6 +653,38 @@ func run() error {
 		postCmdSuccess:
 		}
 
+		// Auto-unhook for handoff-style roles after a handoff summary.
+		//
+		// Planner / Architect / QA each have a "do once, hand off, stop"
+		// contract: they take a single bead, produce structured output
+		// (child tasks, design doc, review notes), notify the next agent,
+		// and are done. If we don't actively clear the hook after handoff
+		// the bead remains in [hooked] state forever — every subsequent
+		// patrol the agent sees the same bead, redoes the work, and
+		// emits ANOTHER "Plan Complete" mail. This caused the planner to
+		// generate 41 duplicate child tasks under hq-bbn and flood mayor's
+		// inbox with 9+ identical handoff messages.
+		//
+		// We intentionally do NOT gate on `!extraordinary` here. A cycle
+		// can be marked extraordinary from any single failing sub-command
+		// (e.g. a typo, a temporary dolt blip) while the overall handoff
+		// — the mail and the nudge to mayor — still succeeded. Observed
+		// in production: planner emitted `Summary: handed off to mayor`
+		// but extraordinary=true from an earlier minor failure suppressed
+		// the unhook, and the loop kept going. The summary-keyword filter
+		// in shouldAutoUnhookAfterHandoff is strict enough on its own:
+		// "blocked", "error", "failed", "missing", "investigating" etc.
+		// already prevent unhooking from a true-failure summary.
+		if shouldAutoUnhookAfterHandoff(roleCanonical, summary) {
+			fmt.Println("[gt-agent] Handoff-style role finished — auto-unhooking to prevent re-planning loop")
+			out, err := exec.Command(gtBin, "unhook").CombinedOutput()
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "[gt-agent] auto-unhook failed (non-fatal): %v\n%s\n", err, string(out))
+			} else {
+				fmt.Printf("[gt-agent] auto-unhook: %s\n", strings.TrimSpace(string(out)))
+			}
+		}
+
 		// Mark extraordinary if any error occurred
 		if extraordinary {
 			state.ExtraordinaryAction = true
@@ -686,6 +731,23 @@ func run() error {
 //
 // We capture the terminator so the parser knows when to close the block.
 var heredocStartRE = regexp.MustCompile(`<<-?\s*['"]?([A-Za-z_][A-Za-z0-9_]*)['"]?`)
+
+// trailingMarkdownBoldRE matches markdown-bold prose tacked onto the end
+// of a CMD line, e.g.
+//
+//	CMD: bd search "F23" --status "open" **Rationale for Command Change:**
+//
+// The model loves to append a bold-headed rationale paragraph on the same
+// line as the command. Anything from `<whitespace>**<text>**` onward is
+// not part of the shell command and must be stripped before execution.
+//
+// Constraints to avoid false positives:
+//   - Requires at least one whitespace character before the opening `**`,
+//     so shell globstars `**/*.go` (no space before) are NOT matched.
+//   - Requires 2+ characters between the `**` markers and at least one
+//     ASCII letter, so balanced `**` inside (unusual) shell args are
+//     less likely to match.
+var trailingMarkdownBoldRE = regexp.MustCompile(`\s+\*\*[^*\n]*[A-Za-z][^*\n]*\*\*.*$`)
 
 // parseLLMResponse extracts CMD blocks and a DONE summary from an LLM
 // response. It returns:
@@ -753,17 +815,52 @@ func parseLLMResponse(response string) (cmds []string, doneSummary string, hallu
 			cmd = strings.TrimSuffix(cmd, "```")
 			cmd = strings.TrimSpace(cmd)
 
+			// Strip same-line trailing markdown bold prose (e.g.
+			// `CMD: bd search "F23" ... **Rationale for Change:** ...`).
+			// The model frequently emits its own rationale paragraph on
+			// the same line as the command, which would otherwise be
+			// passed straight to the shell.
+			cmd = trailingMarkdownBoldRE.ReplaceAllString(cmd, "")
+			cmd = strings.TrimSpace(cmd)
+
 			if cmd == "" {
 				continue
 			}
 
+			// Heredoc must be detected on the *first* sub-segment before
+			// we split on inline `CMD:` markers, because heredocs span
+			// multiple lines and the rest-of-line split would clobber
+			// the terminator we're about to look for.
 			if term := detectHeredocTerm(cmd); term != "" {
 				heredocBuf = []string{cmd}
 				heredocTerm = term
 				continue
 			}
 
-			cmds = append(cmds, cmd)
+			// Split on inline `CMD:` markers: the model sometimes crams
+			// multiple commands onto a single line like
+			//   CMD: cmd1 CMD: cmd2 CMD: cmd3
+			// instead of emitting them on separate lines. Without this
+			// split, the rest of the line is appended as arguments to
+			// the first command and the shell errors out (typically on
+			// an unterminated quoted string). The leading-space guard
+			// prevents accidental matches inside a real argument value.
+			for _, sub := range splitInlineCMDs(cmd) {
+				sub = strings.TrimSpace(sub)
+				if sub == "" {
+					continue
+				}
+				// A `CMD: DONE: …` sentinel from this split is a model
+				// telling us it's done; capture the summary and drop the
+				// pseudo-command instead of shelling out `DONE: …`.
+				if strings.HasPrefix(sub, "DONE:") {
+					if doneSummary == "" {
+						doneSummary = strings.TrimSpace(strings.TrimPrefix(sub, "DONE:"))
+					}
+					continue
+				}
+				cmds = append(cmds, sub)
+			}
 			continue
 		}
 
@@ -775,6 +872,23 @@ func parseLLMResponse(response string) (cmds []string, doneSummary string, hallu
 	// An unterminated heredoc is discarded on purpose — we do not want to
 	// execute a fragment that might contain prose.
 	return cmds, doneSummary, false
+}
+
+// inlineCMDMarkerRE matches the inline `CMD:` separator the model
+// sometimes uses to cram multiple commands onto a single line. The
+// leading whitespace requirement prevents this regex from splitting
+// inside an argument value (e.g. `echo "ACMD:" should not split).
+var inlineCMDMarkerRE = regexp.MustCompile(`\s+CMD:\s*`)
+
+// splitInlineCMDs splits cmd on inline `CMD:` markers. If cmd contains
+// no inline markers, it returns []string{cmd}. The leading-space rule
+// in inlineCMDMarkerRE means we won't accidentally split on `CMD:`
+// substrings that are part of an argument.
+func splitInlineCMDs(cmd string) []string {
+	if !inlineCMDMarkerRE.MatchString(cmd) {
+		return []string{cmd}
+	}
+	return inlineCMDMarkerRE.Split(cmd, -1)
 }
 
 // detectHeredocTerm returns the heredoc terminator word if cmd opens a
@@ -818,20 +932,61 @@ func normalizeGeneratedCommand(cmd string) (string, bool) {
 		rewritten = true
 	}
 
+	// `gd …` is a recurring typo for `gt …`. There is no `gd` binary on
+	// the agent PATH, and the model frequently emits `gd patrol report`,
+	// `gd bd show …`, etc. Rewrite the leading `gd ` to `gt ` so the
+	// agent does the right thing instead of failing with `gd: not found`.
+	if strings.HasPrefix(trimmed, "gd ") {
+		trimmed = "gt " + strings.TrimPrefix(trimmed, "gd ")
+		rewritten = true
+	}
+
 	// Ensure mkdir is idempotent to avoid exit status 1 on existing dirs
 	if strings.HasPrefix(trimmed, "mkdir ") && !strings.Contains(trimmed, " -p") {
 		trimmed = strings.Replace(trimmed, "mkdir ", "mkdir -p ", 1)
 		rewritten = true
 	}
 
-	if hasCommandPrefix(trimmed, "gt handoff") && !strings.Contains(trimmed, " -y") && !strings.Contains(trimmed, " --yes") {
-		trimmed += " -y"
-		rewritten = true
+	if hasCommandPrefix(trimmed, "gt handoff") {
+		// `gt handoff <role> -s SUBJ -m BODY` is a recurring miscommand: the
+		// CLI's remote-handoff path doesn't ship the mail (the -s/-m flags are
+		// silently dropped for cross-role handoff) and the path errors out
+		// with "provider does not support remote handoff" under NATS. What
+		// the agent actually means is "send mail to that role and wake them
+		// up", so rewrite to `gt mail send <role>/ -s SUBJ -m BODY`.
+		if rewritten, ok := rewriteHandoffToMail(trimmed); ok {
+			return rewritten, true
+		}
+		if !strings.Contains(trimmed, " -y") && !strings.Contains(trimmed, " --yes") {
+			trimmed += " -y"
+			rewritten = true
+		}
 	}
 	if hasCommandPrefix(trimmed, "gt prime") {
 		return "gt prime", true
 	}
+	// `gt hook` has real subcommands (show, attach, detach, clear,
+	// status). Only collapse `gt hook` when it's bare or followed by
+	// noise the agent invented (placeholders, raw bead IDs as
+	// positional args, etc.). A recognized subcommand passes through
+	// untouched.
 	if hasCommandPrefix(trimmed, "gt hook") {
+		fields := strings.Fields(trimmed)
+		if len(fields) <= 2 {
+			return "gt hook", true
+		}
+		validHookSubcmds := map[string]bool{
+			"show":   true,
+			"attach": true,
+			"detach": true,
+			"clear":  true,
+			"status": true,
+		}
+		if validHookSubcmds[fields[2]] {
+			// Preserve the real subcommand and its arguments.
+			return trimmed, rewritten
+		}
+		// Unknown trailing args (model hallucination) — collapse to bare.
 		return "gt hook", true
 	}
 	if hasCommandPrefix(trimmed, "nudge") {
@@ -883,6 +1038,20 @@ func normalizeGeneratedCommand(cmd string) (string, bool) {
 		fmt.Fprintf(os.Stderr, "[gt-agent] ⚠ REJECTED inappropriate `--formula shiny` sling for role %q: %q\n", currentRole, trimmed)
 		return "true", true
 	}
+	if hasInvalidSlingTarget(trimmed) {
+		fmt.Fprintf(os.Stderr, "[gt-agent] ⚠ REJECTED hallucinatory `gt sling` with leading-slash target (rig name is missing): %q\n", trimmed)
+		return "true", true
+	}
+	// Rewrite `gt sling … <rig>/polecats [--create] …` to
+	// `gt sling … <rig> [--create] …`. The CLI rejects the bare
+	// `<rig>/polecats` form ("polecats requires a polecat name; or use
+	// just '<rig>' to auto-spawn") but the LLM keeps emitting it. The
+	// rewrite preserves intent (auto-spawn a polecat in that rig) and
+	// saves a wasted LLM turn.
+	if rewrote, ok := rewriteBareRigPolecats(trimmed); ok {
+		fmt.Fprintf(os.Stderr, "[gt-agent] ↻ Rewrote `<rig>/polecats` → `<rig>` (CLI requires a specific polecat name or bare rig for auto-spawn): %q -> %q\n", trimmed, rewrote)
+		return rewrote, true
+	}
 
 	// 4. Reject commands containing unreplaced placeholders like <bead-id>, [bead], or [rig].
 	if containsPlaceholder(trimmed) {
@@ -909,6 +1078,118 @@ func hasCommandPrefix(cmd, prefix string) bool {
 	return strings.HasPrefix(cmd, prefix+" ")
 }
 
+// knownHandoffRoles enumerates the cross-role handoff targets the LLM
+// commonly types. Only these are rewritten to `gt mail send`. A handoff
+// of a bead id (e.g. `gt handoff hq-wisp-foo`) or a fully-qualified
+// session name is left untouched.
+var knownHandoffRoles = map[string]bool{
+	"mayor":     true,
+	"planner":   true,
+	"architect": true,
+	"qa":        true,
+	"witness":   true,
+	"refinery":  true,
+	"mechanic":  true,
+	"deacon":    true,
+	"crew":      true,
+}
+
+// rewriteHandoffToMail converts `gt handoff <role> [-s X] [-m Y]` into
+// `gt mail send <role>/ [-s X] [-m Y]`. Returns (newCmd, true) on rewrite
+// or ("", false) if cmd is not in the expected cross-role-handoff shape.
+//
+// We deliberately preserve everything after `-s` / `-m`, including the
+// shell quoting the LLM emitted, by working on token boundaries via
+// strings.Fields and then re-quoting subject/message values that contain
+// whitespace.
+func rewriteHandoffToMail(cmd string) (string, bool) {
+	parts := strings.Fields(cmd)
+	if len(parts) < 3 || parts[0] != "gt" || parts[1] != "handoff" {
+		return "", false
+	}
+	role := strings.TrimSuffix(parts[2], "/")
+	if !knownHandoffRoles[role] {
+		return "", false
+	}
+
+	// Parse remaining tokens looking for -s / -m / --subject / --message
+	// values. We pass everything else through untouched (e.g. --yes, -c).
+	subject := ""
+	message := ""
+	var extra []string
+	for i := 3; i < len(parts); i++ {
+		tok := parts[i]
+		switch tok {
+		case "-s", "--subject":
+			if i+1 < len(parts) {
+				subject, i = joinQuotedValue(parts, i+1)
+			}
+		case "-m", "--message":
+			if i+1 < len(parts) {
+				message, i = joinQuotedValue(parts, i+1)
+			}
+		case "-y", "--yes":
+			// gt mail send doesn't need a confirmation flag — drop it.
+		default:
+			extra = append(extra, tok)
+		}
+	}
+
+	out := []string{"gt", "mail", "send", role + "/"}
+	if subject != "" {
+		out = append(out, "-s", shellQuote(subject))
+	}
+	if message != "" {
+		out = append(out, "-m", shellQuote(message))
+	}
+	out = append(out, extra...)
+	return strings.Join(out, " "), true
+}
+
+// joinQuotedValue is a small helper that consumes one logical "value"
+// from a tokenized command line, re-joining tokens that were originally
+// inside a quoted string. It returns the unquoted string and the index
+// of the last token consumed.
+//
+// Example: tokens [`"Architecture`, `Ready"`] starting at i=0 returns
+// ("Architecture Ready", 1).
+func joinQuotedValue(parts []string, start int) (string, int) {
+	tok := parts[start]
+	// Single token, no opening quote → return as-is.
+	if !(strings.HasPrefix(tok, "\"") || strings.HasPrefix(tok, "'")) {
+		return trimQuotes(tok), start
+	}
+	quote := tok[:1]
+	// Same-token quoted value, e.g. `"Architecture"`.
+	if strings.HasSuffix(tok, quote) && len(tok) > 1 {
+		return strings.Trim(tok, quote), start
+	}
+	// Multi-token quoted value — find the closing quote.
+	buf := []string{strings.TrimPrefix(tok, quote)}
+	for j := start + 1; j < len(parts); j++ {
+		t := parts[j]
+		if strings.HasSuffix(t, quote) {
+			buf = append(buf, strings.TrimSuffix(t, quote))
+			return strings.Join(buf, " "), j
+		}
+		buf = append(buf, t)
+	}
+	// No closing quote found — return what we have.
+	return strings.Join(buf, " "), len(parts) - 1
+}
+
+// shellQuote wraps s in double quotes, escaping any embedded `"` so that
+// the resulting token is safe to splice into a /bin/sh -c command line.
+func shellQuote(s string) string {
+	if s == "" {
+		return "\"\""
+	}
+	if !strings.ContainsAny(s, " \t\"'\\") {
+		return s
+	}
+	return "\"" + strings.ReplaceAll(s, "\"", "\\\"") + "\""
+}
+
 func rewriteMolCurrent(cmd string) string {
 	parts := strings.Fields(cmd)
 	args := parts[3:]
@@ -920,8 +1201,17 @@ func rewriteMolCurrent(cmd string) string {
 
 var placeholderRe = regexp.MustCompile(`<[a-zA-Z0-9_-]+>`)
 
+// snakeBracketPlaceholderRe matches the classic snake_case-style LLM
+// hallucination `[foo_bar]`, `[command_for_item_X]`, `[task_name]`, etc.
+// We deliberately require at least one underscore so we don't trample
+// legitimate shell uses of `[foo]` (test brackets, array access, etc.).
+var snakeBracketPlaceholderRe = regexp.MustCompile(`\[[A-Za-z][A-Za-z0-9]*(?:_[A-Za-z0-9]+)+\]`)
+
 func containsPlaceholder(cmd string) bool {
 	if placeholderRe.MatchString(cmd) {
+		return true
+	}
+	if snakeBracketPlaceholderRe.MatchString(cmd) {
 		return true
 	}
 	for _, placeholder := range []string{
@@ -994,6 +1284,30 @@ func hasInvalidPatrolCommand(cmd string) bool {
 			}
 		}
 	}
+	// Catch the recurring `gt patrol report --incident --status
+	// --recommendation --sirius …` hallucinations. The real command
+	// only accepts --summary (required) and --steps. Any other flag
+	// indicates the model is fabricating an API.
+	if verb == "report" {
+		validReportFlags := map[string]bool{
+			"--summary": true, "-s": true,
+			"--steps": true,
+			"--help":  true, "-h": true,
+			"--json": true, "--verbose": true, "-v": true,
+		}
+		for _, p := range parts[3:] {
+			if !strings.HasPrefix(p, "-") {
+				continue
+			}
+			flag := p
+			if i := strings.Index(p, "="); i >= 0 {
+				flag = p[:i]
+			}
+			if !validReportFlags[flag] {
+				return true
+			}
+		}
+	}
 	return false
 }
 
@@ -1026,6 +1340,197 @@ func hasInvalidShinyFormula(cmd, role string) bool {
 		}
 	}
 	return false
+}
+
+// hasInvalidSlingTarget catches a recurring mayor hallucination where the
+// LLM copies an unrendered template like `gt sling … /architect` or
+// `gt sling … /polecats --create` — i.e. a target with a leading slash
+// and no rig prefix. The CLI rejects those with "empty path segment at
+// position 0", and the model retries the same bad syntax. We rewrite
+// such commands to a harmless `true` so the agent's next turn sees the
+// rejection log and corrects course.
+//
+// We intentionally do NOT try to guess the right rig name — the Mayor
+// must learn to substitute the real rig.
+func hasInvalidSlingTarget(cmd string) bool {
+	if !hasCommandPrefix(cmd, "gt sling") {
+		return false
+	}
+	parts := strings.Fields(cmd)
+	// Skip well-known flags + their values so we only inspect positional
+	// arguments for the bad leading-slash pattern.
+	skip := false
+	for i := 2; i < len(parts); i++ {
+		p := parts[i]
+		if skip {
+			skip = false
+			continue
+		}
+		if strings.HasPrefix(p, "--") {
+			// Long flags with values: --on X, --formula Y, --merge Z, --crew W,
+			// --base-branch B, --message M, --subject S, --agent A, --account C,
+			// --max-concurrent N, --args A.
+			switch p {
+			case "--on", "--formula", "--merge", "--crew", "--base-branch",
+				"--message", "--subject", "--agent", "--account",
+				"--max-concurrent", "--args", "--var":
+				skip = true
+			}
+			continue
+		}
+		if strings.HasPrefix(p, "-") {
+			// Short flags. Only -a / -m / -s / -n take a value.
+			switch p {
+			case "-a", "-m", "-s", "-n":
+				skip = true
+			}
+			continue
+		}
+		// Positional argument: leading slash is the bug we are catching.
+		if strings.HasPrefix(p, "/") {
+			return true
+		}
+	}
+	return false
+}
+
+// handoffRoles are the roles whose contract is "do once, hand off,
+// stop". When they emit a DONE summary indicating successful handoff,
+// the agent should auto-clear its hook so it doesn't keep re-planning
+// the same bead next patrol.
+//
+// Mayor / Witness / Refinery / Mechanic / Deacon are NOT in this list:
+// they are coordinators with rolling workloads and should keep their
+// hook between cycles.
+var handoffRoles = map[string]bool{
+	"planner":   true,
+	"architect": true,
+	"qa":        true,
+}
+
+// handoffSummaryKeywords are substrings in a DONE summary that
+// indicate the agent has handed off and the hook should be cleared.
+// Conservative on purpose: only fire when the model explicitly states
+// it has handed off / completed / finished. A summary like
+// "still investigating X" must NOT trigger the unhook.
+var handoffSummaryKeywords = []string{
+	"handed off",
+	"hand off",
+	"handoff",
+	"plan complete",
+	"plan ready",
+	"design complete",
+	"design ready",
+	"architecture ready",
+	"architecture complete",
+	"review complete",
+	"qa complete",
+	"qa ready",
+}
+
+// shouldAutoUnhookAfterHandoff returns true if the (role, summary) pair
+// indicates a clean handoff cycle for a single-shot role. Returns false
+// for empty summary, non-handoff roles, or summaries that look like
+// failure / progress reports.
+func shouldAutoUnhookAfterHandoff(role, summary string) bool {
+	if !handoffRoles[role] {
+		return false
+	}
+	if summary == "" {
+		return false
+	}
+	lower := strings.ToLower(summary)
+	// Negative keywords: don't unhook if the summary signals the work
+	// is NOT really finished. The agent is still investigating, blocked,
+	// stalled, or reporting an error.
+	for _, neg := range []string{
+		"unable to proceed",
+		"missing",
+		"stalled",
+		"blocked",
+		"error",
+		"failure",
+		"failed",
+		"investigating",
+		"in progress",
+	} {
+		if strings.Contains(lower, neg) {
+			return false
+		}
+	}
+	for _, kw := range handoffSummaryKeywords {
+		if strings.Contains(lower, kw) {
+			return true
+		}
+	}
+	return false
+}
+
+// rewriteBareRigPolecats rewrites `gt sling … <rig>/polecats …` to
+// `gt sling … <rig> …`. Returns (newCmd, true) on rewrite, (cmd, false)
+// otherwise.
+//
+// Targets like `<rig>/polecats/<name>` (a specific polecat) are NOT
+// rewritten — those are valid CLI targets.
+//
+// Because `strings.Fields` would split a quoted multi-word flag value
+// (e.g. `--message "see testgt2/polecats for context"`) into separate
+// tokens and falsely match the polecats segment as a positional, we
+// track quoted-string state and only consider tokens outside quotes.
+func rewriteBareRigPolecats(cmd string) (string, bool) {
+	if !hasCommandPrefix(cmd, "gt sling") {
+		return cmd, false
+	}
+	parts := strings.Fields(cmd)
+	skipNext := false
+	insideQuote := false
+	rewrote := false
+	for i := 2; i < len(parts); i++ {
+		p := parts[i]
+		// Maintain quote state by counting unescaped " in this token.
+		// A token like `"see` opens a quote that closes on a later
+		// token containing `context"`. Tokens fully inside a quoted
+		// value (no `"`) must be skipped from positional analysis.
+		wasInside := insideQuote
+		if strings.Count(p, `"`)%2 == 1 {
+			insideQuote = !insideQuote
+		}
+		if wasInside {
+			continue
+		}
+		if skipNext {
+			skipNext = false
+			continue
+		}
+		if strings.HasPrefix(p, "--") {
+			switch p {
+			case "--on", "--formula", "--merge", "--crew", "--base-branch",
+				"--message", "--subject", "--agent", "--account",
+				"--max-concurrent", "--args", "--var":
+				skipNext = true
+			}
+			continue
+		}
+		if strings.HasPrefix(p, "-") && !strings.HasPrefix(p, "--") {
+			switch p {
+			case "-a", "-m", "-s", "-n":
+				skipNext = true
+			}
+			continue
+		}
+		// Positional. Match bare `<rig>/polecats` (no further /name).
+		if strings.HasSuffix(p, "/polecats") && strings.Count(p, "/") == 1 {
+			rig := strings.TrimSuffix(p, "/polecats")
+			if rig != "" {
+				parts[i] = rig
+				rewrote = true
+			}
+		}
+	}
+	if !rewrote {
+		return cmd, false
+	}
+	return strings.Join(parts, " "), true
 }
 
 func hasInvalidSlingOnBead(cmd string) bool {

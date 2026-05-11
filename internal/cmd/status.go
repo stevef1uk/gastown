@@ -1731,6 +1731,7 @@ func discoverGlobalAgents(townRoot string, allSessions map[string]bool, allAgent
 		{constants.RoleMayor, constants.RoleMayor + "/", mayorSession, constants.RoleMayor, beads.MayorBeadIDTown()},
 		{constants.RoleDeacon, constants.RoleDeacon + "/", deaconSession, constants.RoleDeacon, beads.DeaconBeadIDTown()},
 		{constants.RolePlanner, constants.RolePlanner + "/", session.PlannerSessionName(), constants.RolePlanner, beads.PlannerBeadIDTown()},
+		{constants.RoleMechanic, constants.RoleMechanic + "/", session.MechanicSessionName(), constants.RoleMechanic, beads.MechanicBeadIDTown()},
 	}
 
 	agents := make([]AgentRuntime, len(agentDefs))
@@ -1884,17 +1885,9 @@ func discoverRigAgents(allSessions map[string]bool, r *rig.Rig, crews []string, 
 		})
 	}
 
-	// Mechanic (rig-bound)
-	mechanicDir := filepath.Join(r.Path, "mechanic")
-	if _, err := os.Stat(mechanicDir); err == nil {
-		defs = append(defs, agentDef{
-			name:    constants.RoleMechanic,
-			address: r.Name + "/mechanic",
-			session: session.MechanicSessionNameForRig(r.Name),
-			role:    constants.RoleMechanic,
-			beadID:  beads.MechanicBeadIDWithPrefix(prefix, r.Name),
-		})
-	}
+	// Mechanic is town-level only — no per-rig mechanic.
+	// (Previously gt up spawned one per rig; that is now removed. The
+	// single town mechanic at hq-mechanic scans logs for all rigs.)
 
 	// Refinery
 	if r.HasRefinery {

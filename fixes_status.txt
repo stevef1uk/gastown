@@ -1,5 +1,5 @@
 # Gas Town Fixes Status
-Last updated: 2026-05-10
+Last updated: 2026-05-11
 
 ## Goal
 Fix the end-to-end Gas Town flow where a spec can be handed to agents who autonomously implement it.
@@ -390,6 +390,23 @@ Fix the end-to-end Gas Town flow where a spec can be handed to agents who autono
 - **Fix**: Updated `outputMoleculeContext` to accept `hookedBead` and skip patrol instructions if any work is already hooked.
 - **Status**: Fixed and Installed.
 
+### 58. [FIXED] CMD-block parser swallows prose between commands (architect handoff stall)
+- **File**: `cmd/gt-agent/main.go`, `cmd/gt-agent/main_test.go`
+- **Issue**: When the LLM emitted multiple `CMD:` blocks separated by Markdown prose (e.g. `### Step 2`, `Since the role is …`, closing ` ``` ` fences), the in-`run()` parser left `inCmdBlock = true` and appended every subsequent line to the previous command. Closing fences were `continue`'d but never terminated the block. Result: the architect's `printf` ran with a multi-line tail of prose attached (`Since: not found`, `As: not found`, `EOF in backquote substitution`), and the follow-up `gt handoff mayor …` command was rewritten to include all trailing prose + a stray `-y`, so the handoff to mayor never reached the CLI.
+- **Fix**: Extracted parser into testable `parseLLMResponse(response)` returning `(cmds, doneSummary, hallucinated)`. CMD blocks are now single-line by default. Heredocs (`cat <<'EOF' > file`) enter a strict heredoc mode that ends on a line whose trimmed content equals the captured terminator; unterminated heredocs are discarded rather than executed. Prose, headings, blank lines, and closing ` ``` ` fences no longer bleed into the previous command. Added `parseLLMResponse` + `detectHeredocTerm` helpers and 13 new unit tests including a direct regression for the architect handoff bug.
+- **Status**: Fixed, tested (`go test ./cmd/gt-agent` green), built (v1.0.1-356-g5e2af996-dirty), deployed via `gt down`/`make install`/`gt up`.
+
+### 59. [FIXED] Planner hallucinates fake `gt patrol*` commands; Witness/Refinery sling `shiny` formula at their own patrol bead
+- **Files**: `cmd/gt-agent/main.go`, `cmd/gt-agent/main_test.go`, `internal/templates/roles/planner.md.tmpl`
+- **Issue (planner)**: Logs showed the planner inventing `gt patrolling mol-planner-patrol cycle 24`, `gt patrol start … -c 24`, `gt patrol new … -f <url>`, and `gt patrol new --httpf "…"`. None of those subcommands or flags exist; the planner looped on stderr help text.
+- **Issue (witness/refinery)**: The witness ran `gt sling hq-wisp-u0z1r --formula shiny` against its own `mol-witness-patrol` bead. The `shiny` engineering formula (design → implement → review → test → submit) has no business being bonded to a patrol bead, but no guard rejected it; `mol bond` failed with the bead already hooked and the agent went into an Extraordinary-action retry.
+- **Fix**:
+    1. Added `hasInvalidPatrolCommand` to `normalizeGeneratedCommand`. Allows only the real verbs (`new`, `report`, `scan`, `digest`) plus help flags; rejects `gt patrolling`, `gt patrol <unknown-verb>`, and the `-f` / `--httpf` / `-c` flag hallucinations for `gt patrol new` as harmless `true` NOPs.
+    2. Added `hasInvalidShinyFormula` guard that consults a new `currentRole` package var (populated in `run()` from `roleCanonical`). When witness/refinery/mechanic/qa/planner attempts `gt sling … --formula shiny …`, it is rewritten to `true` with a stderr warning. Mayor/Architect/Crew/Polecat are unaffected.
+    3. Updated `internal/templates/roles/planner.md.tmpl` to explicitly tell the planner: "If hook is empty AND inbox has no unread mail, you are idle. Do NOT invent commands. Output a single `DONE: idle` and stop." Also enumerates the four real `gt patrol` subcommands inline so the model has them in context.
+- **Tests**: `TestHasInvalidPatrolCommand` (13 cases), `TestHasInvalidShinyFormula` (16 cases), `TestNormalizeRejectsWitnessShinyAndBadPatrol` (end-to-end through `normalizeGeneratedCommand`).
+- **Status**: Fixed, tested, deployed (`gt down`/`make install`/`gt up`).
+
 ### [2026-05-11] Current State & Accomplishments
 - **Status**: **STABLE & AUTONOMOUS**.
 - **Accomplishments**:
@@ -398,3 +415,181 @@ Fix the end-to-end Gas Town flow where a spec can be handed to agents who autono
     - **E2E Flow Verified**: Architect -> Mayor -> Planner -> Mayor handoff loop is functional.
     - **High-Capacity Brains**: Architect, Mayor, and Planner are all confirmed to be using 70B+ models for reliable reasoning.
     - **Autonomous Signal Delivery**: NATS transport is reliably delivering signals between town and rig agents.
+
+### 60. [FIXED] `gt handoff <role>` silently drops subject/message under NATS
+- **Files**: `cmd/gt-agent/main.go`, `cmd/gt-agent/main_test.go`, `internal/templates/roles/architect.md.tmpl`, `internal/templates/roles/planner.md.tmpl`, `internal/templates/roles/qa.md.tmpl`, `internal/templates/roles/crew.md.tmpl`
+- **Issue**: `gt handoff` was designed for in-process tmux session cycling. Under `GT_SESSION_TRANSPORT=nats` a cross-role handoff like `gt handoff mayor -s "Architecture ready" -m "Check inbox"` returns "provider does not support remote handoff" and silently discards `-s`/`-m`. Templates instructed agents to use this command, so the entire architect → mayor signal was dropping on the floor.
+- **Fix**:
+    1. Added `rewriteHandoffToMail` to `normalizeGeneratedCommand`. When the LLM emits `gt handoff <known-role> -s X -m Y`, the agent rewrites it to `gt mail send <role>/ -s X -m Y` (preserving quoting via `joinQuotedValue` / `shellQuote`). `--stdin` heredoc form is preserved.
+    2. Updated architect/planner/qa/crew templates to use `gt mail send <target>/` + `gt nudge <target>` directly instead of `gt handoff`.
+- **Tests**: `TestRewriteHandoffToMail`, `TestNormalizeRewritesArchitectHandoff`.
+- **Status**: Fixed and deployed.
+
+### 61. [FIXED] `gt sling` rejects targets with leading slash
+- **Files**: `cmd/gt-agent/main.go`, `cmd/gt-agent/main_test.go`, `internal/templates/roles/mayor.md.tmpl`
+- **Issue**: Mayor template used `{{ .RigName }}/architect` placeholders. When the town mayor rendered the template with `RigName=""`, the LLM saw `/architect` and dutifully ran `gt sling mol-polecat-work --on hq-wisp-r9ag /polecats --create` — which failed with `invalid target "/polecats": empty path segment at position 0`. The mayor then logged the error as an Extraordinary action and entered a recovery loop.
+- **Fix**:
+    1. Added `hasInvalidSlingTarget` guard in `normalizeGeneratedCommand` that scans positional arguments of `gt sling` and rewrites the command to `true` (with a stderr warning) if any starts with `/`.
+    2. Updated `internal/templates/roles/mayor.md.tmpl` to use the literal `REAL-RIG/role` placeholder and added a "CRITICAL" warning showing correct vs. incorrect sling syntax (no leading slash).
+- **Tests**: `TestHasInvalidSlingTarget`.
+- **Status**: Fixed and deployed.
+
+### 62. [FIXED] Snake-bracket placeholder `[command_for_item_X]` slips past placeholder guard
+- **Files**: `cmd/gt-agent/main.go`, `cmd/gt-agent/main_test.go`
+- **Issue**: The planner emitted hallucinated commands like `[command_for_item_X]` and `[next_command_to_run]`. The existing `containsPlaceholder` only matched angle-bracket placeholders and a small allow-list of square-bracketed single words, so these went straight to the shell and produced `not found` errors.
+- **Fix**: Extended `containsPlaceholder` with `snakeBracketPlaceholderRe` (`\[[A-Za-z][A-Za-z0-9]*(?:_[A-Za-z0-9]+)+\]`) which catches any `[snake_case_with_at_least_one_underscore]` pattern. Rejected as a NOP.
+- **Tests**: `TestContainsPlaceholder_SnakeBracket`.
+- **Status**: Fixed and deployed.
+
+### 63. [FIXED] Mechanic stalls forever when any nudge arrives (LLM diversion)
+- **Files**: `cmd/gt-agent/main.go`
+- **Issue**: The mechanic has no LLM system prompt — it runs a hardcoded deterministic patrol script (`mechanicPatrolScript`). But the script path was only taken when `workItems == 0` after `await-signal` timed out. As soon as another agent nudged the mechanic (e.g. refinery: "Recovery initiated for Extraordinary action"), `workItems` became non-zero and the loop fell through to the LLM/multi-turn code path. With no template, no system prompt, and a stale `gt prime --hook` output, the mechanic just hung at "Processing 1 work item(s) (patrol #1)" with no further log output. Multiple stale nudges accumulated in the queue, so every restart immediately wedged.
+- **Fix**: Added an unconditional mechanic short-circuit at the top of the main loop (immediately after `gatherWork`). The mechanic now always increments `PatrolCount`, prints work-item count, runs `mechanicPatrolScript`, saves state, sleeps 2s, and continues — regardless of how many nudges are queued. Nudges are still drained, just ignored as "work items" since the deterministic script already covers the mechanic's responsibilities.
+- **Symptom signature**: `[gt-agent] Drained N nudge(s)` → `[gt-agent] Processing N work item(s) (patrol #1)` → no further output for minutes. Process alive (PID stable) but no LLM call, no patrol script, no exit.
+- **Status**: Fixed and deployed. After the fix the log progresses to `[gt-agent] Running mechanic patrol script...` → patrol output → next cycle.
+
+### 64. [FIXED] Two mechanics spawned (`hq-mechanic` + `te-<rig>-mechanic`); rig mechanic is redundant
+- **Files**: `internal/cmd/up.go`, `internal/cmd/up_test.go`, `internal/cmd/status.go`, `cmd/gt-agent/main.go`
+- **Issue**: `gt up` spawned both a town-level mechanic (`hq-mechanic`) and a per-rig mechanic (`te-<rig>-mechanic`) for every registered rig. Both ran the same deterministic patrol script. This doubled (or worse) the rate of "Mechanic detected Extraordinary action — please recover" nudges to every agent, contributing to the inbox bloat / recovery-loop pathology and the LLM-diversion bug in #63. `internal/beads/agent_ids.go` already declares mechanic as `TownLevelRoles`, so the per-rig mechanic was never canonical to begin with.
+- **Fix**:
+    1. Dropped `RoleMechanic` from `startRigAgentsWithPrefetch` (no more per-rig mechanic phase) and from the per-rig `services` aggregation loop in `runUp`.
+    2. Removed the `case constants.RoleMechanic:` from `startRigAgentPhase`'s worker switch and deleted the now-dead `upStartRigMechanic`.
+    3. Removed the per-rig mechanic entry from `gatherRigAgentDefs` in `status.go`.
+    4. Added the town mechanic to the `agentDefs` slice at status.go:1731 (alongside mayor/deacon/planner) so `gt status` actually shows it. Previously the town mechanic was running but invisible to `gt status`.
+    5. Relaxed `mechanicPatrolScript` to scan ALL recent agent logs instead of filtering by `*$current_rig*` (which was hardcoded to fall back to `"testgt2"` and excluded town-level logs entirely).
+- **Tests**: Updated `TestStartRigAgentsWithPrefetch_EmptyRigs` and `TestStartRigAgentsWithPrefetch_RecordsErrors` to the new four-return signature.
+- **Verification**: After deploy, `gt up` reports a single `✓ Mechanic: hq-mechanic` line and `gt status` shows one `🔧 mechanic` row at town level — no rig mechanic under `testgt2/`.
+- **Status**: Fixed and deployed.
+
+### 65a. [VERIFIED 2026-05-11 19:30] Planner end-to-end test on real epic
+- **Test bead**: `hq-hkc` "Plan Hello API implementation tasks (test bed for fix #65)" — small description pointing at testgt2/architect/architecture.md and testgt2/mayor/rig/SPEC.md.
+- **Procedure**: `bd close hq-eoi` (F23 fake), `gt sling hq-hkc planner`, `gt nudge planner`, monitor `logs/sessions/hq-planner.log` for 60s.
+- **Results** (all PASS):
+    - Planner read its hook (128 hq-hkc references), ran `gt bd show hq-hkc`, located parent.
+    - Created **11 child tasks** with proper `--parent hq-hkc` linkage (hq-hkc.1 … hq-hkc.11), covering analysis / TDD setup / data model / endpoints / validation / tests / docs / load test.
+    - Wired **9 dependencies** via `bd dep add` forming a sane TDD chain (`Analyze → Design → Implement → Tests`).
+    - Sent `gt mail send mayor/ -s "Hello API Implementation Plan Complete"` and `gt nudge mayor`.
+    - Regression counters all zero: 0 fake `F\d+/T\d+` IDs in shell, 0 `**Rationale**` markdown in shell, 0 new "Urgent: Resolve" mails, 0 surviving snake-bracket placeholders.
+    - One snake-bracket placeholder hallucination was correctly **caught and rejected**: `bd dep <REPLACE_WITH_DEPENDENCY_IDS> hq-hkc` → `true`. Fix #62 working.
+    - Bonus: on the next patrol cycle the planner couldn't find `architecture.md` (town planner has no rig context) and honestly mailed mayor `"Invalid Task: hq-hkc — specification and architecture documents are missing"` instead of inventing fake IDs. Exactly the safe-failure behaviour the hardened template targets.
+- **Conclusion**: Fixes #58, #59, #62, #65 are confirmed working under live load with a town-level 70B planner against a real epic.
+
+### 65. [FIXED] Same-line markdown bold prose bleeds into shell command (planner F23 hallucination)
+- **Files**: `cmd/gt-agent/main.go`, `cmd/gt-agent/main_test.go`, `internal/templates/roles/planner.md.tmpl`
+- **Issue**: Fix #58 stripped prose on *subsequent* lines but the planner started emitting same-line rationale tails like:
+  ```
+  CMD: bd search "F23" --priority-max "P0" --status "open" **Rationale for Command Change:**
+  ```
+  The trailing `**Rationale for Command Change:**` is on the same logical line as the command, so the single-line parser took it as part of the shell command and executed `bd search "F23" ... **Rationale for Command Change:**`, which bd cheerfully accepted as a search term: `No issues found matching 'F23 **Rationale for Command Change:**'`.
+- **Deeper symptom**: The planner invented bead IDs entirely (`F23`, `T34`, `T67`, `T89`, `Patrol Cycle #55`). Real Gas Town bead IDs look like `hq-wisp-xxxx`, `hq-NNN.X-N`, or `te-wisp-xxxx`. The planner then sent `gt mail send mayor/ -s "Urgent: Resolve F23 to Unblock Tasks"` polluting mayor's inbox with fake urgent work, ran `bd show F23` (404), `bd search "F23" --all` (invalid flag), and finally `bd create --status "open"` (also invalid flag) — burning LLM turns and creating fake beads about a non-existent ID.
+- **Fix**:
+    1. Added `trailingMarkdownBoldRE` (`\s+\*\*[^*\n]*[A-Za-z][^*\n]*\*\*.*$`) and applied it after the fence-strip step in `parseLLMResponse`. Strips ` **anything containing letters**` and any trailing content from CMD lines. Carefully constructed so shell globstars (`ls **/*.go` — no whitespace before `**`) survive untouched.
+    2. Updated `internal/templates/roles/planner.md.tmpl` with a new **HARD RULES — NO HALLUCINATIONS** section:
+       - "NEVER invent bead/task IDs" with explicit examples of real-vs-fake formats.
+       - "NEVER mail the mayor about work you cannot prove exists" — must have seen the ID in real `gt`/`bd` output during the same patrol.
+       - "NEVER append a Markdown rationale paragraph to a CMD: line."
+       - "NEVER invent flags" — points out `--all` is not on `bd search`, `--status` is not on `bd create`.
+- **Tests**: 4 new `TestParseLLMResponse` subtests:
+    - `trailing markdown bold prose on CMD line is stripped`
+    - `trailing markdown bold followed by more prose is stripped`
+    - `shell globstar **/* is preserved` (false-positive guard)
+    - `trailing markdown bold with multiple **bold** segments strips from first`
+- **Status**: Fixed and deployed.
+
+### 66. [FIXED] Inline `CMD:` markers cram multiple commands onto one line
+- **Files**: `cmd/gt-agent/main.go`, `cmd/gt-agent/main_test.go`
+- **Issue**: When the planner reached a "handoff" turn, the LLM emitted:
+  ```
+  CMD: bd update hq-bbn --priority 2 CMD: gt mail send mayor/ -s "ready" -m "go" CMD: gt nudge mayor "check" CMD: DONE: handed off to mayor
+  ```
+  All four CMDs on a single line. My existing parser only split on newlines, so it took the whole tail as arguments to `bd update`, producing `gt bd update hq-bbn --priority 2 CMD: gt mail send mayor/ -s "Hello API plan ready" -m "..."` and the shell choked on the unterminated quoted string.
+- **Fix**:
+    - Added `inlineCMDMarkerRE` (`\s+CMD:\s*`) and `splitInlineCMDs` helper.
+    - In `parseLLMResponse`, after stripping fences and trailing markdown bold, split the residual command on inline `CMD:` markers and treat each non-empty fragment as a separate command.
+    - A trailing `DONE: …` fragment from the split is consumed as `doneSummary` (not executed as a `DONE:` shell command).
+    - Leading-whitespace requirement in the regex prevents accidental splits inside argument values (e.g. `echo "prefixCMD:notamarker"`).
+    - Heredoc detection still runs on the FIRST sub-segment before the split, so multi-line heredocs aren't affected.
+- **Tests**: 3 new `TestParseLLMResponse` subtests:
+    - `inline CMD: markers split into separate commands`
+    - `inline CMD: trailing DONE: is captured as summary`
+    - `non-leading CMD: in argument is preserved`
+- **Status**: Fixed and deployed.
+
+### 67. [FIXED] `gt patrol report` flag hallucinations + `gd` → `gt` typo
+- **Files**: `cmd/gt-agent/main.go`, `cmd/gt-agent/main_test.go`, `internal/templates/roles/planner.md.tmpl`
+- **Issue (flags)**: After the planner handed off to mayor it kept emitting commands instead of stopping. Sample hallucination:
+  ```
+  CMD: gt patrol report --incident hq-bbn.3 --status "STALLED: Missing Critical Artifact"
+       --summary "..." --recommendation "Await response from mayor/"
+  ```
+  Real `gt patrol report` only accepts `--summary` (required) and `--steps`. `--incident`, `--status`, `--recommendation`, `--sirius`, etc. are all fabricated. Fix #59 caught invalid VERBS but didn't validate FLAGS on `report`.
+- **Issue (typo)**: Same planner cycle emitted `CMD: gd patrol report …` (capital-G typo for `gt`). Shell failed with `gd: not found` (exit 127).
+- **Fix**:
+    1. Extended `hasInvalidPatrolCommand`: for `verb == "report"`, walk remaining flags and reject any not in the allow-list `{--summary, -s, --steps, --help, -h, --json, --verbose, -v}`.
+    2. Added a leading-`gd ` → `gt ` rewrite at the top of `normalizeGeneratedCommand` (before any other gt-specific rewriters), with negative-test coverage to ensure `gt patrol …`, `echo gd`, and `grep gd file` are not touched.
+    3. Updated `internal/templates/roles/planner.md.tmpl`:
+       - Renamed handoff step to **"HANDOFF + STOP"** with explicit instruction to emit `DONE: handed off to mayor` and stop after the nudge.
+       - Documented that `gt patrol report` is NOT a status-update channel and lists the real flags.
+       - Added a **"FILE PATH DISCIPLINE"** rule: when a bead description gives an absolute path, USE THAT EXACT PATH. Don't read `./architecture.md` (the planner had been reading a stale generic doc in its CWD instead of the rig-specific one).
+- **Tests**: 6 new `TestHasInvalidPatrolCommand` subtests covering the four bogus flags and two valid forms; new `TestNormalizeRewritesGdTypo` with 6 cases.
+- **Status**: Fixed and deployed.
+
+### 70. [FIXED] Planner/Architect/QA loop on the same bead forever (hook never clears after handoff)
+- **Files**: `cmd/gt-agent/main.go`, `cmd/gt-agent/main_test.go`, `internal/templates/roles/planner.md.tmpl`, `internal/templates/roles/architect.md.tmpl`, `internal/templates/roles/qa.md.tmpl`
+- **Issue**: Single-shot roles (planner / architect / qa) all share a "do-once, hand off, stop" contract. But nothing ever cleared their hook after handoff. Concrete observed state on `hq-bbn` "Plan FastAPI Hello World":
+    - Planner cycled the same bead 9+ times.
+    - Created 41 child tasks under it (e.g. `Implement FastAPI app` showing up as `hq-bbn.18`, `hq-bbn.20`, `hq-bbn.41` — three near-identical duplicates).
+    - Sent 9+ "Plan Complete" / "FastAPI Hello World Plan Ready" mails to mayor (`hq-wisp-0ik0`, `hq-wisp-fmmi`, `hq-wisp-va2y`, `hq-wisp-vh56`, `hq-wisp-pwqi`, `hq-wisp-3zqc`, `hq-wisp-vnef`, …) drowning mayor's inbox.
+    - Mayor couldn't distinguish "real" handoff from re-spam; ended up reading 12+ unread mails and never slung to a polecat.
+    - **Same pattern hit architect**: it hooked its own outgoing `hq-wisp-bjr5 'Architecture Ready'` bead and kept re-mailing mayor every patrol.
+- **Fix (two-layer, belt + suspenders)**:
+    1. **Template (explicit)**: planner/architect/qa templates now have a `**UNHOOK + STOP**` step that tells the agent to run `gt unhook` after `gt nudge mayor` and BEFORE emitting `DONE: …`. Reasoning is spelled out: "if you don't clear the hook, every subsequent patrol you'll see the same bead, re-mail mayor, and flood the inbox."
+    2. **Agent safety net (implicit)**: after each cycle, if `shouldAutoUnhookAfterHandoff(role, summary)` returns true, the agent runs `gt unhook` itself. This catches cases where the model forgets the explicit step.
+       - **Important**: the unhook is intentionally NOT gated on `!extraordinary`. Observed in production after the first attempt: planner emitted `Summary: handed off to mayor` cleanly, but a single failed sub-command earlier in the cycle (e.g. a `gt hook` typo) set `extraordinary = true`, which suppressed the unhook, and the loop kept re-firing the handoff. The keyword filter inside `shouldAutoUnhookAfterHandoff` is the real gate — it already rejects summaries containing `blocked`, `error`, `failed`, `missing`, `investigating`, etc. If the agent self-reports successful handoff, trust it.
+- **`shouldAutoUnhookAfterHandoff` heuristic**:
+    - Role must be in `handoffRoles = {planner, architect, qa}`. Mayor / Witness / Refinery / Mechanic / Deacon / Polecat / Crew are excluded (they have rolling workloads).
+    - Summary must contain a positive handoff keyword: `handed off`, `hand off`, `handoff`, `plan complete`, `plan ready`, `design complete`, `design ready`, `architecture ready`, `architecture complete`, `review complete`, `qa complete`, `qa ready`.
+    - Summary must NOT contain a failure / progress keyword: `unable to proceed`, `missing`, `stalled`, `blocked`, `error`, `failure`, `failed`, `investigating`, `in progress`.
+    - Empty summary never triggers.
+- **Tests**: `TestShouldAutoUnhookAfterHandoff` with 21 cases — happy paths for all three roles, all the negative keyword variants, empty summaries, and explicit pass-through for non-handoff roles (mayor / witness / refinery / mechanic / deacon / polecat / crew).
+- **Status**: Fixed and deployed.
+
+### 69. [FIXED] Normalizer kills real `gt hook` subcommands (`attach`/`detach`/`show`/`status`/`clear`)
+- **Files**: `cmd/gt-agent/main.go`, `cmd/gt-agent/main_test.go`
+- **Issue**: The normalizer had a blanket `if hasCommandPrefix(trimmed, "gt hook") { return "gt hook", true }` rule that collapsed every `gt hook <anything>` to bare `gt hook`. This silently broke real subcommands. Live mayor log showed:
+  ```
+  [gt-agent] $ gt hook attach hq-wisp-5zi3
+  ↓ (rewritten)
+  [gt-agent] $ gt hook
+  ```
+  After the rewrite the mayor saw "Nothing on hook" instead of the wisp it just tried to attach, so it could never advance the workflow.
+- **Fix**: Replaced the blanket collapse with subcommand-aware logic. If `gt hook` is followed by a recognized verb (`show`, `attach`, `detach`, `clear`, `status`), pass through verbatim. Bare `gt hook` and unrecognized trailing args still collapse (so hallucinated `gt hook patrolReport fooBar` still becomes a safe `gt hook`).
+- **Tests**: `TestNormalizePreservesGtHookSubcommands` with 8 cases covering all valid subcommands, bare form, and an unknown-arg hallucination.
+- **Status**: Fixed and deployed.
+
+### 68. [FIXED] Mayor slings to bare `<rig>/polecats` (CLI requires a specific polecat name)
+- **Files**: `cmd/gt-agent/main.go`, `cmd/gt-agent/main_test.go`
+- **Issue**: After the planner's clean handoff, the mayor tried to dispatch implementation work with:
+  ```
+  CMD: gt sling mol-polecat-work --on hq-bbn testgt2/polecats --create
+  ```
+  The CLI rejects this — `testgt2/polecats` requires a specific polecat name (e.g. `testgt2/polecats/toast`) or you use bare `testgt2` to auto-spawn. The mayor self-corrected on the next turn, but that's a wasted LLM call.
+- **Fix**: Added `rewriteBareRigPolecats` normalizer that rewrites positional sling targets ending in literal `/polecats` (single-segment, NOT `/polecats/<name>`) to bare `<rig>`. Preserves intent (auto-spawn) and saves the corrective round-trip.
+- **Quote-aware**: The helper tracks balanced `"` chars across `strings.Fields` tokens to avoid rewriting matches that occur inside a quoted multi-word flag value (e.g. `--message "see testgt2/polecats for context"`).
+- **Specific polecat preserved**: `gt sling … testgt2/polecats/toast` is NOT rewritten — that's a valid CLI target.
+- **Tests**: `TestRewriteBareRigPolecats` with 6 cases: bare rewrite, two-positional variants, specific-polecat passthrough, plain-rig no-op, non-sling no-op, and the quoted-value false-positive guard.
+- **Status**: Fixed and deployed.
+
+## Open Issues (next session)
+
+### Witness/Refinery inbox bloat — informational mail accumulating, no triage
+- **Symptom**: `gt mail inbox` for `testgt2/witness` showed 40 messages, all status pings from `testgt2/refinery`: `MERGE_QUEUE_EMPTY`, `MERGE_QUEUE_NONEMPTY`, `MERGE_READY <wisp>`, `MERGE_ACTIVE <wisp>`, `MERGE_FAILED <wisp>`, `REFINERY_STATUS`, `NO_POLECATS_FOUND testgt2`, plus their `RE: …` replies. The witness reads `gt mail inbox`, sees a wall of informational mail with nothing actionable, and loops every patrol re-reading the same 40 messages without archiving or summarising. Hook is empty (`Nothing on hook - no work slung`) so the witness has no actual work, but the noisy inbox makes it look busy.
+- **Root causes (hypothesised, needs investigation)**:
+    1. Refinery sends a status mail every patrol cycle even when nothing has changed (`MERGE_QUEUE_EMPTY` repeated). These should be either NATS-only signals (no permanent bead) or deduplicated.
+    2. Witness template doesn't tell the agent to archive/process refinery status mail in bulk.
+    3. `gt mail send` for routine status creates a permanent bead + Dolt commit (per `CLAUDE.md`), which is exactly what the project convention says NOT to do for routine traffic — `gt nudge` should be used instead.
+- **Proposed fix paths** (pick one or combine):
+    a. Convert refinery's `MERGE_*` and `REFINERY_STATUS` to `gt nudge` instead of `gt mail send` (lowest impact, matches `CLAUDE.md` guidance).
+    b. Add a witness normalizer: any inbox message from `<rig>/refinery` with subjects matching `MERGE_*|REFINERY_STATUS|NO_POLECATS_FOUND` is auto-archived after read.
+    c. Suppress duplicate status mail at refinery: only send when state transitions.
+- **Status**: NOT YET FIXED — logged for next session.

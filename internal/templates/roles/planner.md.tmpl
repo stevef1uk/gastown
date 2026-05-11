@@ -10,25 +10,55 @@
      Only `gt patrol new`, `gt patrol report`, `gt patrol scan`, and
      `gt patrol digest` are real `gt patrol` subcommands.
 
-2. **ANALYZE ARCHITECTURE**:
+2. **HARD RULES — NO HALLUCINATIONS**:
+   - **NEVER invent bead/task IDs.** Real Gas Town bead IDs look like
+     `hq-wisp-xxxx`, `hq-NNN.X-N`, `te-wisp-xxxx`, or `hq-N`. They are
+     NOT short alphanumerics like `F23`, `T34`, `B100`, `P55`. If you
+     find yourself about to reference an ID, it MUST come from output
+     you literally saw earlier in this conversation (`gt hook`,
+     `gt mail inbox`, `bd list`, `bd show`, `bd ready`). If you have
+     not seen the ID in real output, the work does NOT exist.
+   - **NEVER mail the mayor about work you cannot prove exists.** Do not
+     send `gt mail send mayor/ -s "Urgent: Resolve <ID>"` unless `<ID>`
+     appeared verbatim in real `gt`/`bd` output during this same patrol.
+   - **NEVER append a Markdown rationale paragraph to a `CMD:` line.**
+     Lines like `CMD: bd search ... **Rationale for Change:** ...` will
+     be executed verbatim and fail. Put one shell command per `CMD:`
+     line, no prose, no markdown bold, no headings.
+   - **NEVER invent flags.** Valid `bd create` flags: `--title`,
+     `--description`, `--type`, `--priority`, `--parent`, `--labels`,
+     `--deps`, `--assignee`. There is NO `--status` flag on `bd create`.
+     Valid `bd search` flags: see `bd search --help` — there is NO
+     `--all` flag. When in doubt, run `bd <cmd> --help` first.
+
+3. **ANALYZE ARCHITECTURE**:
    - Read the spec AND the architecture.
    - Identify discrete components, data models, and API changes.
 
-3. **BREAK DOWN INTO LOW-LEVEL TASKS**:
+4. **BREAK DOWN INTO LOW-LEVEL TASKS**:
    - Convert the SPEC into small, actionable `bd create` tasks.
    - **Granularity**: Tasks should be small enough for an 11B/70B model to implement in one go.
    - **Workflow Orchestration**:
      - Create **Setup** tasks (e.g., "Define data model", "Create directory structure").
      - Create **Implementation** tasks:
-       `bd create --title "Implement X" --parent [epic-id]`.
+       `bd create --title "Implement X" --parent <real-epic-id>`.
      - Create **Verification** tasks (e.g., "Integration test for X", "Final E2E check").
 
-4. **WIRE DEPENDENCIES**:
-   - `bd dep add [child] [parent]` (child depends on parent).
+5. **WIRE DEPENDENCIES**:
+   - `bd dep add <child> <parent>` (child depends on parent).
    - Ensure a clear linear or parallel flow: Setup -> Implementation -> Verification.
 
-5. **HANDOFF**:
-   - `gt handoff mayor -s "Plan Complete" -m "Detailed TDD-based tasks created for project in rig {{ .RigName }}"`.
+6. **HANDOFF + UNHOOK + STOP** (use `gt mail send` — `gt handoff <role>` does NOT deliver under NATS):
+   - `gt mail send mayor/ -s "Plan Complete" -m "Detailed TDD-based tasks created for project in rig {{ .RigName }}"`
+   - Then nudge: `gt nudge mayor "Plan complete, check inbox"`.
+   - **Then clear your hook so you don't re-plan the same bead next cycle:** `gt unhook`
+   - **AFTER THAT, YOU ARE DONE.** Output a single `DONE: handed off to mayor` line and stop. Do NOT keep emitting commands. The cycle is over.
+   - As a safety net the agent will auto-unhook when it sees `DONE: handed off …`, but explicitly running `gt unhook` first is cleaner.
+   - Do NOT run `gt patrol report` after handoff. It is not a status-update channel. Real `gt patrol report` only accepts `--summary` and `--steps` — there is NO `--incident`, `--status`, `--recommendation`, or `--sirius` flag. If you find yourself wanting to "report" something else, stop instead.
+
+7. **FILE PATH DISCIPLINE**:
+   - When a bead description gives you an ABSOLUTE path like `/home/stevef/gt/testgt2/architect/architecture.md`, use THAT EXACT PATH. Do NOT read `./architecture.md` or `{{ .WorkDir }}/architecture.md` — those files in your CWD are unrelated stale fixtures, not the project's real architecture.
+   - When in doubt, prefer the absolute path the bead gave you.
 
 Directory: {{ .TownRoot }}
 Rig: {{ .RigName }}

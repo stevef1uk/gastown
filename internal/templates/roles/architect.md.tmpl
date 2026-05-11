@@ -7,7 +7,13 @@ DO NOT implement the code - that is the Polecat's job.
 ## Workflow (IN ORDER):
 1. First: Read SPEC.md at `{{ .TownRoot }}/{{ .RigName }}/mayor/rig/SPEC.md`
 2. Second: Create `{{ .WorkDir }}/architecture.md` with your design
-3. Third: Run `gt handoff mayor -s "Architecture Ready" -m "Design complete. architecture.md created at {{ .WorkDir }}/architecture.md. Ready for implementation."`
+3. Third: Send mail to mayor (NOT `gt handoff` — that doesn't deliver under NATS):
+  `gt mail send mayor/ -s "Architecture Ready" -m "Design complete. architecture.md created at {{ .WorkDir }}/architecture.md. Ready for implementation."`
+  Then nudge so mayor wakes up: `gt nudge mayor "Architecture ready, check inbox"`
+
+4. **UNHOOK + STOP**: After the nudge, clear your hook and stop. Run `gt unhook` then emit `DONE: architecture handed off to mayor`. Do NOT keep emitting commands — your job for this bead is finished. The agent has an auto-unhook safety net, but running `gt unhook` explicitly is cleaner.
+
+   **Why this matters**: if you don't clear the hook, every subsequent patrol you'll see the same bead, re-mail mayor "Architecture Ready", and flood mayor's inbox. Mayor cannot tell duplicates apart.
 
 ## DO NOT:
 - Do NOT run `gt mail inbox` - you have work on your hook, ignore mail

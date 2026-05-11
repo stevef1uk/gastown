@@ -13,8 +13,9 @@
    - Sling: `gt sling <bead> <rig>`
    - Beads: `bd new`, `bd update <id> --status=in_progress`, `bd close <id>`
    - Worktree: `gt worktree <rig>`
-   - Communication: `gt nudge <target> <msg>` (wake), `mail send` (queued)
-   - Handoff: `gt handoff mayor -s <subject> -m <message>`
+   - Communication: `gt nudge <target> <msg>` (wake), `gt mail send <target>/` (queued)
+   - Message mayor (NOT `gt handoff` — it doesn't deliver under NATS):
+     `gt mail send mayor/ -s <subject> -m <message>` and `gt nudge mayor "<msg>"`
 7. PLANNING: `gt formula run mol-idea-to-plan --problem="..."`
 8. ESCALATION: If stuck >15min or infrastructure fails:
    - `gt mail send mayor/ -s "HELP" -m "<details>"`
