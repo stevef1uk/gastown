@@ -86,14 +86,34 @@ Both files must now have identical, non-trivial content. This double-
 write defends against any downstream agent (mayor, planner) that strips
 the `architect/` segment from the path they pass around.
 
-### Step 5 — Notify mayor
+### Step 5 — Notify mayor (include the PROJECT BEAD ID)
+
+Before mailing mayor, capture the bead ID that was on your hook when you
+started this cycle — that is the project bead mayor needs for Stage 2.
 
 ```
-gt mail send mayor/ -s "Architecture Ready" -m "Design complete. architecture.md at {{ .WorkDir }}/architecture.md (also mirrored at {{ .TownRoot }}/{{ .RigName }}/architecture.md). Ready for implementation."
+gt hook | grep -oE 'hq-wisp-[a-z0-9]+|hq-[a-z0-9]+' | head -1 > /tmp/project_bead.txt
+PROJECT_BEAD=$(cat /tmp/project_bead.txt)
+echo "project bead: $PROJECT_BEAD"
+```
+
+Then send the handoff mail with the project bead ID **prominently in the
+body** (mayor's template extracts it from there to sling Stage 2):
+
+```
+gt mail send mayor/ -s "Architecture Ready" -m "Project bead: $PROJECT_BEAD
+Design complete. architecture.md at {{ .WorkDir }}/architecture.md (also mirrored at {{ .TownRoot }}/{{ .RigName }}/architecture.md). Ready for implementation."
 gt nudge mayor "Architecture ready, check inbox"
 ```
 
 Do NOT use `gt handoff` — it does not deliver under NATS.
+
+**Why the project bead matters**: the mail wisp itself (hq-wisp-XXXX created
+by `gt mail send`) is NOT the project bead. Mayor must operate on the
+ORIGINAL project bead for every subsequent stage. Without `Project bead:`
+in the body, mayor has no way to discover it, the pipeline stalls, and
+the operator has to manually `gt hook attach <project-bead> planner` to
+unstick it. Always include the line.
 
 ### Step 6 — UNHOOK + STOP (only after steps 1-5 succeeded)
 

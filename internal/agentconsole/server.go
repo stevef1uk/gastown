@@ -14,6 +14,7 @@ import (
 	"sync"
 
 	"github.com/nats-io/nats.go"
+	"github.com/steveyegge/gastown/internal/constants"
 	"github.com/steveyegge/gastown/internal/events"
 	"github.com/steveyegge/gastown/internal/session"
 )
@@ -280,9 +281,23 @@ func (s *Server) discoverAgents() []Agent {
 
 	var agents []Agent
 
-	// Dynamically discover town-level agents from PID files.
+	// 1. Explicitly add town-level infrastructure agents.
+	// These are singletons that should always be visible, even when stopped.
+	infrastructureTownAgents := []string{
+		constants.RoleMayor,
+		constants.RoleDeacon,
+		constants.RolePlanner,
+		constants.RoleMechanic,
+	}
+	added := make(map[string]bool)
+	for _, role := range infrastructureTownAgents {
+		sessionName := "hq-" + role
+		agents = append(agents, s.inspectAgent(sessionName, "", role))
+		added[sessionName] = true
+	}
+
+	// 2. Dynamically discover other town-level agents from PID files (e.g. dogs).
 	// These use the 'hq-' prefix and live at the town root.
-	// Any PID file matching 'hq-<role>' (no additional dashes) is a town-level agent.
 	pidDir := filepath.Join(s.townRoot, ".gt-nats-pids")
 	if entries, err := os.ReadDir(pidDir); err == nil {
 		for _, entry := range entries {
@@ -290,13 +305,15 @@ func (s *Server) discoverAgents() []Agent {
 				continue
 			}
 			name := entry.Name()
-			// Match town-level pattern: hq-<role> (exactly one dash after hq)
-			if strings.HasPrefix(name, "hq-") && !strings.Contains(name[len("hq-"):], "-") {
-				role := name[len("hq-"):]
-				sessionName := name // PID file name is the session name
-				a := s.inspectAgent(sessionName, "", role)
-				agents = append(agents, a)
+			if !strings.HasPrefix(name, "hq-") || added[name] {
+				continue
 			}
+			// Match town-level pattern: hq-<role>
+			// We'll treat anything hq-* as a town agent if not already added.
+			parts := strings.Split(name, "-")
+			role := parts[len(parts)-1]
+			agents = append(agents, s.inspectAgent(name, "", role))
+			added[name] = true
 		}
 	}
 
@@ -321,10 +338,11 @@ func (s *Server) discoverAgents() []Agent {
 		// QA
 		qaID := session.QASessionName(prefix, rigName)
 		agents = append(agents, s.inspectAgent(qaID, rigName, "qa"))
-		
-		// Mechanic (rig-bound version)
-		mechanicID := session.MechanicSessionNameForRig(rigName)
-		agents = append(agents, s.inspectAgent(mechanicID, rigName, "mechanic"))
+
+		// Mechanic (Rig view of town-level mechanic)
+		// The town-level hq-mechanic patrols logs for all rigs, so we show its
+		// status in each rig group to meet user expectations.
+		agents = append(agents, s.inspectAgent(session.MechanicSessionName(), rigName, constants.RoleMechanic))
 
 		// Check crew
 		crewDir := filepath.Join(s.townRoot, rigName, "crew")
@@ -365,7 +383,6 @@ func (s *Server) inspectAgent(sessionName, rig, role string) Agent {
 		Name: sessionName, // Default to session name, overridden for crew/polecat
 	}
 
-	// Try to find the process
 	pid := s.findAgentPID(sessionName)
 	if pid > 0 {
 		a.PID = pid
@@ -376,27 +393,25 @@ func (s *Server) inspectAgent(sessionName, rig, role string) Agent {
 		}
 	} else {
 		a.Status = "stopped"
-		// For stopped agents, use the PID file's mod time as the "Last Run" time
-		for _, pidName := range []string{sessionName, sessionName + ".pid"} {
-			pidFile := filepath.Join(s.townRoot, ".gt-nats-pids", pidName)
-			if stat, err := os.Stat(pidFile); err == nil {
-				a.Since = stat.ModTime()
-				break
-			}
-		}
 	}
 
-	// Read agent type from config
+	// Set agent type (even if stopped, to show correct icon/label)
 	a.AgentType = s.detectAgentType(sessionName)
 
-	// Read recent activity from logs
+	// Provide friendly names for infrastructure agents
+	if strings.HasPrefix(sessionName, "hq-") {
+		roleName := strings.TrimPrefix(sessionName, "hq-")
+		a.Name = strings.Title(roleName)
+	}
+
+	// Try to read activity/state
 	logs := s.readAgentLogs(sessionName, 5)
 	if len(logs) > 0 {
 		a.Activity = logs[len(logs)-1]
 	}
 
-	// Read state file for more info
-	state := s.readAgentState(sessionName)
+	// Read state for patrol count etc.
+	state := s.readAgentState(sessionName, rig, role, a.Name)
 	if state.PatrolCount > 0 {
 		a.Activity = fmt.Sprintf("Patrol #%d", state.PatrolCount)
 	}
@@ -555,16 +570,23 @@ type AgentState struct {
 }
 
 // readAgentState reads the agent's state file.
-func (s *Server) readAgentState(sessionName string) AgentState {
+func (s *Server) readAgentState(sessionName, rig, role, name string) AgentState {
 	var state AgentState
 	// Try to find state file in agent directory
 	var statePath string
-	if strings.HasPrefix(sessionName, "hq-") {
-		role := strings.TrimPrefix(sessionName, "hq-")
+	if rig == "" {
+		// Town-level agent: townRoot/<role>/gt-agent-state.json
 		statePath = filepath.Join(s.townRoot, role, "gt-agent-state.json")
 	} else {
-		// For rig agents, need to parse session name
-		statePath = filepath.Join(s.townRoot, "gt-agent-state.json")
+		// Rig-level agent
+		if role == "polecat" {
+			statePath = filepath.Join(s.townRoot, rig, "polecats", name, "gt-agent-state.json")
+		} else if role == "crew" {
+			statePath = filepath.Join(s.townRoot, rig, "crew", name, "gt-agent-state.json")
+		} else {
+			// Rig singleton: townRoot/<rig>/<role>/gt-agent-state.json
+			statePath = filepath.Join(s.townRoot, rig, role, "gt-agent-state.json")
+		}
 	}
 
 	data, err := os.ReadFile(statePath)
@@ -580,7 +602,7 @@ func (s *Server) readAgentState(sessionName string) AgentState {
 // Rig agents: prefix-role -> prefix-role
 func (s *Server) agentIDToSessionName(id string) string {
 	// Town-level agents
-	if id == "mayor" || id == "deacon" {
+	if id == "mayor" || id == "deacon" || id == "planner" || id == "mechanic" {
 		return "hq-" + id
 	}
 	return id

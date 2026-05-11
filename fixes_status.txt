@@ -534,6 +534,79 @@ Fix the end-to-end Gas Town flow where a spec can be handed to agents who autono
 - **Tests**: 6 new `TestHasInvalidPatrolCommand` subtests covering the four bogus flags and two valid forms; new `TestNormalizeRewritesGdTypo` with 6 cases.
 - **Status**: Fixed and deployed.
 
+### 77. [FIXED] `gt mail send planner/` fails as "unknown recipient" while `gt mail directory` lists it as valid
+- **Files**: `internal/mail/resolve.go`, `internal/mail/resolve_test.go`
+- **Issue**: Live in production after fix #76 redeployed mayor. Mayor LLM tried `gt mail send planner/ -s "..." -m "..."` and got:
+  ```
+  Error: unknown recipient: planner/
+  ```
+  But `gt mail directory` cleanly lists `planner/` as a valid agent address. Same with `mechanic/`. Without the slash (`gt mail send planner`) worked, but mayor's template uses the slash form to disambiguate.
+- **Root cause**: `internal/mail/resolve.go`'s `validateAgentAddress` had a hand-rolled `switch` covering only `mayor`, `mayor/`, `deacon`, `deacon/`, `overseer` as town-level singletons. Addresses containing `/` that fall through the singleton check get parsed as `<rig>/<role>` — but `planner/` has no rig segment, so `len(parts) < 2 || parts[1] == ""` triggers and returns `ErrUnknownRecipient`. This is the exact same town-level-singleton omission we fixed in `agentIDToBeadID` (#71) and `validateAgentAddress`'s sibling list in status.go — just in a third file.
+- **Fix**: Added `constants.RolePlanner + "/"`, `constants.RolePlanner`, `constants.RoleMechanic + "/"`, `constants.RoleMechanic` to the singleton allowlist. Added a comment pointing at the other two files so the next person adding a town-level agent will remember this third location.
+- **Tests**: `TestValidateAgentAddress_TownLevelSingletons` pins `mayor`/`deacon`/`planner`/`mechanic` (with and without trailing slash) all validating, while bogus addresses still fail.
+- **Lesson learned**: Three places in this codebase enumerate town-level singletons. There ought to be one. Filed as future work, not blocking.
+- **Status**: Fixed and deployed.
+
+### 76. [FIXED] Mayor stage-wraparound: `Architecture Ready` mail routes to Stage 1 (Design) instead of Stage 2 (Plan)
+- **Files**: `internal/templates/roles/mayor.md.tmpl`, `cmd/gt-agent/main.go`, `cmd/gt-agent/main_test.go`
+- **Issue**: Live reproducer immediately after fix #75 deployed. Mayor woke up, read the architect's `Architecture Ready` mail (subject=`Architecture Ready`, wisp=`hq-wisp-eulgk`, from=`testgt2/architect`), attached the wisp to its own hook, and then ran:
+  ```
+  CMD: gt sling shiny --on hq-wisp-eulgk testgt2/architect
+  ```
+  Stage 1 (Design), back to the architect, on the architect's OWN handoff mail. That sends the architect a "new" design assignment whose content is its own past notification — architect re-does design, re-mails mayor "Architecture Ready", mayor re-slings: infinite loop.
+- **Root cause**: Mayor's template described stages as prose (`### Stage 1: Design`, `### Stage 2: Plan`, ...) and trusted the LLM to map incoming mail subjects to the correct stage. The LLM read `Architecture Ready` and pattern-matched on the word "Architecture" → picked the design formula. Also the mayor used the MAIL'S WISP as `--on`, not the actual project bead, compounding the loop.
+- **Fix (two-layer)**:
+    1. **Mayor template rewritten as a deterministic routing table.** Top-of-file mission statement says explicitly: "You are an event router, not a designer or planner." A subject→stage→command table is the primary instruction:
+
+       | Signal | Stage | Command |
+       |---|---|---|
+       | New project bead, no `attached_formula` | 1. Design | `gt sling shiny --on <project-bead> <rig>/architect` |
+       | `Architecture Ready`/`Complete` | 2. Plan | `gt sling mol-idea-to-plan --on <project-bead> planner` |
+       | `Plan Complete`/`Plan Ready` | 3. Implement | `gt sling mol-polecat-work --on <task> <rig>/polecats --create` |
+       | `POLECAT_DONE` | 4. Review | `gt sling code-review --on <bead> <rig>/qa` |
+       | `QA Complete` | done | close convoy |
+       | `BLOCKED:` | unblock | investigate, do NOT re-sling |
+
+       New explicit warning: *"`Architecture` in a subject means architecture is FINISHED, not 'go do architecture'."* A dedicated `--on MUST be the PROJECT bead, never the handoff mail's wisp` section gives the correct vs wrong concrete example side-by-side.
+    2. **Agent-layer guard `stageWraparoundReason`** in `gt-agent`: matches `gt sling shiny --on <bead> <rig>/architect`, looks up the bead's title via `bd show -o json`, and rejects if the title starts with any architect-handoff prefix (`Architecture Ready`, `Architecture Complete`, `Architecture location`, `Architecture Plan Submission`). Fails OPEN on any bd lookup error to avoid stranding legitimate work. Title lookup is injectable via the `beadTitleLookup` package var so tests can stub it (no Dolt round trip in CI).
+- **Scope-discipline**: deliberately covers only the `shiny`→architect wraparound. Other potential stage wraparounds (`mol-idea-to-plan`→planner on a Plan Complete wisp, etc.) are left to the deterministic template; we add normalizer guards only after observing the bug in production, to keep false positives near zero.
+- **Tests**: `TestStageWraparoundReason` with 12 cases — canonical loop variants (must block), legitimate project/SPEC beads (must NOT block), different formulas / different targets (out of scope), placeholder bead ID (fail open), unknown bead (fail open), non-sling commands (untouched). `TestIsArchitectHandoffTitle` pins the case-insensitive prefix matcher.
+- **Cleanup**: closed `hq-wisp-eulgk` (the loop-trigger wisp) and unhooked the architect from it.
+- **Status**: Fixed and deployed.
+
+### 75. [FIXED] Agent inboxes grow unbounded — read mail never gets archived
+- **Files**: `cmd/gt-agent/main.go`, `internal/cmd/mail_drain.go`, `internal/cmd/mail_drain_test.go`
+- **Issue**: Mayor's inbox observed at 78 messages / 31 unread within a few hours of running. Symptoms repeated for every other agent. Root cause was two-layered:
+    1. **Nobody ran `gt mail drain` automatically.** The drain command already existed, knew how to archive read wisps + old protocol messages, but had to be invoked manually. Autonomous agents never invoked it, so read mail piled up forever.
+    2. **`drainableSubjects` allowlist was too narrow** — it only covered protocol notifications (POLECAT_DONE, MERGED, LIFECYCLE:*, etc.). The Gas Town pipeline's most common notifications — `Architecture Ready`, `Plan Complete`, `QA Complete`, `BLOCKED:` — weren't in the list, so even when drain ran they were ignored.
+- **Fix (two-layer)**:
+    1. **`mail_drain.go`**: introduced `drainableHandoffSubjects` for the agent handoff subjects (`Architecture Ready`, `Architecture Complete`, `Architecture location`, `Architecture File Status`, `Architecture Plan Submission`, `Plan Complete`, `Plan Ready`, `Plan in progress`, `QA Complete`, `QA Ready`, `Review Complete`, `BLOCKED:`). Added `classifyDrainableSubject` returning `"protocol"`, `"handoff"`, or `""`. The drain loop now gates handoff-subject drains on `msg.Read==true` (or `--all`) so we never silently drop a critical unread "Architecture Ready" before mayor has acted on it. Protocol subjects keep the old age-only drain.
+    2. **`cmd/gt-agent/main.go`**: each patrol cycle now ends with `gt mail drain --max-age 10m`. Non-fatal — if drain errors we log and continue. 10m is short enough to keep inboxes tidy (agents cycle every ~30s, so each message gets ~20 cycles to be acted on) and long enough that a real handoff that mayor needs to read still survives.
+- **Behavior summary**:
+    - Read mail older than 10m: archived automatically.
+    - Unread mail: kept forever (no silent loss).
+    - `🤝 HANDOFF` and `HELP:*` subjects: preserved (require human attention).
+    - Operators can still bulk-archive with `gt mail drain --all` or surgical `gt mail archive <id>`.
+- **Tests**: extended `TestIsDrainableMessage` with the new handoff subjects; new `TestClassifyDrainableSubject` pins the protocol-vs-handoff split.
+- **Help text**: `gt mail drain --help` now documents the two-tier drain rules and the Read-gate on handoff subjects.
+- **Status**: Fixed and deployed.
+
+### 74. [FIXED] Architect overwrote 157-byte architecture.md with 0 bytes (heredoc placeholder literally rendered as content)
+- **Files**: `internal/templates/roles/architect.md.tmpl`, `cmd/gt-agent/main.go`, `cmd/gt-agent/main_test.go`
+- **Issue**: Architect's `cat > .../architecture.md <<'EOF' ... EOF` heredoc from fix #72's template was rendered literally by the LLM: it pasted `...` as the body, producing two 0-byte files. The architect then ran `gt unhook --force` and emitted `DONE: architecture handed off to mayor` without ever mailing mayor or writing real content. Pipeline stalled silently — mayor had no idea architecture was "ready" because no fresh handoff mail was sent, and the spec on disk was gone.
+- **Fix (two-layer)**:
+    1. **Architect template** rewritten end-to-end:
+       - Step 1 `cat SPEC.md` is now mandatory (read SPEC even if architecture.md already exists).
+       - Step 2 heredoc uses `<INSERT-REAL-ARCHITECTURE-HERE>` as the placeholder marker (explicitly not `...`) inside section headings.
+       - **New Step 3 — VERIFY**: `wc -c architecture.md` must report ≥ 200 bytes AND `grep -c 'INSERT-REAL-ARCHITECTURE-HERE'` must be 0 before proceeding.
+       - Mirror to rig-root only AFTER verification (Step 4).
+       - Mail mayor + nudge (Step 5).
+       - `gt unhook` is now Step 6 with explicit "ORDER MATTERS — never unhook before steps 1-5 succeed".
+       - New "HARD RULES" block at top of file reinforces all of the above before any command runs.
+    2. **Agent-layer guard `isEmptyContentFileHeredoc`** in `gt-agent`: rejects shell commands of the form `cat > <…/architecture.md|design.md|plan.md|SPEC.md|README.md> <<EOF ... EOF` if the heredoc body is empty, whitespace-only, contains only literal `...`, or contains only unreplaced placeholder tokens (`<INSERT-…>`, `<TODO>`, `<FIXME>`, `<YOUR-…>`). Heading-only bodies (`## API\n## Data Model`) also fail the check since they produce a useless skeleton. Match logic uses an opening-regex + manual delimiter scan (Go RE2 has no backreferences).
+- **Tests**: `TestIsEmptyContentFileHeredoc` with 10 cases — empty body, `...` body, INSERT-placeholder body, TODO-only body, real content, short-but-real content, unquoted EOF, non-content-file (out of scope), non-heredoc, headings-only, mixed placeholder+real.
+- **Status**: Fixed and deployed.
+
 ### 73. [FIXED] `agentIDToBeadID` returns "" for `<rig>/architect` and `<rig>/qa`; planner template has empty `{{ .RigName }}`
 - **Files**: `internal/cmd/sling_helpers.go`, `internal/cmd/sling_helpers_test.go`, `internal/templates/roles/planner.md.tmpl`
 - **Issue**: Two sibling bugs uncovered while watching fix #70 land in production:

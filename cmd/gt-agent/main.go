@@ -653,6 +653,27 @@ func run() error {
 		postCmdSuccess:
 		}
 
+		// Periodic mail drain — keep this agent's inbox tidy.
+		//
+		// Without this, read mail accumulates forever. Observed in
+		// production: mayor's inbox grew to 78 messages within hours
+		// (47 read, 31 unread), made worse by the handoff loops fixed in
+		// #70/#73 but present even after those fixes. `gt mail drain`
+		// archives read wisps and protocol/handoff notifications that
+		// are older than --max-age (default 30m). The handoff-subject
+		// drain is gated on msg.Read inside mail_drain.go so we won't
+		// silently drop a critical "Architecture Ready" mail that mayor
+		// hasn't acted on yet.
+		//
+		// Non-fatal: if drain errors, we log and continue. The patrol
+		// must never block on inbox hygiene.
+		drainOut, drainErr := exec.Command(gtBin, "mail", "drain", "--max-age", "10m").CombinedOutput()
+		if drainErr != nil {
+			fmt.Fprintf(os.Stderr, "[gt-agent] mail drain (non-fatal): %v\n%s\n", drainErr, string(drainOut))
+		} else if strings.Contains(string(drainOut), "Drained") {
+			fmt.Printf("[gt-agent] %s", string(drainOut))
+		}
+
 		// Auto-unhook for handoff-style roles after a handoff summary.
 		//
 		// Planner / Architect / QA each have a "do once, hand off, stop"
@@ -1057,6 +1078,26 @@ func normalizeGeneratedCommand(cmd string) (string, bool) {
 	if containsPlaceholder(trimmed) {
 		// Log it so the user can see why it failed
 		fmt.Fprintf(os.Stderr, "[gt-agent] ⚠ REJECTED hallucinatory command with placeholders: %q\n", trimmed)
+		return "true", true
+	}
+
+	// 4. Reject stage-wraparound slings: mayor slinging an upstream agent's
+	// own handoff mail BACK to that agent. The classic case is mayor reading
+	// an "Architecture Ready" mail (subject + wisp owned by <rig>/architect)
+	// and then running `gt sling shiny --on hq-wisp-XXXX <rig>/architect`.
+	// That sends the architect its own past notification, which is treated
+	// as a fresh design assignment, and the architect re-mails mayor
+	// "Architecture Ready" — infinite loop. Observed in production
+	// generating 62+ duplicate mails in mayor's inbox; see fix #76.
+	//
+	// Detection is purely syntactic: any `gt sling shiny --on hq-wisp-*
+	// <rig>/architect` triggers a synchronous `bd show` to read the bead's
+	// title. If the title starts with "Architecture Ready" (case-insensitive)
+	// we reject. We don't try to detect wraparound for other stages here —
+	// that's job for the routing-table-driven template — this normalizer is
+	// the safety net for THE specific loop that has actually bitten us.
+	if blockReason := stageWraparoundReason(trimmed); blockReason != "" {
+		fmt.Fprintf(os.Stderr, "[gt-agent] ⚠ REJECTED stage-wraparound sling (%s): %q\n", blockReason, trimmed)
 		return "true", true
 	}
 
@@ -1519,6 +1560,94 @@ func hasInvalidSlingTarget(cmd string) bool {
 		}
 	}
 	return false
+}
+
+// slingShinyArchitectRE matches the specific stage-wraparound shape
+// `gt sling shiny --on <bead> <rig>/architect`. We deliberately do not
+// match other formulas or other targets — the wraparound bug observed
+// in production was uniquely the shiny→architect loop after an
+// Architecture Ready handoff. Keep this narrow to avoid blocking
+// legitimate slings.
+var slingShinyArchitectRE = regexp.MustCompile(
+	`^gt\s+sling\s+shiny\s+(?:.*\s+)?--on\s+(\S+)\s+\S+/architect(?:\s|$)`,
+)
+
+// architectHandoffTitlePrefixes are case-insensitive prefixes that mark
+// a bead as an "architect handoff" — i.e. a wisp the architect itself
+// created when notifying mayor that design is finished. Slinging shiny
+// on such a bead back to the architect creates a stage-wraparound loop.
+var architectHandoffTitlePrefixes = []string{
+	"architecture ready",
+	"architecture complete",
+	"architecture location",
+	"architecture plan submission",
+}
+
+// isArchitectHandoffTitle returns true if title (case-insensitive) starts
+// with any of the architect-handoff prefixes.
+func isArchitectHandoffTitle(title string) bool {
+	t := strings.ToLower(strings.TrimSpace(title))
+	for _, p := range architectHandoffTitlePrefixes {
+		if strings.HasPrefix(t, p) {
+			return true
+		}
+	}
+	return false
+}
+
+// beadTitleLookup is injected by stageWraparoundReason so tests can
+// stub out the `bd show` call. Production sets this to lookupBeadTitle.
+var beadTitleLookup = lookupBeadTitle
+
+// lookupBeadTitle shells out to `bd show -o json <bead-id>` and returns
+// the bead's title (or "" on any failure). Failures fail OPEN — we'd
+// rather let a marginal sling through than strand legitimate work.
+func lookupBeadTitle(beadID string) string {
+	out, err := exec.Command("bd", "show", "-o", "json", beadID).CombinedOutput()
+	if err != nil {
+		return ""
+	}
+	body := string(out)
+	idx := strings.Index(body, `"title":`)
+	if idx < 0 {
+		return ""
+	}
+	rest := strings.TrimLeft(body[idx+len(`"title":`):], " \t")
+	if !strings.HasPrefix(rest, `"`) {
+		return ""
+	}
+	end := strings.IndexByte(rest[1:], '"')
+	if end < 0 {
+		return ""
+	}
+	return rest[1 : 1+end]
+}
+
+// stageWraparoundReason returns a non-empty string describing the
+// wraparound when cmd looks like mayor re-slinging an architect's own
+// handoff mail back to the architect. Returns "" if the command is
+// either not a sling-shiny-to-architect, or is one but with a legitimate
+// (non-handoff) target bead.
+//
+// Costs one `bd show` per candidate sling command, which is fine — slings
+// are rare. If the bd lookup fails for any reason we fail OPEN.
+func stageWraparoundReason(cmd string) string {
+	m := slingShinyArchitectRE.FindStringSubmatch(cmd)
+	if m == nil {
+		return ""
+	}
+	beadID := m[1]
+	if strings.ContainsAny(beadID, "<>[]") {
+		return ""
+	}
+	title := beadTitleLookup(beadID)
+	if title == "" {
+		return ""
+	}
+	if isArchitectHandoffTitle(title) {
+		return "sling shiny→architect on an architect handoff (Stage 2 should sling mol-idea-to-plan to planner, not Stage 1 back to architect)"
+	}
+	return ""
 }
 
 // handoffRoles are the roles whose contract is "do once, hand off,

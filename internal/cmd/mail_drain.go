@@ -26,7 +26,7 @@ Drains messages matching common protocol patterns that accumulate in
 agent inboxes (especially witness). These are messages that have been
 processed or are no longer actionable.
 
-DRAINABLE MESSAGE TYPES:
+DRAINABLE PROTOCOL MESSAGES (drain on age alone):
   POLECAT_DONE       Polecat completion notifications
   POLECAT_STARTED    Polecat startup notifications
   LIFECYCLE:*        Lifecycle events (shutdown, etc.)
@@ -35,9 +35,18 @@ DRAINABLE MESSAGE TYPES:
   MERGE_FAILED       Merge failure notifications
   SWARM_START        Swarm initiation messages
 
+DRAINABLE AGENT HANDOFFS (drain only once READ AND old):
+  Architecture Ready / Complete / location
+  Plan Complete / Plan Ready / Plan in progress
+  QA Complete / QA Ready / Review Complete
+  BLOCKED:*
+
+Read wisp messages (any non-protocol message sent via gt mail send that
+the recipient has opened) are also drained once they exceed --max-age.
+
 NON-DRAINABLE (preserved):
   HELP:*             Help requests (need human attention)
-  HANDOFF            Session handoff context
+  🤝 HANDOFF         Session handoff context (emoji prefix preserved)
 
 By default, only archives protocol messages older than 30 minutes.
 Use --max-age to change the threshold, or --all to drain regardless of age.
@@ -58,9 +67,10 @@ func init() {
 	mailDrainCmd.Flags().BoolVar(&mailDrainAll, "all", false, "Drain all protocol messages regardless of age")
 }
 
-// drainableSubjects are protocol message subject prefixes that are safe to
-// bulk-archive. These are routine notifications that don't require individual
-// attention once the information is stale.
+// drainableSubjects are PROTOCOL message subject prefixes that are safe to
+// bulk-archive without further checks. These are routine notifications that
+// don't require individual attention once the information is stale, so we
+// drop them on age alone (no Read-flag gate).
 var drainableSubjects = []string{
 	"CRASHED_POLECAT",
 	"POLECAT_DONE",
@@ -72,14 +82,61 @@ var drainableSubjects = []string{
 	"SWARM_START",
 }
 
-// isDrainableMessage checks if a message subject matches a drainable protocol pattern.
-func isDrainableMessage(subject string) bool {
+// drainableHandoffSubjects are AGENT HANDOFF subject prefixes — the mails
+// that the Architect / Planner / QA / Polecat / Mayor send each other to
+// pass work along. These DO carry information a human might want to see,
+// so we only drain them once they're BOTH old AND already read by the
+// recipient. This prevents draining a critical handoff before mayor (or
+// the operator) has acknowledged it, while still keeping the inbox tidy
+// once the loop has moved on.
+//
+// Historical context: under NATS transport, agents emit several of these
+// per pipeline stage (one per retry), so without periodic drain mayor's
+// inbox grew to 78+ messages within hours. See fix #75 in fixes_status.txt.
+var drainableHandoffSubjects = []string{
+	"Architecture Ready",
+	"Architecture Complete",
+	"Architecture location",
+	"Architecture File Status",
+	"Architecture Plan Submission",
+	"Plan Complete",
+	"Plan Ready",
+	"Plan in progress",
+	"QA Complete",
+	"QA Ready",
+	"Review Complete",
+	"BLOCKED:",
+}
+
+// isDrainableMessage reports whether a message subject matches any drainable
+// protocol pattern AT ALL. The caller is responsible for any additional
+// gating (e.g. Read-flag check for handoff subjects); see runMailDrain.
+//
+// Returns `kind` to let callers tell protocol subjects apart from handoff
+// subjects:
+//
+//	"protocol" — drainable on age alone
+//	"handoff"  — drainable only when msg.Read is true
+//	""         — not drainable by subject (still might be drainable as
+//	             a read wisp, see runMailDrain)
+func classifyDrainableSubject(subject string) string {
 	for _, prefix := range drainableSubjects {
 		if strings.HasPrefix(subject, prefix) {
-			return true
+			return "protocol"
 		}
 	}
-	return false
+	for _, prefix := range drainableHandoffSubjects {
+		if strings.HasPrefix(subject, prefix) {
+			return "handoff"
+		}
+	}
+	return ""
+}
+
+// isDrainableMessage retained for backward compatibility with callers that
+// only care whether a subject is drainable by some rule (not which rule).
+func isDrainableMessage(subject string) bool {
+	return classifyDrainableSubject(subject) != ""
 }
 
 func runMailDrain(cmd *cobra.Command, args []string) error {
@@ -120,7 +177,8 @@ func runMailDrain(cmd *cobra.Command, args []string) error {
 	var candidates []drainCandidate
 
 	for _, msg := range messages {
-		if !isDrainableMessage(msg.Subject) {
+		kind := classifyDrainableSubject(msg.Subject)
+		if kind == "" {
 			continue
 		}
 
@@ -129,9 +187,18 @@ func runMailDrain(cmd *cobra.Command, args []string) error {
 			continue
 		}
 
-		reason := "protocol"
+		// Handoff subjects (Architect/Planner/QA/Mayor notifications) must
+		// be read by the recipient before we archive — otherwise we'd
+		// silently drop critical pipeline messages that mayor hasn't yet
+		// acted on. Protocol subjects (POLECAT_DONE, MERGED, etc.) are
+		// routine enough to drain on age alone.
+		if kind == "handoff" && !msg.Read && !mailDrainAll {
+			continue
+		}
+
+		reason := kind
 		if msg.Wisp {
-			reason = "wisp+protocol"
+			reason = "wisp+" + kind
 		}
 		candidates = append(candidates, drainCandidate{Message: msg, Reason: reason})
 	}

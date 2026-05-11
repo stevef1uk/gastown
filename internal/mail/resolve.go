@@ -139,9 +139,21 @@ func (r *Resolver) validateAgentAddress(address string) error {
 
 	normalized := normalizeAddress(strings.TrimSuffix(address, "/"))
 
-	// Well-known town-level singletons always valid
+	// Well-known town-level singletons always valid.
+	//
+	// Keep this list in sync with cmd/sling_helpers.go:agentIDToBeadID and
+	// internal/cmd/status.go's town-level agentDefs (see fix #71 and #73 in
+	// fixes_status.txt). Omitting an agent here silently breaks
+	// `gt mail send <agent>/` even though `gt mail directory` lists it as
+	// a valid recipient — observed in production with `gt mail send
+	// planner/` failing as "unknown recipient" while `gt mail directory`
+	// happily showed `planner/` in the table.
 	switch normalized {
-	case constants.RoleMayor + "/", constants.RoleMayor, constants.RoleDeacon + "/", constants.RoleDeacon, "overseer":
+	case constants.RoleMayor + "/", constants.RoleMayor,
+		constants.RoleDeacon + "/", constants.RoleDeacon,
+		constants.RolePlanner + "/", constants.RolePlanner,
+		constants.RoleMechanic + "/", constants.RoleMechanic,
+		"overseer":
 		return nil
 	}
 

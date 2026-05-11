@@ -688,6 +688,152 @@ func TestHasInvalidPatrolCommand(t *testing.T) {
 	}
 }
 
+// TestStageWraparoundReason pins fix #76: reject `gt sling shiny --on
+// <bead> <rig>/architect` when <bead> is itself an architect handoff
+// (title starts with "Architecture Ready" / "Architecture Complete" /
+// etc.). Live reproducer: mayor reads architect's "Architecture Ready"
+// mail and slings shiny back to the architect on the mail's own wisp,
+// creating an infinite loop.
+func TestStageWraparoundReason(t *testing.T) {
+	// Inject a stub title lookup so the test doesn't need a real Dolt
+	// server. The fixture maps bead IDs to titles we want to model.
+	titles := map[string]string{
+		"hq-wisp-eulgk": "Architecture Ready",
+		"hq-wisp-bjr5":  "Architecture Ready",
+		"hq-wisp-zvlv":  "Architecture location: /home/stevef/gt/...",
+		"hq-wisp-9999":  "Architecture Complete: design ready",
+		"hq-wisp-fqq":   "Project: Hello World API for testgt2",
+		"hq-wisp-spec":  "SPEC: Build a chatbot",
+		"hq-aaa":        "Architecture Plan Submission for hq-bbn",
+	}
+	orig := beadTitleLookup
+	beadTitleLookup = func(id string) string { return titles[id] }
+	t.Cleanup(func() { beadTitleLookup = orig })
+
+	tests := []struct {
+		name      string
+		cmd       string
+		wantBlock bool
+	}{
+		// The canonical bug — must block.
+		{
+			name:      "shiny on Architecture Ready wisp back to architect",
+			cmd:       "gt sling shiny --on hq-wisp-eulgk testgt2/architect",
+			wantBlock: true,
+		},
+		{
+			name:      "shiny on Architecture Complete wisp back to architect",
+			cmd:       "gt sling shiny --on hq-wisp-9999 testgt2/architect",
+			wantBlock: true,
+		},
+		{
+			name:      "shiny on Architecture location wisp back to architect",
+			cmd:       "gt sling shiny --on hq-wisp-zvlv testgt2/architect",
+			wantBlock: true,
+		},
+		{
+			name:      "shiny with --on after target (still matches)",
+			cmd:       "gt sling shiny testgt2/architect --on hq-wisp-bjr5",
+			wantBlock: false, // regex requires --on BEFORE target; this is OK
+		},
+		{
+			name:      "shiny on Architecture Plan Submission to architect",
+			cmd:       "gt sling shiny --on hq-aaa testgt2/architect",
+			wantBlock: true,
+		},
+
+		// Legitimate slings — must NOT block.
+		{
+			name:      "shiny on a real project bead — legitimate Stage 1",
+			cmd:       "gt sling shiny --on hq-wisp-fqq testgt2/architect",
+			wantBlock: false,
+		},
+		{
+			name:      "shiny on a SPEC bead — legitimate Stage 1",
+			cmd:       "gt sling shiny --on hq-wisp-spec testgt2/architect",
+			wantBlock: false,
+		},
+
+		// Different formulas — out of scope, do NOT block.
+		{
+			name:      "mol-idea-to-plan to planner — different formula, not wraparound",
+			cmd:       "gt sling mol-idea-to-plan --on hq-wisp-eulgk planner",
+			wantBlock: false,
+		},
+		{
+			name:      "code-review to qa — out of scope",
+			cmd:       "gt sling code-review --on hq-wisp-eulgk testgt2/qa",
+			wantBlock: false,
+		},
+		{
+			name:      "shiny to polecats (not architect) — out of scope",
+			cmd:       "gt sling shiny --on hq-wisp-eulgk testgt2/polecats",
+			wantBlock: false,
+		},
+
+		// Placeholder bead ID — let containsPlaceholder handle, not us.
+		{
+			name:      "placeholder bead ID — fail open",
+			cmd:       "gt sling shiny --on <bead-id> testgt2/architect",
+			wantBlock: false,
+		},
+
+		// Unknown bead — fail open (lookup returns "").
+		{
+			name:      "unknown bead — fail open, allow sling",
+			cmd:       "gt sling shiny --on hq-unknown-bead testgt2/architect",
+			wantBlock: false,
+		},
+
+		// Not a sling at all.
+		{
+			name:      "non-sling command — not checked",
+			cmd:       "bd show hq-wisp-eulgk",
+			wantBlock: false,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := stageWraparoundReason(tc.cmd)
+			if (got != "") != tc.wantBlock {
+				t.Errorf("stageWraparoundReason(%q) = %q, wantBlock=%v",
+					tc.cmd, got, tc.wantBlock)
+			}
+		})
+	}
+}
+
+// TestIsArchitectHandoffTitle pins the title classifier used by
+// stageWraparoundReason — case-insensitive prefix match across the
+// known architect handoff subjects.
+func TestIsArchitectHandoffTitle(t *testing.T) {
+	for _, ok := range []string{
+		"Architecture Ready",
+		"architecture ready",
+		"ARCHITECTURE READY: design.md created",
+		"Architecture Complete",
+		"Architecture Plan Submission for hq-bbn",
+		"  Architecture Ready   ", // leading/trailing whitespace tolerated
+		"Architecture location: /tmp/architecture.md",
+	} {
+		if !isArchitectHandoffTitle(ok) {
+			t.Errorf("isArchitectHandoffTitle(%q) = false, want true", ok)
+		}
+	}
+	for _, no := range []string{
+		"Project: Hello World API",
+		"Plan Complete",
+		"QA Complete",
+		"BLOCKED: architecture missing",
+		"My architecture is broken", // doesn't START with "architecture"
+		"",
+	} {
+		if isArchitectHandoffTitle(no) {
+			t.Errorf("isArchitectHandoffTitle(%q) = true, want false", no)
+		}
+	}
+}
+
 // TestIsEmptyContentFileHeredoc pins fix #74: reject heredoc writes
 // that would blow away a content file (architecture.md, design.md,
 // plan.md, SPEC.md, README.md) with an empty or placeholder-only body.

@@ -312,3 +312,49 @@ func TestResolveWithVisited_ThreadsCycleDetection(t *testing.T) {
 		}
 	})
 }
+
+// TestValidateAgentAddress_TownLevelSingletons pins fix #77:
+// `gt mail send planner/` (and `mechanic/`) must NOT fail with
+// "unknown recipient". Before the fix, validateAgentAddress only
+// allowed mayor/ and deacon/ as town-level singletons, even though
+// `gt mail directory` advertised planner/ and mechanic/ as valid.
+// Observed in production: mayor's `gt mail send planner/` failing
+// while `gt mail directory` happily listed planner/.
+//
+// We construct the resolver with nil beads and "" townRoot; in that
+// configuration validateAgentAddress relies entirely on its hard-coded
+// singleton list. If the agent isn't in the list AND no fallback data
+// source is available, the function returns ErrUnknownRecipient — which
+// is exactly the bug.
+func TestValidateAgentAddress_TownLevelSingletons(t *testing.T) {
+	// Resolver must have at least one of {beads, townRoot} non-nil/non-""
+	// for the validate path to run (otherwise it short-circuits at the top
+	// with `return nil` for graceful degradation). A non-empty townRoot
+	// pointing at a non-existent directory triggers validate without
+	// requiring real beads — every directory check will fail, so we'll
+	// rely on the singleton allowlist.
+	resolver := NewResolver(nil, "/nonexistent-townroot-for-test")
+
+	mustValidate := []string{
+		"mayor", "mayor/",
+		"deacon", "deacon/",
+		"planner", "planner/",
+		"mechanic", "mechanic/",
+	}
+	for _, addr := range mustValidate {
+		if err := resolver.validateAgentAddress(addr); err != nil {
+			t.Errorf("validateAgentAddress(%q) = %v, want nil — town-level singleton must always validate", addr, err)
+		}
+	}
+
+	mustFail := []string{
+		"nobody-such-agent",
+		"nobody-such-agent/",
+		"unknownrig/unknownrole",
+	}
+	for _, addr := range mustFail {
+		if err := resolver.validateAgentAddress(addr); err == nil {
+			t.Errorf("validateAgentAddress(%q) = nil, want ErrUnknownRecipient — bogus address must be rejected", addr)
+		}
+	}
+}
