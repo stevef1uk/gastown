@@ -488,8 +488,8 @@ func run() error {
 		// Build role-specific system prompt
 		systemPrompt := buildSystemPrompt(roleCanonical, rig, polecat, townRoot, state.PatrolCount, string(primeOut), effortLevel)
 
-		// Build user prompt from work items
-		userPrompt := "Execute the following work and report results:\n\n"
+		// Build user prompt from work items - explicitly tell LLM to do ALL items in one response
+		userPrompt := "Execute ALL of the following work items and report results. Output a CMD for EACH item:\n\n"
 		for i, item := range workItems {
 			userPrompt += fmt.Sprintf("%d. %s\n", i+1, item)
 		}
@@ -516,54 +516,106 @@ func run() error {
 		lines := strings.Split(response, "\n")
 		var summary string
 		extraordinary := false
+		
+		// Check for hallucinated outputs first
 		for _, line := range lines {
-			line = strings.TrimSpace(line)
-			if strings.HasPrefix(line, "CMD:") {
-				cmd := strings.TrimPrefix(line, "CMD:")
+			if strings.HasPrefix(strings.TrimSpace(line), "Output:") {
+				fmt.Println("[gt-agent] ⚠ REJECTED hallucinated output. Agent is trying to simulate the terminal.")
+				recordMoleculeState("SYSTEM ERROR", "ERROR: Do not simulate 'Output:'. Output EXACTLY ONE 'CMD: [command]' and STOP generating text. The system will run the command and provide the real output. Retry your command.")
+				state.ExtraordinaryAction = true
+				break
+			}
+		}
+		if state.ExtraordinaryAction {
+			_ = saveState(stateFile, state)
+			time.Sleep(baseSleep)
+			continue
+		}
+
+		var cmdBlocks []string // Collect ALL CMD blocks
+		var currentCmdLines []string
+		var inCmdBlock bool
+		for _, line := range lines {
+			trimmed := strings.TrimSpace(line)
+			if strings.HasPrefix(trimmed, "CMD:") {
+				// Save previous block if exists
+				if len(currentCmdLines) > 0 {
+					cmdBlocks = append(cmdBlocks, strings.Join(currentCmdLines, "\n"))
+					currentCmdLines = nil
+				}
+				cmd := strings.TrimPrefix(trimmed, "CMD:")
 				cmd = strings.TrimSpace(cmd)
 				if cmd != "" {
-					fmt.Printf("[gt-agent] DEBUG: Original cmd: %q\n", cmd)
-					safeCmd, rewritten := normalizeGeneratedCommand(cmd)
-					fmt.Printf("[gt-agent] DEBUG: safeCmd: %q, rewritten: %v\n", safeCmd, rewritten)
-					if rewritten {
-						fmt.Printf("[gt-agent] Rewrote command: %q -> %q\n", cmd, safeCmd)
+					if strings.HasPrefix(cmd, "```") {
+						cmd = strings.TrimPrefix(cmd, "```")
+						cmd = strings.TrimPrefix(cmd, "bash")
+						cmd = strings.TrimPrefix(cmd, "sh")
+						cmd = strings.TrimSpace(cmd)
 					}
-					fmt.Printf("[gt-agent] $ %s\n", safeCmd)
-					out, err := exec.Command("/bin/sh", "-c", safeCmd).CombinedOutput()
-					recordMoleculeState(safeCmd, string(out))
-					if err != nil {
-						// Dolt circuit breaker errors are transient during startup.
-						// Retry once after a short delay before marking as extraordinary.
-						cmdFailed := true
-						if strings.Contains(string(out), "circuit breaker is open") {
-							fmt.Println("[gt-agent] Dolt circuit breaker open, retrying in 5s...")
-							time.Sleep(5 * time.Second)
-							out, err = exec.Command("/bin/sh", "-c", safeCmd).CombinedOutput()
-							recordMoleculeState(safeCmd, string(out))
-							if err == nil {
-								fmt.Printf("[gt-agent] Output (retry OK):\n%s\n", string(out))
-								cmdFailed = false
-							}
-						}
-						if cmdFailed {
-							fmt.Fprintf(os.Stderr, "[gt-agent] Error: %v\n%s\n", err, string(out))
-							extraordinary = true
-							// CRITICAL: Stop executing subsequent commands if one fails.
-							// Models like Llama-3.3 will hallucinate the entire script. If step 1 fails,
-							// executing step 2 is dangerous and guaranteed to fail or corrupt state.
-							break
-						}
-					} else {
-						fmt.Printf("[gt-agent] Output:\n%s\n", string(out))
+					if cmd != "" {
+						currentCmdLines = append(currentCmdLines, cmd)
+						inCmdBlock = true
 					}
-					// CRITICAL: Only execute ONE command per turn. This forces the agent to
-					// see the real output of every step before choosing the next one,
-					// which prevents hallucination-driven cascading failures.
+				}
+			} else if inCmdBlock {
+				if strings.HasPrefix(trimmed, "DONE:") {
+					summary = strings.TrimPrefix(trimmed, "DONE:")
+					summary = strings.TrimSpace(summary)
+					cmdBlocks = append(cmdBlocks, strings.Join(currentCmdLines, "\n"))
+					currentCmdLines = nil
+					inCmdBlock = false
 					break
 				}
-			} else if strings.HasPrefix(line, "DONE:") {
-				summary = strings.TrimPrefix(line, "DONE:")
+				if trimmed == "```" {
+					continue
+				}
+				currentCmdLines = append(currentCmdLines, line)
+			} else if strings.HasPrefix(trimmed, "DONE:") {
+				summary = strings.TrimPrefix(trimmed, "DONE:")
 				summary = strings.TrimSpace(summary)
+			}
+		}
+		// Don't forget the last block if no DONE: was found
+		if len(currentCmdLines) > 0 && len(cmdBlocks) == 0 {
+			cmdBlocks = append(cmdBlocks, strings.Join(currentCmdLines, "\n"))
+		}
+
+		// Execute ALL command blocks
+		for _, fullCmd := range cmdBlocks {
+			cmd := strings.TrimSpace(fullCmd)
+			// Fix escaped quotes from LLM: \' becomes just '
+			cmd = strings.ReplaceAll(cmd, "\\'", "'")
+			cmd = strings.ReplaceAll(cmd, "\\\"", "\"")
+			if strings.HasPrefix(cmd, "`") && strings.HasSuffix(cmd, "`") && !strings.Contains(cmd, "\n") {
+				cmd = strings.Trim(cmd, "`")
+			}
+			fmt.Printf("[gt-agent] DEBUG: Original cmd: %q\n", cmd)
+			safeCmd, rewritten := normalizeGeneratedCommand(cmd)
+			fmt.Printf("[gt-agent] DEBUG: safeCmd: %q, rewritten: %v\n", safeCmd, rewritten)
+			if rewritten {
+				fmt.Printf("[gt-agent] Rewrote command: %q -> %q\n", cmd, safeCmd)
+			}
+			fmt.Printf("[gt-agent] $ %s\n", safeCmd)
+			out, err := exec.Command("/bin/sh", "-c", safeCmd).CombinedOutput()
+			recordMoleculeState(safeCmd, string(out))
+			if err != nil {
+				cmdFailed := true
+				if strings.Contains(string(out), "circuit breaker is open") {
+					fmt.Println("[gt-agent] Dolt circuit breaker open, retrying in 5s...")
+					time.Sleep(5 * time.Second)
+					out, err = exec.Command("/bin/sh", "-c", safeCmd).CombinedOutput()
+					recordMoleculeState(safeCmd, string(out))
+					if err == nil {
+						fmt.Printf("[gt-agent] Output (retry OK):\n%s\n", string(out))
+						cmdFailed = false
+					}
+				}
+				if cmdFailed {
+					fmt.Fprintf(os.Stderr, "[gt-agent] Error: %v\n%s\n", err, string(out))
+					extraordinary = true
+				}
+			} else {
+				fmt.Printf("[gt-agent] Output:\n%s\n", string(out))
 			}
 		}
 
@@ -769,8 +821,10 @@ func rewriteMolCurrent(cmd string) string {
 	return fmt.Sprintf("gt mol current %s", strings.Join(args, " "))
 }
 
+var placeholderRe = regexp.MustCompile(`<[a-zA-Z0-9_-]+>`)
+
 func containsPlaceholder(cmd string) bool {
-	if strings.Contains(cmd, "<") && strings.Contains(cmd, ">") {
+	if placeholderRe.MatchString(cmd) {
 		return true
 	}
 	for _, placeholder := range []string{
@@ -945,7 +999,7 @@ func buildSystemPrompt(role, rig, polecat, townRoot string, patrolCount int, pri
 		if rig != "" && polecat != "" {
 			data.WorkDir = filepath.Join(townRoot, rig, "polecats", polecat)
 		} else if rig != "" {
-			data.WorkDir = filepath.Join(townRoot, rig, "witness")
+			data.WorkDir = filepath.Join(townRoot, rig, role)
 		}
 	}
 

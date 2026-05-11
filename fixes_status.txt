@@ -291,3 +291,57 @@ Fix the end-to-end Gas Town flow where a spec can be handed to agents who autono
     1. Applied `.StripBeadsDir()` to all `BdCmd` calls in `sling_helpers.go` to ensure `bd` resolves the database correctly from its working directory.
     2. Migrated legacy `exec.Command("bd", ...)` calls in `sling.go` to the unified `BdCmd` builder to benefit from `StripBeadsDir()` and consistent environment management.
 - **Status**: Fixed and Verified.
+
+### 46. [FIXED] Agent "cat << EOF" commands failing due to strict placeholder check
+- **File**: `cmd/gt-agent/main.go`
+- **Issue**: Multiline strings and heredocs containing `<` and `>` (e.g. `cat << 'EOF' > file.md`) were triggering the `containsPlaceholder` hallucination guard, rewriting valid file creation commands to `true`.
+- **Fix**: Replaced the naïve `strings.Contains("<")` check with a strict regex (`regexp.MustCompile("<[a-zA-Z0-9_-]+>")`) to only catch actual template placeholders like `<bead-id>`.
+- **Status**: Fixed and Verified.
+
+### 47. [FIXED] LLM hallucinating terminal `Output:` blocks
+- **Files**: `cmd/gt-agent/main.go`, `internal/templates/roles/base.md.tmpl`
+- **Issue**: The model was hallucinating entire interactive sessions (generating both `CMD:` and fake `Output:` blocks) in a single response, preventing the real terminal output from being fed back into the context loop.
+- **Fix**: Added explicit instructions to the base template to stop generating after `CMD:`, and added a strict check in `gt-agent` to intercept and reject any response containing `Output:` with instructions to retry.
+- **Status**: Fixed and Verified.
+
+### 48. [FIXED] WorkDir resolution bug for non-polecat rig agents
+- **File**: `cmd/gt-agent/main.go`
+- **Issue**: `buildSystemPrompt` was incorrectly assigning rig-level agents (like the architect or QA) to the `/witness` directory by default instead of their own role directory.
+- **Fix**: Updated the `default` fallback to correctly route to `filepath.Join(townRoot, rig, role)`.
+- **Status**: Fixed and Verified.
+
+### 49. [FIXED] Next Action `bd mol current` missing attached molecule ID
+- **File**: `internal/cmd/molecule_status.go`, `cmd/gt-agent/main.go`
+- **Issue**: The Next Action hint in `gt mol status` was suggesting `bd mol current [bead-id]` instead of the attached molecule ID. Also, `bd mol current` command rewriting was mishandling arguments.
+- **Fix**: Updated `molecule_status.go` to reference `status.AttachedMolecule`, and fixed the rewrite logic in `gt-agent` to correctly append positional arguments.
+- **Status**: Fixed and Verified.
+
+### 50. [FIXED] Formula variables not substituted in architect's work
+- **Files**: `internal/cmd/prime.go` (lines 969, 1004), `internal/cmd/prime_output.go` (line 805)
+- **Issue**: Architect's formula steps showed `{{feature}}` placeholder instead of substituted value "Hello API". The code was using `strings.Split(attachment.FormulaVars, "\n")` which produced empty/nil slice, instead of using `attachment.AttachedVars` which contains the properly parsed variables.
+- **Fix**: Changed all three call sites to pass `attachment.AttachedVars` (the parsed string slice) instead of `strings.Split(attachment.FormulaVars, "\n")`.
+- **Status**: Fixed and Verified - `gt prime` now shows "Design Hello API" instead of "Design {{feature}}".
+
+### 51. [FIXED] Architect SPEC.md path in template
+- **File**: `internal/templates/roles/architect.md.tmpl`
+- **Issue**: Architect couldn't find SPEC.md - looking in wrong location.
+- **Fix**: Updated template to use proper path template variables `{{ .TownRoot }}/{{ .RigName }}/mayor/rig/SPEC.md`.
+- **Status**: Fixed.
+
+### 52. [FIXED] gt-agent only executes first LLM command
+- **File**: `cmd/gt-agent/main.go`
+- **Issue**: gt-agent was only executing the first CMD: block from LLM, ignoring subsequent commands.
+- **Fix**: Changed code to collect and execute ALL CMD blocks in sequence.
+- **Status**: Fixed.
+
+### 53. [FIXED] LLM escaping quotes in heredoc
+- **File**: `cmd/gt-agent/main.go`
+- **Issue**: LLM outputs `\'EOF\'` instead of `'EOF'` causing heredoc to fail.
+- **Fix**: Added string replacement to fix escaped quotes before execution.
+- **Status**: Fixed.
+
+### 54. [IN PROGRESS] Architect not creating architecture.md
+- **Issue**: LLM puts heredoc content on same line as EOF, making file empty.
+- **Fix**: Changed formula to use printf instead of heredoc format.
+- **Status**: Need to rebuild and test.
+

@@ -1717,16 +1717,9 @@ This is physics, not politeness. Gas Town is a steam engine - you are a piston.
 - Human is AFK / trusting the engine to run
 - Work sits idle. The whole system stalls.
 
-## Startup Protocol
-
-1. Check your hook: ` + "`gt mol status`" + `
-2. If work is hooked → EXECUTE (no announcement, no waiting)
-3. If hook empty → Check mail: ` + "`gt mail inbox`" + `
-4. Still nothing? Wait for user instructions
-
 ## Key Commands
 
-- ` + "`gt mol status`" + ` - Check your hooked work
+- ` + "`gt mol status`" + ` - Check your hooked work (already provided in Context)
 - ` + "`gt mail inbox`" + ` - Check for messages
 - ` + "`bd ready`" + ` - Find available work (no blockers)
 `

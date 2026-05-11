@@ -966,7 +966,7 @@ func outputMoleculeWorkflow(ctx RoleContext, attachment *beads.AttachmentFields)
 
 	// Show inline formula steps from the embedded binary (root-only: no child wisps to query).
 	if attachment.AttachedFormula != "" {
-		hasSteps := showFormulaStepsFull(attachment.AttachedFormula, ctx.TownRoot, ctx.Rig, strings.Split(attachment.FormulaVars, "\n"))
+		hasSteps := showFormulaStepsFull(attachment.AttachedFormula, ctx.TownRoot, ctx.Rig, attachment.AttachedVars)
 		if hasSteps {
 			fmt.Println()
 			fmt.Println("The base bead is your assignment. The formula steps define your workflow.")
@@ -1001,7 +1001,7 @@ func outputRalphLoopDirective(ctx RoleContext, attachment *beads.AttachmentField
 	// the full checklist. Previously this emitted a /ralph-loop slash command
 	// that didn't exist, causing the polecat to die immediately.
 	if attachment.AttachedFormula != "" {
-		showFormulaStepsFull(attachment.AttachedFormula, ctx.TownRoot, ctx.Rig, strings.Split(attachment.FormulaVars, "\n"))
+		showFormulaStepsFull(attachment.AttachedFormula, ctx.TownRoot, ctx.Rig, attachment.AttachedVars)
 		fmt.Println()
 	}
 

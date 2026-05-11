@@ -5,7 +5,10 @@ version = 1
 
 [[steps]]
 acceptance = "Design doc committed covering approach, trade-offs, and files to change"
-description = "Think carefully about architecture before writing code. Consider: How does this fit into the existing system? What are the edge cases? What could go wrong? Is there a simpler approach?"
+description = """Create architecture.md in /home/stevef/gt/testgt2/architect/ with the design for Hello API.
+
+Write the file using printf - each line is a separate argument:
+printf '# Architecture: Hello API\\n\\n## API\\n- GET / returns JSON message\\n\\n## Data Model\\n- No database needed\\n\\n## Components\\n- FastAPI app (main.py)\\n- requirements.txt\\n' > /home/stevef/gt/testgt2/architect/architecture.md"""
 id = "design"
 title = "Design {{feature}}"
 
