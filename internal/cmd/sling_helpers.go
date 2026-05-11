@@ -596,12 +596,23 @@ func agentIDToBeadID(agentID, townRoot string) string {
 	// Normalize: strip trailing slash (resolveSelfTarget returns "mayor/" not "mayor")
 	agentID = strings.TrimSuffix(agentID, "/")
 
-	// Handle simple cases (town-level agents with hq- prefix)
-	if agentID == "mayor" {
+	// Handle simple cases (town-level agents with hq- prefix).
+	// Mayor / Deacon / Planner / Mechanic are all town-level singletons —
+	// they live at the town root with hq- prefix and have no rig segment.
+	// Forgetting any of these here means `gt unhook` (and any other code
+	// path going through resolveSelfTarget -> agentIDToBeadID) returns
+	// "" and surfaces as `could not convert agent ID planner/ to bead ID`,
+	// breaking the planner/mechanic auto-unhook after handoff. See
+	// fix #70 in fixes_status.txt for the original reproducer.
+	switch agentID {
+	case "mayor":
 		return beads.MayorBeadIDTown()
-	}
-	if agentID == "deacon" {
+	case "deacon":
 		return beads.DeaconBeadIDTown()
+	case "planner":
+		return beads.PlannerBeadIDTown()
+	case "mechanic":
+		return beads.MechanicBeadIDTown()
 	}
 
 	// Parse path-style agent IDs

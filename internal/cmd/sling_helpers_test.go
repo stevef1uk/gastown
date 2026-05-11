@@ -210,6 +210,38 @@ func TestCollectExistingMoleculesFiltersClosedMolecules(t *testing.T) {
 	}
 }
 
+// TestAgentIDToBeadID_TownLevelAgents pins the regression caught
+// during fix #70: agentIDToBeadID() used to know only about mayor
+// and deacon as town-level agents, which broke `gt unhook` (and any
+// other resolveSelfTarget-based command) for planner and mechanic
+// with "could not convert agent ID planner/ to bead ID".
+//
+// All four town-level singletons must resolve to their canonical
+// town-level bead IDs. Trailing slash on the agent ID must be
+// tolerated, since resolveSelfTarget() returns e.g. "planner/".
+func TestAgentIDToBeadID_TownLevelAgents(t *testing.T) {
+	tests := []struct {
+		agentID string
+		want    string
+	}{
+		{"mayor", beads.MayorBeadIDTown()},
+		{"mayor/", beads.MayorBeadIDTown()},
+		{"deacon", beads.DeaconBeadIDTown()},
+		{"deacon/", beads.DeaconBeadIDTown()},
+		{"planner", beads.PlannerBeadIDTown()},
+		{"planner/", beads.PlannerBeadIDTown()},
+		{"mechanic", beads.MechanicBeadIDTown()},
+		{"mechanic/", beads.MechanicBeadIDTown()},
+	}
+	for _, tc := range tests {
+		got := agentIDToBeadID(tc.agentID, "")
+		if got != tc.want {
+			t.Errorf("agentIDToBeadID(%q, \"\") = %q, want %q",
+				tc.agentID, got, tc.want)
+		}
+	}
+}
+
 func TestIsSlingConfigError(t *testing.T) {
 	tests := []struct {
 		name string
