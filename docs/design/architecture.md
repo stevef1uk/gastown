@@ -505,3 +505,83 @@ The Proxy acts as the brain's gateway, managing high-throughput requests from do
 *   **Planner**: Strategic task decomposition.
 *   **Architect**: SPEC analysis and design enforcement.
 *   **QA**: Final verification gatekeeper.
+
+## Work Orchestration Flow
+
+The orchestration pipeline coordinates work from idea through implementation to merge:
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                        WORK ORCHESTRATION PIPELINE                         │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+  ┌─────────┐     ┌───────────┐     ┌─────────┐     ┌──────────┐    ┌───────┐
+  │  Overseer │────▶│  Mayor   │────▶│Architect│────▶│  Mayor   │───▶│Planner │
+  │ (human)  │     │(coordina) │     │ (design)│     │(coordina)│    │  (plan)│
+  └─────────┘     └───────────┘     └─────────┘     └──────────┘    └───────┘
+       │                                                          │         │
+       │                            architecture.md               │         │
+       │                                  │                      │         │
+       │                        gt handoff │                      │         │
+       │                                  ▼                      │         │
+       │                          ┌───────────┐                  │         │
+       │                          │  Mayor    │◀─────────────────┘         │
+       │                          │(coordina) │                          │
+       │                          └───────────┘                          │
+       │                                │                                │
+       │         ┌──────────────────────┼──────────────────────┐         │
+       │         │                      │                      │         │
+       │         ▼                      ▼                      ▼         │
+       │  ┌─────────────┐       ┌─────────────┐       ┌─────────────┐    │
+       │  │  Architect  │       │   Polecat   │       │    QA       │    │
+       │  │  (design)   │       │ (implement) │       │  (review)   │    │
+       │  └─────────────┘       └─────────────┘       └─────────────┘    │
+       │        │                      │                      │            │
+       │        │                      │                      │            │
+       │        │                      ▼                      │            │
+       │        │               ┌─────────────┐               │            │
+       │        │               │  Refinery   │◀──────────────┘            │
+       │        │               │    (MQ)     │                             │
+       │        │               └─────────────┘                             │
+       │        │                      │                                    │
+       │        │                      ▼                                    │
+       │        │               ┌─────────────┐                            │
+       └───────▶│               │    main     │                            │
+                │               │   (merge)   │                            │
+                │               └─────────────┘                            │
+```
+
+### Detailed Flow
+
+| Step | From Agent | To Agent | Action | Formula |
+|------|------------|----------|--------|---------|
+| 1 | Overseer | Mayor | Mail with project SPEC.md | - |
+| 2 | Mayor | Architect | Sling for design | `shiny` |
+| 3 | Architect | Mayor | Handoff design | `gt handoff` |
+| 4 | Mayor | Planner | Sling for task breakdown | `mol-idea-to-plan` |
+| 5 | Planner | Mayor | Handoff tasks | `gt handoff` |
+| 6 | Mayor | Polecat | Sling for implementation | `mol-polecat-work` |
+| 7 | Polecat | Refinery | Submit work | `gt done` |
+| 8 | Refinery | main | Merge (after gates pass) | - |
+| 9 | Mayor | QA | Sling for review | `code-review` |
+
+### Formula Usage
+
+Each stage uses specific formulas:
+
+| Stage | Formula | Purpose |
+|-------|---------|---------|
+| Design | `shiny` | Creates architecture.md |
+| Planning | `mol-idea-to-plan` | Breaks into TDD tasks |
+| Implementation | `mol-polecat-work` | Full polecat lifecycle |
+| Implementation | `mol-polecat-work-tdd` | TDD-style implementation |
+| Review | `code-review` | QA review workflow |
+
+### Key Templates
+
+Role templates define each agent's behavior:
+- `internal/templates/roles/mayor.md.tmpl` - Coordination
+- `internal/templates/roles/architect.md.tmpl` - Design
+- `internal/templates/roles/planner.md.tmpl` - Task breakdown
+- `internal/templates/roles/qa.md.tmpl` - Review
+- `templates/polecat-CLAUDE.md` - Implementation

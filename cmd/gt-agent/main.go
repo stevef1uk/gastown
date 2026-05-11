@@ -229,10 +229,8 @@ func findGT() string {
 func statePath(townRoot, role, rig, polecat string) string {
 	var dir string
 	switch role {
-	case "deacon":
-		dir = filepath.Join(townRoot, "deacon")
-	case "mayor":
-		dir = filepath.Join(townRoot, "mayor")
+	case "deacon", "mayor", "planner", "mechanic":
+		dir = filepath.Join(townRoot, role)
 	default:
 		if rig != "" && polecat != "" {
 			dir = filepath.Join(townRoot, rig, "polecats", polecat)
@@ -494,58 +492,55 @@ func run() error {
 			userPrompt += fmt.Sprintf("%d. %s\n", i+1, item)
 		}
 
-		// Call LLM
-		fmt.Println("[gt-agent] Calling LLM...")
-		response, err := client.Complete(ctx, systemPrompt, userPrompt)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "[gt-agent] LLM completion failed: %v\n", err)
-			// Don't exit on LLM error — save state and sleep
-			_ = saveState(stateFile, state)
-			time.Sleep(baseSleep)
-			continue
-		}
-
-		// DEBUG: Log LLM response
-		debugLen := len(response)
-		if debugLen > 500 {
-			debugLen = 500
-		}
-		fmt.Printf("[gt-agent] LLM response (%d chars):\n%s\n---\n", len(response), response[:debugLen])
-
-		// Parse and execute commands
-		lines := strings.Split(response, "\n")
-		var summary string
 		extraordinary := false
-		
-		// Check for hallucinated outputs first
-		for _, line := range lines {
-			if strings.HasPrefix(strings.TrimSpace(line), "Output:") {
-				fmt.Println("[gt-agent] ⚠ REJECTED hallucinated output. Agent is trying to simulate the terminal.")
-				recordMoleculeState("SYSTEM ERROR", "ERROR: Do not simulate 'Output:'. Output EXACTLY ONE 'CMD: [command]' and STOP generating text. The system will run the command and provide the real output. Retry your command.")
-				state.ExtraordinaryAction = true
+		// Multi-turn conversation loop within a single patrol cycle.
+		// This allows the agent to see command output and proceed immediately.
+		messages := []llm.Message{
+			{Role: "system", Content: systemPrompt},
+			{Role: "user", Content: userPrompt},
+		}
+
+		maxTurns := 10
+		var summary string
+		for turn := 1; turn <= maxTurns; turn++ {
+			if turn > 1 {
+				fmt.Printf("[gt-agent] Calling LLM (turn %d)...\n", turn)
+			} else {
+				fmt.Println("[gt-agent] Calling LLM...")
+			}
+
+			response, err := client.CompleteMessages(ctx, messages)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "[gt-agent] LLM completion failed: %v\n", err)
 				break
 			}
-		}
-		if state.ExtraordinaryAction {
-			_ = saveState(stateFile, state)
-			time.Sleep(baseSleep)
-			continue
-		}
 
-		var cmdBlocks []string // Collect ALL CMD blocks
-		var currentCmdLines []string
-		var inCmdBlock bool
-		for _, line := range lines {
-			trimmed := strings.TrimSpace(line)
-			if strings.HasPrefix(trimmed, "CMD:") {
-				// Save previous block if exists
-				if len(currentCmdLines) > 0 {
-					cmdBlocks = append(cmdBlocks, strings.Join(currentCmdLines, "\n"))
-					currentCmdLines = nil
+			// Record raw response
+			fmt.Printf("[gt-agent] LLM response (%d chars):\n%s\n---\n", len(response), response)
+			recordMoleculeState("LLM RESPONSE", response)
+			messages = append(messages, llm.Message{Role: "assistant", Content: response})
+
+			// Parse commands and summary
+			lines := strings.Split(response, "\n")
+			var cmdBlocks []string
+			var currentCmdLines []string
+			var inCmdBlock bool
+			hallucinated := false
+
+			for _, line := range lines {
+				trimmed := strings.TrimSpace(line)
+				if strings.HasPrefix(trimmed, "Output:") {
+					fmt.Println("[gt-agent] \u26a0 REJECTED hallucinated output.")
+					hallucinated = true
+					break
 				}
-				cmd := strings.TrimPrefix(trimmed, "CMD:")
-				cmd = strings.TrimSpace(cmd)
-				if cmd != "" {
+				if strings.HasPrefix(trimmed, "CMD:") {
+					if len(currentCmdLines) > 0 {
+						cmdBlocks = append(cmdBlocks, strings.Join(currentCmdLines, "\n"))
+						currentCmdLines = nil
+					}
+					cmd := strings.TrimPrefix(trimmed, "CMD:")
+					cmd = strings.TrimSpace(cmd)
 					if strings.HasPrefix(cmd, "```") {
 						cmd = strings.TrimPrefix(cmd, "```")
 						cmd = strings.TrimPrefix(cmd, "bash")
@@ -556,79 +551,101 @@ func run() error {
 						currentCmdLines = append(currentCmdLines, cmd)
 						inCmdBlock = true
 					}
-				}
-			} else if inCmdBlock {
-				if strings.HasPrefix(trimmed, "DONE:") {
-					summary = strings.TrimPrefix(trimmed, "DONE:")
-					summary = strings.TrimSpace(summary)
-					cmdBlocks = append(cmdBlocks, strings.Join(currentCmdLines, "\n"))
-					currentCmdLines = nil
-					inCmdBlock = false
-					break
-				}
-				if trimmed == "```" {
-					continue
-				}
-				currentCmdLines = append(currentCmdLines, line)
-			} else if strings.HasPrefix(trimmed, "DONE:") {
-				summary = strings.TrimPrefix(trimmed, "DONE:")
-				summary = strings.TrimSpace(summary)
-			}
-		}
-		// Don't forget the last block if no DONE: was found
-		if len(currentCmdLines) > 0 && len(cmdBlocks) == 0 {
-			cmdBlocks = append(cmdBlocks, strings.Join(currentCmdLines, "\n"))
-		}
-
-		// Execute ALL command blocks
-		for _, fullCmd := range cmdBlocks {
-			cmd := strings.TrimSpace(fullCmd)
-			// Fix escaped quotes from LLM: \' becomes just '
-			cmd = strings.ReplaceAll(cmd, "\\'", "'")
-			cmd = strings.ReplaceAll(cmd, "\\\"", "\"")
-			if strings.HasPrefix(cmd, "`") && strings.HasSuffix(cmd, "`") && !strings.Contains(cmd, "\n") {
-				cmd = strings.Trim(cmd, "`")
-			}
-			fmt.Printf("[gt-agent] DEBUG: Original cmd: %q\n", cmd)
-			safeCmd, rewritten := normalizeGeneratedCommand(cmd)
-			fmt.Printf("[gt-agent] DEBUG: safeCmd: %q, rewritten: %v\n", safeCmd, rewritten)
-			if rewritten {
-				fmt.Printf("[gt-agent] Rewrote command: %q -> %q\n", cmd, safeCmd)
-			}
-			fmt.Printf("[gt-agent] $ %s\n", safeCmd)
-			out, err := exec.Command("/bin/sh", "-c", safeCmd).CombinedOutput()
-			recordMoleculeState(safeCmd, string(out))
-			if err != nil {
-				cmdFailed := true
-				if strings.Contains(string(out), "circuit breaker is open") {
-					fmt.Println("[gt-agent] Dolt circuit breaker open, retrying in 5s...")
-					time.Sleep(5 * time.Second)
-					out, err = exec.Command("/bin/sh", "-c", safeCmd).CombinedOutput()
-					recordMoleculeState(safeCmd, string(out))
-					if err == nil {
-						fmt.Printf("[gt-agent] Output (retry OK):\n%s\n", string(out))
-						cmdFailed = false
+				} else if inCmdBlock {
+					if strings.HasPrefix(trimmed, "DONE:") {
+						summary = strings.TrimSpace(strings.TrimPrefix(trimmed, "DONE:"))
+						cmdBlocks = append(cmdBlocks, strings.Join(currentCmdLines, "\n"))
+						currentCmdLines = nil
+						inCmdBlock = false
+						break
 					}
+					if trimmed == "```" || trimmed == "---" {
+						continue
+					}
+					currentCmdLines = append(currentCmdLines, line)
+				} else if strings.HasPrefix(trimmed, "DONE:") {
+					summary = strings.TrimSpace(strings.TrimPrefix(trimmed, "DONE:"))
 				}
-				if cmdFailed {
-					fmt.Fprintf(os.Stderr, "[gt-agent] Error: %v\n%s\n", err, string(out))
-					extraordinary = true
-				}
-			} else {
-				fmt.Printf("[gt-agent] Output:\n%s\n", string(out))
 			}
-		}
 
-		if summary != "" {
-			fmt.Printf("[gt-agent] Summary: %s\n", summary)
-		}
+			if hallucinated {
+				messages = append(messages, llm.Message{Role: "user", Content: "ERROR: Do not simulate 'Output:'. Output 'CMD: [command]' and STOP. The system will provide the output."})
+				continue
+			}
 
-		// Override LLM-generated DONE if commands actually failed.
-		// The LLM predicts DONE before seeing real command output, so it
-		// often claims success despite errors. We correct this here.
-		if extraordinary && summary != "" && !strings.Contains(summary, "failed") && !strings.Contains(summary, "error") && !strings.Contains(summary, "could not") {
-			summary = "Could not complete: one or more commands failed. Check the output above for details."
-			fmt.Printf("[gt-agent] Corrected summary (commands failed): %s\n", summary)
+			if len(currentCmdLines) > 0 {
+				cmdBlocks = append(cmdBlocks, strings.Join(currentCmdLines, "\n"))
+			}
+
+			if len(cmdBlocks) == 0 {
+				fmt.Println("[gt-agent] No commands found. Ending patrol cycle.")
+				break
+			}
+
+			// Execute ALL command blocks
+			var combinedOutput strings.Builder
+			for _, fullCmd := range cmdBlocks {
+				cmd := strings.TrimSpace(fullCmd)
+				cmd = strings.ReplaceAll(cmd, "\\'", "'")
+				cmd = strings.ReplaceAll(cmd, "\\\"", "\"")
+				if strings.HasPrefix(cmd, "`") && strings.HasSuffix(cmd, "`") && !strings.Contains(cmd, "\n") {
+					cmd = strings.Trim(cmd, "`")
+				}
+
+				safeCmd, rewritten := normalizeGeneratedCommand(cmd)
+				if rewritten {
+					fmt.Printf("[gt-agent] Rewrote command: %q -> %q\n", cmd, safeCmd)
+				}
+				fmt.Printf("[gt-agent] $ %s\n", safeCmd)
+
+				c := exec.Command("/bin/sh", "-c", safeCmd)
+				c.Env = os.Environ()
+				c.Env = append(c.Env, "GT_SESSION=" + sessionName)
+				out, err := c.CombinedOutput()
+				recordMoleculeState(safeCmd, string(out))
+
+				if err != nil {
+					cmdFailed := true
+					if strings.Contains(string(out), "circuit breaker is open") {
+						fmt.Println("[gt-agent] Dolt circuit breaker open, retrying in 5s...")
+						time.Sleep(5 * time.Second)
+						out, err = exec.Command("/bin/sh", "-c", safeCmd).CombinedOutput()
+						recordMoleculeState(safeCmd, string(out))
+						if err == nil {
+							cmdFailed = false
+						}
+					}
+					if cmdFailed {
+						fmt.Fprintf(os.Stderr, "[gt-agent] Error: %v\n%s\n", err, string(out))
+						extraordinary = true
+						combinedOutput.WriteString(fmt.Sprintf("Command: %s\nError: %v\nOutput: %s\n\n", safeCmd, err, string(out)))
+					} else {
+						fmt.Printf("[gt-agent] Output (retry OK):\n%s\n", string(out))
+						combinedOutput.WriteString(fmt.Sprintf("Command: %s\nOutput: %s\n\n", safeCmd, string(out)))
+					}
+				} else {
+					fmt.Printf("[gt-agent] Output:\n%s\n", string(out))
+					combinedOutput.WriteString(fmt.Sprintf("Command: %s\nOutput: %s\n\n", safeCmd, string(out)))
+				}
+
+				if extraordinary {
+					state.ExtraordinaryAction = true
+				}
+			}
+
+			// Feed output back to LLM for the next turn
+			messages = append(messages, llm.Message{
+				Role:    "user",
+				Content: fmt.Sprintf("Output:\n%s", combinedOutput.String()),
+			})
+
+			// Stop if we saw gt done, gt handoff, or a summary
+			if summary != "" || strings.Contains(response, "gt done") || strings.Contains(response, "gt handoff") {
+				if summary != "" {
+					fmt.Printf("[gt-agent] Summary: %s\n", summary)
+				}
+				break
+			}
 		}
 
 		// Call role-specific post-work command
@@ -739,6 +756,10 @@ func normalizeGeneratedCommand(cmd string) (string, bool) {
 		rewritten = true
 	}
 
+	if hasCommandPrefix(trimmed, "gt handoff") && !strings.Contains(trimmed, " -y") && !strings.Contains(trimmed, " --yes") {
+		trimmed += " -y"
+		rewritten = true
+	}
 	if hasCommandPrefix(trimmed, "gt prime") {
 		return "gt prime", true
 	}

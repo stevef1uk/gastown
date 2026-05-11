@@ -345,3 +345,32 @@ Fix the end-to-end Gas Town flow where a spec can be handed to agents who autono
 - **Fix**: Changed formula to use printf instead of heredoc format.
 - **Status**: Need to rebuild and test.
 
+
+## [2026-05-11] Implementing Multi-turn Agent Patrols
+- **Issue**: Architect (and other agents) stuck in loops because gt-agent was stateless between patrols. Agents would read a file, get output, patrol would end, and the next patrol would start without the previous output in context.
+- **Fix 1**: Updated gt-agent/internal/llm/client.go to support CompleteMessages (history).
+- **Fix 2**: Refactored gt-agent/main.go to maintain a conversation history within each patrol cycle, allowing up to 10 turns.
+- **Fix 3**: Relaxed the "EXACTLY ONE CMD:" rule in base.md.tmpl to encourage conversational efficiency.
+- **Status**: Deployment pending (gt down, make install, gt up required).
+
+- [x] Verified Multi-turn Loop: Architect successfully reads SPEC.md and writes architecture.md in a single patrol.
+- [x] Fixed GT_SESSION Propagation: Exported session ID to agent commands to fix 'gt handoff' and 'gt done' detection.
+- [x] Fixed Rig-Scoped Handoff: Updated internal/cmd/handoff.go to correctly resolve working directories for rig agents (Architect, QA, Mechanic, Planner).
+- [x] Fixed Multi-Command Parsing: Updated gt-agent to correctly parse and execute multiple CMD blocks in a single LLM response.
+- [x] Fixed `shiny` formula handoff: Updated `shiny.formula.toml` to explicitly target `mayor` in the handoff step, preventing self-handoff loops.
+- [x] Fixed `gt done` normalization: Removed incorrect `-y` flag injection in `gt-agent` for the `gt done` command, which doesn't support it.
+- [x] Upgraded Polecat capacity: Restarted `testgt2/rust` with `meta/llama-3.3-70b-instruct` to resolve Ralph Wiggum loops caused by the smaller `ministral-3:8b` model.
+- [x] Fixed Handoff Loop: Updated all role templates (`architect`, `planner`, `qa`, `crew`) to include `mayor` as an explicit handoff target, breaking the recursive self-handoff loop.
+
+- [x] Fixed `bd create` command in Planner template and `mol-idea-to-plan` formula: Removed unsupported `--formula` flag.
+- [x] System Stabilization: Performed full `gt down`, `make install`, `gt up` sequence to clear Dolt contention and apply template fixes.
+- [x] Verified Planner Progress: Planner successfully created task `hq-z9bx.3` and handed off to the Mayor.
+
+### [2026-05-11] Current State & Next Steps
+- **Status**: The "Hello API" project has progressed from Design (Architect) to Planning (Planner).
+- **Current Observation**: The Planner has successfully broken down the task and handed off to the Mayor.
+- **Dolt Health**: Observed high CPU usage and "Dolt circuit breaker" warnings during peak agent activity. This is partially resolved by the system restart but remains a potential bottleneck for high-concurrency swarms.
+- **Next Steps**:
+    - Monitor the Mayor's response to the Planner's "Plan Complete" handoff.
+    - Verify that the next agent (e.g., Architect or a Polecat) picks up the implementation task `hq-z9bx.3`.
+    - Investigate why the Mayor is "awaiting signal" despite the Planner's handoff (checking NATS delivery).

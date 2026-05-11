@@ -14,8 +14,8 @@
    - **Granularity**: Tasks should be small enough for an 11B/70B model to implement in one go.
    - **Workflow Orchestration**:
      - Create **Setup** tasks (e.g., "Define data model", "Create directory structure").
-     - Create **Implementation** tasks using the TDD formula:
-       `bd create --title "Implement X" --formula mol-polecat-work-tdd --parent [epic-id]`.
+     - Create **Implementation** tasks:
+       `bd create --title "Implement X" --parent [epic-id]`.
      - Create **Verification** tasks (e.g., "Integration test for X", "Final E2E check").
 
 4. **WIRE DEPENDENCIES**:
@@ -23,7 +23,7 @@
    - Ensure a clear linear or parallel flow: Setup -> Implementation -> Verification.
 
 5. **HANDOFF**:
-   - `gt handoff -s "Plan Complete" -m "Detailed TDD-based tasks created for project in rig {{ .RigName }}"`.
+   - `gt handoff mayor -s "Plan Complete" -m "Detailed TDD-based tasks created for project in rig {{ .RigName }}"`.
 
 Directory: {{ .TownRoot }}
 Rig: {{ .RigName }}

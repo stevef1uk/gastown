@@ -48,13 +48,19 @@ type CompletionResponse struct {
 
 // Complete sends a prompt to the LLM and returns the response.
 func (c *Client) Complete(ctx context.Context, systemPrompt, userPrompt string) (string, error) {
+	messages := []Message{
+		{Role: "system", Content: systemPrompt},
+		{Role: "user", Content: userPrompt},
+	}
+	return c.CompleteMessages(ctx, messages)
+}
+
+// CompleteMessages sends a sequence of messages to the LLM.
+func (c *Client) CompleteMessages(ctx context.Context, messages []Message) (string, error) {
 	reqBody := map[string]interface{}{
-		"model": c.model,
-		"messages": []Message{
-			{Role: "system", Content: systemPrompt},
-			{Role: "user", Content: userPrompt},
-		},
-		"stream": false,
+		"model":    c.model,
+		"messages": messages,
+		"stream":   false,
 	}
 
 	jsonData, err := json.Marshal(reqBody)

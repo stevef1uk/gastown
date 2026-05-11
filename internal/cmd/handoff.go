@@ -1090,6 +1090,17 @@ func sessionWorkDir(sessionName, townRoot string) (string, error) {
 			return fmt.Sprintf("%s/%s/witness", townRoot, identity.Rig), nil
 		case session.RoleRefinery:
 			return fmt.Sprintf("%s/%s/refinery/rig", townRoot, identity.Rig), nil
+		case session.RoleArchitect:
+			return fmt.Sprintf("%s/%s/architect", townRoot, identity.Rig), nil
+		case session.RoleQA:
+			return fmt.Sprintf("%s/%s/qa", townRoot, identity.Rig), nil
+		case session.RoleMechanic:
+			if identity.Rig != "" {
+				return fmt.Sprintf("%s/%s/mechanic", townRoot, identity.Rig), nil
+			}
+			return townRoot + "/mechanic", nil
+		case session.RolePlanner:
+			return townRoot + "/planner", nil
 		case session.RolePolecat:
 			return fmt.Sprintf("%s/%s/polecats/%s", townRoot, identity.Rig, identity.Name), nil
 		case session.RoleDog:

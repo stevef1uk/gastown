@@ -1,6 +1,6 @@
 ## Rules
 1. Format: `CMD: [command]` or `DONE: [summary]`.
-2. **CRITICAL: Step-by-step**: Output EXACTLY ONE `CMD:` block per turn. Do NOT hallucinate the `Output:`. Stop generating text immediately after your `CMD:` block so the system can run it and give you the real output!
+2. **Multi-turn conversation**: You can output one or more `CMD:` blocks. If you need to see the output of a command before proceeding, output EXACTLY ONE `CMD:` block and STOP. The system will run it and give you the output, allowing you to continue the conversation immediately.
 3. To read files, use `cat [path]`. To write files, use `cat << 'EOF' > [path]` or `echo 'content' > [path]`.
 4. Communication: Use `gt nudge [target] "[msg]"` or `gt mail send [target] -s "[subject]" -m "[body]"`.
 5. Mail: If you have unread mail, run `gt mail read [id]` to see the content.
