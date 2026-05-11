@@ -82,6 +82,8 @@ func TestReadHookSessionID_SourceFromEnv(t *testing.T) {
 func TestReadHookSessionID_AutoGeneratesFallback(t *testing.T) {
 	t.Setenv("GT_SESSION_ID", "")
 	t.Setenv("CLAUDE_SESSION_ID", "")
+	t.Setenv("GT_ROOT", "")
+	t.Setenv("GT_TOWN_ROOT", "")
 
 	// Use a temp dir with no .runtime/session_id
 	dir := t.TempDir()
