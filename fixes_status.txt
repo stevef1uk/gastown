@@ -367,6 +367,10 @@ Fix the end-to-end Gas Town flow where a spec can be handed to agents who autono
 - [x] Verified Planner Progress: Planner successfully created task `hq-12q9.1-5` and handed off to the Mayor.
 - [x] Proxy Model Routing Upgrade: Added `planner` to the massive model list in `freeride` proxy to prevent low-capacity hallucinations.
 - [x] Dolt Health Optimization: Disabled Dolt metrics collection to eliminate CPU spikes and circuit breaker loops.
+- [x] **Unit Test Recovery**: Resolved two regression failures:
+    - `TestReadHookSessionID_AutoGeneratesFallback`: Fixed by explicitly clearing `GT_ROOT` and `GT_TOWN_ROOT` in the test environment to prevent interference from the real Gas Town installation.
+    - `TestParseArchitect`: Fixed by manually registering the `te` prefix in the `PrefixRegistry` during the test, as the test environment does not initialize the global registry.
+- [x] **Full Test Suite Green**: Confirmed `go test ./...` is 100% passing across all packages.
 
 ### [2026-05-11] Current State & Accomplishments
 - **Status**: **STABLE & AUTONOMOUS**. The "Hello API" project has successfully traversed Design (Architect) and Planning (Planner) and is now in Implementation.
