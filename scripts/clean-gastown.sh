@@ -769,10 +769,22 @@ if command -v dolt &>/dev/null && [[ -d "$TOWN_ROOT/.dolt-data/hq" ]]; then
     DOLT_WISPS=$(cd "$TOWN_ROOT/.dolt-data/hq" && dolt sql -q "SELECT COUNT(*) FROM wisps;" 2>/dev/null | tail -1 || echo "0")
 fi
 
-# Find stray beads directories
+# Find stray beads directories. Skip anything that lives inside
+# $TOWN_ROOT — the town's own .beads/ is the canonical one and is
+# handled by Phase 5 (which preserves formulas/). If we listed it
+# here too, the Phase 5 second-pass `rm -rf` further down would
+# clobber the freshly-re-provisioned formulas/ subdir.
 STRAY_BEADS=()
-[[ -d "$HOME/.beads" ]] && STRAY_BEADS+=("$HOME/.beads")
-[[ -d "$HOME/gt/.beads" ]] && STRAY_BEADS+=("$HOME/gt/.beads")
+for candidate in "$HOME/.beads" "$HOME/gt/.beads"; do
+    [[ -d "$candidate" ]] || continue
+    # Resolve to absolute path for comparison
+    abs_candidate="$(cd "$candidate" 2>/dev/null && pwd)" || continue
+    abs_town_beads="$(cd "$TOWN_ROOT/.beads" 2>/dev/null && pwd)" || true
+    if [[ -n "$abs_town_beads" && "$abs_candidate" == "$abs_town_beads" ]]; then
+        continue
+    fi
+    STRAY_BEADS+=("$candidate")
+done
 
 # Find unregistered rig directories in TOWN_ROOT
 UNREGISTERED_RIGS=()
@@ -999,14 +1011,68 @@ else
     log_warn "No .dolt-data/ found"
 fi
 
-# ─── Phase 5: Delete Beads Cache ─────────────────────────────────────
+# ─── Phase 5: Delete Beads Cache (preserve formulas) ────────────────
+#
+# `.beads/formulas/*.formula.toml` files are static, content-addressable
+# workflow definitions. They are provisioned by `gt install` from the
+# binary's embedded FS, and the sling-time `verifyFormulaExists`
+# helper looks them up via `bd formula show` (which only sees the
+# on-disk copies, not the embedded ones). If we wipe them on a nuclear
+# reset, the next `gt sling shiny` / `gt sling mol-idea-to-plan` /
+# `gt sling code-review` fails with:
+#
+#   Error: formula 'shiny' not found (check 'bd formula list')
+#
+# breaking the Mayor → Architect → Planner → Polecat → QA pipeline.
+# Since the files are static, we preserve `.beads/formulas/` across
+# the wipe; everything else under `.beads/` (DB credentials, port
+# file, routing, backup, ISSUES export, etc.) is removed normally.
 
-log_info "Clearing beads cache..."
+log_info "Clearing beads cache (preserving formulas/)..."
 if [[ -d "$TOWN_ROOT/.beads" ]]; then
+    # Move formulas/ aside, wipe everything else, restore formulas/.
+    PRESERVE_FORMULAS_TMP=""
+    if [[ -d "$TOWN_ROOT/.beads/formulas" ]]; then
+        PRESERVE_FORMULAS_TMP="$(mktemp -d -t gt-formulas.XXXXXX)"
+        mv "$TOWN_ROOT/.beads/formulas" "$PRESERVE_FORMULAS_TMP/formulas"
+    fi
     rm -rf "$TOWN_ROOT/.beads"
-    log_ok "Deleted .beads/"
+    if [[ -n "$PRESERVE_FORMULAS_TMP" ]]; then
+        mkdir -p "$TOWN_ROOT/.beads"
+        mv "$PRESERVE_FORMULAS_TMP/formulas" "$TOWN_ROOT/.beads/formulas"
+        rmdir "$PRESERVE_FORMULAS_TMP" 2>/dev/null || true
+        formula_count=$(find "$TOWN_ROOT/.beads/formulas" -maxdepth 1 -name '*.formula.toml' 2>/dev/null | wc -l)
+        log_ok "Deleted .beads/ (preserved $formula_count formula(s) at .beads/formulas/)"
+    else
+        log_ok "Deleted .beads/ (no formulas to preserve)"
+    fi
 else
     log_warn "No .beads/ found"
+fi
+
+# Belt-and-braces re-provision: if `.beads/formulas/` is still empty
+# (no prior formulas to preserve, e.g. someone wiped manually before
+# us) AND we can locate this script's sibling source tree
+# `internal/formula/formulas/`, copy *.formula.toml from there. This
+# matches `formula.ProvisionFormulas()` in the Go code minus the
+# checksum tracking (which bd does not require at sling time).
+if [[ ! -d "$TOWN_ROOT/.beads/formulas" || -z "$(ls -A "$TOWN_ROOT/.beads/formulas" 2>/dev/null)" ]]; then
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    FORMULA_SRC="$SCRIPT_DIR/../internal/formula/formulas"
+    if [[ -d "$FORMULA_SRC" ]]; then
+        mkdir -p "$TOWN_ROOT/.beads/formulas"
+        cp_count=0
+        for f in "$FORMULA_SRC"/*.formula.toml; do
+            [[ -f "$f" ]] || continue
+            cp "$f" "$TOWN_ROOT/.beads/formulas/"
+            ((cp_count++)) || true
+        done
+        if (( cp_count > 0 )); then
+            log_ok "Re-provisioned $cp_count formula(s) from $FORMULA_SRC"
+        fi
+    else
+        log_warn "No formulas to restore (expected $FORMULA_SRC); next 'gt sling shiny' may fail"
+    fi
 fi
 
 if [[ ${#STRAY_BEADS[@]} -gt 0 ]]; then
@@ -1056,6 +1122,18 @@ fi
 if [[ -f "$TOWN_ROOT/.events.jsonl.lock" ]]; then
     rm -f "$TOWN_ROOT/.events.jsonl.lock"
     log_ok "Deleted .events.jsonl.lock"
+fi
+
+# Per-channel event spool (events/<channel>/*.event). These pre-date
+# the centralized .events.jsonl and previously survived every nuclear
+# reset. Stale entries (e.g. SLOT_OPEN events from a prior polecat
+# named "rust") aren't load-bearing for `gt up`, but they pollute any
+# grep for current rig state and confuse session-aware tooling. The
+# spool is fully rebuilt by the daemon on first event after `gt up`,
+# so it is safe to remove entirely.
+if [[ -d "$TOWN_ROOT/events" ]]; then
+    rm -rf "$TOWN_ROOT/events"
+    log_ok "Deleted events/ (per-channel event spool)"
 fi
 
 # ─── Phase 8: Delete Runtime Artifacts ───────────────────────────────
