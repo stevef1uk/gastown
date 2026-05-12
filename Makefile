@@ -121,6 +121,31 @@ install: check-up-to-date build
 	@# Prevents drift when plugin fixes merge but runtime dirs are stale.
 	@$(INSTALL_DIR)/$(BINARY) plugin sync --source $(CURDIR)/plugins 2>/dev/null && \
 		echo "Plugins synced." || true
+	@# Sync embedded formula source files to every detected town's
+	@# .beads/formulas/. The binary embeds formulas (via go:embed) and reads
+	@# them at install/seed time; but agents read .beads/formulas/ at sling
+	@# time. Without this copy, edits to internal/formula/formulas/*.toml
+	@# rebuild the binary but never reach the runtime (Fix #114c).
+	@# We only refresh files that already exist on disk (preserving
+	@# fresh-install semantics handled by ProvisionFormulas).
+	@GT_ROOTS="$${GT_ROOT:-$(HOME)/gt}"; \
+	for root in $$GT_ROOTS; do \
+		dst="$$root/.beads/formulas"; \
+		if [ -d "$$dst" ]; then \
+			updated=0; \
+			for src in $(CURDIR)/internal/formula/formulas/*.formula.toml; do \
+				[ -f "$$src" ] || continue; \
+				name=$$(basename "$$src"); \
+				if [ -f "$$dst/$$name" ] && ! cmp -s "$$src" "$$dst/$$name"; then \
+					cp "$$src" "$$dst/$$name"; \
+					updated=$$((updated+1)); \
+				fi; \
+			done; \
+			if [ $$updated -gt 0 ]; then \
+				echo "Synced $$updated formula(s) → $$dst"; \
+			fi; \
+		fi; \
+	done
 
 # safe-install: Replace binary WITHOUT restarting daemon or killing sessions.
 # Use this for automated rebuilds (e.g., rebuild-gt plugin). Sessions pick up

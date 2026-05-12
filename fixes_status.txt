@@ -2536,6 +2536,213 @@ to ship, so deferred to the next session.
   is still under-specified OR the local LLM is too weak — at
   that point, swap to a remote LLM as the next debugging lever.
 
+### Fix #113 — Mayor Stage 0 `sh -c '...'` pipeline keeps erroring out
+
+- **Symptom**: With every fix above in place and a freshly nuked
+  town, Mayor still failed at Stage 0 every kickoff with one of:
+    1. `Syntax error: Unterminated quoted string` at "line 11" of
+       the `sh -c '...'` body.
+    2. `Syntax error: "then" unexpected` on the first line of
+       the body.
+    3. `SyntaxError: invalid syntax` inside an inner
+       `python3 -c "..."` invocation.
+  Each shape produced a `BLOCKED: bd create failed` self-mail and
+  Stage 0 never created the project bead, so the pipeline stayed
+  parked at Stage 0 forever.
+
+- **Three independent root causes, one observed regression**:
+
+  - **Cause A (parser): blank line inside a multi-line CMD: block**
+    terminated the captured script early. `parseLLMResponse` in
+    `cmd/gt-agent/main.go` used to flush `scriptBuf` on the first
+    blank or markdown-shaped line after the `CMD:` marker. Mayor's
+    Stage 0 template has paragraph-style blank lines for
+    readability inside `sh -c '...'`, so the parser handed sh a
+    body whose opening `'` was never closed — hence "Unterminated
+    quoted string". Fixed by adding a `hasOpenShellQuote()`
+    helper that scans `scriptBuf` for unbalanced `'` / `"` and,
+    when the quote is open, treats blank/markdown/prose lines as
+    part of the quoted string instead of as script terminators.
+    Heredocs continue to be tracked by the existing `heredocTerm`
+    state.
+
+  - **Cause B (LLM): collapsing multi-line scripts to a single
+    line of whitespace-separated tokens**. The local llama3.3
+    sometimes flattens newlines to spaces, turning
+    `set -u\nMAIL_ID="..."\nif [ ... ]; then\n  echo ...\nfi`
+    into `set -u MAIL_ID="..." if [ ... ]; then echo ... fi`,
+    which sh cannot parse. Fixed by rewriting the Stage 0
+    pipeline in `internal/templates/roles/mayor.md.tmpl` as one
+    logical line of `sh -c '... ; ... ; ... ; ...'` with explicit
+    `;` after every statement. The script now works whether the
+    LLM keeps newlines or collapses them.
+
+  - **Cause C (runtime): blanket `\"` → `"` unescape destroyed
+    nested escapes**. `gt-agent`'s pre-exec normalizer
+    unconditionally ran `strings.ReplaceAll(cmd, "\\\"", "\"")` to
+    clean up over-escaping from chatty LLMs. That stripped the
+    `\"` inside `python3 -c "import json,sys; ... print(d.get(\"id\"))"`,
+    which broke sh's double-quote nesting and left the inner
+    Python with `print(d.get(id) or d.get(ID) or )`. Fixed by
+    adding `isMultilineQuotedScript(cmd)`: when the captured
+    command is a multi-line `sh -c '...'` / `bash -c "..."`, skip
+    the unescape and let sh do its own escape processing.
+    Additionally swapped the Python one-liner in the Stage 0
+    pipeline for `jq -r ".id // .ID // empty"` so no inner
+    double-quote-in-double-quote escaping is needed in the first
+    place.
+
+- **Files**: `cmd/gt-agent/main.go` (parser quote-state tracking,
+  `hasOpenShellQuote`, `isMultilineQuotedScript`, exempt from the
+  unescape pass), `cmd/gt-agent/main_test.go` (new
+  `TestIsMultilineQuotedScript`, three new
+  `TestParseLLMResponse` cases),
+  `internal/templates/roles/mayor.md.tmpl` (Stage 0 pipeline
+  rewritten as a oneliner with `;` separators, SEMICOLON RULE
+  added, HEREDOC RULE strengthened, Python replaced with `jq`).
+
+- **Validation**: After rebuild Mayor's patrol #1 emitted the
+  oneliner Stage 0 script exactly as expected; sh parsed it
+  cleanly; `bd create` returned `hq-9jo`; `gt sling shiny --on
+  hq-9jo testgt2/architect` succeeded on the canonical path
+  (no mail-fallback needed); Mayor self-mailed `Stage 0 complete:
+  hq-9jo` and stopped with `DONE: Stage 0 dispatched`. End-to-
+  end Stage 0 now reliably works in a single patrol turn.
+
+### Fix #114 — Mayor fan-out noise + hardcoded rig examples in templates
+
+- **Symptom (after Fix #113 unblocked Stage 0)**: Stage 0 worked,
+  Mayor slung `shiny` to the architect — but downstream the
+  pipeline still stalled and the inboxes filled with junk:
+
+    1. **Architect never wrote `architecture.md`.** It read the
+       SPEC, then drifted onto `gt patrol` / `gt patrol report`
+       commands (those are deacon/witness/refinery commands, not
+       architect commands) and eventually unhooked itself idle.
+    2. **Planner woke up uninvited and mailed BLOCKED.** With no
+       `mol-idea-to-plan` sling and an empty inbox, the planner
+       still hallucinated work — running `gt patrol output
+       archives`, `gt patrol new --portal mol-planner-patrol`
+       (made-up flags), then mailing Mayor `BLOCKED: missing
+       architecture file` referencing a `mol-planner-patrol`
+       proto that does not exist.
+    3. **Mayor amplified the noise** by replying to the planner's
+       `BLOCKED: missing architecture file` with
+       `gt mail send planner/ -s "Investigate BLOCKED:
+       missing architecture file" -m "Check canonical locations
+       for architecture file and verify mol-planner-patrol for
+       details."`, then later mailing the architect
+       `gt mail send testgt2/architect -s "Create architecture"
+       -m "Please create the architecture file ..."`. The first
+       is exactly the "do NOT re-sling the same stage" anti-
+       pattern the routing table calls out. The second is even
+       worse: the architect was already slung the design step at
+       Stage 0 via the canonical `shiny` sling — re-mailing
+       "Create architecture" just adds redundant work that the
+       architect role template explicitly ignores.
+
+- **Three independent root causes**:
+
+  - **Cause A (formula): `shiny.formula.toml`'s `design` step had a
+    hardcoded example baked into the `description`** —
+    literally `/home/stevef/gt/testgt2/architect/` AND `Hello API`
+    AND a `printf` example for a FastAPI project. The architect's
+    LLM saw the kickoff mail (FizzBuzz SPEC) AND the wisp
+    description (Hello API printf example) and could not reconcile
+    them. This is a direct repeat of Fix #85's "example text in a
+    prompt becomes a regurgitation pattern" — the formula was
+    written when testgt2 was the only ever-used rig and the
+    canonical example accidentally shipped to production. Fixed by
+    rewriting the `description` to be spec-agnostic ("Read the
+    project SPEC ... write architecture.md following your architect
+    role template"). The architect template (`architect.md.tmpl`)
+    already has the detailed step-by-step instructions, so the
+    formula step just needs to point at it, not duplicate it.
+
+  - **Cause B (templates): hardcoded `testgt2` rig name and
+    `/home/stevef/gt` path** scattered through
+    `mayor.md.tmpl`, `planner.md.tmpl`, and
+    `mol-mechanic-patrol.formula.toml`. The mayor template said
+    "For this town the rig is almost always `testgt2`." The
+    planner template's `jq` shape example used `testgt2` and its
+    "FILE PATH DISCIPLINE" example pasted a literal
+    `/home/stevef/gt/testgt2/architect/architecture.md`. The
+    mechanic patrol formula's `rig` var had `default = "testgt2"`
+    and `town_root` had `default = "/home/stevef/gt"`. All of
+    these are dev-machine leakage that will break the moment
+    anyone creates a rig with a different name. Fixed by
+    replacing `testgt2` with `<rig>` or `<rig-name>` in all
+    illustrative text and removing the dev-specific defaults
+    (mechanic patrol now `required = true` on those vars; the
+    formula consumer must pass them at sling time).
+
+  - **Cause C (runtime): Mayor's fan-out responses to BLOCKED /
+    IDLE mails** — the LLM is incapable of stopping at a BLOCKED
+    signal. The template already said "investigate, do NOT re-
+    sling the same stage" but the LLM routed around it by
+    rephrasing: "Investigate BLOCKED: ...", "Check canonical
+    locations", "Please create architecture", "RE: IDLE
+    Acknowledged". Each of these produces another BLOCKED reply
+    from the recipient and a feedback loop builds. Fixed by
+    pushing the rule from the template down into
+    `hasContentFreeMailSend` in `cmd/gt-agent/main.go`:
+      * `mailSendInvestigateForwardRE` rejects subjects like
+        `Investigate BLOCKED:`, `Check canonical locations`,
+        `Please investigate ...`, `Verify ...`, `Review ...`.
+      * `mailSendCreateArchitectureRE` rejects subjects like
+        `Create architecture`, `Write architecture.md`,
+        `Generate the architecture document`. The architect was
+        already slung; re-mailing duplicates the request.
+      * `mailSendREIdleRE` rejects `RE: IDLE`, `RE: REPORT: idle`,
+        `RE: IDLE: no work` — these are status pings the
+        recipient already has, with bodies that are always echo
+        acks ("Acknowledged, idle status confirmed.").
+    All three guards apply at the gt-agent boundary, so a
+    misbehaving LLM cannot bypass them by reshaping the prose.
+
+- **Template changes for defence-in-depth**: Added a Critical
+  Rule #6 and #7 to `mayor.md.tmpl`: "DO NOT FAN OUT NOISE"
+  (explicitly forbids the three observed patterns by example) and
+  "DO NOT FAKE-SLING TO THE PLANNER" (the planner is woken only
+  by `gt sling mol-idea-to-plan`). Also strengthened the routing
+  table: `BLOCKED:` mail → `gt mail delete <id>` and stop, do
+  NOT re-mail anyone. `IDLE` / `REPORT: idle` mail → same.
+
+- **Files**: `cmd/gt-agent/main.go` (three new regexes,
+  three new `hasContentFreeMailSend` branches),
+  `cmd/gt-agent/main_test.go` (nine new test cases covering all
+  three reject patterns and four real-traffic allowed cases that
+  must not trip),
+  `internal/templates/roles/mayor.md.tmpl` (Critical Rules #6/#7,
+  routing table strengthened, `testgt2`-hardcoded line removed),
+  `internal/templates/roles/planner.md.tmpl` (three `testgt2`
+  illustrative-text replacements with `<rig>` / `<rig-name>`),
+  `internal/formula/formulas/shiny.formula.toml` (design step
+  description rewritten spec-agnostic),
+  `internal/formula/formulas/mol-mechanic-patrol.formula.toml`
+  (dev-specific `default = "testgt2"` / `default = "/home/stevef/gt"`
+  replaced with `required = true`).
+
+- **Why this is a worth-recording fix rather than "the LLM is
+  just bad"**: The hardcoded `testgt2` / `Hello API` content
+  would break for ANY new rig name even with a much stronger
+  LLM. Gas Town is supposed to be rig-agnostic; the templates
+  and formulas have to be too. The fan-out guards are
+  belt-and-braces defence so the system continues to make
+  forward progress even when the LLM regresses on the rule.
+
+- **Validation plan (next session)**: Single-mail kickoff with
+  fresh nuclear reset. Expected sequence: Mayor Stage 0 →
+  shiny sling → architect reads SPEC → architect writes
+  architecture.md → architect mails `Architecture Ready` with
+  `Project bead:` → Mayor slings `mol-idea-to-plan` to planner
+  → planner creates rig-scoped child beads → Mayor slings
+  `mol-polecat-work` per task. No `Investigate BLOCKED` mails,
+  no `Create architecture` mails, no `RE: IDLE` mails should
+  appear anywhere in the logs. Any of these surfacing means
+  the LLM found a new phrasing that escapes the regexes; in
+  that case extend the regexes and re-record under Fix #114b.
+
 ## Open Issues (next session)
 
 ### Auto-save misroute mitigation (see Fix #99)
