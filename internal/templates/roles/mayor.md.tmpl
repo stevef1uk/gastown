@@ -110,80 +110,29 @@ literal id you saw in `gt mail inbox --unread` THIS cycle — NEVER an
 id from memory or a prior patrol, see Critical Rule #1). The whole
 thing is a single `sh -c '...'` invocation so all variables persist.
 
-**HEREDOC RULE (Fix #113)**: do NOT nest a `<<EOF` heredoc inside
-the outer `sh -c '...'` body — sh parses the single-quoted body as
-one literal string and the heredoc end-marker is lost, producing
-`/bin/sh: line N: Syntax error: Unterminated quoted string`. Always
-pass multi-line mail bodies via `-m "literal\nwith\nembedded\nnewlines"`
-(real newlines inside the double-quoted `-m` argument are fine — `sh`
-preserves them as long as the outer single-quote is still open).
+**SEMICOLON RULE (Fix #113)**: every statement inside `sh -c '...'`
+MUST end with `;`. Some LLMs collapse multi-line scripts to a single
+line of space-separated tokens. Without `;` separators the result is
+unparseable shell (`set -u MAIL_ID=... if [ ] ; then ...` errors with
+`Syntax error: "then" unexpected`). With explicit `;` after every
+assignment, the pipeline executes correctly whether emitted on one
+line or many.
+
+**NO HEREDOCS (Fix #113)**: do NOT nest a `<<EOF` heredoc inside the
+outer `sh -c '...'` body. Always pass multi-line mail bodies via
+`-m "literal text"` — real newlines inside the double-quoted `-m`
+argument are fine inside an open single-quoted sh -c body.
+
+Substitute `<MAIL_ID>` below with the literal `hq-wisp-*` id from
+your current `gt mail inbox --unread` output:
 
 ```
-CMD: sh -c '
-set -u
-MAIL_ID="MAIL_ID"  # <-- REPLACE with the actual hq-wisp-* id you JUST saw in gt mail inbox --unread
-if [ "$MAIL_ID" = "MAIL_ID" ] || [ -z "$MAIL_ID" ]; then
-    echo "STAGE0_ABORT: MAIL_ID placeholder not substituted"; exit 0
-fi
-BODY=$(gt mail read "$MAIL_ID" 2>/dev/null)
-SUBJ=$(gt mail read "$MAIL_ID" --header subject 2>/dev/null)
-if [ -z "$BODY" ]; then
-    echo "STAGE0_ABORT: mail $MAIL_ID not found (stale id from memory? re-run gt mail inbox --unread)"; exit 0
-fi
-
-RIG=$(echo "$BODY" | grep -oE "^Rig:[[:space:]]*[A-Za-z0-9._-]+" | head -1 | awk -F": *" "{print \$2}")
-[ -z "$RIG" ] && RIG=$(jq -r ".rigs | keys[0]" {{ .TownRoot }}/rigs.json 2>/dev/null)
-if [ -z "$RIG" ]; then
-    gt mail send --self -s "BLOCKED: no rig" -m "Stage 0 aborted: kickoff mail $MAIL_ID had no Rig: line and rigs.json is empty"
-    exit 0
-fi
-if [ ! -d "{{ .TownRoot }}/$RIG" ]; then
-    gt mail send --self -s "BLOCKED: rig $RIG not found" -m "Stage 0 aborted: {{ .TownRoot }}/$RIG does not exist (mail $MAIL_ID)"
-    exit 0
-fi
-
-SPEC=$(echo "$BODY" | grep -oE "^Spec:[[:space:]]*[/A-Za-z0-9._-]+" | head -1 | awk -F": *" "{print \$2}")
-TITLE=$(echo "$SUBJ" | sed -E "s/^(Subject:[[:space:]]*)?(Project|New project|Kickoff):[[:space:]]*//I" | head -c 200)
-[ -z "$TITLE" ] && TITLE="Untitled kickoff for $RIG"
-
-BEAD=$(cd {{ .TownRoot }} && bd create \
-    --title "$TITLE" \
-    --description "Rig: $RIG
-Spec: $SPEC
-Source mail: $MAIL_ID
-Implement per the spec at the path above." \
-    --type=task --priority=1 \
-    --json 2>/dev/null \
-    | jq -r ".id // .ID // empty" 2>/dev/null)
-if [ -z "$BEAD" ]; then
-    gt mail send --self -s "BLOCKED: bd create failed" -m "Stage 0 aborted: bd create returned empty id (mail $MAIL_ID, rig $RIG)"
-    exit 0
-fi
-
-echo "STAGE0: created bead $BEAD for rig $RIG (title: $TITLE)"
-
-# Try the canonical sling first. If sling fails (Fix #103: shinys
-# HQ-bead bonding regression), fall back to a mail handoff that
-# carries the explicit Project bead line. We use -m with embedded
-# real newlines (NOT a heredoc) so the outer sh -c single-quote
-# stays intact (Fix #113 — nested heredoc caused Mayor to bail with
-# "Unterminated quoted string" on every Stage 0 attempt).
-if ! gt sling shiny --on "$BEAD" "$RIG/architect" 2>/dev/null; then
-    gt mail send "$RIG/architect" -s "Project: $TITLE" -m "Project bead: $BEAD
-Rig: $RIG
-Spec: $SPEC
-
-You have been assigned this project. Read the SPEC, design the architecture,
-write it to /home/stevef/gt/$RIG/architect/architecture.md, and mail mayor
-with subject Architecture Ready and a Project bead: $BEAD line so I can
-route Stage 2."
-    gt nudge "$RIG/architect" "New project assigned, check your inbox"
-fi
-
-gt mail send --self -s "Stage 0 complete: $BEAD" \
-    -m "Kicked off project bead $BEAD for rig $RIG from mail $MAIL_ID. Standby for Architecture Ready."
-'
+CMD: sh -c 'set -u; MAIL_ID="<MAIL_ID>"; BODY=$(gt mail read "$MAIL_ID" 2>/dev/null); SUBJ=$(gt mail read "$MAIL_ID" --header subject 2>/dev/null); if [ -z "$BODY" ]; then echo "STAGE0_ABORT: mail $MAIL_ID not found (stale id?)"; exit 0; fi; RIG=$(echo "$BODY" | grep -oE "^Rig:[[:space:]]*[A-Za-z0-9._-]+" | head -1 | awk -F": *" "{print \$2}"); if [ -z "$RIG" ]; then RIG=$(jq -r ".rigs | keys[0]" {{ .TownRoot }}/rigs.json 2>/dev/null); fi; if [ -z "$RIG" ]; then gt mail send --self -s "BLOCKED: no rig" -m "Stage 0 aborted: kickoff mail $MAIL_ID had no Rig: line and rigs.json is empty"; exit 0; fi; if [ ! -d "{{ .TownRoot }}/$RIG" ]; then gt mail send --self -s "BLOCKED: rig $RIG not found" -m "Stage 0 aborted: {{ .TownRoot }}/$RIG does not exist (mail $MAIL_ID)"; exit 0; fi; SPEC=$(echo "$BODY" | grep -oE "^Spec:[[:space:]]*[/A-Za-z0-9._-]+" | head -1 | awk -F": *" "{print \$2}"); TITLE=$(echo "$SUBJ" | sed -E "s/^(Subject:[[:space:]]*)?(Project|New project|Kickoff):[[:space:]]*//I" | head -c 200); if [ -z "$TITLE" ]; then TITLE="Untitled kickoff for $RIG"; fi; BEAD=$(cd {{ .TownRoot }} && bd create --title "$TITLE" --description "Rig: $RIG Spec: $SPEC Source mail: $MAIL_ID" --type=task --priority=1 --json 2>/dev/null | jq -r ".id // .ID // empty" 2>/dev/null); if [ -z "$BEAD" ]; then gt mail send --self -s "BLOCKED: bd create failed" -m "Stage 0 aborted: bd create returned empty id (mail $MAIL_ID, rig $RIG)"; exit 0; fi; echo "STAGE0: created bead $BEAD for rig $RIG (title: $TITLE)"; if ! gt sling shiny --on "$BEAD" "$RIG/architect" 2>/dev/null; then gt mail send "$RIG/architect" -s "Project: $TITLE" -m "Project bead: $BEAD Rig: $RIG Spec: $SPEC You have been assigned this project. Read the SPEC, design the architecture, write it to {{ .TownRoot }}/$RIG/architect/architecture.md, and mail mayor with subject Architecture Ready and a Project bead: $BEAD line so I can route Stage 2."; gt nudge "$RIG/architect" "New project assigned, check your inbox"; fi; gt mail send --self -s "Stage 0 complete: $BEAD" -m "Kicked off project bead $BEAD for rig $RIG from mail $MAIL_ID. Standby for Architecture Ready."'
 ```
+
+It is fine if your LLM client wraps the line — `sh -c` reads it as
+one logical command. The `;` after every statement is what makes
+this robust. Do NOT remove them.
 
 After running that ONE command, **stop** for this cycle. Output
 `DONE: Stage 0 dispatched <bead>` and wait for `Architecture Ready`
@@ -197,9 +146,10 @@ first. Keep it all inside one `sh -c '...'` invocation.
 **DO NOT** use a `<<EOF` heredoc anywhere inside the `sh -c '...'`
 body. Heredocs do not survive the outer single-quoted shell parsing
 and you will see `Syntax error: Unterminated quoted string`. Use
-`-m "multi
-line
-string"` with real newlines inside double quotes instead.
+`-m "multi-line string"` instead.
+
+**DO NOT** drop the `;` separators. Without them an LLM that
+collapses the command to one line produces unparseable shell.
 
 **Do NOT do Stage 0 if `Project bead:` is already in the mail body** —
 that means another agent (or the e2e test in compat mode) created the
