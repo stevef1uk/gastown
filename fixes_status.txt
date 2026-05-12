@@ -1302,16 +1302,327 @@ issues that explain why mayor had nothing actionable to route.
       smarter recovery (tag-and-archive the failing item; escalate at
       retry #3) is still worth doing if other loops surface.
 
+## Fix 85: Polecat hallucinations from example code in formula step body
+
+- **Symptom**: Even after Fix 83 slimmed the formula prompt, polecats
+  copy-pasted placeholder fragments out of the example code blocks
+  (e.g. `{{issue}}`, `<bead_id>`, `path/to/file`) and ran them as
+  literal shell commands, looping on `bd show {{issue}}` and similar.
+- **Root cause**: The compact formula renderer in
+  `internal/cmd/prime_molecule.go` kept fenced code blocks verbatim,
+  including ones that contained obvious placeholder text — the LLM
+  treated them as concrete commands to execute.
+- **Fix**: Added `sanitizeStepBody()` to strip placeholder-laden code
+  blocks before rendering. Heuristic: a code block is dropped iff it
+  contains template tokens (`{{x}}`, `<placeholder>`, etc.) AND no
+  fully-grounded `gt`/`bd` command. Pure-example blocks die; real
+  command snippets stay.
+- **Files**: `internal/cmd/prime_molecule.go`,
+  `internal/cmd/prime_molecule_render_test.go` (added tests).
+- **Status**: FIXED + deployed.
+
+## Fix 90 (extension): Content-free mail spam from refinery/witness
+
+- **Symptom (recurrence)**: Even after the original Fix #90 token-
+  overlap heuristic, `testgt2/witness` accumulated **218 mails**, most
+  of them `NO_POLECATS_FOUND hq-wisp-*` from `testgt2/refinery`, plus
+  generic "Polecat appears stalled" alerts with no concrete polecat
+  ID, plus "Patrol Cycle #N Complete" status pings.
+- **Root causes**:
+    1. The initial Fix #90 regex only fired on `mol-*` subjects, so
+       `NO_POLECATS_FOUND` slipped past.
+    2. The witness template literally prompted the LLM to send
+       "Polecat appears stalled" mail, but offered no template for
+       attaching a concrete polecat ID — so the LLM omitted it and
+       the receiver couldn't act.
+    3. Routine "Patrol Cycle #N Complete" status mail violated the
+       `CLAUDE.md` rule ("use nudge for routine traffic") and bloated
+       inboxes town-wide.
+- **Fix**: `cmd/gt-agent/main.go`:
+    - Extended `hasContentFreeMailSend` with a generic
+      subject↔body token-overlap heuristic that catches
+      `NO_POLECATS_FOUND` and similar 1-word "subject also pasted in
+      body" mails.
+    - Added `mailSendVaguePolecatAlertRE` to reject "Polecat appears
+      stalled" mails without a concrete polecat ID; allow them when
+      a `polecat/<rig>/<name>` ID is present.
+    - Added `mailSendPatrolStatusRE` to reject `Patrol Cycle #N
+      Complete` and `<role> status` pings (use nudge instead).
+- **Template fix**: `internal/templates/roles/witness.md.tmpl` —
+  reworked the "report stalled polecat" instruction to require
+  concrete evidence (polecat ID, last activity timestamp, log path),
+  and added an explicit warning against generic status pings.
+- **Files**: `cmd/gt-agent/main.go`, `cmd/gt-agent/main_test.go`,
+  `internal/templates/roles/witness.md.tmpl`.
+- **Verification**: After deploy, witness inbox stayed at single
+  digits across multiple patrol cycles; refinery's bulk `NO_POLECATS`
+  emissions are rejected at the gt-agent layer (logged but not sent).
+- **Status**: FIXED + deployed.
+
+## Fix 91: Parser drops multiple inline `CMD:` commands with bold prose
+
+- **Symptom**: When the LLM produced a single line containing two
+  `CMD:` markers separated by markdown-bold prose (e.g.
+  `CMD: bd show 1 **then run** CMD: bd show 2`), the parser kept only
+  the first command and silently dropped the rest.
+- **Root cause**: `parseLLMResponse` stripped markdown formatting
+  *before* splitting on inline `CMD:` markers, so the surviving
+  string was a single concatenated command.
+- **Fix**: `cmd/gt-agent/main.go` — reversed the order of operations
+  in `parseLLMResponse`. Inline `CMD:` splitter now runs first; the
+  per-command markdown stripper runs on each fragment individually.
+- **Files**: `cmd/gt-agent/main.go`, `cmd/gt-agent/main_test.go`
+  (added explicit "multiple CMD with bold" test case).
+- **Status**: FIXED + deployed.
+
+## Fix 92: Vague polecat/patrol mail (covered above under Fix 90 ext)
+
+Cross-reference: see "Fix 90 (extension)" — `mailSendVaguePolecatAlertRE`
+and `mailSendPatrolStatusRE` were added in the same commit. Tracked
+separately in todo/handoff docs as #92 because they target a
+different LLM behaviour (template-driven generic alerts) from the
+generic content-free heuristic of original #90.
+
+## Fix 93: Polecat starts as wrong role (refinery / witness / etc.)
+
+- **Symptom**: Newly-spawned polecat `testgt2/rust` immediately logged
+  `[gt-agent] Starting as refinery (rig=testgt2, polecat=rust)` —
+  i.e. it loaded the refinery role template, complete with refinery
+  patrol prompts, instead of the polecat workflow.
+- **Root cause**: Polecat worktrees are created from the rig's main
+  branch, which (after Fix 95/95b cleanup) is supposed to be free of
+  `.gt-agent` files — but at the time of this fix the testgt2 `main`
+  branch still had a tracked `.gt-agent` file with
+  `{"role": "refinery"}`. The session manager did not unconditionally
+  rewrite `.gt-agent` after worktree creation, so the polecat
+  inherited the stray identity.
+- **Fix**: `internal/polecat/session_manager.go` — extended
+  `addWithOptionsLocked` to always call
+  `writePolecatIdentityFile(workDir, rigName, polecatName)` after
+  worktree creation, overwriting any pre-existing `.gt-agent`. The
+  identity now ALWAYS matches what the manager just spawned, even if
+  the source tree carries garbage.
+- **Files**: `internal/polecat/session_manager.go` (+ existing
+  manager tests pass; no new test added because the bug was
+  reproduced and verified via live E2E session).
+- **Status**: FIXED + deployed. Related but separate fix #95/#95b
+  ensures `.gt-agent` will never be in `main` again.
+
+## Fix 94: PENDING — `gt done` only inspects HEAD, misses real impl
+   commit when auto-save lands on top
+
+- **Symptom**: Polecat `te-189@m...` successfully created
+  `e2e6/hello.txt` across multiple commits, but `gt done` failed with
+  *"no implementation commits found"* because the auto-save safety
+  commit at HEAD was the only one inspected.
+- **Root cause**: `internal/cmd/done.go`'s implementation-commit
+  detection runs `git log -1` (top commit only). If gt-agent's
+  background safety auto-save lands a "wip: auto-save" commit after
+  the polecat's real work, the real commit is invisible to `gt done`.
+- **Proposed fix** (NOT YET WRITTEN): scan
+  `git log <base_branch>..HEAD --pretty=%s` and treat the polecat as
+  having delivered iff **any** commit on the branch has a non-auto-
+  save subject. Auto-save commits should be detected by message
+  prefix (`wip:`, `[auto-save]`, `auto-save:`).
+- **Files (planned)**: `internal/cmd/done.go`,
+  `internal/cmd/done_test.go`.
+- **Workaround until fixed**: polecat manually
+  `git reset --soft HEAD~1 && git commit --amend --no-edit` to remove
+  the trailing auto-save before calling `gt done`. Not autonomous.
+- **Status**: PENDING — logged for next session.
+
+## Fix 95: Agent-internal plumbing files leaking into rig commits
+
+- **Symptom**: User opened the `testgt2` GitHub repo and observed
+  agent-internal files committed to `main`: `.gt-agent`, `typescript`
+  (the `script(1)` output capture), `AGENTS.md` (Gas Town agent
+  instructions), `project_label`, `progress_report`,
+  `gt-agent-state.json`. None of this should ever reach the rig's
+  user-facing repository.
+- **Root cause**: `internal/rig/overlay.go:gasTownIgnorePatterns()`
+  did not include these paths in the ignore set, so polecats that
+  happened to create them in their worktree (template overlays,
+  state files, terminal captures) were able to stage and commit them.
+- **Fix**: Extended `gasTownIgnorePatterns()` to include
+  `.gt-agent`, `typescript`, `AGENTS.md`, `project_label`,
+  `progress_report`, `gt-agent-state.json`. Deliberately did NOT
+  add `SPEC.md` or `README.md` (those are legitimate rig artifacts).
+- **Files**: `internal/rig/overlay.go`,
+  `internal/rig/overlay_test.go` (added pattern assertions).
+- **Status**: FIXED + deployed.
+
+## Fix 95b: Untrack agent-internal files that are *already tracked*
+
+- **Symptom**: After Fix #95 deployed, brand-new polecats still
+  showed `D AGENTS.md` / `?? AGENTS.md` in `git status --porcelain`
+  because `git update-index --skip-worktree` does not retroactively
+  untrack files already in the index.
+- **Root cause**: `git rm --cached` was only invoked when a *fresh*
+  worktree was created. Re-used worktrees, and worktrees of rigs
+  that had previously committed these files, kept them tracked.
+- **Fix**: `internal/rig/overlay.go`:
+    - Added `agentInternalUntrackPaths` (the same list as Fix #95).
+    - Added `untrackAgentInternals(workDir)` which runs
+      `git rm --cached -- <path>` for each path that exists in the
+      index but is now in the ignore set.
+    - `EnsureLocalExcludePatterns` calls `untrackAgentInternals`
+      first, on every invocation.
+    - `internal/polecat/session_manager.go:Start` also calls
+      `rig.UntrackAgentInternalsInWorktree(workDir)` so even reused
+      worktrees get cleaned on session start.
+- **Test impact**:
+  `internal/polecat/manager_test.go:TestAddWithOptions_NoFilesAddedToRepo`
+  updated — `D AGENTS.md` and `?? AGENTS.md` in `git status` after a
+  fresh add is now the *expected* state (Fix #95b semantics) and the
+  test filter ignores those lines.
+- **Files**: `internal/rig/overlay.go`,
+  `internal/rig/overlay_test.go`,
+  `internal/polecat/session_manager.go`,
+  `internal/polecat/manager_test.go`.
+- **Status**: FIXED + deployed. After this fix the user could
+  confirm a clean `testgt2` `main` containing only `SPEC.md`,
+  `README.md`, `.gitignore`.
+
+## Fix 96: LLM prose-leak crash — `Syntax error: Unterminated quoted string`
+
+- **Symptom**: Architect agent looping with shell errors like:
+  ```
+  [gt-agent] $ gt hook | cat
+  Now I'll re-execute the necessary commands ...
+  Let me first check the hook output properly, then redo the steps.
+  [gt-agent] Error: exit status 2
+  /bin/sh: 3: Syntax error: Unterminated quoted string
+  ```
+- **Root cause**: `parseLLMResponse` builds a single shell script
+  from consecutive non-empty lines after a `CMD:` marker. When the
+  LLM emitted prose narration immediately after a command (no blank
+  separator), the prose was treated as the rest of the script — and
+  any apostrophe in the prose ("I'll", "Let's") opened a quote that
+  was never closed.
+- **Fix**: `cmd/gt-agent/main.go`:
+    - Added `llmProseStartRE` regex matching the openings of common
+      narration sentences (`Now I'll`, `Let me`, `Let's`, `First,`,
+      `Next,`, `I'm going to`, `Here's`, etc.).
+    - Added `looksLikeProseLine(trimmed)` which fires only when:
+      (a) the line matches `llmProseStartRE`,
+      (b) the line ends in `.`/`!`/`?`/`:`,
+      (c) the line contains no shell metacharacters (`$|&;<>=` …).
+    - When `looksLikeProseLine` fires inside a script block,
+      `parseLLMResponse` calls `flushScript()` and sets
+      `inScript = false` — the in-progress script is preserved
+      intact and prose is dropped.
+- **Files**: `cmd/gt-agent/main.go`,
+  `cmd/gt-agent/main_test.go` (4 new cases: positive, multi-CMD,
+  metacharacter negative, terminal-punctuation negative).
+- **Status**: FIXED + deployed. Architect ran 30+ patrol cycles
+  post-deploy with no recurrence.
+
+## Fix 97: Orphan `dolt sql-server` processes hanging `gt down` / `gt status`
+
+- **Symptom**: `pgrep -af 'dolt sql-server'` showed 20+ ephemeral
+  dolt servers on random ports (no canonical 3307 server). `gt down`
+  and `gt status` would hang for minutes. Confirmed not test-pollution
+  (no `testdb_*`/`beads_t*` databases) — these were short-lived
+  `bd`-spawned servers that never exited.
+- **Root cause**: `bd` (the beads CLI) spawns its own ephemeral
+  `dolt sql-server` on a random port when it can't reach the
+  canonical 3307 server (e.g. transient `bd` invocation during agent
+  startup races, or a stale Unix socket). If `bd` crashes or its
+  parent exits before tearing down the server, the dolt process is
+  reparented to PID 1 and lives forever.
+- **Fix**: Implemented `gt dolt zap-orphans`
+  (`internal/cmd/dolt_zap_orphans.go`). Walks `/proc`, identifies
+  every `dolt sql-server` process, and classifies each:
+    - **PRESERVE** if PID matches `~/gt/.dolt-data/dolt.pid`
+      (canonical server).
+    - **PRESERVE** if `--port=3307` is in the cmdline.
+    - **PRESERVE** if PPID is a live `bd`/`gt`/`gt-agent` process
+      (actively in use).
+    - **KILL** otherwise (orphan; safe to terminate). Uses SIGTERM
+      then SIGKILL with a 2s window via `killSafely`.
+- **Test coverage**: `internal/cmd/dolt_zap_orphans_test.go` —
+  12 cases for `classifyDoltProc` (canonical PID, canonical port,
+  active parent of each managed type, reparented-to-init, unknown
+  parent), 7 cases for `parsePortFromCmdline`.
+- **Integration**:
+    - `internal/templates/roles/mechanic.md.tmpl` — `CMD: gt dolt
+      zap-orphans` is now **step 1** of every mechanic patrol cycle.
+      Mission text and example conversation updated.
+    - `internal/formula/formulas/mol-mechanic-patrol.formula.toml` —
+      added `zap-orphan-dolts` step between `check-hook` and
+      `scan-logs`. Formula description lists `gt dolt zap-orphans`
+      as the canonical fix for "gt status hangs / dolt unresponsive".
+- **Files**: `internal/cmd/dolt_zap_orphans.go`,
+  `internal/cmd/dolt_zap_orphans_test.go`,
+  `internal/templates/roles/mechanic.md.tmpl`,
+  `internal/formula/formulas/mol-mechanic-patrol.formula.toml`.
+- **Status**: FIXED + deployed. Mechanic now reaps orphans
+  autonomously every patrol cycle.
+
+## Fix 98: `clean-gastown.sh --rig=NAME` surgical reset + stale-state cleanup
+
+- **Symptom 1**: After a `gt rig add` of a freshly-reset rig, the
+  refinery/witness immediately began emitting
+  `MERGE_FAILED polecat/rust/te-189@mp2ewni6` mail — for a polecat
+  that no longer existed locally. The branch survived on GitHub
+  origin (left over from a prior E2E run) and `gt rig add` re-fetched
+  it; the refinery's first patrol then tried to merge a branch with
+  no upstream PR.
+- **Symptom 2**: Even after deleting the origin branch by hand,
+  agents continued referencing `te-189` for ~30 minutes. Diagnosed:
+  the `te-testgt2-*.log` session log files were preserved across the
+  rig-reset and the LLM, on next boot, re-read its own historical
+  context and reproduced the stale polecat ID.
+- **Symptom 3**: HQ agents (mayor/planner/deacon/mechanic) kept
+  replying to dead conversation threads about the old rig because
+  their inboxes were not cleared by single-rig reset (by design —
+  hq is preserved — but it left a poisoned conversation context).
+- **Fix**: `scripts/clean-gastown.sh` — three new behaviours in
+  `--rig=NAME` mode:
+    1. **Always** delete `~/gt/logs/sessions/te-<rig>*.log` files so
+       the next boot of the recreated rig sees zero historical LLM
+       context.
+    2. **`--prune-remote-branches`** flag: enumerate
+       `git ls-remote --heads <origin>` and `git push <origin>
+       :refs/heads/<name>` every non-`main` branch. Stops the fresh
+       rig from re-fetching ancient polecat refs.
+    3. **`--also-clear-hq-mail`** flag: `gt mail clear hq-{mayor,
+       planner,deacon,mechanic}` after the rig directory is gone.
+       Opt-in because it's a town-wide change.
+    4. Origin URL is captured from `config.json` (canonical) or the
+       bare repo's `git remote get-url origin` *before* `rm -rf`,
+       so `--prune-remote-branches` works and the "Next steps"
+       hint can pre-fill the `gt rig add` URL.
+    5. Help text + preview updated; preview now warns when origin
+       has stale branches but `--prune-remote-branches` is not set.
+- **Files**: `scripts/clean-gastown.sh`.
+- **Verification**: Ran with all three flags against the
+  contaminated `testgt2` rig; preview correctly enumerated 5 stale
+  session logs, the captured origin URL, and a clean origin
+  (branches already deleted manually). Real run executed every
+  step in order, exit 0, hq inboxes confirmed drained.
+- **Status**: FIXED + deployed + committed.
+
 ## Open Issues (next session)
 
-### Witness/Refinery inbox bloat — informational mail accumulating, no triage
-- **Symptom**: `gt mail inbox` for `testgt2/witness` showed 40 messages, all status pings from `testgt2/refinery`: `MERGE_QUEUE_EMPTY`, `MERGE_QUEUE_NONEMPTY`, `MERGE_READY <wisp>`, `MERGE_ACTIVE <wisp>`, `MERGE_FAILED <wisp>`, `REFINERY_STATUS`, `NO_POLECATS_FOUND testgt2`, plus their `RE: …` replies. The witness reads `gt mail inbox`, sees a wall of informational mail with nothing actionable, and loops every patrol re-reading the same 40 messages without archiving or summarising. Hook is empty (`Nothing on hook - no work slung`) so the witness has no actual work, but the noisy inbox makes it look busy.
-- **Root causes (hypothesised, needs investigation)**:
-    1. Refinery sends a status mail every patrol cycle even when nothing has changed (`MERGE_QUEUE_EMPTY` repeated). These should be either NATS-only signals (no permanent bead) or deduplicated.
-    2. Witness template doesn't tell the agent to archive/process refinery status mail in bulk.
-    3. `gt mail send` for routine status creates a permanent bead + Dolt commit (per `CLAUDE.md`), which is exactly what the project convention says NOT to do for routine traffic — `gt nudge` should be used instead.
-- **Proposed fix paths** (pick one or combine):
-    a. Convert refinery's `MERGE_*` and `REFINERY_STATUS` to `gt nudge` instead of `gt mail send` (lowest impact, matches `CLAUDE.md` guidance).
-    b. Add a witness normalizer: any inbox message from `<rig>/refinery` with subjects matching `MERGE_*|REFINERY_STATUS|NO_POLECATS_FOUND` is auto-archived after read.
-    c. Suppress duplicate status mail at refinery: only send when state transitions.
-- **Status**: NOT YET FIXED — logged for next session.
+### Fix 94 (pending) — `gt done` only inspects HEAD
+
+See "Fix 94" above. Polecat E2E currently succeeds at the file-
+delivery layer but fails the final `gt done` handshake when an
+auto-save commit lands on top of the real work. Workaround: manual
+`git reset --soft HEAD~1`. Action: rewrite the implementation-commit
+detector in `internal/cmd/done.go` to scan
+`git log <base_branch>..HEAD` rather than `git log -1`.
+
+### Witness/Refinery inbox bloat — superseded by Fix 90 ext + Fix 92
+
+The previously-logged "inbox bloat from `MERGE_*` / `NO_POLECATS_FOUND`
+/ `Patrol Cycle #N`" issue is **substantially resolved** by Fix 90
+(extension) and Fix 92 — the `gt-agent` normalizer now rejects those
+mails at the source. The remaining tail (a small number of legitimate
+status mails) is acceptable and inboxes stayed in single digits
+across multiple post-deploy patrol cycles.
+
+Long-term, options (b) auto-archive at witness and (c) refinery-side
+state-transition dedup are still desirable for defense-in-depth, but
+no longer blocking.

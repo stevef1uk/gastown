@@ -65,6 +65,8 @@ find_town_root() {
 FORCE=false
 TOWN_ROOT=""
 SINGLE_RIG=""
+PRUNE_REMOTE_BRANCHES=false
+CLEAR_HQ_MAIL=false
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -81,6 +83,23 @@ while [[ $# -gt 0 ]]; do
             SINGLE_RIG="${1:-}"
             shift || true
             ;;
+        --prune-remote-branches)
+            # Single-rig mode only: also delete every non-main branch
+            # from the rig's git origin. This stops a freshly-recreated
+            # rig from re-fetching ancient polecat/feature branches and
+            # entering a MERGE_FAILED loop on its first refinery patrol.
+            PRUNE_REMOTE_BRANCHES=true
+            shift
+            ;;
+        --also-clear-hq-mail)
+            # Single-rig mode only: also drain inboxes for hq-mayor,
+            # hq-planner, hq-deacon, hq-mechanic. The hq database is
+            # preserved by single-rig mode, but if those agents had
+            # been chatting about the now-removed rig, their inbox
+            # threads still reference it.
+            CLEAR_HQ_MAIL=true
+            shift
+            ;;
         -h|--help)
             echo "Usage: $0 [options] [town-root]"
             echo ""
@@ -89,15 +108,26 @@ while [[ $# -gt 0 ]]; do
             echo "  - Single rig reset (--rig=NAME): preserves hq + other rigs."
             echo ""
             echo "Options:"
-            echo "  --rig=NAME     Reset only the named rig (surgical)."
-            echo "  -f, --force    Skip confirmation prompts (DANGEROUS)"
-            echo "  -h, --help     Show this help message"
+            echo "  --rig=NAME                 Reset only the named rig (surgical)."
+            echo "  --prune-remote-branches    (--rig only) Also delete every"
+            echo "                             non-main branch from the rig's git"
+            echo "                             origin. Stops fresh rig from"
+            echo "                             re-fetching ancient polecat refs."
+            echo "  --also-clear-hq-mail       (--rig only) Drain inboxes for"
+            echo "                             hq-mayor/planner/deacon/mechanic."
+            echo "  -f, --force                Skip confirmation prompts (DANGEROUS)"
+            echo "  -h, --help                 Show this help message"
             echo ""
             echo "Examples:"
             echo "  $0 ~/gt                          # Full nuclear reset (all rigs)"
             echo "  $0 --force ~/gt                  # Same, non-interactive"
             echo "  $0 --rig=testgt2 ~/gt            # Reset only the testgt2 rig"
             echo "  $0 --rig=testgt2 --force ~/gt    # Same, non-interactive"
+            echo "  $0 --rig=testgt2 --prune-remote-branches --also-clear-hq-mail --force ~/gt"
+            echo "                                   # Maximum-surgical: rig dir +"
+            echo "                                   # dolt db + session logs +"
+            echo "                                   # remote feature/polecat refs +"
+            echo "                                   # hq agents' inboxes"
             exit 0
             ;;
         -*)
@@ -110,6 +140,15 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+if [[ "$PRUNE_REMOTE_BRANCHES" == true && -z "$SINGLE_RIG" ]]; then
+    log_fatal "--prune-remote-branches requires --rig=NAME"
+    exit 1
+fi
+if [[ "$CLEAR_HQ_MAIL" == true && -z "$SINGLE_RIG" ]]; then
+    log_fatal "--also-clear-hq-mail requires --rig=NAME"
+    exit 1
+fi
 
 # Validate --rig name early (must be non-empty, no path components)
 if [[ -n "$SINGLE_RIG" ]]; then
@@ -180,12 +219,62 @@ if [[ -n "$SINGLE_RIG" ]]; then
         POLECAT_COUNT=$(find "$RIG_DIR/polecats" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l | tr -d ' ')
     fi
 
+    # Capture origin URL BEFORE deleting the rig dir — needed later if
+    # --prune-remote-branches is set. We try config.json first (the
+    # canonical record), then fall back to the bare repo's git remote.
+    RIG_ORIGIN_URL=""
+    if [[ -f "$RIG_DIR/config.json" ]]; then
+        RIG_ORIGIN_URL=$(python3 -c "
+import json, sys
+try:
+    d = json.load(open('$RIG_DIR/config.json'))
+    print(d.get('git_url') or d.get('url') or d.get('origin', ''))
+except Exception:
+    pass
+" 2>/dev/null)
+    fi
+    if [[ -z "$RIG_ORIGIN_URL" && -d "$RIG_DIR/.repo.git" ]]; then
+        RIG_ORIGIN_URL=$(git --git-dir="$RIG_DIR/.repo.git" remote get-url origin 2>/dev/null || true)
+    fi
+
+    # Detect session log files associated with this rig. Logs live at
+    # $TOWN_ROOT/logs/sessions/te-<rig>*.log (witness, refinery,
+    # architect, qa, polecats, crew). Leaving them in place poisons
+    # the freshly-recreated rig because the agents re-read their own
+    # historical context on next boot (observed today: witness
+    # re-emitting `te-189` references for 30 minutes after the rig was
+    # gone, purely from log-replay context).
+    RIG_LOG_PATTERN="te-${SINGLE_RIG}*.log"
+    RIG_LOG_COUNT=0
+    if [[ -d "$TOWN_ROOT/logs/sessions" ]]; then
+        RIG_LOG_COUNT=$(find "$TOWN_ROOT/logs/sessions" -maxdepth 1 \
+            -name "$RIG_LOG_PATTERN" 2>/dev/null | wc -l | tr -d ' ')
+    fi
+
+    # Detect stale remote branches on origin (anything that isn't
+    # `main`). When a fresh `gt rig add` re-clones, these branches
+    # come back along with their merge state, and the refinery's first
+    # patrol promptly tries to merge them. Listing requires the origin
+    # URL we captured above.
+    STALE_REMOTE_BRANCH_COUNT=0
+    STALE_REMOTE_BRANCHES=""
+    if [[ -n "$RIG_ORIGIN_URL" ]]; then
+        # Use ls-remote so we don't need a local clone to be present.
+        # The tab-separated output is `<sha>\t<ref>`; we want the ref.
+        STALE_REMOTE_BRANCHES=$(git ls-remote --heads "$RIG_ORIGIN_URL" 2>/dev/null \
+            | awk '$2 != "refs/heads/main" {print $2}' || true)
+        if [[ -n "$STALE_REMOTE_BRANCHES" ]]; then
+            STALE_REMOTE_BRANCH_COUNT=$(echo "$STALE_REMOTE_BRANCHES" | wc -l | tr -d ' ')
+        fi
+    fi
+
     echo "────────────────────────────────────────────────────────────────"
     echo "  PREVIEW OF WHAT WILL BE DELETED (single-rig mode)"
     echo "────────────────────────────────────────────────────────────────"
     echo ""
     echo "  Rig:                  ${SINGLE_RIG}"
     echo "  Registered in rigs.json: ${RIG_REGISTERED}"
+    echo "  Origin URL:           ${RIG_ORIGIN_URL:-<unknown>}"
     echo "  Directory:            ${RIG_DIR}"
     [[ -d "$RIG_DIR" ]]      && echo "    → exists, will be rm -rf'd (worktrees, .repo.git, polecats, configs, .beads)"
     [[ ! -d "$RIG_DIR" ]]    && echo "    → already missing, nothing to delete on disk"
@@ -193,6 +282,30 @@ if [[ -n "$SINGLE_RIG" ]]; then
     echo "  Dolt DB:              ${RIG_DOLT_DIR}"
     [[ "$HAS_DOLT_DB" == true ]]  && echo "    → exists, will be rm -rf'd (loses all beads, wisps, mail for this rig)"
     [[ "$HAS_DOLT_DB" != true ]]  && echo "    → no separate database directory found (nothing to delete)"
+    echo "  Session logs:         ${RIG_LOG_COUNT} file(s) matching $RIG_LOG_PATTERN"
+    [[ "$RIG_LOG_COUNT" -gt 0 ]] && echo "    → will be deleted (prevents LLM-context contamination on next boot)"
+
+    if [[ -n "$RIG_ORIGIN_URL" ]]; then
+        echo ""
+        if [[ "$STALE_REMOTE_BRANCH_COUNT" -eq 0 ]]; then
+            echo "  Remote branches:      origin is clean (only main)"
+        elif [[ "$PRUNE_REMOTE_BRANCHES" == true ]]; then
+            echo "  Remote branches:      ${STALE_REMOTE_BRANCH_COUNT} non-main branch(es)"
+            echo "    --prune-remote-branches set — these will be DELETED from origin:"
+            echo "$STALE_REMOTE_BRANCHES" | sed 's|^|      • |'
+        else
+            log_warn "  Remote branches:      ${STALE_REMOTE_BRANCH_COUNT} non-main branch(es) on origin"
+            log_warn "    These will REMAIN on origin and re-poison the fresh rig:"
+            echo "$STALE_REMOTE_BRANCHES" | sed 's|^|      • |'
+            log_warn "    Pass --prune-remote-branches to delete them."
+        fi
+    fi
+
+    if [[ "$CLEAR_HQ_MAIL" == true ]]; then
+        echo ""
+        echo "  HQ inboxes:           will be drained (mayor, planner, deacon, mechanic)"
+    fi
+
     echo ""
     echo "  PRESERVED (other rig data, town config, hq database):"
     echo "    • $TOWN_ROOT/config.json"
@@ -284,6 +397,65 @@ json.dump(d, open(p, 'w'), indent=2)
         find "$TOWN_ROOT/.runtime" -maxdepth 3 -name "*${SINGLE_RIG}*" -exec rm -rf {} + 2>/dev/null || true
     fi
 
+    # Step 7: delete the rig's session log files. Without this the
+    # freshly-recreated witness/refinery re-read their own historical
+    # `te-<rig>-*.log` on boot and the LLM picks up references to
+    # already-merged/closed polecat branches. Symptom we observed:
+    # witness emitting `MERGE_FAILED <polecat/rust/te-189@m>` to the
+    # refinery on every patrol for 30+ minutes after the rig was wiped
+    # and the remote branch deleted, purely from log-replay.
+    if [[ "$RIG_LOG_COUNT" -gt 0 ]]; then
+        log_info "Deleting ${RIG_LOG_COUNT} session log file(s)..."
+        find "$TOWN_ROOT/logs/sessions" -maxdepth 1 \
+            -name "$RIG_LOG_PATTERN" -delete 2>/dev/null || true
+        log_ok "Deleted session logs (LLM context will be clean on next boot)"
+    fi
+
+    # Step 8: prune stale remote branches if requested. Fresh `gt rig
+    # add` re-clones origin, so any non-main branches that survived
+    # from prior runs (polecat/* refs preserved by `gt polecat nuke`,
+    # abandoned feature/* refs from earlier polecats) immediately
+    # poison the new rig: refinery's first patrol fetches them and
+    # tries to merge them.
+    if [[ "$PRUNE_REMOTE_BRANCHES" == true && "$STALE_REMOTE_BRANCH_COUNT" -gt 0 ]]; then
+        log_info "Pruning ${STALE_REMOTE_BRANCH_COUNT} stale remote branch(es) on ${RIG_ORIGIN_URL}..."
+        # Build a colon-prefixed delete refspec per branch. We use
+        # individual `git push :refs/heads/<name>` calls instead of
+        # one batched push so we can report partial failure.
+        local_failures=0
+        while IFS= read -r ref; do
+            [[ -z "$ref" ]] && continue
+            if git push "$RIG_ORIGIN_URL" ":${ref}" >/dev/null 2>&1; then
+                log_ok "  deleted origin/${ref#refs/heads/}"
+            else
+                log_warn "  could not delete origin/${ref#refs/heads/}"
+                ((local_failures++)) || true
+            fi
+        done <<< "$STALE_REMOTE_BRANCHES"
+        if [[ "$local_failures" -eq 0 ]]; then
+            log_ok "All stale remote branches pruned"
+        else
+            log_warn "${local_failures} remote branch(es) failed to delete — may need manual cleanup"
+        fi
+    fi
+
+    # Step 9: drain HQ inboxes if requested. The hq database is
+    # preserved by single-rig mode, but if the mayor/planner/deacon/
+    # mechanic had been chatting about the now-removed rig (assignment
+    # threads, alert threads, escalations) their inbox queues still
+    # reference it and they'll spend their next patrol replying to
+    # dead conversations. Opt-in because it's a town-wide change.
+    if [[ "$CLEAR_HQ_MAIL" == true ]] && command -v gt >/dev/null 2>&1; then
+        log_info "Draining HQ inboxes (mayor, planner, deacon, mechanic)..."
+        for hq in hq-mayor hq-planner hq-deacon hq-mechanic; do
+            # Output line examples:
+            #   "✓ Cleared 7 messages from hq-mayor"
+            #   "○ Inbox hq-mayor is already empty"
+            result=$(gt mail clear "$hq" 2>&1 | tail -1 || true)
+            log_ok "  ${hq}: ${result}"
+        done
+    fi
+
     echo ""
     echo "╔══════════════════════════════════════════════════════════════╗"
     echo "║              SINGLE-RIG RESET COMPLETE                       ║"
@@ -291,11 +463,20 @@ json.dump(d, open(p, 'w'), indent=2)
     echo ""
     log_ok "Rig '${SINGLE_RIG}' has been reset."
     log_ok "Preserved: hq database, daemon, mayor/planner/deacon, other rigs."
+
+    # Surface the "you should have done this" hints when the user
+    # didn't opt into the deeper cleanups but we detected reasons to.
+    if [[ "$PRUNE_REMOTE_BRANCHES" != true && "$STALE_REMOTE_BRANCH_COUNT" -gt 0 ]]; then
+        echo ""
+        log_warn "Origin still has ${STALE_REMOTE_BRANCH_COUNT} non-main branch(es)."
+        log_warn "Re-run with --prune-remote-branches if you want a truly fresh rig."
+    fi
+
     echo ""
     echo "  Next steps:"
-    echo "    1. ${YELLOW}gt rig add ${SINGLE_RIG} <git-url>${NC}    # Re-create the rig fresh"
-    echo "    2. ${YELLOW}gt up${NC}                                 # Bring services up"
-    echo "    3. ${YELLOW}gt status -v${NC}                          # Verify clean state"
+    printf "    1. ${YELLOW}gt rig add ${SINGLE_RIG} ${RIG_ORIGIN_URL:-<git-url>}${NC}\n"
+    printf "    2. ${YELLOW}gt up${NC}                                 # Bring services up\n"
+    printf "    3. ${YELLOW}gt status -v${NC}                          # Verify clean state\n"
     echo ""
     exit 0
 fi
