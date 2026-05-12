@@ -2700,6 +2700,43 @@ to ship, so deferred to the next session.
     All three guards apply at the gt-agent boundary, so a
     misbehaving LLM cannot bypass them by reshaping the prose.
 
+  - **Cause D (build system): edits to source formulas never reach
+    the runtime on `make install`.** Discovered during rebuild for
+    A/B/C above. After fixing `shiny.formula.toml` and
+    `mol-mechanic-patrol.formula.toml` in `internal/formula/formulas/`,
+    rebuilding the binary, and restarting the town, the on-disk
+    copies at `$GT_ROOT/.beads/formulas/` were STILL stale — in
+    fact both formula files were missing from disk entirely. Agents
+    read `.beads/formulas/*.formula.toml` at sling time (via
+    `ResolveFormulaContent`'s rig → town → embedded precedence), so
+    a perfectly-correct fix that only landed in the embedded copy
+    would never affect a running town. Two contributing reasons:
+      * `ProvisionFormulas` (called by `gt install`) deliberately
+        skips files that already exist on disk, to protect user
+        customisations. That's correct for fresh-install but means
+        deleted-then-restored embedded files never come back.
+      * The original on-disk copy of these two formulas had been
+        wiped at some prior point and ProvisionFormulas would never
+        re-create them — a hidden "stuck stale" state.
+    `formula.UpdateFormulas` (in `internal/formula/embed.go`)
+    already implements the correct intelligent refresh — handles
+    missing, outdated, user-modified files via SHA256 tracking in
+    `.installed.json` — and is exposed to end users through
+    `gt upgrade`. For the dev loop the cheaper answer is fine:
+    `make install` now ends with a small shell loop that copies
+    every embedded formula whose on-disk file is missing or
+    differs from source. Reports `Synced formulas → /path
+    (N added, M updated)`. Honours `$GT_ROOT` for non-default
+    town paths. Does NOT touch `.installed.json` — that path stays
+    owned by `gt upgrade` so end-user hash tracking is unaffected.
+
+    NB: I initially over-engineered this as a new
+    `formula.RefreshFormulas` function + `gt formula sync`
+    subcommand before noticing `UpdateFormulas`/`gt upgrade`
+    already covered the end-user case. Reverted both and kept
+    the change as a ~25-line Makefile addition. The dev loop is
+    `make install`; nothing else needs to change.
+
 - **Template changes for defence-in-depth**: Added a Critical
   Rule #6 and #7 to `mayor.md.tmpl`: "DO NOT FAN OUT NOISE"
   (explicitly forbids the three observed patterns by example) and
@@ -2721,7 +2758,10 @@ to ship, so deferred to the next session.
   description rewritten spec-agnostic),
   `internal/formula/formulas/mol-mechanic-patrol.formula.toml`
   (dev-specific `default = "testgt2"` / `default = "/home/stevef/gt"`
-  replaced with `required = true`).
+  replaced with `required = true`),
+  `Makefile` (install target now syncs embedded formulas to
+  `$GT_ROOT/.beads/formulas/` — closes the dev-loop drift gap
+  described in Cause D).
 
 - **Why this is a worth-recording fix rather than "the LLM is
   just bad"**: The hardcoded `testgt2` / `Hello API` content
