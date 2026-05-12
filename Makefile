@@ -126,23 +126,28 @@ install: check-up-to-date build
 	@# them at install/seed time; but agents read .beads/formulas/ at sling
 	@# time. Without this copy, edits to internal/formula/formulas/*.toml
 	@# rebuild the binary but never reach the runtime (Fix #114c).
-	@# We only refresh files that already exist on disk (preserving
-	@# fresh-install semantics handled by ProvisionFormulas).
+	@# Copies missing-or-different files (provisions new + refreshes changed).
+	@# Skips files where dst matches src. Does not maintain .installed.json
+	@# hash tracking — that's gt upgrade's job for end users; this path is
+	@# for development.
 	@GT_ROOTS="$${GT_ROOT:-$(HOME)/gt}"; \
 	for root in $$GT_ROOTS; do \
 		dst="$$root/.beads/formulas"; \
 		if [ -d "$$dst" ]; then \
-			updated=0; \
+			added=0; updated=0; \
 			for src in $(CURDIR)/internal/formula/formulas/*.formula.toml; do \
 				[ -f "$$src" ] || continue; \
 				name=$$(basename "$$src"); \
-				if [ -f "$$dst/$$name" ] && ! cmp -s "$$src" "$$dst/$$name"; then \
+				if [ ! -f "$$dst/$$name" ]; then \
+					cp "$$src" "$$dst/$$name"; \
+					added=$$((added+1)); \
+				elif ! cmp -s "$$src" "$$dst/$$name"; then \
 					cp "$$src" "$$dst/$$name"; \
 					updated=$$((updated+1)); \
 				fi; \
 			done; \
-			if [ $$updated -gt 0 ]; then \
-				echo "Synced $$updated formula(s) → $$dst"; \
+			if [ $$added -gt 0 ] || [ $$updated -gt 0 ]; then \
+				echo "Synced formulas → $$dst ($$added added, $$updated updated)"; \
 			fi; \
 		fi; \
 	done
