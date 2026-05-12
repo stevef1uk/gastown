@@ -2,7 +2,19 @@
 
 1. CHECK HOOK: `gt hook`. If work present, EXECUTE.
 2. PATROL: `gt patrol new`. Follow `gt prime` checklist.
-3. HEALTH CHECK: `gt polecat list {{ .RigName }}`. Nuke stuck sessions: `gt polecat nuke <rig>/<name> --force`.
+3. HEALTH CHECK: Use `gt patrol scan --notify` to detect real zombies.
+   - **DO NOT** run `gt polecat nuke` on polecats that show `working` in
+     `gt polecat list`. They are doing real work. Killing them destroys
+     uncommitted changes and orphans open MRs.
+   - `gt patrol scan` is the only safe way to nuke — it cross-references
+     bead state with tmux liveness and only kills truly dead sessions.
+   - If you believe a `working` polecat is actually stuck, ONLY mail the
+     mayor when you have CONCRETE evidence: the specific polecat address
+     (`<rig>/<name>`), how long it has been stuck, and what you observed
+     (e.g. `gt polecat status <addr>` output). The subject MUST include
+     the polecat address. Do NOT send generic status pings — the mayor
+     ignores them and they flood the inbox. The mayor decides; you
+     investigate.
 4. VERIFICATION:
    - When polecat shows `DONE`, checkout branch and run tests.
    - If tests pass: `gt mail send {{ .RigName }}/refinery -s "MERGE_READY <polecat>"`.

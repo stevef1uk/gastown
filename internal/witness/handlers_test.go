@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"testing"
@@ -1938,6 +1939,61 @@ func TestCherryHasUnmergedCommits(t *testing.T) {
 				t.Errorf("cherryHasUnmergedCommits(%q) = %v, want %v", tc.in, got, tc.want)
 			}
 		})
+	}
+}
+
+// TestNukePolecat_PassesAbandonWork verifies Fix #89: NukePolecat
+// (the internal-only helper called from the verified-zombie path) MUST
+// pass `--abandon-work` to `gt polecat nuke`. Without the flag, the
+// Fix #84 active-work hard block fires and rejects the nuke — the
+// witness then logs `archive-failed-work-already-merged: nuke failed:
+// ... pass --abandon-work` over and over, leaving the dead-session,
+// already-merged polecat stranded forever. The CLI flag's help text
+// explicitly tells operators to "call `gt patrol scan --notify`
+// instead", so that path MUST be the one that succeeds.
+//
+// Not parallel: overrides the package-level runPolecatNukeCmd var.
+func TestNukePolecat_PassesAbandonWork(t *testing.T) {
+	old := runPolecatNukeCmd
+	t.Cleanup(func() { runPolecatNukeCmd = old })
+
+	var capturedWorkDir string
+	var capturedArgs []string
+	runPolecatNukeCmd = func(workDir string, args []string) error {
+		capturedWorkDir = workDir
+		capturedArgs = append([]string(nil), args...)
+		return nil
+	}
+
+	bd, _ := mockBd(
+		func(args []string) (string, error) { return "[]", nil },
+		func(args []string) error { return nil },
+	)
+
+	workDir := t.TempDir()
+	if err := NukePolecat(bd, workDir, "testrig", "scavenger"); err != nil {
+		t.Fatalf("NukePolecat: %v", err)
+	}
+
+	if capturedWorkDir != workDir {
+		t.Errorf("workDir = %q, want %q", capturedWorkDir, workDir)
+	}
+	wantArgs := []string{"polecat", "nuke", "testrig/scavenger", "--abandon-work"}
+	if !reflect.DeepEqual(capturedArgs, wantArgs) {
+		t.Errorf("args = %v, want %v", capturedArgs, wantArgs)
+	}
+
+	// Belt-and-braces: explicit presence check so the test failure
+	// message is obvious if --abandon-work is ever dropped.
+	hasAbandon := false
+	for _, a := range capturedArgs {
+		if a == "--abandon-work" {
+			hasAbandon = true
+			break
+		}
+	}
+	if !hasAbandon {
+		t.Errorf("--abandon-work MISSING from nuke args (Fix #89 regression): %v", capturedArgs)
 	}
 }
 

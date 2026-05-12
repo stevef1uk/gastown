@@ -143,6 +143,7 @@ var (
 	polecatNukeAll           bool
 	polecatNukeDryRun        bool
 	polecatNukeForce         bool
+	polecatNukeAbandonWork   bool
 	polecatCheckRecoveryJSON bool
 	polecatPoolInitDryRun    bool
 	polecatPoolInitSize      int
@@ -182,9 +183,20 @@ This is the nuclear option for post-merge cleanup. It:
 SAFETY CHECKS: The command refuses to nuke a polecat if:
   - Worktree has unpushed/uncommitted changes
   - Polecat has an open merge request (MR bead)
-  - Polecat has work on its hook
+  - Polecat has work on its hook (active, non-closed bead)
 
-Use --force to bypass safety checks (LOSES WORK).
+TIERED OVERRIDE FLAGS:
+  --force          Bypass SOFT safety checks only (stash, unknown cleanup status).
+                   Still refuses to nuke polecats with active work-on-hook or
+                   open MRs — those would orphan committed work or in-flight
+                   merges. This is the right flag for nuking idle polecats.
+  --abandon-work   Bypass ALL safety checks, including active hook / open MR /
+                   uncommitted changes. ONLY use this when you have explicitly
+                   confirmed (via tmux peek or out-of-band signal) that the
+                   polecat is hung. This flag LOSES the polecat's in-flight
+                   work AND any unresolved MR. Witnesses should NOT pass this
+                   flag — they should call gt patrol scan instead.
+
 Use --dry-run to see what would happen and safety check status.
 
 Examples:
@@ -192,7 +204,8 @@ Examples:
   gt polecat nuke greenplace/Toast greenplace/Furiosa
   gt polecat nuke greenplace --all
   gt polecat nuke greenplace --all --dry-run
-  gt polecat nuke greenplace/Toast --force  # bypass safety checks`,
+  gt polecat nuke greenplace/Toast --force           # nuke idle polecats
+  gt polecat nuke greenplace/Toast --abandon-work    # nuke an actively-hung polecat (LOSES WORK)`,
 	Args: cobra.MinimumNArgs(1),
 	RunE: runPolecatNuke,
 }
@@ -344,7 +357,14 @@ func init() {
 	// Nuke flags
 	polecatNukeCmd.Flags().BoolVar(&polecatNukeAll, "all", false, "Nuke all polecats in the rig")
 	polecatNukeCmd.Flags().BoolVar(&polecatNukeDryRun, "dry-run", false, "Show what would be nuked without doing it")
-	polecatNukeCmd.Flags().BoolVarP(&polecatNukeForce, "force", "f", false, "Force nuke, bypassing all safety checks (LOSES WORK)")
+	polecatNukeCmd.Flags().BoolVarP(&polecatNukeForce, "force", "f", false,
+		"Bypass SOFT safety checks (stash, unknown cleanup). Still refuses to nuke polecats with active work-on-hook or open MRs.")
+	polecatNukeCmd.Flags().BoolVar(&polecatNukeAbandonWork, "abandon-work", false,
+		"Bypass ALL safety checks, including active work-on-hook and open MRs. "+
+			"LOSES uncommitted work and orphans open MRs. Witnesses should NOT use "+
+			"this directly -- call 'gt patrol scan --notify' instead; that path "+
+			"verifies session-dead + branch-merged BEFORE invoking nuke with "+
+			"--abandon-work internally (Fix #89).")
 
 	// Check-recovery flags
 	polecatCheckRecoveryCmd.Flags().BoolVar(&polecatCheckRecoveryJSON, "json", false, "Output as JSON")
@@ -1226,19 +1246,43 @@ func runPolecatNuke(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	// Safety checks: refuse to nuke polecats with active work unless --force is set
-	if !polecatNukeForce && !polecatNukeDryRun {
+	// Safety checks: refuse to nuke polecats with active work.
+	//
+	// Two-tier override model (introduced after witness-template fix):
+	//   --force         bypasses SOFT blocks (stash, unknown cleanup status, etc.)
+	//   --abandon-work  bypasses ALL blocks, including active hook bead and open MR.
+	//
+	// The witness used to be templated with `gt polecat nuke <target> --force`,
+	// which under the old "force bypasses everything" semantics happily killed
+	// polecats that were mid-work, orphaning the polecat's hooked bead and any
+	// open MR. The witness template now points at `gt patrol scan` and explicitly
+	// warns against `gt polecat nuke` — but as a belt-and-suspenders measure we
+	// also tighten `--force` so the previous (now-removed) instruction would
+	// have failed safely.
+	if !polecatNukeDryRun {
 		var blocked []*SafetyCheckResult
 		for _, p := range targets {
 			result := checkPolecatSafety(p)
-			if result.Blocked {
-				blocked = append(blocked, result)
+			if !result.Blocked {
+				continue
 			}
+			if polecatNukeAbandonWork {
+				// User explicitly opted into work loss.
+				continue
+			}
+			if polecatNukeForce && !safetyResultHasHardBlock(result) {
+				// --force bypasses only soft blocks.
+				continue
+			}
+			blocked = append(blocked, result)
 		}
 
 		if len(blocked) > 0 {
 			displaySafetyCheckBlocked(blocked)
-			return fmt.Errorf("blocked: %d polecat(s) have active work", len(blocked))
+			return fmt.Errorf("blocked: %d polecat(s) have active work — "+
+				"pass --abandon-work to nuke anyway (LOSES WORK), or call `gt patrol scan --notify` "+
+				"to handle real zombies safely",
+				len(blocked))
 		}
 	}
 

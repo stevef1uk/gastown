@@ -698,7 +698,12 @@ func run() error {
 		// already prevent unhooking from a true-failure summary.
 		if shouldAutoUnhookAfterHandoff(roleCanonical, summary) {
 			fmt.Println("[gt-agent] Handoff-style role finished — auto-unhooking to prevent re-planning loop")
-			out, err := exec.Command(gtBin, "unhook").CombinedOutput()
+			// `--force` is required for handoff roles (architect/planner/qa)
+			// because their slice of work is intentionally incomplete: the
+			// architect designs but doesn't implement, the planner plans
+			// but doesn't code, etc. Without --force, `gt unhook` rejects
+			// with "hooked work <bead> is incomplete" and the agent loops.
+			out, err := exec.Command(gtBin, "unhook", "--force").CombinedOutput()
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "[gt-agent] auto-unhook failed (non-fatal): %v\n%s\n", err, string(out))
 			} else {
@@ -777,41 +782,78 @@ var trailingMarkdownBoldRE = regexp.MustCompile(`\s+\*\*[^*\n]*[A-Za-z][^*\n]*\*
 //   - hallucinated: true if the model tried to simulate "Output:" itself,
 //     in which case the caller should reject the response and re-prompt
 //
-// Parsing rules (intentionally conservative so prose interleaved between
-// commands does NOT bleed into the previous command):
+// Parsing rules (designed to balance safety against the model's tendency
+// to emit one CMD: followed by an entire multi-line shell SCRIPT — a
+// pattern we observed in the architect role where heredoc + mail + nudge
+// + unhook were all crammed under a single CMD: prefix):
 //
-//  1. A line beginning with "CMD:" starts (and, in the simple case, ends)
-//     a command on that single line.
-//  2. Markdown fences on the CMD: line (```bash, ```sh, ```) are stripped
-//     from both ends.
-//  3. If the CMD's text opens a heredoc (e.g. `cat <<'EOF' > file`), the
+//  1. A line beginning with "CMD:" starts a shell script. The script
+//     STARTS with the rest of the CMD: line and continues with subsequent
+//     non-empty, non-prose lines (this is the change from the old
+//     strict-single-line behavior).
+//  2. The current script is "flushed" (joined with newlines and emitted
+//     as one cmd) on any of these terminators:
+//     • a blank line (most common script-end marker)
+//     • a markdown structural line (`### `, `## `, `# `, ```` ``` ````,
+//       `> `) — these never appear inside real shell
+//     • a new `CMD:` line (starts a fresh script)
+//     • a `DONE:` line (captures the patrol summary)
+//     • a `Output:` line (hallucination, abort)
+//  3. If a script line opens a heredoc (e.g. `cat <<'EOF' > file`), the
 //     parser switches to heredoc mode and collects subsequent lines
 //     verbatim until it sees a line whose trimmed contents equal the
-//     heredoc terminator. A heredoc without a terminator is dropped (we
-//     prefer no execution over executing prose).
-//  4. While NOT in a heredoc, every other kind of line (prose, markdown
-//     headings, closing fences, blank lines, "Note:" sentences, etc.)
-//     simply ends the current command. They are never appended to it.
-//  5. A line beginning with "Output:" outside a heredoc means the model
-//     hallucinated a terminal session. We abort parsing and signal the
-//     caller to re-prompt.
-//  6. A line beginning with "DONE:" outside a heredoc captures the
-//     trailing summary.
+//     heredoc terminator. An unterminated heredoc causes the whole
+//     script to be discarded.
+//  4. Markdown fences on the CMD: line (```bash, ```sh, ```) are stripped.
+//  5. Inline `CMD:` markers (`CMD: a CMD: b CMD: c`) split the first
+//     CMD: line into multiple separate commands.
+//  6. A `Output:` line outside a heredoc means the model hallucinated a
+//     terminal session. We abort parsing and signal the caller to re-
+//     prompt.
+//
+// The script-collection design exists so the LLM can emit a single
+// CMD: block containing e.g.:
+//
+//	CMD: mkdir -p /work
+//	cat > /work/file <<'EOF'
+//	... content ...
+//	EOF
+//	gt mail send mayor/ -s "ready" -m "done"
+//	gt unhook
+//	DONE: handed off
+//
+// /bin/sh -c handles the multi-line script natively (heredocs, multi-line
+// quoted args, semicolons, etc.), so the right behavior is to forward
+// the whole script as one shell invocation.
 func parseLLMResponse(response string) (cmds []string, doneSummary string, hallucinated bool) {
 	lines := strings.Split(response, "\n")
 
-	var heredocBuf []string
-	var heredocTerm string // empty => not currently inside a heredoc
+	var scriptBuf []string // accumulating lines for the current shell script
+	var heredocTerm string // empty when not inside a heredoc body
+	inScript := false      // true if we're collecting continuation lines for an active CMD:
+
+	flushScript := func() {
+		if len(scriptBuf) == 0 {
+			return
+		}
+		if heredocTerm != "" {
+			// Unterminated heredoc — discard the whole script so we
+			// never execute a fragment that may contain prose.
+			scriptBuf = nil
+			heredocTerm = ""
+			return
+		}
+		cmds = append(cmds, strings.Join(scriptBuf, "\n"))
+		scriptBuf = nil
+	}
 
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
 
-		// Heredoc body: collect everything verbatim until terminator.
+		// Inside a heredoc body — collect verbatim until terminator.
 		if heredocTerm != "" {
-			heredocBuf = append(heredocBuf, line)
+			scriptBuf = append(scriptBuf, line)
 			if trimmed == heredocTerm {
-				cmds = append(cmds, strings.Join(heredocBuf, "\n"))
-				heredocBuf = nil
 				heredocTerm = ""
 			}
 			continue
@@ -822,7 +864,21 @@ func parseLLMResponse(response string) (cmds []string, doneSummary string, hallu
 			return nil, "", true
 		}
 
+		if strings.HasPrefix(trimmed, "DONE:") {
+			flushScript()
+			inScript = false
+			if doneSummary == "" {
+				doneSummary = strings.TrimSpace(strings.TrimPrefix(trimmed, "DONE:"))
+			}
+			continue
+		}
+
 		if strings.HasPrefix(trimmed, "CMD:") {
+			// Flush any in-flight script from a previous CMD: before
+			// starting a new one.
+			flushScript()
+			inScript = false
+
 			cmd := strings.TrimSpace(strings.TrimPrefix(trimmed, "CMD:"))
 
 			// Strip a leading markdown fence on the same line as CMD:.
@@ -836,63 +892,176 @@ func parseLLMResponse(response string) (cmds []string, doneSummary string, hallu
 			cmd = strings.TrimSuffix(cmd, "```")
 			cmd = strings.TrimSpace(cmd)
 
-			// Strip same-line trailing markdown bold prose (e.g.
-			// `CMD: bd search "F23" ... **Rationale for Change:** ...`).
-			// The model frequently emits its own rationale paragraph on
-			// the same line as the command, which would otherwise be
-			// passed straight to the shell.
-			cmd = trailingMarkdownBoldRE.ReplaceAllString(cmd, "")
-			cmd = strings.TrimSpace(cmd)
-
 			if cmd == "" {
 				continue
 			}
 
-			// Heredoc must be detected on the *first* sub-segment before
-			// we split on inline `CMD:` markers, because heredocs span
-			// multiple lines and the rest-of-line split would clobber
-			// the terminator we're about to look for.
-			if term := detectHeredocTerm(cmd); term != "" {
-				heredocBuf = []string{cmd}
-				heredocTerm = term
-				continue
+			// Split on inline `CMD:` markers FIRST, then strip
+			// `**bold**` prose from each segment.
+			//
+			// Fix #91 (parse-order bug): we used to strip
+			// `trailingMarkdownBoldRE` on the whole line BEFORE
+			// splitting on `\s+CMD:\s+`. The regex matches greedily
+			// to end-of-line (`.*$`), so a response like
+			//
+			//   CMD: gt patrol new **Patrol Cycle #531 Initiated** CMD: gt patrol scan --notify **...** CMD: gt polecat list
+			//
+			// collapsed to just `gt patrol new` — every subsequent
+			// `CMD:` segment was discarded along with the trailing
+			// markdown. The witness was looping for hours, executing
+			// only the first command of each multi-command response.
+			// Now we split first, then strip bold prose per segment,
+			// so each segment keeps its real shell command.
+			subs := splitInlineCMDs(cmd)
+			for i := range subs {
+				subs[i] = trailingMarkdownBoldRE.ReplaceAllString(subs[i], "")
+				subs[i] = strings.TrimSpace(subs[i])
 			}
-
-			// Split on inline `CMD:` markers: the model sometimes crams
-			// multiple commands onto a single line like
-			//   CMD: cmd1 CMD: cmd2 CMD: cmd3
-			// instead of emitting them on separate lines. Without this
-			// split, the rest of the line is appended as arguments to
-			// the first command and the shell errors out (typically on
-			// an unterminated quoted string). The leading-space guard
-			// prevents accidental matches inside a real argument value.
-			for _, sub := range splitInlineCMDs(cmd) {
-				sub = strings.TrimSpace(sub)
-				if sub == "" {
+			for i := 0; i < len(subs)-1; i++ {
+				s := strings.TrimSpace(subs[i])
+				if s == "" {
 					continue
 				}
-				// A `CMD: DONE: …` sentinel from this split is a model
-				// telling us it's done; capture the summary and drop the
-				// pseudo-command instead of shelling out `DONE: …`.
-				if strings.HasPrefix(sub, "DONE:") {
+				if strings.HasPrefix(s, "DONE:") {
 					if doneSummary == "" {
-						doneSummary = strings.TrimSpace(strings.TrimPrefix(sub, "DONE:"))
+						doneSummary = strings.TrimSpace(strings.TrimPrefix(s, "DONE:"))
 					}
 					continue
 				}
-				cmds = append(cmds, sub)
+				cmds = append(cmds, s)
+			}
+			last := strings.TrimSpace(subs[len(subs)-1])
+			if last == "" {
+				continue
+			}
+			if strings.HasPrefix(last, "DONE:") {
+				if doneSummary == "" {
+					doneSummary = strings.TrimSpace(strings.TrimPrefix(last, "DONE:"))
+				}
+				continue
+			}
+
+			scriptBuf = []string{last}
+			inScript = true
+			if term := detectHeredocTerm(last); term != "" {
+				heredocTerm = term
 			}
 			continue
 		}
 
-		if strings.HasPrefix(trimmed, "DONE:") && doneSummary == "" {
-			doneSummary = strings.TrimSpace(strings.TrimPrefix(trimmed, "DONE:"))
+		if !inScript {
+			// Not collecting — ignore prose, markdown, etc. outside CMD: blocks.
+			continue
+		}
+
+		// We're after a CMD: line, accumulating the script body.
+		if trimmed == "" {
+			// Blank line terminates the script (we are not in a heredoc
+			// because the heredoc branch consumed all lines and returned
+			// up at the top of the loop).
+			flushScript()
+			inScript = false
+			continue
+		}
+
+		if isMarkdownStructure(trimmed) {
+			flushScript()
+			inScript = false
+			continue
+		}
+
+		// Fix #96 (architect prose-leak crash): the LLM sometimes
+		// emits English narration directly after a CMD: line without
+		// a blank line in between, e.g.
+		//
+		//   CMD: gt hook | cat
+		//   Now I'll re-execute the necessary commands with the correct bead ID extraction.
+		//   Let me first check the hook output properly, then redo the steps.
+		//
+		// The old script-collection logic appended every non-blank
+		// non-markdown line to the script body, so the prose got
+		// piped into /bin/sh where the apostrophe in "I'll" opened
+		// an unterminated quoted string and the architect looped
+		// forever on the same syntax error.
+		if looksLikeProseLine(trimmed) {
+			flushScript()
+			inScript = false
+			continue
+		}
+
+		// Append this line to the current script body.
+		scriptBuf = append(scriptBuf, line)
+		// If this continuation line opens a heredoc, enter heredoc mode
+		// so subsequent lines are collected verbatim until the terminator.
+		if term := detectHeredocTerm(line); term != "" {
+			heredocTerm = term
 		}
 	}
 
-	// An unterminated heredoc is discarded on purpose — we do not want to
-	// execute a fragment that might contain prose.
+	// Trailing script (no DONE: or blank line at end of input).
+	flushScript()
 	return cmds, doneSummary, false
+}
+
+// isMarkdownStructure reports whether trimmed looks like the start of a
+// markdown structural element that the LLM commonly emits between
+// command blocks. These lines should terminate any active CMD: script
+// because they are never valid shell.
+func isMarkdownStructure(trimmed string) bool {
+	if strings.HasPrefix(trimmed, "### ") ||
+		strings.HasPrefix(trimmed, "## ") ||
+		strings.HasPrefix(trimmed, "# ") {
+		return true
+	}
+	if strings.HasPrefix(trimmed, "```") {
+		// Both opening (```bash) and closing (```) fences.
+		return true
+	}
+	if strings.HasPrefix(trimmed, "> ") {
+		return true
+	}
+	return false
+}
+
+// llmProseStartRE matches the leading word/phrase of an LLM reasoning
+// sentence the model sometimes emits BETWEEN commands without ever
+// closing the prior CMD: script with a blank line. These lines look
+// like normal English ("Now I'll re-execute...", "Let me first check
+// the hook output...") but get fed into /bin/sh by the script-
+// collection logic, where the apostrophe in "I'll" or "Let's" opens an
+// unterminated quoted string and the whole script aborts.
+//
+// We deliberately match only the most common LLM thinking-prose
+// starters. The list is narrow on purpose: real shell commands almost
+// never begin with these multi-word capitalized phrases, and the
+// trailing-period + no-shell-metacharacter constraint in
+// looksLikeProseLine adds further safety.
+var llmProseStartRE = regexp.MustCompile(`^(Now (I'?ll|I'?m|let|let'?s|we'?ll|we'?re|that|this|the)\b|Let me\b|Let'?s\b|First[,:\s]|Next[,:\s]|Then I'?ll\b|Finally[,:\s]|I'?ll (now|first|need|then|also|go)\b|I'?m going to\b|I need to\b|I will\b|We need to\b|We'?ll (now|first)\b|This will\b|That will\b|Here'?s\b|Note[,:\s]|Actually[,:\s]|However[,:\s]|So\b|Because\b|Since\b)`)
+
+// looksLikeProseLine reports whether trimmed looks like LLM narration
+// rather than shell continuation, and should terminate any in-flight
+// CMD: script. Heuristic:
+//
+//   - Starts with a known LLM thinking-prose phrase (llmProseStartRE).
+//   - Contains NO shell metacharacters that would make it a real
+//     command ($, |, &, ;, <, >, =, backtick, parentheses).
+//   - Ends with sentence-terminating punctuation (. ! ? :).
+//
+// All three must hold. The combination is conservative enough that
+// real shell continuation lines (`&& gt mail send`, `| jq`, `> file`,
+// `for i in ...; do`, etc.) never trigger it.
+func looksLikeProseLine(trimmed string) bool {
+	if trimmed == "" {
+		return false
+	}
+	if strings.ContainsAny(trimmed, "$|&;<>=`()") {
+		return false
+	}
+	last := trimmed[len(trimmed)-1]
+	if last != '.' && last != '!' && last != '?' && last != ':' {
+		return false
+	}
+	return llmProseStartRE.MatchString(trimmed)
 }
 
 // inlineCMDMarkerRE matches the inline `CMD:` separator the model
@@ -990,7 +1159,9 @@ func normalizeGeneratedCommand(cmd string) (string, bool) {
 	// status). Only collapse `gt hook` when it's bare or followed by
 	// noise the agent invented (placeholders, raw bead IDs as
 	// positional args, etc.). A recognized subcommand passes through
-	// untouched.
+	// untouched. Pipelines/redirections that consume `gt hook`'s
+	// output (e.g. `gt hook | grep -oE 'hq-wisp-...'`) ALSO pass
+	// through — those are legitimate scripts.
 	if hasCommandPrefix(trimmed, "gt hook") {
 		fields := strings.Fields(trimmed)
 		if len(fields) <= 2 {
@@ -1005,6 +1176,25 @@ func normalizeGeneratedCommand(cmd string) (string, bool) {
 		}
 		if validHookSubcmds[fields[2]] {
 			// Preserve the real subcommand and its arguments.
+			return trimmed, rewritten
+		}
+		// Shell pipeline / redirection / chaining operators after
+		// `gt hook` mean the agent is using hook's output in a
+		// script, e.g.
+		//   gt hook | grep -oE 'hq-wisp-...' | head -1 > /tmp/x
+		// or
+		//   gt hook && gt mail inbox
+		// Pass these through untouched.
+		shellPipeOps := map[string]bool{
+			"|": true, "||": true,
+			"&": true, "&&": true,
+			";":  true,
+			">":  true, ">>": true,
+			"<":  true,
+			"2>": true, "2>>": true,
+			"|&": true,
+		}
+		if shellPipeOps[fields[2]] {
 			return trimmed, rewritten
 		}
 		// Unknown trailing args (model hallucination) — collapse to bare.
@@ -1022,9 +1212,16 @@ func normalizeGeneratedCommand(cmd string) (string, bool) {
 	if hasCommandPrefix(trimmed, "bd read") {
 		return "gt " + trimmed, true
 	}
-	if hasCommandPrefix(trimmed, "bd update") {
-		return "gt " + trimmed, true
-	}
+	// NOTE: We intentionally do NOT rewrite `bd update <id> ...` to
+	// `gt bd update <id> ...`. `gt bd` (alias for `gt bead`) is a
+	// cross-repo router that only exposes `show`/`read`/`move`/`mol`
+	// — there is no `gt bd update`. Rewriting bare `bd update` here
+	// produced `gt bd update <id> --status=in_progress` which fails
+	// with `unknown flag: --status` and bricks every polecat trying
+	// to mark itself in_progress. The formula text already uses bare
+	// `bd update`, and the polecat's worktree has `bd` on PATH
+	// operating in the correct beads directory, so passing through
+	// unchanged is correct. See Fix #87.
 	if hasCommandPrefix(trimmed, "bd mol current") {
 		return rewriteMolCurrent(trimmed), true
 	}
@@ -1053,6 +1250,18 @@ func normalizeGeneratedCommand(cmd string) (string, bool) {
 	}
 	if hasInvalidPatrolCommand(trimmed) {
 		fmt.Fprintf(os.Stderr, "[gt-agent] ⚠ REJECTED hallucinatory patrol command: %q\n", trimmed)
+		return "true", true
+	}
+	if reason, ok := hasContentFreeMailSend(trimmed); ok {
+		// Fix #90: small LLMs repeatedly emit content-free status mails
+		// like `gt mail send <rig>/witness -s "mol-refinery-patrol" -m
+		// "Reply to witness regarding mol-refinery-patrol"`. Each one
+		// creates a permanent bead + Dolt commit, no operator value,
+		// and the receiving agent then spends its next cycle reading
+		// and archiving them. We've observed this drive the witness
+		// inbox from 40 → 100 → 195+ in a few hours of refinery
+		// patrol cycles. Reject these before they reach `gt mail send`.
+		fmt.Fprintf(os.Stderr, "[gt-agent] ⚠ REJECTED content-free `gt mail send` (Fix #90: %s): %q\n", reason, trimmed)
 		return "true", true
 	}
 	if hasInvalidShinyFormula(trimmed, currentRole) {
@@ -1410,6 +1619,360 @@ var validPatrolVerbs = map[string]bool{
 	"report": true,
 	"scan":   true,
 	"digest": true,
+}
+
+// mailSendFormulaSubjectRE matches mail subjects that are obviously
+// content-free formula-name pings, with or without `RE:` prefix and
+// with or without quotes. Examples that match:
+//
+//	-s "mol-refinery-patrol"
+//	-s 'RE: mol-refinery-patrol'
+//	-s mol-witness-patrol
+//	-s "RE: mol-polecat-work"
+//
+// Formula names are agent-internal molecule identifiers, never
+// human-meaningful subjects. When an LLM emits one as a subject it is
+// always hallucinating a status ping. See Fix #90.
+var mailSendFormulaSubjectRE = regexp.MustCompile(`^(?i)(re:\s*)?mol-[a-z0-9-]+$`)
+
+// mailSendVaguePolecatAlertRE matches subjects that are vague
+// polecat-status alerts ("Polecat appears stalled", "polecat stuck",
+// "Polecat is dead"). Such an alert is only legitimate when the
+// subject or body also names a specific polecat (rig/name) or wisp
+// ID. See Fix #92.
+var mailSendVaguePolecatAlertRE = regexp.MustCompile(
+	`^(?i)(re:\s*)?polecat(s)?(\s+(appears|is|seems|looks|may\s+be))?\s+(stalled|stuck|dead|hung|hanged|frozen|unresponsive|stopped)\s*$`)
+
+// mailSendPolecatAddressRE matches a `<rig>/<polecat-name>` address in
+// subject or body. The address proves the alert is about a specific
+// polecat, not a generic status ping. See Fix #92.
+var mailSendPolecatAddressRE = regexp.MustCompile(`\b[a-z][a-z0-9-]*\/[a-z][a-z0-9_-]*\b`)
+
+// mailSendWispIDRE matches a wisp ID (`hq-wisp-<suffix>` or
+// `<rig>-<id>`). A wisp ID also satisfies the "concrete reference"
+// requirement for polecat-status alerts. See Fix #92.
+var mailSendWispIDRE = regexp.MustCompile(`\b(hq-wisp-[a-z0-9]+|hq-[a-z0-9]+\.\d+|hq-[a-z0-9]{4,})\b`)
+
+// mailSendPatrolStatusRE matches subjects that are patrol-cycle
+// status pings ("Patrol Cycle #531 Complete", "Patrol Initiated",
+// "Patrol Cycle Started", "Patrol Complete"). The recipient already
+// knows the agent patrols on a timer; an inbox notification adds
+// nothing. See Fix #92.
+var mailSendPatrolStatusRE = regexp.MustCompile(
+	`^(?i)(re:\s*)?patrol(\s+cycle)?(\s+#?\d+)?\s+(complete(d)?|initiated|started|finished|ended|done|nominal|ok)\s*$`)
+
+// mailSendEchoBodyRE matches bodies that just echo the subject, e.g.
+//
+//	"Reply to witness regarding mol-refinery-patrol"
+//	"Status update: mol-refinery-patrol"
+//	"<subject>"   (literal echo)
+//	"RE: <subject>"
+//
+// These are the canonical small-LLM "I should send a status mail"
+// hallucinations: 1-line, no operational data, the body is just a
+// rephrasing of the subject. See Fix #90.
+var mailSendEchoBodyPhrases = []string{
+	"reply to ",
+	"status update",
+	"acknowledged",
+	"acknowledgement",
+	"acknowledgment",
+	"received",
+	"noted",
+	"ack",
+}
+
+// hasContentFreeMailSend reports whether `cmd` is a `gt mail send` /
+// `gt mail reply` invocation whose subject + body combination indicate
+// a content-free LLM hallucination. Returns the reason string for
+// logging when the rejection fires.
+//
+// Heuristics (any one is enough to reject):
+//
+//  1. Subject is a formula name (`mol-*`, optionally `RE:`-prefixed).
+//     Formula names are internal identifiers and never legitimate mail
+//     subjects.
+//  2. Subject starts with `RE:` AND there is no `-m`/`--message`/`--stdin`
+//     content provided. A reply with no actual reply text is noise.
+//  3. Subject is non-empty, body is short (<= 80 chars) AND consists
+//     entirely of a generic ack phrase + a literal echo of the
+//     subject. This is the "Reply to <rig>/<role> regarding <subj>"
+//     signature.
+//
+// Returns (reason, true) when rejecting, ("", false) when the command
+// looks legitimate. Heredoc bodies (`--stdin <<EOF ... EOF`) are
+// treated as legitimate because no observed hallucination uses them.
+func hasContentFreeMailSend(cmd string) (string, bool) {
+	trimmed := strings.TrimSpace(cmd)
+	if !strings.HasPrefix(trimmed, "gt mail send") && !strings.HasPrefix(trimmed, "gt mail reply") {
+		return "", false
+	}
+	// Heredoc bodies are always legitimate — observed hallucinations
+	// are single-line `-m "..."`. Don't second-guess multi-line.
+	if strings.Contains(trimmed, "<<") {
+		return "", false
+	}
+	subject, body, ok := extractMailSubjectAndBody(trimmed)
+	if !ok {
+		return "", false
+	}
+	subj := strings.TrimSpace(subject)
+	if subj == "" {
+		return "", false
+	}
+	if mailSendFormulaSubjectRE.MatchString(subj) {
+		return "subject is a bare formula name", true
+	}
+	bodyTrim := strings.TrimSpace(body)
+	if strings.HasPrefix(strings.ToLower(subj), "re:") && bodyTrim == "" {
+		return "RE: reply with empty body", true
+	}
+	// Vague stalled/stuck/dead polecat alert with no concrete address.
+	//
+	// The witness template historically included a literal example
+	// `gt mail send mayor/ -s "Polecat appears stalled" -m "..."`.
+	// Small LLMs copy this verbatim every patrol cycle, producing
+	// 10+ identical alerts per minute to the mayor with no actual
+	// polecat identified. Fix #85 principle: example text in a
+	// prompt becomes a regurgitation pattern.
+	//
+	// To be legitimate, this kind of subject MUST mention either a
+	// rig/name polecat address or a specific wisp ID in the subject
+	// OR body. If neither is present, the alert is content-free.
+	if mailSendVaguePolecatAlertRE.MatchString(subj) {
+		combined := strings.ToLower(subj + " " + bodyTrim)
+		hasAddress := mailSendPolecatAddressRE.MatchString(combined) ||
+			mailSendWispIDRE.MatchString(combined)
+		if !hasAddress {
+			return "polecat-status alert without concrete address (Fix #92)", true
+		}
+	}
+	// Patrol cycle status with no concrete finding.
+	//
+	// "Patrol Cycle #N Complete" / "Patrol Complete" / "Patrol
+	// Initiated" — these are operational chatter the LLM emits at
+	// the start and end of every patrol turn. They carry zero
+	// signal to the recipient (the mayor / witness / refinery
+	// already know patrols are running; they show up in `gt
+	// patrol report`). The body is invariably "all systems
+	// nominal" / "no actionable items" / "sweep complete".
+	if mailSendPatrolStatusRE.MatchString(subj) {
+		return "patrol-cycle status ping (Fix #92)", true
+	}
+	// Body just restates the subject (e.g. subject `NO_POLECATS_FOUND`,
+	// body `No polecats found`). This is the second-most-common
+	// content-free pattern: the LLM writes a SHOUTY_SUBJECT and then
+	// rephrases it in lowercase prose as the body. Every refinery
+	// patrol cycle was sending one of these per state it observed
+	// (`NO_POLECATS_FOUND`, `MERGE_QUEUE_EMPTY`, `MERGE_QUEUE_NONEMPTY`,
+	// `REFINERY_STATUS`) and flooding the witness inbox.
+	//
+	// Heuristic: if every meaningful body token also appears in the
+	// subject, the body adds no information.
+	if bodyTrim != "" && len(bodyTrim) <= 160 {
+		subjectTokens := map[string]bool{}
+		for _, tok := range tokenizeAlnum(strings.TrimPrefix(strings.ToLower(subj), "re:")) {
+			subjectTokens[tok] = true
+		}
+		// Generic filler that doesn't count toward "real content".
+		filler := map[string]bool{
+			"to": true, "from": true, "the": true, "a": true, "an": true,
+			"of": true, "for": true, "in": true, "on": true, "is": true,
+			"are": true, "was": true, "were": true, "be": true,
+			"this": true, "that": true, "these": true, "those": true,
+			"and": true, "or": true, "but": true, "no": true, "not": true,
+			"any": true, "some": true, "all": true, "regarding": true,
+			"about": true, "re": true,
+			// Role/agent names — never carry content on their own.
+			"witness": true, "mayor": true, "refinery": true,
+			"polecat": true, "polecats": true, "deacon": true,
+			"architect": true, "qa": true, "planner": true, "mechanic": true,
+		}
+		bodyTokens := tokenizeAlnum(bodyTrim)
+		extra := 0
+		for _, tok := range bodyTokens {
+			if filler[tok] || subjectTokens[tok] {
+				continue
+			}
+			extra++
+		}
+		// Up to 1 "extra" token is tolerated (typos, "this is X" filler).
+		if len(bodyTokens) > 0 && extra <= 1 {
+			return "body restates the subject (no new information)", true
+		}
+	}
+	// Short body that's just an ack phrase + subject echo.
+	//
+	// We tokenize on word boundaries (NOT substring replace) so that
+	// stripping "a" doesn't carve "regarding" into "regrding" and let
+	// real-looking-but-empty content slip through. The body is
+	// considered content-free when, after removing:
+	//   - the subject tokens (case-insensitive)
+	//   - any ack phrase (`reply to`, `acknowledged`, `noted`, ...)
+	//   - generic filler words (`to`, `the`, `regarding`, `witness`,
+	//     `mayor`, `refinery`, role names, etc.)
+	// there are <= 1 meaningful tokens left. That correctly catches
+	//
+	//   "Reply to witness regarding NO_POLECATS_FOUND"  → 0 tokens
+	//   "acknowledged"                                  → 0 tokens
+	//   "Status update: mol-refinery-patrol"            → 0 tokens
+	//
+	// while preserving real content such as
+	//
+	//   "Branch tests failed: 3 errors in build_test.go" → 5+ tokens.
+	if bodyTrim != "" && len(bodyTrim) <= 120 {
+		lower := strings.ToLower(bodyTrim)
+		hasAck := false
+		for _, phrase := range mailSendEchoBodyPhrases {
+			if strings.Contains(lower, phrase) {
+				hasAck = true
+				break
+			}
+		}
+		if hasAck {
+			meaningful := residualMeaningfulTokens(lower, subj)
+			if len(meaningful) <= 1 {
+				return "body just echoes subject with ack phrase", true
+			}
+		}
+	}
+	return "", false
+}
+
+// residualMeaningfulTokens returns the body tokens that remain after
+// stripping subject tokens, ack phrases, and generic filler. Tokens
+// are lowercase alphanumeric runs separated by punctuation/whitespace.
+//
+// We never substring-replace; this avoids the carving bug where
+// stripping `a` from "regarding" produces a bogus "regrding" token.
+// See Fix #90.
+func residualMeaningfulTokens(lowerBody, subject string) []string {
+	skip := map[string]bool{}
+	// Ack phrases as whole tokens (multi-word phrases will be matched
+	// before tokenizing).
+	for _, phrase := range mailSendEchoBodyPhrases {
+		for _, tok := range tokenizeAlnum(phrase) {
+			skip[tok] = true
+		}
+	}
+	// Subject tokens (after stripping `re:`).
+	subjTok := strings.TrimSpace(strings.TrimPrefix(strings.ToLower(subject), "re:"))
+	for _, tok := range tokenizeAlnum(subjTok) {
+		skip[tok] = true
+	}
+	// Generic English filler + the agent role names we see in
+	// hallucinated bodies.
+	for _, w := range []string{
+		"to", "from", "the", "a", "an", "of", "for", "in", "on",
+		"regarding", "about", "re", "and", "or", "is", "this", "that",
+		"witness", "mayor", "refinery", "polecat", "polecats", "rust",
+		"deacon", "architect", "qa", "planner", "mechanic",
+	} {
+		skip[w] = true
+	}
+
+	var out []string
+	for _, tok := range tokenizeAlnum(lowerBody) {
+		if skip[tok] {
+			continue
+		}
+		out = append(out, tok)
+	}
+	return out
+}
+
+// tokenizeAlnum splits s into lowercase alphanumeric runs. Runs of
+// non-alphanumeric chars act as separators. Empty tokens are dropped.
+func tokenizeAlnum(s string) []string {
+	var out []string
+	var cur strings.Builder
+	flush := func() {
+		if cur.Len() > 0 {
+			out = append(out, cur.String())
+			cur.Reset()
+		}
+	}
+	for _, r := range strings.ToLower(s) {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			cur.WriteRune(r)
+		} else {
+			flush()
+		}
+	}
+	flush()
+	return out
+}
+
+// extractMailSubjectAndBody parses `-s/--subject` and `-m/--message`
+// flag values out of a `gt mail send` command line, handling single
+// and double quotes. Returns ("", "", false) if no subject is found.
+func extractMailSubjectAndBody(cmd string) (subject, body string, ok bool) {
+	fields, err := splitShellCmd(cmd)
+	if err != nil {
+		return "", "", false
+	}
+	for i := 0; i < len(fields); i++ {
+		switch fields[i] {
+		case "-s", "--subject":
+			if i+1 < len(fields) {
+				subject = fields[i+1]
+				ok = true
+				i++
+			}
+		case "-m", "--message", "--body":
+			if i+1 < len(fields) {
+				body = fields[i+1]
+				i++
+			}
+		default:
+			if strings.HasPrefix(fields[i], "-s=") {
+				subject = strings.TrimPrefix(fields[i], "-s=")
+				ok = true
+			} else if strings.HasPrefix(fields[i], "--subject=") {
+				subject = strings.TrimPrefix(fields[i], "--subject=")
+				ok = true
+			} else if strings.HasPrefix(fields[i], "-m=") {
+				body = strings.TrimPrefix(fields[i], "-m=")
+			} else if strings.HasPrefix(fields[i], "--message=") {
+				body = strings.TrimPrefix(fields[i], "--message=")
+			}
+		}
+	}
+	return subject, body, ok
+}
+
+// splitShellCmd is a tiny shell-style tokenizer that handles single
+// and double quotes (no escapes, no command substitution). It is good
+// enough for inspecting flag args; it does NOT execute anything.
+func splitShellCmd(cmd string) ([]string, error) {
+	var (
+		fields  []string
+		cur     strings.Builder
+		inSingle, inDouble bool
+	)
+	flush := func() {
+		if cur.Len() > 0 {
+			fields = append(fields, cur.String())
+			cur.Reset()
+		}
+	}
+	for _, r := range cmd {
+		switch {
+		case r == '\'' && !inDouble:
+			inSingle = !inSingle
+		case r == '"' && !inSingle:
+			inDouble = !inDouble
+		case (r == ' ' || r == '\t') && !inSingle && !inDouble:
+			flush()
+		default:
+			cur.WriteRune(r)
+		}
+	}
+	flush()
+	if inSingle || inDouble {
+		return nil, fmt.Errorf("unterminated quote")
+	}
+	return fields, nil
 }
 
 // hasInvalidPatrolCommand returns true for `gt patrol*` invocations the

@@ -403,14 +403,39 @@ func runDone(cmd *cobra.Command, args []string) (retErr error) {
 	// This check runs AFTER the auto-save safety net to catch "sleepwalking" polecats
 	// that run gt done without implementing anything (just triggering auto-save)
 	// Only check the TOP commit - if it's just auto-save, the polecat didn't do real work
+	//
+	// EXCEPTION (Fix #88): the mol-polecat-work formula explicitly allows a
+	// "no implementation needed" exit path:
+	//
+	//   3. Submit: `git push origin <branch>` then `gt done`.
+	//      - If no changes: `bd close <id> --reason="..."` then `gt done`.
+	//
+	// When the polecat takes that branch — i.e. it deliberately ran
+	// `bd close <id> --reason="..."` because the assigned issue needed no
+	// code change (duplicate, already-fixed, spec-only, test-bead, etc.) —
+	// rejecting `gt done` here strands the polecat: the bead is closed so
+	// it can't be re-worked, but the hook is still set and the polecat
+	// keeps retrying `gt done` until the retry-#5 recovery scorches the
+	// hook. We detect that path by looking up the assigned bead: if it's
+	// already in a terminal state (closed/tombstone), the polecat made a
+	// valid decision and we let `gt done` proceed to the normal
+	// cleanup/unhook path. The remaining auto-save commit (if any) just
+	// gets attributed to the closed issue.
 	if exitType == ExitCompleted && cwd != "" {
 		cmd := exec.Command("git", "log", "--oneline", "-1")
 		cmd.Dir = cwd
 		out, err := cmd.CombinedOutput()
 		if err == nil {
 			topCommit := strings.TrimSpace(string(out))
-			if strings.Contains(topCommit, "auto-save") || strings.Contains(topCommit, "safety net") || strings.Contains(topCommit, "gt-pvx") {
-				return fmt.Errorf("cannot complete: no implementation commits found. Your only commit is an auto-save safety net.\n\nThis means you ran gt done without actually implementing anything.\n\nTo complete this task:\n1. Read your assigned bead: bd show <issue-id>\n2. Read the SPEC.md in your worktree\n3. Create the required files (main.py, requirements.txt, tests, etc.)\n4. Test your implementation works\n5. Commit: git add -A && git commit -m 'feat: implementation (<issue-id>)'\n6. Then run: gt done\n\nThe system REQUIRES actual code changes - auto-save commits don't count as work.")
+			isAutoSaveOnly := strings.Contains(topCommit, "auto-save") || strings.Contains(topCommit, "safety net") || strings.Contains(topCommit, "gt-pvx")
+			if isAutoSaveOnly {
+				if beadAlreadyClosed(cwd, branch) {
+					fmt.Printf("%s Hooked bead is already closed — accepting `gt done` as the formula's \"no implementation needed\" exit path.\n",
+						style.Bold.Render("✓"))
+					fmt.Printf("  (auto-save commit retained as audit trail; nothing to merge.)\n\n")
+				} else {
+					return fmt.Errorf("cannot complete: no implementation commits found. Your only commit is an auto-save safety net.\n\nThis means you ran gt done without actually implementing anything.\n\nTo complete this task:\n1. Read your assigned bead: bd show <issue-id>\n2. Read the SPEC.md in your worktree\n3. Create the required files (main.py, requirements.txt, tests, etc.)\n4. Test your implementation works\n5. Commit: git add -A && git commit -m 'feat: implementation (<issue-id>)'\n6. Then run: gt done\n\nThe system REQUIRES actual code changes - auto-save commits don't count as work.\n\nIf this issue genuinely needs no code change, run `bd close <id> --reason=\"...\"` FIRST, then re-run `gt done`.")
+				}
 			}
 		}
 	}
@@ -2053,6 +2078,37 @@ func stripOverlayCLAUDEmd(g *git.Git, defaultBranch string) bool {
 	fmt.Printf("%s Created cleanup commit to remove Gas Town overlay files\n",
 		style.Bold.Render("✓"))
 	return true
+}
+
+// beadAlreadyClosed reports whether the issue derived from the current
+// branch is already in a terminal state (closed/tombstone). It is used by
+// the auto-save commit guard to distinguish two cases:
+//
+//   - "Sleepwalking" polecat that ran `gt done` without doing anything —
+//     bead is still open, so we reject and force the polecat to
+//     implement, commit, and re-run.
+//   - Formula's documented "no implementation needed" branch — the
+//     polecat ran `bd close <id> --reason="..."` first, so the bead is
+//     already closed and `gt done` should self-clean rather than refuse.
+//
+// All failures (cwd missing, branch unparseable, bd lookup fails, Dolt
+// down) are treated as "not closed" — i.e. we err on the side of the
+// stricter guard. The only side-effect is one read against beads; on
+// failure we log to stderr and return false silently. See Fix #88.
+func beadAlreadyClosed(cwd, branch string) bool {
+	if cwd == "" || branch == "" {
+		return false
+	}
+	issueID := parseBranchName(branch).Issue
+	if issueID == "" {
+		return false
+	}
+	bd := beads.New(cwd)
+	issue, err := bd.Show(issueID)
+	if err != nil || issue == nil {
+		return false
+	}
+	return beads.IssueStatus(issue.Status).IsTerminal()
 }
 
 // purgeClosedEphemeralBeads removes closed ephemeral beads (wisps) that accumulated

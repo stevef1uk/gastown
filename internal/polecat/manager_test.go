@@ -1366,6 +1366,24 @@ func TestAddWithOptions_NoFilesAddedToRepo(t *testing.T) {
 		if strings.Contains(line, "CLAUDE.md") {
 			continue
 		}
+		// Fix #95b: AGENTS.md is agent-internal plumbing that gets:
+		//   (a) copied into the worktree by the fallback path (—> "?? AGENTS.md")
+		//   (b) untracked from the index by untrackAgentInternals if it was
+		//       previously tracked in this branch's HEAD (—> "D  AGENTS.md")
+		// Both lines are the EXPECTED outcome of Fix #95b's untracking, not
+		// a regression — we explicitly want agent-internal files OUT of any
+		// `git add -A` sweep the polecat does when committing real work.
+		if strings.Contains(line, "AGENTS.md") {
+			continue
+		}
+		// .gt-agent identity file is written by Fix #93 (writePolecatIdentityFile)
+		// and is excluded from commits by Fix #95 (.git/info/exclude pattern).
+		// It will normally not appear in `git status` at all because the local
+		// exclude masks it, but we filter defensively in case the test
+		// environment skips that step.
+		if strings.Contains(line, ".gt-agent") {
+			continue
+		}
 		unexpected = append(unexpected, line)
 	}
 	if len(unexpected) > 0 {

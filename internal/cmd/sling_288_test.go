@@ -127,6 +127,30 @@ exit /b 0
 		t.Error("BeadToHook should not be empty")
 	}
 
+	// Fix #86: the returned FormulaVars must include the caller's --vars
+	// AND the auto-filled feature/issue defaults (and base_branch et al.
+	// added by ensureFormulaRequiredVars for mol-polecat-work). The sling
+	// command relies on this to populate the bead's AttachedVars field so
+	// that `gt prime` substitutes `{{issue}}` and `{{feature}}` with real
+	// values instead of leaking placeholders into the polecat's prompt.
+	wantContains := map[string]string{
+		"branch":      "polecat/furiosa/gt-abc123", // caller-supplied
+		"feature":     "Test Bug Fix",              // auto-filled from title
+		"issue":       "gt-abc123",                 // auto-filled from beadID
+		"base_branch": "main",                      // ensureFormulaRequiredVars default
+	}
+	got := make(map[string]string)
+	for _, kv := range result.FormulaVars {
+		if eq := strings.Index(kv, "="); eq > 0 {
+			got[kv[:eq]] = kv[eq+1:]
+		}
+	}
+	for k, v := range wantContains {
+		if got[k] != v {
+			t.Errorf("FormulaVars[%q] = %q, want %q (full set: %v)", k, got[k], v, result.FormulaVars)
+		}
+	}
+
 	// Verify commands were logged
 	logBytes, err := os.ReadFile(logPath)
 	if err != nil {

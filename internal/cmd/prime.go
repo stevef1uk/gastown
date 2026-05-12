@@ -32,6 +32,12 @@ var primeStateJSON bool
 var primeExplain bool
 var primeStructuredSessionStartOutput bool
 
+// primeStep, when > 0, pins the formula step renderer to a single step.
+// Agents use `gt prime --step 2` to fetch the full body of step 2
+// without re-receiving the whole 500-line formula. See
+// `showFormulaStepsFull` for the rationale.
+var primeStep int
+
 // primeHookSource stores the SessionStart source ("startup", "resume", "clear", "compact")
 // when running in hook mode. Used to provide lighter output on compaction/resume.
 var primeHookSource string
@@ -113,6 +119,10 @@ func init() {
 		"Output state as JSON (requires --state)")
 	primeCmd.Flags().BoolVar(&primeExplain, "explain", false,
 		"Show why each section was included")
+	primeCmd.Flags().IntVar(&primeStep, "step", 0,
+		"Show the full body of only the given formula step (1-based). "+
+			"Default (0) shows a compact outline plus step 1 in full. "+
+			"Use this to drill into one step at a time without re-reading the whole formula.")
 	rootCmd.AddCommand(primeCmd)
 }
 
@@ -125,6 +135,12 @@ func runPrime(cmd *cobra.Command, args []string) (retErr error) {
 	if err := validatePrimeFlags(); err != nil {
 		return err
 	}
+
+	// Pin the formula renderer to a single step when --step was passed.
+	// Cleared on the way out so subsequent invocations in the same
+	// process (test binaries, etc.) start with a fresh focus.
+	SetFormulaStepFocus(primeStep)
+	defer SetFormulaStepFocus(0)
 
 	cwd, townRoot, err := resolvePrimeWorkspace()
 	if err != nil {

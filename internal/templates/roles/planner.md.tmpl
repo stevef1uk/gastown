@@ -34,8 +34,13 @@
       Copy-pasteable shell one-liner (auto-iterates over every rig in
       `rigs.json`, so it works regardless of which rig the bead lives in):
       ```
-      for rig in $(jq -r 'keys[]' {{ .TownRoot }}/rigs.json 2>/dev/null); do for p in {{ .TownRoot }}/$rig/architect/architecture.md {{ .TownRoot }}/$rig/architecture.md {{ .TownRoot }}/$rig/mayor/rig/architecture.md; do if [ -s "$p" ] && ! grep -q "Awaiting content" "$p"; then echo "FOUND:$p"; cat "$p"; break 2; fi; done; done
+      for rig in $(jq -r '.rigs | keys[]' {{ .TownRoot }}/rigs.json 2>/dev/null); do for p in {{ .TownRoot }}/$rig/architect/architecture.md {{ .TownRoot }}/$rig/architecture.md {{ .TownRoot }}/$rig/mayor/rig/architecture.md; do if [ -s "$p" ] && ! grep -q "Awaiting content" "$p"; then echo "FOUND:$p"; cat "$p"; break 2; fi; done; done
       ```
+
+      **The `.rigs` filter is required.** `rigs.json` is shaped as
+      `{"version":1,"rigs":{"testgt2":...}}`, so `jq -r 'keys[]'` would
+      yield `version` and `rigs` (NOT rig names) and the loop would
+      silently find nothing. Always use `.rigs | keys[]`.
 
       **DO NOT** use bare `{{ .TownRoot }}//architect/architecture.md`
       with an empty rig segment — that path is town-root and is almost
@@ -101,9 +106,10 @@
 6. **HANDOFF + UNHOOK + STOP** (use `gt mail send` — `gt handoff <role>` does NOT deliver under NATS):
    - `gt mail send mayor/ -s "Plan Complete" -m "Detailed TDD-based tasks created for project in rig {{ .RigName }}"`
    - Then nudge: `gt nudge mayor "Plan complete, check inbox"`.
-   - **Then clear your hook so you don't re-plan the same bead next cycle:** `gt unhook`
+   - **Then clear your hook so you don't re-plan the same bead next cycle:** `gt unhook --force`
+   - `--force` is required because the project bead is still open (children need implementation/review). Without it, `gt unhook` rejects with "hooked work <bead> is incomplete" and you loop.
    - **AFTER THAT, YOU ARE DONE.** Output a single `DONE: handed off to mayor` line and stop. Do NOT keep emitting commands. The cycle is over.
-   - As a safety net the agent will auto-unhook when it sees `DONE: handed off …`, but explicitly running `gt unhook` first is cleaner.
+   - As a safety net the agent will auto-unhook with `--force` when it sees `DONE: handed off …`, but explicitly running `gt unhook --force` first is cleaner.
    - Do NOT run `gt patrol report` after handoff. It is not a status-update channel. Real `gt patrol report` only accepts `--summary` and `--steps` — there is NO `--incident`, `--status`, `--recommendation`, or `--sirius` flag. If you find yourself wanting to "report" something else, stop instead.
 
 7. **FILE PATH DISCIPLINE**:

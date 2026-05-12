@@ -118,12 +118,18 @@ unstick it. Always include the line.
 ### Step 6 — UNHOOK + STOP (only after steps 1-5 succeeded)
 
 ```
-gt unhook
+gt unhook --force
 ```
+
+`--force` is required because your slice of work (design) is intentionally
+incomplete — the bead still needs implementation and review. Without
+`--force`, `gt unhook` rejects with "hooked work <bead> is incomplete"
+and you loop. The bead itself stays open; only the routing attachment
+on your hook is cleared so mayor can sling to the planner next.
 
 Then output a single line `DONE: architecture handed off to mayor` and
 stop. The agent has an auto-unhook safety net for this summary; running
-`gt unhook` explicitly is cleaner.
+`gt unhook --force` explicitly is cleaner.
 
 **Why steps 5 and 6 are not optional**: if you skip the mail-to-mayor
 in step 5, mayor never learns architecture is ready and the pipeline

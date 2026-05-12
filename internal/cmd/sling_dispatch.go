@@ -314,6 +314,14 @@ func executeSling(params SlingParams) (*SlingResult, error) {
 			fmt.Printf("  %s Formula %s applied\n", style.Bold.Render("✓"), params.FormulaName)
 			beadToHook = formulaResult.BeadToHook
 			attachedMoleculeID = formulaResult.WispRootID
+			// Adopt the augmented var set (caller vars + auto-filled
+			// feature/issue/problem/base_branch/etc.) so the bead's
+			// stored AttachedVars match what was actually passed to
+			// `bd mol wisp`. Without this, prime-time renders
+			// `bd show {{issue}}` literally. Fix #86.
+			if len(formulaResult.FormulaVars) > 0 {
+				allVars = formulaResult.FormulaVars
+			}
 		}
 	}
 	result.AttachedMolecule = attachedMoleculeID
@@ -345,10 +353,18 @@ func executeSling(params SlingParams) (*SlingResult, error) {
 	updateAgentHookBead(targetAgent, beadToHook, hookWorkDir, beadsDir)
 
 	// 10. Store fields in bead (dispatcher, args, attached_molecule, no_merge, mode)
+	//
+	// Fix #86: store `allVars` rather than `params.Vars`. After
+	// InstantiateFormulaOnBead succeeds we adopt its `FormulaVars` into
+	// `allVars`, so this captures the full var set including auto-filled
+	// `feature`/`issue`/`problem`/`base_branch`. Without it, the prime-time
+	// renderer reads `attached_vars: ["base_branch=main"]` from the bead and
+	// every other `{{var}}` in the formula text leaks through as a literal
+	// placeholder.
 	fieldUpdates := beadFieldUpdates{
 		Dispatcher:       actor,
 		Args:             params.Args,
-		Vars:             append([]string(nil), params.Vars...),
+		Vars:             append([]string(nil), allVars...),
 		AttachedMolecule: attachedMoleculeID,
 		AttachedFormula:  params.FormulaName,
 		NoMerge:          params.NoMerge,

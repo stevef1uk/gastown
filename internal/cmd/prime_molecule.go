@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/steveyegge/gastown/internal/beads"
@@ -163,10 +165,37 @@ func showFormulaSteps(formulaName, label, townRoot, rigName string, extraVars ..
 	fmt.Println()
 }
 
-// showFormulaStepsFull renders formula steps with full descriptions.
-// Used for polecat work formulas where step details are the primary instructions.
-// townRoot and rigName are used to load formula overlays (operator customizations).
-// extraVars is an optional list of "key=value" overrides substituted into step descriptions.
+// formulaStepFocus is set by the --step flag on `gt prime`. When > 0, the
+// formula renderer shows only that step's body in full instead of the
+// compact outline. Plumbed via a package-level var to avoid changing
+// every call site that hands a *cobra.Command around.
+var formulaStepFocus int
+
+// SetFormulaStepFocus lets callers (notably the prime command) pin the
+// formula renderer to a single step. Pass 0 to clear.
+func SetFormulaStepFocus(n int) { formulaStepFocus = n }
+
+// showFormulaStepsFull renders formula steps. Despite the name (kept for
+// backwards compatibility with existing call sites), it now renders a
+// *compact* outline by default and only inlines the body of one step
+// (the focused one, or step 1).
+//
+// Background (gt-82, 2026-05-12): the 563-line mol-polecat-work formula
+// was being dumped verbatim into the polecat's LLM context (~20 KB),
+// which caused small models (e.g. ollama/llama3.3) to regurgitate every
+// bash example from the formula as separate CMD: lines (including
+// unresolved `{{setup_command}}` placeholders and `<branch-from-notes>`
+// angle-bracket fillers from the prose). The result was useless first
+// turns and no real progress.
+//
+// New behavior:
+//   - Print every step's title + a short first-paragraph summary.
+//   - Print the FULL body of exactly one step (formulaStepFocus, or
+//     step 1 by default) so the agent has a clear next action.
+//   - Print a hint about `gt prime --step N` so the agent can fetch
+//     the full body of any other step on demand.
+//
+// `extraVars` carries `--var key=value` substitutions from the wisp.
 func showFormulaStepsFull(formulaName, townRoot, rigName string, extraVars ...[]string) bool {
 	content, err := formula.ResolveFormulaContent(formulaName, townRoot, rigName)
 	if err != nil {
@@ -209,17 +238,208 @@ func showFormulaStepsFull(formulaName, townRoot, rigName string, extraVars ...[]
 	}
 	varMap := buildFormulaVarMap(f, vars)
 
+	// `GT_FORMULA_VIEW=full` re-enables the legacy full-dump behavior
+	// for operators who explicitly want the old prompt (e.g. crew
+	// workers driven by a large model that benefits from full context).
+	wantFull := strings.EqualFold(os.Getenv("GT_FORMULA_VIEW"), "full")
+
+	focus := formulaStepFocus
+	if focus < 1 || focus > len(f.Steps) {
+		focus = 1
+	}
+
 	fmt.Println()
 	fmt.Printf("**Formula Checklist** (%d steps from %s):\n\n", len(f.Steps), formulaName)
+
+	if wantFull {
+		// Legacy behavior: dump every step in full.
+		for i, step := range f.Steps {
+			title := applyFormulaVars(step.Title, varMap)
+			fmt.Printf("### Step %d: %s\n\n", i+1, title)
+			if step.Description != "" {
+				fmt.Println(applyFormulaVars(step.Description, varMap))
+				fmt.Println()
+			}
+		}
+		return true
+	}
+
+	// Compact outline: title + 1-sentence summary for each step,
+	// with a checkmark-like marker indicating the focus step.
 	for i, step := range f.Steps {
 		title := applyFormulaVars(step.Title, varMap)
-		fmt.Printf("### Step %d: %s\n\n", i+1, title)
+		summary := briefStepSummary(applyFormulaVars(step.Description, varMap))
+		marker := " "
+		if i+1 == focus {
+			marker = "►" // focus indicator
+		}
+		fmt.Printf("%s %d. **%s** — %s\n", marker, i+1, title, summary)
+	}
+	fmt.Println()
+
+	// Inline ONLY the focused step in full. This gives the agent the
+	// detailed instructions for exactly one step at a time, which is
+	// what small LLMs need to behave well. Other steps are reachable
+	// via `gt prime --step N`.
+	//
+	// We additionally sanitize the body to strip code fences whose
+	// content still contains <angle-bracket> placeholders or
+	// {{template_vars}} that didn't get substituted. Small LLMs were
+	// otherwise parroting those bash examples verbatim — e.g. emitting
+	//   CMD: git branch -a | grep <branch-from-notes>
+	// which the gt-agent normalizer would correctly reject as
+	// hallucinatory, but the polecat would then loop until it gave up
+	// and mailed Witness for help instead of doing real work.
+	if focus >= 1 && focus <= len(f.Steps) {
+		step := f.Steps[focus-1]
+		title := applyFormulaVars(step.Title, varMap)
+		fmt.Printf("### ► Step %d (your current step): %s\n\n", focus, title)
 		if step.Description != "" {
-			fmt.Println(applyFormulaVars(step.Description, varMap))
+			body := applyFormulaVars(step.Description, varMap)
+			body = sanitizeStepBody(body)
+			fmt.Println(body)
 			fmt.Println()
 		}
 	}
+
+	fmt.Println("---")
+	fmt.Println("**How to work this checklist (read carefully):**")
+	fmt.Printf("- Work ONE step at a time. You are currently on step %d.\n", focus)
+	fmt.Println("- The bash blocks above are *examples*, not commands to copy verbatim.")
+	fmt.Println("  Run only the commands needed for the current step.")
+	fmt.Println("- Do NOT emit `CMD:` lines that contain `{{placeholders}}` or `<angle brackets>`.")
+	fmt.Println("  Substitute real values first, or skip that command.")
+	fmt.Printf("- When you finish step %d, run `gt prime --step %d` to see the next step in full.\n", focus, focus+1)
+	fmt.Println("---")
+	fmt.Println()
 	return true
+}
+
+// stepBodyPlaceholderRE matches the kinds of unsubstituted markers that
+// turn an "example bash" block into a hallucination magnet for small
+// LLMs. We match:
+//   - `<lowercase-or-snake-case-word>` such as `<branch>`,
+//     `<branch-from-notes>`, `<rig>`, `<polecat>`, `<name>`,
+//     `<symptom>`, `<type>`, `<description>`.
+//   - `{{ident}}` left over because the formula declared a variable but
+//     the caller never supplied a value (e.g. `{{issue}}`,
+//     `{{setup_command}}`, `{{base_branch}}` when no default applied).
+//
+// We deliberately do NOT match angle brackets that look like shell
+// redirections (`<file`, `<<`, `<EOF`) — those are real shell syntax
+// inside legitimate command examples we want to keep.
+var stepBodyPlaceholderRE = regexp.MustCompile(`<[a-z][a-z0-9_-]*>|\{\{[A-Za-z_][A-Za-z0-9_]*\}\}`)
+
+// sanitizeStepBody walks a step description and replaces every fenced
+// code block whose content still contains a placeholder
+// (matched by stepBodyPlaceholderRE) with a short note. Non-code text
+// and clean code blocks are passed through unchanged.
+//
+// Rationale: the bash inside formula step bodies is intentionally a
+// mix of "always run this" (gt prime, bd prime, gt hook, etc.) and
+// "run this IF the bead notes say X" (git checkout <branch>...). Small
+// LLMs (ollama/llama3.3) cannot read the surrounding prose well enough
+// to apply the conditional, so they regurgitate every fenced command
+// they see — placeholders and all. The gt-agent normalizer then
+// rejects the placeholder-laden command, the polecat retries with
+// another bad example, and after a handful of turns the polecat gives
+// up and mails Witness instead of doing real work.
+//
+// By scrubbing placeholder-laden code blocks from the prompt up front,
+// the LLM never sees them and never tries to run them. The prose
+// around the block is preserved, so the agent still understands the
+// conditional ("if bead notes contain MERGE REJECTION, check for a
+// prior branch...") — it just doesn't see the literal bash that it
+// can't safely execute.
+func sanitizeStepBody(body string) string {
+	lines := strings.Split(body, "\n")
+	var out []string
+	var fenceBuf []string
+	inFence := false
+	fenceOpen := ""
+
+	flushFence := func() {
+		joined := strings.Join(fenceBuf, "\n")
+		hasPlaceholder := stepBodyPlaceholderRE.MatchString(joined)
+		if hasPlaceholder {
+			out = append(out, "_(example block omitted: contains placeholders that "+
+				"must be filled in from your specific bead/state before running)_")
+		} else {
+			out = append(out, fenceOpen)
+			out = append(out, fenceBuf...)
+			out = append(out, "```")
+		}
+		fenceBuf = nil
+		fenceOpen = ""
+	}
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if !inFence && strings.HasPrefix(trimmed, "```") {
+			inFence = true
+			fenceOpen = line
+			continue
+		}
+		if inFence && strings.HasPrefix(trimmed, "```") {
+			inFence = false
+			flushFence()
+			continue
+		}
+		if inFence {
+			fenceBuf = append(fenceBuf, line)
+			continue
+		}
+		out = append(out, line)
+	}
+	// Unterminated fence (malformed input) — flush what we have so we
+	// don't silently swallow content.
+	if inFence {
+		flushFence()
+	}
+	return strings.Join(out, "\n")
+}
+
+// briefStepSummary extracts a short single-line summary from a step
+// description. It returns the first non-empty, non-fenced, non-list,
+// non-heading line — i.e. the first prose sentence — truncated to a
+// readable length. This keeps the compact outline scannable while
+// avoiding bash snippets bleeding into the title line.
+func briefStepSummary(desc string) string {
+	desc = strings.TrimSpace(desc)
+	if desc == "" {
+		return "(no summary)"
+	}
+	scanner := strings.Split(desc, "\n")
+	inFence := false
+	for _, raw := range scanner {
+		line := strings.TrimSpace(raw)
+		if strings.HasPrefix(line, "```") {
+			inFence = !inFence
+			continue
+		}
+		if inFence {
+			continue
+		}
+		if line == "" {
+			continue
+		}
+		// Skip markdown bullets, headings, blockquotes, table rows.
+		if strings.HasPrefix(line, "#") ||
+			strings.HasPrefix(line, "- ") ||
+			strings.HasPrefix(line, "* ") ||
+			strings.HasPrefix(line, "> ") ||
+			strings.HasPrefix(line, "|") ||
+			strings.HasPrefix(line, "**") {
+			continue
+		}
+		// Stop at first sentence break.
+		if idx := strings.IndexAny(line, ".!?"); idx > 0 && idx < len(line)-1 {
+			line = line[:idx+1]
+		}
+		return truncateDescription(line, 120)
+	}
+	// Fallback: just truncate the raw description.
+	return truncateDescription(desc, 120)
 }
 
 // buildFormulaVarMap builds a map of variable name → value for substitution.

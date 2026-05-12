@@ -2,7 +2,9 @@ package rig
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -270,6 +272,32 @@ func TestEnsureGitignorePatterns_CreatesNewFile(t *testing.T) {
 			t.Errorf(".gitignore missing pattern %q", pattern)
 		}
 	}
+
+	// Fix #95: agent-internal plumbing patterns must be present.
+	// These were leaking into rig commits and caused Fix #93.
+	agentInternalPatterns := []string{
+		".gt-agent",
+		"typescript",
+		"AGENTS.md",
+		"project_label",
+		"progress_report",
+		"gt-agent-state.json",
+	}
+	for _, pattern := range agentInternalPatterns {
+		if !containsLine(string(content), pattern) {
+			t.Errorf("Fix #95 regression: .gitignore missing agent-internal pattern %q", pattern)
+		}
+	}
+
+	// SPEC.md and README.md must NOT be in the ignore list — they are
+	// user-authored content the polecat must be able to read from its
+	// worktree. Initial Fix #95 wrongly ignored SPEC.md, which made
+	// testgt2's project spec invisible after the rig reset.
+	for _, userContent := range []string{"SPEC.md", "README.md"} {
+		if containsLine(string(content), userContent) {
+			t.Errorf("Fix #95 must NOT ignore user content %q (project spec / docs)", userContent)
+		}
+	}
 }
 
 func TestEnsureGitignorePatterns_AppendsToExisting(t *testing.T) {
@@ -400,7 +428,12 @@ func TestEnsureGitignorePatterns_AllPatternsPresent(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	// Create existing .gitignore with all required patterns.
-	existing := ".runtime/\n.claude/\n.beads/\n.logs/\n__pycache__/\nstate.json\nCLAUDE.md\nCLAUDE.local.md\n"
+	// Fix #95: Includes the agent-internal patterns (.gt-agent,
+	// typescript, AGENTS.md, SPEC.md, project_label, progress_report,
+	// gt-agent-state.json) that were added to plug the
+	// agent-plumbing-leaks-into-rig-repo hole.
+	existing := ".runtime/\n.claude/\n.beads/\n.logs/\n__pycache__/\nstate.json\nCLAUDE.md\nCLAUDE.local.md\n" +
+		".gt-agent\ntypescript\nAGENTS.md\nproject_label\nprogress_report\ngt-agent-state.json\n"
 	if err := os.WriteFile(filepath.Join(tmpDir, ".gitignore"), []byte(existing), 0644); err != nil {
 		t.Fatalf("Failed to create .gitignore: %v", err)
 	}
@@ -429,8 +462,11 @@ func TestEnsureGitignorePatterns_AllPatternsPresent(t *testing.T) {
 func TestEnsureGitignorePatterns_NarrowPatternPresent(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	// Create .gitignore with the exact required patterns
-	existing := ".runtime/\n.claude/\n.logs/\n__pycache__/\nstate.json\nCLAUDE.md\nCLAUDE.local.md\n"
+	// Create .gitignore with the exact required patterns.
+	// Fix #95: also seeds the agent-internal patterns so this test
+	// continues to exercise the "no changes needed" path.
+	existing := ".runtime/\n.claude/\n.logs/\n__pycache__/\nstate.json\nCLAUDE.md\nCLAUDE.local.md\n" +
+		".gt-agent\ntypescript\nAGENTS.md\nSPEC.md\nproject_label\nprogress_report\ngt-agent-state.json\n"
 	if err := os.WriteFile(filepath.Join(tmpDir, ".gitignore"), []byte(existing), 0644); err != nil {
 		t.Fatalf("Failed to create .gitignore: %v", err)
 	}
@@ -541,6 +577,108 @@ func TestGasTownLocalExcludePatterns_IncludesBeads(t *testing.T) {
 			t.Error("gasTownIgnorePatterns() must NOT include .beads/ - that breaks bd sync (see overlay.go)")
 		}
 	}
+}
+
+// TestUntrackAgentInternals_RemovesTrackedFiles verifies Fix #95b:
+// already-tracked agent-internal files (.gt-agent, typescript, etc.) are
+// removed from the git index when EnsureLocalExcludePatterns runs,
+// without deleting them from the working tree.
+func TestUntrackAgentInternals_RemovesTrackedFiles(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Initialize a git repo so `git ls-files` and `git rm --cached` work.
+	if out, err := runGit(tmpDir, "init", "-q"); err != nil {
+		t.Fatalf("git init: %v: %s", err, out)
+	}
+	if out, err := runGit(tmpDir, "config", "user.email", "test@example.com"); err != nil {
+		t.Fatalf("git config email: %v: %s", err, out)
+	}
+	if out, err := runGit(tmpDir, "config", "user.name", "test"); err != nil {
+		t.Fatalf("git config name: %v: %s", err, out)
+	}
+
+	// Stage and commit a typescript file plus a legitimate user file.
+	tsPath := filepath.Join(tmpDir, "typescript")
+	if err := os.WriteFile(tsPath, []byte("simulated script(1) output\n"), 0644); err != nil {
+		t.Fatalf("writing typescript: %v", err)
+	}
+	gtAgentPath := filepath.Join(tmpDir, ".gt-agent")
+	if err := os.WriteFile(gtAgentPath, []byte(`{"role":"refinery"}`), 0644); err != nil {
+		t.Fatalf("writing .gt-agent: %v", err)
+	}
+	userPath := filepath.Join(tmpDir, "user-code.py")
+	if err := os.WriteFile(userPath, []byte("print('hi')\n"), 0644); err != nil {
+		t.Fatalf("writing user file: %v", err)
+	}
+	if out, err := runGit(tmpDir, "add", "-A"); err != nil {
+		t.Fatalf("git add: %v: %s", err, out)
+	}
+	if out, err := runGit(tmpDir, "commit", "-q", "-m", "initial"); err != nil {
+		t.Fatalf("git commit: %v: %s", err, out)
+	}
+
+	// Sanity: both plumbing files are tracked.
+	if out, err := runGit(tmpDir, "ls-files", "typescript"); err != nil || strings.TrimSpace(out) != "typescript" {
+		t.Fatalf("expected typescript tracked: out=%q err=%v", out, err)
+	}
+	if out, err := runGit(tmpDir, "ls-files", ".gt-agent"); err != nil || strings.TrimSpace(out) != ".gt-agent" {
+		t.Fatalf("expected .gt-agent tracked: out=%q err=%v", out, err)
+	}
+
+	// Run EnsureLocalExcludePatterns — this triggers untrackAgentInternals.
+	if err := EnsureLocalExcludePatterns(tmpDir); err != nil {
+		t.Fatalf("EnsureLocalExcludePatterns: %v", err)
+	}
+
+	// typescript and .gt-agent should now be UNTRACKED.
+	if out, _ := runGit(tmpDir, "ls-files", "typescript"); strings.TrimSpace(out) != "" {
+		t.Errorf("Fix #95b: typescript should be untracked, got: %q", out)
+	}
+	if out, _ := runGit(tmpDir, "ls-files", ".gt-agent"); strings.TrimSpace(out) != "" {
+		t.Errorf("Fix #95b: .gt-agent should be untracked, got: %q", out)
+	}
+
+	// But files should still exist on disk (working tree intact).
+	if _, err := os.Stat(tsPath); err != nil {
+		t.Errorf("typescript file should still exist on disk: %v", err)
+	}
+	if _, err := os.Stat(gtAgentPath); err != nil {
+		t.Errorf(".gt-agent file should still exist on disk: %v", err)
+	}
+
+	// User file should remain tracked (untracking is path-specific).
+	if out, _ := runGit(tmpDir, "ls-files", "user-code.py"); strings.TrimSpace(out) != "user-code.py" {
+		t.Errorf("user-code.py should remain tracked, got: %q", out)
+	}
+}
+
+// TestUntrackAgentInternals_NoopWhenNotTracked verifies the function is
+// safe to call on a worktree where the plumbing files were never tracked
+// in the first place (the common case).
+func TestUntrackAgentInternals_NoopWhenNotTracked(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	if out, err := runGit(tmpDir, "init", "-q"); err != nil {
+		t.Fatalf("git init: %v: %s", err, out)
+	}
+	if out, err := runGit(tmpDir, "config", "user.email", "test@example.com"); err != nil {
+		t.Fatalf("git config email: %v: %s", err, out)
+	}
+	if out, err := runGit(tmpDir, "config", "user.name", "test"); err != nil {
+		t.Fatalf("git config name: %v: %s", err, out)
+	}
+	// Empty repo, no commits, no tracked plumbing files. Should not error.
+	if err := EnsureLocalExcludePatterns(tmpDir); err != nil {
+		t.Fatalf("EnsureLocalExcludePatterns on empty repo: %v", err)
+	}
+}
+
+// runGit is a tiny helper for Fix #95b tests — wraps exec.Command for git
+// invocations against a specific worktree.
+func runGit(worktree string, args ...string) (string, error) {
+	cmd := exec.Command("git", append([]string{"-C", worktree}, args...)...)
+	out, err := cmd.CombinedOutput()
+	return string(out), err
 }
 
 // Helper functions

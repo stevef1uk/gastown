@@ -177,6 +177,47 @@ func checkPolecatSafety(target polecatTarget) *SafetyCheckResult {
 	return result
 }
 
+// safetyResultHasHardBlock reports whether the given safety result includes
+// any block reason that --force should NOT be able to override. These are
+// conditions where ignoring the safety check destroys irrecoverable work
+// or orphans in-flight infrastructure:
+//
+//   - Active work-on-hook (a non-closed bead is currently assigned to this
+//     polecat). Nuking discards the polecat's progress on that bead.
+//   - Open MR bead for this polecat's branch. Nuking deletes the remote
+//     branch and orphans the merge-queue entry; the refinery then loops
+//     trying to merge a branch that no longer exists.
+//
+// All other block reasons (stash exists, unknown cleanup status, stashed
+// changes only) are soft and may be bypassed with --force. Hard-blocking
+// reasons require the explicit --abandon-work flag.
+func safetyResultHasHardBlock(r *SafetyCheckResult) bool {
+	if r == nil {
+		return false
+	}
+	if r.HookBead != "" && !r.HookStale {
+		return true
+	}
+	if r.OpenMR != "" {
+		return true
+	}
+	// Uncommitted or unpushed real work is also a hard block — we don't want
+	// --force to silently discard a polecat's commits.
+	if r.GitState != nil {
+		if r.GitState.UnpushedCommits > 0 {
+			return true
+		}
+		if len(r.GitState.UncommittedFiles) > 0 {
+			return true
+		}
+	}
+	if r.CleanupStatus == polecat.CleanupUnpushed ||
+		r.CleanupStatus == polecat.CleanupUncommitted {
+		return true
+	}
+	return false
+}
+
 func rigPrefix(r *rig.Rig) string {
 	townRoot := filepath.Dir(r.Path)
 	return beads.GetPrefixForRig(townRoot, r.Name)
@@ -198,12 +239,15 @@ func displaySafetyCheckBlocked(blocked []*SafetyCheckResult) {
 		polecatList = append(polecatList, b.Polecat)
 	}
 	fmt.Println()
-	fmt.Println("Safety checks failed. Resolve issues before nuking, or use --force.")
+	fmt.Println("Safety checks failed. Resolve the issue before nuking.")
 	fmt.Println("Options:")
-	fmt.Printf("  1. Complete work: gt done (from polecat session)\n")
-	fmt.Printf("  2. Push changes: git push (from polecat worktree)\n")
-	fmt.Printf("  3. Escalate: gt mail send mayor/ -s \"RECOVERY_NEEDED\" -m \"...\"\n")
-	fmt.Printf("  4. Force nuke (LOSES WORK): gt polecat nuke --force %s\n", strings.Join(polecatList, " "))
+	fmt.Printf("  1. Let the polecat finish: gt done (from the polecat's session)\n")
+	fmt.Printf("  2. Push remaining work: git push (from the polecat's worktree)\n")
+	fmt.Printf("  3. Investigate and escalate:\n")
+	fmt.Printf("       gt mail send mayor/ -s \"RECOVERY_NEEDED\" -m \"polecat <name> appears stuck\"\n")
+	fmt.Printf("  4. Detect REAL zombies (preferred): gt patrol scan --notify\n")
+	fmt.Printf("  5. Override safety (LOSES WORK, orphans open MRs):\n")
+	fmt.Printf("       gt polecat nuke --abandon-work %s\n", strings.Join(polecatList, " "))
 	fmt.Println()
 }
 

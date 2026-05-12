@@ -890,6 +890,15 @@ func runSling(cmd *cobra.Command, args []string) (retErr error) {
 		fmt.Printf("%s Formula wisp created: %s\n", style.Bold.Render("✓"), result.WispRootID)
 		fmt.Printf("%s Formula bonded to %s\n", style.Bold.Render("✓"), beadID)
 
+		// Use the FULL formula variable set (caller --vars + auto-filled
+		// feature/issue/problem/etc.) for downstream field storage. Without
+		// this, `gt prime` only sees user-supplied --vars and renders
+		// auto-defaulted vars like {{issue}} as literal placeholders in
+		// the polecat's prompt. Fix #86.
+		if len(result.FormulaVars) > 0 {
+			slingVars = result.FormulaVars
+		}
+
 		// Record attached molecule - will be stored in BASE bead (not wisp).
 		// The base bead is hooked, and its attached_molecule points to the wisp.
 		// This enables:

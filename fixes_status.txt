@@ -710,6 +710,598 @@ Fix the end-to-end Gas Town flow where a spec can be handed to agents who autono
 - **Tests**: `TestRewriteBareRigPolecats` with 6 cases: bare rewrite, two-positional variants, specific-polecat passthrough, plain-rig no-op, non-sling no-op, and the quoted-value false-positive guard.
 - **Status**: Fixed and deployed.
 
+ed 1 previous patrol wisp(s)
+✓ Updated issue: hq-wisp-fxfpj0 — mol-witness-patrol
+hq-wisp-fxfpj0
+
+[gt-agent] $ gt polecat list testgt2
+[gt-agent] Output:
+Polecats
+
+  ● testgt2/rust  working
+    hq-211.1
+
+[gt-agent] $ gt polecat nuke testgt2/rust --force
+
+
+## [2026-05-12] Mayor Not Kicking Off Polecats — Root-Cause Investigation
+
+**Reported symptom**: "Mayor did not kick off polecats" in the end-to-end pipeline.
+
+**Investigation**: Traced through architect, mayor, planner logs after the e2e
+trigger. Discovered the architect's handoff mail to mayor was malformed and the
+planner's architecture-search loop was silently empty, with a cascade of related
+issues that explain why mayor had nothing actionable to route.
+
+### 78. [FIXED] Parser drops multi-line shell scripts under a single CMD: block
+- **Files**: `cmd/gt-agent/main.go`, `cmd/gt-agent/main_test.go`
+- **Symptom**: Architect's LLM emitted ONE `CMD:` followed by a 12-line shell
+  script (heredoc + verification + mirror + gt-hook pipeline + gt mail send +
+  gt nudge + gt unhook + DONE:). The old parser (fix #58) was strict single-
+  line and discarded every line after the first. Concretely, the architect's
+  log showed `mkdir -p ...` running and then "Summary: architecture handed off
+  to mayor" — but the heredoc never executed, mayor never got the "Architecture
+  Ready" mail with the Project bead, and the pipeline froze. The pre-existing
+  architecture.md on disk masked the bug for casual inspection.
+- **Root cause**: `parseLLMResponse` had no concept of "this CMD: opens a
+  multi-line shell script that continues until the next CMD:/DONE:/blank
+  line/markdown structure". It stopped at the newline.
+- **Fix**: Rewrote `parseLLMResponse` to accumulate continuation lines under
+  the active CMD: into one shell script, joined with `\n`, then emitted as a
+  single `cmd` entry. Termination triggers: blank line, markdown structural
+  line (`### `, `## `, `# `, ```` ``` ````, `> `), another `CMD:`, `DONE:`,
+  or `Output:` (hallucination). Heredocs (`cat <<'EOF' > file`) still enter
+  strict heredoc mode that consumes lines verbatim until the terminator.
+  Unterminated heredocs are discarded.
+- **Why this is safe**: `/bin/sh -c` natively handles multi-line scripts
+  (heredocs, multi-line quoted args, command chaining), so forwarding the
+  whole script is correct. The normalizer chain (`normalizeGeneratedCommand`,
+  `containsPlaceholder`, `hasInvalidSlingTarget`, etc.) still runs over the
+  full script string and its regex-based checks remain effective.
+- **Tests**: Added 5 new `TestParseLLMResponse` subtests covering the
+  architect multi-line bug, heredoc markdown-body preservation, multi-line
+  `-m "..."` quoted argument preservation, two-CMD-blocks-each-with-
+  continuations, and markdown-heading-between-continuations-flushes. All
+  21 pre-existing subtests still pass.
+- **Status**: Fixed, tested, deployed (`gt down`/`make install`/`gt up`).
+  Verified live: architect's full handoff script now executes — heredoc
+  writes 710-byte architecture.md, `gt mail send mayor/ -s "Architecture
+  Ready" -m "Project bead: hq-211\nDesign complete..."` succeeds, `gt nudge
+  mayor` succeeds, `gt unhook --force` succeeds, summary captured.
+
+### 79. [FIXED] Planner's `jq -r 'keys[]'` returns top-level keys, not rig names
+- **File**: `internal/templates/roles/planner.md.tmpl`
+- **Symptom**: When the planner's hook-based path was missing or stub, the
+  fallback search across canonical locations under each rig SILENTLY found
+  nothing — `for rig in $(jq -r 'keys[]' /home/stevef/gt/rigs.json …); do …`
+  yielded zero iterations of the inner loop. Planner mailed mayor "BLOCKED:
+  architecture missing" even though architecture.md existed at the right
+  path with real content. Manual reproduction confirmed.
+- **Root cause**: `rigs.json` is shaped `{"version":1,"rigs":{"testgt2":...}}`.
+  `jq -r 'keys[]'` walks the TOP level and emits `version` and `rigs` —
+  neither of which is a rig name. The for loop iterates over those strings,
+  builds paths like `/home/stevef/gt/version/architect/architecture.md`,
+  none of which exist, and exits silently.
+- **Fix**: Changed to `jq -r '.rigs | keys[]'` so the loop iterates over the
+  actual rig names. Added a hard-rule comment explaining the shape and why
+  the `.rigs` filter is required.
+- **Status**: Fixed and deployed. Manual one-liner test now returns
+  `FOUND:/home/stevef/gt/testgt2/architect/architecture.md` and dumps the
+  real content.
+
+### 80. [FIXED] `gt unhook` fails for handoff roles (architect/planner/qa) because the bead is still incomplete
+- **Files**: `cmd/gt-agent/main.go`, `internal/templates/roles/architect.md.tmpl`,
+  `internal/templates/roles/planner.md.tmpl`, `internal/templates/roles/qa.md.tmpl`
+- **Symptom**: After fix #78 unblocked the architect's handoff, the next
+  pathology surfaced: `gt unhook` rejected with "hooked work hq-211 is
+  incomplete (E2E test...)" because the architect's slice of work (design)
+  is intentionally incomplete — the bead still needs implementation and
+  review. Architect couldn't release the hook, agent looped, mechanic
+  flagged extraordinary action, retry storm.
+- **Root cause**: `gt unsling` (aliased to `gt unhook`) requires the bead
+  to be complete OR `--force`. The auto-unhook safety net in `cmd/gt-agent/
+  main.go` and the architect/planner/qa templates all ran bare `gt unhook`,
+  which is correct for terminal roles (mayor/witness/refinery — they
+  persist) but wrong for handoff roles whose bead is open-by-design.
+- **Fix**:
+    1. Updated the agent's `shouldAutoUnhookAfterHandoff` branch to run
+       `gt unhook --force` instead of `gt unhook`. The keyword filter on
+       the summary (`handed off`, `plan complete`, etc.) is the real gate
+       on whether the cycle was a success.
+    2. Updated all three handoff-role templates (architect, planner, qa)
+       to use `gt unhook --force` with an inline comment explaining why
+       `--force` is required (the hook is just a routing attachment; the
+       bead itself stays open for downstream stages).
+- **Status**: Fixed and deployed. Verified live: architect now emits
+  `gt unhook --force` → "Work removed from hook ✓", DONE: captured, cycle
+  closes cleanly.
+
+### 81. [FIXED] Normalizer collapses `gt hook | grep ...` pipelines to bare `gt hook`
+- **Files**: `cmd/gt-agent/main.go`, `cmd/gt-agent/main_test.go`
+- **Symptom**: Architect's PROJECT_BEAD-extraction pipeline
+  `gt hook | grep -oE 'hq-wisp-[a-z0-9]+|hq-[a-z0-9]+' | head -1 > /tmp/...`
+  was being rewritten to bare `gt hook` by the normalizer. The model then
+  had to retry the same pipeline in subsequent turns, and eventually fell
+  back to mailing mayor with a literal `$PROJECT_BEAD` unexpanded.
+- **Root cause**: Fix #69 added a subcommand-aware check that lets real
+  `gt hook` verbs (show/attach/detach/clear/status) pass through but
+  collapsed everything else to bare `gt hook` to catch hallucinations like
+  `gt hook fooBarbaz`. It checked `fields[2]` against the verb allow-list
+  but didn't recognize shell pipe/redirect/chain operators (`|`, `&&`,
+  `||`, `;`, `>`, `>>`, `<`, `|&`, `2>`, `2>>`), which are legitimate
+  positions immediately after `gt hook` in a pipeline.
+- **Fix**: Added a shell-pipe-op allowlist that, when `fields[2]` matches,
+  passes the command through unchanged. Added 4 new test cases in
+  `TestNormalizePreservesGtHookSubcommands` covering pipes, `&&`, `>`,
+  and `;`.
+- **Status**: Fixed and deployed. Verified live: architect's
+  `gt hook | grep -oE ... > /tmp/project_bead.txt` now runs verbatim,
+  PROJECT_BEAD correctly extracted as `hq-211`, mail to mayor contains
+  the real bead ID.
+
+### Combined verification (fixes 78–81, all four required to unblock)
+- Fresh project bead created: `bd create ... hq-211 "E2E test #3"`
+- `gt sling shiny --on hq-211 testgt2/architect` dispatched
+- Architect log (`logs/sessions/te-testgt2-architect.log`) shows:
+    - `cat /home/stevef/gt/testgt2/mayor/rig/SPEC.md` runs ✓
+    - heredoc `cat > architecture.md <<'EOF' ... EOF` writes 710 bytes ✓
+    - verification: `wc -c` = 710, `grep -c INSERT-REAL-` = 0 ✓
+    - mirror to rig-root: `cp` + second `wc -c` = 710 ✓
+    - `gt hook | grep ... > /tmp/project_bead.txt` extracts `hq-211` ✓
+    - `PROJECT_BEAD=$(cat ...)` + `echo "project bead: hq-211"` ✓
+    - `gt mail send mayor/ -s "Architecture Ready" -m "Project bead: hq-211 …"` ✓
+    - `gt nudge mayor "Architecture ready, check inbox"` ✓
+    - `gt unhook --force` → "Work removed from hook" ✓
+    - `DONE: architecture handed off to mayor` ✓
+- Mayor's inbox contains the fresh "Architecture Ready" mail FROM
+  `testgt2/architect` with `Project bead: hq-211` in the body — exactly
+  what its routing-table template needs to sling Stage 2 (`mol-idea-to-
+  plan`) to the planner.
+- Planner one-liner test: `for rig in $(jq -r '.rigs | keys[]' …)` correctly
+  finds `/home/stevef/gt/testgt2/architect/architecture.md` and dumps the
+  real design content.
+
+### Remaining downstream issue (not blocking the architect→mayor chain)
+- Mayor LLM behavior with a 20+ message cluttered inbox: it reads several
+  messages in arbitrary order and sends ack-style replies instead of
+  consistently routing the most-recent "Architecture Ready" to the planner.
+  This is a template/model behavior issue, not a parser/CLI bug; the data
+  it needs (Project bead in the mail body) is now correctly present.
+  Tracked separately — clearing read mail with `gt mail drain --identity
+  mayor/ --all` between cycles helps significantly.
+- `gt sling mol-idea-to-plan --on hq-211 planner` returns exit 1 with
+  "instantiating formula mol-idea-to-plan: creating wisp ...". Separate
+  wisp-creation issue unrelated to fixes 78–81.
+
+### 82. `gt sling <formula> --on <bead>` fails with "creating wisp ... exit status 1"
+- **Symptom**: Running `gt sling mol-idea-to-plan --on hq-211 planner` (or anything that
+  goes through the formula-on-bead path) fails immediately with
+  `Error: instantiating formula mol-idea-to-plan: creating wisp for formula mol-idea-to-plan: exit status 1`.
+  No further detail is printed, so it looks like a generic backend failure.
+- **Root cause (two compounding bugs in `internal/cmd/sling_helpers.go`)**:
+    1. **`wispArgs` built from `extraVars`, not `formulaVars`.** The code did:
+        ```go
+        formulaVars = ensureFormulaRequiredVars(formulaName, formulaVars)
+        wispArgs := []string{"mol", "wisp", resolvedFormula, "--var", featureVar, "--var", issueVar}
+        for _, variable := range extraVars { ... }  // <-- only extraVars, not formulaVars
+        ```
+        Any defaults filled in by `ensureFormulaRequiredVars` were therefore invisible to
+        `bd mol wisp`, even though the bond-fallback path *did* see them. Fragile and
+        confusing.
+    2. **`ensureFormulaRequiredVars` only handled `mol-polecat-work`.** Other formulas with
+        required vars (`mol-idea-to-plan` requires `problem`) had no defaults filled in.
+        Combined with bug 1, this meant `bd mol wisp mol-idea-to-plan --var feature=... --var issue=...`
+        was missing `problem`, so `bd` rejected it with
+        `{"error":"missing required variables: problem","hint":"Provide them with: --var problem=<value>"}`.
+        That JSON went to stdout; the parent `gt sling` only saw `exit status 1` and the
+        wrapped error message hid the actual cause.
+- **Fix** (`internal/cmd/sling_helpers.go`):
+    a. Build `wispArgs` from `formulaVars` (the post-`ensureFormulaRequiredVars` list) so
+        auto-filled defaults reach `bd mol wisp`.
+    b. Include `bd`'s output in the wrapped error so future failures aren't opaque:
+        ```go
+        return nil, fmt.Errorf("creating wisp for formula %s: %w (stderr/output: %s)", ...)
+        ```
+    c. Extend `ensureFormulaRequiredVars(name, vars, title)` with a new `title` parameter
+        and a `switch` on formula name:
+        - `mol-polecat-work` / `polecat-work` — same git/test plumbing defaults as before.
+        - `mol-idea-to-plan` / `idea-to-plan` — default `problem=<bead title>` when not
+          supplied. Mayor's `gt sling mol-idea-to-plan --on <project-bead> planner` calls
+          now succeed without the operator (or LLM) having to remember `--var problem=...`.
+- **Verification**:
+    - `bd mol wisp mol-idea-to-plan --var feature=... --var issue=hq-211 --json` reproduced
+      the original failure (`missing required variables: problem`).
+    - After the fix, `gt sling mol-idea-to-plan --on hq-211 planner` printed
+      `✓ Formula wisp created: hq-wisp-mous9z`, `✓ Formula bonded to hq-211`,
+      `✓ Work attached to hook (status=hooked)`.
+    - Existing tests in `internal/cmd/` still pass (no signature regression, callers
+      pass title through).
+- **Status**: FIXED + tested + deployed.
+
+### 83. Polecat formula prompt was 20 KB — small LLMs regurgitated template fragments
+- **Symptom (user-reported)**: The polecat created on `testgt2/polecats/rust` produced
+  bizarre first turns. Its initial LLM response was 1965 chars with **40+ `CMD:` lines**,
+  most of which were template fragments verbatim from the formula:
+    ```
+    CMD: {{setup_command}} # If setup_command is set, run it to install dependencies
+    CMD: git add <test files> && git commit -m "test: add failing tests for Implement the solution"
+    CMD: git fetch origin git branch -a | grep <branch-from-notes>
+    CMD: git push origin main
+    ```
+  Unresolved `{{setup_command}}` placeholders, `<angle-bracket>` fillers, missing
+  shell operators between commands, and a direct push to `main` (which polecats are
+  forbidden to do) all in one LLM response. No real work happened — the model just
+  echoed the formula's bash example blocks back as commands.
+- **Root cause**: `showFormulaStepsFull` (`internal/cmd/prime_molecule.go`) was dumping
+  the *entire* formula description into the polecat's LLM context every time
+  `gt prime` ran. For `mol-polecat-work` that is **563 lines / ~20 KB** of prose,
+  tables, code fences, and example bash. Small LLMs (e.g. ollama/llama3.3, an 8B-class
+  model) cannot distinguish "example bash snippet inside markdown" from "command I'm
+  supposed to run", so they tokenise every fenced block and emit it back as a `CMD:` line.
+  Larger models cope, smaller models drown.
+- **Fix** (`internal/cmd/prime_molecule.go`, `internal/cmd/prime.go`):
+    1. **Default rendering is now a compact outline**:
+        - All step titles + a single-sentence summary per step (extracted by
+          `briefStepSummary`, which skips bash fences, headings, list bullets, and
+          tables to find the first prose sentence).
+        - The body of exactly *one* step is inlined in full — the "focus" step,
+          marked with `►`. Default focus is step 1, so a freshly-primed polecat
+          sees the workflow outline plus detailed instructions for the next thing
+          it should do.
+        - A footer reminds the model "bash blocks are examples, not commands to
+          copy verbatim" and "do NOT emit `CMD:` lines that contain `{{placeholders}}`
+          or `<angle brackets>`". The model that ate this prompt actually obeyed
+          both rules on the very next turn.
+    2. **New `gt prime --step N` flag**: pins the renderer to step N's full body
+        so the polecat can drill into the next step without re-receiving the
+        whole formula. The renderer plumbing is a single package-level int
+        (`formulaStepFocus`) set by `SetFormulaStepFocus(n)` in `runPrime`
+        and reset on return.
+    3. **Escape hatch**: `GT_FORMULA_VIEW=full` re-enables the legacy verbose
+        dump for operators using large models that benefit from the full prompt.
+- **Verification**:
+    - Unit tests (`prime_molecule_render_test.go`):
+        - `TestShowFormulaStepsFull_CompactByDefault` — asserts `mol-polecat-work`
+          renders to **3331 bytes** (down from ~20 000), well under the 6 KB
+          ceiling, and contains the focus marker + usage footer.
+        - `TestShowFormulaStepsFull_FocusFlag` — `--step 3` puts step 3 in the
+          "current step" position, not step 1.
+        - `TestShowFormulaStepsFull_LegacyFullMode` — `GT_FORMULA_VIEW=full`
+          restores legacy behavior and suppresses the compact footer.
+    - Live re-run: same polecat (`testgt2/polecats/rust`) re-slung against
+      `hq-211.1` produced an LLM response of **771 chars / ~15 commands**
+      (vs 1965 chars / 40+ commands before). The model used
+      `CMD: gt prime --step 2 # Load next step in formula` — i.e. it discovered
+      and used the new flow exactly as designed. No more `{{setup_command}}` or
+      `<branch-from-notes>` template fragments in the output.
+- **Status**: FIXED + tested + deployed. Real-world LLM behavior dramatically
+  improved with no template/prose changes — purely a rendering-layer fix.
+
+### 84. Witness was nuking ACTIVE polecats with `gt polecat nuke <name> --force`
+- **Symptom (user-reported)**: The witness session was running
+    ```
+    gt polecat list testgt2
+    → ● testgt2/rust  working  (hq-211.1)
+    gt polecat nuke testgt2/rust --force
+    ```
+    i.e. listing polecats, finding `rust` in `working` state with an active
+    hooked bead, then immediately nuking it. The polecat's worktree was
+    destroyed, its remote branch deleted, and the hooked bead orphaned.
+    This was happening on every witness patrol cycle, so any polecat slung
+    against `testgt2` was getting executed for ~30 s and then killed.
+- **Root cause** (two cooperating bugs):
+    1. `internal/templates/roles/witness.md.tmpl` step 3 contained the
+        one-liner:
+        ```
+        HEALTH CHECK: `gt polecat list <rig>`. Nuke stuck sessions: `gt polecat nuke <rig>/<name> --force`.
+        ```
+        For a small LLM (ollama/llama3.3) primed on this template, "list
+        then nuke" is a single workflow — the model has no concept of "stuck
+        sessions" diagnosis, so it lists, sees a polecat, and nukes it.
+        The mol-witness-patrol formula explicitly warns "🚨 Do NOT nuke
+        polecats with pending MRs" and "🚨 Do NOT improvise with `gt polecat
+        list` — use `gt patrol scan`", but the template line at prime time
+        contradicts the formula and the template wins (it's at the very top
+        of every witness session).
+    2. `gt polecat nuke --force` in `internal/cmd/polecat.go` was a single
+        big-hammer flag that bypassed *every* safety check, including the
+        critical "polecat has work on its hook" / "polecat has an open MR"
+        checks. So the witness's poorly-templated invocation went through.
+        These two safety checks exist precisely to prevent the failure
+        mode the witness was triggering: orphaned hooked beads and refinery
+        merge-queue entries pointing at remote branches that no longer
+        exist.
+- **Fix** (template + CLI, defense-in-depth):
+    **Template** (`internal/templates/roles/witness.md.tmpl`):
+        - Removed the inline `gt polecat nuke ... --force` example.
+        - Replaced with an explicit instruction to use `gt patrol scan
+          --notify` (which is what the formula has wanted all along).
+        - Added a DO-NOT warning specifically against nuking polecats in
+          `working` state.
+        - Added an escalation path: if the witness believes a working
+          polecat is actually stuck, mail the mayor — don't nuke.
+    **CLI** (`internal/cmd/polecat.go`, `internal/cmd/polecat_helpers.go`):
+        - Split `--force` into two tiers:
+            * `--force` — bypasses SOFT safety only (stash exists, cleanup
+              status is unknown). Still refuses to nuke a polecat with a
+              live hook bead, an open MR, unpushed commits, or
+              uncommitted files.
+            * `--abandon-work` (new) — bypasses ALL safety checks,
+              including the four hard-blocking conditions above. This is
+              the flag for legitimately-stuck polecats where the operator
+              has explicitly confirmed the session is hung. LOSES WORK
+              by design.
+        - New helper `safetyResultHasHardBlock(*SafetyCheckResult) bool`
+          centralises the classification (active hook bead / open MR /
+          unpushed commits / uncommitted files = hard; everything else =
+          soft).
+        - The error message and the `displaySafetyCheckBlocked` "options"
+          list both now point at `gt patrol scan --notify` first and
+          `--abandon-work` last (with a LOSES WORK warning).
+        - `gt polecat nuke --help` long description updated with the new
+          two-tier model and examples.
+    **Tests** (`internal/cmd/polecat_safety_test.go`):
+        - `TestSafetyResultHasHardBlock_ActiveHookBead` — exact case the
+          witness was hitting.
+        - `TestSafetyResultHasHardBlock_StaleHookBead` — closed hook bead
+          should NOT block (polecat is done).
+        - `TestSafetyResultHasHardBlock_OpenMR`,
+          `_UncommittedChanges`, `_UnpushedCommits`,
+          `_CleanupStatusFromBead` — all hard-block cases covered.
+        - `TestSafetyResultHasHardBlock_SoftBlocks` — stash / clean /
+          unknown cleanup should NOT hard-block (so `--force` still works
+          for them).
+        - `TestSafetyResultHasHardBlock_NilResult` — nil-safety.
+- **Verification (live)**:
+    - Spawned a fresh polecat on `testgt2/rust` hooked to `hq-211.3`,
+      then ran the exact incantation the witness was using:
+        ```
+        $ gt polecat nuke testgt2/rust --force
+        Error: Cannot nuke the following polecats:
+          testgt2/rust:
+            - cleanup status unknown
+            - has work on hook (hq-211.3)
+        Safety checks failed. Resolve the issue before nuking.
+        Options:
+          ...
+          4. Detect REAL zombies (preferred): gt patrol scan --notify
+          5. Override safety (LOSES WORK, orphans open MRs):
+               gt polecat nuke --abandon-work testgt2/rust
+        Error: blocked: 1 polecat(s) have active work -- pass --abandon-work
+               to nuke anyway (LOSES WORK), or call `gt patrol scan --notify`
+               to handle real zombies safely
+        ```
+        That is exactly the safety net we want — even if a future witness
+        template regresses to "nuke --force", the CLI now refuses.
+    - Confirmed `--abandon-work` still permits intentional nuke when the
+      operator opts in:
+        ```
+        $ gt polecat nuke testgt2/rust --abandon-work
+        Nuking testgt2/rust...
+          ✓ pushed branch polecat/rust/hq-211.3@... before nuke
+          ✓ deleted worktree
+          ✓ deleted local branch ...
+          ○ remote branch preserved for refinery merge
+          ✓ closed agent bead te-testgt2-polecat-rust
+        ✓ Nuked 1 polecat(s).
+        ```
+- **Status**: FIXED + tested + deployed. Witnesses are no longer trained
+  to invoke a dangerous flag, and even if one tries, the CLI now refuses
+  without an explicit `--abandon-work` opt-in.
+
+## Fix 86: `{{issue}}` / `{{feature}}` / `{{problem}}` not substituted in step body
+
+- **Files**: `internal/cmd/sling_helpers.go`, `internal/cmd/sling.go`,
+  `internal/cmd/sling_dispatch.go`, `internal/cmd/sling_288_test.go`
+- **Symptom**: After a polecat was spawned via `gt sling <bead> <rig> --create`,
+  the slim-rendered step-1 body still contained literal `bd show {{issue}}`
+  (and `{{feature}}`, `{{problem}}`) instead of the real bead ID. The
+  sanitizer from Fix #85 masked this by stripping the entire example
+  block, but the prompt now omitted the most useful, ready-to-run
+  command.
+- **Root cause**: `InstantiateFormulaOnBead` ran `ensureFormulaRequiredVars`
+  to compute `feature=<title>`, `issue=<beadID>`, `problem=<title>`,
+  `base_branch=main` and passed them to `bd mol wisp` / `bd mol bond` —
+  but it never returned that augmented set. Callers (`sling.go`,
+  `sling_dispatch.go`) then stored only the user-supplied `--var` flags
+  into the bead's `attached_vars` / `formula_vars` fields. At hook time,
+  `gt prime` read `attached_vars: ["base_branch=main"]` from the bead,
+  so every other `{{var}}` in the formula text fell through
+  `applyFormulaVars` and leaked to the LLM as a literal placeholder.
+- **Fix**:
+    1. Extend `FormulaOnBeadResult` with `FormulaVars []string` — the
+       full set actually passed to `bd mol wisp` (caller vars +
+       auto-defaults).
+    2. Return that augmented slice from all `InstantiateFormulaOnBead`
+       success paths (parsed wisp, fallback rootID, direct-bond retry).
+    3. In `sling.go`, after a successful instantiation, replace
+       `slingVars` with `result.FormulaVars` before building field
+       updates so `AttachedVars` on the bead matches what was actually
+       passed to the wisp.
+    4. In `sling_dispatch.go`, do the same for `allVars` and store
+       `allVars` (not `params.Vars`) into `fieldUpdates.Vars` so batch
+       slings get the same treatment.
+- **Test**: `TestInstantiateFormulaOnBead` now asserts the returned
+  `FormulaVars` contains the caller var, `feature=<title>`,
+  `issue=<beadID>`, and `base_branch=main` so any future regression in
+  the auto-fill plumbing trips immediately.
+- **Verification**: Slung a fresh polecat onto `hq-n6n`. `bd show hq-n6n`
+  output now contains `attached_vars: ["feature=Fix87 ...","issue=hq-n6n",
+  "base_branch=main", ...]`. The polecat's own log shows it emitting
+  `bd show hq-n6n` and `bd update hq-n6n --status=in_progress` (real ID,
+  not `{{issue}}`), and the substituted example block is no longer being
+  stripped by the sanitizer.
+- **Wider impact**: With substitution working, the full pipeline began
+  firing for the first time: architect → mayor → planner → polecat. A
+  fresh sling onto `hq-gkg` resulted in the rust polecat being
+  re-dispatched by the mayor onto `hq-wisp-fqq.1` ("Define API routes")
+  and starting actual implementation (`git checkout -b feature/...`,
+  `git pull origin main`, multiple LLM turns).
+- **Status**: FIXED + tested + deployed.
+
+## Fix 87: `bd update <id> ...` rewritten to broken `gt bd update`
+
+- **Files**: `cmd/gt-agent/main.go`, `cmd/gt-agent/main_test.go`
+- **Symptom**: Polecat LLMs (correctly, per the formula checklist)
+  emitted `bd update hq-211.3 --status=in_progress`, but every
+  invocation crashed with:
+        Error: unknown flag: --status
+        Usage:
+          gt bead [command]
+        Aliases: bead, bd
+        Available Commands: mol, move, read, show
+  The polecat could never mark itself in_progress, looped, and looked
+  stuck to the witness.
+- **Root cause**: `normalizeGeneratedCommand` had a blanket rewrite for
+  `bd update <…>` → `gt bd update <…>`. `gt bd` (alias for `gt bead`) is
+  a cross-repo router that only exposes `show` / `read` / `move` /
+  `mol` — there is no `gt bd update` subcommand. The rewrite turned a
+  valid bare `bd` call into an invalid `gt bd` call.
+- **Fix**: Drop the `bd update` rewrite branch in
+  `normalizeGeneratedCommand`. Bare `bd update <id> --status=…` /
+  `--notes=…` / `--priority=…` now passes through untouched and reaches
+  the real `bd` CLI on PATH. The matching `bd show` / `bd read`
+  rewrites (which DO have valid `gt bd` counterparts that add
+  prefix-based repo routing) are kept intact. A long comment block in
+  the source documents the asymmetry so the rewrite doesn't get
+  reintroduced.
+- **Test**: `TestNormalizeDoesNotRewriteBdUpdate` covers three common
+  forms (`--status`, `--notes`, `--priority`) and asserts they pass
+  through unchanged.
+- **Verification**: After deploying, a fresh polecat slung onto `hq-n6n`
+  executed `bd update hq-n6n --status=in_progress` directly and saw
+  `✓ Updated issue: hq-n6n` — the first time a polecat has actually
+  managed to mark itself in_progress on its own without operator
+  intervention. The subsequent `bd close hq-n6n --reason="..."` also
+  succeeded.
+- **Status**: FIXED + tested + deployed.
+
+## Fix 89: `gt patrol scan --notify` cannot nuke verified-merged zombies
+
+- **Files**: `internal/witness/handlers.go`, `internal/witness/handlers_test.go`,
+  `internal/cmd/polecat.go`
+- **Symptom**: Witness ran `gt patrol scan --notify` per its template,
+  the scanner correctly identified `rust` as `session-dead-active` with
+  branch already merged, and tried to archive it. Every cycle, the
+  archive step crashed with:
+
+        Action: archive-failed-work-already-merged: nuke failed:
+        Error: blocked: 1 polecat(s) have active work — pass
+        --abandon-work to nuke anyway (LOSES WORK), or call
+        `gt patrol scan --notify` to handle real zombies safely
+
+  The error text told the witness to use `gt patrol scan --notify` —
+  but that's exactly what the witness IS doing. The "safe path" was
+  circular: it called the very thing that was failing.
+- **Root cause**: Fix #84 added a "hard block" in the `gt polecat nuke`
+  CLI that refuses to nuke any polecat with `hook_bead != ""` or an
+  open MR, unless the operator passes `--abandon-work`. The intent
+  was to prevent witness LLMs from emitting `--force` and destroying
+  active work. The CLI help text correctly redirected operators to
+  `gt patrol scan --notify`. But the internal helper that patrol scan
+  invokes — `NukePolecat` in `internal/witness/handlers.go` — called
+  `gt polecat nuke <address>` with no overrides, hitting the same
+  hard block. Patrol scan reaches that helper ONLY after verifying
+  BOTH that the session is dead (zombie classification) AND that the
+  branch is already merged to `main` (`verifyBranchAlreadyMerged`),
+  so the block was actively wrong on this path — the work was already
+  in main, the session couldn't advance, the hook was stale by
+  definition.
+- **Fix**:
+    1. `NukePolecat` now invokes `gt polecat nuke <address>
+       --abandon-work`. The doc comment on `NukePolecat` spells out
+       the full safety argument: this helper is reached only after
+       `handleZombieRestart` verifies session-dead + branch-merged, so
+       passing `--abandon-work` here is strictly safer than what the
+       CLI flag implies in isolation. The CLI flag itself stays gated
+       against direct LLM use — LLMs cannot reach `--abandon-work`
+       without going through this verified internal path.
+    2. The `gt polecat nuke --abandon-work` help text now states
+       *why* this path works: "call `gt patrol scan --notify`
+       instead; that path verifies session-dead + branch-merged
+       BEFORE invoking nuke with --abandon-work internally (Fix #89)".
+    3. Introduced a tiny indirection `runPolecatNukeCmd` (package
+       var) so the witness test suite can capture the exact args
+       passed to `gt polecat nuke` without spawning a real binary.
+- **Test**: `TestNukePolecat_PassesAbandonWork` captures the args via
+  the new indirection and asserts the slice is
+  `{"polecat", "nuke", "<rig>/<name>", "--abandon-work"}` — both as a
+  full deep-equal pin AND a belt-and-braces explicit presence check
+  so future regressions produce a clearly named failure (`--abandon-work
+  MISSING from nuke args (Fix #89 regression)`).
+- **Verification**: Deployed; `gt polecat nuke --help` now shows the
+  updated `--abandon-work` description (`... call 'gt patrol scan
+  --notify' instead; that path verifies session-dead + branch-merged
+  BEFORE invoking nuke with --abandon-work internally (Fix #89).`).
+  The previous zombie `rust` polecat was nuked during the redeploy
+  cycle, so the next time a `session-dead-active` zombie surfaces the
+  witness will be able to actually archive it instead of looping on
+  the same blocked-nuke error.
+- **Status**: FIXED + tested + deployed.
+
+## Fix 88: `gt done` rejects the formula's "no implementation needed" exit path
+
+- **Files**: `internal/cmd/done.go`, `internal/cmd/done_test.go`
+- **Symptom**: A polecat assigned a no-implementation task (duplicate,
+  already-fixed, spec-only, test bead, etc.) followed the formula's
+  documented exit path:
+
+        3. Submit: `git push origin <branch>` then `gt done`.
+           - If no changes: `bd close <id> --reason="..."` then `gt done`.
+
+  It ran `bd update --status=in_progress`, `bd close hq-n6n
+  --reason="..."` (succeeded), then `gt done`. But `gt done` crashed
+  with:
+
+        Error: cannot complete: no implementation commits found. Your
+        only commit is an auto-save safety net.
+
+  The polecat looped on `gt done` until the gt-agent's
+  retry-#5 recovery (`gt hook clear --force`) eventually scorched the
+  hook. In the meantime, the witness saw it as a stuck polecat and the
+  rest of the rig waited.
+- **Root cause**: The auto-save guard at the bottom of `runDone()`
+  blocks completion if the only commit on the branch looks like an
+  auto-save ("auto-save", "safety net", or "gt-pvx"). It was added to
+  catch "sleepwalking" polecats that ran `gt done` without doing
+  anything, but it didn't distinguish that case from the polecat
+  deliberately taking the formula's "no implementation needed" branch
+  by closing the bead first.
+- **Fix**:
+    1. Add a new helper `beadAlreadyClosed(cwd, branch)` that parses the
+       issue ID from the polecat branch (e.g. `polecat/rust/hq-n6n` →
+       `hq-n6n`), opens the local beads store, and reports whether the
+       issue is in a terminal status (closed / tombstone). All failure
+       modes — missing cwd, unparseable branch, bd unavailable, Dolt
+       down — return `false` so the stricter guard still rejects
+       sleepwalking polecats.
+    2. In the auto-save guard, when only an auto-save commit is present,
+       call `beadAlreadyClosed`. If true, print a clear "accepting `gt
+       done` as the formula's no-implementation-needed exit path"
+       message and let the function continue into the normal cleanup /
+       unhook flow (no MR is created because the bead is already done).
+       The auto-save commit, if any, is retained as an audit trail.
+    3. Updated the rejection error message to tell the polecat *how* to
+       exit cleanly when no code is needed (`bd close <id> --reason=...`
+       FIRST, then `gt done`).
+- **Tests**:
+    - `TestBeadAlreadyClosed_DefensiveReturns` covers the five
+      fail-safe paths (empty cwd, empty branch, branch without issue,
+      non-polecat branch, cwd without `.beads/`) and asserts all return
+      `false`.
+    - `TestBeadAlreadyClosed_ParsesBranchIssueID` pins the polecat
+      branch convention (`polecat/<rig>/<issue>`, including dotted
+      child IDs like `hq-211.4` and `aa-abc.1.2`) so the helper keeps
+      working even if branch parsing is refactored.
+- **Status**: FIXED + tested + deployed.
+- **Open follow-ups** (lower priority):
+    - The retry-#5 recovery in `cmd/gt-agent/main.go` still
+      `gt hook clear --force` + `gt mail archive --stale` without
+      targeting the specific offending mail or hook bead. With Fix #88
+      removing the most common loop trigger, this matters less, but a
+      smarter recovery (tag-and-archive the failing item; escalate at
+      retry #3) is still worth doing if other loops surface.
+
 ## Open Issues (next session)
 
 ### Witness/Refinery inbox bloat — informational mail accumulating, no triage

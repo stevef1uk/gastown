@@ -1534,3 +1534,55 @@ func testRunGit(t *testing.T, dir string, args ...string) {
 	}
 }
 
+// Fix #88: beadAlreadyClosed lets `gt done` accept the formula's
+// documented "no implementation needed" exit path.
+//
+//	3. Submit: `git push origin <branch>` then `gt done`.
+//	   - If no changes: `bd close <id> --reason="..."` then `gt done`.
+//
+// Without this helper, a polecat that ran `bd close <id> --reason="..."`
+// followed by `gt done` would hit the auto-save commit guard
+// ("cannot complete: no implementation commits found") and loop until
+// retry-#5 recovery scorched the hook. The helper detects the closed
+// bead and lets `gt done` proceed to normal cleanup.
+//
+// All failure modes (no cwd, unparseable branch, bd unavailable, Dolt
+// down) MUST return false so the strict guard still rejects sleepwalking
+// polecats. The tests below cover each defensive return path.
+func TestBeadAlreadyClosed_DefensiveReturns(t *testing.T) {
+	cases := []struct {
+		name   string
+		cwd    string
+		branch string
+	}{
+		{"empty cwd", "", "polecat/rust/hq-n6n"},
+		{"empty branch", t.TempDir(), ""},
+		{"branch without issue", t.TempDir(), "main"},
+		{"random non-polecat branch", t.TempDir(), "feature/some-thing"},
+		{"cwd without .beads", t.TempDir(), "polecat/rust/hq-nope"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := beadAlreadyClosed(tc.cwd, tc.branch); got {
+				t.Errorf("beadAlreadyClosed(%q, %q) = true, want false (must fail-safe to strict guard)", tc.cwd, tc.branch)
+			}
+		})
+	}
+}
+
+// TestBeadAlreadyClosed_ParsesBranchIssueID is a behavioural pin on the
+// parseBranchName(branch).Issue path the helper depends on. If anyone
+// ever changes the polecat branch convention, this regression test will
+// catch it and force them to update the Fix #88 helper too.
+func TestBeadAlreadyClosed_ParsesBranchIssueID(t *testing.T) {
+	cases := map[string]string{
+		"polecat/rust/hq-n6n":     "hq-n6n",
+		"polecat/foo/hq-211.4":    "hq-211.4",
+		"polecat/rig/aa-abc.1.2":  "aa-abc.1.2",
+	}
+	for branch, want := range cases {
+		if got := parseBranchName(branch).Issue; got != want {
+			t.Errorf("parseBranchName(%q).Issue = %q, want %q (Fix #88 depends on this)", branch, got, want)
+		}
+	}
+}

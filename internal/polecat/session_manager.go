@@ -439,6 +439,28 @@ func (m *SessionManager) Start(polecat string, opts SessionStartOptions) error {
 		return fmt.Errorf("ensuring runtime settings: %w", err)
 	}
 
+	// Write a fresh `.gt-agent` identity file into the polecat's work dir.
+	//
+	// Fix #93 (Polecat starts as wrong role): The rig clone in the polecat's
+	// worktree can contain a tracked `.gt-agent` file with a non-polecat role
+	// (e.g. `role: refinery` — observed in testgt2 because a refinery process
+	// at one time committed its identity file to main). When the polecat's
+	// gt-agent boots in this work dir, `loadAgentFile(".gt-agent")` reads
+	// that file and OVERRIDES the `GT_ROLE=polecat` env var (see
+	// cmd/gt-agent/main.go:run, `if identity := loadAgentFile(...); ...`).
+	// The polecat then runs with the refinery's prompt and patrol loop
+	// instead of `mol-polecat-work`, producing no deliverables.
+	//
+	// `internal/session/lifecycle.go:ensureAgentIdentityFile` already does
+	// this for `session.StartSession`-spawned sessions (mayor, witness,
+	// refinery, etc.), but the polecat manager calls `m.sp.Start` directly
+	// and bypassed that helper. Writing the file here closes the gap and
+	// makes the polecat's identity authoritative regardless of what the
+	// rig clone happens to ship.
+	if err := writePolecatIdentityFile(workDir, m.rig.Name, polecat); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: could not write polecat .gt-agent identity file: %v\n", err)
+	}
+
 	// Get fallback info to determine beacon content based on agent capabilities.
 	// Non-hook agents need "Run gt prime" in beacon; work instructions come as delayed nudge.
 	fallbackInfo := runtime.GetStartupFallbackInfo(runtimeConfig)
@@ -993,6 +1015,41 @@ func (m *SessionManager) verifyStartupNudgeDelivery(sessionID string, rc *config
 		fmt.Fprintf(os.Stderr, "[startup-nudge] WARNING: agent %s still idle after %d nudge retries\n",
 			sessionID, maxRetries)
 	}
+}
+
+// writePolecatIdentityFile writes a `.gt-agent` JSON identity file into
+// the polecat's work directory with `role=polecat` and the polecat's
+// rig + name.
+//
+// Fix #93: this is the polecat-side equivalent of
+// session.ensureAgentIdentityFile (which only runs for sessions started
+// through session.StartSession, never for polecats spawned through the
+// polecat manager). It runs AFTER the worktree exists but BEFORE the
+// session starts so the file is on disk by the time gt-agent boots and
+// calls loadAgentFile(".gt-agent"). Writing here overrides any stale
+// `.gt-agent` checked into the rig clone (we have seen `role: refinery`
+// committed to testgt2 main), which would otherwise short-circuit the
+// `GT_ROLE=polecat` env var and make the polecat run with the wrong
+// role's prompt and patrol loop.
+func writePolecatIdentityFile(workDir, rigName, polecatName string) error {
+	if workDir == "" {
+		return fmt.Errorf("workDir is empty")
+	}
+	identity := struct {
+		Role string `json:"role"`
+		Rig  string `json:"rig,omitempty"`
+		Name string `json:"name,omitempty"`
+	}{
+		Role: "polecat",
+		Rig:  rigName,
+		Name: polecatName,
+	}
+	data, err := json.MarshalIndent(identity, "", "  ")
+	if err != nil {
+		return err
+	}
+	path := filepath.Join(workDir, ".gt-agent")
+	return os.WriteFile(path, data, 0644)
 }
 
 // hookIssue pins an issue to a polecat's hook using bd update.

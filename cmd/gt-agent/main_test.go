@@ -429,11 +429,197 @@ func TestParseLLMResponse(t *testing.T) {
 			wantDone: "handed off to mayor",
 		},
 		{
+			// Fix #91: the witness LLM emitted multiple commands on a
+			// single line with `**markdown bold**` annotations BETWEEN
+			// the `CMD:` segments. The parser previously applied
+			// trailingMarkdownBoldRE to the whole line BEFORE splitting
+			// on `\s+CMD:\s+`. The regex matches `\s+\*\*…\*\*.*$`
+			// (greedy to end-of-line), so it consumed every `CMD:`
+			// segment after the first bold marker and only the first
+			// command survived. Result: the witness looped for hours
+			// executing only one of N planned actions per turn while
+			// the LLM (correctly) re-planned all N every turn.
+			//
+			// After the fix, each inline `CMD:` segment is split first
+			// and the bold-prose stripper runs per segment. All five
+			// commands below must come out as separate entries with
+			// the bold annotations cleanly removed.
+			name: "inline CMD: with **bold** prose between segments (Fix #91)",
+			input: "CMD: gt patrol new **Patrol Cycle #531 Initiated** " +
+				"CMD: gt patrol scan --notify **Scanning for zombies...** " +
+				"CMD: gt patrol report --summary \"Patrol finished\" **Patrol Report:** Patrol finished " +
+				"CMD: gt mail inbox **Checking for unread messages...** " +
+				"CMD: gt polecat list **Error:** Invalid command usage.",
+			wantCmds: []string{
+				"gt patrol new",
+				"gt patrol scan --notify",
+				`gt patrol report --summary "Patrol finished"`,
+				"gt mail inbox",
+				"gt polecat list",
+			},
+		},
+		{
 			// Negative test: a real argument that contains the substring
 			// "CMD:" (without a leading space) must NOT split.
 			name:     "non-leading CMD: in argument is preserved",
 			input:    `CMD: echo "prefixCMD:notamarker"`,
 			wantCmds: []string{`echo "prefixCMD:notamarker"`},
+		},
+		{
+			// Regression: the architect emitted a single CMD: block
+			// followed by a complete multi-line shell script with a
+			// heredoc, multiple commands, a multi-line gt mail send -m,
+			// and a final DONE:. The old parser only kept the FIRST
+			// line (mkdir), silently dropped everything else, and the
+			// pipeline stalled because mayor never got the handoff mail.
+			//
+			// With the new parser, the whole script is collected into
+			// ONE cmds entry that /bin/sh -c can execute as a multi-
+			// line bash script.
+			name: "architect multi-line shell script under one CMD: is collected as one script",
+			input: "CMD: mkdir -p /work/architect\n" +
+				"cat > /work/architect/architecture.md <<'EOF'\n" +
+				"# Architecture: Hello API\n" +
+				"\n" +
+				"## API\n" +
+				"- GET /\n" +
+				"EOF\n" +
+				"wc -c /work/architect/architecture.md\n" +
+				"gt mail send mayor/ -s \"Architecture Ready\" -m \"design done\"\n" +
+				"gt nudge mayor \"ready\"\n" +
+				"gt unhook\n" +
+				"DONE: architecture handed off to mayor",
+			wantCmds: []string{
+				"mkdir -p /work/architect\n" +
+					"cat > /work/architect/architecture.md <<'EOF'\n" +
+					"# Architecture: Hello API\n" +
+					"\n" +
+					"## API\n" +
+					"- GET /\n" +
+					"EOF\n" +
+					"wc -c /work/architect/architecture.md\n" +
+					"gt mail send mayor/ -s \"Architecture Ready\" -m \"design done\"\n" +
+					"gt nudge mayor \"ready\"\n" +
+					"gt unhook",
+			},
+			wantDone: "architecture handed off to mayor",
+		},
+		{
+			// Heredoc body that contains markdown-like syntax (# heading,
+			// ## section, > quote) must NOT terminate the script — heredoc
+			// mode collects verbatim until the EOF terminator.
+			name: "markdown structure inside heredoc body is preserved verbatim",
+			input: "CMD: cat > arch.md <<'EOF'\n" +
+				"# Heading 1\n" +
+				"## Heading 2\n" +
+				"### Heading 3\n" +
+				"> a quote\n" +
+				"```ignored fence```\n" +
+				"EOF\n" +
+				"echo done",
+			wantCmds: []string{
+				"cat > arch.md <<'EOF'\n" +
+					"# Heading 1\n" +
+					"## Heading 2\n" +
+					"### Heading 3\n" +
+					"> a quote\n" +
+					"```ignored fence```\n" +
+					"EOF\n" +
+					"echo done",
+			},
+		},
+		{
+			// Multi-line `-m "..."` quoted argument with an embedded
+			// newline must be preserved as part of the same shell script
+			// (bash handles embedded newlines inside double-quoted args).
+			// This is the exact pattern the architect uses to include
+			// Project bead: $X / Design complete... in one mail body.
+			name: "multi-line quoted argument is preserved in one script",
+			input: "CMD: gt mail send mayor/ -s \"Architecture Ready\" -m \"Project bead: $PROJECT_BEAD\n" +
+				"Design complete. ready for implementation.\"\n" +
+				"gt nudge mayor \"ready\"",
+			wantCmds: []string{
+				"gt mail send mayor/ -s \"Architecture Ready\" -m \"Project bead: $PROJECT_BEAD\n" +
+					"Design complete. ready for implementation.\"\n" +
+					"gt nudge mayor \"ready\"",
+			},
+		},
+		{
+			// Two CMD: blocks with continuation lines under each, separated
+			// by a blank line. Each CMD: starts a new script, blank line
+			// flushes.
+			name: "two CMD: blocks each with continuations",
+			input: "CMD: mkdir -p /a\n" +
+				"cp /tmp/x /a/x\n" +
+				"\n" +
+				"CMD: gt mail send mayor/ -s X -m Y\n" +
+				"gt nudge mayor \"hi\"",
+			wantCmds: []string{
+				"mkdir -p /a\ncp /tmp/x /a/x",
+				"gt mail send mayor/ -s X -m Y\ngt nudge mayor \"hi\"",
+			},
+		},
+		{
+			// Markdown structural line (### heading) between commands
+			// flushes the current script and prevents the heading from
+			// leaking into bash.
+			name: "markdown heading between continuation commands flushes the script",
+			input: "CMD: gt hook\n" +
+				"gt mail inbox\n" +
+				"### Step 2\n" +
+				"This is prose.\n" +
+				"CMD: gt mail read 1",
+			wantCmds: []string{
+				"gt hook\ngt mail inbox",
+				"gt mail read 1",
+			},
+		},
+		{
+			// Fix #96 (architect prose-leak crash): the LLM emitted a
+			// CMD: followed by reasoning prose without an empty line
+			// separator. Before the fix the prose got piped into
+			// /bin/sh where the apostrophe in "I'll" opened an
+			// unterminated quoted string and the architect looped
+			// forever on `Syntax error: Unterminated quoted string`.
+			// Now the prose terminator-detector flushes the script
+			// after the real command and discards the narration.
+			name: "LLM prose continuation after CMD does not leak into shell (Fix #96)",
+			input: "CMD: gt hook | cat\n" +
+				"Now I'll re-execute the necessary commands with the correct bead ID extraction.\n" +
+				"Let me first check the hook output properly, then redo the steps.\n",
+			wantCmds: []string{"gt hook | cat"},
+		},
+		{
+			// Variant of Fix #96 with two CMD: blocks separated by
+			// pure prose (no blank line in between). Both commands
+			// must survive and prose must be discarded.
+			name: "Fix #96 variant: prose between two CMDs (no blank line) keeps both commands",
+			input: "CMD: gt hook\n" +
+				"Now I'll check the inbox.\n" +
+				"Let me first verify the hook output.\n" +
+				"CMD: gt mail inbox\n",
+			wantCmds: []string{"gt hook", "gt mail inbox"},
+		},
+		{
+			// Negative test: a continuation line that LOOKS prose-y
+			// but contains shell metacharacters (a pipe, here) MUST
+			// stay in the script. This guards against an over-eager
+			// prose detector that would break real shell pipelines.
+			name: "Fix #96 negative: continuation line with shell metachar stays in script",
+			input: "CMD: gt hook\n" +
+				"Now let us pipe to jq | jq .status\n",
+			wantCmds: []string{"gt hook\nNow let us pipe to jq | jq .status"},
+		},
+		{
+			// Negative test: a continuation line that starts with a
+			// prose-leading word but lacks sentence-ending punctuation
+			// is not treated as prose (defensive: allows the model to
+			// emit `Now run the script` as a deliberate shell line if
+			// it ever did).
+			name: "Fix #96 negative: prose-leading word without terminal punctuation stays",
+			input: "CMD: gt hook\n" +
+				"Now run\n",
+			wantCmds: []string{"gt hook\nNow run"},
 		},
 	}
 
@@ -1028,6 +1214,18 @@ func TestNormalizePreservesGtHookSubcommands(t *testing.T) {
 
 		// Unknown trailing args (hallucination) collapse to bare.
 		{"gt hook fooBarbaz", "gt hook"},
+
+		// Shell pipelines / redirections / chains that consume the
+		// output of `gt hook` must pass through untouched. The
+		// architect template explicitly uses this pattern to extract
+		// the project bead ID into a tmp file.
+		{
+			"gt hook | grep -oE 'hq-wisp-[a-z0-9]+|hq-[a-z0-9]+' | head -1 > /tmp/project_bead.txt",
+			"gt hook | grep -oE 'hq-wisp-[a-z0-9]+|hq-[a-z0-9]+' | head -1 > /tmp/project_bead.txt",
+		},
+		{"gt hook && gt mail inbox", "gt hook && gt mail inbox"},
+		{"gt hook > /tmp/hook.txt", "gt hook > /tmp/hook.txt"},
+		{"gt hook ; echo done", "gt hook ; echo done"},
 	}
 	for _, tc := range tests {
 		got, _ := normalizeGeneratedCommand(tc.in)
@@ -1218,5 +1416,234 @@ func TestNormalizeStepRewrite(t *testing.T) {
 	got, changed = normalizeGeneratedCommand("bd close 2")
 	if got != "bd close te-5c2" || !changed {
 		t.Fatalf("unexpected rewrite for bd close 2: got %q changed=%v", got, changed)
+	}
+}
+
+// Fix #90: small LLMs emit content-free status mails between same-rig
+// agents (refinery → witness → refinery) every patrol cycle. Each one
+// creates a permanent bead + Dolt commit and clogs the recipient's
+// inbox (observed 195+ messages in <12h). hasContentFreeMailSend
+// rejects the worst offenders BEFORE they reach `gt mail send`.
+//
+// Three signatures, all observed in production:
+//
+//  1. Subject is a bare formula name (`mol-refinery-patrol`,
+//     `RE: mol-witness-patrol`). Formula names are internal
+//     identifiers, never legitimate mail subjects.
+//  2. `RE:` reply with an empty body.
+//  3. Short body that just echoes the subject + an ack phrase
+//     (`"Reply to witness regarding mol-refinery-patrol"`).
+//
+// We also pin the legitimate cases to avoid false positives:
+// real `MERGE_FAILED <wisp>`, `FIX_NEEDED <polecat>`, and `MERGED
+// <polecat>` mails (per the mol-refinery-patrol formula) MUST be
+// allowed through. Heredoc bodies (`--stdin <<EOF...EOF`) are also
+// always allowed because no observed hallucination uses them.
+func TestHasContentFreeMailSend(t *testing.T) {
+	cases := []struct {
+		name       string
+		cmd        string
+		wantReject bool
+	}{
+		// REJECTED: formula-name subjects (the dominant noise source).
+		{
+			name:       "formula subject no RE",
+			cmd:        `gt mail send testgt2/witness -s "mol-refinery-patrol" -m "Status update mol-refinery-patrol"`,
+			wantReject: true,
+		},
+		{
+			name:       "formula subject with RE",
+			cmd:        `gt mail send testgt2/witness -s "RE: mol-refinery-patrol" -m "Reply to witness regarding mol-refinery-patrol"`,
+			wantReject: true,
+		},
+		{
+			name:       "formula subject unquoted",
+			cmd:        `gt mail send testgt2/witness -s mol-witness-patrol -m "noted"`,
+			wantReject: true,
+		},
+		// REJECTED: `RE:` with empty body.
+		{
+			name:       "RE empty body",
+			cmd:        `gt mail send testgt2/witness -s "RE: anything" -m ""`,
+			wantReject: true,
+		},
+		// REJECTED: body just echoes subject + ack phrase.
+		{
+			name:       "body echoes subject (reply to)",
+			cmd:        `gt mail send testgt2/witness -s "NO_POLECATS_FOUND" -m "Reply to witness regarding NO_POLECATS_FOUND"`,
+			wantReject: true,
+		},
+		{
+			name:       "body just ack",
+			cmd:        `gt mail send testgt2/witness -s "MERGE_QUEUE_EMPTY" -m "acknowledged"`,
+			wantReject: true,
+		},
+		// REJECTED (Fix #90 extension): body is just the subject in
+		// plain English ("NO_POLECATS_FOUND" → "No polecats found").
+		// These were the dominant noise in the witness inbox (217+
+		// messages observed). The body adds zero information beyond
+		// the subject.
+		{
+			name:       "body restates subject in plain english (NO_POLECATS_FOUND)",
+			cmd:        `gt mail send testgt2/witness -s "NO_POLECATS_FOUND" -m "No polecats found"`,
+			wantReject: true,
+		},
+		{
+			name:       "body restates subject (MERGE_QUEUE_EMPTY)",
+			cmd:        `gt mail send testgt2/witness -s "MERGE_QUEUE_EMPTY" -m "The merge queue is empty"`,
+			wantReject: true,
+		},
+		{
+			name:       "body restates subject (MERGE_QUEUE_NONEMPTY)",
+			cmd:        `gt mail send testgt2/witness -s "MERGE_QUEUE_NONEMPTY" -m "Merge queue not empty"`,
+			wantReject: true,
+		},
+		{
+			name:       "body restates subject (REFINERY_STATUS)",
+			cmd:        `gt mail send testgt2/witness -s "REFINERY_STATUS" -m "Refinery status"`,
+			wantReject: true,
+		},
+		// REJECTED (Fix #92): vague polecat-status alerts with no concrete
+		// polecat address. Witness template used to contain a literal
+		// example `-s "Polecat appears stalled"` which small LLMs copied
+		// every patrol cycle, flooding the mayor with 10+ identical
+		// alerts per minute and no actual polecat identified.
+		{
+			name:       "vague Polecat appears stalled no address",
+			cmd:        `gt mail send mayor/ -s "Polecat appears stalled" -m "A polecat seems stuck"`,
+			wantReject: true,
+		},
+		{
+			name:       "vague polecat stuck no address",
+			cmd:        `gt mail send mayor/ -s "Polecat stuck" -m "needs attention"`,
+			wantReject: true,
+		},
+		{
+			name:       "polecat dead no address",
+			cmd:        `gt mail send mayor/ -s "Polecat is dead" -m "investigate"`,
+			wantReject: true,
+		},
+		// ALLOWED: vague subject but body names a real polecat.
+		{
+			name:       "Polecat appears stalled with rig/name address",
+			cmd:        `gt mail send mayor/ -s "Polecat appears stalled" -m "testgt2/rust has been idle for 30 minutes; gt polecat status shows no progress"`,
+			wantReject: false,
+		},
+		{
+			name:       "Polecat stalled with wisp id",
+			cmd:        `gt mail send mayor/ -s "Polecat stalled" -m "Stalled on hq-wisp-abc123 for 45m, last activity 09:15"`,
+			wantReject: false,
+		},
+		// REJECTED (Fix #92): patrol-cycle status pings.
+		{
+			name:       "Patrol Cycle #531 Complete",
+			cmd:        `gt mail send mayor/ -s "Patrol Cycle #531 Complete" -m "all systems nominal"`,
+			wantReject: true,
+		},
+		{
+			name:       "Patrol Initiated",
+			cmd:        `gt mail send mayor/ -s "Patrol Initiated" -m "starting patrol"`,
+			wantReject: true,
+		},
+		{
+			name:       "Patrol Complete bare",
+			cmd:        `gt mail send testgt2/witness -s "Patrol Complete" -m "no findings"`,
+			wantReject: true,
+		},
+		// ALLOWED: legitimate operational mails per mol-refinery-patrol formula.
+		{
+			name:       "MERGE_FAILED with real content",
+			cmd:        `gt mail send testgt2/witness -s "MERGE_FAILED hq-wisp-abc" -m "Branch tests failed: 3 errors in build_test.go"`,
+			wantReject: false,
+		},
+		{
+			name:       "FIX_NEEDED with real content",
+			cmd:        `gt mail send testgt2/polecats/rust -s "FIX_NEEDED rust" -m "Branch: polecat/rust/hq-1\nPR: https://github.com/x/y/pull/42\nFailures observed in CI: lint, typecheck"`,
+			wantReject: false,
+		},
+		{
+			name:       "MERGED announcement",
+			cmd:        `gt mail send testgt2/witness -s "MERGED rust" -m "Branch: polecat/rust/hq-1\nMerged-At: 2026-05-12T08:00:00Z"`,
+			wantReject: false,
+		},
+		// ALLOWED: heredoc body never rejected.
+		{
+			name:       "heredoc body always allowed",
+			cmd:        `gt mail send testgt2/witness -s "RE: mol-refinery-patrol" --stdin <<EOF`,
+			wantReject: false,
+		},
+		// NOT A MAIL SEND — must pass through.
+		{
+			name:       "mail inbox is not send",
+			cmd:        `gt mail inbox`,
+			wantReject: false,
+		},
+		{
+			name:       "mail archive is not send",
+			cmd:        `gt mail archive hq-wisp-abc`,
+			wantReject: false,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			reason, rejected := hasContentFreeMailSend(tc.cmd)
+			if rejected != tc.wantReject {
+				t.Errorf("hasContentFreeMailSend(%q) rejected=%v (reason=%q), want %v",
+					tc.cmd, rejected, reason, tc.wantReject)
+			}
+			if rejected && reason == "" {
+				t.Errorf("rejection must carry a non-empty reason for the log line; got empty for %q", tc.cmd)
+			}
+		})
+	}
+}
+
+// TestNormalizeRejectsContentFreeMailSend wires hasContentFreeMailSend
+// into normalizeGeneratedCommand and asserts the full path: the
+// command is replaced with the no-op `true` so the agent doesn't run
+// it, the stderr log carries a `(Fix #90: ...)` marker, and a
+// legitimate mail send still passes through unchanged.
+func TestNormalizeRejectsContentFreeMailSend(t *testing.T) {
+	lastBeadID = ""
+	lastStepID = ""
+
+	// Hallucinated noise → replaced with `true`.
+	got, _ := normalizeGeneratedCommand(`gt mail send testgt2/witness -s "mol-refinery-patrol" -m "Reply to witness regarding mol-refinery-patrol"`)
+	if got != "true" {
+		t.Errorf("expected hallucinated mail to be replaced with 'true', got %q", got)
+	}
+
+	// Real operational mail → unchanged.
+	realCmd := `gt mail send testgt2/witness -s "MERGED rust" -m "Branch: polecat/rust/hq-1\nMerged-At: 2026-05-12T08:00:00Z"`
+	got, _ = normalizeGeneratedCommand(realCmd)
+	if got != realCmd {
+		t.Errorf("expected real MERGED mail to pass through unchanged, got %q", got)
+	}
+}
+
+// Fix #87: `bd update <id> --status=...` (and other write-side bd
+// subcommands) must pass through unchanged. The earlier normalizer
+// prepended `gt`, producing `gt bd update <id> --status=in_progress`,
+// which `gt bd` (alias for `gt bead`) rejects with "unknown flag:
+// --status" because `gt bd` only exposes show/read/move/mol. That bug
+// bricked every polecat trying to mark itself in_progress and
+// triggered the witness's "stuck polecat" heuristics, masking the real
+// problem behind a flood of misleading errors.
+func TestNormalizeDoesNotRewriteBdUpdate(t *testing.T) {
+	lastBeadID = ""
+	lastStepID = ""
+	cases := []string{
+		"bd update hq-211.3 --status=in_progress",
+		`bd update hq-8mn --notes "Findings so far"`,
+		`bd update hq-8mn --priority 1`,
+	}
+	for _, in := range cases {
+		got, _ := normalizeGeneratedCommand(in)
+		if strings.HasPrefix(got, "gt bd update") {
+			t.Errorf("bd update should NOT be rewritten to `gt bd update` (gt bd has no update subcommand): %q -> %q", in, got)
+		}
+		if got != in {
+			t.Errorf("bd update should pass through unchanged: %q -> %q", in, got)
+		}
 	}
 }

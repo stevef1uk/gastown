@@ -764,6 +764,18 @@ func isPolecatTarget(target string) bool {
 type FormulaOnBeadResult struct {
 	WispRootID string // The wisp root ID (compound root after bonding)
 	BeadToHook string // The bead ID to hook (BASE bead, not wisp - lifecycle fix)
+
+	// FormulaVars is the FULL set of formula variables that were passed to
+	// `bd mol wisp` / `bd mol bond`, including the caller-supplied extraVars
+	// and the auto-filled defaults (feature=<title>, issue=<beadID>,
+	// problem=<title>, base_branch=main, etc.) produced by
+	// ensureFormulaRequiredVars. Callers should store this on the bead's
+	// AttachedVars / FormulaVars fields so that `gt prime` can render
+	// `{{issue}}`, `{{feature}}`, `{{problem}}` etc. with their real values
+	// at hook time. Without this, the prime-time renderer only sees the
+	// vars the user explicitly passed via `--var`, and auto-defaulted vars
+	// like `issue` show up as literal `{{issue}}` in the polecat's prompt.
+	FormulaVars []string
 }
 
 // InstantiateFormulaOnBead creates a wisp from a formula, bonds it to a bead.
@@ -824,13 +836,20 @@ func InstantiateFormulaOnBead(ctx context.Context, formulaName, beadID, title, h
 	issueVar := fmt.Sprintf("issue=%s", beadID)
 	formulaVars := []string{featureVar, issueVar}
 	formulaVars = append(formulaVars, extraVars...)
-	formulaVars = ensureFormulaRequiredVars(formulaName, formulaVars)
+	formulaVars = ensureFormulaRequiredVars(formulaName, formulaVars, title)
 
 	// Step 2: Create wisp with feature and issue variables from bead.
 	// Use resolvedFormula which may be a temp file path if the embedded fallback was used.
 	// Root-only: don't materialize child step wisps — agents read inline steps from embedded formula.
-	wispArgs := []string{"mol", "wisp", resolvedFormula, "--var", featureVar, "--var", issueVar}
-	for _, variable := range extraVars {
+	//
+	// IMPORTANT: feed `formulaVars` (the auto-filled list) not `extraVars`,
+	// otherwise formulas that declare additional required vars (e.g.
+	// mol-idea-to-plan needs `problem`) fail wisp creation with
+	// `missing required variables` even though the bond fallback would
+	// have worked. The default value for the missing var is the bead
+	// title, which is already in `formulaVars` as `feature=<title>`.
+	wispArgs := []string{"mol", "wisp", resolvedFormula}
+	for _, variable := range formulaVars {
 		wispArgs = append(wispArgs, "--var", variable)
 	}
 	wispArgs = append(wispArgs, "--json")
@@ -841,7 +860,7 @@ func InstantiateFormulaOnBead(ctx context.Context, formulaName, beadID, title, h
 		WithGTRoot(townRoot).
 		Output()
 	if err != nil {
-		return nil, fmt.Errorf("creating wisp for formula %s: %w", formulaName, err)
+		return nil, fmt.Errorf("creating wisp for formula %s: %w (stderr/output: %s)", formulaName, err, string(wispOut))
 	}
 
 	// Parse wisp output to get the root ID
@@ -881,8 +900,9 @@ func InstantiateFormulaOnBead(ctx context.Context, formulaName, beadID, title, h
 			return nil, fmt.Errorf("bonding formula to bead: %w (direct formula bond fallback failed: %v)", err, fallbackErr)
 		}
 		return &FormulaOnBeadResult{
-			WispRootID: fallbackRootID,
-			BeadToHook: beadID, // Hook the BASE bead (lifecycle fix: wisp is attached_molecule)
+			WispRootID:  fallbackRootID,
+			BeadToHook:  beadID, // Hook the BASE bead (lifecycle fix: wisp is attached_molecule)
+			FormulaVars: append([]string(nil), formulaVars...),
 		}, nil
 	}
 
@@ -899,8 +919,9 @@ func InstantiateFormulaOnBead(ctx context.Context, formulaName, beadID, title, h
 			return nil, fmt.Errorf("bond output not parseable and direct formula bond fallback failed: %v", fallbackErr)
 		}
 		return &FormulaOnBeadResult{
-			WispRootID: fallbackRootID,
-			BeadToHook: beadID, // Hook the BASE bead (lifecycle fix: wisp is attached_molecule)
+			WispRootID:  fallbackRootID,
+			BeadToHook:  beadID, // Hook the BASE bead (lifecycle fix: wisp is attached_molecule)
+			FormulaVars: append([]string(nil), formulaVars...),
 		}, nil
 	}
 	if parsedRootID != "" {
@@ -908,8 +929,9 @@ func InstantiateFormulaOnBead(ctx context.Context, formulaName, beadID, title, h
 	}
 
 	return &FormulaOnBeadResult{
-		WispRootID: wispRootID,
-		BeadToHook: beadID, // Hook the BASE bead (lifecycle fix: wisp is attached_molecule)
+		WispRootID:  wispRootID,
+		BeadToHook:  beadID, // Hook the BASE bead (lifecycle fix: wisp is attached_molecule)
+		FormulaVars: append([]string(nil), formulaVars...),
 	}, nil
 }
 
@@ -974,14 +996,13 @@ func parseBondSpawnRootIDWithStatus(bondOut []byte, formulaName, beadID, fallbac
 	return fallbackID, true
 }
 
-// ensureFormulaRequiredVars appends missing required vars for formulas that enforce
-// strict var presence on direct bond paths.
-func ensureFormulaRequiredVars(formulaName string, vars []string) []string {
-	// Currently only mol-polecat-work has strict required vars on bond.
-	if formulaName != "mol-polecat-work" && formulaName != "polecat-work" {
-		return vars
-	}
-
+// ensureFormulaRequiredVars appends missing required vars for formulas that
+// enforce strict var presence on direct bond / wisp creation paths.
+//
+// `title` is the bead title and is used as a sensible default for
+// title-like vars (`problem`, `feature`) when the caller didn't supply
+// one explicitly.
+func ensureFormulaRequiredVars(formulaName string, vars []string, title string) []string {
 	seen := make(map[string]bool, len(vars))
 	for _, variable := range vars {
 		if eq := strings.Index(variable, "="); eq > 0 {
@@ -989,22 +1010,35 @@ func ensureFormulaRequiredVars(formulaName string, vars []string) []string {
 		}
 	}
 
-	requiredDefaults := []struct {
-		Key   string
-		Value string
-	}{
-		{"base_branch", "main"},
-		{"setup_command", ""},
-		{"typecheck_command", ""},
-		{"lint_command", ""},
-		{"test_command", ""},
-		{"build_command", ""},
-	}
-	for _, item := range requiredDefaults {
-		if !seen[item.Key] {
-			vars = append(vars, item.Key+"="+item.Value)
+	addIfMissing := func(key, value string) {
+		if !seen[key] {
+			vars = append(vars, key+"="+value)
+			seen[key] = true
 		}
 	}
+
+	switch formulaName {
+	case "mol-polecat-work", "polecat-work":
+		// Polecat work needs git/test plumbing defaults.
+		addIfMissing("base_branch", "main")
+		addIfMissing("setup_command", "")
+		addIfMissing("typecheck_command", "")
+		addIfMissing("lint_command", "")
+		addIfMissing("test_command", "")
+		addIfMissing("build_command", "")
+
+	case "mol-idea-to-plan", "idea-to-plan":
+		// `mol-idea-to-plan` declares `problem` as a required var.
+		// Default it from the bead title — when mayor slings this on
+		// an existing project bead, the bead title is exactly the
+		// problem statement we want planners to work on. Without
+		// this default, every `gt sling mol-idea-to-plan --on <bead>
+		// planner` call from the mayor template fails with
+		// `missing required variables: problem` and the pipeline
+		// stalls between Stages 1 and 2.
+		addIfMissing("problem", title)
+	}
+
 	return vars
 }
 

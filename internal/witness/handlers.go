@@ -811,6 +811,37 @@ func RestartPolecatSession(workDir, rigName, polecatName string) error {
 // This kills the tmux session, removes the worktree, and cleans up beads.
 // Refuses to nuke polecats with pending MRs in the refinery queue (gt-6a9d).
 // Refuses to nuke if Mayor ACP session is active (gt-qnp).
+//
+// IMPORTANT (Fix #89, ties into Fix #84):
+//
+// This helper is the ONLY internal entry point that calls `gt polecat nuke`
+// from the witness-side patrol scan flow. It is reached from
+// `handleZombieRestart` ONLY after the patrol scanner has already
+// verified BOTH:
+//
+//  1. The polecat is a zombie (session dead, classification proven by
+//     `internal/witness` zombie-detection logic), and
+//  2. Its branch work is already merged into the default branch
+//     (`verifyBranchAlreadyMerged`).
+//
+// Under those conditions the polecat's `hook_bead` is by definition
+// stale (the dead session can never advance it) and its MR is by
+// definition merged (no orphaning possible). Fix #84 added a "hard
+// block" in `gt polecat nuke` that refuses to nuke any polecat with
+// `hook_bead != ""` or `mr_status != merged`, with the help text
+// directing operators to call `gt patrol scan --notify` instead. But
+// the patrol scanner then called `NukePolecat` → `gt polecat nuke`
+// (with no overrides), which tripped that exact hard block — making
+// the "safe path" circular and impossible to complete. The witness
+// would log `archive-failed-work-already-merged: nuke failed: ... pass
+// --abandon-work` over and over while the zombie sat there.
+//
+// We pass `--abandon-work` here because the patrol scanner has already
+// done strictly MORE verification than the CLI flag's safety check:
+// the work is in `main`, the session is dead, no commits are at risk.
+// The CLI flag stays gated for direct LLM use (Fix #84) — LLMs cannot
+// reach `--abandon-work` without going through this internal,
+// verified-safe path.
 func NukePolecat(bd *BdCli, workDir, rigName, polecatName string) error {
 	// Persistence interlock (gt-qnp): veto cleanup if Mayor ACP session is active.
 	townRoot := workDirToTownRoot(workDir)
@@ -848,14 +879,29 @@ func NukePolecat(bd *BdCli, workDir, rigName, polecatName string) error {
 		}
 	}
 
-	// Now run gt polecat nuke to clean up worktree, branch, and beads
+	// Now run gt polecat nuke to clean up worktree, branch, and beads.
+	//
+	// We pass --abandon-work because we have already verified at the
+	// caller (handleZombieRestart) that:
+	//   - the session is dead (zombie classification), and
+	//   - the branch work is merged into main (verifyBranchAlreadyMerged).
+	// See the doc comment on NukePolecat above for the full safety
+	// analysis. Fix #89.
 	address := fmt.Sprintf("%s/%s", rigName, polecatName)
+	args := []string{"polecat", "nuke", address, "--abandon-work"}
 
-	if err := util.ExecRun(workDir, "gt", "polecat", "nuke", address); err != nil {
+	if err := runPolecatNukeCmd(workDir, args); err != nil {
 		return fmt.Errorf("nuke failed: %w", err)
 	}
 
 	return nil
+}
+
+// runPolecatNukeCmd is a package-level var so tests can capture the
+// args passed to `gt polecat nuke`. Production path goes through
+// util.ExecRun. See Fix #89.
+var runPolecatNukeCmd = func(workDir string, args []string) error {
+	return util.ExecRun(workDir, "gt", args...)
 }
 
 // NukePolecatResult contains the result of an auto-nuke attempt.

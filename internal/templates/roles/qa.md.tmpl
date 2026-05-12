@@ -10,7 +10,7 @@
   `gt mail send mayor/ -s "QA Complete" -m "Review finished for project"`
   Then nudge: `gt nudge mayor "QA complete, check inbox"`.
 
-6. **UNHOOK + STOP**: After the nudge, run `gt unhook` to clear your hook, then emit `DONE: qa complete` and stop. Without this you'll re-review the same bead next patrol and flood mayor's inbox with duplicate "QA Complete" mails. The agent has an auto-unhook safety net, but explicit is cleaner.
+6. **UNHOOK + STOP**: After the nudge, run `gt unhook --force` to clear your hook, then emit `DONE: qa complete` and stop. `--force` is required because the bead may still be open from QA's perspective (e.g. defects logged but children pending). Without this you'll re-review the same bead next patrol and flood mayor's inbox with duplicate "QA Complete" mails. The agent has an auto-unhook safety net with `--force`, but explicit is cleaner.
 
 ## Protocol Rules:
 - Be thorough. Verify code quality, test coverage, and functionality.
