@@ -401,8 +401,15 @@ func runDone(cmd *cobra.Command, args []string) (retErr error) {
 
 	// Guard: Check for implementation commits - prevent gt done without actual work
 	// This check runs AFTER the auto-save safety net to catch "sleepwalking" polecats
-	// that run gt done without implementing anything (just triggering auto-save)
-	// Only check the TOP commit - if it's just auto-save, the polecat didn't do real work
+	// that run gt done without implementing anything (just triggering auto-save).
+	//
+	// Fix #94: Previously this scanned only the TOP commit (`git log -1`). If
+	// the polecat made a real implementation commit AND the gt-agent auto-save
+	// safety net subsequently landed a `wip: auto-save` commit on top, the top
+	// commit was the auto-save and the polecat was rejected with "no
+	// implementation commits found" — even though the real work was one commit
+	// deeper. We now scan the entire branch history since the rig's default
+	// branch and accept iff ANY commit subject is non-auto-save.
 	//
 	// EXCEPTION (Fix #88): the mol-polecat-work formula explicitly allows a
 	// "no implementation needed" exit path:
@@ -422,20 +429,22 @@ func runDone(cmd *cobra.Command, args []string) (retErr error) {
 	// cleanup/unhook path. The remaining auto-save commit (if any) just
 	// gets attributed to the closed issue.
 	if exitType == ExitCompleted && cwd != "" {
-		cmd := exec.Command("git", "log", "--oneline", "-1")
-		cmd.Dir = cwd
-		out, err := cmd.CombinedOutput()
-		if err == nil {
-			topCommit := strings.TrimSpace(string(out))
-			isAutoSaveOnly := strings.Contains(topCommit, "auto-save") || strings.Contains(topCommit, "safety net") || strings.Contains(topCommit, "gt-pvx")
-			if isAutoSaveOnly {
-				if beadAlreadyClosed(cwd, branch) {
-					fmt.Printf("%s Hooked bead is already closed — accepting `gt done` as the formula's \"no implementation needed\" exit path.\n",
-						style.Bold.Render("✓"))
-					fmt.Printf("  (auto-save commit retained as audit trail; nothing to merge.)\n\n")
-				} else {
-					return fmt.Errorf("cannot complete: no implementation commits found. Your only commit is an auto-save safety net.\n\nThis means you ran gt done without actually implementing anything.\n\nTo complete this task:\n1. Read your assigned bead: bd show <issue-id>\n2. Read the SPEC.md in your worktree\n3. Create the required files (main.py, requirements.txt, tests, etc.)\n4. Test your implementation works\n5. Commit: git add -A && git commit -m 'feat: implementation (<issue-id>)'\n6. Then run: gt done\n\nThe system REQUIRES actual code changes - auto-save commits don't count as work.\n\nIf this issue genuinely needs no code change, run `bd close <id> --reason=\"...\"` FIRST, then re-run `gt done`.")
-				}
+		// Determine the rig's default branch so we can scan the full
+		// branch history. This duplicates the lookup performed later
+		// (see `defaultBranch :=` below) but we need the value here
+		// before the early-return guard fires. The cost is one extra
+		// file read.
+		checkDefaultBranch := "main"
+		if rigCfg, err := rig.LoadRigConfig(filepath.Join(townRoot, rigName)); err == nil && rigCfg.DefaultBranch != "" {
+			checkDefaultBranch = rigCfg.DefaultBranch
+		}
+		if !branchHasRealImplementationCommit(cwd, checkDefaultBranch) {
+			if beadAlreadyClosed(cwd, branch) {
+				fmt.Printf("%s Hooked bead is already closed — accepting `gt done` as the formula's \"no implementation needed\" exit path.\n",
+					style.Bold.Render("✓"))
+				fmt.Printf("  (auto-save commit retained as audit trail; nothing to merge.)\n\n")
+			} else {
+				return fmt.Errorf("cannot complete: no implementation commits found. Your only commit is an auto-save safety net.\n\nThis means you ran gt done without actually implementing anything.\n\nTo complete this task:\n1. Read your assigned bead: bd show <issue-id>\n2. Read the SPEC.md in your worktree\n3. Create the required files (main.py, requirements.txt, tests, etc.)\n4. Test your implementation works\n5. Commit: git add -A && git commit -m 'feat: implementation (<issue-id>)'\n6. Then run: gt done\n\nThe system REQUIRES actual code changes - auto-save commits don't count as work.\n\nIf this issue genuinely needs no code change, run `bd close <id> --reason=\"...\"` FIRST, then re-run `gt done`.")
 			}
 		}
 	}
@@ -2078,6 +2087,108 @@ func stripOverlayCLAUDEmd(g *git.Git, defaultBranch string) bool {
 	fmt.Printf("%s Created cleanup commit to remove Gas Town overlay files\n",
 		style.Bold.Render("✓"))
 	return true
+}
+
+// branchHasRealImplementationCommit reports whether the current branch
+// contains at least one commit whose subject is NOT an auto-save / safety-net
+// commit. It scans `git log <base>..HEAD` (all commits on this branch since
+// it diverged from the rig's default branch) and returns true on the first
+// non-auto-save subject seen.
+//
+// Fix #94: the previous implementation only inspected HEAD (`git log -1`),
+// which meant a real implementation commit followed by an auto-save commit
+// at HEAD was incorrectly classified as "no implementation commits found".
+// The polecat would then loop on the rejection until retry-#5 recovery
+// scorched the hook. By scanning the entire branch we accept any branch
+// that has at least one real impl commit, regardless of HEAD content.
+//
+// Resolution strategy for the base ref:
+//  1. Try `origin/<defaultBranch>` (the canonical upstream).
+//  2. Fall back to local `<defaultBranch>` (covers polecats that haven't
+//     fetched origin yet, e.g. offline test setups).
+//  3. Fall back to a recent-history scan (`git log -n 50`). This is a
+//     last resort for the case where neither base ref exists; it errs on
+//     the side of acceptance (better than rejecting a real impl commit
+//     because we can't compute the divergence point).
+//
+// All failures (missing cwd, git errors, no commits at all) return false
+// so the strict guard fires and the polecat is rejected — same behaviour
+// as the original implementation for the "totally empty branch" case.
+func branchHasRealImplementationCommit(cwd, defaultBranch string) bool {
+	if cwd == "" {
+		return false
+	}
+	if defaultBranch == "" {
+		defaultBranch = "main"
+	}
+
+	var subjects string
+	resolved := false
+	for _, base := range []string{"origin/" + defaultBranch, defaultBranch} {
+		cmd := exec.Command("git", "log", base+"..HEAD", "--pretty=%s")
+		cmd.Dir = cwd
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			continue
+		}
+		subjects = string(out)
+		resolved = true
+		break
+	}
+	if !resolved {
+		// Neither base ref resolved (rare — bare polecat worktree
+		// pre-fetch). Fall back to a recent-history scan so we still
+		// detect at least one real impl commit if it exists.
+		cmd := exec.Command("git", "log", "-n", "50", "--pretty=%s")
+		cmd.Dir = cwd
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			return false
+		}
+		subjects = string(out)
+	}
+
+	for _, subject := range strings.Split(strings.TrimSpace(subjects), "\n") {
+		subject = strings.TrimSpace(subject)
+		if subject == "" {
+			continue
+		}
+		if !isAutoSaveSubject(subject) {
+			return true
+		}
+	}
+	return false
+}
+
+// isAutoSaveSubject reports whether a commit subject looks like a gt-agent
+// auto-save / safety-net commit rather than real implementation work.
+//
+// Matches (case-insensitive):
+//   - any substring "auto-save"
+//   - any substring "safety net"
+//   - any substring "gt-pvx" (auto-save commit tag)
+//   - "wip:" or "wip " prefix
+//   - "[auto-save]" prefix
+//   - "auto-save:" prefix
+//
+// Anything else is treated as a real implementation commit.
+func isAutoSaveSubject(subject string) bool {
+	s := strings.ToLower(strings.TrimSpace(subject))
+	if s == "" {
+		return false
+	}
+	if strings.Contains(s, "auto-save") ||
+		strings.Contains(s, "safety net") ||
+		strings.Contains(s, "gt-pvx") {
+		return true
+	}
+	if strings.HasPrefix(s, "wip:") ||
+		strings.HasPrefix(s, "wip ") ||
+		strings.HasPrefix(s, "[auto-save]") ||
+		strings.HasPrefix(s, "auto-save:") {
+		return true
+	}
+	return false
 }
 
 // beadAlreadyClosed reports whether the issue derived from the current

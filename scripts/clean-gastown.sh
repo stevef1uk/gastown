@@ -60,6 +60,75 @@ find_town_root() {
     return 1
 }
 
+# get_rig_prefix prints the beads prefix used for a rig's session log
+# filenames and tmux session names. Used to glob `<prefix>-*.log` files in
+# logs/sessions/. Mirrors internal/rig/manager.go:deriveBeadsPrefix.
+#
+# Resolution order:
+#   1. mayor/rigs.json (canonical) — rigs[<name>].beads.prefix
+#   2. <town>/rigs.json (fallback copy)
+#   3. Algorithmic fallback (mirrors deriveBeadsPrefix in Go):
+#      - Strip "-py" / "-go" suffixes
+#      - Split on '-' or '_': take initials ("gas-town" -> "gt")
+#      - Single word with compound-place suffix
+#        (town/ville/port/place/land/field/wood/ford):
+#        split and take initials ("gastown" -> "gt")
+#      - Single word camelCase: split and take initials ("myProj" -> "mp")
+#      - Otherwise first 2 chars ("testgt2" -> "te")
+#
+# Used after a rig has been removed (rigs.json may be empty), so the
+# algorithmic fallback MUST work without any town state.
+get_rig_prefix() {
+    local rig="$1"
+    local rigs_json prefix
+
+    for rigs_json in "$TOWN_ROOT/mayor/rigs.json" "$TOWN_ROOT/rigs.json"; do
+        [[ -f "$rigs_json" ]] || continue
+        prefix=$(python3 -c "
+import json, sys
+try:
+    d = json.load(open('$rigs_json'))
+    rig = d.get('rigs', {}).get('$rig', {})
+    beads = rig.get('beads', {}) if isinstance(rig.get('beads'), dict) else {}
+    p = beads.get('prefix', '')
+    if p:
+        print(str(p).rstrip('-'))
+except Exception:
+    pass" 2>/dev/null)
+        if [[ -n "$prefix" ]]; then
+            echo "$prefix"
+            return
+        fi
+    done
+
+    # Algorithmic fallback — must match internal/rig/manager.go:deriveBeadsPrefix
+    python3 - <<PYEOF
+import re
+name = "$rig"
+name = name.removesuffix("-py").removesuffix("-go")
+parts = re.split(r"[-_]", name)
+if len(parts) == 1:
+    word = parts[0]
+    wlow = word.lower()
+    # CamelCase: split on lower->upper transitions
+    cc = re.findall(r"[A-Z]+(?=[A-Z][a-z])|[A-Z]?[a-z]+|[A-Z]+", word)
+    if len(cc) >= 2:
+        parts = cc
+    else:
+        # Compound place names
+        for sfx in ("town", "ville", "port", "place", "land", "field", "wood", "ford"):
+            if wlow.endswith(sfx) and len(wlow) > len(sfx):
+                parts = [wlow[: -len(sfx)], sfx]
+                break
+if len(parts) >= 2:
+    print("".join(p[0] for p in parts if p).lower())
+elif len(name) <= 3:
+    print(name.lower())
+else:
+    print(name[:2].lower())
+PYEOF
+}
+
 # ─── Parse arguments ─────────────────────────────────────────────────
 
 FORCE=false
@@ -67,6 +136,13 @@ TOWN_ROOT=""
 SINGLE_RIG=""
 PRUNE_REMOTE_BRANCHES=false
 CLEAR_HQ_MAIL=false
+PURGE_HQ_WISPS=false
+# Cutoff (hours) for --also-purge-hq-wisps. Anything older than this in the
+# HQ issues table and matching the hq-wisp-*.* ephemeral ID pattern is
+# closed and purged. Default 1h is generous enough to spare beads created
+# by the current session while still nuking everything carried over from
+# yesterday/last-week's runs.
+PURGE_HQ_WISPS_HOURS=1
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -100,6 +176,25 @@ while [[ $# -gt 0 ]]; do
             CLEAR_HQ_MAIL=true
             shift
             ;;
+        --also-purge-hq-wisps)
+            # Single-rig mode only: close + purge stale `hq-wisp-*.*`
+            # ephemeral issues from the preserved HQ Dolt DB. Without
+            # this, the planner's first `bd ready` after a rig reset
+            # sees hundreds of P0 wisps from prior molecule pours
+            # (Fizz/ML/Hello-API/etc.) and either hallucinates new
+            # tasks against them or trips duplicate-key SQL errors
+            # trying to re-create them. Older-than-cutoff filter
+            # protects beads from the current session.
+            PURGE_HQ_WISPS=true
+            shift
+            ;;
+        --purge-hq-wisps-hours=*)
+            # Override the default 1h cutoff for --also-purge-hq-wisps.
+            # Useful when the operator KNOWS the rig hasn't been touched
+            # in N hours and wants to spare nothing.
+            PURGE_HQ_WISPS_HOURS="${1#--purge-hq-wisps-hours=}"
+            shift
+            ;;
         -h|--help)
             echo "Usage: $0 [options] [town-root]"
             echo ""
@@ -115,6 +210,12 @@ while [[ $# -gt 0 ]]; do
             echo "                             re-fetching ancient polecat refs."
             echo "  --also-clear-hq-mail       (--rig only) Drain inboxes for"
             echo "                             hq-mayor/planner/deacon/mechanic."
+            echo "  --also-purge-hq-wisps      (--rig only) Close + purge stale"
+            echo "                             hq-wisp-*.* ephemeral issues from"
+            echo "                             the preserved HQ Dolt DB so the"
+            echo "                             fresh rig's planner sees a clean"
+            echo "                             bd ready (default cutoff: 1h)."
+            echo "  --purge-hq-wisps-hours=N   Override cutoff (default: 1)."
             echo "  -f, --force                Skip confirmation prompts (DANGEROUS)"
             echo "  -h, --help                 Show this help message"
             echo ""
@@ -123,11 +224,13 @@ while [[ $# -gt 0 ]]; do
             echo "  $0 --force ~/gt                  # Same, non-interactive"
             echo "  $0 --rig=testgt2 ~/gt            # Reset only the testgt2 rig"
             echo "  $0 --rig=testgt2 --force ~/gt    # Same, non-interactive"
-            echo "  $0 --rig=testgt2 --prune-remote-branches --also-clear-hq-mail --force ~/gt"
+            echo "  $0 --rig=testgt2 --prune-remote-branches --also-clear-hq-mail \\"
+            echo "      --also-purge-hq-wisps --force ~/gt"
             echo "                                   # Maximum-surgical: rig dir +"
             echo "                                   # dolt db + session logs +"
             echo "                                   # remote feature/polecat refs +"
-            echo "                                   # hq agents' inboxes"
+            echo "                                   # hq agents' inboxes +"
+            echo "                                   # stale hq-wisp-*.* issues"
             exit 0
             ;;
         -*)
@@ -148,6 +251,16 @@ fi
 if [[ "$CLEAR_HQ_MAIL" == true && -z "$SINGLE_RIG" ]]; then
     log_fatal "--also-clear-hq-mail requires --rig=NAME"
     exit 1
+fi
+if [[ "$PURGE_HQ_WISPS" == true && -z "$SINGLE_RIG" ]]; then
+    log_fatal "--also-purge-hq-wisps requires --rig=NAME"
+    exit 1
+fi
+if [[ "$PURGE_HQ_WISPS" == true ]]; then
+    if ! [[ "$PURGE_HQ_WISPS_HOURS" =~ ^[0-9]+$ ]] || (( PURGE_HQ_WISPS_HOURS < 0 )); then
+        log_fatal "--purge-hq-wisps-hours must be a non-negative integer (got: $PURGE_HQ_WISPS_HOURS)"
+        exit 1
+    fi
 fi
 
 # Validate --rig name early (must be non-empty, no path components)
@@ -202,10 +315,28 @@ if [[ -n "$SINGLE_RIG" ]]; then
             RIG_REGISTERED=true
         fi
     fi
+
+    # Residual-state-only mode: rig has no on-disk or registry presence,
+    # but session logs / HQ inboxes / origin branches may still survive a
+    # prior cleanup that ran before Fix 98. Allow the script to run iff the
+    # user opted into at least one residual cleanup (--also-clear-hq-mail
+    # or --prune-remote-branches); otherwise there's nothing to do.
+    RESIDUAL_ONLY=false
     if [[ "$RIG_REGISTERED" != true && ! -d "$RIG_DIR" ]]; then
-        log_fatal "Rig '$SINGLE_RIG' is not registered and has no directory at $RIG_DIR"
-        log_fatal "Run 'gt rig list' to see known rigs."
-        exit 1
+        if [[ "$CLEAR_HQ_MAIL" != true && "$PRUNE_REMOTE_BRANCHES" != true && "$PURGE_HQ_WISPS" != true ]]; then
+            log_fatal "Rig '$SINGLE_RIG' is not registered and has no directory at $RIG_DIR"
+            log_fatal "Run 'gt rig list' to see known rigs."
+            log_fatal "Pass --also-clear-hq-mail, --prune-remote-branches, or"
+            log_fatal "--also-purge-hq-wisps to clean residual session logs /"
+            log_fatal "HQ inboxes / origin branches / stale HQ wisps for a rig"
+            log_fatal "that has already been removed from disk + rigs.json."
+            exit 1
+        fi
+        RESIDUAL_ONLY=true
+        log_warn "Rig '$SINGLE_RIG' has no directory or registry entry."
+        log_warn "Running in residual-state-only mode — skipping rig-dir / Dolt /"
+        log_warn "rigs.json steps (already gone). Will still clean session logs,"
+        log_warn "HQ mail, origin branches, and stale HQ wisps as requested."
     fi
 
     # Count what we're about to delete.
@@ -221,7 +352,9 @@ if [[ -n "$SINGLE_RIG" ]]; then
 
     # Capture origin URL BEFORE deleting the rig dir — needed later if
     # --prune-remote-branches is set. We try config.json first (the
-    # canonical record), then fall back to the bare repo's git remote.
+    # canonical record), then the bare repo's git remote, then the
+    # mayor's rigs.json mirror (the only source still available in
+    # residual-only mode after the rig dir is gone).
     RIG_ORIGIN_URL=""
     if [[ -f "$RIG_DIR/config.json" ]]; then
         RIG_ORIGIN_URL=$(python3 -c "
@@ -236,15 +369,37 @@ except Exception:
     if [[ -z "$RIG_ORIGIN_URL" && -d "$RIG_DIR/.repo.git" ]]; then
         RIG_ORIGIN_URL=$(git --git-dir="$RIG_DIR/.repo.git" remote get-url origin 2>/dev/null || true)
     fi
+    if [[ -z "$RIG_ORIGIN_URL" ]]; then
+        for rigs_json in "$TOWN_ROOT/mayor/rigs.json" "$TOWN_ROOT/rigs.json"; do
+            [[ -f "$rigs_json" ]] || continue
+            RIG_ORIGIN_URL=$(python3 -c "
+import json
+try:
+    d = json.load(open('$rigs_json'))
+    rig = d.get('rigs', {}).get('$SINGLE_RIG', {})
+    print(rig.get('git_url') or rig.get('url') or rig.get('origin', '') or '')
+except Exception:
+    pass
+" 2>/dev/null)
+            [[ -n "$RIG_ORIGIN_URL" ]] && break
+        done
+    fi
 
-    # Detect session log files associated with this rig. Logs live at
-    # $TOWN_ROOT/logs/sessions/te-<rig>*.log (witness, refinery,
-    # architect, qa, polecats, crew). Leaving them in place poisons
-    # the freshly-recreated rig because the agents re-read their own
-    # historical context on next boot (observed today: witness
-    # re-emitting `te-189` references for 30 minutes after the rig was
-    # gone, purely from log-replay context).
-    RIG_LOG_PATTERN="te-${SINGLE_RIG}*.log"
+    # Resolve the rig's beads/session prefix. Session log files in
+    # $TOWN_ROOT/logs/sessions/ are named after tmux session names:
+    #
+    #   <prefix>-<polecat>.log              (polecat session)
+    #   <prefix>-<rigName>-architect.log    (architect)
+    #   <prefix>-<rigName>-qa.log           (QA)
+    #
+    # …where <prefix> is derived from the rig name by
+    # internal/rig/manager.go:deriveBeadsPrefix (e.g. "testgt2" -> "te",
+    # "gas-town" -> "gt"). The earlier implementation globbed
+    # `te-<rig>*.log` which caught HQ-style logs but MISSED polecat logs
+    # (which use just `<prefix>-<polecat>.log`, with no rig name). We now
+    # glob `<prefix>-*.log` so all rig-scoped session logs are matched.
+    RIG_PREFIX="$(get_rig_prefix "$SINGLE_RIG")"
+    RIG_LOG_PATTERN="${RIG_PREFIX}-*.log"
     RIG_LOG_COUNT=0
     if [[ -d "$TOWN_ROOT/logs/sessions" ]]; then
         RIG_LOG_COUNT=$(find "$TOWN_ROOT/logs/sessions" -maxdepth 1 \
@@ -269,10 +424,15 @@ except Exception:
     fi
 
     echo "────────────────────────────────────────────────────────────────"
-    echo "  PREVIEW OF WHAT WILL BE DELETED (single-rig mode)"
+    if [[ "$RESIDUAL_ONLY" == true ]]; then
+        echo "  PREVIEW OF WHAT WILL BE DELETED (residual-state-only mode)"
+    else
+        echo "  PREVIEW OF WHAT WILL BE DELETED (single-rig mode)"
+    fi
     echo "────────────────────────────────────────────────────────────────"
     echo ""
     echo "  Rig:                  ${SINGLE_RIG}"
+    echo "  Prefix (logs/tmux):   ${RIG_PREFIX}"
     echo "  Registered in rigs.json: ${RIG_REGISTERED}"
     echo "  Origin URL:           ${RIG_ORIGIN_URL:-<unknown>}"
     echo "  Directory:            ${RIG_DIR}"
@@ -304,6 +464,28 @@ except Exception:
     if [[ "$CLEAR_HQ_MAIL" == true ]]; then
         echo ""
         echo "  HQ inboxes:           will be drained (mayor, planner, deacon, mechanic)"
+    fi
+
+    if [[ "$PURGE_HQ_WISPS" == true ]]; then
+        # Best-effort count BEFORE we do anything. dolt may be unreachable
+        # if services are down; in that case we just say "unknown".
+        HQ_DOLT_DIR="$TOWN_ROOT/.dolt-data/hq"
+        STALE_HQ_WISP_COUNT="?"
+        if [[ -d "$HQ_DOLT_DIR" ]] && command -v dolt >/dev/null 2>&1; then
+            # IMPORTANT: `created_at` is stored as UTC-naive datetime, but
+            # MySQL/Dolt `NOW()` returns *local* time (TZ-shifted). On a
+            # machine offset +0200 from UTC, NOW() - INTERVAL 1 HOUR would
+            # be ~1h *in the future* relative to the stored UTC times,
+            # so we'd accidentally classify perfectly-fresh wisps as
+            # stale and purge them. Use UTC_TIMESTAMP() instead.
+            STALE_HQ_WISP_COUNT=$(dolt --data-dir "$HQ_DOLT_DIR" sql -q "SELECT COUNT(*) FROM issues WHERE id LIKE 'hq-wisp-%' AND status IN ('open','in_progress','hooked') AND created_at < UTC_TIMESTAMP() - INTERVAL ${PURGE_HQ_WISPS_HOURS} HOUR;" 2>/dev/null \
+                | awk 'NR>3 && /^\| *[0-9]+/ {gsub(/[| ]/,""); print; exit}')
+            [[ -z "$STALE_HQ_WISP_COUNT" ]] && STALE_HQ_WISP_COUNT="?"
+        fi
+        echo ""
+        echo "  HQ stale wisps:       ${STALE_HQ_WISP_COUNT} open hq-wisp-*.* issue(s)"
+        echo "                        older than ${PURGE_HQ_WISPS_HOURS}h will be closed + purged"
+        echo "                        (planner's bd ready will be clean on next boot)"
     fi
 
     echo ""
@@ -454,6 +636,75 @@ json.dump(d, open(p, 'w'), indent=2)
             result=$(gt mail clear "$hq" 2>&1 | tail -1 || true)
             log_ok "  ${hq}: ${result}"
         done
+    fi
+
+    # Step 10: purge stale `hq-wisp-*.*` ephemeral issues from the HQ Dolt
+    # DB. Without this, the freshly-recreated rig's planner sees hundreds
+    # of P0 wisps from prior molecule pours on its first `bd ready` and
+    # either hallucinates new tasks against them or trips duplicate-key
+    # SQL errors trying to re-create the same IDs. We close + zero out
+    # any open `hq-wisp-*.*` row older than the cutoff, then delete via
+    # SQL (bd purge --force only removes already-closed wisps, but we
+    # need to also reach `open` ones; direct DELETE is safer than
+    # multi-step gt/bd plumbing here).
+    if [[ "$PURGE_HQ_WISPS" == true ]]; then
+        HQ_DOLT_DIR="$TOWN_ROOT/.dolt-data/hq"
+        if [[ ! -d "$HQ_DOLT_DIR" ]]; then
+            log_warn "Skipping --also-purge-hq-wisps: $HQ_DOLT_DIR does not exist"
+        elif ! command -v dolt >/dev/null 2>&1; then
+            log_warn "Skipping --also-purge-hq-wisps: dolt binary not on PATH"
+        else
+            log_info "Purging stale hq-wisp-*.* issues from HQ Dolt DB (cutoff: ${PURGE_HQ_WISPS_HOURS}h)..."
+
+            # IMPORTANT: `created_at` is stored UTC-naive; MySQL/Dolt
+            # `NOW()` returns LOCAL time. On non-UTC machines that
+            # mismatch would either spare too much OR nuke fresh wisps.
+            # We use UTC_TIMESTAMP() so the comparison is sound regardless
+            # of the operator's TZ. Build a CTE-style WHERE filter once
+            # and reference it from each DELETE to keep the cutoff
+            # consistent if the wall clock ticks mid-statement.
+            cutoff_pred="id LIKE 'hq-wisp-%' AND created_at < UTC_TIMESTAMP() - INTERVAL ${PURGE_HQ_WISPS_HOURS} HOUR"
+            count_pred="${cutoff_pred} AND status IN ('open','in_progress','hooked')"
+            stale_id_subq="SELECT id FROM issues WHERE ${cutoff_pred}"
+
+            # Capture the count FIRST (the only meaningful number to
+            # report — the trailing DELETE only confirms it landed).
+            # Dolt's MySQL dialect doesn't support `SELECT @var := COUNT(*)`
+            # so we just take the count via a separate query.
+            before_out=$(dolt --data-dir "$HQ_DOLT_DIR" sql -q "SELECT COUNT(*) FROM issues WHERE ${count_pred};" 2>&1 || true)
+            before_count=$(echo "$before_out" | awk 'NR>3 && /^\| *[0-9]+/ {gsub(/[| ]/,""); print; exit}')
+            [[ -z "$before_count" ]] && before_count="?"
+
+            # Now cascade-delete the related rows (labels, dependencies,
+            # comments, events, issue_snapshots) then the issues
+            # themselves. Each statement is independent so a failure on
+            # one (e.g. table absent in older HQ schemas) doesn't block
+            # the rest. We swallow errors per-statement and report the
+            # final issue count at the end.
+            purge_sql=$(cat <<PURGE_SQL
+DELETE FROM labels          WHERE issue_id IN (${stale_id_subq});
+DELETE FROM dependencies    WHERE issue_id IN (${stale_id_subq}) OR depends_on_id IN (${stale_id_subq});
+DELETE FROM comments        WHERE issue_id IN (${stale_id_subq});
+DELETE FROM events          WHERE issue_id IN (${stale_id_subq});
+DELETE FROM issue_snapshots WHERE issue_id IN (${stale_id_subq});
+DELETE FROM issues          WHERE ${cutoff_pred};
+PURGE_SQL
+)
+            purge_out=$(dolt --data-dir "$HQ_DOLT_DIR" sql -q "$purge_sql" 2>&1 || true)
+
+            # Verify by re-counting — should be zero stale rows remaining.
+            after_out=$(dolt --data-dir "$HQ_DOLT_DIR" sql -q "SELECT COUNT(*) FROM issues WHERE ${count_pred};" 2>&1 || true)
+            after_count=$(echo "$after_out" | awk 'NR>3 && /^\| *[0-9]+/ {gsub(/[| ]/,""); print; exit}')
+            [[ -z "$after_count" ]] && after_count="?"
+
+            if [[ "$before_count" != "?" && "$after_count" == "0" ]]; then
+                log_ok "Purged ${before_count} stale hq-wisp-*.* issue(s) from HQ Dolt DB (remaining: 0)"
+            else
+                log_warn "Wisp purge completed with caveats: before=${before_count} after=${after_count}"
+                log_warn "  dolt output:"
+                echo "$purge_out" | sed 's|^|    |' | tail -20
+            fi
+        fi
     fi
 
     echo ""

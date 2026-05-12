@@ -1603,16 +1603,167 @@ generic content-free heuristic of original #90.
   step in order, exit 0, hq inboxes confirmed drained.
 - **Status**: FIXED + deployed + committed.
 
+## Fix 94 (delivered) — `gt done` only inspects HEAD
+
+- **Symptom**: Polecat E2E succeeded at the file-delivery layer but
+  failed the final `gt done` handshake when the gt-agent auto-save
+  safety net landed a `wip: auto-save` commit on top of the real
+  implementation commit. The implementation-commit guard ran
+  `git log -1` (HEAD only) so it only saw the auto-save and rejected
+  with "no implementation commits found".
+- **Fix**: `internal/cmd/done.go`:
+    - New `branchHasRealImplementationCommit(cwd, defaultBranch)`
+      scans `git log <base>..HEAD --pretty=%s` and accepts the branch
+      iff ANY commit subject is non-auto-save.
+    - Base ref resolution chain: `origin/<defaultBranch>` →
+      local `<defaultBranch>` → fallback `git log -n 50`. The
+      fallback catches bare-worktree polecats that haven't fetched
+      origin yet (e.g. offline test setups) and errs on the side of
+      acceptance, but real auto-save-only branches still fail it
+      because no real subject ever appears.
+    - New `isAutoSaveSubject(subject)` classifier — case-insensitive,
+      catches: `auto-save` / `safety net` / `gt-pvx` substrings; or
+      `wip:` / `wip ` / `[auto-save]` / `auto-save:` prefixes.
+    - The guard wraps the existing Fix #88 `beadAlreadyClosed` branch
+      so the formula's documented "no implementation needed" path
+      still works (closed bead → accept gt done).
+- **Tests** (`internal/cmd/done_test.go`):
+    - `TestIsAutoSaveSubject` — 19 cases pinning positive/negative
+      classification, including capitalisation and leading-whitespace
+      variants.
+    - `TestBranchHasRealImplementationCommit` — 7 topologies built on
+      real `git init` repos: empty branch, single real, single
+      auto-save, two auto-saves, real-then-auto-save-at-HEAD
+      (the original Fix #94 regression shape), auto-save-then-real,
+      interleaved.
+    - `TestBranchHasRealImplementationCommit_DefensiveReturns` —
+      4 failure-path tests: empty cwd, non-git dir, base==HEAD,
+      empty defaultBranch.
+- **Files**: `internal/cmd/done.go`, `internal/cmd/done_test.go`
+  (`+169` lines).
+- **Status**: FIXED + deployed (gt v1.0.1-365-g1dd03705).
+- **Dogfood**: a `gt done` invocation that fired while installing
+  this fix produced commit `1dd03705` (the auto-save) in the
+  gastown source repo itself — see Fix #99 below.
+
+## Fix 98 — clean-gastown.sh single-rig stale-state cleanup (verified)
+
+Already documented above (see "Fix 98"). Both gaps spotted on the next
+session run were verified to be already-fixed in the current script:
+
+- **Gap A** (script fatal-exits when no rig dir + not registered) is
+  now handled by the `RESIDUAL_ONLY=true` branch that activates when
+  the rig is gone from disk and rigs.json but the operator passes
+  at least one residual-cleanup flag (`--also-clear-hq-mail`,
+  `--prune-remote-branches`, or `--also-purge-hq-wisps` — see Fix
+  #100). Confirmed live: ran with rig already gone and the script
+  drained the stale `te-rust.log` and HQ inboxes as expected.
+
+- **Gap B** (`te-<rig>*.log` glob misses polecat logs) is now handled
+  by `get_rig_prefix()` which reads `mayor/rigs.json` (canonical),
+  falls back to `<town>/rigs.json`, then to an algorithmic mirror of
+  `internal/rig/manager.go:deriveBeadsPrefix`. The pattern is now
+  `<prefix>-*.log` (e.g. `te-*.log` for testgt2), which catches
+  polecat logs like `te-rust.log` along with architect/qa logs.
+  Confirmed live: `te-rust.log` was correctly identified and deleted.
+
+## Fix 99 — gt-agent auto-save firing inside gastown source repo
+
+- **Symptom**: Inspecting `.git/logs/HEAD` in the **gastown source
+  repo** (i.e. the gastown checkout we develop from, not a rig
+  worktree) shows a long history of commits whose subject is
+  literally `fix: auto-save uncommitted implementation work (gt-pvx
+  safety net)`. These were created by `internal/cmd/done.go`'s
+  auto-save block, but `gt done` was invoked with the gastown
+  source directory as its cwd — so the safety net committed our
+  in-flight Go/script edits as "implementation work".
+- **Sub-symptom**: The most recent of these (`1dd03705`) was
+  authored as `testgt2_architect <testgt2_architect@gt.com>`
+  because the user's **global** `~/.gitconfig` is now set to that
+  identity (file mtime: 2026-05-11 20:54). This is **not** a code
+  bug — none of the production gastown code writes `git config
+  --global user.name`; the test helpers that do are all properly
+  sandboxed via `cmd.Env = doltEnv` with isolated `$HOME`. The
+  global identity was clobbered out-of-band (most likely a manual
+  set-up step or an LLM-suggested command). Earlier auto-save
+  commits in the same repo used `Your Name <stevef@omen.home>` —
+  the user's previous local identity — so this has been a
+  long-running pattern, just with different attribution per era.
+- **Root cause (the real bug)**: `gt done`'s auto-save fires
+  unconditionally on the cwd when there are uncommitted changes,
+  with no guard against the cwd being the gastown source repo
+  itself. Whatever `bd sync` / `gt prime` / `gt hook` / etc. flow
+  runs `gt done` during development inadvertently triggers it.
+- **Mitigations (not yet implemented)**:
+    1. Add a worktree-shape guard in `done.go`: refuse to auto-save
+       if `git rev-parse --show-superproject-working-tree` indicates
+       the worktree is the source-of-truth gastown repo, OR if the
+       repo's remote-origin URL is the gastown source URL itself.
+    2. Add a `GT_NO_AUTOSAVE=1` env opt-out for developer shells.
+    3. Audit which gt code paths can invoke `gt done` with a CWD
+       outside any registered rig worktree, and short-circuit there.
+- **Status**: ROOT-CAUSED, mitigation deferred. Workaround: when
+  amending in the gastown source repo, set the author explicitly
+  (`git commit --amend --author='stevef <stevef@omen.home>' -m ...`).
+  See "Open Issues" below.
+
+## Fix 100 — `clean-gastown.sh --also-purge-hq-wisps`
+
+- **Symptom**: After a single-rig reset (which preserves the HQ
+  Dolt DB by design — Fix 98 trade-off), the **freshly-recreated
+  rig's planner re-loads with a polluted `bd ready`**. The HQ
+  `issues` table accumulated ~290 open `hq-wisp-*.*` ephemeral
+  task beads across prior testgt2 attempts ("Review ML Model
+  Requirements", "Implement Hello API", duplicate FizzBuzz tasks
+  etc.). The planner LLM, seeing them at P0, **hallucinates new
+  tasks against those stale projects** and trips
+  `SQLException: cannot insert duplicate key (hq-k0h.3)` when its
+  newly-generated wisp IDs collide with the leftovers. End-to-end
+  result: no polecat is ever slung, no code is ever written.
+- **Fix**: `scripts/clean-gastown.sh`:
+    - `--also-purge-hq-wisps` (single-rig mode only) closes + hard-
+      deletes every open `hq-wisp-*.*` issue in HQ older than a
+      cutoff. Cascade-deletes related rows from `labels`,
+      `dependencies` (both `issue_id` and `depends_on_id`),
+      `comments`, `events`, and `issue_snapshots` first so the
+      issues DELETE doesn't fail on residual children.
+    - `--purge-hq-wisps-hours=N` overrides the default cutoff of
+      1 hour. Validated as non-negative integer.
+    - Preview block shows the staged count before the operator
+      confirms; final block prints `before`/`after` counts.
+    - **UTC-correctness**: `created_at` is stored UTC-naive in
+      Dolt, but `NOW()` returns wall-clock LOCAL time, so a naive
+      `created_at < NOW() - INTERVAL N HOUR` filter on a +0200
+      machine would (a) leave the cutoff 2h in the future and
+      (b) classify perfectly-fresh wisps as stale. We use
+      `UTC_TIMESTAMP()` in every comparison. Verified by inspecting
+      the diff between `NOW()` (15:04:15 local) and
+      `UTC_TIMESTAMP()` (13:04:15 UTC) on the operator's box.
+    - **Residual-only compatibility**: `--also-purge-hq-wisps`
+      counts as a residual-cleanup flag, so passing it after the
+      rig directory is already gone activates `RESIDUAL_ONLY=true`
+      and lets the script run.
+- **Files**: `scripts/clean-gastown.sh`.
+- **Status**: IMPLEMENTED, awaiting first live use against the
+  contaminated HQ. (Nuclear reset is the parallel cleanup path
+  used by this session's end-to-end re-run.)
+
 ## Open Issues (next session)
 
-### Fix 94 (pending) — `gt done` only inspects HEAD
+### Auto-save misroute mitigation (see Fix #99)
 
-See "Fix 94" above. Polecat E2E currently succeeds at the file-
-delivery layer but fails the final `gt done` handshake when an
-auto-save commit lands on top of the real work. Workaround: manual
-`git reset --soft HEAD~1`. Action: rewrite the implementation-commit
-detector in `internal/cmd/done.go` to scan
-`git log <base_branch>..HEAD` rather than `git log -1`.
+The auto-save commit guard inside `internal/cmd/done.go` still
+unconditionally commits to whatever `cwd` is current when there are
+uncommitted changes. Long-term we need one of:
+
+- A worktree-shape guard ("am I sitting in a rig worktree?")
+- A `GT_NO_AUTOSAVE=1` env opt-out for development shells
+- An audit of the call sites that can reach `gt done` with a
+  non-rig cwd
+
+Until then, do NOT run `gt done` while your shell is parked inside
+the gastown source repo, and check `git log -1 --format='%an %ae'`
+before pushing if you're not sure.
 
 ### Witness/Refinery inbox bloat — superseded by Fix 90 ext + Fix 92
 

@@ -1586,3 +1586,172 @@ func TestBeadAlreadyClosed_ParsesBranchIssueID(t *testing.T) {
 		}
 	}
 }
+
+// Fix #94: isAutoSaveSubject classifies commit subjects so that the
+// implementation-commit guard in `gt done` can decide whether a branch
+// contains real work. Anything tagged auto-save / safety-net / gt-pvx
+// must classify as auto-save; everything else must classify as real
+// implementation. Regressions here would either let sleepwalking
+// polecats through (false positives) or lock real polecats out of
+// completion (false negatives — exactly what Fix #94 set out to fix).
+func TestIsAutoSaveSubject(t *testing.T) {
+	cases := []struct {
+		subject string
+		want    bool
+	}{
+		{"", false},
+		{"feat: add hello world endpoint", false},
+		{"fix: handle nil pointer in parser", false},
+		{"feat: implementation (hq-1ab)", false},
+		{"docs: update README", false},
+		{"chore: bump deps", false},
+
+		{"wip: auto-save", true},
+		{"wip: auto-save uncommitted work", true},
+		{"wip auto-save", true},
+		{"WIP: auto-save", true},
+		{"fix: auto-save uncommitted implementation work (gt-pvx safety net)", true},
+		{"fix: auto-save uncommitted implementation work (hq-1ab, gt-pvx safety net)", true},
+		{"[auto-save] uncommitted work", true},
+		{"auto-save: snapshot before gt done", true},
+		{"chore: snapshot via safety net before gt done", true},
+		{"chore: gt-pvx checkpoint", true},
+
+		{"Auto-Save: capitalisation should not matter", true},
+		{"  wip: leading whitespace tolerated", true},
+
+		{"wipeout: remove dead code", false},
+		{"wipo: rename module", false},
+		{"refactor: extract helper from saveState", false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.subject, func(t *testing.T) {
+			if got := isAutoSaveSubject(tc.subject); got != tc.want {
+				t.Errorf("isAutoSaveSubject(%q) = %v, want %v", tc.subject, got, tc.want)
+			}
+		})
+	}
+}
+
+// Fix #94: branchHasRealImplementationCommit must inspect the ENTIRE
+// branch (base..HEAD) rather than only HEAD. This regression-tests every
+// commit-topology variant we saw in the failing E2E sessions, including
+// the original bug shape (real impl commit shadowed by an auto-save at
+// HEAD).
+func TestBranchHasRealImplementationCommit(t *testing.T) {
+	cases := []struct {
+		name     string
+		subjects []string // ordered oldest-to-newest, applied on top of the base
+		want     bool
+	}{
+		{
+			name:     "no commits beyond base",
+			subjects: nil,
+			want:     false,
+		},
+		{
+			name:     "single real impl commit",
+			subjects: []string{"feat: hello world endpoint"},
+			want:     true,
+		},
+		{
+			name:     "single auto-save commit only",
+			subjects: []string{"fix: auto-save uncommitted implementation work (gt-pvx safety net)"},
+			want:     false,
+		},
+		{
+			name:     "two auto-save commits only",
+			subjects: []string{"wip: auto-save", "fix: auto-save uncommitted implementation work (gt-pvx safety net)"},
+			want:     false,
+		},
+		{
+			// The Fix #94 regression shape: real impl commit followed by
+			// an auto-save commit at HEAD. Pre-#94 this was rejected
+			// because only HEAD (the auto-save) was inspected.
+			name:     "real impl then auto-save at HEAD",
+			subjects: []string{"feat: implement endpoint", "wip: auto-save"},
+			want:     true,
+		},
+		{
+			name:     "auto-save then real impl at HEAD",
+			subjects: []string{"wip: auto-save", "feat: implement endpoint"},
+			want:     true,
+		},
+		{
+			name:     "multiple real commits interleaved with auto-saves",
+			subjects: []string{"feat: scaffolding", "wip: auto-save", "feat: add handler", "fix: auto-save uncommitted implementation work (gt-pvx safety net)"},
+			want:     true,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := initTestRepo(t)
+			if len(tc.subjects) > 0 {
+				testRunGit(t, repo, "checkout", "-b", "feature")
+				for _, subj := range tc.subjects {
+					commitEmpty(t, repo, subj)
+				}
+			}
+			got := branchHasRealImplementationCommit(repo, "main")
+			if got != tc.want {
+				t.Errorf("branchHasRealImplementationCommit() = %v, want %v\n  subjects: %v", got, tc.want, tc.subjects)
+			}
+		})
+	}
+}
+
+// TestBranchHasRealImplementationCommit_DefensiveReturns covers the
+// failure paths that must return false so the strict guard fires.
+func TestBranchHasRealImplementationCommit_DefensiveReturns(t *testing.T) {
+	t.Run("empty cwd returns false", func(t *testing.T) {
+		if branchHasRealImplementationCommit("", "main") {
+			t.Errorf("expected false for empty cwd")
+		}
+	})
+
+	t.Run("non-git directory returns false (no real impl commit detectable)", func(t *testing.T) {
+		dir := t.TempDir()
+		if branchHasRealImplementationCommit(dir, "main") {
+			t.Errorf("expected false for non-git directory")
+		}
+	})
+
+	t.Run("git repo with only base main and no branch — no diff to scan", func(t *testing.T) {
+		repo := initTestRepo(t)
+		// HEAD == main == base, so base..HEAD is empty -> false.
+		if branchHasRealImplementationCommit(repo, "main") {
+			t.Errorf("expected false when no commits exist beyond base")
+		}
+	})
+
+	t.Run("empty defaultBranch defaults to main", func(t *testing.T) {
+		repo := initTestRepo(t)
+		testRunGit(t, repo, "checkout", "-b", "feature")
+		commitEmpty(t, repo, "feat: real implementation")
+		if !branchHasRealImplementationCommit(repo, "") {
+			t.Errorf("expected true when defaultBranch is empty (should default to main)")
+		}
+	})
+}
+
+// initTestRepo creates a fresh git repo with a `main` branch containing
+// one base commit. Returns the worktree path. All subsequent commits in
+// the test should be made on a feature branch via `git checkout -b`.
+func initTestRepo(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	testRunGit(t, dir, "init", "-q", "-b", "main")
+	testRunGit(t, dir, "config", "user.email", "test@example.com")
+	testRunGit(t, dir, "config", "user.name", "Test")
+	testRunGit(t, dir, "commit", "--allow-empty", "-m", "init")
+	return dir
+}
+
+// commitEmpty creates an empty commit with the given subject so we can
+// exercise the subject-classification path without touching tree state.
+func commitEmpty(t *testing.T, dir, subject string) {
+	t.Helper()
+	testRunGit(t, dir, "commit", "--allow-empty", "-m", subject)
+}
