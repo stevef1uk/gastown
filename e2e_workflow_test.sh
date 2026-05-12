@@ -17,6 +17,24 @@ gt up
 
 sleep 5
 
+# 1b. Seed HQ issue_prefix if missing (Fix #101).
+# `gt down` wipes the HQ beads dolt dir, and `gt up` recreates an
+# empty `hq.config` without the `issue_prefix=hq` row. Without it,
+# the very next `gt mail send mayor/` fails with
+# "database not initialized: issue_prefix config is missing".
+# This is a belt-and-braces invocation of the healer that
+# clean-gastown.sh drops next to the wipe. If the healer doesn't
+# exist (someone wired up the town without clean-gastown.sh), we
+# fall back to an inline INSERT IGNORE.
+if [[ -x "$GT_DIR/.gt-post-reset-init.sh" ]]; then
+    bash "$GT_DIR/.gt-post-reset-init.sh" || true
+elif command -v dolt >/dev/null 2>&1; then
+    DOLT_CLI_PASSWORD="" dolt --host 127.0.0.1 --port 3307 \
+        --user root --no-tls sql -q \
+        "USE hq; INSERT IGNORE INTO config (\`key\`, value) VALUES ('issue_prefix','hq');" \
+        2>/dev/null || true
+fi
+
 # 2. Send project to Mayor (use different subject to create new bead)
 echo "[2] Sending project to Mayor..."
 gt mail send mayor/ -s "Project: Hello World API for testgt2" --stdin <<'EOF'

@@ -1748,6 +1748,106 @@ session run were verified to be already-fixed in the current script:
   contaminated HQ. (Nuclear reset is the parallel cleanup path
   used by this session's end-to-end re-run.)
 
+### Fix #101 — HQ `issue_prefix` not seeded after a nuclear wipe
+- **Symptom**: After `clean-gastown.sh --force ~/gt` (full nuclear
+  reset) and a fresh `gt up`, every `gt mail send <hq-target>`
+  (mayor/, planner/, deacon/, hq/* polecats) fails with:
+
+      Error: database not initialized: issue_prefix config is
+      missing (run 'bd init --prefix <prefix>' for a new project,
+      or 'bd bootstrap' to clone an existing remote)
+
+  This blocks the Mayor → Architect → Planner → Polecat → QA
+  pipeline at the very first hop: the e2e test script never even
+  gets past `[2] Sending project to Mayor...` because the first
+  HQ-bound send dies, and any architect that does manage to do real
+  work (e.g. by being kicked off via SPEC.md auto-pour from the
+  formula engine) can write `architecture.md` but can't notify
+  mayor that it's done.
+
+  Concretely seen on 2026-05-12: testgt2 architect produced a
+  correct 16-line architecture.md for the FizzBuzz spec at 15:26,
+  then looped on `gt mail send mayor/ -s "Architecture Ready"`
+  until the prefix row was inserted by hand at 15:33.
+
+- **Root cause**: `gt rig add <name> <url>` runs
+  `bd init --prefix <p> --database <name>` for each freshly-cloned
+  rig database. That call:
+    1. Creates `<rig>/.beads/config.yaml` with `prefix:`/`issue-prefix:`
+    2. Runs the bd schema migrations against the rig's Dolt DB
+    3. **Inserts the `issue_prefix=<p>` row into `<rig>.config`**
+
+  But there is no equivalent bootstrap step for the **HQ Dolt
+  database**. The HQ DB is brought to life implicitly the first
+  time the daemon connects to the Dolt server, and `gt up` does
+  not call `bd init --prefix hq` for it. After a nuclear wipe
+  (`.dolt-data/` and `.beads/` both removed), the next `gt up`
+  brings Dolt back, lets the daemon create an empty `hq.config`
+  table, and stops there. The row is never inserted. `bd config
+  get issue_prefix` returns `(not set)`. `bd config set
+  issue_prefix hq` is explicitly refused by bd:
+
+      Error: issue_prefix cannot be set via 'bd config set'.
+        - New project:    bd init --prefix <prefix>
+        - Fresh clone:    bd bootstrap
+        - Rename existing: bd rename-prefix <new-prefix>
+
+  Direct evidence (post-reset live diff between hq and testgt2):
+
+      SELECT * FROM hq.config WHERE `key`='issue_prefix';   --> empty
+      SELECT * FROM testgt2.config WHERE `key`='issue_prefix';
+          --> ('issue_prefix','te')
+
+  Manual repair that proved the model:
+
+      INSERT INTO hq.config (`key`, value)
+        VALUES ('issue_prefix','hq');
+
+  → `bd config get issue_prefix` then returns `hq`, and
+  `gt mail send mayor/` succeeds on the very next attempt.
+
+- **Fix**: `scripts/clean-gastown.sh` now writes a post-up healer
+  alongside the wipe (Phase 12, gated on the nuclear path):
+
+      $TOWN_ROOT/.gt-post-reset-init.sh
+
+  The healer is small, idempotent, and self-contained:
+    1. Verifies `dolt` is in PATH.
+    2. Pings Dolt on `${DOLT_HOST:-127.0.0.1}:${DOLT_PORT:-3307}`;
+       refuses to run if Dolt is down ("run gt up first").
+    3. `USE hq; INSERT IGNORE INTO config (\`key\`, value)
+       VALUES ('issue_prefix', '${HQ_PREFIX:-hq}');`
+    4. Prints a confirmation row.
+
+  The script's nuclear-reset summary now leads with a one-line
+  copy-paste:
+
+      cd $TOWN_ROOT && gt up && bash ./.gt-post-reset-init.sh
+
+  …so operators don't have to remember the healer separately.
+  `INSERT IGNORE` makes the healer safe to run repeatedly, and the
+  Dolt-up precondition keeps it from racing the daemon.
+
+- **Files**: `scripts/clean-gastown.sh` (+72/-2 lines:
+  new Phase 12, updated summary, no other code-path changes).
+- **Status**: IMPLEMENTED. Verified idempotent against the live
+  post-manual-fix HQ DB (INSERT IGNORE no-op leaves the row
+  intact). Awaiting first live exercise via a fresh nuclear
+  reset → `gt up` → healer → `gt mail send mayor/` round trip.
+
+- **Follow-up (Go-level, deferred)**: The real bug is upstream of
+  `clean-gastown.sh` — `gt down` happily wipes the HQ beads dolt
+  dir ("✓ Beads dolt dirs: removed 1"), and the matching `gt up`
+  never re-seeds the prefix. The proper fix lives in the daemon's
+  HQ-init code path: after Dolt comes up and the `hq` database is
+  reachable, check `SELECT value FROM hq.config WHERE
+  \`key\`='issue_prefix'`; if missing, run the equivalent of
+  `bd init --prefix hq` (or just INSERT the row) before letting
+  agent goroutines start writing. Once that lands, the
+  `.gt-post-reset-init.sh` healer becomes a belt-and-braces
+  fallback rather than a load-bearing step. Tracked here so the
+  next session can pick it up without re-deriving the trace.
+
 ## Open Issues (next session)
 
 ### Auto-save misroute mitigation (see Fix #99)

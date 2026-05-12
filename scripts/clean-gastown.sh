@@ -1080,13 +1080,62 @@ fi
 # Delete any session wrapper logs in town root
 find "$TOWN_ROOT" -maxdepth 1 -name "*.wrapper.log" -delete 2>/dev/null || true
 
-# ─── Phase 9: Reset rigs.json ────────────────────────────────────────
+# ─── Phase 9: Reset rigs.json + residual rig metadata ───────────────
+#
+# Phase 11 used to preserve `mayor/rigs.json` and `daemon.json` under
+# the "configs are safe" heuristic, but on a nuclear reset that left
+# stale rig entries (e.g. testgt2) behind. After the rig directory
+# itself is gone from Phase 4-5, the next `gt up` still saw the old
+# rig in `mayor/rigs.json`, tried to start its witness/refinery/
+# architect/qa, and printed:
+#     [orphan-recovery] skipping rig <name> (failed to load)
+#     ✖ Refinery (<name>): rig '<name>' not found
+#     ✖ Architect (<name>): rig '<name>' not found
+# until the operator nuked the file by hand.
+#
+# A nuclear reset means "start from a blank rig slate", so we now
+# truncate BOTH `rigs.json` files. Town config is still preserved
+# (config.json, town.json, overseer.json).
 
-log_info "Resetting rigs.json..."
-if [[ -f "$TOWN_ROOT/rigs.json" ]]; then
-    echo '{"version": 1, "rigs": {}}' > "$TOWN_ROOT/rigs.json"
-    log_ok "Reset rigs.json (emptied rigs list)"
+log_info "Resetting rigs.json (top-level + mayor/)..."
+for rigs_file in "$TOWN_ROOT/rigs.json" "$TOWN_ROOT/mayor/rigs.json"; do
+    if [[ -f "$rigs_file" ]]; then
+        echo '{"version": 1, "rigs": {}}' > "$rigs_file"
+        rel="${rigs_file#$TOWN_ROOT/}"
+        log_ok "Reset ${rel} (emptied rigs list)"
+    fi
+done
+
+# Stale per-rig beads-wisp configs and witness respawn-count entries
+# also survived old nuclear resets and tripped up the next `gt rig
+# list` / planner-side `bd ready` invocations.
+log_info "Wiping residual per-rig metadata..."
+if [[ -d "$TOWN_ROOT/.beads-wisp/config" ]]; then
+    # Each file is one-per-rig: <rig>.json. Safe to delete entirely.
+    found=0
+    for f in "$TOWN_ROOT/.beads-wisp/config"/*.json; do
+        [[ -f "$f" ]] || continue
+        rm -f "$f"
+        ((found++)) || true
+    done
+    if (( found > 0 )); then
+        log_ok "Deleted ${found} stale .beads-wisp/config/*.json entries"
+    fi
 fi
+
+if [[ -f "$TOWN_ROOT/witness/bead-respawn-counts.json" ]]; then
+    echo '{"beads": {}}' > "$TOWN_ROOT/witness/bead-respawn-counts.json"
+    log_ok "Reset witness/bead-respawn-counts.json"
+fi
+
+# Stray top-level logs that pin a previous rig's name in grep output
+# and confuse session-aware tooling.
+for stray in witness.log freeride_live.log console.log; do
+    if [[ -f "$TOWN_ROOT/$stray" ]]; then
+        rm -f "$TOWN_ROOT/$stray"
+        log_ok "Deleted ${stray}"
+    fi
+done
 
 # ─── Phase 10: Delete daemon state ───────────────────────────────────
 
@@ -1111,6 +1160,69 @@ for role_dir in mayor deacon planner; do
     fi
 done
 
+# ─── Phase 12: Write post-`gt up` HQ healer (Fix #101) ───────────────
+#
+# When the HQ Dolt DB is wiped (Phase 4) and then recreated by `gt up`,
+# the new `hq` database comes up with an empty `config` table — no
+# `issue_prefix=hq` row. The first HQ-bound `gt mail send` then fails
+# with "database not initialized: issue_prefix config is missing",
+# which blocks every mayor → architect/qa handoff.
+#
+# `gt rig add` runs `bd init --prefix <p> --database <db>` for each
+# new rig DB which inserts the row, but there's no equivalent
+# bootstrap for the HQ database, so post-wipe HQ never gets seeded.
+#
+# Until `gt up` learns to self-heal (Fix #101 follow-up: Go-level
+# repair in the daemon's HQ-init code path), we emit a one-shot
+# healer script alongside the wipe. The summary tells the operator
+# to run it as `gt up && bash $TOWN_ROOT/.gt-post-reset-init.sh`.
+# The script uses INSERT IGNORE so it's safe to run repeatedly and
+# safe to run when the row already exists.
+
+HEALER="$TOWN_ROOT/.gt-post-reset-init.sh"
+log_info "Writing post-up HQ healer (${HEALER})..."
+cat > "$HEALER" <<'HEALER_EOF'
+#!/usr/bin/env bash
+#
+# Post-reset HQ healer (written by clean-gastown.sh / Fix #101).
+#
+# Run AFTER `gt up` has brought the Dolt server back online. Seeds the
+# `hq.config.issue_prefix` row so HQ-bound mail sends (mayor inbox,
+# planner inbox, etc.) no longer fail with "database not initialized".
+#
+# Safe to run multiple times: the INSERT IGNORE is a no-op if the row
+# is already present.
+set -euo pipefail
+
+DOLT_HOST="${DOLT_HOST:-127.0.0.1}"
+DOLT_PORT="${DOLT_PORT:-3307}"
+HQ_PREFIX="${HQ_PREFIX:-hq}"
+
+if ! command -v dolt >/dev/null 2>&1; then
+    echo "[FATAL] dolt CLI not found in PATH" >&2
+    exit 1
+fi
+
+if ! DOLT_CLI_PASSWORD="" dolt --host "$DOLT_HOST" --port "$DOLT_PORT" \
+        --user root --no-tls sql -q "SELECT 1;" >/dev/null 2>&1; then
+    echo "[FATAL] Dolt server not reachable on ${DOLT_HOST}:${DOLT_PORT}." >&2
+    echo "         Run 'gt up' (or 'gt dolt start') first, then re-run me." >&2
+    exit 1
+fi
+
+DOLT_CLI_PASSWORD="" dolt --host "$DOLT_HOST" --port "$DOLT_PORT" \
+    --user root --no-tls sql -q "
+USE hq;
+INSERT IGNORE INTO config (\`key\`, value) VALUES ('issue_prefix', '${HQ_PREFIX}');
+SELECT 'issue_prefix' AS \`key\`, value FROM config WHERE \`key\`='issue_prefix';
+" 2>&1
+
+echo "✓ HQ issue_prefix seeded (${HQ_PREFIX}) — gt mail send mayor/ should now work."
+HEALER_EOF
+
+chmod +x "$HEALER"
+log_ok "Wrote post-up healer: ${HEALER}"
+
 # ─── Summary ─────────────────────────────────────────────────────────
 
 echo ""
@@ -1127,8 +1239,15 @@ log_warn "IMPORTANT: Services were stopped during cleanup."
 echo "  Run the following commands to restart Gas Town:"
 echo ""
 echo "    cd ${TOWN_ROOT}"
-echo "    ${YELLOW}gt up${NC}                    # Start NATS, Dolt, daemon, and all agents"
-echo "    ${YELLOW}gt doctor${NC}                # Verify everything is healthy"
+echo "    ${YELLOW}gt up${NC}                                          # Start NATS, Dolt, daemon, agents"
+echo "    ${YELLOW}bash ${TOWN_ROOT}/.gt-post-reset-init.sh${NC}"
+echo "                                                # ↑ Seed HQ issue_prefix (Fix #101)"
+echo "                                                #   Required: without it, the first"
+echo "                                                #   'gt mail send mayor/' will fail."
+echo "    ${YELLOW}gt doctor${NC}                                      # Verify everything is healthy"
+echo ""
+echo "  One-liner:"
+echo "    ${YELLOW}cd ${TOWN_ROOT} && gt up && bash ./.gt-post-reset-init.sh${NC}"
 echo ""
 echo "  Note: If agents were repeatedly crashing before cleanup, the daemon"
 echo "  may have them in exponential backoff. 'gt up' will restart them cleanly."
