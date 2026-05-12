@@ -60,6 +60,29 @@ stage completions in past runs. Follow them mechanically.
    stale. Run `gt mail delete <mail-id>` and continue to the next unread.
    Do NOT route the stale signal.
 
+6. **DO NOT FAN OUT NOISE (Fix #114).** When you read a `BLOCKED:`,
+   `IDLE`, or `REPORT: idle` mail from another agent, DELETE it and
+   stop. Do NOT respond by mailing the sender back ("Investigate
+   BLOCKED ...", "RE: IDLE acknowledged ...", "Check canonical
+   locations ..."), do NOT forward the question to a third agent
+   ("please create architecture", "please check this"), and do NOT
+   `gt sling` anything. The other agent already gave you all the
+   information it has — re-engaging it just produces another BLOCKED
+   reply and a feedback loop. Specifically forbidden examples:
+     * `gt mail send planner/ -s "Investigate BLOCKED: ..." -m "Check ..."`
+     * `gt mail send <rig>/architect -s "Create architecture" -m "Please ..."`
+     * `gt mail send <sender>/ -s "RE: IDLE" -m "Acknowledged ..."`
+   The architect has already been slung the design step at Stage 0
+   via the canonical `shiny` sling — if it is failing, mailing it
+   `"Create architecture"` does NOT help; it just adds noise.
+
+7. **DO NOT FAKE-SLING TO THE PLANNER (Fix #114).** The planner is
+   town-level and is woken ONLY by `gt sling mol-idea-to-plan --on
+   <project-bead> planner` after a real `Architecture Ready` mail.
+   Do NOT `gt mail send planner/ ...` to "ask" the planner to do
+   something — the planner template explicitly ignores unsolicited
+   mail and will either go idle or hallucinate fake plan items.
+
 ## THE ROUTING TABLE (read this BEFORE every action)
 
 Look at the **mail subject** (or, if working from a hooked bead, look at the
@@ -73,7 +96,8 @@ bead's title and labels). Find the matching row. Run the listed command. STOP.
 | `Plan Complete` / `Plan Ready` mail FROM `planner/` | 3. Implement (per child task) | for each task bead: `gt sling mol-polecat-work --on <task-bead> <rig>/polecats --create` |
 | `POLECAT_DONE` / `Polecat Done` mail FROM a polecat | 4. Review | `gt sling code-review --on <bead> <rig>/qa` |
 | `QA Complete` mail FROM `<rig>/qa` | done | close convoy / move on |
-| `BLOCKED:` mail | unblock or escalate | investigate, do NOT re-sling the same stage |
+| `BLOCKED:` mail | DELETE the mail and stop | `gt mail delete <id>` — do NOT re-mail the sender, do NOT mail anyone else (Fix #114) |
+| `IDLE:` / `REPORT: idle` mail | DELETE the mail and stop | `gt mail delete <id>` — these are status reports, NOT work signals |
 | Nothing in inbox, hook empty | idle | output `DONE: idle` and stop |
 
 ### Stage 0 — Kickoff: Mayor creates the project bead from a free-form request (Fix #106)
@@ -180,8 +204,8 @@ not "go do architecture".
 - The target is a routing path — it MUST start with a rig name. NEVER write
   bare `/architect`, `/polecats`, `/qa` (a leading slash is an error).
 - Substitute the actual rig name from `cat {{ .TownRoot }}/rigs.json` (NOT a
-  literal `{{ .RigName }}`, NOT `<rig>`). For this town the rig is almost
-  always `testgt2`.
+  literal `{{ .RigName }}`, NOT `<rig>`). Use the rig name from the kickoff
+  mail's `Rig:` line — never a hardcoded name from memory or examples.
 - `planner` is town-level and has NO rig prefix.
 
 ### --on MUST be the PROJECT bead, never the handoff mail's wisp

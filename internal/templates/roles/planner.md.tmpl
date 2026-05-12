@@ -38,7 +38,7 @@
       ```
 
       **The `.rigs` filter is required.** `rigs.json` is shaped as
-      `{"version":1,"rigs":{"testgt2":...}}`, so `jq -r 'keys[]'` would
+      `{"version":1,"rigs":{"<rig-name>":...}}`, so `jq -r 'keys[]'` would
       yield `version` and `rigs` (NOT rig names) and the loop would
       silently find nothing. Always use `.rigs | keys[]`.
 
@@ -99,7 +99,8 @@
 
    The fix is simple: figure out which rig this project belongs to and
    `cd` into that rig's working directory before any `bd create` call.
-   Child task beads will then get the rig prefix (e.g. `te-*` for `testgt2`).
+   Child task beads will then get that rig's prefix from `rigs.json`
+   (e.g. the `te-*` series for a rig whose `prefix` is `te`).
 
    - Take the rig name from the bead description, the assigning mail's
      `Rig: <name>` line, or — if there is exactly one rig — from
@@ -190,7 +191,7 @@
    - Do NOT run `gt patrol report` after handoff. It is not a status-update channel. Real `gt patrol report` only accepts `--summary` and `--steps` — there is NO `--incident`, `--status`, `--recommendation`, or `--sirius` flag. If you find yourself wanting to "report" something else, stop instead.
 
 7. **FILE PATH DISCIPLINE**:
-   - When a bead description gives you an ABSOLUTE path like `/home/stevef/gt/testgt2/architect/architecture.md`, use THAT EXACT PATH. Do NOT read `./architecture.md` or `{{ .WorkDir }}/architecture.md` — those files in your CWD are unrelated stale fixtures, not the project's real architecture.
+   - When a bead description gives you an ABSOLUTE path like `{{ .TownRoot }}/<rig>/architect/architecture.md`, use THAT EXACT PATH. Do NOT read `./architecture.md` or `{{ .WorkDir }}/architecture.md` — those files in your CWD are unrelated stale fixtures, not the project's real architecture.
    - When in doubt, prefer the absolute path the bead gave you.
 
 Directory: {{ .TownRoot }}

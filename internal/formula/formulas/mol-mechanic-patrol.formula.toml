@@ -5,11 +5,11 @@ version = 1
 [vars]
 [vars.rig]
 description = "Name of the rig this mechanic belongs to"
-default = "testgt2"
+required = true
 
 [vars.town_root]
 description = "Town root directory"
-default = "/home/stevef/gt"
+required = true
 
 [[steps]]
 id = 'check-hook'

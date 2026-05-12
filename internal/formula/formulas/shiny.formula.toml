@@ -5,10 +5,7 @@ version = 1
 
 [[steps]]
 acceptance = "Design doc committed covering approach, trade-offs, and files to change"
-description = """Create architecture.md in /home/stevef/gt/testgt2/architect/ with the design for Hello API.
-
-Write the file using printf - each line is a separate argument:
-printf '# Architecture: Hello API\\n\\n## API\\n- GET / returns JSON message\\n\\n## Data Model\\n- No database needed\\n\\n## Components\\n- FastAPI app (main.py)\\n- requirements.txt\\n' > /home/stevef/gt/testgt2/architect/architecture.md"""
+description = """Read the project SPEC (the assigning mail's `Spec:` line gives the path) and write an architecture.md that follows your architect role template. Do NOT invent a different project from this step's text — the SPEC is authoritative. Follow the steps in your architect.md.tmpl exactly: read SPEC, write architecture.md (>= 200 bytes, no `<INSERT-...>` placeholders), mirror it, mail mayor `Architecture Ready` with the `Project bead:` line, then unhook."""
 id = "design"
 title = "Design {{feature}}"
 

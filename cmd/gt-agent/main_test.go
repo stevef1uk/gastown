@@ -1674,6 +1674,84 @@ func TestHasContentFreeMailSend(t *testing.T) {
 			cmd:        `gt mail send testgt2/witness -s "RE: mol-refinery-patrol" --stdin <<EOF`,
 			wantReject: false,
 		},
+		// Fix #114: Mayor must not fan out BLOCKED notifications. When
+		// it gets `BLOCKED: missing architecture file` from planner,
+		// the template tells it to delete the mail and stop. The LLM
+		// sometimes routes around this by mailing the sender back with
+		// a reworded subject ("Investigate BLOCKED ...", "Check
+		// canonical locations ..."). This regex enforces the rule
+		// at the runtime boundary so a misbehaving LLM cannot bypass
+		// the template by rephrasing.
+		{
+			name:       "Mayor investigate-BLOCKED forward",
+			cmd:        `gt mail send planner/ -s "Investigate BLOCKED: missing architecture file" -m "Check canonical locations for architecture file and verify mol-planner-patrol for details."`,
+			wantReject: true,
+		},
+		{
+			name:       "Mayor check-locations forward",
+			cmd:        `gt mail send planner/ -s "Check canonical locations" -m "Please look at the rig directories."`,
+			wantReject: true,
+		},
+		{
+			name:       "Mayor please-investigate forward",
+			cmd:        `gt mail send testgt2/architect -s "Please investigate the BLOCKED state" -m "Could you check why the design isn't progressing?"`,
+			wantReject: true,
+		},
+		// Fix #114: Mayor must not mail "Create architecture" — the
+		// architect was already slung at Stage 0 with `gt sling shiny
+		// --on $BEAD <rig>/architect`. Re-mailing "please create
+		// architecture" doesn't help; it just adds inbox noise the
+		// architect template explicitly ignores.
+		{
+			name:       "Mayor create-architecture forward",
+			cmd:        `gt mail send testgt2/architect -s "Create architecture" -m "Please create the architecture file in /home/stevef/gt/testgt2/architect/architecture.md"`,
+			wantReject: true,
+		},
+		{
+			name:       "Mayor write-architecture forward",
+			cmd:        `gt mail send testgt2/architect -s "Write architecture.md" -m "Need the architecture doc"`,
+			wantReject: true,
+		},
+		{
+			name:       "Mayor generate-architecture forward",
+			cmd:        `gt mail send testgt2/architect -s "Generate the architecture document" -m "Now please."`,
+			wantReject: true,
+		},
+		// Fix #114: RE: IDLE acknowledgement noise. Mayor sometimes
+		// hallucinates a chain of `RE: IDLE` mails to planner after
+		// every IDLE notification.
+		{
+			name:       "RE: IDLE ack with prose body",
+			cmd:        `gt mail send planner/ -s "RE: IDLE" -m "Acknowledged, idle status confirmed."`,
+			wantReject: true,
+		},
+		{
+			name:       "RE: REPORT idle ack",
+			cmd:        `gt mail send planner/ -s "RE: REPORT: idle" -m "Got it."`,
+			wantReject: true,
+		},
+		// ALLOWED — real, actionable mails that must NOT trip the
+		// Fix #114 guards.
+		{
+			name:       "real Architecture Ready handoff",
+			cmd:        `gt mail send mayor/ -s "Architecture Ready" -m "Project bead: hq-9jo\nDesign complete. architecture.md at /home/stevef/gt/testgt2/architect/architecture.md (also mirrored at /home/stevef/gt/testgt2/architecture.md). Ready for implementation."`,
+			wantReject: false,
+		},
+		{
+			name:       "real Plan Complete handoff",
+			cmd:        `gt mail send mayor/ -s "Plan Complete" -m "Project bead: hq-9jo\nChild task beads: te-1 te-2 te-3"`,
+			wantReject: false,
+		},
+		{
+			name:       "real Stage 0 complete self-mail",
+			cmd:        `gt mail send --self -s "Stage 0 complete: hq-9jo" -m "Kicked off project bead hq-9jo for rig testgt2 from mail hq-wisp-k4z. Standby for Architecture Ready."`,
+			wantReject: false,
+		},
+		{
+			name:       "real BLOCKED report from planner",
+			cmd:        `gt mail send mayor/ -s "BLOCKED: architecture missing" -m "Searched /home/stevef/gt/testgt2/architect/architecture.md, all missing or stub. Cannot plan without real architecture."`,
+			wantReject: false,
+		},
 		// NOT A MAIL SEND — must pass through.
 		{
 			name:       "mail inbox is not send",

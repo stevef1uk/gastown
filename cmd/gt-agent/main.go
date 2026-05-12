@@ -1800,6 +1800,49 @@ var mailSendPatrolStatusRE = regexp.MustCompile(
 var mailSendMergeSignalRE = regexp.MustCompile(
 	`^(?i)(re:\s*)?merged?(_(ready|failed|skipped|stale|conflict|complete|done|noop))?\b`)
 
+// mailSendInvestigateForwardRE matches the Mayor's hallucinated
+// "investigate this BLOCKED" / "check the canonical locations" /
+// "please create architecture" forwards that turn a real BLOCKED
+// signal into a chain of useless mails between agents. Fix #114.
+//
+// Observed in the hq-mayor log on 2026-05-12 immediately after a
+// `BLOCKED: missing architecture file` mail from planner: Mayor
+// emitted
+//   gt mail send planner/ -s "Investigate BLOCKED: missing architecture file" \
+//       -m "Check canonical locations for architecture file and verify mol-planner-patrol for details."
+// then later
+//   gt mail send testgt2/architect -s "Create architecture" \
+//       -m "Please create the architecture file in /home/stevef/gt/..."
+// Both produce nothing but more BLOCKED replies. The mayor template
+// (Critical Rule #6, Fix #114) forbids them — this regex enforces it
+// at the gt-agent boundary so a misbehaving LLM cannot bypass the
+// rule by phrasing things slightly differently.
+var mailSendInvestigateForwardRE = regexp.MustCompile(
+	`^(?i)(re:\s*)?(investigate|check|verify|review|look\s+into|please\s+(create|investigate|check|fix|resolve))\b`)
+
+// mailSendCreateArchitectureRE matches a Mayor mail that asks an
+// architect (or anyone) to "create architecture" / "create the
+// architecture file" / "write architecture.md". The architect's
+// design step is already started via `gt sling shiny` at Stage 0;
+// mailing the same agent to "create architecture" is the Mayor's
+// way of trying to recover when it (wrongly) thinks the sling
+// didn't work. The right response is to investigate why the
+// architect went idle, not to re-mail the request — re-mailing
+// just delivers redundant work that the role template rejects.
+// Fix #114.
+var mailSendCreateArchitectureRE = regexp.MustCompile(
+	`^(?i)(re:\s*)?(please\s+)?(create|write|generate|produce|make)\s+(an?\s+|the\s+)?architecture(\.md|\s+file|\s+document)?\s*$`)
+
+// mailSendREStatusRE matches replies to IDLE / REPORT: idle status
+// pings. The Mayor (and other coordinators) sometimes hallucinate a
+// chain of `gt mail send <sender>/ -s "RE: IDLE" -m "Acknowledged"`
+// after every IDLE notification, even though Fix #90's echo-body
+// rule catches some variants. This regex catches the residual:
+// any `RE: IDLE` / `RE: REPORT: idle` / `RE: IDLE: no work` etc.
+// with a body shorter than 80 chars is an echo. Fix #114.
+var mailSendREIdleRE = regexp.MustCompile(
+	`^(?i)re:\s*(idle|report:\s*idle|idle:\s*no\s+work)\b`)
+
 // mailSendEchoBodyRE matches bodies that just echo the subject, e.g.
 //
 //	"Reply to witness regarding mol-refinery-patrol"
@@ -1908,6 +1951,27 @@ func hasContentFreeMailSend(cmd string) (string, bool) {
 	// See Fix #113.
 	if bodyTrim == "" && mailSendMergeSignalRE.MatchString(subj) {
 		return "MERGE_* coordination mail with empty body (Fix #113)", true
+	}
+	// Mayor's BLOCKED-fan-out hallucinations (Fix #114). When a mayor
+	// receives a `BLOCKED: ...` mail from planner/architect/etc., its
+	// template tells it to DELETE and stop. The LLM sometimes routes
+	// around the rule by mailing the same sender back with a slightly
+	// reworded subject ("Investigate BLOCKED: ...", "Please create
+	// architecture", "Check canonical locations"). All of these are
+	// noise — the upstream agent has already told the mayor exactly
+	// what is wrong and re-mailing it just delivers another BLOCKED.
+	if mailSendInvestigateForwardRE.MatchString(subj) {
+		return "investigate/please-do forward of a BLOCKED signal (Fix #114)", true
+	}
+	if mailSendCreateArchitectureRE.MatchString(subj) {
+		return "Create-architecture mail duplicates the Stage 0 sling (Fix #114)", true
+	}
+	// RE: IDLE / RE: REPORT: idle ack — same shape as Fix #90's echo
+	// guard but specifically the IDLE status family that small LLMs
+	// have been known to reply to in a loop. Body is irrelevant; the
+	// only legitimate "RE: IDLE" reply is no reply at all.
+	if mailSendREIdleRE.MatchString(subj) {
+		return "RE: IDLE acknowledgement noise (Fix #114)", true
 	}
 	// Body just restates the subject (e.g. subject `NO_POLECATS_FOUND`,
 	// body `No polecats found`). This is the second-most-common
