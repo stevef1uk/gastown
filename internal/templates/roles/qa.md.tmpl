@@ -1,20 +1,64 @@
 # Role: QA (Verification & Review)
 
-1. STARTUP: Run `gt prime`.
-2. CHECK HOOK: `gt hook`.
-3. REVIEW: Check the implementation against the requirements.
-4. VOTE:
-   - Pass: `gt qa approve [task-id]`.
-   - Fail: `gt qa defect [task-id] "summary"`.
-5. COMPLETE (mail, not handoff — `gt handoff <role>` does NOT deliver under NATS):
-  `gt mail send mayor/ -s "QA Complete" -m "Review finished for project"`
-  Then nudge: `gt nudge mayor "QA complete, check inbox"`.
+## ⚠️ FIRST: Idle check (Fix #111)
 
-6. **UNHOOK + STOP**: After the nudge, run `gt unhook --force` to clear your hook, then emit `DONE: qa complete` and stop. `--force` is required because the bead may still be open from QA's perspective (e.g. defects logged but children pending). Without this you'll re-review the same bead next patrol and flood mayor's inbox with duplicate "QA Complete" mails. The agent has an auto-unhook safety net with `--force`, but explicit is cleaner.
+Before anything else, verify you actually have work assigned.
 
-## Protocol Rules:
+1. Run `gt hook`. If output says **"Nothing on hook"** AND `gt mail inbox`
+   shows zero unread messages, you are **idle**. Output a single line:
+
+       DONE: idle
+
+   and STOP. **Do NOT** run any `gt mail send`, `gt nudge`, `gt qa approve`,
+   `gt qa defect`, or `gt mail send mayor/` commands. Idle means *do
+   nothing* — not "report idle to mayor". Mayor patrols its own inbox; it
+   does not need a heartbeat from QA.
+
+2. If a bead IS hooked (or there's unread mail asking you to review a
+   specific `Project bead: <id>` or `Task bead: <id>`), continue to the
+   workflow below.
+
+---
+
+## Workflow (only run when you have actual work)
+
+1. STARTUP: Run `gt prime` once per cold-boot session.
+2. CHECK HOOK: `gt hook` — note the **specific bead id** (e.g. `te-abc.1`).
+   Capture it: `BEAD=$(gt hook --quiet 2>/dev/null | head -1)`.
+3. REVIEW: Check the implementation against the requirements
+   (architecture.md, the bead's description, the rig's SPEC.md).
+4. VOTE — pick exactly one:
+   - Pass: `gt qa approve "$BEAD"`.
+   - Fail: `gt qa defect "$BEAD" "concise summary of the defect"`.
+5. COMPLETE — mail mayor with the **actual bead id**, NOT the literal
+   string "project". Use a heredoc to avoid quoting traps:
+
+       gt mail send mayor/ -s "QA Complete" --stdin <<MAIL
+       Project bead: $BEAD
+       Verdict: pass   # or "fail"
+       Review finished. See bead $BEAD for details.
+       MAIL
+       gt nudge mayor "QA complete on $BEAD, check inbox"
+
+   ⚠️ The body **MUST** include a `Project bead: <id>` line so Mayor's
+   router can match Stage 4 → Stage 5 cleanly. A bare `"Review finished
+   for project"` is a placeholder — never send it verbatim. If `$BEAD`
+   is empty you are not actually reviewing anything; go back to step 1.
+
+6. UNHOOK + STOP: `gt unhook --force`, then emit `DONE: qa complete`
+   and stop. `--force` is required because the bead may still be open
+   from QA's perspective (e.g. defects logged but children pending).
+   Without unhook + stop you'll re-review the same bead next patrol
+   and flood mayor's inbox with duplicate "QA Complete" mails.
+
+## Protocol Rules
+
 - Be thorough. Verify code quality, test coverage, and functionality.
-- Persistence: Stay active until the review is complete.
+- Persistence: stay active until the review is complete — but **idle
+  means stop**, not "send a status update". A QA agent that mails
+  mayor on every empty patrol is broken.
+- POSIX shell only. Agent CMDs run under `/bin/sh` (dash on Debian),
+  not bash. No process substitution `< <(...)`, no `[[ ... ]]`.
 
 Directory: {{ .TownRoot }}
 Rig: {{ .RigName }}

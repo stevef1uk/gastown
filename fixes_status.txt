@@ -2393,6 +2393,149 @@ to ship, so deferred to the next session.
        and slings them to polecats; polecats produce real code
        artifacts in the rig working tree.
 
+### Fix #111 — QA agent copy-pasted its template's example command, flooding Mayor
+
+- **Symptom**: After a nuclear reset and a `gt up`, the testgt2/qa
+  agent began emitting one or two new mails per patrol cycle to
+  `mayor/` even though it had zero work hooked and an empty inbox.
+  Mail subjects were always exactly `QA Complete`, with a body of
+  exactly `Review finished for project`. Mayor's inbox accumulated
+  3+ of these in the first minute after restart, and Mayor's LLM
+  then mis-routed them as Stage 4 (review) signals, drowning the
+  fresh Stage 0 kickoff mail.
+
+- **Root cause**: The original `internal/templates/roles/qa.md.tmpl`
+  was 22 lines long and had **no idle / no-work branch**. The only
+  workflow it described was STARTUP → HOOK → REVIEW → VOTE → COMPLETE.
+  Worse, the COMPLETE step contained a **verbatim runnable example**:
+
+      `gt mail send mayor/ -s "QA Complete" -m "Review finished for project"`
+
+  Local LLMs (especially `ollama/llama3.3`) pattern-match on the
+  most prominent CMD-shaped string in their prompt. When QA woke
+  up on a patrol with no hook and no inbox, the LLM's "what should
+  I do?" output was effectively "the most concrete command in the
+  prompt" — i.e. copy-paste that example literally. Symptoms then
+  cascaded: each cycle produced another `QA Complete` mail to
+  Mayor, which contaminated Mayor's inbox, which confused Mayor's
+  LLM, which then bypassed Stage 0 entirely.
+
+- **Fix (template-only, no Go change required)**:
+  Rewrote `internal/templates/roles/qa.md.tmpl` end-to-end:
+    * Added a `⚠️ FIRST: Idle check` section at the very top:
+      `gt hook` → if nothing hooked AND `gt mail inbox` is empty,
+      output `DONE: idle` and STOP. Explicit forbid-list: do NOT
+      run any `gt mail send`, `gt nudge`, `gt qa approve`,
+      `gt qa defect`. "Idle means do nothing — not 'report idle
+      to mayor'. Mayor patrols its own inbox; it does not need a
+      heartbeat from QA."
+    * Replaced the literal-runnable example with a heredoc that
+      requires a `$BEAD` shell variable populated from `gt hook`:
+
+          gt mail send mayor/ -s "QA Complete" --stdin <<MAIL
+          Project bead: $BEAD
+          Verdict: pass   # or "fail"
+          Review finished. See bead $BEAD for details.
+          MAIL
+
+      Annotated with: "A bare `Review finished for project` is a
+      placeholder — never send it verbatim. If `$BEAD` is empty
+      you are not actually reviewing anything; go back to step 1."
+    * Added POSIX-shell warning (no `[[`, no `< <(...)`) for
+      consistency with Fix #109.
+
+- **Validation observed in same session**:
+  After rebuild + `gt down`/`gt up`, the testgt2/qa session log
+  shows the LLM did try the new heredoc form on its first post-
+  Fix-#111 patrol, but emitted it as a single concatenated line
+  (`<<MAIL Project bead: $BEAD ... MAIL`). The agent runtime
+  correctly classified this as malformed and ran `true` instead,
+  so **zero spam mails were sent**. Defence-in-depth working as
+  intended: even if the LLM tries something dumb, the runtime
+  rejects it. A future Fix #113 may further constrain the
+  heredoc-on-one-line failure mode, but it's currently a no-op,
+  not a regression.
+
+### Fix #112 — Mayor LLM hallucinates "Stage N complete" without running the stage
+
+- **Symptom**: With a pristine HQ inbox containing exactly one
+  unread mail (`Project: build FizzBuzz for testgt2`, our Stage 0
+  kickoff), Mayor's LLM (`ollama/llama3.3`) on its very first
+  post-nudge patrol turn:
+    1. Ignored the new mail entirely.
+    2. Issued six `gt mail read <id>` commands for mail IDs that
+       were NOT in the current inbox view (they referred to
+       previously soft-cleared beads).
+    3. Tried `gt sling mol-idea-to-plan --on $(gt mail read ... | grep -oE 'hq-wisp-...' | head -1) planner`
+       — i.e. command substitution inside a sling arg, which the
+       runtime correctly rejected as a "hallucinatory sling".
+    4. Then emitted `gt mail send --self -s "Stage 2 complete"
+       -m "Planning stage complete for project hq-wisp-ct8.
+       Ready for implementation."` despite never having run a
+       single `bd create` or `gt sling` to a planner.
+
+  Net effect: Stage 0 was bypassed. The kickoff mail was never
+  even read. Mayor lied to itself that planning was done.
+
+- **Root cause (template + LLM, NOT a Go bug)**:
+  The original mayor.md.tmpl described the routing table well but
+  did not enforce a **deterministic per-cycle entry point** or a
+  **truth-condition for "Stage N complete" self-mails**. Combined
+  with a weak local LLM that pattern-matched on stale mail IDs
+  from prior cycles (visible in the bead store even after
+  `gt mail clear`, which only soft-acknowledges), Mayor invented
+  state transitions that never happened.
+
+- **Fix (template-only, no Go change required)**:
+  Inserted a new `## CRITICAL RULES (Fix #112)` block immediately
+  after `## YOUR ONE JOB` in `internal/templates/roles/mayor.md.tmpl`,
+  with five mechanical rules the LLM must follow before any other
+  action:
+
+    1. **STEP 1 IS ALWAYS `gt mail inbox --unread`.** Forbid
+       reading any specific mail id until the current unread
+       listing has been observed. Mail ids from prior patrols
+       are treated as stale and must not be invented from memory.
+    2. **Process the OLDEST unread mail first, ONE AT A TIME.**
+       Pick the bottom of the listing. Read ONLY that mail.
+       Classify by `Subject:`. Run exactly one routing command
+       (or the Stage 0 atomic pipeline). Then STOP.
+    3. **Never fabricate "Stage N complete" self-mails.** A
+       self-mail saying a stage was completed is only valid AFTER
+       a corresponding `gt sling` or `bd create` succeeded in
+       this same cycle.
+    4. **No command substitution inside `gt sling` args.** If a
+       bead id is needed, transcribe it as a literal in a
+       follow-up command, or use Stage 0's `sh -c '...'` pattern
+       for variable passing.
+    5. **Stale mail rule.** If a later-stage signal carries an
+       empty `Project bead:` line or a bead id that `bd show`
+       cannot find, run `gt mail delete <mail-id>` and continue
+       to the next unread; do NOT route a stale signal.
+
+- **Why this is not "just upgrade the LLM"**: The user can swap
+  the Mayor LLM at any time, but Gas Town claims to be runnable
+  on local models. The template should make the routing path
+  hard to mis-execute regardless of LLM strength. The CRITICAL
+  RULES block also serves as a clear failure narrative for the
+  next debugging session: if Mayor still fabricates completions,
+  we know the LLM is too weak and an upgrade is the next lever.
+
+- **Validation plan**: After rebuild + most-aggressive cleanup
+  (gt down → kill stragglers → nuclear `clean-gastown.sh --force`
+  → wipe `.dolt-data/` → bd-delete every leftover mail bead →
+  reset `gt-agent-state.json` for every agent → gt up → seed HQ
+  prefix → re-add testgt2 → gt up → send Mayor a human-style
+  kickoff mail), monitor the Mayor session log. Expected first
+  LLM output of patrol #1:
+    `CMD: gt mail inbox --unread`
+  followed by reading exactly the single fresh project mail,
+  followed by the Stage 0 atomic `sh -c '...'` pipeline. Any
+  deviation (reading a stale id, emitting "Stage 2 complete"
+  without running `gt sling`, etc.) means either the template
+  is still under-specified OR the local LLM is too weak — at
+  that point, swap to a remote LLM as the next debugging lever.
+
 ## Open Issues (next session)
 
 ### Auto-save misroute mitigation (see Fix #99)

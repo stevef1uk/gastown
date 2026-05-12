@@ -345,6 +345,67 @@ func TestParseLLMResponse(t *testing.T) {
 			wantCmds: nil,
 		},
 		{
+			// Fix #113: the mayor's Stage 0 atomic pipeline is a
+			// multi-line `sh -c '...'` body with paragraph-style blank
+			// lines for readability. The parser USED to terminate the
+			// script on the first blank line, orphaning the opening
+			// `sh -c '` (no closing single-quote was ever appended).
+			// `/bin/sh -c "sh -c '"` then errored with "Unterminated
+			// quoted string" before any of the real script ran.
+			//
+			// The fix counts unbalanced single/double quotes in the
+			// accumulated body; while a quote is open, blank lines are
+			// treated as part of the quoted string instead of as
+			// script terminators.
+			name: "sh -c with blank lines inside single-quoted body is collected verbatim (Fix #113)",
+			input: "CMD: sh -c '\n" +
+				"set -u\n" +
+				"MAIL_ID=\"hq-wisp-7rn\"\n" +
+				"BODY=$(gt mail read \"$MAIL_ID\" 2>/dev/null)\n" +
+				"\n" +
+				"RIG=$(echo \"$BODY\" | head -1)\n" +
+				"\n" +
+				"echo \"STAGE0: bead for $RIG\"\n" +
+				"'\n" +
+				"DONE: Stage 0 dispatched",
+			wantCmds: []string{
+				"sh -c '\nset -u\nMAIL_ID=\"hq-wisp-7rn\"\nBODY=$(gt mail read \"$MAIL_ID\" 2>/dev/null)\n\nRIG=$(echo \"$BODY\" | head -1)\n\necho \"STAGE0: bead for $RIG\"\n'",
+			},
+			wantDone: "Stage 0 dispatched",
+		},
+		{
+			// Sibling case: a `# shell comment` line inside an open
+			// `sh -c '...'` body must NOT be treated as a markdown
+			// heading. Pre-fix, the parser saw `# foo` as `## ` /
+			// `# ` style markdown and killed the script body, again
+			// orphaning the opening `'`.
+			name: "shell-comment line inside sh -c single-quote body is collected (Fix #113)",
+			input: "CMD: sh -c '\n" +
+				"set -u\n" +
+				"# this is a shell comment, not a markdown heading\n" +
+				"echo hi\n" +
+				"'\n" +
+				"DONE: ran",
+			wantCmds: []string{
+				"sh -c '\nset -u\n# this is a shell comment, not a markdown heading\necho hi\n'",
+			},
+			wantDone: "ran",
+		},
+		{
+			// Sibling case: a prose-shaped sentence inside an open
+			// quote (e.g. a help-text string inside `gt mail send -m
+			// "..."`) must also survive. Pre-fix Fix #96 was killing
+			// it as "LLM narration".
+			name: "prose-shaped line inside sh -c double-quote -m body is collected (Fix #113)",
+			input: "CMD: sh -c 'gt mail send mayor/ -s \"hi\" -m \"Now that the previous step finished,\n" +
+				"we should proceed.\"'\n" +
+				"DONE: sent",
+			wantCmds: []string{
+				"sh -c 'gt mail send mayor/ -s \"hi\" -m \"Now that the previous step finished,\nwe should proceed.\"'",
+			},
+			wantDone: "sent",
+		},
+		{
 			name: "hallucinated Output: is rejected",
 			input: "CMD: gt hook\n" +
 				"Output: fake terminal output\n" +
@@ -1550,6 +1611,47 @@ func TestHasContentFreeMailSend(t *testing.T) {
 			cmd:        `gt mail send testgt2/witness -s "Patrol Complete" -m "no findings"`,
 			wantReject: true,
 		},
+		// REJECTED (Fix #113): MERGE_* coordination mail with empty
+		// body. Witness/refinery hallucinate these every patrol cycle,
+		// naming patrol-wisp IDs as if they were polecat branches:
+		//   gt mail send testgt2/refinery -s "MERGE_READY hq-wisp-n460"
+		// with no -m / no --stdin. Real merge mails MUST carry branch
+		// info / failure reason / merge timestamp in the body.
+		{
+			name:       "MERGE_READY no body",
+			cmd:        `gt mail send testgt2/refinery -s "MERGE_READY hq-wisp-n460"`,
+			wantReject: true,
+		},
+		{
+			name:       "MERGE_FAILED no body",
+			cmd:        `gt mail send testgt2/witness -s "MERGE_FAILED hq-wisp-skko"`,
+			wantReject: true,
+		},
+		{
+			name:       "MERGE_READY empty -m body",
+			cmd:        `gt mail send testgt2/refinery -s "MERGE_READY hq-wisp-z5vv" -m ""`,
+			wantReject: true,
+		},
+		{
+			name:       "RE: MERGE_READY no body",
+			cmd:        `gt mail send testgt2/witness -s "RE: MERGE_READY hq-wisp-4qyvr"`,
+			wantReject: true,
+		},
+		{
+			name:       "MERGE_SKIPPED no body",
+			cmd:        `gt mail send testgt2/witness -s "MERGE_SKIPPED te-poly-rust"`,
+			wantReject: true,
+		},
+		{
+			name:       "MERGE_COMPLETE no body",
+			cmd:        `gt mail send testgt2/witness -s "MERGE_COMPLETE hq-wisp-abc"`,
+			wantReject: true,
+		},
+		{
+			name:       "MERGED no body",
+			cmd:        `gt mail send testgt2/witness -s "MERGED rust"`,
+			wantReject: true,
+		},
 		// ALLOWED: legitimate operational mails per mol-refinery-patrol formula.
 		{
 			name:       "MERGE_FAILED with real content",
@@ -1618,6 +1720,68 @@ func TestNormalizeRejectsContentFreeMailSend(t *testing.T) {
 	got, _ = normalizeGeneratedCommand(realCmd)
 	if got != realCmd {
 		t.Errorf("expected real MERGED mail to pass through unchanged, got %q", got)
+	}
+}
+
+// Fix #113: gt-agent used to unconditionally unescape `\"` -> `"` on
+// every captured command. That destroyed nested escapes inside
+// `sh -c '... python3 -c "...\"id\"..." ...'` because sh's own
+// double-quote parser needs the `\"` to survive into /bin/sh. After
+// the strip, sh sees an unbalanced `"` and python got a code string
+// with the quotes already gone, producing `SyntaxError: invalid
+// syntax` and a BLOCKED: bd create failed mail every Stage 0.
+//
+// `isMultilineQuotedScript` is the predicate the runner now checks
+// before applying the blanket unescape. Multi-line `sh -c '...'` /
+// `bash -c "..."` invocations are exempt — sh handles its own escape
+// processing for them.
+func TestIsMultilineQuotedScript(t *testing.T) {
+	tests := []struct {
+		name string
+		cmd  string
+		want bool
+	}{
+		{"single-line sh -c", `sh -c 'echo hi'`, false},
+		{"single-line plain", `gt mail inbox`, false},
+		{"single-line bash -c", `bash -c "echo hi"`, false},
+		{
+			"multi-line sh -c with single-quote body",
+			"sh -c '\nset -u\necho hi\n'",
+			true,
+		},
+		{
+			"multi-line bash -c with double-quote body",
+			"bash -c \"\necho one\necho two\n\"",
+			true,
+		},
+		{
+			"multi-line bash -c with single-quote body",
+			"bash -c '\necho one\n'",
+			true,
+		},
+		{
+			"multi-line /bin/sh -c",
+			"/bin/sh -c '\nset -u\necho hi\n'",
+			true,
+		},
+		{
+			"multi-line gt invocation (not sh -c)",
+			"gt mail send mayor/ -m \"line one\nline two\"",
+			false,
+		},
+		{
+			"multi-line shell heredoc (not sh -c wrapper)",
+			"cat <<EOF\nhello\nEOF",
+			false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := isMultilineQuotedScript(tt.cmd)
+			if got != tt.want {
+				t.Errorf("isMultilineQuotedScript(%q) = %v, want %v", tt.cmd, got, tt.want)
+			}
+		})
 	}
 }
 

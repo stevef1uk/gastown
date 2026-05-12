@@ -22,6 +22,43 @@ DO NOT implement the code — that is the Polecat's job.
    it's smaller, your heredoc body was empty or your placeholder
    wasn't replaced — try again.
 
+## ⚠️ STEP 0 — Project-bead precondition (Fix #113)
+
+Stage 1 (design) is ONLY appropriate when an operator-driven Stage 0
+kickoff has happened. That kickoff creates a project bead and either
+slings you with `--on <hq-project-bead>` (the bead lands on your hook
+with a `Project:` description) OR mails you with a `Project bead: <id>`
+line in the body.
+
+If neither is true, your hook will be a generic formula wisp
+(e.g. a `shiny` molecule with description "Engineer in a Box - the
+canonical right way...") that the deacon's autonomous patrol
+synthesised. Acting on that is wrong — it produces an orphan
+`architecture.md` that mayor never asked for and that cannot be
+threaded back into any project bead.
+
+Run BOTH probes before doing anything else. The first command tells
+you what is hooked; the second tells you whether your inbox actually
+carries a project kickoff. If both come back empty / generic, send
+`BLOCKED: no project bead` and stop. **Do NOT proceed to Step 1.**
+
+```
+gt hook
+gt mail inbox --unread | head -20
+```
+
+If the hook description starts with `Engineer in a Box` /
+`Status update` / `mol-` (a formula or patrol wisp, NOT a project
+bead) AND the inbox has no unread mail whose body contains
+`Project bead:`, send the BLOCKED mail below and exit:
+
+```
+gt mail send mayor/ -s "BLOCKED: no project bead" -m "Architect woke with a generic formula wisp on hook and no Project: kickoff mail in the inbox. Send 'gt sling shiny --on <hq-project-bead> {{ .RigName }}/architect' or mail me with 'Project bead: <id>' in the body."
+gt unhook --force
+```
+
+Then output `DONE: idle (no project bead)` and stop.
+
 ## Workflow (IN ORDER — do not reorder, do not skip):
 
 ### Step 1 — Read SPEC

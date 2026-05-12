@@ -555,15 +555,31 @@ func run() error {
 				break
 			}
 
-			// Execute ALL command blocks
-			var combinedOutput strings.Builder
-			for _, fullCmd := range cmdBlocks {
-				cmd := strings.TrimSpace(fullCmd)
+		// Execute ALL command blocks
+		var combinedOutput strings.Builder
+		for _, fullCmd := range cmdBlocks {
+			cmd := strings.TrimSpace(fullCmd)
+			// Some LLMs over-escape quotes in single-line commands
+			// (e.g. emit `gt mail send -s \"hi\"` when they really
+			// meant `gt mail send -s "hi"`). Unescape \' and \" so
+			// the shell sees the intended literal quote.
+			//
+			// EXCEPTION (Fix #113): multi-line scripts that wrap a
+			// `python3 -c "...\"x\"..."` or similar nested-quote
+			// invocation NEED the inner `\"` to survive into
+			// `/bin/sh -c` because sh's double-quote parser is what
+			// turns `\"` into `"`. Stripping `\"` here destroys the
+			// nesting and sh sees an unbalanced `"`. We detect that
+			// case by looking for a single-quoted multi-line block
+			// (`sh -c '` or `bash -c '` at the start, with an
+			// embedded newline) and skip the unescape for it.
+			if !isMultilineQuotedScript(cmd) {
 				cmd = strings.ReplaceAll(cmd, "\\'", "'")
 				cmd = strings.ReplaceAll(cmd, "\\\"", "\"")
-				if strings.HasPrefix(cmd, "`") && strings.HasSuffix(cmd, "`") && !strings.Contains(cmd, "\n") {
-					cmd = strings.Trim(cmd, "`")
-				}
+			}
+			if strings.HasPrefix(cmd, "`") && strings.HasSuffix(cmd, "`") && !strings.Contains(cmd, "\n") {
+				cmd = strings.Trim(cmd, "`")
+			}
 
 				safeCmd, rewritten := normalizeGeneratedCommand(cmd)
 				if rewritten {
@@ -956,15 +972,31 @@ func parseLLMResponse(response string) (cmds []string, doneSummary string, hallu
 
 		// We're after a CMD: line, accumulating the script body.
 		if trimmed == "" {
-			// Blank line terminates the script (we are not in a heredoc
-			// because the heredoc branch consumed all lines and returned
-			// up at the top of the loop).
+			// Blank line terminates the script — UNLESS we're inside an
+			// open single- or double-quoted string (typical for the
+			// Mayor's Stage 0 atomic `sh -c '...'` pipeline whose body
+			// contains paragraph-style blank lines for readability).
+			// Without this guard the parser orphans the opening `sh -c '`
+			// and `/bin/sh` errors out with "Unterminated quoted string"
+			// at the first blank line — observed in mayor patrol #3 with
+			// the Stage 0 atomic pipeline (Fix #113).
+			if hasOpenShellQuote(scriptBuf) {
+				scriptBuf = append(scriptBuf, line)
+				continue
+			}
 			flushScript()
 			inScript = false
 			continue
 		}
 
 		if isMarkdownStructure(trimmed) {
+			// Markdown also terminates — but only if quotes are balanced.
+			// Inside an open `sh -c '...'` body, a `# comment` line is
+			// just a shell comment, not a markdown heading.
+			if hasOpenShellQuote(scriptBuf) {
+				scriptBuf = append(scriptBuf, line)
+				continue
+			}
 			flushScript()
 			inScript = false
 			continue
@@ -984,6 +1016,13 @@ func parseLLMResponse(response string) (cmds []string, doneSummary string, hallu
 		// an unterminated quoted string and the architect looped
 		// forever on the same syntax error.
 		if looksLikeProseLine(trimmed) {
+			// Same exception as for blank/markdown lines: prose-shaped
+			// content inside an open shell quote is part of the quoted
+			// string, not LLM narration. Don't kill the script body.
+			if hasOpenShellQuote(scriptBuf) {
+				scriptBuf = append(scriptBuf, line)
+				continue
+			}
 			flushScript()
 			inScript = false
 			continue
@@ -1001,6 +1040,90 @@ func parseLLMResponse(response string) (cmds []string, doneSummary string, hallu
 	// Trailing script (no DONE: or blank line at end of input).
 	flushScript()
 	return cmds, doneSummary, false
+}
+
+// isMultilineQuotedScript reports whether cmd looks like a multi-line
+// shell wrapper such as `sh -c '...'` or `bash -c '...'` whose body
+// contains nested quoting that the gt-agent's blanket `\"` -> `"`
+// unescape would destroy. Used to skip the unescape for those cases.
+// Fix #113 (matches the Mayor's Stage 0 atomic pipeline).
+func isMultilineQuotedScript(cmd string) bool {
+	if !strings.Contains(cmd, "\n") {
+		return false
+	}
+	trim := strings.TrimSpace(cmd)
+	prefixes := []string{
+		"sh -c '",
+		"sh -c \"",
+		"bash -c '",
+		"bash -c \"",
+		"/bin/sh -c '",
+		"/bin/sh -c \"",
+		"/bin/bash -c '",
+		"/bin/bash -c \"",
+	}
+	for _, p := range prefixes {
+		if strings.HasPrefix(trim, p) {
+			return true
+		}
+	}
+	return false
+}
+
+// hasOpenShellQuote reports whether the accumulated script body has an
+// unbalanced (open) single- or double-quoted string. Used by
+// parseLLMResponse to decide whether a blank/markdown/prose-shaped line
+// inside a CMD: block is genuine script termination (closed quotes) or
+// just paragraph spacing inside a multi-line `sh -c '...'` body
+// (open quote — keep collecting). Fix #113.
+//
+// The scan is intentionally simple:
+//   - tracks two states: in-single-quote, in-double-quote
+//   - inside single quotes nothing escapes; we wait for the matching `'`
+//   - inside double quotes `\"` escapes the close; we honour it
+//   - outside any quote, `\` followed by `'` or `"` is also honoured so
+//     a literal backslash-quote in code doesn't open a fake string
+//
+// Heredoc bodies are handled by the dedicated heredocTerm state in
+// parseLLMResponse, so we don't have to teach this function about them.
+func hasOpenShellQuote(scriptBuf []string) bool {
+	if len(scriptBuf) == 0 {
+		return false
+	}
+	inSingle := false
+	inDouble := false
+	for _, line := range scriptBuf {
+		for i := 0; i < len(line); i++ {
+			c := line[i]
+			switch {
+			case inSingle:
+				if c == '\'' {
+					inSingle = false
+				}
+			case inDouble:
+				if c == '\\' && i+1 < len(line) {
+					i++
+					continue
+				}
+				if c == '"' {
+					inDouble = false
+				}
+			default:
+				if c == '\\' && i+1 < len(line) {
+					i++
+					continue
+				}
+				if c == '\'' {
+					inSingle = true
+				} else if c == '"' {
+					inDouble = true
+				}
+			}
+		}
+		// A newline does NOT close either kind of quote in POSIX shell,
+		// so we just keep scanning across lines.
+	}
+	return inSingle || inDouble
 }
 
 // isMarkdownStructure reports whether trimmed looks like the start of a
@@ -1661,6 +1784,22 @@ var mailSendWispIDRE = regexp.MustCompile(`\b(hq-wisp-[a-z0-9]+|hq-[a-z0-9]+\.\d
 var mailSendPatrolStatusRE = regexp.MustCompile(
 	`^(?i)(re:\s*)?patrol(\s+cycle)?(\s+#?\d+)?\s+(complete(d)?|initiated|started|finished|ended|done|nominal|ok)\s*$`)
 
+// mailSendMergeSignalRE matches subjects of the merge-coordination
+// protocol between witness and refinery: `MERGE_READY <id>`,
+// `MERGE_FAILED <id>`, `MERGE_SKIPPED <id>`, `MERGE_STALE <id>`,
+// `MERGE_CONFLICT <id>`, `MERGE_COMPLETE <id>`, plus `RE:`-prefixed
+// variants. A legitimate mail of this shape always carries a non-empty
+// body with branch info / failure reason / merge timestamp (see the
+// "MERGE_FAILED with real content" / "MERGED announcement" test cases
+// in TestHasContentFreeMailSend). Small LLMs hallucinate the subject
+// with NO body every patrol cycle, naming patrol-wisp IDs as if they
+// were polecat branches (e.g. `MERGE_READY hq-wisp-n460`). Without
+// content there is nothing for the recipient to act on.
+//
+// See Fix #113 (witness/refinery feedback-loop regression of Fix #90/#92).
+var mailSendMergeSignalRE = regexp.MustCompile(
+	`^(?i)(re:\s*)?merged?(_(ready|failed|skipped|stale|conflict|complete|done|noop))?\b`)
+
 // mailSendEchoBodyRE matches bodies that just echo the subject, e.g.
 //
 //	"Reply to witness regarding mol-refinery-patrol"
@@ -1758,6 +1897,17 @@ func hasContentFreeMailSend(cmd string) (string, bool) {
 	// nominal" / "no actionable items" / "sweep complete".
 	if mailSendPatrolStatusRE.MatchString(subj) {
 		return "patrol-cycle status ping (Fix #92)", true
+	}
+	// MERGE_* coordination subject with no body. The witness ↔
+	// refinery merge protocol REQUIRES the body to carry branch /
+	// failure / timestamp data — a bare `MERGE_READY hq-wisp-n460`
+	// with no -m flag is the hallucinated form that flooded HQ with
+	// 30+ junk beads per kickoff before this rule landed (observed
+	// in the testgt2 trial 2026-05-12). Real `MERGE_FAILED <id>`
+	// and `MERGED <id>` mails always carry a body, so they pass.
+	// See Fix #113.
+	if bodyTrim == "" && mailSendMergeSignalRE.MatchString(subj) {
+		return "MERGE_* coordination mail with empty body (Fix #113)", true
 	}
 	// Body just restates the subject (e.g. subject `NO_POLECATS_FOUND`,
 	// body `No polecats found`). This is the second-most-common
