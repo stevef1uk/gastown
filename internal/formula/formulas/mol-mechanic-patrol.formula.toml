@@ -1,4 +1,4 @@
-description = "Mechanic patrol loop for system repair.\n\nThe Mechanic monitors logs for stalled agents and applies fixes.\nDO NOT check mail inbox - it's not your job.\n\n## Your Pipeline\n1. Check hook: gt hook status\n2. If work on hook: EXECUTE it\n3. If no hook work: Run patrol loop\n4. Loop with 30s sleep between cycles\n\n## Error Patterns to Fix\n- exit status 1 → check what failed, fix it\n- No such file → create symlink: ln -sf <actual> <hallucinated>\n- prefix mismatch → run gt doctor --fix\n\n## After Fix\nNudge the affected agent: gt nudge <target> \"Fixed: <what you fixed>\"\n"
+description = "Mechanic patrol loop for system repair.\n\nThe Mechanic monitors logs, reaps stale processes, and applies fixes.\nDO NOT check mail inbox - it's not your job.\n\n## Your Pipeline\n1. Check hook: gt hook status\n2. If work on hook: EXECUTE it\n3. If no hook work: Run patrol loop\n4. Loop with 30s sleep between cycles\n\n## Patrol Steps\n1. Reap orphan dolt sql-server processes via `gt dolt zap-orphans`\n   (safe, deterministic — preserves canonical 3307 server)\n2. Tail recent session logs and look for errors\n3. Fix any errors found\n4. Sleep 30s\n\n## Error Patterns to Fix\n- exit status 1 → check what failed, fix it\n- No such file → create symlink: ln -sf <actual> <hallucinated>\n- prefix mismatch → run gt doctor --fix\n- gt status hangs / dolt unresponsive → run `gt dolt zap-orphans`\n\n## After Fix\nNudge the affected agent: gt nudge <target> \"Fixed: <what you fixed>\"\n"
 formula = 'mol-mechanic-patrol'
 version = 1
 
@@ -16,9 +16,14 @@ id = 'check-hook'
 title = 'Check for work on hook'
 
 [[steps]]
+id = 'zap-orphan-dolts'
+title = 'Reap stale dolt sql-server processes (gt dolt zap-orphans)'
+needs = ['check-hook']
+
+[[steps]]
 id = 'scan-logs'
 title = 'Scan session logs for errors'
-needs = ['check-hook']
+needs = ['zap-orphan-dolts']
 
 [[steps]]
 id = 'fix-issues'

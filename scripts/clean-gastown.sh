@@ -1,10 +1,23 @@
 #!/usr/bin/env bash
 #
-# clean-gastown.sh — Nuclear reset for Gas Town workspaces
+# clean-gastown.sh — Reset script for Gas Town workspaces
+#
+# Two modes:
+#   1. Full town reset (default): nukes EVERYTHING — all rigs, all Dolt
+#      databases (including hq), daemon, agent state. Town config is
+#      preserved. Use only when starting from scratch.
+#
+#   2. Single rig reset (--rig=NAME): surgically removes one rig while
+#      preserving the rest of the town (hq database, daemon, other rigs,
+#      mayor/planner/deacon state). This is the right tool for "the
+#      rig's agents got stuck in a weird state, give me a clean
+#      <rig> while keeping the rest of the town".
 #
 # Usage: ./clean-gastown.sh [options] [town-root]
 #
 # Options:
+#   --rig=NAME     Reset only the named rig (surgical mode).
+#                  Preserves hq database, daemon, other rigs.
 #   -f, --force    Skip confirmation prompts (DANGEROUS)
 #   -h, --help     Show this help message
 #
@@ -51,6 +64,7 @@ find_town_root() {
 
 FORCE=false
 TOWN_ROOT=""
+SINGLE_RIG=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -58,18 +72,32 @@ while [[ $# -gt 0 ]]; do
             FORCE=true
             shift
             ;;
+        --rig=*)
+            SINGLE_RIG="${1#--rig=}"
+            shift
+            ;;
+        --rig)
+            shift
+            SINGLE_RIG="${1:-}"
+            shift || true
+            ;;
         -h|--help)
             echo "Usage: $0 [options] [town-root]"
             echo ""
-            echo "Nuclear reset for Gas Town workspaces. Deletes all data, rigs, and state."
+            echo "Reset Gas Town workspaces. Two modes:"
+            echo "  - Full town reset (default): deletes everything."
+            echo "  - Single rig reset (--rig=NAME): preserves hq + other rigs."
             echo ""
             echo "Options:"
+            echo "  --rig=NAME     Reset only the named rig (surgical)."
             echo "  -f, --force    Skip confirmation prompts (DANGEROUS)"
             echo "  -h, --help     Show this help message"
             echo ""
             echo "Examples:"
-            echo "  $0 ~/gt              # Interactive reset with previews"
-            echo "  $0 --force ~/gt      # Non-interactive reset"
+            echo "  $0 ~/gt                          # Full nuclear reset (all rigs)"
+            echo "  $0 --force ~/gt                  # Same, non-interactive"
+            echo "  $0 --rig=testgt2 ~/gt            # Reset only the testgt2 rig"
+            echo "  $0 --rig=testgt2 --force ~/gt    # Same, non-interactive"
             exit 0
             ;;
         -*)
@@ -82,6 +110,14 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+# Validate --rig name early (must be non-empty, no path components)
+if [[ -n "$SINGLE_RIG" ]]; then
+    if [[ "$SINGLE_RIG" == *"/"* || "$SINGLE_RIG" == *".."* ]]; then
+        log_fatal "Invalid --rig value: $SINGLE_RIG (must be a plain name)"
+        exit 1
+    fi
+fi
 
 # ─── Main ────────────────────────────────────────────────────────────
 
@@ -97,6 +133,172 @@ fi
 
 TOWN_ROOT="$(cd "$TOWN_ROOT" && pwd)"
 TOWN_NAME="$(basename "$TOWN_ROOT")"
+
+# ─── Single-rig mode (surgical) ──────────────────────────────────────
+#
+# When --rig=NAME is set, branch off into a targeted cleanup that
+# touches only that one rig's directory, removes its registry entry,
+# and drops its Dolt database — leaving the hq database, daemon,
+# mayor/planner/deacon state, and any other rigs untouched.
+#
+# This branch terminates the script via `exit` so the full-town
+# reset code below never runs in single-rig mode.
+
+if [[ -n "$SINGLE_RIG" ]]; then
+    RIG_DIR="$TOWN_ROOT/$SINGLE_RIG"
+
+    echo ""
+    echo "╔══════════════════════════════════════════════════════════════╗"
+    echo "║        GAS TOWN SINGLE-RIG RESET (surgical)                  ║"
+    echo "╚══════════════════════════════════════════════════════════════╝"
+    echo ""
+    log_info "Target town: ${YELLOW}${TOWN_ROOT}${NC}"
+    log_info "Target rig:  ${YELLOW}${SINGLE_RIG}${NC}"
+    echo ""
+
+    # Verify the rig is registered or its directory exists.
+    RIG_REGISTERED=false
+    if [[ -f "$TOWN_ROOT/rigs.json" ]]; then
+        if python3 -c "import json,sys; d=json.load(open('$TOWN_ROOT/rigs.json')); sys.exit(0 if '$SINGLE_RIG' in d.get('rigs', {}) else 1)" 2>/dev/null; then
+            RIG_REGISTERED=true
+        fi
+    fi
+    if [[ "$RIG_REGISTERED" != true && ! -d "$RIG_DIR" ]]; then
+        log_fatal "Rig '$SINGLE_RIG' is not registered and has no directory at $RIG_DIR"
+        log_fatal "Run 'gt rig list' to see known rigs."
+        exit 1
+    fi
+
+    # Count what we're about to delete.
+    RIG_DOLT_DIR="$TOWN_ROOT/.dolt-data/$SINGLE_RIG"
+    HAS_DOLT_DB=false
+    [[ -d "$RIG_DOLT_DIR" ]] && HAS_DOLT_DB=true
+
+    # Detect a polecat count for the preview (best-effort).
+    POLECAT_COUNT=0
+    if [[ -d "$RIG_DIR/polecats" ]]; then
+        POLECAT_COUNT=$(find "$RIG_DIR/polecats" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l | tr -d ' ')
+    fi
+
+    echo "────────────────────────────────────────────────────────────────"
+    echo "  PREVIEW OF WHAT WILL BE DELETED (single-rig mode)"
+    echo "────────────────────────────────────────────────────────────────"
+    echo ""
+    echo "  Rig:                  ${SINGLE_RIG}"
+    echo "  Registered in rigs.json: ${RIG_REGISTERED}"
+    echo "  Directory:            ${RIG_DIR}"
+    [[ -d "$RIG_DIR" ]]      && echo "    → exists, will be rm -rf'd (worktrees, .repo.git, polecats, configs, .beads)"
+    [[ ! -d "$RIG_DIR" ]]    && echo "    → already missing, nothing to delete on disk"
+    echo "  Polecats on disk:     ${POLECAT_COUNT}"
+    echo "  Dolt DB:              ${RIG_DOLT_DIR}"
+    [[ "$HAS_DOLT_DB" == true ]]  && echo "    → exists, will be rm -rf'd (loses all beads, wisps, mail for this rig)"
+    [[ "$HAS_DOLT_DB" != true ]]  && echo "    → no separate database directory found (nothing to delete)"
+    echo ""
+    echo "  PRESERVED (other rig data, town config, hq database):"
+    echo "    • $TOWN_ROOT/config.json"
+    echo "    • $TOWN_ROOT/.dolt-data/hq           (town beads, mayor/planner mail)"
+    echo "    • $TOWN_ROOT/daemon/                  (daemon state)"
+    echo "    • $TOWN_ROOT/mayor/, planner/, deacon/, mechanic/  (HQ agents)"
+    echo "    • All other rig directories in $TOWN_ROOT/"
+    echo ""
+    echo "────────────────────────────────────────────────────────────────"
+    echo ""
+
+    if [[ "$FORCE" != true ]]; then
+        if ! confirm "⚠️  Reset the '${SINGLE_RIG}' rig (delete dir + drop its Dolt DB)?"; then
+            log_info "Aborted by user. Nothing was deleted."
+            exit 0
+        fi
+    fi
+
+    echo ""
+    log_info "Starting single-rig reset for '${SINGLE_RIG}'..."
+
+    # Step 1: ask gt to gracefully shutdown the rig's tmux/nats sessions
+    # if gt is installed. Non-fatal on failure.
+    if command -v gt >/dev/null 2>&1; then
+        log_info "Shutting down rig sessions via 'gt rig shutdown ${SINGLE_RIG}'..."
+        gt rig shutdown "$SINGLE_RIG" --force >/dev/null 2>&1 || \
+            log_warn "  'gt rig shutdown' failed or rig was already stopped (continuing)"
+    else
+        log_warn "  gt CLI not on PATH — skipping graceful shutdown"
+    fi
+
+    # Step 2: also kill any stragglers that may have a worktree open.
+    # We grep for the rig name in the process command line — narrow
+    # enough to avoid hitting other rigs' agents.
+    log_info "Killing any straggler processes referencing '${SINGLE_RIG}'..."
+    pkill -f "gt-agent.*${SINGLE_RIG}" 2>/dev/null || true
+    sleep 1
+    pkill -9 -f "gt-agent.*${SINGLE_RIG}" 2>/dev/null || true
+
+    # Step 3: unregister from rigs.json via gt rig remove (best-effort).
+    # We use --force so it kills any leftover tmux sessions tied to
+    # the rig.
+    if command -v gt >/dev/null 2>&1 && [[ "$RIG_REGISTERED" == true ]]; then
+        log_info "Unregistering rig from rigs.json..."
+        if gt rig remove "$SINGLE_RIG" --force >/dev/null 2>&1; then
+            log_ok "Unregistered '${SINGLE_RIG}' from $TOWN_ROOT/rigs.json"
+        else
+            log_warn "'gt rig remove' failed — falling back to manual rigs.json edit"
+            # Manual fallback: rewrite rigs.json without this rig.
+            if [[ -f "$TOWN_ROOT/rigs.json" ]]; then
+                python3 -c "
+import json
+p = '$TOWN_ROOT/rigs.json'
+d = json.load(open(p))
+if 'rigs' in d and '$SINGLE_RIG' in d['rigs']:
+    del d['rigs']['$SINGLE_RIG']
+json.dump(d, open(p, 'w'), indent=2)
+" 2>/dev/null && log_ok "Removed '${SINGLE_RIG}' from rigs.json (manual fallback)" || \
+                log_warn "Could not edit rigs.json — please remove the entry by hand"
+            fi
+        fi
+    fi
+
+    # Step 4: delete the rig directory.
+    if [[ -d "$RIG_DIR" ]]; then
+        log_info "Deleting $RIG_DIR..."
+        rm -rf "$RIG_DIR"
+        log_ok "Deleted rig directory"
+    fi
+
+    # Step 5: drop the rig's Dolt database (rig-specific subdir only —
+    # NEVER touch ../hq).
+    if [[ -d "$RIG_DOLT_DIR" ]]; then
+        log_info "Dropping Dolt database at $RIG_DOLT_DIR..."
+        # Safety: refuse if the path doesn't end in the rig name or if
+        # it resolves to hq/, the dolt-data root, or anywhere outside.
+        BASENAME="$(basename "$RIG_DOLT_DIR")"
+        if [[ "$BASENAME" != "$SINGLE_RIG" || "$BASENAME" == "hq" || "$BASENAME" == ".dolt-data" ]]; then
+            log_fatal "Refusing to delete $RIG_DOLT_DIR (basename safety check failed)"
+            exit 1
+        fi
+        rm -rf "$RIG_DOLT_DIR"
+        log_ok "Dropped Dolt DB for '${SINGLE_RIG}' (preserved hq + other rigs)"
+    fi
+
+    # Step 6: clean any stray nudge queues, runtime locks for this rig
+    # (best-effort, narrow patterns).
+    if [[ -d "$TOWN_ROOT/.runtime" ]]; then
+        find "$TOWN_ROOT/.runtime" -maxdepth 3 -name "*${SINGLE_RIG}*" -exec rm -rf {} + 2>/dev/null || true
+    fi
+
+    echo ""
+    echo "╔══════════════════════════════════════════════════════════════╗"
+    echo "║              SINGLE-RIG RESET COMPLETE                       ║"
+    echo "╚══════════════════════════════════════════════════════════════╝"
+    echo ""
+    log_ok "Rig '${SINGLE_RIG}' has been reset."
+    log_ok "Preserved: hq database, daemon, mayor/planner/deacon, other rigs."
+    echo ""
+    echo "  Next steps:"
+    echo "    1. ${YELLOW}gt rig add ${SINGLE_RIG} <git-url>${NC}    # Re-create the rig fresh"
+    echo "    2. ${YELLOW}gt up${NC}                                 # Bring services up"
+    echo "    3. ${YELLOW}gt status -v${NC}                          # Verify clean state"
+    echo ""
+    exit 0
+fi
 
 echo ""
 echo "╔══════════════════════════════════════════════════════════════╗"
