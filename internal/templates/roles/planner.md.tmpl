@@ -90,13 +90,44 @@
    - Read the spec AND the architecture.
    - Identify discrete components, data models, and API changes.
 
-4. **BREAK DOWN INTO LOW-LEVEL TASKS**:
+3a. **IDENTIFY THE TARGET RIG — `cd` THERE BEFORE `bd create`** (Fix #105):
+
+   You are town-level. If you run `bd create` from `{{ .WorkDir }}` (or any
+   other town-level cwd), bd walks up to `{{ .TownRoot }}/.beads/` and the
+   new child task gets the HQ prefix (`hq-*`). **Polecats are rig-level and
+   cannot claim `hq-*` tasks** — the polecat fan-out silently fails.
+
+   The fix is simple: figure out which rig this project belongs to and
+   `cd` into that rig's working directory before any `bd create` call.
+   Child task beads will then get the rig prefix (e.g. `te-*` for `testgt2`).
+
+   - Take the rig name from the bead description, the assigning mail's
+     `Rig: <name>` line, or — if there is exactly one rig — from
+     `jq -r '.rigs | keys[0]' {{ .TownRoot }}/rigs.json`.
+   - Set it once and reuse it:
+     ```
+     TARGET_RIG=$(...derive as above...)
+     RIG_DIR={{ .TownRoot }}/$TARGET_RIG
+     test -d "$RIG_DIR" || { echo "BLOCKED: rig $TARGET_RIG not found"; exit 0; }
+     ```
+   - From here on, run **every** `bd create` for child tasks as
+     `cd "$RIG_DIR" && bd create ...`. Keep `--parent <hq-project-bead>`
+     as-is — cross-scope parent links are fine; bd will route by prefix.
+   - The `bd create --repo <rig>` flag is **not** a working substitute
+     for `cd $RIG_DIR` — it currently still emits `hq-*` IDs in this build.
+
+   Quick sanity check before you continue: the first `bd create` you run
+   should print an ID starting with the rig prefix (e.g. `te-`), NOT
+   `hq-`. If it prints `hq-`, you skipped the `cd` and the children are
+   useless to polecats — stop and re-do them in `$RIG_DIR`.
+
+4. **BREAK DOWN INTO LOW-LEVEL TASKS** (all from inside `$RIG_DIR`):
    - Convert the SPEC into small, actionable `bd create` tasks.
    - **Granularity**: Tasks should be small enough for an 11B/70B model to implement in one go.
    - **Workflow Orchestration**:
      - Create **Setup** tasks (e.g., "Define data model", "Create directory structure").
      - Create **Implementation** tasks:
-       `bd create --title "Implement X" --parent <real-epic-id>`.
+       `cd "$RIG_DIR" && bd create --title "Implement X" --parent <real-epic-id>`.
      - Create **Verification** tasks (e.g., "Integration test for X", "Final E2E check").
 
 5. **WIRE DEPENDENCIES**:
@@ -104,8 +135,54 @@
    - Ensure a clear linear or parallel flow: Setup -> Implementation -> Verification.
 
 6. **HANDOFF + UNHOOK + STOP** (use `gt mail send` — `gt handoff <role>` does NOT deliver under NATS):
-   - `gt mail send mayor/ -s "Plan Complete" -m "Detailed TDD-based tasks created for project in rig {{ .RigName }}"`
-   - Then nudge: `gt nudge mayor "Plan complete, check inbox"`.
+
+   - **First, capture the project bead ID** (Fix #104). Mayor's Stage-3
+     routing needs to enumerate the child task beads you just created
+     via `bd list --parent <project-bead>`, so the handoff mail MUST
+     carry `Project bead: <id>` on its own line. Use the same two-tier
+     lookup the architect uses:
+
+         **POSIX shell only** (Fix #109) — the agent runs commands via
+         `/bin/sh`, so bash-only `done < <(...)` will fail with
+         `Syntax error: redirection unexpected`. Use `for ... in $(...)`:
+
+         ```
+         PROJECT_BEAD=$(gt hook 2>/dev/null | grep -oE 'hq-wisp-[a-z0-9]+|hq-[a-z0-9.]+' | head -1)
+         if [ -z "$PROJECT_BEAD" ]; then
+             for mid in $(gt mail inbox 2>/dev/null | grep -oE 'hq-wisp-[a-z0-9]+' | head -20); do
+                 [ -z "$mid" ] && continue
+                 b=$(gt mail read "$mid" 2>/dev/null \
+                     | grep -oE 'Project bead:[[:space:]]*[a-z0-9.-]+' \
+                     | head -1 | awk -F': *' '{print $2}')
+                 [ -n "$b" ] && { PROJECT_BEAD="$b"; break; }
+             done
+         fi
+         ```
+
+     If `PROJECT_BEAD` is still empty, mail mayor `BLOCKED: no project
+     bead` and stop. Do NOT mail "Plan Complete" with an empty
+     `Project bead:` line — that breaks the polecat fan-out.
+
+   - Build a one-line summary of the child task beads you created
+     (mayor uses it as a sanity check; the canonical lookup is
+     `bd list --parent $PROJECT_BEAD` **from inside `$RIG_DIR`**, since
+     the children live in the rig's database now — Fix #105):
+
+     ```
+     CHILD_BEADS=$(cd "$RIG_DIR" && bd list --parent "$PROJECT_BEAD" --format=id 2>/dev/null | head -20 | tr '\n' ' ')
+     ```
+
+   - Send the handoff mail:
+
+     ```
+     gt mail send mayor/ -s "Plan Complete" -m "Project bead: $PROJECT_BEAD
+     Rig: $TARGET_RIG
+     Detailed TDD-based tasks created in rig $TARGET_RIG (rig-scoped child beads — Fix #105).
+     Child task beads: $CHILD_BEADS
+     Enumerate with: cd $RIG_DIR && bd list --parent $PROJECT_BEAD"
+     gt nudge mayor "Plan complete, check inbox"
+     ```
+
    - **Then clear your hook so you don't re-plan the same bead next cycle:** `gt unhook --force`
    - `--force` is required because the project bead is still open (children need implementation/review). Without it, `gt unhook` rejects with "hooked work <bead> is incomplete" and you loop.
    - **AFTER THAT, YOU ARE DONE.** Output a single `DONE: handed off to mayor` line and stop. Do NOT keep emitting commands. The cycle is over.

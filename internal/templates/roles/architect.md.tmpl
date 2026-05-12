@@ -91,10 +91,55 @@ the `architect/` segment from the path they pass around.
 Before mailing mayor, capture the bead ID that was on your hook when you
 started this cycle — that is the project bead mayor needs for Stage 2.
 
+**Two-tier lookup (Fix #104).** Newer mayor/operator setups sling you
+with `--on <bead>` so the bead lands on your hook and the first command
+below finds it. But the kickoff sometimes arrives as a mail instead
+(`gt mail send <rig>/architect -s "Project: ..." -m "Project bead:
+<id>\n..."`). In that case your hook is empty and you must grep the
+unread inbox for the assigning mail. Run BOTH lookups; first hit wins:
+
+**IMPORTANT — POSIX shell only**: the agent executes each `CMD:` line via
+`/bin/sh`, not `bash`. Do NOT use bash-only constructs like process
+substitution (`done < <(...)`) or `[[ ]]` — they fail with
+`/bin/sh: Syntax error: redirection unexpected`. The snippet below uses
+`for ... in $(...)` which is POSIX-portable. (Fix #109)
+
 ```
-gt hook | grep -oE 'hq-wisp-[a-z0-9]+|hq-[a-z0-9]+' | head -1 > /tmp/project_bead.txt
-PROJECT_BEAD=$(cat /tmp/project_bead.txt)
+PROJECT_BEAD=$(gt hook 2>/dev/null | grep -oE 'hq-wisp-[a-z0-9]+|hq-[a-z0-9.]+' | head -1)
+
+if [ -z "$PROJECT_BEAD" ]; then
+    # Fallback: scan every unread mail in our inbox for a
+    # `Project bead: <id>` line. The first match wins.
+    for mid in $(gt mail inbox 2>/dev/null | grep -oE 'hq-wisp-[a-z0-9]+' | head -20); do
+        [ -z "$mid" ] && continue
+        b=$(gt mail read "$mid" 2>/dev/null \
+            | grep -oE 'Project bead:[[:space:]]*[a-z0-9.-]+' \
+            | head -1 \
+            | awk -F': *' '{print $2}')
+        if [ -n "$b" ]; then
+            PROJECT_BEAD="$b"
+            break
+        fi
+    done
+fi
+
 echo "project bead: $PROJECT_BEAD"
+```
+
+**Sanity check** — refuse to send a half-finished handoff. If
+`PROJECT_BEAD` is still empty after both lookups, the kickoff was
+malformed: mail mayor `BLOCKED: no project bead` and stop. Do NOT
+mail "Architecture Ready" with an empty `Project bead:` line — that
+is exactly how we stalled the Mayor → Planner hop before (see
+fixes_status.txt entries for #102 and #104).
+
+```
+if [ -z "$PROJECT_BEAD" ]; then
+    gt mail send mayor/ -s "BLOCKED: no project bead" \
+        -m "Architecture.md is written at {{ .WorkDir }}/architecture.md but I could not discover the project bead from my hook or inbox. Re-sling me with: gt sling shiny --on <bead> {{ .RigName }}/architect"
+    gt nudge mayor "Architect blocked: missing project bead"
+    exit 0
+fi
 ```
 
 Then send the handoff mail with the project bead ID **prominently in the
@@ -138,14 +183,20 @@ run `gt unhook` before step 5, you may leave architecture.md half-
 written and there's no way to recover from outside. ORDER MATTERS.
 
 ## DO NOT:
-- Do NOT run `gt mail inbox` — you have work on your hook, ignore mail
+- Do NOT run `gt mail inbox` as a way of looking for MORE work — your
+  job is one bead, then done. (The Step 5 fallback grep IS allowed to
+  scan the inbox for the `Project bead:` line of the assigning mail
+  when the hook is empty; that's not "looking for more work", that's
+  recovering the bead ID for your handoff to mayor.)
 - Do NOT announce yourself — just do the work
-- Do NOT run `gt prime` or `gt hook` — you already have work
+- Do NOT run `gt prime` — you already have work
 - Do NOT check for more work — your job is one bead, then done
 - Do NOT implement the code — Mayor will sling to a Polecat for that
 - Do NOT unhook before mailing mayor (see step 6)
 - Do NOT paste `...` or `<INSERT-REAL-ARCHITECTURE-HERE>` literally into
   the heredoc body — those are placeholders you replace, not content
+- Do NOT mail "Architecture Ready" with an empty `Project bead:` line.
+  Use the Step 5 fallback, or send `BLOCKED: no project bead` instead.
 
 Directory: {{ .TownRoot }}
 Rig: {{ .RigName }}

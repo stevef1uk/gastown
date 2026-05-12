@@ -839,11 +839,16 @@ Use crew for your own workspace. Polecats are for batch work dispatch.
 			routePath = opts.Name + "/mayor/rig"
 		}
 
-		// If Dolt server mode is active, route to the centralized .dolt-data directory.
-		// (gh#4212): All new rigs should share the central Dolt environment.
-		if len(doltserver.HasServerModeMetadata(m.townRoot)) > 0 {
-			routePath = "../.dolt-data/" + opts.Name
-		}
+		// NOTE (Fix #105): Do NOT rewrite routePath to "../.dolt-data/<rig>"
+		// even in Dolt server mode. The route reader in
+		// internal/beads/routes.go (ResolveBeadsDirForID) joins r.Path with
+		// townRoot, so "../.dolt-data/<rig>" resolves to
+		// "<townRoot>/../.dolt-data/<rig>" which lives outside the town and
+		// doesn't have a `.beads/` directory at all. The rig's own
+		// .beads/config.yaml carries the centralized Dolt server connection
+		// info, so pointing routes.jsonl at the rig's working directory is
+		// correct regardless of whether server mode is active. (gh#4212
+		// was the original motivation; the "../.dolt-data" form was broken.)
 
 		route := beads.Route{
 			Prefix: opts.BeadsPrefix + "-",

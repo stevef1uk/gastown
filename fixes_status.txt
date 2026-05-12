@@ -2163,6 +2163,235 @@ to ship, so deferred to the next session.
       session
     * Fix #104 (architect template loses Project bead) —
       REPORTED for next session
+    * Fix #105 (planner creates `hq-*` child beads instead of
+      rig-scoped `te-*`; town-level cwd is the real cause; fix is
+      `cd $RIG_DIR` before every `bd create`) — TEMPLATE PATCHED,
+      pending rebuild + e2e validation
+    * Fix #106 (Mayor template had no Stage 0 / project-kickoff
+      branch; operator had to pre-create the bead via `bd create`
+      and mail the architect directly, defeating the whole point
+      of having a Mayor) — TEMPLATE PATCHED + e2e simplified to
+      ONLY `gt mail send mayor/`, pending rebuild + e2e validation
+    * Fix #107 (clean-gastown.sh did not drain rig agent inboxes,
+      only HQ agents; rig agents — especially QA — would wake up
+      on the next `gt up` with stale `QA Request` mail in their
+      inbox and immediately spam the new mayor, drowning real
+      project kickoffs) — SCRIPT PATCHED to always drain
+      architect/qa/refinery/witness during `--rig` reset
+    * Fix #108 (Mayor's LLM was bypassing the Stage 0 kickoff
+      mail and instead slinging polecats on stale OPEN hq-* work
+      beads left over from previous test runs — surgical rig
+      reset preserves the HQ Dolt DB by design, so project/task
+      beads from yesterday survived. Without a way to nuke them,
+      Mayor's `bd ready` / `gt hook` lookups always saw something
+      easier to action than the new operator mail.) — SCRIPT
+      PATCHED with new `--also-purge-hq-projects` flag that
+      closes + deletes open hq-* work beads (excluding role
+      beads hq-mayor/planner/deacon/mechanic, convoys hq-cv-*,
+      and wisp ephemerals already covered by --also-purge-hq-wisps)
+    * Fix #109 (Architect AND Planner Project-bead lookup
+      snippets used bash-only `done < <(...)` process
+      substitution; the agent runs commands via `/bin/sh` so
+      every architect / planner cycle was hitting
+      `/bin/sh: 1: Syntax error: redirection unexpected` and
+      proceeding without a Project bead — i.e. couldn't send a
+      proper handoff to Mayor) — TEMPLATES REWRITTEN to POSIX
+      `for mid in $(...); do ... done` and both templates now
+      explicitly warn against bash-isms
+    * Fix #110 (Mayor's Stage 0 was written as FIVE separate
+      shell snippets — a, b, c, d, e — that each set variables
+      like `$PROJECT_BEAD`, `$RIG`, `$TITLE`. The LLM ran each
+      as a separate `CMD:` line; each CMD got its own `/bin/sh`
+      subshell, so the variables from earlier commands were
+      empty in later ones. End result: `gt mail send "$RIG/architect"`
+      ran as `gt mail send /architect`, `gt nudge "$RIG/architect"`
+      failed with "invalid address format: expected 'rig/polecat',
+      got '/architect'", and the self-mail had `Stage 0 complete:`
+      with an empty bead id) — TEMPLATE REWRITTEN as a SINGLE
+      atomic `sh -c '...'` invocation containing all five steps
+      so variables persist across the whole pipeline
+
+### Fix #109 — Templates used bash-only syntax in /bin/sh
+
+- **Symptom**: After cleanest possible kickoff, the architect
+  wrote architecture.md (good!) but the Mayor → Planner handoff
+  never happened. Tracing through the architect's session log,
+  Step 5's project-bead lookup snippet died with
+  `/bin/sh: 1: Syntax error: redirection unexpected`. The bead
+  was empty; the architect then tried `bd bootstrap` (cargo cult)
+  and stopped — never sent "Architecture Ready" with a valid
+  `Project bead:` line, so Mayor had nothing to route on for
+  Stage 2.
+
+- **Root cause**: Fix #104 added a two-tier lookup that used
+  `while read -r mid; do ...; done < <(gt mail inbox | grep ...)`.
+  That `done < <(...)` construct is **bash process substitution**,
+  not POSIX. Each `CMD: ...` line from the agent is executed via
+  `/bin/sh`, which on Debian/Ubuntu is `dash`. `dash` rejects
+  `< <(...)` outright. Both `architect.md.tmpl` Step 5 and
+  `planner.md.tmpl` Step 6 had the same bug (they were written
+  symmetrically).
+
+- **Fix**: Rewrote the loop to use POSIX-portable
+  `for mid in $(gt mail inbox 2>/dev/null | grep -oE 'hq-wisp-[a-z0-9]+' | head -20); do ...; done`.
+  Word-splitting on whitespace is fine for our wisp IDs.
+  Also added an inline note at the top of each snippet warning
+  template editors not to use `done < <(...)` or `[[ ]]` since
+  the agent shell is dash, not bash.
+
+- **Validation**: After rebuild, the architect's session log
+  should show the lookup succeeding (`project bead: hq-wisp-XXXX`)
+  and a real `gt mail send mayor/ -s "Architecture Ready"` with
+  a non-empty `Project bead:` line.
+
+### Fix #108 — Mayor LLM picks up stale HQ work beads, bypasses Stage 0
+
+- **Symptom**: After a surgical rig reset + fresh `gt rig add` +
+  `gt mail send mayor/ -s 'Project: testgt2 FizzBuzz'`, the Mayor
+  did NOT execute the new Stage 0 kickoff branch added by Fix #106.
+  Instead, after `Drained 11 nudge(s)` it issued
+  `CMD: gt sling mol-polecat-work --on hq-7wl.2 testgt2/polecats --create`
+  — i.e. it tried to Stage-3 (Implement) an old child task from a
+  prior test run. That `gt sling` then failed (correctly) with
+  `bead hq-7wl.2 (prefix "hq") is not in rig "testgt2" — it belongs
+  to town root` — itself a downstream symptom of Fix #105 (planner
+  was emitting `hq-*` children when the project bead was HQ-scoped).
+
+- **Why it happened**: Surgical reset (`--rig=testgt2`) explicitly
+  preserves the HQ Dolt DB so cross-rig identity beads survive.
+  But "preserve HQ" also accidentally preserved every OPEN project /
+  child-task bead from every previous run — `hq-7wl`, `hq-7wl.2`,
+  `hq-77e`, `hq-dvj`, `hq-wisp-3l9.5`, etc. The LLM, when handed a
+  noisy patrol cycle (kickoff mail + 11 nudges + stale opens), goes
+  for the most "concretely actionable" bead in `bd ready` instead
+  of the fresh operator mail.
+
+- **Fix**: Added `--also-purge-hq-projects` flag to clean-gastown.sh,
+  mirroring `--also-purge-hq-wisps`. Closes + deletes open
+  `hq-*` work beads older than `--purge-hq-wisps-hours` (default 1h),
+  excluding:
+    * Role identity beads: `hq-mayor`, `hq-planner`, `hq-deacon`, `hq-mechanic`
+    * Convoy coordination beads: `hq-cv-*`
+    * Wisp ephemerals: `hq-wisp-*` (already handled by the sibling flag)
+  All cascaded deletes (labels, dependencies, comments, events,
+  issue_snapshots) match the wisps purge path.
+
+- **Recommended invocation**: from now on the canonical "fully clean
+  reset" command is
+  ```
+  bash scripts/clean-gastown.sh --rig=testgt2 --prune-remote-branches \
+      --also-clear-hq-mail --also-purge-hq-wisps \
+      --also-purge-hq-projects --force ~/gt
+  ```
+  Anything less leaves bait for the next Mayor.
+
+### Fix #106 — Mayor had no Stage 0 (free-form project kickoff)
+
+- **Symptom**: An operator (human or test script) cannot simply mail
+  the Mayor "build me X" and walk away. The Mayor template's routing
+  table started at Stage 1 (`fresh project bead just attached → sling
+  shiny`), implicitly requiring that some upstream process had already
+  called `bd create` to make a project bead. There was no row for
+  "free-form mail describing a project, no bead exists yet → create
+  one and start Stage 1". This is why earlier e2e attempts that
+  simply mailed Mayor a project description stalled — Mayor read the
+  mail, found no signal it recognised, and went idle.
+
+- **Fix (template-only, no Go change required)**:
+  In `internal/templates/roles/mayor.md.tmpl`:
+    * Added a new "Stage 0 — Kickoff" row at the top of the routing
+      table that fires on subjects like `Project:` / `New project:`
+      / `Kickoff:` (or any mail with `Rig:`/`Spec:` body lines and
+      NO `Project bead:` line).
+    * Added a Stage 0 section right after the table that walks the
+      Mayor through (a) extracting `RIG`/`SPEC_PATH`/`TITLE` from the
+      mail body, (b) verifying the rig exists, (c) `bd create`ing
+      the project bead in HQ scope, (d) trying `gt sling shiny --on
+      <bead> <rig>/architect` with a mail-handoff fallback for when
+      shiny's HQ-bead bonding fails (Fix #103), and (e) recording
+      the kickoff with a self-mail so it can be correlated when the
+      architect reports back.
+    * Explicitly states **"Do NOT do Stage 0 if `Project bead:` is
+      already in the mail body"** to preserve compat with the older
+      pre-baked-bead path.
+
+- **e2e_workflow_test.sh simplified accordingly**: removed the entire
+  `bd create` + architect-mail-direct workaround block (~70 lines).
+  Now the kickoff is a single `gt mail send mayor/` + `gt nudge mayor`
+  — the way a real operator would do it. This is also a stronger
+  test: it actually exercises the Mayor's orchestration logic instead
+  of bypassing it.
+
+- **Validation plan**: After rebuild,
+  `bash e2e_workflow_test.sh` should:
+    1. Mail Mayor "Project: testgt2 FizzBuzz" with Rig+Spec.
+    2. Mayor wakes, recognises Stage 0, creates an `hq-*` project
+       bead, slings (or mail-handoffs) the architect.
+    3. Architect designs, mails "Architecture Ready" with the bead.
+    4. Mayor routes Stage 2 (sling planner), planner creates `te-*`
+       child tasks (Fix #105), mails "Plan Complete".
+    5. Mayor fans out polecats for each `te-*` task; polecats
+       produce code artifacts in the rig working tree.
+    6. Polecats mail "POLECAT_DONE", Mayor slings QA.
+
+### Fix #105 — Planner emits HQ-scoped child beads from town-level cwd
+
+- **Symptom**: Planner is correctly **town-level** (`/home/stevef/gt/planner`),
+  but when it called `bd create --parent <hq-project-bead>` it produced
+  child task beads with the `hq-` prefix instead of the rig prefix
+  (`te-` for `testgt2`). Polecats live in the rig; they cannot route
+  to or claim `hq-*` work items, so Mayor's polecat fan-out silently
+  produced nothing the polecats could pick up.
+
+- **Why "should planner be top-level" is the wrong question**: The
+  user asked whether the planner should be town-level rather than
+  rig-level, and the answer is yes — it already is, and that's
+  correct (multi-rig planning, sees the project bead in Mayor's
+  scope, isn't bound to a single codebase). The bug is purely about
+  where `bd create` is called from. `bd` does prefix routing by
+  walking up from cwd to the nearest `.beads/`; from town-level cwd
+  that is always the HQ database.
+
+- **Why `--repo` doesn't help**: `bd create --repo <rig>` is
+  documented as "Target repository for issue (overrides
+  auto-routing)" but was empirically verified to still emit `hq-*`
+  IDs when invoked from town cwd in this build. The only reliable
+  way to force the rig prefix is to `cd $TOWN_ROOT/<RIG>` first.
+
+- **Fix (template-only, no Go change required)**:
+  In `internal/templates/roles/planner.md.tmpl`:
+    * Added new **Step 3a** instructing the planner to derive
+      `TARGET_RIG` from the assigning mail / bead description /
+      single-rig fallback (`jq -r '.rigs | keys[0]' rigs.json`),
+      set `RIG_DIR=$TOWN_ROOT/$TARGET_RIG`, and run **every**
+      child `bd create` as `cd "$RIG_DIR" && bd create ...`.
+    * Added an inline sanity check: the first created child MUST
+      have a non-`hq-` ID; otherwise the cd was skipped and the
+      children are useless to polecats.
+    * Updated Step 6 so `CHILD_BEADS` enumeration also runs from
+      `$RIG_DIR` (`cd "$RIG_DIR" && bd list --parent ...`), and so
+      the "Plan Complete" handoff mail carries `Rig: $TARGET_RIG`
+      and tells Mayor to enumerate via
+      `cd $RIG_DIR && bd list --parent $PROJECT_BEAD`.
+
+- **Why this is not a Go-level fix**: `bd` has no
+  rig-scope-by-flag mode that we can rely on (`--repo` is broken
+  per the test above). The clean architectural fix would be to
+  add `bd create --rig <name>` that resolves via `routes.jsonl`,
+  but that's a `bd` change, not a `gt` change. The template
+  workaround is correct in the meantime and matches how every
+  other rig-scoped operation already routes.
+
+- **Validation plan**: After rebuild + nuclear reset, run
+  `e2e_workflow_test.sh`. Expected:
+    1. Architect handoff carries `Project bead: hq-...`. (Fix #104)
+    2. Mayor slings planner.
+    3. Planner cd's into `testgt2/`, creates child beads with
+       `te-*` IDs, mails "Plan Complete" with `Rig: testgt2`
+       and a `Child task beads: te-...` line.
+    4. Mayor's polecat fan-out picks up rig-scoped `te-*` beads
+       and slings them to polecats; polecats produce real code
+       artifacts in the rig working tree.
 
 ## Open Issues (next session)
 

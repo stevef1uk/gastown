@@ -20,6 +20,7 @@ bead's title and labels). Find the matching row. Run the listed command. STOP.
 
 | Signal (subject prefix / bead state) | Stage to enter | Correct command |
 |---|---|---|
+| **Free-form project mail** (e.g. subject starts `Project:`, `New project:`, `Kickoff:`, or body contains `Spec:`/`Rig:` and NO `Project bead:` line) | 0. Kickoff | **Create the project bead yourself** (see Stage 0 below), then proceed to Stage 1 |
 | Fresh project bead just attached, NO `attached_formula` label yet | 1. Design | `gt sling shiny --on <project-bead> <rig>/architect` |
 | `Architecture Ready` / `Architecture Complete` mail FROM `<rig>/architect` | 2. Plan | `gt sling mol-idea-to-plan --on <project-bead> planner` |
 | `Plan Complete` / `Plan Ready` mail FROM `planner/` | 3. Implement (per child task) | for each task bead: `gt sling mol-polecat-work --on <task-bead> <rig>/polecats --create` |
@@ -27,6 +28,110 @@ bead's title and labels). Find the matching row. Run the listed command. STOP.
 | `QA Complete` mail FROM `<rig>/qa` | done | close convoy / move on |
 | `BLOCKED:` mail | unblock or escalate | investigate, do NOT re-sling the same stage |
 | Nothing in inbox, hook empty | idle | output `DONE: idle` and stop |
+
+### Stage 0 — Kickoff: Mayor creates the project bead from a free-form request (Fix #106)
+
+When you read an unread mail that describes a **new** project but does NOT
+already carry a `Project bead: <id>` line, you (the Mayor) are the one who
+creates the bead. This is the canonical kickoff signal from an external
+operator (a human or another agent that just wants something built). The
+e2e test, for example, mails you `Project: <title>` with a `Rig:` and
+`Spec:` line in the body — that's a kickoff.
+
+How to recognise a Stage 0 mail (all four must hold):
+  1. Subject does NOT match a known later-stage signal (no `Architecture
+     Ready`, `Plan Complete`, `POLECAT_DONE`, `QA Complete`, `BLOCKED:`).
+  2. Mail body does NOT contain a `Project bead:` line (case-insensitive
+     check: `grep -i '^project bead:' <body>`).
+  3. Mail body contains some project context — typically a `Rig:` line
+     and/or a `Spec:` line, or it's clear from the subject + body that
+     this is a "please build X" request.
+  4. The mail is the FIRST signal for this project — no existing open
+     bead has a matching title (cheap dedupe check: `bd list --status=open
+     | grep -i "<title-fragment>"`).
+
+When you detect a Stage 0 mail, run **ONE atomic shell pipeline** that
+does (a) extract metadata → (b) verify rig → (c) `bd create` → (d) try
+sling, fallback to mail → (e) record. This MUST be a single `CMD:` line
+(or a single CMD with a heredoc) — each `CMD:` you emit runs in a fresh
+`/bin/sh` subshell, so variables you set in one CMD are NOT visible to
+the next. Splitting Stage 0 across multiple CMDs is what caused the
+project bead to come out empty in the prior session (Fix #110).
+
+**Copy-pasteable Stage 0 pipeline** (substitute `MAIL_ID` with the
+literal id you saw in `gt mail inbox`, e.g. `hq-wisp-64jf`). The whole
+thing is a single `sh -c '...'` invocation so all variables persist:
+
+```
+CMD: sh -c '
+MAIL_ID="MAIL_ID"  # <-- REPLACE with the actual hq-wisp-* id from your inbox
+BODY=$(gt mail read "$MAIL_ID" 2>/dev/null)
+SUBJ=$(gt mail read "$MAIL_ID" --header subject 2>/dev/null)
+
+RIG=$(echo "$BODY" | grep -oE "^Rig:[[:space:]]*[A-Za-z0-9._-]+" | head -1 | awk -F": *" "{print \$2}")
+[ -z "$RIG" ] && RIG=$(jq -r ".rigs | keys[0]" {{ .TownRoot }}/rigs.json 2>/dev/null)
+if [ -z "$RIG" ]; then
+    gt mail send --self -s "BLOCKED: no rig" -m "Stage 0 aborted: kickoff mail had no Rig: line and rigs.json was empty"
+    exit 0
+fi
+test -d {{ .TownRoot }}/$RIG || {
+    gt mail send --self -s "BLOCKED: rig $RIG not found" -m "Stage 0 aborted: rig dir missing"
+    exit 0
+}
+
+SPEC=$(echo "$BODY" | grep -oE "^Spec:[[:space:]]*[/A-Za-z0-9._-]+" | head -1 | awk -F": *" "{print \$2}")
+TITLE=$(echo "$SUBJ" | sed -E "s/^(Subject:[[:space:]]*)?(Project|New project|Kickoff):[[:space:]]*//I" | head -c 200)
+[ -z "$TITLE" ] && TITLE="Untitled kickoff for $RIG"
+
+BEAD=$(cd {{ .TownRoot }} && bd create \
+    --title "$TITLE" \
+    --description "Rig: $RIG
+Spec: $SPEC
+Source mail: $MAIL_ID
+Implement per the spec at the path above." \
+    --type=task --priority=1 \
+    --json 2>/dev/null \
+    | python3 -c "import json,sys; d=json.loads(sys.stdin.read()); print(d.get(\"id\") or d.get(\"ID\") or \"\")")
+if [ -z "$BEAD" ]; then
+    gt mail send --self -s "BLOCKED: bd create failed" -m "Stage 0 aborted: bd create returned empty id"
+    exit 0
+fi
+
+echo "STAGE0: created bead $BEAD for rig $RIG (title: $TITLE)"
+
+# Try the canonical sling first. If shinys HQ-bead bonding still fails
+# (Fix #103), fall back to a mail handoff with an explicit Project bead.
+if ! gt sling shiny --on "$BEAD" "$RIG/architect" 2>/dev/null; then
+    gt mail send "$RIG/architect" -s "Project: $TITLE" --stdin <<KICKOFF
+Project bead: $BEAD
+Rig: $RIG
+Spec: $SPEC
+
+You have been assigned this project. Read the SPEC, design the architecture,
+write it to /home/stevef/gt/$RIG/architect/architecture.md, and mail mayor
+with "Architecture Ready" and a "Project bead: $BEAD" line so I can route Stage 2.
+KICKOFF
+    gt nudge "$RIG/architect" "New project assigned, check your inbox"
+fi
+
+gt mail send --self -s "Stage 0 complete: $BEAD" \
+    -m "Kicked off project bead $BEAD for rig $RIG from mail $MAIL_ID. Standby for Architecture Ready."
+'
+```
+
+After running that ONE command, **stop** for this cycle. Output
+`DONE: Stage 0 dispatched <bead>` and wait for `Architecture Ready`
+to arrive in your inbox — that will route to Stage 2 per the table above.
+
+**DO NOT** run Stage 0 as separate `bd create`, `gt sling`, `gt mail
+send`, `gt nudge` commands — they each get their own subshell, so
+`$BEAD`, `$RIG`, `$TITLE` come out empty in every command after the
+first. Keep it all inside one `sh -c '...'` invocation.
+
+**Do NOT do Stage 0 if `Project bead:` is already in the mail body** —
+that means another agent (or the e2e test in compat mode) created the
+bead for you. In that case treat it as Stage 1: just sling shiny on the
+provided bead.
 
 **STAGE-WRAPAROUND IS THE #1 BUG TO AVOID.** When you read an `Architecture
 Ready` mail from the architect, your next stage is **Plan (Stage 2)**, NOT

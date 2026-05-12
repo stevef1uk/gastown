@@ -143,6 +143,15 @@ PURGE_HQ_WISPS=false
 # by the current session while still nuking everything carried over from
 # yesterday/last-week's runs.
 PURGE_HQ_WISPS_HOURS=1
+PURGE_HQ_PROJECTS=false
+# Sibling flag of --also-purge-hq-wisps. Targets the OPEN, non-wisp,
+# non-role, non-convoy hq-* work beads (project beads and their
+# children: `hq-7wl`, `hq-7wl.2`, `hq-ars`, etc.). These survive
+# surgical rig resets and were misleading the Mayor into picking them
+# up as "fresh project beads" on the very next kickoff — see Fix #108.
+# Reuses the same cutoff variable (PURGE_HQ_WISPS_HOURS) since the
+# semantics are identical: spare beads from the current session, nuke
+# leftovers from previous runs.
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -173,6 +182,14 @@ while [[ $# -gt 0 ]]; do
             # preserved by single-rig mode, but if those agents had
             # been chatting about the now-removed rig, their inbox
             # threads still reference it.
+            #
+            # NOTE (Fix #107): the rig's OWN agent inboxes (architect,
+            # qa, refinery, witness) are now ALWAYS drained as part of
+            # the rig reset — they're rig-scoped state that has no
+            # reason to survive a rig nuke. Pre-Fix-#107, stale `QA
+            # Request` / `Coverage Report Request` mail in QA's inbox
+            # caused QA to immediately spam the freshly-up mayor on
+            # the next `gt up`, drowning real project kickoffs.
             CLEAR_HQ_MAIL=true
             shift
             ;;
@@ -195,6 +212,24 @@ while [[ $# -gt 0 ]]; do
             PURGE_HQ_WISPS_HOURS="${1#--purge-hq-wisps-hours=}"
             shift
             ;;
+        --also-purge-hq-projects)
+            # Single-rig mode only: close + delete open hq-* work beads
+            # (project beads + their child tasks) that survived prior
+            # surgical resets. Excludes role identity beads (hq-mayor,
+            # hq-planner, hq-deacon, hq-mechanic), convoy beads (hq-cv-*),
+            # and wisp ephemerals (covered by --also-purge-hq-wisps).
+            # Reuses --purge-hq-wisps-hours for the cutoff.
+            #
+            # Background (Fix #108): without this, prior project beads
+            # (e.g. `hq-7wl.2 Implement fizzbuzz function`) remain OPEN in
+            # HQ across rig resets. The Mayor's LLM then sees them via
+            # `bd ready` and picks them up as Stage 3 work on the next
+            # patrol — completely bypassing the new Stage 0 kickoff
+            # signal sitting in its inbox. Cleaning these out makes the
+            # Mayor's only actionable signal the new operator mail.
+            PURGE_HQ_PROJECTS=true
+            shift
+            ;;
         -h|--help)
             echo "Usage: $0 [options] [town-root]"
             echo ""
@@ -215,7 +250,17 @@ while [[ $# -gt 0 ]]; do
             echo "                             the preserved HQ Dolt DB so the"
             echo "                             fresh rig's planner sees a clean"
             echo "                             bd ready (default cutoff: 1h)."
-            echo "  --purge-hq-wisps-hours=N   Override cutoff (default: 1)."
+            echo "  --also-purge-hq-projects   (--rig only) Close + purge stale"
+            echo "                             hq-* project/task beads from prior"
+            echo "                             runs. Excludes role beads, convoys,"
+            echo "                             and wisps. Uses same cutoff as"
+            echo "                             --also-purge-hq-wisps (default 1h)."
+            echo "                             Without this, Mayor's LLM picks up"
+            echo "                             old project beads on bd ready and"
+            echo "                             bypasses the new Stage 0 kickoff."
+            echo "  --purge-hq-wisps-hours=N   Override cutoff (default: 1). Applies"
+            echo "                             to both --also-purge-hq-wisps and"
+            echo "                             --also-purge-hq-projects."
             echo "  -f, --force                Skip confirmation prompts (DANGEROUS)"
             echo "  -h, --help                 Show this help message"
             echo ""
@@ -225,7 +270,7 @@ while [[ $# -gt 0 ]]; do
             echo "  $0 --rig=testgt2 ~/gt            # Reset only the testgt2 rig"
             echo "  $0 --rig=testgt2 --force ~/gt    # Same, non-interactive"
             echo "  $0 --rig=testgt2 --prune-remote-branches --also-clear-hq-mail \\"
-            echo "      --also-purge-hq-wisps --force ~/gt"
+            echo "      --also-purge-hq-wisps --also-purge-hq-projects --force ~/gt"
             echo "                                   # Maximum-surgical: rig dir +"
             echo "                                   # dolt db + session logs +"
             echo "                                   # remote feature/polecat refs +"
@@ -254,6 +299,10 @@ if [[ "$CLEAR_HQ_MAIL" == true && -z "$SINGLE_RIG" ]]; then
 fi
 if [[ "$PURGE_HQ_WISPS" == true && -z "$SINGLE_RIG" ]]; then
     log_fatal "--also-purge-hq-wisps requires --rig=NAME"
+    exit 1
+fi
+if [[ "$PURGE_HQ_PROJECTS" == true && -z "$SINGLE_RIG" ]]; then
+    log_fatal "--also-purge-hq-projects requires --rig=NAME"
     exit 1
 fi
 if [[ "$PURGE_HQ_WISPS" == true ]]; then
@@ -323,13 +372,14 @@ if [[ -n "$SINGLE_RIG" ]]; then
     # or --prune-remote-branches); otherwise there's nothing to do.
     RESIDUAL_ONLY=false
     if [[ "$RIG_REGISTERED" != true && ! -d "$RIG_DIR" ]]; then
-        if [[ "$CLEAR_HQ_MAIL" != true && "$PRUNE_REMOTE_BRANCHES" != true && "$PURGE_HQ_WISPS" != true ]]; then
+        if [[ "$CLEAR_HQ_MAIL" != true && "$PRUNE_REMOTE_BRANCHES" != true && "$PURGE_HQ_WISPS" != true && "$PURGE_HQ_PROJECTS" != true ]]; then
             log_fatal "Rig '$SINGLE_RIG' is not registered and has no directory at $RIG_DIR"
             log_fatal "Run 'gt rig list' to see known rigs."
-            log_fatal "Pass --also-clear-hq-mail, --prune-remote-branches, or"
-            log_fatal "--also-purge-hq-wisps to clean residual session logs /"
-            log_fatal "HQ inboxes / origin branches / stale HQ wisps for a rig"
-            log_fatal "that has already been removed from disk + rigs.json."
+            log_fatal "Pass --also-clear-hq-mail, --prune-remote-branches,"
+            log_fatal "--also-purge-hq-wisps, or --also-purge-hq-projects to"
+            log_fatal "clean residual session logs / HQ inboxes / origin"
+            log_fatal "branches / stale HQ wisps / stale HQ project beads"
+            log_fatal "for a rig that has already been removed."
             exit 1
         fi
         RESIDUAL_ONLY=true
@@ -488,6 +538,21 @@ except Exception:
         echo "                        (planner's bd ready will be clean on next boot)"
     fi
 
+    if [[ "$PURGE_HQ_PROJECTS" == true ]]; then
+        STALE_HQ_PROJECT_COUNT="(unknown — services down)"
+        if command -v dolt >/dev/null 2>&1 && [[ -d "$TOWN_ROOT/.dolt-data/hq" ]]; then
+            STALE_HQ_PROJECT_COUNT=$(dolt --data-dir "$TOWN_ROOT/.dolt-data/hq" sql -q "SELECT COUNT(*) FROM issues WHERE id LIKE 'hq-%' AND id NOT LIKE 'hq-wisp-%' AND id NOT LIKE 'hq-cv-%' AND id NOT IN ('hq-mayor','hq-planner','hq-deacon','hq-mechanic') AND status IN ('open','in_progress','hooked') AND created_at < UTC_TIMESTAMP() - INTERVAL ${PURGE_HQ_WISPS_HOURS} HOUR;" 2>/dev/null \
+                | awk 'NR>3 && /^\| *[0-9]+/ {gsub(/[| ]/,""); print; exit}')
+            [[ -z "$STALE_HQ_PROJECT_COUNT" ]] && STALE_HQ_PROJECT_COUNT="?"
+        fi
+        echo ""
+        echo "  HQ stale projects:    ${STALE_HQ_PROJECT_COUNT} open hq-* work bead(s)"
+        echo "                        older than ${PURGE_HQ_WISPS_HOURS}h will be closed + purged"
+        echo "                        (project/task beads from prior runs; excludes"
+        echo "                        role beads hq-mayor/planner/deacon/mechanic,"
+        echo "                        convoys hq-cv-*, and wisps hq-wisp-*)"
+    fi
+
     echo ""
     echo "  PRESERVED (other rig data, town config, hq database):"
     echo "    • $TOWN_ROOT/config.json"
@@ -621,7 +686,49 @@ json.dump(d, open(p, 'w'), indent=2)
         fi
     fi
 
-    # Step 9: drain HQ inboxes if requested. The hq database is
+    # Step 9a: ALWAYS drain rig agent inboxes (architect/qa/refinery/witness
+    # plus any discovered polecats/crew). Mail addressed to `<rig>/<agent>`
+    # lives in the HQ database keyed by the full address — so even after the
+    # rig directory + its own dolt-data are wiped, the agents that come back
+    # up in the next `gt rig add` inherit the old mail queue. We saw this
+    # cause QA to immediately spam the (also-freshly-up) mayor with stale
+    # "QA Request" / "Coverage Report Request" wisps from the previous
+    # session, drowning the new project kickoff. The agents that the
+    # operator actually wants to interact with cleanly are dead conversations
+    # away from a real reset, so we always clear them.
+    if command -v gt >/dev/null 2>&1; then
+        log_info "Draining rig agent inboxes for '$SINGLE_RIG'..."
+        # Start with the four standard rig agents. Polecats and crew are
+        # enumerated below as a best-effort — those dirs may already be
+        # gone depending on script step ordering, in which case the
+        # globs expand to nothing and the loop body is skipped.
+        rig_targets=(
+            "$SINGLE_RIG/architect"
+            "$SINGLE_RIG/qa"
+            "$SINGLE_RIG/refinery"
+            "$SINGLE_RIG/witness"
+        )
+        if [[ -d "$TOWN_ROOT/$SINGLE_RIG/polecats" ]]; then
+            for pc in "$TOWN_ROOT/$SINGLE_RIG/polecats"/*/; do
+                [[ -d "$pc" ]] || continue
+                pc_name="$(basename "$pc")"
+                rig_targets+=("$SINGLE_RIG/polecats/$pc_name")
+            done
+        fi
+        if [[ -d "$TOWN_ROOT/$SINGLE_RIG/crew" ]]; then
+            for cw in "$TOWN_ROOT/$SINGLE_RIG/crew"/*/; do
+                [[ -d "$cw" ]] || continue
+                cw_name="$(basename "$cw")"
+                rig_targets+=("$SINGLE_RIG/crew/$cw_name")
+            done
+        fi
+        for tgt in "${rig_targets[@]}"; do
+            result=$(gt mail clear "$tgt" 2>&1 | tail -1 || true)
+            log_ok "  ${tgt}: ${result}"
+        done
+    fi
+
+    # Step 9b: drain HQ inboxes if requested. The hq database is
     # preserved by single-rig mode, but if the mayor/planner/deacon/
     # mechanic had been chatting about the now-removed rig (assignment
     # threads, alert threads, escalations) their inbox queues still
@@ -703,6 +810,61 @@ PURGE_SQL
                 log_warn "Wisp purge completed with caveats: before=${before_count} after=${after_count}"
                 log_warn "  dolt output:"
                 echo "$purge_out" | sed 's|^|    |' | tail -20
+            fi
+        fi
+    fi
+
+    # Step 10b (Fix #108): purge stale OPEN hq-* PROJECT/TASK beads
+    # from the HQ Dolt DB. Mirrors the wisps purge above but targets
+    # non-wisp, non-role, non-convoy work beads that survived prior
+    # surgical resets. Without this, the Mayor's LLM sees old
+    # `hq-7wl.2 Implement fizzbuzz function` etc. on `bd ready` /
+    # `gt hook` and slings polecats on them, completely ignoring the
+    # new Stage-0 kickoff mail sitting in its inbox.
+    if [[ "$PURGE_HQ_PROJECTS" == true ]]; then
+        HQ_DOLT_DIR="$TOWN_ROOT/.dolt-data/hq"
+        if [[ ! -d "$HQ_DOLT_DIR" ]]; then
+            log_warn "Skipping --also-purge-hq-projects: $HQ_DOLT_DIR does not exist"
+        elif ! command -v dolt >/dev/null 2>&1; then
+            log_warn "Skipping --also-purge-hq-projects: dolt binary not on PATH"
+        else
+            log_info "Purging stale hq-* project/task beads from HQ Dolt DB (cutoff: ${PURGE_HQ_WISPS_HOURS}h)..."
+
+            # Exclude rules:
+            #   - hq-wisp-*       → handled by --also-purge-hq-wisps
+            #   - hq-cv-*         → convoy coordination state
+            #   - hq-mayor/planner/deacon/mechanic → role identity beads
+            # Cutoff predicate uses UTC_TIMESTAMP for the same reason
+            # the wisps purge does — `created_at` is UTC-naive.
+            proj_cutoff_pred="id LIKE 'hq-%' AND id NOT LIKE 'hq-wisp-%' AND id NOT LIKE 'hq-cv-%' AND id NOT IN ('hq-mayor','hq-planner','hq-deacon','hq-mechanic') AND created_at < UTC_TIMESTAMP() - INTERVAL ${PURGE_HQ_WISPS_HOURS} HOUR"
+            proj_count_pred="${proj_cutoff_pred} AND status IN ('open','in_progress','hooked')"
+            proj_stale_id_subq="SELECT id FROM issues WHERE ${proj_cutoff_pred}"
+
+            proj_before_out=$(dolt --data-dir "$HQ_DOLT_DIR" sql -q "SELECT COUNT(*) FROM issues WHERE ${proj_count_pred};" 2>&1 || true)
+            proj_before_count=$(echo "$proj_before_out" | awk 'NR>3 && /^\| *[0-9]+/ {gsub(/[| ]/,""); print; exit}')
+            [[ -z "$proj_before_count" ]] && proj_before_count="?"
+
+            proj_purge_sql=$(cat <<PROJ_PURGE_SQL
+DELETE FROM labels          WHERE issue_id IN (${proj_stale_id_subq});
+DELETE FROM dependencies    WHERE issue_id IN (${proj_stale_id_subq}) OR depends_on_id IN (${proj_stale_id_subq});
+DELETE FROM comments        WHERE issue_id IN (${proj_stale_id_subq});
+DELETE FROM events          WHERE issue_id IN (${proj_stale_id_subq});
+DELETE FROM issue_snapshots WHERE issue_id IN (${proj_stale_id_subq});
+DELETE FROM issues          WHERE ${proj_cutoff_pred};
+PROJ_PURGE_SQL
+)
+            proj_purge_out=$(dolt --data-dir "$HQ_DOLT_DIR" sql -q "$proj_purge_sql" 2>&1 || true)
+
+            proj_after_out=$(dolt --data-dir "$HQ_DOLT_DIR" sql -q "SELECT COUNT(*) FROM issues WHERE ${proj_count_pred};" 2>&1 || true)
+            proj_after_count=$(echo "$proj_after_out" | awk 'NR>3 && /^\| *[0-9]+/ {gsub(/[| ]/,""); print; exit}')
+            [[ -z "$proj_after_count" ]] && proj_after_count="?"
+
+            if [[ "$proj_before_count" != "?" && "$proj_after_count" == "0" ]]; then
+                log_ok "Purged ${proj_before_count} stale hq-* project/task bead(s) from HQ Dolt DB (remaining: 0)"
+            else
+                log_warn "Project purge completed with caveats: before=${proj_before_count} after=${proj_after_count}"
+                log_warn "  dolt output:"
+                echo "$proj_purge_out" | sed 's|^|    |' | tail -20
             fi
         fi
     fi
