@@ -73,6 +73,40 @@ drain_rig_mail() {
   fi
 }
 
+normalize_town_agent_settings() {
+  local cfg="$GT_ROOT/settings/config.json"
+  [[ -f "$cfg" ]] || return 0
+  echo "[config] normalize town agent settings..."
+  python3 - "$cfg" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+data = json.loads(path.read_text())
+
+agents = data.get("agents", {}) or {}
+role_agents = data.get("role_agents", {}) or {}
+default_agent = data.get("default_agent", "")
+
+builtins = {"claude", "codex", "gemini", "cursor", "auggie", "amp", "opencode", "copilot"}
+valid = set(builtins) | set(agents.keys())
+
+# Keep reset deterministic: if invalid (or address-like), prefer local preset.
+preferred_default = "gt-agent-local" if "gt-agent-local" in valid else "claude"
+if (not isinstance(default_agent, str)) or ("/" in default_agent) or (default_agent not in valid):
+    data["default_agent"] = preferred_default
+
+# Ensure town-level roles never silently fall back to a bad default.
+for role in ("planner", "mechanic"):
+    if role not in role_agents:
+        role_agents[role] = preferred_default
+data["role_agents"] = role_agents
+
+path.write_text(json.dumps(data, indent=2) + "\n")
+PY
+}
+
 echo "=== gt down ==="
 (cd "$GT_ROOT" && gt down) || true
 
@@ -81,6 +115,7 @@ bash "$CLEAN_SCRIPT" --force "$GT_ROOT"
 
 echo "=== gt up ==="
 (cd "$GT_ROOT" && gt up)
+normalize_town_agent_settings
 
 # Fresh HQ DB may still get noise from seeds/plugins; drain before rig add.
 drain_hq_mail

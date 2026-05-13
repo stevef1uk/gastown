@@ -2907,6 +2907,30 @@ to ship, so deferred to the next session.
   `TestFindCaseInsensitiveNameInDir`, `TestRewriteSpecMDPathCaseInsensitive`,
   `TestRewriteSpecMDPathCaseInsensitive_noFileNoRewrite`.
 
+### Fix #117 — Reset could leave invalid `default_agent` and route planner/mechanic to Claude Code
+
+- **Symptom**: After cleanup + restart, planner/mechanic/deacon sessions
+  looked "up" but behaved wrong: planner launched `/bin/claude` with
+  `GT_AGENT=testgt2/witness` and failed with `Invalid API key`, while
+  deacon visibility/registration became inconsistent in the console.
+
+- **Root cause**: Town config accepted `default_agent` values that were
+  agent addresses (`rig/role`) rather than preset aliases. When this bad
+  value existed in `settings/config.json`, role fallback logic could select
+  an unintended runtime (Claude Code) instead of the intended town preset.
+
+- **Fix**:
+  - Added `validateAgentNameForConfigSet` in `internal/cmd/config.go` and
+    wired it into `gt config set default_agent`. It now rejects empty
+    values, slash-containing address-like values, and unknown agent names.
+  - Updated `scripts/reset-town-and-rig.sh` with
+    `normalize_town_agent_settings()`, run right after `gt up`, to enforce
+    a sane default (`gt-agent-local` when present, else `claude`) and set
+    explicit `role_agents` entries for `planner` and `mechanic` when missing.
+
+- **Result**: Fresh reset runs no longer preserve the bad default-agent
+  shape that caused planner/mechanic runtime drift to Claude Code.
+
 ## Open Issues (next session)
 
 ### Items to change — de-hardcode `spec.md` in gt-agent (Fix #116 follow-up)

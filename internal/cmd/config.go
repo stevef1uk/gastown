@@ -731,6 +731,9 @@ func runConfigSet(cmd *cobra.Command, args []string) error {
 		}
 
 	case "default_agent":
+		if err := validateAgentNameForConfigSet(value, townSettings); err != nil {
+			return err
+		}
 		townSettings.DefaultAgent = value
 
 	case "scheduler.max_polecats":
@@ -803,6 +806,30 @@ func runConfigSet(cmd *cobra.Command, args []string) error {
 
 	fmt.Printf("Set %s = %s\n", style.Bold.Render(key), value)
 	return nil
+}
+
+// validateAgentNameForConfigSet validates that an agent name resolves to either
+// a built-in preset or a custom town agent.
+func validateAgentNameForConfigSet(name string, townSettings *config.TownSettings) error {
+	if name == "" {
+		return fmt.Errorf("default_agent cannot be empty")
+	}
+	// Guard common operator mistake: using an agent address (rig/role[/name])
+	// instead of an agent preset alias.
+	if strings.Contains(name, "/") {
+		return fmt.Errorf("default_agent must be an agent alias, not an address: %q", name)
+	}
+	for _, builtin := range config.ListAgentPresets() {
+		if name == builtin {
+			return nil
+		}
+	}
+	if townSettings != nil && townSettings.Agents != nil {
+		if _, ok := townSettings.Agents[name]; ok {
+			return nil
+		}
+	}
+	return fmt.Errorf("agent %q not found (use 'gt config default-agent list')", name)
 }
 
 func runConfigGet(cmd *cobra.Command, args []string) error {
