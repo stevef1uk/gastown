@@ -3047,6 +3047,31 @@ to ship, so deferred to the next session.
   `/home/stevef/gt` — spawned `testgt2/rust` polecat on `hq-3s9` (Define
   requirements for FizzBuzz); nudged polecat to resume.
 
+### Fix #121 — Mayor idle after kickoff: `CMD: DONE: idle` parse + read-mail without Stage 0
+
+- **Symptom**: Fresh kickoff to `mayor/`; Mayor emitted `CMD: DONE: idle` or
+  ran `gt mail read` on the kickoff then restarted; next session showed **0
+  unread**, did nothing useful. `tail mayor/typescript` showed `CMD: DONE: idle`
+  followed by **No commands found**.
+- **Root cause**:
+  1. **Parser**: `CMD: DONE: idle` was parsed as a `CMD:` whose body starts
+     with `DONE:` — the last segment was treated as a DONE summary **without**
+     being recognized as end-of-work, so **no commands** and empty done in some
+     paths; small models often wrongly prefix `DONE` with `CMD:`.
+  2. **Mayor rules**: Critical Rule #1 said **zero unread + empty hook ⇒ idle**
+     immediately. **`gt mail read` marks the kickoff read**; `gatherWork` then
+     never injects that mail again, so a new `gt-agent` session never saw Stage 0
+     work even though no bead was created.
+- **Fix**:
+  - `cmd/gt-agent/main.go` (`parseLLMResponse`): if the payload after `CMD:`
+    starts with `DONE:`, treat as **DONE summary** (same as a bare `DONE:`
+    line).
+  - `internal/templates/roles/mayor.md.tmpl`: new **rule 1b — read kickoff
+    rescue** — if unread is empty and hook empty, list **full** inbox, find a
+    kickoff subject, **`gt mail mark-unread <id>`**, re-list unread, then run
+    Stage 0. Rule 1 defers `DONE: idle` until after 1b.
+  - `cmd/gt-agent/main_test.go`: regression test for `CMD: DONE: idle`.
+
 ## Open Issues (next session)
 
 ### Items to change — de-hardcode `spec.md` in gt-agent (Fix #116 follow-up)

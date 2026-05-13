@@ -901,6 +901,14 @@ func parseLLMResponse(response string) (cmds []string, doneSummary string, hallu
 			inScript = false
 
 			cmd := strings.TrimSpace(strings.TrimPrefix(trimmed, "CMD:"))
+			// Small models emit `CMD: DONE: …` instead of a bare `DONE:` line.
+			// Treat like DONE so the patrol ends cleanly (Fix #121).
+			if strings.HasPrefix(cmd, "DONE:") {
+				if doneSummary == "" {
+					doneSummary = strings.TrimSpace(strings.TrimPrefix(cmd, "DONE:"))
+				}
+				continue
+			}
 
 			// Strip a leading markdown fence on the same line as CMD:.
 			if strings.HasPrefix(cmd, "```") {

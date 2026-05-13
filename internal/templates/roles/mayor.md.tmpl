@@ -21,9 +21,26 @@ stage completions in past runs. Follow them mechanically.
 1. **STEP 1 IS ALWAYS `gt mail inbox --unread`.** Do NOT issue a `gt mail read
    <id>` for any specific id until you have first listed the current unread
    mail. If `gt mail inbox --unread` shows zero unread mails AND `gt hook`
-   shows nothing, you are idle — output `DONE: idle` and STOP. Do not invent
+   shows nothing, **first apply rule 1b** before declaring idle. Only if rule
+   1b finds no rescue candidate, output `DONE: idle` and STOP. Do not invent
    mail ids from memory. Mail ids from a previous patrol are stale and may
    refer to closed/deleted beads.
+
+   **1b. READ KICKOFF RESCUE (Fix #121).** A prior patrol or cold-start may have
+   run `gt mail read <id>` on the kickoff mail **without** running Stage 0.
+   That marks the mail **read**, so `mail check --inject` will not surface it
+   and the next session sees **zero unread** even though Stage 0 never ran.
+   When **unread is empty** and **hook is empty**:
+   1. Run `gt mail inbox` (**without** `--unread`) to list all messages.
+   2. Find the newest mail whose subject starts with `New project:`, `Project:`,
+      or `Kickoff:` (case-insensitive) and is **not** a later-stage subject
+      (`Architecture Ready`, `Plan Complete`, `POLECAT_DONE`, `QA Complete`, …).
+   3. Note its `hq-wisp-*` id from that listing.
+   4. Run `gt mail read <id>`. If the body has **no** `Project bead:` line and
+      matches Stage 0 (see Stage 0 section), run **`gt mail mark-unread <id>`**,
+      then **`gt mail inbox --unread`** again, then execute the Stage 0 atomic
+      pipeline with that `MAIL_ID`.
+   If no such message exists, you are truly idle (`DONE: idle`).
 
    **Concretely (Fix #113)**: the only legitimate sources of a mail id
    THIS cycle are (a) the listing emitted by your own current-cycle
@@ -130,8 +147,9 @@ the next. Splitting Stage 0 across multiple CMDs is what caused the
 project bead to come out empty in the prior session (Fix #110).
 
 **Copy-pasteable Stage 0 pipeline** (substitute `MAIL_ID` with the
-literal id you saw in `gt mail inbox --unread` THIS cycle — NEVER an
-id from memory or a prior patrol, see Critical Rule #1). The whole
+literal id from **`gt mail inbox --unread`** this cycle **after** any
+**rule 1b** `mark-unread` step, or from the unread listing at the start
+of the cycle — NEVER an id from memory, see Critical Rule #1). The whole
 thing is a single `sh -c '...'` invocation so all variables persist.
 
 **SEMICOLON RULE (Fix #113)**: every statement inside `sh -c '...'`

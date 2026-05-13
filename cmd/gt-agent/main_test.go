@@ -682,6 +682,14 @@ func TestParseLLMResponse(t *testing.T) {
 				"Now run\n",
 			wantCmds: []string{"gt hook\nNow run"},
 		},
+		{
+			// Fix #121: models prefix DONE with CMD: — must not execute
+			// "DONE: idle" as shell.
+			name: "CMD: DONE: idle is treated as DONE summary not shell",
+			input:   "CMD: DONE: idle\n",
+			wantCmds: nil,
+			wantDone: "idle",
+		},
 	}
 
 	for _, tc := range tests {
