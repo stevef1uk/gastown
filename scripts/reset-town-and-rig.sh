@@ -97,9 +97,12 @@ preferred_default = "gt-agent-local" if "gt-agent-local" in valid else "claude"
 if (not isinstance(default_agent, str)) or ("/" in default_agent) or (default_agent not in valid):
     data["default_agent"] = preferred_default
 
-# Ensure town-level roles never silently fall back to a bad default.
-for role in ("planner", "mechanic"):
-    if role not in role_agents:
+# Ensure town-level orchestration roles don't drift to unstable presets.
+# Mayor is included explicitly because "powerful" defaults can stall
+# multi-turn stage-routing loops in local setups.
+for role in ("planner", "mechanic", "mayor"):
+    current = role_agents.get(role)
+    if (current is None) or (not isinstance(current, str)) or (current not in valid) or (current == "gt-agent-powerful"):
         role_agents[role] = preferred_default
 data["role_agents"] = role_agents
 

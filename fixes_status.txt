@@ -2958,6 +2958,34 @@ to ship, so deferred to the next session.
   - Cleared the witness inbox (`gt mail clear testgt2/witness`) and
     confirmed it returned to zero messages.
 
+### Fix #119 — Mayor could hang indefinitely on LLM turn or shell command
+
+- **Symptom**: Mayor read kickoff/architecture mail but then stalled in
+  session logs at `Calling LLM (turn N)...`, or hung on long shell commands
+  (notably Stage-0 `sh -c` flows containing `gt sling shiny --on ...`).
+  While wedged, planner handoff never happened.
+
+- **Root cause**: `gt-agent` had no per-turn LLM deadline beyond a very
+  large client timeout, and no timeout at all for per-command shell
+  execution. A single stuck inference or command blocked the entire patrol
+  cycle indefinitely.
+
+- **Fix**:
+  - Added `LLM_TURN_TIMEOUT` support in `cmd/gt-agent/main.go`
+    (default `90s`) and wrapped each `CompleteMessages` call with
+    `context.WithTimeout`.
+  - Added `GT_AGENT_CMD_TIMEOUT` support (default `120s`) and moved shell
+    execution to `runShellCommandWithTimeout(...)` using
+    `exec.CommandContext`.
+  - Circuit-breaker retry is now skipped for hard command timeouts and
+    still retained for transient Dolt open-circuit errors.
+  - Added `TestRunShellCommandWithTimeout` in
+    `cmd/gt-agent/main_test.go`.
+
+- **Validation**:
+  - `go test ./cmd/gt-agent` passes.
+  - Lint check on touched files passes.
+
 ## Open Issues (next session)
 
 ### Items to change — de-hardcode `spec.md` in gt-agent (Fix #116 follow-up)

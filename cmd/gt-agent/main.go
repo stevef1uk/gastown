@@ -411,6 +411,18 @@ func run() error {
 			llmTimeout = d
 		}
 	}
+	llmTurnTimeout := 90 * time.Second
+	if s := os.Getenv("LLM_TURN_TIMEOUT"); s != "" {
+		if d, err := time.ParseDuration(s); err == nil {
+			llmTurnTimeout = d
+		}
+	}
+	cmdTimeout := 120 * time.Second
+	if s := os.Getenv("GT_AGENT_CMD_TIMEOUT"); s != "" {
+		if d, err := time.ParseDuration(s); err == nil {
+			cmdTimeout = d
+		}
+	}
 	llmModel := os.Getenv("LLM_MODEL")
 	if llmModel == "" {
 		llmModel = "meta-llama/llama-3.2-3b-instruct:free"
@@ -532,7 +544,9 @@ func run() error {
 				fmt.Println("[gt-agent] Calling LLM...")
 			}
 
-			response, err := client.CompleteMessages(ctx, messages)
+			turnCtx, cancelTurn := context.WithTimeout(ctx, llmTurnTimeout)
+			response, err := client.CompleteMessages(turnCtx, messages)
+			cancelTurn()
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "[gt-agent] LLM completion failed: %v\n", err)
 				break
@@ -591,18 +605,15 @@ func run() error {
 				}
 				fmt.Printf("[gt-agent] $ %s\n", safeCmd)
 
-				c := exec.Command("/bin/sh", "-c", safeCmd)
-				c.Env = os.Environ()
-				c.Env = append(c.Env, "GT_SESSION=" + sessionName)
-				out, err := c.CombinedOutput()
+				out, err, timedOut := runShellCommandWithTimeout(safeCmd, sessionName, cmdTimeout)
 				recordMoleculeState(safeCmd, string(out))
 
 				if err != nil {
 					cmdFailed := true
-					if strings.Contains(string(out), "circuit breaker is open") {
+					if !timedOut && strings.Contains(string(out), "circuit breaker is open") {
 						fmt.Println("[gt-agent] Dolt circuit breaker open, retrying in 5s...")
 						time.Sleep(5 * time.Second)
-						out, err = exec.Command("/bin/sh", "-c", safeCmd).CombinedOutput()
+						out, err, _ = runShellCommandWithTimeout(safeCmd, sessionName, cmdTimeout)
 						recordMoleculeState(safeCmd, string(out))
 						if err == nil {
 							cmdFailed = false
@@ -845,6 +856,19 @@ var trailingMarkdownBoldRE = regexp.MustCompile(`\s+\*\*[^*\n]*[A-Za-z][^*\n]*\*
 // /bin/sh -c handles the multi-line script natively (heredocs, multi-line
 // quoted args, semicolons, etc.), so the right behavior is to forward
 // the whole script as one shell invocation.
+func runShellCommandWithTimeout(safeCmd, sessionName string, timeout time.Duration) ([]byte, error, bool) {
+	cmdCtx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	c := exec.CommandContext(cmdCtx, "/bin/sh", "-c", safeCmd)
+	c.Env = os.Environ()
+	c.Env = append(c.Env, "GT_SESSION="+sessionName)
+	out, err := c.CombinedOutput()
+	if cmdCtx.Err() == context.DeadlineExceeded {
+		return out, fmt.Errorf("command timed out after %s", timeout), true
+	}
+	return out, err, false
+}
+
 func parseLLMResponse(response string) (cmds []string, doneSummary string, hallucinated bool) {
 	lines := strings.Split(response, "\n")
 

@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // TestFindGT_FromEnv verifies GT_BIN env var is respected.
@@ -2004,5 +2005,26 @@ func TestNormalizeDoesNotRewriteBdUpdate(t *testing.T) {
 		if got != in {
 			t.Errorf("bd update should pass through unchanged: %q -> %q", in, got)
 		}
+	}
+}
+
+func TestRunShellCommandWithTimeout(t *testing.T) {
+	_, err, timedOut := runShellCommandWithTimeout("sleep 2", "test-session", 50*time.Millisecond)
+	if err == nil {
+		t.Fatalf("expected timeout error")
+	}
+	if !timedOut {
+		t.Fatalf("expected timedOut=true")
+	}
+
+	out, err, timedOut := runShellCommandWithTimeout("echo ok", "test-session", 2*time.Second)
+	if err != nil {
+		t.Fatalf("expected success, got error: %v", err)
+	}
+	if timedOut {
+		t.Fatalf("expected timedOut=false")
+	}
+	if strings.TrimSpace(string(out)) != "ok" {
+		t.Fatalf("expected output ok, got %q", string(out))
 	}
 }
