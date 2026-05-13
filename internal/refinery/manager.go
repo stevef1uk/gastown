@@ -596,6 +596,7 @@ func (m *Manager) notifyWorkerRejected(mr *MergeRequest, reason string) {
 	nudgeCmd := exec.Command("gt", "nudge", target, nudgeMsg)
 	util.SetDetachedProcessGroup(nudgeCmd)
 	nudgeCmd.Dir = m.workDir
+	nudgeCmd.Env = toolSubprocessEnv(m.rig)
 	if err := nudgeCmd.Run(); err != nil {
 		log.Printf("warning: nudging worker about rejection for %s: %v", mr.IssueID, err)
 	}

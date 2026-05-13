@@ -37,6 +37,25 @@ func stripEnvKey(env []string, key string) []string {
 	return filtered
 }
 
+// toolSubprocessEnv returns the environment for subprocesses that invoke `gt`
+// or `bd` from merge-queue code. CWD is often refinery/rig; we still need the
+// town root and a stable GT_ROLE so `gt nudge` attributes the sender (not
+// "[from unknown]") and workspace helpers resolve correctly.
+func toolSubprocessEnv(r *rig.Rig) []string {
+	if r == nil {
+		return os.Environ()
+	}
+	base := os.Environ()
+	townRoot := filepath.Dir(r.Path)
+	role := fmt.Sprintf("%s/refinery", r.Name)
+	out := stripEnvKey(stripEnvKey(stripEnvKey(base, "GT_ROLE"), "GT_TOWN_ROOT"), "GT_ROOT")
+	return append(out,
+		"GT_ROLE="+role,
+		"GT_RIG="+r.Name,
+		"GT_TOWN_ROOT="+townRoot,
+	)
+}
+
 // shortSHA returns at most 8 characters of a SHA for display.
 func shortSHA(sha string) string {
 	if len(sha) > 8 {
@@ -1286,6 +1305,7 @@ func (e *Engineer) HandleMRInfoSuccess(mr *MRInfo, result ProcessResult) {
 	nudgeCmd := exec.Command("gt", "nudge", "mayor/", nudgeMsg)
 	util.SetDetachedProcessGroup(nudgeCmd)
 	nudgeCmd.Dir = e.workDir
+	nudgeCmd.Env = toolSubprocessEnv(e.rig)
 	if err := nudgeCmd.Run(); err != nil {
 		_, _ = fmt.Fprintf(e.output, "[Engineer] Warning: failed to nudge mayor about merge: %v\n", err)
 	}
@@ -1333,6 +1353,7 @@ func (e *Engineer) HandleMRInfoFailure(mr *MRInfo, result ProcessResult) {
 			mr.ID, mr.Branch, mr.SourceIssue, mr.Worker)
 		mayorCmd := exec.Command("gt", "nudge", "mayor/", mayorMsg)
 		mayorCmd.Dir = e.workDir
+		mayorCmd.Env = toolSubprocessEnv(e.rig)
 		if err := mayorCmd.Run(); err != nil {
 			_, _ = fmt.Fprintf(e.output, "[Engineer] Warning: failed to nudge mayor about missing branch: %v\n", err)
 		}
@@ -1356,6 +1377,7 @@ func (e *Engineer) HandleMRInfoFailure(mr *MRInfo, result ProcessResult) {
 	nudgeCmd := exec.Command("gt", "nudge", nudgeTarget, nudgeMsg)
 	util.SetDetachedProcessGroup(nudgeCmd)
 	nudgeCmd.Dir = e.workDir
+	nudgeCmd.Env = toolSubprocessEnv(e.rig)
 	if err := nudgeCmd.Run(); err != nil {
 		_, _ = fmt.Fprintf(e.output, "[Engineer] Warning: failed to nudge %s about merge failure: %v\n", polecatName, err)
 	} else {
@@ -1368,6 +1390,7 @@ func (e *Engineer) HandleMRInfoFailure(mr *MRInfo, result ProcessResult) {
 	mayorCmd := exec.Command("gt", "nudge", "mayor/", mayorMsg)
 	util.SetDetachedProcessGroup(mayorCmd)
 	mayorCmd.Dir = e.workDir
+	mayorCmd.Env = toolSubprocessEnv(e.rig)
 	if err := mayorCmd.Run(); err != nil {
 		_, _ = fmt.Fprintf(e.output, "[Engineer] Warning: failed to nudge mayor about merge failure: %v\n", err)
 	}
@@ -1934,6 +1957,7 @@ func (e *Engineer) notifyDeaconConvoyFeeding(mr *MRInfo) {
 	nudgeCmd := exec.Command("gt", "nudge", "deacon", nudgeMsg)
 	util.SetDetachedProcessGroup(nudgeCmd)
 	nudgeCmd.Dir = e.workDir
+	nudgeCmd.Env = toolSubprocessEnv(e.rig)
 	if err := nudgeCmd.Run(); err != nil {
 		_, _ = fmt.Fprintf(e.output, "[Engineer] Warning: failed to nudge deacon about convoy feeding for %s: %v\n", mr.ConvoyID, err)
 	} else {
@@ -2091,6 +2115,7 @@ func (e *Engineer) notifyConvoyCompletion(townRoot, convoyID, title, description
 			"-m", fmt.Sprintf("Convoy %s has completed.\n\nAll tracked issues are now closed.\n\nClosed by: %s/refinery", convoyID, e.rig.Name))
 		util.SetDetachedProcessGroup(mailCmd)
 		mailCmd.Dir = townRoot
+		mailCmd.Env = toolSubprocessEnv(e.rig)
 		if err := mailCmd.Run(); err != nil {
 			_, _ = fmt.Fprintf(e.output, "[Engineer] Warning: could not notify %s: %v\n", addr, err)
 		}
@@ -2128,6 +2153,7 @@ func (e *Engineer) landConvoySwarm(townRoot string, convoy convoyInfo) {
 	landCmd := exec.Command("gt", "swarm", "land", moleculeID)
 	util.SetDetachedProcessGroup(landCmd)
 	landCmd.Dir = townRoot
+	landCmd.Env = toolSubprocessEnv(e.rig)
 	var landOut, landErr bytes.Buffer
 	landCmd.Stdout = &landOut
 	landCmd.Stderr = &landErr

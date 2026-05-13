@@ -155,6 +155,35 @@ var idleWatcherTimeout = 60 * time.Second
 // Var so tests can override.
 var idleWatcherPollInterval = 1 * time.Second
 
+// roleInfoFromEnv builds role identity from GT_ROLE (and optional GT_RIG /
+// GT_CREW / GT_POLECAT) without cwd-based workspace discovery. Tooling that
+// shells out to `gt nudge` often has CWD outside the town tree but still exports
+// these variables from the parent agent.
+func roleInfoFromEnv() (RoleInfo, error) {
+	envRole := strings.TrimSpace(os.Getenv(EnvGTRole))
+	if envRole == "" {
+		return RoleInfo{}, errors.New("GT_ROLE not set")
+	}
+	parsedRole, rig, polecat := parseRoleString(envRole)
+	info := RoleInfo{
+		Role:    parsedRole,
+		Rig:     rig,
+		Polecat: polecat,
+		Source:  "env",
+	}
+	if info.Rig == "" {
+		info.Rig = strings.TrimSpace(os.Getenv("GT_RIG"))
+	}
+	if info.Polecat == "" {
+		if v := strings.TrimSpace(os.Getenv("GT_CREW")); v != "" {
+			info.Polecat = v
+		} else {
+			info.Polecat = strings.TrimSpace(os.Getenv("GT_POLECAT"))
+		}
+	}
+	return info, nil
+}
+
 // deliverNudge routes a nudge based on the --mode flag.
 // For "immediate" mode: sends directly via tmux (current behavior).
 // For "queue" mode: writes to the nudge queue for cooperative delivery.
@@ -378,9 +407,16 @@ func runNudge(cmd *cobra.Command, args []string) (retErr error) {
 		return fmt.Errorf("message required: use -m flag or provide as second argument")
 	}
 
-	// Identify sender for message prefix (needed before channel check)
+	// Identify sender for message prefix (needed before channel check).
 	sender := "unknown"
-	if roleInfo, err := GetRole(); err == nil {
+	roleInfo, roleErr := GetRole()
+	if roleErr != nil {
+		if ri, err2 := roleInfoFromEnv(); err2 == nil {
+			roleInfo = ri
+			roleErr = nil
+		}
+	}
+	if roleErr == nil {
 		switch roleInfo.Role {
 		case RoleMayor:
 			sender = constants.RoleMayor

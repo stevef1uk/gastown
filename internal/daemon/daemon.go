@@ -112,10 +112,16 @@ type Daemon struct {
 	lastMaintenanceRun time.Time
 
 	// mayorZombieCount tracks consecutive patrol cycles where the Mayor tmux
-	// session exists but the agent process is not detected. A count >= 3
-	// triggers a zombie restart, debouncing transient gaps during handoffs.
+	// session exists but the agent process is not detected (after grace).
+	// A count >= mayorZombieRestartThreshold triggers a zombie restart.
 	// Only accessed from heartbeat loop goroutine - no sync needed.
 	mayorZombieCount int
+
+	// mayorLastWarm is the last time we confirmed the Mayor agent was alive
+	// or we (re)started it. Used with mayorZombieProbeGrace to skip spurious
+	// zombie strikes (handoffs, long shell pipelines, NATS/wrapper races).
+	// Only accessed from heartbeat loop goroutine - no sync needed.
+	mayorLastWarm time.Time
 
 	// rigPool runs per-rig heartbeat operations (witness checks, refinery checks,
 	// polecat health, idle reaping, branch pruning) with bounded concurrency and
@@ -147,6 +153,12 @@ const (
 	// doctorMolCooldown is the minimum interval between mol-dog-doctor molecules.
 	// Configurable via operational.daemon.doctor_mol_cooldown.
 	doctorMolCooldown = 5 * time.Minute
+
+	// Mayor zombie restart debouncing (see ensureMayorRunning).
+	mayorZombieRestartThreshold = 6
+	// After a successful liveness probe, ignore "agent not visible" this long.
+	// IsAgentAlive can briefly false-negative during heavy shell work or local LLM load.
+	mayorZombieProbeGrace = 2 * time.Minute
 )
 
 const beadsModulePath = "github.com/steveyegge/beads"
@@ -1961,7 +1973,6 @@ func (d *Daemon) ensurePlannerRunning() {
 	d.logger.Printf("Planner session started successfully")
 }
 
-
 // ensureMayorRunning ensures the Mayor is running.
 // Uses mayor.Manager for consistent startup behavior.
 // If the tmux session exists but the agent is dead (zombie), the daemon
@@ -1972,29 +1983,34 @@ func (d *Daemon) ensureMayorRunning() {
 	if err := mgr.Start(""); err != nil {
 		if err == mayor.ErrAlreadyRunning {
 			// Session exists — verify agent is actually alive.
-			// During handoffs the agent is briefly undetectable, so we
-			// only restart if the session has been a zombie for multiple
-			// consecutive patrol cycles (debounce).
-			if !d.isMayorAgentAlive(mgr) {
-				d.mayorZombieCount++
-				if d.mayorZombieCount >= 3 {
-					d.logger.Printf("Mayor zombie detected (%d cycles), restarting", d.mayorZombieCount)
-					if stopErr := mgr.Stop(); stopErr != nil && stopErr != mayor.ErrNotRunning {
-						d.logger.Printf("Error stopping zombie Mayor: %v", stopErr)
-						return
-					}
-					d.mayorZombieCount = 0
-					if startErr := mgr.Start(""); startErr != nil {
-						d.logger.Printf("Error restarting Mayor after zombie cleanup: %v", startErr)
-						return
-					}
-					d.logger.Println("Mayor restarted after zombie cleanup")
-				} else {
-					d.logger.Printf("Mayor agent not detected (cycle %d/3), waiting before restart", d.mayorZombieCount)
-				}
-			} else {
+			// During handoffs or heavy work (long shell pipelines, local LLM),
+			// liveness can briefly false-negative; use grace + multi-cycle debounce.
+			if d.isMayorAgentAlive(mgr) {
+				d.mayorLastWarm = time.Now()
 				d.mayorZombieCount = 0
+				return
 			}
+			if !d.mayorLastWarm.IsZero() && time.Since(d.mayorLastWarm) < mayorZombieProbeGrace {
+				return
+			}
+			d.mayorZombieCount++
+			if d.mayorZombieCount >= mayorZombieRestartThreshold {
+				d.logger.Printf("Mayor zombie detected (%d cycles), restarting", d.mayorZombieCount)
+				if stopErr := mgr.Stop(); stopErr != nil && stopErr != mayor.ErrNotRunning {
+					d.logger.Printf("Error stopping zombie Mayor: %v", stopErr)
+					return
+				}
+				d.mayorZombieCount = 0
+				if startErr := mgr.Start(""); startErr != nil {
+					d.logger.Printf("Error restarting Mayor after zombie cleanup: %v", startErr)
+					return
+				}
+				d.mayorLastWarm = time.Now()
+				d.logger.Println("Mayor restarted after zombie cleanup")
+				return
+			}
+			d.logger.Printf("Mayor agent not detected (cycle %d/%d), waiting before restart",
+				d.mayorZombieCount, mayorZombieRestartThreshold)
 			return
 		}
 		d.logger.Printf("Error starting Mayor: %v", err)
@@ -2002,6 +2018,7 @@ func (d *Daemon) ensureMayorRunning() {
 	}
 
 	d.mayorZombieCount = 0
+	d.mayorLastWarm = time.Now()
 	d.logger.Println("Mayor started successfully")
 }
 

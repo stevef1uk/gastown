@@ -3158,3 +3158,25 @@ across multiple post-deploy patrol cycles.
 Long-term, options (b) auto-archive at witness and (c) refinery-side
 state-transition dedup are still desirable for defense-in-depth, but
 no longer blocking.
+
+## Fix #129 — Mayor false zombie restarts and gt-agent panic visibility
+
+- **Files**: `internal/daemon/daemon.go`, `cmd/gt-agent/main.go`
+- **Issue**: `ensureMayorRunning` restarted `hq-mayor` after only 3 consecutive
+  false-negative liveness checks. Long shell pipelines and local LLM turns can
+  briefly hide the agent process, truncating session logs and cold-starting the
+  mayor mid-work. Panics in `gt-agent` also lacked stack traces.
+- **Fix**: Track `mayorLastWarm`, add a 2-minute `mayorZombieProbeGrace`, and
+  require 6 consecutive zombie strikes before restart. Add top-level panic
+  recovery in `gt-agent` that prints a stack and exits 2.
+
+## Fix #130 — Refinery nudges should not arrive as `[from unknown]`
+
+- **Files**: `internal/cmd/nudge.go`, `internal/cmd/nudge_test.go`,
+  `internal/refinery/engineer.go`, `internal/refinery/manager.go`
+- **Issue**: Refinery subprocesses invoked `gt nudge` from `refinery/rig`, where
+  cwd-based role detection can fail, so mayor saw merge queue signals as
+  `[from unknown]`.
+- **Fix**: `gt nudge` falls back to `GT_ROLE`/`GT_RIG` identity when `GetRole`
+  cannot find a workspace. Refinery subprocesses now pass `GT_ROLE=<rig>/refinery`,
+  `GT_RIG`, and `GT_TOWN_ROOT` when invoking `gt`.

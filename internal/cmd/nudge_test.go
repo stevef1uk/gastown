@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -17,6 +18,22 @@ func setupNudgeTestRegistry(t *testing.T) {
 	old := session.DefaultRegistry()
 	session.SetDefaultRegistry(reg)
 	t.Cleanup(func() { session.SetDefaultRegistry(old) })
+}
+
+func TestRoleInfoFromEnv(t *testing.T) {
+	t.Setenv(EnvGTRole, "testgt2/refinery")
+	t.Setenv("GT_RIG", "testgt2")
+	t.Cleanup(func() {
+		_ = os.Unsetenv(EnvGTRole)
+		_ = os.Unsetenv("GT_RIG")
+	})
+	ri, err := roleInfoFromEnv()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ri.Role != RoleRefinery || ri.Rig != "testgt2" {
+		t.Fatalf("roleInfoFromEnv: got role=%v rig=%q", ri.Role, ri.Rig)
+	}
 }
 
 func TestNudgeStdinConflict(t *testing.T) {
