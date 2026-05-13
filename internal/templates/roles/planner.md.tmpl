@@ -199,6 +199,19 @@
      bead` and stop. Do NOT mail "Plan Complete" with an empty
      `Project bead:` line — that breaks the polecat fan-out.
 
+   - **Resolve `$TARGET_RIG` and `$RIG_DIR` before any `cd` or mail** (Fix #120).
+     The planner agent often runs with **no `GT_RIG`**, so `{{ .RigName }}` in
+     this template is empty at render time — if you copy-paste `Rig: $TARGET_RIG`
+     without setting the variables, the handoff mail is garbage and Mayor cannot
+     route Stage 3. Always run this immediately after `PROJECT_BEAD` is known:
+
+     ```
+     TARGET_RIG='{{ .RigName }}'
+     if [ -z "$TARGET_RIG" ]; then TARGET_RIG=$(jq -r '.rigs | keys[0]' {{ .TownRoot }}/rigs.json 2>/dev/null); fi
+     if [ -z "$TARGET_RIG" ]; then echo "BLOCKED: could not resolve target rig"; exit 1; fi
+     RIG_DIR="{{ .TownRoot }}/$TARGET_RIG"
+     ```
+
    - Build a one-line summary of the child task beads you created
      (mayor uses it as a sanity check; the canonical lookup is
      `bd list --parent $PROJECT_BEAD` **from inside `$RIG_DIR`**, since
@@ -215,7 +228,7 @@
      Rig: $TARGET_RIG
      Detailed TDD-based tasks created in rig $TARGET_RIG (rig-scoped child beads — Fix #105).
      Child task beads: $CHILD_BEADS
-     Enumerate with: cd $RIG_DIR && bd list --parent $PROJECT_BEAD"
+     Enumerate with: cd \"$RIG_DIR\" && bd list --parent \"$PROJECT_BEAD\""
      gt nudge mayor "Plan complete, check inbox"
      ```
 

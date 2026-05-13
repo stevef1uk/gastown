@@ -534,6 +534,28 @@ Fix the end-to-end Gas Town flow where a spec can be handed to agents who autono
 - **Tests**: 6 new `TestHasInvalidPatrolCommand` subtests covering the four bogus flags and two valid forms; new `TestNormalizeRewritesGdTypo` with 6 cases.
 - **Status**: Fixed and deployed.
 
+### 68. [FIXED] Architect template commands missing CMD: prefix
+- **File**: internal/templates/roles/architect.md.tmpl
+- **Issue**: Example commands in architect template were shown without `CMD:` prefix, causing the LLM to emit commands without the required marker. Commands like `gt hook` and `gt mail inbox` were just text, not executable commands.
+- **Fix**: Added `CMD:` prefix to ALL example commands in the architect template.
+- **Status**: Fixed and verified - architect now uses CMD: format correctly.
+
+### 69. [FIXED] Mayor using too-small model (8B)
+- **File**: /home/stevef/gt/settings/config.json
+- **Issue**: Mayor was configured to use `ministral-3:8b` model which is too weak for complex orchestration tasks.
+- **Fix**: Changed mayor to use `gt-agent-powerful` (llama3.3 70B).
+- **Status**: Fixed.
+
+### 70. [VERIFIED] End-to-end pipeline working
+- **Test**: Sent kickoff to mayor for testgt2 FizzBuzz project
+- **Result**: 
+  - Mayor created project bead (hq-mv4)
+  - Mayor slung to architect
+  - Architect generated architecture.md (wrong - Node.js instead of Python, but executed correctly)
+  - Mayor sling to planner
+  - Planner correctly parsed SPEC.md and created proper FizzBuzz tasks (hq-mv4.1-4)
+- **Status**: Pipeline working autonomously!
+
 ### 77. [FIXED] `gt mail send planner/` fails as "unknown recipient" while `gt mail directory` lists it as valid
 - **Files**: `internal/mail/resolve.go`, `internal/mail/resolve_test.go`
 - **Issue**: Live in production after fix #76 redeployed mayor. Mayor LLM tried `gt mail send planner/ -s "..." -m "..."` and got:
@@ -2970,7 +2992,7 @@ to ship, so deferred to the next session.
   execution. A single stuck inference or command blocked the entire patrol
   cycle indefinitely.
 
-- **Fix**:
+- **Fix (attempted, commit a34fbe9c)**:
   - Added `LLM_TURN_TIMEOUT` support in `cmd/gt-agent/main.go`
     (default `90s`) and wrapped each `CompleteMessages` call with
     `context.WithTimeout`.
@@ -2982,9 +3004,48 @@ to ship, so deferred to the next session.
   - Added `TestRunShellCommandWithTimeout` in
     `cmd/gt-agent/main_test.go`.
 
-- **Validation**:
+- **Validation (pre-revert)**:
   - `go test ./cmd/gt-agent` passes.
   - Lint check on touched files passes.
+
+- **Revert (2026-05-13, commit 0d94e99a)**:
+  - Restored `cmd/gt-agent/main.go` and `cmd/gt-agent/main_test.go` to the
+    pre–Fix-#119 behavior (parent `9dcb1364`): no per-turn LLM context
+    deadline, no `runShellCommandWithTimeout` wrapper.
+  - **Reason**: In production, the defaults (`90s` LLM per turn, `120s` per
+    shell) broke Mayor and other agents behind slow or proxied Ollama
+    (`localhost:11434` often being the freeride LLM proxy): frequent
+    `context deadline exceeded` on multi-turn patrols and long Stage-0
+    pipelines. A follow-up aligned `LLM_TURN_TIMEOUT` with `LLM_TIMEOUT`
+    (commit eeaaf428) still left the command timeout hazard; the whole
+    approach was rolled back until a safer design exists (e.g. much higher
+    defaults, role-specific caps, or opt-in only).
+  - **Current status**: Fix #119 is **not applied** in tree; indefinite hang
+    on a stuck LLM or shell remains a known risk. Prefer operational mitigations
+    (restart agent, fix proxy/model health) until a revised timeout story lands.
+
+### Fix #120 — Mayor could not sling HQ planner tasks to rig polecats; planner handoff omitted rig path
+
+- **Symptom**: After `Plan Complete`, Mayor stayed idle; `gt sling
+  mol-polecat-work --on hq-… testgt2` failed with *bead is not in rig — belongs
+  to town root*. Planner handoff mail sometimes had empty `Rig:` / `cd` lines
+  when the planner agent ran with **empty `GT_RIG`**, so `{{ .RigName }}` rendered
+  blank in copy-pasted shell snippets.
+- **Root cause**: `checkCrossRigGuard` (by design) blocks town-root `hq-*`
+  beads onto rig polecats unless **`--force`**. Planner instructions used
+  `$RIG_DIR` / `$TARGET_RIG` without a POSIX fallback when the template rig
+  name was empty.
+- **Fix**:
+  - `internal/templates/roles/mayor.md.tmpl`: Stage 3 table + new subsection —
+    use `gt sling mol-polecat-work --on <task> <rig> --create --force` for
+    `hq-*` task beads; document that `--force` is expected, not a hack.
+  - `internal/templates/roles/planner.md.tmpl`: Before building `CHILD_BEADS`,
+    require `TARGET_RIG` / `RIG_DIR` via `{{ .RigName }}` with jq fallback to
+    `rigs.json`; quote paths in the `Plan Complete` mail body.
+- **Operational recovery (2026-05-13)**: Manually ran
+  `gt sling mol-polecat-work --on hq-3s9 testgt2 --create --force` from
+  `/home/stevef/gt` — spawned `testgt2/rust` polecat on `hq-3s9` (Define
+  requirements for FizzBuzz); nudged polecat to resume.
 
 ## Open Issues (next session)
 

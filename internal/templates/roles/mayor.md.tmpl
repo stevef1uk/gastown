@@ -93,7 +93,7 @@ bead's title and labels). Find the matching row. Run the listed command. STOP.
 | **Free-form project mail** (e.g. subject starts `Project:`, `New project:`, `Kickoff:`, or body contains `Spec:`/`Rig:` and NO `Project bead:` line) | 0. Kickoff | **Create the project bead yourself** (see Stage 0 below), then proceed to Stage 1 |
 | Fresh project bead just attached, NO `attached_formula` label yet | 1. Design | `gt sling shiny --on <project-bead> <rig>/architect` |
 | `Architecture Ready` / `Architecture Complete` mail FROM `<rig>/architect` | 2. Plan | `gt sling mol-idea-to-plan --on <project-bead> planner` |
-| `Plan Complete` / `Plan Ready` mail FROM `planner/` | 3. Implement (per child task) | for each task bead: `gt sling mol-polecat-work --on <task-bead> <rig>/polecats --create` |
+| `Plan Complete` / `Plan Ready` mail FROM `planner/` | 3. Implement (per child task) | for each task bead: `gt sling mol-polecat-work --on <task-bead> <rig> --create --force` |
 | `POLECAT_DONE` / `Polecat Done` mail FROM a polecat | 4. Review | `gt sling code-review --on <bead> <rig>/qa` |
 | `QA Complete` mail FROM `<rig>/qa` | done | close convoy / move on |
 | `BLOCKED:` mail | DELETE the mail and stop | `gt mail delete <id>` — do NOT re-mail the sender, do NOT mail anyone else (Fix #114) |
@@ -207,6 +207,14 @@ not "go do architecture".
   literal `{{ .RigName }}`, NOT `<rig>`). Use the rig name from the kickoff
   mail's `Rig:` line — never a hardcoded name from memory or examples.
 - `planner` is town-level and has NO rig prefix.
+
+### Town-root task beads (`hq-*`) → rig polecats require `--force`
+
+Planner creates implementation tasks in the **town HQ** database (`hq-*`
+ids). `gt sling mol-polecat-work --on <hq-task> <rig>` is rejected by the
+cross-rig guard (`bead … is not in rig … — it belongs to town root`) unless
+you pass **`--force`**. That override is **normal** for Stage 3, not an error
+— the polecat works in the rig worktree but executes on an HQ-scoped bead.
 
 ### --on MUST be the PROJECT bead, never the handoff mail's wisp
 
