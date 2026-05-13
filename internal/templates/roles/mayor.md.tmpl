@@ -77,6 +77,12 @@ stage completions in past runs. Follow them mechanically.
    stale. Run `gt mail delete <mail-id>` and continue to the next unread.
    Do NOT route the stale signal.
 
+   **Inject supersede (automatic):** `gt mail check --inject` marks older
+   `BLOCKED:` mail **read** when the **same sender** already sent a newer
+   success signal (`Plan Complete`, `Architecture Ready`, etc.) — you will not
+   see those stale BLOCKED lines in the first inject reminder; they remain in
+   the full inbox as read if you list with `--all`.
+
 6. **DO NOT FAN OUT NOISE (Fix #114).** When you read an `IDLE` or
    `REPORT: idle` mail, or a **non-planner** `BLOCKED:` noise spiral
    from another agent, DELETE it and stop. **Exception (Fix #123):**

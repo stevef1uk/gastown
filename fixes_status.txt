@@ -3098,6 +3098,19 @@ to ship, so deferred to the next session.
 - **Files**: `cmd/gt-agent/main.go`, `cmd/gt-agent/main_test.go`,
   `internal/templates/roles/mayor.md.tmpl` (routing table + rule 6).
 
+### Fix #124 — `gt mail check --inject` ignores stale `BLOCKED:` after same-sender success
+
+- **Symptom**: Inbox showed both `BLOCKED: …` and later `Plan Complete` from
+  `planner/`; agents processed the stale BLOCKED first.
+- **Fix**: Before building the inject reminder, group unread by `From`, find
+  the newest by `Timestamp`; if its subject is a **success** prefix (`Plan
+  Complete`, `Architecture Ready`, `QA Complete`, `Polecat Done`, etc.),
+  **mark read** older `BLOCKED:` mail from that sender and omit them from
+  inject. Delivery ack still runs on the full unread batch first. Applies to
+  all roles using `--inject` (not mayor-only).
+- **Files**: `internal/cmd/mail_check.go`, `internal/cmd/mail_check_supersede.go`,
+  `internal/cmd/mail_check_supersede_test.go`, `internal/templates/roles/mayor.md.tmpl`
+
 ## Open Issues (next session)
 
 ### Items to change — de-hardcode `spec.md` in gt-agent (Fix #116 follow-up)
