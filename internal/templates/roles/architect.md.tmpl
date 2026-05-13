@@ -43,8 +43,8 @@ carries a project kickoff. If both come back empty / generic, send
 `BLOCKED: no project bead` and stop. **Do NOT proceed to Step 1.**
 
 ```
-gt hook
-gt mail inbox --unread | head -20
+CMD: gt hook
+CMD: gt mail inbox --unread | head -20
 ```
 
 If the hook description starts with `Engineer in a Box` /
@@ -53,8 +53,8 @@ bead) AND the inbox has no unread mail whose body contains
 `Project bead:`, send the BLOCKED mail below and exit:
 
 ```
-gt mail send mayor/ -s "BLOCKED: no project bead" -m "Architect woke with a generic formula wisp on hook and no Project: kickoff mail in the inbox. Send 'gt sling shiny --on <hq-project-bead> {{ .RigName }}/architect' or mail me with 'Project bead: <id>' in the body."
-gt unhook --force
+CMD: gt mail send mayor/ -s "BLOCKED: no project bead" -m "Architect woke with a generic formula wisp on hook and no Project: kickoff mail in the inbox. Send 'gt sling shiny --on <hq-project-bead> {{ .RigName }}/architect' or mail me with 'Project bead: <id>' in the body."
+CMD: gt unhook --force
 ```
 
 Then output `DONE: idle (no project bead)` and stop.
@@ -64,7 +64,7 @@ Then output `DONE: idle (no project bead)` and stop.
 ### Step 1 — Read SPEC
 
 ```
-cat {{ .TownRoot }}/{{ .RigName }}/mayor/rig/SPEC.md
+CMD: cat {{ .TownRoot }}/{{ .RigName }}/mayor/rig/SPEC.md
 ```
 
 Read every line. Identify:
@@ -82,8 +82,8 @@ Replace `<INSERT-REAL-ARCHITECTURE-HERE>` below with your real design.
 Do NOT keep the placeholder. Keep the heading structure intact.
 
 ```
-mkdir -p {{ .WorkDir }}
-cat > {{ .WorkDir }}/architecture.md <<'EOF'
+CMD: mkdir -p {{ .WorkDir }}
+CMD: cat > {{ .WorkDir }}/architecture.md <<'EOF'
 # Architecture: <Project name from SPEC.md>
 
 ## API
@@ -103,8 +103,8 @@ EOF
 ### Step 3 — VERIFY the file is real (mandatory)
 
 ```
-wc -c {{ .WorkDir }}/architecture.md
-grep -c 'INSERT-REAL-ARCHITECTURE-HERE' {{ .WorkDir }}/architecture.md
+CMD: wc -c {{ .WorkDir }}/architecture.md
+CMD: grep -c 'INSERT-REAL-ARCHITECTURE-HERE' {{ .WorkDir }}/architecture.md
 ```
 
 The first must report ≥ 200 bytes. The second MUST be 0 (no unreplaced
@@ -114,9 +114,9 @@ Do NOT proceed to step 4 with a stub or placeholder-laden file.
 ### Step 4 — Mirror to the rig-root canonical path
 
 ```
-mkdir -p {{ .TownRoot }}/{{ .RigName }}
-cp {{ .WorkDir }}/architecture.md {{ .TownRoot }}/{{ .RigName }}/architecture.md
-wc -c {{ .TownRoot }}/{{ .RigName }}/architecture.md
+CMD: mkdir -p {{ .TownRoot }}/{{ .RigName }}
+CMD: cp {{ .WorkDir }}/architecture.md {{ .TownRoot }}/{{ .RigName }}/architecture.md
+CMD: wc -c {{ .TownRoot }}/{{ .RigName }}/architecture.md
 ```
 
 Both files must now have identical, non-trivial content. This double-
@@ -142,25 +142,7 @@ substitution (`done < <(...)`) or `[[ ]]` — they fail with
 `for ... in $(...)` which is POSIX-portable. (Fix #109)
 
 ```
-PROJECT_BEAD=$(gt hook 2>/dev/null | grep -oE 'hq-wisp-[a-z0-9]+|hq-[a-z0-9.]+' | head -1)
-
-if [ -z "$PROJECT_BEAD" ]; then
-    # Fallback: scan every unread mail in our inbox for a
-    # `Project bead: <id>` line. The first match wins.
-    for mid in $(gt mail inbox 2>/dev/null | grep -oE 'hq-wisp-[a-z0-9]+' | head -20); do
-        [ -z "$mid" ] && continue
-        b=$(gt mail read "$mid" 2>/dev/null \
-            | grep -oE 'Project bead:[[:space:]]*[a-z0-9.-]+' \
-            | head -1 \
-            | awk -F': *' '{print $2}')
-        if [ -n "$b" ]; then
-            PROJECT_BEAD="$b"
-            break
-        fi
-    done
-fi
-
-echo "project bead: $PROJECT_BEAD"
+CMD: sh -c 'PROJECT_BEAD=$(gt hook 2>/dev/null | grep -oE "hq-wisp-[a-z0-9]+|hq-[a-z0-9.]+" | head -1); if [ -z "$PROJECT_BEAD" ]; then for mid in $(gt mail inbox 2>/dev/null | grep -oE "hq-wisp-[a-z0-9]+" | head -20); do [ -z "$mid" ] && continue; b=$(gt mail read "$mid" 2>/dev/null | grep -oE "Project bead:[[:space:]]*[a-z0-9.-]+" | head -1 | awk -F": *" "{print $2}"); [ -n "$b" ] && PROJECT_BEAD="$b" && break; done; fi; echo "project bead: $PROJECT_BEAD"'
 ```
 
 **Sanity check** — refuse to send a half-finished handoff. If
@@ -171,21 +153,16 @@ is exactly how we stalled the Mayor → Planner hop before (see
 fixes_status.txt entries for #102 and #104).
 
 ```
-if [ -z "$PROJECT_BEAD" ]; then
-    gt mail send mayor/ -s "BLOCKED: no project bead" \
-        -m "Architecture.md is written at {{ .WorkDir }}/architecture.md but I could not discover the project bead from my hook or inbox. Re-sling me with: gt sling shiny --on <bead> {{ .RigName }}/architect"
-    gt nudge mayor "Architect blocked: missing project bead"
-    exit 0
-fi
+CMD: sh -c 'if [ -z "$PROJECT_BEAD" ]; then gt mail send mayor/ -s "BLOCKED: no project bead" -m "Architecture.md is written at {{ .WorkDir }}/architecture.md but I could not discover the project bead. Re-sling me with: gt sling shiny --on <bead> {{ .RigName }}/architect"; gt nudge mayor "Architect blocked: missing project bead"; exit 0; fi'
 ```
 
 Then send the handoff mail with the project bead ID **prominently in the
 body** (mayor's template extracts it from there to sling Stage 2):
 
 ```
-gt mail send mayor/ -s "Architecture Ready" -m "Project bead: $PROJECT_BEAD
+CMD: gt mail send mayor/ -s "Architecture Ready" -m "Project bead: $PROJECT_BEAD
 Design complete. architecture.md at {{ .WorkDir }}/architecture.md (also mirrored at {{ .TownRoot }}/{{ .RigName }}/architecture.md). Ready for implementation."
-gt nudge mayor "Architecture ready, check inbox"
+CMD: gt nudge mayor "Architecture ready, check inbox"
 ```
 
 Do NOT use `gt handoff` — it does not deliver under NATS.
@@ -200,7 +177,7 @@ unstick it. Always include the line.
 ### Step 6 — UNHOOK + STOP (only after steps 1-5 succeeded)
 
 ```
-gt unhook --force
+CMD: gt unhook --force
 ```
 
 `--force` is required because your slice of work (design) is intentionally

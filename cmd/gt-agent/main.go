@@ -9,6 +9,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -1295,6 +1296,32 @@ func rewriteSpecMDPathCaseInsensitive(cmd string) (string, bool) {
 func normalizeGeneratedCommand(cmd string) (string, bool) {
 	trimmed := strings.TrimSpace(cmd)
 	rewritten := false
+
+	// Pre-flight check: Block git commit without actual implementation
+	// The polecat keeps trying to commit without creating files
+	if strings.HasPrefix(trimmed, "git commit") {
+		// Check if there are actual files to commit (not just bead notes)
+		checkCmd := exec.Command("/bin/sh", "-c", "git status --short 2>/dev/null | grep -v '^.beads' | grep -v '^.claude' | grep -v 'SPEC.md' | grep -v '^D ' | head -5")
+		checkOut, _ := checkCmd.CombinedOutput()
+		changes := strings.TrimSpace(string(checkOut))
+		if changes == "" {
+			// No real files changed - block the commit
+			fmt.Printf("[gt-agent] ⚠ BLOCKED: git commit with no implementation files (only bead metadata)\n")
+			return "true", true
+		}
+	}
+
+	// Pre-flight check: Block gt done without commits
+	if strings.HasPrefix(trimmed, "gt done") {
+		// Verify at least one real commit exists (not auto-save)
+		checkCmd := exec.Command("/bin/sh", "-c", "git log --oneline origin/main..HEAD 2>/dev/null | wc -l")
+		checkOut, _ := checkCmd.CombinedOutput()
+		commits, _ := strconv.Atoi(strings.TrimSpace(string(checkOut)))
+		if commits == 0 {
+			fmt.Printf("[gt-agent] ⚠ BLOCKED: gt done with no implementation commits\n")
+			return "true", true
+		}
+	}
 
 	// Models often wrap commands in backticks (e.g. `gt prime`)
 	if strings.HasPrefix(trimmed, "`") && strings.HasSuffix(trimmed, "`") {
