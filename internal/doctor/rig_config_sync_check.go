@@ -513,7 +513,9 @@ func (c *RigConfigSyncCheck) Fix(ctx *CheckContext) error {
 				rigName = filepath.Base(info.path)
 			}
 		}
-		_ = doltserver.EnsureMetadata(ctx.TownRoot, rigName)
+		if err := doltserver.EnsureMetadata(ctx.TownRoot, rigName, rigName); err != nil {
+			return fmt.Errorf("could not ensure metadata for %s after init: %w", rigName, err)
+		}
 	}
 
 	// Fix missing issue-prefix in config.yaml
@@ -573,7 +575,9 @@ func (c *RigConfigSyncCheck) Fix(ctx *CheckContext) error {
 		if mismatch.prefix == "hq" {
 			rigName = "hq"
 		}
-		_ = doltserver.EnsureMetadata(ctx.TownRoot, rigName)
+		if err := doltserver.EnsureMetadata(ctx.TownRoot, rigName, rigName); err != nil {
+			return fmt.Errorf("could not repair db metadata for %s: %w", rigName, err)
+		}
 	}
 
 	// Fix missing rig identity beads
@@ -594,6 +598,17 @@ func (c *RigConfigSyncCheck) Fix(ctx *CheckContext) error {
 			rigBeadID := beads.RigBeadIDWithPrefix(info.prefix, info.rigName)
 			_ = bd.Update(rigBeadID, beads.UpdateOptions{AddLabels: []string{"gt:rig", "status:docked"}})
 		}
+	}
+
+	// Final metadata reconciliation across all known rigs. This is safe/idempotent
+	// and prevents a stale dolt_database value from surviving partial fixes.
+	for rigName := range rigsConfig.Rigs {
+		if err := doltserver.EnsureMetadata(ctx.TownRoot, rigName, rigName); err != nil {
+			return fmt.Errorf("could not reconcile metadata for rig %s: %w", rigName, err)
+		}
+	}
+	if err := doltserver.EnsureMetadata(ctx.TownRoot, "hq", "hq"); err != nil {
+		return fmt.Errorf("could not reconcile metadata for hq: %w", err)
 	}
 
 	return nil
