@@ -219,17 +219,35 @@ func TestRigConfigSyncCheck_AllConfigsPresent(t *testing.T) {
 	}
 }
 
-func TestIssuePrefixValueFromSQLJSON_LowercaseValue(t *testing.T) {
-	v, ok := issuePrefixValueFromSQLJSON([]byte(`[{"value":"te"}]`))
-	if !ok || v != "te" {
-		t.Fatalf("got %q ok=%v", v, ok)
+func TestSQLIssuePrefixLookupState_LowercaseValue(t *testing.T) {
+	missing, det := sqlIssuePrefixLookupState([]byte(`[{"value":"te"}]`))
+	if !det || missing {
+		t.Fatalf("missing=%v determined=%v", missing, det)
 	}
 }
 
-func TestIssuePrefixValueFromSQLJSON_UppercaseValue(t *testing.T) {
-	v, ok := issuePrefixValueFromSQLJSON([]byte(`[{"Value":"ab"}]`))
-	if !ok || v != "ab" {
-		t.Fatalf("got %q ok=%v", v, ok)
+func TestSQLIssuePrefixLookupState_UppercaseValue(t *testing.T) {
+	missing, det := sqlIssuePrefixLookupState([]byte(`[{"Value":"ab"}]`))
+	if !det || missing {
+		t.Fatalf("missing=%v determined=%v", missing, det)
+	}
+}
+
+func TestSQLIssuePrefixLookupState_EmptyArray(t *testing.T) {
+	missing, det := sqlIssuePrefixLookupState([]byte(`[]`))
+	if !det || !missing {
+		t.Fatalf("missing=%v determined=%v", missing, det)
+	}
+}
+
+func TestSQLIssuePrefixLookupState_EmptyStdoutInconclusive(t *testing.T) {
+	missing, det := sqlIssuePrefixLookupState(nil)
+	if missing || det {
+		t.Fatalf("missing=%v determined=%v", missing, det)
+	}
+	missing, det = sqlIssuePrefixLookupState([]byte("   \n"))
+	if missing || det {
+		t.Fatalf("missing=%v determined=%v", missing, det)
 	}
 }
 

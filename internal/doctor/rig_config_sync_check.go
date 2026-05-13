@@ -96,35 +96,46 @@ func resolvePrefixStringsForRigFix(townRoot string, info rigCheckInfo) (forInit 
 	return "", "", fmt.Errorf("no beads prefix in rigs.json or routes.jsonl for rig %q", info.name)
 }
 
-// issuePrefixValueFromSQLJSON parses bd sql --json output for SELECT value ...
-// Column names may vary in casing (value, Value) depending on the SQL engine.
-func issuePrefixValueFromSQLJSON(out []byte) (string, bool) {
+// sqlIssuePrefixLookupState interprets bd sql --json for `select value ... issue_prefix`.
+// When determined is false (empty stdout, non-JSON, or unparseable), callers must not
+// flag missing DB prefix — this matches legacy behavior and bd test stubs that exit 0
+// with no output. When determined is true, missing reflects an empty/absent value.
+func sqlIssuePrefixLookupState(out []byte) (missing, determined bool) {
 	out = bytes.TrimSpace(out)
 	if len(out) == 0 || (out[0] != '[' && out[0] != '{') {
-		return "", false
+		return false, false
+	}
+	if bytes.Equal(out, []byte("[]")) {
+		return true, true
 	}
 	var rows []map[string]interface{}
-	if err := json.Unmarshal(out, &rows); err != nil || len(rows) == 0 {
+	if err := json.Unmarshal(out, &rows); err != nil {
 		var wrapped struct {
 			Rows []map[string]interface{} `json:"rows"`
 		}
-		if err := json.Unmarshal(out, &wrapped); err != nil || len(wrapped.Rows) == 0 {
-			return "", false
+		if err2 := json.Unmarshal(out, &wrapped); err2 != nil {
+			return false, false
+		}
+		if len(wrapped.Rows) == 0 {
+			return true, true
 		}
 		rows = wrapped.Rows
+	} else if len(rows) == 0 {
+		return true, true
 	}
 	row := rows[0]
 	for _, key := range []string{"value", "Value", "VALUE"} {
 		if v, ok := row[key].(string); ok {
-			return v, true
+			return v == "", true
 		}
 	}
 	for _, v := range row {
 		if s, ok := v.(string); ok {
-			return s, true
+			return s == "", true
 		}
 	}
-	return "", false
+	// Row parsed but no string column — treat as missing value.
+	return true, true
 }
 
 // NewRigConfigSyncCheck creates a new rig config sync check.
@@ -300,8 +311,8 @@ func (c *RigConfigSyncCheck) Run(ctx *CheckContext) *CheckResult {
 			// Query the config table directly. If missing or empty, it's an issue.
 			out, err := bd.SQL("select value from config where `key` = 'issue_prefix'")
 			if err == nil {
-				val, ok := issuePrefixValueFromSQLJSON(out)
-				if !ok || val == "" {
+				missing, determined := sqlIssuePrefixLookupState(out)
+				if determined && missing {
 					c.missingPrefixDB = append(c.missingPrefixDB, info)
 					details = append(details, fmt.Sprintf("Rig %s database is missing issue_prefix in config table", rigName))
 				}

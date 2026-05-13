@@ -78,8 +78,34 @@ case "$1:$2:$3" in
     exit 0
     ;;
   *)
-    # Fallback for other commands used in Fix
-    exit 0
+    case "$*" in
+      *sql*--json*)
+        echo '[{"value":"stub"}]'
+        ;;
+      *init*--prefix*)
+        beads="${BEADS_DIR:?}"
+        mkdir -p "$beads"
+        case "$beads" in
+          */mayor/rig/.beads)
+            b="$beads"
+            b="$(dirname "$b")"
+            b="$(dirname "$b")"
+            b="$(dirname "$b")"
+            rig="$(basename "$b")"
+            ;;
+          */.beads)
+            rig=hq
+            ;;
+          *)
+            rig=testdb
+            ;;
+        esac
+        printf '%s\n' "{\"dolt_database\":\"$rig\",\"dolt_mode\":\"server\"}" > "$beads/metadata.json"
+        ;;
+      *)
+        exit 0
+        ;;
+    esac
     ;;
 esac
 `
