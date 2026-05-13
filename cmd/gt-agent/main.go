@@ -411,11 +411,19 @@ func run() error {
 			llmTimeout = d
 		}
 	}
-	llmTurnTimeout := 90 * time.Second
+	// Per-turn LLM deadline (each CompleteMessages call). Default matches
+	// LLM_TIMEOUT so local Ollama / large models are not cut off at 90s
+	// while the HTTP client still allows 600s (Mayor multi-turn + big
+	// context often exceeds 90s — context deadline exceeded on :11434).
+	llmTurnTimeout := llmTimeout
 	if s := os.Getenv("LLM_TURN_TIMEOUT"); s != "" {
 		if d, err := time.ParseDuration(s); err == nil {
 			llmTurnTimeout = d
 		}
+	}
+	httpLLMTimeout := llmTimeout
+	if llmTurnTimeout > httpLLMTimeout {
+		httpLLMTimeout = llmTurnTimeout
 	}
 	cmdTimeout := 120 * time.Second
 	if s := os.Getenv("GT_AGENT_CMD_TIMEOUT"); s != "" {
@@ -427,7 +435,7 @@ func run() error {
 	if llmModel == "" {
 		llmModel = "meta-llama/llama-3.2-3b-instruct:free"
 	}
-	client := llm.NewClient(llmEndpoint, llmModel, roleCanonical, llmTimeout)
+	client := llm.NewClient(llmEndpoint, llmModel, roleCanonical, httpLLMTimeout)
 
 	// Load persisted state
 	stateFile := statePath(townRoot, role, rig, polecat)
