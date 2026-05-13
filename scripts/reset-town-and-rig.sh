@@ -14,6 +14,8 @@
 # before rig DB issue_prefix rows exist; this script runs two fix passes.
 # If you still see rig-config-sync / database-prefix warnings, run
 # `cd "$GT_ROOT" && gt doctor --fix` once more by hand when Dolt is healthy.
+# (Doctor no longer runs `bd init --force` when a .beads directory already
+# exists — that used to wipe agent and rig identity beads.)
 # patrol-not-stuck is not auto-fixed — review wisps or restart sessions
 # (DOCTOR_RESTART_SESSIONS=1).
 #
