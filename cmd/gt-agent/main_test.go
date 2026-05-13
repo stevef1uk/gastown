@@ -1691,6 +1691,43 @@ func TestHasContentFreeMailSend(t *testing.T) {
 			cmd:        `gt mail send testgt2/witness -s "Patrol Complete" -m "no findings"`,
 			wantReject: true,
 		},
+		// REJECTED (Fix #118): internal protocol/status chatter that is
+		// not actionable work and was flooding witness inboxes.
+		{
+			name:       "PATROL_FINISH protocol noise",
+			cmd:        `gt mail send testgt2/witness -s "PATROL_FINISH" -m "patrol cycle complete"`,
+			wantReject: true,
+		},
+		{
+			name:       "ACTION_RECEIVED protocol noise",
+			cmd:        `gt mail send testgt2/witness -s "ACTION_RECEIVED lnko" -m "received"`,
+			wantReject: true,
+		},
+		{
+			name:       "HOOK_ERROR protocol noise",
+			cmd:        `gt mail send testgt2/witness -s "HOOK_ERROR hq-wisp-ukk00" -m "retrying"`,
+			wantReject: true,
+		},
+		{
+			name:       "MAIL_READ_ERROR protocol noise",
+			cmd:        `gt mail send testgt2/witness -s "MAIL_READ_ERROR" -m "mail read failed"`,
+			wantReject: true,
+		},
+		{
+			name:       "MAIL_ERROR_REPORT_ACK protocol noise",
+			cmd:        `gt mail send testgt2/witness -s "MAIL_ERROR_REPORT_ACK" -m "ack"`,
+			wantReject: true,
+		},
+		{
+			name:       "PATROL_CLEAR protocol noise",
+			cmd:        `gt mail send testgt2/witness -s "PATROL_CLEAR testgt2" -m "cleared patrol"`,
+			wantReject: true,
+		},
+		{
+			name:       "REPLY_TO_NUDGE protocol noise",
+			cmd:        `gt mail send testgt2/witness -s "REPLY_TO_NUDGE hq-wisp-aqh34: Done" -m "done"`,
+			wantReject: true,
+		},
 		// REJECTED (Fix #113): MERGE_* coordination mail with empty
 		// body. Witness/refinery hallucinate these every patrol cycle,
 		// naming patrol-wisp IDs as if they were polecat branches:

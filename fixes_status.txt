@@ -2931,6 +2931,33 @@ to ship, so deferred to the next session.
 - **Result**: Fresh reset runs no longer preserve the bad default-agent
   shape that caused planner/mechanic runtime drift to Claude Code.
 
+### Fix #118 — Witness inbox flooded by refinery protocol-noise mails
+
+- **Symptom**: `testgt2/witness` inbox accumulated 20+ non-actionable
+  refinery mails in minutes (`PATROL_FINISH`, `ACTION_RECEIVED`,
+  `HOOK_ERROR`, `MAIL_READ_ERROR`, `MAIL_ERROR_REPORT_ACK`,
+  `PATROL_CLEAR`, `REPLY_TO_NUDGE ...`). This drowned real coordination
+  signals and increased patrol-loop confusion.
+
+- **Root cause**: `hasContentFreeMailSend` already blocked many generic
+  status pings, but did not explicitly reject these protocol-style
+  subject families. They bypassed existing heuristics and were delivered
+  as permanent beads.
+
+- **Fix**:
+  - Added `mailSendProtocolNoiseRE` in `cmd/gt-agent/main.go` to reject
+    protocol/status subjects at runtime boundary.
+  - Integrated this check into `hasContentFreeMailSend` with a dedicated
+    rejection reason (`protocol/status subject noise (Fix #118)`).
+  - Extended `TestHasContentFreeMailSend` in
+    `cmd/gt-agent/main_test.go` with explicit rejection cases for each
+    observed noisy subject pattern.
+
+- **Validation**:
+  - `go test ./cmd/gt-agent -run TestHasContentFreeMailSend` passes.
+  - Cleared the witness inbox (`gt mail clear testgt2/witness`) and
+    confirmed it returned to zero messages.
+
 ## Open Issues (next session)
 
 ### Items to change — de-hardcode `spec.md` in gt-agent (Fix #116 follow-up)

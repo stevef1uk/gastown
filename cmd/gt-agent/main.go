@@ -1905,6 +1905,14 @@ var mailSendCreateArchitectureRE = regexp.MustCompile(
 var mailSendREIdleRE = regexp.MustCompile(
 	`^(?i)re:\s*(idle|report:\s*idle|idle:\s*no\s+work)\b`)
 
+// mailSendProtocolNoiseRE matches internal protocol/status chatter that
+// should not be sent as normal inbox mail between agents. These subjects
+// were observed flooding witness inboxes from refinery patrol loops.
+// They are transport-level/reporting artifacts, not actionable work
+// requests. Fix #118.
+var mailSendProtocolNoiseRE = regexp.MustCompile(
+	`^(?i)(re:\s*)?(patrol_finish|patrol_clear|action_received|hook_error|mail_read_error|mail_error_report_ack|reply_to_nudge)\b`)
+
 // mailSendEchoBodyRE matches bodies that just echo the subject, e.g.
 //
 //	"Reply to witness regarding mol-refinery-patrol"
@@ -2034,6 +2042,11 @@ func hasContentFreeMailSend(cmd string) (string, bool) {
 	// only legitimate "RE: IDLE" reply is no reply at all.
 	if mailSendREIdleRE.MatchString(subj) {
 		return "RE: IDLE acknowledgement noise (Fix #114)", true
+	}
+	// Internal protocol/status chatter should not be mailed into agent
+	// inboxes; it creates persistent bead spam and no actionable signal.
+	if mailSendProtocolNoiseRE.MatchString(subj) {
+		return "protocol/status subject noise (Fix #118)", true
 	}
 	// Body just restates the subject (e.g. subject `NO_POLECATS_FOUND`,
 	// body `No polecats found`). This is the second-most-common
