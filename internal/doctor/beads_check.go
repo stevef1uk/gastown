@@ -294,19 +294,23 @@ type dbPrefixGetter interface {
 type realDBPrefixGetter struct{}
 
 func (r *realDBPrefixGetter) GetDBPrefix(rigPath string) (string, error) {
-	cmd := exec.Command("bd", "config", "get", "issue_prefix")
-	cmd.Dir = rigPath
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		// If the error is just that the key is missing, return empty string.
-		// bd config get returns exit code 1 and "not found" message if key is missing.
-		outStr := string(output)
-		if strings.Contains(outStr, "not found") || strings.Contains(outStr, "no such key") {
+	resolved := beads.ResolveBeadsDir(rigPath)
+	if _, err := os.Stat(resolved); err != nil {
+		if os.IsNotExist(err) {
 			return "", nil
 		}
-		return "", fmt.Errorf("bd config get issue_prefix: %s: %w", strings.TrimSpace(outStr), err)
+		return "", err
 	}
-	return strings.TrimSpace(string(output)), nil
+	b := beads.NewWithBeadsDir(rigPath, resolved)
+	out, err := b.Run("config", "get", "issue_prefix")
+	if err != nil {
+		errStr := err.Error()
+		if strings.Contains(errStr, "not found") || strings.Contains(errStr, "no such key") {
+			return "", nil
+		}
+		return "", err
+	}
+	return strings.TrimSpace(string(out)), nil
 }
 
 // DatabasePrefixCheck detects when a rig's database has a different issue_prefix
@@ -491,10 +495,11 @@ func (c *DatabasePrefixCheck) Fix(ctx *CheckContext) error {
 		}
 		_ = doltserver.EnsureMetadata(ctx.TownRoot, rigName)
 
-		cmd := exec.Command("bd", "config", "set", "issue_prefix", m.routesPrefix)
-		cmd.Dir = filepath.Join(ctx.TownRoot, m.rigPath)
-		if output, err := cmd.CombinedOutput(); err != nil {
-			return fmt.Errorf("updating %s: %s", m.rigPath, strings.TrimSpace(string(output)))
+		rigAbsPath := filepath.Join(ctx.TownRoot, m.rigPath)
+		resolved := beads.ResolveBeadsDir(rigAbsPath)
+		b := beads.NewWithBeadsDir(rigAbsPath, resolved)
+		if _, err := b.Run("config", "set", "issue_prefix", m.routesPrefix); err != nil {
+			return fmt.Errorf("updating %s: %v", m.rigPath, err)
 		}
 	}
 

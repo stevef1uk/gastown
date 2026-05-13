@@ -1402,15 +1402,31 @@ func TestHasInvalidShinyFormula(t *testing.T) {
 		{"gt sling te-foo --formula shiny", "qa", true},
 		{"gt sling te-foo --formula shiny", "planner", true},
 
-		// Mayor and Architect are legitimate sources of shiny.
+		// Fix #115: deacon bonded shiny to its own patrol bead via the
+		// legacy `--formula shiny` syntax (exact command observed in
+		// production: `gt sling hq-wisp-nf7e --formula shiny`).
+		{"gt sling hq-wisp-nf7e --formula shiny", "deacon", true},
+
+		// Fix #115: also catch the modern positional-shiny syntax,
+		// regardless of role classification — same restricted set.
+		{"gt sling shiny --on hq-wisp-nf7e deacon/", "deacon", true},
+		{"gt sling shiny --on hq-wisp-u0z1r witness/", "witness", true},
+		{"gt sling shiny --on hq-wisp-xyz refinery/", "refinery", true},
+		{"gt sling shiny --on te-foo testgt2/qa", "qa", true},
+		{"gt sling shiny --on te-foo testgt2/architect", "planner", true},
+
+		// Mayor and Architect are legitimate sources of shiny — both syntaxes.
 		{"gt sling te-foo --formula shiny", "mayor", false},
 		{"gt sling te-foo --formula shiny", "architect", false},
 		{"gt sling te-foo --formula shiny", "polecat", false},
 		{"gt sling te-foo --formula shiny", "crew", false},
+		{"gt sling shiny --on te-foo testgt2/architect", "mayor", false},
+		{"gt sling shiny --on te-foo testgt2/crew/dom", "architect", false},
 
 		// Other formulas are fine for any role.
 		{"gt sling te-foo --formula mol-polecat-work", "witness", false},
 		{"gt sling te-foo --formula mol-witness-patrol", "witness", false},
+		{"gt sling mol-idea-to-plan --on te-foo planner/", "mayor", false},
 
 		// Non-sling commands not touched.
 		{"gt hook", "witness", false},
@@ -1419,12 +1435,76 @@ func TestHasInvalidShinyFormula(t *testing.T) {
 		// Quoted formula name still resolved.
 		{"gt sling te-foo --formula \"shiny\"", "witness", true},
 		{"gt sling te-foo --formula 'shiny'", "witness", true},
+		{"gt sling \"shiny\" --on te-foo deacon/", "deacon", true},
 	}
 	for _, tc := range tests {
 		if got := hasInvalidShinyFormula(tc.cmd, tc.role); got != tc.want {
 			t.Errorf("hasInvalidShinyFormula(%q, %q) = %v, want %v",
 				tc.cmd, tc.role, got, tc.want)
 		}
+	}
+}
+
+func TestFindCaseInsensitiveNameInDir(t *testing.T) {
+	dir := t.TempDir()
+	if _, ok := findCaseInsensitiveNameInDir(dir, "spec.md"); ok {
+		t.Fatal("expected no match on empty dir")
+	}
+	if err := os.WriteFile(filepath.Join(dir, "SPEC.md"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, ok := findCaseInsensitiveNameInDir(dir, "spec.md")
+	if !ok {
+		t.Fatal("expected match")
+	}
+	if want := filepath.Join(dir, "SPEC.md"); got != want {
+		t.Fatalf("got %q want %q", got, want)
+	}
+}
+
+func TestRewriteSpecMDPathCaseInsensitive(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "myrig", "mayor", "rig")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "SPEC.md"), []byte("# SPEC\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	wrong := filepath.Join(dir, "spec.md")
+	cmd := "cat " + wrong + " && wc -c " + wrong
+	want := "cat " + filepath.Join(dir, "SPEC.md") + " && wc -c " + filepath.Join(dir, "SPEC.md")
+	out, changed := rewriteSpecMDPathCaseInsensitive(cmd)
+	if !changed {
+		t.Fatal("expected rewrite")
+	}
+	if out != want {
+		t.Fatalf("got:\n%q\nwant:\n%q", out, want)
+	}
+	// Idempotent / already-correct path: no change
+	out2, changed2 := rewriteSpecMDPathCaseInsensitive(out)
+	if changed2 || out2 != out {
+		t.Fatalf("second pass changed output: changed=%v out=%q", changed2, out2)
+	}
+	// Through normalizer (planner-like command)
+	got, ch := normalizeGeneratedCommand("cat " + wrong)
+	if !ch {
+		t.Fatal("normalize should rewrite spec path")
+	}
+	if got != "cat "+filepath.Join(dir, "SPEC.md") {
+		t.Fatalf("normalize got %q", got)
+	}
+}
+
+func TestRewriteSpecMDPathCaseInsensitive_noFileNoRewrite(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "empty", "mayor", "rig")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	wrong := filepath.Join(dir, "spec.md")
+	cmd := "cat " + wrong
+	out, changed := rewriteSpecMDPathCaseInsensitive(cmd)
+	if changed || out != cmd {
+		t.Fatalf("unexpected rewrite: changed=%v out=%q", changed, out)
 	}
 }
 

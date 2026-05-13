@@ -219,6 +219,41 @@ func TestRigConfigSyncCheck_AllConfigsPresent(t *testing.T) {
 	}
 }
 
+func TestIssuePrefixValueFromSQLJSON_LowercaseValue(t *testing.T) {
+	v, ok := issuePrefixValueFromSQLJSON([]byte(`[{"value":"te"}]`))
+	if !ok || v != "te" {
+		t.Fatalf("got %q ok=%v", v, ok)
+	}
+}
+
+func TestIssuePrefixValueFromSQLJSON_UppercaseValue(t *testing.T) {
+	v, ok := issuePrefixValueFromSQLJSON([]byte(`[{"Value":"ab"}]`))
+	if !ok || v != "ab" {
+		t.Fatalf("got %q ok=%v", v, ok)
+	}
+}
+
+func TestResolvePrefixStringsForRigFix_FromRoutes(t *testing.T) {
+	tmp := t.TempDir()
+	beadsTown := filepath.Join(tmp, ".beads")
+	if err := os.MkdirAll(beadsTown, 0755); err != nil {
+		t.Fatal(err)
+	}
+	routes := `{"prefix":"xy-","path":"myrig/mayor/rig"}` + "\n"
+	if err := os.WriteFile(filepath.Join(beadsTown, "routes.jsonl"), []byte(routes), 0644); err != nil {
+		t.Fatal(err)
+	}
+	rigRoot := filepath.Join(tmp, "myrig")
+	info := rigCheckInfo{name: "myrig", path: rigRoot, prefix: "", isTownRoot: false}
+	forInit, forDB, err := resolvePrefixStringsForRigFix(tmp, info)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if forInit != "xy-" || forDB != "xy" {
+		t.Fatalf("forInit=%q forDB=%q", forInit, forDB)
+	}
+}
+
 func TestStaleRuntimeFilesCheck_StalePIDFiles(t *testing.T) {
 	// Create temp town root
 	tmpDir := t.TempDir()

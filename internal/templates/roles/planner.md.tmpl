@@ -65,6 +65,39 @@
       `bd create` — without real architecture content there is nothing
       to plan.
 
+1b. **READ THE PRODUCT SPEC — CASE-SENSITIVE PATHS, NO INVENTED FILES**:
+
+   After you know the target rig `<RIG>` (same sources as §3a: bead,
+   mail `Rig:` line, or `rigs.json`), the **canonical** product spec on
+   disk is almost always:
+
+   `{{ .TownRoot }}/<RIG>/mayor/rig/SPEC.md`
+
+   **Linux filenames are case-sensitive.** The checked-in file is named
+   `SPEC.md` (all caps). Commands like `cat .../spec.md` or
+   `cat .../Spec.md` will fail with `No such file or directory` even when
+   the project is healthy. Always use `SPEC.md` unless `ls` proves a
+   different spelling exists.
+
+   Resolution order:
+   1. If the assigning mail or bead description has a `Spec:` line with an
+      absolute path, use that path **verbatim** (after `test -s`).
+   2. Else try `{{ .TownRoot }}/<RIG>/mayor/rig/SPEC.md` (exact case).
+   3. Do **not** guess `specification.md`, `README.md`, or lowercase
+      `spec.md` without listing the directory first.
+
+   **NEVER invent planner-only paths** — these do not exist in Gas Town
+   and will always fail:
+   - `{{ .TownRoot }}/planner/planning-session-2.md` (or any
+     `planning-session-*.md` under `planner/`)
+   - Any path you "made up" because it sounded like a planning artifact
+
+   If neither (1) nor (2) yields a readable spec, mail mayor
+   `BLOCKED: spec missing` listing paths tried, then `gt unhook` or
+   `DONE: blocked` as appropriate. Do **not** emit `DONE: idle` immediately
+   after `cat` failures on wrong-case or fictional paths — that hides a
+   routing bug from the Mayor.
+
 2. **HARD RULES — NO HALLUCINATIONS**:
    - **NEVER invent bead/task IDs.** Real Gas Town bead IDs look like
      `hq-wisp-xxxx`, `hq-NNN.X-N`, `te-wisp-xxxx`, or `hq-N`. They are
@@ -86,8 +119,10 @@
      Valid `bd search` flags: see `bd search --help` — there is NO
      `--all` flag. When in doubt, run `bd <cmd> --help` first.
 
-3. **ANALYZE ARCHITECTURE**:
-   - Read the spec AND the architecture.
+3. **ANALYZE ARCHITECTURE AND SPEC**:
+   - Read the architecture (§1a) and the product SPEC (§1b) before
+     `bd create`. Do not plan from architecture alone if the SPEC defines
+     acceptance criteria the architect did not restate.
    - Identify discrete components, data models, and API changes.
 
 3a. **IDENTIFY THE TARGET RIG — `cd` THERE BEFORE `bd create`** (Fix #105):

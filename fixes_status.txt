@@ -2783,7 +2783,149 @@ to ship, so deferred to the next session.
   the LLM found a new phrasing that escapes the regexes; in
   that case extend the regexes and re-record under Fix #114b.
 
+### Fix #115 — Deacon slings shiny on its own patrol bead
+
+- **Symptom**: After Fix #114 unblocked Mayor Stage 0, a fresh
+  end-to-end run produced FIVE junk mails in Mayor's inbox before
+  the operator kickoff was even sent. All five originated from
+  `deacon/`, with subjects:
+    - `Architecture Ready` (empty body)
+    - `Design {{feature}}`
+    - `Implement {{feature}}`
+    - `Test {{feature}}`
+    - `URGENT: Merge {{feature}}`
+  Bodies contained unsubstituted Handlebars-style placeholders
+  (`{{feature}}`, `{{component1}}`, `{{architecture_diagram}}`,
+  `{{technology}}`) — the deacon LLM had clearly bonded the
+  `shiny` formula to its own `mol-deacon-patrol` bead and emitted
+  the resulting wisp titles as mails.
+
+- **Trace (deacon session #14)**:
+    1. `gt hook` returned bead `hq-wisp-nf7e` of type
+       `mol-deacon-patrol` (the deacon's normal patrol cycle).
+    2. LLM first response: `CMD: gt sling hq-wisp-nf7e --formula shiny`.
+       Yes, the deacon bonded the *engineering* workflow (design →
+       implement → review → test → submit) to its *own* patrol bead.
+       `gt sling` accepted it, instantiated five child wisps, and
+       Dolt-committed them.
+    3. LLM second response: a 760-char wall of `CMD:` lines including
+       `cat /home/stevef/gt/architect-role-template/architecture.md.tmpl`
+       (path does not exist) and `echo "Project bead: hq-wisp-nf7e"
+       | mail -s "Architecture Ready" mayor@town.gov` (SMTP — Gas
+       Town has no SMTP). Hallucinations cascading.
+    4. The five wisp titles ended up as mail subjects sent to Mayor,
+       carrying their un-substituted `{{feature}}` placeholders.
+
+- **Root cause**: The existing `shinyRestrictedRoles` guard in
+  `cmd/gt-agent/main.go` (added during the witness/refinery
+  hallucination fix) covered witness, refinery, mechanic, qa, and
+  planner — but **not deacon**. The deacon's role template was
+  also vague ("## Pipeline ... ## Commands"), giving the LLM no
+  explicit list of forbidden commands. The combination meant the
+  deacon could (a) hallucinate `gt sling shiny` and (b) execute
+  it without any safety net.
+
+- **Why it survived earlier passes**: The witness/refinery
+  hallucination was exactly the same pattern but on different
+  agents, and the fix at the time added only the observed roles
+  to the restricted set. Deacon wasn't producing this behaviour
+  during Fix #91-93 (the witness fix), so it wasn't added —
+  classic "fix the symptom, not the symptom-class" gap.
+
+- **Fix**:
+  - `shinyRestrictedRoles` now includes `deacon`.
+  - `hasInvalidShinyFormula` extended to recognise the modern
+    positional syntax `gt sling shiny <args>` (parts[2]=="shiny"),
+    not just the legacy `--formula shiny` form. Either form is
+    now rejected for any restricted role.
+  - `deacon.md.tmpl` rewritten with a `## CRITICAL — Commands you
+    MUST NOT run` section that explicitly forbids `gt sling shiny`,
+    `gt sling mol-idea-to-plan`, `gt sling mol-polecat-work`,
+    `gt sling design.formula`, and creation of wisps titled
+    `Design ...` / `Implement ...` / `Test ...` / `Submit ...` /
+    `Architecture Ready`. Adds an explicit rule for handling
+    project beads that land on the deacon's hook (forward to Mayor,
+    do NOT bond a workflow formula to the patrol bead).
+  - Five new test cases in `TestHasInvalidShinyFormula` covering
+    deacon-with-shiny (both syntaxes), positional shiny for other
+    restricted roles, and Mayor/Architect with positional shiny
+    (must stay allowed).
+
+- **Files**:
+  - `cmd/gt-agent/main.go` (add `deacon` to `shinyRestrictedRoles`,
+    extend `hasInvalidShinyFormula` for positional syntax).
+  - `cmd/gt-agent/main_test.go` (new test cases).
+  - `internal/templates/roles/deacon.md.tmpl` (rewritten with
+    explicit forbidden-commands section).
+
+- **Still open after this fix**:
+  - `gt sling` itself should refuse to instantiate a workflow when
+    a `required = true` var is missing — the deacon's command
+    `gt sling hq-wisp-nf7e --formula shiny` had no `feature` value,
+    yet sling created child wisps with literal `{{feature}}` titles.
+    `ensureFormulaRequiredVars` in `internal/cmd/sling_helpers.go`
+    only auto-defaults for `mol-polecat-work` / `mol-idea-to-plan`;
+    for everything else missing required vars should be a hard
+    error, not a silent template-literal leak.
+  - `gt mail send` should refuse to send mails whose subject or
+    body still contains `{{var}}` unsubstituted Handlebars
+    placeholders — belt-and-braces against this entire bug class.
+  - Filed for the next pass; not blocking the current pipeline
+    because Fix #115 already prevents the deacon from ever
+    starting the chain.
+
+### Fix #116 — Planner used wrong SPEC path (`spec.md` + invented `planning-session-2.md`)
+
+- **Symptom**: After architecture was found correctly via the §1a loop,
+  the planner ran `cat .../mayor/rig/spec.md` (lowercase) — file does
+  not exist; real path is `SPEC.md`. Then it ran
+  `cat .../planner/planning-session-2.md` — path does not exist in Gas
+  Town at all. Model then emitted `DONE: idle` without handing off.
+
+- **Root cause**: Template told planners to "read the spec AND the
+  architecture" but never stated the **canonical** rig spec path or
+  that Linux is case-sensitive. The LLM guessed lowercase and invented
+  a "planning session" file under `planner/`.
+
+- **Fix**: New §1b in `planner.md.tmpl`: canonical
+  `$TOWN_ROOT/<RIG>/mayor/rig/SPEC.md`, explicit case warning, priority
+  order (`Spec:` line from mail first, then `SPEC.md`), explicit ban on
+  `planner/planning-session-*.md`, and instruction not to hide failures
+  with `DONE: idle` after bad `cat`s. Section 3 retitled to reference
+  §1b.
+
+- **Runtime guard (extension)**: `rewriteSpecMDPathCaseInsensitive` in
+  `cmd/gt-agent/main.go` runs inside `normalizeGeneratedCommand`. For
+  each absolute `*.md` path in the command whose basename matches
+  `spec.md` under `strings.EqualFold`, if `os.Stat(exactPath)` fails
+  but the parent directory contains a regular file whose name is
+  `EqualFold` to `spec.md`, every occurrence of that wrong string is
+  replaced with the actual on-disk spelling (e.g. `.../mayor/rig/spec.md`
+  → `.../mayor/rig/SPEC.md`). Works for any directory, not only
+  `mayor/rig/`. Skips rewrite when the exact path already exists so
+  genuinely-lowercase `spec.md` on disk is untouched. Unit tests:
+  `TestFindCaseInsensitiveNameInDir`, `TestRewriteSpecMDPathCaseInsensitive`,
+  `TestRewriteSpecMDPathCaseInsensitive_noFileNoRewrite`.
+
 ## Open Issues (next session)
+
+### Items to change — de-hardcode `spec.md` in gt-agent (Fix #116 follow-up)
+
+The `rewriteSpecMDPathCaseInsensitive` guard in `cmd/gt-agent/main.go`
+still **hardcodes** the basename `spec.md` (via `strings.EqualFold`
+against that literal). That matches the one failure mode we saw in
+production (planner `cat …/mayor/rig/spec.md` vs on-disk `SPEC.md`)
+but it does **not** generalize: the same class of bug can hit
+`architecture.md` / `Architecture.md`, `plan.md`, `README.md`, etc.,
+each of which would currently require another special case in Go.
+
+**Preferred direction (not implemented yet):** resolve by directory
+scan without embedding product filenames in the binary — e.g. when
+`Stat(requestedPath)` fails, `ReadDir(parent)` and pick the first name
+where `EqualFold(entry, filepath.Base(requestedPath))` (already
+general), *or* drive an allowlist from template/config so Gas Town
+conventions live in one place. Until then the hardcoded `spec.md`
+string stays as documented technical debt.
 
 ### Auto-save misroute mitigation (see Fix #99)
 

@@ -1,6 +1,7 @@
 package doctor
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -56,6 +57,74 @@ type dbMismatch struct {
 	prefix      string
 	currentDB   string
 	expectedDB  string
+}
+
+// resolvePrefixStringsForRigFix returns bd init --prefix value and the value
+// stored in config.issue_prefix (no trailing hyphen). Town root uses hq.
+// For rigs with an empty rigs.json beads.prefix, the prefix is taken from
+// town .beads/routes.jsonl so --fix matches DatabasePrefixCheck / bd routing.
+func resolvePrefixStringsForRigFix(townRoot string, info rigCheckInfo) (forInit string, forDB string, err error) {
+	if info.isTownRoot {
+		return "hq", "hq", nil
+	}
+	raw := strings.TrimSpace(info.prefix)
+	if raw != "" {
+		if !strings.HasSuffix(raw, "-") {
+			raw = raw + "-"
+		}
+		return raw, strings.TrimSuffix(raw, "-"), nil
+	}
+	routes, err := beads.LoadRoutes(filepath.Join(townRoot, ".beads"))
+	if err != nil {
+		return "", "", fmt.Errorf("load routes for rig %s: %w", info.name, err)
+	}
+	rigRoot := filepath.Clean(info.path)
+	mayorWorktree := filepath.Join(rigRoot, "mayor", "rig")
+	for _, r := range routes {
+		routeAbs := filepath.Clean(filepath.Join(townRoot, r.Path))
+		if routeAbs == mayorWorktree || routeAbs == rigRoot {
+			p := strings.TrimSpace(r.Prefix)
+			if p == "" {
+				continue
+			}
+			if !strings.HasSuffix(p, "-") {
+				p = p + "-"
+			}
+			return p, strings.TrimSuffix(p, "-"), nil
+		}
+	}
+	return "", "", fmt.Errorf("no beads prefix in rigs.json or routes.jsonl for rig %q", info.name)
+}
+
+// issuePrefixValueFromSQLJSON parses bd sql --json output for SELECT value ...
+// Column names may vary in casing (value, Value) depending on the SQL engine.
+func issuePrefixValueFromSQLJSON(out []byte) (string, bool) {
+	out = bytes.TrimSpace(out)
+	if len(out) == 0 || (out[0] != '[' && out[0] != '{') {
+		return "", false
+	}
+	var rows []map[string]interface{}
+	if err := json.Unmarshal(out, &rows); err != nil || len(rows) == 0 {
+		var wrapped struct {
+			Rows []map[string]interface{} `json:"rows"`
+		}
+		if err := json.Unmarshal(out, &wrapped); err != nil || len(wrapped.Rows) == 0 {
+			return "", false
+		}
+		rows = wrapped.Rows
+	}
+	row := rows[0]
+	for _, key := range []string{"value", "Value", "VALUE"} {
+		if v, ok := row[key].(string); ok {
+			return v, true
+		}
+	}
+	for _, v := range row {
+		if s, ok := v.(string); ok {
+			return s, true
+		}
+	}
+	return "", false
 }
 
 // NewRigConfigSyncCheck creates a new rig config sync check.
@@ -231,14 +300,10 @@ func (c *RigConfigSyncCheck) Run(ctx *CheckContext) *CheckResult {
 			// Query the config table directly. If missing or empty, it's an issue.
 			out, err := bd.SQL("select value from config where `key` = 'issue_prefix'")
 			if err == nil {
-				var rows []struct {
-					Value string `json:"value"`
-				}
-				if err := json.Unmarshal(out, &rows); err == nil {
-					if len(rows) == 0 || rows[0].Value == "" {
-						c.missingPrefixDB = append(c.missingPrefixDB, info)
-						details = append(details, fmt.Sprintf("Rig %s database is missing issue_prefix in config table", rigName))
-					}
+				val, ok := issuePrefixValueFromSQLJSON(out)
+				if !ok || val == "" {
+					c.missingPrefixDB = append(c.missingPrefixDB, info)
+					details = append(details, fmt.Sprintf("Rig %s database is missing issue_prefix in config table", rigName))
 				}
 			} else {
 				// If table doesn't exist or SQL fails, we treat it as missing prefix config
@@ -354,11 +419,48 @@ func (c *RigConfigSyncCheck) Fix(ctx *CheckContext) error {
 		}
 	}
 
+	// Fix missing Dolt database first so bd init --force cannot clobber issue_prefix
+	// written by the missingPrefixDB / missingPrefixCfg loops (GH#doctor-order).
+	for _, info := range c.missingDoltDB {
+		forInit, _, err := resolvePrefixStringsForRigFix(ctx.TownRoot, info)
+		if err != nil {
+			return err
+		}
+
+		beadsDir := filepath.Join(info.path, "mayor", "rig", ".beads")
+		if info.isTownRoot {
+			beadsDir = filepath.Join(info.path, ".beads")
+		}
+
+		// Run bd init --prefix <prefix> --force --destroy-token to create the database
+		destroyToken := "DESTROY-" + strings.TrimSuffix(forInit, "-")
+		bdPath, err := exec.LookPath("bd")
+		if err != nil {
+			return fmt.Errorf("beads (bd) binary not found in PATH")
+		}
+		cmd := exec.Command(bdPath, "init", "--prefix", forInit, "--force", "--destroy-token="+destroyToken)
+		cmd.Dir = info.path
+		cmd.Env = append(os.Environ(), "BEADS_DIR="+beadsDir)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("could not init beads for %s: %v: %s", info.name, err, string(out))
+		}
+
+		rigName := info.name
+		if rigName == "" {
+			if info.isTownRoot {
+				rigName = "hq"
+			} else {
+				rigName = filepath.Base(info.path)
+			}
+		}
+		_ = doltserver.EnsureMetadata(ctx.TownRoot, rigName)
+	}
+
 	// Fix missing issue-prefix in config.yaml
 	for _, info := range c.missingPrefixCfg {
-		prefix := info.prefix
-		if prefix == "" {
-			prefix = "hq"
+		_, forDB, err := resolvePrefixStringsForRigFix(ctx.TownRoot, info)
+		if err != nil {
+			return err
 		}
 
 		beadsDir := filepath.Join(info.path, "mayor", "rig", ".beads")
@@ -374,21 +476,19 @@ func (c *RigConfigSyncCheck) Fix(ctx *CheckContext) error {
 
 		// Initialize beads database if missing
 		// Note: bd init handles creating metadata.json and config.yaml
-		// Initialization will be handled by the missingDoltDB loop if metadata.json is missing.
+		// Initialization is handled by the missingDoltDB loop if metadata.json is missing.
 		// If metadata.json exists but config.yaml is missing, we already created config.yaml above.
 		if _, err := os.Stat(configYamlPath); os.IsNotExist(err) {
-			_ = os.WriteFile(configYamlPath, []byte("issue-prefix: "+info.prefix+"\n"), 0644)
+			_ = os.WriteFile(configYamlPath, []byte("issue-prefix: "+forDB+"\n"), 0644)
 		}
 	}
 
 	// Fix missing issue-prefix in Dolt database
 	for _, info := range c.missingPrefixDB {
-		prefix := info.prefix
-		if prefix == "" {
-			prefix = "hq"
+		_, forDB, err := resolvePrefixStringsForRigFix(ctx.TownRoot, info)
+		if err != nil {
+			return err
 		}
-		// Ensure prefix doesn't have trailing dash for the DB config value
-		dbPrefix := strings.TrimSuffix(prefix, "-")
 
 		beadsDir := filepath.Join(info.path, "mayor", "rig", ".beads")
 		if info.isTownRoot {
@@ -401,46 +501,11 @@ func (c *RigConfigSyncCheck) Fix(ctx *CheckContext) error {
 		_, _ = bd.SQL("create table if not exists config (`key` varchar(255) primary key, `value` varchar(255))")
 
 		// 2. Insert or update issue_prefix
-		query := fmt.Sprintf("replace into config (`key`, `value`) values ('issue_prefix', '%s')", dbPrefix)
+		esc := strings.ReplaceAll(forDB, "'", "''")
+		query := fmt.Sprintf("replace into config (`key`, `value`) values ('issue_prefix', '%s')", esc)
 		if _, err := bd.SQL(query); err != nil {
 			return fmt.Errorf("could not set issue_prefix in database for %s: %w", info.name, err)
 		}
-	}
-
-	// Fix missing Dolt database
-	for _, info := range c.missingDoltDB {
-		prefix := info.prefix
-		if prefix == "" {
-			prefix = "hq"
-		}
-
-		beadsDir := filepath.Join(info.path, "mayor", "rig", ".beads")
-		if info.isTownRoot {
-			beadsDir = filepath.Join(info.path, ".beads")
-		}
-		
-		// Run bd init --prefix <prefix> --force --destroy-token to create the database
-		destroyToken := "DESTROY-" + strings.TrimSuffix(prefix, "-")
-		bdPath, err := exec.LookPath("bd")
-		if err != nil {
-			return fmt.Errorf("beads (bd) binary not found in PATH")
-		}
-		cmd := exec.Command(bdPath, "init", "--prefix", prefix, "--force", "--destroy-token="+destroyToken)
-		cmd.Dir = info.path
-		cmd.Env = append(os.Environ(), "BEADS_DIR="+beadsDir)
-		if out, err := cmd.CombinedOutput(); err != nil {
-			return fmt.Errorf("could not init beads for %s: %v: %s", info.name, err, string(out))
-		}
-		
-		rigName := info.name
-		if rigName == "" {
-			if info.isTownRoot {
-				rigName = "hq"
-			} else {
-				rigName = filepath.Base(info.path)
-			}
-		}
-		_ = doltserver.EnsureMetadata(ctx.TownRoot, rigName)
 	}
 
 	// Fix database name mismatches

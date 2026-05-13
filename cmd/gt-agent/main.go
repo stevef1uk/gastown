@@ -60,6 +60,10 @@ var lastStepShort string
 // command-normalization guards so they can refuse role-inappropriate
 // invocations (e.g. a witness slinging the `shiny` engineering formula).
 var currentRole string
+// absPathMarkdownRE matches absolute Unix paths ending in .md with at
+// least one directory segment (e.g. /home/gt/rig/mayor/rig/spec.md).
+// Used to fix case-only mismatches against on-disk SPEC.md (Fix #116 ext).
+var absPathMarkdownRE = regexp.MustCompile(`(/[A-Za-z0-9_.@-]+(?:/[A-Za-z0-9_.@-]+)+\.md)`)
 var stepIDRe = regexp.MustCompile(`[a-z0-9_-]+/[a-z0-9_-]+/step-[0-9]+`)
 var jsonStepRe = regexp.MustCompile(`"step_id"\s*:\s*"([^"]+)"`)
 var gtBinaryPath string
@@ -1233,6 +1237,59 @@ func canonicalRole(role string) string {
 	return r
 }
 
+// findCaseInsensitiveNameInDir returns the joined path for the first
+// regular file in dir whose name equals wantFile under strings.EqualFold.
+func findCaseInsensitiveNameInDir(dir, wantFile string) (full string, ok bool) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return "", false
+	}
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		if strings.EqualFold(e.Name(), wantFile) {
+			return filepath.Join(dir, e.Name()), true
+		}
+	}
+	return "", false
+}
+
+// rewriteSpecMDPathCaseInsensitive replaces any absolute path whose final
+// component is "spec.md" under case-insensitive comparison when that exact
+// path does not exist on disk, but the parent directory contains a file
+// whose name matches "spec.md" case-insensitively (e.g. SPEC.md). This fixes
+// recurring planner/architect `cat .../mayor/rig/spec.md` failures on Linux.
+func rewriteSpecMDPathCaseInsensitive(cmd string) (string, bool) {
+	if !strings.Contains(cmd, ".md") {
+		return cmd, false
+	}
+	out := cmd
+	changed := false
+	seen := make(map[string]bool)
+	for _, m := range absPathMarkdownRE.FindAllString(cmd, -1) {
+		if seen[m] {
+			continue
+		}
+		seen[m] = true
+		base := filepath.Base(m)
+		if !strings.EqualFold(base, "spec.md") {
+			continue
+		}
+		if _, err := os.Stat(m); err == nil {
+			continue
+		}
+		dir := filepath.Dir(m)
+		resolved, ok := findCaseInsensitiveNameInDir(dir, "spec.md")
+		if !ok || resolved == m {
+			continue
+		}
+		out = strings.ReplaceAll(out, m, resolved)
+		changed = true
+	}
+	return out, changed
+}
+
 // normalizeGeneratedCommand rewrites known-invalid LLM command patterns into
 // safe canonical forms to avoid guaranteed molecule lookup failures.
 func normalizeGeneratedCommand(cmd string) (string, bool) {
@@ -1242,6 +1299,11 @@ func normalizeGeneratedCommand(cmd string) (string, bool) {
 	// Models often wrap commands in backticks (e.g. `gt prime`)
 	if strings.HasPrefix(trimmed, "`") && strings.HasSuffix(trimmed, "`") {
 		trimmed = strings.Trim(trimmed, "`")
+		rewritten = true
+	}
+
+	if fixed, ok := rewriteSpecMDPathCaseInsensitive(trimmed); ok {
+		trimmed = fixed
 		rewritten = true
 	}
 
@@ -2259,23 +2321,44 @@ func hasInvalidPatrolCommand(cmd string) bool {
 // shinyRestrictedRoles are the roles that should never kick off the
 // `shiny` engineering formula (design → implement → review → test →
 // submit). Patrol/governor roles slung shiny at their own patrol bead
-// is the recurring witness/refinery hallucination this guard catches.
+// is the recurring witness/refinery/deacon hallucination this guard
+// catches.
+//
+// Deacon was added (Fix #115) after a session-13 deacon patrol bonded
+// `shiny` to its own `mol-deacon-patrol` bead with
+// `feature=mol-deacon-patrol`, instantiated five child wisps with
+// un-substituted `{{feature}}` placeholders (the substitution only
+// resolves cleanly when the formula is bonded with a substantive
+// `feature` value, and template-literal "{{feature}}" survived through
+// the wisp titles), and mailed Mayor a chain of `Design {{feature}}`,
+// `Implement {{feature}}`, `Test {{feature}}`, `URGENT: Merge
+// {{feature}}` mails plus a bogus `Architecture Ready` — classic
+// downstream noise that the Mayor then tried to route.
 var shinyRestrictedRoles = map[string]bool{
 	"witness":  true,
 	"refinery": true,
 	"mechanic": true,
 	"qa":       true,
 	"planner":  true,
+	"deacon":   true, // Fix #115: deacon is a patrol role, not a project kickoff role
 }
 
 // hasInvalidShinyFormula returns true when a role that has no business
-// running the `shiny` engineering workflow tries to `gt sling … --formula
-// shiny …`. Only Mayor / Architect / Crew / Polecats should ever do that.
+// running the `shiny` engineering workflow tries to sling it, either via
+// `gt sling … --formula shiny …` (legacy syntax) or
+// `gt sling shiny …` (modern positional syntax). Only Mayor / Architect /
+// Crew / Polecats should ever do that.
 func hasInvalidShinyFormula(cmd, role string) bool {
 	if !hasCommandPrefix(cmd, "gt sling") {
 		return false
 	}
 	parts := strings.Fields(cmd)
+	// Modern positional syntax: `gt sling shiny [args...]` —
+	// parts[0]="gt", parts[1]="sling", parts[2]="shiny".
+	if len(parts) >= 3 && trimQuotes(parts[2]) == "shiny" {
+		return shinyRestrictedRoles[role]
+	}
+	// Legacy/explicit syntax: `gt sling <bead> --formula shiny …`.
 	for i, p := range parts {
 		if p != "--formula" || i+1 >= len(parts) {
 			continue
