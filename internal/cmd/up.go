@@ -373,6 +373,7 @@ func runUp(cmd *cobra.Command, args []string) error {
 	} else {
 		services = append(services, ServiceStatus{Name: "Daemon", Type: "daemon", OK: true, Detail: "running (PID unknown)"})
 	}
+	deaconServiceIdx := len(services)
 	services = append(services, ServiceStatus{Name: deaconResult.name, Type: constants.RoleDeacon, OK: deaconResult.ok, Detail: deaconResult.detail})
 	if !deaconResult.ok {
 		allOK = false
@@ -385,6 +386,7 @@ func runUp(cmd *cobra.Command, args []string) error {
 	if !plannerResult.ok {
 		allOK = false
 	}
+	mechanicServiceIdx := len(services)
 	services = append(services, ServiceStatus{Name: mechanicResult.name, Type: constants.RoleMechanic, OK: mechanicResult.ok, Detail: mechanicResult.detail})
 	if !mechanicResult.ok {
 		allOK = false
@@ -422,6 +424,29 @@ func runUp(cmd *cobra.Command, args []string) error {
 			if settings.NatsURL != "" {
 				os.Setenv("GT_NATS_URL", settings.NatsURL)
 			}
+		}
+
+		// Deacon and Mechanic start in parallel with Dolt (startupWg). They can
+		// fail bd/Dolt connection attempts before the town-level wait+env block
+		// above (e.g. Dolt "already running" returns before readiness in the
+		// starter goroutine, or general startup ordering). Retry once now that
+		// Dolt is known ready and connection env is set.
+		if !deaconResult.ok {
+			deaconMgr := deacon.NewManager(townRoot)
+			if err := deaconMgr.Start(""); err == nil {
+				deaconResult = agentStartResult{name: "Deacon", ok: true, detail: deaconMgr.SessionName()}
+			} else if err == deacon.ErrAlreadyRunning {
+				deaconResult = agentStartResult{name: "Deacon", ok: true, detail: deaconMgr.SessionName()}
+			} else {
+				deaconResult = agentStartResult{name: "Deacon", ok: false, detail: err.Error()}
+			}
+			services[deaconServiceIdx].OK = deaconResult.ok
+			services[deaconServiceIdx].Detail = deaconResult.detail
+		}
+		if !mechanicResult.ok {
+			mechanicResult = upStartMechanic(townRoot)
+			services[mechanicServiceIdx].OK = mechanicResult.ok
+			services[mechanicServiceIdx].Detail = mechanicResult.detail
 		}
 	}
 
@@ -519,6 +544,16 @@ func runUp(cmd *cobra.Command, args []string) error {
 				})
 				allOK = false
 			}
+		}
+	}
+
+	// Aggregate success from the full service list (covers deacon/mechanic retry
+	// after Dolt ready and any later appends — incremental allOK can drift).
+	allOK = true
+	for _, svc := range services {
+		if !svc.OK {
+			allOK = false
+			break
 		}
 	}
 
