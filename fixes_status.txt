@@ -1,5 +1,5 @@
 # Gas Town Fixes Status
-Last updated: 2026-05-11
+Last updated: 2026-05-13
 
 ## Goal
 Fix the end-to-end Gas Town flow where a spec can be handed to agents who autonomously implement it.
@@ -3071,6 +3071,32 @@ to ship, so deferred to the next session.
     kickoff subject, **`gt mail mark-unread <id>`**, re-list unread, then run
     Stage 0. Rule 1 defers `DONE: idle` until after 1b.
   - `cmd/gt-agent/main_test.go`: regression test for `CMD: DONE: idle`.
+
+### Fix #122 — Mayor `gt mail delete` destroyed human kickoff before Stage 0
+
+- **Symptom**: After `gt mail send mayor/ -s "New project: …"` the Mayor agent
+  ran `gt mail delete hq-wisp-…` on that message, removing the kickoff before
+  any `bd create` / shiny sling.
+- **Root cause**: No runtime guard; small models sometimes treat inbox cleanup
+  as the first action.
+- **Fix**: `normalizeGeneratedCommand` (mayor only) resolves `id → subject`
+  via `gt mail inbox --json` (injected stub in tests) and rejects
+  `gt mail delete` when any listed ID maps to a kickoff-shaped subject
+  (`new project`, `kickoff…`, `project:` prefixes after `Re:`/`Fwd:` stripping)
+  **or** a `blocked:` subject prefix (Fix #123 — planner input errors).
+  Lookup failures or unknown IDs **fail open** (do not block).
+- **Files**: `cmd/gt-agent/main.go`, `cmd/gt-agent/main_test.go`,
+  `internal/templates/roles/mayor.md.tmpl` (rule 6 + routing table, with Fix #123).
+
+### Fix #123 — Mayor deleted planner `BLOCKED:` mail instead of acting
+
+- **Symptom**: After "Plan Complete", unread still showed
+  `BLOCKED: architecture missing` (wrong `RIGS/` paths). Mayor ran
+  `gt mail delete` on those messages, hiding the failure from the next session.
+- **Fix**: Extend the same mayor delete guard (Fix #122 path) to treat
+  subjects whose normalized prefix is **`blocked:`** as non-disposable.
+- **Files**: `cmd/gt-agent/main.go`, `cmd/gt-agent/main_test.go`,
+  `internal/templates/roles/mayor.md.tmpl` (routing table + rule 6).
 
 ## Open Issues (next session)
 

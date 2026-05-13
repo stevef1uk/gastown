@@ -90,11 +90,21 @@ func runMailCheck(cmd *cobra.Command, args []string) error {
 		}
 
 		if unread > 0 {
-			messages = filterUnreadMessages(messages)
-			fmt.Print(formatInjectOutput(messages))
-			// Ack after output so message is delivered before being marked acked.
-			if ackErr := mailbox.AcknowledgeDeliveries(address, messages); ackErr != nil {
+			unreadMsgs := filterUnreadMessages(messages)
+			// Auto-ignore stale BLOCKED when the same sender later sent a success
+			// signal (e.g. Plan Complete after a mistaken BLOCKED). Mark older
+			// BLOCKED read so `gt mail inbox --unread` matches the inject hint.
+			injectMsgs, markReadSuperseded := supersedeBlockedByNewerSuccessFromSameSender(unreadMsgs)
+			if ackErr := mailbox.AcknowledgeDeliveries(address, unreadMsgs); ackErr != nil {
 				fmt.Fprintf(os.Stderr, "gt mail check: delivery ack update failed for %s: %v\n", address, ackErr)
+			}
+			for _, id := range markReadSuperseded {
+				if err := mailbox.MarkReadOnly(id); err != nil {
+					fmt.Fprintf(os.Stderr, "gt mail check: mark superseded BLOCKED read %s: %v\n", id, err)
+				}
+			}
+			if len(injectMsgs) > 0 {
+				fmt.Print(formatInjectOutput(injectMsgs))
 			}
 		}
 

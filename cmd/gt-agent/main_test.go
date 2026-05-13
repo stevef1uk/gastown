@@ -1545,6 +1545,114 @@ func TestNormalizeRejectsWitnessShinyAndBadPatrol(t *testing.T) {
 	}
 }
 
+// TestMayorKickoffMailDeleteGuard pins Fix #122 / #123: mayor must not
+// `gt mail delete` kickoff mail (Fix #122) or planner `BLOCKED:` status mail
+// (Fix #123).
+func TestMayorKickoffMailDeleteGuard(t *testing.T) {
+	defer func(prev string) { currentRole = prev }(currentRole)
+	orig := mayorMailInboxSubjectsLookup
+	t.Cleanup(func() { mayorMailInboxSubjectsLookup = orig })
+
+	subjects := map[string]string{
+		"hq-wisp-clm": "New project: build testgt2 FizzBuzz from SPEC.md",
+		"hq-wisp-zzz": "mol-planner-patrol complete",
+		"hq-wisp-pk":  "Project: Widget API",
+		"hq-wisp-re":  "Re: Fwd: New project: nested prefixes",
+		"hq-wisp-id6": "BLOCKED: architecture missing",
+		"hq-wisp-v2":  "BLOCKED: architecture and spec input files missing",
+	}
+	mayorMailInboxSubjectsLookup = func() map[string]string {
+		return subjects
+	}
+
+	currentRole = "mayor"
+	got, changed := normalizeGeneratedCommand("gt mail delete hq-wisp-clm")
+	if got != "true" || !changed {
+		t.Fatalf("kickoff-shaped delete: got %q changed=%v want (\"true\", true)", got, changed)
+	}
+
+	got, changed = normalizeGeneratedCommand("gt mail delete hq-wisp-zzz")
+	if got != "gt mail delete hq-wisp-zzz" || changed {
+		t.Fatalf("non-kickoff delete should pass through: got %q changed=%v", got, changed)
+	}
+
+	got, changed = normalizeGeneratedCommand("gt mail delete hq-wisp-pk")
+	if got != "true" || !changed {
+		t.Fatalf("Project:-prefixed subject: got %q changed=%v want (\"true\", true)", got, changed)
+	}
+
+	got, changed = normalizeGeneratedCommand("gt mail delete hq-wisp-re")
+	if got != "true" || !changed {
+		t.Fatalf("Re:/Fwd: kickoff subject: got %q changed=%v want (\"true\", true)", got, changed)
+	}
+
+	got, changed = normalizeGeneratedCommand("gt mail delete hq-wisp-id6")
+	if got != "true" || !changed {
+		t.Fatalf("BLOCKED mail delete: got %q changed=%v want (\"true\", true)", got, changed)
+	}
+
+	got, changed = normalizeGeneratedCommand("gt mail delete hq-wisp-v2")
+	if got != "true" || !changed {
+		t.Fatalf("BLOCKED long subject: got %q changed=%v want (\"true\", true)", got, changed)
+	}
+
+	// Fail open when inbox snapshot is unavailable (no false blocks).
+	mayorMailInboxSubjectsLookup = func() map[string]string { return nil }
+	got, changed = normalizeGeneratedCommand("gt mail delete hq-wisp-clm")
+	if got != "gt mail delete hq-wisp-clm" || changed {
+		t.Fatalf("empty lookup should not block: got %q changed=%v", got, changed)
+	}
+
+	// Other roles: never block mail delete here.
+	currentRole = "witness"
+	mayorMailInboxSubjectsLookup = func() map[string]string { return subjects }
+	got, changed = normalizeGeneratedCommand("gt mail delete hq-wisp-clm")
+	if got != "gt mail delete hq-wisp-clm" || changed {
+		t.Fatalf("witness should not trigger mayor kickoff guard: got %q changed=%v", got, changed)
+	}
+}
+
+func TestIsKickoffLikeMailSubject(t *testing.T) {
+	tests := []struct {
+		subj string
+		want bool
+	}{
+		{"New project: build X", true},
+		{"new PROJECT: lower", true},
+		{"Re: New project: handoff", true},
+		{"Kickoff: FizzBuzz", true},
+		{"kickoff FizzBuzz", true},
+		{"Project: API", true},
+		{"SPEC: build a thing", false},
+		{"Architecture Ready", false},
+		{"Daily standup", false},
+	}
+	for _, tt := range tests {
+		if got := isKickoffLikeMailSubject(tt.subj); got != tt.want {
+			t.Errorf("isKickoffLikeMailSubject(%q) = %v, want %v", tt.subj, got, tt.want)
+		}
+	}
+}
+
+func TestIsBlockedStatusMailSubject(t *testing.T) {
+	tests := []struct {
+		subj string
+		want bool
+	}{
+		{"BLOCKED: architecture missing", true},
+		{"blocked: spec missing", true},
+		{"Re: BLOCKED: still broken", true},
+		{"Plan Complete", false},
+		{"BLOCKED", false},
+		{"Not blocked: yet", false},
+	}
+	for _, tt := range tests {
+		if got := isBlockedStatusMailSubject(tt.subj); got != tt.want {
+			t.Errorf("isBlockedStatusMailSubject(%q) = %v, want %v", tt.subj, got, tt.want)
+		}
+	}
+}
+
 func TestNormalizeStepRewrite(t *testing.T) {
 	lastBeadID = ""
 	lastStepID = "te-5c1"

@@ -77,15 +77,23 @@ stage completions in past runs. Follow them mechanically.
    stale. Run `gt mail delete <mail-id>` and continue to the next unread.
    Do NOT route the stale signal.
 
-6. **DO NOT FAN OUT NOISE (Fix #114).** When you read a `BLOCKED:`,
-   `IDLE`, or `REPORT: idle` mail from another agent, DELETE it and
-   stop. Do NOT respond by mailing the sender back ("Investigate
-   BLOCKED ...", "RE: IDLE acknowledged ...", "Check canonical
-   locations ..."), do NOT forward the question to a third agent
-   ("please create architecture", "please check this"), and do NOT
-   `gt sling` anything. The other agent already gave you all the
-   information it has — re-engaging it just produces another BLOCKED
-   reply and a feedback loop. Specifically forbidden examples:
+6. **DO NOT FAN OUT NOISE (Fix #114).** When you read an `IDLE` or
+   `REPORT: idle` mail, or a **non-planner** `BLOCKED:` noise spiral
+   from another agent, DELETE it and stop. **Exception (Fix #123):**
+   `BLOCKED:` mail **from `planner/`** that says architecture/spec
+   files are missing or lists wrong search paths — **never delete**
+   those; they mean the planner could not read inputs. Verify the files
+   exist under the **rig** tree (paths from the `Architecture Ready`
+   mail or `{{ .TownRoot }}/<rig>/`), then **at most** `gt nudge
+   planner/` with one line of corrected absolute paths if the planner
+   was wrong — do NOT send long investigative mails. Do NOT respond by
+   mailing the sender back ("Investigate BLOCKED ...", "RE: IDLE
+   acknowledged ...", "Check canonical locations ..."), do NOT forward
+   the question to a third agent ("please create architecture", "please
+   check this"), and do NOT `gt sling` anything **when the mail is pure
+   idle/noise with no fixable path error**. The other agent already gave
+   you all the information it has — re-engaging it just produces another
+   BLOCKED reply and a feedback loop. Specifically forbidden examples:
      * `gt mail send planner/ -s "Investigate BLOCKED: ..." -m "Check ..."`
      * `gt mail send <rig>/architect -s "Create architecture" -m "Please ..."`
      * `gt mail send <sender>/ -s "RE: IDLE" -m "Acknowledged ..."`
@@ -113,7 +121,8 @@ bead's title and labels). Find the matching row. Run the listed command. STOP.
 | `Plan Complete` / `Plan Ready` mail FROM `planner/` | 3. Implement (per child task) | for each task bead: `gt sling mol-polecat-work --on <task-bead> <rig> --create --force` |
 | `POLECAT_DONE` / `Polecat Done` mail FROM a polecat | 4. Review | `gt sling code-review --on <bead> <rig>/qa` |
 | `QA Complete` mail FROM `<rig>/qa` | done | close convoy / move on |
-| `BLOCKED:` mail | DELETE the mail and stop | `gt mail delete <id>` — do NOT re-mail the sender, do NOT mail anyone else (Fix #114) |
+| `BLOCKED:` mail **from `planner/`** (missing architecture/spec, wrong paths like `RIGS/…` in body) | Diagnose inputs | **Never** `gt mail delete`. Confirm files on disk under the rig; if they exist, one-line `gt nudge planner/` with correct paths only (Fix #123). Do NOT multi-paragraph "Investigate" mail (Fix #114). |
+| `BLOCKED:` mail (other senders — idle/noise spirals) | noise | `gt mail delete <id>` and stop — do NOT re-mail the sender (Fix #114) |
 | `IDLE:` / `REPORT: idle` mail | DELETE the mail and stop | `gt mail delete <id>` — these are status reports, NOT work signals |
 | Nothing in inbox, hook empty | idle | output `DONE: idle` and stop |
 

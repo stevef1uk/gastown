@@ -1550,6 +1550,16 @@ func normalizeGeneratedCommand(cmd string) (string, bool) {
 		return "true", true
 	}
 
+	// Fix #122 / #123: Mayor must not delete kickoff / project-assignment mail
+	// (Fix #122) or planner "BLOCKED:" status mail (Fix #123 — deleting hides
+	// actionable routing failures). Resolve subjects from `gt mail inbox --json`
+	// and reject deletes on protected subjects. Fail open when lookup is empty
+	// or the ID is not in the snapshot.
+	if mayorKickoffMailDeleteBlocked(trimmed) {
+		fmt.Fprintf(os.Stderr, "[gt-agent] ⚠ REJECTED mayor `gt mail delete` on protected mail (Fix #122/#123): %q\n", trimmed)
+		return "true", true
+	}
+
 	// 5. Handle "checking in" announcements as NOPs (frequently hallucinated from Startup Protocol)
 	if strings.Contains(trimmed, "checking in") {
 		return "true", true // 'true' is a shell NOP that exits 0
@@ -2497,6 +2507,109 @@ func isArchitectHandoffTitle(title string) bool {
 	t := strings.ToLower(strings.TrimSpace(title))
 	for _, p := range architectHandoffTitlePrefixes {
 		if strings.HasPrefix(t, p) {
+			return true
+		}
+	}
+	return false
+}
+
+// mayorMailInboxSubjectsLookup returns id→subject for the mayor's mailbox,
+// used only to block destructive deletes on kickoff-shaped mail (Fix #122).
+// Tests stub this; production uses lookupMayorMailInboxSubjectsJSON.
+var mayorMailInboxSubjectsLookup = lookupMayorMailInboxSubjectsJSON
+
+// mailInboxSubjectRow is the minimal JSON shape from `gt mail inbox --json`.
+type mailInboxSubjectRow struct {
+	ID      string `json:"id"`
+	Subject string `json:"subject"`
+}
+
+func lookupMayorMailInboxSubjectsJSON() map[string]string {
+	if gtBinaryPath == "" {
+		return nil
+	}
+	out, err := exec.Command(gtBinaryPath, "mail", "inbox", "--json").CombinedOutput()
+	if err != nil || len(out) == 0 {
+		return nil
+	}
+	var rows []mailInboxSubjectRow
+	if err := json.Unmarshal(out, &rows); err != nil {
+		return nil
+	}
+	m := make(map[string]string, len(rows))
+	for i := range rows {
+		if rows[i].ID != "" {
+			m[rows[i].ID] = rows[i].Subject
+		}
+	}
+	return m
+}
+
+func stripReplyFwdPrefixes(s string) string {
+	t := strings.TrimSpace(s)
+	for {
+		lower := strings.ToLower(t)
+		switch {
+		case strings.HasPrefix(lower, "re:"):
+			t = strings.TrimSpace(t[3:])
+		case strings.HasPrefix(lower, "fwd:"):
+			t = strings.TrimSpace(t[4:])
+		default:
+			return t
+		}
+	}
+}
+
+// isKickoffLikeMailSubject matches human / operator kickoff subjects. Keep this
+// aligned with mayor.md "kickoff rescue" wording — not every `Project:` bead
+// title, only mail subjects we expect on assignment traffic.
+func isKickoffLikeMailSubject(subject string) bool {
+	t := strings.ToLower(stripReplyFwdPrefixes(subject))
+	if t == "" {
+		return false
+	}
+	if strings.HasPrefix(t, "new project") {
+		return true
+	}
+	if strings.HasPrefix(t, "kickoff") {
+		return true
+	}
+	if strings.HasPrefix(t, "project:") {
+		return true
+	}
+	return false
+}
+
+// isBlockedStatusMailSubject matches planner (or upstream) "BLOCKED:" subjects.
+// Mayor must not delete these as "noise" — they signal missing inputs or bad
+// paths and need routing or fix-up, not archive-via-delete (Fix #123).
+func isBlockedStatusMailSubject(subject string) bool {
+	t := strings.ToLower(stripReplyFwdPrefixes(subject))
+	return strings.HasPrefix(t, "blocked:")
+}
+
+func mayorKickoffMailDeleteBlocked(cmd string) bool {
+	if currentRole != "mayor" {
+		return false
+	}
+	trimmed := strings.TrimSpace(cmd)
+	if !hasCommandPrefix(trimmed, "gt mail delete") {
+		return false
+	}
+	parts := strings.Fields(trimmed)
+	if len(parts) < 4 || parts[0] != "gt" || parts[1] != "mail" || parts[2] != "delete" {
+		return false
+	}
+	subjectsByID := mayorMailInboxSubjectsLookup()
+	if len(subjectsByID) == 0 {
+		return false
+	}
+	for _, id := range parts[3:] {
+		subj, ok := subjectsByID[id]
+		if !ok || subj == "" {
+			continue
+		}
+		if isKickoffLikeMailSubject(subj) || isBlockedStatusMailSubject(subj) {
 			return true
 		}
 	}
