@@ -2009,9 +2009,19 @@ func (d *Daemon) ensureMayorRunning() {
 				d.mayorLastWarm = time.Now()
 				return
 			}
+			// Daemon cold-start / first probe: session can exist before PID file and
+			// ps(1) agree. Without a warm timestamp the grace branch below is skipped
+			// and we would count every failed probe as a zombie strike from cycle 1.
+			if d.mayorLastWarm.IsZero() {
+				d.mayorLastWarm = time.Now()
+				d.mayorZombieCount = 0
+				d.logger.Printf("Mayor: session exists but agent probe not visible yet — starting %s liveness grace (initial)",
+					mayorZombieProbeGrace.Round(time.Second))
+				return
+			}
 			// Agent not visible — may be a transient gap right after a good check
 			// or during slow wrapper startup; do not count as zombie during grace.
-			if !d.mayorLastWarm.IsZero() && time.Since(d.mayorLastWarm) < mayorZombieProbeGrace {
+			if time.Since(d.mayorLastWarm) < mayorZombieProbeGrace {
 				d.logger.Printf("Mayor agent not visible but within %s grace after last good probe — not counting as zombie",
 					mayorZombieProbeGrace.Round(time.Second))
 				d.mayorZombieCount = 0
