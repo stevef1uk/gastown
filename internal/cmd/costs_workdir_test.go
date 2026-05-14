@@ -2,14 +2,31 @@ package cmd
 
 import (
 	"encoding/json"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/steveyegge/gastown/internal/testutil"
 	"github.com/steveyegge/gastown/internal/workspace"
 )
+
+func jsonAfterWarnings(out []byte) []byte {
+	s := string(out)
+	iBracket := strings.Index(s, "[")
+	iBrace := strings.Index(s, "{")
+	switch {
+	case iBracket >= 0 && (iBrace < 0 || iBracket < iBrace):
+		return []byte(s[iBracket:])
+	case iBrace >= 0:
+		return []byte(s[iBrace:])
+	default:
+		return out
+	}
+}
 
 // TestQuerySessionEvents_FindsEventsFromAllLocations verifies that querySessionEvents
 // finds session.ended events from both town-level and rig-level beads databases.
@@ -24,12 +41,12 @@ import (
 // 2. Creates session.ended events in both town and rig beads
 // 3. Verifies querySessionEvents finds events from both locations
 func TestQuerySessionEvents_FindsEventsFromAllLocations(t *testing.T) {
-	// Skip: bd CLI 0.47.2 has a bug where database writes don't commit
-	// ("sql: database is closed" during auto-flush). This affects all tests
-	// that create issues via bd create. See gt-lnn1xn for tracking.
-	t.Skip("bd CLI 0.47.2 bug: database writes don't commit")
+	// Do not inherit town/agent identity from the checkout used to run `go test`
+	// (avoids workspace discovery and bd/gt picking up the wrong .git / Dolt).
+	t.Setenv("GT_TOWN_ROOT", "")
+	t.Setenv("GT_ROOT", "")
+	t.Setenv("BD_ACTOR", "")
 
-	// Skip if gt and bd are not installed
 	if _, err := exec.LookPath("gt"); err != nil {
 		t.Skip("gt not installed, skipping integration test")
 	}
@@ -37,12 +54,14 @@ func TestQuerySessionEvents_FindsEventsFromAllLocations(t *testing.T) {
 		t.Skip("bd not installed, skipping integration test")
 	}
 
-	// Skip when running inside a Gas Town workspace - this integration test
-	// creates a separate workspace and the subprocesses can interact with
-	// the parent workspace's daemon, causing hangs.
-	if os.Getenv("GT_TOWN_ROOT") != "" || os.Getenv("BD_ACTOR") != "" {
-		t.Skip("skipping integration test inside Gas Town workspace (use 'go test' outside workspace)")
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen for free port: %v", err)
 	}
+	doltPort := ln.Addr().(*net.TCPAddr).Port
+	_ = ln.Close()
+	t.Setenv("GT_DOLT_PORT", strconv.Itoa(doltPort))
+	doltEnv := testutil.CleanGTEnv()
 
 	// Create a temporary directory structure
 	tmpDir := t.TempDir()
@@ -62,9 +81,9 @@ func TestQuerySessionEvents_FindsEventsFromAllLocations(t *testing.T) {
 
 	// Use gt install to set up the town
 	// Clear GT environment variables to isolate test from parent workspace
-	gtInstallCmd := exec.Command("gt", "install")
+	gtInstallCmd := exec.Command("gt", "install", "--dolt-port", strconv.Itoa(doltPort))
 	gtInstallCmd.Dir = townRoot
-	gtInstallCmd.Env = testutil.CleanGTEnv()
+	gtInstallCmd.Env = doltEnv
 	if out, err := gtInstallCmd.CombinedOutput(); err != nil {
 		t.Fatalf("gt install: %v\n%s", err, out)
 	}
@@ -100,10 +119,16 @@ func TestQuerySessionEvents_FindsEventsFromAllLocations(t *testing.T) {
 		}
 	}
 
+	bareAbs, err := filepath.Abs(bareRepo)
+	if err != nil {
+		t.Fatalf("abs bare repo: %v", err)
+	}
+	bareURL := "file://" + filepath.ToSlash(bareAbs)
+
 	// Add rig using gt rig add
-	rigAddCmd := exec.Command("gt", "rig", "add", "testrig", bareRepo, "--prefix=tr")
+	rigAddCmd := exec.Command("gt", "rig", "add", "testrig", bareURL, "--prefix=tr")
 	rigAddCmd.Dir = townRoot
-	rigAddCmd.Env = testutil.CleanGTEnv()
+	rigAddCmd.Env = doltEnv
 	if out, err := rigAddCmd.CombinedOutput(); err != nil {
 		t.Fatalf("gt rig add: %v\n%s", err, out)
 	}
@@ -127,7 +152,7 @@ func TestQuerySessionEvents_FindsEventsFromAllLocations(t *testing.T) {
 		"--json",
 	)
 	townEventCmd.Dir = townRoot
-	townEventCmd.Env = testutil.CleanGTEnv()
+	townEventCmd.Env = doltEnv
 	townOut, err := townEventCmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("creating town event: %v\n%s", err, townOut)
@@ -144,7 +169,7 @@ func TestQuerySessionEvents_FindsEventsFromAllLocations(t *testing.T) {
 		"--json",
 	)
 	rigEventCmd.Dir = rigPath
-	rigEventCmd.Env = testutil.CleanGTEnv()
+	rigEventCmd.Env = doltEnv
 	rigOut, err := rigEventCmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("creating rig event: %v\n%s", err, rigOut)
@@ -154,7 +179,7 @@ func TestQuerySessionEvents_FindsEventsFromAllLocations(t *testing.T) {
 	// Verify events are in separate databases by querying each directly
 	townListCmd := exec.Command("bd", "list", "--type=event", "--all", "--json")
 	townListCmd.Dir = townRoot
-	townListCmd.Env = testutil.CleanGTEnv()
+	townListCmd.Env = doltEnv
 	townListOut, err := townListCmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("listing town events: %v\n%s", err, townListOut)
@@ -162,15 +187,15 @@ func TestQuerySessionEvents_FindsEventsFromAllLocations(t *testing.T) {
 
 	rigListCmd := exec.Command("bd", "list", "--type=event", "--all", "--json")
 	rigListCmd.Dir = rigPath
-	rigListCmd.Env = testutil.CleanGTEnv()
+	rigListCmd.Env = doltEnv
 	rigListOut, err := rigListCmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("listing rig events: %v\n%s", err, rigListOut)
 	}
 
 	var townEvents, rigEvents []struct{ ID string }
-	json.Unmarshal(townListOut, &townEvents)
-	json.Unmarshal(rigListOut, &rigEvents)
+	json.Unmarshal(jsonAfterWarnings(townListOut), &townEvents)
+	json.Unmarshal(jsonAfterWarnings(rigListOut), &rigEvents)
 
 	t.Logf("Town beads has %d events", len(townEvents))
 	t.Logf("Rig beads has %d events", len(rigEvents))
