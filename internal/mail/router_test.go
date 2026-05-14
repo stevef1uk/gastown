@@ -1634,15 +1634,20 @@ func TestNotifyRecipient_IdleAgent(t *testing.T) {
 		t.Fatalf("notifyRecipient returned error: %v", err)
 	}
 
-	// The main notification delivery depends on the transport.
-	// For tmux, it's delivered directly if idle.
-	// For NATS, it's enqueued (so we have 2: notification + reminder).
-	isNats := os.Getenv("GT_SESSION_TRANSPORT") == "nats"
-	expectedPending := 1
-	expectedDrained := 0
-	if isNats {
-		expectedPending = 2
-		expectedDrained = 1
+	// Tmux: WaitForIdle can succeed for a cat session; NudgeSession does not queue,
+	// so only the deferred reply-reminder is pending (1) and nothing is drainable yet (0).
+	//
+	// NATS (the default when the broker is reachable, even if GT_SESSION_TRANSPORT is unset):
+	// WaitForIdle is unsupported and returns an error, so the router uses the cooperative
+	// queue for the main notification; NudgeSession also enqueues. Result: 2 pending,
+	// 1 immediately drainable (the mail nudge).
+	sp := session.GetDefaultProvider(townRoot)
+	_, isTmux := sp.(*session.TmuxProvider)
+	expectedPending := 2
+	expectedDrained := 1
+	if isTmux {
+		expectedPending = 1
+		expectedDrained = 0
 	}
 
 	pending, _ := nudge.Pending(townRoot, sessionName)
