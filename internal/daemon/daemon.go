@@ -2047,15 +2047,29 @@ func (d *Daemon) ensureMayorRunning() {
 	d.logger.Println("Mayor started successfully")
 }
 
-// isMayorAgentAlive checks if the Mayor's agent process is running in tmux.
+// mayorTownLogStaleGuardApplies reports whether a stale logs/town.log
+// should count as mayor dead. That heuristic is tmux-specific (zombie pane
+// with no Claude); NATS/gt-agent may not touch town.log during normal work.
+func mayorTownLogStaleGuardApplies(sp session.Provider) bool {
+	_, ok := sp.(*session.TmuxProvider)
+	return ok
+}
+
+// isMayorAgentAlive checks if the Mayor's agent process is running.
 func (d *Daemon) isMayorAgentAlive(mgr *mayor.Manager) bool {
 	alive, _ := d.sp.IsAgentRunning(d.ctx, mgr.SessionName())
 	if !alive {
 		return false
 	}
-	// Log-based liveness: if the tmux session exists but the town log hasn't
-	// been written to recently, the agent may be dead. Only consider alive if
-	// either the tmux process is running OR the town log is fresh.
+	// Log-based liveness is tmux-specific: it catches "pane still there but
+	// Claude exited" zombies. NATS/gt-agent sessions write to
+	// logs/sessions/<session>.log and may not touch logs/town.log for long
+	// stretches of normal work — treating town.log as stale would false-
+	// negative here and the daemon would kill a healthy mayor (observed
+	// with GT_SESSION_TRANSPORT=nats).
+	if !mayorTownLogStaleGuardApplies(d.sp) {
+		return true
+	}
 	logStale := deacon.IsTownLogStale(d.config.TownRoot, deacon.HeartbeatStaleThreshold)
 	if logStale {
 		d.logger.Printf("Mayor: tmux session alive but town log stale — agent may be zombie")

@@ -690,6 +690,20 @@ func TestParseLLMResponse(t *testing.T) {
 			wantCmds: nil,
 			wantDone: "idle",
 		},
+		{
+			name: "markdown numbered step after CMD terminates script (planner template leak)",
+			input: "CMD: test -s /tmp/x && echo y\n" +
+				"1. Verify architecture exists before planning.\n\n" +
+				"CMD: echo z\n",
+			wantCmds: []string{"test -s /tmp/x && echo y", "echo z"},
+		},
+		{
+			name: "markdown bullet after CMD terminates script",
+			input: "CMD: echo one\n" +
+				"- **Load** context from hook\n\n" +
+				"CMD: echo two\n",
+			wantCmds: []string{"echo one", "echo two"},
+		},
 	}
 
 	for _, tc := range tests {
@@ -714,6 +728,20 @@ func TestParseLLMResponse(t *testing.T) {
 				t.Errorf("done = %q, want %q", gotDone, tc.wantDone)
 			}
 		})
+	}
+}
+
+func TestCheckShellSyntax(t *testing.T) {
+	diag, ok := checkShellSyntax("echo hi")
+	if !ok {
+		t.Fatalf("valid script rejected: %s", diag)
+	}
+	diag, ok = checkShellSyntax("echo hi\ntrue <")
+	if ok {
+		t.Fatal("expected invalid script to be rejected")
+	}
+	if diag == "" {
+		t.Fatal("expected diagnostic message from syntax check")
 	}
 }
 

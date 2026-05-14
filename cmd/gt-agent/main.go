@@ -601,6 +601,16 @@ func run() error {
 				}
 				fmt.Printf("[gt-agent] $ %s\n", safeCmd)
 
+				if diag, ok := checkShellSyntax(safeCmd); !ok {
+					fmt.Fprintf(os.Stderr, "[gt-agent] REJECTED invalid shell (syntax check): %s\n", diag)
+					extraordinary = true
+					state.ExtraordinaryAction = true
+					combinedOutput.WriteString(fmt.Sprintf(
+						"Command: %s\nError: invalid shell script (syntax check failed): %s\n\n",
+						safeCmd, diag))
+					continue
+				}
+
 				c := exec.Command("/bin/sh", "-c", safeCmd)
 				c.Env = os.Environ()
 				c.Env = append(c.Env, "GT_SESSION=" + sessionName)
@@ -1050,6 +1060,16 @@ func parseLLMResponse(response string) (cmds []string, doneSummary string, hallu
 			continue
 		}
 
+		if looksLikeMarkdownStepLine(trimmed) {
+			if hasOpenShellQuote(scriptBuf) {
+				scriptBuf = append(scriptBuf, line)
+				continue
+			}
+			flushScript()
+			inScript = false
+			continue
+		}
+
 		// Append this line to the current script body.
 		scriptBuf = append(scriptBuf, line)
 		// If this continuation line opens a heredoc, enter heredoc mode
@@ -1207,6 +1227,36 @@ func looksLikeProseLine(trimmed string) bool {
 		return false
 	}
 	return llmProseStartRE.MatchString(trimmed)
+}
+
+// markdownOrderedStepRE matches "1. Load context" style lines the model
+// often emits after a shell command without a blank line. Feeding those
+// into /bin/sh produces junk like `1.: not found` or, with stray `<`
+// tokens from XML-ish leaks, `Syntax error: newline unexpected` on dash.
+// Real shell almost never starts a continuation line with `N. ` + letter.
+var markdownOrderedStepRE = regexp.MustCompile(`^\d+\.\s+[A-Za-z#*\-]`)
+
+// markdownBulletStepRE matches "- **Do**" / "- Check" markdown bullets.
+var markdownBulletStepRE = regexp.MustCompile(`^-\s+(\*\*|[[#]|[A-Za-z])`)
+
+// looksLikeMarkdownStepLine reports narration the model appends after CMD:
+// lines (numbered/bulleted steps from its system prompt). These must not
+// be concatenated into the shell script when quotes are balanced.
+func looksLikeMarkdownStepLine(trimmed string) bool {
+	return markdownOrderedStepRE.MatchString(trimmed) ||
+		markdownBulletStepRE.MatchString(trimmed)
+}
+
+// checkShellSyntax runs /bin/sh -n on script. If this fails, the script
+// must not be executed: dash parses incrementally and will happily run
+// early commands (side effects) before a syntax error on a later line.
+func checkShellSyntax(script string) (diag string, ok bool) {
+	c := exec.Command("/bin/sh", "-n", "-c", script)
+	out, err := c.CombinedOutput()
+	if err != nil {
+		return strings.TrimSpace(string(out)), false
+	}
+	return "", true
 }
 
 // inlineCMDMarkerRE matches the inline `CMD:` separator the model
