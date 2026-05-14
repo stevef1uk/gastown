@@ -62,6 +62,59 @@ func TestIsRepo(t *testing.T) {
 	}
 }
 
+func TestIsRepoRoot(t *testing.T) {
+	parent := t.TempDir()
+	child := filepath.Join(parent, "child")
+	os.MkdirAll(child, 0755)
+
+	gParent := NewGit(parent)
+	gChild := NewGit(child)
+
+	if gParent.IsRepoRoot() {
+		t.Fatal("expected IsRepoRoot false for empty parent")
+	}
+
+	// Init parent
+	_ = exec.Command("git", "init", parent).Run()
+
+	if !gParent.IsRepoRoot() {
+		t.Fatal("expected IsRepoRoot true for parent after init")
+	}
+	if gChild.IsRepoRoot() {
+		t.Fatal("expected IsRepoRoot false for child (no .git)")
+	}
+	if !gChild.IsRepo() {
+		t.Fatal("expected IsRepo true for child (bubbles up to parent)")
+	}
+}
+
+func TestNewGitStrict(t *testing.T) {
+	parent := t.TempDir()
+	child := filepath.Join(parent, "child")
+	os.MkdirAll(child, 0755)
+
+	// Init parent and make a commit
+	_ = exec.Command("git", "init", parent).Run()
+	_ = os.WriteFile(filepath.Join(parent, "f"), []byte("x"), 0644)
+	_ = exec.Command("git", "-C", parent, "add", ".").Run()
+	_ = exec.Command("git", "-C", parent, "config", "user.email", "t@t.com").Run()
+	_ = exec.Command("git", "-C", parent, "config", "user.name", "t").Run()
+	_ = exec.Command("git", "-C", parent, "commit", "-m", "init").Run()
+
+	gNormal := NewGit(child)
+	gStrict := NewGitStrict(child)
+
+	// Normal Git bubbles up to parent
+	if !gNormal.IsRepo() {
+		t.Fatal("expected normal Git to see parent repo from child dir")
+	}
+
+	// Strict Git should NOT bubble up because of GIT_CEILING_DIRECTORIES
+	if gStrict.IsRepo() {
+		t.Fatal("expected strict Git to NOT see parent repo from child dir")
+	}
+}
+
 func TestTopLevel(t *testing.T) {
 	dir := t.TempDir()
 	cmd := exec.Command("git", "init")

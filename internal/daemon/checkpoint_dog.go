@@ -224,6 +224,11 @@ func resolveCheckpointWorkDir(polecatsDir, polecatName, rigName string) string {
 func runGitCmd(workDir string, args ...string) (string, error) {
 	cmd := exec.Command("git", args...)
 	cmd.Dir = workDir
+	
+	// Isolation environment: prevent git from searching beyond workDir
+	absWork, _ := filepath.Abs(workDir)
+	cmd.Env = append(os.Environ(), "GIT_CEILING_DIRECTORIES="+filepath.Dir(absWork))
+	
 	util.SetDetachedProcessGroup(cmd)
 
 	var stdout, stderr bytes.Buffer

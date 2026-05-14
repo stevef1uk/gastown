@@ -3183,8 +3183,8 @@ func (d *Daemon) cleanupOrphanedProcesses() {
 func (d *Daemon) pruneStaleBranches() {
 	// pruneInDir prunes stale polecat branches in a single git directory.
 	pruneInDir := func(dir, label string) {
-		g := gitpkg.NewGit(dir)
-		if !g.IsRepo() {
+		g := gitpkg.NewGitStrict(dir)
+		if !g.IsRepoRoot() {
 			return
 		}
 

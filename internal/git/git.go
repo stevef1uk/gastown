@@ -63,11 +63,18 @@ func moveDir(src, dest string) error {
 type Git struct {
 	workDir string
 	gitDir  string // Optional: explicit git directory (for bare repos)
+	strict  bool   // If true, isolation is enforced via GIT_CEILING_DIRECTORIES
 }
 
 // NewGit creates a new Git wrapper for the given directory.
 func NewGit(workDir string) *Git {
 	return &Git{workDir: workDir}
+}
+
+// NewGitStrict creates a new Git wrapper with isolation enforced.
+// Git commands will not search for repositories beyond the workDir.
+func NewGitStrict(workDir string) *Git {
+	return &Git{workDir: workDir, strict: true}
 }
 
 // NewGitWithDir creates a Git wrapper with an explicit git directory.
@@ -82,9 +89,22 @@ func (g *Git) WorkDir() string {
 	return g.workDir
 }
 
-// IsRepo returns true if the workDir is a git repository.
+// IsRepo returns true if the workDir (or any parent) is a git repository.
+// Note: This bubbles up to parent directories. Use IsRepoRoot() to check
+// specifically for a repository root at g.workDir.
 func (g *Git) IsRepo() bool {
 	_, err := g.run("rev-parse", "--git-dir")
+	return err == nil
+}
+
+// IsRepoRoot returns true if the workDir contains a .git entry (file or directory).
+// This is useful for verifying a directory is a repository root without bubbling
+// up to parent repositories (e.g., during tests or managed workspace syncs).
+func (g *Git) IsRepoRoot() bool {
+	if g.workDir == "" {
+		return false
+	}
+	_, err := os.Stat(filepath.Join(g.workDir, ".git"))
 	return err == nil
 }
 
@@ -104,6 +124,10 @@ func (g *Git) run(args ...string) (string, error) {
 	util.SetDetachedProcessGroup(cmd)
 	if g.workDir != "" {
 		cmd.Dir = g.workDir
+		if g.strict {
+			absWork, _ := filepath.Abs(g.workDir)
+			cmd.Env = append(os.Environ(), "GIT_CEILING_DIRECTORIES="+filepath.Dir(absWork))
+		}
 	}
 
 	var stdout, stderr bytes.Buffer

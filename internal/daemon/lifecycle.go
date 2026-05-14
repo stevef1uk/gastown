@@ -670,10 +670,25 @@ func (d *Daemon) applySessionTheme(ctx context.Context, sessionName string, pars
 // Configurable via operational.daemon.sync_failure_escalation_threshold.
 const syncFailureEscalationThreshold = 3
 
+// isGitRepo checks if a directory is a git repository (contains a .git entry).
+func isGitRepo(dir string) bool {
+	if _, err := os.Stat(filepath.Join(dir, ".git")); err == nil {
+		return true
+	}
+	return false
+}
+
 // syncWorkspace syncs a git workspace before starting a new session.
 // This ensures agents with persistent clones (like refinery) start with current code.
 // Handles dirty working trees by auto-stashing before pull and restoring after.
 func (d *Daemon) syncWorkspace(workDir string) {
+	// Ensure workDir is actually a git repository root to prevent bubbling up
+	// and corrupting the parent repository (e.g., during tests).
+	if !isGitRepo(workDir) {
+		d.logger.Printf("Skipping sync: %s is not a git repository", workDir)
+		return
+	}
+
 	// Determine default branch from rig config
 	// workDir is like <townRoot>/<rigName>/<role>/rig or <townRoot>/<rigName>/crew/<name>
 	defaultBranch := "main" // fallback
@@ -691,11 +706,15 @@ func (d *Daemon) syncWorkspace(workDir string) {
 	// Capture stderr for debuggability
 	var stderr bytes.Buffer
 
+	// Isolation environment: prevent git from searching beyond workDir
+	absWork, _ := filepath.Abs(workDir)
+	gitEnv := append(os.Environ(), "GIT_CEILING_DIRECTORIES="+filepath.Dir(absWork))
+
 	// Fetch latest from origin
 	fetchCmd := exec.Command("git", "fetch", "origin")
 	fetchCmd.Dir = workDir
 	fetchCmd.Stderr = &stderr
-	fetchCmd.Env = os.Environ() // Inherit PATH to find git executable
+	fetchCmd.Env = gitEnv
 	util.SetDetachedProcessGroup(fetchCmd)
 	if err := fetchCmd.Run(); err != nil {
 		errMsg := strings.TrimSpace(stderr.String())
@@ -718,7 +737,7 @@ func (d *Daemon) syncWorkspace(workDir string) {
 		stashCmd := exec.Command("git", "stash", "push", "-u", "-m", "daemon-auto-stash: pre-sync")
 		stashCmd.Dir = workDir
 		stashCmd.Stderr = &stderr
-		stashCmd.Env = os.Environ()
+		stashCmd.Env = gitEnv
 		util.SetDetachedProcessGroup(stashCmd)
 		if err := stashCmd.Run(); err != nil {
 			errMsg := strings.TrimSpace(stderr.String())
@@ -737,7 +756,7 @@ func (d *Daemon) syncWorkspace(workDir string) {
 	pullCmd := exec.Command("git", "pull", "--rebase", "origin", defaultBranch)
 	pullCmd.Dir = workDir
 	pullCmd.Stderr = &stderr
-	pullCmd.Env = os.Environ() // Inherit PATH to find git executable
+	pullCmd.Env = gitEnv
 	util.SetDetachedProcessGroup(pullCmd)
 	if err := pullCmd.Run(); err != nil {
 		errMsg := strings.TrimSpace(stderr.String())
@@ -763,7 +782,7 @@ func (d *Daemon) syncWorkspace(workDir string) {
 		popCmd := exec.Command("git", "stash", "pop")
 		popCmd.Dir = workDir
 		popCmd.Stderr = &stderr
-		popCmd.Env = os.Environ()
+		popCmd.Env = gitEnv
 		util.SetDetachedProcessGroup(popCmd)
 		if err := popCmd.Run(); err != nil {
 			errMsg := strings.TrimSpace(stderr.String())
@@ -779,10 +798,15 @@ func (d *Daemon) syncWorkspace(workDir string) {
 
 // isWorkingTreeDirty checks if a git working tree has uncommitted changes.
 func (d *Daemon) isWorkingTreeDirty(workDir string) bool {
+	if !isGitRepo(workDir) {
+		return false
+	}
+
 	// "git status --porcelain" outputs nothing if clean
+	absWork, _ := filepath.Abs(workDir)
 	cmd := exec.Command("git", "status", "--porcelain")
 	cmd.Dir = workDir
-	cmd.Env = os.Environ()
+	cmd.Env = append(os.Environ(), "GIT_CEILING_DIRECTORIES="+filepath.Dir(absWork))
 	util.SetDetachedProcessGroup(cmd)
 	output, err := cmd.Output()
 	if err != nil {
