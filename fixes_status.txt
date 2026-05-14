@@ -3233,3 +3233,13 @@ no longer blocking.
 - **Fix**: `gt nudge` falls back to `GT_ROLE`/`GT_RIG` identity when `GetRole`
   cannot find a workspace. Refinery subprocesses now pass `GT_ROLE=<rig>/refinery`,
   `GT_RIG`, and `GT_TOWN_ROOT` when invoking `gt`.
+
+### 81. [FIXED] Git Repository Isolation and Contamination
+- **Files**: `internal/git/git.go`, `internal/daemon/lifecycle.go`, `internal/daemon/daemon.go`, `internal/daemon/checkpoint_dog.go`, `internal/daemon/main_branch_test_runner.go`, `internal/daemon/lifecycle_test.go`
+- **Issue**: Unit tests and background patrols were triggering Git commands (like `git stash`, `git pull --rebase`) that would "bubble up" and accidentally modify/corrupt the host `gastown` repository when run in non-repo subdirectories.
+- **Fix**:
+    1. Implemented **Strict Mode** in `internal/git` using `GIT_CEILING_DIRECTORIES` to prevent upward repository discovery.
+    2. Added `IsRepoRoot()` and `isGitRepo()` guards to ensure Git operations only run in valid repository roots.
+    3. Hardened all daemon lifecycle and maintenance operations (`syncWorkspace`, `pruneStaleBranches`, `checkpoint_dog`) with strict isolation.
+    4. Added unit tests for `NewGitStrict` and `IsRepoRoot` to verify isolation.
+- **Status**: Fixed and Verified. All unmerged paths and markers cleared via hard reset.
