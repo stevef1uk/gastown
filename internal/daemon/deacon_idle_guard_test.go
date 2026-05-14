@@ -121,14 +121,14 @@ func TestCheckDeaconHeartbeat_IdleGuard(t *testing.T) {
 			desc:             "Nudge must fire conservatively when work state is unknown",
 		},
 		{
-			name:         "very stale: heartbeat >= 20 min — escalation path, no nudge",
+			name:         "very stale: heartbeat >= 20 min but town log fresh — skip kill (agent alive)",
 			heartbeatAge: 21 * time.Minute,
 			stores: map[string]beadsdk.Storage{
 				"hq": &searchStorage{results: map[string][]*beadsdk.Issue{}},
 			},
 			wantNudgeLog:     false,
 			wantIdleGuardLog: false,
-			desc:             "Very stale heartbeat takes escalation path, not nudge path; idle guard not reached",
+			desc:             "Very stale heartbeat with fresh town log skips kill (log indicates agent is alive)",
 		},
 	}
 
@@ -146,6 +146,19 @@ func TestCheckDeaconHeartbeat_IdleGuard(t *testing.T) {
 			t.Setenv("TMUX_LOG", tmuxLog)
 
 			writeDeaconHeartbeat(t, townRoot, tc.heartbeatAge)
+
+			// Create a fresh town log for test cases that need it.
+			// This prevents false-positive kills when the agent is actually alive.
+			if strings.Contains(tc.name, "town log fresh") {
+				logsDir := filepath.Join(townRoot, "logs")
+				if err := os.MkdirAll(logsDir, 0755); err != nil {
+					t.Fatalf("create logs dir: %v", err)
+				}
+				townLogPath := filepath.Join(logsDir, "town.log")
+				if err := os.WriteFile(townLogPath, []byte("recent output\n"), 0644); err != nil {
+					t.Fatalf("create town log: %v", err)
+				}
+			}
 
 			d := newTestDaemonWithStores(t, townRoot, tc.stores)
 

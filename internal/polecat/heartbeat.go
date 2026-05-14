@@ -112,18 +112,49 @@ func ReadSessionHeartbeat(townRoot, sessionName string) *SessionHeartbeat {
 	return &hb
 }
 
+// sessionLogsDir returns the directory for session log files.
+func sessionLogsDir(townRoot string) string {
+	return filepath.Join(townRoot, "logs", "sessions")
+}
+
+// sessionLogFile returns the path to a session's log file.
+func sessionLogFile(townRoot, sessionName string) string {
+	return filepath.Join(sessionLogsDir(townRoot), sessionName+".log")
+}
+
+// IsSessionLogStale returns true if the session's log file hasn't been modified
+// within the given threshold, or if no log file exists.
+func IsSessionLogStale(townRoot, sessionName string, threshold time.Duration) bool {
+	logPath := sessionLogFile(townRoot, sessionName)
+	info, err := os.Stat(logPath)
+	if err != nil {
+		return true
+	}
+	return time.Since(info.ModTime()) >= threshold
+}
+
 // IsSessionHeartbeatStale returns true if the session's heartbeat is older than
 // the stale threshold, or if no heartbeat file exists.
 //
-// When no heartbeat file exists, this returns false to avoid false positives
-// during the rollout period where sessions may not yet be touching heartbeats.
-// The caller should fall back to other liveness checks in that case.
+// When no heartbeat file exists, this falls back to checking the session log
+// file mtime. If the log file is fresh (modified within SessionHeartbeatStaleThreshold),
+// the session is considered alive. Only when BOTH heartbeat and log are stale/missing
+// is the session considered dead.
 func IsSessionHeartbeatStale(townRoot, sessionName string) (stale bool, exists bool) {
 	hb := ReadSessionHeartbeat(townRoot, sessionName)
+	if hb != nil && time.Since(hb.Timestamp) < SessionHeartbeatStaleThreshold {
+		return false, true
+	}
 	if hb == nil {
+		if IsSessionLogStale(townRoot, sessionName, SessionHeartbeatStaleThreshold) {
+			return true, false
+		}
 		return false, false
 	}
-	return time.Since(hb.Timestamp) >= SessionHeartbeatStaleThreshold, true
+	if IsSessionLogStale(townRoot, sessionName, SessionHeartbeatStaleThreshold) {
+		return true, true
+	}
+	return false, true
 }
 
 // RemoveSessionHeartbeat removes the heartbeat file for a session.

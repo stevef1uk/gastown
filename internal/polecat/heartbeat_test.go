@@ -94,15 +94,15 @@ func TestSessionHeartbeat_IsV2(t *testing.T) {
 	}
 }
 
-func TestIsSessionHeartbeatStale_NoFile(t *testing.T) {
+func TestIsSessionHeartbeatStale_NoFileNoLog(t *testing.T) {
 	townRoot := t.TempDir()
 
 	stale, exists := IsSessionHeartbeatStale(townRoot, "nonexistent")
 	if exists {
 		t.Error("expected exists=false for missing heartbeat")
 	}
-	if stale {
-		t.Error("expected stale=false for missing heartbeat")
+	if !stale {
+		t.Error("expected stale=true when neither heartbeat nor log file exists")
 	}
 }
 
@@ -120,27 +120,111 @@ func TestIsSessionHeartbeatStale_Fresh(t *testing.T) {
 	}
 }
 
-func TestIsSessionHeartbeatStale_Old(t *testing.T) {
+func TestIsSessionHeartbeatStale_LogFallback(t *testing.T) {
 	townRoot := t.TempDir()
 
-	// Write a heartbeat with an old timestamp
-	dir := filepath.Join(townRoot, ".runtime", "heartbeats")
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	stale, exists := IsSessionHeartbeatStale(townRoot, "gt-test-fallback")
+	if exists {
+		t.Error("expected exists=false for missing heartbeat")
+	}
+	if !stale {
+		t.Error("expected stale=true when neither heartbeat nor log exists")
+	}
+}
+
+func TestIsSessionHeartbeatStale_StaleHeartbeat_FreshLog(t *testing.T) {
+	townRoot := t.TempDir()
+	session := "gt-test-hb-stale-log-alive"
+
+	hbDir := filepath.Join(townRoot, ".runtime", "heartbeats")
+	if err := os.MkdirAll(hbDir, 0755); err != nil {
 		t.Fatal(err)
 	}
 
 	oldTime := time.Now().Add(-10 * time.Minute).UTC()
-	data := []byte(`{"timestamp":"` + oldTime.Format(time.RFC3339Nano) + `"}`)
-	if err := os.WriteFile(filepath.Join(dir, "gt-test-stale.json"), data, 0644); err != nil {
+	data := []byte(`{"timestamp":"` + oldTime.Format(time.RFC3339Nano) + `","state":"working"}`)
+	if err := os.WriteFile(filepath.Join(hbDir, session+".json"), data, 0644); err != nil {
 		t.Fatal(err)
 	}
 
-	stale, exists := IsSessionHeartbeatStale(townRoot, "gt-test-stale")
+	logDir := filepath.Join(townRoot, "logs", "sessions")
+	if err := os.MkdirAll(logDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(logDir, session+".log"), []byte("recent output\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	stale, exists := IsSessionHeartbeatStale(townRoot, session)
 	if !exists {
-		t.Error("expected exists=true for old heartbeat")
+		t.Error("expected exists=true")
+	}
+	if stale {
+		t.Error("expected stale=false when heartbeat is stale but log is fresh")
+	}
+}
+
+func TestIsSessionHeartbeatStale_StaleHeartbeat_StaleLog(t *testing.T) {
+	townRoot := t.TempDir()
+	session := "gt-test-both-dead"
+
+	hbDir := filepath.Join(townRoot, ".runtime", "heartbeats")
+	if err := os.MkdirAll(hbDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	oldTime := time.Now().Add(-10 * time.Minute).UTC()
+	data := []byte(`{"timestamp":"` + oldTime.Format(time.RFC3339Nano) + `","state":"working"}`)
+	if err := os.WriteFile(filepath.Join(hbDir, session+".json"), data, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	logDir := filepath.Join(townRoot, "logs", "sessions")
+	if err := os.MkdirAll(logDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	logPath := filepath.Join(logDir, session+".log")
+	if err := os.WriteFile(logPath, []byte("old output\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	oldMtime := time.Now().Add(-10 * time.Minute)
+	os.Chtimes(logPath, oldMtime, oldMtime)
+
+	stale, exists := IsSessionHeartbeatStale(townRoot, session)
+	if !exists {
+		t.Error("expected exists=true")
 	}
 	if !stale {
-		t.Error("expected stale=true for 10-minute-old heartbeat")
+		t.Error("expected stale=true when both heartbeat and log are stale")
+	}
+}
+
+func TestIsSessionLogStale(t *testing.T) {
+	townRoot := t.TempDir()
+
+	sessionsDir := filepath.Join(townRoot, "logs", "sessions")
+	if err := os.MkdirAll(sessionsDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	if !IsSessionLogStale(townRoot, "gt-no-such-session", 3*time.Minute) {
+		t.Error("expected stale=true for nonexistent log file")
+	}
+
+	logPath := filepath.Join(sessionsDir, "gt-test.log")
+	if err := os.WriteFile(logPath, []byte("content"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	if IsSessionLogStale(townRoot, "gt-test", 3*time.Minute) {
+		t.Error("expected stale=false for fresh log file")
+	}
+
+	old := time.Now().Add(-10 * time.Minute)
+	os.Chtimes(logPath, old, old)
+
+	if !IsSessionLogStale(townRoot, "gt-test", 3*time.Minute) {
+		t.Error("expected stale=true for stale log file")
 	}
 }
 
@@ -206,20 +290,14 @@ func TestIsSessionProcessDead_HeartbeatStale(t *testing.T) {
 }
 
 func TestIsSessionProcessDead_EmptyTownRoot(t *testing.T) {
-	// With empty townRoot, heartbeat check is skipped entirely.
-	// This tests backward compatibility when townRoot isn't available.
-	// We can't test the full PID fallback without a real tmux session,
-	// but we verify no panic with empty townRoot.
 	sessionName := "gt-test-no-townroot"
 
-	// Empty townRoot skips heartbeat, falls through to PID check.
-	// Can't test PID path without tmux, but verify heartbeat path is skipped.
 	stale, exists := IsSessionHeartbeatStale("", sessionName)
 	if exists {
 		t.Error("expected exists=false with empty townRoot")
 	}
-	if stale {
-		t.Error("expected stale=false with empty townRoot")
+	if !stale {
+		t.Error("expected stale=true with empty townRoot (no heartbeat, no log fallback)")
 	}
 }
 

@@ -349,6 +349,92 @@ func TestWriteHeartbeat_TouchesLegacyFile(t *testing.T) {
 	}
 }
 
+func TestTownLogPath(t *testing.T) {
+	townRoot := "/tmp/test-town"
+	expected := filepath.Join(townRoot, "logs", "town.log")
+
+	result := townLogPath(townRoot)
+	if result != expected {
+		t.Errorf("townLogPath() = %q, want %q", result, expected)
+	}
+}
+
+func TestIsTownLogStale(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "deacon-test-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.RemoveAll(tmpDir) }()
+
+	if !IsTownLogStale(tmpDir, 5*time.Minute) {
+		t.Error("expected stale=true for nonexistent town log")
+	}
+
+	logsDir := filepath.Join(tmpDir, "logs")
+	if err := os.MkdirAll(logsDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	logPath := filepath.Join(logsDir, "town.log")
+	if err := os.WriteFile(logPath, []byte("recent output\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	if IsTownLogStale(tmpDir, 5*time.Minute) {
+		t.Error("expected stale=false for fresh town log")
+	}
+
+	old := time.Now().Add(-10 * time.Minute)
+	os.Chtimes(logPath, old, old)
+
+	if !IsTownLogStale(tmpDir, 5*time.Minute) {
+		t.Error("expected stale=true for stale town log")
+	}
+}
+
+func TestIsTownLogStale_WithStaleHeartbeat(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "deacon-test-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.RemoveAll(tmpDir) }()
+
+	hb := &Heartbeat{
+		Timestamp: time.Now().Add(-10 * time.Minute),
+		Cycle:     1,
+	}
+	if err := WriteHeartbeat(tmpDir, hb); err != nil {
+		t.Fatal(err)
+	}
+
+	loaded := ReadHeartbeat(tmpDir)
+	if loaded == nil {
+		t.Fatal("expected heartbeat")
+	}
+
+	if !loaded.IsStale() {
+		t.Error("heartbeat should be stale (>=5min threshold, 10min age)")
+	}
+
+	if loaded.IsFresh() {
+		t.Error("heartbeat should not be fresh (10min age > 5min threshold)")
+	}
+
+	logsDir := filepath.Join(tmpDir, "logs")
+	if err := os.MkdirAll(logsDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	logPath := filepath.Join(logsDir, "town.log")
+	if err := os.WriteFile(logPath, []byte("recent output\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	if IsTownLogStale(tmpDir, 5*time.Minute) {
+		t.Error("expected stale=false for fresh town log (log indicates agent is alive)")
+	}
+}
+
 func TestWriteHeartbeat_SetsTimestamp(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "deacon-test-*")
 	if err != nil {

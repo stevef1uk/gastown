@@ -10,6 +10,24 @@ import (
 	"time"
 )
 
+// townLogPath returns the path to the town log file.
+func townLogPath(townRoot string) string {
+	return filepath.Join(townRoot, "logs", "town.log")
+}
+
+// IsTownLogStale returns true if the town log file hasn't been modified
+// within the given threshold, or if no log file exists.
+// This is used as a fallback liveness check when the heartbeat file is stale
+// but the agent may still be alive (e.g., during long operations).
+func IsTownLogStale(townRoot string, threshold time.Duration) bool {
+	logPath := townLogPath(townRoot)
+	info, err := os.Stat(logPath)
+	if err != nil {
+		return true
+	}
+	return time.Since(info.ModTime()) >= threshold
+}
+
 // Heartbeat age thresholds — these are compiled-in defaults.
 // Configurable via operational.deacon.heartbeat_stale_threshold and
 // operational.deacon.heartbeat_very_stale_threshold in settings/config.json.

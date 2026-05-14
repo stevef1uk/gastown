@@ -1562,14 +1562,25 @@ func (d *Daemon) checkDeaconHeartbeat() {
 		return
 	}
 
+	// Log-based liveness fallback: if the heartbeat is stale but the town log
+	// is fresh (modified recently), the Deacon may be alive but in a long
+	// operation that skips heartbeat writes. Only kill/nudge if BOTH are stale.
+	// This prevents false-positive kills during legitimate await-signal sleep.
+	logStale := deacon.IsTownLogStale(d.config.TownRoot, deacon.HeartbeatStaleThreshold)
+
 	// Session exists but heartbeat is stale - Deacon may be stuck.
 	// Two-tier response: nudge for stale (5-20 min), kill and restart
 	// only for very stale (>= 20 min). Kill threshold must be > backoff-max
 	// to avoid false positive kills during legitimate await-signal sleep.
 	if hb.IsVeryStale() {
-		// Stuck-agent-dog: kill and restart
-		d.logger.Printf("STUCK DEACON: heartbeat stale for %s, session %s needs restart", age.Round(time.Minute), sessionName)
-		d.restartStuckDeacon(sessionName, fmt.Sprintf("heartbeat stale for %s", age.Round(time.Minute)))
+		// Stuck-agent-dog: kill and restart, but only if town log is also stale.
+		// Fresh town log means the agent is still writing output.
+		if logStale {
+			d.logger.Printf("STUCK DEACON: heartbeat stale for %s, session %s needs restart", age.Round(time.Minute), sessionName)
+			d.restartStuckDeacon(sessionName, fmt.Sprintf("heartbeat stale for %s", age.Round(time.Minute)))
+		} else {
+			d.logger.Printf("Deacon heartbeat stale for %s but town log is fresh — skipping kill (agent may be in long operation)", age.Round(time.Minute))
+		}
 	} else {
 		// Stale but not very stale (5-20 min) - nudge to wake up (unless idle).
 		//
@@ -1584,6 +1595,12 @@ func (d *Daemon) checkDeaconHeartbeat() {
 		// for the same reason (it interrupted the deacon's await-signal backoff).
 		if !d.hasActiveWork() {
 			d.logger.Println("Deacon nudge skipped: no active work in flight, await-signal will fire naturally")
+			return
+		}
+
+		// Also skip nudge if town log is fresh (agent may be in long operation)
+		if !logStale {
+			d.logger.Printf("Deacon heartbeat stale for %s but town log is fresh — skipping nudge", age.Round(time.Minute))
 			return
 		}
 
@@ -2033,7 +2050,18 @@ func (d *Daemon) ensureMayorRunning() {
 // isMayorAgentAlive checks if the Mayor's agent process is running in tmux.
 func (d *Daemon) isMayorAgentAlive(mgr *mayor.Manager) bool {
 	alive, _ := d.sp.IsAgentRunning(d.ctx, mgr.SessionName())
-	return alive
+	if !alive {
+		return false
+	}
+	// Log-based liveness: if the tmux session exists but the town log hasn't
+	// been written to recently, the agent may be dead. Only consider alive if
+	// either the tmux process is running OR the town log is fresh.
+	logStale := deacon.IsTownLogStale(d.config.TownRoot, deacon.HeartbeatStaleThreshold)
+	if logStale {
+		d.logger.Printf("Mayor: tmux session alive but town log stale — agent may be zombie")
+		return false
+	}
+	return true
 }
 
 // killDeaconSessions kills leftover deacon and boot tmux sessions.
