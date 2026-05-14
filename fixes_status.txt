@@ -3111,6 +3111,59 @@ to ship, so deferred to the next session.
 - **Files**: `internal/cmd/mail_check.go`, `internal/cmd/mail_check_supersede.go`,
   `internal/cmd/mail_check_supersede_test.go`, `internal/templates/roles/mayor.md.tmpl`
 
+### Fix #125 — Stage 0 used nonexistent `gt mail read --header subject`
+
+- **Symptom**: Mayor Stage 0 pipeline set `SUBJ` via `gt mail read ID --header subject`,
+  which the CLI does not implement — `SUBJ` was always empty; title fell back to
+  `Untitled kickoff for …` and behavior was fragile.
+- **Fix**: Parse the subject from the first `Subject:` line of the same
+  `BODY=$(gt mail read "$MAIL_ID")` output (`grep -m1` + `sed`). Documented in
+  `mayor.md.tmpl` next to the copy-paste pipeline.
+- **Files**: `internal/templates/roles/mayor.md.tmpl`
+
+### Fix #126 — gt-agent: longer sleep on routine-idle patrol (all LLM agents except mayor & mechanic)
+
+- **Symptom**: Permanent agents call the LLM every ~2s after `gt mol await-signal`
+  when the only injected work is “Perform a routine patrol cycle.” Idle convoys
+  burned proxy volume (planner, witness, refinery, architect, QA, …).
+- **Fix**: After each cycle, if role is **not** `mayor` or `mechanic` and work was
+  **only** the routine patrol phrase, sleep **90s** before the next poll (**2s**
+  for mayor/mechanic, or when any nudge/hook/mail is present). Tunable via
+  `GT_AGENT_LOW_FREQ_IDLE_SLEEP` (Go duration, e.g. `2m`, `45s`).
+- **Files**: `cmd/gt-agent/main.go`, `cmd/gt-agent/main_test.go`
+
+### Fix #127 — NATS session logs truncated; daemon ~3m “restart storm” from false-dead `Exists`
+
+- **Symptom (logs)**: Each `NatsProvider.startInternal` did `os.Create` on
+  `logs/sessions/<id>.log`, wiping the previous run’s tail (hard to debug
+  mayor/patrol crashes). Separately, `daemon` recovery heartbeat (~3m) could
+  log `Mayor started successfully` (etc.) on every tick even when agents were
+  fine: `Exists` used `ps -p <pid>` while `IsAgentRunning` already used
+  `processExists` (Unix: `kill(pid,0)`). Under a minimal `PATH`, `ps` can fail
+  so `Exists` returned false → supervisor spawned duplicate sessions.
+- **Fix**: (1) Before `os.Create`, rename any non-empty existing log to
+  `<id>.log.1` (`rotateNATSSessionLog`). (2) Make `Exists` delegate to
+  `IsAgentRunning` so both paths use the same liveness check.
+- **Files**: `internal/session/nats_provider.go`, `internal/session/nats_provider_test.go`
+
+### Fix #128 — Missing `mol-planner-patrol` formula; planner `gt patrol new` hallucinations; deacon/witness post-work argv
+
+- **Symptom**: `gt patrol new --summary …` failed (`unknown flag`); `gt patrol new --role planner` failed with **`proto mol-planner-patrol not found in catalog`** because no embedded formula existed. Deacon logged **`CMD: DONE: Patrol cycle complete.`** then **Extraordinary**: `postWorkCommand` built a quoted `gt patrol report --summary "…"` string but **`strings.Fields` split the summary words**, producing invalid argv to `gt`. Architect template allowed two **`CMD:`** lines in one turn.
+- **Fix**: Add **`internal/formula/formulas/mol-planner-patrol.formula.toml`**. Extend **`PatrolFormulas()`** so doctor checks planner/mechanic patrol files. **`rewritePatrolNew`** strips bogus `patrol new` flags while preserving **`--role`**. **`hasInvalidPatrolCommand`** treats **`--summary` / `--steps` / `--portal`** on **`new`** as invalid. Run **`patrol report`** for deacon/witness with explicit **`exec.Command(gtBin, "patrol", "report", "--summary", summary)`**. When **`parseLLMResponse`** returns no cmds but a **DONE** summary, end the LLM turn loop without the "no commands" dead-end. Planner/architect templates clarified.
+- **Files**: `internal/formula/formulas/mol-planner-patrol.formula.toml`, `internal/constants/constants.go`, `cmd/gt-agent/main.go`, `cmd/gt-agent/main_test.go`, `internal/cmd/install_integration_test.go`, `internal/templates/roles/planner.md.tmpl`, `internal/templates/roles/architect.md.tmpl`
+
+### Fix #129 — Daemon mayor “zombie” restarts too aggressive; gt-agent panic logging
+
+- **Symptom**: Mayor NATS/`gt-agent` sessions restarted mid-work despite healthy
+  wrappers; daemon `ensureMayorRunning` treated repeated `IsAgentRunning` false
+  as zombie after only **3** heartbeat ticks with no grace after last good probe.
+  Panics in **`gt-agent`** left no stack trace in session logs.
+- **Fix**: Track **`mayorLastWarm`**; after a good `IsAgentRunning` or successful
+  start/restart, ignore invisible-agent probes for **`mayorZombieProbeGrace`**
+  (2m); raise threshold to **6** consecutive failures (`mayorZombieRestartThreshold`).
+  **`main`** in **`gt-agent`** uses **`recover` + `debug.PrintStack`** on panic (exit 2).
+- **Files**: `internal/daemon/daemon.go`, `cmd/gt-agent/main.go`, `fixes_status.txt`
+
 ## Open Issues (next session)
 
 ### Items to change — de-hardcode `spec.md` in gt-agent (Fix #116 follow-up)

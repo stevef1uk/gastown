@@ -88,6 +88,11 @@ func (g *Git) IsRepo() bool {
 	return err == nil
 }
 
+// TopLevel returns the absolute path to the root of the working tree.
+func (g *Git) TopLevel() (string, error) {
+	return g.run("rev-parse", "--show-toplevel")
+}
+
 // run executes a git command and returns stdout.
 func (g *Git) run(args ...string) (string, error) {
 	// If gitDir is set (bare repo), prepend --git-dir flag

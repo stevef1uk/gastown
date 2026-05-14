@@ -62,6 +62,27 @@ func TestIsRepo(t *testing.T) {
 	}
 }
 
+func TestTopLevel(t *testing.T) {
+	dir := t.TempDir()
+	cmd := exec.Command("git", "init")
+	cmd.Dir = dir
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("git init: %v", err)
+	}
+	g := NewGit(dir)
+	top, err := g.TopLevel()
+	if err != nil {
+		t.Fatalf("TopLevel: %v", err)
+	}
+	want, err := filepath.Abs(dir)
+	if err != nil {
+		t.Fatalf("Abs: %v", err)
+	}
+	if top != want {
+		t.Fatalf("TopLevel = %q, want %q", top, want)
+	}
+}
+
 func TestCloneWithReferenceCreatesAlternates(t *testing.T) {
 	tmp := t.TempDir()
 	src := filepath.Join(tmp, "src")

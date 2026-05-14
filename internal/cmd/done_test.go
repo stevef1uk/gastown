@@ -1736,6 +1736,34 @@ func TestBranchHasRealImplementationCommit_DefensiveReturns(t *testing.T) {
 	})
 }
 
+func TestIsGastownInstrumentModuleRoot(t *testing.T) {
+	t.Parallel()
+	t.Run("matches instrument module", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module github.com/steveyegge/gastown\n\ngo 1.25\n"), 0644); err != nil {
+			t.Fatal(err)
+		}
+		if !isGastownInstrumentModuleRoot(dir) {
+			t.Error("expected true for github.com/steveyegge/gastown module root")
+		}
+	})
+	t.Run("rejects other modules", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module example.com/foo\n\ngo 1.25\n"), 0644); err != nil {
+			t.Fatal(err)
+		}
+		if isGastownInstrumentModuleRoot(dir) {
+			t.Error("expected false for unrelated module")
+		}
+	})
+	t.Run("missing go.mod", func(t *testing.T) {
+		dir := t.TempDir()
+		if isGastownInstrumentModuleRoot(dir) {
+			t.Error("expected false with no go.mod")
+		}
+	})
+}
+
 // initTestRepo creates a fresh git repo with a `main` branch containing
 // one base commit. Returns the worktree path. All subsequent commits in
 // the test should be made on a feature branch via `git checkout -b`.

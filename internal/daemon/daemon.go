@@ -49,10 +49,10 @@ import (
 // This is recovery-focused: normal wake is handled by feed subscription (bd activity --follow).
 // The daemon is the safety net for dead sessions, GUPP violations, and orphaned work.
 type Daemon struct {
-	config          *Config
-	patrolConfig    *DaemonPatrolConfig
-	sp              session.Provider
-	logger          *log.Logger
+	config        *Config
+	patrolConfig  *DaemonPatrolConfig
+	sp            session.Provider
+	logger        *log.Logger
 	ctx           context.Context
 	cancel        context.CancelFunc
 	curator       *feed.Curator
@@ -114,6 +114,8 @@ type Daemon struct {
 	// mayorZombieCount tracks consecutive patrol cycles where the Mayor tmux
 	// session exists but the agent process is not detected (after grace).
 	// A count >= mayorZombieRestartThreshold triggers a zombie restart.
+	// Debounced with mayorLastWarm + mayorZombieProbeGrace to avoid spurious
+	// kills during handoffs, long shell pipelines, or NATS/wrapper races.
 	// Only accessed from heartbeat loop goroutine - no sync needed.
 	mayorZombieCount int
 
@@ -884,7 +886,7 @@ func (d *Daemon) heartbeat(state *State) {
 		d.logger.Printf("QA patrol disabled in config, skipping")
 		d.killQASessions()
 	}
-	
+
 	// 5.6.5. Ensure Mechanics are running for all rigs (restart if dead)
 	if d.isPatrolActive("mechanic") {
 		if p := d.checkPressure("mechanic"); !p.OK {
@@ -1986,13 +1988,19 @@ func (d *Daemon) ensureMayorRunning() {
 			// During handoffs or heavy work (long shell pipelines, local LLM),
 			// liveness can briefly false-negative; use grace + multi-cycle debounce.
 			if d.isMayorAgentAlive(mgr) {
+				d.mayorZombieCount = 0
 				d.mayorLastWarm = time.Now()
+				return
+			}
+			// Agent not visible — may be a transient gap right after a good check
+			// or during slow wrapper startup; do not count as zombie during grace.
+			if !d.mayorLastWarm.IsZero() && time.Since(d.mayorLastWarm) < mayorZombieProbeGrace {
+				d.logger.Printf("Mayor agent not visible but within %s grace after last good probe — not counting as zombie",
+					mayorZombieProbeGrace.Round(time.Second))
 				d.mayorZombieCount = 0
 				return
 			}
-			if !d.mayorLastWarm.IsZero() && time.Since(d.mayorLastWarm) < mayorZombieProbeGrace {
-				return
-			}
+
 			d.mayorZombieCount++
 			if d.mayorZombieCount >= mayorZombieRestartThreshold {
 				d.logger.Printf("Mayor zombie detected (%d cycles), restarting", d.mayorZombieCount)

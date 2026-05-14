@@ -87,6 +87,50 @@ func doneContaminationBaseRef(defaultBranch, explicitTarget string) string {
 	return "origin/" + targetBranch
 }
 
+func envMeansTrue(s string) bool {
+	v := strings.ToLower(strings.TrimSpace(s))
+	return v == "1" || v == "true" || v == "yes" || v == "on"
+}
+
+// polecatRepoMutationBlocked reports whether gt done must not run mutating git
+// safety nets or cleanup commits against the current repo (gt-pvx stash
+// recovery + auto-commit, gt-p35 overlay strip commit). Gas Town processes must
+// not rewrite the developer's github.com/steveyegge/gastown instrument checkout.
+func polecatRepoMutationBlocked(g *git.Git) (blocked bool, reason string) {
+	if envMeansTrue(os.Getenv("GT_NO_AUTOSAVE")) {
+		return true, "GT_NO_AUTOSAVE is set — skipping automatic polecat git mutations (stash recovery, auto-commit, overlay cleanup commit)"
+	}
+	if g == nil {
+		return false, ""
+	}
+	if envMeansTrue(os.Getenv("GT_ALLOW_GASTOWN_GIT_AUTOSAVE")) {
+		return false, ""
+	}
+	top, err := g.TopLevel()
+	if err != nil {
+		return false, ""
+	}
+	if isGastownInstrumentModuleRoot(top) {
+		return true, "skipping automatic polecat git mutations in the Gas Town instrument checkout (module github.com/steveyegge/gastown) — work from your town clone, not this tree. Opt-in: GT_ALLOW_GASTOWN_GIT_AUTOSAVE=1"
+	}
+	return false, ""
+}
+
+func isGastownInstrumentModuleRoot(gitTop string) bool {
+	data, err := os.ReadFile(filepath.Join(gitTop, "go.mod"))
+	if err != nil {
+		return false
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "module ") {
+			mod := strings.TrimSpace(strings.TrimPrefix(line, "module "))
+			return mod == "github.com/steveyegge/gastown"
+		}
+	}
+	return false
+}
+
 func init() {
 	doneCmd.Flags().StringVar(&doneIssue, "issue", "", "Source issue ID (default: parse from branch name)")
 	doneCmd.Flags().IntVarP(&donePriority, "priority", "p", -1, "Override priority (0-4, default: inherit from issue)")
@@ -283,6 +327,16 @@ func runDone(cmd *cobra.Command, args []string) (retErr error) {
 		}
 	}
 
+	gitWritesBlocked, gitWritesBlockReason := polecatRepoMutationBlocked(g)
+	var warnedGitWritesBlock bool
+	warnBlockedGitOps := func() {
+		if !gitWritesBlocked || gitWritesBlockReason == "" || warnedGitWritesBlock {
+			return
+		}
+		warnedGitWritesBlock = true
+		style.PrintWarning("%s", gitWritesBlockReason)
+	}
+
 	// SAFETY NET (gt-pvx, stash recovery): If we detected stashes belonging to
 	// this branch, auto-pop them so the existing uncommitted-work auto-commit
 	// path (below) catches the contents and saves them as a normal commit.
@@ -299,41 +353,45 @@ func runDone(cmd *cobra.Command, args []string) (retErr error) {
 	// conflicts, we stop and let the agent/user resolve — surfacing the
 	// conflict is better than silently dropping the stash.
 	if cwdAvailable && doneCleanupStatus == "stash" {
-		entries, err := g.StashListForBranch()
-		if err != nil {
-			style.PrintWarning("auto-pop: could not list stashes: %v — orphaned stashes may remain", err)
-		} else if len(entries) > 0 {
-			fmt.Printf("\n%s %d stash(es) detected on this branch — auto-popping (gt-pvx safety net)\n",
-				style.Bold.Render("⚠"), len(entries))
-			// Pop oldest first: iterate in reverse so newest lands on top.
-			popFailed := false
-			for i := len(entries) - 1; i >= 0; i-- {
-				e := entries[i]
-				fmt.Printf("  popping %s — %s\n", e.Ref, e.Message)
-				if popErr := g.StashPop(e.Ref); popErr != nil {
-					style.PrintWarning("auto-pop %s failed (likely conflict): %v", e.Ref, popErr)
-					style.PrintWarning("stopping pop chain — resolve conflict manually then re-run gt done")
-					popFailed = true
-					break
+		if gitWritesBlocked {
+			warnBlockedGitOps()
+		} else {
+			entries, err := g.StashListForBranch()
+			if err != nil {
+				style.PrintWarning("auto-pop: could not list stashes: %v — orphaned stashes may remain", err)
+			} else if len(entries) > 0 {
+				fmt.Printf("\n%s %d stash(es) detected on this branch — auto-popping (gt-pvx safety net)\n",
+					style.Bold.Render("⚠"), len(entries))
+				// Pop oldest first: iterate in reverse so newest lands on top.
+				popFailed := false
+				for i := len(entries) - 1; i >= 0; i-- {
+					e := entries[i]
+					fmt.Printf("  popping %s — %s\n", e.Ref, e.Message)
+					if popErr := g.StashPop(e.Ref); popErr != nil {
+						style.PrintWarning("auto-pop %s failed (likely conflict): %v", e.Ref, popErr)
+						style.PrintWarning("stopping pop chain — resolve conflict manually then re-run gt done")
+						popFailed = true
+						break
+					}
+					// After each pop, stash refs shift; re-fetch the list before next pop.
+					entries, err = g.StashListForBranch()
+					if err != nil || len(entries) == 0 {
+						break
+					}
 				}
-				// After each pop, stash refs shift; re-fetch the list before next pop.
-				entries, err = g.StashListForBranch()
-				if err != nil || len(entries) == 0 {
-					break
-				}
-			}
-			if !popFailed {
-				// Re-evaluate cleanup status: pops likely produced uncommitted changes
-				// that the next block will auto-commit. Worst case, status was already
-				// uncommitted and the next block runs anyway.
-				if workStatus, wsErr := g.CheckUncommittedWork(); wsErr == nil && workStatus.HasUncommittedChanges {
-					doneCleanupStatus = "uncommitted"
-					fmt.Printf("%s Stash content moved to working tree — will auto-commit below.\n",
-						style.Bold.Render("✓"))
-				} else {
-					// Pops succeeded but produced nothing dirty (e.g. stashes were
-					// already merged). Recompute status normally.
-					doneCleanupStatus = ""
+				if !popFailed {
+					// Re-evaluate cleanup status: pops likely produced uncommitted changes
+					// that the next block will auto-commit. Worst case, status was already
+					// uncommitted and the next block runs anyway.
+					if workStatus, wsErr := g.CheckUncommittedWork(); wsErr == nil && workStatus.HasUncommittedChanges {
+						doneCleanupStatus = "uncommitted"
+						fmt.Printf("%s Stash content moved to working tree — will auto-commit below.\n",
+							style.Bold.Render("✓"))
+					} else {
+						// Pops succeeded but produced nothing dirty (e.g. stashes were
+						// already merged). Recompute status normally.
+						doneCleanupStatus = ""
+					}
 				}
 			}
 		}
@@ -350,50 +408,54 @@ func runDone(cmd *cobra.Command, args []string) (retErr error) {
 	// Auto-commit ensures work is NEVER lost regardless of exit type or agent behavior.
 	// The commit message is clearly marked as an auto-save so reviewers know.
 	if cwdAvailable && doneCleanupStatus == "uncommitted" {
-		// Re-check to get file details (cleanup detection already confirmed uncommitted changes)
-		workStatus, err := g.CheckUncommittedWork()
-		if err == nil && workStatus.HasUncommittedChanges && !workStatus.CleanExcludingRuntime() {
-			fmt.Printf("\n%s Uncommitted changes detected — auto-saving to prevent work loss\n", style.Bold.Render("⚠"))
-			fmt.Printf("  Files: %s\n\n", workStatus.String())
+		if gitWritesBlocked {
+			warnBlockedGitOps()
+		} else {
+			// Re-check to get file details (cleanup detection already confirmed uncommitted changes)
+			workStatus, err := g.CheckUncommittedWork()
+			if err == nil && workStatus.HasUncommittedChanges && !workStatus.CleanExcludingRuntime() {
+				fmt.Printf("\n%s Uncommitted changes detected — auto-saving to prevent work loss\n", style.Bold.Render("⚠"))
+				fmt.Printf("  Files: %s\n\n", workStatus.String())
 
-			// Stage all changes (git add -A), then unstage overlay/runtime files (gt-p35)
-			// and any deletions of tracked files (gt-pvx safety: never commit deletions).
-			if addErr := g.Add("-A"); addErr != nil {
-				style.PrintWarning("auto-commit: git add failed: %v — uncommitted work may be at risk", addErr)
-			} else {
-				// Unstage Gas Town overlay files that git add -A picked up.
-				// These are runtime artifacts that must not be committed to repos.
-				_ = g.ResetFiles("CLAUDE.local.md")
-				// Only unstage CLAUDE.md if it contains the overlay marker
-				if claudeData, readErr := os.ReadFile(filepath.Join(cwd, "CLAUDE.md")); readErr == nil {
-					if strings.Contains(string(claudeData), templates.PolecatLifecycleMarker) {
-						_ = g.ResetFiles("CLAUDE.md")
-					}
-				}
-				// Unstage runtime/ephemeral directories (mirrors checkpoint_dog exclusions).
-				for _, dir := range []string{".beads/", ".claude/", ".runtime/", "__pycache__/"} {
-					_ = g.ResetFiles(dir)
-				}
-				// Unstage deletions of tracked files. A safety-net auto-commit should
-				// preserve work (additions + modifications), never destroy it (deletions).
-				// This prevents the bug where a polecat's working tree has a missing
-				// tracked file (e.g. .beads/metadata.json) and the auto-save commits
-				// the deletion, breaking infrastructure for subsequent sessions.
-				if stagedDeletions, delErr := g.StagedDeletions(); delErr == nil && len(stagedDeletions) > 0 {
-					_ = g.ResetFiles(stagedDeletions...)
-				}
-				// Build a descriptive commit message
-				autoMsg := "fix: auto-save uncommitted implementation work (gt-pvx safety net)"
-				if issueFromBranch := parseBranchName(branch).Issue; issueFromBranch != "" {
-					autoMsg = fmt.Sprintf("fix: auto-save uncommitted implementation work (%s, gt-pvx safety net)", issueFromBranch)
-				}
-				if commitErr := g.Commit(autoMsg); commitErr != nil {
-					style.PrintWarning("auto-commit: git commit failed: %v — uncommitted work may be at risk", commitErr)
+				// Stage all changes (git add -A), then unstage overlay/runtime files (gt-p35)
+				// and any deletions of tracked files (gt-pvx safety: never commit deletions).
+				if addErr := g.Add("-A"); addErr != nil {
+					style.PrintWarning("auto-commit: git add failed: %v — uncommitted work may be at risk", addErr)
 				} else {
-					fmt.Printf("%s Auto-committed uncommitted work (safety net)\n", style.Bold.Render("✓"))
-					fmt.Printf("  The agent should have committed before running gt done.\n")
-					fmt.Printf("  This auto-save prevents work loss.\n\n")
-					doneCleanupStatus = "unpushed" // Update status — changes are now committed but not pushed
+					// Unstage Gas Town overlay files that git add -A picked up.
+					// These are runtime artifacts that must not be committed to repos.
+					_ = g.ResetFiles("CLAUDE.local.md")
+					// Only unstage CLAUDE.md if it contains the overlay marker
+					if claudeData, readErr := os.ReadFile(filepath.Join(cwd, "CLAUDE.md")); readErr == nil {
+						if strings.Contains(string(claudeData), templates.PolecatLifecycleMarker) {
+							_ = g.ResetFiles("CLAUDE.md")
+						}
+					}
+					// Unstage runtime/ephemeral directories (mirrors checkpoint_dog exclusions).
+					for _, dir := range []string{".beads/", ".claude/", ".runtime/", "__pycache__/"} {
+						_ = g.ResetFiles(dir)
+					}
+					// Unstage deletions of tracked files. A safety-net auto-commit should
+					// preserve work (additions + modifications), never destroy it (deletions).
+					// This prevents the bug where a polecat's working tree has a missing
+					// tracked file (e.g. .beads/metadata.json) and the auto-save commits
+					// the deletion, breaking infrastructure for subsequent sessions.
+					if stagedDeletions, delErr := g.StagedDeletions(); delErr == nil && len(stagedDeletions) > 0 {
+						_ = g.ResetFiles(stagedDeletions...)
+					}
+					// Build a descriptive commit message
+					autoMsg := "fix: auto-save uncommitted implementation work (gt-pvx safety net)"
+					if issueFromBranch := parseBranchName(branch).Issue; issueFromBranch != "" {
+						autoMsg = fmt.Sprintf("fix: auto-save uncommitted implementation work (%s, gt-pvx safety net)", issueFromBranch)
+					}
+					if commitErr := g.Commit(autoMsg); commitErr != nil {
+						style.PrintWarning("auto-commit: git commit failed: %v — uncommitted work may be at risk", commitErr)
+					} else {
+						fmt.Printf("%s Auto-committed uncommitted work (safety net)\n", style.Bold.Render("✓"))
+						fmt.Printf("  The agent should have committed before running gt done.\n")
+						fmt.Printf("  This auto-save prevents work loss.\n\n")
+						doneCleanupStatus = "unpushed" // Update status — changes are now committed but not pushed
+					}
 				}
 			}
 		}
@@ -708,7 +770,7 @@ func runDone(cmd *cobra.Command, args []string) (retErr error) {
 		// Strip Gas Town overlay from CLAUDE.md / CLAUDE.local.md (gt-p35).
 		// Polecats commit the overlay (polecat lifecycle boilerplate) into repos,
 		// overwriting project-specific CLAUDE.md content. Detect and revert before push.
-		if stripped := stripOverlayCLAUDEmd(g, defaultBranch); stripped {
+		if stripped := stripOverlayCLAUDEmd(g, defaultBranch, gitWritesBlocked, warnBlockedGitOps); stripped {
 			// Recalculate commits ahead since we added a cleanup commit
 			aheadCount, _ = g.CommitsAhead("origin/"+defaultBranch, "HEAD")
 		}
@@ -2009,7 +2071,7 @@ func selfKillSession(townRoot string, roleInfo RoleInfo) error {
 // and a cleanup commit is created.
 //
 // Returns true if a cleanup commit was created.
-func stripOverlayCLAUDEmd(g *git.Git, defaultBranch string) bool {
+func stripOverlayCLAUDEmd(g *git.Git, defaultBranch string, skipMutatingGit bool, onSkipMutating func()) bool {
 	originRef := "origin/" + defaultBranch
 
 	// Check which files changed on this branch vs origin/main
@@ -2032,6 +2094,13 @@ func stripOverlayCLAUDEmd(g *git.Git, defaultBranch string) bool {
 
 	if !claudeChanged && !claudeLocalChanged {
 		return false // Nothing to strip
+	}
+
+	if skipMutatingGit {
+		if onSkipMutating != nil {
+			onSkipMutating()
+		}
+		return false
 	}
 
 	needsCommit := false
