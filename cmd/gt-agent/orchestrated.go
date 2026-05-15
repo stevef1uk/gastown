@@ -431,6 +431,18 @@ func validateImplementationCommand(cmd, rig string) error {
 			return fmt.Errorf("use bd update/close from rig workdir, not %q", bad)
 		}
 	}
+	if strings.Contains(lower, "git push") {
+		return fmt.Errorf("do not push to remote during orchestrator implementation (local commits only)")
+	}
+	if strings.Contains(lower, "git add .") || strings.Contains(lower, "git add -a") ||
+		strings.Contains(lower, "git add --all") {
+		return fmt.Errorf("do not git add . — stage only files under %s/backend/", rigMayorRigPath(rig))
+	}
+	for _, artifact := range []string{"/typescript", ".claude/", ".gt-agent", ".runtime/", "bookmarks.txt", "dummy.py", "plan_complete.js"} {
+		if strings.Contains(lower, artifact) {
+			return fmt.Errorf("do not commit agent artifacts (%s)", artifact)
+		}
+	}
 	return nil
 }
 

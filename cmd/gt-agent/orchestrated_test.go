@@ -152,7 +152,9 @@ func TestValidateImplementationCommand(t *testing.T) {
 		`bash -lc 'cd testgt2/mayor/rig && bd list --status=open'`,
 		`bash -lc 'cd testgt2/mayor/rig && bd update hq-abc --status=in_progress'`,
 		`cat > testgt2/mayor/rig/backend/fizzbuzz.py <<'EOF'`,
+		`bash -lc 'cd testgt2/mayor/rig && git add backend && git commit -m "Implement x"'`,
 	}
+	bad = append(bad, "git push origin main", "git add .", "git add -A", "git add typescript")
 	for _, cmd := range ok {
 		if err := validateImplementationCommand(cmd, "testgt2"); err != nil {
 			t.Fatalf("expected allow %q: %v", cmd, err)
