@@ -112,6 +112,7 @@ Workflow templates that coordinate multi-step work. Formulas (TOML definitions) 
 - **Gastown repo** — build `gt`, `gt-agent`, templates (`make install` syncs `internal/orchestrator/town/` into your town)
 - **NATS** — orchestrator MCP on `gt.orchestrator.mcp` (requires `"session_transport": "nats"` in town settings)
 - **Freeride proxy** (optional) — OpenAI-compatible LLM at `http://localhost:11434` for `gt-agent`; routes models by role
+- **`gt-agent-console`** — web UI on port **8081** to watch orchestrator + rig agents, workflow state, and `typescript` logs (see [Agent Console](#agent-console-))
 
 Patrol agents (witness, refinery, deacon) stay on the legacy loop. Pipeline roles (mayor, architect, planner, polecat, qa) use orchestrated mode when the orchestrator is running.
 
@@ -151,8 +152,18 @@ tail -f planner/typescript              # planning
 tail -f testgt2/polecat/typescript      # implementation (orchestrator polecat, not polecats/*)
 tail -f testgt2/qa/typescript           # qa_review
 
-# 6. Agent console (optional)
-gt-agent-console   # http://127.0.0.1:8081 — orchestrator, workflow badges, typescript logs
+# 6. Agent console (recommended while debugging rig-flow)
+gt-agent-console
+# Open http://127.0.0.1:8081 — see Agent Console section below
+```
+
+While the workflow runs, use **`gt-agent-console`** alongside `gt mayor workflow status`:
+
+- **Orchestrator** entry (running/stopped, `logs/orchestrator.log`)
+- Per-rig **Architect / Planner / Polecat / QA** with live status (matches `GT_ROLE`, not just PID files)
+- **Workflow badge** on the active FSM step (`design`, `implementation`, `qa_review`, …)
+- **typescript** logs for each role (not only sparse `logs/sessions/*.log`)
+
 ```
 
 **QA completes the FSM, not your git remote.** Polecat commits under `{rig}/mayor/rig/` locally; `git push` is blocked during orchestrated implementation. After `current_state=completed`, push from the rig worktree:
@@ -260,9 +271,9 @@ cd myproject/crew/yourname
 # Start all services (NATS, Dolt, daemon, agents)
 gt up
 
-# Open the agent console in another terminal
+# Open the agent console in another terminal (orchestrator + all agents)
 gt-agent-console
-# Then visit http://localhost:8081
+# http://localhost:8081 — see "Agent Console" section
 
 # Send a nudge to the Mayor from the command line
 gt nudge mayor "Set up the project and create initial issues"
@@ -698,9 +709,9 @@ Press `p` in `gt feed` (or start with `gt feed --problems`) to toggle the proble
 
 ## Agent Console 🖥️
 
-The **Agent Console** is a web-based UI for monitoring and interacting with your
-Gas Town agents. It runs on port **8081** by default and provides real-time
-visibility into agent status, activity logs, and nudge queue messaging.
+The **`gt-agent-console`** binary is a web UI for monitoring and interacting with
+Gas Town agents. It is installed with `make install` / `brew install gastown`
+alongside `gt` and `gt-agent`. Default URL: **http://127.0.0.1:8081**.
 
 ```bash
 # Start the agent console (default port 8081)
@@ -713,19 +724,35 @@ GT_AGENT_CONSOLE_PORT=3000 gt-agent-console
 GT_AGENT_CONSOLE_BIND=0.0.0.0 gt-agent-console
 ```
 
-Open http://localhost:8081 in your browser to see:
+Run it from any machine that can read your town root (`GT_ROOT` / `~/gt`). It
+does not replace `gt up` — start the town first, then open the console in another
+terminal while debugging.
 
-- **Agent list** — All agents (Mayor, Deacon, Witness, Refinery, Crew) with live status
-- **Activity logs** — Per-agent wrapper logs showing patrol cycles and command output
-- **Real-time streaming** — SSE stream for live log updates
-- **Send nudges** — Type messages directly to any agent's nudge queue
+### What you see
 
-The console is especially useful for debugging agent behavior: you can watch the
-Mayor's log in real-time as it processes your nudges, or send a corrective
-message when an agent gets stuck.
+- **Agent list** — Town agents (Mayor, Deacon, Planner) and per-rig roles (Witness, Refinery, Architect, QA, pipeline Polecat, crew)
+- **Orchestrator** — `gt orchestrator run` status and activity (when using [rig-flow](#orchestrator--freeride-rig-flow-))
+- **Workflow badges** — active `rig-flow` step highlighted on the matching agent; rig header shows `wf-1 → qa_review` style hints
+- **Activity logs** — tails each role’s `typescript` file where orchestrated agents actually log; falls back to `logs/sessions/*.log`
+- **Live stream** — SSE updates as new log lines appear
+- **Nudges** — send messages to an agent’s queue (orchestrator itself is view-only)
 
-> **Note:** Agents run headlessly via `gt-agent` and NATS. The console does not
-> start or stop agents — use `gt up` / `gt down` for that.
+### Orchestrator / rig-flow debugging
+
+When running [`rig-flow`](#try-rig-flow-on-a-rig-eg-testgt2), prefer the console over
+guessing which `typescript` to tail:
+
+| FSM state | Select in console |
+| --------- | ----------------- |
+| design | Rig → **Architect** |
+| planning | Town → **Planner** |
+| implementation | Rig → **Polecat (pipeline)** — not `polecats/*` workers |
+| qa_review | Rig → **QA** |
+
+CLI equivalents: `gt mayor workflow status`, `gt feed --plain`, `tail -f logs/orchestrator.log`.
+
+> **Note:** The console does not start or stop agents — use `gt up` / `gt down`.
+> Pipeline agents need the orchestrator running and `session_transport: "nats"`.
 
 ## Dashboard
 
