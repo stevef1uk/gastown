@@ -13,6 +13,7 @@ import (
 	"github.com/steveyegge/gastown/internal/daemon"
 	"github.com/steveyegge/gastown/internal/doltserver"
 	"github.com/steveyegge/gastown/internal/mayor"
+	"github.com/steveyegge/gastown/internal/orchestrator"
 	"github.com/steveyegge/gastown/internal/session"
 	"github.com/steveyegge/gastown/internal/style"
 	"github.com/steveyegge/gastown/internal/tmux"
@@ -132,8 +133,114 @@ func init() {
 	mayorAcpCmd.Flags().StringVar(&acpRigOverride, "rig", "", "Rig name (overrides GT_RIG env)")
 	mayorAcpCmd.Flags().StringVar(&acpTownRootOverride, "town", "", "Town root directory (overrides GT_TOWN_ROOT env)")
 	mayorAcpCmd.Flags().StringVar(&mayorAgentOverride, "agent", "", "Agent alias to run (overrides town default)")
+	mayorCmd.AddCommand(mayorWorkflowCmd)
+	mayorWorkflowCmd.AddCommand(mayorWorkflowStartCmd)
+	mayorWorkflowCmd.AddCommand(mayorWorkflowCompleteCmd)
+	mayorWorkflowCmd.AddCommand(mayorWorkflowStatusCmd)
 
 	rootCmd.AddCommand(mayorCmd)
+}
+
+var mayorWorkflowCmd = &cobra.Command{
+	Use:   "workflow",
+	Short: "Manage Mayor workflows",
+	RunE:  requireSubcommand,
+}
+
+var mayorWorkflowStartCmd = &cobra.Command{
+	Use:   "start <template>",
+	Short: "Start a workflow",
+	Args:  cobra.MinimumNArgs(1),
+	RunE:  runMayorWorkflowStart,
+}
+
+var mayorWorkflowCompleteCmd = &cobra.Command{
+	Use:   "complete <workflow-id> <outcome>",
+	Short: "Report workflow step completion (advance FSM)",
+	Args:  cobra.ExactArgs(2),
+	RunE:  runMayorWorkflowComplete,
+}
+
+var mayorWorkflowStatusCmd = &cobra.Command{
+	Use:   "status [workflow-id]",
+	Short: "Show workflow instance status",
+	Args:  cobra.MaximumNArgs(1),
+	RunE:  runMayorWorkflowStatus,
+}
+
+var workflowRig string
+
+func init() {
+	mayorWorkflowStartCmd.Flags().StringVar(&workflowRig, "rig", "", "Rig name for workflow variables (e.g. testgt2)")
+}
+
+func runMayorWorkflowStart(cmd *cobra.Command, args []string) error {
+	townRoot, err := workspace.FindFromCwdOrError()
+	if err != nil {
+		return err
+	}
+
+	templateID := args[0]
+	vars := make(map[string]string)
+	if workflowRig != "" {
+		vars["rig"] = workflowRig
+	} else {
+		rigs := discoverRigs(townRoot)
+		if len(rigs) == 1 {
+			vars["rig"] = rigs[0]
+		}
+	}
+
+	workflowID, err := orchestrator.StartWorkflow(townRoot, templateID, vars)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("%s Workflow started: %s\n", style.SuccessPrefix, workflowID)
+	return nil
+}
+
+func runMayorWorkflowStatus(cmd *cobra.Command, args []string) error {
+	townRoot, err := workspace.FindFromCwdOrError()
+	if err != nil {
+		return err
+	}
+	workflowID := ""
+	if len(args) > 0 {
+		workflowID = args[0]
+	}
+	statuses, err := orchestrator.GetWorkflowStatuses(townRoot, workflowID)
+	if err != nil {
+		return err
+	}
+	if len(statuses) == 0 {
+		fmt.Println("No workflow instances.")
+		return nil
+	}
+	for _, s := range statuses {
+		rig := s.Variables["rig"]
+		if rig != "" {
+			rig = " rig=" + rig
+		}
+		fmt.Printf("%s  template=%s state=%s status=%s role=%s%s\n",
+			s.ID, s.TemplateID, s.CurrentState, s.Status, s.Role, rig)
+	}
+	return nil
+}
+
+func runMayorWorkflowComplete(cmd *cobra.Command, args []string) error {
+	townRoot, err := workspace.FindFromCwdOrError()
+	if err != nil {
+		return err
+	}
+	workflowID := args[0]
+	outcome := args[1]
+	next, err := orchestrator.CompleteTask(townRoot, workflowID, outcome)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("%s Workflow %s advanced to state: %s\n", style.SuccessPrefix, workflowID, next)
+	return nil
 }
 
 // getMayorManager returns a mayor manager for the current workspace.
@@ -157,7 +264,9 @@ func runMayorStart(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Println("Starting Mayor session...")
-	if err := mgr.Start(mayorAgentOverride); err != nil {
+	townRoot, _ := workspace.FindFromCwdOrError()
+	orchestrated, _, _ := orchestrator.IsRunning(townRoot)
+	if err := mgr.Start(mayorAgentOverride, orchestrated); err != nil {
 		if err == mayor.ErrAlreadyRunning {
 			return fmt.Errorf("Mayor session already running. Attach with: gt mayor attach")
 		}
@@ -224,7 +333,8 @@ func runMayorAttach(cmd *cobra.Command, args []string) error {
 	if !running {
 		// Auto-start if not running
 		fmt.Println("Mayor session not running, starting...")
-		if err := mgr.Start(mayorAgentOverride); err != nil {
+		orchestrated, _, _ := orchestrator.IsRunning(townRoot)
+		if err := mgr.Start(mayorAgentOverride, orchestrated); err != nil {
 			return err
 		}
 	} else {

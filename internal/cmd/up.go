@@ -28,6 +28,7 @@ import (
 	"github.com/steveyegge/gastown/internal/mail"
 	"github.com/steveyegge/gastown/internal/mayor"
 	"github.com/steveyegge/gastown/internal/natsserver"
+	"github.com/steveyegge/gastown/internal/orchestrator"
 	"github.com/steveyegge/gastown/internal/polecat"
 	"github.com/steveyegge/gastown/internal/refinery"
 	"github.com/steveyegge/gastown/internal/rig"
@@ -231,9 +232,9 @@ func runUp(cmd *cobra.Command, args []string) error {
 		fmt.Fprintf(os.Stderr, "Warning: NATS not available, agents may use tmux fallback\n")
 	}
 
-	// Start daemon, deacon, mayor, planner, and rig prefetch in parallel
+	// Start daemon, deacon, mayor, planner, mechanic, orchestrator, and rig prefetch in parallel
 	var startupWg sync.WaitGroup
-	startupWg.Add(6)
+	startupWg.Add(8)
 
 	// 1. Dolt server (if configured)
 	go func() {
@@ -297,8 +298,9 @@ func runUp(cmd *cobra.Command, args []string) error {
 	// 3. Deacon
 	go func() {
 		defer startupWg.Done()
+		orchRunning, _, _ := orchestrator.IsRunning(townRoot)
 		deaconMgr := deacon.NewManager(townRoot)
-		if err := deaconMgr.Start(""); err != nil {
+		if err := deaconMgr.Start("", orchestrator.OrchestratedForRole(orchRunning, constants.RoleDeacon)); err != nil {
 			if err == deacon.ErrAlreadyRunning {
 				deaconResult = agentStartResult{name: "Deacon", ok: true, detail: deaconMgr.SessionName()}
 			} else {
@@ -312,8 +314,9 @@ func runUp(cmd *cobra.Command, args []string) error {
 	// 4. Mayor
 	go func() {
 		defer startupWg.Done()
+		orchRunning, _, _ := orchestrator.IsRunning(townRoot)
 		mayorMgr := mayor.NewManager(townRoot)
-		if err := mayorMgr.Start(""); err != nil {
+		if err := mayorMgr.Start("", orchestrator.OrchestratedForRole(orchRunning, constants.RoleMayor)); err != nil {
 			if errors.Is(err, mayor.ErrAlreadyRunning) {
 				mayorResult = agentStartResult{name: "Mayor", ok: true, detail: mayorMgr.SessionName()}
 			} else if errors.Is(err, mayor.ErrACPActive) {
@@ -332,10 +335,27 @@ func runUp(cmd *cobra.Command, args []string) error {
 		defer startupWg.Done()
 		plannerResult = upStartPlanner(townRoot)
 	}()
-	startupWg.Add(1)
 	go func() {
 		defer startupWg.Done()
 		mechanicResult = upStartMechanic(townRoot)
+	}()
+
+	// 4.7. Orchestrator
+	var orchestratorOK bool
+	var orchestratorDetail string
+	go func() {
+		defer startupWg.Done()
+		if err := orchestrator.Start(townRoot); err != nil {
+			orchestratorDetail = err.Error()
+		} else {
+			orchestratorOK = true
+			running, pid, _ := orchestrator.IsRunning(townRoot)
+			if running {
+				orchestratorDetail = fmt.Sprintf("PID %d", pid)
+			} else {
+				orchestratorDetail = "started"
+			}
+		}
 	}()
 
 	// 5. Prefetch rig configs (overlaps with daemon/deacon/mayor startup)
@@ -351,10 +371,26 @@ func runUp(cmd *cobra.Command, args []string) error {
 		_, _ = doltserver.EnsureAllMetadata(townRoot)
 	}
 
-	// Collect Dolt and NATS status
+	// Collect Dolt, NATS, and Orchestrator status
 	services = append(services, ServiceStatus{Name: "NATS", Type: "nats", OK: natsOK, Detail: natsDetail})
 	if !natsOK {
 		allOK = false
+	}
+
+	services = append(services, ServiceStatus{Name: "Orchestrator", Type: "orchestrator", OK: orchestratorOK, Detail: orchestratorDetail})
+	if !orchestratorOK {
+		allOK = false
+	} else {
+		autoRig := ""
+		if len(rigs) == 1 {
+			autoRig = rigs[0]
+		}
+		if wfID, err := orchestrator.MaybeAutoStartWorkflow(townRoot, autoRig); err != nil {
+			fmt.Fprintf(os.Stderr, "%s orchestrator auto-start: %v\n", style.Warning.Render("!"), err)
+		} else if wfID != "" {
+			orchestratorDetail = fmt.Sprintf("%s; workflow %s", orchestratorDetail, wfID)
+			services[len(services)-1].Detail = orchestratorDetail
+		}
 	}
 
 	if !doltSkipped {
@@ -373,6 +409,24 @@ func runUp(cmd *cobra.Command, args []string) error {
 	} else {
 		services = append(services, ServiceStatus{Name: "Daemon", Type: "daemon", OK: true, Detail: "running (PID unknown)"})
 	}
+
+	var orchestrated, _, _ = orchestrator.IsRunning(townRoot)
+	var architectResult, qaResult, polecatResult agentStartResult
+	if orchestrated {
+		if len(rigs) == 0 {
+			architectResult = upStartTownRole(townRoot, constants.RoleArchitect, "hq-architect", orchestrated, "")
+			qaResult = upStartTownRole(townRoot, constants.RoleQA, "hq-qa", orchestrated, "")
+		} else {
+			architectResult = agentStartResult{name: "Architect (Town)", ok: true, detail: "skipped (rig agents)"}
+			qaResult = agentStartResult{name: "QA (Town)", ok: true, detail: "skipped (rig agents)"}
+		}
+		polecatRig := ""
+		if len(rigs) == 1 {
+			polecatRig = rigs[0]
+		}
+		polecatResult = upStartTownRole(townRoot, constants.RolePolecat, "hq-polecat", orchestrated, polecatRig)
+	}
+
 	deaconServiceIdx := len(services)
 	services = append(services, ServiceStatus{Name: deaconResult.name, Type: constants.RoleDeacon, OK: deaconResult.ok, Detail: deaconResult.detail})
 	if !deaconResult.ok {
@@ -390,6 +444,15 @@ func runUp(cmd *cobra.Command, args []string) error {
 	services = append(services, ServiceStatus{Name: mechanicResult.name, Type: constants.RoleMechanic, OK: mechanicResult.ok, Detail: mechanicResult.detail})
 	if !mechanicResult.ok {
 		allOK = false
+	}
+
+	if orchestrated {
+		services = append(services, ServiceStatus{Name: "Architect (Town)", Type: constants.RoleArchitect, OK: architectResult.ok, Detail: architectResult.detail})
+		services = append(services, ServiceStatus{Name: "QA (Town)", Type: constants.RoleQA, OK: qaResult.ok, Detail: qaResult.detail})
+		services = append(services, ServiceStatus{Name: "Polecat (Town)", Type: constants.RolePolecat, OK: polecatResult.ok, Detail: polecatResult.detail})
+		if !architectResult.ok || !qaResult.ok || !polecatResult.ok {
+			allOK = false
+		}
 	}
 
 	// Ensure Dolt server is fully ready before starting agents that depend on it.
@@ -433,7 +496,8 @@ func runUp(cmd *cobra.Command, args []string) error {
 		// Dolt is known ready and connection env is set.
 		if !deaconResult.ok {
 			deaconMgr := deacon.NewManager(townRoot)
-			if err := deaconMgr.Start(""); err == nil {
+			orchestrated, _, _ := orchestrator.IsRunning(townRoot)
+			if err := deaconMgr.Start("", orchestrator.OrchestratedForRole(orchestrated, constants.RoleDeacon)); err == nil {
 				deaconResult = agentStartResult{name: "Deacon", ok: true, detail: deaconMgr.SessionName()}
 			} else if err == deacon.ErrAlreadyRunning {
 				deaconResult = agentStartResult{name: "Deacon", ok: true, detail: deaconMgr.SessionName()}
@@ -916,8 +980,11 @@ func upStartWitness(rigName string, r *rig.Rig) agentStartResult {
 		}
 	}
 
+	townRoot := filepath.Dir(r.Path)
+	orchestrated, _, _ := orchestrator.IsRunning(townRoot)
+
 	mgr := witness.NewManager(r)
-	if err := mgr.Start(false, "", nil); err != nil {
+	if err := mgr.Start(false, "", nil, orchestrator.OrchestratedForRole(orchestrated, constants.RoleWitness)); err != nil {
 		if err == witness.ErrAlreadyRunning {
 			return agentStartResult{name: name, ok: true, detail: sessionID}
 		}
@@ -941,8 +1008,11 @@ func upStartRefinery(rigName string, r *rig.Rig) agentStartResult {
 		}
 	}
 
+	townRoot := filepath.Dir(r.Path)
+	orchestrated, _, _ := orchestrator.IsRunning(townRoot)
+
 	mgr := refinery.NewManager(r)
-	if err := mgr.Start(false, ""); err != nil {
+	if err := mgr.Start(false, "", orchestrator.OrchestratedForRole(orchestrated, constants.RoleRefinery)); err != nil {
 		if err == refinery.ErrAlreadyRunning {
 			return agentStartResult{name: name, ok: true, detail: sessionID}
 		}
@@ -977,6 +1047,8 @@ func upStartArchitect(rigName string, r *rig.Rig) agentStartResult {
 		return agentStartResult{name: name, ok: true, detail: sessionID}
 	}
 
+	orchRunning, _, _ := orchestrator.IsRunning(townRoot)
+
 	_, err := session.StartSession(ctx, sp, &session.SessionConfig{
 		SessionID:    sessionID,
 		WorkDir:      architectDir,
@@ -984,6 +1056,7 @@ func upStartArchitect(rigName string, r *rig.Rig) agentStartResult {
 		TownRoot:     townRoot,
 		RigPath:      r.Path,
 		RigName:      rigName,
+		Orchestrated: orchestrator.OrchestratedForRole(orchRunning, constants.RoleArchitect),
 		Beacon:       session.BeaconConfig{Recipient: "architect", Sender: "daemon", Topic: "startup"},
 		WaitForAgent: true,
 		WaitFatal:    true,
@@ -1022,6 +1095,8 @@ func upStartQA(rigName string, r *rig.Rig) agentStartResult {
 		return agentStartResult{name: name, ok: true, detail: sessionID}
 	}
 
+	orchRunning, _, _ := orchestrator.IsRunning(townRoot)
+
 	_, err := session.StartSession(ctx, sp, &session.SessionConfig{
 		SessionID:    sessionID,
 		WorkDir:      qaDir,
@@ -1029,6 +1104,7 @@ func upStartQA(rigName string, r *rig.Rig) agentStartResult {
 		TownRoot:     townRoot,
 		RigPath:      r.Path,
 		RigName:      rigName,
+		Orchestrated: orchestrator.OrchestratedForRole(orchRunning, constants.RoleQA),
 		Beacon:       session.BeaconConfig{Recipient: "qa", Sender: "daemon", Topic: "startup"},
 		WaitForAgent: true,
 		WaitFatal:    true,
@@ -1057,11 +1133,14 @@ func upStartPlanner(townRoot string) agentStartResult {
 		return agentStartResult{name: name, ok: true, detail: sessionID}
 	}
 
+	orchRunning, _, _ := orchestrator.IsRunning(townRoot)
+
 	_, err := session.StartSession(ctx, sp, &session.SessionConfig{
 		SessionID:    sessionID,
 		WorkDir:      plannerDir,
 		Role:         constants.RolePlanner,
 		TownRoot:     townRoot,
+		Orchestrated: orchestrator.OrchestratedForRole(orchRunning, constants.RolePlanner),
 		Beacon:       session.BeaconConfig{Recipient: "planner", Sender: "daemon", Topic: "startup"},
 		WaitForAgent: true,
 		WaitFatal:    true,
@@ -1380,10 +1459,15 @@ func recoverOrphanedBeads(townRoot string, rigs []string, prefetchedRigs map[str
 // upStartMechanic starts the single town-level mechanic.
 // Mechanic is town-level only — see startRigAgentsWithPrefetch for rationale.
 func upStartMechanic(townRoot string) agentStartResult {
-	name := "Mechanic"
-	sessionID := session.MechanicSessionName()
-	mechanicDir := filepath.Join(townRoot, constants.DirMechanic)
-	if err := os.MkdirAll(mechanicDir, 0755); err != nil {
+	orchRunning, _, _ := orchestrator.IsRunning(townRoot)
+	return upStartTownRole(townRoot, constants.RoleMechanic, session.MechanicSessionName(), orchRunning, "")
+}
+
+// upStartTownRole starts a town-level agent for a given role.
+func upStartTownRole(townRoot string, role string, sessionID string, orchRunning bool, rigName string) agentStartResult {
+	name := strings.Title(role)
+	roleDir := filepath.Join(townRoot, role)
+	if err := os.MkdirAll(roleDir, 0755); err != nil {
 		return agentStartResult{name: name, ok: false, detail: err.Error()}
 	}
 
@@ -1396,10 +1480,12 @@ func upStartMechanic(townRoot string) agentStartResult {
 
 	_, err := session.StartSession(ctx, sp, &session.SessionConfig{
 		SessionID:    sessionID,
-		WorkDir:      mechanicDir,
-		Role:         constants.RoleMechanic,
+		WorkDir:      roleDir,
+		Role:         role,
 		TownRoot:     townRoot,
-		Beacon:       session.BeaconConfig{Recipient: "mechanic", Sender: "daemon", Topic: "startup"},
+		RigName:      rigName,
+		Orchestrated: orchestrator.OrchestratedForRole(orchRunning, role),
+		Beacon:       session.BeaconConfig{Recipient: role, Sender: "daemon", Topic: "startup"},
 		WaitForAgent: true,
 		WaitFatal:    true,
 		ReadyDelay:   true,

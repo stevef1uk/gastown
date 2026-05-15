@@ -130,6 +130,17 @@ type TownSettings struct {
 	// Default: nats.DefaultURL ("nats://127.0.0.1:4222")
 	// Only used when SessionTransport is "nats".
 	NatsURL string `json:"nats_url,omitempty"`
+
+	// Orchestrator configures the MCP workflow FSM service.
+	Orchestrator *OrchestratorConfig `json:"orchestrator,omitempty"`
+}
+
+// OrchestratorConfig controls default rig-flow startup and persistence behavior.
+type OrchestratorConfig struct {
+	// DefaultWorkflow is the template id to start when auto_start is true (e.g. "rig-flow").
+	DefaultWorkflow string `json:"default_workflow,omitempty"`
+	// AutoStart starts DefaultWorkflow on gt up when no active instance exists for the rig.
+	AutoStart bool `json:"auto_start,omitempty"`
 }
 
 // NewTownSettings creates a new TownSettings with defaults.

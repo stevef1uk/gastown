@@ -98,5 +98,10 @@
         "min_aggregate_count": 3
     },
 
-    "disabled_patrols": ["doctor_dog", "compactor_dog"]
+    "disabled_patrols": ["doctor_dog", "compactor_dog"],
+
+    "orchestrator": {
+        "default_workflow": "rig-flow",
+        "auto_start": false
+    }
 }

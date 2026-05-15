@@ -22,6 +22,7 @@ import (
 	"github.com/steveyegge/gastown/internal/doltserver"
 	"github.com/steveyegge/gastown/internal/git"
 	"github.com/steveyegge/gastown/internal/hooks"
+	"github.com/steveyegge/gastown/internal/orchestrator"
 	"github.com/steveyegge/gastown/internal/polecat"
 	"github.com/steveyegge/gastown/internal/refinery"
 	"github.com/steveyegge/gastown/internal/rig"
@@ -296,31 +297,31 @@ Examples:
 
 // Flags
 var (
-	rigAddPrefix       string
-	rigAddLocalRepo    string
-	rigAddBranch       string
-	rigAddPushURL      string
-	rigAddUpstreamURL  string
-	rigAddAdopt           bool
+	rigAddPrefix         string
+	rigAddLocalRepo      string
+	rigAddBranch         string
+	rigAddPushURL        string
+	rigAddUpstreamURL    string
+	rigAddAdopt          bool
 	rigAddAdoptURL       string
 	rigAddAdoptForce     bool
 	rigAddFilter         string
 	rigAddSparseCheckout []string
-	rigResetHandoff    bool
-	rigResetMail       bool
-	rigResetStale      bool
-	rigResetDryRun     bool
-	rigResetRole       string
-	rigShutdownForce   bool
-	rigShutdownNuclear bool
-	rigRebootForce     bool
-	rigRebootNuclear   bool
-	rigStopForce       bool
-	rigStopNuclear     bool
-	rigRestartForce    bool
-	rigRestartNuclear  bool
-	rigListJSON        bool
-	rigRemoveForce     bool
+	rigResetHandoff      bool
+	rigResetMail         bool
+	rigResetStale        bool
+	rigResetDryRun       bool
+	rigResetRole         string
+	rigShutdownForce     bool
+	rigShutdownNuclear   bool
+	rigRebootForce       bool
+	rigRebootNuclear     bool
+	rigStopForce         bool
+	rigStopNuclear       bool
+	rigRestartForce      bool
+	rigRestartNuclear    bool
+	rigListJSON          bool
+	rigRemoveForce       bool
 )
 
 var (
@@ -610,12 +611,18 @@ func runRigAdd(cmd *cobra.Command, args []string) error {
 			fmt.Printf("  Created rig identity bead: %s\n", rigBeadID)
 		}
 
-		// Agent beads (witness, refinery, architect, qa) are now automatically 
+		// Agent beads (witness, refinery, architect, qa) are now automatically
 		// created by mgr.AddRig -> initAgentBeads during rig creation.
 	}
 
 	// Auto-assign a namepool theme that doesn't collide with other rigs (gas-21k).
 	autoAssignNamepoolTheme(townRoot, name, mgr)
+
+	if wfID, err := orchestrator.MaybeAutoStartWorkflow(townRoot, name); err != nil {
+		fmt.Printf("  %s Orchestrator auto-start: %v\n", style.Warning.Render("!"), err)
+	} else if wfID != "" {
+		fmt.Printf("  Started orchestrator workflow: %s\n", wfID)
+	}
 
 	// Sync hooks for the new rig's targets
 	if err := syncRigHooks(townRoot, name); err != nil {
@@ -1592,9 +1599,10 @@ func runRigBoot(cmd *cobra.Command, args []string) error {
 	if running, _ := sp.Exists(context.Background(), witnessSession); running {
 		skipped = append(skipped, "witness (already running)")
 	} else {
-		fmt.Printf("  Starting witness...\n")
+		townRoot, _ = workspace.FindFromCwdOrError()
+		orchestrated, _, _ := orchestrator.IsRunning(townRoot)
 		witMgr := witness.NewManager(r)
-		if err := witMgr.Start(false, "", nil); err != nil {
+		if err := witMgr.Start(false, "", nil, orchestrated); err != nil {
 			if err == witness.ErrAlreadyRunning {
 				skipped = append(skipped, "witness (already running)")
 			} else {
@@ -1613,7 +1621,9 @@ func runRigBoot(cmd *cobra.Command, args []string) error {
 	} else {
 		fmt.Printf("  Starting refinery...\n")
 		refMgr := refinery.NewManager(r)
-		if err := refMgr.Start(false, ""); err != nil { // false = background mode
+		townRoot, _ = workspace.FindFromCwdOrError()
+		orchestrated, _, _ := orchestrator.IsRunning(townRoot)
+		if err := refMgr.Start(false, "", orchestrated); err != nil { // false = background mode
 			return fmt.Errorf("starting refinery: %w", err)
 		}
 		started = append(started, "refinery")
@@ -1678,9 +1688,10 @@ func runRigStart(cmd *cobra.Command, args []string) error {
 		if witnessRunning {
 			skipped = append(skipped, "witness")
 		} else {
-			fmt.Printf("  Starting witness...\n")
+			townRoot, _ = workspace.FindFromCwdOrError()
+			orchestrated, _, _ := orchestrator.IsRunning(townRoot)
 			witMgr := witness.NewManager(r)
-			if err := witMgr.Start(false, "", nil); err != nil {
+			if err := witMgr.Start(false, "", nil, orchestrated); err != nil {
 				if err == witness.ErrAlreadyRunning {
 					skipped = append(skipped, "witness")
 				} else {
@@ -1698,9 +1709,10 @@ func runRigStart(cmd *cobra.Command, args []string) error {
 		if refineryRunning {
 			skipped = append(skipped, "refinery")
 		} else {
-			fmt.Printf("  Starting refinery...\n")
+			townRoot, _ = workspace.FindFromCwdOrError()
+			orchestrated, _, _ := orchestrator.IsRunning(townRoot)
 			refMgr := refinery.NewManager(r)
-			if err := refMgr.Start(false, ""); err != nil {
+			if err := refMgr.Start(false, "", orchestrated); err != nil {
 				fmt.Printf("  %s Failed to start refinery: %v\n", style.Warning.Render("⚠"), err)
 				hasError = true
 			} else {
@@ -2255,8 +2267,10 @@ func runRigRestart(cmd *cobra.Command, args []string) error {
 		if witnessRunning {
 			skipped = append(skipped, "witness")
 		} else {
-			fmt.Printf("    Starting witness...\n")
-			if err := witMgr.Start(false, "", nil); err != nil {
+			townRoot, _ = workspace.FindFromCwdOrError()
+			orchestrated, _, _ := orchestrator.IsRunning(townRoot)
+			witMgr := witness.NewManager(r)
+			if err := witMgr.Start(false, "", nil, orchestrated); err != nil {
 				if err == witness.ErrAlreadyRunning {
 					skipped = append(skipped, "witness")
 				} else {
@@ -2274,8 +2288,10 @@ func runRigRestart(cmd *cobra.Command, args []string) error {
 		if refineryRunning {
 			skipped = append(skipped, "refinery")
 		} else {
-			fmt.Printf("    Starting refinery...\n")
-			if err := refMgr.Start(false, ""); err != nil {
+			townRoot, _ = workspace.FindFromCwdOrError()
+			orchestrated, _, _ := orchestrator.IsRunning(townRoot)
+			refMgr := refinery.NewManager(r)
+			if err := refMgr.Start(false, "", orchestrated); err != nil {
 				fmt.Printf("    %s Failed to start refinery: %v\n", style.Warning.Render("⚠"), err)
 				startErrors = append(startErrors, fmt.Sprintf("refinery: %v", err))
 			} else {
