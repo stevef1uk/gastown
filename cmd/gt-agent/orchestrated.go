@@ -17,10 +17,18 @@ import (
 )
 
 const (
-	defaultOrchPollInterval        = 15 * time.Second
-	maxOrchestratedCmdTurns        = 5
-	maxOrchestratedRetryFeedback   = 6000 // chars persisted for next fetch_task attempt
+	defaultOrchPollInterval      = 15 * time.Second
+	maxOrchestratedCmdTurns      = 5
+	maxOrchestratedQACmdTurns    = 8
+	maxOrchestratedRetryFeedback = 6000 // chars persisted for next fetch_task attempt
 )
+
+func maxOrchestratedTurnsForState(state string) int {
+	if strings.EqualFold(strings.TrimSpace(state), "qa_review") {
+		return maxOrchestratedQACmdTurns
+	}
+	return maxOrchestratedCmdTurns
+}
 
 var jsonBlockRE = regexp.MustCompile("(?s)```(?:json)?\\s*([\\s\\S]*?)```")
 
@@ -129,7 +137,8 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 	var qaBdListClosedOK bool
 	var qaUnittestOK bool
 
-	for turn := 1; turn <= maxOrchestratedCmdTurns; turn++ {
+	maxTurns := maxOrchestratedTurnsForState(task.State)
+	for turn := 1; turn <= maxTurns; turn++ {
 		response, llmErr := client.CompleteMessages(ctx, messages)
 		if llmErr != nil {
 			return "fail", "", lastAttemptFeedback.String(), llmErr
@@ -229,6 +238,9 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 						qaUnittestOK = true
 						qaHadCmdFailure = false
 					}
+					if cmdErr == nil && isQAReadOnlyCommand(cmd) {
+						qaHadCmdFailure = false
+					}
 				}
 				if cmdErr != nil {
 					fmt.Fprintf(os.Stderr, "[gt-agent] command failed: %v\n%s\n", cmdErr, string(out))
@@ -241,7 +253,7 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 			feedback := combined.String()
 			recordAttemptFeedback(feedback)
 			feedback += "\n\nCommands executed. If the step is complete, reply with JSON only (no CMD lines): {\"outcome\":\"...\",\"summary\":\"...\"}"
-			if turn == maxOrchestratedCmdTurns {
+			if turn == maxTurns {
 				feedback += " Use an allowed outcome."
 			}
 			// Same turn may include CMD lines and JSON; accept success when artifacts are ready.
@@ -290,7 +302,7 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 		messages = append(messages, llm.Message{Role: "user", Content: hint})
 	}
 
-	return "fail", "", lastAttemptFeedback.String(), fmt.Errorf("no structured outcome after %d turns", maxOrchestratedCmdTurns)
+	return "fail", "", lastAttemptFeedback.String(), fmt.Errorf("no structured outcome after %d turns", maxTurns)
 }
 
 func isOrchestratedFailureOutcome(outcome string) bool {
@@ -463,6 +475,7 @@ func isOrchestratedOutcomeLine(t string) bool {
 // parseOrchestratedCommands extracts CMD blocks without treating JSON or outcome lines as shell.
 func parseOrchestratedCommands(response string) []string {
 	filtered := stripOutcomeLinesForCmdParse(response)
+	filtered = stripModelToolArtifacts(filtered)
 	filtered = normalizeMarkdownFencedCMD(filtered)
 	// Un-glue EOF'CMD: and similar before line-oriented parsing (polecat heredoc bursts).
 	filtered = normalizeGluedCMDMarkers(filtered)
@@ -470,9 +483,33 @@ func parseOrchestratedCommands(response string) []string {
 	return cmds
 }
 
+// stripModelToolArtifacts removes [TOOL_CALLS] markers and hallucinated shell output
+// the model pastes after CMD lines (common with local LLMs in QA step).
+func stripModelToolArtifacts(response string) string {
+	var kept []string
+	for _, line := range strings.Split(response, "\n") {
+		t := strings.TrimSpace(line)
+		if t == "" {
+			kept = append(kept, line)
+			continue
+		}
+		upper := strings.ToUpper(t)
+		if strings.Contains(upper, "[TOOL_CALLS]") {
+			continue
+		}
+		if looksLikeHallucinatedShellOutput(t) {
+			continue
+		}
+		kept = append(kept, line)
+	}
+	return strings.Join(kept, "\n")
+}
+
 // normalizeMarkdownFencedCMD converts ```CMD: / ```cmd: blocks to plain CMD: lines.
 func normalizeMarkdownFencedCMD(response string) string {
 	response = markdownFencedCMDRE.ReplaceAllString(response, "CMD: ")
+	response = strings.ReplaceAll(response, "```[TOOL_CALLS]", "\n")
+	response = strings.ReplaceAll(response, "[TOOL_CALLS]", "")
 	response = strings.ReplaceAll(response, "```json", "")
 	response = strings.ReplaceAll(response, "```JSON", "")
 	response = strings.ReplaceAll(response, "```", "")
@@ -925,8 +962,22 @@ func isGitCommitBackendCommand(cmd string) bool {
 		strings.Contains(lower, "backend")
 }
 
+func isQAReadOnlyCommand(cmd string) bool {
+	lower := strings.ToLower(strings.TrimSpace(cmd))
+	readPrefixes := []string{"head ", "tail ", "cat ", "wc ", "ls ", "stat ", "grep ", "find "}
+	for _, p := range readPrefixes {
+		if strings.Contains(lower, p) {
+			return true
+		}
+	}
+	return strings.Contains(lower, "bd list")
+}
+
 func validateQACommand(cmd, rig string) error {
 	lower := strings.ToLower(cmd)
+	if strings.Contains(lower, "[tool_calls]") {
+		return fmt.Errorf("do not emit [TOOL_CALLS] markers — use CMD: lines only")
+	}
 	forbidden := []struct {
 		cond bool
 		msg  string

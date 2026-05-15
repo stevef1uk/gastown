@@ -85,6 +85,20 @@ func TestValidateOrchestratedArtifacts_design(t *testing.T) {
 	}
 }
 
+func TestParseOrchestratedCommands_stripsTOOLCALLSAndFakeLs(t *testing.T) {
+	in := "CMD: ls -la testgt2/mayor/rig/backend/\n```[TOOL_CALLS]```\ntotal 24\ndrwxr-xr-x 2 user user 4096 Jun 25 10:00 .\n"
+	cmds := parseOrchestratedCommands(in)
+	if len(cmds) != 1 {
+		t.Fatalf("want 1 cmd, got %d: %v", len(cmds), cmds)
+	}
+	if !strings.Contains(cmds[0], "ls -la") {
+		t.Fatalf("got %q", cmds[0])
+	}
+	if strings.Contains(cmds[0], "TOOL_CALLS") || strings.Contains(cmds[0], "total 24") {
+		t.Fatalf("junk in cmd: %q", cmds[0])
+	}
+}
+
 func TestParseOrchestratedCommands_markdownFencedCMD(t *testing.T) {
 	in := "prose\n```CMD:\ncd testgt2/mayor/rig && bd list --status=closed\n```\n"
 	cmds := parseOrchestratedCommands(in)

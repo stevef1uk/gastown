@@ -1127,6 +1127,18 @@ func parseLLMResponse(response string) (cmds []string, doneSummary string, hallu
 			continue
 		}
 
+		// Model hallucinated directory listings pasted after a CMD (QA local LLMs).
+		if heredocTerm == "" && looksLikeHallucinatedShellOutput(trimmed) {
+			if hasOpenShellQuote(scriptBuf) {
+				scriptBuf = append(scriptBuf, line)
+				continue
+			}
+			flushScript()
+			inScript = false
+			heredocJustClosed = false
+			continue
+		}
+
 		// Outcome JSON glued after a heredoc (common architect/planner mistake)
 		// must not be appended to the shell script (Fix: outcome:: not found).
 		if isOrchestratedOutcomeLine(trimmed) ||
@@ -1316,6 +1328,23 @@ var llmLogLineRE = regexp.MustCompile(`^\[\d{4}-\d{2}-\d{2}\]`)
 
 // llmHeaderLineRE matches "--- Depth 6 ---" style dividers.
 var llmHeaderLineRE = regexp.MustCompile(`^--- .* ---$`)
+
+var hallucinatedLsTotalRE = regexp.MustCompile(`^total\s+\d+`)
+var hallucinatedLsEntryRE = regexp.MustCompile(`^(?:drwx|[\-d][rwxwx-]{9})\s`)
+
+// looksLikeHallucinatedShellOutput reports fake `ls` output the model pastes as text.
+func looksLikeHallucinatedShellOutput(trimmed string) bool {
+	if trimmed == "" {
+		return false
+	}
+	if hallucinatedLsTotalRE.MatchString(trimmed) {
+		return true
+	}
+	if hallucinatedLsEntryRE.MatchString(trimmed) {
+		return true
+	}
+	return false
+}
 
 // looksLikeMarkdownStepLine reports narration the model appends after CMD:
 // lines (numbered/bulleted steps from its system prompt). These must not

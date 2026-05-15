@@ -17,7 +17,23 @@ func prepareOrchestratedScript(cmd string) string {
 	body := unwrapBashLcMultiline(strings.TrimSpace(cmd))
 	body = strings.ReplaceAll(body, `\$`, "$")
 	body = normalizeHeredocDelimiters(body)
-	return body
+	return filterHallucinatedScriptLines(body)
+}
+
+// filterHallucinatedScriptLines drops model junk glued onto shell scripts.
+func filterHallucinatedScriptLines(body string) string {
+	var kept []string
+	for _, line := range strings.Split(body, "\n") {
+		t := strings.TrimSpace(line)
+		if strings.Contains(strings.ToUpper(t), "[TOOL_CALLS]") {
+			continue
+		}
+		if looksLikeHallucinatedShellOutput(t) {
+			continue
+		}
+		kept = append(kept, line)
+	}
+	return strings.TrimSpace(strings.Join(kept, "\n"))
 }
 
 // unwrapBashLcMultiline strips bash -lc '...' / "..." wrappers from multiline agent commands.
