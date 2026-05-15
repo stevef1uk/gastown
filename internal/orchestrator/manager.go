@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/steveyegge/gastown/internal/events"
 	"gopkg.in/yaml.v3"
 )
 
@@ -111,6 +112,11 @@ func (m *Manager) StartWorkflow(templateID string, vars map[string]string) (stri
 	if err := m.persistLocked(); err != nil {
 		return "", fmt.Errorf("persist instances: %w", err)
 	}
+	role := ""
+	if state, ok := tpl.States[tpl.InitialState]; ok {
+		role = state.Role
+	}
+	m.logWorkflowFeed(events.TypeWorkflowStart, id, templateID, "", tpl.InitialState, "", role, rig)
 	return id, nil
 }
 
@@ -176,6 +182,7 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID string
 			outcome, inst.CurrentState, strings.Join(state.AllowedOutcomes(), ", "))
 	}
 
+	fromState := inst.CurrentState
 	next, err := inst.Transition(tpl, outcome)
 	if err != nil {
 		return "", err
@@ -183,7 +190,29 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID string
 	if err := m.persistLocked(); err != nil {
 		return next, fmt.Errorf("persist instances: %w", err)
 	}
+	rig := ""
+	if inst.Variables != nil {
+		rig = inst.Variables["rig"]
+	}
+	m.logWorkflowFeed(events.TypeWorkflowTransition, workflowID, inst.TemplateID, fromState, next, outcome, state.Role, rig)
 	return next, nil
+}
+
+func (m *Manager) logWorkflowFeed(eventType, workflowID, templateID, fromState, toState, outcome, role, rig string) {
+	if m.townRoot == "" {
+		return
+	}
+	actor := "orchestrator"
+	if rig != "" {
+		actor = rig + "/orchestrator"
+	}
+	var payload map[string]interface{}
+	if eventType == events.TypeWorkflowStart {
+		payload = events.WorkflowStartPayload(workflowID, templateID, toState, role, rig)
+	} else {
+		payload = events.WorkflowTransitionPayload(workflowID, templateID, fromState, toState, outcome, role, rig)
+	}
+	_ = events.LogFeedAt(m.townRoot, eventType, actor, payload)
 }
 
 // WorkflowStatus is a snapshot of one workflow instance for operators and MCP.

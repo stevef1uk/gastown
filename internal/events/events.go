@@ -75,6 +75,10 @@ const (
 	TypeSchedulerDispatch       = "scheduler_dispatch"        // Bead dispatched from scheduler
 	TypeSchedulerDispatchFailed = "scheduler_dispatch_failed" // Bead dispatch failed (requeued)
 	TypeSchedulerCloseRetry     = "scheduler_close_retry"     // Context close needed last-resort attempt
+
+	// Orchestrator rig-flow workflow events (feed-visible progression)
+	TypeWorkflowStart       = "workflow_start"
+	TypeWorkflowTransition  = "workflow_transition"
 )
 
 // EventsFile is the name of the raw events log.
@@ -95,9 +99,27 @@ func Log(eventType, actor string, payload map[string]interface{}, visibility str
 	return write(event)
 }
 
+// LogAt writes an event to the given town root (for long-running services with explicit GT_ROOT).
+func LogAt(townRoot, eventType, actor string, payload map[string]interface{}, visibility string) error {
+	event := Event{
+		Timestamp:  time.Now().UTC().Format(time.RFC3339),
+		Source:     "gt",
+		Type:       eventType,
+		Actor:      actor,
+		Payload:    payload,
+		Visibility: visibility,
+	}
+	return writeAt(townRoot, event)
+}
+
 // LogFeed is a convenience wrapper for feed-visible events.
 func LogFeed(eventType, actor string, payload map[string]interface{}) error {
 	return Log(eventType, actor, payload, VisibilityFeed)
+}
+
+// LogFeedAt is LogFeed with an explicit town root (orchestrator, daemon).
+func LogFeedAt(townRoot, eventType, actor string, payload map[string]interface{}) error {
+	return LogAt(townRoot, eventType, actor, payload, VisibilityFeed)
 }
 
 // LogAudit is a convenience wrapper for audit-only events.
@@ -109,10 +131,15 @@ func LogAudit(eventType, actor string, payload map[string]interface{}) error {
 // Uses flock for cross-process synchronization — sync.Mutex only protects
 // intra-process goroutines, but multiple gt processes write concurrently.
 func write(event Event) error {
-	// Find town root
 	townRoot, err := workspace.FindFromCwd()
 	if err != nil || townRoot == "" {
-		// Silently ignore - we're not in a Gas Town workspace
+		return nil
+	}
+	return writeAt(townRoot, event)
+}
+
+func writeAt(townRoot string, event Event) error {
+	if townRoot == "" {
 		return nil
 	}
 
@@ -403,6 +430,43 @@ func SchedulerDispatchPayload(beadID, rig, polecat string) map[string]interface{
 }
 
 // SchedulerDispatchFailedPayload creates a payload for scheduler dispatch failure events.
+// WorkflowStartPayload creates a feed payload when a rig-flow instance starts.
+func WorkflowStartPayload(workflowID, templateID, state, role, rig string) map[string]interface{} {
+	msg := fmt.Sprintf("%s %s started at %s", templateID, workflowID, state)
+	if role != "" {
+		msg += " (" + role + ")"
+	}
+	return map[string]interface{}{
+		"workflow_id": workflowID,
+		"template_id": templateID,
+		"to_state":    state,
+		"role":        role,
+		"rig":         rig,
+		"message":     msg,
+	}
+}
+
+// WorkflowTransitionPayload creates a feed payload for a completed workflow step.
+func WorkflowTransitionPayload(workflowID, templateID, fromState, toState, outcome, role, rig string) map[string]interface{} {
+	msg := fmt.Sprintf("%s %s: %s → %s", templateID, workflowID, fromState, toState)
+	if outcome != "" {
+		msg += " (" + outcome + ")"
+	}
+	if role != "" {
+		msg += " [" + role + "]"
+	}
+	return map[string]interface{}{
+		"workflow_id": workflowID,
+		"template_id": templateID,
+		"from_state":  fromState,
+		"to_state":    toState,
+		"outcome":     outcome,
+		"role":        role,
+		"rig":         rig,
+		"message":     msg,
+	}
+}
+
 func SchedulerDispatchFailedPayload(beadID, rig, errMsg string) map[string]interface{} {
 	return map[string]interface{}{
 		"bead":  beadID,

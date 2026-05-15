@@ -1,6 +1,9 @@
 package events
 
 import (
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -245,6 +248,32 @@ func TestSessionPayload_Full(t *testing.T) {
 	}
 	if p["cwd"] != "/some/dir" {
 		t.Errorf("cwd = %v", p["cwd"])
+	}
+}
+
+func TestWorkflowTransitionPayload(t *testing.T) {
+	p := WorkflowTransitionPayload("wf-1", "rig-flow", "design", "planning", "success", "architect", "testgt2")
+	if p["message"] != "rig-flow wf-1: design → planning (success) [architect]" {
+		t.Fatalf("message: %v", p["message"])
+	}
+	if p["rig"] != "testgt2" {
+		t.Fatalf("rig: %v", p["rig"])
+	}
+}
+
+func TestLogFeedAt_writesEvent(t *testing.T) {
+	dir := t.TempDir()
+	err := LogFeedAt(dir, TypeWorkflowStart, "testgt2/orchestrator",
+		WorkflowStartPayload("wf-1", "rig-flow", "kickoff", "mayor", "testgt2"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(dir, EventsFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "workflow_start") {
+		t.Fatalf("expected workflow_start in %q", string(data))
 	}
 }
 

@@ -530,6 +530,18 @@ func buildEventMessage(eventType string, payload map[string]interface{}) string 
 		}
 		return "merge failed"
 
+	case "workflow_start", "workflow_transition":
+		if msg := getPayloadString(payload, "message"); msg != "" {
+			return msg
+		}
+		templateID := getPayloadString(payload, "template_id")
+		workflowID := getPayloadString(payload, "workflow_id")
+		toState := getPayloadString(payload, "to_state")
+		if templateID != "" && workflowID != "" && toState != "" {
+			return fmt.Sprintf("%s %s → %s", templateID, workflowID, toState)
+		}
+		return eventType
+
 	default:
 		if msg := getPayloadString(payload, "message"); msg != "" {
 			return msg

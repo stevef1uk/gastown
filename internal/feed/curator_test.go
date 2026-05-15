@@ -372,6 +372,14 @@ func TestCurator_GeneratesSummary(t *testing.T) {
 			},
 			expected: "gastown/witness handed off to fresh session",
 		},
+		{
+			event: &events.Event{
+				Type:  events.TypeWorkflowTransition,
+				Actor: "testgt2/orchestrator",
+				Payload: events.WorkflowTransitionPayload("wf-1", "rig-flow", "design", "planning", "success", "architect", "testgt2"),
+			},
+			expected: "rig-flow wf-1: design → planning (success) [architect]",
+		},
 	}
 
 	for _, tc := range tests {

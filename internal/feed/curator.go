@@ -538,6 +538,15 @@ func (c *Curator) generateSummary(event *events.Event) string {
 		}
 		return "Multiple sessions died simultaneously"
 
+	case events.TypeWorkflowStart, events.TypeWorkflowTransition:
+		if msg, ok := event.Payload["message"].(string); ok && msg != "" {
+			return msg
+		}
+		templateID, _ := event.Payload["template_id"].(string)
+		workflowID, _ := event.Payload["workflow_id"].(string)
+		toState, _ := event.Payload["to_state"].(string)
+		return fmt.Sprintf("%s %s → %s", templateID, workflowID, toState)
+
 	default:
 		return fmt.Sprintf("%s: %s", event.Actor, event.Type)
 	}

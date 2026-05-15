@@ -176,6 +176,10 @@ func typeSymbol(eventType string) string {
 		return "\u2717"
 	case "delete":
 		return "\u2298" // circled minus
+	case "workflow_start":
+		return "\u25B6" // play
+	case "workflow_transition":
+		return "\u21BB" // clockwise arrows
 	default:
 		return "\u2192" // arrow
 	}
