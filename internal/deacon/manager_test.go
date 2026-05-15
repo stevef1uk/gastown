@@ -134,7 +134,7 @@ func TestStart_AlreadyRunning(t *testing.T) {
 	}
 	m := newTestManager(t.TempDir(), mock)
 
-	err := m.Start("")
+	err := m.Start("", false)
 	if !errors.Is(err, ErrAlreadyRunning) {
 		t.Errorf("Start() error = %v, want ErrAlreadyRunning", err)
 	}
@@ -148,7 +148,7 @@ func TestStart_NoExistingSession(t *testing.T) {
 	}
 	m := newTestManager(t.TempDir(), mock)
 
-	_ = m.Start("")
+	_ = m.Start("", false)
 
 	// Should NOT have tried to stop anything
 	if len(mock.stopCalls) != 0 {
@@ -165,7 +165,7 @@ func TestStart_ExistsError(t *testing.T) {
 	}
 	m := newTestManager(t.TempDir(), mock)
 
-	_ = m.Start("")
+	_ = m.Start("", false)
 
 	// Should NOT have tried to stop anything
 	if len(mock.stopCalls) != 0 {

@@ -511,7 +511,7 @@ func TestGetStartCommand_NonClaudeAgentBypassesToml(t *testing.T) {
 		RigName:  "",
 	}
 
-	startCmd := d.getStartCommand(roleConfig, parsed)
+	startCmd := d.getStartCommand(roleConfig, parsed, false)
 
 	// The result must NOT start with "exec claude" — that would mean the TOML
 	// start_command was used, bypassing the configured non-Claude agent.
@@ -562,7 +562,7 @@ func TestGetStartCommand_ClaudeAgentFallsThrough(t *testing.T) {
 		RigName:  "",
 	}
 
-	startCmd := d.getStartCommand(roleConfig, parsed)
+	startCmd := d.getStartCommand(roleConfig, parsed, false)
 
 	// Result should still reference claude.
 	if !strings.Contains(startCmd, "claude") {
