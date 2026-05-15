@@ -313,7 +313,19 @@ copy town templates.
 | Mayor/rig kickoff calls `StartWorkflow` | `internal/cmd/mayor.go`, rig add |
 | `get_workflow_status` MCP tool | `mcp.go` |
 
-### P2 — Phase 3 (templates + topology)
+### P2 — Phase 3 (templates + topology) — in progress
+
+| Change | Status |
+|--------|--------|
+| Patrol roles not orchestrated (witness/refinery/mechanic/deacon) | Done |
+| hq-polecat only for rig-flow implementation | Done |
+| Skip legacy polecat restore during active rig-flow | Done |
+| Repair stale `.gt-agent` in polecat worktrees | Done |
+| gt-agent: GT_POLECAT wins over stale `.gt-agent` role | Done |
+| Template loader warns on missing `role:` | Done |
+| Lift legacy role content into state `.md` files | Partial (rig-flow prompts exist) |
+
+### P2 — Phase 3 (original checklist)
 
 | Change | Files |
 |--------|-------|

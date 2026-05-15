@@ -63,6 +63,9 @@ func (m *Manager) LoadTemplatesFromDir(dir string) error {
 			fmt.Printf("[Manager] Warning: skip template %s: missing id\n", entry.Name())
 			continue
 		}
+		if warn := validateTemplateSchema(&tpl, entry.Name()); warn != "" {
+			fmt.Printf("[Manager] Warning: %s\n", warn)
+		}
 
 		m.LoadTemplate(&tpl)
 	}
@@ -233,4 +236,18 @@ func (m *Manager) HasActiveWorkflow(templateID, rig string) bool {
 		return true
 	}
 	return false
+}
+
+func validateTemplateSchema(tpl *WorkflowTemplate, filename string) string {
+	var missing []string
+	for name, st := range tpl.States {
+		if st.Role == "" {
+			missing = append(missing, name)
+		}
+	}
+	if len(missing) == 0 {
+		return ""
+	}
+	return fmt.Sprintf("template %q (%s): states missing role: %s (use role:, not agent_role:)",
+		tpl.ID, filename, strings.Join(missing, ", "))
 }

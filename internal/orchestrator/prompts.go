@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-// IsPipelineRole reports roles that use orchestrator fetch/complete instead of legacy patrol.
+// IsPipelineRole reports roles that participate in orchestrator rig-flow FSM tasks.
 func IsPipelineRole(role string) bool {
 	switch role {
 	case "mayor", "architect", "planner", "polecat", "qa":
@@ -17,9 +17,29 @@ func IsPipelineRole(role string) bool {
 	}
 }
 
+// IsPatrolRole reports roles that must never use orchestrator idle polling.
+func IsPatrolRole(role string) bool {
+	switch role {
+	case "witness", "refinery", "mechanic", "deacon", "boot", "dog", "crew":
+		return true
+	default:
+		return false
+	}
+}
+
 // OrchestratedForRole is true when the agent should run gt-agent --orchestrated.
+// Patrol roles (witness, refinery, mechanic, deacon, …) always return false.
+// Per-bead polecat sessions are never orchestrated; only town hq-polecat is.
 func OrchestratedForRole(orchestratorRunning bool, role string) bool {
-	return orchestratorRunning && IsPipelineRole(role)
+	if !orchestratorRunning || IsPatrolRole(role) {
+		return false
+	}
+	return IsPipelineRole(role)
+}
+
+// OrchestratedForTownPolecat is true for the single town-level rig-flow polecat session.
+func OrchestratedForTownPolecat(orchestratorRunning bool) bool {
+	return orchestratorRunning
 }
 
 // SubstituteVars replaces {{key}} placeholders in text.

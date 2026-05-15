@@ -313,19 +313,28 @@ func loadAgentFile(path string) *agentIdentityFile {
 func run() error {
 	ctx := context.Background()
 
-	// Read identity from environment, then override with .gt-agent if present
+	// Read identity from environment, then merge .gt-agent if present.
+	// Fix #93b: per-bead polecat worktrees may ship a stale .gt-agent (e.g. role
+	// refinery committed to main). GT_POLECAT and polecat GT_ROLE must win over
+	// .gt-agent role so polecats run mol-polecat-work, not refinery patrol.
 	role := os.Getenv("GT_ROLE")
 	rig := os.Getenv("GT_RIG")
 	polecat := os.Getenv("GT_POLECAT")
+	envCanonical := canonicalRole(role)
+	isPolecatSession := polecat != "" || envCanonical == "polecat"
+
+	if isPolecatSession {
+		role = "polecat"
+	}
 
 	if identity := loadAgentFile(".gt-agent"); identity != nil {
-		if identity.Role != "" {
+		if !isPolecatSession && identity.Role != "" {
 			role = identity.Role
 		}
 		if identity.Rig != "" {
 			rig = identity.Rig
 		}
-		if identity.Name != "" && role == "polecat" {
+		if identity.Name != "" && isPolecatSession {
 			polecat = identity.Name
 		}
 	}

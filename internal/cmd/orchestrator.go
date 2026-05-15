@@ -5,6 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/steveyegge/gastown/internal/orchestrator"
+	"github.com/steveyegge/gastown/internal/polecat"
 	"github.com/steveyegge/gastown/internal/style"
 	"github.com/steveyegge/gastown/internal/workspace"
 	"io"
@@ -132,6 +133,15 @@ func runOrchestratorSync(cmd *cobra.Command, args []string) error {
 	}
 	fmt.Printf("%s Orchestrator assets → %s/orchestrator (%d added, %d updated)\n",
 		style.SuccessPrefix, townRoot, res.Added, res.Updated)
+
+	for _, rigName := range discoverRigs(townRoot) {
+		rigPath := filepath.Join(townRoot, rigName)
+		if n, err := polecat.RepairIdentityFiles(rigPath, rigName); err != nil {
+			fmt.Printf("%s polecat identity repair (%s): %v\n", style.Warning.Render("!"), rigName, err)
+		} else if n > 0 {
+			fmt.Printf("  Repaired .gt-agent for %d polecat(s) on %s\n", n, rigName)
+		}
+	}
 	return nil
 }
 

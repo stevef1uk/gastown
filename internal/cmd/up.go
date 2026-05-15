@@ -414,8 +414,10 @@ func runUp(cmd *cobra.Command, args []string) error {
 	var architectResult, qaResult, polecatResult agentStartResult
 	if orchestrated {
 		if len(rigs) == 0 {
-			architectResult = upStartTownRole(townRoot, constants.RoleArchitect, "hq-architect", orchestrated, "")
-			qaResult = upStartTownRole(townRoot, constants.RoleQA, "hq-qa", orchestrated, "")
+			architectResult = upStartTownRole(townRoot, constants.RoleArchitect, "hq-architect",
+				orchestrator.OrchestratedForRole(orchestrated, constants.RoleArchitect), "")
+			qaResult = upStartTownRole(townRoot, constants.RoleQA, "hq-qa",
+				orchestrator.OrchestratedForRole(orchestrated, constants.RoleQA), "")
 		} else {
 			architectResult = agentStartResult{name: "Architect (Town)", ok: true, detail: "skipped (rig agents)"}
 			qaResult = agentStartResult{name: "QA (Town)", ok: true, detail: "skipped (rig agents)"}
@@ -424,7 +426,7 @@ func runUp(cmd *cobra.Command, args []string) error {
 		if len(rigs) == 1 {
 			polecatRig = rigs[0]
 		}
-		polecatResult = upStartTownRole(townRoot, constants.RolePolecat, "hq-polecat", orchestrated, polecatRig)
+		polecatResult = upStartTownRole(townRoot, constants.RolePolecat, "hq-polecat", orchestrator.OrchestratedForTownPolecat(orchestrated), polecatRig)
 	}
 
 	deaconServiceIdx := len(services)
@@ -527,6 +529,17 @@ func runUp(cmd *cobra.Command, args []string) error {
 	// Mechanic is town-level only — the single hq-mechanic patrols logs for
 	// the whole town, including all rigs. See `mechanicPatrolScript`.
 	witnessResults, refineryResults, architectResults, qaResults := startRigAgentsWithPrefetch(rigs, prefetchedRigs, rigErrors)
+
+	if orchestrated {
+		for _, rigName := range rigs {
+			rigPath := filepath.Join(townRoot, rigName)
+			if n, err := polecat.RepairIdentityFiles(rigPath, rigName); err != nil {
+				fmt.Fprintf(os.Stderr, "%s polecat identity repair (%s): %v\n", style.Warning.Render("!"), rigName, err)
+			} else if n > 0 {
+				fmt.Printf("  Repaired .gt-agent for %d polecat(s) on %s\n", n, rigName)
+			}
+		}
+	}
 
 	// Collect results in order: all witnesses first, then all refineries, then architects, then qa
 	for _, rigName := range rigs {
@@ -1333,6 +1346,10 @@ func startPolecatsWithWork(townRoot, rigName string) ([]string, map[string]error
 	started := []string{}
 	errors := map[string]error{}
 
+	if orchestrator.LegacyPolecatsPaused(townRoot, rigName) {
+		return started, errors
+	}
+
 	rigPath := filepath.Join(townRoot, rigName)
 	polecatsDir := filepath.Join(rigPath, "polecats")
 
@@ -1460,11 +1477,12 @@ func recoverOrphanedBeads(townRoot string, rigs []string, prefetchedRigs map[str
 // Mechanic is town-level only — see startRigAgentsWithPrefetch for rationale.
 func upStartMechanic(townRoot string) agentStartResult {
 	orchRunning, _, _ := orchestrator.IsRunning(townRoot)
-	return upStartTownRole(townRoot, constants.RoleMechanic, session.MechanicSessionName(), orchRunning, "")
+	return upStartTownRole(townRoot, constants.RoleMechanic, session.MechanicSessionName(),
+		orchestrator.OrchestratedForRole(orchRunning, constants.RoleMechanic), "")
 }
 
 // upStartTownRole starts a town-level agent for a given role.
-func upStartTownRole(townRoot string, role string, sessionID string, orchRunning bool, rigName string) agentStartResult {
+func upStartTownRole(townRoot string, role string, sessionID string, orchestrated bool, rigName string) agentStartResult {
 	name := strings.Title(role)
 	roleDir := filepath.Join(townRoot, role)
 	if err := os.MkdirAll(roleDir, 0755); err != nil {
@@ -1484,7 +1502,7 @@ func upStartTownRole(townRoot string, role string, sessionID string, orchRunning
 		Role:         role,
 		TownRoot:     townRoot,
 		RigName:      rigName,
-		Orchestrated: orchestrator.OrchestratedForRole(orchRunning, role),
+		Orchestrated: orchestrated,
 		Beacon:       session.BeaconConfig{Recipient: role, Sender: "daemon", Topic: "startup"},
 		WaitForAgent: true,
 		WaitFatal:    true,
