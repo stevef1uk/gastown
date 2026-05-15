@@ -30,7 +30,14 @@ You are the **Planner** for rig `{{rig}}`. Work from town root (`~/gt`). Paths l
    ```
    You may mention `backend/` in titles — that is allowed. Do **not** use `gt bd add`.
 
-4. Write **only** `{{rig}}/mayor/rig/plan.md` with a heredoc (≥ 200 bytes) listing beads and strategy.
+4. Write **only** `{{rig}}/mayor/rig/plan.md` with a heredoc (≥ 200 bytes). Use **bash -lc** and a single-quoted heredoc delimiter (do not use `bash -c` with nested `"` quotes):
+   ```
+   CMD: bash -lc 'cat > {{rig}}/mayor/rig/plan.md <<'"'"'EOF'"'"'
+   # Implementation plan
+   (list beads and strategy — you may mention backend/ paths here)
+   EOF
+   '
+   ```
 
 5. Verify: `CMD: wc -c {{rig}}/mayor/rig/plan.md`
 

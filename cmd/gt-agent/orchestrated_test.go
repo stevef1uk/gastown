@@ -48,13 +48,13 @@ func TestValidateOrchestratedArtifacts_design(t *testing.T) {
 		t.Fatal(err)
 	}
 	task := &orchestrator.Task{State: "design"}
-	if err := validateOrchestratedArtifacts(task, dir, "myrig", "success", false, false); err == nil {
+	if err := validateOrchestratedArtifacts(task, dir, "myrig", "success", false, false, false, false); err == nil {
 		t.Fatal("expected size validation error")
 	}
 	if err := os.WriteFile(path, make([]byte, 200), 0644); err != nil {
 		t.Fatal(err)
 	}
-	if err := validateOrchestratedArtifacts(task, dir, "myrig", "success", false, false); err != nil {
+	if err := validateOrchestratedArtifacts(task, dir, "myrig", "success", false, false, false, false); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -97,6 +97,10 @@ func TestValidatePlanningCommand_forbidsImplementation(t *testing.T) {
 	plan := "cat > testgt2/mayor/rig/plan.md <<'EOF'\n# Plan\nEOF"
 	if err := validatePlanningCommand(plan, "testgt2"); err != nil {
 		t.Fatalf("plan heredoc should be allowed: %v", err)
+	}
+	planBackend := "bash -lc 'cat > testgt2/mayor/rig/plan.md <<'EOF'\nBead 1: Implement backend/fizzbuzz.py\nEOF'"
+	if err := validatePlanningCommand(planBackend, "testgt2"); err != nil {
+		t.Fatalf("plan heredoc body may mention backend/: %v", err)
 	}
 	if err := validatePlanningCommand("gt bd add -t task -m hello", "testgt2"); err == nil {
 		t.Fatal("gt bd add should be rejected")
@@ -194,8 +198,21 @@ func TestValidateDesignArtifacts_allowsStaleBackendPy(t *testing.T) {
 		t.Fatal(err)
 	}
 	task := &orchestrator.Task{State: "design"}
-	if err := validateOrchestratedArtifacts(task, dir, "myrig", "success", false, false); err != nil {
+	if err := validateOrchestratedArtifacts(task, dir, "myrig", "success", false, false, false, false); err != nil {
 		t.Fatalf("stale backend/*.py must not block design: %v", err)
+	}
+}
+
+func TestValidateImplementationArtifacts(t *testing.T) {
+	dir := t.TempDir()
+	if err := validateImplementationArtifacts(dir, "testgt2", false, false); err == nil {
+		t.Fatal("expected error without bd close")
+	}
+	if err := validateImplementationArtifacts(dir, "testgt2", true, true); err == nil {
+		t.Fatal("expected error when commands failed")
+	}
+	if err := validateImplementationArtifacts(dir, "testgt2", false, true); err != nil {
+		t.Fatalf("bd close ok should pass: %v", err)
 	}
 }
 

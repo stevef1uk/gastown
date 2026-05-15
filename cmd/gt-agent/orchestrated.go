@@ -99,6 +99,8 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 
 	var planningHadCmdFailure bool
 	var planningBeadCreateOK bool
+	var implementationHadCmdFailure bool
+	var implementationBeadCloseOK bool
 
 	for turn := 1; turn <= maxOrchestratedCmdTurns; turn++ {
 		response, llmErr := client.CompleteMessages(ctx, messages)
@@ -152,6 +154,14 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 						planningBeadCreateOK = true
 					}
 				}
+				if task.State == "implementation" {
+					if cmdErr != nil {
+						implementationHadCmdFailure = true
+					}
+					if isBeadCloseCommand(cmd) && cmdErr == nil {
+						implementationBeadCloseOK = true
+					}
+				}
 				if cmdErr != nil {
 					fmt.Fprintf(os.Stderr, "[gt-agent] command failed: %v\n%s\n", cmdErr, string(out))
 					combined.WriteString(fmt.Sprintf("Command: %s\nError: %v\nOutput: %s\n\n", cmd, cmdErr, string(out)))
@@ -167,7 +177,7 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 			}
 			// Same turn may include CMD lines and JSON; accept success when artifacts are ready.
 			if o, s, ok := parseOrchestratedResult(response, task.AllowedOutcomes); ok {
-				if vErr := validateOrchestratedArtifacts(task, townRoot, rig, o, planningHadCmdFailure, planningBeadCreateOK); vErr != nil {
+				if vErr := validateOrchestratedArtifacts(task, townRoot, rig, o, planningHadCmdFailure, planningBeadCreateOK, implementationHadCmdFailure, implementationBeadCloseOK); vErr != nil {
 					fmt.Printf("[gt-agent] artifact validation failed: %v\n", vErr)
 				} else {
 					return o, s, nil
@@ -182,7 +192,7 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 
 		// Outcome is only accepted on a turn with no CMD lines (after work is done).
 		if o, s, ok := parseOrchestratedResult(response, task.AllowedOutcomes); ok {
-			if vErr := validateOrchestratedArtifacts(task, townRoot, rig, o, planningHadCmdFailure, planningBeadCreateOK); vErr != nil {
+			if vErr := validateOrchestratedArtifacts(task, townRoot, rig, o, planningHadCmdFailure, planningBeadCreateOK, implementationHadCmdFailure, implementationBeadCloseOK); vErr != nil {
 				fmt.Printf("[gt-agent] artifact validation failed: %v\n", vErr)
 				hint := "Use CMD: with a heredoc to write files, then send JSON outcome."
 				if task.State == "design" {
@@ -190,6 +200,9 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 				}
 				if task.State == "planning" {
 					hint = "Write plan.md (heredoc) and create beads with `cd RIG/mayor/rig && bd create --type task --title \"...\"`. Do not use gt bd add. Do not write backend/ code or run git."
+				}
+				if task.State == "implementation" {
+					hint = "Use bare `bd` from RIG/mayor/rig: list open beads, implement under backend/, `bd close` at least one bead, then success. Never use gt bd."
 				}
 				messages = append(messages, llm.Message{Role: "user", Content: "Validation failed: " + vErr.Error() + ". " + hint})
 				continue
@@ -330,6 +343,11 @@ func isPlanningReadOnlyCmd(cmd string) bool {
 }
 
 func commandWritesBackend(lower string) bool {
+	// plan.md / architecture.md heredocs describe backend paths in prose; destination is not backend/.
+	if (strings.Contains(lower, "plan.md") || strings.Contains(lower, "architecture.md")) &&
+		(strings.Contains(lower, "cat >") || strings.Contains(lower, "<<")) {
+		return false
+	}
 	if strings.Contains(lower, "mkdir") && strings.Contains(lower, "backend") {
 		return true
 	}
@@ -349,6 +367,12 @@ func isBeadCreateCommand(cmd string) bool {
 	lower := strings.ToLower(cmd)
 	return strings.Contains(lower, "bd create") ||
 		(strings.Contains(lower, "bd") && strings.Contains(lower, " create"))
+}
+
+func isBeadCloseCommand(cmd string) bool {
+	lower := strings.ToLower(cmd)
+	return strings.Contains(lower, "bd close") ||
+		(strings.Contains(lower, "bd") && strings.Contains(lower, " close"))
 }
 
 func validatePlanningShellSideEffects(lower string) error {
@@ -378,6 +402,22 @@ func validatePlanningShellSideEffects(lower string) error {
 	return nil
 }
 
+// validatePlanningPlanHeredoc allows plan.md bodies that mention backend/ paths in prose.
+func validatePlanningPlanHeredoc(lower string) error {
+	gitCmd := strings.Contains(lower, "git") &&
+		(strings.Contains(lower, " commit") || strings.Contains(lower, " push") || strings.Contains(lower, " add"))
+	if gitCmd {
+		return fmt.Errorf("must not run git add/commit/push in planning step")
+	}
+	if strings.Contains(lower, "python3") || strings.Contains(lower, "pip install") {
+		return fmt.Errorf("must not run python/pip in planning step")
+	}
+	if strings.Contains(lower, "> backend/") || strings.Contains(lower, ".py>") {
+		return fmt.Errorf("must not write backend source files in planning step")
+	}
+	return nil
+}
+
 // validatePlanningCommand blocks planner scope creep (polecat implements code).
 func validatePlanningCommand(cmd, rig string) error {
 	lower := strings.ToLower(cmd)
@@ -388,7 +428,7 @@ func validatePlanningCommand(cmd, rig string) error {
 	rigSlash := strings.ToLower(rigPrefix) + "/"
 
 	if isPlanMDHeredoc(cmd) {
-		return validatePlanningShellSideEffects(lower)
+		return validatePlanningPlanHeredoc(lower)
 	}
 
 	if strings.Contains(lower, "gt bd add") || strings.Contains(lower, "bd add") {
@@ -449,7 +489,7 @@ func validateImplementationCommand(cmd, rig string) error {
 const minPlanMDBytes = 200
 
 // validateOrchestratedArtifacts rejects false-success when required files are missing or empty.
-func validateOrchestratedArtifacts(task *orchestrator.Task, townRoot, rig, outcome string, planningHadCmdFailure, planningBeadCreateOK bool) error {
+func validateOrchestratedArtifacts(task *orchestrator.Task, townRoot, rig, outcome string, planningHadCmdFailure, planningBeadCreateOK, implementationHadCmdFailure, implementationBeadCloseOK bool) error {
 	if outcome != "success" && outcome != "task_passed" && outcome != "all_passed" {
 		return nil
 	}
@@ -458,6 +498,8 @@ func validateOrchestratedArtifacts(task *orchestrator.Task, townRoot, rig, outco
 		return validateDesignArtifacts(townRoot, rig)
 	case "planning":
 		return validatePlanningArtifacts(townRoot, rig, planningHadCmdFailure, planningBeadCreateOK)
+	case "implementation":
+		return validateImplementationArtifacts(townRoot, rig, implementationHadCmdFailure, implementationBeadCloseOK)
 	}
 	return nil
 }
@@ -476,6 +518,16 @@ func validatePlanningArtifacts(townRoot, rig string, hadCmdFailure, beadCreateOK
 	}
 	if info.Size() < minPlanMDBytes {
 		return fmt.Errorf("plan.md too small (%d bytes); need ≥%d", info.Size(), minPlanMDBytes)
+	}
+	return nil
+}
+
+func validateImplementationArtifacts(townRoot, rig string, hadCmdFailure, beadCloseOK bool) error {
+	if hadCmdFailure {
+		return fmt.Errorf("implementation step had failed commands; fix errors before completing")
+	}
+	if !beadCloseOK {
+		return fmt.Errorf("at least one successful `bd close` in %s/mayor/rig is required before success", rigMayorRigPath(rig))
 	}
 	return nil
 }
@@ -515,7 +567,7 @@ func orchestratedArtifactAutoOutcome(task *orchestrator.Task, townRoot, rig stri
 	case "design":
 		vErr = validateDesignArtifacts(townRoot, rig)
 	case "planning":
-		vErr = validateOrchestratedArtifacts(task, townRoot, rig, "success", planningHadCmdFailure, planningBeadCreateOK)
+		vErr = validateOrchestratedArtifacts(task, townRoot, rig, "success", planningHadCmdFailure, planningBeadCreateOK, false, false)
 	default:
 		return "", "", false
 	}
