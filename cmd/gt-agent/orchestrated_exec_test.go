@@ -7,6 +7,17 @@ import (
 	"testing"
 )
 
+func TestUnwrapBashLcMultiline_unclosedWrapperQuote(t *testing.T) {
+	in := "bash -lc 'cd testgt2/mayor/rig && cat > plan.md <<EOF\n# Plan\nEOF\n"
+	got := unwrapBashLcMultiline(in)
+	if strings.HasPrefix(got, "'") {
+		t.Fatalf("should strip opening quote: %q", got)
+	}
+	if !strings.Contains(got, "cat > plan.md") {
+		t.Fatalf("got %q", got)
+	}
+}
+
 func TestUnwrapBashLcMultiline_doubleQuoted(t *testing.T) {
 	in := "bash -lc \"export BEADS_DIR=\\$GT_ROOT/testgt2/.beads && cd testgt2/mayor/rig && cat > plan.md <<'EOF'\n# Plan\nline two\nEOF\n\""
 	got := unwrapBashLcMultiline(in)

@@ -923,6 +923,7 @@ func parseLLMResponse(response string) (cmds []string, doneSummary string, hallu
 
 	var scriptBuf []string // accumulating lines for the current shell script
 	var heredocTerm string // empty when not inside a heredoc body
+	var heredocJustClosed bool
 	inScript := false      // true if we're collecting continuation lines for an active CMD:
 
 	flushScript := func() {
@@ -948,6 +949,7 @@ func parseLLMResponse(response string) (cmds []string, doneSummary string, hallu
 			scriptBuf = append(scriptBuf, line)
 			if trimmed == heredocTerm {
 				heredocTerm = ""
+				heredocJustClosed = true
 			}
 			continue
 		}
@@ -1115,12 +1117,13 @@ func parseLLMResponse(response string) (cmds []string, doneSummary string, hallu
 		}
 
 		if looksLikeMarkdownStepLine(trimmed) {
-			if hasOpenShellQuote(scriptBuf) {
+			if hasOpenShellQuote(scriptBuf) && !heredocJustClosed {
 				scriptBuf = append(scriptBuf, line)
 				continue
 			}
 			flushScript()
 			inScript = false
+			heredocJustClosed = false
 			continue
 		}
 
@@ -1136,6 +1139,7 @@ func parseLLMResponse(response string) (cmds []string, doneSummary string, hallu
 
 		// Append this line to the current script body.
 		scriptBuf = append(scriptBuf, line)
+		heredocJustClosed = false
 		// If this continuation line opens a heredoc, enter heredoc mode
 		// so subsequent lines are collected verbatim until the terminator.
 		if term := detectHeredocTerm(line); term != "" {

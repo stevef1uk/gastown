@@ -125,6 +125,9 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 	var planningBeadCreateOK bool
 	var implementationHadCmdFailure bool
 	var implementationBeadCloseOK bool
+	var qaHadCmdFailure bool
+	var qaBdListClosedOK bool
+	var qaUnittestOK bool
 
 	for turn := 1; turn <= maxOrchestratedCmdTurns; turn++ {
 		response, llmErr := client.CompleteMessages(ctx, messages)
@@ -156,6 +159,13 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 					if err := validateImplementationCommand(cmd, rig); err != nil {
 						fmt.Fprintf(os.Stderr, "[gt-agent] rejected command: %v\n", err)
 						combined.WriteString(fmt.Sprintf("Command REJECTED (polecat scope): %s\nReason: %v\n\n", cmd, err))
+						continue
+					}
+				}
+				if task.State == "qa_review" {
+					if err := validateQACommand(cmd, rig); err != nil {
+						fmt.Fprintf(os.Stderr, "[gt-agent] rejected command: %v\n", err)
+						combined.WriteString(fmt.Sprintf("Command REJECTED (QA scope): %s\nReason: %v\n\n", cmd, err))
 						continue
 					}
 				}
@@ -201,6 +211,24 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 					if isBeadCloseCommand(cmd) && cmdErr == nil {
 						implementationBeadCloseOK = true
 					}
+					if cmdErr == nil && isUnittestBackendCommand(cmd) {
+						implementationHadCmdFailure = false
+					}
+					if cmdErr == nil && isGitCommitBackendCommand(cmd) {
+						implementationHadCmdFailure = false
+					}
+				}
+				if task.State == "qa_review" {
+					if cmdErr != nil {
+						qaHadCmdFailure = true
+					}
+					if cmdErr == nil && isBdListClosedCommand(cmd) {
+						qaBdListClosedOK = true
+					}
+					if cmdErr == nil && isUnittestBackendCommand(cmd) {
+						qaUnittestOK = true
+						qaHadCmdFailure = false
+					}
 				}
 				if cmdErr != nil {
 					fmt.Fprintf(os.Stderr, "[gt-agent] command failed: %v\n%s\n", cmdErr, string(out))
@@ -218,7 +246,7 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 			}
 			// Same turn may include CMD lines and JSON; accept success when artifacts are ready.
 			if o, s, ok := parseOrchestratedResult(response, task.AllowedOutcomes); ok {
-				if vErr := validateOrchestratedArtifacts(task, townRoot, rig, o, designArchWrittenThisRun, planningHadCmdFailure, planningBeadCreateOK, implementationHadCmdFailure, implementationBeadCloseOK); vErr != nil {
+				if vErr := validateOrchestratedArtifacts(task, townRoot, rig, o, designArchWrittenThisRun, planningHadCmdFailure, planningBeadCreateOK, implementationHadCmdFailure, implementationBeadCloseOK, qaHadCmdFailure, qaBdListClosedOK, qaUnittestOK); vErr != nil {
 					fmt.Printf("[gt-agent] artifact validation failed: %v\n", vErr)
 					recordAttemptFeedback("Validation failed: " + vErr.Error() + "\n")
 				} else {
@@ -234,7 +262,7 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 
 		// Outcome is only accepted on a turn with no CMD lines (after work is done).
 		if o, s, ok := parseOrchestratedResult(response, task.AllowedOutcomes); ok {
-			if vErr := validateOrchestratedArtifacts(task, townRoot, rig, o, designArchWrittenThisRun, planningHadCmdFailure, planningBeadCreateOK, implementationHadCmdFailure, implementationBeadCloseOK); vErr != nil {
+			if vErr := validateOrchestratedArtifacts(task, townRoot, rig, o, designArchWrittenThisRun, planningHadCmdFailure, planningBeadCreateOK, implementationHadCmdFailure, implementationBeadCloseOK, qaHadCmdFailure, qaBdListClosedOK, qaUnittestOK); vErr != nil {
 				fmt.Printf("[gt-agent] artifact validation failed: %v\n", vErr)
 				hint := "Use CMD: with a heredoc to write files, then send JSON outcome."
 				if task.State == "design" {
@@ -245,6 +273,9 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 				}
 				if task.State == "implementation" {
 					hint = "Use bare `bd` from RIG/mayor/rig: list open beads, implement under backend/, `bd close` at least one bead, then success. Never use gt bd."
+				}
+				if task.State == "qa_review" {
+					hint = "Run real CMD: lines (not markdown fences): bd list --status=closed, head SPEC.md, python3 -m unittest backend.test_fizzbuzz from RIG/mayor/rig. No /workspace paths. Then JSON only."
 				}
 				msg := "Validation failed: " + vErr.Error() + ". " + hint
 				recordAttemptFeedback(msg + "\n")
@@ -359,6 +390,8 @@ func updateOrchestratedRetry(state *AgentState, task *orchestrator.Task, outcome
 // outcomeJSONTailRE strips outcome JSON glued onto the end of a CMD line.
 var outcomeJSONTailRE = regexp.MustCompile(`(?i)\s*\{[\s]*"outcome"[\s\S]*$`)
 
+var markdownFencedCMDRE = regexp.MustCompile("(?im)^```\\s*cmd:\\s*")
+
 // stripOutcomeLines removes JSON/outcome lines so they are not fed into shell scripts.
 func stripOutcomeLinesForCmdParse(response string) string {
 	lines := strings.Split(response, "\n")
@@ -430,10 +463,20 @@ func isOrchestratedOutcomeLine(t string) bool {
 // parseOrchestratedCommands extracts CMD blocks without treating JSON or outcome lines as shell.
 func parseOrchestratedCommands(response string) []string {
 	filtered := stripOutcomeLinesForCmdParse(response)
+	filtered = normalizeMarkdownFencedCMD(filtered)
 	// Un-glue EOF'CMD: and similar before line-oriented parsing (polecat heredoc bursts).
 	filtered = normalizeGluedCMDMarkers(filtered)
 	cmds, _, _ := parseLLMResponse(filtered)
 	return cmds
+}
+
+// normalizeMarkdownFencedCMD converts ```CMD: / ```cmd: blocks to plain CMD: lines.
+func normalizeMarkdownFencedCMD(response string) string {
+	response = markdownFencedCMDRE.ReplaceAllString(response, "CMD: ")
+	response = strings.ReplaceAll(response, "```json", "")
+	response = strings.ReplaceAll(response, "```JSON", "")
+	response = strings.ReplaceAll(response, "```", "")
+	return response
 }
 
 func rigMayorRigDir(townRoot, rig string) string {
@@ -761,7 +804,7 @@ func validateImplementationCommand(cmd, rig string) error {
 const minPlanMDBytes = 200
 
 // validateOrchestratedArtifacts rejects false-success when required files are missing or empty.
-func validateOrchestratedArtifacts(task *orchestrator.Task, townRoot, rig, outcome string, designArchWrittenThisRun, planningHadCmdFailure, planningBeadCreateOK, implementationHadCmdFailure, implementationBeadCloseOK bool) error {
+func validateOrchestratedArtifacts(task *orchestrator.Task, townRoot, rig, outcome string, designArchWrittenThisRun, planningHadCmdFailure, planningBeadCreateOK, implementationHadCmdFailure, implementationBeadCloseOK, qaHadCmdFailure, qaBdListClosedOK, qaUnittestOK bool) error {
 	if outcome != "success" && outcome != "task_passed" && outcome != "all_passed" {
 		return nil
 	}
@@ -772,6 +815,8 @@ func validateOrchestratedArtifacts(task *orchestrator.Task, townRoot, rig, outco
 		return validatePlanningArtifacts(townRoot, rig, planningHadCmdFailure, planningBeadCreateOK)
 	case "implementation":
 		return validateImplementationArtifacts(townRoot, rig, implementationHadCmdFailure, implementationBeadCloseOK)
+	case "qa_review":
+		return validateQAArtifacts(townRoot, rig, outcome, qaHadCmdFailure, qaBdListClosedOK, qaUnittestOK)
 	}
 	return nil
 }
@@ -806,7 +851,7 @@ func orchestratedCommandEnv(townRoot, rig, taskState string, base []string) []st
 		return base
 	}
 	switch taskState {
-	case "planning", "implementation":
+	case "planning", "implementation", "qa_review":
 	default:
 		return base
 	}
@@ -862,6 +907,118 @@ func validateImplementationArtifacts(townRoot, rig string, hadCmdFailure, beadCl
 	if !beadCloseOK {
 		return fmt.Errorf("at least one successful `bd close` in %s is required before success", rigMayorRigPath(rig))
 	}
+	if err := validateImplementationBackendFiles(townRoot, rig); err != nil {
+		return err
+	}
+	return nil
+}
+
+func isUnittestBackendCommand(cmd string) bool {
+	lower := strings.ToLower(cmd)
+	return strings.Contains(lower, "unittest") &&
+		(strings.Contains(lower, "backend.test_fizzbuzz") || strings.Contains(lower, "backend/test_fizzbuzz"))
+}
+
+func isGitCommitBackendCommand(cmd string) bool {
+	lower := strings.ToLower(cmd)
+	return strings.Contains(lower, "git") && strings.Contains(lower, "commit") &&
+		strings.Contains(lower, "backend")
+}
+
+func validateQACommand(cmd, rig string) error {
+	lower := strings.ToLower(cmd)
+	forbidden := []struct {
+		cond bool
+		msg  string
+	}{
+		{strings.Contains(lower, "/workspace"), "do not use /workspace paths — work from $GT_ROOT"},
+		{strings.Contains(lower, "pytest"), "use python3 -m unittest backend.test_fizzbuzz (SPEC)"},
+		{strings.Contains(lower, "flake8"), "do not run flake8 in QA step"},
+		{strings.Contains(lower, "pip install"), "do not install packages in QA step"},
+		{strings.Contains(lower, "follow-arch"), "do not grep for invented FOLLOW-ARCH markers"},
+		{strings.Contains(lower, "arch-deviation"), "do not grep for invented ARCH-DEVIATION markers"},
+		{strings.Contains(lower, "spec-not-compliant"), "do not grep for invented SPEC markers"},
+		{strings.Contains(lower, "/beads/implementation"), "beads are in the rig .beads DB — use bd list"},
+	}
+	for _, f := range forbidden {
+		if f.cond {
+			return fmt.Errorf("%s", f.msg)
+		}
+	}
+	rigSlash := strings.ToLower(rig) + "/"
+	if strings.Contains(lower, "bd ") || strings.Contains(lower, "bd\t") {
+		if !strings.Contains(lower, rigSlash) && !strings.Contains(lower, "beads_dir") && !strings.Contains(lower, "mayor/rig") {
+			return fmt.Errorf("run bd from %s/mayor/rig with BEADS_DIR=$GT_ROOT/%s/.beads", rig, rig)
+		}
+	}
+	return nil
+}
+
+func isBdListClosedCommand(cmd string) bool {
+	lower := strings.ToLower(cmd)
+	return strings.Contains(lower, "bd list") && strings.Contains(lower, "closed")
+}
+
+func countOpenImplementationBeads(townRoot, rig string) (int, error) {
+	beadsDir := config.ResolveBeadsDirForRig(townRoot, rig)
+	cmd := exec.Command("bd", "list", "--status=open")
+	cmd.Env = withEnvKey(os.Environ(), "BEADS_DIR", beadsDir)
+	cmd.Dir = rigMayorRigDir(townRoot, rig)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return 0, fmt.Errorf("bd list open: %w: %s", err, strings.TrimSpace(string(out)))
+	}
+	n := 0
+	for _, line := range strings.Split(string(out), "\n") {
+		if strings.Contains(line, "Implement backend/") {
+			n++
+		}
+	}
+	return n, nil
+}
+
+func validateQAArtifacts(townRoot, rig, outcome string, hadCmdFailure, bdListClosedOK, unittestOK bool) error {
+	if hadCmdFailure {
+		return fmt.Errorf("QA step had failed commands; fix errors before completing")
+	}
+	if !bdListClosedOK {
+		return fmt.Errorf("run `bd list --status=closed` from %s before reporting QA outcome", rigMayorRigPath(rig))
+	}
+	if !unittestOK {
+		return fmt.Errorf("run `python3 -m unittest backend.test_fizzbuzz` from %s before reporting QA outcome", rigMayorRigPath(rig))
+	}
+	if err := validateImplementationBackendFiles(townRoot, rig); err != nil {
+		return err
+	}
+	openImpl, err := countOpenImplementationBeads(townRoot, rig)
+	if err != nil {
+		return err
+	}
+	switch outcome {
+	case "all_passed":
+		if openImpl > 0 {
+			return fmt.Errorf("cannot use all_passed: %d open Implement backend/ beads remain", openImpl)
+		}
+	case "task_passed":
+		if openImpl == 0 {
+			return fmt.Errorf("use all_passed when no open Implement backend/ beads remain")
+		}
+	}
+	return nil
+}
+
+func validateImplementationBackendFiles(townRoot, rig string) error {
+	backend := filepath.Join(rigMayorRigDir(townRoot, rig), "backend")
+	for _, name := range []string{"fizzbuzz.py", "main.py", "test_fizzbuzz.py"} {
+		path := filepath.Join(backend, name)
+		info, err := os.Stat(path)
+		if err != nil {
+			return fmt.Errorf("missing %s (implement and commit before success)", path)
+		}
+		if info.Size() == 0 {
+			return fmt.Errorf("%s is empty", path)
+		}
+	}
 	return nil
 }
 
@@ -903,7 +1060,7 @@ func orchestratedArtifactAutoOutcome(task *orchestrator.Task, townRoot, rig stri
 	case "design":
 		vErr = validateDesignArtifacts(townRoot, rig, designArchWrittenThisRun)
 	case "planning":
-		vErr = validateOrchestratedArtifacts(task, townRoot, rig, "success", designArchWrittenThisRun, planningHadCmdFailure, planningBeadCreateOK, false, false)
+		vErr = validateOrchestratedArtifacts(task, townRoot, rig, "success", designArchWrittenThisRun, planningHadCmdFailure, planningBeadCreateOK, false, false, false, false, false)
 	default:
 		return "", "", false
 	}

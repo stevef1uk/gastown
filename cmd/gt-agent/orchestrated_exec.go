@@ -21,6 +21,8 @@ func prepareOrchestratedScript(cmd string) string {
 }
 
 // unwrapBashLcMultiline strips bash -lc '...' / "..." wrappers from multiline agent commands.
+// Multiline heredocs often omit the closing wrapper quote; only strip a closing quote when
+// it is the final character (or a lone quote line at the end).
 func unwrapBashLcMultiline(cmd string) string {
 	cmd = strings.TrimSpace(cmd)
 	const prefix = "bash -lc "
@@ -28,14 +30,28 @@ func unwrapBashLcMultiline(cmd string) string {
 		return cmd
 	}
 	inner := strings.TrimSpace(cmd[len(prefix):])
-	if len(inner) < 2 {
+	if len(inner) == 0 {
 		return inner
 	}
 	q := inner[0]
-	if (q == '\'' || q == '"') && inner[len(inner)-1] == q {
-		return inner[1 : len(inner)-1]
+	if q != '\'' && q != '"' {
+		return inner
 	}
-	return inner
+	inner = inner[1:]
+	inner = strings.TrimSpace(inner)
+	if len(inner) > 0 && inner[len(inner)-1] == q {
+		inner = strings.TrimSpace(inner[:len(inner)-1])
+	}
+	lines := strings.Split(inner, "\n")
+	for len(lines) > 0 {
+		last := strings.TrimSpace(lines[len(lines)-1])
+		if last == string(q) {
+			lines = lines[:len(lines)-1]
+			continue
+		}
+		break
+	}
+	return strings.TrimSpace(strings.Join(lines, "\n"))
 }
 
 func bashLcHeredocEOFMarker() string {

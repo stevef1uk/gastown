@@ -74,14 +74,34 @@ func TestValidateOrchestratedArtifacts_design(t *testing.T) {
 		t.Fatal(err)
 	}
 	task := &orchestrator.Task{State: "design"}
-	if err := validateOrchestratedArtifacts(task, dir, "myrig", "success", true, false, false, false, false); err == nil {
+	if err := validateOrchestratedArtifacts(task, dir, "myrig", "success", true, false, false, false, false, false, false, false); err == nil {
 		t.Fatal("expected size validation error")
 	}
 	if err := os.WriteFile(path, make([]byte, 200), 0644); err != nil {
 		t.Fatal(err)
 	}
-	if err := validateOrchestratedArtifacts(task, dir, "myrig", "success", true, false, false, false, false); err != nil {
+	if err := validateOrchestratedArtifacts(task, dir, "myrig", "success", true, false, false, false, false, false, false, false); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestParseOrchestratedCommands_markdownFencedCMD(t *testing.T) {
+	in := "prose\n```CMD:\ncd testgt2/mayor/rig && bd list --status=closed\n```\n"
+	cmds := parseOrchestratedCommands(in)
+	if len(cmds) != 1 {
+		t.Fatalf("want 1 cmd from fenced CMD, got %d: %v", len(cmds), cmds)
+	}
+	if !strings.Contains(cmds[0], "bd list") {
+		t.Fatalf("got %q", cmds[0])
+	}
+}
+
+func TestValidateQACommand_rejectsWorkspace(t *testing.T) {
+	if err := validateQACommand("cat /workspace/testgt2/src/foo.py", "testgt2"); err == nil {
+		t.Fatal("expected reject")
+	}
+	if err := validateQACommand("cd testgt2/mayor/rig && python3 -m unittest backend.test_fizzbuzz", "testgt2"); err != nil {
+		t.Fatalf("unittest should be allowed: %v", err)
 	}
 }
 
@@ -261,8 +281,21 @@ func TestValidateDesignArtifacts_allowsStaleBackendPy(t *testing.T) {
 		t.Fatal(err)
 	}
 	task := &orchestrator.Task{State: "design"}
-	if err := validateOrchestratedArtifacts(task, dir, "myrig", "success", true, false, false, false, false); err != nil {
+	if err := validateOrchestratedArtifacts(task, dir, "myrig", "success", true, false, false, false, false, false, false, false); err != nil {
 		t.Fatalf("stale backend/*.py must not block design: %v", err)
+	}
+}
+
+func writeImplementationBackendFiles(t *testing.T, townRoot, rig string) {
+	t.Helper()
+	backend := filepath.Join(townRoot, rig, "mayor", "rig", "backend")
+	if err := os.MkdirAll(backend, 0755); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"fizzbuzz.py", "main.py", "test_fizzbuzz.py"} {
+		if err := os.WriteFile(filepath.Join(backend, name), []byte("pass\n"), 0644); err != nil {
+			t.Fatal(err)
+		}
 	}
 }
 
@@ -274,8 +307,9 @@ func TestValidateImplementationArtifacts(t *testing.T) {
 	if err := validateImplementationArtifacts(dir, "testgt2", true, true); err == nil {
 		t.Fatal("expected error when commands failed")
 	}
+	writeImplementationBackendFiles(t, dir, "testgt2")
 	if err := validateImplementationArtifacts(dir, "testgt2", false, true); err != nil {
-		t.Fatalf("bd close ok should pass: %v", err)
+		t.Fatalf("bd close ok with backend files should pass: %v", err)
 	}
 }
 
