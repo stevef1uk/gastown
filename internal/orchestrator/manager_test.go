@@ -134,7 +134,7 @@ func TestSkipsCompletedInstances(t *testing.T) {
 		},
 	})
 	id, _ := m.StartWorkflow("x", nil)
-	m.CompleteTask(id, "success")
+	m.CompleteTask(id, "success", "mayor")
 	_, err := m.FetchTask("mayor")
 	if err == nil {
 		t.Fatal("expected no task for completed workflow")
@@ -164,7 +164,7 @@ func TestSkipsFailedInstances(t *testing.T) {
 func TestCompleteTask_validTransitionAndTerminal(t *testing.T) {
 	m, id := loadTestManager(t, designFlowTemplate())
 
-	next, err := m.CompleteTask(id, "success")
+	next, err := m.CompleteTask(id, "success", "testgt2/architect")
 	if err != nil || next != "planning" {
 		t.Fatalf("CompleteTask success: next=%q err=%v", next, err)
 	}
@@ -172,7 +172,7 @@ func TestCompleteTask_validTransitionAndTerminal(t *testing.T) {
 		t.Fatalf("state: %q", m.instances[id].CurrentState)
 	}
 
-	next, err = m.CompleteTask(id, "success")
+	next, err = m.CompleteTask(id, "success", "planner")
 	if err != nil || next != "completed" {
 		t.Fatalf("CompleteTask to terminal: next=%q err=%v", next, err)
 	}
@@ -188,16 +188,25 @@ func TestCompleteTask_validTransitionAndTerminal(t *testing.T) {
 func TestCompleteTask_failAlias(t *testing.T) {
 	m, id := loadTestManager(t, designFlowTemplate())
 
-	next, err := m.CompleteTask(id, "fail")
+	next, err := m.CompleteTask(id, "fail", "testgt2/architect")
 	if err != nil || next != "design" {
 		t.Fatalf("fail alias: next=%q err=%v", next, err)
+	}
+}
+
+func TestCompleteTask_rejectsWrongAgent(t *testing.T) {
+	m, id := loadTestManager(t, designFlowTemplate())
+
+	_, err := m.CompleteTask(id, "success", "mayor")
+	if err == nil || !strings.Contains(err.Error(), "cannot complete") {
+		t.Fatalf("mayor must not complete design (architect role): %v", err)
 	}
 }
 
 func TestCompleteTask_invalidOutcome(t *testing.T) {
 	m, id := loadTestManager(t, designFlowTemplate())
 
-	_, err := m.CompleteTask(id, "bogus")
+	_, err := m.CompleteTask(id, "bogus", "testgt2/architect")
 	if err == nil {
 		t.Fatal("expected error for invalid outcome")
 	}
@@ -249,8 +258,8 @@ func TestHasActiveWorkflow(t *testing.T) {
 		t.Fatal("should not match other template")
 	}
 
-	_, _ = m.CompleteTask(id, "success")
-	_, _ = m.CompleteTask(id, "success")
+	_, _ = m.CompleteTask(id, "success", "testgt2/architect")
+	_, _ = m.CompleteTask(id, "success", "planner")
 	if m.HasActiveWorkflow("rig-flow", "testgt2") {
 		t.Fatal("completed workflow should not be active")
 	}
@@ -335,7 +344,7 @@ func TestFetchTask_prefersActiveOverCompleted(t *testing.T) {
 	}
 	m.LoadTemplate(tpl)
 	doneID, _ := m.StartWorkflow("x", nil)
-	m.CompleteTask(doneID, "success")
+	m.CompleteTask(doneID, "success", "mayor")
 	activeID, _ := m.StartWorkflow("x", nil)
 	task, err := m.FetchTask("mayor")
 	if err != nil {

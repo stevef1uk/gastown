@@ -278,13 +278,17 @@ func GetWorkflowStatuses(townRoot, workflowID string) ([]WorkflowStatus, error) 
 }
 
 // CompleteTask reports task completion to the orchestrator.
-func CompleteTask(townRoot string, workflowID string, outcome string) (string, error) {
+func CompleteTask(townRoot string, workflowID string, outcome string, agentID string) (string, error) {
+	args := map[string]interface{}{
+		"workflow_id": workflowID,
+		"outcome":     outcome,
+	}
+	if agentID != "" {
+		args["agent_id"] = agentID
+	}
 	params := map[string]interface{}{
-		"name": "complete_task",
-		"arguments": map[string]interface{}{
-			"workflow_id": workflowID,
-			"outcome":     outcome,
-		},
+		"name":      "complete_task",
+		"arguments": args,
 	}
 
 	result, err := Call(townRoot, "call_tool", params)

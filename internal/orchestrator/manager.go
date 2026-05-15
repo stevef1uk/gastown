@@ -151,7 +151,8 @@ func (m *Manager) FetchTask(agentID string) (map[string]interface{}, error) {
 }
 
 // CompleteTask transitions a workflow to the next state.
-func (m *Manager) CompleteTask(workflowID string, outcome string) (string, error) {
+// When agentID is non-empty, it must match the role for the workflow's current state.
+func (m *Manager) CompleteTask(workflowID string, outcome string, agentID string) (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -166,6 +167,10 @@ func (m *Manager) CompleteTask(workflowID string, outcome string) (string, error
 	}
 
 	state, _ := inst.GetCurrentTask(tpl)
+	if agentID != "" && state.Role != "" && !AgentMatchesTask(agentID, state.Role, inst.Variables) {
+		return "", fmt.Errorf("agent %q cannot complete state %q (role %q)",
+			agentID, inst.CurrentState, state.Role)
+	}
 	if state.Role != "" && !state.AcceptsOutcome(outcome) {
 		return "", fmt.Errorf("outcome %q not allowed for state %q (allowed: %s)",
 			outcome, inst.CurrentState, strings.Join(state.AllowedOutcomes(), ", "))

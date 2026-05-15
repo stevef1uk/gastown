@@ -22,14 +22,26 @@ import (
 	"github.com/steveyegge/gastown/internal/templates"
 )
 
+// OrchestratedRetry captures the last failed orchestrator step for cross-attempt LLM feedback.
+type OrchestratedRetry struct {
+	WorkflowID string    `json:"workflow_id"`
+	TemplateID string    `json:"template_id,omitempty"`
+	State      string    `json:"state"`
+	Outcome    string    `json:"outcome"`
+	Summary    string    `json:"summary"`
+	Feedback   string    `json:"feedback,omitempty"` // truncated shell/cmd output from the failed attempt
+	At         time.Time `json:"at"`
+}
+
 // AgentState persists across cycles so the agent doesn't lose count
 // or context when the daemon respawns it.
 type AgentState struct {
-	PatrolCount         int       `json:"patrol_count"`
-	ExtraordinaryAction bool      `json:"extraordinary_action"`
-	LastActivity        time.Time `json:"last_activity"`
-	IdleCycles          int       `json:"idle_cycles"`
-	CmdRetryCount       int       `json:"cmd_retry_count"` // consecutive extraordinary retries
+	PatrolCount         int                `json:"patrol_count"`
+	ExtraordinaryAction bool               `json:"extraordinary_action"`
+	LastActivity        time.Time          `json:"last_activity"`
+	IdleCycles          int                `json:"idle_cycles"`
+	CmdRetryCount       int                `json:"cmd_retry_count"` // consecutive extraordinary retries
+	OrchestratedRetry   *OrchestratedRetry `json:"orchestrated_retry,omitempty"`
 }
 
 const (
@@ -1110,6 +1122,16 @@ func parseLLMResponse(response string) (cmds []string, doneSummary string, hallu
 			continue
 		}
 
+		// Outcome JSON glued after a heredoc (common architect/planner mistake)
+		// must not be appended to the shell script (Fix: outcome:: not found).
+		if isOrchestratedOutcomeLine(trimmed) ||
+			(strings.HasPrefix(trimmed, "{") && strings.Contains(strings.ToLower(trimmed), "outcome")) {
+			flushScript()
+			inScript = false
+			heredocTerm = ""
+			continue
+		}
+
 		// Append this line to the current script body.
 		scriptBuf = append(scriptBuf, line)
 		// If this continuation line opens a heredoc, enter heredoc mode
@@ -1315,6 +1337,8 @@ var inlineCMDMarkerRE = regexp.MustCompile(`(?:\s+CMD:|\nCMD:)\s*`)
 var gluedPathCMDRE = regexp.MustCompile(`/CMD:\s*`)
 var gluedExtCMDRE = regexp.MustCompile(`(\.[a-zA-Z0-9]{2,8})CMD:\s*`)
 var gluedQuoteCMDRE = regexp.MustCompile(`'CMD:\s*`)
+var gluedEOFCMDRE = regexp.MustCompile(`(?i)EOF\s*'?\s*CMD:\s*`)
+var gluedOutcomeAfterQuoteRE = regexp.MustCompile(`'\s*\{[\s]*"outcome"`)
 
 // normalizeGluedCMDMarkers turns model glitches like rig/CMD:, SPEC.mdCMD:, or
 // 'open'CMD: into newline-separated CMD markers so splitInlineCMDs can separate
@@ -1323,6 +1347,8 @@ func normalizeGluedCMDMarkers(cmd string) string {
 	cmd = gluedPathCMDRE.ReplaceAllString(cmd, "\nCMD: ")
 	cmd = gluedExtCMDRE.ReplaceAllString(cmd, "$1\nCMD: ")
 	cmd = gluedQuoteCMDRE.ReplaceAllString(cmd, "'\nCMD: ")
+	cmd = gluedEOFCMDRE.ReplaceAllString(cmd, "EOF\nCMD: ")
+	cmd = gluedOutcomeAfterQuoteRE.ReplaceAllString(cmd, "'\n")
 	return cmd
 }
 

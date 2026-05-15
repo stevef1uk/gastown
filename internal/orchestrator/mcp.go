@@ -188,9 +188,13 @@ func (s *Server) handleCallTool(req MCPRequest) MCPResponse {
 		var args struct {
 			WorkflowID string `json:"workflow_id"`
 			Outcome    string `json:"outcome"`
+			AgentID    string `json:"agent_id"`
 		}
 		json.Unmarshal(params.Arguments, &args)
-		nextState, err := s.orchestrator.CompleteTask(args.WorkflowID, args.Outcome)
+		if args.AgentID != "" {
+			fmt.Printf("[MCP] complete_task for agent: %s\n", args.AgentID)
+		}
+		nextState, err := s.orchestrator.CompleteTask(args.WorkflowID, args.Outcome, args.AgentID)
 		if err != nil {
 			return MCPResponse{JSONRPC: "2.0", ID: req.ID, Error: &MCPError{Code: -32000, Message: err.Error()}}
 		}

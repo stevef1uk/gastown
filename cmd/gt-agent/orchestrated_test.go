@@ -48,6 +48,21 @@ func TestStripOutcomeLinesForCmdParse(t *testing.T) {
 	}
 }
 
+func TestStripOutcomeLines_multilineJSONAfterHeredoc(t *testing.T) {
+	in := "CMD: cat > plan.md <<'EOF'\n# Plan\nEOF\n{\n  \"outcome\": \"success\",\n  \"summary\": \"architecture.md written\"\n}\n"
+	out := stripOutcomeLinesForCmdParse(in)
+	cmds := parseOrchestratedCommands(in)
+	if strings.Contains(out, "\"outcome\"") {
+		t.Fatalf("multiline outcome json should be stripped from filtered text: %q", out)
+	}
+	if len(cmds) != 1 {
+		t.Fatalf("want 1 cmd, got %d: %v", len(cmds), cmds)
+	}
+	if strings.Contains(cmds[0], "outcome") {
+		t.Fatalf("outcome json must not be in shell script: %q", cmds[0])
+	}
+}
+
 func TestValidateOrchestratedArtifacts_design(t *testing.T) {
 	dir := t.TempDir()
 	rig := filepath.Join(dir, "myrig", "mayor", "rig")
@@ -59,13 +74,13 @@ func TestValidateOrchestratedArtifacts_design(t *testing.T) {
 		t.Fatal(err)
 	}
 	task := &orchestrator.Task{State: "design"}
-	if err := validateOrchestratedArtifacts(task, dir, "myrig", "success", false, false, false, false); err == nil {
+	if err := validateOrchestratedArtifacts(task, dir, "myrig", "success", true, false, false, false, false); err == nil {
 		t.Fatal("expected size validation error")
 	}
 	if err := os.WriteFile(path, make([]byte, 200), 0644); err != nil {
 		t.Fatal(err)
 	}
-	if err := validateOrchestratedArtifacts(task, dir, "myrig", "success", false, false, false, false); err != nil {
+	if err := validateOrchestratedArtifacts(task, dir, "myrig", "success", true, false, false, false, false); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -91,6 +106,43 @@ func TestValidateDesignCommand_forbidsImplementation(t *testing.T) {
 	heredoc := "cat > testgt2/mayor/rig/architecture.md <<'EOF'\n# Architecture\nDescribe backend/fizzbuzz.py here.\nEOF"
 	if err := validateDesignCommand(heredoc, "testgt2"); err != nil {
 		t.Fatalf("architecture heredoc may mention backend/: %v", err)
+	}
+	heredocWithProse := "cat > testgt2/mayor/rig/architecture.md <<'EOF'\n# Architecture\nRun python3 -m unittest backend.test_fizzbuzz.\nThe workflow uses gt bd for CI.\nEOF"
+	if err := validateDesignCommand(heredocWithProse, "testgt2"); err != nil {
+		t.Fatalf("architecture heredoc may mention python3/gt bd in prose: %v", err)
+	}
+}
+
+func TestNormalizeGluedEOFCMD(t *testing.T) {
+	in := "EOF'CMD: bash -lc 'echo hi'"
+	out := normalizeGluedCMDMarkers(in)
+	if !strings.Contains(out, "EOF\nCMD:") {
+		t.Fatalf("want EOF newline CMD, got %q", out)
+	}
+}
+
+func TestRewriteBackendPathAfterCD(t *testing.T) {
+	cmd := `bash -lc 'cd testgt2/mayor/rig && cat > testgt2/mayor/rig/backend/fizzbuzz.py <<EOF'`
+	fixed, ok := rewriteBackendPathAfterCD(cmd, "testgt2")
+	if !ok || strings.Contains(fixed, "testgt2/mayor/rig/backend") {
+		t.Fatalf("want backend/ relative path, got ok=%v cmd=%q", ok, fixed)
+	}
+}
+
+func TestRewritePlanMDPathAfterCD(t *testing.T) {
+	cmd := `bash -lc 'cd testgt2/mayor/rig && cat > testgt2/mayor/rig/plan.md <<'"'"'EOF'"'"'
+# Plan
+EOF
+'`
+	fixed, ok := rewritePlanMDPathAfterCD(cmd, "testgt2")
+	if !ok {
+		t.Fatal("expected rewrite")
+	}
+	if strings.Contains(fixed, "testgt2/mayor/rig/plan.md") {
+		t.Fatalf("should rewrite to plan.md only: %q", fixed)
+	}
+	if !strings.Contains(fixed, "cat > plan.md") {
+		t.Fatalf("missing cat > plan.md: %q", fixed)
 	}
 }
 
@@ -187,10 +239,10 @@ func TestOrchestratedArtifactAutoOutcome_planningRequiresBeads(t *testing.T) {
 		t.Fatal(err)
 	}
 	task := &orchestrator.Task{State: "planning", AllowedOutcomes: []string{"success", "failure"}}
-	if _, _, ok := orchestratedArtifactAutoOutcome(task, dir, "testgt2", false, false); ok {
+	if _, _, ok := orchestratedArtifactAutoOutcome(task, dir, "testgt2", false, false, false); ok {
 		t.Fatal("should not auto-complete without bd create success")
 	}
-	if _, _, ok := orchestratedArtifactAutoOutcome(task, dir, "testgt2", false, true); !ok {
+	if _, _, ok := orchestratedArtifactAutoOutcome(task, dir, "testgt2", false, false, true); !ok {
 		t.Fatal("should auto-complete with plan + bead create ok")
 	}
 }
@@ -209,7 +261,7 @@ func TestValidateDesignArtifacts_allowsStaleBackendPy(t *testing.T) {
 		t.Fatal(err)
 	}
 	task := &orchestrator.Task{State: "design"}
-	if err := validateOrchestratedArtifacts(task, dir, "myrig", "success", false, false, false, false); err != nil {
+	if err := validateOrchestratedArtifacts(task, dir, "myrig", "success", true, false, false, false, false); err != nil {
 		t.Fatalf("stale backend/*.py must not block design: %v", err)
 	}
 }
@@ -237,9 +289,12 @@ func TestOrchestratedArtifactAutoOutcome_design(t *testing.T) {
 		t.Fatal(err)
 	}
 	task := &orchestrator.Task{State: "design", AllowedOutcomes: []string{"success", "failure"}}
-	o, _, ok := orchestratedArtifactAutoOutcome(task, dir, "myrig", false, false)
+	if _, _, ok := orchestratedArtifactAutoOutcome(task, dir, "myrig", false, false, false); ok {
+		t.Fatal("stale architecture.md must not auto-complete design without write this run")
+	}
+	o, _, ok := orchestratedArtifactAutoOutcome(task, dir, "myrig", true, false, false)
 	if !ok || o != "success" {
-		t.Fatalf("want auto success, got ok=%v outcome=%q", ok, o)
+		t.Fatalf("want auto success after write this run, got ok=%v outcome=%q", ok, o)
 	}
 }
 

@@ -17,8 +17,9 @@ import (
 )
 
 const (
-	defaultOrchPollInterval = 15 * time.Second
-	maxOrchestratedCmdTurns = 5
+	defaultOrchPollInterval        = 15 * time.Second
+	maxOrchestratedCmdTurns        = 5
+	maxOrchestratedRetryFeedback   = 6000 // chars persisted for next fetch_task attempt
 )
 
 var jsonBlockRE = regexp.MustCompile("(?s)```(?:json)?\\s*([\\s\\S]*?)```")
@@ -62,7 +63,7 @@ func runOrchestrated(ctx context.Context, client *llm.Client, townRoot, role, ri
 		fmt.Printf("[gt-agent] Task wf=%s template=%s state=%s\n",
 			task.WorkflowID, task.TemplateID, task.State)
 
-		outcome, summary, runErr := executeOrchestratedTask(ctx, client, townRoot, rig, sessionName, task)
+		outcome, summary, attemptLog, runErr := executeOrchestratedTask(ctx, client, townRoot, rig, sessionName, task, state.OrchestratedRetry)
 		if runErr != nil {
 			fmt.Fprintf(os.Stderr, "[gt-agent] task execution: %v\n", runErr)
 			if outcome == "" {
@@ -73,8 +74,11 @@ func runOrchestrated(ctx context.Context, client *llm.Client, townRoot, role, ri
 			outcome = "fail"
 		}
 
+		updateOrchestratedRetry(&state, task, outcome, summary, attemptLog)
+
 		fmt.Printf("[gt-agent] complete_task outcome=%q summary=%q\n", outcome, summary)
-		nextState, err := orchestrator.CompleteTask(townRoot, task.WorkflowID, outcome)
+		agentID := orchestrator.OrchestratorAgentID(role, rig)
+		nextState, err := orchestrator.CompleteTask(townRoot, task.WorkflowID, outcome, agentID)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "[gt-agent] complete_task failed: %v\n", err)
 		} else {
@@ -89,15 +93,34 @@ func runOrchestrated(ctx context.Context, client *llm.Client, townRoot, role, ri
 	return nil
 }
 
-func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, rig, sessionName string, task *orchestrator.Task) (outcome, summary string, err error) {
+func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, rig, sessionName string, task *orchestrator.Task, priorRetry *OrchestratedRetry) (outcome, summary, attemptLog string, err error) {
 	systemPrompt := buildOrchestratedSystemPrompt(task)
 	userPrompt := buildOrchestratedUserPrompt(task)
+	if block := formatOrchestratedRetryBlock(priorRetry, task); block != "" {
+		userPrompt = block + "\n\n" + userPrompt
+		fmt.Printf("[gt-agent] injecting prior failure context for %s/%s\n", task.WorkflowID, task.State)
+	}
 
 	messages := []llm.Message{
 		{Role: "system", Content: systemPrompt},
 		{Role: "user", Content: userPrompt},
 	}
 
+	var lastAttemptFeedback strings.Builder
+	recordAttemptFeedback := func(s string) {
+		if s == "" {
+			return
+		}
+		lastAttemptFeedback.WriteString(s)
+		if lastAttemptFeedback.Len() > maxOrchestratedRetryFeedback {
+			trunc := lastAttemptFeedback.String()
+			lastAttemptFeedback.Reset()
+			lastAttemptFeedback.WriteString("...(truncated)\n")
+			lastAttemptFeedback.WriteString(trunc[len(trunc)-maxOrchestratedRetryFeedback:])
+		}
+	}
+
+	var designArchWrittenThisRun bool
 	var planningHadCmdFailure bool
 	var planningBeadCreateOK bool
 	var implementationHadCmdFailure bool
@@ -106,7 +129,7 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 	for turn := 1; turn <= maxOrchestratedCmdTurns; turn++ {
 		response, llmErr := client.CompleteMessages(ctx, messages)
 		if llmErr != nil {
-			return "fail", "", llmErr
+			return "fail", "", lastAttemptFeedback.String(), llmErr
 		}
 		fmt.Printf("[gt-agent] LLM response (turn %d):\n%s\n", turn, response)
 		messages = append(messages, llm.Message{Role: "assistant", Content: response})
@@ -139,6 +162,18 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 				if fixed, ok := rewriteSpecMDPathCaseInsensitive(cmd); ok {
 					cmd = fixed
 				}
+				if task.State == "planning" {
+					if fixed, ok := rewritePlanMDPathAfterCD(cmd, rig); ok {
+						fmt.Printf("[gt-agent] rewrote plan.md path after cd: %s\n", fixed)
+						cmd = fixed
+					}
+				}
+				if task.State == "implementation" {
+					if fixed, ok := rewriteBackendPathAfterCD(cmd, rig); ok {
+						fmt.Printf("[gt-agent] rewrote backend path after cd: %s\n", fixed)
+						cmd = fixed
+					}
+				}
 				fmt.Printf("[gt-agent] $ %s\n", cmd)
 				c := exec.Command("/bin/sh", "-c", cmd)
 				c.Env = orchestratedCommandEnv(townRoot, rig, task.State, os.Environ())
@@ -147,6 +182,9 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 				}
 				c.Dir = townRoot
 				out, cmdErr := c.CombinedOutput()
+				if task.State == "design" && cmdErr == nil && isArchitectureMDWriteCommand(cmd) {
+					designArchWrittenThisRun = true
+				}
 				if task.State == "planning" {
 					if cmdErr != nil {
 						planningHadCmdFailure = true
@@ -172,20 +210,22 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 				}
 			}
 			feedback := combined.String()
+			recordAttemptFeedback(feedback)
 			feedback += "\n\nCommands executed. If the step is complete, reply with JSON only (no CMD lines): {\"outcome\":\"...\",\"summary\":\"...\"}"
 			if turn == maxOrchestratedCmdTurns {
 				feedback += " Use an allowed outcome."
 			}
 			// Same turn may include CMD lines and JSON; accept success when artifacts are ready.
 			if o, s, ok := parseOrchestratedResult(response, task.AllowedOutcomes); ok {
-				if vErr := validateOrchestratedArtifacts(task, townRoot, rig, o, planningHadCmdFailure, planningBeadCreateOK, implementationHadCmdFailure, implementationBeadCloseOK); vErr != nil {
+				if vErr := validateOrchestratedArtifacts(task, townRoot, rig, o, designArchWrittenThisRun, planningHadCmdFailure, planningBeadCreateOK, implementationHadCmdFailure, implementationBeadCloseOK); vErr != nil {
 					fmt.Printf("[gt-agent] artifact validation failed: %v\n", vErr)
+					recordAttemptFeedback("Validation failed: " + vErr.Error() + "\n")
 				} else {
-					return o, s, nil
+					return o, s, lastAttemptFeedback.String(), nil
 				}
 			}
-			if o, s, ok := orchestratedArtifactAutoOutcome(task, townRoot, rig, planningHadCmdFailure, planningBeadCreateOK); ok {
-				return o, s, nil
+			if o, s, ok := orchestratedArtifactAutoOutcome(task, townRoot, rig, designArchWrittenThisRun, planningHadCmdFailure, planningBeadCreateOK); ok {
+				return o, s, lastAttemptFeedback.String(), nil
 			}
 			messages = append(messages, llm.Message{Role: "user", Content: feedback})
 			continue
@@ -193,11 +233,11 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 
 		// Outcome is only accepted on a turn with no CMD lines (after work is done).
 		if o, s, ok := parseOrchestratedResult(response, task.AllowedOutcomes); ok {
-			if vErr := validateOrchestratedArtifacts(task, townRoot, rig, o, planningHadCmdFailure, planningBeadCreateOK, implementationHadCmdFailure, implementationBeadCloseOK); vErr != nil {
+			if vErr := validateOrchestratedArtifacts(task, townRoot, rig, o, designArchWrittenThisRun, planningHadCmdFailure, planningBeadCreateOK, implementationHadCmdFailure, implementationBeadCloseOK); vErr != nil {
 				fmt.Printf("[gt-agent] artifact validation failed: %v\n", vErr)
 				hint := "Use CMD: with a heredoc to write files, then send JSON outcome."
 				if task.State == "design" {
-					hint = "Write only architecture.md (heredoc). You may mention backend/ in the doc. Do not create backend/ or run git. Read SPEC with head -n 60."
+					hint = "Write architecture.md with a heredoc CMD in this session (stale files from prior runs do not count). Read SPEC with head -n 60."
 				}
 				if task.State == "planning" {
 					hint = "Write plan.md (heredoc) and create beads with `export BEADS_DIR=$GT_ROOT/RIG/.beads && cd RIG/mayor/rig && bd create --type task --title \"...\"`. Do not use gt bd add. Do not write backend/ code or run git."
@@ -205,16 +245,88 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 				if task.State == "implementation" {
 					hint = "Use bare `bd` from RIG/mayor/rig: list open beads, implement under backend/, `bd close` at least one bead, then success. Never use gt bd."
 				}
-				messages = append(messages, llm.Message{Role: "user", Content: "Validation failed: " + vErr.Error() + ". " + hint})
+				msg := "Validation failed: " + vErr.Error() + ". " + hint
+				recordAttemptFeedback(msg + "\n")
+				messages = append(messages, llm.Message{Role: "user", Content: msg})
 				continue
 			}
-			return o, s, nil
+			return o, s, lastAttemptFeedback.String(), nil
 		}
 
-		messages = append(messages, llm.Message{Role: "user", Content: "Use CMD: lines to run shell commands (heredoc for multi-line files). When done, reply with JSON only: {\"outcome\":\"...\",\"summary\":\"...\"}"})
+		hint := "Use CMD: lines to run shell commands (heredoc for multi-line files). When done, reply with JSON only: {\"outcome\":\"...\",\"summary\":\"...\"}"
+		recordAttemptFeedback(hint + "\n")
+		messages = append(messages, llm.Message{Role: "user", Content: hint})
 	}
 
-	return "fail", "", fmt.Errorf("no structured outcome after %d turns", maxOrchestratedCmdTurns)
+	return "fail", "", lastAttemptFeedback.String(), fmt.Errorf("no structured outcome after %d turns", maxOrchestratedCmdTurns)
+}
+
+func isOrchestratedFailureOutcome(outcome string) bool {
+	switch strings.ToLower(strings.TrimSpace(outcome)) {
+	case "fail", "failure":
+		return true
+	default:
+		return false
+	}
+}
+
+func truncateOrchestratedFeedback(s string, max int) string {
+	s = strings.TrimSpace(s)
+	if max <= 0 || len(s) <= max {
+		return s
+	}
+	return "...(truncated)\n" + s[len(s)-max:]
+}
+
+// formatOrchestratedRetryBlock returns prior-attempt context for the next LLM session.
+func formatOrchestratedRetryBlock(prior *OrchestratedRetry, task *orchestrator.Task) string {
+	if prior == nil || task == nil {
+		return ""
+	}
+	if prior.WorkflowID != task.WorkflowID || prior.State != task.State {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("## Previous attempt on this step failed\n")
+	b.WriteString(fmt.Sprintf("- Workflow: %s state: %s\n", prior.WorkflowID, prior.State))
+	b.WriteString(fmt.Sprintf("- Outcome: %s\n", prior.Outcome))
+	b.WriteString(fmt.Sprintf("- Summary: %s\n", prior.Summary))
+	if prior.Feedback != "" {
+		b.WriteString("\n### Command output from that attempt\n")
+		b.WriteString(prior.Feedback)
+		b.WriteString("\n")
+	}
+	b.WriteString("\nFix the issues above. Use bead IDs and paths from command output — do not invent IDs. ")
+	b.WriteString("One CMD: per line; use mkdir -p backend before writing backend/ files.\n")
+	return b.String()
+}
+
+// updateOrchestratedRetry stores failure context for the next fetch_task or clears it on success.
+func updateOrchestratedRetry(state *AgentState, task *orchestrator.Task, outcome, summary, attemptLog string) {
+	if state == nil || task == nil {
+		return
+	}
+	if !isOrchestratedFailureOutcome(outcome) {
+		if state.OrchestratedRetry != nil &&
+			state.OrchestratedRetry.WorkflowID == task.WorkflowID &&
+			state.OrchestratedRetry.State == task.State {
+			state.OrchestratedRetry = nil
+		}
+		return
+	}
+	feedback := attemptLog
+	if feedback == "" {
+		feedback = summary
+	}
+	state.OrchestratedRetry = &OrchestratedRetry{
+		WorkflowID: task.WorkflowID,
+		TemplateID: task.TemplateID,
+		State:      task.State,
+		Outcome:    outcome,
+		Summary:    summary,
+		Feedback:   truncateOrchestratedFeedback(feedback, maxOrchestratedRetryFeedback),
+		At:         time.Now(),
+	}
 }
 
 // outcomeJSONTailRE strips outcome JSON glued onto the end of a CMD line.
@@ -222,17 +334,31 @@ var outcomeJSONTailRE = regexp.MustCompile(`(?i)\s*\{[\s]*"outcome"[\s\S]*$`)
 
 // stripOutcomeLines removes JSON/outcome lines so they are not fed into shell scripts.
 func stripOutcomeLinesForCmdParse(response string) string {
+	lines := strings.Split(response, "\n")
 	var kept []string
-	for _, line := range strings.Split(response, "\n") {
+	inOutcomeJSON := false
+	braceDepth := 0
+	for _, line := range lines {
 		t := strings.TrimSpace(line)
 		if t == "" {
-			kept = append(kept, line)
+			if !inOutcomeJSON {
+				kept = append(kept, line)
+			}
 			continue
 		}
-		if strings.HasPrefix(t, "{") && strings.Contains(strings.ToLower(t), "outcome") {
+		if !inOutcomeJSON && strings.HasPrefix(t, "{") && strings.Contains(strings.ToLower(t), "outcome") {
+			inOutcomeJSON = true
+			braceDepth = strings.Count(t, "{") - strings.Count(t, "}")
+			if braceDepth <= 0 {
+				inOutcomeJSON = false
+			}
 			continue
 		}
-		if strings.HasPrefix(strings.ToUpper(t), "OUTCOME:") {
+		if inOutcomeJSON {
+			braceDepth += strings.Count(t, "{") - strings.Count(t, "}")
+			if braceDepth <= 0 {
+				inOutcomeJSON = false
+			}
 			continue
 		}
 		if trimmed := outcomeJSONTailRE.ReplaceAllString(line, ""); trimmed != line {
@@ -242,14 +368,43 @@ func stripOutcomeLinesForCmdParse(response string) string {
 				continue
 			}
 		}
+		if isOrchestratedOutcomeLine(t) {
+			continue
+		}
+		if strings.HasPrefix(strings.ToUpper(t), "OUTCOME:") {
+			continue
+		}
 		kept = append(kept, line)
 	}
 	return strings.Join(kept, "\n")
 }
 
+// isOrchestratedOutcomeLine reports JSON field lines that must not be executed as shell.
+func isOrchestratedOutcomeLine(t string) bool {
+	if strings.Contains(t, "CMD:") {
+		return false
+	}
+	lower := strings.ToLower(t)
+	if strings.HasPrefix(lower, "outcome:") || strings.HasPrefix(lower, "summary:") {
+		return true
+	}
+	if strings.HasPrefix(t, "{") || strings.HasPrefix(t, "}") || t == "}," {
+		return true
+	}
+	if strings.HasPrefix(lower, `"outcome"`) || strings.HasPrefix(lower, `'outcome'`) {
+		return true
+	}
+	if strings.HasPrefix(lower, `"summary"`) {
+		return true
+	}
+	return false
+}
+
 // parseOrchestratedCommands extracts CMD blocks without treating JSON or outcome lines as shell.
 func parseOrchestratedCommands(response string) []string {
 	filtered := stripOutcomeLinesForCmdParse(response)
+	// Un-glue EOF'CMD: and similar before line-oriented parsing (polecat heredoc bursts).
+	filtered = normalizeGluedCMDMarkers(filtered)
 	cmds, _, _ := parseLLMResponse(filtered)
 	return cmds
 }
@@ -267,9 +422,77 @@ func isArchitectureMDHeredoc(cmd string) bool {
 	return strings.Contains(lower, "architecture.md") && strings.Contains(lower, "<<")
 }
 
+// isArchitectureMDWriteCommand reports shell commands that create/overwrite architecture.md.
+func isArchitectureMDWriteCommand(cmd string) bool {
+	if isArchitectureMDHeredoc(cmd) {
+		return true
+	}
+	lower := strings.ToLower(cmd)
+	if !strings.Contains(lower, "architecture.md") {
+		return false
+	}
+	return strings.Contains(lower, ">") || strings.Contains(lower, "tee ") ||
+		strings.Contains(lower, "cp ") || strings.Contains(lower, "mv ")
+}
+
 func isPlanMDHeredoc(cmd string) bool {
 	lower := strings.ToLower(cmd)
 	return strings.Contains(lower, "plan.md") && strings.Contains(lower, "<<")
+}
+
+// rewriteBackendPathAfterCD fixes polecat writing rig/mayor/rig/backend/... after cd into worktree.
+func rewriteBackendPathAfterCD(cmd, rig string) (string, bool) {
+	rigName := rig
+	if rigName == "" {
+		rigName = "testgt2"
+	}
+	mayorRig := rigName + "/mayor/rig"
+	lower := strings.ToLower(cmd)
+	if !strings.Contains(lower, "backend/") || !strings.Contains(lower, "cd ") {
+		return cmd, false
+	}
+	if !strings.Contains(lower, strings.ToLower(mayorRig)) {
+		return cmd, false
+	}
+	wrong := mayorRig + "/backend/"
+	if !strings.Contains(cmd, wrong) {
+		return cmd, false
+	}
+	return strings.ReplaceAll(cmd, wrong, "backend/"), true
+}
+
+// rewritePlanMDPathAfterCD fixes a common planner mistake: after `cd rig/mayor/rig`,
+// the model still writes to `rig/mayor/rig/plan.md` (missing from that cwd).
+func rewritePlanMDPathAfterCD(cmd, rig string) (string, bool) {
+	rigName := rig
+	if rigName == "" {
+		rigName = "testgt2"
+	}
+	mayorRig := rigName + "/mayor/rig"
+	lower := strings.ToLower(cmd)
+	if !strings.Contains(lower, "plan.md") || !strings.Contains(lower, "cd ") {
+		return cmd, false
+	}
+	if !strings.Contains(lower, strings.ToLower(mayorRig)) {
+		return cmd, false
+	}
+	wrong := mayorRig + "/plan.md"
+	if !strings.Contains(cmd, wrong) {
+		return cmd, false
+	}
+	return strings.ReplaceAll(cmd, wrong, "plan.md"), true
+}
+
+// designCommandShellPortion returns the shell preamble before a heredoc delimiter (<<).
+// Architecture.md bodies often mention python3, gt bd, etc. in prose; those must not
+// trigger design-step side-effect checks.
+func designCommandShellPortion(cmd string) string {
+	lower := strings.ToLower(cmd)
+	idx := strings.Index(lower, "<<")
+	if idx < 0 {
+		return cmd
+	}
+	return strings.TrimSpace(cmd[:idx])
 }
 
 func validateDesignShellSideEffects(lower string) error {
@@ -304,8 +527,9 @@ func validateDesignCommand(cmd, rig string) error {
 	rigSlash := strings.ToLower(rigPrefix) + "/"
 
 	if isArchitectureMDHeredoc(cmd) {
-		// Mentioning backend/ inside architecture.md body is allowed.
-		if err := validateDesignShellSideEffects(lower); err != nil {
+		// Mentioning backend/, python3, gt bd, etc. inside architecture.md body is allowed.
+		shell := strings.ToLower(designCommandShellPortion(cmd))
+		if err := validateDesignShellSideEffects(shell); err != nil {
 			return err
 		}
 		return nil
@@ -490,13 +714,13 @@ func validateImplementationCommand(cmd, rig string) error {
 const minPlanMDBytes = 200
 
 // validateOrchestratedArtifacts rejects false-success when required files are missing or empty.
-func validateOrchestratedArtifacts(task *orchestrator.Task, townRoot, rig, outcome string, planningHadCmdFailure, planningBeadCreateOK, implementationHadCmdFailure, implementationBeadCloseOK bool) error {
+func validateOrchestratedArtifacts(task *orchestrator.Task, townRoot, rig, outcome string, designArchWrittenThisRun, planningHadCmdFailure, planningBeadCreateOK, implementationHadCmdFailure, implementationBeadCloseOK bool) error {
 	if outcome != "success" && outcome != "task_passed" && outcome != "all_passed" {
 		return nil
 	}
 	switch task.State {
 	case "design":
-		return validateDesignArtifacts(townRoot, rig)
+		return validateDesignArtifacts(townRoot, rig, designArchWrittenThisRun)
 	case "planning":
 		return validatePlanningArtifacts(townRoot, rig, planningHadCmdFailure, planningBeadCreateOK)
 	case "implementation":
@@ -601,7 +825,10 @@ func rigMayorRigPath(rig string) string {
 	return rig + "/mayor/rig"
 }
 
-func validateDesignArtifacts(townRoot, rig string) error {
+func validateDesignArtifacts(townRoot, rig string, writtenThisRun bool) error {
+	if !writtenThisRun {
+		return fmt.Errorf("architecture.md must be written in this design step (heredoc CMD); stale files from prior runs are ignored")
+	}
 	rigDir := rigMayorRigDir(townRoot, rig)
 	archPath := filepath.Join(rigDir, "architecture.md")
 	info, err := os.Stat(archPath)
@@ -623,13 +850,13 @@ func validateDesignArtifacts(townRoot, rig string) error {
 
 // orchestratedArtifactAutoOutcome completes a step when required files exist after CMD work,
 // even if the model never sends a clean JSON-only turn (common with small local LLMs).
-func orchestratedArtifactAutoOutcome(task *orchestrator.Task, townRoot, rig string, planningHadCmdFailure, planningBeadCreateOK bool) (outcome, summary string, ok bool) {
+func orchestratedArtifactAutoOutcome(task *orchestrator.Task, townRoot, rig string, designArchWrittenThisRun, planningHadCmdFailure, planningBeadCreateOK bool) (outcome, summary string, ok bool) {
 	var vErr error
 	switch task.State {
 	case "design":
-		vErr = validateDesignArtifacts(townRoot, rig)
+		vErr = validateDesignArtifacts(townRoot, rig, designArchWrittenThisRun)
 	case "planning":
-		vErr = validateOrchestratedArtifacts(task, townRoot, rig, "success", planningHadCmdFailure, planningBeadCreateOK, false, false)
+		vErr = validateOrchestratedArtifacts(task, townRoot, rig, "success", designArchWrittenThisRun, planningHadCmdFailure, planningBeadCreateOK, false, false)
 	default:
 		return "", "", false
 	}

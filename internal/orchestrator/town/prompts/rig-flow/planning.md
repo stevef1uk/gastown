@@ -31,16 +31,17 @@ You are the **Planner** for rig `{{rig}}`. Work from town root (`~/gt`). Paths l
    ```
    You may mention `backend/` in titles — that is allowed. Do **not** use `gt bd add`.
 
-4. Write **only** `{{rig}}/mayor/rig/plan.md` with a heredoc (≥ 200 bytes). Use **bash -lc** and a single-quoted heredoc delimiter (do not use `bash -c` with nested `"` quotes):
+4. Write **only** `plan.md` with a heredoc (≥ 200 bytes). Prefer one command that cds into the rig worktree, then writes a **relative** path:
    ```
-   CMD: bash -lc 'cat > {{rig}}/mayor/rig/plan.md <<'"'"'EOF'"'"'
+   CMD: bash -lc 'export BEADS_DIR=$GT_ROOT/{{rig}}/.beads && cd {{rig}}/mayor/rig && cat > plan.md <<'"'"'EOF'"'"'
    # Implementation plan
    (list beads and strategy — you may mention backend/ paths here)
    EOF
    '
    ```
+   **Do not** use `cat > {{rig}}/mayor/rig/plan.md` after `cd {{rig}}/mayor/rig` — that path does not exist from inside the worktree.
 
-5. Verify: `CMD: wc -c {{rig}}/mayor/rig/plan.md`
+5. Verify from town root: `CMD: wc -c {{rig}}/mayor/rig/plan.md`
 
 6. Do not send `success` until plan.md exists, beads were created successfully, and no commands failed.
 
