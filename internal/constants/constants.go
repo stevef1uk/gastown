@@ -176,7 +176,11 @@ const (
 
 	// DirQA is the directory containing qa state.
 	DirQA = "qa"
- 
+
+	// DirPolecat is the directory for a rig's orchestrated pipeline polecat (rig-flow).
+	// Distinct from DirPolecats, which holds per-bead worker worktrees.
+	DirPolecat = "polecat"
+
 	// DirMechanic is the directory containing mechanic state.
 	DirMechanic = "mechanic"
 

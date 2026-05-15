@@ -115,8 +115,14 @@ func AgentEnv(cfg AgentEnvConfig) map[string]string {
 		env["GIT_AUTHOR_NAME"] = fmt.Sprintf("%s/refinery", cfg.Rig)
 
 	case constants.RolePolecat:
-		if cfg.Rig == "" && cfg.AgentName == "" {
-			// Town hq-polecat (orchestrated rig-flow): simple role; rig via GT_RIG.
+		if cfg.Rig != "" && cfg.AgentName == "" {
+			// Rig pipeline polecat (orchestrated rig-flow): agent_id {rig}/polecat.
+			env["GT_ROLE"] = fmt.Sprintf("%s/polecat", cfg.Rig)
+			env["GT_RIG"] = cfg.Rig
+			env["BD_ACTOR"] = fmt.Sprintf("%s/polecat", cfg.Rig)
+			env["GIT_AUTHOR_NAME"] = fmt.Sprintf("%s/polecat", cfg.Rig)
+		} else if cfg.Rig == "" && cfg.AgentName == "" {
+			// Legacy town hq-polecat: simple role; rig via GT_RIG when set.
 			env["GT_ROLE"] = constants.RolePolecat
 			env["BD_ACTOR"] = constants.RolePolecat
 			env["GIT_AUTHOR_NAME"] = constants.RolePolecat

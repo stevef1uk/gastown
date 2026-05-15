@@ -339,6 +339,10 @@ func (s *Server) discoverAgents() []Agent {
 		qaID := session.QASessionName(prefix, rigName)
 		agents = append(agents, s.inspectAgent(qaID, rigName, "qa"))
 
+		// Pipeline polecat (orchestrated rig-flow)
+		rigPolecatID := session.RigPolecatSessionName(prefix, rigName)
+		agents = append(agents, s.inspectAgent(rigPolecatID, rigName, "polecat"))
+
 		// Mechanic (Rig view of town-level mechanic)
 		// The town-level hq-mechanic patrols logs for all rigs, so we show its
 		// status in each rig group to meet user expectations.

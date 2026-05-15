@@ -422,11 +422,12 @@ func runUp(cmd *cobra.Command, args []string) error {
 			architectResult = agentStartResult{name: "Architect (Town)", ok: true, detail: "skipped (rig agents)"}
 			qaResult = agentStartResult{name: "QA (Town)", ok: true, detail: "skipped (rig agents)"}
 		}
-		polecatRig := ""
-		if len(rigs) == 1 {
-			polecatRig = rigs[0]
+		if len(rigs) == 0 {
+			polecatResult = upStartTownRole(townRoot, constants.RolePolecat, "hq-polecat", orchestrator.OrchestratedForTownPolecat(orchestrated), "")
+		} else {
+			stopLegacyTownPolecat(townRoot)
+			polecatResult = agentStartResult{name: "Polecat (Town)", ok: true, detail: "skipped (rig agents)"}
 		}
-		polecatResult = upStartTownRole(townRoot, constants.RolePolecat, "hq-polecat", orchestrator.OrchestratedForTownPolecat(orchestrated), polecatRig)
 	}
 
 	deaconServiceIdx := len(services)
@@ -528,7 +529,7 @@ func runUp(cmd *cobra.Command, args []string) error {
 	// 5 & 6. Witnesses, Refineries, Architects, QAs (using prefetched rigs)
 	// Mechanic is town-level only — the single hq-mechanic patrols logs for
 	// the whole town, including all rigs. See `mechanicPatrolScript`.
-	witnessResults, refineryResults, architectResults, qaResults := startRigAgentsWithPrefetch(rigs, prefetchedRigs, rigErrors)
+	witnessResults, refineryResults, architectResults, qaResults, polecatResults := startRigAgentsWithPrefetch(rigs, prefetchedRigs, rigErrors, orchestrated)
 
 	if orchestrated {
 		for _, rigName := range rigs {
@@ -571,6 +572,16 @@ func runUp(cmd *cobra.Command, args []string) error {
 			services = append(services, ServiceStatus{Name: result.name, Type: constants.RoleQA, Rig: rigName, OK: result.ok, Detail: result.detail})
 			if !result.ok {
 				allOK = false
+			}
+		}
+	}
+	if orchestrated {
+		for _, rigName := range rigs {
+			if result, ok := polecatResults[rigName]; ok {
+				services = append(services, ServiceStatus{Name: result.name, Type: constants.RolePolecat, Rig: rigName, OK: result.ok, Detail: result.detail})
+				if !result.ok {
+					allOK = false
+				}
 			}
 		}
 	}
@@ -885,12 +896,13 @@ type agentResultMsg struct {
 // Mechanic is intentionally NOT included here: it is a town-level role
 // (see `TownLevelRoles` in internal/beads/agent_ids.go). A single town
 // mechanic patrols logs for the whole town, including all rigs.
-func startRigAgentsWithPrefetch(rigNames []string, prefetchedRigs map[string]*rig.Rig, rigErrors map[string]error) (witnessResults, refineryResults, architectResults, qaResults map[string]agentStartResult) {
+func startRigAgentsWithPrefetch(rigNames []string, prefetchedRigs map[string]*rig.Rig, rigErrors map[string]error, orchestrated bool) (witnessResults, refineryResults, architectResults, qaResults, polecatResults map[string]agentStartResult) {
 	n := len(rigNames)
 	witnessResults = make(map[string]agentStartResult, n)
 	refineryResults = make(map[string]agentStartResult, n)
 	architectResults = make(map[string]agentStartResult, n)
 	qaResults = make(map[string]agentStartResult, n)
+	polecatResults = make(map[string]agentStartResult, n)
 
 	if n == 0 {
 		return
@@ -903,6 +915,9 @@ func startRigAgentsWithPrefetch(rigNames []string, prefetchedRigs map[string]*ri
 		refineryResults[rigName] = agentStartResult{name: "Refinery (" + rigName + ")", ok: false, detail: errDetail}
 		architectResults[rigName] = agentStartResult{name: "Architect (" + rigName + ")", ok: false, detail: errDetail}
 		qaResults[rigName] = agentStartResult{name: "QA (" + rigName + ")", ok: false, detail: errDetail}
+		if orchestrated {
+			polecatResults[rigName] = agentStartResult{name: "Polecat (" + rigName + ")", ok: false, detail: errDetail}
+		}
 	}
 
 	if len(prefetchedRigs) == 0 {
@@ -916,12 +931,24 @@ func startRigAgentsWithPrefetch(rigNames []string, prefetchedRigs map[string]*ri
 	for rigName, r := range prefetchedRigs {
 		if archResult, ok := architectResults[rigName]; ok && !archResult.ok {
 			qaResults[rigName] = agentStartResult{name: "QA (" + rigName + ")", ok: false, detail: "skipped (architect startup failed)"}
+			if orchestrated {
+				polecatResults[rigName] = agentStartResult{name: "Polecat (" + rigName + ")", ok: false, detail: "skipped (architect startup failed)"}
+			}
 			continue
 		}
 		qaResults[rigName] = upStartQA(rigName, r)
 	}
 
-	return witnessResults, refineryResults, architectResults, qaResults
+	if orchestrated {
+		for rigName, r := range prefetchedRigs {
+			if archResult, ok := architectResults[rigName]; ok && !archResult.ok {
+				continue
+			}
+			polecatResults[rigName] = upStartRigPolecat(rigName, r)
+		}
+	}
+
+	return witnessResults, refineryResults, architectResults, qaResults, polecatResults
 }
 
 func startRigAgentPhase(rigNames []string, prefetchedRigs map[string]*rig.Rig, role string) map[string]agentStartResult {
@@ -1128,6 +1155,72 @@ func upStartQA(rigName string, r *rig.Rig) agentStartResult {
 		return agentStartResult{name: name, ok: false, detail: err.Error()}
 	}
 	return agentStartResult{name: name, ok: true, detail: sessionID}
+}
+
+// upStartRigPolecat starts the orchestrated pipeline polecat for a rig.
+func upStartRigPolecat(rigName string, r *rig.Rig) agentStartResult {
+	name := "Polecat (" + rigName + ")"
+
+	if !r.GetBoolConfig("auto_start_on_up") && !r.GetBoolConfig("auto_start_on_boot") {
+		townRoot := filepath.Dir(r.Path)
+		if blocked, reason := IsRigParkedOrDocked(townRoot, rigName); blocked {
+			return agentStartResult{name: name, ok: true, detail: fmt.Sprintf("skipped (rig %s)", reason)}
+		}
+	}
+
+	sessionID := session.RigPolecatSessionName(session.PrefixFor(rigName), rigName)
+	polecatDir := filepath.Join(r.Path, constants.DirPolecat)
+	if err := os.MkdirAll(polecatDir, 0755); err != nil {
+		return agentStartResult{name: name, ok: false, detail: err.Error()}
+	}
+
+	townRoot := filepath.Dir(r.Path)
+	sp := session.GetDefaultProvider(townRoot)
+	ctx := context.Background()
+
+	if running, _ := sp.Exists(ctx, sessionID); running {
+		_ = session.RepairTownRoleRigIdentity(ctx, sp, sessionID, polecatDir, constants.RolePolecat, rigName)
+		return agentStartResult{name: name, ok: true, detail: sessionID}
+	}
+
+	orchRunning, _, _ := orchestrator.IsRunning(townRoot)
+
+	_, err := session.StartSession(ctx, sp, &session.SessionConfig{
+		SessionID:    sessionID,
+		WorkDir:      polecatDir,
+		Role:         constants.RolePolecat,
+		TownRoot:     townRoot,
+		RigPath:      r.Path,
+		RigName:      rigName,
+		Orchestrated: orchestrator.OrchestratedForRole(orchRunning, constants.RolePolecat),
+		Beacon:       session.BeaconConfig{Recipient: "polecat", Sender: "daemon", Topic: "startup"},
+		WaitForAgent: true,
+		WaitFatal:    true,
+		ReadyDelay:   true,
+		AutoRespawn:  true,
+	})
+	if err != nil {
+		return agentStartResult{name: name, ok: false, detail: err.Error()}
+	}
+	return agentStartResult{name: name, ok: true, detail: sessionID}
+}
+
+// stopLegacyTownPolecat stops the town-level hq-polecat session when per-rig pipeline polecats are used.
+func stopLegacyTownPolecat(townRoot string) {
+	const legacySession = "hq-polecat"
+	sp := session.GetDefaultProvider(townRoot)
+	ctx := context.Background()
+	running, err := sp.Exists(ctx, legacySession)
+	if err != nil || !running {
+		return
+	}
+	if err := sp.Stop(ctx, legacySession, true); err != nil {
+		fmt.Fprintf(os.Stderr, "%s could not stop legacy %s: %v\n", style.Warning.Render("!"), legacySession, err)
+		return
+	}
+	if !upQuiet {
+		fmt.Printf("%s Stopped legacy %s (per-rig pipeline polecats)\n", style.SuccessPrefix, legacySession)
+	}
 }
 
 // upStartPlanner starts a planner and returns a result struct.

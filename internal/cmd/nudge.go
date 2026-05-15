@@ -482,7 +482,7 @@ func runNudge(cmd *cobra.Command, args []string) (retErr error) {
 		target = session.PlannerSessionName()
 	case constants.RoleMechanic:
 		target = session.MechanicSessionName()
-	case constants.RoleWitness, constants.RoleRefinery, constants.RoleArchitect, constants.RoleQA:
+	case constants.RoleWitness, constants.RoleRefinery, constants.RoleArchitect, constants.RoleQA, constants.RolePolecat:
 		// These need the current rig
 		roleInfo, err := GetRole()
 		if err != nil {
@@ -501,6 +501,12 @@ func runNudge(cmd *cobra.Command, args []string) (retErr error) {
 			target = session.ArchitectSessionName(rigPrefix, roleInfo.Rig)
 		case constants.RoleQA:
 			target = session.QASessionName(rigPrefix, roleInfo.Rig)
+		case constants.RolePolecat:
+			if roleInfo.Polecat == "" {
+				target = session.RigPolecatSessionName(rigPrefix, roleInfo.Rig)
+			} else {
+				target = session.PolecatSessionName(rigPrefix, roleInfo.Polecat)
+			}
 		}
 	}
 
@@ -944,6 +950,8 @@ func addressToAgentBeadID(address string) string {
 		return session.ArchitectSessionName(session.PrefixFor(rig), rig)
 	case constants.RoleQA:
 		return session.QASessionName(session.PrefixFor(rig), rig)
+	case constants.RolePolecat:
+		return session.RigPolecatSessionName(session.PrefixFor(rig), rig)
 	default:
 		// Assume polecat
 		if strings.HasPrefix(role, "crew/") {

@@ -888,6 +888,14 @@ func (d *Daemon) heartbeat(state *State) {
 		d.killQASessions()
 	}
 
+	// 5.6.2. Ensure rig pipeline polecats when orchestrator is running (rig-flow).
+	orchestrated, _, _ := orchestrator.IsRunning(d.config.TownRoot)
+	if orchestrated {
+		d.ensureRigPolecatsRunning()
+	} else {
+		d.killRigPolecatSessions()
+	}
+
 	// 5.6.5. Ensure Mechanics are running for all rigs (restart if dead)
 	if d.isPatrolActive("mechanic") {
 		if p := d.checkPressure("mechanic"); !p.OK {
@@ -1918,6 +1926,88 @@ func (d *Daemon) ensureQARunning(rigName string) {
 	d.metrics.recordRestart(d.ctx, "qa")
 	telemetry.RecordDaemonRestart(d.ctx, "qa-"+rigName)
 	d.logger.Printf("QA session for %s started successfully", rigName)
+}
+
+// ensureRigPolecatsRunning ensures orchestrated pipeline polecats are running per rig.
+func (d *Daemon) ensureRigPolecatsRunning() {
+	rigs := d.getKnownRigs()
+	if len(rigs) > 0 {
+		d.stopLegacyTownPolecatSession()
+	}
+	d.rigPool.runPerRig(d.ctx, rigs, func(ctx context.Context, rigName string) error {
+		d.ensureRigPolecatRunning(rigName)
+		return nil
+	})
+}
+
+// ensureRigPolecatRunning ensures the pipeline polecat for a specific rig is running.
+func (d *Daemon) ensureRigPolecatRunning(rigName string) {
+	if operational, reason := d.isRigOperational(rigName); !operational {
+		d.logger.Printf("Skipping rig polecat auto-start for %s: %s", rigName, reason)
+		name := session.RigPolecatSessionName(session.PrefixFor(rigName), rigName)
+		if exists, _ := d.sp.Exists(d.ctx, name); exists {
+			d.logger.Printf("Killing leftover rig polecat %s (rig %s)", name, reason)
+			_ = d.sp.Stop(d.ctx, name, true)
+		}
+		return
+	}
+
+	sessionID := session.RigPolecatSessionName(session.PrefixFor(rigName), rigName)
+	polecatDir := filepath.Join(d.config.TownRoot, rigName, constants.DirPolecat)
+	_ = os.MkdirAll(polecatDir, 0755)
+
+	if running, _ := d.sp.Exists(d.ctx, sessionID); running {
+		_ = session.RepairTownRoleRigIdentity(d.ctx, d.sp, sessionID, polecatDir, constants.RolePolecat, rigName)
+		return
+	}
+
+	_, err := session.StartSession(d.ctx, d.sp, &session.SessionConfig{
+		SessionID:    sessionID,
+		WorkDir:      polecatDir,
+		Role:         constants.RolePolecat,
+		TownRoot:     d.config.TownRoot,
+		RigPath:      filepath.Join(d.config.TownRoot, rigName),
+		RigName:      rigName,
+		Orchestrated: true,
+		Beacon:       session.BeaconConfig{Recipient: "polecat", Sender: "daemon", Topic: "patrol"},
+		WaitForAgent: false,
+		AutoRespawn:  true,
+	})
+	if err != nil {
+		d.logger.Printf("Error starting rig polecat for %s: %v", rigName, err)
+		return
+	}
+
+	d.metrics.recordRestart(d.ctx, "polecat")
+	telemetry.RecordDaemonRestart(d.ctx, "polecat-"+rigName)
+	d.logger.Printf("Rig polecat session for %s started successfully", rigName)
+}
+
+// stopLegacyTownPolecatSession stops town hq-polecat when per-rig pipeline polecats are active.
+func (d *Daemon) stopLegacyTownPolecatSession() {
+	const legacySession = "hq-polecat"
+	if exists, _ := d.sp.Exists(d.ctx, legacySession); !exists {
+		return
+	}
+	d.logger.Printf("Stopping legacy %s (per-rig pipeline polecats)", legacySession)
+	if err := d.sp.Stop(d.ctx, legacySession, true); err != nil {
+		d.logger.Printf("Error stopping legacy %s: %v", legacySession, err)
+	}
+}
+
+// killRigPolecatSessions kills rig pipeline polecat sessions when orchestrator is not running.
+func (d *Daemon) killRigPolecatSessions() {
+	d.rigPool.runPerRig(d.ctx, d.getKnownRigs(), func(ctx context.Context, rigName string) error {
+		name := session.RigPolecatSessionName(session.PrefixFor(rigName), rigName)
+		exists, _ := d.sp.Exists(ctx, name)
+		if exists {
+			d.logger.Printf("Killing rig polecat %s (orchestrator not running)", name)
+			if err := d.sp.Stop(ctx, name, true); err != nil {
+				d.logger.Printf("Error killing %s session: %v", name, err)
+			}
+		}
+		return nil
+	})
 }
 
 // ensureMechanicsRunning ensures mechanic agents are running for configured rigs.

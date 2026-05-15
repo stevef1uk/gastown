@@ -29,7 +29,7 @@ The orchestrator adds a **central coordinator** that answers one question at a t
 |------|---------|
 | **Workflow template** | YAML FSM definition (e.g. `rig-flow`) loaded from `{townRoot}/orchestrator/templates/` |
 | **Workflow instance** | A running execution of a template (e.g. `wf-1`) with a current state |
-| **State** | A node in the FSM: one `role`, `instructions`, and `transitions` keyed by outcome |
+| **State** | A node in the FSM: one `role`, optional `prompt_file`, `instructions`, and `transitions` keyed by outcome |
 | **Orchestrated agent** | `gt-agent` started with `--orchestrated`; polls the orchestrator instead of `gatherWork()` |
 
 At any moment, exactly **one role** matches the current state. Other agents poll and
@@ -54,132 +54,208 @@ flowchart LR
 
 ## Legacy vs orchestrator
 
-| Concern | Legacy | Orchestrator (current) |
-|---------|--------|------------------------|
-| **System prompt** | `buildSystemPrompt` + `internal/templates/roles/*.md.tmpl` + `gt prime --hook` | Short inline prompt + YAML `instructions` only |
-| **Work assignment** | Hook, mail, nudges, `gt sling` | `fetch_task`: match agent ID to `state.role` |
+| Concern | Legacy | Orchestrator |
+|---------|--------|--------------|
+| **System prompt** | `buildSystemPrompt` + role `*.md.tmpl` + `gt prime --hook` | Per-state `prompt_file` under `orchestrator/prompts/` + short orchestrator wrapper |
+| **Work assignment** | Hook, mail, nudges, `gt sling` | `fetch_task`: match `agent_id` to `state.role` |
 | **Pipeline definition** | Mayor template + `.beads/formulas/*.toml` | YAML in `orchestrator/templates/` (e.g. `rig-flow.yaml`) |
-| **Who starts the pipeline** | Mayor slings / creates project bead | Manual: `gt mayor workflow start <template>` |
-| **State across restart** | Beads/mail persist | Workflow instances in memory only (today) |
+| **Who starts the pipeline** | Mayor slings / beads | `gt mayor workflow start` or optional auto-start on `gt up` |
+| **State across restart** | Beads/mail persist | `{townRoot}/orchestrator/instances.json` |
 
 The orchestrator **does not replace** town or rig beads, convoys, or molecules. It is the
-**structured rig delivery pipeline** for projects like a registered rig with SPEC,
-architecture, plan, and implementation beads.
+**structured rig delivery pipeline** for a registered rig with SPEC, architecture, plan,
+and implementation beads.
 
 See [Molecules](molecules.md) for formula/wisp workflows used elsewhere.
 
-## What you configure
+## Configuration
 
-**Town templates** (runtime, not embedded in the binary):
+### Town settings (`~/gt/settings/config.json`)
+
+```json
+"orchestrator": {
+  "default_workflow": "rig-flow",
+  "auto_start": false
+}
+```
+
+| Field | Meaning |
+|-------|---------|
+| `default_workflow` | Template id to start when `auto_start` is true (e.g. `rig-flow`) |
+| `auto_start` | If true, `gt up` and `gt rig add` call `MaybeAutoStartWorkflow` when no active instance exists for that template/rig |
+
+When `auto_start` is false (default), you must start a workflow explicitly:
+
+```bash
+gt mayor workflow start rig-flow --rig testgt2
+```
+
+Other town settings that affect orchestrated agents:
+
+| Setting | Effect |
+|---------|--------|
+| `session_transport` | `nats` required for orchestrator MCP (`gt.orchestrator.mcp`) |
+| `role_agents` | Which LLM/runtime each role uses (unchanged from legacy) |
+
+### Town assets (templates + prompts)
+
+Runtime files live under `{townRoot}/orchestrator/`:
 
 ```
-{townRoot}/orchestrator/templates/
-  rig-flow.yaml      # Mayor → Architect → Planner → Polecat → QA
-  build-spec.yaml    # Shorter bootstrap pipeline
-  sample.yaml        # hello-world demo
+orchestrator/
+  templates/rig-flow.yaml
+  prompts/rig-flow/kickoff.md
+  prompts/rig-flow/design.md
+  ...
+  instances.json          # persisted workflow state (Phase 2)
 ```
 
-**Town settings** (future): `orchestrator.default_workflow`, `orchestrator.auto_start`
-in `settings/config.json`.
+**Source of truth in gastown:** `internal/orchestrator/town/` — installed by `make install`,
+`gt install`, or `gt orchestrator sync --update-changed`.
 
-**Gastown-bundled examples** under `internal/orchestrator/templates/` must use the same
-schema as town templates (`role:`, not `agent_role:`). See the technical doc.
+### Environment (optional)
+
+| Variable | Default | Meaning |
+|----------|---------|---------|
+| `GT_ORCH_POLL_INTERVAL` | `15s` | Idle poll interval for `--orchestrated` agents |
+| `GT_SESSION_TRANSPORT` | from settings | Town session transport (use `nats` with orchestrator) |
+
+## Which sessions to watch (rig-flow on `testgt2`)
+
+Pipeline agents use **orchestrated** `gt-agent` with rig-scoped `agent_id` where required.
+Tail the **rig-scoped** session, not the town `hq-*` duplicate when a single rig is registered.
+
+| FSM state | Role | Session / log to tail | `fetch_task` agent_id |
+|-----------|------|------------------------|------------------------|
+| kickoff | mayor | `~/gt/mayor/typescript` | `mayor` |
+| design | architect | `~/gt/testgt2/architect/typescript` | `testgt2/architect` |
+| planning | planner | `~/gt/planner/typescript` | `planner` (town-level) |
+| implementation | polecat | `~/gt/testgt2/polecat/typescript` | `testgt2/polecat` |
+| qa_review | qa | `~/gt/testgt2/qa/typescript` | `testgt2/qa` |
+
+**Do not confuse with:**
+
+| Path | Why it is wrong for rig-flow |
+|------|------------------------------|
+| `~/gt/qa/typescript` | Town `hq-qa`: `agent_id="qa"` — does **not** match when workflow has `rig: testgt2` |
+| `~/gt/testgt2/polecats/*/typescript` | Legacy per-bead polecats (witness/sling); **not** the orchestrator implementation step |
+| `~/gt/testgt2/mayor/rig/typescript` | Often refinery/legacy noise committed into the worktree — not the orchestrator polecat |
+
+Orchestrator service log:
+
+```bash
+tail -f ~/gt/logs/orchestrator.log
+```
 
 ## What agents do when orchestrated
 
-Pipeline agents (Mayor, Architect, Planner, Polecat, QA) use the **orchestrator-only**
-path when the service is running. They do **not** run the legacy patrol loop or call the
-LLM while idle.
+**Pipeline roles** (mayor, architect, planner, polecat, qa) use orchestrator dispatch when
+the service is running. They do **not** run legacy `gatherWork()` / `gt prime` patrol while idle.
 
 1. **Poll** NATS (`gt.orchestrator.mcp`) for `fetch_task`
-2. If **no task** — sleep (configurable interval) and poll again. **No LLM call.**
-3. If a task matches their role:
-   - Load **system prompt** from the state’s prompt file (e.g. `orchestrator/prompts/rig-flow/design.md`)
-   - Send a **user prompt** to complete **this step only** (one FSM state = one task)
-   - Run any `CMD:` blocks, then return **structured output** (`outcome`, `summary`, …)
-   - Call `complete_task` with the outcome and return to step 1
+2. If **no task** — sleep (`GT_ORCH_POLL_INTERVAL`, default 15s). **No LLM call.**
+3. If a task matches:
+   - Load **system prompt** from `prompt_file` (e.g. `orchestrator/prompts/rig-flow/design.md`)
+   - Run **CMD:** lines, then JSON `outcome` / `summary` when the step is done
+   - Call `complete_task`; FSM advances if the outcome matches a transition key
 
-Prompt files are kept **separate from YAML** so each step can be focused and sized for
-less capable models. Content is lifted from legacy role templates but trimmed to the
-current state only.
+**Patrol roles** (witness, refinery, mechanic, deacon) are **not** orchestrated — they keep
+the legacy patrol loop even when the orchestrator is running.
 
-**Patrol roles** (Witness, Refinery, Mechanic, Deacon) are not part of the rig pipeline
-FSM unless given their own workflow. They should not use `--orchestrated` idle polling
-with an LLM; Mechanic may remain a deterministic shell patrol.
+## Operator commands
 
-## Operator workflow
+From town root (`~/gt`):
 
-All `gt` and `bd` commands for a town run from the town root (e.g. `/home/stevef/gt`).
+```bash
+# Town + orchestrator service
+gt up
+gt orchestrator status
+gt orchestrator sync --update-changed   # refresh templates/prompts from gastown binary
 
-1. **Start the town** (with NATS session transport if configured):
+# Workflow lifecycle
+gt mayor workflow start rig-flow --rig testgt2
+gt mayor workflow status
+gt mayor workflow status wf-1
+gt mayor workflow complete wf-1 success   # manual advance if stuck
+
+# Observe
+tail -f logs/orchestrator.log
+```
+
+After gastown code changes:
+
+```bash
+gt down
+cd /path/to/gastown && make install
+cd ~/gt && gt up
+gt orchestrator sync --update-changed
+# Workflow persists in orchestrator/instances.json — usually no need to re-start unless you want a fresh wf-*
+```
+
+## Example: `rig-flow` on `testgt2`
+
+| State | Role | Main artifacts / actions |
+|-------|------|---------------------------|
+| kickoff | mayor | Rig registered, `testgt2/mayor/rig/SPEC.md` |
+| design | architect | `architecture.md` (no `backend/` code) |
+| planning | planner | `plan.md` + `bd create` beads in mayor/rig workdir |
+| implementation | polecat (`~/gt/polecat`) | Claim/close one implementation bead; `backend/*.py` |
+| qa_review | qa (`testgt2/qa`) | Review; outcomes `task_passed`, `all_passed`, or `failure` |
+
+Template variables such as `{{rig}}` are substituted in prompts and instructions when the
+workflow is started with `--rig testgt2`.
+
+**Implementation success** requires `complete_task outcome=success` (polecat must actually
+finish a bead). **Failure** on implementation loops in `implementation` (see `rig-flow.yaml`).
+
+## Troubleshooting
+
+### QA never gets a task (`ORCHESTRATED` only, no `Task wf=...`)
+
+1. Check workflow state — QA only runs in `qa_review`:
    ```bash
-   cd ~/gt
-   gt up
+   gt mayor workflow status
+   cat ~/gt/orchestrator/instances.json
    ```
-   Confirm orchestrator is running: `gt orchestrator status` or `daemon/orchestrator.pid`.
-
-2. **Start a workflow** (required today; not automatic on `gt up`):
-   ```bash
-   gt mayor workflow start rig-flow
+2. If `current_state` is still `implementation`, polecat has not reported `success` yet.
+   Tail `~/gt/polecat/typescript`, not `testgt2/polecats/*`.
+3. Confirm you tail **`testgt2/qa/typescript`**, not `~/gt/qa/typescript` (`agent_id` must be `testgt2/qa`).
+4. In `logs/orchestrator.log`, look for:
+   ```text
+   Checking WF wf-1 state qa_review role qa against testgt2/qa
    ```
+   If you only see `implementation role polecat against testgt2/qa`, the FSM is not in QA yet.
 
-3. **Observe progress**:
-   ```bash
-   tail -f logs/orchestrator.log
-   ```
-   States should advance: `kickoff` → `design` → `planning` → `implementation` → `qa_review` → `completed`.
+### Planner rejects commands / false success
 
-4. **After gastown code changes**:
-   ```bash
-   gt down
-   cd /path/to/gastown && make install
-   cd ~/gt && gt up
-   gt mayor workflow start rig-flow   # again, until persistence lands
-   ```
+- Do not use `gt bd add` — use `cd <rig>/mayor/rig && bd create --type task --title "..."`.
+- Guards reject `backend/` in **write** commands but allow it in bead titles and read-only `head`/`cat`.
 
-## Example: testgt2 rig-flow
+### Polecat stuck on `gt bd list -t`
 
-Template `rig-flow` (in the town's `orchestrator/templates/rig-flow.yaml`) drives:
+- `gt bd` is **not** the beads CLI. Use bare `bd` from `{rig}/mayor/rig`.
+- Orchestrator polecat is **`~/gt/polecat`**, not named polecats under `polecats/`.
 
-| State | Role | Main artifact |
-|-------|------|----------------|
-| kickoff | mayor | Rig registered, SPEC present |
-| design | architect | `testgt2/mayor/rig/architecture.md` |
-| planning | planner | Beads + `plan.md` |
-| implementation | polecat | Claim/close implementation beads |
-| qa_review | qa | Verify; loop or complete |
+### Workflow lost after orchestrator restart
 
-Variables such as `rig: testgt2` are planned but not yet substituted in instructions.
+Instances persist in `orchestrator/instances.json`. If missing, run `gt mayor workflow start rig-flow --rig <rig>` again.
+
+### Wrong files committed to `testgt2` git remote
+
+Orchestrator polecat should only commit under `{rig}/mayor/rig/` (ideally `backend/` only).
+Avoid `git add .` (commits `typescript`, `.claude/`, etc.). Legacy sling polecats use separate
+git branches under `origin/polecat/*` — distinct from `main`.
 
 ## Current limitations
 
-Honest status as of the `mcp-orchestrator` branch:
-
-- **Persistence** — workflow instances saved to `{townRoot}/orchestrator/instances.json` (survives orchestrator restart)
-- **Optional auto-start** — `orchestrator.auto_start` + `default_workflow` in `settings/config.json`; `gt up` and `gt rig add` call `MaybeAutoStartWorkflow`
-- **Per-state prompt files** — `prompt_file` in FSM YAML; assets synced from `internal/orchestrator/town/`
-- **Multi-turn CMD loop** — agents may run several CMD turns per state; structured JSON outcome when no CMD lines remain
-- **Legacy path still reachable** — witness-spawned polecats and some dual hq/rig agents (Phase 3 topology)
-- **Outcome mismatch** — QA states may expect `task_passed` / `all_passed` / `failure`; agents often emit `success` / `fail` (aliases partially mapped)
-- **Duplicate town vs rig agents** — e.g. `hq-qa` vs `testgt2/qa` when multiple rigs exist
-- **Not Cursor IDE MCP** — orchestrator speaks JSON-RPC on NATS for `gt-agent`, not Claude/Cursor `mcpServers`
-
-## Where we are going
-
-Target design (confirmed):
-
-1. **Per-state prompt files** — `orchestrator/prompts/{template}/{state}.md`, referenced from FSM YAML
-2. **One task per LLM call** — structured output, then `complete_task`, then poll again
-3. **Idle = poll + sleep only** — no LLM while waiting for work
-4. **Orchestrator-only pipeline** — no parallel legacy `gatherWork` / prime patrol for pipeline roles
-5. **Persistence + auto-start** (Phase 2) — survive restart; optional default workflow on `gt up`
-6. **Rig-scoped matching** — one architect/qa/polecat session per rig in a workflow
-
-See [Orchestrator (technical)](../design/orchestrator.md) for the implementation roadmap.
+- **QA outcome names** — FSM uses `task_passed` / `all_passed` / `failure`; agents often emit `success` / `fail` (partial alias mapping; prefer explicit QA outcomes in prompts).
+- **Legacy polecats** — witness may still spawn per-bead polecats under `{rig}/polecats/`; paused from `gt up --restore` while `rig-flow` is active, but sling can still create work outside the FSM.
+- **hq duplicate sessions** — with one rig, town `hq-architect` / `hq-qa` are skipped; with zero rigs they would still start.
+- **Not Cursor IDE MCP** — orchestrator uses NATS JSON-RPC for `gt-agent`, not Claude/Cursor `mcpServers`.
 
 ## Related reading
 
 - [Orchestrator (technical)](../design/orchestrator.md)
-- [Gas Town Architecture](../design/architecture.md) — beads levels, role storage
-- [Molecules](molecules.md) — formulas and wisps
-- [Overview](../overview.md) — role taxonomy
+- [Gas Town Architecture](../design/architecture.md)
+- [Molecules](molecules.md)
+- [Overview](../overview.md)

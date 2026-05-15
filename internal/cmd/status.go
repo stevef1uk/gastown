@@ -1944,6 +1944,17 @@ func discoverRigAgents(allSessions map[string]bool, r *rig.Rig, crews []string, 
 		})
 	}
 
+	// Pipeline polecat (orchestrated rig-flow; distinct from per-bead workers in polecats/)
+	polecatDir := filepath.Join(r.Path, constants.DirPolecat)
+	if _, err := os.Stat(polecatDir); err == nil {
+		defs = append(defs, agentDef{
+			name:    constants.RolePolecat + " (pipeline)",
+			address: r.Name + "/polecat",
+			session: session.RigPolecatSessionName(session.PrefixFor(r.Name), r.Name),
+			role:    constants.RolePolecat,
+		})
+	}
+
 	// Polecats
 	for _, name := range r.Polecats {
 		defs = append(defs, agentDef{

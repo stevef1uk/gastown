@@ -797,6 +797,12 @@ Use crew for your own workspace. Polecats are for batch work dispatch.
 		return nil, fmt.Errorf("creating qa dir: %w", err)
 	}
 
+	// Create polecat directory for orchestrated rig-flow pipeline agent (no clone needed).
+	polecatPath := filepath.Join(rigPath, constants.DirPolecat)
+	if err := os.MkdirAll(polecatPath, 0755); err != nil {
+		return nil, fmt.Errorf("creating polecat dir: %w", err)
+	}
+
 	// Create polecats directory with agent settings scaffold.
 	// Settings are passed to the agent via --settings flag (Claude) or installed
 	// in workDir (other agents). Scaffolding here ensures the settings file exists

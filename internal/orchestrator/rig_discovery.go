@@ -7,7 +7,7 @@ import (
 	"github.com/steveyegge/gastown/internal/config"
 )
 
-// DiscoverTownPolecatRig resolves the rig for town hq-polecat orchestrated fetch_task.
+// DiscoverTownPolecatRig resolves the rig for legacy town hq-polecat when GT_RIG is unset.
 // Precedence: envRig, identityRig, sole town rig, active workflow instance rig var.
 func DiscoverTownPolecatRig(townRoot, envRig, identityRig string) string {
 	if envRig != "" {

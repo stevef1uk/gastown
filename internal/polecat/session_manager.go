@@ -123,6 +123,8 @@ func (m *SessionManager) SessionName(polecatName string) string {
 		sessionName = session.ArchitectSessionName(prefix, m.rig.Name)
 	case "qa", m.rig.Name+"-qa":
 		sessionName = session.QASessionName(prefix, m.rig.Name)
+	case "polecat", m.rig.Name + "-polecat":
+		sessionName = session.RigPolecatSessionName(prefix, m.rig.Name)
 	default:
 		sessionName = session.PolecatSessionName(prefix, polecatName)
 	}

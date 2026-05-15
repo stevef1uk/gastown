@@ -665,6 +665,16 @@ func resolveRoleToSession(role string) (string, error) {
 		}
 		return session.QASessionName(session.PrefixFor(rig), rig), nil
 
+	case constants.RolePolecat:
+		rig := os.Getenv("GT_RIG")
+		if rig == "" {
+			return "", fmt.Errorf("cannot determine rig - set GT_RIG or run from rig context")
+		}
+		if os.Getenv("GT_POLECAT") != "" {
+			return session.PolecatSessionName(session.PrefixFor(rig), os.Getenv("GT_POLECAT")), nil
+		}
+		return session.RigPolecatSessionName(session.PrefixFor(rig), rig), nil
+
 	case constants.RolePlanner:
 		return session.PlannerSessionName(), nil
 
@@ -714,6 +724,8 @@ func resolvePathToSession(path string) (string, error) {
 			return session.ArchitectSessionName(session.PrefixFor(rig), rig), nil
 		case constants.RoleQA:
 			return session.QASessionName(session.PrefixFor(rig), rig), nil
+		case constants.RolePolecat:
+			return session.RigPolecatSessionName(session.PrefixFor(rig), rig), nil
 		case constants.RoleCrew:
 			// Just "<rig>/crew" without a name - need more info
 			return "", fmt.Errorf("crew path requires name: %s/crew/<name>", rig)

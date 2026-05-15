@@ -29,7 +29,7 @@ func IsPatrolRole(role string) bool {
 
 // OrchestratedForRole is true when the agent should run gt-agent --orchestrated.
 // Patrol roles (witness, refinery, mechanic, deacon, …) always return false.
-// Per-bead polecat sessions are never orchestrated; only town hq-polecat is.
+// Per-bead polecat sessions are never orchestrated; rig pipeline polecats and legacy town hq-polecat are.
 func OrchestratedForRole(orchestratorRunning bool, role string) bool {
 	if !orchestratorRunning || IsPatrolRole(role) {
 		return false
@@ -37,7 +37,7 @@ func OrchestratedForRole(orchestratorRunning bool, role string) bool {
 	return IsPipelineRole(role)
 }
 
-// OrchestratedForTownPolecat is true for the single town-level rig-flow polecat session.
+// OrchestratedForTownPolecat is true for legacy town hq-polecat when no rig-scoped sessions exist.
 func OrchestratedForTownPolecat(orchestratorRunning bool) bool {
 	return orchestratorRunning
 }

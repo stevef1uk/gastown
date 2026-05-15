@@ -191,6 +191,15 @@ func runMayorWorkflowStart(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	if rig := vars["rig"]; rig != "" {
+		if running, _, _ := orchestrator.IsRunning(townRoot); running {
+			mgr := orchestrator.NewManager(townRoot)
+			if mgr.HasActiveWorkflow(templateID, rig) {
+				return fmt.Errorf("workflow %q already active for rig %q (check: gt mayor workflow status)", templateID, rig)
+			}
+		}
+	}
+
 	workflowID, err := orchestrator.StartWorkflow(townRoot, templateID, vars)
 	if err != nil {
 		return err

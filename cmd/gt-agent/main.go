@@ -462,6 +462,12 @@ func run() error {
 				rig = discovered
 				os.Setenv("GT_RIG", rig)
 			}
+			// Stale hq-polecat sessions may have empty GIT_AUTHOR_NAME (testgt2/polecats/).
+			if rig != "" && polecat == "" && os.Getenv("GIT_AUTHOR_NAME") == "" {
+				author := rig + "/polecat"
+				os.Setenv("GIT_AUTHOR_NAME", author)
+				os.Setenv("BD_ACTOR", author)
+			}
 		}
 		return runOrchestrated(ctx, client, townRoot, roleCanonical, rig, sessionName, stateFile, state)
 	}
@@ -1308,13 +1314,15 @@ var inlineCMDMarkerRE = regexp.MustCompile(`(?:\s+CMD:|\nCMD:)\s*`)
 
 var gluedPathCMDRE = regexp.MustCompile(`/CMD:\s*`)
 var gluedExtCMDRE = regexp.MustCompile(`(\.[a-zA-Z0-9]{2,8})CMD:\s*`)
+var gluedQuoteCMDRE = regexp.MustCompile(`'CMD:\s*`)
 
-// normalizeGluedCMDMarkers turns model glitches like rig/CMD: or SPEC.mdCMD:
-// into newline-separated CMD markers so splitInlineCMDs can separate them
-// without eating filename extensions.
+// normalizeGluedCMDMarkers turns model glitches like rig/CMD:, SPEC.mdCMD:, or
+// 'open'CMD: into newline-separated CMD markers so splitInlineCMDs can separate
+// them without eating filename extensions or shell quoting.
 func normalizeGluedCMDMarkers(cmd string) string {
 	cmd = gluedPathCMDRE.ReplaceAllString(cmd, "\nCMD: ")
 	cmd = gluedExtCMDRE.ReplaceAllString(cmd, "$1\nCMD: ")
+	cmd = gluedQuoteCMDRE.ReplaceAllString(cmd, "'\nCMD: ")
 	return cmd
 }
 

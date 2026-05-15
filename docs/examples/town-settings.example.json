@@ -100,6 +100,9 @@
 
     "disabled_patrols": ["doctor_dog", "compactor_dog"],
 
+    "_comment_orchestrator": "Workflow FSM: see docs/concepts/orchestrator.md",
+    "_comment_orchestrator_default": "Template id started when auto_start is true (e.g. rig-flow)",
+    "_comment_orchestrator_auto": "If true, gt up and gt rig add call MaybeAutoStartWorkflow when no active instance exists",
     "orchestrator": {
         "default_workflow": "rig-flow",
         "auto_start": false

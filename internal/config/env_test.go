@@ -52,6 +52,21 @@ func TestAgentEnv_TownPolecat(t *testing.T) {
 	assertNotSet(t, env, "GT_POLECAT")
 }
 
+func TestAgentEnv_RigPolecat(t *testing.T) {
+	t.Parallel()
+	env := AgentEnv(AgentEnvConfig{
+		Role:     "polecat",
+		Rig:      "testgt2",
+		TownRoot: "/town",
+	})
+
+	assertEnv(t, env, "GT_ROLE", "testgt2/polecat")
+	assertEnv(t, env, "GT_RIG", "testgt2")
+	assertEnv(t, env, "BD_ACTOR", "testgt2/polecat")
+	assertEnv(t, env, "GIT_AUTHOR_NAME", "testgt2/polecat")
+	assertNotSet(t, env, "GT_POLECAT")
+}
+
 func TestAgentEnv_Polecat(t *testing.T) {
 	t.Parallel()
 	env := AgentEnv(AgentEnvConfig{

@@ -94,6 +94,16 @@ func QASessionName(rigPrefix, rigName string) string {
 	return fmt.Sprintf("%s-%s-qa", prefix, rigName)
 }
 
+// RigPolecatSessionName returns the session name for a rig's orchestrated pipeline polecat.
+// Distinct from PolecatSessionName, which names per-bead worker sessions (gt-<name>).
+func RigPolecatSessionName(rigPrefix, rigName string) string {
+	prefix := rigPrefix
+	if rigName == "" || rigName == rigPrefix {
+		return fmt.Sprintf("%s-polecat", prefix)
+	}
+	return fmt.Sprintf("%s-%s-polecat", prefix, rigName)
+}
+
 // CrewSessionName returns the session name for a crew worker in a rig.
 // rigPrefix is the rig's beads prefix (e.g., "gt" for gastown, "bd" for beads).
 func CrewSessionName(rigPrefix, name string) string {

@@ -3,8 +3,10 @@
 Technical reference for the Gas Town workflow FSM and MCP service introduced on the
 `mcp-orchestrator` branch. For operators, see [Orchestrator (concept)](../concepts/orchestrator.md).
 
-**Status:** Partial implementation. Core FSM and NATS MCP work; parity with the legacy
-mayor pipeline is incomplete.
+**Status:** Phases 1–3 implemented on `mcp-orchestrator`. Rig-flow FSM, NATS MCP,
+persistence, auto-start, per-state prompts, orchestrated agent loop, topology guards,
+and unit tests are in place. Remaining gaps: QA outcome aliases, duplicate hq agents
+with multiple rigs, full template schema unification for all bundled YAML examples.
 
 ## Status summary
 
@@ -13,21 +15,24 @@ mayor pipeline is incomplete.
 | YAML template load | Done | `{townRoot}/orchestrator/templates/*.yaml` |
 | FSM transition | Done | `WorkflowInstance.Transition` in `types.go` |
 | MCP over NATS | Done | Subject `gt.orchestrator.mcp` |
-| `gt-agent --orchestrated` | Done | Poll / execute / `complete_task` |
-| `gt orchestrator run` | Done | Subprocess from `gt up` |
-| `gt mayor workflow start` | Done | Manual only |
-| Per-state `prompt_file` (separate .md) | Not done | Target; lift from legacy templates |
-| Single-task LLM + structured output | Not done | Multi-turn CMD loop today |
-| Idle poll-only (no LLM) | Partial | Sleeps on empty fetch; some roles still legacy LLM |
-| Orchestrator-only pipeline agents | Not done | Dual legacy + orchestrated paths today |
-| Workflow persistence | Not done | In-memory `Manager.instances` |
-| Auto-start on `gt up` | Not done | |
-| Variable substitution `{{rig}}` | Not done | |
-| `get_workflow_status` tool | Not done | |
-| Bundled template schema | Broken | `agent_role` vs `role` |
-| QA outcome mapping | Partial | FSM keys vs agent `success`/`fail` |
-| Patrol agents not orchestrated | Not done | Witness/refinery still get flag |
-| Unit tests `fsm_test.go` / `mcp_test.go` | Not done | |
+| `gt-agent --orchestrated` | Done | Poll, CMD loop, JSON outcome, state guards |
+| `gt orchestrator run` | Done | Subprocess from `gt up`; PID + log |
+| `gt mayor workflow start\|status\|complete` | Done | CLI + MCP `start_workflow` |
+| Per-state `prompt_file` | Done | `internal/orchestrator/town/prompts/rig-flow/*.md` |
+| Structured JSON outcome | Done | `outcome` / `summary` validated vs transitions |
+| Idle poll-only (no LLM) | Done | Empty `fetch_task` → sleep, no model call |
+| Pipeline roles orchestrator-only | Done | `OrchestratedForRole`; no `gatherWork` when orchestrated |
+| Workflow persistence | Done | `{townRoot}/orchestrator/instances.json` |
+| Auto-start on `gt up` / `gt rig add` | Done | `orchestrator.auto_start` + `default_workflow` |
+| Variable substitution `{{rig}}` | Done | `SubstituteVars` in prompts and instructions |
+| `get_workflow_status` MCP tool | Done | + `gt mayor workflow status` |
+| Town asset sync | Done | `//go:embed town/`; `make install`, `gt orchestrator sync` |
+| Patrol agents not orchestrated | Done | `IsPatrolRole` / `OrchestratedForRole` |
+| hq-polecat + legacy pause | Done | `LegacyPolecatsPaused`; `GT_POLECAT` identity fix |
+| Planning / implementation guards | Done | `cmd/gt-agent/orchestrated.go` |
+| Bundled non-rig-flow templates | Partial | Some examples still use old schema |
+| QA outcome mapping | Partial | Prefer `task_passed` / `all_passed` in FSM |
+| Unit tests | Done | `manager_test.go`, `prompts_test.go`, `legacy_test.go`, … |
 
 ## Architecture
 
@@ -62,7 +67,9 @@ sequenceDiagram
 | **Client** | `internal/orchestrator/orchestrator.go` | `Call`, `FetchTask`, `CompleteTask`, `StartWorkflow`; PID file |
 | **Types** | `internal/orchestrator/types.go` | `WorkflowTemplate`, `State`, `WorkflowInstance` |
 | **CLI** | `internal/cmd/orchestrator.go` | `gt orchestrator start\|stop\|status\|run` |
-| **Mayor CLI** | `internal/cmd/mayor.go` | `gt mayor workflow start <template>` |
+| **Mayor CLI** | `internal/cmd/mayor.go` | `workflow start\|status\|complete` |
+| **Prompts / matching** | `internal/orchestrator/prompts.go` | `AgentMatchesTask`, `OrchestratedForRole`, `LoadPromptFile` |
+| **Legacy pause** | `internal/orchestrator/legacy.go` | `LegacyPolecatsPaused` during active `rig-flow` |
 | **Agent loop** | `cmd/gt-agent/main.go` | `runOrchestrated()` when `--orchestrated` |
 | **Session flag** | `internal/session/lifecycle.go` | Appends `--orchestrated` when orchestrator PID exists |
 | **Town up** | `internal/cmd/up.go` | Starts orchestrator; sets `Orchestrated` on agents |
@@ -111,7 +118,8 @@ states:
 - `FetchTask` loads file content, substitutes `{{rig}}` etc. from instance variables,
   returns `system_prompt` + `task_prompt` to `gt-agent`.
 
-**Current YAML** still uses inline `instructions` only; `prompt_file` is not yet in `types.go`.
+**Runtime YAML** (`rig-flow.yaml`) sets both `prompt_file` and short `instructions`.
+`FetchTask` returns `system_prompt` (file) and task text (instructions + substituted vars).
 
 **Terminal states:** Transitioning *into* state name `completed` or `failed` sets instance
 `Status` to that value.
@@ -157,28 +165,74 @@ Validate `outcome` against keys in `state.transitions` before advancing FSM.
 
 ### Orchestrated — current (`runOrchestrated`)
 
-Inline system string + YAML `instructions`; multi-turn CMD loop; `OUTCOME: success|fail` text parsing. See gaps below.
+`cmd/gt-agent/orchestrated.go`:
 
-## Agent matching (`FetchTask`)
+1. `fetch_task` → load `system_prompt` from `prompt_file`
+2. Multi-turn **CMD:** loop with per-state command guards
+3. JSON `{"outcome","summary",...}` or auto-complete when artifacts validate
+4. `complete_task` → FSM transition
 
-`Manager.FetchTask(agentID)` scans all instances (no status filter today):
+**State guards** (reject before running CMD):
+
+| State | Rejects (examples) |
+|-------|---------------------|
+| `planning` | `gt bd add`, `git add/commit/push`, `mkdir`, `python3`, writing `backend/` |
+| `implementation` | `gt bd *`, `git push`, `git add .`, agent junk paths |
+
+**Artifact validation** before accepting `success`:
+
+| State | Checks |
+|-------|--------|
+| `planning` | Successful `bd create`, no failed CMDs, `plan.md` ≥ 200 bytes |
+| `design` | `architecture.md` present and non-empty |
+| `implementation` | Bead closed / backend artifacts per prompt |
+
+## Agent matching (`AgentMatchesTask`)
+
+`Manager.FetchTask` scans active instances and calls `AgentMatchesTask(agentID, state.Role, inst.Variables)` (`prompts.go`):
 
 ```go
-if role == agentID || agentID == "any" || strings.HasSuffix(agentID, "/"+role) {
-    return task
+// Rig-scoped roles (architect, polecat, qa): require "{rig}/{role}" when vars["rig"] set.
+// Town-level roles (mayor, planner): bare "{role}" matches.
+// agent_id "any" always matches.
+```
+
+| `vars["rig"]` | State role | Agent ID | Matches? |
+|---------------|------------|----------|------------|
+| `testgt2` | architect | `testgt2/architect` | Yes |
+| `testgt2` | architect | `architect` | No |
+| `testgt2` | qa | `testgt2/qa` | Yes |
+| `testgt2` | qa | `qa` | No |
+| (any) | mayor | `mayor` | Yes |
+| (any) | planner | `planner` | Yes |
+| `testgt2` | polecat | `testgt2/polecat` | Yes |
+| `testgt2` | polecat | `polecat` | No (legacy town `hq-polecat` only when zero rigs) |
+
+**`gt-agent` agent_id:** from `GT_AGENT_ID` / session name (e.g. `testgt2/architect`).
+
+**Topology (`gt up`):** with orchestrator running and ≥1 rig, rig-scoped architect/qa/polecat start under `{town}/{rig}/`; town `hq-architect` / `hq-qa` / `hq-polecat` are skipped. Per-rig pipeline polecat at `{town}/{rig}/polecat/` handles `implementation` for rig-flow (`agent_id` `{rig}/polecat`).
+
+## `OrchestratedForRole` vs patrol
+
+```go
+func OrchestratedForRole(orchestratorRunning bool, role string) bool {
+    if !orchestratorRunning || IsPatrolRole(role) { return false }
+    return IsPipelineRole(role)
 }
 ```
 
-| Agent ID passed | Matches state `role: architect` |
-|-----------------|-----------------------------------|
-| `architect` | Yes |
-| `testgt2/architect` | Yes (suffix) |
-| `mayor` at state `design` | No |
+| Category | Roles | `--orchestrated` when orch running |
+|----------|-------|-------------------------------------|
+| Pipeline | mayor, architect, planner, polecat, qa | Yes |
+| Patrol | witness, refinery, mechanic, deacon | No (legacy patrol) |
 
-**Collision:** `gt up` with orchestrator running may start both `hq-architect` (town) and
-`te-<rig>-architect` (rig). First matching instance wins; no rig affinity yet.
+Rig pipeline polecat uses `OrchestratedForRole` like architect/qa. Legacy town `hq-polecat` uses `OrchestratedForTownPolecat` only when no rigs are registered.
 
-**Canonical role** in `gt-agent` comes from `GT_ROLE` / `.gt-agent` via `canonicalRole()`.
+## `LegacyPolecatsPaused`
+
+While an active `rig-flow` instance exists for a rig, `gt up --restore` skips
+`startPolecatsWithWork` for per-bead polecats under `{rig}/polecats/`. Witness sling may
+still spawn legacy polecats outside the FSM.
 
 ## MCP tools (NATS, not IDE MCP)
 
@@ -187,13 +241,12 @@ This is **not** registered in Cursor/Claude `mcpServers`; only `gt-agent` and CL
 
 | Tool | Arguments | Returns |
 |------|-----------|---------|
-| `fetch_task` | `agent_id` | `workflow_id`, `state`, `instructions`, `role` (missing `template_id`) |
-| `complete_task` | `workflow_id`, `outcome` | `next_state` |
-| `start_workflow` | `template_id`, `variables` | `workflow_id` |
+| `fetch_task` | `agent_id` | `workflow_id`, `template_id`, `state`, `role`, `system_prompt`, `instructions`, `allowed_outcomes` |
+| `complete_task` | `workflow_id`, `outcome`, optional `summary` | `next_state`, `status` |
+| `start_workflow` | `template_id`, `variables` (e.g. `rig`) | `workflow_id` |
+| `get_workflow_status` | optional `workflow_id` | instance list or single instance JSON |
 
 JSON-RPC methods: `initialize`, `list_tools`, `call_tool`.
-
-**Planned:** `get_workflow_status` for operators.
 
 ### Outcome → transition
 
@@ -217,16 +270,18 @@ qa_review:
       to: implementation
 ```
 
-`runOrchestrated` currently sets outcome only from `OUTCOME: success` / `OUTCOME: fail` in
-LLM text — QA branches do not fire unless extended.
+Agents should emit transition keys from `allowed_outcomes` (e.g. QA: `task_passed`,
+`all_passed`, `failure`). `success` / `fail` are accepted as fallbacks where mapped.
 
 ## Integration points
 
 ### `gt up`
 
 - Starts orchestrator subprocess (`orchestrator.Start`)
-- If orchestrator running: `Orchestrated: true` on mayor, deacon, planner, mechanic, witness, refinery, architect, qa
-- Also starts town-level `hq-architect`, `hq-qa`, `hq-polecat` when orchestrated
+- `OrchestratedForRole` → `--orchestrated` only on pipeline roles (not witness/refinery/mechanic/deacon)
+- Rig-scoped architect/qa/polecat when rigs exist; legacy `hq-polecat` only with zero rigs
+- `MaybeAutoStartWorkflow` when `settings.config.orchestrator.auto_start`
+- `RepairIdentityFiles` for polecat worktrees; `LegacyPolecatsPaused` skips legacy polecat restore
 
 ### `gt down`
 
@@ -244,10 +299,10 @@ Independent of orchestrator MCP:
 | Location | Loaded when |
 |----------|-------------|
 | `{townRoot}/orchestrator/templates/` | `gt orchestrator run` (runtime) |
-| `internal/orchestrator/templates/` | Not auto-loaded; examples only |
+| `internal/orchestrator/town/` (gastown) | Source; embedded + synced via `make install` / `gt orchestrator sync` |
+| `internal/orchestrator/templates/` | Legacy examples only; not embedded |
 
-Town templates override/supplement what operators ship; gastown `make install` does not
-copy town templates.
+`make install` copies `town/templates` and `town/prompts` into `{townRoot}/orchestrator/`.
 
 ## File map
 
@@ -265,74 +320,59 @@ copy town templates.
 | `cmd/gt-agent/main.go` | `runOrchestrated`, `buildSystemPrompt` |
 | `internal/session/lifecycle.go` | `--orchestrated` on command line |
 | `internal/templates/roles/*.md.tmpl` | Legacy role prompts |
-| `internal/orchestrator/templates/*.yaml` | Example templates (schema fix needed) |
+| `internal/orchestrator/town/templates/rig-flow.yaml` | Canonical rig-flow (embedded) |
+| `internal/orchestrator/town/prompts/rig-flow/*.md` | Per-state system prompts |
+| `cmd/gt-agent/orchestrated.go` | Orchestrated loop + guards |
+| `internal/orchestrator/provision.go` | `//go:embed town/` |
 
 ### Town runtime (example)
 
 | Path | Purpose |
 |------|---------|
-| `orchestrator/templates/rig-flow.yaml` | testgt2 pipeline |
+| `orchestrator/templates/rig-flow.yaml` | Rig pipeline FSM |
+| `orchestrator/prompts/rig-flow/*.md` | Per-state prompts |
+| `orchestrator/instances.json` | Persisted workflow instances |
 | `daemon/orchestrator.pid` | Running indicator |
 | `logs/orchestrator.log` | MCP + manager debug |
-| `settings/config.json` | `session_transport`, `role_agents` |
+| `settings/config.json` | `orchestrator.*`, `session_transport`, `role_agents` |
 
 ## Known gaps and bugs
 
-1. ~~**In-memory instances**~~ — persisted to `orchestrator/instances.json` (Phase 2)
-2. ~~**No auto `start_workflow` on `gt up`**~~ — optional via `orchestrator.auto_start` (Phase 2)
-3. **Thin orchestrated prompts** — no role templates / prime hook
-4. **`template_id` not returned** from `FetchTask`
-5. **Completed instances still scanned** — `Status` not set on create; no skip filter
-6. **QA outcomes** — agent `success`/`fail` vs FSM `task_passed`/`all_passed`/`failure`
-7. **Bundled YAML schema** — `idea-to-plan.yaml`, `mechanic-patrol.yaml` incompatible
-8. **Patrol agents orchestrated** — witness/refinery poll without workflow roles
-9. **Duplicate hq + rig agents** for architect/qa/polecat
-10. **`cmd/gt-orchestrator/main.go`** — stale, non-compiling; use `gt orchestrator run`
-11. **Variable substitution** — `{{review_id}}` in templates not expanded
-12. **NATS URL** — hardcoded/default; not read from town settings consistently
+1. **QA outcomes** — FSM keys `task_passed` / `all_passed` vs agent habit of `success` / `fail`
+2. **Legacy sling polecats** — can still run parallel to hq-polecat; identity repair helps but does not remove witness path
+3. **Bundled non-rig-flow YAML** — some files under `internal/orchestrator/templates/` use old schema
+4. **Completed instances** — may still be scanned until status filter tightened
+5. **Multi-rig towns** — hq vs rig agent duplication returns when multiple rigs registered
+6. **`cmd/gt-orchestrator/main.go`** — stale; use `gt orchestrator run`
+7. **Beads/Dolt backing** — instances are JSON file only (not beads yet)
 
 ## Roadmap (implementation phases)
 
-### P0 — Phase 1 (agent + prompts)
+### Phase 1 — agent + prompts (done)
 
-| Change | Files |
+Per-state `prompt_file`, orchestrated poll loop, JSON outcomes, idle without LLM,
+pipeline roles skip `gatherWork`, `template_id` in `fetch_task`.
+
+### Phase 2 — operations (done)
+
+`orchestrator/instances.json` persistence, `get_workflow_status`, `orchestrator.auto_start`
+/ `default_workflow`, `gt mayor workflow status|complete`, `gt orchestrator sync`.
+
+### Phase 3 — topology + guards (done)
+
+`AgentMatchesTask` rig affinity, `OrchestratedForRole`, hq-polecat, `LegacyPolecatsPaused`,
+polecat identity repair, planning/implementation CMD guards, rig-flow prompt pack in
+`internal/orchestrator/town/`.
+
+### Future
+
+| Change | Notes |
 |--------|-------|
-| `prompt_file` on states; load in `FetchTask` | `types.go`, `manager.go`, `orchestrator/prompts/` |
-| Single-task loop + structured JSON outcome | `cmd/gt-agent/main.go` |
-| Idle poll-only; no LLM on empty fetch | `cmd/gt-agent/main.go` |
-| Pipeline roles orchestrator-only (no `gatherWork`) | `cmd/gt-agent/main.go`, `up.go` |
-| Return `template_id`; skip completed instances | `manager.go` |
-| Outcome validation vs transitions | `manager.go`, `cmd/gt-agent/main.go` |
-
-### P1 — Phase 2 (operations)
-
-| Change | Files |
-|--------|-------|
-| Persist instances (beads/Dolt) | `manager.go` |
-| Auto-start workflow from settings | `internal/cmd/up.go`, town `settings/config.json` |
-| Mayor/rig kickoff calls `StartWorkflow` | `internal/cmd/mayor.go`, rig add |
-| `get_workflow_status` MCP tool | `mcp.go` |
-
-### P2 — Phase 3 (templates + topology) — in progress
-
-| Change | Status |
-|--------|--------|
-| Patrol roles not orchestrated (witness/refinery/mechanic/deacon) | Done |
-| hq-polecat only for rig-flow implementation | Done |
-| Skip legacy polecat restore during active rig-flow | Done |
-| Repair stale `.gt-agent` in polecat worktrees | Done |
-| gt-agent: GT_POLECAT wins over stale `.gt-agent` role | Done |
-| Template loader warns on missing `role:` | Done |
-| Lift legacy role content into state `.md` files | Partial (rig-flow prompts exist) |
-
-### P2 — Phase 3 (original checklist)
-
-| Change | Files |
-|--------|-------|
-| Lift legacy role content into state `.md` files | `orchestrator/prompts/rig-flow/*.md` |
-| Rig-scoped `FetchTask`; drop duplicate hq agents | `manager.go`, `up.go` |
-| Unify bundled template schema + loader validation | `templates/*.yaml`, `manager.go` |
-| Witness/refinery/mechanic not orchestrated without FSM | `up.go`, session lifecycle |
+| Persist instances in beads/Dolt | Replace or mirror JSON file |
+| Unify all bundled template YAML | Single schema with loader validation |
+| Stop legacy sling polecats during rig-flow | Beyond restore skip |
+| Full QA outcome aliases + prompt tables | Match FSM keys exactly |
+| Hybrid molecules ↔ orchestrator | Optional; formulas remain separate today |
 
 ## Testing
 
@@ -342,17 +382,25 @@ copy town templates.
 cd ~/gt
 gt up
 gt orchestrator status
-gt mayor workflow start rig-flow
+gt mayor workflow start rig-flow --rig testgt2
 tail -f logs/orchestrator.log
 # Expect: kickoff → design → planning → implementation → qa_review → completed
 ```
 
-Verify role logs only receive tasks when FSM role matches (e.g. polecat at `implementation`).
+Verify:
 
-### Automated (planned)
+- `testgt2/architect` only active in `design`
+- `~/gt/polecat` only in `implementation` (`testgt2/polecat`)
+- `testgt2/qa` only in `qa_review` (not `~/gt/qa`)
 
-- `fsm_test.go` — transitions, fallbacks, terminal states
-- `mcp_test.go` — `fetch_task` / `complete_task` over NATS or in-process server
+### Automated
+
+```bash
+go test ./internal/orchestrator/...
+```
+
+Covers `AgentMatchesTask`, `OrchestratedForRole`, `LegacyPolecatsPaused`, FSM transitions,
+`CompleteTask`, `FetchTask`, `GetWorkflowStatus`, template validation.
 
 ## Related documentation
 

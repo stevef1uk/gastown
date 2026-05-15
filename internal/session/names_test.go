@@ -161,6 +161,26 @@ func TestQASessionName(t *testing.T) {
 	}
 }
 
+func TestRigPolecatSessionName(t *testing.T) {
+	tests := []struct {
+		rigPrefix string
+		rigName   string
+		want      string
+	}{
+		{"gt", "testgt2", "gt-testgt2-polecat"},
+		{"bd", "beads", "bd-beads-polecat"},
+		{"hop", "greenplace", "hop-greenplace-polecat"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.rigPrefix+"/"+tt.rigName, func(t *testing.T) {
+			got := RigPolecatSessionName(tt.rigPrefix, tt.rigName)
+			if got != tt.want {
+				t.Errorf("RigPolecatSessionName(%q, %q) = %q, want %q", tt.rigPrefix, tt.rigName, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestDefaultPrefix(t *testing.T) {
 	want := "gt"
 	if DefaultPrefix != want {

@@ -76,7 +76,7 @@ one role at a time via NATS.
 
 ```bash
 gt up
-gt mayor workflow start rig-flow
+gt mayor workflow start rig-flow --rig <rig>
 ```
 
 See [Orchestrator (concept)](concepts/orchestrator.md) and [Orchestrator (technical)](design/orchestrator.md).

@@ -538,6 +538,14 @@ func TestParseLLMResponse(t *testing.T) {
 			},
 		},
 		{
+			name: "glued CMD after shell single-quoted arg splits commands",
+			input: "CMD: bash -lc 'cd testgt2/mayor/rig && bd list --status=open'CMD: bash -lc 'cd testgt2/mayor/rig && bd ready'",
+			wantCmds: []string{
+				"bash -lc 'cd testgt2/mayor/rig && bd list --status=open'",
+				"bash -lc 'cd testgt2/mayor/rig && bd ready'",
+			},
+		},
+		{
 			// Regression: the architect emitted a single CMD: block
 			// followed by a complete multi-line shell script with a
 			// heredoc, multiple commands, a multi-line gt mail send -m,

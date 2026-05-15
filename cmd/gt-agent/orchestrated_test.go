@@ -9,6 +9,17 @@ import (
 	"github.com/steveyegge/gastown/internal/orchestrator"
 )
 
+func TestParseOrchestratedCommands_gluedQuoteCMD(t *testing.T) {
+	in := "CMD: bash -lc 'cd testgt2/mayor/rig && bd list --status=open'CMD: bash -lc 'cd testgt2/mayor/rig && bd ready'"
+	cmds := parseOrchestratedCommands(in)
+	if len(cmds) != 2 {
+		t.Fatalf("want 2 commands, got %d: %v", len(cmds), cmds)
+	}
+	if !strings.Contains(cmds[0], "--status=open") || strings.Contains(cmds[0], "CMD:") {
+		t.Fatalf("cmd[0] should end at open quote, got %q", cmds[0])
+	}
+}
+
 func TestParseOrchestratedCommands_gluedPlannerLine(t *testing.T) {
 	in := "CMD: ls -R testgt2/mayor/rig/CMD: cat testgt2/mayor/rig/SPEC.mdCMD: cat testgt2/mayor/rig/architecture.md{\"outcome\":\"failure\"}"
 	cmds := parseOrchestratedCommands(in)

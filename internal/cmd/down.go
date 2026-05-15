@@ -261,6 +261,26 @@ func runDown(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	// Phase 1d: Stop rig pipeline polecats (orchestrated rig-flow)
+	for _, rigName := range rigs {
+		sessionName := session.RigPolecatSessionName(session.PrefixFor(rigName), rigName)
+		if downDryRun {
+			if running, _ := t.HasSession(sessionName); running {
+				printDownStatus(fmt.Sprintf("Polecat (%s)", rigName), true, "would stop")
+			}
+			continue
+		}
+		wasRunning, err := stopSession(t, sessionName)
+		if err != nil {
+			printDownStatus(fmt.Sprintf("Polecat (%s)", rigName), false, err.Error())
+			allOK = false
+		} else if wasRunning {
+			printDownStatus(fmt.Sprintf("Polecat (%s)", rigName), true, "stopped")
+		} else {
+			printDownStatus(fmt.Sprintf("Polecat (%s)", rigName), true, "not running")
+		}
+	}
+
 	// Phase 2: Stop witnesses
 	for _, rigName := range rigs {
 		if rigMgr == nil {

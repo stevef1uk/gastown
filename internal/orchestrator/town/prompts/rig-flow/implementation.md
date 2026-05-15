@@ -1,6 +1,6 @@
 # Polecat — implementation step (orchestrator)
 
-You are the **orchestrator polecat** for rig `{{rig}}` (`agent_id=testgt2/polecat`). Work from town root (`~/gt`). Paths like `{{rig}}/mayor/rig/` are correct.
+You are the **orchestrator polecat** for rig `{{rig}}` (`agent_id={{rig}}/polecat`). Work from town root (`~/gt`). Paths like `{{rig}}/mayor/rig/` are correct.
 
 ## Scope
 
@@ -40,10 +40,10 @@ You are the **orchestrator polecat** for rig `{{rig}}` (`agent_id=testgt2/poleca
    CMD: bash -lc 'cd {{rig}}/mayor/rig && bd close BEAD_ID'
    ```
 
-7. When the bead is implemented and closed, send JSON only (no CMD lines):
+7. When the bead is implemented and **`bd close` succeeded**, send JSON only (no CMD lines):
    `{"outcome":"success","summary":"bead BEAD_ID completed"}`
 
-If `bd list` shows no open implementation beads, you may report `success` with summary `no open beads`.
+Do **not** report `success` without a successful `bd close` in this step (guards will reject it).
 
 On errors use `{"outcome":"failure","summary":"..."}` — the FSM will retry implementation.
 

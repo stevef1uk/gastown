@@ -486,7 +486,7 @@ func ShutdownDelay() time.Duration {
 }
 
 // RepairTownRoleRigIdentity updates .gt-agent and session env when a running town
-// role session was started without rig metadata (stale hq-polecat after gt up).
+// role session was started without rig metadata (stale town or rig polecat after gt up).
 func RepairTownRoleRigIdentity(ctx context.Context, p Provider, sessionID, workDir, role, rigName string) error {
 	if rigName == "" || workDir == "" {
 		return nil
@@ -528,7 +528,11 @@ func RepairTownRoleRigIdentity(ctx context.Context, p Provider, sessionID, workD
 	}
 	_ = p.SetEnvironment(ctx, sessionID, "GT_RIG", rigName)
 	if role == constants.RolePolecat && agentName == "" {
-		_ = p.SetEnvironment(ctx, sessionID, "GT_ROLE", constants.RolePolecat)
+		// Rig-flow pipeline polecat (not per-bead polecats/NAME).
+		pipelineRole := fmt.Sprintf("%s/polecat", rigName)
+		_ = p.SetEnvironment(ctx, sessionID, "GT_ROLE", pipelineRole)
+		_ = p.SetEnvironment(ctx, sessionID, "BD_ACTOR", pipelineRole)
+		_ = p.SetEnvironment(ctx, sessionID, "GIT_AUTHOR_NAME", pipelineRole)
 	}
 	return nil
 }
