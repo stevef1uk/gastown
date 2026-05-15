@@ -118,6 +118,12 @@ func TestValidateQACommand_rejectsWorkspace(t *testing.T) {
 	if err := validateQACommand("cd testgt2/mayor/rig && python3 -m unittest backend.test_fizzbuzz", "testgt2", v); err != nil {
 		t.Fatalf("unittest should be allowed: %v", err)
 	}
+	if err := validateQACommand("python3 -m unittest backend.test_fizzbuzz -v", "testgt2", v); err == nil {
+		t.Fatal("unittest without cd should be rejected")
+	}
+	if err := validateQACommand("python3 -m unittest backend.test_fizzbuzz -v | grep ok", "testgt2", v); err == nil {
+		t.Fatal("unittest piped to grep should be rejected")
+	}
 }
 
 func TestValidateDesignCommand_forbidsImplementation(t *testing.T) {

@@ -193,6 +193,17 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 						cmd = fixed
 					}
 				}
+				if task.State == "implementation" || task.State == "qa_review" {
+					if fixed, ok := rewriteUnittestToWorkdir(cmd, rig); ok {
+						fmt.Printf("[gt-agent] rewrote unittest to run in mayor/rig: %s\n", fixed)
+						cmd = fixed
+					}
+				}
+				if task.State == "qa_review" || task.State == "planning" || task.State == "implementation" {
+					if fixed, ok := rewriteBdListLimit(cmd); ok {
+						cmd = fixed
+					}
+				}
 				fmt.Printf("[gt-agent] $ %s\n", cmd)
 				cmdEnv := orchestratedCommandEnv(townRoot, rig, task.State, os.Environ())
 				if needsOrchestratedScriptFile(cmd) {
@@ -893,7 +904,26 @@ func orchestratedCommandEnv(townRoot, rig, taskState string, base []string) []st
 		return base
 	}
 	beadsDir := config.ResolveBeadsDirForRig(townRoot, rig)
-	return withEnvKey(base, "BEADS_DIR", beadsDir)
+	env := withEnvKey(base, "BEADS_DIR", beadsDir)
+	workDir := rigMayorRigDir(townRoot, rig)
+	if taskState == "implementation" || taskState == "qa_review" {
+		env = prependEnvPath(env, "PYTHONPATH", workDir)
+	}
+	return env
+}
+
+func prependEnvPath(env []string, key, dir string) []string {
+	prefix := key + "="
+	for _, e := range env {
+		if strings.HasPrefix(e, prefix) {
+			rest := strings.TrimPrefix(e, prefix)
+			if rest == "" {
+				return withEnvKey(env, key, dir)
+			}
+			return withEnvKey(env, key, dir+string(os.PathListSeparator)+rest)
+		}
+	}
+	return append(env, prefix+dir)
 }
 
 func withEnvKey(env []string, key, value string) []string {
@@ -985,6 +1015,12 @@ func validateQACommand(cmd, rig string, v orchestrator.WorkflowValidation) error
 	if strings.Contains(lower, "[tool_calls]") {
 		return fmt.Errorf("do not emit [TOOL_CALLS] markers — use CMD: lines only")
 	}
+	if strings.Contains(lower, "unittest") && (strings.Contains(lower, "| grep") || strings.Contains(lower, "if [")) {
+		return fmt.Errorf("run unittest as a single CMD (e.g. cd %s && python3 -m unittest %s -v); do not use pipes or shell if-blocks", rigMayorRigPath(rig), v.UnittestModule)
+	}
+	if strings.Contains(lower, "unittest") && !strings.Contains(lower, "cd ") && !strings.Contains(lower, rigMayorRigPath(rig)) {
+		return fmt.Errorf("unittest must run from %s (e.g. cd %s && python3 -m unittest %s -v)", rigMayorRigPath(rig), rigMayorRigPath(rig), v.UnittestModule)
+	}
 	forbidden := []struct {
 		cond bool
 		msg  string
@@ -1019,7 +1055,7 @@ func isBdListClosedCommand(cmd string) bool {
 
 func countOpenMatchingBeads(townRoot, rig, titleContains string) (int, error) {
 	beadsDir := config.ResolveBeadsDirForRig(townRoot, rig)
-	cmd := exec.Command("bd", "list", "--status=open")
+	cmd := exec.Command("bd", "list", "--status=open", "--limit=0")
 	cmd.Env = withEnvKey(os.Environ(), "BEADS_DIR", beadsDir)
 	cmd.Dir = rigMayorRigDir(townRoot, rig)
 	out, err := cmd.CombinedOutput()

@@ -64,6 +64,26 @@ func TestRunOrchestratedCommand_heredocWritesFile(t *testing.T) {
 	}
 }
 
+func TestRewriteUnittestToWorkdir(t *testing.T) {
+	cmd := "python3 -m unittest backend.test_fizzbuzz -v"
+	fixed, ok := rewriteUnittestToWorkdir(cmd, "testgt2")
+	if !ok || !strings.Contains(fixed, "cd testgt2/mayor/rig &&") {
+		t.Fatalf("got ok=%v cmd=%q", ok, fixed)
+	}
+	already := "cd testgt2/mayor/rig && python3 -m unittest backend.test_fizzbuzz -v"
+	if _, ok := rewriteUnittestToWorkdir(already, "testgt2"); ok {
+		t.Fatal("should not rewrite when cd present")
+	}
+}
+
+func TestRewriteBdListLimit(t *testing.T) {
+	cmd := "export BEADS_DIR=x && bd list --status=open | grep foo"
+	fixed, ok := rewriteBdListLimit(cmd)
+	if !ok || !strings.Contains(fixed, "--limit=0") {
+		t.Fatalf("got %q ok=%v", fixed, ok)
+	}
+}
+
 func TestNeedsOrchestratedScriptFile(t *testing.T) {
 	if !needsOrchestratedScriptFile("echo <<EOF\nx\nEOF") {
 		t.Fatal("heredoc should use script")

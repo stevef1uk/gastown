@@ -81,6 +81,34 @@ func normalizeHeredocDelimiters(body string) string {
 	return strings.ReplaceAll(body, bashLcHeredocEOFMarker(), plain)
 }
 
+// rewriteUnittestToWorkdir prepends cd into mayor/rig when the model omits it (unittest needs backend/ on sys.path).
+func rewriteUnittestToWorkdir(cmd, rig string) (string, bool) {
+	lower := strings.ToLower(cmd)
+	if !strings.Contains(lower, "unittest") {
+		return cmd, false
+	}
+	work := rigMayorRigPath(rig)
+	wl := strings.ToLower(work)
+	if strings.Contains(lower, "cd "+wl) || strings.Contains(lower, "cd "+strings.ToLower(rig)+"/mayor/rig") {
+		return cmd, false
+	}
+	return "cd " + work + " && " + strings.TrimSpace(cmd), true
+}
+
+// rewriteBdListLimit ensures bd list counts are not capped at 50 (beads default).
+func rewriteBdListLimit(cmd string) (string, bool) {
+	lower := strings.ToLower(cmd)
+	if !strings.Contains(lower, "bd list") || strings.Contains(lower, "--limit") {
+		return cmd, false
+	}
+	// Insert --limit=0 after "bd list"
+	re := strings.Replace(cmd, "bd list", "bd list --limit=0", 1)
+	if re == cmd {
+		re = strings.Replace(cmd, "BD list", "bd list --limit=0", 1)
+	}
+	return re, re != cmd
+}
+
 func runOrchestratedCommand(cmd, townRoot, sessionName string, env []string) ([]byte, error) {
 	if sessionName != "" {
 		env = append(env, "GT_SESSION="+sessionName)
