@@ -510,7 +510,7 @@ func validatePlanningArtifacts(townRoot, rig string, hadCmdFailure, beadCreateOK
 		return fmt.Errorf("planning step had failed commands; fix errors before completing")
 	}
 	if !beadCreateOK {
-		return fmt.Errorf("at least one successful `bd create` in %s/mayor/rig is required", rigMayorRigPath(rig))
+		return fmt.Errorf("at least one successful `bd create` in %s is required", rigMayorRigPath(rig))
 	}
 	path := filepath.Join(rigMayorRigDir(townRoot, rig), "plan.md")
 	info, err := os.Stat(path)
@@ -589,7 +589,7 @@ func validateImplementationArtifacts(townRoot, rig string, hadCmdFailure, beadCl
 		return fmt.Errorf("implementation step had failed commands; fix errors before completing")
 	}
 	if !beadCloseOK {
-		return fmt.Errorf("at least one successful `bd close` in %s/mayor/rig is required before success", rigMayorRigPath(rig))
+		return fmt.Errorf("at least one successful `bd close` in %s is required before success", rigMayorRigPath(rig))
 	}
 	return nil
 }

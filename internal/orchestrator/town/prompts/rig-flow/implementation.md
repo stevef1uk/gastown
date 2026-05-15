@@ -18,16 +18,21 @@ You are the **orchestrator polecat** for rig `{{rig}}` (`agent_id={{rig}}/poleca
    ```
    Or: `CMD: bash -lc 'cd {{rig}}/mayor/rig && bd ready'`
 
-2. Pick a bead ID from the output. Start work:
+2. Pick a bead ID from **`bd list` column 2** (IDs look like `te-2fv`, `te-4cg`). Use `bd list` or `bd ready` — not only `--status=open` (that hides `in_progress` beads). Run `bd show te-xxx` if unsure. **Only** beads whose title starts with `Implement backend/` (e.g. `Implement backend/fizzbuzz.py per architecture`). **Never** invent IDs like `impl-001`, `impl-01`, `bead-002`, or `1234`. **Skip** patrol/role beads (`te-ebe`, `te-es8`, `te-ojh`, `te-testgt2-*`). Start work:
    ```
    CMD: bash -lc 'cd {{rig}}/mayor/rig && bd update BEAD_ID --status=in_progress'
    ```
 
-3. Implement per bead title, architecture.md, and plan.md — write real files under `backend/` (e.g. `fizzbuzz.py`, `main.py`, tests).
-
-4. Run tests if present:
+3. Implement per bead title, `SPEC.md`, `architecture.md`, and `plan.md` — write real files under `backend/` (e.g. `fizzbuzz.py`, `main.py`, tests). Use heredocs only via `cat`:
    ```
-   CMD: bash -lc 'cd {{rig}}/mayor/rig && python3 -m pytest backend/ -q'
+   CMD: bash -lc 'cat <<'"'"'EOF'"'"' > {{rig}}/mayor/rig/backend/fizzbuzz.py
+   ...file contents...
+   EOF'
+   ```
+
+4. Run tests (SPEC requires stdlib `unittest`, not pytest):
+   ```
+   CMD: bash -lc 'cd {{rig}}/mayor/rig && python3 -m unittest backend.test_fizzbuzz -v'
    ```
 
 5. Commit in the rig worktree (set git identity if needed):
@@ -53,3 +58,4 @@ On errors use `{"outcome":"failure","summary":"..."}` — the FSM will retry imp
 - `gt bd claim` / `gt bead claim` → subcommand does not exist
 - Pasting JSON or markdown fences inside CMD blocks
 - `<<EOF` without `cat` (use `cat <<'EOF' > path`)
+- Closing patrol or `te-testgt2-*` role beads instead of `Implement backend/...` tasks
