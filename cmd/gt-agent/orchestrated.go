@@ -172,7 +172,7 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 					}
 				}
 				if task.State == "qa_review" {
-					if err := validateQACommand(cmd, rig); err != nil {
+					if err := validateQACommand(cmd, rig, taskValidation(task)); err != nil {
 						fmt.Fprintf(os.Stderr, "[gt-agent] rejected command: %v\n", err)
 						combined.WriteString(fmt.Sprintf("Command REJECTED (QA scope): %s\nReason: %v\n\n", cmd, err))
 						continue
@@ -220,7 +220,7 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 					if isBeadCloseCommand(cmd) && cmdErr == nil {
 						implementationBeadCloseOK = true
 					}
-					if cmdErr == nil && isUnittestBackendCommand(cmd) {
+					if cmdErr == nil && isUnittestCommand(cmd, taskValidation(task).UnittestModule) {
 						implementationHadCmdFailure = false
 					}
 					if cmdErr == nil && isGitCommitBackendCommand(cmd) {
@@ -234,7 +234,7 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 					if cmdErr == nil && isBdListClosedCommand(cmd) {
 						qaBdListClosedOK = true
 					}
-					if cmdErr == nil && isUnittestBackendCommand(cmd) {
+					if cmdErr == nil && isUnittestCommand(cmd, taskValidation(task).UnittestModule) {
 						qaUnittestOK = true
 						qaHadCmdFailure = false
 					}
@@ -287,7 +287,8 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 					hint = "Use bare `bd` from RIG/mayor/rig: list open beads, implement under backend/, `bd close` at least one bead, then success. Never use gt bd."
 				}
 				if task.State == "qa_review" {
-					hint = "Run real CMD: lines (not markdown fences): bd list --status=closed, head SPEC.md, python3 -m unittest backend.test_fizzbuzz from RIG/mayor/rig. No /workspace paths. Then JSON only."
+					v := taskValidation(task)
+					hint = "Run real CMD: lines (not markdown fences): bd list --status=closed, head SPEC.md, " + v.UnittestCommandHint() + " from RIG/mayor/rig. No /workspace paths. Then JSON only."
 				}
 				msg := "Validation failed: " + vErr.Error() + ". " + hint
 				recordAttemptFeedback(msg + "\n")
@@ -564,7 +565,7 @@ func planMDMeetsMinSize(townRoot, rig string) bool {
 	if err != nil {
 		return false
 	}
-	return info.Size() >= minPlanMDBytes
+	return info.Size() >= orchestrator.DefaultWorkflowValidation().MinPlanBytes
 }
 
 // rewriteBackendPathAfterCD fixes polecat writing rig/mayor/rig/backend/... after cd into worktree.
@@ -838,27 +839,26 @@ func validateImplementationCommand(cmd, rig string) error {
 	return nil
 }
 
-const minPlanMDBytes = 200
-
 // validateOrchestratedArtifacts rejects false-success when required files are missing or empty.
 func validateOrchestratedArtifacts(task *orchestrator.Task, townRoot, rig, outcome string, designArchWrittenThisRun, planningHadCmdFailure, planningBeadCreateOK, implementationHadCmdFailure, implementationBeadCloseOK, qaHadCmdFailure, qaBdListClosedOK, qaUnittestOK bool) error {
 	if outcome != "success" && outcome != "task_passed" && outcome != "all_passed" {
 		return nil
 	}
+	v := taskValidation(task)
 	switch task.State {
 	case "design":
-		return validateDesignArtifacts(townRoot, rig, designArchWrittenThisRun)
+		return validateDesignArtifacts(townRoot, rig, designArchWrittenThisRun, v)
 	case "planning":
-		return validatePlanningArtifacts(townRoot, rig, planningHadCmdFailure, planningBeadCreateOK)
+		return validatePlanningArtifacts(townRoot, rig, planningHadCmdFailure, planningBeadCreateOK, v)
 	case "implementation":
-		return validateImplementationArtifacts(townRoot, rig, implementationHadCmdFailure, implementationBeadCloseOK)
+		return validateImplementationArtifacts(townRoot, rig, implementationHadCmdFailure, implementationBeadCloseOK, v)
 	case "qa_review":
-		return validateQAArtifacts(townRoot, rig, outcome, qaHadCmdFailure, qaBdListClosedOK, qaUnittestOK)
+		return validateQAArtifacts(townRoot, rig, outcome, qaHadCmdFailure, qaBdListClosedOK, qaUnittestOK, v)
 	}
 	return nil
 }
 
-func validatePlanningArtifacts(townRoot, rig string, hadCmdFailure, beadCreateOK bool) error {
+func validatePlanningArtifacts(townRoot, rig string, hadCmdFailure, beadCreateOK bool, v orchestrator.WorkflowValidation) error {
 	if hadCmdFailure {
 		return fmt.Errorf("planning step had failed commands; fix errors before completing")
 	}
@@ -870,8 +870,8 @@ func validatePlanningArtifacts(townRoot, rig string, hadCmdFailure, beadCreateOK
 	if err != nil {
 		return fmt.Errorf("plan.md missing at %s", path)
 	}
-	if info.Size() < minPlanMDBytes {
-		return fmt.Errorf("plan.md too small (%d bytes); need ≥%d", info.Size(), minPlanMDBytes)
+	if info.Size() < v.MinPlanBytes {
+		return fmt.Errorf("plan.md too small (%d bytes); need ≥%d", info.Size(), v.MinPlanBytes)
 	}
 	if rig != "" {
 		if err := validateRigOpenBeads(townRoot, rig); err != nil {
@@ -937,23 +937,30 @@ func validateRigOpenBeads(townRoot, rig string) error {
 	return fmt.Errorf("no rig-scoped open beads in %s (only town hq-* or empty); planning must use BEADS_DIR=%s", rig, beadsDir)
 }
 
-func validateImplementationArtifacts(townRoot, rig string, hadCmdFailure, beadCloseOK bool) error {
+func validateImplementationArtifacts(townRoot, rig string, hadCmdFailure, beadCloseOK bool, v orchestrator.WorkflowValidation) error {
 	if hadCmdFailure {
 		return fmt.Errorf("implementation step had failed commands; fix errors before completing")
 	}
 	if !beadCloseOK {
 		return fmt.Errorf("at least one successful `bd close` in %s is required before success", rigMayorRigPath(rig))
 	}
-	if err := validateImplementationBackendFiles(townRoot, rig); err != nil {
+	if err := validateRequiredWorkFiles(townRoot, rig, v); err != nil {
 		return err
 	}
 	return nil
 }
 
-func isUnittestBackendCommand(cmd string) bool {
+func isUnittestCommand(cmd, unittestModule string) bool {
 	lower := strings.ToLower(cmd)
-	return strings.Contains(lower, "unittest") &&
-		(strings.Contains(lower, "backend.test_fizzbuzz") || strings.Contains(lower, "backend/test_fizzbuzz"))
+	if !strings.Contains(lower, "unittest") {
+		return false
+	}
+	mod := strings.ToLower(strings.TrimSpace(unittestModule))
+	if mod == "" {
+		mod = strings.ToLower(orchestrator.DefaultWorkflowValidation().UnittestModule)
+	}
+	slashMod := strings.ReplaceAll(mod, ".", "/")
+	return strings.Contains(lower, mod) || (slashMod != mod && strings.Contains(lower, slashMod))
 }
 
 func isGitCommitBackendCommand(cmd string) bool {
@@ -973,7 +980,7 @@ func isQAReadOnlyCommand(cmd string) bool {
 	return strings.Contains(lower, "bd list")
 }
 
-func validateQACommand(cmd, rig string) error {
+func validateQACommand(cmd, rig string, v orchestrator.WorkflowValidation) error {
 	lower := strings.ToLower(cmd)
 	if strings.Contains(lower, "[tool_calls]") {
 		return fmt.Errorf("do not emit [TOOL_CALLS] markers — use CMD: lines only")
@@ -983,7 +990,7 @@ func validateQACommand(cmd, rig string) error {
 		msg  string
 	}{
 		{strings.Contains(lower, "/workspace"), "do not use /workspace paths — work from $GT_ROOT"},
-		{strings.Contains(lower, "pytest"), "use python3 -m unittest backend.test_fizzbuzz (SPEC)"},
+		{strings.Contains(lower, "pytest"), "use " + v.UnittestCommandHint() + " (per workflow validation)"},
 		{strings.Contains(lower, "flake8"), "do not run flake8 in QA step"},
 		{strings.Contains(lower, "pip install"), "do not install packages in QA step"},
 		{strings.Contains(lower, "follow-arch"), "do not grep for invented FOLLOW-ARCH markers"},
@@ -1010,7 +1017,7 @@ func isBdListClosedCommand(cmd string) bool {
 	return strings.Contains(lower, "bd list") && strings.Contains(lower, "closed")
 }
 
-func countOpenImplementationBeads(townRoot, rig string) (int, error) {
+func countOpenMatchingBeads(townRoot, rig, titleContains string) (int, error) {
 	beadsDir := config.ResolveBeadsDirForRig(townRoot, rig)
 	cmd := exec.Command("bd", "list", "--status=open")
 	cmd.Env = withEnvKey(os.Environ(), "BEADS_DIR", beadsDir)
@@ -1021,14 +1028,14 @@ func countOpenImplementationBeads(townRoot, rig string) (int, error) {
 	}
 	n := 0
 	for _, line := range strings.Split(string(out), "\n") {
-		if strings.Contains(line, "Implement backend/") {
+		if strings.Contains(line, titleContains) {
 			n++
 		}
 	}
 	return n, nil
 }
 
-func validateQAArtifacts(townRoot, rig, outcome string, hadCmdFailure, bdListClosedOK, unittestOK bool) error {
+func validateQAArtifacts(townRoot, rig, outcome string, hadCmdFailure, bdListClosedOK, unittestOK bool, v orchestrator.WorkflowValidation) error {
 	if hadCmdFailure {
 		return fmt.Errorf("QA step had failed commands; fix errors before completing")
 	}
@@ -1036,32 +1043,32 @@ func validateQAArtifacts(townRoot, rig, outcome string, hadCmdFailure, bdListClo
 		return fmt.Errorf("run `bd list --status=closed` from %s before reporting QA outcome", rigMayorRigPath(rig))
 	}
 	if !unittestOK {
-		return fmt.Errorf("run `python3 -m unittest backend.test_fizzbuzz` from %s before reporting QA outcome", rigMayorRigPath(rig))
+		return fmt.Errorf("run `%s` from %s before reporting QA outcome", v.UnittestCommandHint(), rigMayorRigPath(rig))
 	}
-	if err := validateImplementationBackendFiles(townRoot, rig); err != nil {
+	if err := validateRequiredWorkFiles(townRoot, rig, v); err != nil {
 		return err
 	}
-	openImpl, err := countOpenImplementationBeads(townRoot, rig)
+	openImpl, err := countOpenMatchingBeads(townRoot, rig, v.BeadTitleContains)
 	if err != nil {
 		return err
 	}
 	switch outcome {
 	case "all_passed":
 		if openImpl > 0 {
-			return fmt.Errorf("cannot use all_passed: %d open Implement backend/ beads remain", openImpl)
+			return fmt.Errorf("cannot use all_passed: %d open beads matching %q remain", openImpl, v.BeadTitleContains)
 		}
 	case "task_passed":
 		if openImpl == 0 {
-			return fmt.Errorf("use all_passed when no open Implement backend/ beads remain")
+			return fmt.Errorf("use all_passed when no open beads matching %q remain", v.BeadTitleContains)
 		}
 	}
 	return nil
 }
 
-func validateImplementationBackendFiles(townRoot, rig string) error {
-	backend := filepath.Join(rigMayorRigDir(townRoot, rig), "backend")
-	for _, name := range []string{"fizzbuzz.py", "main.py", "test_fizzbuzz.py"} {
-		path := filepath.Join(backend, name)
+func validateRequiredWorkFiles(townRoot, rig string, v orchestrator.WorkflowValidation) error {
+	rigDir := rigMayorRigDir(townRoot, rig)
+	for _, rel := range v.RequiredFiles {
+		path := filepath.Join(rigDir, filepath.FromSlash(rel))
 		info, err := os.Stat(path)
 		if err != nil {
 			return fmt.Errorf("missing %s (implement and commit before success)", path)
@@ -1080,7 +1087,7 @@ func rigMayorRigPath(rig string) string {
 	return rig + "/mayor/rig"
 }
 
-func validateDesignArtifacts(townRoot, rig string, writtenThisRun bool) error {
+func validateDesignArtifacts(townRoot, rig string, writtenThisRun bool, v orchestrator.WorkflowValidation) error {
 	if !writtenThisRun {
 		return fmt.Errorf("architecture.md must be written in this design step (heredoc CMD); stale files from prior runs are ignored")
 	}
@@ -1090,12 +1097,11 @@ func validateDesignArtifacts(townRoot, rig string, writtenThisRun bool) error {
 	if err != nil {
 		return fmt.Errorf("architecture.md missing at %s", archPath)
 	}
-	if info.Size() < 200 {
-		return fmt.Errorf("architecture.md too small (%d bytes); need ≥200", info.Size())
+	if info.Size() < v.MinArchitectureBytes {
+		return fmt.Errorf("architecture.md too small (%d bytes); need ≥%d", info.Size(), v.MinArchitectureBytes)
 	}
-	// Stale backend/*.py from a prior polecat run must not block design completion.
-	// Reject implementation files if architect dropped them next to architecture.md
-	for _, name := range []string{"fizzbuzz.py", "main.py", "test_fizzbuzz.py"} {
+	// Stale implementation files at mayor/rig root must not block design completion.
+	for _, name := range v.ForbiddenRigRootBasenames() {
 		if _, err := os.Stat(filepath.Join(rigDir, name)); err == nil {
 			return fmt.Errorf("implementation file %q must not exist in mayor/rig/ (only architecture.md)", name)
 		}
@@ -1109,7 +1115,7 @@ func orchestratedArtifactAutoOutcome(task *orchestrator.Task, townRoot, rig stri
 	var vErr error
 	switch task.State {
 	case "design":
-		vErr = validateDesignArtifacts(townRoot, rig, designArchWrittenThisRun)
+		vErr = validateDesignArtifacts(townRoot, rig, designArchWrittenThisRun, taskValidation(task))
 	case "planning":
 		vErr = validateOrchestratedArtifacts(task, townRoot, rig, "success", designArchWrittenThisRun, planningHadCmdFailure, planningBeadCreateOK, false, false, false, false, false)
 	default:

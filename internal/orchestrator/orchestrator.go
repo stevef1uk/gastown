@@ -206,14 +206,15 @@ func StartWorkflow(townRoot string, templateID string, vars map[string]string) (
 
 // Task represents a task assigned by the orchestrator.
 type Task struct {
-	WorkflowID      string   `json:"workflow_id"`
-	TemplateID      string   `json:"template_id"`
-	State           string   `json:"state"`
-	Role            string   `json:"role"`
-	SystemPrompt    string   `json:"system_prompt"`
-	TaskPrompt      string   `json:"task_prompt"`
-	Instructions    string   `json:"instructions"`
-	AllowedOutcomes []string `json:"allowed_outcomes"`
+	WorkflowID      string             `json:"workflow_id"`
+	TemplateID      string             `json:"template_id"`
+	State           string             `json:"state"`
+	Role            string             `json:"role"`
+	SystemPrompt    string             `json:"system_prompt"`
+	TaskPrompt      string             `json:"task_prompt"`
+	Instructions    string             `json:"instructions"`
+	AllowedOutcomes []string           `json:"allowed_outcomes"`
+	Validation      WorkflowValidation `json:"validation"`
 }
 
 // FetchTask fetches the next task for an agent.

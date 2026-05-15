@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/steveyegge/gastown/internal/orchestrator"
 )
 
 func TestUnwrapBashLcMultiline_unclosedWrapperQuote(t *testing.T) {
@@ -57,7 +59,7 @@ func TestRunOrchestratedCommand_heredocWritesFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if info.Size() < minPlanMDBytes {
+	if info.Size() < orchestrator.DefaultWorkflowValidation().MinPlanBytes {
 		t.Fatalf("plan.md size %d", info.Size())
 	}
 }

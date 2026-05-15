@@ -111,10 +111,11 @@ func TestParseOrchestratedCommands_markdownFencedCMD(t *testing.T) {
 }
 
 func TestValidateQACommand_rejectsWorkspace(t *testing.T) {
-	if err := validateQACommand("cat /workspace/testgt2/src/foo.py", "testgt2"); err == nil {
+	v := orchestrator.DefaultWorkflowValidation()
+	if err := validateQACommand("cat /workspace/testgt2/src/foo.py", "testgt2", v); err == nil {
 		t.Fatal("expected reject")
 	}
-	if err := validateQACommand("cd testgt2/mayor/rig && python3 -m unittest backend.test_fizzbuzz", "testgt2"); err != nil {
+	if err := validateQACommand("cd testgt2/mayor/rig && python3 -m unittest backend.test_fizzbuzz", "testgt2", v); err != nil {
 		t.Fatalf("unittest should be allowed: %v", err)
 	}
 }
@@ -219,19 +220,20 @@ func TestValidatePlanningArtifacts(t *testing.T) {
 	if err := os.MkdirAll(rigDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	if err := validatePlanningArtifacts(dir, "testgt2", false, false); err == nil {
+	v := orchestrator.DefaultWorkflowValidation()
+	if err := validatePlanningArtifacts(dir, "testgt2", false, false, v); err == nil {
 		t.Fatal("expected error without plan and beads")
 	}
 	if err := os.WriteFile(filepath.Join(rigDir, "plan.md"), make([]byte, 250), 0644); err != nil {
 		t.Fatal(err)
 	}
-	if err := validatePlanningArtifacts(dir, "testgt2", false, false); err == nil {
+	if err := validatePlanningArtifacts(dir, "testgt2", false, false, v); err == nil {
 		t.Fatal("expected error without successful bd create")
 	}
-	if err := validatePlanningArtifacts(dir, "testgt2", true, true); err == nil {
+	if err := validatePlanningArtifacts(dir, "testgt2", true, true, v); err == nil {
 		t.Fatal("expected error when commands failed")
 	}
-	if err := validatePlanningArtifacts(dir, "testgt2", false, true); err != nil {
+	if err := validatePlanningArtifacts(dir, "testgt2", false, true, v); err != nil {
 		t.Fatalf("plan + beads should pass: %v", err)
 	}
 }
@@ -315,14 +317,15 @@ func writeImplementationBackendFiles(t *testing.T, townRoot, rig string) {
 
 func TestValidateImplementationArtifacts(t *testing.T) {
 	dir := t.TempDir()
-	if err := validateImplementationArtifacts(dir, "testgt2", false, false); err == nil {
+	v := orchestrator.DefaultWorkflowValidation()
+	if err := validateImplementationArtifacts(dir, "testgt2", false, false, v); err == nil {
 		t.Fatal("expected error without bd close")
 	}
-	if err := validateImplementationArtifacts(dir, "testgt2", true, true); err == nil {
+	if err := validateImplementationArtifacts(dir, "testgt2", true, true, v); err == nil {
 		t.Fatal("expected error when commands failed")
 	}
 	writeImplementationBackendFiles(t, dir, "testgt2")
-	if err := validateImplementationArtifacts(dir, "testgt2", false, true); err != nil {
+	if err := validateImplementationArtifacts(dir, "testgt2", false, true, v); err != nil {
 		t.Fatalf("bd close ok with backend files should pass: %v", err)
 	}
 }

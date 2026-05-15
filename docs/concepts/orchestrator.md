@@ -68,6 +68,141 @@ and implementation beads.
 
 See [Molecules](molecules.md) for formula/wisp workflows used elsewhere.
 
+## Quickstart: `rig-flow` on `testgt2`
+
+End-to-end example of a working orchestrator pipeline (Mayor → Architect → Planner → Polecat → QA).
+Assumes town root `~/gt`, rig `testgt2`, and `session_transport: "nats"` in `settings/config.json`.
+
+### 1. Install and bring the town up
+
+```bash
+cd /path/to/gastown
+SKIP_UPDATE_CHECK=1 make install
+
+cd ~/gt
+gt down && gt up
+gt orchestrator sync --update-changed
+gt orchestrator status    # should show running + PID
+```
+
+### 2. Start the workflow
+
+```bash
+gt mayor workflow start rig-flow --rig testgt2
+gt mayor workflow status
+# → wf-1  rig-flow  state=kickoff|design|…  status=running
+```
+
+Watch progression:
+
+```bash
+gt mayor workflow status
+gt feed --plain                    # workflow_start / workflow_transition events
+tail -f ~/gt/logs/orchestrator.log
+```
+
+Optional: **Agent console** (`gt-agent-console`, default `http://127.0.0.1:8081`) lists the orchestrator, rig agents (Architect, QA, Polecat pipeline), workflow badges on the active step, and tails each role’s `typescript` log.
+
+### 3. Tail the right session per state
+
+| State | Tail |
+|-------|------|
+| kickoff | `~/gt/mayor/typescript` |
+| design | `~/gt/testgt2/architect/typescript` |
+| planning | `~/gt/planner/typescript` |
+| implementation | `~/gt/testgt2/polecat/typescript` |
+| qa_review | `~/gt/testgt2/qa/typescript` |
+
+Do **not** use `~/gt/qa/typescript` for this rig — `fetch_task` expects `agent_id=testgt2/qa`.
+
+### 4. Beads: town DB vs rig DB
+
+`bd list` without `BEADS_DIR` shows **town HQ** beads (`hq-mayor`, patrol wisps). Implementation and QA use the **rig** database:
+
+```bash
+export BEADS_DIR=$HOME/gt/testgt2/.beads
+cd ~/gt/testgt2/mayor/rig
+
+bd list --status=open
+bd list --status=open | grep 'Implement backend'
+bd list --status=closed | grep 'Implement backend'
+```
+
+Only titles containing `Implement backend/` count for QA completion. Ignore open patrol / `te-testgt2-*` role beads.
+
+### 5. QA outcomes (what “done” means)
+
+After polecat reports `success`, the FSM moves to `qa_review`. QA runs read-only checks plus:
+
+```bash
+cd ~/gt/testgt2/mayor/rig
+python3 -m unittest backend.test_fizzbuzz -v
+```
+
+| Outcome | When to use |
+|---------|-------------|
+| `task_passed` | Unittest passed; **some** open `Implement backend/` beads remain (more polecat work) |
+| `all_passed` | Unittest passed; **zero** open `Implement backend/` beads (pipeline complete) |
+| `failure` | Tests or SPEC/architecture not met → back to implementation |
+
+Example JSON (after commands have actually run):
+
+```json
+{"outcome":"task_passed","summary":"unittest OK; 3 open Implement backend beads remain"}
+```
+
+`gt-agent` **rejects** `all_passed` if open implementation beads still exist, even when the model claims they are closed:
+
+```text
+artifact validation failed: cannot use all_passed: 3 open Implement backend/ beads remain
+```
+
+That is expected: close the remaining beads in implementation (e.g. `bd close te-mxp --reason "main.py done"`), then re-run QA with `all_passed`.
+
+### 6. Verify a healthy run
+
+```bash
+gt mayor workflow status
+# current_state=completed  status=completed   (after all_passed)
+
+export BEADS_DIR=$HOME/gt/testgt2/.beads
+bd list --status=open | grep 'Implement backend' || echo "no open implementation beads"
+```
+
+### 7. Reset and retry (optional)
+
+```bash
+cd /path/to/gastown
+bash scripts/reset-rig-orchestrator.sh --force   # clears wf + rig orchestrator state
+gt mayor workflow start rig-flow --rig testgt2
+```
+
+## Workflow validation (configurable guards)
+
+Rig-flow artifact checks (bead title prefix, unittest module, required files) are **not hard-coded in Go only** — they live in the workflow template YAML and are sent to `gt-agent` on each `fetch_task`.
+
+Edit `{townRoot}/orchestrator/templates/rig-flow.yaml` (or sync from gastown via `gt orchestrator sync --update-changed`):
+
+```yaml
+validation:
+  bead_title_contains: "Implement backend/"   # open beads QA/polecat care about
+  unittest_module: backend.test_fizzbuzz      # python3 -m unittest …
+  required_files:                             # under {rig}/mayor/rig/
+    - backend/fizzbuzz.py
+    - backend/main.py
+    - backend/test_fizzbuzz.py
+  min_architecture_bytes: 200
+  min_plan_bytes: 200
+```
+
+When you change **SPEC.md** scope (different paths, test module, or bead naming):
+
+1. Update **validation** in `rig-flow.yaml` to match your new bead titles and files.
+2. Update **prompts** in `orchestrator/prompts/rig-flow/` (they use `{{bead_title_contains}}`, `{{unittest_module}}`, `{{required_files}}`).
+3. Run `gt orchestrator sync --update-changed` and restart orchestrated agents if prompts were cached in a long-running session.
+
+`gt-agent` applies these rules for planning, implementation, design, and QA guards. Empty fields fall back to the FizzBuzz defaults in code.
+
 ## Configuration
 
 ### Town settings (`~/gt/settings/config.json`)

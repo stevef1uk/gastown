@@ -7,10 +7,11 @@ import (
 
 // WorkflowTemplate defines a deterministic FSM for a Gas Town workflow.
 type WorkflowTemplate struct {
-	ID           string           `yaml:"id"`
-	Description  string           `yaml:"description"`
-	InitialState string           `yaml:"initial_state"`
-	States       map[string]State `yaml:"states"`
+	ID           string             `yaml:"id"`
+	Description  string             `yaml:"description"`
+	InitialState string             `yaml:"initial_state"`
+	Validation   WorkflowValidation `yaml:"validation"`
+	States       map[string]State   `yaml:"states"`
 }
 
 // State represents a node in the workflow FSM.

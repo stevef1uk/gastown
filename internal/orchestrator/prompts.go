@@ -104,11 +104,20 @@ func (m *Manager) BuildTaskPayload(inst *WorkflowInstance, tpl *WorkflowTemplate
 	if vars == nil {
 		vars = map[string]string{}
 	}
-	systemPrompt, err := LoadPromptFile(m.townRoot, state.PromptFile, vars)
+	promptVars := make(map[string]string, len(vars)+4)
+	for k, v := range vars {
+		promptVars[k] = v
+	}
+	validation := tpl.Validation.SubstituteVars(vars).WithDefaults()
+	for k, v := range validation.PromptVars() {
+		promptVars[k] = v
+	}
+
+	systemPrompt, err := LoadPromptFile(m.townRoot, state.PromptFile, promptVars)
 	if err != nil {
 		return nil, err
 	}
-	taskPrompt := SubstituteVars(state.Instructions, vars)
+	taskPrompt := SubstituteVars(state.Instructions, promptVars)
 	if systemPrompt == "" && taskPrompt == "" {
 		return nil, fmt.Errorf("state %q has no prompt_file or instructions", inst.CurrentState)
 	}
@@ -122,5 +131,6 @@ func (m *Manager) BuildTaskPayload(inst *WorkflowInstance, tpl *WorkflowTemplate
 		"task_prompt":       taskPrompt,
 		"instructions":      taskPrompt,
 		"allowed_outcomes":  state.AllowedOutcomes(),
+		"validation":        validation,
 	}, nil
 }

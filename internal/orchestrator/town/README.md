@@ -36,6 +36,8 @@ town/
 
 ## Start rig-flow
 
+See **[Quickstart: rig-flow on testgt2](../../../docs/concepts/orchestrator.md#quickstart-rig-flow-on-testgt2)** for the full walkthrough (beads DB, QA outcomes, agent console).
+
 ```bash
 cd ~/gt
 gt up

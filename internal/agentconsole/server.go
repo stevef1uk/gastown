@@ -16,6 +16,7 @@ import (
 	"github.com/nats-io/nats.go"
 	"github.com/steveyegge/gastown/internal/constants"
 	"github.com/steveyegge/gastown/internal/events"
+	"github.com/steveyegge/gastown/internal/orchestrator"
 	"github.com/steveyegge/gastown/internal/session"
 )
 
@@ -29,7 +30,10 @@ type Agent struct {
 	AgentType string    `json:"agent_type"`
 	PID       int       `json:"pid,omitempty"`
 	Since     time.Time `json:"since,omitempty"`
-	Activity  string    `json:"activity,omitempty"`
+	Activity       string `json:"activity,omitempty"`
+	WorkflowID     string `json:"workflow_id,omitempty"`
+	WorkflowState  string `json:"workflow_state,omitempty"`
+	WorkflowActive bool   `json:"workflow_active,omitempty"`
 }
 
 // Server is the agent console HTTP server.
@@ -85,6 +89,7 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/agents/{id}/logs", s.handleAgentLogs)
 	mux.HandleFunc("/api/agents/{id}/stream", s.handleAgentStream)
 	mux.HandleFunc("/api/status", s.handleStatus)
+	mux.HandleFunc("/api/workflows", s.handleWorkflows)
 	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.FS(staticFiles))))
 }
 
@@ -93,6 +98,11 @@ func (s *Server) handleAgents(w http.ResponseWriter, r *http.Request) {
 	agents := s.discoverAgents()
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(agents)
+}
+
+func (s *Server) handleWorkflows(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(s.loadWorkflows())
 }
 
 // writeJSONError sends a JSON error response.
@@ -176,8 +186,16 @@ func (s *Server) handleAgentLogs(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	agent, ok := s.lookupAgent(id)
 	sessionName := s.agentIDToSessionName(id)
-	logs := s.readAgentLogs(sessionName, 50)
+	rig, role, workerName := "", "", ""
+	if ok {
+		rig, role = agent.Rig, agent.Role
+		if agent.Rig != "" && (agent.Role == "crew" || agent.Role == "polecat") && agent.Name != sessionName && agent.Name != friendlyRigAgentName(agent.Rig, agent.Role, sessionName) {
+			workerName = agent.Name
+		}
+	}
+	logs := s.readAgentLogs(sessionName, rig, role, workerName, 50)
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"agent":   id,
@@ -218,6 +236,7 @@ func (s *Server) handleAgentStream(w http.ResponseWriter, r *http.Request) {
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
 
+	agent, _ := s.lookupAgent(id)
 	lastLogCount := 0
 	for {
 		select {
@@ -228,7 +247,12 @@ func (s *Server) handleAgentStream(w http.ResponseWriter, r *http.Request) {
 			flusher.Flush()
 		case <-ticker.C:
 			// Check for new logs
-			logs := s.readAgentLogs(s.agentIDToSessionName(id), 100)
+			workerName := ""
+			sn := s.agentIDToSessionName(id)
+			if agent.Rig != "" && (agent.Role == "crew" || agent.Role == "polecat") && agent.Name != sn && agent.Name != friendlyRigAgentName(agent.Rig, agent.Role, sn) {
+				workerName = agent.Name
+			}
+			logs := s.readAgentLogs(sn, agent.Rig, agent.Role, workerName, 100)
 			if len(logs) != lastLogCount {
 				newLogs := logs
 				if len(logs) > lastLogCount && lastLogCount > 0 {
@@ -253,12 +277,16 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	orchRunning, orchPID, _ := orchestrator.IsRunning(s.townRoot)
 	status := map[string]interface{}{
-		"agents_total":    len(agents),
-		"agents_running":  running,
-		"nats_connected":  s.nc != nil && s.nc.IsConnected(),
-		"town_root":       s.townRoot,
-		"timestamp":       time.Now().Format(time.RFC3339),
+		"agents_total":          len(agents),
+		"agents_running":        running,
+		"nats_connected":        s.nc != nil && s.nc.IsConnected(),
+		"town_root":             s.townRoot,
+		"orchestrator_running":  orchRunning,
+		"orchestrator_pid":      orchPID,
+		"workflows":             s.loadWorkflows(),
+		"timestamp":             time.Now().Format(time.RFC3339),
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(status)
@@ -280,6 +308,11 @@ func (s *Server) discoverAgents() []Agent {
 	_ = session.InitRegistry(s.townRoot)
 
 	var agents []Agent
+
+	workflows := s.loadWorkflows()
+
+	// Orchestrator service (gt orchestrator run)
+	agents = append(agents, s.inspectOrchestrator(workflows))
 
 	// 1. Explicitly add town-level infrastructure agents.
 	// These are singletons that should always be visible, even when stopped.
@@ -375,7 +408,42 @@ func (s *Server) discoverAgents() []Agent {
 		}
 	}
 
+	enrichAgentsWithWorkflows(agents, workflows)
 	return agents
+}
+
+func (s *Server) inspectOrchestrator(workflows []WorkflowInfo) Agent {
+	a := Agent{
+		ID:        "orchestrator",
+		Name:      "Orchestrator",
+		Role:      "orchestrator",
+		AgentType: "gt-orchestrator",
+	}
+	running, pid, _ := orchestrator.IsRunning(s.townRoot)
+	if running && pid > 0 {
+		a.PID = pid
+		a.Status = "running"
+		if stat, err := os.Stat(filepath.Join("/proc", strconv.Itoa(pid))); err == nil {
+			a.Since = stat.ModTime()
+		}
+	} else {
+		a.Status = "stopped"
+	}
+	a.Activity = orchestratorActivity(workflows)
+	logs := s.readAgentLogs("orchestrator", "", "orchestrator", "", 3)
+	if len(logs) > 0 && a.Activity == "Idle" {
+		a.Activity = logs[len(logs)-1]
+	}
+	return a
+}
+
+func (s *Server) lookupAgent(id string) (Agent, bool) {
+	for _, a := range s.discoverAgents() {
+		if a.ID == id {
+			return a, true
+		}
+	}
+	return Agent{}, false
 }
 
 // inspectAgent checks the status of a specific agent.
@@ -387,7 +455,7 @@ func (s *Server) inspectAgent(sessionName, rig, role string) Agent {
 		Name: sessionName, // Default to session name, overridden for crew/polecat
 	}
 
-	pid := s.findAgentPID(sessionName)
+	pid := s.findAgentPID(sessionName, rig, role)
 	if pid > 0 {
 		a.PID = pid
 		a.Status = "running"
@@ -402,14 +470,21 @@ func (s *Server) inspectAgent(sessionName, rig, role string) Agent {
 	// Set agent type (even if stopped, to show correct icon/label)
 	a.AgentType = s.detectAgentType(sessionName)
 
+	workerName := ""
+	if rig != "" && (role == "crew" || role == "polecat") && a.Name != sessionName {
+		workerName = a.Name
+	}
+
 	// Provide friendly names for infrastructure agents
 	if strings.HasPrefix(sessionName, "hq-") {
 		roleName := strings.TrimPrefix(sessionName, "hq-")
 		a.Name = strings.Title(roleName)
+	} else if rig != "" && a.Name == sessionName {
+		a.Name = friendlyRigAgentName(rig, role, sessionName)
 	}
 
 	// Try to read activity/state
-	logs := s.readAgentLogs(sessionName, 5)
+	logs := s.readAgentLogs(sessionName, rig, role, workerName, 5)
 	if len(logs) > 0 {
 		a.Activity = logs[len(logs)-1]
 	}
@@ -423,11 +498,29 @@ func (s *Server) inspectAgent(sessionName, rig, role string) Agent {
 	return a
 }
 
+func friendlyRigAgentName(rig, role, sessionName string) string {
+	switch role {
+	case "architect":
+		return "Architect"
+	case "qa":
+		return "QA"
+	case "witness":
+		return "Witness"
+	case "refinery":
+		return "Refinery"
+	case "polecat":
+		if strings.HasSuffix(sessionName, "-polecat") || strings.HasSuffix(sessionName, rig+"-polecat") {
+			return "Polecat (pipeline)"
+		}
+		return "Polecat"
+	default:
+		return strings.Title(role)
+	}
+}
+
 // findAgentPID finds the PID of an agent by its session name.
-// For NATS-based gt-agent processes, the session name is NOT in the
-// command line (it's passed via env var). We must search for gt-agent
-// processes and match them by role name in the title string.
-func (s *Server) findAgentPID(sessionName string) int {
+// NATS gt-agent processes pass GT_SESSION / GT_ROLE in the environment, not argv.
+func (s *Server) findAgentPID(sessionName, rig, role string) int {
 	// Check wrapper PID files. NATS provider writes to sessionID (no .pid
 	// extension), but legacy code may use .pid — check both.
 	for _, pidName := range []string{sessionName, sessionName + ".pid"} {
@@ -442,51 +535,62 @@ func (s *Server) findAgentPID(sessionName string) int {
 		}
 	}
 
-	// Fallback 1: search for gt-agent processes matching the role name
-	// in the process title.
-	role := sessionName
-	if strings.Contains(sessionName, "-") {
+	// Fallback: scan gt-agent PIDs in this town and match GT_SESSION or GT_ROLE.
+	searchRole := role
+	if searchRole == "" && strings.Contains(sessionName, "-") {
 		parts := strings.Split(sessionName, "-")
-		// hq-deacon -> deacon
-		// hq-qsq-witness -> witness
-		role = parts[len(parts)-1]
+		searchRole = parts[len(parts)-1]
 	}
-
-	// Search for gt-agent processes with this role in the title.
-	// Pattern is purposely broad to match regardless of session prefix.
-	searchTerm := fmt.Sprintf("gt-agent.*%s", role)
-	cmd := exec.Command("pgrep", "-a", "-f", searchTerm)
+	cmd := exec.Command("pgrep", "-f", "gt-agent")
 	out, _ := cmd.Output()
 	for _, line := range strings.Split(string(out), "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
 		}
-		fields := strings.Fields(line)
-		if len(fields) < 2 {
-			continue
-		}
-		pid, err := strconv.Atoi(fields[0])
+		pid, err := strconv.Atoi(strings.Fields(line)[0])
 		if err != nil {
 			continue
 		}
-		// Also verify that the full command line contains the session name
-		// to avoid matching other sessions of the same role.
-		if !strings.Contains(line, sessionName) {
+		if !s.pidInTown(pid) {
 			continue
 		}
-
-		// Verify this process's cwd is inside the town root
-		// (prevents matching gt-agent processes from other towns)
-		procCwd, err := os.Readlink(filepath.Join("/proc", fields[0], "cwd"))
-		if err != nil {
-			continue
-		}
-		if strings.HasPrefix(procCwd, s.townRoot) {
+		env := readProcEnviron(pid)
+		if procEnvironMatches(env, "GT_SESSION", sessionName) {
 			return pid
+		}
+		if rig != "" && searchRole != "" {
+			qualified := rig + "/" + searchRole
+			if procEnvironMatches(env, "GT_ROLE", qualified) || procEnvironMatches(env, "GT_ROLE", searchRole) {
+				return pid
+			}
 		}
 	}
 	return 0
+}
+
+func (s *Server) pidInTown(pid int) bool {
+	procCwd, err := os.Readlink(filepath.Join("/proc", strconv.Itoa(pid), "cwd"))
+	if err != nil {
+		return false
+	}
+	return strings.HasPrefix(procCwd, s.townRoot)
+}
+
+func readProcEnviron(pid int) string {
+	data, err := os.ReadFile(filepath.Join("/proc", strconv.Itoa(pid), "environ"))
+	if err != nil {
+		return ""
+	}
+	return string(data)
+}
+
+func procEnvironMatches(environ, key, value string) bool {
+	if environ == "" || value == "" {
+		return false
+	}
+	needle := key + "=" + value
+	return strings.Contains(environ, needle+"\x00") || strings.HasSuffix(environ, needle)
 }
 
 // detectAgentType determines what agent binary is used.
@@ -528,33 +632,58 @@ func (s *Server) detectAgentType(sessionName string) string {
 	return "unknown"
 }
 
-// readAgentLogs reads the last N lines from an agent's wrapper log.
-func (s *Server) readAgentLogs(sessionName string, n int) []string {
-	// Try both .log (NATS) and .wrapper.log (Tmux)
-	logDir := filepath.Join(s.townRoot, "logs", "sessions")
-	logPaths := []string{
+// agentLogPaths returns candidate log files, preferring typescript for rig agents.
+func agentLogPaths(townRoot, sessionName, rig, role, workerName string) []string {
+	var paths []string
+	if sessionName == "orchestrator" {
+		return []string{filepath.Join(townRoot, "logs", "orchestrator.log")}
+	}
+	logDir := filepath.Join(townRoot, "logs", "sessions")
+	paths = append(paths,
 		filepath.Join(logDir, sessionName+".log"),
 		filepath.Join(logDir, sessionName+".wrapper.log"),
+	)
+	if rig == "" {
+		return paths
 	}
+	switch role {
+	case "architect", "qa", "witness", "refinery":
+		paths = append([]string{filepath.Join(townRoot, rig, role, "typescript")}, paths...)
+	case "polecat":
+		if workerName != "" && workerName != sessionName && !strings.HasSuffix(sessionName, "-polecat") {
+			paths = append([]string{filepath.Join(townRoot, rig, "polecats", workerName, "typescript")}, paths...)
+		} else {
+			paths = append([]string{filepath.Join(townRoot, rig, "polecat", "typescript")}, paths...)
+		}
+	case "crew":
+		if workerName != "" && workerName != sessionName {
+			paths = append([]string{filepath.Join(townRoot, rig, "crew", workerName, "typescript")}, paths...)
+		}
+	case "planner":
+		paths = append([]string{filepath.Join(townRoot, "planner", "typescript")}, paths...)
+	}
+	return paths
+}
 
-	var data []byte
-	var err error
-	for _, path := range logPaths {
-		data, err = os.ReadFile(path)
-		if err == nil {
-			break
+// readAgentLogs reads the last N lines from an agent's log sources.
+func (s *Server) readAgentLogs(sessionName, rig, role, workerName string, n int) []string {
+	for _, path := range agentLogPaths(s.townRoot, sessionName, rig, role, workerName) {
+		if lines := tailFileLines(path, n); len(lines) > 0 {
+			return lines
 		}
 	}
+	return nil
+}
 
+func tailFileLines(path string, n int) []string {
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil
 	}
-
 	lines := strings.Split(string(data), "\n")
 	if len(lines) > n {
 		lines = lines[len(lines)-n:]
 	}
-	// Trim empty lines
 	var result []string
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
@@ -605,6 +734,9 @@ func (s *Server) readAgentState(sessionName, rig, role, name string) AgentState 
 // Town-level agents: mayor -> hq-mayor, deacon -> hq-deacon
 // Rig agents: prefix-role -> prefix-role
 func (s *Server) agentIDToSessionName(id string) string {
+	if id == "orchestrator" {
+		return "orchestrator"
+	}
 	// Town-level agents
 	if id == "mayor" || id == "deacon" || id == "planner" || id == "mechanic" {
 		return "hq-" + id

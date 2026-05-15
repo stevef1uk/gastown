@@ -276,6 +276,25 @@
         .agent-details .label {
             color: #484f58;
         }
+        .workflow-badge {
+            display: inline-block;
+            font-size: 10px;
+            font-weight: 600;
+            padding: 2px 6px;
+            border-radius: 4px;
+            background: rgba(31, 111, 235, 0.2);
+            color: #58a6ff;
+            margin-left: 6px;
+            vertical-align: middle;
+        }
+        .rig-workflow-hint {
+            font-size: 10px;
+            font-weight: 500;
+            color: #58a6ff;
+            padding: 0 12px 4px;
+            text-transform: none;
+            letter-spacing: 0;
+        }
     </style>
 </head>
 <body>
@@ -314,15 +333,22 @@
         let currentAgent = null;
         let eventSource = null;
         let agents = [];
+        let workflows = [];
 
         // Load agents on startup
         async function loadAgents() {
             try {
-                const res = await fetch('/api/agents');
-                if (!res.ok) {
-                    throw new Error(`Server returned ${res.status}: ${res.statusText}`);
+                const [agentsRes, wfRes] = await Promise.all([
+                    fetch('/api/agents'),
+                    fetch('/api/workflows'),
+                ]);
+                if (!agentsRes.ok) {
+                    throw new Error(`Server returned ${agentsRes.status}: ${agentsRes.statusText}`);
                 }
-                agents = await res.json();
+                agents = await agentsRes.json();
+                if (wfRes.ok) {
+                    workflows = await wfRes.json();
+                }
                 updateRigFilter();
                 renderAgentList();
                 updateSystemStatus();
@@ -381,8 +407,15 @@
             sortedRigs.forEach(rig => {
                 const rigHeader = document.createElement('div');
                 rigHeader.style = 'font-size: 11px; font-weight: 700; text-transform: uppercase; color: #484f58; padding: 12px 12px 4px; border-top: 1px solid #21262d; margin-top: 8px;';
+                const activeWf = workflows.filter(w => w.rig === rig && w.status === 'running');
                 rigHeader.textContent = rig;
                 list.appendChild(rigHeader);
+                if (activeWf.length > 0) {
+                    const hint = document.createElement('div');
+                    hint.className = 'rig-workflow-hint';
+                    hint.textContent = activeWf.map(w => `${w.id} → ${w.current_state}`).join(' · ');
+                    list.appendChild(hint);
+                }
 
                 groups[rig].forEach(agent => {
                     const item = document.createElement('div');
@@ -397,11 +430,16 @@
                                 agent.role === 'mechanic' ? 'X' :
                                 agent.role === 'planner' ? 'P' :
                                 agent.role === 'architect' ? 'A' :
-                                agent.role === 'qa' ? 'Q' : '•';
+                                agent.role === 'qa' ? 'Q' :
+                                agent.role === 'orchestrator' ? 'O' :
+                                agent.role === 'polecat' ? '⚡' : '•';
+                    const wfBadge = agent.workflow_active
+                        ? `<span class="workflow-badge">${agent.workflow_state || 'active'}</span>`
+                        : '';
                     item.innerHTML = `
                         <div class="agent-avatar" style="background: ${getRoleColor(agent.role)}">${icon}</div>
                         <div class="agent-info">
-                            <div class="agent-name">${agent.name}</div>
+                            <div class="agent-name">${agent.name}${wfBadge}</div>
                             <div class="agent-role">${agent.role} ${agent.agent_type ? `(${agent.agent_type})` : ''}</div>
                         </div>
                         <div class="agent-status"></div>
@@ -422,14 +460,18 @@
                 case 'architect': return 'linear-gradient(135deg, #ea580c, #f97316)'; // Orange
                 case 'qa': return 'linear-gradient(135deg, #db2777, #f472b6)';        // Pink/Rose
                 case 'mechanic': return 'linear-gradient(135deg, #0891b2, #22d3ee)';  // Cyan
+                case 'orchestrator': return 'linear-gradient(135deg, #a855f7, #6366f1)'; // Purple/Indigo
+                case 'polecat': return 'linear-gradient(135deg, #ca8a04, #eab308)';   // Amber
                 default: return 'linear-gradient(135deg, #238636, #2ea043)';
             }
         }
 
         function updateSystemStatus() {
             const running = agents.filter(a => a.status === 'running').length;
+            const orch = agents.find(a => a.role === 'orchestrator');
+            const orchHint = orch ? ` · orchestrator ${orch.status}` : '';
             document.getElementById('system-status').textContent = 
-                `${running}/${agents.length} agents running`;
+                `${running}/${agents.length} agents running${orchHint}`;
         }
 
         async function selectAgent(agent) {
@@ -443,16 +485,21 @@
             `;
 
             document.getElementById('agent-details').style.display = 'block';
+            const wfLine = agent.workflow_id
+                ? `<span><span class="label">Workflow:</span> ${agent.workflow_id} (${agent.workflow_state || '—'})</span>`
+                : '';
             document.getElementById('agent-details').innerHTML = `
                 <span><span class="label">Role:</span> ${agent.role}</span>
                 <span><span class="label">Type:</span> ${agent.agent_type}</span>
                 <span><span class="label">PID:</span> ${agent.pid || 'N/A'}</span>
                 <span><span class="label">Activity:</span> ${agent.activity || 'Idle'}</span>
+                ${wfLine}
             `;
 
-            document.getElementById('input-area').style.display = 'flex';
-            document.getElementById('message-input').disabled = agent.status === 'stopped';
-            document.getElementById('send-btn').disabled = agent.status === 'stopped';
+            const noMessage = agent.status === 'stopped' || agent.role === 'orchestrator';
+            document.getElementById('input-area').style.display = noMessage ? 'none' : 'flex';
+            document.getElementById('message-input').disabled = noMessage;
+            document.getElementById('send-btn').disabled = noMessage;
 
             // Load logs
             await loadAgentLogs(agent.id);

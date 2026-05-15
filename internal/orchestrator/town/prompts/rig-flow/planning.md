@@ -24,9 +24,10 @@ You are the **Planner** for rig `{{rig}}`. Work from town root (`~/gt`). Paths l
 
 3. Create implementation beads in the **rig** beads DB (not town `~/gt/.beads`). Export `BEADS_DIR` before every `bd` command:
    ```
-   CMD: bash -lc 'export BEADS_DIR=$GT_ROOT/{{rig}}/.beads && cd {{rig}}/mayor/rig && bd create --type task --title "Implement backend/fizzbuzz.py per architecture"'
-   CMD: bash -lc 'export BEADS_DIR=$GT_ROOT/{{rig}}/.beads && cd {{rig}}/mayor/rig && bd create --type task --title "Implement backend/main.py runner"'
-   CMD: bash -lc 'export BEADS_DIR=$GT_ROOT/{{rig}}/.beads && cd {{rig}}/mayor/rig && bd create --type task --title "Implement backend/test_fizzbuzz.py"'
+   Create one `bd create` per SPEC task; titles must contain `{{bead_title_contains}}` (e.g. `{{bead_title_contains}}fizzbuzz.py per architecture`). Example:
+   CMD: bash -lc 'export BEADS_DIR=$GT_ROOT/{{rig}}/.beads && cd {{rig}}/mayor/rig && bd create --type task --title "{{bead_title_contains}}fizzbuzz.py per architecture"'
+   CMD: bash -lc 'export BEADS_DIR=$GT_ROOT/{{rig}}/.beads && cd {{rig}}/mayor/rig && bd create --type task --title "{{bead_title_contains}}main.py runner"'
+   CMD: bash -lc 'export BEADS_DIR=$GT_ROOT/{{rig}}/.beads && cd {{rig}}/mayor/rig && bd create --type task --title "{{bead_title_contains}}test_fizzbuzz.py"'
    CMD: bash -lc 'export BEADS_DIR=$GT_ROOT/{{rig}}/.beads && bd list --status=open'
    ```
    You may mention `backend/` in titles — that is allowed. Do **not** use `gt bd add`.
