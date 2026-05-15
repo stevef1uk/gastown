@@ -242,3 +242,33 @@ func TestOrchestratedArtifactAutoOutcome_design(t *testing.T) {
 		t.Fatalf("want auto success, got ok=%v outcome=%q", ok, o)
 	}
 }
+
+func TestOrchestratedCommandEnv_pinsRigBeadsForPlanning(t *testing.T) {
+	town := t.TempDir()
+	townBeads := filepath.Join(town, ".beads")
+	rigBeads := filepath.Join(town, "testgt2", ".beads")
+	for _, d := range []string{townBeads, rigBeads} {
+		if err := os.MkdirAll(d, 0755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	base := []string{"BEADS_DIR=" + townBeads, "GT_ROOT=" + town}
+	env := orchestratedCommandEnv(town, "testgt2", "planning", base)
+	if got := envLookup(env, "BEADS_DIR"); got != rigBeads {
+		t.Fatalf("planning BEADS_DIR = %q, want %q", got, rigBeads)
+	}
+	env = orchestratedCommandEnv(town, "testgt2", "design", base)
+	if got := envLookup(env, "BEADS_DIR"); got != townBeads {
+		t.Fatalf("design should not override BEADS_DIR: got %q", got)
+	}
+}
+
+func envLookup(env []string, key string) string {
+	prefix := key + "="
+	for _, e := range env {
+		if strings.HasPrefix(e, prefix) {
+			return e[len(prefix):]
+		}
+	}
+	return ""
+}

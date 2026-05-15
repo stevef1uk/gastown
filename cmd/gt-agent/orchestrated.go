@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/steveyegge/gastown/cmd/gt-agent/internal/llm"
+	"github.com/steveyegge/gastown/internal/config"
 	"github.com/steveyegge/gastown/internal/orchestrator"
 )
 
@@ -140,7 +141,7 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 				}
 				fmt.Printf("[gt-agent] $ %s\n", cmd)
 				c := exec.Command("/bin/sh", "-c", cmd)
-				c.Env = os.Environ()
+				c.Env = orchestratedCommandEnv(townRoot, rig, task.State, os.Environ())
 				if sessionName != "" {
 					c.Env = append(c.Env, "GT_SESSION="+sessionName)
 				}
@@ -199,7 +200,7 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 					hint = "Write only architecture.md (heredoc). You may mention backend/ in the doc. Do not create backend/ or run git. Read SPEC with head -n 60."
 				}
 				if task.State == "planning" {
-					hint = "Write plan.md (heredoc) and create beads with `cd RIG/mayor/rig && bd create --type task --title \"...\"`. Do not use gt bd add. Do not write backend/ code or run git."
+					hint = "Write plan.md (heredoc) and create beads with `export BEADS_DIR=$GT_ROOT/RIG/.beads && cd RIG/mayor/rig && bd create --type task --title \"...\"`. Do not use gt bd add. Do not write backend/ code or run git."
 				}
 				if task.State == "implementation" {
 					hint = "Use bare `bd` from RIG/mayor/rig: list open beads, implement under backend/, `bd close` at least one bead, then success. Never use gt bd."
@@ -519,7 +520,68 @@ func validatePlanningArtifacts(townRoot, rig string, hadCmdFailure, beadCreateOK
 	if info.Size() < minPlanMDBytes {
 		return fmt.Errorf("plan.md too small (%d bytes); need ≥%d", info.Size(), minPlanMDBytes)
 	}
+	if rig != "" {
+		if err := validateRigOpenBeads(townRoot, rig); err != nil {
+			return err
+		}
+	}
 	return nil
+}
+
+// orchestratedCommandEnv pins BEADS_DIR to the workflow rig for planning/implementation
+// so town-level planner sessions do not write beads into ~/gt/.beads.
+func orchestratedCommandEnv(townRoot, rig, taskState string, base []string) []string {
+	if rig == "" || townRoot == "" {
+		return base
+	}
+	switch taskState {
+	case "planning", "implementation":
+	default:
+		return base
+	}
+	beadsDir := config.ResolveBeadsDirForRig(townRoot, rig)
+	return withEnvKey(base, "BEADS_DIR", beadsDir)
+}
+
+func withEnvKey(env []string, key, value string) []string {
+	prefix := key + "="
+	out := make([]string, 0, len(env)+1)
+	for _, e := range env {
+		if !strings.HasPrefix(e, prefix) {
+			out = append(out, e)
+		}
+	}
+	return append(out, prefix+value)
+}
+
+// validateRigOpenBeads ensures planning created tasks in the rig DB, not town hq-* only.
+func validateRigOpenBeads(townRoot, rig string) error {
+	beadsDir := config.ResolveBeadsDirForRig(townRoot, rig)
+	if _, err := os.Stat(beadsDir); err != nil {
+		return nil
+	}
+	cmd := exec.Command("bd", "list", "--status=open", "--json")
+	cmd.Env = withEnvKey(os.Environ(), "BEADS_DIR", beadsDir)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("rig beads check (BEADS_DIR=%s): %w: %s", beadsDir, err, strings.TrimSpace(string(out)))
+	}
+	var issues []struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal(out, &issues); err != nil {
+		return fmt.Errorf("parse rig beads list: %w", err)
+	}
+	for _, issue := range issues {
+		id := strings.TrimSpace(issue.ID)
+		if id == "" {
+			continue
+		}
+		if !strings.HasPrefix(id, "hq-") {
+			return nil
+		}
+	}
+	return fmt.Errorf("no rig-scoped open beads in %s (only town hq-* or empty); planning must use BEADS_DIR=%s", rig, beadsDir)
 }
 
 func validateImplementationArtifacts(townRoot, rig string, hadCmdFailure, beadCloseOK bool) error {

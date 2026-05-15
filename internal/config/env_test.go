@@ -1358,3 +1358,25 @@ func TestAgentEnv_EffortLevel(t *testing.T) {
 		}
 	})
 }
+
+func TestResolveBeadsDirForRig(t *testing.T) {
+	t.Parallel()
+	town := t.TempDir()
+	townBeads := filepath.Join(town, ".beads")
+	if err := os.MkdirAll(townBeads, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if got := ResolveBeadsDirForRig(town, ""); got != townBeads {
+		t.Fatalf("empty rig: got %q, want %q", got, townBeads)
+	}
+	if got := ResolveBeadsDirForRig(town, "myrig"); got != townBeads {
+		t.Fatalf("rig without .beads: got %q, want town %q", got, townBeads)
+	}
+	rigBeads := filepath.Join(town, "myrig", ".beads")
+	if err := os.MkdirAll(rigBeads, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if got := ResolveBeadsDirForRig(town, "myrig"); got != rigBeads {
+		t.Fatalf("rig with .beads: got %q, want %q", got, rigBeads)
+	}
+}

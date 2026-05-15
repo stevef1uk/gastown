@@ -12,6 +12,7 @@
 #   START_RIG_FLOW=1         — after reset, run:
 #                                gt mayor workflow start rig-flow --rig "$RIG"
 #   SKIP_ORCHESTRATOR_SYNC=1 — do not refresh $GT_ROOT/orchestrator/ from gastown
+#   RESET_ORCHESTRATOR_INSTANCES=0 — keep orchestrator/instances.json (default: clear it)
 #
 # Orchestrator workflow state (wf-1, design/planning, …) lives in the orchestrator
 # process memory — nuclear clean + gt up clears it. Templates/prompts under
@@ -159,8 +160,21 @@ path.write_text(json.dumps(data, indent=2) + "\n")
 PY
 }
 
+reset_orchestrator_instances() {
+  if [[ "${RESET_ORCHESTRATOR_INSTANCES:-1}" != "1" ]]; then
+    echo "[orchestrator] keeping instances.json (RESET_ORCHESTRATOR_INSTANCES=0)"
+    return 0
+  fi
+  local inst="$GT_ROOT/orchestrator/instances.json"
+  if [[ -f "$inst" ]]; then
+    rm -f "$inst"
+    echo "[orchestrator] removed $inst (stale workflow state)"
+  fi
+}
+
 echo "=== gt down ==="
 (cd "$GT_ROOT" && gt down) || true
+reset_orchestrator_instances
 
 echo "=== clean-gastown (nuclear, --force) ==="
 bash "$CLEAN_SCRIPT" --force "$GT_ROOT"

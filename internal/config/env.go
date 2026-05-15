@@ -78,6 +78,22 @@ type AgentEnvConfig struct {
 	SessionName string
 }
 
+// ResolveBeadsDirForRig returns the beads directory for orchestrated rig work.
+// When rig is empty, returns the town-level beads dir. When rig is set, prefers
+// the rig's .beads if it exists (same logic as AgentEnv BEADS_DIR).
+func ResolveBeadsDirForRig(townRoot, rig string) string {
+	beadsDir := beadredirect.ResolveBeadsDir(townRoot)
+	if rig == "" || townRoot == "" {
+		return beadsDir
+	}
+	rigPath := filepath.Join(townRoot, rig)
+	rigBeadsDir := beadredirect.ResolveBeadsDir(rigPath)
+	if _, err := os.Stat(rigBeadsDir); err == nil {
+		return rigBeadsDir
+	}
+	return beadsDir
+}
+
 // AgentEnv returns all environment variables for an agent based on the config.
 // This is the single source of truth for agent environment variables.
 func AgentEnv(cfg AgentEnvConfig) map[string]string {

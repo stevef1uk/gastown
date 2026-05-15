@@ -22,11 +22,12 @@ You are the **Planner** for rig `{{rig}}`. Work from town root (`~/gt`). Paths l
    CMD: head -n 40 {{rig}}/mayor/rig/architecture.md
    ```
 
-3. Create implementation beads from the rig mayor/rig workdir (one command per bead):
+3. Create implementation beads in the **rig** beads DB (not town `~/gt/.beads`). Export `BEADS_DIR` before every `bd` command:
    ```
-   CMD: bash -lc 'cd {{rig}}/mayor/rig && bd create --type task --title "Implement backend/fizzbuzz.py per architecture"'
-   CMD: bash -lc 'cd {{rig}}/mayor/rig && bd create --type task --title "Implement backend/main.py runner"'
-   CMD: bash -lc 'cd {{rig}}/mayor/rig && bd create --type task --title "Implement backend/test_fizzbuzz.py"'
+   CMD: bash -lc 'export BEADS_DIR=$GT_ROOT/{{rig}}/.beads && cd {{rig}}/mayor/rig && bd create --type task --title "Implement backend/fizzbuzz.py per architecture"'
+   CMD: bash -lc 'export BEADS_DIR=$GT_ROOT/{{rig}}/.beads && cd {{rig}}/mayor/rig && bd create --type task --title "Implement backend/main.py runner"'
+   CMD: bash -lc 'export BEADS_DIR=$GT_ROOT/{{rig}}/.beads && cd {{rig}}/mayor/rig && bd create --type task --title "Implement backend/test_fizzbuzz.py"'
+   CMD: bash -lc 'export BEADS_DIR=$GT_ROOT/{{rig}}/.beads && bd list --status=open'
    ```
    You may mention `backend/` in titles — that is allowed. Do **not** use `gt bd add`.
 
