@@ -14,9 +14,11 @@
 #   SKIP_ORCHESTRATOR_SYNC=1 — do not refresh $GT_ROOT/orchestrator/ from gastown
 #   RESET_ORCHESTRATOR_INSTANCES=0 — keep orchestrator/instances.json (default: clear it)
 #
-# Orchestrator workflow state (wf-1, design/planning, …) lives in the orchestrator
-# process memory — nuclear clean + gt up clears it. Templates/prompts under
-# $GT_ROOT/orchestrator/ are refreshed from gastown (source: internal/orchestrator/town/).
+# Orchestrator workflow state (wf-*, design/planning, …) is persisted in
+# $GT_ROOT/orchestrator/instances.json (removed when RESET_ORCHESTRATOR_INSTANCES=1).
+# Templates/prompts under $GT_ROOT/orchestrator/ are refreshed from gastown
+# (source: internal/orchestrator/town/). For a single-rig reset without nuclear clean,
+# use scripts/reset-rig-orchestrator.sh.
 #
 # After a nuclear reset, `gt doctor --fix` sometimes needs Dolt to settle
 # before rig DB issue_prefix rows exist; this script runs two fix passes.
@@ -24,6 +26,11 @@
 # Requires: gt on PATH (typically ~/.local/bin), bash, clean-gastown.sh deps (python3, etc.)
 #
 set -euo pipefail
+
+if [[ -z "${BASH_VERSION:-}" ]]; then
+  echo "FATAL: run with bash, not sh: bash $0 $*" >&2
+  exit 1
+fi
 
 GT_ROOT="${GT_ROOT:-$HOME/gt}"
 # Directory containing this repo (parent of scripts/)
@@ -112,7 +119,11 @@ sync_orchestrator_assets() {
     return 0
   fi
   local added=0 updated=0
+  local file_list
+  file_list="$(mktemp)"
+  find "$orch_src" -type f | sort >"$file_list"
   while IFS= read -r srcfile; do
+    [[ -n "$srcfile" ]] || continue
     rel="${srcfile#"$orch_src/"}"
     dst="$GT_ROOT/orchestrator/$rel"
     mkdir -p "$(dirname "$dst")"
@@ -123,7 +134,8 @@ sync_orchestrator_assets() {
       cp "$srcfile" "$dst"
       updated=$((updated + 1))
     fi
-  done < <(find "$orch_src" -type f | sort)
+  done <"$file_list"
+  rm -f "$file_list"
   echo "[orchestrator] synced from source tree ($added added, $updated updated)"
 }
 
@@ -202,13 +214,15 @@ drain_rig_mail "$RIG"
 
 echo "=== gt doctor --fix (settle + two passes) ==="
 sleep 3
-doc_flags=(--fix)
+doc_flags="--fix"
 if [[ "${DOCTOR_RESTART_SESSIONS:-0}" == "1" ]]; then
-  doc_flags+=(--restart-sessions)
+  doc_flags="$doc_flags --restart-sessions"
 fi
-(cd "$GT_ROOT" && gt doctor "${doc_flags[@]}") || true
+# shellcheck disable=SC2086
+(cd "$GT_ROOT" && gt doctor $doc_flags) || true
 sleep 3
-(cd "$GT_ROOT" && gt doctor "${doc_flags[@]}") || true
+# shellcheck disable=SC2086
+(cd "$GT_ROOT" && gt doctor $doc_flags) || true
 
 echo "=== gt doctor (read-only summary) ==="
 (cd "$GT_ROOT" && gt doctor) || true

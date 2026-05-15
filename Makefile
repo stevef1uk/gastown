@@ -1,4 +1,4 @@
-.PHONY: build desktop-build desktop-run install safe-install check-forward-only check-version-tag clean test test-e2e-container check-up-to-date
+.PHONY: build desktop-build desktop-run install safe-install sync-town-config check-forward-only check-version-tag clean test test-e2e-container check-up-to-date
 
 BINARY := gt
 BINARY_DESKTOP := gt-desktop
@@ -121,57 +121,7 @@ install: check-up-to-date build
 	@# Prevents drift when plugin fixes merge but runtime dirs are stale.
 	@$(INSTALL_DIR)/$(BINARY) plugin sync --source $(CURDIR)/plugins 2>/dev/null && \
 		echo "Plugins synced." || true
-	@# Sync embedded formula source files to every detected town's
-	@# .beads/formulas/. The binary embeds formulas (via go:embed) and reads
-	@# them at install/seed time; but agents read .beads/formulas/ at sling
-	@# time. Without this copy, edits to internal/formula/formulas/*.toml
-	@# rebuild the binary but never reach the runtime (Fix #114c).
-	@# Copies missing-or-different files (provisions new + refreshes changed).
-	@# Skips files where dst matches src. Does not maintain .installed.json
-	@# hash tracking — that's gt upgrade's job for end users; this path is
-	@# for development.
-	@GT_ROOTS="$${GT_ROOT:-$(HOME)/gt}"; \
-	for root in $$GT_ROOTS; do \
-		dst="$$root/.beads/formulas"; \
-		if [ -d "$$dst" ]; then \
-			added=0; updated=0; \
-			for src in $(CURDIR)/internal/formula/formulas/*.formula.toml; do \
-				[ -f "$$src" ] || continue; \
-				name=$$(basename "$$src"); \
-				if [ ! -f "$$dst/$$name" ]; then \
-					cp "$$src" "$$dst/$$name"; \
-					added=$$((added+1)); \
-				elif ! cmp -s "$$src" "$$dst/$$name"; then \
-					cp "$$src" "$$dst/$$name"; \
-					updated=$$((updated+1)); \
-				fi; \
-			done; \
-			if [ $$added -gt 0 ] || [ $$updated -gt 0 ]; then \
-				echo "Synced formulas → $$dst ($$added added, $$updated updated)"; \
-			fi; \
-		fi; \
-	done
-	@# Sync orchestrator workflow templates + prompts to every detected town.
-	@# Source of truth: internal/orchestrator/town/ (embedded via go:embed in the binary).
-	@GT_ROOTS="$${GT_ROOT:-$(HOME)/gt}"; \
-	orch_src="$(CURDIR)/internal/orchestrator/town"; \
-	for root in $$GT_ROOTS; do \
-		if [ ! -f "$$root/config.json" ] || [ ! -d "$$orch_src" ]; then continue; fi; \
-		added=0; updated=0; \
-		for srcfile in $$(find "$$orch_src" -type f 2>/dev/null | sort); do \
-			rel="$${srcfile#$$orch_src/}"; \
-			dst="$$root/orchestrator/$$rel"; \
-			mkdir -p "$$(dirname "$$dst")"; \
-			if [ ! -f "$$dst" ]; then \
-				cp "$$srcfile" "$$dst"; added=$$((added+1)); \
-			elif ! cmp -s "$$srcfile" "$$dst"; then \
-				cp "$$srcfile" "$$dst"; updated=$$((updated+1)); \
-			fi; \
-		done; \
-		if [ $$added -gt 0 ] || [ $$updated -gt 0 ]; then \
-			echo "Synced orchestrator → $$root/orchestrator ($$added added, $$updated updated)"; \
-		fi; \
-	done
+	@$(MAKE) sync-town-config
 
 # safe-install: Replace binary WITHOUT restarting daemon or killing sessions.
 # Use this for automated rebuilds (e.g., rebuild-gt plugin). Sessions pick up
@@ -190,6 +140,24 @@ safe-install: check-up-to-date check-forward-only build
 	done
 	@echo "Installed $(BINARY) to $(INSTALL_DIR)/$(BINARY) (daemon NOT restarted)"
 	@echo "Sessions will pick up new binary on next cycle."
+	@$(MAKE) sync-town-config
+
+# sync-town-config: push embedded orchestrator templates/prompts and formulas into
+# every detected town (GT_ROOT or ~/gt). Always overwrites orchestrator files
+# that differ from the binary embed; formulas use safe update (skips modified).
+sync-town-config:
+	@GT_ROOTS="$${GT_ROOT:-$(HOME)/gt}"; \
+	GT_BIN="$(INSTALL_DIR)/$(BINARY)"; \
+	if [ ! -x "$$GT_BIN" ]; then GT_BIN="$(BUILD_DIR)/$(BINARY)"; fi; \
+	if [ ! -x "$$GT_BIN" ]; then \
+		echo "ERROR: $$GT_BIN not found; run make build first"; \
+		exit 1; \
+	fi; \
+	for root in $$GT_ROOTS; do \
+		if [ ! -f "$$root/config.json" ]; then continue; fi; \
+		echo "=== Syncing town config → $$root ==="; \
+		"$$GT_BIN" config sync --town-root "$$root" || exit 1; \
+	done
 
 # check-version-tag: Verify that if HEAD is tagged vX.Y.Z, the Version constant
 # in internal/cmd/version.go equals X.Y.Z. No-op when HEAD is untagged, so it is
