@@ -257,21 +257,23 @@ func findGT() string {
 }
 
 // statePath returns the path to the agent's state file.
+// Layout matches internal/agentconsole: town agents under townRoot/<role>/,
+// rig singletons under townRoot/<rig>/<role>/, named polecats under polecats/<name>/.
 func statePath(townRoot, role, rig, polecat string) string {
-	var dir string
 	switch role {
 	case "deacon", "mayor", "planner", "mechanic":
-		dir = filepath.Join(townRoot, role)
-	default:
-		if rig != "" && polecat != "" {
-			dir = filepath.Join(townRoot, rig, "polecats", polecat)
-		} else if rig != "" {
-			dir = filepath.Join(townRoot, rig, "witness")
-		} else {
-			dir = townRoot
-		}
+		return filepath.Join(townRoot, role, stateFileName)
 	}
-	return filepath.Join(dir, stateFileName)
+	if rig != "" && polecat != "" {
+		return filepath.Join(townRoot, rig, "polecats", polecat, stateFileName)
+	}
+	if rig != "" {
+		if role == "crew" && polecat != "" {
+			return filepath.Join(townRoot, rig, "crew", polecat, stateFileName)
+		}
+		return filepath.Join(townRoot, rig, role, stateFileName)
+	}
+	return filepath.Join(townRoot, stateFileName)
 }
 
 // loadState reads the persisted agent state.

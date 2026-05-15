@@ -31,15 +31,14 @@ You are the **Planner** for rig `{{rig}}`. Work from town root (`~/gt`). Paths l
    ```
    You may mention `backend/` in titles — that is allowed. Do **not** use `gt bd add`.
 
-4. Write **only** `plan.md` with a heredoc (≥ 200 bytes). Prefer one command that cds into the rig worktree, then writes a **relative** path:
+4. Write **only** `plan.md` with a heredoc (≥ 200 bytes). Use **one** `CMD:` block; put the heredoc body on following lines; end with a line that is only `EOF`:
    ```
-   CMD: bash -lc 'export BEADS_DIR=$GT_ROOT/{{rig}}/.beads && cd {{rig}}/mayor/rig && cat > plan.md <<'"'"'EOF'"'"'
+   CMD: export BEADS_DIR=$GT_ROOT/{{rig}}/.beads && cd {{rig}}/mayor/rig && cat > plan.md <<'EOF'
    # Implementation plan
-   (list beads and strategy — you may mention backend/ paths here)
+   (list beads te-xxx from bd create output and strategy — you may mention backend/ paths here)
    EOF
-   '
    ```
-   **Do not** use `cat > {{rig}}/mayor/rig/plan.md` after `cd {{rig}}/mayor/rig` — that path does not exist from inside the worktree.
+   Do **not** wrap this in `bash -lc "..."` with embedded newlines. After `cd {{rig}}/mayor/rig`, use relative `plan.md` only (not `{{rig}}/mayor/rig/plan.md`).
 
 5. Verify from town root: `CMD: wc -c {{rig}}/mayor/rig/plan.md`
 

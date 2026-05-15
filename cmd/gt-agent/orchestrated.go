@@ -74,15 +74,15 @@ func runOrchestrated(ctx context.Context, client *llm.Client, townRoot, role, ri
 			outcome = "fail"
 		}
 
-		updateOrchestratedRetry(&state, task, outcome, summary, attemptLog)
-
 		fmt.Printf("[gt-agent] complete_task outcome=%q summary=%q\n", outcome, summary)
 		agentID := orchestrator.OrchestratorAgentID(role, rig)
 		nextState, err := orchestrator.CompleteTask(townRoot, task.WorkflowID, outcome, agentID)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "[gt-agent] complete_task failed: %v\n", err)
+			updateOrchestratedRetry(&state, task, "failure", err.Error(), attemptLog)
 		} else {
 			fmt.Printf("[gt-agent] next state: %s\n", nextState)
+			updateOrchestratedRetry(&state, task, outcome, summary, attemptLog)
 		}
 
 		state.LastActivity = time.Now()
@@ -96,7 +96,7 @@ func runOrchestrated(ctx context.Context, client *llm.Client, townRoot, role, ri
 func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, rig, sessionName string, task *orchestrator.Task, priorRetry *OrchestratedRetry) (outcome, summary, attemptLog string, err error) {
 	systemPrompt := buildOrchestratedSystemPrompt(task)
 	userPrompt := buildOrchestratedUserPrompt(task)
-	if block := formatOrchestratedRetryBlock(priorRetry, task); block != "" {
+	if block := formatOrchestratedRetryBlock(priorRetry, task, rig); block != "" {
 		userPrompt = block + "\n\n" + userPrompt
 		fmt.Printf("[gt-agent] injecting prior failure context for %s/%s\n", task.WorkflowID, task.State)
 	}
@@ -175,13 +175,11 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 					}
 				}
 				fmt.Printf("[gt-agent] $ %s\n", cmd)
-				c := exec.Command("/bin/sh", "-c", cmd)
-				c.Env = orchestratedCommandEnv(townRoot, rig, task.State, os.Environ())
-				if sessionName != "" {
-					c.Env = append(c.Env, "GT_SESSION="+sessionName)
+				cmdEnv := orchestratedCommandEnv(townRoot, rig, task.State, os.Environ())
+				if needsOrchestratedScriptFile(cmd) {
+					fmt.Printf("[gt-agent] running multiline/heredoc via temp script\n")
 				}
-				c.Dir = townRoot
-				out, cmdErr := c.CombinedOutput()
+				out, cmdErr := runOrchestratedCommand(cmd, townRoot, sessionName, cmdEnv)
 				if task.State == "design" && cmdErr == nil && isArchitectureMDWriteCommand(cmd) {
 					designArchWrittenThisRun = true
 				}
@@ -191,6 +189,9 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 					}
 					if isBeadCreateCommand(cmd) && cmdErr == nil {
 						planningBeadCreateOK = true
+					}
+					if cmdErr == nil && isPlanMDWriteCommand(cmd) && planMDMeetsMinSize(townRoot, rig) {
+						planningHadCmdFailure = false
 					}
 				}
 				if task.State == "implementation" {
@@ -279,7 +280,7 @@ func truncateOrchestratedFeedback(s string, max int) string {
 }
 
 // formatOrchestratedRetryBlock returns prior-attempt context for the next LLM session.
-func formatOrchestratedRetryBlock(prior *OrchestratedRetry, task *orchestrator.Task) string {
+func formatOrchestratedRetryBlock(prior *OrchestratedRetry, task *orchestrator.Task, rig string) string {
 	if prior == nil || task == nil {
 		return ""
 	}
@@ -296,9 +297,35 @@ func formatOrchestratedRetryBlock(prior *OrchestratedRetry, task *orchestrator.T
 		b.WriteString(prior.Feedback)
 		b.WriteString("\n")
 	}
-	b.WriteString("\nFix the issues above. Use bead IDs and paths from command output — do not invent IDs. ")
-	b.WriteString("One CMD: per line; use mkdir -p backend before writing backend/ files.\n")
+	b.WriteString("\nFix the issues above. Use bead IDs and paths from command output — do not invent IDs.\n")
+	b.WriteString(orchestratedRetryHintsForState(task.State, rig))
 	return b.String()
+}
+
+// orchestratedRetryHintsForState returns step-specific guidance after a failed attempt.
+func orchestratedRetryHintsForState(state, rig string) string {
+	switch strings.ToLower(strings.TrimSpace(state)) {
+	case "kickoff":
+		return "One CMD: per line. Confirm the rig is registered and SPEC.md exists before reporting success.\n"
+	case "design":
+		return "One CMD: per line. Read SPEC with head; write architecture.md via a single-quoted heredoc (≥200 bytes). " +
+			"Prose may mention python3 or backend/ paths — that is fine inside the document.\n"
+	case "planning":
+		worktree := "<rig>/mayor/rig"
+		if rig != "" {
+			worktree = rig + "/mayor/rig"
+		}
+		return fmt.Sprintf("One CMD: per line. After `cd %s`, write plan.md with a relative path (not %s/plan.md). "+
+			"Heredoc must end with a line containing only EOF. Verify with wc -c from town root.\n",
+			worktree, worktree)
+	case "implementation":
+		return "One CMD: per line. Run `mkdir -p backend` before creating backend files. " +
+			"Use real te-xxx bead IDs from bd list output — do not invent IDs.\n"
+	case "qa_review":
+		return "One CMD: per line. Review closed beads against SPEC and architecture; use allowed QA outcomes only.\n"
+	default:
+		return "One CMD: per line.\n"
+	}
 }
 
 // updateOrchestratedRetry stores failure context for the next fetch_task or clears it on success.
@@ -438,6 +465,26 @@ func isArchitectureMDWriteCommand(cmd string) bool {
 func isPlanMDHeredoc(cmd string) bool {
 	lower := strings.ToLower(cmd)
 	return strings.Contains(lower, "plan.md") && strings.Contains(lower, "<<")
+}
+
+func isPlanMDWriteCommand(cmd string) bool {
+	if isPlanMDHeredoc(cmd) {
+		return true
+	}
+	lower := strings.ToLower(cmd)
+	if !strings.Contains(lower, "plan.md") {
+		return false
+	}
+	return strings.Contains(lower, ">") || strings.Contains(lower, "tee ")
+}
+
+func planMDMeetsMinSize(townRoot, rig string) bool {
+	path := filepath.Join(rigMayorRigDir(townRoot, rig), "plan.md")
+	info, err := os.Stat(path)
+	if err != nil {
+		return false
+	}
+	return info.Size() >= minPlanMDBytes
 }
 
 // rewriteBackendPathAfterCD fixes polecat writing rig/mayor/rig/backend/... after cd into worktree.
