@@ -48,13 +48,13 @@ func TestValidateOrchestratedArtifacts_design(t *testing.T) {
 		t.Fatal(err)
 	}
 	task := &orchestrator.Task{State: "design"}
-	if err := validateOrchestratedArtifacts(task, dir, "myrig", "success"); err == nil {
+	if err := validateOrchestratedArtifacts(task, dir, "myrig", "success", false, false); err == nil {
 		t.Fatal("expected size validation error")
 	}
 	if err := os.WriteFile(path, make([]byte, 200), 0644); err != nil {
 		t.Fatal(err)
 	}
-	if err := validateOrchestratedArtifacts(task, dir, "myrig", "success"); err != nil {
+	if err := validateOrchestratedArtifacts(task, dir, "myrig", "success", false, false); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -98,8 +98,83 @@ func TestValidatePlanningCommand_forbidsImplementation(t *testing.T) {
 	if err := validatePlanningCommand(plan, "testgt2"); err != nil {
 		t.Fatalf("plan heredoc should be allowed: %v", err)
 	}
-	if err := validatePlanningCommand("gt bd add -t task -m hello", "testgt2"); err != nil {
-		t.Fatalf("gt bd add should be allowed: %v", err)
+	if err := validatePlanningCommand("gt bd add -t task -m hello", "testgt2"); err == nil {
+		t.Fatal("gt bd add should be rejected")
+	}
+	if err := validatePlanningCommand(`bash -lc 'cd testgt2/mayor/rig && bd create --type task --title "Implement backend/fizzbuzz.py"'`, "testgt2"); err != nil {
+		t.Fatalf("bd create with backend/ in title should be allowed: %v", err)
+	}
+	if err := validatePlanningCommand("head -n 40 testgt2/mayor/rig/architecture.md", "testgt2"); err != nil {
+		t.Fatalf("head architecture should be allowed: %v", err)
+	}
+	if err := validatePlanningCommand("cat > testgt2/mayor/rig/backend/foo.py <<'EOF'", "testgt2"); err == nil {
+		t.Fatal("writing backend file should be rejected")
+	}
+}
+
+func TestValidatePlanningArtifacts(t *testing.T) {
+	dir := t.TempDir()
+	rigDir := filepath.Join(dir, "testgt2", "mayor", "rig")
+	if err := os.MkdirAll(rigDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := validatePlanningArtifacts(dir, "testgt2", false, false); err == nil {
+		t.Fatal("expected error without plan and beads")
+	}
+	if err := os.WriteFile(filepath.Join(rigDir, "plan.md"), make([]byte, 250), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := validatePlanningArtifacts(dir, "testgt2", false, false); err == nil {
+		t.Fatal("expected error without successful bd create")
+	}
+	if err := validatePlanningArtifacts(dir, "testgt2", true, true); err == nil {
+		t.Fatal("expected error when commands failed")
+	}
+	if err := validatePlanningArtifacts(dir, "testgt2", false, true); err != nil {
+		t.Fatalf("plan + beads should pass: %v", err)
+	}
+}
+
+func TestValidateImplementationCommand(t *testing.T) {
+	bad := []string{
+		"gt bd list -t implementation -s open",
+		"gt bd claim impl-1",
+		"gt bead close 101",
+		"```bash\ncmd\n```",
+		"<<EOF > foo",
+	}
+	for _, cmd := range bad {
+		if err := validateImplementationCommand(cmd, "testgt2"); err == nil {
+			t.Fatalf("expected reject: %q", cmd)
+		}
+	}
+	ok := []string{
+		`bash -lc 'cd testgt2/mayor/rig && bd list --status=open'`,
+		`bash -lc 'cd testgt2/mayor/rig && bd update hq-abc --status=in_progress'`,
+		`cat > testgt2/mayor/rig/backend/fizzbuzz.py <<'EOF'`,
+	}
+	for _, cmd := range ok {
+		if err := validateImplementationCommand(cmd, "testgt2"); err != nil {
+			t.Fatalf("expected allow %q: %v", cmd, err)
+		}
+	}
+}
+
+func TestOrchestratedArtifactAutoOutcome_planningRequiresBeads(t *testing.T) {
+	dir := t.TempDir()
+	rigDir := filepath.Join(dir, "testgt2", "mayor", "rig")
+	if err := os.MkdirAll(rigDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(rigDir, "plan.md"), make([]byte, 250), 0644); err != nil {
+		t.Fatal(err)
+	}
+	task := &orchestrator.Task{State: "planning", AllowedOutcomes: []string{"success", "failure"}}
+	if _, _, ok := orchestratedArtifactAutoOutcome(task, dir, "testgt2", false, false); ok {
+		t.Fatal("should not auto-complete without bd create success")
+	}
+	if _, _, ok := orchestratedArtifactAutoOutcome(task, dir, "testgt2", false, true); !ok {
+		t.Fatal("should auto-complete with plan + bead create ok")
 	}
 }
 
@@ -117,7 +192,7 @@ func TestValidateDesignArtifacts_allowsStaleBackendPy(t *testing.T) {
 		t.Fatal(err)
 	}
 	task := &orchestrator.Task{State: "design"}
-	if err := validateOrchestratedArtifacts(task, dir, "myrig", "success"); err != nil {
+	if err := validateOrchestratedArtifacts(task, dir, "myrig", "success", false, false); err != nil {
 		t.Fatalf("stale backend/*.py must not block design: %v", err)
 	}
 }
@@ -132,7 +207,7 @@ func TestOrchestratedArtifactAutoOutcome_design(t *testing.T) {
 		t.Fatal(err)
 	}
 	task := &orchestrator.Task{State: "design", AllowedOutcomes: []string{"success", "failure"}}
-	o, _, ok := orchestratedArtifactAutoOutcome(task, dir, "myrig")
+	o, _, ok := orchestratedArtifactAutoOutcome(task, dir, "myrig", false, false)
 	if !ok || o != "success" {
 		t.Fatalf("want auto success, got ok=%v outcome=%q", ok, o)
 	}
