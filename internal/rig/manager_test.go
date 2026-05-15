@@ -456,6 +456,15 @@ func TestInitBeads_TrackedBeads_CreatesRedirect(t *testing.T) {
 		t.Errorf("redirect content = %q, want %q", string(content), expected)
 	}
 
+	rigBeadsDir := filepath.Join(rigPath, ".beads")
+	info, err := os.Stat(rigBeadsDir)
+	if err != nil {
+		t.Fatalf("stat rig .beads: %v", err)
+	}
+	if got := info.Mode().Perm(); got != 0700 {
+		t.Fatalf("rig .beads mode = %o, want 0700", got)
+	}
+
 	// Verify no local database was created (no config.yaml at rig level)
 	rigConfigPath := filepath.Join(rigPath, ".beads", "config.yaml")
 	if _, err := os.Stat(rigConfigPath); !os.IsNotExist(err) {
@@ -503,6 +512,47 @@ exit 0
 	beadsDir := filepath.Join(rigPath, ".beads")
 	if _, err := os.Stat(beadsDir); os.IsNotExist(err) {
 		t.Errorf("expected .beads directory to be created")
+	}
+	info, err := os.Stat(beadsDir)
+	if err != nil {
+		t.Fatalf("stat .beads: %v", err)
+	}
+	if got := info.Mode().Perm(); got != 0700 {
+		t.Fatalf(".beads mode = %o, want 0700", got)
+	}
+}
+
+func TestInitBeads_RepairsExistingLoosePerms(t *testing.T) {
+	// Cannot use t.Parallel() due to t.Setenv
+	rigPath := t.TempDir()
+	beadsDir := filepath.Join(rigPath, ".beads")
+	if err := os.MkdirAll(beadsDir, 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	mayorRigDir := filepath.Join(rigPath, "mayor", "rig")
+	if err := os.MkdirAll(mayorRigDir, 0755); err != nil {
+		t.Fatalf("mkdir mayor/rig: %v", err)
+	}
+
+	script := `#!/usr/bin/env bash
+exit 0
+`
+	windowsScript := "@echo off\r\nexit /b 0\r\n"
+	binDir := writeFakeBD(t, script, windowsScript)
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	manager := &Manager{}
+	if err := manager.InitBeads(rigPath, "gt", ""); err != nil {
+		t.Fatalf("InitBeads: %v", err)
+	}
+
+	info, err := os.Stat(beadsDir)
+	if err != nil {
+		t.Fatalf("stat .beads: %v", err)
+	}
+	if got := info.Mode().Perm(); got != 0700 {
+		t.Fatalf(".beads mode = %o, want 0700", got)
 	}
 }
 

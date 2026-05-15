@@ -1095,6 +1095,11 @@ func (m *Manager) InitBeads(rigPath, prefix, rigName string) error {
 
 	beadsDir := filepath.Join(rigPath, ".beads")
 	mayorRigBeads := filepath.Join(rigPath, "mayor", "rig", ".beads")
+	ensureRigBeadsDirMode := func() {
+		if err := beads.EnsureBeadsDirMode0700(beadsDir); err != nil {
+			fmt.Printf("  Warning: Could not set .beads directory permissions to 0700: %v\n", err)
+		}
+	}
 
 	// Check if source repo has tracked .beads/ (cloned into mayor/rig).
 	// If so, create a redirect file instead of a new database.
@@ -1103,6 +1108,7 @@ func (m *Manager) InitBeads(rigPath, prefix, rigName string) error {
 		if err := os.MkdirAll(beadsDir, 0700); err != nil {
 			return err
 		}
+		ensureRigBeadsDirMode()
 		redirectPath := filepath.Join(beadsDir, "redirect")
 		if err := os.WriteFile(redirectPath, []byte("mayor/rig/.beads\n"), 0644); err != nil {
 			return fmt.Errorf("creating redirect file: %w", err)
@@ -1114,6 +1120,7 @@ func (m *Manager) InitBeads(rigPath, prefix, rigName string) error {
 	if err := os.MkdirAll(beadsDir, 0700); err != nil {
 		return err
 	}
+	ensureRigBeadsDirMode()
 
 	// Ensure metadata.json is correctly configured BEFORE bd init.
 	// This ensures bd connects to the centralized Dolt server database
@@ -1238,6 +1245,9 @@ func (m *Manager) InitBeads(rigPath, prefix, rigName string) error {
 	// bd's routing walks up to find town root (via mayor/town.json) and uses
 	// town-level routes.jsonl for prefix-based routing. Rig-level routes.jsonl
 	// would prevent this walk-up and break cross-rig routing.
+
+	// Repair mode after bd init (bd may recreate or loosen the directory).
+	ensureRigBeadsDirMode()
 
 	return nil
 }

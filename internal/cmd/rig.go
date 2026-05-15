@@ -1288,6 +1288,12 @@ func runRigAdopt(_ *cobra.Command, args []string) error {
 		}
 	}
 
+	// Repair rig-level .beads permissions (e.g. legacy 0755 from umask or clone).
+	rigBeadsDir := filepath.Join(rigPath, ".beads")
+	if err := beads.EnsureBeadsDirMode0700(rigBeadsDir); err != nil {
+		fmt.Printf("  %s Could not set .beads directory permissions to 0700: %v\n", style.Warning.Render("!"), err)
+	}
+
 	// Create rig identity bead if prefix is set
 	if result.BeadsPrefix != "" {
 		mayorRigBeads := filepath.Join(rigPath, "mayor", "rig", ".beads")
