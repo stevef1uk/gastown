@@ -22,6 +22,7 @@ import (
 	"github.com/steveyegge/gastown/internal/deps"
 	"github.com/steveyegge/gastown/internal/doltserver"
 	"github.com/steveyegge/gastown/internal/formula"
+	"github.com/steveyegge/gastown/internal/orchestrator"
 	"github.com/steveyegge/gastown/internal/hooks"
 	"github.com/steveyegge/gastown/internal/runtime"
 	"github.com/steveyegge/gastown/internal/shell"
@@ -392,6 +393,12 @@ func runInstall(cmd *cobra.Command, args []string) error {
 			fmt.Printf("   %s Could not provision formulas: %v\n", style.Dim.Render("⚠"), err)
 		} else if count > 0 {
 			fmt.Printf("   ✓ Provisioned %d formulas\n", count)
+		}
+
+		if res, err := orchestrator.ProvisionTownAssets(absPath); err != nil {
+			fmt.Printf("   %s Could not provision orchestrator assets: %v\n", style.Dim.Render("⚠"), err)
+		} else if res.Added > 0 {
+			fmt.Printf("   ✓ Provisioned orchestrator assets (%d files)\n", res.Added)
 		}
 
 		// Create town-level agent beads (Mayor, Deacon).

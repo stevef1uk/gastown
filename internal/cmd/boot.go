@@ -14,6 +14,7 @@ import (
 	"github.com/steveyegge/gastown/internal/daemon"
 	"github.com/steveyegge/gastown/internal/deacon"
 	"github.com/steveyegge/gastown/internal/session"
+	"github.com/steveyegge/gastown/internal/orchestrator"
 	"github.com/steveyegge/gastown/internal/style"
 	"github.com/steveyegge/gastown/internal/workspace"
 )
@@ -193,6 +194,7 @@ func runBootStatus(cmd *cobra.Command, args []string) error {
 }
 
 func runBootSpawn(cmd *cobra.Command, args []string) error {
+	townRoot, _ := workspace.FindFromCwdOrError()
 	b, err := getBootManager()
 	if err != nil {
 		return err
@@ -212,7 +214,8 @@ func runBootSpawn(cmd *cobra.Command, args []string) error {
 	}
 
 	// Spawn Boot
-	if err := b.Spawn(bootAgentOverride); err != nil {
+	orchestrated, _, _ := orchestrator.IsRunning(townRoot)
+	if err := b.Spawn(bootAgentOverride, orchestrated); err != nil {
 		status.Error = err.Error()
 		status.CompletedAt = time.Now()
 		_ = b.SaveStatus(status)
@@ -312,7 +315,8 @@ func runDegradedTriage(b *boot.Boot) (action, target string, err error) {
 		fmt.Println("Deacon session missing - starting Deacon")
 		if townRoot != "" {
 			mgr := deacon.NewManager(townRoot)
-			if err := mgr.Start(""); err != nil && err != deacon.ErrAlreadyRunning {
+			orchestrated, _, _ := orchestrator.IsRunning(townRoot)
+			if err := mgr.Start("", orchestrated); err != nil && err != deacon.ErrAlreadyRunning {
 				fmt.Printf("Failed to start Deacon: %v\n", err)
 				return "error", "deacon-start-failed", fmt.Errorf("starting deacon: %w", err)
 			}

@@ -1,0 +1,68 @@
+id: idea-to-plan
+description: "Full pipeline from vague idea to approved implementation plan."
+initial_state: intake
+states:
+  intake:
+    agent_role: architect
+    instructions: |
+      Read the conversation context and produce a structured PRD draft.
+      
+      Write a structured PRD draft to `.prd-reviews/{{review_id}}/prd-draft.md`
+      Use this structure:
+      # PRD: <feature name>
+      ## Problem Statement
+      ## Goals
+      ## Non-Goals
+      ## User Stories / Scenarios
+      ## Constraints
+      ## Open Questions
+      ## Rough Approach
+      
+      After writing, signal completion with outcome 'success'.
+    transitions:
+      success: prd-review
+      fail: intake
+
+  prd-review:
+    agent_role: reviewer
+    instructions: |
+      Review the PRD draft at `.prd-reviews/{{review_id}}/prd-draft.md`.
+      Check for requirements, gaps, ambiguity, feasibility, scope, and stakeholders.
+      Produce a synthesis report at `.prd-reviews/{{review_id}}/prd-review.md`.
+    transitions:
+      success: human-clarify
+      fail: prd-review
+
+  human-clarify:
+    agent_role: mayor
+    instructions: |
+      Present the consolidated questions from `.prd-reviews/{{review_id}}/prd-review.md` to the human.
+      Wait for the human to answer in the chat.
+      Update `.prd-reviews/{{review_id}}/prd-draft.md` with the answers.
+    transitions:
+      success: generate-plan
+      fail: human-clarify
+
+  generate-plan:
+    agent_role: architect
+    instructions: |
+      Generate an implementation plan from the refined PRD.
+      The plan should be written to `.designs/{{review_id}}/design-doc.md`.
+    transitions:
+      success: create-beads
+      fail: generate-plan
+
+  create-beads:
+    agent_role: architect
+    instructions: |
+      Convert the refined implementation plan into beads.
+      Use 'bd create' to create tasks and epics.
+    transitions:
+      success: completed
+      fail: create-beads
+
+  completed:
+    agent_role: mayor
+    instructions: |
+      Workflow complete. Notify the human.
+    transitions: {}

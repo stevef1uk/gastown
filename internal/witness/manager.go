@@ -82,8 +82,18 @@ func (m *Manager) Status() (*tmux.SessionInfo, error) {
 	return &tmux.SessionInfo{Name: sessionID}, nil
 }
 
+// ensureWitnessWorkdir returns the witness workdir, creating witness/rig/ if needed.
+// Beads redirect requires a path at least two levels below town root (e.g. <rig>/witness/rig).
+func (m *Manager) ensureWitnessWorkdir() (string, error) {
+	witnessRigDir := filepath.Join(m.rig.Path, "witness", "rig")
+	if err := os.MkdirAll(witnessRigDir, 0755); err != nil {
+		return "", fmt.Errorf("creating witness workdir: %w", err)
+	}
+	return witnessRigDir, nil
+}
+
 // witnessDir returns the working directory for the witness.
-// Prefers witness/rig/, falls back to witness/, then rig root.
+// Prefers witness/rig/, then witness/. Does not use rig root (too shallow for beads redirect).
 func (m *Manager) witnessDir() string {
 	witnessRigDir := filepath.Join(m.rig.Path, "witness", "rig")
 	if _, err := os.Stat(witnessRigDir); err == nil {
@@ -95,7 +105,7 @@ func (m *Manager) witnessDir() string {
 		return witnessDir
 	}
 
-	return m.rig.Path
+	return witnessRigDir
 }
 
 // Start starts the witness.
@@ -104,7 +114,7 @@ func (m *Manager) witnessDir() string {
 // agentOverride optionally specifies a different agent alias to use.
 // envOverrides are KEY=VALUE pairs that override all other env var sources.
 // ZFC-compliant: no state file, tmux session is source of truth.
-func (m *Manager) Start(foreground bool, agentOverride string, envOverrides []string) error {
+func (m *Manager) Start(foreground bool, agentOverride string, envOverrides []string, orchestrated bool) error {
 	if foreground {
 		// Foreground mode is deprecated - patrol logic moved to mol-witness-patrol
 		return fmt.Errorf("foreground mode is deprecated; use background mode (remove --foreground flag)")
@@ -120,8 +130,10 @@ func (m *Manager) Start(foreground bool, agentOverride string, envOverrides []st
 		return ErrAlreadyRunning
 	}
 
-	// Ensure runtime settings exist in the shared witness parent directory.
-	witnessDir := m.witnessDir()
+	witnessDir, err := m.ensureWitnessWorkdir()
+	if err != nil {
+		return err
+	}
 	if err := beads.SetupRedirect(townRoot, witnessDir); err != nil {
 		return fmt.Errorf("ensuring witness beads redirect: %w", err)
 	}
@@ -171,6 +183,7 @@ func (m *Manager) Start(foreground bool, agentOverride string, envOverrides []st
 		RigName:          m.rig.Name,
 		RigPath:          m.rig.Path,
 		TownRoot:         townRoot,
+		Orchestrated:     orchestrated,
 		RuntimeConfigDir: runtimeConfigDir,
 		AgentOverride:    agentOverride,
 		ExtraEnv:         extraEnv,

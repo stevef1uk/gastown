@@ -69,6 +69,18 @@ Ephemeral Beads destroyed after runs. Wisps are lightweight work items used for 
 ### Hook
 A special pinned Bead for each agent. The Hook is an agent's primary work queue - when work appears on your Hook, GUPP dictates you must run it.
 
+### Orchestrator
+Central workflow FSM service that assigns pipeline work by state and role. Templates live in `{townRoot}/orchestrator/templates/`; agents with `--orchestrated` poll via NATS MCP (`fetch_task` / `complete_task`). See [Orchestrator (concept)](concepts/orchestrator.md).
+
+### Workflow template
+YAML definition of a finite-state machine: states, per-state `role` and `instructions`, and `transitions` keyed by outcome.
+
+### Workflow instance
+A running execution of a workflow template (e.g. `wf-1`) with a `current_state` and optional `variables`. Today held in orchestrator memory only.
+
+### Orchestrated agent
+An agent session running `gt-agent --orchestrated`, taking tasks from the orchestrator instead of the legacy hook/mail patrol loop.
+
 ## Workflow Commands
 
 ### Convoy

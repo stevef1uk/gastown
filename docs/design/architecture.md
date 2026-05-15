@@ -506,6 +506,18 @@ The Proxy acts as the brain's gateway, managing high-throughput requests from do
 *   **Architect**: SPEC analysis and design enforcement.
 *   **QA**: Final verification gatekeeper.
 
+## Orchestrator (workflow FSM)
+
+For explicit rig pipelines (Mayor → Architect → Planner → Polecat → QA), Gas Town runs
+an in-process **orchestrator** with YAML templates under `{townRoot}/orchestrator/templates/`.
+Agents started with `--orchestrated` poll NATS subject `gt.orchestrator.mcp` for tasks
+instead of using the hook/mail patrol loop for that work.
+
+- Conceptual overview: [Orchestrator (concept)](../concepts/orchestrator.md)
+- Technical reference: [Orchestrator (technical)](orchestrator.md)
+
+This complements (does not replace) molecules, convoys, and beads-based dispatch below.
+
 ## Work Orchestration Flow
 
 The orchestration pipeline coordinates work from idea through implementation to merge:

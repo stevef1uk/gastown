@@ -1,0 +1,28 @@
+id: mechanic-patrol
+description: "Standard town-level maintenance and repair cycle"
+initial_state: scan_logs
+
+states:
+  scan_logs:
+    agent_role: mechanic
+    instructions: |
+      find $GT_TOWN_ROOT/logs/sessions -maxdepth 1 -name "*.log" -mmin -60 -type f | xargs grep -l "exit status" || true
+      # If logs found, output 'errors_found', else 'clean'
+    transitions:
+      errors_found: fix_agent
+      clean: sleep
+
+  fix_agent:
+    agent_role: mechanic
+    instructions: |
+      # Simple heuristic: restart any agent with recent crash logs
+      # gt restart <agent>
+      echo "REPAIR_REQUIRED"
+    transitions:
+      done: scan_logs
+
+  sleep:
+    agent_role: mechanic
+    instructions: "sleep 60"
+    transitions:
+      done: scan_logs

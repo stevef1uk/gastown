@@ -15,6 +15,7 @@ import (
 	"github.com/steveyegge/gastown/internal/beads"
 	"github.com/steveyegge/gastown/internal/config"
 	"github.com/steveyegge/gastown/internal/constants"
+	"github.com/steveyegge/gastown/internal/orchestrator"
 	"github.com/steveyegge/gastown/internal/rig"
 	"github.com/steveyegge/gastown/internal/session"
 	"github.com/steveyegge/gastown/internal/tmux"
@@ -381,16 +382,18 @@ func (d *Daemon) restartSession(sessionName, identity string) error {
 	// NewSessionWithCommand (command as initial pane process). This eliminates
 	// the race condition in the old EnsureSessionFresh + SendKeys pattern where
 	// the shell might not be ready to receive keystrokes, producing empty windows.
-	startCmd := d.getStartCommand(config, parsed)
+	orchestrated, _, _ := orchestrator.IsRunning(d.config.TownRoot)
+	startCmd := d.getStartCommand(config, parsed, orchestrated)
 
 	// Create session with command as initial process.
 	// EnsureSessionFresh kills zombie sessions and creates a new one.
 	ctx := context.Background()
 	if err := d.sp.EnsureSessionFresh(ctx, session.StartOptions{
-		SessionID: sessionName,
-		WorkDir:   workDir,
-		Command:   startCmd,
-		Env:       nil,
+		SessionID:    sessionName,
+		WorkDir:      workDir,
+		Command:      startCmd,
+		Orchestrated: orchestrated,
+		Env:          nil,
 	}); err != nil {
 		if errors.Is(err, tmux.ErrSessionRunning) {
 			d.logger.Printf("Session %s already running with healthy agent, skipping restart", sessionName)
@@ -530,7 +533,7 @@ func isBuiltinClaudeStartCommand(cmd string) bool {
 // getStartCommand determines the startup command for an agent.
 // Uses role config if available, then role-based agent selection, then hardcoded defaults.
 // Includes beacon + role-specific instructions in the CLI prompt.
-func (d *Daemon) getStartCommand(roleConfig *beads.RoleConfig, parsed *ParsedIdentity) string {
+func (d *Daemon) getStartCommand(roleConfig *beads.RoleConfig, parsed *ParsedIdentity, orchestrated bool) string {
 	// Role config start_command: only use when the resolved agent is Claude.
 	// Built-in role TOMLs hardcode "exec claude ..." which bypasses the
 	// declarative agent resolution system. Fall through to agent resolution
@@ -600,7 +603,11 @@ func (d *Daemon) getStartCommand(roleConfig *beads.RoleConfig, parsed *ParsedIde
 		SessionIDEnv: sessionIDEnv,
 	})
 	config.SanitizeAgentEnv(envVars, map[string]string{})
-	return config.PrependEnv("exec "+runtimeConfig.BuildCommandWithPrompt(prompt), envVars)
+	cmd := "exec " + runtimeConfig.BuildCommandWithPrompt(prompt)
+	if orchestrated {
+		cmd += " --orchestrated"
+	}
+	return config.PrependEnv(cmd, envVars)
 }
 
 // setSessionEnvironment sets environment variables for the session.

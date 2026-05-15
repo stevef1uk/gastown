@@ -21,6 +21,7 @@ import (
 	"github.com/steveyegge/gastown/internal/doltserver"
 	"github.com/steveyegge/gastown/internal/git"
 	"github.com/steveyegge/gastown/internal/mayor"
+	"github.com/steveyegge/gastown/internal/orchestrator"
 	"github.com/steveyegge/gastown/internal/polecat"
 	"github.com/steveyegge/gastown/internal/refinery"
 	"github.com/steveyegge/gastown/internal/rig"
@@ -307,7 +308,8 @@ func startCoreAgents(townRoot string, agentOverride string, mu *sync.Mutex) erro
 	go func() {
 		defer wg.Done()
 		mayorMgr := mayor.NewManager(townRoot)
-		if err := mayorMgr.Start(agentOverride); err != nil {
+		orchestrated, _, _ := orchestrator.IsRunning(townRoot)
+		if err := mayorMgr.Start(agentOverride, orchestrated); err != nil {
 			if errors.Is(err, mayor.ErrAlreadyRunning) {
 				mu.Lock()
 				fmt.Printf("  %s Mayor already running\n", style.Dim.Render("○"))
@@ -338,7 +340,8 @@ func startCoreAgents(townRoot string, agentOverride string, mu *sync.Mutex) erro
 	go func() {
 		defer wg.Done()
 		deaconMgr := deacon.NewManager(townRoot)
-		if err := deaconMgr.Start(agentOverride); err != nil {
+		orchestrated, _, _ := orchestrator.IsRunning(townRoot)
+		if err := deaconMgr.Start(agentOverride, orchestrated); err != nil {
 			if errors.Is(err, deacon.ErrAlreadyRunning) {
 				mu.Lock()
 				fmt.Printf("  %s Deacon already running\n", style.Dim.Render("○"))
@@ -397,7 +400,9 @@ func startRigAgents(rigs []*rig.Rig, mu *sync.Mutex) {
 // startWitnessForRig starts the witness for a single rig and returns a status message.
 func startWitnessForRig(r *rig.Rig) string {
 	witMgr := witness.NewManager(r)
-	if err := witMgr.Start(false, "", nil); err != nil {
+	townRoot, _ := workspace.FindFromCwdOrError()
+	orchestrated, _, _ := orchestrator.IsRunning(townRoot)
+	if err := witMgr.Start(false, "", nil, orchestrated); err != nil {
 		if errors.Is(err, witness.ErrAlreadyRunning) {
 			return fmt.Sprintf("  %s %s witness already running\n", style.Dim.Render("○"), r.Name)
 		}
@@ -409,7 +414,9 @@ func startWitnessForRig(r *rig.Rig) string {
 // startRefineryForRig starts the refinery for a single rig and returns a status message.
 func startRefineryForRig(r *rig.Rig) string {
 	refineryMgr := refinery.NewManager(r)
-	if err := refineryMgr.Start(false, ""); err != nil {
+	townRoot, _ := workspace.FindFromCwdOrError()
+	orchestrated, _, _ := orchestrator.IsRunning(townRoot)
+	if err := refineryMgr.Start(false, "", orchestrated); err != nil {
 		if errors.Is(err, refinery.ErrAlreadyRunning) {
 			return fmt.Sprintf("  %s %s refinery already running\n", style.Dim.Render("○"), r.Name)
 		}

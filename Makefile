@@ -151,6 +151,27 @@ install: check-up-to-date build
 			fi; \
 		fi; \
 	done
+	@# Sync orchestrator workflow templates + prompts to every detected town.
+	@# Source of truth: internal/orchestrator/town/ (embedded via go:embed in the binary).
+	@GT_ROOTS="$${GT_ROOT:-$(HOME)/gt}"; \
+	orch_src="$(CURDIR)/internal/orchestrator/town"; \
+	for root in $$GT_ROOTS; do \
+		if [ ! -f "$$root/config.json" ] || [ ! -d "$$orch_src" ]; then continue; fi; \
+		added=0; updated=0; \
+		while IFS= read -r srcfile; do \
+			rel="$${srcfile#$$orch_src/}"; \
+			dst="$$root/orchestrator/$$rel"; \
+			mkdir -p "$$(dirname "$$dst")"; \
+			if [ ! -f "$$dst" ]; then \
+				cp "$$srcfile" "$$dst"; added=$$((added+1)); \
+			elif ! cmp -s "$$srcfile" "$$dst"; then \
+				cp "$$srcfile" "$$dst"; updated=$$((updated+1)); \
+			fi; \
+		done < <(find "$$orch_src" -type f | sort); \
+		if [ $$added -gt 0 ] || [ $$updated -gt 0 ]; then \
+			echo "Synced orchestrator → $$root/orchestrator ($$added added, $$updated updated)"; \
+		fi; \
+	done
 
 # safe-install: Replace binary WITHOUT restarting daemon or killing sessions.
 # Use this for automated rebuilds (e.g., rebuild-gt plugin). Sessions pick up

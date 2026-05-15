@@ -113,7 +113,7 @@ func (m *Manager) mayorDir() string {
 // Start starts the mayor session.
 // It checks both TMUX and ACP modes and returns ErrAlreadyRunning if active.
 // agentOverride optionally specifies a different agent alias to use.
-func (m *Manager) Start(agentOverride string) error {
+func (m *Manager) Start(agentOverride string, orchestrated bool) error {
 	status, err := m.CombinedStatus()
 	if err == nil && status.Active {
 		switch status.Mode {
@@ -123,13 +123,13 @@ func (m *Manager) Start(agentOverride string) error {
 			return ErrAlreadyRunning
 		}
 	}
-	return m.StartTMUX(agentOverride)
+	return m.StartTMUX(agentOverride, orchestrated)
 }
 
 // StartTMUX starts the mayor session using the configured transport.
 // Respects GT_SESSION_TRANSPORT env var and town settings session_transport field.
 // agentOverride optionally specifies a different agent alias to use.
-func (m *Manager) StartTMUX(agentOverride string) error {
+func (m *Manager) StartTMUX(agentOverride string, orchestrated bool) error {
 	if IsACPActive(m.townRoot) {
 		return ErrAlreadyRunning
 	}
@@ -178,6 +178,7 @@ func (m *Manager) StartTMUX(agentOverride string) error {
 		Role:             "mayor",
 		TownRoot:         m.townRoot,
 		AgentName:        "Mayor",
+		Orchestrated:     orchestrated,
 		RuntimeConfigDir: claudeConfigDir,
 		Beacon: session.BeaconConfig{
 			Recipient: "mayor",

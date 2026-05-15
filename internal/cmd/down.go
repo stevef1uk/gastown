@@ -20,6 +20,7 @@ import (
 	"github.com/steveyegge/gastown/internal/events"
 	"github.com/steveyegge/gastown/internal/git"
 	"github.com/steveyegge/gastown/internal/natsserver"
+	"github.com/steveyegge/gastown/internal/orchestrator"
 	"github.com/steveyegge/gastown/internal/polecat"
 	"github.com/steveyegge/gastown/internal/refinery"
 	"github.com/steveyegge/gastown/internal/rig"
@@ -305,7 +306,21 @@ func runDown(cmd *cobra.Command, args []string) error {
 			printDownStatus(ts.Name, true, "not running")
 		}
 	}
-
+	
+	// Phase 3.5: Stop Orchestrator
+	if downDryRun {
+		if running, _, _ := orchestrator.IsRunning(townRoot); running {
+			printDownStatus("Orchestrator", true, "would stop")
+		}
+	} else {
+		if err := orchestrator.Stop(townRoot); err != nil {
+			printDownStatus("Orchestrator", false, err.Error())
+			allOK = false
+		} else {
+			printDownStatus("Orchestrator", true, "stopped")
+		}
+	}
+	
 	// Phase 4: Stop Daemon
 	running, pid, daemonErr := daemon.IsRunning(townRoot)
 	if daemonErr != nil {

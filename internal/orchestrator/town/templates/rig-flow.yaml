@@ -1,0 +1,61 @@
+id: rig-flow
+description: Standard rig workflow (Mayor -> Architect -> Planner -> Polecat -> QA) aligned with Beads/Dolt
+initial_state: kickoff
+states:
+  kickoff:
+    role: mayor
+    prompt_file: prompts/rig-flow/kickoff.md
+    instructions: |
+      1. Ensure rig '{{rig}}' is registered and `{{rig}}/mayor/rig/SPEC.md` exists.
+      2. Report outcome success when ready for design.
+    transitions:
+      success:
+        to: design
+      failure:
+        to: kickoff
+  design:
+    role: architect
+    prompt_file: prompts/rig-flow/design.md
+    instructions: |
+      1. Read `{{rig}}/mayor/rig/SPEC.md`.
+      2. Write `{{rig}}/mayor/rig/architecture.md` (≥200 bytes).
+    transitions:
+      success:
+        to: planning
+      failure:
+        to: design
+  planning:
+    role: planner
+    prompt_file: prompts/rig-flow/planning.md
+    instructions: |
+      1. Read SPEC and architecture under `{{rig}}/mayor/rig/`.
+      2. Create implementation beads and `plan.md`.
+    transitions:
+      success:
+        to: implementation
+      failure:
+        to: planning
+  implementation:
+    role: polecat
+    prompt_file: prompts/rig-flow/implementation.md
+    instructions: |
+      1. In `{{rig}}/mayor/rig/`, list open implementation beads, claim one, implement, close bead.
+      2. Report success when ready for QA.
+    transitions:
+      success:
+        to: qa_review
+      failure:
+        to: implementation
+  qa_review:
+    role: qa
+    prompt_file: prompts/rig-flow/qa_review.md
+    instructions: |
+      1. Review closed implementation beads in `{{rig}}` against SPEC and architecture.
+      2. Use outcome task_passed (more work), all_passed (done), or failure (rework).
+    transitions:
+      task_passed:
+        to: implementation
+      all_passed:
+        to: completed
+      failure:
+        to: implementation

@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/steveyegge/gastown/internal/beads"
 	"github.com/steveyegge/gastown/internal/refinery"
+	"github.com/steveyegge/gastown/internal/orchestrator"
 	"github.com/steveyegge/gastown/internal/session"
 	"github.com/steveyegge/gastown/internal/rig"
 	"github.com/steveyegge/gastown/internal/style"
@@ -310,7 +311,9 @@ func runRefineryStart(cmd *cobra.Command, args []string) error {
 
 	fmt.Printf("Starting refinery for %s...\n", rigName)
 
-	if err := mgr.Start(refineryForeground, refineryAgentOverride); err != nil {
+	townRoot, _ := workspace.FindFromCwdOrError()
+	orchestrated, _, _ := orchestrator.IsRunning(townRoot)
+	if err := mgr.Start(refineryForeground, refineryAgentOverride, orchestrated); err != nil {
 		if err == refinery.ErrAlreadyRunning {
 			fmt.Printf("%s Refinery is already running\n", style.Dim.Render("⚠"))
 			return nil
@@ -514,7 +517,9 @@ func runRefineryAttach(cmd *cobra.Command, args []string) error {
 	if !running {
 		// Auto-start if not running
 		fmt.Printf("Refinery not running for %s, starting...\n", rigName)
-		if err := mgr.Start(false, refineryAgentOverride); err != nil {
+		townRoot, _ := workspace.FindFromCwdOrError()
+		orchestrated, _, _ := orchestrator.IsRunning(townRoot)
+		if err := mgr.Start(false, refineryAgentOverride, orchestrated); err != nil {
 			return fmt.Errorf("starting refinery: %w", err)
 		}
 		fmt.Printf("%s Refinery started\n", style.Bold.Render("✓"))
@@ -547,7 +552,9 @@ func runRefineryRestart(cmd *cobra.Command, args []string) error {
 	}
 
 	// Start fresh
-	if err := mgr.Start(false, refineryAgentOverride); err != nil {
+	townRoot, _ := workspace.FindFromCwdOrError()
+	orchestrated, _, _ := orchestrator.IsRunning(townRoot)
+	if err := mgr.Start(false, refineryAgentOverride, orchestrated); err != nil {
 		return fmt.Errorf("starting refinery: %w", err)
 	}
 

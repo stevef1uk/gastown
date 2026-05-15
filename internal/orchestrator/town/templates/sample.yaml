@@ -1,0 +1,18 @@
+id: hello-world
+description: A simple hello world workflow
+initial_state: greet
+states:
+  greet:
+    role: mayor
+    instructions: |
+      Say hello to the user by echoing a message to a file 'hello.txt'.
+    transitions:
+      success:
+        to: finish
+  finish:
+    role: deacon
+    instructions: |
+      Log the successful completion of the hello-world workflow.
+    transitions:
+      success:
+        to: completed

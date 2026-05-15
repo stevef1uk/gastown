@@ -14,6 +14,7 @@ import (
 	"github.com/steveyegge/gastown/internal/beads"
 	"github.com/steveyegge/gastown/internal/constants"
 	"github.com/steveyegge/gastown/internal/deacon"
+	"github.com/steveyegge/gastown/internal/orchestrator"
 	"github.com/steveyegge/gastown/internal/session"
 	"github.com/steveyegge/gastown/internal/style"
 	"github.com/steveyegge/gastown/internal/util"
@@ -469,7 +470,8 @@ func runDeaconStart(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	mgr := deacon.NewManager(townRoot)
-	if err := mgr.Start(deaconAgentOverride); err != nil {
+	orchestrated, _, _ := orchestrator.IsRunning(townRoot)
+	if err := mgr.Start(deaconAgentOverride, orchestrated); err != nil {
 		if err == deacon.ErrAlreadyRunning {
 			return fmt.Errorf("Deacon session already running. Attach with: gt deacon attach")
 		}
@@ -519,7 +521,8 @@ func runDeaconAttach(cmd *cobra.Command, args []string) error {
 	if !running {
 		// Auto-start if not running
 		fmt.Println("Deacon session not running, starting...")
-		if err := mgr.Start(deaconAgentOverride); err != nil {
+		orchestrated, _, _ := orchestrator.IsRunning(townRoot)
+		if err := mgr.Start(deaconAgentOverride, orchestrated); err != nil {
 			return err
 		}
 	}

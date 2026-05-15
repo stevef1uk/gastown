@@ -527,6 +527,17 @@ func TestParseLLMResponse(t *testing.T) {
 			wantCmds: []string{`echo "prefixCMD:notamarker"`},
 		},
 		{
+			// Planner regression: model glued CMD markers without spaces
+			// (rig/CMD:, SPEC.mdCMD:) on a single line — must not run as ls args.
+			name: "glued CMD: markers without whitespace split into separate commands",
+			input: "CMD: ls -R testgt2/mayor/rig/CMD: cat testgt2/mayor/rig/SPEC.mdCMD: cat testgt2/mayor/rig/architecture.md",
+			wantCmds: []string{
+				"ls -R testgt2/mayor/rig",
+				"cat testgt2/mayor/rig/SPEC.md",
+				"cat testgt2/mayor/rig/architecture.md",
+			},
+		},
+		{
 			// Regression: the architect emitted a single CMD: block
 			// followed by a complete multi-line shell script with a
 			// heredoc, multiple commands, a multi-line gt mail send -m,

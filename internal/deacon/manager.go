@@ -57,7 +57,7 @@ func (m *Manager) deaconDir() string {
 // Start starts the deacon session.
 // agentOverride allows specifying an alternate agent alias (e.g., for testing).
 // Restarts are handled by daemon via ensureDeaconRunning on each heartbeat.
-func (m *Manager) Start(agentOverride string) error {
+func (m *Manager) Start(agentOverride string, orchestrated bool) error {
 	sp := m.sp
 	sessionID := m.SessionName()
 	ctx := context.Background()
@@ -80,10 +80,11 @@ func (m *Manager) Start(agentOverride string) error {
 	}
 
 	_, err := session.StartSession(ctx, sp, &session.SessionConfig{
-		SessionID:   sessionID,
-		WorkDir:     deaconDir,
-		Role:        "deacon",
-		TownRoot:    m.townRoot,
+		SessionID:    sessionID,
+		WorkDir:      deaconDir,
+		Role:         "deacon",
+		TownRoot:     m.townRoot,
+		Orchestrated: orchestrated,
 		Beacon: session.BeaconConfig{
 			Recipient: "deacon",
 			Sender:    "daemon",

@@ -33,6 +33,7 @@ import (
 	"github.com/steveyegge/gastown/internal/feed"
 	gitpkg "github.com/steveyegge/gastown/internal/git"
 	"github.com/steveyegge/gastown/internal/mayor"
+	"github.com/steveyegge/gastown/internal/orchestrator"
 	"github.com/steveyegge/gastown/internal/polecat"
 	"github.com/steveyegge/gastown/internal/refinery"
 	"github.com/steveyegge/gastown/internal/rig"
@@ -1341,7 +1342,8 @@ func (d *Daemon) ensureBootRunning() {
 
 	// Spawn Boot in a fresh tmux session
 	d.logger.Println("Spawning Boot for triage...")
-	if err := b.Spawn(""); err != nil {
+	orchestrated, _, _ := orchestrator.IsRunning(d.config.TownRoot)
+	if err := b.Spawn("", orchestrated); err != nil {
 		d.logger.Printf("Error spawning Boot: %v, falling back to direct Deacon check", err)
 		// Fallback: ensure Deacon is running directly
 		d.ensureDeaconRunning()
@@ -1444,7 +1446,8 @@ func (d *Daemon) ensureDeaconRunning() {
 		}
 	}
 
-	if err := mgr.Start(""); err != nil {
+	orchestrated, _, _ := orchestrator.IsRunning(d.config.TownRoot)
+	if err := mgr.Start("", orchestrated); err != nil {
 		d.logger.Printf("Error starting Deacon: %v", err)
 		return
 	}
@@ -1736,7 +1739,8 @@ func (d *Daemon) ensureWitnessRunning(rigName string) {
 	// context (checks for active work before declaring something stuck).
 	// See: daemon.log "is hung (no activity for 30m0s), killing for restart"
 
-	if err := mgr.Start(false, "", nil); err != nil {
+	orchestrated, _, _ := orchestrator.IsRunning(d.config.TownRoot)
+	if err := mgr.Start(false, "", nil, orchestrated); err != nil {
 		if err == witness.ErrAlreadyRunning {
 			// Already running - this is the expected case
 			d.logger.Printf("Witness for %s already running, skipping spawn", rigName)
@@ -1796,7 +1800,8 @@ func (d *Daemon) ensureRefineryRunning(rigName string) {
 	// context (checks for active work before declaring something stuck).
 	// See: daemon.log "is hung (no activity for 30m0s), killing for restart"
 
-	if err := mgr.Start(false, ""); err != nil {
+	orchestrated, _, _ := orchestrator.IsRunning(d.config.TownRoot)
+	if err := mgr.Start(false, "", orchestrated); err != nil {
 		if err == refinery.ErrAlreadyRunning {
 			// Already running - this is the expected case when fix is working
 			d.logger.Printf("Refinery for %s already running, skipping spawn", rigName)
@@ -1840,6 +1845,7 @@ func (d *Daemon) ensureArchitectRunning(rigName string) {
 		return
 	}
 
+	orchestrated, _, _ := orchestrator.IsRunning(d.config.TownRoot)
 	_, err := session.StartSession(d.ctx, d.sp, &session.SessionConfig{
 		SessionID:    sessionID,
 		WorkDir:      architectDir,
@@ -1847,6 +1853,7 @@ func (d *Daemon) ensureArchitectRunning(rigName string) {
 		TownRoot:     d.config.TownRoot,
 		RigPath:      filepath.Join(d.config.TownRoot, rigName),
 		RigName:      rigName,
+		Orchestrated: orchestrated,
 		Beacon:       session.BeaconConfig{Recipient: "architect", Sender: "daemon", Topic: "patrol"},
 		WaitForAgent: false,
 		AutoRespawn:  true,
@@ -1890,6 +1897,7 @@ func (d *Daemon) ensureQARunning(rigName string) {
 		return
 	}
 
+	orchestrated, _, _ := orchestrator.IsRunning(d.config.TownRoot)
 	_, err := session.StartSession(d.ctx, d.sp, &session.SessionConfig{
 		SessionID:    sessionID,
 		WorkDir:      qaDir,
@@ -1897,6 +1905,7 @@ func (d *Daemon) ensureQARunning(rigName string) {
 		TownRoot:     d.config.TownRoot,
 		RigPath:      filepath.Join(d.config.TownRoot, rigName),
 		RigName:      rigName,
+		Orchestrated: orchestrated,
 		Beacon:       session.BeaconConfig{Recipient: "qa", Sender: "daemon", Topic: "patrol"},
 		WaitForAgent: false,
 		AutoRespawn:  true,
@@ -1942,6 +1951,7 @@ func (d *Daemon) ensureMechanicRunning(rigName string) {
 		return
 	}
 
+	orchestrated, _, _ := orchestrator.IsRunning(d.config.TownRoot)
 	_, err := session.StartSession(d.ctx, d.sp, &session.SessionConfig{
 		SessionID:    sessionID,
 		WorkDir:      mechanicDir,
@@ -1949,6 +1959,7 @@ func (d *Daemon) ensureMechanicRunning(rigName string) {
 		TownRoot:     d.config.TownRoot,
 		RigPath:      filepath.Join(d.config.TownRoot, rigName),
 		RigName:      rigName,
+		Orchestrated: orchestrated,
 		Beacon:       session.BeaconConfig{Recipient: "mechanic", Sender: "daemon", Topic: "patrol"},
 		WaitForAgent: false,
 		AutoRespawn:  true,
@@ -1973,11 +1984,13 @@ func (d *Daemon) ensurePlannerRunning() {
 		return
 	}
 
+	orchestrated, _, _ := orchestrator.IsRunning(d.config.TownRoot)
 	_, err := session.StartSession(d.ctx, d.sp, &session.SessionConfig{
 		SessionID:    sessionID,
 		WorkDir:      plannerDir,
 		Role:         constants.RolePlanner,
 		TownRoot:     d.config.TownRoot,
+		Orchestrated: orchestrated,
 		Beacon:       session.BeaconConfig{Recipient: "planner", Sender: "daemon", Topic: "patrol"},
 		WaitForAgent: false,
 		AutoRespawn:  true,
@@ -1999,7 +2012,8 @@ func (d *Daemon) ensurePlannerRunning() {
 func (d *Daemon) ensureMayorRunning() {
 	mgr := mayor.NewManager(d.config.TownRoot)
 
-	if err := mgr.Start(""); err != nil {
+	orchestrated, _, _ := orchestrator.IsRunning(d.config.TownRoot)
+	if err := mgr.Start("", orchestrated); err != nil {
 		if err == mayor.ErrAlreadyRunning {
 			// Session exists — verify agent is actually alive.
 			// During handoffs or heavy work (long shell pipelines, local LLM),
@@ -2036,7 +2050,8 @@ func (d *Daemon) ensureMayorRunning() {
 					return
 				}
 				d.mayorZombieCount = 0
-				if startErr := mgr.Start(""); startErr != nil {
+				orchestrated, _, _ := orchestrator.IsRunning(d.config.TownRoot)
+				if startErr := mgr.Start("", orchestrated); startErr != nil {
 					d.logger.Printf("Error restarting Mayor after zombie cleanup: %v", startErr)
 					return
 				}

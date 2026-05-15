@@ -24,6 +24,7 @@ import (
 	"github.com/steveyegge/gastown/internal/git"
 	"github.com/steveyegge/gastown/internal/mail"
 	"github.com/steveyegge/gastown/internal/mayor"
+	"github.com/steveyegge/gastown/internal/orchestrator"
 	"github.com/steveyegge/gastown/internal/rig"
 	"github.com/steveyegge/gastown/internal/session"
 	"github.com/steveyegge/gastown/internal/style"
@@ -68,8 +69,9 @@ type TownStatus struct {
 	Location string         `json:"location"`
 	Overseer *OverseerInfo  `json:"overseer,omitempty"` // Human operator
 	DND      *DNDInfo       `json:"dnd,omitempty"`      // Current agent DND status
-	Daemon   *ServiceInfo   `json:"daemon,omitempty"`   // Daemon status
-	Dolt     *DoltInfo      `json:"dolt,omitempty"`     // Dolt server status
+	Daemon       *ServiceInfo   `json:"daemon,omitempty"`       // Daemon status
+	Orchestrator *ServiceInfo   `json:"orchestrator,omitempty"` // Orchestrator status
+	Dolt         *DoltInfo      `json:"dolt,omitempty"`         // Dolt server status
 	Tmux     *TmuxInfo      `json:"tmux,omitempty"`     // Tmux server status
 	ACP      *ServiceInfo   `json:"acp,omitempty"`      // ACP mayor status
 	Agents   []AgentRuntime `json:"agents"`             // Global agents (Mayor, Deacon)
@@ -315,17 +317,14 @@ func isAgentCmdline(cmdline string) bool {
 		return false
 	}
 	parts := strings.Split(cmdline, "\x00")
-	if len(parts) == 0 {
-		return false
-	}
-	base := filepath.Base(parts[0])
-	if isKnownAgent(base) {
-		return true
-	}
-	// Check if wrapper (node/bun) is running an agent
-	if isAgentWrapper(base) && len(parts) > 1 {
-		argBase := filepath.Base(parts[1])
-		return isKnownAgent(argBase)
+	for _, part := range parts {
+		if part == "" {
+			continue
+		}
+		base := filepath.Base(part)
+		if isKnownAgent(base) {
+			return true
+		}
 	}
 	return false
 }
@@ -354,6 +353,9 @@ func extractBaseName(cmdline string) string {
 
 // isKnownAgent returns true if the command is a recognized agent runtime.
 func isKnownAgent(base string) bool {
+	if base == "gt-agent" {
+		return true
+	}
 	return config.IsKnownPreset(base)
 }
 
@@ -381,12 +383,18 @@ func parseRuntimeInfo(cmdline string) string {
 	// Find the actual agent command — skip wrappers (node, bun, cgroup-wrap)
 	cmd := ""
 	startIdx := 0
+	// fmt.Printf("DEBUG: parseRuntimeInfo parts: %q\n", parts)
 	for i, part := range parts {
-		base := filepath.Base(part)
-		if isKnownAgent(base) {
-			cmd = base
-			startIdx = i
-			break
+		if part == "" {
+			continue
+		}
+		// Scan sub-parts (e.g. bash -c "exec env ... gt-agent")
+		for _, subPart := range strings.Fields(part) {
+			base := filepath.Base(subPart)
+			if isKnownAgent(base) {
+				cmd = base
+				startIdx = i
+			}
 		}
 	}
 	if cmd == "" {
@@ -837,6 +845,11 @@ func gatherStatus() (TownStatus, error) {
 		status.Daemon = &ServiceInfo{Running: daemonRunning, PID: daemonPid}
 	}
 
+	// Orchestrator status
+	if orchRunning, orchPid, err := orchestrator.IsRunning(townRoot); err == nil {
+		status.Orchestrator = &ServiceInfo{Running: orchRunning, PID: orchPid}
+	}
+
 	// Dolt status
 	doltCfg := doltserver.DefaultConfig(townRoot)
 	if doltCfg.IsRemote() {
@@ -1073,6 +1086,13 @@ func outputStatusText(w io.Writer, status TownStatus) error {
 				parts = append(parts, fmt.Sprintf("daemon %s", style.Dim.Render(fmt.Sprintf("(PID %d)", status.Daemon.PID))))
 			} else {
 				parts = append(parts, fmt.Sprintf("daemon %s", style.Dim.Render("(stopped)")))
+			}
+		}
+		if status.Orchestrator != nil {
+			if status.Orchestrator.Running {
+				parts = append(parts, fmt.Sprintf("orchestrator %s", style.Dim.Render(fmt.Sprintf("(PID %d)", status.Orchestrator.PID))))
+			} else {
+				parts = append(parts, fmt.Sprintf("orchestrator %s", style.Dim.Render("(stopped)")))
 			}
 		}
 		if status.Dolt != nil {

@@ -433,6 +433,19 @@ func run() error {
 	fmt.Printf("[gt-agent] State loaded: patrol_count=%d idle_cycles=%d\n",
 		state.PatrolCount, state.IdleCycles)
 
+	// Check for --orchestrated flag
+	orchestrated := false
+	for _, arg := range os.Args {
+		if arg == "--orchestrated" {
+			orchestrated = true
+			break
+		}
+	}
+
+	if orchestrated {
+		return runOrchestrated(ctx, client, townRoot, roleCanonical, rig, sessionName, stateFile, state)
+	}
+
 	// Main event loop
 	for {
 		if isShutdownRequested() {
@@ -899,7 +912,8 @@ func parseLLMResponse(response string) (cmds []string, doneSummary string, hallu
 			continue
 		}
 
-		if strings.HasPrefix(trimmed, "Output:") {
+		lowerTrimmed := strings.ToLower(trimmed)
+		if strings.HasPrefix(lowerTrimmed, "output:") {
 			hallucinated = true
 			return nil, "", true
 		}
@@ -1219,6 +1233,9 @@ func looksLikeProseLine(trimmed string) bool {
 	if trimmed == "" {
 		return false
 	}
+	if llmLogLineRE.MatchString(trimmed) || llmHeaderLineRE.MatchString(trimmed) {
+		return true
+	}
 	if strings.ContainsAny(trimmed, "$|&;<>=`()") {
 		return false
 	}
@@ -1238,6 +1255,13 @@ var markdownOrderedStepRE = regexp.MustCompile(`^\d+\.\s+[A-Za-z#*\-]`)
 
 // markdownBulletStepRE matches "- **Do**" / "- Check" markdown bullets.
 var markdownBulletStepRE = regexp.MustCompile(`^-\s+(\*\*|[[#]|[A-Za-z])`)
+
+// llmLogLineRE matches "[2026-05-14] 23:00 ..." style lines the model
+// appends after a shell command.
+var llmLogLineRE = regexp.MustCompile(`^\[\d{4}-\d{2}-\d{2}\]`)
+
+// llmHeaderLineRE matches "--- Depth 6 ---" style dividers.
+var llmHeaderLineRE = regexp.MustCompile(`^--- .* ---$`)
 
 // looksLikeMarkdownStepLine reports narration the model appends after CMD:
 // lines (numbered/bulleted steps from its system prompt). These must not
@@ -1259,21 +1283,40 @@ func checkShellSyntax(script string) (diag string, ok bool) {
 	return "", true
 }
 
-// inlineCMDMarkerRE matches the inline `CMD:` separator the model
-// sometimes uses to cram multiple commands onto a single line. The
-// leading whitespace requirement prevents this regex from splitting
-// inside an argument value (e.g. `echo "ACMD:" should not split).
-var inlineCMDMarkerRE = regexp.MustCompile(`\s+CMD:\s*`)
+// inlineCMDMarkerRE matches space- or newline-separated inline CMD markers.
+var inlineCMDMarkerRE = regexp.MustCompile(`(?:\s+CMD:|\nCMD:)\s*`)
+
+var gluedPathCMDRE = regexp.MustCompile(`/CMD:\s*`)
+var gluedExtCMDRE = regexp.MustCompile(`(\.[a-zA-Z0-9]{2,8})CMD:\s*`)
+
+// normalizeGluedCMDMarkers turns model glitches like rig/CMD: or SPEC.mdCMD:
+// into newline-separated CMD markers so splitInlineCMDs can separate them
+// without eating filename extensions.
+func normalizeGluedCMDMarkers(cmd string) string {
+	cmd = gluedPathCMDRE.ReplaceAllString(cmd, "\nCMD: ")
+	cmd = gluedExtCMDRE.ReplaceAllString(cmd, "$1\nCMD: ")
+	return cmd
+}
 
 // splitInlineCMDs splits cmd on inline `CMD:` markers. If cmd contains
-// no inline markers, it returns []string{cmd}. The leading-space rule
-// in inlineCMDMarkerRE means we won't accidentally split on `CMD:`
-// substrings that are part of an argument.
+// no inline markers, it returns []string{cmd}.
 func splitInlineCMDs(cmd string) []string {
+	cmd = normalizeGluedCMDMarkers(cmd)
 	if !inlineCMDMarkerRE.MatchString(cmd) {
+		return []string{strings.TrimSpace(cmd)}
+	}
+	parts := inlineCMDMarkerRE.Split(cmd, -1)
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			out = append(out, p)
+		}
+	}
+	if len(out) == 0 {
 		return []string{cmd}
 	}
-	return inlineCMDMarkerRE.Split(cmd, -1)
+	return out
 }
 
 // detectHeredocTerm returns the heredoc terminator word if cmd opens a

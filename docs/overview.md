@@ -67,6 +67,20 @@ gt convoy list
 The "swarm" is the set of workers currently assigned to a convoy's issues.
 When issues close, the convoy lands. See [Convoys](concepts/convoy.md) for details.
 
+## Orchestrator: structured rig pipelines
+
+For multi-step rig delivery (SPEC → architecture → plan → implementation → QA), Gas Town
+can run a **workflow FSM** instead of relying on each agent to self-dispatch. Templates
+live in the town's `orchestrator/templates/` directory; the orchestrator service assigns
+one role at a time via NATS.
+
+```bash
+gt up
+gt mayor workflow start rig-flow
+```
+
+See [Orchestrator (concept)](concepts/orchestrator.md) and [Orchestrator (technical)](design/orchestrator.md).
+
 ## Crew vs Polecats
 
 Both do project work, but with key differences:

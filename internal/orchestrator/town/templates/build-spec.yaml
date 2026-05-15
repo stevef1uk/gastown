@@ -1,0 +1,31 @@
+id: build-spec
+description: Initialize testgt2 rig and build its architecture and plan from existing SPEC.md
+initial_state: bootstrap
+states:
+  bootstrap:
+    role: mayor
+    instructions: |
+      1. Ensure rig 'testgt2' is registered: gt rig add testgt2 https://github.com/stevef1uk/testgt2.git
+      2. Verify 'testgt2/mayor/rig/SPEC.md' exists (it should be in the repo).
+      3. If SPEC.md is missing, report failure. Otherwise, report success.
+    transitions:
+      success:
+        to: architectural_design
+  architectural_design:
+    role: mayor
+    instructions: |
+      1. Read 'testgt2/mayor/rig/SPEC.md'.
+      2. Based on the SPEC, create 'testgt2/mayor/rig/architecture.md' with technical design details.
+      3. Commit and push: cd testgt2/mayor/rig && git add architecture.md && git commit -m "add architecture" && git push
+    transitions:
+      success:
+        to: planning
+  planning:
+    role: planner
+    instructions: |
+      1. Read 'testgt2/mayor/rig/SPEC.md' and 'testgt2/mayor/rig/architecture.md'.
+      2. Create 'testgt2/mayor/rig/plan.md' with implementation tasks.
+      3. Commit and push: cd testgt2/mayor/rig && git add plan.md && git commit -m "add plan" && git push
+    transitions:
+      success:
+        to: completed

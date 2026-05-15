@@ -154,7 +154,7 @@ func (b *Boot) LoadStatus() (*Status, error) {
 // In degraded mode (no tmux), it runs in a subprocess.
 // The agentOverride parameter allows specifying an agent alias to use instead of the town default.
 // Boot is ephemeral - each spawn kills any existing session and starts fresh.
-func (b *Boot) Spawn(agentOverride string) error {
+func (b *Boot) Spawn(agentOverride string, orchestrated bool) error {
 	// No IsRunning() guard here - Boot is ephemeral by design.
 	// spawnTmux() kills any existing session before spawning fresh.
 
@@ -163,11 +163,11 @@ func (b *Boot) Spawn(agentOverride string) error {
 		return b.spawnDegraded()
 	}
 
-	return b.spawnTmux(agentOverride)
+	return b.spawnTmux(agentOverride, orchestrated)
 }
 
 // spawnTmux spawns Boot in a tmux session.
-func (b *Boot) spawnTmux(agentOverride string) error {
+func (b *Boot) spawnTmux(agentOverride string, orchestrated bool) error {
 	ctx := context.Background()
 	// Kill any stale session first (Boot is ephemeral).
 	_ = b.sp.Stop(ctx, session.BootSessionName(), false)
@@ -183,6 +183,7 @@ func (b *Boot) spawnTmux(agentOverride string) error {
 		WorkDir:   b.bootDir,
 		Role:      "boot",
 		TownRoot:  b.townRoot,
+		Orchestrated: orchestrated,
 		Beacon: session.BeaconConfig{
 			Recipient: "boot",
 			Sender:    "daemon",

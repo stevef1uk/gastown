@@ -106,7 +106,7 @@ func (m *Manager) Status() (*tmux.SessionInfo, error) {
 // Start starts the refinery.
 // If foreground is true, returns an error (foreground mode deprecated).
 // Otherwise, spawns a Claude agent in a session to process the merge queue.
-func (m *Manager) Start(foreground bool, agentOverride string) error {
+func (m *Manager) Start(foreground bool, agentOverride string, orchestrated bool) error {
 	if foreground {
 		return fmt.Errorf("foreground mode is deprecated; use background mode (remove --foreground flag)")
 	}
@@ -163,6 +163,7 @@ func (m *Manager) Start(foreground bool, agentOverride string) error {
 		RigName:          m.rig.Name,
 		RigPath:          m.rig.Path,
 		TownRoot:         townRoot,
+		Orchestrated:     orchestrated,
 		RuntimeConfigDir: runtimeConfigDir,
 		AgentOverride:    agentOverride,
 		ExtraEnv:         extraEnv,

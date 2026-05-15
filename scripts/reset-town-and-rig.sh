@@ -9,15 +9,16 @@
 # Optional:
 #   DOCTOR_RESTART_SESSIONS=1  — pass --restart-sessions to gt doctor --fix
 #                                (helps stale patrol tmux after reset)
+#   START_RIG_FLOW=1         — after reset, run:
+#                                gt mayor workflow start rig-flow --rig "$RIG"
+#   SKIP_ORCHESTRATOR_SYNC=1 — do not refresh $GT_ROOT/orchestrator/ from gastown
+#
+# Orchestrator workflow state (wf-1, design/planning, …) lives in the orchestrator
+# process memory — nuclear clean + gt up clears it. Templates/prompts under
+# $GT_ROOT/orchestrator/ are refreshed from gastown (source: internal/orchestrator/town/).
 #
 # After a nuclear reset, `gt doctor --fix` sometimes needs Dolt to settle
 # before rig DB issue_prefix rows exist; this script runs two fix passes.
-# If you still see rig-config-sync / database-prefix warnings, run
-# `cd "$GT_ROOT" && gt doctor --fix` once more by hand when Dolt is healthy.
-# (Doctor no longer runs `bd init --force` when a .beads directory already
-# exists — that used to wipe agent and rig identity beads.)
-# patrol-not-stuck is not auto-fixed — review wisps or restart sessions
-# (DOCTOR_RESTART_SESSIONS=1).
 #
 # Requires: gt on PATH (typically ~/.local/bin), bash, clean-gastown.sh deps (python3, etc.)
 #
@@ -73,6 +74,58 @@ drain_rig_mail() {
   fi
 }
 
+# Remove polecat implementation cruft from a prior bad architect/planner run.
+# SPEC and rig git history come from the remote on gt rig add; this only
+# clears obvious stale artifacts under mayor/rig/.
+clean_rig_pipeline_artifacts() {
+  local r="$1"
+  local rig_dir="$GT_ROOT/$r/mayor/rig"
+  [[ -d "$rig_dir" ]] || return 0
+  echo "[clean] rig pipeline artifacts under $r/mayor/rig/..."
+  if [[ -d "$rig_dir/backend" ]]; then
+    rm -rf "$rig_dir/backend"
+    echo "  removed backend/ (polecat recreates during implementation)"
+  fi
+  for f in fizzbuzz.py main.py test_fizzbuzz.py dummy.py plan_complete.js; do
+    if [[ -f "$rig_dir/$f" ]]; then
+      rm -f "$rig_dir/$f"
+      echo "  removed stray $f"
+    fi
+  done
+}
+
+# Install orchestrator FSM templates + prompts from gastown into the town.
+sync_orchestrator_assets() {
+  if [[ "${SKIP_ORCHESTRATOR_SYNC:-0}" == "1" ]]; then
+    echo "[orchestrator] sync skipped (SKIP_ORCHESTRATOR_SYNC=1)"
+    return 0
+  fi
+  echo "=== sync orchestrator assets (gastown → $GT_ROOT/orchestrator) ==="
+  if (cd "$GT_ROOT" && gt orchestrator sync --update-changed 2>/dev/null); then
+    return 0
+  fi
+  local orch_src="$GASTOWN/internal/orchestrator/town"
+  if [[ ! -d "$orch_src" ]]; then
+    echo "[orchestrator] warn: no embedded town assets in $orch_src" >&2
+    echo "[orchestrator] run 'make install' in gastown after building gt with orchestrator sync" >&2
+    return 0
+  fi
+  local added=0 updated=0
+  while IFS= read -r srcfile; do
+    rel="${srcfile#"$orch_src/"}"
+    dst="$GT_ROOT/orchestrator/$rel"
+    mkdir -p "$(dirname "$dst")"
+    if [[ ! -f "$dst" ]]; then
+      cp "$srcfile" "$dst"
+      added=$((added + 1))
+    elif ! cmp -s "$srcfile" "$dst"; then
+      cp "$srcfile" "$dst"
+      updated=$((updated + 1))
+    fi
+  done < <(find "$orch_src" -type f | sort)
+  echo "[orchestrator] synced from source tree ($added added, $updated updated)"
+}
+
 normalize_town_agent_settings() {
   local cfg="$GT_ROOT/settings/config.json"
   [[ -f "$cfg" ]] || return 0
@@ -92,14 +145,10 @@ default_agent = data.get("default_agent", "")
 builtins = {"claude", "codex", "gemini", "cursor", "auggie", "amp", "opencode", "copilot"}
 valid = set(builtins) | set(agents.keys())
 
-# Keep reset deterministic: if invalid (or address-like), prefer local preset.
 preferred_default = "gt-agent-local" if "gt-agent-local" in valid else "claude"
 if (not isinstance(default_agent, str)) or ("/" in default_agent) or (default_agent not in valid):
     data["default_agent"] = preferred_default
 
-# Ensure town-level orchestration roles don't drift to unstable presets.
-# Mayor is included explicitly because "powerful" defaults can stall
-# multi-turn stage-routing loops in local setups.
 for role in ("planner", "mechanic", "mayor"):
     current = role_agents.get(role)
     if (current is None) or (not isinstance(current, str)) or (current not in valid) or (current == "gt-agent-powerful"):
@@ -119,23 +168,24 @@ bash "$CLEAN_SCRIPT" --force "$GT_ROOT"
 echo "=== gt up ==="
 (cd "$GT_ROOT" && gt up)
 normalize_town_agent_settings
+sync_orchestrator_assets
 
-# Fresh HQ DB may still get noise from seeds/plugins; drain before rig add.
 drain_hq_mail
 
 echo "=== gt rig add $RIG ==="
 (cd "$GT_ROOT" && gt rig add "$RIG" "$RIG_URL")
 
+clean_rig_pipeline_artifacts "$RIG"
 drain_hq_mail
 drain_rig_mail "$RIG"
 
 echo "=== gt up (pick up new rig agents) ==="
 (cd "$GT_ROOT" && gt up)
 
+sync_orchestrator_assets
 drain_hq_mail
 drain_rig_mail "$RIG"
 
-# Give Dolt/bd a moment after agents start so doctor fixes can touch rig DBs.
 echo "=== gt doctor --fix (settle + two passes) ==="
 sleep 3
 doc_flags=(--fix)
@@ -149,7 +199,23 @@ sleep 3
 echo "=== gt doctor (read-only summary) ==="
 (cd "$GT_ROOT" && gt doctor) || true
 
+if [[ "${START_RIG_FLOW:-0}" == "1" ]]; then
+  echo "=== gt mayor workflow start rig-flow ==="
+  if (cd "$GT_ROOT" && gt mayor workflow start rig-flow --rig "$RIG"); then
+    echo "[orchestrator] workflow started — tail logs/orchestrator.log and */typescript"
+  else
+    echo "[orchestrator] workflow start failed (is orchestrator running? gt orchestrator status)" >&2
+  fi
+fi
+
 echo "=== done ==="
 echo "Town: $GT_ROOT"
 echo "Rig:  $RIG  ($RIG_URL)"
-echo "Next: single kickoff mail to mayor/, then gt nudge mayor \"...\""
+echo "Orchestrator templates: $GT_ROOT/orchestrator/ (source: $GASTOWN/internal/orchestrator/town/)"
+if [[ "${START_RIG_FLOW:-0}" == "1" ]]; then
+  echo "Next: tail -f $GT_ROOT/logs/orchestrator.log $GT_ROOT/planner/typescript"
+else
+  echo "Next (orchestrator path):"
+  echo "  START_RIG_FLOW=1 $0"
+  echo "  # or: cd $GT_ROOT && gt mayor workflow start rig-flow --rig $RIG"
+fi

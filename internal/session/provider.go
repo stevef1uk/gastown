@@ -33,8 +33,9 @@ type StartOptions struct {
 	SessionID string
 	WorkDir   string
 	Command   string
-	Env       map[string]string
-	Theme     any // Provider-specific theme (e.g. *tmux.Theme)
+	Env          map[string]string
+	Orchestrated bool
+	Theme        any // Provider-specific theme (e.g. *tmux.Theme)
 }
 
 // WaitForIdle waits for a session to become idle using provider-specific detection.

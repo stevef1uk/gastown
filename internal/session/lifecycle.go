@@ -113,6 +113,9 @@ type SessionConfig struct {
 	// VerifySurvived checks that the session is still alive after startup.
 	VerifySurvived bool
 
+	// Orchestrated starts the agent in orchestrated mode.
+	Orchestrated bool
+
 	// OnStart is called after the session is created and tracked.
 	OnStart func(p Provider)
 }
@@ -460,12 +463,20 @@ func buildPrompt(cfg SessionConfig) string {
 
 // buildCommand creates the startup command using the config package.
 func buildCommand(cfg SessionConfig, prompt string) (string, error) {
+	var cmd string
+	var err error
 	if cfg.AgentOverride != "" {
-		return config.BuildAgentStartupCommandWithAgentOverride(
+		cmd, err = config.BuildAgentStartupCommandWithAgentOverride(
 			cfg.Role, cfg.RigName, cfg.TownRoot, cfg.RigPath, prompt, cfg.AgentOverride)
+	} else {
+		cmd = config.BuildAgentStartupCommand(
+			cfg.Role, cfg.RigName, cfg.TownRoot, cfg.RigPath, prompt)
 	}
-	return config.BuildAgentStartupCommand(
-		cfg.Role, cfg.RigName, cfg.TownRoot, cfg.RigPath, prompt), nil
+
+	if err == nil && cfg.Orchestrated {
+		cmd += " --orchestrated"
+	}
+	return cmd, err
 }
 
 // ShutdownDelay is the standard delay after session creation.
