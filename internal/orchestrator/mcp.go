@@ -202,6 +202,16 @@ func (s *Server) handleCallTool(req MCPRequest) MCPResponse {
 			Variables  map[string]string `json:"variables"`
 		}
 		json.Unmarshal(params.Arguments, &args)
+		rig := ""
+		if args.Variables != nil {
+			rig = args.Variables["rig"]
+		}
+		if s.orchestrator.HasActiveWorkflow(args.TemplateID, rig) {
+			return MCPResponse{JSONRPC: "2.0", ID: req.ID, Error: &MCPError{
+				Code:    -32000,
+				Message: fmt.Sprintf("workflow %q already active for rig %q", args.TemplateID, rig),
+			}}
+		}
 		workflowID, err := s.orchestrator.StartWorkflow(args.TemplateID, args.Variables)
 		if err != nil {
 			return MCPResponse{JSONRPC: "2.0", ID: req.ID, Error: &MCPError{Code: -32000, Message: err.Error()}}

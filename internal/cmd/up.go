@@ -391,6 +391,18 @@ func runUp(cmd *cobra.Command, args []string) error {
 			orchestratorDetail = fmt.Sprintf("%s; workflow %s", orchestratorDetail, wfID)
 			services[len(services)-1].Detail = orchestratorDetail
 		}
+		if summary := orchestrator.WorkflowResumeSummary(townRoot); summary != "" {
+			fmt.Fprintf(os.Stderr, "%s orchestrator: %s\n", style.Warning.Render("!"), summary)
+			if orchestratorDetail != "" && !strings.Contains(orchestratorDetail, "resumed") {
+				orchestratorDetail = orchestratorDetail + "; " + summary
+				services[len(services)-1].Detail = orchestratorDetail
+			}
+		}
+		if statuses, err := orchestrator.GetWorkflowStatuses(townRoot, ""); err == nil {
+			if warn := orchestrator.DuplicateActiveWarning(statuses); warn != "" {
+				fmt.Fprintf(os.Stderr, "%s %s\n", style.Warning.Render("!"), warn)
+			}
+		}
 	}
 
 	if !doltSkipped {

@@ -13,6 +13,9 @@ import (
 // ErrNoTask indicates no workflow task matches this agent.
 var ErrNoTask = fmt.Errorf("no task available")
 
+// ErrWorkflowAlreadyActive is returned when StartWorkflow would duplicate a running instance.
+var ErrWorkflowAlreadyActive = fmt.Errorf("workflow already active for this template and rig")
+
 // Manager coordinates workflows and templates.
 type Manager struct {
 	townRoot  string
@@ -90,6 +93,10 @@ func (m *Manager) StartWorkflow(templateID string, vars map[string]string) (stri
 	}
 	if vars == nil {
 		vars = map[string]string{}
+	}
+	rig := vars["rig"]
+	if m.hasActiveWorkflowLocked(templateID, rig) {
+		return "", ErrWorkflowAlreadyActive
 	}
 
 	id := m.allocateWorkflowID()
@@ -223,6 +230,10 @@ func (m *Manager) GetWorkflowStatus(workflowID string) ([]WorkflowStatus, error)
 func (m *Manager) HasActiveWorkflow(templateID, rig string) bool {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
+	return m.hasActiveWorkflowLocked(templateID, rig)
+}
+
+func (m *Manager) hasActiveWorkflowLocked(templateID, rig string) bool {
 	for _, inst := range m.instances {
 		if inst.Status == "completed" || inst.Status == "failed" {
 			continue

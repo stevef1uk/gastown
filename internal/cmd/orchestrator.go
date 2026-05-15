@@ -27,6 +27,7 @@ var orchestratorRunCmd = &cobra.Command{
 		}
 
 		mgr := orchestrator.NewManager(townRoot)
+		orchestrator.LogRestoreNotice(townRoot)
 		// Load templates from townRoot/orchestrator/templates
 		tmplDir := filepath.Join(townRoot, "orchestrator", "templates")
 		if err := mgr.LoadTemplatesFromDir(tmplDir); err != nil {

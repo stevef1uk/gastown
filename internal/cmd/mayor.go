@@ -234,6 +234,12 @@ func runMayorWorkflowStatus(cmd *cobra.Command, args []string) error {
 		fmt.Printf("%s  template=%s state=%s status=%s role=%s%s\n",
 			s.ID, s.TemplateID, s.CurrentState, s.Status, s.Role, rig)
 	}
+	if warn := orchestrator.DuplicateActiveWarning(statuses); warn != "" {
+		fmt.Printf("\n%s %s\n", style.Warning.Render("!"), warn)
+	}
+	if notice, _ := orchestrator.BuildRestoreNotice(townRoot); notice.Count > 0 {
+		fmt.Printf("\n(Loaded from orchestrator/instances.json — resume, not a fresh kickoff.)\n")
+	}
 	return nil
 }
 

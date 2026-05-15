@@ -228,6 +228,14 @@ func TestGetWorkflowStatus(t *testing.T) {
 	}
 }
 
+func TestStartWorkflow_rejectsDuplicateActive(t *testing.T) {
+	m, _ := loadTestManager(t, designFlowTemplate())
+	_, err := m.StartWorkflow("rig-flow", map[string]string{"rig": "testgt2"})
+	if err != ErrWorkflowAlreadyActive {
+		t.Fatalf("want ErrWorkflowAlreadyActive, got %v", err)
+	}
+}
+
 func TestHasActiveWorkflow(t *testing.T) {
 	m, id := loadTestManager(t, designFlowTemplate())
 

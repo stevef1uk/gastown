@@ -17,6 +17,7 @@ func main() {
 	}
 
 	mgr := orchestrator.NewManager(townRoot)
+	orchestrator.LogRestoreNotice(townRoot)
 	tmplDir := filepath.Join(townRoot, "orchestrator", "templates")
 	if err := mgr.LoadTemplatesFromDir(tmplDir); err != nil {
 		log.Printf("Warning: failed to load templates: %v", err)
