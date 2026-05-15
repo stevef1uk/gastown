@@ -98,6 +98,79 @@ Git-backed issue tracking system that stores work state as structured data.
 
 Workflow templates that coordinate multi-step work. Formulas (TOML definitions) are instantiated as molecules with tracked steps. Two modes: root-only wisps (steps materialized at runtime, lightweight) and poured wisps (steps materialized as sub-wisps with checkpoint recovery). See [Molecules](docs/concepts/molecules.md).
 
+### Orchestrator & Freeride (rig-flow) 🎯
+
+**New:** A deterministic **workflow FSM** coordinates rig delivery — Mayor kickoff → Architect → Planner → Polecat → QA — instead of every agent discovering work independently via mail, hooks, and sling.
+
+| Model | How work moves |
+| ----- | -------------- |
+| **Legacy (autonomous)** | Mayor slings beads; polecats/crew self-dispatch via `gt prime`, mail, and patrol |
+| **Orchestrator (`rig-flow`)** | `gt orchestrator run` owns state; pipeline `gt-agent --orchestrated` roles poll `fetch_task` / `complete_task` over NATS |
+
+**Freeride stack** (typical dev setup):
+
+- **Gastown repo** — build `gt`, `gt-agent`, templates (`make install` syncs `internal/orchestrator/town/` into your town)
+- **NATS** — orchestrator MCP on `gt.orchestrator.mcp` (requires `"session_transport": "nats"` in town settings)
+- **Freeride proxy** (optional) — OpenAI-compatible LLM at `http://localhost:11434` for `gt-agent`; routes models by role
+
+Patrol agents (witness, refinery, deacon) stay on the legacy loop. Pipeline roles (mayor, architect, planner, polecat, qa) use orchestrated mode when the orchestrator is running.
+
+Full reference: [Orchestrator (concept)](docs/concepts/orchestrator.md) · [Technical design](docs/design/orchestrator.md)
+
+#### Try `rig-flow` on a rig (e.g. `testgt2`)
+
+Prerequisites: town with at least one rig, Dolt/beads healthy, NATS transport, and an LLM endpoint (Ollama or Freeride proxy on port 11434).
+
+```bash
+# 1. Build from your gastown checkout (Freeride dev tree) and install into the town
+cd /path/to/gastown          # e.g. ~/dev/freeride/gastown
+SKIP_UPDATE_CHECK=1 make install
+
+# 2. Town settings: ~/gt/settings/config.json
+#    "session_transport": "nats"
+#    "orchestrator": { "default_workflow": "rig-flow", "auto_start": false }
+
+cd ~/gt
+gt down && gt up
+gt orchestrator sync --update-changed
+gt orchestrator status          # running + PID
+
+# 3. Register rig if needed (example)
+# gt rig add testgt2 https://github.com/you/testgt2.git
+# Ensure testgt2/mayor/rig/SPEC.md exists
+
+# 4. Start the pipeline
+gt mayor workflow start rig-flow --rig testgt2
+gt mayor workflow status
+gt feed --plain
+tail -f logs/orchestrator.log
+
+# 5. Watch the active role (see docs for full table)
+tail -f testgt2/architect/typescript    # design
+tail -f planner/typescript              # planning
+tail -f testgt2/polecat/typescript      # implementation (orchestrator polecat, not polecats/*)
+tail -f testgt2/qa/typescript           # qa_review
+
+# 6. Agent console (optional)
+gt-agent-console   # http://127.0.0.1:8081 — orchestrator, workflow badges, typescript logs
+```
+
+**QA completes the FSM, not your git remote.** Polecat commits under `{rig}/mayor/rig/` locally; `git push` is blocked during orchestrated implementation. After `current_state=completed`, push from the rig worktree:
+
+```bash
+cd ~/gt/testgt2/mayor/rig
+git push origin main
+```
+
+Reset and re-run a clean pipeline:
+
+```bash
+cd /path/to/gastown
+START_RIG_FLOW=1 ./scripts/reset-rig-orchestrator.sh --force
+```
+
+Tune bead prefixes, unittest module, and required files in `{town}/orchestrator/templates/rig-flow.yaml` (`validation:` block) when you change `SPEC.md` — see [Workflow validation](docs/concepts/orchestrator.md#workflow-validation-configurable-guards).
+
 ### Monitoring: Witness, Deacon, Dogs 🐕
 
 A three-tier watchdog system keeps agents healthy:
@@ -227,6 +300,8 @@ gt config agent list &&
 gt mayor attach
 ```
 and tell the Mayor what you want to build!
+
+For the **orchestrated rig pipeline** (Freeride + `rig-flow`), use [Orchestrator & Freeride](#orchestrator--freeride-rig-flow-) instead of ad-hoc Mayor slinging.
 
 ---
 
