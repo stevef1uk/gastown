@@ -21,20 +21,31 @@ type instancesSnapshot struct {
 	NextSeq   int                 `json:"next_seq"`
 }
 
-// LoadInstances restores workflow instances from disk into the manager.
-func (m *Manager) LoadInstances() error {
-	path := InstancesPath(m.townRoot)
+// LoadInstancesSnapshot reads persisted workflow instances without a Manager.
+func LoadInstancesSnapshot(townRoot string) (*instancesSnapshot, error) {
+	path := InstancesPath(townRoot)
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil
+			return &instancesSnapshot{}, nil
 		}
-		return err
+		return nil, err
 	}
-
 	var snap instancesSnapshot
 	if err := json.Unmarshal(data, &snap); err != nil {
-		return fmt.Errorf("decode %s: %w", path, err)
+		return nil, fmt.Errorf("decode %s: %w", path, err)
+	}
+	return &snap, nil
+}
+
+// LoadInstances restores workflow instances from disk into the manager.
+func (m *Manager) LoadInstances() error {
+	snap, err := LoadInstancesSnapshot(m.townRoot)
+	if err != nil {
+		return err
+	}
+	if snap == nil {
+		return nil
 	}
 
 	m.mu.Lock()

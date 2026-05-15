@@ -485,6 +485,54 @@ func ShutdownDelay() time.Duration {
 	return constants.ShutdownNotifyDelay
 }
 
+// RepairTownRoleRigIdentity updates .gt-agent and session env when a running town
+// role session was started without rig metadata (stale hq-polecat after gt up).
+func RepairTownRoleRigIdentity(ctx context.Context, p Provider, sessionID, workDir, role, rigName string) error {
+	if rigName == "" || workDir == "" {
+		return nil
+	}
+
+	identityPath := filepath.Join(workDir, ".gt-agent")
+	agentName := ""
+	if data, err := os.ReadFile(identityPath); err == nil {
+		var existing struct {
+			Role string `json:"role"`
+			Rig  string `json:"rig"`
+			Name string `json:"name"`
+		}
+		if json.Unmarshal(data, &existing) == nil {
+			if existing.Rig == rigName {
+				if p == nil || sessionID == "" {
+					return nil
+				}
+				// Identity OK; still refresh session env in case GT_RIG was never set.
+			}
+			agentName = existing.Name
+			if existing.Role != "" {
+				role = existing.Role
+			}
+		}
+	}
+
+	if err := ensureAgentIdentityFile(SessionConfig{
+		WorkDir:   workDir,
+		Role:      role,
+		RigName:   rigName,
+		AgentName: agentName,
+	}); err != nil {
+		return err
+	}
+
+	if p == nil || sessionID == "" {
+		return nil
+	}
+	_ = p.SetEnvironment(ctx, sessionID, "GT_RIG", rigName)
+	if role == constants.RolePolecat && agentName == "" {
+		_ = p.SetEnvironment(ctx, sessionID, "GT_ROLE", constants.RolePolecat)
+	}
+	return nil
+}
+
 // ensureAgentIdentityFile writes a JSON file identifying the agent's role and rig.
 // This is read by gt-agent on startup to resolve its identity.
 func ensureAgentIdentityFile(cfg SessionConfig) error {

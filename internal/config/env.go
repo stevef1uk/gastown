@@ -115,11 +115,22 @@ func AgentEnv(cfg AgentEnvConfig) map[string]string {
 		env["GIT_AUTHOR_NAME"] = fmt.Sprintf("%s/refinery", cfg.Rig)
 
 	case constants.RolePolecat:
-		env["GT_ROLE"] = fmt.Sprintf("%s/polecats/%s", cfg.Rig, cfg.AgentName)
-		env["GT_RIG"] = cfg.Rig
-		env["GT_POLECAT"] = cfg.AgentName
-		env["BD_ACTOR"] = fmt.Sprintf("%s/polecats/%s", cfg.Rig, cfg.AgentName)
-		env["GIT_AUTHOR_NAME"] = cfg.AgentName
+		if cfg.Rig == "" && cfg.AgentName == "" {
+			// Town hq-polecat (orchestrated rig-flow): simple role; rig via GT_RIG.
+			env["GT_ROLE"] = constants.RolePolecat
+			env["BD_ACTOR"] = constants.RolePolecat
+			env["GIT_AUTHOR_NAME"] = constants.RolePolecat
+		} else {
+			env["GT_ROLE"] = fmt.Sprintf("%s/polecats/%s", cfg.Rig, cfg.AgentName)
+			env["BD_ACTOR"] = fmt.Sprintf("%s/polecats/%s", cfg.Rig, cfg.AgentName)
+			env["GIT_AUTHOR_NAME"] = cfg.AgentName
+		}
+		if cfg.Rig != "" {
+			env["GT_RIG"] = cfg.Rig
+		}
+		if cfg.AgentName != "" {
+			env["GT_POLECAT"] = cfg.AgentName
+		}
 		// Disable Dolt auto-commit for polecats. With branch-per-polecat,
 		// individual commits are pointless — all changes merge at gt done time
 		// via DOLT_MERGE. Without this, concurrent polecats cause manifest

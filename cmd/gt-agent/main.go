@@ -18,6 +18,7 @@ import (
 
 	"github.com/steveyegge/gastown/cmd/gt-agent/internal/llm"
 	"github.com/steveyegge/gastown/internal/nudge"
+	"github.com/steveyegge/gastown/internal/orchestrator"
 	"github.com/steveyegge/gastown/internal/templates"
 )
 
@@ -452,6 +453,16 @@ func run() error {
 	}
 
 	if orchestrated {
+		if roleCanonical == "polecat" {
+			identityRig := rig
+			if identity := loadAgentFile(".gt-agent"); identity != nil && identity.Rig != "" {
+				identityRig = identity.Rig
+			}
+			if discovered := orchestrator.DiscoverTownPolecatRig(townRoot, rig, identityRig); discovered != "" {
+				rig = discovered
+				os.Setenv("GT_RIG", rig)
+			}
+		}
 		return runOrchestrated(ctx, client, townRoot, roleCanonical, rig, sessionName, stateFile, state)
 	}
 

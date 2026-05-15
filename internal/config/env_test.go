@@ -39,6 +39,19 @@ func TestAgentEnv_Witness(t *testing.T) {
 	assertEnv(t, env, "GT_ROOT", "/town")
 }
 
+func TestAgentEnv_TownPolecat(t *testing.T) {
+	t.Parallel()
+	env := AgentEnv(AgentEnvConfig{
+		Role:     "polecat",
+		TownRoot: "/town",
+	})
+
+	assertEnv(t, env, "GT_ROLE", "polecat")
+	assertEnv(t, env, "BD_ACTOR", "polecat")
+	assertNotSet(t, env, "GT_RIG")
+	assertNotSet(t, env, "GT_POLECAT")
+}
+
 func TestAgentEnv_Polecat(t *testing.T) {
 	t.Parallel()
 	env := AgentEnv(AgentEnvConfig{

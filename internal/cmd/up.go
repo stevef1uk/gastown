@@ -1493,6 +1493,11 @@ func upStartTownRole(townRoot string, role string, sessionID string, orchestrate
 	ctx := context.Background()
 
 	if running, _ := sp.Exists(ctx, sessionID); running {
+		if rigName != "" {
+			if err := session.RepairTownRoleRigIdentity(ctx, sp, sessionID, roleDir, role, rigName); err != nil {
+				fmt.Fprintf(os.Stderr, "%s repair %s rig identity: %v\n", style.Warning.Render("!"), sessionID, err)
+			}
+		}
 		return agentStartResult{name: name, ok: true, detail: sessionID}
 	}
 
