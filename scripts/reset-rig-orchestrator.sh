@@ -230,16 +230,39 @@ else:
 PY
 }
 
+DOLT_HOST="${DOLT_HOST:-127.0.0.1}"
+DOLT_PORT="${DOLT_PORT:-3307}"
+
+ensure_dolt() {
+  if command -v dolt >/dev/null 2>&1; then
+    if DOLT_CLI_PASSWORD="" dolt --host "$DOLT_HOST" --port "$DOLT_PORT" \
+        --user root --no-tls sql -q "SELECT 1;" &>/dev/null; then
+      echo "[dolt] server reachable at ${DOLT_HOST}:${DOLT_PORT}"
+      return 0
+    fi
+  fi
+  if command -v gt &>/dev/null && [[ -f "$GT_ROOT/config.json" ]]; then
+    echo "[dolt] starting Gas Town shared server (gt dolt start) ..."
+    (cd "$GT_ROOT" && gt dolt start) && return 0
+  fi
+  echo "[dolt] warn: no Dolt on ${DOLT_HOST}:${DOLT_PORT}; run: cd $GT_ROOT && gt dolt start" >&2
+  return 1
+}
+
 start_beads_dolt() {
   local beads_dir="$1"
-  local rig_ctx="$2"
-  echo "[beads] starting Dolt for $beads_dir ..."
+  local rig_ctx="${2:-}"
+  echo "[beads] BEADS_DIR=$beads_dir"
+  if command -v gt &>/dev/null && [[ -f "$GT_ROOT/config.json" ]]; then
+    ensure_dolt || true
+    return 0
+  fi
   if [[ -n "$rig_ctx" ]]; then
-    (cd "$GT_ROOT/$rig_ctx/mayor/rig" 2>/dev/null && export BEADS_DIR="$beads_dir" && bd dolt start) \
-      || (export BEADS_DIR="$beads_dir" && bd dolt start) \
+    (cd "$GT_ROOT/$rig_ctx/mayor/rig" 2>/dev/null && export BEADS_DIR="$beads_dir" && bd dolt start 2>/dev/null) \
+      || (export BEADS_DIR="$beads_dir" && bd dolt start 2>/dev/null) \
       || true
   else
-    (export BEADS_DIR="$beads_dir" && bd dolt start) || true
+    (export BEADS_DIR="$beads_dir" && bd dolt start 2>/dev/null) || true
   fi
 }
 
@@ -291,7 +314,7 @@ def run_bd(*args):
         env={**os.environ, "BEADS_DIR": beads_dir},
     )
 
-proc = run_bd("list", "--json")
+proc = run_bd("list", "--json", "--flat", "--limit=0")
 if proc.returncode != 0:
     print(f"  warn: bd list --json failed: {proc.stderr.strip()}", file=sys.stderr)
     sys.exit(0)

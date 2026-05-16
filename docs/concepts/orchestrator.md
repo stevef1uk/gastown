@@ -180,6 +180,21 @@ bash scripts/reset-rig-orchestrator.sh --force
 gt mayor workflow start rig-flow --rig testgt2
 ```
 
+**List / delete workflow instances** (`orchestrator/instances.json`):
+
+```bash
+./scripts/list-workflows.sh
+./scripts/delete-workflows.sh wf-2 --dry-run
+./scripts/delete-workflows.sh --rig testgt2 -f   # stop orchestrator first
+```
+
+**Clear implementation beads only** (duplicate `Implementation …` tasks from planner retries; does not reset instances or the worktree). See [README — Clear duplicate implementation beads](../README.md#clear-duplicate-implementation-beads):
+
+```bash
+./scripts/clear-implementation-beads.sh --rig testgt2 --dry-run
+./scripts/clear-implementation-beads.sh --rig testgt2
+```
+
 ## Workflow validation and spec profile
 
 Rig-flow guards (bead title prefix, required files, min sizes, test command) are **per rig**, not baked into prompts as a fixed example project.

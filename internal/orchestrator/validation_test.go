@@ -7,6 +7,44 @@ import (
 	"testing"
 )
 
+func TestClampProfileValidation(t *testing.T) {
+	tests := []struct {
+		name string
+		in   WorkflowValidation
+		want WorkflowValidation
+	}{
+		{
+			name: "absurd plan from llm",
+			in:   WorkflowValidation{MinPlanBytes: 17496, MinArchitectureBytes: 50000},
+			want: WorkflowValidation{MinPlanBytes: DefaultMinPlanBytes, MinArchitectureBytes: DefaultMinArchitectureBytes},
+		},
+		{
+			name: "zero uses defaults",
+			in:   WorkflowValidation{},
+			want: WorkflowValidation{MinPlanBytes: DefaultMinPlanBytes, MinArchitectureBytes: DefaultMinArchitectureBytes},
+		},
+		{
+			name: "in range kept",
+			in:   WorkflowValidation{MinPlanBytes: 3000, MinArchitectureBytes: 6000},
+			want: WorkflowValidation{MinPlanBytes: 3000, MinArchitectureBytes: 6000},
+		},
+		{
+			name: "below floor raised",
+			in:   WorkflowValidation{MinPlanBytes: 50},
+			want: WorkflowValidation{MinPlanBytes: MinArtifactBytesFloor, MinArchitectureBytes: DefaultMinArchitectureBytes},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := ClampProfileValidation(tc.in)
+			if got.MinPlanBytes != tc.want.MinPlanBytes || got.MinArchitectureBytes != tc.want.MinArchitectureBytes {
+				t.Fatalf("ClampProfileValidation() = plan %d arch %d, want plan %d arch %d",
+					got.MinPlanBytes, got.MinArchitectureBytes, tc.want.MinPlanBytes, tc.want.MinArchitectureBytes)
+			}
+		})
+	}
+}
+
 func TestDefaultWorkflowValidation(t *testing.T) {
 	v := DefaultWorkflowValidation()
 	if v.BeadTitleContains != "Implement " {

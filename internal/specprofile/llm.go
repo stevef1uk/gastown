@@ -55,6 +55,8 @@ Rules:
 - qa_verify_command: ONE shell command or chain run from the rig worktree (mayor/rig cwd is the repo root). It must verify the backend or main app (e.g. "cd defender/backend && pytest -q" or "cd finally/backend && uv run pytest -q" or "python3 -m unittest backend.test_fizzbuzz -v"). Use paths consistent with layout_root.
 - required_files: 3–8 critical paths relative to mayor/rig (e.g. defender/backend/main.py, defender/backend/requirements.txt). Include entrypoints the spec names.
 - spec_summary: 400–2500 characters summarizing goals, stack, directory layout, and how to run tests—so downstream agents need not re-read the full spec.
+- min_plan_bytes: target 1500–2500 (enough for bead list + phased strategy in plan.md). Use 200–4096 only; NEVER copy SPEC byte length or spec_summary character count.
+- min_architecture_bytes: target 4000–8192 for a substantive architecture.md. Use 200–8192 only; NEVER copy SPEC byte length.
 - confidence: "high", "medium", or "low".
 
 Output JSON only.`
@@ -140,6 +142,7 @@ Output JSON only.`
 	if v.LayoutRoot == "." {
 		v.LayoutRoot = ""
 	}
+	v = orchestrator.ClampProfileValidation(v)
 	conf := strings.TrimSpace(payload.Confidence)
 	if conf == "" {
 		conf = "medium"

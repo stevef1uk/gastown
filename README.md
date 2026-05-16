@@ -191,6 +191,47 @@ cd /path/to/gastown
 START_RIG_FLOW=1 ./scripts/reset-rig-orchestrator.sh --force
 ```
 
+### List and delete workflow instances
+
+Workflow state is stored in `{town}/orchestrator/instances.json`. Use these scripts for a table view and safe deletion (alternative to editing JSON by hand):
+
+```bash
+cd /path/to/gastown
+./scripts/list-workflows.sh
+./scripts/list-workflows.sh --rig testgt1 --status active
+./scripts/delete-workflows.sh wf-2 --dry-run
+./scripts/delete-workflows.sh --rig testgt1 -f    # after gt orchestrator stop
+./scripts/delete-workflows.sh --completed -f     # drop finished runs only
+```
+
+`gt mayor workflow status` still works when the orchestrator is running (includes live role). The list script reads `instances.json` directly and resolves **ROLE** from `orchestrator/templates/<template>.yaml`. Stop the orchestrator before delete (`gt orchestrator stop`) so in-memory state does not overwrite the file.
+
+### Clear duplicate implementation beads
+
+Lighter than a full rig reset — does not touch orchestrator instances, mail, or the git worktree. Use when planner retries left many open `Implementation …` tasks in the rig beads DB:
+
+```bash
+cd /path/to/gastown
+./scripts/clear-implementation-beads.sh --rig testgt1 --dry-run
+./scripts/clear-implementation-beads.sh --rig testgt1
+```
+
+Implementation beads live in **rig** scope (`~/gt/<rig>/.beads`). `--town` only scans town HQ (`~/gt/.beads`); HQ usually has no implementation tasks unless you use a custom `--match` (e.g. `Implement backend` for legacy `hq-*` beads).
+
+| Flag | Effect |
+|------|--------|
+| `--rig <name>` | Rig beads database (typical use) |
+| `--town` | Town HQ beads |
+| `--match <substring>` | Filter by title; default is `validation.bead_title_contains` from `{rig}/mayor/rig/.gastown/workflow-profile.json`, else `Implementation` |
+| `--all-open` | Delete every open bead in scope (role/patrol beads still kept) |
+| `--all` | Delete all beads in scope; add `--include-closed` to include closed |
+| `--dry-run` | Show what would be deleted |
+| `-f` / `--force` | Skip the confirmation prompt |
+
+Dolt: the script uses the **Gas Town shared server** on port 3307 (`gt dolt start` or `gt up`). It does not run per-rig `bd dolt start` (that can collide on the same port). If a rig-local `bd dolt` is holding the port, stop it with `BEADS_DIR=~/gt/<rig>/.beads bd dolt stop`, then `cd ~/gt && gt dolt start`.
+
+After cleanup, recreate the canonical implementation beads from `plan.md`, or rewind/restart the workflow (`gt mayor workflow reset …`, then planning/implementation). Environment: `GT_ROOT=~/gt` (default `~/gt`), `KEEP_ROLE_BEADS=1` (default — skips `te-<rig>-architect|qa|refinery|witness` and patrol molecules).
+
 When `SPEC.md` changes, refresh the per-rig profile: `gt rig spec-index <rig> --force` — see [Workflow validation](docs/concepts/orchestrator.md#workflow-validation-and-spec-profile).
 
 ### Monitoring: Witness, Deacon, Dogs 🐕

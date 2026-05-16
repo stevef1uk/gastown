@@ -20,14 +20,44 @@ type WorkflowValidation struct {
 	MinPlanBytes         int64    `yaml:"min_plan_bytes" json:"min_plan_bytes"`
 }
 
+// Artifact size guard defaults for rig-flow (gt rig spec-index / workflow-profile.json).
+// LLMs often emit min_plan_bytes near the full SPEC size; ClampProfileValidation corrects that.
+const (
+	MinArtifactBytesFloor       int64 = 200
+	DefaultMinPlanBytes         int64 = 2500
+	MaxMinPlanBytes             int64 = 4096
+	DefaultMinArchitectureBytes int64 = 8192
+	MaxMinArchitectureBytes     int64 = 8192
+)
+
 // DefaultWorkflowValidation returns minimal rig-flow defaults when YAML/profile omit validation.
 // Per-rig values should come from mayor/rig/.gastown/workflow-profile.json (gt rig spec-index).
 func DefaultWorkflowValidation() WorkflowValidation {
 	return WorkflowValidation{
 		BeadTitleContains:    "Implement ",
-		MinArchitectureBytes: 200,
-		MinPlanBytes:         200,
+		MinArchitectureBytes: MinArtifactBytesFloor,
+		MinPlanBytes:         MinArtifactBytesFloor,
 	}
+}
+
+// ClampProfileValidation normalizes min_*_bytes from spec-index LLM output or hand-edited profiles.
+func ClampProfileValidation(v WorkflowValidation) WorkflowValidation {
+	v.MinPlanBytes = clampArtifactBytes(v.MinPlanBytes, DefaultMinPlanBytes, MinArtifactBytesFloor, MaxMinPlanBytes)
+	v.MinArchitectureBytes = clampArtifactBytes(v.MinArchitectureBytes, DefaultMinArchitectureBytes, MinArtifactBytesFloor, MaxMinArchitectureBytes)
+	return v
+}
+
+func clampArtifactBytes(value, defaultVal, floor, ceiling int64) int64 {
+	if value <= 0 {
+		return defaultVal
+	}
+	if value < floor {
+		return floor
+	}
+	if value > ceiling {
+		return defaultVal
+	}
+	return value
 }
 
 // WithDefaults fills empty fields from DefaultWorkflowValidation.
