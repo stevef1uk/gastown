@@ -231,7 +231,7 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 					if isBeadCloseCommand(cmd) && cmdErr == nil {
 						implementationBeadCloseOK = true
 					}
-					if cmdErr == nil && isUnittestCommand(cmd, taskValidation(task).UnittestModule) {
+					if cmdErr == nil && isQATestCommandOK(cmd, taskValidation(task)) {
 						implementationHadCmdFailure = false
 					}
 					if cmdErr == nil && isGitCommitBackendCommand(cmd) {
@@ -245,7 +245,7 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 					if cmdErr == nil && isBdListClosedCommand(cmd) {
 						qaBdListClosedOK = true
 					}
-					if cmdErr == nil && isUnittestCommand(cmd, taskValidation(task).UnittestModule) {
+					if cmdErr == nil && isQATestCommandOK(cmd, taskValidation(task)) {
 						qaUnittestOK = true
 						qaHadCmdFailure = false
 					}
@@ -1018,6 +1018,16 @@ func validateQACommand(cmd, rig string, v orchestrator.WorkflowValidation) error
 	if strings.Contains(lower, "unittest") && (strings.Contains(lower, "| grep") || strings.Contains(lower, "if [")) {
 		return fmt.Errorf("run unittest as a single CMD (e.g. cd %s && python3 -m unittest %s -v); do not use pipes or shell if-blocks", rigMayorRigPath(rig), v.UnittestModule)
 	}
+	tr := strings.ToLower(strings.TrimSpace(v.TestRunner))
+	if strings.Contains(lower, "pytest") && (strings.Contains(lower, "| grep") || strings.Contains(lower, "if [")) {
+		return fmt.Errorf("run pytest as a single CMD from %s; do not use pipes or shell if-blocks", rigMayorRigPath(rig))
+	}
+	if strings.Contains(lower, "pytest") && tr != "pytest" && tr != "custom" {
+		return fmt.Errorf("pytest not allowed for this workflow test_runner=%q — use %s or update rig workflow profile", v.TestRunner, v.UnittestCommandHint())
+	}
+	if strings.Contains(lower, "pytest") && !strings.Contains(lower, "cd ") && !strings.Contains(lower, strings.ToLower(rigMayorRigPath(rig))) {
+		return fmt.Errorf("pytest must run from under %s (e.g. cd %s && …)", rigMayorRigPath(rig), rigMayorRigPath(rig))
+	}
 	if strings.Contains(lower, "unittest") && !strings.Contains(lower, "cd ") && !strings.Contains(lower, rigMayorRigPath(rig)) {
 		return fmt.Errorf("unittest must run from %s (e.g. cd %s && python3 -m unittest %s -v)", rigMayorRigPath(rig), rigMayorRigPath(rig), v.UnittestModule)
 	}
@@ -1026,7 +1036,6 @@ func validateQACommand(cmd, rig string, v orchestrator.WorkflowValidation) error
 		msg  string
 	}{
 		{strings.Contains(lower, "/workspace"), "do not use /workspace paths — work from $GT_ROOT"},
-		{strings.Contains(lower, "pytest"), "use " + v.UnittestCommandHint() + " (per workflow validation)"},
 		{strings.Contains(lower, "flake8"), "do not run flake8 in QA step"},
 		{strings.Contains(lower, "pip install"), "do not install packages in QA step"},
 		{strings.Contains(lower, "follow-arch"), "do not grep for invented FOLLOW-ARCH markers"},

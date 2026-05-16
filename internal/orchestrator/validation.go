@@ -1,6 +1,7 @@
 package orchestrator
 
 import (
+	"fmt"
 	"path/filepath"
 	"strings"
 )
@@ -8,19 +9,22 @@ import (
 // WorkflowValidation configures artifact checks for a workflow template (rig-flow, etc.).
 // Operators edit these fields in orchestrator/templates/*.yaml when changing SPEC scope.
 type WorkflowValidation struct {
+	LayoutRoot           string   `yaml:"layout_root" json:"layout_root"`
 	BeadTitleContains    string   `yaml:"bead_title_contains" json:"bead_title_contains"`
 	UnittestModule       string   `yaml:"unittest_module" json:"unittest_module"`
+	QAVerifyCommand      string   `yaml:"qa_verify_command" json:"qa_verify_command"`
+	TestRunner           string   `yaml:"test_runner" json:"test_runner"`
 	RequiredFiles        []string `yaml:"required_files" json:"required_files"`
+	SpecSummary          string   `yaml:"spec_summary" json:"spec_summary"`
 	MinArchitectureBytes int64    `yaml:"min_architecture_bytes" json:"min_architecture_bytes"`
 	MinPlanBytes         int64    `yaml:"min_plan_bytes" json:"min_plan_bytes"`
 }
 
-// DefaultWorkflowValidation returns rig-flow FizzBuzz defaults when YAML omits validation.
+// DefaultWorkflowValidation returns minimal rig-flow defaults when YAML/profile omit validation.
+// Per-rig values should come from mayor/rig/.gastown/workflow-profile.json (gt rig spec-index).
 func DefaultWorkflowValidation() WorkflowValidation {
 	return WorkflowValidation{
-		BeadTitleContains:    "Implement backend/",
-		UnittestModule:       "backend.test_fizzbuzz",
-		RequiredFiles:        []string{"backend/fizzbuzz.py", "backend/main.py", "backend/test_fizzbuzz.py"},
+		BeadTitleContains:    "Implement ",
 		MinArchitectureBytes: 200,
 		MinPlanBytes:         200,
 	}
@@ -32,7 +36,10 @@ func (v WorkflowValidation) WithDefaults() WorkflowValidation {
 	if v.BeadTitleContains == "" {
 		v.BeadTitleContains = d.BeadTitleContains
 	}
-	if v.UnittestModule == "" {
+	hasCustomQA := strings.TrimSpace(v.QAVerifyCommand) != "" ||
+		strings.EqualFold(strings.TrimSpace(v.TestRunner), "pytest") ||
+		strings.EqualFold(strings.TrimSpace(v.TestRunner), "custom")
+	if v.UnittestModule == "" && !hasCustomQA {
 		v.UnittestModule = d.UnittestModule
 	}
 	if len(v.RequiredFiles) == 0 {
@@ -60,11 +67,23 @@ func MergeValidation(tpl *WorkflowTemplate, task *Task) WorkflowValidation {
 }
 
 func mergeValidationFields(base, overlay WorkflowValidation) WorkflowValidation {
+	if overlay.LayoutRoot != "" {
+		base.LayoutRoot = overlay.LayoutRoot
+	}
 	if overlay.BeadTitleContains != "" {
 		base.BeadTitleContains = overlay.BeadTitleContains
 	}
 	if overlay.UnittestModule != "" {
 		base.UnittestModule = overlay.UnittestModule
+	}
+	if overlay.QAVerifyCommand != "" {
+		base.QAVerifyCommand = overlay.QAVerifyCommand
+	}
+	if overlay.TestRunner != "" {
+		base.TestRunner = overlay.TestRunner
+	}
+	if overlay.SpecSummary != "" {
+		base.SpecSummary = overlay.SpecSummary
 	}
 	if len(overlay.RequiredFiles) > 0 {
 		base.RequiredFiles = append([]string(nil), overlay.RequiredFiles...)
@@ -83,8 +102,12 @@ func (v WorkflowValidation) SubstituteVars(vars map[string]string) WorkflowValid
 	if len(vars) == 0 {
 		return v
 	}
+	v.LayoutRoot = SubstituteVars(v.LayoutRoot, vars)
 	v.BeadTitleContains = SubstituteVars(v.BeadTitleContains, vars)
 	v.UnittestModule = SubstituteVars(v.UnittestModule, vars)
+	v.QAVerifyCommand = SubstituteVars(v.QAVerifyCommand, vars)
+	v.TestRunner = SubstituteVars(v.TestRunner, vars)
+	v.SpecSummary = SubstituteVars(v.SpecSummary, vars)
 	for i, f := range v.RequiredFiles {
 		v.RequiredFiles[i] = SubstituteVars(f, vars)
 	}
@@ -94,9 +117,16 @@ func (v WorkflowValidation) SubstituteVars(vars map[string]string) WorkflowValid
 // PromptVars returns keys for {{bead_title_contains}}, {{unittest_module}}, etc. in prompt files.
 func (v WorkflowValidation) PromptVars() map[string]string {
 	return map[string]string{
-		"bead_title_contains": v.BeadTitleContains,
-		"unittest_module":     v.UnittestModule,
-		"required_files":      strings.Join(v.RequiredFiles, ", "),
+		"layout_root":             v.LayoutRoot,
+		"bead_title_contains":     v.BeadTitleContains,
+		"unittest_module":         v.UnittestModule,
+		"qa_verify_command":       v.QAVerifyCommand,
+		"test_runner":             v.TestRunner,
+		"required_files":          strings.Join(v.RequiredFiles, ", "),
+		"spec_summary":            v.SpecSummary,
+		"unittest_command_hint":   v.UnittestCommandHint(),
+		"min_architecture_bytes":  fmt.Sprintf("%d", v.MinArchitectureBytes),
+		"min_plan_bytes":          fmt.Sprintf("%d", v.MinPlanBytes),
 	}
 }
 
@@ -117,8 +147,11 @@ func (v WorkflowValidation) ForbiddenRigRootBasenames() []string {
 	return out
 }
 
-// UnittestCommandHint returns the suggested QA unittest command for error messages.
+// UnittestCommandHint returns the suggested QA command for error messages.
 func (v WorkflowValidation) UnittestCommandHint() string {
+	if q := strings.TrimSpace(v.QAVerifyCommand); q != "" {
+		return q
+	}
 	mod := strings.TrimSpace(v.UnittestModule)
 	if mod == "" {
 		mod = DefaultWorkflowValidation().UnittestModule

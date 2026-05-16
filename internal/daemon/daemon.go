@@ -1350,8 +1350,7 @@ func (d *Daemon) ensureBootRunning() {
 
 	// Spawn Boot in a fresh tmux session
 	d.logger.Println("Spawning Boot for triage...")
-	orchestrated, _, _ := orchestrator.IsRunning(d.config.TownRoot)
-	if err := b.Spawn("", orchestrated); err != nil {
+	if err := b.Spawn("", d.orchestratedForRole("boot")); err != nil {
 		d.logger.Printf("Error spawning Boot: %v, falling back to direct Deacon check", err)
 		// Fallback: ensure Deacon is running directly
 		d.ensureDeaconRunning()
@@ -1425,6 +1424,13 @@ func (d *Daemon) runDegradedBootTriage(b *boot.Boot) {
 	}
 }
 
+// orchestratedForRole reports whether gt-agent should run with --orchestrated for role.
+// Patrol roles (deacon, witness, refinery, mechanic) must never use orchestrator idle polling.
+func (d *Daemon) orchestratedForRole(role string) bool {
+	orchRunning, _, _ := orchestrator.IsRunning(d.config.TownRoot)
+	return orchestrator.OrchestratedForRole(orchRunning, role)
+}
+
 // ensureDeaconRunning ensures the Deacon is running.
 // Uses deacon.Manager for consistent startup behavior (WaitForShellReady, GUPP, etc.).
 func (d *Daemon) ensureDeaconRunning() {
@@ -1433,12 +1439,19 @@ func (d *Daemon) ensureDeaconRunning() {
 	// Check if deacon is actually running - this should be checked even in crash
 	// loop mode so we can detect recovery and clear the crash loop state.
 	mgr := deacon.NewManagerWithProvider(d.config.TownRoot, d.sp)
+	sessionName := mgr.SessionName()
 	if running, _ := mgr.IsRunning(); running {
 		// Deacon is running - record success to reset backoff/crash loop
 		if d.restartTracker != nil {
 			d.restartTracker.RecordSuccess(agentID)
 		}
+		d.logger.Printf("Deacon session %s already running, skipping spawn", sessionName)
 		return
+	}
+	// Zombie: nats-wrapper PID file exists but gt-agent exited.
+	if exists, _ := d.sp.Exists(d.ctx, sessionName); exists {
+		d.logger.Printf("Deacon session %s wrapper is up but agent is dead — cleaning up", sessionName)
+		_ = d.sp.Stop(d.ctx, sessionName, false)
 	}
 
 	// Check restart tracker for backoff/crash loop (only if not already running)
@@ -1454,9 +1467,13 @@ func (d *Daemon) ensureDeaconRunning() {
 		}
 	}
 
-	orchestrated, _, _ := orchestrator.IsRunning(d.config.TownRoot)
-	if err := mgr.Start("", orchestrated); err != nil {
+	// Set before Start so the seed heartbeat and checkDeaconHeartbeat grace logic
+	// treat this spawn as current (not a pre-restart artifact).
+	d.deaconLastStarted = time.Now()
+
+	if err := mgr.Start("", d.orchestratedForRole(constants.RoleDeacon)); err != nil {
 		d.logger.Printf("Error starting Deacon: %v", err)
+		d.deaconLastStarted = time.Time{}
 		return
 	}
 
@@ -1467,10 +1484,6 @@ func (d *Daemon) ensureDeaconRunning() {
 			d.logger.Printf("Warning: failed to save restart state: %v", err)
 		}
 	}
-
-	// Track when we started the Deacon to prevent race condition in checkDeaconHeartbeat.
-	// The heartbeat file will still be stale until the Deacon runs a full patrol cycle.
-	d.deaconLastStarted = time.Now()
 	d.metrics.recordRestart(d.ctx, "deacon")
 	telemetry.RecordDaemonRestart(d.ctx, "deacon")
 	d.logger.Println("Deacon started successfully")
@@ -1560,16 +1573,25 @@ func (d *Daemon) checkDeaconHeartbeat() {
 
 	d.logger.Printf("Deacon heartbeat is stale (%s old), checking session...", age.Round(time.Minute))
 
-	// Check if session exists
-	hasSession, err := d.sp.Exists(d.ctx, sessionName)
+	// Check if the agent process is alive (not just the nats-wrapper).
+	hasSession, err := d.sp.IsAgentRunning(d.ctx, sessionName)
 	if err != nil {
 		d.logger.Printf("Error checking Deacon session: %v", err)
 		return
 	}
 
 	if !hasSession {
-		// Session doesn't exist - ensureDeaconRunning already ran earlier
-		// in heartbeat, so Deacon should be starting
+		// ensureDeaconRunning may have failed or been skipped earlier in the tick.
+		d.logger.Printf("Deacon heartbeat stale but no session %s — starting Deacon", sessionName)
+		d.ensureDeaconRunning()
+		return
+	}
+
+	// Deacon was started outside this daemon process (gt deacon start/restart) while
+	// heartbeat.json still reflects a pre-restart cycle. Grant grace before kill/nudge.
+	if d.deaconLastStarted.IsZero() && hb.IsVeryStale() {
+		d.deaconLastStarted = time.Now()
+		d.logger.Printf("Deacon session %s running (external start); awaiting fresh heartbeat", sessionName)
 		return
 	}
 
@@ -1747,8 +1769,7 @@ func (d *Daemon) ensureWitnessRunning(rigName string) {
 	// context (checks for active work before declaring something stuck).
 	// See: daemon.log "is hung (no activity for 30m0s), killing for restart"
 
-	orchestrated, _, _ := orchestrator.IsRunning(d.config.TownRoot)
-	if err := mgr.Start(false, "", nil, orchestrated); err != nil {
+	if err := mgr.Start(false, "", nil, d.orchestratedForRole(constants.RoleWitness)); err != nil {
 		if err == witness.ErrAlreadyRunning {
 			// Already running - this is the expected case
 			d.logger.Printf("Witness for %s already running, skipping spawn", rigName)
@@ -1808,8 +1829,7 @@ func (d *Daemon) ensureRefineryRunning(rigName string) {
 	// context (checks for active work before declaring something stuck).
 	// See: daemon.log "is hung (no activity for 30m0s), killing for restart"
 
-	orchestrated, _, _ := orchestrator.IsRunning(d.config.TownRoot)
-	if err := mgr.Start(false, "", orchestrated); err != nil {
+	if err := mgr.Start(false, "", d.orchestratedForRole(constants.RoleRefinery)); err != nil {
 		if err == refinery.ErrAlreadyRunning {
 			// Already running - this is the expected case when fix is working
 			d.logger.Printf("Refinery for %s already running, skipping spawn", rigName)
@@ -1853,7 +1873,6 @@ func (d *Daemon) ensureArchitectRunning(rigName string) {
 		return
 	}
 
-	orchestrated, _, _ := orchestrator.IsRunning(d.config.TownRoot)
 	_, err := session.StartSession(d.ctx, d.sp, &session.SessionConfig{
 		SessionID:    sessionID,
 		WorkDir:      architectDir,
@@ -1861,7 +1880,7 @@ func (d *Daemon) ensureArchitectRunning(rigName string) {
 		TownRoot:     d.config.TownRoot,
 		RigPath:      filepath.Join(d.config.TownRoot, rigName),
 		RigName:      rigName,
-		Orchestrated: orchestrated,
+		Orchestrated: d.orchestratedForRole(constants.RoleArchitect),
 		Beacon:       session.BeaconConfig{Recipient: "architect", Sender: "daemon", Topic: "patrol"},
 		WaitForAgent: false,
 		AutoRespawn:  true,
@@ -1905,7 +1924,6 @@ func (d *Daemon) ensureQARunning(rigName string) {
 		return
 	}
 
-	orchestrated, _, _ := orchestrator.IsRunning(d.config.TownRoot)
 	_, err := session.StartSession(d.ctx, d.sp, &session.SessionConfig{
 		SessionID:    sessionID,
 		WorkDir:      qaDir,
@@ -1913,7 +1931,7 @@ func (d *Daemon) ensureQARunning(rigName string) {
 		TownRoot:     d.config.TownRoot,
 		RigPath:      filepath.Join(d.config.TownRoot, rigName),
 		RigName:      rigName,
-		Orchestrated: orchestrated,
+		Orchestrated: d.orchestratedForRole(constants.RoleQA),
 		Beacon:       session.BeaconConfig{Recipient: "qa", Sender: "daemon", Topic: "patrol"},
 		WaitForAgent: false,
 		AutoRespawn:  true,
@@ -2010,58 +2028,40 @@ func (d *Daemon) killRigPolecatSessions() {
 	})
 }
 
-// ensureMechanicsRunning ensures mechanic agents are running for configured rigs.
+// ensureMechanicsRunning ensures the town-level mechanic is running (hq-mechanic).
+// One mechanic patrols logs for the whole town; per-rig mechanic dirs are legacy only.
 func (d *Daemon) ensureMechanicsRunning() {
-	rigs := d.getPatrolRigs("mechanic")
-	d.rigPool.runPerRig(d.ctx, rigs, func(ctx context.Context, rigName string) error {
-		d.ensureMechanicRunning(rigName)
-		return nil
-	})
+	d.ensureTownMechanicRunning()
 }
 
-// ensureMechanicRunning ensures the mechanic agent for a specific rig is running.
-func (d *Daemon) ensureMechanicRunning(rigName string) {
-	if operational, reason := d.isRigOperational(rigName); !operational {
-		d.logger.Printf("Skipping mechanic auto-start for %s: %s", rigName, reason)
-		name := session.MechanicSessionNameForRig(rigName)
-		if exists, _ := d.sp.Exists(d.ctx, name); exists {
-			d.logger.Printf("Killing leftover mechanic %s (rig %s)", name, reason)
-			_ = d.sp.Stop(d.ctx, name, true)
-		}
-		return
-	}
-
-	sessionID := session.MechanicSessionNameForRig(rigName)
-	mechanicDir := filepath.Join(d.config.TownRoot, rigName, constants.DirMechanic)
-	if _, err := os.Stat(mechanicDir); os.IsNotExist(err) {
-		return // Not all rigs have a mechanic
-	}
+// ensureTownMechanicRunning ensures the town-level mechanic at ~/gt/mechanic is running.
+func (d *Daemon) ensureTownMechanicRunning() {
+	sessionID := session.MechanicSessionName()
+	mechanicDir := filepath.Join(d.config.TownRoot, constants.DirMechanic)
+	_ = os.MkdirAll(mechanicDir, 0755)
 
 	if running, _ := d.sp.Exists(d.ctx, sessionID); running {
 		return
 	}
 
-	orchestrated, _, _ := orchestrator.IsRunning(d.config.TownRoot)
 	_, err := session.StartSession(d.ctx, d.sp, &session.SessionConfig{
 		SessionID:    sessionID,
 		WorkDir:      mechanicDir,
 		Role:         constants.RoleMechanic,
 		TownRoot:     d.config.TownRoot,
-		RigPath:      filepath.Join(d.config.TownRoot, rigName),
-		RigName:      rigName,
-		Orchestrated: orchestrated,
+		Orchestrated: d.orchestratedForRole(constants.RoleMechanic),
 		Beacon:       session.BeaconConfig{Recipient: "mechanic", Sender: "daemon", Topic: "patrol"},
 		WaitForAgent: false,
 		AutoRespawn:  true,
 	})
 	if err != nil {
-		d.logger.Printf("Error starting mechanic for %s: %v", rigName, err)
+		d.logger.Printf("Error starting mechanic: %v", err)
 		return
 	}
 
 	d.metrics.recordRestart(d.ctx, "mechanic")
-	telemetry.RecordDaemonRestart(d.ctx, "mechanic-"+rigName)
-	d.logger.Printf("Mechanic session for %s started successfully", rigName)
+	telemetry.RecordDaemonRestart(d.ctx, "mechanic")
+	d.logger.Printf("Mechanic session started successfully")
 }
 
 // ensurePlannerRunning ensures the town-level planner is running.
@@ -2074,13 +2074,12 @@ func (d *Daemon) ensurePlannerRunning() {
 		return
 	}
 
-	orchestrated, _, _ := orchestrator.IsRunning(d.config.TownRoot)
 	_, err := session.StartSession(d.ctx, d.sp, &session.SessionConfig{
 		SessionID:    sessionID,
 		WorkDir:      plannerDir,
 		Role:         constants.RolePlanner,
 		TownRoot:     d.config.TownRoot,
-		Orchestrated: orchestrated,
+		Orchestrated: d.orchestratedForRole(constants.RolePlanner),
 		Beacon:       session.BeaconConfig{Recipient: "planner", Sender: "daemon", Topic: "patrol"},
 		WaitForAgent: false,
 		AutoRespawn:  true,
@@ -2102,8 +2101,7 @@ func (d *Daemon) ensurePlannerRunning() {
 func (d *Daemon) ensureMayorRunning() {
 	mgr := mayor.NewManager(d.config.TownRoot)
 
-	orchestrated, _, _ := orchestrator.IsRunning(d.config.TownRoot)
-	if err := mgr.Start("", orchestrated); err != nil {
+	if err := mgr.Start("", d.orchestratedForRole(constants.RoleMayor)); err != nil {
 		if err == mayor.ErrAlreadyRunning {
 			// Session exists — verify agent is actually alive.
 			// During handoffs or heavy work (long shell pipelines, local LLM),
@@ -2140,8 +2138,7 @@ func (d *Daemon) ensureMayorRunning() {
 					return
 				}
 				d.mayorZombieCount = 0
-				orchestrated, _, _ := orchestrator.IsRunning(d.config.TownRoot)
-				if startErr := mgr.Start("", orchestrated); startErr != nil {
+				if startErr := mgr.Start("", d.orchestratedForRole(constants.RoleMayor)); startErr != nil {
 					d.logger.Printf("Error restarting Mayor after zombie cleanup: %v", startErr)
 					return
 				}
@@ -2240,14 +2237,20 @@ func (d *Daemon) killRefinerySessions() {
 	})
 }
 
-// killMechanicSessions kills leftover mechanic tmux sessions for all rigs.
+// killMechanicSessions kills leftover town-level and legacy per-rig mechanic sessions.
 // Called when the mechanic patrol is disabled. (hq-2mstj)
 func (d *Daemon) killMechanicSessions() {
+	if exists, _ := d.sp.Exists(d.ctx, session.MechanicSessionName()); exists {
+		d.logger.Printf("Killing leftover %s session (patrol disabled)", session.MechanicSessionName())
+		if err := d.sp.Stop(d.ctx, session.MechanicSessionName(), true); err != nil {
+			d.logger.Printf("Error killing %s session: %v", session.MechanicSessionName(), err)
+		}
+	}
 	d.rigPool.runPerRig(d.ctx, d.getKnownRigs(), func(ctx context.Context, rigName string) error {
 		name := session.MechanicSessionNameForRig(rigName)
 		exists, _ := d.sp.Exists(d.ctx, name)
 		if exists {
-			d.logger.Printf("Killing leftover %s session (patrol disabled)", name)
+			d.logger.Printf("Killing leftover legacy %s session (patrol disabled)", name)
 			if err := d.sp.Stop(d.ctx, name, true); err != nil {
 				d.logger.Printf("Error killing %s session: %v", name, err)
 			}

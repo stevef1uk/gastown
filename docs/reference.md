@@ -545,7 +545,24 @@ export OPENCODE_PERMISSION='{"*":"allow"}'
 gt rig add <name> <url>
 gt rig list
 gt rig remove <name>
+gt rig spec-index <name>              # LLM: SPEC.md → .gastown/workflow-profile.json
+gt rig spec-index <name> --force      # overwrite existing profile
 ```
+
+### Orchestrator workflow (`rig-flow`)
+
+Requires `session_transport: "nats"` and `gt orchestrator run` (started by `gt up`).
+
+```bash
+gt mayor workflow start rig-flow --rig <rig>
+gt mayor workflow status [workflow-id]
+gt mayor workflow complete <workflow-id> <outcome>
+gt mayor workflow reset <workflow-id> --to design   # rewind FSM (default: design)
+gt orchestrator status|start|stop|sync --update-changed
+gt up --orchestrator-only   # skip legacy town hq-architect/qa/polecat when orchestrator runs
+```
+
+See [Orchestrator (concept)](concepts/orchestrator.md).
 
 ### Convoy Management (Primary Dashboard)
 

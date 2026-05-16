@@ -62,9 +62,12 @@ func (m *Manager) Start(agentOverride string, orchestrated bool) error {
 	sessionID := m.SessionName()
 	ctx := context.Background()
 
-	// Check if session already exists using the provider
-	if running, _ := sp.Exists(ctx, sessionID); running {
+	// Check for a live agent (not just the nats-wrapper PID).
+	if alive, _ := sp.IsAgentRunning(ctx, sessionID); alive {
 		return ErrAlreadyRunning
+	}
+	if exists, _ := sp.Exists(ctx, sessionID); exists {
+		_ = sp.Stop(ctx, sessionID, false) // zombie wrapper without gt-agent
 	}
 
 	// Ensure deacon directory exists
@@ -101,6 +104,14 @@ func (m *Manager) Start(agentOverride string, orchestrated bool) error {
 		return err
 	}
 
+	// Seed a fresh heartbeat so the daemon does not treat a newly started Deacon as
+	// stuck based on a pre-restart heartbeat.json (stuck-agent-dog false positive).
+	_ = WriteHeartbeat(m.townRoot, &Heartbeat{
+		Timestamp:  time.Now().UTC(),
+		Cycle:      0,
+		LastAction: "starting",
+	})
+
 	time.Sleep(constants.ShutdownNotifyDelay)
 
 	return nil
@@ -129,9 +140,9 @@ func (m *Manager) Stop() error {
 	return nil
 }
 
-// IsRunning checks if the deacon session is active.
+// IsRunning checks if the deacon agent process is active (not just the wrapper).
 func (m *Manager) IsRunning() (bool, error) {
-	return m.sp.Exists(context.Background(), m.SessionName())
+	return m.sp.IsAgentRunning(context.Background(), m.SessionName())
 }
 
 // Status returns information about the deacon session.
@@ -140,7 +151,7 @@ func (m *Manager) Status() (*tmux.SessionInfo, error) {
 	sessionID := m.SessionName()
 	ctx := context.Background()
 
-	running, err := sp.Exists(ctx, sessionID)
+	running, err := sp.IsAgentRunning(ctx, sessionID)
 	if err != nil {
 		return nil, fmt.Errorf("checking session: %w", err)
 	}

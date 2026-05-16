@@ -15,6 +15,7 @@
 #   GT_DOWN=1                 run gt down before reset
 #   GT_UP=1                   run gt up after reset
 #   RESET_ORCHESTRATOR_INSTANCES=1  clear workflow state in instances.json
+#                                   (lighter: gt mayor workflow reset wf-N --to design)
 #   RESET_IMPL_BEADS=1        delete rig beads whose title contains "Implement backend"
 #   KEEP_ROLE_BEADS=1         skip te-<rig>-architect/qa/refinery/witness and patrol beads
 #   CLEAR_ALL_RIG_BEADS=0     if 1, delete all rig beads (including role/patrol)
@@ -24,6 +25,9 @@
 #   START_RIG_FLOW=0          if 1, start one rig-flow workflow after reset
 #
 # Examples:
+#   # Rewind FSM only (keep wf-* id) after deleting architecture.md / plan.md:
+#   gt mayor workflow reset wf-1 --to design
+#
 #   # Interactive reset for testgt2, then inspect:
 #   ./scripts/reset-rig-orchestrator.sh
 #

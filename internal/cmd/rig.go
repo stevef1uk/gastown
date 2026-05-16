@@ -27,6 +27,7 @@ import (
 	"github.com/steveyegge/gastown/internal/refinery"
 	"github.com/steveyegge/gastown/internal/rig"
 	"github.com/steveyegge/gastown/internal/session"
+	"github.com/steveyegge/gastown/internal/specprofile"
 	"github.com/steveyegge/gastown/internal/style"
 	"github.com/steveyegge/gastown/internal/suggest"
 	"github.com/steveyegge/gastown/internal/wisp"
@@ -99,6 +100,38 @@ Examples:
   gt rig list          # List all rigs with status
   gt rig list --json   # Output as JSON for scripting`,
 	RunE: runRigList,
+}
+
+var rigSpecIndexCmd = &cobra.Command{
+	Use:   "spec-index <rig>",
+	Short: "Generate workflow-profile.json from mayor/rig/SPEC.md via LLM",
+	Long: `Reads SPEC.md in the rig's mayor worktree and writes mayor/rig/.gastown/workflow-profile.json
+for orchestrator validation (commands, layout, QA). Requires LLM_ENDPOINT and LLM_MODEL (or defaults to local Ollama).
+
+After a successful write, a short summary of the extracted fields is printed—review it; if the model guessed wrong,
+edit the JSON directly or re-run with --force.
+
+Set GT_SKIP_SPEC_INDEX=1 to skip automatic indexing after 'gt rig add' / 'gt rig add --adopt'.
+
+Examples:
+  gt rig spec-index myproject
+  gt rig spec-index myproject --force`,
+	Args: cobra.ExactArgs(1),
+	RunE: runRigSpecIndex,
+}
+
+var rigSyncUpstreamCmd = &cobra.Command{
+	Use:   "sync-upstream <rig>",
+	Short: "Commit dirty mayor/rig and push current branch to origin",
+	Long: `Publishes the rig's mayor/rig worktree to origin (git push -u origin <branch>).
+
+Use when a rig-flow workflow finished but upstream has no commits because the
+orchestrator was not running a build with checkpoint/push support, or to publish
+remaining local commits.
+
+Commits uncommitted changes first if the worktree is dirty.`,
+	Args: cobra.ExactArgs(1),
+	RunE: runRigSyncUpstream,
 }
 
 var rigRemoveCmd = &cobra.Command{
@@ -321,6 +354,7 @@ var (
 	rigRestartForce      bool
 	rigRestartNuclear    bool
 	rigListJSON          bool
+	rigSpecIndexForce    bool
 	rigRemoveForce       bool
 )
 
@@ -346,6 +380,8 @@ func init() {
 	rigCmd.AddCommand(rigAddCmd)
 	rigCmd.AddCommand(rigBootCmd)
 	rigCmd.AddCommand(rigListCmd)
+	rigCmd.AddCommand(rigSpecIndexCmd)
+	rigCmd.AddCommand(rigSyncUpstreamCmd)
 	rigCmd.AddCommand(rigRebootCmd)
 	rigCmd.AddCommand(rigRemoveCmd)
 	rigCmd.AddCommand(rigResetCmd)
@@ -357,6 +393,8 @@ func init() {
 	rigCmd.AddCommand(rigStopCmd)
 
 	rigListCmd.Flags().BoolVar(&rigListJSON, "json", false, "Output as JSON")
+
+	rigSpecIndexCmd.Flags().BoolVar(&rigSpecIndexForce, "force", false, "Overwrite an existing workflow-profile.json")
 
 	rigRemoveCmd.Flags().BoolVarP(&rigRemoveForce, "force", "f", false, "Kill running tmux sessions before removing (may lose uncommitted work)")
 
@@ -629,6 +667,8 @@ func runRigAdd(cmd *cobra.Command, args []string) error {
 		fmt.Fprintf(os.Stderr, "Warning: failed to sync hooks for new rig: %v\n", err)
 	}
 
+	maybeSpecIndexFromSPEC(townRoot, name)
+
 	// Commit town-level config changes (rigs.json, daemon.json, routes.jsonl)
 	// so they aren't reverted by git restore/checkout operations.
 	commitTownConfigChanges(townRoot, name)
@@ -664,6 +704,113 @@ func runRigAdd(cmd *cobra.Command, args []string) error {
 	fmt.Printf("  gt crew add <name> --rig %s   # Create your personal workspace\n", name)
 	fmt.Printf("  cd %s/crew/<name>              # Start working\n", filepath.Join(townRoot, name))
 
+	return nil
+}
+
+// maybeSpecIndexFromSPEC runs LLM extraction when mayor/rig/SPEC.md exists.
+// Skipped when GT_SKIP_SPEC_INDEX is set. Errors are non-fatal (warning only).
+func maybeSpecIndexFromSPEC(townRoot, rigName string) {
+	if os.Getenv("GT_SKIP_SPEC_INDEX") != "" {
+		return
+	}
+	specPath := specprofile.SpecPath(townRoot, rigName)
+	if _, err := os.Stat(specPath); err != nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+	prof, err := specprofile.IndexRig(ctx, townRoot, rigName)
+	if err != nil {
+		fmt.Printf("  %s Workflow profile from SPEC.md (LLM): %v\n", style.Warning.Render("!"), err)
+		return
+	}
+	rel := filepath.Join(rigName, "mayor", "rig", specprofile.GastownMetaDir, specprofile.WorkflowProfileFilename)
+	fmt.Printf("  %s Wrote %s from SPEC.md (LLM)\n", style.Success.Render("✓"), rel)
+	absProfile := specprofile.ProfilePath(townRoot, rigName)
+	if a, err := filepath.Abs(absProfile); err == nil {
+		absProfile = a
+	}
+	notice := specprofile.FormatOperatorWorkflowProfileNotice(absProfile, rigName, prof)
+	if notice != "" {
+		fmt.Printf("\n")
+		for _, line := range strings.Split(notice, "\n") {
+			fmt.Printf("  %s\n", style.Dim.Render(line))
+		}
+		fmt.Printf("\n")
+	}
+}
+
+func runRigSpecIndex(_ *cobra.Command, args []string) error {
+	rigName := args[0]
+	townRoot, err := workspace.FindFromCwdOrError()
+	if err != nil {
+		return fmt.Errorf("not in a Gas Town workspace: %w", err)
+	}
+
+	rigsPath := filepath.Join(townRoot, "mayor", "rigs.json")
+	rigsConfig, err := config.LoadRigsConfig(rigsPath)
+	if err != nil {
+		rigsConfig = &config.RigsConfig{Rigs: make(map[string]config.RigEntry)}
+	}
+	g := git.NewGit(townRoot)
+	rigMgr := rig.NewManager(townRoot, rigsConfig, g)
+	if _, err := rigMgr.GetRig(rigName); err != nil {
+		return fmt.Errorf("rig %q not found", rigName)
+	}
+
+	specPath := specprofile.SpecPath(townRoot, rigName)
+	if _, err := os.Stat(specPath); err != nil {
+		return fmt.Errorf("SPEC.md not found at %s", specPath)
+	}
+
+	profilePath := specprofile.ProfilePath(townRoot, rigName)
+	if _, err := os.Stat(profilePath); err == nil && !rigSpecIndexForce {
+		return fmt.Errorf("profile already exists at %s (use --force to overwrite)", profilePath)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+	fmt.Printf("Indexing SPEC.md for rig %s (LLM)...\n", style.Bold.Render(rigName))
+	prof, err := specprofile.IndexRig(ctx, townRoot, rigName)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("%s Wrote %s\n", style.Success.Render("✓"), profilePath)
+	if a, err := filepath.Abs(profilePath); err == nil {
+		profilePath = a
+	}
+	notice := specprofile.FormatOperatorWorkflowProfileNotice(profilePath, rigName, prof)
+	if notice != "" {
+		fmt.Printf("\n")
+		for _, line := range strings.Split(notice, "\n") {
+			fmt.Println(style.Dim.Render(line))
+		}
+		fmt.Printf("\n")
+	}
+	return nil
+}
+
+func runRigSyncUpstream(_ *cobra.Command, args []string) error {
+	rigName := args[0]
+	townRoot, err := workspace.FindFromCwdOrError()
+	if err != nil {
+		return fmt.Errorf("not in a Gas Town workspace: %w", err)
+	}
+	rigsPath := filepath.Join(townRoot, "mayor", "rigs.json")
+	rigsConfig, err := config.LoadRigsConfig(rigsPath)
+	if err != nil {
+		rigsConfig = &config.RigsConfig{Rigs: make(map[string]config.RigEntry)}
+	}
+	g := git.NewGit(townRoot)
+	rigMgr := rig.NewManager(townRoot, rigsConfig, g)
+	if _, err := rigMgr.GetRig(rigName); err != nil {
+		return fmt.Errorf("rig %q not found", rigName)
+	}
+	fmt.Printf("Syncing %s mayor/rig to origin...\n", style.Bold.Render(rigName))
+	if err := refinery.SyncMayorRigUpstream(townRoot, rigName); err != nil {
+		return err
+	}
+	fmt.Printf("%s Published mayor/rig to origin\n", style.Success.Render("✓"))
 	return nil
 }
 
@@ -1349,6 +1496,8 @@ func runRigAdopt(_ *cobra.Command, args []string) error {
 
 	// Auto-assign a namepool theme that doesn't collide with other rigs (gas-21k).
 	autoAssignNamepoolTheme(townRoot, name, mgr)
+
+	maybeSpecIndexFromSPEC(townRoot, name)
 
 	// Print results
 	fmt.Printf("\n%s Rig %s adopted\n", style.Success.Render("✓"), name)

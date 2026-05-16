@@ -68,7 +68,9 @@ func (m *mockProvider) CapturePane(ctx context.Context, sessionID string, lines 
 func (m *mockProvider) SendKeys(ctx context.Context, sessionID string, keys string) error { return nil }
 func (m *mockProvider) SendKeysDebounced(ctx context.Context, sessionID string, keys string, debounceMs int) error { return nil }
 func (m *mockProvider) IsIdle(ctx context.Context, sessionID string) (bool, error) { return true, nil }
-func (m *mockProvider) IsAgentRunning(ctx context.Context, sessionID string) (bool, error) { return true, nil }
+func (m *mockProvider) IsAgentRunning(ctx context.Context, sessionID string) (bool, error) {
+	return m.Exists(ctx, sessionID)
+}
 func (m *mockProvider) CleanupOrphanedSessions(isGTSession func(string) bool) (int, error) { return 0, nil }
 func (m *mockProvider) StopAllSessions(ctx context.Context) error { return nil }
 func (m *mockProvider) NudgeSession(ctx context.Context, sessionID, message, sender string) error { return nil }

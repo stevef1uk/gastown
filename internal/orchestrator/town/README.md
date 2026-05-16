@@ -9,7 +9,43 @@ installed into your town at `{townRoot}/orchestrator/` by:
 
 The running orchestrator loads templates from `{townRoot}/orchestrator/templates/` when
 `gt orchestrator run` / `gt up` starts the service. Workflow state persists in
-`{townRoot}/orchestrator/instances.json`.
+`{townRoot}/orchestrator/instances.json` (not in git — use `gt mayor workflow reset` to rewind).
+
+## Per-rig workflow profile
+
+Validation and prompt variables for a rig come from:
+
+```
+{rig}/mayor/rig/.gastown/workflow-profile.json
+```
+
+Generate or refresh from `SPEC.md`:
+
+```bash
+gt rig spec-index <rig>
+gt rig spec-index <rig> --force
+```
+
+`gt rig add` / `gt rig adopt` run spec-index automatically when `SPEC.md` exists.
+
+`rig-flow.yaml` in this directory carries **placeholder** `validation:` defaults only.
+At runtime, **profile overrides template overrides Go defaults**.
+
+## Prompt variables
+
+Rig-flow prompts (`prompts/rig-flow/*.md`) are spec-driven. Common placeholders:
+
+| Variable | Source |
+|----------|--------|
+| `{{rig}}` | Workflow instance `--rig` |
+| `{{spec_summary}}` | Profile |
+| `{{layout_root}}` | Profile (e.g. `defender`, `backend`) |
+| `{{bead_title_contains}}` | Profile |
+| `{{required_files}}` | Profile (comma-separated in prompts) |
+| `{{min_architecture_bytes}}` / `{{min_plan_bytes}}` | Profile |
+| `{{unittest_command_hint}}` | Profile (`qa_verify_command` or unittest module) |
+
+Do not hard-code example project names or paths in prompts — use these variables.
 
 ## Configuration
 
@@ -40,10 +76,20 @@ See **[Quickstart: rig-flow on testgt2](../../../docs/concepts/orchestrator.md#q
 
 ```bash
 cd ~/gt
+gt rig spec-index <rig>    # if not already indexed
 gt up
 gt mayor workflow start rig-flow --rig <rig>
 gt mayor workflow status
 tail -f logs/orchestrator.log
+```
+
+## Rewind after deleting artifacts
+
+Deleting `architecture.md` or `plan.md` in git does **not** change the FSM:
+
+```bash
+gt mayor workflow reset wf-1 --to design
+gt up --orchestrator-only
 ```
 
 ## Which sessions to tail

@@ -664,52 +664,40 @@ func gatherStatus() (TownStatus, error) {
 	g := git.NewGit(townRoot)
 	mgr := rig.NewManager(townRoot, rigsConfig, g)
 
-	// Create tmux instance for runtime checks
-	t := tmux.NewTmux()
-
-	// Pre-fetch all tmux sessions and verify agent liveness for O(1) lookup.
-	// A Gas Town session is only considered "running" if the agent process is
-	// alive inside it, not merely if the tmux session exists. This prevents
-	// zombie sessions (tmux alive, agent dead) from showing as running.
-	// See: gt-bd6i3
-	allSessions := make(map[string]bool)
-	if sessions, err := t.ListSessions(); err == nil {
-		var sessionMu sync.Mutex
-		var sessionWg sync.WaitGroup
-		for _, s := range sessions {
-			if session.IsKnownSession(s) {
-				sessionWg.Add(1)
-				go func(name string) {
-					defer sessionWg.Done()
-					alive := t.IsAgentAlive(name)
-					sessionMu.Lock()
-					allSessions[name] = alive
-					sessionMu.Unlock()
-				}(s)
-			} else {
-				allSessions[s] = true
-			}
-		}
-		sessionWg.Wait()
-	}
-
-	// Also check NATS sessions (for platforms where tmux doesn't work)
 	sp := session.GetDefaultProvider(townRoot)
+
+	// Pre-fetch sessions for O(1) lookup. With NATS transport, liveness comes from
+	// .gt-nats-pids/ + process checks only (no tmux). With tmux, verify agent liveness
+	// inside each known session (gt-bd6i3).
+	allSessions := make(map[string]bool)
 	if natsProvider, ok := sp.(*session.NatsProvider); ok {
 		ctx := context.Background()
 		if natsSessions, err := natsProvider.List(ctx); err == nil {
 			for _, s := range natsSessions {
-				// Verify the process is actually alive before marking as running
-				if alive, _ := natsProvider.Exists(ctx, s); alive {
-					// If NATS says it's alive, it's alive! This correctly handles
-					// the case where a stale tmux session with the same name exists.
+				alive, _ := natsProvider.IsAgentRunning(ctx, s)
+				allSessions[s] = alive
+			}
+		}
+	} else {
+		t := tmux.NewTmux()
+		if sessions, err := t.ListSessions(); err == nil {
+			var sessionMu sync.Mutex
+			var sessionWg sync.WaitGroup
+			for _, s := range sessions {
+				if session.IsKnownSession(s) {
+					sessionWg.Add(1)
+					go func(name string) {
+						defer sessionWg.Done()
+						alive := t.IsAgentAlive(name)
+						sessionMu.Lock()
+						allSessions[name] = alive
+						sessionMu.Unlock()
+					}(s)
+				} else {
 					allSessions[s] = true
-				} else if _, exists := allSessions[s]; !exists {
-					// Only set to false if it doesn't exist already (don't overwrite
-					// a true from tmux, though NATS is usually the source of truth now).
-					allSessions[s] = false
 				}
 			}
+			sessionWg.Wait()
 		}
 	}
 
@@ -1110,22 +1098,15 @@ func outputStatusText(w io.Writer, status TownStatus) error {
 				parts = append(parts, fmt.Sprintf("dolt %s", style.Dim.Render(fmt.Sprintf("(stopped, :%d)", status.Dolt.Port))))
 			}
 		}
-		// Only show tmux if it's the active provider or has sessions
-		if status.Tmux != nil {
+		// Show session transport summary (NATS pid-tracked sessions or tmux server).
+		if status.Tmux != nil && status.Tmux.SessionCount > 0 {
 			sp := session.GetDefaultProvider(status.Location)
-			showTmux := false
-			if _, ok := sp.(*session.TmuxProvider); ok {
-				showTmux = true
-			} else if status.Tmux.SessionCount > 0 && status.Tmux.Running {
-				showTmux = true
-			}
-
-			if showTmux {
-				if status.Tmux.Running {
-					parts = append(parts, fmt.Sprintf("tmux %s", style.Dim.Render(fmt.Sprintf("(-L %s, PID %d, %d sessions, %s)", status.Tmux.Socket, status.Tmux.PID, status.Tmux.SessionCount, status.Tmux.SocketPath))))
-				} else {
-					parts = append(parts, fmt.Sprintf("tmux %s", style.Dim.Render(fmt.Sprintf("(-L %s, no server)", status.Tmux.Socket))))
-				}
+			if _, ok := sp.(*session.NatsProvider); ok {
+				parts = append(parts, fmt.Sprintf("nats %s", style.Dim.Render(fmt.Sprintf("(%d sessions)", status.Tmux.SessionCount))))
+			} else if status.Tmux.Running {
+				parts = append(parts, fmt.Sprintf("tmux %s", style.Dim.Render(fmt.Sprintf("(-L %s, PID %d, %d sessions, %s)", status.Tmux.Socket, status.Tmux.PID, status.Tmux.SessionCount, status.Tmux.SocketPath))))
+			} else {
+				parts = append(parts, fmt.Sprintf("tmux %s", style.Dim.Render(fmt.Sprintf("(-L %s, no server)", status.Tmux.Socket))))
 			}
 		}
 		if status.ACP != nil {

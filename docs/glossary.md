@@ -76,7 +76,10 @@ Central workflow FSM service that assigns pipeline work by state and role. Templ
 YAML definition of a finite-state machine: states, per-state `role` and `instructions`, and `transitions` keyed by outcome.
 
 ### Workflow instance
-A running execution of a workflow template (e.g. `wf-1`) with a `current_state` and optional `variables`. Persisted in `{townRoot}/orchestrator/instances.json`.
+A running execution of a workflow template (e.g. `wf-1`) with a `current_state` and optional `variables`. Persisted in `{townRoot}/orchestrator/instances.json`. Rewind with `gt mayor workflow reset <id> --to <state>` (e.g. `design` after deleting `architecture.md`).
+
+### Workflow profile
+Per-rig JSON at `{rig}/mayor/rig/.gastown/workflow-profile.json` produced by `gt rig spec-index` from `SPEC.md`. Supplies validation guards and prompt variables (`layout_root`, `bead_title_contains`, `required_files`, etc.) for rig-flow.
 
 ### Orchestrated agent
 An agent session running `gt-agent --orchestrated`, taking tasks from the orchestrator instead of the legacy hook/mail patrol loop.

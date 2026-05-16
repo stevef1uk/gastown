@@ -9,6 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/steveyegge/gastown/internal/beads"
+	"github.com/steveyegge/gastown/internal/constants"
 	"github.com/steveyegge/gastown/internal/refinery"
 	"github.com/steveyegge/gastown/internal/orchestrator"
 	"github.com/steveyegge/gastown/internal/session"
@@ -312,8 +313,8 @@ func runRefineryStart(cmd *cobra.Command, args []string) error {
 	fmt.Printf("Starting refinery for %s...\n", rigName)
 
 	townRoot, _ := workspace.FindFromCwdOrError()
-	orchestrated, _, _ := orchestrator.IsRunning(townRoot)
-	if err := mgr.Start(refineryForeground, refineryAgentOverride, orchestrated); err != nil {
+	orchRunning, _, _ := orchestrator.IsRunning(townRoot)
+	if err := mgr.Start(refineryForeground, refineryAgentOverride, orchestrator.OrchestratedForRole(orchRunning, constants.RoleRefinery)); err != nil {
 		if err == refinery.ErrAlreadyRunning {
 			fmt.Printf("%s Refinery is already running\n", style.Dim.Render("⚠"))
 			return nil
@@ -518,8 +519,8 @@ func runRefineryAttach(cmd *cobra.Command, args []string) error {
 		// Auto-start if not running
 		fmt.Printf("Refinery not running for %s, starting...\n", rigName)
 		townRoot, _ := workspace.FindFromCwdOrError()
-		orchestrated, _, _ := orchestrator.IsRunning(townRoot)
-		if err := mgr.Start(false, refineryAgentOverride, orchestrated); err != nil {
+		orchRunning, _, _ := orchestrator.IsRunning(townRoot)
+		if err := mgr.Start(false, refineryAgentOverride, orchestrator.OrchestratedForRole(orchRunning, constants.RoleRefinery)); err != nil {
 			return fmt.Errorf("starting refinery: %w", err)
 		}
 		fmt.Printf("%s Refinery started\n", style.Bold.Render("✓"))
@@ -553,8 +554,8 @@ func runRefineryRestart(cmd *cobra.Command, args []string) error {
 
 	// Start fresh
 	townRoot, _ := workspace.FindFromCwdOrError()
-	orchestrated, _, _ := orchestrator.IsRunning(townRoot)
-	if err := mgr.Start(false, refineryAgentOverride, orchestrated); err != nil {
+	orchRunning, _, _ := orchestrator.IsRunning(townRoot)
+	if err := mgr.Start(false, refineryAgentOverride, orchestrator.OrchestratedForRole(orchRunning, constants.RoleRefinery)); err != nil {
 		return fmt.Errorf("starting refinery: %w", err)
 	}
 

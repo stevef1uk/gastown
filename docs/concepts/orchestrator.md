@@ -124,40 +124,29 @@ export BEADS_DIR=$HOME/gt/testgt2/.beads
 cd ~/gt/testgt2/mayor/rig
 
 bd list --status=open
-bd list --status=open | grep 'Implement backend'
-bd list --status=closed | grep 'Implement backend'
+# Filter by your profile's bead_title_contains (e.g. "Implement defender/")
+bd list --status=open | grep 'Implement '
 ```
 
-Only titles containing `Implement backend/` count for QA completion. Ignore open patrol / `te-testgt2-*` role beads.
+Only titles matching `bead_title_contains` from the rig workflow profile count for QA. Ignore open patrol / role beads (`te-testgt2-*`, etc.).
 
 ### 5. QA outcomes (what “done” means)
 
-After polecat reports `success`, the FSM moves to `qa_review`. QA runs read-only checks plus:
-
-```bash
-cd ~/gt/testgt2/mayor/rig
-python3 -m unittest backend.test_fizzbuzz -v
-```
+After polecat reports `success`, the FSM moves to `qa_review`. QA runs read-only checks plus the verify command from the workflow profile (`qa_verify_command` or `python3 -m unittest <module>`).
 
 | Outcome | When to use |
 |---------|-------------|
-| `task_passed` | Unittest passed; **some** open `Implement backend/` beads remain (more polecat work) |
-| `all_passed` | Unittest passed; **zero** open `Implement backend/` beads (pipeline complete) |
+| `task_passed` | Verify command passed; **some** open implementation beads remain (more polecat work) |
+| `all_passed` | Verify command passed; **zero** open implementation beads (pipeline complete) |
 | `failure` | Tests or SPEC/architecture not met → back to implementation |
 
 Example JSON (after commands have actually run):
 
 ```json
-{"outcome":"task_passed","summary":"unittest OK; 3 open Implement backend beads remain"}
+{"outcome":"task_passed","summary":"tests OK; 3 open implementation beads remain"}
 ```
 
-`gt-agent` **rejects** `all_passed` if open implementation beads still exist, even when the model claims they are closed:
-
-```text
-artifact validation failed: cannot use all_passed: 3 open Implement backend/ beads remain
-```
-
-That is expected: close the remaining beads in implementation (e.g. `bd close te-mxp --reason "main.py done"`), then re-run QA with `all_passed`.
+`gt-agent` **rejects** `all_passed` if open implementation beads still exist, even when the model claims they are closed. Close remaining beads in implementation, then re-run QA with `all_passed`.
 
 ### 6. Verify a healthy run
 
@@ -166,42 +155,62 @@ gt mayor workflow status
 # current_state=completed  status=completed   (after all_passed)
 
 export BEADS_DIR=$HOME/gt/testgt2/.beads
-bd list --status=open | grep 'Implement backend' || echo "no open implementation beads"
+bd list --status=open
 ```
 
-### 7. Reset and retry (optional)
+### 7. Reset and retry
+
+**Rewind the FSM** (keeps the same `wf-*` id) when you deleted `architecture.md` / `plan.md` but the orchestrator already advanced:
+
+```bash
+rm -f testgt2/mayor/rig/architecture.md testgt2/mayor/rig/plan.md
+gt orchestrator stop    # optional; reset works offline too
+gt mayor workflow reset wf-1 --to design
+gt orchestrator start
+gt up --orchestrator-only
+```
+
+Use `--to kickoff` to run mayor kickoff again. Restart the orchestrator after `make install` so it exposes the `reset_workflow` MCP tool.
+
+**Full rig reset** (remove workflow instances for that rig, beads, mail, worktree):
 
 ```bash
 cd /path/to/gastown
-bash scripts/reset-rig-orchestrator.sh --force   # clears wf + rig orchestrator state
+bash scripts/reset-rig-orchestrator.sh --force
 gt mayor workflow start rig-flow --rig testgt2
 ```
 
-## Workflow validation (configurable guards)
+## Workflow validation and spec profile
 
-Rig-flow artifact checks (bead title prefix, unittest module, required files) are **not hard-coded in Go only** — they live in the workflow template YAML and are sent to `gt-agent` on each `fetch_task`.
+Rig-flow guards (bead title prefix, required files, min sizes, test command) are **per rig**, not baked into prompts as a fixed example project.
 
-Edit `{townRoot}/orchestrator/templates/rig-flow.yaml` (or sync from gastown via `gt orchestrator sync --update-changed`):
+### Generate profile from SPEC
 
-```yaml
-validation:
-  bead_title_contains: "Implement backend/"   # open beads QA/polecat care about
-  unittest_module: backend.test_fizzbuzz      # python3 -m unittest …
-  required_files:                             # under {rig}/mayor/rig/
-    - backend/fizzbuzz.py
-    - backend/main.py
-    - backend/test_fizzbuzz.py
-  min_architecture_bytes: 200
-  min_plan_bytes: 200
+```bash
+gt rig spec-index testgt2
+# → testgt2/mayor/rig/.gastown/workflow-profile.json
+
+gt rig spec-index testgt2 --force   # after SPEC.md changes
 ```
 
-When you change **SPEC.md** scope (different paths, test module, or bead naming):
+`gt rig add` and `gt rig adopt` run spec-index automatically when `SPEC.md` exists (best-effort; requires LLM endpoint).
 
-1. Update **validation** in `rig-flow.yaml` to match your new bead titles and files.
-2. Update **prompts** in `orchestrator/prompts/rig-flow/` (they use `{{bead_title_contains}}`, `{{unittest_module}}`, `{{required_files}}`).
-3. Run `gt orchestrator sync --update-changed` and restart orchestrated agents if prompts were cached in a long-running session.
+Example profile fields (also sent to `gt-agent` on `fetch_task` and substituted into prompts):
 
-`gt-agent` applies these rules for planning, implementation, design, and QA guards. Empty fields fall back to the FizzBuzz defaults in code.
+| Field | Purpose |
+|-------|---------|
+| `layout_root` | Top-level code directory under `mayor/rig/` (e.g. `defender`, `backend`) |
+| `bead_title_contains` | Prefix for implementation beads (`Implement defender/…`) |
+| `required_files` | Paths QA/polecat must respect |
+| `spec_summary` | Short project description for architect/planner prompts |
+| `min_architecture_bytes` / `min_plan_bytes` | Size guards for `architecture.md` / `plan.md` |
+| `qa_verify_command` / `unittest_module` / `test_runner` | QA test invocation |
+
+Town copy of `orchestrator/templates/rig-flow.yaml` has **placeholder** `validation:` defaults only; the running workflow merges **profile overrides template overrides defaults**.
+
+Prompts under `orchestrator/prompts/rig-flow/` use `{{spec_summary}}`, `{{layout_root}}`, `{{required_files}}`, `{{bead_title_contains}}`, `{{min_architecture_bytes}}`, etc. — sync via `make install` or `gt orchestrator sync --update-changed`.
+
+`gt-agent` applies merged validation for design, planning, implementation, and QA guards.
 
 ## Configuration
 
@@ -312,10 +321,16 @@ gt mayor workflow start rig-flow --rig testgt2
 gt mayor workflow status
 gt mayor workflow status wf-1
 gt mayor workflow complete wf-1 success   # manual advance if stuck
+gt mayor workflow reset wf-1 --to design  # rewind FSM (e.g. after deleting architecture.md)
+
+# Rig profile from SPEC
+gt rig spec-index testgt2
 
 # Observe
 tail -f logs/orchestrator.log
 ```
+
+`gt up --orchestrator-only` starts NATS, Dolt, daemon, orchestrator, and pipeline agents but skips legacy town `hq-architect` / `hq-qa` / `hq-polecat` when the orchestrator is running.
 
 After gastown code changes:
 
@@ -324,7 +339,7 @@ gt down
 cd /path/to/gastown && make install
 cd ~/gt && gt up
 gt orchestrator sync --update-changed
-# Workflow persists in orchestrator/instances.json — usually no need to re-start unless you want a fresh wf-*
+# Workflow persists in orchestrator/instances.json — use reset or a new start, not git, to rewind
 ```
 
 ## Example: `rig-flow` on `testgt2`
@@ -332,9 +347,9 @@ gt orchestrator sync --update-changed
 | State | Role | Main artifacts / actions |
 |-------|------|---------------------------|
 | kickoff | mayor | Rig registered, `testgt2/mayor/rig/SPEC.md` |
-| design | architect | `architecture.md` (no `backend/` code) |
-| planning | planner | `plan.md` + `bd create` beads in mayor/rig workdir |
-| implementation | polecat (`~/gt/polecat`) | Claim/close one implementation bead; `backend/*.py` |
+| design | architect | `architecture.md` (scope from SPEC + profile; no implementation code) |
+| planning | planner | `plan.md` + `bd create` beads matching profile `bead_title_contains` |
+| implementation | polecat (`testgt2/polecat`) | Claim/close one implementation bead under `layout_root/` |
 | qa_review | qa (`testgt2/qa`) | Review; outcomes `task_passed`, `all_passed`, or `failure` |
 
 Template variables such as `{{rig}}` are substituted in prompts and instructions when the
@@ -364,7 +379,34 @@ finish a bead). **Failure** on implementation loops in `implementation` (see `ri
 ### Planner rejects commands / false success
 
 - Do not use `gt bd add` — use `cd <rig>/mayor/rig && bd create --type task --title "..."`.
-- Guards reject `backend/` in **write** commands but allow it in bead titles and read-only `head`/`cat`.
+- Bead titles and file paths must match `workflow-profile.json` / `architecture.md`, not a generic example layout.
+
+### Deleted architecture.md but FSM still at planning
+
+Orchestrator state lives in `orchestrator/instances.json`, not git. Rewind:
+
+```bash
+gt mayor workflow reset wf-1 --to design
+```
+
+Then remove stale `plan.md` if present and `gt up --orchestrator-only`.
+
+### Architect wrote wrong project (ignored SPEC)
+
+Ensure `gt rig spec-index <rig>` ran and prompts are current (`make install`, `gt orchestrator sync --update-changed`). Design prompts are spec-driven (`{{spec_summary}}`); stale town copies of old FizzBuzz example prompts cause this.
+
+### `gt up` reports daemon failed but daemon is running
+
+Under heavy parallel startup, the daemon may need more than 300ms to acquire `daemon.lock`. Recent builds poll up to 3s (same as `gt daemon start`). Check `gt daemon status` and `gt daemon logs`.
+
+### Deacon stuck stopped / crash loop
+
+```bash
+gt daemon clear-backoff deacon
+gt deacon restart
+```
+
+With NATS transport, `gt status -v` uses PID files and process-tree checks (not tmux). A stale wrapper PID without a live `gt-agent` child is cleaned on the next heartbeat.
 
 ### Polecat stuck on `gt bd list -t`
 
@@ -373,7 +415,7 @@ finish a bead). **Failure** on implementation loops in `implementation` (see `ri
 
 ### Workflow lost after orchestrator restart
 
-Instances persist in `orchestrator/instances.json`. If missing, run `gt mayor workflow start rig-flow --rig <rig>` again.
+Instances persist in `orchestrator/instances.json` and resume on `gt up` (see “resumed N active at …”). If missing, run `gt mayor workflow start rig-flow --rig <rig>` again.
 
 ### Wrong files committed to `testgt2` git remote
 

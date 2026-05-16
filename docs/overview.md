@@ -71,12 +71,15 @@ When issues close, the convoy lands. See [Convoys](concepts/convoy.md) for detai
 
 For multi-step rig delivery (SPEC → architecture → plan → implementation → QA), Gas Town
 can run a **workflow FSM** instead of relying on each agent to self-dispatch. Templates
-live in the town's `orchestrator/templates/` directory; the orchestrator service assigns
-one role at a time via NATS.
+live in the town's `orchestrator/templates/` directory; per-rig guards and prompt variables
+come from `gt rig spec-index` → `{rig}/mayor/rig/.gastown/workflow-profile.json`; the
+orchestrator service assigns one role at a time via NATS.
 
 ```bash
 gt up
+gt rig spec-index <rig>
 gt mayor workflow start rig-flow --rig <rig>
+gt mayor workflow reset wf-1 --to design   # rewind FSM after artifact cleanup
 ```
 
 See [Orchestrator (concept)](concepts/orchestrator.md) and [Orchestrator (technical)](design/orchestrator.md).

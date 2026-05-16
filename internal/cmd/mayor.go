@@ -137,6 +137,7 @@ func init() {
 	mayorWorkflowCmd.AddCommand(mayorWorkflowStartCmd)
 	mayorWorkflowCmd.AddCommand(mayorWorkflowCompleteCmd)
 	mayorWorkflowCmd.AddCommand(mayorWorkflowStatusCmd)
+	mayorWorkflowCmd.AddCommand(mayorWorkflowResetCmd)
 
 	rootCmd.AddCommand(mayorCmd)
 }
@@ -168,14 +169,43 @@ var mayorWorkflowStatusCmd = &cobra.Command{
 	RunE:  runMayorWorkflowStatus,
 }
 
+var mayorWorkflowResetCmd = &cobra.Command{
+	Use:   "reset <workflow-id>",
+	Short: "Rewind a workflow to an earlier state",
+	Long: `Rewind a workflow instance so agents redo a step (e.g. design after deleting architecture.md).
+
+Updates orchestrator/instances.json and the running orchestrator when it is up.
+Remove stale artifacts under {rig}/mayor/rig/ before bringing agents back up.`,
+	Args: cobra.ExactArgs(1),
+	RunE: runMayorWorkflowReset,
+}
+
 var workflowRig string
+var workflowResetTo string
+var workflowTownRoot string
 
 func init() {
+	mayorWorkflowCmd.PersistentFlags().StringVar(&workflowTownRoot, "town", "", "Town root (default: cwd walk-up or GT_TOWN_ROOT)")
 	mayorWorkflowStartCmd.Flags().StringVar(&workflowRig, "rig", "", "Rig name for workflow variables (e.g. testgt2)")
+	mayorWorkflowResetCmd.Flags().StringVar(&workflowResetTo, "to", "design", "FSM state to rewind to (kickoff, design, planning, …)")
+}
+
+func resolveMayorWorkflowTownRoot() (string, error) {
+	if workflowTownRoot != "" {
+		ok, err := workspace.IsWorkspace(workflowTownRoot)
+		if err != nil {
+			return "", err
+		}
+		if !ok {
+			return "", fmt.Errorf("not a Gas Town workspace: %s", workflowTownRoot)
+		}
+		return workflowTownRoot, nil
+	}
+	return workspace.FindFromCwdOrError()
 }
 
 func runMayorWorkflowStart(cmd *cobra.Command, args []string) error {
-	townRoot, err := workspace.FindFromCwdOrError()
+	townRoot, err := resolveMayorWorkflowTownRoot()
 	if err != nil {
 		return err
 	}
@@ -210,7 +240,7 @@ func runMayorWorkflowStart(cmd *cobra.Command, args []string) error {
 }
 
 func runMayorWorkflowStatus(cmd *cobra.Command, args []string) error {
-	townRoot, err := workspace.FindFromCwdOrError()
+	townRoot, err := resolveMayorWorkflowTownRoot()
 	if err != nil {
 		return err
 	}
@@ -243,8 +273,31 @@ func runMayorWorkflowStatus(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+func runMayorWorkflowReset(cmd *cobra.Command, args []string) error {
+	townRoot, err := resolveMayorWorkflowTownRoot()
+	if err != nil {
+		return err
+	}
+	workflowID := args[0]
+	var next string
+	if running, _, _ := orchestrator.IsRunning(townRoot); running {
+		next, err = orchestrator.ResetWorkflow(townRoot, workflowID, workflowResetTo)
+	} else {
+		mgr := orchestrator.NewManager(townRoot)
+		if err := mgr.LoadTownTemplates(); err != nil {
+			return fmt.Errorf("load workflow templates: %w", err)
+		}
+		next, err = mgr.ResetWorkflow(workflowID, workflowResetTo)
+	}
+	if err != nil {
+		return err
+	}
+	fmt.Printf("%s Workflow %s reset to state: %s (status=running)\n", style.SuccessPrefix, workflowID, next)
+	return nil
+}
+
 func runMayorWorkflowComplete(cmd *cobra.Command, args []string) error {
-	townRoot, err := workspace.FindFromCwdOrError()
+	townRoot, err := resolveMayorWorkflowTownRoot()
 	if err != nil {
 		return err
 	}

@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/steveyegge/gastown/internal/events"
+	"github.com/steveyegge/gastown/internal/refinery"
 	"gopkg.in/yaml.v3"
 )
 
@@ -35,6 +36,14 @@ func NewManager(townRoot string) *Manager {
 	}
 	_ = m.LoadInstances()
 	return m
+}
+
+// LoadTownTemplates loads workflow templates from {townRoot}/orchestrator/templates.
+func (m *Manager) LoadTownTemplates() error {
+	if m.townRoot == "" {
+		return nil
+	}
+	return m.LoadTemplatesFromDir(filepath.Join(m.townRoot, "orchestrator", "templates"))
 }
 
 // LoadTemplatesFromDir loads all .yaml templates from a directory.
@@ -194,8 +203,50 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID string
 	if inst.Variables != nil {
 		rig = inst.Variables["rig"]
 	}
+	if cerr := refinery.CommitMayorRigOrchestratorCheckpoint(m.townRoot, rig, workflowID, inst.TemplateID, fromState, next, outcome); cerr != nil {
+		fmt.Printf("[Manager] Warning: rig-flow mayor/rig git (commit/push): %v\n", cerr)
+	}
 	m.logWorkflowFeed(events.TypeWorkflowTransition, workflowID, inst.TemplateID, fromState, next, outcome, state.Role, rig)
 	return next, nil
+}
+
+// ResetWorkflow rewinds a workflow instance to an earlier FSM state (default design).
+// Use when artifacts were removed or a step needs to be redone.
+func (m *Manager) ResetWorkflow(workflowID, toState string) (string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	inst, ok := m.instances[workflowID]
+	if !ok {
+		return "", fmt.Errorf("workflow instance %q not found", workflowID)
+	}
+	tpl := m.templates[inst.TemplateID]
+	if tpl == nil {
+		return "", fmt.Errorf("template %q not found for workflow %q", inst.TemplateID, workflowID)
+	}
+	if toState == "" {
+		toState = "design"
+	}
+	if _, ok := tpl.States[toState]; !ok {
+		return "", fmt.Errorf("state %q not in template %q", toState, inst.TemplateID)
+	}
+
+	fromState := inst.CurrentState
+	inst.CurrentState = toState
+	inst.Status = "running"
+	if err := m.persistLocked(); err != nil {
+		return "", fmt.Errorf("persist instances: %w", err)
+	}
+	rig := ""
+	if inst.Variables != nil {
+		rig = inst.Variables["rig"]
+	}
+	role := ""
+	if state, _ := inst.GetCurrentTask(tpl); state.Role != "" {
+		role = state.Role
+	}
+	m.logWorkflowFeed(events.TypeWorkflowTransition, workflowID, inst.TemplateID, fromState, toState, "reset", role, rig)
+	return toState, nil
 }
 
 func (m *Manager) logWorkflowFeed(eventType, workflowID, templateID, fromState, toState, outcome, role, rig string) {

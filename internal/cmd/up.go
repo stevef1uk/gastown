@@ -9,7 +9,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -109,16 +108,6 @@ func emitUpJSON(w io.Writer, services []ServiceStatus) error {
 // more than ~10 concurrent starts can saturate CPU and cause timeouts.
 const maxConcurrentAgentStarts = 10
 
-// daemonStartupGrace is how long to wait after spawning the daemon process
-// before verifying it started. The daemon needs time to write its PID file.
-// On Windows, DETACHED_PROCESS startup is slower so we allow extra time.
-var daemonStartupGrace = func() time.Duration {
-	if runtime.GOOS == "windows" {
-		return 2 * time.Second
-	}
-	return 300 * time.Millisecond
-}()
-
 var upCmd = &cobra.Command{
 	Use:     "up",
 	GroupID: GroupServices,
@@ -142,20 +131,27 @@ Use --restore to also start:
   • Crew       - Per rig settings (settings/config.json crew.startup)
   • Polecats   - Those with pinned beads (work attached)
 
+Use --orchestrator-only (or settings orchestrator.pipeline_only) with the orchestrator
+running to skip legacy pipeline agents: per-bead polecats, crew restore, and town
+hq-polecat / hq-architect / hq-qa. Witness, refinery, deacon, and orchestrated rig
+roles (mayor, planner, architect, polecat, qa) still start.
+
 Running 'gt up' multiple times is safe - it only starts services that
 aren't already running.`,
 	RunE: runUp,
 }
 
 var (
-	upQuiet   bool
-	upRestore bool
-	upJSON    bool
+	upQuiet             bool
+	upRestore           bool
+	upJSON              bool
+	upOrchestratorOnly  bool
 )
 
 func init() {
 	upCmd.Flags().BoolVarP(&upQuiet, "quiet", "q", false, "Only show errors (ignored with --json)")
 	upCmd.Flags().BoolVar(&upRestore, "restore", false, "Also restore crew (from settings) and polecats (from hooks)")
+	upCmd.Flags().BoolVar(&upOrchestratorOnly, "orchestrator-only", false, "Skip legacy pipeline agents when orchestrator is running (per-bead polecats, crew restore, town hq-polecat/architect/qa)")
 	upCmd.Flags().BoolVar(&upJSON, "json", false, "Output as JSON")
 	rootCmd.AddCommand(upCmd)
 }
@@ -423,20 +419,23 @@ func runUp(cmd *cobra.Command, args []string) error {
 	}
 
 	var orchestrated, _, _ = orchestrator.IsRunning(townRoot)
+	pipelineOnly := orchestrated && orchestrator.PipelineOnlyEnabled(townRoot, upOrchestratorOnly)
 	var architectResult, qaResult, polecatResult agentStartResult
 	if orchestrated {
-		if len(rigs) == 0 {
+		if pipelineOnly {
+			stopLegacyTownPolecat(townRoot)
+			architectResult = agentStartResult{name: "Architect (Town)", ok: true, detail: "skipped (--orchestrator-only)"}
+			qaResult = agentStartResult{name: "QA (Town)", ok: true, detail: "skipped (--orchestrator-only)"}
+			polecatResult = agentStartResult{name: "Polecat (Town)", ok: true, detail: "skipped (--orchestrator-only)"}
+		} else if len(rigs) == 0 {
 			architectResult = upStartTownRole(townRoot, constants.RoleArchitect, "hq-architect",
 				orchestrator.OrchestratedForRole(orchestrated, constants.RoleArchitect), "")
 			qaResult = upStartTownRole(townRoot, constants.RoleQA, "hq-qa",
 				orchestrator.OrchestratedForRole(orchestrated, constants.RoleQA), "")
+			polecatResult = upStartTownRole(townRoot, constants.RolePolecat, "hq-polecat", orchestrator.OrchestratedForTownPolecat(orchestrated), "")
 		} else {
 			architectResult = agentStartResult{name: "Architect (Town)", ok: true, detail: "skipped (rig agents)"}
 			qaResult = agentStartResult{name: "QA (Town)", ok: true, detail: "skipped (rig agents)"}
-		}
-		if len(rigs) == 0 {
-			polecatResult = upStartTownRole(townRoot, constants.RolePolecat, "hq-polecat", orchestrator.OrchestratedForTownPolecat(orchestrated), "")
-		} else {
 			stopLegacyTownPolecat(townRoot)
 			polecatResult = agentStartResult{name: "Polecat (Town)", ok: true, detail: "skipped (rig agents)"}
 		}
@@ -597,8 +596,8 @@ func runUp(cmd *cobra.Command, args []string) error {
 			}
 		}
 	}
-	// 7. Crew (if --restore)
-	if upRestore {
+	// 7. Crew (if --restore; skipped in orchestrator pipeline-only mode)
+	if upRestore && !pipelineOnly {
 		for _, rigName := range rigs {
 			crewStarted, crewErrors := startCrewFromSettings(townRoot, rigName)
 			for _, name := range crewStarted {
@@ -621,8 +620,14 @@ func runUp(cmd *cobra.Command, args []string) error {
 				allOK = false
 			}
 		}
+	}
 
-		// 7. Polecats with pinned work (if --restore)
+	if upRestore && pipelineOnly && !upQuiet {
+		fmt.Printf("%s Skipping crew/polecat restore (--orchestrator-only)\n", style.Dim.Render("ℹ"))
+	}
+
+	// 7b. Polecats with pinned work (if --restore; skipped in pipeline-only mode)
+	if upRestore && !pipelineOnly {
 		for _, rigName := range rigs {
 			polecatsStarted, polecatErrors := startPolecatsWithWork(townRoot, rigName)
 			for _, name := range polecatsStarted {
@@ -828,11 +833,7 @@ func ensureDaemon(townRoot string) error {
 		return err
 	}
 
-	// Wait for daemon to initialize
-	time.Sleep(daemonStartupGrace)
-
-	// Verify it started
-	running, _, err = daemon.IsRunning(townRoot)
+	running, _, err = waitForDaemonRunning(townRoot)
 	if err != nil {
 		return err
 	}

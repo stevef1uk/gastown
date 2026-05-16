@@ -13,52 +13,11 @@ import (
 	beadsdk "github.com/steveyegge/beads"
 )
 
-// writeFakeTmuxWithSession creates a fake tmux binary that reports the Deacon
-// session as existing (has-session returns 0). Used for deacon idle guard tests
-// where the session must be present so checkDeaconHeartbeat reaches the nudge path.
+// writeFakeTmuxWithSession creates a fake tmux session with a live agent pane so
+// checkDeaconHeartbeat uses IsAgentRunning (not just has-session) without spawning Deacon.
 func writeFakeTmuxWithSession(t *testing.T, dir string) {
 	t.Helper()
-	script := `#!/usr/bin/env bash
-set -euo pipefail
-
-cmd=""
-skip_next=0
-for arg in "$@"; do
-  if [[ "$skip_next" -eq 1 ]]; then
-    skip_next=0
-    continue
-  fi
-  if [[ "$arg" == "-u" ]]; then
-    continue
-  fi
-  if [[ "$arg" == "-L" ]]; then
-    skip_next=1
-    continue
-  fi
-  cmd="$arg"
-  break
-done
-
-if [[ -n "${TMUX_LOG:-}" ]]; then
-  printf "%s %s\n" "$cmd" "$*" >> "$TMUX_LOG"
-fi
-
-if [[ "${1:-}" == "-V" ]]; then
-  echo "tmux 3.3a"
-  exit 0
-fi
-
-# Session exists: has-session returns 0 so the nudge path is reachable.
-if [[ "$cmd" == "has-session" ]]; then
-  exit 0
-fi
-
-exit 0
-`
-	path := filepath.Join(dir, "tmux")
-	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
-		t.Fatalf("write fake tmux: %v", err)
-	}
+	writeFakeTmuxWithAgent(t, dir, "claude")
 }
 
 // TestCheckDeaconHeartbeat_IdleGuard verifies that the nudge is suppressed when

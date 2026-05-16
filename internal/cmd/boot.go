@@ -11,6 +11,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/steveyegge/gastown/internal/boot"
+	"github.com/steveyegge/gastown/internal/constants"
 	"github.com/steveyegge/gastown/internal/daemon"
 	"github.com/steveyegge/gastown/internal/deacon"
 	"github.com/steveyegge/gastown/internal/session"
@@ -315,8 +316,8 @@ func runDegradedTriage(b *boot.Boot) (action, target string, err error) {
 		fmt.Println("Deacon session missing - starting Deacon")
 		if townRoot != "" {
 			mgr := deacon.NewManager(townRoot)
-			orchestrated, _, _ := orchestrator.IsRunning(townRoot)
-			if err := mgr.Start("", orchestrated); err != nil && err != deacon.ErrAlreadyRunning {
+			orchRunning, _, _ := orchestrator.IsRunning(townRoot)
+			if err := mgr.Start("", orchestrator.OrchestratedForRole(orchRunning, constants.RoleDeacon)); err != nil && err != deacon.ErrAlreadyRunning {
 				fmt.Printf("Failed to start Deacon: %v\n", err)
 				return "error", "deacon-start-failed", fmt.Errorf("starting deacon: %w", err)
 			}

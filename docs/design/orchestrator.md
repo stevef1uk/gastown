@@ -17,7 +17,9 @@ with multiple rigs, full template schema unification for all bundled YAML exampl
 | MCP over NATS | Done | Subject `gt.orchestrator.mcp` |
 | `gt-agent --orchestrated` | Done | Poll, CMD loop, JSON outcome, state guards |
 | `gt orchestrator run` | Done | Subprocess from `gt up`; PID + log |
-| `gt mayor workflow start\|status\|complete` | Done | CLI + MCP `start_workflow` |
+| `gt mayor workflow start\|status\|complete\|reset` | Done | CLI + MCP `start_workflow` / `reset_workflow` |
+| Per-rig `workflow-profile.json` | Done | `gt rig spec-index`; merged in `FetchTask` / `gt-agent` guards |
+| Spec-driven rig-flow prompts | Done | `{{spec_summary}}`, `{{layout_root}}`, `{{required_files}}`, … in `town/prompts/rig-flow/` |
 | Per-state `prompt_file` | Done | `internal/orchestrator/town/prompts/rig-flow/*.md` |
 | Structured JSON outcome | Done | `outcome` / `summary` validated vs transitions |
 | Idle poll-only (no LLM) | Done | Empty `fetch_task` → sleep, no model call |
@@ -30,6 +32,7 @@ with multiple rigs, full template schema unification for all bundled YAML exampl
 | Patrol agents not orchestrated | Done | `IsPatrolRole` / `OrchestratedForRole` |
 | hq-polecat + legacy pause | Done | `LegacyPolecatsPaused`; `GT_POLECAT` identity fix |
 | Planning / implementation guards | Done | `cmd/gt-agent/orchestrated.go` |
+| Rig-flow checkpoint commits | Done | After each **rig-flow** FSM edge, `refinery.CommitMayorRigOrchestratorCheckpoint` commits dirty `mayor/rig` (**runs inside `gt orchestrator`**, not the refinery tmux patrol). On **completed**, pushes `origin` via `git push -u`. Opt out: `GT_SKIP_WORKFLOW_GIT_COMMIT`, `GT_WORKFLOW_SKIP_PUSH`. Look for `[Orchestrator] rig … mayor/rig` lines in `{town}/logs/orchestrator.log`. |
 | Bundled non-rig-flow templates | Partial | Some examples still use old schema |
 | QA outcome mapping | Partial | Prefer `task_passed` / `all_passed` in FSM |
 | Unit tests | Done | `manager_test.go`, `prompts_test.go`, `legacy_test.go`, … |
@@ -67,8 +70,9 @@ sequenceDiagram
 | **Client** | `internal/orchestrator/orchestrator.go` | `Call`, `FetchTask`, `CompleteTask`, `StartWorkflow`; PID file |
 | **Types** | `internal/orchestrator/types.go` | `WorkflowTemplate`, `State`, `WorkflowInstance` |
 | **CLI** | `internal/cmd/orchestrator.go` | `gt orchestrator start\|stop\|status\|run` |
-| **Mayor CLI** | `internal/cmd/mayor.go` | `workflow start\|status\|complete` |
-| **Prompts / matching** | `internal/orchestrator/prompts.go` | `AgentMatchesTask`, `OrchestratedForRole`, `LoadPromptFile` |
+| **Mayor CLI** | `internal/cmd/mayor.go` | `workflow start\|status\|complete\|reset` |
+| **Spec profile** | `internal/specprofile/`, `rig_profile_load.go` | `gt rig spec-index` → `workflow-profile.json` |
+| **Prompts / matching** | `internal/orchestrator/prompts.go` | `AgentMatchesTask`, `OrchestratedForRole`, `LoadPromptFile`, `PromptVars` |
 | **Legacy pause** | `internal/orchestrator/legacy.go` | `LegacyPolecatsPaused` during active `rig-flow` |
 | **Agent loop** | `cmd/gt-agent/main.go` | `runOrchestrated()` when `--orchestrated` |
 | **Session flag** | `internal/session/lifecycle.go` | Appends `--orchestrated` when orchestrator PID exists |
@@ -176,16 +180,19 @@ Validate `outcome` against keys in `state.transitions` before advancing FSM.
 
 | State | Rejects (examples) |
 |-------|---------------------|
-| `planning` | `gt bd add`, `git add/commit/push`, `mkdir`, `python3`, writing `backend/` |
+| `planning` | `gt bd add`, `git add/commit/push`, `mkdir`, `python3`, writing under `layout_root/` from profile |
 | `implementation` | `gt bd *`, `git push`, `git add .`, agent junk paths |
 
-**Artifact validation** before accepting `success`:
+**Artifact validation** before accepting `success` (thresholds from `workflow-profile.json` when present):
 
 | State | Checks |
 |-------|--------|
-| `planning` | Successful `bd create`, no failed CMDs, `plan.md` ≥ 200 bytes |
-| `design` | `architecture.md` present and non-empty |
-| `implementation` | Bead closed / backend artifacts per prompt |
+| `planning` | Successful `bd create`, no failed CMDs, `plan.md` ≥ `min_plan_bytes` |
+| `design` | `architecture.md` ≥ `min_architecture_bytes` |
+| `implementation` | Bead closed; paths under profile `required_files` / `layout_root` |
+
+**Validation merge order:** defaults → `rig-flow.yaml` `validation:` → `{rig}/mayor/rig/.gastown/workflow-profile.json`.
+Prompt substitution uses the same merged struct (`PromptVars`).
 
 ## Agent matching (`AgentMatchesTask`)
 
@@ -279,9 +286,13 @@ Agents should emit transition keys from `allowed_outcomes` (e.g. QA: `task_passe
 
 - Starts orchestrator subprocess (`orchestrator.Start`)
 - `OrchestratedForRole` → `--orchestrated` only on pipeline roles (not witness/refinery/mechanic/deacon)
+- `gt up --orchestrator-only` skips legacy town `hq-architect` / `hq-qa` / `hq-polecat` when orchestrator runs
 - Rig-scoped architect/qa/polecat when rigs exist; legacy `hq-polecat` only with zero rigs
 - `MaybeAutoStartWorkflow` when `settings.config.orchestrator.auto_start`
 - `RepairIdentityFiles` for polecat worktrees; `LegacyPolecatsPaused` skips legacy polecat restore
+- `ensureDaemon` polls up to 3s for `daemon.lock` (same as `gt daemon start`; avoids false “daemon failed” under load)
+- Daemon ensures **town** `hq-mechanic` at `{town}/mechanic/` (not only per-rig mechanics)
+- NATS session liveness: `IsAgentRunning` walks process tree for `gt-agent`; status shows `nats (N sessions)` when not using tmux
 
 ### `gt down`
 
@@ -311,7 +322,9 @@ Independent of orchestrator MCP:
 | Path | Purpose |
 |------|---------|
 | `internal/orchestrator/types.go` | FSM types, `Transition`, `GetCurrentTask` |
-| `internal/orchestrator/manager.go` | Load templates, instances, fetch/complete |
+| `internal/orchestrator/manager.go` | Load templates, instances, fetch/complete/reset |
+| `internal/specprofile/` | `gt rig spec-index` LLM extraction |
+| `internal/orchestrator/rig_profile_load.go` | Load `{rig}/mayor/rig/.gastown/workflow-profile.json` |
 | `internal/orchestrator/mcp.go` | MCP server |
 | `internal/orchestrator/orchestrator.go` | NATS client, start/stop, PID |
 | `internal/cmd/orchestrator.go` | CLI |
@@ -331,7 +344,8 @@ Independent of orchestrator MCP:
 |------|---------|
 | `orchestrator/templates/rig-flow.yaml` | Rig pipeline FSM |
 | `orchestrator/prompts/rig-flow/*.md` | Per-state prompts |
-| `orchestrator/instances.json` | Persisted workflow instances |
+| `orchestrator/instances.json` | Persisted workflow instances (`gt mayor workflow reset` rewinds `current_state`) |
+| `{rig}/mayor/rig/.gastown/workflow-profile.json` | Per-rig validation + prompt variables |
 | `daemon/orchestrator.pid` | Running indicator |
 | `logs/orchestrator.log` | MCP + manager debug |
 | `settings/config.json` | `orchestrator.*`, `session_transport`, `role_agents` |
@@ -355,8 +369,9 @@ pipeline roles skip `gatherWork`, `template_id` in `fetch_task`.
 
 ### Phase 2 — operations (done)
 
-`orchestrator/instances.json` persistence, `get_workflow_status`, `orchestrator.auto_start`
-/ `default_workflow`, `gt mayor workflow status|complete`, `gt orchestrator sync`.
+`orchestrator/instances.json` persistence, `get_workflow_status`, `reset_workflow`,
+`orchestrator.auto_start` / `default_workflow`, `gt mayor workflow status|complete|reset`,
+`gt orchestrator sync`, `gt rig spec-index`.
 
 ### Phase 3 — topology + guards (done)
 

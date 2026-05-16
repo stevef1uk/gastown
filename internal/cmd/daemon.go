@@ -202,20 +202,11 @@ func runDaemonStart(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("starting daemon: %w", err)
 	}
 
-	// Poll for daemon to initialize and acquire the lock (up to 3s)
-	var started bool
-	for range 30 {
-		time.Sleep(100 * time.Millisecond)
-		running, pid, err = daemon.IsRunning(townRoot)
-		if err != nil {
-			return fmt.Errorf("checking daemon status: %w", err)
-		}
-		if running {
-			started = true
-			break
-		}
+	running, pid, err = waitForDaemonRunning(townRoot)
+	if err != nil {
+		return fmt.Errorf("checking daemon status: %w", err)
 	}
-	if !started {
+	if !running {
 		if msg := readDaemonStartupFailure(townRoot, daemonCmd.Process.Pid); msg != "" {
 			return fmt.Errorf("daemon failed to start: %s", msg)
 		}
@@ -316,6 +307,29 @@ func getBinaryModTime() (time.Time, error) {
 		return time.Time{}, err
 	}
 	return info.ModTime(), nil
+}
+
+const (
+	daemonReadyPollInterval = 100 * time.Millisecond
+	daemonReadyTimeout      = 3 * time.Second
+)
+
+// waitForDaemonRunning polls until a daemon holds the town flock or timeout.
+// gt up starts many services in parallel; the daemon may need >300ms to acquire
+// the lock and write daemon.pid under load.
+func waitForDaemonRunning(townRoot string) (bool, int, error) {
+	deadline := time.Now().Add(daemonReadyTimeout)
+	for time.Now().Before(deadline) {
+		running, pid, err := daemon.IsRunning(townRoot)
+		if err != nil {
+			return false, 0, err
+		}
+		if running {
+			return true, pid, nil
+		}
+		time.Sleep(daemonReadyPollInterval)
+	}
+	return false, 0, nil
 }
 
 func readDaemonStartupFailure(townRoot string, pid int) string {

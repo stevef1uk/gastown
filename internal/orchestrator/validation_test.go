@@ -9,11 +9,11 @@ import (
 
 func TestDefaultWorkflowValidation(t *testing.T) {
 	v := DefaultWorkflowValidation()
-	if v.BeadTitleContains != "Implement backend/" {
+	if v.BeadTitleContains != "Implement " {
 		t.Fatalf("bead prefix: %q", v.BeadTitleContains)
 	}
-	if len(v.RequiredFiles) != 3 {
-		t.Fatalf("required files: %v", v.RequiredFiles)
+	if len(v.RequiredFiles) != 0 {
+		t.Fatalf("required files should be empty until profile loaded: %v", v.RequiredFiles)
 	}
 }
 
@@ -22,8 +22,20 @@ func TestWithDefaults_partial(t *testing.T) {
 	if v.BeadTitleContains != "Implement api/" {
 		t.Fatalf("got %q", v.BeadTitleContains)
 	}
-	if v.UnittestModule != DefaultWorkflowValidation().UnittestModule {
-		t.Fatal("expected default unittest when unset")
+	if v.UnittestModule != "" {
+		t.Fatalf("expected empty unittest when unset and no QA command: %q", v.UnittestModule)
+	}
+}
+
+func TestPromptVars_includesUnittestCommandHint(t *testing.T) {
+	v := WorkflowValidation{QAVerifyCommand: "pytest -q"}.WithDefaults()
+	vars := v.PromptVars()
+	if vars["unittest_command_hint"] != "pytest -q" {
+		t.Fatalf("hint: %q", vars["unittest_command_hint"])
+	}
+	v2 := WorkflowValidation{UnittestModule: "pkg.t"}.WithDefaults()
+	if h := v2.PromptVars()["unittest_command_hint"]; h != "python3 -m unittest pkg.t" {
+		t.Fatalf("hint: %q", h)
 	}
 }
 

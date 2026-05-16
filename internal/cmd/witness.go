@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
+	"github.com/steveyegge/gastown/internal/constants"
 	"github.com/steveyegge/gastown/internal/orchestrator"
 	"github.com/steveyegge/gastown/internal/session"
 	"github.com/steveyegge/gastown/internal/style"
@@ -168,8 +169,8 @@ func runWitnessStart(cmd *cobra.Command, args []string) error {
 	fmt.Printf("Starting witness for %s...\n", rigName)
 
 	townRoot, _ := workspace.FindFromCwdOrError()
-	orchestrated, _, _ := orchestrator.IsRunning(townRoot)
-	if err := mgr.Start(witnessForeground, witnessAgentOverride, witnessEnvOverrides, orchestrated); err != nil {
+	orchRunning, _, _ := orchestrator.IsRunning(townRoot)
+	if err := mgr.Start(witnessForeground, witnessAgentOverride, witnessEnvOverrides, orchestrator.OrchestratedForRole(orchRunning, constants.RoleWitness)); err != nil {
 		if err == witness.ErrAlreadyRunning {
 			fmt.Printf("%s Witness is already running\n", style.Dim.Render("⚠"))
 			fmt.Printf("  %s\n", style.Dim.Render("Use 'gt witness attach' to connect"))
@@ -325,8 +326,8 @@ func runWitnessAttach(cmd *cobra.Command, args []string) error {
 
 	// Ensure session exists (creates if needed)
 	townRoot, _ := workspace.FindFromCwdOrError()
-	orchestrated, _, _ := orchestrator.IsRunning(townRoot)
-	if err := mgr.Start(false, "", nil, orchestrated); err != nil && err != witness.ErrAlreadyRunning {
+	orchRunning, _, _ := orchestrator.IsRunning(townRoot)
+	if err := mgr.Start(false, "", nil, orchestrator.OrchestratedForRole(orchRunning, constants.RoleWitness)); err != nil && err != witness.ErrAlreadyRunning {
 		return err
 	} else if err == nil {
 		fmt.Printf("Started witness session for %s\n", rigName)
@@ -355,8 +356,8 @@ func runWitnessRestart(cmd *cobra.Command, args []string) error {
 
 	// Start fresh
 	townRoot, _ := workspace.FindFromCwdOrError()
-	orchestrated, _, _ := orchestrator.IsRunning(townRoot)
-	if err := mgr.Start(false, witnessAgentOverride, witnessEnvOverrides, orchestrated); err != nil {
+	orchRunning, _, _ := orchestrator.IsRunning(townRoot)
+	if err := mgr.Start(false, witnessAgentOverride, witnessEnvOverrides, orchestrator.OrchestratedForRole(orchRunning, constants.RoleWitness)); err != nil {
 		return fmt.Errorf("starting witness: %w", err)
 	}
 

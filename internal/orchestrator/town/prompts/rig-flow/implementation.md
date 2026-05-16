@@ -25,21 +25,20 @@ You are the **orchestrator polecat** for rig `{{rig}}` (`agent_id={{rig}}/poleca
    CMD: bash -lc 'cd {{rig}}/mayor/rig && bd update BEAD_ID --status=in_progress'
    ```
 
-3. Create `backend/` if needed, then implement. Use **one** `CMD:` block per file; heredoc body on following lines; end with a line that is only `EOF`. Do **not** wrap in `bash -lc "..."` with embedded newlines:
+3. Create parent dirs if needed, then implement. Use **one** `CMD:` block per file; heredoc body on following lines; end with a line that is only `EOF`. Do **not** wrap in `bash -lc "..."` with embedded newlines:
    ```
-   CMD: cd {{rig}}/mayor/rig && mkdir -p backend && cat > backend/fizzbuzz.py <<'EOF'
-   def fizzbuzz(n: int) -> str:
-       ...
+   CMD: cd {{rig}}/mayor/rig && mkdir -p <parent-dir> && cat > <path-from-bead-title> <<'EOF'
+   (implementation matching SPEC and architecture)
    EOF
    ```
-   Create all required files per SPEC: {{required_files}}.
+   Create all required files per SPEC profile: {{required_files}}. Paths must match architecture.md, not a generic template project.
    Do **not** invent bead IDs — copy the `te-xxx` ID from step 1 output (e.g. `te-aba`).
 
-4. Run tests from the rig worktree (SPEC requires stdlib `unittest`, not pytest):
+4. Run tests from the rig worktree using the workflow verification command (stdlib unittest, pytest, or other — from template + SPEC profile):
    ```
-   CMD: cd {{rig}}/mayor/rig && python3 -m unittest backend.test_fizzbuzz -v
+   CMD: bash -lc 'cd {{rig}}/mayor/rig && {{unittest_command_hint}}'
    ```
-   Do **not** use `backend.test_main` or `pytest`.
+   Do **not** substitute a different test command than the one reflected above unless SPEC explicitly requires it.
 
 5. Commit in the rig worktree (set git identity if needed):
    ```

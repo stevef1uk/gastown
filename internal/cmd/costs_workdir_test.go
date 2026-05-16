@@ -47,12 +47,11 @@ func TestQuerySessionEvents_FindsEventsFromAllLocations(t *testing.T) {
 	t.Setenv("GT_ROOT", "")
 	t.Setenv("BD_ACTOR", "")
 
-	if _, err := exec.LookPath("gt"); err != nil {
-		t.Skip("gt not installed, skipping integration test")
-	}
 	if _, err := exec.LookPath("bd"); err != nil {
 		t.Skip("bd not installed, skipping integration test")
 	}
+
+	gtBin := buildGT(t)
 
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -61,7 +60,7 @@ func TestQuerySessionEvents_FindsEventsFromAllLocations(t *testing.T) {
 	doltPort := ln.Addr().(*net.TCPAddr).Port
 	_ = ln.Close()
 	t.Setenv("GT_DOLT_PORT", strconv.Itoa(doltPort))
-	doltEnv := testutil.CleanGTEnv()
+	doltEnv := testutil.CleanGTEnv("GT_SKIP_SPEC_INDEX=1")
 
 	// Create a temporary directory structure
 	tmpDir := t.TempDir()
@@ -81,7 +80,7 @@ func TestQuerySessionEvents_FindsEventsFromAllLocations(t *testing.T) {
 
 	// Use gt install to set up the town
 	// Clear GT environment variables to isolate test from parent workspace
-	gtInstallCmd := exec.Command("gt", "install", "--dolt-port", strconv.Itoa(doltPort))
+	gtInstallCmd := exec.Command(gtBin, "install", "--dolt-port", strconv.Itoa(doltPort))
 	gtInstallCmd.Dir = townRoot
 	gtInstallCmd.Env = doltEnv
 	if out, err := gtInstallCmd.CombinedOutput(); err != nil {
@@ -126,7 +125,7 @@ func TestQuerySessionEvents_FindsEventsFromAllLocations(t *testing.T) {
 	bareURL := "file://" + filepath.ToSlash(bareAbs)
 
 	// Add rig using gt rig add
-	rigAddCmd := exec.Command("gt", "rig", "add", "testrig", bareURL, "--prefix=tr")
+	rigAddCmd := exec.Command(gtBin, "rig", "add", "testrig", bareURL, "--prefix=tr")
 	rigAddCmd.Dir = townRoot
 	rigAddCmd.Env = doltEnv
 	if out, err := rigAddCmd.CombinedOutput(); err != nil {

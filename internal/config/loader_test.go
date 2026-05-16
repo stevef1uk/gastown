@@ -4029,6 +4029,46 @@ func TestResolveRoleAgentConfig(t *testing.T) {
 	})
 }
 
+// Regression (empty rigPath): RigSettingsPath("") is "settings/config.json" relative to cwd.
+// Town-only resolution must not open that path, or it picks up an unrelated rig config.
+func TestResolveAgentConfig_ignoresCWDRigSettingsWhenRigPathEmpty(t *testing.T) {
+	t.Parallel()
+	cwdPolluted := t.TempDir()
+	poisonPath := filepath.Join(cwdPolluted, "settings", "config.json")
+	if err := os.MkdirAll(filepath.Dir(poisonPath), 0755); err != nil {
+		t.Fatal(err)
+	}
+	poison := &RigSettings{
+		Type:    "rig-settings",
+		Version: CurrentRigSettingsVersion,
+		Agent:   "gemini",
+	}
+	if err := SaveRigSettings(poisonPath, poison); err != nil {
+		t.Fatal(err)
+	}
+
+	townRoot := t.TempDir()
+	townSettings := NewTownSettings()
+	townSettings.DefaultAgent = "claude"
+	if err := SaveTownSettings(TownSettingsPath(townRoot), townSettings); err != nil {
+		t.Fatal(err)
+	}
+
+	oldWD, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(cwdPolluted); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(oldWD) })
+
+	rc := ResolveAgentConfig(townRoot, "")
+	if !isClaudeCommand(rc.Command) {
+		t.Fatalf("Command = %q, want claude; empty rigPath must not load cwd settings/config.json", rc.Command)
+	}
+}
+
 func TestResolveRoleAgentName(t *testing.T) {
 	t.Parallel()
 	townRoot := t.TempDir()

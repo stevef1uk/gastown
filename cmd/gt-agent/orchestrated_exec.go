@@ -81,10 +81,10 @@ func normalizeHeredocDelimiters(body string) string {
 	return strings.ReplaceAll(body, bashLcHeredocEOFMarker(), plain)
 }
 
-// rewriteUnittestToWorkdir prepends cd into mayor/rig when the model omits it (unittest needs backend/ on sys.path).
+// rewriteUnittestToWorkdir prepends cd into mayor/rig when the model omits it (tests need project on cwd/sys.path).
 func rewriteUnittestToWorkdir(cmd, rig string) (string, bool) {
 	lower := strings.ToLower(cmd)
-	if !strings.Contains(lower, "unittest") {
+	if !strings.Contains(lower, "unittest") && !strings.Contains(lower, "pytest") {
 		return cmd, false
 	}
 	work := rigMayorRigPath(rig)

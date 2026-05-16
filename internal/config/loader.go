@@ -1134,10 +1134,15 @@ func ResolveAgentConfig(townRoot, rigPath string) *RuntimeConfig {
 // resolveAgentConfigInternal is the lock-free version of ResolveAgentConfig.
 // Caller must hold resolveConfigMu.
 func resolveAgentConfigInternal(townRoot, rigPath string) *RuntimeConfig {
-	// Load rig settings
-	rigSettings, err := LoadRigSettings(RigSettingsPath(rigPath))
-	if err != nil {
-		rigSettings = nil
+	// Load rig settings (skip when rigPath is empty — used for town-level roles;
+	// RigSettingsPath("") would join to "settings/config.json" and read cwd by mistake)
+	var rigSettings *RigSettings
+	if rigPath != "" {
+		var err error
+		rigSettings, err = LoadRigSettings(RigSettingsPath(rigPath))
+		if err != nil {
+			rigSettings = nil
+		}
 	}
 
 	// Backwards compatibility: if Runtime is set directly, use it
@@ -1159,7 +1164,9 @@ func resolveAgentConfigInternal(townRoot, rigPath string) *RuntimeConfig {
 	_ = LoadAgentRegistry(DefaultAgentRegistryPath(townRoot))
 
 	// Load rig-level custom agent registry if it exists (for per-rig custom agents)
-	_ = LoadRigAgentRegistry(RigAgentRegistryPath(rigPath))
+	if rigPath != "" {
+		_ = LoadRigAgentRegistry(RigAgentRegistryPath(rigPath))
+	}
 
 	// Determine which agent name to use
 	agentName := ""
@@ -1189,10 +1196,13 @@ func ResolveAgentConfigWithOverride(townRoot, rigPath, agentOverride string) (*R
 // resolveAgentConfigWithOverrideInternal is the lock-free version.
 // Caller must hold resolveConfigMu.
 func resolveAgentConfigWithOverrideInternal(townRoot, rigPath, agentOverride string) (*RuntimeConfig, string, error) {
-	// Load rig settings
-	rigSettings, err := LoadRigSettings(RigSettingsPath(rigPath))
-	if err != nil {
-		rigSettings = nil
+	var rigSettings *RigSettings
+	if rigPath != "" {
+		var err error
+		rigSettings, err = LoadRigSettings(RigSettingsPath(rigPath))
+		if err != nil {
+			rigSettings = nil
+		}
 	}
 
 	// Backwards compatibility: if Runtime is set directly, use it (but still report agentOverride if present)
@@ -1214,7 +1224,9 @@ func resolveAgentConfigWithOverrideInternal(townRoot, rigPath, agentOverride str
 	_ = LoadAgentRegistry(DefaultAgentRegistryPath(townRoot))
 
 	// Load rig-level custom agent registry if it exists (for per-rig custom agents)
-	_ = LoadRigAgentRegistry(RigAgentRegistryPath(rigPath))
+	if rigPath != "" {
+		_ = LoadRigAgentRegistry(RigAgentRegistryPath(rigPath))
+	}
 
 	// Determine which agent name to use
 	agentName := ""

@@ -470,8 +470,8 @@ func runDeaconStart(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	mgr := deacon.NewManager(townRoot)
-	orchestrated, _, _ := orchestrator.IsRunning(townRoot)
-	if err := mgr.Start(deaconAgentOverride, orchestrated); err != nil {
+	orchRunning, _, _ := orchestrator.IsRunning(townRoot)
+	if err := mgr.Start(deaconAgentOverride, orchestrator.OrchestratedForRole(orchRunning, constants.RoleDeacon)); err != nil {
 		if err == deacon.ErrAlreadyRunning {
 			return fmt.Errorf("Deacon session already running. Attach with: gt deacon attach")
 		}
@@ -521,8 +521,8 @@ func runDeaconAttach(cmd *cobra.Command, args []string) error {
 	if !running {
 		// Auto-start if not running
 		fmt.Println("Deacon session not running, starting...")
-		orchestrated, _, _ := orchestrator.IsRunning(townRoot)
-		if err := mgr.Start(deaconAgentOverride, orchestrated); err != nil {
+		orchRunning, _, _ := orchestrator.IsRunning(townRoot)
+		if err := mgr.Start(deaconAgentOverride, orchestrator.OrchestratedForRole(orchRunning, constants.RoleDeacon)); err != nil {
 			return err
 		}
 	}

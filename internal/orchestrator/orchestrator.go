@@ -278,6 +278,28 @@ func GetWorkflowStatuses(townRoot, workflowID string) ([]WorkflowStatus, error) 
 	return data.Workflows, nil
 }
 
+// ResetWorkflow rewinds a workflow instance via the running orchestrator.
+func ResetWorkflow(townRoot, workflowID, toState string) (string, error) {
+	params := map[string]interface{}{
+		"name": "reset_workflow",
+		"arguments": map[string]interface{}{
+			"workflow_id": workflowID,
+			"to_state":    toState,
+		},
+	}
+	result, err := Call(townRoot, "call_tool", params)
+	if err != nil {
+		return "", err
+	}
+	var data struct {
+		State string `json:"state"`
+	}
+	if err := json.Unmarshal(result, &data); err != nil {
+		return "", err
+	}
+	return data.State, nil
+}
+
 // CompleteTask reports task completion to the orchestrator.
 func CompleteTask(townRoot string, workflowID string, outcome string, agentID string) (string, error) {
 	args := map[string]interface{}{

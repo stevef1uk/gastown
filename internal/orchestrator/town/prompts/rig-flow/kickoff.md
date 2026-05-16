@@ -9,6 +9,12 @@ You are the **Mayor** completing the **kickoff** step of a rig pipeline. Do only
 3. Verify the rig exists in the registry and `{{rig}}/mayor/rig/SPEC.md` is present.
 4. If SPEC is missing, report outcome `failure` with a short summary.
 
+## Rig context (from SPEC profile)
+
+{{spec_summary}}
+
+If the section above is empty, open `{{rig}}/mayor/rig/SPEC.md` for full detail.
+
 ## Typical commands
 
 ```

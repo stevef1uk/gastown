@@ -141,6 +141,10 @@ type OrchestratorConfig struct {
 	DefaultWorkflow string `json:"default_workflow,omitempty"`
 	// AutoStart starts DefaultWorkflow on gt up when no active instance exists for the rig.
 	AutoStart bool `json:"auto_start,omitempty"`
+	// PipelineOnly skips legacy autonomous pipeline agents on gt up (per-bead polecats,
+	// crew restore, town hq-polecat/hq-architect/hq-qa). Witness, refinery, deacon, and
+	// orchestrated rig roles still start. Also available as gt up --orchestrator-only.
+	PipelineOnly bool `json:"pipeline_only,omitempty"`
 }
 
 // NewTownSettings creates a new TownSettings with defaults.

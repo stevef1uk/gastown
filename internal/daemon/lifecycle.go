@@ -15,7 +15,6 @@ import (
 	"github.com/steveyegge/gastown/internal/beads"
 	"github.com/steveyegge/gastown/internal/config"
 	"github.com/steveyegge/gastown/internal/constants"
-	"github.com/steveyegge/gastown/internal/orchestrator"
 	"github.com/steveyegge/gastown/internal/rig"
 	"github.com/steveyegge/gastown/internal/session"
 	"github.com/steveyegge/gastown/internal/tmux"
@@ -382,7 +381,7 @@ func (d *Daemon) restartSession(sessionName, identity string) error {
 	// NewSessionWithCommand (command as initial pane process). This eliminates
 	// the race condition in the old EnsureSessionFresh + SendKeys pattern where
 	// the shell might not be ready to receive keystrokes, producing empty windows.
-	orchestrated, _, _ := orchestrator.IsRunning(d.config.TownRoot)
+	orchestrated := d.orchestratedForRole(parsed.RoleType)
 	startCmd := d.getStartCommand(config, parsed, orchestrated)
 
 	// Create session with command as initial process.

@@ -104,11 +104,20 @@ func (m *Manager) BuildTaskPayload(inst *WorkflowInstance, tpl *WorkflowTemplate
 	if vars == nil {
 		vars = map[string]string{}
 	}
-	promptVars := make(map[string]string, len(vars)+4)
+	promptVars := make(map[string]string, len(vars)+16)
 	for k, v := range vars {
 		promptVars[k] = v
 	}
-	validation := tpl.Validation.SubstituteVars(vars).WithDefaults()
+	validation := DefaultWorkflowValidation()
+	validation = mergeValidationFields(validation, tpl.Validation.SubstituteVars(vars))
+	if rig := vars["rig"]; rig != "" {
+		if prof, ok, err := LoadRigWorkflowProfileFile(m.townRoot, rig); err != nil {
+			return nil, err
+		} else if ok {
+			validation = mergeValidationFields(validation, prof)
+		}
+	}
+	validation = validation.WithDefaults()
 	for k, v := range validation.PromptVars() {
 		promptVars[k] = v
 	}

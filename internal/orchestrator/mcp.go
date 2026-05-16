@@ -148,6 +148,18 @@ func (s *Server) handleRequest(req MCPRequest) MCPResponse {
 							},
 						},
 					},
+					{
+						"name":        "reset_workflow",
+						"description": "Rewind a workflow to an earlier state (e.g. design after deleting architecture.md)",
+						"inputSchema": map[string]interface{}{
+							"type": "object",
+							"properties": map[string]interface{}{
+								"workflow_id": map[string]string{"type": "string"},
+								"to_state":    map[string]string{"type": "string"},
+							},
+							"required": []string{"workflow_id"},
+						},
+					},
 				},
 			},
 		}
@@ -231,6 +243,17 @@ func (s *Server) handleCallTool(req MCPRequest) MCPResponse {
 			return MCPResponse{JSONRPC: "2.0", ID: req.ID, Error: &MCPError{Code: -32000, Message: err.Error()}}
 		}
 		return MCPResponse{JSONRPC: "2.0", ID: req.ID, Result: map[string]interface{}{"workflows": statuses}}
+	case "reset_workflow":
+		var args struct {
+			WorkflowID string `json:"workflow_id"`
+			ToState    string `json:"to_state"`
+		}
+		json.Unmarshal(params.Arguments, &args)
+		next, err := s.orchestrator.ResetWorkflow(args.WorkflowID, args.ToState)
+		if err != nil {
+			return MCPResponse{JSONRPC: "2.0", ID: req.ID, Error: &MCPError{Code: -32000, Message: err.Error()}}
+		}
+		return MCPResponse{JSONRPC: "2.0", ID: req.ID, Result: map[string]string{"state": next}}
 	default:
 		return MCPResponse{JSONRPC: "2.0", ID: req.ID, Error: &MCPError{Code: -32601, Message: "Tool not found"}}
 	}

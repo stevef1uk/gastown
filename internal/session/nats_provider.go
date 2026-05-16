@@ -263,6 +263,32 @@ func signalProcessTree(pid int, sig os.Signal) error {
 	return nil
 }
 
+// isGTAgentProcess reports whether pid is a live gt-agent patrol/orchestration process.
+func isGTAgentProcess(pid int) bool {
+	if !processExists(pid) {
+		return false
+	}
+	data, err := os.ReadFile(fmt.Sprintf("/proc/%d/cmdline", pid))
+	if err != nil {
+		return false
+	}
+	cmdline := strings.ReplaceAll(string(data), "\x00", " ")
+	return strings.Contains(cmdline, "gt-agent") && strings.Contains(cmdline, "[GAS TOWN]")
+}
+
+// hasLiveGTAgentInTree returns true if any process in root's tree is a live gt-agent.
+func hasLiveGTAgentInTree(root int) bool {
+	if !processExists(root) {
+		return false
+	}
+	for _, pid := range collectDescendants(root) {
+		if isGTAgentProcess(pid) {
+			return true
+		}
+	}
+	return false
+}
+
 // collectDescendants returns a slice of PIDs starting with the root PID
 // followed by all descendants in breadth-first order.
 func collectDescendants(root int) []int {
@@ -321,8 +347,13 @@ func (p *NatsProvider) Exists(ctx context.Context, sessionID string) (bool, erro
 	// in the Go process environment (common when spawned by systemd, tmux,
 	// or other parent processes that don't inherit a full shell environment).
 	cmd := exec.CommandContext(ctx, util.FindPsBinary(), "-p", pidStr, "-o", "pid=")
-	err = cmd.Run()
-	return err == nil, nil
+	if err := cmd.Run(); err == nil {
+		return true, nil
+	}
+
+	// Stale PID file (process exited without cleanup goroutine finishing).
+	_ = os.Remove(filepath.Join(p.townRoot, ".gt-nats-pids", sessionID))
+	return false, nil
 }
 
 func (p *NatsProvider) List(ctx context.Context) ([]string, error) {
@@ -437,7 +468,11 @@ func (p *NatsProvider) IsAgentRunning(ctx context.Context, id string) (bool, err
 	if err != nil {
 		return false, nil
 	}
-	return processExists(pid), nil
+	if !processExists(pid) {
+		_ = os.Remove(filepath.Join(p.townRoot, ".gt-nats-pids", id))
+		return false, nil
+	}
+	return hasLiveGTAgentInTree(pid), nil
 }
 
 func (p *NatsProvider) CleanupOrphanedSessions(isGTSession func(string) bool) (int, error) {
@@ -457,9 +492,9 @@ func (p *NatsProvider) WaitForRuntimeReady(ctx context.Context, sessionID string
 	}
 	defer cancel()
 
-	// Wait for the wrapped process to appear.
+	// Wait for the nats-wrapper process to appear (gt-agent may start later).
 	for {
-		running, _ := p.IsAgentRunning(deadlineCtx, sessionID)
+		running, _ := p.Exists(deadlineCtx, sessionID)
 		if running {
 			break
 		}

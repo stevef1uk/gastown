@@ -1,14 +1,10 @@
 id: rig-flow
 description: Standard rig workflow (Mayor -> Architect -> Planner -> Polecat -> QA) aligned with Beads/Dolt
 initial_state: kickoff
-# Artifact guards for gt-agent (bead prefix, unittest, required files). Change when you change SPEC.md scope.
+# Artifact guards for gt-agent. Per-rig values come from mayor/rig/.gastown/workflow-profile.json
+# (gt rig spec-index). These YAML defaults are placeholders only.
 validation:
-  bead_title_contains: "Implement backend/"
-  unittest_module: backend.test_fizzbuzz
-  required_files:
-    - backend/fizzbuzz.py
-    - backend/main.py
-    - backend/test_fizzbuzz.py
+  bead_title_contains: "Implement "
   min_architecture_bytes: 200
   min_plan_bytes: 200
 states:

@@ -237,6 +237,21 @@ func TestGetWorkflowStatus(t *testing.T) {
 	}
 }
 
+func TestResetWorkflow_rewindsToDesign(t *testing.T) {
+	m, id := loadTestManager(t, designFlowTemplate())
+	_, _ = m.CompleteTask(id, "success", "testgt2/architect")
+	if m.instances[id].CurrentState != "planning" {
+		t.Fatalf("want planning, got %s", m.instances[id].CurrentState)
+	}
+	next, err := m.ResetWorkflow(id, "design")
+	if err != nil || next != "design" {
+		t.Fatalf("ResetWorkflow: next=%q err=%v", next, err)
+	}
+	if m.instances[id].CurrentState != "design" || m.instances[id].Status != "running" {
+		t.Fatalf("after reset: state=%s status=%s", m.instances[id].CurrentState, m.instances[id].Status)
+	}
+}
+
 func TestStartWorkflow_rejectsDuplicateActive(t *testing.T) {
 	m, _ := loadTestManager(t, designFlowTemplate())
 	_, err := m.StartWorkflow("rig-flow", map[string]string{"rig": "testgt2"})

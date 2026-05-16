@@ -609,6 +609,12 @@ func (g *Git) Push(remote, branch string, force bool) error {
 	return err
 }
 
+// PushSetUpstream runs git push -u remote branch so the first publish sets the upstream.
+func (g *Git) PushSetUpstream(remote, branch string) error {
+	_, err := g.runWithTimeout(pushTimeout, "push", "-u", remote, branch)
+	return err
+}
+
 // PushWithEnv pushes with additional environment variables.
 // Used by gt mq integration land to set GT_INTEGRATION_LAND=1, which the
 // pre-push hook checks to allow integration branch content landing on main.
