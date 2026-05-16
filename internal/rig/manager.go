@@ -613,6 +613,9 @@ func (m *Manager) AddRig(opts AddRigOptions) (*Rig, error) {
 		// When metadata.json exists but the Dolt server database doesn't (fresh clone
 		// to a new workspace), we still need to run bd init to create the server-side
 		// database and set issue_prefix. Always ensure issue_prefix is set afterward.
+		if err := doltserver.EnsureMetadata(m.townRoot, opts.Name); err != nil {
+			fmt.Printf("  Warning: Could not set Dolt metadata for tracked beads: %v\n", err)
+		}
 		if !bdDatabaseExists(sourceBeadsDir) {
 			initArgs := []string{"init"}
 			if opts.BeadsPrefix != "" {
@@ -623,9 +626,10 @@ func (m *Manager) AddRig(opts AddRigOptions) (*Rig, error) {
 			// server. Without this, bd auto-starts its own server on a random
 			// port, causing "database not found" errors. (GH #2405)
 			doltCfg := doltserver.DefaultConfig(m.townRoot)
-			initArgs = append(initArgs, "--server-port", strconv.Itoa(doltCfg.Port))
+			initArgs = append(initArgs, "--server-port", strconv.Itoa(doltCfg.Port), "--force")
 			cmd := exec.Command("bd", initArgs...)
 			cmd.Dir = mayorRigPath
+			cmd.Env = append(os.Environ(), "BEADS_DIR="+sourceBeadsDir)
 			if output, err := cmd.CombinedOutput(); err != nil {
 				fmt.Printf("  Warning: Could not init bd database: %v (%s)\n", err, strings.TrimSpace(string(output)))
 			}
@@ -635,18 +639,13 @@ func (m *Manager) AddRig(opts AddRigOptions) (*Rig, error) {
 			}
 		}
 
-		// Always ensure issue_prefix and custom types are configured, even when
-		// metadata.json was tracked in git (bdDatabaseExists returned true).
-		// The tracked metadata.json tells bd HOW to connect but doesn't guarantee
-		// the server-side database has issue_prefix set for this workspace.
 		configCmd := exec.Command("bd", "config", "set", "types.custom", constants.BeadsCustomTypes)
 		configCmd.Dir = mayorRigPath
+		configCmd.Env = append(os.Environ(), "BEADS_DIR="+sourceBeadsDir)
 		_, _ = configCmd.CombinedOutput() // Ignore errors - older beads don't need this
 
-		prefixSetCmd := exec.Command("bd", "config", "set", "issue_prefix", opts.BeadsPrefix)
-		prefixSetCmd.Dir = mayorRigPath
-		if prefixOutput, prefixErr := prefixSetCmd.CombinedOutput(); prefixErr != nil {
-			fmt.Printf("  Warning: Could not set issue_prefix: %v (%s)\n", prefixErr, strings.TrimSpace(string(prefixOutput)))
+		if err := beads.EnsureIssuePrefix(mayorRigPath, sourceBeadsDir, opts.BeadsPrefix); err != nil {
+			fmt.Printf("  Warning: Could not ensure issue_prefix on tracked beads: %v\n", err)
 		}
 	}
 
@@ -674,23 +673,14 @@ func (m *Manager) AddRig(opts AddRigOptions) (*Rig, error) {
 		_ = doltserver.RemoveDatabase(m.townRoot, orphanDB, true)
 	}
 
-	// Set issue_prefix on the correct server-side database.
-	// InitBeads ran bd config set issue_prefix, but against the wrong database
-	// (beads_<prefix> from bd init, not <rigName> from the centralized server).
-	// Now that EnsureMetadata has corrected dolt_database, re-set it.
-	{
-		resolvedBeadsDir := beads.ResolveBeadsDir(rigPath)
-		prefixCmd := exec.Command("bd", "config", "set", "issue_prefix", opts.BeadsPrefix)
-		prefixCmd.Dir = rigPath
-		prefixCmd.Env = append(os.Environ(), "BEADS_DIR="+resolvedBeadsDir)
-		if out, err := prefixCmd.CombinedOutput(); err != nil {
-			fmt.Printf("  Warning: Could not set issue_prefix on rig database: %v (%s)\n", err, strings.TrimSpace(string(out)))
-		}
-		typesCmd := exec.Command("bd", "config", "set", "types.custom", constants.BeadsCustomTypes)
-		typesCmd.Dir = rigPath
-		typesCmd.Env = append(os.Environ(), "BEADS_DIR="+resolvedBeadsDir)
-		_, _ = typesCmd.CombinedOutput()
+	resolvedBeadsDir := beads.ResolveBeadsDir(rigPath)
+	if err := beads.EnsureIssuePrefix(rigPath, resolvedBeadsDir, opts.BeadsPrefix); err != nil {
+		return nil, fmt.Errorf("ensuring issue_prefix on rig beads database: %w", err)
 	}
+	typesCmd := exec.Command("bd", "config", "set", "types.custom", constants.BeadsCustomTypes)
+	typesCmd.Dir = rigPath
+	typesCmd.Env = append(os.Environ(), "BEADS_DIR="+resolvedBeadsDir)
+	_, _ = typesCmd.CombinedOutput()
 
 	// Auto-create DoltHub remote for the rig's beads database.
 	// Requires DOLTHUB_TOKEN and DOLTHUB_ORG environment variables.
@@ -1202,18 +1192,8 @@ func (m *Manager) InitBeads(rigPath, prefix, rigName string) error {
 		// Ignore errors - older beads versions don't need this
 		_, _ = configCmd.CombinedOutput()
 
-		// Explicitly set issue_prefix config (bd init --prefix may not persist it in newer versions).
-		// Without this, bd create and gt sling fail with "issue_prefix config is missing".
-		// bd >= 1.0.0 rejects this with "cannot be set via 'bd config set'" because init persists
-		// it directly; treat that as already-set rather than a failure.
-		prefixSetCmd := exec.Command("bd", "config", "set", "issue_prefix", prefix)
-		prefixSetCmd.Dir = rigPath
-		prefixSetCmd.Env = filteredEnv
-		if prefixOutput, prefixErr := prefixSetCmd.CombinedOutput(); prefixErr != nil {
-			out := strings.TrimSpace(string(prefixOutput))
-			if !strings.Contains(out, "cannot be set via") {
-				return fmt.Errorf("bd config set issue_prefix failed: %s", out)
-			}
+		if err := beads.EnsureIssuePrefix(rigPath, beadsDir, prefix); err != nil {
+			return fmt.Errorf("ensure issue_prefix after bd init: %w", err)
 		}
 
 		// Drop the orphaned beads_<prefix> database created by bd init (gt-sv1h).
