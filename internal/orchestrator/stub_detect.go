@@ -150,9 +150,6 @@ func CheckContentNotStub(data []byte, displayRel string, opts StubCheckOptions) 
 	if len(data) == 0 {
 		return fmt.Errorf("%s is empty (stub/placeholder)", displayRel)
 	}
-	if int64(len(data)) < opts.MinFileBytes {
-		return fmt.Errorf("%s is only %d bytes (minimum %d for non-stub work)", displayRel, len(data), opts.MinFileBytes)
-	}
 
 	text := string(data)
 	substantive := substantiveLines(text)
@@ -177,18 +174,60 @@ func CheckContentNotStub(data []byte, displayRel string, opts StubCheckOptions) 
 		}
 	}
 
-	// Mostly comments/whitespace with almost no code.
-	nonWS := strings.Map(func(r rune) rune {
-		if unicode.IsSpace(r) {
-			return -1
+	minBytes := opts.MinFileBytes
+	if looksSubstantiveImplementation(text, substantive, opts) {
+		// Small but complete modules (e.g. pure fizzbuzz.py) may be well under 400 bytes.
+		if minBytes > MinImplementationFileBytesFloor {
+			minBytes = MinImplementationFileBytesFloor
 		}
-		return r
-	}, text)
-	if len(nonWS) > 0 && int64(len(nonWS)) < opts.MinFileBytes/2 {
-		return fmt.Errorf("%s has too little non-whitespace content (%d bytes)", displayRel, len(nonWS))
+	}
+	if int64(len(data)) < minBytes {
+		return fmt.Errorf("%s is only %d bytes (minimum %d for non-stub work)", displayRel, len(data), minBytes)
+	}
+
+	// Mostly comments/whitespace with almost no code (only when not clearly substantive).
+	if !looksSubstantiveImplementation(text, substantive, opts) {
+		nonWS := strings.Map(func(r rune) rune {
+			if unicode.IsSpace(r) {
+				return -1
+			}
+			return r
+		}, text)
+		if len(nonWS) > 0 && int64(len(nonWS)) < opts.MinFileBytes/2 {
+			return fmt.Errorf("%s has too little non-whitespace content (%d bytes)", displayRel, len(nonWS))
+		}
 	}
 
 	return nil
+}
+
+// looksSubstantiveImplementation detects small but real code (not hello-world / pass stubs).
+func looksSubstantiveImplementation(text string, substantive []string, opts StubCheckOptions) bool {
+	if len(substantive) < opts.MinSubstantiveLines {
+		return false
+	}
+	joined := strings.ToLower(strings.Join(substantive, "\n"))
+	if trivialCodeRe.MatchString(strings.TrimSpace(strings.Join(substantive, " "))) {
+		return false
+	}
+	visible := strings.TrimSpace(visibleText(text))
+	if visible != "" && len(visible) < 24 && stubOnlyTextRe.MatchString(visible) {
+		return false
+	}
+	signals := 0
+	for _, pat := range []string{
+		"def ", "function ", "func ", "fn ", "class ", "struct ",
+		"if ", "elif ", "else if", "else:", "for ", "while ", "switch ",
+		"return ", "=>", "export ", "import ", "from ", "package ",
+	} {
+		if strings.Contains(joined, pat) {
+			signals++
+		}
+	}
+	if signals >= 2 {
+		return true
+	}
+	return signals >= 1 && len(substantive) >= opts.MinSubstantiveLines+2
 }
 
 func visibleText(s string) string {

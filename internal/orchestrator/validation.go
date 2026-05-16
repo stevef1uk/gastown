@@ -3,6 +3,7 @@ package orchestrator
 import (
 	"fmt"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
 
@@ -176,7 +177,16 @@ func (v WorkflowValidation) PromptVars() map[string]string {
 		"min_plan_bytes":                fmt.Sprintf("%d", v.MinPlanBytes),
 		"min_implementation_file_bytes": fmt.Sprintf("%d", StubCheckOptionsFromValidation(v).MinFileBytes),
 		"min_substantive_lines":         fmt.Sprintf("%d", StubCheckOptionsFromValidation(v).MinSubstantiveLines),
+		"bead_id_example":               beadIDExample(v),
 	}
+}
+
+func beadIDExample(v WorkflowValidation) string {
+	// Filled from rig prefix at payload build when available; fallback for templates.
+	if p := strings.TrimSpace(v.BeadTitleContains); p != "" {
+		return "<id-from-bd-list>"
+	}
+	return "<id-from-bd-list>"
 }
 
 // ForbiddenRigRootBasenames lists mayor/rig files that must not exist outside subdirs during design
@@ -199,11 +209,24 @@ func (v WorkflowValidation) ForbiddenRigRootBasenames() []string {
 // UnittestCommandHint returns the suggested QA command for error messages.
 func (v WorkflowValidation) UnittestCommandHint() string {
 	if q := strings.TrimSpace(v.QAVerifyCommand); q != "" {
-		return q
+		return NormalizePytestCommand(q)
 	}
 	mod := strings.TrimSpace(v.UnittestModule)
 	if mod == "" {
 		mod = DefaultWorkflowValidation().UnittestModule
 	}
 	return "python3 -m unittest " + mod
+}
+
+// NormalizePytestCommand rewrites bare `pytest` to `python3 -m pytest` for agent PATHs without a pytest shim.
+func NormalizePytestCommand(cmd string) string {
+	lower := strings.ToLower(cmd)
+	if !strings.Contains(lower, "pytest") {
+		return cmd
+	}
+	if strings.Contains(lower, "python3 -m pytest") || strings.Contains(lower, "python -m pytest") {
+		return cmd
+	}
+	re := regexp.MustCompile(`(?i)(^|[;&|]\s*|\s+)pytest\b`)
+	return re.ReplaceAllString(cmd, `${1}python3 -m pytest`)
 }

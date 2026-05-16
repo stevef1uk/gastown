@@ -329,7 +329,10 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 			}
 			// Same turn may include CMD lines and JSON; accept success when artifacts are ready.
 			if o, s, ok := parseOrchestratedResult(response, task.AllowedOutcomes); ok {
-				if vErr := validateOrchestratedArtifacts(task, townRoot, rig, o, designArchWrittenThisRun, planningHadCmdFailure, planningBeadCreateOK, planningBeadDeleteOK, planReviewHadCmdFailure, planReviewListOpenOK, planReviewDidDelete, implementationHadCmdFailure, implementationBeadCloseOK, qaHadCmdFailure, qaBdListClosedOK, qaUnittestOK); vErr != nil {
+				if vErr := validateOutcomeSummaryBeadIDs(townRoot, rig, task.State, o, s); vErr != nil {
+					orchestratedPrintf("[gt-agent] summary validation failed: %v\n", vErr)
+					recordAttemptFeedback("Validation failed: " + vErr.Error() + "\n")
+				} else if vErr := validateOrchestratedArtifacts(task, townRoot, rig, o, designArchWrittenThisRun, planningHadCmdFailure, planningBeadCreateOK, planningBeadDeleteOK, planReviewHadCmdFailure, planReviewListOpenOK, planReviewDidDelete, implementationHadCmdFailure, implementationBeadCloseOK, qaHadCmdFailure, qaBdListClosedOK, qaUnittestOK); vErr != nil {
 					orchestratedPrintf("[gt-agent] artifact validation failed: %v\n", vErr)
 					recordAttemptFeedback("Validation failed: " + vErr.Error() + "\n")
 				} else {
@@ -345,6 +348,13 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 
 		// Outcome is only accepted on a turn with no CMD lines (after work is done).
 		if o, s, ok := parseOrchestratedResult(response, task.AllowedOutcomes); ok {
+			if vErr := validateOutcomeSummaryBeadIDs(townRoot, rig, task.State, o, s); vErr != nil {
+				orchestratedPrintf("[gt-agent] summary validation failed: %v\n", vErr)
+				msg := "Validation failed: " + vErr.Error() + ". Run `bd list` and copy bead IDs exactly into the summary."
+				recordAttemptFeedback(msg + "\n")
+				messages = append(messages, llm.Message{Role: "user", Content: msg})
+				continue
+			}
 			if vErr := validateOrchestratedArtifacts(task, townRoot, rig, o, designArchWrittenThisRun, planningHadCmdFailure, planningBeadCreateOK, planningBeadDeleteOK, planReviewHadCmdFailure, planReviewListOpenOK, planReviewDidDelete, implementationHadCmdFailure, implementationBeadCloseOK, qaHadCmdFailure, qaBdListClosedOK, qaUnittestOK); vErr != nil {
 				orchestratedPrintf("[gt-agent] artifact validation failed: %v\n", vErr)
 				hint := "Use CMD: with a heredoc to write files, then send JSON outcome."
@@ -353,7 +363,7 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 				}
 				if task.State == "planning" {
 					work := rigMayorRigPath(rig)
-					hint = fmt.Sprintf("Repair beads: `bd delete te-xxx --force` for duplicates, `bd create` only for missing paths, rewrite plan.md if needed — then JSON success. Or first-time: `bd create` per required file. Work from %s with BEADS_DIR=$GT_ROOT/%s/.beads. No python/git/backend code.", work, rig)
+					hint = fmt.Sprintf("Repair beads: `bd delete %s --force` for duplicates, `bd create` only for missing paths, rewrite plan.md if needed — then JSON success. Work from %s with BEADS_DIR=$GT_ROOT/%s/.beads. No python/git/backend code.", beadIDExample(townRoot, rig), work, rig)
 				}
 				if task.State == "plan_review" {
 					work := rigMayorRigPath(rig)
@@ -445,7 +455,7 @@ func workflowReworkHints(fromState, toState, rig, summary string) string {
 ### Plan review failed — repair beads (plan.md is OK)
 1. Read the QA **summary** above — fix duplicate or missing implementation beads only.
 2. `+"`"+`CMD: export BEADS_DIR=$GT_ROOT/%s/.beads && cd %s && bd list --status=open --flat --limit=0`+"`"+`
-3. Delete duplicate beads: `+"`"+`bd delete te-xxx --force`+"`"+` (only IDs from bd list output).
+3. Delete duplicate beads: `+"`"+`bd delete <id-from-bd-list> --force`+"`"+` (only IDs from bd list output).
 4. Create missing beads with `+"`"+`bd create`+"`"+` — one per required path (implement-prefix in title).
 5. Do **not** pad or rewrite `+"`"+`plan.md`+"`"+` unless the summary says it is too small.
 `, rig, worktree)
@@ -454,9 +464,9 @@ func workflowReworkHints(fromState, toState, rig, summary string) string {
 ### Plan review failed — repair beads and plan.md
 1. Read the QA **summary** and details above (duplicate paths, missing files, weak plan.md).
 2. `+"`"+`CMD: export BEADS_DIR=$GT_ROOT/%s/.beads && cd %s && bd list --status=open --flat --limit=0`+"`"+`
-3. Delete duplicate bad beads: `+"`"+`bd delete te-xxx --force`+"`"+` (only IDs from bd list).
+3. Delete duplicate bad beads: `+"`"+`bd delete <id-from-bd-list> --force`+"`"+` (only IDs from bd list).
 4. Create missing beads with `+"`"+`bd create`+"`"+` — one per required path in architecture (implement-prefix in title).
-5. Rewrite `+"`"+`plan.md`+"`"+` (≥ min size) listing real `+"`"+`te-xxx`+"`"+` IDs from bd output. Do not invent IDs.
+5. Rewrite `+"`"+`plan.md`+"`"+` (≥ min size) listing real bead IDs from bd output. Do not invent IDs.
 `, rig, worktree)
 	}
 	if fromState != "qa_review" || toState != "implementation" {
@@ -470,8 +480,8 @@ func workflowReworkHints(fromState, toState, rig, summary string) string {
 ### QA sent you back — do this first
 1. Fix the **specific** issues in the QA summary and command output (files under backend/, tests, stubs).
 2. `+"`"+`CMD: bash -lc 'cd %s && bd list --status=open'`+"`"+` — pick a bead whose title contains the workflow implement prefix.
-3. If **no** open implement beads: `+"`"+`bd list --status=closed`+"`"+`, find closed implement beads, reopen one with `+"`"+`bd update te-xxx --status=open`+"`"+`, then fix code and `+"`"+`bd close te-xxx`+"`"+`.
-4. **Never** invent IDs (te-aba, te-2fv, te-backend-01, impl-001) — only `+"`"+`te-xxx`+"`"+` from bd list output.
+3. If **no** open implement beads: `+"`"+`bd list --status=closed`+"`"+`, find closed implement beads, reopen one with `+"`"+`bd update <id-from-bd-list> --status=open`+"`"+`, then fix code and `+"`"+`bd close <id-from-bd-list>`+"`"+`.
+4. **Never** invent bead IDs — copy only from bd list output for this rig.
 5. Use `+"`"+`cat > path <<'EOF'`+"`"+` heredocs (line with only EOF). Do not nest `+"`"+`bash -lc '...<<'EOF''`+"`"+`.
 `, worktree)
 }
@@ -516,7 +526,7 @@ func orchestratedRetryHintsForState(state, rig string) string {
 			"Heredoc must end with a line containing only EOF. Verify with wc -c from town root.\n",
 			worktree, worktree)
 	case "implementation":
-		return "One CMD: per line. Run `bd list` first; use only te-xxx IDs from that output. " +
+		return "One CMD: per line. Run `bd list` first; use only bead IDs from that output (rig prefix from bd, not invented te- IDs). " +
 			"Run `mkdir -p backend` before creating backend files. Heredoc: `cat > path <<'EOF'` then EOF alone on its own line.\n"
 	case "qa_review":
 		return "One CMD: per line. Review closed beads against SPEC and architecture; use allowed QA outcomes only.\n"
@@ -1508,6 +1518,28 @@ func countOpenMatchingBeads(townRoot, rig, titleContains string) (int, error) {
 		}
 	}
 	return n, nil
+}
+
+func beadIDExample(townRoot, rig string) string {
+	prefix, err := orchestrator.RigIssuePrefix(townRoot, rig)
+	if err != nil || prefix == "" {
+		return "<id-from-bd-list>"
+	}
+	return prefix + "-xxx"
+}
+
+func validateOutcomeSummaryBeadIDs(townRoot, rig, taskState, outcome, summary string) error {
+	if !isOrchestratedFailureOutcome(outcome) {
+		return nil
+	}
+	if taskState != "qa_review" && taskState != "plan_review" {
+		return nil
+	}
+	known, prefix, err := orchestrator.ListRigBeadIDSet(townRoot, rig)
+	if err != nil {
+		return nil
+	}
+	return orchestrator.ValidateSummaryBeadIDs(summary, known, prefix)
 }
 
 func validateQAArtifacts(townRoot, rig, outcome string, hadCmdFailure, bdListClosedOK, unittestOK bool, v orchestrator.WorkflowValidation) error {

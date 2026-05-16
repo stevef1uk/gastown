@@ -50,6 +50,6 @@ Required implementation files (from profile): {{required_files}}
    - `{"outcome":"success","summary":"beads cover architecture; plan.md ok"}`
    - `{"outcome":"failure","summary":"..."}` — summary **must** list duplicate paths, missing required_files paths, weak plan.md issues, and real `te-xxx` bead IDs to delete or fix.
 
-Example failure: `{"outcome":"failure","summary":"duplicate backend/main.py beads te-32k te-94h; missing backend/test_fizzbuzz.py bead; plan.md 900 bytes (need ≥ {{min_plan_bytes}})"}`
+Example failure: `{"outcome":"failure","summary":"duplicate backend/main.py beads {{bead_id_example}} {{bead_id_example}}; missing backend/test_fizzbuzz.py bead; plan.md 900 bytes (need ≥ {{min_plan_bytes}})"}`
 
 On `failure`, the **Planner** runs again in `planning` with your summary in its prompt.

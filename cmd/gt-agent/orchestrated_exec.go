@@ -5,6 +5,8 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+
+	"github.com/steveyegge/gastown/internal/orchestrator"
 )
 
 // needsOrchestratedScriptFile reports commands that must not be passed to sh -c as one line.
@@ -87,9 +89,17 @@ func rewriteUnittestToWorkdir(cmd, rig string) (string, bool) {
 	if !strings.Contains(lower, "unittest") && !strings.Contains(lower, "pytest") {
 		return cmd, false
 	}
+	changed := false
+	if fixed := orchestrator.NormalizePytestCommand(cmd); fixed != cmd {
+		cmd = fixed
+		changed = true
+	}
 	work := rigMayorRigPath(rig)
 	wl := strings.ToLower(work)
-	if strings.Contains(lower, "cd "+wl) || strings.Contains(lower, "cd "+strings.ToLower(rig)+"/mayor/rig") {
+	if strings.Contains(strings.ToLower(cmd), "cd "+wl) || strings.Contains(strings.ToLower(cmd), "cd "+strings.ToLower(rig)+"/mayor/rig") {
+		if changed {
+			return cmd, true
+		}
 		return cmd, false
 	}
 	return "cd " + work + " && " + strings.TrimSpace(cmd), true

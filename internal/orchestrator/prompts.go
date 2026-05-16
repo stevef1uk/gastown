@@ -121,6 +121,12 @@ func (m *Manager) BuildTaskPayload(inst *WorkflowInstance, tpl *WorkflowTemplate
 	for k, v := range validation.PromptVars() {
 		promptVars[k] = v
 	}
+	rig := vars["rig"]
+	if rig != "" {
+		if prefix, err := RigIssuePrefix(m.townRoot, rig); err == nil && prefix != "" {
+			promptVars["bead_id_example"] = prefix + "-xxx"
+		}
+	}
 
 	systemPrompt, err := LoadPromptFile(m.townRoot, state.PromptFile, promptVars)
 	if err != nil {
@@ -130,8 +136,6 @@ func (m *Manager) BuildTaskPayload(inst *WorkflowInstance, tpl *WorkflowTemplate
 	if systemPrompt == "" && taskPrompt == "" {
 		return nil, fmt.Errorf("state %q has no prompt_file or instructions", inst.CurrentState)
 	}
-
-	rig := vars["rig"]
 	payload := map[string]interface{}{
 		"workflow_id":      inst.ID,
 		"template_id":      inst.TemplateID,

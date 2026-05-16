@@ -64,6 +64,35 @@ func TestValidateWorkNotStubbed_layoutTree(t *testing.T) {
 	}
 }
 
+func TestCheckContentNotStub_acceptsSmallCompleteFizzBuzz(t *testing.T) {
+	py := `def fizzbuzz(n: int) -> str:
+    """Return FizzBuzz string for integer n."""
+    if n % 15 == 0:
+        return "FizzBuzz"
+    elif n % 3 == 0:
+        return "Fizz"
+    elif n % 5 == 0:
+        return "Buzz"
+    else:
+        return str(n)
+`
+	opts := StubCheckOptions{MinFileBytes: 400, MinSubstantiveLines: 3}
+	if err := CheckContentNotStub([]byte(py), "backend/fizzbuzz.py", opts); err != nil {
+		t.Fatalf("expected small complete module to pass: %v", err)
+	}
+	mainPy := `def main():
+    from .fizzbuzz import fizzbuzz
+    for i in range(1, 16):
+        print(fizzbuzz(i))
+
+if __name__ == "__main__":
+    main()
+`
+	if err := CheckContentNotStub([]byte(mainPy), "backend/main.py", opts); err != nil {
+		t.Fatalf("expected small runner to pass: %v", err)
+	}
+}
+
 func TestValidateWorkNotStubbed_testgt1Fixture(t *testing.T) {
 	// Mirrors a real stub polecat output.
 	html := `<!DOCTYPE html>
