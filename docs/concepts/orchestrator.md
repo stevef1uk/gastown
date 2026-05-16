@@ -219,6 +219,7 @@ Example profile fields (also sent to `gt-agent` on `fetch_task` and substituted 
 | `required_files` | Paths QA/polecat must respect |
 | `spec_summary` | Short project description for architect/planner prompts |
 | `min_architecture_bytes` / `min_plan_bytes` | Size guards for `architecture.md` / `plan.md` |
+| `min_implementation_file_bytes` / `min_substantive_lines` | QA stub guard: rejects tiny/placeholder files under `layout_root` (language-agnostic) |
 | `qa_verify_command` / `unittest_module` / `test_runner` | QA test invocation |
 
 Town copy of `orchestrator/templates/rig-flow.yaml` has **placeholder** `validation:` defaults only; the running workflow merges **profile overrides template overrides defaults**.

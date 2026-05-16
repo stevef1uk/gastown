@@ -1,0 +1,232 @@
+package orchestrator
+
+import (
+	"fmt"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"regexp"
+	"strings"
+	"unicode"
+)
+
+// Defaults for language-agnostic stub detection (QA / implementation guards).
+const (
+	DefaultMinImplementationFileBytes int64 = 400
+	MinImplementationFileBytesFloor   int64 = 80
+	MaxMinImplementationFileBytes     int64 = 8192
+	DefaultMinSubstantiveLines          int   = 3
+)
+
+// StubCheckOptions configures heuristic stub detection for a source file.
+type StubCheckOptions struct {
+	MinFileBytes        int64
+	MinSubstantiveLines int
+}
+
+// StubCheckOptionsFromValidation returns effective stub-check settings from a profile.
+func StubCheckOptionsFromValidation(v WorkflowValidation) StubCheckOptions {
+	minBytes := v.MinImplementationFileBytes
+	if minBytes <= 0 {
+		minBytes = DefaultMinImplementationFileBytes
+	}
+	minLines := v.MinSubstantiveLines
+	if minLines <= 0 {
+		minLines = DefaultMinSubstantiveLines
+	}
+	return StubCheckOptions{MinFileBytes: minBytes, MinSubstantiveLines: minLines}
+}
+
+var (
+	htmlTagRe      = regexp.MustCompile(`(?is)<[^>]+>`)
+	stubOnlyTextRe = regexp.MustCompile(`(?i)^(hello(\s+world)?|world|test|stub|placeholder|todo|fixme|tbd|not\s+implemented|coming\s+soon)\.?$`)
+	trivialCodeRe  = regexp.MustCompile(`(?i)^(pass|\.\.\.|nil|null|undefined|void|return\s*;?|noop|no-op)\s*;?$`)
+)
+
+// sourceFileExtensions lists extensions scanned under layout_root (language-agnostic set).
+var sourceFileExtensions = map[string]bool{
+	".py": true, ".js": true, ".mjs": true, ".cjs": true, ".ts": true, ".tsx": true,
+	".jsx": true, ".html": true, ".htm": true, ".css": true, ".scss": true,
+	".go": true, ".rs": true, ".java": true, ".kt": true, ".scala": true,
+	".rb": true, ".php": true, ".c": true, ".cc": true, ".cpp": true, ".h": true, ".hpp": true,
+	".cs": true, ".swift": true, ".vue": true, ".svelte": true, ".sh": true, ".sql": true,
+	".lua": true, ".zig": true, ".ex": true, ".exs": true, ".clj": true, ".hs": true,
+}
+
+// configFileExtensions are small manifest files (requirements, lockfiles) — non-empty only.
+var configFileExtensions = map[string]bool{
+	".txt": true, ".json": true, ".yaml": true, ".yml": true, ".toml": true, ".ini": true, ".cfg": true,
+	".lock": true, ".mod": true, ".sum": true,
+}
+
+// ValidateWorkNotStubbed rejects placeholder implementations under the rig worktree.
+// Checks required_files and, when layout_root is set, other source files in that tree.
+func ValidateWorkNotStubbed(rigDir string, v WorkflowValidation) error {
+	opts := StubCheckOptionsFromValidation(v)
+	checked := make(map[string]bool)
+
+	for _, rel := range v.RequiredFiles {
+		rel = filepath.ToSlash(strings.TrimSpace(rel))
+		if rel == "" {
+			continue
+		}
+		path := filepath.Join(rigDir, filepath.FromSlash(rel))
+		checked[path] = true
+		if err := CheckPathNotStub(path, rel, optsForPath(rel, opts)); err != nil {
+			return err
+		}
+	}
+
+	layout := strings.TrimSpace(v.LayoutRoot)
+	if layout == "" {
+		return nil
+	}
+	layoutDir := filepath.Join(rigDir, filepath.FromSlash(layout))
+	info, err := os.Stat(layoutDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	if !info.IsDir() {
+		return nil
+	}
+
+	return filepath.WalkDir(layoutDir, func(path string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if d.IsDir() {
+			base := d.Name()
+			if base == ".git" || base == "node_modules" || base == "__pycache__" || base == ".gastown" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if checked[path] {
+			return nil
+		}
+		ext := strings.ToLower(filepath.Ext(path))
+		if !sourceFileExtensions[ext] && !configFileExtensions[ext] {
+			return nil
+		}
+		if info, err := d.Info(); err == nil && info.Size() > 512*1024 {
+			return nil // skip very large files
+		}
+		rel, err := filepath.Rel(rigDir, path)
+		if err != nil {
+			rel = path
+		}
+		checked[path] = true
+		return CheckPathNotStub(path, filepath.ToSlash(rel), optsForPath(filepath.ToSlash(rel), opts))
+	})
+}
+
+func optsForPath(displayRel string, opts StubCheckOptions) StubCheckOptions {
+	ext := strings.ToLower(filepath.Ext(displayRel))
+	if !configFileExtensions[ext] {
+		return opts
+	}
+	relaxed := opts
+	relaxed.MinFileBytes = MinImplementationFileBytesFloor
+	if relaxed.MinSubstantiveLines > 1 {
+		relaxed.MinSubstantiveLines = 1
+	}
+	return relaxed
+}
+
+// CheckPathNotStub reads path and applies language-agnostic stub heuristics.
+func CheckPathNotStub(path, displayRel string, opts StubCheckOptions) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("read %s: %w", displayRel, err)
+	}
+	return CheckContentNotStub(data, displayRel, opts)
+}
+
+// CheckContentNotStub applies stub heuristics to file bytes.
+func CheckContentNotStub(data []byte, displayRel string, opts StubCheckOptions) error {
+	if len(data) == 0 {
+		return fmt.Errorf("%s is empty (stub/placeholder)", displayRel)
+	}
+	if int64(len(data)) < opts.MinFileBytes {
+		return fmt.Errorf("%s is only %d bytes (minimum %d for non-stub work)", displayRel, len(data), opts.MinFileBytes)
+	}
+
+	text := string(data)
+	substantive := substantiveLines(text)
+	if len(substantive) < opts.MinSubstantiveLines {
+		return fmt.Errorf("%s has only %d substantive line(s) (need ≥%d); likely a stub", displayRel, len(substantive), opts.MinSubstantiveLines)
+	}
+
+	visible := strings.TrimSpace(visibleText(text))
+	if visible != "" && len(visible) < 24 && stubOnlyTextRe.MatchString(visible) {
+		return fmt.Errorf("%s visible text is trivial %q (stub/placeholder)", displayRel, visible)
+	}
+	if opts.MinFileBytes <= MinImplementationFileBytesFloor+1 && len(substantive) >= 1 && len(visible) == 0 {
+		// Config/manifest file: non-empty with at least one line is enough.
+		return nil
+	}
+
+	// Single-line or few-line files that are only a trivial code token.
+	if len(substantive) <= 2 {
+		joined := strings.ToLower(strings.Join(substantive, " "))
+		if trivialCodeRe.MatchString(strings.TrimSpace(joined)) {
+			return fmt.Errorf("%s is a trivial code stub (%q)", displayRel, strings.TrimSpace(joined))
+		}
+	}
+
+	// Mostly comments/whitespace with almost no code.
+	nonWS := strings.Map(func(r rune) rune {
+		if unicode.IsSpace(r) {
+			return -1
+		}
+		return r
+	}, text)
+	if len(nonWS) > 0 && int64(len(nonWS)) < opts.MinFileBytes/2 {
+		return fmt.Errorf("%s has too little non-whitespace content (%d bytes)", displayRel, len(nonWS))
+	}
+
+	return nil
+}
+
+func visibleText(s string) string {
+	s = htmlTagRe.ReplaceAllString(s, " ")
+	s = strings.Join(strings.Fields(s), " ")
+	return strings.TrimSpace(s)
+}
+
+func substantiveLines(text string) []string {
+	var out []string
+	for _, line := range strings.Split(text, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		if isCommentOnlyLine(line) {
+			continue
+		}
+		out = append(out, line)
+	}
+	return out
+}
+
+func isCommentOnlyLine(line string) bool {
+	lower := strings.ToLower(strings.TrimSpace(line))
+	switch {
+	case strings.HasPrefix(lower, "#"):
+		return true
+	case strings.HasPrefix(lower, "//"):
+		return true
+	case strings.HasPrefix(lower, "/*") && strings.HasSuffix(lower, "*/"):
+		return true
+	case strings.HasPrefix(lower, "<!--") && strings.Contains(lower, "-->"):
+		return true
+	case lower == "*" || strings.HasPrefix(lower, "* "):
+		return true
+	case lower == "{" || lower == "}" || lower == "};":
+		return true
+	}
+	return false
+}

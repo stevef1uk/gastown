@@ -1093,6 +1093,9 @@ func validateQAArtifacts(townRoot, rig, outcome string, hadCmdFailure, bdListClo
 	if err := validateRequiredWorkFiles(townRoot, rig, v); err != nil {
 		return err
 	}
+	if err := orchestrator.ValidateWorkNotStubbed(rigMayorRigDir(townRoot, rig), v); err != nil {
+		return fmt.Errorf("implementation files look like stubs (QA must use outcome failure): %w", err)
+	}
 	openImpl, err := countOpenMatchingBeads(townRoot, rig, v.BeadTitleContains)
 	if err != nil {
 		return err

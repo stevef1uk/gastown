@@ -15,9 +15,11 @@ type WorkflowValidation struct {
 	QAVerifyCommand      string   `yaml:"qa_verify_command" json:"qa_verify_command"`
 	TestRunner           string   `yaml:"test_runner" json:"test_runner"`
 	RequiredFiles        []string `yaml:"required_files" json:"required_files"`
-	SpecSummary          string   `yaml:"spec_summary" json:"spec_summary"`
-	MinArchitectureBytes int64    `yaml:"min_architecture_bytes" json:"min_architecture_bytes"`
-	MinPlanBytes         int64    `yaml:"min_plan_bytes" json:"min_plan_bytes"`
+	SpecSummary                string   `yaml:"spec_summary" json:"spec_summary"`
+	MinArchitectureBytes       int64    `yaml:"min_architecture_bytes" json:"min_architecture_bytes"`
+	MinPlanBytes               int64    `yaml:"min_plan_bytes" json:"min_plan_bytes"`
+	MinImplementationFileBytes int64    `yaml:"min_implementation_file_bytes" json:"min_implementation_file_bytes"`
+	MinSubstantiveLines        int      `yaml:"min_substantive_lines" json:"min_substantive_lines"`
 }
 
 // Artifact size guard defaults for rig-flow (gt rig spec-index / workflow-profile.json).
@@ -44,6 +46,15 @@ func DefaultWorkflowValidation() WorkflowValidation {
 func ClampProfileValidation(v WorkflowValidation) WorkflowValidation {
 	v.MinPlanBytes = clampArtifactBytes(v.MinPlanBytes, DefaultMinPlanBytes, MinArtifactBytesFloor, MaxMinPlanBytes)
 	v.MinArchitectureBytes = clampArtifactBytes(v.MinArchitectureBytes, DefaultMinArchitectureBytes, MinArtifactBytesFloor, MaxMinArchitectureBytes)
+	v.MinImplementationFileBytes = clampArtifactBytes(
+		v.MinImplementationFileBytes, DefaultMinImplementationFileBytes, MinImplementationFileBytesFloor, MaxMinImplementationFileBytes,
+	)
+	if v.MinSubstantiveLines < 1 {
+		v.MinSubstantiveLines = DefaultMinSubstantiveLines
+	}
+	if v.MinSubstantiveLines > 20 {
+		v.MinSubstantiveLines = DefaultMinSubstantiveLines
+	}
 	return v
 }
 
@@ -124,6 +135,12 @@ func mergeValidationFields(base, overlay WorkflowValidation) WorkflowValidation 
 	if overlay.MinPlanBytes > 0 {
 		base.MinPlanBytes = overlay.MinPlanBytes
 	}
+	if overlay.MinImplementationFileBytes > 0 {
+		base.MinImplementationFileBytes = overlay.MinImplementationFileBytes
+	}
+	if overlay.MinSubstantiveLines > 0 {
+		base.MinSubstantiveLines = overlay.MinSubstantiveLines
+	}
 	return base
 }
 
@@ -155,8 +172,10 @@ func (v WorkflowValidation) PromptVars() map[string]string {
 		"required_files":          strings.Join(v.RequiredFiles, ", "),
 		"spec_summary":            v.SpecSummary,
 		"unittest_command_hint":   v.UnittestCommandHint(),
-		"min_architecture_bytes":  fmt.Sprintf("%d", v.MinArchitectureBytes),
-		"min_plan_bytes":          fmt.Sprintf("%d", v.MinPlanBytes),
+		"min_architecture_bytes":        fmt.Sprintf("%d", v.MinArchitectureBytes),
+		"min_plan_bytes":                fmt.Sprintf("%d", v.MinPlanBytes),
+		"min_implementation_file_bytes": fmt.Sprintf("%d", StubCheckOptionsFromValidation(v).MinFileBytes),
+		"min_substantive_lines":         fmt.Sprintf("%d", StubCheckOptionsFromValidation(v).MinSubstantiveLines),
 	}
 }
 
