@@ -8,10 +8,12 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/steveyegge/gastown/cmd/gt-agent/internal/llm"
+	"github.com/steveyegge/gastown/internal/beads"
 	"github.com/steveyegge/gastown/internal/config"
 	"github.com/steveyegge/gastown/internal/orchestrator"
 )
@@ -24,10 +26,12 @@ const (
 )
 
 func maxOrchestratedTurnsForState(state string) int {
-	if strings.EqualFold(strings.TrimSpace(state), "qa_review") {
+	switch strings.ToLower(strings.TrimSpace(state)) {
+	case "qa_review", "plan_review":
 		return maxOrchestratedQACmdTurns
+	default:
+		return maxOrchestratedCmdTurns
 	}
-	return maxOrchestratedCmdTurns
 }
 
 var jsonBlockRE = regexp.MustCompile("(?s)```(?:json)?\\s*([\\s\\S]*?)```")
@@ -50,7 +54,10 @@ func orchestratorPollInterval() time.Duration {
 func runOrchestrated(ctx context.Context, client *llm.Client, townRoot, role, rig, sessionName, stateFile string, state AgentState) error {
 	agentID := orchestrator.OrchestratorAgentID(role, rig)
 	pollEvery := orchestratorPollInterval()
-	fmt.Printf("[gt-agent] ORCHESTRATED mode agent_id=%q poll=%s (no LLM while idle)\n", agentID, pollEvery)
+	initOrchestratedLogger(townRoot, sessionName)
+	if !orchestratedQuiet() {
+		orchestratedLog("orchestrated %s (poll %s)", agentID, pollEvery)
+	}
 
 	for {
 		if isShutdownRequested() {
@@ -59,7 +66,7 @@ func runOrchestrated(ctx context.Context, client *llm.Client, townRoot, role, ri
 
 		task, err := orchestrator.FetchTask(townRoot, agentID)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "[gt-agent] fetch_task error: %v\n", err)
+			orchestratedFprintfStderr( "[gt-agent] fetch_task error: %v\n", err)
 			time.Sleep(pollEvery)
 			continue
 		}
@@ -68,12 +75,19 @@ func runOrchestrated(ctx context.Context, client *llm.Client, townRoot, role, ri
 			continue
 		}
 
-		fmt.Printf("[gt-agent] Task wf=%s template=%s state=%s\n",
+		orchestratedPrintf("[gt-agent] Task wf=%s template=%s state=%s\n",
 			task.WorkflowID, task.TemplateID, task.State)
 
-		outcome, summary, attemptLog, runErr := executeOrchestratedTask(ctx, client, townRoot, rig, sessionName, task, state.OrchestratedRetry)
+		taskRig := resolveOrchestratedRigName(townRoot, orchestratedTaskRig(task, rig))
+		if taskRig == "" {
+			orchestratedFprintfStderr("[gt-agent] workflow %s has no rig name (set instance variable rig= or register rigs.json)\n", task.WorkflowID)
+			_, _ = orchestrator.CompleteTask(townRoot, task.WorkflowID, "failure", orchestrator.OrchestratorAgentID(role, rig),
+				"orchestrator rig variable missing", "")
+			continue
+		}
+		outcome, summary, attemptLog, runErr := executeOrchestratedTask(ctx, client, townRoot, taskRig, sessionName, task, state.OrchestratedRetry)
 		if runErr != nil {
-			fmt.Fprintf(os.Stderr, "[gt-agent] task execution: %v\n", runErr)
+			orchestratedFprintfStderr( "[gt-agent] task execution: %v\n", runErr)
 			if outcome == "" {
 				outcome = "fail"
 			}
@@ -82,14 +96,14 @@ func runOrchestrated(ctx context.Context, client *llm.Client, townRoot, role, ri
 			outcome = "fail"
 		}
 
-		fmt.Printf("[gt-agent] complete_task outcome=%q summary=%q\n", outcome, summary)
+		orchestratedPrintf("[gt-agent] complete_task outcome=%q summary=%q\n", outcome, summary)
 		agentID := orchestrator.OrchestratorAgentID(role, rig)
-		nextState, err := orchestrator.CompleteTask(townRoot, task.WorkflowID, outcome, agentID)
+		nextState, err := orchestrator.CompleteTask(townRoot, task.WorkflowID, outcome, agentID, summary, attemptLog)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "[gt-agent] complete_task failed: %v\n", err)
+			orchestratedFprintfStderr( "[gt-agent] complete_task failed: %v\n", err)
 			updateOrchestratedRetry(&state, task, "failure", err.Error(), attemptLog)
 		} else {
-			fmt.Printf("[gt-agent] next state: %s\n", nextState)
+			orchestratedPrintf("[gt-agent] next state: %s\n", nextState)
 			updateOrchestratedRetry(&state, task, outcome, summary, attemptLog)
 		}
 
@@ -102,11 +116,23 @@ func runOrchestrated(ctx context.Context, client *llm.Client, townRoot, role, ri
 }
 
 func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, rig, sessionName string, task *orchestrator.Task, priorRetry *OrchestratedRetry) (outcome, summary, attemptLog string, err error) {
+	rig = resolveOrchestratedRigName(townRoot, rig)
+	if rig == "" {
+		return "failure", "workflow rig name not set", "", fmt.Errorf("orchestrator rig variable missing")
+	}
 	systemPrompt := buildOrchestratedSystemPrompt(task)
 	userPrompt := buildOrchestratedUserPrompt(task)
+	var contextBlocks []string
+	if block := formatWorkflowReworkBlock(task, rig); block != "" {
+		contextBlocks = append(contextBlocks, block)
+		orchestratedPrintf("[gt-agent] injecting QA/review rework context for %s/%s\n", task.WorkflowID, task.State)
+	}
 	if block := formatOrchestratedRetryBlock(priorRetry, task, rig); block != "" {
-		userPrompt = block + "\n\n" + userPrompt
-		fmt.Printf("[gt-agent] injecting prior failure context for %s/%s\n", task.WorkflowID, task.State)
+		contextBlocks = append(contextBlocks, block)
+		orchestratedPrintf("[gt-agent] injecting prior failure context for %s/%s\n", task.WorkflowID, task.State)
+	}
+	if len(contextBlocks) > 0 {
+		userPrompt = strings.Join(contextBlocks, "\n\n") + "\n\n" + userPrompt
 	}
 
 	messages := []llm.Message{
@@ -136,6 +162,8 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 	var qaHadCmdFailure bool
 	var qaBdListClosedOK bool
 	var qaUnittestOK bool
+	var planReviewHadCmdFailure bool
+	var planReviewListOpenOK bool
 
 	maxTurns := maxOrchestratedTurnsForState(task.State)
 	for turn := 1; turn <= maxTurns; turn++ {
@@ -143,7 +171,7 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 		if llmErr != nil {
 			return "fail", "", lastAttemptFeedback.String(), llmErr
 		}
-		fmt.Printf("[gt-agent] LLM response (turn %d):\n%s\n", turn, response)
+		orchestratedPrintf("[gt-agent] LLM response (turn %d):\n%s\n", turn, response)
 		messages = append(messages, llm.Message{Role: "assistant", Content: response})
 
 		cmdBlocks := parseOrchestratedCommands(response)
@@ -152,28 +180,35 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 			for _, cmd := range cmdBlocks {
 				if task.State == "design" {
 					if err := validateDesignCommand(cmd, rig); err != nil {
-						fmt.Fprintf(os.Stderr, "[gt-agent] rejected command: %v\n", err)
+						orchestratedFprintfStderr( "[gt-agent] rejected command: %v\n", err)
 						combined.WriteString(fmt.Sprintf("Command REJECTED (architect scope): %s\nReason: %v\n\n", cmd, err))
 						continue
 					}
 				}
 				if task.State == "planning" {
 					if err := validatePlanningCommand(cmd, rig); err != nil {
-						fmt.Fprintf(os.Stderr, "[gt-agent] rejected command: %v\n", err)
+						orchestratedFprintfStderr( "[gt-agent] rejected command: %v\n", err)
 						combined.WriteString(fmt.Sprintf("Command REJECTED (planner scope): %s\nReason: %v\n\n", cmd, err))
 						continue
 					}
 				}
 				if task.State == "implementation" {
 					if err := validateImplementationCommand(cmd, rig); err != nil {
-						fmt.Fprintf(os.Stderr, "[gt-agent] rejected command: %v\n", err)
+						orchestratedFprintfStderr( "[gt-agent] rejected command: %v\n", err)
 						combined.WriteString(fmt.Sprintf("Command REJECTED (polecat scope): %s\nReason: %v\n\n", cmd, err))
+						continue
+					}
+				}
+				if task.State == "plan_review" {
+					if err := validatePlanReviewCommand(cmd, rig); err != nil {
+						orchestratedFprintfStderr( "[gt-agent] rejected command: %v\n", err)
+						combined.WriteString(fmt.Sprintf("Command REJECTED (plan review scope): %s\nReason: %v\n\n", cmd, err))
 						continue
 					}
 				}
 				if task.State == "qa_review" {
 					if err := validateQACommand(cmd, rig, taskValidation(task)); err != nil {
-						fmt.Fprintf(os.Stderr, "[gt-agent] rejected command: %v\n", err)
+						orchestratedFprintfStderr( "[gt-agent] rejected command: %v\n", err)
 						combined.WriteString(fmt.Sprintf("Command REJECTED (QA scope): %s\nReason: %v\n\n", cmd, err))
 						continue
 					}
@@ -181,33 +216,37 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 				if fixed, ok := rewriteSpecMDPathCaseInsensitive(cmd); ok {
 					cmd = fixed
 				}
+				if fixed, ok := rewriteOrchestratedRigPlaceholders(cmd, rig); ok {
+					orchestratedPrintf("[gt-agent] rewrote RIG placeholder paths → %s: %s\n", rig, fixed)
+					cmd = fixed
+				}
 				if task.State == "planning" {
 					if fixed, ok := rewritePlanMDPathAfterCD(cmd, rig); ok {
-						fmt.Printf("[gt-agent] rewrote plan.md path after cd: %s\n", fixed)
+						orchestratedPrintf("[gt-agent] rewrote plan.md path after cd: %s\n", fixed)
 						cmd = fixed
 					}
 				}
 				if task.State == "implementation" {
 					if fixed, ok := rewriteBackendPathAfterCD(cmd, rig); ok {
-						fmt.Printf("[gt-agent] rewrote backend path after cd: %s\n", fixed)
+						orchestratedPrintf("[gt-agent] rewrote backend path after cd: %s\n", fixed)
 						cmd = fixed
 					}
 				}
 				if task.State == "implementation" || task.State == "qa_review" {
 					if fixed, ok := rewriteUnittestToWorkdir(cmd, rig); ok {
-						fmt.Printf("[gt-agent] rewrote unittest to run in mayor/rig: %s\n", fixed)
+						orchestratedPrintf("[gt-agent] rewrote unittest to run in mayor/rig: %s\n", fixed)
 						cmd = fixed
 					}
 				}
-				if task.State == "qa_review" || task.State == "planning" || task.State == "implementation" {
+				if task.State == "qa_review" || task.State == "plan_review" || task.State == "planning" || task.State == "implementation" {
 					if fixed, ok := rewriteBdListLimit(cmd); ok {
 						cmd = fixed
 					}
 				}
-				fmt.Printf("[gt-agent] $ %s\n", cmd)
+				orchestratedPrintf("[gt-agent] $ %s\n", cmd)
 				cmdEnv := orchestratedCommandEnv(townRoot, rig, task.State, os.Environ())
 				if needsOrchestratedScriptFile(cmd) {
-					fmt.Printf("[gt-agent] running multiline/heredoc via temp script\n")
+					orchestratedPrintf("[gt-agent] running multiline/heredoc via temp script\n")
 				}
 				out, cmdErr := runOrchestratedCommand(cmd, townRoot, sessionName, cmdEnv)
 				if task.State == "design" && cmdErr == nil && isArchitectureMDWriteCommand(cmd) {
@@ -238,6 +277,21 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 						implementationHadCmdFailure = false
 					}
 				}
+				if task.State == "plan_review" {
+					if cmdErr != nil {
+						planReviewHadCmdFailure = true
+					}
+					if cmdErr == nil && isBdListOpenCommand(cmd) {
+						planReviewListOpenOK = true
+						planReviewHadCmdFailure = false
+					}
+					if cmdErr == nil && isQAReadOnlyCommand(cmd) {
+						planReviewHadCmdFailure = false
+					}
+					if cmdErr == nil && isBeadDeleteCommand(cmd) {
+						planReviewHadCmdFailure = false
+					}
+				}
 				if task.State == "qa_review" {
 					if cmdErr != nil {
 						qaHadCmdFailure = true
@@ -254,10 +308,10 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 					}
 				}
 				if cmdErr != nil {
-					fmt.Fprintf(os.Stderr, "[gt-agent] command failed: %v\n%s\n", cmdErr, string(out))
+					orchestratedFprintfStderr( "[gt-agent] command failed: %v\n%s\n", cmdErr, string(out))
 					combined.WriteString(fmt.Sprintf("Command: %s\nError: %v\nOutput: %s\n\n", cmd, cmdErr, string(out)))
 				} else {
-					fmt.Printf("[gt-agent] output:\n%s\n", string(out))
+					orchestratedPrintf("[gt-agent] output:\n%s\n", string(out))
 					combined.WriteString(string(out))
 				}
 			}
@@ -269,8 +323,8 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 			}
 			// Same turn may include CMD lines and JSON; accept success when artifacts are ready.
 			if o, s, ok := parseOrchestratedResult(response, task.AllowedOutcomes); ok {
-				if vErr := validateOrchestratedArtifacts(task, townRoot, rig, o, designArchWrittenThisRun, planningHadCmdFailure, planningBeadCreateOK, implementationHadCmdFailure, implementationBeadCloseOK, qaHadCmdFailure, qaBdListClosedOK, qaUnittestOK); vErr != nil {
-					fmt.Printf("[gt-agent] artifact validation failed: %v\n", vErr)
+				if vErr := validateOrchestratedArtifacts(task, townRoot, rig, o, designArchWrittenThisRun, planningHadCmdFailure, planningBeadCreateOK, planReviewHadCmdFailure, planReviewListOpenOK, implementationHadCmdFailure, implementationBeadCloseOK, qaHadCmdFailure, qaBdListClosedOK, qaUnittestOK); vErr != nil {
+					orchestratedPrintf("[gt-agent] artifact validation failed: %v\n", vErr)
 					recordAttemptFeedback("Validation failed: " + vErr.Error() + "\n")
 				} else {
 					return o, s, lastAttemptFeedback.String(), nil
@@ -285,21 +339,26 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 
 		// Outcome is only accepted on a turn with no CMD lines (after work is done).
 		if o, s, ok := parseOrchestratedResult(response, task.AllowedOutcomes); ok {
-			if vErr := validateOrchestratedArtifacts(task, townRoot, rig, o, designArchWrittenThisRun, planningHadCmdFailure, planningBeadCreateOK, implementationHadCmdFailure, implementationBeadCloseOK, qaHadCmdFailure, qaBdListClosedOK, qaUnittestOK); vErr != nil {
-				fmt.Printf("[gt-agent] artifact validation failed: %v\n", vErr)
+			if vErr := validateOrchestratedArtifacts(task, townRoot, rig, o, designArchWrittenThisRun, planningHadCmdFailure, planningBeadCreateOK, planReviewHadCmdFailure, planReviewListOpenOK, implementationHadCmdFailure, implementationBeadCloseOK, qaHadCmdFailure, qaBdListClosedOK, qaUnittestOK); vErr != nil {
+				orchestratedPrintf("[gt-agent] artifact validation failed: %v\n", vErr)
 				hint := "Use CMD: with a heredoc to write files, then send JSON outcome."
 				if task.State == "design" {
 					hint = "Write architecture.md with a heredoc CMD in this session (stale files from prior runs do not count). Read SPEC with head -n 60."
 				}
 				if task.State == "planning" {
-					hint = "Write plan.md (heredoc) and create beads with `export BEADS_DIR=$GT_ROOT/RIG/.beads && cd RIG/mayor/rig && bd create --type task --title \"...\"`. Do not use gt bd add. Do not write backend/ code or run git."
+					work := rigMayorRigPath(rig)
+					hint = fmt.Sprintf("Write plan.md (heredoc) and create beads with `export BEADS_DIR=$GT_ROOT/%s/.beads && cd %s && bd create --type task --title \"...\"`. Never use literal RIG/ as a path. Do not use gt bd add. Do not write backend/ code or run git.", rig, work)
+				}
+				if task.State == "plan_review" {
+					work := rigMayorRigPath(rig)
+					hint = fmt.Sprintf("Run `bd list --status=open` from %s with BEADS_DIR set; compare titles to architecture required_files. Use outcome failure to send the Planner back to fix duplicates or missing paths.", work)
 				}
 				if task.State == "implementation" {
-					hint = "Use bare `bd` from RIG/mayor/rig: list open beads, implement under backend/, `bd close` at least one bead, then success. Never use gt bd."
+					hint = fmt.Sprintf("Use bare `bd` from %s: list open beads, implement under backend/, `bd close` at least one bead, then success. Never use gt bd.", rigMayorRigPath(rig))
 				}
 				if task.State == "qa_review" {
 					v := taskValidation(task)
-					hint = "Run real CMD: lines (not markdown fences): bd list --status=closed, head SPEC.md, " + v.UnittestCommandHint() + " from RIG/mayor/rig. No /workspace paths. Then JSON only."
+					hint = "Run real CMD: lines (not markdown fences): bd list --status=closed, head SPEC.md, " + v.UnittestCommandHint() + " from " + rigMayorRigPath(rig) + ". No /workspace paths. Then JSON only."
 				}
 				msg := "Validation failed: " + vErr.Error() + ". " + hint
 				recordAttemptFeedback(msg + "\n")
@@ -332,6 +391,69 @@ func truncateOrchestratedFeedback(s string, max int) string {
 		return s
 	}
 	return "...(truncated)\n" + s[len(s)-max:]
+}
+
+// formatWorkflowReworkBlock returns cross-step failure context (e.g. QA plan_review → planner).
+func formatWorkflowReworkBlock(task *orchestrator.Task, rig string) string {
+	if task == nil || task.PendingRework == nil {
+		return ""
+	}
+	r := task.PendingRework
+	if r.FromState == task.State {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("## Prior step failed — fix before completing this step\n")
+	b.WriteString(fmt.Sprintf("- Failed step: %s (workflow %s)\n", r.FromState, task.WorkflowID))
+	b.WriteString(fmt.Sprintf("- Your step now: %s\n", task.State))
+	if r.AgentID != "" {
+		b.WriteString(fmt.Sprintf("- Reported by: %s\n", r.AgentID))
+	}
+	b.WriteString(fmt.Sprintf("- Outcome: %s\n", r.Outcome))
+	if r.Summary != "" {
+		b.WriteString(fmt.Sprintf("- Summary: %s\n", r.Summary))
+	}
+	if r.Feedback != "" {
+		b.WriteString("\n### Command output from the failed review\n")
+		b.WriteString(r.Feedback)
+		b.WriteString("\n")
+	}
+	b.WriteString("\nAddress the issues above. Use bead IDs and paths from command output — do not invent IDs.\n")
+	b.WriteString(workflowReworkHints(r.FromState, task.State, rig))
+	b.WriteString(orchestratedRetryHintsForState(task.State, rig))
+	return b.String()
+}
+
+func workflowReworkHints(fromState, toState, rig string) string {
+	if fromState == "plan_review" && toState == "planning" {
+		worktree := "<rig>/mayor/rig"
+		if rig != "" {
+			worktree = rig + "/mayor/rig"
+		}
+		return fmt.Sprintf(`
+### Plan review failed — repair beads and plan.md
+1. Read the QA **summary** and command output above (duplicate paths, missing files, weak plan.md).
+2. `+"`"+`CMD: export BEADS_DIR=$GT_ROOT/%s/.beads && cd %s && bd list --status=open --flat --limit=0`+"`"+`
+3. Delete duplicate bad beads: `+"`"+`bd delete te-xxx --force`+"`"+` (only IDs from bd list).
+4. Create missing beads with `+"`"+`bd create`+"`"+` — one per required path in architecture (implement-prefix in title).
+5. Rewrite `+"`"+`plan.md`+"`"+` (≥ min size) listing real `+"`"+`te-xxx`+"`"+` IDs from bd output. Do not invent IDs.
+`, rig, worktree)
+	}
+	if fromState != "qa_review" || toState != "implementation" {
+		return ""
+	}
+	worktree := "<rig>/mayor/rig"
+	if rig != "" {
+		worktree = rig + "/mayor/rig"
+	}
+	return fmt.Sprintf(`
+### QA sent you back — do this first
+1. Fix the **specific** issues in the QA summary and command output (files under backend/, tests, stubs).
+2. `+"`"+`CMD: bash -lc 'cd %s && bd list --status=open'`+"`"+` — pick a bead whose title contains the workflow implement prefix.
+3. If **no** open implement beads: `+"`"+`bd list --status=closed`+"`"+`, find closed implement beads, reopen one with `+"`"+`bd update te-xxx --status=open`+"`"+`, then fix code and `+"`"+`bd close te-xxx`+"`"+`.
+4. **Never** invent IDs (te-aba, te-2fv, te-backend-01, impl-001) — only `+"`"+`te-xxx`+"`"+` from bd list output.
+5. Use `+"`"+`cat > path <<'EOF'`+"`"+` heredocs (line with only EOF). Do not nest `+"`"+`bash -lc '...<<'EOF''`+"`"+`.
+`, worktree)
 }
 
 // formatOrchestratedRetryBlock returns prior-attempt context for the next LLM session.
@@ -374,8 +496,8 @@ func orchestratedRetryHintsForState(state, rig string) string {
 			"Heredoc must end with a line containing only EOF. Verify with wc -c from town root.\n",
 			worktree, worktree)
 	case "implementation":
-		return "One CMD: per line. Run `mkdir -p backend` before creating backend files. " +
-			"Use real te-xxx bead IDs from bd list output — do not invent IDs.\n"
+		return "One CMD: per line. Run `bd list` first; use only te-xxx IDs from that output. " +
+			"Run `mkdir -p backend` before creating backend files. Heredoc: `cat > path <<'EOF'` then EOF alone on its own line.\n"
 	case "qa_review":
 		return "One CMD: per line. Review closed beads against SPEC and architecture; use allowed QA outcomes only.\n"
 	default:
@@ -528,12 +650,92 @@ func normalizeMarkdownFencedCMD(response string) string {
 	return response
 }
 
-func rigMayorRigDir(townRoot, rig string) string {
-	rigName := rig
-	if rigName == "" {
-		rigName = "testgt2"
+// orchestratedTaskRig returns the workflow rig (from fetch_task) when the agent has no GT_RIG.
+func orchestratedTaskRig(task *orchestrator.Task, agentRig string) string {
+	if agentRig != "" {
+		return strings.TrimSpace(agentRig)
 	}
-	return filepath.Join(townRoot, rigName, "mayor", "rig")
+	if task != nil && strings.TrimSpace(task.Rig) != "" {
+		return strings.TrimSpace(task.Rig)
+	}
+	return ""
+}
+
+// resolveOrchestratedRigName returns the real rig directory name for shell paths.
+// Never use the literal string "RIG" in commands — that was a placeholder bug when rig was empty.
+func resolveOrchestratedRigName(townRoot, rig string) string {
+	rig = strings.TrimSpace(rig)
+	if rig != "" {
+		return rig
+	}
+	if r := strings.TrimSpace(os.Getenv("GT_RIG")); r != "" {
+		return r
+	}
+	return discoverOrchestratedRigName(townRoot)
+}
+
+// discoverOrchestratedRigName reads the first rig key from rigs.json (mayor/ or town root).
+func discoverOrchestratedRigName(townRoot string) string {
+	if townRoot == "" {
+		return ""
+	}
+	for _, path := range []string{
+		filepath.Join(townRoot, "mayor", "rigs.json"),
+		filepath.Join(townRoot, "rigs.json"),
+	} {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		var cfg struct {
+			Rigs map[string]json.RawMessage `json:"rigs"`
+		}
+		if err := json.Unmarshal(data, &cfg); err != nil || len(cfg.Rigs) == 0 {
+			continue
+		}
+		keys := make([]string, 0, len(cfg.Rigs))
+		for k := range cfg.Rigs {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		return keys[0]
+	}
+	return ""
+}
+
+// rewriteOrchestratedRigPlaceholders fixes commands that copied the old "RIG/mayor/rig"
+// placeholder from error hints when the workflow rig variable was empty.
+func rewriteOrchestratedRigPlaceholders(cmd, rig string) (string, bool) {
+	rig = strings.TrimSpace(rig)
+	if rig == "" {
+		return cmd, false
+	}
+	work := rig + "/mayor/rig"
+	out := cmd
+	changed := false
+	replacements := []struct{ from, to string }{
+		{"RIG/mayor/rig", work},
+		{"rig/mayor/rig", work}, // empty {{rig}} substitution
+		{"$GT_ROOT/RIG/.beads", "$GT_ROOT/" + rig + "/.beads"},
+		{"GT_ROOT/RIG/.beads", "GT_ROOT/" + rig + "/.beads"},
+		{"cd RIG/mayor/rig", "cd " + work},
+		{"cd RIG/", "cd " + rig + "/"},
+		{"&& cd RIG/mayor/rig", "&& cd " + work},
+	}
+	for _, r := range replacements {
+		if strings.Contains(out, r.from) {
+			out = strings.ReplaceAll(out, r.from, r.to)
+			changed = true
+		}
+	}
+	return out, changed
+}
+
+func rigMayorRigDir(townRoot, rig string) string {
+	if rig == "" {
+		return filepath.Join(townRoot, "mayor", "rig")
+	}
+	return filepath.Join(townRoot, rig, "mayor", "rig")
 }
 
 func isArchitectureMDHeredoc(cmd string) bool {
@@ -581,9 +783,9 @@ func planMDMeetsMinSize(townRoot, rig string) bool {
 
 // rewriteBackendPathAfterCD fixes polecat writing rig/mayor/rig/backend/... after cd into worktree.
 func rewriteBackendPathAfterCD(cmd, rig string) (string, bool) {
-	rigName := rig
+	rigName := strings.TrimSpace(rig)
 	if rigName == "" {
-		rigName = "testgt2"
+		return cmd, false
 	}
 	mayorRig := rigName + "/mayor/rig"
 	lower := strings.ToLower(cmd)
@@ -603,9 +805,9 @@ func rewriteBackendPathAfterCD(cmd, rig string) (string, bool) {
 // rewritePlanMDPathAfterCD fixes a common planner mistake: after `cd rig/mayor/rig`,
 // the model still writes to `rig/mayor/rig/plan.md` (missing from that cwd).
 func rewritePlanMDPathAfterCD(cmd, rig string) (string, bool) {
-	rigName := rig
+	rigName := strings.TrimSpace(rig)
 	if rigName == "" {
-		rigName = "testgt2"
+		return cmd, false
 	}
 	mayorRig := rigName + "/mayor/rig"
 	lower := strings.ToLower(cmd)
@@ -694,12 +896,18 @@ func validateDesignCommand(cmd, rig string) error {
 
 func isPlanningReadOnlyCmd(cmd string) bool {
 	lower := strings.ToLower(strings.TrimSpace(cmd))
-	if strings.Contains(lower, "<<") || strings.Contains(lower, ">") {
+	if strings.Contains(lower, "<<") {
 		return false
 	}
-	readPrefixes := []string{"head ", "tail ", "cat ", "wc ", "ls ", "stat ", "test ", "grep ", "less ", "more ", "find "}
+	if isBeadCreateCommand(cmd) || isBeadDeleteCommand(cmd) || isBdListOpenCommand(cmd) || strings.Contains(lower, "bd show") {
+		return true
+	}
+	if strings.Contains(lower, ">") && !strings.Contains(lower, "plan.md") {
+		return false
+	}
+	readPrefixes := []string{"head ", "tail ", "cat ", "wc ", "ls ", "stat ", "test ", "grep ", "less ", "more ", "find ", "export ", "cd "}
 	for _, p := range readPrefixes {
-		if strings.HasPrefix(lower, p) {
+		if strings.HasPrefix(lower, p) || strings.Contains(lower, " && "+p) {
 			return true
 		}
 	}
@@ -707,6 +915,11 @@ func isPlanningReadOnlyCmd(cmd string) bool {
 }
 
 func commandWritesBackend(lower string) bool {
+	// Bead titles mention backend paths; creating tasks is allowed in planning.
+	if strings.Contains(lower, "bd create") || strings.Contains(lower, "bd delete") ||
+		strings.Contains(lower, "bd close") || strings.Contains(lower, "bd list") || strings.Contains(lower, "bd show") {
+		return false
+	}
 	// plan.md / architecture.md heredocs describe backend paths in prose; destination is not backend/.
 	if (strings.Contains(lower, "plan.md") || strings.Contains(lower, "architecture.md")) &&
 		(strings.Contains(lower, "cat >") || strings.Contains(lower, "<<")) {
@@ -785,18 +998,25 @@ func validatePlanningPlanHeredoc(lower string) error {
 // validatePlanningCommand blocks planner scope creep (polecat implements code).
 func validatePlanningCommand(cmd, rig string) error {
 	lower := strings.ToLower(cmd)
-	rigPrefix := rig
-	if rigPrefix == "" {
-		rigPrefix = "testgt2"
+	rigPrefix := strings.TrimSpace(rig)
+	rigSlash := ""
+	if rigPrefix != "" {
+		rigSlash = strings.ToLower(rigPrefix) + "/"
 	}
-	rigSlash := strings.ToLower(rigPrefix) + "/"
 
 	if isPlanMDHeredoc(cmd) {
 		return validatePlanningPlanHeredoc(lower)
 	}
 
 	if strings.Contains(lower, "gt bd add") || strings.Contains(lower, "bd add") {
-		return fmt.Errorf("use `cd %s/mayor/rig && bd create --type task --title \"...\"` (gt bd is not the bd CLI)", rigPrefix)
+		return fmt.Errorf("use `cd %s/mayor/rig && bd create --type task --title \"...\"` (gt bd is not the bd CLI)", rigMayorRigPath(rigPrefix))
+	}
+
+	if isPlanningReadOnlyCmd(cmd) {
+		if strings.Contains(lower, "git") && (strings.Contains(lower, " commit") || strings.Contains(lower, " push") || strings.Contains(lower, " add")) {
+			return fmt.Errorf("must not run git add/commit/push in planning step")
+		}
+		return nil
 	}
 
 	if err := validatePlanningShellSideEffects(lower); err != nil {
@@ -810,7 +1030,7 @@ func validatePlanningCommand(cmd, rig string) error {
 		if strings.Contains(lower, ".py>") || strings.Contains(lower, "> backend/") {
 			return fmt.Errorf("must not write Python or backend files in planning step")
 		}
-		if strings.Contains(lower, rigSlash) || strings.Contains(lower, "mayor/rig/") {
+		if rigSlash != "" && strings.Contains(lower, rigSlash) {
 			return fmt.Errorf("may only write plan.md under %s/mayor/rig/", rigPrefix)
 		}
 	}
@@ -851,7 +1071,7 @@ func validateImplementationCommand(cmd, rig string) error {
 }
 
 // validateOrchestratedArtifacts rejects false-success when required files are missing or empty.
-func validateOrchestratedArtifacts(task *orchestrator.Task, townRoot, rig, outcome string, designArchWrittenThisRun, planningHadCmdFailure, planningBeadCreateOK, implementationHadCmdFailure, implementationBeadCloseOK, qaHadCmdFailure, qaBdListClosedOK, qaUnittestOK bool) error {
+func validateOrchestratedArtifacts(task *orchestrator.Task, townRoot, rig, outcome string, designArchWrittenThisRun, planningHadCmdFailure, planningBeadCreateOK, planReviewHadCmdFailure, planReviewListOpenOK, implementationHadCmdFailure, implementationBeadCloseOK, qaHadCmdFailure, qaBdListClosedOK, qaUnittestOK bool) error {
 	if outcome != "success" && outcome != "task_passed" && outcome != "all_passed" {
 		return nil
 	}
@@ -861,6 +1081,8 @@ func validateOrchestratedArtifacts(task *orchestrator.Task, townRoot, rig, outco
 		return validateDesignArtifacts(townRoot, rig, designArchWrittenThisRun, v)
 	case "planning":
 		return validatePlanningArtifacts(townRoot, rig, planningHadCmdFailure, planningBeadCreateOK, v)
+	case "plan_review":
+		return validatePlanReviewArtifacts(townRoot, rig, planReviewHadCmdFailure, planReviewListOpenOK, v)
 	case "implementation":
 		return validateImplementationArtifacts(townRoot, rig, implementationHadCmdFailure, implementationBeadCloseOK, v)
 	case "qa_review":
@@ -899,7 +1121,7 @@ func orchestratedCommandEnv(townRoot, rig, taskState string, base []string) []st
 		return base
 	}
 	switch taskState {
-	case "planning", "implementation", "qa_review":
+	case "planning", "plan_review", "implementation", "qa_review":
 	default:
 		return base
 	}
@@ -943,12 +1165,14 @@ func validateRigOpenBeads(townRoot, rig string) error {
 	if _, err := os.Stat(beadsDir); err != nil {
 		return nil
 	}
-	cmd := exec.Command("bd", "list", "--status=open", "--json")
+	args := beads.InjectFlatForListJSON([]string{"list", "--status=open", "--json", "--limit=0"})
+	cmd := exec.Command("bd", args...)
 	cmd.Env = withEnvKey(os.Environ(), "BEADS_DIR", beadsDir)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("rig beads check (BEADS_DIR=%s): %w: %s", beadsDir, err, strings.TrimSpace(string(out)))
 	}
+	out = beads.StripStdoutWarnings(out)
 	var issues []struct {
 		ID string `json:"id"`
 	}
@@ -1062,6 +1286,112 @@ func isBdListClosedCommand(cmd string) bool {
 	return strings.Contains(lower, "bd list") && strings.Contains(lower, "closed")
 }
 
+func isBdListOpenCommand(cmd string) bool {
+	lower := strings.ToLower(cmd)
+	return strings.Contains(lower, "bd list") && strings.Contains(lower, "open")
+}
+
+func isBeadDeleteCommand(cmd string) bool {
+	lower := strings.ToLower(strings.TrimSpace(cmd))
+	return strings.Contains(lower, "bd delete") || strings.Contains(lower, "bd close")
+}
+
+func validatePlanReviewCommand(cmd, rig string) error {
+	lower := strings.ToLower(cmd)
+	if strings.Contains(lower, "[tool_calls]") {
+		return fmt.Errorf("do not emit [TOOL_CALLS] markers — use CMD: lines only")
+	}
+	if strings.Contains(lower, "bd create") {
+		return fmt.Errorf("do not create beads in plan_review — use outcome failure so the Planner repairs in planning")
+	}
+	if strings.Contains(lower, "unittest") || strings.Contains(lower, "pytest") {
+		return fmt.Errorf("no test commands in plan_review — implementation has not started")
+	}
+	forbidden := []struct {
+		cond bool
+		msg  string
+	}{
+		{strings.Contains(lower, "/workspace"), "do not use /workspace paths — work from $GT_ROOT"},
+		{strings.Contains(lower, "pip install"), "do not install packages in plan_review"},
+	}
+	for _, f := range forbidden {
+		if f.cond {
+			return fmt.Errorf("%s", f.msg)
+		}
+	}
+	rigSlash := strings.ToLower(rig) + "/"
+	if strings.Contains(lower, "bd ") || strings.Contains(lower, "bd\t") {
+		if !strings.Contains(lower, rigSlash) && !strings.Contains(lower, "beads_dir") && !strings.Contains(lower, "mayor/rig") {
+			return fmt.Errorf("run bd from %s/mayor/rig with BEADS_DIR=$GT_ROOT/%s/.beads", rig, rig)
+		}
+	}
+	if isBeadCreateCommand(cmd) {
+		return fmt.Errorf("bd create is not allowed in plan_review")
+	}
+	if isQAReadOnlyCommand(cmd) || isBdListOpenCommand(cmd) || isBeadDeleteCommand(cmd) {
+		return nil
+	}
+	if strings.Contains(lower, "bd show") {
+		return nil
+	}
+	return fmt.Errorf("plan_review allows read-only inspection (bd list/show, head, grep) and bd delete for duplicate cleanup — not: %s", cmd)
+}
+
+func listOpenImplementationBeads(townRoot, rig string) ([]orchestrator.PlanBead, error) {
+	beadsDir := config.ResolveBeadsDirForRig(townRoot, rig)
+	args := beads.InjectFlatForListJSON([]string{"list", "--status=open", "--json", "--limit=0"})
+	cmd := exec.Command("bd", args...)
+	cmd.Env = withEnvKey(os.Environ(), "BEADS_DIR", beadsDir)
+	cmd.Dir = rigMayorRigDir(townRoot, rig)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return nil, fmt.Errorf("bd list open: %w: %s", err, strings.TrimSpace(string(out)))
+	}
+	out = beads.StripStdoutWarnings(out)
+	var rows []struct {
+		ID    string `json:"id"`
+		Title string `json:"title"`
+	}
+	if err := json.Unmarshal(out, &rows); err != nil {
+		return nil, fmt.Errorf("parse open beads: %w", err)
+	}
+	result := make([]orchestrator.PlanBead, 0, len(rows))
+	for _, r := range rows {
+		id := strings.TrimSpace(beads.ExtractIssueID(r.ID))
+		if id == "" {
+			continue
+		}
+		result = append(result, orchestrator.PlanBead{ID: id, Title: strings.TrimSpace(r.Title)})
+	}
+	return result, nil
+}
+
+func validatePlanReviewArtifacts(townRoot, rig string, hadCmdFailure, listOpenOK bool, v orchestrator.WorkflowValidation) error {
+	if hadCmdFailure {
+		return fmt.Errorf("plan review step had failed commands; fix errors before completing")
+	}
+	if !listOpenOK {
+		return fmt.Errorf("run `bd list --status=open` from %s before reporting plan review outcome", rigMayorRigPath(rig))
+	}
+	planPath := filepath.Join(rigMayorRigDir(townRoot, rig), "plan.md")
+	info, err := os.Stat(planPath)
+	if err != nil {
+		return fmt.Errorf("plan.md missing at %s", planPath)
+	}
+	if info.Size() < v.MinPlanBytes {
+		return fmt.Errorf("plan.md too small (%d bytes); need ≥%d", info.Size(), v.MinPlanBytes)
+	}
+	open, err := listOpenImplementationBeads(townRoot, rig)
+	if err != nil {
+		return err
+	}
+	archPath := filepath.Join(rigMayorRigDir(townRoot, rig), "architecture.md")
+	if err := orchestrator.ValidatePlanBeads(open, archPath, v); err != nil {
+		return fmt.Errorf("plan beads do not match architecture/profile: %w", err)
+	}
+	return nil
+}
+
 func countOpenMatchingBeads(townRoot, rig, titleContains string) (int, error) {
 	beadsDir := config.ResolveBeadsDirForRig(townRoot, rig)
 	cmd := exec.Command("bd", "list", "--status=open", "--limit=0")
@@ -1129,8 +1459,9 @@ func validateRequiredWorkFiles(townRoot, rig string, v orchestrator.WorkflowVali
 }
 
 func rigMayorRigPath(rig string) string {
+	rig = strings.TrimSpace(rig)
 	if rig == "" {
-		return "testgt2/mayor/rig"
+		return "<rig>/mayor/rig"
 	}
 	return rig + "/mayor/rig"
 }
@@ -1165,7 +1496,7 @@ func orchestratedArtifactAutoOutcome(task *orchestrator.Task, townRoot, rig stri
 	case "design":
 		vErr = validateDesignArtifacts(townRoot, rig, designArchWrittenThisRun, taskValidation(task))
 	case "planning":
-		vErr = validateOrchestratedArtifacts(task, townRoot, rig, "success", designArchWrittenThisRun, planningHadCmdFailure, planningBeadCreateOK, false, false, false, false, false)
+		vErr = validateOrchestratedArtifacts(task, townRoot, rig, "success", designArchWrittenThisRun, planningHadCmdFailure, planningBeadCreateOK, false, false, false, false, false, false, false)
 	default:
 		return "", "", false
 	}
@@ -1176,7 +1507,7 @@ func orchestratedArtifactAutoOutcome(task *orchestrator.Task, townRoot, rig stri
 	if o == "" {
 		return "", "", false
 	}
-	fmt.Printf("[gt-agent] auto-completing %s: artifacts satisfied\n", task.State)
+	orchestratedPrintf("[gt-agent] auto-completing %s: artifacts satisfied\n", task.State)
 	return o, "artifacts validated", true
 }
 

@@ -74,13 +74,13 @@ func TestValidateOrchestratedArtifacts_design(t *testing.T) {
 		t.Fatal(err)
 	}
 	task := &orchestrator.Task{State: "design"}
-	if err := validateOrchestratedArtifacts(task, dir, "myrig", "success", true, false, false, false, false, false, false, false); err == nil {
+	if err := validateOrchestratedArtifacts(task, dir, "myrig", "success", true, false, false, false, false, false, false, false, false, false); err == nil {
 		t.Fatal("expected size validation error")
 	}
 	if err := os.WriteFile(path, make([]byte, 200), 0644); err != nil {
 		t.Fatal(err)
 	}
-	if err := validateOrchestratedArtifacts(task, dir, "myrig", "success", true, false, false, false, false, false, false, false); err != nil {
+	if err := validateOrchestratedArtifacts(task, dir, "myrig", "success", true, false, false, false, false, false, false, false, false, false); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -167,6 +167,20 @@ func TestRewriteBackendPathAfterCD(t *testing.T) {
 	fixed, ok := rewriteBackendPathAfterCD(cmd, "testgt2")
 	if !ok || strings.Contains(fixed, "testgt2/mayor/rig/backend") {
 		t.Fatalf("want backend/ relative path, got ok=%v cmd=%q", ok, fixed)
+	}
+}
+
+func TestRewriteOrchestratedRigPlaceholders(t *testing.T) {
+	cmd := `export BEADS_DIR=$GT_ROOT/RIG/.beads && cd RIG/mayor/rig && bd create --type task --title "x"`
+	fixed, ok := rewriteOrchestratedRigPlaceholders(cmd, "testgt2")
+	if !ok {
+		t.Fatal("expected rewrite")
+	}
+	if strings.Contains(fixed, "RIG/") {
+		t.Fatalf("RIG placeholder should be gone: %q", fixed)
+	}
+	if !strings.Contains(fixed, "testgt2/mayor/rig") || !strings.Contains(fixed, "testgt2/.beads") {
+		t.Fatalf("unexpected: %q", fixed)
 	}
 }
 
@@ -303,7 +317,7 @@ func TestValidateDesignArtifacts_allowsStaleBackendPy(t *testing.T) {
 		t.Fatal(err)
 	}
 	task := &orchestrator.Task{State: "design"}
-	if err := validateOrchestratedArtifacts(task, dir, "myrig", "success", true, false, false, false, false, false, false, false); err != nil {
+	if err := validateOrchestratedArtifacts(task, dir, "myrig", "success", true, false, false, false, false, false, false, false, false, false); err != nil {
 		t.Fatalf("stale backend/*.py must not block design: %v", err)
 	}
 }
