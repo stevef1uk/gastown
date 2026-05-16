@@ -1,6 +1,7 @@
 package beads
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -3374,6 +3375,24 @@ func TestIsSubprocessCrash(t *testing.T) {
 				t.Errorf("isSubprocessCrash(%v) = %v, want %v", tt.err, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestStripStdoutWarnings_CapitalWarning(t *testing.T) {
+	t.Parallel()
+	in := []byte("Warning: /tmp/.beads has permissions 0775 (recommended: 0700).\n[\n  {\"id\":\"de-abc\"}\n]\n")
+	got := StripStdoutWarnings(in)
+	if !bytes.HasPrefix(bytes.TrimSpace(got), []byte("[")) {
+		t.Fatalf("got %q, want JSON array", got)
+	}
+	var rows []struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal(got, &rows); err != nil {
+		t.Fatalf("json.Unmarshal: %v", err)
+	}
+	if len(rows) != 1 || rows[0].ID != "de-abc" {
+		t.Fatalf("rows = %+v", rows)
 	}
 }
 

@@ -25,6 +25,79 @@ func TestFormatOrchestratedRetryBlock_matchesWorkflowState(t *testing.T) {
 	}
 }
 
+func TestValidatePlanReviewGrep_rejectsBadPatterns(t *testing.T) {
+	cases := []struct {
+		cmd string
+		ok  bool
+	}{
+		{"grep -E 'te-8i9|te-9dw'", false},
+		{"grep te-8i9 beads.md", false},
+		{"grep -i implement plan.md", true},
+		{"grep backend architecture.md", true},
+	}
+	for _, tc := range cases {
+		err := validatePlanReviewGrep(tc.cmd)
+		if tc.ok && err != nil {
+			t.Errorf("%q: unexpected error: %v", tc.cmd, err)
+		}
+		if !tc.ok && err == nil {
+			t.Errorf("%q: expected rejection", tc.cmd)
+		}
+	}
+}
+
+func TestFormatWorkflowReworkBlock_planOKSkipsRewriteHint(t *testing.T) {
+	task := &orchestrator.Task{
+		WorkflowID: "wf-1",
+		State:      "planning",
+		PendingRework: &orchestrator.WorkflowRework{
+			FromState: "plan_review",
+			Outcome:   "failure",
+			Summary:   "duplicate beads; plan.md size 1020 bytes (≥1000) ok",
+			Feedback:  "QA summary: duplicate beads; plan.md size 1020 bytes (≥1000) ok",
+		},
+	}
+	block := formatWorkflowReworkBlock(task, "testgt2")
+	if !strings.Contains(block, "plan.md is OK") || strings.Contains(block, "Rewrite `plan.md`") {
+		t.Fatalf("expected plan-ok hints only, got:\n%s", block)
+	}
+}
+
+func TestFormatWorkflowReworkBlock_qaToPlanner(t *testing.T) {
+	task := &orchestrator.Task{
+		WorkflowID: "wf-1",
+		State:      "planning",
+		PendingRework: &orchestrator.WorkflowRework{
+			FromState: "plan_review",
+			Outcome:   "failure",
+			Summary:   "duplicate main.js beads",
+			Feedback:  "FAIL: missing bead for backend/main.py",
+			AgentID:   "testgt1/qa",
+		},
+	}
+	block := formatWorkflowReworkBlock(task, "testgt1")
+	if block == "" {
+		t.Fatal("expected rework block")
+	}
+	if !strings.Contains(block, "plan_review") || !strings.Contains(block, "duplicate main.js beads") {
+		t.Fatalf("block: %q", block)
+	}
+}
+
+func TestFormatWorkflowReworkBlock_sameStateIgnored(t *testing.T) {
+	task := &orchestrator.Task{
+		WorkflowID: "wf-1",
+		State:      "implementation",
+		PendingRework: &orchestrator.WorkflowRework{
+			FromState: "implementation",
+			Summary:   "x",
+		},
+	}
+	if formatWorkflowReworkBlock(task, "testgt1") != "" {
+		t.Fatal("same-state rework should use OrchestratedRetry, not workflow block")
+	}
+}
+
 func TestFormatOrchestratedRetryBlock_wrongStateIgnored(t *testing.T) {
 	prior := &OrchestratedRetry{WorkflowID: "wf-1", State: "planning", Summary: "x"}
 	task := &orchestrator.Task{WorkflowID: "wf-1", State: "implementation"}

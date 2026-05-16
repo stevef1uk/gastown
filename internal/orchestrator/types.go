@@ -27,13 +27,33 @@ type Transition struct {
 	To string `yaml:"to"`
 }
 
+// WorkflowRework captures why a step failed so the next FSM state/agent can fix it.
+type WorkflowRework struct {
+	FromState string `json:"from_state"`
+	Outcome   string `json:"outcome"`
+	Summary   string `json:"summary"`
+	Feedback  string `json:"feedback,omitempty"`
+	AgentID   string `json:"agent_id,omitempty"`
+}
+
 // WorkflowInstance is an active execution of a WorkflowTemplate.
 type WorkflowInstance struct {
-	ID           string            `json:"id"`
-	TemplateID   string            `json:"template_id"`
-	CurrentState string            `json:"current_state"`
-	Variables    map[string]string `json:"variables"`
-	Status       string            `json:"status"` // "running", "completed", "failed"
+	ID            string            `json:"id"`
+	TemplateID    string            `json:"template_id"`
+	CurrentState  string            `json:"current_state"`
+	Variables     map[string]string `json:"variables"`
+	Status        string            `json:"status"` // "running", "completed", "failed"
+	PendingRework *WorkflowRework   `json:"pending_rework,omitempty"`
+}
+
+// IsFailureOutcome reports whether complete_task outcome means rework/failure.
+func IsFailureOutcome(outcome string) bool {
+	switch strings.ToLower(strings.TrimSpace(outcome)) {
+	case "fail", "failure":
+		return true
+	default:
+		return false
+	}
 }
 
 // AllowedOutcomes returns transition keys for the state (valid complete_task outcomes).

@@ -916,14 +916,14 @@ func (b *Beads) listEphemeral(opts ListOptions) ([]*Issue, error) {
 	return issues, nil
 }
 
-// stripStdoutWarnings removes warning/diagnostic lines that bd may emit to stdout.
-// bd sometimes prints "warning: ..." lines to stdout instead of stderr, which
+// StripStdoutWarnings removes warning/diagnostic lines that bd may emit to stdout.
+// bd sometimes prints "Warning: ..." lines to stdout instead of stderr, which
 // corrupts JSON output. This strips those lines so downstream JSON parsing works.
-func stripStdoutWarnings(data []byte) []byte {
-	if !bytes.Contains(data, []byte("warning:")) {
-		return data
-	}
+func StripStdoutWarnings(data []byte) []byte {
+	return stripStdoutWarnings(data)
+}
 
+func stripStdoutWarnings(data []byte) []byte {
 	lines := bytes.Split(data, []byte("\n"))
 	var cleaned [][]byte
 	stripped := false

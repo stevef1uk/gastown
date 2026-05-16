@@ -165,9 +165,13 @@ func (m *Manager) FetchTask(agentID string) (map[string]interface{}, error) {
 	return nil, fmt.Errorf("%w for agent %q", ErrNoTask, agentID)
 }
 
+const maxWorkflowReworkSummary = 2000
+const maxWorkflowReworkFeedback = 6000
+
 // CompleteTask transitions a workflow to the next state.
 // When agentID is non-empty, it must match the role for the workflow's current state.
-func (m *Manager) CompleteTask(workflowID string, outcome string, agentID string) (string, error) {
+// summary and feedback are stored on cross-state failure for the next agent (e.g. QA → polecat).
+func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summary, feedback string) (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -195,6 +199,19 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID string
 	next, err := inst.Transition(tpl, outcome)
 	if err != nil {
 		return "", err
+	}
+	if IsFailureOutcome(outcome) && next != "" && next != fromState {
+		inst.PendingRework = &WorkflowRework{
+			FromState: fromState,
+			Outcome:   outcome,
+			Summary:   truncateWorkflowText(summary, maxWorkflowReworkSummary),
+			Feedback:  PrepareWorkflowReworkFeedback(fromState, next, summary, feedback),
+			AgentID:   agentID,
+		}
+	} else if !IsFailureOutcome(outcome) {
+		// Success clears QA/plan-review rework for the next agent.
+		// Same-state failures (e.g. polecat retry) must not wipe cross-step PendingRework.
+		inst.PendingRework = nil
 	}
 	if err := m.persistLocked(); err != nil {
 		return next, fmt.Errorf("persist instances: %w", err)
@@ -247,6 +264,14 @@ func (m *Manager) ResetWorkflow(workflowID, toState string) (string, error) {
 	}
 	m.logWorkflowFeed(events.TypeWorkflowTransition, workflowID, inst.TemplateID, fromState, toState, "reset", role, rig)
 	return toState, nil
+}
+
+func truncateWorkflowText(s string, max int) string {
+	s = strings.TrimSpace(s)
+	if max <= 0 || len(s) <= max {
+		return s
+	}
+	return "...(truncated)\n" + s[len(s)-max:]
 }
 
 func (m *Manager) logWorkflowFeed(eventType, workflowID, templateID, fromState, toState, outcome, role, rig string) {

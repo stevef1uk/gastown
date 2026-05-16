@@ -210,11 +210,13 @@ type Task struct {
 	TemplateID      string             `json:"template_id"`
 	State           string             `json:"state"`
 	Role            string             `json:"role"`
+	Rig             string             `json:"rig"`
 	SystemPrompt    string             `json:"system_prompt"`
 	TaskPrompt      string             `json:"task_prompt"`
 	Instructions    string             `json:"instructions"`
 	AllowedOutcomes []string           `json:"allowed_outcomes"`
 	Validation      WorkflowValidation `json:"validation"`
+	PendingRework   *WorkflowRework    `json:"pending_rework,omitempty"`
 }
 
 // FetchTask fetches the next task for an agent.
@@ -301,13 +303,19 @@ func ResetWorkflow(townRoot, workflowID, toState string) (string, error) {
 }
 
 // CompleteTask reports task completion to the orchestrator.
-func CompleteTask(townRoot string, workflowID string, outcome string, agentID string) (string, error) {
+func CompleteTask(townRoot string, workflowID string, outcome string, agentID, summary, feedback string) (string, error) {
 	args := map[string]interface{}{
 		"workflow_id": workflowID,
 		"outcome":     outcome,
 	}
 	if agentID != "" {
 		args["agent_id"] = agentID
+	}
+	if summary != "" {
+		args["summary"] = summary
+	}
+	if feedback != "" {
+		args["feedback"] = feedback
 	}
 	params := map[string]interface{}{
 		"name":      "complete_task",

@@ -10,8 +10,12 @@ import (
 func TestAgentLogPaths_RigSingleton(t *testing.T) {
 	town := "/home/stevef/gt"
 	paths := agentLogPaths(town, "te-testgt2-qa", "testgt2", "qa", "te-testgt2-qa")
-	if !strings.HasPrefix(paths[0], filepath.Join(town, "testgt2", "qa", "typescript")) {
-		t.Fatalf("expected typescript first, got %v", paths)
+	want := filepath.Join(town, "logs", "sessions", "te-testgt2-qa.log")
+	if len(paths) == 0 || paths[0] != want {
+		t.Fatalf("expected sessions log first, got %v", paths)
+	}
+	if !strings.HasSuffix(paths[len(paths)-1], filepath.Join("testgt2", "qa", "typescript")) {
+		t.Fatalf("expected typescript fallback, got %v", paths)
 	}
 }
 
@@ -26,8 +30,9 @@ func TestAgentLogPaths_Orchestrator(t *testing.T) {
 func TestAgentLogPaths_PolecatWorker(t *testing.T) {
 	town := "/town"
 	paths := agentLogPaths(town, "te-worker", "testgt2", "polecat", "worker")
-	if !strings.HasPrefix(paths[0], filepath.Join(town, "testgt2", "polecats", "worker", "typescript")) {
-		t.Fatalf("expected polecats worker typescript first, got %v", paths)
+	want := filepath.Join(town, "logs", "sessions", "te-worker.log")
+	if len(paths) == 0 || paths[0] != want {
+		t.Fatalf("expected sessions log first, got %v", paths)
 	}
 }
 

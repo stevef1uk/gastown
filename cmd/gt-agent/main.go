@@ -421,17 +421,39 @@ func run() error {
 		os.Setenv("GT_POLECAT", polecat)
 	}
 
-	fmt.Printf("[gt-agent] Starting as %s", role)
-	if rig != "" {
-		fmt.Printf(" (rig=%s", rig)
-		if polecat != "" {
-			fmt.Printf(", polecat=%s", polecat)
+	orchestrated := false
+	for _, arg := range os.Args {
+		if arg == "--orchestrated" {
+			orchestrated = true
+			break
 		}
-		fmt.Print(")")
 	}
-	fmt.Println()
-	fmt.Printf("[gt-agent] Using gt binary: %s\n", gtBin)
-	fmt.Printf("[gt-agent] PATH: %s\n", os.Getenv("PATH"))
+	if orchestrated {
+		setupOrchestratedOutputMirror(townRoot, roleCanonical, rig)
+	}
+
+	printStartup := func(format string, args ...interface{}) {
+		if orchestrated {
+			orchestratedPrintf(format, args...)
+		} else {
+			fmt.Printf(format, args...)
+		}
+	}
+	printStartup("[gt-agent] Starting as %s", role)
+	if rig != "" {
+		printStartup(" (rig=%s", rig)
+		if polecat != "" {
+			printStartup(", polecat=%s", polecat)
+		}
+		printStartup(")")
+	}
+	if orchestrated {
+		orchestratedPrintf("\n")
+	} else {
+		fmt.Println()
+	}
+	printStartup("[gt-agent] Using gt binary: %s\n", gtBin)
+	printStartup("[gt-agent] PATH: %s\n", os.Getenv("PATH"))
 
 	// Load LLM config
 	llmEndpoint := os.Getenv("LLM_ENDPOINT")
@@ -454,17 +476,8 @@ func run() error {
 	// Load persisted state
 	stateFile := statePath(townRoot, role, rig, polecat)
 	state := loadState(stateFile)
-	fmt.Printf("[gt-agent] State loaded: patrol_count=%d idle_cycles=%d\n",
+	printStartup("[gt-agent] State loaded: patrol_count=%d idle_cycles=%d\n",
 		state.PatrolCount, state.IdleCycles)
-
-	// Check for --orchestrated flag
-	orchestrated := false
-	for _, arg := range os.Args {
-		if arg == "--orchestrated" {
-			orchestrated = true
-			break
-		}
-	}
 
 	if orchestrated {
 		if roleCanonical == "polecat" {

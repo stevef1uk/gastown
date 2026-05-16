@@ -58,7 +58,7 @@ Do **not** invent bead IDs or add implementation code under `{{layout_root}}/`.
 
 5. Verify from town root: `CMD: wc -c {{rig}}/mayor/rig/plan.md`
 
-6. Do not send `success` until plan.md exists, beads were created successfully, no commands failed, and open beads cover required_files (QA will verify next).
+6. Do not send `success` until plan.md exists (≥ {{min_plan_bytes}} bytes), no commands failed, and open beads cover required_files — after rework you may only `bd delete` duplicates (no new `bd create` required if the bead set is already valid). QA verifies next.
 
 7. On a **later turn** with no CMD lines, send JSON only:
    `{"outcome":"success","summary":"plan and beads created; ready for plan review"}`

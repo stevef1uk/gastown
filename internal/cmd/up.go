@@ -1248,19 +1248,28 @@ func upStartPlanner(townRoot string) agentStartResult {
 	sp := session.GetDefaultProvider(townRoot)
 	ctx := context.Background()
 
+	orchRunning, _, _ := orchestrator.IsRunning(townRoot)
+	wantOrch := orchestrator.OrchestratedForRole(orchRunning, constants.RolePlanner)
+
 	if running, _ := sp.Exists(ctx, sessionID); running {
-		return agentStartResult{name: name, ok: true, detail: sessionID}
+		if wantOrch && !session.GTAgentHasFlagInSession(townRoot, sessionID, "--orchestrated") {
+			_ = sp.Stop(ctx, sessionID, false)
+		} else {
+			return agentStartResult{name: name, ok: true, detail: sessionID}
+		}
 	}
 
-	orchRunning, _, _ := orchestrator.IsRunning(townRoot)
-
+	beaconTopic := "startup"
+	if wantOrch {
+		beaconTopic = "orchestrated"
+	}
 	_, err := session.StartSession(ctx, sp, &session.SessionConfig{
 		SessionID:    sessionID,
 		WorkDir:      plannerDir,
 		Role:         constants.RolePlanner,
 		TownRoot:     townRoot,
-		Orchestrated: orchestrator.OrchestratedForRole(orchRunning, constants.RolePlanner),
-		Beacon:       session.BeaconConfig{Recipient: "planner", Sender: "daemon", Topic: "startup"},
+		Orchestrated: wantOrch,
+		Beacon:       session.BeaconConfig{Recipient: "planner", Sender: "daemon", Topic: beaconTopic},
 		WaitForAgent: true,
 		WaitFatal:    true,
 		ReadyDelay:   true,

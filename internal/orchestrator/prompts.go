@@ -131,15 +131,21 @@ func (m *Manager) BuildTaskPayload(inst *WorkflowInstance, tpl *WorkflowTemplate
 		return nil, fmt.Errorf("state %q has no prompt_file or instructions", inst.CurrentState)
 	}
 
-	return map[string]interface{}{
-		"workflow_id":       inst.ID,
-		"template_id":       inst.TemplateID,
-		"state":             inst.CurrentState,
-		"role":              state.Role,
-		"system_prompt":     systemPrompt,
-		"task_prompt":       taskPrompt,
-		"instructions":      taskPrompt,
-		"allowed_outcomes":  state.AllowedOutcomes(),
-		"validation":        validation,
-	}, nil
+	rig := vars["rig"]
+	payload := map[string]interface{}{
+		"workflow_id":      inst.ID,
+		"template_id":      inst.TemplateID,
+		"state":            inst.CurrentState,
+		"role":             state.Role,
+		"rig":              rig,
+		"system_prompt":    systemPrompt,
+		"task_prompt":      taskPrompt,
+		"instructions":     taskPrompt,
+		"allowed_outcomes": state.AllowedOutcomes(),
+		"validation":       validation,
+	}
+	if inst.PendingRework != nil {
+		payload["pending_rework"] = inst.PendingRework
+	}
+	return payload, nil
 }

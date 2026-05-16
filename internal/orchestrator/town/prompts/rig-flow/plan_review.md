@@ -20,9 +20,9 @@ Required implementation files (from profile): {{required_files}}
 | Allowed | Forbidden |
 |---------|-----------|
 | Read `SPEC.md`, `architecture.md`, `plan.md` | Writing code under `{{layout_root}}/` |
-| `bd list`, `bd show` on **open** implementation beads | `bd create` (Planner's job on retry) |
-| `bd delete` / `bd close` only to remove **duplicate** bad beads before sending `failure` | Running pytest/unittest (implementation not started) |
-| `head`, `wc`, `grep` on docs | Approving duplicate `main.js` beads |
+| `bd list`, `bd show` on **open** implementation beads | `bd create`, `bd delete`, `bd close` (Planner fixes beads on retry) |
+| `head`, `wc`, `grep` on docs | Running pytest/unittest (implementation not started) |
+| | Approving duplicate paths or padding plan.md when duplicates exist |
 
 ## HARD RULES
 
@@ -42,9 +42,11 @@ Required implementation files (from profile): {{required_files}}
    - a required path has no bead
    - bead titles omit real paths from architecture (hallucinated `te-xxx` IDs only in plan.md)
 
-4. Automated guard (gt-agent): duplicate paths and missing required_files fail validation — use `failure` so the workflow returns to **planning** and the Planner repairs beads.
+4. **Duplicates:** Report `failure` with duplicate paths and real `te-xxx` IDs. Do **not** delete beads in plan_review — the **Planner** removes duplicates and updates `plan.md` in `planning`.
 
-5. When satisfied, send **JSON only**:
+5. Automated guard (gt-agent): duplicate paths and missing required_files fail validation on `success`.
+
+6. When satisfied, send **JSON only**:
    - `{"outcome":"success","summary":"beads cover architecture; plan.md ok"}`
    - `{"outcome":"failure","summary":"..."}` — summary **must** list duplicate paths, missing required_files paths, weak plan.md issues, and real `te-xxx` bead IDs to delete or fix.
 

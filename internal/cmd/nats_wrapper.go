@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/nats-io/nats.go"
@@ -44,16 +45,22 @@ func runNatsWrapper(cmd *cobra.Command, args []string) error {
 	}
 	defer nc.Close()
 
-	// Set up command — wrap with script(1) to provide a PTY for agents like
-	// Claude Code that require a terminal.
-	//
-	// CRITICAL: The Go process may have an empty PATH (observed on some platforms
-	// where the parent shell doesn't export PATH to child processes). We must
-	// explicitly search common bin directories for script(1) instead of relying
-	// on exec.LookPath, which uses the process's PATH.
-	scriptPath := findScriptBinary()
-	child := exec.Command(scriptPath, append([]string{"-qfec", args[0]}, args[1:]...)...)
-	child.Env = buildChildEnv()
+	// Orchestrated gt-agent only polls the orchestrator and runs subprocesses
+	// without a TTY. Wrapping it in script(1) records terminal escape noise
+	// (OSC color queries, cursor position reports) into typescript/logs.
+	var child *exec.Cmd
+	if commandNeedsPTY(args) {
+		// Wrap with script(1) for interactive agents (Claude Code, etc.).
+		//
+		// CRITICAL: The Go process may have an empty PATH (observed on some
+		// platforms where the parent shell doesn't export PATH to child
+		// processes). Search common bin directories for script(1).
+		scriptPath := findScriptBinary()
+		child = exec.Command(scriptPath, append([]string{"-qfec", args[0]}, args[1:]...)...)
+	} else {
+		child = exec.Command(args[0], args[1:]...)
+	}
+	child.Env = buildChildEnv(!commandNeedsPTY(args))
 
 	stdin, err := child.StdinPipe()
 	if err != nil {
@@ -138,10 +145,20 @@ func findScriptBinary() string {
 	return "script"
 }
 
+// commandNeedsPTY reports whether the wrapped command needs a pseudo-terminal.
+// Orchestrated gt-agent does not; script(1) only adds escape-sequence noise.
+func commandNeedsPTY(args []string) bool {
+	if len(args) == 0 {
+		return true
+	}
+	joined := strings.Join(args, " ")
+	return !strings.Contains(joined, "--orchestrated")
+}
+
 // buildChildEnv returns the environment for the child process. If the current
 // process has an empty PATH, it injects a sensible default so that common
 // binaries (bash, env, etc.) can be found by the child.
-func buildChildEnv() []string {
+func buildChildEnv(nonInteractive bool) []string {
 	env := os.Environ()
 	hasPath := false
 	for _, e := range env {
@@ -157,6 +174,10 @@ func buildChildEnv() []string {
 	// Inject session ID so that gt prime (and others) can find the current session
 	// without relying on tmux-specific environment detection.
 	env = append(env, "GT_SESSION_ID="+natsWrapperSessionID)
+
+	if nonInteractive {
+		env = append(env, "TERM=dumb", "COLORTERM=")
+	}
 
 	return env
 }

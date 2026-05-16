@@ -38,6 +38,17 @@ states:
       2. Create implementation beads and `plan.md`.
     transitions:
       success:
+        to: plan_review
+      failure:
+        to: planning
+  plan_review:
+    role: qa
+    prompt_file: prompts/rig-flow/plan_review.md
+    instructions: |
+      1. Verify open implementation beads match architecture.md and workflow required_files.
+      2. Reject duplicate or path-less beads; send planner back to fix.
+    transitions:
+      success:
         to: implementation
       failure:
         to: planning

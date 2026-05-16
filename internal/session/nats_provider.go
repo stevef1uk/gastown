@@ -113,11 +113,13 @@ func (p *NatsProvider) startInternal(ctx context.Context, sessionID, workDir, co
 		}
 	}
 
-	// Create a log file for the session
+	// Append session output (do not truncate on restart — operators tail this file).
 	logDir := filepath.Join(p.townRoot, "logs", "sessions")
 	_ = os.MkdirAll(logDir, 0755)
-	logFile, err := os.Create(filepath.Join(logDir, sessionID+".log"))
+	logPath := filepath.Join(logDir, sessionID+".log")
+	logFile, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err == nil {
+		_, _ = fmt.Fprintf(logFile, "\n=== session %s start @ %s ===\n", sessionID, time.Now().Format(time.RFC3339))
 		cmd.Stdout = logFile
 		cmd.Stderr = logFile
 	}

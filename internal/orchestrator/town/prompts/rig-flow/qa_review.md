@@ -59,8 +59,10 @@ You are **QA** for rig `{{rig}}` (`agent_id={{rig}}/qa`). Work from town root (`
 6. When verification is complete, send **JSON only** (no CMD lines in that message):
    - `all_passed` only if verification passed, required files exist ({{required_files}}), and **zero** open beads matching `{{bead_title_contains}}` in step 2.
    - `task_passed` if verification passed but open beads matching `{{bead_title_contains}}` remain (ignore patrol/`te-testgt2-*` beads).
-   - `failure` if tests fail, SPEC is not met, or code under `{{layout_root}}/` is stub/placeholder work.
+   - `failure` if tests fail, SPEC is not met, or code under `{{layout_root}}/` is stub/placeholder work. The **summary must name** failing tests, file paths, and closed implement bead IDs (e.g. `te-32k`) so the polecat can reopen and fix them.
 
-Example: `{"outcome":"all_passed","summary":"unittest passed; all Implement backend beads closed"}`
+Example failure: `{"outcome":"failure","summary":"unittest ImportError backend.fizzbuzz; stub main.py; reopen te-32k te-94h and fix backend/"}`
+
+Example pass: `{"outcome":"all_passed","summary":"unittest passed; all Implement backend beads closed"}`
 
 Do **not** emit JSON until you have run the commands above and seen their output.

@@ -646,21 +646,23 @@ func agentLogPaths(townRoot, sessionName, rig, role, workerName string) []string
 	if rig == "" {
 		return paths
 	}
+	// Prefer logs/sessions/*.log (NATS wrapper / orchestrated gt-agent) over
+	// typescript — script(1) transcripts often contain terminal escape noise.
 	switch role {
 	case "architect", "qa", "witness", "refinery":
-		paths = append([]string{filepath.Join(townRoot, rig, role, "typescript")}, paths...)
+		paths = append(paths, filepath.Join(townRoot, rig, role, "typescript"))
 	case "polecat":
 		if workerName != "" && workerName != sessionName && !strings.HasSuffix(sessionName, "-polecat") {
-			paths = append([]string{filepath.Join(townRoot, rig, "polecats", workerName, "typescript")}, paths...)
+			paths = append(paths, filepath.Join(townRoot, rig, "polecats", workerName, "typescript"))
 		} else {
-			paths = append([]string{filepath.Join(townRoot, rig, "polecat", "typescript")}, paths...)
+			paths = append(paths, filepath.Join(townRoot, rig, "polecat", "typescript"))
 		}
 	case "crew":
 		if workerName != "" && workerName != sessionName {
-			paths = append([]string{filepath.Join(townRoot, rig, "crew", workerName, "typescript")}, paths...)
+			paths = append(paths, filepath.Join(townRoot, rig, "crew", workerName, "typescript"))
 		}
 	case "planner":
-		paths = append([]string{filepath.Join(townRoot, "planner", "typescript")}, paths...)
+		paths = append(paths, filepath.Join(townRoot, "planner", "typescript"))
 	}
 	return paths
 }

@@ -74,14 +74,42 @@ func TestValidateOrchestratedArtifacts_design(t *testing.T) {
 		t.Fatal(err)
 	}
 	task := &orchestrator.Task{State: "design"}
-	if err := validateOrchestratedArtifacts(task, dir, "myrig", "success", true, false, false, false, false, false, false, false, false, false); err == nil {
+	if err := validateOrchestratedArtifacts(task, dir, "myrig", "success", true, false, false, false, false, false, false, false, false, false, false, false); err == nil {
 		t.Fatal("expected size validation error")
 	}
 	if err := os.WriteFile(path, make([]byte, 200), 0644); err != nil {
 		t.Fatal(err)
 	}
-	if err := validateOrchestratedArtifacts(task, dir, "myrig", "success", true, false, false, false, false, false, false, false, false, false); err != nil {
+	if err := validateOrchestratedArtifacts(task, dir, "myrig", "success", true, false, false, false, false, false, false, false, false, false, false, false); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestParseOrchestratedJSON_usesLastOutcome(t *testing.T) {
+	in := `Assessment
+{"outcome":"failure","summary":"duplicate beads"}
+After fixes
+{"outcome":"success","summary":"beads ok"}`
+	o, s, ok := parseOrchestratedJSON(in)
+	if !ok || o != "success" || s != "beads ok" {
+		t.Fatalf("got outcome=%q summary=%q ok=%v", o, s, ok)
+	}
+}
+
+func TestUpdateOrchestratedRetryAfterComplete_clearsOnStateChange(t *testing.T) {
+	state := AgentState{
+		OrchestratedRetry: &OrchestratedRetry{WorkflowID: "wf-1", State: "plan_review", Summary: "old"},
+	}
+	task := &orchestrator.Task{WorkflowID: "wf-1", State: "plan_review"}
+	updateOrchestratedRetryAfterComplete(&state, task, "failure", "dup beads", "", "planning")
+	if state.OrchestratedRetry != nil {
+		t.Fatalf("expected retry cleared on cross-step transition, got %+v", state.OrchestratedRetry)
+	}
+}
+
+func TestValidatePlanReviewCommand_rejectsDelete(t *testing.T) {
+	if err := validatePlanReviewCommand("bd delete te-ajz --force", "testgt2"); err == nil {
+		t.Fatal("expected reject")
 	}
 }
 
@@ -241,20 +269,20 @@ func TestValidatePlanningArtifacts(t *testing.T) {
 		t.Fatal(err)
 	}
 	v := orchestrator.DefaultWorkflowValidation()
-	if err := validatePlanningArtifacts(dir, "testgt2", false, false, v); err == nil {
+	if err := validatePlanningArtifacts(dir, "testgt2", false, false, false, v); err == nil {
 		t.Fatal("expected error without plan and beads")
 	}
 	if err := os.WriteFile(filepath.Join(rigDir, "plan.md"), make([]byte, 250), 0644); err != nil {
 		t.Fatal(err)
 	}
-	if err := validatePlanningArtifacts(dir, "testgt2", false, false, v); err == nil {
-		t.Fatal("expected error without successful bd create")
+	if err := validatePlanningArtifacts(dir, "testgt2", false, false, false, v); err == nil {
+		t.Fatal("expected error without bead create/repair")
 	}
-	if err := validatePlanningArtifacts(dir, "testgt2", true, true, v); err == nil {
+	if err := validatePlanningArtifacts(dir, "testgt2", true, true, false, v); err == nil {
 		t.Fatal("expected error when commands failed")
 	}
-	if err := validatePlanningArtifacts(dir, "testgt2", false, true, v); err != nil {
-		t.Fatalf("plan + beads should pass: %v", err)
+	if err := validatePlanningArtifacts(dir, "testgt2", false, true, false, v); err != nil {
+		t.Fatalf("plan + bd create should pass: %v", err)
 	}
 }
 
@@ -295,10 +323,10 @@ func TestOrchestratedArtifactAutoOutcome_planningRequiresBeads(t *testing.T) {
 		t.Fatal(err)
 	}
 	task := &orchestrator.Task{State: "planning", AllowedOutcomes: []string{"success", "failure"}}
-	if _, _, ok := orchestratedArtifactAutoOutcome(task, dir, "testgt2", false, false, false); ok {
+	if _, _, ok := orchestratedArtifactAutoOutcome(task, dir, "testgt2", false, false, false, false); ok {
 		t.Fatal("should not auto-complete without bd create success")
 	}
-	if _, _, ok := orchestratedArtifactAutoOutcome(task, dir, "testgt2", false, false, true); !ok {
+	if _, _, ok := orchestratedArtifactAutoOutcome(task, dir, "testgt2", false, false, true, false); !ok {
 		t.Fatal("should auto-complete with plan + bead create ok")
 	}
 }
@@ -317,7 +345,7 @@ func TestValidateDesignArtifacts_allowsStaleBackendPy(t *testing.T) {
 		t.Fatal(err)
 	}
 	task := &orchestrator.Task{State: "design"}
-	if err := validateOrchestratedArtifacts(task, dir, "myrig", "success", true, false, false, false, false, false, false, false, false, false); err != nil {
+	if err := validateOrchestratedArtifacts(task, dir, "myrig", "success", true, false, false, false, false, false, false, false, false, false, false, false); err != nil {
 		t.Fatalf("stale backend/*.py must not block design: %v", err)
 	}
 }
@@ -360,10 +388,10 @@ func TestOrchestratedArtifactAutoOutcome_design(t *testing.T) {
 		t.Fatal(err)
 	}
 	task := &orchestrator.Task{State: "design", AllowedOutcomes: []string{"success", "failure"}}
-	if _, _, ok := orchestratedArtifactAutoOutcome(task, dir, "myrig", false, false, false); ok {
+	if _, _, ok := orchestratedArtifactAutoOutcome(task, dir, "myrig", false, false, false, false); ok {
 		t.Fatal("stale architecture.md must not auto-complete design without write this run")
 	}
-	o, _, ok := orchestratedArtifactAutoOutcome(task, dir, "myrig", true, false, false)
+	o, _, ok := orchestratedArtifactAutoOutcome(task, dir, "myrig", true, false, false, false)
 	if !ok || o != "success" {
 		t.Fatalf("want auto success after write this run, got ok=%v outcome=%q", ok, o)
 	}

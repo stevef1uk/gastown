@@ -134,7 +134,7 @@ func TestSkipsCompletedInstances(t *testing.T) {
 		},
 	})
 	id, _ := m.StartWorkflow("x", nil)
-	m.CompleteTask(id, "success", "mayor")
+	m.CompleteTask(id, "success", "mayor", "", "")
 	_, err := m.FetchTask("mayor")
 	if err == nil {
 		t.Fatal("expected no task for completed workflow")
@@ -164,7 +164,7 @@ func TestSkipsFailedInstances(t *testing.T) {
 func TestCompleteTask_validTransitionAndTerminal(t *testing.T) {
 	m, id := loadTestManager(t, designFlowTemplate())
 
-	next, err := m.CompleteTask(id, "success", "testgt2/architect")
+	next, err := m.CompleteTask(id, "success", "testgt2/architect", "", "")
 	if err != nil || next != "planning" {
 		t.Fatalf("CompleteTask success: next=%q err=%v", next, err)
 	}
@@ -172,7 +172,7 @@ func TestCompleteTask_validTransitionAndTerminal(t *testing.T) {
 		t.Fatalf("state: %q", m.instances[id].CurrentState)
 	}
 
-	next, err = m.CompleteTask(id, "success", "planner")
+	next, err = m.CompleteTask(id, "success", "planner", "", "")
 	if err != nil || next != "completed" {
 		t.Fatalf("CompleteTask to terminal: next=%q err=%v", next, err)
 	}
@@ -188,7 +188,7 @@ func TestCompleteTask_validTransitionAndTerminal(t *testing.T) {
 func TestCompleteTask_failAlias(t *testing.T) {
 	m, id := loadTestManager(t, designFlowTemplate())
 
-	next, err := m.CompleteTask(id, "fail", "testgt2/architect")
+	next, err := m.CompleteTask(id, "fail", "testgt2/architect", "", "")
 	if err != nil || next != "design" {
 		t.Fatalf("fail alias: next=%q err=%v", next, err)
 	}
@@ -197,7 +197,7 @@ func TestCompleteTask_failAlias(t *testing.T) {
 func TestCompleteTask_rejectsWrongAgent(t *testing.T) {
 	m, id := loadTestManager(t, designFlowTemplate())
 
-	_, err := m.CompleteTask(id, "success", "mayor")
+	_, err := m.CompleteTask(id, "success", "mayor", "", "")
 	if err == nil || !strings.Contains(err.Error(), "cannot complete") {
 		t.Fatalf("mayor must not complete design (architect role): %v", err)
 	}
@@ -206,7 +206,7 @@ func TestCompleteTask_rejectsWrongAgent(t *testing.T) {
 func TestCompleteTask_invalidOutcome(t *testing.T) {
 	m, id := loadTestManager(t, designFlowTemplate())
 
-	_, err := m.CompleteTask(id, "bogus", "testgt2/architect")
+	_, err := m.CompleteTask(id, "bogus", "testgt2/architect", "", "")
 	if err == nil {
 		t.Fatal("expected error for invalid outcome")
 	}
@@ -239,7 +239,7 @@ func TestGetWorkflowStatus(t *testing.T) {
 
 func TestResetWorkflow_rewindsToDesign(t *testing.T) {
 	m, id := loadTestManager(t, designFlowTemplate())
-	_, _ = m.CompleteTask(id, "success", "testgt2/architect")
+	_, _ = m.CompleteTask(id, "success", "testgt2/architect", "", "")
 	if m.instances[id].CurrentState != "planning" {
 		t.Fatalf("want planning, got %s", m.instances[id].CurrentState)
 	}
@@ -273,8 +273,8 @@ func TestHasActiveWorkflow(t *testing.T) {
 		t.Fatal("should not match other template")
 	}
 
-	_, _ = m.CompleteTask(id, "success", "testgt2/architect")
-	_, _ = m.CompleteTask(id, "success", "planner")
+	_, _ = m.CompleteTask(id, "success", "testgt2/architect", "", "")
+	_, _ = m.CompleteTask(id, "success", "planner", "", "")
 	if m.HasActiveWorkflow("rig-flow", "testgt2") {
 		t.Fatal("completed workflow should not be active")
 	}
@@ -359,7 +359,7 @@ func TestFetchTask_prefersActiveOverCompleted(t *testing.T) {
 	}
 	m.LoadTemplate(tpl)
 	doneID, _ := m.StartWorkflow("x", nil)
-	m.CompleteTask(doneID, "success", "mayor")
+	m.CompleteTask(doneID, "success", "mayor", "", "")
 	activeID, _ := m.StartWorkflow("x", nil)
 	task, err := m.FetchTask("mayor")
 	if err != nil {
@@ -367,5 +367,96 @@ func TestFetchTask_prefersActiveOverCompleted(t *testing.T) {
 	}
 	if task["workflow_id"] != activeID {
 		t.Fatalf("want active %s, got %v", activeID, task["workflow_id"])
+	}
+}
+
+func TestCompleteTask_crossStateFailureStoresPendingRework(t *testing.T) {
+	dir := t.TempDir()
+	m := NewManager(dir)
+	m.LoadTemplate(&WorkflowTemplate{
+		ID:           "rig-flow",
+		InitialState: "plan_review",
+		States: map[string]State{
+			"plan_review": {
+				Role: "qa",
+				Transitions: map[string]Transition{
+					"failure": {To: "planning"},
+				},
+			},
+			"planning": {
+				Role:         "planner",
+				Instructions: "fix plan",
+				Transitions: map[string]Transition{
+					"success": {To: "completed"},
+				},
+			},
+			"completed": {Role: "planner"},
+		},
+	})
+	id, _ := m.StartWorkflow("rig-flow", map[string]string{"rig": "testgt1"})
+	m.instances[id].CurrentState = "plan_review"
+
+	next, err := m.CompleteTask(id, "failure", "testgt1/qa", "duplicate main.js beads", "bd list showed 3 open beads")
+	if err != nil || next != "planning" {
+		t.Fatalf("CompleteTask: next=%q err=%v", next, err)
+	}
+	inst := m.instances[id]
+	if inst.PendingRework == nil || inst.PendingRework.FromState != "plan_review" {
+		t.Fatalf("PendingRework: %+v", inst.PendingRework)
+	}
+	if inst.PendingRework.Summary != "duplicate main.js beads" {
+		t.Fatalf("summary: %q", inst.PendingRework.Summary)
+	}
+	if !strings.Contains(inst.PendingRework.Feedback, "QA summary:") {
+		t.Fatalf("feedback should be sanitized summary, got %q", inst.PendingRework.Feedback)
+	}
+
+	tpl := m.templates["rig-flow"]
+	state, _ := inst.GetCurrentTask(tpl)
+	payload, err := m.BuildTaskPayload(inst, tpl, state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rework, ok := payload["pending_rework"].(*WorkflowRework)
+	if !ok || rework == nil {
+		t.Fatalf("pending_rework: %#v", payload["pending_rework"])
+	}
+	if rework.FromState != "plan_review" {
+		t.Fatalf("rework from_state: %q", rework.FromState)
+	}
+
+	_, _ = m.CompleteTask(id, "success", "planner", "", "")
+	if inst.PendingRework != nil {
+		t.Fatal("success should clear pending rework")
+	}
+}
+
+func TestCompleteTask_sameStateFailureKeepsPendingRework(t *testing.T) {
+	dir := t.TempDir()
+	m := NewManager(dir)
+	m.LoadTemplate(&WorkflowTemplate{
+		ID:           "rig-flow",
+		InitialState: "implementation",
+		States: map[string]State{
+			"implementation": {
+				Role: "polecat",
+				Transitions: map[string]Transition{
+					"success": {To: "qa_review"},
+					"failure": {To: "implementation"},
+				},
+			},
+			"qa_review": {Role: "qa", Transitions: map[string]Transition{"failure": {To: "implementation"}}},
+		},
+	})
+	id, _ := m.StartWorkflow("rig-flow", map[string]string{"rig": "testgt2"})
+	m.instances[id].CurrentState = "qa_review"
+	_, _ = m.CompleteTask(id, "failure", "testgt2/qa", "unittest failed", "ImportError fizzbuzz")
+	if m.instances[id].PendingRework == nil {
+		t.Fatal("expected pending rework after qa failure")
+	}
+	m.instances[id].CurrentState = "implementation"
+	_, _ = m.CompleteTask(id, "failure", "testgt2/polecat", "", "no outcome after 5 turns")
+	if m.instances[id].PendingRework == nil || m.instances[id].PendingRework.Summary != "unittest failed" {
+		t.Fatalf("same-state polecat fail should keep QA rework: %+v", m.instances[id].PendingRework)
 	}
 }

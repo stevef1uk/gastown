@@ -2071,16 +2071,28 @@ func (d *Daemon) ensurePlannerRunning() {
 	_ = os.MkdirAll(plannerDir, 0755)
 
 	if running, _ := d.sp.Exists(d.ctx, sessionID); running {
-		return
+		wantOrch := d.orchestratedForRole(constants.RolePlanner)
+		hasOrch := session.GTAgentHasFlagInSession(d.config.TownRoot, sessionID, "--orchestrated")
+		if wantOrch && !hasOrch {
+			d.logger.Printf("Planner session %s is in patrol mode but orchestrator is running — restarting with --orchestrated", sessionID)
+			_ = d.sp.Stop(d.ctx, sessionID, false)
+		} else {
+			return
+		}
 	}
 
+	orch := d.orchestratedForRole(constants.RolePlanner)
+	beaconTopic := "patrol"
+	if orch {
+		beaconTopic = "orchestrated"
+	}
 	_, err := session.StartSession(d.ctx, d.sp, &session.SessionConfig{
 		SessionID:    sessionID,
 		WorkDir:      plannerDir,
 		Role:         constants.RolePlanner,
 		TownRoot:     d.config.TownRoot,
-		Orchestrated: d.orchestratedForRole(constants.RolePlanner),
-		Beacon:       session.BeaconConfig{Recipient: "planner", Sender: "daemon", Topic: "patrol"},
+		Orchestrated: orch,
+		Beacon:       session.BeaconConfig{Recipient: "planner", Sender: "daemon", Topic: beaconTopic},
 		WaitForAgent: false,
 		AutoRespawn:  true,
 	})
