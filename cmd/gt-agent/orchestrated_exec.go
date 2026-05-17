@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -161,7 +162,7 @@ func commandHasMayorRigCD(cmd, rig string) bool {
 	return false
 }
 
-// rewriteBdListImplementScope appends grep for profile bead_title_contains on bd list output.
+// rewriteBdListImplementScope scopes bd list to implement beads and includes in_progress work.
 func rewriteBdListImplementScope(cmd, titleContains string) (string, bool) {
 	titleContains = strings.TrimSpace(titleContains)
 	if titleContains == "" {
@@ -171,11 +172,51 @@ func rewriteBdListImplementScope(cmd, titleContains string) (string, bool) {
 	if !strings.Contains(lower, "bd list") || strings.Contains(lower, "grep") {
 		return cmd, false
 	}
-	if !strings.Contains(lower, "--status=open") && !strings.Contains(lower, "--status=closed") {
+	if !strings.Contains(lower, "--status=open") && !strings.Contains(lower, "--status=in_progress") &&
+		!strings.Contains(lower, "--status=closed") {
 		return cmd, false
 	}
+	out := strings.TrimSpace(cmd)
+	if strings.Contains(lower, "--status=open") && !strings.Contains(lower, "--status=in_progress") {
+		out = strings.Replace(out, "--status=open", "--status=open,in_progress", 1)
+		out = strings.Replace(out, "--status open", "--status open,in_progress", 1)
+	}
 	q := "'" + strings.ReplaceAll(titleContains, "'", `'"'"'`) + "'"
-	return strings.TrimSpace(cmd) + " | grep -Fi " + q, true
+	return out + " | grep -Fi " + q + " || true", true
+}
+
+// isScopedImplementBdListGrep reports bd list output filtered to implement bead titles.
+func isScopedImplementBdListGrep(cmd string) bool {
+	lower := strings.ToLower(cmd)
+	return strings.Contains(lower, "bd list") && strings.Contains(lower, "grep -fi")
+}
+
+// isScopedImplementBdListEmpty is true when scoped grep found no matching beads (exit 1).
+func isScopedImplementBdListEmpty(cmd string, cmdErr error) bool {
+	if cmdErr == nil || !isScopedImplementBdListGrep(cmd) {
+		return false
+	}
+	var exitErr *exec.ExitError
+	if !errors.As(cmdErr, &exitErr) || exitErr.ExitCode() != 1 {
+		return false
+	}
+	return true
+}
+
+// orchestratedWritesGoUnderLayout reports heredoc/redirect commands that write .go under layout_root.
+func orchestratedWritesGoUnderLayout(cmd string, v orchestrator.WorkflowValidation) bool {
+	layout := strings.Trim(strings.TrimSpace(v.LayoutRoot), "/")
+	if layout == "" {
+		return false
+	}
+	lower := strings.ToLower(cmd)
+	if !strings.Contains(lower, ".go") {
+		return false
+	}
+	if !strings.Contains(lower, "<<") && !strings.Contains(lower, "cat >") && !strings.Contains(lower, "cat>>") {
+		return false
+	}
+	return strings.Contains(lower, layout)
 }
 
 // rewriteBdListLimit ensures bd list counts are not capped at 50 (beads default).

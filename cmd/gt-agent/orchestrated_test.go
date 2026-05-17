@@ -75,13 +75,13 @@ func TestValidateOrchestratedArtifacts_design(t *testing.T) {
 		t.Fatal(err)
 	}
 	task := &orchestrator.Task{State: "design"}
-	if err := validateOrchestratedArtifacts(task, dir, "myrig", "success", true, false, false, false, false, false, false, false, false, false, false, false); err == nil {
+	if err := validateOrchestratedArtifacts(task, dir, "myrig", "success", true, false, false, false, false, false, false, false, false, false, false, false, false); err == nil {
 		t.Fatal("expected size validation error")
 	}
 	if err := os.WriteFile(path, make([]byte, 200), 0644); err != nil {
 		t.Fatal(err)
 	}
-	if err := validateOrchestratedArtifacts(task, dir, "myrig", "success", true, false, false, false, false, false, false, false, false, false, false, false); err != nil {
+	if err := validateOrchestratedArtifacts(task, dir, "myrig", "success", true, false, false, false, false, false, false, false, false, false, false, false, false); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -346,7 +346,7 @@ func TestValidateDesignArtifacts_allowsStaleBackendPy(t *testing.T) {
 		t.Fatal(err)
 	}
 	task := &orchestrator.Task{State: "design"}
-	if err := validateOrchestratedArtifacts(task, dir, "myrig", "success", true, false, false, false, false, false, false, false, false, false, false, false); err != nil {
+	if err := validateOrchestratedArtifacts(task, dir, "myrig", "success", true, false, false, false, false, false, false, false, false, false, false, false, false); err != nil {
 		t.Fatalf("stale backend/*.py must not block design: %v", err)
 	}
 }
@@ -367,15 +367,33 @@ func writeImplementationBackendFiles(t *testing.T, townRoot, rig string) {
 func TestValidateImplementationArtifacts(t *testing.T) {
 	dir := t.TempDir()
 	v := orchestrator.DefaultWorkflowValidation()
-	if err := validateImplementationArtifacts(dir, "mockrig", false, false, v); err == nil {
+	if err := validateImplementationArtifacts(dir, "mockrig", false, false, false, v); err == nil {
 		t.Fatal("expected error without bd close")
 	}
-	if err := validateImplementationArtifacts(dir, "mockrig", true, true, v); err == nil {
+	if err := validateImplementationArtifacts(dir, "mockrig", true, true, false, v); err == nil {
 		t.Fatal("expected error when commands failed")
 	}
 	writeImplementationBackendFiles(t, dir, "mockrig")
-	if err := validateImplementationArtifacts(dir, "mockrig", false, true, v); err != nil {
+	if err := validateImplementationArtifacts(dir, "mockrig", false, true, false, v); err != nil {
 		t.Fatalf("bd close ok with backend files should pass: %v", err)
+	}
+	vGo := v
+	vGo.QAVerifyCommand = "cd linkshelf && go test ./..."
+	if err := validateImplementationArtifacts(dir, "mockrig", false, true, false, vGo); err == nil {
+		t.Fatal("expected error without verify when qa_verify_command set")
+	}
+	if err := validateImplementationArtifacts(dir, "mockrig", false, true, true, vGo); err != nil {
+		t.Fatalf("bd close + verify should pass: %v", err)
+	}
+}
+
+func TestValidateImplementationCommand_oneInProgressBead(t *testing.T) {
+	cmd := `bd update tg-abc --status=in_progress`
+	if err := validateImplementationCommandWithState(cmd, "mockrig", "tg-xyz"); err == nil {
+		t.Fatal("expected reject second in_progress bead")
+	}
+	if err := validateImplementationCommandWithState(cmd, "mockrig", "tg-abc"); err != nil {
+		t.Fatalf("same bead should be allowed: %v", err)
 	}
 }
 

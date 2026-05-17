@@ -176,6 +176,8 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 	var planningBeadDeleteOK bool
 	var implementationHadCmdFailure bool
 	var implementationBeadCloseOK bool
+	var implementationVerifyOK bool
+	var implementationActiveBead string
 	var qaHadCmdFailure bool
 	var qaBdListClosedOK bool
 	var qaUnittestOK bool
@@ -215,7 +217,7 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 					}
 				}
 				if task.State == "implementation" {
-					if err := validateImplementationCommand(cmd, rig); err != nil {
+					if err := validateImplementationCommandWithState(cmd, rig, implementationActiveBead); err != nil {
 						orchestratedFprintfStderr( "[gt-agent] rejected command: %v\n", err)
 						combined.WriteString(fmt.Sprintf("Command REJECTED (polecat scope): %s\nReason: %v\n\n", cmd, err))
 						continue
@@ -299,6 +301,10 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 				}
 				workDir := orchestratedCommandWorkDir(townRoot, rig, task.State)
 				out, cmdErr := runOrchestratedCommand(cmd, workDir, sessionName, cmdEnv)
+				if task.State == "implementation" && isScopedImplementBdListEmpty(cmd, cmdErr) {
+					cmdErr = nil
+					out = append(out, []byte("(no matching open/in_progress implement beads)\n")...)
+				}
 				if cmdErr == nil && writesRequirementsFile(cmd) {
 					maybeRepairWorkflowRequirements(townRoot, rig, taskValidation(task))
 				}
@@ -320,17 +326,39 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 					}
 				}
 				if task.State == "implementation" {
+					vImpl := taskValidation(task)
 					if cmdErr != nil {
 						implementationHadCmdFailure = true
 					}
 					if isBeadCloseCommand(cmd) && cmdErr == nil {
 						implementationBeadCloseOK = true
+						if id := extractBeadIDFromBdClose(cmd); id != "" && id == implementationActiveBead {
+							implementationActiveBead = ""
+						}
 					}
-					if cmdErr == nil && isQATestCommandOK(cmd, taskValidation(task)) {
+					if isBeadUpdateInProgressCommand(cmd) && cmdErr == nil {
+						if id := extractBeadIDFromBdUpdate(cmd); id != "" {
+							implementationActiveBead = id
+						}
+					}
+					if cmdErr == nil && isQATestCommandOK(cmd, vImpl) {
+						implementationVerifyOK = true
 						implementationHadCmdFailure = false
 					}
 					if cmdErr == nil && isGitCommitBackendCommand(cmd) {
 						implementationHadCmdFailure = false
+					}
+					if cmdErr == nil && orchestratedWritesGoUnderLayout(cmd, vImpl) && strings.TrimSpace(vImpl.QAVerifyCommand) != "" {
+						verifyOut, verifyErr := runOrchestratedCommand(vImpl.QAVerifyCommand, workDir, sessionName, cmdEnv)
+						if verifyErr != nil {
+							implementationHadCmdFailure = true
+							orchestratedFprintfStderr("[gt-agent] post-write verify failed: %v\n%s\n", verifyErr, string(verifyOut))
+							combined.WriteString(fmt.Sprintf("Auto-verify after .go write: %s\nError: %v\nOutput: %s\n\n", vImpl.QAVerifyCommand, verifyErr, string(verifyOut)))
+						} else {
+							implementationVerifyOK = true
+							orchestratedPrintf("[gt-agent] post-write verify ok:\n%s\n", string(verifyOut))
+							combined.WriteString(string(verifyOut))
+						}
 					}
 				}
 				if task.State == "plan_review" {
@@ -383,7 +411,7 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 				if vErr := validateOutcomeSummaryBeadIDs(townRoot, rig, task.State, o, s); vErr != nil {
 					orchestratedPrintf("[gt-agent] summary validation failed: %v\n", vErr)
 					recordAttemptFeedback("Validation failed: " + vErr.Error() + "\n")
-				} else if vErr := validateOrchestratedArtifacts(task, townRoot, rig, o, designArchWrittenThisRun, planningHadCmdFailure, planningBeadCreateOK, planningBeadDeleteOK, planReviewHadCmdFailure, planReviewListOpenOK, planReviewDidDelete, implementationHadCmdFailure, implementationBeadCloseOK, qaHadCmdFailure, qaBdListClosedOK, qaUnittestOK); vErr != nil {
+				} else if vErr := validateOrchestratedArtifacts(task, townRoot, rig, o, designArchWrittenThisRun, planningHadCmdFailure, planningBeadCreateOK, planningBeadDeleteOK, planReviewHadCmdFailure, planReviewListOpenOK, planReviewDidDelete, implementationHadCmdFailure, implementationBeadCloseOK, implementationVerifyOK, qaHadCmdFailure, qaBdListClosedOK, qaUnittestOK); vErr != nil {
 					orchestratedPrintf("[gt-agent] artifact validation failed: %v\n", vErr)
 					recordAttemptFeedback("Validation failed: " + vErr.Error() + "\n")
 				} else {
@@ -406,7 +434,7 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 				messages = append(messages, llm.Message{Role: "user", Content: msg})
 				continue
 			}
-			if vErr := validateOrchestratedArtifacts(task, townRoot, rig, o, designArchWrittenThisRun, planningHadCmdFailure, planningBeadCreateOK, planningBeadDeleteOK, planReviewHadCmdFailure, planReviewListOpenOK, planReviewDidDelete, implementationHadCmdFailure, implementationBeadCloseOK, qaHadCmdFailure, qaBdListClosedOK, qaUnittestOK); vErr != nil {
+			if vErr := validateOrchestratedArtifacts(task, townRoot, rig, o, designArchWrittenThisRun, planningHadCmdFailure, planningBeadCreateOK, planningBeadDeleteOK, planReviewHadCmdFailure, planReviewListOpenOK, planReviewDidDelete, implementationHadCmdFailure, implementationBeadCloseOK, implementationVerifyOK, qaHadCmdFailure, qaBdListClosedOK, qaUnittestOK); vErr != nil {
 				orchestratedPrintf("[gt-agent] artifact validation failed: %v\n", vErr)
 				hint := "Use CMD: with a heredoc to write files, then send JSON outcome."
 				if task.State == "design" {
@@ -1061,6 +1089,52 @@ func isBeadCloseCommand(cmd string) bool {
 		(strings.Contains(lower, "bd") && strings.Contains(lower, " close"))
 }
 
+func isBeadUpdateInProgressCommand(cmd string) bool {
+	lower := strings.ToLower(cmd)
+	return strings.Contains(lower, "bd update") && strings.Contains(lower, "in_progress")
+}
+
+func extractBeadIDFromBdUpdate(cmd string) string {
+	lower := strings.ToLower(cmd)
+	idx := strings.Index(lower, "bd update")
+	if idx < 0 {
+		return ""
+	}
+	rest := strings.TrimSpace(cmd[idx+len("bd update"):])
+	if rest == "" {
+		return ""
+	}
+	id := strings.Fields(rest)[0]
+	return strings.Trim(id, `"'`)
+}
+
+func extractBeadIDFromBdClose(cmd string) string {
+	lower := strings.ToLower(cmd)
+	idx := strings.Index(lower, "bd close")
+	if idx < 0 {
+		return ""
+	}
+	rest := strings.TrimSpace(cmd[idx+len("bd close"):])
+	if rest == "" {
+		return ""
+	}
+	id := strings.Fields(rest)[0]
+	return strings.Trim(id, `"'`)
+}
+
+func validateImplementationCommandWithState(cmd, rig, activeBead string) error {
+	if err := validateImplementationCommand(cmd, rig); err != nil {
+		return err
+	}
+	if activeBead == "" || !isBeadUpdateInProgressCommand(cmd) {
+		return nil
+	}
+	if id := extractBeadIDFromBdUpdate(cmd); id != "" && id != activeBead {
+		return fmt.Errorf("only one implement bead may be in_progress at a time (active: %s)", activeBead)
+	}
+	return nil
+}
+
 func validatePlanningShellSideEffects(lower string) error {
 	gitCmd := strings.Contains(lower, "git") &&
 		(strings.Contains(lower, " commit") || strings.Contains(lower, " push") || strings.Contains(lower, " add"))
@@ -1180,7 +1254,7 @@ func validateImplementationCommand(cmd, rig string) error {
 }
 
 // validateOrchestratedArtifacts rejects false-success when required files are missing or empty.
-func validateOrchestratedArtifacts(task *orchestrator.Task, townRoot, rig, outcome string, designArchWrittenThisRun, planningHadCmdFailure, planningBeadCreateOK, planningBeadDeleteOK, planReviewHadCmdFailure, planReviewListOpenOK, planReviewDidDelete, implementationHadCmdFailure, implementationBeadCloseOK, qaHadCmdFailure, qaBdListClosedOK, qaUnittestOK bool) error {
+func validateOrchestratedArtifacts(task *orchestrator.Task, townRoot, rig, outcome string, designArchWrittenThisRun, planningHadCmdFailure, planningBeadCreateOK, planningBeadDeleteOK, planReviewHadCmdFailure, planReviewListOpenOK, planReviewDidDelete, implementationHadCmdFailure, implementationBeadCloseOK, implementationVerifyOK, qaHadCmdFailure, qaBdListClosedOK, qaUnittestOK bool) error {
 	if outcome != "success" && outcome != "task_passed" && outcome != "all_passed" {
 		return nil
 	}
@@ -1193,7 +1267,7 @@ func validateOrchestratedArtifacts(task *orchestrator.Task, townRoot, rig, outco
 	case "plan_review":
 		return validatePlanReviewArtifacts(townRoot, rig, planReviewHadCmdFailure, planReviewListOpenOK, planReviewDidDelete, v)
 	case "implementation":
-		return validateImplementationArtifacts(townRoot, rig, implementationHadCmdFailure, implementationBeadCloseOK, v)
+		return validateImplementationArtifacts(townRoot, rig, implementationHadCmdFailure, implementationBeadCloseOK, implementationVerifyOK, v)
 	case "qa_review":
 		return validateQAArtifacts(townRoot, rig, outcome, qaHadCmdFailure, qaBdListClosedOK, qaUnittestOK, v)
 	}
@@ -1365,12 +1439,15 @@ func validatePlanningBeadSet(townRoot, rig string, v orchestrator.WorkflowValida
 	return nil
 }
 
-func validateImplementationArtifacts(townRoot, rig string, hadCmdFailure, beadCloseOK bool, v orchestrator.WorkflowValidation) error {
+func validateImplementationArtifacts(townRoot, rig string, hadCmdFailure, beadCloseOK, verifyOK bool, v orchestrator.WorkflowValidation) error {
 	if hadCmdFailure {
 		return fmt.Errorf("implementation step had failed commands; fix errors before completing")
 	}
 	if !beadCloseOK {
 		return fmt.Errorf("at least one successful `bd close` in %s is required before success", rigMayorRigPath(rig))
+	}
+	if strings.TrimSpace(v.QAVerifyCommand) != "" && !verifyOK {
+		return fmt.Errorf("profile verification must pass in this session before success (%s)", strings.TrimSpace(v.QAVerifyCommand))
 	}
 	if err := validateRequiredWorkFiles(townRoot, rig, v); err != nil {
 		return err
@@ -1738,7 +1815,7 @@ func orchestratedArtifactAutoOutcome(task *orchestrator.Task, townRoot, rig stri
 	case "design":
 		vErr = validateDesignArtifacts(townRoot, rig, designArchWrittenThisRun, taskValidation(task))
 	case "planning":
-		vErr = validateOrchestratedArtifacts(task, townRoot, rig, "success", designArchWrittenThisRun, planningHadCmdFailure, planningBeadCreateOK, planningBeadDeleteOK, false, false, false, false, false, false, false, false)
+		vErr = validateOrchestratedArtifacts(task, townRoot, rig, "success", designArchWrittenThisRun, planningHadCmdFailure, planningBeadCreateOK, planningBeadDeleteOK, false, false, false, false, false, false, false, false, false)
 	default:
 		return "", "", false
 	}

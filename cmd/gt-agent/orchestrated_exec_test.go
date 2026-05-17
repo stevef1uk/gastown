@@ -89,6 +89,20 @@ func TestRewriteUnittestToWorkdir(t *testing.T) {
 	}
 }
 
+func TestRewriteBdListImplementScope(t *testing.T) {
+	cmd := "export BEADS_DIR=x && bd list --status=open --flat"
+	fixed, ok := rewriteBdListImplementScope(cmd, "Implement linkshelf/")
+	if !ok {
+		t.Fatal("expected rewrite")
+	}
+	if !strings.Contains(fixed, "--status=open,in_progress") {
+		t.Fatalf("want open,in_progress: %q", fixed)
+	}
+	if !strings.Contains(fixed, "grep -Fi") || !strings.Contains(fixed, "|| true") {
+		t.Fatalf("want scoped grep with || true: %q", fixed)
+	}
+}
+
 func TestRewriteBdListLimit(t *testing.T) {
 	cmd := "export BEADS_DIR=x && bd list --status=open | grep foo"
 	fixed, ok := rewriteBdListLimit(cmd)

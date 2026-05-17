@@ -45,24 +45,26 @@ If the prompt includes **"Prior step failed"** from `qa_review`, QA rejected you
    ```
    Required paths: {{required_files}}
 
-4. If the profile lists `{{requirements_file}}`, install deps into the project venv (`{{python_venv_dir}}/`, created by gt-agent), then verify:
+4. **Go projects** (when verification uses `go test`, not Python venv): use module path under `{{layout_root}}/` only; `modernc.org/sqlite` for SQLite; stdlib `net/http` only — no Echo, Gin, Chi, or `mattn/go-sqlite3`. Only **one** implement bead `in_progress` at a time. Run `{{unittest_command_hint}}` after each `.go` heredoc and before `bd close`.
+
+5. If the profile lists `{{requirements_file}}`, install deps into the project venv (`{{python_venv_dir}}/`, created by gt-agent), then verify:
    ```
    CMD: cd {{rig}}/mayor/rig && test -f "{{requirements_file}}" && python3 -m pip install -r "{{requirements_file}}"
    CMD: cd {{rig}}/mayor/rig && {{unittest_command_hint}}
    ```
    Do not use `bash -lc` wrappers. Do not commit `{{python_venv_dir}}/`.
 
-5. Commit:
+6. Commit:
    ```
    CMD: bash -lc 'cd {{rig}}/mayor/rig && git add -A {{layout_root}} 2>/dev/null; git -c user.name={{rig}}/polecat -c user.email=polecat@{{rig}}.local commit -m "Implement BEAD_ID" || true'
    ```
 
-6. Close the bead (must succeed):
+7. Close the bead (must succeed):
    ```
    CMD: export BEADS_DIR=$GT_ROOT/{{rig}}/.beads && cd {{rig}}/mayor/rig && bd close BEAD_ID
    ```
 
-7. When **`bd close` succeeded** and tests passed, JSON only:
+8. When **`bd close` succeeded** and tests passed, JSON only:
    `{"outcome":"success","summary":"bead BEAD_ID completed; tests passed"}`
 
 Do **not** report `success` without successful `bd close` and a green verification command in this session.
