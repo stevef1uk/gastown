@@ -119,3 +119,4 @@ daemon/daemon.log
 daemon/dolt.log
 /testgt1/*/typescript
 /planner/typescript
+gt-agent-state.json
