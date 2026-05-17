@@ -478,6 +478,21 @@ func TestTownSettings_MissingFile_ReturnsDefaults(t *testing.T) {
 	if ts.FeedCurator != nil {
 		t.Errorf("FeedCurator should be nil for defaults")
 	}
+	if ts.DefaultAgent != "claude" {
+		t.Errorf("DefaultAgent = %q, want claude", ts.DefaultAgent)
+	}
+}
+
+func TestNewTownSettings_MinimalDefaults(t *testing.T) {
+	t.Parallel()
+	ts := NewTownSettings()
+	if ts.DefaultAgent != "claude" {
+		t.Errorf("DefaultAgent = %q, want claude", ts.DefaultAgent)
+	}
+	if len(ts.Agents) != 0 || len(ts.RoleAgents) != 0 {
+		t.Errorf("NewTownSettings should start with empty agent maps, got agents=%d role_agents=%d",
+			len(ts.Agents), len(ts.RoleAgents))
+	}
 }
 
 // --- omitempty behavior: nil config fields must not appear in JSON ---

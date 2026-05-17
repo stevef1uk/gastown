@@ -437,6 +437,13 @@ func runInstall(cmd *cobra.Command, args []string) error {
 		fmt.Printf("   ✓ Created settings/escalation.json\n")
 	}
 
+	// Create default town agent settings (Freeride-backed gt-agent profiles).
+	if created, err := config.EnsureTownSettingsFile(absPath); err != nil {
+		fmt.Printf("   %s Could not create town settings: %v\n", style.Dim.Render("⚠"), err)
+	} else if created {
+		fmt.Printf("   ✓ Created settings/config.json\n")
+	}
+
 	// Provision town-level slash commands (.claude/commands/)
 	// All agents inherit these via Claude's directory traversal - no per-workspace copies needed.
 	if err := templates.ProvisionCommands(absPath); err != nil {

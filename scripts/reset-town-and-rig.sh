@@ -166,6 +166,12 @@ for role in ("planner", "mechanic", "mayor"):
     current = role_agents.get(role)
     if (current is None) or (not isinstance(current, str)) or (current not in valid) or (current == "gt-agent-powerful"):
         role_agents[role] = preferred_default
+
+if "gt-agent-nvidia" in valid:
+    current = role_agents.get("polecat")
+    if (current is None) or (not isinstance(current, str)) or (current not in valid):
+        role_agents["polecat"] = "gt-agent-nvidia"
+
 data["role_agents"] = role_agents
 
 path.write_text(json.dumps(data, indent=2) + "\n")

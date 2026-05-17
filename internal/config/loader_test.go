@@ -1804,7 +1804,7 @@ func TestResolveRoleAgentConfigFromRigSettings(t *testing.T) {
 
 func TestResolveRoleAgentConfigFallsBackToDefaults(t *testing.T) {
 	t.Parallel()
-	// Non-existent paths should use defaults
+	// Missing settings/config.json uses in-memory NewTownSettings (claude default).
 	rc := ResolveRoleAgentConfig("polecat", "/nonexistent/town", "/nonexistent/rig")
 	if !isClaudeCommand(rc.Command) {
 		t.Errorf("Command = %q, want claude or path ending in /claude (default)", rc.Command)

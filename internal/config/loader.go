@@ -1087,6 +1087,22 @@ func LoadOrCreateTownSettings(path string) (*TownSettings, error) {
 	return &settings, nil
 }
 
+// EnsureTownSettingsFile writes settings/config.json with NewTownSettings defaults
+// when the file does not exist yet (e.g. during gt install).
+// The bool is true when a new file was written.
+func EnsureTownSettingsFile(townRoot string) (bool, error) {
+	path := TownSettingsPath(townRoot)
+	if _, err := os.Stat(path); err == nil {
+		return false, nil
+	} else if !os.IsNotExist(err) {
+		return false, err
+	}
+	if err := SaveTownSettings(path, DefaultInstalledTownSettings()); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 // SaveTownSettings saves town settings to a file.
 func SaveTownSettings(path string, settings *TownSettings) error {
 	if settings.Type != "town-settings" && settings.Type != "" {

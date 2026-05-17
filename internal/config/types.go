@@ -147,7 +147,8 @@ type OrchestratorConfig struct {
 	PipelineOnly bool `json:"pipeline_only,omitempty"`
 }
 
-// NewTownSettings creates a new TownSettings with defaults.
+// NewTownSettings creates a new TownSettings with minimal defaults (claude, empty maps).
+// Use DefaultInstalledTownSettings for a fresh gt install / missing settings file.
 func NewTownSettings() *TownSettings {
 	return &TownSettings{
 		Type:         "town-settings",
@@ -155,6 +156,19 @@ func NewTownSettings() *TownSettings {
 		DefaultAgent: "claude",
 		Agents:       make(map[string]*RuntimeConfig),
 		RoleAgents:   make(map[string]string),
+	}
+}
+
+// DefaultInstalledTownSettings returns town settings written by gt install and used
+// when settings/config.json is missing (Freeride-backed gt-agent profiles).
+func DefaultInstalledTownSettings() *TownSettings {
+	return &TownSettings{
+		Type:             "town-settings",
+		Version:          CurrentTownSettingsVersion,
+		DefaultAgent:     "gt-agent-local",
+		Agents:           DefaultFreerideAgents(),
+		RoleAgents:       DefaultFreerideRoleAgents(),
+		SessionTransport: "nats",
 	}
 }
 
