@@ -12,6 +12,18 @@ import (
 	"github.com/steveyegge/gastown/internal/config"
 )
 
+// EnsureImplementBeadsAvailable reopens closed implement beads when none are open for polecat work.
+func EnsureImplementBeadsAvailable(townRoot, rig string, v WorkflowValidation) ([]string, error) {
+	open, err := listImplementBeadsByStatus(townRoot, rig, v, "open")
+	if err != nil {
+		return nil, err
+	}
+	if len(open) > 0 {
+		return nil, nil
+	}
+	return reopenClosedImplementBeads(townRoot, rig, v)
+}
+
 // ReopenImplementationBeadsAfterQAFailure reopens closed implement beads when QA sends
 // polecat back so work can continue without manual bd update.
 func ReopenImplementationBeadsAfterQAFailure(townRoot, rig string, v WorkflowValidation, summary string) ([]string, error) {
@@ -42,6 +54,10 @@ func ReopenImplementationBeadsAfterQAFailure(townRoot, rig string, v WorkflowVal
 		return nil, nil
 	}
 
+	return reopenClosedImplementBeads(townRoot, rig, v)
+}
+
+func reopenClosedImplementBeads(townRoot, rig string, v WorkflowValidation) ([]string, error) {
 	closed, err := listImplementBeadsByStatus(townRoot, rig, v, "closed")
 	if err != nil {
 		return nil, err
@@ -49,9 +65,8 @@ func ReopenImplementationBeadsAfterQAFailure(townRoot, rig string, v WorkflowVal
 	if len(closed) == 0 {
 		return nil, nil
 	}
-
 	beadsDir := config.ResolveBeadsDirForRig(townRoot, rig)
-	workDir := rigDir
+	workDir := filepath.Join(townRoot, rig, "mayor", "rig")
 	var reopened []string
 	for _, b := range closed {
 		if b.ID == "" {

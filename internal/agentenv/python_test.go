@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/steveyegge/gastown/internal/testrig"
 )
 
 func TestRewritePython3InCommand(t *testing.T) {
@@ -17,8 +19,8 @@ func TestRewritePython3InCommand(t *testing.T) {
 }
 
 func TestRewritePython3InCommand_preservesHeredoc(t *testing.T) {
-	py := "/home/stevef/gt/mockrig/mayor/rig/.venv/bin/python3"
-	in := "cd mockrig/mayor/rig && cat > backend/requirements.txt <<'EOF'\npython3 -m pytest\npytest>=7\nEOF"
+	py := "/tmp/example-venv/bin/python3"
+	in := "cd " + testrig.Worktree(testrig.Name) + " && cat > " + testrig.RequirementsFile + " <<'EOF'\npython3 -m pytest\npytest>=7\nEOF"
 	got := RewritePython3InCommand(in, py)
 	if strings.Contains(got, py) {
 		t.Fatalf("heredoc body must not be rewritten: %q", got)
@@ -47,12 +49,13 @@ func TestResolvePython3_prefersPyenvShim(t *testing.T) {
 
 func TestUnwrapBashLcSingleLine(t *testing.T) {
 	t.Parallel()
-	in := "bash -lc 'cd mockrig/mayor/rig && python3 -m pytest -q'"
+	wt := testrig.Worktree(testrig.Name)
+	in := "bash -lc 'cd " + wt + " && python3 -m pytest -q'"
 	got := UnwrapBashLcSingleLine(in)
 	if strings.HasPrefix(got, "bash -lc") {
 		t.Fatalf("got %q", got)
 	}
-	if !strings.Contains(got, "cd mockrig/mayor/rig") {
+	if !strings.Contains(got, "cd "+wt) {
 		t.Fatalf("got %q", got)
 	}
 }

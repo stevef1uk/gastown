@@ -83,12 +83,45 @@ func normalizeHeredocDelimiters(body string) string {
 	return strings.ReplaceAll(body, bashLcHeredocEOFMarker(), plain)
 }
 
+// isToolchainExecutionCommand reports shell commands that run pip/pytest/unittest (not file writes).
+func isToolchainExecutionCommand(cmd string) bool {
+	lower := strings.ToLower(cmd)
+	if strings.Contains(lower, "<<") {
+		return false
+	}
+	if strings.Contains(lower, "cat >") || strings.Contains(lower, "cat>>") {
+		return false
+	}
+	if strings.Contains(lower, "-m pip") || strings.Contains(lower, "pip install") || strings.Contains(lower, "pip3 install") {
+		return true
+	}
+	if strings.Contains(lower, "-m pytest") || strings.Contains(lower, "-m unittest") {
+		return true
+	}
+	if strings.Contains(lower, "unittest") {
+		return true
+	}
+	if strings.Contains(lower, "pytest") {
+		return strings.Contains(lower, "cd ") || strings.Contains(lower, " -q") ||
+			strings.Contains(lower, " -v") || strings.Contains(lower, " -k")
+	}
+	return false
+}
+
+// writesRequirementsFile reports commands that create/overwrite requirements.txt (heredoc or redirect).
+func writesRequirementsFile(cmd string) bool {
+	lower := strings.ToLower(cmd)
+	return strings.Contains(lower, "requirements.txt") &&
+		(strings.Contains(lower, "<<") || strings.Contains(lower, "cat >") || strings.Contains(lower, "cat>>"))
+}
+
 // rewriteUnittestToWorkdir prepends cd into mayor/rig when the model omits it (tests/deps need project cwd).
 func rewriteUnittestToWorkdir(cmd, rig string) (string, bool) {
-	lower := strings.ToLower(cmd)
-	if !strings.Contains(lower, "unittest") && !strings.Contains(lower, "pytest") && !strings.Contains(lower, "pip") {
+	if !isToolchainExecutionCommand(cmd) {
 		return cmd, false
 	}
+	lower := strings.ToLower(cmd)
+	_ = lower
 	changed := false
 	if fixed := orchestrator.NormalizePytestCommand(cmd); fixed != cmd {
 		cmd = fixed
@@ -107,6 +140,23 @@ func rewriteUnittestToWorkdir(cmd, rig string) (string, bool) {
 		return cmd, false
 	}
 	return "cd " + work + " && " + strings.TrimSpace(cmd), true
+}
+
+// rewriteBdListImplementScope appends grep for profile bead_title_contains on bd list output.
+func rewriteBdListImplementScope(cmd, titleContains string) (string, bool) {
+	titleContains = strings.TrimSpace(titleContains)
+	if titleContains == "" {
+		return cmd, false
+	}
+	lower := strings.ToLower(cmd)
+	if !strings.Contains(lower, "bd list") || strings.Contains(lower, "grep") {
+		return cmd, false
+	}
+	if !strings.Contains(lower, "--status=open") && !strings.Contains(lower, "--status=closed") {
+		return cmd, false
+	}
+	q := "'" + strings.ReplaceAll(titleContains, "'", `'"'"'`) + "'"
+	return strings.TrimSpace(cmd) + " | grep -Fi " + q, true
 }
 
 // rewriteBdListLimit ensures bd list counts are not capped at 50 (beads default).

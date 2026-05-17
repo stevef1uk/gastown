@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/steveyegge/gastown/internal/orchestrator"
+	"github.com/steveyegge/gastown/internal/testrig"
 )
 
 func TestUnwrapBashLcMultiline_unclosedWrapperQuote(t *testing.T) {
@@ -61,6 +62,13 @@ func TestRunOrchestratedCommand_heredocWritesFile(t *testing.T) {
 	}
 	if info.Size() < orchestrator.DefaultWorkflowValidation().MinPlanBytes {
 		t.Fatalf("plan.md size %d", info.Size())
+	}
+}
+
+func TestRewriteUnittestToWorkdir_skipsRequirementsHeredoc(t *testing.T) {
+	cmd := "cd " + testrig.Worktree(testrig.Name) + " && cat > " + testrig.RequirementsFile + " <<'EOF'\npython3 -m pytest\nwidget-lib\nEOF"
+	if fixed, ok := rewriteUnittestToWorkdir(cmd, testrig.Name); ok {
+		t.Fatalf("must not rewrite requirements heredoc: ok=%v cmd=%q", ok, fixed)
 	}
 }
 

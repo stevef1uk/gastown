@@ -4,6 +4,8 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/steveyegge/gastown/internal/testrig"
 )
 
 func TestSanitizeRequirementsText(t *testing.T) {
@@ -18,9 +20,10 @@ func TestSanitizeRequirementsText(t *testing.T) {
 }
 
 func TestRequirementsPathFromPipInstall(t *testing.T) {
-	cmd := `cd rig && python3 -m pip install -r "defender/backend/requirements.txt"`
-	if got := RequirementsPathFromPipInstall(cmd); got != "defender/backend/requirements.txt" {
-		t.Fatalf("got %q", got)
+	want := testrig.RequirementsFile
+	cmd := `cd rig && python3 -m pip install -r "` + want + `"`
+	if got := RequirementsPathFromPipInstall(cmd); got != want {
+		t.Fatalf("got %q want %q", got, want)
 	}
 }
 

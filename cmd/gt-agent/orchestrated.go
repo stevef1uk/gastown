@@ -138,6 +138,15 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 		contextBlocks = append(contextBlocks, block)
 		orchestratedPrintf("[gt-agent] injecting prior failure context for %s/%s\n", task.WorkflowID, task.State)
 	}
+	if task.State == "implementation" {
+		v := taskValidation(task)
+		maybeRepairWorkflowRequirements(townRoot, rig, v)
+		if reopened, err := orchestrator.EnsureImplementBeadsAvailable(townRoot, rig, v); err != nil {
+			orchestratedFprintfStderr("[gt-agent] reopen implement beads: %v\n", err)
+		} else if len(reopened) > 0 {
+			orchestratedPrintf("[gt-agent] auto-reopened implement beads: %s\n", strings.Join(reopened, ", "))
+		}
+	}
 	if len(contextBlocks) > 0 {
 		userPrompt = strings.Join(contextBlocks, "\n\n") + "\n\n" + userPrompt
 	}
@@ -246,8 +255,14 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 					}
 				}
 				if task.State == "implementation" || task.State == "qa_review" {
+					if title := taskValidation(task).BeadTitleContains; title != "" {
+						if fixed, ok := rewriteBdListImplementScope(cmd, title); ok {
+							orchestratedPrintf("[gt-agent] scoped bd list to implement beads: %s\n", fixed)
+							cmd = fixed
+						}
+					}
 					if fixed, ok := rewriteUnittestToWorkdir(cmd, rig); ok {
-						orchestratedPrintf("[gt-agent] rewrote unittest to run in mayor/rig: %s\n", fixed)
+						orchestratedPrintf("[gt-agent] rewrote toolchain cmd for mayor/rig: %s\n", fixed)
 						cmd = fixed
 					}
 				}
@@ -284,6 +299,9 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 				}
 				workDir := orchestratedCommandWorkDir(townRoot, rig, task.State)
 				out, cmdErr := runOrchestratedCommand(cmd, workDir, sessionName, cmdEnv)
+				if cmdErr == nil && writesRequirementsFile(cmd) {
+					maybeRepairWorkflowRequirements(townRoot, rig, taskValidation(task))
+				}
 				if task.State == "design" && cmdErr == nil && isArchitectureMDWriteCommand(cmd) {
 					designArchWrittenThisRun = true
 				}
