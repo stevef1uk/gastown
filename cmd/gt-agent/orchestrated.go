@@ -406,16 +406,23 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 			if turn == maxTurns {
 				feedback += " Use an allowed outcome."
 			}
-			// Same turn may include CMD lines and JSON; accept success when artifacts are ready.
+			// Same turn may include CMD + success JSON when artifacts already satisfy validation.
+			// Never accept failure/fail on a CMD turn — the model must see command output first.
 			if o, s, ok := parseOrchestratedResult(response, task.AllowedOutcomes); ok {
-				if vErr := validateOutcomeSummaryBeadIDs(townRoot, rig, task.State, o, s); vErr != nil {
-					orchestratedPrintf("[gt-agent] summary validation failed: %v\n", vErr)
-					recordAttemptFeedback("Validation failed: " + vErr.Error() + "\n")
-				} else if vErr := validateOrchestratedArtifacts(task, townRoot, rig, o, designArchWrittenThisRun, planningHadCmdFailure, planningBeadCreateOK, planningBeadDeleteOK, planReviewHadCmdFailure, planReviewListOpenOK, planReviewDidDelete, implementationHadCmdFailure, implementationBeadCloseOK, implementationVerifyOK, qaHadCmdFailure, qaBdListClosedOK, qaUnittestOK); vErr != nil {
-					orchestratedPrintf("[gt-agent] artifact validation failed: %v\n", vErr)
-					recordAttemptFeedback("Validation failed: " + vErr.Error() + "\n")
-				} else {
-					return o, s, lastAttemptFeedback.String(), nil
+				o = normalizeOrchestratedOutcome(o, task.AllowedOutcomes)
+				if o == "failure" || o == "fail" {
+					orchestratedPrintf("[gt-agent] ignoring failure JSON in same turn as CMD lines; review output then send JSON only\n")
+					recordAttemptFeedback("Failure JSON ignored because CMD lines ran this turn. Review command output, then reply with JSON only.\n")
+				} else if o != "" {
+					if vErr := validateOutcomeSummaryBeadIDs(townRoot, rig, task.State, o, s); vErr != nil {
+						orchestratedPrintf("[gt-agent] summary validation failed: %v\n", vErr)
+						recordAttemptFeedback("Validation failed: " + vErr.Error() + "\n")
+					} else if vErr := validateOrchestratedArtifacts(task, townRoot, rig, o, designArchWrittenThisRun, planningHadCmdFailure, planningBeadCreateOK, planningBeadDeleteOK, planReviewHadCmdFailure, planReviewListOpenOK, planReviewDidDelete, implementationHadCmdFailure, implementationBeadCloseOK, implementationVerifyOK, qaHadCmdFailure, qaBdListClosedOK, qaUnittestOK); vErr != nil {
+						orchestratedPrintf("[gt-agent] artifact validation failed: %v\n", vErr)
+						recordAttemptFeedback("Validation failed: " + vErr.Error() + "\n")
+					} else {
+						return o, s, lastAttemptFeedback.String(), nil
+					}
 				}
 			}
 			if o, s, ok := orchestratedArtifactAutoOutcome(task, townRoot, rig, designArchWrittenThisRun, planningHadCmdFailure, planningBeadCreateOK, planningBeadDeleteOK); ok {
