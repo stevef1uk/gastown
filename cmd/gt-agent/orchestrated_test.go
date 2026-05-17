@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -407,13 +408,37 @@ func TestOrchestratedCommandEnv_pinsRigBeadsForPlanning(t *testing.T) {
 		}
 	}
 	base := []string{"BEADS_DIR=" + townBeads, "GT_ROOT=" + town}
-	env := orchestratedCommandEnv(town, "mockrig", "planning", base)
+	env := orchestratedCommandEnv(town, "mockrig", "planning", base, orchestrator.DefaultWorkflowValidation())
 	if got := envLookup(env, "BEADS_DIR"); got != rigBeads {
 		t.Fatalf("planning BEADS_DIR = %q, want %q", got, rigBeads)
 	}
-	env = orchestratedCommandEnv(town, "mockrig", "design", base)
+	env = orchestratedCommandEnv(town, "mockrig", "design", base, orchestrator.DefaultWorkflowValidation())
 	if got := envLookup(env, "BEADS_DIR"); got != townBeads {
 		t.Fatalf("design should not override BEADS_DIR: got %q", got)
+	}
+}
+
+func TestOrchestratedCommandEnv_createsPythonVenv(t *testing.T) {
+	if _, err := exec.LookPath("python3"); err != nil {
+		t.Skip("python3 not available")
+	}
+	town := t.TempDir()
+	rigDir := filepath.Join(town, "mockrig", "mayor", "rig")
+	if err := os.MkdirAll(rigDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	v := orchestrator.WorkflowValidation{RequiredFiles: []string{"backend/requirements.txt"}}
+	env := orchestratedCommandEnv(town, "mockrig", "implementation", os.Environ(), v)
+	virt := envLookup(env, "VIRTUAL_ENV")
+	if virt == "" {
+		t.Fatal("missing VIRTUAL_ENV")
+	}
+	if !strings.HasSuffix(virt, filepath.Join("mockrig", "mayor", "rig", ".venv")) {
+		t.Fatalf("VIRTUAL_ENV=%q", virt)
+	}
+	py := envLookup(env, "GT_PYTHON3")
+	if py == "" || !strings.Contains(py, ".venv") {
+		t.Fatalf("GT_PYTHON3=%q", py)
 	}
 }
 

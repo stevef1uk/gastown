@@ -432,7 +432,7 @@ func TestEnsureGitignorePatterns_AllPatternsPresent(t *testing.T) {
 	// typescript, AGENTS.md, SPEC.md, project_label, progress_report,
 	// gt-agent-state.json) that were added to plug the
 	// agent-plumbing-leaks-into-rig-repo hole.
-	existing := ".runtime/\n.claude/\n.beads/\n.logs/\n__pycache__/\nstate.json\nCLAUDE.md\nCLAUDE.local.md\n" +
+	existing := ".runtime/\n.claude/\n.beads/\n.logs/\n__pycache__/\n.venv/\nvenv/\nstate.json\nCLAUDE.md\nCLAUDE.local.md\n" +
 		".gt-agent\ntypescript\nAGENTS.md\nproject_label\nprogress_report\ngt-agent-state.json\n"
 	if err := os.WriteFile(filepath.Join(tmpDir, ".gitignore"), []byte(existing), 0644); err != nil {
 		t.Fatalf("Failed to create .gitignore: %v", err)
@@ -465,7 +465,7 @@ func TestEnsureGitignorePatterns_NarrowPatternPresent(t *testing.T) {
 	// Create .gitignore with the exact required patterns.
 	// Fix #95: also seeds the agent-internal patterns so this test
 	// continues to exercise the "no changes needed" path.
-	existing := ".runtime/\n.claude/\n.logs/\n__pycache__/\nstate.json\nCLAUDE.md\nCLAUDE.local.md\n" +
+	existing := ".runtime/\n.claude/\n.logs/\n__pycache__/\n.venv/\nvenv/\nstate.json\nCLAUDE.md\nCLAUDE.local.md\n" +
 		".gt-agent\ntypescript\nAGENTS.md\nSPEC.md\nproject_label\nprogress_report\ngt-agent-state.json\n"
 	if err := os.WriteFile(filepath.Join(tmpDir, ".gitignore"), []byte(existing), 0644); err != nil {
 		t.Fatalf("Failed to create .gitignore: %v", err)

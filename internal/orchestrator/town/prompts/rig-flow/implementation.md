@@ -18,7 +18,9 @@ If the prompt includes **"Prior step failed"** from `qa_review`, QA rejected you
 |---------|-----------|
 | `bd list`, `bd ready`, `bd show`, `bd update`, `bd close` from rig beads repo | `gt bd list`, `gt bd claim`, `gt bd close` (not real — `gt bd` is `gt bead`) |
 | Implement code under `{{rig}}/mayor/rig/{{layout_root}}/` | Inventing `implementation.txt` instead of real code |
-| `python3 -m pip install -r {{requirements_file}}` when profile lists it | Pasting `pytest` / `python3 -m` lines into source files |
+| `python3 -m pip install -r {{requirements_file}}` into `{{python_venv_dir}}/` (auto-created; gitignored) | Pasting `pytest` / `python3 -m` lines into source files |
+| `requirements.txt` lines = **package names only** (e.g. `pytest`, `flask==3.0`) — never `python3 -m pytest` | Shell commands inside `requirements.txt` |
+| `python3 -m pip` / `python3 -m pytest` (gt-agent activates the venv) | `pip install` without venv, or system-wide installs |
 | `git add` / `git commit` in mayor/rig worktree | QA review commands |
 
 ## Workflow (one bead per step)
@@ -43,11 +45,12 @@ If the prompt includes **"Prior step failed"** from `qa_review`, QA rejected you
    ```
    Required paths: {{required_files}}
 
-4. If the profile lists `{{requirements_file}}`, install deps, then verify:
+4. If the profile lists `{{requirements_file}}`, install deps into the project venv (`{{python_venv_dir}}/`, created by gt-agent), then verify:
    ```
-   CMD: bash -lc 'cd {{rig}}/mayor/rig && test -n "{{requirements_file}}" && test -f "{{requirements_file}}" && python3 -m pip install -r "{{requirements_file}}" || true'
-   CMD: bash -lc 'cd {{rig}}/mayor/rig && {{unittest_command_hint}}'
+   CMD: cd {{rig}}/mayor/rig && test -f "{{requirements_file}}" && python3 -m pip install -r "{{requirements_file}}"
+   CMD: cd {{rig}}/mayor/rig && {{unittest_command_hint}}
    ```
+   Do not use `bash -lc` wrappers. Do not commit `{{python_venv_dir}}/`.
 
 5. Commit:
    ```

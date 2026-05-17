@@ -30,16 +30,16 @@ func EnsurePATH(env []string) []string {
 		parts = append(parts, abs)
 	}
 
-	for _, name := range []string{"python3", "go", "pip", "pip3", "pytest"} {
-		if p, err := exec.LookPath(name); err == nil {
-			addDir(filepath.Dir(p))
-		}
-	}
-	if home, err := os.UserHomeDir(); err == nil && home != "" {
+	if home := homeDir(env); home != "" {
 		addDir(filepath.Join(home, ".local", "bin"))
 		addDir(filepath.Join(home, "go", "bin"))
 		addDir(filepath.Join(home, ".pyenv", "shims"))
 		addDir(filepath.Join(home, ".pyenv", "bin"))
+	}
+	for _, name := range []string{"python3", "go", "pip", "pip3", "pytest"} {
+		if p, err := exec.LookPath(name); err == nil {
+			addDir(filepath.Dir(p))
+		}
 	}
 	for _, dir := range []string{"/usr/local/bin", "/usr/bin", "/bin", "/sbin"} {
 		addDir(dir)

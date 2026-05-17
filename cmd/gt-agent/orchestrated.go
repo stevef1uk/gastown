@@ -18,6 +18,7 @@ import (
 	"github.com/steveyegge/gastown/internal/nudge"
 	"github.com/steveyegge/gastown/internal/agentenv"
 	"github.com/steveyegge/gastown/internal/orchestrator"
+	rigpkg "github.com/steveyegge/gastown/internal/rig"
 )
 
 const (
@@ -182,6 +183,10 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 		orchestratedPrintf("[gt-agent] LLM response (turn %d):\n%s\n", turn, response)
 		messages = append(messages, llm.Message{Role: "assistant", Content: response})
 
+		if task.State == "implementation" || task.State == "qa_review" {
+			maybeRepairWorkflowRequirements(townRoot, rig, taskValidation(task))
+		}
+
 		cmdBlocks := parseOrchestratedCommands(response)
 		if len(cmdBlocks) > 0 {
 			var combined strings.Builder
@@ -251,8 +256,29 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 						cmd = fixed
 					}
 				}
+				if unwrapped := agentenv.UnwrapBashLcSingleLine(cmd); unwrapped != cmd {
+					orchestratedPrintf("[gt-agent] unwrapped bash -lc → %s\n", unwrapped)
+					cmd = unwrapped
+				}
+				if task.State == "implementation" || task.State == "qa_review" {
+					if reqRel := agentenv.RequirementsPathFromPipInstall(cmd); reqRel != "" {
+						reqPath := filepath.Join(rigMayorRigDir(townRoot, rig), reqRel)
+						if changed, err := agentenv.RepairRequirementsFile(reqPath); err != nil {
+							orchestratedFprintfStderr("[gt-agent] requirements repair: %v\n", err)
+						} else if changed {
+							orchestratedPrintf("[gt-agent] repaired shell lines in %s\n", reqRel)
+						}
+					}
+				}
+				cmdEnv := orchestratedCommandEnv(townRoot, rig, task.State, os.Environ(), taskValidation(task))
+				if task.State == "implementation" || task.State == "qa_review" {
+					py := agentenv.ResolvePython3(cmdEnv)
+					if fixed := agentenv.RewritePython3InCommand(cmd, py); fixed != cmd {
+						orchestratedPrintf("[gt-agent] using python %s\n", py)
+						cmd = fixed
+					}
+				}
 				orchestratedPrintf("[gt-agent] $ %s\n", cmd)
-				cmdEnv := orchestratedCommandEnv(townRoot, rig, task.State, os.Environ())
 				if needsOrchestratedScriptFile(cmd) {
 					orchestratedPrintf("[gt-agent] running multiline/heredoc via temp script\n")
 				}
@@ -1186,8 +1212,9 @@ func validatePlanningArtifacts(townRoot, rig string, hadCmdFailure, beadCreateOK
 
 // orchestratedCommandEnv pins BEADS_DIR to the workflow rig for planning/implementation
 // so town-level planner sessions do not write beads into ~/gt/.beads.
-func orchestratedCommandEnv(townRoot, rig, taskState string, base []string) []string {
-	env := agentenv.EnsurePATH(base)
+// For Python workflows it ensures mayor/rig/<python_venv_dir> and activates it for pip/pytest.
+func orchestratedCommandEnv(townRoot, rig, taskState string, base []string, v orchestrator.WorkflowValidation) []string {
+	env := agentenv.WithPython3(agentenv.EnsurePATH(base))
 	if rig == "" || townRoot == "" {
 		return env
 	}
@@ -1201,8 +1228,37 @@ func orchestratedCommandEnv(townRoot, rig, taskState string, base []string) []st
 	workDir := rigMayorRigDir(townRoot, rig)
 	if taskState == "implementation" || taskState == "qa_review" {
 		env = prependEnvPath(env, "PYTHONPATH", workDir)
+		if v.UsesPythonVenv() {
+			venvRel := v.PythonVenvRelDir()
+			var created bool
+			var venvErr error
+			env, _, created, venvErr = agentenv.WithRigVenv(env, workDir, venvRel)
+			if venvErr != nil {
+				orchestratedFprintfStderr("[gt-agent] venv %s: %v (using host python)\n", venvRel, venvErr)
+			} else if created {
+				orchestratedPrintf("[gt-agent] created python venv at %s/%s\n", rigMayorRigPath(rig), venvRel)
+				if err := rigpkg.EnsureGitignorePatterns(workDir); err != nil {
+					orchestratedFprintfStderr("[gt-agent] gitignore: %v\n", err)
+				}
+			}
+		}
 	}
 	return env
+}
+
+func maybeRepairWorkflowRequirements(townRoot, rig string, v orchestrator.WorkflowValidation) {
+	if !v.UsesPythonVenv() {
+		return
+	}
+	workDir := rigMayorRigDir(townRoot, rig)
+	repaired, err := agentenv.RepairRequirementsUnder(workDir)
+	if err != nil {
+		orchestratedFprintfStderr("[gt-agent] requirements repair: %v\n", err)
+		return
+	}
+	if len(repaired) > 0 {
+		orchestratedPrintf("[gt-agent] repaired requirements.txt: %s\n", strings.Join(repaired, ", "))
+	}
 }
 
 func prependEnvPath(env []string, key, dir string) []string {

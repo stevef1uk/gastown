@@ -17,6 +17,8 @@ func gasTownIgnorePatterns() []string {
 		".claude/",
 		".logs/",
 		"__pycache__/",
+		".venv/",
+		"venv/",
 		"state.json",
 		"CLAUDE.md",
 		"CLAUDE.local.md",

@@ -87,6 +87,20 @@ func TestPromptVars_includesUnittestCommandHint(t *testing.T) {
 	}
 }
 
+func TestUsesPythonVenv(t *testing.T) {
+	v := WorkflowValidation{RequiredFiles: []string{"backend/requirements.txt"}}
+	if !v.UsesPythonVenv() {
+		t.Fatal("expected venv for requirements.txt project")
+	}
+	if v.PythonVenvRelDir() != ".venv" {
+		t.Fatalf("dir: %q", v.PythonVenvRelDir())
+	}
+	off := WorkflowValidation{PythonVenvDir: "off", RequiredFiles: []string{"a.py"}}
+	if off.UsesPythonVenv() {
+		t.Fatal("off should disable venv")
+	}
+}
+
 func TestForbiddenRigRootBasenames(t *testing.T) {
 	v := WorkflowValidation{
 		RequiredFiles: []string{"backend/api.py", "backend/main.py"},

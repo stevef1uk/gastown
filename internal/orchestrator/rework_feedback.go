@@ -58,7 +58,9 @@ func prepareQAReviewToImplementationFeedback(summary, raw string, v WorkflowVali
 	b.WriteString("\nRecovery steps (automated rig-flow):\n")
 	b.WriteString("1. Use only bead IDs from bd list (rig prefix — copy exactly).\n")
 	if req := v.RequirementsFilePath(); req != "" {
-		b.WriteString("2. Install deps: `python3 -m pip install -r ")
+		b.WriteString("2. Install deps into the project venv (gt-agent creates `")
+		b.WriteString(v.PythonVenvRelDir())
+		b.WriteString("`): `python3 -m pip install -r ")
 		b.WriteString(req)
 		b.WriteString("` before tests.\n")
 	} else {

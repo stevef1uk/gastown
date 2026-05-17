@@ -21,6 +21,8 @@ type WorkflowValidation struct {
 	MinPlanBytes               int64    `yaml:"min_plan_bytes" json:"min_plan_bytes"`
 	MinImplementationFileBytes int64    `yaml:"min_implementation_file_bytes" json:"min_implementation_file_bytes"`
 	MinSubstantiveLines        int      `yaml:"min_substantive_lines" json:"min_substantive_lines"`
+	// PythonVenvDir is the venv directory under mayor/rig (default ".venv"). Set "off" to disable.
+	PythonVenvDir string `yaml:"python_venv_dir" json:"python_venv_dir"`
 }
 
 // Artifact size guard defaults for rig-flow (gt rig spec-index / workflow-profile.json).
@@ -142,8 +144,57 @@ func mergeValidationFields(base, overlay WorkflowValidation) WorkflowValidation 
 	if overlay.MinSubstantiveLines > 0 {
 		base.MinSubstantiveLines = overlay.MinSubstantiveLines
 	}
+	if overlay.PythonVenvDir != "" {
+		base.PythonVenvDir = overlay.PythonVenvDir
+	}
 	base.QAVerifyCommand = NormalizePytestCommand(strings.TrimSpace(base.QAVerifyCommand))
 	return base
+}
+
+// PythonVenvRelDir returns the venv path relative to mayor/rig (default ".venv").
+func (v WorkflowValidation) PythonVenvRelDir() string {
+	d := strings.TrimSpace(v.PythonVenvDir)
+	if strings.EqualFold(d, "off") {
+		return ""
+	}
+	if d == "" {
+		return ".venv"
+	}
+	d = filepath.ToSlash(d)
+	if strings.Contains(d, "..") || filepath.IsAbs(d) {
+		return ".venv"
+	}
+	return d
+}
+
+// UsesPythonVenv reports whether gt-agent should create/use a project venv for pip/pytest.
+func (v WorkflowValidation) UsesPythonVenv() bool {
+	if v.PythonVenvRelDir() == "" {
+		return false
+	}
+	return v.detectsPythonProject()
+}
+
+func (v WorkflowValidation) detectsPythonProject() bool {
+	if v.RequirementsFilePath() != "" {
+		return true
+	}
+	if strings.EqualFold(strings.TrimSpace(v.TestRunner), "pytest") {
+		return true
+	}
+	q := strings.ToLower(strings.TrimSpace(v.QAVerifyCommand))
+	if strings.Contains(q, "python") || strings.Contains(q, "pytest") {
+		return true
+	}
+	if mod := strings.TrimSpace(v.UnittestModule); mod != "" {
+		return true
+	}
+	for _, f := range v.RequiredFiles {
+		if strings.HasSuffix(strings.ToLower(strings.TrimSpace(f)), ".py") {
+			return true
+		}
+	}
+	return false
 }
 
 // SubstituteVars replaces {{key}} in validation string fields.
@@ -195,6 +246,7 @@ func (v WorkflowValidation) PromptVars() map[string]string {
 		"requirements_file":       req,
 		"spec_summary":            v.SpecSummary,
 		"unittest_command_hint":   v.UnittestCommandHint(),
+		"python_venv_dir":         v.PythonVenvRelDir(),
 		"min_architecture_bytes":        fmt.Sprintf("%d", v.MinArchitectureBytes),
 		"min_plan_bytes":                fmt.Sprintf("%d", v.MinPlanBytes),
 		"min_implementation_file_bytes": fmt.Sprintf("%d", StubCheckOptionsFromValidation(v).MinFileBytes),
