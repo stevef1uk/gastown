@@ -131,15 +131,34 @@ func rewriteUnittestToWorkdir(cmd, rig string) (string, bool) {
 		cmd = fixed
 		changed = true
 	}
-	work := rigMayorRigPath(rig)
-	wl := strings.ToLower(work)
-	if strings.Contains(strings.ToLower(cmd), "cd "+wl) || strings.Contains(strings.ToLower(cmd), "cd "+strings.ToLower(rig)+"/mayor/rig") {
+	if commandHasMayorRigCD(cmd, rig) {
 		if changed {
 			return cmd, true
 		}
 		return cmd, false
 	}
+	work := rigMayorRigPath(rig)
 	return "cd " + work + " && " + strings.TrimSpace(cmd), true
+}
+
+// commandHasMayorRigCD reports whether cmd already cds into the rig mayor/rig worktree.
+func commandHasMayorRigCD(cmd, rig string) bool {
+	lower := strings.ToLower(cmd)
+	if !strings.Contains(lower, "cd ") {
+		return false
+	}
+	work := strings.ToLower(rigMayorRigPath(rig))
+	if strings.Contains(lower, "cd "+work) {
+		return true
+	}
+	// Model may use ~/gt/<rig>/mayor/rig or $GT_ROOT/<rig>/mayor/rig.
+	if strings.Contains(lower, "/mayor/rig") {
+		rigLower := strings.ToLower(strings.TrimSpace(rig))
+		if rigLower != "" && strings.Contains(lower, rigLower+"/mayor/rig") {
+			return true
+		}
+	}
+	return false
 }
 
 // rewriteBdListImplementScope appends grep for profile bead_title_contains on bd list output.
@@ -213,15 +232,13 @@ func runOrchestratedCommand(cmd, workDir, sessionName string, env []string) ([]b
 	return c.CombinedOutput()
 }
 
-// orchestratedCommandWorkDir is the subprocess cwd for rig workflow steps.
+// orchestratedCommandWorkDir is the subprocess cwd for rig workflow shell commands.
+// All rig-flow prompts tell agents to work from town root with paths like {{rig}}/mayor/rig/....
+// Using mayor/rig as cwd makes those paths resolve into a nested {{rig}}/mayor/rig/ subtree.
 func orchestratedCommandWorkDir(townRoot, rig, taskState string) string {
+	_ = taskState
 	if rig == "" || townRoot == "" {
 		return townRoot
 	}
-	switch taskState {
-	case "planning", "plan_review", "implementation", "qa_review":
-		return rigMayorRigDir(townRoot, rig)
-	default:
-		return townRoot
-	}
+	return townRoot
 }

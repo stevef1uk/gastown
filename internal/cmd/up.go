@@ -551,6 +551,7 @@ func runUp(cmd *cobra.Command, args []string) error {
 				fmt.Printf("  Repaired .gt-agent for %d polecat(s) on %s\n", n, rigName)
 			}
 		}
+		reconcileOrchestratedPipelineAgents(townRoot, rigs, prefetchedRigs)
 	}
 
 	// Collect results in order: all witnesses first, then all refineries, then architects, then qa
@@ -1096,11 +1097,13 @@ func upStartArchitect(rigName string, r *rig.Rig) agentStartResult {
 	sp := session.GetDefaultProvider(townRoot)
 	ctx := context.Background()
 
+	orchRunning, _, _ := orchestrator.IsRunning(townRoot)
+	wantOrch := orchestrator.OrchestratedForRole(orchRunning, constants.RoleArchitect)
+	upEnsureFreshPipelineSession(ctx, sp, townRoot, sessionID, wantOrch)
+
 	if running, _ := sp.Exists(ctx, sessionID); running {
 		return agentStartResult{name: name, ok: true, detail: sessionID}
 	}
-
-	orchRunning, _, _ := orchestrator.IsRunning(townRoot)
 
 	_, err := session.StartSession(ctx, sp, &session.SessionConfig{
 		SessionID:    sessionID,
@@ -1109,8 +1112,8 @@ func upStartArchitect(rigName string, r *rig.Rig) agentStartResult {
 		TownRoot:     townRoot,
 		RigPath:      r.Path,
 		RigName:      rigName,
-		Orchestrated: orchestrator.OrchestratedForRole(orchRunning, constants.RoleArchitect),
-		Beacon:       session.BeaconConfig{Recipient: "architect", Sender: "daemon", Topic: "startup"},
+		Orchestrated: wantOrch,
+		Beacon:       session.BeaconConfig{Recipient: "architect", Sender: "daemon", Topic: beaconTopicForOrchestrated(wantOrch)},
 		WaitForAgent: true,
 		WaitFatal:    true,
 		ReadyDelay:   true,
@@ -1144,11 +1147,13 @@ func upStartQA(rigName string, r *rig.Rig) agentStartResult {
 	sp := session.GetDefaultProvider(townRoot)
 	ctx := context.Background()
 
+	orchRunning, _, _ := orchestrator.IsRunning(townRoot)
+	wantOrch := orchestrator.OrchestratedForRole(orchRunning, constants.RoleQA)
+	upEnsureFreshPipelineSession(ctx, sp, townRoot, sessionID, wantOrch)
+
 	if running, _ := sp.Exists(ctx, sessionID); running {
 		return agentStartResult{name: name, ok: true, detail: sessionID}
 	}
-
-	orchRunning, _, _ := orchestrator.IsRunning(townRoot)
 
 	_, err := session.StartSession(ctx, sp, &session.SessionConfig{
 		SessionID:    sessionID,
@@ -1157,8 +1162,8 @@ func upStartQA(rigName string, r *rig.Rig) agentStartResult {
 		TownRoot:     townRoot,
 		RigPath:      r.Path,
 		RigName:      rigName,
-		Orchestrated: orchestrator.OrchestratedForRole(orchRunning, constants.RoleQA),
-		Beacon:       session.BeaconConfig{Recipient: "qa", Sender: "daemon", Topic: "startup"},
+		Orchestrated: wantOrch,
+		Beacon:       session.BeaconConfig{Recipient: "qa", Sender: "daemon", Topic: beaconTopicForOrchestrated(wantOrch)},
 		WaitForAgent: true,
 		WaitFatal:    true,
 		ReadyDelay:   true,
@@ -1191,12 +1196,14 @@ func upStartRigPolecat(rigName string, r *rig.Rig) agentStartResult {
 	sp := session.GetDefaultProvider(townRoot)
 	ctx := context.Background()
 
+	orchRunning, _, _ := orchestrator.IsRunning(townRoot)
+	wantOrch := orchestrator.OrchestratedForRole(orchRunning, constants.RolePolecat)
+	upEnsureFreshPipelineSession(ctx, sp, townRoot, sessionID, wantOrch)
+
 	if running, _ := sp.Exists(ctx, sessionID); running {
 		_ = session.RepairTownRoleRigIdentity(ctx, sp, sessionID, polecatDir, constants.RolePolecat, rigName)
 		return agentStartResult{name: name, ok: true, detail: sessionID}
 	}
-
-	orchRunning, _, _ := orchestrator.IsRunning(townRoot)
 
 	_, err := session.StartSession(ctx, sp, &session.SessionConfig{
 		SessionID:    sessionID,
@@ -1205,8 +1212,8 @@ func upStartRigPolecat(rigName string, r *rig.Rig) agentStartResult {
 		TownRoot:     townRoot,
 		RigPath:      r.Path,
 		RigName:      rigName,
-		Orchestrated: orchestrator.OrchestratedForRole(orchRunning, constants.RolePolecat),
-		Beacon:       session.BeaconConfig{Recipient: "polecat", Sender: "daemon", Topic: "startup"},
+		Orchestrated: wantOrch,
+		Beacon:       session.BeaconConfig{Recipient: "polecat", Sender: "daemon", Topic: beaconTopicForOrchestrated(wantOrch)},
 		WaitForAgent: true,
 		WaitFatal:    true,
 		ReadyDelay:   true,
@@ -1250,26 +1257,19 @@ func upStartPlanner(townRoot string) agentStartResult {
 
 	orchRunning, _, _ := orchestrator.IsRunning(townRoot)
 	wantOrch := orchestrator.OrchestratedForRole(orchRunning, constants.RolePlanner)
+	upEnsureFreshPipelineSession(ctx, sp, townRoot, sessionID, wantOrch)
 
 	if running, _ := sp.Exists(ctx, sessionID); running {
-		if wantOrch && !session.GTAgentHasFlagInSession(townRoot, sessionID, "--orchestrated") {
-			_ = sp.Stop(ctx, sessionID, false)
-		} else {
-			return agentStartResult{name: name, ok: true, detail: sessionID}
-		}
+		return agentStartResult{name: name, ok: true, detail: sessionID}
 	}
 
-	beaconTopic := "startup"
-	if wantOrch {
-		beaconTopic = "orchestrated"
-	}
 	_, err := session.StartSession(ctx, sp, &session.SessionConfig{
 		SessionID:    sessionID,
 		WorkDir:      plannerDir,
 		Role:         constants.RolePlanner,
 		TownRoot:     townRoot,
 		Orchestrated: wantOrch,
-		Beacon:       session.BeaconConfig{Recipient: "planner", Sender: "daemon", Topic: beaconTopic},
+		Beacon:       session.BeaconConfig{Recipient: "planner", Sender: "daemon", Topic: beaconTopicForOrchestrated(wantOrch)},
 		WaitForAgent: true,
 		WaitFatal:    true,
 		ReadyDelay:   true,
@@ -1607,6 +1607,8 @@ func upStartTownRole(townRoot string, role string, sessionID string, orchestrate
 	sp := session.GetDefaultProvider(townRoot)
 	ctx := context.Background()
 
+	upEnsureFreshPipelineSession(ctx, sp, townRoot, sessionID, orchestrated)
+
 	if running, _ := sp.Exists(ctx, sessionID); running {
 		if rigName != "" {
 			if err := session.RepairTownRoleRigIdentity(ctx, sp, sessionID, roleDir, role, rigName); err != nil {
@@ -1623,7 +1625,7 @@ func upStartTownRole(townRoot string, role string, sessionID string, orchestrate
 		TownRoot:     townRoot,
 		RigName:      rigName,
 		Orchestrated: orchestrated,
-		Beacon:       session.BeaconConfig{Recipient: role, Sender: "daemon", Topic: "startup"},
+		Beacon:       session.BeaconConfig{Recipient: role, Sender: "daemon", Topic: beaconTopicForOrchestrated(orchestrated)},
 		WaitForAgent: true,
 		WaitFatal:    true,
 		ReadyDelay:   true,

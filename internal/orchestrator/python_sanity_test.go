@@ -25,3 +25,10 @@ func TestCheckPythonSourceValid_acceptsNormal(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestCheckPythonSourceValid_acceptsImportPytest(t *testing.T) {
+	src := []byte("import pytest\nfrom defender.backend.main import app\n")
+	if err := CheckPythonSourceValid(src, "defender/backend/tests/test_api.py"); err != nil {
+		t.Fatalf("import pytest is valid test code: %v", err)
+	}
+}

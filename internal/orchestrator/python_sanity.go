@@ -8,7 +8,8 @@ import (
 	"strings"
 )
 
-var invalidPythonLineRE = regexp.MustCompile(`(?i)^\s*import\s+(python3?|pytest)\b`)
+// Catches `import python3 -m pytest` pasted into .py files — not legitimate `import pytest`.
+var invalidPythonLineRE = regexp.MustCompile(`(?i)^\s*import\s+python3?\b`)
 
 // CheckPythonSourceValid rejects common LLM mistakes (shell commands pasted as Python).
 func CheckPythonSourceValid(data []byte, displayRel string) error {

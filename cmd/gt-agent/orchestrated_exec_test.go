@@ -105,3 +105,34 @@ func TestNeedsOrchestratedScriptFile(t *testing.T) {
 		t.Fatal("simple cmd should not")
 	}
 }
+
+func TestOrchestratedCommandWorkDir_rigFlowUsesTownRoot(t *testing.T) {
+	town := "/gt"
+	rig := testrig.Name
+	for _, state := range []string{"kickoff", "design", "planning", "plan_review", "implementation", "qa_review"} {
+		if got := orchestratedCommandWorkDir(town, rig, state); got != town {
+			t.Fatalf("%s cwd = %q, want town root %q", state, got, town)
+		}
+	}
+}
+
+func TestCommandHasMayorRigCD(t *testing.T) {
+	rig := testrig.Name
+	if !commandHasMayorRigCD("cd "+rig+"/mayor/rig && pytest", rig) {
+		t.Fatal("relative cd")
+	}
+	if !commandHasMayorRigCD("cd ~/gt/"+rig+"/mayor/rig && pytest", rig) {
+		t.Fatal("home cd")
+	}
+	if commandHasMayorRigCD("pytest -q backend", rig) {
+		t.Fatal("no cd")
+	}
+}
+
+func TestRewriteUnittestToWorkdir_skipsWhenAlreadyCD(t *testing.T) {
+	rig := testrig.Name
+	already := "cd ~/gt/" + rig + "/mayor/rig && python3 -m pytest -q defender/backend"
+	if fixed, ok := rewriteUnittestToWorkdir(already, rig); ok {
+		t.Fatalf("should not prepend cd: %q", fixed)
+	}
+}
