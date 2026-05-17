@@ -44,7 +44,7 @@ func gasTownIgnorePatterns() []string {
 		// they are user-authored content (the project contract /
 		// human-facing docs) and the polecat needs to READ them from
 		// its worktree at runtime. The initial Fix #95 wrongly
-		// included SPEC.md, which caused testgt2's project spec to
+		// included SPEC.md, which caused mockrig's project spec to
 		// be silently ignored after the rig reset. AGENTS.md /
 		// CLAUDE.md stay in: those are agent-internal prompt files
 		// (overridable with `git add -f` if a user really wants

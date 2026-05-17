@@ -11,6 +11,8 @@ import (
 
 	"github.com/nats-io/nats.go"
 	"github.com/spf13/cobra"
+
+	"github.com/steveyegge/gastown/internal/agentenv"
 )
 
 var (
@@ -159,17 +161,7 @@ func commandNeedsPTY(args []string) bool {
 // process has an empty PATH, it injects a sensible default so that common
 // binaries (bash, env, etc.) can be found by the child.
 func buildChildEnv(nonInteractive bool) []string {
-	env := os.Environ()
-	hasPath := false
-	for _, e := range env {
-		if len(e) >= 5 && e[:5] == "PATH=" {
-			hasPath = true
-			break
-		}
-	}
-	if !hasPath {
-		env = append(env, "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin")
-	}
+	env := agentenv.EnsurePATH(os.Environ())
 
 	// Inject session ID so that gt prime (and others) can find the current session
 	// without relying on tmux-specific environment detection.

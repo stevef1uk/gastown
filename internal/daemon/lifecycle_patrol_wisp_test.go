@@ -25,7 +25,7 @@ func TestEnsurePatrolWisp_NonPatrolAgents(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			parsed := &ParsedIdentity{
 				RoleType: tc.role,
-				RigName:  "testgt1",
+				RigName:  "mockrigb",
 				AgentName: "test",
 			}
 
@@ -58,7 +58,7 @@ func TestEnsurePatrolWisp_PatrolAgents(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			parsed := &ParsedIdentity{
 				RoleType: tc.role,
-				RigName:  "testgt1",
+				RigName:  "mockrigb",
 			}
 
 			// For this test, we don't have a real beads environment,

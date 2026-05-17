@@ -8,8 +8,8 @@ import (
 )
 
 func TestOrchestratorAgentID(t *testing.T) {
-	if got := OrchestratorAgentID("polecat", "testgt2"); got != "testgt2/polecat" {
-		t.Fatalf("OrchestratorAgentID(polecat, testgt2) = %q, want testgt2/polecat", got)
+	if got := OrchestratorAgentID("polecat", "mockrig"); got != "mockrig/polecat" {
+		t.Fatalf("OrchestratorAgentID(polecat, mockrig) = %q, want mockrig/polecat", got)
 	}
 	if got := OrchestratorAgentID("polecat", ""); got != "polecat" {
 		t.Fatalf("OrchestratorAgentID(polecat, empty) = %q, want polecat", got)
@@ -34,12 +34,12 @@ func TestDiscoverTownPolecatRig_singleRigFromRigsJSON(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(town, "mayor"), 0755); err != nil {
 		t.Fatal(err)
 	}
-	rigsJSON := `{"rigs":{"testgt2":{"name":"testgt2"}}}`
+	rigsJSON := `{"rigs":{"mockrig":{"name":"mockrig"}}}`
 	if err := os.WriteFile(filepath.Join(town, "mayor", "rigs.json"), []byte(rigsJSON), 0644); err != nil {
 		t.Fatal(err)
 	}
-	if got := DiscoverTownPolecatRig(town, "", ""); got != "testgt2" {
-		t.Fatalf("single rig from rigs.json: got %q, want testgt2", got)
+	if got := DiscoverTownPolecatRig(town, "", ""); got != "mockrig" {
+		t.Fatalf("single rig from rigs.json: got %q, want mockrig", got)
 	}
 }
 
@@ -55,7 +55,7 @@ func TestDiscoverTownPolecatRig_activeWorkflow(t *testing.T) {
 				ID:         "wf-1",
 				TemplateID: "rig-flow",
 				Status:     "running",
-				Variables:  map[string]string{"rig": "testgt2"},
+				Variables:  map[string]string{"rig": "mockrig"},
 			},
 		},
 	}
@@ -66,7 +66,7 @@ func TestDiscoverTownPolecatRig_activeWorkflow(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(orchDir, instancesFileName), data, 0644); err != nil {
 		t.Fatal(err)
 	}
-	if got := DiscoverTownPolecatRig(town, "", ""); got != "testgt2" {
-		t.Fatalf("active workflow rig: got %q, want testgt2", got)
+	if got := DiscoverTownPolecatRig(town, "", ""); got != "mockrig" {
+		t.Fatalf("active workflow rig: got %q, want mockrig", got)
 	}
 }

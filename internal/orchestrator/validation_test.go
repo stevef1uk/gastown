@@ -7,6 +7,16 @@ import (
 	"testing"
 )
 
+func TestWorkflowValidation_RequirementsFilePath(t *testing.T) {
+	v := WorkflowValidation{RequiredFiles: []string{"pkg/main.py", "pkg/requirements.txt"}}
+	if got := v.RequirementsFilePath(); got != "pkg/requirements.txt" {
+		t.Fatalf("got %q", got)
+	}
+	if v.RequirementsFilePath() == "" && len(v.RequiredFiles) == 0 {
+		return
+	}
+}
+
 func TestClampProfileValidation(t *testing.T) {
 	tests := []struct {
 		name string

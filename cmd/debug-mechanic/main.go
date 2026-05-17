@@ -5,19 +5,31 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/steveyegge/gastown/cmd/debug-mechanic/llm"
+	"github.com/steveyegge/gastown/internal/agentllm"
+	"github.com/steveyegge/gastown/internal/dotenv"
 	"github.com/steveyegge/gastown/internal/templates"
+	"github.com/steveyegge/gastown/internal/workspace"
 )
 
 func main() {
 	fmt.Println("=== Mechanic Agent LLM Test ===")
+	fmt.Println("(Dev-only: production mechanic uses the shell patrol script, not the LLM.)")
 
-	apiKey := os.Getenv("OPENAI_API_KEY")
-	if apiKey == "" {
-		fmt.Println("ERROR: Set OPENAI_API_KEY to run this test")
+	if loaded, err := dotenv.LoadFromCwd(); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: .env: %v\n", err)
+	} else if loaded != "" {
+		fmt.Printf("Loaded %s\n", loaded)
+	}
+
+	townRoot, err := workspace.FindFromCwdOrError()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Town root not found: %v\n", err)
+		fmt.Fprintln(os.Stderr, "Set GT_ROOT in the environment, or copy .env.example to .env in the gastown repo with GT_ROOT=~/gt")
 		os.Exit(1)
 	}
 
@@ -27,11 +39,23 @@ func main() {
 		os.Exit(1)
 	}
 
+	rigName := strings.TrimSpace(os.Getenv("GT_RIG"))
+	workDir := filepath.Join(townRoot, "mechanic")
+	if wd := strings.TrimSpace(os.Getenv("GT_WORKDIR")); wd != "" {
+		workDir = wd
+	}
+
+	fmt.Printf("Using town root: %s\n", townRoot)
+	if rigName != "" {
+		fmt.Printf("Using rig (GT_RIG): %s\n", rigName)
+	}
+	fmt.Printf("Work dir: %s\n", workDir)
+
 	data := templates.RoleData{
 		Role:          "mechanic",
-		RigName:       "testgt2",
-		TownRoot:      "/home/stevef/gt",
-		WorkDir:       "/home/stevef/gt/mechanic",
+		RigName:       rigName,
+		TownRoot:      townRoot,
+		WorkDir:       workDir,
 		DefaultBranch: "main",
 		Polecat:       "",
 		MayorSession:  "hq-mayor",
@@ -44,10 +68,10 @@ func main() {
 
 	systemPrompt := combined + "\n\nFormat: CMD: <command> or DONE: <summary>"
 
-	// Simulate the hook work item - what the mechanic receives
+	// Simulate a patrol-cycle nudge (mechanic ignores mail; runs log/dolt patrol).
 	userPrompt := `Execute the following work and report results:
 
-1. [HOOK] Check inbox for work assignments
+1. [PATROL] Run mechanic patrol cycle #1 (dolt orphans, then session logs).
 
 You are patrol cycle #1 for this agent session.`
 
@@ -59,21 +83,20 @@ You are patrol cycle #1 for this agent session.`
 	fmt.Println(userPrompt)
 	fmt.Println()
 
-	// Get LLM config from environment
-	endpoint := os.Getenv("LLM_ENDPOINT")
-	if endpoint == "" {
-		endpoint = "https://api.openai.com/v1/chat/completions"
+	endpoint := agentllm.ResolveEndpoint()
+	model := agentllm.ResolveModel()
+	if agentllm.RequiresAuthToken(endpoint) {
+		fmt.Println("ERROR: remote LLM_ENDPOINT requires OPENAI_API_KEY or ANTHROPIC_API_KEY")
+		fmt.Println("For freeride/local proxy, set LLM_ENDPOINT=http://localhost:11434/v1/chat/completions (default)")
+		os.Exit(1)
 	}
-	model := os.Getenv("LLM_MODEL")
-	if model == "" {
-		model = "gpt-4o"
-	}
+	fmt.Printf("LLM endpoint: %s\n", endpoint)
+	fmt.Printf("LLM model: %s\n", model)
 
-	// Make LLM call
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), agentllm.ResolveTimeout(60*time.Second))
 	defer cancel()
 
-	client := llm.NewClient(endpoint, model, "", 60*time.Second)
+	client := llm.NewClient(endpoint, model, "mechanic", agentllm.ResolveTimeout(60*time.Second))
 
 	resp, err := client.Complete(ctx, systemPrompt, userPrompt)
 	if err != nil {
@@ -85,16 +108,28 @@ You are patrol cycle #1 for this agent session.`
 	fmt.Println(resp)
 	fmt.Println()
 
-	// Analyze response
-	if strings.Contains(resp, "gt mail inbox") {
-		fmt.Println("❌ PROBLEM: LLM still wants to run 'gt mail inbox'")
-	} else if strings.Contains(resp, "ls -rt") || strings.Contains(resp, "log") {
-		fmt.Println("✅ GOOD: LLM is scanning logs")
-	} else {
-		respLen := len(resp)
-		if respLen > 100 {
-			respLen = 100
+	analyzeMechanicResponse(resp)
+}
+
+// analyzeMechanicResponse prints a dev verdict on whether the model followed mechanic rules.
+func analyzeMechanicResponse(resp string) {
+	lower := strings.ToLower(resp)
+	switch {
+	case strings.Contains(lower, "gt mail inbox"), strings.Contains(lower, "mail send"), strings.Contains(lower, "mail read"):
+		fmt.Println("❌ PROBLEM: LLM used forbidden mail commands")
+	case strings.Contains(lower, "zap-orphans"), strings.Contains(lower, "dolt zap"):
+		fmt.Println("✅ GOOD: LLM started patrol with gt dolt zap-orphans (step 1)")
+	case strings.Contains(lower, "ls -rt"), strings.Contains(lower, "logs/sessions"):
+		fmt.Println("✅ GOOD: LLM is scanning session logs (step 2)")
+	case strings.Contains(lower, "tail ") && strings.Contains(lower, ".log"):
+		fmt.Println("✅ GOOD: LLM is tailing a session log (step 3)")
+	case strings.HasPrefix(strings.TrimSpace(resp), "CMD:") && !strings.Contains(lower, "mail"):
+		fmt.Println("✅ GOOD: LLM emitted CMD without mail (acceptable patrol command)")
+	default:
+		preview := strings.TrimSpace(resp)
+		if len(preview) > 120 {
+			preview = preview[:120] + "..."
 		}
-		fmt.Printf("⚠️  UNKNOWN: Response starts with: %s\n", resp[:respLen])
+		fmt.Printf("⚠️  REVIEW: unexpected response: %s\n", preview)
 	}
 }

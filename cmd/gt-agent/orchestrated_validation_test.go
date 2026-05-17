@@ -10,7 +10,7 @@ import (
 
 func TestValidateQAArtifacts_customValidation(t *testing.T) {
 	dir := t.TempDir()
-	rigDir := filepath.Join(dir, "testgt2", "mayor", "rig")
+	rigDir := filepath.Join(dir, "mockrig", "mayor", "rig")
 	backend := filepath.Join(rigDir, "backend")
 	if err := os.MkdirAll(backend, 0755); err != nil {
 		t.Fatal(err)
@@ -26,7 +26,7 @@ func TestValidateQAArtifacts_customValidation(t *testing.T) {
 		t.Fatal(err)
 	}
 	// all_passed with no unittest run should fail
-	if err := validateQAArtifacts(dir, "testgt2", "all_passed", false, true, false, v); err == nil {
+	if err := validateQAArtifacts(dir, "mockrig", "all_passed", false, true, false, v); err == nil {
 		t.Fatal("expected unittest required")
 	}
 }

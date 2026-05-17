@@ -7,8 +7,8 @@ import (
 
 func TestOrchestratedRoleLogPath(t *testing.T) {
 	t.Parallel()
-	got := orchestratedRoleLogPath("/gt", "architect", "testgt1", "")
-	want := filepath.Join("/gt", "testgt1", "architect", "typescript")
+	got := orchestratedRoleLogPath("/gt", "architect", "mockrigb", "")
+	want := filepath.Join("/gt", "mockrigb", "architect", "typescript")
 	if got != want {
 		t.Fatalf("got %q want %q", got, want)
 	}

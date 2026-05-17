@@ -76,6 +76,9 @@ func ValidateSummaryBeadIDs(summary string, known map[string]bool, rigPrefix str
 		if isIgnoredSummaryToken(id) {
 			continue
 		}
+		if summaryMentionsAgentIdentityBead(summary, id) {
+			continue
+		}
 		if known != nil && known[id] {
 			continue
 		}
@@ -96,8 +99,27 @@ func isIgnoredSummaryToken(id string) bool {
 	case "gt-agent", "gt-role", "in-progress":
 		return true
 	}
-	if strings.HasPrefix(id, "te-testgt") || strings.HasPrefix(id, "de-testgt") {
-		return true // agent identity beads
+	return isAgentIdentityBeadID(id)
+}
+
+// summaryMentionsAgentIdentityBead returns true when the regex matched a prefix of a role bead (xx-<rig>-architect).
+func summaryMentionsAgentIdentityBead(summary, matchedID string) bool {
+	lower := strings.ToLower(summary)
+	matchedID = strings.ToLower(matchedID)
+	for _, role := range []string{"architect", "qa", "witness", "refinery", "polecat"} {
+		if strings.Contains(lower, matchedID+"-"+role) {
+			return true
+		}
 	}
-	return false
+	return strings.Contains(lower, matchedID+"-crew-")
+}
+
+// isAgentIdentityBeadID reports rig patrol/role beads (e.g. xx-<rig>-architect), not implementation tasks.
+func isAgentIdentityBeadID(id string) bool {
+	for _, suf := range []string{"-architect", "-qa", "-witness", "-refinery", "-polecat"} {
+		if strings.HasSuffix(id, suf) {
+			return true
+		}
+	}
+	return strings.Contains(id, "-crew-")
 }

@@ -176,7 +176,7 @@ func CheckContentNotStub(data []byte, displayRel string, opts StubCheckOptions) 
 
 	minBytes := opts.MinFileBytes
 	if looksSubstantiveImplementation(text, substantive, opts) {
-		// Small but complete modules (e.g. pure fizzbuzz.py) may be well under 400 bytes.
+		// Small but complete modules may be well under 400 bytes.
 		if minBytes > MinImplementationFileBytesFloor {
 			minBytes = MinImplementationFileBytesFloor
 		}

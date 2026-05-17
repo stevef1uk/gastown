@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 
 	"github.com/steveyegge/gastown/internal/config"
+	"github.com/steveyegge/gastown/internal/dotenv"
 )
 
 // ErrNotFound indicates no workspace was found.
@@ -76,6 +77,7 @@ func FindOrError(startDir string) (string, error) {
 }
 
 func FindFromCwd() (string, error) {
+	_, _ = dotenv.LoadFromCwd()
 	cwd, err := os.Getwd()
 	if err == nil {
 		if root, err := Find(cwd); err == nil && root != "" {

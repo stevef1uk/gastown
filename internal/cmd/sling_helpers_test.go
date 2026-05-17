@@ -245,7 +245,7 @@ func TestAgentIDToBeadID_TownLevelAgents(t *testing.T) {
 // TestAgentIDToBeadID_RigLevelArchitectQA pins the regression caught
 // during fix #73: agentIDToBeadID() previously returned "" for
 // `<rig>/architect` and `<rig>/qa`, which broke `gt unhook` for those
-// roles with "could not convert agent ID testgt2/architect to bead ID".
+// roles with "could not convert agent ID mockrig/architect to bead ID".
 // That left the architect stuck on its own outgoing "Architecture Ready"
 // wisp and flooded mayor's inbox with 55+ duplicate handoff mails.
 //

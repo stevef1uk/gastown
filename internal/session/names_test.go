@@ -167,7 +167,7 @@ func TestRigPolecatSessionName(t *testing.T) {
 		rigName   string
 		want      string
 	}{
-		{"gt", "testgt2", "gt-testgt2-polecat"},
+		{"gt", "mockrig", "gt-mockrig-polecat"},
 		{"bd", "beads", "bd-beads-polecat"},
 		{"hop", "greenplace", "hop-greenplace-polecat"},
 	}

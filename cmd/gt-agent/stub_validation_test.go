@@ -11,17 +11,18 @@ import (
 
 func TestValidateQAArtifacts_rejectsStubs(t *testing.T) {
 	dir := t.TempDir()
-	rigDir := filepath.Join(dir, "testgt1", "mayor", "rig")
-	layout := filepath.Join(rigDir, "defender", "frontend", "game")
+	rig := "mockrig"
+	rigDir := filepath.Join(dir, rig, "mayor", "rig")
+	layout := filepath.Join(rigDir, "myapp", "frontend", "game")
 	if err := os.MkdirAll(layout, 0755); err != nil {
 		t.Fatal(err)
 	}
 	files := map[string]string{
-		"defender/frontend/index.html":     `<html><body>Hello</body></html>`,
-		"defender/frontend/game/main.js":   "def start():\n    pass\n",
-		"defender/frontend/game/renderer.js": "def render():\n    pass\n",
-		"defender/backend/main.py":         "def hello():\n    return 'Hello'\n",
-		"defender/backend/requirements.txt": "flask\n",
+		"myapp/frontend/index.html":       `<html><body>Hello</body></html>`,
+		"myapp/frontend/game/main.js":     "def start():\n    pass\n",
+		"myapp/frontend/game/renderer.js": "def render():\n    pass\n",
+		"myapp/backend/main.py":           "def hello():\n    return 'Hello'\n",
+		"myapp/backend/requirements.txt":  "flask\n",
 	}
 	for rel, body := range files {
 		path := filepath.Join(rigDir, filepath.FromSlash(rel))
@@ -33,20 +34,20 @@ func TestValidateQAArtifacts_rejectsStubs(t *testing.T) {
 		}
 	}
 	v := orchestrator.WorkflowValidation{
-		LayoutRoot: "defender",
-		BeadTitleContains: "Implementation defender/",
+		LayoutRoot:        "myapp",
+		BeadTitleContains: "Implement myapp/",
 		RequiredFiles: []string{
-			"defender/backend/main.py",
-			"defender/backend/requirements.txt",
-			"defender/frontend/index.html",
-			"defender/frontend/game/main.js",
-			"defender/frontend/game/renderer.js",
+			"myapp/backend/main.py",
+			"myapp/backend/requirements.txt",
+			"myapp/frontend/index.html",
+			"myapp/frontend/game/main.js",
+			"myapp/frontend/game/renderer.js",
 		},
-		QAVerifyCommand: "cd defender/backend && pytest -q",
+		QAVerifyCommand: "cd myapp/backend && python3 -m pytest -q",
 		TestRunner:      "pytest",
 	}
 	v = orchestrator.ClampProfileValidation(v)
-	err := validateQAArtifacts(dir, "testgt1", "all_passed", false, true, true, v)
+	err := validateQAArtifacts(dir, rig, "all_passed", false, true, true, v)
 	if err == nil {
 		t.Fatal("expected QA to reject stub files")
 	}

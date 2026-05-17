@@ -186,7 +186,7 @@ var workflowTownRoot string
 
 func init() {
 	mayorWorkflowCmd.PersistentFlags().StringVar(&workflowTownRoot, "town", "", "Town root (default: cwd walk-up or GT_TOWN_ROOT)")
-	mayorWorkflowStartCmd.Flags().StringVar(&workflowRig, "rig", "", "Rig name for workflow variables (e.g. testgt2)")
+	mayorWorkflowStartCmd.Flags().StringVar(&workflowRig, "rig", "", "Rig name for workflow variables (from gt rig list)")
 	mayorWorkflowResetCmd.Flags().StringVar(&workflowResetTo, "to", "design", "FSM state to rewind to (kickoff, design, planning, …)")
 }
 

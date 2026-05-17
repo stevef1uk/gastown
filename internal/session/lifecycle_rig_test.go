@@ -13,7 +13,7 @@ func TestRepairTownRoleRigIdentity_writesGtAgent(t *testing.T) {
 	workDir := t.TempDir()
 	ctx := context.Background()
 
-	if err := RepairTownRoleRigIdentity(ctx, nil, "", workDir, "polecat", "testgt2"); err != nil {
+	if err := RepairTownRoleRigIdentity(ctx, nil, "", workDir, "polecat", "mockrig"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -28,19 +28,19 @@ func TestRepairTownRoleRigIdentity_writesGtAgent(t *testing.T) {
 	if err := json.Unmarshal(data, &id); err != nil {
 		t.Fatal(err)
 	}
-	if id.Role != "polecat" || id.Rig != "testgt2" {
-		t.Fatalf("identity = %+v, want role=polecat rig=testgt2", id)
+	if id.Role != "polecat" || id.Rig != "mockrig" {
+		t.Fatalf("identity = %+v, want role=polecat rig=mockrig", id)
 	}
 }
 
 func TestRepairTownRoleRigIdentity_skipsWhenRigMatches(t *testing.T) {
 	t.Parallel()
 	workDir := t.TempDir()
-	existing := `{"role":"polecat","rig":"testgt2"}`
+	existing := `{"role":"polecat","rig":"mockrig"}`
 	if err := os.WriteFile(filepath.Join(workDir, ".gt-agent"), []byte(existing), 0644); err != nil {
 		t.Fatal(err)
 	}
-	if err := RepairTownRoleRigIdentity(context.Background(), nil, "", workDir, "polecat", "testgt2"); err != nil {
+	if err := RepairTownRoleRigIdentity(context.Background(), nil, "", workDir, "polecat", "mockrig"); err != nil {
 		t.Fatal(err)
 	}
 }

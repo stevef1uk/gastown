@@ -10,7 +10,7 @@ import (
 )
 
 func TestParseOrchestratedCommands_gluedQuoteCMD(t *testing.T) {
-	in := "CMD: bash -lc 'cd testgt2/mayor/rig && bd list --status=open'CMD: bash -lc 'cd testgt2/mayor/rig && bd ready'"
+	in := "CMD: bash -lc 'cd mockrig/mayor/rig && bd list --status=open'CMD: bash -lc 'cd mockrig/mayor/rig && bd ready'"
 	cmds := parseOrchestratedCommands(in)
 	if len(cmds) != 2 {
 		t.Fatalf("want 2 commands, got %d: %v", len(cmds), cmds)
@@ -21,15 +21,15 @@ func TestParseOrchestratedCommands_gluedQuoteCMD(t *testing.T) {
 }
 
 func TestParseOrchestratedCommands_gluedPlannerLine(t *testing.T) {
-	in := "CMD: ls -R testgt2/mayor/rig/CMD: cat testgt2/mayor/rig/SPEC.mdCMD: cat testgt2/mayor/rig/architecture.md{\"outcome\":\"failure\"}"
+	in := "CMD: ls -R mockrig/mayor/rig/CMD: cat mockrig/mayor/rig/SPEC.mdCMD: cat mockrig/mayor/rig/architecture.md{\"outcome\":\"failure\"}"
 	cmds := parseOrchestratedCommands(in)
 	if len(cmds) != 3 {
 		t.Fatalf("want 3 commands, got %d: %v", len(cmds), cmds)
 	}
-	if cmds[0] != "ls -R testgt2/mayor/rig" {
+	if cmds[0] != "ls -R mockrig/mayor/rig" {
 		t.Fatalf("cmd[0]: %q", cmds[0])
 	}
-	if cmds[1] != "cat testgt2/mayor/rig/SPEC.md" {
+	if cmds[1] != "cat mockrig/mayor/rig/SPEC.md" {
 		t.Fatalf("cmd[1]: %q", cmds[1])
 	}
 	if strings.Contains(cmds[2], "outcome") {
@@ -108,13 +108,13 @@ func TestUpdateOrchestratedRetryAfterComplete_clearsOnStateChange(t *testing.T) 
 }
 
 func TestValidatePlanReviewCommand_rejectsDelete(t *testing.T) {
-	if err := validatePlanReviewCommand("bd delete te-ajz --force", "testgt2"); err == nil {
+	if err := validatePlanReviewCommand("bd delete te-ajz --force", "mockrig"); err == nil {
 		t.Fatal("expected reject")
 	}
 }
 
 func TestParseOrchestratedCommands_stripsTOOLCALLSAndFakeLs(t *testing.T) {
-	in := "CMD: ls -la testgt2/mayor/rig/backend/\n```[TOOL_CALLS]```\ntotal 24\ndrwxr-xr-x 2 user user 4096 Jun 25 10:00 .\n"
+	in := "CMD: ls -la mockrig/mayor/rig/backend/\n```[TOOL_CALLS]```\ntotal 24\ndrwxr-xr-x 2 user user 4096 Jun 25 10:00 .\n"
 	cmds := parseOrchestratedCommands(in)
 	if len(cmds) != 1 {
 		t.Fatalf("want 1 cmd, got %d: %v", len(cmds), cmds)
@@ -128,7 +128,7 @@ func TestParseOrchestratedCommands_stripsTOOLCALLSAndFakeLs(t *testing.T) {
 }
 
 func TestParseOrchestratedCommands_markdownFencedCMD(t *testing.T) {
-	in := "prose\n```CMD:\ncd testgt2/mayor/rig && bd list --status=closed\n```\n"
+	in := "prose\n```CMD:\ncd mockrig/mayor/rig && bd list --status=closed\n```\n"
 	cmds := parseOrchestratedCommands(in)
 	if len(cmds) != 1 {
 		t.Fatalf("want 1 cmd from fenced CMD, got %d: %v", len(cmds), cmds)
@@ -140,44 +140,44 @@ func TestParseOrchestratedCommands_markdownFencedCMD(t *testing.T) {
 
 func TestValidateQACommand_rejectsWorkspace(t *testing.T) {
 	v := orchestrator.DefaultWorkflowValidation()
-	if err := validateQACommand("cat /workspace/testgt2/src/foo.py", "testgt2", v); err == nil {
+	if err := validateQACommand("cat /workspace/mockrig/src/foo.py", "mockrig", v); err == nil {
 		t.Fatal("expected reject")
 	}
-	if err := validateQACommand("cd testgt2/mayor/rig && python3 -m unittest backend.test_fizzbuzz", "testgt2", v); err != nil {
+	if err := validateQACommand("cd mockrig/mayor/rig && python3 -m unittest backend.test_fizzbuzz", "mockrig", v); err != nil {
 		t.Fatalf("unittest should be allowed: %v", err)
 	}
-	if err := validateQACommand("python3 -m unittest backend.test_fizzbuzz -v", "testgt2", v); err == nil {
+	if err := validateQACommand("python3 -m unittest backend.test_fizzbuzz -v", "mockrig", v); err == nil {
 		t.Fatal("unittest without cd should be rejected")
 	}
-	if err := validateQACommand("python3 -m unittest backend.test_fizzbuzz -v | grep ok", "testgt2", v); err == nil {
+	if err := validateQACommand("python3 -m unittest backend.test_fizzbuzz -v | grep ok", "mockrig", v); err == nil {
 		t.Fatal("unittest piped to grep should be rejected")
 	}
 }
 
 func TestValidateDesignCommand_forbidsImplementation(t *testing.T) {
 	cases := []string{
-		"git -C testgt2/mayor/rig commit -m x",
-		"mkdir -p testgt2/mayor/rig/backend",
-		"cat > testgt2/mayor/rig/backend/fizzbuzz.py <<'EOF'",
-		"python3 testgt2/mayor/rig/backend/main.py",
+		"git -C mockrig/mayor/rig commit -m x",
+		"mkdir -p mockrig/mayor/rig/backend",
+		"cat > mockrig/mayor/rig/backend/fizzbuzz.py <<'EOF'",
+		"python3 mockrig/mayor/rig/backend/main.py",
 	}
 	for _, cmd := range cases {
-		if err := validateDesignCommand(cmd, "testgt2"); err == nil {
+		if err := validateDesignCommand(cmd, "mockrig"); err == nil {
 			t.Fatalf("expected reject for %q", cmd)
 		}
 	}
-	if err := validateDesignCommand("cat > testgt2/mayor/rig/architecture.md <<'EOF'", "testgt2"); err != nil {
+	if err := validateDesignCommand("cat > mockrig/mayor/rig/architecture.md <<'EOF'", "mockrig"); err != nil {
 		t.Fatalf("architecture heredoc should be allowed: %v", err)
 	}
-	if err := validateDesignCommand("head -n 60 testgt2/mayor/rig/SPEC.md", "testgt2"); err != nil {
+	if err := validateDesignCommand("head -n 60 mockrig/mayor/rig/SPEC.md", "mockrig"); err != nil {
 		t.Fatalf("head SPEC should be allowed: %v", err)
 	}
-	heredoc := "cat > testgt2/mayor/rig/architecture.md <<'EOF'\n# Architecture\nDescribe backend/fizzbuzz.py here.\nEOF"
-	if err := validateDesignCommand(heredoc, "testgt2"); err != nil {
+	heredoc := "cat > mockrig/mayor/rig/architecture.md <<'EOF'\n# Architecture\nDescribe backend/fizzbuzz.py here.\nEOF"
+	if err := validateDesignCommand(heredoc, "mockrig"); err != nil {
 		t.Fatalf("architecture heredoc may mention backend/: %v", err)
 	}
-	heredocWithProse := "cat > testgt2/mayor/rig/architecture.md <<'EOF'\n# Architecture\nRun python3 -m unittest backend.test_fizzbuzz.\nThe workflow uses gt bd for CI.\nEOF"
-	if err := validateDesignCommand(heredocWithProse, "testgt2"); err != nil {
+	heredocWithProse := "cat > mockrig/mayor/rig/architecture.md <<'EOF'\n# Architecture\nRun python3 -m unittest backend.test_fizzbuzz.\nThe workflow uses gt bd for CI.\nEOF"
+	if err := validateDesignCommand(heredocWithProse, "mockrig"); err != nil {
 		t.Fatalf("architecture heredoc may mention python3/gt bd in prose: %v", err)
 	}
 }
@@ -191,37 +191,37 @@ func TestNormalizeGluedEOFCMD(t *testing.T) {
 }
 
 func TestRewriteBackendPathAfterCD(t *testing.T) {
-	cmd := `bash -lc 'cd testgt2/mayor/rig && cat > testgt2/mayor/rig/backend/fizzbuzz.py <<EOF'`
-	fixed, ok := rewriteBackendPathAfterCD(cmd, "testgt2")
-	if !ok || strings.Contains(fixed, "testgt2/mayor/rig/backend") {
+	cmd := `bash -lc 'cd mockrig/mayor/rig && cat > mockrig/mayor/rig/backend/fizzbuzz.py <<EOF'`
+	fixed, ok := rewriteBackendPathAfterCD(cmd, "mockrig")
+	if !ok || strings.Contains(fixed, "mockrig/mayor/rig/backend") {
 		t.Fatalf("want backend/ relative path, got ok=%v cmd=%q", ok, fixed)
 	}
 }
 
 func TestRewriteOrchestratedRigPlaceholders(t *testing.T) {
 	cmd := `export BEADS_DIR=$GT_ROOT/RIG/.beads && cd RIG/mayor/rig && bd create --type task --title "x"`
-	fixed, ok := rewriteOrchestratedRigPlaceholders(cmd, "testgt2")
+	fixed, ok := rewriteOrchestratedRigPlaceholders(cmd, "mockrig")
 	if !ok {
 		t.Fatal("expected rewrite")
 	}
 	if strings.Contains(fixed, "RIG/") {
 		t.Fatalf("RIG placeholder should be gone: %q", fixed)
 	}
-	if !strings.Contains(fixed, "testgt2/mayor/rig") || !strings.Contains(fixed, "testgt2/.beads") {
+	if !strings.Contains(fixed, "mockrig/mayor/rig") || !strings.Contains(fixed, "mockrig/.beads") {
 		t.Fatalf("unexpected: %q", fixed)
 	}
 }
 
 func TestRewritePlanMDPathAfterCD(t *testing.T) {
-	cmd := `bash -lc 'cd testgt2/mayor/rig && cat > testgt2/mayor/rig/plan.md <<'"'"'EOF'"'"'
+	cmd := `bash -lc 'cd mockrig/mayor/rig && cat > mockrig/mayor/rig/plan.md <<'"'"'EOF'"'"'
 # Plan
 EOF
 '`
-	fixed, ok := rewritePlanMDPathAfterCD(cmd, "testgt2")
+	fixed, ok := rewritePlanMDPathAfterCD(cmd, "mockrig")
 	if !ok {
 		t.Fatal("expected rewrite")
 	}
-	if strings.Contains(fixed, "testgt2/mayor/rig/plan.md") {
+	if strings.Contains(fixed, "mockrig/mayor/rig/plan.md") {
 		t.Fatalf("should rewrite to plan.md only: %q", fixed)
 	}
 	if !strings.Contains(fixed, "cat > plan.md") {
@@ -236,52 +236,52 @@ func TestValidatePlanningCommand_forbidsImplementation(t *testing.T) {
 		"python3 backend/main.py",
 	}
 	for _, cmd := range cases {
-		if err := validatePlanningCommand(cmd, "testgt2"); err == nil {
+		if err := validatePlanningCommand(cmd, "mockrig"); err == nil {
 			t.Fatalf("expected reject for %q", cmd)
 		}
 	}
-	plan := "cat > testgt2/mayor/rig/plan.md <<'EOF'\n# Plan\nEOF"
-	if err := validatePlanningCommand(plan, "testgt2"); err != nil {
+	plan := "cat > mockrig/mayor/rig/plan.md <<'EOF'\n# Plan\nEOF"
+	if err := validatePlanningCommand(plan, "mockrig"); err != nil {
 		t.Fatalf("plan heredoc should be allowed: %v", err)
 	}
-	planBackend := "bash -lc 'cat > testgt2/mayor/rig/plan.md <<'EOF'\nBead 1: Implement backend/fizzbuzz.py\nEOF'"
-	if err := validatePlanningCommand(planBackend, "testgt2"); err != nil {
+	planBackend := "bash -lc 'cat > mockrig/mayor/rig/plan.md <<'EOF'\nBead 1: Implement backend/fizzbuzz.py\nEOF'"
+	if err := validatePlanningCommand(planBackend, "mockrig"); err != nil {
 		t.Fatalf("plan heredoc body may mention backend/: %v", err)
 	}
-	if err := validatePlanningCommand("gt bd add -t task -m hello", "testgt2"); err == nil {
+	if err := validatePlanningCommand("gt bd add -t task -m hello", "mockrig"); err == nil {
 		t.Fatal("gt bd add should be rejected")
 	}
-	if err := validatePlanningCommand(`bash -lc 'cd testgt2/mayor/rig && bd create --type task --title "Implement backend/fizzbuzz.py"'`, "testgt2"); err != nil {
+	if err := validatePlanningCommand(`bash -lc 'cd mockrig/mayor/rig && bd create --type task --title "Implement backend/fizzbuzz.py"'`, "mockrig"); err != nil {
 		t.Fatalf("bd create with backend/ in title should be allowed: %v", err)
 	}
-	if err := validatePlanningCommand("head -n 40 testgt2/mayor/rig/architecture.md", "testgt2"); err != nil {
+	if err := validatePlanningCommand("head -n 40 mockrig/mayor/rig/architecture.md", "mockrig"); err != nil {
 		t.Fatalf("head architecture should be allowed: %v", err)
 	}
-	if err := validatePlanningCommand("cat > testgt2/mayor/rig/backend/foo.py <<'EOF'", "testgt2"); err == nil {
+	if err := validatePlanningCommand("cat > mockrig/mayor/rig/backend/foo.py <<'EOF'", "mockrig"); err == nil {
 		t.Fatal("writing backend file should be rejected")
 	}
 }
 
 func TestValidatePlanningArtifacts(t *testing.T) {
 	dir := t.TempDir()
-	rigDir := filepath.Join(dir, "testgt2", "mayor", "rig")
+	rigDir := filepath.Join(dir, "mockrig", "mayor", "rig")
 	if err := os.MkdirAll(rigDir, 0755); err != nil {
 		t.Fatal(err)
 	}
 	v := orchestrator.DefaultWorkflowValidation()
-	if err := validatePlanningArtifacts(dir, "testgt2", false, false, false, v); err == nil {
+	if err := validatePlanningArtifacts(dir, "mockrig", false, false, false, v); err == nil {
 		t.Fatal("expected error without plan and beads")
 	}
 	if err := os.WriteFile(filepath.Join(rigDir, "plan.md"), make([]byte, 250), 0644); err != nil {
 		t.Fatal(err)
 	}
-	if err := validatePlanningArtifacts(dir, "testgt2", false, false, false, v); err == nil {
+	if err := validatePlanningArtifacts(dir, "mockrig", false, false, false, v); err == nil {
 		t.Fatal("expected error without bead create/repair")
 	}
-	if err := validatePlanningArtifacts(dir, "testgt2", true, true, false, v); err == nil {
+	if err := validatePlanningArtifacts(dir, "mockrig", true, true, false, v); err == nil {
 		t.Fatal("expected error when commands failed")
 	}
-	if err := validatePlanningArtifacts(dir, "testgt2", false, true, false, v); err != nil {
+	if err := validatePlanningArtifacts(dir, "mockrig", false, true, false, v); err != nil {
 		t.Fatalf("plan + bd create should pass: %v", err)
 	}
 }
@@ -295,19 +295,19 @@ func TestValidateImplementationCommand(t *testing.T) {
 		"<<EOF > foo",
 	}
 	for _, cmd := range bad {
-		if err := validateImplementationCommand(cmd, "testgt2"); err == nil {
+		if err := validateImplementationCommand(cmd, "mockrig"); err == nil {
 			t.Fatalf("expected reject: %q", cmd)
 		}
 	}
 	ok := []string{
-		`bash -lc 'cd testgt2/mayor/rig && bd list --status=open'`,
-		`bash -lc 'cd testgt2/mayor/rig && bd update hq-abc --status=in_progress'`,
-		`cat > testgt2/mayor/rig/backend/fizzbuzz.py <<'EOF'`,
-		`bash -lc 'cd testgt2/mayor/rig && git add backend && git commit -m "Implement x"'`,
+		`bash -lc 'cd mockrig/mayor/rig && bd list --status=open'`,
+		`bash -lc 'cd mockrig/mayor/rig && bd update hq-abc --status=in_progress'`,
+		`cat > mockrig/mayor/rig/backend/fizzbuzz.py <<'EOF'`,
+		`bash -lc 'cd mockrig/mayor/rig && git add backend && git commit -m "Implement x"'`,
 	}
 	bad = append(bad, "git push origin main", "git add .", "git add -A", "git add typescript")
 	for _, cmd := range ok {
-		if err := validateImplementationCommand(cmd, "testgt2"); err != nil {
+		if err := validateImplementationCommand(cmd, "mockrig"); err != nil {
 			t.Fatalf("expected allow %q: %v", cmd, err)
 		}
 	}
@@ -315,7 +315,7 @@ func TestValidateImplementationCommand(t *testing.T) {
 
 func TestOrchestratedArtifactAutoOutcome_planningRequiresBeads(t *testing.T) {
 	dir := t.TempDir()
-	rigDir := filepath.Join(dir, "testgt2", "mayor", "rig")
+	rigDir := filepath.Join(dir, "mockrig", "mayor", "rig")
 	if err := os.MkdirAll(rigDir, 0755); err != nil {
 		t.Fatal(err)
 	}
@@ -323,10 +323,10 @@ func TestOrchestratedArtifactAutoOutcome_planningRequiresBeads(t *testing.T) {
 		t.Fatal(err)
 	}
 	task := &orchestrator.Task{State: "planning", AllowedOutcomes: []string{"success", "failure"}}
-	if _, _, ok := orchestratedArtifactAutoOutcome(task, dir, "testgt2", false, false, false, false); ok {
+	if _, _, ok := orchestratedArtifactAutoOutcome(task, dir, "mockrig", false, false, false, false); ok {
 		t.Fatal("should not auto-complete without bd create success")
 	}
-	if _, _, ok := orchestratedArtifactAutoOutcome(task, dir, "testgt2", false, false, true, false); !ok {
+	if _, _, ok := orchestratedArtifactAutoOutcome(task, dir, "mockrig", false, false, true, false); !ok {
 		t.Fatal("should auto-complete with plan + bead create ok")
 	}
 }
@@ -366,14 +366,14 @@ func writeImplementationBackendFiles(t *testing.T, townRoot, rig string) {
 func TestValidateImplementationArtifacts(t *testing.T) {
 	dir := t.TempDir()
 	v := orchestrator.DefaultWorkflowValidation()
-	if err := validateImplementationArtifacts(dir, "testgt2", false, false, v); err == nil {
+	if err := validateImplementationArtifacts(dir, "mockrig", false, false, v); err == nil {
 		t.Fatal("expected error without bd close")
 	}
-	if err := validateImplementationArtifacts(dir, "testgt2", true, true, v); err == nil {
+	if err := validateImplementationArtifacts(dir, "mockrig", true, true, v); err == nil {
 		t.Fatal("expected error when commands failed")
 	}
-	writeImplementationBackendFiles(t, dir, "testgt2")
-	if err := validateImplementationArtifacts(dir, "testgt2", false, true, v); err != nil {
+	writeImplementationBackendFiles(t, dir, "mockrig")
+	if err := validateImplementationArtifacts(dir, "mockrig", false, true, v); err != nil {
 		t.Fatalf("bd close ok with backend files should pass: %v", err)
 	}
 }
@@ -400,18 +400,18 @@ func TestOrchestratedArtifactAutoOutcome_design(t *testing.T) {
 func TestOrchestratedCommandEnv_pinsRigBeadsForPlanning(t *testing.T) {
 	town := t.TempDir()
 	townBeads := filepath.Join(town, ".beads")
-	rigBeads := filepath.Join(town, "testgt2", ".beads")
+	rigBeads := filepath.Join(town, "mockrig", ".beads")
 	for _, d := range []string{townBeads, rigBeads} {
 		if err := os.MkdirAll(d, 0755); err != nil {
 			t.Fatal(err)
 		}
 	}
 	base := []string{"BEADS_DIR=" + townBeads, "GT_ROOT=" + town}
-	env := orchestratedCommandEnv(town, "testgt2", "planning", base)
+	env := orchestratedCommandEnv(town, "mockrig", "planning", base)
 	if got := envLookup(env, "BEADS_DIR"); got != rigBeads {
 		t.Fatalf("planning BEADS_DIR = %q, want %q", got, rigBeads)
 	}
-	env = orchestratedCommandEnv(town, "testgt2", "design", base)
+	env = orchestratedCommandEnv(town, "mockrig", "design", base)
 	if got := envLookup(env, "BEADS_DIR"); got != townBeads {
 		t.Fatalf("design should not override BEADS_DIR: got %q", got)
 	}

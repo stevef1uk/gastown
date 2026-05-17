@@ -194,7 +194,7 @@ func (p *NatsProvider) Stop(ctx context.Context, sessionID string, graceful bool
 func killAgentBySessionID(sessionID, townRoot string) error {
 	// Find all gt-agent processes and check their cwd. gt-agent processes
 	// run from subdirectories of the town root (e.g., ~/gt/mayor/,
-	// ~/gt/defender/witness/), so we can identify town membership by cwd.
+	// ~/gt/<rig>/witness/), so we can identify town membership by cwd.
 	out, err := exec.Command("pgrep", "-a", "-f", "gt-agent.*\\[GAS TOWN\\]").Output()
 	if err != nil {
 		return err // No gt-agent processes

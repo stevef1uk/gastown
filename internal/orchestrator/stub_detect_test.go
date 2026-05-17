@@ -11,7 +11,7 @@ func TestCheckContentNotStub_rejectsHelloHTML(t *testing.T) {
 	html := `<!DOCTYPE html>
 <html><body>Hello</body></html>`
 	opts := StubCheckOptions{MinFileBytes: 400, MinSubstantiveLines: 3}
-	err := CheckContentNotStub([]byte(html), "defender/frontend/index.html", opts)
+	err := CheckContentNotStub([]byte(html), "myapp/frontend/index.html", opts)
 	if err == nil {
 		t.Fatal("expected stub rejection for hello html")
 	}
@@ -43,8 +43,8 @@ func TestCheckContentNotStub_acceptsSubstantiveFile(t *testing.T) {
 
 func TestValidateWorkNotStubbed_layoutTree(t *testing.T) {
 	dir := t.TempDir()
-	rigDir := filepath.Join(dir, "testgt1", "mayor", "rig")
-	layout := filepath.Join(rigDir, "defender", "frontend")
+	rigDir := filepath.Join(dir, "mockrig", "mayor", "rig")
+	layout := filepath.Join(rigDir, "myapp", "frontend")
 	if err := os.MkdirAll(layout, 0755); err != nil {
 		t.Fatal(err)
 	}
@@ -53,8 +53,8 @@ func TestValidateWorkNotStubbed_layoutTree(t *testing.T) {
 		t.Fatal(err)
 	}
 	v := WorkflowValidation{
-		LayoutRoot:           "defender",
-		RequiredFiles:        []string{"defender/frontend/index.html"},
+		LayoutRoot:                 "myapp",
+		RequiredFiles:              []string{"myapp/frontend/index.html"},
 		MinImplementationFileBytes: 400,
 	}.WithDefaults()
 	v = ClampProfileValidation(v)
@@ -64,26 +64,25 @@ func TestValidateWorkNotStubbed_layoutTree(t *testing.T) {
 	}
 }
 
-func TestCheckContentNotStub_acceptsSmallCompleteFizzBuzz(t *testing.T) {
-	py := `def fizzbuzz(n: int) -> str:
-    """Return FizzBuzz string for integer n."""
+func TestCheckContentNotStub_acceptsSmallCompleteModule(t *testing.T) {
+	py := `def widget(n: int) -> str:
+    """Return label for integer n."""
     if n % 15 == 0:
         return "FizzBuzz"
     elif n % 3 == 0:
         return "Fizz"
     elif n % 5 == 0:
         return "Buzz"
-    else:
-        return str(n)
+    return str(n)
 `
 	opts := StubCheckOptions{MinFileBytes: 400, MinSubstantiveLines: 3}
-	if err := CheckContentNotStub([]byte(py), "backend/fizzbuzz.py", opts); err != nil {
+	if err := CheckContentNotStub([]byte(py), "backend/widget.py", opts); err != nil {
 		t.Fatalf("expected small complete module to pass: %v", err)
 	}
 	mainPy := `def main():
-    from .fizzbuzz import fizzbuzz
+    from .widget import widget
     for i in range(1, 16):
-        print(fizzbuzz(i))
+        print(widget(i))
 
 if __name__ == "__main__":
     main()
@@ -93,8 +92,7 @@ if __name__ == "__main__":
 	}
 }
 
-func TestValidateWorkNotStubbed_testgt1Fixture(t *testing.T) {
-	// Mirrors a real stub polecat output.
+func TestCheckContentNotStub_rejectsTypicalStubs(t *testing.T) {
 	html := `<!DOCTYPE html>
 <html><body>Hello</body></html>`
 	py := "def hello():\n    return \"Hello\"\n"
@@ -104,8 +102,8 @@ func TestValidateWorkNotStubbed_testgt1Fixture(t *testing.T) {
 		content string
 		rel     string
 	}{
-		{"html", html, "defender/frontend/index.html"},
-		{"py", py, "defender/backend/main.py"},
+		{"html", html, "myapp/frontend/index.html"},
+		{"py", py, "myapp/backend/main.py"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if err := CheckContentNotStub([]byte(tc.content), tc.rel, opts); err == nil {

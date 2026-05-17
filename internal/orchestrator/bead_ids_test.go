@@ -28,10 +28,36 @@ func TestValidateSummaryBeadIDs_unknownID(t *testing.T) {
 	}
 }
 
+func TestIsAgentIdentityBeadID(t *testing.T) {
+	for _, id := range []string{"xx-mockrig-architect", "xx-mockrig-qa", "xx-mockrig-crew-steve"} {
+		if !isAgentIdentityBeadID(id) {
+			t.Fatalf("expected agent identity: %s", id)
+		}
+	}
+	if isAgentIdentityBeadID("xx-abc123") {
+		t.Fatal("task bead should not match")
+	}
+}
+
+func TestValidateSummaryBeadIDs_ignoresAgentIdentity(t *testing.T) {
+	known := map[string]bool{"xx-5d0": true}
+	if err := ValidateSummaryBeadIDs("also xx-mockrig-architect", known, "xx"); err != nil {
+		t.Fatalf("agent identity beads should be ignored: %v", err)
+	}
+}
+
 func TestNormalizePytestCommand(t *testing.T) {
-	in := "cd defender/backend && pytest -q"
-	want := "cd defender/backend && python3 -m pytest -q"
+	in := "cd myapp/pkg && pytest -q"
+	want := "cd myapp/pkg && python3 -m pytest -q"
 	if got := NormalizePytestCommand(in); got != want {
+		t.Fatalf("got %q want %q", got, want)
+	}
+}
+
+func TestNormalizePipCommand(t *testing.T) {
+	in := "pip install -r requirements.txt"
+	want := "python3 -m pip install -r requirements.txt"
+	if got := NormalizePipCommand(in); got != want {
 		t.Fatalf("got %q want %q", got, want)
 	}
 }

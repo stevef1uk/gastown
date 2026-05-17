@@ -8,6 +8,8 @@ import (
 	"io"
 	"net/http"
 	"time"
+
+	"github.com/steveyegge/gastown/internal/agentllm"
 )
 
 // Client is a simple HTTP client for OpenAI-compatible LLM APIs.
@@ -70,6 +72,9 @@ func (c *Client) Complete(ctx context.Context, systemPrompt, userPrompt string) 
 	req.Header.Set("Content-Type", "application/json")
 	if c.role != "" {
 		req.Header.Set("X-GasTown-Role", c.role)
+	}
+	if tok := agentllm.AuthToken(); tok != "" {
+		req.Header.Set("Authorization", "Bearer "+tok)
 	}
 
 	resp, err := c.client.Do(req)

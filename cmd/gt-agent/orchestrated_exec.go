@@ -83,14 +83,18 @@ func normalizeHeredocDelimiters(body string) string {
 	return strings.ReplaceAll(body, bashLcHeredocEOFMarker(), plain)
 }
 
-// rewriteUnittestToWorkdir prepends cd into mayor/rig when the model omits it (tests need project on cwd/sys.path).
+// rewriteUnittestToWorkdir prepends cd into mayor/rig when the model omits it (tests/deps need project cwd).
 func rewriteUnittestToWorkdir(cmd, rig string) (string, bool) {
 	lower := strings.ToLower(cmd)
-	if !strings.Contains(lower, "unittest") && !strings.Contains(lower, "pytest") {
+	if !strings.Contains(lower, "unittest") && !strings.Contains(lower, "pytest") && !strings.Contains(lower, "pip") {
 		return cmd, false
 	}
 	changed := false
 	if fixed := orchestrator.NormalizePytestCommand(cmd); fixed != cmd {
+		cmd = fixed
+		changed = true
+	}
+	if fixed := orchestrator.NormalizePipCommand(cmd); fixed != cmd {
 		cmd = fixed
 		changed = true
 	}
@@ -119,14 +123,17 @@ func rewriteBdListLimit(cmd string) (string, bool) {
 	return re, re != cmd
 }
 
-func runOrchestratedCommand(cmd, townRoot, sessionName string, env []string) ([]byte, error) {
+func runOrchestratedCommand(cmd, workDir, sessionName string, env []string) ([]byte, error) {
 	if sessionName != "" {
 		env = append(env, "GT_SESSION="+sessionName)
+	}
+	if workDir == "" {
+		workDir = "."
 	}
 	if !needsOrchestratedScriptFile(cmd) {
 		c := exec.Command("/bin/sh", "-c", cmd)
 		c.Env = env
-		c.Dir = townRoot
+		c.Dir = workDir
 		return c.CombinedOutput()
 	}
 
@@ -152,6 +159,19 @@ func runOrchestratedCommand(cmd, townRoot, sessionName string, env []string) ([]
 
 	c := exec.Command("/bin/bash", tmpPath)
 	c.Env = env
-	c.Dir = townRoot
+	c.Dir = workDir
 	return c.CombinedOutput()
+}
+
+// orchestratedCommandWorkDir is the subprocess cwd for rig workflow steps.
+func orchestratedCommandWorkDir(townRoot, rig, taskState string) string {
+	if rig == "" || townRoot == "" {
+		return townRoot
+	}
+	switch taskState {
+	case "planning", "plan_review", "implementation", "qa_review":
+		return rigMayorRigDir(townRoot, rig)
+	default:
+		return townRoot
+	}
 }

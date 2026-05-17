@@ -24,20 +24,20 @@ func TestOrchestratedForRole(t *testing.T) {
 }
 
 func TestAgentMatchesTask_edgeCases(t *testing.T) {
-	vars := map[string]string{"rig": "testgt2"}
+	vars := map[string]string{"rig": "mockrig"}
 	if !AgentMatchesTask("any", "architect", vars) {
 		t.Fatal("any should match")
 	}
-	if AgentMatchesTask("testgt2/qa", "architect", vars) {
+	if AgentMatchesTask("mockrig/qa", "architect", vars) {
 		t.Fatal("wrong role suffix should not match")
 	}
-	if !AgentMatchesTask("testgt2/qa", "qa", vars) {
+	if !AgentMatchesTask("mockrig/qa", "qa", vars) {
 		t.Fatal("rig-qualified qa should match")
 	}
 	if AgentMatchesTask("qa", "qa", vars) {
 		t.Fatal("bare qa should not match when workflow has rig")
 	}
-	if !AgentMatchesTask("testgt2/polecat", "polecat", vars) {
+	if !AgentMatchesTask("mockrig/polecat", "polecat", vars) {
 		t.Fatal("rig polecat should match")
 	}
 	if AgentMatchesTask("polecat", "polecat", vars) {

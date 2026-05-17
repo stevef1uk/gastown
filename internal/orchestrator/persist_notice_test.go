@@ -31,7 +31,7 @@ func TestBuildRestoreNotice_andDuplicateWarning(t *testing.T) {
 		},
 	}
 	m.LoadTemplate(tpl)
-	if _, err := m.StartWorkflow("rig-flow", map[string]string{"rig": "testgt2"}); err != nil {
+	if _, err := m.StartWorkflow("rig-flow", map[string]string{"rig": "mockrig"}); err != nil {
 		t.Fatal(err)
 	}
 	// Simulate legacy duplicate instances (StartWorkflow now rejects a second active).
@@ -39,7 +39,7 @@ func TestBuildRestoreNotice_andDuplicateWarning(t *testing.T) {
 	id2 := m.allocateWorkflowID()
 	m.instances[id2] = &WorkflowInstance{
 		ID: id2, TemplateID: "rig-flow", CurrentState: "kickoff",
-		Variables: map[string]string{"rig": "testgt2"}, Status: "running",
+		Variables: map[string]string{"rig": "mockrig"}, Status: "running",
 	}
 	m.mu.Unlock()
 	for _, inst := range m.instances {
@@ -66,7 +66,7 @@ func TestBuildRestoreNotice_andDuplicateWarning(t *testing.T) {
 
 	statuses, _ := m.GetWorkflowStatus("")
 	warn := DuplicateActiveWarning(statuses)
-	if !strings.Contains(warn, "2 active for rig-flow/testgt2") {
+	if !strings.Contains(warn, "2 active for rig-flow/mockrig") {
 		t.Fatalf("warn=%q", warn)
 	}
 

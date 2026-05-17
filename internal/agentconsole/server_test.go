@@ -9,12 +9,12 @@ import (
 
 func TestAgentLogPaths_RigSingleton(t *testing.T) {
 	town := "/home/stevef/gt"
-	paths := agentLogPaths(town, "te-testgt2-qa", "testgt2", "qa", "te-testgt2-qa")
-	want := filepath.Join(town, "logs", "sessions", "te-testgt2-qa.log")
+	paths := agentLogPaths(town, "te-mockrig-qa", "mockrig", "qa", "te-mockrig-qa")
+	want := filepath.Join(town, "logs", "sessions", "te-mockrig-qa.log")
 	if len(paths) == 0 || paths[0] != want {
 		t.Fatalf("expected sessions log first, got %v", paths)
 	}
-	if !strings.HasSuffix(paths[len(paths)-1], filepath.Join("testgt2", "qa", "typescript")) {
+	if !strings.HasSuffix(paths[len(paths)-1], filepath.Join("mockrig", "qa", "typescript")) {
 		t.Fatalf("expected typescript fallback, got %v", paths)
 	}
 }
@@ -29,7 +29,7 @@ func TestAgentLogPaths_Orchestrator(t *testing.T) {
 
 func TestAgentLogPaths_PolecatWorker(t *testing.T) {
 	town := "/town"
-	paths := agentLogPaths(town, "te-worker", "testgt2", "polecat", "worker")
+	paths := agentLogPaths(town, "te-worker", "mockrig", "polecat", "worker")
 	want := filepath.Join(town, "logs", "sessions", "te-worker.log")
 	if len(paths) == 0 || paths[0] != want {
 		t.Fatalf("expected sessions log first, got %v", paths)
@@ -37,11 +37,11 @@ func TestAgentLogPaths_PolecatWorker(t *testing.T) {
 }
 
 func TestProcEnvironMatches(t *testing.T) {
-	env := "GT_ROOT=/gt\x00GT_SESSION=te-testgt2-architect\x00GT_ROLE=testgt2/architect\x00"
-	if !procEnvironMatches(env, "GT_SESSION", "te-testgt2-architect") {
+	env := "GT_ROOT=/gt\x00GT_SESSION=te-mockrig-architect\x00GT_ROLE=mockrig/architect\x00"
+	if !procEnvironMatches(env, "GT_SESSION", "te-mockrig-architect") {
 		t.Fatal("expected GT_SESSION match")
 	}
-	if !procEnvironMatches(env, "GT_ROLE", "testgt2/architect") {
+	if !procEnvironMatches(env, "GT_ROLE", "mockrig/architect") {
 		t.Fatal("expected GT_ROLE match")
 	}
 	if procEnvironMatches(env, "GT_SESSION", "other") {
@@ -50,10 +50,10 @@ func TestProcEnvironMatches(t *testing.T) {
 }
 
 func TestFriendlyRigAgentName(t *testing.T) {
-	if got := friendlyRigAgentName("testgt2", "polecat", "te-testgt2-polecat"); got != "Polecat (pipeline)" {
+	if got := friendlyRigAgentName("mockrig", "polecat", "te-mockrig-polecat"); got != "Polecat (pipeline)" {
 		t.Fatalf("got %q", got)
 	}
-	if got := friendlyRigAgentName("testgt2", "architect", "te-testgt2-architect"); got != "Architect" {
+	if got := friendlyRigAgentName("mockrig", "architect", "te-mockrig-architect"); got != "Architect" {
 		t.Fatalf("got %q", got)
 	}
 }
@@ -81,11 +81,11 @@ func TestRigFlowStateRole(t *testing.T) {
 
 func TestEnrichAgentsWithWorkflows(t *testing.T) {
 	agents := []Agent{
-		{ID: "te-testgt2-qa", Rig: "testgt2", Role: "qa"},
-		{ID: "te-testgt2-architect", Rig: "testgt2", Role: "architect"},
+		{ID: "te-mockrig-qa", Rig: "mockrig", Role: "qa"},
+		{ID: "te-mockrig-architect", Rig: "mockrig", Role: "architect"},
 	}
 	workflows := []WorkflowInfo{{
-		ID: "wf-1", Rig: "testgt2", CurrentState: "qa_review",
+		ID: "wf-1", Rig: "mockrig", CurrentState: "qa_review",
 		Status: "running", ActiveRole: "qa",
 	}}
 	enrichAgentsWithWorkflows(agents, workflows)

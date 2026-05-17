@@ -201,11 +201,24 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summa
 		return "", err
 	}
 	if IsFailureOutcome(outcome) && next != "" && next != fromState {
+		v := m.workflowValidationFor(inst, tpl)
+		reworkFeedback := PrepareWorkflowReworkFeedback(fromState, next, summary, feedback, v)
+		rig := ""
+		if inst.Variables != nil {
+			rig = inst.Variables["rig"]
+		}
+		if fromState == "qa_review" && next == "implementation" && rig != "" {
+			if reopened, rerr := ReopenImplementationBeadsAfterQAFailure(m.townRoot, rig, v, summary); rerr != nil {
+				fmt.Printf("[Manager] Warning: reopen implement beads after QA failure: %v\n", rerr)
+			} else if len(reopened) > 0 {
+				reworkFeedback = strings.TrimSpace(reworkFeedback + "\n\nAuto-reopened closed implement beads: " + strings.Join(reopened, ", "))
+			}
+		}
 		inst.PendingRework = &WorkflowRework{
 			FromState: fromState,
 			Outcome:   outcome,
 			Summary:   truncateWorkflowText(summary, maxWorkflowReworkSummary),
-			Feedback:  PrepareWorkflowReworkFeedback(fromState, next, summary, feedback),
+			Feedback:  reworkFeedback,
 			AgentID:   agentID,
 		}
 	} else if !IsFailureOutcome(outcome) {
@@ -357,6 +370,23 @@ func (m *Manager) hasActiveWorkflowLocked(templateID, rig string) bool {
 		return true
 	}
 	return false
+}
+
+func (m *Manager) workflowValidationFor(inst *WorkflowInstance, tpl *WorkflowTemplate) WorkflowValidation {
+	vars := inst.Variables
+	if vars == nil {
+		vars = map[string]string{}
+	}
+	v := DefaultWorkflowValidation()
+	if tpl != nil {
+		v = mergeValidationFields(v, tpl.Validation.SubstituteVars(vars))
+	}
+	if rig := vars["rig"]; rig != "" {
+		if prof, ok, err := LoadRigWorkflowProfileFile(m.townRoot, rig); err == nil && ok {
+			v = mergeValidationFields(v, prof)
+		}
+	}
+	return v.WithDefaults()
 }
 
 func validateTemplateSchema(tpl *WorkflowTemplate, filename string) string {

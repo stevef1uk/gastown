@@ -219,12 +219,12 @@ func TestCanonicalRole(t *testing.T) {
 		want string
 	}{
 		{"witness", "witness"},
-		{"testgt1/witness", "witness"},
-		{"testgt1/refinery", "refinery"},
-		{"testgt1/polecats/rictus", "polecat"},
-		{"testgt1/crew/alice", "crew"},
+		{"mockrigb/witness", "witness"},
+		{"mockrigb/refinery", "refinery"},
+		{"mockrigb/polecats/rictus", "polecat"},
+		{"mockrigb/crew/alice", "crew"},
 		{"mechanic", "mechanic"},
-		{"testgt1/mechanic", "mechanic"},
+		{"mockrigb/mechanic", "mechanic"},
 		{"deacon/boot", "boot"},
 		{"", "worker"},
 	}
@@ -246,9 +246,9 @@ func TestNormalizeGeneratedCommand(t *testing.T) {
 		{"bd ready", "bd ready", false},
 		{"gt mol current", "gt mol current", false},
 		{"gt sling design --on [bead] [rig]/architect", "true", true},
-		{"gt sling design --on <bead-id> testgt2/architect", "true", true},
+		{"gt sling design --on <bead-id> mockrig/architect", "true", true},
 		{"gt sling design --on MOL-1234 Rig-Alpha/architect", "true", true},
-		{"gt sling design --on te-ybw testgt2/architect", "gt sling design --on te-ybw testgt2/architect", false},
+		{"gt sling design --on te-ybw mockrig/architect", "gt sling design --on te-ybw mockrig/architect", false},
 		{"gt mol execute --on mol-idea-9012", "true", true},
 	}
 	for _, tt := range tests {
@@ -530,19 +530,19 @@ func TestParseLLMResponse(t *testing.T) {
 			// Planner regression: model glued CMD markers without spaces
 			// (rig/CMD:, SPEC.mdCMD:) on a single line — must not run as ls args.
 			name: "glued CMD: markers without whitespace split into separate commands",
-			input: "CMD: ls -R testgt2/mayor/rig/CMD: cat testgt2/mayor/rig/SPEC.mdCMD: cat testgt2/mayor/rig/architecture.md",
+			input: "CMD: ls -R mockrig/mayor/rig/CMD: cat mockrig/mayor/rig/SPEC.mdCMD: cat mockrig/mayor/rig/architecture.md",
 			wantCmds: []string{
-				"ls -R testgt2/mayor/rig",
-				"cat testgt2/mayor/rig/SPEC.md",
-				"cat testgt2/mayor/rig/architecture.md",
+				"ls -R mockrig/mayor/rig",
+				"cat mockrig/mayor/rig/SPEC.md",
+				"cat mockrig/mayor/rig/architecture.md",
 			},
 		},
 		{
 			name: "glued CMD after shell single-quoted arg splits commands",
-			input: "CMD: bash -lc 'cd testgt2/mayor/rig && bd list --status=open'CMD: bash -lc 'cd testgt2/mayor/rig && bd ready'",
+			input: "CMD: bash -lc 'cd mockrig/mayor/rig && bd list --status=open'CMD: bash -lc 'cd mockrig/mayor/rig && bd ready'",
 			wantCmds: []string{
-				"bash -lc 'cd testgt2/mayor/rig && bd list --status=open'",
-				"bash -lc 'cd testgt2/mayor/rig && bd ready'",
+				"bash -lc 'cd mockrig/mayor/rig && bd list --status=open'",
+				"bash -lc 'cd mockrig/mayor/rig && bd ready'",
 			},
 		},
 		{
@@ -873,8 +873,8 @@ func TestRewriteHandoffToMail(t *testing.T) {
 // TestNormalizeRewritesArchitectHandoff verifies the end-to-end normalizer
 // path rewrites the exact command the architect produced in production.
 func TestNormalizeRewritesArchitectHandoff(t *testing.T) {
-	const in = `gt handoff mayor -s "Architecture Ready" -m "Design complete. architecture.md created at /home/stevef/gt/testgt2/architect/architecture.md. Ready for implementation."`
-	want := `gt mail send mayor/ -s "Architecture Ready" -m "Design complete. architecture.md created at /home/stevef/gt/testgt2/architect/architecture.md. Ready for implementation."`
+	const in = `gt handoff mayor -s "Architecture Ready" -m "Design complete. architecture.md created at /home/stevef/gt/mockrig/architect/architecture.md. Ready for implementation."`
+	want := `gt mail send mayor/ -s "Architecture Ready" -m "Design complete. architecture.md created at /home/stevef/gt/mockrig/architect/architecture.md. Ready for implementation."`
 	got, changed := normalizeGeneratedCommand(in)
 	if !changed {
 		t.Fatalf("expected rewrite; got unchanged %q", got)
@@ -892,7 +892,7 @@ func TestContainsPlaceholder_SnakeBracket(t *testing.T) {
 		// Snake-case-style hallucinations that bypassed the old guard.
 		{"[command_for_item_X]", true},
 		{"echo [task_name]", true},
-		{"gt sling [bead_id] testgt2/architect", true},
+		{"gt sling [bead_id] mockrig/architect", true},
 		{"cp [src_file] [dest_file]", true},
 		{"foo [a_b_c]", true},
 
@@ -924,10 +924,10 @@ func TestHasInvalidSlingTarget(t *testing.T) {
 		{"gt sling code-review --on hq-wisp-x /qa", true},
 
 		// Valid commands must pass through.
-		{"gt sling shiny --on hq-wisp-abc testgt2/architect", false},
-		{"gt sling mol-polecat-work --on hq-wisp-r9ag testgt2/polecats --create", false},
+		{"gt sling shiny --on hq-wisp-abc mockrig/architect", false},
+		{"gt sling mol-polecat-work --on hq-wisp-r9ag mockrig/polecats --create", false},
 		{"gt sling mol-idea-to-plan --on hq-wisp-abc planner", false},
-		{"gt sling hq-wisp-abc testgt2", false},
+		{"gt sling hq-wisp-abc mockrig", false},
 		{"gt sling hq-wisp-abc", false},
 		{"gt sling", false},
 
@@ -936,8 +936,8 @@ func TestHasInvalidSlingTarget(t *testing.T) {
 		{"gt handoff mayor", false},
 
 		// Flag values with slashes are NOT positional, must not trigger.
-		{"gt sling --on hq-wisp-x --base-branch release/v2 testgt2/architect", false},
-		{"gt sling --formula shiny --on hq-wisp-x testgt2/architect", false},
+		{"gt sling --on hq-wisp-x --base-branch release/v2 mockrig/architect", false},
+		{"gt sling --formula shiny --on hq-wisp-x mockrig/architect", false},
 	}
 	for _, tc := range tests {
 		if got := hasInvalidSlingTarget(tc.in); got != tc.want {
@@ -1004,7 +1004,7 @@ func TestStageWraparoundReason(t *testing.T) {
 		"hq-wisp-bjr5":  "Architecture Ready",
 		"hq-wisp-zvlv":  "Architecture location: /home/stevef/gt/...",
 		"hq-wisp-9999":  "Architecture Complete: design ready",
-		"hq-wisp-fqq":   "Project: Hello World API for testgt2",
+		"hq-wisp-fqq":   "Project: Hello World API for mockrig",
 		"hq-wisp-spec":  "SPEC: Build a chatbot",
 		"hq-aaa":        "Architecture Plan Submission for hq-bbn",
 	}
@@ -1020,39 +1020,39 @@ func TestStageWraparoundReason(t *testing.T) {
 		// The canonical bug — must block.
 		{
 			name:      "shiny on Architecture Ready wisp back to architect",
-			cmd:       "gt sling shiny --on hq-wisp-eulgk testgt2/architect",
+			cmd:       "gt sling shiny --on hq-wisp-eulgk mockrig/architect",
 			wantBlock: true,
 		},
 		{
 			name:      "shiny on Architecture Complete wisp back to architect",
-			cmd:       "gt sling shiny --on hq-wisp-9999 testgt2/architect",
+			cmd:       "gt sling shiny --on hq-wisp-9999 mockrig/architect",
 			wantBlock: true,
 		},
 		{
 			name:      "shiny on Architecture location wisp back to architect",
-			cmd:       "gt sling shiny --on hq-wisp-zvlv testgt2/architect",
+			cmd:       "gt sling shiny --on hq-wisp-zvlv mockrig/architect",
 			wantBlock: true,
 		},
 		{
 			name:      "shiny with --on after target (still matches)",
-			cmd:       "gt sling shiny testgt2/architect --on hq-wisp-bjr5",
+			cmd:       "gt sling shiny mockrig/architect --on hq-wisp-bjr5",
 			wantBlock: false, // regex requires --on BEFORE target; this is OK
 		},
 		{
 			name:      "shiny on Architecture Plan Submission to architect",
-			cmd:       "gt sling shiny --on hq-aaa testgt2/architect",
+			cmd:       "gt sling shiny --on hq-aaa mockrig/architect",
 			wantBlock: true,
 		},
 
 		// Legitimate slings — must NOT block.
 		{
 			name:      "shiny on a real project bead — legitimate Stage 1",
-			cmd:       "gt sling shiny --on hq-wisp-fqq testgt2/architect",
+			cmd:       "gt sling shiny --on hq-wisp-fqq mockrig/architect",
 			wantBlock: false,
 		},
 		{
 			name:      "shiny on a SPEC bead — legitimate Stage 1",
-			cmd:       "gt sling shiny --on hq-wisp-spec testgt2/architect",
+			cmd:       "gt sling shiny --on hq-wisp-spec mockrig/architect",
 			wantBlock: false,
 		},
 
@@ -1064,26 +1064,26 @@ func TestStageWraparoundReason(t *testing.T) {
 		},
 		{
 			name:      "code-review to qa — out of scope",
-			cmd:       "gt sling code-review --on hq-wisp-eulgk testgt2/qa",
+			cmd:       "gt sling code-review --on hq-wisp-eulgk mockrig/qa",
 			wantBlock: false,
 		},
 		{
 			name:      "shiny to polecats (not architect) — out of scope",
-			cmd:       "gt sling shiny --on hq-wisp-eulgk testgt2/polecats",
+			cmd:       "gt sling shiny --on hq-wisp-eulgk mockrig/polecats",
 			wantBlock: false,
 		},
 
 		// Placeholder bead ID — let containsPlaceholder handle, not us.
 		{
 			name:      "placeholder bead ID — fail open",
-			cmd:       "gt sling shiny --on <bead-id> testgt2/architect",
+			cmd:       "gt sling shiny --on <bead-id> mockrig/architect",
 			wantBlock: false,
 		},
 
 		// Unknown bead — fail open (lookup returns "").
 		{
 			name:      "unknown bead — fail open, allow sling",
-			cmd:       "gt sling shiny --on hq-unknown-bead testgt2/architect",
+			cmd:       "gt sling shiny --on hq-unknown-bead mockrig/architect",
 			wantBlock: false,
 		},
 
@@ -1153,17 +1153,17 @@ func TestIsEmptyContentFileHeredoc(t *testing.T) {
 	}{
 		{
 			name: "empty heredoc body to architecture.md",
-			cmd:  "cat > /home/stevef/gt/testgt2/architect/architecture.md <<'EOF'\nEOF",
+			cmd:  "cat > /home/stevef/gt/mockrig/architect/architecture.md <<'EOF'\nEOF",
 			want: true,
 		},
 		{
 			name: "literal '...' heredoc body",
-			cmd:  "cat > /home/stevef/gt/testgt2/architecture.md <<'EOF'\n...\nEOF",
+			cmd:  "cat > /home/stevef/gt/mockrig/architecture.md <<'EOF'\n...\nEOF",
 			want: true,
 		},
 		{
 			name: "INSERT-REAL-ARCHITECTURE-HERE placeholder body",
-			cmd: "cat > /home/stevef/gt/testgt2/architect/architecture.md <<'EOF'\n" +
+			cmd: "cat > /home/stevef/gt/mockrig/architect/architecture.md <<'EOF'\n" +
 				"# Architecture: Foo\n" +
 				"## API\n" +
 				"<INSERT-REAL-ARCHITECTURE-HERE — endpoints>\n" +
@@ -1182,7 +1182,7 @@ func TestIsEmptyContentFileHeredoc(t *testing.T) {
 		},
 		{
 			name: "real architecture body — must NOT be rejected",
-			cmd: "cat > /home/stevef/gt/testgt2/architect/architecture.md <<'EOF'\n" +
+			cmd: "cat > /home/stevef/gt/mockrig/architect/architecture.md <<'EOF'\n" +
 				"# Architecture: Hello API\n\n" +
 				"## API\n" +
 				"- GET / returns a JSON greeting with status 200\n" +
@@ -1216,7 +1216,7 @@ func TestIsEmptyContentFileHeredoc(t *testing.T) {
 		},
 		{
 			name: "not a heredoc at all — out of scope",
-			cmd:  "echo hello > /home/stevef/gt/testgt2/architecture.md",
+			cmd:  "echo hello > /home/stevef/gt/mockrig/architecture.md",
 			want: false,
 		},
 		{
@@ -1319,7 +1319,7 @@ func TestNormalizePreservesGtHookSubcommands(t *testing.T) {
 	}{
 		// Real subcommands must pass through verbatim.
 		{"gt hook show planner", "gt hook show planner"},
-		{"gt hook show testgt2/witness", "gt hook show testgt2/witness"},
+		{"gt hook show mockrig/witness", "gt hook show mockrig/witness"},
 		{"gt hook attach hq-wisp-5zi3", "gt hook attach hq-wisp-5zi3"},
 		{"gt hook detach hq-abc", "gt hook detach hq-abc"},
 		{"gt hook clear", "gt hook clear"},
@@ -1362,41 +1362,41 @@ func TestRewriteBareRigPolecats(t *testing.T) {
 	}{
 		// The actual mayor mistake: bare <rig>/polecats target.
 		{
-			"gt sling mol-polecat-work --on hq-bbn testgt2/polecats --create",
-			"gt sling mol-polecat-work --on hq-bbn testgt2 --create",
+			"gt sling mol-polecat-work --on hq-bbn mockrig/polecats --create",
+			"gt sling mol-polecat-work --on hq-bbn mockrig --create",
 			true,
 		},
 		{
-			"gt sling hq-abc testgt2/polecats",
-			"gt sling hq-abc testgt2",
+			"gt sling hq-abc mockrig/polecats",
+			"gt sling hq-abc mockrig",
 			true,
 		},
 
 		// A specific polecat name MUST be preserved.
 		{
-			"gt sling hq-abc testgt2/polecats/toast",
-			"gt sling hq-abc testgt2/polecats/toast",
+			"gt sling hq-abc mockrig/polecats/toast",
+			"gt sling hq-abc mockrig/polecats/toast",
 			false,
 		},
 
 		// Plain rig target needs no rewrite.
 		{
-			"gt sling hq-abc testgt2",
-			"gt sling hq-abc testgt2",
+			"gt sling hq-abc mockrig",
+			"gt sling hq-abc mockrig",
 			false,
 		},
 
 		// Non-sling commands are untouched.
 		{
-			"gt hook show testgt2/polecats",
-			"gt hook show testgt2/polecats",
+			"gt hook show mockrig/polecats",
+			"gt hook show mockrig/polecats",
 			false,
 		},
 
 		// Flag values that look like rig/polecats must not be rewritten.
 		{
-			`gt sling hq-abc testgt2 --message "see testgt2/polecats for context"`,
-			`gt sling hq-abc testgt2 --message "see testgt2/polecats for context"`,
+			`gt sling hq-abc mockrig --message "see mockrig/polecats for context"`,
+			`gt sling hq-abc mockrig --message "see mockrig/polecats for context"`,
 			false,
 		},
 	}
@@ -1467,16 +1467,16 @@ func TestHasInvalidShinyFormula(t *testing.T) {
 		{"gt sling shiny --on hq-wisp-nf7e deacon/", "deacon", true},
 		{"gt sling shiny --on hq-wisp-u0z1r witness/", "witness", true},
 		{"gt sling shiny --on hq-wisp-xyz refinery/", "refinery", true},
-		{"gt sling shiny --on te-foo testgt2/qa", "qa", true},
-		{"gt sling shiny --on te-foo testgt2/architect", "planner", true},
+		{"gt sling shiny --on te-foo mockrig/qa", "qa", true},
+		{"gt sling shiny --on te-foo mockrig/architect", "planner", true},
 
 		// Mayor and Architect are legitimate sources of shiny — both syntaxes.
 		{"gt sling te-foo --formula shiny", "mayor", false},
 		{"gt sling te-foo --formula shiny", "architect", false},
 		{"gt sling te-foo --formula shiny", "polecat", false},
 		{"gt sling te-foo --formula shiny", "crew", false},
-		{"gt sling shiny --on te-foo testgt2/architect", "mayor", false},
-		{"gt sling shiny --on te-foo testgt2/crew/dom", "architect", false},
+		{"gt sling shiny --on te-foo mockrig/architect", "mayor", false},
+		{"gt sling shiny --on te-foo mockrig/crew/dom", "architect", false},
 
 		// Other formulas are fine for any role.
 		{"gt sling te-foo --formula mol-polecat-work", "witness", false},
@@ -1601,7 +1601,7 @@ func TestMayorKickoffMailDeleteGuard(t *testing.T) {
 	t.Cleanup(func() { mayorMailInboxSubjectsLookup = orig })
 
 	subjects := map[string]string{
-		"hq-wisp-clm": "New project: build testgt2 FizzBuzz from SPEC.md",
+		"hq-wisp-clm": "New project: build mockrig FizzBuzz from SPEC.md",
 		"hq-wisp-zzz": "mol-planner-patrol complete",
 		"hq-wisp-pk":  "Project: Widget API",
 		"hq-wisp-re":  "Re: Fwd: New project: nested prefixes",
@@ -1752,34 +1752,34 @@ func TestHasContentFreeMailSend(t *testing.T) {
 		// REJECTED: formula-name subjects (the dominant noise source).
 		{
 			name:       "formula subject no RE",
-			cmd:        `gt mail send testgt2/witness -s "mol-refinery-patrol" -m "Status update mol-refinery-patrol"`,
+			cmd:        `gt mail send mockrig/witness -s "mol-refinery-patrol" -m "Status update mol-refinery-patrol"`,
 			wantReject: true,
 		},
 		{
 			name:       "formula subject with RE",
-			cmd:        `gt mail send testgt2/witness -s "RE: mol-refinery-patrol" -m "Reply to witness regarding mol-refinery-patrol"`,
+			cmd:        `gt mail send mockrig/witness -s "RE: mol-refinery-patrol" -m "Reply to witness regarding mol-refinery-patrol"`,
 			wantReject: true,
 		},
 		{
 			name:       "formula subject unquoted",
-			cmd:        `gt mail send testgt2/witness -s mol-witness-patrol -m "noted"`,
+			cmd:        `gt mail send mockrig/witness -s mol-witness-patrol -m "noted"`,
 			wantReject: true,
 		},
 		// REJECTED: `RE:` with empty body.
 		{
 			name:       "RE empty body",
-			cmd:        `gt mail send testgt2/witness -s "RE: anything" -m ""`,
+			cmd:        `gt mail send mockrig/witness -s "RE: anything" -m ""`,
 			wantReject: true,
 		},
 		// REJECTED: body just echoes subject + ack phrase.
 		{
 			name:       "body echoes subject (reply to)",
-			cmd:        `gt mail send testgt2/witness -s "NO_POLECATS_FOUND" -m "Reply to witness regarding NO_POLECATS_FOUND"`,
+			cmd:        `gt mail send mockrig/witness -s "NO_POLECATS_FOUND" -m "Reply to witness regarding NO_POLECATS_FOUND"`,
 			wantReject: true,
 		},
 		{
 			name:       "body just ack",
-			cmd:        `gt mail send testgt2/witness -s "MERGE_QUEUE_EMPTY" -m "acknowledged"`,
+			cmd:        `gt mail send mockrig/witness -s "MERGE_QUEUE_EMPTY" -m "acknowledged"`,
 			wantReject: true,
 		},
 		// REJECTED (Fix #90 extension): body is just the subject in
@@ -1789,22 +1789,22 @@ func TestHasContentFreeMailSend(t *testing.T) {
 		// the subject.
 		{
 			name:       "body restates subject in plain english (NO_POLECATS_FOUND)",
-			cmd:        `gt mail send testgt2/witness -s "NO_POLECATS_FOUND" -m "No polecats found"`,
+			cmd:        `gt mail send mockrig/witness -s "NO_POLECATS_FOUND" -m "No polecats found"`,
 			wantReject: true,
 		},
 		{
 			name:       "body restates subject (MERGE_QUEUE_EMPTY)",
-			cmd:        `gt mail send testgt2/witness -s "MERGE_QUEUE_EMPTY" -m "The merge queue is empty"`,
+			cmd:        `gt mail send mockrig/witness -s "MERGE_QUEUE_EMPTY" -m "The merge queue is empty"`,
 			wantReject: true,
 		},
 		{
 			name:       "body restates subject (MERGE_QUEUE_NONEMPTY)",
-			cmd:        `gt mail send testgt2/witness -s "MERGE_QUEUE_NONEMPTY" -m "Merge queue not empty"`,
+			cmd:        `gt mail send mockrig/witness -s "MERGE_QUEUE_NONEMPTY" -m "Merge queue not empty"`,
 			wantReject: true,
 		},
 		{
 			name:       "body restates subject (REFINERY_STATUS)",
-			cmd:        `gt mail send testgt2/witness -s "REFINERY_STATUS" -m "Refinery status"`,
+			cmd:        `gt mail send mockrig/witness -s "REFINERY_STATUS" -m "Refinery status"`,
 			wantReject: true,
 		},
 		// REJECTED (Fix #92): vague polecat-status alerts with no concrete
@@ -1830,7 +1830,7 @@ func TestHasContentFreeMailSend(t *testing.T) {
 		// ALLOWED: vague subject but body names a real polecat.
 		{
 			name:       "Polecat appears stalled with rig/name address",
-			cmd:        `gt mail send mayor/ -s "Polecat appears stalled" -m "testgt2/rust has been idle for 30 minutes; gt polecat status shows no progress"`,
+			cmd:        `gt mail send mayor/ -s "Polecat appears stalled" -m "mockrig/rust has been idle for 30 minutes; gt polecat status shows no progress"`,
 			wantReject: false,
 		},
 		{
@@ -1851,107 +1851,107 @@ func TestHasContentFreeMailSend(t *testing.T) {
 		},
 		{
 			name:       "Patrol Complete bare",
-			cmd:        `gt mail send testgt2/witness -s "Patrol Complete" -m "no findings"`,
+			cmd:        `gt mail send mockrig/witness -s "Patrol Complete" -m "no findings"`,
 			wantReject: true,
 		},
 		// REJECTED (Fix #118): internal protocol/status chatter that is
 		// not actionable work and was flooding witness inboxes.
 		{
 			name:       "PATROL_FINISH protocol noise",
-			cmd:        `gt mail send testgt2/witness -s "PATROL_FINISH" -m "patrol cycle complete"`,
+			cmd:        `gt mail send mockrig/witness -s "PATROL_FINISH" -m "patrol cycle complete"`,
 			wantReject: true,
 		},
 		{
 			name:       "ACTION_RECEIVED protocol noise",
-			cmd:        `gt mail send testgt2/witness -s "ACTION_RECEIVED lnko" -m "received"`,
+			cmd:        `gt mail send mockrig/witness -s "ACTION_RECEIVED lnko" -m "received"`,
 			wantReject: true,
 		},
 		{
 			name:       "HOOK_ERROR protocol noise",
-			cmd:        `gt mail send testgt2/witness -s "HOOK_ERROR hq-wisp-ukk00" -m "retrying"`,
+			cmd:        `gt mail send mockrig/witness -s "HOOK_ERROR hq-wisp-ukk00" -m "retrying"`,
 			wantReject: true,
 		},
 		{
 			name:       "MAIL_READ_ERROR protocol noise",
-			cmd:        `gt mail send testgt2/witness -s "MAIL_READ_ERROR" -m "mail read failed"`,
+			cmd:        `gt mail send mockrig/witness -s "MAIL_READ_ERROR" -m "mail read failed"`,
 			wantReject: true,
 		},
 		{
 			name:       "MAIL_ERROR_REPORT_ACK protocol noise",
-			cmd:        `gt mail send testgt2/witness -s "MAIL_ERROR_REPORT_ACK" -m "ack"`,
+			cmd:        `gt mail send mockrig/witness -s "MAIL_ERROR_REPORT_ACK" -m "ack"`,
 			wantReject: true,
 		},
 		{
 			name:       "PATROL_CLEAR protocol noise",
-			cmd:        `gt mail send testgt2/witness -s "PATROL_CLEAR testgt2" -m "cleared patrol"`,
+			cmd:        `gt mail send mockrig/witness -s "PATROL_CLEAR mockrig" -m "cleared patrol"`,
 			wantReject: true,
 		},
 		{
 			name:       "REPLY_TO_NUDGE protocol noise",
-			cmd:        `gt mail send testgt2/witness -s "REPLY_TO_NUDGE hq-wisp-aqh34: Done" -m "done"`,
+			cmd:        `gt mail send mockrig/witness -s "REPLY_TO_NUDGE hq-wisp-aqh34: Done" -m "done"`,
 			wantReject: true,
 		},
 		// REJECTED (Fix #113): MERGE_* coordination mail with empty
 		// body. Witness/refinery hallucinate these every patrol cycle,
 		// naming patrol-wisp IDs as if they were polecat branches:
-		//   gt mail send testgt2/refinery -s "MERGE_READY hq-wisp-n460"
+		//   gt mail send mockrig/refinery -s "MERGE_READY hq-wisp-n460"
 		// with no -m / no --stdin. Real merge mails MUST carry branch
 		// info / failure reason / merge timestamp in the body.
 		{
 			name:       "MERGE_READY no body",
-			cmd:        `gt mail send testgt2/refinery -s "MERGE_READY hq-wisp-n460"`,
+			cmd:        `gt mail send mockrig/refinery -s "MERGE_READY hq-wisp-n460"`,
 			wantReject: true,
 		},
 		{
 			name:       "MERGE_FAILED no body",
-			cmd:        `gt mail send testgt2/witness -s "MERGE_FAILED hq-wisp-skko"`,
+			cmd:        `gt mail send mockrig/witness -s "MERGE_FAILED hq-wisp-skko"`,
 			wantReject: true,
 		},
 		{
 			name:       "MERGE_READY empty -m body",
-			cmd:        `gt mail send testgt2/refinery -s "MERGE_READY hq-wisp-z5vv" -m ""`,
+			cmd:        `gt mail send mockrig/refinery -s "MERGE_READY hq-wisp-z5vv" -m ""`,
 			wantReject: true,
 		},
 		{
 			name:       "RE: MERGE_READY no body",
-			cmd:        `gt mail send testgt2/witness -s "RE: MERGE_READY hq-wisp-4qyvr"`,
+			cmd:        `gt mail send mockrig/witness -s "RE: MERGE_READY hq-wisp-4qyvr"`,
 			wantReject: true,
 		},
 		{
 			name:       "MERGE_SKIPPED no body",
-			cmd:        `gt mail send testgt2/witness -s "MERGE_SKIPPED te-poly-rust"`,
+			cmd:        `gt mail send mockrig/witness -s "MERGE_SKIPPED te-poly-rust"`,
 			wantReject: true,
 		},
 		{
 			name:       "MERGE_COMPLETE no body",
-			cmd:        `gt mail send testgt2/witness -s "MERGE_COMPLETE hq-wisp-abc"`,
+			cmd:        `gt mail send mockrig/witness -s "MERGE_COMPLETE hq-wisp-abc"`,
 			wantReject: true,
 		},
 		{
 			name:       "MERGED no body",
-			cmd:        `gt mail send testgt2/witness -s "MERGED rust"`,
+			cmd:        `gt mail send mockrig/witness -s "MERGED rust"`,
 			wantReject: true,
 		},
 		// ALLOWED: legitimate operational mails per mol-refinery-patrol formula.
 		{
 			name:       "MERGE_FAILED with real content",
-			cmd:        `gt mail send testgt2/witness -s "MERGE_FAILED hq-wisp-abc" -m "Branch tests failed: 3 errors in build_test.go"`,
+			cmd:        `gt mail send mockrig/witness -s "MERGE_FAILED hq-wisp-abc" -m "Branch tests failed: 3 errors in build_test.go"`,
 			wantReject: false,
 		},
 		{
 			name:       "FIX_NEEDED with real content",
-			cmd:        `gt mail send testgt2/polecats/rust -s "FIX_NEEDED rust" -m "Branch: polecat/rust/hq-1\nPR: https://github.com/x/y/pull/42\nFailures observed in CI: lint, typecheck"`,
+			cmd:        `gt mail send mockrig/polecats/rust -s "FIX_NEEDED rust" -m "Branch: polecat/rust/hq-1\nPR: https://github.com/x/y/pull/42\nFailures observed in CI: lint, typecheck"`,
 			wantReject: false,
 		},
 		{
 			name:       "MERGED announcement",
-			cmd:        `gt mail send testgt2/witness -s "MERGED rust" -m "Branch: polecat/rust/hq-1\nMerged-At: 2026-05-12T08:00:00Z"`,
+			cmd:        `gt mail send mockrig/witness -s "MERGED rust" -m "Branch: polecat/rust/hq-1\nMerged-At: 2026-05-12T08:00:00Z"`,
 			wantReject: false,
 		},
 		// ALLOWED: heredoc body never rejected.
 		{
 			name:       "heredoc body always allowed",
-			cmd:        `gt mail send testgt2/witness -s "RE: mol-refinery-patrol" --stdin <<EOF`,
+			cmd:        `gt mail send mockrig/witness -s "RE: mol-refinery-patrol" --stdin <<EOF`,
 			wantReject: false,
 		},
 		// Fix #114: Mayor must not fan out BLOCKED notifications. When
@@ -1974,7 +1974,7 @@ func TestHasContentFreeMailSend(t *testing.T) {
 		},
 		{
 			name:       "Mayor please-investigate forward",
-			cmd:        `gt mail send testgt2/architect -s "Please investigate the BLOCKED state" -m "Could you check why the design isn't progressing?"`,
+			cmd:        `gt mail send mockrig/architect -s "Please investigate the BLOCKED state" -m "Could you check why the design isn't progressing?"`,
 			wantReject: true,
 		},
 		// Fix #114: Mayor must not mail "Create architecture" — the
@@ -1984,17 +1984,17 @@ func TestHasContentFreeMailSend(t *testing.T) {
 		// architect template explicitly ignores.
 		{
 			name:       "Mayor create-architecture forward",
-			cmd:        `gt mail send testgt2/architect -s "Create architecture" -m "Please create the architecture file in /home/stevef/gt/testgt2/architect/architecture.md"`,
+			cmd:        `gt mail send mockrig/architect -s "Create architecture" -m "Please create the architecture file in /home/stevef/gt/mockrig/architect/architecture.md"`,
 			wantReject: true,
 		},
 		{
 			name:       "Mayor write-architecture forward",
-			cmd:        `gt mail send testgt2/architect -s "Write architecture.md" -m "Need the architecture doc"`,
+			cmd:        `gt mail send mockrig/architect -s "Write architecture.md" -m "Need the architecture doc"`,
 			wantReject: true,
 		},
 		{
 			name:       "Mayor generate-architecture forward",
-			cmd:        `gt mail send testgt2/architect -s "Generate the architecture document" -m "Now please."`,
+			cmd:        `gt mail send mockrig/architect -s "Generate the architecture document" -m "Now please."`,
 			wantReject: true,
 		},
 		// Fix #114: RE: IDLE acknowledgement noise. Mayor sometimes
@@ -2014,7 +2014,7 @@ func TestHasContentFreeMailSend(t *testing.T) {
 		// Fix #114 guards.
 		{
 			name:       "real Architecture Ready handoff",
-			cmd:        `gt mail send mayor/ -s "Architecture Ready" -m "Project bead: hq-9jo\nDesign complete. architecture.md at /home/stevef/gt/testgt2/architect/architecture.md (also mirrored at /home/stevef/gt/testgt2/architecture.md). Ready for implementation."`,
+			cmd:        `gt mail send mayor/ -s "Architecture Ready" -m "Project bead: hq-9jo\nDesign complete. architecture.md at /home/stevef/gt/mockrig/architect/architecture.md (also mirrored at /home/stevef/gt/mockrig/architecture.md). Ready for implementation."`,
 			wantReject: false,
 		},
 		{
@@ -2024,12 +2024,12 @@ func TestHasContentFreeMailSend(t *testing.T) {
 		},
 		{
 			name:       "real Stage 0 complete self-mail",
-			cmd:        `gt mail send --self -s "Stage 0 complete: hq-9jo" -m "Kicked off project bead hq-9jo for rig testgt2 from mail hq-wisp-k4z. Standby for Architecture Ready."`,
+			cmd:        `gt mail send --self -s "Stage 0 complete: hq-9jo" -m "Kicked off project bead hq-9jo for rig mockrig from mail hq-wisp-k4z. Standby for Architecture Ready."`,
 			wantReject: false,
 		},
 		{
 			name:       "real BLOCKED report from planner",
-			cmd:        `gt mail send mayor/ -s "BLOCKED: architecture missing" -m "Searched /home/stevef/gt/testgt2/architect/architecture.md, all missing or stub. Cannot plan without real architecture."`,
+			cmd:        `gt mail send mayor/ -s "BLOCKED: architecture missing" -m "Searched /home/stevef/gt/mockrig/architect/architecture.md, all missing or stub. Cannot plan without real architecture."`,
 			wantReject: false,
 		},
 		// NOT A MAIL SEND — must pass through.
@@ -2068,13 +2068,13 @@ func TestNormalizeRejectsContentFreeMailSend(t *testing.T) {
 	lastStepID = ""
 
 	// Hallucinated noise → replaced with `true`.
-	got, _ := normalizeGeneratedCommand(`gt mail send testgt2/witness -s "mol-refinery-patrol" -m "Reply to witness regarding mol-refinery-patrol"`)
+	got, _ := normalizeGeneratedCommand(`gt mail send mockrig/witness -s "mol-refinery-patrol" -m "Reply to witness regarding mol-refinery-patrol"`)
 	if got != "true" {
 		t.Errorf("expected hallucinated mail to be replaced with 'true', got %q", got)
 	}
 
 	// Real operational mail → unchanged.
-	realCmd := `gt mail send testgt2/witness -s "MERGED rust" -m "Branch: polecat/rust/hq-1\nMerged-At: 2026-05-12T08:00:00Z"`
+	realCmd := `gt mail send mockrig/witness -s "MERGED rust" -m "Branch: polecat/rust/hq-1\nMerged-At: 2026-05-12T08:00:00Z"`
 	got, _ = normalizeGeneratedCommand(realCmd)
 	if got != realCmd {
 		t.Errorf("expected real MERGED mail to pass through unchanged, got %q", got)

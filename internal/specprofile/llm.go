@@ -48,12 +48,12 @@ The JSON must match this shape (use sensible defaults for small tutorials; for l
 }
 
 Rules:
-- layout_root: top-level project directory name if the spec says code lives under e.g. "defender/" or "finally/" relative to repo root; use "." if the primary code is at repo root (e.g. plain backend/).
-- bead_title_contains: short prefix for implementation task beads (e.g. "Implement defender/" or "Implement finally/"); must be stable for grep on bd list.
+- layout_root: top-level project directory name if the spec says code lives under a named folder relative to repo root; use "." if the primary code is at repo root.
+- bead_title_contains: short prefix for implementation task beads (e.g. "Implement <layout_root>/"); must be stable for grep on bd list.
 - test_runner: one of "unittest", "pytest", "custom".
 - unittest_module: dotted module for stdlib unittest ONLY if test_runner is unittest (e.g. backend.test_app); else "".
-- qa_verify_command: ONE shell command or chain run from the rig worktree (mayor/rig cwd is the repo root). It must verify the backend or main app (e.g. "cd defender/backend && pytest -q" or "cd finally/backend && uv run pytest -q" or "python3 -m unittest backend.test_fizzbuzz -v"). Use paths consistent with layout_root.
-- required_files: 3–8 critical paths relative to mayor/rig (e.g. defender/backend/main.py, defender/backend/requirements.txt). Include entrypoints the spec names.
+- qa_verify_command: ONE shell command or chain run from the rig worktree (mayor/rig cwd is the repo root). It must verify the app. Prefer "python3 -m pytest -q" or "python3 -m unittest …" (not bare "pytest"). Use paths consistent with layout_root and required_files.
+- required_files: 3–8 critical paths relative to mayor/rig (under layout_root when set). Include entrypoints and requirements.txt/pyproject.toml when the spec names them.
 - spec_summary: 400–2500 characters summarizing goals, stack, directory layout, and how to run tests—so downstream agents need not re-read the full spec.
 - min_plan_bytes: target 1500–2500 (enough for bead list + phased strategy in plan.md). Use 200–4096 only; NEVER copy SPEC byte length or spec_summary character count.
 - min_architecture_bytes: target 4000–8192 for a substantive architecture.md. Use 200–8192 only; NEVER copy SPEC byte length.

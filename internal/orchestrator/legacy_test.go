@@ -5,9 +5,9 @@ import "testing"
 func TestLegacyPolecatsPausedFromStatuses(t *testing.T) {
 	active := []WorkflowStatus{{
 		ID: "wf-1", TemplateID: "rig-flow", Status: "running",
-		Variables: map[string]string{"rig": "testgt2"},
+		Variables: map[string]string{"rig": "mockrig"},
 	}}
-	if !legacyPolecatsPausedFromStatuses(active, "testgt2") {
+	if !legacyPolecatsPausedFromStatuses(active, "mockrig") {
 		t.Fatal("expected pause for active rig-flow on same rig")
 	}
 	if legacyPolecatsPausedFromStatuses(active, "other") {
@@ -19,17 +19,17 @@ func TestLegacyPolecatsPausedFromStatuses(t *testing.T) {
 
 	done := []WorkflowStatus{{
 		ID: "wf-1", TemplateID: "rig-flow", Status: "completed",
-		Variables: map[string]string{"rig": "testgt2"},
+		Variables: map[string]string{"rig": "mockrig"},
 	}}
-	if legacyPolecatsPausedFromStatuses(done, "testgt2") {
+	if legacyPolecatsPausedFromStatuses(done, "mockrig") {
 		t.Fatal("completed workflow should not pause polecats")
 	}
 
 	otherTpl := []WorkflowStatus{{
 		ID: "wf-2", TemplateID: "build-spec", Status: "running",
-		Variables: map[string]string{"rig": "testgt2"},
+		Variables: map[string]string{"rig": "mockrig"},
 	}}
-	if legacyPolecatsPausedFromStatuses(otherTpl, "testgt2") {
+	if legacyPolecatsPausedFromStatuses(otherTpl, "mockrig") {
 		t.Fatal("non rig-flow template should not pause polecats")
 	}
 }

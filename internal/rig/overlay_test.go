@@ -292,7 +292,7 @@ func TestEnsureGitignorePatterns_CreatesNewFile(t *testing.T) {
 	// SPEC.md and README.md must NOT be in the ignore list — they are
 	// user-authored content the polecat must be able to read from its
 	// worktree. Initial Fix #95 wrongly ignored SPEC.md, which made
-	// testgt2's project spec invisible after the rig reset.
+	// mockrig's project spec invisible after the rig reset.
 	for _, userContent := range []string{"SPEC.md", "README.md"} {
 		if containsLine(string(content), userContent) {
 			t.Errorf("Fix #95 must NOT ignore user content %q (project spec / docs)", userContent)

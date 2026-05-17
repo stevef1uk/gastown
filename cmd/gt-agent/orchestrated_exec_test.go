@@ -10,7 +10,7 @@ import (
 )
 
 func TestUnwrapBashLcMultiline_unclosedWrapperQuote(t *testing.T) {
-	in := "bash -lc 'cd testgt2/mayor/rig && cat > plan.md <<EOF\n# Plan\nEOF\n"
+	in := "bash -lc 'cd mockrig/mayor/rig && cat > plan.md <<EOF\n# Plan\nEOF\n"
 	got := unwrapBashLcMultiline(in)
 	if strings.HasPrefix(got, "'") {
 		t.Fatalf("should strip opening quote: %q", got)
@@ -21,7 +21,7 @@ func TestUnwrapBashLcMultiline_unclosedWrapperQuote(t *testing.T) {
 }
 
 func TestUnwrapBashLcMultiline_doubleQuoted(t *testing.T) {
-	in := "bash -lc \"export BEADS_DIR=\\$GT_ROOT/testgt2/.beads && cd testgt2/mayor/rig && cat > plan.md <<'EOF'\n# Plan\nline two\nEOF\n\""
+	in := "bash -lc \"export BEADS_DIR=\\$GT_ROOT/mockrig/.beads && cd mockrig/mayor/rig && cat > plan.md <<'EOF'\n# Plan\nline two\nEOF\n\""
 	got := unwrapBashLcMultiline(in)
 	if strings.Contains(got, "bash -lc") {
 		t.Fatalf("should unwrap: %q", got)
@@ -44,11 +44,11 @@ func TestPrepareOrchestratedScript_normalizesEOF(t *testing.T) {
 
 func TestRunOrchestratedCommand_heredocWritesFile(t *testing.T) {
 	dir := t.TempDir()
-	rigDir := filepath.Join(dir, "testgt2", "mayor", "rig")
+	rigDir := filepath.Join(dir, "mockrig", "mayor", "rig")
 	if err := os.MkdirAll(rigDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	cmd := "export GT_ROOT=" + dir + " && cd testgt2/mayor/rig && cat > plan.md <<'EOF'\n# Implementation Plan\n" +
+	cmd := "export GT_ROOT=" + dir + " && cd mockrig/mayor/rig && cat > plan.md <<'EOF'\n# Implementation Plan\n" +
 		strings.Repeat("x", 220) + "\nEOF"
 	env := []string{"GT_ROOT=" + dir, "HOME=" + dir, "PATH=/usr/bin:/bin"}
 	out, err := runOrchestratedCommand(cmd, dir, "", env)
@@ -66,13 +66,18 @@ func TestRunOrchestratedCommand_heredocWritesFile(t *testing.T) {
 
 func TestRewriteUnittestToWorkdir(t *testing.T) {
 	cmd := "python3 -m unittest backend.test_fizzbuzz -v"
-	fixed, ok := rewriteUnittestToWorkdir(cmd, "testgt2")
-	if !ok || !strings.Contains(fixed, "cd testgt2/mayor/rig &&") {
+	fixed, ok := rewriteUnittestToWorkdir(cmd, "mockrig")
+	if !ok || !strings.Contains(fixed, "cd mockrig/mayor/rig &&") {
 		t.Fatalf("got ok=%v cmd=%q", ok, fixed)
 	}
-	already := "cd testgt2/mayor/rig && python3 -m unittest backend.test_fizzbuzz -v"
-	if _, ok := rewriteUnittestToWorkdir(already, "testgt2"); ok {
+	already := "cd mockrig/mayor/rig && python3 -m unittest backend.test_fizzbuzz -v"
+	if _, ok := rewriteUnittestToWorkdir(already, "mockrig"); ok {
 		t.Fatal("should not rewrite when cd present")
+	}
+	pipCmd := "pip install -r requirements.txt"
+	fixed, ok = rewriteUnittestToWorkdir(pipCmd, "mockrig")
+	if !ok || !strings.Contains(fixed, "python3 -m pip") || !strings.Contains(fixed, "cd mockrig/mayor/rig &&") {
+		t.Fatalf("pip rewrite: ok=%v cmd=%q", ok, fixed)
 	}
 }
 

@@ -142,6 +142,7 @@ func mergeValidationFields(base, overlay WorkflowValidation) WorkflowValidation 
 	if overlay.MinSubstantiveLines > 0 {
 		base.MinSubstantiveLines = overlay.MinSubstantiveLines
 	}
+	base.QAVerifyCommand = NormalizePytestCommand(strings.TrimSpace(base.QAVerifyCommand))
 	return base
 }
 
@@ -162,8 +163,28 @@ func (v WorkflowValidation) SubstituteVars(vars map[string]string) WorkflowValid
 	return v
 }
 
+// RequirementsFilePath returns the first requirements.txt or pyproject.toml from the profile, if any.
+func (v WorkflowValidation) RequirementsFilePath() string {
+	for _, f := range v.RequiredFiles {
+		f = filepath.ToSlash(strings.TrimSpace(f))
+		if strings.HasSuffix(f, "requirements.txt") || strings.HasSuffix(f, "pyproject.toml") {
+			return f
+		}
+	}
+	return ""
+}
+
+// LayoutRootDir returns the profile layout_root for path hints, or "." when unset.
+func (v WorkflowValidation) LayoutRootDir() string {
+	if l := strings.TrimSpace(v.LayoutRoot); l != "" {
+		return l
+	}
+	return "."
+}
+
 // PromptVars returns keys for {{bead_title_contains}}, {{unittest_module}}, etc. in prompt files.
 func (v WorkflowValidation) PromptVars() map[string]string {
+	req := v.RequirementsFilePath()
 	return map[string]string{
 		"layout_root":             v.LayoutRoot,
 		"bead_title_contains":     v.BeadTitleContains,
@@ -171,6 +192,7 @@ func (v WorkflowValidation) PromptVars() map[string]string {
 		"qa_verify_command":       v.QAVerifyCommand,
 		"test_runner":             v.TestRunner,
 		"required_files":          strings.Join(v.RequiredFiles, ", "),
+		"requirements_file":       req,
 		"spec_summary":            v.SpecSummary,
 		"unittest_command_hint":   v.UnittestCommandHint(),
 		"min_architecture_bytes":        fmt.Sprintf("%d", v.MinArchitectureBytes),
@@ -190,7 +212,7 @@ func beadIDExample(v WorkflowValidation) string {
 }
 
 // ForbiddenRigRootBasenames lists mayor/rig files that must not exist outside subdirs during design
-// (e.g. backend/fizzbuzz.py → forbid fizzbuzz.py at rig root).
+// (e.g. layout_root/pkg/module.py → forbid module.py at rig root).
 func (v WorkflowValidation) ForbiddenRigRootBasenames() []string {
 	seen := make(map[string]bool)
 	var out []string
@@ -229,4 +251,17 @@ func NormalizePytestCommand(cmd string) string {
 	}
 	re := regexp.MustCompile(`(?i)(^|[;&|]\s*|\s+)pytest\b`)
 	return re.ReplaceAllString(cmd, `${1}python3 -m pytest`)
+}
+
+// NormalizePipCommand rewrites bare `pip` to `python3 -m pip` when pip is not on PATH but python is.
+func NormalizePipCommand(cmd string) string {
+	lower := strings.ToLower(cmd)
+	if !strings.Contains(lower, "pip") {
+		return cmd
+	}
+	if strings.Contains(lower, "python3 -m pip") || strings.Contains(lower, "python -m pip") {
+		return cmd
+	}
+	re := regexp.MustCompile(`(?i)(^|[;&|]\s*|\s+)pip\b`)
+	return re.ReplaceAllString(cmd, `${1}python3 -m pip`)
 }

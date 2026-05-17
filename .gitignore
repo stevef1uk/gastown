@@ -32,6 +32,7 @@ coverage.out
 internal/events/*/
 
 # Local config
+.env
 config.toml
 !config.example.toml
 !internal/hooks/templates/vibe/config.toml

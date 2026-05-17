@@ -158,7 +158,7 @@ func validateSessionName(sessionName, rigName string) error {
 		// Allow canonical preset agent naming: <rig>-witness, <rig>-refinery, etc.
 		suffix := strings.TrimPrefix(namePart, rigName+"-")
 		switch suffix {
-		case "witness", "refinery", "architect", "qa":
+		case "witness", "refinery", "architect", "qa", "polecat":
 			return nil
 		}
 
@@ -445,7 +445,7 @@ func (m *SessionManager) Start(polecat string, opts SessionStartOptions) error {
 	//
 	// Fix #93 (Polecat starts as wrong role): The rig clone in the polecat's
 	// worktree can contain a tracked `.gt-agent` file with a non-polecat role
-	// (e.g. `role: refinery` — observed in testgt2 because a refinery process
+	// (e.g. `role: refinery` when a refinery process
 	// at one time committed its identity file to main). When the polecat's
 	// gt-agent boots in this work dir, `loadAgentFile(".gt-agent")` reads
 	// that file and OVERRIDES the `GT_ROLE=polecat` env var (see
@@ -1030,7 +1030,7 @@ func (m *SessionManager) verifyStartupNudgeDelivery(sessionID string, rc *config
 // session starts so the file is on disk by the time gt-agent boots and
 // calls loadAgentFile(".gt-agent"). Writing here overrides any stale
 // `.gt-agent` checked into the rig clone (we have seen `role: refinery`
-// committed to testgt2 main), which would otherwise short-circuit the
+// committed to a rig main branch), which would otherwise short-circuit the
 // `GT_ROLE=polecat` env var and make the polecat run with the wrong
 // role's prompt and patrol loop.
 func writePolecatIdentityFile(workDir, rigName, polecatName string) error {

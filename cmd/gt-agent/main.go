@@ -87,9 +87,9 @@ var agentTownRoot string
 // mechanicPatrolScript is a hardcoded shell script for the mechanic.
 // It does NOT use the LLM to avoid hallucination issues.
 const mechanicPatrolScript = `#!/bin/sh
-TOWN_ROOT="${TOWN_ROOT:-/home/stevef/gt}"
+TOWN_ROOT="${GT_ROOT:-${GT_TOWN_ROOT:-${TOWN_ROOT:-.}}}"
 LOG_DIR="$TOWN_ROOT/logs/sessions"
-GT="/home/stevef/.local/bin/gt"
+GT="${GT:-$(command -v gt 2>/dev/null || echo gt)}"
 
 echo "=== Mechanic patrol starting ==="
 
@@ -111,7 +111,7 @@ for logfile in $logs; do
   # Check for error patterns
   if grep -qi "exit status" "$logfile" 2>/dev/null; then
     # Extract agent name from logfile
-    # Format: hq-qsq-testgt1-refinery.log or te-testgt2-witness.log
+    # Format: hq-qsq-<rig>-refinery.log or <prefix>-<rig>-witness.log
     filename=$(basename "$logfile")
     agent=$(echo "$filename" | sed -E 's/^(hq|te)-([^.]+)-(.+)\.log$/\3/' | sed 's/-/./g')
     rig=$(echo "$filename" | sed -E 's/^(hq|te)-([^.]+)-.*/\2/')
@@ -174,7 +174,7 @@ func isPermanentAgent(role string) bool {
 	if permanentAgents[role] {
 		return true
 	}
-	// Also check for rig-specific roles like "testgt1/witness"
+	// Also check for rig-specific roles like "<rig>/witness"
 	parts := strings.Split(role, "/")
 	last := parts[len(parts)-1]
 	return permanentAgents[last]
@@ -489,7 +489,7 @@ func run() error {
 				rig = discovered
 				os.Setenv("GT_RIG", rig)
 			}
-			// Stale hq-polecat sessions may have empty GIT_AUTHOR_NAME (testgt2/polecats/).
+			// Stale hq-polecat sessions may have empty GIT_AUTHOR_NAME (<rig>/polecats/).
 			if rig != "" && polecat == "" && os.Getenv("GIT_AUTHOR_NAME") == "" {
 				author := rig + "/polecat"
 				os.Setenv("GIT_AUTHOR_NAME", author)
@@ -2122,7 +2122,7 @@ var mailSendMergeSignalRE = regexp.MustCompile(
 //   gt mail send planner/ -s "Investigate BLOCKED: missing architecture file" \
 //       -m "Check canonical locations for architecture file and verify mol-planner-patrol for details."
 // then later
-//   gt mail send testgt2/architect -s "Create architecture" \
+//   gt mail send <rig>/architect -s "Create architecture" \
 //       -m "Please create the architecture file in /home/stevef/gt/..."
 // Both produce nothing but more BLOCKED replies. The mayor template
 // (Critical Rule #6, Fix #114) forbids them — this regex enforces it
@@ -2265,7 +2265,7 @@ func hasContentFreeMailSend(cmd string) (string, bool) {
 	// failure / timestamp data — a bare `MERGE_READY hq-wisp-n460`
 	// with no -m flag is the hallucinated form that flooded HQ with
 	// 30+ junk beads per kickoff before this rule landed (observed
-	// in the testgt2 trial 2026-05-12). Real `MERGE_FAILED <id>`
+	// in an earlier trial). Real `MERGE_FAILED <id>`
 	// and `MERGED <id>` mails always carry a body, so they pass.
 	// See Fix #113.
 	if bodyTrim == "" && mailSendMergeSignalRE.MatchString(subj) {
@@ -2955,7 +2955,7 @@ func shouldAutoUnhookAfterHandoff(role, summary string) bool {
 // rewritten — those are valid CLI targets.
 //
 // Because `strings.Fields` would split a quoted multi-word flag value
-// (e.g. `--message "see testgt2/polecats for context"`) into separate
+// (e.g. `--message "see <rig>/polecats for context"`) into separate
 // tokens and falsely match the polecats segment as a positional, we
 // track quoted-string state and only consider tokens outside quotes.
 func rewriteBareRigPolecats(cmd string) (string, bool) {

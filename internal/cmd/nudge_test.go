@@ -21,8 +21,8 @@ func setupNudgeTestRegistry(t *testing.T) {
 }
 
 func TestRoleInfoFromEnv(t *testing.T) {
-	t.Setenv(EnvGTRole, "testgt2/refinery")
-	t.Setenv("GT_RIG", "testgt2")
+	t.Setenv(EnvGTRole, "mockrig/refinery")
+	t.Setenv("GT_RIG", "mockrig")
 	t.Cleanup(func() {
 		_ = os.Unsetenv(EnvGTRole)
 		_ = os.Unsetenv("GT_RIG")
@@ -31,7 +31,7 @@ func TestRoleInfoFromEnv(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ri.Role != RoleRefinery || ri.Rig != "testgt2" {
+	if ri.Role != RoleRefinery || ri.Rig != "mockrig" {
 		t.Fatalf("roleInfoFromEnv: got role=%v rig=%q", ri.Role, ri.Rig)
 	}
 }

@@ -375,8 +375,8 @@ func TestCurator_GeneratesSummary(t *testing.T) {
 		{
 			event: &events.Event{
 				Type:  events.TypeWorkflowTransition,
-				Actor: "testgt2/orchestrator",
-				Payload: events.WorkflowTransitionPayload("wf-1", "rig-flow", "design", "planning", "success", "architect", "testgt2"),
+				Actor: "mockrig/orchestrator",
+				Payload: events.WorkflowTransitionPayload("wf-1", "rig-flow", "design", "planning", "success", "architect", "mockrig"),
 			},
 			expected: "rig-flow wf-1: design → planning (success) [architect]",
 		},

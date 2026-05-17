@@ -13,7 +13,7 @@ func TestPrepareWorkflowReworkFeedback_planReviewStripsGrepNoise(t *testing.T) {
 		"○ te-b [● P2] [task] - Implement backend/main.py per architecture\n" +
 		"Use CMD: lines to run shell commands\n"
 
-	got := PrepareWorkflowReworkFeedback("plan_review", "planning", summary, raw)
+	got := PrepareWorkflowReworkFeedback("plan_review", "planning", summary, raw, WorkflowValidation{})
 	if strings.Contains(got, "grep:") {
 		t.Fatalf("expected grep noise stripped, got %q", got)
 	}

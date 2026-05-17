@@ -46,7 +46,7 @@ func MechanicSessionNameForRig(rigName string) string {
 
 // WitnessSessionName returns the session name for a rig's Witness agent.
 // rigPrefix is the rig's beads prefix (e.g., "gt" for gastown, "bd" for beads).
-// rigName is the name of the rig (e.g., "testgt1").
+// rigName is the name of the rig (e.g., "myrig").
 func WitnessSessionName(rigPrefix, rigName string) string {
 	prefix := rigPrefix
 	if rigName == "" || rigName == rigPrefix {
@@ -62,7 +62,7 @@ func WitnessSessionNameForRig(rigName string) string {
 
 // RefinerySessionName returns the session name for a rig's Refinery agent.
 // rigPrefix is the rig's beads prefix (e.g., "gt" for gastown, "bd" for beads).
-// rigName is the name of the rig (e.g., "testgt1").
+// rigName is the name of the rig (e.g., "myrig").
 func RefinerySessionName(rigPrefix, rigName string) string {
 	prefix := rigPrefix
 	if rigName == "" || rigName == rigPrefix {

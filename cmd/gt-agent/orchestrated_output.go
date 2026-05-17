@@ -41,7 +41,7 @@ func orchestratedRoleLogPath(townRoot, role, rig, polecat string) string {
 }
 
 // setupOrchestratedOutputMirror duplicates stdout/stderr to the role typescript path
-// (e.g. testgt1/architect/typescript) without dup2, so NATS session logging still works.
+// (e.g. <rig>/architect/typescript) without dup2, so NATS session logging still works.
 func setupOrchestratedOutputMirror(townRoot, role, rig string) {
 	roleLog := orchestratedRoleLogPath(townRoot, role, rig, os.Getenv("GT_POLECAT"))
 	if roleLog == "" {

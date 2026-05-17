@@ -27,7 +27,7 @@ func TestPersistInstancesRoundTrip(t *testing.T) {
 	}
 	m.LoadTemplate(tpl)
 
-	wf, err = m.StartWorkflow("rig-flow", map[string]string{"rig": "testgt2"})
+	wf, err = m.StartWorkflow("rig-flow", map[string]string{"rig": "mockrig"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -36,7 +36,7 @@ func TestPersistInstancesRoundTrip(t *testing.T) {
 	if len(m2.instances) != 1 {
 		t.Fatalf("expected 1 instance, got %d", len(m2.instances))
 	}
-	if m2.instances[wf].Variables["rig"] != "testgt2" {
+	if m2.instances[wf].Variables["rig"] != "mockrig" {
 		t.Fatalf("rig var: %v", m2.instances[wf].Variables)
 	}
 

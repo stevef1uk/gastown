@@ -101,7 +101,7 @@ func TestNatsProvider_EnvironmentStorage(t *testing.T) {
 		t.Fatalf("SetEnvironment failed: %v", err)
 	}
 
-	err = p.SetEnvironment(ctx, sessionID, "GT_RIG", "defender")
+	err = p.SetEnvironment(ctx, sessionID, "GT_RIG", "mockrig")
 	if err != nil {
 		t.Fatalf("SetEnvironment failed: %v", err)
 	}
@@ -115,8 +115,8 @@ func TestNatsProvider_EnvironmentStorage(t *testing.T) {
 	if env["GT_ROLE"] != "polecat" {
 		t.Errorf("GT_ROLE = %q, want polecat", env["GT_ROLE"])
 	}
-	if env["GT_RIG"] != "defender" {
-		t.Errorf("GT_RIG = %q, want defender", env["GT_RIG"])
+	if env["GT_RIG"] != "mockrig" {
+		t.Errorf("GT_RIG = %q, want mockrig", env["GT_RIG"])
 	}
 
 	// Verify empty for unknown session

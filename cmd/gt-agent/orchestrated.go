@@ -15,6 +15,8 @@ import (
 	"github.com/steveyegge/gastown/cmd/gt-agent/internal/llm"
 	"github.com/steveyegge/gastown/internal/beads"
 	"github.com/steveyegge/gastown/internal/config"
+	"github.com/steveyegge/gastown/internal/nudge"
+	"github.com/steveyegge/gastown/internal/agentenv"
 	"github.com/steveyegge/gastown/internal/orchestrator"
 )
 
@@ -123,6 +125,10 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 	systemPrompt := buildOrchestratedSystemPrompt(task)
 	userPrompt := buildOrchestratedUserPrompt(task)
 	var contextBlocks []string
+	if block := drainOrchestratedNudges(townRoot, sessionName); block != "" {
+		contextBlocks = append(contextBlocks, block)
+		orchestratedPrintf("[gt-agent] injected drained nudge(s) for %s/%s\n", task.WorkflowID, task.State)
+	}
 	if block := formatWorkflowReworkBlock(task, rig); block != "" {
 		contextBlocks = append(contextBlocks, block)
 		orchestratedPrintf("[gt-agent] injecting QA/review rework context for %s/%s\n", task.WorkflowID, task.State)
@@ -250,7 +256,8 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 				if needsOrchestratedScriptFile(cmd) {
 					orchestratedPrintf("[gt-agent] running multiline/heredoc via temp script\n")
 				}
-				out, cmdErr := runOrchestratedCommand(cmd, townRoot, sessionName, cmdEnv)
+				workDir := orchestratedCommandWorkDir(townRoot, rig, task.State)
+				out, cmdErr := runOrchestratedCommand(cmd, workDir, sessionName, cmdEnv)
 				if task.State == "design" && cmdErr == nil && isArchitectureMDWriteCommand(cmd) {
 					designArchWrittenThisRun = true
 				}
@@ -370,7 +377,8 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 					hint = fmt.Sprintf("Run `bd list --status=open` from %s with BEADS_DIR set; compare titles to architecture required_files. Use outcome failure to send the Planner back to fix duplicates or missing paths.", work)
 				}
 				if task.State == "implementation" {
-					hint = fmt.Sprintf("Use bare `bd` from %s: list open beads, implement under backend/, `bd close` at least one bead, then success. Never use gt bd.", rigMayorRigPath(rig))
+					hint = fmt.Sprintf("Use bare `bd` from %s with BEADS_DIR=$GT_ROOT/%s/.beads: fix files QA named, `python3 -m pip install -r requirements.txt` if needed, run %s, `bd close` a bead, then success. No shell text in .py files.",
+						rigMayorRigPath(rig), rig, taskValidation(task).UnittestCommandHint())
 				}
 				if task.State == "qa_review" {
 					v := taskValidation(task)
@@ -439,12 +447,13 @@ func formatWorkflowReworkBlock(task *orchestrator.Task, rig string) string {
 	} else {
 		b.WriteString("\nAddress the issues above. Use bead IDs and paths from command output — do not invent IDs.\n")
 	}
-	b.WriteString(workflowReworkHints(r.FromState, task.State, rig, r.Summary))
-	b.WriteString(orchestratedRetryHintsForState(task.State, rig))
+	v := taskValidation(task)
+	b.WriteString(workflowReworkHints(r.FromState, task.State, rig, r.Summary, v))
+	b.WriteString(orchestratedRetryHintsForState(task.State, rig, v))
 	return b.String()
 }
 
-func workflowReworkHints(fromState, toState, rig, summary string) string {
+func workflowReworkHints(fromState, toState, rig, summary string, v orchestrator.WorkflowValidation) string {
 	if fromState == "plan_review" && toState == "planning" {
 		worktree := "<rig>/mayor/rig"
 		if rig != "" {
@@ -476,14 +485,19 @@ func workflowReworkHints(fromState, toState, rig, summary string) string {
 	if rig != "" {
 		worktree = rig + "/mayor/rig"
 	}
+	layout := v.LayoutRootDir()
+	prefix := strings.TrimSpace(v.BeadTitleContains)
+	if prefix == "" {
+		prefix = "implement prefix from profile"
+	}
 	return fmt.Sprintf(`
 ### QA sent you back — do this first
-1. Fix the **specific** issues in the QA summary and command output (files under backend/, tests, stubs).
-2. `+"`"+`CMD: bash -lc 'cd %s && bd list --status=open'`+"`"+` — pick a bead whose title contains the workflow implement prefix.
+1. Fix the **specific** issues in the QA summary and command output (paths under %s/, tests, stubs).
+2. `+"`"+`CMD: bash -lc 'cd %s && bd list --status=open'`+"`"+` — pick a bead whose title contains %q.
 3. If **no** open implement beads: `+"`"+`bd list --status=closed`+"`"+`, find closed implement beads, reopen one with `+"`"+`bd update <id-from-bd-list> --status=open`+"`"+`, then fix code and `+"`"+`bd close <id-from-bd-list>`+"`"+`.
 4. **Never** invent bead IDs — copy only from bd list output for this rig.
 5. Use `+"`"+`cat > path <<'EOF'`+"`"+` heredocs (line with only EOF). Do not nest `+"`"+`bash -lc '...<<'EOF''`+"`"+`.
-`, worktree)
+`, layout, worktree, prefix)
 }
 
 // formatOrchestratedRetryBlock returns prior-attempt context for the next LLM session.
@@ -505,12 +519,12 @@ func formatOrchestratedRetryBlock(prior *OrchestratedRetry, task *orchestrator.T
 		b.WriteString("\n")
 	}
 	b.WriteString("\nFix the issues above. Use bead IDs and paths from command output — do not invent IDs.\n")
-	b.WriteString(orchestratedRetryHintsForState(task.State, rig))
+	b.WriteString(orchestratedRetryHintsForState(task.State, rig, taskValidation(task)))
 	return b.String()
 }
 
 // orchestratedRetryHintsForState returns step-specific guidance after a failed attempt.
-func orchestratedRetryHintsForState(state, rig string) string {
+func orchestratedRetryHintsForState(state, rig string, v orchestrator.WorkflowValidation) string {
 	switch strings.ToLower(strings.TrimSpace(state)) {
 	case "kickoff":
 		return "One CMD: per line. Confirm the rig is registered and SPEC.md exists before reporting success.\n"
@@ -526,8 +540,9 @@ func orchestratedRetryHintsForState(state, rig string) string {
 			"Heredoc must end with a line containing only EOF. Verify with wc -c from town root.\n",
 			worktree, worktree)
 	case "implementation":
-		return "One CMD: per line. Run `bd list` first; use only bead IDs from that output (rig prefix from bd, not invented te- IDs). " +
-			"Run `mkdir -p backend` before creating backend files. Heredoc: `cat > path <<'EOF'` then EOF alone on its own line.\n"
+		layout := v.LayoutRootDir()
+		return fmt.Sprintf("One CMD: per line. Run `bd list` first; use only bead IDs from that output (rig prefix from bd — never invent IDs). "+
+			"Create files under %s/ per bead titles and profile required_files. Heredoc: `cat > path <<'EOF'` then EOF alone on its own line.\n", layout)
 	case "qa_review":
 		return "One CMD: per line. Review closed beads against SPEC and architecture; use allowed QA outcomes only.\n"
 	default:
@@ -909,11 +924,10 @@ func validateDesignShellSideEffects(lower string) error {
 // validateDesignCommand blocks architect scope creep before shell execution.
 func validateDesignCommand(cmd, rig string) error {
 	lower := strings.ToLower(cmd)
-	rigPrefix := rig
-	if rigPrefix == "" {
-		rigPrefix = "testgt2"
+	rigSlash := ""
+	if rig != "" {
+		rigSlash = strings.ToLower(strings.TrimSpace(rig)) + "/"
 	}
-	rigSlash := strings.ToLower(rigPrefix) + "/"
 
 	if isArchitectureMDHeredoc(cmd) {
 		// Mentioning backend/, python3, gt bd, etc. inside architecture.md body is allowed.
@@ -936,7 +950,10 @@ func validateDesignCommand(cmd, rig string) error {
 			return nil
 		}
 		if strings.Contains(lower, rigSlash) || strings.Contains(lower, "mayor/rig/") {
-			return fmt.Errorf("may only write architecture.md under %s/mayor/rig/", rigPrefix)
+			if rig == "" {
+				return fmt.Errorf("may only write architecture.md under <rig>/mayor/rig/")
+			}
+			return fmt.Errorf("may only write architecture.md under %s/mayor/rig/", rig)
 		}
 	}
 	return nil
@@ -1170,16 +1187,17 @@ func validatePlanningArtifacts(townRoot, rig string, hadCmdFailure, beadCreateOK
 // orchestratedCommandEnv pins BEADS_DIR to the workflow rig for planning/implementation
 // so town-level planner sessions do not write beads into ~/gt/.beads.
 func orchestratedCommandEnv(townRoot, rig, taskState string, base []string) []string {
+	env := agentenv.EnsurePATH(base)
 	if rig == "" || townRoot == "" {
-		return base
+		return env
 	}
 	switch taskState {
 	case "planning", "plan_review", "implementation", "qa_review":
 	default:
-		return base
+		return env
 	}
 	beadsDir := config.ResolveBeadsDirForRig(townRoot, rig)
-	env := withEnvKey(base, "BEADS_DIR", beadsDir)
+	env = withEnvKey(env, "BEADS_DIR", beadsDir)
 	workDir := rigMayorRigDir(townRoot, rig)
 	if taskState == "implementation" || taskState == "qa_review" {
 		env = prependEnvPath(env, "PYTHONPATH", workDir)
@@ -1283,7 +1301,25 @@ func validateImplementationArtifacts(townRoot, rig string, hadCmdFailure, beadCl
 	if err := validateRequiredWorkFiles(townRoot, rig, v); err != nil {
 		return err
 	}
+	rigDir := rigMayorRigDir(townRoot, rig)
+	if err := orchestrator.ValidateLayoutPythonSources(rigDir, v); err != nil {
+		return fmt.Errorf("invalid Python under %s: %w", v.LayoutRoot, err)
+	}
+	if err := orchestrator.ValidateWorkNotStubbed(rigDir, v); err != nil {
+		return fmt.Errorf("implementation still looks like stubs: %w", err)
+	}
 	return nil
+}
+
+func drainOrchestratedNudges(townRoot, sessionName string) string {
+	if townRoot == "" || strings.TrimSpace(sessionName) == "" {
+		return ""
+	}
+	drained, err := nudge.Drain(townRoot, sessionName)
+	if err != nil || len(drained) == 0 {
+		return ""
+	}
+	return "## Operator / peer nudge\n\n" + nudge.FormatForInjection(drained)
 }
 
 func isUnittestCommand(cmd, unittestModule string) bool {

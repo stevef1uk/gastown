@@ -7,8 +7,8 @@ import (
 )
 
 func TestParseArchitect(t *testing.T) {
-	DefaultRegistry().Register("te", "testgt2")
-	id, err := ParseSessionName("te-testgt2-architect")
+	DefaultRegistry().Register("te", "mockrig")
+	id, err := ParseSessionName("te-mockrig-architect")
 	if err != nil {
 		t.Fatalf("Error: %v", err)
 	}

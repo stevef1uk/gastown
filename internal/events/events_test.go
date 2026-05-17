@@ -252,19 +252,19 @@ func TestSessionPayload_Full(t *testing.T) {
 }
 
 func TestWorkflowTransitionPayload(t *testing.T) {
-	p := WorkflowTransitionPayload("wf-1", "rig-flow", "design", "planning", "success", "architect", "testgt2")
+	p := WorkflowTransitionPayload("wf-1", "rig-flow", "design", "planning", "success", "architect", "mockrig")
 	if p["message"] != "rig-flow wf-1: design → planning (success) [architect]" {
 		t.Fatalf("message: %v", p["message"])
 	}
-	if p["rig"] != "testgt2" {
+	if p["rig"] != "mockrig" {
 		t.Fatalf("rig: %v", p["rig"])
 	}
 }
 
 func TestLogFeedAt_writesEvent(t *testing.T) {
 	dir := t.TempDir()
-	err := LogFeedAt(dir, TypeWorkflowStart, "testgt2/orchestrator",
-		WorkflowStartPayload("wf-1", "rig-flow", "kickoff", "mayor", "testgt2"))
+	err := LogFeedAt(dir, TypeWorkflowStart, "mockrig/orchestrator",
+		WorkflowStartPayload("wf-1", "rig-flow", "kickoff", "mayor", "mockrig"))
 	if err != nil {
 		t.Fatal(err)
 	}
