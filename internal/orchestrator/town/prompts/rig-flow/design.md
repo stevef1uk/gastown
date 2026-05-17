@@ -20,9 +20,9 @@ Polecat implements code later from SPEC. Your architecture doc should **describe
 
 ## HARD RULES
 
-1. Read SPEC with **head only** (do not dump the whole file into the chat):
+1. Read SPEC completely to understand all requirements and files needed:
    ```
-   CMD: head -n 60 {{rig}}/mayor/rig/SPEC.md
+   CMD: cat {{rig}}/mayor/rig/SPEC.md
    ```
 2. Write **only** `{{rig}}/mayor/rig/architecture.md` using a heredoc. Match the **actual** project in SPEC (title, layout_root `{{layout_root}}`, required files: {{required_files}}). Do **not** copy example projects from other rigs.
 3. Verify: `CMD: wc -c {{rig}}/mayor/rig/architecture.md`
@@ -55,5 +55,7 @@ EOF
 In a **separate** message with **no** `CMD:` lines:
 
 `{"outcome":"success","summary":"architecture.md written"}`
+
+**CRITICAL RULE**: Do **not** emit JSON in the same message as `CMD:` lines. You MUST wait to see the actual command outputs in the next turn before deciding on the outcome. Do not provide placeholder summaries.
 
 Forbidden commands are **rejected** by the agent runtime; `success` is rejected if `architecture.md` is too small (need ≥ {{min_architecture_bytes}} bytes).

@@ -66,6 +66,7 @@ If the prompt includes **"Prior step failed"** from `qa_review`, QA rejected you
    `{"outcome":"success","summary":"bead BEAD_ID completed; tests passed"}`
 
 Do **not** report `success` without successful `bd close` and a green verification command in this session.
+**CRITICAL RULE**: Do **not** emit JSON in the same message as `CMD:` lines. You MUST wait to see the actual command outputs in the next turn before deciding on the outcome. Do not provide placeholder summaries.
 
 On errors: `{"outcome":"failure","summary":"..."}` with the real error.
 

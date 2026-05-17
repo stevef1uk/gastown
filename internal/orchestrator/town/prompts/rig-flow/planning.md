@@ -35,8 +35,8 @@ Do **not** invent bead IDs or add implementation code under `{{layout_root}}/`.
 2. Inspect inputs (read-only):
    ```
    CMD: ls -la {{rig}}/mayor/rig/
-   CMD: head -n 40 {{rig}}/mayor/rig/SPEC.md
-   CMD: head -n 40 {{rig}}/mayor/rig/architecture.md
+   CMD: cat {{rig}}/mayor/rig/SPEC.md
+   CMD: cat {{rig}}/mayor/rig/architecture.md
    ```
 
 3. Create implementation beads in the **rig** beads DB (not town `~/gt/.beads`). Export `BEADS_DIR` before every `bd` command:
@@ -62,6 +62,7 @@ Do **not** invent bead IDs or add implementation code under `{{layout_root}}/`.
 
 7. On a **later turn** with no CMD lines, send JSON only:
    `{"outcome":"success","summary":"plan and beads created; ready for plan review"}`
+   **CRITICAL RULE**: Do **not** emit JSON in the same message as `CMD:` lines. You MUST wait to see the actual command outputs in the next turn before deciding on the outcome. Do not provide placeholder summaries.
 
 ## Anti-hallucination
 

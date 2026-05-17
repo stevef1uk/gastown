@@ -30,7 +30,7 @@ Required implementation files (from profile): {{required_files}}
 
 2. Compare architecture to open beads (export rig `BEADS_DIR`):
    ```
-   CMD: head -n 60 {{rig}}/mayor/rig/architecture.md
+   CMD: cat {{rig}}/mayor/rig/architecture.md
    CMD: export BEADS_DIR=$GT_ROOT/{{rig}}/.beads && cd {{rig}}/mayor/rig && bd list --status=open --flat --limit=0
    CMD: wc -c {{rig}}/mayor/rig/plan.md
    ```
@@ -51,5 +51,7 @@ Required implementation files (from profile): {{required_files}}
    - `{"outcome":"failure","summary":"..."}` — summary **must** list duplicate paths, missing required_files paths, weak plan.md issues, and real `te-xxx` bead IDs to delete or fix.
 
 Example failure: `{"outcome":"failure","summary":"duplicate backend/main.py beads {{bead_id_example}} {{bead_id_example}}; missing backend/test_fizzbuzz.py bead; plan.md 900 bytes (need ≥ {{min_plan_bytes}})"}`
+
+**CRITICAL RULE**: Do **not** emit JSON in the same message as `CMD:` lines. You MUST wait to see the actual command outputs in the next turn before deciding on `success` or `failure`. Do not provide placeholder summaries.
 
 On `failure`, the **Planner** runs again in `planning` with your summary in its prompt.

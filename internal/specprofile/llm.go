@@ -53,10 +53,10 @@ Rules:
 - test_runner: one of "unittest", "pytest", "custom".
 - unittest_module: dotted module for stdlib unittest ONLY if test_runner is unittest (e.g. backend.test_app); else "".
 - qa_verify_command: ONE shell command or chain run from the rig worktree (mayor/rig cwd is the repo root). It must verify the app. Prefer "python3 -m pytest -q" or "python3 -m unittest …" (not bare "pytest"). Use paths consistent with layout_root and required_files.
-- required_files: 3–8 critical paths relative to mayor/rig (under layout_root when set). Include entrypoints and requirements.txt/pyproject.toml when the spec names them.
+- required_files: An exhaustive array of critical paths relative to mayor/rig (under layout_root when set). Include ALL frontend code, backend code, entrypoints, and configuration files required by the spec. There is no limit; capture every explicit or implicitly required file (e.g. 10-30+ files for a real app).
 - spec_summary: 400–2500 characters summarizing goals, stack, directory layout, and how to run tests—so downstream agents need not re-read the full spec.
-- min_plan_bytes: target 1500–2500 (enough for bead list + phased strategy in plan.md). Use 200–4096 only; NEVER copy SPEC byte length or spec_summary character count.
-- min_architecture_bytes: target 4000–8192 for a substantive architecture.md. Use 200–8192 only; NEVER copy SPEC byte length.
+- min_plan_bytes: target 3000–5000 (enough for a detailed bead list + phased strategy in plan.md). Use 200–8192 only; NEVER copy SPEC byte length or spec_summary character count.
+- min_architecture_bytes: target 6000–12000 for a substantive architecture.md. Use 200–12000 only; NEVER copy SPEC byte length.
 - confidence: "high", "medium", or "low".
 
 Output JSON only.`
