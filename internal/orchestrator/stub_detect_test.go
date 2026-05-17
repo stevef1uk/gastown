@@ -92,6 +92,29 @@ if __name__ == "__main__":
 	}
 }
 
+func TestCheckContentNotStub_acceptsDependencyManifests(t *testing.T) {
+	opts := StubCheckOptionsFromValidation(WorkflowValidation{
+		MinImplementationFileBytes: 400,
+		MinSubstantiveLines:        3,
+	})
+	cases := []struct {
+		rel     string
+		content string
+	}{
+		{"myapp/pkg/requirements.txt", "pytest\nflask\n"},
+		{"service/go.mod", "module example.com/foo\n\ngo 1.22\n"},
+		{"service/go.sum", "example.com/foo v0.0.0 h1:abc=\n"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.rel, func(t *testing.T) {
+			o := optsForPath(tc.rel, opts)
+			if err := CheckContentNotStub([]byte(tc.content), tc.rel, o); err != nil {
+				t.Fatalf("manifest should pass: %v", err)
+			}
+		})
+	}
+}
+
 func TestCheckContentNotStub_rejectsTypicalStubs(t *testing.T) {
 	html := `<!DOCTYPE html>
 <html><body>Hello</body></html>`

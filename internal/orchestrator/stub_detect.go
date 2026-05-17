@@ -59,6 +59,43 @@ var configFileExtensions = map[string]bool{
 	".lock": true, ".mod": true, ".sum": true,
 }
 
+// dependencyManifestNames are lockfiles and dependency lists — non-empty only, no min byte/line counts.
+var dependencyManifestNames = map[string]bool{
+	"requirements.txt":      true,
+	"requirements-dev.txt":  true,
+	"requirements-test.txt": true,
+	"constraints.txt":       true,
+	"pyproject.toml":        true,
+	"poetry.lock":           true,
+	"Pipfile":               true,
+	"Pipfile.lock":          true,
+	"go.mod":                true,
+	"go.sum":                true,
+	"go.work":               true,
+	"go.work.sum":           true,
+	"package.json":          true,
+	"package-lock.json":     true,
+	"yarn.lock":             true,
+	"pnpm-lock.yaml":        true,
+	"npm-shrinkwrap.json":   true,
+	"Cargo.toml":            true,
+	"Cargo.lock":            true,
+	"composer.json":         true,
+	"composer.lock":         true,
+	"Gemfile":               true,
+	"Gemfile.lock":          true,
+}
+
+// IsDependencyManifest reports whether rel is a dependency/manifest file (size guards do not apply).
+func IsDependencyManifest(displayRel string) bool {
+	base := filepath.Base(filepath.ToSlash(strings.TrimSpace(displayRel)))
+	if dependencyManifestNames[base] {
+		return true
+	}
+	lower := strings.ToLower(base)
+	return dependencyManifestNames[lower]
+}
+
 // ValidateWorkNotStubbed rejects placeholder implementations under the rig worktree.
 // Checks required_files and, when layout_root is set, other source files in that tree.
 func ValidateWorkNotStubbed(rigDir string, v WorkflowValidation) error {
@@ -124,6 +161,9 @@ func ValidateWorkNotStubbed(rigDir string, v WorkflowValidation) error {
 }
 
 func optsForPath(displayRel string, opts StubCheckOptions) StubCheckOptions {
+	if IsDependencyManifest(displayRel) {
+		return StubCheckOptions{MinFileBytes: 1, MinSubstantiveLines: 0}
+	}
 	ext := strings.ToLower(filepath.Ext(displayRel))
 	if !configFileExtensions[ext] {
 		return opts
@@ -149,6 +189,10 @@ func CheckPathNotStub(path, displayRel string, opts StubCheckOptions) error {
 func CheckContentNotStub(data []byte, displayRel string, opts StubCheckOptions) error {
 	if len(data) == 0 {
 		return fmt.Errorf("%s is empty (stub/placeholder)", displayRel)
+	}
+	if opts.MinSubstantiveLines <= 0 {
+		// Dependency manifests (requirements.txt, go.mod, lockfiles): non-empty is enough.
+		return nil
 	}
 
 	text := string(data)
