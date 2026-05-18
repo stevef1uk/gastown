@@ -23,9 +23,29 @@ func isGoModInitCommand(cmd string) bool {
 	return strings.Contains(lower, "go mod init")
 }
 
+func destroysGoMod(cmd string) bool {
+	lower := strings.ToLower(cmd)
+	if !strings.Contains(lower, "rm ") && !strings.Contains(lower, "unlink ") {
+		return false
+	}
+	return strings.Contains(lower, "go.mod") || strings.Contains(lower, "go.sum")
+}
+
 func isGoModTidyCommand(cmd string) bool {
 	lower := strings.ToLower(cmd)
 	return strings.Contains(lower, "go mod tidy")
+}
+
+// benignGoCommandError reports errors that are safe to ignore (e.g. go mod init when go.mod exists).
+func benignGoCommandError(cmd string, cmdErr error, out []byte) bool {
+	if cmdErr == nil {
+		return false
+	}
+	if isGoModInitCommand(cmd) {
+		msg := strings.ToLower(string(out) + " " + cmdErr.Error())
+		return strings.Contains(msg, "already exists")
+	}
+	return false
 }
 
 func isLLMPlaceholderCommand(cmd string) bool {
@@ -187,22 +207,28 @@ func validateProjectSetupArtifacts(townRoot, rig string, hadCmdFailure, verifyOK
 	return nil
 }
 
-func validateGoImplementationCommand(cmd, mayorRigDir string, v orchestrator.WorkflowValidation, verifyOK bool) error {
+func validateGoImplementationCommand(cmd, townRoot, rig, mayorRigDir, activeBead string, v orchestrator.WorkflowValidation, verifyOK bool) error {
 	if !orchestrator.WorkflowUsesGo(v) {
 		return nil
 	}
 	if writesGoModuleFilesViaHeredoc(cmd) {
 		return fmt.Errorf("do not write go.mod or go.sum via heredoc — use go mod init, go get, and go mod tidy in project_setup or before bd close")
 	}
+	if destroysGoMod(cmd) {
+		return fmt.Errorf("do not delete go.mod or go.sum — use go mod edit, go get, and go mod tidy")
+	}
+	beadPath := orchestrator.ImplementBeadPathForID(townRoot, rig, activeBead, v)
+	verifyHint := orchestrator.GoImplementationVerifyCommandForBead(v, mayorRigDir, beadPath)
 	lower := strings.ToLower(cmd)
-	if (strings.Contains(lower, "go run") || strings.Contains(lower, "curl ")) &&
-		!orchestrator.GoServerMainExists(mayorRigDir, v) {
-		return fmt.Errorf("go run/curl not until cmd/server/main.go exists — use: %s",
-			orchestrator.GoImplementationVerifyCommand(v, mayorRigDir))
+	onGoModBead := strings.HasSuffix(filepath.ToSlash(beadPath), "go.mod")
+	onServerMainBead := orchestrator.IsServerMainImplementBead(beadPath)
+	if strings.Contains(lower, "go run") || strings.Contains(lower, "curl ") {
+		if onGoModBead || !onServerMainBead || !orchestrator.GoServerMainExists(mayorRigDir, v) {
+			return fmt.Errorf("for this bead use compile verify only — use: %s", verifyHint)
+		}
 	}
 	if isBeadCloseCommand(cmd) && !verifyOK {
-		return fmt.Errorf("run green verify before bd close: %s",
-			orchestrator.GoImplementationVerifyCommand(v, mayorRigDir))
+		return fmt.Errorf("run green verify before bd close: %s", verifyHint)
 	}
 	return nil
 }

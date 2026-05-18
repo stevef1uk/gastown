@@ -193,6 +193,10 @@ func (r *stateRunner) validateCommand(cmd string) error {
 }
 
 func (r *stateRunner) rewriteCommand(cmd string) string {
+	if fixed, ok := normalizeGoCommandTypos(cmd); ok {
+		orchestratedPrintf("[gt-agent] rewrote go command typo → %s\n", fixed)
+		cmd = fixed
+	}
 	for _, rw := range r.hooks.CmdRewrites {
 		switch rw {
 		case "rig_placeholders":
@@ -355,7 +359,7 @@ func (r *stateRunner) trackCommand(cmd string, cmdErr error) {
 				r.track.activeBead = id
 			}
 		}
-		if cmdErr == nil && isImplementationVerifyCommandOK(cmd, r.townRoot, r.rig, r.v) {
+		if cmdErr == nil && isImplementationVerifyCommandOK(cmd, r.townRoot, r.rig, r.track.activeBead, r.v) {
 			r.track.verifyOK = true
 			r.track.hadCmdFailure = false
 		}
@@ -411,19 +415,25 @@ func (r *stateRunner) runAutoVerify(cmd, workDir, sessionName string, cmdEnv []s
 		if verifyCmd == "" {
 			continue
 		}
+		if fixed, ok := rewriteUnittestToWorkdir(verifyCmd, r.rig, r.v); ok {
+			verifyCmd = fixed
+		}
 		verifyOut, verifyErr := runOrchestratedCommand(verifyCmd, workDir, sessionName, cmdEnv)
 		if verifyErr != nil {
 			r.track.hadCmdFailure = true
 			r.track.verifyOK = false
 			orchestratedFprintfStderr("[gt-agent] auto-verify failed: %v\n%s\n", verifyErr, string(verifyOut))
 			combined.WriteString(fmt.Sprintf("Auto-verify: %s\nError: %v\nOutput: %s\n\n", verifyCmd, verifyErr, string(verifyOut)))
+			if r.hooks.AppendGoCompileContext && orchestrator.WorkflowUsesGo(r.v) {
+				appendGoCompileSourceContext(combined, rigMayorRigDir(r.townRoot, r.rig), r.v.LayoutRoot, verifyCmd, string(verifyOut))
+			}
 		} else {
 			r.track.verifyOK = true
 			if r.hooks.Track == "project_setup" {
 				r.track.hadCmdFailure = false
 			}
-			orchestratedPrintf("[gt-agent] auto-verify ok\n")
-			combined.WriteString(string(verifyOut))
+			orchestratedPrintf("[gt-agent] auto-verify ok: %s\n", verifyCmd)
+			combined.WriteString(fmt.Sprintf("Auto-verify: %s\n%s", verifyCmd, formatSuccessCommandOutput(verifyOut)))
 		}
 	}
 }
@@ -459,7 +469,9 @@ func (r *stateRunner) verifyCommand(kind string) string {
 		}
 	case "go_implementation":
 		if orchestrator.WorkflowUsesGo(r.v) {
-			return orchestrator.GoImplementationVerifyCommand(r.v, filepath.Join(r.townRoot, r.rig, "mayor", "rig"))
+			mayor := filepath.Join(r.townRoot, r.rig, "mayor", "rig")
+			beadPath := orchestrator.ImplementBeadPathForID(r.townRoot, r.rig, r.track.activeBead, r.v)
+			return orchestrator.GoImplementationVerifyCommandForBead(r.v, mayor, beadPath)
 		}
 	case "python":
 		if orchestrator.WorkflowUsesPython(r.v) {

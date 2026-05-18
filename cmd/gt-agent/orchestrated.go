@@ -205,13 +205,22 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 				}
 				workDir := runner.workDir()
 				out, cmdErr := runOrchestratedCommand(cmd, workDir, sessionName, cmdEnv)
+				if cmdErr != nil && benignGoCommandError(cmd, cmdErr, out) {
+					orchestratedPrintf("[gt-agent] treating as ok: %v\n", cmdErr)
+					combined.WriteString(fmt.Sprintf("Command: %s\n(note: %v — continuing)\nOutput: %s\n\n", cmd, cmdErr, string(out)))
+					cmdErr = nil
+				}
 				runner.afterCommand(cmd, cmdErr, workDir, sessionName, cmdEnv, &combined)
 				if cmdErr != nil {
 					orchestratedFprintfStderr("[gt-agent] command failed: %v\n%s\n", cmdErr, string(out))
 					combined.WriteString(fmt.Sprintf("Command: %s\nError: %v\nOutput: %s\n\n", cmd, cmdErr, string(out)))
+					if runner.hooks.AppendGoCompileContext && orchestrator.WorkflowUsesGo(runner.v) {
+						appendGoCompileSourceContext(&combined, rigMayorRigDir(townRoot, rig), runner.v.LayoutRoot, cmd, string(out))
+					}
 				} else {
-					orchestratedPrintf("[gt-agent] output:\n%s\n", string(out))
-					combined.WriteString(string(out))
+					feedbackOut := formatSuccessCommandOutput(out)
+					orchestratedPrintf("[gt-agent] output: %s\n", strings.TrimSpace(feedbackOut))
+					combined.WriteString(feedbackOut)
 				}
 			}
 			feedback := combined.String()
@@ -484,24 +493,38 @@ var outcomeJSONTailRE = regexp.MustCompile(`(?i)\s*\{[\s]*"outcome"[\s\S]*$`)
 var markdownFencedCMDRE = regexp.MustCompile("(?im)^```\\s*cmd:\\s*")
 
 // stripOutcomeLines removes JSON/outcome lines so they are not fed into shell scripts.
+// Heredoc bodies are copied verbatim so Go lines containing only "}" are preserved.
 func stripOutcomeLinesForCmdParse(response string) string {
 	lines := strings.Split(response, "\n")
 	var kept []string
 	inOutcomeJSON := false
 	braceDepth := 0
+	heredocTerm := ""
 	for _, line := range lines {
 		t := strings.TrimSpace(line)
+		if heredocTerm != "" {
+			kept = append(kept, line)
+			if t == heredocTerm {
+				heredocTerm = ""
+			}
+			continue
+		}
+		if term := detectHeredocTerm(line); term != "" {
+			kept = append(kept, line)
+			heredocTerm = term
+			continue
+		}
 		if t == "" {
 			if !inOutcomeJSON {
 				kept = append(kept, line)
 			}
 			continue
 		}
-		if !inOutcomeJSON && strings.HasPrefix(t, "{") && strings.Contains(strings.ToLower(t), "outcome") {
+		if !inOutcomeJSON && (t == "{" || (strings.HasPrefix(t, "{") && strings.Contains(strings.ToLower(t), "outcome"))) {
 			inOutcomeJSON = true
 			braceDepth = strings.Count(t, "{") - strings.Count(t, "}")
 			if braceDepth <= 0 {
-				inOutcomeJSON = false
+				braceDepth = 1
 			}
 			continue
 		}
@@ -535,17 +558,16 @@ func isOrchestratedOutcomeLine(t string) bool {
 	if strings.Contains(t, "CMD:") {
 		return false
 	}
-	lower := strings.ToLower(t)
+	trimmed := strings.TrimSpace(t)
+	lower := strings.ToLower(trimmed)
 	if strings.HasPrefix(lower, "outcome:") || strings.HasPrefix(lower, "summary:") {
 		return true
 	}
-	if strings.HasPrefix(t, "{") || strings.HasPrefix(t, "}") || t == "}," {
+	// Do not match bare "{" or "}" — they appear on their own lines in Go heredocs.
+	if strings.HasPrefix(trimmed, "{") && strings.Contains(lower, `"outcome"`) {
 		return true
 	}
-	if strings.HasPrefix(lower, `"outcome"`) || strings.HasPrefix(lower, `'outcome'`) {
-		return true
-	}
-	if strings.HasPrefix(lower, `"summary"`) {
+	if strings.HasPrefix(trimmed, `"outcome"`) || strings.HasPrefix(trimmed, `"summary"`) {
 		return true
 	}
 	return false
@@ -1115,7 +1137,7 @@ func validateImplementationCommandWithState(cmd, townRoot, rig, activeBead strin
 		return err
 	}
 	mayorDir := rigMayorRigDir(townRoot, rig)
-	if err := validateGoImplementationCommand(cmd, mayorDir, v, verifyOK); err != nil {
+	if err := validateGoImplementationCommand(cmd, townRoot, rig, mayorDir, activeBead, v, verifyOK); err != nil {
 		return err
 	}
 	if err := validatePythonImplementationCommand(cmd, v, verifyOK); err != nil {
@@ -1153,6 +1175,14 @@ func validateImplementationBeadFileWrite(cmd, townRoot, rig, activeBead string, 
 	}
 	if pathMatchesImplementWrite(written, allowedPath, v.RequiredFiles) {
 		return nil
+	}
+	// go.mod bead: go mod tidy fails until other packages import correctly — allow fixing those .go files.
+	if strings.HasSuffix(filepath.ToSlash(allowedPath), "go.mod") && strings.HasSuffix(written, ".go") {
+		for _, want := range v.RequiredFiles {
+			if pathMatchesImplementWrite(written, want, v.RequiredFiles) {
+				return nil
+			}
+		}
 	}
 	return fmt.Errorf("write only the active/next implement file (%s for bead %s), not %q",
 		allowedPath, allowedID, written)

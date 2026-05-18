@@ -1,41 +1,43 @@
 package main
 
 import (
-	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/steveyegge/gastown/internal/orchestrator"
 )
 
-func TestValidateQAArtifacts_customValidation(t *testing.T) {
-	dir := t.TempDir()
-	rigDir := filepath.Join(dir, "mockrig", "mayor", "rig")
-	backend := filepath.Join(rigDir, "backend")
-	if err := os.MkdirAll(backend, 0755); err != nil {
-		t.Fatal(err)
-	}
-	v := orchestrator.WorkflowValidation{
-		BeadTitleContains: "Implement api/",
-		UnittestModule:    "backend.test_api",
-		RequiredFiles:     []string{"backend/api.py"},
-		MinPlanBytes:        200,
-		MinArchitectureBytes: 200,
-	}.WithDefaults()
-	if err := os.WriteFile(filepath.Join(backend, "api.py"), []byte("ok\n"), 0644); err != nil {
-		t.Fatal(err)
-	}
-	// all_passed with no unittest run should fail
-	if err := validateQAArtifacts(dir, "mockrig", "all_passed", false, true, false, v); err == nil {
-		t.Fatal("expected unittest required")
+func TestGoVerifyCommandMatches_layoutPath(t *testing.T) {
+	t.Parallel()
+	v := orchestrator.WorkflowValidation{LayoutRoot: "linkshelf"}
+	verify := orchestrator.GoModBeadVerifyCommand(v)
+	cmd := "cd testgt3/mayor/rig/linkshelf && go mod tidy"
+	if !goVerifyCommandMatches(cmd, verify, v) {
+		t.Fatalf("expected match for %q vs %q", cmd, verify)
 	}
 }
 
-func TestIsUnittestCommand_customModule(t *testing.T) {
-	if !isUnittestCommand("python3 -m unittest backend.test_api -v", "backend.test_api") {
-		t.Fatal("expected match")
+func TestGoVerifyCommandMatches_packageBuild(t *testing.T) {
+	t.Parallel()
+	v := orchestrator.WorkflowValidation{LayoutRoot: "linkshelf"}
+	verify := orchestrator.GoCompileVerifyCommandForBead(v, "linkshelf/internal/store/store.go")
+	cmd := "cd testgt3/mayor/rig && cd linkshelf && go mod tidy && go build ./internal/store/..."
+	if !goVerifyCommandMatches(cmd, verify, v) {
+		t.Fatalf("expected package build match: verify=%q cmd=%q", verify, cmd)
 	}
-	if isUnittestCommand("python3 -m unittest backend.test_fizzbuzz", "backend.test_api") {
-		t.Fatal("expected no match")
+	if goVerifyCommandMatches("cd testgt3/mayor/rig/linkshelf && go build ./...", verify, v) {
+		t.Fatal("full module build must not match package-scoped verify")
 	}
 }
+
+func TestBenignGoCommandError_modInitExists(t *testing.T) {
+	t.Parallel()
+	cmd := "cd testgt3/mayor/rig/linkshelf && go mod init linkshelf"
+	out := []byte("go: /tmp/linkshelf/go.mod already exists\n")
+	if !benignGoCommandError(cmd, errExitStatus(1), out) {
+		t.Fatal("expected benign when go.mod exists")
+	}
+}
+
+type errExitStatus int
+
+func (e errExitStatus) Error() string { return "exit status 1" }

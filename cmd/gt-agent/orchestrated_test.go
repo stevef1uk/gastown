@@ -105,6 +105,31 @@ func TestStripOutcomeLines_multilineJSONAfterHeredoc(t *testing.T) {
 	}
 }
 
+func TestStripOutcomeLines_preservesGoBracesInsideHeredoc(t *testing.T) {
+	t.Parallel()
+	in := "CMD: cat > f.go <<'EOF'\npackage p\n\ntype T struct {\n\tx int\n}\n\nfunc F() {}\nEOF\n{\"outcome\":\"success\"}\n"
+	out := stripOutcomeLinesForCmdParse(in)
+	if !strings.Contains(out, "}\n\nfunc F") && !strings.Contains(out, "}\nfunc F") {
+		t.Fatalf("heredoc closing braces stripped:\n%s", out)
+	}
+	if strings.Contains(out, `"outcome"`) {
+		t.Fatalf("outcome json should be stripped after heredoc: %q", out)
+	}
+}
+
+func TestIsOrchestratedOutcomeLine_goBraces(t *testing.T) {
+	t.Parallel()
+	if isOrchestratedOutcomeLine("}") || isOrchestratedOutcomeLine("{") {
+		t.Fatal("bare braces are valid Go heredoc lines, not outcome JSON")
+	}
+	if !isOrchestratedOutcomeLine(`{"outcome":"success"}`) {
+		t.Fatal("single-line outcome JSON should match")
+	}
+	if !isOrchestratedOutcomeLine(`  "outcome": "success",`) {
+		t.Fatal("outcome field line should match")
+	}
+}
+
 func TestValidateOrchestratedArtifacts_design(t *testing.T) {
 	dir := t.TempDir()
 	rig := filepath.Join(dir, "myrig", "mayor", "rig")
@@ -179,6 +204,50 @@ func TestParseOrchestratedCommands_markdownFencedCMD(t *testing.T) {
 	}
 	if !strings.Contains(cmds[0], "bd list") {
 		t.Fatalf("got %q", cmds[0])
+	}
+}
+
+func TestParseOrchestratedCommands_heredocPreservesGoClosingBraces(t *testing.T) {
+	t.Parallel()
+	in := `CMD: cd mockrig/mayor/rig && cat > linkshelf/internal/store/store.go <<'EOF'
+package store
+
+type Store interface {
+	Get() string
+}
+
+func New() Store { return nil }
+EOF
+CMD: cd mockrig/mayor/rig/linkshelf && go build ./internal/store/...
+{"outcome":"success","summary":"done"}`
+	cmds := parseOrchestratedCommands(in)
+	if len(cmds) < 1 {
+		t.Fatalf("want heredoc cmd, got %v", cmds)
+	}
+	if !strings.Contains(cmds[0], "}\n\nfunc New") && !strings.Contains(cmds[0], "}\nfunc New") {
+		t.Fatalf("closing brace line stripped from heredoc:\n%s", cmds[0])
+	}
+}
+
+func TestRunOrchestratedCommand_heredocWritesGoWithClosingBraces(t *testing.T) {
+	dir := t.TempDir()
+	rigDir := filepath.Join(dir, "mockrig", "mayor", "rig", "linkshelf", "internal", "store")
+	if err := os.MkdirAll(rigDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	cmd := "export GT_ROOT=" + dir + " && cd mockrig/mayor/rig && cat > linkshelf/internal/store/store.go <<'EOF'\n" +
+		"package store\n\ntype S struct {\n\tx int\n}\n\nfunc NewS() *S { return &S{} }\nEOF"
+	env := []string{"GT_ROOT=" + dir, "HOME=" + dir, "PATH=/usr/bin:/bin"}
+	if _, err := runOrchestratedCommand(cmd, dir, "", env); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(rigDir, "store.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(data)
+	if !strings.Contains(body, "}\n\nfunc NewS") && !strings.Contains(body, "}\nfunc NewS") {
+		t.Fatalf("written file missing closing braces:\n%s", body)
 	}
 }
 
@@ -557,16 +626,21 @@ func TestValidateGoImplementationCommand(t *testing.T) {
 		LayoutRoot:      "linkshelf",
 		QAVerifyCommand: "cd linkshelf && go test ./...",
 	}
-	if err := validateGoImplementationCommand(`cat > linkshelf/go.sum <<'EOF'`, mayor, v, true); err == nil {
+	town := dir
+	rig := "mockrig"
+	if err := validateGoImplementationCommand(`cat > linkshelf/go.sum <<'EOF'`, town, rig, mayor, "", v, true); err == nil {
 		t.Fatal("expected reject go.sum heredoc")
 	}
-	if err := validateGoImplementationCommand("bd close tg-1", mayor, v, false); err == nil {
+	if err := validateGoImplementationCommand("cd linkshelf && rm -f go.mod go.sum", town, rig, mayor, "", v, true); err == nil {
+		t.Fatal("expected reject rm go.mod")
+	}
+	if err := validateGoImplementationCommand("bd close tg-1", town, rig, mayor, "", v, false); err == nil {
 		t.Fatal("expected reject bd close without verify")
 	}
-	if err := validateGoImplementationCommand("bd close tg-1", mayor, v, true); err != nil {
+	if err := validateGoImplementationCommand("bd close tg-1", town, rig, mayor, "", v, true); err != nil {
 		t.Fatalf("bd close with verify ok should pass: %v", err)
 	}
-	if err := validateGoImplementationCommand("cd linkshelf && go run ./cmd/server", mayor, v, true); err == nil {
+	if err := validateGoImplementationCommand("cd linkshelf && go run ./cmd/server", town, rig, mayor, "", v, true); err == nil {
 		t.Fatal("expected reject go run before main.go exists")
 	}
 }

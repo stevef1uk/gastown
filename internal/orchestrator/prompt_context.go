@@ -14,6 +14,7 @@
 //   - user_prompt_wrapper: none      — drop "Complete this step only:" prefix
 //   - failure_prompt_context           — which prompt_context keys to repeat on validation/empty reply (not the full list)
 //   - empty_response_suffix            — one line after empty LLM reply
+//   - append_go_compile_context        — inject .go file snippets after failed go build/tidy (polecat repair)
 //   - failure_hint, retry_hint_key, pre_run, cmd_guard, artifacts, …
 //
 // Add a new case to PromptContextBlock or RunPreRunHook only for a reusable named hook; reference it from YAML.
@@ -91,6 +92,8 @@ func RunPreRunHook(step, townRoot, rig string, v WorkflowValidation) (string, er
 		if len(reopened) > 0 {
 			return fmt.Sprintf("auto-reopened implement beads: %s", joinStrings(reopened, ", ")), nil
 		}
+	case "prune_stale_layout_go":
+		return PruneStaleLayoutGoFilesLog(townRoot, rig, v)
 	}
 	return "", nil
 }

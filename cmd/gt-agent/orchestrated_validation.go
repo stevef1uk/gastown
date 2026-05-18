@@ -34,7 +34,7 @@ func isQATestCommandOK(cmd string, v orchestrator.WorkflowValidation) bool {
 	return isUnittestCommand(cmd, v.UnittestModule)
 }
 
-func isImplementationVerifyCommandOK(cmd, townRoot, rig string, v orchestrator.WorkflowValidation) bool {
+func isImplementationVerifyCommandOK(cmd, townRoot, rig, activeBead string, v orchestrator.WorkflowValidation) bool {
 	if isQATestCommandOK(cmd, v) {
 		return true
 	}
@@ -42,8 +42,56 @@ func isImplementationVerifyCommandOK(cmd, townRoot, rig string, v orchestrator.W
 		return false
 	}
 	mayorDir := filepath.Join(townRoot, rig, "mayor", "rig")
-	impl := orchestrator.GoImplementationVerifyCommand(v, mayorDir)
-	return commandMatchesQAVerify(cmd, impl)
+	beadPath := orchestrator.ImplementBeadPathForID(townRoot, rig, activeBead, v)
+	impl := orchestrator.GoImplementationVerifyCommandForBead(v, mayorDir, beadPath)
+	if commandMatchesQAVerify(cmd, impl) {
+		return true
+	}
+	return goVerifyCommandMatches(cmd, impl, v)
+}
+
+// goVerifyCommandMatches accepts agent commands that cd into layout via rig/mayor/rig paths
+// while verify hints use layout-relative cd (cd linkshelf && go mod tidy).
+func goVerifyCommandMatches(cmd, verify string, v orchestrator.WorkflowValidation) bool {
+	layout := strings.Trim(strings.TrimSpace(v.LayoutRoot), "/")
+	if layout == "" {
+		return false
+	}
+	lower := strings.ToLower(cmd)
+	if !strings.Contains(lower, layout) {
+		return false
+	}
+	steps := goToolchainStepsFromVerify(verify)
+	if len(steps) == 0 {
+		return false
+	}
+	for _, step := range steps {
+		if strings.HasPrefix(step, "go build ") {
+			target := strings.TrimSpace(strings.TrimPrefix(step, "go build"))
+			if target != "" && !strings.Contains(lower, target) {
+				return false
+			}
+			if !strings.Contains(lower, "go build") {
+				return false
+			}
+			continue
+		}
+		if !strings.Contains(lower, step) {
+			return false
+		}
+	}
+	return true
+}
+
+func goToolchainStepsFromVerify(verify string) []string {
+	var steps []string
+	for _, part := range strings.Split(verify, "&&") {
+		p := strings.ToLower(strings.TrimSpace(part))
+		if strings.HasPrefix(p, "go ") {
+			steps = append(steps, p)
+		}
+	}
+	return steps
 }
 
 func commandMatchesQAVerify(cmd, verify string) bool {

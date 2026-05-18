@@ -40,6 +40,8 @@ type StateHooks struct {
 	UserPromptWrapper       string `yaml:"user_prompt_wrapper,omitempty" json:"user_prompt_wrapper,omitempty"` // "none" = no "Complete this step only" prefix
 	FailurePromptContext    []string `yaml:"failure_prompt_context,omitempty" json:"failure_prompt_context,omitempty"` // prompt_context keys on validation/empty-reply nudges only
 	EmptyResponseSuffix     string `yaml:"empty_response_suffix,omitempty" json:"empty_response_suffix,omitempty"`
+	// AppendGoCompileContext injects head of .go files mentioned in failed go build/tidy output (stateless LLM repair).
+	AppendGoCompileContext bool `yaml:"append_go_compile_context,omitempty" json:"append_go_compile_context,omitempty"`
 }
 
 // StateEnvHooks configures subprocess environment for a state.

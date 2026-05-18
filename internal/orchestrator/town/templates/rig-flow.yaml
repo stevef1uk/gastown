@@ -137,14 +137,15 @@ states:
     instructions: |
       Implement the **Next bead** in the user message only: in_progress → heredoc file → verify → bd close. JSON success when all implement beads are closed.
     hooks:
+      max_cmd_turns: 12
       omit_orchestrator_context: true
       system_prompt_footer: |
         Format: `CMD: <shell>` one per line; JSON `{"outcome":"success","summary":"..."}` only in a later message (not with CMD).
       user_prompt_wrapper: none
       failure_prompt_context: [implementation_queue]
-      empty_response_suffix: "Send CMD: lines (bd update → heredoc → verify → bd close)."
+      empty_response_suffix: "Reply with CMD lines only. Use Verify from Next bead; fix .go files in Source context when tidy/build fails."
       prompt_context: [implementation_queue]
-      pre_run: [enforce_implement_bead_queue, repair_requirements, reopen_implement_beads]
+      pre_run: [enforce_implement_bead_queue, prune_stale_layout_go, repair_requirements, reopen_implement_beads]
       per_turn: [repair_requirements]
       cmd_guard: implementation
       cmd_rewrites: [rig_placeholders, backend_path_after_cd, bd_list_implement_scope, unittest_workdir, bd_list_limit, unwrap_bash_lc]
@@ -155,14 +156,17 @@ states:
       pip_repair_before_run: true
       python3_rewrite: true
       track: implementation
+      append_go_compile_context: true
       empty_bd_list_ok: true
       auto_verify:
+        - when: go_mod_tidy
+          verify: go_implementation
         - when: go_write_layout
           verify: go_implementation
       artifacts: implementation
       retry_hint_key: implementation
       failure_hint: |
-        One bead at a time for **Next bead** only: bd update → heredoc that path → {{implementation_verify_hint}} → bd close. No go run/curl until cmd/server/main.go exists.
+        One bead at a time for **Next bead** only: bd update → heredoc that path → verify (see Next bead line) → bd close. go run/curl only on cmd/server/main.go bead; other beads use go build ./...
     transitions:
       success:
         to: qa_review

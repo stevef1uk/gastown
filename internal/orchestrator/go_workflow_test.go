@@ -1,6 +1,8 @@
 package orchestrator
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -32,6 +34,34 @@ func TestGoProjectSetupVerifyCommand(t *testing.T) {
 	}
 }
 
+func TestGoCompileOnlyVerifyCommand(t *testing.T) {
+	t.Parallel()
+	got := GoCompileOnlyVerifyCommand(WorkflowValidation{LayoutRoot: "linkshelf"})
+	if !strings.Contains(got, "go build") || strings.Contains(got, "curl") {
+		t.Fatalf("got %q", got)
+	}
+}
+
+func TestImplementationVerifyHint_neverCurl(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	main := filepath.Join(dir, "linkshelf", "cmd", "server", "main.go")
+	if err := os.MkdirAll(filepath.Dir(main), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(main, []byte("package main\nfunc main() {}\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	v := WorkflowValidation{
+		LayoutRoot:      "linkshelf",
+		QAVerifyCommand: "cd linkshelf && go run ./cmd/server & curl -s http://localhost:8080/",
+	}
+	got := v.ImplementationVerifyHint(dir)
+	if strings.Contains(got, "curl") || strings.Contains(got, "go run") {
+		t.Fatalf("prompt hint must be compile-only: %q", got)
+	}
+}
+
 func TestGoImplementationVerifyCommand_beforeMain(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
@@ -39,6 +69,52 @@ func TestGoImplementationVerifyCommand_beforeMain(t *testing.T) {
 	got := GoImplementationVerifyCommand(v, dir)
 	if !strings.Contains(got, "go build") || strings.Contains(got, "curl") {
 		t.Fatalf("want compile-only before main: %q", got)
+	}
+}
+
+func TestGoImplementationVerifyCommandForBead_goMod(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	main := filepath.Join(dir, "linkshelf", "cmd", "server", "main.go")
+	if err := os.MkdirAll(filepath.Dir(main), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(main, []byte("package main\nfunc main() {}\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	v := WorkflowValidation{
+		LayoutRoot:      "linkshelf",
+		QAVerifyCommand: "cd linkshelf && go run ./cmd/server & curl -s http://localhost:8080/",
+	}
+	got := GoImplementationVerifyCommandForBead(v, dir, "linkshelf/go.mod")
+	if strings.Contains(got, "curl") || strings.Contains(got, "go run") || strings.Contains(got, "go build") {
+		t.Fatalf("go.mod bead wants tidy only: %q", got)
+	}
+	if !strings.Contains(got, "go mod tidy") {
+		t.Fatalf("want go mod tidy: %q", got)
+	}
+}
+
+func TestGoImplementationVerifyCommandForBead_storeCompileOnly(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	main := filepath.Join(dir, "linkshelf", "cmd", "server", "main.go")
+	if err := os.MkdirAll(filepath.Dir(main), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(main, []byte("package main\nfunc main() {}\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	v := WorkflowValidation{
+		LayoutRoot:      "linkshelf",
+		QAVerifyCommand: "cd linkshelf && go run ./cmd/server & curl -s http://localhost:8080/",
+	}
+	got := GoImplementationVerifyCommandForBead(v, dir, "linkshelf/internal/store/store.go")
+	if strings.Contains(got, "curl") || strings.Contains(got, "go run") {
+		t.Fatalf("store bead must not curl: %q", got)
+	}
+	if !strings.Contains(got, "go build ./internal/store/...") {
+		t.Fatalf("store bead wants package-scoped build: %q", got)
 	}
 }
 

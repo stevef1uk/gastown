@@ -250,9 +250,9 @@ func (v WorkflowValidation) PromptVars() map[string]string {
 		"required_files":          strings.Join(v.RequiredFiles, ", "),
 		"requirements_file":       req,
 		"spec_summary":            v.SpecSummary,
-		"unittest_command_hint":        v.UnittestCommandHint(),
-		"implementation_verify_hint":   v.UnittestCommandHint(),
-		"project_setup_verify_hint":    v.ProjectSetupVerifyHint(),
+		"unittest_command_hint":     v.UnittestCommandHint(),
+		"implementation_verify_hint": "(resolved per rig at fetch_task — use go build until server main exists)",
+		"project_setup_verify_hint": v.ProjectSetupVerifyHint(),
 		"python_venv_dir":         v.PythonVenvRelDir(),
 		"min_architecture_bytes":        fmt.Sprintf("%d", v.MinArchitectureBytes),
 		"min_plan_bytes":                fmt.Sprintf("%d", v.MinPlanBytes),
@@ -287,10 +287,11 @@ func (v WorkflowValidation) ForbiddenRigRootBasenames() []string {
 	return out
 }
 
-// ImplementationVerifyHint returns verify for polecat (compile until server main exists).
+// ImplementationVerifyHint returns verify text for polecat prompts (system/failure hints).
+// Always compile-only — per-bead verify (incl. go run/curl on non-go.mod beads) is enforced by gt-agent.
 func (v WorkflowValidation) ImplementationVerifyHint(mayorRigDir string) string {
 	if WorkflowUsesGo(v) {
-		return GoImplementationVerifyCommand(v, mayorRigDir)
+		return GoCompileOnlyVerifyCommand(v)
 	}
 	if WorkflowUsesPython(v) {
 		return PythonVerifyCommand(v)

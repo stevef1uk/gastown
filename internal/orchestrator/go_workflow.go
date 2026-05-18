@@ -73,15 +73,49 @@ func GoServerMainExists(mayorRigDir string, v WorkflowValidation) bool {
 	return err == nil
 }
 
-// GoImplementationVerifyCommand is the verify chain during implementation: compile-only
-// until cmd/server/main.go exists, then the profile QA command (go run/curl or go test).
-func GoImplementationVerifyCommand(v WorkflowValidation, mayorRigDir string) string {
+// IsServerMainImplementBead reports whether the active implement bead is cmd/server/main.go.
+func IsServerMainImplementBead(beadPath string) bool {
+	beadPath = filepath.ToSlash(strings.TrimSpace(beadPath))
+	return strings.HasSuffix(beadPath, "cmd/server/main.go")
+}
+
+// GoCompileOnlyVerifyCommand is the compile verify chain (tidy + build) for polecat prompts and go.mod beads.
+func GoCompileOnlyVerifyCommand(v WorkflowValidation) string {
 	layout := strings.Trim(strings.TrimSpace(v.LayoutRoot), "/")
 	if layout == "" {
 		layout = "."
 	}
-	if !GoServerMainExists(mayorRigDir, v) {
-		return "cd " + layout + " && go mod tidy && go build ./..."
+	return "cd " + layout + " && go mod tidy && go build ./..."
+}
+
+// GoImplementationVerifyCommand is the verify chain during implementation: compile-only
+// until cmd/server/main.go exists, then the profile QA command (go run/curl or go test).
+func GoImplementationVerifyCommand(v WorkflowValidation, mayorRigDir string) string {
+	return GoImplementationVerifyCommandForBead(v, mayorRigDir, "")
+}
+
+// GoImplementationVerifyCommandForBead picks verify for the active implement bead path.
+func GoImplementationVerifyCommandForBead(v WorkflowValidation, mayorRigDir, beadPath string) string {
+	layout := strings.Trim(strings.TrimSpace(v.LayoutRoot), "/")
+	if layout == "" {
+		layout = "."
 	}
-	return GoVerifyCommandWithTidy(v)
+	beadPath = filepath.ToSlash(strings.TrimSpace(beadPath))
+	if strings.HasSuffix(beadPath, "go.mod") {
+		return GoModBeadVerifyCommand(v)
+	}
+	// Integration (go run/curl) only on the server main bead; other beads build their package only.
+	if IsServerMainImplementBead(beadPath) && GoServerMainExists(mayorRigDir, v) {
+		return GoVerifyCommandWithTidy(v)
+	}
+	return GoCompileVerifyCommandForBead(v, beadPath)
+}
+
+// GoModBeadVerifyCommand is verify for the go.mod implement bead only (module graph, not full build).
+func GoModBeadVerifyCommand(v WorkflowValidation) string {
+	layout := strings.Trim(strings.TrimSpace(v.LayoutRoot), "/")
+	if layout == "" {
+		layout = "."
+	}
+	return "cd " + layout + " && go mod tidy"
 }

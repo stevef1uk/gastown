@@ -509,9 +509,13 @@ func FormatImplementationQueueBlock(townRoot, rig string, v WorkflowValidation) 
 			break
 		}
 	}
+	mayorDir := filepath.Join(townRoot, rig, "mayor", "rig")
+	beadPath := ExtractPathFromBeadTitle(next.Title, v.BeadTitleContains)
+	verify := GoImplementationVerifyCommandForBead(v, mayorDir, beadPath)
 	if step > 0 {
-		return fmt.Sprintf("**Next bead (%d/%d):** %s → `%s` — work only this ID until `bd close`.",
-			step, total, next.ID, next.Title)
+		return fmt.Sprintf("**Next bead (%d/%d):** %s → `%s` — work only this ID until `bd close`. Verify: `%s`.",
+			step, total, next.ID, next.Title, verify)
 	}
-	return fmt.Sprintf("**Next bead:** %s → `%s` — work only this ID until `bd close`.", next.ID, next.Title)
+	return fmt.Sprintf("**Next bead:** %s → `%s` — work only this ID until `bd close`. Verify: `%s`.",
+		next.ID, next.Title, verify)
 }

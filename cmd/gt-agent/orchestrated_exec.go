@@ -271,6 +271,33 @@ func rewriteBdListLimit(cmd string) (string, bool) {
 	return re, re != cmd
 }
 
+// normalizeGoCommandTypos fixes common model mistakes in go subcommands (e.g. "go build./...").
+func normalizeGoCommandTypos(cmd string) (string, bool) {
+	repls := []struct{ old, new string }{
+		{"go build./", "go build ./"},
+		{"go build..", "go build ./"},
+		{"go test./", "go test ./"},
+		{"go run./", "go run ./"},
+		{"go vet./", "go vet ./"},
+	}
+	changed := false
+	for _, r := range repls {
+		if strings.Contains(cmd, r.old) {
+			cmd = strings.ReplaceAll(cmd, r.old, r.new)
+			changed = true
+		}
+	}
+	return cmd, changed
+}
+
+// formatSuccessCommandOutput makes successful runs visible when tools print nothing (e.g. go mod tidy).
+func formatSuccessCommandOutput(out []byte) string {
+	if strings.TrimSpace(string(out)) != "" {
+		return string(out)
+	}
+	return "(exit 0, no output)\n"
+}
+
 func runOrchestratedCommand(cmd, workDir, sessionName string, env []string) ([]byte, error) {
 	if sessionName != "" {
 		env = append(env, "GT_SESSION="+sessionName)
