@@ -43,6 +43,7 @@ func reconcileOrchestratedPipelineAgents(townRoot string, rigNames []string, pre
 	if !orchRunning {
 		return
 	}
+	EnsureOrchestratedTownPipeline(townRoot)
 	sp := session.GetDefaultProvider(townRoot)
 	ctx := context.Background()
 

@@ -293,7 +293,7 @@ func (r *stateRunner) commandEnv(base []string) []string {
 }
 
 func (r *stateRunner) rewritePythonCmd(cmd string, cmdEnv []string) string {
-	if !r.hooks.Python3Rewrite {
+	if !r.hooks.Python3Rewrite || orchestrator.IsPythonImportCheckCommand(cmd) {
 		return cmd
 	}
 	py := agentenv.ResolvePython3(cmdEnv)
@@ -415,7 +415,11 @@ func (r *stateRunner) runAutoVerify(cmd, workDir, sessionName string, cmdEnv []s
 		if verifyCmd == "" {
 			continue
 		}
-		if fixed, ok := rewriteUnittestToWorkdir(verifyCmd, r.rig, r.v); ok {
+		if hook.Verify != "python_setup" {
+			if fixed, ok := rewriteUnittestToWorkdir(verifyCmd, r.rig, r.v); ok {
+				verifyCmd = fixed
+			}
+		} else if fixed, ok := rewriteOrchestratedRigPlaceholders(verifyCmd, r.townRoot, r.rig); ok {
 			verifyCmd = fixed
 		}
 		verifyOut, verifyErr := runOrchestratedCommand(verifyCmd, workDir, sessionName, cmdEnv)

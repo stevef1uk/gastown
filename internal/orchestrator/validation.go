@@ -374,6 +374,12 @@ func NormalizePytestCommand(cmd string) string {
 	if !strings.Contains(lower, "pytest") {
 		return cmd
 	}
+	if strings.Contains(lower, "import pytest") {
+		return cmd
+	}
+	if strings.Contains(lower, "-c ") && strings.Contains(lower, "import ") {
+		return cmd
+	}
 	if strings.Contains(lower, "python3 -m pytest") || strings.Contains(lower, "python -m pytest") {
 		return cmd
 	}

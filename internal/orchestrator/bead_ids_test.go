@@ -52,6 +52,10 @@ func TestNormalizePytestCommand(t *testing.T) {
 	if got := NormalizePytestCommand(in); got != want {
 		t.Fatalf("got %q want %q", got, want)
 	}
+	setup := "test -x .venv/bin/python3 && .venv/bin/python3 -c 'import pytest'"
+	if got := NormalizePytestCommand(setup); got != setup {
+		t.Fatalf("must not rewrite import check: got %q", got)
+	}
 }
 
 func TestNormalizePipCommand(t *testing.T) {

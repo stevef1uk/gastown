@@ -62,6 +62,12 @@ func (v WorkflowValidation) detectsPythonProject() bool {
 	return false
 }
 
+// IsPythonImportCheckCommand reports python -c 'import pytest' setup verify (must not be pytest-normalized).
+func IsPythonImportCheckCommand(cmd string) bool {
+	lower := strings.ToLower(cmd)
+	return strings.Contains(lower, "-c ") && strings.Contains(lower, "import pytest")
+}
+
 // PythonVerifyCommand returns the verify shell chain for Python rigs (QA/implementation).
 func PythonVerifyCommand(v WorkflowValidation) string {
 	base := strings.TrimSpace(v.QAVerifyCommand)

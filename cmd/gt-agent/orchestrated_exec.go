@@ -127,9 +127,11 @@ func rewriteUnittestToWorkdir(cmd, rig string, v orchestrator.WorkflowValidation
 		return cmd, false
 	}
 	changed := false
-	if fixed := orchestrator.NormalizePytestCommand(cmd); fixed != cmd {
-		cmd = fixed
-		changed = true
+	if !orchestrator.IsPythonImportCheckCommand(cmd) {
+		if fixed := orchestrator.NormalizePytestCommand(cmd); fixed != cmd {
+			cmd = fixed
+			changed = true
+		}
 	}
 	if fixed := orchestrator.NormalizePipCommand(cmd); fixed != cmd {
 		cmd = fixed

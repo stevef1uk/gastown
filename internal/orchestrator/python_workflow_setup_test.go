@@ -5,6 +5,17 @@ import (
 	"testing"
 )
 
+func TestIsPythonImportCheckCommand(t *testing.T) {
+	t.Parallel()
+	cmd := "test -x .venv/bin/python3 && .venv/bin/python3 -c 'import pytest'"
+	if !IsPythonImportCheckCommand(cmd) {
+		t.Fatal("expected import check")
+	}
+	if IsPythonImportCheckCommand("cd tasklist && python3 -m pytest -v") {
+		t.Fatal("pytest run is not import check")
+	}
+}
+
 func TestPythonProjectSetupVerifyCommand(t *testing.T) {
 	t.Parallel()
 	got := PythonProjectSetupVerifyCommand(WorkflowValidation{PythonVenvDir: ".venv"})

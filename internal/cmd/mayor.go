@@ -273,6 +273,7 @@ func runMayorWorkflowStart(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	EnsureOrchestratedTownPipeline(townRoot)
 	if rig := strings.TrimSpace(vars["rig"]); rig != "" {
 		EnsureOrchestratedRigAgents(townRoot, rig)
 	}
@@ -369,6 +370,7 @@ func runMayorWorkflowResume(cmd *cobra.Command, args []string) error {
 	if err := orchestrator.ResumeWorkflow(townRoot, args[0]); err != nil {
 		return err
 	}
+	EnsureOrchestratedTownPipeline(townRoot)
 	statuses, _ := orchestrator.GetWorkflowStatuses(townRoot, args[0])
 	if len(statuses) > 0 {
 		if rig := strings.TrimSpace(statuses[0].Variables["rig"]); rig != "" {
