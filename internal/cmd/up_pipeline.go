@@ -72,25 +72,7 @@ func reconcileOrchestratedPipelineAgents(townRoot string, rigNames []string, pre
 		if orchestrator.SkipRigAgentStartReason(townRoot, rigName) != "" {
 			continue
 		}
-		prefix := session.PrefixFor(rigName)
-
-		archID := session.ArchitectSessionName(prefix, rigName)
-		wantArch := orchestrator.OrchestratedForRole(true, constants.RoleArchitect)
-		if upEnsureFreshPipelineSession(ctx, sp, townRoot, archID, wantArch) {
-			_ = upStartArchitect(rigName, r)
-		}
-
-		qaID := session.QASessionName(prefix, rigName)
-		wantQA := orchestrator.OrchestratedForRole(true, constants.RoleQA)
-		if upEnsureFreshPipelineSession(ctx, sp, townRoot, qaID, wantQA) {
-			_ = upStartQA(rigName, r)
-		}
-
-		poleID := session.RigPolecatSessionName(prefix, rigName)
-		wantPole := orchestrator.OrchestratedForRole(true, constants.RolePolecat)
-		if upEnsureFreshPipelineSession(ctx, sp, townRoot, poleID, wantPole) {
-			_ = upStartRigPolecat(rigName, r)
-		}
+		ensureOrchestratedRigAgentsRunning(townRoot, rigName, r)
 	}
 }
 

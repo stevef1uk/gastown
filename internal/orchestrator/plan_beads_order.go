@@ -79,6 +79,20 @@ func pathMatchesRequired(path string, required []string) bool {
 	return false
 }
 
+// AllowedEarlierImplementDependencyWrite reports whether written is a profile required_file
+// that polecat order builds before activePath (e.g. store/tasks while the cmd/main bead is active).
+func AllowedEarlierImplementDependencyWrite(activePath, writtenPath string, required []string) bool {
+	if len(required) == 0 || !pathMatchesRequired(writtenPath, required) {
+		return false
+	}
+	activePath = filepath.ToSlash(strings.TrimSpace(activePath))
+	writtenPath = filepath.ToSlash(strings.TrimSpace(writtenPath))
+	if activePath == "" || writtenPath == "" || activePath == writtenPath {
+		return false
+	}
+	return implementationPathScore(writtenPath) < implementationPathScore(activePath)
+}
+
 // OrderRequiredFilesForImplementation returns required_files in polecat build order.
 func OrderRequiredFilesForImplementation(files []string) []string {
 	type item struct {

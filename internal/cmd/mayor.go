@@ -273,6 +273,10 @@ func runMayorWorkflowStart(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	if rig := strings.TrimSpace(vars["rig"]); rig != "" {
+		EnsureOrchestratedRigAgents(townRoot, rig)
+	}
+
 	fmt.Printf("%s Workflow started: %s\n", style.SuccessPrefix, workflowID)
 	return nil
 }
@@ -365,8 +369,13 @@ func runMayorWorkflowResume(cmd *cobra.Command, args []string) error {
 	if err := orchestrator.ResumeWorkflow(townRoot, args[0]); err != nil {
 		return err
 	}
-	fmt.Printf("%s Workflow %s resumed (status=running). Start agents with: gt rig boot <rig> or gt up\n",
-		style.SuccessPrefix, args[0])
+	statuses, _ := orchestrator.GetWorkflowStatuses(townRoot, args[0])
+	if len(statuses) > 0 {
+		if rig := strings.TrimSpace(statuses[0].Variables["rig"]); rig != "" {
+			EnsureOrchestratedRigAgents(townRoot, rig)
+		}
+	}
+	fmt.Printf("%s Workflow %s resumed (status=running)\n", style.SuccessPrefix, args[0])
 	return nil
 }
 

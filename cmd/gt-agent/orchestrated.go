@@ -1176,6 +1176,10 @@ func validateImplementationBeadFileWrite(cmd, townRoot, rig, activeBead string, 
 	if pathMatchesImplementWrite(written, allowedPath, v.RequiredFiles) {
 		return nil
 	}
+	// cmd/main (and similar) verify builds import earlier packages — allow heredoc to those paths only.
+	if orchestrator.AllowedEarlierImplementDependencyWrite(allowedPath, written, v.RequiredFiles) {
+		return nil
+	}
 	// go.mod bead: go mod tidy fails until other packages import correctly — allow fixing those .go files.
 	if strings.HasSuffix(filepath.ToSlash(allowedPath), "go.mod") && strings.HasSuffix(written, ".go") {
 		for _, want := range v.RequiredFiles {
