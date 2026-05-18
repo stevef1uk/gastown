@@ -16,6 +16,12 @@ func taskValidation(task *orchestrator.Task) orchestrator.WorkflowValidation {
 }
 
 func isProjectSetupVerifyCommandOK(cmd string, v orchestrator.WorkflowValidation) bool {
+	if orchestrator.WorkflowUsesPython(v) {
+		if commandMatchesQAVerify(cmd, orchestrator.PythonProjectSetupVerifyCommand(v)) {
+			return true
+		}
+		return isPipInstallRequirementsCommand(cmd)
+	}
 	if !orchestrator.WorkflowUsesGo(v) {
 		return isQATestCommandOK(cmd, v)
 	}

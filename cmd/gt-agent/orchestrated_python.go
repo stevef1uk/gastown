@@ -16,13 +16,21 @@ func isPipInstallRequirementsCommand(cmd string) bool {
 		(strings.Contains(lower, "-r ") || strings.Contains(lower, "install -r"))
 }
 
-func validatePythonProjectSetupCommand(cmd string) error {
+func validatePythonProjectSetupCommand(cmd string, v orchestrator.WorkflowValidation) error {
 	lower := strings.ToLower(cmd)
-	if strings.Contains(lower, "go mod") {
-		return fmt.Errorf("do not run go mod in Python project_setup — use pip and pytest")
+	if strings.Contains(lower, "go mod") || strings.Contains(lower, "go test") || strings.Contains(lower, "go build") {
+		return fmt.Errorf("do not run go toolchain in Python project_setup — use venv, pip, and setup verify")
 	}
 	if strings.Contains(lower, "bd close") {
 		return fmt.Errorf("do not bd close in project_setup")
+	}
+	if strings.Contains(lower, "source ") {
+		return fmt.Errorf("do not use source/activate — gt-agent runs pip/pytest with the venv python automatically")
+	}
+	if req := v.RequirementsFilePath(); req != "" && strings.Contains(lower, strings.ToLower(req)) {
+		if strings.Contains(lower, "echo ") || strings.Contains(lower, "<<") || strings.Contains(lower, "cat >") {
+			return nil
+		}
 	}
 	return nil
 }
@@ -32,7 +40,7 @@ func validatePythonProjectSetupArtifacts(townRoot, rig string, hadCmdFailure, ve
 		return fmt.Errorf("project_setup had failed commands; fix errors before completing")
 	}
 	if !verifyOK {
-		return fmt.Errorf("project_setup requires green verify: %s", orchestrator.PythonVerifyCommand(v))
+		return fmt.Errorf("project_setup requires green verify: %s", orchestrator.PythonProjectSetupVerifyCommand(v))
 	}
 	workDir := rigMayorRigDir(townRoot, rig)
 	venvPy := agentenv.VenvPython(workDir, v.PythonVenvRelDir())

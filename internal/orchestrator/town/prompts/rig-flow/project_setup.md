@@ -90,7 +90,9 @@ CMD: cd {{rig}}/mayor/rig && test -f "{{requirements_file}}" && python3 -m pip i
 CMD: cd {{rig}}/mayor/rig && {{project_setup_verify_hint}}
 ```
 
-If `{{requirements_file}}` is missing but beads need packages, create it with **package lines only** (e.g. `pytest`, `flask==3.0.0`), then pip install once.
+`{{project_setup_verify_hint}}` checks the venv can `import pytest` — **not** a full `pytest` run (no tests exist until implementation).
+
+If `{{requirements_file}}` is missing but beads need packages, create it with **package lines only** (e.g. `pytest`, `flask==3.0.0`), then pip install once. Do not use `source`/`activate` — gt-agent uses the venv python for pip.
 
 Success JSON: `{"outcome":"success","summary":"Python venv ready; deps installed; beads split; verify passed"}`
 

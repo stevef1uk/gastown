@@ -62,10 +62,33 @@ func (v WorkflowValidation) detectsPythonProject() bool {
 	return false
 }
 
-// PythonVerifyCommand returns the verify shell chain for Python rigs.
+// PythonVerifyCommand returns the verify shell chain for Python rigs (QA/implementation).
 func PythonVerifyCommand(v WorkflowValidation) string {
-	if q := strings.TrimSpace(v.QAVerifyCommand); q != "" {
-		return NormalizePytestCommand(q)
+	base := strings.TrimSpace(v.QAVerifyCommand)
+	if base == "" {
+		base = v.UnittestCommandHint()
+	} else {
+		base = NormalizePytestCommand(base)
 	}
-	return v.UnittestCommandHint()
+	return pythonVerifyWithLayout(base, v)
+}
+
+// PythonProjectSetupVerifyCommand is the green check for project_setup only: venv
+// exists and deps (pytest) are importable — not a full pytest run (no tests exist yet).
+func PythonProjectSetupVerifyCommand(v WorkflowValidation) string {
+	venv := v.PythonVenvRelDir()
+	py := venv + "/bin/python3"
+	return "test -x " + py + " && " + py + " -c 'import pytest'"
+}
+
+func pythonVerifyWithLayout(cmd string, v WorkflowValidation) string {
+	layout := strings.Trim(strings.TrimSpace(v.LayoutRoot), "/")
+	if layout == "" || layout == "." {
+		return cmd
+	}
+	lower := strings.ToLower(cmd)
+	if strings.Contains(lower, "cd "+strings.ToLower(layout)) {
+		return cmd
+	}
+	return "cd " + layout + " && " + cmd
 }

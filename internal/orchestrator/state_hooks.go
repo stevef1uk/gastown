@@ -105,7 +105,7 @@ func resolveRetryHintKey(key string, v WorkflowValidation, vars map[string]strin
 				req = "requirements.txt"
 			}
 			return "Python rig: create " + v.PythonVenvRelDir() + " with python3 -m venv, pip install -r " + req +
-				" once, split beads one file each. Green verify: " + PythonVerifyCommand(v)
+				" once, split beads one file each. Green verify: " + PythonProjectSetupVerifyCommand(v)
 		}
 		return "Run project_setup per profile (Go or Python); do not skip with empty success."
 	case "implementation":

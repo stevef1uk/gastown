@@ -351,7 +351,7 @@ func (v WorkflowValidation) ProjectSetupVerifyHint() string {
 		return GoProjectSetupVerifyCommand(v)
 	}
 	if WorkflowUsesPython(v) {
-		return PythonVerifyCommand(v)
+		return PythonProjectSetupVerifyCommand(v)
 	}
 	return v.UnittestCommandHint()
 }

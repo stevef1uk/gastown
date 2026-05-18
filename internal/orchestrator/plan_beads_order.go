@@ -65,6 +65,11 @@ func ValidateImplementBeadCreateTitle(title string, v WorkflowValidation) error 
 	return nil
 }
 
+// PathMatchesRequiredFile reports whether path is a profile required_files entry (or same basename).
+func PathMatchesRequiredFile(path string, required string) bool {
+	return pathMatchesRequired(path, []string{required})
+}
+
 func pathMatchesRequired(path string, required []string) bool {
 	path = filepath.ToSlash(strings.TrimSpace(path))
 	for _, want := range required {

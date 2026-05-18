@@ -143,8 +143,8 @@ func TestStateRunner_rigFlowAutoVerifyHooksMatchCommands(t *testing.T) {
 	if !r.autoVerifyMatches("python3 -m pip install -r backend/requirements.txt", "pip_install") {
 		t.Fatal("expected pip_install match")
 	}
-	if r.verifyCommand("python") == "" {
-		t.Fatal("expected python verify for Python profile")
+	if got := r.verifyCommand("python_setup"); got == "" || !strings.Contains(got, "import pytest") {
+		t.Fatalf("expected python_setup verify, got %q", got)
 	}
 }
 
