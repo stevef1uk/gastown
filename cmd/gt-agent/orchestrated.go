@@ -1484,6 +1484,9 @@ func validatePlanningBeadSet(townRoot, rig string, v orchestrator.WorkflowValida
 	return nil
 }
 
+// countOpenMatchingBeadsHook is set by tests to avoid calling bd list.
+var countOpenMatchingBeadsHook func(townRoot, rig, titleContains string) (int, error)
+
 func validateImplementationArtifacts(townRoot, rig string, hadCmdFailure, beadCloseOK, verifyOK bool, v orchestrator.WorkflowValidation) error {
 	if hadCmdFailure {
 		return fmt.Errorf("implementation step had failed commands; fix errors before completing")
@@ -1493,6 +1496,16 @@ func validateImplementationArtifacts(townRoot, rig string, hadCmdFailure, beadCl
 	}
 	if strings.TrimSpace(v.QAVerifyCommand) != "" && !verifyOK {
 		return fmt.Errorf("profile verification must pass in this session before success (%s)", strings.TrimSpace(v.QAVerifyCommand))
+	}
+	titleContains := strings.TrimSpace(v.BeadTitleContains)
+	if titleContains != "" {
+		openImpl, err := countOpenMatchingBeads(townRoot, rig, titleContains)
+		if err != nil {
+			return err
+		}
+		if openImpl > 0 {
+			return fmt.Errorf("%d open implement bead(s) remain — continue with Next bead (bd update → heredoc → verify → bd close); send JSON success only when none are open", openImpl)
+		}
 	}
 	if err := validateRequiredWorkFiles(townRoot, rig, v); err != nil {
 		return err
@@ -1756,6 +1769,9 @@ func validatePlanReviewArtifacts(townRoot, rig string, hadCmdFailure, listOpenOK
 }
 
 func countOpenMatchingBeads(townRoot, rig, titleContains string) (int, error) {
+	if countOpenMatchingBeadsHook != nil {
+		return countOpenMatchingBeadsHook(townRoot, rig, titleContains)
+	}
 	beadsDir := config.ResolveBeadsDirForRig(townRoot, rig)
 	cmd := exec.Command("bd", "list", "--status=open", "--limit=0")
 	cmd.Env = withEnvKey(os.Environ(), "BEADS_DIR", beadsDir)

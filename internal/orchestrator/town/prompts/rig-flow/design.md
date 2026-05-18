@@ -24,7 +24,7 @@ Polecat implements code later from SPEC. Your architecture doc should **describe
    ```
    CMD: cat {{rig}}/mayor/rig/SPEC.md
    ```
-2. Write **only** `{{rig}}/mayor/rig/architecture.md` using a heredoc. Match the **actual** project in SPEC (title, layout_root `{{layout_root}}`, required files: {{required_files}}). Do **not** copy example projects from other rigs.
+2. Write **only** `{{rig}}/mayor/rig/architecture.md` using a heredoc. Match the **actual** project in SPEC (title, layout_root `{{layout_root}}`). Include a **## Delivery phases** section when the profile lists multiple phases (`{{delivery_phase_count}}`); map all paths: {{all_required_files}} (or {{required_files}} when no phases). Do **not** copy example projects from other rigs.
 3. Verify size **before** reporting success (must be ≥ {{min_architecture_bytes}} bytes):
    ```
    CMD: wc -c {{rig}}/mayor/rig/architecture.md

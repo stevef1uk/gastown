@@ -140,9 +140,16 @@ func rewriteUnittestToWorkdir(cmd, rig string, v orchestrator.WorkflowValidation
 	if layout != "" && layout != "." {
 		workPath = workPath + "/" + layout
 	}
-	if !commandHasMayorRigCD(cmd, rig) && !commandHasLayoutCD(cmd, layout) {
-		cmd = "cd " + workPath + " && " + strings.TrimSpace(cmd)
-		changed = true
+	if !commandHasMayorRigCD(cmd, rig) {
+		if !commandHasLayoutCD(cmd, layout) {
+			cmd = "cd " + workPath + " && " + strings.TrimSpace(cmd)
+			changed = true
+		} else if layout != "" && layout != "." {
+			// Profile verify uses bare "cd layout" (mayor/rig-relative); orchestrated cwd is town root.
+			rest := stripFirstCDPrefix(cmd)
+			cmd = "cd " + workPath + " && " + rest
+			changed = true
+		}
 	} else if orchestrator.WorkflowUsesGo(v) && layout != "" && layout != "." &&
 		commandHasMayorRigCD(cmd, rig) && !commandHasLayoutCD(cmd, layout) {
 		// Already under mayor/rig but not in layout module dir — one cd to module root.

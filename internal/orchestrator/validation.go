@@ -15,7 +15,9 @@ type WorkflowValidation struct {
 	UnittestModule       string   `yaml:"unittest_module" json:"unittest_module"`
 	QAVerifyCommand      string   `yaml:"qa_verify_command" json:"qa_verify_command"`
 	TestRunner           string   `yaml:"test_runner" json:"test_runner"`
-	RequiredFiles        []string `yaml:"required_files" json:"required_files"`
+	RequiredFiles        []string         `yaml:"required_files" json:"required_files"`
+	DeliveryPhases       []DeliveryPhase  `yaml:"delivery_phases" json:"delivery_phases,omitempty"`
+	ActivePhaseIDField   string           `yaml:"active_phase_id" json:"active_phase_id,omitempty"`
 	SpecSummary                string   `yaml:"spec_summary" json:"spec_summary"`
 	MinArchitectureBytes       int64    `yaml:"min_architecture_bytes" json:"min_architecture_bytes"`
 	MinPlanBytes               int64    `yaml:"min_plan_bytes" json:"min_plan_bytes"`
@@ -63,12 +65,18 @@ func ClampProfileValidation(v WorkflowValidation) WorkflowValidation {
 		v.MinSubstantiveLines = DefaultMinSubstantiveLines
 	}
 	v = capArchitectureBytesForSmallRig(v)
+	v = FinalizeDeliveryPhases(v)
 	return v
 }
 
 // capArchitectureBytesForSmallRig lowers min_architecture_bytes when required_files is a short list.
 func capArchitectureBytesForSmallRig(v WorkflowValidation) WorkflowValidation {
 	n := len(v.RequiredFiles)
+	if v.HasPhasedDelivery() {
+		if active := v.ActiveRequiredFiles(); len(active) > 0 {
+			n = len(active)
+		}
+	}
 	if n == 0 || n > smallRigRequiredFileCap {
 		return v
 	}
@@ -99,6 +107,7 @@ func NormalizeLayoutProfile(v WorkflowValidation) WorkflowValidation {
 		}
 		v.RequiredFiles = out
 	}
+	v = NormalizeDeliveryPhasesLayout(v)
 	qa := strings.TrimSpace(v.QAVerifyCommand)
 	if qa != "" && WorkflowUsesGo(v) {
 		lower := strings.ToLower(qa)
@@ -183,6 +192,12 @@ func mergeValidationFields(base, overlay WorkflowValidation) WorkflowValidation 
 	if len(overlay.RequiredFiles) > 0 {
 		base.RequiredFiles = append([]string(nil), overlay.RequiredFiles...)
 	}
+	if len(overlay.DeliveryPhases) > 0 {
+		base.DeliveryPhases = append([]DeliveryPhase(nil), overlay.DeliveryPhases...)
+	}
+	if overlay.ActivePhaseIDField != "" {
+		base.ActivePhaseIDField = overlay.ActivePhaseIDField
+	}
 	if overlay.MinArchitectureBytes > 0 {
 		base.MinArchitectureBytes = overlay.MinArchitectureBytes
 	}
@@ -216,6 +231,16 @@ func (v WorkflowValidation) SubstituteVars(vars map[string]string) WorkflowValid
 	for i, f := range v.RequiredFiles {
 		v.RequiredFiles[i] = SubstituteVars(f, vars)
 	}
+	for i := range v.DeliveryPhases {
+		v.DeliveryPhases[i].ID = SubstituteVars(v.DeliveryPhases[i].ID, vars)
+		v.DeliveryPhases[i].Title = SubstituteVars(v.DeliveryPhases[i].Title, vars)
+		v.DeliveryPhases[i].QAVerifyCommand = SubstituteVars(v.DeliveryPhases[i].QAVerifyCommand, vars)
+		v.DeliveryPhases[i].SpecFocus = SubstituteVars(v.DeliveryPhases[i].SpecFocus, vars)
+		for j, f := range v.DeliveryPhases[i].RequiredFiles {
+			v.DeliveryPhases[i].RequiredFiles[j] = SubstituteVars(f, vars)
+		}
+	}
+	v.ActivePhaseIDField = SubstituteVars(v.ActivePhaseIDField, vars)
 	return v
 }
 
@@ -241,13 +266,34 @@ func (v WorkflowValidation) LayoutRootDir() string {
 // PromptVars returns keys for {{bead_title_contains}}, {{unittest_module}}, etc. in prompt files.
 func (v WorkflowValidation) PromptVars() map[string]string {
 	req := v.RequirementsFilePath()
+	scoped := v.ForActivePhase()
+	activeFiles := scoped.RequiredFiles
+	allFiles := append([]string(nil), v.RequiredFiles...)
+	if len(allFiles) == 0 {
+		allFiles = append([]string(nil), activeFiles...)
+	}
+	phaseQA := scoped.QAVerifyCommand
+	activeID := v.ActivePhaseID()
+	activeTitle := ""
+	if p, ok := v.ActivePhase(); ok {
+		activeTitle = strings.TrimSpace(p.Title)
+		if activeID == "" {
+			activeID = strings.TrimSpace(p.ID)
+		}
+	}
 	return map[string]string{
 		"layout_root":             v.LayoutRoot,
 		"bead_title_contains":     v.BeadTitleContains,
 		"unittest_module":         v.UnittestModule,
-		"qa_verify_command":       v.QAVerifyCommand,
+		"qa_verify_command":       phaseQA,
+		"phase_qa_verify_command": phaseQA,
 		"test_runner":             v.TestRunner,
-		"required_files":          strings.Join(v.RequiredFiles, ", "),
+		"required_files":          strings.Join(activeFiles, ", "),
+		"all_required_files":      strings.Join(allFiles, ", "),
+		"active_phase_id":         activeID,
+		"active_phase_title":      activeTitle,
+		"delivery_phase_count":    fmt.Sprintf("%d", len(v.DeliveryPhases)),
+		"phase_scope_note":        v.PhaseScopeNote(),
 		"requirements_file":       req,
 		"spec_summary":            v.SpecSummary,
 		"unittest_command_hint":     v.UnittestCommandHint(),

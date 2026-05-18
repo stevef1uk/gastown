@@ -569,7 +569,21 @@ func writeImplementationBackendFiles(t *testing.T, townRoot, rig string) {
 	}
 }
 
+func TestValidateImplementationArtifacts_openBeadsRemain(t *testing.T) {
+	countOpenMatchingBeadsHook = func(_, _, _ string) (int, error) { return 2, nil }
+	defer func() { countOpenMatchingBeadsHook = nil }()
+	v := orchestrator.DefaultWorkflowValidation()
+	v.BeadTitleContains = "Implement backend/"
+	err := validateImplementationArtifacts(t.TempDir(), "mockrig", false, true, true, v)
+	if err == nil || !strings.Contains(err.Error(), "open implement bead") {
+		t.Fatalf("want open-bead error, got %v", err)
+	}
+}
+
 func TestValidateImplementationArtifacts(t *testing.T) {
+	countOpenMatchingBeadsHook = func(_, _, _ string) (int, error) { return 0, nil }
+	defer func() { countOpenMatchingBeadsHook = nil }()
+
 	dir := t.TempDir()
 	v := orchestrator.DefaultWorkflowValidation()
 	if err := validateImplementationArtifacts(dir, "mockrig", false, false, false, v); err == nil {

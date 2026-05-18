@@ -51,6 +51,7 @@ func IsValidImplementBeadPath(path string) bool {
 
 // ValidateImplementBeadCreateTitle ensures bd create titles map to a profile required path.
 func ValidateImplementBeadCreateTitle(title string, v WorkflowValidation) error {
+	v = v.ForActivePhase()
 	path := ExtractPathFromBeadTitle(title, v.BeadTitleContains)
 	if !IsValidImplementBeadPath(path) {
 		return fmt.Errorf("bead title must be %q<file-path> per architecture (got invalid path %q)", v.BeadTitleContains, path)

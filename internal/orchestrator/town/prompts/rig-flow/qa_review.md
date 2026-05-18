@@ -7,12 +7,14 @@ You are **QA** for rig `{{rig}}` (`agent_id={{rig}}/qa`). Work from town root (`
 | outcome | When |
 |---------|------|
 | `task_passed` | Verified current work; **more** beads matching `{{bead_title_contains}}` still open |
-| `all_passed` | All beads matching `{{bead_title_contains}}` closed; code passes SPEC tests |
+| `all_passed` | All **active-phase** beads matching `{{bead_title_contains}}` closed; `{{phase_qa_verify_command}}` passes |
 | `failure` | SPEC/architecture violations, **stub/placeholder code**, or failed verification; send polecat back to implementation |
 
 ## Rig context (from SPEC profile)
 
 {{spec_summary}}
+
+{{phase_scope_note}}
 
 ## Scope (strict)
 

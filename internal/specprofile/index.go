@@ -29,7 +29,7 @@ func IndexRig(ctx context.Context, townRoot, rig string) (*ProfileFile, error) {
 		return nil, fmt.Errorf("read %s: %w", specPath, err)
 	}
 
-	v, confidence, err := LLMExtractProfile(ctx, string(data))
+	v, confidence, err := indexSpecContent(ctx, string(data))
 	if err != nil {
 		return nil, err
 	}
@@ -60,4 +60,26 @@ func IndexRig(ctx context.Context, townRoot, rig string) (*ProfileFile, error) {
 		return nil, err
 	}
 	return &f, nil
+}
+
+func indexSpecContent(ctx context.Context, spec string) (orchestrator.WorkflowValidation, string, error) {
+	chunks := splitSpecIntoChunks(spec)
+	if len(chunks) == 1 {
+		return LLMExtractProfile(ctx, chunks[0])
+	}
+	var parts []orchestrator.WorkflowValidation
+	confidence := "medium"
+	for i, chunk := range chunks {
+		v, conf, err := LLMExtractProfile(ctx, chunk)
+		if err != nil {
+			return orchestrator.WorkflowValidation{}, "", fmt.Errorf("chunk %d/%d: %w", i+1, len(chunks), err)
+		}
+		parts = append(parts, v)
+		if conf == "low" {
+			confidence = "low"
+		} else if conf == "high" && confidence != "low" {
+			confidence = "high"
+		}
+	}
+	return mergeIndexedProfiles(parts), confidence, nil
 }

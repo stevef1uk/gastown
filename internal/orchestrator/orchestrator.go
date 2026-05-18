@@ -337,3 +337,87 @@ func CompleteTask(townRoot string, workflowID string, outcome string, agentID, s
 
 	return data.NextState, nil
 }
+
+// PauseWorkflow pauses an instance via the running orchestrator (or offline manager).
+func PauseWorkflow(townRoot, workflowID string) (rig string, err error) {
+	if running, _, _ := IsRunning(townRoot); running {
+		return pauseWorkflowViaMCP(townRoot, workflowID)
+	}
+	mgr := NewManager(townRoot)
+	if err := mgr.LoadTownTemplates(); err != nil {
+		return "", err
+	}
+	return mgr.PauseWorkflow(workflowID)
+}
+
+// ResumeWorkflow resumes a paused instance.
+func ResumeWorkflow(townRoot, workflowID string) error {
+	if running, _, _ := IsRunning(townRoot); running {
+		return resumeWorkflowViaMCP(townRoot, workflowID)
+	}
+	mgr := NewManager(townRoot)
+	if err := mgr.LoadTownTemplates(); err != nil {
+		return err
+	}
+	return mgr.ResumeWorkflow(workflowID)
+}
+
+// PauseWorkflowsForRig pauses all running workflows bound to rig.
+func PauseWorkflowsForRig(townRoot, rig string) ([]string, error) {
+	if running, _, _ := IsRunning(townRoot); running {
+		return pauseRigWorkflowsViaMCP(townRoot, rig)
+	}
+	mgr := NewManager(townRoot)
+	if err := mgr.LoadTownTemplates(); err != nil {
+		return nil, err
+	}
+	return mgr.PauseRunningWorkflowsForRig(rig)
+}
+
+func pauseWorkflowViaMCP(townRoot, workflowID string) (string, error) {
+	result, err := Call(townRoot, "call_tool", map[string]interface{}{
+		"name": "pause_workflow",
+		"arguments": map[string]interface{}{
+			"workflow_id": workflowID,
+		},
+	})
+	if err != nil {
+		return "", err
+	}
+	var data struct {
+		Rig string `json:"rig"`
+	}
+	if err := json.Unmarshal(result, &data); err != nil {
+		return "", err
+	}
+	return data.Rig, nil
+}
+
+func resumeWorkflowViaMCP(townRoot, workflowID string) error {
+	_, err := Call(townRoot, "call_tool", map[string]interface{}{
+		"name": "resume_workflow",
+		"arguments": map[string]interface{}{
+			"workflow_id": workflowID,
+		},
+	})
+	return err
+}
+
+func pauseRigWorkflowsViaMCP(townRoot, rig string) ([]string, error) {
+	result, err := Call(townRoot, "call_tool", map[string]interface{}{
+		"name": "pause_workflow",
+		"arguments": map[string]interface{}{
+			"rig": rig,
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+	var data struct {
+		WorkflowIDs []string `json:"workflow_ids"`
+	}
+	if err := json.Unmarshal(result, &data); err != nil {
+		return nil, err
+	}
+	return data.WorkflowIDs, nil
+}

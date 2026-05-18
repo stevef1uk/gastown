@@ -41,7 +41,9 @@ Rig-flow prompts (`prompts/rig-flow/*.md`) are spec-driven. Common placeholders:
 | `{{spec_summary}}` | Profile |
 | `{{layout_root}}` | Profile (e.g. `defender`, `backend`) |
 | `{{bead_title_contains}}` | Profile |
-| `{{required_files}}` | Profile (comma-separated in prompts) |
+| `{{required_files}}` | Active phase paths (comma-separated); same as union when no phases |
+| `{{all_required_files}}` | Full union across all delivery phases |
+| `{{active_phase_id}}` / `{{phase_scope_note}}` | Phased delivery (from `delivery_phases` in profile) |
 | `{{min_architecture_bytes}}` / `{{min_plan_bytes}}` | Profile |
 | `{{unittest_command_hint}}` | Profile (`qa_verify_command` or unittest module) |
 
@@ -81,6 +83,31 @@ town/
   templates/rig-flow.yaml    # FSM: kickoff → design → planning → plan_review → project_setup → implementation → qa_review
   prompts/rig-flow/*.md      # Per-state system prompts (prompt_file in YAML)
 ```
+
+## Pause / resume
+
+```bash
+gt mayor workflow pause wf-1              # pause + gt rig shutdown <rig> --force
+gt mayor workflow pause --rig testgt3     # pause all running workflows on a rig
+gt mayor workflow pause wf-1 --no-shutdown
+gt mayor workflow resume wf-1             # status=running; then gt rig boot <rig> or gt up
+```
+
+Paused workflows keep `current_state` in `instances.json` but do not receive `fetch_task` work and do not block `gt mayor workflow start` on the same rig.
+
+With the orchestrator running, `gt up` starts rig agents **only** for rigs that have a **running** workflow. Paused rigs are skipped (witness/refinery/architect/qa/polecat stay down after `gt rig shutdown`).
+
+## Phased delivery (large SPECs)
+
+When `workflow-profile.json` includes `delivery_phases`, rig-flow scopes planning beads, polecat queue, and QA to the **active** phase only. The architect still documents the full system (`all_required_files`).
+
+```bash
+gt rig spec-index <rig>              # may emit delivery_phases for large SPECs
+gt rig set-phase <rig> --list        # show phases and active id
+gt rig set-phase <rig> p1-infra      # switch active phase (manual advance)
+```
+
+After QA `all_passed` for a phase, set the next phase id and restart or reset the workflow from planning (see operator runbook in plan docs).
 
 ## Start rig-flow
 

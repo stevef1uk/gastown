@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 	"syscall"
 	"time"
 
@@ -138,6 +139,8 @@ func init() {
 	mayorWorkflowCmd.AddCommand(mayorWorkflowCompleteCmd)
 	mayorWorkflowCmd.AddCommand(mayorWorkflowStatusCmd)
 	mayorWorkflowCmd.AddCommand(mayorWorkflowResetCmd)
+	mayorWorkflowCmd.AddCommand(mayorWorkflowPauseCmd)
+	mayorWorkflowCmd.AddCommand(mayorWorkflowResumeCmd)
 
 	rootCmd.AddCommand(mayorCmd)
 }
@@ -169,6 +172,35 @@ var mayorWorkflowStatusCmd = &cobra.Command{
 	RunE:  runMayorWorkflowStatus,
 }
 
+var mayorWorkflowPauseCmd = &cobra.Command{
+	Use:   "pause [workflow-id]",
+	Short: "Pause a workflow and optionally shut down its rig agents",
+	Long: `Pauses a workflow instance (status=paused). Orchestrated agents stop receiving
+fetch_task work for that instance. Paused workflows do not block starting a new
+workflow on the same rig.
+
+By default runs 'gt rig shutdown <rig> --force' for the workflow's rig.
+
+Examples:
+  gt mayor workflow pause wf-1
+  gt mayor workflow pause --rig testgt3
+  gt mayor workflow pause wf-1 --no-shutdown`,
+	Args: cobra.MaximumNArgs(1),
+	RunE: runMayorWorkflowPause,
+}
+
+var mayorWorkflowResumeCmd = &cobra.Command{
+	Use:   "resume <workflow-id>",
+	Short: "Resume a paused workflow",
+	Long: `Sets workflow status back to running. Does not start rig agents — run
+'gt rig boot <rig>' or 'gt up' after resume if agents were shut down.
+
+Example:
+  gt mayor workflow resume wf-1`,
+	Args: cobra.ExactArgs(1),
+	RunE: runMayorWorkflowResume,
+}
+
 var mayorWorkflowResetCmd = &cobra.Command{
 	Use:   "reset <workflow-id>",
 	Short: "Rewind a workflow to an earlier state",
@@ -183,11 +215,17 @@ Remove stale artifacts under {rig}/mayor/rig/ before bringing agents back up.`,
 var workflowRig string
 var workflowResetTo string
 var workflowTownRoot string
+var workflowPauseRig string
+var workflowPauseShutdown bool
+var workflowPauseShutdownForce bool
 
 func init() {
 	mayorWorkflowCmd.PersistentFlags().StringVar(&workflowTownRoot, "town", "", "Town root (default: cwd walk-up or GT_TOWN_ROOT)")
 	mayorWorkflowStartCmd.Flags().StringVar(&workflowRig, "rig", "", "Rig name for workflow variables (from gt rig list)")
 	mayorWorkflowResetCmd.Flags().StringVar(&workflowResetTo, "to", "design", "FSM state to rewind to (kickoff, design, planning, …)")
+	mayorWorkflowPauseCmd.Flags().StringVar(&workflowPauseRig, "rig", "", "Pause all running workflows for this rig (omit workflow-id)")
+	mayorWorkflowPauseCmd.Flags().BoolVar(&workflowPauseShutdown, "shutdown", true, "Run gt rig shutdown for the rig after pausing")
+	mayorWorkflowPauseCmd.Flags().BoolVar(&workflowPauseShutdownForce, "force", true, "Pass --force to gt rig shutdown")
 }
 
 func resolveMayorWorkflowTownRoot() (string, error) {
@@ -270,6 +308,65 @@ func runMayorWorkflowStatus(cmd *cobra.Command, args []string) error {
 	if notice, _ := orchestrator.BuildRestoreNotice(townRoot); notice.Count > 0 {
 		fmt.Printf("\n(Loaded from orchestrator/instances.json — resume, not a fresh kickoff.)\n")
 	}
+	return nil
+}
+
+func runMayorWorkflowPause(cmd *cobra.Command, args []string) error {
+	townRoot, err := resolveMayorWorkflowTownRoot()
+	if err != nil {
+		return err
+	}
+	var rigsToShutdown []string
+	if workflowPauseRig != "" {
+		ids, err := orchestrator.PauseWorkflowsForRig(townRoot, workflowPauseRig)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("%s Paused %d workflow(s) for rig %s: %s\n",
+			style.SuccessPrefix, len(ids), style.Bold.Render(workflowPauseRig), strings.Join(ids, ", "))
+		rigsToShutdown = append(rigsToShutdown, workflowPauseRig)
+	} else if len(args) == 0 {
+		return fmt.Errorf("workflow id or --rig required\n\nUsage: gt mayor workflow pause <workflow-id>\n       gt mayor workflow pause --rig <rig>")
+	} else {
+		rig, err := orchestrator.PauseWorkflow(townRoot, args[0])
+		if err != nil {
+			return err
+		}
+		fmt.Printf("%s Workflow %s paused", style.SuccessPrefix, args[0])
+		if rig != "" {
+			fmt.Printf(" (rig %s)", style.Bold.Render(rig))
+		}
+		fmt.Println()
+		if rig != "" {
+			rigsToShutdown = append(rigsToShutdown, rig)
+		}
+	}
+	if workflowPauseShutdown {
+		seen := make(map[string]bool)
+		for _, rig := range rigsToShutdown {
+			if rig == "" || seen[rig] {
+				continue
+			}
+			seen[rig] = true
+			fmt.Printf("Shutting down rig %s...\n", style.Bold.Render(rig))
+			if err := shutdownRigAgents(townRoot, rig, workflowPauseShutdownForce); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func runMayorWorkflowResume(cmd *cobra.Command, args []string) error {
+	townRoot, err := resolveMayorWorkflowTownRoot()
+	if err != nil {
+		return err
+	}
+	if err := orchestrator.ResumeWorkflow(townRoot, args[0]); err != nil {
+		return err
+	}
+	fmt.Printf("%s Workflow %s resumed (status=running). Start agents with: gt rig boot <rig> or gt up\n",
+		style.SuccessPrefix, args[0])
 	return nil
 }
 

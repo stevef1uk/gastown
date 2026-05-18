@@ -160,6 +160,28 @@ func (s *Server) handleRequest(req MCPRequest) MCPResponse {
 							"required": []string{"workflow_id"},
 						},
 					},
+					{
+						"name":        "pause_workflow",
+						"description": "Pause workflow(s); pass workflow_id or rig (pauses all running on that rig)",
+						"inputSchema": map[string]interface{}{
+							"type": "object",
+							"properties": map[string]interface{}{
+								"workflow_id": map[string]string{"type": "string"},
+								"rig":         map[string]string{"type": "string"},
+							},
+						},
+					},
+					{
+						"name":        "resume_workflow",
+						"description": "Resume a paused workflow instance",
+						"inputSchema": map[string]interface{}{
+							"type": "object",
+							"properties": map[string]interface{}{
+								"workflow_id": map[string]string{"type": "string"},
+							},
+							"required": []string{"workflow_id"},
+						},
+					},
 				},
 			},
 		}
@@ -256,6 +278,42 @@ func (s *Server) handleCallTool(req MCPRequest) MCPResponse {
 			return MCPResponse{JSONRPC: "2.0", ID: req.ID, Error: &MCPError{Code: -32000, Message: err.Error()}}
 		}
 		return MCPResponse{JSONRPC: "2.0", ID: req.ID, Result: map[string]string{"state": next}}
+	case "pause_workflow":
+		var args struct {
+			WorkflowID string `json:"workflow_id"`
+			Rig        string `json:"rig"`
+		}
+		json.Unmarshal(params.Arguments, &args)
+		if args.Rig != "" {
+			ids, err := s.orchestrator.PauseRunningWorkflowsForRig(args.Rig)
+			if err != nil {
+				return MCPResponse{JSONRPC: "2.0", ID: req.ID, Error: &MCPError{Code: -32000, Message: err.Error()}}
+			}
+			return MCPResponse{JSONRPC: "2.0", ID: req.ID, Result: map[string]interface{}{
+				"workflow_ids": ids,
+				"rig":          args.Rig,
+			}}
+		}
+		if args.WorkflowID == "" {
+			return MCPResponse{JSONRPC: "2.0", ID: req.ID, Error: &MCPError{Code: -32602, Message: "workflow_id or rig required"}}
+		}
+		rig, err := s.orchestrator.PauseWorkflow(args.WorkflowID)
+		if err != nil {
+			return MCPResponse{JSONRPC: "2.0", ID: req.ID, Error: &MCPError{Code: -32000, Message: err.Error()}}
+		}
+		return MCPResponse{JSONRPC: "2.0", ID: req.ID, Result: map[string]interface{}{
+			"workflow_id": args.WorkflowID,
+			"rig":         rig,
+		}}
+	case "resume_workflow":
+		var args struct {
+			WorkflowID string `json:"workflow_id"`
+		}
+		json.Unmarshal(params.Arguments, &args)
+		if err := s.orchestrator.ResumeWorkflow(args.WorkflowID); err != nil {
+			return MCPResponse{JSONRPC: "2.0", ID: req.ID, Error: &MCPError{Code: -32000, Message: err.Error()}}
+		}
+		return MCPResponse{JSONRPC: "2.0", ID: req.ID, Result: map[string]string{"workflow_id": args.WorkflowID, "status": "running"}}
 	default:
 		return MCPResponse{JSONRPC: "2.0", ID: req.ID, Error: &MCPError{Code: -32601, Message: "Tool not found"}}
 	}

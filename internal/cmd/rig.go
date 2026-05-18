@@ -102,6 +102,24 @@ Examples:
 	RunE: runRigList,
 }
 
+var rigSetPhaseCmd = &cobra.Command{
+	Use:   "set-phase <rig> <phase-id>",
+	Short: "Set active delivery phase for phased rig-flow",
+	Long: `Updates active_phase_id in mayor/rig/.gastown/workflow-profile.json.
+
+Use after gt rig spec-index produced delivery_phases. Planning and implementation
+beads/QA then scope to that phase only. Advance manually between phases:
+
+  gt rig set-phase finally p2-backend-core
+  gt mayor workflow reset --rig finally   # or jump FSM to planning per runbook
+
+Examples:
+  gt rig set-phase myrig p1-infra
+  gt rig set-phase myrig --list`,
+	Args: cobra.RangeArgs(1, 2),
+	RunE: runRigSetPhase,
+}
+
 var rigSpecIndexCmd = &cobra.Command{
 	Use:   "spec-index <rig>",
 	Short: "Generate workflow-profile.json from mayor/rig/SPEC.md via LLM",
@@ -355,6 +373,7 @@ var (
 	rigRestartNuclear    bool
 	rigListJSON          bool
 	rigSpecIndexForce    bool
+	rigSetPhaseList      bool
 	rigRemoveForce       bool
 )
 
@@ -381,6 +400,7 @@ func init() {
 	rigCmd.AddCommand(rigBootCmd)
 	rigCmd.AddCommand(rigListCmd)
 	rigCmd.AddCommand(rigSpecIndexCmd)
+	rigCmd.AddCommand(rigSetPhaseCmd)
 	rigCmd.AddCommand(rigSyncUpstreamCmd)
 	rigCmd.AddCommand(rigRebootCmd)
 	rigCmd.AddCommand(rigRemoveCmd)
@@ -395,6 +415,7 @@ func init() {
 	rigListCmd.Flags().BoolVar(&rigListJSON, "json", false, "Output as JSON")
 
 	rigSpecIndexCmd.Flags().BoolVar(&rigSpecIndexForce, "force", false, "Overwrite an existing workflow-profile.json")
+	rigSetPhaseCmd.Flags().BoolVar(&rigSetPhaseList, "list", false, "List delivery phase ids from workflow-profile.json")
 
 	rigRemoveCmd.Flags().BoolVarP(&rigRemoveForce, "force", "f", false, "Kill running tmux sessions before removing (may lose uncommitted work)")
 
@@ -738,6 +759,41 @@ func maybeSpecIndexFromSPEC(townRoot, rigName string) {
 		}
 		fmt.Printf("\n")
 	}
+}
+
+func runRigSetPhase(_ *cobra.Command, args []string) error {
+	rigName := args[0]
+	townRoot, err := workspace.FindFromCwdOrError()
+	if err != nil {
+		return fmt.Errorf("not in a Gas Town workspace: %w", err)
+	}
+	prof, ok, err := orchestrator.LoadRigWorkflowProfileFile(townRoot, rigName)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return fmt.Errorf("no workflow-profile.json for rig %q — run gt rig spec-index %s", rigName, rigName)
+	}
+	if rigSetPhaseList || len(args) < 2 {
+		if !prof.HasPhasedDelivery() {
+			fmt.Printf("Rig %s has no delivery_phases in workflow-profile.json\n", rigName)
+			return nil
+		}
+		active := prof.ActivePhaseID()
+		for _, line := range prof.PhaseSummaryLines() {
+			fmt.Println(line)
+		}
+		if active != "" {
+			fmt.Printf("\nActive phase: %s\n", active)
+		}
+		return nil
+	}
+	phaseID := args[1]
+	if err := orchestrator.SetRigActivePhase(townRoot, rigName, phaseID); err != nil {
+		return err
+	}
+	fmt.Printf("%s Active phase set to %s for rig %s\n", style.Success.Render("✓"), style.Bold.Render(phaseID), rigName)
+	return nil
 }
 
 func runRigSpecIndex(_ *cobra.Command, args []string) error {
@@ -1962,6 +2018,16 @@ func runRigShutdown(cmd *cobra.Command, args []string) error {
 		if err := witMgr.Stop(); err != nil {
 			errors = append(errors, fmt.Sprintf("witness: %v", err))
 		}
+	}
+
+	// 4. Stop orchestrated rig-flow pipeline agents (architect, qa, rig polecat).
+	graceful := !rigShutdownForce
+	stopped, err := session.StopRigPipelineSessions(sp, rigName, graceful)
+	if err != nil {
+		errors = append(errors, fmt.Sprintf("pipeline sessions: %v", err))
+	}
+	if len(stopped) > 0 {
+		fmt.Printf("  Stopped pipeline session(s): %s\n", strings.Join(stopped, ", "))
 	}
 
 	if len(errors) > 0 {

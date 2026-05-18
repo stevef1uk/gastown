@@ -81,6 +81,27 @@ def profile_validation(mayor_rig: Path) -> dict:
     return v if isinstance(v, dict) else {}
 
 
+def active_required_files(val: dict) -> list[str]:
+    """Scope to active delivery phase when delivery_phases is set."""
+    phases = val.get("delivery_phases") or []
+    if not isinstance(phases, list) or not phases:
+        raw = val.get("required_files") or []
+        return [str(x).replace("\\", "/").strip() for x in raw if str(x).strip()] if isinstance(raw, list) else []
+    active = (val.get("active_phase_id") or "").strip()
+    if not active and phases:
+        first = phases[0]
+        if isinstance(first, dict):
+            active = (first.get("id") or "").strip()
+    for ph in phases:
+        if not isinstance(ph, dict):
+            continue
+        if (ph.get("id") or "").strip() == active:
+            raw = ph.get("required_files") or []
+            return [str(x).replace("\\", "/").strip() for x in raw if str(x).strip()] if isinstance(raw, list) else []
+    raw = val.get("required_files") or []
+    return [str(x).replace("\\", "/").strip() for x in raw if str(x).strip()] if isinstance(raw, list) else []
+
+
 def workflow_uses_go(val: dict) -> bool:
     qa = (val.get("qa_verify_command") or "").lower()
     if any(x in qa for x in ("go test", "go vet", "go mod", "go build", "go run")):
@@ -500,14 +521,21 @@ def main() -> int:
     val = profile_validation(mayor_rig)
     layout = (val.get("layout_root") or "").strip()
     title_contains = (val.get("bead_title_contains") or "Implement ").strip()
-    required_raw = val.get("required_files") or []
-    required = [str(x).replace("\\", "/").strip() for x in required_raw if str(x).strip()] if isinstance(required_raw, list) else []
+    union_raw = val.get("required_files") or []
+    union_count = len(union_raw) if isinstance(union_raw, list) else 0
+    required = active_required_files(val)
+    phases = val.get("delivery_phases") or []
+    active_phase = (val.get("active_phase_id") or "").strip()
 
     print("Profile")
     print(f"  layout_root:         {layout or '(none)'}")
     print(f"  bead_title_contains: {title_contains!r}")
     print(f"  test_runner:         {(val.get('test_runner') or '(unset)')}")
-    print(f"  required_files:      {len(required)}")
+    if isinstance(phases, list) and phases:
+        print(f"  delivery_phases:     {len(phases)} (active: {active_phase or '(first)'})")
+        print(f"  required_files:      {len(required)} active / {union_count} union")
+    else:
+        print(f"  required_files:      {len(required)}")
     kind = "go" if workflow_uses_go(val) else ("python" if workflow_uses_python(val) else "other")
     print(f"  detected_stack:      {kind}")
     print()

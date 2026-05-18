@@ -3,7 +3,7 @@ package orchestrator
 // legacyPolecatsPausedFromStatuses implements rig-flow pause logic from workflow snapshots.
 func legacyPolecatsPausedFromStatuses(statuses []WorkflowStatus, rigName string) bool {
 	for _, s := range statuses {
-		if s.Status == "completed" || s.Status == "failed" {
+		if s.Status == "completed" || s.Status == "failed" || s.Status == "paused" {
 			continue
 		}
 		if s.TemplateID != "rig-flow" {

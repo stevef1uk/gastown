@@ -137,7 +137,7 @@ func (m *Manager) FetchTask(agentID string) (map[string]interface{}, error) {
 	fmt.Printf("[Manager] FetchTask for agent: %q\n", agentID)
 
 	for _, inst := range m.instances {
-		if inst.Status == "completed" || inst.Status == "failed" {
+		if isWorkflowTerminalStatus(inst.Status) || inst.Status == "paused" {
 			continue
 		}
 		tpl := m.templates[inst.TemplateID]
@@ -178,6 +178,9 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summa
 	inst, ok := m.instances[workflowID]
 	if !ok {
 		return "", fmt.Errorf("workflow instance %q not found", workflowID)
+	}
+	if inst.Status == "paused" {
+		return "", fmt.Errorf("%w %q", ErrWorkflowPaused, workflowID)
 	}
 
 	tpl := m.templates[inst.TemplateID]
@@ -358,7 +361,7 @@ func (m *Manager) HasActiveWorkflow(templateID, rig string) bool {
 
 func (m *Manager) hasActiveWorkflowLocked(templateID, rig string) bool {
 	for _, inst := range m.instances {
-		if inst.Status == "completed" || inst.Status == "failed" {
+		if !isWorkflowRunningStatus(inst.Status) {
 			continue
 		}
 		if templateID != "" && inst.TemplateID != templateID {
@@ -386,7 +389,8 @@ func (m *Manager) workflowValidationFor(inst *WorkflowInstance, tpl *WorkflowTem
 			v = mergeValidationFields(v, prof)
 		}
 	}
-	return v.WithDefaults()
+	v = v.WithDefaults()
+	return v.ForActivePhase()
 }
 
 func validateTemplateSchema(tpl *WorkflowTemplate, filename string) string {

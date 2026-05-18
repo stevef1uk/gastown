@@ -69,6 +69,9 @@ func reconcileOrchestratedPipelineAgents(townRoot string, rigNames []string, pre
 		if r == nil {
 			continue
 		}
+		if orchestrator.SkipRigAgentStartReason(townRoot, rigName) != "" {
+			continue
+		}
 		prefix := session.PrefixFor(rigName)
 
 		archID := session.ArchitectSessionName(prefix, rigName)

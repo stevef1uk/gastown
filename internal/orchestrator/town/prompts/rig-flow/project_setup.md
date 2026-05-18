@@ -55,7 +55,7 @@ Use **Go** or **Python** instructions below based on the profile (`{{project_set
 
 ```
 CMD: mkdir -p {{rig}}/mayor/rig/{{layout_root}}
-CMD: cd {{rig}}/mayor/rig/{{layout_root}} && go mod init linkshelf
+CMD: cd {{rig}}/mayor/rig/{{layout_root}} && go mod init {{layout_root}}
 CMD: cd {{rig}}/mayor/rig/{{layout_root}} && go get modernc.org/sqlite@v1.29.0
 CMD: cd {{rig}}/mayor/rig/{{layout_root}} && go mod tidy
 CMD: cd {{rig}}/mayor/rig/{{layout_root}} && go mod tidy

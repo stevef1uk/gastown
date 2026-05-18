@@ -19,6 +19,8 @@ Do **not** invent bead IDs or add implementation code under `{{layout_root}}/`.
 
 {{spec_summary}}
 
+{{phase_scope_note}}
+
 ## Scope (strict)
 
 | Allowed | Forbidden |

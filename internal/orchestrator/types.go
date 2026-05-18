@@ -43,7 +43,7 @@ type WorkflowInstance struct {
 	TemplateID    string            `json:"template_id"`
 	CurrentState  string            `json:"current_state"`
 	Variables     map[string]string `json:"variables"`
-	Status        string            `json:"status"` // "running", "completed", "failed"
+	Status        string            `json:"status"` // "running", "paused", "completed", "failed"
 	PendingRework *WorkflowRework   `json:"pending_rework,omitempty"`
 }
 

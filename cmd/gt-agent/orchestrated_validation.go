@@ -11,7 +11,8 @@ func taskValidation(task *orchestrator.Task) orchestrator.WorkflowValidation {
 	if task == nil {
 		return orchestrator.DefaultWorkflowValidation()
 	}
-	return orchestrator.ClampProfileValidation(task.Validation.WithDefaults())
+	v := orchestrator.ClampProfileValidation(task.Validation.WithDefaults())
+	return v.ForActivePhase()
 }
 
 func isProjectSetupVerifyCommandOK(cmd string, v orchestrator.WorkflowValidation) bool {

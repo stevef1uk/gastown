@@ -1034,6 +1034,11 @@ func upStartWitness(rigName string, r *rig.Rig) agentStartResult {
 	rigPrefix := session.PrefixFor(rigName)
 	sessionID := session.WitnessSessionName(rigPrefix, rigName)
 
+	townRoot := filepath.Dir(r.Path)
+	if skip, detail := rigOrchestratorAgentSkip(townRoot, rigName, name); skip {
+		return agentStartResult{name: name, ok: true, detail: detail}
+	}
+
 	// Check if rig is parked or docked (wisp + bead labels).
 	if !r.GetBoolConfig("auto_start_on_up") && !r.GetBoolConfig("auto_start_on_boot") {
 		townRoot := filepath.Dir(r.Path)
@@ -1042,7 +1047,6 @@ func upStartWitness(rigName string, r *rig.Rig) agentStartResult {
 		}
 	}
 
-	townRoot := filepath.Dir(r.Path)
 	orchestrated, _, _ := orchestrator.IsRunning(townRoot)
 
 	mgr := witness.NewManager(r)
@@ -1062,6 +1066,11 @@ func upStartRefinery(rigName string, r *rig.Rig) agentStartResult {
 	rigPrefix := session.PrefixFor(rigName)
 	sessionID := session.RefinerySessionName(rigPrefix, rigName)
 
+	townRoot := filepath.Dir(r.Path)
+	if skip, detail := rigOrchestratorAgentSkip(townRoot, rigName, name); skip {
+		return agentStartResult{name: name, ok: true, detail: detail}
+	}
+
 	// Check if rig is parked or docked (wisp + bead labels).
 	if !r.GetBoolConfig("auto_start_on_up") && !r.GetBoolConfig("auto_start_on_boot") {
 		townRoot := filepath.Dir(r.Path)
@@ -1070,7 +1079,6 @@ func upStartRefinery(rigName string, r *rig.Rig) agentStartResult {
 		}
 	}
 
-	townRoot := filepath.Dir(r.Path)
 	orchestrated, _, _ := orchestrator.IsRunning(townRoot)
 
 	mgr := refinery.NewManager(r)
@@ -1088,6 +1096,11 @@ func upStartRefinery(rigName string, r *rig.Rig) agentStartResult {
 func upStartArchitect(rigName string, r *rig.Rig) agentStartResult {
 	name := "Architect (" + rigName + ")"
 
+	townRoot := filepath.Dir(r.Path)
+	if skip, detail := rigOrchestratorAgentSkip(townRoot, rigName, name); skip {
+		return agentStartResult{name: name, ok: true, detail: detail}
+	}
+
 	if !r.GetBoolConfig("auto_start_on_up") && !r.GetBoolConfig("auto_start_on_boot") {
 		townRoot := filepath.Dir(r.Path)
 		if blocked, reason := IsRigParkedOrDocked(townRoot, rigName); blocked {
@@ -1101,7 +1114,6 @@ func upStartArchitect(rigName string, r *rig.Rig) agentStartResult {
 		return agentStartResult{name: name, ok: false, detail: err.Error()}
 	}
 
-	townRoot := filepath.Dir(r.Path)
 	sp := session.GetDefaultProvider(townRoot)
 	ctx := context.Background()
 
@@ -1138,6 +1150,11 @@ func upStartArchitect(rigName string, r *rig.Rig) agentStartResult {
 func upStartQA(rigName string, r *rig.Rig) agentStartResult {
 	name := "QA (" + rigName + ")"
 
+	townRoot := filepath.Dir(r.Path)
+	if skip, detail := rigOrchestratorAgentSkip(townRoot, rigName, name); skip {
+		return agentStartResult{name: name, ok: true, detail: detail}
+	}
+
 	if !r.GetBoolConfig("auto_start_on_up") && !r.GetBoolConfig("auto_start_on_boot") {
 		townRoot := filepath.Dir(r.Path)
 		if blocked, reason := IsRigParkedOrDocked(townRoot, rigName); blocked {
@@ -1151,7 +1168,6 @@ func upStartQA(rigName string, r *rig.Rig) agentStartResult {
 		return agentStartResult{name: name, ok: false, detail: err.Error()}
 	}
 
-	townRoot := filepath.Dir(r.Path)
 	sp := session.GetDefaultProvider(townRoot)
 	ctx := context.Background()
 
@@ -1187,6 +1203,11 @@ func upStartQA(rigName string, r *rig.Rig) agentStartResult {
 func upStartRigPolecat(rigName string, r *rig.Rig) agentStartResult {
 	name := "Polecat (" + rigName + ")"
 
+	townRoot := filepath.Dir(r.Path)
+	if skip, detail := rigOrchestratorAgentSkip(townRoot, rigName, name); skip {
+		return agentStartResult{name: name, ok: true, detail: detail}
+	}
+
 	if !r.GetBoolConfig("auto_start_on_up") && !r.GetBoolConfig("auto_start_on_boot") {
 		townRoot := filepath.Dir(r.Path)
 		if blocked, reason := IsRigParkedOrDocked(townRoot, rigName); blocked {
@@ -1200,7 +1221,6 @@ func upStartRigPolecat(rigName string, r *rig.Rig) agentStartResult {
 		return agentStartResult{name: name, ok: false, detail: err.Error()}
 	}
 
-	townRoot := filepath.Dir(r.Path)
 	sp := session.GetDefaultProvider(townRoot)
 	ctx := context.Background()
 

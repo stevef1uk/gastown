@@ -45,9 +45,16 @@ func FormatOperatorWorkflowProfileNotice(absProfilePath, rigName string, p *Prof
 		if len(v.RequiredFiles) > max {
 			list += fmt.Sprintf(", … (+%d more)", len(v.RequiredFiles)-max)
 		}
-		fmt.Fprintf(&b, "    - required_files: %s\n", list)
+		fmt.Fprintf(&b, "    - required_files (union): %s\n", list)
 	} else {
 		fmt.Fprintf(&b, "    - required_files: (empty)\n")
+	}
+	if v.HasPhasedDelivery() {
+		fmt.Fprintf(&b, "    - delivery_phases: %d (active: %s)\n", len(v.DeliveryPhases), v.ActivePhaseID())
+		for _, line := range v.PhaseSummaryLines() {
+			fmt.Fprintf(&b, "        %s\n", line)
+		}
+		fmt.Fprintf(&b, "  Advance phase manually: gt rig set-phase %s <phase-id>\n", rigName)
 	}
 	sum := strings.TrimSpace(v.SpecSummary)
 	if sum != "" {

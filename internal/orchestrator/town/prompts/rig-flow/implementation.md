@@ -8,7 +8,8 @@ Rig `{{rig}}` (`{{rig}}/polecat`). Work under `{{rig}}/mayor/rig/`. Use the **Ne
 2. `CMD: cd {{rig}}/mayor/rig && mkdir -p <dirs> && cat > <path> <<'EOF'` … real code … line with only `EOF`
 3. `CMD: cd {{rig}}/mayor/rig && {{implementation_verify_hint}}` (green before `bd close`)
 4. `CMD: export BEADS_DIR=$GT_ROOT/{{rig}}/.beads && cd {{rig}}/mayor/rig && bd close BEAD_ID`
-5. When all implement beads are closed, a **later** message: `{"outcome":"success","summary":"…"}`
+5. If **Next bead** still shows an open ID, repeat steps 1–4 for that bead (more `CMD:` lines — not JSON yet).
+6. When **Next bead** says none open, a **later** message only: `{"outcome":"success","summary":"…"}`
 
 ## Rules
 

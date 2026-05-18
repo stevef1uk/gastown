@@ -20,7 +20,10 @@ func MaybeAutoStartWorkflow(townRoot, rig string) (string, error) {
 		return "", err
 	}
 	for _, s := range statuses {
-		if s.Status == "completed" || s.Status == "failed" {
+		if isWorkflowTerminalStatus(s.Status) || s.Status == "paused" {
+			continue
+		}
+		if !isWorkflowRunningStatus(s.Status) {
 			continue
 		}
 		if s.TemplateID != cfg.DefaultWorkflow {

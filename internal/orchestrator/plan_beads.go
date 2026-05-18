@@ -63,6 +63,7 @@ func NormalizeBeadPathForLayout(beadPath, layoutRoot string) string {
 
 // ValidatePlanBeads checks open implementation beads against architecture and profile.
 func ValidatePlanBeads(beads []PlanBead, archPath string, v WorkflowValidation) error {
+	v = v.ForActivePhase()
 	if len(v.RequiredFiles) == 0 {
 		return nil
 	}

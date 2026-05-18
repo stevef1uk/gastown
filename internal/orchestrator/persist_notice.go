@@ -105,7 +105,7 @@ func DuplicateActiveWarning(statuses []WorkflowStatus) string {
 	type key struct{ templateID, rig string }
 	counts := make(map[key]int)
 	for _, s := range statuses {
-		if s.Status == "completed" || s.Status == "failed" {
+		if s.Status != "running" && s.Status != "" {
 			continue
 		}
 		rig := s.Variables["rig"]

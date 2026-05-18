@@ -183,6 +183,23 @@ func TestRewriteUnittestToWorkdir_alreadyInModule(t *testing.T) {
 	}
 }
 
+func TestRewriteUnittestToWorkdir_bareLayoutCD(t *testing.T) {
+	v := orchestrator.WorkflowValidation{
+		LayoutRoot:      "tasklist",
+		QAVerifyCommand: "cd tasklist && go test ./...",
+		TestRunner:      "custom",
+	}
+	cmd := "cd tasklist && go mod tidy"
+	fixed, ok := rewriteUnittestToWorkdir(cmd, "testgt4", v)
+	if !ok {
+		t.Fatal("expected rewrite")
+	}
+	want := "cd testgt4/mayor/rig/tasklist && go mod tidy"
+	if fixed != want {
+		t.Fatalf("got %q want %q", fixed, want)
+	}
+}
+
 func TestRewriteUnittestToWorkdir_mayorRigCDIntoModule(t *testing.T) {
 	v := orchestrator.WorkflowValidation{LayoutRoot: "linkshelf", TestRunner: "custom", QAVerifyCommand: "go build ./..."}
 	cmd := "cd testgt3/mayor/rig && go build ./..."
