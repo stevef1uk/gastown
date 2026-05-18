@@ -3,11 +3,15 @@ package orchestrator
 import "strings"
 
 // StateHooks configures gt-agent behavior for one FSM state (declarative; no state-name switches in gt-agent).
+// Wire new behavior via templates/rig-flow.yaml — see prompt_context.go and town/README.md (§ FSM vs Go).
 type StateHooks struct {
 	MaxCmdTurns int `yaml:"max_cmd_turns,omitempty" json:"max_cmd_turns,omitempty"`
 
 	PreRun   []string `yaml:"pre_run,omitempty" json:"pre_run,omitempty"`
 	PerTurn  []string `yaml:"per_turn,omitempty" json:"per_turn,omitempty"`
+	// PromptContext lists prompt_context hook names (see orchestrator.PromptContextBlock).
+	// Example keys: planning_bead_bootstrap, implementation_queue.
+	PromptContext []string `yaml:"prompt_context,omitempty" json:"prompt_context,omitempty"`
 	CmdGuard string   `yaml:"cmd_guard,omitempty" json:"cmd_guard,omitempty"`
 
 	CmdRewrites []string `yaml:"cmd_rewrites,omitempty" json:"cmd_rewrites,omitempty"`
@@ -29,6 +33,13 @@ type StateHooks struct {
 
 	BeadIDsInSummary bool `yaml:"bead_ids_in_summary,omitempty" json:"bead_ids_in_summary,omitempty"`
 	EmptyBdListOK    bool `yaml:"empty_bd_list_ok,omitempty" json:"empty_bd_list_ok,omitempty"`
+
+	// Prompt framing (prefer these over if task.State in gt-agent).
+	OmitOrchestratorContext bool   `yaml:"omit_orchestrator_context,omitempty" json:"omit_orchestrator_context,omitempty"`
+	SystemPromptFooter      string `yaml:"system_prompt_footer,omitempty" json:"system_prompt_footer,omitempty"`
+	UserPromptWrapper       string `yaml:"user_prompt_wrapper,omitempty" json:"user_prompt_wrapper,omitempty"` // "none" = no "Complete this step only" prefix
+	FailurePromptContext    []string `yaml:"failure_prompt_context,omitempty" json:"failure_prompt_context,omitempty"` // prompt_context keys on validation/empty-reply nudges only
+	EmptyResponseSuffix     string `yaml:"empty_response_suffix,omitempty" json:"empty_response_suffix,omitempty"`
 }
 
 // StateEnvHooks configures subprocess environment for a state.
@@ -63,6 +74,16 @@ func (h StateHooks) FailureHintText(v WorkflowValidation, vars map[string]string
 	return ""
 }
 
+// SystemPromptFooterText returns optional per-state footer appended after the prompt file ({{var}} substitution).
+func (h StateHooks) SystemPromptFooterText(vars map[string]string) string {
+	return SubstituteVars(strings.TrimSpace(h.SystemPromptFooter), vars)
+}
+
+// UserPromptWrapsWithCompleteStep reports whether gt-agent should prefix user prompts with "Complete this step only".
+func (h StateHooks) UserPromptWrapsWithCompleteStep() bool {
+	return !strings.EqualFold(strings.TrimSpace(h.UserPromptWrapper), "none")
+}
+
 func resolveRetryHintKey(key string, v WorkflowValidation, vars map[string]string) string {
 	switch key {
 	case "project_setup":
@@ -72,8 +93,9 @@ func resolveRetryHintKey(key string, v WorkflowValidation, vars map[string]strin
 				layout = "."
 			}
 			return "Go rig: run go mod init/get/tidy under " + layout +
-				" (never heredoc go.mod/go.sum, no go build/run/curl in setup). Split oversized beads with bd create/delete so each bead is one file. Green verify: " +
-				GoProjectSetupVerifyCommand(v)
+				" only — never cat/heredoc/touch source files (.go/.js/.html/.css) under " + layout +
+				"/ (polecat implements them). No heredoc go.mod/go.sum, no go build/run/curl in setup. Green verify: " +
+				GoProjectSetupVerifyCommand(v) + ". Then JSON success in a separate message."
 		}
 		if WorkflowUsesPython(v) {
 			req := v.RequirementsFilePath()

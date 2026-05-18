@@ -36,8 +36,8 @@ GT_ROOT="${GT_ROOT:-$HOME/gt}"
 # Directory containing this repo (parent of scripts/)
 GASTOWN="${GASTOWN:-$(cd "$(dirname "$0")/.." && pwd)}"
 CLEAN_SCRIPT="${GASTOWN}/scripts/clean-gastown.sh"
-RIG="${RIG_NAME:-testgt2}"
-RIG_URL="${RIG_URL:-https://github.com/stevef1uk/testgt2}"
+RIG="${RIG_NAME:-testgt3}"
+RIG_URL="${RIG_URL:-https://github.com/stevef1uk/testgt3_go}"
 
 if [[ ! -f "$CLEAN_SCRIPT" ]]; then
   echo "FATAL: clean script not found: $CLEAN_SCRIPT" >&2

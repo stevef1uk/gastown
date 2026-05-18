@@ -56,7 +56,7 @@ Rules:
 - required_files: An exhaustive array of critical paths relative to mayor/rig (under layout_root when set). Include ALL frontend code, backend code, entrypoints, and configuration files required by the spec. There is no limit; capture every explicit or implicitly required file (e.g. 10-30+ files for a real app).
 - spec_summary: 400–2500 characters summarizing goals, stack, directory layout, and how to run tests—so downstream agents need not re-read the full spec.
 - min_plan_bytes: target 3000–5000 (enough for a detailed bead list + phased strategy in plan.md). Use 200–8192 only; NEVER copy SPEC byte length or spec_summary character count.
-- min_architecture_bytes: target 6000–12000 for a substantive architecture.md. Use 200–12000 only; NEVER copy SPEC byte length.
+- min_architecture_bytes: target 2500–5000 for most rigs; use 6000–8000 only when required_files has 15+ paths or the spec is very large. For ≤10 required_files use 2000–3500. Use 200–8192 only; NEVER copy SPEC byte length.
 - confidence: "high", "medium", or "low".
 
 Output JSON only.`

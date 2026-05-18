@@ -56,6 +56,18 @@ func TestClampProfileValidation(t *testing.T) {
 			want: WorkflowValidation{MinPlanBytes: 3000, MinArchitectureBytes: 6000},
 		},
 		{
+			name: "small rig caps high architecture minimum",
+			in: WorkflowValidation{
+				MinPlanBytes:         3000,
+				MinArchitectureBytes: 8000,
+				RequiredFiles:        []string{"a.go", "b.go", "c.go"},
+			},
+			want: WorkflowValidation{
+				MinPlanBytes:         3000,
+				MinArchitectureBytes: SmallRigMaxArchitectureBytes,
+			},
+		},
+		{
 			name: "below floor raised",
 			in:   WorkflowValidation{MinPlanBytes: 50},
 			want: WorkflowValidation{MinPlanBytes: MinArtifactBytesFloor, MinArchitectureBytes: DefaultMinArchitectureBytes},

@@ -66,17 +66,57 @@ func (r *stateRunner) maxTurns() int {
 
 func (r *stateRunner) runPreRun() {
 	for _, step := range r.hooks.PreRun {
-		switch step {
-		case "repair_requirements":
+		if step == "repair_requirements" {
 			maybeRepairWorkflowRequirements(r.townRoot, r.rig, r.v)
-		case "reopen_implement_beads":
-			if reopened, err := orchestrator.EnsureImplementBeadsAvailable(r.townRoot, r.rig, r.v); err != nil {
-				orchestratedFprintfStderr("[gt-agent] reopen implement beads: %v\n", err)
-			} else if len(reopened) > 0 {
-				orchestratedPrintf("[gt-agent] auto-reopened implement beads: %s\n", strings.Join(reopened, ", "))
-			}
+			continue
+		}
+		logLine, err := orchestrator.RunPreRunHook(step, r.townRoot, r.rig, r.v)
+		if err != nil {
+			orchestratedFprintfStderr("[gt-agent] pre_run %s: %v\n", step, err)
+			continue
+		}
+		if logLine != "" {
+			orchestratedPrintf("[gt-agent] %s: %s\n", step, logLine)
 		}
 	}
+}
+
+func (r *stateRunner) promptContextBlocks() []string {
+	return orchestrator.PromptContextBlocks(r.hooks.PromptContext, r.townRoot, r.rig, r.v)
+}
+
+func (r *stateRunner) failurePromptContextBlocks() []string {
+	keys := r.hooks.FailurePromptContext
+	if len(keys) == 0 {
+		return r.promptContextBlocks()
+	}
+	return orchestrator.PromptContextBlocks(keys, r.townRoot, r.rig, r.v)
+}
+
+func (r *stateRunner) artifactFailureFeedback(err error) string {
+	msg := "Validation failed: " + err.Error()
+	if h := r.failureHint(); h != "" {
+		msg += ". " + h
+	}
+	for _, block := range r.failurePromptContextBlocks() {
+		msg += "\n\n" + block
+	}
+	return msg
+}
+
+func (r *stateRunner) emptyResponseNudge() string {
+	msg := "Empty reply."
+	for _, block := range r.failurePromptContextBlocks() {
+		msg += " " + block
+	}
+	if suffix := orchestrator.SubstituteVars(strings.TrimSpace(r.hooks.EmptyResponseSuffix), r.promptVars); suffix != "" {
+		msg += " " + suffix
+	} else if h := r.failureHint(); h != "" {
+		msg += " " + h
+	} else {
+		msg += " Send CMD: lines only (no blank turns)."
+	}
+	return msg
 }
 
 func (r *stateRunner) runPerTurn() {
@@ -86,6 +126,29 @@ func (r *stateRunner) runPerTurn() {
 			maybeRepairWorkflowRequirements(r.townRoot, r.rig, r.v)
 		}
 	}
+}
+
+func validateImplementationBeadOrder(townRoot, rig, cmd string, v orchestrator.WorkflowValidation) error {
+	if len(v.RequiredFiles) == 0 {
+		return nil
+	}
+	if !isBeadUpdateInProgressCommand(cmd) && !isBeadCloseCommand(cmd) {
+		return nil
+	}
+	next, err := orchestrator.NextOpenImplementBead(townRoot, rig, v)
+	if err != nil || next == nil || next.ID == "" {
+		return nil
+	}
+	var id string
+	if isBeadUpdateInProgressCommand(cmd) {
+		id = extractBeadIDFromBdUpdate(cmd)
+	} else {
+		id = extractBeadIDFromBdClose(cmd)
+	}
+	if id == "" || id == next.ID {
+		return nil
+	}
+	return fmt.Errorf("implement beads in profile order — next open bead is %s (%s); finish or bd close it before starting %s", next.ID, next.Title, id)
 }
 
 func (r *stateRunner) rejectScope() string {
@@ -112,11 +175,14 @@ func (r *stateRunner) validateCommand(cmd string) error {
 	case "design":
 		return validateDesignCommand(cmd, r.rig)
 	case "planning":
-		return validatePlanningCommand(cmd, r.rig)
+		return validatePlanningCommandWithProfile(cmd, r.rig, r.v)
 	case "project_setup":
 		return validateProjectSetupCommand(cmd, r.rig, r.v)
 	case "implementation":
-		return validateImplementationCommandWithState(cmd, r.rig, r.track.activeBead, r.v, r.track.verifyOK)
+		if err := validateImplementationCommandWithState(cmd, r.rig, r.track.activeBead, r.v, r.track.verifyOK); err != nil {
+			return err
+		}
+		return validateImplementationBeadOrder(r.townRoot, r.rig, cmd, r.v)
 	case "plan_review":
 		return validatePlanReviewCommand(cmd, r.rig)
 	case "qa":
@@ -463,8 +529,8 @@ func (r *stateRunner) failureHint() string {
 	case "plan_review":
 		return fmt.Sprintf("Run `bd list --status=open` from %s with BEADS_DIR set; compare titles to architecture required_files. Use outcome failure to send the Planner back to fix duplicates or missing paths.", rigMayorRigPath(r.rig))
 	case "implementation":
-		return fmt.Sprintf("Use bare `bd` from %s with BEADS_DIR=$GT_ROOT/%s/.beads: fix files QA named, run %s, `bd close` a bead, then success. No shell text in .py files.",
-			rigMayorRigPath(r.rig), r.rig, r.v.UnittestCommandHint())
+		return fmt.Sprintf("One bead at a time from %s (BEADS_DIR=$GT_ROOT/%s/.beads): bd update → heredoc under %s/ → %s → bd close → JSON.",
+			rigMayorRigPath(r.rig), r.rig, strings.TrimSpace(r.v.LayoutRoot), r.v.UnittestCommandHint())
 	case "qa":
 		return "Run real CMD: lines (not markdown fences): bd list --status=closed, head SPEC.md, " + r.v.UnittestCommandHint() + " from " + rigMayorRigPath(r.rig) + ". No /workspace paths. Then JSON only."
 	default:

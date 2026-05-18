@@ -47,6 +47,18 @@ Rig-flow prompts (`prompts/rig-flow/*.md`) are spec-driven. Common placeholders:
 
 Do not hard-code example project names or paths in prompts — use these variables.
 
+## FSM behavior belongs in YAML (not gt-agent Go)
+
+When changing how a workflow step behaves (prompt size, bead queue text, empty-reply nudges, failure hints):
+
+1. Edit **`templates/rig-flow.yaml`** hooks for that state and/or **`prompts/rig-flow/*.md`**.
+2. Use hook fields: `omit_orchestrator_context`, `system_prompt_footer`, `user_prompt_wrapper: none`, `failure_prompt_context`, `empty_response_suffix`, `prompt_context`, `failure_hint`, `pre_run`, etc.
+3. Use **`workflow-profile.json`** for per-rig paths, verify commands, and `required_files`.
+
+Do **not** add `if task.State == "implementation"` (or any state name) in `cmd/gt-agent`. That bypasses town sync and duplicates config.
+
+Reusable hook implementations live in `internal/orchestrator/prompt_context.go` — add a **named** hook only when YAML cannot express it. See the maintainer block at the top of that file.
+
 ## Configuration
 
 Town operators set orchestrator behavior in **`{townRoot}/settings/config.json`**:

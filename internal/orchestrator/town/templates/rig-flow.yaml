@@ -1,6 +1,8 @@
 id: rig-flow
 description: Standard rig workflow (Mayor -> Architect -> Planner -> Polecat -> QA) aligned with Beads/Dolt
 initial_state: kickoff
+# AGENTS: Change agent behavior in this file (hooks, prompts, failure_hint) — NOT with if task.State in gt-agent.
+# See internal/orchestrator/prompt_context.go and town/README.md § "FSM behavior belongs in YAML".
 # Artifact guards for gt-agent. Per-rig values come from mayor/rig/.gastown/workflow-profile.json
 # (gt rig spec-index). These YAML defaults are placeholders only.
 # State behavior (guards, env, auto-verify) is configured under each state's hooks: block.
@@ -28,8 +30,9 @@ states:
     prompt_file: prompts/rig-flow/design.md
     instructions: |
       1. Read `{{rig}}/mayor/rig/SPEC.md`.
-      2. Write `{{rig}}/mayor/rig/architecture.md` (≥200 bytes).
+      2. Write `{{rig}}/mayor/rig/architecture.md` (≥{{min_architecture_bytes}} bytes).
     hooks:
+      max_cmd_turns: 8
       cmd_guard: design
       cmd_rewrites: [rig_placeholders, spec_md_case, unwrap_bash_lc]
       track: design
@@ -51,6 +54,9 @@ states:
       1. Read SPEC and architecture under `{{rig}}/mayor/rig/`.
       2. Create implementation beads and `plan.md`.
     hooks:
+      prompt_context: [planning_bead_bootstrap]
+      # Optional: pre_run: [bootstrap_implement_beads]  # auto-create missing beads (planner normally runs bd create)
+      max_cmd_turns: 8
       cmd_guard: planning
       cmd_rewrites: [rig_placeholders, spec_md_case, plan_md_after_cd, bd_list_limit, unwrap_bash_lc]
       env:
@@ -61,7 +67,7 @@ states:
         One CMD: per line. After `cd {{rig}}/mayor/rig`, write plan.md with a relative path (not {{rig}}/mayor/rig/plan.md).
         Heredoc must end with a line containing only EOF. Verify with wc -c from town root.
       failure_hint: |
-        Repair beads with bd delete/create, rewrite plan.md if needed — then JSON success. Work from {{rig}}/mayor/rig with BEADS_DIR=$GT_ROOT/{{rig}}/.beads. No python/git/backend code.
+        Do not send success JSON until CMD: lines ran in this session. If beads exist, bd list only — do not duplicate bd create. plan.md heredoc must end with a line containing only EOF (short body ≥ {{min_plan_bytes}} bytes or the model output will truncate). Then wc -c plan.md, then JSON only. Work from {{rig}}/mayor/rig with BEADS_DIR=$GT_ROOT/{{rig}}/.beads.
     transitions:
       success:
         to: plan_review
@@ -98,6 +104,7 @@ states:
       1. Go: scaffold module (go mod init/tidy), split beads one file each, green verify.
       2. Python: create venv, pip install -r requirements.txt once, split beads, green pytest/unittest.
     hooks:
+      pre_run: [enforce_implement_bead_queue]
       cmd_guard: project_setup
       cmd_rewrites: [rig_placeholders, bd_list_implement_scope, unittest_workdir, bd_list_limit, unwrap_bash_lc]
       env:
@@ -117,6 +124,8 @@ states:
           verify: python
       artifacts: project_setup
       retry_hint_key: project_setup
+      failure_hint: |
+        project_setup scaffolds the Go module only (go mod init/get/tidy under {{layout_root}}/). Do NOT cat/heredoc/touch source files. Duplicate implement beads are auto-deleted on pre_run — do not bd create more. Run {{project_setup_verify_hint}} green, then JSON success only (no CMD in that message).
     transitions:
       success:
         to: implementation
@@ -126,10 +135,16 @@ states:
     role: polecat
     prompt_file: prompts/rig-flow/implementation.md
     instructions: |
-      1. In `{{rig}}/mayor/rig/`, list open implementation beads, claim one, implement, close bead.
-      2. Report success when ready for QA.
+      Implement the **Next bead** in the user message only: in_progress → heredoc file → verify → bd close. JSON success when all implement beads are closed.
     hooks:
-      pre_run: [repair_requirements, reopen_implement_beads]
+      omit_orchestrator_context: true
+      system_prompt_footer: |
+        Format: `CMD: <shell>` one per line; JSON `{"outcome":"success","summary":"..."}` only in a later message (not with CMD).
+      user_prompt_wrapper: none
+      failure_prompt_context: [implementation_queue]
+      empty_response_suffix: "Send CMD: lines (bd update → heredoc → verify → bd close)."
+      prompt_context: [implementation_queue]
+      pre_run: [enforce_implement_bead_queue, repair_requirements, reopen_implement_beads]
       per_turn: [repair_requirements]
       cmd_guard: implementation
       cmd_rewrites: [rig_placeholders, backend_path_after_cd, bd_list_implement_scope, unittest_workdir, bd_list_limit, unwrap_bash_lc]
@@ -147,7 +162,7 @@ states:
       artifacts: implementation
       retry_hint_key: implementation
       failure_hint: |
-        Use bare `bd` from {{rig}}/mayor/rig with BEADS_DIR=$GT_ROOT/{{rig}}/.beads: fix files QA named, run {{unittest_command_hint}}, `bd close` a bead, then success. No shell text in .py files.
+        One bead at a time: bd update <id> --status=in_progress, heredoc under {{layout_root}}/, {{unittest_command_hint}}, bd close <id>. JSON only after bd close succeeds.
     transitions:
       success:
         to: qa_review

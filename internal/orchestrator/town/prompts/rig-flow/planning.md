@@ -47,11 +47,19 @@ Do **not** invent bead IDs or add implementation code under `{{layout_root}}/`.
    ```
    **No duplicate paths** (do not create three beads for the same `main.js`). Paths must match architecture.md / required_files. On retry after QA `failure`, delete duplicate beads (`bd delete <id> --force`) before creating missing ones. Do **not** use `gt bd add`.
 
-4. Write **only** `plan.md` with a heredoc (≥ {{min_plan_bytes}} bytes). Use **one** `CMD:` block; put the heredoc body on following lines; end with a line that is only `EOF`:
+4. Write **only** `plan.md` with a heredoc (≥ {{min_plan_bytes}} bytes). **Keep the heredoc short** so the reply is not cut off — use bullet lists and real `te-xxx` IDs from `bd list`, not essay prose.
+
+   **Split across turns** (recommended):
+   - Turn A: `bd list --status=open` (skip `bd create` if seven implement beads already exist).
+   - Turn B: one `cat > plan.md <<'EOF'` … body … then a line with **only** `EOF` (no text after EOF in the same message).
+   - Turn C: `wc -c plan.md` from town root.
+   - Turn D: JSON success only.
+
    ```
    CMD: export BEADS_DIR=$GT_ROOT/{{rig}}/.beads && cd {{rig}}/mayor/rig && cat > plan.md <<'EOF'
    # Implementation plan
-   (list beads te-xxx from bd create output and strategy — paths must match architecture.md)
+   (te-abc: linkshelf/go.mod — …)
+   …
    EOF
    ```
    Do **not** wrap this in `bash -lc "..."` with embedded newlines. After `cd {{rig}}/mayor/rig`, use relative `plan.md` only (not `{{rig}}/mayor/rig/plan.md`).

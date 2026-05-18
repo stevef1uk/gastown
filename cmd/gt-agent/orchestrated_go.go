@@ -73,6 +73,13 @@ func validateProjectSetupCommand(cmd, rig string, v orchestrator.WorkflowValidat
 	if !orchestrator.WorkflowUsesGo(v) {
 		return nil
 	}
+	if isBeadCreateCommand(cmd) {
+		if title := extractBeadCreateTitle(cmd); title != "" {
+			if err := orchestrator.ValidateImplementBeadCreateTitle(title, v); err != nil {
+				return err
+			}
+		}
+	}
 	for _, blocked := range []string{"go build", "go run", "go test", "go vet", "curl "} {
 		if strings.Contains(lower, blocked) {
 			return fmt.Errorf("project_setup only runs go mod init/get/tidy — polecat runs %s after setup", strings.TrimSpace(blocked))
@@ -166,6 +173,16 @@ func validateProjectSetupArtifacts(townRoot, rig string, hadCmdFailure, verifyOK
 	goMod := filepath.Join(rigMayorRigDir(townRoot, rig), layout, "go.mod")
 	if _, err := os.Stat(goMod); err != nil {
 		return fmt.Errorf("go.mod missing at %s after setup", goMod)
+	}
+	if len(v.RequiredFiles) > 0 {
+		open, err := orchestrator.ListOpenImplementBeads(townRoot, rig, v)
+		if err != nil {
+			return fmt.Errorf("list implement beads: %w", err)
+		}
+		archPath := filepath.Join(rigMayorRigDir(townRoot, rig), "architecture.md")
+		if err := orchestrator.ValidatePlanBeads(open, archPath, v); err != nil {
+			return fmt.Errorf("bead set must match required_files exactly (bd delete junk, one bead per path): %w", err)
+		}
 	}
 	return nil
 }

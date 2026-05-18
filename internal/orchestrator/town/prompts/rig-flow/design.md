@@ -25,7 +25,11 @@ Polecat implements code later from SPEC. Your architecture doc should **describe
    CMD: cat {{rig}}/mayor/rig/SPEC.md
    ```
 2. Write **only** `{{rig}}/mayor/rig/architecture.md` using a heredoc. Match the **actual** project in SPEC (title, layout_root `{{layout_root}}`, required files: {{required_files}}). Do **not** copy example projects from other rigs.
-3. Verify: `CMD: wc -c {{rig}}/mayor/rig/architecture.md`
+3. Verify size **before** reporting success (must be ≥ {{min_architecture_bytes}} bytes):
+   ```
+   CMD: wc -c {{rig}}/mayor/rig/architecture.md
+   ```
+   If under the minimum, expand the heredoc (per-file API/behavior, data model, error cases, acceptance mapping) and rewrite `architecture.md` — do not report success until `wc -c` meets the threshold.
 4. Architecture must reference the real SPEC goals and planned layout under `{{layout_root}}/` (or paths SPEC defines) without creating those files.
 
 ## Required write pattern

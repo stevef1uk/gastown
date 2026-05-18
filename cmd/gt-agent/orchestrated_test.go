@@ -35,6 +35,33 @@ func TestParseOrchestratedCommands_gluedDoubleQuoteCMD(t *testing.T) {
 	}
 }
 
+func TestResponseHasUnterminatedHeredoc(t *testing.T) {
+	truncated := "CMD: cat > plan.md <<'EOF'\n# Plan\nline two\nno terminator"
+	if !responseHasUnterminatedHeredoc(truncated) {
+		t.Fatal("expected truncated heredoc")
+	}
+	complete := "CMD: cat > plan.md <<'EOF'\n# Plan\nline two\nEOF\n"
+	if responseHasUnterminatedHeredoc(complete) {
+		t.Fatal("expected complete heredoc")
+	}
+}
+
+func TestExtractBeadCreateTitle_quotedTitleInBashLc(t *testing.T) {
+	cmd := `bash -lc 'export BEADS_DIR=$GT_ROOT/testgt3/.beads && cd testgt3/mayor/rig && bd create --type task --title "Implement linkshelf/go.mod per architecture" --description="Implement linkshelf/go.mod: see architecture.md"'`
+	got := extractBeadCreateTitle(cmd)
+	want := "Implement linkshelf/go.mod per architecture"
+	if got != want {
+		t.Fatalf("title = %q, want %q", got, want)
+	}
+	v := orchestrator.WorkflowValidation{
+		BeadTitleContains: "Implement linkshelf/",
+		RequiredFiles:     []string{"linkshelf/go.mod"},
+	}
+	if err := orchestrator.ValidateImplementBeadCreateTitle(got, v); err != nil {
+		t.Fatalf("ValidateImplementBeadCreateTitle: %v", err)
+	}
+}
+
 func TestParseOrchestratedCommands_gluedPlannerLine(t *testing.T) {
 	in := "CMD: ls -R mockrig/mayor/rig/CMD: cat mockrig/mayor/rig/SPEC.mdCMD: cat mockrig/mayor/rig/architecture.md{\"outcome\":\"failure\"}"
 	cmds := parseOrchestratedCommands(in)

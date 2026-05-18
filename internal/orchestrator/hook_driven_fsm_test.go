@@ -93,7 +93,7 @@ func TestRigFlowYAML_projectSetupHasAutoVerifyAndVenvCreate(t *testing.T) {
 	for _, av := range h.AutoVerify {
 		switch av.When {
 		case "go_mod_tidy":
-			hasGo = av.Verify == "go_with_tidy"
+			hasGo = av.Verify == "go_setup"
 		case "pip_install":
 			hasPip = av.Verify == "python"
 		}

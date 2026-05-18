@@ -114,8 +114,17 @@ func ValidatePlanBeads(beads []PlanBead, archPath string, v WorkflowValidation) 
 	if len(dupes) > 0 {
 		return fmt.Errorf("duplicate open bead(s) for the same path: %s", strings.Join(dedupeStrings(dupes), "; "))
 	}
-	if len(impl) > len(expected)*2 {
-		return fmt.Errorf("too many open implementation beads (%d); expected about %d (one per required file, no duplicates)", len(impl), len(expected))
+	var extra []string
+	for p, ids := range pathToIDs {
+		if !pathMatchesRequired(p, expected) || !IsValidImplementBeadPath(p) {
+			extra = append(extra, fmt.Sprintf("%s (%s)", p, strings.Join(ids, ", ")))
+		}
+	}
+	if len(extra) > 0 {
+		return fmt.Errorf("extra open bead(s) not in required_files (bd delete --force): %s", strings.Join(dedupeStrings(extra), "; "))
+	}
+	if len(impl) != len(expected) {
+		return fmt.Errorf("open implementation beads (%d) must equal required_files (%d) — one bead per path, no extras", len(impl), len(expected))
 	}
 	return nil
 }

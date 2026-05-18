@@ -129,6 +129,12 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 		orchestratedPrintf("[gt-agent] injecting prior failure context for %s/%s\n", task.WorkflowID, task.State)
 	}
 	runner := newStateRunner(task, townRoot, rig)
+	for _, block := range runner.promptContextBlocks() {
+		contextBlocks = append(contextBlocks, block)
+	}
+	if len(runner.hooks.PromptContext) > 0 {
+		orchestratedPrintf("[gt-agent] injecting prompt_context for %s/%s: %v\n", task.WorkflowID, task.State, runner.hooks.PromptContext)
+	}
 	runner.runPreRun()
 	if len(contextBlocks) > 0 {
 		userPrompt = strings.Join(contextBlocks, "\n\n") + "\n\n" + userPrompt
@@ -166,6 +172,17 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 		runner.runPerTurn()
 
 		cmdBlocks := parseOrchestratedCommands(response)
+		if len(cmdBlocks) == 0 && responseHasUnterminatedHeredoc(response) {
+			msg := "Your reply started a heredoc (e.g. plan.md <<'EOF') but never sent a line with only EOF — the message was cut off, so no command ran.\n\n" +
+				"Fix: use a **shorter** plan.md (list real te-xxx IDs from bd list; one section per required file). " +
+				"Split across turns: (1) `bd list --status=open`, (2) `cat > plan.md <<'EOF'` … body … `EOF` on its own line, (3) `wc -c plan.md`, (4) JSON success only."
+			if h := runner.failureHint(); h != "" {
+				msg += "\n\n" + h
+			}
+			recordAttemptFeedback(msg + "\n")
+			messages = append(messages, llm.Message{Role: "user", Content: msg})
+			continue
+		}
 		if len(cmdBlocks) > 0 {
 			var combined strings.Builder
 			for _, cmd := range cmdBlocks {
@@ -228,6 +245,16 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 		}
 
 		if o, s, ok := parseOrchestratedResult(response, task.AllowedOutcomes); ok {
+			o = normalizeOrchestratedOutcome(o, task.AllowedOutcomes)
+			if isOrchestratedFailureOutcome(o) && runner.hooks.Artifacts == "planning" {
+				if vErr := runner.validateArtifacts("success"); vErr == nil {
+					orchestratedPrintf("[gt-agent] ignoring planning failure JSON — artifacts already satisfy success (min_plan_bytes=%d)\n", runner.v.MinPlanBytes)
+					msg := fmt.Sprintf("Do not report failure: plan.md and beads already meet requirements (≥ %d bytes). Reply with JSON only: {\"outcome\":\"success\",\"summary\":\"plan and beads ready for plan review\"}", runner.v.MinPlanBytes)
+					recordAttemptFeedback(msg + "\n")
+					messages = append(messages, llm.Message{Role: "user", Content: msg})
+					continue
+				}
+			}
 			if vErr := validateOutcomeForTask(task, townRoot, rig, o, s); vErr != nil {
 				orchestratedPrintf("[gt-agent] summary validation failed: %v\n", vErr)
 				msg := "Validation failed: " + vErr.Error() + ". Run `bd list` and copy bead IDs exactly into the summary."
@@ -237,7 +264,7 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 			}
 			if vErr := runner.validateArtifacts(o); vErr != nil {
 				orchestratedPrintf("[gt-agent] artifact validation failed: %v\n", vErr)
-				msg := "Validation failed: " + vErr.Error() + ". " + runner.failureHint()
+				msg := runner.artifactFailureFeedback(vErr)
 				recordAttemptFeedback(msg + "\n")
 				messages = append(messages, llm.Message{Role: "user", Content: msg})
 				continue
@@ -245,7 +272,17 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 			return o, s, lastAttemptFeedback.String(), nil
 		}
 
+		if strings.TrimSpace(response) == "" {
+			msg := runner.emptyResponseNudge()
+			recordAttemptFeedback(msg + "\n")
+			messages = append(messages, llm.Message{Role: "user", Content: msg})
+			continue
+		}
+
 		hint := "Use CMD: lines to run shell commands (heredoc for multi-line files). When done, reply with JSON only: {\"outcome\":\"...\",\"summary\":\"...\"}"
+		if responseHasUnterminatedHeredoc(response) {
+			hint = "Heredoc was truncated — shorten plan.md and end with a line containing only EOF, then wc -c."
+		}
 		recordAttemptFeedback(hint + "\n")
 		messages = append(messages, llm.Message{Role: "user", Content: hint})
 	}
@@ -512,6 +549,25 @@ func isOrchestratedOutcomeLine(t string) bool {
 		return true
 	}
 	return false
+}
+
+// responseHasUnterminatedHeredoc reports whether the model started a heredoc but omitted the closing delimiter line.
+func responseHasUnterminatedHeredoc(response string) bool {
+	lines := strings.Split(response, "\n")
+	var heredocTerm string
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if heredocTerm != "" {
+			if trimmed == heredocTerm {
+				heredocTerm = ""
+			}
+			continue
+		}
+		if term := detectHeredocTerm(line); term != "" {
+			heredocTerm = term
+		}
+	}
+	return heredocTerm != ""
 }
 
 // parseOrchestratedCommands extracts CMD blocks without treating JSON or outcome lines as shell.
@@ -932,6 +988,89 @@ func isBeadCreateCommand(cmd string) bool {
 		(strings.Contains(lower, "bd") && strings.Contains(lower, " create"))
 }
 
+// extractBeadCreateTitle returns the title string from a bd create command.
+func extractBeadCreateTitle(cmd string) string {
+	idx := strings.Index(strings.ToLower(cmd), "bd create")
+	if idx < 0 {
+		return ""
+	}
+	rest := strings.TrimSpace(cmd[idx+len("bd create"):])
+	if rest == "" {
+		return ""
+	}
+	if title := extractCLIFlagValue(rest, "--title", "-t"); title != "" {
+		return title
+	}
+	return takeShellWord(rest)
+}
+
+// extractCLIFlagValue reads --flag value or --flag=value (quoted values may contain spaces).
+func extractCLIFlagValue(s string, flags ...string) string {
+	lower := strings.ToLower(s)
+	for _, flag := range flags {
+		fl := strings.ToLower(flag)
+		search := 0
+		for {
+			pos := strings.Index(lower[search:], fl)
+			if pos < 0 {
+				break
+			}
+			pos += search
+			after := pos + len(flag)
+			if after < len(s) && s[after] == '=' {
+				return takeShellWord(strings.TrimSpace(s[after+1:]))
+			}
+			if after >= len(s) {
+				break
+			}
+			if s[after] != ' ' && s[after] != '\t' {
+				search = pos + 1
+				continue
+			}
+			val := strings.TrimSpace(s[after:])
+			if val != "" {
+				return takeShellWord(val)
+			}
+			break
+		}
+	}
+	return ""
+}
+
+// takeShellWord returns the first shell token (handles "quoted strings" with spaces).
+func takeShellWord(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return ""
+	}
+	switch s[0] {
+	case '"':
+		var b strings.Builder
+		for i := 1; i < len(s); i++ {
+			if s[i] == '\\' && i+1 < len(s) {
+				b.WriteByte(s[i+1])
+				i++
+				continue
+			}
+			if s[i] == '"' {
+				return b.String()
+			}
+			b.WriteByte(s[i])
+		}
+		return strings.Trim(s, `"`)
+	case '\'':
+		if end := strings.IndexByte(s[1:], '\''); end >= 0 {
+			return s[1 : 1+end]
+		}
+		return strings.Trim(s, `'`)
+	default:
+		if sp := strings.IndexAny(s, " \t"); sp >= 0 {
+			return s[:sp]
+		}
+		return s
+	}
+}
+
 func isBeadCloseCommand(cmd string) bool {
 	lower := strings.ToLower(cmd)
 	return strings.Contains(lower, "bd close") ||
@@ -1060,7 +1199,6 @@ func validatePlanningCommand(cmd, rig string) error {
 	if err := validatePlanningShellSideEffects(lower); err != nil {
 		return err
 	}
-
 	if strings.Contains(lower, ">") {
 		if strings.Contains(lower, "plan.md") {
 			return nil
@@ -1070,6 +1208,20 @@ func validatePlanningCommand(cmd, rig string) error {
 		}
 		if rigSlash != "" && strings.Contains(lower, rigSlash) {
 			return fmt.Errorf("may only write plan.md under %s/mayor/rig/", rigPrefix)
+		}
+	}
+	return nil
+}
+
+func validatePlanningCommandWithProfile(cmd, rig string, v orchestrator.WorkflowValidation) error {
+	if err := validatePlanningCommand(cmd, rig); err != nil {
+		return err
+	}
+	if isBeadCreateCommand(cmd) {
+		if title := extractBeadCreateTitle(cmd); title != "" {
+			if err := orchestrator.ValidateImplementBeadCreateTitle(title, v); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -1600,7 +1752,8 @@ func validateDesignArtifacts(townRoot, rig string, writtenThisRun bool, v orches
 		return fmt.Errorf("architecture.md missing at %s", archPath)
 	}
 	if info.Size() < v.MinArchitectureBytes {
-		return fmt.Errorf("architecture.md too small (%d bytes); need ≥%d", info.Size(), v.MinArchitectureBytes)
+		short := v.MinArchitectureBytes - info.Size()
+		return fmt.Errorf("architecture.md too small (%d bytes); need ≥%d (%d more). Run `CMD: wc -c %s/mayor/rig/architecture.md`, then rewrite the heredoc with fuller per-file sections (API tables, data model, acceptance) before JSON success", info.Size(), v.MinArchitectureBytes, short, rig)
 	}
 	// Stale implementation files at mayor/rig root must not block design completion.
 	for _, name := range v.ForbiddenRigRootBasenames() {
@@ -1612,31 +1765,54 @@ func validateDesignArtifacts(townRoot, rig string, writtenThisRun bool, v orches
 }
 
 func buildOrchestratedSystemPrompt(task *orchestrator.Task) string {
+	vars := orchestratorPromptVars(task)
 	var b strings.Builder
 	if task.SystemPrompt != "" {
-		b.WriteString(task.SystemPrompt)
-		b.WriteString("\n\n")
+		b.WriteString(strings.TrimSpace(task.SystemPrompt))
 	}
-	b.WriteString("## Orchestrator context\n")
-	b.WriteString(fmt.Sprintf("- Workflow: %s (%s)\n", task.TemplateID, task.WorkflowID))
-	b.WriteString(fmt.Sprintf("- State: %s\n", task.State))
-	b.WriteString(fmt.Sprintf("- Role: %s\n", task.Role))
-	if len(task.AllowedOutcomes) > 0 {
-		b.WriteString(fmt.Sprintf("- Allowed outcomes: %s\n", strings.Join(task.AllowedOutcomes, ", ")))
+	if !task.Hooks.OmitOrchestratorContext {
+		if task.SystemPrompt != "" {
+			b.WriteString("\n\n")
+		}
+		b.WriteString("## Orchestrator context\n")
+		b.WriteString(fmt.Sprintf("- Workflow: %s (%s)\n", task.TemplateID, task.WorkflowID))
+		b.WriteString(fmt.Sprintf("- State: %s\n", task.State))
+		b.WriteString(fmt.Sprintf("- Role: %s\n", task.Role))
+		if len(task.AllowedOutcomes) > 0 {
+			b.WriteString(fmt.Sprintf("- Allowed outcomes: %s\n", strings.Join(task.AllowedOutcomes, ", ")))
+		}
+		b.WriteString("\nComplete **only this step**.\n")
+		b.WriteString("1. Run shell work as `CMD: <command>` lines (use a single heredoc CMD for multi-line files).\n")
+		b.WriteString("2. After commands succeed, send a **separate** message with JSON only (no CMD lines in that message):\n")
+		b.WriteString(`{"outcome":"<one allowed outcome>","summary":"<brief result>"}`)
+		b.WriteString("\nDo not put JSON on the same line as CMD. Do not use `cat > file` without a heredoc body.\n")
 	}
-	b.WriteString("\nComplete **only this step**.\n")
-	b.WriteString("1. Run shell work as `CMD: <command>` lines (use a single heredoc CMD for multi-line files).\n")
-	b.WriteString("2. After commands succeed, send a **separate** message with JSON only (no CMD lines in that message):\n")
-	b.WriteString(`{"outcome":"<one allowed outcome>","summary":"<brief result>"}`)
-	b.WriteString("\nDo not put JSON on the same line as CMD. Do not use `cat > file` without a heredoc body.\n")
+	if footer := task.Hooks.SystemPromptFooterText(vars); footer != "" {
+		if b.Len() > 0 {
+			b.WriteString("\n\n")
+		}
+		b.WriteString(footer)
+	}
 	return b.String()
 }
 
-func buildOrchestratedUserPrompt(task *orchestrator.Task) string {
-	if task.TaskPrompt != "" {
-		return "Complete this step only:\n\n" + task.TaskPrompt
+func orchestratorPromptVars(task *orchestrator.Task) map[string]string {
+	vars := map[string]string{"rig": task.Rig}
+	for k, v := range task.Validation.WithDefaults().PromptVars() {
+		vars[k] = v
 	}
-	return "Complete this step only:\n\n" + task.Instructions
+	return vars
+}
+
+func buildOrchestratedUserPrompt(task *orchestrator.Task) string {
+	body := task.Instructions
+	if task.TaskPrompt != "" {
+		body = task.TaskPrompt
+	}
+	if !task.Hooks.UserPromptWrapsWithCompleteStep() {
+		return body
+	}
+	return "Complete this step only:\n\n" + body
 }
 
 func parseOrchestratedResult(response string, allowed []string) (outcome, summary string, ok bool) {

@@ -31,8 +31,12 @@ const (
 	MinArtifactBytesFloor       int64 = 200
 	DefaultMinPlanBytes         int64 = 2500
 	MaxMinPlanBytes             int64 = 4096
-	DefaultMinArchitectureBytes int64 = 8192
+	DefaultMinArchitectureBytes int64 = 4000
 	MaxMinArchitectureBytes     int64 = 8192
+	// SmallRigMaxArchitectureBytes caps min_architecture_bytes when the profile lists few files
+	// (e.g. Link Shelf). Spec-index often requests 8k+; a complete doc for 7 paths is ~3–4k.
+	SmallRigMaxArchitectureBytes int64 = 3200
+	smallRigRequiredFileCap        = 10
 )
 
 // DefaultWorkflowValidation returns minimal rig-flow defaults when YAML/profile omit validation.
@@ -57,6 +61,19 @@ func ClampProfileValidation(v WorkflowValidation) WorkflowValidation {
 	}
 	if v.MinSubstantiveLines > 20 {
 		v.MinSubstantiveLines = DefaultMinSubstantiveLines
+	}
+	v = capArchitectureBytesForSmallRig(v)
+	return v
+}
+
+// capArchitectureBytesForSmallRig lowers min_architecture_bytes when required_files is a short list.
+func capArchitectureBytesForSmallRig(v WorkflowValidation) WorkflowValidation {
+	n := len(v.RequiredFiles)
+	if n == 0 || n > smallRigRequiredFileCap {
+		return v
+	}
+	if v.MinArchitectureBytes > SmallRigMaxArchitectureBytes {
+		v.MinArchitectureBytes = SmallRigMaxArchitectureBytes
 	}
 	return v
 }

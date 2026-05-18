@@ -45,18 +45,27 @@ Use **Go** or **Python** instructions below based on the profile (`{{project_set
 | Allowed | Forbidden |
 |---------|-----------|
 | `go mod init`, `go get`, `go mod tidy` under `{{layout_root}}/` | Writing `go.mod` or `go.sum` via heredoc |
-| `mkdir -p {{layout_root}}` only | pytest, pip, Python venv, gorilla/mux |
+| `mkdir -p {{rig}}/mayor/rig/{{layout_root}}` only | **Any** `cat`/`heredoc`/`touch`/`echo >` under `{{layout_root}}/` (no `.go`, `.js`, `.html`, `.css`) |
+| `bd list` (pre_run auto-dedupes duplicate implement beads) | `bd create` new implement beads — planner already created them |
+| Run `{{project_setup_verify_hint}}` after module commands | `go build`, `go run`, `go test`, `curl` |
 
-### Go commands (example)
+**project_setup leaves `{{layout_root}}/` with only `go.mod` + `go.sum`.** If `go.mod` already exists, skip `go mod init` and run `go get` + `go mod tidy` only.
+
+### Go commands (example — one CMD per line, no markdown fences)
 
 ```
 CMD: mkdir -p {{rig}}/mayor/rig/{{layout_root}}
 CMD: cd {{rig}}/mayor/rig/{{layout_root}} && go mod init linkshelf
 CMD: cd {{rig}}/mayor/rig/{{layout_root}} && go get modernc.org/sqlite@v1.29.0
 CMD: cd {{rig}}/mayor/rig/{{layout_root}} && go mod tidy
+CMD: cd {{rig}}/mayor/rig/{{layout_root}} && go mod tidy
 ```
 
-Success JSON: `{"outcome":"success","summary":"Go module scaffolded; beads split; verify passed"}`
+Wait for verify output, then a **later** message with JSON only:
+
+`{"outcome":"success","summary":"Go module scaffolded; beads OK; verify passed"}`
+
+Do **not** put JSON in the same message as `CMD:` lines.
 
 ---
 
