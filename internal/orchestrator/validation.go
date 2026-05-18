@@ -61,6 +61,40 @@ func ClampProfileValidation(v WorkflowValidation) WorkflowValidation {
 	return v
 }
 
+// NormalizeLayoutProfile prefixes required_files with layout_root and ensures Go
+// qa_verify_command runs from the module directory when the LLM omitted cd.
+func NormalizeLayoutProfile(v WorkflowValidation) WorkflowValidation {
+	layout := strings.Trim(strings.TrimSpace(v.LayoutRoot), "/")
+	if layout == "" || layout == "." {
+		return v
+	}
+	if len(v.RequiredFiles) > 0 {
+		out := make([]string, 0, len(v.RequiredFiles))
+		for _, f := range v.RequiredFiles {
+			f = filepath.ToSlash(strings.TrimSpace(f))
+			if f == "" {
+				continue
+			}
+			if !strings.HasPrefix(f, layout+"/") && !strings.Contains(f, "..") {
+				f = layout + "/" + strings.TrimPrefix(f, "/")
+			}
+			out = append(out, f)
+		}
+		v.RequiredFiles = out
+	}
+	qa := strings.TrimSpace(v.QAVerifyCommand)
+	if qa != "" && WorkflowUsesGo(v) {
+		lower := strings.ToLower(qa)
+		cdLayout := "cd " + layout
+		if !strings.Contains(lower, cdLayout) && !strings.Contains(lower, "cd ./"+layout) {
+			if !strings.Contains(lower, "cd ") {
+				v.QAVerifyCommand = cdLayout + " && " + qa
+			}
+		}
+	}
+	return v
+}
+
 func clampArtifactBytes(value, defaultVal, floor, ceiling int64) int64 {
 	if value <= 0 {
 		return defaultVal
@@ -199,7 +233,8 @@ func (v WorkflowValidation) PromptVars() map[string]string {
 		"required_files":          strings.Join(v.RequiredFiles, ", "),
 		"requirements_file":       req,
 		"spec_summary":            v.SpecSummary,
-		"unittest_command_hint":   v.UnittestCommandHint(),
+		"unittest_command_hint":        v.UnittestCommandHint(),
+		"project_setup_verify_hint":    v.ProjectSetupVerifyHint(),
 		"python_venv_dir":         v.PythonVenvRelDir(),
 		"min_architecture_bytes":        fmt.Sprintf("%d", v.MinArchitectureBytes),
 		"min_plan_bytes":                fmt.Sprintf("%d", v.MinPlanBytes),
@@ -232,6 +267,17 @@ func (v WorkflowValidation) ForbiddenRigRootBasenames() []string {
 		}
 	}
 	return out
+}
+
+// ProjectSetupVerifyHint returns the verify command agents should run in project_setup.
+func (v WorkflowValidation) ProjectSetupVerifyHint() string {
+	if WorkflowUsesGo(v) {
+		return GoProjectSetupVerifyCommand(v)
+	}
+	if WorkflowUsesPython(v) {
+		return PythonVerifyCommand(v)
+	}
+	return v.UnittestCommandHint()
 }
 
 // UnittestCommandHint returns the suggested QA command for error messages.

@@ -46,4 +46,10 @@ func TestAgentMatchesTask_edgeCases(t *testing.T) {
 	if !AgentMatchesTask("planner", "planner", nil) {
 		t.Fatal("town planner without rig var should match")
 	}
+	if AgentMatchesTask("planner", "setup", vars) {
+		t.Fatal("planner must not claim project_setup (role setup)")
+	}
+	if !AgentMatchesTask("setup", "setup", vars) {
+		t.Fatal("town setup agent should claim project_setup")
+	}
 }

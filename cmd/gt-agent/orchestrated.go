@@ -155,6 +155,7 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 
 	maxTurns := runner.maxTurns()
 	for turn := 1; turn <= maxTurns; turn++ {
+		orchestratedPrintf("[gt-agent] LLM request (turn %d)...\n", turn)
 		response, llmErr := client.CompleteMessages(ctx, messages)
 		if llmErr != nil {
 			return "fail", "", lastAttemptFeedback.String(), llmErr
@@ -168,6 +169,10 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 		if len(cmdBlocks) > 0 {
 			var combined strings.Builder
 			for _, cmd := range cmdBlocks {
+				if strings.Contains(cmd, "CMD:") {
+					orchestratedFprintfStderr("[gt-agent] warning: dropping malformed command with embedded CMD:\n")
+					continue
+				}
 				if err := runner.validateCommand(cmd); err != nil {
 					orchestratedFprintfStderr("[gt-agent] rejected command: %v\n", err)
 					combined.WriteString(fmt.Sprintf("Command REJECTED (%s): %s\nReason: %v\n\n", runner.rejectScope(), cmd, err))
@@ -258,11 +263,26 @@ func isOrchestratedFailureOutcome(outcome string) bool {
 }
 
 func truncateOrchestratedFeedback(s string, max int) string {
+	s = sanitizeRetryFeedbackForLLM(s)
 	s = strings.TrimSpace(s)
 	if max <= 0 || len(s) <= max {
 		return s
 	}
 	return "...(truncated)\n" + s[len(s)-max:]
+}
+
+// htmlRetryDumpRE matches curl false-positives (agent-console Svelte HTML on :8080).
+var htmlRetryDumpRE = regexp.MustCompile(`(?is)<!doctype html>[\s\S]*?</html>`)
+
+// sanitizeRetryFeedbackForLLM strips huge HTML verify noise before the next LLM turn.
+func sanitizeRetryFeedbackForLLM(s string) string {
+	if s == "" {
+		return s
+	}
+	if htmlRetryDumpRE.MatchString(s) {
+		s = htmlRetryDumpRE.ReplaceAllString(s, "\n[verify output: unrelated HTML on :8080 — not Link Shelf; use go mod tidy only in project_setup]\n")
+	}
+	return s
 }
 
 // formatWorkflowReworkBlock returns cross-step failure context (e.g. QA plan_review → planner).
@@ -366,7 +386,7 @@ func formatOrchestratedRetryBlock(prior *OrchestratedRetry, task *orchestrator.T
 	b.WriteString(fmt.Sprintf("- Summary: %s\n", prior.Summary))
 	if prior.Feedback != "" {
 		b.WriteString("\n### Command output from that attempt\n")
-		b.WriteString(prior.Feedback)
+		b.WriteString(sanitizeRetryFeedbackForLLM(prior.Feedback))
 		b.WriteString("\n")
 	}
 	b.WriteString("\nFix the issues above. Use bead IDs and paths from command output — do not invent IDs.\n")
@@ -502,7 +522,29 @@ func parseOrchestratedCommands(response string) []string {
 	// Un-glue EOF'CMD: and similar before line-oriented parsing (polecat heredoc bursts).
 	filtered = normalizeGluedCMDMarkers(filtered)
 	cmds, _, _ := parseLLMResponse(filtered)
-	return cmds
+	return expandGluedOrchestratedCommands(cmds)
+}
+
+// expandGluedOrchestratedCommands splits shell lines that embed CMD: markers mid-command.
+func expandGluedOrchestratedCommands(cmds []string) []string {
+	var out []string
+	for _, c := range cmds {
+		c = strings.TrimSpace(c)
+		if c == "" {
+			continue
+		}
+		if !strings.Contains(c, "CMD:") {
+			out = append(out, c)
+			continue
+		}
+		for _, part := range splitInlineCMDs(c) {
+			part = strings.TrimSpace(part)
+			if part != "" {
+				out = append(out, part)
+			}
+		}
+	}
+	return out
 }
 
 // stripModelToolArtifacts removes [TOOL_CALLS] markers and hallucinated shell output
@@ -592,8 +634,9 @@ func discoverOrchestratedRigName(townRoot string) string {
 }
 
 // rewriteOrchestratedRigPlaceholders fixes commands that copied the old "RIG/mayor/rig"
-// placeholder from error hints when the workflow rig variable was empty.
-func rewriteOrchestratedRigPlaceholders(cmd, rig string) (string, bool) {
+// placeholder from error hints when the workflow rig variable was empty, and rewrites
+// hallucinated absolute town paths (e.g. /home/ubuntu/gt) to the real town root.
+func rewriteOrchestratedRigPlaceholders(cmd, townRoot, rig string) (string, bool) {
 	rig = strings.TrimSpace(rig)
 	if rig == "" {
 		return cmd, false
@@ -601,6 +644,13 @@ func rewriteOrchestratedRigPlaceholders(cmd, rig string) (string, bool) {
 	work := rig + "/mayor/rig"
 	out := cmd
 	changed := false
+	if townRoot != "" {
+		townRoot = strings.TrimRight(filepath.Clean(townRoot), string(filepath.Separator))
+		if alt, ok := rewriteHallucinatedAbsoluteTownRoot(out, townRoot, rig, work); ok {
+			out = alt
+			changed = true
+		}
+	}
 	replacements := []struct{ from, to string }{
 		{"RIG/mayor/rig", work},
 		{"rig/mayor/rig", work}, // empty {{rig}} substitution
@@ -615,6 +665,46 @@ func rewriteOrchestratedRigPlaceholders(cmd, rig string) (string, bool) {
 			out = strings.ReplaceAll(out, r.from, r.to)
 			changed = true
 		}
+	}
+	return out, changed
+}
+
+// rewriteHallucinatedAbsoluteTownRoot replaces wrong absolute town paths in agent CMD lines.
+func rewriteHallucinatedAbsoluteTownRoot(cmd, townRoot, rig, work string) (string, bool) {
+	out := cmd
+	changed := false
+	// ~/gt/<rig>/... from town cwd — never replace bare "/gt" (breaks ~/gt/ → ~<rig>).
+	if strings.Contains(out, "~/gt/") {
+		out = strings.ReplaceAll(out, "~/gt/", "")
+		changed = true
+	}
+	if strings.Contains(out, "~$GT_ROOT") {
+		out = strings.ReplaceAll(out, "~$GT_ROOT", "$GT_ROOT")
+		changed = true
+	}
+	for _, wrongRoot := range []string{"/home/ubuntu/gt", "/workspace/gt"} {
+		if strings.Contains(out, wrongRoot) {
+			out = strings.ReplaceAll(out, wrongRoot, townRoot)
+			changed = true
+		}
+	}
+	rigWorkAbs := townRoot + string(filepath.Separator) + filepath.FromSlash(work)
+	if strings.Contains(out, rigWorkAbs) {
+		repl := work
+		if strings.Contains(out, "$GT_ROOT") {
+			repl = "$GT_ROOT/" + work
+		}
+		out = strings.ReplaceAll(out, rigWorkAbs, repl)
+		changed = true
+	}
+	rigAbs := townRoot + string(filepath.Separator) + rig
+	if strings.Contains(out, rigAbs+"/") {
+		repl := rig + "/"
+		if strings.Contains(out, "$GT_ROOT") {
+			repl = "$GT_ROOT/" + rig + "/"
+		}
+		out = strings.ReplaceAll(out, rigAbs+"/", repl)
+		changed = true
 	}
 	return out, changed
 }
@@ -669,25 +759,31 @@ func planMDMeetsMinSize(townRoot, rig string) bool {
 	return info.Size() >= orchestrator.DefaultWorkflowValidation().MinPlanBytes
 }
 
-// rewriteBackendPathAfterCD fixes polecat writing rig/mayor/rig/backend/... after cd into worktree.
-func rewriteBackendPathAfterCD(cmd, rig string) (string, bool) {
+// rewriteBackendPathAfterCD fixes paths like rig/mayor/rig/<layout>/... after cd into mayor/rig.
+// Uses profile layout_root when set; otherwise "backend" for legacy Python rigs.
+func rewriteBackendPathAfterCD(cmd, rig, layoutRoot string) (string, bool) {
 	rigName := strings.TrimSpace(rig)
+	layout := strings.Trim(strings.TrimSpace(layoutRoot), "/")
+	if layout == "" || layout == "." {
+		layout = "backend"
+	}
 	if rigName == "" {
 		return cmd, false
 	}
 	mayorRig := rigName + "/mayor/rig"
 	lower := strings.ToLower(cmd)
-	if !strings.Contains(lower, "backend/") || !strings.Contains(lower, "cd ") {
+	needle := strings.ToLower(layout) + "/"
+	if !strings.Contains(lower, needle) || !strings.Contains(lower, "cd ") {
 		return cmd, false
 	}
 	if !strings.Contains(lower, strings.ToLower(mayorRig)) {
 		return cmd, false
 	}
-	wrong := mayorRig + "/backend/"
+	wrong := mayorRig + "/" + layout + "/"
 	if !strings.Contains(cmd, wrong) {
 		return cmd, false
 	}
-	return strings.ReplaceAll(cmd, wrong, "backend/"), true
+	return strings.ReplaceAll(cmd, wrong, layout+"/"), true
 }
 
 // rewritePlanMDPathAfterCD fixes a common planner mistake: after `cd rig/mayor/rig`,
@@ -1000,9 +1096,8 @@ func validateImplementationCommand(cmd, rig string) error {
 	if strings.Contains(lower, "git push") {
 		return fmt.Errorf("do not push to remote during orchestrator implementation (local commits only)")
 	}
-	if strings.Contains(lower, "git add .") || strings.Contains(lower, "git add -a") ||
-		strings.Contains(lower, "git add --all") {
-		return fmt.Errorf("do not git add . — stage only files under %s/backend/", rigMayorRigPath(rig))
+	if isGitAddEntireWorktree(lower) {
+		return fmt.Errorf("do not git add entire worktree — stage a path (e.g. git add -A <layout_root>/) from %s", rigMayorRigPath(rig))
 	}
 	for _, artifact := range []string{"/typescript", ".claude/", ".gt-agent", ".runtime/", "bookmarks.txt", "dummy.py", "plan_complete.js"} {
 		if strings.Contains(lower, artifact) {
@@ -1188,10 +1283,31 @@ func isUnittestCommand(cmd, unittestModule string) bool {
 	return strings.Contains(lower, mod) || (slashMod != mod && strings.Contains(lower, slashMod))
 }
 
-func isGitCommitBackendCommand(cmd string) bool {
+func isGitAddEntireWorktree(lower string) bool {
+	if strings.Contains(lower, "git add .") || strings.Contains(lower, "git add --all") {
+		return true
+	}
+	for _, flag := range []string{"git add -a", "git add -all"} {
+		idx := strings.Index(lower, flag)
+		if idx < 0 {
+			continue
+		}
+		rest := strings.TrimSpace(lower[idx+len(flag):])
+		if rest == "" || strings.HasPrefix(rest, "&&") || strings.HasPrefix(rest, ";") {
+			return true
+		}
+	}
+	return false
+}
+
+func isGitCommitLayoutCommand(cmd, layoutRoot string) bool {
+	layout := strings.Trim(strings.TrimSpace(layoutRoot), "/")
+	if layout == "" || layout == "." {
+		layout = "backend"
+	}
 	lower := strings.ToLower(cmd)
 	return strings.Contains(lower, "git") && strings.Contains(lower, "commit") &&
-		strings.Contains(lower, "backend")
+		strings.Contains(lower, strings.ToLower(layout))
 }
 
 func isQAReadOnlyCommand(cmd string) bool {

@@ -142,7 +142,7 @@ Output JSON only.`
 	if v.LayoutRoot == "." {
 		v.LayoutRoot = ""
 	}
-	v = orchestrator.ClampProfileValidation(v)
+	v = orchestrator.ClampProfileValidation(orchestrator.NormalizeLayoutProfile(v))
 	conf := strings.TrimSpace(payload.Confidence)
 	if conf == "" {
 		conf = "medium"

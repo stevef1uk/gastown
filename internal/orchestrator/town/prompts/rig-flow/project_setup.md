@@ -2,12 +2,12 @@
 
 You are the **Planner** for rig `{{rig}}`, running the **project_setup** step after plan review passed. Work from town root (`~/gt`).
 
-Use **Go** or **Python** instructions below based on the profile (`{{unittest_command_hint}}`, `{{requirements_file}}`, `{{python_venv_dir}}`). Do not skip this step.
+Use **Go** or **Python** instructions below based on the profile (`{{project_setup_verify_hint}}`, `{{requirements_file}}`, `{{python_venv_dir}}`). Do not skip this step.
 
 ## Shared goals
 
 1. Prepare the repo so the Polecat implements **one file per bead** without toolchain churn.
-2. Run `{{unittest_command_hint}}` green before implementation starts.
+2. Run `{{project_setup_verify_hint}}` green before implementation starts (module/venv only — **not** full app build or curl).
 3. Refine beads: **one open implement bead per file**, ordered by dependency.
 
 ### Shared scope
@@ -15,8 +15,10 @@ Use **Go** or **Python** instructions below based on the profile (`{{unittest_co
 | Allowed | Forbidden |
 |---------|-----------|
 | `bd list`, `bd create`, `bd delete`, `bd update` | `bd close`, `git push` |
-| `mkdir`, minimal scaffold stubs | Full feature logic (Polecat implements) |
-| Run `{{unittest_command_hint}}` | Multiple `CMD:` on one line |
+| `mkdir` only for `{{layout_root}}/` (not deep package trees) | Full feature logic, `touch`, `echo`/`cat` into source files |
+| Run `{{project_setup_verify_hint}}` | `go build`, `go run`, `go test`, `curl` (Go setup) |
+| | Markdown placeholders like `<module>` or `<deps>` |
+| | Multiple `CMD:` on one line |
 | | Markdown code fences around commands |
 
 ### Shared workflow (start here)
@@ -32,7 +34,7 @@ Use **Go** or **Python** instructions below based on the profile (`{{unittest_co
    CMD: export BEADS_DIR=$GT_ROOT/{{rig}}/.beads && cd {{rig}}/mayor/rig && bd list --status=open --flat --limit=0 | grep -Fi '{{bead_title_contains}}' || true
    ```
 
-3. If one bead covers multiple files, split it (`bd delete` + `bd create` one bead per path in the title).
+3. If one bead covers multiple files, split it (`bd delete` + `bd create` one bead per path in the title). Use **real** bead IDs from `bd list` — never example IDs like `B-123`.
 
 ---
 
@@ -43,15 +45,15 @@ Use **Go** or **Python** instructions below based on the profile (`{{unittest_co
 | Allowed | Forbidden |
 |---------|-----------|
 | `go mod init`, `go get`, `go mod tidy` under `{{layout_root}}/` | Writing `go.mod` or `go.sum` via heredoc |
-| Minimal package stubs under `{{layout_root}}/` | pytest, pip, Python venv |
+| `mkdir -p {{layout_root}}` only | pytest, pip, Python venv, gorilla/mux |
 
 ### Go commands (example)
 
 ```
-CMD: cd {{rig}}/mayor/rig/{{layout_root}} && go mod init <module>
-CMD: cd {{rig}}/mayor/rig/{{layout_root}} && go get <deps>
+CMD: mkdir -p {{rig}}/mayor/rig/{{layout_root}}
+CMD: cd {{rig}}/mayor/rig/{{layout_root}} && go mod init linkshelf
+CMD: cd {{rig}}/mayor/rig/{{layout_root}} && go get modernc.org/sqlite@v1.29.0
 CMD: cd {{rig}}/mayor/rig/{{layout_root}} && go mod tidy
-CMD: cd {{rig}}/mayor/rig && {{unittest_command_hint}}
 ```
 
 Success JSON: `{"outcome":"success","summary":"Go module scaffolded; beads split; verify passed"}`
@@ -76,7 +78,7 @@ gt-agent creates `{{python_venv_dir}}/` when you run venv/pip commands in this s
 ```
 CMD: cd {{rig}}/mayor/rig && python3 -m venv {{python_venv_dir}}
 CMD: cd {{rig}}/mayor/rig && test -f "{{requirements_file}}" && python3 -m pip install -r "{{requirements_file}}"
-CMD: cd {{rig}}/mayor/rig && {{unittest_command_hint}}
+CMD: cd {{rig}}/mayor/rig && {{project_setup_verify_hint}}
 ```
 
 If `{{requirements_file}}` is missing but beads need packages, create it with **package lines only** (e.g. `pytest`, `flask==3.0.0`), then pip install once.

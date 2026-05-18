@@ -16,6 +16,20 @@ func TestWorkflowUsesGo(t *testing.T) {
 	if !WorkflowUsesGo(WorkflowValidation{TestRunner: "go"}) {
 		t.Fatal("test_runner go")
 	}
+	if !WorkflowUsesGo(WorkflowValidation{QAVerifyCommand: "cd linkshelf && go run ./cmd/server"}) {
+		t.Fatal("expected Go from go run in qa_verify_command")
+	}
+}
+
+func TestGoProjectSetupVerifyCommand(t *testing.T) {
+	t.Parallel()
+	got := GoProjectSetupVerifyCommand(WorkflowValidation{LayoutRoot: "linkshelf"})
+	if got != "cd linkshelf && go mod tidy" {
+		t.Fatalf("got %q", got)
+	}
+	if strings.Contains(got, "go build") || strings.Contains(got, "curl") {
+		t.Fatalf("setup verify must not build or curl: %q", got)
+	}
 }
 
 func TestGoVerifyCommandWithTidy(t *testing.T) {

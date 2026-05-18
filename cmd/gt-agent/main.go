@@ -1386,6 +1386,8 @@ var inlineCMDMarkerRE = regexp.MustCompile(`(?:\s+CMD:|\nCMD:)\s*`)
 var gluedPathCMDRE = regexp.MustCompile(`/CMD:\s*`)
 var gluedExtCMDRE = regexp.MustCompile(`(\.[a-zA-Z0-9]{2,8})CMD:\s*`)
 var gluedQuoteCMDRE = regexp.MustCompile(`'CMD:\s*`)
+var gluedDoubleQuoteCMDRE = regexp.MustCompile(`"CMD:\s*`)
+var gluedParenCMDRE = regexp.MustCompile(`\)CMD:\s*`)
 var gluedEOFCMDRE = regexp.MustCompile(`(?i)EOF\s*'?\s*CMD:\s*`)
 var gluedOutcomeAfterQuoteRE = regexp.MustCompile(`'\s*\{[\s]*"outcome"`)
 
@@ -1396,6 +1398,8 @@ func normalizeGluedCMDMarkers(cmd string) string {
 	cmd = gluedPathCMDRE.ReplaceAllString(cmd, "\nCMD: ")
 	cmd = gluedExtCMDRE.ReplaceAllString(cmd, "$1\nCMD: ")
 	cmd = gluedQuoteCMDRE.ReplaceAllString(cmd, "'\nCMD: ")
+	cmd = gluedDoubleQuoteCMDRE.ReplaceAllString(cmd, "\"\nCMD: ")
+	cmd = gluedParenCMDRE.ReplaceAllString(cmd, ")\nCMD: ")
 	cmd = gluedEOFCMDRE.ReplaceAllString(cmd, "EOF\nCMD: ")
 	cmd = gluedOutcomeAfterQuoteRE.ReplaceAllString(cmd, "'\n")
 	return cmd

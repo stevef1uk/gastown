@@ -108,16 +108,12 @@ states:
       track: project_setup
       auto_verify:
         - when: go_mod_tidy
-          verify: go_with_tidy
+          verify: go_setup
         - when: go_mod_init
-          verify: go_with_tidy
+          verify: go_setup
         - when: pip_install
           verify: python
         - when: python_venv
-          verify: python
-        - when: qa_test_ok
-          verify: go_with_tidy
-        - when: qa_test_ok
           verify: python
       artifacts: project_setup
       retry_hint_key: project_setup

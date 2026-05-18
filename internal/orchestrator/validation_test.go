@@ -17,6 +17,23 @@ func TestWorkflowValidation_RequirementsFilePath(t *testing.T) {
 	}
 }
 
+func TestNormalizeLayoutProfile(t *testing.T) {
+	t.Parallel()
+	v := WorkflowValidation{
+		LayoutRoot:      "linkshelf",
+		RequiredFiles:   []string{"go.mod", "cmd/server/main.go"},
+		QAVerifyCommand: "go run ./cmd/server",
+		TestRunner:      "custom",
+	}
+	got := NormalizeLayoutProfile(v)
+	if got.RequiredFiles[0] != "linkshelf/go.mod" {
+		t.Fatalf("required_files[0] = %q", got.RequiredFiles[0])
+	}
+	if !strings.Contains(got.QAVerifyCommand, "cd linkshelf &&") {
+		t.Fatalf("qa_verify_command = %q", got.QAVerifyCommand)
+	}
+}
+
 func TestClampProfileValidation(t *testing.T) {
 	tests := []struct {
 		name string

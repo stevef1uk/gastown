@@ -130,7 +130,7 @@ func (r *stateRunner) rewriteCommand(cmd string) string {
 	for _, rw := range r.hooks.CmdRewrites {
 		switch rw {
 		case "rig_placeholders":
-			if fixed, ok := rewriteOrchestratedRigPlaceholders(cmd, r.rig); ok {
+			if fixed, ok := rewriteOrchestratedRigPlaceholders(cmd, r.townRoot, r.rig); ok {
 				orchestratedPrintf("[gt-agent] rewrote RIG placeholder paths → %s: %s\n", r.rig, fixed)
 				cmd = fixed
 			}
@@ -144,8 +144,8 @@ func (r *stateRunner) rewriteCommand(cmd string) string {
 				cmd = fixed
 			}
 		case "backend_path_after_cd":
-			if fixed, ok := rewriteBackendPathAfterCD(cmd, r.rig); ok {
-				orchestratedPrintf("[gt-agent] rewrote backend path after cd: %s\n", fixed)
+			if fixed, ok := rewriteBackendPathAfterCD(cmd, r.rig, r.v.LayoutRoot); ok {
+				orchestratedPrintf("[gt-agent] rewrote layout path after cd: %s\n", fixed)
 				cmd = fixed
 			}
 		case "bd_list_implement_scope":
@@ -156,8 +156,8 @@ func (r *stateRunner) rewriteCommand(cmd string) string {
 				}
 			}
 		case "unittest_workdir":
-			if fixed, ok := rewriteUnittestToWorkdir(cmd, r.rig); ok {
-				orchestratedPrintf("[gt-agent] rewrote toolchain cmd for mayor/rig: %s\n", fixed)
+			if fixed, ok := rewriteUnittestToWorkdir(cmd, r.rig, r.v); ok {
+				orchestratedPrintf("[gt-agent] rewrote verify/toolchain cmd for workdir: %s\n", fixed)
 				cmd = fixed
 			}
 		case "bd_list_limit":
@@ -293,14 +293,14 @@ func (r *stateRunner) trackCommand(cmd string, cmdErr error) {
 			r.track.verifyOK = true
 			r.track.hadCmdFailure = false
 		}
-		if cmdErr == nil && isGitCommitBackendCommand(cmd) {
+		if cmdErr == nil && isGitCommitLayoutCommand(cmd, r.v.LayoutRoot) {
 			r.track.hadCmdFailure = false
 		}
 	case "project_setup":
 		if cmdErr != nil {
 			r.track.hadCmdFailure = true
 		}
-		if cmdErr == nil && isQATestCommandOK(cmd, r.v) {
+		if cmdErr == nil && isProjectSetupVerifyCommandOK(cmd, r.v) {
 			r.track.verifyOK = true
 			r.track.hadCmdFailure = false
 		}
@@ -383,6 +383,10 @@ func (r *stateRunner) autoVerifyMatches(cmd, when string) bool {
 
 func (r *stateRunner) verifyCommand(kind string) string {
 	switch kind {
+	case "go_setup":
+		if orchestrator.WorkflowUsesGo(r.v) {
+			return orchestrator.GoProjectSetupVerifyCommand(r.v)
+		}
 	case "go_with_tidy":
 		if orchestrator.WorkflowUsesGo(r.v) {
 			return orchestrator.GoVerifyCommandWithTidy(r.v)

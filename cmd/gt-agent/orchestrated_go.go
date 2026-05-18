@@ -28,8 +28,36 @@ func isGoModTidyCommand(cmd string) bool {
 	return strings.Contains(lower, "go mod tidy")
 }
 
+func isLLMPlaceholderCommand(cmd string) bool {
+	if strings.Contains(cmd, "<") && strings.Contains(cmd, ">") {
+		start := strings.Index(cmd, "<")
+		end := strings.LastIndex(cmd, ">")
+		if start >= 0 && end > start {
+			inner := strings.TrimSpace(cmd[start+1 : end])
+			if inner != "" && !strings.Contains(inner, " ") {
+				return true
+			}
+			lower := strings.ToLower(inner)
+			if strings.Contains(lower, "specific-") || strings.Contains(lower, "module") ||
+				strings.Contains(lower, "deps") {
+				return true
+			}
+		}
+	}
+	if strings.Contains(cmd, "**") {
+		return true
+	}
+	return false
+}
+
 func validateProjectSetupCommand(cmd, rig string, v orchestrator.WorkflowValidation) error {
 	lower := strings.ToLower(cmd)
+	if isLLMPlaceholderCommand(cmd) {
+		return fmt.Errorf("do not run markdown example placeholders — use real package names and paths")
+	}
+	if strings.Contains(cmd, "CMD:") {
+		return fmt.Errorf("one shell command per CMD: line — do not glue CMD: markers inside a command")
+	}
 	if strings.Contains(lower, "```") {
 		return fmt.Errorf("do not wrap commands in markdown code fences")
 	}
@@ -45,27 +73,91 @@ func validateProjectSetupCommand(cmd, rig string, v orchestrator.WorkflowValidat
 	if !orchestrator.WorkflowUsesGo(v) {
 		return nil
 	}
+	for _, blocked := range []string{"go build", "go run", "go test", "go vet", "curl "} {
+		if strings.Contains(lower, blocked) {
+			return fmt.Errorf("project_setup only runs go mod init/get/tidy — polecat runs %s after setup", strings.TrimSpace(blocked))
+		}
+	}
 	if writesGoModuleFilesViaHeredoc(cmd) {
 		return fmt.Errorf("do not write go.mod or go.sum via heredoc — use go mod init and go mod tidy")
 	}
 	if strings.Contains(lower, "python3") || strings.Contains(lower, "pip install") {
 		return fmt.Errorf("project_setup is for Go scaffold and beads only — no Python in this step")
 	}
+	if commandWritesImplementationTree(lower, v.LayoutRoot) {
+		return fmt.Errorf("project_setup scaffolds go.mod and beads only — polecat implements code under %s/", v.LayoutRootDir())
+	}
+	for _, ext := range []string{".go", ".html", ".js", ".css", ".py"} {
+		if !strings.Contains(lower, ext) {
+			continue
+		}
+		if strings.Contains(lower, "cat >") || strings.Contains(lower, "<<") ||
+			strings.Contains(lower, "echo ") && strings.Contains(lower, ">") {
+			return fmt.Errorf("project_setup must not write source files (%s) — use go mod init/tidy and bd only", ext)
+		}
+	}
+	if strings.Contains(lower, "touch ") {
+		return fmt.Errorf("project_setup must not touch files — polecat creates implementation files")
+	}
 	return nil
 }
 
+// commandWritesImplementationTree reports mkdir/touch/heredoc writes to implementation paths.
+func commandWritesImplementationTree(lower, layoutRoot string) bool {
+	if strings.Contains(lower, "bd create") || strings.Contains(lower, "bd delete") ||
+		strings.Contains(lower, "bd list") || strings.Contains(lower, "bd show") || strings.Contains(lower, "bd update") {
+		return false
+	}
+	layout := strings.Trim(strings.TrimSpace(layoutRoot), "/")
+	if layout == "" {
+		layout = "backend"
+	}
+	layoutSlash := strings.ToLower(layout) + "/"
+	hasLayoutPath := strings.Contains(lower, layoutSlash) ||
+		strings.Contains(lower, "/"+layoutSlash) ||
+		strings.Contains(lower, " "+layoutSlash)
+	if !hasLayoutPath && layout != "backend" {
+		// Legacy python rigs without layout in cmd still use backend/ checks via commandWritesBackend.
+		return commandWritesBackend(lower)
+	}
+	if strings.Contains(lower, "touch ") && hasLayoutPath {
+		return true
+	}
+	if strings.Contains(lower, "mkdir") && hasLayoutPath {
+		// Allow mkdir -p <layout> only; block deep package trees (polecat creates paths).
+		if strings.Count(lower, layoutSlash) > 0 {
+			after := lower[strings.Index(lower, layoutSlash)+len(layoutSlash):]
+			if strings.Contains(after, "/") {
+				return true
+			}
+		}
+	}
+	srcExt := []string{".go", ".html", ".js", ".css", ".py", ".ts", ".tsx"}
+	for _, ext := range srcExt {
+		if !strings.Contains(lower, ext) {
+			continue
+		}
+		if strings.Contains(lower, "cat >") || strings.Contains(lower, "<<") ||
+			strings.Contains(lower, "tee ") || strings.Contains(lower, ext+">") ||
+			(strings.Contains(lower, "echo ") && strings.Contains(lower, ">")) {
+			return true
+		}
+	}
+	return false
+}
+
 func validateProjectSetupArtifacts(townRoot, rig string, hadCmdFailure, verifyOK bool, v orchestrator.WorkflowValidation) error {
+	if hadCmdFailure {
+		return fmt.Errorf("project_setup had failed commands; fix errors before completing")
+	}
 	if orchestrator.WorkflowUsesPython(v) {
 		return validatePythonProjectSetupArtifacts(townRoot, rig, hadCmdFailure, verifyOK, v)
 	}
 	if !orchestrator.WorkflowUsesGo(v) {
 		return nil
 	}
-	if hadCmdFailure {
-		return fmt.Errorf("project_setup had failed commands; fix errors before completing")
-	}
 	if !verifyOK {
-		return fmt.Errorf("project_setup requires green verify: %s", orchestrator.GoVerifyCommandWithTidy(v))
+		return fmt.Errorf("project_setup requires green verify: %s", orchestrator.GoProjectSetupVerifyCommand(v))
 	}
 	layout := strings.TrimSpace(v.LayoutRoot)
 	if layout == "" {

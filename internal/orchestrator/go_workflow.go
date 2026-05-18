@@ -9,7 +9,8 @@ import (
 func WorkflowUsesGo(v WorkflowValidation) bool {
 	qa := strings.ToLower(strings.TrimSpace(v.QAVerifyCommand))
 	if strings.Contains(qa, "go test") || strings.Contains(qa, "go vet") ||
-		strings.Contains(qa, "go mod") || strings.Contains(qa, "go build") {
+		strings.Contains(qa, "go mod") || strings.Contains(qa, "go build") ||
+		strings.Contains(qa, "go run") {
 		return true
 	}
 	switch strings.ToLower(strings.TrimSpace(v.TestRunner)) {
@@ -17,6 +18,16 @@ func WorkflowUsesGo(v WorkflowValidation) bool {
 		return true
 	}
 	return false
+}
+
+// GoProjectSetupVerifyCommand is the green check for project_setup only: module
+// toolchain under layout_root, not go build/test/run (polecat implements code).
+func GoProjectSetupVerifyCommand(v WorkflowValidation) string {
+	layout := strings.Trim(strings.TrimSpace(v.LayoutRoot), "/")
+	if layout == "" {
+		layout = "."
+	}
+	return "cd " + layout + " && go mod tidy"
 }
 
 // GoVerifyCommandWithTidy returns the verify shell chain for Go rigs, always

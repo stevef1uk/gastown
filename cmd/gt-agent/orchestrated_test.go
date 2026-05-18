@@ -21,6 +21,20 @@ func TestParseOrchestratedCommands_gluedQuoteCMD(t *testing.T) {
 	}
 }
 
+func TestParseOrchestratedCommands_gluedDoubleQuoteCMD(t *testing.T) {
+	in := `CMD: export BEADS_DIR=$GT_ROOT/testgt3/.beads && cd testgt3/mayor/rig && bd create "Implement linkshelf/go.mod" && bd create "Implement linkshelf/cmd/server/main.go"CMD: cd testgt3/mayor/rig/linkshelf && go mod tidy`
+	cmds := parseOrchestratedCommands(in)
+	if len(cmds) != 2 {
+		t.Fatalf("want 2 commands, got %d: %v", len(cmds), cmds)
+	}
+	if strings.Contains(cmds[0], "go mod tidy") || strings.Contains(cmds[0], "CMD:") {
+		t.Fatalf("cmd[0] should be bd create only: %q", cmds[0])
+	}
+	if !strings.Contains(cmds[1], "go mod tidy") {
+		t.Fatalf("cmd[1]: %q", cmds[1])
+	}
+}
+
 func TestParseOrchestratedCommands_gluedPlannerLine(t *testing.T) {
 	in := "CMD: ls -R mockrig/mayor/rig/CMD: cat mockrig/mayor/rig/SPEC.mdCMD: cat mockrig/mayor/rig/architecture.md{\"outcome\":\"failure\"}"
 	cmds := parseOrchestratedCommands(in)
@@ -195,15 +209,53 @@ func TestNormalizeGluedEOFCMD(t *testing.T) {
 
 func TestRewriteBackendPathAfterCD(t *testing.T) {
 	cmd := `bash -lc 'cd mockrig/mayor/rig && cat > mockrig/mayor/rig/backend/fizzbuzz.py <<EOF'`
-	fixed, ok := rewriteBackendPathAfterCD(cmd, "mockrig")
+	fixed, ok := rewriteBackendPathAfterCD(cmd, "mockrig", "")
 	if !ok || strings.Contains(fixed, "mockrig/mayor/rig/backend") {
 		t.Fatalf("want backend/ relative path, got ok=%v cmd=%q", ok, fixed)
 	}
 }
 
+func TestRewriteLayoutPathAfterCD_linkshelf(t *testing.T) {
+	cmd := `cd mockrig/mayor/rig && cat > mockrig/mayor/rig/linkshelf/web/app.js <<'EOF'`
+	fixed, ok := rewriteBackendPathAfterCD(cmd, "mockrig", "linkshelf")
+	if !ok || strings.Contains(fixed, "mockrig/mayor/rig/linkshelf") {
+		t.Fatalf("want linkshelf/ relative path, got ok=%v cmd=%q", ok, fixed)
+	}
+}
+
+func TestRewriteHallucinatedAbsoluteTownRoot(t *testing.T) {
+	town := t.TempDir()
+	cmd := "cd /home/ubuntu/gt/testgt3/mayor/rig/linkshelf && go mod tidy"
+	fixed, ok := rewriteOrchestratedRigPlaceholders(cmd, town, "testgt3")
+	if !ok {
+		t.Fatal("expected rewrite")
+	}
+	if strings.Contains(fixed, "/home/ubuntu/gt") {
+		t.Fatalf("hallucinated path should be gone: %q", fixed)
+	}
+	if !strings.Contains(fixed, "testgt3/mayor/rig/linkshelf") {
+		t.Fatalf("want relative rig path: %q", fixed)
+	}
+}
+
+func TestRewriteHallucinatedHomeGT(t *testing.T) {
+	town := t.TempDir()
+	cmd := "cd ~/gt/testgt3/mayor/rig/linkshelf && go mod tidy"
+	fixed, ok := rewriteOrchestratedRigPlaceholders(cmd, town, "testgt3")
+	if !ok {
+		t.Fatal("expected rewrite")
+	}
+	if strings.Contains(fixed, "~testgt3") || strings.Contains(fixed, "~/gt") {
+		t.Fatalf("must not break ~/gt into ~rig: %q", fixed)
+	}
+	if !strings.Contains(fixed, "testgt3/mayor/rig/linkshelf") {
+		t.Fatalf("want relative path: %q", fixed)
+	}
+}
+
 func TestRewriteOrchestratedRigPlaceholders(t *testing.T) {
 	cmd := `export BEADS_DIR=$GT_ROOT/RIG/.beads && cd RIG/mayor/rig && bd create --type task --title "x"`
-	fixed, ok := rewriteOrchestratedRigPlaceholders(cmd, "mockrig")
+	fixed, ok := rewriteOrchestratedRigPlaceholders(cmd, t.TempDir(), "mockrig")
 	if !ok {
 		t.Fatal("expected rewrite")
 	}
@@ -309,10 +361,58 @@ func TestValidateImplementationCommand(t *testing.T) {
 		`bash -lc 'cd mockrig/mayor/rig && git add backend && git commit -m "Implement x"'`,
 	}
 	bad = append(bad, "git push origin main", "git add .", "git add -A", "git add typescript")
+	ok = append(ok, `bash -lc 'cd mockrig/mayor/rig && git add -A linkshelf && git commit -m "Implement x"'`)
 	for _, cmd := range ok {
 		if err := validateImplementationCommand(cmd, "mockrig"); err != nil {
 			t.Fatalf("expected allow %q: %v", cmd, err)
 		}
+	}
+}
+
+func TestValidateProjectSetupCommand_rejectsImplementationWrites(t *testing.T) {
+	v := orchestrator.WorkflowValidation{LayoutRoot: "linkshelf", QAVerifyCommand: "go test ./..."}
+	cmds := []string{
+		"cd testgt3/mayor/rig && touch linkshelf/web/app.js",
+		"cd testgt3/mayor/rig/linkshelf && cat > cmd/server/main.go <<'EOF'",
+		"mkdir -p linkshelf/internal/api",
+		"go get -u <specific-dependency-if-any>",
+		"cd testgt3/mayor/rig/linkshelf && go build ./...",
+		"cd testgt3/mayor/rig/linkshelf && go run ./cmd/server",
+		`bd create "x"CMD: go mod tidy`,
+	}
+	for _, cmd := range cmds {
+		if err := validateProjectSetupCommand(cmd, "testgt3", v); err == nil {
+			t.Fatalf("expected reject: %q", cmd)
+		}
+	}
+	ok := []string{
+		"cd testgt3/mayor/rig/linkshelf && go mod init linkshelf",
+		"cd testgt3/mayor/rig/linkshelf && go mod tidy",
+		"mkdir -p linkshelf",
+	}
+	for _, cmd := range ok {
+		if err := validateProjectSetupCommand(cmd, "testgt3", v); err != nil {
+			t.Fatalf("expected allow %q: %v", cmd, err)
+		}
+	}
+}
+
+func TestValidateProjectSetupArtifacts_rejectsHadCmdFailureForCustomGo(t *testing.T) {
+	v := orchestrator.WorkflowValidation{
+		LayoutRoot:      "linkshelf",
+		QAVerifyCommand: "cd linkshelf && go run ./cmd/server",
+		TestRunner:      "custom",
+	}
+	dir := t.TempDir()
+	rigDir := filepath.Join(dir, "mockrig", "mayor", "rig", "linkshelf")
+	if err := os.MkdirAll(rigDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(rigDir, "go.mod"), []byte("module linkshelf\ngo 1.22\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateProjectSetupArtifacts(dir, "mockrig", true, false, v); err == nil {
+		t.Fatal("expected failure when commands failed even with custom Go verify")
 	}
 }
 

@@ -35,5 +35,5 @@ func LoadRigWorkflowProfileFile(townRoot, rig string) (WorkflowValidation, bool,
 	if err := json.Unmarshal(data, &env); err != nil {
 		return WorkflowValidation{}, false, fmt.Errorf("decode rig profile %s: %w", path, err)
 	}
-	return ClampProfileValidation(env.Validation), true, nil
+	return ClampProfileValidation(NormalizeLayoutProfile(env.Validation)), true, nil
 }

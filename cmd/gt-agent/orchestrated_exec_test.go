@@ -67,23 +67,24 @@ func TestRunOrchestratedCommand_heredocWritesFile(t *testing.T) {
 
 func TestRewriteUnittestToWorkdir_skipsRequirementsHeredoc(t *testing.T) {
 	cmd := "cd " + testrig.Worktree(testrig.Name) + " && cat > " + testrig.RequirementsFile + " <<'EOF'\npython3 -m pytest\nwidget-lib\nEOF"
-	if fixed, ok := rewriteUnittestToWorkdir(cmd, testrig.Name); ok {
+	if fixed, ok := rewriteUnittestToWorkdir(cmd, testrig.Name, orchestrator.DefaultWorkflowValidation()); ok {
 		t.Fatalf("must not rewrite requirements heredoc: ok=%v cmd=%q", ok, fixed)
 	}
 }
 
 func TestRewriteUnittestToWorkdir(t *testing.T) {
 	cmd := "python3 -m unittest backend.test_fizzbuzz -v"
-	fixed, ok := rewriteUnittestToWorkdir(cmd, "mockrig")
+	defV := orchestrator.DefaultWorkflowValidation()
+	fixed, ok := rewriteUnittestToWorkdir(cmd, "mockrig", defV)
 	if !ok || !strings.Contains(fixed, "cd mockrig/mayor/rig &&") {
 		t.Fatalf("got ok=%v cmd=%q", ok, fixed)
 	}
 	already := "cd mockrig/mayor/rig && python3 -m unittest backend.test_fizzbuzz -v"
-	if _, ok := rewriteUnittestToWorkdir(already, "mockrig"); ok {
+	if _, ok := rewriteUnittestToWorkdir(already, "mockrig", defV); ok {
 		t.Fatal("should not rewrite when cd present")
 	}
 	pipCmd := "pip install -r requirements.txt"
-	fixed, ok = rewriteUnittestToWorkdir(pipCmd, "mockrig")
+	fixed, ok = rewriteUnittestToWorkdir(pipCmd, "mockrig", defV)
 	if !ok || !strings.Contains(fixed, "python3 -m pip") || !strings.Contains(fixed, "cd mockrig/mayor/rig &&") {
 		t.Fatalf("pip rewrite: ok=%v cmd=%q", ok, fixed)
 	}
@@ -146,7 +147,51 @@ func TestCommandHasMayorRigCD(t *testing.T) {
 func TestRewriteUnittestToWorkdir_skipsWhenAlreadyCD(t *testing.T) {
 	rig := testrig.Name
 	already := "cd ~/gt/" + rig + "/mayor/rig && python3 -m pytest -q defender/backend"
-	if fixed, ok := rewriteUnittestToWorkdir(already, rig); ok {
+	if fixed, ok := rewriteUnittestToWorkdir(already, rig, orchestrator.DefaultWorkflowValidation()); ok {
 		t.Fatalf("should not prepend cd: %q", fixed)
+	}
+}
+
+func TestRewriteUnittestToWorkdir_goLayout(t *testing.T) {
+	v := orchestrator.WorkflowValidation{
+		LayoutRoot:      "linkshelf",
+		QAVerifyCommand: "cd linkshelf && go run ./cmd/server",
+		TestRunner:      "custom",
+	}
+	cmd := "go run ./cmd/server"
+	fixed, ok := rewriteUnittestToWorkdir(cmd, "mockrig", v)
+	if !ok {
+		t.Fatal("expected rewrite")
+	}
+	if !strings.Contains(fixed, "cd mockrig/mayor/rig/linkshelf &&") {
+		t.Fatalf("want single cd into module: %q", fixed)
+	}
+	if strings.Count(fixed, "cd linkshelf") > 1 || strings.HasPrefix(fixed, "cd linkshelf && cd ") {
+		t.Fatalf("must not double-cd layout: %q", fixed)
+	}
+}
+
+func TestRewriteUnittestToWorkdir_alreadyInModule(t *testing.T) {
+	v := orchestrator.WorkflowValidation{
+		LayoutRoot:      "linkshelf",
+		QAVerifyCommand: "cd linkshelf && go mod tidy",
+	}
+	cmd := "cd testgt3/mayor/rig/linkshelf && go mod tidy"
+	fixed, ok := rewriteUnittestToWorkdir(cmd, "testgt3", v)
+	if ok && strings.HasPrefix(fixed, "cd linkshelf && cd testgt3") {
+		t.Fatalf("must not prepend extra layout cd: %q", fixed)
+	}
+}
+
+func TestRewriteUnittestToWorkdir_mayorRigCDIntoModule(t *testing.T) {
+	v := orchestrator.WorkflowValidation{LayoutRoot: "linkshelf", TestRunner: "custom", QAVerifyCommand: "go build ./..."}
+	cmd := "cd testgt3/mayor/rig && go build ./..."
+	fixed, ok := rewriteUnittestToWorkdir(cmd, "testgt3", v)
+	if !ok {
+		t.Fatal("expected rewrite")
+	}
+	want := "cd testgt3/mayor/rig/linkshelf && go build ./..."
+	if fixed != want {
+		t.Fatalf("got %q want %q", fixed, want)
 	}
 }

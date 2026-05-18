@@ -72,8 +72,8 @@ func resolveRetryHintKey(key string, v WorkflowValidation, vars map[string]strin
 				layout = "."
 			}
 			return "Go rig: run go mod init/get/tidy under " + layout +
-				" (never heredoc go.mod/go.sum). Split oversized beads with bd create/delete so each bead is one file. Green verify: " +
-				GoVerifyCommandWithTidy(v)
+				" (never heredoc go.mod/go.sum, no go build/run/curl in setup). Split oversized beads with bd create/delete so each bead is one file. Green verify: " +
+				GoProjectSetupVerifyCommand(v)
 		}
 		if WorkflowUsesPython(v) {
 			req := v.RequirementsFilePath()

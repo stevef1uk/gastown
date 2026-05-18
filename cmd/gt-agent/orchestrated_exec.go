@@ -106,6 +106,11 @@ func isToolchainExecutionCommand(cmd string) bool {
 		return strings.Contains(lower, "cd ") || strings.Contains(lower, " -q") ||
 			strings.Contains(lower, " -v") || strings.Contains(lower, " -k")
 	}
+	if strings.Contains(lower, "go test") || strings.Contains(lower, "go run") ||
+		strings.Contains(lower, "go build") || strings.Contains(lower, "go vet") ||
+		strings.Contains(lower, "go mod") {
+		return true
+	}
 	return false
 }
 
@@ -116,13 +121,11 @@ func writesRequirementsFile(cmd string) bool {
 		(strings.Contains(lower, "<<") || strings.Contains(lower, "cat >") || strings.Contains(lower, "cat>>"))
 }
 
-// rewriteUnittestToWorkdir prepends cd into mayor/rig when the model omits it (tests/deps need project cwd).
-func rewriteUnittestToWorkdir(cmd, rig string) (string, bool) {
+// rewriteUnittestToWorkdir prepends cd into mayor/rig (and layout_root for Go modules) when omitted.
+func rewriteUnittestToWorkdir(cmd, rig string, v orchestrator.WorkflowValidation) (string, bool) {
 	if !isToolchainExecutionCommand(cmd) {
 		return cmd, false
 	}
-	lower := strings.ToLower(cmd)
-	_ = lower
 	changed := false
 	if fixed := orchestrator.NormalizePytestCommand(cmd); fixed != cmd {
 		cmd = fixed
@@ -132,14 +135,49 @@ func rewriteUnittestToWorkdir(cmd, rig string) (string, bool) {
 		cmd = fixed
 		changed = true
 	}
-	if commandHasMayorRigCD(cmd, rig) {
-		if changed {
-			return cmd, true
-		}
-		return cmd, false
+	layout := strings.Trim(strings.TrimSpace(v.LayoutRoot), "/")
+	workPath := rigMayorRigPath(rig)
+	if layout != "" && layout != "." {
+		workPath = workPath + "/" + layout
 	}
-	work := rigMayorRigPath(rig)
-	return "cd " + work + " && " + strings.TrimSpace(cmd), true
+	if !commandHasMayorRigCD(cmd, rig) && !commandHasLayoutCD(cmd, layout) {
+		cmd = "cd " + workPath + " && " + strings.TrimSpace(cmd)
+		changed = true
+	} else if orchestrator.WorkflowUsesGo(v) && layout != "" && layout != "." &&
+		commandHasMayorRigCD(cmd, rig) && !commandHasLayoutCD(cmd, layout) {
+		// Already under mayor/rig but not in layout module dir — one cd to module root.
+		rest := stripFirstCDPrefix(cmd)
+		cmd = "cd " + workPath + " && " + rest
+		changed = true
+	}
+	return cmd, changed
+}
+
+// stripFirstCDPrefix removes a leading "cd <path> &&" so rewrite can replace with one module cd.
+func stripFirstCDPrefix(cmd string) string {
+	trimmed := strings.TrimSpace(cmd)
+	lower := strings.ToLower(trimmed)
+	if !strings.HasPrefix(lower, "cd ") {
+		return trimmed
+	}
+	if idx := strings.Index(lower, " && "); idx >= 0 {
+		return strings.TrimSpace(trimmed[idx+4:])
+	}
+	return ""
+}
+
+func commandHasLayoutCD(cmd, layout string) bool {
+	layout = strings.Trim(strings.TrimSpace(layout), "/")
+	if layout == "" {
+		return false
+	}
+	lower := strings.ToLower(cmd)
+	layoutLower := strings.ToLower(layout)
+	return strings.Contains(lower, "cd "+layoutLower) ||
+		strings.Contains(lower, "cd ./"+layoutLower) ||
+		strings.Contains(lower, "/"+layoutLower+"/") ||
+		strings.Contains(lower, "/"+layoutLower+" &&") ||
+		strings.Contains(lower, "/"+layoutLower+" ")
 }
 
 // commandHasMayorRigCD reports whether cmd already cds into the rig mayor/rig worktree.
