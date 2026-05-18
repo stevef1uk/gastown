@@ -223,7 +223,7 @@ func validateGoImplementationCommand(cmd, townRoot, rig, mayorRigDir, activeBead
 		return fmt.Errorf("do not delete go.mod or go.sum — use go mod edit, go get, and go mod tidy")
 	}
 	beadPath := orchestrator.ImplementBeadPathForID(townRoot, rig, activeBead, v)
-	verifyHint := orchestrator.GoImplementationVerifyCommandForBead(v, mayorRigDir, beadPath)
+	verifyHint := orchestrator.ImplementationVerifyCommandForBead(v, mayorRigDir, beadPath)
 	lower := strings.ToLower(cmd)
 	onGoModBead := strings.HasSuffix(filepath.ToSlash(beadPath), "go.mod")
 	onServerMainBead := orchestrator.IsServerMainImplementBead(beadPath)

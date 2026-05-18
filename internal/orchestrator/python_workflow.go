@@ -87,6 +87,46 @@ func PythonProjectSetupVerifyCommand(v WorkflowValidation) string {
 	return "test -x " + py + " && " + py + " -c 'import pytest'"
 }
 
+// ImplementationVerifyCommandForBead picks per-bead verify for the active implement path.
+func ImplementationVerifyCommandForBead(v WorkflowValidation, mayorRigDir, beadPath string) string {
+	if WorkflowUsesGo(v) {
+		return GoImplementationVerifyCommandForBead(v, mayorRigDir, beadPath)
+	}
+	if WorkflowUsesPython(v) {
+		return PythonImplementationVerifyCommandForBead(v, mayorRigDir, beadPath)
+	}
+	return strings.TrimSpace(v.UnittestCommandHint())
+}
+
+// PythonImplementationVerifyCommandForBead returns verify scoped to the bead (not full suite until tests exist).
+func PythonImplementationVerifyCommandForBead(v WorkflowValidation, mayorRigDir, beadPath string) string {
+	_ = mayorRigDir
+	beadPath = filepath.ToSlash(strings.TrimSpace(beadPath))
+	layout := strings.Trim(strings.TrimSpace(v.LayoutRoot), "/")
+	if layout == "" {
+		layout = "."
+	}
+	venv := v.PythonVenvRelDir()
+	py := venv + "/bin/python3"
+	prefix := "cd " + layout + " && "
+
+	if req := v.RequirementsFilePath(); req != "" && pathMatchesRequired(beadPath, []string{req}) {
+		return "test -x " + py + " && " + py + " -c 'import pytest'"
+	}
+
+	if strings.Contains(beadPath, "/tests/") || strings.HasPrefix(filepath.Base(beadPath), "test_") {
+		if strings.HasSuffix(beadPath, ".py") {
+			return prefix + py + " -m pytest -v " + beadPath
+		}
+	}
+
+	if strings.HasSuffix(beadPath, ".py") {
+		return prefix + py + " -m compileall -q " + beadPath
+	}
+
+	return PythonVerifyCommand(v)
+}
+
 func pythonVerifyWithLayout(cmd string, v WorkflowValidation) string {
 	layout := strings.Trim(strings.TrimSpace(v.LayoutRoot), "/")
 	if layout == "" || layout == "." {

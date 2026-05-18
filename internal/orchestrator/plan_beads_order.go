@@ -131,6 +131,8 @@ func implementationPathScore(p string) int {
 	switch {
 	case strings.HasSuffix(lower, "go.mod"):
 		return 0
+	case strings.HasSuffix(lower, "requirements.txt") || strings.HasSuffix(lower, "pyproject.toml"):
+		return 5
 	case strings.Contains(lower, "/internal/store/"):
 		return 10
 	case strings.Contains(lower, "/internal/api/"):
@@ -531,7 +533,7 @@ func FormatImplementationQueueBlock(townRoot, rig string, v WorkflowValidation) 
 	}
 	mayorDir := filepath.Join(townRoot, rig, "mayor", "rig")
 	beadPath := ExtractPathFromBeadTitle(next.Title, v.BeadTitleContains)
-	verify := GoImplementationVerifyCommandForBead(v, mayorDir, beadPath)
+	verify := ImplementationVerifyCommandForBead(v, mayorDir, beadPath)
 	if step > 0 {
 		return fmt.Sprintf("**Next bead (%d/%d):** %s → `%s` — work only this ID until `bd close`. Verify: `%s`.",
 			step, total, next.ID, next.Title, verify)

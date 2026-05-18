@@ -475,7 +475,7 @@ func (r *stateRunner) verifyCommand(kind string) string {
 		if orchestrator.WorkflowUsesGo(r.v) {
 			mayor := filepath.Join(r.townRoot, r.rig, "mayor", "rig")
 			beadPath := orchestrator.ImplementBeadPathForID(r.townRoot, r.rig, r.track.activeBead, r.v)
-			return orchestrator.GoImplementationVerifyCommandForBead(r.v, mayor, beadPath)
+			return orchestrator.ImplementationVerifyCommandForBead(r.v, mayor, beadPath)
 		}
 	case "python_setup":
 		if orchestrator.WorkflowUsesPython(r.v) {

@@ -60,6 +60,10 @@ func validatePythonImplementationCommand(cmd string, v orchestrator.WorkflowVali
 	if !orchestrator.WorkflowUsesPython(v) {
 		return nil
 	}
+	lower := strings.ToLower(cmd)
+	if strings.Contains(lower, "go mod") || strings.Contains(lower, "go test") || strings.Contains(lower, "go build") {
+		return fmt.Errorf("do not run go toolchain on Python rig — use pip/pytest/compileall per Next bead verify")
+	}
 	if isPipInstallRequirementsCommand(cmd) {
 		return fmt.Errorf("install dependencies in project_setup — venv and pip install already ran there")
 	}

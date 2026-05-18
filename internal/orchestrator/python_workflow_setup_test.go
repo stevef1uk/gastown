@@ -27,6 +27,24 @@ func TestPythonProjectSetupVerifyCommand(t *testing.T) {
 	}
 }
 
+func TestPythonImplementationVerifyCommandForBead_requirements(t *testing.T) {
+	t.Parallel()
+	v := WorkflowValidation{
+		LayoutRoot:      "tasklist",
+		PythonVenvDir:   ".venv",
+		RequiredFiles:   []string{"tasklist/requirements.txt", "tasklist/tasklist/store.py"},
+		QAVerifyCommand: "pytest -v",
+	}
+	got := PythonImplementationVerifyCommandForBead(v, "/tmp", "tasklist/requirements.txt")
+	if !strings.Contains(got, "import pytest") || strings.Contains(got, "pytest -v") {
+		t.Fatalf("requirements bead should import-check only: %q", got)
+	}
+	got = PythonImplementationVerifyCommandForBead(v, "/tmp", "tasklist/tasklist/store.py")
+	if !strings.Contains(got, "compileall") {
+		t.Fatalf("source bead should compileall: %q", got)
+	}
+}
+
 func TestPythonVerifyCommand_layout(t *testing.T) {
 	t.Parallel()
 	v := WorkflowValidation{LayoutRoot: "tasklist", QAVerifyCommand: "pytest -v"}

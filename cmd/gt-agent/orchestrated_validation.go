@@ -50,7 +50,7 @@ func isImplementationVerifyCommandOK(cmd, townRoot, rig, activeBead string, v or
 	}
 	mayorDir := filepath.Join(townRoot, rig, "mayor", "rig")
 	beadPath := orchestrator.ImplementBeadPathForID(townRoot, rig, activeBead, v)
-	impl := orchestrator.GoImplementationVerifyCommandForBead(v, mayorDir, beadPath)
+	impl := orchestrator.ImplementationVerifyCommandForBead(v, mayorDir, beadPath)
 	if commandMatchesQAVerify(cmd, impl) {
 		return true
 	}
