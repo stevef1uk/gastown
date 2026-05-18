@@ -1,6 +1,8 @@
 package orchestrator
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -54,4 +56,32 @@ func GoVerifyCommandWithTidy(v WorkflowValidation) string {
 		return prefix + "go mod tidy && " + strings.TrimSpace(chain[len(prefix):])
 	}
 	return prefix + "go mod tidy && " + chain
+}
+
+// GoServerMainPath returns linkshelf/cmd/server/main.go under mayor/rig.
+func GoServerMainPath(mayorRigDir string, v WorkflowValidation) string {
+	layout := strings.Trim(strings.TrimSpace(v.LayoutRoot), "/")
+	if layout == "" {
+		layout = "."
+	}
+	return filepath.Join(mayorRigDir, layout, "cmd", "server", "main.go")
+}
+
+// GoServerMainExists reports whether polecat may run go run/curl integration verify.
+func GoServerMainExists(mayorRigDir string, v WorkflowValidation) bool {
+	_, err := os.Stat(GoServerMainPath(mayorRigDir, v))
+	return err == nil
+}
+
+// GoImplementationVerifyCommand is the verify chain during implementation: compile-only
+// until cmd/server/main.go exists, then the profile QA command (go run/curl or go test).
+func GoImplementationVerifyCommand(v WorkflowValidation, mayorRigDir string) string {
+	layout := strings.Trim(strings.TrimSpace(v.LayoutRoot), "/")
+	if layout == "" {
+		layout = "."
+	}
+	if !GoServerMainExists(mayorRigDir, v) {
+		return "cd " + layout + " && go mod tidy && go build ./..."
+	}
+	return GoVerifyCommandWithTidy(v)
 }

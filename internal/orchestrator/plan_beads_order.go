@@ -131,30 +131,96 @@ func ListOpenImplementBeads(townRoot, rig string, v WorkflowValidation) ([]PlanB
 	return listImplementBeadsByStatus(townRoot, rig, v, "open")
 }
 
-// NextOpenImplementBead returns the next open bead to implement following profile order.
+// ListImplementBeadsOpenOrInProgress returns open and in_progress implement beads.
+func ListImplementBeadsOpenOrInProgress(townRoot, rig string, v WorkflowValidation) ([]PlanBead, error) {
+	inProg, err := listImplementBeadsByStatus(townRoot, rig, v, "in_progress")
+	if err != nil {
+		return nil, err
+	}
+	open, err := listImplementBeadsByStatus(townRoot, rig, v, "open")
+	if err != nil {
+		return nil, err
+	}
+	return append(inProg, open...), nil
+}
+
+// EnforceSingleImplementInProgress leaves at most one implement bead in_progress (the queue head).
+func EnforceSingleImplementInProgress(townRoot, rig string, v WorkflowValidation) ([]string, error) {
+	inProg, err := listImplementBeadsByStatus(townRoot, rig, v, "in_progress")
+	if err != nil {
+		return nil, err
+	}
+	if len(inProg) <= 1 {
+		return nil, nil
+	}
+	next, err := NextOpenImplementBead(townRoot, rig, v)
+	if err != nil {
+		return nil, err
+	}
+	keep := ""
+	if next != nil {
+		keep = next.ID
+	}
+	if keep == "" && len(inProg) > 0 {
+		keep = inProg[0].ID
+	}
+	beadsDir := config.ResolveBeadsDirForRig(townRoot, rig)
+	workDir := filepath.Join(townRoot, rig, "mayor", "rig")
+	var reopened []string
+	for _, b := range inProg {
+		if b.ID == keep {
+			continue
+		}
+		cmd := exec.Command("bd", "update", b.ID, "--status=open")
+		cmd.Env = append(os.Environ(), "BEADS_DIR="+beadsDir)
+		cmd.Dir = workDir
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			return reopened, fmt.Errorf("bd update %s --status=open: %w: %s", b.ID, err, strings.TrimSpace(string(out)))
+		}
+		reopened = append(reopened, b.ID)
+	}
+	return reopened, nil
+}
+
+// NextOpenImplementBead returns the next bead to implement following profile order (open or in_progress).
 func NextOpenImplementBead(townRoot, rig string, v WorkflowValidation) (*PlanBead, error) {
 	if len(v.RequiredFiles) == 0 {
 		return nil, nil
 	}
-	open, err := ListOpenImplementBeads(townRoot, rig, v)
+	active, err := ListImplementBeadsOpenOrInProgress(townRoot, rig, v)
 	if err != nil {
 		return nil, err
 	}
 	idByPath := map[string]string{}
-	for _, b := range open {
+	titleByID := map[string]string{}
+	for _, b := range active {
 		p := ExtractPathFromBeadTitle(b.Title, v.BeadTitleContains)
 		if p == "" || !IsValidImplementBeadPath(p) {
 			continue
 		}
 		if _, ok := idByPath[p]; !ok {
 			idByPath[p] = b.ID
+			titleByID[b.ID] = b.Title
+		}
+		for _, want := range v.RequiredFiles {
+			if pathMatchesRequired(p, []string{want}) {
+				if _, ok := idByPath[want]; !ok {
+					idByPath[want] = b.ID
+					titleByID[b.ID] = b.Title
+				}
+			}
 		}
 	}
 	order := OrderRequiredFilesForImplementation(v.RequiredFiles)
 	for _, want := range order {
 		for p, id := range idByPath {
 			if pathMatchesRequired(p, []string{want}) {
-				return &PlanBead{ID: id, Title: want}, nil
+				title := titleByID[id]
+				if title == "" {
+					title = want
+				}
+				return &PlanBead{ID: id, Title: title}, nil
 			}
 		}
 	}
@@ -401,6 +467,25 @@ func FormatPlanningBeadBootstrapBlock(rig string, v WorkflowValidation) string {
 	b.WriteString(fmt.Sprintf("%d", v.MinPlanBytes))
 	b.WriteString(" bytes) with real IDs, `wc -c plan.md`, then JSON success in a **later** turn.\n")
 	return b.String()
+}
+
+// ImplementBeadPathForID resolves the file path for an implement bead ID.
+func ImplementBeadPathForID(townRoot, rig, beadID string, v WorkflowValidation) string {
+	beadID = strings.TrimSpace(beadID)
+	if beadID == "" {
+		return ""
+	}
+	active, err := ListImplementBeadsOpenOrInProgress(townRoot, rig, v)
+	if err != nil {
+		return ""
+	}
+	for _, b := range active {
+		if b.ID != beadID {
+			continue
+		}
+		return ExtractPathFromBeadTitle(b.Title, v.BeadTitleContains)
+	}
+	return ""
 }
 
 // FormatImplementationQueueBlock returns a single-line "next bead" hint for the polecat.

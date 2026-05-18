@@ -32,6 +32,16 @@ func TestGoProjectSetupVerifyCommand(t *testing.T) {
 	}
 }
 
+func TestGoImplementationVerifyCommand_beforeMain(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	v := WorkflowValidation{LayoutRoot: "linkshelf"}
+	got := GoImplementationVerifyCommand(v, dir)
+	if !strings.Contains(got, "go build") || strings.Contains(got, "curl") {
+		t.Fatalf("want compile-only before main: %q", got)
+	}
+}
+
 func TestGoVerifyCommandWithTidy(t *testing.T) {
 	t.Parallel()
 	v := WorkflowValidation{

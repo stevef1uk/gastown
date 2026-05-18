@@ -187,15 +187,22 @@ func validateProjectSetupArtifacts(townRoot, rig string, hadCmdFailure, verifyOK
 	return nil
 }
 
-func validateGoImplementationCommand(cmd string, v orchestrator.WorkflowValidation, verifyOK bool) error {
+func validateGoImplementationCommand(cmd, mayorRigDir string, v orchestrator.WorkflowValidation, verifyOK bool) error {
 	if !orchestrator.WorkflowUsesGo(v) {
 		return nil
 	}
 	if writesGoModuleFilesViaHeredoc(cmd) {
 		return fmt.Errorf("do not write go.mod or go.sum via heredoc — use go mod init, go get, and go mod tidy in project_setup or before bd close")
 	}
+	lower := strings.ToLower(cmd)
+	if (strings.Contains(lower, "go run") || strings.Contains(lower, "curl ")) &&
+		!orchestrator.GoServerMainExists(mayorRigDir, v) {
+		return fmt.Errorf("go run/curl not until cmd/server/main.go exists — use: %s",
+			orchestrator.GoImplementationVerifyCommand(v, mayorRigDir))
+	}
 	if isBeadCloseCommand(cmd) && !verifyOK {
-		return fmt.Errorf("run green verify before bd close: %s", orchestrator.GoVerifyCommandWithTidy(v))
+		return fmt.Errorf("run green verify before bd close: %s",
+			orchestrator.GoImplementationVerifyCommand(v, mayorRigDir))
 	}
 	return nil
 }

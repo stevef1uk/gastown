@@ -158,11 +158,11 @@ states:
       empty_bd_list_ok: true
       auto_verify:
         - when: go_write_layout
-          verify: go_with_tidy
+          verify: go_implementation
       artifacts: implementation
       retry_hint_key: implementation
       failure_hint: |
-        One bead at a time: bd update <id> --status=in_progress, heredoc under {{layout_root}}/, {{unittest_command_hint}}, bd close <id>. JSON only after bd close succeeds.
+        One bead at a time for **Next bead** only: bd update → heredoc that path → {{implementation_verify_hint}} → bd close. No go run/curl until cmd/server/main.go exists.
     transitions:
       success:
         to: qa_review

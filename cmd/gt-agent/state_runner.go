@@ -179,7 +179,7 @@ func (r *stateRunner) validateCommand(cmd string) error {
 	case "project_setup":
 		return validateProjectSetupCommand(cmd, r.rig, r.v)
 	case "implementation":
-		if err := validateImplementationCommandWithState(cmd, r.rig, r.track.activeBead, r.v, r.track.verifyOK); err != nil {
+		if err := validateImplementationCommandWithState(cmd, r.townRoot, r.rig, r.track.activeBead, r.v, r.track.verifyOK); err != nil {
 			return err
 		}
 		return validateImplementationBeadOrder(r.townRoot, r.rig, cmd, r.v)
@@ -355,7 +355,7 @@ func (r *stateRunner) trackCommand(cmd string, cmdErr error) {
 				r.track.activeBead = id
 			}
 		}
-		if cmdErr == nil && isQATestCommandOK(cmd, r.v) {
+		if cmdErr == nil && isImplementationVerifyCommandOK(cmd, r.townRoot, r.rig, r.v) {
 			r.track.verifyOK = true
 			r.track.hadCmdFailure = false
 		}
@@ -456,6 +456,10 @@ func (r *stateRunner) verifyCommand(kind string) string {
 	case "go_with_tidy":
 		if orchestrator.WorkflowUsesGo(r.v) {
 			return orchestrator.GoVerifyCommandWithTidy(r.v)
+		}
+	case "go_implementation":
+		if orchestrator.WorkflowUsesGo(r.v) {
+			return orchestrator.GoImplementationVerifyCommand(r.v, filepath.Join(r.townRoot, r.rig, "mayor", "rig"))
 		}
 	case "python":
 		if orchestrator.WorkflowUsesPython(r.v) {

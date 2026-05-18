@@ -127,6 +127,8 @@ func (m *Manager) BuildTaskPayload(inst *WorkflowInstance, tpl *WorkflowTemplate
 		if prefix, err := RigIssuePrefix(m.townRoot, rig); err == nil && prefix != "" {
 			promptVars["bead_id_example"] = prefix + "-xxx"
 		}
+		mayorDir := filepath.Join(m.townRoot, rig, "mayor", "rig")
+		promptVars["implementation_verify_hint"] = validation.ImplementationVerifyHint(mayorDir)
 	}
 
 	systemPrompt, err := LoadPromptFile(m.townRoot, state.PromptFile, promptVars)

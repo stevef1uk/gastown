@@ -524,11 +524,12 @@ func TestValidateImplementationArtifacts(t *testing.T) {
 }
 
 func TestValidateImplementationCommand_oneInProgressBead(t *testing.T) {
+	dir := t.TempDir()
 	cmd := `bd update tg-abc --status=in_progress`
-	if err := validateImplementationCommandWithState(cmd, "mockrig", "tg-xyz", orchestrator.DefaultWorkflowValidation(), false); err == nil {
+	if err := validateImplementationCommandWithState(cmd, dir, "mockrig", "tg-xyz", orchestrator.DefaultWorkflowValidation(), false); err == nil {
 		t.Fatal("expected reject second in_progress bead")
 	}
-	if err := validateImplementationCommandWithState(cmd, "mockrig", "tg-abc", orchestrator.DefaultWorkflowValidation(), false); err != nil {
+	if err := validateImplementationCommandWithState(cmd, dir, "mockrig", "tg-abc", orchestrator.DefaultWorkflowValidation(), false); err != nil {
 		t.Fatalf("same bead should be allowed: %v", err)
 	}
 }
@@ -547,18 +548,26 @@ func TestValidatePythonImplementationCommand(t *testing.T) {
 }
 
 func TestValidateGoImplementationCommand(t *testing.T) {
+	dir := t.TempDir()
+	mayor := filepath.Join(dir, "mockrig", "mayor", "rig")
+	if err := os.MkdirAll(filepath.Join(mayor, "linkshelf"), 0755); err != nil {
+		t.Fatal(err)
+	}
 	v := orchestrator.WorkflowValidation{
 		LayoutRoot:      "linkshelf",
 		QAVerifyCommand: "cd linkshelf && go test ./...",
 	}
-	if err := validateGoImplementationCommand(`cat > linkshelf/go.sum <<'EOF'`, v, true); err == nil {
+	if err := validateGoImplementationCommand(`cat > linkshelf/go.sum <<'EOF'`, mayor, v, true); err == nil {
 		t.Fatal("expected reject go.sum heredoc")
 	}
-	if err := validateGoImplementationCommand("bd close tg-1", v, false); err == nil {
+	if err := validateGoImplementationCommand("bd close tg-1", mayor, v, false); err == nil {
 		t.Fatal("expected reject bd close without verify")
 	}
-	if err := validateGoImplementationCommand("bd close tg-1", v, true); err != nil {
+	if err := validateGoImplementationCommand("bd close tg-1", mayor, v, true); err != nil {
 		t.Fatalf("bd close with verify ok should pass: %v", err)
+	}
+	if err := validateGoImplementationCommand("cd linkshelf && go run ./cmd/server", mayor, v, true); err == nil {
+		t.Fatal("expected reject go run before main.go exists")
 	}
 }
 

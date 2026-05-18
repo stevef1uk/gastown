@@ -1,6 +1,7 @@
 package main
 
 import (
+	"path/filepath"
 	"strings"
 
 	"github.com/steveyegge/gastown/internal/orchestrator"
@@ -31,6 +32,18 @@ func isQATestCommandOK(cmd string, v orchestrator.WorkflowValidation) bool {
 		return commandMatchesQAVerify(cmd, v.QAVerifyCommand)
 	}
 	return isUnittestCommand(cmd, v.UnittestModule)
+}
+
+func isImplementationVerifyCommandOK(cmd, townRoot, rig string, v orchestrator.WorkflowValidation) bool {
+	if isQATestCommandOK(cmd, v) {
+		return true
+	}
+	if !orchestrator.WorkflowUsesGo(v) || rig == "" {
+		return false
+	}
+	mayorDir := filepath.Join(townRoot, rig, "mayor", "rig")
+	impl := orchestrator.GoImplementationVerifyCommand(v, mayorDir)
+	return commandMatchesQAVerify(cmd, impl)
 }
 
 func commandMatchesQAVerify(cmd, verify string) bool {

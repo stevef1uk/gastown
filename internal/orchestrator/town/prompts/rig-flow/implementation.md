@@ -6,7 +6,7 @@ Rig `{{rig}}` (`{{rig}}/polecat`). Work under `{{rig}}/mayor/rig/`. Use the **Ne
 
 1. `CMD: export BEADS_DIR=$GT_ROOT/{{rig}}/.beads && cd {{rig}}/mayor/rig && bd update BEAD_ID --status=in_progress`
 2. `CMD: cd {{rig}}/mayor/rig && mkdir -p <dirs> && cat > <path> <<'EOF'` … real code … line with only `EOF`
-3. `CMD: cd {{rig}}/mayor/rig && {{unittest_command_hint}}` (after `.go` changes; green before `bd close`)
+3. `CMD: cd {{rig}}/mayor/rig && {{implementation_verify_hint}}` (after `.go` changes; green before `bd close` — no `go run`/curl until `cmd/server/main.go` exists)
 4. `CMD: export BEADS_DIR=$GT_ROOT/{{rig}}/.beads && cd {{rig}}/mayor/rig && bd close BEAD_ID`
 5. When all implement beads are closed, a **later** message: `{"outcome":"success","summary":"…"}`
 

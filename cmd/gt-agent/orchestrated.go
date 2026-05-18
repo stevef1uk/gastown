@@ -1110,14 +1110,18 @@ func extractBeadIDFromBdClose(cmd string) string {
 	return strings.Trim(id, `"'`)
 }
 
-func validateImplementationCommandWithState(cmd, rig, activeBead string, v orchestrator.WorkflowValidation, verifyOK bool) error {
+func validateImplementationCommandWithState(cmd, townRoot, rig, activeBead string, v orchestrator.WorkflowValidation, verifyOK bool) error {
 	if err := validateImplementationCommand(cmd, rig); err != nil {
 		return err
 	}
-	if err := validateGoImplementationCommand(cmd, v, verifyOK); err != nil {
+	mayorDir := rigMayorRigDir(townRoot, rig)
+	if err := validateGoImplementationCommand(cmd, mayorDir, v, verifyOK); err != nil {
 		return err
 	}
 	if err := validatePythonImplementationCommand(cmd, v, verifyOK); err != nil {
+		return err
+	}
+	if err := validateImplementationBeadFileWrite(cmd, townRoot, rig, activeBead, v); err != nil {
 		return err
 	}
 	if activeBead == "" || !isBeadUpdateInProgressCommand(cmd) {
@@ -1127,6 +1131,68 @@ func validateImplementationCommandWithState(cmd, rig, activeBead string, v orche
 		return fmt.Errorf("only one implement bead may be in_progress at a time (active: %s)", activeBead)
 	}
 	return nil
+}
+
+// validateImplementationBeadFileWrite rejects heredoc/touch writes to paths outside the active or next implement bead.
+func validateImplementationBeadFileWrite(cmd, townRoot, rig, activeBead string, v orchestrator.WorkflowValidation) error {
+	written := extractImplementFilePathFromCmd(cmd, v.LayoutRoot)
+	if written == "" {
+		return nil
+	}
+	allowedID := strings.TrimSpace(activeBead)
+	if allowedID == "" {
+		next, err := orchestrator.NextOpenImplementBead(townRoot, rig, v)
+		if err != nil || next == nil {
+			return nil
+		}
+		allowedID = next.ID
+	}
+	allowedPath := orchestrator.ImplementBeadPathForID(townRoot, rig, allowedID, v)
+	if allowedPath == "" {
+		return nil
+	}
+	if pathMatchesImplementWrite(written, allowedPath, v.RequiredFiles) {
+		return nil
+	}
+	return fmt.Errorf("write only the active/next implement file (%s for bead %s), not %q",
+		allowedPath, allowedID, written)
+}
+
+func pathMatchesImplementWrite(written, allowed string, required []string) bool {
+	written = filepath.ToSlash(strings.TrimSpace(written))
+	allowed = filepath.ToSlash(strings.TrimSpace(allowed))
+	if written == allowed {
+		return true
+	}
+	for _, want := range required {
+		want = filepath.ToSlash(strings.TrimSpace(want))
+		if written == want && (allowed == want || filepath.Base(allowed) == filepath.Base(want)) {
+			return true
+		}
+	}
+	return filepath.Base(written) == filepath.Base(allowed)
+}
+
+var implementFilePathRE = regexp.MustCompile(`(?i)cat\s*>\s*([^\s<;|&]+)`)
+
+func extractImplementFilePathFromCmd(cmd, layoutRoot string) string {
+	lower := strings.ToLower(cmd)
+	if !strings.Contains(lower, "cat >") && !strings.Contains(lower, "<<") && !strings.Contains(lower, "cat>>") {
+		return ""
+	}
+	m := implementFilePathRE.FindStringSubmatch(cmd)
+	if len(m) < 2 {
+		return ""
+	}
+	p := filepath.ToSlash(strings.Trim(m[1], `"'`))
+	layout := strings.Trim(strings.TrimSpace(layoutRoot), "/")
+	if layout != "" && !strings.HasPrefix(p, layout+"/") && strings.Contains(p, "/") {
+		// Allow paths relative to mayor/rig after cd.
+		if idx := strings.Index(p, layout+"/"); idx >= 0 {
+			p = p[idx:]
+		}
+	}
+	return p
 }
 
 func validatePlanningShellSideEffects(lower string) error {
