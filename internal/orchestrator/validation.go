@@ -393,7 +393,18 @@ func NormalizePipCommand(cmd string) string {
 	if !strings.Contains(lower, "pip") {
 		return cmd
 	}
+	if strings.Contains(lower, ".venv/bin/pip") || strings.Contains(lower, "/bin/pip install") {
+		return cmd
+	}
 	if strings.Contains(lower, "python3 -m pip") || strings.Contains(lower, "python -m pip") {
+		return cmd
+	}
+	// "pip install --upgrade pip" — final pip is the package name, not the CLI.
+	if regexp.MustCompile(`(?i)(^|[;&|]\s*)pip\s+install\b`).MatchString(lower) &&
+		regexp.MustCompile(`(?i)\binstall\s+(\S+\s+)*pip\s*$`).MatchString(strings.TrimSpace(lower)) {
+		return cmd
+	}
+	if regexp.MustCompile(`(?i)(^|[;&|]\s*)pip\s+install\s+--upgrade\s+pip\s*$`).MatchString(strings.TrimSpace(lower)) {
 		return cmd
 	}
 	re := regexp.MustCompile(`(?i)(^|[;&|]\s*|\s+)pip\b`)

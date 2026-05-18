@@ -56,7 +56,7 @@ func validatePythonProjectSetupArtifacts(townRoot, rig string, hadCmdFailure, ve
 	return nil
 }
 
-func validatePythonImplementationCommand(cmd string, v orchestrator.WorkflowValidation, verifyOK bool) error {
+func validatePythonImplementationCommand(cmd, townRoot, rig, activeBead string, v orchestrator.WorkflowValidation, verifyOK bool) error {
 	if !orchestrator.WorkflowUsesPython(v) {
 		return nil
 	}
@@ -68,7 +68,10 @@ func validatePythonImplementationCommand(cmd string, v orchestrator.WorkflowVali
 		return fmt.Errorf("install dependencies in project_setup — venv and pip install already ran there")
 	}
 	if isBeadCloseCommand(cmd) && !verifyOK {
-		return fmt.Errorf("run green verify before bd close: %s", orchestrator.PythonVerifyCommand(v))
+		mayorDir := rigMayorRigDir(townRoot, rig)
+		beadPath := orchestrator.ImplementBeadPathForID(townRoot, rig, activeBead, v)
+		verifyHint := orchestrator.ImplementationVerifyCommandForBead(v, mayorDir, beadPath)
+		return fmt.Errorf("run green verify before bd close: %s", verifyHint)
 	}
 	return nil
 }

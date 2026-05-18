@@ -1140,7 +1140,7 @@ func validateImplementationCommandWithState(cmd, townRoot, rig, activeBead strin
 	if err := validateGoImplementationCommand(cmd, townRoot, rig, mayorDir, activeBead, v, verifyOK); err != nil {
 		return err
 	}
-	if err := validatePythonImplementationCommand(cmd, v, verifyOK); err != nil {
+	if err := validatePythonImplementationCommand(cmd, townRoot, rig, activeBead, v, verifyOK); err != nil {
 		return err
 	}
 	if err := validateImplementationBeadFileWrite(cmd, townRoot, rig, activeBead, v); err != nil {

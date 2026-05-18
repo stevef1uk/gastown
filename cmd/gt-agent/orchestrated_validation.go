@@ -42,10 +42,7 @@ func isQATestCommandOK(cmd string, v orchestrator.WorkflowValidation) bool {
 }
 
 func isImplementationVerifyCommandOK(cmd, townRoot, rig, activeBead string, v orchestrator.WorkflowValidation) bool {
-	if isQATestCommandOK(cmd, v) {
-		return true
-	}
-	if !orchestrator.WorkflowUsesGo(v) || rig == "" {
+	if rig == "" {
 		return false
 	}
 	mayorDir := filepath.Join(townRoot, rig, "mayor", "rig")
@@ -54,7 +51,34 @@ func isImplementationVerifyCommandOK(cmd, townRoot, rig, activeBead string, v or
 	if commandMatchesQAVerify(cmd, impl) {
 		return true
 	}
-	return goVerifyCommandMatches(cmd, impl, v)
+	if orchestrator.WorkflowUsesGo(v) {
+		if goVerifyCommandMatches(cmd, impl, v) {
+			return true
+		}
+	}
+	if orchestrator.WorkflowUsesPython(v) {
+		if pythonVerifyCommandMatches(cmd, impl) {
+			return true
+		}
+	}
+	// Full-suite QA verify (e.g. final pytest -v) — only after per-bead checks miss.
+	return isQATestCommandOK(cmd, v)
+}
+
+// pythonVerifyCommandMatches accepts venv import checks and compileall/pytest scoped to the active bead.
+func pythonVerifyCommandMatches(cmd, verify string) bool {
+	lower := strings.ToLower(cmd)
+	vLower := strings.ToLower(verify)
+	if strings.Contains(vLower, "import pytest") {
+		return strings.Contains(lower, "import pytest")
+	}
+	if strings.Contains(vLower, "compileall") {
+		return strings.Contains(lower, "compileall")
+	}
+	if strings.Contains(vLower, "-m pytest") {
+		return strings.Contains(lower, "pytest")
+	}
+	return false
 }
 
 // goVerifyCommandMatches accepts agent commands that cd into layout via rig/mayor/rig paths

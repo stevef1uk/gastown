@@ -456,6 +456,10 @@ func (r *stateRunner) autoVerifyMatches(cmd, when string) bool {
 		return isQATestCommandOK(cmd, r.v)
 	case "go_write_layout":
 		return orchestratedWritesGoUnderLayout(cmd, r.v)
+	case "python_import_check":
+		return orchestrator.IsPythonImportCheckCommand(cmd)
+	case "python_compileall":
+		return strings.Contains(strings.ToLower(cmd), "compileall")
 	default:
 		return false
 	}
@@ -471,8 +475,8 @@ func (r *stateRunner) verifyCommand(kind string) string {
 		if orchestrator.WorkflowUsesGo(r.v) {
 			return orchestrator.GoVerifyCommandWithTidy(r.v)
 		}
-	case "go_implementation":
-		if orchestrator.WorkflowUsesGo(r.v) {
+	case "go_implementation", "python_implementation":
+		if orchestrator.WorkflowUsesGo(r.v) || orchestrator.WorkflowUsesPython(r.v) {
 			mayor := filepath.Join(r.townRoot, r.rig, "mayor", "rig")
 			beadPath := orchestrator.ImplementBeadPathForID(r.townRoot, r.rig, r.track.activeBead, r.v)
 			return orchestrator.ImplementationVerifyCommandForBead(r.v, mayor, beadPath)

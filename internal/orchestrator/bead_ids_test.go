@@ -64,4 +64,8 @@ func TestNormalizePipCommand(t *testing.T) {
 	if got := NormalizePipCommand(in); got != want {
 		t.Fatalf("got %q want %q", got, want)
 	}
+	upgrade := ".venv/bin/pip install --upgrade pip"
+	if got := NormalizePipCommand(upgrade); got != upgrade {
+		t.Fatalf("must not rewrite package name pip: got %q", got)
+	}
 }

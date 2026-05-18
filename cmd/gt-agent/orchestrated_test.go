@@ -622,11 +622,27 @@ func TestValidatePythonImplementationCommand(t *testing.T) {
 		RequiredFiles:   []string{"backend/requirements.txt"},
 		QAVerifyCommand: "cd backend && python3 -m pytest -q",
 	}
-	if err := validatePythonImplementationCommand("python3 -m pip install -r backend/requirements.txt", v, true); err == nil {
+	dir := t.TempDir()
+	rig := "mockrig"
+	if err := validatePythonImplementationCommand("python3 -m pip install -r backend/requirements.txt", dir, rig, "", v, true); err == nil {
 		t.Fatal("expected pip install rejected in implementation")
 	}
-	if err := validatePythonImplementationCommand("bd close tg-1", v, false); err == nil {
+	if err := validatePythonImplementationCommand("bd close tg-1", dir, rig, "tg-1", v, false); err == nil {
 		t.Fatal("expected bd close without verify rejected")
+	}
+}
+
+func TestPythonImplementationVerifyAcceptance(t *testing.T) {
+	v := orchestrator.WorkflowValidation{
+		LayoutRoot:      "tasklist",
+		PythonVenvDir:   ".venv",
+		RequiredFiles:   []string{"tasklist/requirements.txt"},
+		QAVerifyCommand: "pytest -v",
+	}
+	impl := orchestrator.ImplementationVerifyCommandForBead(v, t.TempDir(), "tasklist/requirements.txt")
+	cmd := "cd testgt5/mayor/rig && test -x .venv/bin/python3 && .venv/bin/python3 -c 'import pytest'"
+	if !commandMatchesQAVerify(cmd, impl) && !pythonVerifyCommandMatches(cmd, impl) {
+		t.Fatalf("import pytest should satisfy per-bead verify %q", impl)
 	}
 }
 

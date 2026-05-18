@@ -163,6 +163,10 @@ states:
           verify: go_implementation
         - when: go_write_layout
           verify: go_implementation
+        - when: python_import_check
+          verify: python_implementation
+        - when: python_compileall
+          verify: python_implementation
       artifacts: implementation
       retry_hint_key: implementation
       failure_hint: |
