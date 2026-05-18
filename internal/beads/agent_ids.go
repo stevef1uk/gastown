@@ -38,6 +38,11 @@ func PlannerBeadIDTown() string {
 	return TownBeadsPrefix + "-planner"
 }
 
+// SetupBeadIDTown returns the project-setup agent bead ID for town-level beads.
+func SetupBeadIDTown() string {
+	return TownBeadsPrefix + "-setup"
+}
+
 // MechanicBeadIDTown returns the Mechanic agent bead ID for town-level beads.
 // This uses the "hq-" prefix for town-level storage.
 func MechanicBeadIDTown() string {
@@ -57,6 +62,7 @@ var ValidAgentRoles = []string{
 	constants.RoleMayor,    // Town-level: gt-mayor
 	constants.RoleDeacon,   // Town-level: gt-deacon
 	constants.RolePlanner,  // Town-level: gt-planner
+	constants.RoleSetup,    // Town-level: gt-setup
 	"dog",                  // Town-level with name: gt-dog-<name>
 	constants.RoleWitness,  // Per-rig: gt-<rig>-witness
 	constants.RoleRefinery, // Per-rig: gt-<rig>-refinery
@@ -68,7 +74,7 @@ var ValidAgentRoles = []string{
 }
 
 // TownLevelRoles are agent roles that don't have a rig.
-var TownLevelRoles = []string{constants.RoleMayor, constants.RoleDeacon, constants.RolePlanner, constants.RoleMechanic}
+var TownLevelRoles = []string{constants.RoleMayor, constants.RoleDeacon, constants.RolePlanner, constants.RoleSetup, constants.RoleMechanic}
 
 // TownLevelNamedRoles are town-level agent roles that include a name.
 var TownLevelNamedRoles = []string{"dog"}
@@ -522,7 +528,7 @@ func IsAgentSessionBead(beadID string) bool {
 	}
 	// Known agent roles
 	switch role {
-	case constants.RoleMayor, constants.RoleDeacon, constants.RolePlanner, constants.RoleMechanic, constants.RoleWitness, constants.RoleRefinery, constants.RoleArchitect, constants.RoleQA, constants.RoleCrew, constants.RolePolecat, "dog":
+	case constants.RoleMayor, constants.RoleDeacon, constants.RolePlanner, constants.RoleSetup, constants.RoleMechanic, constants.RoleWitness, constants.RoleRefinery, constants.RoleArchitect, constants.RoleQA, constants.RoleCrew, constants.RolePolecat, "dog":
 		return true
 	default:
 		return false

@@ -57,6 +57,7 @@ const (
 	RoleDeacon    Role = "deacon"
 	RoleBoot      Role = "boot"
 	RolePlanner   Role = "planner"
+	RoleSetup     Role = "setup"
 	RoleWitness   Role = "witness"
 	RoleRefinery  Role = "refinery"
 	RoleArchitect Role = "architect"
@@ -1093,6 +1094,8 @@ func buildRoleAnnouncement(ctx RoleContext) string {
 		return fmt.Sprintf("%s Crew %s, checking in.", ctx.Rig, ctx.Polecat)
 	case RolePlanner:
 		return "Planner, checking in."
+	case RoleSetup:
+		return "Setup, checking in."
 	case RoleArchitect:
 		return fmt.Sprintf("%s Architect, checking in.", ctx.Rig)
 	case RoleQA:
@@ -1131,6 +1134,8 @@ func getAgentIdentity(ctx RoleContext) string {
 		return fmt.Sprintf("%s/refinery", ctx.Rig)
 	case RolePlanner:
 		return "planner"
+	case RoleSetup:
+		return "setup"
 	case RoleArchitect:
 		return fmt.Sprintf("%s/architect", ctx.Rig)
 	case RoleQA:
@@ -1236,6 +1241,8 @@ func getAgentBeadID(ctx RoleContext) string {
 		return ""
 	case RolePlanner:
 		return beads.PlannerBeadIDTown()
+	case RoleSetup:
+		return beads.SetupBeadIDTown()
 	case RoleArchitect:
 		if ctx.Rig != "" {
 			prefix := beads.GetPrefixForRig(ctx.TownRoot, ctx.Rig)

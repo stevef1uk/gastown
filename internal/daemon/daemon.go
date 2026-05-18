@@ -892,8 +892,14 @@ func (d *Daemon) heartbeat(state *State) {
 	orchestrated, _, _ := orchestrator.IsRunning(d.config.TownRoot)
 	if orchestrated {
 		d.ensureRigPolecatsRunning()
+		if p := d.checkPressure("setup"); !p.OK {
+			d.logger.Printf("Deferring setup spawn: %s", p.Reason)
+		} else {
+			d.ensureSetupRunning()
+		}
 	} else {
 		d.killRigPolecatSessions()
+		d.killSetupSessions()
 	}
 
 	// 5.6.5. Ensure Mechanics are running for all rigs (restart if dead)
@@ -2104,6 +2110,49 @@ func (d *Daemon) ensurePlannerRunning() {
 	d.metrics.recordRestart(d.ctx, "planner")
 	telemetry.RecordDaemonRestart(d.ctx, "planner")
 	d.logger.Printf("Planner session started successfully")
+}
+
+// ensureSetupRunning ensures the town-level project-setup agent is running (rig-flow).
+// Only spawned while the orchestrator is active; see patrol loop §5.6.2.
+func (d *Daemon) ensureSetupRunning() {
+	sessionID := session.SetupSessionName()
+	setupDir := filepath.Join(d.config.TownRoot, constants.DirSetup)
+	_ = os.MkdirAll(setupDir, 0755)
+
+	if running, _ := d.sp.Exists(d.ctx, sessionID); running {
+		wantOrch := d.orchestratedForRole(constants.RoleSetup)
+		hasOrch := session.GTAgentHasFlagInSession(d.config.TownRoot, sessionID, "--orchestrated")
+		if wantOrch && !hasOrch {
+			d.logger.Printf("Setup session %s is not orchestrated but orchestrator is running — restarting with --orchestrated", sessionID)
+			_ = d.sp.Stop(d.ctx, sessionID, false)
+		} else {
+			return
+		}
+	}
+
+	orch := d.orchestratedForRole(constants.RoleSetup)
+	beaconTopic := "orchestrated"
+	if !orch {
+		beaconTopic = "patrol"
+	}
+	_, err := session.StartSession(d.ctx, d.sp, &session.SessionConfig{
+		SessionID:    sessionID,
+		WorkDir:      setupDir,
+		Role:         constants.RoleSetup,
+		TownRoot:     d.config.TownRoot,
+		Orchestrated: orch,
+		Beacon:       session.BeaconConfig{Recipient: "setup", Sender: "daemon", Topic: beaconTopic},
+		WaitForAgent: false,
+		AutoRespawn:  true,
+	})
+	if err != nil {
+		d.logger.Printf("Error starting setup: %v", err)
+		return
+	}
+
+	d.metrics.recordRestart(d.ctx, "setup")
+	telemetry.RecordDaemonRestart(d.ctx, "setup")
+	d.logger.Printf("Setup session started successfully")
 }
 
 // ensureMayorRunning ensures the Mayor is running.
@@ -3420,6 +3469,18 @@ func (d *Daemon) killPlannerSessions() {
 	exists, _ := d.sp.Exists(d.ctx, name)
 	if exists {
 		d.logger.Printf("Killing leftover %s session (patrol disabled)", name)
+		if err := d.sp.Stop(d.ctx, name, true); err != nil {
+			d.logger.Printf("Error killing %s session: %v", name, err)
+		}
+	}
+}
+
+// killSetupSessions kills the project-setup session when the orchestrator is stopped.
+func (d *Daemon) killSetupSessions() {
+	name := session.SetupSessionName()
+	exists, _ := d.sp.Exists(d.ctx, name)
+	if exists {
+		d.logger.Printf("Killing leftover %s session (orchestrator not running)", name)
 		if err := d.sp.Stop(d.ctx, name, true); err != nil {
 			d.logger.Printf("Error killing %s session: %v", name, err)
 		}

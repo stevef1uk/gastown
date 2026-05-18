@@ -10,7 +10,7 @@ import (
 // IsPipelineRole reports roles that participate in orchestrator rig-flow FSM tasks.
 func IsPipelineRole(role string) bool {
 	switch role {
-	case "mayor", "architect", "planner", "polecat", "qa":
+	case "mayor", "architect", "planner", "setup", "polecat", "qa":
 		return true
 	default:
 		return false
@@ -71,6 +71,7 @@ func LoadPromptFile(townRoot, promptFile string, vars map[string]string) (string
 var rigScopedPipelineRoles = map[string]bool{
 	"architect": true,
 	"planner":   false, // town hq-planner is not rig-prefixed
+	"setup":     false, // town hq-setup is not rig-prefixed
 	"polecat":   true,
 	"qa":        true,
 }
@@ -147,6 +148,7 @@ func (m *Manager) BuildTaskPayload(inst *WorkflowInstance, tpl *WorkflowTemplate
 		"instructions":     taskPrompt,
 		"allowed_outcomes": state.AllowedOutcomes(),
 		"validation":       validation,
+		"hooks":            state.Hooks,
 	}
 	if inst.PendingRework != nil {
 		payload["pending_rework"] = inst.PendingRework

@@ -60,6 +60,7 @@ var permanentAgents = map[string]bool{
 	"witness":     true,
 	"refinery":    true,
 	"planner":     true,
+	"setup":       true,
 	"mechanic":    true,
 	"architect":   true,
 	"qa":          true,
@@ -261,7 +262,7 @@ func findGT() string {
 // rig singletons under townRoot/<rig>/<role>/, named polecats under polecats/<name>/.
 func statePath(townRoot, role, rig, polecat string) string {
 	switch role {
-	case "deacon", "mayor", "planner", "mechanic":
+	case "deacon", "mayor", "planner", "setup", "mechanic":
 		return filepath.Join(townRoot, role, stateFileName)
 	}
 	if rig != "" && polecat != "" {
@@ -378,7 +379,7 @@ func run() error {
 	if sessionName == "" {
 		if rig != "" && polecat != "" {
 			sessionName = fmt.Sprintf("gt-%s-%s", rig, polecat)
-		} else if roleCanonical == "mayor" || roleCanonical == "deacon" || roleCanonical == "witness" || roleCanonical == "refinery" || roleCanonical == "planner" || roleCanonical == "mechanic" || roleCanonical == "architect" || roleCanonical == "qa" {
+		} else if roleCanonical == "mayor" || roleCanonical == "deacon" || roleCanonical == "witness" || roleCanonical == "refinery" || roleCanonical == "planner" || roleCanonical == "setup" || roleCanonical == "mechanic" || roleCanonical == "architect" || roleCanonical == "qa" {
 			// For rig-level roles, use the prefix if known
 			prefix := rig
 			if prefix == "" {
@@ -2324,7 +2325,7 @@ func hasContentFreeMailSend(cmd string) (string, bool) {
 			// Role/agent names — never carry content on their own.
 			"witness": true, "mayor": true, "refinery": true,
 			"polecat": true, "polecats": true, "deacon": true,
-			"architect": true, "qa": true, "planner": true, "mechanic": true,
+			"architect": true, "qa": true, "planner": true, "setup": true, "mechanic": true,
 		}
 		bodyTokens := tokenizeAlnum(bodyTrim)
 		extra := 0
@@ -2404,7 +2405,7 @@ func residualMeaningfulTokens(lowerBody, subject string) []string {
 		"to", "from", "the", "a", "an", "of", "for", "in", "on",
 		"regarding", "about", "re", "and", "or", "is", "this", "that",
 		"witness", "mayor", "refinery", "polecat", "polecats", "rust",
-		"deacon", "architect", "qa", "planner", "mechanic",
+		"deacon", "architect", "qa", "planner", "setup", "mechanic",
 	} {
 		skip[w] = true
 	}
@@ -3160,7 +3161,7 @@ func buildSystemPrompt(role, rig, polecat, townRoot string, patrolCount int, pri
 
 	// Update WorkDir for specific roles
 	switch role {
-	case "mayor", "deacon", "planner", "mechanic":
+	case "mayor", "deacon", "planner", "setup", "mechanic":
 		data.WorkDir = filepath.Join(townRoot, role)
 	default:
 		if rig != "" && polecat != "" {

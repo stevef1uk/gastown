@@ -14,6 +14,7 @@ const (
 	RoleMayor     Role = "mayor"
 	RoleDeacon    Role = "deacon"
 	RolePlanner   Role = "planner"
+	RoleSetup     Role = "setup"
 	RoleOverseer  Role = "overseer"
 	RoleWitness   Role = "witness"
 	RoleRefinery  Role = "refinery"
@@ -48,6 +49,9 @@ func ParseAddress(address string) (*AgentIdentity, error) {
 	}
 	if address == string(RolePlanner) || address == string(RolePlanner)+"/" {
 		return &AgentIdentity{Role: RolePlanner}, nil
+	}
+	if address == string(RoleSetup) || address == string(RoleSetup)+"/" {
+		return &AgentIdentity{Role: RoleSetup}, nil
 	}
 	if address == string(RoleMechanic) || address == string(RoleMechanic)+"/" {
 		return &AgentIdentity{Role: RoleMechanic}, nil
@@ -143,6 +147,8 @@ func ParseSessionNameWithRegistry(session string, registry *PrefixRegistry) (*Ag
 			return &AgentIdentity{Role: RoleDeacon}, nil
 		case string(RolePlanner):
 			return &AgentIdentity{Role: RolePlanner}, nil
+		case string(RoleSetup):
+			return &AgentIdentity{Role: RoleSetup}, nil
 		case string(RoleMechanic):
 			return &AgentIdentity{Role: RoleMechanic}, nil
 		case "boot":
@@ -233,6 +239,8 @@ func (a *AgentIdentity) SessionName() string {
 		return DeaconSessionName()
 	case RolePlanner:
 		return PlannerSessionName()
+	case RoleSetup:
+		return SetupSessionName()
 	case RoleOverseer:
 		return OverseerSessionName()
 	case RoleWitness:
@@ -287,6 +295,8 @@ func (a *AgentIdentity) BeaconAddress() string {
 		return "deacon"
 	case RolePlanner:
 		return "planner"
+	case RoleSetup:
+		return "setup"
 	case RoleOverseer:
 		return "overseer"
 	case RoleWitness:
@@ -324,6 +334,8 @@ func (a *AgentIdentity) Address() string {
 		return "deacon"
 	case RolePlanner:
 		return "planner"
+	case RoleSetup:
+		return "setup"
 	case RoleOverseer:
 		return "overseer"
 	case RoleWitness:

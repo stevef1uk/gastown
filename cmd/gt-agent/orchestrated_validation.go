@@ -10,7 +10,7 @@ func taskValidation(task *orchestrator.Task) orchestrator.WorkflowValidation {
 	if task == nil {
 		return orchestrator.DefaultWorkflowValidation()
 	}
-	return task.Validation.WithDefaults()
+	return orchestrator.ClampProfileValidation(task.Validation.WithDefaults())
 }
 
 func isQATestCommandOK(cmd string, v orchestrator.WorkflowValidation) bool {

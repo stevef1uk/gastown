@@ -480,6 +480,8 @@ func runNudge(cmd *cobra.Command, args []string) (retErr error) {
 		target = session.MayorSessionName()
 	case constants.RolePlanner:
 		target = session.PlannerSessionName()
+	case constants.RoleSetup:
+		target = session.SetupSessionName()
 	case constants.RoleMechanic:
 		target = session.MechanicSessionName()
 	case constants.RoleWitness, constants.RoleRefinery, constants.RoleArchitect, constants.RoleQA, constants.RolePolecat:
@@ -926,6 +928,8 @@ func addressToAgentBeadID(address string) string {
 		return session.DeaconSessionName()
 	case constants.RolePlanner:
 		return session.PlannerSessionName()
+	case constants.RoleSetup:
+		return session.SetupSessionName()
 	}
 
 	// Parse rig/role format

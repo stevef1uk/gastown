@@ -120,14 +120,24 @@ func TestUpdateOrchestratedRetry_failureThenSuccess(t *testing.T) {
 }
 
 func TestOrchestratedRetryHints_planningMentionsWorktree(t *testing.T) {
-	h := orchestratedRetryHintsForState("planning", "mockrig", orchestrator.WorkflowValidation{})
+	task := &orchestrator.Task{
+		Hooks: orchestrator.StateHooks{
+			RetryHint: "After `cd {{rig}}/mayor/rig`, write plan.md",
+		},
+	}
+	h := newStateRunner(task, "", "mockrig").retryHint()
 	if !strings.Contains(h, "mockrig/mayor/rig") || !strings.Contains(h, "plan.md") {
 		t.Fatalf("planning hints: %q", h)
 	}
 }
 
 func TestOrchestratedRetryHints_design(t *testing.T) {
-	h := orchestratedRetryHintsForState("design", "mockrig", orchestrator.WorkflowValidation{})
+	task := &orchestrator.Task{
+		Hooks: orchestrator.StateHooks{
+			RetryHint: "write architecture.md via heredoc",
+		},
+	}
+	h := newStateRunner(task, "", "mockrig").retryHint()
 	if !strings.Contains(h, "architecture.md") {
 		t.Fatalf("design hints: %q", h)
 	}

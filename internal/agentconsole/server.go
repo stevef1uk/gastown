@@ -320,6 +320,7 @@ func (s *Server) discoverAgents() []Agent {
 		constants.RoleMayor,
 		constants.RoleDeacon,
 		constants.RolePlanner,
+		constants.RoleSetup,
 		constants.RoleMechanic,
 	}
 	added := make(map[string]bool)
@@ -644,6 +645,19 @@ func agentLogPaths(townRoot, sessionName, rig, role, workerName string) []string
 		filepath.Join(logDir, sessionName+".wrapper.log"),
 	)
 	if rig == "" {
+		// Town-level orchestrated agents (hq-planner, hq-setup, …).
+		switch role {
+		case constants.RolePlanner:
+			paths = append(paths, filepath.Join(townRoot, constants.DirPlanner, "typescript"))
+		case constants.RoleSetup:
+			paths = append(paths, filepath.Join(townRoot, constants.DirSetup, "typescript"))
+		case constants.RoleMayor:
+			paths = append(paths, filepath.Join(townRoot, constants.DirMayor, "typescript"))
+		case constants.RoleDeacon:
+			paths = append(paths, filepath.Join(townRoot, "deacon", "typescript"))
+		case constants.RoleMechanic:
+			paths = append(paths, filepath.Join(townRoot, constants.DirMechanic, "typescript"))
+		}
 		return paths
 	}
 	// Prefer logs/sessions/*.log (NATS wrapper / orchestrated gt-agent) over
@@ -661,8 +675,6 @@ func agentLogPaths(townRoot, sessionName, rig, role, workerName string) []string
 		if workerName != "" && workerName != sessionName {
 			paths = append(paths, filepath.Join(townRoot, rig, "crew", workerName, "typescript"))
 		}
-	case "planner":
-		paths = append(paths, filepath.Join(townRoot, "planner", "typescript"))
 	}
 	return paths
 }
@@ -740,7 +752,7 @@ func (s *Server) agentIDToSessionName(id string) string {
 		return "orchestrator"
 	}
 	// Town-level agents
-	if id == "mayor" || id == "deacon" || id == "planner" || id == "mechanic" {
+	if id == "mayor" || id == "deacon" || id == "planner" || id == "setup" || id == "mechanic" {
 		return "hq-" + id
 	}
 	return id

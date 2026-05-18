@@ -1125,6 +1125,7 @@ func outputStatusText(w io.Writer, status TownStatus) error {
 		constants.RoleMayor:     constants.EmojiMayor,
 		constants.RoleDeacon:    constants.EmojiDeacon,
 		constants.RolePlanner:   constants.EmojiPlanner,
+		constants.RoleSetup:     constants.EmojiSetup,
 		constants.RoleWitness:   constants.EmojiWitness,
 		constants.RoleRefinery:  constants.EmojiRefinery,
 		constants.RoleArchitect: constants.EmojiArchitect,
@@ -1732,6 +1733,7 @@ func discoverGlobalAgents(townRoot string, allSessions map[string]bool, allAgent
 		{constants.RoleMayor, constants.RoleMayor + "/", mayorSession, constants.RoleMayor, beads.MayorBeadIDTown()},
 		{constants.RoleDeacon, constants.RoleDeacon + "/", deaconSession, constants.RoleDeacon, beads.DeaconBeadIDTown()},
 		{constants.RolePlanner, constants.RolePlanner + "/", session.PlannerSessionName(), constants.RolePlanner, beads.PlannerBeadIDTown()},
+		{constants.RoleSetup, constants.RoleSetup + "/", session.SetupSessionName(), constants.RoleSetup, beads.SetupBeadIDTown()},
 		{constants.RoleMechanic, constants.RoleMechanic + "/", session.MechanicSessionName(), constants.RoleMechanic, beads.MechanicBeadIDTown()},
 	}
 

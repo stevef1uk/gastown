@@ -19,6 +19,7 @@ type State struct {
 	Role         string                `yaml:"role"`
 	PromptFile   string                `yaml:"prompt_file"` // relative to {townRoot}/orchestrator/
 	Instructions string                `yaml:"instructions"`
+	Hooks        StateHooks            `yaml:"hooks"`
 	Transitions  map[string]Transition `yaml:"transitions"`
 }
 

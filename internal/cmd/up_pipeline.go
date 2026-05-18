@@ -59,6 +59,11 @@ func reconcileOrchestratedPipelineAgents(townRoot string, rigNames []string, pre
 		_ = upStartPlanner(townRoot)
 	}
 
+	wantSetup := orchestrator.OrchestratedForRole(true, constants.RoleSetup)
+	if upEnsureFreshPipelineSession(ctx, sp, townRoot, session.SetupSessionName(), wantSetup) {
+		_ = upStartSetup(townRoot)
+	}
+
 	for _, rigName := range rigNames {
 		r := prefetched[rigName]
 		if r == nil {

@@ -22,7 +22,7 @@ func orchestratedRoleLogPath(townRoot, role, rig, polecat string) string {
 		return ""
 	}
 	switch role {
-	case "deacon", "mayor", "planner", "mechanic":
+	case "deacon", "mayor", "planner", "setup", "mechanic":
 		return filepath.Join(townRoot, role, "typescript")
 	}
 	if rig == "" {

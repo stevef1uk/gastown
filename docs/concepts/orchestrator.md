@@ -105,13 +105,16 @@ Optional: **Agent console** (`gt-agent-console`, default `http://127.0.0.1:8081`
 
 ### 3. Tail the right session per state
 
-| State | Tail |
-|-------|------|
-| kickoff | `~/gt/mayor/typescript` |
-| design | `~/gt/testgt2/architect/typescript` |
-| planning | `~/gt/planner/typescript` |
-| implementation | `~/gt/testgt2/polecat/typescript` |
-| qa_review | `~/gt/testgt2/qa/typescript` |
+| State | Role in `gt status` | Tail |
+|-------|---------------------|------|
+| kickoff | mayor | `~/gt/mayor/typescript` |
+| design | architect (per rig) | `~/gt/testgt2/architect/typescript` |
+| planning | planner | `~/gt/planner/typescript` |
+| project_setup | planner (same session as planning) | `~/gt/planner/typescript` |
+| implementation | polecat (per rig) | `~/gt/testgt2/polecat/typescript` |
+| qa_review | qa (per rig) | `~/gt/testgt2/qa/typescript` |
+
+There is no separate “setup” agent row in `gt status`. FSM state `project_setup` is assigned to the **planner** role; use `gt mayor workflow status` to see `state=project_setup` while setup runs.
 
 Do **not** use `~/gt/qa/typescript` for this rig — `fetch_task` expects `agent_id=testgt2/qa`.
 

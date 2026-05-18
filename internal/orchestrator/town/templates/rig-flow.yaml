@@ -3,6 +3,7 @@ description: Standard rig workflow (Mayor -> Architect -> Planner -> Polecat -> 
 initial_state: kickoff
 # Artifact guards for gt-agent. Per-rig values come from mayor/rig/.gastown/workflow-profile.json
 # (gt rig spec-index). These YAML defaults are placeholders only.
+# State behavior (guards, env, auto-verify) is configured under each state's hooks: block.
 validation:
   bead_title_contains: "Implement "
   min_architecture_bytes: 200
@@ -14,6 +15,9 @@ states:
     instructions: |
       1. Ensure rig '{{rig}}' is registered and `{{rig}}/mayor/rig/SPEC.md` exists.
       2. Report outcome success when ready for design.
+    hooks:
+      retry_hint: |
+        One CMD: per line. Confirm the rig is registered and SPEC.md exists before reporting success.
     transitions:
       success:
         to: design
@@ -25,6 +29,16 @@ states:
     instructions: |
       1. Read `{{rig}}/mayor/rig/SPEC.md`.
       2. Write `{{rig}}/mayor/rig/architecture.md` (≥200 bytes).
+    hooks:
+      cmd_guard: design
+      cmd_rewrites: [rig_placeholders, spec_md_case, unwrap_bash_lc]
+      track: design
+      artifacts: design
+      retry_hint: |
+        One CMD: per line. Read SPEC with head; write architecture.md via a single-quoted heredoc (≥200 bytes).
+        Prose may mention python3 or backend/ paths — that is fine inside the document.
+      failure_hint: |
+        Write architecture.md with a heredoc CMD in this session (stale files from prior runs do not count). Read SPEC with head -n 60.
     transitions:
       success:
         to: planning
@@ -36,6 +50,18 @@ states:
     instructions: |
       1. Read SPEC and architecture under `{{rig}}/mayor/rig/`.
       2. Create implementation beads and `plan.md`.
+    hooks:
+      cmd_guard: planning
+      cmd_rewrites: [rig_placeholders, spec_md_case, plan_md_after_cd, bd_list_limit, unwrap_bash_lc]
+      env:
+        beads_dir: true
+      track: planning
+      artifacts: planning
+      retry_hint: |
+        One CMD: per line. After `cd {{rig}}/mayor/rig`, write plan.md with a relative path (not {{rig}}/mayor/rig/plan.md).
+        Heredoc must end with a line containing only EOF. Verify with wc -c from town root.
+      failure_hint: |
+        Repair beads with bd delete/create, rewrite plan.md if needed — then JSON success. Work from {{rig}}/mayor/rig with BEADS_DIR=$GT_ROOT/{{rig}}/.beads. No python/git/backend code.
     transitions:
       success:
         to: plan_review
@@ -47,17 +73,85 @@ states:
     instructions: |
       1. Verify open implementation beads match architecture.md and workflow required_files.
       2. Reject duplicate or path-less beads; send planner back to fix.
+    hooks:
+      max_cmd_turns: 8
+      cmd_guard: plan_review
+      cmd_rewrites: [rig_placeholders, spec_md_case, bd_list_limit, unwrap_bash_lc]
+      env:
+        beads_dir: true
+      track: plan_review
+      artifacts: plan_review
+      bead_ids_in_summary: true
+      retry_hint: |
+        One CMD: per line. Run bd list --status=open from {{rig}}/mayor/rig; compare titles to architecture required_files.
+      failure_hint: |
+        Run `bd list --status=open` from {{rig}}/mayor/rig with BEADS_DIR set; compare titles to architecture required_files. Use outcome failure to send the Planner back.
+    transitions:
+      success:
+        to: project_setup
+      failure:
+        to: planning
+  project_setup:
+    role: setup
+    prompt_file: prompts/rig-flow/project_setup.md
+    instructions: |
+      1. Go: scaffold module (go mod init/tidy), split beads one file each, green verify.
+      2. Python: create venv, pip install -r requirements.txt once, split beads, green pytest/unittest.
+    hooks:
+      cmd_guard: project_setup
+      cmd_rewrites: [rig_placeholders, bd_list_implement_scope, unittest_workdir, bd_list_limit, unwrap_bash_lc]
+      env:
+        beads_dir: true
+        python_venv: create
+      pip_repair_before_run: true
+      python3_rewrite: true
+      track: project_setup
+      auto_verify:
+        - when: go_mod_tidy
+          verify: go_with_tidy
+        - when: go_mod_init
+          verify: go_with_tidy
+        - when: pip_install
+          verify: python
+        - when: python_venv
+          verify: python
+        - when: qa_test_ok
+          verify: go_with_tidy
+        - when: qa_test_ok
+          verify: python
+      artifacts: project_setup
+      retry_hint_key: project_setup
     transitions:
       success:
         to: implementation
       failure:
-        to: planning
+        to: project_setup
   implementation:
     role: polecat
     prompt_file: prompts/rig-flow/implementation.md
     instructions: |
       1. In `{{rig}}/mayor/rig/`, list open implementation beads, claim one, implement, close bead.
       2. Report success when ready for QA.
+    hooks:
+      pre_run: [repair_requirements, reopen_implement_beads]
+      per_turn: [repair_requirements]
+      cmd_guard: implementation
+      cmd_rewrites: [rig_placeholders, backend_path_after_cd, bd_list_implement_scope, unittest_workdir, bd_list_limit, unwrap_bash_lc]
+      env:
+        beads_dir: true
+        pythonpath: true
+        python_venv: activate
+      pip_repair_before_run: true
+      python3_rewrite: true
+      track: implementation
+      empty_bd_list_ok: true
+      auto_verify:
+        - when: go_write_layout
+          verify: go_with_tidy
+      artifacts: implementation
+      retry_hint_key: implementation
+      failure_hint: |
+        Use bare `bd` from {{rig}}/mayor/rig with BEADS_DIR=$GT_ROOT/{{rig}}/.beads: fix files QA named, run {{unittest_command_hint}}, `bd close` a bead, then success. No shell text in .py files.
     transitions:
       success:
         to: qa_review
@@ -69,6 +163,24 @@ states:
     instructions: |
       1. Review closed implementation beads in `{{rig}}` against SPEC and architecture.
       2. Use outcome task_passed (more work), all_passed (done), or failure (rework).
+    hooks:
+      max_cmd_turns: 8
+      per_turn: [repair_requirements]
+      cmd_guard: qa
+      cmd_rewrites: [rig_placeholders, bd_list_implement_scope, unittest_workdir, bd_list_limit, unwrap_bash_lc]
+      env:
+        beads_dir: true
+        pythonpath: true
+        python_venv: activate
+      pip_repair_before_run: true
+      python3_rewrite: true
+      track: qa
+      artifacts: qa
+      bead_ids_in_summary: true
+      retry_hint: |
+        One CMD: per line. Review closed beads against SPEC and architecture; use allowed QA outcomes only.
+      failure_hint: |
+        Run real CMD: lines: bd list --status=closed, head SPEC.md, {{unittest_command_hint}} from {{rig}}/mayor/rig. Then JSON only.
     transitions:
       task_passed:
         to: implementation

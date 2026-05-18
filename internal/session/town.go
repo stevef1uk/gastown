@@ -23,6 +23,7 @@ func TownSessions() []TownSession {
 	return []TownSession{
 		{"Mayor", MayorSessionName()},
 		{"Planner", PlannerSessionName()},
+		{"Setup", SetupSessionName()},
 		{"Mechanic", MechanicSessionName()},
 		{"Boot", BootSessionName()},
 		{"Deacon", DeaconSessionName()},

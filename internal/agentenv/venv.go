@@ -40,6 +40,23 @@ func EnsureVenv(workDir, venvRel, hostPython string) (venvPython string, created
 	return venvPython, true, nil
 }
 
+// ActivateRigVenvIfExists sets VIRTUAL_ENV/PATH/GT_PYTHON3 when workDir/venvRel already exists.
+// It does not create a venv (use WithRigVenv in project_setup).
+func ActivateRigVenvIfExists(env []string, workDir, venvRel string) []string {
+	venvPy := VenvPython(workDir, venvRel)
+	if !isExecutable(venvPy) {
+		return env
+	}
+	venvPath, err := filepath.Abs(filepath.Join(workDir, venvRel))
+	if err != nil {
+		venvPath = filepath.Join(workDir, venvRel)
+	}
+	env = withEnvKey(env, "VIRTUAL_ENV", venvPath)
+	env = prependPathDir(env, filepath.Join(venvPath, "bin"))
+	env = withEnvKey(env, "GT_PYTHON3", venvPy)
+	return env
+}
+
 // WithRigVenv ensures a project venv and returns env with VIRTUAL_ENV, PATH, and GT_PYTHON3 set.
 func WithRigVenv(env []string, workDir, venvRel string) ([]string, string, bool, error) {
 	env = EnsurePATH(env)

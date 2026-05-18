@@ -230,7 +230,7 @@ func runUp(cmd *cobra.Command, args []string) error {
 
 	// Start daemon, deacon, mayor, planner, mechanic, orchestrator, and rig prefetch in parallel
 	var startupWg sync.WaitGroup
-	startupWg.Add(8)
+	startupWg.Add(9)
 
 	// 1. Dolt server (if configured)
 	go func() {
@@ -325,11 +325,15 @@ func runUp(cmd *cobra.Command, args []string) error {
 		}
 	}()
 
-	// 4.5. Planner and Mechanic
-	var plannerResult, mechanicResult agentStartResult
+	// 4.5. Planner, Setup, and Mechanic
+	var plannerResult, setupResult, mechanicResult agentStartResult
 	go func() {
 		defer startupWg.Done()
 		plannerResult = upStartPlanner(townRoot)
+	}()
+	go func() {
+		defer startupWg.Done()
+		setupResult = upStartSetup(townRoot)
 	}()
 	go func() {
 		defer startupWg.Done()
@@ -452,6 +456,10 @@ func runUp(cmd *cobra.Command, args []string) error {
 	}
 	services = append(services, ServiceStatus{Name: plannerResult.name, Type: constants.RolePlanner, OK: plannerResult.ok, Detail: plannerResult.detail})
 	if !plannerResult.ok {
+		allOK = false
+	}
+	services = append(services, ServiceStatus{Name: setupResult.name, Type: constants.RoleSetup, OK: setupResult.ok, Detail: setupResult.detail})
+	if !setupResult.ok {
 		allOK = false
 	}
 	mechanicServiceIdx := len(services)
@@ -665,7 +673,7 @@ func runUp(cmd *cobra.Command, args []string) error {
 
 	// Log boot event for both JSON and text paths
 	if allOK {
-		startedServices := []string{"dolt", "daemon", "deacon", "mayor", "planner", "mechanic"}
+		startedServices := []string{"dolt", "daemon", "deacon", "mayor", "planner", "setup", "mechanic"}
 		for _, rigName := range rigs {
 			startedServices = append(startedServices, fmt.Sprintf("%s/witness", rigName))
 			startedServices = append(startedServices, fmt.Sprintf("%s/refinery", rigName))
@@ -1270,6 +1278,44 @@ func upStartPlanner(townRoot string) agentStartResult {
 		TownRoot:     townRoot,
 		Orchestrated: wantOrch,
 		Beacon:       session.BeaconConfig{Recipient: "planner", Sender: "daemon", Topic: beaconTopicForOrchestrated(wantOrch)},
+		WaitForAgent: true,
+		WaitFatal:    true,
+		ReadyDelay:   true,
+		AutoRespawn:  true,
+	})
+	if err != nil {
+		return agentStartResult{name: name, ok: false, detail: err.Error()}
+	}
+	return agentStartResult{name: name, ok: true, detail: sessionID}
+}
+
+// upStartSetup starts the project-setup agent and returns a result struct.
+func upStartSetup(townRoot string) agentStartResult {
+	name := "Setup"
+	sessionID := session.SetupSessionName()
+	setupDir := filepath.Join(townRoot, constants.DirSetup)
+	if err := os.MkdirAll(setupDir, 0755); err != nil {
+		return agentStartResult{name: name, ok: false, detail: err.Error()}
+	}
+
+	sp := session.GetDefaultProvider(townRoot)
+	ctx := context.Background()
+
+	orchRunning, _, _ := orchestrator.IsRunning(townRoot)
+	wantOrch := orchestrator.OrchestratedForRole(orchRunning, constants.RoleSetup)
+	upEnsureFreshPipelineSession(ctx, sp, townRoot, sessionID, wantOrch)
+
+	if running, _ := sp.Exists(ctx, sessionID); running {
+		return agentStartResult{name: name, ok: true, detail: sessionID}
+	}
+
+	_, err := session.StartSession(ctx, sp, &session.SessionConfig{
+		SessionID:    sessionID,
+		WorkDir:      setupDir,
+		Role:         constants.RoleSetup,
+		TownRoot:     townRoot,
+		Orchestrated: wantOrch,
+		Beacon:       session.BeaconConfig{Recipient: "setup", Sender: "daemon", Topic: beaconTopicForOrchestrated(wantOrch)},
 		WaitForAgent: true,
 		WaitFatal:    true,
 		ReadyDelay:   true,

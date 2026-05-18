@@ -66,7 +66,7 @@ Requires `session_transport: "nats"` in the same file for orchestrator MCP.
 
 ```
 town/
-  templates/rig-flow.yaml    # FSM: kickoff → design → planning → implementation → qa_review
+  templates/rig-flow.yaml    # FSM: kickoff → design → planning → plan_review → project_setup → implementation → qa_review
   prompts/rig-flow/*.md      # Per-state system prompts (prompt_file in YAML)
 ```
 

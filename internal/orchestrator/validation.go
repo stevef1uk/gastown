@@ -151,52 +151,6 @@ func mergeValidationFields(base, overlay WorkflowValidation) WorkflowValidation 
 	return base
 }
 
-// PythonVenvRelDir returns the venv path relative to mayor/rig (default ".venv").
-func (v WorkflowValidation) PythonVenvRelDir() string {
-	d := strings.TrimSpace(v.PythonVenvDir)
-	if strings.EqualFold(d, "off") {
-		return ""
-	}
-	if d == "" {
-		return ".venv"
-	}
-	d = filepath.ToSlash(d)
-	if strings.Contains(d, "..") || filepath.IsAbs(d) {
-		return ".venv"
-	}
-	return d
-}
-
-// UsesPythonVenv reports whether gt-agent should create/use a project venv for pip/pytest.
-func (v WorkflowValidation) UsesPythonVenv() bool {
-	if v.PythonVenvRelDir() == "" {
-		return false
-	}
-	return v.detectsPythonProject()
-}
-
-func (v WorkflowValidation) detectsPythonProject() bool {
-	if v.RequirementsFilePath() != "" {
-		return true
-	}
-	if strings.EqualFold(strings.TrimSpace(v.TestRunner), "pytest") {
-		return true
-	}
-	q := strings.ToLower(strings.TrimSpace(v.QAVerifyCommand))
-	if strings.Contains(q, "python") || strings.Contains(q, "pytest") {
-		return true
-	}
-	if mod := strings.TrimSpace(v.UnittestModule); mod != "" {
-		return true
-	}
-	for _, f := range v.RequiredFiles {
-		if strings.HasSuffix(strings.ToLower(strings.TrimSpace(f)), ".py") {
-			return true
-		}
-	}
-	return false
-}
-
 // SubstituteVars replaces {{key}} in validation string fields.
 func (v WorkflowValidation) SubstituteVars(vars map[string]string) WorkflowValidation {
 	if len(vars) == 0 {

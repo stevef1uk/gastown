@@ -31,7 +31,8 @@ with multiple rigs, full template schema unification for all bundled YAML exampl
 | Town asset sync | Done | `//go:embed town/`; `make install`, `gt orchestrator sync` |
 | Patrol agents not orchestrated | Done | `IsPatrolRole` / `OrchestratedForRole` |
 | hq-polecat + legacy pause | Done | `LegacyPolecatsPaused`; `GT_POLECAT` identity fix |
-| Planning / implementation guards | Done | `cmd/gt-agent/orchestrated.go` |
+| Per-state YAML `hooks:` | Done | `StateHooks` in `state_hooks.go`; `rig-flow.yaml`; delivered on `fetch_task` |
+| Hook interpreter (`state_runner`) | Done | `cmd/gt-agent/state_runner.go` — no FSM state-name switches in `orchestrated.go` |
 | Rig-flow checkpoint commits | Done | After each **rig-flow** FSM edge, `refinery.CommitMayorRigOrchestratorCheckpoint` commits dirty `mayor/rig` (**runs inside `gt orchestrator`**, not the refinery tmux patrol). On **completed**, pushes `origin` via `git push -u`. Opt out: `GT_SKIP_WORKFLOW_GIT_COMMIT`, `GT_WORKFLOW_SKIP_PUSH`. Look for `[Orchestrator] rig … mayor/rig` lines in `{town}/logs/orchestrator.log`. |
 | Bundled non-rig-flow templates | Partial | Some examples still use old schema |
 | QA outcome mapping | Partial | Prefer `task_passed` / `all_passed` in FSM |
@@ -68,7 +69,9 @@ sequenceDiagram
 | **Manager** | `internal/orchestrator/manager.go` | Templates + instances; `FetchTask`, `CompleteTask`, `StartWorkflow` |
 | **Server** | `internal/orchestrator/mcp.go` | JSON-RPC 2.0; stdio + NATS subscriber |
 | **Client** | `internal/orchestrator/orchestrator.go` | `Call`, `FetchTask`, `CompleteTask`, `StartWorkflow`; PID file |
-| **Types** | `internal/orchestrator/types.go` | `WorkflowTemplate`, `State`, `WorkflowInstance` |
+| **Types** | `internal/orchestrator/types.go` | `WorkflowTemplate`, `State`, `StateHooks`, `WorkflowInstance` |
+| **State hooks** | `internal/orchestrator/state_hooks.go` | YAML schema + `RetryHintKey` helpers |
+| **Hook runner** | `cmd/gt-agent/state_runner.go` | Interprets `task.hooks` from `fetch_task` |
 | **CLI** | `internal/cmd/orchestrator.go` | `gt orchestrator start\|stop\|status\|run` |
 | **Mayor CLI** | `internal/cmd/mayor.go` | `workflow start\|status\|complete\|reset` |
 | **Spec profile** | `internal/specprofile/`, `rig_profile_load.go` | `gt rig spec-index` → `workflow-profile.json` |
@@ -85,26 +88,49 @@ sequenceDiagram
 
 ## Workflow template schema (canonical)
 
-Templates must match Go structs in `types.go` (today). **Target** adds `prompt_file`:
+Templates are YAML files under `{townRoot}/orchestrator/templates/`. They map to Go structs in
+`types.go` and are loaded by `Manager.LoadTemplatesFromDir`.
+
+A workflow has three configuration layers:
+
+| Layer | Where | What it controls |
+|-------|--------|------------------|
+| **Template** | `templates/<id>.yaml` | FSM graph, roles, prompts, per-state **hooks** |
+| **Template `validation:`** | Same YAML file | Default thresholds (placeholder in rig-flow) |
+| **Rig profile** | `{rig}/mayor/rig/.gastown/workflow-profile.json` | Spec-derived paths, verify commands, min bytes (`gt rig spec-index`) |
+
+### Minimal template
 
 ```yaml
-id: rig-flow
-description: Standard rig pipeline
-initial_state: kickoff
+id: my-flow
+description: Example pipeline
+initial_state: design
+validation:                    # optional; merged with profile at runtime
+  min_plan_bytes: 200
 states:
-  kickoff:
-    role: mayor
-    prompt_file: prompts/rig-flow/kickoff.md   # relative to {townRoot}/orchestrator/
-    instructions: |                            # short user-task hint (optional)
-      Verify SPEC for {{rig}}.
+  design:
+    role: architect
+    prompt_file: prompts/my-flow/design.md
+    instructions: |
+      Write architecture for {{rig}}.
+    hooks:                     # optional but required for rig-style enforcement
+      cmd_guard: design
+      track: design
+      artifacts: design
     transitions:
       success:
-        to: design
+        to: completed
       failure:
-        to: kickoff
+        to: design
+  completed:
+    role: mayor
+    instructions: "Pipeline done."
 ```
 
-### Prompt file layout (target)
+Required per state: `role`, and either `prompt_file` or `instructions`. Transitions use
+`outcome: { to: next_state }` (not bare `success: next`).
+
+### Prompt file layout
 
 ```
 {townRoot}/orchestrator/
@@ -176,20 +202,21 @@ Validate `outcome` against keys in `state.transitions` before advancing FSM.
 3. JSON `{"outcome","summary",...}` or auto-complete when artifacts validate
 4. `complete_task` → FSM transition
 
-**State guards** (reject before running CMD):
+**State hooks** (declarative in `orchestrator/templates/rig-flow.yaml` under each state's `hooks:` block; delivered on `fetch_task` as JSON):
 
-| State | Rejects (examples) |
-|-------|---------------------|
-| `planning` | `gt bd add`, `git add/commit/push`, `mkdir`, `python3`, writing under `layout_root/` from profile |
-| `implementation` | `gt bd *`, `git push`, `git add .`, agent junk paths |
+| Hook field | Purpose |
+|------------|---------|
+| `cmd_guard` | Named guard preset (`design`, `planning`, `implementation`, …) |
+| `cmd_rewrites` | Command normalizers (`rig_placeholders`, `bd_list_limit`, …) |
+| `env` | `beads_dir`, `python_venv` (`create` / `activate`), `pythonpath` |
+| `track` | Per-command tracker for artifact validation |
+| `auto_verify` | Run verify after matching commands (`go_mod_tidy`, `pip_install`, …) |
+| `artifacts` | Success gate preset (`planning`, `implementation`, `qa`, …) |
+| `retry_hint` / `failure_hint` | Agent guidance (supports `{{rig}}` substitution) |
 
-**Artifact validation** before accepting `success` (thresholds from `workflow-profile.json` when present):
+`gt-agent` interprets hooks via `state_runner.go`; it does not switch on FSM state names.
 
-| State | Checks |
-|-------|--------|
-| `planning` | Successful `bd create`, no failed CMDs, `plan.md` ≥ `min_plan_bytes` |
-| `design` | `architecture.md` ≥ `min_architecture_bytes` |
-| `implementation` | Bead closed; paths under profile `required_files` / `layout_root` |
+**Artifact validation** thresholds still come from `workflow-profile.json` when present (merged into `task.validation`).
 
 **Validation merge order:** defaults → `rig-flow.yaml` `validation:` → `{rig}/mayor/rig/.gastown/workflow-profile.json`.
 Prompt substitution uses the same merged struct (`PromptVars`).

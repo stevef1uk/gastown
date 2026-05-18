@@ -29,6 +29,11 @@ func PlannerSessionName() string {
 	return HQPrefix + "planner"
 }
 
+// SetupSessionName returns the session name for the project-setup agent (rig-flow).
+func SetupSessionName() string {
+	return HQPrefix + "setup"
+}
+
 // MechanicSessionName returns the session name for the Mechanic agent.
 // One mechanic per machine - multi-town requires containers/VMs for isolation.
 func MechanicSessionName() string {

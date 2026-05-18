@@ -31,6 +31,14 @@ func TestPlannerSessionName(t *testing.T) {
 	}
 }
 
+func TestSetupSessionName(t *testing.T) {
+	want := "hq-setup"
+	got := SetupSessionName()
+	if got != want {
+		t.Errorf("SetupSessionName() = %q, want %q", got, want)
+	}
+}
+
 func TestOverseerSessionName(t *testing.T) {
 	want := "hq-overseer"
 	got := OverseerSessionName()

@@ -13,6 +13,7 @@ func TestLoadFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("EXISTING", "already-set")
+	t.Setenv("GT_ROOT", "")
 
 	if err := LoadFile(path); err != nil {
 		t.Fatal(err)

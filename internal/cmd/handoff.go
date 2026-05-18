@@ -677,6 +677,8 @@ func resolveRoleToSession(role string) (string, error) {
 
 	case constants.RolePlanner:
 		return session.PlannerSessionName(), nil
+	case constants.RoleSetup:
+		return session.SetupSessionName(), nil
 
 	default:
 		// Assume it's a direct session name (e.g., gt-gastown-crew-max)

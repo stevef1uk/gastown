@@ -611,6 +611,8 @@ func agentIDToBeadID(agentID, townRoot string) string {
 		return beads.DeaconBeadIDTown()
 	case "planner":
 		return beads.PlannerBeadIDTown()
+	case "setup":
+		return beads.SetupBeadIDTown()
 	case "mechanic":
 		return beads.MechanicBeadIDTown()
 	}

@@ -74,14 +74,16 @@ func TestValidateOrchestratedArtifacts_design(t *testing.T) {
 	if err := os.WriteFile(path, []byte("x"), 0644); err != nil {
 		t.Fatal(err)
 	}
-	task := &orchestrator.Task{State: "design"}
-	if err := validateOrchestratedArtifacts(task, dir, "myrig", "success", true, false, false, false, false, false, false, false, false, false, false, false, false); err == nil {
+	task := &orchestrator.Task{Hooks: orchestrator.StateHooks{Artifacts: "design"}}
+	runner := newStateRunner(task, dir, "myrig")
+	runner.track.designArchWritten = true
+	if err := runner.validateArtifacts("success"); err == nil {
 		t.Fatal("expected size validation error")
 	}
 	if err := os.WriteFile(path, make([]byte, 200), 0644); err != nil {
 		t.Fatal(err)
 	}
-	if err := validateOrchestratedArtifacts(task, dir, "myrig", "success", true, false, false, false, false, false, false, false, false, false, false, false, false); err != nil {
+	if err := runner.validateArtifacts("success"); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -323,11 +325,16 @@ func TestOrchestratedArtifactAutoOutcome_planningRequiresBeads(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(rigDir, "plan.md"), make([]byte, 250), 0644); err != nil {
 		t.Fatal(err)
 	}
-	task := &orchestrator.Task{State: "planning", AllowedOutcomes: []string{"success", "failure"}}
-	if _, _, ok := orchestratedArtifactAutoOutcome(task, dir, "mockrig", false, false, false, false); ok {
+	task := &orchestrator.Task{
+		AllowedOutcomes: []string{"success", "failure"},
+		Hooks:           orchestrator.StateHooks{Artifacts: "planning"},
+	}
+	runner := newStateRunner(task, dir, "mockrig")
+	if _, _, ok := runner.tryAutoOutcome(); ok {
 		t.Fatal("should not auto-complete without bd create success")
 	}
-	if _, _, ok := orchestratedArtifactAutoOutcome(task, dir, "mockrig", false, false, true, false); !ok {
+	runner.track.beadCreateOK = true
+	if _, _, ok := runner.tryAutoOutcome(); !ok {
 		t.Fatal("should auto-complete with plan + bead create ok")
 	}
 }
@@ -345,8 +352,10 @@ func TestValidateDesignArtifacts_allowsStaleBackendPy(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(rigDir, "architecture.md"), make([]byte, 250), 0644); err != nil {
 		t.Fatal(err)
 	}
-	task := &orchestrator.Task{State: "design"}
-	if err := validateOrchestratedArtifacts(task, dir, "myrig", "success", true, false, false, false, false, false, false, false, false, false, false, false, false); err != nil {
+	task := &orchestrator.Task{Hooks: orchestrator.StateHooks{Artifacts: "design"}}
+	runner := newStateRunner(task, dir, "myrig")
+	runner.track.designArchWritten = true
+	if err := runner.validateArtifacts("success"); err != nil {
 		t.Fatalf("stale backend/*.py must not block design: %v", err)
 	}
 }
@@ -389,11 +398,40 @@ func TestValidateImplementationArtifacts(t *testing.T) {
 
 func TestValidateImplementationCommand_oneInProgressBead(t *testing.T) {
 	cmd := `bd update tg-abc --status=in_progress`
-	if err := validateImplementationCommandWithState(cmd, "mockrig", "tg-xyz"); err == nil {
+	if err := validateImplementationCommandWithState(cmd, "mockrig", "tg-xyz", orchestrator.DefaultWorkflowValidation(), false); err == nil {
 		t.Fatal("expected reject second in_progress bead")
 	}
-	if err := validateImplementationCommandWithState(cmd, "mockrig", "tg-abc"); err != nil {
+	if err := validateImplementationCommandWithState(cmd, "mockrig", "tg-abc", orchestrator.DefaultWorkflowValidation(), false); err != nil {
 		t.Fatalf("same bead should be allowed: %v", err)
+	}
+}
+
+func TestValidatePythonImplementationCommand(t *testing.T) {
+	v := orchestrator.WorkflowValidation{
+		RequiredFiles:   []string{"backend/requirements.txt"},
+		QAVerifyCommand: "cd backend && python3 -m pytest -q",
+	}
+	if err := validatePythonImplementationCommand("python3 -m pip install -r backend/requirements.txt", v, true); err == nil {
+		t.Fatal("expected pip install rejected in implementation")
+	}
+	if err := validatePythonImplementationCommand("bd close tg-1", v, false); err == nil {
+		t.Fatal("expected bd close without verify rejected")
+	}
+}
+
+func TestValidateGoImplementationCommand(t *testing.T) {
+	v := orchestrator.WorkflowValidation{
+		LayoutRoot:      "linkshelf",
+		QAVerifyCommand: "cd linkshelf && go test ./...",
+	}
+	if err := validateGoImplementationCommand(`cat > linkshelf/go.sum <<'EOF'`, v, true); err == nil {
+		t.Fatal("expected reject go.sum heredoc")
+	}
+	if err := validateGoImplementationCommand("bd close tg-1", v, false); err == nil {
+		t.Fatal("expected reject bd close without verify")
+	}
+	if err := validateGoImplementationCommand("bd close tg-1", v, true); err != nil {
+		t.Fatalf("bd close with verify ok should pass: %v", err)
 	}
 }
 
@@ -406,11 +444,16 @@ func TestOrchestratedArtifactAutoOutcome_design(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(rigDir, "architecture.md"), make([]byte, 250), 0644); err != nil {
 		t.Fatal(err)
 	}
-	task := &orchestrator.Task{State: "design", AllowedOutcomes: []string{"success", "failure"}}
-	if _, _, ok := orchestratedArtifactAutoOutcome(task, dir, "myrig", false, false, false, false); ok {
+	task := &orchestrator.Task{
+		AllowedOutcomes: []string{"success", "failure"},
+		Hooks:           orchestrator.StateHooks{Artifacts: "design"},
+	}
+	runner := newStateRunner(task, dir, "myrig")
+	if _, _, ok := runner.tryAutoOutcome(); ok {
 		t.Fatal("stale architecture.md must not auto-complete design without write this run")
 	}
-	o, _, ok := orchestratedArtifactAutoOutcome(task, dir, "myrig", true, false, false, false)
+	runner.track.designArchWritten = true
+	o, _, ok := runner.tryAutoOutcome()
 	if !ok || o != "success" {
 		t.Fatalf("want auto success after write this run, got ok=%v outcome=%q", ok, o)
 	}
@@ -426,11 +469,16 @@ func TestOrchestratedCommandEnv_pinsRigBeadsForPlanning(t *testing.T) {
 		}
 	}
 	base := []string{"BEADS_DIR=" + townBeads, "GT_ROOT=" + town}
-	env := orchestratedCommandEnv(town, "mockrig", "planning", base, orchestrator.DefaultWorkflowValidation())
+	planTask := &orchestrator.Task{
+		Validation: orchestrator.DefaultWorkflowValidation(),
+		Hooks:      orchestrator.StateHooks{Env: orchestrator.StateEnvHooks{BeadsDir: true}},
+	}
+	env := newStateRunner(planTask, town, "mockrig").commandEnv(base)
 	if got := envLookup(env, "BEADS_DIR"); got != rigBeads {
 		t.Fatalf("planning BEADS_DIR = %q, want %q", got, rigBeads)
 	}
-	env = orchestratedCommandEnv(town, "mockrig", "design", base, orchestrator.DefaultWorkflowValidation())
+	designTask := &orchestrator.Task{Validation: orchestrator.DefaultWorkflowValidation()}
+	env = newStateRunner(designTask, town, "mockrig").commandEnv(base)
 	if got := envLookup(env, "BEADS_DIR"); got != townBeads {
 		t.Fatalf("design should not override BEADS_DIR: got %q", got)
 	}
@@ -446,7 +494,13 @@ func TestOrchestratedCommandEnv_createsPythonVenv(t *testing.T) {
 		t.Fatal(err)
 	}
 	v := orchestrator.WorkflowValidation{RequiredFiles: []string{"backend/requirements.txt"}}
-	env := orchestratedCommandEnv(town, "mockrig", "implementation", os.Environ(), v)
+	task := &orchestrator.Task{
+		Validation: v,
+		Hooks: orchestrator.StateHooks{
+			Env: orchestrator.StateEnvHooks{BeadsDir: true, PythonVenv: "create"},
+		},
+	}
+	env := newStateRunner(task, town, "mockrig").commandEnv(os.Environ())
 	virt := envLookup(env, "VIRTUAL_ENV")
 	if virt == "" {
 		t.Fatal("missing VIRTUAL_ENV")

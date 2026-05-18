@@ -216,6 +216,7 @@ type Task struct {
 	Instructions    string             `json:"instructions"`
 	AllowedOutcomes []string           `json:"allowed_outcomes"`
 	Validation      WorkflowValidation `json:"validation"`
+	Hooks           StateHooks         `json:"hooks"`
 	PendingRework   *WorkflowRework    `json:"pending_rework,omitempty"`
 }
 

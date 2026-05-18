@@ -22,6 +22,7 @@ var rigFlowStateRole = map[string]string{
 	"kickoff":        "mayor",
 	"design":         "architect",
 	"planning":       "planner",
+	"project_setup":  "setup",
 	"implementation": "polecat",
 	"qa_review":      "qa",
 	"completed":      "",
@@ -58,7 +59,20 @@ func enrichAgentsWithWorkflows(agents []Agent, workflows []WorkflowInfo) {
 			if w.Status != "running" {
 				continue
 			}
-			if w.Rig != "" && agents[i].Rig == w.Rig && agents[i].Role == w.ActiveRole {
+			if agents[i].Role != w.ActiveRole || w.ActiveRole == "" {
+				continue
+			}
+			// Town-level pipeline agents (mayor, planner, setup) have no rig on the Agent row.
+			if agents[i].Rig == "" {
+				switch agents[i].Role {
+				case "mayor", "planner", "setup":
+					agents[i].WorkflowID = w.ID
+					agents[i].WorkflowState = w.CurrentState
+					agents[i].WorkflowActive = true
+				}
+				continue
+			}
+			if w.Rig != "" && agents[i].Rig == w.Rig {
 				agents[i].WorkflowID = w.ID
 				agents[i].WorkflowState = w.CurrentState
 				agents[i].WorkflowActive = true

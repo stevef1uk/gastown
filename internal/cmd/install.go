@@ -325,6 +325,18 @@ func runInstall(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	setupDir := filepath.Join(absPath, constants.DirSetup)
+	if err := os.MkdirAll(setupDir, 0755); err != nil {
+		fmt.Printf("   %s Could not create setup directory: %v\n", style.Dim.Render("⚠"), err)
+	} else {
+		setupRuntimeConfig := config.ResolveRoleAgentConfig("setup", absPath, setupDir)
+		if err := runtime.EnsureSettingsForRole(setupDir, setupDir, "setup", setupRuntimeConfig); err != nil {
+			fmt.Printf("   %s Could not create setup settings: %v\n", style.Dim.Render("⚠"), err)
+		} else {
+			fmt.Printf("   ✓ Created setup/.claude/settings.json\n")
+		}
+	}
+
 	// Create boot directory (deacon/dogs/boot/) for Boot watchdog.
 	// This avoids gt doctor warning on fresh install.
 	bootDir := filepath.Join(deaconDir, "dogs", "boot")
@@ -878,6 +890,11 @@ func initTownAgentBeads(townPath string) error {
 			id:       beads.PlannerBeadIDTown(),
 			roleType: "planner",
 			title:    "Planner - breaks down SPECs into actionable tasks for polecats.",
+		},
+		{
+			id:       beads.SetupBeadIDTown(),
+			roleType: "setup",
+			title:    "Setup - scaffolds the rig (venv, go mod, bead split) before implementation.",
 		},
 	}
 

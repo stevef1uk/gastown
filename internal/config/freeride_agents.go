@@ -41,6 +41,7 @@ func DefaultFreerideRoleAgents() map[string]string {
 		"mechanic":  "gt-agent-local",
 		"mayor":     "gt-agent-local",
 		"planner":   "gt-agent-local",
+		"setup":     "gt-agent-local",
 		"polecat":   "gt-agent-nvidia",
 		"qa":        "gt-agent-local",
 		"refinery":  "gt-agent-local",

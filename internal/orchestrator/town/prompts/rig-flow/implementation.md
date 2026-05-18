@@ -18,7 +18,7 @@ If the prompt includes **"Prior step failed"** from `qa_review`, QA rejected you
 |---------|-----------|
 | `bd list`, `bd ready`, `bd show`, `bd update`, `bd close` from rig beads repo | `gt bd list`, `gt bd claim`, `gt bd close` (not real — `gt bd` is `gt bead`) |
 | Implement code under `{{rig}}/mayor/rig/{{layout_root}}/` | Inventing `implementation.txt` instead of real code |
-| `python3 -m pip install -r {{requirements_file}}` into `{{python_venv_dir}}/` (auto-created; gitignored) | Pasting `pytest` / `python3 -m` lines into source files |
+| `python3 -m pytest` / `{{unittest_command_hint}}` (venv from project_setup) | `pip install` (deps installed in project_setup) |
 | `requirements.txt` lines = **package names only** (e.g. `pytest`, `flask==3.0`) — never `python3 -m pytest` | Shell commands inside `requirements.txt` |
 | `python3 -m pip` / `python3 -m pytest` (gt-agent activates the venv) | `pip install` without venv, or system-wide installs |
 | `git add` / `git commit` in mayor/rig worktree | QA review commands |
@@ -45,11 +45,10 @@ If the prompt includes **"Prior step failed"** from `qa_review`, QA rejected you
    ```
    Required paths: {{required_files}}
 
-4. **Go projects** (when verification uses `go test`, not Python venv): use module path under `{{layout_root}}/` only; `modernc.org/sqlite` for SQLite; stdlib `net/http` only — no Echo, Gin, Chi, or `mattn/go-sqlite3`. Only **one** implement bead `in_progress` at a time. Run `{{unittest_command_hint}}` after each `.go` heredoc and before `bd close`.
+4. **Go projects** (when verification uses `go test`, not Python venv): use module path under `{{layout_root}}/` only; `modernc.org/sqlite` for SQLite; stdlib `net/http` only — no Echo, Gin, Chi, or `mattn/go-sqlite3`. **Never** heredoc `go.mod` or `go.sum` (project_setup already ran `go mod tidy`). Only **one** implement bead `in_progress` at a time. Run `{{unittest_command_hint}}` after each `.go` heredoc; **bd close** only after verify is green in this session.
 
-5. If the profile lists `{{requirements_file}}`, install deps into the project venv (`{{python_venv_dir}}/`, created by gt-agent), then verify:
+5. **Python projects:** `{{python_venv_dir}}/` and `pip install -r {{requirements_file}}` were done in **project_setup**. Run verify only, then close the bead:
    ```
-   CMD: cd {{rig}}/mayor/rig && test -f "{{requirements_file}}" && python3 -m pip install -r "{{requirements_file}}"
    CMD: cd {{rig}}/mayor/rig && {{unittest_command_hint}}
    ```
    Do not use `bash -lc` wrappers. Do not commit `{{python_venv_dir}}/`.

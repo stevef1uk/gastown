@@ -171,6 +171,9 @@ const (
 	// DirPlanner is the directory containing planner state.
 	DirPlanner = "planner"
 
+	// DirSetup is the directory containing project-setup agent state.
+	DirSetup = "setup"
+
 	// DirArchitect is the directory containing architect state.
 	DirArchitect = "architect"
 
@@ -309,6 +312,9 @@ const (
 	// RolePlanner is the planner agent role.
 	RolePlanner = "planner"
 
+	// RoleSetup is the project-setup agent role (rig-flow project_setup state).
+	RoleSetup = "setup"
+
 	// RoleWitness is the witness agent role.
 	RoleWitness = "witness"
 
@@ -348,6 +354,9 @@ const (
 
 	// EmojiPlanner is the planner emoji (architect).
 	EmojiPlanner = "📐"
+
+	// EmojiSetup is the project-setup agent emoji.
+	EmojiSetup = "🛠️"
 
 	// EmojiWitness is the witness emoji (watchful owl).
 	EmojiWitness = "🦉"
@@ -432,6 +441,8 @@ func RoleEmoji(role string) string {
 		return EmojiDeacon
 	case RolePlanner:
 		return EmojiPlanner
+	case RoleSetup:
+		return EmojiSetup
 	case RoleWitness:
 		return EmojiWitness
 	case RoleRefinery:
