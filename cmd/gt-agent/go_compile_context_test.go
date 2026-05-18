@@ -59,6 +59,45 @@ func TestExtractGoSourcePathsFromOutput_cmdServerImports(t *testing.T) {
 	}
 }
 
+func TestExtractGoSourcePathsFromOutput_moduleRelative(t *testing.T) {
+	t.Parallel()
+	out := `# linkshelf/internal/store
+internal/store/sqlite.go:16:1: syntax error
+internal/store/store.go:20:1: syntax error`
+	got := extractGoSourcePathsFromOutput(out, "linkshelf")
+	for _, wantSuffix := range []string{"linkshelf/internal/store/sqlite.go", "linkshelf/internal/store/store.go"} {
+		found := false
+		for _, p := range got {
+			if p == wantSuffix {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("missing %q in %v", wantSuffix, got)
+		}
+	}
+}
+
+func TestAppendGoCompileSourceContext_moduleRelativePaths(t *testing.T) {
+	dir := t.TempDir()
+	storeDir := filepath.Join(dir, "linkshelf", "internal", "store")
+	if err := os.MkdirAll(storeDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(storeDir, "store.go"), []byte("package store\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	var b strings.Builder
+	appendGoCompileSourceContext(&b, dir, "linkshelf", "go build ./internal/store/...", "internal/store/store.go:20:1: syntax error")
+	if strings.Contains(b.String(), "(could not read source") {
+		t.Fatalf("want snippet, got %q", b.String())
+	}
+	if !strings.Contains(b.String(), "package store") {
+		t.Fatalf("want store.go contents: %q", b.String())
+	}
+}
+
 func TestAppendGoCompileSourceContext_writesSnippet(t *testing.T) {
 	dir := t.TempDir()
 	storeDir := filepath.Join(dir, "linkshelf", "internal", "store")

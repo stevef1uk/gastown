@@ -142,9 +142,9 @@ states:
       system_prompt_footer: |
         Format: `CMD: <shell>` one per line; JSON `{"outcome":"success","summary":"..."}` only in a later message (not with CMD).
       user_prompt_wrapper: none
-      failure_prompt_context: [implementation_queue]
+      failure_prompt_context: [implementation_queue, implement_bead_context]
       empty_response_suffix: "Reply with CMD lines only. Use Verify from Next bead; fix .go files in Source context when tidy/build fails."
-      prompt_context: [implementation_queue]
+      prompt_context: [implementation_queue, implement_bead_context]
       pre_run: [enforce_implement_bead_queue, prune_stale_layout_go, repair_requirements, reopen_implement_beads]
       per_turn: [repair_requirements]
       cmd_guard: implementation

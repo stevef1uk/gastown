@@ -15,6 +15,40 @@ func TestExtractPathFromBeadTitle(t *testing.T) {
 	}
 }
 
+func TestNormalizeBeadPathForLayout(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		path, layout, want string
+	}{
+		{"internal/store/store.go", "linkshelf", "linkshelf/internal/store/store.go"},
+		{"linkshelf/internal/store/store.go", "linkshelf", "linkshelf/internal/store/store.go"},
+		{"go.mod", "linkshelf", "linkshelf/go.mod"},
+		{"myapp/frontend/main.js", "finally", "myapp/frontend/main.js"},
+		{"", "linkshelf", ""},
+		{"internal/store/store.go", "", "internal/store/store.go"},
+	}
+	for _, tc := range tests {
+		got := NormalizeBeadPathForLayout(tc.path, tc.layout)
+		if got != tc.want {
+			t.Fatalf("NormalizeBeadPathForLayout(%q, %q) = %q, want %q", tc.path, tc.layout, got, tc.want)
+		}
+	}
+}
+
+func TestNormalizeBeadPathForLayout_testgt3BeadTitle(t *testing.T) {
+	t.Parallel()
+	title := "Implement linkshelf/internal/store/store.go per architecture"
+	raw := ExtractPathFromBeadTitle(title, "Implement linkshelf/")
+	got := NormalizeBeadPathForLayout(raw, "linkshelf")
+	want := "linkshelf/internal/store/store.go"
+	if raw != "internal/store/store.go" {
+		t.Fatalf("ExtractPathFromBeadTitle = %q, want internal/store/store.go", raw)
+	}
+	if got != want {
+		t.Fatalf("normalized = %q, want %q", got, want)
+	}
+}
+
 func TestValidatePlanBeads_duplicates(t *testing.T) {
 	v := WorkflowValidation{
 		BeadTitleContains: "Implement finally/",

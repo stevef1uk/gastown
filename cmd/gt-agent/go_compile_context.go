@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/steveyegge/gastown/internal/orchestrator"
 )
 
 var goDiagFileRE = regexp.MustCompile(`(?m)(?:^|\s|\])([a-zA-Z0-9_./-]+\.go):\d+`)
@@ -42,6 +44,9 @@ func extractGoSourcePathsFromOutput(output, layoutRoot string) []string {
 	var paths []string
 	add := func(p string) {
 		p = filepath.ToSlash(strings.TrimSpace(p))
+		if layout != "" {
+			p = orchestrator.NormalizeBeadPathForLayout(p, layout)
+		}
 		if p == "" || !strings.HasSuffix(p, ".go") || seen[p] {
 			return
 		}

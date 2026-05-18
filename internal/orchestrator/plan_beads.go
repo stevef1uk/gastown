@@ -32,6 +32,35 @@ func ExtractPathFromBeadTitle(title, titlePrefix string) string {
 	return filepath.ToSlash(strings.TrimSpace(title))
 }
 
+// NormalizeBeadPathForLayout prefixes layout_root when a bead title or go tool output
+// omitted it (e.g. internal/store/store.go → linkshelf/internal/store/store.go).
+func NormalizeBeadPathForLayout(beadPath, layoutRoot string) string {
+	beadPath = filepath.ToSlash(strings.TrimSpace(beadPath))
+	layoutRoot = strings.Trim(strings.TrimSpace(layoutRoot), "/")
+	if beadPath == "" || layoutRoot == "" || layoutRoot == "." {
+		return beadPath
+	}
+	if strings.HasPrefix(beadPath, layoutRoot+"/") || beadPath == layoutRoot {
+		return beadPath
+	}
+	if strings.Contains(beadPath, "..") {
+		return beadPath
+	}
+	if beadPath == "go.mod" || beadPath == "go.sum" {
+		return layoutRoot + "/" + beadPath
+	}
+	// Module-relative paths from titles (Implement linkshelf/…) or `cd layout && go build`.
+	switch {
+	case strings.HasPrefix(beadPath, "internal/"),
+		strings.HasPrefix(beadPath, "cmd/"),
+		strings.HasPrefix(beadPath, "pkg/"),
+		strings.HasPrefix(beadPath, "api/"),
+		strings.HasPrefix(beadPath, "web/"):
+		return layoutRoot + "/" + beadPath
+	}
+	return beadPath
+}
+
 // ValidatePlanBeads checks open implementation beads against architecture and profile.
 func ValidatePlanBeads(beads []PlanBead, archPath string, v WorkflowValidation) error {
 	if len(v.RequiredFiles) == 0 {

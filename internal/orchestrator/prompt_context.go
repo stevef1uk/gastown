@@ -30,6 +30,8 @@ func PromptContextBlock(key, townRoot, rig string, v WorkflowValidation) string 
 		return FormatPlanningBeadBootstrapBlock(rig, v)
 	case "implementation_queue":
 		return FormatImplementationQueueBlock(townRoot, rig, v)
+	case "implement_bead_context":
+		return FormatImplementBeadContextBlock(townRoot, rig, v)
 	default:
 		return ""
 	}
