@@ -2,6 +2,7 @@ package util
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -55,6 +56,24 @@ func TestExpandHome_TildeSlash(t *testing.T) {
 	want := home + "/"
 	if got != want {
 		t.Errorf("ExpandHome(~/) = %q, want %q", got, want)
+	}
+}
+
+func TestPathsEqual_macOSVarSymlink(t *testing.T) {
+	tmp := t.TempDir()
+	abs, err := filepath.Abs(tmp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolved, err := filepath.EvalSymlinks(abs)
+	if err != nil {
+		t.Skip("EvalSymlinks:", err)
+	}
+	if abs == resolved {
+		t.Skip("temp dir has no /var symlink on this platform")
+	}
+	if !PathsEqual(abs, resolved) {
+		t.Fatalf("PathsEqual(%q, %q) = false", abs, resolved)
 	}
 }
 

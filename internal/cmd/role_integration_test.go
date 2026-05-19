@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/spf13/cobra"
+	"github.com/steveyegge/gastown/internal/util"
 	"github.com/steveyegge/gastown/internal/workspace"
 )
 
@@ -89,7 +90,7 @@ func TestPlannerStartCommand(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to find workspace in mock town: %v", err)
 	}
-	if root != townRoot {
+	if !util.PathsEqual(root, townRoot) {
 		t.Errorf("workspace root = %q, want %q", root, townRoot)
 	}
 }

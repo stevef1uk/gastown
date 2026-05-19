@@ -110,7 +110,11 @@ func (g *Git) IsRepoRoot() bool {
 
 // TopLevel returns the absolute path to the root of the working tree.
 func (g *Git) TopLevel() (string, error) {
-	return g.run("rev-parse", "--show-toplevel")
+	top, err := g.run("rev-parse", "--show-toplevel")
+	if err != nil {
+		return "", err
+	}
+	return util.CanonicalPath(top)
 }
 
 // run executes a git command and returns stdout.

@@ -2,6 +2,7 @@ package util
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 )
@@ -31,4 +32,34 @@ func ExpandHome(path string) string {
 		return path
 	}
 	return home + path[1:]
+}
+
+// CanonicalPath returns an absolute path with symlinks evaluated.
+// On macOS this normalizes /var/... and /private/var/... to the same string.
+func CanonicalPath(p string) (string, error) {
+	if p == "" {
+		return "", nil
+	}
+	abs, err := filepath.Abs(p)
+	if err != nil {
+		return "", err
+	}
+	resolved, err := filepath.EvalSymlinks(abs)
+	if err != nil {
+		return abs, nil
+	}
+	return resolved, nil
+}
+
+// PathsEqual reports whether two paths refer to the same location after CanonicalPath.
+func PathsEqual(a, b string) bool {
+	ca, err := CanonicalPath(a)
+	if err != nil {
+		ca = a
+	}
+	cb, err := CanonicalPath(b)
+	if err != nil {
+		cb = b
+	}
+	return ca == cb
 }

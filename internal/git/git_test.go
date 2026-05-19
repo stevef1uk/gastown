@@ -131,6 +131,9 @@ func TestTopLevel(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Abs: %v", err)
 	}
+	if resolved, err := filepath.EvalSymlinks(want); err == nil {
+		want = resolved
+	}
 	if top != want {
 		t.Fatalf("TopLevel = %q, want %q", top, want)
 	}
