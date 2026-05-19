@@ -238,15 +238,20 @@ def python_qa_verify_command(val: dict, mayor_rig: Path) -> str:
     cmd = normalize_pytest_command(cmd)
     venv_rel = python_venv_rel(val)
     venv_py = mayor_rig / venv_rel / "bin" / "python3"
+    layout = (val.get("layout_root") or "").strip().strip("/")
+    test_scope = f"{layout}/tests" if layout else ""
     if venv_py.is_file():
         if re.search(r"(?i)\bpython3?\b", cmd):
             cmd = re.sub(r"(?i)\bpython3?\b", str(venv_py), cmd, count=1)
         else:
             extra = re.sub(r"(?i)^pytest\b", "", cmd).strip()
             cmd = f"{venv_py} -m pytest {extra}".strip()
+        if test_scope and "pytest" in cmd.lower() and test_scope not in cmd:
+            cmd = f"{cmd} {test_scope}"
         return cmd
-    layout = (val.get("layout_root") or "").strip().strip("/")
     if layout and f"cd {layout}" not in cmd.lower() and (mayor_rig / layout).is_dir():
+        if test_scope and "pytest" in cmd.lower() and test_scope not in cmd:
+            return f"{cmd} {test_scope}"
         return f"cd {layout} && {cmd}"
     return cmd
 

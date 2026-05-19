@@ -43,12 +43,18 @@ func TestClampProfileValidation(t *testing.T) {
 		{
 			name: "absurd plan from llm",
 			in:   WorkflowValidation{MinPlanBytes: 17496, MinArchitectureBytes: 50000},
-			want: WorkflowValidation{MinPlanBytes: DefaultMinPlanBytes, MinArchitectureBytes: DefaultMinArchitectureBytes},
+			want: WorkflowValidation{
+				MinPlanBytes:         MinPlanBytesFromArchitecture(DefaultMinArchitectureBytes),
+				MinArchitectureBytes: DefaultMinArchitectureBytes,
+			},
 		},
 		{
 			name: "zero uses defaults",
 			in:   WorkflowValidation{},
-			want: WorkflowValidation{MinPlanBytes: DefaultMinPlanBytes, MinArchitectureBytes: DefaultMinArchitectureBytes},
+			want: WorkflowValidation{
+				MinPlanBytes:         MinPlanBytesFromArchitecture(DefaultMinArchitectureBytes),
+				MinArchitectureBytes: DefaultMinArchitectureBytes,
+			},
 		},
 		{
 			name: "in range kept",
@@ -63,14 +69,17 @@ func TestClampProfileValidation(t *testing.T) {
 				RequiredFiles:        []string{"a.go", "b.go", "c.go"},
 			},
 			want: WorkflowValidation{
-				MinPlanBytes:         3000,
+				MinPlanBytes:         MinPlanBytesFromArchitecture(SmallRigMaxArchitectureBytes),
 				MinArchitectureBytes: SmallRigMaxArchitectureBytes,
 			},
 		},
 		{
 			name: "below floor raised",
 			in:   WorkflowValidation{MinPlanBytes: 50},
-			want: WorkflowValidation{MinPlanBytes: MinArtifactBytesFloor, MinArchitectureBytes: DefaultMinArchitectureBytes},
+			want: WorkflowValidation{
+				MinPlanBytes:         MinPlanBytesFromArchitecture(DefaultMinArchitectureBytes),
+				MinArchitectureBytes: DefaultMinArchitectureBytes,
+			},
 		},
 	}
 	for _, tc := range tests {
@@ -81,6 +90,28 @@ func TestClampProfileValidation(t *testing.T) {
 					got.MinPlanBytes, got.MinArchitectureBytes, tc.want.MinPlanBytes, tc.want.MinArchitectureBytes)
 			}
 		})
+	}
+}
+
+func TestMinPlanBytesFromArchitecture_half(t *testing.T) {
+	t.Parallel()
+	if got := MinPlanBytesFromArchitecture(4000); got != 2000 {
+		t.Fatalf("got %d want 2000", got)
+	}
+	if got := MinPlanBytesFromArchitecture(100); got != MinArtifactBytesFloor {
+		t.Fatalf("got %d want floor %d", got, MinArtifactBytesFloor)
+	}
+}
+
+func TestEffectiveMinPlanBytes_usesOnDiskArchitecture(t *testing.T) {
+	rigDir := t.TempDir()
+	arch := filepath.Join(rigDir, "architecture.md")
+	if err := os.WriteFile(arch, make([]byte, 3000), 0644); err != nil {
+		t.Fatal(err)
+	}
+	v := WorkflowValidation{MinArchitectureBytes: 8000, MinPlanBytes: 4000}
+	if got := EffectiveMinPlanBytes(rigDir, v); got != 1500 {
+		t.Fatalf("got %d want 1500 (half of 3000 on disk)", got)
 	}
 }
 

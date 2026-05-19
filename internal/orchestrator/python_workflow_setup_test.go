@@ -74,7 +74,10 @@ func TestPythonVerifyCommand_layout(t *testing.T) {
 	t.Parallel()
 	v := WorkflowValidation{LayoutRoot: "tasklist", QAVerifyCommand: "pytest -v"}
 	got := PythonVerifyCommand(v)
-	if !strings.Contains(got, "cd tasklist") || !strings.Contains(got, "pytest") {
+	if !strings.Contains(got, "tasklist/tests") || !strings.Contains(got, "pytest") {
 		t.Fatalf("got %q", got)
+	}
+	if strings.Contains(got, "cd tasklist") {
+		t.Fatalf("pytest should run from mayor/rig with scoped path, not cd layout: %q", got)
 	}
 }

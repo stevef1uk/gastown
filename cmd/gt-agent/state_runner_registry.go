@@ -65,7 +65,7 @@ var trackHandlers = map[string]trackFn{
 		if cmdErr == nil && isBeadDeleteCommand(cmd) {
 			r.track.beadDeleteOK = true
 		}
-		if cmdErr == nil && isPlanMDWriteCommand(cmd) && planMDMeetsMinSize(r.townRoot, r.rig) {
+		if cmdErr == nil && isPlanMDWriteCommand(cmd) && planMDMeetsMinSize(r.townRoot, r.rig, r.v) {
 			r.track.hadCmdFailure = false
 		}
 	},
@@ -166,6 +166,10 @@ var artifactAutoCompleters = map[string]artifactAutoCompleteFn{
 		return r.validateArtifacts("success")
 	},
 	"implementation": func(r *stateRunner) error {
+		// Do not auto-complete without green verify when profile defines QA (pytest/go test).
+		if strings.TrimSpace(r.v.QAVerifyCommand) != "" && !r.track.verifyOK {
+			return fmt.Errorf("profile verification must pass before auto-complete")
+		}
 		return validateImplementationArtifacts(r.townRoot, r.rig, false, false, r.track.verifyOK, r.v)
 	},
 }

@@ -2,6 +2,7 @@ package orchestrator
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -51,9 +52,36 @@ func DefaultWorkflowValidation() WorkflowValidation {
 	}
 }
 
+// MinPlanBytesFromArchitecture returns the minimum plan.md size: half of architecture bytes (floored/capped).
+func MinPlanBytesFromArchitecture(architectureBytes int64) int64 {
+	if architectureBytes < 0 {
+		architectureBytes = 0
+	}
+	n := architectureBytes / 2
+	if n < MinArtifactBytesFloor {
+		n = MinArtifactBytesFloor
+	}
+	if n > MaxMinPlanBytes {
+		n = MaxMinPlanBytes
+	}
+	return n
+}
+
+// EffectiveMinPlanBytes returns the plan.md minimum for a rig: half of on-disk architecture.md when present,
+// otherwise half of the profile min_architecture_bytes (via MinPlanBytes after ClampProfileValidation).
+func EffectiveMinPlanBytes(rigDir string, v WorkflowValidation) int64 {
+	archPath := filepath.Join(rigDir, "architecture.md")
+	if info, err := os.Stat(archPath); err == nil && info.Size() > 0 {
+		return MinPlanBytesFromArchitecture(info.Size())
+	}
+	if v.MinPlanBytes > 0 {
+		return v.MinPlanBytes
+	}
+	return MinPlanBytesFromArchitecture(v.MinArchitectureBytes)
+}
+
 // ClampProfileValidation normalizes min_*_bytes from spec-index LLM output or hand-edited profiles.
 func ClampProfileValidation(v WorkflowValidation) WorkflowValidation {
-	v.MinPlanBytes = clampArtifactBytes(v.MinPlanBytes, DefaultMinPlanBytes, MinArtifactBytesFloor, MaxMinPlanBytes)
 	v.MinArchitectureBytes = clampArtifactBytes(v.MinArchitectureBytes, DefaultMinArchitectureBytes, MinArtifactBytesFloor, MaxMinArchitectureBytes)
 	v.MinImplementationFileBytes = clampArtifactBytes(
 		v.MinImplementationFileBytes, DefaultMinImplementationFileBytes, MinImplementationFileBytesFloor, MaxMinImplementationFileBytes,
@@ -65,6 +93,7 @@ func ClampProfileValidation(v WorkflowValidation) WorkflowValidation {
 		v.MinSubstantiveLines = DefaultMinSubstantiveLines
 	}
 	v = capArchitectureBytesForSmallRig(v)
+	v.MinPlanBytes = MinPlanBytesFromArchitecture(v.MinArchitectureBytes)
 	v = FinalizeDeliveryPhases(v)
 	return v
 }

@@ -264,8 +264,9 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 			o = normalizeOrchestratedOutcome(o, task.AllowedOutcomes)
 			if isOrchestratedFailureOutcome(o) && runner.hooks.Artifacts == "planning" {
 				if vErr := runner.validateArtifacts("success"); vErr == nil {
-					orchestratedPrintf("[gt-agent] ignoring planning failure JSON — artifacts already satisfy success (min_plan_bytes=%d)\n", runner.v.MinPlanBytes)
-					msg := fmt.Sprintf("Do not report failure: plan.md and beads already meet requirements (≥ %d bytes). Reply with JSON only: {\"outcome\":\"success\",\"summary\":\"plan and beads ready for plan review\"}", runner.v.MinPlanBytes)
+					minPlan := orchestrator.EffectiveMinPlanBytes(rigMayorRigDir(townRoot, rig), runner.v)
+					orchestratedPrintf("[gt-agent] ignoring planning failure JSON — artifacts already satisfy success (min_plan_bytes=%d)\n", minPlan)
+					msg := fmt.Sprintf("Do not report failure: plan.md and beads already meet requirements (≥ %d bytes, half of architecture.md). Reply with JSON only: {\"outcome\":\"success\",\"summary\":\"plan and beads ready for plan review\"}", minPlan)
 					recordAttemptFeedback(msg + "\n")
 					messages = append(messages, llm.Message{Role: "user", Content: msg})
 					continue
@@ -835,13 +836,14 @@ func isPlanMDWriteCommand(cmd string) bool {
 	return strings.Contains(lower, ">") || strings.Contains(lower, "tee ")
 }
 
-func planMDMeetsMinSize(townRoot, rig string) bool {
-	path := filepath.Join(rigMayorRigDir(townRoot, rig), "plan.md")
+func planMDMeetsMinSize(townRoot, rig string, v orchestrator.WorkflowValidation) bool {
+	rigDir := rigMayorRigDir(townRoot, rig)
+	path := filepath.Join(rigDir, "plan.md")
 	info, err := os.Stat(path)
 	if err != nil {
 		return false
 	}
-	return info.Size() >= orchestrator.DefaultWorkflowValidation().MinPlanBytes
+	return info.Size() >= orchestrator.EffectiveMinPlanBytes(rigDir, v)
 }
 
 // rewriteBackendPathAfterCD fixes paths like rig/mayor/rig/<layout>/... after cd into mayor/rig.
@@ -1378,13 +1380,15 @@ func validatePlanningArtifacts(townRoot, rig string, hadCmdFailure, beadCreateOK
 			return fmt.Errorf("run `bd create` for missing paths or `bd delete` for duplicates in %s, then ensure open beads match architecture: %w", rigMayorRigPath(rig), err)
 		}
 	}
-	path := filepath.Join(rigMayorRigDir(townRoot, rig), "plan.md")
+	rigDir := rigMayorRigDir(townRoot, rig)
+	path := filepath.Join(rigDir, "plan.md")
 	info, err := os.Stat(path)
 	if err != nil {
 		return fmt.Errorf("plan.md missing at %s", path)
 	}
-	if info.Size() < v.MinPlanBytes {
-		return fmt.Errorf("plan.md too small (%d bytes); need ≥%d", info.Size(), v.MinPlanBytes)
+	minPlan := orchestrator.EffectiveMinPlanBytes(rigDir, v)
+	if info.Size() < minPlan {
+		return fmt.Errorf("plan.md too small (%d bytes); need ≥%d (half of architecture.md)", info.Size(), minPlan)
 	}
 	if rig != "" {
 		if err := validateRigOpenBeads(townRoot, rig); err != nil {
@@ -1768,13 +1772,15 @@ func validatePlanReviewArtifacts(townRoot, rig string, hadCmdFailure, listOpenOK
 	if !listOpenOK {
 		return fmt.Errorf("run `bd list --status=open` from %s before reporting plan review outcome", rigMayorRigPath(rig))
 	}
-	planPath := filepath.Join(rigMayorRigDir(townRoot, rig), "plan.md")
+	rigDir := rigMayorRigDir(townRoot, rig)
+	planPath := filepath.Join(rigDir, "plan.md")
 	info, err := os.Stat(planPath)
 	if err != nil {
 		return fmt.Errorf("plan.md missing at %s", planPath)
 	}
-	if info.Size() < v.MinPlanBytes {
-		return fmt.Errorf("plan.md too small (%d bytes); need ≥%d", info.Size(), v.MinPlanBytes)
+	minPlan := orchestrator.EffectiveMinPlanBytes(rigDir, v)
+	if info.Size() < minPlan {
+		return fmt.Errorf("plan.md too small (%d bytes); need ≥%d (half of architecture.md)", info.Size(), minPlan)
 	}
 	open, err := listOpenImplementationBeads(townRoot, rig)
 	if err != nil {

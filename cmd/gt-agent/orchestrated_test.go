@@ -423,6 +423,9 @@ func TestValidatePlanningArtifacts(t *testing.T) {
 	if err := validatePlanningArtifacts(dir, "mockrig", false, false, false, v); err == nil {
 		t.Fatal("expected error without plan and beads")
 	}
+	if err := os.WriteFile(filepath.Join(rigDir, "architecture.md"), make([]byte, 500), 0644); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(filepath.Join(rigDir, "plan.md"), make([]byte, 250), 0644); err != nil {
 		t.Fatal(err)
 	}

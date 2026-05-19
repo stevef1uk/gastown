@@ -49,8 +49,11 @@ func TestRunOrchestratedCommand_heredocWritesFile(t *testing.T) {
 	if err := os.MkdirAll(rigDir, 0755); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(rigDir, "architecture.md"), make([]byte, 480), 0644); err != nil {
+		t.Fatal(err)
+	}
 	cmd := "export GT_ROOT=" + dir + " && cd mockrig/mayor/rig && cat > plan.md <<'EOF'\n# Implementation Plan\n" +
-		strings.Repeat("x", 220) + "\nEOF"
+		strings.Repeat("x", 230) + "\nEOF"
 	env := []string{"GT_ROOT=" + dir, "HOME=" + dir, "PATH=/usr/bin:/bin"}
 	out, err := runOrchestratedCommand(cmd, dir, "", env)
 	if err != nil {
@@ -60,8 +63,9 @@ func TestRunOrchestratedCommand_heredocWritesFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if info.Size() < orchestrator.DefaultWorkflowValidation().MinPlanBytes {
-		t.Fatalf("plan.md size %d", info.Size())
+	minPlan := orchestrator.EffectiveMinPlanBytes(rigDir, orchestrator.DefaultWorkflowValidation())
+	if info.Size() < minPlan {
+		t.Fatalf("plan.md size %d < min %d", info.Size(), minPlan)
 	}
 }
 

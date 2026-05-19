@@ -133,6 +133,12 @@ func pythonVerifyWithLayout(cmd string, v WorkflowValidation) string {
 		return cmd
 	}
 	lower := strings.ToLower(cmd)
+	testScope := layout + "/tests"
+	// Run pytest from mayor/rig (venv lives there) and collect only layout/tests — not stray tests/ at rig root.
+	if strings.Contains(lower, "pytest") && !strings.Contains(lower, testScope) {
+		cmd = strings.TrimSpace(cmd) + " " + testScope
+		return cmd
+	}
 	if strings.Contains(lower, "cd "+strings.ToLower(layout)) {
 		return cmd
 	}

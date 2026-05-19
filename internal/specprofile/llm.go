@@ -114,8 +114,8 @@ Rules:
 - required_files: Union of ALL critical paths relative to mayor/rig (under layout_root). For large specs (15+ files), still list the full union here.
 - delivery_phases: For large or multi-stack specs, split into 4–10 phases with 5–15 required_files each (infra, backend layers, frontend, e2e). Each phase needs id (kebab-case), title, required_files subset, and qa_verify_command that validates only that slice. Order phases by dependency. Omit delivery_phases for tiny tutorials (≤12 files total).
 - spec_summary: 400–2500 characters summarizing goals, stack, directory layout, and how to run tests—so downstream agents need not re-read the full spec.
-- min_plan_bytes: target 3000–5000 (enough for a detailed bead list + phased strategy in plan.md). Use 200–8192 only; NEVER copy SPEC byte length or spec_summary character count.
 - min_architecture_bytes: target 2500–5000 for most rigs; use 6000–8000 only when required_files has 15+ paths or the spec is very large. For ≤10 required_files use 2000–3500. Use 200–8192 only; NEVER copy SPEC byte length.
+- min_plan_bytes: ignored at runtime — plan.md must be ≥ half of architecture.md bytes (set min_architecture_bytes only).
 - confidence: "high", "medium", or "low".
 
 Output JSON only.`
