@@ -57,8 +57,8 @@ if [[ -z "$RIG" && "$SCOPE_TOWN" -eq 0 ]]; then
   usage 1
 fi
 
-if [[ ! -f "$GT_ROOT/config.json" ]]; then
-  echo "FATAL: not a Gas Town root (no config.json): $GT_ROOT" >&2
+if [[ ! -f "$GT_ROOT/settings/config.json" ]]; then
+  echo "FATAL: not a Gas Town root (no settings/config.json): $GT_ROOT" >&2
   exit 1
 fi
 
@@ -122,7 +122,7 @@ ensure_dolt() {
     echo "[dolt] server reachable at ${DOLT_HOST}:${DOLT_PORT}"
     return 0
   fi
-  if command -v gt &>/dev/null && [[ -f "$GT_ROOT/config.json" ]]; then
+  if command -v gt &>/dev/null && [[ -f "$GT_ROOT/settings/config.json" ]]; then
     echo "[dolt] starting Gas Town shared server (gt dolt start) ..."
     if (cd "$GT_ROOT" && gt dolt start); then
       if dolt_port_reachable; then
@@ -146,7 +146,7 @@ start_beads_dolt() {
   fi
 
   # Non–Gas Town: per-project bd dolt (only when shared gt server is not in use).
-  if command -v gt &>/dev/null && [[ -f "$GT_ROOT/config.json" ]]; then
+  if command -v gt &>/dev/null && [[ -f "$GT_ROOT/settings/config.json" ]]; then
     ensure_dolt || true
     if beads_db_ready "$beads_dir" "$rig_ctx"; then
       return 0
@@ -385,7 +385,7 @@ if [[ "$FORCE" -eq 0 && "$DRY_RUN" -eq 0 ]]; then
   esac
 fi
 
-if command -v gt &>/dev/null && [[ -f "$GT_ROOT/config.json" ]]; then
+if command -v gt &>/dev/null && [[ -f "$GT_ROOT/settings/config.json" ]]; then
   ensure_dolt || true
 fi
 

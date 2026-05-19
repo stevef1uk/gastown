@@ -16,8 +16,8 @@ from typing import Any
 def town_root_from_env(explicit: str | None) -> Path:
     root = explicit or os.environ.get("GT_ROOT") or os.path.expanduser("~/gt")
     root = Path(root).expanduser().resolve()
-    if not (root / "config.json").is_file():
-        sys.exit(f"FATAL: not a Gas Town root (no config.json): {root}")
+    if not (root / "settings" / "config.json").is_file():
+        sys.exit(f"FATAL: not a Gas Town root (no settings/config.json): {root}")
     return root
 
 
