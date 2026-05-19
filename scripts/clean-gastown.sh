@@ -51,7 +51,7 @@ find_town_root() {
     dir="$(cd "$dir" && pwd)"
 
     while [[ "$dir" != "/" ]]; do
-        if [[ -f "$dir/config.json" ]]; then
+        if [[ -f "$dir/settings/config.json" ]]; then
             echo "$dir"
             return 0
         fi
@@ -326,8 +326,8 @@ if [[ -z "$TOWN_ROOT" ]]; then
     TOWN_ROOT="$(find_town_root 2>/dev/null || true)"
 fi
 
-if [[ -z "$TOWN_ROOT" || ! -f "$TOWN_ROOT/config.json" ]]; then
-    log_fatal "Could not find a Gas Town workspace (no config.json found)."
+if [[ -z "$TOWN_ROOT" || ! -f "$TOWN_ROOT/settings/config.json" ]]; then
+    log_fatal "Could not find a Gas Town workspace (no settings/config.json found)."
     log_fatal "Usage: $0 [path/to/town]"
     exit 1
 fi
@@ -555,7 +555,7 @@ except Exception:
 
     echo ""
     echo "  PRESERVED (other rig data, town config, hq database):"
-    echo "    • $TOWN_ROOT/config.json"
+    echo "    • $TOWN_ROOT/settings/config.json"
     echo "    • $TOWN_ROOT/.dolt-data/hq           (town beads, mayor/planner mail)"
     echo "    • $TOWN_ROOT/daemon/                  (daemon state)"
     echo "    • $TOWN_ROOT/mayor/, planner/, deacon/, mechanic/  (HQ agents)"
@@ -1058,7 +1058,7 @@ echo "  Files to RESET (keep file, empty contents):"
 
 echo ""
 echo "  Files PRESERVED (never touched):"
-echo "    • config.json     (town configuration)"
+echo "    • settings/config.json     (town configuration)"
 echo "    • settings/       (town settings)"
 echo "    • .git/           (git repository)"
 echo "    • CLAUDE.md / AGENTS.md"

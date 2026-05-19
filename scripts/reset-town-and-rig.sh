@@ -43,8 +43,8 @@ if [[ ! -f "$CLEAN_SCRIPT" ]]; then
   echo "FATAL: clean script not found: $CLEAN_SCRIPT" >&2
   exit 1
 fi
-if [[ ! -f "$GT_ROOT/config.json" ]]; then
-  echo "FATAL: not a Gas Town root (no config.json): $GT_ROOT" >&2
+if [[ ! -f "$GT_ROOT/settings/config.json" ]]; then
+  echo "FATAL: not a Gas Town root (no settings/config.json): $GT_ROOT" >&2
   exit 1
 fi
 

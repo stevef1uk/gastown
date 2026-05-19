@@ -61,8 +61,8 @@ RIG="${RIG:-${RIG_NAME:-testgt2}}"
 
 export GT_ROOT GASTOWN RIG
 
-if [[ ! -f "$GT_ROOT/config.json" ]]; then
-  echo "FATAL: not a Gas Town root (no config.json): $GT_ROOT" >&2
+if [[ ! -f "$GT_ROOT/settings/config.json" ]]; then
+  echo "FATAL: not a Gas Town root (no settings/config.json): $GT_ROOT" >&2
   exit 1
 fi
 if [[ ! -d "$GT_ROOT/$RIG" ]]; then
@@ -241,7 +241,7 @@ ensure_dolt() {
       return 0
     fi
   fi
-  if command -v gt &>/dev/null && [[ -f "$GT_ROOT/config.json" ]]; then
+  if command -v gt &>/dev/null && [[ -f "$GT_ROOT/settings/config.json" ]]; then
     echo "[dolt] starting Gas Town shared server (gt dolt start) ..."
     (cd "$GT_ROOT" && gt dolt start) && return 0
   fi
@@ -253,7 +253,7 @@ start_beads_dolt() {
   local beads_dir="$1"
   local rig_ctx="${2:-}"
   echo "[beads] BEADS_DIR=$beads_dir"
-  if command -v gt &>/dev/null && [[ -f "$GT_ROOT/config.json" ]]; then
+  if command -v gt &>/dev/null && [[ -f "$GT_ROOT/settings/config.json" ]]; then
     ensure_dolt || true
     return 0
   fi

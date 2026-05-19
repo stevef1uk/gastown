@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"runtime"
 	"strings"
 	"syscall"
 
@@ -58,7 +59,13 @@ func runNatsWrapper(cmd *cobra.Command, args []string) error {
 		// platforms where the parent shell doesn't export PATH to child
 		// processes). Search common bin directories for script(1).
 		scriptPath := findScriptBinary()
-		child = exec.Command(scriptPath, append([]string{"-qfec", args[0]}, args[1:]...)...)
+		var scriptArgs []string
+		if runtime.GOOS == "darwin" {
+			scriptArgs = append([]string{"-q", "-F", "/dev/null", args[0]}, args[1:]...)
+		} else {
+			scriptArgs = append([]string{"-qfec", args[0]}, args[1:]...)
+		}
+		child = exec.Command(scriptPath, scriptArgs...)
 	} else {
 		child = exec.Command(args[0], args[1:]...)
 	}
