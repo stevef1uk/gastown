@@ -37,8 +37,10 @@ STATE_AGENT_DIRS: dict[str, str] = {
 def town_root_from_env(explicit: str | None) -> Path:
     root = explicit or os.environ.get("GT_ROOT") or os.environ.get("GASTOWN_TOWN_ROOT") or os.path.expanduser("~/gt")
     root = Path(root).expanduser().resolve()
-    if not (root / "config.json").is_file():
-        sys.exit(f"FATAL: not a Gas Town root (no config.json): {root}")
+    # Support config.json in root or in settings/ subdirectory
+    config_paths = [root / "config.json", root / "settings" / "config.json"]
+    if not any(p.is_file() for p in config_paths):
+        sys.exit(f"FATAL: not a Gas Town root (no config.json in {root} or {root}/settings)")
     return root
 
 

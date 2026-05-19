@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -19,6 +20,48 @@ import (
 	"github.com/steveyegge/gastown/internal/orchestrator"
 	"github.com/steveyegge/gastown/internal/session"
 )
+
+// processExists checks if a process with the given PID is running.
+// Works on both Linux (via /proc) and macOS (via sysctl).
+func processExists(pid int) bool {
+	if pid <= 0 {
+		return false
+	}
+	if runtime.GOOS == "linux" {
+		_, err := os.Stat(filepath.Join("/proc", strconv.Itoa(pid)))
+		return err == nil
+	}
+	// macOS: use sysctl to check if process exists
+	cmd := exec.Command("ps", "-p", strconv.Itoa(pid), "-o", "pid=")
+	out, err := cmd.Output()
+	return err == nil && len(out) > 0
+}
+
+// processStartTime returns the process start time (for "since" field).
+// On Linux reads /proc/<pid>/stat, on macOS returns zero time.
+func processStartTime(pid int) time.Time {
+	if pid <= 0 {
+		return time.Time{}
+	}
+	if runtime.GOOS == "linux" {
+		if stat, err := os.Stat(filepath.Join("/proc", strconv.Itoa(pid))); err == nil {
+			return stat.ModTime()
+		}
+	}
+	// macOS: try to get start time via ps
+	cmd := exec.Command("ps", "-p", strconv.Itoa(pid), "-o", "lstart=")
+	out, err := cmd.Output()
+	if err != nil || len(out) == 0 {
+		return time.Time{}
+	}
+	// Parse the lstart output - it's in a fixed format
+	// Example: "Mon May 19 12:34:56 2026"
+	t, err := time.Parse("Mon Jan 2 15:04:05 2006", strings.TrimSpace(string(out)))
+	if err != nil {
+		return time.Time{}
+	}
+	return t
+}
 
 // Agent represents a Gas Town agent (deacon, mayor, witness, refinery, crew, polecat).
 type Agent struct {
@@ -424,9 +467,7 @@ func (s *Server) inspectOrchestrator(workflows []WorkflowInfo) Agent {
 	if running && pid > 0 {
 		a.PID = pid
 		a.Status = "running"
-		if stat, err := os.Stat(filepath.Join("/proc", strconv.Itoa(pid))); err == nil {
-			a.Since = stat.ModTime()
-		}
+		a.Since = processStartTime(pid)
 	} else {
 		a.Status = "stopped"
 	}
@@ -460,10 +501,7 @@ func (s *Server) inspectAgent(sessionName, rig, role string) Agent {
 	if pid > 0 {
 		a.PID = pid
 		a.Status = "running"
-		// Get process start time
-		if stat, err := os.Stat(filepath.Join("/proc", strconv.Itoa(pid))); err == nil {
-			a.Since = stat.ModTime()
-		}
+		a.Since = processStartTime(pid)
 	} else {
 		a.Status = "stopped"
 	}
@@ -529,7 +567,7 @@ func (s *Server) findAgentPID(sessionName, rig, role string) int {
 		if data, err := os.ReadFile(pidFile); err == nil {
 			if pid, err := strconv.Atoi(strings.TrimSpace(string(data))); err == nil {
 				// Verify process exists
-				if _, err := os.Stat(filepath.Join("/proc", strconv.Itoa(pid))); err == nil {
+				if processExists(pid) {
 					return pid
 				}
 			}
@@ -571,19 +609,40 @@ func (s *Server) findAgentPID(sessionName, rig, role string) int {
 }
 
 func (s *Server) pidInTown(pid int) bool {
-	procCwd, err := os.Readlink(filepath.Join("/proc", strconv.Itoa(pid), "cwd"))
+	if runtime.GOOS == "linux" {
+		procCwd, err := os.Readlink(filepath.Join("/proc", strconv.Itoa(pid), "cwd"))
+		if err != nil {
+			return false
+		}
+		return strings.HasPrefix(procCwd, s.townRoot)
+	}
+	// macOS: use ps to get cwd
+	cmd := exec.Command("ps", "-p", strconv.Itoa(pid), "-o", "cwd=")
+	out, err := cmd.Output()
 	if err != nil {
 		return false
 	}
-	return strings.HasPrefix(procCwd, s.townRoot)
+	cwd := strings.TrimSpace(string(out))
+	return strings.HasPrefix(cwd, s.townRoot)
 }
 
 func readProcEnviron(pid int) string {
-	data, err := os.ReadFile(filepath.Join("/proc", strconv.Itoa(pid), "environ"))
+	if runtime.GOOS == "linux" {
+		data, err := os.ReadFile(filepath.Join("/proc", strconv.Itoa(pid), "environ"))
+		if err != nil {
+			return ""
+		}
+		return string(data)
+	}
+	// macOS: use ps to get environment
+	cmd := exec.Command("ps", "-p", strconv.Itoa(pid), "-o", "args=")
+	out, err := cmd.Output()
 	if err != nil {
 		return ""
 	}
-	return string(data)
+	// macOS doesn't easily expose environment, but we can at least check process exists
+	// For environment matching, we'll rely on process arguments instead
+	return string(out)
 }
 
 func procEnvironMatches(environ, key, value string) bool {

@@ -1,0 +1,736 @@
+?   	github.com/steveyegge/gastown	[no test files]
+?   	github.com/steveyegge/gastown/cmd/debug-mechanic	[no test files]
+?   	github.com/steveyegge/gastown/cmd/debug-mechanic/llm	[no test files]
+ok  	github.com/steveyegge/gastown/cmd/gt	(cached)
+[gt-agent] auto-verify failed: exit status 1
+go: finding module for package modernc.org/sqlite
+go: finding module for package github.com/modernc.org/sqlite
+go: found modernc.org/sqlite in modernc.org/sqlite v1.50.1
+go: finding module for package github.com/modernc.org/sqlite
+go: linkshelf/cmd/server imports
+	github.com/modernc.org/sqlite: cannot find module providing package github.com/modernc.org/sqlite: module github.com/modernc.org/sqlite: git ls-remote -q --end-of-options origin in /Users/stevef/go/pkg/mod/cache/vcs/f8685a18056cc9ad5bfcedc71510c1c26ab4fe4871049b120e224f5ce8544171: exit status 128:
+	remote: Repository not found.
+	fatal: repository 'https://github.com/modernc.org/sqlite/' not found
+
+[gt-agent] ⚠ REJECTED hallucinatory command with placeholders: "gt sling design --on [bead] [rig]/architect"
+[gt-agent] ⚠ REJECTED hallucinatory command with placeholders: "gt sling design --on <bead-id> mockrig/architect"
+[gt-agent] ⚠ REJECTED hallucinatory sling command (invalid bead id): "MOL-1234"
+[gt-agent] ⚠ REJECTED hallucinatory mol execute command: "gt mol execute --on mol-idea-9012"
+--- FAIL: TestRewriteSpecMDPathCaseInsensitive (0.00s)
+    main_test.go:1533: expected rewrite
+[gt-agent] ⚠ REJECTED inappropriate `--formula shiny` sling for role "witness": "gt sling hq-wisp-u0z1r --formula shiny"
+[gt-agent] ⚠ REJECTED hallucinatory patrol command: "gt patrolling mol-planner-patrol cycle 24"
+[gt-agent] ⚠ REJECTED mayor `gt mail delete` on protected mail (Fix #122/#123): "gt mail delete hq-wisp-clm"
+[gt-agent] ⚠ REJECTED mayor `gt mail delete` on protected mail (Fix #122/#123): "gt mail delete hq-wisp-pk"
+[gt-agent] ⚠ REJECTED mayor `gt mail delete` on protected mail (Fix #122/#123): "gt mail delete hq-wisp-re"
+[gt-agent] ⚠ REJECTED mayor `gt mail delete` on protected mail (Fix #122/#123): "gt mail delete hq-wisp-id6"
+[gt-agent] ⚠ REJECTED mayor `gt mail delete` on protected mail (Fix #122/#123): "gt mail delete hq-wisp-v2"
+[gt-agent] ⚠ REJECTED shortcut close command "bd close step-2" because no step is currently active (molecule may be naked)
+[gt-agent] ⚠ REJECTED content-free `gt mail send` (Fix #90: subject is a bare formula name): "gt mail send mockrig/witness -s \"mol-refinery-patrol\" -m \"Reply to witness regarding mol-refinery-patrol\""
+[gt-agent] auto-completing planning: artifacts satisfied
+[gt-agent] auto-completing design: artifacts satisfied
+[gt-agent] created python venv at mockrig/mayor/rig/.venv
+FAIL
+FAIL	github.com/steveyegge/gastown/cmd/gt-agent	8.100s
+?   	github.com/steveyegge/gastown/cmd/gt-agent/internal/llm	[no test files]
+?   	github.com/steveyegge/gastown/cmd/gt-agent-console	[no test files]
+?   	github.com/steveyegge/gastown/cmd/gt-orchestrator	[no test files]
+?   	github.com/steveyegge/gastown/cmd/gt-proxy-client	[no test files]
+ok  	github.com/steveyegge/gastown/cmd/gt-proxy-server	(cached)
+ok  	github.com/steveyegge/gastown/internal/acp	(cached)
+ok  	github.com/steveyegge/gastown/internal/activity	(cached)
+ok  	github.com/steveyegge/gastown/internal/agent	(cached)
+ok  	github.com/steveyegge/gastown/internal/agent/provider	(cached)
+ok  	github.com/steveyegge/gastown/internal/agentconsole	(cached)
+ok  	github.com/steveyegge/gastown/internal/agentenv	(cached)
+ok  	github.com/steveyegge/gastown/internal/agentllm	(cached)
+ok  	github.com/steveyegge/gastown/internal/agentlog	(cached)
+ok  	github.com/steveyegge/gastown/internal/atomicfile	(cached)
+?   	github.com/steveyegge/gastown/internal/beadredirect	[no test files]
+ok  	github.com/steveyegge/gastown/internal/beads	(cached)
+ok  	github.com/steveyegge/gastown/internal/bitbucket	(cached)
+ok  	github.com/steveyegge/gastown/internal/boot	(cached)
+ok  	github.com/steveyegge/gastown/internal/channelevents	(cached)
+ok  	github.com/steveyegge/gastown/internal/checkpoint	(cached)
+ok  	github.com/steveyegge/gastown/internal/cli	(cached)
+Switched to account 'personal'
+~/.claude -> /var/folders/sn/rj5bqcz12nj5x18ygsb4psph0000gp/T/TestAccountSwitchswitch_between_accounts2526114485/002/claude-accounts/personal
+
+⚠️  Restart Claude Code for the change to take effect
+Already on account 'work'
+Moving ~/.claude to /var/folders/sn/rj5bqcz12nj5x18ygsb4psph0000gp/T/TestAccountSwitchreal_directory_gets_moved3894835093/002/claude-accounts/work...
+Switched to account 'personal'
+~/.claude -> /var/folders/sn/rj5bqcz12nj5x18ygsb4psph0000gp/T/TestAccountSwitchreal_directory_gets_moved3894835093/002/claude-accounts/personal
+
+⚠️  Restart Claude Code for the change to take effect
+Warning: /Users/stevef/dev/freeride/gastown/.beads has permissions 0755 (recommended: 0700). Run: chmod 700 /Users/stevef/dev/freeride/gastown/.beads
+bd version 1.0.3 (Homebrew)
+Warrant executed: session gt-test-nonexistent-x7q already dead (gastown/polecats/test-nonexistent-x7q)
+Available Agents
+
+  amp [built-in] amp --dangerously-allow-all --no-ide
+  auggie [built-in] auggie --allow-indexing
+  claude [built-in] claude --dangerously-skip-permissions
+  codex [built-in] codex --dangerously-bypass-approvals-and-sandbox
+  copilot [built-in] copilot --yolo
+  cursor [built-in] cursor-agent -f
+  gemini [built-in] gemini --approval-mode yolo
+  groq-compound [built-in] claude --dangerously-skip-permissions
+  gt-agent [built-in] gt-agent
+  omp [built-in] omp --hook .omp/hooks/gastown-hook.ts
+  opencode [built-in] opencode
+  pi [built-in] pi -e .pi/extensions/gastown-hooks.js
+  vibe [built-in] vibe --agent auto-approve
+
+Default: claude
+Available Agents
+
+  amp [built-in] amp --dangerously-allow-all --no-ide
+  auggie [built-in] auggie --allow-indexing
+  claude [built-in] claude --dangerously-skip-permissions
+  codex [built-in] codex --dangerously-bypass-approvals-and-sandbox
+  copilot [built-in] copilot --yolo
+  cursor [built-in] cursor-agent -f
+  gemini [built-in] gemini --approval-mode yolo
+  groq-compound [built-in] claude --dangerously-skip-permissions
+  gt-agent [built-in] gt-agent
+  my-custom [custom] my-agent --flag
+  omp [built-in] omp --hook .omp/hooks/gastown-hook.ts
+  opencode [built-in] opencode
+  pi [built-in] pi -e .pi/extensions/gastown-hooks.js
+  vibe [built-in] vibe --agent auto-approve
+
+Default: claude
+[
+  {
+    "name": "amp",
+    "command": "amp",
+    "args": "--dangerously-allow-all --no-ide",
+    "type": "built-in",
+    "is_custom": false
+  },
+  {
+    "name": "auggie",
+    "command": "auggie",
+    "args": "--allow-indexing",
+    "type": "built-in",
+    "is_custom": false
+  },
+  {
+    "name": "claude",
+    "command": "claude",
+    "args": "--dangerously-skip-permissions",
+    "type": "built-in",
+    "is_custom": false
+  },
+  {
+    "name": "codex",
+    "command": "codex",
+    "args": "--dangerously-bypass-approvals-and-sandbox",
+    "type": "built-in",
+    "is_custom": false
+  },
+  {
+    "name": "copilot",
+    "command": "copilot",
+    "args": "--yolo",
+    "type": "built-in",
+    "is_custom": false
+  },
+  {
+    "name": "cursor",
+    "command": "cursor-agent",
+    "args": "-f",
+    "type": "built-in",
+    "is_custom": false
+  },
+  {
+    "name": "gemini",
+    "command": "gemini",
+    "args": "--approval-mode yolo",
+    "type": "built-in",
+    "is_custom": false
+  },
+  {
+    "name": "groq-compound",
+    "command": "claude",
+    "args": "--dangerously-skip-permissions",
+    "type": "built-in",
+    "is_custom": false
+  },
+  {
+    "name": "gt-agent",
+    "command": "gt-agent",
+    "type": "built-in",
+    "is_custom": false
+  },
+  {
+    "name": "omp",
+    "command": "omp",
+    "args": "--hook .omp/hooks/gastown-hook.ts",
+    "type": "built-in",
+    "is_custom": false
+  },
+  {
+    "name": "opencode",
+    "command": "opencode",
+    "type": "built-in",
+    "is_custom": false
+  },
+  {
+    "name": "pi",
+    "command": "pi",
+    "args": "-e .pi/extensions/gastown-hooks.js",
+    "type": "built-in",
+    "is_custom": false
+  },
+  {
+    "name": "vibe",
+    "command": "vibe",
+    "args": "--agent auto-approve",
+    "type": "built-in",
+    "is_custom": false
+  }
+]
+Agent: claude
+
+Type:   built-in
+Command: claude
+Args:    --dangerously-skip-permissions
+Session ID Env: CLAUDE_SESSION_ID
+Resume Style:  flag (--resume)
+Supports Hooks: true
+Agent: my-custom
+
+Type:   custom
+Command: my-agent
+Args:    --flag1 --flag2
+Agent 'my-agent' set to: my-agent --arg1 --arg2
+Agent 'simple-agent' set to: simple-agent
+Agent 'my-agent' set to: new-command --new
+Agent 'gemini-custom' set to: gemini --fast-mode
+Agent 'my-bot' set to: my-custom-tool --flag
+Agent 'my-claude-wrapper' set to: my-claude-wrapper --custom
+Removed custom agent 'my-agent'
+Default agent: claude
+Default agent set to 'gemini'
+Default agent set to 'my-custom'
+Available Agents
+
+  amp [built-in] amp --dangerously-allow-all --no-ide
+  auggie [built-in] auggie --allow-indexing
+  claude [built-in] claude --dangerously-skip-permissions
+  codex [built-in] codex --dangerously-bypass-approvals-and-sandbox
+  copilot [built-in] copilot --yolo
+  cursor [built-in] cursor-agent -f
+  gemini [built-in] gemini --approval-mode yolo
+  groq-compound [built-in] claude --dangerously-skip-permissions
+  gt-agent [built-in] gt-agent
+  omp [built-in] omp --hook .omp/hooks/gastown-hook.ts
+  opencode [built-in] opencode
+  pi [built-in] pi -e .pi/extensions/gastown-hooks.js
+  vibe [built-in] vibe --agent auto-approve
+
+Default: claude
+[
+  {
+    "name": "amp",
+    "command": "amp",
+    "args": "--dangerously-allow-all --no-ide",
+    "type": "built-in",
+    "is_custom": false
+  },
+  {
+    "name": "auggie",
+    "command": "auggie",
+    "args": "--allow-indexing",
+    "type": "built-in",
+    "is_custom": false
+  },
+  {
+    "name": "claude",
+    "command": "claude",
+    "args": "--dangerously-skip-permissions",
+    "type": "built-in",
+    "is_custom": false
+  },
+  {
+    "name": "codex",
+    "command": "codex",
+    "args": "--dangerously-bypass-approvals-and-sandbox",
+    "type": "built-in",
+    "is_custom": false
+  },
+  {
+    "name": "copilot",
+    "command": "copilot",
+    "args": "--yolo",
+    "type": "built-in",
+    "is_custom": false
+  },
+  {
+    "name": "cursor",
+    "command": "cursor-agent",
+    "args": "-f",
+    "type": "built-in",
+    "is_custom": false
+  },
+  {
+    "name": "gemini",
+    "command": "gemini",
+    "args": "--approval-mode yolo",
+    "type": "built-in",
+    "is_custom": false
+  },
+  {
+    "name": "groq-compound",
+    "command": "claude",
+    "args": "--dangerously-skip-permissions",
+    "type": "built-in",
+    "is_custom": false
+  },
+  {
+    "name": "gt-agent",
+    "command": "gt-agent",
+    "type": "built-in",
+    "is_custom": false
+  },
+  {
+    "name": "omp",
+    "command": "omp",
+    "args": "--hook .omp/hooks/gastown-hook.ts",
+    "type": "built-in",
+    "is_custom": false
+  },
+  {
+    "name": "opencode",
+    "command": "opencode",
+    "type": "built-in",
+    "is_custom": false
+  },
+  {
+    "name": "pi",
+    "command": "pi",
+    "args": "-e .pi/extensions/gastown-hooks.js",
+    "type": "built-in",
+    "is_custom": false
+  },
+  {
+    "name": "vibe",
+    "command": "vibe",
+    "args": "--agent auto-approve",
+    "type": "built-in",
+    "is_custom": false
+  }
+]
+Set convoy.notify_on_complete = true
+true
+Set convoy.notify_on_complete = false
+Set cli_theme = dark
+Set maintenance.window = 03:00
+Scheduled maintenance enabled (window: 03:00, interval: )
+Hint: set interval with: gt config set maintenance.interval daily
+03:00
+Set maintenance.window = 03:00
+Scheduled maintenance enabled (window: 03:00, interval: )
+Hint: set interval with: gt config set maintenance.interval daily
+Set maintenance.window = 00:00
+Scheduled maintenance enabled (window: 00:00, interval: )
+Hint: set interval with: gt config set maintenance.interval daily
+Set maintenance.window = 23:59
+Scheduled maintenance enabled (window: 23:59, interval: )
+Hint: set interval with: gt config set maintenance.interval daily
+Set maintenance.window = 12:30
+Scheduled maintenance enabled (window: 12:30, interval: )
+Hint: set interval with: gt config set maintenance.interval daily
+Set maintenance.interval = daily
+Set maintenance.interval = weekly
+Set maintenance.interval = monthly
+Set maintenance.interval = 48h
+Set maintenance.threshold = 500
+Set maintenance.window = 04:00
+Scheduled maintenance enabled (window: 04:00, interval: )
+Hint: set interval with: gt config set maintenance.interval daily
+04:00
+Warning: 1 non-operational rig(s) in convoy: parkedrig
+  Proceeding with --force (tasks may fail)
+Validation bead created: hq-529uj (blocked by 2 tasks, formula: mol-validate-prd)
+gt-epic-1 [epic] Test Epic (rig: gastown) [open]
+├── gt-task-1 [task] First task (rig: gastown) [open]
+└── gt-task-2 [task] Second task (rig: gastown) [open]
+  Wave   ID              Title                          Rig          Blocked By
+  ────────────────────────────────────────────────────────────────────────────────
+  1      gt-task-1       First task                     gastown      —
+  1      gt-task-2       Second task                    gastown      —
+  2      hq-529uj        Validate: PRD success criter.. ?            gt-task-1, gt-task-2
+
+  3 tasks across 2 waves (max parallelism: 2 in wave 1)
+Warnings:
+  1. [orphan] task gt-task-1 has no blocking dependencies with other staged tasks (isolated in wave graph)
+     Affected: gt-task-1
+     Fix: add a blocking dependency for gt-task-1, or verify it should be staged independently
+  2. [orphan] task gt-task-2 has no blocking dependencies with other staged tasks (isolated in wave graph)
+     Affected: gt-task-2
+     Fix: add a blocking dependency for gt-task-2, or verify it should be staged independently
+Convoy created: hq-cv-ii2lf (status: staged_warnings)
+  gt-t1 [task] Task One (rig: gastown) [open]
+  gt-t2 [task] Task Two (rig: gastown) [open]
+  Wave   ID              Title                          Rig          Blocked By
+  ────────────────────────────────────────────────────────────────────────────────
+  1      gt-t1           Task One                       gastown      —
+  1      gt-t2           Task Two                       gastown      —
+
+  2 tasks across 1 waves (max parallelism: 2 in wave 1)
+Convoy created: hq-cv-xcgbl (status: staged_ready)
+Closed 2 molecule step(s) for gt-wisp-xyz
+Closed 1 molecule step(s) for gt-wisp-xyz
+Closed 2 molecule step(s) for gt-wisp-xyz
+⚠ Warning: closing descendants of gt-wisp-xyz: listing children of gt-wisp-xyz: bd list --json --status=all --priority=0 --parent=gt-wisp-xyz --limit=0 --flat: Error: database locked
+Warning: couldn't close attached molecule gt-wisp-xyz: bd close gt-wisp-xyz --reason=done --force: exit status 1
+Warning: circular redirect detected in /var/folders/sn/rj5bqcz12nj5x18ygsb4psph0000gp/T/TestDoneCircularRedirectProtection30353769/001/.beads/redirect, ignoring redirect and removing stale file
+Pushing submodule libs/sub (30f098e)...
+✓ Submodule libs/sub pushed
+⚠ Warning: email action 'email:human' skipped: contacts.human_email not configured in settings/escalation.json
+  📝 Logged to escalation log
+⚠ Warning: email action 'email:human' skipped: contacts.human_email not configured in settings/escalation.json
+⚠ Warning: email action 'email:human' skipped: contacts.smtp_host not configured in settings/escalation.json
+⚠ Warning: sms action 'sms:human' skipped: contacts.human_sms not configured in settings/escalation.json
+⚠ Warning: sms action 'sms:human' skipped: contacts.sms_webhook not configured in settings/escalation.json
+⚠ Warning: slack action skipped: contacts.slack_webhook not configured in settings/escalation.json
+  💬 Posted to Slack
+  📝 Logged to escalation log
+⚠ Warning: email action 'email:human' skipped: contacts.smtp_host not configured in settings/escalation.json
+⚠ Warning: sms action 'sms:human' skipped: contacts.sms_webhook not configured in settings/escalation.json
+  💬 Posted to Slack
+  📝 Logged to escalation log
+Create and manage escalations for critical issues.
+
+The escalation system provides severity-based routing for issues that need
+human or mayor attention. Escalations are tracked as beads with gt:escalation label.
+
+SEVERITY LEVELS:
+  critical  (P0) Immediate attention required
+  high      (P1) Urgent, needs attention soon
+  medium    (P2) Standard escalation (default)
+  low       (P3) Informational, can wait
+
+WORKFLOW:
+  1. Agent encounters blocking issue
+  2. Runs: gt escalate "Description" --severity high --reason "details"
+  3. Escalation is routed based on settings/escalation.json
+  4. Recipient acknowledges with: gt escalate ack <id>
+  5. After resolution: gt escalate close <id> --reason "fixed"
+
+CONFIGURATION:
+  Routing is configured in ~/gt/settings/escalation.json:
+  - routes: Map severity to action lists (bead, mail:mayor, email:human, sms:human)
+  - contacts: Human email/SMS for external notifications
+  - stale_threshold: When unacked escalations are re-escalated (default: 4h)
+  - max_reescalations: How many times to bump severity (default: 2)
+
+Examples:
+  gt escalate "Build failing" --severity critical --reason "CI blocked"
+  gt escalate "Need API credentials" --severity high --source "plugin:rebuild-gt"
+  gt escalate "Code review requested" --reason "PR #123 ready"
+  gt escalate list                          # Show open escalations
+  gt escalate ack hq-abc123                 # Acknowledge
+  gt escalate close hq-abc123 --reason "Fixed in commit abc"
+  gt escalate stale                         # Re-escalate stale escalations
+
+Usage:
+  gt escalate [description] [flags]
+  gt escalate [command]
+
+Available Commands:
+  ack         Acknowledge an escalation
+  close       Close a resolved escalation
+  list        List open escalations
+  show        Show details of an escalation
+  stale       Re-escalate stale unacknowledged escalations
+
+Flags:
+  -n, --dry-run           Show what would be done without executing
+      --json              Output as JSON
+  -r, --reason string     Detailed reason for escalation
+      --related string    Related bead ID (task, bug, etc.)
+  -s, --severity string   Severity level: critical, high, medium, low (default "medium")
+      --source string     Source identifier (e.g., plugin:rebuild-gt, patrol:deacon)
+      --stdin             Read reason from stdin (avoids shell quoting issues)
+
+Use "gt escalate [command] --help" for more information about a command.
+⚠ Warning: rigs.json not found (checked mayor/rigs.json and town root). PrefixRegistry is empty — session parsing will fail. Run 'gt doctor' or restore rigs.json.
+⚠ Warning: skipping automatic polecat git mutations in the Gas Town instrument checkout (module github.com/steveyegge/gastown) — work from your town clone, not this tree. Opt-in: GT_ALLOW_GASTOWN_GIT_AUTOSAVE=1
+Warning: couldn't set done-intent label on gt-gastown-polecat-max: issue not found
+⚠ Warning: could not write completion metadata to agent bead: issue not found
+Warning: failed to nudge witness gt-gastown-witness: no session provider
+Warning: couldn't write checkpoint witness-notified on gt-gastown-polecat-max: issue not found
+Warning: couldn't clear hook_bead on gt-gastown-polecat-max: issue not found
+Warning: wisp purge failed: issue not found
+Warning: couldn't set agent gt-gastown-polecat-max to idle: issue not found
+Warning: couldn't update agent gt-gastown-polecat-max cleanup status: issue not found
+⚠ Warning: uncommitted changes still present — skipping worktree sync to preserve work
+⚠ Warning: rigs.json not found (checked mayor/rigs.json and town root). PrefixRegistry is empty — session parsing will fail. Run 'gt doctor' or restore rigs.json.
+⚠ Warning: skipping automatic polecat git mutations in the Gas Town instrument checkout (module github.com/steveyegge/gastown) — work from your town clone, not this tree. Opt-in: GT_ALLOW_GASTOWN_GIT_AUTOSAVE=1
+Warning: couldn't set done-intent label on gt-gastown-polecat-Toast: issue not found
+⚠ Warning: could not write completion metadata to agent bead: issue not found
+Warning: failed to nudge witness gt-gastown-witness: no session provider
+Warning: couldn't write checkpoint witness-notified on gt-gastown-polecat-Toast: issue not found
+Warning: couldn't clear hook_bead on gt-gastown-polecat-Toast: issue not found
+Warning: wisp purge failed: issue not found
+Warning: couldn't set agent gt-gastown-polecat-Toast to idle: issue not found
+Warning: couldn't update agent gt-gastown-polecat-Toast cleanup status: issue not found
+⚠ Warning: uncommitted changes still present — skipping worktree sync to preserve work
+⚠ workspace has uncommitted work: 1 uncommitted change(s)
+⚠   untracked: tests_out.txt
+  (use --no-git-check to suppress this warning)
+DEBUG: role="mayor"
+The session was NOT respawned. Fix the issue and retry 'gt handoff'.
+⚠ workspace has uncommitted work: 1 uncommitted change(s)
+⚠   untracked: tests_out.txt
+  (use --no-git-check to suppress this warning)
+⚠ workspace has uncommitted work: 1 uncommitted change(s)
+⚠   untracked: tests_out.txt
+  (use --no-git-check to suppress this warning)
+⚠ workspace has uncommitted work: 1 uncommitted change(s)
+⚠   untracked: tests_out.txt
+  (use --no-git-check to suppress this warning)
+⚠ Warning: rigs.json not found (checked mayor/rigs.json and town root). PrefixRegistry is empty — session parsing will fail. Run 'gt doctor' or restore rigs.json.
+⚠ Warning: skipping automatic polecat git mutations in the Gas Town instrument checkout (module github.com/steveyegge/gastown) — work from your town clone, not this tree. Opt-in: GT_ALLOW_GASTOWN_GIT_AUTOSAVE=1
+Warning: failed to nudge witness gt-gastown-witness: no session provider
+⚠ Warning: no agent bead ID found for cmd/, skipping agent state update
+⏳ Handoff cooldown: waiting 1s (last handoff 1m59s ago, min 2m0s)
+Syncing hooks...
+  ✖ mayor (integrity violation): loading current settings: settings integrity violation at /private/var/folders/sn/rj5bqcz12nj5x18ygsb4psph0000gp/T/TestRunHooksSyncFailsClosedOnIntegrityViolation1422601538/001/town/mayor/.claude/settings.json: unmarshaling hooks: json: cannot unmarshal string into Go struct field HooksConfig.SessionStart of type []hooks.HookEntry
+  ✓ deacon/.claude/settings.json (created)
+
+Synced 2 targets (1 created, 0 updated, 0 unchanged, 1 errors)
+Syncing hooks...
+  ✓ mayor/.claude/settings.json (created)
+  ✓ deacon/.claude/settings.json (created)
+  ✓ myrig/crew/.claude/settings.json (created)
+  ✓ myrig/crew/alice/.opencode/plugins/gastown.js (created opencode)
+
+Synced 4 targets (4 created, 0 updated, 0 unchanged)
+Dry run - showing what would change...
+
+  ~ mayor/.claude/settings.json (would create)
+  ~ deacon/.claude/settings.json (would create)
+  ~ myrig/crew/.claude/settings.json (would create)
+  ~ myrig/crew/alice/.opencode/plugins/gastown.js (would create opencode)
+
+Would sync 4 targets (4 to create, 0 to update, 0 unchanged)
+Syncing hooks...
+  ✓ mayor/.claude/settings.json (created)
+  ✓ deacon/.claude/settings.json (created)
+  ✓ myrig/polecats/.claude/settings.json (created)
+  ✓ myrig/polecats/fury/gastown/.opencode/plugins/gastown.js (created opencode)
+
+Synced 4 targets (4 created, 0 updated, 0 unchanged)
+  Installed to: /var/folders/sn/rj5bqcz12nj5x18ygsb4psph0000gp/T/TestInstallHookToSerializesCorrectly2226130971/001
+[mysql] 2026/05/19 18:02:58 packets.go:58 read tcp 127.0.0.1:58713->127.0.0.1:58712: i/o timeout
+warning: could not list agents: issue not found
+warning: could not list groups: issue not found
+warning: could not list queues: issue not found
+warning: could not list channels: issue not found
+warning: could not list agents: issue not found
+warning: could not list groups: issue not found
+warning: could not list queues: issue not found
+warning: could not list channels: issue not found
+warning: could not list agents: issue not found
+warning: could not list groups: issue not found
+warning: could not list queues: issue not found
+warning: could not list channels: issue not found
+warning: could not list agents: issue not found
+warning: could not list groups: issue not found
+warning: could not list queues: issue not found
+warning: could not list channels: issue not found
+○ No announce channels configured
+○ No announce channels configured
+DEBUG: role="mayor"
+🎯 Slinging formula mol-polecat-work on gt-abc123 to mayor/...
+  Instantiating formula mol-polecat-work...
+✓ Formula wisp created: gt-wisp-xyz
+✓ Formula bonded to gt-abc123
+✓ Work attached to hook (status=hooked)
+○ Self-sling: work hooked, will process on next turn
+DEBUG: role="mayor"
+🎯 Slinging formula mol-polecat-work on gt-abc123 to mayor/...
+  Instantiating formula mol-polecat-work...
+✓ Formula wisp created: gt-wisp-xyz
+✓ Formula bonded to gt-abc123
+✓ Work attached to hook (status=hooked)
+○ Self-sling: work hooked, will process on next turn
+🔥 Burned molecule gt-wisp-mol1 from witness
+📦 Squashed molecule gt-wisp-patrol1 (no digest)
+🔥 Burned molecule gt-wisp-mol2 from witness
+  Closed 1 step issues
+⚠ Warning: rigs.json not found (checked mayor/rigs.json and town root). PrefixRegistry is empty — session parsing will fail. Run 'gt doctor' or restore rigs.json.
+⚠ Warning: rigs.json not found (checked mayor/rigs.json and town root). PrefixRegistry is empty — session parsing will fail. Run 'gt doctor' or restore rigs.json.
+⚠ Warning: rigs.json not found (checked mayor/rigs.json and town root). PrefixRegistry is empty — session parsing will fail. Run 'gt doctor' or restore rigs.json.
+⚠ Warning: rigs.json not found (checked mayor/rigs.json and town root). PrefixRegistry is empty — session parsing will fail. Run 'gt doctor' or restore rigs.json.
+⚠ Warning: rigs.json not found (checked mayor/rigs.json and town root). PrefixRegistry is empty — session parsing will fail. Run 'gt doctor' or restore rigs.json.
+○ Deacon not running, nudge skipped
+⚠ Warning: rigs.json not found (checked mayor/rigs.json and town root). PrefixRegistry is empty — session parsing will fail. Run 'gt doctor' or restore rigs.json.
+⚠ Warning: rigs.json not found (checked mayor/rigs.json and town root). PrefixRegistry is empty — session parsing will fail. Run 'gt doctor' or restore rigs.json.
+Watching test-session for idle (up to 500ms)...
+🔥 Burned 3 previous patrol wisp(s)
+🔥 Burned 1 previous patrol wisp(s)
+⚠ Warning: could not load formula mol-nonexistent: embedded formula "mol-nonexistent" not found: open formulas/mol-nonexistent.formula.toml: file does not exist
+⚠ Warning: could not load formula mol-nonexistent: embedded formula "mol-nonexistent" not found: open formulas/mol-nonexistent.formula.toml: file does not exist
+Warning: rig .beads not found at /var/folders/sn/rj5bqcz12nj5x18ygsb4psph0000gp/T/TestEnsureBeadsRedirect_WitnessCreatesRedirect3401665589/001/testrig/.beads, using /var/folders/sn/rj5bqcz12nj5x18ygsb4psph0000gp/T/TestEnsureBeadsRedirect_WitnessCreatesRedirect3401665589/001/testrig/mayor/rig/.beads
+  Run 'bd doctor' to fix rig beads configuration
+{
+  "type": "rig-settings",
+  "version": 1,
+  "merge_queue": {
+    "enabled": true,
+    "integration_branch_polecat_enabled": true,
+    "integration_branch_refinery_enabled": true,
+    "on_conflict": "assign_back",
+    "run_tests": true,
+    "delete_merged_branches": true,
+    "retry_flaky_tests": 1,
+    "poll_interval": "30s",
+    "max_concurrent": 1,
+    "stale_claim_timeout": "30m"
+  },
+  "namepool": {
+    "style": "mad-max",
+    "max_before_numbering": 50
+  },
+  "agent": "claude",
+  "role_agents": {
+    "witness": "gemini"
+  }
+}
+No settings file found at /private/var/folders/sn/rj5bqcz12nj5x18ygsb4psph0000gp/T/TestRigSettingsShowshows_helpful_message_when_file_doesnt_exis3864003257/001/testrig/settings/config.json
+Use 'gt rig settings set' to create one.
+{
+  "type": "rig-settings",
+  "version": 1,
+  "merge_queue": {
+    "enabled": true,
+    "integration_branch_polecat_enabled": true,
+    "integration_branch_refinery_enabled": true,
+    "on_conflict": "assign_back",
+    "run_tests": true,
+    "delete_merged_branches": true,
+    "retry_flaky_tests": 1,
+    "poll_interval": "30s",
+    "max_concurrent": 5,
+    "stale_claim_timeout": "30m"
+  },
+  "namepool": {
+    "style": "mad-max",
+    "max_before_numbering": 50
+  },
+  "agent": "claude",
+  "role_agents": {
+    "polecat": "claude-haiku",
+    "refinery": "claude-sonnet",
+    "witness": "gemini"
+  }
+}
+✓ Set agent="claude" in settings for rig testrig
+✓ Set role_agents.witness="gemini" in settings for rig testrig
+✓ Set merge_queue.max_concurrent=5 in settings for rig testrig
+✓ Set agent=true in settings for rig testrig
+✓ Set merge_queue.max_concurrent=10 in settings for rig testrig
+✓ Set agent=42 in settings for rig testrig
+✓ Set role_agents.witness=false in settings for rig testrig
+✓ Set role_agents.witness=[gemini claude] in settings for rig testrig
+✓ Set agent="claude" in settings for rig testrig
+✓ Set merge_queue.max_concurrent=7 in settings for rig testrig
+✓ Unset agent from settings for rig testrig
+✓ Unset role_agents.witness from settings for rig testrig
+✓ Set agent="test\"value'with\\special/chars" in settings for rig testrig
+✓ Set agent="claude" in settings for rig testrig
+✓ Set role_agents.witness="gemini" in settings for rig testrig
+✓ Set role_agents.refinery="claude-sonnet" in settings for rig testrig
+⚠ Could not check polecats for uncommitted work: list failed
+
+
+⚠ Cannot stop testrig - polecats have uncommitted work:
+  alpha: 1 uncommitted change(s)
+
+--- FAIL: TestPlannerStartCommand (0.00s)
+    role_integration_test.go:93: workspace root = "/private/var/folders/sn/rj5bqcz12nj5x18ygsb4psph0000gp/T/TestPlannerStartCommand1066463979/001", want "/var/folders/sn/rj5bqcz12nj5x18ygsb4psph0000gp/T/TestPlannerStartCommand1066463979/001"
+This is a test command for testing checkHelpFlag.
+
+This is a test command for testing checkHelpFlag.
+
+This is a test command for testing checkHelpFlag.
+
+ERROR: This binary was built with 'go build' directly.
+       macOS will SIGKILL unsigned binaries. Use 'make build' instead.
+FAIL	github.com/steveyegge/gastown/internal/cmd	115.870s
+ok  	github.com/steveyegge/gastown/internal/config	(cached)
+ok  	github.com/steveyegge/gastown/internal/connection	(cached)
+ok  	github.com/steveyegge/gastown/internal/constants	(cached)
+ok  	github.com/steveyegge/gastown/internal/convoy	(cached)
+ok  	github.com/steveyegge/gastown/internal/crew	(cached)
+ok  	github.com/steveyegge/gastown/internal/daemon	34.066s
+ok  	github.com/steveyegge/gastown/internal/deacon	(cached)
+ok  	github.com/steveyegge/gastown/internal/deps	(cached)
+ok  	github.com/steveyegge/gastown/internal/doctor	16.511s
+ok  	github.com/steveyegge/gastown/internal/dog	(cached)
+ok  	github.com/steveyegge/gastown/internal/doltserver	(cached)
+ok  	github.com/steveyegge/gastown/internal/dotenv	(cached)
+ok  	github.com/steveyegge/gastown/internal/estop	(cached)
+ok  	github.com/steveyegge/gastown/internal/events	(cached)
+ok  	github.com/steveyegge/gastown/internal/feed	(cached)
+ok  	github.com/steveyegge/gastown/internal/formula	(cached)
+--- FAIL: TestTopLevel (0.13s)
+    git_test.go:135: TopLevel = "/private/var/folders/sn/rj5bqcz12nj5x18ygsb4psph0000gp/T/TestTopLevel453810842/001", want "/var/folders/sn/rj5bqcz12nj5x18ygsb4psph0000gp/T/TestTopLevel453810842/001"
+FAIL
+FAIL	github.com/steveyegge/gastown/internal/git	14.511s
+ok  	github.com/steveyegge/gastown/internal/github	(cached)
+?   	github.com/steveyegge/gastown/internal/health	[no test files]
+ok  	github.com/steveyegge/gastown/internal/hooks	(cached)
+ok  	github.com/steveyegge/gastown/internal/hookutil	(cached)
+ok  	github.com/steveyegge/gastown/internal/keepalive	(cached)
+ok  	github.com/steveyegge/gastown/internal/krc	(cached)
+ok  	github.com/steveyegge/gastown/internal/lock	(cached)
+ok  	github.com/steveyegge/gastown/internal/mail	(cached)
+ok  	github.com/steveyegge/gastown/internal/mayor	(cached)
+ok  	github.com/steveyegge/gastown/internal/mq	(cached)
+?   	github.com/steveyegge/gastown/internal/natsserver	[no test files]
+?   	github.com/steveyegge/gastown/internal/natsutil	[no test files]
+ok  	github.com/steveyegge/gastown/internal/nudge	(cached)
+ok  	github.com/steveyegge/gastown/internal/orchestrator	(cached)
+ok  	github.com/steveyegge/gastown/internal/plugin	(cached)
+ok  	github.com/steveyegge/gastown/internal/polecat	(cached)
+ok  	github.com/steveyegge/gastown/internal/protocol	(cached)
+ok  	github.com/steveyegge/gastown/internal/proxy	3.439s
+ok  	github.com/steveyegge/gastown/internal/quota	(cached)
+ok  	github.com/steveyegge/gastown/internal/reaper	(cached)
+ok  	github.com/steveyegge/gastown/internal/refinery	25.972s
+ok  	github.com/steveyegge/gastown/internal/rig	(cached)
+ok  	github.com/steveyegge/gastown/internal/runtime	(cached)
+ok  	github.com/steveyegge/gastown/internal/scheduler/capacity	(cached)
+ok  	github.com/steveyegge/gastown/internal/session	(cached)
+ok  	github.com/steveyegge/gastown/internal/shell	(cached)
+ok  	github.com/steveyegge/gastown/internal/specprofile	(cached)
+ok  	github.com/steveyegge/gastown/internal/state	(cached)
+ok  	github.com/steveyegge/gastown/internal/style	(cached)
+ok  	github.com/steveyegge/gastown/internal/suggest	(cached)
+ok  	github.com/steveyegge/gastown/internal/telemetry	(cached)
+ok  	github.com/steveyegge/gastown/internal/templates	(cached)
+ok  	github.com/steveyegge/gastown/internal/templates/commands	(cached)
+?   	github.com/steveyegge/gastown/internal/testrig	[no test files]
+ok  	github.com/steveyegge/gastown/internal/testutil	(cached)
+ok  	github.com/steveyegge/gastown/internal/tmux	(cached)
+ok  	github.com/steveyegge/gastown/internal/townconfig	(cached)
+ok  	github.com/steveyegge/gastown/internal/townlog	(cached)
+ok  	github.com/steveyegge/gastown/internal/tui/convoy	(cached)
+ok  	github.com/steveyegge/gastown/internal/tui/feed	(cached)
+ok  	github.com/steveyegge/gastown/internal/ui	(cached)
+ok  	github.com/steveyegge/gastown/internal/util	(cached)
+ok  	github.com/steveyegge/gastown/internal/version	(cached)
+ok  	github.com/steveyegge/gastown/internal/wasteland	(cached)
+ok  	github.com/steveyegge/gastown/internal/web	(cached)
+ok  	github.com/steveyegge/gastown/internal/wisp	(cached)
+ok  	github.com/steveyegge/gastown/internal/witness	(cached)
+ok  	github.com/steveyegge/gastown/internal/workspace	(cached)
+ok  	github.com/steveyegge/gastown/internal/wrappers	(cached)
+FAIL
