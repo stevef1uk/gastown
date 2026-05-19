@@ -775,7 +775,12 @@ func rewriteHallucinatedAbsoluteTownRoot(cmd, townRoot, rig, work string) (strin
 		}
 	}
 	rigWorkAbs := townRoot + string(filepath.Separator) + filepath.FromSlash(work)
-	if strings.Contains(out, rigWorkAbs) {
+	// Leave correct absolute mayor/rig paths alone (e.g. …/mayor/rig/.venv/bin/python3).
+	// Replacing them with relative testgt5/mayor/rig breaks venv when cwd is already mayor/rig.
+	if strings.Contains(out, rigWorkAbs+"/.venv") {
+		out = strings.ReplaceAll(out, rigWorkAbs+"/.venv", ".venv")
+		changed = true
+	} else if strings.Contains(out, rigWorkAbs) && !strings.Contains(out, "$GT_ROOT") {
 		repl := work
 		if strings.Contains(out, "$GT_ROOT") {
 			repl = "$GT_ROOT/" + work
@@ -1411,6 +1416,14 @@ func maybeRepairWorkflowRequirements(townRoot, rig string, v orchestrator.Workfl
 	if len(repaired) > 0 {
 		orchestratedPrintf("[gt-agent] repaired requirements.txt: %s\n", strings.Join(repaired, ", "))
 	}
+	layout := strings.Trim(strings.TrimSpace(v.LayoutRoot), "/")
+	if layout != "" {
+		if fixed, err := agentenv.RepairBrokenPythonInit(workDir, layout); err != nil {
+			orchestratedFprintfStderr("[gt-agent] python __init__ repair: %v\n", err)
+		} else if fixed {
+			orchestratedPrintf("[gt-agent] repaired %s/__init__.py (removed invalid TaskStore import)\n", layout)
+		}
+	}
 }
 
 func prependEnvPath(env []string, key, dir string) []string {
@@ -1503,12 +1516,9 @@ func validatePlanningBeadSet(townRoot, rig string, v orchestrator.WorkflowValida
 var countOpenMatchingBeadsHook func(townRoot, rig, titleContains string) (int, error)
 
 func validateImplementationArtifacts(townRoot, rig string, hadCmdFailure, beadCloseOK, verifyOK bool, v orchestrator.WorkflowValidation) error {
-	if hadCmdFailure {
-		return fmt.Errorf("implementation step had failed commands; fix errors before completing")
-	}
 	rigDir := rigMayorRigDir(townRoot, rig)
 	scoped := v.ForActivePhase()
-	diskReady := len(scoped.RequiredFiles) > 0 && orchestrator.ImplementationDiskWorkReady(rigDir, v) == nil
+	diskReady := len(scoped.RequiredFiles) > 0 && orchestrator.ImplementationDiskWorkReady(rigDir, scoped) == nil
 	titleContains := strings.TrimSpace(v.BeadTitleContains)
 	openImpl := 0
 	if titleContains != "" {
@@ -1518,18 +1528,17 @@ func validateImplementationArtifacts(townRoot, rig string, hadCmdFailure, beadCl
 		}
 		openImpl = n
 	}
-	if !beadCloseOK {
-		if openImpl > 0 || !diskReady {
-			return fmt.Errorf("at least one successful `bd close` in %s is required before success", rigMayorRigPath(rig))
-		}
-	}
-	if strings.TrimSpace(v.QAVerifyCommand) != "" && !verifyOK {
-		if openImpl > 0 || !diskReady {
-			return fmt.Errorf("profile verification must pass in this session before success (%s)", strings.TrimSpace(v.QAVerifyCommand))
-		}
-	}
 	if openImpl > 0 {
 		return fmt.Errorf("%d open implement bead(s) remain — continue with Next bead (bd update → heredoc → verify → bd close); send JSON success only when none are open", openImpl)
+	}
+	if hadCmdFailure {
+		return fmt.Errorf("implementation step had failed commands; fix errors before completing")
+	}
+	if !beadCloseOK && !diskReady {
+		return fmt.Errorf("at least one successful `bd close` in %s is required before success", rigMayorRigPath(rig))
+	}
+	if strings.TrimSpace(v.QAVerifyCommand) != "" && !verifyOK && !diskReady {
+		return fmt.Errorf("profile verification must pass in this session before success (%s)", strings.TrimSpace(v.QAVerifyCommand))
 	}
 	if err := validateRequiredWorkFiles(townRoot, rig, v); err != nil {
 		return err
@@ -1798,6 +1807,15 @@ func countOpenMatchingBeads(townRoot, rig, titleContains string) (int, error) {
 		return countOpenMatchingBeadsHook(townRoot, rig, titleContains)
 	}
 	beadsDir := config.ResolveBeadsDirForRig(townRoot, rig)
+	if beadsDir == "" {
+		return 0, nil
+	}
+	if _, err := os.Stat(beadsDir); err != nil {
+		if os.IsNotExist(err) {
+			return 0, nil
+		}
+		return 0, err
+	}
 	cmd := exec.Command("bd", "list", "--status=open", "--limit=0")
 	cmd.Env = withEnvKey(os.Environ(), "BEADS_DIR", beadsDir)
 	cmd.Dir = rigMayorRigDir(townRoot, rig)

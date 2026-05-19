@@ -60,7 +60,7 @@ Do **not** invent bead IDs or add implementation code under `{{layout_root}}/`.
    ```
    CMD: export BEADS_DIR=$GT_ROOT/{{rig}}/.beads && cd {{rig}}/mayor/rig && cat > plan.md <<'EOF'
    # Implementation plan
-   (te-abc: linkshelf/go.mod — …)
+   (te-abc: myapp/go.mod — …)
    …
    EOF
    ```

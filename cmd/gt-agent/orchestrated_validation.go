@@ -7,6 +7,44 @@ import (
 	"github.com/steveyegge/gastown/internal/orchestrator"
 )
 
+func pythonVerifyCommandMatches(cmd, verify string) bool {
+	if commandMatchesQAVerify(cmd, verify) {
+		return true
+	}
+	c := strings.ToLower(cmd)
+	v := strings.ToLower(verify)
+	if strings.Contains(v, "import pytest") {
+		return strings.Contains(c, "import pytest")
+	}
+	if strings.Contains(v, "-m pytest") {
+		return strings.Contains(c, "pytest")
+	}
+	if !strings.Contains(c, "compileall") || !strings.Contains(v, "compileall") {
+		return false
+	}
+	cPath := pythonCompileallTarget(c)
+	vPath := pythonCompileallTarget(v)
+	if cPath == "" || vPath == "" {
+		return false
+	}
+	return cPath == vPath || strings.HasSuffix(vPath, "/"+cPath) || strings.HasSuffix(cPath, "/"+vPath)
+}
+
+func pythonCompileallTarget(lowerCmd string) string {
+	idx := strings.Index(lowerCmd, "compileall")
+	if idx < 0 {
+		return ""
+	}
+	rest := strings.TrimSpace(lowerCmd[idx+len("compileall"):])
+	rest = strings.TrimPrefix(rest, "-q")
+	rest = strings.TrimSpace(rest)
+	fields := strings.Fields(rest)
+	if len(fields) == 0 {
+		return ""
+	}
+	return strings.Trim(fields[len(fields)-1], `"'`)
+}
+
 func taskValidation(task *orchestrator.Task) orchestrator.WorkflowValidation {
 	if task == nil {
 		return orchestrator.DefaultWorkflowValidation()
@@ -42,7 +80,18 @@ func isQATestCommandOK(cmd string, v orchestrator.WorkflowValidation) bool {
 }
 
 func isImplementationVerifyCommandOK(cmd, townRoot, rig, activeBead string, v orchestrator.WorkflowValidation) bool {
-	if rig == "" {
+	if isQATestCommandOK(cmd, v) {
+		return true
+	}
+	if orchestrator.WorkflowUsesPython(v) && rig != "" {
+		mayorDir := filepath.Join(townRoot, rig, "mayor", "rig")
+		beadPath := orchestrator.ImplementBeadPathForID(townRoot, rig, activeBead, v)
+		impl := orchestrator.PythonImplementationVerifyCommandForBead(v, mayorDir, beadPath)
+		if pythonVerifyCommandMatches(cmd, impl) {
+			return true
+		}
+	}
+	if !orchestrator.WorkflowUsesGo(v) || rig == "" {
 		return false
 	}
 	mayorDir := filepath.Join(townRoot, rig, "mayor", "rig")
@@ -63,22 +112,6 @@ func isImplementationVerifyCommandOK(cmd, townRoot, rig, activeBead string, v or
 	}
 	// Full-suite QA verify (e.g. final pytest -v) — only after per-bead checks miss.
 	return isQATestCommandOK(cmd, v)
-}
-
-// pythonVerifyCommandMatches accepts venv import checks and compileall/pytest scoped to the active bead.
-func pythonVerifyCommandMatches(cmd, verify string) bool {
-	lower := strings.ToLower(cmd)
-	vLower := strings.ToLower(verify)
-	if strings.Contains(vLower, "import pytest") {
-		return strings.Contains(lower, "import pytest")
-	}
-	if strings.Contains(vLower, "compileall") {
-		return strings.Contains(lower, "compileall")
-	}
-	if strings.Contains(vLower, "-m pytest") {
-		return strings.Contains(lower, "pytest")
-	}
-	return false
 }
 
 // goVerifyCommandMatches accepts agent commands that cd into layout via rig/mayor/rig paths

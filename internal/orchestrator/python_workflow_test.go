@@ -1,24 +1,31 @@
 package orchestrator
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
-func TestWorkflowUsesPython(t *testing.T) {
+func TestPythonVerifyCommand_layoutScopedTests(t *testing.T) {
 	t.Parallel()
-	if !WorkflowUsesPython(WorkflowValidation{QAVerifyCommand: "cd backend && python3 -m pytest -q"}) {
-		t.Fatal("expected Python from pytest verify")
+	v := WorkflowValidation{LayoutRoot: "tasklist", QAVerifyCommand: "pytest -v"}
+	got := PythonVerifyCommand(v)
+	if !strings.Contains(got, "tasklist/tests") || !strings.Contains(got, "pytest") {
+		t.Fatalf("got %q", got)
 	}
-	if WorkflowUsesPython(WorkflowValidation{QAVerifyCommand: "cd linkshelf && go test ./..."}) {
-		t.Fatal("Go profile should not be Python")
-	}
-	if !WorkflowUsesPython(WorkflowValidation{RequiredFiles: []string{"backend/requirements.txt"}}) {
-		t.Fatal("requirements.txt implies Python venv")
+	if strings.Contains(got, "cd tasklist") {
+		t.Fatalf("pytest should run from mayor/rig with scoped path: %q", got)
 	}
 }
 
-func TestUsesPythonVenv_off(t *testing.T) {
+func TestPythonImplementationVerifyCommandForBead_store(t *testing.T) {
 	t.Parallel()
-	v := WorkflowValidation{PythonVenvDir: "off", RequiredFiles: []string{"backend/requirements.txt"}}
-	if v.UsesPythonVenv() {
-		t.Fatal("python_venv_dir off should disable")
+	v := WorkflowValidation{
+		LayoutRoot:    "tasklist",
+		RequiredFiles: []string{"tasklist/store.py"},
+		QAVerifyCommand: "pytest -v",
+	}
+	got := PythonImplementationVerifyCommandForBead(v, "/tmp/rig", "tasklist/store.py")
+	if !strings.Contains(got, "compileall") || !strings.Contains(got, "tasklist/store.py") {
+		t.Fatalf("got %q", got)
 	}
 }

@@ -630,16 +630,15 @@ func TestValidateImplementationCommand_oneInProgressBead(t *testing.T) {
 }
 
 func TestValidatePythonImplementationCommand(t *testing.T) {
+	dir := t.TempDir()
 	v := orchestrator.WorkflowValidation{
 		RequiredFiles:   []string{"backend/requirements.txt"},
 		QAVerifyCommand: "cd backend && python3 -m pytest -q",
 	}
-	dir := t.TempDir()
-	rig := "mockrig"
-	if err := validatePythonImplementationCommand("python3 -m pip install -r backend/requirements.txt", dir, rig, "", v, true); err == nil {
+	if err := validatePythonImplementationCommand("python3 -m pip install -r backend/requirements.txt", dir, "mockrig", "", v, true); err == nil {
 		t.Fatal("expected pip install rejected in implementation")
 	}
-	if err := validatePythonImplementationCommand("bd close tg-1", dir, rig, "tg-1", v, false); err == nil {
+	if err := validatePythonImplementationCommand("bd close tg-1", dir, "mockrig", "tg-1", v, false); err == nil {
 		t.Fatal("expected bd close without verify rejected")
 	}
 }

@@ -98,17 +98,12 @@ func ImplementationVerifyCommandForBead(v WorkflowValidation, mayorRigDir, beadP
 	return strings.TrimSpace(v.UnittestCommandHint())
 }
 
-// PythonImplementationVerifyCommandForBead returns verify scoped to the bead (not full suite until tests exist).
+// PythonImplementationVerifyCommandForBead returns verify scoped to the active implement path.
 func PythonImplementationVerifyCommandForBead(v WorkflowValidation, mayorRigDir, beadPath string) string {
 	_ = mayorRigDir
 	beadPath = filepath.ToSlash(strings.TrimSpace(beadPath))
-	layout := strings.Trim(strings.TrimSpace(v.LayoutRoot), "/")
-	if layout == "" {
-		layout = "."
-	}
 	venv := v.PythonVenvRelDir()
 	py := venv + "/bin/python3"
-	// Venv lives under mayor/rig — do not "cd layout" first (.venv is not under layout/).
 
 	if req := v.RequirementsFilePath(); req != "" && pathMatchesRequired(beadPath, []string{req}) {
 		return "test -x " + py + " && " + py + " -c 'import pytest'"
@@ -134,10 +129,9 @@ func pythonVerifyWithLayout(cmd string, v WorkflowValidation) string {
 	}
 	lower := strings.ToLower(cmd)
 	testScope := layout + "/tests"
-	// Run pytest from mayor/rig (venv lives there) and collect only layout/tests — not stray tests/ at rig root.
+	// Run pytest from mayor/rig (venv lives there); collect only layout/tests.
 	if strings.Contains(lower, "pytest") && !strings.Contains(lower, testScope) {
-		cmd = strings.TrimSpace(cmd) + " " + testScope
-		return cmd
+		return strings.TrimSpace(cmd) + " " + testScope
 	}
 	if strings.Contains(lower, "cd "+strings.ToLower(layout)) {
 		return cmd
