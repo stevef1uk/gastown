@@ -1517,8 +1517,23 @@ func TestFindCaseInsensitiveNameInDir(t *testing.T) {
 	}
 }
 
+// caseInsensitiveFS reports volumes where names differing only by case are the same file
+// (default macOS APFS). rewriteSpecMDPathCaseInsensitive targets Linux rigs where spec.md ≠ SPEC.md.
+func caseInsensitiveFS(dir string) bool {
+	upper := filepath.Join(dir, "CaseTestFile")
+	if err := os.WriteFile(upper, []byte("x"), 0o644); err != nil {
+		return false
+	}
+	_, err := os.Stat(filepath.Join(dir, "casetestfile"))
+	return err == nil
+}
+
 func TestRewriteSpecMDPathCaseInsensitive(t *testing.T) {
-	dir := filepath.Join(t.TempDir(), "myrig", "mayor", "rig")
+	root := t.TempDir()
+	if caseInsensitiveFS(root) {
+		t.Skip("case-insensitive filesystem: spec.md and SPEC.md are the same path")
+	}
+	dir := filepath.Join(root, "myrig", "mayor", "rig")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
