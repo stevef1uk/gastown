@@ -7,6 +7,38 @@ import (
 	"github.com/steveyegge/gastown/internal/orchestrator"
 )
 
+func pythonVerifyCommandMatches(cmd, verify string) bool {
+	if commandMatchesQAVerify(cmd, verify) {
+		return true
+	}
+	c := strings.ToLower(cmd)
+	v := strings.ToLower(verify)
+	if !strings.Contains(c, "compileall") || !strings.Contains(v, "compileall") {
+		return false
+	}
+	cPath := pythonCompileallTarget(c)
+	vPath := pythonCompileallTarget(v)
+	if cPath == "" || vPath == "" {
+		return false
+	}
+	return cPath == vPath || strings.HasSuffix(vPath, "/"+cPath) || strings.HasSuffix(cPath, "/"+vPath)
+}
+
+func pythonCompileallTarget(lowerCmd string) string {
+	idx := strings.Index(lowerCmd, "compileall")
+	if idx < 0 {
+		return ""
+	}
+	rest := strings.TrimSpace(lowerCmd[idx+len("compileall"):])
+	rest = strings.TrimPrefix(rest, "-q")
+	rest = strings.TrimSpace(rest)
+	fields := strings.Fields(rest)
+	if len(fields) == 0 {
+		return ""
+	}
+	return strings.Trim(fields[len(fields)-1], `"'`)
+}
+
 func taskValidation(task *orchestrator.Task) orchestrator.WorkflowValidation {
 	if task == nil {
 		return orchestrator.DefaultWorkflowValidation()
@@ -37,6 +69,14 @@ func isQATestCommandOK(cmd string, v orchestrator.WorkflowValidation) bool {
 func isImplementationVerifyCommandOK(cmd, townRoot, rig, activeBead string, v orchestrator.WorkflowValidation) bool {
 	if isQATestCommandOK(cmd, v) {
 		return true
+	}
+	if orchestrator.WorkflowUsesPython(v) && rig != "" {
+		mayorDir := filepath.Join(townRoot, rig, "mayor", "rig")
+		beadPath := orchestrator.ImplementBeadPathForID(townRoot, rig, activeBead, v)
+		impl := orchestrator.PythonImplementationVerifyCommandForBead(v, mayorDir, beadPath)
+		if pythonVerifyCommandMatches(cmd, impl) {
+			return true
+		}
 	}
 	if !orchestrator.WorkflowUsesGo(v) || rig == "" {
 		return false

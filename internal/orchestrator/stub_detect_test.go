@@ -92,6 +92,44 @@ if __name__ == "__main__":
 	}
 }
 
+func TestCheckContentNotStub_acceptsPackageInit(t *testing.T) {
+	opts := StubCheckOptionsFromValidation(WorkflowValidation{
+		MinImplementationFileBytes: 400,
+		MinSubstantiveLines:        3,
+	})
+	for _, content := range []string{"", "# tasklist package\n"} {
+		if err := CheckContentNotStub([]byte(content), "tasklist/__init__.py", opts); err != nil {
+			t.Fatalf("package __init__.py should not be stub-checked: %v", err)
+		}
+	}
+}
+
+func TestValidateWorkNotStubbed_allowsMinimalInitInLayout(t *testing.T) {
+	dir := t.TempDir()
+	rigDir := filepath.Join(dir, "mockrig", "mayor", "rig")
+	layout := filepath.Join(rigDir, "tasklist")
+	if err := os.MkdirAll(layout, 0755); err != nil {
+		t.Fatal(err)
+	}
+	storePy := `def load(path: str) -> dict:
+    with open(path) as f:
+        return {}
+def save(store: dict, path: str) -> None:
+    pass
+`
+	if err := os.WriteFile(filepath.Join(layout, "store.py"), []byte(storePy), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(layout, "__init__.py"), []byte("# package\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	v := WorkflowValidation{LayoutRoot: "tasklist"}.WithDefaults()
+	v = ClampProfileValidation(v)
+	if err := ValidateWorkNotStubbed(rigDir, v); err != nil {
+		t.Fatalf("minimal __init__.py in layout should pass: %v", err)
+	}
+}
+
 func TestCheckContentNotStub_acceptsDependencyManifests(t *testing.T) {
 	opts := StubCheckOptionsFromValidation(WorkflowValidation{
 		MinImplementationFileBytes: 400,

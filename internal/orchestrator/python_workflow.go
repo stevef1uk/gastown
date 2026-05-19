@@ -62,10 +62,60 @@ func (v WorkflowValidation) detectsPythonProject() bool {
 	return false
 }
 
-// PythonVerifyCommand returns the verify shell chain for Python rigs.
+// IsPythonImportCheckCommand reports python -c 'import pytest' setup verify (must not be pytest-normalized).
+func IsPythonImportCheckCommand(cmd string) bool {
+	lower := strings.ToLower(cmd)
+	return strings.Contains(lower, "-c ") && strings.Contains(lower, "import pytest")
+}
+
+// PythonVerifyCommand returns the verify shell chain for Python rigs (QA/implementation).
 func PythonVerifyCommand(v WorkflowValidation) string {
-	if q := strings.TrimSpace(v.QAVerifyCommand); q != "" {
-		return NormalizePytestCommand(q)
+	base := strings.TrimSpace(v.QAVerifyCommand)
+	if base == "" {
+		base = v.UnittestCommandHint()
+	} else {
+		base = NormalizePytestCommand(base)
 	}
-	return v.UnittestCommandHint()
+	return pythonVerifyWithLayout(base, v)
+}
+
+// PythonImplementationVerifyCommandForBead returns verify scoped to the active implement path.
+func PythonImplementationVerifyCommandForBead(v WorkflowValidation, mayorRigDir, beadPath string) string {
+	_ = mayorRigDir
+	beadPath = filepath.ToSlash(strings.TrimSpace(beadPath))
+	venv := v.PythonVenvRelDir()
+	py := venv + "/bin/python3"
+
+	if req := v.RequirementsFilePath(); req != "" && pathMatchesRequired(beadPath, []string{req}) {
+		return "test -x " + py + " && " + py + " -c 'import pytest'"
+	}
+
+	if strings.Contains(beadPath, "/tests/") || strings.HasPrefix(filepath.Base(beadPath), "test_") {
+		if strings.HasSuffix(beadPath, ".py") {
+			return py + " -m pytest -v " + beadPath
+		}
+	}
+
+	if strings.HasSuffix(beadPath, ".py") {
+		return py + " -m compileall -q " + beadPath
+	}
+
+	return PythonVerifyCommand(v)
+}
+
+func pythonVerifyWithLayout(cmd string, v WorkflowValidation) string {
+	layout := strings.Trim(strings.TrimSpace(v.LayoutRoot), "/")
+	if layout == "" || layout == "." {
+		return cmd
+	}
+	lower := strings.ToLower(cmd)
+	testScope := layout + "/tests"
+	// Run pytest from mayor/rig (venv lives there); collect only layout/tests.
+	if strings.Contains(lower, "pytest") && !strings.Contains(lower, testScope) {
+		return strings.TrimSpace(cmd) + " " + testScope
+	}
+	if strings.Contains(lower, "cd "+strings.ToLower(layout)) {
+		return cmd
+	}
+	return "cd " + layout + " && " + cmd
 }

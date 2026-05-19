@@ -86,6 +86,12 @@ var dependencyManifestNames = map[string]bool{
 	"Gemfile.lock":          true,
 }
 
+// IsPackageInitFile reports package entrypoints that are intentionally minimal (e.g. Python __init__.py).
+func IsPackageInitFile(displayRel string) bool {
+	base := filepath.Base(filepath.ToSlash(strings.TrimSpace(displayRel)))
+	return base == "__init__.py"
+}
+
 // IsDependencyManifest reports whether rel is a dependency/manifest file (size guards do not apply).
 func IsDependencyManifest(displayRel string) bool {
 	base := filepath.Base(filepath.ToSlash(strings.TrimSpace(displayRel)))
@@ -161,6 +167,9 @@ func ValidateWorkNotStubbed(rigDir string, v WorkflowValidation) error {
 }
 
 func optsForPath(displayRel string, opts StubCheckOptions) StubCheckOptions {
+	if IsPackageInitFile(displayRel) {
+		return StubCheckOptions{MinFileBytes: 0, MinSubstantiveLines: 0}
+	}
 	if IsDependencyManifest(displayRel) {
 		return StubCheckOptions{MinFileBytes: 1, MinSubstantiveLines: 0}
 	}
@@ -187,6 +196,9 @@ func CheckPathNotStub(path, displayRel string, opts StubCheckOptions) error {
 
 // CheckContentNotStub applies stub heuristics to file bytes.
 func CheckContentNotStub(data []byte, displayRel string, opts StubCheckOptions) error {
+	if IsPackageInitFile(displayRel) {
+		return nil
+	}
 	if len(data) == 0 {
 		return fmt.Errorf("%s is empty (stub/placeholder)", displayRel)
 	}

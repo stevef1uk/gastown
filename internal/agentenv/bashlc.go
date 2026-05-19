@@ -18,8 +18,17 @@ func UnwrapBashLcSingleLine(cmd string) string {
 	if q != '\'' && q != '"' {
 		return inner
 	}
-	inner = inner[1:]
-	inner = strings.TrimSpace(inner)
+	body := inner[1:]
+	// bash -lc 'cd … && cmd' | grep … — closing quote is not at end of string
+	if idx := strings.IndexByte(body, q); idx >= 0 {
+		unwrapped := strings.TrimSpace(body[:idx])
+		rest := strings.TrimSpace(body[idx+1:])
+		if rest != "" {
+			return unwrapped + " " + rest
+		}
+		return unwrapped
+	}
+	inner = strings.TrimSpace(body)
 	if len(inner) > 0 && inner[len(inner)-1] == q {
 		inner = strings.TrimSpace(inner[:len(inner)-1])
 	}

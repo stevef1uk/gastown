@@ -218,6 +218,11 @@ func (r *stateRunner) rewriteCommand(cmd string) string {
 				orchestratedPrintf("[gt-agent] rewrote layout path after cd: %s\n", fixed)
 				cmd = fixed
 			}
+		case "unwrap_bash_lc":
+			if unwrapped := agentenv.UnwrapBashLcSingleLine(cmd); unwrapped != cmd {
+				orchestratedPrintf("[gt-agent] unwrapped bash -lc → %s\n", unwrapped)
+				cmd = unwrapped
+			}
 		case "bd_list_implement_scope":
 			if title := r.v.BeadTitleContains; title != "" {
 				if fixed, ok := rewriteBdListImplementScope(cmd, title); ok {
@@ -233,11 +238,6 @@ func (r *stateRunner) rewriteCommand(cmd string) string {
 		case "bd_list_limit":
 			if fixed, ok := rewriteBdListLimit(cmd); ok {
 				cmd = fixed
-			}
-		case "unwrap_bash_lc":
-			if unwrapped := agentenv.UnwrapBashLcSingleLine(cmd); unwrapped != cmd {
-				orchestratedPrintf("[gt-agent] unwrapped bash -lc → %s\n", unwrapped)
-				cmd = unwrapped
 			}
 		}
 	}
@@ -347,6 +347,9 @@ func (r *stateRunner) trackCommand(cmd string, cmdErr error) {
 		}
 		if isBeadCloseCommand(cmd) && cmdErr == nil {
 			r.track.beadCloseOK = true
+			if r.track.verifyOK {
+				r.track.hadCmdFailure = false
+			}
 			if id := extractBeadIDFromBdClose(cmd); id != "" && id == r.track.activeBead {
 				r.track.activeBead = ""
 			}

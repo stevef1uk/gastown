@@ -767,7 +767,12 @@ func rewriteHallucinatedAbsoluteTownRoot(cmd, townRoot, rig, work string) (strin
 		}
 	}
 	rigWorkAbs := townRoot + string(filepath.Separator) + filepath.FromSlash(work)
-	if strings.Contains(out, rigWorkAbs) {
+	// Leave correct absolute mayor/rig paths alone (e.g. …/mayor/rig/.venv/bin/python3).
+	// Replacing them with relative testgt5/mayor/rig breaks venv when cwd is already mayor/rig.
+	if strings.Contains(out, rigWorkAbs+"/.venv") {
+		out = strings.ReplaceAll(out, rigWorkAbs+"/.venv", ".venv")
+		changed = true
+	} else if strings.Contains(out, rigWorkAbs) && !strings.Contains(out, "$GT_ROOT") {
 		repl := work
 		if strings.Contains(out, "$GT_ROOT") {
 			repl = "$GT_ROOT/" + work
@@ -1140,7 +1145,7 @@ func validateImplementationCommandWithState(cmd, townRoot, rig, activeBead strin
 	if err := validateGoImplementationCommand(cmd, townRoot, rig, mayorDir, activeBead, v, verifyOK); err != nil {
 		return err
 	}
-	if err := validatePythonImplementationCommand(cmd, v, verifyOK); err != nil {
+	if err := validatePythonImplementationCommand(cmd, townRoot, rig, activeBead, v, verifyOK); err != nil {
 		return err
 	}
 	if err := validateImplementationBeadFileWrite(cmd, townRoot, rig, activeBead, v); err != nil {
@@ -1396,6 +1401,14 @@ func maybeRepairWorkflowRequirements(townRoot, rig string, v orchestrator.Workfl
 	if len(repaired) > 0 {
 		orchestratedPrintf("[gt-agent] repaired requirements.txt: %s\n", strings.Join(repaired, ", "))
 	}
+	layout := strings.Trim(strings.TrimSpace(v.LayoutRoot), "/")
+	if layout != "" {
+		if fixed, err := agentenv.RepairBrokenPythonInit(workDir, layout); err != nil {
+			orchestratedFprintfStderr("[gt-agent] python __init__ repair: %v\n", err)
+		} else if fixed {
+			orchestratedPrintf("[gt-agent] repaired %s/__init__.py (removed invalid TaskStore import)\n", layout)
+		}
+	}
 }
 
 func prependEnvPath(env []string, key, dir string) []string {
@@ -1485,6 +1498,19 @@ func validatePlanningBeadSet(townRoot, rig string, v orchestrator.WorkflowValida
 }
 
 func validateImplementationArtifacts(townRoot, rig string, hadCmdFailure, beadCloseOK, verifyOK bool, v orchestrator.WorkflowValidation) error {
+	rigDir := rigMayorRigDir(townRoot, rig)
+	titleContains := strings.TrimSpace(v.BeadTitleContains)
+	openImpl := 0
+	if titleContains != "" {
+		n, err := countOpenMatchingBeads(townRoot, rig, titleContains)
+		if err != nil {
+			return err
+		}
+		openImpl = n
+	}
+	if openImpl > 0 {
+		return fmt.Errorf("%d open implement bead(s) remain — continue with Next bead (bd update → heredoc → verify → bd close); send JSON success only when none are open", openImpl)
+	}
 	if hadCmdFailure {
 		return fmt.Errorf("implementation step had failed commands; fix errors before completing")
 	}
@@ -1497,7 +1523,6 @@ func validateImplementationArtifacts(townRoot, rig string, hadCmdFailure, beadCl
 	if err := validateRequiredWorkFiles(townRoot, rig, v); err != nil {
 		return err
 	}
-	rigDir := rigMayorRigDir(townRoot, rig)
 	if err := orchestrator.ValidateLayoutPythonSources(rigDir, v); err != nil {
 		return fmt.Errorf("invalid Python under %s: %w", v.LayoutRoot, err)
 	}
@@ -1757,6 +1782,15 @@ func validatePlanReviewArtifacts(townRoot, rig string, hadCmdFailure, listOpenOK
 
 func countOpenMatchingBeads(townRoot, rig, titleContains string) (int, error) {
 	beadsDir := config.ResolveBeadsDirForRig(townRoot, rig)
+	if beadsDir == "" {
+		return 0, nil
+	}
+	if _, err := os.Stat(beadsDir); err != nil {
+		if os.IsNotExist(err) {
+			return 0, nil
+		}
+		return 0, err
+	}
 	cmd := exec.Command("bd", "list", "--status=open", "--limit=0")
 	cmd.Env = withEnvKey(os.Environ(), "BEADS_DIR", beadsDir)
 	cmd.Dir = rigMayorRigDir(townRoot, rig)

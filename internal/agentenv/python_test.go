@@ -59,3 +59,15 @@ func TestUnwrapBashLcSingleLine(t *testing.T) {
 		t.Fatalf("got %q", got)
 	}
 }
+
+func TestUnwrapBashLcSingleLine_pipedGrep(t *testing.T) {
+	t.Parallel()
+	in := "bash -lc 'cd testgt5/mayor/rig && bd list --status=open,in_progress' | grep -Fi 'Implement tasklist/' || true"
+	got := UnwrapBashLcSingleLine(in)
+	if strings.Contains(got, "in_progress'") {
+		t.Fatalf("stray quote in: %q", got)
+	}
+	if !strings.Contains(got, "grep -Fi") {
+		t.Fatalf("missing pipe tail: %q", got)
+	}
+}
