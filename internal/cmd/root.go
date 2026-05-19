@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
@@ -102,7 +103,9 @@ func persistentPreRun(cmd *cobra.Command, args []string) error {
 	// Warning only - doesn't block execution.
 	// Skip warning when Build was set by a package manager (e.g. Homebrew sets
 	// Build to "Homebrew" via ldflags but doesn't set BuiltProperly).
-	if BuiltProperly == "" && Build == "dev" && runtime.GOOS == "darwin" {
+	// go test produces a *.test binary in the same package; it is not a user-facing gt install.
+	if BuiltProperly == "" && Build == "dev" && runtime.GOOS == "darwin" &&
+		!strings.HasSuffix(filepath.Base(os.Args[0]), ".test") {
 		fmt.Fprintln(os.Stderr, "ERROR: This binary was built with 'go build' directly.")
 		fmt.Fprintln(os.Stderr, "       macOS will SIGKILL unsigned binaries. Use 'make build' instead.")
 		if gtRoot := os.Getenv("GT_ROOT"); gtRoot != "" {

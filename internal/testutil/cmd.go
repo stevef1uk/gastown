@@ -19,7 +19,8 @@ func CleanGTEnv(extraEnv ...string) []string {
 	for _, e := range os.Environ() {
 		if strings.HasPrefix(e, "GT_") &&
 			!strings.HasPrefix(e, "GT_DOLT_PORT=") &&
-			!strings.HasPrefix(e, "GT_DOLT_HOST=") {
+			!strings.HasPrefix(e, "GT_DOLT_HOST=") &&
+			!strings.HasPrefix(e, "GT_BINARY=") {
 			continue
 		}
 		if strings.HasPrefix(e, "BD_") {
@@ -39,13 +40,20 @@ func NewBDCommand(args ...string) *exec.Cmd {
 	return exec.Command("bd", args...)
 }
 
+func gtCommand() string {
+	if p := os.Getenv("GT_BINARY"); p != "" {
+		return p
+	}
+	return "gt"
+}
+
 // NewGTCommand creates an exec.Command for the gt CLI with GT_DOLT_PORT
 // automatically propagated. The command inherits the full process environment
 // (which includes GT_DOLT_PORT set by TestMain).
 //
 // Use this instead of bare exec.Command("gt", ...) in tests.
 func NewGTCommand(args ...string) *exec.Cmd {
-	return exec.Command("gt", args...)
+	return exec.Command(gtCommand(), args...)
 }
 
 // NewIsolatedBDCommand creates an exec.Command for the bd CLI with GT_*/BD_*
@@ -63,7 +71,7 @@ func NewIsolatedBDCommand(args ...string) *exec.Cmd {
 // to isolate a subprocess from the parent Gas Town workspace but still route
 // to the test Dolt server.
 func NewIsolatedGTCommand(args ...string) *exec.Cmd {
-	cmd := exec.Command("gt", args...)
+	cmd := exec.Command(gtCommand(), args...)
 	cmd.Env = CleanGTEnv()
 	return cmd
 }

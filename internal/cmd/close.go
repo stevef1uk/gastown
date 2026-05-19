@@ -261,13 +261,7 @@ func checkConvoyCompletion(beadIDs []string) {
 	}
 	defer func() { _ = store.Close() }()
 
-	gtPath, err := os.Executable()
-	if err != nil {
-		gtPath, _ = exec.LookPath("gt")
-		if gtPath == "" {
-			return
-		}
-	}
+	gtPath := gtSubprocessPath()
 
 	for _, beadID := range beadIDs {
 		convoy.CheckConvoysForIssue(ctx, store, townRoot, beadID, "Close", nil, gtPath, nil)

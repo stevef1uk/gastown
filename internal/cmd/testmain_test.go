@@ -1,7 +1,9 @@
 package cmd
 
 import (
+	"fmt"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
@@ -20,8 +22,13 @@ func TestMain(m *testing.M) {
 	// macOS kills unsigned dev builds in persistentPreRun; subprocesses must use
 	// a test-built gt (see buildGTBinary in test_helpers_test.go).
 	if runtime.GOOS == "darwin" {
-		if bin, err := buildGTBinary(); err == nil {
+		bin, err := buildGTBinary()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "cmd TestMain: buildGTBinary: %v\n", err)
+		} else {
 			_ = os.Setenv("GT_BINARY", bin)
+			binDir := filepath.Dir(bin)
+			_ = os.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 		}
 	}
 
