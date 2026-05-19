@@ -409,10 +409,7 @@ func run() error {
 	if home != "" {
 		goBin = filepath.Join(home, "go/bin") + ":" + goBin
 	}
-	newPath := gtDir + ":" + goBin + ":/usr/local/bin:/usr/bin:/bin:/sbin"
-	if !strings.Contains(pathEnv, gtDir) {
-		newPath = newPath + ":" + pathEnv
-	}
+	newPath := gtDir + ":" + goBin + ":/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:/sbin:" + pathEnv
 	os.Setenv("PATH", newPath)
 	os.Setenv("GT_ROLE", role)
 	if rig != "" {
