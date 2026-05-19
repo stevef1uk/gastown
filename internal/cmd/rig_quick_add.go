@@ -94,7 +94,7 @@ func runRigQuickAdd(cmd *cobra.Command, args []string) error {
 	}
 
 	addArgs := []string{"rig", "add", rigName, gitURL}
-	addCmd := exec.Command("gt", addArgs...)
+	addCmd := exec.Command(gtExecutable(), addArgs...)
 	addCmd.Dir = townRoot
 	addCmd.Stdout = os.Stdout
 	addCmd.Stderr = os.Stderr
@@ -117,7 +117,7 @@ func runRigQuickAdd(cmd *cobra.Command, args []string) error {
 	}
 
 	crewArgs := []string{"crew", "add", user, "--rig", rigName}
-	crewCmd := exec.Command("gt", crewArgs...)
+	crewCmd := exec.Command(gtExecutable(), crewArgs...)
 	crewCmd.Dir = filepath.Join(townRoot, rigName)
 	crewCmd.Stdout = os.Stdout
 	crewCmd.Stderr = os.Stderr

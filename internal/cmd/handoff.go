@@ -156,7 +156,7 @@ func runHandoff(cmd *cobra.Command, args []string) error {
 			style.Bold.Render("🐾"), polecatName)
 		// Polecats don't respawn themselves - Witness handles lifecycle
 		// Call gt done with DEFERRED status to preserve work state
-		doneCmd := exec.Command("gt", "done", "--status", "DEFERRED")
+		doneCmd := exec.Command(gtExecutable(), "done", "--status", "DEFERRED")
 		doneCmd.Stdout = os.Stdout
 		doneCmd.Stderr = os.Stderr
 		return doneCmd.Run()
@@ -1500,7 +1500,7 @@ func collectHandoffState() string {
 	}
 
 	// Get hooked work
-	hookOutput, err := exec.Command("gt", "hook").Output()
+	hookOutput, err := exec.Command(gtExecutable(), "hook").Output()
 	if err == nil {
 		hookStr := strings.TrimSpace(string(hookOutput))
 		if hookStr != "" && !strings.Contains(hookStr, "Nothing on hook") {
@@ -1509,7 +1509,7 @@ func collectHandoffState() string {
 	}
 
 	// Get inbox summary (first few messages)
-	inboxOutput, err := exec.Command("gt", "mail", "inbox").Output()
+	inboxOutput, err := exec.Command(gtExecutable(), "mail", "inbox").Output()
 	if err == nil {
 		inboxStr := strings.TrimSpace(string(inboxOutput))
 		if inboxStr != "" && !strings.Contains(inboxStr, "Inbox empty") {

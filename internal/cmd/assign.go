@@ -177,7 +177,7 @@ func runAssign(_ *cobra.Command, args []string) error {
 		fmt.Printf("  %s Agent won't be notified (use --nudge to wake them)\n", style.Dim.Render("ℹ"))
 	} else {
 		nudgeMsg := fmt.Sprintf("New work on your hook: %s", title)
-		nudgeCmd := exec.Command("gt", "nudge", agentID, "-m", nudgeMsg)
+		nudgeCmd := exec.Command(gtExecutable(), "nudge", agentID, "-m", nudgeMsg)
 		nudgeCmd.Stderr = os.Stderr
 		if out, err := nudgeCmd.Output(); err != nil {
 			fmt.Fprintf(os.Stderr, "%s Warning: nudge failed: %v\n", style.Warning.Render("⚠"), err)

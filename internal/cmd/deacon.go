@@ -1078,7 +1078,7 @@ func getAgentBeadUpdateTime(townRoot, beadID string) (time.Time, error) {
 
 // sendMail sends a mail message using gt mail send.
 func sendMail(townRoot, to, subject, body string) {
-	cmd := exec.Command("gt", "mail", "send", to, "-s", subject, "-m", body)
+	cmd := exec.Command(gtExecutable(), "mail", "send", to, "-s", subject, "-m", body)
 	cmd.Dir = townRoot
 	_ = cmd.Run() // Best effort
 }

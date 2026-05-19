@@ -1303,7 +1303,7 @@ type dogDispatchResult struct {
 
 // dogEscalateBestEffort fires a MEDIUM escalation via gt escalate.
 func dogEscalateBestEffort(msg string) error {
-	cmd := exec.Command("gt", "escalate", "--severity", "medium", msg)
+	cmd := exec.Command(gtExecutable(), "escalate", "--severity", "medium", msg)
 	return cmd.Run()
 }
 

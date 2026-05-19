@@ -37,11 +37,11 @@ func runResume(cmd *cobra.Command, args []string) error {
 // checkHandoffMessages checks the inbox for handoff messages and displays them.
 func checkHandoffMessages() error {
 	// Get inbox in JSON format
-	inboxCmd := exec.Command("gt", "mail", "inbox", "--json")
+	inboxCmd := exec.Command(gtExecutable(), "mail", "inbox", "--json")
 	output, err := inboxCmd.Output()
 	if err != nil {
 		// Fallback to non-JSON if --json not supported
-		inboxCmd = exec.Command("gt", "mail", "inbox")
+		inboxCmd = exec.Command(gtExecutable(), "mail", "inbox")
 		output, err = inboxCmd.Output()
 		if err != nil {
 			return fmt.Errorf("checking inbox: %w", err)
@@ -69,7 +69,7 @@ func checkHandoffMessages() error {
 	}
 	if err := json.Unmarshal(output, &messages); err != nil {
 		// JSON parse failed, use plain text output
-		inboxCmd = exec.Command("gt", "mail", "inbox")
+		inboxCmd = exec.Command(gtExecutable(), "mail", "inbox")
 		output, err = inboxCmd.Output()
 		if err != nil {
 			return fmt.Errorf("fallback inbox check failed: %w", err)

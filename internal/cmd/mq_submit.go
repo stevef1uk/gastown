@@ -455,7 +455,7 @@ Please verify state and execute lifecycle action.
 `, worker, time.Now().Format(time.RFC3339))
 
 	// Send via gt mail
-	cmd := exec.Command("gt", "mail", "send", manager,
+	cmd := exec.Command(gtExecutable(), "mail", "send", manager,
 		"-s", subject,
 		"-m", body,
 	)

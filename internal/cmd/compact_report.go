@@ -124,7 +124,7 @@ func runDailyDigest() error {
 	}
 
 	// Run compaction with --json to get results
-	compactOut, err := exec.Command("gt", "compact", "--json").Output()
+	compactOut, err := exec.Command(gtExecutable(), "compact", "--json").Output()
 	if err != nil {
 		return fmt.Errorf("running compaction: %w", err)
 	}
@@ -317,7 +317,7 @@ func sendCompactDigest(dateStr, body string) error {
 
 	// Send to mayor/ only — deacon/ is not a valid mail address (audit bead
 	// serves as the deacon-side record).
-	mailCmd := exec.Command("gt", "mail", "send", "mayor/",
+	mailCmd := exec.Command(gtExecutable(), "mail", "send", "mayor/",
 		"-s", subject,
 		"-m", body,
 	)
@@ -433,7 +433,7 @@ func runWeeklyRollup() error {
 
 	// Send to mayor/
 	subject := fmt.Sprintf("Weekly Wisp Compaction: %s to %s", weekStart, weekEnd)
-	mailCmd := exec.Command("gt", "mail", "send", "mayor/",
+	mailCmd := exec.Command(gtExecutable(), "mail", "send", "mayor/",
 		"-s", subject,
 		"-m", markdown,
 	)

@@ -1724,8 +1724,12 @@ func TestNudgeSession_WithRetry(t *testing.T) {
 	}
 	defer func() { _ = tm.KillSession(sessionName) }()
 
-	// Give shell a moment to initialize
-	time.Sleep(200 * time.Millisecond)
+	// Give shell a moment to initialize (darwin tmux is slower under load).
+	wait := 200 * time.Millisecond
+	if runtime.GOOS == "darwin" {
+		wait = 1200 * time.Millisecond
+	}
+	time.Sleep(wait)
 
 	// NudgeSession should succeed on a ready session
 	err := tm.NudgeSession(sessionName, "test message")
@@ -1743,7 +1747,11 @@ func TestNudgeSession_WithStoredPaneID(t *testing.T) {
 	}
 	defer func() { _ = tm.KillSession(sessionName) }()
 
-	time.Sleep(200 * time.Millisecond)
+	wait := 200 * time.Millisecond
+	if runtime.GOOS == "darwin" {
+		wait = 1200 * time.Millisecond
+	}
+	time.Sleep(wait)
 
 	paneID, err := tm.GetPaneID(sessionName)
 	if err != nil {

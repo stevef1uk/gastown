@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -12,25 +13,19 @@ import (
 // It caches the build across tests in the same run.
 var cachedGTBinary string
 
-func buildGT(t *testing.T) string {
-	t.Helper()
-
+func buildGTBinary() (string, error) {
 	if cachedGTBinary != "" {
-		// Verify cached binary still exists
 		if _, err := os.Stat(cachedGTBinary); err == nil {
-			return cachedGTBinary
+			return cachedGTBinary, nil
 		}
-		// Binary was cleaned up, rebuild
 		cachedGTBinary = ""
 	}
 
-	// Find project root (where go.mod is)
 	wd, err := os.Getwd()
 	if err != nil {
-		t.Fatalf("failed to get working directory: %v", err)
+		return "", fmt.Errorf("getwd: %w", err)
 	}
 
-	// Walk up to find go.mod
 	projectRoot := wd
 	for {
 		if _, err := os.Stat(filepath.Join(projectRoot, "go.mod")); err == nil {
@@ -38,26 +33,33 @@ func buildGT(t *testing.T) string {
 		}
 		parent := filepath.Dir(projectRoot)
 		if parent == projectRoot {
-			t.Fatal("could not find project root (go.mod)")
+			return "", fmt.Errorf("could not find project root (go.mod)")
 		}
 		projectRoot = parent
 	}
 
-	// Build gt binary to a persistent temp location (not per-test)
 	tmpDir := os.TempDir()
 	binaryName := "gt-integration-test"
 	if runtime.GOOS == "windows" {
 		binaryName += ".exe"
 	}
 	tmpBinary := filepath.Join(tmpDir, binaryName)
-	// Must set BuiltProperly=1 via ldflags, otherwise binary refuses to run
 	ldflags := "-X github.com/steveyegge/gastown/internal/cmd.BuiltProperly=1"
 	cmd := exec.Command("go", "build", "-ldflags", ldflags, "-o", tmpBinary, "./cmd/gt")
 	cmd.Dir = projectRoot
 	if output, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("failed to build gt: %v\nOutput: %s", err, output)
+		return "", fmt.Errorf("build gt: %w\n%s", err, output)
 	}
 
 	cachedGTBinary = tmpBinary
-	return tmpBinary
+	return tmpBinary, nil
+}
+
+func buildGT(t *testing.T) string {
+	t.Helper()
+	bin, err := buildGTBinary()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return bin
 }

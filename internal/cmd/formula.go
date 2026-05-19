@@ -701,7 +701,7 @@ func executeConvoyFormula(f *formula.Formula, formulaName, targetRig string) err
 			slingArgs = append(slingArgs, "--review-only")
 		}
 
-		slingCmd := exec.Command("gt", slingArgs...)
+		slingCmd := exec.Command(gtExecutable(), slingArgs...)
 		slingCmd.Stdout = os.Stdout
 		slingCmd.Stderr = os.Stderr
 
@@ -916,7 +916,7 @@ func executeWorkflowFormula(f *formula.Formula, formulaName, targetRig string) e
 			slingArgs = append(slingArgs, "--agent", stepAgent)
 		}
 
-		slingCmd := exec.Command("gt", slingArgs...)
+		slingCmd := exec.Command(gtExecutable(), slingArgs...)
 		slingCmd.Stdout = os.Stdout
 		slingCmd.Stderr = os.Stderr
 

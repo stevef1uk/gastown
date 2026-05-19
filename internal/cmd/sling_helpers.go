@@ -662,7 +662,7 @@ func updateAgentHookBead(agentID, beadID, workDir, townBeadsDir string) {
 // separately when an MR is actually created (by nudgeRefinery).
 func wakeRigAgents(rigName string) {
 	// Boot the rig (idempotent - no-op if already running)
-	bootCmd := exec.Command("gt", "rig", "boot", rigName)
+	bootCmd := exec.Command(gtExecutable(), "rig", "boot", rigName)
 	_ = bootCmd.Run() // Ignore errors - rig might already be running
 
 	// Verify daemon is running — polecat triggering depends on daemon

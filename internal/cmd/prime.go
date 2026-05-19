@@ -641,7 +641,7 @@ func runMemoryInject() {
 // runMailCheckInject runs `gt mail check --inject` and outputs the result.
 // This injects any pending mail into the agent's context.
 func runMailCheckInject(workDir string) {
-	cmd := exec.Command("gt", "mail", "check", "--inject")
+	cmd := exec.Command(gtExecutable(), "mail", "check", "--inject")
 	cmd.Dir = workDir
 
 	var stdout, stderr bytes.Buffer
@@ -770,7 +770,7 @@ func isBeadNotFound(err error) bool {
 // failure but does not gate the prime exit.
 var firePolecatHookUnresolvableEscalation = func(agentID, detail string) {
 	msg := fmt.Sprintf("polecat hook unresolvable: agent=%s detail=%s — see gt-el4", agentID, detail)
-	cmd := exec.Command("gt", "escalate", "--severity", "high", "--reason", "polecat-hook-unresolvable", msg)
+	cmd := exec.Command(gtExecutable(), "escalate", "--severity", "high", "--reason", "polecat-hook-unresolvable", msg)
 	if err := cmd.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "polecat prime: escalation failed: %v\n", err)
 	}

@@ -1153,7 +1153,7 @@ func sendCloseNotification(addr, convoyID, title, reason string) {
 	body := fmt.Sprintf("Convoy %s has been closed.\n\nReason: %s", convoyID, reason)
 
 	mailArgs := []string{"mail", "send", addr, "-s", subject, "-m", body}
-	mailCmd := exec.Command("gt", mailArgs...)
+	mailCmd := exec.Command(gtExecutable(), mailArgs...)
 	if err := mailCmd.Run(); err != nil {
 		style.PrintWarning("couldn't send notification: %v", err)
 	} else {
@@ -1375,7 +1375,7 @@ func findConvoyWorktrees(tracked []trackedIssueInfo) []convoyWorktreeInfo {
 func removePolecatWorktree(wt convoyWorktreeInfo) error {
 	// gt polecat remove accepts rig/polecat format
 	target := fmt.Sprintf("%s/%s", wt.rigName, wt.polecatName)
-	cmd := exec.Command("gt", "polecat", "remove", target, "--force")
+	cmd := exec.Command(gtExecutable(), "polecat", "remove", target, "--force")
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 
@@ -1727,7 +1727,7 @@ func notifyConvoyCompletion(townBeads, convoyID, title string) {
 		mailArgs := []string{"mail", "send", addr,
 			"-s", fmt.Sprintf("🚚 Convoy landed: %s", title),
 			"-m", fmt.Sprintf("Convoy %s has completed.\n\nAll tracked issues are now closed.", convoyID)}
-		mailCmd := exec.Command("gt", mailArgs...)
+		mailCmd := exec.Command(gtExecutable(), mailArgs...)
 		if err := mailCmd.Run(); err != nil {
 			style.PrintWarning("could not notify %s: %v", addr, err)
 		}
@@ -1736,7 +1736,7 @@ func notifyConvoyCompletion(townBeads, convoyID, title string) {
 	// Send nudge notifications to nudge watchers
 	for _, addr := range fields.NudgeNotificationAddresses() {
 		nudgeMsg := fmt.Sprintf("🚚 Convoy landed: %s — Convoy %s has completed. All tracked issues are now closed.", title, convoyID)
-		nudgeCmd := exec.Command("gt", "nudge", addr, "-m", nudgeMsg)
+		nudgeCmd := exec.Command(gtExecutable(), "nudge", addr, "-m", nudgeMsg)
 		if err := nudgeCmd.Run(); err != nil {
 			style.PrintWarning("could not nudge %s: %v", addr, err)
 		}
@@ -1759,7 +1759,7 @@ func notifyMayorSession(townBeads, convoyID, title string) {
 	}
 
 	nudgeMsg := fmt.Sprintf("🚚 Convoy landed: %s — Convoy %s has completed. All tracked issues are now closed.", title, convoyID)
-	nudgeCmd := exec.Command("gt", "nudge", "mayor", "-m", nudgeMsg)
+	nudgeCmd := exec.Command(gtExecutable(), "nudge", "mayor", "-m", nudgeMsg)
 	if err := nudgeCmd.Run(); err != nil {
 		style.PrintWarning("could not nudge Mayor session: %v", err)
 	}

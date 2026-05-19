@@ -609,7 +609,7 @@ func createSynthesisBead(convoyID string, meta *ConvoyMeta, f *formula.Formula,
 // slingSynthesis slings the synthesis bead to a rig.
 func slingSynthesis(beadID, targetRig string) error {
 	slingArgs := []string{"sling", beadID, targetRig}
-	slingCmd := exec.Command("gt", slingArgs...)
+	slingCmd := exec.Command(gtExecutable(), slingArgs...)
 	slingCmd.Stdout = os.Stdout
 	slingCmd.Stderr = os.Stderr
 

@@ -63,7 +63,7 @@ func resetCrossRigEscalationStateForTest() {
 // effort — escalation failure is logged but does not block the dispatch path.
 var fireCrossRigEscalation = func(rig, prefix, beadID string) {
 	msg := fmt.Sprintf("cross-rig dispatch refused: rig=%s prefix=%s bead=%s — see gt-el4", rig, prefix, beadID)
-	cmd := exec.Command("gt", "escalate", "--severity", "medium", "--reason", "cross-rig-prefix", msg)
+	cmd := exec.Command(gtExecutable(), "escalate", "--severity", "medium", "--reason", "cross-rig-prefix", msg)
 	if err := cmd.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "%s cross-rig escalation failed: %v\n", style.Warning.Render("⚠"), err)
 	}
