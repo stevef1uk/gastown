@@ -7,6 +7,23 @@ import (
 	"testing"
 )
 
+// writeTownSettingsForDoctorTests creates settings/config.json (canonical town config path).
+func writeTownSettingsForDoctorTests(t *testing.T, townRoot string) {
+	t.Helper()
+	settingsDir := filepath.Join(townRoot, "settings")
+	if err := os.MkdirAll(settingsDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	townCfg := `{
+		"type": "town-settings",
+		"version": 1,
+		"beads": { "prefix": "hq" }
+	}`
+	if err := os.WriteFile(filepath.Join(settingsDir, "config.json"), []byte(townCfg), 0644); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func installFakeBdForDoctorTests(t *testing.T, townRoot string) {
 	t.Helper()
 

@@ -433,7 +433,18 @@ func (c *RigConfigSyncCheck) Fix(ctx *CheckContext) error {
 	}
 
 	// Fix missing config.json files
+	townName, _ := workspace.GetTownName(ctx.TownRoot)
+	if townName == "" {
+		townName = "hq"
+	}
 	for _, rigName := range c.missingConfig {
+		if rigName == townName {
+			if _, err := config.EnsureTownSettingsFile(ctx.TownRoot); err != nil {
+				return fmt.Errorf("could not create town settings for %s: %w", rigName, err)
+			}
+			continue
+		}
+
 		entry, ok := rigsConfig.Rigs[rigName]
 		if !ok {
 			continue

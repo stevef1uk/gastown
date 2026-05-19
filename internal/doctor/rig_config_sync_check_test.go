@@ -32,11 +32,7 @@ func TestRigConfigSyncCheck_MissingConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Create town root config.json to avoid "hq missing config" warning
-	townConfig := `{"type": "rig", "version": 1, "name": "hq", "beads": {"prefix": "hq"}}`
-	if err := os.WriteFile(filepath.Join(tmpDir, "config.json"), []byte(townConfig), 0644); err != nil {
-		t.Fatal(err)
-	}
+	writeTownSettingsForDoctorTests(t, tmpDir)
 
 	// Create rig directory WITHOUT config.json
 	rigDir := filepath.Join(tmpDir, "testrig")
@@ -88,11 +84,7 @@ func TestRigConfigSyncCheck_FixCreatesConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Create town root config.json to avoid "hq missing config" warning
-	townConfig := `{"type": "rig", "version": 1, "name": "hq", "beads": {"prefix": "hq"}}`
-	if err := os.WriteFile(filepath.Join(tmpDir, "config.json"), []byte(townConfig), 0644); err != nil {
-		t.Fatal(err)
-	}
+	writeTownSettingsForDoctorTests(t, tmpDir)
 
 	// Create rig directory WITHOUT config.json
 	rigDir := filepath.Join(tmpDir, "testrig")
@@ -161,15 +153,7 @@ func TestRigConfigSyncCheck_AllConfigsPresent(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Create town root config.json
-	townCfg := `{
-		"type": "town-settings",
-		"version": 1,
-		"beads": { "prefix": "hq" }
-	}`
-	if err := os.WriteFile(filepath.Join(tmpDir, "config.json"), []byte(townCfg), 0644); err != nil {
-		t.Fatal(err)
-	}
+	writeTownSettingsForDoctorTests(t, tmpDir)
 
 	// Create rig directory and config.json
 	rigDir := filepath.Join(tmpDir, "testrig")
