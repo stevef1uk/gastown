@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/steveyegge/gastown/internal/testutil"
+	"github.com/steveyegge/gastown/internal/util"
 	"github.com/steveyegge/gastown/internal/workspace"
 )
 
@@ -227,14 +228,7 @@ func TestQuerySessionEvents_FindsEventsFromAllLocations(t *testing.T) {
 	if wsErr != nil {
 		t.Fatalf("workspace.FindFromCwdOrError failed: %v", wsErr)
 	}
-	normalizePath := func(path string) string {
-		resolved, err := filepath.EvalSymlinks(path)
-		if err != nil {
-			return filepath.Clean(path)
-		}
-		return resolved
-	}
-	if normalizePath(foundTownRoot) != normalizePath(townRoot) {
+	if !util.PathsEqual(foundTownRoot, townRoot) {
 		t.Errorf("workspace.FindFromCwdOrError returned %s, expected %s", foundTownRoot, townRoot)
 	}
 

@@ -10,6 +10,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/steveyegge/gastown/internal/util"
 )
 
 // TestCreateBatchConvoy_CreatesOneConvoyTrackingAllBeads verifies that
@@ -909,7 +911,7 @@ exit 0
 		t.Errorf("create should include 'Work: Fix the widget' in args:\n%s", logContent)
 	}
 
-	if helperTownRoot != townRoot {
+	if !util.PathsEqual(helperTownRoot, townRoot) {
 		t.Errorf("tracking helper townRoot = %q, want %q", helperTownRoot, townRoot)
 	}
 	if helperConvoyID != convoyID {
