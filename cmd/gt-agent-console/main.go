@@ -12,7 +12,7 @@ import (
 )
 
 func main() {
-	port := 8081
+	port := 8090 // Default changed from 8081 to avoid conflict with dev servers
 	if p := os.Getenv("GT_AGENT_CONSOLE_PORT"); p != "" {
 		if v, err := strconv.Atoi(p); err == nil {
 			port = v
