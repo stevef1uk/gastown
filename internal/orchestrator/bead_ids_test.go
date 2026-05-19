@@ -39,6 +39,14 @@ func TestIsAgentIdentityBeadID(t *testing.T) {
 	}
 }
 
+func TestValidateSummaryBeadIDs_ignoresPathTokens(t *testing.T) {
+	known := map[string]bool{"fi-vjd": true}
+	summary := "missing beads for finally/docker-compose.yml; only fi-vjd exists"
+	if err := ValidateSummaryBeadIDs(summary, known, "fi"); err != nil {
+		t.Fatalf("path tokens must not be treated as bead IDs: %v", err)
+	}
+}
+
 func TestValidateSummaryBeadIDs_ignoresAgentIdentity(t *testing.T) {
 	known := map[string]bool{"xx-5d0": true}
 	if err := ValidateSummaryBeadIDs("also xx-mockrig-architect", known, "xx"); err != nil {

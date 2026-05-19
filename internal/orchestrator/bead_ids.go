@@ -11,7 +11,8 @@ import (
 	"github.com/steveyegge/gastown/internal/config"
 )
 
-var summaryBeadIDRE = regexp.MustCompile(`\b([a-z][a-z0-9]{1,10}-[a-z0-9]{2,})\b`)
+// Bead IDs use a short rig prefix (e.g. fi-vjd). Do not match long hyphenated words like docker-compose.
+var summaryBeadIDRE = regexp.MustCompile(`\b([a-z]{2,4}-[a-z0-9]{2,8})\b`)
 
 // RigIssuePrefix reads issue_prefix from the rig beads database (e.g. "de", "te").
 func RigIssuePrefix(townRoot, rig string) (string, error) {
