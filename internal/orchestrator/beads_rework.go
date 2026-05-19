@@ -72,6 +72,10 @@ func reopenClosedImplementBeads(townRoot, rig string, v WorkflowValidation) ([]s
 		if b.ID == "" {
 			continue
 		}
+		p := ExtractPathFromBeadTitle(b.Title, v.BeadTitleContains)
+		if IsProjectSetupArtifactPath(p, v) {
+			continue
+		}
 		cmd := exec.Command("bd", "update", b.ID, "--status=open")
 		cmd.Env = append(os.Environ(), "BEADS_DIR="+beadsDir)
 		cmd.Dir = workDir

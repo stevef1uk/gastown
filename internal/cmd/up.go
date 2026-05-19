@@ -1122,6 +1122,10 @@ func upStartArchitect(rigName string, r *rig.Rig) agentStartResult {
 	upEnsureFreshPipelineSession(ctx, sp, townRoot, sessionID, wantOrch)
 
 	if running, _ := sp.Exists(ctx, sessionID); running {
+		if orchestrator.IsRigWorkflowPaused(townRoot, rigName) {
+			stopOrchestratedRigAgentsForPausedWorkflow(townRoot, rigName)
+			return agentStartResult{name: name, ok: true, detail: "stopped (workflow paused)"}
+		}
 		return agentStartResult{name: name, ok: true, detail: sessionID}
 	}
 
@@ -1176,6 +1180,10 @@ func upStartQA(rigName string, r *rig.Rig) agentStartResult {
 	upEnsureFreshPipelineSession(ctx, sp, townRoot, sessionID, wantOrch)
 
 	if running, _ := sp.Exists(ctx, sessionID); running {
+		if orchestrator.IsRigWorkflowPaused(townRoot, rigName) {
+			stopOrchestratedRigAgentsForPausedWorkflow(townRoot, rigName)
+			return agentStartResult{name: name, ok: true, detail: "stopped (workflow paused)"}
+		}
 		return agentStartResult{name: name, ok: true, detail: sessionID}
 	}
 
@@ -1229,6 +1237,10 @@ func upStartRigPolecat(rigName string, r *rig.Rig) agentStartResult {
 	upEnsureFreshPipelineSession(ctx, sp, townRoot, sessionID, wantOrch)
 
 	if running, _ := sp.Exists(ctx, sessionID); running {
+		if orchestrator.IsRigWorkflowPaused(townRoot, rigName) {
+			stopOrchestratedRigAgentsForPausedWorkflow(townRoot, rigName)
+			return agentStartResult{name: name, ok: true, detail: "stopped (workflow paused)"}
+		}
 		_ = session.RepairTownRoleRigIdentity(ctx, sp, sessionID, polecatDir, constants.RolePolecat, rigName)
 		return agentStartResult{name: name, ok: true, detail: sessionID}
 	}

@@ -108,7 +108,7 @@ func PythonImplementationVerifyCommandForBead(v WorkflowValidation, mayorRigDir,
 	}
 	venv := v.PythonVenvRelDir()
 	py := venv + "/bin/python3"
-	prefix := "cd " + layout + " && "
+	// Venv lives under mayor/rig — do not "cd layout" first (.venv is not under layout/).
 
 	if req := v.RequirementsFilePath(); req != "" && pathMatchesRequired(beadPath, []string{req}) {
 		return "test -x " + py + " && " + py + " -c 'import pytest'"
@@ -116,12 +116,12 @@ func PythonImplementationVerifyCommandForBead(v WorkflowValidation, mayorRigDir,
 
 	if strings.Contains(beadPath, "/tests/") || strings.HasPrefix(filepath.Base(beadPath), "test_") {
 		if strings.HasSuffix(beadPath, ".py") {
-			return prefix + py + " -m pytest -v " + beadPath
+			return py + " -m pytest -v " + beadPath
 		}
 	}
 
 	if strings.HasSuffix(beadPath, ".py") {
-		return prefix + py + " -m compileall -q " + beadPath
+		return py + " -m compileall -q " + beadPath
 	}
 
 	return PythonVerifyCommand(v)

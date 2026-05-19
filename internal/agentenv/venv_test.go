@@ -33,6 +33,27 @@ func TestEnsureVenv_createsAndReuses(t *testing.T) {
 	}
 }
 
+func TestEnsureVenv_underWorkDirNotSubdir(t *testing.T) {
+	if _, err := exec.LookPath("python3"); err != nil {
+		t.Skip("python3 not available")
+	}
+	mayorRig := t.TempDir()
+	layout := filepath.Join(mayorRig, "tasklist")
+	if err := os.MkdirAll(layout, 0755); err != nil {
+		t.Fatal(err)
+	}
+	py, _, err := EnsureVenv(mayorRig, ".venv", "python3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(py, mayorRig) {
+		t.Fatalf("venv python %q should live under workDir %q", py, mayorRig)
+	}
+	if strings.HasPrefix(py, layout) {
+		t.Fatalf("venv must not be created under layout subdir: %q", py)
+	}
+}
+
 func TestWithRigVenv_setsVirtualEnv(t *testing.T) {
 	if _, err := exec.LookPath("python3"); err != nil {
 		t.Skip("python3 not available")

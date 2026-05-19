@@ -152,44 +152,17 @@ func validateImplementationBeadOrder(townRoot, rig, cmd string, v orchestrator.W
 }
 
 func (r *stateRunner) rejectScope() string {
-	switch r.hooks.CmdGuard {
-	case "design":
-		return "architect scope"
-	case "planning":
-		return "planner scope"
-	case "project_setup":
-		return "project setup scope"
-	case "implementation":
-		return "polecat scope"
-	case "plan_review":
-		return "plan review scope"
-	case "qa":
-		return "QA scope"
-	default:
-		return "command scope"
+	if s, ok := cmdGuardRejectScope[r.hooks.CmdGuard]; ok {
+		return s
 	}
+	return "command scope"
 }
 
 func (r *stateRunner) validateCommand(cmd string) error {
-	switch r.hooks.CmdGuard {
-	case "design":
-		return validateDesignCommand(cmd, r.rig)
-	case "planning":
-		return validatePlanningCommandWithProfile(cmd, r.rig, r.v)
-	case "project_setup":
-		return validateProjectSetupCommand(cmd, r.rig, r.v)
-	case "implementation":
-		if err := validateImplementationCommandWithState(cmd, r.townRoot, r.rig, r.track.activeBead, r.v, r.track.verifyOK); err != nil {
-			return err
-		}
-		return validateImplementationBeadOrder(r.townRoot, r.rig, cmd, r.v)
-	case "plan_review":
-		return validatePlanReviewCommand(cmd, r.rig)
-	case "qa":
-		return validateQACommand(cmd, r.rig, r.v)
-	default:
-		return nil
+	if fn, ok := cmdGuardHandlers[r.hooks.CmdGuard]; ok {
+		return fn(r, cmd)
 	}
+	return nil
 }
 
 func (r *stateRunner) rewriteCommand(cmd string) string {
@@ -305,7 +278,7 @@ func (r *stateRunner) rewritePythonCmd(cmd string, cmdEnv []string) string {
 }
 
 func (r *stateRunner) workDir() string {
-	return orchestratedCommandWorkDir(r.townRoot, r.rig, r.task.State)
+	return orchestratedCommandWorkDir(r.townRoot, r.rig, "")
 }
 
 func (r *stateRunner) afterCommand(cmd string, cmdErr error, workDir, sessionName string, cmdEnv []string, combined *strings.Builder) {
@@ -323,86 +296,8 @@ func (r *stateRunner) afterCommand(cmd string, cmdErr error, workDir, sessionNam
 }
 
 func (r *stateRunner) trackCommand(cmd string, cmdErr error) {
-	switch r.hooks.Track {
-	case "design":
-		if cmdErr == nil && isArchitectureMDWriteCommand(cmd) {
-			r.track.designArchWritten = true
-		}
-	case "planning":
-		if cmdErr != nil {
-			r.track.hadCmdFailure = true
-		}
-		if isBeadCreateCommand(cmd) && cmdErr == nil {
-			r.track.beadCreateOK = true
-		}
-		if cmdErr == nil && isBeadDeleteCommand(cmd) {
-			r.track.beadDeleteOK = true
-		}
-		if cmdErr == nil && isPlanMDWriteCommand(cmd) && planMDMeetsMinSize(r.townRoot, r.rig) {
-			r.track.hadCmdFailure = false
-		}
-	case "implementation":
-		if cmdErr != nil {
-			r.track.hadCmdFailure = true
-		}
-		if isBeadCloseCommand(cmd) && cmdErr == nil {
-			r.track.beadCloseOK = true
-			if id := extractBeadIDFromBdClose(cmd); id != "" && id == r.track.activeBead {
-				r.track.activeBead = ""
-			}
-		}
-		if isBeadUpdateInProgressCommand(cmd) && cmdErr == nil {
-			if id := extractBeadIDFromBdUpdate(cmd); id != "" {
-				if r.track.activeBead != id {
-					r.track.verifyOK = false
-				}
-				r.track.activeBead = id
-			}
-		}
-		if cmdErr == nil && isImplementationVerifyCommandOK(cmd, r.townRoot, r.rig, r.track.activeBead, r.v) {
-			r.track.verifyOK = true
-			r.track.hadCmdFailure = false
-		}
-		if cmdErr == nil && isGitCommitLayoutCommand(cmd, r.v.LayoutRoot) {
-			r.track.hadCmdFailure = false
-		}
-	case "project_setup":
-		if cmdErr != nil {
-			r.track.hadCmdFailure = true
-		}
-		if cmdErr == nil && isProjectSetupVerifyCommandOK(cmd, r.v) {
-			r.track.verifyOK = true
-			r.track.hadCmdFailure = false
-		}
-	case "plan_review":
-		if cmdErr != nil {
-			r.track.hadCmdFailure = true
-		}
-		if cmdErr == nil && isBdListOpenCommand(cmd) {
-			r.track.listOpenOK = true
-			r.track.hadCmdFailure = false
-		}
-		if cmdErr == nil && isQAReadOnlyCommand(cmd) {
-			r.track.hadCmdFailure = false
-		}
-		if cmdErr == nil && isBeadDeleteCommand(cmd) {
-			r.track.hadCmdFailure = false
-			r.track.didDelete = true
-		}
-	case "qa":
-		if cmdErr != nil {
-			r.track.hadCmdFailure = true
-		}
-		if cmdErr == nil && isBdListClosedCommand(cmd) {
-			r.track.bdListClosedOK = true
-		}
-		if cmdErr == nil && isQATestCommandOK(cmd, r.v) {
-			r.track.unittestOK = true
-			r.track.hadCmdFailure = false
-		}
-		if cmdErr == nil && isQAReadOnlyCommand(cmd) {
-			r.track.hadCmdFailure = false
-		}
+	if fn, ok := trackHandlers[r.hooks.Track]; ok {
+		fn(r, cmd, cmdErr)
 	}
 }
 
@@ -433,7 +328,7 @@ func (r *stateRunner) runAutoVerify(cmd, workDir, sessionName string, cmdEnv []s
 			}
 		} else {
 			r.track.verifyOK = true
-			if r.hooks.Track == "project_setup" {
+			if r.hooks.AutoVerifyOKClearsCmdFailure {
 				r.track.hadCmdFailure = false
 			}
 			orchestratedPrintf("[gt-agent] auto-verify ok: %s\n", verifyCmd)
@@ -443,54 +338,15 @@ func (r *stateRunner) runAutoVerify(cmd, workDir, sessionName string, cmdEnv []s
 }
 
 func (r *stateRunner) autoVerifyMatches(cmd, when string) bool {
-	switch when {
-	case "go_mod_tidy":
-		return isGoModTidyCommand(cmd)
-	case "go_mod_init":
-		return isGoModInitCommand(cmd)
-	case "pip_install":
-		return isPipInstallRequirementsCommand(cmd)
-	case "python_venv":
-		return strings.Contains(strings.ToLower(cmd), "python3 -m venv")
-	case "qa_test_ok":
-		return isQATestCommandOK(cmd, r.v)
-	case "go_write_layout":
-		return orchestratedWritesGoUnderLayout(cmd, r.v)
-	case "python_import_check":
-		return orchestrator.IsPythonImportCheckCommand(cmd)
-	case "python_compileall":
-		return strings.Contains(strings.ToLower(cmd), "compileall")
-	default:
-		return false
+	if fn, ok := autoVerifyWhenHandlers[when]; ok {
+		return fn(r, cmd)
 	}
+	return false
 }
 
 func (r *stateRunner) verifyCommand(kind string) string {
-	switch kind {
-	case "go_setup":
-		if orchestrator.WorkflowUsesGo(r.v) {
-			return orchestrator.GoProjectSetupVerifyCommand(r.v)
-		}
-	case "go_with_tidy":
-		if orchestrator.WorkflowUsesGo(r.v) {
-			return orchestrator.GoVerifyCommandWithTidy(r.v)
-		}
-	case "go_implementation", "python_implementation":
-		if orchestrator.WorkflowUsesGo(r.v) || orchestrator.WorkflowUsesPython(r.v) {
-			mayor := filepath.Join(r.townRoot, r.rig, "mayor", "rig")
-			beadPath := orchestrator.ImplementBeadPathForID(r.townRoot, r.rig, r.track.activeBead, r.v)
-			return orchestrator.ImplementationVerifyCommandForBead(r.v, mayor, beadPath)
-		}
-	case "python_setup":
-		if orchestrator.WorkflowUsesPython(r.v) {
-			return orchestrator.PythonProjectSetupVerifyCommand(r.v)
-		}
-	case "python":
-		if orchestrator.WorkflowUsesPython(r.v) {
-			return orchestrator.PythonVerifyCommand(r.v)
-		}
-	case "profile":
-		return strings.TrimSpace(r.v.QAVerifyCommand)
+	if fn, ok := verifyKindHandlers[kind]; ok {
+		return fn(r)
 	}
 	return ""
 }
@@ -499,43 +355,43 @@ func (r *stateRunner) validateArtifacts(outcome string) error {
 	if outcome != "success" && outcome != "task_passed" && outcome != "all_passed" {
 		return nil
 	}
-	t := r.track
-	switch r.hooks.Artifacts {
-	case "design":
-		return validateDesignArtifacts(r.townRoot, r.rig, t.designArchWritten, r.v)
-	case "planning":
-		return validatePlanningArtifacts(r.townRoot, r.rig, t.hadCmdFailure, t.beadCreateOK, t.beadDeleteOK, r.v)
-	case "plan_review":
-		return validatePlanReviewArtifacts(r.townRoot, r.rig, t.hadCmdFailure, t.listOpenOK, t.didDelete, r.v)
-	case "project_setup":
-		return validateProjectSetupArtifacts(r.townRoot, r.rig, t.hadCmdFailure, t.verifyOK, r.v)
-	case "implementation":
-		return validateImplementationArtifacts(r.townRoot, r.rig, t.hadCmdFailure, t.beadCloseOK, t.verifyOK, r.v)
-	case "qa":
-		return validateQAArtifacts(r.townRoot, r.rig, outcome, t.hadCmdFailure, t.bdListClosedOK, t.unittestOK, r.v)
-	default:
+	fn, ok := artifactValidators[r.hooks.Artifacts]
+	if !ok {
 		return nil
 	}
+	if err := fn(r, outcome); err != nil {
+		return err
+	}
+	return r.runPostArtifactSuccess()
+}
+
+func (r *stateRunner) runPostArtifactSuccess() error {
+	for _, step := range r.hooks.PostArtifactSuccess {
+		logLine, err := orchestrator.RunPreRunHook(step, r.townRoot, r.rig, r.v)
+		if err != nil {
+			orchestratedFprintfStderr("[gt-agent] post_artifact_success %s: %v\n", step, err)
+			return err
+		}
+		if logLine != "" {
+			orchestratedPrintf("[gt-agent] %s: %s\n", step, logLine)
+		}
+	}
+	return nil
 }
 
 func (r *stateRunner) tryAutoOutcome() (outcome, summary string, ok bool) {
-	switch r.hooks.Artifacts {
-	case "design":
-		if err := validateDesignArtifacts(r.townRoot, r.rig, r.track.designArchWritten, r.v); err != nil {
-			return "", "", false
-		}
-	case "planning":
-		if err := r.validateArtifacts("success"); err != nil {
-			return "", "", false
-		}
-	default:
+	fn, ok := artifactAutoCompleters[r.hooks.Artifacts]
+	if !ok {
+		return "", "", false
+	}
+	if err := fn(r); err != nil {
 		return "", "", false
 	}
 	o := normalizeOrchestratedOutcome("success", r.task.AllowedOutcomes)
 	if o == "" {
 		return "", "", false
 	}
-	orchestratedPrintf("[gt-agent] auto-completing %s: artifacts satisfied\n", r.task.State)
+	orchestratedPrintf("[gt-agent] auto-completing %s: artifacts satisfied\n", r.hooks.Artifacts)
 	return o, "artifacts validated", true
 }
 
@@ -547,23 +403,10 @@ func (r *stateRunner) failureHint() string {
 	if h := r.hooks.FailureHintText(r.v, r.promptVars); h != "" {
 		return h
 	}
-	switch r.hooks.Artifacts {
-	case "design":
-		return "Write architecture.md with a heredoc CMD in this session (stale files from prior runs do not count). Read SPEC with head -n 60."
-	case "planning":
-		work := rigMayorRigPath(r.rig)
-		return fmt.Sprintf("Repair beads: `bd delete %s --force` for duplicates, `bd create` only for missing paths, rewrite plan.md if needed — then JSON success. Work from %s with BEADS_DIR=$GT_ROOT/%s/.beads. No python/git/backend code.",
-			beadIDExample(r.townRoot, r.rig), work, r.rig)
-	case "plan_review":
-		return fmt.Sprintf("Run `bd list --status=open` from %s with BEADS_DIR set; compare titles to architecture required_files. Use outcome failure to send the Planner back to fix duplicates or missing paths.", rigMayorRigPath(r.rig))
-	case "implementation":
-		return fmt.Sprintf("One bead at a time from %s (BEADS_DIR=$GT_ROOT/%s/.beads): bd update → heredoc under %s/ → %s → bd close → JSON.",
-			rigMayorRigPath(r.rig), r.rig, strings.TrimSpace(r.v.LayoutRoot), r.v.UnittestCommandHint())
-	case "qa":
-		return "Run real CMD: lines (not markdown fences): bd list --status=closed, head SPEC.md, " + r.v.UnittestCommandHint() + " from " + rigMayorRigPath(r.rig) + ". No /workspace paths. Then JSON only."
-	default:
-		return "Use CMD: with a heredoc to write files, then send JSON outcome."
+	if fn, ok := artifactFailureHints[r.hooks.Artifacts]; ok {
+		return fn(r)
 	}
+	return "Use CMD: with a heredoc to write files, then send JSON outcome."
 }
 
 func validateOutcomeForTask(task *orchestrator.Task, townRoot, rig, outcome, summary string) error {

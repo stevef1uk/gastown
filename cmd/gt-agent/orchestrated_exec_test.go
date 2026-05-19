@@ -183,6 +183,27 @@ func TestRewriteUnittestToWorkdir_alreadyInModule(t *testing.T) {
 	}
 }
 
+func TestRewriteUnittestToWorkdir_pythonVenvAtMayorRig(t *testing.T) {
+	v := orchestrator.WorkflowValidation{
+		LayoutRoot:      "tasklist",
+		RequiredFiles:   []string{"tasklist/requirements.txt"},
+		QAVerifyCommand: "pytest -v",
+	}
+	verify := orchestrator.PythonImplementationVerifyCommandForBead(v, "", "tasklist/tasklist/__init__.py")
+	cmd := verify
+	fixed, ok := rewriteUnittestToWorkdir(cmd, "testgt5", v)
+	if !ok {
+		t.Fatal("expected rewrite for compileall verify")
+	}
+	if strings.Contains(fixed, "mayor/rig/tasklist/.venv") || strings.Contains(fixed, "tasklist/.venv") {
+		t.Fatalf("must not cd into layout for venv: %q", fixed)
+	}
+	want := "cd testgt5/mayor/rig && .venv/bin/python3 -m compileall -q tasklist/tasklist/__init__.py"
+	if fixed != want {
+		t.Fatalf("got %q want %q", fixed, want)
+	}
+}
+
 func TestRewriteUnittestToWorkdir_bareLayoutCD(t *testing.T) {
 	v := orchestrator.WorkflowValidation{
 		LayoutRoot:      "tasklist",

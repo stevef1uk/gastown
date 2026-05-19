@@ -26,6 +26,10 @@ type StateHooks struct {
 	AutoVerify []AutoVerifyHook `yaml:"auto_verify,omitempty" json:"auto_verify,omitempty"`
 
 	Artifacts string `yaml:"artifacts,omitempty" json:"artifacts,omitempty"`
+	// PostArtifactSuccess runs named hooks after artifact validation passes (e.g. close_project_setup_beads).
+	PostArtifactSuccess []string `yaml:"post_artifact_success,omitempty" json:"post_artifact_success,omitempty"`
+	// AutoVerifyOKClearsCmdFailure clears hadCmdFailure after a successful auto_verify (project_setup recovery).
+	AutoVerifyOKClearsCmdFailure bool `yaml:"auto_verify_ok_clears_cmd_failure,omitempty" json:"auto_verify_ok_clears_cmd_failure,omitempty"`
 
 	RetryHint    string `yaml:"retry_hint,omitempty" json:"retry_hint,omitempty"`
 	RetryHintKey string `yaml:"retry_hint_key,omitempty" json:"retry_hint_key,omitempty"`

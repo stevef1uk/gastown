@@ -1,6 +1,7 @@
 package orchestrator
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -42,6 +43,30 @@ func TestPythonImplementationVerifyCommandForBead_requirements(t *testing.T) {
 	got = PythonImplementationVerifyCommandForBead(v, "/tmp", "tasklist/tasklist/store.py")
 	if !strings.Contains(got, "compileall") {
 		t.Fatalf("source bead should compileall: %q", got)
+	}
+	if strings.Contains(got, "cd tasklist") {
+		t.Fatalf("venv verify must run from mayor/rig, not cd into layout: %q", got)
+	}
+	got = PythonImplementationVerifyCommandForBead(v, "/tmp", "tasklist/tasklist/__init__.py")
+	if want := ".venv/bin/python3 -m compileall -q tasklist/tasklist/__init__.py"; got != want {
+		t.Fatalf("got %q want %q", got, want)
+	}
+}
+
+func TestPythonVenvRelDir_isMayorRigRelative(t *testing.T) {
+	t.Parallel()
+	v := WorkflowValidation{
+		LayoutRoot:    "tasklist",
+		PythonVenvDir: ".venv",
+		RequiredFiles: []string{"tasklist/requirements.txt"},
+	}
+	if v.PythonVenvRelDir() != ".venv" {
+		t.Fatalf("dir: %q", v.PythonVenvRelDir())
+	}
+	mayorRig := "/tmp/rig/mayor/rig"
+	venvPy := filepath.Join(mayorRig, v.PythonVenvRelDir(), "bin", "python3")
+	if strings.Contains(venvPy, filepath.Join("tasklist", ".venv")) {
+		t.Fatalf("resolved venv must not be under layout: %s", venvPy)
 	}
 }
 

@@ -730,10 +730,14 @@ func TestOrchestratedCommandEnv_createsPythonVenv(t *testing.T) {
 	}
 	town := t.TempDir()
 	rigDir := filepath.Join(town, "mockrig", "mayor", "rig")
-	if err := os.MkdirAll(rigDir, 0755); err != nil {
+	layoutDir := filepath.Join(rigDir, "tasklist")
+	if err := os.MkdirAll(layoutDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	v := orchestrator.WorkflowValidation{RequiredFiles: []string{"backend/requirements.txt"}}
+	v := orchestrator.WorkflowValidation{
+		LayoutRoot:    "tasklist",
+		RequiredFiles: []string{"tasklist/requirements.txt"},
+	}
 	task := &orchestrator.Task{
 		Validation: v,
 		Hooks: orchestrator.StateHooks{
@@ -745,11 +749,26 @@ func TestOrchestratedCommandEnv_createsPythonVenv(t *testing.T) {
 	if virt == "" {
 		t.Fatal("missing VIRTUAL_ENV")
 	}
-	if !strings.HasSuffix(virt, filepath.Join("mockrig", "mayor", "rig", ".venv")) {
-		t.Fatalf("VIRTUAL_ENV=%q", virt)
+	wantVenv := filepath.Join(rigDir, ".venv")
+	virtAbs, err := filepath.Abs(virt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantAbs, err := filepath.Abs(wantVenv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if virtAbs != wantAbs {
+		t.Fatalf("VIRTUAL_ENV=%q want mayor/rig/.venv at %q (not under layout)", virt, wantAbs)
+	}
+	if strings.Contains(virt, filepath.Join("tasklist", ".venv")) {
+		t.Fatalf("venv must not be under layout_root: %q", virt)
+	}
+	if _, err := os.Stat(filepath.Join(wantVenv, "bin", "python3")); err != nil {
+		t.Fatalf("venv python missing under mayor/rig: %v", err)
 	}
 	py := envLookup(env, "GT_PYTHON3")
-	if py == "" || !strings.Contains(py, ".venv") {
+	if py == "" || !strings.Contains(py, filepath.Join("mayor", "rig", ".venv")) {
 		t.Fatalf("GT_PYTHON3=%q", py)
 	}
 }

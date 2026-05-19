@@ -236,6 +236,9 @@ func NextOpenImplementBead(townRoot, rig string, v WorkflowValidation) (*PlanBea
 	}
 	order := OrderRequiredFilesForImplementation(v.RequiredFiles)
 	for _, want := range order {
+		if IsProjectSetupArtifactPath(want, v) {
+			continue
+		}
 		for p, id := range idByPath {
 			if pathMatchesRequired(p, []string{want}) {
 				title := titleByID[id]

@@ -96,6 +96,9 @@ func isToolchainExecutionCommand(cmd string) bool {
 	if strings.Contains(lower, "-m pip") || strings.Contains(lower, "pip install") || strings.Contains(lower, "pip3 install") {
 		return true
 	}
+	if strings.Contains(lower, "-m compileall") || strings.Contains(lower, "compileall") {
+		return true
+	}
 	if strings.Contains(lower, "-m pytest") || strings.Contains(lower, "-m unittest") {
 		return true
 	}
@@ -138,9 +141,11 @@ func rewriteUnittestToWorkdir(cmd, rig string, v orchestrator.WorkflowValidation
 		changed = true
 	}
 	layout := strings.Trim(strings.TrimSpace(v.LayoutRoot), "/")
-	workPath := rigMayorRigPath(rig)
-	if layout != "" && layout != "." {
-		workPath = workPath + "/" + layout
+	mayorRig := rigMayorRigPath(rig)
+	// Python venv lives under mayor/rig only — never cd into layout_root for pip/pytest/compileall.
+	workPath := mayorRig
+	if layout != "" && layout != "." && orchestrator.WorkflowUsesGo(v) {
+		workPath = mayorRig + "/" + layout
 	}
 	if !commandHasMayorRigCD(cmd, rig) {
 		if !commandHasLayoutCD(cmd, layout) {

@@ -43,6 +43,11 @@ func rigWorkflowActivityFromStatuses(rigName string, statuses []WorkflowStatus) 
 	return RigWorkflowIdle
 }
 
+// IsRigWorkflowPaused reports whether the rig's active workflow instance is paused.
+func IsRigWorkflowPaused(townRoot, rigName string) bool {
+	return RigWorkflowActivityForRig(townRoot, rigName) == RigWorkflowPaused
+}
+
 // SkipRigAgentStartReason returns a non-empty operator message when gt up should not
 // start rig-scoped agents while the orchestrator is running (paused or idle rig).
 func SkipRigAgentStartReason(townRoot, rigName string) string {

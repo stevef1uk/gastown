@@ -64,6 +64,10 @@ func runOrchestrated(ctx context.Context, client *llm.Client, townRoot, role, ri
 			continue
 		}
 		if task == nil {
+			if rig != "" && orchestrator.IsRigWorkflowPaused(townRoot, rig) {
+				orchestratedPrintf("[gt-agent] workflow paused for rig %s — exiting\n", rig)
+				break
+			}
 			time.Sleep(pollEvery)
 			continue
 		}
@@ -161,6 +165,9 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 
 	maxTurns := runner.maxTurns()
 	for turn := 1; turn <= maxTurns; turn++ {
+		if rig != "" && orchestrator.IsRigWorkflowPaused(townRoot, rig) {
+			return "failure", "workflow paused", lastAttemptFeedback.String(), orchestrator.ErrWorkflowPaused
+		}
 		orchestratedPrintf("[gt-agent] LLM request (turn %d)...\n", turn)
 		response, llmErr := client.CompleteMessages(ctx, messages)
 		if llmErr != nil {

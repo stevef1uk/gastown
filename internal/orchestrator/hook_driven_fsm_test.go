@@ -101,6 +101,12 @@ func TestRigFlowYAML_projectSetupHasAutoVerifyAndVenvCreate(t *testing.T) {
 	if !hasGo || !hasPip {
 		t.Fatalf("auto_verify: go=%v pip=%v rules=%v", hasGo, hasPip, h.AutoVerify)
 	}
+	if len(h.PostArtifactSuccess) != 1 || h.PostArtifactSuccess[0] != "close_project_setup_beads" {
+		t.Fatalf("post_artifact_success = %v", h.PostArtifactSuccess)
+	}
+	if !h.AutoVerifyOKClearsCmdFailure {
+		t.Fatal("expected auto_verify_ok_clears_cmd_failure on project_setup")
+	}
 }
 
 func TestHookDrivenFSM_fetchTaskDeliversHooksPerState(t *testing.T) {

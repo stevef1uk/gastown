@@ -113,6 +113,8 @@ states:
       pip_repair_before_run: true
       python3_rewrite: true
       track: project_setup
+      auto_verify_ok_clears_cmd_failure: true
+      post_artifact_success: [close_project_setup_beads]
       auto_verify:
         - when: go_mod_tidy
           verify: go_setup
@@ -145,7 +147,7 @@ states:
       failure_prompt_context: [implementation_queue, implement_bead_context]
       empty_response_suffix: "Reply with CMD lines only. Use Verify from Next bead; fix .go files in Source context when tidy/build fails."
       prompt_context: [implementation_queue, implement_bead_context]
-      pre_run: [enforce_implement_bead_queue, prune_stale_layout_go, repair_requirements, reopen_implement_beads]
+      pre_run: [close_project_setup_beads, enforce_implement_bead_queue, prune_stale_layout_go, repair_requirements, reopen_implement_beads]
       per_turn: [repair_requirements]
       cmd_guard: implementation
       cmd_rewrites: [rig_placeholders, backend_path_after_cd, bd_list_implement_scope, unittest_workdir, bd_list_limit, unwrap_bash_lc]

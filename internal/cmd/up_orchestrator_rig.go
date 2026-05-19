@@ -16,10 +16,28 @@ import (
 
 // rigOrchestratorAgentSkip returns (true, detail) when orchestrator mode should not start rig agents.
 func rigOrchestratorAgentSkip(townRoot, rigName, agentLabel string) (bool, string) {
+	if orchestrator.IsRigWorkflowPaused(townRoot, rigName) {
+		return true, "skipped (workflow paused)"
+	}
 	if reason := orchestrator.SkipRigAgentStartReason(townRoot, rigName); reason != "" {
 		return true, "skipped (" + reason + ")"
 	}
 	return false, ""
+}
+
+// stopOrchestratedRigAgentsForPausedWorkflow stops pipeline agents when a rig workflow is paused.
+// gt up reconcile and pause both rely on this so AutoRespawn sessions do not keep polling.
+func stopOrchestratedRigAgentsForPausedWorkflow(townRoot, rigName string) {
+	if townRoot == "" || rigName == "" || !orchestrator.IsRigWorkflowPaused(townRoot, rigName) {
+		return
+	}
+	if !upQuiet {
+		fmt.Fprintf(os.Stderr, "%s Stopping rig %s agents (workflow paused)\n",
+			style.Warning.Render("!"), style.Bold.Render(rigName))
+	}
+	if err := shutdownRigAgents(townRoot, rigName, true); err != nil && !upQuiet {
+		fmt.Fprintf(os.Stderr, "%s stop paused rig %s: %v\n", style.Warning.Render("!"), rigName, err)
+	}
 }
 
 // loadRigAtTownRoot loads a rig by name when the town root is already known.

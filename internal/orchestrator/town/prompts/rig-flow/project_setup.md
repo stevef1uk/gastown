@@ -79,7 +79,7 @@ gt-agent creates `{{python_venv_dir}}/` when you run venv/pip commands in this s
 |---------|-----------|
 | `python3 -m venv {{python_venv_dir}}` under mayor/rig | `go mod` |
 | `python3 -m pip install -r {{requirements_file}}` (venv active) | Shell lines inside `requirements.txt` |
-| `requirements.txt` = package names only | `bd close` |
+| `requirements.txt` = package names only | `bd close` (gt-agent auto-closes manifest beads after green setup verify) |
 | Minimal `__init__.py` / package dirs if beads need them | Pasting pytest commands into `.py` source |
 
 ### Python commands (example)
@@ -93,6 +93,8 @@ CMD: cd {{rig}}/mayor/rig && {{project_setup_verify_hint}}
 `{{project_setup_verify_hint}}` checks the venv can `import pytest` — **not** a full `pytest` run (no tests exist until implementation).
 
 If `{{requirements_file}}` is missing but beads need packages, create it with **package lines only** (e.g. `pytest`, `flask==3.0.0`), then pip install once. Do not use `source`/`activate` — gt-agent uses the venv python for pip.
+
+After green `{{project_setup_verify_hint}}`, gt-agent closes the `{{requirements_file}}` implement bead automatically — polecat never implements it.
 
 Success JSON: `{"outcome":"success","summary":"Python venv ready; deps installed; beads split; verify passed"}`
 
