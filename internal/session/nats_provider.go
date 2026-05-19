@@ -270,11 +270,18 @@ func isGTAgentProcess(pid int) bool {
 	if !processExists(pid) {
 		return false
 	}
+	var cmdline string
 	data, err := os.ReadFile(fmt.Sprintf("/proc/%d/cmdline", pid))
-	if err != nil {
-		return false
+	if err == nil {
+		cmdline = strings.ReplaceAll(string(data), "\x00", " ")
+	} else {
+		// Fallback for macOS/BSD
+		out, err := exec.Command("ps", "-p", strconv.Itoa(pid), "-o", "command=").Output()
+		if err != nil {
+			return false
+		}
+		cmdline = string(out)
 	}
-	cmdline := strings.ReplaceAll(string(data), "\x00", " ")
 	return strings.Contains(cmdline, "gt-agent") && strings.Contains(cmdline, "[GAS TOWN]")
 }
 

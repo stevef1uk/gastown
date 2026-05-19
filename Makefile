@@ -99,6 +99,12 @@ install: check-up-to-date build
 	@cp $(BUILD_DIR)/$(BINARY) $(INSTALL_DIR)/$(BINARY)
 	@cp $(BUILD_DIR)/$(BINARY)-agent $(INSTALL_DIR)/$(BINARY)-agent
 	@cp $(BUILD_DIR)/$(BINARY)-agent-console $(INSTALL_DIR)/$(BINARY)-agent-console
+	@if [ "$$(uname)" = "Darwin" ]; then \
+		echo "Signing binaries for macOS Gatekeeper compatibility..."; \
+		codesign -s - $(INSTALL_DIR)/$(BINARY) 2>/dev/null || true; \
+		codesign -s - $(INSTALL_DIR)/$(BINARY)-agent 2>/dev/null || true; \
+		codesign -s - $(INSTALL_DIR)/$(BINARY)-agent-console 2>/dev/null || true; \
+	fi
 	@# Nuke any stale go-install binaries that shadow the canonical location
 	@for bad in $(HOME)/go/bin/$(BINARY) $(HOME)/bin/$(BINARY); do \
 		if [ -f "$$bad" ]; then \

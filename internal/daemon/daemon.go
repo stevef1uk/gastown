@@ -2161,6 +2161,16 @@ func (d *Daemon) ensureSetupRunning() {
 // stops the zombie session and starts a fresh one.
 func (d *Daemon) ensureMayorRunning() {
 	mgr := mayor.NewManager(d.config.TownRoot)
+	sessionID := mgr.SessionName()
+
+	if running, _ := d.sp.Exists(d.ctx, sessionID); running {
+		wantOrch := d.orchestratedForRole(constants.RoleMayor)
+		hasOrch := session.GTAgentHasFlagInSession(d.config.TownRoot, sessionID, "--orchestrated")
+		if wantOrch && !hasOrch {
+			d.logger.Printf("Mayor session %s is in patrol mode but orchestrator is running — restarting with --orchestrated", sessionID)
+			_ = d.sp.Stop(d.ctx, sessionID, false)
+		}
+	}
 
 	if err := mgr.Start("", d.orchestratedForRole(constants.RoleMayor)); err != nil {
 		if err == mayor.ErrAlreadyRunning {
