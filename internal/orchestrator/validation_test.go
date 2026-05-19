@@ -115,6 +115,44 @@ func TestEffectiveMinPlanBytes_usesOnDiskArchitecture(t *testing.T) {
 	}
 }
 
+func TestEffectiveMinPlanBytes_phasedDeliveryScalesByActiveFiles(t *testing.T) {
+	rigDir := t.TempDir()
+	const archSize = 8000
+	if err := os.WriteFile(filepath.Join(rigDir, "architecture.md"), make([]byte, archSize), 0644); err != nil {
+		t.Fatal(err)
+	}
+	v := WorkflowValidation{
+		RequiredFiles:      []string{"a", "b", "c", "d", "e", "f", "g", "h", "i", "j"},
+		ActivePhaseIDField: "p1",
+		DeliveryPhases: []DeliveryPhase{
+			{ID: "p1", RequiredFiles: []string{"a", "b"}},
+			{ID: "p2", RequiredFiles: []string{"c", "d", "e", "f", "g", "h", "i", "j"}},
+		},
+	}
+	full := EffectiveMinPlanBytes(rigDir, WorkflowValidation{})
+	if full != MinPlanBytesFromArchitecture(archSize) {
+		t.Fatalf("unscaled: got %d want %d", full, MinPlanBytesFromArchitecture(archSize))
+	}
+	scaled := EffectiveMinPlanBytes(rigDir, v)
+	// 2/10 of arch → 1600 bytes → half = 800
+	want := MinPlanBytesFromArchitecture(int64(float64(archSize) * 0.2))
+	if scaled != want {
+		t.Fatalf("scaled: got %d want %d", scaled, want)
+	}
+	if scaled >= full {
+		t.Fatalf("scaled %d should be less than full %d", scaled, full)
+	}
+	// User's finally case: 1648-byte plan should pass when threshold is ~800
+	if 1648 < scaled {
+		t.Fatalf("1648-byte phase plan should meet scaled min %d", scaled)
+	}
+	scoped := v.ForActivePhase()
+	scopedScaled := EffectiveMinPlanBytes(rigDir, scoped)
+	if scopedScaled != scaled {
+		t.Fatalf("ForActivePhase-scoped validation: got min %d want %d (gt-agent uses scoped v)", scopedScaled, scaled)
+	}
+}
+
 func TestDefaultWorkflowValidation(t *testing.T) {
 	v := DefaultWorkflowValidation()
 	if v.BeadTitleContains != "Implement " {

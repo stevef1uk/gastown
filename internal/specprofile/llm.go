@@ -7,24 +7,24 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"strings"
-	"time"
 
+	"github.com/steveyegge/gastown/internal/config"
 	"github.com/steveyegge/gastown/internal/orchestrator"
 )
 
 const maxSpecChars = 60000
 
 // LLMExtractProfile calls an OpenAI-compatible chat API to turn SPEC.md into WorkflowValidation fields.
-func LLMExtractProfile(ctx context.Context, specContent string) (orchestrator.WorkflowValidation, string, error) {
-	endpoint := strings.TrimSpace(os.Getenv("LLM_ENDPOINT"))
+// endpoint and model should come from ResolveLLMForSpecIndex(townRoot); empty strings use Freeride defaults.
+func LLMExtractProfile(ctx context.Context, endpoint, model, specContent string) (orchestrator.WorkflowValidation, string, error) {
+	endpoint = strings.TrimSpace(endpoint)
+	model = strings.TrimSpace(model)
 	if endpoint == "" {
-		endpoint = "http://localhost:11434/v1/chat/completions"
+		endpoint = config.DefaultFreerideProxyEndpoint
 	}
-	model := strings.TrimSpace(os.Getenv("LLM_MODEL"))
 	if model == "" {
-		model = "llama3"
+		model = "ollama/llama3.3"
 	}
 
 	system := specIndexSystemPrompt()
@@ -51,7 +51,7 @@ func LLMExtractProfile(ctx context.Context, specContent string) (orchestrator.Wo
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-GasTown-Role", "spec-index")
 
-	client := &http.Client{Timeout: 120 * time.Second}
+	client := &http.Client{Timeout: HTTPTimeoutForSpecIndex()}
 	resp, err := client.Do(req)
 	if err != nil {
 		return orchestrator.WorkflowValidation{}, "", fmt.Errorf("llm request: %w", err)

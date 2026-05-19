@@ -435,8 +435,12 @@ func TestValidatePlanningArtifacts(t *testing.T) {
 	if err := validatePlanningArtifacts(dir, "mockrig", true, true, false, v); err == nil {
 		t.Fatal("expected error when commands failed")
 	}
+	listOpenImplementationBeadsHook = func(_, _ string) ([]orchestrator.PlanBead, error) {
+		return []orchestrator.PlanBead{{ID: "mo-1", Title: "Implement mock/main.go per architecture"}}, nil
+	}
+	defer func() { listOpenImplementationBeadsHook = nil }()
 	if err := validatePlanningArtifacts(dir, "mockrig", false, true, false, v); err != nil {
-		t.Fatalf("plan + bd create should pass: %v", err)
+		t.Fatalf("plan + implement beads should pass: %v", err)
 	}
 }
 
@@ -532,6 +536,10 @@ func TestOrchestratedArtifactAutoOutcome_planningRequiresBeads(t *testing.T) {
 	if _, _, ok := runner.tryAutoOutcome(); ok {
 		t.Fatal("should not auto-complete without bd create success")
 	}
+	listOpenImplementationBeadsHook = func(_, _ string) ([]orchestrator.PlanBead, error) {
+		return []orchestrator.PlanBead{{ID: "mo-1", Title: "Implement mock/main.go per architecture"}}, nil
+	}
+	defer func() { listOpenImplementationBeadsHook = nil }()
 	runner.track.beadCreateOK = true
 	if _, _, ok := runner.tryAutoOutcome(); !ok {
 		t.Fatal("should auto-complete with plan + bead create ok")

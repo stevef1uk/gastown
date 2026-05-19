@@ -79,8 +79,13 @@ Use --adopt to register an existing directory instead of creating new:
 
 Example:
   gt rig add gastown https://github.com/steveyegge/gastown
+  gt rig add finally git@github.com:you/finally.git
   gt rig add my_project git@github.com:user/repo.git --prefix mp
-  gt rig add existing_rig --adopt`,
+  gt rig add existing_rig --adopt
+
+Large SPEC (FinAlly): commit mayor/rig/SPEC.md, ensure Freeride is on :11434, then:
+  gt rig spec-index finally --force
+  gt rig set-phase finally --list`,
 	Args: cobra.RangeArgs(1, 2),
 	RunE: runRigAdd,
 }
@@ -124,7 +129,12 @@ var rigSpecIndexCmd = &cobra.Command{
 	Use:   "spec-index <rig>",
 	Short: "Generate workflow-profile.json from mayor/rig/SPEC.md via LLM",
 	Long: `Reads SPEC.md in the rig's mayor worktree and writes mayor/rig/.gastown/workflow-profile.json
-for orchestrator validation (commands, layout, QA). Requires LLM_ENDPOINT and LLM_MODEL (or defaults to local Ollama).
+for orchestrator validation (commands, layout, QA).
+
+LLM: uses LLM_ENDPOINT and LLM_MODEL from the environment when set; otherwise the architect/planner
+agent env from ~/gt/settings/config.json (Freeride proxy at http://localhost:11434 by default).
+Override per run: export LLM_MODEL=meta/llama-3.3-70b-instruct
+Per-request timeout: GT_SPEC_INDEX_HTTP_TIMEOUT (default 5m).
 
 After a successful write, a short summary of the extracted fields is printed—review it; if the model guessed wrong,
 edit the JSON directly or re-run with --force.
@@ -132,7 +142,7 @@ edit the JSON directly or re-run with --force.
 Set GT_SKIP_SPEC_INDEX=1 to skip automatic indexing after 'gt rig add' / 'gt rig add --adopt'.
 
 Examples:
-  gt rig spec-index myproject
+  gt rig spec-index finally --force
   gt rig spec-index myproject --force`,
 	Args: cobra.ExactArgs(1),
 	RunE: runRigSpecIndex,
@@ -824,9 +834,11 @@ func runRigSpecIndex(_ *cobra.Command, args []string) error {
 		return fmt.Errorf("profile already exists at %s (use --force to overwrite)", profilePath)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 	defer cancel()
-	fmt.Printf("Indexing SPEC.md for rig %s (LLM)...\n", style.Bold.Render(rigName))
+	endpoint, model := specprofile.ResolveLLMForSpecIndex(townRoot)
+	fmt.Printf("Indexing SPEC.md for rig %s (LLM %s via %s)...\n",
+		style.Bold.Render(rigName), style.Dim.Render(model), style.Dim.Render(endpoint))
 	prof, err := specprofile.IndexRig(ctx, townRoot, rigName)
 	if err != nil {
 		return err

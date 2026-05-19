@@ -115,6 +115,10 @@ func TestStateRunner_rigFlowHooksTrackAndArtifacts(t *testing.T) {
 	if err := os.WriteFile(planPath, make([]byte, minBytes), 0644); err != nil {
 		t.Fatal(err)
 	}
+	listOpenImplementationBeadsHook = func(_, _ string) ([]orchestrator.PlanBead, error) {
+		return []orchestrator.PlanBead{{ID: "my-1", Title: "Implement myapp/main.go per architecture"}}, nil
+	}
+	defer func() { listOpenImplementationBeadsHook = nil }()
 	r.track.beadCreateOK = true
 	if err := r.validateArtifacts("success"); err != nil {
 		t.Fatalf("planning with plan+beadCreate: %v", err)

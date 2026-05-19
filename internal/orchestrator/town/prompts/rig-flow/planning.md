@@ -11,7 +11,7 @@ If the prompt includes **"Prior step failed"** from `plan_review`, QA rejected y
 1. Read the QA **summary** and **command output** — fix exactly what QA named (duplicates, missing paths, weak plan).
 2. `bd list --status=open` with `BEADS_DIR` set — use only `te-xxx` IDs from that output.
 3. `bd delete te-xxx --force` for duplicate/wrong beads, then `bd create` for any missing required paths.
-4. Rewrite `plan.md` (≥ half the size of `architecture.md`; profile hint {{min_plan_bytes}} bytes) with real bead IDs from `bd create` / `bd list` output.
+4. Rewrite `plan.md` (≥ {{min_plan_bytes}} bytes — {{plan_min_size_hint}}) with real bead IDs from `bd create` / `bd list` output.
 
 Do **not** invent bead IDs or add implementation code under `{{layout_root}}/`.
 

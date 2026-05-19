@@ -266,7 +266,7 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 				if vErr := runner.validateArtifacts("success"); vErr == nil {
 					minPlan := orchestrator.EffectiveMinPlanBytes(rigMayorRigDir(townRoot, rig), runner.v)
 					orchestratedPrintf("[gt-agent] ignoring planning failure JSON — artifacts already satisfy success (min_plan_bytes=%d)\n", minPlan)
-					msg := fmt.Sprintf("Do not report failure: plan.md and beads already meet requirements (≥ %d bytes, half of architecture.md). Reply with JSON only: {\"outcome\":\"success\",\"summary\":\"plan and beads ready for plan review\"}", minPlan)
+					msg := fmt.Sprintf("Do not report failure: plan.md and beads already meet requirements (≥ %d bytes, %s). Reply with JSON only: {\"outcome\":\"success\",\"summary\":\"plan and beads ready for plan review\"}", minPlan, runner.v.PlanMinSizeHint())
 					recordAttemptFeedback(msg + "\n")
 					messages = append(messages, llm.Message{Role: "user", Content: msg})
 					continue
@@ -1377,13 +1377,14 @@ func validatePlanningArtifacts(townRoot, rig string, hadCmdFailure, beadCreateOK
 	if hadCmdFailure {
 		return fmt.Errorf("planning step had failed commands; fix errors before completing")
 	}
-	if !beadCreateOK {
-		if err := validatePlanningBeadSet(townRoot, rig, v); err != nil {
-			if beadDeleteOK {
-				return fmt.Errorf("bead set still invalid after bd delete: %w", err)
-			}
+	if err := validatePlanningBeadSet(townRoot, rig, v); err != nil {
+		if beadDeleteOK {
+			return fmt.Errorf("bead set still invalid after bd delete: %w", err)
+		}
+		if !beadCreateOK {
 			return fmt.Errorf("run `bd create` for missing paths or `bd delete` for duplicates in %s, then ensure open beads match architecture: %w", rigMayorRigPath(rig), err)
 		}
+		return fmt.Errorf("open implement beads must match active phase required_files: %w", err)
 	}
 	rigDir := rigMayorRigDir(townRoot, rig)
 	path := filepath.Join(rigDir, "plan.md")
@@ -1393,7 +1394,7 @@ func validatePlanningArtifacts(townRoot, rig string, hadCmdFailure, beadCreateOK
 	}
 	minPlan := orchestrator.EffectiveMinPlanBytes(rigDir, v)
 	if info.Size() < minPlan {
-		return fmt.Errorf("plan.md too small (%d bytes); need ≥%d (half of architecture.md)", info.Size(), minPlan)
+		return fmt.Errorf("plan.md too small (%d bytes); need ≥%d (%s)", info.Size(), minPlan, v.PlanMinSizeHint())
 	}
 	if rig != "" {
 		if err := validateRigOpenBeads(townRoot, rig); err != nil {
@@ -1742,7 +1743,13 @@ func validatePlanReviewGrep(cmd string) error {
 	return nil
 }
 
+// listOpenImplementationBeadsHook is set by tests to avoid calling bd list.
+var listOpenImplementationBeadsHook func(townRoot, rig string) ([]orchestrator.PlanBead, error)
+
 func listOpenImplementationBeads(townRoot, rig string) ([]orchestrator.PlanBead, error) {
+	if listOpenImplementationBeadsHook != nil {
+		return listOpenImplementationBeadsHook(townRoot, rig)
+	}
 	beadsDir := config.ResolveBeadsDirForRig(townRoot, rig)
 	args := beads.InjectFlatForListJSON([]string{"list", "--status=open", "--json", "--limit=0"})
 	cmd := exec.Command("bd", args...)
@@ -1789,7 +1796,7 @@ func validatePlanReviewArtifacts(townRoot, rig string, hadCmdFailure, listOpenOK
 	}
 	minPlan := orchestrator.EffectiveMinPlanBytes(rigDir, v)
 	if info.Size() < minPlan {
-		return fmt.Errorf("plan.md too small (%d bytes); need ≥%d (half of architecture.md)", info.Size(), minPlan)
+		return fmt.Errorf("plan.md too small (%d bytes); need ≥%d (%s)", info.Size(), minPlan, v.PlanMinSizeHint())
 	}
 	open, err := listOpenImplementationBeads(townRoot, rig)
 	if err != nil {

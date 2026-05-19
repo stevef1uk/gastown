@@ -67,17 +67,56 @@ func MinPlanBytesFromArchitecture(architectureBytes int64) int64 {
 	return n
 }
 
-// EffectiveMinPlanBytes returns the plan.md minimum for a rig: half of on-disk architecture.md when present,
-// otherwise half of the profile min_architecture_bytes (via MinPlanBytes after ClampProfileValidation).
+// phasedPlanByteScale returns the fraction of architecture.md that applies to plan.md sizing.
+// With delivery_phases, planning covers only ActiveRequiredFiles — not the full union.
+func (v WorkflowValidation) phasedPlanByteScale() float64 {
+	if !v.HasPhasedDelivery() {
+		return 1
+	}
+	total := len(v.UnionRequiredFiles())
+	active := len(v.ActiveRequiredFiles())
+	if total == 0 || active == 0 || active >= total {
+		return 1
+	}
+	ratio := float64(active) / float64(total)
+	const minRatio = 0.12 // avoid tiny plans when a phase has only a few paths
+	if ratio < minRatio {
+		ratio = minRatio
+	}
+	return ratio
+}
+
+// EffectiveMinPlanBytes returns the plan.md minimum for a rig: half of on-disk architecture.md when present
+// (scaled by active delivery phase when phased), otherwise half of min_architecture_bytes from the profile.
 func EffectiveMinPlanBytes(rigDir string, v WorkflowValidation) int64 {
+	var archBytes int64
 	archPath := filepath.Join(rigDir, "architecture.md")
 	if info, err := os.Stat(archPath); err == nil && info.Size() > 0 {
-		return MinPlanBytesFromArchitecture(info.Size())
+		archBytes = info.Size()
+	} else if v.MinArchitectureBytes > 0 {
+		archBytes = v.MinArchitectureBytes
+	} else {
+		return MinPlanBytesFromArchitecture(0)
 	}
-	if v.MinPlanBytes > 0 {
-		return v.MinPlanBytes
+	scaled := int64(float64(archBytes) * v.phasedPlanByteScale())
+	return MinPlanBytesFromArchitecture(scaled)
+}
+
+// PlanMinSizeHint describes how EffectiveMinPlanBytes was derived (for errors and prompts).
+func (v WorkflowValidation) PlanMinSizeHint() string {
+	if v.HasPhasedDelivery() && len(v.ActiveRequiredFiles()) < len(v.UnionRequiredFiles()) {
+		id := v.ActivePhaseID()
+		if id == "" {
+			if p, ok := v.ActivePhase(); ok {
+				id = strings.TrimSpace(p.ID)
+			}
+		}
+		if id != "" {
+			return fmt.Sprintf("half of architecture.md scaled for delivery phase %q", id)
+		}
+		return "half of architecture.md scaled for active delivery phase"
 	}
-	return MinPlanBytesFromArchitecture(v.MinArchitectureBytes)
+	return "half of architecture.md"
 }
 
 // ClampProfileValidation normalizes min_*_bytes from spec-index LLM output or hand-edited profiles.
@@ -297,7 +336,7 @@ func (v WorkflowValidation) PromptVars() map[string]string {
 	req := v.RequirementsFilePath()
 	scoped := v.ForActivePhase()
 	activeFiles := scoped.RequiredFiles
-	allFiles := append([]string(nil), v.RequiredFiles...)
+	allFiles := v.UnionRequiredFiles()
 	if len(allFiles) == 0 {
 		allFiles = append([]string(nil), activeFiles...)
 	}

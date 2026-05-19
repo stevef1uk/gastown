@@ -129,6 +129,8 @@ func (m *Manager) BuildTaskPayload(inst *WorkflowInstance, tpl *WorkflowTemplate
 		}
 		mayorDir := filepath.Join(m.townRoot, rig, "mayor", "rig")
 		promptVars["implementation_verify_hint"] = validation.ImplementationVerifyHint(mayorDir)
+		promptVars["min_plan_bytes"] = fmt.Sprintf("%d", EffectiveMinPlanBytes(mayorDir, validation))
+		promptVars["plan_min_size_hint"] = validation.PlanMinSizeHint()
 	}
 
 	systemPrompt, err := LoadPromptFile(m.townRoot, state.PromptFile, promptVars)

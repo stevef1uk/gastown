@@ -63,6 +63,30 @@ func (v WorkflowValidation) ActivePhaseQAVerifyCommand() string {
 	return strings.TrimSpace(v.QAVerifyCommand)
 }
 
+// UnionRequiredFiles returns all paths across delivery phases (deduped), or RequiredFiles when unphased.
+// Safe to call on ForActivePhase-scoped validation: phases still hold the full union.
+func (v WorkflowValidation) UnionRequiredFiles() []string {
+	if len(v.DeliveryPhases) == 0 {
+		return normalizePathList(v.RequiredFiles)
+	}
+	seen := make(map[string]bool)
+	var union []string
+	add := func(paths []string) {
+		for _, f := range normalizePathList(paths) {
+			if f == "" || seen[f] {
+				continue
+			}
+			seen[f] = true
+			union = append(union, f)
+		}
+	}
+	for _, p := range v.DeliveryPhases {
+		add(p.RequiredFiles)
+	}
+	add(v.RequiredFiles)
+	return union
+}
+
 // ForActivePhase returns a copy of v with RequiredFiles and QAVerifyCommand scoped to the active phase.
 func (v WorkflowValidation) ForActivePhase() WorkflowValidation {
 	if !v.HasPhasedDelivery() {
@@ -163,7 +187,8 @@ func (v WorkflowValidation) PhaseScopeNote() string {
 		line += " (" + title + ")"
 	}
 	line += ". Create implement beads **only** for `required_files` in this message (current phase). "
-	line += "Architecture must still describe the full system; union paths: " + strings.Join(v.RequiredFiles, ", ")
+	line += "`plan.md` only needs to cover this phase (size guard uses " + v.PlanMinSizeHint() + "). "
+	line += "Architecture must still describe the full system; union paths: " + strings.Join(v.UnionRequiredFiles(), ", ")
 	return line
 }
 
