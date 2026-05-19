@@ -1392,8 +1392,20 @@ var gluedOutcomeAfterQuoteRE = regexp.MustCompile(`'\s*\{[\s]*"outcome"`)
 // 'open'CMD: into newline-separated CMD markers so splitInlineCMDs can separate
 // them without eating filename extensions or shell quoting.
 func normalizeGluedCMDMarkers(cmd string) string {
-	cmd = gluedPathCMDRE.ReplaceAllString(cmd, "\nCMD: ")
-	cmd = gluedExtCMDRE.ReplaceAllString(cmd, "$1\nCMD: ")
+    // Generic fix: insert newline when CMD: is glued after a non-alphanumeric, non-quote char
+    // Avoid splitting inside strings like "prefixCMD:notamarker"
+    // e.g. "...limit=0CMD: next" -> "...limit=0\nCMD: next"
+    genericGlued := regexp.MustCompile(`([^A-Za-z0-9"'\n])CMD:\s*`)
+    cmd = genericGlued.ReplaceAllStringFunc(cmd, func(m string) string {
+        // m is like "<char>CMD:"; if char is '/', drop it (matches existing expectations)
+        if len(m) > 0 && m[0] == '/' {
+            return "\nCMD:"
+        }
+        // otherwise keep the prefix char
+        return string(m[0]) + "\nCMD:"
+    })
+    cmd = gluedPathCMDRE.ReplaceAllString(cmd, "\nCMD: ")
+    cmd = gluedExtCMDRE.ReplaceAllString(cmd, "$1\nCMD: ")
 	cmd = gluedQuoteCMDRE.ReplaceAllString(cmd, "'\nCMD: ")
 	cmd = gluedDoubleQuoteCMDRE.ReplaceAllString(cmd, "\"\nCMD: ")
 	cmd = gluedParenCMDRE.ReplaceAllString(cmd, ")\nCMD: ")
@@ -1413,6 +1425,9 @@ func splitInlineCMDs(cmd string) []string {
 	out := make([]string, 0, len(parts))
 	for _, p := range parts {
 		p = strings.TrimSpace(p)
+		// Fix: when a path is immediately followed by CMD:, a trailing '/'
+		// can be left behind (e.g. "rig/"), but tests expect it removed.
+		p = strings.TrimSuffix(p, "/")
 		if p != "" {
 			out = append(out, p)
 		}
