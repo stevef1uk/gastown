@@ -12,13 +12,25 @@ import (
 	"github.com/steveyegge/gastown/internal/config"
 )
 
-// EnsureImplementBeadsAvailable reopens closed implement beads when none are open for polecat work.
+// EnsureImplementBeadsAvailable reopens closed implement beads only when polecat work is incomplete
+// (missing/stub files). It does not reopen when all implement beads are closed and disk work is ready.
 func EnsureImplementBeadsAvailable(townRoot, rig string, v WorkflowValidation) ([]string, error) {
 	open, err := listImplementBeadsByStatus(townRoot, rig, v, "open")
 	if err != nil {
 		return nil, err
 	}
 	if len(open) > 0 {
+		return nil, nil
+	}
+	inProgress, err := listImplementBeadsByStatus(townRoot, rig, v, "in_progress")
+	if err != nil {
+		return nil, err
+	}
+	if len(inProgress) > 0 {
+		return nil, nil
+	}
+	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
+	if ImplementationDiskWorkReady(rigDir, v) == nil {
 		return nil, nil
 	}
 	return reopenClosedImplementBeads(townRoot, rig, v)
@@ -57,6 +69,65 @@ func ReopenImplementationBeadsAfterQAFailure(townRoot, rig string, v WorkflowVal
 	return reopenClosedImplementBeads(townRoot, rig, v)
 }
 
+// ImplementationDiskWorkReady reports nil when active-phase required_files exist and are not stubs.
+func ImplementationDiskWorkReady(rigDir string, v WorkflowValidation) error {
+	v = v.ForActivePhase()
+	for _, rel := range v.RequiredFiles {
+		rel = filepath.ToSlash(strings.TrimSpace(rel))
+		if rel == "" {
+			continue
+		}
+		path := filepath.Join(rigDir, filepath.FromSlash(rel))
+		info, err := os.Stat(path)
+		if err != nil {
+			return fmt.Errorf("missing %s", rel)
+		}
+		if info.Size() == 0 {
+			return fmt.Errorf("empty %s", rel)
+		}
+	}
+	var polecatRequired []string
+	for _, rel := range v.RequiredFiles {
+		rel = filepath.ToSlash(strings.TrimSpace(rel))
+		if rel == "" || IsProjectSetupArtifactPath(rel, v) {
+			continue
+		}
+		polecatRequired = append(polecatRequired, rel)
+	}
+	if len(polecatRequired) > 0 {
+		vStub := v
+		vStub.RequiredFiles = polecatRequired
+		if stubs := stubbedRequiredFiles(rigDir, vStub); len(stubs) > 0 {
+			return fmt.Errorf("stub or invalid: %s", strings.Join(stubs, ", "))
+		}
+	}
+	return nil
+}
+
+func beadImplementationNeedsRework(rigDir, beadPath string, v WorkflowValidation) bool {
+	beadPath = filepath.ToSlash(strings.TrimSpace(beadPath))
+	if beadPath == "" {
+		return true
+	}
+	path := filepath.Join(rigDir, filepath.FromSlash(beadPath))
+	info, err := os.Stat(path)
+	if err != nil || info.Size() == 0 {
+		return true
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return true
+	}
+	opts := StubCheckOptionsFromValidation(v)
+	if err := CheckContentNotStub(data, beadPath, opts); err != nil {
+		return true
+	}
+	if err := CheckPythonSourceValid(data, beadPath); err != nil {
+		return true
+	}
+	return false
+}
+
 func reopenClosedImplementBeads(townRoot, rig string, v WorkflowValidation) ([]string, error) {
 	closed, err := listImplementBeadsByStatus(townRoot, rig, v, "closed")
 	if err != nil {
@@ -66,14 +137,18 @@ func reopenClosedImplementBeads(townRoot, rig string, v WorkflowValidation) ([]s
 		return nil, nil
 	}
 	beadsDir := config.ResolveBeadsDirForRig(townRoot, rig)
-	workDir := filepath.Join(townRoot, rig, "mayor", "rig")
+	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
+	workDir := rigDir
 	var reopened []string
 	for _, b := range closed {
 		if b.ID == "" {
 			continue
 		}
-		p := ExtractPathFromBeadTitle(b.Title, v.BeadTitleContains)
+		p := resolveImplementBeadPath(b.Title, v)
 		if IsProjectSetupArtifactPath(p, v) {
+			continue
+		}
+		if !beadImplementationNeedsRework(rigDir, p, v) {
 			continue
 		}
 		cmd := exec.Command("bd", "update", b.ID, "--status=open")

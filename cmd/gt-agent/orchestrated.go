@@ -1502,26 +1502,34 @@ func validateImplementationArtifacts(townRoot, rig string, hadCmdFailure, beadCl
 	if hadCmdFailure {
 		return fmt.Errorf("implementation step had failed commands; fix errors before completing")
 	}
-	if !beadCloseOK {
-		return fmt.Errorf("at least one successful `bd close` in %s is required before success", rigMayorRigPath(rig))
-	}
-	if strings.TrimSpace(v.QAVerifyCommand) != "" && !verifyOK {
-		return fmt.Errorf("profile verification must pass in this session before success (%s)", strings.TrimSpace(v.QAVerifyCommand))
-	}
+	rigDir := rigMayorRigDir(townRoot, rig)
+	scoped := v.ForActivePhase()
+	diskReady := len(scoped.RequiredFiles) > 0 && orchestrator.ImplementationDiskWorkReady(rigDir, v) == nil
 	titleContains := strings.TrimSpace(v.BeadTitleContains)
+	openImpl := 0
 	if titleContains != "" {
-		openImpl, err := countOpenMatchingBeads(townRoot, rig, titleContains)
+		n, err := countOpenMatchingBeads(townRoot, rig, titleContains)
 		if err != nil {
 			return err
 		}
-		if openImpl > 0 {
-			return fmt.Errorf("%d open implement bead(s) remain — continue with Next bead (bd update → heredoc → verify → bd close); send JSON success only when none are open", openImpl)
+		openImpl = n
+	}
+	if !beadCloseOK {
+		if openImpl > 0 || !diskReady {
+			return fmt.Errorf("at least one successful `bd close` in %s is required before success", rigMayorRigPath(rig))
 		}
+	}
+	if strings.TrimSpace(v.QAVerifyCommand) != "" && !verifyOK {
+		if openImpl > 0 || !diskReady {
+			return fmt.Errorf("profile verification must pass in this session before success (%s)", strings.TrimSpace(v.QAVerifyCommand))
+		}
+	}
+	if openImpl > 0 {
+		return fmt.Errorf("%d open implement bead(s) remain — continue with Next bead (bd update → heredoc → verify → bd close); send JSON success only when none are open", openImpl)
 	}
 	if err := validateRequiredWorkFiles(townRoot, rig, v); err != nil {
 		return err
 	}
-	rigDir := rigMayorRigDir(townRoot, rig)
 	if err := orchestrator.ValidateLayoutPythonSources(rigDir, v); err != nil {
 		return fmt.Errorf("invalid Python under %s: %w", v.LayoutRoot, err)
 	}

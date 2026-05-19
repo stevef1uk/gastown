@@ -7,6 +7,33 @@ import (
 	"testing"
 )
 
+// TestCloseProjectSetupBeads_onTown closes setup-owned beads when GT_CLOSE_BEADS=1 and GT_ROOT are set.
+func TestCloseProjectSetupBeads_onTown(t *testing.T) {
+	if os.Getenv("GT_CLOSE_BEADS") != "1" {
+		t.Skip("set GT_CLOSE_BEADS=1 and GT_ROOT to run")
+	}
+	town := os.Getenv("GT_ROOT")
+	if town == "" {
+		t.Skip("GT_ROOT required")
+	}
+	rig := os.Getenv("GT_RIG")
+	if rig == "" {
+		rig = "testgt5"
+	}
+	v, ok, err := LoadRigWorkflowProfileFile(town, rig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok {
+		t.Skip("no workflow profile")
+	}
+	closed, err := CloseProjectSetupBeads(town, rig, v.ForActivePhase())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("closed: %v", closed)
+}
+
 func TestIsProjectSetupArtifactPath(t *testing.T) {
 	t.Parallel()
 	v := WorkflowValidation{
@@ -56,6 +83,20 @@ func TestNextOpenImplementBead_skipsSetupArtifacts(t *testing.T) {
 	}
 }
 
+func TestResolveImplementBeadPath_tasklistRequirements(t *testing.T) {
+	t.Parallel()
+	v := WorkflowValidation{
+		LayoutRoot:        "tasklist",
+		BeadTitleContains: "Implement tasklist/",
+		RequiredFiles:     []string{"tasklist/requirements.txt", "tasklist/store.py"},
+	}
+	title := "Implement tasklist/requirements.txt per architecture"
+	got := resolveImplementBeadPath(title, v)
+	if got != "tasklist/requirements.txt" {
+		t.Fatalf("resolve = %q", got)
+	}
+}
+
 func TestProjectSetupArtifactReady_python(t *testing.T) {
 	workDir := t.TempDir()
 	reqPath := filepath.Join(workDir, "tasklist", "requirements.txt")
@@ -79,5 +120,8 @@ func TestProjectSetupArtifactReady_python(t *testing.T) {
 	}
 	if !projectSetupArtifactReady(workDir, "tasklist/requirements.txt", v) {
 		t.Fatal("expected ready when requirements exist and venv imports pytest")
+	}
+	if projectSetupArtifactReady(workDir, "requirements.txt", v) {
+		t.Fatal("un-normalized path must not match file under layout_root")
 	}
 }

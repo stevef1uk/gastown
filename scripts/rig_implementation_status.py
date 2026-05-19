@@ -207,6 +207,50 @@ def go_build_rel_package(layout_root: str, bead_path: str) -> str:
     return os.path.dirname(p).replace("\\", "/")
 
 
+def normalize_pytest_command(cmd: str) -> str:
+    """Mirror orchestrator.NormalizePytestCommand (bare pytest → python3 -m pytest)."""
+    lower = cmd.lower()
+    if "pytest" not in lower:
+        return cmd
+    if "import pytest" in lower:
+        return cmd
+    if "-c " in lower and "import " in lower:
+        return cmd
+    if "python3 -m pytest" in lower or "python -m pytest" in lower:
+        return cmd
+    return re.sub(r"(?i)(^|[;&|]\s*|\s+)pytest\b", r"\1python3 -m pytest", cmd)
+
+
+def python_venv_rel(val: dict) -> str:
+    d = (val.get("python_venv_dir") or "").strip()
+    if d.lower() == "off":
+        return ""
+    return d if d else ".venv"
+
+
+def python_qa_verify_command(val: dict, mayor_rig: Path) -> str:
+    """QA verify for status script: venv python when present (mayor/rig), else profile cmd."""
+    cmd = (val.get("qa_verify_command") or "").strip()
+    if not cmd:
+        cmd = (val.get("unittest_command_hint") or "").strip()
+    if not cmd:
+        return ""
+    cmd = normalize_pytest_command(cmd)
+    venv_rel = python_venv_rel(val)
+    venv_py = mayor_rig / venv_rel / "bin" / "python3"
+    if venv_py.is_file():
+        if re.search(r"(?i)\bpython3?\b", cmd):
+            cmd = re.sub(r"(?i)\bpython3?\b", str(venv_py), cmd, count=1)
+        else:
+            extra = re.sub(r"(?i)^pytest\b", "", cmd).strip()
+            cmd = f"{venv_py} -m pytest {extra}".strip()
+        return cmd
+    layout = (val.get("layout_root") or "").strip().strip("/")
+    if layout and f"cd {layout}" not in cmd.lower() and (mayor_rig / layout).is_dir():
+        return f"cd {layout} && {cmd}"
+    return cmd
+
+
 def go_compile_verify_for_bead(val: dict, bead_path: str) -> str:
     layout = (val.get("layout_root") or "").strip() or "."
     p = bead_path.replace("\\", "/")
@@ -412,17 +456,11 @@ def go_checks(mayor_rig: Path, layout_root: str, required: list[str]) -> list[tu
 
 
 def python_checks(val: dict, mayor_rig: Path, layout_root: str) -> list[tuple[str, int, str]]:
-    cmd = (val.get("qa_verify_command") or "").strip()
+    _ = layout_root
+    cmd = python_qa_verify_command(val, mayor_rig)
     if not cmd:
-        hint = (val.get("unittest_command_hint") or "").strip()
-        if hint:
-            cmd = hint
-        else:
-            return []
-    layout = layout_root.strip().strip("/")
+        return []
     cwd = mayor_rig
-    if layout and (mayor_rig / layout).is_dir():
-        cwd = mayor_rig / layout
     code, out = run(["bash", "-lc", cmd], cwd=cwd, env=os.environ.copy())
     summary = "ok" if code == 0 else (out.splitlines()[-1] if out else f"exit {code}")
     label = cmd if len(cmd) <= 100 else cmd[:97] + "..."

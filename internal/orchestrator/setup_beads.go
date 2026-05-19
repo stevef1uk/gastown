@@ -47,7 +47,7 @@ func CloseProjectSetupBeads(townRoot, rig string, v WorkflowValidation) ([]strin
 	workDir := filepath.Join(townRoot, rig, "mayor", "rig")
 	var closed []string
 	for _, b := range active {
-		p := ExtractPathFromBeadTitle(b.Title, v.BeadTitleContains)
+		p := resolveImplementBeadPath(b.Title, v)
 		if !IsProjectSetupArtifactPath(p, v) {
 			continue
 		}
@@ -64,6 +64,17 @@ func CloseProjectSetupBeads(townRoot, rig string, v WorkflowValidation) ([]strin
 		closed = append(closed, b.ID)
 	}
 	return closed, nil
+}
+
+// resolveImplementBeadPath maps a bead title to the canonical required_files path when possible.
+func resolveImplementBeadPath(title string, v WorkflowValidation) string {
+	p := NormalizeBeadPathForLayout(ExtractPathFromBeadTitle(title, v.BeadTitleContains), v.LayoutRoot)
+	for _, want := range v.RequiredFiles {
+		if pathMatchesRequired(p, []string{want}) {
+			return want
+		}
+	}
+	return p
 }
 
 func projectSetupArtifactReady(workDir, path string, v WorkflowValidation) bool {

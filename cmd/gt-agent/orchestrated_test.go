@@ -562,8 +562,9 @@ func writeImplementationBackendFiles(t *testing.T, townRoot, rig string) {
 	if err := os.MkdirAll(backend, 0755); err != nil {
 		t.Fatal(err)
 	}
+	body := []byte("def run():\n    return 1\n\nif __name__ == '__main__':\n    run()\n")
 	for _, name := range []string{"fizzbuzz.py", "main.py", "test_fizzbuzz.py"} {
-		if err := os.WriteFile(filepath.Join(backend, name), []byte("pass\n"), 0644); err != nil {
+		if err := os.WriteFile(filepath.Join(backend, name), body, 0644); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -593,17 +594,25 @@ func TestValidateImplementationArtifacts(t *testing.T) {
 		t.Fatal("expected error when commands failed")
 	}
 	writeImplementationBackendFiles(t, dir, "mockrig")
+	v.RequiredFiles = []string{"backend/fizzbuzz.py", "backend/main.py", "backend/test_fizzbuzz.py"}
+	v.MinImplementationFileBytes = 1
+	v.MinSubstantiveLines = 1
 	if err := validateImplementationArtifacts(dir, "mockrig", false, true, false, v); err != nil {
 		t.Fatalf("bd close ok with backend files should pass: %v", err)
 	}
+	if err := validateImplementationArtifacts(dir, "mockrig", false, false, false, v); err != nil {
+		t.Fatalf("all closed on disk without bd close this session should pass: %v", err)
+	}
 	vGo := v
 	vGo.QAVerifyCommand = "cd linkshelf && go test ./..."
+	if err := validateImplementationArtifacts(dir, "mockrig", false, true, false, vGo); err != nil {
+		t.Fatalf("disk-ready implementation passes without session verify: %v", err)
+	}
+	countOpenMatchingBeadsHook = func(_, _, _ string) (int, error) { return 1, nil }
 	if err := validateImplementationArtifacts(dir, "mockrig", false, true, false, vGo); err == nil {
-		t.Fatal("expected error without verify when qa_verify_command set")
+		t.Fatal("expected error when open implement beads remain without session verify")
 	}
-	if err := validateImplementationArtifacts(dir, "mockrig", false, true, true, vGo); err != nil {
-		t.Fatalf("bd close + verify should pass: %v", err)
-	}
+	countOpenMatchingBeadsHook = func(_, _, _ string) (int, error) { return 0, nil }
 }
 
 func TestValidateImplementationCommand_oneInProgressBead(t *testing.T) {

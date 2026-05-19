@@ -165,6 +165,9 @@ var artifactAutoCompleters = map[string]artifactAutoCompleteFn{
 	"planning": func(r *stateRunner) error {
 		return r.validateArtifacts("success")
 	},
+	"implementation": func(r *stateRunner) error {
+		return validateImplementationArtifacts(r.townRoot, r.rig, false, false, r.track.verifyOK, r.v)
+	},
 }
 
 var artifactFailureHints = map[string]func(*stateRunner) string{
