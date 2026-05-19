@@ -41,7 +41,7 @@ func EnsurePATH(env []string) []string {
 			addDir(filepath.Dir(p))
 		}
 	}
-	for _, dir := range []string{"/usr/local/bin", "/usr/bin", "/bin", "/sbin"} {
+	for _, dir := range []string{"/opt/homebrew/bin", "/opt/homebrew/sbin", "/usr/local/bin", "/usr/bin", "/bin", "/sbin"} {
 		addDir(dir)
 	}
 	if extra := os.Getenv("GT_PATH_EXTRA"); extra != "" {

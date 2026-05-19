@@ -234,6 +234,9 @@ func (c *RigConfigSyncCheck) Run(ctx *CheckContext) *CheckResult {
 		rigName := info.name
 		rigPath := info.path
 		configPath := filepath.Join(rigPath, "config.json")
+		if info.isTownRoot {
+			configPath = filepath.Join(rigPath, "settings", "config.json")
+		}
 
 		// Skip existence check for town root directory (we know it exists)
 		if !info.isTownRoot {
