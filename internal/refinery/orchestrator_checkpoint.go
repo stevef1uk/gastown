@@ -3,12 +3,64 @@ package refinery
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
 	"github.com/steveyegge/gastown/internal/constants"
 	"github.com/steveyegge/gastown/internal/git"
 )
+
+// hasBinaryFiles returns true if there are binary (non-text) files among
+// the uncommitted changes in the git repository at workDir.
+func hasBinaryFiles(workDir string) (bool, error) {
+	run := func(args ...string) (string, error) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = workDir
+		out, err := cmd.CombinedOutput()
+		return string(out), err
+	}
+
+	lines, err := run("diff", "--cached", "--numstat", "-z")
+	if err != nil && !strings.Contains(err.Error(), "empty") {
+		return false, err
+	}
+	if lines == "" {
+		lines, err = run("diff", "--numstat", "-z")
+		if err != nil && !strings.Contains(err.Error(), "empty") {
+			return false, err
+		}
+	}
+	if lines == "" {
+		lines, err = run("ls-files", "--others", "--exclude-standard", "-z")
+		if err != nil && !strings.Contains(err.Error(), "empty") {
+			return false, err
+		}
+	}
+
+	if strings.Contains(lines, "\t-\t") {
+		return true, nil
+	}
+
+	if lines != "" {
+		parts := strings.Split(lines, "\x00")
+		for _, path := range parts {
+			if path != "" {
+				fullPath := filepath.Join(workDir, path)
+				data, rerr := os.ReadFile(fullPath)
+				if rerr != nil {
+					continue
+				}
+				for i := 0; i < len(data) && i < 8192; i++ {
+					if data[i] == 0 {
+						return true, nil
+					}
+				}
+			}
+		}
+	}
+	return false, nil
+}
 
 // CommitMayorRigOrchestratorCheckpoint stages and commits all tracked and untracked
 // changes in mayor/rig after an orchestrator rig-flow FSM transition. This mirrors
@@ -52,11 +104,17 @@ func CommitMayorRigOrchestratorCheckpoint(townRoot, rigName, workflowID, templat
 		return fmt.Errorf("mayor/rig status: %w", err)
 	}
 	if dirty {
+		if hasBin, berr := hasBinaryFiles(mayorRig); berr != nil {
+			fmt.Printf("[Orchestrator] rig %s: warning: could not check for binary files: %v\n", rigName, berr)
+		} else if hasBin {
+			fmt.Printf("[Orchestrator] rig %s: SKIP checkpoint commit — binary files detected in worktree\n", rigName)
+			return maybePushMayorRigOnCompleted(townRoot, rigName, templateID, fromState, toState)
+		}
 		if err := g.Add("-A"); err != nil {
 			return fmt.Errorf("git add: %w", err)
 		}
 
-		msg := buildOrchestratorCheckpointMessage(workflowID, fromState, toState, outcome)
+		msg := buildOrchestratorTransitionMessage(workflowID, fromState, toState, outcome)
 		if err := g.Commit(msg); err != nil {
 			if strings.Contains(err.Error(), "nothing to commit") {
 				// Index clean after add (e.g. skip-worktree); still may need push below.
@@ -66,6 +124,12 @@ func CommitMayorRigOrchestratorCheckpoint(townRoot, rigName, workflowID, templat
 		} else {
 			fmt.Printf("[Orchestrator] rig %s mayor/rig: checkpoint commit (%s -> %s)\n", rigName, fromState, toState)
 		}
+	} else if isQAApprovedTransition(templateID, fromState, toState) {
+		msg := buildQAApprovedMessage(workflowID)
+		if err := g.CommitAllowEmpty(msg); err != nil {
+			return fmt.Errorf("git commit qa marker: %w", err)
+		}
+		fmt.Printf("[Orchestrator] rig %s mayor/rig: QA-approved marker commit\n", rigName)
 	} else {
 		fmt.Printf("[Orchestrator] rig %s mayor/rig: worktree clean at %s -> %s (no checkpoint commit)\n", rigName, fromState, toState)
 	}
@@ -94,6 +158,12 @@ func SyncMayorRigUpstream(townRoot, rigName string) error {
 		return fmt.Errorf("status: %w", err)
 	}
 	if dirty {
+		if hasBin, berr := hasBinaryFiles(mayorRig); berr != nil {
+			fmt.Printf("[Orchestrator] rig %s: warning: could not check for binary files: %v\n", rigName, berr)
+		} else if hasBin {
+			fmt.Printf("[Orchestrator] rig %s: SKIP sync commit — binary files detected in worktree\n", rigName)
+			return maybePushMayorRigOnCompleted(townRoot, rigName, "rig-flow", "sync", "completed")
+		}
 		if err := g.Add("-A"); err != nil {
 			return fmt.Errorf("git add: %w", err)
 		}
@@ -144,6 +214,13 @@ func maybePushMayorRigOnCompleted(townRoot, rigName, templateID, fromState, toSt
 	return nil
 }
 
+func buildOrchestratorTransitionMessage(workflowID, fromState, toState, outcome string) string {
+	if isQAApprovedTransition("rig-flow", fromState, toState) {
+		return buildQAApprovedMessage(workflowID)
+	}
+	return buildOrchestratorCheckpointMessage(workflowID, fromState, toState, outcome)
+}
+
 func buildOrchestratorCheckpointMessage(workflowID, fromState, toState, outcome string) string {
 	const prefix = "chore(orchestrator): checkpoint"
 	var b strings.Builder
@@ -155,4 +232,16 @@ func buildOrchestratorCheckpointMessage(workflowID, fromState, toState, outcome 
 		fmt.Fprintf(&b, " [%s]", workflowID)
 	}
 	return b.String()
+}
+
+func buildQAApprovedMessage(workflowID string) string {
+	msg := "chore(orchestrator): qa approved"
+	if workflowID != "" {
+		msg += fmt.Sprintf(" [%s]", workflowID)
+	}
+	return msg
+}
+
+func isQAApprovedTransition(templateID, fromState, toState string) bool {
+	return templateID == "rig-flow" && fromState == "qa_review" && toState == "completed"
 }
