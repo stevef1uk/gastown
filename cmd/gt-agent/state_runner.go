@@ -42,6 +42,7 @@ type stateRunner struct {
 	v           orchestrator.WorkflowValidation
 	promptVars  map[string]string
 	track       *cmdTracker
+	servers     *devServerTracker
 }
 
 func newStateRunner(task *orchestrator.Task, townRoot, rig string) *stateRunner {
@@ -58,6 +59,7 @@ func newStateRunner(task *orchestrator.Task, townRoot, rig string) *stateRunner 
 		v:          v,
 		promptVars: vars,
 		track:      &cmdTracker{},
+		servers:    newDevServerTracker(),
 	}
 }
 
@@ -283,6 +285,9 @@ func (r *stateRunner) workDir() string {
 }
 
 func (r *stateRunner) afterCommand(cmd string, cmdErr error, workDir, sessionName string, cmdEnv []string, combined *strings.Builder) {
+	if trackNeedsDevServerCleanup(r.hooks.Track) {
+		r.servers.noteCommand(cmd)
+	}
 	if r.hooks.EmptyBdListOK && isScopedImplementBdListEmpty(cmd, cmdErr) {
 		cmdErr = nil
 		combined.WriteString("(no matching open/in_progress implement beads)\n")
@@ -300,6 +305,13 @@ func (r *stateRunner) trackCommand(cmd string, cmdErr error) {
 	if fn, ok := trackHandlers[r.hooks.Track]; ok {
 		fn(r, cmd, cmdErr)
 	}
+}
+
+func (r *stateRunner) shutdownStartedServers() {
+	if !trackNeedsDevServerCleanup(r.hooks.Track) {
+		return
+	}
+	shutdownStartedDevServers(r.servers)
 }
 
 func (r *stateRunner) runAutoVerify(cmd, workDir, sessionName string, cmdEnv []string, combined *strings.Builder) {

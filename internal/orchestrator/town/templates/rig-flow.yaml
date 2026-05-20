@@ -183,7 +183,8 @@ states:
     prompt_file: prompts/rig-flow/qa_review.md
     instructions: |
       1. Review closed implementation beads in `{{rig}}` against SPEC and architecture.
-      2. Use outcome task_passed (more work), all_passed (done), or failure (rework).
+      2. For web+server profiles: run runtime smoke (static asset curls, API GET [] not null, POST not 405, SPA uses /# anchors).
+      3. Use outcome task_passed (more work), all_passed (done), or failure (rework).
     hooks:
       max_cmd_turns: 8
       per_turn: [repair_requirements]
@@ -201,7 +202,7 @@ states:
       retry_hint: |
         One CMD: per line. Review closed beads against SPEC and architecture; use allowed QA outcomes only.
       failure_hint: |
-        Run real CMD: lines: bd list --status=closed, head SPEC.md, {{unittest_command_hint}} from {{rig}}/mayor/rig. Then JSON only.
+        Run real CMD: lines: bd list --status=closed, head SPEC.md, {{unittest_command_hint}} from {{rig}}/mayor/rig. Web+server rigs also need go run+curl smoke (assets 200, API [] not null, POST works, SPA /# links). Then JSON only.
     transitions:
       task_passed:
         to: implementation

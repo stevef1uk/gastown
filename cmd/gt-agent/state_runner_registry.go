@@ -206,7 +206,7 @@ var artifactFailureHints = map[string]func(*stateRunner) string{
 	"qa": func(r *stateRunner) string {
 		hint := "Run real CMD: lines (not markdown fences): bd list --status=closed, head SPEC.md, " + r.v.UnittestCommandHint() + " from " + rigMayorRigPath(r.rig) + "."
 		if requiresQARuntimeSmoke(r.v) {
-			hint += " This web/API profile also requires a live smoke CMD that starts the server with `go run`, curls `/`, static assets, and API GET/POST behavior."
+			hint += " Web/API smoke required: go run server, curl -sf each asset path from index.html, GET API must return [] not null, POST must not 405, SPA section links use /#id. gt-agent stops the server when QA finishes."
 		}
 		return hint + " No /workspace paths. Then JSON only."
 	},

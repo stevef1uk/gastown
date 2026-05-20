@@ -590,6 +590,10 @@ func run() error {
 		}
 
 		extraordinary := false
+		var devServers *devServerTracker
+		if roleNeedsDevServerCleanup(roleCanonical) {
+			devServers = newDevServerTracker()
+		}
 		// Multi-turn conversation loop within a single patrol cycle.
 		// This allows the agent to see command output and proceed immediately.
 		messages := []llm.Message{
@@ -664,6 +668,9 @@ func run() error {
 					fmt.Printf("[gt-agent] Rewrote command: %q -> %q\n", cmd, safeCmd)
 				}
 				fmt.Printf("[gt-agent] $ %s\n", safeCmd)
+				if devServers != nil {
+					devServers.noteCommand(safeCmd)
+				}
 
 				if diag, ok := checkShellSyntax(safeCmd); !ok {
 					fmt.Fprintf(os.Stderr, "[gt-agent] REJECTED invalid shell (syntax check): %s\n", diag)
@@ -723,6 +730,10 @@ func run() error {
 				}
 				break
 			}
+		}
+
+		if devServers != nil {
+			shutdownStartedDevServers(devServers)
 		}
 
 		// Call role-specific post-work command

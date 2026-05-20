@@ -133,6 +133,7 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 		orchestratedPrintf("[gt-agent] injecting prior failure context for %s/%s\n", task.WorkflowID, task.State)
 	}
 	runner := newStateRunner(task, townRoot, rig)
+	defer runner.shutdownStartedServers()
 	for _, block := range runner.promptContextBlocks() {
 		contextBlocks = append(contextBlocks, block)
 	}

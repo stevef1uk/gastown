@@ -18,7 +18,7 @@ Rig `{{rig}}` (`{{rig}}/polecat`). Work under `{{rig}}/mayor/rig/`. Use the **Ne
 - Only bead IDs from `bd list`; only files under `{{layout_root}}/`
 - Go: use module/import paths from **Implement context** / architecture; do not heredoc `go.mod` / `go.sum`
 - **go.mod bead:** use `go mod init` / `go get` (deps from architecture) / `go mod tidy` only — no heredoc for `go.mod`. If tidy fails, fix bad `import` lines in existing `.go` files shown in **Source context** (heredoc those files only). Verify is **tidy only** (no `go build`/`go run`/curl on this bead).
-- **Other `.go` beads:** verify builds **that file's package only** (see **Verify** on the Next bead line) — not `go build ./...` unless that is what Verify shows. **`go run`/curl only on the `cmd/server/main.go` bead.**
+- **Other `.go` beads:** verify builds **that file's package only** (see **Verify** on the Next bead line) — not `go build ./...` unless that is what Verify shows. **`go run`/curl only on the `cmd/server/main.go` bead.** gt-agent shuts down any `go run` server when the implementation step finishes.
 - **`cmd/…/main.go` bead:** Before writing imports, check what's already in internal/ with `ls {{rig}}/mayor/rig/{{layout_root}}/internal/`. If `internal/*` packages don't exist yet, implement them FIRST (not in main.go). Then re-run verify and `bd close`.
 - No `gt bd` — use `bd` with `BEADS_DIR` set as above
 
