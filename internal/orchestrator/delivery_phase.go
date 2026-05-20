@@ -102,11 +102,103 @@ func (v WorkflowValidation) ForActivePhase() WorkflowValidation {
 	return out
 }
 
+// IsDockerPackagingPath reports container packaging files (Dockerfile, compose, .dockerignore).
+// These belong in the final delivery phase after application source exists.
+func IsDockerPackagingPath(path string) bool {
+	path = filepath.ToSlash(strings.TrimSpace(path))
+	if path == "" {
+		return false
+	}
+	lower := strings.ToLower(path)
+	base := strings.ToLower(filepath.Base(path))
+	if base == "dockerfile" || base == "containerfile" || base == ".dockerignore" {
+		return true
+	}
+	return strings.Contains(lower, "docker-compose")
+}
+
+func sortDockerPackagingPaths(paths []string) []string {
+	score := func(p string) int {
+		lower := strings.ToLower(p)
+		switch {
+		case strings.HasSuffix(lower, "dockerfile") || strings.HasSuffix(lower, "containerfile"):
+			return 0
+		case strings.Contains(lower, "docker-compose") && strings.Contains(lower, ".test."):
+			return 2
+		case strings.Contains(lower, "docker-compose"):
+			return 1
+		default:
+			return 3
+		}
+	}
+	out := append([]string(nil), paths...)
+	for i := 0; i < len(out); i++ {
+		for j := i + 1; j < len(out); j++ {
+			if score(out[j]) < score(out[i]) {
+				out[i], out[j] = out[j], out[i]
+			}
+		}
+	}
+	return out
+}
+
+// moveDockerPathsToFinalDeliveryPhase pulls Dockerfile/compose paths out of early phases
+// and appends them to the last phase so polecats implement real code before container wiring.
+func moveDockerPathsToFinalDeliveryPhase(v WorkflowValidation) WorkflowValidation {
+	if len(v.DeliveryPhases) == 0 {
+		return v
+	}
+	seen := make(map[string]bool)
+	var dockerPaths []string
+	for i := range v.DeliveryPhases {
+		var kept []string
+		for _, f := range v.DeliveryPhases[i].RequiredFiles {
+			if IsDockerPackagingPath(f) {
+				if !seen[f] {
+					seen[f] = true
+					dockerPaths = append(dockerPaths, f)
+				}
+				continue
+			}
+			kept = append(kept, f)
+		}
+		v.DeliveryPhases[i].RequiredFiles = kept
+	}
+	if len(dockerPaths) == 0 {
+		return v
+	}
+	dockerPaths = sortDockerPackagingPaths(dockerPaths)
+
+	last := len(v.DeliveryPhases) - 1
+	v.DeliveryPhases[last].RequiredFiles = append(
+		normalizePathList(v.DeliveryPhases[last].RequiredFiles),
+		dockerPaths...,
+	)
+
+	active := v.ActivePhaseID()
+	var phases []DeliveryPhase
+	for _, p := range v.DeliveryPhases {
+		if len(p.RequiredFiles) == 0 {
+			if active != "" && strings.TrimSpace(p.ID) == active {
+				v.ActivePhaseIDField = ""
+			}
+			continue
+		}
+		phases = append(phases, p)
+	}
+	if len(phases) == 0 {
+		return v
+	}
+	v.DeliveryPhases = phases
+	return v
+}
+
 // FinalizeDeliveryPhases unions phase file lists into RequiredFiles, sets default active phase, normalizes paths.
 func FinalizeDeliveryPhases(v WorkflowValidation) WorkflowValidation {
 	if len(v.DeliveryPhases) == 0 {
 		return v
 	}
+	v = moveDockerPathsToFinalDeliveryPhase(v)
 	seen := make(map[string]bool)
 	var union []string
 	add := func(paths []string) {

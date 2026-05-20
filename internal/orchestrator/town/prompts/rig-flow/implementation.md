@@ -21,5 +21,6 @@ Rig `{{rig}}` (`{{rig}}/polecat`). Work under `{{rig}}/mayor/rig/`. Use the **Ne
 - **Other `.go` beads:** verify builds **that file's package only** (see **Verify** on the Next bead line) — not `go build ./...` unless that is what Verify shows. **`go run`/curl only on the `cmd/server/main.go` bead.** gt-agent shuts down any `go run` server when the implementation step finishes.
 - **`cmd/…/main.go` bead:** Before writing imports, check what's already in internal/ with `ls {{rig}}/mayor/rig/{{layout_root}}/internal/`. If `internal/*` packages don't exist yet, implement them FIRST (not in main.go). Then re-run verify and `bd close`.
 - No `gt bd` — use `bd` with `BEADS_DIR` set as above
+- **Docker / compose beads:** implement only when they appear on **Next bead** (final phase). `docker-compose.yml` must reference a real `Dockerfile` and app layout from earlier beads — `docker compose config` (or `docker-compose config`) is enough to verify; no full stack run required until QA.
 
 If the user message includes **Prior step failed** (QA rework), fix only what QA named; otherwise ignore QA wording.

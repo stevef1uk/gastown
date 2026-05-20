@@ -161,6 +161,12 @@ func implementationPathScore(p string) int {
 		return 85
 	case strings.Contains(lower, "/cmd/"):
 		return 90
+	case strings.HasSuffix(lower, "dockerfile") || strings.HasSuffix(lower, "containerfile"):
+		return 96
+	case strings.Contains(lower, "docker-compose"):
+		return 97
+	case strings.HasSuffix(lower, ".dockerignore"):
+		return 95
 	default:
 		return 50
 	}

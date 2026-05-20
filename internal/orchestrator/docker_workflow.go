@@ -107,13 +107,12 @@ func DockerImplementationVerifyCommandForBead(v WorkflowValidation, mayorRigDir,
 		layout = "."
 	}
 	beadPath = filepath.ToSlash(strings.TrimSpace(beadPath))
-	base := "cd " + layout
 
 	switch {
 	case strings.HasSuffix(strings.ToLower(beadPath), "dockerfile"):
-		return base + " && docker build -f Dockerfile ."
+		return dockerVerifyWithLayout("docker build -f Dockerfile .", layout)
 	case strings.Contains(strings.ToLower(beadPath), "docker-compose"):
-		return base + " && " + DockerComposeCLI() + " -f docker-compose.yml config"
+		return dockerVerifyWithLayout(DockerComposeCLI()+" -f docker-compose.yml config", layout)
 	case strings.HasSuffix(beadPath, ".env.example"), strings.HasSuffix(beadPath, ".env"):
 		return "test -f " + beadPath
 	default:

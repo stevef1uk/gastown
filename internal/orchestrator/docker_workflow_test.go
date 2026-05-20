@@ -48,6 +48,13 @@ func TestDockerImplementationVerifyCommandForBead_compose(t *testing.T) {
 	if got != want {
 		t.Fatalf("got %q want %q", got, want)
 	}
+
+	flat := WorkflowValidation{LayoutRoot: "."}
+	got = DockerImplementationVerifyCommandForBead(flat, "/tmp/rig", "docker-compose.yml")
+	want = "docker-compose -f docker-compose.yml config"
+	if got != want {
+		t.Fatalf("flat layout got %q want %q", got, want)
+	}
 }
 
 func TestDockerImplementationVerifyCommandForBead(t *testing.T) {

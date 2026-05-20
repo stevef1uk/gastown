@@ -37,6 +37,41 @@ func TestForActivePhase_scopesFilesAndQA(t *testing.T) {
 	}
 }
 
+func TestMoveDockerPathsToFinalDeliveryPhase(t *testing.T) {
+	v := WorkflowValidation{
+		ActivePhaseIDField: "setup-infrastructure",
+		DeliveryPhases: []DeliveryPhase{
+			{
+				ID:            "setup-infrastructure",
+				Title:         "Setup Infrastructure",
+				RequiredFiles: []string{"Dockerfile", "docker-compose.yml", "backend/main.py"},
+			},
+			{
+				ID:            "backend-core",
+				RequiredFiles: []string{"backend/db/schema.sql"},
+			},
+		},
+	}
+	got := FinalizeDeliveryPhases(v)
+	if got.ActivePhaseIDField != "setup-infrastructure" {
+		t.Fatalf("active_phase_id = %q, want setup-infrastructure", got.ActivePhaseIDField)
+	}
+	first := got.DeliveryPhases[0]
+	if len(first.RequiredFiles) != 1 || first.RequiredFiles[0] != "backend/main.py" {
+		t.Fatalf("first phase files = %v, want only backend/main.py", first.RequiredFiles)
+	}
+	last := got.DeliveryPhases[len(got.DeliveryPhases)-1]
+	wantLast := []string{"backend/db/schema.sql", "Dockerfile", "docker-compose.yml"}
+	if len(last.RequiredFiles) != len(wantLast) {
+		t.Fatalf("last.RequiredFiles = %v, want %v", last.RequiredFiles, wantLast)
+	}
+	for i, p := range wantLast {
+		if last.RequiredFiles[i] != p {
+			t.Fatalf("last.RequiredFiles = %v, want %v", last.RequiredFiles, wantLast)
+		}
+	}
+}
+
 func TestValidatePlanBeads_activePhaseOnly(t *testing.T) {
 	v := WorkflowValidation{
 		BeadTitleContains:  "Implement ",

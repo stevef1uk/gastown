@@ -101,7 +101,7 @@ Success JSON: `{"outcome":"success","summary":"Python venv ready; deps installed
 
 ## Docker / custom profiles (`test_runner: custom`, `docker build`, compose files)
 
-When the profile uses Docker (not Go/Python), **project_setup** only splits beads and confirms the module directory exists — do not write application source yet.
+When the profile uses Docker (not Go/Python), **project_setup** only splits beads for the **active** delivery phase and confirms the module directory exists — do not write application source yet. Dockerfile and docker-compose.yml belong in the **final** delivery phase (after backend/frontend paths); they are not implemented in the first phase.
 
 | Allowed | Forbidden |
 |---------|-----------|

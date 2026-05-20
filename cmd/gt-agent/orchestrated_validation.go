@@ -95,7 +95,7 @@ func isImplementationVerifyCommandOK(cmd, townRoot, rig, activeBead string, v or
 		mayorDir := filepath.Join(townRoot, rig, "mayor", "rig")
 		beadPath := orchestrator.ImplementBeadPathForID(townRoot, rig, activeBead, v)
 		impl := orchestrator.DockerImplementationVerifyCommandForBead(v, mayorDir, beadPath)
-		if commandMatchesQAVerify(cmd, impl) {
+		if dockerVerifyCommandMatches(cmd, impl) {
 			return true
 		}
 	}
@@ -167,6 +167,36 @@ func goToolchainStepsFromVerify(verify string) []string {
 		}
 	}
 	return steps
+}
+
+// dockerVerifyCommandMatches accepts verify run from mayor/rig while hints use layout-relative cd.
+func dockerVerifyCommandMatches(cmd, verify string) bool {
+	if commandMatchesQAVerify(cmd, verify) {
+		return true
+	}
+	c := dockerSubstantiveCommand(cmd)
+	v := dockerSubstantiveCommand(verify)
+	if c == "" || v == "" {
+		return false
+	}
+	if c == v {
+		return true
+	}
+	if strings.Contains(c, "docker build") && strings.Contains(v, "docker build") {
+		return true
+	}
+	return (strings.Contains(c, "docker-compose") || strings.Contains(c, "docker compose")) &&
+		strings.Contains(c, "config") &&
+		(strings.Contains(v, "docker-compose") || strings.Contains(v, "docker compose")) &&
+		strings.Contains(v, "config")
+}
+
+func dockerSubstantiveCommand(cmd string) string {
+	s := strings.TrimSpace(cmd)
+	if i := strings.LastIndex(strings.ToLower(s), "&&"); i >= 0 {
+		s = strings.TrimSpace(s[i+2:])
+	}
+	return strings.ToLower(strings.Join(strings.Fields(orchestrator.NormalizeDockerCommand(s)), " "))
 }
 
 func commandMatchesQAVerify(cmd, verify string) bool {
