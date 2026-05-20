@@ -86,6 +86,13 @@ func extractGoSourcePathsFromOutput(output, layoutRoot string) []string {
 			add(p)
 		}
 	}
+	// Undefined selector failures often cite only the caller; include sibling sources
+	// so the agent can see whether the referenced API actually exists.
+	if layout != "" && strings.Contains(output, "undefined:") {
+		for _, p := range requiredGoPathsUnderLayout(layout) {
+			add(p)
+		}
+	}
 	return paths
 }
 
@@ -146,5 +153,8 @@ func appendGoCompileSourceContext(b *strings.Builder, mayorRigDir, layoutRoot, c
 	if strings.Contains(cmdOutput, "cannot find module providing package") ||
 		strings.Contains(cmdOutput, "invalid import path") {
 		b.WriteString("\nHint: fix import paths in the .go files above, then re-run verify.\n")
+	}
+	if strings.Contains(cmdOutput, "undefined:") {
+		b.WriteString("\nHint: an undefined Go symbol means the referenced API is missing or misnamed. Inspect the defining package files above; either add the missing export or change the caller to use an API that exists, then re-run verify.\n")
 	}
 }

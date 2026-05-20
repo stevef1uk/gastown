@@ -100,6 +100,55 @@ func TestImplementationGoFailureFeedback_includesSourceContext(t *testing.T) {
 	}
 }
 
+func TestImplementationGoFailureFeedback_undefinedSymbolIncludesSiblingContext(t *testing.T) {
+	town := t.TempDir()
+	rig := "testrig"
+	mayor := filepath.Join(town, rig, "mayor", "rig")
+	files := map[string]string{
+		"linkshelf/cmd/server/main.go": `package main
+
+func main() {}
+`,
+		"linkshelf/internal/api/handlers.go": `package api
+
+import "linkshelf/internal/store"
+
+func handle() error {
+	return store.ErrRecordNotFound
+}
+`,
+		"linkshelf/internal/store/store.go": `package store
+
+type Store struct{}
+`,
+	}
+	for rel, body := range files {
+		p := filepath.Join(mayor, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(p), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	cmd := "cd linkshelf && go build ./..."
+	out := "# linkshelf/internal/api\nlinkshelf/internal/api/handlers.go:6:15: undefined: store.ErrRecordNotFound\n"
+	var feedback strings.Builder
+	appendGoCompileSourceContext(&feedback, mayor, "linkshelf", cmd, out)
+
+	got := feedback.String()
+	if !strings.Contains(got, "undefined Go symbol") {
+		t.Fatalf("feedback must explain undefined symbols:\n%s", got)
+	}
+	if !strings.Contains(got, "--- linkshelf/internal/store/store.go ---") {
+		t.Fatalf("feedback must include sibling store source:\n%s", got)
+	}
+	if !strings.Contains(got, "type Store struct{}") {
+		t.Fatalf("feedback must show current store API from disk:\n%s", got)
+	}
+}
+
 func TestImplementationGoFailureFeedback_hookDisabledOmitsSourceContext(t *testing.T) {
 	town := t.TempDir()
 	rig := "testrig"
