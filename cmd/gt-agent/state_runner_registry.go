@@ -70,6 +70,11 @@ var trackHandlers = map[string]trackFn{
 		}
 	},
 	"implementation": func(r *stateRunner, cmd string, cmdErr error) {
+		// Reset tracking when starting a new bead
+		if isBeadUpdateInProgressCommand(cmd) && cmdErr == nil {
+			r.track.hadCmdFailure = false
+			r.track.verifyOK = false
+		}
 		if cmdErr != nil {
 			r.track.hadCmdFailure = true
 		}
