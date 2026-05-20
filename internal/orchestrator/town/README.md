@@ -160,6 +160,8 @@ When `workflow-profile.json` includes `delivery_phases`, rig-flow scopes plannin
 
 ```bash
 gt rig spec-index <rig>              # may emit delivery_phases for large SPECs
+gt rig normalize-profile <rig>       # rewrite profile (docker → final phase, layout clamp)
+gt rig set-phase <rig> --list        # show phases and active id
 gt rig set-phase <rig> --list        # show phases and active id
 gt rig set-phase <rig> p1-infra      # switch active phase (manual advance)
 ```

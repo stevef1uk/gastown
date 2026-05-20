@@ -24,6 +24,10 @@
 #   SKIP_ORCHESTRATOR_SYNC=0  set 1 to skip sync_orchestrator_assets
 #   START_RIG_FLOW=0          if 1, start one rig-flow workflow after reset
 #
+# After reset, workflow-profile.json is rewritten via gt rig normalize-profile
+# (Dockerfile/compose belong in the *last* delivery phase). Do not manually
+# set-phase to an old infra phase expecting docker beads there.
+#
 # Examples:
 #   # Rewind FSM only (keep wf-* id) after deleting architecture.md / plan.md:
 #   gt mayor workflow reset wf-1 --to design
@@ -466,6 +470,16 @@ fi
 
 sync_orchestrator_assets
 drain_rig_mail "$RIG"
+
+normalize_workflow_profile() {
+  echo "=== gt rig normalize-profile (docker → final delivery phase) ==="
+  if (cd "$GT_ROOT" && gt rig normalize-profile "$RIG"); then
+    (cd "$GT_ROOT" && gt rig set-phase "$RIG" --list) || true
+  else
+    echo "[profile] warn: normalize-profile failed — run: cd $GT_ROOT && gt rig normalize-profile $RIG" >&2
+  fi
+}
+normalize_workflow_profile
 
 if [[ "${START_RIG_FLOW:-0}" == "1" ]]; then
   echo "=== gt mayor workflow start rig-flow ==="

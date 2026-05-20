@@ -125,6 +125,23 @@ Examples:
 	RunE: runRigSetPhase,
 }
 
+var rigNormalizeProfileCmd = &cobra.Command{
+	Use:   "normalize-profile <rig>",
+	Short: "Rewrite workflow-profile.json with current rig-flow normalization rules",
+	Long: `Loads mayor/rig/.gastown/workflow-profile.json, applies ClampProfileValidation
+(move Dockerfile/compose to the final delivery phase, layout fixes, etc.), and saves it back.
+
+Run after upgrading gastown or before restarting a phased rig-flow:
+
+  gt rig normalize-profile finally
+  gt rig set-phase finally --list
+
+Examples:
+  gt rig normalize-profile finally`,
+	Args: cobra.ExactArgs(1),
+	RunE: runRigNormalizeProfile,
+}
+
 var rigSpecIndexCmd = &cobra.Command{
 	Use:   "spec-index <rig>",
 	Short: "Generate workflow-profile.json from mayor/rig/SPEC.md via LLM",
@@ -411,6 +428,7 @@ func init() {
 	rigCmd.AddCommand(rigListCmd)
 	rigCmd.AddCommand(rigSpecIndexCmd)
 	rigCmd.AddCommand(rigSetPhaseCmd)
+	rigCmd.AddCommand(rigNormalizeProfileCmd)
 	rigCmd.AddCommand(rigSyncUpstreamCmd)
 	rigCmd.AddCommand(rigRebootCmd)
 	rigCmd.AddCommand(rigRemoveCmd)
@@ -769,6 +787,28 @@ func maybeSpecIndexFromSPEC(townRoot, rigName string) {
 		}
 		fmt.Printf("\n")
 	}
+}
+
+func runRigNormalizeProfile(_ *cobra.Command, args []string) error {
+	rigName := args[0]
+	townRoot, err := workspace.FindFromCwdOrError()
+	if err != nil {
+		return fmt.Errorf("not in a Gas Town workspace: %w", err)
+	}
+	v, err := orchestrator.NormalizeRigWorkflowProfile(townRoot, rigName)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("%s Normalized workflow-profile for rig %s\n", style.Success.Render("✓"), rigName)
+	if v.HasPhasedDelivery() {
+		for _, line := range v.PhaseSummaryLines() {
+			fmt.Println(line)
+		}
+		if id := v.ActivePhaseID(); id != "" {
+			fmt.Printf("\nActive phase: %s\n", id)
+		}
+	}
+	return nil
 }
 
 func runRigSetPhase(_ *cobra.Command, args []string) error {

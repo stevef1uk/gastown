@@ -22,6 +22,49 @@ func marshalRigProfileJSON(env rigProfileEnvelope) ([]byte, error) {
 	return bytes.TrimSpace(buf.Bytes()), nil
 }
 
+// SaveRigWorkflowProfileEnvelope writes a clamped profile envelope to workflow-profile.json.
+func SaveRigWorkflowProfileEnvelope(townRoot, rig string, env rigProfileEnvelope) error {
+	if rig == "" || townRoot == "" {
+		return fmt.Errorf("town root and rig name required")
+	}
+	env.Validation = ClampProfileValidationForRig(townRoot, rig, NormalizeLayoutProfile(env.Validation))
+	path := filepath.Join(townRoot, rig, "mayor", "rig", rigProfileDir, rigProfileFile)
+	raw, err := marshalRigProfileJSON(env)
+	if err != nil {
+		return err
+	}
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, raw, 0644); err != nil {
+		return err
+	}
+	return os.Rename(tmp, path)
+}
+
+// NormalizeRigWorkflowProfile rewrites workflow-profile.json with ClampProfileValidation
+// (e.g. Dockerfile/compose moved to the final delivery phase). Returns the normalized validation.
+func NormalizeRigWorkflowProfile(townRoot, rig string) (WorkflowValidation, error) {
+	if rig == "" || townRoot == "" {
+		return WorkflowValidation{}, fmt.Errorf("town root and rig name required")
+	}
+	path := filepath.Join(townRoot, rig, "mayor", "rig", rigProfileDir, rigProfileFile)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return WorkflowValidation{}, fmt.Errorf("read rig profile %s: %w", path, err)
+	}
+	var env rigProfileEnvelope
+	if err := json.Unmarshal(data, &env); err != nil {
+		return WorkflowValidation{}, fmt.Errorf("decode rig profile: %w", err)
+	}
+	if env.Validation.ActivePhaseID() == "" && len(env.Validation.DeliveryPhases) > 0 {
+		env.Validation.ActivePhaseIDField = strings.TrimSpace(env.Validation.DeliveryPhases[0].ID)
+	}
+	if err := SaveRigWorkflowProfileEnvelope(townRoot, rig, env); err != nil {
+		return WorkflowValidation{}, err
+	}
+	v, _, err := LoadRigWorkflowProfileFile(townRoot, rig)
+	return v, err
+}
+
 // SetRigActivePhase updates active_phase_id in workflow-profile.json.
 func SetRigActivePhase(townRoot, rig, phaseID string) error {
 	if rig == "" || townRoot == "" {
@@ -51,16 +94,7 @@ func SetRigActivePhase(townRoot, rig, phaseID string) error {
 		return fmt.Errorf("unknown phase id %q (see delivery_phases in %s)", phaseID, path)
 	}
 	env.Validation.ActivePhaseIDField = phaseID
-	env.Validation = ClampProfileValidationForRig(townRoot, rig, NormalizeLayoutProfile(env.Validation))
-	raw, err := marshalRigProfileJSON(env)
-	if err != nil {
-		return err
-	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, raw, 0644); err != nil {
-		return err
-	}
-	return os.Rename(tmp, path)
+	return SaveRigWorkflowProfileEnvelope(townRoot, rig, env)
 }
 
 // WriteRigWorkflowProfile writes a full profile envelope (used by spec-index).
