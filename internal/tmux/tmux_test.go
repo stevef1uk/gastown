@@ -1718,21 +1718,23 @@ func TestNudgeSession_WithRetry(t *testing.T) {
 	tm := newTestTmux(t)
 	sessionName := "gt-test-nudge-retry-" + fmt.Sprintf("%d", time.Now().UnixNano()%10000)
 
-	// Create a ready session
-	if err := tm.NewSession(sessionName, os.TempDir()); err != nil {
-		t.Fatalf("NewSession: %v", err)
+	// Minimal interactive bash — avoids zsh startup noise and Escape clearing readline.
+	if err := tm.NewSessionWithCommand(sessionName, os.TempDir(), "bash --noprofile --norc -i"); err != nil {
+		t.Fatalf("NewSessionWithCommand: %v", err)
 	}
 	defer func() { _ = tm.KillSession(sessionName) }()
 
-	// Give shell a moment to initialize (darwin tmux is slower under load).
-	wait := 200 * time.Millisecond
+	readyTimeout := 5 * time.Second
 	if runtime.GOOS == "darwin" {
-		wait = 1200 * time.Millisecond
+		readyTimeout = 10 * time.Second
 	}
-	time.Sleep(wait)
+	if err := tm.WaitForShellReady(sessionName, readyTimeout); err != nil {
+		t.Fatalf("WaitForShellReady: %v", err)
+	}
 
-	// NudgeSession should succeed on a ready session
-	err := tm.NudgeSession(sessionName, "test message")
+	// SkipEscape: plain shell test (Escape clears the typed line; Enter verify needs output change).
+	// echo guarantees visible pane change after Enter on all platforms.
+	err := tm.NudgeSessionWithOpts(sessionName, "echo nudge-ok", NudgeOpts{SkipEscape: true})
 	if err != nil {
 		t.Errorf("NudgeSession() = %v, want nil", err)
 	}
@@ -1742,16 +1744,18 @@ func TestNudgeSession_WithStoredPaneID(t *testing.T) {
 	tm := newTestTmux(t)
 	sessionName := "gt-test-nudge-paneid-" + fmt.Sprintf("%d", time.Now().UnixNano()%10000)
 
-	if err := tm.NewSession(sessionName, os.TempDir()); err != nil {
-		t.Fatalf("NewSession: %v", err)
+	if err := tm.NewSessionWithCommand(sessionName, os.TempDir(), "bash --noprofile --norc -i"); err != nil {
+		t.Fatalf("NewSessionWithCommand: %v", err)
 	}
 	defer func() { _ = tm.KillSession(sessionName) }()
 
-	wait := 200 * time.Millisecond
+	readyTimeout := 5 * time.Second
 	if runtime.GOOS == "darwin" {
-		wait = 1200 * time.Millisecond
+		readyTimeout = 10 * time.Second
 	}
-	time.Sleep(wait)
+	if err := tm.WaitForShellReady(sessionName, readyTimeout); err != nil {
+		t.Fatalf("WaitForShellReady: %v", err)
+	}
 
 	paneID, err := tm.GetPaneID(sessionName)
 	if err != nil {
@@ -1761,7 +1765,7 @@ func TestNudgeSession_WithStoredPaneID(t *testing.T) {
 		t.Fatalf("SetEnvironment GT_PANE_ID: %v", err)
 	}
 
-	if err := tm.NudgeSession(sessionName, "test message"); err != nil {
+	if err := tm.NudgeSessionWithOpts(sessionName, "echo nudge-ok", NudgeOpts{SkipEscape: true}); err != nil {
 		t.Fatalf("NudgeSession() with GT_PANE_ID = %v, want nil", err)
 	}
 }

@@ -1453,12 +1453,17 @@ func (t *Tmux) dismissRewindMode(target string) {
 // Max 3 retries before returning an error.
 //
 // Falls back to best-effort (no verification) if pane capture fails.
+func enterVerifyConfig() (maxRetries int, initialBackoff time.Duration) {
+	// macOS tmux + login shells are slower to reflect pane updates after Enter.
+	if runtime.GOOS == "darwin" {
+		return 5, 750 * time.Millisecond
+	}
+	return 3, 500 * time.Millisecond
+}
+
 func (t *Tmux) sendEnterVerified(target string) error {
-	const (
-		maxRetries     = 3
-		initialBackoff = 500 * time.Millisecond
-		verifyLines    = 5 // capture last N lines for comparison
-	)
+	const verifyLines = 5 // capture last N lines for comparison
+	maxRetries, initialBackoff := enterVerifyConfig()
 
 	// Snapshot pane content before Enter so we can detect processing.
 	preSnapshot, preErr := t.CapturePane(target, verifyLines)
@@ -1498,7 +1503,11 @@ func (t *Tmux) sendEnterVerified(target string) error {
 	}
 
 	// Final verification after last retry.
-	time.Sleep(500 * time.Millisecond)
+	finalWait := 500 * time.Millisecond
+	if runtime.GOOS == "darwin" {
+		finalWait = 1000 * time.Millisecond
+	}
+	time.Sleep(finalWait)
 	postSnapshot, err := t.CapturePane(target, verifyLines)
 	if err != nil || postSnapshot != preSnapshot {
 		return nil // Can't verify or content changed — consider success.
