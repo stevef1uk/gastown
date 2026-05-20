@@ -42,6 +42,7 @@ type WorkflowInstance struct {
 	ID            string            `json:"id"`
 	TemplateID    string            `json:"template_id"`
 	CurrentState  string            `json:"current_state"`
+	StateEnteredAt string           `json:"state_entered_at,omitempty"` // RFC3339 UTC; wall-clock timeout anchor
 	Variables     map[string]string `json:"variables"`
 	Status        string            `json:"status"` // "running", "paused", "completed", "failed"
 	PendingRework *WorkflowRework   `json:"pending_rework,omitempty"`
@@ -119,6 +120,7 @@ func (wi *WorkflowInstance) Transition(tpl *WorkflowTemplate, outcome string) (s
 	}
 
 	wi.CurrentState = trans.To
+	wi.touchStateEnteredAt()
 	if wi.CurrentState == "completed" || wi.CurrentState == "failed" {
 		wi.Status = wi.CurrentState
 	} else if wi.Status == "" {

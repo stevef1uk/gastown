@@ -309,6 +309,23 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 		messages = append(messages, llm.Message{Role: "user", Content: hint})
 	}
 
+	if len(runner.hooks.OnTimeout) > 0 && runner.hooks.Artifacts == "planning" {
+		logLine, hookErr := orchestrator.RunOnTimeoutHooks(runner.hooks.OnTimeout, townRoot, rig, runner.v)
+		if hookErr != nil {
+			orchestratedFprintfStderr("[gt-agent] on_timeout (max turns): %v\n", hookErr)
+		} else if logLine != "" {
+			orchestratedPrintf("[gt-agent] on_timeout (max turns): %s\n", logLine)
+		}
+		for _, allowed := range task.AllowedOutcomes {
+			if strings.EqualFold(allowed, "timeout") {
+				summary := fmt.Sprintf("planning exhausted %d CMD turns", maxTurns)
+				if logLine != "" {
+					summary += "; " + logLine
+				}
+				return "timeout", summary, lastAttemptFeedback.String(), fmt.Errorf("no structured outcome after %d turns", maxTurns)
+			}
+		}
+	}
 	return "fail", "", lastAttemptFeedback.String(), fmt.Errorf("no structured outcome after %d turns", maxTurns)
 }
 

@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/steveyegge/gastown/internal/events"
 	"github.com/steveyegge/gastown/internal/refinery"
@@ -117,6 +118,7 @@ func (m *Manager) StartWorkflow(templateID string, vars map[string]string) (stri
 		Variables:    vars,
 		Status:       "running",
 	}
+	instance.touchStateEnteredAt()
 	m.instances[id] = instance
 	if err := m.persistLocked(); err != nil {
 		return "", fmt.Errorf("persist instances: %w", err)
@@ -131,11 +133,31 @@ func (m *Manager) StartWorkflow(templateID string, vars map[string]string) (stri
 
 // FetchTask finds the next available task for an agent.
 func (m *Manager) FetchTask(agentID string) (map[string]interface{}, error) {
+	fmt.Printf("[Manager] FetchTask for agent: %q\n", agentID)
+	for {
+		instID, timedOut := m.findTaskInstanceID(agentID)
+		if instID == "" {
+			return nil, fmt.Errorf("%w for agent %q", ErrNoTask, agentID)
+		}
+		if timedOut {
+			if _, err := m.applyStateTimeout(instID); err != nil {
+				fmt.Printf("[Manager] Warning: state timeout %s: %v\n", instID, err)
+			}
+			continue
+		}
+		payload, err := m.buildTaskPayloadForInstance(instID)
+		if err != nil {
+			fmt.Printf("[Manager] Warning: %v\n", err)
+			continue
+		}
+		return payload, nil
+	}
+}
+
+func (m *Manager) findTaskInstanceID(agentID string) (instID string, timedOut bool) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-
-	fmt.Printf("[Manager] FetchTask for agent: %q\n", agentID)
-
+	now := time.Now().UTC()
 	for _, inst := range m.instances {
 		if isWorkflowTerminalStatus(inst.Status) || inst.Status == "paused" {
 			continue
@@ -150,19 +172,33 @@ func (m *Manager) FetchTask(agentID string) (map[string]interface{}, error) {
 		}
 		fmt.Printf("[Manager] Checking WF %s state %s role %s against %s\n",
 			inst.ID, inst.CurrentState, state.Role, agentID)
-
 		if !AgentMatchesTask(agentID, state.Role, inst.Variables) {
 			continue
 		}
-		payload, err := m.BuildTaskPayload(inst, tpl, state)
-		if err != nil {
-			fmt.Printf("[Manager] Warning: %v\n", err)
-			continue
+		if strings.TrimSpace(inst.StateEnteredAt) == "" {
+			inst.touchStateEnteredAt()
 		}
-		return payload, nil
+		if stateTimedOut(inst, state, now) {
+			return inst.ID, true
+		}
+		return inst.ID, false
 	}
+	return "", false
+}
 
-	return nil, fmt.Errorf("%w for agent %q", ErrNoTask, agentID)
+func (m *Manager) buildTaskPayloadForInstance(instID string) (map[string]interface{}, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	inst := m.instances[instID]
+	if inst == nil {
+		return nil, fmt.Errorf("workflow instance %q not found", instID)
+	}
+	tpl := m.templates[inst.TemplateID]
+	if tpl == nil {
+		return nil, fmt.Errorf("template %q not found", inst.TemplateID)
+	}
+	state, _ := inst.GetCurrentTask(tpl)
+	return m.BuildTaskPayload(inst, tpl, state)
 }
 
 const maxWorkflowReworkSummary = 2000
@@ -203,7 +239,8 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summa
 	if err != nil {
 		return "", err
 	}
-	if IsFailureOutcome(outcome) && next != "" && next != fromState {
+	setRework := IsTimeoutOutcome(outcome) || (IsFailureOutcome(outcome) && next != "" && next != fromState)
+	if setRework && next != "" {
 		v := m.workflowValidationFor(inst, tpl)
 		reworkFeedback := PrepareWorkflowReworkFeedback(fromState, next, summary, feedback, v)
 		rig := ""
@@ -224,9 +261,8 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summa
 			Feedback:  reworkFeedback,
 			AgentID:   agentID,
 		}
-	} else if !IsFailureOutcome(outcome) {
+	} else if !IsFailureOutcome(outcome) && !IsTimeoutOutcome(outcome) {
 		// Success clears QA/plan-review rework for the next agent.
-		// Same-state failures (e.g. polecat retry) must not wipe cross-step PendingRework.
 		inst.PendingRework = nil
 	}
 	if err := m.persistLocked(); err != nil {
@@ -267,6 +303,7 @@ func (m *Manager) ResetWorkflow(workflowID, toState string) (string, error) {
 	fromState := inst.CurrentState
 	inst.CurrentState = toState
 	inst.Status = "running"
+	inst.touchStateEnteredAt()
 	if err := m.persistLocked(); err != nil {
 		return "", fmt.Errorf("persist instances: %w", err)
 	}

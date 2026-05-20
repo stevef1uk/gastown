@@ -265,6 +265,49 @@ func NextOpenImplementBead(townRoot, rig string, v WorkflowValidation) (*PlanBea
 	return nil, nil
 }
 
+// ResetPlanningPhase deletes all open implement beads for the active phase, removes plan.md,
+// and recreates canonical implement beads. Used on planning timeout / stuck recovery.
+func ResetPlanningPhase(townRoot, rig string, v WorkflowValidation) (string, error) {
+	v = v.ForActivePhase()
+	var parts []string
+	open, err := listAllOpenBeads(townRoot, rig)
+	if err != nil {
+		return "", err
+	}
+	beadsDir := config.ResolveBeadsDirForRig(townRoot, rig)
+	workDir := filepath.Join(townRoot, rig, "mayor", "rig")
+	var deleted []string
+	for _, b := range open {
+		if !MatchesImplementBeadTitle(b.Title, v) {
+			continue
+		}
+		cmd := exec.Command("bd", "delete", b.ID, "--force")
+		cmd.Env = append(os.Environ(), "BEADS_DIR="+beadsDir)
+		cmd.Dir = workDir
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			return joinStrings(parts, "; "), fmt.Errorf("bd delete %s: %w: %s", b.ID, err, strings.TrimSpace(string(out)))
+		}
+		deleted = append(deleted, b.ID)
+	}
+	if len(deleted) > 0 {
+		parts = append(parts, "deleted implement beads: "+joinStrings(deleted, ", "))
+	}
+	if removed, err := RemoveStalePlanMD(townRoot, rig, v); err != nil {
+		return joinStrings(parts, "; "), err
+	} else if removed {
+		parts = append(parts, "removed plan.md")
+	}
+	created, err := EnsurePlanningImplementBeads(townRoot, rig, v)
+	if err != nil {
+		return joinStrings(parts, "; "), err
+	}
+	if len(created) > 0 {
+		parts = append(parts, "recreated: "+joinStrings(created, ", "))
+	}
+	return joinStrings(parts, "; "), nil
+}
+
 // RepairPlanningBeadSet dedupes and prunes open implement beads to match the active planning phase.
 func RepairPlanningBeadSet(townRoot, rig string, v WorkflowValidation) (string, error) {
 	v = v.ForActivePhase()

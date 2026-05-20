@@ -56,6 +56,8 @@ states:
     hooks:
       prompt_context: [planning_bead_bootstrap]
       pre_run: [repair_planning_beads]
+      state_timeout_seconds: 1800
+      on_timeout: [reset_planning_phase]
       max_cmd_turns: 8
       cmd_guard: planning
       cmd_rewrites: [rig_placeholders, spec_md_case, plan_md_after_cd, bd_list_limit, unwrap_bash_lc]
@@ -72,6 +74,8 @@ states:
       success:
         to: plan_review
       failure:
+        to: planning
+      timeout:
         to: planning
   plan_review:
     role: qa

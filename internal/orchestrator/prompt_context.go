@@ -15,7 +15,7 @@
 //   - failure_prompt_context           — which prompt_context keys to repeat on validation/empty reply (not the full list)
 //   - empty_response_suffix            — one line after empty LLM reply
 //   - append_go_compile_context        — inject .go file snippets after failed go build/tidy (polecat repair)
-//   - failure_hint, retry_hint_key, pre_run, post_artifact_success, cmd_guard, artifacts, …
+//   - failure_hint, retry_hint_key, pre_run, on_timeout, state_timeout_seconds, post_artifact_success, cmd_guard, artifacts, …
 //
 // Add a new case to PromptContextBlock or RunPreRunHook only for a reusable named hook; reference it from YAML.
 // Profile vars: {rig}/mayor/rig/.gastown/workflow-profile.json. See town/README.md § "FSM behavior belongs in YAML".

@@ -8,6 +8,10 @@ type StateHooks struct {
 	MaxCmdTurns int `yaml:"max_cmd_turns,omitempty" json:"max_cmd_turns,omitempty"`
 
 	PreRun   []string `yaml:"pre_run,omitempty" json:"pre_run,omitempty"`
+	// OnTimeout runs when a state exceeds state_timeout_seconds or max_cmd_turns is exhausted (planning cleanup).
+	OnTimeout []string `yaml:"on_timeout,omitempty" json:"on_timeout,omitempty"`
+	// StateTimeoutSeconds is the wall-clock limit for the current FSM state (0 = disabled).
+	StateTimeoutSeconds int `yaml:"state_timeout_seconds,omitempty" json:"state_timeout_seconds,omitempty"`
 	PerTurn  []string `yaml:"per_turn,omitempty" json:"per_turn,omitempty"`
 	// PromptContext lists prompt_context hook names (see orchestrator.PromptContextBlock).
 	// Example keys: planning_bead_bootstrap, implementation_queue.
@@ -131,4 +135,12 @@ func (h StateHooks) EffectiveMaxCmdTurns() int {
 		return h.MaxCmdTurns
 	}
 	return 5
+}
+
+// EffectiveStateTimeoutSeconds returns the wall-clock limit for this state (0 = disabled).
+func (h StateHooks) EffectiveStateTimeoutSeconds() int {
+	if h.StateTimeoutSeconds > 0 {
+		return h.StateTimeoutSeconds
+	}
+	return 0
 }
