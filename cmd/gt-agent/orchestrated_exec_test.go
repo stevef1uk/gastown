@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -32,9 +33,36 @@ func TestUnwrapBashLcMultiline_doubleQuoted(t *testing.T) {
 	}
 }
 
+func TestScrubOrphanHeredocDelimiterLines(t *testing.T) {
+	in := "export X=1\ncat > plan.md <<'EOF'\nbody\nEOF\nEOF\nwc -c plan.md"
+	got := scrubOrphanHeredocDelimiterLines(in)
+	if strings.Contains(got, "\nEOF\nEOF") {
+		t.Fatalf("duplicate EOF not scrubbed: %q", got)
+	}
+	if !strings.Contains(got, "wc -c plan.md") {
+		t.Fatalf("got %q", got)
+	}
+}
+
+func TestBenignPlanningShellNoise_standaloneEOF(t *testing.T) {
+	cmd := exec.Command("/bin/sh", "-c", "EOF")
+	if err := cmd.Run(); err != nil {
+		if !benignPlanningShellNoise("EOF", err) {
+			t.Fatalf("expected benign for standalone EOF: %v", err)
+		}
+	} else {
+		t.Fatal("expected exit error")
+	}
+}
+
 func TestPrepareOrchestratedScript_normalizesEOF(t *testing.T) {
-	in := "cat > plan.md " + bashLcHeredocEOFMarker() + "\nbody\nEOF"
+	in := "cat > plan.md <<'EOF'\nbody\nEOF\nEOF\n"
 	got := prepareOrchestratedScript(in)
+	if strings.Contains(got, "\nEOF\nEOF") {
+		t.Fatalf("duplicate closer should be scrubbed: %q", got)
+	}
+	in = "cat > plan.md " + bashLcHeredocEOFMarker() + "\nbody\nEOF"
+	got = prepareOrchestratedScript(in)
 	if strings.Contains(got, `"'"`) {
 		t.Fatalf("should normalize delimiter: %q", got)
 	}

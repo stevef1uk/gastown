@@ -31,13 +31,34 @@ func NormalizePlannerBeadPath(path, layoutRoot, rig string) string {
 	return path
 }
 
+// MatchesImplementBeadTitle reports whether a bd task title is an implementation bead
+// (canonical "Implement <path>" or common planner typos like "ImplementDockerfile").
+func MatchesImplementBeadTitle(title string, v WorkflowValidation) bool {
+	title = strings.TrimSpace(title)
+	if title == "" {
+		return false
+	}
+	pfx := strings.TrimSpace(v.BeadTitleContains)
+	if pfx != "" && strings.Contains(strings.ToLower(title), strings.ToLower(pfx)) {
+		return true
+	}
+	lower := strings.ToLower(title)
+	return strings.HasPrefix(lower, "implement") &&
+		(strings.Contains(lower, " per arch") || strings.Contains(lower, "/") || strings.Contains(lower, "."))
+}
+
 // ExtractPathFromBeadTitle returns a repo-relative file path from an implementation bead title.
 func ExtractPathFromBeadTitle(title, titlePrefix string) string {
 	title = strings.TrimSpace(title)
 	prefix := strings.TrimSpace(titlePrefix)
 	if prefix != "" {
-		if idx := strings.Index(strings.ToLower(title), strings.ToLower(prefix)); idx >= 0 {
+		lowerTitle := strings.ToLower(title)
+		lowerPfx := strings.ToLower(prefix)
+		if idx := strings.Index(lowerTitle, lowerPfx); idx >= 0 {
 			title = strings.TrimSpace(title[idx+len(prefix):])
+		} else if strings.HasPrefix(lowerTitle, "implement") && strings.HasPrefix(lowerPfx, "implement") {
+			// Glued typo: ImplementDockerfile, Implement.env.example
+			title = strings.TrimSpace(title[len("Implement"):])
 		}
 	}
 	if before, _, ok := strings.Cut(title, " per architecture"); ok {
@@ -101,7 +122,7 @@ func ValidatePlanBeads(beads []PlanBead, archPath string, v WorkflowValidation, 
 		if b.ID == "" {
 			continue
 		}
-		if !strings.Contains(strings.ToLower(b.Title), strings.ToLower(strings.TrimSpace(v.BeadTitleContains))) {
+		if !MatchesImplementBeadTitle(b.Title, v) {
 			continue
 		}
 		impl = append(impl, b)

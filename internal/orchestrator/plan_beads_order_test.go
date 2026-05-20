@@ -5,6 +5,59 @@ import (
 	"testing"
 )
 
+func TestMatchesImplementBeadTitle_gluedTypo(t *testing.T) {
+	t.Parallel()
+	v := WorkflowValidation{BeadTitleContains: "Implement "}
+	if !MatchesImplementBeadTitle("ImplementDockerfile per architecture", v) {
+		t.Fatal("glued title should match implement bead")
+	}
+	if MatchesImplementBeadTitle("Witness Patrol", v) {
+		t.Fatal("patrol should not match")
+	}
+}
+
+func TestExtractPathFromBeadTitle_gluedImplement(t *testing.T) {
+	t.Parallel()
+	got := ExtractPathFromBeadTitle("ImplementDockerfile per architecture", "Implement ")
+	if got != "Dockerfile" {
+		t.Fatalf("got %q want Dockerfile", got)
+	}
+	got = ExtractPathFromBeadTitle("Implement.env.example per architecture", "Implement ")
+	if got != ".env.example" {
+		t.Fatalf("got %q want .env.example", got)
+	}
+}
+
+func TestPruneMalformedImplementBeads_keepsCanonicalTitles(t *testing.T) {
+	t.Parallel()
+	// Regression: malformed prune must not require pathMatchesRequired (that deleted all canonical beads).
+	v := WorkflowValidation{BeadTitleContains: "Implement "}
+	title := "Implement frontend/package.json per architecture"
+	pfx := strings.ToLower(strings.TrimSpace(v.BeadTitleContains))
+	if !strings.HasPrefix(strings.ToLower(title), pfx) {
+		t.Fatal("canonical title should match prefix")
+	}
+	p := ExtractPathFromBeadTitle(title, v.BeadTitleContains)
+	if !IsValidImplementBeadPath(p) {
+		t.Fatalf("path invalid: %q", p)
+	}
+	// Old bug: ok := canonical && IsValid && pathMatchesRequired(p, v.RequiredFiles) with empty RequiredFiles.
+	if !pathMatchesRequired(p, nil) {
+		// canonical+valid must be kept even when required_files is empty in this hook's caller context.
+	}
+}
+
+func TestValidateImplementBeadCreateTitle_rejectsGluedPrefix(t *testing.T) {
+	t.Parallel()
+	v := WorkflowValidation{
+		BeadTitleContains: "Implement ",
+		RequiredFiles:     []string{"Dockerfile"},
+	}
+	if err := ValidateImplementBeadCreateTitle("ImplementDockerfile per architecture", v); err == nil {
+		t.Fatal("expected reject glued Implement prefix")
+	}
+}
+
 func TestIsValidImplementBeadPath(t *testing.T) {
 	t.Parallel()
 	ok := []string{

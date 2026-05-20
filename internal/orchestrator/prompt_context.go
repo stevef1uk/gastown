@@ -27,7 +27,7 @@ import "fmt"
 func PromptContextBlock(key, townRoot, rig string, v WorkflowValidation) string {
 	switch key {
 	case "planning_bead_bootstrap":
-		return FormatPlanningBeadBootstrapBlock(rig, v.ForActivePhase())
+		return FormatPlanningBeadBootstrapBlock(townRoot, rig, v.ForActivePhase())
 	case "implementation_queue":
 		return FormatImplementationQueueBlock(townRoot, rig, v)
 	case "implement_bead_context":

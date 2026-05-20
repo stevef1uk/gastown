@@ -204,15 +204,14 @@ func listImplementBeadsByStatus(townRoot, rig string, v WorkflowValidation, stat
 	if err := json.Unmarshal(out, &rows); err != nil {
 		return nil, err
 	}
-	prefix := strings.ToLower(strings.TrimSpace(v.BeadTitleContains))
 	var result []PlanBead
 	for _, r := range rows {
 		id := strings.TrimSpace(beads.ExtractIssueID(r.ID))
 		title := strings.TrimSpace(r.Title)
-		if id == "" || prefix == "" {
+		if id == "" {
 			continue
 		}
-		if !strings.Contains(strings.ToLower(title), prefix) {
+		if !MatchesImplementBeadTitle(title, v) {
 			continue
 		}
 		result = append(result, PlanBead{ID: id, Title: title})

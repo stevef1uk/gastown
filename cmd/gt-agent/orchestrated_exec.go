@@ -20,7 +20,59 @@ func prepareOrchestratedScript(cmd string) string {
 	body := unwrapBashLcMultiline(strings.TrimSpace(cmd))
 	body = strings.ReplaceAll(body, `\$`, "$")
 	body = normalizeHeredocDelimiters(body)
-	return filterHallucinatedScriptLines(body)
+	body = filterHallucinatedScriptLines(body)
+	return scrubOrphanHeredocDelimiterLines(body)
+}
+
+// scrubOrphanHeredocDelimiterLines drops stray EOF/EOT/END lines the model emits after a closed heredoc.
+func scrubOrphanHeredocDelimiterLines(body string) string {
+	var out []string
+	inHeredoc := false
+	var term string
+	for _, line := range strings.Split(body, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if inHeredoc {
+			out = append(out, line)
+			if trimmed == term {
+				inHeredoc = false
+				term = ""
+			}
+			continue
+		}
+		if t := detectHeredocTerm(line); t != "" {
+			inHeredoc = true
+			term = t
+			out = append(out, line)
+			continue
+		}
+		if isStandaloneHeredocDelimiter(trimmed) {
+			continue
+		}
+		out = append(out, line)
+	}
+	return strings.TrimSpace(strings.Join(out, "\n"))
+}
+
+func isStandaloneHeredocDelimiter(s string) bool {
+	switch strings.ToUpper(strings.TrimSpace(s)) {
+	case "EOF", "EOT", "END":
+		return true
+	default:
+		return false
+	}
+}
+
+// benignPlanningShellNoise reports harmless planner mistakes (e.g. a lone EOF CMD after heredoc).
+func benignPlanningShellNoise(cmd string, cmdErr error) bool {
+	if cmdErr == nil {
+		return false
+	}
+	var exitErr *exec.ExitError
+	if !errors.As(cmdErr, &exitErr) || exitErr.ExitCode() != 127 {
+		return false
+	}
+	t := strings.TrimSpace(cmd)
+	return isStandaloneHeredocDelimiter(t)
 }
 
 // filterHallucinatedScriptLines drops model junk glued onto shell scripts.

@@ -56,7 +56,7 @@ var trackHandlers = map[string]trackFn{
 		}
 	},
 	"planning": func(r *stateRunner, cmd string, cmdErr error) {
-		if cmdErr != nil {
+		if cmdErr != nil && !benignPlanningShellNoise(cmd, cmdErr) {
 			r.track.hadCmdFailure = true
 		}
 		if isBeadCreateCommand(cmd) && cmdErr == nil {
@@ -66,6 +66,9 @@ var trackHandlers = map[string]trackFn{
 			r.track.beadDeleteOK = true
 		}
 		if cmdErr == nil && isPlanMDWriteCommand(cmd) && planMDMeetsMinSize(r.townRoot, r.rig, r.v) {
+			r.track.hadCmdFailure = false
+		}
+		if cmdErr == nil && isPlanMDSizeCheckCommand(cmd) && planMDMeetsMinSize(r.townRoot, r.rig, r.v) {
 			r.track.hadCmdFailure = false
 		}
 	},

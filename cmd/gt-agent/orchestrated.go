@@ -211,8 +211,13 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 					orchestratedPrintf("[gt-agent] running multiline/heredoc via temp script\n")
 				}
 				workDir := runner.workDir()
+				if isStandaloneHeredocDelimiter(strings.TrimSpace(cmd)) {
+					orchestratedPrintf("[gt-agent] skipping stray heredoc delimiter command: %q\n", cmd)
+					combined.WriteString(fmt.Sprintf("Command skipped (stray heredoc delimiter): %s\n\n", cmd))
+					continue
+				}
 				out, cmdErr := runOrchestratedCommand(cmd, workDir, sessionName, cmdEnv)
-				if cmdErr != nil && benignGoCommandError(cmd, cmdErr, out) {
+				if cmdErr != nil && (benignGoCommandError(cmd, cmdErr, out) || (runner.hooks.Artifacts == "planning" && benignPlanningShellNoise(cmd, cmdErr))) {
 					orchestratedPrintf("[gt-agent] treating as ok: %v\n", cmdErr)
 					combined.WriteString(fmt.Sprintf("Command: %s\n(note: %v — continuing)\nOutput: %s\n\n", cmd, cmdErr, string(out)))
 					cmdErr = nil
@@ -614,9 +619,9 @@ func parseOrchestratedCommands(response string) []string {
 // expandGluedOrchestratedCommands splits shell lines that embed CMD: markers mid-command.
 func expandGluedOrchestratedCommands(cmds []string) []string {
 	var out []string
-	for _, c := range cmds {
+		for _, c := range cmds {
 		c = strings.TrimSpace(c)
-		if c == "" {
+		if c == "" || isStandaloneHeredocDelimiter(c) {
 			continue
 		}
 		if !strings.Contains(c, "CMD:") {
@@ -839,6 +844,11 @@ func isPlanMDWriteCommand(cmd string) bool {
 		return false
 	}
 	return strings.Contains(lower, ">") || strings.Contains(lower, "tee ")
+}
+
+func isPlanMDSizeCheckCommand(cmd string) bool {
+	lower := strings.ToLower(cmd)
+	return strings.Contains(lower, "wc") && strings.Contains(lower, "plan.md")
 }
 
 func planMDMeetsMinSize(townRoot, rig string, v orchestrator.WorkflowValidation) bool {
@@ -1407,9 +1417,6 @@ func validateImplementationCommand(cmd, rig string) error {
 }
 
 func validatePlanningArtifacts(townRoot, rig string, hadCmdFailure, beadCreateOK, beadDeleteOK bool, v orchestrator.WorkflowValidation) error {
-	if hadCmdFailure {
-		return fmt.Errorf("planning step had failed commands; fix errors before completing")
-	}
 	if err := validatePlanningBeadSet(townRoot, rig, v); err != nil {
 		if beadDeleteOK {
 			return fmt.Errorf("bead set still invalid after bd delete: %w", err)
@@ -1436,6 +1443,9 @@ func validatePlanningArtifacts(townRoot, rig string, hadCmdFailure, beadCreateOK
 		if err := validateRigOpenBeads(townRoot, rig); err != nil {
 			return err
 		}
+	}
+	if hadCmdFailure {
+		return fmt.Errorf("planning step had failed commands; fix errors before completing")
 	}
 	return nil
 }

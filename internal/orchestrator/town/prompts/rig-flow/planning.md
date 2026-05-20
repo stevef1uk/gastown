@@ -49,7 +49,9 @@ Do **not** invent bead IDs or add implementation code under `{{layout_root}}/`.
    ```
    **No duplicate paths** and **no extra-phase paths** (gt-agent rejects `bd create` outside `required_files`). Paths must match `required_files` exactly. On retry after QA `failure`, delete duplicate beads (`bd delete <id> --force`) before creating missing ones. Do **not** use `gt bd add`.
 
-4. Write **only** `plan.md` with a heredoc. **Minimum size is {{min_plan_bytes}} bytes** — a 3-line checklist will always fail `wc -c`. Use structured sections (not one-line todos). Copy **full repo paths** from `required_files` (e.g. `finally/Dockerfile`, not bare `Dockerfile`). Real bead IDs only — from `bd list` output, never `te-xxx` / `fi-xxx` placeholders.
+4. Write **only** `plan.md` with a heredoc. **Minimum size is {{min_plan_bytes}} bytes** — a 3-line checklist will always fail `wc -c`. Use structured sections (not one-line todos). Copy **exact paths** from `required_files` (e.g. `Dockerfile`, `frontend/package.json` when layout_root is `.`). Real bead IDs only — from `bd list` output, never `fi-001` / `te-xxx` placeholders.
+
+   **Title format:** `{{bead_title_contains}}<path> per architecture` must include the **space** in `{{bead_title_contains}}` (e.g. `Implement Dockerfile per architecture`, not `ImplementDockerfile`).
 
    **Split across turns** (recommended):
    - Turn A: `bd list --status=open` — if no open tasks match `{{bead_title_contains}}`, run every `bd create` from the bootstrap block below **before** writing plan.md.

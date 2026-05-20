@@ -35,6 +35,16 @@ func TestParseOrchestratedCommands_gluedDoubleQuoteCMD(t *testing.T) {
 	}
 }
 
+func TestParseOrchestratedCommands_dropsStandaloneEOF(t *testing.T) {
+	in := "CMD: cat > plan.md <<'EOF'\n# Plan\nline\nEOF\nCMD: EOF\nCMD: wc -c plan.md"
+	cmds := parseOrchestratedCommands(in)
+	for _, c := range cmds {
+		if strings.TrimSpace(c) == "EOF" {
+			t.Fatalf("standalone EOF should be dropped, got %v", cmds)
+		}
+	}
+}
+
 func TestResponseHasUnterminatedHeredoc(t *testing.T) {
 	truncated := "CMD: cat > plan.md <<'EOF'\n# Plan\nline two\nno terminator"
 	if !responseHasUnterminatedHeredoc(truncated) {

@@ -1,13 +1,16 @@
 package orchestrator
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"unicode"
 
+	"github.com/steveyegge/gastown/internal/beads"
 	"github.com/steveyegge/gastown/internal/config"
 )
 
@@ -52,6 +55,12 @@ func IsValidImplementBeadPath(path string) bool {
 // ValidateImplementBeadCreateTitle ensures bd create titles map to a profile required path.
 func ValidateImplementBeadCreateTitle(title string, v WorkflowValidation) error {
 	v = v.ForActivePhase()
+	pfx := strings.TrimSpace(v.BeadTitleContains)
+	if pfx != "" && !strings.HasPrefix(strings.ToLower(strings.TrimSpace(title)), strings.ToLower(pfx)) {
+		if strings.HasPrefix(strings.ToLower(strings.TrimSpace(title)), "implement") {
+			return fmt.Errorf("bead title must start with %q before the file path (got %q)", pfx, title)
+		}
+	}
 	path := ExtractPathFromBeadTitle(title, v.BeadTitleContains)
 	if !IsValidImplementBeadPath(path) {
 		return fmt.Errorf("bead title must be %q<file-path> per architecture (got invalid path %q)", v.BeadTitleContains, path)
@@ -260,6 +269,18 @@ func NextOpenImplementBead(townRoot, rig string, v WorkflowValidation) (*PlanBea
 func RepairPlanningBeadSet(townRoot, rig string, v WorkflowValidation) (string, error) {
 	v = v.ForActivePhase()
 	var parts []string
+	malformed, err := PruneMalformedImplementBeads(townRoot, rig, v)
+	if err != nil {
+		return "", err
+	}
+	if len(malformed) > 0 {
+		parts = append(parts, "pruned malformed: "+joinStrings(malformed, ", "))
+	}
+	if removed, err := RemoveStalePlanMD(townRoot, rig, v); err != nil {
+		return "", err
+	} else if removed {
+		parts = append(parts, "removed stale plan.md")
+	}
 	dupes, err := PruneDuplicateImplementBeads(townRoot, rig, v)
 	if err != nil {
 		return "", err
@@ -410,6 +431,98 @@ func PruneExtraImplementBeads(townRoot, rig string, v WorkflowValidation) ([]str
 	return deleted, nil
 }
 
+// PruneMalformedImplementBeads deletes open implement-like beads with glued titles or invalid paths.
+func PruneMalformedImplementBeads(townRoot, rig string, v WorkflowValidation) ([]string, error) {
+	v = v.ForActivePhase()
+	open, err := listAllOpenBeads(townRoot, rig)
+	if err != nil {
+		return nil, err
+	}
+	beadsDir := config.ResolveBeadsDirForRig(townRoot, rig)
+	workDir := filepath.Join(townRoot, rig, "mayor", "rig")
+	pfx := strings.ToLower(strings.TrimSpace(v.BeadTitleContains))
+	var deleted []string
+	for _, b := range open {
+		if !MatchesImplementBeadTitle(b.Title, v) {
+			continue
+		}
+		lowerTitle := strings.ToLower(strings.TrimSpace(b.Title))
+		canonical := pfx != "" && strings.HasPrefix(lowerTitle, pfx)
+		p := NormalizePlannerBeadPath(ExtractPathFromBeadTitle(b.Title, v.BeadTitleContains), v.LayoutRoot, rig)
+		// Only remove glued/invalid titles here; PruneExtraImplementBeads handles wrong-phase paths.
+		if canonical && IsValidImplementBeadPath(p) {
+			continue
+		}
+		cmd := exec.Command("bd", "delete", b.ID, "--force")
+		cmd.Env = append(os.Environ(), "BEADS_DIR="+beadsDir)
+		cmd.Dir = workDir
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			return deleted, fmt.Errorf("bd delete %s: %w: %s", b.ID, err, strings.TrimSpace(string(out)))
+		}
+		deleted = append(deleted, b.ID)
+	}
+	return deleted, nil
+}
+
+var planPlaceholderBeadIDRE = regexp.MustCompile(`(?m)^###\s+(?:fi|te|hq)-00[0-9]:`)
+
+// RemoveStalePlanMD deletes plan.md when it is too small or cites placeholder bead IDs.
+func RemoveStalePlanMD(townRoot, rig string, v WorkflowValidation) (bool, error) {
+	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
+	path := filepath.Join(rigDir, "plan.md")
+	info, err := os.Stat(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	remove := info.Size() < EffectiveMinPlanBytes(rigDir, v)
+	if !remove {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return false, err
+		}
+		remove = planPlaceholderBeadIDRE.Match(data)
+	}
+	if !remove {
+		return false, nil
+	}
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return false, err
+	}
+	return true, nil
+}
+
+func listAllOpenBeads(townRoot, rig string) ([]PlanBead, error) {
+	beadsDir := config.ResolveBeadsDirForRig(townRoot, rig)
+	args := beads.InjectFlatForListJSON([]string{"list", "--status=open", "--json", "--limit=0"})
+	cmd := exec.Command("bd", args...)
+	cmd.Env = append(os.Environ(), "BEADS_DIR="+beadsDir)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return nil, fmt.Errorf("bd list open: %w: %s", err, strings.TrimSpace(string(out)))
+	}
+	out = beads.StripStdoutWarnings(out)
+	var rows []struct {
+		ID    string `json:"id"`
+		Title string `json:"title"`
+	}
+	if err := json.Unmarshal(out, &rows); err != nil {
+		return nil, err
+	}
+	var result []PlanBead
+	for _, r := range rows {
+		id := strings.TrimSpace(beads.ExtractIssueID(r.ID))
+		if id == "" {
+			continue
+		}
+		result = append(result, PlanBead{ID: id, Title: strings.TrimSpace(r.Title)})
+	}
+	return result, nil
+}
+
 // PlanningBeadTitle returns the canonical open-task title for a required_files path.
 func PlanningBeadTitle(requiredPath string, v WorkflowValidation) string {
 	path := filepath.ToSlash(strings.TrimSpace(requiredPath))
@@ -505,13 +618,23 @@ func parseBeadIDFromCreateOutput(out string) string {
 }
 
 // FormatPlanningBeadBootstrapBlock lists exact bd create lines for the planner.
-func FormatPlanningBeadBootstrapBlock(rig string, v WorkflowValidation) string {
+func FormatPlanningBeadBootstrapBlock(townRoot, rig string, v WorkflowValidation) string {
 	v = v.ForActivePhase()
 	if len(v.RequiredFiles) == 0 {
 		return ""
 	}
 	var b strings.Builder
 	b.WriteString("## Planning: implementation beads required\n\n")
+	if townRoot != "" && rig != "" {
+		if open, err := ListOpenImplementBeads(townRoot, rig, v); err == nil && len(open) > 0 {
+			b.WriteString("**Open implement beads — copy these IDs into plan.md (never fi-001 placeholders):**\n\n")
+			for _, bead := range open {
+				p := NormalizePlannerBeadPath(ExtractPathFromBeadTitle(bead.Title, v.BeadTitleContains), v.LayoutRoot, rig)
+				b.WriteString(fmt.Sprintf("- `%s` → `%s`\n", bead.ID, p))
+			}
+			b.WriteString("\n")
+		}
+	}
 	if v.HasPhasedDelivery() {
 		id := v.ActivePhaseID()
 		if id == "" {
@@ -522,7 +645,8 @@ func FormatPlanningBeadBootstrapBlock(rig string, v WorkflowValidation) string {
 		b.WriteString(fmt.Sprintf("**Active phase `%s` only** — do not `bd create` for paths that appear in architecture.md but are not listed below.\n\n", id))
 	}
 	b.WriteString("You must run **CMD:** `bd create` lines in this session before JSON success. ")
-	b.WriteString("Do not claim beads exist without command output showing new bead IDs.\n\n")
+	b.WriteString("Do not claim beads exist without command output showing new bead IDs. ")
+	b.WriteString("Titles must include a **space** after `Implement` (e.g. `Implement Dockerfile per architecture`, never `ImplementDockerfile`).\n\n")
 	b.WriteString("One `bd create` per path below (do not add extras):\n\n")
 	for _, p := range v.RequiredFiles {
 		p = filepath.ToSlash(strings.TrimSpace(p))
