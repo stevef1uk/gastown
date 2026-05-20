@@ -37,7 +37,12 @@ func IsValidImplementBeadPath(path string) bool {
 		return false
 	}
 	if !strings.Contains(path, "/") && !strings.Contains(base, ".") {
-		return false
+		switch base {
+		case "Dockerfile", "Makefile", "LICENSE", "README", "Containerfile":
+			return true
+		default:
+			return false
+		}
 	}
 	parts := strings.Split(path, "/")
 	for _, seg := range parts {
@@ -55,8 +60,8 @@ func IsValidImplementBeadPath(path string) bool {
 // ValidateImplementBeadCreateTitle ensures bd create titles map to a profile required path.
 func ValidateImplementBeadCreateTitle(title string, v WorkflowValidation) error {
 	v = v.ForActivePhase()
-	pfx := strings.TrimSpace(v.BeadTitleContains)
-	if pfx != "" && !strings.HasPrefix(strings.ToLower(strings.TrimSpace(title)), strings.ToLower(pfx)) {
+	pfx := v.BeadTitleContains
+	if strings.TrimSpace(pfx) != "" && !strings.HasPrefix(strings.ToLower(strings.TrimSpace(title)), strings.ToLower(pfx)) {
 		if strings.HasPrefix(strings.ToLower(strings.TrimSpace(title)), "implement") {
 			return fmt.Errorf("bead title must start with %q before the file path (got %q)", pfx, title)
 		}
@@ -278,7 +283,9 @@ func ResetPlanningPhase(townRoot, rig string, v WorkflowValidation) (string, err
 	workDir := filepath.Join(townRoot, rig, "mayor", "rig")
 	var deleted []string
 	for _, b := range open {
-		if !MatchesImplementBeadTitle(b.Title, v) {
+		lower := strings.ToLower(strings.TrimSpace(b.Title))
+		// Broad match: glued titles (ImplementDockerfile) omit the Implement<space> prefix.
+		if !strings.Contains(lower, "implement") || !strings.Contains(lower, "per arch") {
 			continue
 		}
 		cmd := exec.Command("bd", "delete", b.ID, "--force")
@@ -304,6 +311,20 @@ func ResetPlanningPhase(townRoot, rig string, v WorkflowValidation) (string, err
 	}
 	if len(created) > 0 {
 		parts = append(parts, "recreated: "+joinStrings(created, ", "))
+	}
+	malformed, err := PruneMalformedImplementBeads(townRoot, rig, v)
+	if err != nil {
+		return joinStrings(parts, "; "), err
+	}
+	if len(malformed) > 0 {
+		parts = append(parts, "pruned malformed: "+joinStrings(malformed, ", "))
+	}
+	dupes, err := PruneDuplicateImplementBeads(townRoot, rig, v)
+	if err != nil {
+		return joinStrings(parts, "; "), err
+	}
+	if len(dupes) > 0 {
+		parts = append(parts, "deduped: "+joinStrings(dupes, ", "))
 	}
 	return joinStrings(parts, "; "), nil
 }
@@ -569,8 +590,8 @@ func listAllOpenBeads(townRoot, rig string) ([]PlanBead, error) {
 // PlanningBeadTitle returns the canonical open-task title for a required_files path.
 func PlanningBeadTitle(requiredPath string, v WorkflowValidation) string {
 	path := filepath.ToSlash(strings.TrimSpace(requiredPath))
-	pfx := strings.TrimSpace(v.BeadTitleContains)
-	if pfx == "" {
+	pfx := v.BeadTitleContains
+	if strings.TrimSpace(pfx) == "" {
 		pfx = "Implement "
 	}
 	layout := strings.Trim(strings.TrimPrefix(strings.ToLower(pfx), "implement "), "/")
@@ -646,15 +667,19 @@ func EnsurePlanningImplementBeads(townRoot, rig string, v WorkflowValidation) ([
 func parseBeadIDFromCreateOutput(out string) string {
 	for _, line := range strings.Split(out, "\n") {
 		line = strings.TrimSpace(line)
-		if line == "" {
+		if !strings.Contains(line, "Created issue:") {
 			continue
 		}
-		fields := strings.Fields(line)
-		for _, f := range fields {
-			f = strings.Trim(f, "[](),")
-			if strings.HasPrefix(f, "te-") || strings.HasPrefix(f, "hq-") {
-				return f
-			}
+		rest := line[strings.Index(line, "Created issue:")+len("Created issue:"):]
+		rest = strings.TrimSpace(strings.TrimPrefix(rest, "✓"))
+		if before, _, ok := strings.Cut(rest, "—"); ok {
+			return strings.TrimSpace(before)
+		}
+		if before, _, ok := strings.Cut(rest, " - "); ok {
+			return strings.TrimSpace(before)
+		}
+		if f := strings.Fields(rest); len(f) > 0 {
+			return strings.Trim(f[0], "[](),")
 		}
 	}
 	return ""

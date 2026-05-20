@@ -1,6 +1,9 @@
 package orchestrator
 
 import (
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -8,8 +11,11 @@ import (
 func TestMatchesImplementBeadTitle_gluedTypo(t *testing.T) {
 	t.Parallel()
 	v := WorkflowValidation{BeadTitleContains: "Implement "}
-	if !MatchesImplementBeadTitle("ImplementDockerfile per architecture", v) {
-		t.Fatal("glued title should match implement bead")
+	if MatchesImplementBeadTitle("ImplementDockerfile per architecture", v) {
+		t.Fatal("glued title without space should not match implement bead")
+	}
+	if !MatchesImplementBeadTitle("Implement Dockerfile per architecture", v) {
+		t.Fatal("canonical title should match")
 	}
 	if MatchesImplementBeadTitle("Witness Patrol", v) {
 		t.Fatal("patrol should not match")
@@ -69,6 +75,9 @@ func TestIsValidImplementBeadPath(t *testing.T) {
 		if !IsValidImplementBeadPath(p) {
 			t.Fatalf("want valid %q", p)
 		}
+	}
+	if !IsValidImplementBeadPath("Dockerfile") {
+		t.Fatal("Dockerfile must be valid for flat-repo scaffold beads")
 	}
 	bad := []string{
 		"linkshelf/P2]",
@@ -136,6 +145,66 @@ func TestFormatImplementationQueueBlock_nextOnly(t *testing.T) {
 	}
 	if got == "" {
 		t.Fatal("expected non-empty when required_files set")
+	}
+}
+
+func TestRunOnTimeoutHook_resetPlanningPhase_delegates(t *testing.T) {
+	t.Parallel()
+	if _, err := exec.LookPath("bd"); err != nil {
+		t.Skip("bd not in PATH")
+	}
+	townRoot := t.TempDir()
+	rig := "mockrig"
+	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
+	beadsDir := filepath.Join(townRoot, rig, ".beads")
+	for _, d := range []string{rigDir, beadsDir} {
+		if err := os.MkdirAll(d, 0755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	init := exec.Command("bd", "init")
+	init.Env = append(os.Environ(), "BEADS_DIR="+beadsDir)
+	init.Dir = rigDir
+	if out, err := init.CombinedOutput(); err != nil {
+		t.Fatalf("bd init: %v\n%s", err, out)
+	}
+	v := WorkflowValidation{
+		BeadTitleContains: "Implement ",
+		RequiredFiles:     []string{"Dockerfile"},
+	}
+	if _, err := RunOnTimeoutHook("reset_planning_phase", townRoot, rig, v); err != nil {
+		t.Fatal(err)
+	}
+	open, err := listAllOpenBeads(townRoot, rig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var n int
+	for _, b := range open {
+		if strings.HasPrefix(b.Title, "Implement ") {
+			n++
+		}
+	}
+	if n != 1 {
+		t.Fatalf("want 1 canonical implement bead, got %d: %v", n, open)
+	}
+}
+
+func TestPlanningBeadTitle_preservesSpaceAfterImplement(t *testing.T) {
+	t.Parallel()
+	v := WorkflowValidation{BeadTitleContains: "Implement "}
+	got := PlanningBeadTitle("frontend/package.json", v)
+	want := "Implement frontend/package.json per architecture"
+	if got != want {
+		t.Fatalf("got %q want %q", got, want)
+	}
+}
+
+func TestParseBeadIDFromCreateOutput_rigPrefix(t *testing.T) {
+	t.Parallel()
+	out := "✓ Created issue: rig-abc — Implement Dockerfile per architecture\n  Priority: P2\n"
+	if got := parseBeadIDFromCreateOutput(out); got != "rig-abc" {
+		t.Fatalf("got %q want rig-abc", got)
 	}
 }
 

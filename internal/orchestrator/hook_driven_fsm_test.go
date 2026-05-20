@@ -80,6 +80,24 @@ func TestRigFlowYAML_allPipelineStatesHaveHooks(t *testing.T) {
 	}
 }
 
+func TestRigFlowYAML_planningHasTimeoutHooks(t *testing.T) {
+	tpl := loadRigFlowTemplate(t)
+	st, ok := tpl.States["planning"]
+	if !ok {
+		t.Fatal("missing planning state")
+	}
+	if st.Hooks.EffectiveStateTimeoutSeconds() != 1800 {
+		t.Fatalf("state_timeout_seconds = %d, want 1800", st.Hooks.StateTimeoutSeconds)
+	}
+	if len(st.Hooks.OnTimeout) != 1 || st.Hooks.OnTimeout[0] != "reset_planning_phase" {
+		t.Fatalf("on_timeout = %v, want [reset_planning_phase]", st.Hooks.OnTimeout)
+	}
+	trans, ok := st.Transitions["timeout"]
+	if !ok || trans.To != "planning" {
+		t.Fatalf("timeout transition = %+v, want to planning", st.Transitions["timeout"])
+	}
+}
+
 func TestRigFlowYAML_projectSetupHasAutoVerifyAndVenvCreate(t *testing.T) {
 	tpl := loadRigFlowTemplate(t)
 	h := tpl.States["project_setup"].Hooks

@@ -38,20 +38,18 @@ func MatchesImplementBeadTitle(title string, v WorkflowValidation) bool {
 	if title == "" {
 		return false
 	}
-	pfx := strings.TrimSpace(v.BeadTitleContains)
-	if pfx != "" && strings.Contains(strings.ToLower(title), strings.ToLower(pfx)) {
-		return true
+	pfx := v.BeadTitleContains
+	if strings.TrimSpace(pfx) == "" {
+		return false
 	}
-	lower := strings.ToLower(title)
-	return strings.HasPrefix(lower, "implement") &&
-		(strings.Contains(lower, " per arch") || strings.Contains(lower, "/") || strings.Contains(lower, "."))
+	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(title)), strings.ToLower(pfx))
 }
 
 // ExtractPathFromBeadTitle returns a repo-relative file path from an implementation bead title.
 func ExtractPathFromBeadTitle(title, titlePrefix string) string {
 	title = strings.TrimSpace(title)
-	prefix := strings.TrimSpace(titlePrefix)
-	if prefix != "" {
+	prefix := titlePrefix
+	if strings.TrimSpace(prefix) != "" {
 		lowerTitle := strings.ToLower(title)
 		lowerPfx := strings.ToLower(prefix)
 		if idx := strings.Index(lowerTitle, lowerPfx); idx >= 0 {
