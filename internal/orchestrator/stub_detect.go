@@ -199,6 +199,11 @@ func CheckContentNotStub(data []byte, displayRel string, opts StubCheckOptions) 
 	if IsPackageInitFile(displayRel) {
 		return nil
 	}
+	// Dependency manifests like go.sum can legitimately be empty
+	// when no external dependencies are used (e.g., modernc.org/sqlite)
+	if IsDependencyManifest(displayRel) {
+		return nil
+	}
 	if len(data) == 0 {
 		return fmt.Errorf("%s is empty (stub/placeholder)", displayRel)
 	}
