@@ -14,6 +14,23 @@ type PlanBead struct {
 	Title string
 }
 
+// NormalizePlannerBeadPath canonicalizes paths from bead titles for flat mayor/rig worktrees.
+// Models often prefix paths with the rig name (e.g. finally/Dockerfile) even when layout_root is ".".
+func NormalizePlannerBeadPath(path, layoutRoot, rig string) string {
+	path = filepath.ToSlash(strings.TrimSpace(path))
+	layoutRoot = strings.Trim(filepath.ToSlash(strings.TrimSpace(layoutRoot)), "/")
+	rig = strings.TrimSpace(rig)
+	if layoutRoot == "" || layoutRoot == "." {
+		if rig != "" && strings.HasPrefix(path, rig+"/") {
+			path = strings.TrimPrefix(path, rig+"/")
+		}
+	}
+	if layoutRoot != "" && layoutRoot != "." {
+		path = fixDoubledLayoutPath(path, layoutRoot)
+	}
+	return path
+}
+
 // ExtractPathFromBeadTitle returns a repo-relative file path from an implementation bead title.
 func ExtractPathFromBeadTitle(title, titlePrefix string) string {
 	title = strings.TrimSpace(title)
@@ -62,7 +79,8 @@ func NormalizeBeadPathForLayout(beadPath, layoutRoot string) string {
 }
 
 // ValidatePlanBeads checks open implementation beads against architecture and profile.
-func ValidatePlanBeads(beads []PlanBead, archPath string, v WorkflowValidation) error {
+// rig is the Gas Town rig name (used to strip erroneous finally/… prefixes on flat worktrees).
+func ValidatePlanBeads(beads []PlanBead, archPath string, v WorkflowValidation, rig string) error {
 	v = v.ForActivePhase()
 	if len(v.RequiredFiles) == 0 {
 		return nil
@@ -94,9 +112,13 @@ func ValidatePlanBeads(beads []PlanBead, archPath string, v WorkflowValidation) 
 
 	pathToIDs := map[string][]string{}
 	for _, b := range impl {
-		p := ExtractPathFromBeadTitle(b.Title, v.BeadTitleContains)
+		p := NormalizePlannerBeadPath(ExtractPathFromBeadTitle(b.Title, v.BeadTitleContains), v.LayoutRoot, rig)
 		if p == "" {
 			return fmt.Errorf("bead %s title has no file path: %q", b.ID, b.Title)
+		}
+		if DoubledLayoutPath(p, v.LayoutRoot) {
+			return fmt.Errorf("bead %s duplicates layout_root in path %q — use %s/Dockerfile not %s/%s/…",
+				b.ID, p, v.LayoutRoot, v.LayoutRoot, v.LayoutRoot)
 		}
 		pathToIDs[p] = append(pathToIDs[p], b.ID)
 	}
@@ -159,7 +181,10 @@ func ValidatePlanBeads(beads []PlanBead, archPath string, v WorkflowValidation) 
 	return nil
 }
 
-var archPathRe = regexp.MustCompile("`([^`]+\\.(?:js|py|html|css|tsx?|jsx?))`")
+var (
+	archPathBoldRe = regexp.MustCompile("(?:\\*\\*)`([^`]+)`(?:\\*\\*)")
+	archPathRe     = regexp.MustCompile("`([^`]+(?:\\.[a-zA-Z0-9]+)?)`")
+)
 
 // beadIDsForPath returns bead IDs covering a required/architecture path (exact or basename match).
 func beadIDsForPath(pathToIDs map[string][]string, want string) []string {
@@ -183,13 +208,15 @@ func beadIDsForPath(pathToIDs map[string][]string, want string) []string {
 func extractArchPaths(archText, layoutRoot string) []string {
 	seen := map[string]bool{}
 	var out []string
-	for _, m := range archPathRe.FindAllStringSubmatch(archText, -1) {
-		p := filepath.ToSlash(strings.TrimSpace(m[1]))
-		if p == "" || seen[p] || !isLikelyRepoFilePath(p, layoutRoot) {
-			continue
+	for _, re := range []*regexp.Regexp{archPathBoldRe, archPathRe} {
+		for _, m := range re.FindAllStringSubmatch(archText, -1) {
+			p := filepath.ToSlash(strings.TrimSpace(m[1]))
+			if p == "" || seen[p] || !isLikelyRepoFilePath(p, layoutRoot) {
+				continue
+			}
+			seen[p] = true
+			out = append(out, p)
 		}
-		seen[p] = true
-		out = append(out, p)
 	}
 	return out
 }
@@ -207,7 +234,11 @@ func isLikelyRepoFilePath(p, layoutRoot string) bool {
 	if layoutRoot != "" {
 		return strings.HasPrefix(p, layoutRoot+"/") || strings.Contains(p, "/")
 	}
-	return strings.Contains(p, "/")
+	if strings.Contains(p, "/") {
+		return true
+	}
+	return p == "Dockerfile" || strings.Contains(lower, "docker-compose") ||
+		strings.HasSuffix(lower, ".env") || strings.HasSuffix(lower, ".example")
 }
 
 func dedupeStrings(in []string) []string {

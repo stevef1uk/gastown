@@ -1157,6 +1157,9 @@ func validateImplementationCommandWithState(cmd, townRoot, rig, activeBead strin
 	if err := validatePythonImplementationCommand(cmd, townRoot, rig, activeBead, v, verifyOK); err != nil {
 		return err
 	}
+	if err := validateCustomImplementationCommand(cmd, townRoot, rig, activeBead, v, verifyOK); err != nil {
+		return err
+	}
 	if err := validateImplementationBeadFileWrite(cmd, townRoot, rig, activeBead, v); err != nil {
 		return err
 	}
@@ -1270,17 +1273,47 @@ func validatePlanningShellSideEffects(lower string) error {
 	return nil
 }
 
+// shellContainsGitWrite detects real git write commands, not prose like "commits to repo" or ".gitkeep".
+func shellContainsGitWrite(lower string) bool {
+	if !strings.Contains(lower, "git") {
+		return false
+	}
+	for _, sub := range []string{"git commit", "git push", "git add", "git  commit", "git  add", "git  push"} {
+		if strings.Contains(lower, sub) {
+			return true
+		}
+	}
+	return false
+}
+
+// planHeredocBody returns the plan.md heredoc body (after <<), for content-only checks.
+func planHeredocBody(cmd string) string {
+	lower := strings.ToLower(cmd)
+	markers := []string{"<<'eof'", "<<\"eof\"", "<<eof"}
+	var start int
+	for _, m := range markers {
+		if i := strings.Index(lower, m); i >= 0 {
+			start = i + len(m)
+			break
+		}
+	}
+	if start == 0 {
+		return ""
+	}
+	return cmd[start:]
+}
+
 // validatePlanningPlanHeredoc allows plan.md bodies that mention backend/ paths in prose.
-func validatePlanningPlanHeredoc(lower string) error {
-	gitCmd := strings.Contains(lower, "git") &&
-		(strings.Contains(lower, " commit") || strings.Contains(lower, " push") || strings.Contains(lower, " add"))
-	if gitCmd {
+func validatePlanningPlanHeredoc(cmd string) error {
+	shell := strings.ToLower(designCommandShellPortion(cmd))
+	if shellContainsGitWrite(shell) {
 		return fmt.Errorf("must not run git add/commit/push in planning step")
 	}
-	if strings.Contains(lower, "python3") || strings.Contains(lower, "pip install") {
+	if strings.Contains(shell, "python3") || strings.Contains(shell, "pip install") {
 		return fmt.Errorf("must not run python/pip in planning step")
 	}
-	if strings.Contains(lower, "> backend/") || strings.Contains(lower, ".py>") {
+	body := strings.ToLower(planHeredocBody(cmd))
+	if strings.Contains(body, "> backend/") || strings.Contains(body, ".py>") {
 		return fmt.Errorf("must not write backend source files in planning step")
 	}
 	return nil
@@ -1296,7 +1329,7 @@ func validatePlanningCommand(cmd, rig string) error {
 	}
 
 	if isPlanMDHeredoc(cmd) {
-		return validatePlanningPlanHeredoc(lower)
+		return validatePlanningPlanHeredoc(cmd)
 	}
 
 	if strings.Contains(lower, "gt bd add") || strings.Contains(lower, "bd add") {
@@ -1396,12 +1429,47 @@ func validatePlanningArtifacts(townRoot, rig string, hadCmdFailure, beadCreateOK
 	if info.Size() < minPlan {
 		return fmt.Errorf("plan.md too small (%d bytes); need ≥%d (%s)", info.Size(), minPlan, v.PlanMinSizeHint())
 	}
+	if err := validatePlanMDBeadIDs(townRoot, rig, path, v); err != nil {
+		return err
+	}
 	if rig != "" {
 		if err := validateRigOpenBeads(townRoot, rig); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+var planBeadIDLineRE = regexp.MustCompile(`(?m)^###\s+([a-zA-Z0-9][a-zA-Z0-9_-]*):\s+`)
+
+// validatePlanMDBeadIDs rejects plan.md sections that cite bead IDs not open in bd list.
+func validatePlanMDBeadIDs(townRoot, rig, planPath string, v orchestrator.WorkflowValidation) error {
+	data, err := os.ReadFile(planPath)
+	if err != nil {
+		return err
+	}
+	open, err := listOpenImplementationBeads(townRoot, rig)
+	if err != nil {
+		return err
+	}
+	openIDs := map[string]bool{}
+	for _, b := range open {
+		if strings.Contains(strings.ToLower(b.Title), strings.ToLower(strings.TrimSpace(v.BeadTitleContains))) {
+			openIDs[b.ID] = true
+		}
+	}
+	var missing []string
+	for _, m := range planBeadIDLineRE.FindAllStringSubmatch(string(data), -1) {
+		id := strings.TrimSpace(m[1])
+		if id == "" || openIDs[id] {
+			continue
+		}
+		missing = append(missing, id)
+	}
+	if len(missing) == 0 {
+		return nil
+	}
+	return fmt.Errorf("plan.md cites bead ID(s) not open in bd list (run bd create first, then rewrite plan.md): %s", strings.Join(missing, ", "))
 }
 
 func maybeRepairWorkflowRequirements(townRoot, rig string, v orchestrator.WorkflowValidation) {
@@ -1486,6 +1554,12 @@ func validateRigOpenBeads(townRoot, rig string) error {
 
 // validatePlanningBeadSet checks open implementation beads against architecture (rework may only bd delete).
 func validatePlanningBeadSet(townRoot, rig string, v orchestrator.WorkflowValidation) error {
+	v = v.ForActivePhase()
+	if logLine, err := orchestrator.RepairPlanningBeadSet(townRoot, rig, v); err != nil {
+		return fmt.Errorf("planning bead repair: %w", err)
+	} else if logLine != "" {
+		orchestratedPrintf("[gt-agent] planning bead repair: %s\n", logLine)
+	}
 	open, err := listOpenImplementationBeads(townRoot, rig)
 	if err != nil {
 		return err
@@ -1495,7 +1569,7 @@ func validatePlanningBeadSet(townRoot, rig string, v orchestrator.WorkflowValida
 	}
 	archPath := filepath.Join(rigMayorRigDir(townRoot, rig), "architecture.md")
 	if len(v.RequiredFiles) > 0 {
-		return orchestrator.ValidatePlanBeads(open, archPath, v)
+		return orchestrator.ValidatePlanBeads(open, archPath, v, rig)
 	}
 	pathToIDs := map[string][]string{}
 	for _, b := range open {
@@ -1803,7 +1877,7 @@ func validatePlanReviewArtifacts(townRoot, rig string, hadCmdFailure, listOpenOK
 		return err
 	}
 	archPath := filepath.Join(rigMayorRigDir(townRoot, rig), "architecture.md")
-	if err := orchestrator.ValidatePlanBeads(open, archPath, v); err != nil {
+	if err := orchestrator.ValidatePlanBeads(open, archPath, v, rig); err != nil {
 		return fmt.Errorf("plan beads do not match architecture/profile: %w", err)
 	}
 	return nil

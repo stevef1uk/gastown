@@ -173,6 +173,12 @@ func (r *stateRunner) rewriteCommand(cmd string) string {
 		orchestratedPrintf("[gt-agent] rewrote go command typo → %s\n", fixed)
 		cmd = fixed
 	}
+	if orchestrator.WorkflowUsesDocker(r.v) {
+		if fixed := orchestrator.NormalizeDockerCommand(cmd); fixed != cmd {
+			orchestratedPrintf("[gt-agent] rewrote docker command typo → %s\n", fixed)
+			cmd = fixed
+		}
+	}
 	for _, rw := range r.hooks.CmdRewrites {
 		switch rw {
 		case "rig_placeholders":

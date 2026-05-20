@@ -99,4 +99,20 @@ Success JSON: `{"outcome":"success","summary":"Python venv ready; deps installed
 
 ---
 
+## Docker / custom profiles (`test_runner: custom`, `docker build`, compose files)
+
+When the profile uses Docker (not Go/Python), **project_setup** only splits beads and confirms the module directory exists — do not write application source yet.
+
+| Allowed | Forbidden |
+|---------|-----------|
+| `mkdir -p {{rig}}/mayor/rig/{{layout_root}}` | `go mod`, `pip`, heredoc into app source |
+| `bd list`, `bd delete`, `bd create` (split multi-file beads) | `bd close`, `git push` |
+| Run `{{project_setup_verify_hint}}` from `{{layout_root}}/` | `docker build` at mayor/rig root if Dockerfile lives under `{{layout_root}}/` |
+
+Verify runs **inside** `{{layout_root}}/` (e.g. `cd finally && docker build -f Dockerfile .`). Paths in bead titles must be `finally/Dockerfile`, never `finally/finally/Dockerfile`.
+
+Success JSON: `{"outcome":"success","summary":"Docker phase scaffolded; beads OK; verify passed"}`
+
+---
+
 On errors: `{"outcome":"failure","summary":"..."}` with the real command output.

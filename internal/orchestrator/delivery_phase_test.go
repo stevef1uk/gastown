@@ -48,11 +48,11 @@ func TestValidatePlanBeads_activePhaseOnly(t *testing.T) {
 		},
 	}
 	beads := []PlanBead{{ID: "te-1", Title: "Implement a.go per architecture"}}
-	if err := ValidatePlanBeads(beads, "", v); err != nil {
+	if err := ValidatePlanBeads(beads, "", v, ""); err != nil {
 		t.Fatalf("expected ok for single phase bead: %v", err)
 	}
 	beads = append(beads, PlanBead{ID: "te-2", Title: "Implement b.go per architecture"})
-	if err := ValidatePlanBeads(beads, "", v); err == nil {
+	if err := ValidatePlanBeads(beads, "", v, ""); err == nil {
 		t.Fatal("expected error when extra bead for future phase path")
 	}
 }

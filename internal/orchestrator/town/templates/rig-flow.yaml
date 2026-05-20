@@ -55,7 +55,7 @@ states:
       2. Create implementation beads and `plan.md` (≥{{min_plan_bytes}} bytes) with a ## Bead map: real IDs from bd list, full paths, scope + acceptance per file.
     hooks:
       prompt_context: [planning_bead_bootstrap]
-      # Optional: pre_run: [bootstrap_implement_beads]  # auto-create missing beads (planner normally runs bd create)
+      pre_run: [repair_planning_beads]
       max_cmd_turns: 8
       cmd_guard: planning
       cmd_rewrites: [rig_placeholders, spec_md_case, plan_md_after_cd, bd_list_limit, unwrap_bash_lc]

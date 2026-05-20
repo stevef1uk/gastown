@@ -62,7 +62,7 @@ func TestValidatePlanBeads_duplicates(t *testing.T) {
 		{ID: "xx-b", Title: "Implement finally/myapp/frontend/game/main.js per architecture"},
 		{ID: "xx-c", Title: "Implement finally/finally/backend/main.py per architecture"},
 	}
-	err := ValidatePlanBeads(beads, "", v)
+	err := ValidatePlanBeads(beads, "", v, "finally")
 	if err == nil || !containsAll(err.Error(), "duplicate", "main.js") {
 		t.Fatalf("expected duplicate error, got %v", err)
 	}
@@ -88,7 +88,7 @@ func TestValidatePlanBeads_archBacktickBasenameMatch(t *testing.T) {
 	if err := os.WriteFile(archPath, []byte(arch), 0644); err != nil {
 		t.Fatal(err)
 	}
-	if err := ValidatePlanBeads(beads, archPath, v); err != nil {
+	if err := ValidatePlanBeads(beads, archPath, v, ""); err != nil {
 		t.Fatalf("expected ok with basename + command backtick noise: %v", err)
 	}
 }
@@ -106,7 +106,7 @@ func TestValidatePlanBeads_ok(t *testing.T) {
 		{ID: "xx-c", Title: "Implement finally/finally/backend/main.py per architecture"},
 	}
 	v.RequiredFiles[1] = "finally/backend/main.py"
-	if err := ValidatePlanBeads(beads, "", v); err != nil {
+	if err := ValidatePlanBeads(beads, "", v, ""); err != nil {
 		t.Fatal(err)
 	}
 }

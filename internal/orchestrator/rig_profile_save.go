@@ -1,6 +1,7 @@
 package orchestrator
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -8,6 +9,18 @@ import (
 	"strings"
 	"time"
 )
+
+// marshalRigProfileJSON writes workflow-profile.json without \\u0026 escapes for & and &&.
+func marshalRigProfileJSON(env rigProfileEnvelope) ([]byte, error) {
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(env); err != nil {
+		return nil, err
+	}
+	return bytes.TrimSpace(buf.Bytes()), nil
+}
 
 // SetRigActivePhase updates active_phase_id in workflow-profile.json.
 func SetRigActivePhase(townRoot, rig, phaseID string) error {
@@ -38,8 +51,8 @@ func SetRigActivePhase(townRoot, rig, phaseID string) error {
 		return fmt.Errorf("unknown phase id %q (see delivery_phases in %s)", phaseID, path)
 	}
 	env.Validation.ActivePhaseIDField = phaseID
-	env.Validation = ClampProfileValidation(NormalizeLayoutProfile(env.Validation))
-	raw, err := json.MarshalIndent(env, "", "  ")
+	env.Validation = ClampProfileValidationForRig(townRoot, rig, NormalizeLayoutProfile(env.Validation))
+	raw, err := marshalRigProfileJSON(env)
 	if err != nil {
 		return err
 	}
@@ -61,9 +74,9 @@ func WriteRigWorkflowProfile(townRoot, rig string, v WorkflowValidation, source,
 		GeneratedAt: time.Now().UTC().Format(time.RFC3339),
 		Source:      source,
 		Confidence:  confidence,
-		Validation:  ClampProfileValidation(NormalizeLayoutProfile(v)),
+		Validation:  ClampProfileValidationForRig(townRoot, rig, NormalizeLayoutProfile(v)),
 	}
-	raw, err := json.MarshalIndent(env, "", "  ")
+	raw, err := marshalRigProfileJSON(env)
 	if err != nil {
 		return err
 	}

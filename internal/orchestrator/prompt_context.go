@@ -27,7 +27,7 @@ import "fmt"
 func PromptContextBlock(key, townRoot, rig string, v WorkflowValidation) string {
 	switch key {
 	case "planning_bead_bootstrap":
-		return FormatPlanningBeadBootstrapBlock(rig, v)
+		return FormatPlanningBeadBootstrapBlock(rig, v.ForActivePhase())
 	case "implementation_queue":
 		return FormatImplementationQueueBlock(townRoot, rig, v)
 	case "implement_bead_context":
@@ -85,6 +85,14 @@ func RunPreRunHook(step, townRoot, rig string, v WorkflowValidation) (string, er
 		}
 		if len(logParts) > 0 {
 			return "implement bead queue: " + joinStrings(logParts, "; "), nil
+		}
+	case "repair_planning_beads":
+		logLine, err := RepairPlanningBeadSet(townRoot, rig, v)
+		if err != nil {
+			return "", err
+		}
+		if logLine != "" {
+			return "planning bead repair: " + logLine, nil
 		}
 	case "reopen_implement_beads":
 		reopened, err := EnsureImplementBeadsAvailable(townRoot, rig, v)

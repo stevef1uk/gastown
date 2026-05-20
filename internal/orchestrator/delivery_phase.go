@@ -186,9 +186,11 @@ func (v WorkflowValidation) PhaseScopeNote() string {
 	if title != "" {
 		line += " (" + title + ")"
 	}
-	line += ". Create implement beads **only** for `required_files` in this message (current phase). "
-	line += "`plan.md` only needs to cover this phase (size guard uses " + v.PlanMinSizeHint() + "). "
-	line += "Architecture must still describe the full system; union paths: " + strings.Join(v.UnionRequiredFiles(), ", ")
+	activeFiles := v.ActiveRequiredFiles()
+	line += fmt.Sprintf(". Create implement beads **only** for the %d paths in `required_files` below", len(activeFiles))
+	line += " — **not** every path in `architecture.md` (later phases get their own beads). "
+	line += "`plan.md` only needs to cover this phase (" + v.PlanMinSizeHint() + "). "
+	line += "Read architecture for context; do **not** `bd create` for backend/frontend/test paths until their phase is active."
 	return line
 }
 

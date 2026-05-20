@@ -45,7 +45,7 @@ func TestValidatePlanBeads_rejectsExtras(t *testing.T) {
 		{ID: "te-2", Title: "Implement linkshelf/internal/store/store.go per architecture"},
 		{ID: "te-3", Title: "Implement linkshelf/P2]"},
 	}
-	if err := ValidatePlanBeads(beads, "", v); err == nil {
+	if err := ValidatePlanBeads(beads, "", v, ""); err == nil {
 		t.Fatal("expected extra/invalid bead rejection")
 	}
 }

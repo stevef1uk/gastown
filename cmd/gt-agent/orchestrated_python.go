@@ -56,6 +56,19 @@ func validatePythonProjectSetupArtifacts(townRoot, rig string, hadCmdFailure, ve
 	return nil
 }
 
+func validateCustomImplementationCommand(cmd, townRoot, rig, activeBead string, v orchestrator.WorkflowValidation, verifyOK bool) error {
+	if orchestrator.WorkflowUsesGo(v) || orchestrator.WorkflowUsesPython(v) {
+		return nil
+	}
+	if isBeadCloseCommand(cmd) && !verifyOK {
+		mayorDir := rigMayorRigDir(townRoot, rig)
+		beadPath := orchestrator.ImplementBeadPathForID(townRoot, rig, activeBead, v)
+		hint := orchestrator.ImplementationVerifyCommandForBead(v, mayorDir, beadPath)
+		return fmt.Errorf("run green verify before bd close: %s", hint)
+	}
+	return nil
+}
+
 func validatePythonImplementationCommand(cmd, townRoot, rig, activeBead string, v orchestrator.WorkflowValidation, verifyOK bool) error {
 	if !orchestrator.WorkflowUsesPython(v) {
 		return nil

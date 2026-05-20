@@ -205,7 +205,7 @@ func validateProjectSetupArtifacts(townRoot, rig string, hadCmdFailure, verifyOK
 			return fmt.Errorf("list implement beads: %w", err)
 		}
 		archPath := filepath.Join(rigMayorRigDir(townRoot, rig), "architecture.md")
-		if err := orchestrator.ValidatePlanBeads(open, archPath, v); err != nil {
+		if err := orchestrator.ValidatePlanBeads(open, archPath, v, rig); err != nil {
 			return fmt.Errorf("bead set must match required_files exactly (bd delete junk, one bead per path): %w", err)
 		}
 	}

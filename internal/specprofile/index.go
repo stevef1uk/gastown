@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/steveyegge/gastown/internal/orchestrator"
@@ -35,11 +34,6 @@ func IndexRig(ctx context.Context, townRoot, rig string) (*ProfileFile, error) {
 		return nil, err
 	}
 
-	outDir := filepath.Join(townRoot, rig, "mayor", "rig", GastownMetaDir)
-	if err := os.MkdirAll(outDir, 0755); err != nil {
-		return nil, err
-	}
-
 	f := ProfileFile{
 		Version:     1,
 		GeneratedAt: time.Now().UTC().Format(time.RFC3339),
@@ -47,19 +41,17 @@ func IndexRig(ctx context.Context, townRoot, rig string) (*ProfileFile, error) {
 		Confidence:  confidence,
 		Validation:  v,
 	}
-	raw, err := json.MarshalIndent(f, "", "  ")
-	if err != nil {
+	if err := orchestrator.WriteRigWorkflowProfile(townRoot, rig, f.Validation, f.Source, f.Confidence); err != nil {
 		return nil, err
 	}
 
 	path := ProfilePath(townRoot, rig)
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, raw, 0644); err != nil {
-		return nil, err
+	// Re-read so returned ProfileFile matches sanitized on-disk validation.
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return &f, nil
 	}
-	if err := os.Rename(tmp, path); err != nil {
-		return nil, err
-	}
+	_ = json.Unmarshal(raw, &f)
 	return &f, nil
 }
 

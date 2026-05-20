@@ -399,6 +399,13 @@ func TestValidatePlanningCommand_forbidsImplementation(t *testing.T) {
 	if err := validatePlanningCommand(planBackend, "mockrig"); err != nil {
 		t.Fatalf("plan heredoc body may mention backend/: %v", err)
 	}
+	planGitProse := `export BEADS_DIR=$GT_ROOT/finally/.beads && cd finally/mayor/rig && cat > plan.md <<'EOF'
+### fi-ye7: db/.gitkeep
+- Acceptance: File exists; commits to repo; directory persists in Git history.
+EOF`
+	if err := validatePlanningCommand(planGitProse, "finally"); err != nil {
+		t.Fatalf("plan heredoc must allow git prose (.gitkeep, commits): %v", err)
+	}
 	if err := validatePlanningCommand("gt bd add -t task -m hello", "mockrig"); err == nil {
 		t.Fatal("gt bd add should be rejected")
 	}

@@ -134,7 +134,19 @@ func ClampProfileValidation(v WorkflowValidation) WorkflowValidation {
 	v = capArchitectureBytesForSmallRig(v)
 	v.MinPlanBytes = MinPlanBytesFromArchitecture(v.MinArchitectureBytes)
 	v = FinalizeDeliveryPhases(v)
+	v = SanitizeRigFlowProfile(v)
 	return v
+}
+
+// ClampProfileValidationForRig applies ClampProfileValidation and, when architecture.md exists,
+// aligns layout_root with paths documented in the architecture (flat mayor/rig worktrees).
+func ClampProfileValidationForRig(townRoot, rig string, v WorkflowValidation) WorkflowValidation {
+	v = ClampProfileValidation(v)
+	if townRoot == "" || rig == "" {
+		return v
+	}
+	archPath := filepath.Join(townRoot, rig, "mayor", "rig", "architecture.md")
+	return AlignProfileLayoutWithArchitecture(v, archPath)
 }
 
 // capArchitectureBytesForSmallRig lowers min_architecture_bytes when required_files is a short list.
@@ -410,6 +422,9 @@ func (v WorkflowValidation) ImplementationVerifyHint(mayorRigDir string) string 
 	if WorkflowUsesPython(v) {
 		return PythonVerifyCommand(v)
 	}
+	if WorkflowUsesDocker(v) {
+		return DockerImplementationVerifyCommandForBead(v.ForActivePhase(), mayorRigDir, "")
+	}
 	return v.UnittestCommandHint()
 }
 
@@ -420,6 +435,14 @@ func (v WorkflowValidation) ProjectSetupVerifyHint() string {
 	}
 	if WorkflowUsesPython(v) {
 		return PythonProjectSetupVerifyCommand(v)
+	}
+	if WorkflowUsesDocker(v) {
+		scoped := v.ForActivePhase()
+		layout := strings.Trim(strings.TrimSpace(scoped.LayoutRoot), "/")
+		if layout == "" {
+			layout = "."
+		}
+		return dockerVerifyWithLayout(scoped.ActivePhaseQAVerifyCommand(), layout)
 	}
 	return v.UnittestCommandHint()
 }

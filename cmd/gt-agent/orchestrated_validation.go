@@ -91,6 +91,17 @@ func isImplementationVerifyCommandOK(cmd, townRoot, rig, activeBead string, v or
 			return true
 		}
 	}
+	if orchestrator.WorkflowUsesDocker(v) && rig != "" {
+		mayorDir := filepath.Join(townRoot, rig, "mayor", "rig")
+		beadPath := orchestrator.ImplementBeadPathForID(townRoot, rig, activeBead, v)
+		impl := orchestrator.DockerImplementationVerifyCommandForBead(v, mayorDir, beadPath)
+		if commandMatchesQAVerify(cmd, impl) {
+			return true
+		}
+	}
+	if orchestrator.WorkflowUsesDocker(v) {
+		return isQATestCommandOK(cmd, v)
+	}
 	if !orchestrator.WorkflowUsesGo(v) || rig == "" {
 		return false
 	}

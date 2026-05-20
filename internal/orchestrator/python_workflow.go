@@ -95,6 +95,9 @@ func ImplementationVerifyCommandForBead(v WorkflowValidation, mayorRigDir, beadP
 	if WorkflowUsesPython(v) {
 		return PythonImplementationVerifyCommandForBead(v, mayorRigDir, beadPath)
 	}
+	if WorkflowUsesDocker(v) {
+		return DockerImplementationVerifyCommandForBead(v, mayorRigDir, beadPath)
+	}
 	return strings.TrimSpace(v.UnittestCommandHint())
 }
 

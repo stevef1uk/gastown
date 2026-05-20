@@ -43,17 +43,17 @@ Do **not** invent bead IDs or add implementation code under `{{layout_root}}/`.
 
 3. Create implementation beads in the **rig** beads DB (not town `~/gt/.beads`). Export `BEADS_DIR` before every `bd` command:
    ```
-   Create **exactly one** `bd create` per file in workflow required_files ({{required_files}}). Titles must contain `{{bead_title_contains}}` and the repo-relative path, ending with ` per architecture`. Example:
+   When phased delivery is active, create **exactly one** `bd create` per path in **this step's** `required_files` only ({{required_files}}) — **not** every path in `architecture.md`. Later phases add their own beads. Titles must contain `{{bead_title_contains}}` and the repo-relative path, ending with ` per architecture`. Example:
    CMD: bash -lc 'export BEADS_DIR=$GT_ROOT/{{rig}}/.beads && cd {{rig}}/mayor/rig && bd create --type task --title "{{bead_title_contains}}<path-from-architecture> per architecture" --description="Implement <path>: see architecture.md §…"'
    CMD: bash -lc 'export BEADS_DIR=$GT_ROOT/{{rig}}/.beads && cd {{rig}}/mayor/rig && bd list --status=open --flat --limit=0'
    ```
-   **No duplicate paths** (do not create three beads for the same `main.js`). Paths must match architecture.md / required_files. On retry after QA `failure`, delete duplicate beads (`bd delete <id> --force`) before creating missing ones. Do **not** use `gt bd add`.
+   **No duplicate paths** and **no extra-phase paths** (gt-agent rejects `bd create` outside `required_files`). Paths must match `required_files` exactly. On retry after QA `failure`, delete duplicate beads (`bd delete <id> --force`) before creating missing ones. Do **not** use `gt bd add`.
 
 4. Write **only** `plan.md` with a heredoc. **Minimum size is {{min_plan_bytes}} bytes** — a 3-line checklist will always fail `wc -c`. Use structured sections (not one-line todos). Copy **full repo paths** from `required_files` (e.g. `finally/Dockerfile`, not bare `Dockerfile`). Real bead IDs only — from `bd list` output, never `te-xxx` / `fi-xxx` placeholders.
 
    **Split across turns** (recommended):
-   - Turn A: `bd list --status=open` (skip `bd create` if implement beads already exist for every path).
-   - Turn B: one `cat > plan.md <<'EOF'` … body … then a line with **only** `EOF` (no text after EOF in the same message).
+   - Turn A: `bd list --status=open` — if no open tasks match `{{bead_title_contains}}`, run every `bd create` from the bootstrap block below **before** writing plan.md.
+   - Turn B: one `cat > plan.md <<'EOF'` … body … then a line with **only** `EOF` (no text after EOF in the same message). Every `### <id>:` line must use a bead ID printed by `bd list` in this session (never reuse old IDs like fi-0r2 from memory).
    - Turn C: `wc -c plan.md` from town root — if under {{min_plan_bytes}}, expand the heredoc (more bullets per file) and rewrite in another turn.
    - Turn D: JSON success only.
 
