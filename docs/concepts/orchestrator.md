@@ -231,6 +231,27 @@ Prompts under `orchestrator/prompts/rig-flow/` use `{{spec_summary}}`, `{{layout
 
 `gt-agent` applies merged validation for design, planning, implementation, and QA guards.
 
+### State timeout (stuck planning recovery)
+
+If a workflow step sits too long in one state, the orchestrator can fire a **`timeout`** transition (not the same as `failure`).
+
+| Hook / field | Role |
+|--------------|------|
+| `state_timeout_seconds` | Wall-clock limit for the current state (seconds). Checked on each `fetch_task`. |
+| `on_timeout` | Named cleanup hooks run **before** the FSM advances (planning: `reset_planning_phase`). |
+| `transitions.timeout` | Outcome key (e.g. `timeout: { to: planning }`). |
+| `max_cmd_turns` | Per-invocation LLM turn cap; if exhausted and `timeout` is allowed, cleanup runs and outcome is `timeout` instead of `failure`. |
+
+**Planning (rig-flow today):** limit is **1800s (30 min)**. On timeout, implement beads for the active phase are deleted, `plan.md` is removed, and canonical beads are recreated. The planner is sent back to `planning` with `pending_rework` describing the reset.
+
+```bash
+# Confirm timeout fired
+tail -f ~/gt/logs/orchestrator.log   # "state timeout wf=… planning -> planning"
+gt mayor workflow status wf-1
+```
+
+See [Orchestrator town README](../../internal/orchestrator/town/README.md#state-timeout-wall-clock--turn-budget) for maintainer details and YAML.
+
 ## Configuration
 
 ### Town settings (`~/gt/settings/config.json`)

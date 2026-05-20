@@ -61,6 +61,63 @@ Do **not** add `if task.State == "implementation"` (or any state name) in `cmd/g
 
 Reusable hook implementations live in `internal/orchestrator/prompt_context.go` — add a **named** hook only when YAML cannot express it. See the maintainer block at the top of that file.
 
+## State timeout (wall-clock + turn budget)
+
+Some FSM states can declare a **wall-clock limit** and **cleanup hooks** when the step is stuck. This is separate from `max_cmd_turns` (how many LLM rounds one `fetch_task` invocation gets).
+
+| Mechanism | Config | When it fires | Default on `planning` |
+|-----------|--------|---------------|------------------------|
+| **Turn budget** | `max_cmd_turns` | Planner exhausts CMD turns in one session without valid JSON | `8` |
+| **Wall-clock timeout** | `state_timeout_seconds` | `state_entered_at` in `instances.json` is older than the limit when `fetch_task` runs | `1800` (30 min) |
+| **Cleanup** | `on_timeout` | Before `complete_task` with outcome `timeout` | `[reset_planning_phase]` |
+| **FSM edge** | `transitions.timeout.to` | After cleanup; same as failure for planning (`planning` again) | `planning` |
+
+### Purpose
+
+Planning often leaves the rig in a bad partial state: glued bead titles (`ImplementDockerfile`), fake IDs in `plan.md` (`fi-001`), or duplicate/missing implement beads. Retrying with `failure → planning` alone keeps that dirt. A **timeout** runs **`on_timeout` hooks** first, then transitions with outcome **`timeout`** so the next planner turn starts from a clean scaffold.
+
+For **planning**, `reset_planning_phase`:
+
+1. Deletes open beads whose titles look like implement tasks for this phase (`implement` + `per arch` in the title).
+2. Removes stale `plan.md` (too small or placeholder bead IDs).
+3. Recreates one canonical `bd create` per active-phase `required_files` path.
+4. Dedupes and prunes malformed titles (via `repair_planning_beads` logic).
+
+The planner receives **`pending_rework`** on the next `fetch_task` (same as cross-step failure) explaining that a timeout occurred and artifacts were reset.
+
+### YAML example (`planning` in `rig-flow.yaml`)
+
+```yaml
+hooks:
+  state_timeout_seconds: 1800
+  on_timeout: [reset_planning_phase]
+  max_cmd_turns: 8
+transitions:
+  success:
+    to: plan_review
+  failure:
+    to: planning
+  timeout:
+    to: planning
+```
+
+### Implementation notes
+
+- **`state_entered_at`** is set on `StartWorkflow`, `ResetWorkflow`, and every `Transition` (including `timeout → planning`).
+- **`FetchTask`** checks the limit before dispatching work; on timeout it runs `on_timeout` and calls `complete_task` with outcome `timeout` (no agent LLM call that poll).
+- **`gt-agent`** also runs `on_timeout` when `max_cmd_turns` is exhausted and the state defines a `timeout` transition (outcome `timeout` instead of `failure`).
+- Add new cleanup steps in `RunOnTimeoutHook` in `prompt_context.go` (same pattern as `pre_run`).
+
+### Operator signals
+
+```bash
+gt mayor workflow status wf-1          # still planning after long wait
+tail -f ~/gt/logs/orchestrator.log     # "state timeout wf=… planning -> planning"
+export BEADS_DIR=~/gt/<rig>/.beads && bd list --status=open --flat
+```
+
+After timeout, expect fresh implement beads (`Implement <path> per architecture` with a **space** after `Implement`) and no `plan.md` until the planner writes a new one.
+
 ## Configuration
 
 Town operators set orchestrator behavior in **`{townRoot}/settings/config.json`**:

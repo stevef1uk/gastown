@@ -32,6 +32,7 @@ with multiple rigs, full template schema unification for all bundled YAML exampl
 | Patrol agents not orchestrated | Done | `IsPatrolRole` / `OrchestratedForRole` |
 | hq-polecat + legacy pause | Done | `LegacyPolecatsPaused`; `GT_POLECAT` identity fix |
 | Per-state YAML `hooks:` | Done | `StateHooks` in `state_hooks.go`; `rig-flow.yaml`; delivered on `fetch_task` |
+| Planning state timeout | Done | `state_timeout_seconds`, `on_timeout`, `transitions.timeout`; `workflow_timeout*.go` |
 | Hook interpreter (`state_runner`) | Done | `cmd/gt-agent/state_runner.go` — no FSM state-name switches in `orchestrated.go` |
 | Rig-flow checkpoint commits | Done | After each **rig-flow** FSM edge, `refinery.CommitMayorRigOrchestratorCheckpoint` commits dirty `mayor/rig` (**runs inside `gt orchestrator`**, not the refinery tmux patrol). On **completed**, pushes `origin` via `git push -u`. Opt out: `GT_SKIP_WORKFLOW_GIT_COMMIT`, `GT_WORKFLOW_SKIP_PUSH`. Look for `[Orchestrator] rig … mayor/rig` lines in `{town}/logs/orchestrator.log`. |
 | Bundled non-rig-flow templates | Partial | Some examples still use old schema |
@@ -213,8 +214,21 @@ Validate `outcome` against keys in `state.transitions` before advancing FSM.
 | `auto_verify` | Run verify after matching commands (`go_mod_tidy`, `pip_install`, …) |
 | `artifacts` | Success gate preset (`planning`, `implementation`, `qa`, …) |
 | `retry_hint` / `failure_hint` | Agent guidance (supports `{{rig}}` substitution) |
+| `pre_run` | Hooks before each orchestrated attempt (`repair_planning_beads`, …) |
+| `state_timeout_seconds` | Wall-clock limit for this state; `0` = disabled |
+| `on_timeout` | Cleanup hooks before `complete_task` outcome `timeout` (`reset_planning_phase`, …) |
+| `max_cmd_turns` | LLM CMD turns per `fetch_task` invocation (default 5) |
 
 `gt-agent` interprets hooks via `state_runner.go`; it does not switch on FSM state names.
+
+### State timeout (implementation)
+
+- **`WorkflowInstance.state_entered_at`** — RFC3339 UTC; set on every `Transition`, `StartWorkflow`, and `ResetWorkflow` (`types.go`).
+- **`Manager.FetchTask`** — if `now - state_entered_at ≥ state_timeout_seconds`, calls `applyStateTimeout` (`workflow_timeout_apply.go`): runs `RunOnTimeoutHooks`, then `Transition(..., "timeout")`, sets `PendingRework`, persists.
+- **`gt-agent`** — on `max_cmd_turns` exhaustion, if `on_timeout` is set and `timeout` is an allowed outcome, runs the same hooks and returns outcome `timeout` instead of `failure`.
+- **`reset_planning_phase`** (`plan_beads_order.go`) — delete phase implement beads, remove stale `plan.md`, `EnsurePlanningImplementBeads`, then prune/dedupe.
+
+Allowed outcomes include `timeout` when `transitions.timeout` exists (`State.AcceptsOutcome`). Timeout sets `PendingRework` even for same-state transitions (unlike `failure`, which only sets rework when `next != fromState`).
 
 **Artifact validation** thresholds still come from `workflow-profile.json` when present (merged into `task.validation`).
 
