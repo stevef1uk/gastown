@@ -166,9 +166,11 @@ func SanitizeRigFlowProfile(v WorkflowValidation) WorkflowValidation {
 		} else {
 			v.BeadTitleContains = "Implement "
 		}
-	}
-	if layout == "." && strings.HasPrefix(strings.TrimSpace(v.BeadTitleContains), "Implement") {
-		v.BeadTitleContains = "Implement "
+	case "Implement finally/":
+		// spec-index often confuses rig name with layout_root on flat mayor/rig worktrees
+		if layout == "." {
+			v.BeadTitleContains = "Implement "
+		}
 	}
 	return v
 }

@@ -118,6 +118,17 @@ func TestSanitizeRigFlowProfile_flatRepoBeadPrefix(t *testing.T) {
 	}
 }
 
+func TestSanitizeRigFlowProfile_preservesLayoutSubdirPrefix(t *testing.T) {
+	got := SanitizeRigFlowProfile(WorkflowValidation{
+		LayoutRoot:        "api",
+		BeadTitleContains: "Implement api/",
+		QAVerifyCommand:   "pytest -q",
+	})
+	if got.BeadTitleContains != "Implement api/" {
+		t.Fatalf("bead_title_contains = %q want Implement api/", got.BeadTitleContains)
+	}
+}
+
 func TestDockerVerifyWithLayout_flatRepoNoBrokenCd(t *testing.T) {
 	in := "cd  && docker-compose -f test/docker-compose.test.yml up --abort-on-container-exit"
 	got := dockerVerifyWithLayout(in, "")
