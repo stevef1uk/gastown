@@ -188,8 +188,9 @@ var artifactFailureHints = map[string]func(*stateRunner) string{
 	},
 	"planning": func(r *stateRunner) string {
 		work := rigMayorRigPath(r.rig)
-		return fmt.Sprintf("Repair beads: `bd delete %s --force` for duplicates, `bd create` only for missing paths, rewrite plan.md if needed — then JSON success. Work from %s with BEADS_DIR=$GT_ROOT/%s/.beads. No python/git/backend code.",
-			beadIDExample(r.townRoot, r.rig), work, r.rig)
+		minPlan := orchestrator.EffectiveMinPlanBytes(rigMayorRigDir(r.townRoot, r.rig), r.v)
+		return fmt.Sprintf("plan.md must be ≥ %d bytes (## Bead map with ### <id>: <full-path> per file — not a short checklist). Repair beads: `bd delete %s --force` for duplicates, `bd create` for missing paths, rewrite plan.md, `wc -c plan.md`, then JSON success. Work from %s with BEADS_DIR=$GT_ROOT/%s/.beads.",
+			minPlan, beadIDExample(r.townRoot, r.rig), work, r.rig)
 	},
 	"plan_review": func(r *stateRunner) string {
 		return fmt.Sprintf("Run `bd list --status=open` from %s with BEADS_DIR set; compare titles to architecture required_files. Use outcome failure to send the Planner back to fix duplicates or missing paths.", rigMayorRigPath(r.rig))

@@ -52,7 +52,7 @@ states:
     prompt_file: prompts/rig-flow/planning.md
     instructions: |
       1. Read SPEC and architecture under `{{rig}}/mayor/rig/`.
-      2. Create implementation beads and `plan.md`.
+      2. Create implementation beads and `plan.md` (≥{{min_plan_bytes}} bytes) with a ## Bead map: real IDs from bd list, full paths, scope + acceptance per file.
     hooks:
       prompt_context: [planning_bead_bootstrap]
       # Optional: pre_run: [bootstrap_implement_beads]  # auto-create missing beads (planner normally runs bd create)
@@ -67,7 +67,7 @@ states:
         One CMD: per line. After `cd {{rig}}/mayor/rig`, write plan.md with a relative path (not {{rig}}/mayor/rig/plan.md).
         Heredoc must end with a line containing only EOF. Verify with wc -c from town root.
       failure_hint: |
-        Do not send success JSON until CMD: lines ran in this session. If beads exist, bd list only — do not duplicate bd create. plan.md heredoc must end with a line containing only EOF (short body ≥ {{min_plan_bytes}} bytes or the model output will truncate). Then wc -c plan.md, then JSON only. Work from {{rig}}/mayor/rig with BEADS_DIR=$GT_ROOT/{{rig}}/.beads.
+        Do not send success JSON until CMD: lines ran in this session. If beads exist, bd list only — do not duplicate bd create. plan.md must be ≥ {{min_plan_bytes}} bytes (expand ### per-bead sections — not a short checklist). Heredoc ends with a line containing only EOF. Run wc -c plan.md; if too small, rewrite plan.md before JSON. Work from {{rig}}/mayor/rig with BEADS_DIR=$GT_ROOT/{{rig}}/.beads.
     transitions:
       success:
         to: plan_review

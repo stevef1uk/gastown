@@ -181,8 +181,7 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 		cmdBlocks := parseOrchestratedCommands(response)
 		if len(cmdBlocks) == 0 && responseHasUnterminatedHeredoc(response) {
 			msg := "Your reply started a heredoc (e.g. plan.md <<'EOF') but never sent a line with only EOF — the message was cut off, so no command ran.\n\n" +
-				"Fix: use a **shorter** plan.md (list real te-xxx IDs from bd list; one section per required file). " +
-				"Split across turns: (1) `bd list --status=open`, (2) `cat > plan.md <<'EOF'` … body … `EOF` on its own line, (3) `wc -c plan.md`, (4) JSON success only."
+				"Fix: split across turns — (1) `bd list --status=open`, (2) `cat > plan.md <<'EOF'` with ## Bead map and ### <id>: <full-path> sections (scope + acceptance per file; must meet min_plan_bytes), (3) line with only `EOF`, (4) `wc -c plan.md`, (5) JSON success only."
 			if h := runner.failureHint(); h != "" {
 				msg += "\n\n" + h
 			}

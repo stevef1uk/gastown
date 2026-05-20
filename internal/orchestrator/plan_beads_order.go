@@ -477,7 +477,7 @@ func FormatPlanningBeadBootstrapBlock(rig string, v WorkflowValidation) string {
 	var b strings.Builder
 	b.WriteString("## Planning: implementation beads required\n\n")
 	b.WriteString("You must run **CMD:** `bd create` lines in this session before JSON success. ")
-	b.WriteString("Do not claim beads exist without command output showing new `te-xxx` IDs.\n\n")
+	b.WriteString("Do not claim beads exist without command output showing new bead IDs.\n\n")
 	b.WriteString("Example (one line per file, adjust paths if needed):\n\n")
 	for _, p := range v.RequiredFiles {
 		p = filepath.ToSlash(strings.TrimSpace(p))
@@ -490,7 +490,9 @@ func FormatPlanningBeadBootstrapBlock(rig string, v WorkflowValidation) string {
 	}
 	b.WriteString("\nThen `bd list --status=open`, write plan.md (≥ ")
 	b.WriteString(fmt.Sprintf("%d", v.MinPlanBytes))
-	b.WriteString(" bytes) with real IDs, `wc -c plan.md`, then JSON success in a **later** turn.\n")
+	b.WriteString(" bytes) with a ## Bead map: one ### <id>: <full-path> section per file (scope, architecture ref, acceptance bullets). ")
+	b.WriteString("A 3-line checklist is too small and will fail wc -c. Use real IDs from bd list only. ")
+	b.WriteString("`wc -c plan.md`, then JSON success in a **later** turn.\n")
 	return b.String()
 }
 
