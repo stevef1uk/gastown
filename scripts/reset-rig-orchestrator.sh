@@ -5,7 +5,7 @@
 # Usage:
 #   ./scripts/reset-rig-orchestrator.sh
 #   ./scripts/reset-rig-orchestrator.sh --force
-#   GT_ROOT=~/gt RIG=testgt2 ./scripts/reset-rig-orchestrator.sh
+#   GT_ROOT=~/gt RIG=finally ./scripts/reset-rig-orchestrator.sh
 #   START_RIG_FLOW=1 ./scripts/reset-rig-orchestrator.sh --force
 #
 # Environment (defaults shown):
@@ -57,7 +57,7 @@ done
 
 GT_ROOT="${GT_ROOT:-$HOME/gt}"
 GASTOWN="${GASTOWN:-$(cd "$(dirname "$0")/.." && pwd)}"
-RIG="${RIG:-${RIG_NAME:-testgt2}}"
+RIG="${RIG:-${RIG_NAME:-finally}}"
 
 export GT_ROOT GASTOWN RIG
 
