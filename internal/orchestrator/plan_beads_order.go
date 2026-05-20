@@ -270,9 +270,33 @@ func NextOpenImplementBead(townRoot, rig string, v WorkflowValidation) (*PlanBea
 	return nil, nil
 }
 
+// BeadsDatabaseReady reports whether the rig has an on-disk beads store that bd can list.
+// Unit tests and fresh rig dirs often have no .beads yet; repair/reset hooks should no-op then.
+// Requires the resolved BEADS_DIR to exist (bd may otherwise walk up and hit an unrelated town DB).
+func BeadsDatabaseReady(townRoot, rig string) bool {
+	if _, err := exec.LookPath("bd"); err != nil {
+		return false
+	}
+	beadsDir := config.ResolveBeadsDirForRig(townRoot, rig)
+	if beadsDir == "" {
+		return false
+	}
+	if _, err := os.Stat(beadsDir); err != nil {
+		return false
+	}
+	args := beads.InjectFlatForListJSON([]string{"list", "--status=open", "--json", "--limit=0"})
+	cmd := exec.Command("bd", args...)
+	cmd.Env = append(os.Environ(), "BEADS_DIR="+beadsDir)
+	_, err := cmd.CombinedOutput()
+	return err == nil
+}
+
 // ResetPlanningPhase deletes all open implement beads for the active phase, removes plan.md,
 // and recreates canonical implement beads. Used on planning timeout / stuck recovery.
 func ResetPlanningPhase(townRoot, rig string, v WorkflowValidation) (string, error) {
+	if !BeadsDatabaseReady(townRoot, rig) {
+		return "", nil
+	}
 	v = v.ForActivePhase()
 	var parts []string
 	open, err := listAllOpenBeads(townRoot, rig)
@@ -331,6 +355,9 @@ func ResetPlanningPhase(townRoot, rig string, v WorkflowValidation) (string, err
 
 // RepairPlanningBeadSet dedupes and prunes open implement beads to match the active planning phase.
 func RepairPlanningBeadSet(townRoot, rig string, v WorkflowValidation) (string, error) {
+	if !BeadsDatabaseReady(townRoot, rig) {
+		return "", nil
+	}
 	v = v.ForActivePhase()
 	var parts []string
 	malformed, err := PruneMalformedImplementBeads(townRoot, rig, v)

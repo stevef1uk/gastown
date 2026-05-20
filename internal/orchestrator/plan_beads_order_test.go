@@ -224,3 +224,11 @@ func TestOrderRequiredFilesForImplementation(t *testing.T) {
 		t.Fatalf("main.go last: %v", got)
 	}
 }
+
+func TestBeadsDatabaseReady_falseWithoutInit(t *testing.T) {
+	t.Parallel()
+	town := t.TempDir()
+	if BeadsDatabaseReady(town, "myrig") {
+		t.Fatal("expected false when rig has no beads database")
+	}
+}
