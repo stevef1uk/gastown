@@ -94,6 +94,10 @@ GT="${GT:-$(command -v gt 2>/dev/null || echo gt)}"
 
 echo "=== Mechanic patrol starting ==="
 
+# Reap leaked bd-spawned dolt sql-server processes (preserves canonical :3307 server).
+echo "=== Reaping orphan dolt servers ==="
+"$GT" dolt zap-orphans 2>/dev/null || true
+
 # Mechanic is town-level: scan ALL recent agent logs (town + every rig).
 # Limit to logs touched in the last 60 minutes so we ignore stale sessions.
 logs=$(find "$LOG_DIR" -maxdepth 1 -name "*.log" -mmin -60 -type f 2>/dev/null | sort -r | head -20)
