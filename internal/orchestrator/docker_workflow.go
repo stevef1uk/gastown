@@ -2,9 +2,68 @@ package orchestrator
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 )
+
+var (
+	dockerComposeCLICache     string
+	dockerComposeCLICacheOnce sync.Once
+	dockerComposeCLIOverride  string // non-empty in tests only
+)
+
+// DockerComposeCLI returns the host's compose invocation: "docker compose" (plugin) or "docker-compose" (standalone).
+func DockerComposeCLI() string {
+	if dockerComposeCLIOverride != "" {
+		return dockerComposeCLIOverride
+	}
+	dockerComposeCLICacheOnce.Do(func() {
+		dockerComposeCLICache = detectDockerComposeCLI()
+	})
+	return dockerComposeCLICache
+}
+
+func detectDockerComposeCLI() string {
+	if path, err := exec.LookPath("docker"); err == nil {
+		cmd := exec.Command(path, "compose", "version")
+		if err := cmd.Run(); err == nil {
+			return "docker compose"
+		}
+	}
+	if path, err := exec.LookPath("docker-compose"); err == nil {
+		cmd := exec.Command(path, "version")
+		if err := cmd.Run(); err == nil {
+			return "docker-compose"
+		}
+	}
+	return "docker compose"
+}
+
+// AdaptDockerComposeCommand rewrites compose CLI spelling to match DockerComposeCLI.
+// Only command tokens are changed (trailing space); paths like docker-compose.yml are left alone.
+func AdaptDockerComposeCommand(cmd string) string {
+	if cmd == "" {
+		return cmd
+	}
+	want := DockerComposeCLI()
+	if want == "docker-compose" {
+		return replaceComposeInvocation(cmd, "docker compose", "docker-compose")
+	}
+	return replaceComposeInvocation(cmd, "docker-compose", "docker compose")
+}
+
+func replaceComposeInvocation(cmd, from, to string) string {
+	withSpace := from + " "
+	if strings.Contains(cmd, withSpace) {
+		cmd = strings.ReplaceAll(cmd, withSpace, to+" ")
+	}
+	if strings.HasSuffix(cmd, from) {
+		cmd = cmd[:len(cmd)-len(from)] + to
+	}
+	return cmd
+}
 
 // WorkflowUsesDocker reports Docker-based verify (custom runner + docker in QA command or Dockerfile paths).
 func WorkflowUsesDocker(v WorkflowValidation) bool {
@@ -38,7 +97,7 @@ func NormalizeDockerCommand(cmd string) string {
 			out = strings.ReplaceAll(out, r.old, r.new)
 		}
 	}
-	return out
+	return AdaptDockerComposeCommand(out)
 }
 
 // DockerImplementationVerifyCommandForBead returns verify scoped to layout_root and bead path.
@@ -54,7 +113,7 @@ func DockerImplementationVerifyCommandForBead(v WorkflowValidation, mayorRigDir,
 	case strings.HasSuffix(strings.ToLower(beadPath), "dockerfile"):
 		return base + " && docker build -f Dockerfile ."
 	case strings.Contains(strings.ToLower(beadPath), "docker-compose"):
-		return base + " && docker compose -f docker-compose.yml config"
+		return base + " && " + DockerComposeCLI() + " -f docker-compose.yml config"
 	case strings.HasSuffix(beadPath, ".env.example"), strings.HasSuffix(beadPath, ".env"):
 		return "test -f " + beadPath
 	default:

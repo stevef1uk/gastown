@@ -22,6 +22,34 @@ func TestWorkflowUsesDocker_finallyProfile(t *testing.T) {
 	}
 }
 
+func TestAdaptDockerComposeCommand(t *testing.T) {
+	t.Parallel()
+	prev := dockerComposeCLIOverride
+	t.Cleanup(func() { dockerComposeCLIOverride = prev })
+
+	dockerComposeCLIOverride = "docker-compose"
+	if got := AdaptDockerComposeCommand("docker compose -f docker-compose.yml config"); got != "docker-compose -f docker-compose.yml config" {
+		t.Fatalf("v1 host: got %q", got)
+	}
+	dockerComposeCLIOverride = "docker compose"
+	if got := AdaptDockerComposeCommand("docker-compose -f test/docker-compose.test.yml up"); got != "docker compose -f test/docker-compose.test.yml up" {
+		t.Fatalf("v2 host: got %q", got)
+	}
+}
+
+func TestDockerImplementationVerifyCommandForBead_compose(t *testing.T) {
+	prev := dockerComposeCLIOverride
+	t.Cleanup(func() { dockerComposeCLIOverride = prev })
+	dockerComposeCLIOverride = "docker-compose"
+
+	v := WorkflowValidation{LayoutRoot: "finally"}
+	got := DockerImplementationVerifyCommandForBead(v, "/tmp/rig", "finally/docker-compose.yml")
+	want := "cd finally && docker-compose -f docker-compose.yml config"
+	if got != want {
+		t.Fatalf("got %q want %q", got, want)
+	}
+}
+
 func TestDockerImplementationVerifyCommandForBead(t *testing.T) {
 	v := WorkflowValidation{
 		LayoutRoot:      "finally",
@@ -130,6 +158,10 @@ func TestSanitizeRigFlowProfile_preservesLayoutSubdirPrefix(t *testing.T) {
 }
 
 func TestDockerVerifyWithLayout_flatRepoNoBrokenCd(t *testing.T) {
+	prev := dockerComposeCLIOverride
+	t.Cleanup(func() { dockerComposeCLIOverride = prev })
+	dockerComposeCLIOverride = "docker-compose"
+
 	in := "cd  && docker-compose -f test/docker-compose.test.yml up --abort-on-container-exit"
 	got := dockerVerifyWithLayout(in, "")
 	want := "docker-compose -f test/docker-compose.test.yml up --abort-on-container-exit"
