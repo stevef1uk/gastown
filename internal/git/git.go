@@ -644,6 +644,12 @@ func (g *Git) Commit(message string) error {
 	return err
 }
 
+// CommitAllowEmpty creates a commit even when the index is clean.
+func (g *Git) CommitAllowEmpty(message string) error {
+	_, err := g.run("commit", "--allow-empty", "-m", message)
+	return err
+}
+
 // CommitAll stages all changes and commits.
 func (g *Git) CommitAll(message string) error {
 	_, err := g.run("commit", "-am", message)

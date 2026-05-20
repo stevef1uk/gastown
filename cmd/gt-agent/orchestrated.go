@@ -1846,7 +1846,7 @@ func beadIDExample(townRoot, rig string) string {
 	return prefix + "-xxx"
 }
 
-func validateQAArtifacts(townRoot, rig, outcome string, hadCmdFailure, bdListClosedOK, unittestOK bool, v orchestrator.WorkflowValidation) error {
+func validateQAArtifacts(townRoot, rig, outcome string, hadCmdFailure, bdListClosedOK, unittestOK, qaSmokeOK bool, v orchestrator.WorkflowValidation) error {
 	if hadCmdFailure {
 		return fmt.Errorf("QA step had failed commands; fix errors before completing")
 	}
@@ -1861,6 +1861,12 @@ func validateQAArtifacts(townRoot, rig, outcome string, hadCmdFailure, bdListClo
 	}
 	if err := orchestrator.ValidateWorkNotStubbed(rigMayorRigDir(townRoot, rig), v); err != nil {
 		return fmt.Errorf("implementation files look like stubs (QA must use outcome failure): %w", err)
+	}
+	if err := validateWebStaticReferences(townRoot, rig, v); err != nil {
+		return err
+	}
+	if requiresQARuntimeSmoke(v) && !qaSmokeOK {
+		return fmt.Errorf("web/API QA requires a live smoke command before passing: start the server with `go run`, then curl `/`, referenced static assets, and API GET/POST behavior")
 	}
 	openImpl, err := countOpenMatchingBeads(townRoot, rig, v.BeadTitleContains)
 	if err != nil {
@@ -1877,6 +1883,189 @@ func validateQAArtifacts(townRoot, rig, outcome string, hadCmdFailure, bdListClo
 		}
 	}
 	return nil
+}
+
+func requiresQARuntimeSmoke(v orchestrator.WorkflowValidation) bool {
+	if !orchestrator.WorkflowUsesGo(v) {
+		return false
+	}
+	files := append([]string(nil), v.RequiredFiles...)
+	files = append(files, v.UnionRequiredFiles()...)
+	hasWeb := false
+	hasServer := false
+	for _, f := range files {
+		f = filepath.ToSlash(strings.TrimSpace(f))
+		if strings.Contains(f, "/web/") && (strings.HasSuffix(f, ".html") || strings.HasSuffix(f, ".js") || strings.HasSuffix(f, ".css")) {
+			hasWeb = true
+		}
+		if strings.HasSuffix(f, "/cmd/server/main.go") {
+			hasServer = true
+		}
+	}
+	return hasWeb && hasServer
+}
+
+func isQARuntimeSmokeCommandOK(cmd string, v orchestrator.WorkflowValidation) bool {
+	if !requiresQARuntimeSmoke(v) {
+		return false
+	}
+	lower := strings.ToLower(strings.Join(strings.Fields(cmd), " "))
+	if !strings.Contains(lower, "go run") || !strings.Contains(lower, "curl ") {
+		return false
+	}
+	if !strings.Contains(lower, "localhost") && !strings.Contains(lower, "127.0.0.1") {
+		return false
+	}
+	if !strings.Contains(lower, " /api/") && !strings.Contains(lower, "/api/") {
+		return false
+	}
+	if profileHasAPI(v) && !strings.Contains(lower, "post") && !strings.Contains(lower, " -d ") && !strings.Contains(lower, " --data") {
+		return false
+	}
+	return true
+}
+
+func profileHasAPI(v orchestrator.WorkflowValidation) bool {
+	for _, f := range append(append([]string(nil), v.RequiredFiles...), v.UnionRequiredFiles()...) {
+		f = strings.ToLower(filepath.ToSlash(strings.TrimSpace(f)))
+		if strings.Contains(f, "/api/") || strings.Contains(f, "handler") {
+			return true
+		}
+	}
+	return false
+}
+
+var htmlAttrRefRE = regexp.MustCompile(`(?i)\b(src|href)\s*=\s*["']([^"'#][^"']*)["']`)
+
+func validateWebStaticReferences(townRoot, rig string, v orchestrator.WorkflowValidation) error {
+	rigDir := rigMayorRigDir(townRoot, rig)
+	for _, rel := range webHTMLRequiredFiles(v) {
+		abs := filepath.Join(rigDir, filepath.FromSlash(rel))
+		body, err := os.ReadFile(abs)
+		if err != nil {
+			continue
+		}
+		webRoot := webRootForHTML(rigDir, rel, v)
+		for _, m := range htmlAttrRefRE.FindAllStringSubmatch(string(body), -1) {
+			attr := strings.ToLower(m[1])
+			ref := strings.TrimSpace(m[2])
+			if skipLocalHTMLRef(ref) {
+				continue
+			}
+			if attr == "src" || strings.HasSuffix(strings.ToLower(ref), ".js") || strings.HasSuffix(strings.ToLower(ref), ".css") {
+				if !webRefExists(webRoot, rel, ref) {
+					return fmt.Errorf("HTML references missing static asset %q from %s; fix the path or add the file", ref, rel)
+				}
+				continue
+			}
+			if attr == "href" && isLocalPageRef(ref) && !webPageRefExists(webRoot, rel, ref) && !goServerDefinesRoute(rigDir, v, ref) {
+				return fmt.Errorf("HTML link %q in %s has no matching static page or server route; use an in-page anchor for SPA sections", ref, rel)
+			}
+		}
+	}
+	return nil
+}
+
+func webHTMLRequiredFiles(v orchestrator.WorkflowValidation) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, f := range append(append([]string(nil), v.RequiredFiles...), v.UnionRequiredFiles()...) {
+		f = filepath.ToSlash(strings.TrimSpace(f))
+		if f == "" || seen[f] || !strings.HasSuffix(strings.ToLower(f), ".html") || !strings.Contains(f, "/web/") {
+			continue
+		}
+		seen[f] = true
+		out = append(out, f)
+	}
+	return out
+}
+
+func webRootForHTML(rigDir, htmlRel string, v orchestrator.WorkflowValidation) string {
+	parts := strings.Split(filepath.ToSlash(htmlRel), "/web/")
+	if len(parts) > 1 {
+		return filepath.Join(rigDir, filepath.FromSlash(parts[0]), "web")
+	}
+	layout := strings.Trim(strings.TrimSpace(v.LayoutRoot), "/")
+	if layout == "" || layout == "." {
+		return filepath.Join(rigDir, "web")
+	}
+	return filepath.Join(rigDir, filepath.FromSlash(layout), "web")
+}
+
+func skipLocalHTMLRef(ref string) bool {
+	lower := strings.ToLower(strings.TrimSpace(ref))
+	return lower == "" || strings.HasPrefix(lower, "#") || strings.HasPrefix(lower, "http://") ||
+		strings.HasPrefix(lower, "https://") || strings.HasPrefix(lower, "mailto:") || strings.HasPrefix(lower, "tel:") ||
+		strings.HasPrefix(lower, "/api/")
+}
+
+func webRefExists(webRoot, htmlRel, ref string) bool {
+	path := webRefPath(webRoot, htmlRel, ref)
+	if path == "" {
+		return false
+	}
+	info, err := os.Stat(path)
+	return err == nil && !info.IsDir()
+}
+
+func webPageRefExists(webRoot, htmlRel, ref string) bool {
+	path := webRefPath(webRoot, htmlRel, ref)
+	if path == "" {
+		return false
+	}
+	candidates := []string{path, path + ".html", filepath.Join(path, "index.html")}
+	for _, candidate := range candidates {
+		info, err := os.Stat(candidate)
+		if err == nil && !info.IsDir() {
+			return true
+		}
+	}
+	return false
+}
+
+func webRefPath(webRoot, htmlRel, ref string) string {
+	ref = strings.TrimSpace(strings.Split(ref, "?")[0])
+	ref = strings.Split(ref, "#")[0]
+	if ref == "" || strings.Contains(ref, "..") {
+		return ""
+	}
+	if strings.HasPrefix(ref, "/") {
+		return filepath.Join(webRoot, filepath.FromSlash(strings.TrimPrefix(ref, "/")))
+	}
+	htmlDir := filepath.Dir(filepath.Join(webRoot, filepath.Base(filepath.ToSlash(htmlRel))))
+	return filepath.Join(htmlDir, filepath.FromSlash(ref))
+}
+
+func isLocalPageRef(ref string) bool {
+	if skipLocalHTMLRef(ref) || strings.HasPrefix(ref, "/#") {
+		return false
+	}
+	lower := strings.ToLower(strings.Split(strings.Split(ref, "?")[0], "#")[0])
+	return !strings.Contains(filepath.Base(lower), ".")
+}
+
+func goServerDefinesRoute(rigDir string, v orchestrator.WorkflowValidation, ref string) bool {
+	path := "/" + strings.Trim(strings.Split(strings.Split(ref, "?")[0], "#")[0], "/")
+	if path == "/" {
+		return true
+	}
+	layout := strings.Trim(strings.TrimSpace(v.LayoutRoot), "/")
+	root := rigDir
+	if layout != "" && layout != "." {
+		root = filepath.Join(rigDir, filepath.FromSlash(layout))
+	}
+	found := false
+	_ = filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() || !strings.HasSuffix(p, ".go") || found {
+			return nil
+		}
+		data, readErr := os.ReadFile(p)
+		if readErr == nil && strings.Contains(string(data), `"`+path+`"`) {
+			found = true
+		}
+		return nil
+	})
+	return found
 }
 
 func validateRequiredWorkFiles(townRoot, rig string, v orchestrator.WorkflowValidation) error {

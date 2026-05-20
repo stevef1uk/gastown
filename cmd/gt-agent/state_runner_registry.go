@@ -139,6 +139,10 @@ var trackHandlers = map[string]trackFn{
 			r.track.unittestOK = true
 			r.track.hadCmdFailure = false
 		}
+		if cmdErr == nil && isQARuntimeSmokeCommandOK(cmd, r.v) {
+			r.track.qaSmokeOK = true
+			r.track.hadCmdFailure = false
+		}
 		if cmdErr == nil && isQAReadOnlyCommand(cmd) {
 			r.track.hadCmdFailure = false
 		}
@@ -162,7 +166,7 @@ var artifactValidators = map[string]artifactValidateFn{
 		return validateImplementationArtifacts(r.townRoot, r.rig, r.track.hadCmdFailure, r.track.beadCloseOK, r.track.verifyOK, r.v)
 	},
 	"qa": func(r *stateRunner, outcome string) error {
-		return validateQAArtifacts(r.townRoot, r.rig, outcome, r.track.hadCmdFailure, r.track.bdListClosedOK, r.track.unittestOK, r.v)
+		return validateQAArtifacts(r.townRoot, r.rig, outcome, r.track.hadCmdFailure, r.track.bdListClosedOK, r.track.unittestOK, r.track.qaSmokeOK, r.v)
 	},
 }
 
@@ -200,7 +204,11 @@ var artifactFailureHints = map[string]func(*stateRunner) string{
 			rigMayorRigPath(r.rig), r.rig, strings.TrimSpace(r.v.LayoutRoot), r.v.UnittestCommandHint())
 	},
 	"qa": func(r *stateRunner) string {
-		return "Run real CMD: lines (not markdown fences): bd list --status=closed, head SPEC.md, " + r.v.UnittestCommandHint() + " from " + rigMayorRigPath(r.rig) + ". No /workspace paths. Then JSON only."
+		hint := "Run real CMD: lines (not markdown fences): bd list --status=closed, head SPEC.md, " + r.v.UnittestCommandHint() + " from " + rigMayorRigPath(r.rig) + "."
+		if requiresQARuntimeSmoke(r.v) {
+			hint += " This web/API profile also requires a live smoke CMD that starts the server with `go run`, curls `/`, static assets, and API GET/POST behavior."
+		}
+		return hint + " No /workspace paths. Then JSON only."
 	},
 }
 

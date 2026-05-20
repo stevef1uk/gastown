@@ -30,6 +30,7 @@ type cmdTracker struct {
 	didDelete         bool
 	bdListClosedOK    bool
 	unittestOK        bool
+	qaSmokeOK        bool
 	activeBead        string
 }
 
