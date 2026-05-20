@@ -13,12 +13,13 @@ Rig `{{rig}}` (`{{rig}}/polecat`). Work under `{{rig}}/mayor/rig/`. Use the **Ne
 
 ## Rules
 
+- **Before importing a package or type**, list files in that package first: `ls {{rig}}/mayor/rig/{{layout_root}}/internal/*/` to see what's already implemented. If the package or type doesn't exist, implement it FIRST before using it.
 - One `CMD:` per line; never JSON in the same message as `CMD:`
 - Only bead IDs from `bd list`; only files under `{{layout_root}}/`
 - Go: use module/import paths from **Implement context** / architecture; do not heredoc `go.mod` / `go.sum`
 - **go.mod bead:** use `go mod init` / `go get` (deps from architecture) / `go mod tidy` only — no heredoc for `go.mod`. If tidy fails, fix bad `import` lines in existing `.go` files shown in **Source context** (heredoc those files only). Verify is **tidy only** (no `go build`/`go run`/curl on this bead).
 - **Other `.go` beads:** verify builds **that file's package only** (see **Verify** on the Next bead line) — not `go build ./...` unless that is what Verify shows. **`go run`/curl only on the `cmd/server/main.go` bead.**
-- **`cmd/…/main.go` bead:** if verify fails on missing `internal/*` symbols, you may heredoc **earlier** required_files paths (store, tasks, …) in the same session, then re-run verify and `bd close`.
+- **`cmd/…/main.go` bead:** Before writing imports, check what's already in internal/ with `ls {{rig}}/mayor/rig/{{layout_root}}/internal/`. If `internal/*` packages don't exist yet, implement them FIRST (not in main.go). Then re-run verify and `bd close`.
 - No `gt bd` — use `bd` with `BEADS_DIR` set as above
 
 If the user message includes **Prior step failed** (QA rework), fix only what QA named; otherwise ignore QA wording.
