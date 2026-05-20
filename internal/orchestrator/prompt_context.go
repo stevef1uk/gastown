@@ -94,6 +94,14 @@ func RunPreRunHook(step, townRoot, rig string, v WorkflowValidation) (string, er
 		if logLine != "" {
 			return "planning bead repair: " + logLine, nil
 		}
+	case "sync_planning_artifacts":
+		logLine, err := SyncPlanningArtifacts(townRoot, rig, v, false)
+		if err != nil {
+			return "", err
+		}
+		if logLine != "" {
+			return "planning sync: " + logLine, nil
+		}
 	case "reopen_implement_beads":
 		reopened, err := EnsureImplementBeadsAvailable(townRoot, rig, v)
 		if err != nil {

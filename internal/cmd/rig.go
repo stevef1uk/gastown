@@ -125,6 +125,26 @@ Examples:
 	RunE: runRigSetPhase,
 }
 
+var rigSyncPlanningForce bool
+
+var rigSyncPlanningCmd = &cobra.Command{
+	Use:   "sync-planning <rig>",
+	Short: "Create implement beads and plan.md from workflow-profile (no LLM)",
+	Long: `Deterministic planning scaffold for rig-flow: repairs open implement beads to match
+required_files in mayor/rig/.gastown/workflow-profile.json and writes plan.md with real
+bead IDs from bd list.
+
+The orchestrator runs the same logic as pre_run hook sync_planning_artifacts before each
+planning step. Use this after editing the profile, removing delivery_phases, or when the
+planner left stale plan.md / missing beads.
+
+Examples:
+  gt rig sync-planning testgt3
+  gt rig sync-planning testgt3 --force   # rewrite plan.md even if it looks valid`,
+	Args: cobra.ExactArgs(1),
+	RunE: runRigSyncPlanning,
+}
+
 var rigNormalizeProfileCmd = &cobra.Command{
 	Use:   "normalize-profile <rig>",
 	Short: "Rewrite workflow-profile.json with current rig-flow normalization rules",
@@ -429,6 +449,8 @@ func init() {
 	rigCmd.AddCommand(rigSpecIndexCmd)
 	rigCmd.AddCommand(rigSetPhaseCmd)
 	rigCmd.AddCommand(rigNormalizeProfileCmd)
+	rigSyncPlanningCmd.Flags().BoolVar(&rigSyncPlanningForce, "force", false, "rewrite plan.md even when it already matches open beads")
+	rigCmd.AddCommand(rigSyncPlanningCmd)
 	rigCmd.AddCommand(rigSyncUpstreamCmd)
 	rigCmd.AddCommand(rigRebootCmd)
 	rigCmd.AddCommand(rigRemoveCmd)
@@ -787,6 +809,42 @@ func maybeSpecIndexFromSPEC(townRoot, rigName string) {
 		}
 		fmt.Printf("\n")
 	}
+}
+
+func runRigSyncPlanning(_ *cobra.Command, args []string) error {
+	rigName := args[0]
+	townRoot, err := workspace.FindFromCwdOrError()
+	if err != nil {
+		return fmt.Errorf("not in a Gas Town workspace: %w", err)
+	}
+	prof, ok, err := orchestrator.LoadRigWorkflowProfileFile(townRoot, rigName)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return fmt.Errorf("no workflow-profile.json for rig %q — run gt rig spec-index %s", rigName, rigName)
+	}
+	prof = orchestrator.ClampProfileValidationForRig(townRoot, rigName, prof)
+	logLine, err := orchestrator.SyncPlanningArtifacts(townRoot, rigName, prof, rigSyncPlanningForce)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("%s Synced planning artifacts for rig %s\n", style.Success.Render("✓"), rigName)
+	if logLine != "" {
+		fmt.Println(logLine)
+	}
+	open, err := orchestrator.ListOpenImplementBeads(townRoot, rigName, prof.ForActivePhase())
+	if err == nil {
+		fmt.Printf("\nOpen implement beads: %d\n", len(open))
+		for _, b := range open {
+			fmt.Printf("  %s  %s\n", b.ID, b.Title)
+		}
+	}
+	planPath := filepath.Join(townRoot, rigName, "mayor", "rig", "plan.md")
+	if info, err := os.Stat(planPath); err == nil {
+		fmt.Printf("\nplan.md: %d bytes\n", info.Size())
+	}
+	return nil
 }
 
 func runRigNormalizeProfile(_ *cobra.Command, args []string) error {

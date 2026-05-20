@@ -55,7 +55,7 @@ states:
       2. Create implementation beads and `plan.md` (≥{{min_plan_bytes}} bytes) with a ## Bead map: real IDs from bd list, full paths, scope + acceptance per file.
     hooks:
       prompt_context: [planning_bead_bootstrap]
-      pre_run: [repair_planning_beads]
+      pre_run: [sync_planning_artifacts]
       state_timeout_seconds: 1800
       on_timeout: [reset_planning_phase]
       max_cmd_turns: 8

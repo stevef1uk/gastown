@@ -520,7 +520,8 @@ func updateOrchestratedRetry(state *AgentState, task *orchestrator.Task, outcome
 // outcomeJSONTailRE strips outcome JSON glued onto the end of a CMD line.
 var outcomeJSONTailRE = regexp.MustCompile(`(?i)\s*\{[\s]*"outcome"[\s\S]*$`)
 
-var markdownFencedCMDRE = regexp.MustCompile("(?im)^```\\s*cmd:\\s*")
+// Matches ```cmd: / ```CMD / ```cmd (LLMs often omit the colon).
+var markdownFencedCMDRE = regexp.MustCompile("(?im)^```\\s*cmd:?\\s*")
 
 // stripOutcomeLines removes JSON/outcome lines so they are not fed into shell scripts.
 // Heredoc bodies are copied verbatim so Go lines containing only "}" are preserved.
@@ -1949,26 +1950,34 @@ func beadIDExample(townRoot, rig string) string {
 }
 
 func validateQAArtifacts(townRoot, rig, outcome string, hadCmdFailure, bdListClosedOK, unittestOK, qaSmokeOK bool, v orchestrator.WorkflowValidation) error {
-	if hadCmdFailure {
+	sendToImpl := outcome == "failure"
+	if hadCmdFailure && !sendToImpl {
 		return fmt.Errorf("QA step had failed commands; fix errors before completing")
 	}
 	if !bdListClosedOK {
 		return fmt.Errorf("run `bd list --status=closed` from %s before reporting QA outcome", rigMayorRigPath(rig))
 	}
-	if !unittestOK {
-		return fmt.Errorf("run `%s` from %s before reporting QA outcome", v.UnittestCommandHint(), rigMayorRigPath(rig))
+	if !sendToImpl {
+		if !unittestOK {
+			return fmt.Errorf("run `%s` from %s before reporting QA outcome", v.UnittestCommandHint(), rigMayorRigPath(rig))
+		}
+		if err := validateRequiredWorkFiles(townRoot, rig, v); err != nil {
+			return err
+		}
+		if err := orchestrator.ValidateWorkNotStubbed(rigMayorRigDir(townRoot, rig), v); err != nil {
+			return fmt.Errorf("implementation files look like stubs (QA must use outcome failure): %w", err)
+		}
+		if err := validateWebStaticReferences(townRoot, rig, v); err != nil {
+			return err
+		}
+		if requiresQARuntimeSmoke(v) && !qaSmokeOK {
+			return fmt.Errorf("web/API QA requires a live smoke command before passing: start the server with `go run`, then curl `/`, referenced static assets, and API GET/POST behavior")
+		}
 	}
-	if err := validateRequiredWorkFiles(townRoot, rig, v); err != nil {
-		return err
-	}
-	if err := orchestrator.ValidateWorkNotStubbed(rigMayorRigDir(townRoot, rig), v); err != nil {
-		return fmt.Errorf("implementation files look like stubs (QA must use outcome failure): %w", err)
-	}
-	if err := validateWebStaticReferences(townRoot, rig, v); err != nil {
-		return err
-	}
-	if requiresQARuntimeSmoke(v) && !qaSmokeOK {
-		return fmt.Errorf("web/API QA requires a live smoke command before passing: start the server with `go run`, then curl `/`, referenced static assets, and API GET/POST behavior")
+	if sendToImpl {
+		if err := validateRequiredWorkFiles(townRoot, rig, v); err != nil {
+			return err
+		}
 	}
 	openImpl, err := countOpenMatchingBeads(townRoot, rig, v.BeadTitleContains)
 	if err != nil {

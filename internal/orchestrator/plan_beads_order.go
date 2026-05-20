@@ -342,20 +342,10 @@ func ResetPlanningPhase(townRoot, rig string, v WorkflowValidation) (string, err
 	if len(created) > 0 {
 		parts = append(parts, "recreated: "+joinStrings(created, ", "))
 	}
-	malformed, err := PruneMalformedImplementBeads(townRoot, rig, v)
-	if err != nil {
+	if _, err := WritePlanningPlanMD(townRoot, rig, v); err != nil {
 		return joinStrings(parts, "; "), err
 	}
-	if len(malformed) > 0 {
-		parts = append(parts, "pruned malformed: "+joinStrings(malformed, ", "))
-	}
-	dupes, err := PruneDuplicateImplementBeads(townRoot, rig, v)
-	if err != nil {
-		return joinStrings(parts, "; "), err
-	}
-	if len(dupes) > 0 {
-		parts = append(parts, "deduped: "+joinStrings(dupes, ", "))
-	}
+	parts = append(parts, "wrote plan.md")
 	return joinStrings(parts, "; "), nil
 }
 

@@ -217,6 +217,17 @@ func TestParseOrchestratedCommands_markdownFencedCMD(t *testing.T) {
 	}
 }
 
+func TestParseOrchestratedCommands_markdownFencedCMDNoColon(t *testing.T) {
+	in := "```CMD\nexport BEADS_DIR=$GT_ROOT/testgt3/.beads && cd testgt3/mayor/rig && bd list --status=closed --limit=0\n```\n"
+	cmds := parseOrchestratedCommands(in)
+	if len(cmds) != 1 {
+		t.Fatalf("want 1 cmd, got %d: %v", len(cmds), cmds)
+	}
+	if !strings.Contains(cmds[0], "bd list --status=closed") {
+		t.Fatalf("got %q", cmds[0])
+	}
+}
+
 func TestParseOrchestratedCommands_heredocPreservesGoClosingBraces(t *testing.T) {
 	t.Parallel()
 	in := `CMD: cd mockrig/mayor/rig && cat > linkshelf/internal/store/store.go <<'EOF'
@@ -806,6 +817,19 @@ func TestOrchestratedCommandEnv_createsPythonVenv(t *testing.T) {
 	py := envLookup(env, "GT_PYTHON3")
 	if py == "" || !strings.Contains(py, filepath.Join("mayor", "rig", ".venv")) {
 		t.Fatalf("GT_PYTHON3=%q", py)
+	}
+}
+
+func TestValidateQAArtifacts_failureAllowsFailedSmoke(t *testing.T) {
+	v := orchestrator.DefaultWorkflowValidation()
+	v.BeadTitleContains = "Implement "
+	err := validateQAArtifacts(t.TempDir(), "r", "failure", true, true, false, false, v)
+	if err != nil {
+		t.Fatalf("failure outcome should pass with bd list only (failed smoke is the finding): %v", err)
+	}
+	err = validateQAArtifacts(t.TempDir(), "r", "all_passed", true, true, false, false, v)
+	if err == nil || !strings.Contains(err.Error(), "failed commands") {
+		t.Fatalf("all_passed should reject hadCmdFailure, got %v", err)
 	}
 }
 

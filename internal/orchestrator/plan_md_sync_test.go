@@ -1,0 +1,106 @@
+package orchestrator
+
+import (
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+func TestPlanningPlanMDNeedsRefresh_missingFile(t *testing.T) {
+	town := t.TempDir()
+	rig := "mockrig"
+	rigDir := filepath.Join(town, rig, "mayor", "rig")
+	if err := os.MkdirAll(rigDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(rigDir, "architecture.md"), []byte(strings.Repeat("a", 400)), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(rigDir, "plan.md"), []byte("### te-old: linkshelf/go.mod\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	v := WorkflowValidation{
+		BeadTitleContains: "Implement ",
+		RequiredFiles:     []string{"linkshelf/go.mod", "linkshelf/web/index.html"},
+	}
+	if !PlanningPlanMDNeedsRefresh(town, rig, v) {
+		t.Fatal("expected refresh when plan missing second path and beads absent")
+	}
+}
+
+func TestPadPlanningPlanMD_meetsMin(t *testing.T) {
+	body := "# plan\n"
+	got := padPlanningPlanMD(body, 500)
+	if int64(len(got)) < 500 {
+		t.Fatalf("len=%d want >= 500", len(got))
+	}
+}
+
+func TestSyncPlanningArtifacts_integration(t *testing.T) {
+	if _, err := exec.LookPath("bd"); err != nil {
+		t.Skip("bd not in PATH")
+	}
+	townRoot := t.TempDir()
+	rig := "mockrig"
+	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
+	beadsDir := filepath.Join(townRoot, rig, ".beads")
+	for _, d := range []string{rigDir, beadsDir} {
+		if err := os.MkdirAll(d, 0755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	init := exec.Command("bd", "init")
+	init.Env = append(os.Environ(), "BEADS_DIR="+beadsDir)
+	init.Dir = rigDir
+	if out, err := init.CombinedOutput(); err != nil {
+		t.Fatalf("bd init: %v\n%s", err, out)
+	}
+	if err := os.WriteFile(filepath.Join(rigDir, "architecture.md"), []byte(strings.Repeat("arch line\n", 80)), 0644); err != nil {
+		t.Fatal(err)
+	}
+	v := WorkflowValidation{
+		LayoutRoot:        "app",
+		BeadTitleContains: "Implement app/",
+		RequiredFiles:     []string{"app/go.mod", "app/main.go"},
+		MinPlanBytes:      100,
+	}
+	planPath := filepath.Join(rigDir, "plan.md")
+
+	logLine, err := SyncPlanningArtifacts(townRoot, rig, v, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(logLine, "wrote plan.md") {
+		t.Fatalf("expected wrote plan.md in log, got %q", logLine)
+	}
+
+	open, err := ListOpenImplementBeads(townRoot, rig, v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(open) != len(v.RequiredFiles) {
+		t.Fatalf("open implement beads = %d, want %d: %v", len(open), len(v.RequiredFiles), open)
+	}
+	if err := ValidatePlanBeads(open, filepath.Join(rigDir, "architecture.md"), v, rig); err != nil {
+		t.Fatalf("ValidatePlanBeads: %v", err)
+	}
+
+	data, err := os.ReadFile(planPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, b := range open {
+		section := "### " + b.ID + ":"
+		if !strings.Contains(string(data), section) {
+			t.Fatalf("plan.md missing section for %s:\n%s", b.ID, data)
+		}
+	}
+	if int64(len(data)) < EffectiveMinPlanBytes(rigDir, v) {
+		t.Fatalf("plan.md too small: %d", len(data))
+	}
+	if PlanningPlanMDNeedsRefresh(townRoot, rig, v) {
+		t.Fatal("plan.md should be fresh after sync")
+	}
+}

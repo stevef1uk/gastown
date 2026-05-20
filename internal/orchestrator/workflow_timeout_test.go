@@ -214,8 +214,18 @@ func TestResetPlanningPhase_integration(t *testing.T) {
 	if !strings.Contains(logLine, "deleted") && !strings.Contains(logLine, "recreated") {
 		t.Fatalf("expected cleanup log, got %q", logLine)
 	}
-	if _, err := os.Stat(planPath); !os.IsNotExist(err) {
-		t.Fatal("plan.md should be removed")
+	if !strings.Contains(logLine, "wrote plan.md") {
+		t.Fatalf("expected plan.md rewrite in log, got %q", logLine)
+	}
+	planData, err := os.ReadFile(planPath)
+	if err != nil {
+		t.Fatalf("plan.md should exist after reset: %v", err)
+	}
+	if strings.Contains(string(planData), "fi-001") {
+		t.Fatal("stale placeholder fi-001 should be gone from plan.md")
+	}
+	if int64(len(planData)) < EffectiveMinPlanBytes(rigDir, v) {
+		t.Fatalf("plan.md too small: %d bytes", len(planData))
 	}
 	open, err := listAllOpenBeads(townRoot, rig)
 	if err != nil {
