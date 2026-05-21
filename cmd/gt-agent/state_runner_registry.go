@@ -138,6 +138,9 @@ var trackHandlers = map[string]trackFn{
 		if cmdErr == nil && isBdListClosedCommand(cmd) {
 			r.track.bdListClosedOK = true
 		}
+		if cmdErr == nil && isBdListOpenCommand(cmd) {
+			r.track.listOpenOK = true
+		}
 		if cmdErr == nil && isQATestCommandOK(cmd, r.v) {
 			r.track.unittestOK = true
 			r.track.hadCmdFailure = false

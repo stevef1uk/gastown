@@ -102,6 +102,7 @@ func runOrchestrated(ctx context.Context, client *llm.Client, townRoot, role, ri
 		} else {
 			orchestratedPrintf("[gt-agent] next state: %s\n", nextState)
 			updateOrchestratedRetryAfterComplete(&state, task, outcome, summary, attemptLog, nextState)
+			clearQAReviewProgressIfLeaving(townRoot, taskRig, task.State, nextState)
 		}
 
 		state.LastActivity = time.Now()
@@ -135,6 +136,10 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 	runner := newStateRunner(task, townRoot, rig)
 	runner.scrubStaleDevServersAtTaskStart()
 	defer runner.shutdownStartedServers()
+	if block := runner.initQAReviewProgress(); block != "" {
+		contextBlocks = append(contextBlocks, block)
+		orchestratedPrintf("[gt-agent] loaded qa-review-progress for %s/%s\n", task.WorkflowID, task.State)
+	}
 	for _, block := range runner.promptContextBlocks() {
 		contextBlocks = append(contextBlocks, block)
 	}

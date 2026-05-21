@@ -10,7 +10,7 @@ func orchestratedCommandTimeoutForTrack(track, cmd string) time.Duration {
 	if strings.EqualFold(strings.TrimSpace(track), "qa") {
 		lower := strings.ToLower(cmd)
 		if strings.Contains(lower, "go run") && strings.Contains(lower, "curl") {
-			return 90 * time.Second
+			return 45 * time.Second
 		}
 		if strings.Contains(lower, "go build ./...") || strings.Contains(lower, "go test ./...") {
 			return 2 * time.Minute

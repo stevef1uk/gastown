@@ -481,13 +481,13 @@ func simplifyGoDevServerSmoke(cmd string) (string, bool) {
 	var b strings.Builder
 	b.WriteString("cd ")
 	b.WriteString(workDir)
-	// disown: non-interactive sh must not wait for background go run (first compile can take minutes).
-	b.WriteString(" && go run ./cmd/server & _gtsrv=$!; disown ${_gtsrv} 2>/dev/null; _gtok=0; ")
-	b.WriteString(fmt.Sprintf(`for _i in 1 2 3 4 5 6 7 8; do curl -sf --max-time 3 http://127.0.0.1:%d/ >/dev/null && _gtok=1 && break; sleep 1; done; test "$_gtok" = 1`, port))
+	// Subshell + pid file: /bin/sh (dash) has no disown; without this, sh waits for go run until compile ends.
+	b.WriteString(" && rm -f .gt-smoke.pid && (go run ./cmd/server >/dev/null 2>&1 & echo $! >.gt-smoke.pid); _gtok=0; ")
+	b.WriteString(fmt.Sprintf(`for _i in 1 2 3 4 5; do curl -sf --connect-timeout 1 --max-time 2 http://127.0.0.1:%d/ >/dev/null && _gtok=1 && break; sleep 1; done; test "$_gtok" = 1`, port))
 	if strings.Contains(lower, "/api/") {
-		b.WriteString(fmt.Sprintf(`; curl -sf --max-time 3 http://127.0.0.1:%d/api/links >/dev/null`, port))
+		b.WriteString(fmt.Sprintf(`; curl -sf --connect-timeout 1 --max-time 2 http://127.0.0.1:%d/api/links >/dev/null`, port))
 	}
-	b.WriteString("; kill ${_gtsrv} 2>/dev/null")
+	b.WriteString("; _gtsrv=$(cat .gt-smoke.pid 2>/dev/null); kill ${_gtsrv} 2>/dev/null; rm -f .gt-smoke.pid")
 	return b.String(), true
 }
 
@@ -576,7 +576,11 @@ func runOrchestratedCommand(cmd, workDir, sessionName string, env []string, cmdT
 		defer cancel()
 	}
 	if !needsOrchestratedScriptFile(cmd) {
-		c := exec.CommandContext(ctx, "/bin/sh", "-c", cmd)
+		shell, flag := "/bin/sh", "-c"
+		if isGoDevServerSmokeCommand(cmd) {
+			shell, flag = "/bin/bash", "-c"
+		}
+		c := exec.CommandContext(ctx, shell, flag, cmd)
 		c.Env = env
 		c.Dir = workDir
 		out, err := c.CombinedOutput()
