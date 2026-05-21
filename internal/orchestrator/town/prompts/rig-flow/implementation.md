@@ -10,10 +10,23 @@ If the prompt includes **Prior step failed** from a **timeout**, the orchestrato
 
 1. `CMD: export BEADS_DIR=$GT_ROOT/{{rig}}/.beads && cd {{rig}}/mayor/rig && bd update BEAD_ID --status=in_progress`
 2. **Fix the file** with native **EDIT:** / **WRITE:** (see orchestrator context) — not `cat > path <<'EOF'` on existing files.
-3. `CMD: cd {{rig}}/mayor/rig && …` — run **Verify** from the Next bead line (Python venv is `{{python_venv_dir}}/` under mayor/rig, not under `{{layout_root}}/`). Green before `bd close`.
-4. `CMD: export BEADS_DIR=$GT_ROOT/{{rig}}/.beads && cd {{rig}}/mayor/rig && bd close BEAD_ID`
-5. If **Next bead** still shows an open ID, repeat steps 1–4 for that bead (more edits/CMD — not JSON yet).
-6. When **Next bead** says none open, a **later** message only: `{"outcome":"success","summary":"…"}`
+3. **Unit tests (best practice):** implement or extend tests **in the same session** as production code, mapped to **SPEC.md**, **architecture.md**, and **plan.md** acceptance for this path (see **Implement context**). Tests must assert real functional requirements — not stubs or `assert True`.
+4. `CMD: cd {{rig}}/mayor/rig && …` — run **Verify** from the Next bead line (Python venv is `{{python_venv_dir}}/` under mayor/rig, not under `{{layout_root}}/`). Green before `bd close`.
+5. `CMD: export BEADS_DIR=$GT_ROOT/{{rig}}/.beads && cd {{rig}}/mayor/rig && bd close BEAD_ID`
+6. If **Next bead** still shows an open ID, repeat steps 1–5 for that bead (more edits/CMD — not JSON yet).
+7. When **Next bead** says none open, a **later** message only: `{"outcome":"success","summary":"…"}`
+
+## Unit tests (required)
+
+| Stack | Where | Verify |
+|-------|--------|--------|
+| Go | `*_test.go` in the **same package** (often its own implement bead in `required_files`) | `go test -count=1 ./<pkg>/...` on the **test bead**; production `.go` beads use `go build` until that file exists |
+| Python | `tests/test_<module>.py` or `test_*.py` under `tests/` | `pytest -v` on that file when it exists |
+
+- Read **From plan.md** and **From architecture.md** in Implement context — each case should trace to a SPEC/plan acceptance bullet.
+- **Test bead:** only test code; cover happy path, errors, and edge cases named in architecture.
+- **Production bead:** add or update the correlated test file before `bd close` if Verify runs `go test` / `pytest` (or a test bead is listed in `required_files`).
+- Do **not** defer all tests to QA — QA runs the full suite (`{{unittest_command_hint}}`) plus runtime smoke.
 
 ## Native file tools (preferred)
 
@@ -21,7 +34,7 @@ gt-agent runs these directly (same turn as `CMD:` is allowed):
 
 - **READ:** `layout/path.go` — inspect active bead or **Dependency packages** (read-only).
 - **EDIT:** `layout/path.go` then a unique `<<<<<<< SEARCH` / `=======` / `>>>>>>> REPLACE` block (copy exact lines from READ or **Current file on disk**).
-- **WRITE:** `layout/newfile.go` then file body until `---END WRITE---` — **new files only** (gt-agent rejects full WRITE on large existing files).
+- **WRITE:** `layout/newfile.go` then file body until `---END WRITE---` — **new files only** (gt-agent rejects full WRITE on large existing files). Use **WRITE** for new `*_test.go` / `tests/test_*.py`.
 
 Use **CMD:** only for `bd`, **Verify**, `go run`/curl (main bead), and `ls`. Auto-verify runs after EDIT/WRITE.
 
@@ -45,7 +58,7 @@ When **Verify** fails in a path that is **not** your active bead (e.g. `handlers
 - Only bead IDs from `bd list`; only files under `{{layout_root}}/`
 - Go: use module/import paths from **Implement context** / architecture; do not heredoc `go.mod` / `go.sum`
 - **go.mod bead:** `go mod init` / `go get` / `go mod tidy` via CMD only.
-- **Other `.go` beads:** package-scoped verify from Next bead — not `go build ./...` unless Verify says so.
+- **Other `.go` beads:** package-scoped **`go test`** from Next bead — not `go build ./...` unless Verify says so.
 - **`go run`/curl** only on the `cmd/server/main.go` bead.
 - **`cmd/…/main.go`:** if an earlier file's bead is **open**, implement that bead first; never WRITE/EDIT closed-bead paths.
 - No `gt bd` — use `bd` with `BEADS_DIR` as above

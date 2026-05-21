@@ -2029,6 +2029,9 @@ func isQARuntimeSmokeCommandOK(cmd string, v orchestrator.WorkflowValidation) bo
 	if !requiresQARuntimeSmoke(v) {
 		return false
 	}
+	if orchestrator.IsProfileDerivedSmokeCommand(cmd) {
+		return true
+	}
 	lower := strings.ToLower(strings.Join(strings.Fields(cmd), " "))
 	if !strings.Contains(lower, "go run") || !strings.Contains(lower, "curl ") {
 		return false

@@ -54,7 +54,7 @@ func FormatOperatorWorkflowProfileNotice(absProfilePath, rigName string, p *Prof
 		for _, line := range v.PhaseSummaryLines() {
 			fmt.Fprintf(&b, "        %s\n", line)
 		}
-		fmt.Fprintf(&b, "  Advance phase manually: gt rig set-phase %s <phase-id>\n", rigName)
+		fmt.Fprintf(&b, "  Phases auto-advance after QA all_passed; manual: gt rig set-phase %s <phase-id>\n", rigName)
 	}
 	sum := strings.TrimSpace(v.SpecSummary)
 	if sum != "" {

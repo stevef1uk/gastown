@@ -108,7 +108,7 @@ func GoImplementationVerifyCommandForBead(v WorkflowValidation, mayorRigDir, bea
 	if IsServerMainImplementBead(beadPath) && GoServerMainExists(mayorRigDir, v) {
 		return GoVerifyCommandWithTidy(v)
 	}
-	return GoCompileVerifyCommandForBead(v, beadPath)
+	return GoCompileVerifyCommandForBead(v, mayorRigDir, beadPath)
 }
 
 // GoModBeadVerifyCommand is verify for the go.mod implement bead only (module graph, not full build).

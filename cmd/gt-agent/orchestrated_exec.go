@@ -390,17 +390,13 @@ func normalizeGoCommandTypos(cmd string) (string, bool) {
 			changed = true
 		}
 	}
-	if fixed, ok := normalizeGoDevServerSmokeCommand(cmd); ok {
-		cmd = fixed
-		changed = true
-	}
 	return cmd, changed
 }
 
 // normalizeGoDevServerSmokeCommand fixes polecat-invented go run smoke chains: gt-agent
 // already stops listeners and go run processes — pkill is unreliable; go build ./...
 // before go run is redundant and slow.
-func normalizeGoDevServerSmokeCommand(cmd string) (string, bool) {
+func normalizeGoDevServerSmokeCommand(cmd, townRoot, rig string, v orchestrator.WorkflowValidation) (string, bool) {
 	lower := strings.ToLower(cmd)
 	if !strings.Contains(lower, "go run") || !strings.Contains(lower, "cmd/server") {
 		return cmd, false
@@ -419,7 +415,7 @@ func normalizeGoDevServerSmokeCommand(cmd string) (string, bool) {
 		out = goSmokeStripTidyRE.ReplaceAllString(out, "")
 		changed = true
 	}
-	if short, ok := simplifyGoDevServerSmoke(out); ok {
+	if short, ok := simplifyGoDevServerSmoke(out, townRoot, rig, v); ok {
 		out = short
 		changed = true
 	}
@@ -467,8 +463,8 @@ func ensureGoSmokeShellReturns(cmd string) (string, bool) {
 	return strings.TrimSpace(out) + `; kill ${_gtsrv} 2>/dev/null`, true
 }
 
-// simplifyGoDevServerSmoke replaces long agent-invented smoke chains with a short probe (QA/polecat).
-func simplifyGoDevServerSmoke(cmd string) (string, bool) {
+// simplifyGoDevServerSmoke replaces long agent-invented smoke chains with a profile-derived probe.
+func simplifyGoDevServerSmoke(cmd, townRoot, rig string, v orchestrator.WorkflowValidation) (string, bool) {
 	lower := strings.ToLower(cmd)
 	if !strings.Contains(lower, "go run") || !strings.Contains(lower, "cmd/server") || !strings.Contains(lower, "curl") {
 		return cmd, false
@@ -477,18 +473,12 @@ func simplifyGoDevServerSmoke(cmd string) (string, bool) {
 	if workDir == "" {
 		return cmd, false
 	}
-	port := smokeLocalhostPort(cmd)
-	var b strings.Builder
-	b.WriteString("cd ")
-	b.WriteString(workDir)
-	// Subshell + pid file: /bin/sh (dash) has no disown; without this, sh waits for go run until compile ends.
-	b.WriteString(" && rm -f .gt-smoke.pid && (go run ./cmd/server >/dev/null 2>&1 & echo $! >.gt-smoke.pid); _gtok=0; ")
-	b.WriteString(fmt.Sprintf(`for _i in 1 2 3 4 5; do curl -sf --connect-timeout 1 --max-time 2 http://127.0.0.1:%d/ >/dev/null && _gtok=1 && break; sleep 1; done; test "$_gtok" = 1`, port))
-	if strings.Contains(lower, "/api/") {
-		b.WriteString(fmt.Sprintf(`; curl -sf --connect-timeout 1 --max-time 2 http://127.0.0.1:%d/api/links >/dev/null`, port))
+	spec, _ := orchestrator.LoadAPISmokeSpecFromRig(townRoot, rig, v)
+	built := orchestrator.BuildRuntimeSmokeShell(workDir, spec)
+	if built == "" {
+		return cmd, false
 	}
-	b.WriteString("; _gtsrv=$(cat .gt-smoke.pid 2>/dev/null); kill ${_gtsrv} 2>/dev/null; rm -f .gt-smoke.pid")
-	return b.String(), true
+	return built, true
 }
 
 func smokeWorkDirFromCommand(cmd string) string {

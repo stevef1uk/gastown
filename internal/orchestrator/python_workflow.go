@@ -1,6 +1,7 @@
 package orchestrator
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 )
@@ -103,7 +104,6 @@ func ImplementationVerifyCommandForBead(v WorkflowValidation, mayorRigDir, beadP
 
 // PythonImplementationVerifyCommandForBead returns verify scoped to the active implement path.
 func PythonImplementationVerifyCommandForBead(v WorkflowValidation, mayorRigDir, beadPath string) string {
-	_ = mayorRigDir
 	beadPath = filepath.ToSlash(strings.TrimSpace(beadPath))
 	venv := v.PythonVenvRelDir()
 	py := venv + "/bin/python3"
@@ -112,13 +112,16 @@ func PythonImplementationVerifyCommandForBead(v WorkflowValidation, mayorRigDir,
 		return "test -x " + py + " && " + py + " -c 'import pytest'"
 	}
 
-	if strings.Contains(beadPath, "/tests/") || strings.HasPrefix(filepath.Base(beadPath), "test_") {
-		if strings.HasSuffix(beadPath, ".py") {
-			return py + " -m pytest -v " + beadPath
-		}
+	if IsTestImplementPath(beadPath) && strings.HasSuffix(beadPath, ".py") {
+		return py + " -m pytest -v " + beadPath
 	}
 
 	if strings.HasSuffix(beadPath, ".py") {
+		if testPath := CorrelatedTestPathForSource(beadPath, v.LayoutRoot); testPath != "" {
+			if _, err := os.Stat(filepath.Join(mayorRigDir, testPath)); err == nil {
+				return py + " -m pytest -v " + testPath
+			}
+		}
 		return py + " -m compileall -q " + beadPath
 	}
 

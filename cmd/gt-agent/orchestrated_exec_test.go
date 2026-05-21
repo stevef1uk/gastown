@@ -81,9 +81,32 @@ func TestPrepareOrchestratedScript_scrubsOrphanQuote(t *testing.T) {
 	}
 }
 
+func linkshelfSmokeTestRig(t *testing.T) (townRoot, rig string, v orchestrator.WorkflowValidation) {
+	t.Helper()
+	townRoot = t.TempDir()
+	rig = "testgt3"
+	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
+	spec := "| GET | /api/links | 200, JSON array | — |\n| POST | /api/links | 201 | — |\n"
+	if err := os.MkdirAll(filepath.Join(rigDir, "linkshelf", "web"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(rigDir, "SPEC.md"), []byte(spec), 0644); err != nil {
+		t.Fatal(err)
+	}
+	v = orchestrator.WorkflowValidation{
+		LayoutRoot: "linkshelf",
+		RequiredFiles: []string{
+			"linkshelf/web/index.html",
+			"linkshelf/cmd/server/main.go",
+		},
+	}
+	return townRoot, rig, v
+}
+
 func TestNormalizeGoDevServerSmokeCommand(t *testing.T) {
+	townRoot, rig, v := linkshelfSmokeTestRig(t)
 	in := `cd testgt3/mayor/rig && cd linkshelf && go mod tidy && go build ./... && go run ./cmd/server & sleep 2 && curl -s http://localhost:8080 > /dev/null && pkill -f "go run ./cmd/server"`
-	got, ok := normalizeGoDevServerSmokeCommand(in)
+	got, ok := normalizeGoDevServerSmokeCommand(in, townRoot, rig, v)
 	if !ok {
 		t.Fatal("expected rewrite")
 	}
@@ -102,8 +125,9 @@ func TestNormalizeGoDevServerSmokeCommand(t *testing.T) {
 }
 
 func TestSimplifyGoDevServerSmokeCommand_shortProbe(t *testing.T) {
+	townRoot, rig, v := linkshelfSmokeTestRig(t)
 	in := `cd testgt3/mayor/rig && cd linkshelf && go mod tidy && go build ./... && go run ./cmd/server & sleep 2 && curl -sf http://127.0.0.1:8080/ && curl -sf http://127.0.0.1:8080/api/links`
-	got, ok := simplifyGoDevServerSmoke(in)
+	got, ok := simplifyGoDevServerSmoke(in, townRoot, rig, v)
 	if !ok {
 		t.Fatal("expected simplify")
 	}
@@ -111,7 +135,10 @@ func TestSimplifyGoDevServerSmokeCommand_shortProbe(t *testing.T) {
 		t.Fatalf("got %q", got)
 	}
 	if !strings.Contains(got, ".gt-smoke.pid") || !strings.Contains(got, "for _i in") || !strings.Contains(got, "/api/links") {
-		t.Fatalf("want poll-based smoke with API check: %q", got)
+		t.Fatalf("want profile-derived smoke with API from SPEC: %q", got)
+	}
+	if !strings.Contains(got, "POST") || !strings.Contains(got, `= "[]"`) {
+		t.Fatalf("want POST and empty-array GET from SPEC table: %q", got)
 	}
 	if strings.Contains(got, "sleep 6") {
 		t.Fatalf("want curl poll not fixed sleep 6: %q", got)

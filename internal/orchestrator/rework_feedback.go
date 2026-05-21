@@ -191,6 +191,24 @@ func preparePlanReviewToPlannerFeedback(summary, raw string) string {
 	return sanitizeAttemptFeedback(raw)
 }
 
+func preparePhaseAdvanceToPlanningFeedback(fromPhase, toPhase string, v WorkflowValidation) string {
+	var b strings.Builder
+	b.WriteString("Prior delivery phase `")
+	b.WriteString(strings.TrimSpace(fromPhase))
+	b.WriteString("` passed QA (`all_passed`). Orchestrator advanced to phase `")
+	b.WriteString(strings.TrimSpace(toPhase))
+	b.WriteString("` and synced implement beads + plan.md.\n\n")
+	if note := v.PhaseScopeNote(); note != "" {
+		b.WriteString(note)
+		b.WriteString("\n\n")
+	}
+	b.WriteString("Planner steps:\n")
+	b.WriteString("1. `bd list --status=open` — beads for this phase should already exist (do not duplicate `bd create`).\n")
+	b.WriteString("2. `wc -c plan.md` — expand per-file acceptance from SPEC/architecture if under minimum.\n")
+	b.WriteString("3. JSON success when bead set matches required_files for this phase only.\n")
+	return strings.TrimSpace(b.String())
+}
+
 // PlanReviewSummarySaysPlanOK reports whether QA explicitly accepted plan.md size.
 func PlanReviewSummarySaysPlanOK(summary string) bool {
 	lower := strings.ToLower(summary)

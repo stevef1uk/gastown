@@ -72,6 +72,25 @@ func TestMoveDockerPathsToFinalDeliveryPhase(t *testing.T) {
 	}
 }
 
+func TestNextDeliveryPhaseID(t *testing.T) {
+	v := WorkflowValidation{
+		ActivePhaseIDField: "p1",
+		DeliveryPhases: []DeliveryPhase{
+			{ID: "p1"},
+			{ID: "p2"},
+			{ID: "p3"},
+		},
+	}
+	next, ok := v.NextDeliveryPhaseID()
+	if !ok || next != "p2" {
+		t.Fatalf("got %q ok=%v want p2", next, ok)
+	}
+	v.ActivePhaseIDField = "p3"
+	if _, ok := v.NextDeliveryPhaseID(); ok {
+		t.Fatal("expected no next after last phase")
+	}
+}
+
 func TestValidatePlanBeads_activePhaseOnly(t *testing.T) {
 	v := WorkflowValidation{
 		BeadTitleContains:  "Implement ",

@@ -113,8 +113,8 @@ func TestGoImplementationVerifyCommandForBead_storeCompileOnly(t *testing.T) {
 	if strings.Contains(got, "curl") || strings.Contains(got, "go run") {
 		t.Fatalf("store bead must not curl: %q", got)
 	}
-	if !strings.Contains(got, "go build ./internal/store/...") {
-		t.Fatalf("store bead wants package-scoped build: %q", got)
+	if !strings.Contains(got, "go build ./internal/store/...") && !strings.Contains(got, "go test -count=1 ./internal/store/...") {
+		t.Fatalf("store bead wants package-scoped verify: %q", got)
 	}
 }
 

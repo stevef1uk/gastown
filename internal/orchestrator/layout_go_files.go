@@ -21,8 +21,44 @@ func GoBuildRelPackage(layoutRoot, beadPath string) string {
 	return strings.Trim(filepath.ToSlash(filepath.Dir(beadPath)), "/")
 }
 
-// GoCompileVerifyCommandForBead is compile verify scoped to the active implement file's package.
-func GoCompileVerifyCommandForBead(v WorkflowValidation, beadPath string) string {
+// GoTestVerifyCommandForPackage runs unit tests for the package containing beadPath.
+func GoTestVerifyCommandForPackage(v WorkflowValidation, beadPath string) string {
+	layout := strings.Trim(strings.TrimSpace(v.LayoutRoot), "/")
+	if layout == "" {
+		layout = "."
+	}
+	pkg := GoBuildRelPackage(v.LayoutRoot, beadPath)
+	if pkg == "" {
+		return GoCompileOnlyVerifyCommand(v)
+	}
+	return fmt.Sprintf("cd %s && go mod tidy && go test -count=1 ./%s/...", layout, pkg)
+}
+
+// GoCompileVerifyCommandForBead is verify scoped to the active implement file's package.
+// Test beads always run go test. Production .go beads run go test when tests exist on disk,
+// or when there is no separate *_test.go bead; otherwise go build until the test bead is implemented.
+func GoCompileVerifyCommandForBead(v WorkflowValidation, mayorRigDir, beadPath string) string {
+	beadPath = filepath.ToSlash(strings.TrimSpace(beadPath))
+	if strings.HasSuffix(beadPath, ".go") && !strings.HasSuffix(beadPath, "go.mod") && !IsServerMainImplementBead(beadPath) {
+		if IsTestImplementPath(beadPath) {
+			return GoTestVerifyCommandForPackage(v, beadPath)
+		}
+		testPath := CorrelatedTestPathForSource(beadPath, v.LayoutRoot)
+		if testPath != "" && TestPathListedInRequired(beadPath, v.RequiredFiles, v.LayoutRoot) {
+			if _, err := os.Stat(filepath.Join(mayorRigDir, testPath)); os.IsNotExist(err) {
+				return goBuildVerifyForPackage(v, beadPath)
+			}
+		}
+		return GoTestVerifyCommandForPackage(v, beadPath)
+	}
+	layout := strings.Trim(strings.TrimSpace(v.LayoutRoot), "/")
+	if layout == "" {
+		layout = "."
+	}
+	return goBuildVerifyForPackage(v, beadPath)
+}
+
+func goBuildVerifyForPackage(v WorkflowValidation, beadPath string) string {
 	layout := strings.Trim(strings.TrimSpace(v.LayoutRoot), "/")
 	if layout == "" {
 		layout = "."

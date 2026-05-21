@@ -8,10 +8,28 @@ import (
 
 func TestGoCompileVerifyCommandForBead_storePackage(t *testing.T) {
 	t.Parallel()
-	v := WorkflowValidation{LayoutRoot: "linkshelf"}
-	got := GoCompileVerifyCommandForBead(v, "linkshelf/internal/store/store.go")
+	v := WorkflowValidation{
+		LayoutRoot: "linkshelf",
+		RequiredFiles: []string{
+			"linkshelf/internal/store/store.go",
+			"linkshelf/internal/store/store_test.go",
+		},
+	}
+	dir := t.TempDir()
+	got := GoCompileVerifyCommandForBead(v, dir, "linkshelf/internal/store/store.go")
 	if got != "cd linkshelf && go mod tidy && go build ./internal/store/..." {
-		t.Fatalf("got %q", got)
+		t.Fatalf("production bead before test file exists: got %q", got)
+	}
+	testFile := filepath.Join(dir, "linkshelf/internal/store/store_test.go")
+	if err := os.MkdirAll(filepath.Dir(testFile), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(testFile, []byte("package store\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	got = GoCompileVerifyCommandForBead(v, dir, "linkshelf/internal/store/store.go")
+	if got != "cd linkshelf && go mod tidy && go test -count=1 ./internal/store/..." {
+		t.Fatalf("production bead after test file exists: got %q", got)
 	}
 }
 

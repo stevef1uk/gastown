@@ -239,6 +239,35 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summa
 	if err != nil {
 		return "", err
 	}
+	rig := ""
+	if inst.Variables != nil {
+		rig = inst.Variables["rig"]
+	}
+	var phaseAdvance *WorkflowRework
+	if fromState == "qa_review" && outcome == "all_passed" && next == "completed" && rig != "" {
+		redirected, fromPhase, toPhase, logLine, advErr := TryAdvanceDeliveryPhaseAfterQA(m.townRoot, rig)
+		if advErr != nil {
+			fmt.Printf("[Manager] Warning: delivery phase advance after QA: %v\n", advErr)
+		} else if redirected {
+			next = "planning"
+			inst.CurrentState = next
+			inst.Status = "running"
+			inst.touchStateEnteredAt()
+			if logLine != "" {
+				summary = strings.TrimSpace(logLine + "\n\n" + summary)
+			}
+			full, ok, _ := LoadRigWorkflowProfileFile(m.townRoot, rig)
+			if ok {
+				full.ActivePhaseIDField = toPhase
+				phaseAdvance = &WorkflowRework{
+					FromState: fromState,
+					Outcome:   outcome,
+					Summary:   truncateWorkflowText(summary, maxWorkflowReworkSummary),
+					Feedback:  truncateWorkflowText(preparePhaseAdvanceToPlanningFeedback(fromPhase, toPhase, full.ForActivePhase()), maxWorkflowReworkFeedback),
+				}
+			}
+		}
+	}
 	setRework := IsTimeoutOutcome(outcome) || (IsFailureOutcome(outcome) && next != "" && next != fromState)
 	if setRework && next != "" {
 		v := m.workflowValidationFor(inst, tpl)
@@ -247,7 +276,7 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summa
 		if inst.Variables != nil {
 			rig = inst.Variables["rig"]
 		}
-		if fromState == "qa_review" && next == "implementation" && rig != "" {
+		if fromState == "qa_review" && next == "implementation" && rig != "" && phaseAdvance == nil {
 			if reopened, rerr := ReopenImplementationBeadsAfterQAFailure(m.townRoot, rig, v, summary); rerr != nil {
 				fmt.Printf("[Manager] Warning: reopen implement beads after QA failure: %v\n", rerr)
 			} else if len(reopened) > 0 {
@@ -265,11 +294,13 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summa
 		// Success clears QA/plan-review rework for the next agent.
 		inst.PendingRework = nil
 	}
+	if phaseAdvance != nil {
+		inst.PendingRework = phaseAdvance
+	}
 	if err := m.persistLocked(); err != nil {
 		return next, fmt.Errorf("persist instances: %w", err)
 	}
-	rig := ""
-	if inst.Variables != nil {
+	if rig == "" && inst.Variables != nil {
 		rig = inst.Variables["rig"]
 	}
 	if cerr := refinery.CommitMayorRigOrchestratorCheckpoint(m.townRoot, rig, workflowID, inst.TemplateID, fromState, next, outcome); cerr != nil {

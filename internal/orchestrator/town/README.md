@@ -207,7 +207,7 @@ gt rig set-phase <rig> --list        # show phases and active id
 gt rig set-phase <rig> p1-infra      # switch active phase (manual advance)
 ```
 
-After QA `all_passed` for a phase, set the next phase id and restart or reset the workflow from planning (see operator runbook in plan docs).
+After QA `all_passed` for a phase, the orchestrator **automatically** sets the next `active_phase_id`, syncs beads/plan.md, and transitions the workflow to **planning**. Use `gt rig set-phase` only for manual overrides.
 
 ## Start rig-flow
 

@@ -46,8 +46,11 @@ CMD: cat > {{rig}}/mayor/rig/architecture.md <<'EOF'
 ## Planned file layout
 - (list key paths from SPEC / {{required_files}} — describe only; do not create)
 
+## Unit tests
+(Map SPEC functional requirements to test files: Go `*_test.go` per package, Python `tests/test_*.py`. Name cases after FR/acceptance bullets.)
+
 ## Integration and testing
-(how pieces connect; test/verify commands polecat should run)
+(how pieces connect; full-suite command e.g. `go test ./...` / `pytest -v`; polecat runs package tests during implementation)
 
 ## Acceptance mapping
 (how architecture satisfies SPEC goals)

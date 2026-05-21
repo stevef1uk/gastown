@@ -52,7 +52,18 @@ func formatImplementBeadContextForPath(townRoot, rig, beadPath string, v Workflo
 	b.WriteString("## Implement context for `")
 	b.WriteString(beadPath)
 	b.WriteString("`\n")
-	b.WriteString("Match architecture and profile — do not invent packages, paths, or APIs not described below.\n")
+	b.WriteString("Match architecture, **plan.md** acceptance, and profile — do not invent packages, paths, or APIs not described below.\n")
+
+	if plan := PlanExcerptForBead(townRoot, rig, beadPath); plan != "" {
+		b.WriteString("\n### From plan.md (acceptance for this bead)\n")
+		b.WriteString(plan)
+		b.WriteString("\n")
+	}
+	if note := formatUnitTestGuidanceForBead(townRoot, rig, beadPath, v); note != "" {
+		b.WriteString("\n")
+		b.WriteString(note)
+		b.WriteString("\n")
+	}
 
 	if excerpt := architectureExcerptForBead(townRoot, rig, beadPath, v); excerpt != "" {
 		b.WriteString("\n### From architecture.md\n")
@@ -236,6 +247,39 @@ func excerptLinesForPath(doc, beadPath, layoutRoot string, maxBytes int) string 
 		}
 	}
 	return strings.Join(out, "\n")
+}
+
+func formatUnitTestGuidanceForBead(townRoot, rig, beadPath string, v WorkflowValidation) string {
+	if IsTestImplementPath(beadPath) {
+		return strings.TrimSpace("### Unit tests (this bead)\n" +
+			"Implement or extend tests that prove **SPEC.md / plan.md acceptance** for this path — not smoke curls.\n" +
+			"Use table-driven or case-per-requirement tests; run **Verify** (go test / pytest -v) before bd close.")
+	}
+	if WorkflowUsesGo(v) && strings.HasSuffix(beadPath, ".go") && !IsServerMainImplementBead(beadPath) && !strings.HasSuffix(beadPath, "go.mod") {
+		testPath := CorrelatedTestPathForSource(beadPath, v.LayoutRoot)
+		if testPath == "" {
+			return ""
+		}
+		if TestPathListedInRequired(beadPath, v.RequiredFiles, v.LayoutRoot) && !mayorRigTestFileExists(townRoot, rig, testPath) {
+			return strings.TrimSpace("### Unit tests (separate bead)\n" +
+				"This bead is **production code only** (`" + beadPath + "`). **Verify** runs `go build` for this package.\n" +
+				"Do **not** `cat` `" + testPath + "` — it does not exist until the **`" + testPath + "` implement bead**.\n" +
+				"Implement tests on that later bead (table-driven cases from SPEC/plan acceptance).")
+		}
+		msg := "### Unit tests (required with this code)\nBefore `bd close`, `" + testPath + "` must exist and **Verify** (`go test -count=1`) must pass.\n"
+		msg += "Create tests with **WRITE:** or **EDIT:** in this session — do not fail because the file is missing; write it.\n"
+		return strings.TrimSpace(msg)
+	}
+	if WorkflowUsesPython(v) && strings.HasSuffix(beadPath, ".py") && !IsTestImplementPath(beadPath) {
+		testPath := CorrelatedTestPathForSource(beadPath, v.LayoutRoot)
+		if testPath == "" {
+			return ""
+		}
+		return strings.TrimSpace("### Unit tests (required with this code)\n" +
+			"Add or update `" + testPath + "` with pytest cases mapped to SPEC/plan acceptance for `" + beadPath + "`.\n" +
+			"Verify runs pytest on that file when it exists on disk.")
+	}
+	return ""
 }
 
 func readMayorRigFileSnippet(townRoot, rig, relPath string, maxBytes int) string {

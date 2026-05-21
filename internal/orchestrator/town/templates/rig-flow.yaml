@@ -141,7 +141,7 @@ states:
     role: polecat
     prompt_file: prompts/rig-flow/implementation.md
     instructions: |
-      Implement the **Next bead** only: in_progress → incremental edit (sed/patch) or heredoc for new files → verify → bd close. JSON success when all implement beads are closed.
+      Implement the **Next bead** only: in_progress → code + unit tests tied to SPEC/plan acceptance → verify (go test / pytest per Next bead) → bd close. JSON success when all implement beads are closed.
     hooks:
       state_timeout_seconds: 3600
       on_timeout: [recover_implementation_stall]
@@ -149,10 +149,10 @@ states:
       max_cmd_turns: 12
       omit_orchestrator_context: true
       system_prompt_footer: |
-        Prefer READ:/EDIT:/WRITE: for source files; `CMD: <shell>` for bd and Verify only. JSON success in a later message (not with CMD or native tools).
+        Prefer READ:/EDIT:/WRITE: for source and test files; `CMD: <shell>` for bd and Verify only. Add/update unit tests from plan.md acceptance before bd close. JSON success in a later message (not with CMD or native tools).
       user_prompt_wrapper: none
       failure_prompt_context: [implementation_queue, implement_bead_context]
-      empty_response_suffix: "Reply with EDIT:/WRITE:/READ: or CMD: lines. Use EDIT search/replace on existing files; WRITE only for new files. Use Verify from Next bead."
+      empty_response_suffix: "Reply with EDIT:/WRITE:/READ: or CMD: lines. Implement code and unit tests per plan.md; WRITE for new *_test.go or tests/test_*.py. Use Verify from Next bead."
       prompt_context: [implementation_queue, implement_bead_context]
       pre_run: [close_project_setup_beads, enforce_implement_bead_queue, prune_stale_layout_go, repair_requirements, reopen_implement_beads]
       per_turn: [repair_requirements]
@@ -180,7 +180,7 @@ states:
       artifacts: implementation
       retry_hint_key: implementation
       failure_hint: |
-        One bead at a time: bd update → **EDIT:** search/replace (or WRITE: for new files) → verify from Next bead → bd close. Use CMD only for bd/verify. go run/curl only on cmd/server/main.go bead.
+        One bead at a time: bd update → **EDIT:** / **WRITE:** (include *_test.go or tests/test_*.py mapped to SPEC/plan) → verify from Next bead (go test / pytest) → bd close. Use CMD only for bd/verify. go run/curl only on cmd/server/main.go bead.
     transitions:
       success:
         to: qa_review

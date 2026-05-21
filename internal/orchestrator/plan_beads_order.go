@@ -653,6 +653,47 @@ func lexicographicMinID(ids []string) string {
 	return min
 }
 
+// PruneOpenImplementBeadsOutsideRequired deletes open implement beads whose path is not an exact
+// active-phase required_files entry (used after delivery phase advance; avoids basename false positives).
+func PruneOpenImplementBeadsOutsideRequired(townRoot, rig string, v WorkflowValidation) ([]string, error) {
+	v = v.ForActivePhase()
+	if len(v.RequiredFiles) == 0 {
+		return nil, nil
+	}
+	required := make(map[string]bool)
+	for _, want := range v.RequiredFiles {
+		want = filepath.ToSlash(strings.TrimSpace(want))
+		if want != "" {
+			required[want] = true
+		}
+	}
+	open, err := listAllOpenBeads(townRoot, rig)
+	if err != nil {
+		return nil, err
+	}
+	beadsDir := config.ResolveBeadsDirForRig(townRoot, rig)
+	workDir := filepath.Join(townRoot, rig, "mayor", "rig")
+	var deleted []string
+	for _, b := range open {
+		if !MatchesImplementBeadTitle(b.Title, v) {
+			continue
+		}
+		p := NormalizePlannerBeadPath(ExtractPathFromBeadTitle(b.Title, v.BeadTitleContains), v.LayoutRoot, rig)
+		if p == "" || required[p] {
+			continue
+		}
+		cmd := exec.Command("bd", "delete", b.ID, "--force")
+		cmd.Env = append(os.Environ(), "BEADS_DIR="+beadsDir)
+		cmd.Dir = workDir
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			return deleted, fmt.Errorf("bd delete %s: %w: %s", b.ID, err, strings.TrimSpace(string(out)))
+		}
+		deleted = append(deleted, b.ID)
+	}
+	return deleted, nil
+}
+
 // PruneExtraImplementBeads deletes open implement beads whose paths are invalid or not in required_files.
 func PruneExtraImplementBeads(townRoot, rig string, v WorkflowValidation) ([]string, error) {
 	v = v.ForActivePhase()
@@ -915,7 +956,7 @@ func FormatPlanningBeadBootstrapBlock(townRoot, rig string, v WorkflowValidation
 	}
 	b.WriteString("\nThen `bd list --status=open`, write plan.md (≥ ")
 	b.WriteString(fmt.Sprintf("%d", v.MinPlanBytes))
-	b.WriteString(" bytes) with a ## Bead map: one ### <id>: <full-path> section per file (scope, architecture ref, acceptance bullets). ")
+	b.WriteString(" bytes) with a ## Bead map: one ### <id>: <full-path> section per file (scope, architecture ref, acceptance bullets; include *_test.go / tests/test_*.py paths from architecture). ")
 	b.WriteString("A 3-line checklist is too small and will fail wc -c. Use real IDs from bd list only. ")
 	b.WriteString("`wc -c plan.md`, then JSON success in a **later** turn.\n")
 	return b.String()

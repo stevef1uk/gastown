@@ -282,8 +282,88 @@ func (v WorkflowValidation) PhaseScopeNote() string {
 	line += fmt.Sprintf(". Create implement beads **only** for the %d paths in `required_files` below", len(activeFiles))
 	line += " — **not** every path in `architecture.md` (later phases get their own beads). "
 	line += "`plan.md` only needs to cover this phase (" + v.PlanMinSizeHint() + "). "
-	line += "Read architecture for context; do **not** `bd create` for backend/frontend/test paths until their phase is active."
+	line += "Read architecture for context; do **not** `bd create` for backend/frontend/test paths until their phase is active. "
+	line += "When QA reports `all_passed` for this phase, the orchestrator **automatically** advances to the next phase and restarts at planning."
 	return line
+}
+
+// NextDeliveryPhaseID returns the phase id after the active one, or ("", false) on the last phase.
+func (v WorkflowValidation) NextDeliveryPhaseID() (string, bool) {
+	if len(v.DeliveryPhases) < 2 {
+		return "", false
+	}
+	active := v.ActivePhaseID()
+	idx := 0
+	if active != "" {
+		found := false
+		for i, p := range v.DeliveryPhases {
+			if strings.TrimSpace(p.ID) == active {
+				idx = i
+				found = true
+				break
+			}
+		}
+		if !found {
+			return "", false
+		}
+	}
+	if idx+1 >= len(v.DeliveryPhases) {
+		return "", false
+	}
+	return strings.TrimSpace(v.DeliveryPhases[idx+1].ID), true
+}
+
+// TryAdvanceDeliveryPhaseAfterQA moves active_phase_id to the next phase and syncs planning beads/plan.md.
+// Call when QA reports all_passed for the current phase. Returns redirected=true when the workflow should
+// continue at planning instead of completed.
+func TryAdvanceDeliveryPhaseAfterQA(townRoot, rig string) (redirected bool, fromID, toID, logLine string, err error) {
+	if townRoot == "" || rig == "" {
+		return false, "", "", "", nil
+	}
+	full, ok, err := LoadRigWorkflowProfileFile(townRoot, rig)
+	if err != nil {
+		return false, "", "", "", err
+	}
+	if !ok || !full.HasPhasedDelivery() {
+		return false, "", "", "", nil
+	}
+	fromID = full.ActivePhaseID()
+	if fromID == "" {
+		if p, ok := full.ActivePhase(); ok {
+			fromID = strings.TrimSpace(p.ID)
+		}
+	}
+	nextID, has := full.NextDeliveryPhaseID()
+	if !has {
+		return false, fromID, "", "", nil
+	}
+	if err := SetRigActivePhase(townRoot, rig, nextID); err != nil {
+		return false, fromID, "", "", err
+	}
+	full, ok, err = LoadRigWorkflowProfileFile(townRoot, rig)
+	if err != nil || !ok {
+		return false, fromID, nextID, "", err
+	}
+	pruned, err := PruneOpenImplementBeadsOutsideRequired(townRoot, rig, full)
+	if err != nil {
+		return false, fromID, nextID, "", err
+	}
+	syncLog, err := SyncPlanningArtifacts(townRoot, rig, full, true)
+	if err != nil {
+		return false, fromID, nextID, "", err
+	}
+	logLine = fmt.Sprintf("delivery phase advanced %s → %s", fromID, nextID)
+	var parts []string
+	if len(pruned) > 0 {
+		parts = append(parts, "pruned prior-phase open beads: "+joinStrings(pruned, ", "))
+	}
+	if syncLog != "" {
+		parts = append(parts, syncLog)
+	}
+	if len(parts) > 0 {
+		logLine += " (" + strings.Join(parts, "; ") + ")"
+	}
+	return true, fromID, nextID, logLine, nil
 }
 
 // PhaseSummaryLines returns human-readable phase list for operator notices.

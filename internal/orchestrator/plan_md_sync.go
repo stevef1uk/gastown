@@ -145,9 +145,11 @@ func WritePlanningPlanMD(townRoot, rig string, v WorkflowValidation) (bool, erro
 		b.WriteString(fmt.Sprintf("- Scope: Implement `%s` per `architecture.md` and SPEC.md.\n", want))
 		b.WriteString("- Architecture: see architecture.md (paths and data model for this file).\n")
 		b.WriteString("- Acceptance:\n")
-		b.WriteString(fmt.Sprintf("  - File exists at `%s` under the rig worktree.\n", want))
-		b.WriteString("  - Matches layout and naming in architecture.md (no stub/placeholder implementation).\n")
-		b.WriteString("  - Polecat runs the profile verify command for this phase before `bd close` on this bead.\n")
+		for _, bullet := range planAcceptanceBullets(want, v) {
+			b.WriteString("  - ")
+			b.WriteString(bullet)
+			b.WriteString("\n")
+		}
 		b.WriteString(fmt.Sprintf("  - Bead `%s` is closed only after verification passes.\n", id))
 		b.WriteString("\n")
 	}
@@ -159,7 +161,7 @@ func WritePlanningPlanMD(townRoot, rig string, v WorkflowValidation) (bool, erro
 			}
 		}
 		b.WriteString("## Phase context\n\n")
-		b.WriteString(fmt.Sprintf("Active delivery phase `%s` only. Do not implement paths from later phases until `gt rig set-phase` advances the rig.\n\n", id))
+		b.WriteString(fmt.Sprintf("Active delivery phase `%s` only. Later phases start automatically after QA `all_passed` (or use `gt rig set-phase` to switch manually).\n\n", id))
 	}
 	body := b.String()
 	body = padPlanningPlanMD(body, minBytes)
