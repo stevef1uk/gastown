@@ -7,11 +7,22 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/steveyegge/gastown/internal/orchestrator"
 )
+
+// devServerPortTestMu serializes tests that bind ephemeral ports or run fuser/pkill cleanup.
+// Parallel runs otherwise flake when another test frees a port the holder still needs.
+var devServerPortTestMu sync.Mutex
+
+func acquirePortTestSlot(t *testing.T) {
+	t.Helper()
+	devServerPortTestMu.Lock()
+	t.Cleanup(func() { devServerPortTestMu.Unlock() })
+}
 
 func TestDevServerTracker_noteCommand_ports(t *testing.T) {
 	t.Parallel()
@@ -100,9 +111,10 @@ func TestBuildStaleDevServerTracker_noServerMain(t *testing.T) {
 }
 
 func TestFreeDevServersBeforeCommand_skipsGoBuild(t *testing.T) {
-	t.Parallel()
+	acquirePortTestSlot(t)
 	port, stop := startSubprocessPortHolder(t)
 	defer stop()
+	waitPortListening(t, port)
 	freeDevServersBeforeCommand("go build ./...")
 	if err := dialPort(port); err != nil {
 		t.Fatalf("go build must not kill holder: %v", err)
@@ -110,23 +122,28 @@ func TestFreeDevServersBeforeCommand_skipsGoBuild(t *testing.T) {
 }
 
 func TestFreeDevServersBeforeCommand_freesPortInCommand(t *testing.T) {
+	acquirePortTestSlot(t)
 	requirePortCleanupTools(t)
 	port, stop := startSubprocessPortHolder(t)
 	defer stop()
+	waitPortListening(t, port)
 	cmd := fmt.Sprintf("go run ./cmd/server & curl -sf http://127.0.0.1:%d/", port)
 	freeDevServersBeforeCommand(cmd)
 	waitPortFree(t, port)
 }
 
 func TestKillTCPListeners_freesEphemeralPort(t *testing.T) {
+	acquirePortTestSlot(t)
 	requirePortCleanupTools(t)
 	port, stop := startSubprocessPortHolder(t)
 	defer stop()
+	waitPortListening(t, port)
 	killTCPListeners(port)
 	waitPortFree(t, port)
 }
 
 func TestStopRigDevServersScript_freesPort(t *testing.T) {
+	acquirePortTestSlot(t)
 	script := filepath.Join("..", "..", "scripts", "stop-rig-dev-servers.sh")
 	if _, err := os.Stat(script); err != nil {
 		t.Skip("stop-rig-dev-servers.sh not found from test cwd")
@@ -137,6 +154,7 @@ func TestStopRigDevServersScript_freesPort(t *testing.T) {
 	requirePortCleanupTools(t)
 	port, stop := startSubprocessPortHolder(t)
 	defer stop()
+	waitPortListening(t, port)
 	cmd := exec.Command("bash", script, strconv.Itoa(port))
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("script: %v\n%s", err, out)
@@ -208,6 +226,18 @@ func dialPort(port int) error {
 		return err
 	}
 	return conn.Close()
+}
+
+func waitPortListening(t *testing.T, port int) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if err := dialPort(port); err == nil {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatalf("port %d never accepted connections", port)
 }
 
 func waitPortFree(t *testing.T, port int) {
