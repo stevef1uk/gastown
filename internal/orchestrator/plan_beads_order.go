@@ -202,16 +202,16 @@ func FormatClosedDependencyCompileHints(townRoot, rig, activeBeadPath string, er
 			continue
 		}
 		lines = append(lines, fmt.Sprintf(
-			"- `%s` belongs to closed bead **%s** — you cannot edit it on the active `%s` bead. Reopen: `bd update %s --status=open`, fix the file, `bd close %s`, then continue this bead.",
+			"- `%s` belongs to closed bead **%s** — you cannot edit it on the active `%s` bead. Reopen: `bd update %s --status=open` → **EDIT:** / **WRITE:** → Verify → `bd close %s`, then continue this bead.",
 			p, id, activeBeadPath, id, id,
 		))
 	}
 	if len(lines) == 0 {
 		return ""
 	}
-	return strings.TrimSpace("### Errors in closed implement files (read-only on this bead)\n" +
+	return strings.TrimSpace("### Reopen closed implement beads (compile errors in dependencies)\n" +
 		strings.Join(lines, "\n") +
-		"\n\nDo **not** keep editing only the active file or use `bd update --status=failed` (invalid). If you cannot proceed, finish with JSON only: `{\"outcome\":\"failure\",\"summary\":\"reopen <bead-id> for <path>: <compile error>\"}`.")
+		"\n\nCopy bead IDs from `bd list --status=closed`. Do **not** keep editing only the active file or use `bd update --status=failed` (invalid). If you cannot proceed, finish with JSON only: `{\"outcome\":\"failure\",\"summary\":\"reopen <bead-id> for <path>: <compile error>\"}`.")
 }
 
 // AllowedEarlierImplementDependencyWrite reports whether written is a profile required_file
@@ -315,16 +315,16 @@ func implementationPathScore(p string) int {
 
 // ListOpenImplementBeads returns open implementation beads for the rig.
 func ListOpenImplementBeads(townRoot, rig string, v WorkflowValidation) ([]PlanBead, error) {
-	return listImplementBeadsByStatus(townRoot, rig, v, "open")
+	return listImplementBeadsForGuard(townRoot, rig, v, "open")
 }
 
 // ListImplementBeadsOpenOrInProgress returns open and in_progress implement beads.
 func ListImplementBeadsOpenOrInProgress(townRoot, rig string, v WorkflowValidation) ([]PlanBead, error) {
-	inProg, err := listImplementBeadsByStatus(townRoot, rig, v, "in_progress")
+	inProg, err := listImplementBeadsForGuard(townRoot, rig, v, "in_progress")
 	if err != nil {
 		return nil, err
 	}
-	open, err := listImplementBeadsByStatus(townRoot, rig, v, "open")
+	open, err := listImplementBeadsForGuard(townRoot, rig, v, "open")
 	if err != nil {
 		return nil, err
 	}
@@ -333,7 +333,7 @@ func ListImplementBeadsOpenOrInProgress(townRoot, rig string, v WorkflowValidati
 
 // EnforceSingleImplementInProgress leaves at most one implement bead in_progress (the queue head).
 func EnforceSingleImplementInProgress(townRoot, rig string, v WorkflowValidation) ([]string, error) {
-	inProg, err := listImplementBeadsByStatus(townRoot, rig, v, "in_progress")
+	inProg, err := listImplementBeadsForGuard(townRoot, rig, v, "in_progress")
 	if err != nil {
 		return nil, err
 	}
@@ -976,7 +976,7 @@ func ImplementBeadPathForID(townRoot, rig, beadID string, v WorkflowValidation) 
 		if b.ID != beadID {
 			continue
 		}
-		return ExtractPathFromBeadTitle(b.Title, v.BeadTitleContains)
+		return NormalizeBeadPathForLayout(ExtractPathFromBeadTitle(b.Title, v.BeadTitleContains), v.LayoutRoot)
 	}
 	return ""
 }

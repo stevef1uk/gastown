@@ -159,8 +159,12 @@ func (r *stateRunner) processOrchestratedTools(response, sessionName string, com
 			orchestratedFprintfStderr("[gt-agent] command failed: %v\n%s\n", cmdErr, string(out))
 			combined.WriteString(fmt.Sprintf("Command: %s\nError: %v\nOutput: %s\n\n", cmd, cmdErr, string(out)))
 			if r.hooks.AppendGoCompileContext && orchestrator.WorkflowUsesGo(r.v) {
+				outStr := string(out)
 				appendGoCompileSourceContext(combined, r.townRoot, r.rig, rigMayorRigDir(r.townRoot, r.rig), r.v.LayoutRoot,
-					r.activeImplementBeadPath(), r.v, cmd, string(out))
+					r.activeImplementBeadPath(), r.v, cmd, outStr)
+				if strings.EqualFold(strings.TrimSpace(r.hooks.Track), "implementation") {
+					r.noteImplementationVerifyFailure(cmd, outStr)
+				}
 			}
 			if strings.EqualFold(strings.TrimSpace(r.hooks.Track), "qa") {
 				appendQAFailureReportNudge(combined, cmd, cmdErr)
@@ -217,6 +221,9 @@ func (r *stateRunner) executeNativeEditOp(op nativeEditOp, workDir string) (stri
 		}
 		data, err := os.ReadFile(abs)
 		if err != nil {
+			if nudgeErr := nativeReadMissingFileError(r.townRoot, r.rig, r.track.activeBead, r.track.activeBeadPath, rel, r.v, err); nudgeErr != err {
+				return "", nudgeErr
+			}
 			return "", err
 		}
 		if len(data) > nativeReadMaxBytes {
@@ -342,12 +349,15 @@ func (r *stateRunner) runAutoVerifyForNativeLayoutWrite(sessionName string, cmdE
 		r.track.verifyOK = false
 		combined.WriteString(fmt.Sprintf("Auto-verify (after native edit): %s\nError: %v\nOutput: %s\n\n", verifyCmd, verifyErr, string(verifyOut)))
 		if r.hooks.AppendGoCompileContext && orchestrator.WorkflowUsesGo(r.v) {
+			outStr := string(verifyOut)
 			appendGoCompileSourceContext(combined, r.townRoot, r.rig, rigMayorRigDir(r.townRoot, r.rig), r.v.LayoutRoot,
-				r.activeImplementBeadPath(), r.v, verifyCmd, string(verifyOut))
+				r.activeImplementBeadPath(), r.v, verifyCmd, outStr)
+			r.noteImplementationVerifyFailure(verifyCmd, outStr)
 		}
 		return
 	}
 	r.track.verifyOK = true
 	r.track.hadCmdFailure = false
+	r.persistImplementationProgress(verifyCmd)
 	combined.WriteString(fmt.Sprintf("Auto-verify (after native edit): %s\n%s", verifyCmd, formatSuccessCommandOutput(verifyOut)))
 }

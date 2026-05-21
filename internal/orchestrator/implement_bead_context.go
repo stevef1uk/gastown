@@ -59,6 +59,11 @@ func formatImplementBeadContextForPath(townRoot, rig, beadPath string, v Workflo
 		b.WriteString(plan)
 		b.WriteString("\n")
 	}
+	if checklist := FormatPlanAcceptanceChecklist(townRoot, rig, beadPath, v); checklist != "" {
+		b.WriteString("\n")
+		b.WriteString(checklist)
+		b.WriteString("\n")
+	}
 	if note := formatUnitTestGuidanceForBead(townRoot, rig, beadPath, v); note != "" {
 		b.WriteString("\n")
 		b.WriteString(note)

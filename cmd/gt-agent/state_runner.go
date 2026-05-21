@@ -33,6 +33,7 @@ type cmdTracker struct {
 	unittestOK        bool
 	qaSmokeOK        bool
 	activeBead        string
+	activeBeadPath    string
 }
 
 type stateRunner struct {
@@ -44,8 +45,9 @@ type stateRunner struct {
 	promptVars  map[string]string
 	track       *cmdTracker
 	servers     *devServerTracker
-	qaProgress     *QAReviewProgress // qa_review only; persisted across gt-agent restarts
-	attemptFixWork bool              // implementation: true after EDIT/verify/bd close this task attempt
+	qaProgress     *QAReviewProgress         // qa_review only; persisted across gt-agent restarts
+	implProgress   *ImplementationProgress   // implementation: per-bead verify/close across restarts
+	attemptFixWork bool                      // implementation: true after EDIT/verify/bd close this task attempt
 }
 
 func newStateRunner(task *orchestrator.Task, townRoot, rig string) *stateRunner {
@@ -358,6 +360,9 @@ func (r *stateRunner) afterCommand(cmd string, cmdErr error, workDir, sessionNam
 		if strings.EqualFold(strings.TrimSpace(r.hooks.Track), "qa") {
 			r.persistQAReviewProgress(cmd)
 		}
+		if strings.EqualFold(strings.TrimSpace(r.hooks.Track), "implementation") {
+			r.persistImplementationProgress(cmd)
+		}
 		r.noteImplementationFixAttempt(cmd, false)
 		r.runAutoVerify(cmd, workDir, sessionName, cmdEnv, combined)
 		return
@@ -417,8 +422,10 @@ func (r *stateRunner) runAutoVerify(cmd, workDir, sessionName string, cmdEnv []s
 			orchestratedFprintfStderr("[gt-agent] auto-verify failed: %v\n%s\n", verifyErr, string(verifyOut))
 			combined.WriteString(fmt.Sprintf("Auto-verify: %s\nError: %v\nOutput: %s\n\n", verifyCmd, verifyErr, string(verifyOut)))
 			if r.hooks.AppendGoCompileContext && orchestrator.WorkflowUsesGo(r.v) {
+				out := string(verifyOut)
 				appendGoCompileSourceContext(combined, r.townRoot, r.rig, rigMayorRigDir(r.townRoot, r.rig), r.v.LayoutRoot,
-					r.activeImplementBeadPath(), r.v, verifyCmd, string(verifyOut))
+					r.activeImplementBeadPath(), r.v, verifyCmd, out)
+				r.noteImplementationVerifyFailure(verifyCmd, out)
 			}
 			if strings.EqualFold(strings.TrimSpace(r.hooks.Track), "qa") {
 				appendQAFailureReportNudge(combined, verifyCmd, verifyErr)

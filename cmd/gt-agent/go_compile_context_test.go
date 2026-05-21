@@ -101,6 +101,46 @@ func TestAppendGoCompileSourceContext_moduleRelativePaths(t *testing.T) {
 	}
 }
 
+func TestAppendGoCompileSourceContext_includesClosedBeadReopenHints(t *testing.T) {
+	dir := t.TempDir()
+	rig := "mockrig"
+	mayor := filepath.Join(dir, rig, "mayor", "rig")
+	handlersDir := filepath.Join(mayor, "linkshelf/internal/api")
+	if err := os.MkdirAll(handlersDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(handlersDir, "handlers.go"), []byte("package api\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	v := orchestrator.WorkflowValidation{
+		LayoutRoot:        "linkshelf",
+		BeadTitleContains: "Implement linkshelf/",
+		RequiredFiles: []string{
+			"linkshelf/internal/api/handlers.go",
+			"linkshelf/cmd/server/main.go",
+		},
+	}
+	orchestrator.ListImplementBeadsByStatusHook = func(_, _ string, _ orchestrator.WorkflowValidation, status string) ([]orchestrator.PlanBead, error) {
+		switch status {
+		case "in_progress":
+			return []orchestrator.PlanBead{{ID: "te-main", Title: "Implement linkshelf/cmd/server/main.go per architecture"}}, nil
+		case "closed":
+			return []orchestrator.PlanBead{{ID: "te-h", Title: "Implement linkshelf/internal/api/handlers.go per architecture"}}, nil
+		default:
+			return nil, nil
+		}
+	}
+	t.Cleanup(func() { orchestrator.ListImplementBeadsByStatusHook = nil })
+
+	var b strings.Builder
+	appendGoCompileSourceContext(&b, dir, rig, mayor, "linkshelf", "linkshelf/cmd/server/main.go", v,
+		"go build ./...", "linkshelf/cmd/server/main.go:3:9: undefined: api.Missing")
+	got := b.String()
+	if !strings.Contains(got, "Reopen closed implement beads") || !strings.Contains(got, "te-h") {
+		t.Fatalf("want reopen hints, got %q", got)
+	}
+}
+
 func TestAppendGoCompileSourceContext_writesSnippet(t *testing.T) {
 	dir := t.TempDir()
 	storeDir := filepath.Join(dir, "linkshelf", "internal", "store")

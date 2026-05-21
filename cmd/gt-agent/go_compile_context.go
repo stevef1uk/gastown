@@ -117,6 +117,7 @@ func appendGoCompileSourceContext(b *strings.Builder, townRoot, rig, mayorRigDir
 		return
 	}
 	paths := extractGoSourcePathsFromOutput(cmdOutput, layoutRoot)
+	paths = orchestrator.CompileErrorPathsIncludingClosedDeps(townRoot, rig, activeBeadPath, paths, cmdOutput, v)
 	if len(paths) == 0 {
 		return
 	}

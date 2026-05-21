@@ -56,6 +56,20 @@ func TestFormatClosedDependencyCompileHints(t *testing.T) {
 	}
 }
 
+func TestListImplementBeadsOpenOrInProgress_usesStatusHook(t *testing.T) {
+	ListImplementBeadsByStatusHook = func(_, _ string, _ WorkflowValidation, status string) ([]PlanBead, error) {
+		if status == "in_progress" {
+			return []PlanBead{{ID: "te-x", Title: "Implement linkshelf/foo.go per architecture"}}, nil
+		}
+		return nil, nil
+	}
+	t.Cleanup(func() { ListImplementBeadsByStatusHook = nil })
+	got, err := ListImplementBeadsOpenOrInProgress("", "", WorkflowValidation{BeadTitleContains: "Implement linkshelf/"})
+	if err != nil || len(got) != 1 || got[0].ID != "te-x" {
+		t.Fatalf("got %v err %v", got, err)
+	}
+}
+
 func TestAllowedEarlierImplementDependencyWrite(t *testing.T) {
 	t.Parallel()
 	v := WorkflowValidation{

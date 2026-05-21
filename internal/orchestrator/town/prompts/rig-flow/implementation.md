@@ -2,6 +2,10 @@
 
 Rig `{{rig}}` (`{{rig}}/polecat`). Work under `{{rig}}/mayor/rig/`. Use the **Next bead** line and **Implement context** block in the user message — that is the only bead to touch this session.
 
+## Persisted progress
+
+gt-agent saves per-bead checkpoints in `{{rig}}/qa/implementation-progress.json` for the active workflow. After a restart you may see an **Implementation progress** block — **do not re-run Verify** on beads already marked green unless you changed that file. Reopen hints for compile errors in **closed** dependency beads list exact `bd update <id> --status=open` steps.
+
 ## After implementation timeout (stall recovery)
 
 If the prompt includes **Prior step failed** from a **timeout**, the orchestrator ran **`recover_implementation_stall`**: dev servers on tracked ports were stopped, in_progress implement beads were reset to **open**, and a single bead was selected for work. Continue with **Next bead** — do not re-close beads that are not green.
@@ -23,7 +27,9 @@ If the prompt includes **Prior step failed** from a **timeout**, the orchestrato
 | Go | `*_test.go` in the **same package** (often its own implement bead in `required_files`) | `go test -count=1 ./<pkg>/...` on the **test bead**; production `.go` beads use `go build` until that file exists |
 | Python | `tests/test_<module>.py` or `test_*.py` under `tests/` | `pytest -v` on that file when it exists |
 
-- Read **From plan.md** and **From architecture.md** in Implement context — each case should trace to a SPEC/plan acceptance bullet.
+- Read **From plan.md**, **Acceptance checklist**, and **From architecture.md** in Implement context — each case should trace to a SPEC/plan acceptance bullet.
+- On a **test bead**, `bd update --status=in_progress` may create a minimal `*_test.go` skeleton — replace `TestPlaceholder` / `test_placeholder` with real cases before `bd close`.
+- Do **not** `cat` or **READ:** a path that does not exist yet — use **WRITE:** on the active bead (or finish the production bead before opening the test bead).
 - **Test bead:** only test code; cover happy path, errors, and edge cases named in architecture.
 - **Production bead:** add or update the correlated test file before `bd close` if Verify runs `go test` / `pytest` (or a test bead is listed in `required_files`).
 - Do **not** defer all tests to QA — QA runs the full suite (`{{unittest_command_hint}}`) plus runtime smoke.

@@ -7,6 +7,31 @@ import (
 	"testing"
 )
 
+func TestFormatImplementBeadContextForPath_includesAcceptanceChecklist(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	rig := "rig"
+	rigDir := filepath.Join(dir, rig, "mayor", "rig")
+	if err := os.MkdirAll(filepath.Join(rigDir, "linkshelf", "internal", "store"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	plan := `### te-1: linkshelf/internal/store/store.go
+- Acceptance: AddLink persists rows
+`
+	if err := os.WriteFile(filepath.Join(rigDir, "plan.md"), []byte(plan), 0644); err != nil {
+		t.Fatal(err)
+	}
+	v := WorkflowValidation{
+		LayoutRoot:    "linkshelf",
+		TestRunner:    "go",
+		RequiredFiles: []string{"linkshelf/internal/store/store.go"},
+	}
+	got := formatImplementBeadContextForPath(dir, rig, "linkshelf/internal/store/store.go", v)
+	if !strings.Contains(got, "### Acceptance checklist") || !strings.Contains(got, "AddLink persists rows") {
+		t.Fatalf("missing checklist in:\n%s", got)
+	}
+}
+
 func TestFormatImplementBeadContextForPath_fullBlock(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()

@@ -30,6 +30,9 @@ var cmdGuardHandlers = map[string]cmdGuardFn{
 		if err := validateImplementationCommandWithState(cmd, r.townRoot, r.rig, r.track.activeBead, r.v, r.track.verifyOK); err != nil {
 			return err
 		}
+		if err := r.validateImplementationMissingFileRead(cmd); err != nil {
+			return err
+		}
 		return validateImplementationBeadOrder(r.townRoot, r.rig, cmd, r.v)
 	},
 	"plan_review": func(r *stateRunner, cmd string) error {
@@ -88,6 +91,7 @@ var trackHandlers = map[string]trackFn{
 			}
 			if id := extractBeadIDFromBdClose(cmd); id != "" && id == r.track.activeBead {
 				r.track.activeBead = ""
+				r.track.activeBeadPath = ""
 			}
 		}
 		if isBeadUpdateInProgressCommand(cmd) && cmdErr == nil {
@@ -96,11 +100,14 @@ var trackHandlers = map[string]trackFn{
 					r.track.verifyOK = false
 				}
 				r.track.activeBead = id
+				r.track.activeBeadPath = orchestrator.ImplementBeadPathForID(r.townRoot, r.rig, id, r.v)
+				r.ensureTestBeadSkeletonAfterInProgress(cmd)
 			}
 		}
 		if cmdErr == nil && isImplementationVerifyCommandOK(cmd, r.townRoot, r.rig, r.track.activeBead, r.v) {
 			r.track.verifyOK = true
 			r.track.hadCmdFailure = false
+			r.persistImplementationProgress(cmd)
 		}
 		if cmdErr == nil && isGitCommitLayoutCommand(cmd, r.v.LayoutRoot) {
 			r.track.hadCmdFailure = false
@@ -262,6 +269,14 @@ func verifyImplementationBead(r *stateRunner) string {
 }
 
 func (r *stateRunner) activeImplementBeadPath() string {
+	if r != nil && r.track != nil {
+		if p := strings.TrimSpace(r.track.activeBeadPath); p != "" {
+			return p
+		}
+	}
+	if r == nil || r.track == nil {
+		return ""
+	}
 	return orchestrator.ImplementBeadPathForID(r.townRoot, r.rig, r.track.activeBead, r.v)
 }
 
