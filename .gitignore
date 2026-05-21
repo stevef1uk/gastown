@@ -111,6 +111,12 @@ test_dashboard_fetch.go
 flake.lock
 
 # Logs and temporary files
+session-ses_*.md
+test_out.txt
+test_output.txt
+test_results.txt
+tests_out.txt
+testgt1/
 typescript
 *.log
 *.log.gz
