@@ -161,6 +161,59 @@ func ImplementPathHasOnlyClosedBeads(townRoot, rig, writtenPath string, v Workfl
 	return false, nil
 }
 
+// ClosedImplementBeadForPath returns the closed implement bead ID for filePath, if all beads on that path are closed.
+func ClosedImplementBeadForPath(townRoot, rig, filePath string, v WorkflowValidation) (beadID string, ok bool) {
+	closedOnly, err := ImplementPathHasOnlyClosedBeads(townRoot, rig, filePath, v)
+	if err != nil || !closedOnly {
+		return "", false
+	}
+	closed, err := listImplementBeadsForGuard(townRoot, rig, v, "closed")
+	if err != nil {
+		return "", false
+	}
+	for _, b := range closed {
+		p := NormalizePlannerBeadPath(ExtractPathFromBeadTitle(b.Title, v.BeadTitleContains), v.LayoutRoot, rig)
+		if PathMatchesImplementFile(filePath, p) {
+			return b.ID, true
+		}
+	}
+	return "", false
+}
+
+// FormatClosedDependencyCompileHints explains verify failures in earlier implement files whose beads are closed.
+func FormatClosedDependencyCompileHints(townRoot, rig, activeBeadPath string, errorPaths []string, v WorkflowValidation) string {
+	activeBeadPath = filepath.ToSlash(strings.TrimSpace(activeBeadPath))
+	if activeBeadPath == "" || len(errorPaths) == 0 {
+		return ""
+	}
+	seen := map[string]bool{}
+	var lines []string
+	for _, p := range errorPaths {
+		p = filepath.ToSlash(strings.TrimSpace(p))
+		if p == "" || p == activeBeadPath || seen[p] {
+			continue
+		}
+		seen[p] = true
+		if PathMatchesImplementWrite(p, activeBeadPath, v.RequiredFiles) {
+			continue
+		}
+		id, ok := ClosedImplementBeadForPath(townRoot, rig, p, v)
+		if !ok {
+			continue
+		}
+		lines = append(lines, fmt.Sprintf(
+			"- `%s` belongs to closed bead **%s** — you cannot edit it on the active `%s` bead. Reopen: `bd update %s --status=open`, fix the file, `bd close %s`, then continue this bead.",
+			p, id, activeBeadPath, id, id,
+		))
+	}
+	if len(lines) == 0 {
+		return ""
+	}
+	return strings.TrimSpace("### Errors in closed implement files (read-only on this bead)\n" +
+		strings.Join(lines, "\n") +
+		"\n\nDo **not** keep editing only the active file or use `bd update --status=failed` (invalid). If you cannot proceed, finish with JSON only: `{\"outcome\":\"failure\",\"summary\":\"reopen <bead-id> for <path>: <compile error>\"}`.")
+}
+
 // AllowedEarlierImplementDependencyWrite reports whether written is a profile required_file
 // that polecat order builds before activePath (e.g. store/tasks while the cmd/main bead is active).
 // Returns false when writtenPath's implement bead(s) are closed — fixes must use that bead reopened.

@@ -436,14 +436,8 @@ func (d *Daemon) Run() (err error) {
 
 	d.logger.Printf("Daemon running, recovery heartbeat interval %v", d.recoveryHeartbeatInterval())
 
-	// Start NATS server if configured
-	if d.natsServer != nil && d.natsServer.IsEnabled() {
-		if err := d.natsServer.Start(); err != nil {
-			d.logger.Printf("Warning: failed to start NATS server: %v", err)
-		} else {
-			d.logger.Println("NATS server started")
-		}
-	}
+	// Start NATS server if configured (heartbeat also calls ensureNatsServerRunning).
+	d.ensureNatsServerRunning()
 
 	// Start feed curator goroutine
 	d.curator = feed.NewCurator(d.config.TownRoot)
@@ -816,6 +810,9 @@ func (d *Daemon) heartbeat(state *State) {
 	// This must happen before beads operations that depend on Dolt.
 	d.ensureDoltServerRunning()
 
+	// 0a. Ensure NATS broker is running before session spawns (recovery heartbeat).
+	d.ensureNatsServerRunning()
+
 	// 0c. Orchestrator MCP: start if missing, restart if NATS ping or heartbeat says stuck.
 	d.ensureOrchestratorHealthy()
 
@@ -1019,6 +1016,20 @@ func (d *Daemon) rotateOversizedLogs() {
 // This provides the backend for beads database access in server mode.
 // Option B throttling: pours a mol-dog-doctor molecule only when health check
 // warnings are detected, with a 5-minute cooldown to avoid wisp spam.
+func (d *Daemon) ensureNatsServerRunning() {
+	if d.natsServer == nil || !d.natsServer.IsEnabled() {
+		return
+	}
+	wasRunning := d.natsServer.IsRunning()
+	if err := d.natsServer.EnsureRunning(); err != nil {
+		d.logger.Printf("Error ensuring NATS server is running: %v", err)
+		return
+	}
+	if !wasRunning && d.natsServer.IsRunning() {
+		d.logger.Println("NATS server started")
+	}
+}
+
 func (d *Daemon) ensureDoltServerRunning() {
 	if d.doltServer == nil || !d.doltServer.IsEnabled() {
 		return

@@ -1,6 +1,9 @@
 package orchestrator
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestEarlierRequiredFilesForBead(t *testing.T) {
 	required := []string{
@@ -22,6 +25,34 @@ func TestEarlierRequiredFilesForBead(t *testing.T) {
 		if got[i] != want[i] {
 			t.Fatalf("got %v want %v", got, want)
 		}
+	}
+}
+
+func TestFormatClosedDependencyCompileHints(t *testing.T) {
+	v := WorkflowValidation{
+		BeadTitleContains: "Implement linkshelf/",
+		LayoutRoot:        "linkshelf",
+		RequiredFiles: []string{
+			"linkshelf/internal/api/handlers.go",
+			"linkshelf/cmd/server/main.go",
+		},
+	}
+	ListImplementBeadsByStatusHook = func(_, _ string, _ WorkflowValidation, status string) ([]PlanBead, error) {
+		switch status {
+		case "in_progress":
+			return []PlanBead{{ID: "te-main", Title: "Implement linkshelf/cmd/server/main.go per architecture"}}, nil
+		case "closed":
+			return []PlanBead{{ID: "te-h", Title: "Implement linkshelf/internal/api/handlers.go per architecture"}}, nil
+		default:
+			return nil, nil
+		}
+	}
+	t.Cleanup(func() { ListImplementBeadsByStatusHook = nil })
+
+	got := FormatClosedDependencyCompileHints("", "", "linkshelf/cmd/server/main.go",
+		[]string{"linkshelf/internal/api/handlers.go"}, v)
+	if got == "" || !strings.Contains(got, "te-h") || !strings.Contains(got, "closed") {
+		t.Fatalf("want closed-bead hint, got %q", got)
 	}
 }
 

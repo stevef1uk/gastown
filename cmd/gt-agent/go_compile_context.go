@@ -112,7 +112,7 @@ const (
 
 // appendGoCompileSourceContext adds file snippets to LLM feedback after failed go commands.
 // mayorRigDir is {townRoot}/{rig}/mayor/rig (paths in go output are relative to that directory).
-func appendGoCompileSourceContext(b *strings.Builder, mayorRigDir, layoutRoot, cmd, cmdOutput string) {
+func appendGoCompileSourceContext(b *strings.Builder, townRoot, rig, mayorRigDir, layoutRoot, activeBeadPath string, v orchestrator.WorkflowValidation, cmd, cmdOutput string) {
 	if !goToolOutputLooksFailed(cmd, cmdOutput) {
 		return
 	}
@@ -156,6 +156,11 @@ func appendGoCompileSourceContext(b *strings.Builder, mayorRigDir, layoutRoot, c
 	}
 	if strings.Contains(cmdOutput, "undefined:") {
 		b.WriteString("\nHint: an undefined Go symbol means the referenced API is missing or misnamed. Inspect the defining package files above; either add the missing export or change the caller to use an API that exists, then re-run verify.\n")
+	}
+	if hint := orchestrator.FormatClosedDependencyCompileHints(townRoot, rig, activeBeadPath, paths, v); hint != "" {
+		b.WriteString("\n")
+		b.WriteString(hint)
+		b.WriteString("\n")
 	}
 	b.WriteString("\nHint: fix internal packages with **sed -i** or a small **patch**. **cmd/…/main.go** may use `cat > … <<'EOF'` when the file has duplicate handlers or stub bodies; use symbols from **Dependency packages** / Source context, not invented names.\n")
 }

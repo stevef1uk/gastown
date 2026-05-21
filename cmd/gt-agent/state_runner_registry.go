@@ -258,6 +258,10 @@ func verifyImplementationBead(r *stateRunner) string {
 	return orchestrator.ImplementationVerifyCommandForBead(r.v, mayor, beadPath)
 }
 
+func (r *stateRunner) activeImplementBeadPath() string {
+	return orchestrator.ImplementBeadPathForID(r.townRoot, r.rig, r.track.activeBead, r.v)
+}
+
 type autoVerifyWhenFn func(r *stateRunner, cmd string) bool
 
 var autoVerifyWhenHandlers = map[string]autoVerifyWhenFn{

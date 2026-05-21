@@ -357,7 +357,8 @@ func (r *stateRunner) runAutoVerify(cmd, workDir, sessionName string, cmdEnv []s
 			orchestratedFprintfStderr("[gt-agent] auto-verify failed: %v\n%s\n", verifyErr, string(verifyOut))
 			combined.WriteString(fmt.Sprintf("Auto-verify: %s\nError: %v\nOutput: %s\n\n", verifyCmd, verifyErr, string(verifyOut)))
 			if r.hooks.AppendGoCompileContext && orchestrator.WorkflowUsesGo(r.v) {
-				appendGoCompileSourceContext(combined, rigMayorRigDir(r.townRoot, r.rig), r.v.LayoutRoot, verifyCmd, string(verifyOut))
+				appendGoCompileSourceContext(combined, r.townRoot, r.rig, rigMayorRigDir(r.townRoot, r.rig), r.v.LayoutRoot,
+					r.activeImplementBeadPath(), r.v, verifyCmd, string(verifyOut))
 			}
 		} else {
 			r.track.verifyOK = true

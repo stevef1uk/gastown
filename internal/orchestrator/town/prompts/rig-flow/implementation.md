@@ -29,6 +29,22 @@ Use **heredoc** (`cat > path <<'EOF'`) only when the file **does not exist yet**
 
 On **`cmd/server/main.go`**, read **Dependency packages** in Implement context for real `store`/`handlers` symbols — do not define handler bodies in main; register routes and delegate.
 
+## Closed dependency failures (generic)
+
+When **Verify** fails with errors in a path that is **not** your active bead file (e.g. `internal/api/handlers.go` while you are on `cmd/server/main.go`), that earlier file’s implement bead is usually **closed**. You **cannot** edit it on this bead.
+
+1. Read **Dependency packages** — use only symbols that exist there (`AddLink`, not invented `CreateLink`).
+2. If the error is only in a **closed** file, reopen that bead: `bd list --status=closed`, then `bd update <id> --status=open`, fix, `bd close <id>`, then continue the active bead.
+3. If you cannot proceed, reply with JSON only: `{"outcome":"failure","summary":"reopen <bead-id> for <path>: …"}` — do **not** use `bd update --status=failed` (no such flag).
+
+## Closed dependency failures (generic)
+
+When **Verify** fails with errors in a path that is **not** your active bead file (e.g. `internal/api/handlers.go` while you are on `cmd/server/main.go`), that earlier file’s implement bead is usually **closed**. You **cannot** edit it on this bead.
+
+1. Read **Dependency packages** — use only symbols that exist there (`AddLink`, not invented `CreateLink`).
+2. If the error is only in a **closed** file, reopen that bead: `bd list --status=closed`, then `bd update <id> --status=open`, fix, `bd close <id>`, then continue the active bead.
+3. If you cannot proceed, reply with JSON only: `{"outcome":"failure","summary":"reopen <bead-id> for <path>: …"}` — do **not** use `bd update --status=failed` (no such flag).
+
 ## Rules
 
 - **Before importing a package or type**, list files in that package first: `ls {{rig}}/mayor/rig/{{layout_root}}/internal/*/` to see what's already implemented. If the package or type doesn't exist, implement it FIRST before using it.

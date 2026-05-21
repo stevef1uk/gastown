@@ -37,22 +37,29 @@ func (m *NatsServerManager) IsEnabled() bool {
 	return m.config != nil && m.config.Enabled
 }
 
-// Start ensures the NATS server is running.
+// Start ensures the NATS server is running (daemon boot).
 func (m *NatsServerManager) Start() error {
+	return m.EnsureRunning()
+}
+
+// EnsureRunning starts or recreates the NATS container when it is down or unhealthy.
+// Called on each daemon recovery heartbeat (same role as ensureDoltServerRunning).
+func (m *NatsServerManager) EnsureRunning() error {
 	if !m.IsEnabled() {
 		return nil
 	}
+	cfg := m.serverConfig()
+	if err := natsserver.EnsureRunning(cfg); err != nil {
+		return fmt.Errorf("starting nats server: %w", err)
+	}
+	return nil
+}
 
-	cfg := natsserver.Config{
+func (m *NatsServerManager) serverConfig() natsserver.Config {
+	return natsserver.Config{
 		Port:        m.config.Port,
 		MonitorPort: m.config.MonitorPort,
 	}
-
-	if err := natsserver.Start(cfg); err != nil {
-		return fmt.Errorf("starting nats server: %w", err)
-	}
-
-	return nil
 }
 
 // Stop ensures the NATS server is stopped.

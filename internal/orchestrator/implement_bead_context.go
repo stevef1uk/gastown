@@ -128,6 +128,7 @@ func formatDependencyPackagesContext(townRoot, rig, activePath string, v Workflo
 	if IsCmdMainImplementPath(activePath) {
 		b.WriteString("\n**cmd/main bead:** wire routes only — call handlers in `internal/api` (or architecture path); do not re-implement handler bodies in main.go.\n")
 	}
+	b.WriteString("\nCall **only** functions/types shown in the snippets above (e.g. `AddLink`, `GetAllLinks`, `DeleteLink`) — do not invent `CreateLink`, `ErrNotFound`, or other symbols.\n")
 	return strings.TrimSpace(b.String())
 }
 

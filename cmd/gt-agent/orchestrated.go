@@ -229,7 +229,8 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 					orchestratedFprintfStderr("[gt-agent] command failed: %v\n%s\n", cmdErr, string(out))
 					combined.WriteString(fmt.Sprintf("Command: %s\nError: %v\nOutput: %s\n\n", cmd, cmdErr, string(out)))
 					if runner.hooks.AppendGoCompileContext && orchestrator.WorkflowUsesGo(runner.v) {
-						appendGoCompileSourceContext(&combined, rigMayorRigDir(townRoot, rig), runner.v.LayoutRoot, cmd, string(out))
+						appendGoCompileSourceContext(&combined, townRoot, rig, rigMayorRigDir(townRoot, rig), runner.v.LayoutRoot,
+							runner.activeImplementBeadPath(), runner.v, cmd, string(out))
 					}
 				} else {
 					feedbackOut := formatSuccessCommandOutput(out)

@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/steveyegge/gastown/internal/orchestrator"
 )
 
 func TestExtractGoSourcePathsFromOutput(t *testing.T) {
@@ -89,7 +91,8 @@ func TestAppendGoCompileSourceContext_moduleRelativePaths(t *testing.T) {
 		t.Fatal(err)
 	}
 	var b strings.Builder
-	appendGoCompileSourceContext(&b, dir, "linkshelf", "go build ./internal/store/...", "internal/store/store.go:20:1: syntax error")
+	v := orchestrator.WorkflowValidation{LayoutRoot: "linkshelf"}
+	appendGoCompileSourceContext(&b, "", "", dir, "linkshelf", "", v, "go build ./internal/store/...", "internal/store/store.go:20:1: syntax error")
 	if strings.Contains(b.String(), "(could not read source") {
 		t.Fatalf("want snippet, got %q", b.String())
 	}
@@ -108,7 +111,8 @@ func TestAppendGoCompileSourceContext_writesSnippet(t *testing.T) {
 		t.Fatal(err)
 	}
 	var b strings.Builder
-	appendGoCompileSourceContext(&b, dir, "linkshelf", "go build ./...", "linkshelf/internal/store/store.go:3:8: syntax error")
+	v := orchestrator.WorkflowValidation{LayoutRoot: "linkshelf"}
+	appendGoCompileSourceContext(&b, "", "", dir, "linkshelf", "", v, "go build ./...", "linkshelf/internal/store/store.go:3:8: syntax error")
 	if !strings.Contains(b.String(), "package store") {
 		t.Fatalf("want snippet in feedback: %q", b.String())
 	}

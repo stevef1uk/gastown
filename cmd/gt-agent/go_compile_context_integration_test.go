@@ -46,7 +46,8 @@ func buildFailedGoCommandFeedback(runner *stateRunner, cmd string, out []byte, c
 	var combined strings.Builder
 	combined.WriteString(fmt.Sprintf("Command: %s\nError: %v\nOutput: %s\n\n", cmd, cmdErr, string(out)))
 	if runner.hooks.AppendGoCompileContext && orchestrator.WorkflowUsesGo(runner.v) {
-		appendGoCompileSourceContext(&combined, rigMayorRigDir(runner.townRoot, runner.rig), runner.v.LayoutRoot, cmd, string(out))
+		appendGoCompileSourceContext(&combined, runner.townRoot, runner.rig, rigMayorRigDir(runner.townRoot, runner.rig), runner.v.LayoutRoot,
+			runner.activeImplementBeadPath(), runner.v, cmd, string(out))
 	}
 	return combined.String()
 }
@@ -103,6 +104,7 @@ func TestImplementationGoFailureFeedback_includesSourceContext(t *testing.T) {
 func TestImplementationGoFailureFeedback_undefinedSymbolIncludesSiblingContext(t *testing.T) {
 	town := t.TempDir()
 	rig := "testrig"
+	v := orchestrator.WorkflowValidation{LayoutRoot: "linkshelf"}
 	mayor := filepath.Join(town, rig, "mayor", "rig")
 	files := map[string]string{
 		"linkshelf/cmd/server/main.go": `package main
@@ -135,7 +137,7 @@ type Store struct{}
 	cmd := "cd linkshelf && go build ./..."
 	out := "# linkshelf/internal/api\nlinkshelf/internal/api/handlers.go:6:15: undefined: store.ErrRecordNotFound\n"
 	var feedback strings.Builder
-	appendGoCompileSourceContext(&feedback, mayor, "linkshelf", cmd, out)
+	appendGoCompileSourceContext(&feedback, town, rig, mayor, "linkshelf", "", v, cmd, out)
 
 	got := feedback.String()
 	if !strings.Contains(got, "undefined Go symbol") {
@@ -202,7 +204,8 @@ func TestAfterCommand_autoVerifyFailure_appendsSourceContext(t *testing.T) {
 	if verifyErr != nil {
 		combined.WriteString(fmt.Sprintf("Auto-verify: %s\nError: %v\nOutput: %s\n\n", verifyCmd, verifyErr, string(out)))
 		if runner.hooks.AppendGoCompileContext && orchestrator.WorkflowUsesGo(runner.v) {
-			appendGoCompileSourceContext(&combined, rigMayorRigDir(runner.townRoot, runner.rig), runner.v.LayoutRoot, verifyCmd, string(out))
+			appendGoCompileSourceContext(&combined, runner.townRoot, runner.rig, rigMayorRigDir(runner.townRoot, runner.rig), runner.v.LayoutRoot,
+				runner.activeImplementBeadPath(), runner.v, verifyCmd, string(out))
 		}
 	} else {
 		t.Fatalf("expected implementation verify to fail on broken tree; output:\n%s", out)
