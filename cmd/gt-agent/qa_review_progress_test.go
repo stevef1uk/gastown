@@ -116,6 +116,93 @@ func TestClearQAReviewProgressIfLeaving_onlyOnExit(t *testing.T) {
 	}
 }
 
+func qaReviewTask(workflowID, rig string, v orchestrator.WorkflowValidation) *orchestrator.Task {
+	return &orchestrator.Task{
+		WorkflowID: workflowID,
+		State:      "qa_review",
+		Hooks:      orchestrator.StateHooks{Track: "qa", Artifacts: "qa"},
+		Validation: v,
+	}
+}
+
+// TestQAReviewProgress_restartSession simulates gt-agent dying mid-qa_review and a new
+// process resuming: progress file + tracker flags + skip prompt must carry over.
+func TestQAReviewProgress_restartSession(t *testing.T) {
+	dir := t.TempDir()
+	rig := "mockrig"
+	wf := "wf-restart-qa"
+	v := linkshelfWebProfile()
+
+	task := qaReviewTask(wf, rig, v)
+	sessionA := newStateRunner(task, dir, rig)
+	if block := sessionA.initQAReviewProgress(); block != "" {
+		t.Fatalf("fresh session should not inject progress block, got %q", block)
+	}
+
+	closedCmd := "export BEADS_DIR=$GT_ROOT/" + rig + "/.beads && cd " + rig + "/mayor/rig && bd list --status=closed"
+	openCmd := "export BEADS_DIR=$GT_ROOT/" + rig + "/.beads && cd " + rig + "/mayor/rig && bd list --status=open,in_progress"
+	specCmd := "cat " + rig + "/mayor/rig/SPEC.md"
+	archCmd := "cat " + rig + "/mayor/rig/architecture.md"
+	auditCmd := "find " + rig + "/mayor/rig/linkshelf -type f -name '*.go' -exec wc -c {} +"
+	testCmd := "cd " + rig + "/mayor/rig && cd linkshelf && go test ./..."
+	smokeCmd := "cd " + rig + "/mayor/rig/linkshelf && go run ./cmd/server & curl -sf -X POST -d '{\"title\":\"qa\",\"url\":\"https://example.com\"}' http://127.0.0.1:8080/api/bookmarks && curl -sf http://127.0.0.1:8080/api/bookmarks"
+
+	for _, cmd := range []string{closedCmd, openCmd, specCmd, archCmd, auditCmd, testCmd, smokeCmd} {
+		var combined strings.Builder
+		sessionA.afterCommand(cmd, nil, dir, "te-mockrig-qa", nil, &combined)
+	}
+
+	for _, key := range []string{
+		qaMilestoneClosedBeads, qaMilestoneOpenBeads, qaMilestoneSpecRead, qaMilestoneArchRead,
+		qaMilestoneFileAudit, qaMilestoneUnittest, qaMilestoneRuntimeSmoke,
+	} {
+		if !sessionA.qaProgress.done(key) {
+			t.Fatalf("session A missing milestone %q: %+v", key, sessionA.qaProgress.Completed)
+		}
+	}
+	if !sessionA.track.bdListClosedOK || !sessionA.track.listOpenOK || !sessionA.track.unittestOK || !sessionA.track.qaSmokeOK {
+		t.Fatalf("session A track=%+v", sessionA.track)
+	}
+	onDisk := loadQAReviewProgress(dir, rig, wf, "qa_review")
+	if onDisk == nil || len(onDisk.Completed) != 7 {
+		t.Fatalf("on disk: %+v", onDisk)
+	}
+
+	// Session B: new gt-agent process, same workflow still in qa_review.
+	sessionB := newStateRunner(task, dir, rig)
+	block := sessionB.initQAReviewProgress()
+	if block == "" {
+		t.Fatal("restarted session must inject progress block")
+	}
+	if !strings.Contains(block, "do not repeat") {
+		t.Fatalf("block missing skip guidance: %q", block)
+	}
+	if strings.Contains(block, "Still required") {
+		t.Fatalf("all milestones done — should not list remaining work: %q", block)
+	}
+	if !strings.Contains(block, "runtime smoke") {
+		t.Fatal("block should list completed runtime smoke check")
+	}
+	if !sessionB.track.bdListClosedOK || !sessionB.track.qaSmokeOK {
+		t.Fatalf("session B track not restored: %+v", sessionB.track)
+	}
+	// Artifact validator should accept restored smoke/unittest flags without re-running CMDs.
+	if err := sessionB.validateArtifacts("failure"); err != nil {
+		if strings.Contains(err.Error(), "bd list --status=closed") {
+			t.Fatalf("should not require re-listing closed beads: %v", err)
+		}
+		if strings.Contains(err.Error(), "live smoke") {
+			t.Fatalf("should not require re-smoke when milestone restored: %v", err)
+		}
+	}
+
+	// Leaving qa_review clears the file for the next cycle.
+	clearQAReviewProgressIfLeaving(dir, rig, "qa_review", "implementation")
+	if _, err := os.Stat(qaReviewProgressPath(dir, rig)); !os.IsNotExist(err) {
+		t.Fatalf("progress file should be cleared after transition, err=%v", err)
+	}
+}
+
 func TestPersistQAReviewProgress_writesFile(t *testing.T) {
 	dir := t.TempDir()
 	rig := "mockrig"
