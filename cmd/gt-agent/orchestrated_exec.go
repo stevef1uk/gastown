@@ -1,11 +1,14 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
 	"os/exec"
+	"regexp"
 	"strings"
+	"time"
 
 	"github.com/steveyegge/gastown/internal/orchestrator"
 )
@@ -21,7 +24,22 @@ func prepareOrchestratedScript(cmd string) string {
 	body = strings.ReplaceAll(body, `\$`, "$")
 	body = normalizeHeredocDelimiters(body)
 	body = filterHallucinatedScriptLines(body)
-	return scrubOrphanHeredocDelimiterLines(body)
+	body = scrubOrphanHeredocDelimiterLines(body)
+	return scrubOrphanBashLcQuoteLines(body)
+}
+
+// scrubOrphanBashLcQuoteLines drops stray wrapper quote lines left after unwrapBashLcMultiline
+// (e.g. bash -lc 'cat <<'EOF' … EOF' leaves a lone ' line that breaks bash -e scripts).
+func scrubOrphanBashLcQuoteLines(body string) string {
+	var out []string
+	for _, line := range strings.Split(body, "\n") {
+		t := strings.TrimSpace(line)
+		if t == `'` || t == `"` {
+			continue
+		}
+		out = append(out, line)
+	}
+	return strings.TrimSpace(strings.Join(out, "\n"))
 }
 
 // scrubOrphanHeredocDelimiterLines drops stray EOF/EOT/END lines the model emits after a closed heredoc.
@@ -337,6 +355,11 @@ func rewriteBdListLimit(cmd string) (string, bool) {
 	return re, re != cmd
 }
 
+var (
+	goSmokeStripPkillRE  = regexp.MustCompile(`(?i)\s*&&\s*pkill\s+-f\s+[^&|;]+`)
+	goSmokeStripBuildRE = regexp.MustCompile(`(?i)go\s+build\s+\./\.\.\.\s*&&\s*`)
+)
+
 // normalizeGoCommandTypos fixes common model mistakes in go subcommands (e.g. "go build./...").
 func normalizeGoCommandTypos(cmd string) (string, bool) {
 	repls := []struct{ old, new string }{
@@ -353,7 +376,60 @@ func normalizeGoCommandTypos(cmd string) (string, bool) {
 			changed = true
 		}
 	}
+	if fixed, ok := normalizeGoDevServerSmokeCommand(cmd); ok {
+		cmd = fixed
+		changed = true
+	}
 	return cmd, changed
+}
+
+// normalizeGoDevServerSmokeCommand fixes polecat-invented go run smoke chains: gt-agent
+// already stops listeners and go run processes — pkill is unreliable; go build ./...
+// before go run is redundant and slow.
+func normalizeGoDevServerSmokeCommand(cmd string) (string, bool) {
+	lower := strings.ToLower(cmd)
+	if !strings.Contains(lower, "go run") || !strings.Contains(lower, "cmd/server") {
+		return cmd, false
+	}
+	out := cmd
+	changed := false
+	if goSmokeStripPkillRE.MatchString(out) {
+		out = goSmokeStripPkillRE.ReplaceAllString(out, "")
+		changed = true
+	}
+	if goSmokeStripBuildRE.MatchString(out) {
+		out = goSmokeStripBuildRE.ReplaceAllString(out, "")
+		changed = true
+	}
+	if strings.Contains(strings.ToLower(out), "curl ") && !strings.Contains(out, "--max-time") {
+		for _, pair := range []struct{ old, new string }{
+			{"curl -sf ", "curl -sf --max-time 10 "},
+			{"curl -sSf ", "curl -sSf --max-time 10 "},
+			{"curl -s ", "curl -s --max-time 10 "},
+		} {
+			if strings.Contains(out, pair.old) {
+				out = strings.ReplaceAll(out, pair.old, pair.new)
+				changed = true
+			}
+		}
+	}
+	if strings.Contains(out, "sleep 2") {
+		out = strings.ReplaceAll(out, "sleep 2", "sleep 4")
+		changed = true
+	}
+	return strings.TrimSpace(out), changed
+}
+
+// orchestratedCommandTimeout returns a max runtime for long polecat smoke tests.
+func orchestratedCommandTimeout(cmd string) time.Duration {
+	lower := strings.ToLower(cmd)
+	if strings.Contains(lower, "go run") && strings.Contains(lower, "curl") {
+		return 3 * time.Minute
+	}
+	if strings.Contains(lower, "go build ./...") || strings.Contains(lower, "go test ./...") {
+		return 5 * time.Minute
+	}
+	return 0
 }
 
 // formatSuccessCommandOutput makes successful runs visible when tools print nothing (e.g. go mod tidy).
@@ -371,11 +447,21 @@ func runOrchestratedCommand(cmd, workDir, sessionName string, env []string) ([]b
 	if workDir == "" {
 		workDir = "."
 	}
+	ctx := context.Background()
+	if d := orchestratedCommandTimeout(cmd); d > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, d)
+		defer cancel()
+	}
 	if !needsOrchestratedScriptFile(cmd) {
-		c := exec.Command("/bin/sh", "-c", cmd)
+		c := exec.CommandContext(ctx, "/bin/sh", "-c", cmd)
 		c.Env = env
 		c.Dir = workDir
-		return c.CombinedOutput()
+		out, err := c.CombinedOutput()
+		if err != nil && ctx.Err() == context.DeadlineExceeded {
+			return out, fmt.Errorf("%w (command exceeded %s)", err, orchestratedCommandTimeout(cmd))
+		}
+		return out, err
 	}
 
 	script := prepareOrchestratedScript(cmd)
@@ -398,10 +484,14 @@ func runOrchestratedCommand(cmd, workDir, sessionName string, env []string) ([]b
 		return nil, err
 	}
 
-	c := exec.Command("/bin/bash", tmpPath)
+	c := exec.CommandContext(ctx, "/bin/bash", tmpPath)
 	c.Env = env
 	c.Dir = workDir
-	return c.CombinedOutput()
+	out, err := c.CombinedOutput()
+	if err != nil && ctx.Err() == context.DeadlineExceeded {
+		return out, fmt.Errorf("%w (script exceeded %s)", err, orchestratedCommandTimeout(cmd))
+	}
+	return out, err
 }
 
 // orchestratedCommandWorkDir is the subprocess cwd for rig workflow shell commands.

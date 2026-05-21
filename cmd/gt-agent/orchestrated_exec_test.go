@@ -55,6 +55,46 @@ func TestBenignPlanningShellNoise_standaloneEOF(t *testing.T) {
 	}
 }
 
+func TestScrubOrphanBashLcQuoteLines(t *testing.T) {
+	in := "cd x && cat > f.go <<'EOF'\npackage main\nEOF\n'\nwc -c f.go"
+	got := scrubOrphanBashLcQuoteLines(in)
+	if strings.Contains(got, "\n'\n") || strings.HasSuffix(got, "'") {
+		t.Fatalf("orphan wrapper quote must be removed: %q", got)
+	}
+	if !strings.Contains(got, "wc -c f.go") {
+		t.Fatalf("got %q", got)
+	}
+}
+
+func TestPrepareOrchestratedScript_scrubsOrphanQuote(t *testing.T) {
+	in := "bash -lc 'cd mockrig/mayor/rig && cat > plan.md <<'EOF'\n# Plan\nEOF\n'"
+	got := prepareOrchestratedScript(in)
+	if strings.Contains(got, "\n'\n") {
+		t.Fatalf("prepare should drop orphan quote line: %q", got)
+	}
+	scriptPath := filepath.Join(t.TempDir(), "t.sh")
+	if err := os.WriteFile(scriptPath, []byte("#!/bin/bash\nset -euo pipefail\n"+got+"\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := exec.Command("/bin/bash", "-n", scriptPath).CombinedOutput(); err != nil {
+		t.Fatalf("bash -n syntax check: %v\n%s", err, out)
+	}
+}
+
+func TestNormalizeGoDevServerSmokeCommand(t *testing.T) {
+	in := `cd testgt3/mayor/rig && cd linkshelf && go mod tidy && go build ./... && go run ./cmd/server & sleep 2 && curl -s http://localhost:8080 > /dev/null && pkill -f "go run ./cmd/server"`
+	got, ok := normalizeGoDevServerSmokeCommand(in)
+	if !ok {
+		t.Fatal("expected rewrite")
+	}
+	if strings.Contains(got, "pkill") || strings.Contains(got, "go build ./...") {
+		t.Fatalf("got %q", got)
+	}
+	if !strings.Contains(got, "sleep 4") || !strings.Contains(got, "--max-time") {
+		t.Fatalf("want longer sleep and curl timeout: %q", got)
+	}
+}
+
 func TestPrepareOrchestratedScript_normalizesEOF(t *testing.T) {
 	in := "cat > plan.md <<'EOF'\nbody\nEOF\nEOF\n"
 	got := prepareOrchestratedScript(in)
