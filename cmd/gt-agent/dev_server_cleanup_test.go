@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"sync"
 	"testing"
@@ -182,6 +183,12 @@ time.sleep(3600)
 
 func requirePortCleanupTools(t *testing.T) {
 	t.Helper()
+	if runtime.GOOS == "darwin" {
+		if _, err := exec.LookPath("lsof"); err != nil {
+			t.Skip("macOS port cleanup tests require lsof")
+		}
+		return
+	}
 	if _, err := exec.LookPath("fuser"); err != nil {
 		if _, err2 := exec.LookPath("lsof"); err2 != nil {
 			t.Skip("need fuser or lsof to test port cleanup")
@@ -243,7 +250,11 @@ func waitPortListening(t *testing.T, port int) {
 func waitPortFree(t *testing.T, port int) {
 	t.Helper()
 	addr := fmt.Sprintf("127.0.0.1:%d", port)
-	deadline := time.Now().Add(3 * time.Second)
+	wait := 3 * time.Second
+	if runtime.GOOS == "darwin" {
+		wait = 6 * time.Second
+	}
+	deadline := time.Now().Add(wait)
 	for time.Now().Before(deadline) {
 		ln, err := net.Listen("tcp", addr)
 		if err == nil {

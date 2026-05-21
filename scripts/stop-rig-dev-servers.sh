@@ -24,6 +24,20 @@ is_protected() {
   return 1
 }
 
+kill_port_lsof() {
+  local port="$1"
+  local pids sig
+  for sig in TERM KILL; do
+    pids="$(lsof -ti ":${port}" 2>/dev/null || true)"
+    if [[ -z "${pids:-}" ]]; then
+      return 0
+    fi
+    # shellcheck disable=SC2086
+    kill -"${sig}" $pids 2>/dev/null || true
+    sleep 0.1
+  done
+}
+
 kill_port() {
   local port="$1"
   if ! [[ "$port" =~ ^[0-9]+$ ]] || (( port < 1 || port > 65535 )); then
@@ -34,17 +48,20 @@ kill_port() {
     echo "refusing protected port: $port" >&2
     return 1
   fi
+  # macOS fuser cannot target TCP listeners; lsof is required.
+  if [[ "$(uname -s)" == "Darwin" ]]; then
+    if command -v lsof >/dev/null 2>&1; then
+      kill_port_lsof "$port"
+      return 0
+    fi
+    echo "need lsof to free port $port on macOS" >&2
+    return 1
+  fi
   if command -v fuser >/dev/null 2>&1; then
     fuser -k "${port}/tcp" 2>/dev/null || true
-    return 0
   fi
   if command -v lsof >/dev/null 2>&1; then
-    local pids
-    pids="$(lsof -ti ":${port}" 2>/dev/null || true)"
-    if [[ -n "${pids:-}" ]]; then
-      # shellcheck disable=SC2086
-      kill -TERM $pids 2>/dev/null || true
-    fi
+    kill_port_lsof "$port"
     return 0
   fi
   echo "need fuser or lsof to free port $port" >&2
