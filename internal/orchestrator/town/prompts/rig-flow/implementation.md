@@ -35,7 +35,8 @@ When **Verify** fails in a path that is **not** your active bead (e.g. `handlers
 
 1. Use **Dependency packages** APIs only (`AddLink`, not invented `CreateLink`).
 2. Reopen the bead: `bd list --status=closed`, `bd update <id> --status=open`, fix with EDIT, `bd close <id>`, continue active bead.
-3. If blocked, JSON only: `{"outcome":"failure","summary":"reopen <bead-id> for <path>: …"}` — no `bd update --status=failed`.
+3. If blocked after **verify/EDIT attempts**, JSON only: `{"outcome":"failure","summary":"reopen <bead-id> for <path>: …"}` — no `bd update --status=failed`.
+4. **gt-agent rejects** failure JSON with no EDIT/verify/bd work in the same task while open implement beads exist — you must run **Next bead** steps first.
 
 ## Rules
 

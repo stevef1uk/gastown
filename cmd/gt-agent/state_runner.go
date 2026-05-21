@@ -44,7 +44,8 @@ type stateRunner struct {
 	promptVars  map[string]string
 	track       *cmdTracker
 	servers     *devServerTracker
-	qaProgress  *QAReviewProgress // qa_review only; persisted across gt-agent restarts
+	qaProgress     *QAReviewProgress // qa_review only; persisted across gt-agent restarts
+	attemptFixWork bool              // implementation: true after EDIT/verify/bd close this task attempt
 }
 
 func newStateRunner(task *orchestrator.Task, townRoot, rig string) *stateRunner {
@@ -353,6 +354,7 @@ func (r *stateRunner) afterCommand(cmd string, cmdErr error, workDir, sessionNam
 		if strings.EqualFold(strings.TrimSpace(r.hooks.Track), "qa") {
 			r.persistQAReviewProgress(cmd)
 		}
+		r.noteImplementationFixAttempt(cmd, false)
 		r.runAutoVerify(cmd, workDir, sessionName, cmdEnv, combined)
 		return
 	}

@@ -83,6 +83,13 @@ func runOrchestrated(ctx context.Context, client *llm.Client, townRoot, role, ri
 			continue
 		}
 		outcome, summary, attemptLog, runErr := executeOrchestratedTask(ctx, client, townRoot, taskRig, sessionName, task, state.OrchestratedRetry)
+		if runErr != nil && isRetriableLLMError(runErr) {
+			orchestratedPrintf("[gt-agent] LLM unavailable (%v) — not completing task; backing off before retry\n", runErr)
+			time.Sleep(90 * time.Second)
+			state.LastActivity = time.Now()
+			_ = saveState(stateFile, state)
+			continue
+		}
 		if runErr != nil {
 			orchestratedFprintfStderr( "[gt-agent] task execution: %v\n", runErr)
 			if outcome == "" {
@@ -187,6 +194,9 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 
 		var combined strings.Builder
 		hadNative, cmdCount := runner.processOrchestratedTools(response, sessionName, &combined)
+		if hadNative {
+			runner.noteImplementationFixAttempt("", true)
+		}
 
 		if cmdCount == 0 && !hadNative && responseHasUnterminatedHeredoc(response) {
 			msg := "Your reply started a heredoc (e.g. plan.md <<'EOF') but never sent a line with only EOF — the message was cut off, so no command ran.\n\n" +
@@ -210,6 +220,9 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 				if o == "failure" || o == "fail" {
 					orchestratedPrintf("[gt-agent] ignoring failure JSON in same turn as CMD lines; review output then send JSON only\n")
 					recordAttemptFeedback("Failure JSON ignored because CMD lines ran this turn. Review command output, then reply with JSON only.\n")
+				} else if msg, reject := runner.rejectImplementationNoOpFailure(o); reject {
+					orchestratedPrintf("[gt-agent] rejecting implementation failure JSON without fix work this attempt\n")
+					recordAttemptFeedback(msg + "\n")
 				} else if o != "" {
 					if vErr := validateOutcomeForTask(task, townRoot, rig, o, s); vErr != nil {
 						orchestratedPrintf("[gt-agent] summary validation failed: %v\n", vErr)
@@ -255,6 +268,12 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 			if vErr := validateOutcomeForTask(task, townRoot, rig, o, s); vErr != nil {
 				orchestratedPrintf("[gt-agent] summary validation failed: %v\n", vErr)
 				msg := "Validation failed: " + vErr.Error() + ". Run `bd list` and copy bead IDs exactly into the summary."
+				recordAttemptFeedback(msg + "\n")
+				messages = append(messages, llm.Message{Role: "user", Content: msg})
+				continue
+			}
+			if msg, reject := runner.rejectImplementationNoOpFailure(o); reject {
+				orchestratedPrintf("[gt-agent] rejecting implementation failure JSON without fix work this attempt\n")
 				recordAttemptFeedback(msg + "\n")
 				messages = append(messages, llm.Message{Role: "user", Content: msg})
 				continue

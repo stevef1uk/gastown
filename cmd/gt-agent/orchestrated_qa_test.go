@@ -12,8 +12,8 @@ func TestOrchestratedCommandTimeoutForTrack_qaSmokeShorterThanPolecat(t *testing
 	cmd := "cd rig/mayor/rig/app && go run ./cmd/server & sleep 2 && curl -sf http://127.0.0.1:8080/"
 	qa := orchestratedCommandTimeoutForTrack("qa", cmd)
 	polecat := orchestratedCommandTimeoutForTrack("implementation", cmd)
-	if qa != 90*time.Second {
-		t.Fatalf("qa smoke timeout = %v, want 90s", qa)
+	if qa != 45*time.Second {
+		t.Fatalf("qa smoke timeout = %v, want 45s (dash-safe probe; fail fast)", qa)
 	}
 	if polecat != 3*time.Minute {
 		t.Fatalf("polecat smoke timeout = %v, want 3m", polecat)
@@ -27,8 +27,8 @@ func TestStateRunner_effectiveCommandTimeoutSec_qaUsesTrackDefault(t *testing.T)
 	}
 	r := newStateRunner(task, t.TempDir(), "testrig")
 	cmd := "go run ./cmd/server & curl -sf http://127.0.0.1:8080/api/x"
-	if got := r.effectiveCommandTimeoutSec(cmd); got != 90 {
-		t.Fatalf("effective timeout = %d, want 90", got)
+	if got := r.effectiveCommandTimeoutSec(cmd); got != 45 {
+		t.Fatalf("effective timeout = %d, want 45", got)
 	}
 }
 
@@ -56,7 +56,7 @@ func TestAppendQAFailureReportNudge_includesFailureJSON(t *testing.T) {
 	}
 }
 
-var errQACommandTimeout = &timeoutError{msg: "command exceeded 90s"}
+var errQACommandTimeout = &timeoutError{msg: "command exceeded 45s"}
 
 type timeoutError struct{ msg string }
 
