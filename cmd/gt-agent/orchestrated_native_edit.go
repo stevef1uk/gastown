@@ -261,7 +261,8 @@ func (r *stateRunner) executeNativeEditOp(op nativeEditOp, workDir string) (stri
 		if err := orchestrator.ValidateImplementWritePath(r.townRoot, r.rig, r.track.activeBead, rel, r.v, false); err != nil {
 			return "", err
 		}
-		return applyNativeSearchReplace(abs, op.search, op.replace)
+		replace := sanitizeNativeFileContent(op.replace)
+		return applyNativeSearchReplace(abs, op.search, replace)
 	case "write":
 		if err := orchestrator.ValidateImplementWritePath(r.townRoot, r.rig, r.track.activeBead, rel, r.v, true); err != nil {
 			return "", err
@@ -272,10 +273,11 @@ func (r *stateRunner) executeNativeEditOp(op nativeEditOp, workDir string) (stri
 		if err := os.MkdirAll(filepath.Dir(abs), 0755); err != nil {
 			return "", err
 		}
-		if err := os.WriteFile(abs, []byte(op.content), 0644); err != nil {
+		content := sanitizeNativeFileContent(op.content)
+		if err := os.WriteFile(abs, []byte(content), 0644); err != nil {
 			return "", err
 		}
-		return fmt.Sprintf("wrote %d bytes", len(op.content)), nil
+		return fmt.Sprintf("wrote %d bytes", len(content)), nil
 	default:
 		return "", fmt.Errorf("unknown native edit kind %q", op.kind)
 	}

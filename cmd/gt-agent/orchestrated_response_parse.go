@@ -87,3 +87,63 @@ func isNativeEditEndMarker(line string) bool {
 	t := strings.TrimSpace(line)
 	return t == nativeEditEndMarker || strings.EqualFold(t, "---END EDIT---")
 }
+
+// sanitizeNativeFileContent strips markdown fences and stray heredoc/WRITE terminators
+// the model often appends to EDIT/WRITE bodies or heredoc file content.
+func sanitizeNativeFileContent(content string) string {
+	if content == "" {
+		return content
+	}
+	hadTrailingNL := strings.HasSuffix(content, "\n")
+	lines := strings.Split(strings.TrimRight(content, "\n"), "\n")
+	changed := false
+	for {
+		trimChanged := false
+		for len(lines) > 0 {
+			first := strings.TrimSpace(lines[0])
+			if strings.HasPrefix(first, "```") {
+				lines = lines[1:]
+				trimChanged = true
+				continue
+			}
+			break
+		}
+		for len(lines) > 0 {
+			last := strings.TrimSpace(lines[len(lines)-1])
+			if last == "```" || isStrayFileTerminatorLine(last) {
+				lines = lines[:len(lines)-1]
+				trimChanged = true
+				continue
+			}
+			break
+		}
+		if !trimChanged {
+			break
+		}
+		changed = true
+	}
+	if !changed {
+		return content
+	}
+	out := strings.Join(lines, "\n")
+	if hadTrailingNL && len(lines) > 0 {
+		out += "\n"
+	}
+	return out
+}
+
+// stripMarkdownCodeFencesFromSource removes outer ```lang / ``` wrappers (one pass).
+func stripMarkdownCodeFencesFromSource(content string) string {
+	return sanitizeNativeFileContent(content)
+}
+
+func isStrayFileTerminatorLine(line string) bool {
+	switch strings.ToUpper(strings.TrimSpace(line)) {
+	case "EOF", "EOT", "END":
+		return true
+	}
+	t := strings.TrimSpace(line)
+	return strings.EqualFold(t, nativeEditWriteEnd) ||
+		strings.EqualFold(t, "---END EDIT---") ||
+		strings.EqualFold(t, "---END WRITE---")
+}

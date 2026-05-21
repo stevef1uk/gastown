@@ -54,6 +54,58 @@ func TestIsBdInfrastructureFailure_detectsDoltMissing(t *testing.T) {
 	}
 }
 
+func TestSanitizeNativeFileContent_stripsEOFAndFences(t *testing.T) {
+	in := "```go\npackage store\n\nimport \"fmt\"\n```\nEOF\n"
+	got := sanitizeNativeFileContent(in)
+	if strings.Contains(got, "```") || strings.Contains(got, "EOF") {
+		t.Fatalf("want clean Go only: %q", got)
+	}
+	if !strings.HasPrefix(got, "package store") {
+		t.Fatalf("want package first: %q", got)
+	}
+}
+
+func TestStripMarkdownCodeFencesFromSource_goWrite(t *testing.T) {
+	in := "```go\npackage store\n\nimport \"fmt\"\n```\n"
+	got := stripMarkdownCodeFencesFromSource(in)
+	if strings.Contains(got, "```") {
+		t.Fatalf("fences remain: %q", got)
+	}
+	if !strings.HasPrefix(got, "package store") {
+		t.Fatalf("want package line first: %q", got)
+	}
+}
+
+func TestStripMarkdownFencesInHeredocScripts_stripsEOFInBody(t *testing.T) {
+	script := "cat > f.go <<'EOF'\npackage main\nEOF\nEOF\n"
+	got := stripMarkdownFencesInHeredocScripts(script)
+	const marker = "<<'EOF'\n"
+	i := strings.Index(got, marker)
+	if i < 0 {
+		t.Fatalf("missing heredoc opener: %q", got)
+	}
+	rest := got[i+len(marker):]
+	j := strings.Index(rest, "\nEOF\n")
+	if j < 0 {
+		t.Fatalf("missing heredoc close: %q", got)
+	}
+	body := rest[:j]
+	if strings.TrimSpace(body) != "package main" {
+		t.Fatalf("heredoc body should not contain stray EOF line: %q", body)
+	}
+}
+
+func TestStripMarkdownFencesInHeredocScripts(t *testing.T) {
+	script := "cat > f.go <<'EOF'\n```go\npackage main\n```\nEOF\n"
+	got := stripMarkdownFencesInHeredocScripts(script)
+	if strings.Contains(got, "```go") || strings.Contains(got, "\n```\nEOF") {
+		t.Fatalf("fences in script: %q", got)
+	}
+	if !strings.Contains(got, "package main") {
+		t.Fatalf("missing body: %q", got)
+	}
+}
+
 func TestParseOrchestratedNativeEdits_acceptsEndEditAlias(t *testing.T) {
 	in := `EDIT: linkshelf/internal/store/store_test.go
 <<<<<<< SEARCH

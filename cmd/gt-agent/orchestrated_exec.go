@@ -26,7 +26,49 @@ func prepareOrchestratedScript(cmd string) string {
 	body = normalizeHeredocDelimiters(body)
 	body = filterHallucinatedScriptLines(body)
 	body = scrubOrphanHeredocDelimiterLines(body)
+	body = stripMarkdownFencesInHeredocScripts(body)
 	return scrubOrphanBashLcQuoteLines(body)
+}
+
+// stripMarkdownFencesInHeredocScripts removes ```lang / ``` wrappers inside heredoc bodies.
+func stripMarkdownFencesInHeredocScripts(script string) string {
+	lines := strings.Split(script, "\n")
+	var out []string
+	inBody := false
+	var term string
+	var bodyLines []string
+	flushBody := func() {
+		if len(bodyLines) == 0 {
+			return
+		}
+		stripped := sanitizeNativeFileContent(strings.Join(bodyLines, "\n"))
+		out = append(out, strings.Split(stripped, "\n")...)
+		bodyLines = nil
+	}
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if inBody {
+			if trimmed == term {
+				flushBody()
+				out = append(out, line)
+				inBody = false
+				term = ""
+				continue
+			}
+			bodyLines = append(bodyLines, line)
+			continue
+		}
+		out = append(out, line)
+		if t := detectHeredocTerm(line); t != "" {
+			inBody = true
+			term = t
+			bodyLines = nil
+		}
+	}
+	if inBody {
+		flushBody()
+	}
+	return strings.Join(out, "\n")
 }
 
 // scrubOrphanBashLcQuoteLines drops stray wrapper quote lines left after unwrapBashLcMultiline
