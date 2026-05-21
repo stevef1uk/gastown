@@ -60,8 +60,12 @@ func TestQuerySessionEvents_FindsEventsFromAllLocations(t *testing.T) {
 	}
 	doltPort := ln.Addr().(*net.TCPAddr).Port
 	_ = ln.Close()
-	t.Setenv("GT_DOLT_PORT", strconv.Itoa(doltPort))
-	doltEnv := testutil.CleanGTEnv("GT_SKIP_SPEC_INDEX=1")
+	portStr := strconv.Itoa(doltPort)
+	doltEnv := testutil.CleanGTEnv(
+		"GT_SKIP_SPEC_INDEX=1",
+		"GT_DOLT_PORT="+portStr,
+		"BEADS_DOLT_PORT="+portStr,
+	)
 
 	// Create a temporary directory structure
 	tmpDir := t.TempDir()
@@ -81,7 +85,7 @@ func TestQuerySessionEvents_FindsEventsFromAllLocations(t *testing.T) {
 
 	// Use gt install to set up the town
 	// Clear GT environment variables to isolate test from parent workspace
-	gtInstallCmd := exec.Command(gtBin, "install", "--dolt-port", strconv.Itoa(doltPort))
+	gtInstallCmd := exec.Command(gtBin, "install", "--dolt-port", portStr)
 	gtInstallCmd.Dir = townRoot
 	gtInstallCmd.Env = doltEnv
 	if out, err := gtInstallCmd.CombinedOutput(); err != nil {
@@ -152,9 +156,13 @@ func TestQuerySessionEvents_FindsEventsFromAllLocations(t *testing.T) {
 		"--json",
 	)
 	townEventCmd.Dir = townRoot
-	townEventCmd.Env = doltEnv
+	townEventCmd.Env = append(doltEnv, "BEADS_DIR="+filepath.Join(townRoot, ".beads"))
 	townOut, err := townEventCmd.CombinedOutput()
 	if err != nil {
+		msg := string(townOut) + err.Error()
+		if strings.Contains(msg, "Dolt server unreachable") || strings.Contains(msg, "auto-start is suppressed") {
+			t.Skipf("Dolt not available for bd create: %v\n%s", err, townOut)
+		}
 		t.Fatalf("creating town event: %v\n%s", err, townOut)
 	}
 	t.Logf("Created town event: %s", string(townOut))
@@ -169,7 +177,7 @@ func TestQuerySessionEvents_FindsEventsFromAllLocations(t *testing.T) {
 		"--json",
 	)
 	rigEventCmd.Dir = rigPath
-	rigEventCmd.Env = doltEnv
+	rigEventCmd.Env = append(doltEnv, "BEADS_DIR="+filepath.Join(rigPath, ".beads"))
 	rigOut, err := rigEventCmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("creating rig event: %v\n%s", err, rigOut)
@@ -179,7 +187,7 @@ func TestQuerySessionEvents_FindsEventsFromAllLocations(t *testing.T) {
 	// Verify events are in separate databases by querying each directly
 	townListCmd := exec.Command("bd", "list", "--type=event", "--all", "--json")
 	townListCmd.Dir = townRoot
-	townListCmd.Env = doltEnv
+	townListCmd.Env = append(doltEnv, "BEADS_DIR="+filepath.Join(townRoot, ".beads"))
 	townListOut, err := townListCmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("listing town events: %v\n%s", err, townListOut)
@@ -187,7 +195,7 @@ func TestQuerySessionEvents_FindsEventsFromAllLocations(t *testing.T) {
 
 	rigListCmd := exec.Command("bd", "list", "--type=event", "--all", "--json")
 	rigListCmd.Dir = rigPath
-	rigListCmd.Env = doltEnv
+	rigListCmd.Env = append(doltEnv, "BEADS_DIR="+filepath.Join(rigPath, ".beads"))
 	rigListOut, err := rigListCmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("listing rig events: %v\n%s", err, rigListOut)
@@ -222,6 +230,8 @@ func TestQuerySessionEvents_FindsEventsFromAllLocations(t *testing.T) {
 	if err := os.Chdir(townRoot); err != nil {
 		t.Fatalf("changing to town root: %v", err)
 	}
+	t.Setenv("GT_DOLT_PORT", portStr)
+	t.Setenv("BEADS_DOLT_PORT", portStr)
 
 	// Verify workspace discovery works
 	foundTownRoot, wsErr := workspace.FindFromCwdOrError()

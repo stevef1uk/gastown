@@ -124,6 +124,7 @@ func StartIsolatedDoltContainer(t *testing.T) string {
 
 	portStr := port.Port()
 	t.Setenv("GT_DOLT_PORT", portStr)
+	t.Setenv("BEADS_DOLT_PORT", portStr)
 	return portStr
 }
 

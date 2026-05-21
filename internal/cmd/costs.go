@@ -454,6 +454,16 @@ func querySessionEvents() []CostEntry {
 	return allEntries
 }
 
+// beadsCmdEnvForLocation returns subprocess env with BEADS_DIR set for a town or rig root.
+func beadsCmdEnvForLocation(location string) []string {
+	env := os.Environ()
+	beadsDir := filepath.Join(location, constants.DirBeads)
+	if _, err := os.Stat(beadsDir); err == nil {
+		return append(env, "BEADS_DIR="+beadsDir)
+	}
+	return env
+}
+
 // querySessionEventsFromLocation queries a single beads location for session.ended events.
 func querySessionEventsFromLocation(location string) ([]CostEntry, error) {
 	// Step 1: Get list of event IDs
@@ -467,6 +477,7 @@ func querySessionEventsFromLocation(location string) ([]CostEntry, error) {
 
 	listCmd := exec.Command("bd", listArgs...)
 	listCmd.Dir = location
+	listCmd.Env = beadsCmdEnvForLocation(location)
 	listOutput, err := listCmd.Output()
 	if err != nil {
 		// If bd fails (e.g., no beads database), return empty list
@@ -491,6 +502,7 @@ func querySessionEventsFromLocation(location string) ([]CostEntry, error) {
 
 	showCmd := exec.Command("bd", showArgs...)
 	showCmd.Dir = location
+	showCmd.Env = beadsCmdEnvForLocation(location)
 	showOutput, err := showCmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("showing events: %w", err)
