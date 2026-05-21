@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -358,7 +359,10 @@ func rewriteBdListLimit(cmd string) (string, bool) {
 var (
 	goSmokeStripPkillRE  = regexp.MustCompile(`(?i)\s*&&\s*pkill\s+-f\s+[^&|;]+`)
 	goSmokeStripBuildRE  = regexp.MustCompile(`(?i)go\s+build\s+\./\.\.\.\s*&&\s*`)
+	goSmokeStripTidyRE   = regexp.MustCompile(`(?i)go\s+mod\s+tidy\s*&&\s*`)
 	goSmokeServerBgRE    = regexp.MustCompile(`(?i)(go\s+run\s+(?:\.\/)?cmd/server[^\s&;]*)\s*&`)
+	goSmokeWorkDirRE     = regexp.MustCompile(`(?i)cd\s+([^\s&;]+linkshelf[^\s&;]*)`)
+	goSmokeLocalhostRE   = regexp.MustCompile(`(?i)(?:localhost|127\.0\.0\.1):(\d{2,5})`)
 )
 
 // normalizeGoCommandTypos fixes common model mistakes in go subcommands (e.g. "go build./...").
@@ -402,6 +406,14 @@ func normalizeGoDevServerSmokeCommand(cmd string) (string, bool) {
 		out = goSmokeStripBuildRE.ReplaceAllString(out, "")
 		changed = true
 	}
+	if goSmokeStripTidyRE.MatchString(out) {
+		out = goSmokeStripTidyRE.ReplaceAllString(out, "")
+		changed = true
+	}
+	if short, ok := simplifyGoDevServerSmoke(out); ok {
+		out = short
+		changed = true
+	}
 	if strings.Contains(strings.ToLower(out), "curl ") && !strings.Contains(out, "--max-time") {
 		for _, pair := range []struct{ old, new string }{
 			{"curl -sf ", "curl -sf --max-time 10 "},
@@ -436,11 +448,61 @@ func ensureGoSmokeShellReturns(cmd string) (string, bool) {
 	if strings.Contains(lower, "_gtsrv=") {
 		return cmd, false
 	}
-	out := goSmokeServerBgRE.ReplaceAllString(cmd, `${1} & _gtsrv=$!`)
+	out := goSmokeServerBgRE.ReplaceAllString(cmd, `${1} & _gtsrv=$!;`)
 	if out == cmd {
 		return cmd, false
 	}
-	return strings.TrimSpace(out) + `; kill ${_gtsrv} 2>/dev/null; wait ${_gtsrv} 2>/dev/null`, true
+	out = strings.ReplaceAll(out, "_gtsrv=$! sleep", "_gtsrv=$!; sleep")
+	out = strings.ReplaceAll(out, "_gtsrv=$! && sleep", "_gtsrv=$!; sleep")
+	// Do not wait on go run — first compile can take minutes; kill the wrapper only.
+	return strings.TrimSpace(out) + `; kill ${_gtsrv} 2>/dev/null`, true
+}
+
+// simplifyGoDevServerSmoke replaces long agent-invented smoke chains with a short probe (QA/polecat).
+func simplifyGoDevServerSmoke(cmd string) (string, bool) {
+	lower := strings.ToLower(cmd)
+	if !strings.Contains(lower, "go run") || !strings.Contains(lower, "cmd/server") || !strings.Contains(lower, "curl") {
+		return cmd, false
+	}
+	workDir := smokeWorkDirFromCommand(cmd)
+	if workDir == "" {
+		return cmd, false
+	}
+	port := smokeLocalhostPort(cmd)
+	var b strings.Builder
+	b.WriteString("cd ")
+	b.WriteString(workDir)
+	b.WriteString(" && go run ./cmd/server & _gtsrv=$!; sleep 6; ")
+	b.WriteString(fmt.Sprintf("curl -sf --max-time 8 http://127.0.0.1:%d/ >/dev/null", port))
+	if strings.Contains(lower, "/api/") {
+		b.WriteString(fmt.Sprintf("; curl -sf --max-time 8 http://127.0.0.1:%d/api/links >/dev/null || true", port))
+	}
+	b.WriteString("; kill ${_gtsrv} 2>/dev/null")
+	return b.String(), true
+}
+
+func smokeWorkDirFromCommand(cmd string) string {
+	if m := goSmokeWorkDirRE.FindStringSubmatch(cmd); len(m) >= 2 {
+		return strings.TrimSpace(m[1])
+	}
+	// Fallback: last cd into layout before go run
+	parts := strings.Split(cmd, "&&")
+	for i := len(parts) - 1; i >= 0; i-- {
+		p := strings.TrimSpace(parts[i])
+		if strings.HasPrefix(strings.ToLower(p), "cd ") {
+			return strings.TrimSpace(p[3:])
+		}
+	}
+	return ""
+}
+
+func smokeLocalhostPort(cmd string) int {
+	if m := goSmokeLocalhostRE.FindStringSubmatch(cmd); len(m) >= 2 {
+		if p, err := strconv.Atoi(m[1]); err == nil && p > 0 && p <= 65535 {
+			return p
+		}
+	}
+	return 8080
 }
 
 // orchestratedCommandTimeout returns a max runtime for long polecat smoke tests.

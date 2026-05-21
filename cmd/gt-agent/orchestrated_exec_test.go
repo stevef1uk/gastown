@@ -90,11 +90,28 @@ func TestNormalizeGoDevServerSmokeCommand(t *testing.T) {
 	if strings.Contains(got, "pkill") || strings.Contains(got, "go build ./...") {
 		t.Fatalf("got %q", got)
 	}
-	if !strings.Contains(got, "sleep 4") || !strings.Contains(got, "--max-time") {
-		t.Fatalf("want longer sleep and curl timeout: %q", got)
+	if !strings.Contains(got, "sleep 6") || !strings.Contains(got, "--max-time") {
+		t.Fatalf("want server warmup sleep and curl timeout: %q", got)
 	}
 	if !strings.Contains(got, "_gtsrv=$!") || !strings.Contains(got, "kill ${_gtsrv}") {
 		t.Fatalf("want smoke to kill background server so shell returns: %q", got)
+	}
+	if strings.Contains(got, "go mod tidy") || strings.Contains(got, "wait ${_gtsrv}") {
+		t.Fatalf("want short smoke without tidy or wait: %q", got)
+	}
+}
+
+func TestSimplifyGoDevServerSmokeCommand_shortProbe(t *testing.T) {
+	in := `cd testgt3/mayor/rig && cd linkshelf && go mod tidy && go build ./... && go run ./cmd/server & sleep 2 && curl -sf http://127.0.0.1:8080/ && curl -sf http://127.0.0.1:8080/api/links`
+	got, ok := simplifyGoDevServerSmoke(in)
+	if !ok {
+		t.Fatal("expected simplify")
+	}
+	if strings.Contains(got, "go mod tidy") || strings.Contains(got, "go build") {
+		t.Fatalf("got %q", got)
+	}
+	if !strings.Contains(got, "sleep 6") || !strings.Contains(got, "/api/links") {
+		t.Fatalf("want short probe with API check: %q", got)
 	}
 }
 
