@@ -71,7 +71,7 @@ Use these instead of ` + "`" + `sed` + "`" + ` / ` + "`" + `patch` + "`" + ` / `
 exact old lines
 ` + NativeEditReplaceMarker + `
 new lines
-` + NativeEditEndMarker + `` + "`" + `
+` + NativeEditEndMarker + `` + "`" + ` (exact line — not ` + "`" + `---END EDIT---` + "`" + `)
 
 ` + "`" + `WRITE: <path>` + "`" + ` — create a **new** file (or stub); body until a line containing only ` + "`" + NativeEditWriteEnd + "`" + `.
 

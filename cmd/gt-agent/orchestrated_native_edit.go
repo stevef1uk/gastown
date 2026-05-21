@@ -27,8 +27,14 @@ type nativeEditOp struct {
 }
 
 // parseOrchestratedNativeEdits extracts READ:/EDIT:/WRITE: blocks from an LLM response.
+const (
+	maxNativeOpsPerTurn   = 12
+	maxNativeReadsPerTurn = 3
+)
+
 func parseOrchestratedNativeEdits(response string) []nativeEditOp {
-	filtered := stripOutcomeLinesForCmdParse(response)
+	filtered := preprocessOrchestratedResponse(response)
+	filtered = stripOutcomeLinesForCmdParse(filtered)
 	var ops []nativeEditOp
 	lines := strings.Split(filtered, "\n")
 	var i int
@@ -73,17 +79,15 @@ func parseNativeEditSearchReplace(lines []string, start int) (search, replace st
 	var searchLines, replaceLines []string
 	for i := start; i < len(lines); i++ {
 		t := strings.TrimSpace(lines[i])
-		switch t {
-		case nativeEditSearchMarker:
+		switch {
+		case t == nativeEditSearchMarker:
 			mode = "search"
-			continue
-		case nativeEditReplaceMarker:
+		case t == nativeEditReplaceMarker:
 			if mode != "search" {
 				return "", "", i + 1, false
 			}
 			mode = "replace"
-			continue
-		case nativeEditEndMarker:
+		case isNativeEditEndMarker(t):
 			if mode != "replace" {
 				return "", "", i + 1, false
 			}
@@ -117,6 +121,25 @@ func parseNativeWriteBody(lines []string, start int) (content string, next int) 
 func (r *stateRunner) processOrchestratedTools(response, sessionName string, combined *strings.Builder) (hadNative bool, cmdCount int) {
 	if r.hooks.NativeEditTools {
 		ops := parseOrchestratedNativeEdits(response)
+		reads := 0
+		var capped []nativeEditOp
+		for _, op := range ops {
+			if len(capped) >= maxNativeOpsPerTurn {
+				break
+			}
+			if op.kind == "read" {
+				reads++
+				if reads > maxNativeReadsPerTurn {
+					continue
+				}
+			}
+			capped = append(capped, op)
+		}
+		if len(ops) > len(capped) {
+			orchestratedPrintf("[gt-agent] capped native tools %d → %d (max %d ops, %d reads)\n",
+				len(ops), len(capped), maxNativeOpsPerTurn, maxNativeReadsPerTurn)
+		}
+		ops = capped
 		editDir := r.mayorRigWorkDir()
 		cmdEnv := r.commandEnv(os.Environ())
 		hadNative = r.executeNativeEdits(ops, editDir, sessionName, cmdEnv, combined)
@@ -149,6 +172,9 @@ func (r *stateRunner) processOrchestratedTools(response, sessionName string, com
 			continue
 		}
 		out, cmdErr := r.runShellCommand(cmd, workDir, sessionName, cmdEnv)
+		if isBdInfrastructureFailure(cmdErr, string(out)) {
+			r.track.bdInfraFailed = true
+		}
 		if cmdErr != nil && (benignGoCommandError(cmd, cmdErr, out) || (r.hooks.Artifacts == "planning" && benignPlanningShellNoise(cmd, cmdErr))) {
 			orchestratedPrintf("[gt-agent] treating as ok: %v\n", cmdErr)
 			combined.WriteString(fmt.Sprintf("Command: %s\n(note: %v — continuing)\nOutput: %s\n\n", cmd, cmdErr, string(out)))

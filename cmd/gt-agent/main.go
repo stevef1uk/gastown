@@ -1427,6 +1427,10 @@ func normalizeGluedCMDMarkers(cmd string) string {
 	cmd = gluedParenCMDRE.ReplaceAllString(cmd, ")\nCMD: ")
 	cmd = gluedEOFCMDRE.ReplaceAllString(cmd, "EOF\nCMD: ")
 	cmd = gluedOutcomeAfterQuoteRE.ReplaceAllString(cmd, "'\n")
+	// Polecat bursts: ---END EDIT---CMD:, .goCMD:, REPLACECMD:
+	cmd = regexp.MustCompile(`(?i)---END\s+EDIT---\s*CMD:\s*`).ReplaceAllString(cmd, "---END EDIT---\nCMD: ")
+	cmd = regexp.MustCompile(`(?i)---END\s+WRITE---\s*CMD:\s*`).ReplaceAllString(cmd, "---END WRITE---\nCMD: ")
+	cmd = regexp.MustCompile(`(?i)>>>>>>>\s*REPLACE\s*CMD:\s*`).ReplaceAllString(cmd, ">>>>>>> REPLACE\nCMD: ")
 	return cmd
 }
 

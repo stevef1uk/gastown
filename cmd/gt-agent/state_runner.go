@@ -34,6 +34,7 @@ type cmdTracker struct {
 	qaSmokeOK        bool
 	activeBead        string
 	activeBeadPath    string
+	bdInfraFailed     bool
 }
 
 type stateRunner struct {
@@ -456,6 +457,10 @@ func (r *stateRunner) verifyCommand(kind string) string {
 }
 
 func (r *stateRunner) validateArtifacts(outcome string) error {
+	if r.track != nil && r.track.bdInfraFailed && isOrchestratedSuccessOutcome(outcome) {
+		return fmt.Errorf("bd/Dolt unavailable for rig %s — fix beads (bd doctor, bd bootstrap, ensure Dolt serves this rig) before JSON success; do not claim tests passed or beads closed",
+			r.rig)
+	}
 	if outcome != "success" && outcome != "task_passed" && outcome != "all_passed" {
 		return nil
 	}

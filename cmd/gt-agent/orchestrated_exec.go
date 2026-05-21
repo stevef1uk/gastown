@@ -353,16 +353,7 @@ func orchestratedWritesGoUnderLayout(cmd string, v orchestrator.WorkflowValidati
 
 // rewriteBdListLimit ensures bd list counts are not capped at 50 (beads default).
 func rewriteBdListLimit(cmd string) (string, bool) {
-	lower := strings.ToLower(cmd)
-	if !strings.Contains(lower, "bd list") || strings.Contains(lower, "--limit") {
-		return cmd, false
-	}
-	// Insert --limit=0 after "bd list"
-	re := strings.Replace(cmd, "bd list", "bd list --limit=0", 1)
-	if re == cmd {
-		re = strings.Replace(cmd, "BD list", "bd list --limit=0", 1)
-	}
-	return re, re != cmd
+	return sanitizeBdListCommand(cmd)
 }
 
 var (

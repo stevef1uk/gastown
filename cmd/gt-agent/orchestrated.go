@@ -225,6 +225,9 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 				if o == "failure" || o == "fail" {
 					orchestratedPrintf("[gt-agent] ignoring failure JSON in same turn as CMD lines; review output then send JSON only\n")
 					recordAttemptFeedback("Failure JSON ignored because CMD lines ran this turn. Review command output, then reply with JSON only.\n")
+				} else if task.State == "implementation" && isOrchestratedSuccessOutcome(o) {
+					orchestratedPrintf("[gt-agent] ignoring success JSON in same turn as CMD/native tools; run Verify and bd close first, then JSON only\n")
+					recordAttemptFeedback("Success JSON ignored because commands ran this turn. Finish Verify + bd close for the active bead, then reply with JSON only.\n")
 				} else if msg, reject := runner.rejectImplementationNoOpFailure(o); reject {
 					orchestratedPrintf("[gt-agent] rejecting implementation failure JSON without fix work this attempt\n")
 					recordAttemptFeedback(msg + "\n")
@@ -253,6 +256,19 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 			feedback += "\n\nNative edits processed. If the step is complete, reply with JSON only: {\"outcome\":\"...\",\"summary\":\"...\"}"
 			if turn == maxTurns {
 				feedback += " Use an allowed outcome."
+			}
+			if o, s, ok := parseOrchestratedResult(response, task.AllowedOutcomes); ok {
+				o = normalizeOrchestratedOutcome(o, task.AllowedOutcomes)
+				if task.State == "implementation" && isOrchestratedSuccessOutcome(o) {
+					orchestratedPrintf("[gt-agent] ignoring success JSON in same turn as native tools\n")
+					recordAttemptFeedback("Success JSON ignored — run Verify from Next bead and `bd close` before JSON success.\n")
+				} else if o != "" {
+					if vErr := runner.validateArtifacts(o); vErr != nil {
+						recordAttemptFeedback("Validation failed: " + vErr.Error() + "\n")
+					} else {
+						return o, s, lastAttemptFeedback.String(), nil
+					}
+				}
 			}
 			messages = append(messages, llm.Message{Role: "user", Content: feedback})
 			continue
@@ -332,6 +348,15 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 func isOrchestratedFailureOutcome(outcome string) bool {
 	switch strings.ToLower(strings.TrimSpace(outcome)) {
 	case "fail", "failure":
+		return true
+	default:
+		return false
+	}
+}
+
+func isOrchestratedSuccessOutcome(outcome string) bool {
+	switch strings.ToLower(strings.TrimSpace(outcome)) {
+	case "success", "all_passed", "task_passed", "completed":
 		return true
 	default:
 		return false
@@ -631,11 +656,10 @@ func responseHasUnterminatedHeredoc(response string) bool {
 
 // parseOrchestratedCommands extracts CMD blocks without treating JSON or outcome lines as shell.
 func parseOrchestratedCommands(response string) []string {
-	filtered := stripOutcomeLinesForCmdParse(response)
+	filtered := preprocessOrchestratedResponse(response)
+	filtered = stripOutcomeLinesForCmdParse(filtered)
 	filtered = stripModelToolArtifacts(filtered)
 	filtered = normalizeMarkdownFencedCMD(filtered)
-	// Un-glue EOF'CMD: and similar before line-oriented parsing (polecat heredoc bursts).
-	filtered = normalizeGluedCMDMarkers(filtered)
 	cmds, _, _ := parseLLMResponse(filtered)
 	return expandGluedOrchestratedCommands(cmds)
 }
@@ -1438,6 +1462,30 @@ func validateImplementationBeadPlaceholder(cmd, townRoot, rig string) error {
 	if bdPlaceholderIDRE.MatchString(cmd) {
 		return fmt.Errorf("do not use angle-bracket placeholders in bd commands — copy IDs from `bd list` (e.g. %s)",
 			beadIDExample(townRoot, rig))
+	}
+	if err := validateBdCommandBeadID(cmd, townRoot, rig); err != nil {
+		return err
+	}
+	return nil
+}
+
+func validateBdCommandBeadID(cmd, townRoot, rig string) error {
+	var id string
+	switch {
+	case isBeadUpdateInProgressCommand(cmd):
+		id = extractBeadIDFromBdUpdate(cmd)
+	case isBeadCloseCommand(cmd):
+		id = extractBeadIDFromBdClose(cmd)
+	default:
+		return nil
+	}
+	id = strings.Trim(id, `"'`)
+	if id == "" {
+		return nil
+	}
+	if bdBeadNumericIDRE.MatchString(id) {
+		return fmt.Errorf("bead ID %q is invalid — use a real ID from `bd list` (e.g. %s), not a bare number",
+			id, beadIDExample(townRoot, rig))
 	}
 	return nil
 }
