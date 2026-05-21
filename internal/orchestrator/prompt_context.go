@@ -67,7 +67,14 @@ func RunPreRunHook(step, townRoot, rig string, v WorkflowValidation) (string, er
 			return "", err
 		}
 		if len(dupes) > 0 {
-			logParts = append(logParts, "deduped: "+joinStrings(dupes, ", "))
+			logParts = append(logParts, "deduped open: "+joinStrings(dupes, ", "))
+		}
+		closedDupes, err := PruneDuplicateClosedImplementBeads(townRoot, rig, v)
+		if err != nil {
+			return "", err
+		}
+		if len(closedDupes) > 0 {
+			logParts = append(logParts, "deduped closed: "+joinStrings(closedDupes, ", "))
 		}
 		deleted, err := PruneExtraImplementBeads(townRoot, rig, v)
 		if err != nil {

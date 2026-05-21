@@ -313,6 +313,20 @@ func (r *stateRunner) trackCommand(cmd string, cmdErr error) {
 	}
 }
 
+func (r *stateRunner) scrubStaleDevServersAtTaskStart() {
+	if !trackNeedsDevServerCleanup(r.hooks.Track) {
+		return
+	}
+	scrubStaleDevServersAtTaskStart(r.v, rigMayorRigDir(r.townRoot, r.rig))
+}
+
+func (r *stateRunner) beforeDevServerCommand(cmd string) {
+	if !trackNeedsDevServerCleanup(r.hooks.Track) {
+		return
+	}
+	freeDevServersBeforeCommand(cmd)
+}
+
 func (r *stateRunner) shutdownStartedServers() {
 	if !trackNeedsDevServerCleanup(r.hooks.Track) {
 		return

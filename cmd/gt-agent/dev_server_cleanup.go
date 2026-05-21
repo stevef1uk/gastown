@@ -6,6 +6,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/steveyegge/gastown/internal/orchestrator"
 )
 
 // protectedDevPorts are never targeted for dev-server cleanup (shared town infra).
@@ -141,6 +143,47 @@ func killGoRunServerProcesses() {
 			orchestratedPrintf("[gt-agent] stopped go run server: %s\n", msg)
 		}
 	}
+}
+
+// commandStartsDevServer reports whether a shell command may bind a local HTTP port.
+func commandStartsDevServer(cmd string) bool {
+	return strings.Contains(strings.ToLower(cmd), "go run")
+}
+
+// freeDevServersBeforeCommand stops listeners and go run server processes implied by cmd
+// before polecat/QA smoke tests (avoids "address already in use" from prior sessions).
+func freeDevServersBeforeCommand(cmd string) {
+	if !commandStartsDevServer(cmd) {
+		return
+	}
+	tr := newDevServerTracker()
+	tr.noteCommand(cmd)
+	orchestratedPrintf("[gt-agent] freeing dev server ports before go run\n")
+	shutdownStartedDevServers(tr)
+}
+
+// buildStaleDevServerTracker collects ports/processes to scrub at polecat/QA task start.
+func buildStaleDevServerTracker(v orchestrator.WorkflowValidation, mayorRigDir string) *devServerTracker {
+	tr := newDevServerTracker()
+	for _, q := range []string{v.QAVerifyCommand, v.ActivePhaseQAVerifyCommand()} {
+		tr.noteCommand(q)
+	}
+	if orchestrator.WorkflowUsesGo(v) && orchestrator.GoServerMainExists(mayorRigDir, v) {
+		tr.goRunSeen = true
+		if len(tr.ports) == 0 {
+			tr.ports[8080] = struct{}{}
+		}
+	}
+	return tr
+}
+
+func scrubStaleDevServersAtTaskStart(v orchestrator.WorkflowValidation, mayorRigDir string) {
+	tr := buildStaleDevServerTracker(v, mayorRigDir)
+	if !tr.needsCleanup() {
+		return
+	}
+	orchestratedPrintf("[gt-agent] scrubbing stale dev servers at task start\n")
+	shutdownStartedDevServers(tr)
 }
 
 func roleNeedsDevServerCleanup(role string) bool {

@@ -671,10 +671,11 @@ func run() error {
 				if rewritten {
 					fmt.Printf("[gt-agent] Rewrote command: %q -> %q\n", cmd, safeCmd)
 				}
-				fmt.Printf("[gt-agent] $ %s\n", safeCmd)
 				if devServers != nil {
+					freeDevServersBeforeCommand(safeCmd)
 					devServers.noteCommand(safeCmd)
 				}
+				fmt.Printf("[gt-agent] $ %s\n", safeCmd)
 
 				if diag, ok := checkShellSyntax(safeCmd); !ok {
 					fmt.Fprintf(os.Stderr, "[gt-agent] REJECTED invalid shell (syntax check): %s\n", diag)

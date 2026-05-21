@@ -102,9 +102,70 @@ func pathMatchesRequired(path string, required []string) bool {
 	return false
 }
 
+// PathMatchesImplementFile reports whether written and beadPath refer to the same implement file.
+func PathMatchesImplementFile(written, beadPath string) bool {
+	written = filepath.ToSlash(strings.TrimSpace(written))
+	beadPath = filepath.ToSlash(strings.TrimSpace(beadPath))
+	if written == "" || beadPath == "" {
+		return false
+	}
+	if written == beadPath {
+		return true
+	}
+	if filepath.Base(written) == filepath.Base(beadPath) {
+		return true
+	}
+	return strings.HasSuffix(written, "/"+beadPath) || strings.HasSuffix(beadPath, "/"+written)
+}
+
+// ListImplementBeadsByStatusHook is set by tests to stub bd list for implement-path guards.
+var ListImplementBeadsByStatusHook func(townRoot, rig string, v WorkflowValidation, status string) ([]PlanBead, error)
+
+func listImplementBeadsForGuard(townRoot, rig string, v WorkflowValidation, status string) ([]PlanBead, error) {
+	if ListImplementBeadsByStatusHook != nil {
+		return ListImplementBeadsByStatusHook(townRoot, rig, v, status)
+	}
+	return listImplementBeadsByStatus(townRoot, rig, v, status)
+}
+
+// ImplementPathHasOnlyClosedBeads reports whether every implement bead for writtenPath is closed
+// (no open or in_progress bead for that path). Used to block polecat from stomping finished files.
+func ImplementPathHasOnlyClosedBeads(townRoot, rig, writtenPath string, v WorkflowValidation) (bool, error) {
+	v = v.ForActivePhase()
+	writtenPath = filepath.ToSlash(strings.TrimSpace(writtenPath))
+	if writtenPath == "" {
+		return false, nil
+	}
+	for _, status := range []string{"open", "in_progress"} {
+		beads, err := listImplementBeadsForGuard(townRoot, rig, v, status)
+		if err != nil {
+			return false, err
+		}
+		for _, b := range beads {
+			p := NormalizePlannerBeadPath(ExtractPathFromBeadTitle(b.Title, v.BeadTitleContains), v.LayoutRoot, rig)
+			if PathMatchesImplementFile(writtenPath, p) {
+				return false, nil
+			}
+		}
+	}
+	closed, err := listImplementBeadsForGuard(townRoot, rig, v, "closed")
+	if err != nil {
+		return false, err
+	}
+	for _, b := range closed {
+		p := NormalizePlannerBeadPath(ExtractPathFromBeadTitle(b.Title, v.BeadTitleContains), v.LayoutRoot, rig)
+		if PathMatchesImplementFile(writtenPath, p) {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 // AllowedEarlierImplementDependencyWrite reports whether written is a profile required_file
 // that polecat order builds before activePath (e.g. store/tasks while the cmd/main bead is active).
-func AllowedEarlierImplementDependencyWrite(activePath, writtenPath string, required []string) bool {
+// Returns false when writtenPath's implement bead(s) are closed — fixes must use that bead reopened.
+func AllowedEarlierImplementDependencyWrite(townRoot, rig, activePath, writtenPath string, v WorkflowValidation) bool {
+	required := v.RequiredFiles
 	if len(required) == 0 || !pathMatchesRequired(writtenPath, required) {
 		return false
 	}
@@ -113,7 +174,14 @@ func AllowedEarlierImplementDependencyWrite(activePath, writtenPath string, requ
 	if activePath == "" || writtenPath == "" || activePath == writtenPath {
 		return false
 	}
-	return implementationPathScore(writtenPath) < implementationPathScore(activePath)
+	if implementationPathScore(writtenPath) >= implementationPathScore(activePath) {
+		return false
+	}
+	closedOnly, err := ImplementPathHasOnlyClosedBeads(townRoot, rig, writtenPath, v)
+	if err == nil && closedOnly {
+		return false
+	}
+	return true
 }
 
 // OrderRequiredFilesForImplementation returns required_files in polecat build order.
@@ -395,16 +463,26 @@ func RepairPlanningBeadSet(townRoot, rig string, v WorkflowValidation) (string, 
 // PruneDuplicateImplementBeads deletes duplicate open beads for the same required_files path,
 // keeping the canonical planner title when present.
 func PruneDuplicateImplementBeads(townRoot, rig string, v WorkflowValidation) ([]string, error) {
+	return pruneDuplicateImplementBeadsByStatus(townRoot, rig, v, "open")
+}
+
+// PruneDuplicateClosedImplementBeads deletes duplicate closed beads for the same path
+// (e.g. two closed go.mod beads). Keeps one closed bead per path for audit; removes extras.
+func PruneDuplicateClosedImplementBeads(townRoot, rig string, v WorkflowValidation) ([]string, error) {
+	return pruneDuplicateImplementBeadsByStatus(townRoot, rig, v, "closed")
+}
+
+func pruneDuplicateImplementBeadsByStatus(townRoot, rig string, v WorkflowValidation, status string) ([]string, error) {
 	v = v.ForActivePhase()
 	if len(v.RequiredFiles) == 0 {
 		return nil, nil
 	}
-	open, err := ListOpenImplementBeads(townRoot, rig, v)
+	beads, err := listImplementBeadsByStatus(townRoot, rig, v, status)
 	if err != nil {
 		return nil, err
 	}
 	pathToIDs := map[string][]string{}
-	for _, b := range open {
+	for _, b := range beads {
 		p := NormalizePlannerBeadPath(ExtractPathFromBeadTitle(b.Title, v.BeadTitleContains), v.LayoutRoot, rig)
 		if p == "" || !IsValidImplementBeadPath(p) {
 			continue
@@ -417,7 +495,21 @@ func PruneDuplicateImplementBeads(townRoot, rig string, v WorkflowValidation) ([
 		if len(ids) <= 1 {
 			continue
 		}
-		keeper := selectKeeperImplementBead(open, want, ids, v)
+		keeper := selectKeeperImplementBead(beads, want, ids, v)
+		for _, id := range ids {
+			if id != keeper {
+				toDelete[id] = true
+			}
+		}
+	}
+	for p, ids := range pathToIDs {
+		if len(ids) <= 1 {
+			continue
+		}
+		if pathMatchesRequired(p, v.RequiredFiles) {
+			continue // already handled via required_files loop
+		}
+		keeper := selectKeeperImplementBead(beads, p, dedupeStrings(ids), v)
 		for _, id := range ids {
 			if id != keeper {
 				toDelete[id] = true

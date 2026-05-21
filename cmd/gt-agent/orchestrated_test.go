@@ -654,6 +654,45 @@ func TestValidateImplementationArtifacts(t *testing.T) {
 	countOpenMatchingBeadsHook = func(_, _, _ string) (int, error) { return 0, nil }
 }
 
+func TestValidateImplementationBeadFileWrite_rejectsClosedPath(t *testing.T) {
+	dir := t.TempDir()
+	v := orchestrator.WorkflowValidation{
+		LayoutRoot:        "linkshelf",
+		BeadTitleContains: "Implement ",
+		RequiredFiles: []string{
+			"linkshelf/internal/api/handlers.go",
+			"linkshelf/cmd/server/main.go",
+		},
+	}
+	orchestrator.ListImplementBeadsByStatusHook = func(_, _ string, _ orchestrator.WorkflowValidation, status string) ([]orchestrator.PlanBead, error) {
+		switch status {
+		case "closed":
+			return []orchestrator.PlanBead{{
+				ID:    "te-h",
+				Title: "Implement linkshelf/internal/api/handlers.go per architecture",
+			}}, nil
+		case "in_progress":
+			return []orchestrator.PlanBead{{
+				ID:    "te-main",
+				Title: "Implement linkshelf/cmd/server/main.go per architecture",
+			}}, nil
+		default:
+			return nil, nil
+		}
+	}
+	t.Cleanup(func() { orchestrator.ListImplementBeadsByStatusHook = nil })
+	cmd := `cd mockrig/mayor/rig && cat > linkshelf/internal/api/handlers.go <<'EOF'
+package api
+EOF`
+	err := validateImplementationBeadFileWrite(cmd, dir, "mockrig", "te-main", v)
+	if err == nil {
+		t.Fatal("expected reject write to closed-only path while active bead is main")
+	}
+	if !strings.Contains(err.Error(), "closed") {
+		t.Fatalf("want closed-path error, got %v", err)
+	}
+}
+
 func TestValidateImplementationCommand_oneInProgressBead(t *testing.T) {
 	dir := t.TempDir()
 	cmd := `bd update tg-abc --status=in_progress`

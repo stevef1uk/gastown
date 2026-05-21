@@ -54,7 +54,7 @@ You are **QA** for rig `{{rig}}` (`agent_id={{rig}}/qa`). Work from town root (`
    CMD: cd {{rig}}/mayor/rig && {{unittest_command_hint}}
    ```
 
-5. **Web/API runtime smoke** (required when the profile includes HTML/JS under `web/` **and** `cmd/server/main.go`). Unit tests alone miss integration bugs — run **one CMD** that starts the server, exercises the app, then exits (gt-agent stops the server when this step finishes). Check every item below; use `failure` if any check fails.
+5. **Web/API runtime smoke** (required when the profile includes HTML/JS under `web/` **and** `cmd/server/main.go`). Unit tests alone miss integration bugs — run **one CMD** that starts the server, exercises the app, then exits (gt-agent **frees stale listeners before each `go run`** and stops the server when the step finishes). Check every item below; use `failure` if any check fails.
 
    | Bug class | What to verify | How |
    |-----------|----------------|-----|
@@ -70,7 +70,7 @@ You are **QA** for rig `{{rig}}` (`agent_id={{rig}}/qa`). Work from town root (`
    ```
    Replace `/api/bookmarks`, port, and asset paths with the rig's real routes. If POST or GET list fails, outcome **`failure`** with the HTTP status and response body in the summary.
 
-   If `go run` fails with "address already in use", a prior server is still bound — report **`failure`** naming the port; gt-agent normally stops stray servers when QA finishes, but an external process may need `fuser -k PORT/tcp`.
+   If `go run` fails with "address already in use", run **`CMD: bash "${GASTOWN:-$HOME/dev/freeride/gastown}/scripts/stop-rig-dev-servers.sh" 8080`** (adjust port), then repeat the smoke CMD. gt-agent also auto-scrubs before `go run`; persistent binds may be a non–go-run process — name the port in **`failure`** only if stop script + retry still fail.
 
 6. Re-run verification if needed before finishing:
    ```

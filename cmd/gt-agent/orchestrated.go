@@ -133,6 +133,7 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 		orchestratedPrintf("[gt-agent] injecting prior failure context for %s/%s\n", task.WorkflowID, task.State)
 	}
 	runner := newStateRunner(task, townRoot, rig)
+	runner.scrubStaleDevServersAtTaskStart()
 	defer runner.shutdownStartedServers()
 	for _, block := range runner.promptContextBlocks() {
 		contextBlocks = append(contextBlocks, block)
@@ -206,6 +207,7 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 				runner.repairPipBeforeRun(cmd)
 				cmdEnv := runner.commandEnv(os.Environ())
 				cmd = runner.rewritePythonCmd(cmd, cmdEnv)
+				runner.beforeDevServerCommand(cmd)
 				orchestratedPrintf("[gt-agent] $ %s\n", cmd)
 				if needsOrchestratedScriptFile(cmd) {
 					orchestratedPrintf("[gt-agent] running multiline/heredoc via temp script\n")
@@ -1215,14 +1217,21 @@ func validateImplementationBeadFileWrite(cmd, townRoot, rig, activeBead string, 
 		allowedID = next.ID
 	}
 	allowedPath := orchestrator.ImplementBeadPathForID(townRoot, rig, allowedID, v)
+	if closedOnly, err := orchestrator.ImplementPathHasOnlyClosedBeads(townRoot, rig, written, v); err == nil && closedOnly {
+		if allowedPath != "" {
+			return fmt.Errorf("do not overwrite %q — its implement bead is closed (fix via QA rework reopening that bead, or edit only %s for %s)",
+				written, allowedPath, allowedID)
+		}
+		return fmt.Errorf("do not overwrite %q — its implement bead is closed (active bead %s)", written, allowedID)
+	}
 	if allowedPath == "" {
 		return nil
 	}
 	if pathMatchesImplementWrite(written, allowedPath, v.RequiredFiles) {
 		return nil
 	}
-	// cmd/main (and similar) verify builds import earlier packages — allow heredoc to those paths only.
-	if orchestrator.AllowedEarlierImplementDependencyWrite(allowedPath, written, v.RequiredFiles) {
+	// cmd/main (and similar) verify builds import earlier packages — allow heredoc only while that path's bead is still open.
+	if orchestrator.AllowedEarlierImplementDependencyWrite(townRoot, rig, allowedPath, written, v) {
 		return nil
 	}
 	// go.mod bead: go mod tidy fails until other packages import correctly — allow fixing those .go files.
