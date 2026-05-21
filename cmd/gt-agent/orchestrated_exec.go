@@ -357,7 +357,8 @@ func rewriteBdListLimit(cmd string) (string, bool) {
 
 var (
 	goSmokeStripPkillRE  = regexp.MustCompile(`(?i)\s*&&\s*pkill\s+-f\s+[^&|;]+`)
-	goSmokeStripBuildRE = regexp.MustCompile(`(?i)go\s+build\s+\./\.\.\.\s*&&\s*`)
+	goSmokeStripBuildRE  = regexp.MustCompile(`(?i)go\s+build\s+\./\.\.\.\s*&&\s*`)
+	goSmokeServerBgRE    = regexp.MustCompile(`(?i)(go\s+run\s+(?:\.\/)?cmd/server[^\s&;]*)\s*&`)
 )
 
 // normalizeGoCommandTypos fixes common model mistakes in go subcommands (e.g. "go build./...").
@@ -417,7 +418,29 @@ func normalizeGoDevServerSmokeCommand(cmd string) (string, bool) {
 		out = strings.ReplaceAll(out, "sleep 2", "sleep 4")
 		changed = true
 	}
+	if fixed, ok := ensureGoSmokeShellReturns(out); ok {
+		out = fixed
+		changed = true
+	}
 	return strings.TrimSpace(out), changed
+}
+
+// ensureGoSmokeShellReturns appends kill/wait so sh -c does not block until go run exits.
+// Without this, `go run ./cmd/server & … && curl …` waits on the background server forever.
+func ensureGoSmokeShellReturns(cmd string) (string, bool) {
+	lower := strings.ToLower(cmd)
+	if !strings.Contains(lower, "go run") || !strings.Contains(lower, "cmd/server") ||
+		!strings.Contains(lower, "&") || !strings.Contains(lower, "curl") {
+		return cmd, false
+	}
+	if strings.Contains(lower, "_gtsrv=") {
+		return cmd, false
+	}
+	out := goSmokeServerBgRE.ReplaceAllString(cmd, `${1} & _gtsrv=$!`)
+	if out == cmd {
+		return cmd, false
+	}
+	return strings.TrimSpace(out) + `; kill ${_gtsrv} 2>/dev/null; wait ${_gtsrv} 2>/dev/null`, true
 }
 
 // orchestratedCommandTimeout returns a max runtime for long polecat smoke tests.

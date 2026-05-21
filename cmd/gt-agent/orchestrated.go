@@ -1352,9 +1352,14 @@ func validatePlanningCommandWithProfile(cmd, rig string, v orchestrator.Workflow
 	return nil
 }
 
+var bdPlaceholderIDRE = regexp.MustCompile(`<[a-zA-Z][a-zA-Z0-9_-]*>`)
+
 // validateImplementationCommand blocks gt bd hallucinations; polecat uses bare bd in rig workdir.
 func validateImplementationCommand(cmd, rig string) error {
 	lower := strings.ToLower(cmd)
+	if err := validateImplementationBeadPlaceholder(cmd, "", rig); err != nil {
+		return err
+	}
 	if strings.Contains(lower, "```") {
 		return fmt.Errorf("do not wrap commands in markdown code fences")
 	}
@@ -1380,6 +1385,30 @@ func validateImplementationCommand(cmd, rig string) error {
 		if strings.Contains(lower, artifact) {
 			return fmt.Errorf("do not commit agent artifacts (%s)", artifact)
 		}
+	}
+	return nil
+}
+
+func validateImplementationBeadPlaceholder(cmd, townRoot, rig string) error {
+	lower := strings.ToLower(cmd)
+	if !strings.Contains(lower, "bd ") && !strings.Contains(lower, "bd\t") {
+		return nil
+	}
+	for _, literal := range []string{
+		"<id-from-bd-list>", "<bead-id>", "<identified-bead-id>", "<bead_id>",
+		"<te-xxx>", "<id>", "bead_id", "identified-bead-id",
+	} {
+		if strings.Contains(lower, literal) {
+			return fmt.Errorf("use a real bead ID from `bd list` output (e.g. %s) — not placeholder %q",
+				beadIDExample(townRoot, rig), literal)
+		}
+	}
+	if strings.Contains(cmd, "BEAD_ID") {
+		return fmt.Errorf("replace BEAD_ID with a real ID from `bd list` output (e.g. %s)", beadIDExample(townRoot, rig))
+	}
+	if bdPlaceholderIDRE.MatchString(cmd) {
+		return fmt.Errorf("do not use angle-bracket placeholders in bd commands — copy IDs from `bd list` (e.g. %s)",
+			beadIDExample(townRoot, rig))
 	}
 	return nil
 }
@@ -1671,6 +1700,12 @@ func validateQACommand(cmd, rig string, v orchestrator.WorkflowValidation) error
 	lower := strings.ToLower(cmd)
 	if strings.Contains(lower, "[tool_calls]") {
 		return fmt.Errorf("do not emit [TOOL_CALLS] markers — use CMD: lines only")
+	}
+	if strings.Contains(lower, "if [") || strings.Contains(lower, "then ") || strings.Contains(lower, "fi\n") {
+		return fmt.Errorf("do not use shell if/then blocks in QA — use simple CMD: lines and JSON outcomes")
+	}
+	if err := validateImplementationBeadPlaceholder(cmd, "", rig); err != nil {
+		return err
 	}
 	if strings.Contains(lower, "unittest") && (strings.Contains(lower, "| grep") || strings.Contains(lower, "if [")) {
 		return fmt.Errorf("run unittest as a single CMD (e.g. cd %s && python3 -m unittest %s -v); do not use pipes or shell if-blocks", rigMayorRigPath(rig), v.UnittestModule)

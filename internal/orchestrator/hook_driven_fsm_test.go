@@ -101,6 +101,27 @@ func TestRigFlowYAML_implementationHasStallRecoveryHooks(t *testing.T) {
 	}
 }
 
+func TestRigFlowYAML_qaReviewHasFastFailHooks(t *testing.T) {
+	tpl := loadRigFlowTemplate(t)
+	st, ok := tpl.States["qa_review"]
+	if !ok {
+		t.Fatal("missing qa_review state")
+	}
+	if st.Hooks.EffectiveCmdTimeoutSeconds() != 120 {
+		t.Fatalf("cmd_timeout_seconds = %d, want 120", st.Hooks.CmdTimeoutSeconds)
+	}
+	if st.Hooks.EffectiveStateTimeoutSeconds() != 1800 {
+		t.Fatalf("state_timeout_seconds = %d, want 1800", st.Hooks.StateTimeoutSeconds)
+	}
+	if !st.Hooks.AppendGoCompileContext {
+		t.Fatal("qa_review must set append_go_compile_context: true")
+	}
+	trans, ok := st.Transitions["timeout"]
+	if !ok || trans.To != "implementation" {
+		t.Fatalf("timeout transition = %+v, want to implementation", st.Transitions["timeout"])
+	}
+}
+
 func TestRigFlowYAML_planningHasTimeoutHooks(t *testing.T) {
 	tpl := loadRigFlowTemplate(t)
 	st, ok := tpl.States["planning"]

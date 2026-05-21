@@ -196,6 +196,9 @@ states:
       2. For web+server profiles: run runtime smoke (static asset curls, API GET [] not null, POST not 405, SPA uses /# anchors).
       3. Use outcome task_passed (more work), all_passed (done), or failure (rework).
     hooks:
+      state_timeout_seconds: 1800
+      cmd_timeout_seconds: 120
+      append_go_compile_context: true
       max_cmd_turns: 8
       per_turn: [repair_requirements]
       cmd_guard: qa
@@ -212,11 +215,13 @@ states:
       retry_hint: |
         One CMD: per line. Review closed beads against SPEC and architecture; use allowed QA outcomes only.
       failure_hint: |
-        Run real CMD: lines: bd list --status=closed, head SPEC.md, {{unittest_command_hint}} from {{rig}}/mayor/rig. Web+server rigs also need go run+curl smoke (assets 200, API [] not null, POST works, SPA /# links). Then JSON only.
+        Run real CMD: lines: bd list --status=closed, head SPEC.md, {{unittest_command_hint}} from {{rig}}/mayor/rig. Web+server rigs also need go run+curl smoke (assets 200, API [] not null, POST works, SPA /# links). If smoke or verify fails, do **not** repeat the same go run+curl — reply next turn with JSON only: {"outcome":"failure","summary":"..."} naming HTTP status, routes, and bd bead IDs from list output.
     transitions:
       task_passed:
         to: implementation
       all_passed:
         to: completed
       failure:
+        to: implementation
+      timeout:
         to: implementation

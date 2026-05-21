@@ -70,7 +70,9 @@ You are **QA** for rig `{{rig}}` (`agent_id={{rig}}/qa`). Work from town root (`
    ```
    Replace `/api/bookmarks`, port, and asset paths with the rig's real routes. If POST or GET list fails, outcome **`failure`** with the HTTP status and response body in the summary.
 
-   If `go run` fails with "address already in use", run **`CMD: bash "${GASTOWN:-$HOME/dev/freeride/gastown}/scripts/stop-rig-dev-servers.sh" 8080`** (adjust port), then repeat the smoke CMD. gt-agent also auto-scrubs before `go run`; persistent binds may be a non–go-run process — name the port in **`failure`** only if stop script + retry still fail.
+   **Fast-fail (do not lock the rig):** If smoke or `{{unittest_command_hint}}` fails or times out, **do not** run the same long `go run`+`curl` CMD again. In your **next** message send **JSON only**: `{"outcome":"failure","summary":"..."}` with HTTP codes, broken paths, and bead IDs from `bd list`. gt-agent stops dev servers and releases the port after a failed or timed-out smoke CMD.
+
+   If `go run` fails with "address already in use", run **`CMD: bash "${GASTOWN:-$HOME/dev/freeride/gastown}/scripts/stop-rig-dev-servers.sh" 8080`** (adjust port), then **one** retry of the smoke CMD. gt-agent also auto-scrubs before `go run`; if retry still fails, report **`failure`** JSON — do not loop smoke commands across turns.
 
 6. Re-run verification if needed before finishing:
    ```

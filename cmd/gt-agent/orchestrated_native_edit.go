@@ -148,7 +148,7 @@ func (r *stateRunner) processOrchestratedTools(response, sessionName string, com
 			combined.WriteString(fmt.Sprintf("Command skipped (stray heredoc delimiter): %s\n\n", cmd))
 			continue
 		}
-		out, cmdErr := runOrchestratedCommand(cmd, workDir, sessionName, cmdEnv, r.hooks.EffectiveCmdTimeoutSeconds())
+		out, cmdErr := r.runShellCommand(cmd, workDir, sessionName, cmdEnv)
 		if cmdErr != nil && (benignGoCommandError(cmd, cmdErr, out) || (r.hooks.Artifacts == "planning" && benignPlanningShellNoise(cmd, cmdErr))) {
 			orchestratedPrintf("[gt-agent] treating as ok: %v\n", cmdErr)
 			combined.WriteString(fmt.Sprintf("Command: %s\n(note: %v — continuing)\nOutput: %s\n\n", cmd, cmdErr, string(out)))
@@ -161,6 +161,9 @@ func (r *stateRunner) processOrchestratedTools(response, sessionName string, com
 			if r.hooks.AppendGoCompileContext && orchestrator.WorkflowUsesGo(r.v) {
 				appendGoCompileSourceContext(combined, r.townRoot, r.rig, rigMayorRigDir(r.townRoot, r.rig), r.v.LayoutRoot,
 					r.activeImplementBeadPath(), r.v, cmd, string(out))
+			}
+			if strings.EqualFold(strings.TrimSpace(r.hooks.Track), "qa") {
+				appendQAFailureReportNudge(combined, cmd, cmdErr)
 			}
 		} else {
 			feedbackOut := formatSuccessCommandOutput(out)
@@ -333,7 +336,7 @@ func (r *stateRunner) runAutoVerifyForNativeLayoutWrite(sessionName string, cmdE
 		verifyCmd = fixed
 	}
 	workDir := r.workDir()
-	verifyOut, verifyErr := runOrchestratedCommand(verifyCmd, workDir, sessionName, cmdEnv, r.hooks.EffectiveCmdTimeoutSeconds())
+	verifyOut, verifyErr := r.runShellCommand(verifyCmd, workDir, sessionName, cmdEnv)
 	if verifyErr != nil {
 		r.track.hadCmdFailure = true
 		r.track.verifyOK = false

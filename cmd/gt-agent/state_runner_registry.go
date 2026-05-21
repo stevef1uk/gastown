@@ -211,7 +211,7 @@ var artifactFailureHints = map[string]func(*stateRunner) string{
 		if requiresQARuntimeSmoke(r.v) {
 			hint += " Web/API smoke required: go run server, curl -sf each asset path from index.html, GET API must return [] not null, POST must not 405, SPA section links use /#id. gt-agent stops the server when QA finishes."
 		}
-		return hint + " No /workspace paths. Then JSON only."
+		return hint + " If smoke or verify failed above, do not repeat go run+curl — reply with JSON only: {\"outcome\":\"failure\",\"summary\":\"...\"}. No /workspace paths."
 	},
 }
 

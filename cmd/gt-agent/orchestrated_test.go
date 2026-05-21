@@ -286,6 +286,12 @@ func TestValidateQACommand_rejectsWorkspace(t *testing.T) {
 	if err := validateQACommand("python3 -m unittest backend.test_fizzbuzz -v | grep ok", "mockrig", v); err == nil {
 		t.Fatal("unittest piped to grep should be rejected")
 	}
+	if err := validateQACommand(`if [ "$API_RESPONSE" != "[]" ]; then echo fail; fi`, "mockrig", v); err == nil {
+		t.Fatal("expected reject shell if-block in QA")
+	}
+	if err := validateQACommand(`bd update <identified-bead-id> --status=open`, "mockrig", v); err == nil {
+		t.Fatal("expected reject placeholder bead ID in QA")
+	}
 }
 
 func TestValidateDesignCommand_forbidsImplementation(t *testing.T) {
@@ -768,6 +774,12 @@ EOF`
 func TestValidateImplementationCommand_oneInProgressBead(t *testing.T) {
 	dir := t.TempDir()
 	cmd := `bd update tg-abc --status=in_progress`
+	if err := validateImplementationCommand(`bd update <identified-bead-id> --status=open`, "mockrig"); err == nil {
+		t.Fatal("expected reject placeholder bead ID")
+	}
+	if err := validateImplementationCommand(`bd update BEAD_ID --status=in_progress`, "mockrig"); err == nil {
+		t.Fatal("expected reject BEAD_ID template")
+	}
 	if err := validateImplementationCommandWithState(cmd, dir, "mockrig", "tg-xyz", orchestrator.DefaultWorkflowValidation(), false); err == nil {
 		t.Fatal("expected reject second in_progress bead")
 	}

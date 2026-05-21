@@ -43,14 +43,7 @@ func ReopenImplementationBeadsAfterQAFailure(townRoot, rig string, v WorkflowVal
 		return nil, nil
 	}
 	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
-	lower := strings.ToLower(summary)
-	qaFailed := strings.Contains(lower, "stub") ||
-		strings.Contains(lower, "pytest") ||
-		strings.Contains(lower, "unittest") ||
-		strings.Contains(lower, "reopen") ||
-		strings.Contains(lower, "syntax") ||
-		strings.Contains(lower, "import") ||
-		strings.Contains(lower, "failed")
+	qaFailed := qaFailureRequiresImplementationRework(summary)
 
 	stubFiles := stubbedRequiredFiles(rigDir, v)
 	if !qaFailed && len(stubFiles) == 0 {
@@ -67,6 +60,26 @@ func ReopenImplementationBeadsAfterQAFailure(townRoot, rig string, v WorkflowVal
 	}
 
 	return reopenClosedImplementBeads(townRoot, rig, v)
+}
+
+// qaFailureRequiresImplementationRework reports whether a QA failure summary should reopen implement beads.
+func qaFailureRequiresImplementationRework(summary string) bool {
+	lower := strings.ToLower(strings.TrimSpace(summary))
+	if lower == "" {
+		return false
+	}
+	for _, needle := range []string{
+		"stub", "pytest", "unittest", "reopen", "syntax", "import", "failed",
+		"404", "405", "/api/", "null not", "not []", "smoke failed", "smoke test failed",
+		"curl", "route", "http status", "returned 4", "returned 5",
+		"method not allowed", "address already in use", "bd list", "exit status 127",
+		"command not found", "verification", "verify failed", "web assets", "not served",
+	} {
+		if strings.Contains(lower, needle) {
+			return true
+		}
+	}
+	return false
 }
 
 // ImplementationDiskWorkReady reports nil when active-phase required_files exist and are not stubs.

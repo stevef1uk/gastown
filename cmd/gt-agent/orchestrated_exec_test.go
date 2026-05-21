@@ -93,6 +93,9 @@ func TestNormalizeGoDevServerSmokeCommand(t *testing.T) {
 	if !strings.Contains(got, "sleep 4") || !strings.Contains(got, "--max-time") {
 		t.Fatalf("want longer sleep and curl timeout: %q", got)
 	}
+	if !strings.Contains(got, "_gtsrv=$!") || !strings.Contains(got, "kill ${_gtsrv}") {
+		t.Fatalf("want smoke to kill background server so shell returns: %q", got)
+	}
 }
 
 func TestPrepareOrchestratedScript_normalizesEOF(t *testing.T) {

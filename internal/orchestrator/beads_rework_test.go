@@ -58,6 +58,27 @@ func TestImplementationDiskWorkReady_allPresent(t *testing.T) {
 	}
 }
 
+func TestQAFailureRequiresImplementationRework(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		summary string
+		want    bool
+	}{
+		{"POST /api/links returned 405", true},
+		{"GET list returned null not []", true},
+		{"Error executing bd list command; exit status 127", true},
+		{"runtime smoke test passed", false},
+		{"runtime smoke test failed: POST 405", true},
+		{"plan.md ok", false},
+		{"", false},
+	}
+	for _, tc := range cases {
+		if got := qaFailureRequiresImplementationRework(tc.summary); got != tc.want {
+			t.Errorf("summary %q: got %v want %v", tc.summary, got, tc.want)
+		}
+	}
+}
+
 func TestReopenClosedImplementBeads_selective(t *testing.T) {
 	t.Parallel()
 	// beadImplementationNeedsRework false for good file → reopen loop skips (tested via needsRework helpers).

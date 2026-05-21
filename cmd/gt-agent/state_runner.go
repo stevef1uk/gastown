@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/steveyegge/gastown/internal/agentenv"
 	"github.com/steveyegge/gastown/internal/config"
@@ -98,6 +99,9 @@ func (r *stateRunner) failurePromptContextBlocks() []string {
 
 func (r *stateRunner) artifactFailureFeedback(err error) string {
 	msg := "Validation failed: " + err.Error()
+	if extra := r.implementationArtifactFailureExtra(err); extra != "" {
+		msg += "\n\n" + extra
+	}
 	if h := r.failureHint(); h != "" {
 		msg += ". " + h
 	}
@@ -105,6 +109,33 @@ func (r *stateRunner) artifactFailureFeedback(err error) string {
 		msg += "\n\n" + block
 	}
 	return msg
+}
+
+func (r *stateRunner) implementationArtifactFailureExtra(err error) string {
+	if r.hooks.Artifacts != "implementation" || err == nil {
+		return ""
+	}
+	em := err.Error()
+	var b strings.Builder
+	if strings.Contains(em, "failed commands") || strings.Contains(em, "placeholder") {
+		b.WriteString("Do not use template placeholders (`<identified-bead-id>`, `BEAD_ID`, etc.). Copy bead IDs exactly from `bd list` output.\n")
+	}
+	next, nerr := orchestrator.NextOpenImplementBead(r.townRoot, r.rig, r.v)
+	if nerr == nil && next == nil && (strings.Contains(em, "failed commands") || r.hasQAPendingRework()) {
+		example := beadIDExample(r.townRoot, r.rig)
+		b.WriteString("All implement beads are closed but work is not done. ")
+		if r.hasQAPendingRework() {
+			b.WriteString("Read **Prior step failed** / QA summary above. ")
+		}
+		b.WriteString("Run `bd list --status=closed`, pick the bead for the broken path (e.g. cmd/server or handlers), then:\n")
+		b.WriteString("`bd update " + example + " --status=open` → EDIT:/WRITE: or CMD verify → `bd close " + example + "`.\n")
+		b.WriteString("Do not send JSON success until verify is green.\n")
+	}
+	return strings.TrimSpace(b.String())
+}
+
+func (r *stateRunner) hasQAPendingRework() bool {
+	return r.task != nil && r.task.PendingRework != nil && r.task.PendingRework.FromState == "qa_review"
 }
 
 func (r *stateRunner) emptyResponseNudge() string {
@@ -290,6 +321,21 @@ func (r *stateRunner) workDir() string {
 	return orchestratedCommandWorkDir(r.townRoot, r.rig, "")
 }
 
+// effectiveCommandTimeoutSec returns per-CMD wall clock: yaml cmd_timeout_seconds, else track defaults.
+func (r *stateRunner) effectiveCommandTimeoutSec(cmd string) int {
+	if sec := r.hooks.EffectiveCmdTimeoutSeconds(); sec > 0 {
+		return sec
+	}
+	if d := orchestratedCommandTimeoutForTrack(r.hooks.Track, cmd); d > 0 {
+		return int(d / time.Second)
+	}
+	return 0
+}
+
+func (r *stateRunner) runShellCommand(cmd, workDir, sessionName string, env []string) ([]byte, error) {
+	return runOrchestratedCommand(cmd, workDir, sessionName, env, r.effectiveCommandTimeoutSec(cmd))
+}
+
 func (r *stateRunner) afterCommand(cmd string, cmdErr error, workDir, sessionName string, cmdEnv []string, combined *strings.Builder) {
 	if trackNeedsDevServerCleanup(r.hooks.Track) {
 		r.servers.noteCommand(cmd)
@@ -304,6 +350,10 @@ func (r *stateRunner) afterCommand(cmd string, cmdErr error, workDir, sessionNam
 	r.trackCommand(cmd, cmdErr)
 	if cmdErr == nil {
 		r.runAutoVerify(cmd, workDir, sessionName, cmdEnv, combined)
+		return
+	}
+	if strings.EqualFold(strings.TrimSpace(r.hooks.Track), "qa") && qaCommandFailureNeedsCleanup(cmd) {
+		shutdownStartedDevServers(r.servers)
 	}
 }
 
@@ -350,7 +400,7 @@ func (r *stateRunner) runAutoVerify(cmd, workDir, sessionName string, cmdEnv []s
 		} else if fixed, ok := rewriteOrchestratedRigPlaceholders(verifyCmd, r.townRoot, r.rig); ok {
 			verifyCmd = fixed
 		}
-		verifyOut, verifyErr := runOrchestratedCommand(verifyCmd, workDir, sessionName, cmdEnv, r.hooks.EffectiveCmdTimeoutSeconds())
+		verifyOut, verifyErr := r.runShellCommand(verifyCmd, workDir, sessionName, cmdEnv)
 		if verifyErr != nil {
 			r.track.hadCmdFailure = true
 			r.track.verifyOK = false
@@ -359,6 +409,9 @@ func (r *stateRunner) runAutoVerify(cmd, workDir, sessionName string, cmdEnv []s
 			if r.hooks.AppendGoCompileContext && orchestrator.WorkflowUsesGo(r.v) {
 				appendGoCompileSourceContext(combined, r.townRoot, r.rig, rigMayorRigDir(r.townRoot, r.rig), r.v.LayoutRoot,
 					r.activeImplementBeadPath(), r.v, verifyCmd, string(verifyOut))
+			}
+			if strings.EqualFold(strings.TrimSpace(r.hooks.Track), "qa") {
+				appendQAFailureReportNudge(combined, verifyCmd, verifyErr)
 			}
 		} else {
 			r.track.verifyOK = true
