@@ -149,10 +149,10 @@ states:
       max_cmd_turns: 12
       omit_orchestrator_context: true
       system_prompt_footer: |
-        Format: `CMD: <shell>` one per line; JSON `{"outcome":"success","summary":"..."}` only in a later message (not with CMD).
+        Prefer READ:/EDIT:/WRITE: for source files; `CMD: <shell>` for bd and Verify only. JSON success in a later message (not with CMD or native tools).
       user_prompt_wrapper: none
       failure_prompt_context: [implementation_queue, implement_bead_context]
-      empty_response_suffix: "Reply with CMD lines only. Use sed -i or patch on existing files; heredoc only for new files. Use Verify from Next bead."
+      empty_response_suffix: "Reply with EDIT:/WRITE:/READ: or CMD: lines. Use EDIT search/replace on existing files; WRITE only for new files. Use Verify from Next bead."
       prompt_context: [implementation_queue, implement_bead_context]
       pre_run: [close_project_setup_beads, enforce_implement_bead_queue, prune_stale_layout_go, repair_requirements, reopen_implement_beads]
       per_turn: [repair_requirements]
@@ -166,6 +166,7 @@ states:
       python3_rewrite: true
       track: implementation
       append_go_compile_context: true
+      native_edit_tools: true
       empty_bd_list_ok: true
       auto_verify:
         - when: go_mod_tidy
@@ -179,7 +180,7 @@ states:
       artifacts: implementation
       retry_hint_key: implementation
       failure_hint: |
-        One bead at a time: bd update → **sed -i or patch** on existing files (heredoc only if file is new) → verify from Next bead → bd close. go run/curl only on cmd/server/main.go bead.
+        One bead at a time: bd update → **EDIT:** search/replace (or WRITE: for new files) → verify from Next bead → bd close. Use CMD only for bd/verify. go run/curl only on cmd/server/main.go bead.
     transitions:
       success:
         to: qa_review

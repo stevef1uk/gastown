@@ -52,7 +52,39 @@ type StateHooks struct {
 	EmptyResponseSuffix     string `yaml:"empty_response_suffix,omitempty" json:"empty_response_suffix,omitempty"`
 	// AppendGoCompileContext injects head of .go files mentioned in failed go build/tidy output (stateless LLM repair).
 	AppendGoCompileContext bool `yaml:"append_go_compile_context,omitempty" json:"append_go_compile_context,omitempty"`
+	// NativeEditTools enables READ:/EDIT:/WRITE: file tools in gt-agent (preferred over sed/heredoc for implementation).
+	NativeEditTools bool `yaml:"native_edit_tools,omitempty" json:"native_edit_tools,omitempty"`
 }
+
+// NativeEditPromptSection returns orchestrator-context instructions when native_edit_tools is enabled.
+func (h StateHooks) NativeEditPromptSection() string {
+	if !h.NativeEditTools {
+		return ""
+	}
+	return strings.TrimSpace(`## Native file tools (preferred for source edits)
+Use these instead of ` + "`" + `sed` + "`" + ` / ` + "`" + `patch` + "`" + ` / ` + "`" + `cat > file <<'EOF'` + "`" + ` on existing files:
+
+` + "`" + `READ: <path-under-layout>` + "`" + ` — show file contents (dependencies + active bead allowed).
+
+` + "`" + `EDIT: <path>` + "`" + ` — unique search/replace (must match file exactly once):
+` + "`" + `` + NativeEditSearchMarker + `
+exact old lines
+` + NativeEditReplaceMarker + `
+new lines
+` + NativeEditEndMarker + `` + "`" + `
+
+` + "`" + `WRITE: <path>` + "`" + ` — create a **new** file (or stub); body until a line containing only ` + "`" + NativeEditWriteEnd + "`" + `.
+
+Still use ` + "`" + `CMD:` + "`" + ` for ` + "`" + `bd update` + "`" + `, ` + "`" + `bd close` + "`" + `, and **Verify** from Next bead. JSON outcome in a later message with no CMD/native tools.`)
+}
+
+// Markers exported for prompts/tests (duplicate literals in gt-agent).
+const (
+	NativeEditSearchMarker  = "<<<<<<< SEARCH"
+	NativeEditReplaceMarker = "======="
+	NativeEditEndMarker     = ">>>>>>> REPLACE"
+	NativeEditWriteEnd      = "---END WRITE---"
+)
 
 // StateEnvHooks configures subprocess environment for a state.
 type StateEnvHooks struct {

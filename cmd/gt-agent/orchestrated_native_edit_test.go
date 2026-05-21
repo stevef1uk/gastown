@@ -1,0 +1,362 @@
+package main
+
+import (
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/steveyegge/gastown/internal/orchestrator"
+)
+
+func linkshelfImplementValidation(files ...string) orchestrator.WorkflowValidation {
+	v := orchestrator.DefaultWorkflowValidation()
+	v.LayoutRoot = "linkshelf"
+	v.BeadTitleContains = "Implement "
+	v.RequiredFiles = files
+	v.QAVerifyCommand = "cd linkshelf && go test ./..."
+	return v
+}
+
+func writeLinkshelfStoreTree(t *testing.T, mayor, storeBody string) {
+	t.Helper()
+	if storeBody == "" {
+		storeBody = "package store\n"
+	}
+	files := map[string]string{
+		"linkshelf/go.mod":                  "module linkshelf\n\ngo 1.22\n",
+		"linkshelf/internal/store/store.go": storeBody,
+	}
+	for rel, body := range files {
+		p := filepath.Join(mayor, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(p), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func closedHandlersBeadHook() {
+	orchestrator.ListImplementBeadsByStatusHook = func(_, _ string, _ orchestrator.WorkflowValidation, status string) ([]orchestrator.PlanBead, error) {
+		switch status {
+		case "closed":
+			return []orchestrator.PlanBead{{
+				ID:    "te-h",
+				Title: "Implement linkshelf/internal/api/handlers.go per architecture",
+			}}, nil
+		case "in_progress":
+			return []orchestrator.PlanBead{{
+				ID:    "te-main",
+				Title: "Implement linkshelf/cmd/server/main.go per architecture",
+			}}, nil
+		default:
+			return nil, nil
+		}
+	}
+}
+
+func TestParseOrchestratedNativeEdits_editAndWrite(t *testing.T) {
+	in := `EDIT: linkshelf/internal/store/store.go
+<<<<<<< SEARCH
+func Old() {}
+=======
+func New() {}
+>>>>>>> REPLACE
+
+WRITE: linkshelf/internal/new/x.go
+package x
+---END WRITE---
+`
+	ops := parseOrchestratedNativeEdits(in)
+	if len(ops) != 2 {
+		t.Fatalf("ops=%d want 2", len(ops))
+	}
+	if ops[0].kind != "edit" || !strings.Contains(ops[0].path, "store.go") || ops[0].search == "" {
+		t.Fatalf("edit op: %+v", ops[0])
+	}
+	if ops[1].kind != "write" || ops[1].content == "" {
+		t.Fatalf("write op: %+v", ops[1])
+	}
+}
+
+func TestApplyNativeSearchReplace_unique(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "f.go")
+	if err := os.WriteFile(path, []byte("alpha\nbeta\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	msg, err := applyNativeSearchReplace(path, "beta", "gamma")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(msg, "1 search/replace") {
+		t.Fatalf("msg=%q", msg)
+	}
+	data, _ := os.ReadFile(path)
+	if string(data) != "alpha\ngamma\n" {
+		t.Fatalf("got %q", data)
+	}
+}
+
+func TestApplyNativeSearchReplace_notFound(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "f.go")
+	_ = os.WriteFile(path, []byte("x\n"), 0644)
+	_, err := applyNativeSearchReplace(path, "missing", "y")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+}
+
+func TestStateRunner_executeNativeEdit_writeAndScope(t *testing.T) {
+	dir := t.TempDir()
+	rig := "mockrig"
+	workDir := filepath.Join(dir, rig, "mayor", "rig")
+	layout := filepath.Join(workDir, "linkshelf")
+	if err := os.MkdirAll(layout, 0755); err != nil {
+		t.Fatal(err)
+	}
+	v := orchestrator.DefaultWorkflowValidation()
+	v.LayoutRoot = "linkshelf"
+	v.RequiredFiles = []string{"linkshelf/internal/foo.go"}
+	v.BeadTitleContains = "Implement"
+
+	task := &orchestrator.Task{
+		State: "implementation",
+		Hooks: orchestrator.StateHooks{
+			NativeEditTools: true,
+			CmdGuard:        "implementation",
+			Track:           "implementation",
+		},
+		Validation: v,
+	}
+	r := newStateRunner(task, dir, rig)
+	r.track.activeBead = "te-foo"
+
+	var combined strings.Builder
+	ops := []nativeEditOp{{
+		kind:    "write",
+		path:    "linkshelf/internal/foo.go",
+		content: "package foo\n",
+	}}
+	r.executeNativeEdits(ops, rigMayorRigDir(dir, rig), "", nil, &combined)
+	if r.track.hadCmdFailure {
+		t.Fatalf("feedback:\n%s", combined.String())
+	}
+	data, err := os.ReadFile(filepath.Join(workDir, "linkshelf/internal/foo.go"))
+	if err != nil || string(data) != "package foo\n" {
+		t.Fatalf("file: %v %q", err, data)
+	}
+}
+
+func TestValidateImplementWritePath_rejectsClosedHeredoc(t *testing.T) {
+	// Uses same helpers as production; minimal fixture in orchestrator tests if needed.
+	v := orchestrator.DefaultWorkflowValidation()
+	v.LayoutRoot = "linkshelf"
+	reason := orchestrator.RejectFullFileHeredocReason(
+		"cat > linkshelf/internal/store/store.go <<'EOF'",
+		t.TempDir(), "mockrig", "te-x", v,
+	)
+	// No file on disk — reason empty; create file and prefer incremental
+	dir := t.TempDir()
+	rig := "mockrig"
+	rel := "linkshelf/internal/store/store.go"
+	abs := filepath.Join(dir, rig, "mayor", "rig", rel)
+	if err := os.MkdirAll(filepath.Dir(abs), 0755); err != nil {
+		t.Fatal(err)
+	}
+	body := "package store\n\nimport \"errors\"\n\ntype Store struct{}\n\nfunc (s *Store) AddLink(url string) error {\n\tif url == \"\" {\n\t\treturn errors.New(\"empty\")\n\t}\n\treturn nil\n}\n"
+	if err := os.WriteFile(abs, []byte(body), 0644); err != nil {
+		t.Fatal(err)
+	}
+	v.LayoutRoot = "linkshelf"
+	v.RequiredFiles = []string{rel}
+	if !orchestrator.PreferIncrementalEdit(dir, rig, rel, v) {
+		t.Fatal("fixture should prefer incremental edit")
+	}
+	reason = orchestrator.RejectFullFileHeredocReason(
+		"cat > "+rel+" <<'EOF'", dir, rig, "te-store", v,
+	)
+	if reason == "" {
+		t.Fatal("expected reject full replace on existing file")
+	}
+	_ = reason
+}
+
+func TestRigFlowImplementationHook_nativeEditToolsEnabled(t *testing.T) {
+	t.Parallel()
+	hooks, err := orchestrator.RigFlowStateHooks("implementation")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !hooks.NativeEditTools {
+		t.Fatal("rig-flow implementation must set native_edit_tools: true")
+	}
+	if section := hooks.NativeEditPromptSection(); section == "" || !strings.Contains(section, "READ:") {
+		t.Fatalf("expected native edit prompt section, got %q", section)
+	}
+}
+
+func TestNativeEdit_READ_returnsFileContent(t *testing.T) {
+	dir := t.TempDir()
+	rig := "testrig"
+	mayor := filepath.Join(dir, rig, "mayor", "rig")
+	storeBody := "package store\n\nfunc Foo() int { return 1 }\n"
+	writeLinkshelfStoreTree(t, mayor, storeBody)
+	v := linkshelfImplementValidation("linkshelf/internal/store/store.go")
+	task := rigFlowTask(t, "implementation", v)
+	r := newStateRunner(task, dir, rig)
+	r.track.activeBead = "te-store"
+	orchestrator.ListImplementBeadsByStatusHook = func(_, _ string, _ orchestrator.WorkflowValidation, status string) ([]orchestrator.PlanBead, error) {
+		if status == "in_progress" {
+			return []orchestrator.PlanBead{{ID: "te-store", Title: "Implement linkshelf/internal/store/store.go per architecture"}}, nil
+		}
+		return nil, nil
+	}
+	t.Cleanup(func() { orchestrator.ListImplementBeadsByStatusHook = nil })
+
+	var combined strings.Builder
+	had, _ := r.processOrchestratedTools("READ: linkshelf/internal/store/store.go\n", "sess", &combined)
+	if !had {
+		t.Fatal("expected native tool run")
+	}
+	got := combined.String()
+	if !strings.Contains(got, "package store") || !strings.Contains(got, "Foo()") {
+		t.Fatalf("READ feedback missing file body:\n%s", got)
+	}
+}
+
+func TestNativeEdit_EDIT_rejectsClosedBeadPath(t *testing.T) {
+	dir := t.TempDir()
+	rig := "mockrig"
+	mayor := filepath.Join(dir, rig, "mayor", "rig")
+	handlers := filepath.Join(mayor, "linkshelf/internal/api")
+	if err := os.MkdirAll(handlers, 0755); err != nil {
+		t.Fatal(err)
+	}
+	body := "package api\n\nfunc X() {}\n"
+	if err := os.WriteFile(filepath.Join(handlers, "handlers.go"), []byte(body), 0644); err != nil {
+		t.Fatal(err)
+	}
+	v := linkshelfImplementValidation(
+		"linkshelf/internal/api/handlers.go",
+		"linkshelf/cmd/server/main.go",
+	)
+	closedHandlersBeadHook()
+	t.Cleanup(func() { orchestrator.ListImplementBeadsByStatusHook = nil })
+
+	task := rigFlowTask(t, "implementation", v)
+	r := newStateRunner(task, dir, rig)
+	r.track.activeBead = "te-main"
+
+	response := `EDIT: linkshelf/internal/api/handlers.go
+<<<<<<< SEARCH
+func X() {}
+=======
+func Y() {}
+>>>>>>> REPLACE
+`
+	var combined strings.Builder
+	r.processOrchestratedTools(response, "sess", &combined)
+	if !r.track.hadCmdFailure {
+		t.Fatal("expected failure tracking for closed-path EDIT")
+	}
+	got := combined.String()
+	if !strings.Contains(got, "closed") {
+		t.Fatalf("want closed-bead rejection, got:\n%s", got)
+	}
+	data, _ := os.ReadFile(filepath.Join(handlers, "handlers.go"))
+	if strings.Contains(string(data), "func Y()") {
+		t.Fatal("closed file must not be modified")
+	}
+}
+
+func TestNativeEdit_autoVerifyAfterEDIT(t *testing.T) {
+	if _, err := exec.LookPath("go"); err != nil {
+		t.Skip("go toolchain not available")
+	}
+	dir := t.TempDir()
+	rig := "testrig"
+	mayor := filepath.Join(dir, rig, "mayor", "rig")
+	writeLinkshelfStoreTree(t, mayor, "pacakge store\n")
+	v := linkshelfImplementValidation("linkshelf/internal/store/store.go")
+	task := rigFlowTask(t, "implementation", v)
+	r := newStateRunner(task, dir, rig)
+	r.track.activeBead = "te-store"
+	orchestrator.ListImplementBeadsByStatusHook = func(_, _ string, _ orchestrator.WorkflowValidation, status string) ([]orchestrator.PlanBead, error) {
+		if status == "in_progress" {
+			return []orchestrator.PlanBead{{ID: "te-store", Title: "Implement linkshelf/internal/store/store.go per architecture"}}, nil
+		}
+		return nil, nil
+	}
+	t.Cleanup(func() { orchestrator.ListImplementBeadsByStatusHook = nil })
+
+	response := `EDIT: linkshelf/internal/store/store.go
+<<<<<<< SEARCH
+pacakge store
+=======
+package store
+>>>>>>> REPLACE
+`
+	var combined strings.Builder
+	hadNative, cmdCount := r.processOrchestratedTools(response, "sess", &combined)
+	if !hadNative || cmdCount != 0 {
+		t.Fatalf("hadNative=%v cmdCount=%d", hadNative, cmdCount)
+	}
+	if r.track.hadCmdFailure || !r.track.verifyOK {
+		t.Fatalf("verifyOK=%v hadCmdFailure=%v feedback:\n%s", r.track.verifyOK, r.track.hadCmdFailure, combined.String())
+	}
+	if !strings.Contains(combined.String(), "Auto-verify (after native edit)") {
+		t.Fatalf("expected auto-verify feedback:\n%s", combined.String())
+	}
+	data, _ := os.ReadFile(filepath.Join(mayor, "linkshelf/internal/store/store.go"))
+	if !strings.HasPrefix(string(data), "package store") {
+		t.Fatalf("file not fixed: %q", data)
+	}
+}
+
+func TestOrchestratedTurn_nativeEditThenCMD_integration(t *testing.T) {
+	dir := t.TempDir()
+	rig := "testrig"
+	mayor := filepath.Join(dir, rig, "mayor", "rig")
+	writeLinkshelfStoreTree(t, mayor, "package store\n\nvar Broken = 1\n")
+	v := linkshelfImplementValidation("linkshelf/internal/store/store.go")
+	task := rigFlowTask(t, "implementation", v)
+	r := newStateRunner(task, dir, rig)
+	r.track.activeBead = "te-store"
+	orchestrator.ListImplementBeadsByStatusHook = func(_, _ string, _ orchestrator.WorkflowValidation, status string) ([]orchestrator.PlanBead, error) {
+		if status == "in_progress" {
+			return []orchestrator.PlanBead{{ID: "te-store", Title: "Implement linkshelf/internal/store/store.go per architecture"}}, nil
+		}
+		return nil, nil
+	}
+	t.Cleanup(func() { orchestrator.ListImplementBeadsByStatusHook = nil })
+
+	response := `READ: linkshelf/internal/store/store.go
+
+EDIT: linkshelf/internal/store/store.go
+<<<<<<< SEARCH
+var Broken = 1
+=======
+var Fixed = 1
+>>>>>>> REPLACE
+
+CMD: true
+`
+	var combined strings.Builder
+	hadNative, cmdCount := r.processOrchestratedTools(response, "sess", &combined)
+	if !hadNative || cmdCount != 1 {
+		t.Fatalf("hadNative=%v cmdCount=%d", hadNative, cmdCount)
+	}
+	got := combined.String()
+	if !strings.Contains(got, "READ:") || !strings.Contains(got, "EDIT:") || !strings.Contains(got, "package store") {
+		t.Fatalf("unexpected feedback:\n%s", got)
+	}
+	data, _ := os.ReadFile(filepath.Join(mayor, "linkshelf/internal/store/store.go"))
+	if !strings.Contains(string(data), "var Fixed = 1") {
+		t.Fatalf("disk file not updated: %s", data)
+	}
+}

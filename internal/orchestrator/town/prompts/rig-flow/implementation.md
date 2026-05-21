@@ -9,53 +9,45 @@ If the prompt includes **Prior step failed** from a **timeout**, the orchestrato
 ## Per bead
 
 1. `CMD: export BEADS_DIR=$GT_ROOT/{{rig}}/.beads && cd {{rig}}/mayor/rig && bd update BEAD_ID --status=in_progress`
-2. **Write or fix the file** (see **Incremental edit** below — do not blindly heredoc entire existing files).
+2. **Fix the file** with native **EDIT:** / **WRITE:** (see orchestrator context) — not `cat > path <<'EOF'` on existing files.
 3. `CMD: cd {{rig}}/mayor/rig && …` — run **Verify** from the Next bead line (Python venv is `{{python_venv_dir}}/` under mayor/rig, not under `{{layout_root}}/`). Green before `bd close`.
 4. `CMD: export BEADS_DIR=$GT_ROOT/{{rig}}/.beads && cd {{rig}}/mayor/rig && bd close BEAD_ID`
-5. If **Next bead** still shows an open ID, repeat steps 1–4 for that bead (more `CMD:` lines — not JSON yet).
+5. If **Next bead** still shows an open ID, repeat steps 1–4 for that bead (more edits/CMD — not JSON yet).
 6. When **Next bead** says none open, a **later** message only: `{"outcome":"success","summary":"…"}`
 
-## Incremental edit (required for fixes)
+## Native file tools (preferred)
 
-When **Implement context** shows **Current file on disk** or **Incremental edit required**:
+gt-agent runs these directly (same turn as `CMD:` is allowed):
 
-- **Do not** use `cat > path <<'EOF'` to replace the whole file — gt-agent **rejects** that on existing substantive files.
-- **Do** use small, targeted shell edits:
-  - `CMD: cd {{rig}}/mayor/rig && sed -i 's/wrongSymbol/correctSymbol/' {{layout_root}}/internal/store/store.go`
-  - For several lines: write `fix.patch`, then `CMD: cd {{rig}}/mayor/rig && patch -p0 < fix.patch`
-- After each edit batch, run **Verify** from Next bead, then `bd close`.
+- **READ:** `layout/path.go` — inspect active bead or **Dependency packages** (read-only).
+- **EDIT:** `layout/path.go` then a unique `<<<<<<< SEARCH` / `=======` / `>>>>>>> REPLACE` block (copy exact lines from READ or **Current file on disk**).
+- **WRITE:** `layout/newfile.go` then file body until `---END WRITE---` — **new files only** (gt-agent rejects full WRITE on large existing files).
 
-Use **heredoc** (`cat > path <<'EOF'`) only when the file **does not exist yet** (new bead / empty path) or the on-disk file is a stub/placeholder — **except** `cmd/…/main.go`: you may heredoc-rewrite main when wiring is broken (duplicate handlers, empty stubs); still use **Dependency packages** APIs, not invented `CreateLink`-style names.
+Use **CMD:** only for `bd`, **Verify**, `go run`/curl (main bead), and `ls`. Auto-verify runs after EDIT/WRITE.
 
-On **`cmd/server/main.go`**, read **Dependency packages** in Implement context for real `store`/`handlers` symbols — do not define handler bodies in main; register routes and delegate.
+Shell **sed/patch/heredoc** still work but are fallback when EDIT fails.
 
-## Closed dependency failures (generic)
+On **`cmd/server/main.go`**, read **Dependency packages** for real `store`/`handlers` symbols — wire routes in main; do not re-implement handler bodies.
 
-When **Verify** fails with errors in a path that is **not** your active bead file (e.g. `internal/api/handlers.go` while you are on `cmd/server/main.go`), that earlier file’s implement bead is usually **closed**. You **cannot** edit it on this bead.
+## Closed dependency failures
 
-1. Read **Dependency packages** — use only symbols that exist there (`AddLink`, not invented `CreateLink`).
-2. If the error is only in a **closed** file, reopen that bead: `bd list --status=closed`, then `bd update <id> --status=open`, fix, `bd close <id>`, then continue the active bead.
-3. If you cannot proceed, reply with JSON only: `{"outcome":"failure","summary":"reopen <bead-id> for <path>: …"}` — do **not** use `bd update --status=failed` (no such flag).
+When **Verify** fails in a path that is **not** your active bead (e.g. `handlers.go` while on `main.go`), that bead is usually **closed** — native EDIT/WRITE to that path are rejected.
 
-## Closed dependency failures (generic)
-
-When **Verify** fails with errors in a path that is **not** your active bead file (e.g. `internal/api/handlers.go` while you are on `cmd/server/main.go`), that earlier file’s implement bead is usually **closed**. You **cannot** edit it on this bead.
-
-1. Read **Dependency packages** — use only symbols that exist there (`AddLink`, not invented `CreateLink`).
-2. If the error is only in a **closed** file, reopen that bead: `bd list --status=closed`, then `bd update <id> --status=open`, fix, `bd close <id>`, then continue the active bead.
-3. If you cannot proceed, reply with JSON only: `{"outcome":"failure","summary":"reopen <bead-id> for <path>: …"}` — do **not** use `bd update --status=failed` (no such flag).
+1. Use **Dependency packages** APIs only (`AddLink`, not invented `CreateLink`).
+2. Reopen the bead: `bd list --status=closed`, `bd update <id> --status=open`, fix with EDIT, `bd close <id>`, continue active bead.
+3. If blocked, JSON only: `{"outcome":"failure","summary":"reopen <bead-id> for <path>: …"}` — no `bd update --status=failed`.
 
 ## Rules
 
-- **Before importing a package or type**, list files in that package first: `ls {{rig}}/mayor/rig/{{layout_root}}/internal/*/` to see what's already implemented. If the package or type doesn't exist, implement it FIRST before using it.
-- One `CMD:` per line; never JSON in the same message as `CMD:`
+- **Before importing a package or type**, `READ:` or `ls` the package under `{{layout_root}}/internal/`.
+- Do not mix JSON outcome with EDIT/WRITE/CMD in the same message.
 - Only bead IDs from `bd list`; only files under `{{layout_root}}/`
 - Go: use module/import paths from **Implement context** / architecture; do not heredoc `go.mod` / `go.sum`
-- **go.mod bead:** use `go mod init` / `go get` (deps from architecture) / `go mod tidy` only — no heredoc for `go.mod`. If tidy fails, fix bad `import` lines with **sed -i** on existing `.go` files (or heredoc only if the file is new). Verify is **tidy only** (no `go build`/`go run`/curl on this bead).
-- **Other `.go` beads:** verify builds **that file's package only** (see **Verify** on the Next bead line) — not `go build ./...` unless that is what Verify shows. **`go run`/curl only on the `cmd/server/main.go` bead.** Run **only** the **Verify** line from **Next bead** (do not add `go build ./...` or `pkill`). gt-agent **frees stale listeners before each `go run`**, stops the server when the step finishes, and strips broken `pkill` tails from smoke commands.
-- **Port already in use:** gt-agent should have cleared it; belt-and-braces: `CMD: bash "${GASTOWN:-$HOME/dev/freeride/gastown}/scripts/stop-rig-dev-servers.sh" 8080` (use the port from architecture.md), then re-run verify.
-- **`cmd/…/main.go` bead:** Before writing imports, check what's already in internal/ with `ls {{rig}}/mayor/rig/{{layout_root}}/internal/`. If an earlier file's bead is still **open**, implement that bead first — **never heredoc over a path whose implement bead is already closed** (gt-agent rejects it; QA must reopen for rework).
-- No `gt bd` — use `bd` with `BEADS_DIR` set as above
-- **Docker / compose beads:** implement only when they appear on **Next bead** (final phase). `docker-compose.yml` must reference a real `Dockerfile` and app layout from earlier beads — `docker compose config` (or `docker-compose config`) is enough to verify; no full stack run required until QA.
+- **go.mod bead:** `go mod init` / `go get` / `go mod tidy` via CMD only.
+- **Other `.go` beads:** package-scoped verify from Next bead — not `go build ./...` unless Verify says so.
+- **`go run`/curl** only on the `cmd/server/main.go` bead.
+- **`cmd/…/main.go`:** if an earlier file's bead is **open**, implement that bead first; never WRITE/EDIT closed-bead paths.
+- No `gt bd` — use `bd` with `BEADS_DIR` as above
+- **Docker / compose beads:** final phase only; `docker compose config` is enough until QA.
 
-If the user message includes **Prior step failed** (QA rework, timeout, or compile error), fix with **sed** or **patch** on internal packages; **`cmd/…/main.go` may use heredoc** when the file is syntactically broken or has duplicate declarations.
+If **Prior step failed**, use **EDIT:** on internal packages; **WRITE:** or heredoc CMD only for broken `cmd/…/main.go` wiring when duplicates/stubs block compile.

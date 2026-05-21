@@ -129,9 +129,21 @@ After timeout, expect fresh implement beads (`Implement <path> per architecture`
 
 Hung `go run` or a stuck heredoc no longer blocks the rig indefinitely: gt-agent kills the command after `cmd_timeout_seconds`, and the mayor orchestrator can time out the whole step and run the recovery hook.
 
+### Native file tools (READ / EDIT / WRITE)
+
+Implementation state sets `native_edit_tools: true` in `rig-flow.yaml`. The polecat can edit without fragile shell heredocs:
+
+| Tool | Purpose |
+|------|---------|
+| `READ: <path>` | Show file (active bead + dependency packages) |
+| `EDIT: <path>` + `<<<<<<< SEARCH` / `=======` / `>>>>>>> REPLACE` | Exact search/replace (must match once) |
+| `WRITE: <path>` … `---END WRITE---` | New files only (rejected on large existing files) |
+
+`CMD:` remains for `bd`, **Verify**, and `go run`. Auto-verify runs after EDIT/WRITE. **sed/patch/heredoc** still work as fallback.
+
 ### Incremental edits (sed / patch vs full-file heredoc)
 
-When an implement bead’s file **already exists** on disk (and is not a stub), gt-agent **rejects** `cat > path <<'EOF'` full rewrites and tells the polecat to use **`sed -i`** or **`patch`** instead. New files still use heredoc. **Implement context** in the user prompt includes an **Incremental edit required** block when applicable.
+When an implement bead’s file **already exists** on disk (and is not a stub), gt-agent **rejects** `cat > path <<'EOF'` and full **`WRITE:`** rewrites; use **`EDIT:`** search/replace instead. **Implement context** includes an **Incremental edit required** block when applicable.
 
 Restart a dead polecat session: `gt up` (pipeline liveness restarts gt-agent without `--orchestrated`), or `scripts/reset-rig-orchestrator.sh` for a full rig rewind.
 

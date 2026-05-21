@@ -120,12 +120,8 @@ func RejectFullFileHeredocReason(cmd, townRoot, rig, activeBead string, v Workfl
 	if !PreferIncrementalEdit(townRoot, rig, path, v) {
 		return ""
 	}
-	allowed := ImplementBeadPathForID(townRoot, rig, activeBead, v)
-	if allowed != "" && !PathMatchesImplementWrite(path, allowed, v.RequiredFiles) {
-		return ""
-	}
 	return fmt.Sprintf(
-		"do not rewrite existing file %q with cat/heredoc — use incremental edits (sed -i or patch) to fix only the broken lines; full rewrite risks truncation and syntax errors",
+		"do not rewrite existing file %q with cat/heredoc or WRITE — use EDIT search/replace (or sed -i / patch); full rewrite risks truncation and syntax errors",
 		path,
 	)
 }
@@ -140,8 +136,8 @@ func FormatIncrementalEditBlock(townRoot, rig, beadPath string, v WorkflowValida
 File **%s** already exists on disk (%d+ bytes). **Do not** use `+"`"+`cat > %s <<'EOF'`+"`"+` to replace the whole file.
 
 Prefer small, targeted fixes:
-- **Go / text:** `+"`"+`sed -i 's/old/new/' %s`+"`"+` (one or more sed lines; escape slashes in paths)
-- **Multi-line:** write a minimal `+"`"+`fix.patch`+"`"+` then `+"`"+`patch -p0 < fix.patch`+"`"+` from `+"`"+`{{rig}}/mayor/rig`+"`"+`
+- **Native tools (preferred):** `+"`"+`EDIT: %s`+"`"+` with `+"`"+`<<<<<<< SEARCH`+"`"+` / `+"`"+`=======`+"`"+` / `+"`"+`>>>>>>> REPLACE`+"`"+` blocks (see orchestrator context)
+- **Shell fallback:** `+"`"+`sed -i`+"`"+` or `+"`"+`patch`+"`"+` if EDIT fails
 - After edits, run **Verify** from Next bead, then `+"`"+`bd close`+"`"+`
 
 Use full heredoc only when creating a **new** file (path missing on disk) or replacing a known stub/placeholder.`,

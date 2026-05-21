@@ -180,8 +180,10 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 
 		runner.runPerTurn()
 
-		cmdBlocks := parseOrchestratedCommands(response)
-		if len(cmdBlocks) == 0 && responseHasUnterminatedHeredoc(response) {
+		var combined strings.Builder
+		hadNative, cmdCount := runner.processOrchestratedTools(response, sessionName, &combined)
+
+		if cmdCount == 0 && !hadNative && responseHasUnterminatedHeredoc(response) {
 			msg := "Your reply started a heredoc (e.g. plan.md <<'EOF') but never sent a line with only EOF — the message was cut off, so no command ran.\n\n" +
 				"Fix: split across turns — (1) `bd list --status=open`, (2) `cat > plan.md <<'EOF'` with ## Bead map and ### <id>: <full-path> sections (scope + acceptance per file; must meet min_plan_bytes), (3) line with only `EOF`, (4) `wc -c plan.md`, (5) JSON success only."
 			if h := runner.failureHint(); h != "" {
@@ -191,53 +193,7 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 			messages = append(messages, llm.Message{Role: "user", Content: msg})
 			continue
 		}
-		if len(cmdBlocks) > 0 {
-			var combined strings.Builder
-			for _, cmd := range cmdBlocks {
-				if strings.Contains(cmd, "CMD:") {
-					orchestratedFprintfStderr("[gt-agent] warning: dropping malformed command with embedded CMD:\n")
-					continue
-				}
-				if err := runner.validateCommand(cmd); err != nil {
-					orchestratedFprintfStderr("[gt-agent] rejected command: %v\n", err)
-					combined.WriteString(fmt.Sprintf("Command REJECTED (%s): %s\nReason: %v\n\n", runner.rejectScope(), cmd, err))
-					continue
-				}
-				cmd = runner.rewriteCommand(cmd)
-				runner.repairPipBeforeRun(cmd)
-				cmdEnv := runner.commandEnv(os.Environ())
-				cmd = runner.rewritePythonCmd(cmd, cmdEnv)
-				runner.beforeDevServerCommand(cmd)
-				orchestratedPrintf("[gt-agent] $ %s\n", cmd)
-				if needsOrchestratedScriptFile(cmd) {
-					orchestratedPrintf("[gt-agent] running multiline/heredoc via temp script\n")
-				}
-				workDir := runner.workDir()
-				if isStandaloneHeredocDelimiter(strings.TrimSpace(cmd)) {
-					orchestratedPrintf("[gt-agent] skipping stray heredoc delimiter command: %q\n", cmd)
-					combined.WriteString(fmt.Sprintf("Command skipped (stray heredoc delimiter): %s\n\n", cmd))
-					continue
-				}
-				out, cmdErr := runOrchestratedCommand(cmd, workDir, sessionName, cmdEnv, runner.hooks.EffectiveCmdTimeoutSeconds())
-				if cmdErr != nil && (benignGoCommandError(cmd, cmdErr, out) || (runner.hooks.Artifacts == "planning" && benignPlanningShellNoise(cmd, cmdErr))) {
-					orchestratedPrintf("[gt-agent] treating as ok: %v\n", cmdErr)
-					combined.WriteString(fmt.Sprintf("Command: %s\n(note: %v — continuing)\nOutput: %s\n\n", cmd, cmdErr, string(out)))
-					cmdErr = nil
-				}
-				runner.afterCommand(cmd, cmdErr, workDir, sessionName, cmdEnv, &combined)
-				if cmdErr != nil {
-					orchestratedFprintfStderr("[gt-agent] command failed: %v\n%s\n", cmdErr, string(out))
-					combined.WriteString(fmt.Sprintf("Command: %s\nError: %v\nOutput: %s\n\n", cmd, cmdErr, string(out)))
-					if runner.hooks.AppendGoCompileContext && orchestrator.WorkflowUsesGo(runner.v) {
-						appendGoCompileSourceContext(&combined, townRoot, rig, rigMayorRigDir(townRoot, rig), runner.v.LayoutRoot,
-							runner.activeImplementBeadPath(), runner.v, cmd, string(out))
-					}
-				} else {
-					feedbackOut := formatSuccessCommandOutput(out)
-					orchestratedPrintf("[gt-agent] output: %s\n", strings.TrimSpace(feedbackOut))
-					combined.WriteString(feedbackOut)
-				}
-			}
+		if cmdCount > 0 || hadNative {
 			feedback := combined.String()
 			recordAttemptFeedback(feedback)
 			feedback += "\n\nCommands executed. If the step is complete, reply with JSON only (no CMD lines): {\"outcome\":\"...\",\"summary\":\"...\"}"
@@ -263,6 +219,17 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 			}
 			if o, s, ok := runner.tryAutoOutcome(); ok {
 				return o, s, lastAttemptFeedback.String(), nil
+			}
+			messages = append(messages, llm.Message{Role: "user", Content: feedback})
+			continue
+		}
+
+		if hadNative {
+			feedback := combined.String()
+			recordAttemptFeedback(feedback)
+			feedback += "\n\nNative edits processed. If the step is complete, reply with JSON only: {\"outcome\":\"...\",\"summary\":\"...\"}"
+			if turn == maxTurns {
+				feedback += " Use an allowed outcome."
 			}
 			messages = append(messages, llm.Message{Role: "user", Content: feedback})
 			continue
@@ -304,7 +271,7 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 			continue
 		}
 
-		hint := "Use CMD: lines to run shell commands (heredoc for multi-line files). When done, reply with JSON only: {\"outcome\":\"...\",\"summary\":\"...\"}"
+		hint := orchestratedEmptyTurnHint(runner.hooks)
 		if responseHasUnterminatedHeredoc(response) {
 			hint = "Heredoc was truncated — shorten plan.md and end with a line containing only EOF, then wc -c."
 		}
@@ -2226,10 +2193,19 @@ func buildOrchestratedSystemPrompt(task *orchestrator.Task) string {
 			b.WriteString(fmt.Sprintf("- Allowed outcomes: %s\n", strings.Join(task.AllowedOutcomes, ", ")))
 		}
 		b.WriteString("\nComplete **only this step**.\n")
-		b.WriteString("1. Run shell work as `CMD: <command>` lines (use a single heredoc CMD for multi-line files).\n")
-		b.WriteString("2. After commands succeed, send a **separate** message with JSON only (no CMD lines in that message):\n")
-		b.WriteString(`{"outcome":"<one allowed outcome>","summary":"<brief result>"}`)
-		b.WriteString("\nDo not put JSON on the same line as CMD. Do not use `cat > file` without a heredoc body.\n")
+		if section := task.Hooks.NativeEditPromptSection(); section != "" {
+			b.WriteString("1. Edit source files with native tools (see below); use `CMD:` for bd/verify only.\n")
+			b.WriteString("2. After work succeeds, send a **separate** message with JSON only (no CMD/native tools in that message):\n")
+			b.WriteString(`{"outcome":"<one allowed outcome>","summary":"<brief result>"}`)
+			b.WriteString("\n\n")
+			b.WriteString(section)
+			b.WriteString("\n")
+		} else {
+			b.WriteString("1. Run shell work as `CMD: <command>` lines (use a single heredoc CMD for multi-line files).\n")
+			b.WriteString("2. After commands succeed, send a **separate** message with JSON only (no CMD lines in that message):\n")
+			b.WriteString(`{"outcome":"<one allowed outcome>","summary":"<brief result>"}`)
+			b.WriteString("\nDo not put JSON on the same line as CMD. Do not use `cat > file` without a heredoc body.\n")
+		}
 	}
 	if footer := task.Hooks.SystemPromptFooterText(vars); footer != "" {
 		if b.Len() > 0 {
