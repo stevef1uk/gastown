@@ -157,5 +157,5 @@ func appendGoCompileSourceContext(b *strings.Builder, mayorRigDir, layoutRoot, c
 	if strings.Contains(cmdOutput, "undefined:") {
 		b.WriteString("\nHint: an undefined Go symbol means the referenced API is missing or misnamed. Inspect the defining package files above; either add the missing export or change the caller to use an API that exists, then re-run verify.\n")
 	}
-	b.WriteString("\nHint: fix existing .go files with **sed -i** (one line at a time) or a small **patch** — do not `cat > file <<'EOF'` rewrite whole files.\n")
+	b.WriteString("\nHint: fix internal packages with **sed -i** or a small **patch**. **cmd/…/main.go** may use `cat > … <<'EOF'` when the file has duplicate handlers or stub bodies; use symbols from **Dependency packages** / Source context, not invented names.\n")
 }

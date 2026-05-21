@@ -33,6 +33,48 @@ func TestExtractImplementWritePathFromCmd_patch(t *testing.T) {
 	}
 }
 
+func TestPreferIncrementalEdit_cmdMainExempt(t *testing.T) {
+	dir := t.TempDir()
+	rig := "mockrig"
+	rel := "linkshelf/cmd/server/main.go"
+	absDir := filepath.Join(dir, rig, "mayor", "rig", "linkshelf", "cmd", "server")
+	if err := os.MkdirAll(absDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := "package main\n\n" + strings.Repeat("func main() { println(1) }\n", 12)
+	if err := os.WriteFile(filepath.Join(absDir, "main.go"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	v := DefaultWorkflowValidation()
+	v.LayoutRoot = "linkshelf"
+	if PreferIncrementalEdit(dir, rig, rel, v) {
+		t.Fatal("cmd/server/main.go should allow heredoc rewrites")
+	}
+}
+
+func TestRejectFullFileHeredocReason_cmdMainAllowed(t *testing.T) {
+	dir := t.TempDir()
+	rig := "mockrig"
+	layout := "linkshelf"
+	absDir := filepath.Join(dir, rig, "mayor", "rig", layout, "cmd", "server")
+	if err := os.MkdirAll(absDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := "package main\n\n" + strings.Repeat("func handleGetLinks() {}\n", 12)
+	if err := os.WriteFile(filepath.Join(absDir, "main.go"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	v := DefaultWorkflowValidation()
+	v.LayoutRoot = layout
+	v.RequiredFiles = []string{layout + "/internal/store/store.go", layout + "/cmd/server/main.go"}
+	cmd := `cat > linkshelf/cmd/server/main.go <<'EOF'
+package main
+EOF`
+	if reason := RejectFullFileHeredocReason(cmd, dir, rig, "te-main", v); reason != "" {
+		t.Fatalf("cmd main heredoc should be allowed: %q", reason)
+	}
+}
+
 func TestPreferIncrementalEdit_substantiveFile(t *testing.T) {
 	dir := t.TempDir()
 	rig := "mockrig"

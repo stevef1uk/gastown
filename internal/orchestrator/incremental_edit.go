@@ -81,8 +81,17 @@ func ImplementFileOnDisk(townRoot, rig, relPath string) (size int64, exists bool
 	return info.Size(), true, nil
 }
 
+// IsCmdMainImplementPath reports cmd/…/main.go entrypoints (wiring files; full rewrites are allowed).
+func IsCmdMainImplementPath(relPath string) bool {
+	p := strings.ToLower(filepath.ToSlash(strings.TrimSpace(relPath)))
+	return strings.Contains(p, "/cmd/") && strings.HasSuffix(p, "/main.go")
+}
+
 // PreferIncrementalEdit reports whether agents should use sed/patch instead of heredoc rewrite.
 func PreferIncrementalEdit(townRoot, rig, relPath string, v WorkflowValidation) bool {
+	if IsCmdMainImplementPath(relPath) {
+		return false
+	}
 	size, exists, err := ImplementFileOnDisk(townRoot, rig, relPath)
 	if err != nil || !exists || size < IncrementalEditMinBytes {
 		return false

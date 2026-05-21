@@ -397,7 +397,7 @@ func formatWorkflowReworkBlock(task *orchestrator.Task, rig string) string {
 	v := taskValidation(task)
 	b.WriteString(workflowReworkHints(r.FromState, task.State, rig, r.Summary, v))
 	if task.State == "implementation" && (r.Outcome == "failure" || r.Outcome == "timeout") {
-		b.WriteString("\nUse **sed -i** or **patch** on existing files — gt-agent rejects full-file `cat > … <<'EOF'` rewrites.\n")
+		b.WriteString("\nUse **sed -i** or **patch** on internal packages; **cmd/…/main.go may use heredoc** when wiring is broken. Use store/handler APIs from **Dependency packages** — do not invent symbols.\n")
 	}
 	runner := newStateRunner(task, "", rig)
 	runner.v = v
@@ -473,7 +473,7 @@ func formatOrchestratedRetryBlock(prior *OrchestratedRetry, task *orchestrator.T
 	}
 	b.WriteString("\nFix the issues above. Use bead IDs and paths from command output — do not invent IDs.\n")
 	if task.State == "implementation" {
-		b.WriteString("\nUse **sed -i** or **patch** for line-level fixes on files shown in Source context — not full-file heredocs.\n")
+		b.WriteString("\nUse **sed -i** or **patch** on internal .go files; **cmd/…/main.go may use heredoc** when Source context shows duplicate or stub handlers. Match APIs in **Dependency packages**.\n")
 	}
 	runner := newStateRunner(task, "", rig)
 	b.WriteString(runner.retryHint())

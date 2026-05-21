@@ -104,11 +104,50 @@ func TestFormatImplementBeadContextBlock_linkshelfTitlePrefix(t *testing.T) {
 	}
 }
 
+func TestFormatImplementBeadContextForPath_includesDependencyStore(t *testing.T) {
+	dir := t.TempDir()
+	rig := "testrig"
+	rigDir := filepath.Join(dir, rig, "mayor", "rig")
+	storePath := filepath.Join(rigDir, "linkshelf", "internal", "store", "store.go")
+	mainPath := filepath.Join(rigDir, "linkshelf", "cmd", "server", "main.go")
+	if err := os.MkdirAll(filepath.Dir(storePath), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(mainPath), 0755); err != nil {
+		t.Fatal(err)
+	}
+	storeBody := "package store\n\nfunc (s *Store) GetAllLinks() ([]Link, error) { return nil, nil }\n"
+	if err := os.WriteFile(storePath, []byte(storeBody), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(mainPath, []byte("package main\nfunc main() {}\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	v := WorkflowValidation{
+		LayoutRoot:    "linkshelf",
+		RequiredFiles: []string{"linkshelf/go.mod", "linkshelf/internal/store/store.go", "linkshelf/cmd/server/main.go"},
+	}
+	got := formatImplementBeadContextForPath(dir, rig, "linkshelf/cmd/server/main.go", v)
+	for _, want := range []string{
+		"### Dependency packages",
+		"GetAllLinks",
+		"cmd/main bead",
+		"do not re-implement handler",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("missing %q in:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "### Incremental edit required") {
+		t.Fatal("cmd/main should not show incremental-edit block")
+	}
+}
+
 func TestFormatIncrementalEditBlock_direct(t *testing.T) {
 	dir := t.TempDir()
 	rig := "mockrig"
 	layout := "linkshelf"
-	rel := layout + "/cmd/server/main.go"
+	rel := layout + "/internal/store/store.go"
 	abs := filepath.Join(dir, rig, "mayor", "rig", filepath.Dir(rel))
 	if err := os.MkdirAll(abs, 0o755); err != nil {
 		t.Fatal(err)
@@ -119,7 +158,7 @@ func TestFormatIncrementalEditBlock_direct(t *testing.T) {
 	}
 	v := WorkflowValidation{LayoutRoot: layout}
 	got := FormatIncrementalEditBlock(dir, rig, rel, v)
-	for _, want := range []string{"Incremental edit required", "sed -i", "patch", "cat >"} {
+	for _, want := range []string{"Incremental edit required", "sed -i", "patch"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("missing %q in:\n%s", want, got)
 		}

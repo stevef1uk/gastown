@@ -212,6 +212,26 @@ func OrderRequiredFilesForImplementation(files []string) []string {
 	return out
 }
 
+// EarlierRequiredFilesForBead returns profile paths built before activePath (store before cmd/main, etc.).
+func EarlierRequiredFilesForBead(activePath string, required []string) []string {
+	activePath = filepath.ToSlash(strings.TrimSpace(activePath))
+	if activePath == "" || len(required) == 0 {
+		return nil
+	}
+	activeScore := implementationPathScore(activePath)
+	var out []string
+	for _, p := range OrderRequiredFilesForImplementation(required) {
+		p = filepath.ToSlash(strings.TrimSpace(p))
+		if p == "" || p == activePath {
+			continue
+		}
+		if implementationPathScore(p) < activeScore {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
 func implementationPathScore(p string) int {
 	lower := strings.ToLower(p)
 	switch {

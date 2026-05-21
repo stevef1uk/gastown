@@ -737,6 +737,32 @@ EOF`
 	if err := validateImplementationBeadFileWrite(patchCmd, dir, rig, "te-store", v); err != nil {
 		t.Fatalf("patch should be allowed: %v", err)
 	}
+
+	mainDir := filepath.Join(dir, rig, "mayor", "rig", layout, "cmd", "server")
+	if err := os.MkdirAll(mainDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	mainBody := "package main\n\n" + strings.Repeat("func handleGetLinks() {}\n", 10)
+	if err := os.WriteFile(filepath.Join(mainDir, "main.go"), []byte(mainBody), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	vMain := v
+	vMain.RequiredFiles = append(vMain.RequiredFiles, layout+"/cmd/server/main.go")
+	orchestrator.ListImplementBeadsByStatusHook = func(_, _ string, _ orchestrator.WorkflowValidation, status string) ([]orchestrator.PlanBead, error) {
+		if status == "in_progress" {
+			return []orchestrator.PlanBead{{
+				ID:    "te-main",
+				Title: "Implement linkshelf/cmd/server/main.go per architecture",
+			}}, nil
+		}
+		return nil, nil
+	}
+	mainHeredoc := `cd mockrig/mayor/rig && cat > linkshelf/cmd/server/main.go <<'EOF'
+package main
+EOF`
+	if err := validateImplementationBeadFileWrite(mainHeredoc, dir, rig, "te-main", vMain); err != nil {
+		t.Fatalf("cmd/main heredoc should be allowed: %v", err)
+	}
 }
 
 func TestValidateImplementationCommand_oneInProgressBead(t *testing.T) {

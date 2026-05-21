@@ -70,10 +70,63 @@ func formatImplementBeadContextForPath(townRoot, rig, beadPath string, v Workflo
 		b.WriteString(snippet)
 		b.WriteString("\n```\n")
 	}
+	if dep := formatDependencyPackagesContext(townRoot, rig, beadPath, v); dep != "" {
+		b.WriteString("\n")
+		b.WriteString(dep)
+		b.WriteString("\n")
+	}
 	if block := FormatIncrementalEditBlock(townRoot, rig, beadPath, v); block != "" {
 		b.WriteString("\n")
 		b.WriteString(block)
 		b.WriteString("\n")
+	}
+	return strings.TrimSpace(b.String())
+}
+
+const (
+	maxDependencyContextFiles  = 3
+	maxDependencyContextBytes  = 2400
+	maxDependencySnippetBytes  = 800
+)
+
+// formatDependencyPackagesContext injects read-only snippets from earlier implement files (e.g. store for cmd/main).
+func formatDependencyPackagesContext(townRoot, rig, activePath string, v WorkflowValidation) string {
+	if len(v.RequiredFiles) == 0 {
+		return ""
+	}
+	deps := EarlierRequiredFilesForBead(activePath, v.RequiredFiles)
+	if len(deps) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("### Dependency packages (read-only — use these APIs; do not invent symbols)\n")
+	b.WriteString("You may **read** these paths with `cat` but must **not** write them while this bead is active (their beads are closed).\n")
+	total := 0
+	shown := 0
+	for _, rel := range deps {
+		if shown >= maxDependencyContextFiles || total >= maxDependencyContextBytes {
+			break
+		}
+		if !strings.HasSuffix(strings.ToLower(rel), ".go") {
+			continue
+		}
+		snippet := readMayorRigFileSnippet(townRoot, rig, rel, maxDependencySnippetBytes)
+		if snippet == "" {
+			continue
+		}
+		block := "`" + rel + "`:\n```\n" + snippet + "\n```\n"
+		if total+len(block) > maxDependencyContextBytes {
+			break
+		}
+		b.WriteString(block)
+		total += len(block)
+		shown++
+	}
+	if shown == 0 {
+		return ""
+	}
+	if IsCmdMainImplementPath(activePath) {
+		b.WriteString("\n**cmd/main bead:** wire routes only — call handlers in `internal/api` (or architecture path); do not re-implement handler bodies in main.go.\n")
 	}
 	return strings.TrimSpace(b.String())
 }

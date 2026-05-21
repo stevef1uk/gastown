@@ -25,7 +25,9 @@ When **Implement context** shows **Current file on disk** or **Incremental edit 
   - For several lines: write `fix.patch`, then `CMD: cd {{rig}}/mayor/rig && patch -p0 < fix.patch`
 - After each edit batch, run **Verify** from Next bead, then `bd close`.
 
-Use **heredoc** (`cat > path <<'EOF'`) only when the file **does not exist yet** (new bead / empty path) or the on-disk file is a stub/placeholder.
+Use **heredoc** (`cat > path <<'EOF'`) only when the file **does not exist yet** (new bead / empty path) or the on-disk file is a stub/placeholder — **except** `cmd/…/main.go`: you may heredoc-rewrite main when wiring is broken (duplicate handlers, empty stubs); still use **Dependency packages** APIs, not invented `CreateLink`-style names.
+
+On **`cmd/server/main.go`**, read **Dependency packages** in Implement context for real `store`/`handlers` symbols — do not define handler bodies in main; register routes and delegate.
 
 ## Rules
 
@@ -40,4 +42,4 @@ Use **heredoc** (`cat > path <<'EOF'`) only when the file **does not exist yet**
 - No `gt bd` — use `bd` with `BEADS_DIR` set as above
 - **Docker / compose beads:** implement only when they appear on **Next bead** (final phase). `docker-compose.yml` must reference a real `Dockerfile` and app layout from earlier beads — `docker compose config` (or `docker-compose config`) is enough to verify; no full stack run required until QA.
 
-If the user message includes **Prior step failed** (QA rework, timeout, or compile error), fix only the named lines/paths with **sed** or **patch** — not full-file rewrites.
+If the user message includes **Prior step failed** (QA rework, timeout, or compile error), fix with **sed** or **patch** on internal packages; **`cmd/…/main.go` may use heredoc** when the file is syntactically broken or has duplicate declarations.
