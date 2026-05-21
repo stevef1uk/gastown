@@ -180,12 +180,21 @@ func isToolchainExecutionCommand(cmd string) bool {
 		return strings.Contains(lower, "cd ") || strings.Contains(lower, " -q") ||
 			strings.Contains(lower, " -v") || strings.Contains(lower, " -k")
 	}
+	if isGoDevServerSmokeCommand(cmd) {
+		return false
+	}
 	if strings.Contains(lower, "go test") || strings.Contains(lower, "go run") ||
 		strings.Contains(lower, "go build") || strings.Contains(lower, "go vet") ||
 		strings.Contains(lower, "go mod") {
 		return true
 	}
 	return false
+}
+
+func isGoDevServerSmokeCommand(cmd string) bool {
+	lower := strings.ToLower(cmd)
+	return strings.Contains(lower, "go run") && strings.Contains(lower, "cmd/server") &&
+		strings.Contains(lower, "curl")
 }
 
 // writesRequirementsFile reports commands that create/overwrite requirements.txt (heredoc or redirect).
@@ -475,23 +484,43 @@ func simplifyGoDevServerSmoke(cmd string) (string, bool) {
 	b.WriteString(" && go run ./cmd/server & _gtsrv=$!; sleep 6; ")
 	b.WriteString(fmt.Sprintf("curl -sf --max-time 8 http://127.0.0.1:%d/ >/dev/null", port))
 	if strings.Contains(lower, "/api/") {
-		b.WriteString(fmt.Sprintf("; curl -sf --max-time 8 http://127.0.0.1:%d/api/links >/dev/null || true", port))
+		b.WriteString(fmt.Sprintf("; curl -sf --max-time 8 http://127.0.0.1:%d/api/links >/dev/null", port))
 	}
 	b.WriteString("; kill ${_gtsrv} 2>/dev/null")
 	return b.String(), true
 }
 
 func smokeWorkDirFromCommand(cmd string) string {
+	// Join chained cds before go run (cd testgt3/mayor/rig && cd linkshelf → testgt3/mayor/rig/linkshelf).
+	var joined string
+	for _, p := range strings.Split(cmd, "&&") {
+		p = strings.TrimSpace(p)
+		lower := strings.ToLower(p)
+		if strings.Contains(lower, "go run") {
+			break
+		}
+		if !strings.HasPrefix(lower, "cd ") {
+			continue
+		}
+		dir := strings.Trim(strings.TrimSpace(p[3:]), `"'`)
+		if dir == "" {
+			continue
+		}
+		if joined == "" {
+			joined = dir
+			continue
+		}
+		if strings.HasPrefix(dir, "/") || strings.Contains(dir, "mayor/rig") {
+			joined = dir
+		} else {
+			joined = strings.TrimSuffix(joined, "/") + "/" + strings.TrimPrefix(dir, "/")
+		}
+	}
+	if joined != "" {
+		return joined
+	}
 	if m := goSmokeWorkDirRE.FindStringSubmatch(cmd); len(m) >= 2 {
 		return strings.TrimSpace(m[1])
-	}
-	// Fallback: last cd into layout before go run
-	parts := strings.Split(cmd, "&&")
-	for i := len(parts) - 1; i >= 0; i-- {
-		p := strings.TrimSpace(parts[i])
-		if strings.HasPrefix(strings.ToLower(p), "cd ") {
-			return strings.TrimSpace(p[3:])
-		}
 	}
 	return ""
 }

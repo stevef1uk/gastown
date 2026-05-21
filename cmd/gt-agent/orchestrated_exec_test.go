@@ -113,6 +113,20 @@ func TestSimplifyGoDevServerSmokeCommand_shortProbe(t *testing.T) {
 	if !strings.Contains(got, "sleep 6") || !strings.Contains(got, "/api/links") {
 		t.Fatalf("want short probe with API check: %q", got)
 	}
+	if strings.Contains(got, "|| true") {
+		t.Fatalf("API curl must not use || true (masks failure): %q", got)
+	}
+	if !strings.Contains(got, "testgt3/mayor/rig/linkshelf") {
+		t.Fatalf("want deepest cd path in smoke: %q", got)
+	}
+}
+
+func TestRewriteUnittestToWorkdir_skipsGoDevServerSmoke(t *testing.T) {
+	cmd := "cd linkshelf && go run ./cmd/server & _gtsrv=$!; sleep 6; curl -sf http://127.0.0.1:8080/"
+	v := orchestrator.WorkflowValidation{LayoutRoot: "linkshelf", QAVerifyCommand: "go test ./..."}
+	if _, ok := rewriteUnittestToWorkdir(cmd, "testgt3", v); ok {
+		t.Fatal("smoke must not get unittest workdir rewrite")
+	}
 }
 
 func TestPrepareOrchestratedScript_normalizesEOF(t *testing.T) {
