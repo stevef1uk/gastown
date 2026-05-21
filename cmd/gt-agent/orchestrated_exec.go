@@ -481,10 +481,11 @@ func simplifyGoDevServerSmoke(cmd string) (string, bool) {
 	var b strings.Builder
 	b.WriteString("cd ")
 	b.WriteString(workDir)
-	b.WriteString(" && go run ./cmd/server & _gtsrv=$!; sleep 6; ")
-	b.WriteString(fmt.Sprintf("curl -sf --max-time 8 http://127.0.0.1:%d/ >/dev/null", port))
+	// disown: non-interactive sh must not wait for background go run (first compile can take minutes).
+	b.WriteString(" && go run ./cmd/server & _gtsrv=$!; disown ${_gtsrv} 2>/dev/null; _gtok=0; ")
+	b.WriteString(fmt.Sprintf(`for _i in 1 2 3 4 5 6 7 8; do curl -sf --max-time 3 http://127.0.0.1:%d/ >/dev/null && _gtok=1 && break; sleep 1; done; test "$_gtok" = 1`, port))
 	if strings.Contains(lower, "/api/") {
-		b.WriteString(fmt.Sprintf("; curl -sf --max-time 8 http://127.0.0.1:%d/api/links >/dev/null", port))
+		b.WriteString(fmt.Sprintf(`; curl -sf --max-time 3 http://127.0.0.1:%d/api/links >/dev/null`, port))
 	}
 	b.WriteString("; kill ${_gtsrv} 2>/dev/null")
 	return b.String(), true

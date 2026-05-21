@@ -90,8 +90,8 @@ func TestNormalizeGoDevServerSmokeCommand(t *testing.T) {
 	if strings.Contains(got, "pkill") || strings.Contains(got, "go build ./...") {
 		t.Fatalf("got %q", got)
 	}
-	if !strings.Contains(got, "sleep 6") || !strings.Contains(got, "--max-time") {
-		t.Fatalf("want server warmup sleep and curl timeout: %q", got)
+	if !strings.Contains(got, "disown") || !strings.Contains(got, "--max-time") {
+		t.Fatalf("want disown and curl timeout in smoke rewrite: %q", got)
 	}
 	if !strings.Contains(got, "_gtsrv=$!") || !strings.Contains(got, "kill ${_gtsrv}") {
 		t.Fatalf("want smoke to kill background server so shell returns: %q", got)
@@ -110,8 +110,11 @@ func TestSimplifyGoDevServerSmokeCommand_shortProbe(t *testing.T) {
 	if strings.Contains(got, "go mod tidy") || strings.Contains(got, "go build") {
 		t.Fatalf("got %q", got)
 	}
-	if !strings.Contains(got, "sleep 6") || !strings.Contains(got, "/api/links") {
-		t.Fatalf("want short probe with API check: %q", got)
+	if !strings.Contains(got, "disown") || !strings.Contains(got, "for _i in") || !strings.Contains(got, "/api/links") {
+		t.Fatalf("want poll-based smoke with API check: %q", got)
+	}
+	if strings.Contains(got, "sleep 6") {
+		t.Fatalf("want curl poll not fixed sleep 6: %q", got)
 	}
 	if strings.Contains(got, "|| true") {
 		t.Fatalf("API curl must not use || true (masks failure): %q", got)
