@@ -93,6 +93,16 @@ func GetDefaultProvider(townRoot string) Provider {
 	return p
 }
 
+// CloseProvider closes the provider if it implements Close (e.g. NatsProvider).
+func CloseProvider(p Provider) {
+	if p == nil {
+		return
+	}
+	if c, ok := p.(interface{ Close() }); ok {
+		c.Close()
+	}
+}
+
 // stubProvider is a fallback provider when neither tmux nor NATS is available.
 type stubProvider struct {
 	err error

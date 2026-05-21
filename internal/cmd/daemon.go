@@ -393,6 +393,12 @@ func runDaemonRun(cmd *cobra.Command, args []string) error {
 	}
 	os.Setenv("BD_ACTOR", "daemon")
 
+	// Start NATS before connecting the session provider (avoids a permanent stub
+	// when the broker container is still starting).
+	if err := daemon.BootstrapNATSBroker(townRoot); err != nil {
+		return fmt.Errorf("starting NATS broker: %w", err)
+	}
+
 	config := daemon.DefaultConfig(townRoot)
 	d, err := daemon.New(config, session.GetDefaultProvider(townRoot))
 	if err != nil {

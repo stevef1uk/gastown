@@ -438,6 +438,7 @@ func (d *Daemon) Run() (err error) {
 
 	// Start NATS server if configured (heartbeat also calls ensureNatsServerRunning).
 	d.ensureNatsServerRunning()
+	d.ensureSessionProvider()
 
 	// Start feed curator goroutine
 	d.curator = feed.NewCurator(d.config.TownRoot)
@@ -1027,6 +1028,25 @@ func (d *Daemon) ensureNatsServerRunning() {
 	}
 	if !wasRunning && d.natsServer.IsRunning() {
 		d.logger.Println("NATS server started")
+	}
+	d.ensureSessionProvider()
+}
+
+// ensureSessionProvider reconnects when the daemon was created with a stub provider
+// because NATS was not ready yet (startup race) or the broker was restarted later.
+func (d *Daemon) ensureSessionProvider() {
+	if d.sp != nil && d.sp.IsAvailable() {
+		return
+	}
+	sp := session.GetDefaultProvider(d.config.TownRoot)
+	if !sp.IsAvailable() {
+		return
+	}
+	session.CloseProvider(d.sp)
+	d.sp = sp
+	d.logger.Println("Session provider connected (NATS)")
+	if err := d.sp.SetGlobalEnvironment("GT_TOWN_ROOT", d.config.TownRoot); err != nil {
+		d.logger.Printf("Warning: failed to set GT_TOWN_ROOT in session global env: %v", err)
 	}
 }
 

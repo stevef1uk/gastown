@@ -79,3 +79,18 @@ func (m *NatsServerManager) Stop() error {
 func (m *NatsServerManager) IsRunning() bool {
 	return natsserver.IsRunning()
 }
+
+// BootstrapNATSBroker starts the NATS container before the session provider connects.
+// runDaemonRun calls this before session.GetDefaultProvider so a startup race does not
+// cache a permanent stub provider when NATS is still coming up.
+func BootstrapNATSBroker(townRoot string) error {
+	patrolConfig := LoadPatrolConfig(townRoot)
+	if patrolConfig == nil || patrolConfig.Patrols == nil || patrolConfig.Patrols.NatsServer == nil {
+		return nil
+	}
+	m := NewNatsServerManager(townRoot, patrolConfig.Patrols.NatsServer, nil)
+	if !m.IsEnabled() {
+		return nil
+	}
+	return m.EnsureRunning()
+}
