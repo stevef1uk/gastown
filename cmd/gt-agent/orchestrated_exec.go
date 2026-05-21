@@ -432,6 +432,13 @@ func orchestratedCommandTimeout(cmd string) time.Duration {
 	return 0
 }
 
+func commandTimeoutDur(cmd string, overrideSec int) time.Duration {
+	if overrideSec > 0 {
+		return time.Duration(overrideSec) * time.Second
+	}
+	return orchestratedCommandTimeout(cmd)
+}
+
 // formatSuccessCommandOutput makes successful runs visible when tools print nothing (e.g. go mod tidy).
 func formatSuccessCommandOutput(out []byte) string {
 	if strings.TrimSpace(string(out)) != "" {
@@ -440,7 +447,7 @@ func formatSuccessCommandOutput(out []byte) string {
 	return "(exit 0, no output)\n"
 }
 
-func runOrchestratedCommand(cmd, workDir, sessionName string, env []string) ([]byte, error) {
+func runOrchestratedCommand(cmd, workDir, sessionName string, env []string, cmdTimeoutSec int) ([]byte, error) {
 	if sessionName != "" {
 		env = append(env, "GT_SESSION="+sessionName)
 	}
@@ -448,7 +455,7 @@ func runOrchestratedCommand(cmd, workDir, sessionName string, env []string) ([]b
 		workDir = "."
 	}
 	ctx := context.Background()
-	if d := orchestratedCommandTimeout(cmd); d > 0 {
+	if d := commandTimeoutDur(cmd, cmdTimeoutSec); d > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, d)
 		defer cancel()
@@ -459,7 +466,7 @@ func runOrchestratedCommand(cmd, workDir, sessionName string, env []string) ([]b
 		c.Dir = workDir
 		out, err := c.CombinedOutput()
 		if err != nil && ctx.Err() == context.DeadlineExceeded {
-			return out, fmt.Errorf("%w (command exceeded %s)", err, orchestratedCommandTimeout(cmd))
+			return out, fmt.Errorf("%w (command exceeded %s)", err, commandTimeoutDur(cmd, cmdTimeoutSec))
 		}
 		return out, err
 	}
@@ -489,7 +496,7 @@ func runOrchestratedCommand(cmd, workDir, sessionName string, env []string) ([]b
 	c.Dir = workDir
 	out, err := c.CombinedOutput()
 	if err != nil && ctx.Err() == context.DeadlineExceeded {
-		return out, fmt.Errorf("%w (script exceeded %s)", err, orchestratedCommandTimeout(cmd))
+		return out, fmt.Errorf("%w (script exceeded %s)", err, commandTimeoutDur(cmd, cmdTimeoutSec))
 	}
 	return out, err
 }

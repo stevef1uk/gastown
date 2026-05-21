@@ -118,6 +118,31 @@ export BEADS_DIR=~/gt/<rig>/.beads && bd list --status=open --flat
 
 After timeout, expect fresh implement beads (`Implement <path> per architecture` with a **space** after `Implement`) and no `plan.md` until the planner writes a new one.
 
+### Implementation stall recovery (`recover_implementation_stall`)
+
+| Mechanism | Config | When it fires |
+|-----------|--------|---------------|
+| **Wall-clock timeout** | `state_timeout_seconds: 3600` | Implementation state exceeds 1h without transition |
+| **Per-CMD timeout** | `cmd_timeout_seconds: 900` | Any single shell CMD (heredoc, `go run`, build) exceeds 15m |
+| **Cleanup** | `on_timeout: [recover_implementation_stall]` | Stops dev servers, resets `in_progress` implement beads → `open`, enforces one active bead |
+| **FSM edge** | `transitions.timeout.to: implementation` | Polecat gets a fresh turn with `pending_rework` |
+
+Hung `go run` or a stuck heredoc no longer blocks the rig indefinitely: gt-agent kills the command after `cmd_timeout_seconds`, and the mayor orchestrator can time out the whole step and run the recovery hook.
+
+Restart a dead polecat session: `gt up` (pipeline liveness restarts gt-agent without `--orchestrated`), or `scripts/reset-rig-orchestrator.sh` for a full rig rewind.
+
+### Orchestrator MCP liveness (daemon patrol)
+
+The **orchestrator process** (`gt orchestrator run`, PID in `daemon/orchestrator.pid`) can hang while the PID still exists. The **daemon recovery heartbeat** (default ~3 min) now:
+
+| Check | Threshold | Action |
+|-------|-----------|--------|
+| **NATS ping** | `ping` MCP tool, 5s timeout | Restart if no response |
+| **Heartbeat file** | `daemon/orchestrator-heartbeat.json` stale > 2 min (ping must succeed first) | Restart |
+| **Process dead** | PID file missing / signal 0 fails | **Start** (not restart) |
+
+After restart, pipeline agents are reconciled on the same daemon tick (`ensureMayorRunning`, `ensureRigPolecatsRunning`, …). Manual: `gt orchestrator stop && gt orchestrator start`, or `gt up`.
+
 ## Configuration
 
 Town operators set orchestrator behavior in **`{townRoot}/settings/config.json`**:

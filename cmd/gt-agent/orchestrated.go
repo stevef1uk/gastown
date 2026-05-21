@@ -218,7 +218,7 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 					combined.WriteString(fmt.Sprintf("Command skipped (stray heredoc delimiter): %s\n\n", cmd))
 					continue
 				}
-				out, cmdErr := runOrchestratedCommand(cmd, workDir, sessionName, cmdEnv)
+				out, cmdErr := runOrchestratedCommand(cmd, workDir, sessionName, cmdEnv, runner.hooks.EffectiveCmdTimeoutSeconds())
 				if cmdErr != nil && (benignGoCommandError(cmd, cmdErr, out) || (runner.hooks.Artifacts == "planning" && benignPlanningShellNoise(cmd, cmdErr))) {
 					orchestratedPrintf("[gt-agent] treating as ok: %v\n", cmdErr)
 					combined.WriteString(fmt.Sprintf("Command: %s\n(note: %v — continuing)\nOutput: %s\n\n", cmd, cmdErr, string(out)))
@@ -311,21 +311,22 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 		messages = append(messages, llm.Message{Role: "user", Content: hint})
 	}
 
-	if len(runner.hooks.OnTimeout) > 0 && runner.hooks.Artifacts == "planning" {
-		logLine, hookErr := orchestrator.RunOnTimeoutHooks(runner.hooks.OnTimeout, townRoot, rig, runner.v)
-		if hookErr != nil {
-			orchestratedFprintfStderr("[gt-agent] on_timeout (max turns): %v\n", hookErr)
-		} else if logLine != "" {
-			orchestratedPrintf("[gt-agent] on_timeout (max turns): %s\n", logLine)
-		}
+	if len(runner.hooks.OnTimeout) > 0 {
 		for _, allowed := range task.AllowedOutcomes {
-			if strings.EqualFold(allowed, "timeout") {
-				summary := fmt.Sprintf("planning exhausted %d CMD turns", maxTurns)
-				if logLine != "" {
-					summary += "; " + logLine
-				}
-				return "timeout", summary, lastAttemptFeedback.String(), fmt.Errorf("no structured outcome after %d turns", maxTurns)
+			if !strings.EqualFold(allowed, "timeout") {
+				continue
 			}
+			logLine, hookErr := orchestrator.RunOnTimeoutHooks(runner.hooks.OnTimeout, townRoot, rig, runner.v)
+			if hookErr != nil {
+				orchestratedFprintfStderr("[gt-agent] on_timeout (max turns): %v\n", hookErr)
+			} else if logLine != "" {
+				orchestratedPrintf("[gt-agent] on_timeout (max turns): %s\n", logLine)
+			}
+			summary := fmt.Sprintf("%s exhausted %d CMD turns", task.State, maxTurns)
+			if logLine != "" {
+				summary += "; " + logLine
+			}
+			return "timeout", summary, lastAttemptFeedback.String(), fmt.Errorf("no structured outcome after %d turns", maxTurns)
 		}
 	}
 	return "fail", "", lastAttemptFeedback.String(), fmt.Errorf("no structured outcome after %d turns", maxTurns)

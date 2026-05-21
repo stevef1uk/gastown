@@ -350,7 +350,7 @@ func (r *stateRunner) runAutoVerify(cmd, workDir, sessionName string, cmdEnv []s
 		} else if fixed, ok := rewriteOrchestratedRigPlaceholders(verifyCmd, r.townRoot, r.rig); ok {
 			verifyCmd = fixed
 		}
-		verifyOut, verifyErr := runOrchestratedCommand(verifyCmd, workDir, sessionName, cmdEnv)
+		verifyOut, verifyErr := runOrchestratedCommand(verifyCmd, workDir, sessionName, cmdEnv, r.hooks.EffectiveCmdTimeoutSeconds())
 		if verifyErr != nil {
 			r.track.hadCmdFailure = true
 			r.track.verifyOK = false

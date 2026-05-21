@@ -8,10 +8,12 @@ type StateHooks struct {
 	MaxCmdTurns int `yaml:"max_cmd_turns,omitempty" json:"max_cmd_turns,omitempty"`
 
 	PreRun   []string `yaml:"pre_run,omitempty" json:"pre_run,omitempty"`
-	// OnTimeout runs when a state exceeds state_timeout_seconds or max_cmd_turns is exhausted (planning cleanup).
+	// OnTimeout runs when a state exceeds state_timeout_seconds or max_cmd_turns is exhausted (e.g. reset_planning_phase, recover_implementation_stall).
 	OnTimeout []string `yaml:"on_timeout,omitempty" json:"on_timeout,omitempty"`
 	// StateTimeoutSeconds is the wall-clock limit for the current FSM state (0 = disabled).
 	StateTimeoutSeconds int `yaml:"state_timeout_seconds,omitempty" json:"state_timeout_seconds,omitempty"`
+	// CmdTimeoutSeconds caps each shell CMD in gt-agent for this state (0 = default per command type).
+	CmdTimeoutSeconds int `yaml:"cmd_timeout_seconds,omitempty" json:"cmd_timeout_seconds,omitempty"`
 	PerTurn  []string `yaml:"per_turn,omitempty" json:"per_turn,omitempty"`
 	// PromptContext lists prompt_context hook names (see orchestrator.PromptContextBlock).
 	// Example keys: planning_bead_bootstrap, implementation_queue.
@@ -141,6 +143,14 @@ func (h StateHooks) EffectiveMaxCmdTurns() int {
 func (h StateHooks) EffectiveStateTimeoutSeconds() int {
 	if h.StateTimeoutSeconds > 0 {
 		return h.StateTimeoutSeconds
+	}
+	return 0
+}
+
+// EffectiveCmdTimeoutSeconds returns per-shell-command wall clock for gt-agent (0 = use defaults).
+func (h StateHooks) EffectiveCmdTimeoutSeconds() int {
+	if h.CmdTimeoutSeconds > 0 {
+		return h.CmdTimeoutSeconds
 	}
 	return 0
 }

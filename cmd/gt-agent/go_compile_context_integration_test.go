@@ -80,7 +80,7 @@ func TestImplementationGoFailureFeedback_includesSourceContext(t *testing.T) {
 
 	cmd := fmt.Sprintf("cd %s/mayor/rig/linkshelf && go mod tidy", rig)
 	workDir := town
-	out, cmdErr := runOrchestratedCommand(cmd, workDir, "test-session", os.Environ())
+	out, cmdErr := runOrchestratedCommand(cmd, workDir, "test-session", os.Environ(), 0)
 	if cmdErr == nil {
 		t.Fatalf("expected go mod tidy to fail on broken imports; output:\n%s", out)
 	}
@@ -164,7 +164,7 @@ func TestImplementationGoFailureFeedback_hookDisabledOmitsSourceContext(t *testi
 	runner := newStateRunner(task, town, rig)
 
 	cmd := fmt.Sprintf("cd %s/mayor/rig/linkshelf && go mod tidy", rig)
-	out, cmdErr := runOrchestratedCommand(cmd, town, "test-session", os.Environ())
+	out, cmdErr := runOrchestratedCommand(cmd, town, "test-session", os.Environ(), 0)
 	if cmdErr == nil {
 		t.Fatal("expected go mod tidy to fail")
 	}
@@ -195,6 +195,7 @@ func TestAfterCommand_autoVerifyFailure_appendsSourceContext(t *testing.T) {
 		town,
 		"test-session",
 		os.Environ(),
+		0,
 	)
 	runner.afterCommand("cat > testrig/mayor/rig/linkshelf/internal/store/store.go <<'EOF'\npackage store\nEOF", nil, town, "test-session", os.Environ(), &combined)
 	// Simulate auto-verify failure path (same as state_runner.runAutoVerify).

@@ -2,6 +2,10 @@
 
 Rig `{{rig}}` (`{{rig}}/polecat`). Work under `{{rig}}/mayor/rig/`. Use the **Next bead** line and **Implement context** block in the user message — that is the only bead to touch this session.
 
+## After implementation timeout (stall recovery)
+
+If the prompt includes **Prior step failed** from a **timeout**, the orchestrator ran **`recover_implementation_stall`**: dev servers on tracked ports were stopped, in_progress implement beads were reset to **open**, and a single bead was selected for work. Continue with **Next bead** — do not re-close beads that are not green.
+
 ## Per bead
 
 1. `CMD: export BEADS_DIR=$GT_ROOT/{{rig}}/.beads && cd {{rig}}/mayor/rig && bd update BEAD_ID --status=in_progress`

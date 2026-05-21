@@ -80,6 +80,27 @@ func TestRigFlowYAML_allPipelineStatesHaveHooks(t *testing.T) {
 	}
 }
 
+func TestRigFlowYAML_implementationHasStallRecoveryHooks(t *testing.T) {
+	tpl := loadRigFlowTemplate(t)
+	st, ok := tpl.States["implementation"]
+	if !ok {
+		t.Fatal("missing implementation state")
+	}
+	if st.Hooks.EffectiveStateTimeoutSeconds() != 3600 {
+		t.Fatalf("state_timeout_seconds = %d, want 3600", st.Hooks.StateTimeoutSeconds)
+	}
+	if len(st.Hooks.OnTimeout) != 1 || st.Hooks.OnTimeout[0] != "recover_implementation_stall" {
+		t.Fatalf("on_timeout = %v, want [recover_implementation_stall]", st.Hooks.OnTimeout)
+	}
+	if st.Hooks.EffectiveCmdTimeoutSeconds() != 900 {
+		t.Fatalf("cmd_timeout_seconds = %d, want 900", st.Hooks.CmdTimeoutSeconds)
+	}
+	trans, ok := st.Transitions["timeout"]
+	if !ok || trans.To != "implementation" {
+		t.Fatalf("timeout transition = %+v, want to implementation", st.Transitions["timeout"])
+	}
+}
+
 func TestRigFlowYAML_planningHasTimeoutHooks(t *testing.T) {
 	tpl := loadRigFlowTemplate(t)
 	st, ok := tpl.States["planning"]

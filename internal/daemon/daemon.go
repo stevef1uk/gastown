@@ -78,6 +78,9 @@ type Daemon struct {
 	// Note: Only accessed from heartbeat loop goroutine - no sync needed.
 	deaconLastStarted time.Time
 
+	// orchestratorLastRestart tracks Start/Restart for post-restart grace (MCP liveness).
+	orchestratorLastRestart time.Time
+
 	// syncFailures tracks consecutive git pull failures per workdir.
 	// Used to escalate logging from WARN to ERROR after repeated failures.
 	// Only accessed from heartbeat loop goroutine - no sync needed.
@@ -812,6 +815,9 @@ func (d *Daemon) heartbeat(state *State) {
 	// 0. Ensure Dolt server is running (if configured)
 	// This must happen before beads operations that depend on Dolt.
 	d.ensureDoltServerRunning()
+
+	// 0c. Orchestrator MCP: start if missing, restart if NATS ping or heartbeat says stuck.
+	d.ensureOrchestratorHealthy()
 
 	// 1. Ensure Deacon is running (restart if dead)
 	// Check patrol config - can be disabled in mayor/daemon.json

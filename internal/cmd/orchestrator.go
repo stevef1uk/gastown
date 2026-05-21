@@ -27,6 +27,7 @@ var orchestratorRunCmd = &cobra.Command{
 		}
 
 		mgr := orchestrator.NewManager(townRoot)
+		orchestrator.StartHeartbeatLoop(townRoot)
 		orchestrator.LogRestoreNotice(townRoot)
 		// Load templates from townRoot/orchestrator/templates
 		tmplDir := filepath.Join(townRoot, "orchestrator", "templates")
@@ -113,6 +114,13 @@ var orchestratorStatusCmd = &cobra.Command{
 		running, pid, _ := orchestrator.IsRunning(townRoot)
 		if running {
 			fmt.Printf("%s Orchestrator is running (PID %d)\n", style.Bold.Render("●"), pid)
+			if reason := orchestrator.UnhealthyReason(townRoot); reason != "" {
+				fmt.Printf("%s Orchestrator unhealthy: %s\n", style.Warning.Render("!"), reason)
+			} else if err := orchestrator.Ping(townRoot); err != nil {
+				fmt.Printf("%s Orchestrator ping failed: %v\n", style.Warning.Render("!"), err)
+			} else {
+				fmt.Printf("%s Orchestrator MCP ping OK\n", style.SuccessPrefix)
+			}
 		} else {
 			fmt.Printf("%s Orchestrator is not running\n", style.Dim.Render("○"))
 		}

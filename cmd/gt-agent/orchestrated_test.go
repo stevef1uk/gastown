@@ -259,7 +259,7 @@ func TestRunOrchestratedCommand_heredocWritesGoWithClosingBraces(t *testing.T) {
 	cmd := "export GT_ROOT=" + dir + " && cd mockrig/mayor/rig && cat > linkshelf/internal/store/store.go <<'EOF'\n" +
 		"package store\n\ntype S struct {\n\tx int\n}\n\nfunc NewS() *S { return &S{} }\nEOF"
 	env := []string{"GT_ROOT=" + dir, "HOME=" + dir, "PATH=/usr/bin:/bin"}
-	if _, err := runOrchestratedCommand(cmd, dir, "", env); err != nil {
+	if _, err := runOrchestratedCommand(cmd, dir, "", env, 0); err != nil {
 		t.Fatal(err)
 	}
 	data, err := os.ReadFile(filepath.Join(rigDir, "store.go"))

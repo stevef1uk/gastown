@@ -20,6 +20,14 @@ const (
 	PidFile = "daemon/orchestrator.pid"
 )
 
+// orchestratorNATSURL returns the NATS URL for MCP calls (GT_ORCHESTRATOR_NATS_URL overrides in tests).
+func orchestratorNATSURL() string {
+	if u := os.Getenv("GT_ORCHESTRATOR_NATS_URL"); u != "" {
+		return u
+	}
+	return nats.DefaultURL
+}
+
 // IsRunning checks if the orchestrator is running by checking its PID file.
 func IsRunning(townRoot string) (bool, int, error) {
 	pidPath := filepath.Join(townRoot, PidFile)
@@ -102,6 +110,7 @@ func Start(townRoot string) error {
 	if err := os.WriteFile(pidPath, []byte(strconv.Itoa(cmd.Process.Pid)), 0644); err != nil {
 		return err
 	}
+	TouchOrchestratorHeartbeat(townRoot)
 
 	return nil
 }
@@ -140,10 +149,15 @@ func Stop(townRoot string) error {
 
 // Call calls a tool on the orchestrator via NATS.
 func Call(townRoot string, method string, params any) (json.RawMessage, error) {
-	// [TODO] Get NATS URL from town settings
-	natsURL := nats.DefaultURL
+	return CallWithTimeout(townRoot, method, params, 2*time.Second)
+}
 
-	nc, err := nats.Connect(natsURL)
+// CallWithTimeout calls the orchestrator MCP service with a custom NATS request timeout.
+func CallWithTimeout(townRoot string, method string, params any, timeout time.Duration) (json.RawMessage, error) {
+	if timeout <= 0 {
+		timeout = 2 * time.Second
+	}
+	nc, err := nats.Connect(orchestratorNATSURL())
 	if err != nil {
 		return nil, fmt.Errorf("connecting to NATS: %w", err)
 	}
@@ -157,7 +171,7 @@ func Call(townRoot string, method string, params any) (json.RawMessage, error) {
 	}
 	data, _ := json.Marshal(req)
 
-	msg, err := nc.Request("gt.orchestrator.mcp", data, 2*time.Second)
+	msg, err := nc.Request("gt.orchestrator.mcp", data, timeout)
 	if err != nil {
 		return nil, fmt.Errorf("request to orchestrator failed: %w", err)
 	}

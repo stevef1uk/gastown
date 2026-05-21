@@ -143,6 +143,9 @@ states:
     instructions: |
       Implement the **Next bead** in the user message only: in_progress → heredoc file → verify → bd close. JSON success when all implement beads are closed.
     hooks:
+      state_timeout_seconds: 3600
+      on_timeout: [recover_implementation_stall]
+      cmd_timeout_seconds: 900
       max_cmd_turns: 12
       omit_orchestrator_context: true
       system_prompt_footer: |
@@ -181,6 +184,8 @@ states:
       success:
         to: qa_review
       failure:
+        to: implementation
+      timeout:
         to: implementation
   qa_review:
     role: qa

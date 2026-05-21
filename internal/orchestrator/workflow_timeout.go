@@ -45,6 +45,8 @@ func RunOnTimeoutHook(step, townRoot, rig string, v WorkflowValidation) (string,
 	switch step {
 	case "reset_planning_phase":
 		return ResetPlanningPhase(townRoot, rig, v)
+	case "recover_implementation_stall":
+		return RecoverImplementationStall(townRoot, rig, v)
 	default:
 		return "", fmt.Errorf("unknown on_timeout hook %q", step)
 	}

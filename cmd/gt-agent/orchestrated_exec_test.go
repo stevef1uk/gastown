@@ -123,7 +123,7 @@ func TestRunOrchestratedCommand_heredocWritesFile(t *testing.T) {
 	cmd := "export GT_ROOT=" + dir + " && cd mockrig/mayor/rig && cat > plan.md <<'EOF'\n# Implementation Plan\n" +
 		strings.Repeat("x", 230) + "\nEOF"
 	env := []string{"GT_ROOT=" + dir, "HOME=" + dir, "PATH=/usr/bin:/bin"}
-	out, err := runOrchestratedCommand(cmd, dir, "", env)
+	out, err := runOrchestratedCommand(cmd, dir, "", env, 0)
 	if err != nil {
 		t.Fatalf("run: %v\n%s", err, out)
 	}

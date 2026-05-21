@@ -80,6 +80,9 @@ func (s *Server) ListenNATS(url string) error {
 }
 
 func (s *Server) handleRequest(req MCPRequest) MCPResponse {
+	if s.orchestrator != nil && s.orchestrator.townRoot != "" {
+		TouchOrchestratorHeartbeat(s.orchestrator.townRoot)
+	}
 	switch req.Method {
 	case "initialize":
 		return MCPResponse{
@@ -100,6 +103,14 @@ func (s *Server) handleRequest(req MCPRequest) MCPResponse {
 			ID:      req.ID,
 			Result: map[string]interface{}{
 				"tools": []map[string]interface{}{
+					{
+						"name":        "ping",
+						"description": "Liveness probe (no-op; updates orchestrator heartbeat)",
+						"inputSchema": map[string]interface{}{
+							"type":       "object",
+							"properties": map[string]interface{}{},
+						},
+					},
 					{
 						"name":        "fetch_task",
 						"description": "Fetch the next task for an agent",
@@ -207,6 +218,8 @@ func (s *Server) handleCallTool(req MCPRequest) MCPResponse {
 	fmt.Printf("[MCP] Call Tool: %s\n", params.Name)
 
 	switch params.Name {
+	case "ping":
+		return MCPResponse{JSONRPC: "2.0", ID: req.ID, Result: map[string]string{"status": "ok"}}
 	case "fetch_task":
 		var args struct {
 			AgentID string `json:"agent_id"`
