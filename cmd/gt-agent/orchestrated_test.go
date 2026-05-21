@@ -693,6 +693,52 @@ EOF`
 	}
 }
 
+func TestValidateImplementationBeadFileWrite_rejectsFullHeredocAllowsSed(t *testing.T) {
+	dir := t.TempDir()
+	rig := "mockrig"
+	layout := "linkshelf"
+	path := filepath.Join(dir, rig, "mayor", "rig", layout, "internal", "store")
+	if err := os.MkdirAll(path, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := "package store\n\n" + strings.Repeat("type Link struct { ID int; URL string }\nfunc (s *Store) GetAll() ([]Link, error) { return nil, nil }\n", 8)
+	if err := os.WriteFile(filepath.Join(path, "store.go"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	v := orchestrator.DefaultWorkflowValidation()
+	v.LayoutRoot = layout
+	v.RequiredFiles = []string{layout + "/internal/store/store.go"}
+	v.BeadTitleContains = "Implement "
+	orchestrator.ListImplementBeadsByStatusHook = func(_, _ string, _ orchestrator.WorkflowValidation, status string) ([]orchestrator.PlanBead, error) {
+		if status == "in_progress" {
+			return []orchestrator.PlanBead{{
+				ID:    "te-store",
+				Title: "Implement linkshelf/internal/store/store.go per architecture",
+			}}, nil
+		}
+		return nil, nil
+	}
+	t.Cleanup(func() { orchestrator.ListImplementBeadsByStatusHook = nil })
+	heredoc := `cd mockrig/mayor/rig && cat > linkshelf/internal/store/store.go <<'EOF'
+package store
+EOF`
+	errHeredoc := validateImplementationBeadFileWrite(heredoc, dir, rig, "te-store", v)
+	if errHeredoc == nil {
+		t.Fatal("expected reject full heredoc on existing file")
+	}
+	if !strings.Contains(errHeredoc.Error(), "sed") {
+		t.Fatalf("err = %v", errHeredoc)
+	}
+	sedCmd := `cd mockrig/mayor/rig && sed -i 's/x/y/' linkshelf/internal/store/store.go`
+	if err := validateImplementationBeadFileWrite(sedCmd, dir, rig, "te-store", v); err != nil {
+		t.Fatalf("sed should be allowed: %v", err)
+	}
+	patchCmd := `cd mockrig/mayor/rig && patch -p0 linkshelf/internal/store/store.go < fix.patch`
+	if err := validateImplementationBeadFileWrite(patchCmd, dir, rig, "te-store", v); err != nil {
+		t.Fatalf("patch should be allowed: %v", err)
+	}
+}
+
 func TestValidateImplementationCommand_oneInProgressBead(t *testing.T) {
 	dir := t.TempDir()
 	cmd := `bd update tg-abc --status=in_progress`

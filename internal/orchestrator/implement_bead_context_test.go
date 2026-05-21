@@ -23,14 +23,16 @@ Do not add separate model packages.
 	if err := os.WriteFile(filepath.Join(rigDir, "architecture.md"), []byte(arch), 0644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(storePath, []byte("package store\nimport \"linkshelf/internal/model\"\n"), 0644); err != nil {
-		t.Fatal(err)
-	}
 	v := WorkflowValidation{
 		BeadTitleContains: "Implement linkshelf/",
 		RequiredFiles:     []string{"linkshelf/internal/store/store.go"},
 		SpecSummary:       "The store in linkshelf/internal/store/store.go uses SQLite for links.",
 		LayoutRoot:        "linkshelf",
+	}
+
+	substantiveBody := "package store\nimport \"linkshelf/internal/model\"\n\n" + strings.Repeat("func (s *Store) GetAll() ([]Link, error) { return nil, nil }\n", 10)
+	if err := os.WriteFile(storePath, []byte(substantiveBody), 0644); err != nil {
+		t.Fatal(err)
 	}
 	got := formatImplementBeadContextForPath(dir, rig, "linkshelf/internal/store/store.go", v)
 
@@ -44,6 +46,9 @@ Do not add separate model packages.
 		"SQLite for links",
 		"### Current file on disk",
 		"linkshelf/internal/model",
+		"### Incremental edit required",
+		"sed -i",
+		"Do not** use `cat >",
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("missing %q in:\n%s", want, got)
@@ -96,6 +101,44 @@ func TestFormatImplementBeadContextBlock_linkshelfTitlePrefix(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Fatalf("missing %q in:\n%s", want, got)
 		}
+	}
+}
+
+func TestFormatIncrementalEditBlock_direct(t *testing.T) {
+	dir := t.TempDir()
+	rig := "mockrig"
+	layout := "linkshelf"
+	rel := layout + "/cmd/server/main.go"
+	abs := filepath.Join(dir, rig, "mayor", "rig", filepath.Dir(rel))
+	if err := os.MkdirAll(abs, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := "package main\n\n" + strings.Repeat("func main() { println(1) }\n", 12)
+	if err := os.WriteFile(filepath.Join(dir, rig, "mayor", "rig", rel), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	v := WorkflowValidation{LayoutRoot: layout}
+	got := FormatIncrementalEditBlock(dir, rig, rel, v)
+	for _, want := range []string{"Incremental edit required", "sed -i", "patch", "cat >"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("missing %q in:\n%s", want, got)
+		}
+	}
+}
+
+func TestFormatIncrementalEditBlock_omittedForStub(t *testing.T) {
+	dir := t.TempDir()
+	rig := "mockrig"
+	rel := "linkshelf/internal/new.go"
+	if err := os.MkdirAll(filepath.Join(dir, rig, "mayor", "rig", "linkshelf", "internal"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, rig, "mayor", "rig", rel), []byte("TODO\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	v := WorkflowValidation{LayoutRoot: "linkshelf"}
+	if got := FormatIncrementalEditBlock(dir, rig, rel, v); got != "" {
+		t.Fatalf("stub should not require incremental block: %q", got)
 	}
 }
 

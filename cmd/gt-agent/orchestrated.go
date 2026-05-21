@@ -396,6 +396,9 @@ func formatWorkflowReworkBlock(task *orchestrator.Task, rig string) string {
 	}
 	v := taskValidation(task)
 	b.WriteString(workflowReworkHints(r.FromState, task.State, rig, r.Summary, v))
+	if task.State == "implementation" && (r.Outcome == "failure" || r.Outcome == "timeout") {
+		b.WriteString("\nUse **sed -i** or **patch** on existing files — gt-agent rejects full-file `cat > … <<'EOF'` rewrites.\n")
+	}
 	runner := newStateRunner(task, "", rig)
 	runner.v = v
 	runner.promptVars["rig"] = rig
@@ -446,7 +449,7 @@ func workflowReworkHints(fromState, toState, rig, summary string, v orchestrator
 2. `+"`"+`CMD: bash -lc 'cd %s && bd list --status=open'`+"`"+` — pick a bead whose title contains %q.
 3. If **no** open implement beads: `+"`"+`bd list --status=closed`+"`"+`, find closed implement beads, reopen one with `+"`"+`bd update <id-from-bd-list> --status=open`+"`"+`, then fix code and `+"`"+`bd close <id-from-bd-list>`+"`"+`.
 4. **Never** invent bead IDs — copy only from bd list output for this rig.
-5. Use `+"`"+`cat > path <<'EOF'`+"`"+` heredocs (line with only EOF). Do not nest `+"`"+`bash -lc '...<<'EOF''`+"`"+`.
+5. **Incremental fixes only** — existing files must use `+"`"+`sed -i`+"`"+` or `+"`"+`patch`+"`"+`, not `+"`"+`cat > path <<'EOF'`+"`"+` full rewrites. Use heredoc only for **new** files.
 `, layout, worktree, prefix)
 }
 
@@ -469,6 +472,9 @@ func formatOrchestratedRetryBlock(prior *OrchestratedRetry, task *orchestrator.T
 		b.WriteString("\n")
 	}
 	b.WriteString("\nFix the issues above. Use bead IDs and paths from command output — do not invent IDs.\n")
+	if task.State == "implementation" {
+		b.WriteString("\nUse **sed -i** or **patch** for line-level fixes on files shown in Source context — not full-file heredocs.\n")
+	}
 	runner := newStateRunner(task, "", rig)
 	b.WriteString(runner.retryHint())
 	return b.String()
@@ -1205,7 +1211,10 @@ func validateImplementationCommandWithState(cmd, townRoot, rig, activeBead strin
 
 // validateImplementationBeadFileWrite rejects heredoc/touch writes to paths outside the active or next implement bead.
 func validateImplementationBeadFileWrite(cmd, townRoot, rig, activeBead string, v orchestrator.WorkflowValidation) error {
-	written := extractImplementFilePathFromCmd(cmd, v.LayoutRoot)
+	if reason := orchestrator.RejectFullFileHeredocReason(cmd, townRoot, rig, activeBead, v); reason != "" {
+		return fmt.Errorf("%s", reason)
+	}
+	written := orchestrator.ExtractImplementWritePathFromCmd(cmd, v.LayoutRoot)
 	if written == "" {
 		return nil
 	}
@@ -1228,7 +1237,7 @@ func validateImplementationBeadFileWrite(cmd, townRoot, rig, activeBead string, 
 	if allowedPath == "" {
 		return nil
 	}
-	if pathMatchesImplementWrite(written, allowedPath, v.RequiredFiles) {
+	if orchestrator.PathMatchesImplementWrite(written, allowedPath, v.RequiredFiles) {
 		return nil
 	}
 	// cmd/main (and similar) verify builds import earlier packages — allow heredoc only while that path's bead is still open.
@@ -1238,50 +1247,13 @@ func validateImplementationBeadFileWrite(cmd, townRoot, rig, activeBead string, 
 	// go.mod bead: go mod tidy fails until other packages import correctly — allow fixing those .go files.
 	if strings.HasSuffix(filepath.ToSlash(allowedPath), "go.mod") && strings.HasSuffix(written, ".go") {
 		for _, want := range v.RequiredFiles {
-			if pathMatchesImplementWrite(written, want, v.RequiredFiles) {
+			if orchestrator.PathMatchesImplementWrite(written, want, v.RequiredFiles) {
 				return nil
 			}
 		}
 	}
 	return fmt.Errorf("write only the active/next implement file (%s for bead %s), not %q",
 		allowedPath, allowedID, written)
-}
-
-func pathMatchesImplementWrite(written, allowed string, required []string) bool {
-	written = filepath.ToSlash(strings.TrimSpace(written))
-	allowed = filepath.ToSlash(strings.TrimSpace(allowed))
-	if written == allowed {
-		return true
-	}
-	for _, want := range required {
-		want = filepath.ToSlash(strings.TrimSpace(want))
-		if written == want && (allowed == want || filepath.Base(allowed) == filepath.Base(want)) {
-			return true
-		}
-	}
-	return filepath.Base(written) == filepath.Base(allowed)
-}
-
-var implementFilePathRE = regexp.MustCompile(`(?i)cat\s*>\s*([^\s<;|&]+)`)
-
-func extractImplementFilePathFromCmd(cmd, layoutRoot string) string {
-	lower := strings.ToLower(cmd)
-	if !strings.Contains(lower, "cat >") && !strings.Contains(lower, "<<") && !strings.Contains(lower, "cat>>") {
-		return ""
-	}
-	m := implementFilePathRE.FindStringSubmatch(cmd)
-	if len(m) < 2 {
-		return ""
-	}
-	p := filepath.ToSlash(strings.Trim(m[1], `"'`))
-	layout := strings.Trim(strings.TrimSpace(layoutRoot), "/")
-	if layout != "" && !strings.HasPrefix(p, layout+"/") && strings.Contains(p, "/") {
-		// Allow paths relative to mayor/rig after cd.
-		if idx := strings.Index(p, layout+"/"); idx >= 0 {
-			p = p[idx:]
-		}
-	}
-	return p
 }
 
 func validatePlanningShellSideEffects(lower string) error {

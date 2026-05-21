@@ -88,7 +88,7 @@ func validateProjectSetupCommand(cmd, rig string, v orchestrator.WorkflowValidat
 		if err := validatePythonProjectSetupCommand(cmd, v); err != nil {
 			return err
 		}
-		if written := extractImplementFilePathFromCmd(cmd, v.LayoutRoot); written != "" {
+		if written := orchestrator.ExtractImplementWritePathFromCmd(cmd, v.LayoutRoot); written != "" {
 			if req := v.RequirementsFilePath(); req == "" || !orchestrator.PathMatchesRequiredFile(written, req) {
 				return fmt.Errorf("project_setup may only write %s (not %q) before implementation", req, written)
 			}

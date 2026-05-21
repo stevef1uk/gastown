@@ -129,6 +129,10 @@ After timeout, expect fresh implement beads (`Implement <path> per architecture`
 
 Hung `go run` or a stuck heredoc no longer blocks the rig indefinitely: gt-agent kills the command after `cmd_timeout_seconds`, and the mayor orchestrator can time out the whole step and run the recovery hook.
 
+### Incremental edits (sed / patch vs full-file heredoc)
+
+When an implement bead’s file **already exists** on disk (and is not a stub), gt-agent **rejects** `cat > path <<'EOF'` full rewrites and tells the polecat to use **`sed -i`** or **`patch`** instead. New files still use heredoc. **Implement context** in the user prompt includes an **Incremental edit required** block when applicable.
+
 Restart a dead polecat session: `gt up` (pipeline liveness restarts gt-agent without `--orchestrated`), or `scripts/reset-rig-orchestrator.sh` for a full rig rewind.
 
 ### Orchestrator MCP liveness (daemon patrol)

@@ -70,6 +70,11 @@ func formatImplementBeadContextForPath(townRoot, rig, beadPath string, v Workflo
 		b.WriteString(snippet)
 		b.WriteString("\n```\n")
 	}
+	if block := FormatIncrementalEditBlock(townRoot, rig, beadPath, v); block != "" {
+		b.WriteString("\n")
+		b.WriteString(block)
+		b.WriteString("\n")
+	}
 	return strings.TrimSpace(b.String())
 }
 

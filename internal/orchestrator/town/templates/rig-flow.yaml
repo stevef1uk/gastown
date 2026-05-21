@@ -141,7 +141,7 @@ states:
     role: polecat
     prompt_file: prompts/rig-flow/implementation.md
     instructions: |
-      Implement the **Next bead** in the user message only: in_progress → heredoc file → verify → bd close. JSON success when all implement beads are closed.
+      Implement the **Next bead** only: in_progress → incremental edit (sed/patch) or heredoc for new files → verify → bd close. JSON success when all implement beads are closed.
     hooks:
       state_timeout_seconds: 3600
       on_timeout: [recover_implementation_stall]
@@ -152,7 +152,7 @@ states:
         Format: `CMD: <shell>` one per line; JSON `{"outcome":"success","summary":"..."}` only in a later message (not with CMD).
       user_prompt_wrapper: none
       failure_prompt_context: [implementation_queue, implement_bead_context]
-      empty_response_suffix: "Reply with CMD lines only. Use Verify from Next bead; fix .go files in Source context when tidy/build fails."
+      empty_response_suffix: "Reply with CMD lines only. Use sed -i or patch on existing files; heredoc only for new files. Use Verify from Next bead."
       prompt_context: [implementation_queue, implement_bead_context]
       pre_run: [close_project_setup_beads, enforce_implement_bead_queue, prune_stale_layout_go, repair_requirements, reopen_implement_beads]
       per_turn: [repair_requirements]
@@ -179,7 +179,7 @@ states:
       artifacts: implementation
       retry_hint_key: implementation
       failure_hint: |
-        One bead at a time for **Next bead** only: bd update → heredoc that path → verify (see Next bead line) → bd close. go run/curl only on cmd/server/main.go bead; other beads use go build ./...
+        One bead at a time: bd update → **sed -i or patch** on existing files (heredoc only if file is new) → verify from Next bead → bd close. go run/curl only on cmd/server/main.go bead.
     transitions:
       success:
         to: qa_review
