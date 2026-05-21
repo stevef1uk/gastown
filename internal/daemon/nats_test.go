@@ -39,3 +39,8 @@ func TestEnsureNatsServerRunning_logsStartWhenWasDown(t *testing.T) {
 		t.Fatalf("expected start log, got %q", buf.String())
 	}
 }
+
+func TestEnsureSessionProvider_nilConfigNoPanic(t *testing.T) {
+	d := &Daemon{logger: log.Default()}
+	d.ensureSessionProvider() // must not panic when config is unset (unit test daemons)
+}

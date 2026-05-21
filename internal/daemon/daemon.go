@@ -1035,6 +1035,9 @@ func (d *Daemon) ensureNatsServerRunning() {
 // ensureSessionProvider reconnects when the daemon was created with a stub provider
 // because NATS was not ready yet (startup race) or the broker was restarted later.
 func (d *Daemon) ensureSessionProvider() {
+	if d.config == nil {
+		return
+	}
 	if d.sp != nil && d.sp.IsAvailable() {
 		return
 	}
