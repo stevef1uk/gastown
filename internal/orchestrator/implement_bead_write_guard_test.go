@@ -20,7 +20,6 @@ func TestPathMatchesImplementFile(t *testing.T) {
 }
 
 func TestAllowedEarlierImplementDependencyWrite_rejectsClosedPath(t *testing.T) {
-	t.Parallel()
 	v := WorkflowValidation{
 		LayoutRoot:        "linkshelf",
 		BeadTitleContains: "Implement ",
@@ -31,7 +30,7 @@ func TestAllowedEarlierImplementDependencyWrite_rejectsClosedPath(t *testing.T) 
 	}
 	active := "linkshelf/cmd/server/main.go"
 	written := "linkshelf/internal/api/handlers.go"
-	setListImplementBeadsByStatusHook(t, func(_, _ string, _ WorkflowValidation, status string) ([]PlanBead, error) {
+	setListImplementBeadsByStatusHook(t, "", "", func(_, _ string, _ WorkflowValidation, status string) ([]PlanBead, error) {
 		if status == "closed" {
 			return []PlanBead{{ID: "te-h", Title: "Implement linkshelf/internal/api/handlers.go per architecture"}}, nil
 		}

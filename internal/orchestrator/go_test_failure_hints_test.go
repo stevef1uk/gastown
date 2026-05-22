@@ -37,7 +37,7 @@ func TestCompileErrorPathsIncludingClosedDeps_goTestIncludesClosedStore(t *testi
 			"linkshelf/internal/store/store_test.go",
 		},
 	}
-	setListImplementBeadsByStatusHook(t, func(_, _ string, _ WorkflowValidation, status string) ([]PlanBead, error) {
+	setListImplementBeadsByStatusHook(t, townRoot, rig, func(_, _ string, _ WorkflowValidation, status string) ([]PlanBead, error) {
 		if status == "closed" {
 			return []PlanBead{{ID: "te-uam", Title: "Implement linkshelf/internal/store/store.go per architecture"}}, nil
 		}

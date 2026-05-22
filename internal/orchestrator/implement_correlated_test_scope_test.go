@@ -22,7 +22,7 @@ func TestValidateImplementReadPath_correlatedGoTest(t *testing.T) {
 	v.LayoutRoot = "linkshelf"
 	v.QAVerifyCommand = "cd linkshelf && go test ./..."
 	v.RequiredFiles = []string{"linkshelf/internal/store/schema.go"}
-	setListImplementBeadsByStatusHook(t, func(_, _ string, _ WorkflowValidation, status string) ([]PlanBead, error) {
+	setListImplementBeadsByStatusHook(t, dir, rig, func(_, _ string, _ WorkflowValidation, status string) ([]PlanBead, error) {
 		if status == "in_progress" {
 			return []PlanBead{{
 				ID:    "te-phq",
@@ -51,9 +51,9 @@ func TestValidateImplementWritePath_correlatedGoTest_table(t *testing.T) {
 		"linkshelf/internal/store/schema.go",
 		"linkshelf/internal/store/store.go",
 	}
-	setListImplementBeadsByStatusHook(t, nil)
+	setListImplementBeadsByStatusHook(t, dir, rig, nil)
 	setActive := func(id, title string) {
-		replaceListImplementBeadsByStatusHook(func(_, _ string, _ WorkflowValidation, status string) ([]PlanBead, error) {
+		replaceListImplementBeadsByStatusHook(t, dir, rig, func(_, _ string, _ WorkflowValidation, status string) ([]PlanBead, error) {
 			if status == "open" || status == "in_progress" {
 				return []PlanBead{{ID: id, Title: title}}, nil
 			}

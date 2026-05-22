@@ -37,7 +37,7 @@ func TestFormatClosedDependencyCompileHints(t *testing.T) {
 			"linkshelf/cmd/server/main.go",
 		},
 	}
-	setListImplementBeadsByStatusHook(t, func(_, _ string, _ WorkflowValidation, status string) ([]PlanBead, error) {
+	setListImplementBeadsByStatusHook(t, "", "", func(_, _ string, _ WorkflowValidation, status string) ([]PlanBead, error) {
 		switch status {
 		case "in_progress":
 			return []PlanBead{{ID: "te-main", Title: "Implement linkshelf/cmd/server/main.go per architecture"}}, nil
@@ -62,7 +62,7 @@ func TestFormatClosedDependencyCompileHints(t *testing.T) {
 }
 
 func TestListImplementBeadsOpenOrInProgress_usesStatusHook(t *testing.T) {
-	setListImplementBeadsByStatusHook(t, func(_, _ string, _ WorkflowValidation, status string) ([]PlanBead, error) {
+	setListImplementBeadsByStatusHook(t, "", "", func(_, _ string, _ WorkflowValidation, status string) ([]PlanBead, error) {
 		if status == "in_progress" {
 			return []PlanBead{{ID: "te-x", Title: "Implement linkshelf/foo.go per architecture"}}, nil
 		}
@@ -75,8 +75,7 @@ func TestListImplementBeadsOpenOrInProgress_usesStatusHook(t *testing.T) {
 }
 
 func TestAllowedEarlierImplementDependencyWrite(t *testing.T) {
-	t.Parallel()
-	setListImplementBeadsByStatusHook(t, nil)
+	setListImplementBeadsByStatusHook(t, "", "", nil)
 	v := WorkflowValidation{
 		RequiredFiles: []string{
 			"tasklist/go.mod",

@@ -8,9 +8,8 @@ import (
 )
 
 func TestAllowClosedDepFixForVerifyFailure_storeTestBead(t *testing.T) {
-	t.Parallel()
 	dir := t.TempDir()
-	rig := "testgt3"
+	rig := "mockrig-store-unblock"
 	storeDir := filepath.Join(dir, rig, "mayor", "rig", "linkshelf", "internal", "store")
 	if err := os.MkdirAll(storeDir, 0755); err != nil {
 		t.Fatal(err)
@@ -36,7 +35,7 @@ func (s *Store) List(ctx context.Context) ([]Link, error) {
 			"linkshelf/internal/store/store_test.go",
 		},
 	}
-	setListImplementBeadsByStatusHook(t, func(_, _ string, _ WorkflowValidation, status string) ([]PlanBead, error) {
+	setListImplementBeadsByStatusHook(t, dir, rig, func(_, _ string, _ WorkflowValidation, status string) ([]PlanBead, error) {
 		switch status {
 		case "closed":
 			return []PlanBead{{ID: "te-uam", Title: "Implement linkshelf/internal/store/store.go per architecture"}}, nil

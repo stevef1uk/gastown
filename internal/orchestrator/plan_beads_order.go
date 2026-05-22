@@ -2,6 +2,7 @@ package orchestrator
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -133,7 +134,12 @@ func PathMatchesImplementFile(written, beadPath string) bool {
 }
 
 // ListImplementBeadsByStatusHook is set by tests to stub bd list for implement-path guards.
+// Return errImplementBeadsUseRealList from the hook (or use setListImplementBeadsByStatusHook with
+// a mismatched townRoot/rig) to fall through to real bd list — required for t.Parallel() safety.
 var ListImplementBeadsByStatusHook func(townRoot, rig string, v WorkflowValidation, status string) ([]PlanBead, error)
+
+// errImplementBeadsUseRealList signals listImplementBeadsForGuard to call bd list for real.
+var errImplementBeadsUseRealList = errors.New("orchestrator: implement beads hook passthrough")
 
 var listImplementBeadsHookMu sync.Mutex
 
@@ -142,7 +148,12 @@ func listImplementBeadsForGuard(townRoot, rig string, v WorkflowValidation, stat
 	hook := ListImplementBeadsByStatusHook
 	listImplementBeadsHookMu.Unlock()
 	if hook != nil {
-		return hook(townRoot, rig, v, status)
+		beads, err := hook(townRoot, rig, v, status)
+		if errors.Is(err, errImplementBeadsUseRealList) {
+			// Another parallel test's hook is active — do not call bd against this townRoot/rig.
+			return nil, nil
+		}
+		return beads, err
 	}
 	return listImplementBeadsByStatus(townRoot, rig, v, status)
 }
