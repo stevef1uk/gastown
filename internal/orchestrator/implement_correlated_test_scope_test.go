@@ -106,7 +106,7 @@ func TestValidateImplementWritePath_correlatedGoTest_table(t *testing.T) {
 		tc := tc
 		t.Run(tc.write+"_"+tc.beadID, func(t *testing.T) {
 			setActive(tc.beadID, tc.title)
-			err := ValidateImplementWritePath(dir, rig, tc.beadID, tc.write, v, tc.full)
+			err := ValidateImplementWritePath(dir, rig, tc.beadID, tc.write, v, tc.full, "")
 			if tc.wantFail {
 				if err == nil {
 					t.Fatal("expected error")

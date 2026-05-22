@@ -673,11 +673,17 @@ func expandGluedOrchestratedCommands(cmds []string) []string {
 			continue
 		}
 		if !strings.Contains(c, "CMD:") {
+			if fixed, ok := sanitizeOrchestratedShellCommand(c); ok {
+				c = fixed
+			}
 			out = append(out, c)
 			continue
 		}
 		for _, part := range splitInlineCMDs(c) {
 			part = strings.TrimSpace(part)
+			if fixed, ok := sanitizeOrchestratedShellCommand(part); ok {
+				part = fixed
+			}
 			if part != "" {
 				out = append(out, part)
 			}

@@ -99,6 +99,10 @@ func PreferIncrementalEdit(townRoot, rig, relPath string, v WorkflowValidation) 
 	if err != nil || !exists || size < IncrementalEditMinBytes {
 		return false
 	}
+	// Corrupted Go does not parse — allow one-shot WRITE/heredoc recovery instead of more EDIT fragments.
+	if WorkflowUsesGo(v) && strings.HasSuffix(filepath.ToSlash(relPath), ".go") && !GoFileAtMayorRigParses(townRoot, rig, relPath) {
+		return false
+	}
 	abs := filepath.Join(townRoot, rig, "mayor", "rig", filepath.FromSlash(relPath))
 	data, err := os.ReadFile(abs)
 	if err != nil {
@@ -132,7 +136,17 @@ func RejectFullFileHeredocReason(cmd, townRoot, rig, activeBead string, v Workfl
 // FormatIncrementalEditBlock returns prompt text when the active bead file already exists on disk.
 func FormatIncrementalEditBlock(townRoot, rig, beadPath string, v WorkflowValidation) string {
 	beadPath = NormalizeBeadPathForLayout(filepath.ToSlash(strings.TrimSpace(beadPath)), v.LayoutRoot)
-	if beadPath == "" || !PreferIncrementalEdit(townRoot, rig, beadPath, v) {
+	if beadPath == "" {
+		return ""
+	}
+	if WorkflowUsesGo(v) && strings.HasSuffix(beadPath, ".go") && !GoFileAtMayorRigParses(townRoot, rig, beadPath) {
+		return strings.TrimSpace(fmt.Sprintf(`### Corrupted file — full WRITE required
+**%s** on disk has Go **syntax errors** (broken EDIT merges). Do **not** use small EDIT/search-replace patches.
+
+Use **WRITE:** %s with a complete valid file body until `+"`---END WRITE---`"+`, matching **SPEC Store contract** in Implement context, then run **Verify**.`,
+			beadPath, beadPath))
+	}
+	if !PreferIncrementalEdit(townRoot, rig, beadPath, v) {
 		return ""
 	}
 	return strings.TrimSpace(fmt.Sprintf(`### Incremental edit required

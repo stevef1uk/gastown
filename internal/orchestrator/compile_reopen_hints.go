@@ -20,12 +20,24 @@ func CompileErrorPathsIncludingClosedDeps(townRoot, rig, activeBeadPath string, 
 		out = append(out, p)
 	}
 	for _, p := range errorPaths {
+		p = filepath.ToSlash(strings.TrimSpace(p))
+		if p == "" || seen[p] {
+			continue
+		}
+		seen[p] = true
+		out = append(out, p)
+	}
+	for _, p := range GoTestFailureProductionPaths(cmdOutput, v.LayoutRoot) {
 		add(p)
 	}
-	if activeBeadPath == "" || !compileOutputSuggestsCrossPackage(cmdOutput) {
+	if activeBeadPath == "" || !verifyOutputSuggestsCrossFile(cmdOutput) {
 		return out
 	}
-	for _, dep := range EarlierRequiredFilesForBead(activeBeadPath, v.RequiredFiles) {
+	deps := EarlierRequiredFilesForBead(activeBeadPath, v.RequiredFiles)
+	for _, p := range GoTestFailureProductionPaths(cmdOutput, v.LayoutRoot) {
+		deps = appendUniquePath(deps, p)
+	}
+	for _, dep := range deps {
 		if !strings.HasSuffix(strings.ToLower(dep), ".go") {
 			continue
 		}
@@ -76,4 +88,17 @@ func outputMentionsPath(cmdOutput, beadPath, layoutRoot string) bool {
 		}
 	}
 	return strings.Contains(lower, strings.ToLower(filepath.Base(beadPath)))
+}
+
+func appendUniquePath(paths []string, p string) []string {
+	p = filepath.ToSlash(strings.TrimSpace(p))
+	if p == "" {
+		return paths
+	}
+	for _, existing := range paths {
+		if filepath.ToSlash(existing) == p {
+			return paths
+		}
+	}
+	return append(paths, p)
 }

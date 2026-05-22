@@ -35,6 +35,11 @@ func planAcceptanceBullets(beadPath string, v WorkflowValidation) []string {
 				"Package has unit tests in `"+testPath+"` (same bead or dedicated test bead) covering SPEC behavior before close.",
 				"`go test` for this package must pass (Verify runs `go test -count=1 ./<pkg>/...`).",
 			)
+			if strings.Contains(beadPath, "internal/store/store.go") {
+				common = append(common,
+					"Store methods match SPEC (`List`/`Create`/`Delete` with `context.Context`); tests use `:memory:` + `InitSchema` — not a shared `./links.db`.",
+				)
+			}
 		}
 	}
 	if WorkflowUsesPython(v) && strings.HasSuffix(beadPath, ".py") && !IsTestImplementPath(beadPath) {

@@ -277,11 +277,11 @@ func TestValidateImplementWritePath_rejectsSchemaTestWhileOnStoreBead(t *testing
 	t.Cleanup(func() { orchestrator.ListImplementBeadsByStatusHook = nil })
 	// store_test.go is correlated to store.go, not schema.go — must not write while on store if we meant schema_test?
 	// While on store bead, store_test.go IS allowed.
-	if err := orchestrator.ValidateImplementWritePath(dir, rig, "te-store", "linkshelf/internal/store/store_test.go", v, true); err != nil {
+	if err := orchestrator.ValidateImplementWritePath(dir, rig, "te-store", "linkshelf/internal/store/store_test.go", v, true, ""); err != nil {
 		t.Fatalf("store bead should allow store_test.go: %v", err)
 	}
 	// schema_test.go is not correlated to store.go
-	if err := orchestrator.ValidateImplementWritePath(dir, rig, "te-store", "linkshelf/internal/store/schema_test.go", v, true); err == nil {
+	if err := orchestrator.ValidateImplementWritePath(dir, rig, "te-store", "linkshelf/internal/store/schema_test.go", v, true, ""); err == nil {
 		t.Fatal("expected reject schema_test.go while active bead is store.go")
 	}
 }

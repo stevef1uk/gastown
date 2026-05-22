@@ -69,6 +69,71 @@ func unwrapMarkdownInlineCode(s string) string {
 	return s
 }
 
+// sanitizeOrchestratedShellCommand trims model prose/JSON glued onto shell commands.
+func sanitizeOrchestratedShellCommand(cmd string) (string, bool) {
+	changed := false
+	if fixed, ok := trimJSONGluedToShellCommand(cmd); ok {
+		cmd = fixed
+		changed = true
+	}
+	if fixed, ok := trimProseGluedAfterGoTestEllipsis(cmd); ok {
+		cmd = fixed
+		changed = true
+	}
+	if fixed, ok := trimProseGluedAfterGoBuildEllipsis(cmd); ok {
+		cmd = fixed
+		changed = true
+	}
+	// bd list --limit fixes stay in rewriteBdListLimit (CmdRewrites), not here — injecting
+	// --limit=0 during parse broke tests and changes commands that already omit --limit by design.
+	return strings.TrimSpace(cmd), changed
+}
+
+func trimJSONGluedToShellCommand(cmd string) (string, bool) {
+	for _, needle := range []string{`{"outcome"`, `{" outcome"`} {
+		if i := strings.Index(cmd, needle); i > 0 {
+			return strings.TrimSpace(cmd[:i]), true
+		}
+	}
+	if i := strings.Index(cmd, "{"); i > 0 {
+		rest := strings.TrimSpace(cmd[i:])
+		if strings.HasPrefix(rest, "{") && (strings.Contains(rest, `"outcome"`) || strings.Contains(rest, `"summary"`)) {
+			return strings.TrimSpace(cmd[:i]), true
+		}
+	}
+	return cmd, false
+}
+
+func trimProseGluedAfterGoTestEllipsis(cmd string) (string, bool) {
+	return trimProseGluedAfterGoSubcommandEllipsis(cmd, "go test")
+}
+
+func trimProseGluedAfterGoBuildEllipsis(cmd string) (string, bool) {
+	return trimProseGluedAfterGoSubcommandEllipsis(cmd, "go build")
+}
+
+func trimProseGluedAfterGoSubcommandEllipsis(cmd, subcmd string) (string, bool) {
+	lower := strings.ToLower(cmd)
+	idx := strings.Index(lower, subcmd)
+	if idx < 0 {
+		return cmd, false
+	}
+	segment := cmd[idx:]
+	dot := strings.Index(segment, "...")
+	if dot < 0 {
+		return cmd, false
+	}
+	end := idx + dot + 3
+	if end >= len(cmd) {
+		return cmd, false
+	}
+	r := cmd[end]
+	if (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z') {
+		return strings.TrimSpace(cmd[:end]), true
+	}
+	return cmd, false
+}
+
 // sanitizeBdListCommand fixes --limit glued with prose and ensures --limit=0 when missing.
 func sanitizeBdListCommand(cmd string) (string, bool) {
 	lower := strings.ToLower(cmd)

@@ -31,7 +31,7 @@ func TestImplementationProgress_saveLoadVerifyAndClear(t *testing.T) {
 	}
 }
 
-func TestInitImplementationProgress_restoresVerifyOK(t *testing.T) {
+func TestInitImplementationProgress_doesNotRestoreVerifyOKWithoutGreenRun(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	rig := "mockrig"
@@ -52,10 +52,10 @@ func TestInitImplementationProgress_restoresVerifyOK(t *testing.T) {
 	}, dir, rig)
 	runner.v = orchestrator.WorkflowValidation{LayoutRoot: "linkshelf", TestRunner: "go"}
 	block := runner.initImplementationProgress()
-	if !runner.track.verifyOK {
-		t.Fatal("expected verifyOK restored from progress")
+	if runner.track.verifyOK {
+		t.Fatal("verifyOK must not be true until Verify passes in this session")
 	}
-	if !strings.Contains(block, "te-store") || !strings.Contains(block, "Verify already passed") {
+	if !strings.Contains(block, "te-store") || !strings.Contains(block, "Verify passed") {
 		t.Fatalf("block = %q", block)
 	}
 }
@@ -114,9 +114,14 @@ func TestNoteImplementationVerifyFailure_persistsReopenPaths(t *testing.T) {
 	t.Cleanup(func() { orchestrator.ListImplementBeadsByStatusHook = nil })
 
 	runner.noteImplementationVerifyFailure("go build ./...", "linkshelf/cmd/server/main.go:10:2: undefined: api.ListLinks")
+	runner.implProgress.mark(implVerifyKey("te-main"))
+	runner.track.verifyOK = true
 	got := loadImplementationProgress(dir, rig, wf, "implementation")
 	if got == nil || len(got.LastVerifyFailPaths) == 0 {
 		t.Fatalf("progress = %+v", got)
+	}
+	if got.done(implVerifyKey("te-main")) {
+		t.Fatal("verify milestone should be cleared on failure")
 	}
 	found := false
 	for _, p := range got.LastVerifyFailPaths {

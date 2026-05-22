@@ -38,10 +38,10 @@ func (s *Store) AddLink(url string) error {
 	if !PreferIncrementalEdit(dir, rig, rel, v) {
 		t.Fatal("fixture should prefer incremental edit")
 	}
-	if err := ValidateImplementWritePath(dir, rig, "te-store", rel, v, false); err != nil {
+	if err := ValidateImplementWritePath(dir, rig, "te-store", rel, v, false, ""); err != nil {
 		t.Fatalf("partial: %v", err)
 	}
-	if err := ValidateImplementWritePath(dir, rig, "te-store", rel, v, true); err == nil {
+	if err := ValidateImplementWritePath(dir, rig, "te-store", rel, v, true, ""); err == nil {
 		t.Fatal("expected full WRITE rejection on substantive file")
 	}
 }

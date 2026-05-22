@@ -31,10 +31,13 @@ func TestPlanAcceptanceBullets_storeGoUsesDefaultBullets(t *testing.T) {
 		QAVerifyCommand: "cd linkshelf && go test ./...",
 	})
 	joined := strings.Join(bullets, "\n")
-	if strings.Contains(joined, "InitSchema") {
-		t.Fatalf("store.go should not get schema-only bullets:\n%s", joined)
+	if strings.Contains(joined, "CREATE TABLE") || strings.Contains(joined, "before `internal/store/store.go`") {
+		t.Fatalf("store.go should not get schema-bead-only bullets:\n%s", joined)
 	}
 	if !strings.Contains(joined, "go test") {
 		t.Fatal("expected correlated test bullet for store.go")
+	}
+	if !strings.Contains(joined, ":memory:") {
+		t.Fatalf("expected store test isolation bullet:\n%s", joined)
 	}
 }

@@ -84,10 +84,12 @@ type Model struct {
 	feedViewport   viewport.Model
 
 	// Data
-	rigs        map[string]*Rig
-	events      []Event
-	convoyState *ConvoyState
-	townRoot    string
+	rigs           map[string]*Rig
+	workflowsByRig map[string][]RigWorkflow
+	events         []Event
+	convoyState    *ConvoyState
+	townRoot       string
+	workflowsError error
 
 	// UI state
 	keys     KeyMap
@@ -134,6 +136,7 @@ func NewModel(bd *beads.Beads) *Model {
 		feedViewport:     viewport.New(0, 0),
 		problemsViewport: viewport.New(0, 0),
 		rigs:             make(map[string]*Rig),
+		workflowsByRig:   make(map[string][]RigWorkflow),
 		events:           make([]Event, 0, maxEventHistory),
 		problemAgents:    make([]*ProblemAgent, 0),
 		keys:             DefaultKeyMap(),
@@ -166,6 +169,7 @@ func (m *Model) Init() tea.Cmd {
 	cmds := []tea.Cmd{
 		m.listenForEvents(),
 		m.fetchConvoys(),
+		m.fetchWorkflows(),
 		tea.SetWindowTitle("GT Feed"),
 	}
 	// If starting in problems view, fetch problems immediately
@@ -181,6 +185,13 @@ type eventMsg Event
 // convoyUpdateMsg is sent when convoy data is refreshed
 type convoyUpdateMsg struct {
 	state *ConvoyState
+}
+
+// workflowUpdateMsg is sent when workflow instance data is refreshed
+type workflowUpdateMsg struct {
+	byRig   map[string][]RigWorkflow
+	err     error
+	fetched bool // true when byRig/err are from LoadWorkflowsByRig
 }
 
 // problemsUpdateMsg is sent when problems data is refreshed
@@ -250,6 +261,26 @@ func (m *Model) convoyRefreshTick() tea.Cmd {
 	})
 }
 
+// fetchWorkflows returns a command that loads workflow instances by rig.
+func (m *Model) fetchWorkflows() tea.Cmd {
+	m.mu.RLock()
+	townRoot := m.townRoot
+	m.mu.RUnlock()
+	if townRoot == "" {
+		return nil
+	}
+	return func() tea.Msg {
+		byRig, err := LoadWorkflowsByRig(townRoot)
+		return workflowUpdateMsg{byRig: byRig, err: err, fetched: true}
+	}
+}
+
+func (m *Model) workflowRefreshTick() tea.Cmd {
+	return tea.Tick(10*time.Second, func(t time.Time) tea.Msg {
+		return workflowUpdateMsg{}
+	})
+}
+
 // fetchProblems returns a command that fetches problem agent data
 func (m *Model) fetchProblems() tea.Cmd {
 	detector := m.stuckDetector
@@ -299,6 +330,28 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			// Tick fired - fetch new data
 			cmds = append(cmds, m.fetchConvoys())
+		}
+
+	case workflowUpdateMsg:
+		if msg.fetched {
+			m.mu.Lock()
+			if msg.err == nil {
+				m.workflowsByRig = msg.byRig
+				if m.workflowsByRig == nil {
+					m.workflowsByRig = make(map[string][]RigWorkflow)
+				}
+				m.workflowsError = nil
+			} else {
+				m.workflowsError = msg.err
+			}
+			m.updateViewContentLocked()
+			scheduleNext := m.viewMode == ViewActivity
+			m.mu.Unlock()
+			if scheduleNext {
+				cmds = append(cmds, m.workflowRefreshTick())
+			}
+		} else {
+			cmds = append(cmds, m.fetchWorkflows())
 		}
 
 	case problemsUpdateMsg:

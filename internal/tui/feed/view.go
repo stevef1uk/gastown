@@ -260,18 +260,15 @@ func getStateStyle(state AgentState) lipgloss.Style {
 // renderTree renders the agent tree content.
 // Caller must hold m.mu.
 func (m *Model) renderTree() string {
-	if len(m.rigs) == 0 {
-		return AgentIdleStyle.Render("No agents active")
+	rigNames := m.rigNamesForTree()
+	if len(rigNames) == 0 {
+		if m.workflowsError != nil {
+			return AgentIdleStyle.Render(fmt.Sprintf("No rigs (workflows: %v)", m.workflowsError))
+		}
+		return AgentIdleStyle.Render("No agents or workflows")
 	}
 
 	var lines []string
-
-	// Sort rigs by name
-	rigNames := make([]string, 0, len(m.rigs))
-	for name := range m.rigs {
-		rigNames = append(rigNames, name)
-	}
-	sort.Strings(rigNames)
 
 	for _, rigName := range rigNames {
 		rig := m.rigs[rigName]
@@ -279,6 +276,15 @@ func (m *Model) renderTree() string {
 		// Rig header
 		rigLine := RigStyle.Render(rigName + "/")
 		lines = append(lines, rigLine)
+
+		// Workflows for this rig (instances + FSM state)
+		for _, wf := range m.workflowsByRig[rigName] {
+			lines = append(lines, m.renderWorkflowLine(wf))
+		}
+
+		if rig == nil {
+			continue
+		}
 
 		// Group agents by role
 		byRole := m.groupAgentsByRole(rig.Agents)
@@ -309,6 +315,64 @@ func (m *Model) renderTree() string {
 	}
 
 	return strings.Join(lines, "\n")
+}
+
+// rigNamesForTree returns sorted rig names from agents and workflow instances.
+func (m *Model) rigNamesForTree() []string {
+	seen := make(map[string]bool)
+	for name := range m.rigs {
+		seen[name] = true
+	}
+	for name := range m.workflowsByRig {
+		seen[name] = true
+	}
+	names := make([]string, 0, len(seen))
+	for name := range seen {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
+func (m *Model) renderWorkflowLine(wf RigWorkflow) string {
+	tpl := wf.TemplateID
+	if tpl == "" {
+		tpl = "workflow"
+	}
+	state := wf.CurrentState
+	if state == "" {
+		state = "—"
+	}
+	status := wf.Status
+	if status == "" {
+		status = "—"
+	}
+	id := wf.ID
+	if id == "" {
+		id = "?"
+	}
+	return fmt.Sprintf("  %s %s  %s  %s  %s",
+		WorkflowStyle.Render("⚙"),
+		WorkflowStyle.Render(id),
+		WorkflowStyle.Render(tpl),
+		WorkflowStateStyle.Render(state),
+		workflowStatusStyle(status).Render(status),
+	)
+}
+
+func workflowStatusStyle(status string) lipgloss.Style {
+	switch strings.ToLower(strings.TrimSpace(status)) {
+	case "running":
+		return WorkflowStatusRunningStyle
+	case "paused":
+		return WorkflowStatusPausedStyle
+	case "failed":
+		return WorkflowStatusFailedStyle
+	case "completed":
+		return WorkflowStatusDoneStyle
+	default:
+		return AgentIdleStyle
+	}
 }
 
 // groupAgentsByRole groups agents by their role

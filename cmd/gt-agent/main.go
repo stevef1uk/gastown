@@ -1047,6 +1047,9 @@ func parseLLMResponse(response string) (cmds []string, doneSummary string, hallu
 			for i := range subs {
 				subs[i] = trailingMarkdownBoldRE.ReplaceAllString(subs[i], "")
 				subs[i] = strings.TrimSpace(subs[i])
+				if fixed, ok := sanitizeOrchestratedShellCommand(subs[i]); ok {
+					subs[i] = fixed
+				}
 			}
 			for i := 0; i < len(subs)-1; i++ {
 				s := strings.TrimSpace(subs[i])

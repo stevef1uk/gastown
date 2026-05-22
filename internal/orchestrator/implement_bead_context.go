@@ -69,6 +69,20 @@ func formatImplementBeadContextForPath(townRoot, rig, beadPath string, v Workflo
 		b.WriteString(note)
 		b.WriteString("\n")
 	}
+	if block := FormatSpecSchemaContractBlock(townRoot, rig, beadPath); block != "" {
+		b.WriteString("\n")
+		b.WriteString(block)
+		b.WriteString("\n")
+	} else if block := FormatSpecStoreContractBlock(townRoot, rig, beadPath); block != "" {
+		b.WriteString("\n")
+		b.WriteString(block)
+		b.WriteString("\n")
+	}
+	if block := FormatStoreTestBeadChecklist(beadPath); block != "" {
+		b.WriteString("\n")
+		b.WriteString(block)
+		b.WriteString("\n")
+	}
 
 	if excerpt := architectureExcerptForBead(townRoot, rig, beadPath, v); excerpt != "" {
 		b.WriteString("\n### From architecture.md\n")
@@ -92,6 +106,11 @@ func formatImplementBeadContextForPath(townRoot, rig, beadPath string, v Workflo
 		b.WriteString("\n")
 	}
 	if block := FormatIncrementalEditBlock(townRoot, rig, beadPath, v); block != "" {
+		b.WriteString("\n")
+		b.WriteString(block)
+		b.WriteString("\n")
+	}
+	if block := FormatNilSliceListUnblockHint(townRoot, rig, beadPath, v); block != "" {
 		b.WriteString("\n")
 		b.WriteString(block)
 		b.WriteString("\n")
@@ -144,7 +163,7 @@ func formatDependencyPackagesContext(townRoot, rig, activePath string, v Workflo
 	if IsCmdMainImplementPath(activePath) {
 		b.WriteString("\n**cmd/main bead:** wire routes only — call handlers in `internal/api` (or architecture path); do not re-implement handler bodies in main.go.\n")
 	}
-	b.WriteString("\nCall **only** functions/types shown in the snippets above (e.g. `AddLink`, `GetAllLinks`, `DeleteLink`) — do not invent `CreateLink`, `ErrNotFound`, or other symbols.\n")
+	b.WriteString("\nCall **only** functions/types and signatures from the snippets above and **SPEC.md** — do not invent alternate store APIs (`AddBookmark`, `GetAllBookmarks`, `Create(Link)`, etc.).\n")
 	return strings.TrimSpace(b.String())
 }
 
@@ -273,6 +292,9 @@ func formatUnitTestGuidanceForBead(townRoot, rig, beadPath string, v WorkflowVal
 		}
 		msg := "### Unit tests (required with this code)\nBefore `bd close`, `" + testPath + "` must exist and **Verify** (`go test -count=1`) must pass.\n"
 		msg += "Create tests with **WRITE:** or **EDIT:** in this session — do not fail because the file is missing; write it.\n"
+		if strings.Contains(filepath.ToSlash(beadPath), "internal/store/store.go") {
+			msg += "SQLite store tests must use a **fresh DB per test** (`:memory:` or `filepath.Join(t.TempDir(), \"test.db\")` passed into `OpenDB`) — never reuse `./links.db` from prior runs.\n"
+		}
 		return strings.TrimSpace(msg)
 	}
 	if WorkflowUsesPython(v) && strings.HasSuffix(beadPath, ".py") && !IsTestImplementPath(beadPath) {

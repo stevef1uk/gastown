@@ -8,7 +8,8 @@ import (
 
 // ValidateImplementWritePath checks whether relPath may be written during implementation.
 // fullReplace true simulates heredoc/WRITE (rejects incremental-edit files); false allows partial edits (EDIT/sed).
-func ValidateImplementWritePath(townRoot, rig, activeBead, relPath string, v WorkflowValidation, fullReplace bool) error {
+// verifyOutput is recent go test/build stderr (optional); enables closed-dep fixes for nil-slice List failures.
+func ValidateImplementWritePath(townRoot, rig, activeBead, relPath string, v WorkflowValidation, fullReplace bool, verifyOutput string) error {
 	relPath = NormalizeBeadPathForLayout(SanitizeNativeEditRelPath(relPath), v.LayoutRoot)
 	if relPath == "" {
 		return fmt.Errorf("empty path")
@@ -22,7 +23,7 @@ func ValidateImplementWritePath(townRoot, rig, activeBead, relPath string, v Wor
 			return fmt.Errorf("%s", reason)
 		}
 	}
-	return validateImplementWriteScope(townRoot, rig, activeBead, relPath, v)
+	return validateImplementWriteScope(townRoot, rig, activeBead, relPath, v, verifyOutput)
 }
 
 // ValidateImplementReadPath allows reads for the active bead, open/next implement paths, and earlier dependencies.
@@ -65,7 +66,7 @@ func ValidateImplementReadPath(townRoot, rig, activeBead, relPath string, v Work
 		strings.Trim(v.LayoutRoot, "/"), allowedID)
 }
 
-func validateImplementWriteScope(townRoot, rig, activeBead, written string, v WorkflowValidation) error {
+func validateImplementWriteScope(townRoot, rig, activeBead, written string, v WorkflowValidation, verifyOutput string) error {
 	allowedID := strings.TrimSpace(activeBead)
 	if allowedID == "" {
 		next, err := NextOpenImplementBead(townRoot, rig, v)
@@ -75,6 +76,9 @@ func validateImplementWriteScope(townRoot, rig, activeBead, written string, v Wo
 		allowedID = next.ID
 	}
 	allowedPath := ImplementBeadPathForID(townRoot, rig, allowedID, v)
+	if AllowClosedDepFixForVerifyFailure(townRoot, rig, allowedPath, written, verifyOutput, v) {
+		return nil
+	}
 	if closedOnly, err := ImplementPathHasOnlyClosedBeads(townRoot, rig, written, v); err == nil && closedOnly {
 		if allowedPath != "" {
 			return fmt.Errorf("do not overwrite %q — its implement bead is closed (reopen that bead or edit only %s for %s)",

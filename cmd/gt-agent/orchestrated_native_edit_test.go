@@ -137,10 +137,10 @@ package x
 func TestApplyNativeSearchReplace_unique(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "f.go")
-	if err := os.WriteFile(path, []byte("alpha\nbeta\n"), 0644); err != nil {
+	if err := os.WriteFile(path, []byte("package p\n\nconst beta = 1\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
-	msg, err := applyNativeSearchReplace(path, "beta", "gamma")
+	msg, err := applyNativeSearchReplace(path, "const beta = 1", "const gamma = 2")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -148,7 +148,7 @@ func TestApplyNativeSearchReplace_unique(t *testing.T) {
 		t.Fatalf("msg=%q", msg)
 	}
 	data, _ := os.ReadFile(path)
-	if string(data) != "alpha\ngamma\n" {
+	if string(data) != "package p\n\nconst gamma = 2\n" {
 		t.Fatalf("got %q", data)
 	}
 }

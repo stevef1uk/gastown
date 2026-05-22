@@ -69,16 +69,16 @@ func TestImplementationProgress_restartSession(t *testing.T) {
 	if block == "" {
 		t.Fatal("restarted session must inject implementation progress block")
 	}
-	if !strings.Contains(block, "do not repeat") && !strings.Contains(block, "resume without repeating") {
-		t.Fatalf("block missing skip guidance: %q", block)
+	if !strings.Contains(block, "Verify passed") && !strings.Contains(block, "resume without repeating") {
+		t.Fatalf("block missing progress guidance: %q", block)
 	}
 	if !strings.Contains(block, "te-store") {
 		t.Fatalf("block should mention active bead: %q", block)
 	}
 	sessionB.track.activeBead = "te-store"
 	sessionB.track.activeBeadPath = "linkshelf/internal/store/store.go"
-	if !sessionB.track.verifyOK {
-		t.Fatal("verifyOK should restore from progress for active bead")
+	if sessionB.track.verifyOK {
+		t.Fatal("verifyOK must not restore from progress alone; run Verify in this session")
 	}
 }
 

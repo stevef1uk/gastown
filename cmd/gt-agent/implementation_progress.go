@@ -190,9 +190,7 @@ func (r *stateRunner) applyImplementationProgressToTrack() {
 	if r.track.activeBeadPath == "" && r.implProgress.ActiveBeadPath != "" {
 		r.track.activeBeadPath = r.implProgress.ActiveBeadPath
 	}
-	if r.track.activeBead != "" && r.implProgress.done(implVerifyKey(r.track.activeBead)) {
-		r.track.verifyOK = true
-	}
+	// verifyOK is set only by a green Verify in this session (post-write / auto-verify / clearStale on resume).
 }
 
 func (r *stateRunner) persistImplementationProgress(cmd string) {
@@ -254,6 +252,10 @@ func (r *stateRunner) noteImplementationVerifyFailure(cmd, cmdOutput string) {
 	r.implProgress.LastVerifyFailBead = r.track.activeBead
 	r.implProgress.LastVerifyFailPath = activePath
 	r.implProgress.LastVerifyFailPaths = paths
+	r.track.lastVerifyOutput = cmdOutput
+	if r.implProgress.Completed != nil && r.track.activeBead != "" {
+		delete(r.implProgress.Completed, implVerifyKey(r.track.activeBead))
+	}
 	r.track.verifyOK = false
 	if err := saveImplementationProgress(r.townRoot, r.rig, r.implProgress); err != nil {
 		orchestratedFprintfStderr("[gt-agent] implementation progress save: %v\n", err)
@@ -284,7 +286,7 @@ func (r *stateRunner) formatImplementationProgressBlock() string {
 			continue
 		}
 		id := strings.TrimPrefix(key, implMilestoneVerifyPrefix)
-		b.WriteString(fmt.Sprintf("- ✓ Verify already passed for bead **%s** — skip re-running the same Verify CMD unless you changed that file.\n", id))
+		b.WriteString(fmt.Sprintf("- ✓ Verify passed for bead **%s** in a prior run — re-run **Verify** after any edit to that file.\n", id))
 	}
 	for key := range r.implProgress.Completed {
 		if !strings.HasPrefix(key, implMilestoneClosedPrefix) {
@@ -294,14 +296,21 @@ func (r *stateRunner) formatImplementationProgressBlock() string {
 		b.WriteString(fmt.Sprintf("- ✓ Bead **%s** was closed in a prior run.\n", id))
 	}
 
-	if r.track != nil && r.track.activeBead != "" && r.implProgress.done(implVerifyKey(r.track.activeBead)) {
-		b.WriteString(fmt.Sprintf("\nActive bead **%s** (`%s`) already has green Verify in this cycle — proceed to **EDIT:**/**WRITE:** fixes or `bd close` if the file is done.\n",
+	if r.track != nil && r.track.activeBead != "" && r.implProgress.done(implVerifyKey(r.track.activeBead)) && r.track.verifyOK {
+		b.WriteString(fmt.Sprintf("\nActive bead **%s** (`%s`) has green Verify in this session — proceed to **EDIT:**/**WRITE:** fixes or `bd close` if the file is done.\n",
 			r.track.activeBead, r.activeImplementBeadPath()))
 	}
 
 	if hasResume && r.track != nil && r.implProgress.LastVerifyFailBead == r.track.activeBead {
 		if hint := orchestrator.FormatClosedDependencyCompileHints(
 			r.townRoot, r.rig, r.implProgress.LastVerifyFailPath, r.implProgress.LastVerifyFailPaths, r.v,
+		); hint != "" {
+			b.WriteString("\n")
+			b.WriteString(hint)
+			b.WriteString("\n")
+		}
+		if hint := orchestrator.FormatGoTestFailureHints(
+			r.townRoot, r.rig, r.implProgress.LastVerifyFailPath, "", r.implProgress.LastVerifyFailPaths, r.v,
 		); hint != "" {
 			b.WriteString("\n")
 			b.WriteString(hint)

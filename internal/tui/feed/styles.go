@@ -43,6 +43,25 @@ var (
 			Bold(true).
 			Foreground(colorPrimary)
 
+	WorkflowStyle = lipgloss.NewStyle().
+			Foreground(colorAccent)
+
+	WorkflowStateStyle = lipgloss.NewStyle().
+			Foreground(colorHighlight)
+
+	WorkflowStatusRunningStyle = lipgloss.NewStyle().
+			Foreground(colorSuccess)
+
+	WorkflowStatusPausedStyle = lipgloss.NewStyle().
+			Foreground(colorWarning)
+
+	WorkflowStatusFailedStyle = lipgloss.NewStyle().
+			Foreground(colorError).
+			Bold(true)
+
+	WorkflowStatusDoneStyle = lipgloss.NewStyle().
+			Foreground(colorDim)
+
 	RoleStyle = lipgloss.NewStyle().
 			Foreground(colorAccent)
 

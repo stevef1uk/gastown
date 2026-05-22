@@ -275,13 +275,13 @@ func (r *stateRunner) executeNativeEditOp(op nativeEditOp, workDir string) (stri
 		}
 		return string(data), nil
 	case "edit":
-		if err := orchestrator.ValidateImplementWritePath(r.townRoot, r.rig, r.track.activeBead, rel, r.v, false); err != nil {
+		if err := orchestrator.ValidateImplementWritePath(r.townRoot, r.rig, r.track.activeBead, rel, r.v, false, r.track.lastVerifyOutput); err != nil {
 			return "", err
 		}
 		replace := sanitizeNativeFileContent(op.replace)
-		return applyNativeSearchReplace(abs, op.search, replace)
+		return applyNativeSearchReplaceValidated(rel, abs, op.search, replace)
 	case "write":
-		if err := orchestrator.ValidateImplementWritePath(r.townRoot, r.rig, r.track.activeBead, rel, r.v, true); err != nil {
+		if err := orchestrator.ValidateImplementWritePath(r.townRoot, r.rig, r.track.activeBead, rel, r.v, true, r.track.lastVerifyOutput); err != nil {
 			return "", err
 		}
 		if len(op.content) > nativeWriteMaxBytes {
@@ -291,6 +291,9 @@ func (r *stateRunner) executeNativeEditOp(op nativeEditOp, workDir string) (stri
 			return "", err
 		}
 		content := sanitizeNativeFileContent(op.content)
+		if err := validateNativeGoContent(rel, content); err != nil {
+			return "", err
+		}
 		if err := os.WriteFile(abs, []byte(content), 0644); err != nil {
 			return "", err
 		}
@@ -331,36 +334,63 @@ func resolveNativeEditAbsPath(workDir, path, layoutRoot string) (rel, abs string
 }
 
 func applyNativeSearchReplace(abs, search, replace string) (string, error) {
+	return applyNativeSearchReplaceValidated(filepath.Base(abs), abs, search, replace)
+}
+
+func validateNativeGoContent(relPath, content string) error {
+	if !strings.HasSuffix(filepath.ToSlash(relPath), ".go") {
+		return nil
+	}
+	if !strings.Contains(content, "package ") {
+		return nil
+	}
+	if strings.Contains(content, "}; if err") || strings.Contains(content, "}||") || strings.Contains(content, "Descriptionn") {
+		return fmt.Errorf("EDIT/WRITE body contains merged patch fragments — use one full WRITE with a complete file per SPEC Store contract")
+	}
+	if err := orchestrator.GoSourceBytesValid([]byte(content)); err != nil {
+		return fmt.Errorf("Go syntax invalid — fix WRITE/EDIT body before saving (%v). If the file on disk is already broken, use one full WRITE with a complete file per SPEC", err)
+	}
+	return nil
+}
+
+func applyNativeSearchReplaceValidated(relPath, abs, search, replace string) (string, error) {
 	data, err := os.ReadFile(abs)
 	if err != nil {
 		return "", err
 	}
 	content := string(data)
-	n := strings.Count(content, search)
-	if n == 0 {
-		// Try CRLF-normalized match
-		norm := strings.ReplaceAll(content, "\r\n", "\n")
-		normSearch := strings.ReplaceAll(search, "\r\n", "\n")
-		if strings.Count(norm, normSearch) == 0 {
-			return "", fmt.Errorf("SEARCH block not found in file (must match exactly, including whitespace)")
-		}
-		if strings.Count(norm, normSearch) > 1 {
-			return "", fmt.Errorf("SEARCH block matches %d times — make it unique", strings.Count(norm, normSearch))
-		}
-		updated := strings.Replace(norm, normSearch, strings.ReplaceAll(replace, "\r\n", "\n"), 1)
-		if err := os.WriteFile(abs, []byte(updated), 0644); err != nil {
-			return "", err
-		}
-		return "applied 1 search/replace (normalized line endings)", nil
+	updated, msg, err := computeNativeSearchReplace(content, search, replace)
+	if err != nil {
+		return "", err
 	}
-	if n > 1 {
-		return "", fmt.Errorf("SEARCH block matches %d times — make it unique", n)
+	if err := validateNativeGoContent(relPath, updated); err != nil {
+		return "", err
 	}
-	updated := strings.Replace(content, search, replace, 1)
 	if err := os.WriteFile(abs, []byte(updated), 0644); err != nil {
 		return "", err
 	}
-	return "applied 1 search/replace", nil
+	return msg, nil
+}
+
+func computeNativeSearchReplace(content, search, replace string) (updated, msg string, err error) {
+	n := strings.Count(content, search)
+	if n == 0 {
+		norm := strings.ReplaceAll(content, "\r\n", "\n")
+		normSearch := strings.ReplaceAll(search, "\r\n", "\n")
+		if strings.Count(norm, normSearch) == 0 {
+			return "", "", fmt.Errorf("SEARCH block not found in file (must match exactly, including whitespace)")
+		}
+		if strings.Count(norm, normSearch) > 1 {
+			return "", "", fmt.Errorf("SEARCH block matches %d times — make it unique", strings.Count(norm, normSearch))
+		}
+		updated = strings.Replace(norm, normSearch, strings.ReplaceAll(replace, "\r\n", "\n"), 1)
+		return updated, "applied 1 search/replace (normalized line endings)", nil
+	}
+	if n > 1 {
+		return "", "", fmt.Errorf("SEARCH block matches %d times — make it unique", n)
+	}
+	updated = strings.Replace(content, search, replace, 1)
+	return updated, "applied 1 search/replace", nil
 }
 
 func orchestratedEmptyTurnHint(hooks orchestrator.StateHooks) string {

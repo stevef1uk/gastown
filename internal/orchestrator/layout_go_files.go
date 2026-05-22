@@ -37,6 +37,7 @@ func GoTestVerifyCommandForPackage(v WorkflowValidation, beadPath string) string
 // GoCompileVerifyCommandForBead is verify scoped to the active implement file's package.
 // Test beads always run go test. Production .go beads run go test when tests exist on disk,
 // or when there is no separate *_test.go bead; otherwise go build until the test bead is implemented.
+// When the package contains another bead's *_test.go, verify runs only this bead's Test* functions (-run).
 func GoCompileVerifyCommandForBead(v WorkflowValidation, mayorRigDir, beadPath string) string {
 	beadPath = filepath.ToSlash(strings.TrimSpace(beadPath))
 	if strings.HasSuffix(beadPath, ".go") && !strings.HasSuffix(beadPath, "go.mod") && !IsServerMainImplementBead(beadPath) {
@@ -44,9 +45,15 @@ func GoCompileVerifyCommandForBead(v WorkflowValidation, mayorRigDir, beadPath s
 			return GoTestVerifyCommandForPackage(v, beadPath)
 		}
 		testPath := CorrelatedTestPathForSource(beadPath, v.LayoutRoot)
-		if testPath != "" && TestPathListedInRequired(beadPath, v.RequiredFiles, v.LayoutRoot) {
+		if testPath != "" {
 			if _, err := os.Stat(filepath.Join(mayorRigDir, testPath)); os.IsNotExist(err) {
-				return goBuildVerifyForPackage(v, beadPath)
+				if TestPathListedInRequired(beadPath, v.RequiredFiles, v.LayoutRoot) {
+					return goBuildVerifyForPackage(v, beadPath)
+				}
+			} else if scoped := goTestVerifyScopedToBead(v, mayorRigDir, beadPath, testPath); scoped != "" {
+				return scoped
+			} else {
+				return GoTestVerifyCommandForPackage(v, beadPath)
 			}
 		}
 		return GoTestVerifyCommandForPackage(v, beadPath)
@@ -56,6 +63,32 @@ func GoCompileVerifyCommandForBead(v WorkflowValidation, mayorRigDir, beadPath s
 		layout = "."
 	}
 	return goBuildVerifyForPackage(v, beadPath)
+}
+
+// goTestVerifyScopedToBead runs go test -run for this bead's Test* funcs when sibling *_test.go
+// files in the same package belong to other implement beads (e.g. schema.go vs store_test.go).
+func goTestVerifyScopedToBead(v WorkflowValidation, mayorRigDir, beadPath, correlatedTest string) string {
+	if !PackageHasForeignTestFiles(beadPath, v, mayorRigDir) {
+		return ""
+	}
+	layout := strings.Trim(strings.TrimSpace(v.LayoutRoot), "/")
+	if layout == "" {
+		layout = "."
+	}
+	pkg := GoBuildRelPackage(v.LayoutRoot, beadPath)
+	if pkg == "" {
+		return ""
+	}
+	data, err := os.ReadFile(filepath.Join(mayorRigDir, correlatedTest))
+	if err != nil {
+		return goBuildVerifyForPackage(v, beadPath)
+	}
+	names := TestFuncNamesFromGoTestFile(data)
+	if len(names) == 0 {
+		return goBuildVerifyForPackage(v, beadPath)
+	}
+	return fmt.Sprintf("cd %s && go mod tidy && go test -count=1 ./%s/... -run '%s'",
+		layout, pkg, strings.Join(names, "|"))
 }
 
 func goBuildVerifyForPackage(v WorkflowValidation, beadPath string) string {

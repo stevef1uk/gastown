@@ -34,6 +34,7 @@ type cmdTracker struct {
 	qaSmokeOK        bool
 	activeBead        string
 	activeBeadPath    string
+	lastVerifyOutput  string
 	bdInfraFailed     bool
 }
 
@@ -205,6 +206,10 @@ func (r *stateRunner) validateCommand(cmd string) error {
 }
 
 func (r *stateRunner) rewriteCommand(cmd string) string {
+	if fixed, ok := sanitizeOrchestratedShellCommand(cmd); ok {
+		orchestratedPrintf("[gt-agent] trimmed glued prose/JSON from command → %s\n", fixed)
+		cmd = fixed
+	}
 	if fixed, ok := normalizeGoCommandTypos(cmd); ok {
 		orchestratedPrintf("[gt-agent] rewrote go command typo → %s\n", fixed)
 		cmd = fixed
@@ -420,6 +425,7 @@ func (r *stateRunner) runAutoVerify(cmd, workDir, sessionName string, cmdEnv []s
 		if verifyErr != nil {
 			r.track.hadCmdFailure = true
 			r.track.verifyOK = false
+			r.track.lastVerifyOutput = string(verifyOut)
 			orchestratedFprintfStderr("[gt-agent] auto-verify failed: %v\n%s\n", verifyErr, string(verifyOut))
 			combined.WriteString(fmt.Sprintf("Auto-verify: %s\nError: %v\nOutput: %s\n\n", verifyCmd, verifyErr, string(verifyOut)))
 			if r.hooks.AppendGoCompileContext && orchestrator.WorkflowUsesGo(r.v) {

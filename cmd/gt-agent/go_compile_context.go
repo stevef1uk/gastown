@@ -163,5 +163,23 @@ func appendGoCompileSourceContext(b *strings.Builder, townRoot, rig, mayorRigDir
 		b.WriteString(hint)
 		b.WriteString("\n")
 	}
+	if strings.Contains(cmdOutput, "matched no packages") && strings.Contains(cmd, "...") {
+		b.WriteString("\nHint: the go command may include **prose glued after `...`** (e.g. `./internal/store/...We need`). Run only the shell command — no English text on the same line as **CMD:**.\n")
+	}
+	if hint := orchestrator.FormatGoTestFailureHints(townRoot, rig, activeBeadPath, cmdOutput, paths, v); hint != "" {
+		b.WriteString("\n")
+		b.WriteString(hint)
+		b.WriteString("\n")
+	}
+	if hint := orchestrator.StorePackageTestIsolationHint(mayorRigDir, layoutRoot, cmdOutput); hint != "" {
+		b.WriteString("\n")
+		b.WriteString(hint)
+		b.WriteString("\n")
+	}
+	if hint := orchestrator.FormatCorruptedGoFileRecoveryHint(cmdOutput, paths); hint != "" {
+		b.WriteString("\n")
+		b.WriteString(hint)
+		b.WriteString("\n")
+	}
 	b.WriteString("\nHint: fix internal packages with **sed -i** or a small **patch**. **cmd/…/main.go** may use `cat > … <<'EOF'` when the file has duplicate handlers or stub bodies; use symbols from **Dependency packages** / Source context, not invented names.\n")
 }

@@ -29,6 +29,7 @@ If the prompt includes **Prior step failed** from a **timeout**:
 |-------|--------|--------|
 | Go | `*_test.go` in the **same package** (often its own implement bead in `required_files`) | `go test -count=1 ./<pkg>/...` on the **test bead**; production `.go` beads use `go build` until that file exists |
 | Store DDL bead (when in `required_files`) | Implement before store/query code in the same package | Run the architecture’s schema/migrate helper on test DBs and in the server entrypoint — never query tables before schema exists |
+| SQLite `internal/store` | `store.go` + `store_test.go` | **SPEC Store API only** (`List`/`Create`/`Delete` with `context.Context` — same names in tests). **Fresh DB per test** (`:memory:` + `InitSchema`). If verify shows **syntax errors**, use one full **WRITE:** of the file (no more EDIT patches). |
 | Python | `tests/test_<module>.py` or `test_*.py` under `tests/` | `pytest -v` on that file when it exists |
 
 - Read **From plan.md**, **Acceptance checklist**, and **From architecture.md** in Implement context — each case should trace to a SPEC/plan acceptance bullet.

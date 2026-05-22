@@ -26,6 +26,36 @@ store, err := New()
 	}
 }
 
+func TestSanitizeOrchestratedShellCommand_goTestEllipsisGluedProse(t *testing.T) {
+	t.Parallel()
+	in := "cd testgt3/mayor/rig/linkshelf && go test -count=1 ./internal/store/...We need to run command."
+	fixed, changed := sanitizeOrchestratedShellCommand(in)
+	if !changed {
+		t.Fatal("expected change")
+	}
+	if strings.Contains(fixed, "...We") || strings.Contains(fixed, "need") {
+		t.Fatalf("prose still glued: %q", fixed)
+	}
+	if fixed != "cd testgt3/mayor/rig/linkshelf && go test -count=1 ./internal/store/..." {
+		t.Fatalf("got %q", fixed)
+	}
+}
+
+func TestParseOrchestratedCommands_goTestGluedProseAndJSON(t *testing.T) {
+	t.Parallel()
+	in := "CMD: cd testgt3/mayor/rig/linkshelf && go test -count=1 ./internal/store/...We need to run command.CMD: export BEADS_DIR=$GT_ROOT/testgt3/.beads && cd testgt3/mayor/rig && bd close te-thd{\"outcome\":\"success\"}"
+	cmds := parseOrchestratedCommands(in)
+	if len(cmds) < 2 {
+		t.Fatalf("want >=2 commands, got %d: %v", len(cmds), cmds)
+	}
+	if strings.Contains(cmds[0], "We need") {
+		t.Fatalf("cmd[0]: %q", cmds[0])
+	}
+	if strings.Contains(cmds[1], "{") || strings.Contains(cmds[1], "outcome") {
+		t.Fatalf("cmd[1] should be bd close only: %q", cmds[1])
+	}
+}
+
 func TestSanitizeBdListCommand_limitGluedWithProse(t *testing.T) {
 	cmd := "export BEADS_DIR=x && cd testgt3/mayor/rig && bd list --limit=0We need to output result"
 	fixed, changed := sanitizeBdListCommand(cmd)
