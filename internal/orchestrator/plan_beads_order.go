@@ -224,7 +224,10 @@ func FormatClosedDependencyCompileHints(townRoot, rig, activeBeadPath string, er
 	}
 	return strings.TrimSpace("### Reopen closed implement beads (compile errors in dependencies)\n" +
 		strings.Join(lines, "\n") +
-		"\n\nCopy bead IDs from `bd list --status=closed`. Do **not** keep editing only the active file or use `bd update --status=failed` (invalid). If you cannot proceed, finish with JSON only: `{\"outcome\":\"failure\",\"summary\":\"reopen <bead-id> for <path>: <compile error>\"}`.")
+		"\n\n**First:** run `CMD:` lines to reopen and fix each closed dependency bead (`bd update <id> --status=open` → **EDIT:** / **WRITE:** → Verify → `bd close <id>`), then continue the active bead. " +
+		"Copy bead IDs from `bd list --status=closed`. Do **not** send JSON `failure` until you have run those `bd update` / fix steps in this session. " +
+		"Do **not** keep editing only the active file or use `bd update --status=failed` (invalid). " +
+		"Use JSON `failure` only if reopen/fix is impossible and name the bead ID + compile error.")
 }
 
 // AllowedEarlierImplementDependencyWrite reports whether written is a profile required_file

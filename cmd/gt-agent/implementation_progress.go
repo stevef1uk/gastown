@@ -133,7 +133,51 @@ func (r *stateRunner) initImplementationProgress() string {
 		r.implProgress = newImplementationProgress(r.task.WorkflowID, r.task.State, r.rig)
 	}
 	r.applyImplementationProgressToTrack()
+	r.clearStaleImplementationVerifyFailureOnResume()
 	return r.formatImplementationProgressBlock()
+}
+
+// clearStaleImplementationVerifyFailureOnResume drops persisted verify-fail state when the
+// active bead's verify command is green again (e.g. after manual fixes or a prior flaky run).
+func (r *stateRunner) clearStaleImplementationVerifyFailureOnResume() {
+	if r.implProgress == nil || r.track == nil || r.track.activeBead == "" {
+		return
+	}
+	if r.implProgress.LastVerifyFailBead == "" || r.implProgress.LastVerifyFailBead != r.track.activeBead {
+		return
+	}
+	if !orchestrator.WorkflowUsesGo(r.v) {
+		return
+	}
+	beadPath := r.activeImplementBeadPath()
+	if beadPath == "" {
+		beadPath = r.implProgress.LastVerifyFailPath
+	}
+	if beadPath == "" {
+		return
+	}
+	mayorDir := rigMayorRigDir(r.townRoot, r.rig)
+	verifyCmd := orchestrator.GoCompileVerifyCommandForBead(r.v, mayorDir, beadPath)
+	if verifyCmd == "" {
+		return
+	}
+	if fixed, ok := rewriteUnittestToWorkdir(verifyCmd, r.rig, r.v); ok {
+		verifyCmd = fixed
+	}
+	out, err := r.runShellCommand(verifyCmd, r.workDir(), "", r.commandEnv(os.Environ()))
+	if err != nil || goToolOutputLooksFailed(verifyCmd, string(out)) {
+		return
+	}
+	r.implProgress.LastVerifyFailBead = ""
+	r.implProgress.LastVerifyFailPath = ""
+	r.implProgress.LastVerifyFailPaths = nil
+	r.track.verifyOK = true
+	r.implProgress.mark(implVerifyKey(r.track.activeBead))
+	if saveErr := saveImplementationProgress(r.townRoot, r.rig, r.implProgress); saveErr != nil {
+		orchestratedFprintfStderr("[gt-agent] implementation progress save: %v\n", saveErr)
+	} else {
+		orchestratedPrintf("[gt-agent] cleared stale verify-fail for bead %s (verify green on resume)\n", r.track.activeBead)
+	}
 }
 
 func (r *stateRunner) applyImplementationProgressToTrack() {
@@ -159,6 +203,9 @@ func (r *stateRunner) persistImplementationProgress(cmd string) {
 	if r.track.activeBead != "" {
 		if r.implProgress.ActiveBead != r.track.activeBead {
 			r.implProgress.ActiveBead = r.track.activeBead
+			r.implProgress.LastVerifyFailBead = ""
+			r.implProgress.LastVerifyFailPath = ""
+			r.implProgress.LastVerifyFailPaths = nil
 			changed = true
 		}
 	}

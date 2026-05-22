@@ -54,6 +54,12 @@ func TestFormatClosedDependencyCompileHints(t *testing.T) {
 	if got == "" || !strings.Contains(got, "te-h") || !strings.Contains(got, "closed") {
 		t.Fatalf("want closed-bead hint, got %q", got)
 	}
+	if !strings.Contains(got, "bd update te-h --status=open") {
+		t.Fatalf("want explicit bd update step, got %q", got)
+	}
+	if !strings.Contains(got, "**First:**") || strings.Contains(got, "finish with JSON only") {
+		t.Fatalf("want CMD-first reopen guidance, not failure-json default, got %q", got)
+	}
 }
 
 func TestListImplementBeadsOpenOrInProgress_usesStatusHook(t *testing.T) {

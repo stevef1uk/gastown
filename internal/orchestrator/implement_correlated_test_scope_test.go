@@ -43,7 +43,6 @@ func TestValidateImplementReadPath_correlatedGoTest(t *testing.T) {
 }
 
 func TestValidateImplementWritePath_correlatedGoTest_table(t *testing.T) {
-	t.Parallel()
 	dir := t.TempDir()
 	rig := "mockrig"
 	v := DefaultWorkflowValidation()

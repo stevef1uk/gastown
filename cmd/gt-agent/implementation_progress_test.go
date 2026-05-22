@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -129,6 +130,57 @@ func TestNoteImplementationVerifyFailure_persistsReopenPaths(t *testing.T) {
 	block := runner.formatImplementationProgressBlock()
 	if !strings.Contains(block, "te-h") || !strings.Contains(block, "Reopen closed") {
 		t.Fatalf("block = %q", block)
+	}
+}
+
+func TestClearStaleImplementationVerifyFailureOnResume(t *testing.T) {
+	if _, err := exec.LookPath("go"); err != nil {
+		t.Skip("go toolchain not available")
+	}
+	dir := t.TempDir()
+	rig := "mockrig"
+	wf := "wf-stale"
+	mayor := filepath.Join(dir, rig, "mayor", "rig")
+	storeDir := filepath.Join(mayor, "linkshelf", "internal", "store")
+	if err := os.MkdirAll(storeDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(mayor, "linkshelf/go.mod"), []byte("module linkshelf\n\ngo 1.22\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(storeDir, "store.go"), []byte("package store\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	p := newImplementationProgress(wf, "implementation", rig)
+	p.ActiveBead = "te-store"
+	p.ActiveBeadPath = "linkshelf/internal/store/store.go"
+	p.LastVerifyFailBead = "te-store"
+	p.LastVerifyFailPath = "linkshelf/internal/store/store.go"
+	p.LastVerifyFailPaths = []string{"linkshelf/internal/store/schema.go"}
+	if err := saveImplementationProgress(dir, rig, p); err != nil {
+		t.Fatal(err)
+	}
+	runner := newStateRunner(&orchestrator.Task{
+		WorkflowID: wf,
+		State:      "implementation",
+		Hooks:      orchestrator.StateHooks{Track: "implementation"},
+	}, dir, rig)
+	runner.v = orchestrator.WorkflowValidation{
+		LayoutRoot:        "linkshelf",
+		QAVerifyCommand:   "cd linkshelf && go test ./...",
+		RequiredFiles:     []string{"linkshelf/internal/store/store.go"},
+		BeadTitleContains: "Implement ",
+	}
+	runner.track.activeBead = "te-store"
+	runner.track.activeBeadPath = "linkshelf/internal/store/store.go"
+	runner.implProgress = loadImplementationProgress(dir, rig, wf, "implementation")
+	runner.clearStaleImplementationVerifyFailureOnResume()
+	got := loadImplementationProgress(dir, rig, wf, "implementation")
+	if got == nil || got.LastVerifyFailBead != "" || len(got.LastVerifyFailPaths) > 0 {
+		t.Fatalf("expected cleared verify-fail, got %+v", got)
+	}
+	if !runner.track.verifyOK {
+		t.Fatal("expected verifyOK after green resume check")
 	}
 }
 

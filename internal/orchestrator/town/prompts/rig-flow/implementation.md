@@ -61,7 +61,7 @@ On **`cmd/server/main.go`**, read **Dependency packages** for real `store`/`hand
 When **Verify** fails in a path that is **not** your active bead (e.g. `handlers.go` while on `main.go`), that bead is usually **closed** — native EDIT/WRITE to that path are rejected.
 
 1. Use **Dependency packages** APIs only (`AddLink`, not invented `CreateLink`).
-2. Reopen the bead: `bd list --status=closed`, `bd update <id> --status=open`, fix with EDIT, `bd close <id>`, continue active bead.
+2. Reopen the bead: `bd list --status=closed`, `CMD: bd update <id> --status=open`, fix with EDIT, Verify, `bd close <id>`, continue active bead. Do **not** send JSON `failure` instead of running `bd update`.
 3. If blocked after **verify/EDIT attempts**, JSON only: `{"outcome":"failure","summary":"reopen <bead-id> for <path>: …"}` — no `bd update --status=failed`.
 4. **gt-agent rejects** failure JSON with no EDIT/verify/bd work in the same task while open implement beads exist — you must run **Next bead** steps first.
 

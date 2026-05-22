@@ -70,6 +70,32 @@ func goBuildVerifyForPackage(v WorkflowValidation, beadPath string) string {
 	return fmt.Sprintf("cd %s && go mod tidy && go build ./%s/...", layout, pkg)
 }
 
+// layoutGoRelPathsProtectedFromPrune returns layout-relative .go paths that must not be deleted
+// (required_files plus correlated *_test.go for each production source bead).
+func layoutGoRelPathsProtectedFromPrune(v WorkflowValidation) map[string]bool {
+	layout := strings.Trim(filepath.ToSlash(strings.TrimSpace(v.LayoutRoot)), "/")
+	if layout == "" || len(v.RequiredFiles) == 0 {
+		return nil
+	}
+	protected := map[string]bool{}
+	add := func(fullPath string) {
+		p := filepath.ToSlash(strings.TrimSpace(fullPath))
+		p = strings.TrimPrefix(p, layout+"/")
+		if strings.HasSuffix(p, ".go") && p != "" {
+			protected[p] = true
+		}
+	}
+	for _, f := range v.RequiredFiles {
+		add(f)
+		if WorkflowUsesGo(v) && !IsTestImplementPath(f) {
+			if testPath := CorrelatedTestPathForSource(f, v.LayoutRoot); testPath != "" {
+				add(testPath)
+			}
+		}
+	}
+	return protected
+}
+
 // PruneStaleLayoutGoFiles removes .go files under layout_root that are not listed in required_files.
 func PruneStaleLayoutGoFiles(townRoot, rig string, v WorkflowValidation) ([]string, error) {
 	layout := strings.Trim(filepath.ToSlash(strings.TrimSpace(v.LayoutRoot)), "/")
@@ -77,13 +103,9 @@ func PruneStaleLayoutGoFiles(townRoot, rig string, v WorkflowValidation) ([]stri
 		return nil, nil
 	}
 	root := filepath.Join(townRoot, rig, "mayor", "rig", layout)
-	required := map[string]bool{}
-	for _, f := range v.RequiredFiles {
-		p := filepath.ToSlash(strings.TrimSpace(f))
-		p = strings.TrimPrefix(p, layout+"/")
-		if strings.HasSuffix(p, ".go") {
-			required[p] = true
-		}
+	required := layoutGoRelPathsProtectedFromPrune(v)
+	if len(required) == 0 {
+		return nil, nil
 	}
 	var removed []string
 	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {

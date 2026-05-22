@@ -64,3 +64,50 @@ func TestPruneStaleLayoutGoFiles(t *testing.T) {
 		t.Fatal("sqlite.go should be gone")
 	}
 }
+
+func TestPruneStaleLayoutGoFiles_keepsCorrelatedTest(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	rig := "rig"
+	layout := filepath.Join(dir, rig, "mayor", "rig", "linkshelf", "internal", "store")
+	if err := os.MkdirAll(layout, 0755); err != nil {
+		t.Fatal(err)
+	}
+	for name, body := range map[string]string{
+		"store.go":      "package store\n",
+		"store_test.go": "package store\n",
+		"extra.go":      "package store\n",
+	} {
+		if err := os.WriteFile(filepath.Join(layout, name), []byte(body), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	v := WorkflowValidation{
+		LayoutRoot:    "linkshelf",
+		QAVerifyCommand: "cd linkshelf && go test ./...",
+		RequiredFiles: []string{"linkshelf/internal/store/store.go"},
+	}
+	removed, err := PruneStaleLayoutGoFiles(dir, rig, v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(removed) != 1 || removed[0] != "linkshelf/internal/store/extra.go" {
+		t.Fatalf("removed = %v", removed)
+	}
+	if _, err := os.Stat(filepath.Join(layout, "store_test.go")); err != nil {
+		t.Fatalf("store_test.go should remain: %v", err)
+	}
+}
+
+func TestLayoutGoRelPathsProtectedFromPrune_includesCorrelatedTest(t *testing.T) {
+	t.Parallel()
+	v := WorkflowValidation{
+		LayoutRoot:    "linkshelf",
+		QAVerifyCommand: "cd linkshelf && go test ./...",
+		RequiredFiles: []string{"linkshelf/internal/store/schema.go"},
+	}
+	got := layoutGoRelPathsProtectedFromPrune(v)
+	if !got["internal/store/schema.go"] || !got["internal/store/schema_test.go"] {
+		t.Fatalf("protected = %v", got)
+	}
+}
