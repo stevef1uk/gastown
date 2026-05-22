@@ -24,6 +24,67 @@ func preprocessOrchestratedResponse(response string) string {
 	return response
 }
 
+func unwrapSingleBacktickLine(s string) string {
+	s = strings.TrimSpace(s)
+	if len(s) >= 2 && strings.HasPrefix(s, "`") && strings.HasSuffix(s, "`") {
+		return strings.TrimSpace(s[1 : len(s)-1])
+	}
+	return ""
+}
+
+func looksLikeOrchestratedShellLine(s string) bool {
+	s = strings.TrimSpace(s)
+	if s == "" || strings.HasPrefix(s, "{") {
+		return false
+	}
+	lower := strings.ToLower(s)
+	for _, p := range []string{"bd ", "export ", "cd ", "go ", "cat ", "bash ", "curl ", "chmod ", "ls "} {
+		if strings.HasPrefix(lower, p) {
+			return true
+		}
+	}
+	return strings.Contains(lower, " && ") &&
+		(strings.Contains(lower, "bd ") || strings.Contains(lower, "go "))
+}
+
+// FormatMalformedNativeEditFeedback reports EDIT: blocks missing <<<<<<< SEARCH (common model mistake).
+func FormatMalformedNativeEditFeedback(response string) string {
+	lines := strings.Split(response, "\n")
+	var msgs []string
+	for i := 0; i < len(lines); i++ {
+		trimmed := strings.TrimSpace(lines[i])
+		upper := strings.ToUpper(trimmed)
+		if !strings.HasPrefix(upper, "EDIT:") {
+			continue
+		}
+		path := strings.TrimSpace(trimmed[len("EDIT:"):])
+		hasSearch := false
+		for j := i + 1; j < len(lines) && j < i+40; j++ {
+			t := strings.TrimSpace(lines[j])
+			tu := strings.ToUpper(t)
+			if strings.HasPrefix(tu, "EDIT:") || strings.HasPrefix(tu, "WRITE:") ||
+				strings.HasPrefix(tu, "READ:") || strings.HasPrefix(tu, "CMD:") {
+				break
+			}
+			if t == nativeEditSearchMarker || strings.HasPrefix(t, "<<<<<<<") {
+				hasSearch = true
+				break
+			}
+			if t == nativeEditReplaceMarker || strings.HasPrefix(t, ">>>>>>>") ||
+				isNativeEditEndMarker(t) {
+				break
+			}
+		}
+		if !hasSearch {
+			msgs = append(msgs, "EDIT: "+path+" is missing "+nativeEditSearchMarker+" / ======= before >>>>>>> REPLACE — copy from ### Current file on disk, then retry.")
+		}
+	}
+	if len(msgs) == 0 {
+		return ""
+	}
+	return strings.TrimSpace("Malformed EDIT (not applied):\n- " + strings.Join(msgs, "\n- "))
+}
+
 // unwrapMarkdownInlineToolLines strips `CMD:` / `EDIT:` lines wrapped in markdown backticks.
 func unwrapMarkdownInlineToolLines(response string) string {
 	var out []string
@@ -33,6 +94,14 @@ func unwrapMarkdownInlineToolLines(response string) string {
 		if strings.HasPrefix(upper, "CMD:") || strings.HasPrefix(upper, "READ:") ||
 			strings.HasPrefix(upper, "EDIT:") || strings.HasPrefix(upper, "WRITE:") {
 			out = append(out, line)
+			continue
+		}
+		if inner := unwrapSingleBacktickLine(trimmed); inner != "" && looksLikeOrchestratedShellLine(inner) {
+			if !strings.HasPrefix(strings.ToUpper(inner), "CMD:") {
+				out = append(out, "CMD: "+inner)
+			} else {
+				out = append(out, inner)
+			}
 			continue
 		}
 		unwrapped := unwrapMarkdownInlineCode(trimmed)

@@ -135,6 +135,10 @@ func parseNativeWriteBody(lines []string, start int) (content string, next int) 
 
 // processOrchestratedTools runs native READ/EDIT/WRITE and CMD lines from one LLM response.
 func (r *stateRunner) processOrchestratedTools(response, sessionName string, combined *strings.Builder) (hadNative bool, cmdCount int) {
+	if hint := FormatMalformedNativeEditFeedback(response); hint != "" {
+		combined.WriteString(hint)
+		combined.WriteString("\n\n")
+	}
 	if r.hooks.NativeEditTools {
 		ops := parseOrchestratedNativeEdits(response)
 		reads := 0

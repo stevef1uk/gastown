@@ -152,6 +152,47 @@ func TestPreprocessOrchestratedResponse_gluedFenceWriteCMD(t *testing.T) {
 	}
 }
 
+func TestUnwrapMarkdownInlineToolLines_backtickBdUpdate(t *testing.T) {
+	t.Parallel()
+	in := "`bd update te-rnd --status=in_progress`\n"
+	got := preprocessOrchestratedResponse(in)
+	if !strings.Contains(got, "CMD: bd update te-rnd") {
+		t.Fatalf("want CMD prefix, got %q", got)
+	}
+	cmds := parseOrchestratedCommands(in)
+	if len(cmds) != 1 || !strings.Contains(cmds[0], "bd update te-rnd") {
+		t.Fatalf("cmds = %v", cmds)
+	}
+}
+
+func TestFormatMalformedNativeEditFeedback_replaceOnly(t *testing.T) {
+	t.Parallel()
+	in := "EDIT: linkshelf/internal/api/handlers_test.go\n>>>>>>> REPLACE\n"
+	got := FormatMalformedNativeEditFeedback(in)
+	if got == "" || !strings.Contains(got, "<<<<<<< SEARCH") {
+		t.Fatalf("got %q", got)
+	}
+	if !strings.Contains(got, "handlers_test.go") {
+		t.Fatalf("got %q", got)
+	}
+}
+
+func TestParseOrchestratedCommands_polecatMalformedTurn(t *testing.T) {
+	t.Parallel()
+	in := "`bd update te-rnd --status=in_progress`\nEDIT: linkshelf/internal/api/handlers_test.go\n>>>>>>> REPLACE\n"
+	cmds := parseOrchestratedCommands(in)
+	if len(cmds) != 1 || !strings.Contains(cmds[0], "bd update te-rnd") {
+		t.Fatalf("want bd update as CMD, got %v", cmds)
+	}
+	ops := parseOrchestratedNativeEdits(in)
+	if len(ops) != 0 {
+		t.Fatalf("malformed EDIT must not parse, ops=%+v", ops)
+	}
+	if got := FormatMalformedNativeEditFeedback(in); got == "" {
+		t.Fatal("expected malformed EDIT feedback")
+	}
+}
+
 func TestParseOrchestratedNativeEdits_acceptsEndEditAlias(t *testing.T) {
 	in := `EDIT: linkshelf/internal/store/store_test.go
 <<<<<<< SEARCH
