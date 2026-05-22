@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"os/exec"
 	"regexp"
-	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -78,38 +78,89 @@ func (t *devServerTracker) noteCommand(cmd string) {
 }
 
 func killTCPListeners(port int) {
-	if port < 1 || protectedDevPorts[port] {
-		return
-	}
-	if runtime.GOOS == "darwin" {
-		killTCPListenersLsof(port)
-		return
-	}
-	spec := fmt.Sprintf("%d/tcp", port)
-	if path, err := exec.LookPath("fuser"); err == nil {
-		_, _ = exec.Command(path, "-k", spec).CombinedOutput()
-	}
-	killTCPListenersLsof(port)
+	_, _ = KillTCPListenersOnPort(port)
 }
 
-func killTCPListenersLsof(port int) {
+// KillTCPListenersOnPort frees a localhost TCP port using lsof+kill on macOS and Linux.
+// Some Linux images ship a busybox fuser without -k; lsof is the portable path.
+// Returns PIDs signalled on the last kill attempt (may be empty if none found).
+func KillTCPListenersOnPort(port int) ([]string, error) {
+	if port < 1 || protectedDevPorts[port] {
+		return nil, nil
+	}
+	if fuserSupportsKill() {
+		spec := fmt.Sprintf("%d/tcp", port)
+		if path, err := exec.LookPath("fuser"); err == nil {
+			_, _ = exec.Command(path, "-k", spec).CombinedOutput()
+		}
+	}
+	return killTCPListenersLsof(port)
+}
+
+var (
+	fuserKillProbed bool
+	fuserKillOK     bool
+	fuserKillMu     sync.Mutex
+)
+
+func fuserSupportsKill() bool {
+	fuserKillMu.Lock()
+	defer fuserKillMu.Unlock()
+	if fuserKillProbed {
+		return fuserKillOK
+	}
+	fuserKillProbed = true
+	path, err := exec.LookPath("fuser")
+	if err != nil {
+		return false
+	}
+	out, err := exec.Command(path, "-k", "1/tcp").CombinedOutput()
+	text := strings.ToLower(string(out))
+	if err != nil {
+		text += " " + strings.ToLower(err.Error())
+	}
+	fuserKillOK = !strings.Contains(text, "unknown option") &&
+		!strings.Contains(text, "invalid option") &&
+		!strings.Contains(text, "unrecognized option")
+	return fuserKillOK
+}
+
+func lsofPIDsOnTCPPort(lsofPath string, port int) []string {
+	for _, args := range [][]string{
+		{"-nP", fmt.Sprintf("-iTCP:%d", port), "-sTCP:LISTEN", "-t"},
+		{"-ti", fmt.Sprintf(":%d", port)},
+	} {
+		out, err := exec.Command(lsofPath, args...).CombinedOutput()
+		if err != nil {
+			continue
+		}
+		pids := strings.Fields(strings.TrimSpace(string(out)))
+		if len(pids) > 0 {
+			return pids
+		}
+	}
+	return nil
+}
+
+func killTCPListenersLsof(port int) ([]string, error) {
 	path, err := exec.LookPath("lsof")
 	if err != nil {
-		return
+		return nil, err
 	}
-	portSpec := fmt.Sprintf(":%d", port)
+	var lastPIDs []string
 	for _, sig := range []string{"TERM", "KILL"} {
-		out, _ := exec.Command(path, "-ti", portSpec).CombinedOutput()
-		pids := strings.Fields(strings.TrimSpace(string(out)))
+		pids := lsofPIDsOnTCPPort(path, port)
 		if len(pids) == 0 {
-			return
+			return lastPIDs, nil
 		}
+		lastPIDs = pids
 		args := append([]string{"-" + sig}, pids...)
 		_, _ = exec.Command("kill", args...).CombinedOutput()
 		if sig == "TERM" {
 			time.Sleep(100 * time.Millisecond)
 		}
 	}
+	return lastPIDs, nil
 }
 
 func killGoRunServerProcesses() {

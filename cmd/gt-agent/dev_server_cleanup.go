@@ -1,13 +1,10 @@
 package main
 
 import (
-	"fmt"
 	"os/exec"
 	"regexp"
-	"runtime"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/steveyegge/gastown/internal/orchestrator"
 )
@@ -103,51 +100,11 @@ func shutdownStartedDevServers(t *devServerTracker) {
 }
 
 func killTCPListeners(port int) {
-	if port < 1 || protectedDevPorts[port] {
+	pids, err := orchestrator.KillTCPListenersOnPort(port)
+	if err != nil || len(pids) == 0 {
 		return
 	}
-	// macOS fuser does not free TCP listeners; lsof+kill is required (Homebrew fuser is no better).
-	if runtime.GOOS == "darwin" {
-		killTCPListenersLsof(port)
-		return
-	}
-	spec := fmt.Sprintf("%d/tcp", port)
-	if path, err := exec.LookPath("fuser"); err == nil {
-		out, _ := exec.Command(path, "-k", spec).CombinedOutput()
-		if msg := strings.TrimSpace(string(out)); msg != "" {
-			orchestratedPrintf("[gt-agent] stopped listener on :%d: %s\n", port, msg)
-		} else {
-			orchestratedPrintf("[gt-agent] stopped listener on :%d\n", port)
-		}
-	}
-	// Always follow with lsof on Linux too — fuser can leave the listener up in CI.
-	killTCPListenersLsof(port)
-}
-
-// killTCPListenersLsof stops processes bound to port via lsof -ti (works on macOS and Linux).
-func killTCPListenersLsof(port int) {
-	path, err := exec.LookPath("lsof")
-	if err != nil {
-		return
-	}
-	portSpec := fmt.Sprintf(":%d", port)
-	var lastPIDs []string
-	for _, sig := range []string{"TERM", "KILL"} {
-		out, _ := exec.Command(path, "-ti", portSpec).CombinedOutput()
-		pids := strings.Fields(strings.TrimSpace(string(out)))
-		if len(pids) == 0 {
-			return
-		}
-		lastPIDs = pids
-		args := append([]string{"-" + sig}, pids...)
-		_, _ = exec.Command("kill", args...).CombinedOutput()
-		if sig == "TERM" {
-			time.Sleep(100 * time.Millisecond)
-		}
-	}
-	if len(lastPIDs) > 0 {
-		orchestratedPrintf("[gt-agent] stopped listener on :%d (pids %s)\n", port, strings.Join(lastPIDs, ","))
-	}
+	orchestratedPrintf("[gt-agent] stopped listener on :%d (pids %s)\n", port, strings.Join(pids, ","))
 }
 
 func killGoRunServerProcesses() {

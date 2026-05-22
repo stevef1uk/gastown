@@ -48,23 +48,12 @@ kill_port() {
     echo "refusing protected port: $port" >&2
     return 1
   fi
-  # macOS fuser cannot target TCP listeners; lsof is required.
-  if [[ "$(uname -s)" == "Darwin" ]]; then
-    if command -v lsof >/dev/null 2>&1; then
-      kill_port_lsof "$port"
-      return 0
-    fi
-    echo "need lsof to free port $port on macOS" >&2
-    return 1
-  fi
-  if command -v fuser >/dev/null 2>&1; then
-    fuser -k "${port}/tcp" 2>/dev/null || true
-  fi
+  # lsof+kill works on macOS and Linux (busybox fuser often lacks -k).
   if command -v lsof >/dev/null 2>&1; then
     kill_port_lsof "$port"
     return 0
   fi
-  echo "need fuser or lsof to free port $port" >&2
+  echo "need lsof to free port $port" >&2
   return 1
 }
 

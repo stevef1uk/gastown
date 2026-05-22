@@ -183,16 +183,8 @@ time.sleep(3600)
 
 func requirePortCleanupTools(t *testing.T) {
 	t.Helper()
-	if runtime.GOOS == "darwin" {
-		if _, err := exec.LookPath("lsof"); err != nil {
-			t.Skip("macOS port cleanup tests require lsof")
-		}
-		return
-	}
-	if _, err := exec.LookPath("fuser"); err != nil {
-		if _, err2 := exec.LookPath("lsof"); err2 != nil {
-			t.Skip("need fuser or lsof to test port cleanup")
-		}
+	if _, err := exec.LookPath("lsof"); err != nil {
+		t.Skip("port cleanup tests require lsof (macOS and Linux)")
 	}
 }
 
