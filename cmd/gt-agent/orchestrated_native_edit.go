@@ -134,7 +134,7 @@ func parseNativeWriteBody(lines []string, start int) (content string, next int) 
 }
 
 // processOrchestratedTools runs native READ/EDIT/WRITE and CMD lines from one LLM response.
-func (r *stateRunner) processOrchestratedTools(response, sessionName string, combined *strings.Builder) (hadNative bool, cmdCount int) {
+func (r *stateRunner) processOrchestratedTools(response, sessionName string, combined *strings.Builder) (hadNative bool, hadSuccessfulNative bool, cmdCount int) {
 	if hint := FormatMalformedNativeEditFeedback(response); hint != "" {
 		combined.WriteString(hint)
 		combined.WriteString("\n\n")
@@ -162,7 +162,7 @@ func (r *stateRunner) processOrchestratedTools(response, sessionName string, com
 		ops = capped
 		editDir := r.mayorRigWorkDir()
 		cmdEnv := r.commandEnv(os.Environ())
-		hadNative = r.executeNativeEdits(ops, editDir, sessionName, cmdEnv, combined)
+		hadNative, hadSuccessfulNative = r.executeNativeEdits(ops, editDir, sessionName, cmdEnv, combined)
 	}
 	cmdBlocks := parseOrchestratedCommands(response)
 	cmdCount = len(cmdBlocks)
@@ -221,7 +221,11 @@ func (r *stateRunner) processOrchestratedTools(response, sessionName string, com
 			combined.WriteString(feedbackOut)
 		}
 	}
-	return hadNative, cmdCount
+	return hadNative, hadSuccessfulNative, cmdCount
+}
+
+func isNativeEditSearchNotFound(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "SEARCH block not found")
 }
 
 func (r *stateRunner) mayorRigWorkDir() string {
@@ -231,11 +235,12 @@ func (r *stateRunner) mayorRigWorkDir() string {
 	return r.workDir()
 }
 
-func (r *stateRunner) executeNativeEdits(ops []nativeEditOp, editDir, sessionName string, cmdEnv []string, combined *strings.Builder) bool {
+func (r *stateRunner) executeNativeEdits(ops []nativeEditOp, editDir, sessionName string, cmdEnv []string, combined *strings.Builder) (bool, bool) {
 	if len(ops) == 0 {
-		return false
+		return false, false
 	}
 	any := false
+	success := false
 	for _, op := range ops {
 		any = true
 		feedback, err := r.executeNativeEditOp(op, editDir)
@@ -244,7 +249,15 @@ func (r *stateRunner) executeNativeEdits(ops []nativeEditOp, editDir, sessionNam
 			r.track.hadCmdFailure = true
 			orchestratedFprintfStderr("[gt-agent] %s rejected: %v\n", label, err)
 			combined.WriteString(fmt.Sprintf("%s\nError: %v\n\n", label, err))
+			if op.kind == "edit" && isNativeEditSearchNotFound(err) {
+				r.attemptEditSearchMiss = true
+				r.appendAutoReadAfterEditSearchMiss(combined, op.path, editDir)
+			}
 			continue
+		}
+		if op.kind == "edit" || op.kind == "write" {
+			success = true
+			r.attemptFixWork = true
 		}
 		orchestratedPrintf("[gt-agent] %s ok\n", label)
 		combined.WriteString(fmt.Sprintf("%s\n%s\n\n", label, feedback))
@@ -253,7 +266,23 @@ func (r *stateRunner) executeNativeEdits(ops []nativeEditOp, editDir, sessionNam
 			r.runAutoVerifyForNativeLayoutWrite(sessionName, cmdEnv, combined)
 		}
 	}
-	return any
+	return any, success
+}
+
+func (r *stateRunner) appendAutoReadAfterEditSearchMiss(combined *strings.Builder, relPath, editDir string) {
+	relPath = orchestrator.SanitizeNativeEditRelPath(relPath)
+	if relPath == "" {
+		return
+	}
+	op := nativeEditOp{kind: "read", path: relPath}
+	feedback, err := r.executeNativeEditOp(op, editDir)
+	if err != nil {
+		combined.WriteString(fmt.Sprintf("Auto-READ %s failed: %v\n\n", relPath, err))
+		return
+	}
+	orchestratedPrintf("[gt-agent] auto-READ after SEARCH miss: %s\n", relPath)
+	combined.WriteString(fmt.Sprintf("### Auto-READ after SEARCH miss (%s)\n%s\n\n", relPath, feedback))
+	combined.WriteString(fmt.Sprintf("Retry **EDIT:** %s with `<<<<<<< SEARCH` copied exactly from Auto-READ above (or ### Current file on disk), then run Verify.\n\n", relPath))
 }
 
 func (r *stateRunner) executeNativeEditOp(op nativeEditOp, workDir string) (string, error) {

@@ -309,13 +309,69 @@ func TestNativeEdit_READ_returnsFileContent(t *testing.T) {
 	t.Cleanup(func() { orchestrator.ListImplementBeadsByStatusHook = nil })
 
 	var combined strings.Builder
-	had, _ := r.processOrchestratedTools("READ: linkshelf/internal/store/store.go\n", "sess", &combined)
+	had, _, _ := r.processOrchestratedTools("READ: linkshelf/internal/store/store.go\n", "sess", &combined)
 	if !had {
 		t.Fatal("expected native tool run")
 	}
 	got := combined.String()
 	if !strings.Contains(got, "package store") || !strings.Contains(got, "Foo()") {
 		t.Fatalf("READ feedback missing file body:\n%s", got)
+	}
+}
+
+func TestNativeEdit_autoReadAfterSearchMiss(t *testing.T) {
+	countOpenMatchingBeadsHook = func(_, _, _ string) (int, error) { return 2, nil }
+	defer func() { countOpenMatchingBeadsHook = nil }()
+
+	dir := t.TempDir()
+	rig := "mockrig"
+	mayor := filepath.Join(dir, rig, "mayor", "rig")
+	apiDir := filepath.Join(mayor, "linkshelf/internal/api")
+	if err := os.MkdirAll(apiDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	body := "package api\n\nfunc TestX(t *testing.T) {}\n"
+	testPath := filepath.Join(apiDir, "handlers_test.go")
+	if err := os.WriteFile(testPath, []byte(body), 0644); err != nil {
+		t.Fatal(err)
+	}
+	v := linkshelfImplementValidation("linkshelf/internal/api/handlers_test.go")
+	task := rigFlowTask(t, "implementation", v)
+	r := newStateRunner(task, dir, rig)
+	r.track.activeBead = "te-test"
+	orchestrator.ListImplementBeadsByStatusHook = func(_, _ string, _ orchestrator.WorkflowValidation, status string) ([]orchestrator.PlanBead, error) {
+		if status == "in_progress" {
+			return []orchestrator.PlanBead{{ID: "te-test", Title: "Implement linkshelf/internal/api/handlers_test.go per architecture"}}, nil
+		}
+		return nil, nil
+	}
+	t.Cleanup(func() { orchestrator.ListImplementBeadsByStatusHook = nil })
+
+	response := `EDIT: linkshelf/internal/api/handlers_test.go
+<<<<<<< SEARCH
+func TestMissing(t *testing.T) {}
+=======
+func TestY(t *testing.T) {}
+>>>>>>> REPLACE
+`
+	var combined strings.Builder
+	hadNative, ok, _ := r.processOrchestratedTools(response, "sess", &combined)
+	if !hadNative || ok {
+		t.Fatalf("hadNative=%v ok=%v", hadNative, ok)
+	}
+	if !r.attemptEditSearchMiss {
+		t.Fatal("expected attemptEditSearchMiss")
+	}
+	got := combined.String()
+	if !strings.Contains(got, "SEARCH block not found") || !strings.Contains(got, "Auto-READ") {
+		t.Fatalf("feedback:\n%s", got)
+	}
+	if !strings.Contains(got, "func TestX") {
+		t.Fatalf("auto-read should include file body:\n%s", got)
+	}
+	msg, reject := r.rejectImplementationNoOpFailure("failure")
+	if !reject || !strings.Contains(msg, "Auto-READ") {
+		t.Fatalf("reject=%v msg=%q", reject, msg)
 	}
 }
 
@@ -392,7 +448,7 @@ package store
 >>>>>>> REPLACE
 `
 	var combined strings.Builder
-	hadNative, cmdCount := r.processOrchestratedTools(response, "sess", &combined)
+	hadNative, _, cmdCount := r.processOrchestratedTools(response, "sess", &combined)
 	if !hadNative || cmdCount != 0 {
 		t.Fatalf("hadNative=%v cmdCount=%d", hadNative, cmdCount)
 	}
@@ -437,7 +493,7 @@ var Fixed = 1
 CMD: true
 `
 	var combined strings.Builder
-	hadNative, cmdCount := r.processOrchestratedTools(response, "sess", &combined)
+	hadNative, _, cmdCount := r.processOrchestratedTools(response, "sess", &combined)
 	if !hadNative || cmdCount != 1 {
 		t.Fatalf("hadNative=%v cmdCount=%d", hadNative, cmdCount)
 	}

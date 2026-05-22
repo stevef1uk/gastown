@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"unicode"
 
 	"github.com/steveyegge/gastown/internal/beads"
@@ -134,9 +135,14 @@ func PathMatchesImplementFile(written, beadPath string) bool {
 // ListImplementBeadsByStatusHook is set by tests to stub bd list for implement-path guards.
 var ListImplementBeadsByStatusHook func(townRoot, rig string, v WorkflowValidation, status string) ([]PlanBead, error)
 
+var listImplementBeadsHookMu sync.Mutex
+
 func listImplementBeadsForGuard(townRoot, rig string, v WorkflowValidation, status string) ([]PlanBead, error) {
-	if ListImplementBeadsByStatusHook != nil {
-		return ListImplementBeadsByStatusHook(townRoot, rig, v, status)
+	listImplementBeadsHookMu.Lock()
+	hook := ListImplementBeadsByStatusHook
+	listImplementBeadsHookMu.Unlock()
+	if hook != nil {
+		return hook(townRoot, rig, v, status)
 	}
 	return listImplementBeadsByStatus(townRoot, rig, v, status)
 }

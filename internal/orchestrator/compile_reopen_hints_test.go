@@ -15,7 +15,7 @@ func TestCompileErrorPathsIncludingClosedDeps_addsEarlierClosedGoFile(t *testing
 			"linkshelf/cmd/server/main.go",
 		},
 	}
-	ListImplementBeadsByStatusHook = func(_, _ string, _ WorkflowValidation, status string) ([]PlanBead, error) {
+	setListImplementBeadsByStatusHook(t, func(_, _ string, _ WorkflowValidation, status string) ([]PlanBead, error) {
 		switch status {
 		case "in_progress":
 			return []PlanBead{{ID: "te-main", Title: "Implement linkshelf/cmd/server/main.go per architecture"}}, nil
@@ -24,8 +24,7 @@ func TestCompileErrorPathsIncludingClosedDeps_addsEarlierClosedGoFile(t *testing
 		default:
 			return nil, nil
 		}
-	}
-	t.Cleanup(func() { ListImplementBeadsByStatusHook = nil })
+	})
 
 	out := strings.Join(CompileErrorPathsIncludingClosedDeps("", "", "linkshelf/cmd/server/main.go", nil,
 		"linkshelf/cmd/server/main.go:42:9: undefined: api.GetLinks", v), ",")

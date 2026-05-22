@@ -49,7 +49,8 @@ type stateRunner struct {
 	servers     *devServerTracker
 	qaProgress     *QAReviewProgress         // qa_review only; persisted across gt-agent restarts
 	implProgress   *ImplementationProgress   // implementation: per-bead verify/close across restarts
-	attemptFixWork bool                      // implementation: true after EDIT/verify/bd close this task attempt
+	attemptFixWork       bool // implementation: true after successful EDIT/WRITE, verify, or bd update/close this attempt
+	attemptEditSearchMiss bool // implementation: EDIT failed SEARCH-not-found this attempt (auto-READ may have run)
 }
 
 func newStateRunner(task *orchestrator.Task, townRoot, rig string) *stateRunner {

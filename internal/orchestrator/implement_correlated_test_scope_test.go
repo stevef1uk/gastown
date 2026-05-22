@@ -22,7 +22,7 @@ func TestValidateImplementReadPath_correlatedGoTest(t *testing.T) {
 	v.LayoutRoot = "linkshelf"
 	v.QAVerifyCommand = "cd linkshelf && go test ./..."
 	v.RequiredFiles = []string{"linkshelf/internal/store/schema.go"}
-	ListImplementBeadsByStatusHook = func(_, _ string, _ WorkflowValidation, status string) ([]PlanBead, error) {
+	setListImplementBeadsByStatusHook(t, func(_, _ string, _ WorkflowValidation, status string) ([]PlanBead, error) {
 		if status == "in_progress" {
 			return []PlanBead{{
 				ID:    "te-phq",
@@ -30,8 +30,7 @@ func TestValidateImplementReadPath_correlatedGoTest(t *testing.T) {
 			}}, nil
 		}
 		return nil, nil
-	}
-	t.Cleanup(func() { ListImplementBeadsByStatusHook = nil })
+	})
 
 	testPath := "linkshelf/internal/store/schema_test.go"
 	if err := ValidateImplementReadPath(dir, rig, "te-phq", testPath, v); err != nil {
@@ -52,15 +51,15 @@ func TestValidateImplementWritePath_correlatedGoTest_table(t *testing.T) {
 		"linkshelf/internal/store/schema.go",
 		"linkshelf/internal/store/store.go",
 	}
+	setListImplementBeadsByStatusHook(t, nil)
 	setActive := func(id, title string) {
-		ListImplementBeadsByStatusHook = func(_, _ string, _ WorkflowValidation, status string) ([]PlanBead, error) {
+		replaceListImplementBeadsByStatusHook(func(_, _ string, _ WorkflowValidation, status string) ([]PlanBead, error) {
 			if status == "open" || status == "in_progress" {
 				return []PlanBead{{ID: id, Title: title}}, nil
 			}
 			return nil, nil
-		}
+		})
 	}
-	t.Cleanup(func() { ListImplementBeadsByStatusHook = nil })
 
 	cases := []struct {
 		beadID   string

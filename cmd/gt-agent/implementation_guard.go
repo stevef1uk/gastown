@@ -20,11 +20,11 @@ func isRetriableLLMError(err error) bool {
 }
 
 // noteImplementationFixAttempt marks that this task attempt did real fix work (not read-only inspection).
-func (r *stateRunner) noteImplementationFixAttempt(cmd string, hadNative bool) {
+func (r *stateRunner) noteImplementationFixAttempt(cmd string, hadSuccessfulNative bool) {
 	if r == nil || r.task == nil || r.task.State != "implementation" {
 		return
 	}
-	if hadNative {
+	if hadSuccessfulNative {
 		r.attemptFixWork = true
 		return
 	}
@@ -51,21 +51,42 @@ func (r *stateRunner) rejectImplementationNoOpFailure(outcome string) (string, b
 	if !isOrchestratedFailureOutcome(outcome) {
 		return "", false
 	}
+	openImpl := openImplementBeadCount(r)
+	if r.attemptEditSearchMiss && !r.attemptFixWork && (openImpl > 0 || r.hasQAPendingRework()) {
+		return r.implementationEditSearchMissNudge(openImpl), true
+	}
 	if r.attemptFixWork {
 		return "", false
-	}
-	openImpl := 0
-	if title := strings.TrimSpace(r.v.BeadTitleContains); title != "" {
-		n, err := countOpenMatchingBeads(r.townRoot, r.rig, title)
-		if err != nil {
-			return "", false
-		}
-		openImpl = n
 	}
 	if openImpl == 0 && !r.hasQAPendingRework() {
 		return "", false
 	}
 	return r.implementationNoOpFailureNudge(openImpl), true
+}
+
+func openImplementBeadCount(r *stateRunner) int {
+	if r == nil {
+		return 0
+	}
+	title := strings.TrimSpace(r.v.BeadTitleContains)
+	if title == "" {
+		return 0
+	}
+	n, err := countOpenMatchingBeads(r.townRoot, r.rig, title)
+	if err != nil {
+		return 0
+	}
+	return n
+}
+
+func (r *stateRunner) implementationEditSearchMissNudge(openImpl int) string {
+	var b strings.Builder
+	b.WriteString("**Rejected:** EDIT failed because SEARCH did not match the file. Auto-READ output is in the feedback above — do not send failure JSON yet.\n\n")
+	b.WriteString("Copy exact lines from **Auto-READ** (or ### Current file on disk) into a new **EDIT:** `<<<<<<< SEARCH` / `=======` / `>>>>>>> REPLACE` block, then run Verify.\n")
+	if openImpl > 0 {
+		b.WriteString(fmt.Sprintf("\n%d open implement bead(s) remain.\n", openImpl))
+	}
+	return b.String()
 }
 
 func (r *stateRunner) implementationNoOpFailureNudge(openImpl int) string {

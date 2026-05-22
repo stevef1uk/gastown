@@ -21,7 +21,50 @@ func preprocessOrchestratedResponse(response string) string {
 	response = gluedCmdToToolRE.ReplaceAllString(response, "$1\n$2")
 	response = inlineToolRE.ReplaceAllString(response, "$1\n$2")
 	response = unwrapMarkdownInlineToolLines(response)
+	response = unwrapMarkdownFencedToolBlocks(response)
 	return response
+}
+
+// unwrapMarkdownFencedToolBlocks unwraps ```go / ```python fences around CMD:/EDIT:/READ:/WRITE: blocks.
+func unwrapMarkdownFencedToolBlocks(response string) string {
+	lines := strings.Split(response, "\n")
+	var out []string
+	inFence := false
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if !inFence {
+			if strings.HasPrefix(trimmed, "```") {
+				inner := strings.TrimSpace(strings.TrimPrefix(trimmed, "```"))
+				upper := strings.ToUpper(inner)
+				if strings.HasPrefix(upper, "CMD:") || strings.HasPrefix(upper, "READ:") ||
+					strings.HasPrefix(upper, "EDIT:") || strings.HasPrefix(upper, "WRITE:") {
+					out = append(out, inner)
+					continue
+				}
+				if isMarkdownToolFenceLang(inner) {
+					inFence = true
+					continue
+				}
+			}
+			out = append(out, line)
+			continue
+		}
+		if trimmed == "```" {
+			inFence = false
+			continue
+		}
+		out = append(out, line)
+	}
+	return strings.Join(out, "\n")
+}
+
+func isMarkdownToolFenceLang(lang string) bool {
+	switch strings.ToLower(strings.TrimSpace(lang)) {
+	case "", "go", "golang", "python", "py", "bash", "sh", "shell", "json", "text":
+		return true
+	default:
+		return false
+	}
 }
 
 func unwrapSingleBacktickLine(s string) string {

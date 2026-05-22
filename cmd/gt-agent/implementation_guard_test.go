@@ -55,6 +55,23 @@ func TestRejectImplementationNoOpFailure_allowsAfterFixWork(t *testing.T) {
 	}
 }
 
+func TestRejectImplementationNoOpFailure_blocksAfterEditSearchMiss(t *testing.T) {
+	countOpenMatchingBeadsHook = func(_, _, _ string) (int, error) { return 3, nil }
+	defer func() { countOpenMatchingBeadsHook = nil }()
+
+	task := &orchestrator.Task{
+		WorkflowID: "wf-1",
+		State:      "implementation",
+		Hooks:      orchestrator.StateHooks{Track: "implementation", Artifacts: "implementation"},
+	}
+	r := newStateRunner(task, t.TempDir(), "mockrig")
+	r.attemptEditSearchMiss = true
+	msg, reject := r.rejectImplementationNoOpFailure("failure")
+	if !reject || !strings.Contains(msg, "SEARCH") || !strings.Contains(msg, "Auto-READ") {
+		t.Fatalf("reject=%v msg=%q", reject, msg)
+	}
+}
+
 func TestNoteImplementationFixAttempt_bdUpdate(t *testing.T) {
 	task := &orchestrator.Task{
 		State: "implementation",

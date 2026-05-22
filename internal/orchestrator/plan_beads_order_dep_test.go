@@ -37,7 +37,7 @@ func TestFormatClosedDependencyCompileHints(t *testing.T) {
 			"linkshelf/cmd/server/main.go",
 		},
 	}
-	ListImplementBeadsByStatusHook = func(_, _ string, _ WorkflowValidation, status string) ([]PlanBead, error) {
+	setListImplementBeadsByStatusHook(t, func(_, _ string, _ WorkflowValidation, status string) ([]PlanBead, error) {
 		switch status {
 		case "in_progress":
 			return []PlanBead{{ID: "te-main", Title: "Implement linkshelf/cmd/server/main.go per architecture"}}, nil
@@ -46,8 +46,7 @@ func TestFormatClosedDependencyCompileHints(t *testing.T) {
 		default:
 			return nil, nil
 		}
-	}
-	t.Cleanup(func() { ListImplementBeadsByStatusHook = nil })
+	})
 
 	got := FormatClosedDependencyCompileHints("", "", "linkshelf/cmd/server/main.go",
 		[]string{"linkshelf/internal/api/handlers.go"}, v)
@@ -63,13 +62,12 @@ func TestFormatClosedDependencyCompileHints(t *testing.T) {
 }
 
 func TestListImplementBeadsOpenOrInProgress_usesStatusHook(t *testing.T) {
-	ListImplementBeadsByStatusHook = func(_, _ string, _ WorkflowValidation, status string) ([]PlanBead, error) {
+	setListImplementBeadsByStatusHook(t, func(_, _ string, _ WorkflowValidation, status string) ([]PlanBead, error) {
 		if status == "in_progress" {
 			return []PlanBead{{ID: "te-x", Title: "Implement linkshelf/foo.go per architecture"}}, nil
 		}
 		return nil, nil
-	}
-	t.Cleanup(func() { ListImplementBeadsByStatusHook = nil })
+	})
 	got, err := ListImplementBeadsOpenOrInProgress("", "", WorkflowValidation{BeadTitleContains: "Implement linkshelf/"})
 	if err != nil || len(got) != 1 || got[0].ID != "te-x" {
 		t.Fatalf("got %v err %v", got, err)
@@ -78,6 +76,7 @@ func TestListImplementBeadsOpenOrInProgress_usesStatusHook(t *testing.T) {
 
 func TestAllowedEarlierImplementDependencyWrite(t *testing.T) {
 	t.Parallel()
+	setListImplementBeadsByStatusHook(t, nil)
 	v := WorkflowValidation{
 		RequiredFiles: []string{
 			"tasklist/go.mod",

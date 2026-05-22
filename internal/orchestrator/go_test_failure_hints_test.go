@@ -37,13 +37,12 @@ func TestCompileErrorPathsIncludingClosedDeps_goTestIncludesClosedStore(t *testi
 			"linkshelf/internal/store/store_test.go",
 		},
 	}
-	ListImplementBeadsByStatusHook = func(_, _ string, _ WorkflowValidation, status string) ([]PlanBead, error) {
+	setListImplementBeadsByStatusHook(t, func(_, _ string, _ WorkflowValidation, status string) ([]PlanBead, error) {
 		if status == "closed" {
 			return []PlanBead{{ID: "te-uam", Title: "Implement linkshelf/internal/store/store.go per architecture"}}, nil
 		}
 		return []PlanBead{{ID: "te-8cz", Title: "Implement linkshelf/internal/store/schema.go per architecture"}}, nil
-	}
-	t.Cleanup(func() { ListImplementBeadsByStatusHook = nil })
+	})
 
 	out := "--- FAIL: TestStore_List_Empty (0.00s)\n    store_test.go:31: List returned nil slice, want empty slice\nFAIL\tlinkshelf/internal/store\t0.003s\n"
 	paths := CompileErrorPathsIncludingClosedDeps(townRoot, rig, "linkshelf/internal/store/schema.go", nil, out, v)

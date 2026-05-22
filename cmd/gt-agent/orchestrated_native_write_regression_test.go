@@ -238,7 +238,7 @@ func TestStateRunner_processOrchestratedTools_schemaTurnParsesVerifyAndClose(t *
 	}
 
 	var combined strings.Builder
-	hadNative, cmdCount := r.processOrchestratedTools(polecatSchemaBeadTurn, "sess", &combined)
+	hadNative, _, cmdCount := r.processOrchestratedTools(polecatSchemaBeadTurn, "sess", &combined)
 	if !hadNative {
 		t.Fatal("expected native edits")
 	}

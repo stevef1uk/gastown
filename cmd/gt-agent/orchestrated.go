@@ -198,8 +198,8 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 		runner.runPerTurn()
 
 		var combined strings.Builder
-		hadNative, cmdCount := runner.processOrchestratedTools(response, sessionName, &combined)
-		if hadNative {
+		hadNative, hadSuccessfulNative, cmdCount := runner.processOrchestratedTools(response, sessionName, &combined)
+		if hadSuccessfulNative {
 			runner.noteImplementationFixAttempt("", true)
 		}
 
@@ -263,7 +263,10 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 					orchestratedPrintf("[gt-agent] ignoring success JSON in same turn as native tools\n")
 					recordAttemptFeedback("Success JSON ignored — run Verify from Next bead and `bd close` before JSON success.\n")
 				} else if o != "" {
-					if vErr := runner.validateArtifacts(o); vErr != nil {
+					if msg, reject := runner.rejectImplementationNoOpFailure(o); reject {
+						orchestratedPrintf("[gt-agent] rejecting implementation failure JSON without fix work this attempt\n")
+						recordAttemptFeedback(msg + "\n")
+					} else if vErr := runner.validateArtifacts(o); vErr != nil {
 						recordAttemptFeedback("Validation failed: " + vErr.Error() + "\n")
 					} else {
 						return o, s, lastAttemptFeedback.String(), nil
@@ -717,6 +720,7 @@ func stripModelToolArtifacts(response string) string {
 // normalizeMarkdownFencedCMD converts ```CMD: / ```cmd: blocks to plain CMD: lines.
 func normalizeMarkdownFencedCMD(response string) string {
 	response = markdownFencedCMDRE.ReplaceAllString(response, "CMD: ")
+	response = unwrapMarkdownFencedToolBlocks(response)
 	response = strings.ReplaceAll(response, "```[TOOL_CALLS]", "\n")
 	response = strings.ReplaceAll(response, "[TOOL_CALLS]", "")
 	response = strings.ReplaceAll(response, "```json", "")

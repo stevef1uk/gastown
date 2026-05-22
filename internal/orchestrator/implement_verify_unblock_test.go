@@ -36,7 +36,7 @@ func (s *Store) List(ctx context.Context) ([]Link, error) {
 			"linkshelf/internal/store/store_test.go",
 		},
 	}
-	ListImplementBeadsByStatusHook = func(_, _ string, _ WorkflowValidation, status string) ([]PlanBead, error) {
+	setListImplementBeadsByStatusHook(t, func(_, _ string, _ WorkflowValidation, status string) ([]PlanBead, error) {
 		switch status {
 		case "closed":
 			return []PlanBead{{ID: "te-uam", Title: "Implement linkshelf/internal/store/store.go per architecture"}}, nil
@@ -45,8 +45,7 @@ func (s *Store) List(ctx context.Context) ([]Link, error) {
 		default:
 			return nil, nil
 		}
-	}
-	t.Cleanup(func() { ListImplementBeadsByStatusHook = nil })
+	})
 
 	active := "linkshelf/internal/store/store_test.go"
 	written := "linkshelf/internal/store/store.go"

@@ -207,7 +207,7 @@ func TestNativeREAD_missingSeparateTestFileNudge(t *testing.T) {
 	r.track.activeBeadPath = "linkshelf/internal/store/store.go"
 
 	var combined strings.Builder
-	had, _ := r.processOrchestratedTools("READ: linkshelf/internal/store/store_test.go\n", "sess", &combined)
+	had, _, _ := r.processOrchestratedTools("READ: linkshelf/internal/store/store_test.go\n", "sess", &combined)
 	if !had {
 		t.Fatal("expected native tool attempt")
 	}

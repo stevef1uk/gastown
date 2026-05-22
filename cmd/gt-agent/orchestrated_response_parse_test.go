@@ -193,6 +193,28 @@ func TestParseOrchestratedCommands_polecatMalformedTurn(t *testing.T) {
 	}
 }
 
+func TestUnwrapMarkdownFencedToolBlocks_pythonCMD(t *testing.T) {
+	t.Parallel()
+	in := "```python\nCMD: export BEADS_DIR=x && cd rig/mayor/rig && bd close te-rnd\n```\n"
+	got := unwrapMarkdownFencedToolBlocks(in)
+	if !strings.HasPrefix(strings.TrimSpace(got), "CMD:") {
+		t.Fatalf("got %q", got)
+	}
+	cmds := parseOrchestratedCommands(in)
+	if len(cmds) != 1 || !strings.Contains(cmds[0], "bd close te-rnd") {
+		t.Fatalf("cmds = %v", cmds)
+	}
+}
+
+func TestUnwrapMarkdownFencedToolBlocks_goEDIT(t *testing.T) {
+	t.Parallel()
+	in := "```go\nEDIT: linkshelf/internal/api/handlers_test.go\n<<<<<<< SEARCH\nx\n=======\ny\n>>>>>>> REPLACE\n```\n"
+	ops := parseOrchestratedNativeEdits(in)
+	if len(ops) != 1 || ops[0].kind != "edit" || ops[0].search != "x" {
+		t.Fatalf("ops = %+v", ops)
+	}
+}
+
 func TestParseOrchestratedNativeEdits_acceptsEndEditAlias(t *testing.T) {
 	in := `EDIT: linkshelf/internal/store/store_test.go
 <<<<<<< SEARCH
