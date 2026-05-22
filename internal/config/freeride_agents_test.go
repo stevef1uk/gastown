@@ -17,8 +17,18 @@ func TestDefaultInstalledTownSettings_FreerideDefaults(t *testing.T) {
 	if ts.SessionTransport != "nats" {
 		t.Errorf("SessionTransport = %q, want nats", ts.SessionTransport)
 	}
-	if ts.RoleAgents["polecat"] != "gt-agent-nvidia" {
-		t.Errorf("role_agents[polecat] = %q, want gt-agent-nvidia", ts.RoleAgents["polecat"])
+	if ts.RoleAgents["polecat"] != "gt-agent-gemini" {
+		t.Errorf("role_agents[polecat] = %q, want gt-agent-gemini", ts.RoleAgents["polecat"])
+	}
+	gemini := ts.Agents["gt-agent-gemini"]
+	if gemini == nil {
+		t.Fatal("missing gt-agent-gemini agent")
+	}
+	if gemini.Env["LLM_MODEL"] != "google/gemini-3.5-flash" {
+		t.Errorf("gt-agent-gemini LLM_MODEL = %q", gemini.Env["LLM_MODEL"])
+	}
+	if gemini.Env["LLM_ENDPOINT"] != DefaultFreerideProxyEndpoint {
+		t.Errorf("gt-agent-gemini LLM_ENDPOINT = %q", gemini.Env["LLM_ENDPOINT"])
 	}
 	nvidia := ts.Agents["gt-agent-nvidia"]
 	if nvidia == nil {
@@ -27,8 +37,26 @@ func TestDefaultInstalledTownSettings_FreerideDefaults(t *testing.T) {
 	if nvidia.Env["LLM_MODEL"] != "nvidia/llama-3.3-nemotron-super-49b-v1" {
 		t.Errorf("gt-agent-nvidia LLM_MODEL = %q", nvidia.Env["LLM_MODEL"])
 	}
-	if nvidia.Env["LLM_ENDPOINT"] != DefaultFreerideProxyEndpoint {
-		t.Errorf("gt-agent-nvidia LLM_ENDPOINT = %q", nvidia.Env["LLM_ENDPOINT"])
+}
+
+func TestDefaultFreerideRoleAgents_PolecatUsesGemini(t *testing.T) {
+	roles := DefaultFreerideRoleAgents()
+	if roles["polecat"] != "gt-agent-gemini" {
+		t.Fatalf("polecat role agent = %q, want gt-agent-gemini", roles["polecat"])
+	}
+}
+
+func TestDefaultFreerideAgents_GeminiProfile(t *testing.T) {
+	agents := DefaultFreerideAgents()
+	rc := agents["gt-agent-gemini"]
+	if rc == nil {
+		t.Fatal("gt-agent-gemini profile missing")
+	}
+	if rc.Env["LLM_MODEL"] != "google/gemini-3.5-flash" {
+		t.Fatalf("LLM_MODEL = %q, want google/gemini-3.5-flash", rc.Env["LLM_MODEL"])
+	}
+	if rc.Env["LLM_ENDPOINT"] != DefaultFreerideProxyEndpoint {
+		t.Fatalf("LLM_ENDPOINT = %q, want %q", rc.Env["LLM_ENDPOINT"], DefaultFreerideProxyEndpoint)
 	}
 }
 
@@ -52,7 +80,7 @@ func TestEnsureTownSettingsFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadOrCreateTownSettings: %v", err)
 	}
-	if loaded.RoleAgents["polecat"] != "gt-agent-nvidia" {
+	if loaded.RoleAgents["polecat"] != "gt-agent-gemini" {
 		t.Errorf("loaded polecat role = %q", loaded.RoleAgents["polecat"])
 	}
 
