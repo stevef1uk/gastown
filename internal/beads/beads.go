@@ -641,14 +641,15 @@ func isSubprocessCrash(err error) bool {
 // appended by run(). This was the root cause of gt-uygpe / GH #803.
 func (b *Beads) buildRunEnv() []string {
 	if b.isolated {
-		env := filterBeadsEnv(os.Environ())
+		env := filterBeadsEnv(stripExportedBashFunctions(os.Environ()))
 		if b.serverPort > 0 {
 			env = append(env, fmt.Sprintf("GT_DOLT_PORT=%d", b.serverPort))
 			env = append(env, fmt.Sprintf("BEADS_DOLT_PORT=%d", b.serverPort))
 		}
 		return env
 	}
-	env := stripEnvPrefixes(os.Environ(), "BEADS_DIR=")
+	env := stripExportedBashFunctions(os.Environ())
+	env = stripEnvPrefixes(env, "BEADS_DIR=")
 	env = overrideDoltEnvFromBeadsDir(env, b.getResolvedBeadsDir())
 	return translateDoltPort(env)
 }
@@ -658,16 +659,32 @@ func (b *Beads) buildRunEnv() []string {
 // In isolated mode: also strips BD_ACTOR, BEADS_*, GT_ROOT, HOME.
 func (b *Beads) buildRoutingEnv() []string {
 	if b.isolated {
-		env := filterBeadsEnv(os.Environ())
+		env := filterBeadsEnv(stripExportedBashFunctions(os.Environ()))
 		if b.serverPort > 0 {
 			env = append(env, fmt.Sprintf("GT_DOLT_PORT=%d", b.serverPort))
 			env = append(env, fmt.Sprintf("BEADS_DOLT_PORT=%d", b.serverPort))
 		}
 		return env
 	}
-	env := stripEnvPrefixes(os.Environ(), "BEADS_DIR=")
+	env := stripExportedBashFunctions(os.Environ())
+	env = stripEnvPrefixes(env, "BEADS_DIR=")
 	env = overrideDoltEnvFromBeadsDir(env, b.getResolvedBeadsDir())
 	return translateDoltPort(env)
+}
+
+// stripExportedBashFunctions removes BASH_FUNC_* entries from the environment.
+// macOS/Linux dev shells often export bash-completion function definitions; when bd
+// (or a child shell) inherits them under an incompatible bash, subprocesses fail with
+// "_comp_complete_longopt: syntax error" before bd runs.
+func stripExportedBashFunctions(environ []string) []string {
+	out := make([]string, 0, len(environ))
+	for _, env := range environ {
+		if strings.HasPrefix(env, "BASH_FUNC_") {
+			continue
+		}
+		out = append(out, env)
+	}
+	return out
 }
 
 // filterBeadsEnv removes beads-related environment variables from the given

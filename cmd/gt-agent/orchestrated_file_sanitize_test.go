@@ -80,6 +80,64 @@ func TestSanitizeNativeFileContent(t *testing.T) {
 	}
 }
 
+func TestSanitizeNativeFileContent_stripsHeredocEOFMarker(t *testing.T) {
+	t.Parallel()
+	in := "<<<<<<< EOF\npackage store\n\nimport (\n\t\"os\"\n\t\"testing\"\n)\n"
+	got := sanitizeNativeFileContent(in)
+	if strings.Contains(got, "<<<<<<<") {
+		t.Fatalf("marker leaked: %q", got)
+	}
+	if !strings.HasPrefix(got, "package store") {
+		t.Fatalf("want package first: %q", got)
+	}
+}
+
+func TestStateRunner_executeNativeEdit_stripsEOFMarkerOnWrite(t *testing.T) {
+	dir := t.TempDir()
+	rig := "mockrig"
+	workDir := filepath.Join(dir, rig, "mayor", "rig")
+	layout := filepath.Join(workDir, "linkshelf")
+	if err := os.MkdirAll(filepath.Join(layout, "internal", "store"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	v := orchestrator.DefaultWorkflowValidation()
+	v.LayoutRoot = "linkshelf"
+	v.RequiredFiles = []string{"linkshelf/internal/store/schema_test.go"}
+	v.BeadTitleContains = "Implement"
+	v.QAVerifyCommand = "cd linkshelf && go test ./..."
+	task := &orchestrator.Task{
+		State: "implementation",
+		Hooks: orchestrator.StateHooks{NativeEditTools: true, CmdGuard: "implementation", Track: "implementation"},
+		Validation: v,
+	}
+	r := newStateRunner(task, dir, rig)
+	r.track.activeBead = "te-phq"
+	orchestrator.ListImplementBeadsByStatusHook = func(_, _ string, _ orchestrator.WorkflowValidation, status string) ([]orchestrator.PlanBead, error) {
+		if status == "in_progress" {
+			return []orchestrator.PlanBead{{
+				ID:    "te-phq",
+				Title: "Implement linkshelf/internal/store/schema.go per architecture",
+			}}, nil
+		}
+		return nil, nil
+	}
+	t.Cleanup(func() { orchestrator.ListImplementBeadsByStatusHook = nil })
+	body := "<<<<<<< EOF\npackage store\n\nimport \"testing\"\n\nfunc TestInitSchema(t *testing.T) {}\n"
+	ops := []nativeEditOp{{kind: "write", path: "linkshelf/internal/store/schema_test.go", content: body}}
+	var combined strings.Builder
+	r.executeNativeEdits(ops, rigMayorRigDir(dir, rig), "", nil, &combined)
+	data, err := os.ReadFile(filepath.Join(layout, "internal", "store", "schema_test.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "<<<<<<<") {
+		t.Fatalf("wrote marker to disk: %q", data)
+	}
+	if !strings.HasPrefix(string(data), "package store") {
+		t.Fatalf("got %q", data)
+	}
+}
+
 func TestSanitizeNativeFileContent_realWorldStoreSnippet(t *testing.T) {
 	// Regression: polecat wrote user's store.go with ```go prefix and ```/EOF suffix.
 	in := "```go\npackage store\n\nimport (\n\t\"database/sql\"\n\t\"fmt\"\n)\n\ntype Bookmark struct{}\n```\nEOF\n"

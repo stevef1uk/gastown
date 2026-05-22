@@ -147,7 +147,7 @@ func sanitizeNativeFileContent(content string) string {
 		trimChanged := false
 		for len(lines) > 0 {
 			first := strings.TrimSpace(lines[0])
-			if strings.HasPrefix(first, "```") {
+			if strings.HasPrefix(first, "```") || isNativeEditArtifactLine(first) {
 				lines = lines[1:]
 				trimChanged = true
 				continue
@@ -156,7 +156,7 @@ func sanitizeNativeFileContent(content string) string {
 		}
 		for len(lines) > 0 {
 			last := strings.TrimSpace(lines[len(lines)-1])
-			if last == "```" || isStrayFileTerminatorLine(last) {
+			if last == "```" || isStrayFileTerminatorLine(last) || isNativeEditArtifactLine(last) {
 				lines = lines[:len(lines)-1]
 				trimChanged = true
 				continue
@@ -192,4 +192,20 @@ func isStrayFileTerminatorLine(line string) bool {
 	return strings.EqualFold(t, nativeEditWriteEnd) ||
 		strings.EqualFold(t, "---END EDIT---") ||
 		strings.EqualFold(t, "---END WRITE---")
+}
+
+// isNativeEditArtifactLine reports EDIT/WRITE marker lines the model glued into file bodies
+// (e.g. "<<<<<<< EOF" from heredoc confusion, or "<<<<<<< SEARCH" before package).
+func isNativeEditArtifactLine(line string) bool {
+	t := strings.TrimSpace(line)
+	if t == "" {
+		return false
+	}
+	if t == nativeEditSearchMarker || t == nativeEditReplaceMarker || t == nativeEditEndMarker {
+		return true
+	}
+	if strings.HasPrefix(strings.ToUpper(t), "<<<<<<<") || strings.HasPrefix(t, ">>>>>>>") {
+		return true
+	}
+	return t == "======="
 }

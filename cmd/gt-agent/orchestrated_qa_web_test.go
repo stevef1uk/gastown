@@ -206,6 +206,10 @@ func TestValidateQAArtifacts_requiresRuntimeSmokeWhenProfileHasWebAPI(t *testing
 	if err := os.WriteFile(filepath.Join(storeDir, "store.go"), []byte(storeGo), 0644); err != nil {
 		t.Fatal(err)
 	}
+	schemaGo := strings.Repeat("package store\n\n// DDL and InitSchema for SQLite persistence.\nfunc InitSchema() error { return nil }\n", 3)
+	if err := os.WriteFile(filepath.Join(storeDir, "schema.go"), []byte(schemaGo), 0644); err != nil {
+		t.Fatal(err)
+	}
 	err := validateQAArtifacts(dir, rig, "all_passed", false, true, true, false, v)
 	if err == nil || !strings.Contains(err.Error(), "live smoke") {
 		t.Fatalf("expected live smoke requirement, got: %v", err)
