@@ -9,9 +9,12 @@ import (
 // ValidateImplementWritePath checks whether relPath may be written during implementation.
 // fullReplace true simulates heredoc/WRITE (rejects incremental-edit files); false allows partial edits (EDIT/sed).
 func ValidateImplementWritePath(townRoot, rig, activeBead, relPath string, v WorkflowValidation, fullReplace bool) error {
-	relPath = NormalizeBeadPathForLayout(filepath.ToSlash(strings.TrimSpace(relPath)), v.LayoutRoot)
+	relPath = NormalizeBeadPathForLayout(SanitizeNativeEditRelPath(relPath), v.LayoutRoot)
 	if relPath == "" {
 		return fmt.Errorf("empty path")
+	}
+	if !IsValidImplementBeadPath(relPath) {
+		return fmt.Errorf("invalid implement path %q", relPath)
 	}
 	if fullReplace {
 		fake := fmt.Sprintf("cat > %s <<'EOF'", relPath)

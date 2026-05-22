@@ -84,6 +84,8 @@ func TestIsValidImplementBeadPath(t *testing.T) {
 		"linkshelf/architecture",
 		"linkshelf/linkshelf/go.mod",
 		"linkshelf/[task]",
+		"linkshelf/` command to create the file.",
+		"linkshelf/** to create it per architecture and plan acceptance.",
 		"",
 	}
 	for _, p := range bad {

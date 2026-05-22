@@ -650,8 +650,8 @@ func TestValidateImplementationArtifacts(t *testing.T) {
 	}
 	vGo := v
 	vGo.QAVerifyCommand = "cd linkshelf && go test ./..."
-	if err := validateImplementationArtifacts(dir, "mockrig", false, true, false, vGo); err != nil {
-		t.Fatalf("disk-ready implementation passes without session verify: %v", err)
+	if err := validateImplementationArtifacts(dir, "mockrig", false, true, false, vGo); err == nil || !strings.Contains(err.Error(), "verification must pass") {
+		t.Fatalf("go profile requires green session verify before success: %v", err)
 	}
 	countOpenMatchingBeadsHook = func(_, _, _ string) (int, error) { return 1, nil }
 	if err := validateImplementationArtifacts(dir, "mockrig", false, true, false, vGo); err == nil {

@@ -8,7 +8,10 @@ gt-agent saves per-bead checkpoints in `{{rig}}/qa/implementation-progress.json`
 
 ## After implementation timeout (stall recovery)
 
-If the prompt includes **Prior step failed** from a **timeout**, the orchestrator ran **`recover_implementation_stall`**: dev servers on tracked ports were stopped, in_progress implement beads were reset to **open**, and a single bead was selected for work. Continue with **Next bead** — do not re-close beads that are not green.
+If the prompt includes **Prior step failed** from a **timeout**:
+
+- **Max CMD turns** (`recover_implementation_stall`): dev servers stopped, `in_progress` beads → **open**, one bead selected.
+- **Wall-clock state timeout** (`reset_implementation_phase`): **targeted** reset — **all `.go` and `.py`** under `layout_root` were **deleted** (`go.mod`, `go.sum`, `requirements.txt` kept; SPEC/plan/architecture unchanged), **all implement beads reopened**, `implementation-progress.json` cleared. Re-implement from **Next bead** in plan order.
 
 ## Per bead
 
@@ -43,8 +46,10 @@ gt-agent runs these directly (same turn as `CMD:` is allowed):
 - **WRITE:** `layout/newfile.go` then file body until `---END WRITE---` — **new files only** (gt-agent rejects full WRITE on large existing files). Use **WRITE** for new `*_test.go` / `tests/test_*.py`.
 - **Never** wrap EDIT/WRITE bodies (or heredoc file content) in markdown fences — no leading ` ```go ` or trailing ` ``` `; first line must be real source (`package …`, `import …`, etc.).
 - **Never** put heredoc markers in file bodies — no trailing line `EOF` / `EOT` / `END` (those belong only on their own line **after** a shell `cat <<'EOF'`, not inside **WRITE:** or **EDIT:**).
+- **Never** wrap `CMD:` / `EDIT:` / `WRITE:` in markdown backticks — write `CMD: …` on its own line (no `` `CMD: …` ``).
+- **WRITE:/EDIT:/READ: paths** must be real repo paths only (e.g. `WRITE: linkshelf/internal/store/store.go`) — never prose like `` ` command to create the file. `` or `** to create it per architecture**`.
 
-Use **CMD:** only for `bd`, **Verify**, `go run`/curl (main bead), and `ls`. Auto-verify runs after EDIT/WRITE.
+Use **CMD:** only for `bd`, **Verify**, `go run`/curl (main bead), and `ls`. gt-agent runs **post-write verify** after every EDIT/WRITE; **`bd close` is rejected** unless that bead's Verify passed in this session.
 
 Shell **sed/patch/heredoc** still work but are fallback when EDIT fails.
 

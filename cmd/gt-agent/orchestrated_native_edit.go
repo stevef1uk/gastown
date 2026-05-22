@@ -44,13 +44,13 @@ func parseOrchestratedNativeEdits(response string) []nativeEditOp {
 		upper := strings.ToUpper(trimmed)
 		switch {
 		case strings.HasPrefix(upper, "READ:"):
-			path := strings.TrimSpace(trimmed[len("READ:"):])
+			path := orchestrator.SanitizeNativeEditRelPath(trimmed[len("READ:"):])
 			if path != "" {
 				ops = append(ops, nativeEditOp{kind: "read", path: path})
 			}
 			i++
 		case strings.HasPrefix(upper, "EDIT:"):
-			path := strings.TrimSpace(trimmed[len("EDIT:"):])
+			path := orchestrator.SanitizeNativeEditRelPath(trimmed[len("EDIT:"):])
 			i++
 			search, replace, next, ok := parseNativeEditSearchReplace(lines, i)
 			if !ok || path == "" {
@@ -60,7 +60,7 @@ func parseOrchestratedNativeEdits(response string) []nativeEditOp {
 			ops = append(ops, nativeEditOp{kind: "edit", path: path, search: search, replace: replace})
 			i = next
 		case strings.HasPrefix(upper, "WRITE:"):
-			path := strings.TrimSpace(trimmed[len("WRITE:"):])
+			path := orchestrator.SanitizeNativeEditRelPath(trimmed[len("WRITE:"):])
 			i++
 			content, next := parseNativeWriteBody(lines, i)
 			if path != "" {
@@ -229,6 +229,7 @@ func (r *stateRunner) executeNativeEdits(ops []nativeEditOp, editDir, sessionNam
 		orchestratedPrintf("[gt-agent] %s ok\n", label)
 		combined.WriteString(fmt.Sprintf("%s\n%s\n\n", label, feedback))
 		if op.kind == "edit" || op.kind == "write" {
+			r.runPostNativeWriteVerify(op.path, sessionName, cmdEnv, combined)
 			r.runAutoVerifyForNativeLayoutWrite(sessionName, cmdEnv, combined)
 		}
 	}
@@ -284,7 +285,7 @@ func (r *stateRunner) executeNativeEditOp(op nativeEditOp, workDir string) (stri
 }
 
 func resolveNativeEditAbsPath(workDir, path, layoutRoot string) (rel, abs string, err error) {
-	path = filepath.ToSlash(strings.TrimSpace(path))
+	path = orchestrator.SanitizeNativeEditRelPath(path)
 	if path == "" || strings.Contains(path, "..") {
 		return "", "", fmt.Errorf("invalid path %q", path)
 	}
@@ -295,8 +296,8 @@ func resolveNativeEditAbsPath(workDir, path, layoutRoot string) (rel, abs string
 		}
 	}
 	rel = orchestrator.NormalizeBeadPathForLayout(path, layoutRoot)
-	if rel == "" {
-		return "", "", fmt.Errorf("invalid path %q", path)
+	if rel == "" || !orchestrator.IsValidImplementBeadPath(rel) {
+		return "", "", fmt.Errorf("invalid path %q (use repo-relative paths like %s/internal/foo.go, not markdown prose)", path, strings.Trim(layoutRoot, "/"))
 	}
 	abs = filepath.Join(workDir, filepath.FromSlash(rel))
 	workClean, err := filepath.Abs(workDir)

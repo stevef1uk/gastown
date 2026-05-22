@@ -8,8 +8,11 @@ type StateHooks struct {
 	MaxCmdTurns int `yaml:"max_cmd_turns,omitempty" json:"max_cmd_turns,omitempty"`
 
 	PreRun   []string `yaml:"pre_run,omitempty" json:"pre_run,omitempty"`
-	// OnTimeout runs when a state exceeds state_timeout_seconds or max_cmd_turns is exhausted (e.g. reset_planning_phase, recover_implementation_stall).
+	// OnTimeout runs when max_cmd_turns is exhausted in gt-agent (e.g. recover_implementation_stall).
 	OnTimeout []string `yaml:"on_timeout,omitempty" json:"on_timeout,omitempty"`
+	// OnStateTimeout runs on wall-clock state_timeout_seconds in the orchestrator manager (e.g. reset_implementation_phase).
+	// When empty, the manager falls back to OnTimeout.
+	OnStateTimeout []string `yaml:"on_state_timeout,omitempty" json:"on_state_timeout,omitempty"`
 	// StateTimeoutSeconds is the wall-clock limit for the current FSM state (0 = disabled).
 	StateTimeoutSeconds int `yaml:"state_timeout_seconds,omitempty" json:"state_timeout_seconds,omitempty"`
 	// CmdTimeoutSeconds caps each shell CMD in gt-agent for this state (0 = default per command type).
@@ -180,6 +183,14 @@ func (h StateHooks) EffectiveStateTimeoutSeconds() int {
 }
 
 // EffectiveCmdTimeoutSeconds returns per-shell-command wall clock for gt-agent (0 = use defaults).
+// EffectiveOnStateTimeoutHooks returns hooks for wall-clock state timeout (may differ from max-turn hooks).
+func (h StateHooks) EffectiveOnStateTimeoutHooks() []string {
+	if len(h.OnStateTimeout) > 0 {
+		return h.OnStateTimeout
+	}
+	return h.OnTimeout
+}
+
 func (h StateHooks) EffectiveCmdTimeoutSeconds() int {
 	if h.CmdTimeoutSeconds > 0 {
 		return h.CmdTimeoutSeconds

@@ -145,6 +145,7 @@ states:
     hooks:
       state_timeout_seconds: 3600
       on_timeout: [recover_implementation_stall]
+      on_state_timeout: [reset_implementation_phase]
       cmd_timeout_seconds: 900
       max_cmd_turns: 12
       omit_orchestrator_context: true

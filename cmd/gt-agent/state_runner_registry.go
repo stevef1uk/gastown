@@ -83,10 +83,12 @@ var trackHandlers = map[string]trackFn{
 		}
 		if cmdErr != nil {
 			r.track.hadCmdFailure = true
+			// Stale verifyOK must not allow bd close after a failed go test/build in the same turn.
+			r.track.verifyOK = false
 		}
 		if isBeadCloseCommand(cmd) && cmdErr == nil {
-			r.track.beadCloseOK = true
 			if r.track.verifyOK {
+				r.track.beadCloseOK = true
 				r.track.hadCmdFailure = false
 			}
 			if id := extractBeadIDFromBdClose(cmd); id != "" && id == r.track.activeBead {
@@ -195,7 +197,7 @@ var artifactAutoCompleters = map[string]artifactAutoCompleteFn{
 		if strings.TrimSpace(r.v.QAVerifyCommand) != "" && !r.track.verifyOK {
 			return fmt.Errorf("profile verification must pass before auto-complete")
 		}
-		return validateImplementationArtifacts(r.townRoot, r.rig, false, false, r.track.verifyOK, r.v)
+		return validateImplementationArtifacts(r.townRoot, r.rig, r.track.hadCmdFailure, r.track.beadCloseOK, r.track.verifyOK, r.v)
 	},
 }
 

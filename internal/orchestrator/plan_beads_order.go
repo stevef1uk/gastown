@@ -16,11 +16,18 @@ import (
 
 // IsValidImplementBeadPath reports whether a path extracted from a bead title is a real repo file path.
 func IsValidImplementBeadPath(path string) bool {
-	path = filepath.ToSlash(strings.TrimSpace(path))
+	path = SanitizeNativeEditRelPath(path)
 	if path == "" || strings.Contains(path, "..") {
 		return false
 	}
+	if strings.ContainsAny(path, "`") || strings.Contains(path, "**") {
+		return false
+	}
 	if strings.ContainsAny(path, "[]") || strings.Contains(path, " per ") {
+		return false
+	}
+	lower := strings.ToLower(path)
+	if strings.Contains(lower, "command to create") || strings.Contains(lower, "per architecture") {
 		return false
 	}
 	for _, r := range path {
@@ -36,6 +43,9 @@ func IsValidImplementBeadPath(path string) bool {
 	if base == "" || base == "." || base == "architecture" || base == "Implement" {
 		return false
 	}
+	if strings.Contains(base, " ") {
+		return false
+	}
 	if !strings.Contains(path, "/") && !strings.Contains(base, ".") {
 		switch base {
 		case "Dockerfile", "Makefile", "LICENSE", "README", "Containerfile":
@@ -47,6 +57,9 @@ func IsValidImplementBeadPath(path string) bool {
 	parts := strings.Split(path, "/")
 	for _, seg := range parts {
 		if seg == "" || strings.Contains(seg, "[") || strings.Contains(seg, "]") {
+			return false
+		}
+		if seg != strings.TrimSpace(seg) || strings.HasPrefix(seg, "`") || strings.HasPrefix(seg, "**") {
 			return false
 		}
 	}

@@ -36,8 +36,9 @@ func (m *Manager) applyStateTimeout(workflowID string) (string, error) {
 	}
 	v := m.workflowValidationFor(inst, tpl)
 	var hookLog string
-	if len(state.Hooks.OnTimeout) > 0 && rig != "" {
-		logLine, err := RunOnTimeoutHooks(state.Hooks.OnTimeout, m.townRoot, rig, v)
+	timeoutHooks := state.Hooks.EffectiveOnStateTimeoutHooks()
+	if len(timeoutHooks) > 0 && rig != "" {
+		logLine, err := RunOnTimeoutHooks(timeoutHooks, m.townRoot, rig, v)
 		if err != nil {
 			return "", fmt.Errorf("on_timeout: %w", err)
 		}

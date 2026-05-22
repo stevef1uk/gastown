@@ -40,7 +40,10 @@ func normalizeImplementWritePath(m []string, layout string) string {
 	if len(m) < 2 {
 		return ""
 	}
-	p := filepath.ToSlash(strings.Trim(m[1], `"'`))
+	p := SanitizeNativeEditRelPath(strings.Trim(m[1], `"'`))
+	if p == "" || !IsValidImplementBeadPath(p) {
+		return ""
+	}
 	if layout != "" && !strings.HasPrefix(p, layout+"/") && strings.Contains(p, "/") {
 		if idx := strings.Index(p, layout+"/"); idx >= 0 {
 			p = p[idx:]

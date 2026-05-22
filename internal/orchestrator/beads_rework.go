@@ -31,6 +31,9 @@ func EnsureImplementBeadsAvailable(townRoot, rig string, v WorkflowValidation) (
 	}
 	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
 	if ImplementationDiskWorkReady(rigDir, v) == nil {
+		if err := ImplementationModuleCompileOK(rigDir, v); err != nil {
+			return reopenClosedImplementBeads(townRoot, rig, v)
+		}
 		return nil, nil
 	}
 	return reopenClosedImplementBeads(townRoot, rig, v)
@@ -74,6 +77,8 @@ func qaFailureRequiresImplementationRework(summary string) bool {
 		"curl", "route", "http status", "returned 4", "returned 5",
 		"method not allowed", "address already in use", "bd list", "exit status 127",
 		"command not found", "verification", "verify failed", "web assets", "not served",
+		"imports must appear", "expected declaration", "found db", "setup failed",
+		"compile/test failed", "module compile",
 	} {
 		if strings.Contains(lower, needle) {
 			return true

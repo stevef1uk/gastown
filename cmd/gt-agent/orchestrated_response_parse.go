@@ -20,7 +20,53 @@ func preprocessOrchestratedResponse(response string) string {
 	response = gluedNativeToolRE.ReplaceAllString(response, "$1\n$2")
 	response = gluedCmdToToolRE.ReplaceAllString(response, "$1\n$2")
 	response = inlineToolRE.ReplaceAllString(response, "$1\n$2")
+	response = unwrapMarkdownInlineToolLines(response)
 	return response
+}
+
+// unwrapMarkdownInlineToolLines strips `CMD:` / `EDIT:` lines wrapped in markdown backticks.
+func unwrapMarkdownInlineToolLines(response string) string {
+	var out []string
+	for _, line := range strings.Split(response, "\n") {
+		trimmed := strings.TrimSpace(line)
+		upper := strings.ToUpper(trimmed)
+		if strings.HasPrefix(upper, "CMD:") || strings.HasPrefix(upper, "READ:") ||
+			strings.HasPrefix(upper, "EDIT:") || strings.HasPrefix(upper, "WRITE:") {
+			out = append(out, line)
+			continue
+		}
+		unwrapped := unwrapMarkdownInlineCode(trimmed)
+		u := strings.ToUpper(strings.TrimSpace(unwrapped))
+		if strings.HasPrefix(u, "CMD:") || strings.HasPrefix(u, "READ:") ||
+			strings.HasPrefix(u, "EDIT:") || strings.HasPrefix(u, "WRITE:") {
+			// Preserve leading whitespace on the original line when present.
+			if i := strings.Index(line, trimmed); i >= 0 {
+				out = append(out, line[:i]+unwrapped)
+			} else {
+				out = append(out, unwrapped)
+			}
+			continue
+		}
+		out = append(out, line)
+	}
+	return strings.Join(out, "\n")
+}
+
+func unwrapMarkdownInlineCode(s string) string {
+	s = strings.TrimSpace(s)
+	if len(s) >= 2 && strings.HasPrefix(s, "`") && strings.HasSuffix(s, "`") {
+		inner := strings.TrimSpace(s[1 : len(s)-1])
+		if strings.HasPrefix(inner, "`") && strings.HasSuffix(inner, "`") && len(inner) >= 2 {
+			inner = strings.TrimSpace(inner[1 : len(inner)-1])
+		}
+		return inner
+	}
+	// Trailing backtick from `CMD: ...` prose (common model mistake).
+	if strings.HasPrefix(strings.ToUpper(s), "CMD:") || strings.HasPrefix(strings.ToUpper(s), "EDIT:") ||
+		strings.HasPrefix(strings.ToUpper(s), "WRITE:") || strings.HasPrefix(strings.ToUpper(s), "READ:") {
+		return strings.TrimRight(s, "`")
+	}
+	return s
 }
 
 // sanitizeBdListCommand fixes --limit glued with prose and ensures --limit=0 when missing.

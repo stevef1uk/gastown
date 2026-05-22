@@ -118,14 +118,22 @@ export BEADS_DIR=~/gt/<rig>/.beads && bd list --status=open --flat
 
 After timeout, expect fresh implement beads (`Implement <path> per architecture` with a **space** after `Implement`) and no `plan.md` until the planner writes a new one.
 
-### Implementation stall recovery (`recover_implementation_stall`)
+### Implementation stall recovery (two tiers)
 
 | Mechanism | Config | When it fires |
 |-----------|--------|---------------|
 | **Wall-clock timeout** | `state_timeout_seconds: 3600` | Implementation state exceeds 1h without transition |
 | **Per-CMD timeout** | `cmd_timeout_seconds: 900` | Any single shell CMD (heredoc, `go run`, build) exceeds 15m |
-| **Cleanup** | `on_timeout: [recover_implementation_stall]` | Stops dev servers, resets `in_progress` implement beads → `open`, enforces one active bead |
+| **Light cleanup** | `on_timeout: [recover_implementation_stall]` | **gt-agent max CMD turns**: stop dev servers, `in_progress` → `open`, one active bead |
+| **Hard targeted reset** | `on_state_timeout: [reset_implementation_phase]` | **Orchestrator wall-clock timeout**: delete **all `.go` / `.py`** under `layout_root` (keep `go.mod`, `go.sum`, `requirements.txt`), reopen **all** implement beads, clear `implementation-progress.json` |
 | **FSM edge** | `transitions.timeout.to: implementation` | Polecat gets a fresh turn with `pending_rework` |
+
+Manual hard reset (same as `reset_implementation_phase`):
+
+```bash
+GT_ROOT=~/gt RIG=testgt3 ./scripts/reset-implementation-phase.sh
+# preview: --dry-run
+```
 
 Hung `go run` or a stuck heredoc no longer blocks the rig indefinitely: gt-agent kills the command after `cmd_timeout_seconds`, and the mayor orchestrator can time out the whole step and run the recovery hook.
 

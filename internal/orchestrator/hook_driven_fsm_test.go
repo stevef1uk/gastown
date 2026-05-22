@@ -92,6 +92,12 @@ func TestRigFlowYAML_implementationHasStallRecoveryHooks(t *testing.T) {
 	if len(st.Hooks.OnTimeout) != 1 || st.Hooks.OnTimeout[0] != "recover_implementation_stall" {
 		t.Fatalf("on_timeout = %v, want [recover_implementation_stall]", st.Hooks.OnTimeout)
 	}
+	if len(st.Hooks.OnStateTimeout) != 1 || st.Hooks.OnStateTimeout[0] != "reset_implementation_phase" {
+		t.Fatalf("on_state_timeout = %v, want [reset_implementation_phase]", st.Hooks.OnStateTimeout)
+	}
+	if got := st.Hooks.EffectiveOnStateTimeoutHooks(); len(got) != 1 || got[0] != "reset_implementation_phase" {
+		t.Fatalf("EffectiveOnStateTimeoutHooks = %v", got)
+	}
 	if st.Hooks.EffectiveCmdTimeoutSeconds() != 900 {
 		t.Fatalf("cmd_timeout_seconds = %d, want 900", st.Hooks.CmdTimeoutSeconds)
 	}

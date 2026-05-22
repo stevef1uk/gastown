@@ -1696,8 +1696,13 @@ func validateImplementationArtifacts(townRoot, rig string, hadCmdFailure, beadCl
 	if !beadCloseOK && !diskReady {
 		return fmt.Errorf("at least one successful `bd close` in %s is required before success", rigMayorRigPath(rig))
 	}
-	if strings.TrimSpace(v.QAVerifyCommand) != "" && !verifyOK && !diskReady {
+	if strings.TrimSpace(v.QAVerifyCommand) != "" && !verifyOK {
 		return fmt.Errorf("profile verification must pass in this session before success (%s)", strings.TrimSpace(v.QAVerifyCommand))
+	}
+	if openImpl == 0 && orchestrator.WorkflowUsesGo(v) {
+		if err := orchestrator.ImplementationModuleCompileOK(rigDir, v); err != nil {
+			return fmt.Errorf("all implement beads are closed but the module does not compile — reopen affected beads and fix: %w", err)
+		}
 	}
 	if err := validateRequiredWorkFiles(townRoot, rig, v); err != nil {
 		return err
