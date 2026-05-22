@@ -134,6 +134,7 @@ func ClampProfileValidation(v WorkflowValidation) WorkflowValidation {
 	v = capArchitectureBytesForSmallRig(v)
 	v.MinPlanBytes = MinPlanBytesFromArchitecture(v.MinArchitectureBytes)
 	v = FinalizeDeliveryPhases(v)
+	v = InjectSQLiteSchemaBead(v)
 	v = SanitizeRigFlowProfile(v)
 	return v
 }

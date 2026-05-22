@@ -207,6 +207,8 @@ With the orchestrator running, `gt up` starts rig agents **only** for rigs that 
 
 When `workflow-profile.json` includes `delivery_phases`, rig-flow scopes planning beads, polecat queue, and QA to the **active** phase only. The architect still documents the full system (`all_required_files`).
 
+**Go + `internal/store/` rigs:** `ClampProfileValidation` may inject `{{layout_root}}/internal/store/schema.go` when the profile lists store `.go` files but omits a DDL owner. The architect documents the real table names in **that rig’s** `architecture.md`; polecat implements the injected path per architecture, not a fixed example schema.
+
 ```bash
 gt rig spec-index <rig>              # may emit delivery_phases for large SPECs
 gt rig normalize-profile <rig>       # rewrite profile (docker → final phase, layout clamp)

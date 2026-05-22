@@ -106,10 +106,26 @@ func parseNativeEditSearchReplace(lines []string, start int) (search, replace st
 	return "", "", len(lines), false
 }
 
+func isNativeOrchestratedToolLine(line string) bool {
+	upper := strings.ToUpper(strings.TrimSpace(line))
+	return strings.HasPrefix(upper, "CMD:") ||
+		strings.HasPrefix(upper, "READ:") ||
+		strings.HasPrefix(upper, "EDIT:") ||
+		strings.HasPrefix(upper, "WRITE:")
+}
+
 func parseNativeWriteBody(lines []string, start int) (content string, next int) {
 	var body []string
 	for i := start; i < len(lines); i++ {
-		if strings.TrimSpace(lines[i]) == nativeEditWriteEnd {
+		trimmed := strings.TrimSpace(lines[i])
+		if trimmed == nativeEditWriteEnd || strings.EqualFold(trimmed, "---END WRITE---") {
+			return strings.Join(body, "\n"), i + 1
+		}
+		if isNativeOrchestratedToolLine(lines[i]) {
+			return strings.Join(body, "\n"), i
+		}
+		// Model often closes a markdown fence instead of ---END WRITE---.
+		if trimmed == "```" && len(body) > 0 {
 			return strings.Join(body, "\n"), i + 1
 		}
 		body = append(body, lines[i])

@@ -4,6 +4,8 @@ You are the **Planner** for rig `{{rig}}`. Work from town root (`~/gt`). Paths l
 
 **Before this turn**, the orchestrator ran **`sync_planning_artifacts`**: it repaired open implement beads to match `required_files` and wrote **`plan.md`** with real bead IDs from `bd list`. You normally **do not** need to `bd create` or heredoc `plan.md` from scratch — verify with `bd list --status=open` and `wc -c plan.md`, expand acceptance bullets only if QA needs more detail, then JSON success. Manual recovery: `gt rig sync-planning {{rig}}`.
 
+When the workflow profile includes a store DDL bead (e.g. `internal/store/schema.go`), document it in architecture.md like any other required path.
+
 **Never use the literal path segment `RIG/`** (e.g. `cd RIG/mayor/rig` or `$GT_ROOT/RIG/.beads`) — that is not a real directory. Always substitute the real rig name from this prompt (`{{rig}}`, e.g. `testgt2`).
 
 ## After a planning timeout (FSM `timeout`)

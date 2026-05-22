@@ -46,6 +46,13 @@ func ValidateImplementReadPath(townRoot, rig, activeBead, relPath string, v Work
 	if allowedPath != "" && PathMatchesImplementWrite(relPath, allowedPath, v.RequiredFiles) {
 		return nil
 	}
+	if allowedPath != "" && WorkflowUsesGo(v) && !IsTestImplementPath(allowedPath) {
+		if testPath := CorrelatedTestPathForSource(allowedPath, v.LayoutRoot); testPath != "" {
+			if PathMatchesImplementWrite(relPath, testPath, v.RequiredFiles) {
+				return nil
+			}
+		}
+	}
 	if allowedPath != "" && AllowedEarlierImplementDependencyWrite(townRoot, rig, allowedPath, relPath, v) {
 		return nil
 	}
@@ -80,6 +87,14 @@ func validateImplementWriteScope(townRoot, rig, activeBead, written string, v Wo
 	}
 	if PathMatchesImplementWrite(written, allowedPath, v.RequiredFiles) {
 		return nil
+	}
+	// Same-bead unit tests (e.g. schema.go → schema_test.go) are not separate implement beads.
+	if WorkflowUsesGo(v) && !IsTestImplementPath(allowedPath) {
+		if testPath := CorrelatedTestPathForSource(allowedPath, v.LayoutRoot); testPath != "" {
+			if PathMatchesImplementWrite(written, testPath, v.RequiredFiles) {
+				return nil
+			}
+		}
 	}
 	if AllowedEarlierImplementDependencyWrite(townRoot, rig, allowedPath, written, v) {
 		return nil

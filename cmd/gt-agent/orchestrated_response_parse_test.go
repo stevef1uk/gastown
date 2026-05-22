@@ -106,6 +106,22 @@ func TestStripMarkdownFencesInHeredocScripts(t *testing.T) {
 	}
 }
 
+func TestPreprocessOrchestratedResponse_gluedFenceWriteCMD(t *testing.T) {
+	in := "WRITE: linkshelf/internal/store/schema.go\npackage store\n}\n```WRITE: linkshelf/internal/store/schema_test.go\npackage store\nCMD: go test ./...\n"
+	got := preprocessOrchestratedResponse(in)
+	if !strings.Contains(got, "\nWRITE:") {
+		t.Fatalf("want newline before second WRITE:, got %q", got)
+	}
+	ops := parseOrchestratedNativeEdits(got)
+	if len(ops) != 2 {
+		t.Fatalf("ops=%+v", ops)
+	}
+	cmds := parseOrchestratedCommands(got)
+	if len(cmds) != 1 || !strings.Contains(cmds[0], "go test") {
+		t.Fatalf("cmds=%v", cmds)
+	}
+}
+
 func TestParseOrchestratedNativeEdits_acceptsEndEditAlias(t *testing.T) {
 	in := `EDIT: linkshelf/internal/store/store_test.go
 <<<<<<< SEARCH

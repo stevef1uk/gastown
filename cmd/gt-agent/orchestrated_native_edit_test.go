@@ -58,6 +58,58 @@ func closedHandlersBeadHook() {
 	}
 }
 
+func TestParseNativeWriteBody_stopsAtNextToolOrFence(t *testing.T) {
+	t.Parallel()
+	lines := []string{
+		"package store",
+		"}",
+		"```",
+		"WRITE: linkshelf/internal/store/schema_test.go",
+		"package store_test",
+		"---END WRITE---",
+	}
+	body, next := parseNativeWriteBody(lines, 0)
+	if strings.Contains(body, "WRITE:") || strings.Contains(body, "schema_test") {
+		t.Fatalf("first write swallowed next tool: %q", body)
+	}
+	if next != 3 {
+		t.Fatalf("next=%d want 3 (line after closing ```)", next)
+	}
+	if !strings.HasPrefix(strings.TrimSpace(lines[next]), "WRITE:") {
+		t.Fatalf("line %d = %q, want WRITE:", next, lines[next])
+	}
+	body2, next2 := parseNativeWriteBody(lines, next+1)
+	if !strings.Contains(body2, "package store_test") {
+		t.Fatalf("second write: %q", body2)
+	}
+	if next2 != 6 {
+		t.Fatalf("next2=%d want 6", next2)
+	}
+}
+
+func TestParseOrchestratedNativeEdits_multiWriteWithoutEndMarker(t *testing.T) {
+	in := "WRITE: linkshelf/internal/store/schema.go\npackage store\n\nfunc InitSchema() {}\n```\n" +
+		"WRITE: linkshelf/internal/store/schema_test.go\npackage store_test\n" +
+		"CMD: cd linkshelf && go test ./internal/store/...\n"
+	ops := parseOrchestratedNativeEdits(in)
+	if len(ops) != 2 {
+		t.Fatalf("ops=%d want 2: %+v", len(ops), ops)
+	}
+	if ops[0].kind != "write" || !strings.Contains(ops[0].path, "schema.go") {
+		t.Fatalf("first: %+v", ops[0])
+	}
+	if strings.Contains(ops[0].content, "CMD:") {
+		t.Fatalf("first write swallowed CMD: %q", ops[0].content)
+	}
+	if ops[1].kind != "write" || !strings.Contains(ops[1].path, "schema_test.go") {
+		t.Fatalf("second: %+v", ops[1])
+	}
+	cmds := parseOrchestratedCommands(in)
+	if len(cmds) != 1 || !strings.Contains(cmds[0], "go test") {
+		t.Fatalf("cmds=%v", cmds)
+	}
+}
+
 func TestParseOrchestratedNativeEdits_editAndWrite(t *testing.T) {
 	in := `EDIT: linkshelf/internal/store/store.go
 <<<<<<< SEARCH

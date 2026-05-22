@@ -45,6 +45,7 @@ CMD: cat > {{rig}}/mayor/rig/architecture.md <<'EOF'
 
 ## Planned file layout
 - (list key paths from SPEC / {{required_files}} — describe only; do not create)
+- **When SPEC requires SQL persistence:** name one file that owns DDL/migrations (e.g. `schema.go`, `migrate.go`, or `schema.sql` under the store package) and state that app startup and tests call it — do not scatter duplicate `CREATE TABLE` only in entrypoints or each `*_test.go`. Match table/column names to SPEC (not a fixed example schema).
 
 ## Unit tests
 (Map SPEC functional requirements to test files: Go `*_test.go` per package, Python `tests/test_*.py`. Name cases after FR/acceptance bullets.)

@@ -45,3 +45,4 @@ func (s *Store) AddLink(url string) error {
 		t.Fatal("expected full WRITE rejection on substantive file")
 	}
 }
+

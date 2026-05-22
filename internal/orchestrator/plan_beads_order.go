@@ -305,6 +305,8 @@ func implementationPathScore(p string) int {
 		return 0
 	case strings.HasSuffix(lower, "requirements.txt") || strings.HasSuffix(lower, "pyproject.toml"):
 		return 5
+	case strings.Contains(lower, "/internal/store/schema.go") || strings.Contains(lower, "/internal/store/migrate.go"):
+		return 8
 	case strings.Contains(lower, "/internal/store/"):
 		return 10
 	case strings.Contains(lower, "/internal/api/"):

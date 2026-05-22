@@ -7,6 +7,15 @@ import (
 
 func planAcceptanceBullets(beadPath string, v WorkflowValidation) []string {
 	beadPath = filepath.ToSlash(strings.TrimSpace(beadPath))
+	if IsSQLiteSchemaBeadPath(beadPath) {
+		return []string{
+			"File exists at `" + beadPath + "` under the rig worktree.",
+			"Exports `InitSchema(*sql.DB) error` (or equivalent) with `CREATE TABLE IF NOT EXISTS` DDL from architecture.md.",
+			"DDL matches architecture.md; production entrypoint and package tests call this helper — no duplicated `CREATE TABLE` strings in tests or main.",
+			"Polecat runs **Verify** from the Next bead line before `bd close`.",
+			"Bead is implemented before `internal/store/store.go` in build order.",
+		}
+	}
 	common := []string{
 		"File exists at `" + beadPath + "` under the rig worktree.",
 		"Matches layout and naming in architecture.md (no stub/placeholder implementation).",
