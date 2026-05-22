@@ -50,6 +50,7 @@ gt-agent runs these directly (same turn as `CMD:` is allowed):
 - **Never** prefix WRITE bodies with heredoc/EDIT markers — no `<<<<<<< EOF`, `<<<<<<< SEARCH`, `=======`, or `>>>>>>> REPLACE` (those are shell/EDIT syntax only, not Go/Python source).
 - **Never** put heredoc markers in file bodies — no trailing line `EOF` / `EOT` / `END` (those belong only on their own line **after** a shell `cat <<'EOF'`, not inside **WRITE:** or **EDIT:**).
 - **Never** wrap `CMD:` / `EDIT:` / `WRITE:` in markdown backticks — write `CMD: …` on its own line (no `` `CMD: …` ``).
+- After **EDIT:**/**WRITE:** on `.go` files, gt-agent runs **goimports** when installed (drops unused imports like stray `"fmt"`). If verify still says `imported and not used`, fix the **import block only** with a tiny EDIT — not a whole-file rewrite.
 - **WRITE:/EDIT:/READ: paths** must be real repo paths only (e.g. `WRITE: linkshelf/internal/store/store.go`) — never prose like `` ` command to create the file. `` or `** to create it per architecture**`.
 
 Use **CMD:** only for `bd`, **Verify**, `go run`/curl (main bead), and `ls`. gt-agent runs **post-write verify** after every EDIT/WRITE; **`bd close` is rejected** unless that bead's Verify passed in this session.

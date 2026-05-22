@@ -206,6 +206,18 @@ func (r *stateRunner) processOrchestratedTools(response, sessionName string, com
 			combined.WriteString(fmt.Sprintf("Command: %s\nError: %v\nOutput: %s\n\n", cmd, cmdErr, string(out)))
 			if r.hooks.AppendGoCompileContext && orchestrator.WorkflowUsesGo(r.v) {
 				outStr := string(out)
+				if orchestrator.GoCompileOutputHasUnusedImport(outStr) {
+					beadPath := r.activeImplementBeadPath()
+					if beadPath == "" {
+						beadPath = orchestrator.ImplementBeadPathForID(r.townRoot, r.rig, r.track.activeBead, r.v)
+					}
+					if beadPath != "" {
+						mayorDir := rigMayorRigDir(r.townRoot, r.rig)
+						if ran, tidyErr := orchestrator.RunGoimportsOnFile(mayorDir, beadPath); ran && tidyErr == nil {
+							combined.WriteString(fmt.Sprintf("Auto-ran goimports on %s — re-run the same verify CMD\n\n", beadPath))
+						}
+					}
+				}
 				appendGoCompileSourceContext(combined, r.townRoot, r.rig, rigMayorRigDir(r.townRoot, r.rig), r.v.LayoutRoot,
 					r.activeImplementBeadPath(), r.v, cmd, outStr)
 				if strings.EqualFold(strings.TrimSpace(r.hooks.Track), "implementation") {
@@ -262,6 +274,7 @@ func (r *stateRunner) executeNativeEdits(ops []nativeEditOp, editDir, sessionNam
 		orchestratedPrintf("[gt-agent] %s ok\n", label)
 		combined.WriteString(fmt.Sprintf("%s\n%s\n\n", label, feedback))
 		if op.kind == "edit" || op.kind == "write" {
+			r.tidyGoFileAfterNativeWrite(op.path, combined)
 			r.runPostNativeWriteVerify(op.path, sessionName, cmdEnv, combined)
 			r.runAutoVerifyForNativeLayoutWrite(sessionName, cmdEnv, combined)
 		}

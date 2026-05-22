@@ -7,6 +7,31 @@ import (
 	"github.com/steveyegge/gastown/internal/orchestrator"
 )
 
+// tidyGoFileAfterNativeWrite runs goimports on relPath when available (fixes unused imports after partial EDITs).
+func (r *stateRunner) tidyGoFileAfterNativeWrite(relPath string, combined *strings.Builder) {
+	if !strings.EqualFold(strings.TrimSpace(r.hooks.Track), "implementation") {
+		return
+	}
+	if !orchestrator.WorkflowUsesGo(r.v) {
+		return
+	}
+	relPath = orchestrator.NormalizeBeadPathForLayout(relPath, r.v.LayoutRoot)
+	if relPath == "" || !strings.HasSuffix(relPath, ".go") {
+		return
+	}
+	mayorDir := rigMayorRigDir(r.townRoot, r.rig)
+	ran, err := orchestrator.RunGoimportsOnFile(mayorDir, relPath)
+	if !ran {
+		return
+	}
+	if err != nil {
+		combined.WriteString(fmt.Sprintf("goimports %s: %v\n\n", relPath, err))
+		return
+	}
+	orchestratedPrintf("[gt-agent] goimports -w %s\n", relPath)
+	combined.WriteString(fmt.Sprintf("Ran goimports on %s (unused imports / formatting)\n\n", relPath))
+}
+
 // runPostNativeWriteVerify runs compile/test for the edited package immediately after WRITE/EDIT.
 func (r *stateRunner) runPostNativeWriteVerify(relPath string, sessionName string, cmdEnv []string, combined *strings.Builder) {
 	if !strings.EqualFold(strings.TrimSpace(r.hooks.Track), "implementation") {
@@ -30,6 +55,13 @@ func (r *stateRunner) runPostNativeWriteVerify(relPath string, sessionName strin
 	workDir := r.workDir()
 	orchestratedPrintf("[gt-agent] post-write verify: %s\n", verifyCmd)
 	out, err := r.runShellCommand(verifyCmd, workDir, sessionName, cmdEnv)
+	if err != nil && orchestrator.GoCompileOutputHasUnusedImport(string(out)) {
+		if ran, tidyErr := orchestrator.RunGoimportsOnFile(mayorDir, relPath); ran && tidyErr == nil {
+			orchestratedPrintf("[gt-agent] retrying verify after goimports on %s\n", relPath)
+			combined.WriteString(fmt.Sprintf("Auto-ran goimports on %s before retrying verify\n\n", relPath))
+			out, err = r.runShellCommand(verifyCmd, workDir, sessionName, cmdEnv)
+		}
+	}
 	if err != nil {
 		r.track.hadCmdFailure = true
 		r.track.verifyOK = false
