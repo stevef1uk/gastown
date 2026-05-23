@@ -85,6 +85,8 @@ gt orchestrator sync --update-changed
 gt orchestrator status    # should show running + PID
 ```
 
+**Optional (implementation phase):** on the polecat host, install [codeindex](https://github.com/scheidydude/codeindex) (`pip install codeindex`) so gt-agent can refresh `mayor/rig/codeindex.json` and inject blast-radius context per implement bead. For Go rigs, `go install golang.org/x/tools/cmd/goimports@latest` helps after native EDIT/WRITE. Set `GT_CODEINDEX=0` to disable. See your freeride `README.md` (**Polecat host tools**) or `internal/orchestrator/town/README.md`.
+
 ### 2. Start the workflow
 
 ```bash

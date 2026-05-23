@@ -113,6 +113,7 @@ Workflow templates that coordinate multi-step work. Formulas (TOML definitions) 
 - **NATS** — orchestrator MCP on `gt.orchestrator.mcp` (requires `"session_transport": "nats"` in town settings)
 - **Freeride proxy** (optional) — OpenAI-compatible LLM at `http://localhost:11434` for `gt-agent`; routes models by role
 - **`gt-agent-console`** — web UI on port **8081** to watch orchestrator + rig agents, workflow state, and `typescript` logs (see [Agent Console](#agent-console-))
+- **codeindex** (optional, polecat host) — `pip install codeindex` for implementation blast-radius context; see freeride `README.md` (**Polecat host tools**) or [town operator notes](internal/orchestrator/town/README.md)
 
 Patrol agents (witness, refinery, deacon, **town mechanic**) stay on the legacy loop. Pipeline roles (mayor, architect, planner, polecat, qa) use orchestrated mode when the orchestrator is running.
 

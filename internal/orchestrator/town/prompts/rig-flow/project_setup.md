@@ -38,6 +38,19 @@ Use **Go** or **Python** instructions below based on the profile (`{{project_set
 
 ---
 
+## Host tools for implementation (install once — not planner CMDs)
+
+**project_setup** only scaffolds the module/venv. The **polecat** host (where `gt-agent` runs for `{{rig}}/polecat/`) should have these optional tools **before implementation** starts. Operators install them on the machine; the planner does **not** run `pip`/`go install` in this step.
+
+| Tool | Purpose | Install |
+|------|---------|---------|
+| **codeindex** | Blast-radius context in implement prompts; gt-agent builds `{{rig}}/mayor/rig/codeindex.json` | `pip install codeindex` — must be on `PATH` |
+| **goimports** | Fixes unused imports after EDIT/WRITE on Go rigs | `go install golang.org/x/tools/cmd/goimports@latest` |
+
+Disable codeindex only: `GT_CODEINDEX=0` in polecat agent env. Operator docs: freeride `README.md` → **Gas Town Integration** → **Polecat host tools (optional)**.
+
+---
+
 ## Go projects (`go test` in verify)
 
 ### Go-specific scope

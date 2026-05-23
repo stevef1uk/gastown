@@ -153,7 +153,18 @@ Implementation state sets `native_edit_tools: true` in `rig-flow.yaml`. The pole
 
 When an implement bead’s file **already exists** on disk (and is not a stub), gt-agent **rejects** `cat > path <<'EOF'` and full **`WRITE:`** rewrites; use **`EDIT:`** search/replace instead. **Implement context** includes an **Incremental edit required** block when applicable.
 
-**Codeindex (optional):** if [`codeindex`](https://github.com/scheidydude/codeindex) is on PATH (`pip install codeindex`), implementation `pre_run` runs `refresh_codeindex` (builds `mayor/rig/codeindex.json`) and each bead prompt gets **blast radius** via `codeindex impact`. Set `GT_CODEINDEX=0` to disable.
+**Codeindex (optional):** dependency blast radius for implement beads — see freeride `README.md` → **Gas Town Integration** → **Polecat host tools (optional)** → **Codeindex**. Summary:
+
+| Item | Detail |
+|------|--------|
+| Install | `pip install codeindex` on the **polecat** host (`codeindex` on `PATH`) |
+| Index file | `{townRoot}/{rig}/mayor/rig/codeindex.json` |
+| Analyze root | `{mayor}/rig/{layout_root}/` (e.g. `linkshelf/`) from `workflow-profile.json` |
+| When | `refresh_codeindex` in implementation `pre_run`; per-bead `codeindex impact` in **Implement context** |
+| Disable | `GT_CODEINDEX=0` or `CODEINDEX=0` in polecat `gt-agent` env |
+| Manual | `codeindex analyze <layout> --output codeindex.json` from `mayor/rig`; impact paths relative to layout |
+
+**goimports (Go):** optional; gt-agent runs it on the package after native EDIT/WRITE when verify reports unused imports.
 
 Restart a dead polecat session: `gt up` (pipeline liveness restarts gt-agent without `--orchestrated`), or `scripts/reset-rig-orchestrator.sh` for a full rig rewind.
 
