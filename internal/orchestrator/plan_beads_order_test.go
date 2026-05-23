@@ -22,6 +22,20 @@ func TestMatchesImplementBeadTitle_gluedTypo(t *testing.T) {
 	}
 }
 
+func TestMatchesImplementBeadTitle_pathInRequiredFilesWithoutPrefix(t *testing.T) {
+	t.Parallel()
+	v := WorkflowValidation{
+		BeadTitleContains: "Implement linkshelf/",
+		RequiredFiles:     []string{"linkshelf/go.mod", "linkshelf/internal/store/schema.go"},
+	}
+	if !MatchesImplementBeadTitle("Implement go.mod per architecture", v) {
+		t.Fatal("canonical title with path in required_files should match without layout prefix")
+	}
+	if MatchesImplementBeadTitle("Implement other/pkg/foo.go per architecture", v) {
+		t.Fatal("path not in required_files should not match")
+	}
+}
+
 func TestExtractPathFromBeadTitle_gluedImplement(t *testing.T) {
 	t.Parallel()
 	got := ExtractPathFromBeadTitle("ImplementDockerfile per architecture", "Implement ")

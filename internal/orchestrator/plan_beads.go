@@ -39,10 +39,24 @@ func MatchesImplementBeadTitle(title string, v WorkflowValidation) bool {
 		return false
 	}
 	pfx := v.BeadTitleContains
-	if strings.TrimSpace(pfx) == "" {
-		return false
+	lowerTitle := strings.ToLower(title)
+	if strings.TrimSpace(pfx) != "" && strings.HasPrefix(lowerTitle, strings.ToLower(pfx)) {
+		return true
 	}
-	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(title)), strings.ToLower(pfx))
+	// Fallback when profile prefix is layout-specific (e.g. "Implement linkshelf/") but the
+	// planner emitted canonical "Implement go.mod per architecture".
+	if strings.HasPrefix(lowerTitle, "implement ") &&
+		(strings.Contains(lowerTitle, " per architecture") || strings.Contains(lowerTitle, " per arch")) {
+		path := ExtractPathFromBeadTitle(title, v.BeadTitleContains)
+		if path == "" || !IsValidImplementBeadPath(path) {
+			return false
+		}
+		if len(v.RequiredFiles) == 0 {
+			return pfx == "" || strings.HasPrefix(lowerTitle, strings.ToLower(pfx))
+		}
+		return pathMatchesRequired(path, v.RequiredFiles)
+	}
+	return false
 }
 
 // ExtractPathFromBeadTitle returns a repo-relative file path from an implementation bead title.

@@ -131,7 +131,8 @@ func handlerContractIssues(body string, mapping WebStaticMapping) []string {
 	return issues
 }
 
-// ValidateImplementWrittenContent rejects polecat patterns that break HTTP contract (GT-VERIFY-001).
+// ValidateImplementWrittenContent rejects polecat patterns that break HTTP contract (GT-VERIFY-001)
+// and cross-bead symbol duplication in shared Go packages (e.g. InitSchema in store.go).
 func ValidateImplementWrittenContent(relPath, content string, v WorkflowValidation) error {
 	relPath = filepath.ToSlash(strings.TrimSpace(relPath))
 	if relPath == "" {
@@ -141,6 +142,9 @@ func ValidateImplementWrittenContent(relPath, content string, v WorkflowValidati
 		if strings.Contains(content, "os.Chdir") {
 			return fmt.Errorf("%s must not use os.Chdir — tests and handlers must use the real web/ tree (webRoot=\"web\" or filepath.Join from the module directory); table cases should hit architecture paths (GET /, static assets, .. traversal)", relPath)
 		}
+	}
+	if err := ValidateImplementCrossBeadContent(relPath, content, v); err != nil {
+		return err
 	}
 	return nil
 }

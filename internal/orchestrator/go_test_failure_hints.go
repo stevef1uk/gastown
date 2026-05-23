@@ -107,6 +107,45 @@ func TestFuncNamesFromGoTestFile(data []byte) []string {
 	return names
 }
 
+func packageNeedsScopedGoTest(beadPath string, v WorkflowValidation, mayorRigDir string) bool {
+	return PackageHasForeignTestFiles(beadPath, v, mayorRigDir) ||
+		PackageHasForeignProductionGoFiles(beadPath, v, mayorRigDir)
+}
+
+// PackageHasForeignProductionGoFiles reports whether the package contains other production
+// .go files on disk that belong to a different required_files implement bead.
+func PackageHasForeignProductionGoFiles(beadPath string, v WorkflowValidation, mayorRigDir string) bool {
+	beadPath = filepath.ToSlash(strings.TrimSpace(beadPath))
+	if beadPath == "" || IsTestImplementPath(beadPath) {
+		return false
+	}
+	layout := strings.Trim(strings.TrimSpace(v.LayoutRoot), "/")
+	pkgRel := GoBuildRelPackage(v.LayoutRoot, beadPath)
+	if pkgRel == "" {
+		return false
+	}
+	dir := filepath.Join(mayorRigDir, layout, filepath.FromSlash(pkgRel))
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return false
+	}
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".go") || strings.HasSuffix(e.Name(), "_test.go") {
+			continue
+		}
+		prodRel := filepath.ToSlash(filepath.Join(layout, pkgRel, e.Name()))
+		if prodRel == beadPath {
+			continue
+		}
+		for _, want := range v.RequiredFiles {
+			if pathMatchesRequired(prodRel, []string{want}) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // PackageHasForeignTestFiles reports whether the package for beadPath contains *_test.go
 // files on disk that belong to a different required_files production bead.
 func PackageHasForeignTestFiles(beadPath string, v WorkflowValidation, mayorRigDir string) bool {

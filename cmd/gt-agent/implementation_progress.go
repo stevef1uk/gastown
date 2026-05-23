@@ -184,14 +184,22 @@ func (r *stateRunner) applyImplementationProgressToTrack() {
 	if r.implProgress == nil || r.track == nil {
 		return
 	}
+	// Align with queue head before restoring persisted active bead (avoids stale active after restart).
+	r.reconcileActiveImplementBeadWithQueue()
 	if r.track.activeBead == "" && r.implProgress.ActiveBead != "" {
-		r.track.activeBead = r.implProgress.ActiveBead
+		next, err := orchestrator.NextOpenImplementBead(r.townRoot, r.rig, r.v)
+		if err == nil && next != nil && next.ID == r.implProgress.ActiveBead {
+			r.track.activeBead = r.implProgress.ActiveBead
+			if r.track.activeBeadPath == "" && r.implProgress.ActiveBeadPath != "" {
+				r.track.activeBeadPath = r.implProgress.ActiveBeadPath
+			}
+		}
 	}
-	if r.track.activeBeadPath == "" && r.implProgress.ActiveBeadPath != "" {
+	if r.track.activeBeadPath == "" && r.implProgress.ActiveBeadPath != "" &&
+		r.track.activeBead != "" && r.track.activeBead == r.implProgress.ActiveBead {
 		r.track.activeBeadPath = r.implProgress.ActiveBeadPath
 	}
 	// verifyOK is set only by a green Verify in this session (post-write / auto-verify / clearStale on resume).
-	r.reconcileActiveImplementBeadWithQueue()
 }
 
 func (r *stateRunner) persistImplementationProgress(cmd string) {

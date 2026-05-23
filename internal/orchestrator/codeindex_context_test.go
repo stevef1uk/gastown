@@ -3,6 +3,7 @@ package orchestrator
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -48,6 +49,59 @@ func TestFormatCodeindexContextForBead_disabled(t *testing.T) {
 	got := FormatCodeindexContextForBead(t.TempDir(), "linkshelf/foo.go", WorkflowValidation{LayoutRoot: "linkshelf"})
 	if got != "" {
 		t.Fatalf("want empty when disabled, got %q", got)
+	}
+}
+
+func TestCodeindexImpactCandidates_goFile(t *testing.T) {
+	t.Parallel()
+	v := WorkflowValidation{
+		LayoutRoot:      "linkshelf",
+		QAVerifyCommand: "cd linkshelf && go test ./...",
+	}
+	got := codeindexImpactCandidates("linkshelf/internal/store/schema.go", v)
+	if len(got) != 2 || got[0] != "internal/store" || got[1] != "internal/store/schema.go" {
+		t.Fatalf("got %v", got)
+	}
+}
+
+func TestCodeindexLayoutRelativePath(t *testing.T) {
+	t.Parallel()
+	v := WorkflowValidation{LayoutRoot: "linkshelf"}
+	got := codeindexLayoutRelativePath("linkshelf/internal/api/handlers.go", v)
+	if got != "internal/api/handlers.go" {
+		t.Fatalf("got %q", got)
+	}
+}
+
+func TestFormatCodeindexContextForBead_goPackageImpact(t *testing.T) {
+	if !CodeindexEnabled() {
+		t.Skip("codeindex not on PATH")
+	}
+	dir := t.TempDir()
+	layout := filepath.Join(dir, "linkshelf", "internal", "store")
+	if err := os.MkdirAll(layout, 0755); err != nil {
+		t.Fatal(err)
+	}
+	body := "package store\n\nfunc InitSchema() error { return nil }\n"
+	if err := os.WriteFile(filepath.Join(layout, "schema.go"), []byte(body), 0644); err != nil {
+		t.Fatal(err)
+	}
+	v := WorkflowValidation{
+		LayoutRoot:      "linkshelf",
+		QAVerifyCommand: "cd linkshelf && go test ./...",
+	}
+	if _, err := RefreshCodeindexIndex(dir, v); err != nil {
+		t.Fatalf("refresh: %v", err)
+	}
+	got := FormatCodeindexContextForBead(dir, "linkshelf/internal/store/schema.go", v)
+	if got == "" {
+		t.Fatal("want blast radius block")
+	}
+	if strings.Contains(got, "impact lookup failed") || strings.Contains(got, "File not found in index") {
+		t.Fatalf("file path should fall back to package impact, got:\n%s", got)
+	}
+	if !strings.Contains(got, "Codeindex blast radius") {
+		t.Fatalf("got %q", got)
 	}
 }
 

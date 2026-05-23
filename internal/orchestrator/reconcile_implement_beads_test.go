@@ -34,6 +34,28 @@ func TestValidateBeadArtifactOnDisk_missing(t *testing.T) {
 	}
 }
 
+func TestRequiredFileAtOrBeforeQueueHead(t *testing.T) {
+	t.Parallel()
+	v := WorkflowValidation{
+		RequiredFiles: []string{
+			"linkshelf/go.mod",
+			"linkshelf/internal/store/schema.go",
+			"linkshelf/internal/store/store.go",
+			"linkshelf/internal/store/store_test.go",
+		},
+	}
+	head := "linkshelf/internal/store/store.go"
+	if !requiredFileAtOrBeforeQueueHead("linkshelf/internal/store/schema.go", head, v) {
+		t.Fatal("schema is before store head")
+	}
+	if !requiredFileAtOrBeforeQueueHead(head, head, v) {
+		t.Fatal("head path should audit")
+	}
+	if requiredFileAtOrBeforeQueueHead("linkshelf/internal/store/store_test.go", head, v) {
+		t.Fatal("store_test after head should not audit")
+	}
+}
+
 func TestAuditRequiredImplementFiles_present(t *testing.T) {
 	t.Parallel()
 	rigDir := t.TempDir()

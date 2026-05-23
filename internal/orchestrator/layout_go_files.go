@@ -68,7 +68,7 @@ func GoCompileVerifyCommandForBead(v WorkflowValidation, mayorRigDir, beadPath s
 // goTestVerifyScopedToBead runs go test -run for this bead's Test* funcs when sibling *_test.go
 // files in the same package belong to other implement beads (e.g. schema.go vs store_test.go).
 func goTestVerifyScopedToBead(v WorkflowValidation, mayorRigDir, beadPath, correlatedTest string) string {
-	if !PackageHasForeignTestFiles(beadPath, v, mayorRigDir) {
+	if !packageNeedsScopedGoTest(beadPath, v, mayorRigDir) {
 		return ""
 	}
 	layout := strings.Trim(strings.TrimSpace(v.LayoutRoot), "/")

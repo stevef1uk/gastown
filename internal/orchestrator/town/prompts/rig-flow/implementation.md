@@ -16,7 +16,7 @@ If the prompt includes **Prior step failed** from a **timeout**:
 ## Per bead
 
 1. `CMD: export BEADS_DIR=$GT_ROOT/{{rig}}/.beads && cd {{rig}}/mayor/rig && bd update BEAD_ID --status=in_progress`
-2. **Fix the file** with native **EDIT:** / **WRITE:** (see orchestrator context) — not `cat > path <<'EOF'` on existing files. EDIT blocks must end with a line **`>>>>>>> REPLACE`** only (not `---END EDIT---`).
+2. **Fix the file** with native **EDIT:** / **WRITE:** (see orchestrator context) — not `cat > path <<'EOF'` on existing files. EDIT blocks must end with a line **`>>>>>>> REPLACE`** only (not `---END EDIT---`). Put all code in **WRITE:** / **EDIT:** blocks — do **not** paste implementation as markdown ` ```go ` fences (the orchestrator ignores fenced code).
 3. **Unit tests (best practice):** implement or extend tests **in the same session** as production code, mapped to **SPEC.md**, **architecture.md**, and **plan.md** acceptance for this path (see **Implement context**). Tests must assert real functional requirements — not stubs or `assert True`.
 4. `CMD: cd {{rig}}/mayor/rig && …` — run **Verify** from the Next bead line (Python venv is `{{python_venv_dir}}/` under mayor/rig, not under `{{layout_root}}/`). Green before `bd close`.
 5. `CMD: export BEADS_DIR=$GT_ROOT/{{rig}}/.beads && cd {{rig}}/mayor/rig && bd close BEAD_ID`

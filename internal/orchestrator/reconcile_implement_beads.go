@@ -32,13 +32,46 @@ func ReconcileClosedImplementBeads(townRoot, rig string, v WorkflowValidation) (
 	return reopenClosedImplementBeads(townRoot, rig, v.ForActivePhase())
 }
 
+// requiredFileAtOrBeforeQueueHead reports whether rel is the queue head or an earlier required_files entry.
+func requiredFileAtOrBeforeQueueHead(rel, headPath string, v WorkflowValidation) bool {
+	headPath = filepath.ToSlash(strings.TrimSpace(headPath))
+	rel = filepath.ToSlash(strings.TrimSpace(rel))
+	if headPath == "" || rel == "" {
+		return true
+	}
+	for _, want := range OrderRequiredFilesForImplementation(v.RequiredFiles) {
+		if pathMatchesRequired(want, []string{rel}) {
+			return true
+		}
+		if pathMatchesRequired(want, []string{headPath}) {
+			return false
+		}
+	}
+	return false
+}
+
 // AuditRequiredImplementFiles reports required_files that are missing, empty, or stubbed on disk.
+// When townRoot and rig are set, files after the open queue head are skipped (not implemented yet).
 func AuditRequiredImplementFiles(rigDir string, v WorkflowValidation) []string {
+	return auditRequiredImplementFiles(rigDir, "", "", v)
+}
+
+func auditRequiredImplementFiles(rigDir, townRoot, rig string, v WorkflowValidation) []string {
 	v = v.ForActivePhase()
+	headPath := ""
+	if townRoot != "" && rig != "" && BeadsDatabaseReady(townRoot, rig) {
+		if next, err := NextOpenImplementBead(townRoot, rig, v); err == nil && next != nil {
+			headPath = NormalizeBeadPathForLayout(
+				ExtractPathFromBeadTitle(next.Title, v.BeadTitleContains), v.LayoutRoot)
+		}
+	}
 	var issues []string
 	for _, rel := range v.RequiredFiles {
 		rel = filepath.ToSlash(strings.TrimSpace(rel))
 		if rel == "" {
+			continue
+		}
+		if headPath != "" && !requiredFileAtOrBeforeQueueHead(rel, headPath, v) {
 			continue
 		}
 		path := filepath.Join(rigDir, filepath.FromSlash(rel))
@@ -104,7 +137,7 @@ func ReconcileImplementBeads(townRoot, rig string, v WorkflowValidation) (string
 	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
 	var parts []string
 
-	for _, issue := range AuditRequiredImplementFiles(rigDir, v) {
+	for _, issue := range auditRequiredImplementFiles(rigDir, townRoot, rig, v) {
 		parts = append(parts, issue)
 	}
 	mismatches, err := AuditClosedImplementBeadMismatches(townRoot, rig, v)

@@ -93,6 +93,63 @@ func TestInitSchema(t *testing.T) {}
 	}
 }
 
+func TestPackageHasForeignProductionGoFiles(t *testing.T) {
+	t.Parallel()
+	v := WorkflowValidation{
+		LayoutRoot: "linkshelf",
+		RequiredFiles: []string{
+			"linkshelf/internal/store/schema.go",
+			"linkshelf/internal/store/store.go",
+		},
+	}
+	dir := t.TempDir()
+	storeDir := filepath.Join(dir, "linkshelf/internal/store")
+	if err := os.MkdirAll(storeDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(storeDir, "store.go"), []byte("package store\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if !PackageHasForeignProductionGoFiles("linkshelf/internal/store/schema.go", v, dir) {
+		t.Fatal("schema bead should see foreign store.go")
+	}
+	if PackageHasForeignProductionGoFiles("linkshelf/internal/store/store.go", v, dir) {
+		t.Fatal("store bead should not see itself as foreign")
+	}
+}
+
+func TestGoCompileVerifyCommandForBead_schemaScopedWhenBrokenStoreOnDisk(t *testing.T) {
+	t.Parallel()
+	v := WorkflowValidation{
+		LayoutRoot: "linkshelf",
+		RequiredFiles: []string{
+			"linkshelf/internal/store/schema.go",
+			"linkshelf/internal/store/store.go",
+		},
+	}
+	dir := t.TempDir()
+	storeDir := filepath.Join(dir, "linkshelf/internal/store")
+	if err := os.MkdirAll(storeDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(storeDir, "store.go"), []byte("package store\nfunc NewStore() {}\nfunc NewStore() {}\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	schemaTest := `package store
+
+import "testing"
+
+func TestInitSchema(t *testing.T) {}
+`
+	if err := os.WriteFile(filepath.Join(storeDir, "schema_test.go"), []byte(schemaTest), 0644); err != nil {
+		t.Fatal(err)
+	}
+	got := GoCompileVerifyCommandForBead(v, dir, "linkshelf/internal/store/schema.go")
+	if !strings.Contains(got, "-run 'TestInitSchema'") {
+		t.Fatalf("expected scoped verify when sibling store.go exists, got %q", got)
+	}
+}
+
 func TestFormatGoTestFailureHints_nilSlice(t *testing.T) {
 	t.Parallel()
 	out := `store_test.go:31: List returned nil slice, want empty slice`

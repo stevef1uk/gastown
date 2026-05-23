@@ -106,6 +106,48 @@ func newestSourceMtime(root string) (time.Time, error) {
 	return newest, err
 }
 
+// codeindexLayoutRelativePath strips layout_root from a bead path for the codeindex CLI.
+func codeindexLayoutRelativePath(beadPath string, v WorkflowValidation) string {
+	impactPath := filepath.ToSlash(strings.TrimSpace(beadPath))
+	layout := strings.Trim(filepath.ToSlash(strings.TrimSpace(v.LayoutRoot)), "/")
+	if layout != "" && strings.HasPrefix(impactPath, layout+"/") {
+		impactPath = strings.TrimPrefix(impactPath, layout+"/")
+	}
+	return impactPath
+}
+
+// codeindexImpactCandidates returns paths to try with `codeindex impact`.
+// Go rigs index packages (internal/store), not individual .go files — package path first.
+func codeindexImpactCandidates(beadPath string, v WorkflowValidation) []string {
+	rel := codeindexLayoutRelativePath(beadPath, v)
+	if rel == "" {
+		return nil
+	}
+	var candidates []string
+	if WorkflowUsesGo(v) && strings.HasSuffix(rel, ".go") {
+		if pkg := GoBuildRelPackage(v.LayoutRoot, beadPath); pkg != "" {
+			candidates = append(candidates, pkg)
+		}
+	}
+	candidates = append(candidates, rel)
+	seen := map[string]bool{}
+	var out []string
+	for _, c := range candidates {
+		if c != "" && !seen[c] {
+			seen[c] = true
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+func runCodeindexImpact(mayorRigDir, indexPath, impactPath string) (string, error) {
+	cmd := exec.Command("codeindex", "impact", impactPath, "--index", indexPath)
+	cmd.Dir = mayorRigDir
+	out, err := cmd.CombinedOutput()
+	return strings.TrimSpace(string(out)), err
+}
+
 // FormatCodeindexContextForBead injects blast-radius impact for the active implement path.
 func FormatCodeindexContextForBead(mayorRigDir, beadPath string, v WorkflowValidation) string {
 	if !CodeindexEnabled() {
@@ -120,23 +162,24 @@ func FormatCodeindexContextForBead(mayorRigDir, beadPath string, v WorkflowValid
 	if _, err := os.Stat(indexPath); err != nil {
 		return ""
 	}
-	impactPath := beadPath
-	if layout := strings.Trim(filepath.ToSlash(strings.TrimSpace(v.LayoutRoot)), "/"); layout != "" && strings.HasPrefix(impactPath, layout+"/") {
-		impactPath = strings.TrimPrefix(impactPath, layout+"/")
+	candidates := codeindexImpactCandidates(beadPath, v)
+	var text string
+	var failText string
+	for _, impactPath := range candidates {
+		out, err := runCodeindexImpact(mayorRigDir, indexPath, impactPath)
+		if err == nil && out != "" {
+			text = out
+			break
+		}
+		if out != "" {
+			failText = out
+		}
 	}
-	cmd := exec.Command("codeindex", "impact", impactPath, "--index", indexPath)
-	cmd.Dir = mayorRigDir
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		text := strings.TrimSpace(string(out))
-		if text == "" {
+	if text == "" {
+		if failText == "" {
 			return ""
 		}
-		return strings.TrimSpace("### Codeindex (impact lookup failed)\n" + truncateCodeindexText(text, 800))
-	}
-	text := strings.TrimSpace(string(out))
-	if text == "" {
-		return ""
+		return strings.TrimSpace("### Codeindex (impact lookup failed)\n" + truncateCodeindexText(failText, 800))
 	}
 	var b strings.Builder
 	b.WriteString("### Codeindex blast radius (optional — read before large EDITs)\n")
@@ -144,7 +187,11 @@ func FormatCodeindexContextForBead(mayorRigDir, beadPath string, v WorkflowValid
 	b.WriteString("```\n")
 	b.WriteString(truncateCodeindexText(text, codeindexImpactMaxBytes))
 	b.WriteString("\n```\n")
-	b.WriteString("\nPrefer **Dependency packages** and **Current file on disk** for APIs; use codeindex to see who imports this file.\n")
+	if WorkflowUsesGo(v) && strings.HasSuffix(beadPath, ".go") {
+		b.WriteString("\nPrefer **Dependency packages** and **Current file on disk** for APIs; codeindex shows who imports this **package**.\n")
+	} else {
+		b.WriteString("\nPrefer **Dependency packages** and **Current file on disk** for APIs; use codeindex to see who imports this file.\n")
+	}
 	return strings.TrimSpace(b.String())
 }
 
