@@ -9,9 +9,10 @@ import (
 )
 
 func TestOrchestratedCommandTimeoutForTrack_qaSmokeShorterThanPolecat(t *testing.T) {
-	cmd := "cd rig/mayor/rig/app && go run ./cmd/server & sleep 2 && curl -sf http://127.0.0.1:8080/"
-	qa := orchestratedCommandTimeoutForTrack("qa", cmd)
-	polecat := orchestratedCommandTimeoutForTrack("implementation", cmd)
+	qaCmd := "cd rig/mayor/rig/app && go run ./cmd/server & sleep 2"
+	polecatCmd := "cd rig/mayor/rig/app && go run ./cmd/server & sleep 2 && curl -sf http://127.0.0.1:8080/"
+	qa := orchestratedCommandTimeoutForTrack("qa", qaCmd)
+	polecat := orchestratedCommandTimeoutForTrack("implementation", polecatCmd)
 	if qa != 45*time.Second {
 		t.Fatalf("qa smoke timeout = %v, want 45s (dash-safe probe; fail fast)", qa)
 	}

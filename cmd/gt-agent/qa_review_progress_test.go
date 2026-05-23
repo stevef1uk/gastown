@@ -46,8 +46,8 @@ func TestQAReviewProgress_applyToTrack(t *testing.T) {
 	runner.qaProgress.mark(qaMilestoneUnittest)
 	runner.qaProgress.mark(qaMilestoneRuntimeSmoke)
 	runner.applyQAProgressToTrack()
-	if !runner.track.unittestOK || !runner.track.qaSmokeOK {
-		t.Fatalf("track=%+v", runner.track)
+	if !runner.track.unittestOK || runner.track.qaSmokeOK {
+		t.Fatalf("track=%+v (runtime smoke must not restore qaSmokeOK)", runner.track)
 	}
 }
 
@@ -55,15 +55,16 @@ func TestFormatQAReviewProgressBlock_listsDoneAndTodo(t *testing.T) {
 	p := newQAReviewProgress("wf-1", "qa_review", "testgt3")
 	p.mark(qaMilestoneClosedBeads)
 	p.mark(qaMilestoneSpecRead)
-	block := formatQAReviewProgressBlock(p, "testgt3", "go test ./...")
+	v := linkshelfWebProfile()
+	block := formatQAReviewProgressBlock(p, "testgt3", "go test ./...", requiresQARuntimeSmoke(v), false)
 	if !strings.Contains(block, "do not repeat") {
 		t.Fatal("want skip guidance")
 	}
 	if !strings.Contains(block, "closed") || !strings.Contains(block, "SPEC.md") {
 		t.Fatalf("got %q", block)
 	}
-	if !strings.Contains(block, "runtime smoke") {
-		t.Fatal("want remaining smoke in todo")
+	if !strings.Contains(block, "this gt-agent session") {
+		t.Fatal("want runtime smoke required this session")
 	}
 }
 
@@ -177,23 +178,24 @@ func TestQAReviewProgress_restartSession(t *testing.T) {
 	if !strings.Contains(block, "do not repeat") {
 		t.Fatalf("block missing skip guidance: %q", block)
 	}
-	if strings.Contains(block, "Still required") {
-		t.Fatalf("all milestones done — should not list remaining work: %q", block)
+	if !strings.Contains(block, "Still required") || !strings.Contains(block, "this gt-agent session") {
+		t.Fatalf("session B must require runtime smoke this session: %q", block)
 	}
-	if !strings.Contains(block, "runtime smoke") {
-		t.Fatal("block should list completed runtime smoke check")
+	if !strings.Contains(block, "re-run smoke CMD") {
+		t.Fatal("block should note prior smoke with re-run requirement")
 	}
-	if !sessionB.track.bdListClosedOK || !sessionB.track.qaSmokeOK {
-		t.Fatalf("session B track not restored: %+v", sessionB.track)
+	if !sessionB.track.bdListClosedOK || sessionB.track.qaSmokeOK {
+		t.Fatalf("session B track: bdList restored, qaSmokeOK must be false until smoke reruns: %+v", sessionB.track)
 	}
-	// Artifact validator should accept restored smoke/unittest flags without re-running CMDs.
 	if err := sessionB.validateArtifacts("failure"); err != nil {
 		if strings.Contains(err.Error(), "bd list --status=closed") {
 			t.Fatalf("should not require re-listing closed beads: %v", err)
 		}
-		if strings.Contains(err.Error(), "live smoke") {
-			t.Fatalf("should not require re-smoke when milestone restored: %v", err)
-		}
+	}
+	writeLinkshelfSmokeFingerprintFixture(t, dir, rig, "<html></html>")
+	vSmoke := linkshelfSmokeValidationProfile()
+	if err := validateQAArtifacts(dir, rig, "all_passed", false, true, true, false, vSmoke); err == nil || !strings.Contains(err.Error(), "this gt-agent session") {
+		t.Fatalf("all_passed must require smoke this session, got: %v", err)
 	}
 
 	// Leaving qa_review clears the file for the next cycle.

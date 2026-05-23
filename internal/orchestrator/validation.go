@@ -385,7 +385,9 @@ func (v WorkflowValidation) PromptVars() map[string]string {
 		"min_plan_bytes":                fmt.Sprintf("%d", v.MinPlanBytes),
 		"min_implementation_file_bytes": fmt.Sprintf("%d", StubCheckOptionsFromValidation(v).MinFileBytes),
 		"min_substantive_lines":         fmt.Sprintf("%d", StubCheckOptionsFromValidation(v).MinSubstantiveLines),
-		"bead_id_example":               beadIDExample(v),
+		"bead_id_example":                  beadIDExample(v),
+		"static_url_contract_guidance":     RigFlowStaticURLContractGuidance,
+		"static_url_contract_short":        RigFlowStaticURLContractShort,
 	}
 }
 

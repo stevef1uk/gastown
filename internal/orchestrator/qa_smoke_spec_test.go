@@ -1,7 +1,9 @@
 package orchestrator
 
 import (
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -68,6 +70,33 @@ func TestBuildRuntimeSmokeShell_includesPOSTAndEmptyArray(t *testing.T) {
 	}
 	if !strings.Contains(cmd, "/app.js") {
 		t.Fatalf("want static asset curl: %q", cmd)
+	}
+	if !strings.HasPrefix(cmd, SmokeShellStrictPrefix) {
+		t.Fatalf("want strict bash prefix, got %q", cmd)
+	}
+	if strings.Contains(cmd, `; test "$_gtok"`) || strings.Contains(cmd, `; curl -sf`) {
+		t.Fatalf("probe steps must be &&-chained, not semicolon-separated: %q", cmd)
+	}
+}
+
+func TestBuildRuntimeSmokeShell_failFastBeforeAPICheck(t *testing.T) {
+	t.Parallel()
+	base := "http://127.0.0.1:9"
+	rootProbe := fmt.Sprintf(
+		`_gtok=0; for _i in 1 2 3; do curl -sf --connect-timeout 1 --max-time 1 %s/ >/dev/null && _gtok=1 && break; done`,
+		base,
+	)
+	strict := exec.Command("/bin/bash", "-c", SmokeShellStrictPrefix+rootProbe+` && test "$_gtok" = 1 && echo after-root`)
+	if err := strict.Run(); err == nil {
+		t.Fatal("strict probe should exit before later steps when / never returns 200")
+	}
+	loose := exec.Command("/bin/bash", "-c", rootProbe+`; test "$_gtok" = 1; echo after-root`)
+	out, err := loose.CombinedOutput()
+	if err != nil {
+		t.Fatalf("loose probe should continue after failed root test: %v\n%s", err, out)
+	}
+	if !strings.Contains(string(out), "after-root") {
+		t.Fatalf("loose probe should run steps after failed test, got %q", out)
 	}
 }
 

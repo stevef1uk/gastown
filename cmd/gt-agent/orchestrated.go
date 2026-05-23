@@ -476,11 +476,12 @@ func workflowReworkHints(fromState, toState, rig, summary string, v orchestrator
 	}
 	return fmt.Sprintf(`
 ### QA sent you back — do this first
-1. Fix the **specific** issues in the QA summary and command output (paths under %s/, tests, stubs).
-2. `+"`"+`CMD: bash -lc 'cd %s && bd list --status=open'`+"`"+` — pick a bead whose title contains %q.
+1. Fix the **specific** issues in the QA summary and command output (paths under %s/, tests, stubs). If QA reported **smoke/404/curl** failures, fix **handlers** and **web/** (routes + index.html asset paths) — not only package unit tests.
+2. `+"`"+`CMD: bash -lc 'cd %s && bd list --status=open'`+"`"+` — pick a bead whose title contains %q (handler/web beads first when smoke failed).
 3. If **no** open implement beads: `+"`"+`bd list --status=closed`+"`"+`, find closed implement beads, reopen one with `+"`"+`bd update <id-from-bd-list> --status=open`+"`"+`, then fix code and `+"`"+`bd close <id-from-bd-list>`+"`"+`.
 4. **Never** invent bead IDs — copy only from bd list output for this rig.
 5. **Incremental fixes only** — existing files must use `+"`"+`sed -i`+"`"+` or `+"`"+`patch`+"`"+`, not `+"`"+`cat > path <<'EOF'`+"`"+` full rewrites. Use heredoc only for **new** files.
+6. **Do not** send JSON success until runtime issues are fixed; gt-agent will not auto-complete implementation on unit tests alone while QA rework is pending.
 `, layout, worktree, prefix)
 }
 
@@ -1725,8 +1726,8 @@ func validateImplementationArtifacts(townRoot, rig string, hadCmdFailure, beadCl
 		return fmt.Errorf("profile verification must pass in this session before success (%s)", strings.TrimSpace(v.QAVerifyCommand))
 	}
 	if openImpl == 0 && orchestrator.WorkflowUsesGo(v) {
-		if err := orchestrator.ImplementationModuleCompileOK(rigDir, v); err != nil {
-			return fmt.Errorf("all implement beads are closed but the module does not compile — reopen affected beads and fix: %w", err)
+		if err := orchestrator.ImplementationPhaseVerifyOK(townRoot, rig, v); err != nil {
+			return fmt.Errorf("all implement beads are closed but compile or runtime smoke failed — reopen affected beads and fix handlers/web: %w", err)
 		}
 	}
 	if err := validateRequiredWorkFiles(townRoot, rig, v); err != nil {
@@ -1852,6 +1853,9 @@ func validateQACommand(cmd, rig string, v orchestrator.WorkflowValidation) error
 		if !strings.Contains(lower, rigSlash) && !strings.Contains(lower, "beads_dir") && !strings.Contains(lower, "mayor/rig") {
 			return fmt.Errorf("run bd from %s/mayor/rig with BEADS_DIR=$GT_ROOT/%s/.beads", rig, rig)
 		}
+	}
+	if path, mutates := orchestrator.QACommandMutatesLayoutSource(cmd, v); mutates {
+		return fmt.Errorf("QA must not modify implementation files (blocked write to %q) — send outcome failure with bead IDs so the polecat fixes handlers/web; do not sed or redirect-edit under %s", path, strings.TrimSpace(v.LayoutRoot))
 	}
 	return nil
 }
@@ -2063,7 +2067,7 @@ func validateQAArtifacts(townRoot, rig, outcome string, hadCmdFailure, bdListClo
 			return err
 		}
 		if requiresQARuntimeSmoke(v) && !qaSmokeOK {
-			return fmt.Errorf("web/API QA requires a live smoke command before passing: start the server with `go run`, then curl `/`, referenced static assets, and API GET/POST behavior")
+			return fmt.Errorf("web/API QA requires a successful runtime smoke CMD in this gt-agent session before all_passed (qa-review-progress.json does not count); run `go run` + curl for `/`, static assets, and API GET/POST")
 		}
 	}
 	if sendToImpl {
@@ -2089,23 +2093,7 @@ func validateQAArtifacts(townRoot, rig, outcome string, hadCmdFailure, bdListClo
 }
 
 func requiresQARuntimeSmoke(v orchestrator.WorkflowValidation) bool {
-	if !orchestrator.WorkflowUsesGo(v) {
-		return false
-	}
-	files := append([]string(nil), v.RequiredFiles...)
-	files = append(files, v.UnionRequiredFiles()...)
-	hasWeb := false
-	hasServer := false
-	for _, f := range files {
-		f = filepath.ToSlash(strings.TrimSpace(f))
-		if strings.Contains(f, "/web/") && (strings.HasSuffix(f, ".html") || strings.HasSuffix(f, ".js") || strings.HasSuffix(f, ".css")) {
-			hasWeb = true
-		}
-		if strings.HasSuffix(f, "/cmd/server/main.go") {
-			hasServer = true
-		}
-	}
-	return hasWeb && hasServer
+	return orchestrator.WorkflowNeedsRuntimeSmoke(v)
 }
 
 func isQARuntimeSmokeCommandOK(cmd string, v orchestrator.WorkflowValidation) bool {
@@ -2116,7 +2104,10 @@ func isQARuntimeSmokeCommandOK(cmd string, v orchestrator.WorkflowValidation) bo
 		return true
 	}
 	lower := strings.ToLower(strings.Join(strings.Fields(cmd), " "))
-	if !strings.Contains(lower, "go run") || !strings.Contains(lower, "curl ") {
+	if !strings.Contains(lower, "go run") || !strings.Contains(lower, "cmd/server") {
+		return false
+	}
+	if !strings.Contains(lower, "curl ") && !strings.Contains(lower, ".gt-smoke.pid") {
 		return false
 	}
 	if !strings.Contains(lower, "localhost") && !strings.Contains(lower, "127.0.0.1") {
@@ -2145,6 +2136,7 @@ var htmlAttrRefRE = regexp.MustCompile(`(?i)\b(src|href)\s*=\s*["']([^"'#][^"']*
 
 func validateWebStaticReferences(townRoot, rig string, v orchestrator.WorkflowValidation) error {
 	rigDir := rigMayorRigDir(townRoot, rig)
+	staticMap := orchestrator.LoadWebStaticMappingFromRig(townRoot, rig, v)
 	for _, rel := range webHTMLRequiredFiles(v) {
 		abs := filepath.Join(rigDir, filepath.FromSlash(rel))
 		body, err := os.ReadFile(abs)
@@ -2159,12 +2151,15 @@ func validateWebStaticReferences(townRoot, rig string, v orchestrator.WorkflowVa
 				continue
 			}
 			if attr == "src" || strings.HasSuffix(strings.ToLower(ref), ".js") || strings.HasSuffix(strings.ToLower(ref), ".css") {
-				if !webRefExists(webRoot, rel, ref) {
-					return fmt.Errorf("HTML references missing static asset %q from %s; fix the path or add the file", ref, rel)
+				if hint := staticMap.StaticRefMismatchHint(ref); hint != "" {
+					return fmt.Errorf("HTML references %q from %s: %s", ref, rel, hint)
+				}
+				if !webRefExists(webRoot, rel, ref, staticMap) {
+					return fmt.Errorf("HTML references missing static asset %q from %s; fix the path or add the file under web/", ref, rel)
 				}
 				continue
 			}
-			if attr == "href" && isLocalPageRef(ref) && !webPageRefExists(webRoot, rel, ref) && !goServerDefinesRoute(rigDir, v, ref) {
+			if attr == "href" && isLocalPageRef(ref) && !webPageRefExists(webRoot, rel, ref, staticMap) && !goServerDefinesRoute(rigDir, v, ref) {
 				return fmt.Errorf("HTML link %q in %s has no matching static page or server route; use an in-page anchor for SPA sections", ref, rel)
 			}
 		}
@@ -2205,8 +2200,8 @@ func skipLocalHTMLRef(ref string) bool {
 		strings.HasPrefix(lower, "/api/")
 }
 
-func webRefExists(webRoot, htmlRel, ref string) bool {
-	path := webRefPath(webRoot, htmlRel, ref)
+func webRefExists(webRoot, htmlRel, ref string, m orchestrator.WebStaticMapping) bool {
+	path := webRefPath(webRoot, htmlRel, ref, m)
 	if path == "" {
 		return false
 	}
@@ -2214,8 +2209,8 @@ func webRefExists(webRoot, htmlRel, ref string) bool {
 	return err == nil && !info.IsDir()
 }
 
-func webPageRefExists(webRoot, htmlRel, ref string) bool {
-	path := webRefPath(webRoot, htmlRel, ref)
+func webPageRefExists(webRoot, htmlRel, ref string, m orchestrator.WebStaticMapping) bool {
+	path := webRefPath(webRoot, htmlRel, ref, m)
 	if path == "" {
 		return false
 	}
@@ -2229,17 +2224,8 @@ func webPageRefExists(webRoot, htmlRel, ref string) bool {
 	return false
 }
 
-func webRefPath(webRoot, htmlRel, ref string) string {
-	ref = strings.TrimSpace(strings.Split(ref, "?")[0])
-	ref = strings.Split(ref, "#")[0]
-	if ref == "" || strings.Contains(ref, "..") {
-		return ""
-	}
-	if strings.HasPrefix(ref, "/") {
-		return filepath.Join(webRoot, filepath.FromSlash(strings.TrimPrefix(ref, "/")))
-	}
-	htmlDir := filepath.Dir(filepath.Join(webRoot, filepath.Base(filepath.ToSlash(htmlRel))))
-	return filepath.Join(htmlDir, filepath.FromSlash(ref))
+func webRefPath(webRoot, htmlRel, ref string, m orchestrator.WebStaticMapping) string {
+	return m.WebDiskPathForURLRef(webRoot, htmlRel, ref)
 }
 
 func isLocalPageRef(ref string) bool {

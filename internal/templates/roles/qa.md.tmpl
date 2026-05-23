@@ -32,8 +32,8 @@ Before anything else, verify you actually have work assigned.
    do not rely on unit tests alone. Start the server, then verify runtime behavior:
 
    - **Static assets:** `curl -sf` every script/stylesheet URL from `index.html`
-     (paths must match server mount — e.g. `/app.js` not `/static/app.js` unless
-     the server serves `/static/`).
+     (paths must match **architecture.md** HTTP routes — gt-agent rig-flow smoke
+     uses those refs; do not change HTML to guess `/app.js` vs `/static/…`).
    - **SPA navigation:** in-page sections use `/#section` anchors, not `/section`
      paths that 404 on a single-page app.
    - **Empty lists:** GET collection APIs must return JSON `[]`, not `null`, when

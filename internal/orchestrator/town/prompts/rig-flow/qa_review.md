@@ -31,19 +31,21 @@ gt-agent persists completed checks in `{{rig}}/qa/qa-review-progress.json` for t
 
 ## HARD RULES
 
-1. **One `CMD:` per line** — not ` ```CMD: ` markdown fences. Never emit `[TOOL_CALLS]` markers or paste fake command output. **No shell `if`/`then` blocks or pipes on unittest** — use JSON outcomes instead. Example:
+1. **Do not modify implementation code** — no `sed`, `cat >`, `tee`, `patch`, or `EDIT:`/`WRITE:` under `{{layout_root}}/`. If smoke or validation fails, send `failure` JSON with HTTP errors and bead IDs from `bd list`; the polecat fixes handlers and `web/` (gt-agent reopens those beads).
+
+2. **One `CMD:` per line** — not ` ```CMD: ` markdown fences. Never emit `[TOOL_CALLS]` markers or paste fake command output. **No shell `if`/`then` blocks or pipes on unittest** — use JSON outcomes instead. Example:
    ```
    CMD: cd {{rig}}/mayor/rig && bd list --status=closed
    ```
 
-2. List closed implementation beads (export rig `BEADS_DIR`):
+3. List closed implementation beads (export rig `BEADS_DIR`):
    ```
    CMD: export BEADS_DIR=$GT_ROOT/{{rig}}/.beads && cd {{rig}}/mayor/rig && bd list --status=closed --limit=0
    CMD: export BEADS_DIR=$GT_ROOT/{{rig}}/.beads && cd {{rig}}/mayor/rig && bd list --status=open --limit=0
    ```
    Only review beads whose title contains `{{bead_title_contains}}`. Ignore patrol/agent identity beads (`*-architect`, `*-qa`, `*-witness`, `*-refinery`, `*-polecat`, `*-crew-*`).
 
-3. Read SPEC and code (from town root or after `cd {{rig}}/mayor/rig`). **Reject stubs** in source (HTML/JS/Py/Go, etc.) — not dependency manifests. `requirements.txt`, `go.mod`, `go.sum`, `package.json`, lockfiles, and `pyproject.toml` only need to exist and be **non-empty** (no {{min_implementation_file_bytes}} check). Use `wc -c` and `head` on code under `{{layout_root}}/`:
+4. Read SPEC and code (from town root or after `cd {{rig}}/mayor/rig`). **Reject stubs** in source (HTML/JS/Py/Go, etc.) — not dependency manifests. `requirements.txt`, `go.mod`, `go.sum`, `package.json`, lockfiles, and `pyproject.toml` only need to exist and be **non-empty** (no {{min_implementation_file_bytes}} check). Use `wc -c` and `head` on code under `{{layout_root}}/`:
    ```
    CMD: cat {{rig}}/mayor/rig/SPEC.md
    CMD: cat {{rig}}/mayor/rig/architecture.md
@@ -52,43 +54,45 @@ gt-agent persists completed checks in `{{rig}}/qa/qa-review-progress.json` for t
    ```
    Automated guard: code files need ≥{{min_implementation_file_bytes}} bytes and ≥{{min_substantive_lines}} substantive lines; dependency manifests are exempt.
 
-4. If a requirements file exists in the profile, install into `{{python_venv_dir}}/` (gt-agent creates it; do not commit it), then verify:
+5. If a requirements file exists in the profile, install into `{{python_venv_dir}}/` (gt-agent creates it; do not commit it), then verify:
    ```
    CMD: cd {{rig}}/mayor/rig && test -f "{{requirements_file}}" && python3 -m pip install -r "{{requirements_file}}"
    CMD: cd {{rig}}/mayor/rig && {{unittest_command_hint}}
    ```
 
-5. **Web/API runtime smoke** (required when the profile includes HTML/JS under `web/` **and** `cmd/server/main.go`). Unit tests alone miss integration bugs — run **one CMD** that starts the server, exercises the app, then exits (gt-agent **frees stale listeners before each `go run`** and stops the server when the step finishes). Check every item below; use `failure` if any check fails.
+6. **Web/API runtime smoke** (required when the profile includes HTML/JS under `web/` **and** `cmd/server/main.go`). Unit tests alone miss integration bugs — run **one CMD** that starts the server, exercises the app, then exits (gt-agent **frees stale listeners before each `go run`** and stops the server when the step finishes). Check every item below; use `failure` if any check fails.
 
    | Bug class | What to verify | How |
    |-----------|----------------|-----|
-   | Broken static assets | Every `src=` / `href=` to `.js` / `.css` returns **200**, not 404 | `curl -sf` each path from `index.html` (paths must match how the server mounts `web/` — often `/app.js`, **not** `/static/app.js` unless the server defines `/static/`) |
+   | Broken static assets | Every `src=` / `href=` to `.js` / `.css` returns **200**, not 404 | `curl -sf` each path from `index.html` (same URLs architecture defines — see **From architecture.md** in implement context) |
    | SPA nav 404 | Section links on a **single-page** app must not request separate routes like `/bookmarks` unless the server implements them | Use `href="/#bookmarks"` (or `/#id`) for in-page sections; `curl -sf` bare `/bookmarks` should **not** be required for pass |
    | Empty API list | Empty collections must be JSON **`[]`**, not **`null`** | `curl -s http://127.0.0.1:PORT/api/...` — body must be `[]` or a non-null array; Go stores need `make([]T, 0)` not bare `nil` slice |
    | Create API missing | Forms that POST must have a working handler | `curl -sf -X POST -H 'Content-Type: application/json' -d '{"title":"QA smoke","url":"https://example.com"}' http://127.0.0.1:PORT/api/...` — expect **201** or **200**, not **405** |
    | Frontend vs API | UI must not call `.length` / `.map` on API `null` | After GET list, confirm JS handles `[]`; grep frontend for `fetch`/`POST` paths and match server routes |
 
-   gt-agent **rewrites** long `go run`+`curl` CMDs into a short probe built from **SPEC.md / architecture.md / plan.md** (HTTP table rows, static assets in `index.html`) — do not rely on a fixed `/api/links` path.
+   {{static_url_contract_guidance}}
 
-   Example smoke CMD (adjust port, paths, and API from `architecture.md` / SPEC):
+   gt-agent **rewrites** any `go run ./cmd/server` CMD (even `go run … & sleep` with no curls) into a **background server + curl probe** from **SPEC.md / architecture.md / plan.md** (HTTP table + every static `src`/`href` in `web/index.html`). Do **not** run synchronous `go run ./cmd/server` alone — it blocks the session. Do **not** rely on `sleep` instead of curls.
+
+   Prefer one smoke **CMD** starting the server (gt-agent injects curls — **do not** hand-pick `/app.js` vs `/static/…`; read architecture first):
    ```
-   CMD: cd {{rig}}/mayor/rig/{{layout_root}} && go run ./cmd/server & sleep 2 && curl -sf http://127.0.0.1:8080/ >/dev/null && curl -sf http://127.0.0.1:8080/app.js >/dev/null && test "$(curl -s http://127.0.0.1:8080/api/bookmarks)" = "[]" && curl -sf -X POST -H 'Content-Type: application/json' -d '{"title":"qa-smoke","url":"https://example.com/qa"}' http://127.0.0.1:8080/api/bookmarks && curl -s http://127.0.0.1:8080/api/bookmarks | grep -q qa-smoke
+   CMD: cd {{rig}}/mayor/rig/{{layout_root}} && go run ./cmd/server
    ```
-   Replace `/api/bookmarks`, port, and asset paths with the rig's real routes. If POST or GET list fails, outcome **`failure`** with the HTTP status and response body in the summary.
+   If POST or GET list fails, outcome **`failure`** with the HTTP status and response body in the summary.
 
    **Fast-fail (do not lock the rig):** If smoke or `{{unittest_command_hint}}` fails or times out, **do not** run the same long `go run`+`curl` CMD again. In your **next** message send **JSON only**: `{"outcome":"failure","summary":"..."}` with HTTP codes, broken paths, and bead IDs from `bd list`. gt-agent stops dev servers and releases the port after a failed or timed-out smoke CMD.
 
    If `go run` fails with "address already in use", run **`CMD: bash "${GASTOWN:-$HOME/dev/freeride/gastown}/scripts/stop-rig-dev-servers.sh" 8080`** (adjust port), then **one** retry of the smoke CMD. gt-agent also auto-scrubs before `go run`; if retry still fails, report **`failure`** JSON — do not loop smoke commands across turns.
 
-6. Re-run verification if needed before finishing:
+7. Re-run verification if needed before finishing:
    ```
    CMD: cd {{rig}}/mayor/rig && {{unittest_command_hint}}
    ```
 
-7. When verification is complete, send **JSON only** (no CMD lines in that message):
-   - `all_passed` only if verification passed, required files exist ({{required_files}}), and **zero** open beads matching `{{bead_title_contains}}` in step 2.
+8. When verification is complete, send **JSON only** (no CMD lines in that message):
+   - `all_passed` only if verification passed, required files exist ({{required_files}}), and **zero** open beads matching `{{bead_title_contains}}` in step 3.
    - `task_passed` if verification passed but open beads matching `{{bead_title_contains}}` remain (ignore patrol/agent identity beads: `*-architect`, `*-qa`, `*-witness`).
-   - `failure` if tests fail, SPEC is not met, **runtime smoke** (step 5) fails, or code under `{{layout_root}}/` is stub/placeholder work. The **summary must name** failing tests, HTTP status codes, broken paths/URLs, file paths from `{{required_files}}`, and bead IDs **copied from `bd list` output only** (format like `{{bead_id_example}}` — never invent IDs).
+   - `failure` if tests fail, SPEC is not met, **runtime smoke** (step 6) fails, or code under `{{layout_root}}/` is stub/placeholder work. The **summary must name** failing tests, HTTP status codes, broken paths/URLs, file paths from `{{required_files}}`, and bead IDs **copied from `bd list` output only** (format like `{{bead_id_example}}` — never invent IDs).
 
 Example failure: `{"outcome":"failure","summary":"POST /api/bookmarks returned 405; GET list returned null not []; href /bookmarks 404 on SPA — use /#bookmarks; reopen {{bead_id_example}} from bd list"}`
 

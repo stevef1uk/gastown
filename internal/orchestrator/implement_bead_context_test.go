@@ -315,6 +315,20 @@ func TestExcerptLinesForPath_skipsUnrelated(t *testing.T) {
 	}
 }
 
+func TestFormatImplementBeadContextForPath_includesHTTPRoutingGuidance(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	rig := "mockrig"
+	writeHTTPContractFixture(t, dir, rig, "<html></html>", "package api\n")
+	v := linkshelfHTTPProfile()
+	got := formatImplementBeadContextForPath(dir, rig, "linkshelf/internal/api/handlers_test.go", v)
+	for _, want := range []string{"HTTP routing", "os.Chdir", "web/"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("missing %q in:\n%s", want, got)
+		}
+	}
+}
+
 func TestSpecSummaryExcerptForBead_longParagraph(t *testing.T) {
 	t.Parallel()
 	path := "linkshelf/internal/store/store.go"

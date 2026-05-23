@@ -526,3 +526,49 @@ CMD: true
 		t.Fatalf("disk file not updated: %s", data)
 	}
 }
+
+func TestNativeEdit_WRITE_rejectsChdirInHandlerTest(t *testing.T) {
+	dir := t.TempDir()
+	rig := "mockrig"
+	mayor := filepath.Join(dir, rig, "mayor", "rig")
+	if err := os.MkdirAll(filepath.Join(mayor, "linkshelf/internal/api"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	v := linkshelfImplementValidation(
+		"linkshelf/internal/api/handlers_test.go",
+		"linkshelf/web/index.html",
+		"linkshelf/cmd/server/main.go",
+	)
+	stubImplementBeadsHook(t, orchestrator.PlanBead{
+		ID:    "te-rnd",
+		Title: "Implement linkshelf/internal/api/handlers_test.go per architecture",
+	})
+	task := rigFlowTask(t, "implementation", v)
+	r := newStateRunner(task, dir, rig)
+	r.track.activeBead = "te-rnd"
+
+	response := `WRITE: linkshelf/internal/api/handlers_test.go
+package api
+
+import (
+	"os"
+	"testing"
+)
+
+func TestStatic(t *testing.T) {
+	os.Chdir(t.TempDir())
+}
+---END WRITE---
+`
+	var combined strings.Builder
+	hadNative, ok, _ := r.processOrchestratedTools(response, "sess", &combined)
+	if ok {
+		t.Fatal("expected chdir rejection")
+	}
+	if !hadNative {
+		t.Fatal("expected native tool attempt")
+	}
+	if !strings.Contains(combined.String(), "os.Chdir") {
+		t.Fatalf("feedback:\n%s", combined.String())
+	}
+}

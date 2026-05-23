@@ -108,6 +108,28 @@ func TestRejectImplementationPrematureSuccess_allowsAfterVerifyOK(t *testing.T) 
 	}
 }
 
+func TestTryAutoOutcome_blockedOnQAPendingRework(t *testing.T) {
+	countOpenMatchingBeadsHook = func(_, _, _ string) (int, error) { return 0, nil }
+	defer func() { countOpenMatchingBeadsHook = nil }()
+
+	task := &orchestrator.Task{
+		State: "implementation",
+		Hooks: orchestrator.StateHooks{Track: "implementation", Artifacts: "implementation"},
+		Validation: orchestrator.WorkflowValidation{
+			QAVerifyCommand: "cd linkshelf && go test ./...",
+		},
+		PendingRework: &orchestrator.WorkflowRework{
+			FromState: "qa_review",
+			Summary:   "runtime smoke failed: GET / 404",
+		},
+	}
+	r := newStateRunner(task, t.TempDir(), "mockrig")
+	r.track.verifyOK = true
+	if _, _, ok := r.tryAutoOutcome(); ok {
+		t.Fatal("must not auto-complete implementation while QA rework is pending")
+	}
+}
+
 func TestNoteImplementationFixAttempt_bdUpdate(t *testing.T) {
 	task := &orchestrator.Task{
 		State: "implementation",

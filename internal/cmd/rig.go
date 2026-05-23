@@ -71,6 +71,9 @@ The command also:
   - Seeds patrol molecules (Deacon, Witness, Refinery)
   - Creates ~/gt/plugins/ (town-level) if it doesn't exist
   - Creates <rig>/plugins/ (rig-level)
+  - Appends Gas Town ignore rules to mayor/rig/.gitignore and .git/info/exclude so
+    orchestrator checkpoint commits do not push .beads/, *.db, codeindex.json, or
+    build artifacts (see docs/design/orchestrator.md for GT_SKIP_WORKFLOW_* flags)
 
 Use --adopt to register an existing directory instead of creating new:
   - Reads existing config.json if present
@@ -1598,6 +1601,15 @@ func runRigAdopt(_ *cobra.Command, args []string) error {
 			fmt.Printf("  %s Could not init beads database: %v\n", style.Warning.Render("!"), err)
 		} else {
 			fmt.Printf("  %s Initialized beads database\n", style.Success.Render("✓"))
+		}
+	}
+
+	mayorRigPath := filepath.Join(townRoot, name, "mayor", "rig")
+	if st, err := os.Stat(mayorRigPath); err == nil && st.IsDir() {
+		if err := rig.EnsureMayorRigGitHygiene(mayorRigPath); err != nil {
+			fmt.Printf("  %s Could not configure mayor/rig gitignore: %v\n", style.Warning.Render("!"), err)
+		} else {
+			fmt.Printf("  %s Configured mayor/rig .gitignore (orchestrator checkpoint hygiene)\n", style.Success.Render("✓"))
 		}
 	}
 

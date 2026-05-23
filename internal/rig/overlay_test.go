@@ -554,6 +554,59 @@ func TestEnsureGitignorePatterns_UpgradePreservesBroadPattern(t *testing.T) {
 	}
 }
 
+func TestEnsureMayorRigGitHygiene_AppendsPatternsAndUntracksBeads(t *testing.T) {
+	tmpDir := t.TempDir()
+	if out, err := runGit(tmpDir, "init", "-q"); err != nil {
+		t.Fatalf("git init: %v: %s", err, out)
+	}
+	if out, err := runGit(tmpDir, "config", "user.email", "test@example.com"); err != nil {
+		t.Fatalf("git config email: %v: %s", err, out)
+	}
+	if out, err := runGit(tmpDir, "config", "user.name", "test"); err != nil {
+		t.Fatalf("git config name: %v: %s", err, out)
+	}
+	beadsDir := filepath.Join(tmpDir, ".beads")
+	if err := os.MkdirAll(beadsDir, 0755); err != nil {
+		t.Fatalf("mkdir .beads: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(beadsDir, "issues.jsonl"), []byte("{}\n"), 0644); err != nil {
+		t.Fatalf("write issues: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(tmpDir, "codeindex.json"), []byte("{}"), 0644); err != nil {
+		t.Fatalf("write codeindex: %v", err)
+	}
+	if out, err := runGit(tmpDir, "add", "-A"); err != nil {
+		t.Fatalf("git add: %v: %s", err, out)
+	}
+	if out, err := runGit(tmpDir, "commit", "-q", "-m", "seed"); err != nil {
+		t.Fatalf("git commit: %v: %s", err, out)
+	}
+
+	if err := EnsureMayorRigGitHygiene(tmpDir); err != nil {
+		t.Fatalf("EnsureMayorRigGitHygiene: %v", err)
+	}
+
+	gitignore, err := os.ReadFile(filepath.Join(tmpDir, ".gitignore"))
+	if err != nil {
+		t.Fatalf("read .gitignore: %v", err)
+	}
+	for _, pattern := range []string{"codeindex.json", "*.db", "qa/implementation-progress.json"} {
+		if !containsLine(string(gitignore), pattern) {
+			t.Errorf(".gitignore missing %q", pattern)
+		}
+	}
+	if containsLine(string(gitignore), ".beads/") {
+		t.Error(".beads/ must not be in tracked .gitignore (bd sync); use local exclude")
+	}
+
+	if out, _ := runGit(tmpDir, "ls-files", ".beads"); strings.TrimSpace(out) != "" {
+		t.Errorf(".beads should be untracked, got %q", out)
+	}
+	if out, _ := runGit(tmpDir, "ls-files", "codeindex.json"); strings.TrimSpace(out) != "" {
+		t.Errorf("codeindex.json should be untracked, got %q", out)
+	}
+}
+
 // TestGasTownLocalExcludePatterns_IncludesBeads verifies that the local exclude
 // patterns include .beads/ (defense-in-depth for gas-7vg) while the gitignore
 // patterns do NOT include .beads/ (regression guard).

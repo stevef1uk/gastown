@@ -69,6 +69,11 @@ func formatImplementBeadContextForPath(townRoot, rig, beadPath string, v Workflo
 		b.WriteString(note)
 		b.WriteString("\n")
 	}
+	if note := FormatHTTPRoutingGuidanceForBead(townRoot, rig, beadPath, v); note != "" {
+		b.WriteString("\n")
+		b.WriteString(note)
+		b.WriteString("\n")
+	}
 	if block := FormatSpecSchemaContractBlock(townRoot, rig, beadPath); block != "" {
 		b.WriteString("\n")
 		b.WriteString(block)

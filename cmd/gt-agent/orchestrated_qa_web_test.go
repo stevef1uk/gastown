@@ -24,9 +24,41 @@ func linkshelfWebProfile() orchestrator.WorkflowValidation {
 	}
 }
 
+func writeLinkshelfArchitecture(t *testing.T, rigDir string, withStaticPrefix bool) {
+	t.Helper()
+	var arch string
+	if withStaticPrefix {
+		arch = `# Link Shelf HTTP
+
+| Method | Path | Notes |
+| GET | / | web/index.html |
+| GET | /static/{file} | serves web/{file} |
+| GET | /api/links | JSON array |
+`
+	} else {
+		arch = `# Link Shelf HTTP
+
+| Method | Path | Notes |
+| GET | / | web/index.html |
+| GET | /api/bookmarks | JSON array |
+`
+	}
+	if err := os.WriteFile(filepath.Join(rigDir, "architecture.md"), []byte(arch), 0644); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func writeLinkshelfWebFixture(t *testing.T, townRoot, rig string, indexHTML string) {
+	writeLinkshelfWebFixtureArch(t, townRoot, rig, indexHTML, false)
+}
+
+func writeLinkshelfWebFixtureArch(t *testing.T, townRoot, rig string, indexHTML string, staticPrefixArch bool) {
 	t.Helper()
 	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
+	if err := os.MkdirAll(rigDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	writeLinkshelfArchitecture(t, rigDir, staticPrefixArch)
 	webDir := filepath.Join(rigDir, "linkshelf", "web")
 	if err := os.MkdirAll(webDir, 0755); err != nil {
 		t.Fatal(err)
@@ -53,25 +85,37 @@ func main() {
 	}
 }
 
-func TestValidateWebStaticReferences_rejectsWrongStaticPrefix(t *testing.T) {
+func TestValidateWebStaticReferences_acceptsStaticPrefixFromArchitecture(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	rig := "mockrig"
-	// Bug from t.txt: /static/app.js when server serves web/ at /
-	writeLinkshelfWebFixture(t, dir, rig, `<!DOCTYPE html>
+	writeLinkshelfWebFixtureArch(t, dir, rig, `<!DOCTYPE html>
 <html><head><script src="/static/app.js"></script></head><body></body></html>
-`)
+`, true)
+	v := linkshelfWebProfile()
+	if err := validateWebStaticReferences(dir, rig, v); err != nil {
+		t.Fatalf("expected pass for /static/app.js mapped to web/app.js: %v", err)
+	}
+}
+
+func TestValidateWebStaticReferences_rejectsRootPathWhenArchitectureUsesStatic(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	rig := "mockrig"
+	writeLinkshelfWebFixtureArch(t, dir, rig, `<!DOCTYPE html>
+<html><head><script src="/app.js"></script></head><body></body></html>
+`, true)
 	v := linkshelfWebProfile()
 	err := validateWebStaticReferences(dir, rig, v)
 	if err == nil {
-		t.Fatal("expected reject for /static/app.js when asset is /app.js")
+		t.Fatal("expected reject for /app.js when architecture defines /static/{file}")
 	}
-	if !strings.Contains(err.Error(), "static") && !strings.Contains(err.Error(), "app.js") {
+	if !strings.Contains(err.Error(), "/static/app.js") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
-func TestValidateWebStaticReferences_acceptsCorrectAssetPath(t *testing.T) {
+func TestValidateWebStaticReferences_acceptsRootPathWithoutStaticArch(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	rig := "mockrig"
@@ -80,7 +124,7 @@ func TestValidateWebStaticReferences_acceptsCorrectAssetPath(t *testing.T) {
 `)
 	v := linkshelfWebProfile()
 	if err := validateWebStaticReferences(dir, rig, v); err != nil {
-		t.Fatalf("expected pass for /app.js: %v", err)
+		t.Fatalf("expected pass for /app.js when architecture has no /static/ route: %v", err)
 	}
 }
 
@@ -211,7 +255,7 @@ func TestValidateQAArtifacts_requiresRuntimeSmokeWhenProfileHasWebAPI(t *testing
 		t.Fatal(err)
 	}
 	err := validateQAArtifacts(dir, rig, "all_passed", false, true, true, false, v)
-	if err == nil || !strings.Contains(err.Error(), "live smoke") {
-		t.Fatalf("expected live smoke requirement, got: %v", err)
+	if err == nil || !strings.Contains(err.Error(), "this gt-agent session") {
+		t.Fatalf("expected live smoke requirement this session, got: %v", err)
 	}
 }

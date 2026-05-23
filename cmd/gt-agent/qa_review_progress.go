@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/steveyegge/gastown/internal/orchestrator"
 )
 
 // QA review milestones persisted across gt-agent restarts within the same
@@ -23,11 +25,12 @@ const (
 
 // QAReviewProgress records which verification steps already succeeded this cycle.
 type QAReviewProgress struct {
-	WorkflowID string            `json:"workflow_id"`
-	State      string            `json:"state"`
-	Rig        string            `json:"rig"`
-	UpdatedAt  time.Time         `json:"updated_at"`
-	Completed  map[string]bool   `json:"completed"`
+	WorkflowID              string          `json:"workflow_id"`
+	State                   string          `json:"state"`
+	Rig                     string          `json:"rig"`
+	UpdatedAt               time.Time       `json:"updated_at"`
+	Completed               map[string]bool `json:"completed"`
+	SmokeSourceFingerprint  string          `json:"smoke_source_fingerprint,omitempty"`
 }
 
 func qaReviewProgressPath(townRoot, rig string) string {
@@ -135,12 +138,27 @@ func (r *stateRunner) initQAReviewProgress() string {
 	}
 	existing := loadQAReviewProgress(r.townRoot, r.rig, r.task.WorkflowID, r.task.State)
 	if existing != nil {
+		existing.invalidateStaleRuntimeSmoke(r.townRoot, r.rig, r.v)
 		r.qaProgress = existing
 	} else {
 		r.qaProgress = newQAReviewProgress(r.task.WorkflowID, r.task.State, r.rig)
 	}
 	r.applyQAProgressToTrack()
-	return formatQAReviewProgressBlock(r.qaProgress, r.rig, r.v.UnittestCommandHint())
+	return formatQAReviewProgressBlock(r.qaProgress, r.rig, r.v.UnittestCommandHint(), requiresQARuntimeSmoke(r.v), r.track.qaSmokeOK)
+}
+
+// invalidateStaleRuntimeSmoke drops a persisted runtime_smoke milestone when handler/web
+// sources changed since the last successful smoke (GT-VERIFY-006).
+func (p *QAReviewProgress) invalidateStaleRuntimeSmoke(townRoot, rig string, v orchestrator.WorkflowValidation) {
+	if p == nil || !p.done(qaMilestoneRuntimeSmoke) {
+		return
+	}
+	cur := orchestrator.QASmokeSourceFingerprint(townRoot, rig, v)
+	if p.SmokeSourceFingerprint == "" || p.SmokeSourceFingerprint != cur {
+		delete(p.Completed, qaMilestoneRuntimeSmoke)
+		p.SmokeSourceFingerprint = ""
+		_ = saveQAReviewProgress(townRoot, rig, p)
+	}
 }
 
 func (r *stateRunner) applyQAProgressToTrack() {
@@ -156,9 +174,8 @@ func (r *stateRunner) applyQAProgressToTrack() {
 	if r.qaProgress.done(qaMilestoneUnittest) {
 		r.track.unittestOK = true
 	}
-	if r.qaProgress.done(qaMilestoneRuntimeSmoke) {
-		r.track.qaSmokeOK = true
-	}
+	// runtime_smoke is never restored into qaSmokeOK — each gt-agent session must run smoke
+	// before all_passed (see validateQAArtifacts).
 }
 
 func (r *stateRunner) persistQAReviewProgress(cmd string) {
@@ -176,7 +193,14 @@ func (r *stateRunner) persistQAReviewProgress(cmd string) {
 		changed = r.qaProgress.mark(qaMilestoneUnittest) || changed
 	}
 	if r.track.qaSmokeOK {
-		changed = r.qaProgress.mark(qaMilestoneRuntimeSmoke) || changed
+		if r.qaProgress.mark(qaMilestoneRuntimeSmoke) {
+			changed = true
+		}
+		fp := orchestrator.QASmokeSourceFingerprint(r.townRoot, r.rig, r.v)
+		if fp != "" && fp != r.qaProgress.SmokeSourceFingerprint {
+			r.qaProgress.SmokeSourceFingerprint = fp
+			changed = true
+		}
 	}
 	for _, key := range qaMilestonesFromReadCommand(cmd) {
 		if r.qaProgress.mark(key) {
@@ -191,7 +215,7 @@ func (r *stateRunner) persistQAReviewProgress(cmd string) {
 	}
 }
 
-func formatQAReviewProgressBlock(p *QAReviewProgress, rig, unittestHint string) string {
+func formatQAReviewProgressBlock(p *QAReviewProgress, rig, unittestHint string, needsRuntimeSmoke, smokeOKThisSession bool) string {
 	if p == nil || len(p.Completed) == 0 {
 		return ""
 	}
@@ -215,7 +239,11 @@ func formatQAReviewProgressBlock(p *QAReviewProgress, rig, unittestHint string) 
 	} else {
 		add(qaMilestoneUnittest, "unit/integration verification command")
 	}
-	add(qaMilestoneRuntimeSmoke, "runtime smoke (`go run` + curl for static assets and API)")
+	if p.done(qaMilestoneRuntimeSmoke) && needsRuntimeSmoke && !smokeOKThisSession {
+		b.WriteString("- ✓ runtime smoke passed in a prior run (handler/web fingerprint matches) — **re-run smoke CMD in this session** before `all_passed`\n")
+	} else if p.done(qaMilestoneRuntimeSmoke) {
+		add(qaMilestoneRuntimeSmoke, "runtime smoke (`go run` + curl for static assets and API)")
+	}
 
 	var todo []string
 	if !p.done(qaMilestoneClosedBeads) {
@@ -236,7 +264,9 @@ func formatQAReviewProgressBlock(p *QAReviewProgress, rig, unittestHint string) 
 	if !p.done(qaMilestoneUnittest) {
 		todo = append(todo, "run profile verification")
 	}
-	if !p.done(qaMilestoneRuntimeSmoke) {
+	if needsRuntimeSmoke && !smokeOKThisSession {
+		todo = append(todo, "runtime smoke CMD in this gt-agent session (required for all_passed)")
+	} else if !p.done(qaMilestoneRuntimeSmoke) {
 		todo = append(todo, "runtime smoke when web+server profile applies")
 	}
 	if len(todo) > 0 {

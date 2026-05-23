@@ -108,32 +108,81 @@ func CopyOverlay(rigPath, destPath string) error {
 	return nil
 }
 
+// gasTownMayorRigIgnorePatterns are extra ignore rules for mayor/rig (the project clone
+// that orchestrator checkpoint commits). Prevents beads DBs, codeindex caches, Go
+// build artifacts, and QA progress files from being pushed on rig-flow completion.
+func gasTownMayorRigIgnorePatterns() []string {
+	return []string{
+		"codeindex.json",
+		"**/codeindex.json",
+		"*.db",
+		"server",
+		"block:",
+		"qa/implementation-progress.json",
+		"qa/qa-review-progress.json",
+		"testgt3/",
+	}
+}
+
+// mayorRigUntrackPaths removes these paths from the git index when already tracked
+// (orchestrator `git add -A` cannot ignore tracked files via .gitignore alone).
+func mayorRigUntrackPaths() []string {
+	return []string{
+		".beads",
+		"codeindex.json",
+		"linkshelf/codeindex.json",
+		"linkshelf/linkshelf.db",
+		"linkshelf/server",
+		"linkshelf/block:",
+		"testgt3",
+	}
+}
+
+// EnsureMayorRigGitHygiene configures mayor/rig so orchestrator checkpoint commits
+// stay limited to project source. Called from gt rig add and gt rig add --adopt.
+func EnsureMayorRigGitHygiene(worktreePath string) error {
+	if err := EnsureGitignorePatterns(worktreePath); err != nil {
+		return err
+	}
+	if err := appendMissingIgnorePatterns(worktreePath, filepath.Join(worktreePath, ".gitignore"), "# Gas Town mayor/rig (rig-flow checkpoints)", gasTownMayorRigIgnorePatterns()); err != nil {
+		return err
+	}
+	if err := EnsureLocalExcludePatterns(worktreePath); err != nil {
+		return err
+	}
+	if err := appendMissingIgnorePatterns(worktreePath, gitLocalExcludePathForWorktree(worktreePath), "# Gas Town mayor/rig (local exclude)", append(gasTownMayorRigIgnorePatterns(), ".beads/")); err != nil {
+		return err
+	}
+	untrackPathsIfTracked(worktreePath, mayorRigUntrackPaths())
+	return nil
+}
+
+func gitLocalExcludePathForWorktree(worktreePath string) string {
+	p, err := gitLocalExcludePath(worktreePath)
+	if err != nil {
+		return filepath.Join(worktreePath, ".git", "info", "exclude")
+	}
+	return p
+}
+
 // EnsureGitignorePatterns ensures the .gitignore has required Gas Town patterns.
 // This is called after cloning to add patterns that may be missing from the source repo.
 func EnsureGitignorePatterns(worktreePath string) error {
-	gitignorePath := filepath.Join(worktreePath, ".gitignore")
-
 	// Required patterns for Gas Town worktrees.
 	// DO NOT add ".beads/" here. Beads manages its own .beads/.gitignore
 	// (created by bd init) which selectively ignores runtime files.
 	// Adding .beads/ here overrides that and breaks bd sync.
 	// This has regressed twice (PR #753 added it, #891 removed it,
 	// #966 re-added it). See overlay_test.go for a regression guard.
-	//
-	// .claude/ is the broad pattern (covers commands/, settings.json, rules/, etc.).
-	// Settings are installed in gastown-managed parent directories via --settings flag,
-	// but Cursor still creates .claude/ inside worktrees at runtime. The narrow
-	// .claude/commands/ pattern missed other Cursor-created files, causing gt done
-	// to fail with "uncommitted changes would be lost" on untracked .claude/ entries.
-	requiredPatterns := gasTownIgnorePatterns()
+	return appendMissingIgnorePatterns(worktreePath, filepath.Join(worktreePath, ".gitignore"), "# Gas Town (added by gt)", gasTownIgnorePatterns())
+}
 
-	// Read existing gitignore content
+func appendMissingIgnorePatterns(worktreePath, ignoreFilePath, header string, requiredPatterns []string) error {
 	var existingContent string
-	if data, err := os.ReadFile(gitignorePath); err == nil {
+	if data, err := os.ReadFile(ignoreFilePath); err == nil {
 		existingContent = string(data)
 	}
 
-	// Find missing patterns
 	var missing []string
 	for _, pattern := range requiredPatterns {
 		found := false
@@ -150,24 +199,25 @@ func EnsureGitignorePatterns(worktreePath string) error {
 	}
 
 	if len(missing) == 0 {
-		return nil // All patterns present
+		return nil
 	}
 
-	// Append missing patterns
-	f, err := os.OpenFile(gitignorePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err := os.MkdirAll(filepath.Dir(ignoreFilePath), 0755); err != nil {
+		return fmt.Errorf("creating ignore file dir: %w", err)
+	}
+	f, err := os.OpenFile(ignoreFilePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
-		return fmt.Errorf("opening .gitignore: %w", err)
+		return fmt.Errorf("opening %s: %w", ignoreFilePath, err)
 	}
 	defer f.Close()
 
-	// Add header if appending to existing file
 	if existingContent != "" && !strings.HasSuffix(existingContent, "\n") {
 		if _, err := f.WriteString("\n"); err != nil {
 			return err
 		}
 	}
-	if existingContent != "" {
-		if _, err := f.WriteString("\n# Gas Town (added by gt)\n"); err != nil {
+	if existingContent != "" && header != "" {
+		if _, err := f.WriteString("\n" + header + "\n"); err != nil {
 			return err
 		}
 	}
@@ -177,8 +227,21 @@ func EnsureGitignorePatterns(worktreePath string) error {
 			return err
 		}
 	}
-
 	return nil
+}
+
+func untrackPathsIfTracked(worktreePath string, paths []string) {
+	for _, path := range paths {
+		check := exec.Command("git", "-C", worktreePath, "ls-files", "--error-unmatch", path)
+		if err := check.Run(); err != nil {
+			continue
+		}
+		rm := exec.Command("git", "-C", worktreePath, "rm", "-r", "--cached", "--quiet", "--", path)
+		if out, err := rm.CombinedOutput(); err != nil {
+			style.PrintWarning("could not untrack %s in %s: %v: %s",
+				path, worktreePath, err, strings.TrimSpace(string(out)))
+		}
+	}
 }
 
 // gasTownLocalExcludePatterns returns the patterns to write to the worktree-local

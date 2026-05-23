@@ -58,6 +58,31 @@ func TestImplementationDiskWorkReady_allPresent(t *testing.T) {
 	}
 }
 
+func TestQARuntimeFailureSummary(t *testing.T) {
+	t.Parallel()
+	if !qaRuntimeFailureSummary("runtime smoke failed: GET / 404") {
+		t.Fatal("expected runtime smoke summary")
+	}
+	if qaRuntimeFailureSummary("all unit tests passed") {
+		t.Fatal("unit-test-only summary should not count as runtime")
+	}
+}
+
+func TestImplementPathsForRuntimeRework(t *testing.T) {
+	t.Parallel()
+	v := WorkflowValidation{
+		RequiredFiles: []string{
+			"linkshelf/internal/api/handlers.go",
+			"linkshelf/web/index.html",
+			"linkshelf/cmd/server/main.go",
+		},
+	}
+	got := implementPathsForRuntimeRework(v)
+	if len(got) != 2 {
+		t.Fatalf("got %v", got)
+	}
+}
+
 func TestQAFailureRequiresImplementationRework(t *testing.T) {
 	t.Parallel()
 	cases := []struct {

@@ -560,6 +560,12 @@ func (m *Manager) AddRig(opts AddRigOptions) (*Rig, error) {
 	}
 	fmt.Printf("   ✓ Created mayor clone\n")
 
+	if err := EnsureMayorRigGitHygiene(mayorRigPath); err != nil {
+		fmt.Printf("  Warning: Could not configure mayor/rig gitignore: %v\n", err)
+	} else {
+		fmt.Printf("   ✓ Configured mayor/rig .gitignore (orchestrator checkpoint hygiene)\n")
+	}
+
 	// Create server-side database and ensure metadata.json is correctly
 	// configured BEFORE any bd commands. This prevents bd from
 	// creating/using 'beads_<prefix>' when it should use '<rigName>'

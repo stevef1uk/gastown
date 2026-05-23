@@ -1,0 +1,8 @@
+codeindex.json
+**/codeindex.json
+*.db
+server
+block:
+qa/implementation-progress.json
+qa/qa-review-progress.json
+testgt3/

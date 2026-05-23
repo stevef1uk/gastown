@@ -34,10 +34,38 @@ with multiple rigs, full template schema unification for all bundled YAML exampl
 | Per-state YAML `hooks:` | Done | `StateHooks` in `state_hooks.go`; `rig-flow.yaml`; delivered on `fetch_task` |
 | Planning state timeout | Done | `state_timeout_seconds`, `on_timeout`, `transitions.timeout`; `workflow_timeout*.go` |
 | Hook interpreter (`state_runner`) | Done | `cmd/gt-agent/state_runner.go` — no FSM state-name switches in `orchestrated.go` |
-| Rig-flow checkpoint commits | Done | After each **rig-flow** FSM edge, `refinery.CommitMayorRigOrchestratorCheckpoint` commits dirty `mayor/rig` (**runs inside `gt orchestrator`**, not the refinery tmux patrol). On **completed**, pushes `origin` via `git push -u`. Opt out: `GT_SKIP_WORKFLOW_GIT_COMMIT`, `GT_WORKFLOW_SKIP_PUSH`. Look for `[Orchestrator] rig … mayor/rig` lines in `{town}/logs/orchestrator.log`. |
+| Rig-flow checkpoint commits | Done | After each **rig-flow** FSM edge, `refinery.CommitMayorRigOrchestratorCheckpoint` commits dirty `mayor/rig` (**runs inside `gt orchestrator`**, not the refinery tmux patrol). On **completed**, pushes `origin` via `git push -u`. Opt out: `GT_SKIP_WORKFLOW_GIT_COMMIT`, `GT_WORKFLOW_SKIP_PUSH`. `gt rig add` seeds mayor/rig `.gitignore` / `.git/info/exclude` so checkpoints skip beads, DBs, codeindex, and build artifacts. Look for `[Orchestrator] rig … mayor/rig` lines in `{town}/logs/orchestrator.log`. |
 | Bundled non-rig-flow templates | Partial | Some examples still use old schema |
 | QA outcome mapping | Partial | Prefer `task_passed` / `all_passed` in FSM |
+| Verify / runtime smoke vs architecture | **Partial** | [verify-and-smoke-gaps.md](./verify-and-smoke-gaps.md) — GT-VERIFY-003 done (`set -e` smoke); 001/002/004–009 open |
 | Unit tests | Done | `manager_test.go`, `prompts_test.go`, `legacy_test.go`, … |
+
+### Rig-flow git checkpoints (`GT_*` env vars)
+
+Checkpoint commits and pushes are **not** done by polecat, QA, or `gt rig sync-upstream` alone. They run inside the **`gt orchestrator run`** process when the FSM advances (see `internal/refinery/orchestrator_checkpoint.go`).
+
+| Variable | Set on | Effect |
+|----------|--------|--------|
+| `GT_SKIP_WORKFLOW_GIT_COMMIT=1` | Orchestrator process (`gt orchestrator run`, or whatever starts it from `gt up`) | No `git add` / `git commit` on FSM transitions |
+| `GT_WORKFLOW_SKIP_PUSH=1` | Same | Commits still run (unless skip commit is set); **no** `git push` when the workflow reaches `completed` |
+| `GT_SKIP_SPEC_INDEX=1` | Shell before `gt rig add` | Unrelated to git — skips LLM `workflow-profile.json` generation |
+
+Example (dev rig — local checkpoints only):
+
+```bash
+export GT_WORKFLOW_SKIP_PUSH=1
+cd ~/gt && gt orchestrator run   # or rely on gt up auto_start
+```
+
+Example (no checkpoint noise at all):
+
+```bash
+export GT_SKIP_WORKFLOW_GIT_COMMIT=1
+```
+
+**Mayor/rig ignore rules:** `gt rig add` and `gt rig add --adopt` call `rig.EnsureMayorRigGitHygiene` on `mayor/rig/` (`.gitignore` + `.git/info/exclude`, and `git rm --cached` for common junk already tracked). Re-run adopt on an existing rig to refresh rules; then manually `git rm -r --cached` anything still tracked from before.
+
+**Manual publish** (orchestrator was old / push skipped): `gt rig sync-upstream <rig>`.
 
 ## Architecture
 

@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/steveyegge/gastown/internal/beads"
@@ -31,7 +32,7 @@ func EnsureImplementBeadsAvailable(townRoot, rig string, v WorkflowValidation) (
 	}
 	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
 	if ImplementationDiskWorkReady(rigDir, v) == nil {
-		if err := ImplementationModuleCompileOK(rigDir, v); err != nil {
+		if err := ImplementationPhaseVerifyOK(townRoot, rig, v); err != nil {
 			return reopenClosedImplementBeads(townRoot, rig, v)
 		}
 		return nil, nil
@@ -57,12 +58,97 @@ func ReopenImplementationBeadsAfterQAFailure(townRoot, rig string, v WorkflowVal
 	if err != nil {
 		return nil, err
 	}
-	if len(open) > 0 && len(stubFiles) == 0 {
+	runtimeRework := qaFailed && qaRuntimeFailureSummary(summary)
+	var reopened []string
+	if runtimeRework {
+		more, err := reopenClosedImplementBeadsForPaths(townRoot, rig, v, implementPathsForRuntimeRework(v))
+		if err != nil {
+			return reopened, err
+		}
+		reopened = append(reopened, more...)
+	}
+	if len(open) > 0 && len(stubFiles) == 0 && !runtimeRework {
 		// Open implement work exists and only tests failed — leave beads as-is.
-		return nil, nil
+		return reopened, nil
 	}
 
-	return reopenClosedImplementBeads(townRoot, rig, v)
+	more, err := reopenClosedImplementBeads(townRoot, rig, v)
+	if err != nil {
+		return reopened, err
+	}
+	reopened = append(reopened, more...)
+	return dedupeStrings(reopened), nil
+}
+
+// qaRuntimeFailureSummary reports QA feedback about HTTP/smoke/runtime (not unit-test-only).
+func qaRuntimeFailureSummary(summary string) bool {
+	lower := strings.ToLower(strings.TrimSpace(summary))
+	if lower == "" {
+		return false
+	}
+	for _, needle := range []string{
+		"smoke", "404", "405", "curl", "web asset", "/app.js", "/style.css", "/static",
+		"runtime", "not served", "http status", "returned 4", "returned 5", "get /",
+	} {
+		if strings.Contains(lower, needle) {
+			return true
+		}
+	}
+	return false
+}
+
+// implementPathsForRuntimeRework lists handler + web paths to reopen after QA smoke failure.
+func implementPathsForRuntimeRework(v WorkflowValidation) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, rel := range append(append([]string(nil), v.RequiredFiles...), v.UnionRequiredFiles()...) {
+		rel = filepath.ToSlash(strings.TrimSpace(rel))
+		if rel == "" || seen[rel] {
+			continue
+		}
+		lower := strings.ToLower(rel)
+		if strings.Contains(lower, "/api/handlers") || strings.Contains(lower, "/web/") {
+			seen[rel] = true
+			out = append(out, rel)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+func reopenClosedImplementBeadsForPaths(townRoot, rig string, v WorkflowValidation, paths []string) ([]string, error) {
+	if len(paths) == 0 {
+		return nil, nil
+	}
+	want := map[string]bool{}
+	for _, p := range paths {
+		want[filepath.ToSlash(strings.TrimSpace(p))] = true
+	}
+	closed, err := listImplementBeadsByStatus(townRoot, rig, v, "closed")
+	if err != nil {
+		return nil, err
+	}
+	beadsDir := config.ResolveBeadsDirForRig(townRoot, rig)
+	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
+	var reopened []string
+	for _, b := range closed {
+		if b.ID == "" {
+			continue
+		}
+		p := filepath.ToSlash(strings.TrimSpace(resolveImplementBeadPath(b.Title, v)))
+		if !want[p] {
+			continue
+		}
+		cmd := exec.Command("bd", "update", b.ID, "--status=open")
+		cmd.Env = append(os.Environ(), "BEADS_DIR="+beadsDir)
+		cmd.Dir = rigDir
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			return reopened, fmt.Errorf("bd update %s --status=open: %w: %s", b.ID, err, strings.TrimSpace(string(out)))
+		}
+		reopened = append(reopened, b.ID)
+	}
+	return reopened, nil
 }
 
 // qaFailureRequiresImplementationRework reports whether a QA failure summary should reopen implement beads.

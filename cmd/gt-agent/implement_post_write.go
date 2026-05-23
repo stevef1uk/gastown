@@ -77,3 +77,21 @@ func (r *stateRunner) runPostNativeWriteVerify(relPath string, sessionName strin
 	r.persistImplementationProgress(verifyCmd)
 	combined.WriteString(fmt.Sprintf("Post-write verify: %s\n%s", verifyCmd, formatSuccessCommandOutput(out)))
 }
+
+// runPostWriteHTTPContract validates cross-file HTTP routing after handler/web writes (GT-VERIFY-007).
+func (r *stateRunner) runPostWriteHTTPContract(relPath string, combined *strings.Builder) {
+	if !strings.EqualFold(strings.TrimSpace(r.hooks.Track), "implementation") {
+		return
+	}
+	relPath = orchestrator.NormalizeBeadPathForLayout(relPath, r.v.LayoutRoot)
+	if !orchestrator.IsHTTPContractRelevantPath(relPath) {
+		return
+	}
+	if err := orchestrator.ValidateHTTPContract(r.townRoot, r.rig, r.v); err != nil {
+		r.track.hadCmdFailure = true
+		r.track.verifyOK = false
+		msg := fmt.Sprintf("HTTP contract check failed after %s: %v\nReconcile handlers.go with web/index.html per architecture.md before bd close.\n\n", relPath, err)
+		combined.WriteString(msg)
+		orchestratedFprintfStderr("[gt-agent] %s", msg)
+	}
+}

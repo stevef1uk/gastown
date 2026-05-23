@@ -228,9 +228,6 @@ func isToolchainExecutionCommand(cmd string) bool {
 		return strings.Contains(lower, "cd ") || strings.Contains(lower, " -q") ||
 			strings.Contains(lower, " -v") || strings.Contains(lower, " -k")
 	}
-	if isGoDevServerSmokeCommand(cmd) {
-		return false
-	}
 	if strings.Contains(lower, "go test") || strings.Contains(lower, "go run") ||
 		strings.Contains(lower, "go build") || strings.Contains(lower, "go vet") ||
 		strings.Contains(lower, "go mod") {
@@ -239,10 +236,26 @@ func isToolchainExecutionCommand(cmd string) bool {
 	return false
 }
 
+// isGoDevServerSmokeCommand reports go run ./cmd/server (with or without curl).
+// QA often sends only "go run … & sleep N"; that must still rewrite to the background
+// profile probe so the shell does not block and curls actually run.
 func isGoDevServerSmokeCommand(cmd string) bool {
 	lower := strings.ToLower(cmd)
-	return strings.Contains(lower, "go run") && strings.Contains(lower, "cmd/server") &&
-		strings.Contains(lower, "curl")
+	return strings.Contains(lower, "go run") && strings.Contains(lower, "cmd/server")
+}
+
+// wrapStrictBashSmoke prefixes agent-invented go run+curl chains with set -euo pipefail
+// so a failed probe (e.g. GET / 404) cannot be masked by a later passing curl (GT-VERIFY-003).
+func wrapStrictBashSmoke(cmd string) string {
+	cmd = strings.TrimSpace(cmd)
+	if cmd == "" {
+		return cmd
+	}
+	lower := strings.ToLower(cmd)
+	if strings.HasPrefix(lower, "set -e") {
+		return cmd
+	}
+	return "set -euo pipefail; " + cmd
 }
 
 // writesRequirementsFile reports commands that create/overwrite requirements.txt (heredoc or redirect).
@@ -257,6 +270,12 @@ func rewriteUnittestToWorkdir(cmd, rig string, v orchestrator.WorkflowValidation
 	if !isToolchainExecutionCommand(cmd) {
 		return cmd, false
 	}
+	layout := strings.Trim(strings.TrimSpace(v.LayoutRoot), "/")
+	// Profile-relative "cd linkshelf && go run …" smoke must not get a second prefix; bare
+	// "go run ./cmd/server" from town root still needs cd into layout_root (see goLayout test).
+	if isGoDevServerSmokeCommand(cmd) && (commandHasMayorRigCD(cmd, rig) || commandHasLayoutCD(cmd, layout)) {
+		return cmd, false
+	}
 	changed := false
 	if !orchestrator.IsPythonImportCheckCommand(cmd) {
 		if fixed := orchestrator.NormalizePytestCommand(cmd); fixed != cmd {
@@ -268,7 +287,6 @@ func rewriteUnittestToWorkdir(cmd, rig string, v orchestrator.WorkflowValidation
 		cmd = fixed
 		changed = true
 	}
-	layout := strings.Trim(strings.TrimSpace(v.LayoutRoot), "/")
 	mayorRig := rigMayorRigPath(rig)
 	// Python venv lives under mayor/rig only — never cd into layout_root for pip/pytest/compileall.
 	workPath := mayorRig
@@ -457,8 +475,7 @@ func normalizeGoDevServerSmokeCommand(cmd, townRoot, rig string, v orchestrator.
 		changed = true
 	}
 	if short, ok := simplifyGoDevServerSmoke(out, townRoot, rig, v); ok {
-		out = short
-		changed = true
+		return short, true
 	}
 	if strings.Contains(strings.ToLower(out), "curl ") && !strings.Contains(out, "--max-time") {
 		for _, pair := range []struct{ old, new string }{
@@ -504,10 +521,10 @@ func ensureGoSmokeShellReturns(cmd string) (string, bool) {
 	return strings.TrimSpace(out) + `; kill ${_gtsrv} 2>/dev/null`, true
 }
 
-// simplifyGoDevServerSmoke replaces long agent-invented smoke chains with a profile-derived probe.
+// simplifyGoDevServerSmoke replaces agent go run ./cmd/server CMDs with the profile-derived
+// background-server + curl probe (including bare "go run … & sleep" with no curls).
 func simplifyGoDevServerSmoke(cmd, townRoot, rig string, v orchestrator.WorkflowValidation) (string, bool) {
-	lower := strings.ToLower(cmd)
-	if !strings.Contains(lower, "go run") || !strings.Contains(lower, "cmd/server") || !strings.Contains(lower, "curl") {
+	if !isGoDevServerSmokeCommand(cmd) {
 		return cmd, false
 	}
 	workDir := smokeWorkDirFromCommand(cmd)
@@ -610,6 +627,7 @@ func runOrchestratedCommand(cmd, workDir, sessionName string, env []string, cmdT
 		shell, flag := "/bin/sh", "-c"
 		if isGoDevServerSmokeCommand(cmd) {
 			shell, flag = "/bin/bash", "-c"
+			cmd = wrapStrictBashSmoke(cmd)
 		}
 		c := exec.CommandContext(ctx, shell, flag, cmd)
 		c.Env = env

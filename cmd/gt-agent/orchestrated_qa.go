@@ -9,7 +9,7 @@ import (
 func orchestratedCommandTimeoutForTrack(track, cmd string) time.Duration {
 	if strings.EqualFold(strings.TrimSpace(track), "qa") {
 		lower := strings.ToLower(cmd)
-		if strings.Contains(lower, "go run") && strings.Contains(lower, "curl") {
+		if strings.Contains(lower, "go run") && strings.Contains(lower, "cmd/server") {
 			return 45 * time.Second
 		}
 		if strings.Contains(lower, "go build ./...") || strings.Contains(lower, "go test ./...") {
@@ -38,6 +38,7 @@ func appendQAFailureReportNudge(b *strings.Builder, cmd string, cmdErr error) {
 		b.WriteString("QA command failed; dev-server ports were released. ")
 	}
 	b.WriteString("Do **not** repeat the same long `go run`+`curl` smoke CMD.\n")
+	b.WriteString("Do **not** `sed`, `cat >`, or otherwise edit files under the implementation layout — send **failure** JSON so the polecat reopens handler/web beads.\n")
 	b.WriteString("In your **next** message reply with **JSON only** (no CMD lines), e.g.\n")
 	b.WriteString(`{"outcome":"failure","summary":"<HTTP status, curl error, route/path mismatches from output above>"}`)
 	b.WriteString("\n")

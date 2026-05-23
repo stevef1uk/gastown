@@ -178,6 +178,9 @@ var artifactValidators = map[string]artifactValidateFn{
 		return validateProjectSetupArtifacts(r.townRoot, r.rig, r.track.hadCmdFailure, r.track.verifyOK, r.v)
 	},
 	"implementation": func(r *stateRunner, _ string) error {
+		if r.hasQAPendingRework() {
+			return fmt.Errorf("QA rework pending — fix runtime/smoke issues named in Prior step failed before completing implementation")
+		}
 		return validateImplementationArtifacts(r.townRoot, r.rig, r.track.hadCmdFailure, r.track.beadCloseOK, r.track.verifyOK, r.v)
 	},
 	"qa": func(r *stateRunner, outcome string) error {
@@ -193,6 +196,9 @@ var artifactAutoCompleters = map[string]artifactAutoCompleteFn{
 		return r.validateArtifacts("success")
 	},
 	"implementation": func(r *stateRunner) error {
+		if r.hasQAPendingRework() {
+			return fmt.Errorf("QA rework pending — fix runtime/smoke issues in Prior step failed (handlers, web/, routes); go test ./... alone is not enough")
+		}
 		// Do not auto-complete without green verify when profile defines QA (pytest/go test).
 		if strings.TrimSpace(r.v.QAVerifyCommand) != "" && !r.track.verifyOK {
 			return fmt.Errorf("profile verification must pass before auto-complete")
@@ -215,8 +221,12 @@ var artifactFailureHints = map[string]func(*stateRunner) string{
 		return fmt.Sprintf("Run `bd list --status=open` from %s with BEADS_DIR set; compare titles to architecture required_files. Use outcome failure to send the Planner back to fix duplicates or missing paths.", rigMayorRigPath(r.rig))
 	},
 	"implementation": func(r *stateRunner) string {
-		return fmt.Sprintf("One bead at a time from %s (BEADS_DIR=$GT_ROOT/%s/.beads): bd update → heredoc under %s/ → %s → bd close → JSON.",
+		hint := fmt.Sprintf("One bead at a time from %s (BEADS_DIR=$GT_ROOT/%s/.beads): bd update → heredoc under %s/ → %s → bd close → JSON.",
 			rigMayorRigPath(r.rig), r.rig, strings.TrimSpace(r.v.LayoutRoot), r.v.UnittestCommandHint())
+		if orchestrator.WorkflowNeedsRuntimeSmoke(r.v) {
+			hint += " Before success, gt-agent runs go test + architecture/index.html runtime smoke on the real server — green unit tests alone are not enough."
+		}
+		return hint
 	},
 	"qa": func(r *stateRunner) string {
 		hint := "Run real CMD: lines (not markdown fences): bd list --status=closed, head SPEC.md, " + r.v.UnittestCommandHint() + " from " + rigMayorRigPath(r.rig) + "."

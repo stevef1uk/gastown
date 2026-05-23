@@ -217,7 +217,12 @@ func webRootDir(rigDir, htmlRel string, v WorkflowValidation) string {
 	return filepath.Join(rigDir, filepath.FromSlash(layout), "web")
 }
 
-// BuildRuntimeSmokeShell returns a dash-safe go run + curl probe from profile/docs.
+// SmokeShellStrictPrefix enables fail-fast behavior when the probe runs under bash -c.
+const SmokeShellStrictPrefix = "set -euo pipefail; "
+
+// BuildRuntimeSmokeShell returns a bash go run + curl probe from profile/docs.
+// Steps after the background server are joined with && so a failed GET / cannot be
+// masked by a later passing API curl (GT-VERIFY-003).
 func BuildRuntimeSmokeShell(workDir string, spec APISmokeSpec) string {
 	workDir = strings.Trim(strings.TrimSpace(workDir), `"'`)
 	if workDir == "" {
@@ -228,13 +233,14 @@ func BuildRuntimeSmokeShell(workDir string, spec APISmokeSpec) string {
 		port = 8080
 	}
 	base := fmt.Sprintf("http://127.0.0.1:%d", port)
-	var b strings.Builder
-	b.WriteString("cd ")
-	b.WriteString(workDir)
-	b.WriteString(" && rm -f .gt-smoke.pid && (go run ./cmd/server >/dev/null 2>&1 & echo $! >.gt-smoke.pid); _gtok=0; ")
-	b.WriteString(fmt.Sprintf(`for _i in 1 2 3 4 5; do curl -sf --connect-timeout 1 --max-time 2 %s/ >/dev/null && _gtok=1 && break; sleep 1; done; test "$_gtok" = 1`, base))
+	var parts []string
+	parts = append(parts, "cd "+workDir)
+	parts = append(parts, "rm -f .gt-smoke.pid")
+	parts = append(parts, "(go run ./cmd/server >/dev/null 2>&1 & echo $! >.gt-smoke.pid)")
+	parts = append(parts, fmt.Sprintf(`_gtok=0; for _i in 1 2 3 4 5; do curl -sf --connect-timeout 1 --max-time 2 %s/ >/dev/null && _gtok=1 && break; sleep 1; done`, base))
+	parts = append(parts, `test "$_gtok" = 1`)
 	for _, asset := range spec.StaticAssets {
-		b.WriteString(fmt.Sprintf(`; curl -sf --connect-timeout 1 --max-time 2 %s%s >/dev/null`, base, asset))
+		parts = append(parts, fmt.Sprintf(`curl -sf --connect-timeout 1 --max-time 2 %s%s >/dev/null`, base, asset))
 	}
 	emptySet := map[string]bool{}
 	for _, p := range spec.GETEmptyJSONArray {
@@ -245,17 +251,17 @@ func BuildRuntimeSmokeShell(workDir string, spec APISmokeSpec) string {
 			continue
 		}
 		if emptySet[path] {
-			b.WriteString(fmt.Sprintf(`; test "$(curl -s --connect-timeout 1 --max-time 2 %s%s)" = "[]"`, base, path))
+			parts = append(parts, fmt.Sprintf(`test "$(curl -s --connect-timeout 1 --max-time 2 %s%s)" = "[]"`, base, path))
 		} else {
-			b.WriteString(fmt.Sprintf(`; curl -sf --connect-timeout 1 --max-time 2 %s%s >/dev/null`, base, path))
+			parts = append(parts, fmt.Sprintf(`curl -sf --connect-timeout 1 --max-time 2 %s%s >/dev/null`, base, path))
 		}
 	}
 	for _, post := range spec.POSTProbes {
 		body := strings.ReplaceAll(post.Body, `'`, `'\''`)
-		b.WriteString(fmt.Sprintf(`; curl -sf --connect-timeout 1 --max-time 2 -X POST -H 'Content-Type: application/json' -d '%s' %s%s >/dev/null`, body, base, post.Path))
+		parts = append(parts, fmt.Sprintf(`curl -sf --connect-timeout 1 --max-time 2 -X POST -H 'Content-Type: application/json' -d '%s' %s%s >/dev/null`, body, base, post.Path))
 	}
-	b.WriteString("; _gtsrv=$(cat .gt-smoke.pid 2>/dev/null); kill ${_gtsrv} 2>/dev/null; rm -f .gt-smoke.pid")
-	return b.String()
+	parts = append(parts, `(_gtsrv=$(cat .gt-smoke.pid 2>/dev/null); kill ${_gtsrv} 2>/dev/null || true; rm -f .gt-smoke.pid)`)
+	return SmokeShellStrictPrefix + strings.Join(parts, " && ")
 }
 
 // IsProfileDerivedSmokeCommand reports whether cmd is the canonical probe built from rig docs.

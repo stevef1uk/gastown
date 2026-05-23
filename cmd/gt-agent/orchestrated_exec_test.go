@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/steveyegge/gastown/internal/orchestrator"
 	"github.com/steveyegge/gastown/internal/testrig"
@@ -93,13 +94,7 @@ func linkshelfSmokeTestRig(t *testing.T) (townRoot, rig string, v orchestrator.W
 	if err := os.WriteFile(filepath.Join(rigDir, "SPEC.md"), []byte(spec), 0644); err != nil {
 		t.Fatal(err)
 	}
-	v = orchestrator.WorkflowValidation{
-		LayoutRoot: "linkshelf",
-		RequiredFiles: []string{
-			"linkshelf/web/index.html",
-			"linkshelf/cmd/server/main.go",
-		},
-	}
+	v = linkshelfWebProfile()
 	return townRoot, rig, v
 }
 
@@ -143,11 +138,105 @@ func TestSimplifyGoDevServerSmokeCommand_shortProbe(t *testing.T) {
 	if strings.Contains(got, "sleep 6") {
 		t.Fatalf("want curl poll not fixed sleep 6: %q", got)
 	}
-	if strings.Contains(got, "|| true") {
-		t.Fatalf("API curl must not use || true (masks failure): %q", got)
+	for _, step := range strings.Split(got, "&&") {
+		step = strings.TrimSpace(step)
+		if strings.Contains(step, "curl") && strings.Contains(step, "|| true") {
+			t.Fatalf("curl step must not use || true (masks failure): %q", step)
+		}
 	}
 	if !strings.Contains(got, "testgt3/mayor/rig/linkshelf") {
 		t.Fatalf("want deepest cd path in smoke: %q", got)
+	}
+	if !strings.HasPrefix(got, "set -euo pipefail;") {
+		t.Fatalf("want fail-fast bash prefix: %q", got)
+	}
+}
+
+func TestSimplifyGoDevServerSmoke_goRunWithoutCurl(t *testing.T) {
+	townRoot, rig, v := linkshelfSmokeTestRig(t)
+	in := `cd testgt3/mayor/rig && cd linkshelf && go run ./cmd/server & sleep 4`
+	got, ok := simplifyGoDevServerSmoke(in, townRoot, rig, v)
+	if !ok {
+		t.Fatal("expected profile probe when agent omits curl")
+	}
+	if !strings.Contains(got, ".gt-smoke.pid") || !strings.Contains(got, "/api/links") {
+		t.Fatalf("want full background smoke probe, got %q", got)
+	}
+	if strings.Contains(got, "sleep 4") {
+		t.Fatalf("probe should poll / with curl, not sleep: %q", got)
+	}
+}
+
+func TestNormalizeGoDevServerSmokeCommand_syncGoRunUpgradesToProbe(t *testing.T) {
+	townRoot, rig, v := linkshelfSmokeTestRig(t)
+	in := `cd testgt3/mayor/rig/linkshelf && go run ./cmd/server`
+	got, ok := normalizeGoDevServerSmokeCommand(in, townRoot, rig, v)
+	if !ok {
+		t.Fatal("expected rewrite for synchronous go run")
+	}
+	if !strings.HasPrefix(got, "set -euo pipefail;") || !strings.Contains(got, "go run ./cmd/server") {
+		t.Fatalf("want profile background probe, got %q", got)
+	}
+	if strings.Contains(got, "sleep 4") {
+		t.Fatalf("sync go run must not become sleep-only wait: %q", got)
+	}
+}
+
+// TestStateRunner_rewriteCommand_qaGoRunSleepOnly is the regression from testgt3 QA logs:
+// agent sent go run & sleep with no curls; must become profile probe, not sleep-only rewrite.
+func TestStateRunner_rewriteCommand_qaGoRunSleepOnly(t *testing.T) {
+	townRoot, rig, v := linkshelfSmokeTestRig(t)
+	task := &orchestrator.Task{
+		State:      "qa_review",
+		Hooks:      orchestrator.StateHooks{Track: "qa"},
+		Validation: v,
+	}
+	r := newStateRunner(task, townRoot, rig)
+	in := `cd testgt3/mayor/rig/linkshelf && go run ./cmd/server & sleep 4`
+	got := r.rewriteCommand(in)
+	if strings.Contains(got, "sleep 4") && !strings.Contains(got, ".gt-smoke.pid") {
+		t.Fatalf("must not leave sleep-only smoke, got %q", got)
+	}
+	if !strings.Contains(got, ".gt-smoke.pid") || !strings.Contains(got, "for _i in") {
+		t.Fatalf("want profile-derived background+curl probe, got %q", got)
+	}
+	if !orchestrator.IsProfileDerivedSmokeCommand(got) {
+		t.Fatalf("rewritten cmd should be profile-derived smoke: %q", got)
+	}
+	if !isQARuntimeSmokeCommandOK(got, r.v) {
+		t.Fatalf("rewritten cmd should count as QA runtime smoke (runner v): %q", got)
+	}
+	if d := orchestratedCommandTimeoutForTrack("qa", got); d != 45*time.Second {
+		t.Fatalf("qa timeout = %v, want 45s", d)
+	}
+}
+
+func TestIsQARuntimeSmokeCommandOK_profileProbeWithoutAgentCurl(t *testing.T) {
+	townRoot, rig, v := linkshelfSmokeTestRig(t)
+	built, ok := simplifyGoDevServerSmoke(
+		`cd testgt3/mayor/rig/linkshelf && go run ./cmd/server & sleep 4`,
+		townRoot, rig, v,
+	)
+	if !ok {
+		t.Fatal("expected profile probe")
+	}
+	if !isQARuntimeSmokeCommandOK(built, v) {
+		t.Fatalf("profile probe should qualify as QA smoke: %q", built)
+	}
+	if isQARuntimeSmokeCommandOK("go run ./cmd/server & sleep 4", v) {
+		t.Fatal("raw sleep-only go run must not qualify before rewrite")
+	}
+}
+
+func TestWrapStrictBashSmoke(t *testing.T) {
+	t.Parallel()
+	in := "go run ./cmd/server & curl -sf http://127.0.0.1:8080/"
+	got := wrapStrictBashSmoke(in)
+	if !strings.HasPrefix(got, "set -euo pipefail;") {
+		t.Fatalf("got %q", got)
+	}
+	if wrapStrictBashSmoke(got) != got {
+		t.Fatal("should not double-prefix")
 	}
 }
 

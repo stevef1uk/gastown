@@ -194,7 +194,7 @@ states:
     prompt_file: prompts/rig-flow/qa_review.md
     instructions: |
       1. Review closed implementation beads in `{{rig}}` against SPEC and architecture.
-      2. For web+server profiles: run runtime smoke (static asset curls, API GET [] not null, POST not 405, SPA uses /# anchors).
+      2. For web+server profiles: run runtime smoke (curls built from architecture.md + index.html refs; API GET [] not null, POST not 405, SPA uses /# anchors). Do not change HTML to fix smoke unless architecture defines that URL.
       3. Use outcome task_passed (more work), all_passed (done), or failure (rework).
     hooks:
       state_timeout_seconds: 1800
@@ -217,7 +217,7 @@ states:
       retry_hint: |
         One CMD: per line. Review closed beads against SPEC and architecture; use allowed QA outcomes only.
       failure_hint: |
-        Run real CMD: lines: bd list --status=closed, head SPEC.md, {{unittest_command_hint}} from {{rig}}/mayor/rig. Web+server rigs also need go run+curl smoke (assets 200, API [] not null, POST works, SPA /# links). If smoke or verify fails, do **not** repeat the same go run+curl — reply next turn with JSON only: {"outcome":"failure","summary":"..."} naming HTTP status, routes, and bd bead IDs from list output.
+        Run real CMD: lines: bd list --status=closed, head SPEC.md, {{unittest_command_hint}} from {{rig}}/mayor/rig. Web+server rigs: `go run ./cmd/server` (gt-agent adds curls from architecture + index.html — do not sed HTML to guess static URLs). If smoke or verify fails, do **not** repeat the same go run+curl — reply next turn with JSON only: {"outcome":"failure","summary":"..."} naming HTTP status, routes, and bd bead IDs from list output.
     transitions:
       task_passed:
         to: implementation

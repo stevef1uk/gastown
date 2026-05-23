@@ -943,6 +943,26 @@ func TestOrchestratedCommandEnv_createsPythonVenv(t *testing.T) {
 	}
 }
 
+func TestValidateQACommand_rejectsLayoutWrites(t *testing.T) {
+	t.Parallel()
+	v := linkshelfWebProfile()
+	cases := []string{
+		`cd mockrig/mayor/rig && sed -i 's|/static/app.js|/app.js|g' linkshelf/web/index.html`,
+		`cd mockrig/mayor/rig && cat > linkshelf/web/index.html <<'EOF'\n<html></html>\nEOF`,
+		`cd mockrig/mayor/rig/linkshelf && tee web/index.html <<'EOF'\n<html></html>\nEOF`,
+	}
+	for _, cmd := range cases {
+		if err := validateQACommand(cmd, "mockrig", v); err == nil {
+			t.Fatalf("expected reject for %q", cmd)
+		} else if !strings.Contains(err.Error(), "must not modify") {
+			t.Fatalf("unexpected error for %q: %v", cmd, err)
+		}
+	}
+	if err := validateQACommand(`cd mockrig/mayor/rig && head -n 5 linkshelf/web/index.html`, "mockrig", v); err != nil {
+		t.Fatalf("read-only head should pass: %v", err)
+	}
+}
+
 func TestValidateQAArtifacts_failureAllowsFailedSmoke(t *testing.T) {
 	v := orchestrator.DefaultWorkflowValidation()
 	v.BeadTitleContains = "Implement "

@@ -31,8 +31,8 @@ func goTestArgsFromVerify(v WorkflowValidation) []string {
 	return []string{"test", "./..."}
 }
 
-// ImplementationModuleCompileOK runs the profile Go verify chain (go mod tidy + tests)
-// from mayor/rig. Used before treating implementation as complete or skipping bead reopen.
+// ImplementationModuleCompileOK runs go mod tidy + go test from mayor/rig layout_root.
+// HTTP/runtime checks are in ImplementationPhaseVerifyOK (GT-VERIFY-009), not here.
 func ImplementationModuleCompileOK(rigDir string, v WorkflowValidation) error {
 	if !WorkflowUsesGo(v) {
 		return nil

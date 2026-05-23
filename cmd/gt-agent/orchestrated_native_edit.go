@@ -394,6 +394,7 @@ func (r *stateRunner) executeNativeEdits(ops []nativeEditOp, editDir, sessionNam
 		if op.kind == "edit" || op.kind == "write" {
 			r.tidyGoFileAfterNativeWrite(op.path, combined)
 			r.runPostNativeWriteVerify(op.path, sessionName, cmdEnv, combined)
+			r.runPostWriteHTTPContract(op.path, combined)
 			r.runAutoVerifyForNativeLayoutWrite(sessionName, cmdEnv, combined)
 		}
 	}
@@ -417,6 +418,9 @@ func (r *stateRunner) appendAutoReadAfterEditSearchMiss(combined *strings.Builde
 }
 
 func (r *stateRunner) executeNativeEditOp(op nativeEditOp, workDir string) (string, error) {
+	if strings.EqualFold(strings.TrimSpace(r.hooks.Track), "qa") && (op.kind == "edit" || op.kind == "write") {
+		return "", fmt.Errorf("QA must not use EDIT/WRITE on implementation files — send outcome failure so the polecat can fix them")
+	}
 	rel, abs, err := resolveNativeEditAbsPath(workDir, op.path, r.v.LayoutRoot)
 	if err != nil {
 		return "", err
@@ -443,6 +447,9 @@ func (r *stateRunner) executeNativeEditOp(op nativeEditOp, workDir string) (stri
 			return "", err
 		}
 		replace := sanitizeNativeFileContent(op.replace)
+		if err := orchestrator.ValidateImplementWrittenContent(rel, replace, r.v); err != nil {
+			return "", err
+		}
 		return applyNativeSearchReplaceValidated(rel, abs, op.search, replace)
 	case "write":
 		if err := orchestrator.ValidateImplementWritePath(r.townRoot, r.rig, r.track.activeBead, rel, r.v, true, r.track.lastVerifyOutput); err != nil {
@@ -456,6 +463,9 @@ func (r *stateRunner) executeNativeEditOp(op nativeEditOp, workDir string) (stri
 		}
 		content := sanitizeNativeFileContent(op.content)
 		if err := validateNativeGoContent(rel, content); err != nil {
+			return "", err
+		}
+		if err := orchestrator.ValidateImplementWrittenContent(rel, content, r.v); err != nil {
 			return "", err
 		}
 		if err := os.WriteFile(abs, []byte(content), 0644); err != nil {
