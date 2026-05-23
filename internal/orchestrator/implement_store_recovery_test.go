@@ -29,6 +29,15 @@ func TestValidateImplementWritePath_allowsFullWriteWhenGoCorrupt(t *testing.T) {
 	v.LayoutRoot = "linkshelf"
 	v.TestRunner = "go"
 	v.RequiredFiles = []string{rel}
+	setListImplementBeadsByStatusHook(t, dir, rig, func(_, _ string, _ WorkflowValidation, status string) ([]PlanBead, error) {
+		if status == "open" || status == "in_progress" {
+			return []PlanBead{{
+				ID:    "te-store",
+				Title: "Implement linkshelf/internal/store/store.go per architecture",
+			}}, nil
+		}
+		return nil, nil
+	})
 	if PreferIncrementalEdit(dir, rig, rel, v) {
 		t.Fatal("corrupt Go must not prefer incremental edit")
 	}

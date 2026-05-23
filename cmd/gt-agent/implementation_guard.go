@@ -3,6 +3,8 @@ package main
 import (
 	"fmt"
 	"strings"
+
+	"github.com/steveyegge/gastown/internal/orchestrator"
 )
 
 // isRetriableLLMError reports API quota/rate-limit failures where completing the
@@ -40,6 +42,57 @@ func (r *stateRunner) noteImplementationFixAttempt(cmd string, hadSuccessfulNati
 	if isImplementationVerifyCommandOK(cmd, r.townRoot, r.rig, r.track.activeBead, r.v) {
 		r.attemptFixWork = true
 	}
+}
+
+// rejectImplementationPrematureSuccess blocks success JSON while verify/compile still fails
+// (e.g. unused import in handlers_test.go while the active bead is handlers.go).
+func (r *stateRunner) rejectImplementationPrematureSuccess(outcome string) (string, bool) {
+	if r == nil || r.task == nil || r.task.State != "implementation" {
+		return "", false
+	}
+	if !isOrchestratedSuccessOutcome(outcome) {
+		return "", false
+	}
+	openImpl := openImplementBeadCount(r)
+	if openImpl == 0 {
+		return "", false
+	}
+	out := strings.TrimSpace(r.track.lastVerifyOutput)
+	if out == "" {
+		return "", false
+	}
+	if orchestrator.GoCompileOutputHasUnusedImport(out) {
+		return r.implementationPrematureSuccessNudge(openImpl), true
+	}
+	if !r.track.verifyOK && r.track.hadCmdFailure && implementationCompileStillBlocked(out) {
+		return r.implementationPrematureSuccessNudge(openImpl), true
+	}
+	return "", false
+}
+
+func implementationCompileStillBlocked(verifyOutput string) bool {
+	lower := strings.ToLower(verifyOutput)
+	if strings.Contains(lower, "[build failed]") || strings.Contains(lower, "build failed") {
+		return true
+	}
+	if strings.Contains(verifyOutput, ".go:") &&
+		(strings.Contains(lower, "fail") || strings.Contains(lower, "error") || strings.Contains(lower, "undefined:")) {
+		return true
+	}
+	return false
+}
+
+func (r *stateRunner) implementationPrematureSuccessNudge(openImpl int) string {
+	var b strings.Builder
+	b.WriteString("**Rejected:** success JSON while verify/compile still fails (see command output above).\n\n")
+	b.WriteString("Fix compile errors first (often `goimports` on the **test file** in the same package), run **Verify** from Next bead, then `bd close`.\n")
+	b.WriteString(fmt.Sprintf("%d open implement bead(s) remain.\n", openImpl))
+	if h := orchestrator.FormatUnusedImportCompileHint(r.track.lastVerifyOutput); h != "" {
+		b.WriteString("\n")
+		b.WriteString(h)
+		b.WriteString("\n")
+	}
+	return b.String()
 }
 
 // rejectImplementationNoOpFailure blocks failure JSON when the polecat did not attempt a fix

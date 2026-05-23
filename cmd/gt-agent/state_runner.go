@@ -207,6 +207,10 @@ func (r *stateRunner) validateCommand(cmd string) error {
 }
 
 func (r *stateRunner) rewriteCommand(cmd string) string {
+	if stripped := stripOrchestratedShellBackticks(cmd); stripped != cmd {
+		orchestratedPrintf("[gt-agent] stripped markdown backticks from command → %s\n", stripped)
+		cmd = stripped
+	}
 	if fixed, ok := sanitizeOrchestratedShellCommand(cmd); ok {
 		orchestratedPrintf("[gt-agent] trimmed glued prose/JSON from command → %s\n", fixed)
 		cmd = fixed

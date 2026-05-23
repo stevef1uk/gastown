@@ -72,6 +72,42 @@ func TestRejectImplementationNoOpFailure_blocksAfterEditSearchMiss(t *testing.T)
 	}
 }
 
+func TestRejectImplementationPrematureSuccess_blocksUnusedImport(t *testing.T) {
+	countOpenMatchingBeadsHook = func(_, _, _ string) (int, error) { return 2, nil }
+	defer func() { countOpenMatchingBeadsHook = nil }()
+
+	task := &orchestrator.Task{
+		WorkflowID: "wf-1",
+		State:      "implementation",
+		Hooks:      orchestrator.StateHooks{Track: "implementation", Artifacts: "implementation"},
+	}
+	r := newStateRunner(task, t.TempDir(), "mockrig")
+	r.track.verifyOK = false
+	r.track.hadCmdFailure = true
+	r.track.lastVerifyOutput = `./handlers_test.go:6:2: "fmt" imported and not used`
+	msg, reject := r.rejectImplementationPrematureSuccess("success")
+	if !reject || !strings.Contains(msg, "Rejected") || !strings.Contains(msg, "goimports") {
+		t.Fatalf("reject=%v msg=%q", reject, msg)
+	}
+}
+
+func TestRejectImplementationPrematureSuccess_allowsAfterVerifyOK(t *testing.T) {
+	countOpenMatchingBeadsHook = func(_, _, _ string) (int, error) { return 1, nil }
+	defer func() { countOpenMatchingBeadsHook = nil }()
+
+	task := &orchestrator.Task{
+		WorkflowID: "wf-1",
+		State:      "implementation",
+		Hooks:      orchestrator.StateHooks{Track: "implementation", Artifacts: "implementation"},
+	}
+	r := newStateRunner(task, t.TempDir(), "mockrig")
+	r.track.verifyOK = true
+	r.track.lastVerifyOutput = "ok"
+	if _, reject := r.rejectImplementationPrematureSuccess("success"); reject {
+		t.Fatal("should allow success when verifyOK")
+	}
+}
+
 func TestNoteImplementationFixAttempt_bdUpdate(t *testing.T) {
 	task := &orchestrator.Task{
 		State: "implementation",

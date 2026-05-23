@@ -14,6 +14,7 @@ require (
 	github.com/gofrs/flock v0.13.0
 	github.com/google/uuid v1.6.0
 	github.com/muesli/termenv v0.16.0
+	github.com/nats-io/nats.go v1.51.0
 	github.com/spf13/cobra v1.10.2
 	github.com/steveyegge/beads v1.0.0
 	github.com/stretchr/testify v1.11.1
@@ -93,7 +94,6 @@ require (
 	github.com/muesli/ansi v0.0.0-20230316100256-276c6243b2f6 // indirect
 	github.com/muesli/cancelreader v0.2.2 // indirect
 	github.com/muesli/reflow v0.3.0 // indirect
-	github.com/nats-io/nats.go v1.51.0 // indirect
 	github.com/nats-io/nkeys v0.4.15 // indirect
 	github.com/nats-io/nuid v1.0.1 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect

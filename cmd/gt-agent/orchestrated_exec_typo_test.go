@@ -10,3 +10,12 @@ func TestNormalizeGoCommandTypos(t *testing.T) {
 		t.Fatalf("got ok=%v cmd=%q", ok, fixed)
 	}
 }
+
+func TestNormalizeGoCommandTypos_goTestCountFlag(t *testing.T) {
+	t.Parallel()
+	cmd := "go test -count=1./internal/api/..."
+	fixed, ok := normalizeGoCommandTypos(cmd)
+	if !ok || fixed != "go test -count=1 ./internal/api/..." {
+		t.Fatalf("got ok=%v cmd=%q", ok, fixed)
+	}
+}

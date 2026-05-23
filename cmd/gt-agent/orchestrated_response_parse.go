@@ -2,7 +2,10 @@ package main
 
 import (
 	"regexp"
+	"strconv"
 	"strings"
+
+	"github.com/steveyegge/gastown/internal/orchestrator"
 )
 
 var (
@@ -22,7 +25,61 @@ func preprocessOrchestratedResponse(response string) string {
 	response = inlineToolRE.ReplaceAllString(response, "$1\n$2")
 	response = unwrapMarkdownInlineToolLines(response)
 	response = unwrapMarkdownFencedToolBlocks(response)
+	response = stripMarkdownFenceOnlyLines(response)
 	return response
+}
+
+// stripMarkdownFenceOnlyLines removes ``` / ```go lines models wrap around EDIT bodies.
+func stripMarkdownFenceOnlyLines(response string) string {
+	var out []string
+	for _, line := range strings.Split(response, "\n") {
+		t := strings.TrimSpace(line)
+		if t == "```" || strings.HasPrefix(t, "```") && len(strings.TrimSpace(strings.TrimPrefix(t, "```"))) <= 8 {
+			lang := strings.TrimSpace(strings.TrimPrefix(t, "```"))
+			switch strings.ToLower(lang) {
+			case "", "go", "golang", "python", "py", "bash", "sh", "shell", "text", "json":
+				continue
+			}
+		}
+		out = append(out, line)
+	}
+	return strings.Join(out, "\n")
+}
+
+// stripOrchestratedShellBackticks removes markdown backticks that break /bin/sh (EOF in backquote substitution).
+func stripOrchestratedShellBackticks(cmd string) string {
+	cmd = strings.TrimSpace(cmd)
+	for i := 0; i < 6; i++ {
+		changed := false
+		if len(cmd) >= 2 && strings.HasPrefix(cmd, "`") && strings.HasSuffix(cmd, "`") {
+			inner := strings.TrimSpace(cmd[1 : len(cmd)-1])
+			if !strings.Contains(inner, "`") {
+				cmd = inner
+				changed = true
+			}
+		}
+		if strings.HasPrefix(cmd, "`") {
+			if j := strings.Index(cmd[1:], "`"); j >= 0 {
+				cmd = strings.TrimSpace(cmd[1 : 1+j])
+				changed = true
+			} else {
+				cmd = strings.TrimSpace(cmd[1:])
+				changed = true
+			}
+		}
+		if strings.HasSuffix(cmd, "`") {
+			cmd = strings.TrimSpace(cmd[:len(cmd)-1])
+			changed = true
+		}
+		if strings.HasPrefix(strings.ToUpper(cmd), "CMD:") {
+			cmd = strings.TrimSpace(cmd[4:])
+			changed = true
+		}
+		if !changed {
+			break
+		}
+	}
+	return strings.TrimSpace(cmd)
 }
 
 // unwrapMarkdownFencedToolBlocks unwraps ```go / ```python fences around CMD:/EDIT:/READ:/WRITE: blocks.
@@ -101,6 +158,10 @@ func FormatMalformedNativeEditFeedback(response string) string {
 			continue
 		}
 		path := strings.TrimSpace(trimmed[len("EDIT:"):])
+		if path != "" && !orchestrator.IsValidImplementBeadPath(path) {
+			msgs = append(msgs, "EDIT: rejected prose path "+strconv.Quote(path)+" — output a real path on its own line, e.g. EDIT: linkshelf/internal/api/handlers_test.go (no markdown fences or tutorial text on the EDIT: line)")
+			continue
+		}
 		hasSearch := false
 		for j := i + 1; j < len(lines) && j < i+40; j++ {
 			t := strings.TrimSpace(lines[j])
@@ -184,6 +245,10 @@ func unwrapMarkdownInlineCode(s string) string {
 // sanitizeOrchestratedShellCommand trims model prose/JSON glued onto shell commands.
 func sanitizeOrchestratedShellCommand(cmd string) (string, bool) {
 	changed := false
+	if stripped := stripOrchestratedShellBackticks(cmd); stripped != cmd {
+		cmd = stripped
+		changed = true
+	}
 	if fixed, ok := trimJSONGluedToShellCommand(cmd); ok {
 		cmd = fixed
 		changed = true
@@ -309,6 +374,47 @@ func isBdInfrastructureFailure(cmdErr error, output string) bool {
 func isNativeEditEndMarker(line string) bool {
 	t := strings.TrimSpace(line)
 	return t == nativeEditEndMarker || strings.EqualFold(t, "---END EDIT---")
+}
+
+// isOrchestratedNativeToolLine reports READ:/EDIT:/WRITE: markers that must never run as shell.
+func isOrchestratedNativeToolLine(line string) bool {
+	t := strings.TrimSpace(line)
+	upper := strings.ToUpper(t)
+	return strings.HasPrefix(upper, "READ:") ||
+		strings.HasPrefix(upper, "EDIT:") ||
+		strings.HasPrefix(upper, "WRITE:")
+}
+
+// stripNativeToolBlocksForCmdParse removes native tool blocks so WRITE/EDIT bodies are not executed as shell.
+func stripNativeToolBlocksForCmdParse(response string) string {
+	lines := strings.Split(response, "\n")
+	var kept []string
+	skip := false
+	for _, line := range lines {
+		t := strings.TrimSpace(line)
+		upper := strings.ToUpper(t)
+		if isOrchestratedNativeToolLine(line) || strings.HasPrefix(upper, "<<<<<<<") {
+			skip = true
+			continue
+		}
+		if skip {
+			if isStrayFileTerminatorLine(t) || isNativeEditEndMarker(t) {
+				skip = false
+				continue
+			}
+			if strings.HasPrefix(upper, "CMD:") {
+				skip = false
+				kept = append(kept, line)
+			}
+			continue
+		}
+		if t == "=======" || strings.HasPrefix(upper, ">>>>>>>") {
+			skip = true
+			continue
+		}
+		kept = append(kept, line)
+	}
+	return strings.Join(kept, "\n")
 }
 
 // sanitizeNativeFileContent strips markdown fences and stray heredoc/WRITE terminators

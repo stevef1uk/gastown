@@ -2,9 +2,17 @@ package orchestrator
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
+)
+
+var (
+	goCompileDiagFileRE     = regexp.MustCompile(`(?m)(?:^|[\s\]])\.?/?([a-zA-Z0-9_./-]+\.go):\d+`)
+	goCompileTestPackageRE  = regexp.MustCompile(`\[(?:[a-zA-Z0-9_.-]+\.)?([a-zA-Z0-9_./-]+)\.test\]`)
+	goCompileHashPackageRE  = regexp.MustCompile(`(?m)^#\s+([a-zA-Z0-9_./-]+)\s+\[`)
 )
 
 // GoCompileOutputHasUnusedImport reports build/test output blocked by unused imports.
@@ -60,4 +68,127 @@ func RunGoimportsOnFile(mayorRigDir, relPath string) (ran bool, err error) {
 		return true, fmt.Errorf("goimports -w %s: %w: %s", relPath, err, strings.TrimSpace(string(out)))
 	}
 	return true, nil
+}
+
+// goCompilePackageDirFromOutput returns the package directory from go test headers
+// (e.g. # linkshelf/internal/api [linkshelf/internal/api.test] → linkshelf/internal/api).
+func goCompilePackageDirFromOutput(output, layoutRoot string) string {
+	if m := goCompileTestPackageRE.FindStringSubmatch(output); len(m) >= 2 {
+		return NormalizeBeadPathForLayout(filepath.ToSlash(m[1]), layoutRoot)
+	}
+	if m := goCompileHashPackageRE.FindStringSubmatch(output); len(m) >= 2 {
+		return NormalizeBeadPathForLayout(filepath.ToSlash(m[1]), layoutRoot)
+	}
+	return ""
+}
+
+// GoFilePathsFromCompileOutput extracts .go paths from go test/build stderr (e.g. ./handlers_test.go:6:2).
+func GoFilePathsFromCompileOutput(output, layoutRoot string) []string {
+	layout := strings.Trim(strings.TrimSpace(layoutRoot), "/")
+	pkgDir := goCompilePackageDirFromOutput(output, layout)
+	seen := map[string]bool{}
+	var paths []string
+	add := func(p string) {
+		p = filepath.ToSlash(strings.TrimSpace(p))
+		p = strings.TrimPrefix(p, "./")
+		if !strings.Contains(p, "/") && pkgDir != "" {
+			p = pkgDir + "/" + p
+		}
+		if layout != "" {
+			p = NormalizeBeadPathForLayout(p, layout)
+		}
+		if p == "" || !strings.HasSuffix(p, ".go") || seen[p] {
+			return
+		}
+		seen[p] = true
+		paths = append(paths, p)
+	}
+	for _, m := range goCompileDiagFileRE.FindAllStringSubmatch(output, -1) {
+		if len(m) >= 2 {
+			add(m[1])
+		}
+	}
+	return paths
+}
+
+// packageDirsForGoFiles returns unique directory paths (layout-relative) for the given files.
+func packageDirsForGoFiles(files []string) []string {
+	seen := map[string]bool{}
+	var dirs []string
+	for _, f := range files {
+		d := filepath.ToSlash(filepath.Dir(f))
+		if d == "" || d == "." || seen[d] {
+			continue
+		}
+		seen[d] = true
+		dirs = append(dirs, d)
+	}
+	return dirs
+}
+
+// GoFilesInPackageDir lists layout-relative .go files in a package directory under mayorRigDir.
+func GoFilesInPackageDir(mayorRigDir, pkgDir string) ([]string, error) {
+	pkgDir = filepath.ToSlash(strings.TrimSpace(pkgDir))
+	if pkgDir == "" || pkgDir == "." {
+		return nil, nil
+	}
+	abs := filepath.Join(mayorRigDir, filepath.FromSlash(pkgDir))
+	entries, err := os.ReadDir(abs)
+	if err != nil {
+		return nil, err
+	}
+	var files []string
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".go") {
+			continue
+		}
+		files = append(files, filepath.ToSlash(filepath.Join(pkgDir, e.Name())))
+	}
+	return files, nil
+}
+
+// RunGoimportsOnCompileOutput runs goimports on all .go files in packages cited by compile output.
+// Fixes unused imports in test files while the active bead is a sibling production file.
+func RunGoimportsOnCompileOutput(mayorRigDir, layoutRoot, output string) (touched []string, ran bool, err error) {
+	if !GoCompileOutputHasUnusedImport(output) {
+		return nil, false, nil
+	}
+	cited := GoFilePathsFromCompileOutput(output, layoutRoot)
+	dirs := packageDirsForGoFiles(cited)
+	seen := map[string]bool{}
+	for _, dir := range dirs {
+		files, readErr := GoFilesInPackageDir(mayorRigDir, dir)
+		if readErr != nil {
+			return touched, true, readErr
+		}
+		for _, f := range files {
+			if seen[f] {
+				continue
+			}
+			seen[f] = true
+			didRun, tidyErr := RunGoimportsOnFile(mayorRigDir, f)
+			if !didRun {
+				continue
+			}
+			ran = true
+			if tidyErr != nil {
+				return touched, true, tidyErr
+			}
+			touched = append(touched, f)
+		}
+	}
+	if !ran {
+		for _, f := range cited {
+			didRun, tidyErr := RunGoimportsOnFile(mayorRigDir, f)
+			if !didRun {
+				continue
+			}
+			ran = true
+			if tidyErr != nil {
+				return touched, true, tidyErr
+			}
+			touched = append(touched, f)
+		}
+	}
+	return touched, ran, nil
 }

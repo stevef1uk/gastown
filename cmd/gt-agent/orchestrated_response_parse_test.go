@@ -41,6 +41,40 @@ func TestSanitizeOrchestratedShellCommand_goTestEllipsisGluedProse(t *testing.T)
 	}
 }
 
+func TestStripNativeToolBlocksForCmdParse(t *testing.T) {
+	t.Parallel()
+	in := "---END WRITE---\n" +
+		"CMD: cd linkshelf && go test -count=1 ./internal/store/... -run 'TestInitSchema'\n" +
+		`{"outcome":"success","summary":"Schema file and test implemented, verification passed"}` + "\n" +
+		"WRITE: linkshelf/internal/store/schema_test.go\n" +
+		"package store\n" +
+		"CMD: ls linkshelf/internal/store/schema_test.go\n"
+	out := stripNativeToolBlocksForCmdParse(in)
+	if strings.Contains(out, "package store") || strings.Contains(out, "WRITE:") {
+		t.Fatalf("WRITE body should be stripped: %q", out)
+	}
+	cmds := parseOrchestratedCommands(in)
+	if len(cmds) != 2 {
+		t.Fatalf("want 2 cmds, got %d: %v", len(cmds), cmds)
+	}
+	if strings.Contains(cmds[0], "outcome") || strings.Contains(cmds[1], "WRITE") {
+		t.Fatalf("cmds=%v", cmds)
+	}
+}
+
+func TestStripGluedOutcomeJSONFromLine_leadingColon(t *testing.T) {
+	t.Parallel()
+	in := `cd testgt3/mayor/rig/linkshelf && go test -count=1 ./internal/store/... -run 'TestInitSchema'
+:"success","summary":"Schema file and test implemented, verification passed"}`
+	got := stripGluedOutcomeJSONFromLine(in)
+	if strings.Contains(got, "success") || strings.Contains(got, "summary") {
+		t.Fatalf("got %q", got)
+	}
+	if !strings.Contains(got, "go test") {
+		t.Fatalf("verify cmd should remain: %q", got)
+	}
+}
+
 func TestParseOrchestratedCommands_goTestGluedProseAndJSON(t *testing.T) {
 	t.Parallel()
 	in := "CMD: cd testgt3/mayor/rig/linkshelf && go test -count=1 ./internal/store/...We need to run command.CMD: export BEADS_DIR=$GT_ROOT/testgt3/.beads && cd testgt3/mayor/rig && bd close te-thd{\"outcome\":\"success\"}"
@@ -162,6 +196,19 @@ func TestUnwrapMarkdownInlineToolLines_backtickBdUpdate(t *testing.T) {
 	cmds := parseOrchestratedCommands(in)
 	if len(cmds) != 1 || !strings.Contains(cmds[0], "bd update te-rnd") {
 		t.Fatalf("cmds = %v", cmds)
+	}
+}
+
+func TestFormatMalformedNativeEditFeedback_prosePath(t *testing.T) {
+	t.Parallel()
+	in := "EDIT: command with `<<<<<<< SEARCH` / `=======` / `>>>>>>> REPLACE` blocks.\n"
+	got := FormatMalformedNativeEditFeedback(in)
+	if got == "" || !strings.Contains(got, "rejected prose path") {
+		t.Fatalf("got %q", got)
+	}
+	ops := parseOrchestratedNativeEdits(in)
+	if len(ops) != 0 {
+		t.Fatalf("prose EDIT must not parse, ops=%+v", ops)
 	}
 }
 

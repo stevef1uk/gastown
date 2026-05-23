@@ -10,6 +10,18 @@ import (
 	"github.com/steveyegge/gastown/internal/orchestrator"
 )
 
+func stubImplementBeadsHook(t *testing.T, beads ...orchestrator.PlanBead) {
+	t.Helper()
+	prev := orchestrator.ListImplementBeadsByStatusHook
+	orchestrator.ListImplementBeadsByStatusHook = func(_, _ string, _ orchestrator.WorkflowValidation, status string) ([]orchestrator.PlanBead, error) {
+		if status == "open" || status == "in_progress" || status == "closed" {
+			return beads, nil
+		}
+		return nil, nil
+	}
+	t.Cleanup(func() { orchestrator.ListImplementBeadsByStatusHook = prev })
+}
+
 func linkshelfImplementValidation(files ...string) orchestrator.WorkflowValidation {
 	v := orchestrator.DefaultWorkflowValidation()
 	v.LayoutRoot = "linkshelf"
@@ -182,6 +194,10 @@ func TestStateRunner_executeNativeEdit_stripsMarkdownFencesOnWrite(t *testing.T)
 	}
 	r := newStateRunner(task, dir, rig)
 	r.track.activeBead = "te-store"
+	stubImplementBeadsHook(t, orchestrator.PlanBead{
+		ID:    "te-store",
+		Title: "Implement linkshelf/internal/store/store.go per architecture",
+	})
 	var combined strings.Builder
 	body := "```go\npackage store\n\nimport \"fmt\"\n```\nEOF\n"
 	ops := []nativeEditOp{{kind: "write", path: "linkshelf/internal/store/store.go", content: body}}
@@ -225,6 +241,10 @@ func TestStateRunner_executeNativeEdit_writeAndScope(t *testing.T) {
 	}
 	r := newStateRunner(task, dir, rig)
 	r.track.activeBead = "te-foo"
+	stubImplementBeadsHook(t, orchestrator.PlanBead{
+		ID:    "te-foo",
+		Title: "Implement linkshelf/internal/foo.go per architecture",
+	})
 
 	var combined strings.Builder
 	ops := []nativeEditOp{{

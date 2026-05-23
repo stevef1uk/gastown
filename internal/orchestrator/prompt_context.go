@@ -21,7 +21,10 @@
 // Profile vars: {rig}/mayor/rig/.gastown/workflow-profile.json. See town/README.md § "FSM behavior belongs in YAML".
 package orchestrator
 
-import "fmt"
+import (
+	"fmt"
+	"path/filepath"
+)
 
 // PromptContextBlock returns injected user-prompt text for a rig-flow prompt_context hook name.
 func PromptContextBlock(key, townRoot, rig string, v WorkflowValidation) string {
@@ -109,13 +112,20 @@ func RunPreRunHook(step, townRoot, rig string, v WorkflowValidation) (string, er
 		if logLine != "" {
 			return "planning sync: " + logLine, nil
 		}
-	case "reopen_implement_beads":
-		reopened, err := EnsureImplementBeadsAvailable(townRoot, rig, v)
+	case "refresh_codeindex":
+		mayorRig := filepath.Join(townRoot, rig, "mayor", "rig")
+		log, err := RefreshCodeindexIndex(mayorRig, v)
 		if err != nil {
 			return "", err
 		}
-		if len(reopened) > 0 {
-			return fmt.Sprintf("auto-reopened implement beads: %s", joinStrings(reopened, ", ")), nil
+		return log, nil
+	case "reopen_implement_beads", "reconcile_implement_beads":
+		log, err := ReconcileImplementBeads(townRoot, rig, v)
+		if err != nil {
+			return "", err
+		}
+		if log != "" && log != "implement beads and required_files are consistent" {
+			return "reconcile implement beads: " + log, nil
 		}
 	case "prune_stale_layout_go":
 		return PruneStaleLayoutGoFilesLog(townRoot, rig, v)

@@ -35,6 +35,15 @@ func (s *Store) AddLink(url string) error {
 	v := DefaultWorkflowValidation()
 	v.LayoutRoot = "linkshelf"
 	v.RequiredFiles = []string{rel}
+	setListImplementBeadsByStatusHook(t, dir, rig, func(_, _ string, _ WorkflowValidation, status string) ([]PlanBead, error) {
+		if status == "open" || status == "in_progress" {
+			return []PlanBead{{
+				ID:    "te-store",
+				Title: "Implement linkshelf/internal/store/store.go per architecture",
+			}}, nil
+		}
+		return nil, nil
+	})
 	if !PreferIncrementalEdit(dir, rig, rel, v) {
 		t.Fatal("fixture should prefer incremental edit")
 	}

@@ -52,6 +52,10 @@ func parseOrchestratedNativeEdits(response string) []nativeEditOp {
 		case strings.HasPrefix(upper, "EDIT:"):
 			path := orchestrator.SanitizeNativeEditRelPath(trimmed[len("EDIT:"):])
 			i++
+			if path != "" && !orchestrator.IsValidImplementBeadPath(path) {
+				i = skipNativeEditBlock(lines, i)
+				continue
+			}
 			search, replace, next, ok := parseNativeEditSearchReplace(lines, i)
 			if !ok || path == "" {
 				i = next
@@ -62,6 +66,9 @@ func parseOrchestratedNativeEdits(response string) []nativeEditOp {
 		case strings.HasPrefix(upper, "WRITE:"):
 			path := orchestrator.SanitizeNativeEditRelPath(trimmed[len("WRITE:"):])
 			i++
+			if path != "" && !orchestrator.IsValidImplementBeadPath(path) {
+				continue
+			}
 			content, next := parseNativeWriteBody(lines, i)
 			if path != "" {
 				ops = append(ops, nativeEditOp{kind: "write", path: path, content: content})
@@ -95,6 +102,9 @@ func parseNativeEditSearchReplace(lines []string, start int) (search, replace st
 			replace = strings.TrimRight(strings.Join(replaceLines, "\n"), "\n")
 			return search, replace, i + 1, search != ""
 		default:
+			if isMarkdownFenceOnlyLine(t) {
+				continue
+			}
 			switch mode {
 			case "search":
 				searchLines = append(searchLines, lines[i])
@@ -104,6 +114,22 @@ func parseNativeEditSearchReplace(lines []string, start int) (search, replace st
 		}
 	}
 	return "", "", len(lines), false
+}
+
+// skipNativeEditBlock advances past a malformed EDIT block (e.g. prose path, missing SEARCH).
+func skipNativeEditBlock(lines []string, start int) int {
+	for i := start; i < len(lines); i++ {
+		t := strings.TrimSpace(lines[i])
+		tu := strings.ToUpper(t)
+		if strings.HasPrefix(tu, "EDIT:") || strings.HasPrefix(tu, "WRITE:") ||
+			strings.HasPrefix(tu, "READ:") || strings.HasPrefix(tu, "CMD:") {
+			return i
+		}
+		if isNativeEditEndMarker(t) || t == nativeEditReplaceMarker || strings.HasPrefix(t, ">>>>>>>") {
+			return i + 1
+		}
+	}
+	return len(lines)
 }
 
 func isNativeOrchestratedToolLine(line string) bool {
@@ -139,7 +165,10 @@ func (r *stateRunner) processOrchestratedTools(response, sessionName string, com
 		combined.WriteString(hint)
 		combined.WriteString("\n\n")
 	}
+	var ranPreInProgress bool
 	if r.hooks.NativeEditTools {
+		r.syncActiveImplementBeadFromQueue()
+		ranPreInProgress = r.runInProgressBeadUpdatesBeforeNativeEdits(response, sessionName, combined)
 		ops := parseOrchestratedNativeEdits(response)
 		reads := 0
 		var capped []nativeEditOp
@@ -167,8 +196,16 @@ func (r *stateRunner) processOrchestratedTools(response, sessionName string, com
 	cmdBlocks := parseOrchestratedCommands(response)
 	cmdCount = len(cmdBlocks)
 	for _, cmd := range cmdBlocks {
+		if ranPreInProgress && isBeadUpdateInProgressCommand(cmd) {
+			continue
+		}
 		if strings.Contains(cmd, "CMD:") {
 			orchestratedFprintfStderr("[gt-agent] warning: dropping malformed command with embedded CMD:\n")
+			continue
+		}
+		if isOrchestratedNativeToolLine(cmd) {
+			orchestratedFprintfStderr("[gt-agent] warning: dropping native tool line mistaken for shell: %q\n", cmd)
+			combined.WriteString(fmt.Sprintf("Command skipped (native tool line, not shell): %s\n\n", cmd))
 			continue
 		}
 		if err := r.validateCommand(cmd); err != nil {
@@ -207,16 +244,7 @@ func (r *stateRunner) processOrchestratedTools(response, sessionName string, com
 			if r.hooks.AppendGoCompileContext && orchestrator.WorkflowUsesGo(r.v) {
 				outStr := string(out)
 				if orchestrator.GoCompileOutputHasUnusedImport(outStr) {
-					beadPath := r.activeImplementBeadPath()
-					if beadPath == "" {
-						beadPath = orchestrator.ImplementBeadPathForID(r.townRoot, r.rig, r.track.activeBead, r.v)
-					}
-					if beadPath != "" {
-						mayorDir := rigMayorRigDir(r.townRoot, r.rig)
-						if ran, tidyErr := orchestrator.RunGoimportsOnFile(mayorDir, beadPath); ran && tidyErr == nil {
-							combined.WriteString(fmt.Sprintf("Auto-ran goimports on %s — re-run the same verify CMD\n\n", beadPath))
-						}
-					}
+					r.tryGoimportsForCompileFailure(rigMayorRigDir(r.townRoot, r.rig), outStr, combined)
 				}
 				appendGoCompileSourceContext(combined, r.townRoot, r.rig, rigMayorRigDir(r.townRoot, r.rig), r.v.LayoutRoot,
 					r.activeImplementBeadPath(), r.v, cmd, outStr)
@@ -238,6 +266,96 @@ func (r *stateRunner) processOrchestratedTools(response, sessionName string, com
 
 func isNativeEditSearchNotFound(err error) bool {
 	return err != nil && strings.Contains(err.Error(), "SEARCH block not found")
+}
+
+func isMarkdownFenceOnlyLine(t string) bool {
+	t = strings.TrimSpace(t)
+	if t == "```" {
+		return true
+	}
+	if strings.HasPrefix(t, "```") {
+		lang := strings.TrimSpace(strings.TrimPrefix(t, "```"))
+		switch strings.ToLower(lang) {
+		case "", "go", "golang", "python", "py", "bash", "sh", "shell", "text", "json":
+			return true
+		}
+	}
+	return false
+}
+
+// reconcileActiveImplementBeadWithQueue clears a stale persisted active bead when the queue head moved on.
+func (r *stateRunner) reconcileActiveImplementBeadWithQueue() {
+	if r.track == nil || !strings.EqualFold(strings.TrimSpace(r.hooks.Track), "implementation") {
+		return
+	}
+	if len(r.v.RequiredFiles) == 0 {
+		return
+	}
+	next, err := orchestrator.NextOpenImplementBead(r.townRoot, r.rig, r.v)
+	if err != nil || next == nil || next.ID == "" {
+		return
+	}
+	active := strings.TrimSpace(r.track.activeBead)
+	if active == "" {
+		r.track.activeBead = next.ID
+		r.track.activeBeadPath = orchestrator.ImplementBeadPathForID(r.townRoot, r.rig, next.ID, r.v)
+		return
+	}
+	if active == next.ID {
+		return
+	}
+	orchestratedPrintf("[gt-agent] clearing stale active bead %s (queue head is %s); use CMD: bd update %s --status=in_progress before EDIT\n",
+		active, next.ID, next.ID)
+	r.track.activeBead = ""
+	r.track.activeBeadPath = ""
+	r.track.verifyOK = false
+	if r.implProgress != nil && r.implProgress.ActiveBead == active {
+		r.implProgress.ActiveBead = ""
+		r.implProgress.ActiveBeadPath = ""
+		if err := saveImplementationProgress(r.townRoot, r.rig, r.implProgress); err != nil {
+			orchestratedFprintfStderr("[gt-agent] implementation progress save: %v\n", err)
+		}
+	}
+}
+
+// syncActiveImplementBeadFromQueue aligns track.activeBead with the implementation queue head.
+func (r *stateRunner) syncActiveImplementBeadFromQueue() {
+	r.reconcileActiveImplementBeadWithQueue()
+}
+
+// runInProgressBeadUpdatesBeforeNativeEdits runs bd update --status=in_progress before EDIT/WRITE in the same turn.
+func (r *stateRunner) runInProgressBeadUpdatesBeforeNativeEdits(response, sessionName string, combined *strings.Builder) bool {
+	if !strings.EqualFold(strings.TrimSpace(r.hooks.Track), "implementation") {
+		return false
+	}
+	var ran bool
+	for _, cmd := range parseOrchestratedCommands(response) {
+		if !isBeadUpdateInProgressCommand(cmd) {
+			continue
+		}
+		if err := r.validateCommand(cmd); err != nil {
+			orchestratedFprintfStderr("[gt-agent] pre-native rejected command: %v\n", err)
+			combined.WriteString(fmt.Sprintf("Command REJECTED (%s, before native tools): %s\nReason: %v\n\n", r.rejectScope(), cmd, err))
+			continue
+		}
+		cmd = r.rewriteCommand(cmd)
+		r.repairPipBeforeRun(cmd)
+		cmdEnv := r.commandEnv(os.Environ())
+		cmd = r.rewritePythonCmd(cmd, cmdEnv)
+		r.beforeDevServerCommand(cmd)
+		orchestratedPrintf("[gt-agent] (pre-native) $ %s\n", cmd)
+		workDir := r.workDir()
+		out, cmdErr := r.runShellCommand(cmd, workDir, sessionName, cmdEnv)
+		r.afterCommand(cmd, cmdErr, workDir, sessionName, cmdEnv, combined)
+		if cmdErr != nil {
+			orchestratedFprintfStderr("[gt-agent] pre-native command failed: %v\n%s\n", cmdErr, string(out))
+			combined.WriteString(fmt.Sprintf("Command: %s\nError: %v\nOutput: %s\n\n", cmd, cmdErr, string(out)))
+		} else {
+			combined.WriteString(formatSuccessCommandOutput(out))
+		}
+		ran = true
+	}
+	return ran
 }
 
 func (r *stateRunner) mayorRigWorkDir() string {

@@ -15,7 +15,6 @@ func TestCorrelatedTestPathForSource_schemaBead(t *testing.T) {
 }
 
 func TestValidateImplementReadPath_correlatedGoTest(t *testing.T) {
-	t.Parallel()
 	dir := t.TempDir()
 	rig := "mockrig"
 	v := DefaultWorkflowValidation()

@@ -86,6 +86,7 @@ func TestIsValidImplementBeadPath(t *testing.T) {
 		"linkshelf/[task]",
 		"linkshelf/` command to create the file.",
 		"linkshelf/** to create it per architecture and plan acceptance.",
+		"command with `<<<<<<< SEARCH` / `=======` / `>>>>>>> REPLACE` blocks.",
 		"",
 	}
 	for _, p := range bad {

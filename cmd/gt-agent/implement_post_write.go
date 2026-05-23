@@ -56,9 +56,8 @@ func (r *stateRunner) runPostNativeWriteVerify(relPath string, sessionName strin
 	orchestratedPrintf("[gt-agent] post-write verify: %s\n", verifyCmd)
 	out, err := r.runShellCommand(verifyCmd, workDir, sessionName, cmdEnv)
 	if err != nil && orchestrator.GoCompileOutputHasUnusedImport(string(out)) {
-		if ran, tidyErr := orchestrator.RunGoimportsOnFile(mayorDir, relPath); ran && tidyErr == nil {
-			orchestratedPrintf("[gt-agent] retrying verify after goimports on %s\n", relPath)
-			combined.WriteString(fmt.Sprintf("Auto-ran goimports on %s before retrying verify\n\n", relPath))
+		if r.tryGoimportsForCompileFailure(mayorDir, string(out), combined) {
+			orchestratedPrintf("[gt-agent] retrying verify after goimports package tidy\n")
 			out, err = r.runShellCommand(verifyCmd, workDir, sessionName, cmdEnv)
 		}
 	}

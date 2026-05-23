@@ -49,8 +49,13 @@ gt-agent runs these directly (same turn as `CMD:` is allowed):
 - **Never** wrap EDIT/WRITE bodies (or heredoc file content) in markdown fences — no leading ` ```go ` or trailing ` ``` `; first line must be real source (`package …`, `import …`, etc.).
 - **Never** prefix WRITE bodies with heredoc/EDIT markers — no `<<<<<<< EOF`, `<<<<<<< SEARCH`, `=======`, or `>>>>>>> REPLACE` (those are shell/EDIT syntax only, not Go/Python source).
 - **Never** put heredoc markers in file bodies — no trailing line `EOF` / `EOT` / `END` (those belong only on their own line **after** a shell `cat <<'EOF'`, not inside **WRITE:** or **EDIT:**).
-- **Never** wrap `CMD:` / `EDIT:` / `WRITE:` in markdown backticks — write `CMD: …` on its own line (no `` `CMD: …` ``).
-- After **EDIT:**/**WRITE:** on `.go` files, gt-agent runs **goimports** when installed (drops unused imports like stray `"fmt"`). If verify still says `imported and not used`, fix the **import block only** with a tiny EDIT — not a whole-file rewrite.
+- **Never** wrap `CMD:` / `EDIT:` / `WRITE:` in markdown backticks or ` ``` ` fences — write `CMD: …` / `EDIT: path` on their own lines (no `` `CMD: …` ``). Do not write tutorial lines like `EDIT: command with SEARCH blocks` — use a real path: `EDIT: linkshelf/internal/api/handlers_test.go`.
+- In one reply, put **`CMD: bd update BEAD_ID --status=in_progress` before** any `EDIT:`/`WRITE:` for that bead (gt-agent applies in_progress first, then native tools).
+- **Verify CMD** must be plain shell (no markdown backticks): `CMD: cd linkshelf && go test -count=1 ./internal/api/...` — not `` `CMD: ...` `` or `-count=1./` (space required: `-count=1 ./`).
+- If **Next bead** ≠ persisted active bead, gt-agent clears the stale lock — run `bd update` on the **Next bead** ID from the prompt.
+- After **EDIT:**/**WRITE:** or failed **Verify**, gt-agent runs **goimports** on the whole package when installed (fixes unused imports in `*_test.go` while your active bead is another file in the same package). If verify still says `imported and not used`, fix the **import block only** with a tiny EDIT — not a whole-file rewrite. Do not send JSON **success** until Verify passes.
+- **`bd close` is gated:** green Verify in this session **and** the bead file (plus correlated `*_test.go` when applicable) must exist on disk. gt-agent reopens other closed beads with missing/stub files before allowing close — fix those first.
+- **Codeindex (optional):** if `codeindex` is installed (`pip install codeindex`), gt-agent refreshes `mayor/rig/codeindex.json` at task start and injects **blast radius** for the active bead. Disable with `GT_CODEINDEX=0`.
 - **WRITE:/EDIT:/READ: paths** must be real repo paths only (e.g. `WRITE: linkshelf/internal/store/store.go`) — never prose like `` ` command to create the file. `` or `** to create it per architecture**`.
 
 Use **CMD:** only for `bd`, **Verify**, `go run`/curl (main bead), and `ls`. gt-agent runs **post-write verify** after every EDIT/WRITE; **`bd close` is rejected** unless that bead's Verify passed in this session.

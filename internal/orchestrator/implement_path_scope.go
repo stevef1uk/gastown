@@ -87,6 +87,9 @@ func validateImplementWriteScope(townRoot, rig, activeBead, written string, v Wo
 		return fmt.Errorf("do not overwrite %q — its implement bead is closed (active bead %s)", written, allowedID)
 	}
 	if allowedPath == "" {
+		if allowedID != "" {
+			return fmt.Errorf("could not resolve file path for active implement bead %s (check bd list / BEADS_DIR)", allowedID)
+		}
 		return nil
 	}
 	if PathMatchesImplementWrite(written, allowedPath, v.RequiredFiles) {
@@ -110,6 +113,38 @@ func validateImplementWriteScope(townRoot, rig, activeBead, written string, v Wo
 			}
 		}
 	}
-	return fmt.Errorf("write only the active/next implement file (%s for bead %s), not %q",
+	return NewImplementWriteScopeError(townRoot, rig, allowedID, allowedPath, written, v)
+}
+
+// OpenImplementBeadForPath returns an open or in_progress implement bead that owns filePath.
+func OpenImplementBeadForPath(townRoot, rig, filePath string, v WorkflowValidation) (id, beadPath string, ok bool) {
+	filePath = NormalizeBeadPathForLayout(filepath.ToSlash(strings.TrimSpace(filePath)), v.LayoutRoot)
+	if filePath == "" {
+		return "", "", false
+	}
+	beads, err := ListImplementBeadsOpenOrInProgress(townRoot, rig, v)
+	if err != nil {
+		return "", "", false
+	}
+	for _, b := range beads {
+		p := NormalizeBeadPathForLayout(ExtractPathFromBeadTitle(b.Title, v.BeadTitleContains), v.LayoutRoot)
+		if p == "" {
+			continue
+		}
+		if PathMatchesImplementWrite(filePath, p, v.RequiredFiles) {
+			return b.ID, p, true
+		}
+	}
+	return "", "", false
+}
+
+// NewImplementWriteScopeError explains why a native EDIT/WRITE path was rejected.
+func NewImplementWriteScopeError(townRoot, rig, allowedID, allowedPath, written string, v WorkflowValidation) error {
+	base := fmt.Errorf("write only the active/next implement file (%s for bead %s), not %q",
 		allowedPath, allowedID, written)
+	if targetID, targetPath, ok := OpenImplementBeadForPath(townRoot, rig, written, v); ok && targetID != "" && targetID != allowedID {
+		return fmt.Errorf("%w — %q belongs to open bead %s (%s); finish bead %s (%s) first, then `CMD: bd update %s --status=in_progress` → **EDIT:** → Verify → `bd close %s`",
+			base, written, targetID, targetPath, allowedID, allowedPath, targetID, targetID)
+	}
+	return base
 }

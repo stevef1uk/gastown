@@ -141,10 +141,16 @@ func filterHallucinatedScriptLines(body string) string {
 	var kept []string
 	for _, line := range strings.Split(body, "\n") {
 		t := strings.TrimSpace(line)
+		if isOrchestratedNativeToolLine(line) {
+			continue
+		}
 		if strings.Contains(strings.ToUpper(t), "[TOOL_CALLS]") {
 			continue
 		}
 		if looksLikeHallucinatedShellOutput(t) {
+			continue
+		}
+		if outcomeJSONLeadingColonRE.MatchString(t) {
 			continue
 		}
 		kept = append(kept, line)
@@ -415,6 +421,8 @@ func normalizeGoCommandTypos(cmd string) (string, bool) {
 		{"go test./", "go test ./"},
 		{"go run./", "go run ./"},
 		{"go vet./", "go vet ./"},
+		{"-count=1./", "-count=1 ./"},
+		{"-count=1..", "-count=1 ./"},
 	}
 	changed := false
 	for _, r := range repls {

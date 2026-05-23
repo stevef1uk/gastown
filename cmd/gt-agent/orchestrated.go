@@ -302,6 +302,12 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 				messages = append(messages, llm.Message{Role: "user", Content: msg})
 				continue
 			}
+			if msg, reject := runner.rejectImplementationPrematureSuccess(o); reject {
+				orchestratedPrintf("[gt-agent] rejecting implementation success JSON while compile still blocked\n")
+				recordAttemptFeedback(msg + "\n")
+				messages = append(messages, llm.Message{Role: "user", Content: msg})
+				continue
+			}
 			if vErr := runner.validateArtifacts(o); vErr != nil {
 				orchestratedPrintf("[gt-agent] artifact validation failed: %v\n", vErr)
 				msg := runner.artifactFailureFeedback(vErr)
@@ -554,6 +560,26 @@ func updateOrchestratedRetry(state *AgentState, task *orchestrator.Task, outcome
 // outcomeJSONTailRE strips outcome JSON glued onto the end of a CMD line.
 var outcomeJSONTailRE = regexp.MustCompile(`(?i)\s*\{[\s]*"outcome"[\s\S]*$`)
 
+// outcomeJSONLeadingColonRE strips partial JSON the model glues after verify (e.g. :"success","summary":...).
+var outcomeJSONLeadingColonRE = regexp.MustCompile(`(?i)^\s*:\s*"success"\s*,\s*"summary"\s*:[\s\S]*$`)
+
+// stripGluedOutcomeJSONFromLine removes outcome JSON glued onto a shell line.
+func stripGluedOutcomeJSONFromLine(line string) string {
+	var out []string
+	for _, l := range strings.Split(line, "\n") {
+		l = outcomeJSONTailRE.ReplaceAllString(l, "")
+		if outcomeJSONLeadingColonRE.MatchString(strings.TrimSpace(l)) {
+			continue
+		}
+		l = outcomeJSONLeadingColonRE.ReplaceAllString(l, "")
+		l = strings.TrimRight(l, " \t")
+		if strings.TrimSpace(l) != "" {
+			out = append(out, l)
+		}
+	}
+	return strings.Join(out, "\n")
+}
+
 // Matches ```cmd: / ```CMD / ```cmd (LLMs often omit the colon).
 var markdownFencedCMDRE = regexp.MustCompile("(?im)^```\\s*cmd:?\\s*")
 
@@ -600,8 +626,8 @@ func stripOutcomeLinesForCmdParse(response string) string {
 			}
 			continue
 		}
-		if trimmed := outcomeJSONTailRE.ReplaceAllString(line, ""); trimmed != line {
-			line = strings.TrimRight(trimmed, " \t")
+		if cleaned := stripGluedOutcomeJSONFromLine(line); cleaned != line {
+			line = cleaned
 			t = strings.TrimSpace(line)
 			if t == "" {
 				continue
@@ -660,6 +686,7 @@ func responseHasUnterminatedHeredoc(response string) bool {
 // parseOrchestratedCommands extracts CMD blocks without treating JSON or outcome lines as shell.
 func parseOrchestratedCommands(response string) []string {
 	filtered := preprocessOrchestratedResponse(response)
+	filtered = stripNativeToolBlocksForCmdParse(filtered)
 	filtered = stripOutcomeLinesForCmdParse(filtered)
 	filtered = stripModelToolArtifacts(filtered)
 	filtered = normalizeMarkdownFencedCMD(filtered)
@@ -1231,6 +1258,9 @@ func validateImplementationCommandWithState(cmd, townRoot, rig, activeBead strin
 	if err := validateImplementationBeadFileWrite(cmd, townRoot, rig, activeBead, v); err != nil {
 		return err
 	}
+	if err := validateImplementationBeadClose(cmd, townRoot, rig, v, verifyOK); err != nil {
+		return err
+	}
 	if activeBead == "" || !isBeadUpdateInProgressCommand(cmd) {
 		return nil
 	}
@@ -1268,23 +1298,8 @@ func validateImplementationBeadFileWrite(cmd, townRoot, rig, activeBead string, 
 	if allowedPath == "" {
 		return nil
 	}
-	if orchestrator.PathMatchesImplementWrite(written, allowedPath, v.RequiredFiles) {
-		return nil
-	}
-	// cmd/main (and similar) verify builds import earlier packages — allow heredoc only while that path's bead is still open.
-	if orchestrator.AllowedEarlierImplementDependencyWrite(townRoot, rig, allowedPath, written, v) {
-		return nil
-	}
-	// go.mod bead: go mod tidy fails until other packages import correctly — allow fixing those .go files.
-	if strings.HasSuffix(filepath.ToSlash(allowedPath), "go.mod") && strings.HasSuffix(written, ".go") {
-		for _, want := range v.RequiredFiles {
-			if orchestrator.PathMatchesImplementWrite(written, want, v.RequiredFiles) {
-				return nil
-			}
-		}
-	}
-	return fmt.Errorf("write only the active/next implement file (%s for bead %s), not %q",
-		allowedPath, allowedID, written)
+	// Scope only (fullReplace false): heredoc/WRITE incremental rules handled above via RejectFullFileHeredocReason.
+	return orchestrator.ValidateImplementWritePath(townRoot, rig, activeBead, written, v, false, "")
 }
 
 func validatePlanningShellSideEffects(lower string) error {

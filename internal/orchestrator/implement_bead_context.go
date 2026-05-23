@@ -115,6 +115,11 @@ func formatImplementBeadContextForPath(townRoot, rig, beadPath string, v Workflo
 		b.WriteString(block)
 		b.WriteString("\n")
 	}
+	if block := FormatCodeindexContextForBead(filepath.Join(townRoot, rig, "mayor", "rig"), beadPath, v); block != "" {
+		b.WriteString("\n")
+		b.WriteString(block)
+		b.WriteString("\n")
+	}
 	return strings.TrimSpace(b.String())
 }
 

@@ -191,6 +191,7 @@ func (r *stateRunner) applyImplementationProgressToTrack() {
 		r.track.activeBeadPath = r.implProgress.ActiveBeadPath
 	}
 	// verifyOK is set only by a green Verify in this session (post-write / auto-verify / clearStale on resume).
+	r.reconcileActiveImplementBeadWithQueue()
 }
 
 func (r *stateRunner) persistImplementationProgress(cmd string) {
@@ -297,8 +298,13 @@ func (r *stateRunner) formatImplementationProgressBlock() string {
 	}
 
 	if r.track != nil && r.track.activeBead != "" && r.implProgress.done(implVerifyKey(r.track.activeBead)) && r.track.verifyOK {
-		b.WriteString(fmt.Sprintf("\nActive bead **%s** (`%s`) has green Verify in this session — proceed to **EDIT:**/**WRITE:** fixes or `bd close` if the file is done.\n",
-			r.track.activeBead, r.activeImplementBeadPath()))
+		if next, err := orchestrator.NextOpenImplementBead(r.townRoot, r.rig, r.v); err == nil && next != nil && next.ID != "" && next.ID == r.track.activeBead {
+			b.WriteString(fmt.Sprintf("\nActive bead **%s** (`%s`) has green Verify in this session — proceed to **EDIT:**/**WRITE:** fixes or `bd close` if the file is done.\n",
+				r.track.activeBead, r.activeImplementBeadPath()))
+		} else if next != nil && next.ID != "" && next.ID != r.track.activeBead {
+			b.WriteString(fmt.Sprintf("\nPersisted active bead **%s** is not the queue head — **Next bead** is **%s**. Run `CMD: bd update %s --status=in_progress` (gt-agent cleared stale in_progress lock).\n",
+				r.track.activeBead, next.ID, next.ID))
+		}
 	}
 
 	if hasResume && r.track != nil && r.implProgress.LastVerifyFailBead == r.track.activeBead {

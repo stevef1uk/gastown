@@ -32,6 +32,12 @@ func IsValidImplementBeadPath(path string) bool {
 	if strings.Contains(lower, "command to create") || strings.Contains(lower, "per architecture") {
 		return false
 	}
+	if strings.Contains(path, "<<<<<<<") || strings.Contains(path, ">>>>>>>") || strings.Contains(path, "=======") {
+		return false
+	}
+	if strings.HasPrefix(lower, "command ") || strings.Contains(lower, " blocks.") {
+		return false
+	}
 	for _, r := range path {
 		if unicode.IsControl(r) {
 			return false
@@ -1003,15 +1009,17 @@ func ImplementBeadPathForID(townRoot, rig, beadID string, v WorkflowValidation) 
 	if beadID == "" {
 		return ""
 	}
-	active, err := ListImplementBeadsOpenOrInProgress(townRoot, rig, v)
-	if err != nil {
-		return ""
-	}
-	for _, b := range active {
-		if b.ID != beadID {
+	for _, status := range []string{"open", "in_progress", "closed"} {
+		beads, err := listImplementBeadsForGuard(townRoot, rig, v, status)
+		if err != nil {
 			continue
 		}
-		return NormalizeBeadPathForLayout(ExtractPathFromBeadTitle(b.Title, v.BeadTitleContains), v.LayoutRoot)
+		for _, b := range beads {
+			if b.ID != beadID {
+				continue
+			}
+			return NormalizeBeadPathForLayout(ExtractPathFromBeadTitle(b.Title, v.BeadTitleContains), v.LayoutRoot)
+		}
 	}
 	return ""
 }

@@ -268,6 +268,10 @@ func TestStateRunner_executeNativeEdit_editStripsJunkOnReplace(t *testing.T) {
 	}
 	r := newStateRunner(task, dir, rig)
 	r.track.activeBead = "te-store"
+	stubImplementBeadsHook(t, orchestrator.PlanBead{
+		ID:    "te-store",
+		Title: "Implement linkshelf/internal/store/store.go per architecture",
+	})
 	ops := []nativeEditOp{{
 		kind:    "edit",
 		path:    rel,
@@ -312,6 +316,10 @@ func TestParseOrchestratedNativeEdits_writeBodyGetsSanitizedOnDisk(t *testing.T)
 	}
 	r := newStateRunner(task, dir, rig)
 	r.track.activeBead = "te-h"
+	stubImplementBeadsHook(t, orchestrator.PlanBead{
+		ID:    "te-h",
+		Title: "Implement " + rel + " per architecture",
+	})
 	response := "WRITE: " + rel + "\n```go\npackage new\n\nfunc Handler() {}\n```\nEOF\n---END WRITE---\n"
 	ops := parseOrchestratedNativeEdits(response)
 	if len(ops) != 1 || ops[0].kind != "write" {

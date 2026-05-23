@@ -153,6 +153,8 @@ Implementation state sets `native_edit_tools: true` in `rig-flow.yaml`. The pole
 
 When an implement bead’s file **already exists** on disk (and is not a stub), gt-agent **rejects** `cat > path <<'EOF'` and full **`WRITE:`** rewrites; use **`EDIT:`** search/replace instead. **Implement context** includes an **Incremental edit required** block when applicable.
 
+**Codeindex (optional):** if [`codeindex`](https://github.com/scheidydude/codeindex) is on PATH (`pip install codeindex`), implementation `pre_run` runs `refresh_codeindex` (builds `mayor/rig/codeindex.json`) and each bead prompt gets **blast radius** via `codeindex impact`. Set `GT_CODEINDEX=0` to disable.
+
 Restart a dead polecat session: `gt up` (pipeline liveness restarts gt-agent without `--orchestrated`), or `scripts/reset-rig-orchestrator.sh` for a full rig rewind.
 
 ### Orchestrator MCP liveness (daemon patrol)
