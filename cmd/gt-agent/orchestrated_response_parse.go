@@ -26,7 +26,42 @@ func preprocessOrchestratedResponse(response string) string {
 	response = unwrapMarkdownInlineToolLines(response)
 	response = unwrapMarkdownFencedToolBlocks(response)
 	response = stripMarkdownFenceOnlyLines(response)
+	response = normalizeNativeEditEndLines(response)
 	return response
+}
+
+// normalizeNativeEditEndLines fixes common model typos (e.g. >>>>>> REPLACE → >>>>>>> REPLACE).
+func normalizeNativeEditEndLines(response string) string {
+	var out []string
+	for _, line := range strings.Split(response, "\n") {
+		if isShortNativeEditEndMarker(strings.TrimSpace(line)) {
+			out = append(out, nativeEditEndMarker)
+			continue
+		}
+		out = append(out, line)
+	}
+	return strings.Join(out, "\n")
+}
+
+// isShortNativeEditEndMarker reports >>>>>> REPLACE (six arrows) and similar typos.
+func isShortNativeEditEndMarker(line string) bool {
+	line = strings.TrimSpace(line)
+	if line == "" || strings.EqualFold(line, nativeEditEndMarker) || strings.EqualFold(line, "---END EDIT---") {
+		return false
+	}
+	upper := strings.ToUpper(line)
+	if !strings.HasSuffix(upper, "REPLACE") {
+		return false
+	}
+	i := 0
+	for i < len(upper) && upper[i] == '>' {
+		i++
+	}
+	if i < 6 || i >= 7 {
+		return false
+	}
+	rest := strings.TrimSpace(upper[i:])
+	return rest == "REPLACE"
 }
 
 // stripMarkdownFenceOnlyLines removes ``` / ```go lines models wrap around EDIT bodies.
@@ -181,6 +216,10 @@ func FormatMalformedNativeEditFeedback(response string) string {
 		}
 		if !hasSearch {
 			msgs = append(msgs, "EDIT: "+path+" is missing "+nativeEditSearchMarker+" / ======= before >>>>>>> REPLACE — copy from ### Current file on disk, then retry.")
+			continue
+		}
+		if extra := formatDoubleEqualsEditFeedback(lines, i); extra != "" {
+			msgs = append(msgs, extra)
 		}
 	}
 	if len(msgs) == 0 {
@@ -373,7 +412,38 @@ func isBdInfrastructureFailure(cmdErr error, output string) bool {
 
 func isNativeEditEndMarker(line string) bool {
 	t := strings.TrimSpace(line)
-	return t == nativeEditEndMarker || strings.EqualFold(t, "---END EDIT---")
+	if t == nativeEditEndMarker || strings.EqualFold(t, "---END EDIT---") {
+		return true
+	}
+	return isShortNativeEditEndMarker(t)
+}
+
+// formatDoubleEqualsEditFeedback detects git-merge style EDIT bodies (two ======= dividers).
+func formatDoubleEqualsEditFeedback(lines []string, editLine int) string {
+	equals := 0
+	sawSearch := false
+	for j := editLine + 1; j < len(lines) && j < editLine+80; j++ {
+		t := strings.TrimSpace(lines[j])
+		tu := strings.ToUpper(t)
+		if strings.HasPrefix(tu, "EDIT:") || strings.HasPrefix(tu, "WRITE:") ||
+			strings.HasPrefix(tu, "CMD:") {
+			break
+		}
+		if t == nativeEditSearchMarker || strings.HasPrefix(t, "<<<<<<<") {
+			sawSearch = true
+			continue
+		}
+		if sawSearch && t == nativeEditReplaceMarker {
+			equals++
+		}
+		if isNativeEditEndMarker(t) {
+			break
+		}
+	}
+	if equals < 2 {
+		return ""
+	}
+	return "EDIT: uses two " + nativeEditReplaceMarker + " lines (git-merge style) — use exactly one SEARCH block, one " + nativeEditReplaceMarker + ", then >>>>>>> REPLACE"
 }
 
 // isOrchestratedNativeToolLine reports READ:/EDIT:/WRITE: markers that must never run as shell.

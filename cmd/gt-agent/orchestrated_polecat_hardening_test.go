@@ -45,6 +45,24 @@ func TestParseOrchestratedCommands_backtickWrappedVerify(t *testing.T) {
 	}
 }
 
+func TestNormalizeNativeEditEndLines_sixArrows(t *testing.T) {
+	t.Parallel()
+	in := "EDIT: linkshelf/internal/api/handlers.go\n<<<<<<< SEARCH\nx\n=======\ny\n>>>>>> REPLACE\n"
+	ops := parseOrchestratedNativeEdits(in)
+	if len(ops) != 1 || ops[0].search != "x" || ops[0].replace != "y" {
+		t.Fatalf("ops = %+v", ops)
+	}
+}
+
+func TestFormatMalformedNativeEditFeedback_doubleEquals(t *testing.T) {
+	t.Parallel()
+	in := "EDIT: linkshelf/internal/api/handlers.go\n<<<<<<< SEARCH\n=======\nold\n=======\nnew\n>>>>>> REPLACE\n"
+	got := FormatMalformedNativeEditFeedback(in)
+	if got == "" || !strings.Contains(got, "git-merge") {
+		t.Fatalf("want git-merge feedback, got %q", got)
+	}
+}
+
 func TestParseOrchestratedNativeEdits_fencedEditBody(t *testing.T) {
 	t.Parallel()
 	in := "EDIT: linkshelf/internal/api/handlers.go\n```\n<<<<<<< SEARCH\n\t\tjson.NewEncoder(w).Encode(links)\n=======\n\t\tw.Write([]byte(\"[]\"))\n>>>>>>> REPLACE\n```\n"
