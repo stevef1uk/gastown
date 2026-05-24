@@ -42,7 +42,11 @@ type WorkflowInstance struct {
 	ID            string            `json:"id"`
 	TemplateID    string            `json:"template_id"`
 	CurrentState  string            `json:"current_state"`
-	StateEnteredAt string           `json:"state_entered_at,omitempty"` // RFC3339 UTC; wall-clock timeout anchor
+	// StateEnteredAt is when the current FSM state was entered (RFC3339 UTC).
+	// Used for state_timeout_seconds. Refreshed only on cross-state transitions and
+	// after orchestrator wall-clock timeout (applyStateTimeout); same-state timeout/failure
+	// rework loops do not reset it so max_cmd_turns sessions cannot defer hard reset.
+	StateEnteredAt string `json:"state_entered_at,omitempty"`
 	Variables     map[string]string `json:"variables"`
 	Status        string            `json:"status"` // "running", "paused", "completed", "failed"
 	PendingRework *WorkflowRework   `json:"pending_rework,omitempty"`
@@ -56,6 +60,16 @@ func IsFailureOutcome(outcome string) bool {
 	default:
 		return false
 	}
+}
+
+// IsArchitectureReworkOutcome reports QA sending the workflow back to the architect (design).
+func IsArchitectureReworkOutcome(outcome string) bool {
+	return strings.EqualFold(strings.TrimSpace(outcome), "architecture_failure")
+}
+
+// IsCrossStateReworkOutcome reports outcomes that should set PendingRework on a state change.
+func IsCrossStateReworkOutcome(outcome string) bool {
+	return IsFailureOutcome(outcome) || IsArchitectureReworkOutcome(outcome) || IsTimeoutOutcome(outcome)
 }
 
 // AllowedOutcomes returns transition keys for the state (valid complete_task outcomes).
@@ -119,8 +133,11 @@ func (wi *WorkflowInstance) Transition(tpl *WorkflowTemplate, outcome string) (s
 		}
 	}
 
+	fromState := wi.CurrentState
 	wi.CurrentState = trans.To
-	wi.touchStateEnteredAt()
+	if trans.To != fromState {
+		wi.touchStateEnteredAt()
+	}
 	if wi.CurrentState == "completed" || wi.CurrentState == "failed" {
 		wi.Status = wi.CurrentState
 	} else if wi.Status == "" {

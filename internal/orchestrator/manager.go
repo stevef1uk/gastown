@@ -268,7 +268,9 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summa
 			}
 		}
 	}
-	setRework := IsTimeoutOutcome(outcome) || (IsFailureOutcome(outcome) && next != "" && next != fromState)
+	// Timeout keeps PendingRework even on same-state transitions (planning → planning).
+	setRework := IsTimeoutOutcome(outcome) ||
+		(next != fromState && (IsFailureOutcome(outcome) || IsArchitectureReworkOutcome(outcome)))
 	if setRework && next != "" {
 		v := m.workflowValidationFor(inst, tpl)
 		reworkFeedback := PrepareWorkflowReworkFeedback(fromState, next, summary, feedback, v)
@@ -290,7 +292,7 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summa
 			Feedback:  reworkFeedback,
 			AgentID:   agentID,
 		}
-	} else if !IsFailureOutcome(outcome) && !IsTimeoutOutcome(outcome) {
+	} else if !IsTimeoutOutcome(outcome) && !IsFailureOutcome(outcome) && !IsArchitectureReworkOutcome(outcome) {
 		// Success clears QA/plan-review rework for the next agent.
 		inst.PendingRework = nil
 	}

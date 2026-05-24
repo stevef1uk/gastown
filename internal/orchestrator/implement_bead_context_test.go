@@ -219,6 +219,52 @@ func TestFormatImplementBeadContextBlock_emptyWithoutBead(t *testing.T) {
 	}
 }
 
+func TestPromptContextBlock_implementBeadContext_includesCodeindexEarly(t *testing.T) {
+	dir := t.TempDir()
+	rig := "testrig"
+	rigDir := filepath.Join(dir, rig, "mayor", "rig")
+	layout := filepath.Join(rigDir, "linkshelf", "internal", "store")
+	if err := os.MkdirAll(layout, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(layout, "schema.go"), []byte("package store\nfunc InitSchema() error { return nil }\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(rigDir, "architecture.md"), []byte("`linkshelf/internal/api/handlers.go` routes\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	v := WorkflowValidation{
+		BeadTitleContains: "Implement ",
+		LayoutRoot:        "linkshelf",
+		QAVerifyCommand:   "cd linkshelf && go test ./...",
+		RequiredFiles: []string{
+			"linkshelf/internal/store/schema.go",
+			"linkshelf/internal/api/handlers.go",
+		},
+	}
+	if !CodeindexEnabled() {
+		t.Skip("codeindex not on PATH")
+	}
+	if _, err := RefreshCodeindexIndex(rigDir, v); err != nil {
+		t.Fatalf("refresh: %v", err)
+	}
+	prev := nextOpenImplementBeadHook
+	nextOpenImplementBeadHook = func(_, _ string, _ WorkflowValidation) (*PlanBead, error) {
+		return &PlanBead{ID: "te-api", Title: "Implement linkshelf/internal/api/handlers.go per architecture"}, nil
+	}
+	t.Cleanup(func() { nextOpenImplementBeadHook = prev })
+
+	got := PromptContextBlock("implement_bead_context", dir, rig, v)
+	if !strings.Contains(got, "### Codeindex symbols") {
+		t.Fatalf("want codeindex block, got:\n%s", got)
+	}
+	archIdx := strings.Index(got, "### From architecture.md")
+	codeIdx := strings.Index(got, "### Codeindex symbols")
+	if archIdx >= 0 && codeIdx > archIdx {
+		t.Fatalf("codeindex should appear before architecture excerpt")
+	}
+}
+
 func TestPromptContextBlock_implementBeadContext(t *testing.T) {
 	dir := t.TempDir()
 	rig := "testrig"

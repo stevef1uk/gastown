@@ -225,5 +225,7 @@ states:
         to: completed
       failure:
         to: implementation
+      architecture_failure:
+        to: design
       timeout:
         to: implementation

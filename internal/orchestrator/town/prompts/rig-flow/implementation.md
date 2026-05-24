@@ -56,10 +56,10 @@ gt-agent runs these directly (same turn as `CMD:` is allowed):
 - If **Next bead** ≠ persisted active bead, gt-agent clears the stale lock — run `bd update` on the **Next bead** ID from the prompt.
 - After **EDIT:**/**WRITE:** or failed **Verify**, gt-agent runs **goimports** on the whole package when installed (fixes unused imports in `*_test.go` while your active bead is another file in the same package). If verify still says `imported and not used`, fix the **import block only** with a tiny EDIT — not a whole-file rewrite. Do not send JSON **success** until Verify passes.
 - **`bd close` is gated:** green Verify in this session **and** the bead file (plus correlated `*_test.go` when applicable) must exist on disk. gt-agent reopens other closed beads with missing/stub files before allowing close — fix those first.
-- **Codeindex (optional):** if `codeindex` is installed (`pip install codeindex`), gt-agent refreshes `mayor/rig/codeindex.json` at task start and injects **blast radius** for the active bead. Disable with `GT_CODEINDEX=0`.
+- **Codeindex (optional):** if `codeindex` is on `PATH`, gt-agent refreshes `mayor/rig/codeindex.json` at task start and **auto-injects symbol tables** for the active package and closed dependencies in **Implement context** (`### Codeindex symbols`). Use those names in EDIT/WRITE — do not invent `Handler`, `NewHandler`, etc. Optional CMD refresh: `codeindex symbols <pkg> --index codeindex.json`. Disable with `GT_CODEINDEX=0`.
 - **WRITE:/EDIT:/READ: paths** must be real repo paths only (e.g. `WRITE: linkshelf/internal/store/store.go`) — never prose like `` ` command to create the file. `` or `** to create it per architecture**`.
 
-Use **CMD:** only for `bd`, **Verify**, `go run`/curl (main bead), and `ls`. gt-agent runs **post-write verify** after every EDIT/WRITE; **`bd close` is rejected** unless that bead's Verify passed in this session.
+Use **CMD:** only for `bd`, **Verify**, `go run`/curl (main bead), **`codeindex symbols` / `codeindex impact`** (read-only API lookup), and `ls`. gt-agent runs **post-write verify** after every EDIT/WRITE; **`bd close` is rejected** unless that bead's Verify passed in this session.
 
 Shell **sed/patch/heredoc** still work but are fallback when EDIT fails.
 

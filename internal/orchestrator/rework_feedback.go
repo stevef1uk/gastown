@@ -16,6 +16,9 @@ func PrepareWorkflowReworkFeedback(fromState, nextState, summary, rawFeedback st
 	if fromState == "qa_review" && nextState == "implementation" {
 		return truncateWorkflowText(prepareQAReviewToImplementationFeedback(summary, rawFeedback, v), maxWorkflowReworkFeedback)
 	}
+	if fromState == "qa_review" && nextState == "design" {
+		return truncateWorkflowText(prepareQAReviewToDesignFeedback(summary, rawFeedback, v), maxWorkflowReworkFeedback)
+	}
 	cleaned := sanitizeAttemptFeedback(rawFeedback)
 	if summary != "" && cleaned != "" {
 		return truncateWorkflowText("Summary: "+summary+"\n\n"+cleaned, maxWorkflowReworkFeedback)
@@ -24,6 +27,53 @@ func PrepareWorkflowReworkFeedback(fromState, nextState, summary, rawFeedback st
 		return truncateWorkflowText(summary, maxWorkflowReworkFeedback)
 	}
 	return truncateWorkflowText(cleaned, maxWorkflowReworkFeedback)
+}
+
+func prepareQAReviewToDesignFeedback(summary, raw string, v WorkflowValidation) string {
+	var b strings.Builder
+	b.WriteString("QA escalated to architecture rework: unit tests passed and implementation appears to match the current architecture/SPEC, but end-to-end behavior (runtime smoke, HTTP contract, or UX) still fails.\n\n")
+	if summary != "" {
+		b.WriteString("QA summary: ")
+		b.WriteString(summary)
+		b.WriteString("\n")
+	}
+	if err := extractLastTestFailure(raw); err != "" {
+		b.WriteString("\nLast test output (should be green):\n")
+		b.WriteString(err)
+		b.WriteString("\n")
+	}
+	if smoke := extractLastSmokeFailure(raw); smoke != "" {
+		b.WriteString("\nRuntime smoke / curl failures:\n")
+		b.WriteString(smoke)
+		b.WriteString("\n")
+	}
+	b.WriteString("\nArchitect steps:\n")
+	b.WriteString("1. Read SPEC.md and the QA summary above — the **design** is wrong, not the polecat code.\n")
+	b.WriteString("2. Update `architecture.md` (HTTP routes, static asset paths, API shapes, SPA navigation, data model) so a correct implementation can pass QA smoke.\n")
+	b.WriteString("3. Map acceptance to concrete URLs and handler contracts; fix contradictions between SPEC and architecture.\n")
+	b.WriteString("4. `wc -c architecture.md` ≥ minimum, then JSON success — planner will refresh plan.md and beads on the next step.\n")
+	return strings.TrimSpace(b.String())
+}
+
+func extractLastSmokeFailure(raw string) string {
+	lines := strings.Split(raw, "\n")
+	var block []string
+	capture := false
+	for _, line := range lines {
+		lower := strings.ToLower(line)
+		if strings.Contains(lower, "curl:") || strings.Contains(lower, "http/") ||
+			strings.Contains(lower, "smoke") || strings.Contains(lower, "405") ||
+			strings.Contains(lower, "404") || strings.Contains(lower, "address already in use") {
+			capture = true
+		}
+		if capture {
+			block = append(block, line)
+			if len(block) > 50 {
+				block = block[1:]
+			}
+		}
+	}
+	return strings.TrimSpace(strings.Join(block, "\n"))
 }
 
 func prepareQAReviewToImplementationFeedback(summary, raw string, v WorkflowValidation) string {

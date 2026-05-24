@@ -1,16 +1,9 @@
 package orchestrator
 
 import (
-	"os"
 	"path/filepath"
 	"strings"
 )
-
-// IsStorePackageBeadPath reports store-layer production or test beads.
-func IsStorePackageBeadPath(beadPath string) bool {
-	p := filepath.ToSlash(strings.TrimSpace(beadPath))
-	return strings.Contains(p, "internal/store/")
-}
 
 // ExtractSpecMarkdownSection returns lines under a ## heading until the next ## heading.
 func ExtractSpecMarkdownSection(doc, heading string) string {
@@ -59,21 +52,30 @@ func sectionHeadingMatches(h string, want []string) bool {
 	return false
 }
 
+// IsStorePackageBeadPath reports store-layer production or test beads.
+func IsStorePackageBeadPath(beadPath string) bool {
+	p := filepath.ToSlash(strings.TrimSpace(beadPath))
+	return strings.Contains(p, "/internal/store/")
+}
+
 // LoadSpecStoreContractFromRig reads SPEC.md Store + Data model sections under mayor/rig.
 func LoadSpecStoreContractFromRig(townRoot, rig string) string {
 	if townRoot == "" || rig == "" {
 		return ""
 	}
-	data, err := os.ReadFile(filepath.Join(townRoot, rig, "mayor", "rig", "SPEC.md"))
-	if err != nil {
+	return loadSpecStoreContractFromDir(filepath.Join(townRoot, rig, "mayor", "rig"))
+}
+
+func loadSpecStoreContractFromDir(rigDir string) string {
+	specDoc := readRigDoc(rigDir, "SPEC.md")
+	if strings.TrimSpace(specDoc) == "" {
 		return ""
 	}
-	doc := string(data)
 	var parts []string
-	if s := ExtractSpecMarkdownSection(doc, "Data model"); s != "" {
+	if s := ExtractSpecMarkdownSection(specDoc, "Data model"); s != "" {
 		parts = append(parts, "### Data model (SPEC.md)\n"+s)
 	}
-	if s := ExtractSpecMarkdownSection(doc, "Store"); s != "" {
+	if s := ExtractSpecMarkdownSection(specDoc, "Store"); s != "" {
 		parts = append(parts, "### Store API (SPEC.md — authoritative)\n"+s)
 	}
 	if len(parts) == 0 {
@@ -88,48 +90,80 @@ func FormatSpecSchemaContractBlock(townRoot, rig, beadPath string) string {
 		return ""
 	}
 	contract := LoadSpecStoreContractFromRig(townRoot, rig)
-	base := strings.TrimSpace(`### Schema bead (SPEC.md — DDL only)
-This bead is **` + "`schema.go`" + ` only**. Export:
-
-` + "```go\nfunc InitSchema(db *sql.DB) error\n```" + `
-
-- Use the **` + "`links`" + `** table DDL from SPEC **Data model** (not ` + "`bookmarks`" + `).
-- Do **not** implement ` + "`List`" + ` / ` + "`Create`" + ` / ` + "`Delete`" + ` here — those belong on the **` + "`store.go`" + `** bead.
-- You may add **` + "`schema_test.go`" + `** in this session (correlated test) calling ` + "`InitSchema`" + ` on ` + "`:memory:`" + ` and asserting the ` + "`links`" + ` table exists.
-- No SQLite driver import required in ` + "`schema.go`" + ` if you only call ` + "`db.Exec`" + ` with DDL strings.`)
-	if contract != "" && strings.Contains(contract, "Data model") {
-		return base + "\n\n" + contract
+	var b strings.Builder
+	b.WriteString("### Schema bead (from SPEC.md)\n")
+	b.WriteString("This bead owns **schema/migration DDL only** for the store package.\n")
+	b.WriteString("- Export schema helpers named in **Architecture contract** / SPEC **Data model** (e.g. `InitSchema`).\n")
+	b.WriteString("- Do **not** implement persistence/query methods here — those belong on the **store.go** bead.\n")
+	b.WriteString("- Tests may use `:memory:` SQLite and assert tables from SPEC DDL.\n")
+	if contract != "" {
+		b.WriteString("\n")
+		b.WriteString(contract)
 	}
-	return base
+	return strings.TrimSpace(b.String())
 }
 
 // FormatSpecStoreContractBlock injects SPEC store contract for store.go / store_test.go beads (not schema.go).
-func FormatSpecStoreContractBlock(townRoot, rig, beadPath string) string {
+func FormatSpecStoreContractBlock(townRoot, rig, beadPath string, v WorkflowValidation) string {
 	if !IsStorePackageBeadPath(beadPath) || IsSQLiteSchemaBeadPath(beadPath) {
 		return ""
 	}
 	contract := LoadSpecStoreContractFromRig(townRoot, rig)
-	if contract == "" {
-		return strings.TrimSpace(`### Store package (SPEC)
-Implement **only** the Store API from SPEC.md: ` + "`List(ctx context.Context) ([]Link, error)`" + `, ` + "`Create(ctx, title, url string) (Link, error)`" + `, ` + "`Delete(ctx, id int64) error`" + `.
-Use the ` + "`links`" + ` table and ` + "`Link`" + ` struct from SPEC. Tests use ` + "`:memory:`" + ` SQLite and ` + "`InitSchema`" + ` — not a shared ` + "`./links.db`" + ` file.`)
+	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
+	var b strings.Builder
+	b.WriteString("### Store package (from SPEC.md)\n")
+	b.WriteString("Implement **only** the Store API for this bead — same names/signatures in production and tests.\n")
+	b.WriteString("- Call schema helpers from the schema/migrate bead; do not duplicate `CREATE TABLE` in this file.\n")
+	b.WriteString("- **Do not redefine domain types** already in an earlier same-package file (see **Go package bead ownership**). Use package-level types from the schema bead.\n")
+	for _, schemaPath := range schemaBeadPathsInProfile(beadPath, v) {
+		sym := readExportedGoSymbolsFromRig(rigDir, schemaPath)
+		if len(sym.Types) > 0 {
+			b.WriteString("- Types already defined in `")
+			b.WriteString(schemaPath)
+			b.WriteString("`: ")
+			b.WriteString(strings.Join(sym.Types, ", "))
+			b.WriteString(" — reference them; omit `type ... struct` from your WRITE.\n")
+			break
+		}
 	}
-	extra := strings.TrimSpace(`**Alignment rules (mandatory):**
-- Production and tests must use the **same** method names and signatures as SPEC (no ` + "`AddBookmark`" + ` / ` + "`GetAllBookmarks`" + ` / ` + "`Create(Link)`" + ` variants).
-- ` + "`store_test.go`" + ` must call ` + "`NewStore(\":memory:\")`" + ` or open ` + "`:memory:`" + ` + ` + "`InitSchema`" + `; each test starts with an empty DB.
-- ` + "`schema.go`" + ` (already implemented) owns DDL — call ` + "`InitSchema(db)`" + `, do not duplicate ` + "`CREATE TABLE`" + ` strings in ` + "`store.go`" + ` or tests.`)
-	return contract + "\n\n" + extra
+	b.WriteString("- Use a **fresh DB per test** (`:memory:` or temp file) — not a shared on-disk DB from prior runs.\n")
+	if contract != "" {
+		b.WriteString("\n")
+		b.WriteString(contract)
+	}
+	return strings.TrimSpace(b.String())
 }
 
-// FormatStoreTestBeadChecklist returns architecture-named tests for store_test.go beads.
-func FormatStoreTestBeadChecklist(beadPath string) string {
+// FormatStoreTestBeadChecklist returns test guidance for store_test.go beads (names from architecture/plan).
+func FormatStoreTestBeadChecklist(townRoot, rig, beadPath string) string {
 	if !strings.HasSuffix(filepath.ToSlash(beadPath), "internal/store/store_test.go") {
 		return ""
 	}
-	return strings.TrimSpace(`### store_test.go checklist (architecture.md)
-Implement these tests against the **SPEC Store API** (not alternate symbol names):
-- ` + "`TestStore_List_Empty`" + ` — ` + "`List`" + ` returns non-nil empty slice
-- ` + "`TestStore_Create_List_Success`" + `
-- ` + "`TestStore_Create_InvalidURL`" + `, ` + "`TestStore_Create_EmptyTitle`" + `, ` + "`TestStore_Create_TitleTooLong`" + `
-- ` + "`TestStore_Delete_Success`" + `, ` + "`TestStore_Delete_NonExistentID`" + ``)
+	names := extractTestNamesForBead(
+		readRigDoc(filepath.Join(townRoot, rig, "mayor", "rig"), "architecture.md"),
+		readRigDoc(filepath.Join(townRoot, rig, "mayor", "rig"), "plan.md"),
+		beadPath,
+		"",
+	)
+	if len(names) == 0 {
+		return strings.TrimSpace("### store_test.go\nImplement table-driven tests mapped to SPEC **Store** acceptance and architecture unit-test bullets.")
+	}
+	return strings.TrimSpace("### store_test.go (architecture/plan)\nImplement: " + strings.Join(names, ", "))
+}
+
+func schemaBeadPathsInProfile(activePath string, v WorkflowValidation) []string {
+	var out []string
+	for _, p := range EarlierRequiredFilesForBead(activePath, v.RequiredFiles) {
+		if IsSQLiteSchemaBeadPath(p) {
+			out = append(out, p)
+		}
+	}
+	if len(out) == 0 {
+		for _, p := range v.RequiredFiles {
+			if IsSQLiteSchemaBeadPath(p) {
+				out = append(out, p)
+			}
+		}
+	}
+	return out
 }

@@ -98,7 +98,7 @@ func TestX(t *testing.T) {
   os.Chdir(t.TempDir())
 }
 `
-	err := ValidateImplementWrittenContent("linkshelf/internal/api/handlers_test.go", body, linkshelfHTTPProfile())
+	err := ValidateImplementWrittenContent(t.TempDir(), "linkshelf/internal/api/handlers_test.go", body, linkshelfHTTPProfile())
 	if err == nil || !strings.Contains(err.Error(), "os.Chdir") {
 		t.Fatalf("got %v", err)
 	}

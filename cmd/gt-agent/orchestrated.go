@@ -144,6 +144,9 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 	runner := newStateRunner(task, townRoot, rig)
 	runner.scrubStaleDevServersAtTaskStart()
 	defer runner.shutdownStartedServers()
+	// pre_run (refresh_codeindex, bead queue, reconcile) must run before prompt_context so
+	// implement_bead_context sees a fresh codeindex.json and the correct queue head.
+	runner.runPreRun()
 	if block := runner.initQAReviewProgress(); block != "" {
 		contextBlocks = append(contextBlocks, block)
 		orchestratedPrintf("[gt-agent] loaded qa-review-progress for %s/%s\n", task.WorkflowID, task.State)
@@ -158,7 +161,7 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 	if len(runner.hooks.PromptContext) > 0 {
 		orchestratedPrintf("[gt-agent] injecting prompt_context for %s/%s: %v\n", task.WorkflowID, task.State, runner.hooks.PromptContext)
 	}
-	runner.runPreRun()
+	runner.logCodeindexInjectionForActiveBead()
 	if len(contextBlocks) > 0 {
 		userPrompt = strings.Join(contextBlocks, "\n\n") + "\n\n" + userPrompt
 	}
@@ -214,12 +217,15 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 			continue
 		}
 		if cmdCount > 0 || hadNative {
-			feedback := combined.String()
-			recordAttemptFeedback(feedback)
-			feedback += "\n\nCommands executed. If the step is complete, reply with JSON only (no CMD lines): {\"outcome\":\"...\",\"summary\":\"...\"}"
+			var feedbackBuilder strings.Builder
+			feedbackBuilder.WriteString(combined.String())
+			recordAttemptFeedback(feedbackBuilder.String())
+			feedbackBuilder.WriteString("\n\nCommands executed. If the step is complete, reply with JSON only (no CMD lines): {\"outcome\":\"...\",\"summary\":\"...\"}")
 			if turn == maxTurns {
-				feedback += " Use an allowed outcome."
+				feedbackBuilder.WriteString(" Use an allowed outcome.")
 			}
+			runner.appendImplementationCodeindexReminder(&feedbackBuilder)
+			feedback := feedbackBuilder.String()
 			if o, s, ok := parseOrchestratedResult(response, task.AllowedOutcomes); ok {
 				o = normalizeOrchestratedOutcome(o, task.AllowedOutcomes)
 				if o == "failure" || o == "fail" {
@@ -251,12 +257,15 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 		}
 
 		if hadNative {
-			feedback := combined.String()
-			recordAttemptFeedback(feedback)
-			feedback += "\n\nNative edits processed. If the step is complete, reply with JSON only: {\"outcome\":\"...\",\"summary\":\"...\"}"
+			var feedbackBuilder strings.Builder
+			feedbackBuilder.WriteString(combined.String())
+			recordAttemptFeedback(feedbackBuilder.String())
+			feedbackBuilder.WriteString("\n\nNative edits processed. If the step is complete, reply with JSON only: {\"outcome\":\"...\",\"summary\":\"...\"}")
 			if turn == maxTurns {
-				feedback += " Use an allowed outcome."
+				feedbackBuilder.WriteString(" Use an allowed outcome.")
 			}
+			runner.appendImplementationCodeindexReminder(&feedbackBuilder)
+			feedback := feedbackBuilder.String()
 			if o, s, ok := parseOrchestratedResult(response, task.AllowedOutcomes); ok {
 				o = normalizeOrchestratedOutcome(o, task.AllowedOutcomes)
 				if task.State == "implementation" && isOrchestratedSuccessOutcome(o) {
@@ -461,6 +470,13 @@ func workflowReworkHints(fromState, toState, rig, summary string, v orchestrator
 4. Create missing beads with `+"`"+`bd create`+"`"+` — one per required path in architecture (implement-prefix in title).
 5. Rewrite `+"`"+`plan.md`+"`"+` (≥ min size) listing real bead IDs from bd output. Do not invent IDs.
 `, rig, worktree)
+	}
+	if fromState == "qa_review" && toState == "design" {
+		return "\n### QA escalated architecture rework — do this first\n" +
+			"1. Read the QA **summary** and smoke/curl output above — unit tests passed; the **architecture** is wrong.\n" +
+			"2. Rewrite architecture.md so HTTP routes, static asset paths, API request/response shapes, and SPA navigation match what QA must verify.\n" +
+			"3. Align with SPEC.md; resolve contradictions (wrong paths in the HTTP table, missing POST routes, SPA using bare paths instead of /# anchors).\n" +
+			"4. wc -c architecture.md ≥ minimum, then JSON success — the planner will update plan.md and beads next.\n"
 	}
 	if fromState != "qa_review" || toState != "implementation" {
 		return ""
@@ -2047,11 +2063,30 @@ func beadIDExample(townRoot, rig string) string {
 
 func validateQAArtifacts(townRoot, rig, outcome string, hadCmdFailure, bdListClosedOK, unittestOK, qaSmokeOK bool, v orchestrator.WorkflowValidation) error {
 	sendToImpl := outcome == "failure"
-	if hadCmdFailure && !sendToImpl {
+	sendToArchitect := outcome == "architecture_failure"
+	if hadCmdFailure && !sendToImpl && !sendToArchitect {
 		return fmt.Errorf("QA step had failed commands; fix errors before completing")
 	}
 	if !bdListClosedOK {
 		return fmt.Errorf("run `bd list --status=closed` from %s before reporting QA outcome", rigMayorRigPath(rig))
+	}
+	if sendToArchitect {
+		if !unittestOK {
+			return fmt.Errorf("architecture_failure requires green %s in this session — use outcome failure for test failures", v.UnittestCommandHint())
+		}
+		if requiresQARuntimeSmoke(v) && qaSmokeOK {
+			return fmt.Errorf("architecture_failure requires failed runtime smoke while unit tests pass — use all_passed if smoke passed")
+		}
+		if err := validateRequiredWorkFiles(townRoot, rig, v); err != nil {
+			return err
+		}
+		if err := orchestrator.ValidateWorkNotStubbed(rigMayorRigDir(townRoot, rig), v); err != nil {
+			return fmt.Errorf("stub/placeholder code cannot use architecture_failure — use outcome failure: %w", err)
+		}
+		return nil
+	}
+	if sendToImpl && unittestOK && requiresQARuntimeSmoke(v) && !qaSmokeOK {
+		return fmt.Errorf("unit tests passed but runtime smoke failed — if implementation matches architecture.md, use outcome architecture_failure (architect revises design); use failure only for code bugs")
 	}
 	if !sendToImpl {
 		if !unittestOK {

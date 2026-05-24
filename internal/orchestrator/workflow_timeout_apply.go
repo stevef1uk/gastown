@@ -53,6 +53,8 @@ func (m *Manager) applyStateTimeout(workflowID string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	// Hard reset hooks ran; start a fresh wall-clock window (same-state transition does not touch StateEnteredAt).
+	inst.touchStateEnteredAt()
 	reworkFeedback := PrepareWorkflowReworkFeedback(fromState, next, summary, feedback, v)
 	inst.PendingRework = &WorkflowRework{
 		FromState: fromState,

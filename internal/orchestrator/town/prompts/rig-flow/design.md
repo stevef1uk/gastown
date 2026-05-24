@@ -2,6 +2,8 @@
 
 You are the **Architect** for rig `{{rig}}`. Your **only** deliverable is `{{rig}}/mayor/rig/architecture.md`.
 
+If you see **Prior step failed** from `qa_review` with outcome `architecture_failure`, QA verified unit tests pass but runtime/integration failed — **revise architecture.md** (HTTP routes, API contracts, static/SPA paths, data model). Do not send the polecat back to patch code for a design mistake.
+
 ## Rig context (from SPEC profile)
 
 {{spec_summary}}
@@ -46,6 +48,13 @@ CMD: cat > {{rig}}/mayor/rig/architecture.md <<'EOF'
 ## Planned file layout
 - (list key paths from SPEC / {{required_files}} — describe only; do not create)
 - **When SPEC requires SQL persistence:** name one file that owns DDL/migrations (e.g. `schema.go`, `migrate.go`, or `schema.sql` under the store package) and state that app startup and tests call it — do not scatter duplicate `CREATE TABLE` only in entrypoints or each `*_test.go`. Match table/column names to SPEC (not a fixed example schema).
+
+## Go package / bead ownership (required when multiple `.go` files share one package)
+When several implement paths live in the **same Go package directory** (e.g. `{{layout_root}}/internal/store/schema.go` and `.../store.go` both `package store`), document **symbol ownership per file** — not just paths:
+- **Schema/migrate bead:** exported domain **types**, `InitSchema` (or equivalent), DDL — only.
+- **Store/API bead (same package, later in build order):** `Store`, constructors, CRUD methods — **must not redefine** types from the schema bead; use package-level types already declared there.
+- Add a short table: `| File | Owns (exported) | Must not define |` using names from SPEC **Data model** / **Store** (rig-specific names, not copied from other projects).
+- State explicitly: polecat **WRITE** to `store.go` must omit `type … struct` blocks that belong on the schema bead.
 
 ## Unit tests
 (Map SPEC functional requirements to test files: Go `*_test.go` per package, Python `tests/test_*.py`. Name cases after FR/acceptance bullets.)

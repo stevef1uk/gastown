@@ -30,6 +30,9 @@ var cmdGuardHandlers = map[string]cmdGuardFn{
 		if err := validateImplementationCommandWithState(cmd, r.townRoot, r.rig, r.track.activeBead, r.v, r.track.verifyOK); err != nil {
 			return err
 		}
+		if err := r.validateImplementationFencedCodeGuard(cmd); err != nil {
+			return err
+		}
 		if err := r.validateImplementationMissingFileRead(cmd); err != nil {
 			return err
 		}
@@ -233,7 +236,7 @@ var artifactFailureHints = map[string]func(*stateRunner) string{
 		if requiresQARuntimeSmoke(r.v) {
 			hint += " Web/API smoke required: go run server, curl -sf each asset path from index.html, GET API must return [] not null, POST must not 405, SPA section links use /#id. gt-agent stops the server when QA finishes."
 		}
-		return hint + " If smoke or verify failed above, do not repeat go run+curl — reply with JSON only: {\"outcome\":\"failure\",\"summary\":\"...\"}. No /workspace paths."
+		return hint + " If unit tests pass but smoke fails and code matches architecture, use architecture_failure (resets to architect). If tests fail or code violates SPEC, use failure. Do not repeat go run+curl — reply with JSON only. No /workspace paths."
 	},
 }
 

@@ -161,6 +161,8 @@ func parseNativeWriteBody(lines []string, start int) (content string, next int) 
 
 // processOrchestratedTools runs native READ/EDIT/WRITE and CMD lines from one LLM response.
 func (r *stateRunner) processOrchestratedTools(response, sessionName string, combined *strings.Builder) (hadNative bool, hadSuccessfulNative bool, cmdCount int) {
+	r.turnResponse = response
+	r.turnHadSuccessfulNative = false
 	if hint := FormatMalformedNativeEditFeedback(response); hint != "" {
 		combined.WriteString(hint)
 		combined.WriteString("\n\n")
@@ -192,6 +194,11 @@ func (r *stateRunner) processOrchestratedTools(response, sessionName string, com
 		editDir := r.mayorRigWorkDir()
 		cmdEnv := r.commandEnv(os.Environ())
 		hadNative, hadSuccessfulNative = r.executeNativeEdits(ops, editDir, sessionName, cmdEnv, combined)
+	}
+	r.turnHadSuccessfulNative = hadSuccessfulNative
+	if r.hooks.NativeEditTools && !hadSuccessfulNative && responseLooksLikeMarkdownTutorialImplementation(response) {
+		combined.WriteString(FormatFencedGoWithoutNativeWriteFeedback())
+		combined.WriteString("\n\n")
 	}
 	cmdBlocks := parseOrchestratedCommands(response)
 	cmdCount = len(cmdBlocks)
@@ -388,6 +395,7 @@ func (r *stateRunner) executeNativeEdits(ops []nativeEditOp, editDir, sessionNam
 		if op.kind == "edit" || op.kind == "write" {
 			success = true
 			r.attemptFixWork = true
+			r.refreshCodeindexAfterGoWrite(op.path)
 		}
 		orchestratedPrintf("[gt-agent] %s ok\n", label)
 		combined.WriteString(fmt.Sprintf("%s\n%s\n\n", label, feedback))
@@ -447,7 +455,15 @@ func (r *stateRunner) executeNativeEditOp(op nativeEditOp, workDir string) (stri
 			return "", err
 		}
 		replace := sanitizeNativeFileContent(op.replace)
-		if err := orchestrator.ValidateImplementWrittenContent(rel, replace, r.v); err != nil {
+		rigDir := r.mayorRigWorkDir()
+		if stripped, ok := orchestrator.PrepareImplementPackageWrite(rigDir, rel, replace, r.v); ok {
+			replace = stripped
+			orchestratedPrintf("[gt-agent] stripped duplicate package types from EDIT %s (already on earlier implement file)\n", rel)
+		}
+		if err := orchestrator.ValidateImplementWrittenContent(rigDir, rel, replace, r.v); err != nil {
+			return "", err
+		}
+		if err := orchestrator.ValidateImplementExportedSymbols(r.mayorRigWorkDir(), rel, replace, r.v); err != nil {
 			return "", err
 		}
 		return applyNativeSearchReplaceValidated(rel, abs, op.search, replace)
@@ -465,7 +481,15 @@ func (r *stateRunner) executeNativeEditOp(op nativeEditOp, workDir string) (stri
 		if err := validateNativeGoContent(rel, content); err != nil {
 			return "", err
 		}
-		if err := orchestrator.ValidateImplementWrittenContent(rel, content, r.v); err != nil {
+		rigDir := r.mayorRigWorkDir()
+		if stripped, ok := orchestrator.PrepareImplementPackageWrite(rigDir, rel, content, r.v); ok {
+			content = stripped
+			orchestratedPrintf("[gt-agent] stripped duplicate package types from WRITE %s (already on earlier implement file)\n", rel)
+		}
+		if err := orchestrator.ValidateImplementWrittenContent(rigDir, rel, content, r.v); err != nil {
+			return "", err
+		}
+		if err := orchestrator.ValidateImplementExportedSymbols(r.mayorRigWorkDir(), rel, content, r.v); err != nil {
 			return "", err
 		}
 		if err := os.WriteFile(abs, []byte(content), 0644); err != nil {

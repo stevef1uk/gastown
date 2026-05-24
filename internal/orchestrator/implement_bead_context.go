@@ -54,6 +54,17 @@ func formatImplementBeadContextForPath(townRoot, rig, beadPath string, v Workflo
 	b.WriteString("`\n")
 	b.WriteString("Match architecture, **plan.md** acceptance, and profile — do not invent packages, paths, or APIs not described below.\n")
 
+	if block := FormatArchitectureContractForBead(townRoot, rig, beadPath, v); block != "" {
+		b.WriteString("\n")
+		b.WriteString(block)
+		b.WriteString("\n")
+	}
+	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
+	if block := FormatPackageBeadOwnershipBlock(rigDir, beadPath, v); block != "" {
+		b.WriteString("\n")
+		b.WriteString(block)
+		b.WriteString("\n")
+	}
 	if plan := PlanExcerptForBead(townRoot, rig, beadPath); plan != "" {
 		b.WriteString("\n### From plan.md (acceptance for this bead)\n")
 		b.WriteString(plan)
@@ -62,6 +73,11 @@ func formatImplementBeadContextForPath(townRoot, rig, beadPath string, v Workflo
 	if checklist := FormatPlanAcceptanceChecklist(townRoot, rig, beadPath, v); checklist != "" {
 		b.WriteString("\n")
 		b.WriteString(checklist)
+		b.WriteString("\n")
+	}
+	if block := FormatCodeindexContextForBead(filepath.Join(townRoot, rig, "mayor", "rig"), beadPath, v); block != "" {
+		b.WriteString("\n")
+		b.WriteString(block)
 		b.WriteString("\n")
 	}
 	if note := formatUnitTestGuidanceForBead(townRoot, rig, beadPath, v); note != "" {
@@ -78,12 +94,12 @@ func formatImplementBeadContextForPath(townRoot, rig, beadPath string, v Workflo
 		b.WriteString("\n")
 		b.WriteString(block)
 		b.WriteString("\n")
-	} else if block := FormatSpecStoreContractBlock(townRoot, rig, beadPath); block != "" {
+	} else if block := FormatSpecStoreContractBlock(townRoot, rig, beadPath, v); block != "" {
 		b.WriteString("\n")
 		b.WriteString(block)
 		b.WriteString("\n")
 	}
-	if block := FormatStoreTestBeadChecklist(beadPath); block != "" {
+	if block := FormatStoreTestBeadChecklist(townRoot, rig, beadPath); block != "" {
 		b.WriteString("\n")
 		b.WriteString(block)
 		b.WriteString("\n")
@@ -116,11 +132,6 @@ func formatImplementBeadContextForPath(townRoot, rig, beadPath string, v Workflo
 		b.WriteString("\n")
 	}
 	if block := FormatNilSliceListUnblockHint(townRoot, rig, beadPath, v); block != "" {
-		b.WriteString("\n")
-		b.WriteString(block)
-		b.WriteString("\n")
-	}
-	if block := FormatCodeindexContextForBead(filepath.Join(townRoot, rig, "mayor", "rig"), beadPath, v); block != "" {
 		b.WriteString("\n")
 		b.WriteString(block)
 		b.WriteString("\n")
@@ -173,7 +184,7 @@ func formatDependencyPackagesContext(townRoot, rig, activePath string, v Workflo
 	if IsCmdMainImplementPath(activePath) {
 		b.WriteString("\n**cmd/main bead:** wire routes only — call handlers in `internal/api` (or architecture path); do not re-implement handler bodies in main.go.\n")
 	}
-	b.WriteString("\nCall **only** functions/types and signatures from the snippets above and **SPEC.md** — do not invent alternate store APIs (`AddBookmark`, `GetAllBookmarks`, `Create(Link)`, etc.).\n")
+	b.WriteString("\nCall **only** functions/types and signatures from the snippets above, **Architecture contract**, and **SPEC.md**.\n")
 	return strings.TrimSpace(b.String())
 }
 

@@ -85,7 +85,7 @@ func TestFormatImplementBeadContextForPath_includesSpecStoreContract(t *testing.
 	for _, want := range []string{
 		"### Store API (SPEC.md",
 		"List(ctx context.Context)",
-		"AddBookmark",
+		"same names/signatures",
 		":memory:",
 	} {
 		if !strings.Contains(got, want) {
@@ -104,8 +104,8 @@ func TestFormatImplementBeadContextForPath_storeTestBeadChecklist(t *testing.T) 
 		RequiredFiles: []string{rel},
 	}
 	got := formatImplementBeadContextForPath(dir, rig, rel, v)
-	if !strings.Contains(got, "TestStore_Create_InvalidURL") {
-		t.Fatalf("missing architecture test names:\n%s", got)
+	if !strings.Contains(got, "### store_test.go") {
+		t.Fatalf("missing store test guidance:\n%s", got)
 	}
 }
 

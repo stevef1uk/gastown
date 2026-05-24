@@ -30,7 +30,7 @@ func TestFormatSpecSchemaContractBlock_schemaBead(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := FormatSpecSchemaContractBlock(dir, rig, "linkshelf/internal/store/schema.go")
-	for _, want := range []string{"InitSchema(db *sql.DB)", "DDL only", "links", "bookmarks"} {
+	for _, want := range []string{"Schema bead", "DDL", "Data model (SPEC.md)"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("missing %q in:\n%s", want, got)
 		}
@@ -51,32 +51,45 @@ func TestFormatSpecStoreContractBlock_storeBead(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(rigDir, "SPEC.md"), []byte(spec), 0644); err != nil {
 		t.Fatal(err)
 	}
-	got := FormatSpecStoreContractBlock(dir, rig, "linkshelf/internal/store/store.go")
+	v := WorkflowValidation{
+		LayoutRoot:      "linkshelf",
+		QAVerifyCommand: "cd linkshelf && go test ./...",
+		RequiredFiles: []string{
+			"linkshelf/internal/store/schema.go",
+			"linkshelf/internal/store/store.go",
+		},
+	}
+	got := FormatSpecStoreContractBlock(dir, rig, "linkshelf/internal/store/store.go", v)
 	if !strings.Contains(got, "List(ctx context.Context)") {
 		t.Fatalf("got %q", got)
 	}
-	if !strings.Contains(got, "AddBookmark") {
-		t.Fatal("expected alignment warning against alternate APIs")
+	if !strings.Contains(got, "same names/signatures") {
+		t.Fatal("expected generic alignment warning")
 	}
 }
 
 func TestFormatStoreTestBeadChecklist(t *testing.T) {
-	got := FormatStoreTestBeadChecklist("linkshelf/internal/store/store_test.go")
+	dir := t.TempDir()
+	rig := "mockrig"
+	rigDir := filepath.Join(dir, rig, "mayor", "rig")
+	if err := os.MkdirAll(rigDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	arch := "`linkshelf/internal/store/store_test.go` tests: TestStoreCreate TestStoreDelete\n"
+	if err := os.WriteFile(filepath.Join(rigDir, "architecture.md"), []byte(arch), 0644); err != nil {
+		t.Fatal(err)
+	}
+	got := FormatStoreTestBeadChecklist(dir, rig, "linkshelf/internal/store/store_test.go")
 	if got == "" {
 		t.Fatal("expected checklist")
 	}
-	for _, name := range []string{
-		"TestStore_List_Empty",
-		"TestStore_Delete_NonExistentID",
-	} {
-		if !strings.Contains(got, name) {
-			t.Fatalf("missing %s in %q", name, got)
-		}
+	if !strings.Contains(got, "TestStoreCreate") {
+		t.Fatalf("missing extracted test name in %q", got)
 	}
 }
 
 func TestFormatStoreTestBeadChecklist_nonTestPath(t *testing.T) {
-	if got := FormatStoreTestBeadChecklist("linkshelf/internal/store/store.go"); got != "" {
+	if got := FormatStoreTestBeadChecklist(t.TempDir(), "rig", "linkshelf/internal/store/store.go"); got != "" {
 		t.Fatalf("unexpected checklist: %q", got)
 	}
 }

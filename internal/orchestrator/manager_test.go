@@ -431,6 +431,46 @@ func TestCompleteTask_crossStateFailureStoresPendingRework(t *testing.T) {
 	}
 }
 
+func TestCompleteTask_qaArchitectureFailureResetsToDesign(t *testing.T) {
+	dir := t.TempDir()
+	m := NewManager(dir)
+	m.LoadTemplate(&WorkflowTemplate{
+		ID:           "rig-flow",
+		InitialState: "qa_review",
+		States: map[string]State{
+			"qa_review": {
+				Role: "qa",
+				Transitions: map[string]Transition{
+					"architecture_failure": {To: "design"},
+					"failure":              {To: "implementation"},
+				},
+			},
+			"design": {
+				Role:         "architect",
+				Instructions: "fix arch",
+				Transitions: map[string]Transition{
+					"success": {To: "planning"},
+				},
+			},
+			"planning": {Role: "planner"},
+		},
+	})
+	id, _ := m.StartWorkflow("rig-flow", map[string]string{"rig": "mockrig"})
+	m.instances[id].CurrentState = "qa_review"
+
+	next, err := m.CompleteTask(id, "architecture_failure", "mockrig/qa", "unit tests ok; smoke POST 405", "curl smoke failed")
+	if err != nil || next != "design" {
+		t.Fatalf("CompleteTask: next=%q err=%v", next, err)
+	}
+	inst := m.instances[id]
+	if inst.PendingRework == nil || inst.PendingRework.FromState != "qa_review" {
+		t.Fatalf("PendingRework: %+v", inst.PendingRework)
+	}
+	if !strings.Contains(inst.PendingRework.Feedback, "architecture rework") {
+		t.Fatalf("feedback: %q", inst.PendingRework.Feedback)
+	}
+}
+
 func TestCompleteTask_sameStateFailureKeepsPendingRework(t *testing.T) {
 	dir := t.TempDir()
 	m := NewManager(dir)

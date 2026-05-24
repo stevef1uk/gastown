@@ -51,6 +51,8 @@ type stateRunner struct {
 	implProgress   *ImplementationProgress   // implementation: per-bead verify/close across restarts
 	attemptFixWork       bool // implementation: true after successful EDIT/WRITE, verify, or bd update/close this attempt
 	attemptEditSearchMiss bool // implementation: EDIT failed SEARCH-not-found this attempt (auto-READ may have run)
+	turnResponse           string // current LLM turn (for fenced-code vs native-tool guards)
+	turnHadSuccessfulNative bool // true after a successful WRITE/EDIT this turn
 }
 
 func newStateRunner(task *orchestrator.Task, townRoot, rig string) *stateRunner {

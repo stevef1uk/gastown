@@ -45,7 +45,7 @@ func FormatCorruptedGoFileRecoveryHint(cmdOutput string, paths []string) string 
 
 Replace the entire file in one shot:
 - **WRITE:** %s`+"\n"+`then a complete, valid Go source body until `+"`---END WRITE---`"+`
-- Match the **SPEC Store contract** and **Implement context** signatures exactly (one `+"`List`"+` / `+"`Create`"+` / `+"`Delete`"+` — do not mix alternate names like `+"`AddBookmark`"+` or `+"`GetAllBookmarks`"+`).
+- Match **Architecture contract**, **SPEC**, and **Codeindex symbols** exactly — do not invent alternate exported names.
 - Then run **Verify** before `+"`bd close`"+`.`, p, p))
 		}
 	}

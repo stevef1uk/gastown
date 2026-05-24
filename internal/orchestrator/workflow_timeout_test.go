@@ -32,25 +32,51 @@ func TestIsTimeoutOutcome(t *testing.T) {
 	}
 }
 
-func TestTransition_resetsStateEnteredAt(t *testing.T) {
+func TestTransition_sameStateTimeout_preservesStateEnteredAt(t *testing.T) {
 	t.Parallel()
 	tpl := &WorkflowTemplate{
-		InitialState: "planning",
+		InitialState: "implementation",
 		States: map[string]State{
-			"planning": {
+			"implementation": {
 				Transitions: map[string]Transition{
-					"timeout": {To: "planning"},
+					"timeout": {To: "implementation"},
+					"failure": {To: "implementation"},
 				},
 			},
 		},
 	}
-	inst := &WorkflowInstance{CurrentState: "planning", StateEnteredAt: "2000-01-01T00:00:00Z"}
+	inst := &WorkflowInstance{CurrentState: "implementation", StateEnteredAt: "2000-01-01T00:00:00Z"}
 	before := inst.StateEnteredAt
-	if _, err := inst.Transition(tpl, "timeout"); err != nil {
+	for _, outcome := range []string{"timeout", "failure"} {
+		if _, err := inst.Transition(tpl, outcome); err != nil {
+			t.Fatal(err)
+		}
+		if inst.StateEnteredAt != before {
+			t.Fatalf("StateEnteredAt should not refresh on same-state %q rework", outcome)
+		}
+	}
+}
+
+func TestTransition_crossState_refreshesStateEnteredAt(t *testing.T) {
+	t.Parallel()
+	tpl := &WorkflowTemplate{
+		InitialState: "project_setup",
+		States: map[string]State{
+			"project_setup": {
+				Transitions: map[string]Transition{
+					"success": {To: "implementation"},
+				},
+			},
+			"implementation": {},
+		},
+	}
+	inst := &WorkflowInstance{CurrentState: "project_setup", StateEnteredAt: "2000-01-01T00:00:00Z"}
+	before := inst.StateEnteredAt
+	if _, err := inst.Transition(tpl, "success"); err != nil {
 		t.Fatal(err)
 	}
 	if inst.StateEnteredAt == before {
-		t.Fatal("StateEnteredAt should refresh on transition")
+		t.Fatal("StateEnteredAt should refresh on cross-state transition")
 	}
 }
 
@@ -141,16 +167,21 @@ func TestManager_FetchTask_triggersWallClockTimeout(t *testing.T) {
 
 func TestManager_CompleteTask_timeout_sameStateSetsPendingRework(t *testing.T) {
 	m, wfID := loadTestManager(t, planningTimeoutTestTemplate())
+	inst := m.instances[wfID]
+	inst.StateEnteredAt = time.Now().UTC().Add(-2 * time.Hour).Format(time.RFC3339)
+	before := inst.StateEnteredAt
 	next, err := m.CompleteTask(wfID, "timeout", "", "planning timed out", "reset artifacts")
 	if err != nil || next != "planning" {
 		t.Fatalf("CompleteTask: next=%q err=%v", next, err)
 	}
-	inst := m.instances[wfID]
 	if inst.PendingRework == nil {
 		t.Fatal("expected PendingRework for same-state timeout")
 	}
 	if inst.PendingRework.Summary != "planning timed out" {
 		t.Fatalf("summary = %q", inst.PendingRework.Summary)
+	}
+	if inst.StateEnteredAt != before {
+		t.Fatalf("same-state turn timeout must not reset StateEnteredAt (got %q, want %q)", inst.StateEnteredAt, before)
 	}
 }
 
