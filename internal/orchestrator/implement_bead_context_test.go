@@ -141,7 +141,14 @@ func TestFormatImplementBeadContextForPath_includesDependencyStore(t *testing.T)
 	if err := os.MkdirAll(filepath.Dir(mainPath), 0755); err != nil {
 		t.Fatal(err)
 	}
-	storeBody := "package store\n\nfunc (s *Store) GetAllLinks() ([]Link, error) { return nil, nil }\n"
+	handlersPath := filepath.Join(rigDir, "linkshelf", "internal", "api", "handlers.go")
+	if err := os.MkdirAll(filepath.Dir(handlersPath), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(handlersPath, []byte("package api\n\nfunc registerHandlers(mux *http.ServeMux) {}\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	storeBody := "package store\n\nfunc List() {}\n"
 	if err := os.WriteFile(storePath, []byte(storeBody), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -149,19 +156,30 @@ func TestFormatImplementBeadContextForPath_includesDependencyStore(t *testing.T)
 		t.Fatal(err)
 	}
 	v := WorkflowValidation{
-		LayoutRoot:    "linkshelf",
-		RequiredFiles: []string{"linkshelf/go.mod", "linkshelf/internal/store/store.go", "linkshelf/cmd/server/main.go"},
+		LayoutRoot:      "linkshelf",
+		QAVerifyCommand: "cd linkshelf && go test ./...",
+		RequiredFiles: []string{
+			"linkshelf/go.mod",
+			"linkshelf/internal/store/store.go",
+			"linkshelf/internal/api/handlers.go",
+			"linkshelf/cmd/server/main.go",
+		},
 	}
 	got := formatImplementBeadContextForPath(dir, rig, "linkshelf/cmd/server/main.go", v)
 	for _, want := range []string{
+		"### Main wiring",
+		"registerAPI",
 		"### Dependency packages",
-		"GetAllLinks",
+		"handlers.go",
 		"cmd/main bead",
 		"do not re-implement handler",
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("missing %q in:\n%s", want, got)
 		}
+	}
+	if strings.Contains(got, "GetAllLinks") {
+		t.Fatalf("stale GetAllLinks should not appear in main context:\n%s", got)
 	}
 	if strings.Contains(got, "### Incremental edit required") {
 		t.Fatal("cmd/main should not show incremental-edit block")

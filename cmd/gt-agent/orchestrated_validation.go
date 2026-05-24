@@ -212,3 +212,18 @@ func commandMatchesQAVerify(cmd, verify string) bool {
 	}
 	return strings.Contains(c, v)
 }
+
+// isBenignImplementationCmdFailure reports bd read/list/show failures that must not
+// clear a green session verify from an earlier go test in the same implementation turn.
+func isBenignImplementationCmdFailure(cmd string) bool {
+	lower := strings.ToLower(strings.TrimSpace(cmd))
+	if !strings.Contains(lower, "bd ") {
+		return false
+	}
+	for _, sub := range []string{"bd list", "bd show", "bd mol current", "bd prime"} {
+		if strings.Contains(lower, sub) {
+			return true
+		}
+	}
+	return false
+}

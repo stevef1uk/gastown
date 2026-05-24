@@ -80,6 +80,19 @@ var drainableSubjects = []string{
 	"MERGE_READY",
 	"MERGE_FAILED",
 	"SWARM_START",
+	// Witness ↔ refinery patrol protocol (accumulate when drain isn't run).
+	"PATROL_",
+	"PATROL:",
+	"REFINERY_",
+	"MERGE_QUEUE",
+	"REBASE_FAILED",
+	"RECOVERY_INITIATED",
+	"NO_POLECATS",
+	"INACTIVITY_NOTICE",
+	"FREQUENT_NUDGES",
+	"SYSTEM_ERROR",
+	"Nudge Queue Full",
+	"Mechanic Queue Full",
 }
 
 // drainableHandoffSubjects are AGENT HANDOFF subject prefixes — the mails
@@ -119,14 +132,30 @@ var drainableHandoffSubjects = []string{
 //	"handoff"  — drainable only when msg.Read is true
 //	""         — not drainable by subject (still might be drainable as
 //	             a read wisp, see runMailDrain)
+// normalizeDrainSubject strips reply prefixes so "RE: MERGE_FAILED foo"
+// classifies the same as "MERGE_FAILED foo".
+func normalizeDrainSubject(subject string) string {
+	s := strings.TrimSpace(subject)
+	for {
+		lower := strings.ToLower(s)
+		if strings.HasPrefix(lower, "re:") {
+			s = strings.TrimSpace(s[3:])
+			continue
+		}
+		break
+	}
+	return s
+}
+
 func classifyDrainableSubject(subject string) string {
+	normalized := normalizeDrainSubject(subject)
 	for _, prefix := range drainableSubjects {
-		if strings.HasPrefix(subject, prefix) {
+		if strings.HasPrefix(normalized, prefix) {
 			return "protocol"
 		}
 	}
 	for _, prefix := range drainableHandoffSubjects {
-		if strings.HasPrefix(subject, prefix) {
+		if strings.HasPrefix(normalized, prefix) {
 			return "handoff"
 		}
 	}

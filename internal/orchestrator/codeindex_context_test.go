@@ -75,11 +75,13 @@ func TestCodeindexLayoutRelativePath(t *testing.T) {
 
 func TestFormatCodeindexSymbolsSection(t *testing.T) {
 	t.Parallel()
-	got := formatCodeindexSymbolsSection("dependency internal/store", "internal/store", "func InitSchema()\nfunc NewStore()", 500)
+	got := formatCodeindexSymbolsSection("dependency internal/store", "internal/store", "InitSchema (function)\n[test only] TestInitSchema (function)", 500)
 	for _, want := range []string{
 		"### Codeindex symbols (dependency internal/store)",
-		"do not invent",
-		"func InitSchema()",
+		"Production symbols",
+		"Test-only symbols",
+		"InitSchema (function)",
+		"[test only] TestInitSchema",
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("missing %q in:\n%s", want, got)

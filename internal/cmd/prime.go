@@ -681,7 +681,11 @@ func checkSlungWork(ctx RoleContext, hookedBead *beads.Issue) bool {
 	outputHookedBeadDetails(hookedBead)
 
 	if hasWorkflow {
-		outputMoleculeWorkflow(ctx, attachment)
+		if isRefineryMergeRequestHook(ctx, hookedBead) {
+			outputRefineryMergeWorkflow(ctx, hookedBead, attachment)
+		} else {
+			outputMoleculeWorkflow(ctx, attachment)
+		}
 	} else {
 		outputBeadPreview(hookedBead)
 	}
@@ -901,15 +905,21 @@ func outputAutonomousDirective(ctx RoleContext, hookedBead *beads.Issue, hasMole
 	fmt.Println("1. Announce: \"" + roleAnnounce + "\" (ONE line, no elaboration)")
 
 	if hasMolecule {
-		fmt.Println("2. This bead has an ATTACHED MOLECULE (formula workflow)")
-		fmt.Println("3. If there are formula steps listed below, use them as a checklist. Otherwise, follow your role's standard instructions.")
-		fmt.Println("4. You do NOT need to run `bd close` or `bd mol current`. The steps are a checklist for your session.")
-
 		attachment := beads.ParseAttachmentFields(hookedBead)
-		if attachment != nil && attachment.AttachedFormula != "" {
-			showFormulaStepsFull(attachment.AttachedFormula, ctx.TownRoot, ctx.Rig, attachment.AttachedVars)
-		} else if attachment != nil && attachment.AttachedMolecule != "" {
-			showMoleculeExecutionPrompt(ctx.WorkDir, attachment.AttachedMolecule)
+		if isRefineryMergeRequestHook(ctx, hookedBead) {
+			fmt.Println("2. This is a **MERGE REQUEST** on your hook — run refinery merge protocol (below)")
+			fmt.Println("3. Do NOT run mol-polecat-work / implementation steps on this bead")
+			fmt.Println("4. Follow mol-refinery-patrol: rebase → gates → merge-push → MERGED mail")
+		} else {
+			fmt.Println("2. This bead has an ATTACHED MOLECULE (formula workflow)")
+			fmt.Println("3. If there are formula steps listed below, use them as a checklist. Otherwise, follow your role's standard instructions.")
+			fmt.Println("4. You do NOT need to run `bd close` or `bd mol current`. The steps are a checklist for your session.")
+
+			if attachment != nil && attachment.AttachedFormula != "" {
+				showFormulaStepsFull(attachment.AttachedFormula, ctx.TownRoot, ctx.Rig, attachment.AttachedVars)
+			} else if attachment != nil && attachment.AttachedMolecule != "" {
+				showMoleculeExecutionPrompt(ctx.WorkDir, attachment.AttachedMolecule)
+			}
 		}
 	} else {
 		fmt.Printf("2. Then IMMEDIATELY run: `gt sling %s --formula shiny` to begin project orchestration.\n", hookedBead.ID)
@@ -959,6 +969,61 @@ func outputHookedBeadDetails(hookedBead *beads.Issue) {
 		}
 	}
 	fmt.Println()
+}
+
+func isRefineryMergeRequestHook(ctx RoleContext, hookedBead *beads.Issue) bool {
+	return ctx.Role == RoleRefinery && hookedBead != nil && beads.HasLabel(hookedBead, "gt:merge-request")
+}
+
+// outputRefineryMergeWorkflow shows merge-queue processing steps for a hooked MR bead.
+// MR beads may incorrectly carry mol-polecat-work metadata from a bad sling; refinery
+// must merge, not implement.
+func outputRefineryMergeWorkflow(ctx RoleContext, mr *beads.Issue, attachment *beads.AttachmentFields) {
+	fmt.Printf("%s\n\n", style.Bold.Render("## 🔀 MERGE REQUEST (Refinery)"))
+	fmt.Printf("MR: %s — %s\n", mr.ID, mr.Title)
+	if branch, target, sha := parseMergeRequestFields(mr.Description); branch != "" || target != "" {
+		if branch != "" {
+			fmt.Printf("Branch: %s\n", branch)
+		}
+		if target != "" {
+			fmt.Printf("Target: %s\n", target)
+		}
+		if sha != "" {
+			fmt.Printf("Commit: %s\n", sha)
+		}
+	}
+	if attachment != nil && attachment.AttachedFormula != "" && attachment.AttachedFormula != "mol-refinery-patrol" {
+		fmt.Printf("\n%s\n", style.Dim.Render(fmt.Sprintf(
+			"(Ignoring attached_formula %q — MR beads use refinery merge protocol, not polecat implementation.)",
+			attachment.AttachedFormula,
+		)))
+	}
+	fmt.Println()
+	fmt.Println("**Execute merge protocol now** (not mol-polecat-work):")
+	fmt.Printf("1. `git fetch --prune origin` and `gt mq list %s` — confirm MR is queued\n", ctx.Rig)
+	fmt.Println("2. Rebase polecat branch onto target, run configured gates (setup/typecheck/lint/build/test)")
+	fmt.Println("3. On pass: ff-merge to target, push, verify remote SHA")
+	fmt.Printf("4. `gt mail send %s/witness -s \"MERGED <polecat>\"` then `gt mq post-merge %s <mr-id>`\n", ctx.Rig, ctx.Rig)
+	fmt.Println("5. On fail: `gt mail send <rig>/polecats/<name> -s \"FIX_NEEDED <name>\"` (do NOT reopen implementation formula)")
+	fmt.Printf("6. `gt patrol report --summary \"Merged %s\"` when done\n", mr.ID)
+	fmt.Println()
+	fmt.Println("Full step detail: mol-refinery-patrol (process-branch → merge-push).")
+	fmt.Println()
+}
+
+// parseMergeRequestFields reads branch/target/commit_sha lines from MR bead descriptions.
+func parseMergeRequestFields(description string) (branch, target, commitSHA string) {
+	for _, line := range strings.Split(description, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "branch:") {
+			branch = strings.TrimSpace(strings.TrimPrefix(line, "branch:"))
+		} else if strings.HasPrefix(line, "target:") {
+			target = strings.TrimSpace(strings.TrimPrefix(line, "target:"))
+		} else if strings.HasPrefix(line, "commit_sha:") {
+			commitSHA = strings.TrimSpace(strings.TrimPrefix(line, "commit_sha:"))
+		}
+	}
+	return branch, target, commitSHA
 }
 
 // outputMoleculeWorkflow displays attached molecule context with current step.

@@ -18,7 +18,19 @@ func TestIsDrainableMessage(t *testing.T) {
 		{"MERGED furiosa", true},
 		{"MERGE_READY furiosa", true},
 		{"MERGE_FAILED furiosa", true},
+		{"RE: MERGE_FAILED polecat-branch", true},
 		{"SWARM_START", true},
+		{"PATROL_COMPLETED testgt3", true},
+		{"PATROL_REPORT testgt3/witness", true},
+		{"REFINERY_STATUS testgt3/witness", true},
+		{"MERGE_QUEUE_EMPTY testgt3", true},
+		{"REBASE_FAILED polecat-branch", true},
+		{"RECOVERY_INITIATED", true},
+		{"NO_POLECATS_FOUND", true},
+		{"INACTIVITY_NOTICE", true},
+		{"FREQUENT_NUDGES", true},
+		{"SYSTEM_ERROR", true},
+		{"Nudge Queue Full for te-mechanic", true},
 
 		// Drainable handoff subjects (added in fix #75 — these were
 		// accumulating in mayor's inbox to 78+ messages).
@@ -66,6 +78,9 @@ func TestClassifyDrainableSubject(t *testing.T) {
 		{"LIFECYCLE:Shutdown", "protocol"},
 		{"MERGED foo", "protocol"},
 		{"SWARM_START", "protocol"},
+		{"RE: MERGE_FAILED polecat-branch", "protocol"},
+		{"PATROL_COMPLETED testgt3", "protocol"},
+		{"MERGE_QUEUE_STATUS", "protocol"},
 
 		// Handoff — drainable only if Read.
 		{"Architecture Ready", "handoff"},

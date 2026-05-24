@@ -75,6 +75,11 @@ func formatImplementBeadContextForPath(townRoot, rig, beadPath string, v Workflo
 		b.WriteString(checklist)
 		b.WriteString("\n")
 	}
+	if block := FormatMainWiringContextForBead(townRoot, rig, beadPath, v); block != "" {
+		b.WriteString("\n")
+		b.WriteString(block)
+		b.WriteString("\n")
+	}
 	if block := FormatCodeindexContextForBead(filepath.Join(townRoot, rig, "mayor", "rig"), beadPath, v); block != "" {
 		b.WriteString("\n")
 		b.WriteString(block)
@@ -150,9 +155,13 @@ func formatDependencyPackagesContext(townRoot, rig, activePath string, v Workflo
 	if len(v.RequiredFiles) == 0 {
 		return ""
 	}
-	deps := EarlierRequiredFilesForBead(activePath, v.RequiredFiles)
+	deps := orderedDependencyGoFilesForContext(activePath, v)
 	if len(deps) == 0 {
 		return ""
+	}
+	maxFiles := maxDependencyContextFiles
+	if IsCmdMainImplementPath(activePath) {
+		maxFiles = 4
 	}
 	var b strings.Builder
 	b.WriteString("### Dependency packages (read-only — use these APIs; do not invent symbols)\n")
@@ -160,7 +169,7 @@ func formatDependencyPackagesContext(townRoot, rig, activePath string, v Workflo
 	total := 0
 	shown := 0
 	for _, rel := range deps {
-		if shown >= maxDependencyContextFiles || total >= maxDependencyContextBytes {
+		if shown >= maxFiles || total >= maxDependencyContextBytes {
 			break
 		}
 		if !strings.HasSuffix(strings.ToLower(rel), ".go") {
@@ -182,7 +191,7 @@ func formatDependencyPackagesContext(townRoot, rig, activePath string, v Workflo
 		return ""
 	}
 	if IsCmdMainImplementPath(activePath) {
-		b.WriteString("\n**cmd/main bead:** wire routes only — call handlers in `internal/api` (or architecture path); do not re-implement handler bodies in main.go.\n")
+		b.WriteString("\n**cmd/main bead:** implement `registerAPI` / `serveStaticFiles` in package `main` per **Main wiring** and `main_test.go`; do not re-implement handler bodies from scratch.\n")
 	}
 	b.WriteString("\nCall **only** functions/types and signatures from the snippets above, **Architecture contract**, and **SPEC.md**.\n")
 	return strings.TrimSpace(b.String())

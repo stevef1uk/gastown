@@ -192,6 +192,12 @@ bd mol wisp gc --closed --force
 bd mol wisp gc --age 1h --force
 ```
 
+Drain stale protocol mail first (prevents inbox backlog from patrol noise):
+
+```bash
+gt mail drain --max-age 30m
+```
+
 Then check mail for MERGE_READY submissions, escalations, and messages.
 
 ```bash

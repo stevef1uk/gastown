@@ -212,6 +212,22 @@ func extractInlineSymbolsFromCodeindex(indexPath string, paths []string) string 
 	return strings.Join(lines, "\n")
 }
 
+// isCodeindexTestSymbol reports symbols that belong in *_test.go (not callable from production/main).
+func isCodeindexTestSymbol(name, file string) bool {
+	file = filepath.ToSlash(strings.TrimSpace(file))
+	if strings.HasSuffix(file, "_test.go") {
+		return true
+	}
+	// Go test function naming convention.
+	if strings.HasPrefix(name, "Test") && len(name) > 4 {
+		r := name[4]
+		if r >= 'A' && r <= 'Z' {
+			return true
+		}
+	}
+	return false
+}
+
 func formatCodeindexSymbolLine(sym map[string]interface{}) string {
 	name, _ := sym["name"].(string)
 	if name == "" {
@@ -225,6 +241,9 @@ func formatCodeindexSymbolLine(sym map[string]interface{}) string {
 	file, _ := sym["file"].(string)
 	lineNum, _ := sym["line"].(float64)
 	var b strings.Builder
+	if isCodeindexTestSymbol(name, file) {
+		b.WriteString("[test only] ")
+	}
 	b.WriteString(name)
 	if kind != "" {
 		b.WriteString(" (")
@@ -246,6 +265,7 @@ func formatCodeindexSymbolsSection(label, path, body string, maxBytes int) strin
 	if body == "" {
 		return ""
 	}
+	prod, test := partitionCodeindexSymbolLines(body)
 	var b strings.Builder
 	b.WriteString("### Codeindex symbols")
 	if label != "" {
@@ -254,16 +274,51 @@ func formatCodeindexSymbolsSection(label, path, body string, maxBytes int) strin
 		b.WriteString(")")
 	}
 	b.WriteString("\n")
-	b.WriteString("Use **only** these exported names — do not invent alternate APIs not listed here or in **Architecture contract**.\n")
+	b.WriteString("Lines prefixed **`[test only]`** are for `*_test.go` — **do not** call them from `main.go` or production handlers.\n")
+	b.WriteString("Use **production** lines (no prefix) plus **Main wiring** / **Architecture contract** / dependency snippets.\n")
 	if path != "" {
 		b.WriteString("Path: `")
 		b.WriteString(path)
 		b.WriteString("`\n\n")
 	}
-	b.WriteString("```\n")
-	b.WriteString(truncateCodeindexText(body, maxBytes))
-	b.WriteString("\n```\n")
+	if prod != "" {
+		b.WriteString("**Production symbols:**\n```\n")
+		b.WriteString(truncateCodeindexText(prod, maxBytes))
+		b.WriteString("\n```\n")
+	}
+	if test != "" {
+		if prod != "" {
+			b.WriteString("\n")
+		}
+		b.WriteString("**Test-only symbols** (not for main.go):\n```\n")
+		// Reserve budget for production block when both present.
+		testMax := maxBytes / 2
+		if prod == "" {
+			testMax = maxBytes
+		}
+		b.WriteString(truncateCodeindexText(test, testMax))
+		b.WriteString("\n```\n")
+	}
+	if prod == "" && test != "" {
+		b.WriteString("\n(No exported production symbols in this package — use **Main wiring** and dependency file snippets.)\n")
+	}
 	return b.String()
+}
+
+func partitionCodeindexSymbolLines(body string) (production, testOnly string) {
+	var prodLines, testLines []string
+	for _, line := range strings.Split(body, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		if strings.HasPrefix(line, "[test only]") {
+			testLines = append(testLines, line)
+		} else {
+			prodLines = append(prodLines, line)
+		}
+	}
+	return strings.Join(prodLines, "\n"), strings.Join(testLines, "\n")
 }
 
 // codeindexDependencySymbolPaths returns package paths for closed dependency .go beads (Go rigs).
@@ -564,10 +619,20 @@ func extractCodeindexSymbolNames(block string) []string {
 	seen := map[string]bool{}
 	var names []string
 	inSymbolsFence := false
+	inTestSection := false
 	for _, line := range strings.Split(block, "\n") {
 		line = strings.TrimSpace(line)
 		if strings.HasPrefix(line, "### Codeindex symbols") {
 			inSymbolsFence = false
+			inTestSection = false
+			continue
+		}
+		if strings.HasPrefix(line, "**Test-only symbols**") {
+			inTestSection = true
+			continue
+		}
+		if strings.HasPrefix(line, "**Production symbols**") {
+			inTestSection = false
 			continue
 		}
 		if line == "```" {
@@ -579,6 +644,9 @@ func extractCodeindexSymbolNames(block string) []string {
 			continue
 		}
 		if !inSymbolsFence {
+			continue
+		}
+		if inTestSection {
 			continue
 		}
 		m := codeindexSymbolLineRE.FindStringSubmatch(line)

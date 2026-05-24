@@ -87,7 +87,9 @@ var trackHandlers = map[string]trackFn{
 		if cmdErr != nil {
 			r.track.hadCmdFailure = true
 			// Stale verifyOK must not allow bd close after a failed go test/build in the same turn.
-			r.track.verifyOK = false
+			if !isBenignImplementationCmdFailure(cmd) {
+				r.track.verifyOK = false
+			}
 		}
 		if isBeadCloseCommand(cmd) && cmdErr == nil {
 			if r.track.verifyOK {

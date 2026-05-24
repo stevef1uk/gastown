@@ -885,6 +885,40 @@ func TestOutputContinuationDirective(t *testing.T) {
 	})
 }
 
+func TestCheckSlungWork_RefineryMergeRequestUsesMergeProtocol(t *testing.T) {
+	ctx := RoleContext{Role: RoleRefinery, Rig: "testgt3"}
+	hookedBead := &beads.Issue{
+		ID:    "te-wisp-35a",
+		Title: "Merge: polecat-branch",
+		Labels: []string{"gt:merge-request"},
+		Description: strings.Join([]string{
+			"attached_formula: mol-polecat-work",
+			"attached_molecule: te-wisp-nf9f",
+			"branch: polecat-branch",
+			"target: main",
+			"commit_sha: 4cc06f4d37d913433c78502b0aae7d081e19c87e",
+		}, "\n"),
+	}
+
+	var found bool
+	output := captureStdout(t, func() {
+		found = checkSlungWork(ctx, hookedBead)
+	})
+
+	if !found {
+		t.Fatalf("checkSlungWork() = false, want true")
+	}
+	if !strings.Contains(output, "MERGE REQUEST") {
+		t.Fatalf("expected refinery MR merge protocol, got:\n%s", output)
+	}
+	if strings.Contains(output, "mol-polecat-work") && strings.Contains(output, "Formula Checklist") {
+		t.Fatalf("expected polecat formula checklist to be suppressed for MR hook, got:\n%s", output)
+	}
+	if !strings.Contains(output, "gt mq list testgt3") {
+		t.Fatalf("expected merge queue command in output, got:\n%s", output)
+	}
+}
+
 func TestCheckSlungWork_StandaloneFormulaUsesWorkflowOutput(t *testing.T) {
 	ctx := RoleContext{Role: RoleCrew}
 	hookedBead := &beads.Issue{
