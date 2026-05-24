@@ -53,6 +53,50 @@ func TestValidateImplementExportedSymbols_rejectsUndocumentedExport(t *testing.T
 	}
 }
 
+func TestArchitectureContractSymbolNames_receiverMethodsAndInlineArch(t *testing.T) {
+	rigDir := t.TempDir()
+	spec := "## Store (`myapp/internal/store/store.go`)\n```go\nfunc (s *Store) List(ctx context.Context) ([]Link, error)\nfunc (s *Store) Create(ctx context.Context, title, url string) (Link, error)\nfunc (s *Store) Delete(ctx context.Context, id int64) error\n```\n"
+	arch := "| `store.go` | `type Store struct { db *sql.DB }` `func NewStore(db *sql.DB) *Store` | notes |\n"
+	if err := os.WriteFile(filepath.Join(rigDir, "SPEC.md"), []byte(spec), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(rigDir, "architecture.md"), []byte(arch), 0644); err != nil {
+		t.Fatal(err)
+	}
+	v := WorkflowValidation{LayoutRoot: "myapp", QAVerifyCommand: "cd myapp && go test ./..."}
+	got := ArchitectureContractSymbolNames(rigDir, "myapp/internal/store/store.go", v)
+	want := map[string]bool{"Store": true, "NewStore": true, "List": true, "Create": true, "Delete": true}
+	for name := range want {
+		found := false
+		for _, g := range got {
+			if g == name {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("missing %q in %v", name, got)
+		}
+	}
+}
+
+func TestValidateImplementExportedSymbols_allowsStoreAndNewStoreFromReceiverSpec(t *testing.T) {
+	dir := t.TempDir()
+	rigDir := filepath.Join(dir, "rig", "mayor", "rig")
+	if err := os.MkdirAll(rigDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	spec := "## Store\n```go\nfunc (s *Store) List(ctx context.Context) ([]Link, error)\nfunc NewStore(db *sql.DB) *Store\n```\n"
+	if err := os.WriteFile(filepath.Join(rigDir, "SPEC.md"), []byte(spec), 0644); err != nil {
+		t.Fatal(err)
+	}
+	v := WorkflowValidation{LayoutRoot: "myapp", QAVerifyCommand: "cd myapp && go test ./..."}
+	body := "package store\n\ntype Store struct{ db *sql.DB }\nfunc NewStore(db *sql.DB) *Store { return &Store{db: db} }\n"
+	if err := ValidateImplementExportedSymbols(rigDir, "myapp/internal/store/store.go", body, v); err != nil {
+		t.Fatalf("got %v", err)
+	}
+}
+
 func TestValidateImplementExportedSymbols_allowsSpecNames(t *testing.T) {
 	dir := t.TempDir()
 	rigDir := filepath.Join(dir, "rig", "mayor", "rig")

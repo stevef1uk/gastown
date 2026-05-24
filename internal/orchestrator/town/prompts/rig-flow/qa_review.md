@@ -96,7 +96,7 @@ gt-agent persists completed checks in `{{rig}}/qa/qa-review-progress.json` for t
    - `failure` if **unit tests fail**, code violates SPEC/architecture, or work under `{{layout_root}}/` is stub/placeholder. Summary must name failing tests, paths, and bead IDs from `bd list`.
    - `architecture_failure` only when **unit tests passed in this session**, implementation matches the written architecture (routes, symbols, static paths as documented), and **runtime smoke** (step 6) or integration behavior still fails. Summary must explain **what is wrong with the design** (wrong URL table, API shape, SPA `href` model, missing route) — not “fix handlers” alone.
 
-Example implementation failure: `{"outcome":"failure","summary":"go test ./internal/store failed: undefined: NewStore; reopen {{bead_id_example}} from bd list"}`
+Example implementation failure: `{"outcome":"failure","summary":"go test ./<pkg> failed: undefined: <Symbol>; reopen {{bead_id_example}} from bd list"}`
 
 Example architecture failure: `{"outcome":"architecture_failure","summary":"Unit tests green; smoke: POST /api/items 405 — architecture documents POST /api/bookmarks but handlers implement /api/items; SPA uses /bookmarks not /#bookmarks; revise architecture HTTP table and static asset paths"}`
 

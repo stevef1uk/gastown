@@ -70,6 +70,25 @@ func closedHandlersBeadHook() {
 	}
 }
 
+func TestParseNativeWriteBody_splitTerminator(t *testing.T) {
+	t.Parallel()
+	lines := []string{
+		"package store",
+		"---",
+		"END WRITE---",
+	}
+	body, next := parseNativeWriteBody(lines, 0)
+	if strings.Contains(body, "END WRITE") || strings.Contains(body, "---") {
+		t.Fatalf("body should be clean and not contain split terminator: %q", body)
+	}
+	if body != "package store" {
+		t.Fatalf("unexpected body: %q", body)
+	}
+	if next != 3 {
+		t.Fatalf("next=%d want 3", next)
+	}
+}
+
 func TestParseNativeWriteBody_stopsAtNextToolOrFence(t *testing.T) {
 	t.Parallel()
 	lines := []string{

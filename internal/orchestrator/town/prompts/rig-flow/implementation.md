@@ -30,7 +30,7 @@ If the prompt includes **Prior step failed** from a **timeout**:
 | Go | `*_test.go` in the **same package** (often its own implement bead in `required_files`) | `go test -count=1 ./<pkg>/...` on the **test bead**; production `.go` beads use `go build` until that file exists |
 | Go `internal/api` + `web/` | Handler + `handlers_test.go` + `web/index.html` | **Same routing story:** serve from `web/` on disk; **no `os.Chdir`**; {{static_url_contract_short}} |
 | Store DDL bead (when in `required_files`) | Implement before store/query code in the same package | Run the architecture’s schema/migrate helper on test DBs and in the server entrypoint — never query tables before schema exists |
-| SQLite `internal/store` | `store.go` + `store_test.go` | **SPEC Store API only** (`List`/`Create`/`Delete` with `context.Context` — same names in tests). **Fresh DB per test** (`:memory:` + `InitSchema`). If verify shows **syntax errors**, use one full **WRITE:** of the file (no more EDIT patches). |
+| Go persistence package (when in profile) | Production + `*_test.go` per architecture | Use **only** exported names from SPEC/architecture for that package; fresh test DB per architecture; one full **WRITE:** if verify reports syntax errors |
 | Python | `tests/test_<module>.py` or `test_*.py` under `tests/` | `pytest -v` on that file when it exists |
 
 - Read **From plan.md**, **Acceptance checklist**, and **From architecture.md** in Implement context — each case should trace to a SPEC/plan acceptance bullet.
@@ -50,26 +50,28 @@ gt-agent runs these directly (same turn as `CMD:` is allowed):
 - **Never** wrap EDIT/WRITE bodies (or heredoc file content) in markdown fences — no leading ` ```go ` or trailing ` ``` `; first line must be real source (`package …`, `import …`, etc.).
 - **Never** prefix WRITE bodies with heredoc/EDIT markers — no `<<<<<<< EOF`, `<<<<<<< SEARCH`, `=======`, or `>>>>>>> REPLACE` (those are shell/EDIT syntax only, not Go/Python source).
 - **Never** put heredoc markers in file bodies — no trailing line `EOF` / `EOT` / `END` (those belong only on their own line **after** a shell `cat <<'EOF'`, not inside **WRITE:** or **EDIT:**).
-- **Never** wrap `CMD:` / `EDIT:` / `WRITE:` in markdown backticks or ` ``` ` fences — write `CMD: …` / `EDIT: path` on their own lines (no `` `CMD: …` ``). Do not write tutorial lines like `EDIT: command with SEARCH blocks` — use a real path: `EDIT: linkshelf/internal/api/handlers_test.go`.
+- **Never** wrap `CMD:` / `EDIT:` / `WRITE:` in markdown backticks or ` ``` ` fences — write `CMD: …` / `EDIT: path` on their own lines (no `` `CMD: …` ``). Use a real path under `{{layout_root}}/` (e.g. `EDIT: {{layout_root}}/internal/api/handlers_test.go`).
 - In one reply, put **`CMD: bd update BEAD_ID --status=in_progress` before** any `EDIT:`/`WRITE:` for that bead (gt-agent applies in_progress first, then native tools).
-- **Verify CMD** must be plain shell (no markdown backticks): `CMD: cd linkshelf && go test -count=1 ./internal/api/...` — not `` `CMD: ...` `` or `-count=1./` (space required: `-count=1 ./`).
+- **Verify CMD** must be plain shell (no markdown backticks): `CMD: cd {{layout_root}} && go test -count=1 ./internal/api/...` — not `` `CMD: ...` `` or `-count=1./` (space required: `-count=1 ./`).
 - If **Next bead** ≠ persisted active bead, gt-agent clears the stale lock — run `bd update` on the **Next bead** ID from the prompt.
 - After **EDIT:**/**WRITE:** or failed **Verify**, gt-agent runs **goimports** on the whole package when installed (fixes unused imports in `*_test.go` while your active bead is another file in the same package). If verify still says `imported and not used`, fix the **import block only** with a tiny EDIT — not a whole-file rewrite. Do not send JSON **success** until Verify passes.
 - **`bd close` is gated:** green Verify in this session **and** the bead file (plus correlated `*_test.go` when applicable) must exist on disk. gt-agent reopens other closed beads with missing/stub files before allowing close — fix those first.
 - **Codeindex (optional):** if `codeindex` is on `PATH`, gt-agent refreshes `mayor/rig/codeindex.json` at task start and **auto-injects symbol tables** for the active package and closed dependencies in **Implement context** (`### Codeindex symbols`). Use those names in EDIT/WRITE — do not invent `Handler`, `NewHandler`, etc. Optional CMD refresh: `codeindex symbols <pkg> --index codeindex.json`. Disable with `GT_CODEINDEX=0`.
-- **WRITE:/EDIT:/READ: paths** must be real repo paths only (e.g. `WRITE: linkshelf/internal/store/store.go`) — never prose like `` ` command to create the file. `` or `** to create it per architecture**`.
+- **WRITE:/EDIT:/READ: paths** must be real repo paths under `{{layout_root}}/` only (e.g. `WRITE: {{layout_root}}/internal/store/store.go`) — never prose placeholders.
 
 Use **CMD:** only for `bd`, **Verify**, `go run`/curl (main bead), **`codeindex symbols` / `codeindex impact`** (read-only API lookup), and `ls`. gt-agent runs **post-write verify** after every EDIT/WRITE; **`bd close` is rejected** unless that bead's Verify passed in this session.
 
 Shell **sed/patch/heredoc** still work but are fallback when EDIT fails.
 
-On **`cmd/server/main.go`**, read **Dependency packages** for real `store`/`handlers` symbols — wire routes in main; do not re-implement handler bodies.
+On the **server entrypoint bead** (`cmd/.../main.go` when in profile), read **Dependency exports** and **Main wiring** first — they reflect **on-disk** symbols from closed dependency beads. Wire only those names and SPEC HTTP paths; do not re-implement handler bodies.
+
+**Allowlist:** exported names must appear in **Architecture contract** and/or **Codeindex symbols** (including receiver methods in SPEC fences). If validation rejects a name architecture documents, reopen the owning bead and export it — do not work around with unexported types while the entrypoint imports an exported name.
 
 ## Closed dependency failures
 
 When **Verify** fails in a path that is **not** your active bead (e.g. `handlers.go` while on `main.go`), that bead is usually **closed** — native EDIT/WRITE to that path are rejected.
 
-1. Use **Dependency packages** APIs only (`AddLink`, not invented `CreateLink`).
+1. Use **Dependency packages** / **Dependency exports** APIs only — do not invent alternate exported names.
 2. Reopen the bead: `bd list --status=closed`, `CMD: bd update <id> --status=open`, fix with EDIT, Verify, `bd close <id>`, continue active bead. Do **not** send JSON `failure` instead of running `bd update`.
 3. If blocked after **verify/EDIT attempts**, JSON only: `{"outcome":"failure","summary":"reopen <bead-id> for <path>: …"}` — no `bd update --status=failed`.
 4. **gt-agent rejects** failure JSON with no EDIT/verify/bd work in the same task while open implement beads exist — you must run **Next bead** steps first.

@@ -50,11 +50,17 @@ CMD: cat > {{rig}}/mayor/rig/architecture.md <<'EOF'
 - **When SPEC requires SQL persistence:** name one file that owns DDL/migrations (e.g. `schema.go`, `migrate.go`, or `schema.sql` under the store package) and state that app startup and tests call it — do not scatter duplicate `CREATE TABLE` only in entrypoints or each `*_test.go`. Match table/column names to SPEC (not a fixed example schema).
 
 ## Go package / bead ownership (required when multiple `.go` files share one package)
-When several implement paths live in the **same Go package directory** (e.g. `{{layout_root}}/internal/store/schema.go` and `.../store.go` both `package store`), document **symbol ownership per file** — not just paths:
-- **Schema/migrate bead:** exported domain **types**, `InitSchema` (or equivalent), DDL — only.
-- **Store/API bead (same package, later in build order):** `Store`, constructors, CRUD methods — **must not redefine** types from the schema bead; use package-level types already declared there.
-- Add a short table: `| File | Owns (exported) | Must not define |` using names from SPEC **Data model** / **Store** (rig-specific names, not copied from other projects).
-- State explicitly: polecat **WRITE** to `store.go` must omit `type … struct` blocks that belong on the schema bead.
+When several implement paths live in the **same Go package directory**, document **symbol ownership per file** — not just paths:
+- **Earlier bead (schema/migrate/types):** exported domain types, DDL/init helpers — only what SPEC assigns to that file.
+- **Later bead (same package):** behavior/API methods or constructors — **must not redefine** types from the earlier bead.
+- Add a short table: `| File | Owns (exported) | Must not define |` using **names from this rig's SPEC** (never copy symbols from other projects).
+- In table cells, use **backtick Go fragments** for every exported symbol (types, constructors, methods) so implementation allowlists match architecture.
+- State which symbols belong on which implement path so polecat does not duplicate types across beads.
+
+## HTTP + entrypoint integration (required when profile includes `cmd/.../main.go`)
+- Copy the SPEC **HTTP API** table into architecture (methods + paths).
+- State how the **server entrypoint** wires dependencies: one consistent story (instance + handler factories, package-level funcs, or same-package `registerHandlers`) — match what earlier beads actually export.
+- Route paths in architecture must match SPEC exactly — do not invent alternate URL shapes (e.g. extra path segments when SPEC uses method + single path).
 
 ## Unit tests
 (Map SPEC functional requirements to test files: Go `*_test.go` per package, Python `tests/test_*.py`. Name cases after FR/acceptance bullets.)

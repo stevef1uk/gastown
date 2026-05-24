@@ -99,6 +99,15 @@ func TestParseOrchestratedNativeEdits_writeRegression_table(t *testing.T) {
 			wantPaths: []string{"linkshelf/a.go", "linkshelf/b.go", "linkshelf/b.go"},
 			noCmdIn:   []int{0, 2},
 		},
+		{
+			name: "split_write_terminator",
+			in: "WRITE: tasklist/__init__.py\n# package\n---\nEND WRITE---\n" +
+				"We need to add tests next.\n" +
+				"WRITE: tasklist/tests/test_init.py\n# test\n---END WRITE---\n",
+			wantOps:   2,
+			wantPaths: []string{"tasklist/__init__.py", "tasklist/tests/test_init.py"},
+			noCmdIn:   []int{0, 1},
+		},
 	}
 	for _, tc := range cases {
 		tc := tc
@@ -127,6 +136,9 @@ func TestParseOrchestratedNativeEdits_writeRegression_table(t *testing.T) {
 				}
 				if strings.Contains(ops[idx].content, "WRITE:") {
 					t.Fatalf("op[%d] swallowed WRITE: %q", idx, ops[idx].content)
+				}
+				if strings.Contains(ops[idx].content, "We need to add") {
+					t.Fatalf("op[%d] swallowed prose after split terminator: %q", idx, ops[idx].content)
 				}
 			}
 			cmds := parseOrchestratedCommands(in)

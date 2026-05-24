@@ -12,10 +12,12 @@ import (
 const maxArchitectureContractBytes = 2800
 
 var (
-	goExportedFuncRE  = regexp.MustCompile(`(?m)^func\s+([A-Z][A-Za-z0-9_]*)\s*\(`)
-	goExportedTypeRE  = regexp.MustCompile(`(?m)^type\s+([A-Z][A-Za-z0-9_]*)\s+(?:struct|interface)`)
-	goCodeFenceRE     = regexp.MustCompile("(?s)```(?:go|golang)?\\s*\\n(.*?)```")
-	archTestNameRE    = regexp.MustCompile(`\b(Test[A-Za-z0-9_]+)\b`)
+	goExportedFuncRE     = regexp.MustCompile(`(?m)^func\s+([A-Z][A-Za-z0-9_]*)\s*\(`)
+	goExportedTypeRE     = regexp.MustCompile(`(?m)^type\s+([A-Z][A-Za-z0-9_]*)\s+(?:struct|interface)`)
+	goExportedMethodRE   = regexp.MustCompile(`(?m)^func\s+\([^)]*\*?([A-Z][A-Za-z0-9_]*)\)\s+([A-Z][A-Za-z0-9_]*)\s*\(`)
+	goInlineSnippetRE    = regexp.MustCompile("`([^`]*(?:\\bfunc\\s+|\\btype\\s+)[^`]*)`")
+	goCodeFenceRE        = regexp.MustCompile("(?s)```(?:go|golang)?\\s*\\n(.*?)```")
+	archTestNameRE       = regexp.MustCompile(`\b(Test[A-Za-z0-9_]+)\b`)
 )
 
 // FormatArchitectureContractForBead injects deterministic contract text from SPEC, architecture, and plan.
@@ -167,10 +169,26 @@ func extractContractSymbolsFromDocs(specDoc, archDoc, planDoc, beadPath, layoutR
 			if len(block) < 2 {
 				continue
 			}
-			for _, sym := range extractGoExportedSymbols(block[1]) {
+			for _, sym := range extractContractSymbolsFromGoSource(block[1]) {
 				if !seen[sym] {
 					seen[sym] = true
 					out = append(out, sym)
+				}
+			}
+		}
+		for _, line := range strings.Split(doc, "\n") {
+			if !lineMatchesBeadKeys(strings.ToLower(line), keys) {
+				continue
+			}
+			for _, m := range goInlineSnippetRE.FindAllStringSubmatch(line, -1) {
+				if len(m) < 2 {
+					continue
+				}
+				for _, sym := range extractContractSymbolsFromGoSource(m[1]) {
+					if !seen[sym] {
+						seen[sym] = true
+						out = append(out, sym)
+					}
 				}
 			}
 		}
@@ -178,6 +196,31 @@ func extractContractSymbolsFromDocs(specDoc, archDoc, planDoc, beadPath, layoutR
 	sort.Strings(out)
 	if len(out) > 20 {
 		out = out[:20]
+	}
+	return out
+}
+
+// extractContractSymbolsFromGoSource collects exported names from SPEC/architecture Go snippets,
+// including receiver methods (func (s *Store) List) and inline backtick fragments.
+func extractContractSymbolsFromGoSource(goSrc string) []string {
+	seen := map[string]bool{}
+	var out []string
+	add := func(name string) {
+		name = strings.TrimSpace(name)
+		if name == "" || !astIsExportedName(name) || seen[name] {
+			return
+		}
+		seen[name] = true
+		out = append(out, name)
+	}
+	for _, sym := range extractGoExportedSymbols(goSrc) {
+		add(sym)
+	}
+	for _, m := range goExportedMethodRE.FindAllStringSubmatch(goSrc, -1) {
+		if len(m) >= 3 {
+			add(m[1]) // receiver type, e.g. Store
+			add(m[2]) // method name, e.g. List
+		}
 	}
 	return out
 }

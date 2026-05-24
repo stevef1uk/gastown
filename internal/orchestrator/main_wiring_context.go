@@ -14,8 +14,8 @@ const (
 
 var goFuncDeclLineRE = regexp.MustCompile(`(?m)^func\s+([A-Za-z_][A-Za-z0-9_]*)\s*(\([^)]*\))`)
 
-// FormatMainWiringContextForBead injects cmd/server/main.go integration guidance: real handler
-// wiring from handlers.go, main_test helpers, and store package-level API (not Store/LinkStore).
+// FormatMainWiringContextForBead injects cmd/server/main.go integration guidance from on-disk
+// handlers.go, store.go, and main_test.go (not a fixed API shape).
 func FormatMainWiringContextForBead(townRoot, rig, beadPath string, v WorkflowValidation) string {
 	if !IsCmdMainImplementPath(beadPath) || !WorkflowUsesGo(v) {
 		return ""
@@ -24,33 +24,87 @@ func FormatMainWiringContextForBead(townRoot, rig, beadPath string, v WorkflowVa
 	layout := strings.Trim(filepath.ToSlash(strings.TrimSpace(v.LayoutRoot)), "/")
 
 	var b strings.Builder
-	b.WriteString("### Main wiring (cmd/server — read before EDIT/WRITE)\n")
-	b.WriteString("This bead **wires** existing packages. Do **not** invent `LinkStore`, `HandleListLinks`, `SetDB`, or other APIs not shown below.\n\n")
+	b.WriteString("### Main wiring (server entrypoint — read before EDIT/WRITE)\n")
+	b.WriteString("This bead **wires** packages implemented in earlier beads. Match **Dependency exports**, **Dependency packages**, and **HTTP routing** — do not invent symbols, packages, or URL paths not shown on disk or in SPEC.\n\n")
 
-	b.WriteString("**`main_test.go` requires these functions in package `main`:**\n")
-	b.WriteString("- `registerAPI(mux *http.ServeMux)` — register API routes (tests call this, not `api.HandleListLinks`).\n")
-	b.WriteString("- `serveStaticFiles(mux *http.ServeMux)` — serve `web/` (see architecture / handlers snippet for paths).\n\n")
-
-	b.WriteString("**Store (package `internal/store`):**\n")
-	b.WriteString("- Call `store.InitSchema(db)` on the `*sql.DB` you open in `main`.\n")
-	b.WriteString("- Handlers use package-level `store.List`, `store.Create`, `store.Delete` (see store.go snippet).\n")
-	b.WriteString("- Plan text may say \"Store instance\" — the implemented API is **package functions**, not `NewStore` / `LinkStore`.\n")
-	b.WriteString("- If tests use a file DB but `store.List` still hits an in-memory default, wire the opened DB in **this** bead (e.g. exported `SetDB` in store) only when store.go has no setter and handlers cannot see your DB.\n\n")
+	b.WriteString("**Package `main` helpers:**\n")
+	b.WriteString("- Implement helpers named in `main_test.go` / architecture (e.g. route registration, static file serving).\n")
 
 	handlersPath := firstRequiredPathSuffix(v, "/internal/api/handlers.go")
+	var handlersSrc string
 	if handlersPath != "" {
-		abs := filepath.Join(rigDir, filepath.FromSlash(handlersPath))
-		if wiring := formatHandlersWiringFromSource(abs); wiring != "" {
-			b.WriteString("**From `handlers.go` (wire via `registerAPI` in main — `registerHandlers` is same-package only):**\n")
-			b.WriteString(wiring)
-			b.WriteString("\n")
+		if data, err := os.ReadFile(filepath.Join(rigDir, filepath.FromSlash(handlersPath))); err == nil {
+			handlersSrc = string(data)
 		}
 	}
+	storePath := storeRelPathForMain(v)
+	var storeSrc string
+	if storePath != "" {
+		if data, err := os.ReadFile(filepath.Join(rigDir, filepath.FromSlash(storePath))); err == nil {
+			storeSrc = string(data)
+		}
+	}
+	handlerMode := detectHandlerWiringMode(handlersSrc)
+	storeMode := detectStoreWiringMode(storeSrc)
 
 	mainTestPath := firstRequiredPathSuffix(v, "cmd/server/main_test.go")
 	if mainTestPath == "" && layout != "" {
 		mainTestPath = layout + "/cmd/server/main_test.go"
 	}
+	regSig := ""
+	if mainTestPath != "" {
+		regSig = registerAPISignatureFromMainTest(readMayorRigFileSnippet(townRoot, rig, mainTestPath, maxMainTestSnippetBytes))
+	}
+	if regSig != "" {
+		b.WriteString("- Tests expect: `")
+		b.WriteString(regSig)
+		b.WriteString("`\n")
+	} else {
+		b.WriteString("- `registerAPI(mux *http.ServeMux, …)` — signature must match how handlers/store are wired (see below).\n")
+	}
+
+	storeLabel := "dependency store package"
+	if storePath != "" {
+		storeLabel = "`" + storePath + "`"
+	}
+	b.WriteString("\n**Store dependency ")
+	b.WriteString(storeLabel)
+	b.WriteString(":**\n")
+	b.WriteString("- Open DB and run schema/init helpers per **Dependency packages** / architecture.\n")
+	switch storeMode {
+	case storeWiringInstance:
+		b.WriteString("- **On disk:** exported instance type + constructor — create instance and pass to handlers per **Dependency exports**.\n")
+	case storeWiringPackageFuncs:
+		b.WriteString("- **On disk:** package-level functions — wire handlers as implemented; no instance constructor.\n")
+	default:
+		b.WriteString("- Read **Dependency exports** — if an exported name is missing, reopen that bead and add it per architecture.\n")
+	}
+
+	handlerLabel := "handler dependency"
+	if handlersPath != "" {
+		handlerLabel = "`" + handlersPath + "`"
+	}
+	b.WriteString("\n**Handler dependency ")
+	b.WriteString(handlerLabel)
+	b.WriteString(":**\n")
+	switch handlerMode {
+	case handlerWiringFactoryFuncs:
+		b.WriteString("- **On disk:** exported handler factory funcs (see **Dependency exports**) — register **SPEC HTTP paths** only; no invented URL shapes.\n")
+	case handlerWiringRegisterHandlers:
+		b.WriteString("- **On disk:** same-package route registration helper — expose via entrypoint helpers in package `main` per architecture/tests.\n")
+	default:
+		b.WriteString("- Read handlers snippet — wire only exported entrypoints listed under **Dependency exports**.\n")
+	}
+
+	if handlersPath != "" {
+		abs := filepath.Join(rigDir, filepath.FromSlash(handlersPath))
+		if wiring := formatHandlersWiringFromSource(abs); wiring != "" {
+			b.WriteString("\n**From `handlers.go`:**\n")
+			b.WriteString(wiring)
+			b.WriteString("\n")
+		}
+	}
+
 	if mainTestPath != "" {
 		snip := readMayorRigFileSnippet(townRoot, rig, mainTestPath, maxMainTestSnippetBytes)
 		if snip != "" {
@@ -93,6 +147,10 @@ func formatHandlersWiringFromSource(absPath string) string {
 			continue
 		}
 		name := m[1]
+		if name != "registerHandlers" && !strings.HasPrefix(name, "handle") && name[0] >= 'A' && name[0] <= 'Z' {
+			lines = append(lines, "- `"+name+m[2]+"` — exported entrypoint; register on paths from **HTTP routing** / SPEC.")
+			continue
+		}
 		if name != "registerHandlers" && !strings.HasPrefix(name, "handle") {
 			continue
 		}
@@ -101,7 +159,7 @@ func formatHandlersWiringFromSource(absPath string) string {
 			prefix = "internal"
 		}
 		if name == "registerHandlers" {
-			lines = append(lines, "- `"+name+m[2]+"` — **unexported**; expose via `registerAPI` in package `main` (duplicate route table or thin wrapper calling into api after exporting `RegisterHandlers`).")
+			lines = append(lines, "- `"+name+m[2]+"` — same-package helper; expose via `registerAPI` in package `main` or export `RegisterHandlers`.")
 			continue
 		}
 		lines = append(lines, "- `"+name+m[2]+"` ("+prefix+", used inside api — do not re-export from main)")

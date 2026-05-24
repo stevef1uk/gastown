@@ -59,8 +59,7 @@ func formatImplementBeadContextForPath(townRoot, rig, beadPath string, v Workflo
 		b.WriteString(block)
 		b.WriteString("\n")
 	}
-	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
-	if block := FormatPackageBeadOwnershipBlock(rigDir, beadPath, v); block != "" {
+	if block := FormatPackageBeadOwnershipBlock(filepath.Join(townRoot, rig, "mayor", "rig"), beadPath, v); block != "" {
 		b.WriteString("\n")
 		b.WriteString(block)
 		b.WriteString("\n")
@@ -73,6 +72,12 @@ func formatImplementBeadContextForPath(townRoot, rig, beadPath string, v Workflo
 	if checklist := FormatPlanAcceptanceChecklist(townRoot, rig, beadPath, v); checklist != "" {
 		b.WriteString("\n")
 		b.WriteString(checklist)
+		b.WriteString("\n")
+	}
+	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
+	if block := FormatMainDependencyExportsBlock(rigDir, beadPath, v); block != "" {
+		b.WriteString("\n")
+		b.WriteString(block)
 		b.WriteString("\n")
 	}
 	if block := FormatMainWiringContextForBead(townRoot, rig, beadPath, v); block != "" {

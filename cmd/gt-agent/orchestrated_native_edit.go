@@ -147,6 +147,13 @@ func parseNativeWriteBody(lines []string, start int) (content string, next int) 
 		if trimmed == nativeEditWriteEnd || strings.EqualFold(trimmed, "---END WRITE---") {
 			return strings.Join(body, "\n"), i + 1
 		}
+		// Model sometimes splits ---END WRITE--- across two lines after fence stripping.
+		if trimmed == "---" && i+1 < len(lines) {
+			nextTrimmed := strings.TrimSpace(lines[i+1])
+			if strings.EqualFold(nextTrimmed, "END WRITE---") || strings.EqualFold(nextTrimmed, "---END WRITE---") {
+				return strings.Join(body, "\n"), i + 2
+			}
+		}
 		if isNativeOrchestratedToolLine(lines[i]) {
 			return strings.Join(body, "\n"), i
 		}

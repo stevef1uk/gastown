@@ -23,6 +23,18 @@ If the prompt includes **"Prior step failed"** from `plan_review`, QA rejected y
 
 Do **not** invent bead IDs or add implementation code under `{{layout_root}}/`.
 
+## Cross-bead integration (required when profile has a server entrypoint)
+
+Before finalizing beads and `plan.md`, reconcile **exported names** and **wire order** for packages the entrypoint imports:
+
+| Check | Action |
+|-------|--------|
+| Multiple `.go` files in one package | Plan **earlier** files first (schema/DDL/types); later files own behavior/API — list exported symbols per file in architecture |
+| Server entrypoint bead (e.g. `cmd/.../main.go`) | Plan it **after** dependency packages it imports; acceptance must name **actual** exported handler/store symbols from architecture — not invented helpers |
+| SPEC shows receiver methods in ` ```go ` fences | Plan must list **every exported type and method name** from SPEC/architecture — polecat allowlist parses those fences |
+
+Add **## Integration contract** to `plan.md`: how the entrypoint obtains dependencies, how it registers routes (exact SPEC HTTP table), and which symbols each file **exports** (from architecture **per-file ownership**).
+
 ## Rig context (from SPEC profile)
 
 {{spec_summary}}
