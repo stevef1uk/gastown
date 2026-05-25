@@ -140,16 +140,21 @@ func TestIsOrchestratedOutcomeLine_goBraces(t *testing.T) {
 	}
 }
 
+// writeMinimalDesignSPEC creates SPEC.md with no HTTP/store contract (passes design alignment checks).
+func writeMinimalDesignSPEC(t *testing.T, rigDir string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(rigDir, "SPEC.md"), []byte("# Test rig\n\nFixture SPEC without HTTP API or store symbols.\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestValidateOrchestratedArtifacts_design(t *testing.T) {
 	dir := t.TempDir()
 	rig := filepath.Join(dir, "myrig", "mayor", "rig")
 	if err := os.MkdirAll(rig, 0755); err != nil {
 		t.Fatal(err)
 	}
-	specPath := filepath.Join(rig, "SPEC.md")
-	if err := os.WriteFile(specPath, []byte("# Spec\nmodule myrig\n"), 0644); err != nil {
-		t.Fatal(err)
-	}
+	writeMinimalDesignSPEC(t, rig)
 	path := filepath.Join(rig, "architecture.md")
 	if err := os.WriteFile(path, []byte("x"), 0644); err != nil {
 		t.Fatal(err)
@@ -682,6 +687,7 @@ func TestValidateDesignArtifacts_allowsStaleBackendPy(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(rigDir, "architecture.md"), make([]byte, 250), 0644); err != nil {
 		t.Fatal(err)
 	}
+	writeMinimalDesignSPEC(t, rigDir)
 	task := &orchestrator.Task{Hooks: orchestrator.StateHooks{Artifacts: "design"}}
 	runner := newStateRunner(task, dir, "myrig")
 	runner.track.designArchWritten = true
@@ -943,6 +949,7 @@ func TestOrchestratedArtifactAutoOutcome_design(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(rigDir, "architecture.md"), make([]byte, 250), 0644); err != nil {
 		t.Fatal(err)
 	}
+	writeMinimalDesignSPEC(t, rigDir)
 	task := &orchestrator.Task{
 		AllowedOutcomes: []string{"success", "failure"},
 		Hooks:           orchestrator.StateHooks{Artifacts: "design"},

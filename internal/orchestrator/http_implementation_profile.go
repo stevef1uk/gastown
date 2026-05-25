@@ -553,11 +553,13 @@ func (p HTTPImplementationProfile) HandlerTestMissingModuleChdirIssues(relPath, 
 	if !p.Enabled || !IsHTTPHandlerTestPath(relPath) {
 		return nil
 	}
-	if !strings.Contains(content, "httptest") {
-		return nil
-	}
-	if strings.Contains(content, "t.Chdir") || strings.Contains(content, ".Chdir(") {
-		return nil
+	if strings.Contains(content, "t.Chdir") || strings.Contains(content, "os.Chdir") {
+		if handlerTestUsesModuleRootChdir(content) {
+			return nil
+		}
+		return []string{
+			"do not os.Chdir into t.TempDir() or other fake layouts — use module-root cwd: os.Chdir(" + ChdirExprToModuleRootFromTest(relPath, v.LayoutRoot) + ") at Test* start",
+		}
 	}
 	if !strings.Contains(content, "RegisterHandlers") && !strings.Contains(content, `httptest.NewRequest`) {
 		return nil
@@ -566,6 +568,13 @@ func (p HTTPImplementationProfile) HandlerTestMissingModuleChdirIssues(relPath, 
 	return []string{
 		fmt.Sprintf("add module-root cwd before httptest (go test cwd is the package dir): os.Chdir(%s) at Test* start", chdir),
 	}
+}
+
+func handlerTestUsesModuleRootChdir(content string) bool {
+	if strings.Contains(content, "t.TempDir()") && strings.Contains(content, "Chdir") {
+		return false
+	}
+	return strings.Contains(content, `filepath.Join(".."`) || strings.Contains(content, "filepath.Join(..")
 }
 
 // InstallDefaultHTTPProfiles copies embedded defaults into town orchestrator/http-profiles/.

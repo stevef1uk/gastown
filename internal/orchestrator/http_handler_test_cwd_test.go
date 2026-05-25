@@ -65,6 +65,12 @@ func TestHandlerTestMissingModuleChdirIssues(t *testing.T) {
 	if issues := HandlerTestMissingModuleChdirIssues("", "", "linkshelf/internal/api/handlers_test.go", body2, v); len(issues) != 0 {
 		t.Fatalf("unexpected issues: %v", issues)
 	}
+	body3 := `func TestStatic(t *testing.T) {
+		os.Chdir(t.TempDir())
+	}`
+	if issues := HandlerTestMissingModuleChdirIssues("", "", "linkshelf/internal/api/handlers_test.go", body3, v); len(issues) == 0 {
+		t.Fatal("expected reject chdir to t.TempDir()")
+	}
 }
 
 func TestHandlerStaticHandlerHasEarlyRequestURIGuard(t *testing.T) {
