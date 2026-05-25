@@ -5,6 +5,25 @@ import (
 	"testing"
 )
 
+func TestParseOrchestratedCommands_skipsStandaloneEndEditLine(t *testing.T) {
+	t.Parallel()
+	in := `CMD: export BEADS_DIR=$GT_ROOT/testgt3/.beads && cd testgt3/mayor/rig && bd update te-93y --status=in_progress
+---END EDIT---
+CMD: cd linkshelf && go test -count=1 ./internal/api/...`
+	cmds := parseOrchestratedCommands(in)
+	if len(cmds) != 2 {
+		t.Fatalf("cmds = %#v", cmds)
+	}
+	for _, c := range cmds {
+		if strings.Contains(c, "END EDIT") {
+			t.Fatalf("unexpected END EDIT in cmd: %q", c)
+		}
+	}
+	if strings.Contains(cmds[0], "\n---END EDIT---") {
+		t.Fatalf("glued END EDIT in first cmd: %q", cmds[0])
+	}
+}
+
 func TestPreprocessOrchestratedResponse_gluedEndEditCMD(t *testing.T) {
 	in := `EDIT: linkshelf/internal/store/store_test.go
 <<<<<<< SEARCH

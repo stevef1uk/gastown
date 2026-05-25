@@ -128,6 +128,7 @@ func handlerContractIssues(body string, mapping WebStaticMapping) []string {
 	if mapping.StaticURLPrefix != "" && strings.Contains(lower, "static/") && !strings.Contains(lower, "/web/") && !strings.Contains(lower, `"web"`) {
 		issues = append(issues, "static files should be read from web/ on disk with URL prefix "+mapping.StaticURLPrefix)
 	}
+	issues = append(issues, HandlerStaticServePatternIssues(body, mapping)...)
 	return issues
 }
 
@@ -141,6 +142,14 @@ func ValidateImplementWrittenContent(mayorRigDir, relPath, content string, v Wor
 	if IsHTTPHandlerTestPath(relPath) || (IsHTTPHandlerImplementPath(relPath) && strings.Contains(content, "os.Chdir")) {
 		if strings.Contains(content, "os.Chdir") {
 			return fmt.Errorf("%s must not use os.Chdir — tests and handlers must use the real web/ tree (webRoot=\"web\" or filepath.Join from the module directory); table cases should hit architecture paths (GET /, static assets, .. traversal)", relPath)
+		}
+	}
+	if IsHTTPHandlerImplementPath(relPath) {
+		if handlerBadWebPathRE.MatchString(content) {
+			return fmt.Errorf("%s must serve from filepath.Join(\"web\", name) — not filepath.Join(\"..\", \"..\", \"web\", …)", relPath)
+		}
+		for _, issue := range HandlerStaticServePatternIssues(content, WebStaticMapping{StaticURLPrefix: "/static"}) {
+			return fmt.Errorf("%s: %s", relPath, issue)
 		}
 	}
 	if err := ValidateImplementCrossBeadContent(mayorRigDir, relPath, content, v); err != nil {
@@ -165,7 +174,10 @@ func FormatHTTPRoutingGuidanceForBead(townRoot, rig, beadPath string, v Workflow
 		b.WriteString("- Match static `src`/`href` paths in `web/index.html` to how the handler mounts files (see architecture HTTP table).\n")
 	}
 	if IsHTTPHandlerTestPath(beadPath) || strings.Contains(filepath.ToSlash(beadPath), "/api/handlers") {
-		b.WriteString("- **Handler tests:** table-driven cases for `GET /`, each static asset path from architecture, and `GET /static/../` or `..` traversal → **404/403**; run tests against the real `web/` tree, not a chdir temp layout.\n")
+		b.WriteString("- **Handler tests:** table-driven cases for `GET /`, each static asset path from architecture, and `GET /static/../` or `..` traversal → **404** (not 307 redirect); run tests against the real `web/` tree, not a chdir temp layout.\n")
+	}
+	if mapping.StaticURLPrefix != "" && IsHTTPHandlerImplementPath(beadPath) {
+		b.WriteString("- **Static route:** use `mux.HandleFunc(\"/static/\", …)`; at handler start: `if strings.Contains(r.URL.RequestURI(), \"..\") || strings.Contains(r.URL.RawPath, \"..\") { http.NotFound(w, r); return }`; then `filepath.Join(\"web\", strings.TrimPrefix(r.URL.Path, \"/static/\"))`.\n")
 	}
 	return strings.TrimSpace(b.String())
 }

@@ -115,12 +115,15 @@ func scrubOrphanHeredocDelimiterLines(body string) string {
 }
 
 func isStandaloneHeredocDelimiter(s string) bool {
-	switch strings.ToUpper(strings.TrimSpace(s)) {
+	t := strings.TrimSpace(s)
+	switch strings.ToUpper(t) {
 	case "EOF", "EOT", "END":
 		return true
-	default:
-		return false
 	}
+	if isNativeEditEndMarker(t) || isOrchestratedNativeToolLine(t) {
+		return true
+	}
+	return false
 }
 
 // benignPlanningShellNoise reports harmless planner mistakes (e.g. a lone EOF CMD after heredoc).

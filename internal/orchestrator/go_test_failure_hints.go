@@ -200,6 +200,13 @@ func FormatGoTestFailureHints(townRoot, rig, activeBeadPath, cmdOutput string, e
 		b.WriteString(hint)
 		b.WriteString("\n")
 	}
+	if GoTestOutputSuggestsTraversalRedirect(cmdOutput) {
+		mapping := LoadWebStaticMappingFromRig(townRoot, rig, v)
+		if hint := FormatHandlerTraversalRedirectHint(mapping); hint != "" {
+			b.WriteString(hint)
+			b.WriteString("\n")
+		}
+	}
 	if strings.Contains(cmdOutput, "nil slice, want empty slice") {
 		b.WriteString("### Go test: empty slice vs nil\n")
 		b.WriteString("Tests expect a **non-nil empty slice** (`[]T{}` or `make([]T, 0)`), not `nil`. ")

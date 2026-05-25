@@ -736,7 +736,7 @@ func expandGluedOrchestratedCommands(cmds []string) []string {
 	var out []string
 		for _, c := range cmds {
 		c = strings.TrimSpace(c)
-		if c == "" || isStandaloneHeredocDelimiter(c) {
+		if c == "" || isStandaloneHeredocDelimiter(c) || isOrchestratedShellNoiseLine(c) {
 			continue
 		}
 		if !strings.Contains(c, "CMD:") {

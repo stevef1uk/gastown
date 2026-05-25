@@ -24,6 +24,34 @@ Root cause was not missing tests but **misaligned contracts**: architecture said
 | [GT-VERIFY-007](#gt-verify-007-cross-file-routing-consistency-at-bead-close) | P2 | Cross-file routing at bead close |
 | [GT-VERIFY-008](#gt-verify-008-prompts-single-source-of-truth-for-static-urls) | P2 | Prompts: one static URL story |
 | [GT-VERIFY-009](#gt-verify-009-module-compileok-after-implementation) | P2 | Post-implementation integration probe |
+| [GT-VERIFY-010](#gt-verify-010-static-traversal-307-and-native-edit-terminators) | P0 | Static traversal 307 + native EDIT terminators |
+
+---
+
+## GT-VERIFY-010: Static traversal 307 and native EDIT terminators
+
+**Priority:** P0  
+**Files:** `internal/orchestrator/http_handler_traversal.go`, `internal/orchestrator/go_test_failure_hints.go`, `cmd/gt-agent/orchestrated_response_parse.go`, `cmd/gt-agent/orchestrated_exec.go`
+
+### Problem (testgt3 polecat loop, May 2026)
+
+1. `TestRegisterHandlers` expects `GET /static/../go.mod` → **404**, but `ServeMux` returned **307** when handlers used `/static` without trailing slash or checked only the trimmed file name after redirect.
+2. Polecat used `filepath.Join("..", "..", "web", …)` so even valid static URLs 404’d.
+3. Model ended **EDIT:** blocks with `---END EDIT---`; gt-agent ran it as shell (`exit 127`) and skipped the patch; **SEARCH** mismatches left handlers unchanged while the model retried `bd close` on a failing verify.
+
+### Generic behavior (implemented)
+
+1. **`FormatHandlerTraversalRedirectHint`** — injected on verify failure when test output matches traversal+307 (via `FormatGoTestFailureHints` / compile context).
+2. **`HandlerStaticServePatternIssues` / `ValidateImplementWrittenContent`** — reject `../../web` joins, `HandleFunc("/static",` without `/static/`, and `/static/` handlers that only check trimmed path (must guard `r.URL.RequestURI()` / `RawPath` for `..`).
+3. **`normalizeNativeEditEndLines` + `isOrchestratedShellNoiseLine`** — strip `---END EDIT---` from CMD parse path; never execute as shell.
+4. **`FormatMalformedNativeEditFeedback`** — explicit nudge to use `>>>>>>> REPLACE` only.
+
+### Acceptance criteria
+
+- [x] Traversal 307 test output produces actionable handler hint in polecat feedback.
+- [x] Native EDIT ending with `---END EDIT---` does not run as a shell command.
+- [x] Handler WRITE/EDIT with `filepath.Join("..", "..", "web"` fails post-write validation.
+- [x] Handler WRITE/EDIT with `/static/` but no `RequestURI`/`RawPath` `..` check fails post-write validation (blocks 307 loop before verify).
 
 ---
 

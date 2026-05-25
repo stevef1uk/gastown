@@ -222,6 +222,9 @@ func FormatMalformedNativeEditFeedback(response string) string {
 			msgs = append(msgs, extra)
 		}
 	}
+	if strings.Contains(strings.ToUpper(response), "---END EDIT---") {
+		msgs = append(msgs, "Do not use ---END EDIT--- — end EDIT blocks with a line containing only "+nativeEditEndMarker)
+	}
 	if len(msgs) == 0 {
 		return ""
 	}
@@ -281,9 +284,31 @@ func unwrapMarkdownInlineCode(s string) string {
 	return s
 }
 
+// scrubNativeEditLinesFromShellCommand drops lines like ---END EDIT--- the model glues after CMD blocks.
+func scrubNativeEditLinesFromShellCommand(cmd string) (string, bool) {
+	var kept []string
+	changed := false
+	for _, line := range strings.Split(cmd, "\n") {
+		if isOrchestratedShellNoiseLine(line) {
+			changed = true
+			continue
+		}
+		kept = append(kept, line)
+	}
+	out := strings.TrimSpace(strings.Join(kept, "\n"))
+	if out == "" {
+		return cmd, false
+	}
+	return out, changed
+}
+
 // sanitizeOrchestratedShellCommand trims model prose/JSON glued onto shell commands.
 func sanitizeOrchestratedShellCommand(cmd string) (string, bool) {
 	changed := false
+	if scrubbed, ok := scrubNativeEditLinesFromShellCommand(cmd); ok {
+		cmd = scrubbed
+		changed = true
+	}
 	if stripped := stripOrchestratedShellBackticks(cmd); stripped != cmd {
 		cmd = stripped
 		changed = true
@@ -444,6 +469,20 @@ func formatDoubleEqualsEditFeedback(lines []string, editLine int) string {
 		return ""
 	}
 	return "EDIT: uses two " + nativeEditReplaceMarker + " lines (git-merge style) — use exactly one SEARCH block, one " + nativeEditReplaceMarker + ", then >>>>>>> REPLACE"
+}
+
+// isOrchestratedShellNoiseLine reports a single-line token that must never run as shell
+// (native edit terminators the model emits without CMD:).
+func isOrchestratedShellNoiseLine(s string) bool {
+	t := strings.TrimSpace(s)
+	if t == "" {
+		return false
+	}
+	if isNativeEditEndMarker(t) || isOrchestratedNativeToolLine(t) {
+		return true
+	}
+	upper := strings.ToUpper(t)
+	return strings.HasPrefix(upper, "<<<<<<<") || strings.HasPrefix(upper, ">>>>>>>") || t == "======="
 }
 
 // isOrchestratedNativeToolLine reports READ:/EDIT:/WRITE: markers that must never run as shell.
