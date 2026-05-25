@@ -43,33 +43,54 @@ func WriteAlignedPlanningDocsForTest(rigDir string) error {
 	return nil
 }
 
-// ValidatePlanningDocAlignment ensures SPEC.md, architecture.md, and plan.md agree on HTTP routes,
-// store API names, and module identity before project_setup / implementation.
-func ValidatePlanningDocAlignment(rigDir string, v WorkflowValidation) error {
-	specDoc := readRigDoc(rigDir, "SPEC.md")
-	archDoc := readRigDoc(rigDir, "architecture.md")
-	planDoc := readRigDoc(rigDir, "plan.md")
-	if strings.TrimSpace(specDoc) == "" {
-		return fmt.Errorf("SPEC.md missing or empty under %s", rigDir)
-	}
-
-	var issues []string
-	issues = append(issues, checkHTTPDocAlignment("architecture.md", archDoc, specDoc, v)...)
-	issues = append(issues, checkHTTPDocAlignment("plan.md", planDoc, specDoc, v)...)
-	issues = append(issues, checkStoreAPIAlignment("architecture.md", archDoc, specDoc)...)
-	issues = append(issues, checkStoreAPIAlignment("plan.md", planDoc, specDoc)...)
-	issues = append(issues, checkGoModuleAlignment("architecture.md", archDoc, specDoc, v)...)
-	issues = append(issues, checkGoModuleAlignment("plan.md", planDoc, specDoc, v)...)
-	issues = append(issues, checkPlanTestMandate(planDoc, v)...)
-	issues = append(issues, checkPlanIntegrationContract(planDoc, v)...)
-
+func formatDocAlignmentError(prefix string, issues []string) error {
 	if len(issues) == 0 {
 		return nil
 	}
 	if len(issues) > 10 {
 		issues = append(issues[:10], fmt.Sprintf("…and %d more", len(issues)-10))
 	}
-	return fmt.Errorf("SPEC/architecture/plan misaligned: %s", strings.Join(issues, "; "))
+	return fmt.Errorf("%s: %s", prefix, strings.Join(issues, "; "))
+}
+
+// ValidateArchitectureDocAlignment ensures architecture.md matches SPEC.md (HTTP routes, store API, module).
+// Called on design success so the planner is not blocked by architect drift.
+func ValidateArchitectureDocAlignment(rigDir string, v WorkflowValidation) error {
+	specDoc := readRigDoc(rigDir, "SPEC.md")
+	if strings.TrimSpace(specDoc) == "" {
+		return fmt.Errorf("SPEC.md missing or empty under %s", rigDir)
+	}
+	issues := architectureDocAlignmentIssues(rigDir, specDoc, v)
+	return formatDocAlignmentError("SPEC/architecture misaligned", issues)
+}
+
+func architectureDocAlignmentIssues(rigDir, specDoc string, v WorkflowValidation) []string {
+	archDoc := readRigDoc(rigDir, "architecture.md")
+	var issues []string
+	issues = append(issues, checkHTTPDocAlignment("architecture.md", archDoc, specDoc, v)...)
+	issues = append(issues, checkStoreAPIAlignment("architecture.md", archDoc, specDoc)...)
+	issues = append(issues, checkGoModuleAlignment("architecture.md", archDoc, specDoc, v)...)
+	return issues
+}
+
+// ValidatePlanningDocAlignment ensures SPEC.md, architecture.md, and plan.md agree on HTTP routes,
+// store API names, and module identity before project_setup / implementation.
+func ValidatePlanningDocAlignment(rigDir string, v WorkflowValidation) error {
+	specDoc := readRigDoc(rigDir, "SPEC.md")
+	planDoc := readRigDoc(rigDir, "plan.md")
+	if strings.TrimSpace(specDoc) == "" {
+		return fmt.Errorf("SPEC.md missing or empty under %s", rigDir)
+	}
+
+	var issues []string
+	issues = append(issues, architectureDocAlignmentIssues(rigDir, specDoc, v)...)
+	issues = append(issues, checkHTTPDocAlignment("plan.md", planDoc, specDoc, v)...)
+	issues = append(issues, checkStoreAPIAlignment("plan.md", planDoc, specDoc)...)
+	issues = append(issues, checkGoModuleAlignment("plan.md", planDoc, specDoc, v)...)
+	issues = append(issues, checkPlanTestMandate(planDoc, v)...)
+	issues = append(issues, checkPlanIntegrationContract(planDoc, v)...)
+
+	return formatDocAlignmentError("SPEC/architecture/plan misaligned", issues)
 }
 
 func checkHTTPDocAlignment(docName, doc, specDoc string, v WorkflowValidation) []string {

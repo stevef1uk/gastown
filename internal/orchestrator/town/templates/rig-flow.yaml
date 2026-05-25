@@ -41,7 +41,7 @@ states:
         One CMD: per line. Read SPEC with head; write architecture.md via a single-quoted heredoc (≥200 bytes).
         Prose may mention python3 or backend/ paths — that is fine inside the document.
       failure_hint: |
-        Write architecture.md with a heredoc CMD in this session (stale files from prior runs do not count). Read SPEC with head -n 60.
+        Write architecture.md with a heredoc CMD in this session (stale files from prior runs do not count). Read SPEC with head -n 60. HTTP paths and store symbols must match SPEC verbatim (gt-agent rejects /web/* vs /static/, ListLinks vs List, etc.).
     transitions:
       success:
         to: planning

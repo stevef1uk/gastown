@@ -33,6 +33,7 @@ Polecat implements code later from SPEC. Your architecture doc should **describe
    ```
    If under the minimum, expand the heredoc (per-file API/behavior, data model, error cases, acceptance mapping) and rewrite `architecture.md` — do not report success until `wc -c` meets the threshold.
 4. Architecture must reference the real SPEC goals and planned layout under `{{layout_root}}/` (or paths SPEC defines) without creating those files.
+5. **HTTP route table and store API names in architecture.md must match SPEC.md verbatim** (e.g. `/static/{file}` not `/web/*`; `List`/`Create`/`Delete`/`InitSchema` not `GetLinks`/`Store` struct/`InitDB`). gt-agent rejects design success on drift.
 
 ## Required write pattern
 

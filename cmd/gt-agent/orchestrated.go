@@ -2391,6 +2391,9 @@ func validateDesignArtifacts(townRoot, rig string, writtenThisRun bool, v orches
 			return fmt.Errorf("implementation file %q must not exist in mayor/rig/ (only architecture.md)", name)
 		}
 	}
+	if err := orchestrator.ValidateArchitectureDocAlignment(rigDir, v); err != nil {
+		return fmt.Errorf("align architecture.md with SPEC.md before planning: %w", err)
+	}
 	return nil
 }
 

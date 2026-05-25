@@ -7,6 +7,60 @@ import (
 	"testing"
 )
 
+func TestValidateArchitectureDocAlignment_catchesArchDrift(t *testing.T) {
+	dir := t.TempDir()
+	spec := `# Linkshelf MVP
+| GET | / | 200, serve web/index.html | — |
+| GET | /static/{file} | 200, file under web/ | 404 |
+| GET | /api/links | 200, JSON array | — |
+
+## Store
+` + "```go\nfunc InitSchema(db *sql.DB) error\nfunc List(ctx context.Context) ([]Link, error)\nfunc Create(ctx context.Context, title, url string) (Link, error)\nfunc Delete(ctx context.Context, id int64) error\n```" + `
+
+module linkshelf
+`
+	arch := `# Architecture
+| GET | /web/* | static |
+Handlers: GetLinks, DeleteLink. type Store struct. InitDB(db).
+`
+	if err := os.WriteFile(filepath.Join(dir, "SPEC.md"), []byte(spec), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "architecture.md"), []byte(arch), 0644); err != nil {
+		t.Fatal(err)
+	}
+	v := WorkflowValidation{LayoutRoot: "linkshelf"}
+	err := ValidateArchitectureDocAlignment(dir, v)
+	if err == nil {
+		t.Fatal("expected architecture alignment error")
+	}
+	msg := err.Error()
+	for _, want := range []string{"/web", "GetLinks", "Store struct", "InitDB"} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("error %q missing %q", msg, want)
+		}
+	}
+}
+
+func TestValidateArchitectureDocAlignment_passesAlignedArch(t *testing.T) {
+	dir := t.TempDir()
+	spec := `# Spec
+| GET | /api/links | 200, JSON array | — |
+## Store
+` + "```go\nfunc List() ([]Link, error)\nfunc Create(title, url string) (Link, error)\n```" + `
+module linkshelf
+`
+	arch := `Routes GET/POST /api/links. Package store: List, Create, InitSchema.`
+	for name, body := range map[string]string{"SPEC.md": spec, "architecture.md": arch} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := ValidateArchitectureDocAlignment(dir, WorkflowValidation{LayoutRoot: "linkshelf"}); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestValidatePlanningDocAlignment_catchesPlanHTTPAndStoreDrift(t *testing.T) {
 	dir := t.TempDir()
 	spec := `# Linkshelf MVP

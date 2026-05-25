@@ -146,6 +146,10 @@ func TestValidateOrchestratedArtifacts_design(t *testing.T) {
 	if err := os.MkdirAll(rig, 0755); err != nil {
 		t.Fatal(err)
 	}
+	specPath := filepath.Join(rig, "SPEC.md")
+	if err := os.WriteFile(specPath, []byte("# Spec\nmodule myrig\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
 	path := filepath.Join(rig, "architecture.md")
 	if err := os.WriteFile(path, []byte("x"), 0644); err != nil {
 		t.Fatal(err)
@@ -160,7 +164,83 @@ func TestValidateOrchestratedArtifacts_design(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := runner.validateArtifacts("success"); err != nil {
+		t.Fatalf("aligned arch with SPEC should pass design validation: %v", err)
+	}
+}
+
+// TestValidateDesignArtifacts_architectureMustMatchSPEC ensures design success is blocked when
+// architecture.md drifts from SPEC (regression for planner loops on planning validation).
+func TestValidateDesignArtifacts_architectureMustMatchSPEC(t *testing.T) {
+	dir := t.TempDir()
+	rig := "linkshelf"
+	rigDir := filepath.Join(dir, rig, "mayor", "rig")
+	if err := os.MkdirAll(rigDir, 0755); err != nil {
 		t.Fatal(err)
+	}
+	spec := `# Link Shelf MVP
+| GET | / | 200, serve web/index.html | — |
+| GET | /static/{file} | 200, file under web/ | 404 |
+| GET | /api/links | 200, JSON array | — |
+| POST | /api/links | 201 | 400 |
+| DELETE | /api/links/{id} | 204 | 404 |
+
+## Store
+` + "```go\nfunc InitSchema(db *sql.DB) error\nfunc List(ctx context.Context) ([]Link, error)\nfunc Create(ctx context.Context, title, url string) (Link, error)\nfunc Delete(ctx context.Context, id int64) error\n```" + `
+
+module linkshelf
+`
+	// Architect-style drift: /web/*, Store struct, InitDB, GetLinks — must fail at design, not planning.
+	misalignedArch := strings.Repeat("# Architecture\n", 1) + `
+| GET | /web/* | static assets |
+Handlers use GetLinks, DeleteLink, NewHandler(store.Store). InitDB(db). type Store struct { DB *sql.DB }
+` + strings.Repeat("detail line about packages and acceptance.\n", 40)
+
+	alignedArch := `# Architecture for linkshelf
+
+## HTTP
+| GET | / | serve web/index.html |
+| GET | /static/{file} | file under web/ |
+| GET | /api/links | JSON list |
+| POST | /api/links | create link |
+| DELETE | /api/links/{id} | delete link |
+
+## Store
+Package-level List, Create, Delete, InitSchema on var DB — no Store struct.
+` + strings.Repeat("Per-file layout and acceptance mapping for required_files.\n", 35)
+
+	if err := os.WriteFile(filepath.Join(rigDir, "SPEC.md"), []byte(spec), 0644); err != nil {
+		t.Fatal(err)
+	}
+	v := orchestrator.WorkflowValidation{
+		LayoutRoot:            "linkshelf",
+		MinArchitectureBytes:  200,
+		BeadTitleContains:     "Implement ",
+	}
+
+	writeArch := func(body string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(rigDir, "architecture.md"), []byte(body), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	writeArch(misalignedArch)
+	err := validateDesignArtifacts(dir, rig, true, v)
+	if err == nil {
+		t.Fatal("expected design validation error for misaligned architecture")
+	}
+	if !strings.Contains(err.Error(), "align architecture.md with SPEC.md") {
+		t.Fatalf("want design gate error, got: %v", err)
+	}
+	for _, frag := range []string{"/web", "GetLinks", "Store struct", "InitDB"} {
+		if !strings.Contains(err.Error(), frag) {
+			t.Errorf("error should mention %q: %v", frag, err)
+		}
+	}
+
+	writeArch(alignedArch)
+	if err := validateDesignArtifacts(dir, rig, true, v); err != nil {
+		t.Fatalf("aligned architecture should pass design validation: %v", err)
 	}
 }
 
