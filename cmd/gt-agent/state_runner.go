@@ -61,6 +61,9 @@ func newStateRunner(task *orchestrator.Task, townRoot, rig string) *stateRunner 
 	for k, val := range v.PromptVars() {
 		vars[k] = val
 	}
+	if townRoot != "" && rig != "" {
+		vars["qa_runtime_smoke_block"] = orchestrator.RigFlowQARuntimeSmokeBlock(townRoot, rig, v)
+	}
 	return &stateRunner{
 		task:       task,
 		townRoot:   townRoot,
@@ -221,9 +224,12 @@ func (r *stateRunner) rewriteCommand(cmd string) string {
 		orchestratedPrintf("[gt-agent] rewrote go command typo → %s\n", fixed)
 		cmd = fixed
 	}
-	if fixed, ok := normalizeGoDevServerSmokeCommand(cmd, r.townRoot, r.rig, r.v); ok {
-		orchestratedPrintf("[gt-agent] rewrote go dev-server smoke → %s\n", fixed)
-		cmd = fixed
+	// Runtime smoke rewrite is for implementation/QA only — planner must not go run the server.
+	if r.hooks.CmdGuard != "planning" && r.hooks.CmdGuard != "plan_review" && r.hooks.CmdGuard != "design" {
+		if fixed, ok := normalizeGoDevServerSmokeCommand(cmd, r.townRoot, r.rig, r.v); ok {
+			orchestratedPrintf("[gt-agent] rewrote go dev-server smoke → %s\n", fixed)
+			cmd = fixed
+		}
 	}
 	if orchestrator.WorkflowUsesDocker(r.v) {
 		if fixed := orchestrator.NormalizeDockerCommand(cmd); fixed != cmd {

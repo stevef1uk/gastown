@@ -45,6 +45,13 @@ func (r *stateRunner) runPostNativeWriteVerify(relPath string, sessionName strin
 		return
 	}
 	mayorDir := rigMayorRigDir(r.townRoot, r.rig)
+	if err := orchestrator.ValidateHTTPHandlerBeadPrerequisites(mayorDir, relPath, r.v); err != nil {
+		r.track.hadCmdFailure = true
+		r.track.verifyOK = false
+		combined.WriteString(err.Error() + "\n\n")
+		orchestratedFprintfStderr("[gt-agent] %s\n", err)
+		return
+	}
 	verifyCmd := orchestrator.GoCompileVerifyCommandForBead(r.v, mayorDir, relPath)
 	if verifyCmd == "" {
 		return

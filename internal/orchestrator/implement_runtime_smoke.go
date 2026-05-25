@@ -13,9 +13,8 @@ func SkipImplementationRuntimeSmoke() bool {
 	return os.Getenv("GT_SKIP_IMPLEMENTATION_SMOKE") == "1"
 }
 
-// WorkflowNeedsRuntimeSmoke reports Go web+server profiles that require HTTP smoke
-// before implementation can complete or match QA runtime checks (GT-VERIFY-002/009).
-func WorkflowNeedsRuntimeSmoke(v WorkflowValidation) bool {
+// workflowHasGoWebAndServer reports required_files includes web assets and cmd/server/main.go.
+func workflowHasGoWebAndServer(v WorkflowValidation) bool {
 	if !WorkflowUsesGo(v) {
 		return false
 	}
@@ -33,6 +32,80 @@ func WorkflowNeedsRuntimeSmoke(v WorkflowValidation) bool {
 		}
 	}
 	return hasWeb && hasServer
+}
+
+// WorkflowNeedsRuntimeSmoke reports Go web+server profiles that may run HTTP smoke
+// during implementation verify (GT-VERIFY-002/009). Probe paths come from SPEC only.
+func WorkflowNeedsRuntimeSmoke(v WorkflowValidation) bool {
+	return workflowHasGoWebAndServer(v)
+}
+
+// APISmokeHasHTTPAPI reports whether rig docs define HTTP API paths beyond serving "/".
+func APISmokeHasHTTPAPI(spec APISmokeSpec) bool {
+	for _, p := range spec.GETPaths {
+		if smokeProbeAPIPath(p) {
+			return true
+		}
+	}
+	return len(spec.POSTProbes) > 0
+}
+
+func smokeProbeAPIPath(path string) bool {
+	path = normalizeSmokePath(path)
+	if path == "" || path == "/" {
+		return false
+	}
+	return strings.HasPrefix(path, "/api/") || strings.Contains(path, "{")
+}
+
+func smokeHasNonRootGET(spec APISmokeSpec) bool {
+	for _, p := range spec.GETPaths {
+		if normalizeSmokePath(p) != "" && normalizeSmokePath(p) != "/" {
+			return true
+		}
+	}
+	return false
+}
+
+// WorkflowNeedsQARuntimeSmoke reports whether QA must run a live server smoke CMD this session.
+// Python rigs use pytest unless SPEC documents HTTP. Go rigs skip API curls when SPEC has no API table.
+func WorkflowNeedsQARuntimeSmoke(townRoot, rig string, v WorkflowValidation) bool {
+	if WorkflowUsesPython(v) {
+		return pythonWorkflowNeedsQARuntimeSmoke(townRoot, rig, v)
+	}
+	if !workflowHasGoWebAndServer(v) {
+		return false
+	}
+	spec, _ := LoadAPISmokeSpecFromRig(townRoot, rig, v)
+	if APISmokeHasHTTPAPI(spec) || len(spec.StaticAssets) > 0 || smokeHasNonRootGET(spec) {
+		return true
+	}
+	for _, p := range spec.GETPaths {
+		if normalizeSmokePath(p) == "/" {
+			return true
+		}
+	}
+	return false
+}
+
+func pythonWorkflowNeedsQARuntimeSmoke(townRoot, rig string, v WorkflowValidation) bool {
+	spec, err := LoadAPISmokeSpecFromRig(townRoot, rig, v)
+	if err != nil || !APISmokeHasHTTPAPI(spec) {
+		return false
+	}
+	for _, f := range append(append([]string(nil), v.RequiredFiles...), v.UnionRequiredFiles()...) {
+		lower := strings.ToLower(filepath.ToSlash(strings.TrimSpace(f)))
+		switch {
+		case strings.HasSuffix(lower, "app.py"),
+			strings.HasSuffix(lower, "main.py"),
+			strings.Contains(lower, "/api/"),
+			strings.Contains(lower, "wsgi"),
+			strings.Contains(lower, "asgi"),
+			strings.Contains(lower, "server.py"):
+			return true
+		}
+	}
+	return false
 }
 
 func implementationModuleDir(townRoot, rig string, v WorkflowValidation) string {

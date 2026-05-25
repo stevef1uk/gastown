@@ -81,7 +81,9 @@ Per-bead verify runs **`go test` / `go build` scoped to package** only. `GoCompi
 
 ### Acceptance criteria
 
-- [ ] Closing `handlers.go` without `web/` serving contract fails verify on a linkshelf-like profile (per-bead post-write — not done).
+- [x] Closing `handlers.go` without `web/` on disk fails post-write verify (`ValidateHTTPHandlerBeadPrerequisites`) and implement context warns (May 2026).
+- [x] Implement bead order: `web/` paths score before `internal/api/` (`implementationPathScore` 15 vs 20).
+- [x] `TestServeIndex`/`TestServeStatic` 404 → `FormatHandlerStatic404Hint` (do not chase `../../web` path tweaks).
 - [x] `ImplementationPhaseVerifyOK` runs `BuildRuntimeSmokeShell` when profile has `web/` + `cmd/server/main.go` (before implementation success / QA handoff).
 - [x] Unit tests in `implement_runtime_smoke_test.go` cover smoke pass/fail on minimal fixture.
 

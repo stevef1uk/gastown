@@ -48,7 +48,10 @@ Add **## Integration contract** to `plan.md`: how the entrypoint obtains depende
 | Read SPEC + architecture (`head`, `cat`, `wc`, `ls`) | Writing implementation files (`{{layout_root}}/`, `*.py`, etc.) |
 | `bd create` from rig beads repo | `gt bd add` (not the bd CLI — will be rejected) |
 | Write `plan.md` via heredoc | `git commit`, `git push`, polecat work |
+| `test -f plan.md`, `wc -c plan.md` | **`go test`, `go build`, `go run`, `curl`, `pytest`** — SPEC “definition of done” is for the **polecat**, not you |
 | | `python3`, `pip install`, `mkdir` |
+
+You are **not** verifying the app. Do not run the server or test suite to “check” the plan — gt-agent rejects those CMDs in planning.
 
 ## HARD RULES
 
@@ -103,7 +106,7 @@ Add **## Integration contract** to `plan.md`: how the entrypoint obtains depende
 
 5. Verify from town root: `CMD: wc -c {{rig}}/mayor/rig/plan.md`
 
-6. Do not send `success` until plan.md exists (≥ {{min_plan_bytes}} bytes), no commands failed, and open beads cover required_files — after rework you may only `bd delete` duplicates (no new `bd create` required if the bead set is already valid). QA verifies next.
+6. Do not send `success` until plan.md exists (≥ {{min_plan_bytes}} bytes), no commands failed, and open beads cover required_files — after rework you may only `bd delete` duplicates (no new `bd create` required if the bead set is already valid). **Before plan review:** HTTP paths, store function names, and module in `plan.md` must match **SPEC.md** verbatim (e.g. `/api/links` not `/links`; `List` not `ListLinks`). Include **## Integration contract** when the profile has `cmd/.../main.go`. QA and gt-agent reject drift.
 
 7. On a **later turn** with no CMD lines, send JSON only:
    `{"outcome":"success","summary":"plan and beads created; ready for plan review"}`

@@ -196,6 +196,10 @@ func FormatGoTestFailureHints(townRoot, rig, activeBeadPath, cmdOutput string, e
 		return hint
 	}
 	var b strings.Builder
+	if hint := FormatHandlerStatic404Hint(townRoot, rig, activeBeadPath, cmdOutput, v); hint != "" {
+		b.WriteString(hint)
+		b.WriteString("\n")
+	}
 	if strings.Contains(cmdOutput, "nil slice, want empty slice") {
 		b.WriteString("### Go test: empty slice vs nil\n")
 		b.WriteString("Tests expect a **non-nil empty slice** (`[]T{}` or `make([]T, 0)`), not `nil`. ")

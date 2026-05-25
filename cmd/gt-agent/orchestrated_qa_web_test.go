@@ -26,6 +26,9 @@ func linkshelfWebProfile() orchestrator.WorkflowValidation {
 
 func writeLinkshelfArchitecture(t *testing.T, rigDir string, withStaticPrefix bool) {
 	t.Helper()
+	if err := os.MkdirAll(rigDir, 0755); err != nil {
+		t.Fatal(err)
+	}
 	var arch string
 	if withStaticPrefix {
 		arch = `# Link Shelf HTTP
@@ -174,21 +177,59 @@ func TestValidateWebStaticReferences_acceptsRouteDefinedInGo(t *testing.T) {
 
 func TestRequiresQARuntimeSmoke_webAndServer(t *testing.T) {
 	t.Parallel()
+	dir := t.TempDir()
+	rig := "mockrig"
+	rigDir := filepath.Join(dir, rig, "mayor", "rig")
+	if err := os.MkdirAll(rigDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	writeLinkshelfArchitecture(t, rigDir, true)
 	v := linkshelfWebProfile()
-	if !requiresQARuntimeSmoke(v) {
-		t.Fatal("expected runtime smoke for web+server profile")
+	if !requiresQARuntimeSmoke(dir, rig, v) {
+		t.Fatal("expected runtime smoke when SPEC/architecture define API routes")
 	}
 	v2 := orchestrator.WorkflowValidation{LayoutRoot: "linkshelf", RequiredFiles: []string{"linkshelf/cmd/server/main.go"}}
-	if requiresQARuntimeSmoke(v2) {
+	if requiresQARuntimeSmoke(dir, rig, v2) {
 		t.Fatal("expected no smoke without web assets")
+	}
+}
+
+func TestRequiresQARuntimeSmoke_skipsAPIWhenSpecHasNoAPI(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	rig := "mockrig"
+	rigDir := filepath.Join(dir, rig, "mayor", "rig")
+	if err := os.MkdirAll(rigDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	arch := `# Static site only
+| GET | / | index.html |
+`
+	if err := os.WriteFile(filepath.Join(rigDir, "architecture.md"), []byte(arch), 0644); err != nil {
+		t.Fatal(err)
+	}
+	v := linkshelfWebProfile()
+	if !requiresQARuntimeSmoke(dir, rig, v) {
+		t.Fatal("expected static web smoke when web+server profile")
+	}
+	spec, _ := orchestrator.LoadAPISmokeSpecFromRig(dir, rig, v)
+	if orchestrator.APISmokeHasHTTPAPI(spec) {
+		t.Fatalf("expected no API paths in spec: %+v", spec)
 	}
 }
 
 func TestIsQARuntimeSmokeCommandOK(t *testing.T) {
 	t.Parallel()
+	dir := t.TempDir()
+	rig := "mockrig"
+	rigDir := filepath.Join(dir, rig, "mayor", "rig")
+	if err := os.MkdirAll(rigDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	writeLinkshelfArchitecture(t, rigDir, false)
 	v := linkshelfWebProfile()
 	ok := `cd mockrig/mayor/rig/linkshelf && go run ./cmd/server & sleep 1 && curl -sf http://127.0.0.1:8080/ && curl -s http://127.0.0.1:8080/api/bookmarks | grep -q '[]' && curl -sf -X POST -H 'Content-Type: application/json' -d '{"title":"x","url":"https://a"}' http://127.0.0.1:8080/api/bookmarks`
-	if !isQARuntimeSmokeCommandOK(ok, v) {
+	if !isQARuntimeSmokeCommandOK(ok, dir, rig, v) {
 		t.Fatal("expected full smoke CMD to qualify")
 	}
 	bad := []string{
@@ -197,7 +238,7 @@ func TestIsQARuntimeSmokeCommandOK(t *testing.T) {
 		"go run ./cmd/server && curl http://localhost:8080/",
 	}
 	for _, cmd := range bad {
-		if isQARuntimeSmokeCommandOK(cmd, v) {
+		if isQARuntimeSmokeCommandOK(cmd, dir, rig, v) {
 			t.Fatalf("expected reject: %q", cmd)
 		}
 	}

@@ -114,19 +114,19 @@ func symbolsOwnedByLaterSiblings(rigDir, relPath string, v WorkflowValidation) g
 	for _, sib := range laterSamePackageProductionFiles(relPath, v) {
 		sym := readExportedGoSymbolsFromRig(rigDir, sib)
 		if len(sym.Types) == 0 && len(sym.Funcs) == 0 {
-			for _, n := range ArchitectureContractSymbolNames(rigDir, sib, v) {
-				if n == "" || !astIsExportedName(n) {
-					continue
+			// Use ownership-table "Owns" column only — dependency columns list symbols this
+			// bead must call (e.g. InitSchema on store.go) and must not block schema beads.
+			owned := architectureOwnedSymbolsForBead(rigDir, sib, v)
+			for _, n := range owned.Types {
+				if !seenT[n] {
+					seenT[n] = true
+					types = append(types, n)
 				}
-				if strings.Contains(n, " ") {
-					continue
-				}
-				// Contract lists func names; types are rare in fences but include if parsed.
-				if len(n) > 0 && n[0] >= 'A' && n[0] <= 'Z' {
-					if !seenF[n] {
-						seenF[n] = true
-						funcs = append(funcs, n)
-					}
+			}
+			for _, n := range owned.Funcs {
+				if !seenF[n] {
+					seenF[n] = true
+					funcs = append(funcs, n)
 				}
 			}
 		}

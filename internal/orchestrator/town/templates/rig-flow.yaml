@@ -83,6 +83,7 @@ states:
     instructions: |
       1. Verify open implementation beads match architecture.md and workflow required_files.
       2. Reject duplicate or path-less beads; send planner back to fix.
+      3. Reject when SPEC.md, architecture.md, and plan.md disagree on HTTP routes, store API names, module path, or integration contract (gt-agent enforces on success).
     hooks:
       max_cmd_turns: 8
       cmd_guard: plan_review
@@ -95,7 +96,7 @@ states:
       retry_hint: |
         One CMD: per line. Run bd list --status=open from {{rig}}/mayor/rig; compare titles to architecture required_files.
       failure_hint: |
-        Run `bd list --status=open` from {{rig}}/mayor/rig with BEADS_DIR set; compare titles to architecture required_files. Use outcome failure to send the Planner back.
+        Run `bd list --status=open` from {{rig}}/mayor/rig with BEADS_DIR set; compare titles to required_files. Read SPEC HTTP table and Store API — plan.md and architecture.md must use the same paths and symbols (e.g. /api/links not /links; List not ListLinks). Use outcome failure to send the Planner back.
     transitions:
       success:
         to: project_setup
@@ -193,8 +194,8 @@ states:
     role: qa
     prompt_file: prompts/rig-flow/qa_review.md
     instructions: |
-      1. Review closed implementation beads in `{{rig}}` against SPEC and architecture.
-      2. For web+server profiles: run runtime smoke (curls built from architecture.md + index.html refs; API GET [] not null, POST not 405, SPA uses /# anchors). Do not change HTML to fix smoke unless architecture defines that URL.
+      1. Review closed implementation beads in `{{rig}}` against SPEC.md and architecture.md (static `src`/`href` in web/index.html must match the architecture HTTP table — {{static_url_contract_short}}).
+      2. Runtime smoke only when SPEC/architecture define HTTP routes or static web+server (see qa_runtime_smoke_block). Skip go run/curl for library-only or API-less profiles. Python rigs use pytest from layout_root/backend — not Go cmd/server paths.
       3. Use outcome task_passed (more work), all_passed (done), or failure (rework).
     hooks:
       state_timeout_seconds: 1800

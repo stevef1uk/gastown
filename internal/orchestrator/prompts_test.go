@@ -72,6 +72,12 @@ func TestRigFlowPrompts_staticURLGuidanceFromArchitecture(t *testing.T) {
 	t.Parallel()
 	for _, name := range []string{"qa_review.md", "implementation.md"} {
 		body := readEmbeddedRigFlowPrompt(t, name)
+		if name == "qa_review.md" {
+			if !strings.Contains(body, "{{qa_runtime_smoke_block}}") {
+				t.Fatalf("qa_review.md must use {{qa_runtime_smoke_block}}")
+			}
+			continue
+		}
 		if !strings.Contains(body, "{{static_url_contract") {
 			t.Fatalf("%s must use {{static_url_contract_*}} placeholder", name)
 		}
@@ -88,8 +94,14 @@ func TestRigFlowPrompts_staticURLGuidanceFromArchitecture(t *testing.T) {
 		}
 	}
 	qa := readEmbeddedRigFlowPrompt(t, "qa_review.md")
-	if !strings.Contains(qa, "gt-agent **rewrites**") || !strings.Contains(qa, "architecture.md") {
-		t.Fatalf("qa_review should describe architecture-driven smoke:\n%s", qa)
+	if !strings.Contains(qa, "{{qa_runtime_smoke_block}}") {
+		t.Fatalf("qa_review should inject profile-specific smoke block")
+	}
+	resolved := SubstituteVars(qa, map[string]string{
+		"qa_runtime_smoke_block": RigFlowQARuntimeSmokeBlock(t.TempDir(), "rig", linkshelfLikeValidation()),
+	})
+	if !strings.Contains(resolved, "gt-agent") || !strings.Contains(resolved, "architecture") {
+		t.Fatalf("resolved qa smoke block should describe architecture-driven smoke:\n%s", resolved)
 	}
 	if strings.Contains(qa, "curl -sf http://127.0.0.1:8080/app.js") {
 		t.Fatal("qa_review must not hardcode /app.js smoke example")

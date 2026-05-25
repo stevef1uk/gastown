@@ -55,8 +55,11 @@ func TestFormatQAReviewProgressBlock_listsDoneAndTodo(t *testing.T) {
 	p := newQAReviewProgress("wf-1", "qa_review", "testgt3")
 	p.mark(qaMilestoneClosedBeads)
 	p.mark(qaMilestoneSpecRead)
+	dir := t.TempDir()
+	rig := "testgt3"
+	writeLinkshelfArchitecture(t, filepath.Join(dir, rig, "mayor", "rig"), false)
 	v := linkshelfWebProfile()
-	block := formatQAReviewProgressBlock(p, "testgt3", "go test ./...", requiresQARuntimeSmoke(v), false)
+	block := formatQAReviewProgressBlock(p, rig, "go test ./...", requiresQARuntimeSmoke(dir, rig, v), false)
 	if !strings.Contains(block, "do not repeat") {
 		t.Fatal("want skip guidance")
 	}
@@ -133,6 +136,7 @@ func TestQAReviewProgress_restartSession(t *testing.T) {
 	rig := "mockrig"
 	wf := "wf-restart-qa"
 	v := linkshelfWebProfile()
+	writeLinkshelfArchitecture(t, filepath.Join(dir, rig, "mayor", "rig"), false)
 
 	task := qaReviewTask(wf, rig, v)
 	sessionA := newStateRunner(task, dir, rig)

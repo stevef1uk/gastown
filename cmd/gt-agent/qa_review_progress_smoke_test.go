@@ -12,6 +12,7 @@ import (
 func writeLinkshelfSmokeFingerprintFixture(t *testing.T, townRoot, rig string, indexBody string) {
 	t.Helper()
 	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
+	writeLinkshelfArchitecture(t, rigDir, true)
 	webDir := filepath.Join(rigDir, "linkshelf", "web")
 	serverDir := filepath.Join(rigDir, "linkshelf", "cmd", "server")
 	if err := os.MkdirAll(filepath.Join(rigDir, "linkshelf", "internal", "api"), 0755); err != nil {

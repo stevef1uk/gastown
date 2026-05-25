@@ -159,7 +159,7 @@ var trackHandlers = map[string]trackFn{
 			r.track.unittestOK = true
 			r.track.hadCmdFailure = false
 		}
-		if cmdErr == nil && isQARuntimeSmokeCommandOK(cmd, r.v) {
+		if cmdErr == nil && isQARuntimeSmokeCommandOK(cmd, r.townRoot, r.rig, r.v) {
 			r.track.qaSmokeOK = true
 			r.track.hadCmdFailure = false
 		}
@@ -223,7 +223,7 @@ var artifactFailureHints = map[string]func(*stateRunner) string{
 			minPlan, beadIDExample(r.townRoot, r.rig), work, r.rig)
 	},
 	"plan_review": func(r *stateRunner) string {
-		return fmt.Sprintf("Run `bd list --status=open` from %s with BEADS_DIR set; compare titles to architecture required_files. Use outcome failure to send the Planner back to fix duplicates or missing paths.", rigMayorRigPath(r.rig))
+		return fmt.Sprintf("Run `bd list --status=open` from %s; compare beads to required_files. Read SPEC.md — architecture.md and plan.md must match SPEC HTTP routes and store API names (no /links vs /api/links drift, no ListLinks). Use outcome failure to send the Planner back.", rigMayorRigPath(r.rig))
 	},
 	"implementation": func(r *stateRunner) string {
 		hint := fmt.Sprintf("One bead at a time from %s (BEADS_DIR=$GT_ROOT/%s/.beads): bd update → heredoc under %s/ → %s → bd close → JSON.",
@@ -235,8 +235,12 @@ var artifactFailureHints = map[string]func(*stateRunner) string{
 	},
 	"qa": func(r *stateRunner) string {
 		hint := "Run real CMD: lines (not markdown fences): bd list --status=closed, head SPEC.md, " + r.v.UnittestCommandHint() + " from " + rigMayorRigPath(r.rig) + "."
-		if requiresQARuntimeSmoke(r.v) {
-			hint += " Web/API smoke required: go run server, curl -sf each asset path from index.html, GET API must return [] not null, POST must not 405, SPA section links use /#id. gt-agent stops the server when QA finishes."
+		if requiresQARuntimeSmoke(r.townRoot, r.rig, r.v) {
+			if orchestrator.WorkflowUsesPython(r.v) {
+				hint += " HTTP smoke only if SPEC documents API routes and profile includes a server entrypoint."
+			} else {
+				hint += " Runtime smoke from SPEC only (go run when profile has cmd/server + web): static assets and API paths in docs — not invented /api/ routes. gt-agent stops the server when QA finishes."
+			}
 		}
 		return hint + " If unit tests pass but smoke fails and code matches architecture, use architecture_failure (resets to architect). If tests fail or code violates SPEC, use failure. Do not repeat go run+curl — reply with JSON only. No /workspace paths."
 	},

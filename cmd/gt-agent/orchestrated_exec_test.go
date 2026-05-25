@@ -203,7 +203,7 @@ func TestStateRunner_rewriteCommand_qaGoRunSleepOnly(t *testing.T) {
 	if !orchestrator.IsProfileDerivedSmokeCommand(got) {
 		t.Fatalf("rewritten cmd should be profile-derived smoke: %q", got)
 	}
-	if !isQARuntimeSmokeCommandOK(got, r.v) {
+	if !isQARuntimeSmokeCommandOK(got, r.townRoot, r.rig, r.v) {
 		t.Fatalf("rewritten cmd should count as QA runtime smoke (runner v): %q", got)
 	}
 	if d := orchestratedCommandTimeoutForTrack("qa", got); d != 45*time.Second {
@@ -220,10 +220,10 @@ func TestIsQARuntimeSmokeCommandOK_profileProbeWithoutAgentCurl(t *testing.T) {
 	if !ok {
 		t.Fatal("expected profile probe")
 	}
-	if !isQARuntimeSmokeCommandOK(built, v) {
+	if !isQARuntimeSmokeCommandOK(built, townRoot, rig, v) {
 		t.Fatalf("profile probe should qualify as QA smoke: %q", built)
 	}
-	if isQARuntimeSmokeCommandOK("go run ./cmd/server & sleep 4", v) {
+	if isQARuntimeSmokeCommandOK("go run ./cmd/server & sleep 4", townRoot, rig, v) {
 		t.Fatal("raw sleep-only go run must not qualify before rewrite")
 	}
 }

@@ -93,6 +93,9 @@ func validateImplementWriteScope(townRoot, rig, activeBead, written string, v Wo
 		return nil
 	}
 	if PathMatchesImplementWrite(written, allowedPath, v.RequiredFiles) {
+		if err := ValidateHTTPHandlerBeadPrerequisites(filepath.Join(townRoot, rig, "mayor", "rig"), written, v); err != nil {
+			return err
+		}
 		return nil
 	}
 	// Same-bead unit tests (e.g. schema.go → schema_test.go) are not separate implement beads.

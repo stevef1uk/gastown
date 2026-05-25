@@ -112,7 +112,10 @@ func TestStateRunner_rigFlowHooksTrackAndArtifacts(t *testing.T) {
 	planPath := filepath.Join(rigDir, "plan.md")
 	planning := rigFlowTask(t, "planning", orchestrator.WorkflowValidation{MinPlanBytes: minBytes})
 	r = newStateRunner(planning, dir, "myrig")
-	if err := os.WriteFile(planPath, make([]byte, minBytes), 0644); err != nil {
+	if err := orchestrator.WriteAlignedPlanningDocsForTest(rigDir); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(planPath, append(make([]byte, minBytes), '\n'), 0644); err != nil {
 		t.Fatal(err)
 	}
 	listOpenImplementationBeadsHook = func(_, _ string) ([]orchestrator.PlanBead, error) {

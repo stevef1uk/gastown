@@ -49,7 +49,17 @@ func crossBeadSymbolIssues(mayorRigDir, relPath, content string, v WorkflowValid
 
 	if IsSQLiteSchemaBeadPath(relPath) {
 		later := symbolsOwnedByLaterSiblings(mayorRigDir, relPath, v)
+		schemaOwned := symbolNameSet(ArchitectureContractOwnedSymbolNames(mayorRigDir, relPath, v))
+		for _, n := range readExportedGoSymbolsFromRig(mayorRigDir, relPath).Types {
+			schemaOwned[n] = true
+		}
+		for _, n := range readExportedGoSymbolsFromRig(mayorRigDir, relPath).Funcs {
+			schemaOwned[n] = true
+		}
 		for _, name := range incoming.Types {
+			if schemaOwned[name] {
+				continue
+			}
 			for _, t := range later.Types {
 				if t == name {
 					issues = append(issues, fmt.Sprintf("type %s belongs on a later implement file in this package — schema bead is DDL/types only", name))
@@ -57,6 +67,9 @@ func crossBeadSymbolIssues(mayorRigDir, relPath, content string, v WorkflowValid
 			}
 		}
 		for _, name := range incoming.Funcs {
+			if schemaOwned[name] {
+				continue
+			}
 			for _, f := range later.Funcs {
 				if f == name {
 					issues = append(issues, fmt.Sprintf("func %s belongs on a later implement file in this package (e.g. store API)", name))

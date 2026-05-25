@@ -61,6 +61,32 @@ func TestValidateImplementCrossBeadContent_allowsInitSchemaOnSchemaBead(t *testi
 	}
 }
 
+// Regression: store.go Depends column lists InitSchema; schema bead must still own InitSchema (not blocked as "later" API).
+func TestValidateImplementCrossBeadContent_allowsInitSchemaWhenStoreDependsColumnMentionsIt(t *testing.T) {
+	t.Parallel()
+	rigDir := t.TempDir()
+	arch := `| Package | File | Owns (exported) | Depends on |
+| --- | --- | --- | --- |
+| datastore | app/internal/store/schema.go | ` + "`func InitSchema(db *sql.DB) error` `type Record struct{}`" + ` | |
+| datastore | app/internal/store/store.go | ` + "`func List(context.Context) ([]Record, error)`" + ` | ` + "`type Record` `func InitSchema`" + ` |
+`
+	if err := os.WriteFile(filepath.Join(rigDir, "architecture.md"), []byte(arch), 0644); err != nil {
+		t.Fatal(err)
+	}
+	v := WorkflowValidation{
+		LayoutRoot:      "app",
+		QAVerifyCommand: "cd app && go test ./...",
+		RequiredFiles: []string{
+			"app/internal/store/schema.go",
+			"app/internal/store/store.go",
+		},
+	}
+	body := "package store\n\nimport \"database/sql\"\n\nfunc InitSchema(db *sql.DB) error { return nil }\n"
+	if err := ValidateImplementCrossBeadContent(rigDir, "app/internal/store/schema.go", body, v); err != nil {
+		t.Fatalf("got %v", err)
+	}
+}
+
 func TestValidateImplementCrossBeadContent_rejectsStoreMethodsOnSchema(t *testing.T) {
 	t.Parallel()
 	v := linkshelfStoreValidation()

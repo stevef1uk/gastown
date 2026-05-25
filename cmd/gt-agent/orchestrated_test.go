@@ -412,6 +412,9 @@ func TestValidatePlanningCommand_forbidsImplementation(t *testing.T) {
 		"cat > backend/fizzbuzz.py <<'EOF'",
 		"git commit -m x",
 		"python3 backend/main.py",
+		"cd linkshelf && go test ./...",
+		"cd mockrig/mayor/rig/linkshelf && go run ./cmd/server",
+		"curl -sf http://127.0.0.1:8080/api/links",
 	}
 	for _, cmd := range cases {
 		if err := validatePlanningCommand(cmd, "mockrig"); err == nil {
@@ -458,6 +461,9 @@ func TestValidatePlanningArtifacts(t *testing.T) {
 		t.Fatal("expected error without plan and beads")
 	}
 	if err := os.WriteFile(filepath.Join(rigDir, "architecture.md"), make([]byte, 500), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := orchestrator.WriteAlignedPlanningDocsForTest(rigDir); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(rigDir, "plan.md"), make([]byte, 250), 0644); err != nil {
@@ -559,7 +565,10 @@ func TestOrchestratedArtifactAutoOutcome_planningRequiresBeads(t *testing.T) {
 	if err := os.MkdirAll(rigDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(rigDir, "plan.md"), make([]byte, 250), 0644); err != nil {
+	if err := orchestrator.WriteAlignedPlanningDocsForTest(rigDir); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(rigDir, "plan.md"), append(make([]byte, 250), '\n'), 0644); err != nil {
 		t.Fatal(err)
 	}
 	task := &orchestrator.Task{

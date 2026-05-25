@@ -143,7 +143,7 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 	if rig == "" {
 		return "failure", "workflow rig name not set", "", fmt.Errorf("orchestrator rig variable missing")
 	}
-	systemPrompt := buildOrchestratedSystemPrompt(task)
+	systemPrompt := buildOrchestratedSystemPrompt(task, townRoot)
 	userPrompt := buildOrchestratedUserPrompt(task)
 	var contextBlocks []string
 	if block := drainOrchestratedNudges(townRoot, sessionName); block != "" {
@@ -1339,6 +1339,25 @@ func validateImplementationBeadFileWrite(cmd, townRoot, rig, activeBead string, 
 	return orchestrator.ValidateImplementWritePath(townRoot, rig, activeBead, written, v, false, "")
 }
 
+func validatePlanningRuntimeCommands(lower string) error {
+	for _, blocked := range []struct {
+		sub string
+		msg string
+	}{
+		{"go test", "must not run go test in planning — polecat verifies after implementation"},
+		{"go build", "must not run go build in planning — polecat verifies after implementation"},
+		{"go run", "must not run go run in planning — no server smoke until QA/implementation"},
+		{"go vet", "must not run go vet in planning step"},
+		{"pytest", "must not run pytest in planning step"},
+		{"curl ", "must not run curl/runtime smoke in planning step"},
+	} {
+		if strings.Contains(lower, blocked.sub) {
+			return fmt.Errorf("%s", blocked.msg)
+		}
+	}
+	return nil
+}
+
 func validatePlanningShellSideEffects(lower string) error {
 	gitCmd := strings.Contains(lower, "git") &&
 		(strings.Contains(lower, " commit") || strings.Contains(lower, " push") || strings.Contains(lower, " add"))
@@ -1423,6 +1442,9 @@ func validatePlanningCommand(cmd, rig string) error {
 
 	if isPlanMDHeredoc(cmd) {
 		return validatePlanningPlanHeredoc(cmd)
+	}
+	if err := validatePlanningRuntimeCommands(lower); err != nil {
+		return err
 	}
 
 	if strings.Contains(lower, "gt bd add") || strings.Contains(lower, "bd add") {
@@ -1579,6 +1601,9 @@ func validatePlanningArtifacts(townRoot, rig string, hadCmdFailure, beadCreateOK
 		if err := validateRigOpenBeads(townRoot, rig); err != nil {
 			return err
 		}
+	}
+	if err := orchestrator.ValidatePlanningDocAlignment(rigDir, v); err != nil {
+		return fmt.Errorf("align SPEC.md, architecture.md, and plan.md before plan review: %w", err)
 	}
 	if hadCmdFailure {
 		return fmt.Errorf("planning step had failed commands; fix errors before completing")
@@ -2040,6 +2065,9 @@ func validatePlanReviewArtifacts(townRoot, rig string, hadCmdFailure, listOpenOK
 	if err := orchestrator.ValidatePlanBeads(open, archPath, v, rig); err != nil {
 		return fmt.Errorf("plan beads do not match architecture/profile: %w", err)
 	}
+	if err := orchestrator.ValidatePlanningDocAlignment(rigDir, v); err != nil {
+		return fmt.Errorf("SPEC/architecture/plan must agree before build: %w", err)
+	}
 	return nil
 }
 
@@ -2094,7 +2122,7 @@ func validateQAArtifacts(townRoot, rig, outcome string, hadCmdFailure, bdListClo
 		if !unittestOK {
 			return fmt.Errorf("architecture_failure requires green %s in this session — use outcome failure for test failures", v.UnittestCommandHint())
 		}
-		if requiresQARuntimeSmoke(v) && qaSmokeOK {
+		if requiresQARuntimeSmoke(townRoot, rig, v) && qaSmokeOK {
 			return fmt.Errorf("architecture_failure requires failed runtime smoke while unit tests pass — use all_passed if smoke passed")
 		}
 		if err := validateRequiredWorkFiles(townRoot, rig, v); err != nil {
@@ -2105,7 +2133,7 @@ func validateQAArtifacts(townRoot, rig, outcome string, hadCmdFailure, bdListClo
 		}
 		return nil
 	}
-	if sendToImpl && unittestOK && requiresQARuntimeSmoke(v) && !qaSmokeOK {
+	if sendToImpl && unittestOK && requiresQARuntimeSmoke(townRoot, rig, v) && !qaSmokeOK {
 		return fmt.Errorf("unit tests passed but runtime smoke failed — if implementation matches architecture.md, use outcome architecture_failure (architect revises design); use failure only for code bugs")
 	}
 	if !sendToImpl {
@@ -2121,8 +2149,8 @@ func validateQAArtifacts(townRoot, rig, outcome string, hadCmdFailure, bdListClo
 		if err := validateWebStaticReferences(townRoot, rig, v); err != nil {
 			return err
 		}
-		if requiresQARuntimeSmoke(v) && !qaSmokeOK {
-			return fmt.Errorf("web/API QA requires a successful runtime smoke CMD in this gt-agent session before all_passed (qa-review-progress.json does not count); run `go run` + curl for `/`, static assets, and API GET/POST")
+		if requiresQARuntimeSmoke(townRoot, rig, v) && !qaSmokeOK {
+			return fmt.Errorf("QA requires a successful runtime smoke CMD in this gt-agent session before all_passed (qa-review-progress.json does not count); probes come from SPEC/architecture only — no invented API routes")
 		}
 	}
 	if sendToImpl {
@@ -2147,18 +2175,22 @@ func validateQAArtifacts(townRoot, rig, outcome string, hadCmdFailure, bdListClo
 	return nil
 }
 
-func requiresQARuntimeSmoke(v orchestrator.WorkflowValidation) bool {
-	return orchestrator.WorkflowNeedsRuntimeSmoke(v)
+func requiresQARuntimeSmoke(townRoot, rig string, v orchestrator.WorkflowValidation) bool {
+	return orchestrator.WorkflowNeedsQARuntimeSmoke(townRoot, rig, v)
 }
 
-func isQARuntimeSmokeCommandOK(cmd string, v orchestrator.WorkflowValidation) bool {
-	if !requiresQARuntimeSmoke(v) {
+func isQARuntimeSmokeCommandOK(cmd, townRoot, rig string, v orchestrator.WorkflowValidation) bool {
+	if !requiresQARuntimeSmoke(townRoot, rig, v) {
 		return false
 	}
 	if orchestrator.IsProfileDerivedSmokeCommand(cmd) {
 		return true
 	}
 	lower := strings.ToLower(strings.Join(strings.Fields(cmd), " "))
+	if orchestrator.WorkflowUsesPython(v) {
+		return strings.Contains(lower, "curl ") &&
+			(strings.Contains(lower, "localhost") || strings.Contains(lower, "127.0.0.1"))
+	}
 	if !strings.Contains(lower, "go run") || !strings.Contains(lower, "cmd/server") {
 		return false
 	}
@@ -2168,23 +2200,24 @@ func isQARuntimeSmokeCommandOK(cmd string, v orchestrator.WorkflowValidation) bo
 	if !strings.Contains(lower, "localhost") && !strings.Contains(lower, "127.0.0.1") {
 		return false
 	}
-	if !strings.Contains(lower, " /api/") && !strings.Contains(lower, "/api/") {
-		return false
-	}
-	if profileHasAPI(v) && !strings.Contains(lower, "post") && !strings.Contains(lower, " -d ") && !strings.Contains(lower, " --data") {
-		return false
-	}
-	return true
-}
-
-func profileHasAPI(v orchestrator.WorkflowValidation) bool {
-	for _, f := range append(append([]string(nil), v.RequiredFiles...), v.UnionRequiredFiles()...) {
-		f = strings.ToLower(filepath.ToSlash(strings.TrimSpace(f)))
-		if strings.Contains(f, "/api/") || strings.Contains(f, "handler") {
-			return true
+	spec, _ := orchestrator.LoadAPISmokeSpecFromRig(townRoot, rig, v)
+	if orchestrator.APISmokeHasHTTPAPI(spec) {
+		if !strings.Contains(lower, " /api/") && !strings.Contains(lower, "/api/") {
+			return false
+		}
+		if !strings.Contains(lower, "post") && !strings.Contains(lower, " -d ") && !strings.Contains(lower, " --data") {
+			return false
+		}
+	} else {
+		// SPEC has no API table — do not count smoke that probes invented /api/ routes.
+		if strings.Contains(lower, "/api/") {
+			return false
+		}
+		if strings.Contains(lower, " -x post") || strings.Contains(lower, " -d ") || strings.Contains(lower, " --data") {
+			return false
 		}
 	}
-	return false
+	return true
 }
 
 var htmlAttrRefRE = regexp.MustCompile(`(?i)\b(src|href)\s*=\s*["']([^"'#][^"']*)["']`)
@@ -2361,8 +2394,8 @@ func validateDesignArtifacts(townRoot, rig string, writtenThisRun bool, v orches
 	return nil
 }
 
-func buildOrchestratedSystemPrompt(task *orchestrator.Task) string {
-	vars := orchestratorPromptVars(task)
+func buildOrchestratedSystemPrompt(task *orchestrator.Task, townRoot string) string {
+	vars := orchestratorPromptVars(task, townRoot)
 	var b strings.Builder
 	if task.SystemPrompt != "" {
 		b.WriteString(strings.TrimSpace(task.SystemPrompt))
@@ -2402,10 +2435,14 @@ func buildOrchestratedSystemPrompt(task *orchestrator.Task) string {
 	return b.String()
 }
 
-func orchestratorPromptVars(task *orchestrator.Task) map[string]string {
+func orchestratorPromptVars(task *orchestrator.Task, townRoot string) map[string]string {
 	vars := map[string]string{"rig": task.Rig}
-	for k, v := range task.Validation.WithDefaults().PromptVars() {
-		vars[k] = v
+	v := task.Validation.WithDefaults()
+	for k, val := range v.PromptVars() {
+		vars[k] = val
+	}
+	if townRoot != "" && task.Rig != "" {
+		vars["qa_runtime_smoke_block"] = orchestrator.RigFlowQARuntimeSmokeBlock(townRoot, task.Rig, v)
 	}
 	return vars
 }

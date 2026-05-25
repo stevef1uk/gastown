@@ -144,7 +144,7 @@ func (r *stateRunner) initQAReviewProgress() string {
 		r.qaProgress = newQAReviewProgress(r.task.WorkflowID, r.task.State, r.rig)
 	}
 	r.applyQAProgressToTrack()
-	return formatQAReviewProgressBlock(r.qaProgress, r.rig, r.v.UnittestCommandHint(), requiresQARuntimeSmoke(r.v), r.track.qaSmokeOK)
+	return formatQAReviewProgressBlock(r.qaProgress, r.rig, r.v.UnittestCommandHint(), requiresQARuntimeSmoke(r.townRoot, r.rig, r.v), r.track.qaSmokeOK)
 }
 
 // invalidateStaleRuntimeSmoke drops a persisted runtime_smoke milestone when handler/web

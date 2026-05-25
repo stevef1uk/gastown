@@ -120,6 +120,7 @@ func normalizeSmokePath(path string) string {
 			return ""
 		}
 	}
+	path = strings.TrimRight(path, ".,;:!?)")
 	return path
 }
 

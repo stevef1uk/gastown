@@ -29,6 +29,7 @@ func TestValidateQAArtifacts_architectureFailure_scenario(t *testing.T) {
 	dir := t.TempDir()
 	rig := "testrig"
 	rigDir := rigMayorRigDir(dir, rig)
+	writeLinkshelfArchitecture(t, rigDir, false)
 	layout := filepath.Join(rigDir, "linkshelf")
 	for _, rel := range v.RequiredFiles {
 		p := filepath.Join(rigDir, filepath.FromSlash(rel))

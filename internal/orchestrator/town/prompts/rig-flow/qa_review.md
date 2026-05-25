@@ -46,12 +46,11 @@ gt-agent persists completed checks in `{{rig}}/qa/qa-review-progress.json` for t
    ```
    Only review beads whose title contains `{{bead_title_contains}}`. Ignore patrol/agent identity beads (`*-architect`, `*-qa`, `*-witness`, `*-refinery`, `*-polecat`, `*-crew-*`).
 
-4. Read SPEC and code (from town root or after `cd {{rig}}/mayor/rig`). **Reject stubs** in source (HTML/JS/Py/Go, etc.) — not dependency manifests. `requirements.txt`, `go.mod`, `go.sum`, `package.json`, lockfiles, and `pyproject.toml` only need to exist and be **non-empty** (no {{min_implementation_file_bytes}} check). Use `wc -c` and `head` on code under `{{layout_root}}/`:
+4. Read SPEC and code (from town root or after `cd {{rig}}/mayor/rig`). **Reject stubs** in source (HTML/JS/Py/Go, etc.) — not dependency manifests. `requirements.txt`, `go.mod`, `go.sum`, `package.json`, lockfiles, and `pyproject.toml` only need to exist and be **non-empty** (no {{min_implementation_file_bytes}} check). Audit paths from **required_files** / architecture — Python rigs often use `backend/` or `src/`, Go rigs use `{{layout_root}}/web/`, not a fixed `frontend/` tree:
    ```
    CMD: cat {{rig}}/mayor/rig/SPEC.md
    CMD: cat {{rig}}/mayor/rig/architecture.md
-   CMD: find {{rig}}/mayor/rig/{{layout_root}} -type f \( -name '*.html' -o -name '*.js' -o -name '*.py' -o -name '*.css' \) -exec wc -c {} +
-   CMD: head -n 30 {{rig}}/mayor/rig/{{layout_root}}/frontend/index.html
+   CMD: find {{rig}}/mayor/rig/{{layout_root}} -type f \( -name '*.html' -o -name '*.js' -o -name '*.py' -o -name '*.css' -o -name '*.go' \) -exec wc -c {} +
    ```
    Automated guard: code files need ≥{{min_implementation_file_bytes}} bytes and ≥{{min_substantive_lines}} substantive lines; dependency manifests are exempt.
 
@@ -61,29 +60,9 @@ gt-agent persists completed checks in `{{rig}}/qa/qa-review-progress.json` for t
    CMD: cd {{rig}}/mayor/rig && {{unittest_command_hint}}
    ```
 
-6. **Web/API runtime smoke** (required when the profile includes HTML/JS under `web/` **and** `cmd/server/main.go`). Unit tests alone miss integration bugs — run **one CMD** that starts the server, exercises the app, then exits (gt-agent **frees stale listeners before each `go run`** and stops the server when the step finishes). Check every item below; use `failure` if any check fails.
+6. {{qa_runtime_smoke_block}}
 
-   | Bug class | What to verify | How |
-   |-----------|----------------|-----|
-   | Broken static assets | Every `src=` / `href=` to `.js` / `.css` returns **200**, not 404 | `curl -sf` each path from `index.html` (same URLs architecture defines — see **From architecture.md** in implement context) |
-   | SPA nav 404 | Section links on a **single-page** app must not request separate routes like `/bookmarks` unless the server implements them | Use `href="/#bookmarks"` (or `/#id`) for in-page sections; `curl -sf` bare `/bookmarks` should **not** be required for pass |
-   | Empty API list | Empty collections must be JSON **`[]`**, not **`null`** | `curl -s http://127.0.0.1:PORT/api/...` — body must be `[]` or a non-null array; Go stores need `make([]T, 0)` not bare `nil` slice |
-   | Create API missing | Forms that POST must have a working handler | `curl -sf -X POST -H 'Content-Type: application/json' -d '{"title":"QA smoke","url":"https://example.com"}' http://127.0.0.1:PORT/api/...` — expect **201** or **200**, not **405** |
-   | Frontend vs API | UI must not call `.length` / `.map` on API `null` | After GET list, confirm JS handles `[]`; grep frontend for `fetch`/`POST` paths and match server routes |
-
-   {{static_url_contract_guidance}}
-
-   gt-agent **rewrites** any `go run ./cmd/server` CMD (even `go run … & sleep` with no curls) into a **background server + curl probe** from **SPEC.md / architecture.md / plan.md** (HTTP table + every static `src`/`href` in `web/index.html`). Do **not** run synchronous `go run ./cmd/server` alone — it blocks the session. Do **not** rely on `sleep` instead of curls.
-
-   Prefer one smoke **CMD** starting the server (gt-agent injects curls — **do not** hand-pick `/app.js` vs `/static/…`; read architecture first):
-   ```
-   CMD: cd {{rig}}/mayor/rig/{{layout_root}} && go run ./cmd/server
-   ```
-   If POST or GET list fails, outcome **`failure`** with the HTTP status and response body in the summary.
-
-   **Fast-fail (do not lock the rig):** If smoke or `{{unittest_command_hint}}` fails or times out, **do not** run the same long `go run`+`curl` CMD again. In your **next** message send **JSON only**: `{"outcome":"failure","summary":"..."}` with HTTP codes, broken paths, and bead IDs from `bd list`. gt-agent stops dev servers and releases the port after a failed or timed-out smoke CMD.
-
-   If `go run` fails with "address already in use", run **`CMD: bash "${GASTOWN:-$HOME/dev/freeride/gastown}/scripts/stop-rig-dev-servers.sh" 8080`** (adjust port), then **one** retry of the smoke CMD. gt-agent also auto-scrubs before `go run`; if retry still fails, report **`failure`** JSON — do not loop smoke commands across turns.
+   **Fast-fail:** If verification or smoke fails, **do not** repeat the same long CMD. Next message: **JSON only** with errors and bead IDs. gt-agent stops dev servers after failed smoke.
 
 7. Re-run verification if needed before finishing:
    ```

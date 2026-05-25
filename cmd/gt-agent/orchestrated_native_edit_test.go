@@ -553,6 +553,13 @@ func TestNativeEdit_WRITE_rejectsChdirInHandlerTest(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(mayor, "linkshelf/internal/api"), 0755); err != nil {
 		t.Fatal(err)
 	}
+	webDir := filepath.Join(mayor, "linkshelf/web")
+	if err := os.MkdirAll(webDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(webDir, "index.html"), []byte("<!DOCTYPE html><html></html>"), 0644); err != nil {
+		t.Fatal(err)
+	}
 	v := linkshelfImplementValidation(
 		"linkshelf/internal/api/handlers_test.go",
 		"linkshelf/web/index.html",

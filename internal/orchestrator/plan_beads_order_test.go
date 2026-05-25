@@ -242,6 +242,29 @@ func TestOrderRequiredFilesForImplementation(t *testing.T) {
 	}
 }
 
+func TestOrderRequiredFilesForImplementation_webBeforeHandlers(t *testing.T) {
+	t.Parallel()
+	files := []string{
+		"linkshelf/cmd/server/main.go",
+		"linkshelf/internal/api/handlers.go",
+		"linkshelf/web/index.html",
+		"linkshelf/internal/store/store.go",
+	}
+	got := OrderRequiredFilesForImplementation(files)
+	var webIdx, handlerIdx = -1, -1
+	for i, p := range got {
+		if strings.Contains(p, "/web/") {
+			webIdx = i
+		}
+		if strings.Contains(p, "/internal/api/handlers.go") {
+			handlerIdx = i
+		}
+	}
+	if webIdx < 0 || handlerIdx < 0 || webIdx > handlerIdx {
+		t.Fatalf("web before handlers: %v", got)
+	}
+}
+
 func TestBeadsDatabaseReady_falseWithoutInit(t *testing.T) {
 	t.Parallel()
 	town := t.TempDir()

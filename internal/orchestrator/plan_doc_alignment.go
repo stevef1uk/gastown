@@ -1,0 +1,314 @@
+package orchestrator
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"regexp"
+	"sort"
+	"strings"
+)
+
+var (
+	goModModuleLineRE     = regexp.MustCompile(`(?m)^module\s+(\S+)`)
+	planWrongModuleRE     = regexp.MustCompile(`(?i)(?:^|\s)module\s+(?:github\.com/)?example\b|github\.com/example`)
+	storeHallucinationREs = []*regexp.Regexp{
+		regexp.MustCompile(`\bListLinks\b`),
+		regexp.MustCompile(`\bCreateLink\b`),
+		regexp.MustCompile(`\bDeleteLink\b`),
+		regexp.MustCompile(`\bGetLinks\b`),
+		regexp.MustCompile(`\bNewStore\s*\(`),
+		regexp.MustCompile(`\btype\s+Store\s+struct\b`),
+	}
+	planMandatoryTestRE = []*regexp.Regexp{
+		regexp.MustCompile(`(?i)httptest\s+(?:is\s+)?(?:required|mandatory)`),
+		regexp.MustCompile(`(?i)eslint\s+(?:is\s+)?(?:required|mandatory)`),
+		regexp.MustCompile(`(?i)(?:unit|integration)\s+tests?\s+must\b`),
+		regexp.MustCompile(`(?i)mandatory\s+.*_test\.go`),
+		regexp.MustCompile(`(?i)every\s+bead\s+must\s+include\s+.*_test\.go`),
+	}
+	integrationContractHeadingRE = regexp.MustCompile(`(?im)^##\s+integration\s+contract\b`)
+)
+
+// WriteAlignedPlanningDocsForTest writes minimal SPEC/architecture/plan stubs for gt-agent tests.
+func WriteAlignedPlanningDocsForTest(rigDir string) error {
+	spec := "# Test SPEC\n"
+	arch := "# Test architecture\nAligned with SPEC.\n"
+	plan := "# Test plan\n## Bead map\n### test-1: main.go\n- Scope: test\n"
+	for name, body := range map[string]string{"SPEC.md": spec, "architecture.md": arch, "plan.md": plan} {
+		if err := os.WriteFile(filepath.Join(rigDir, name), []byte(body), 0644); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// ValidatePlanningDocAlignment ensures SPEC.md, architecture.md, and plan.md agree on HTTP routes,
+// store API names, and module identity before project_setup / implementation.
+func ValidatePlanningDocAlignment(rigDir string, v WorkflowValidation) error {
+	specDoc := readRigDoc(rigDir, "SPEC.md")
+	archDoc := readRigDoc(rigDir, "architecture.md")
+	planDoc := readRigDoc(rigDir, "plan.md")
+	if strings.TrimSpace(specDoc) == "" {
+		return fmt.Errorf("SPEC.md missing or empty under %s", rigDir)
+	}
+
+	var issues []string
+	issues = append(issues, checkHTTPDocAlignment("architecture.md", archDoc, specDoc, v)...)
+	issues = append(issues, checkHTTPDocAlignment("plan.md", planDoc, specDoc, v)...)
+	issues = append(issues, checkStoreAPIAlignment("architecture.md", archDoc, specDoc)...)
+	issues = append(issues, checkStoreAPIAlignment("plan.md", planDoc, specDoc)...)
+	issues = append(issues, checkGoModuleAlignment("architecture.md", archDoc, specDoc, v)...)
+	issues = append(issues, checkGoModuleAlignment("plan.md", planDoc, specDoc, v)...)
+	issues = append(issues, checkPlanTestMandate(planDoc, v)...)
+	issues = append(issues, checkPlanIntegrationContract(planDoc, v)...)
+
+	if len(issues) == 0 {
+		return nil
+	}
+	if len(issues) > 10 {
+		issues = append(issues[:10], fmt.Sprintf("…and %d more", len(issues)-10))
+	}
+	return fmt.Errorf("SPEC/architecture/plan misaligned: %s", strings.Join(issues, "; "))
+}
+
+func checkHTTPDocAlignment(docName, doc, specDoc string, v WorkflowValidation) []string {
+	if strings.TrimSpace(doc) == "" {
+		return nil
+	}
+	specAPI := parseAPISmokeSpecText(specDoc, v)
+	specPaths := apiPathSet(specAPI)
+	if len(specPaths) == 0 {
+		return nil
+	}
+	docAPI := parseAPISmokeSpecText(doc, v)
+	var issues []string
+	for _, p := range docAPI.GETPaths {
+		if issue := httpPathDriftIssue(docName, p, specPaths); issue != "" {
+			issues = append(issues, issue)
+		}
+	}
+	for _, probe := range docAPI.POSTProbes {
+		if issue := httpPathDriftIssue(docName, probe.Path, specPaths); issue != "" {
+			issues = append(issues, issue)
+		}
+	}
+	return issues
+}
+
+func apiPathSet(api APISmokeSpec) map[string]bool {
+	out := make(map[string]bool)
+	for _, p := range api.GETPaths {
+		out[p] = true
+	}
+	for _, probe := range api.POSTProbes {
+		out[probe.Path] = true
+	}
+	return out
+}
+
+func httpPathDriftIssue(docName, path string, specPaths map[string]bool) string {
+	path = normalizeSmokePath(path)
+	if path == "" {
+		return ""
+	}
+	if specPaths[path] {
+		return ""
+	}
+	if conflictingCanonicalPath(path, specPaths) != "" {
+		return fmt.Sprintf("%s uses %s but SPEC routes are %s", docName, path, conflictingCanonicalPath(path, specPaths))
+	}
+	return fmt.Sprintf("%s documents HTTP path %s not present in SPEC (canonical: %s)", docName, path, joinSortedPathKeys(specPaths))
+}
+
+// conflictingCanonicalPath returns a SPEC path that shares the same resource suffix (e.g. /links vs /api/links).
+func conflictingCanonicalPath(path string, specPaths map[string]bool) string {
+	bare := strings.TrimPrefix(path, "/")
+	var matches []string
+	for sp := range specPaths {
+		if sp == path {
+			continue
+		}
+		if strings.HasSuffix(sp, "/"+bare) || strings.HasSuffix(path, strings.TrimPrefix(sp, "/")) {
+			matches = append(matches, sp)
+		}
+	}
+	if len(matches) == 0 {
+		return ""
+	}
+	sort.Strings(matches)
+	return strings.Join(matches, ", ")
+}
+
+func joinSortedPathKeys(paths map[string]bool) string {
+	var keys []string
+	for k := range paths {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return strings.Join(keys, ", ")
+}
+
+func checkStoreAPIAlignment(docName, doc, specDoc string) []string {
+	if strings.TrimSpace(doc) == "" {
+		return nil
+	}
+	canonical := canonicalStoreSymbolsFromSPEC(specDoc)
+	if len(canonical) == 0 {
+		return nil
+	}
+	canonList := strings.Join(sortedKeys(canonical), ", ")
+	var issues []string
+	for _, re := range storeHallucinationREs {
+		if m := re.FindString(doc); m != "" {
+			issues = append(issues, fmt.Sprintf("%s uses %s; SPEC store API: %s", docName, m, canonList))
+		}
+	}
+	for _, alt := range storeSymbolAlternatives(canonical) {
+		if wordInDoc(doc, alt) && isForbiddenStoreAlias(alt, canonical) {
+			issues = append(issues, fmt.Sprintf("%s uses %s; SPEC store API: %s", docName, alt, canonList))
+		}
+	}
+	return dedupeStrings(issues)
+}
+
+// isForbiddenStoreAlias reports wrong store API names. Package-qualified forms like
+// store.List or schema.InitSchema are allowed when the base symbol is in SPEC.
+func isForbiddenStoreAlias(name string, canonical map[string]bool) bool {
+	if canonical[name] {
+		return false
+	}
+	if i := strings.LastIndex(name, "."); i >= 0 {
+		if canonical[strings.TrimSpace(name[i+1:])] {
+			return false
+		}
+	}
+	return true
+}
+
+func canonicalStoreSymbolsFromSPEC(specDoc string) map[string]bool {
+	var chunks []string
+	for _, heading := range []string{"Store", "Data model", "HTTP", "API"} {
+		if s := ExtractSpecMarkdownSection(specDoc, heading); s != "" {
+			chunks = append(chunks, s)
+		}
+	}
+	for _, block := range goCodeFenceRE.FindAllStringSubmatch(specDoc, -1) {
+		if len(block) >= 2 {
+			chunks = append(chunks, block[1])
+		}
+	}
+	seen := map[string]bool{}
+	for _, chunk := range chunks {
+		for _, sym := range extractContractSymbolsFromGoSource(chunk) {
+			seen[sym] = true
+		}
+	}
+	return seen
+}
+
+func storeSymbolAlternatives(canonical map[string]bool) []string {
+	altMap := map[string][]string{
+		"List":       {"ListLinks", "GetLinks"},
+		"Create":     {"CreateLink", "AddLink"},
+		"Delete":     {"DeleteLink", "RemoveLink"},
+		"InitSchema": {"InitDB", "Migrate"},
+	}
+	var out []string
+	for canon, alts := range altMap {
+		if !canonical[canon] {
+			continue
+		}
+		out = append(out, alts...)
+	}
+	return out
+}
+
+func wordInDoc(doc, word string) bool {
+	re := regexp.MustCompile(`\b` + regexp.QuoteMeta(word) + `\b`)
+	return re.FindStringIndex(doc) != nil
+}
+
+func checkGoModuleAlignment(docName, doc, specDoc string, v WorkflowValidation) []string {
+	if strings.TrimSpace(doc) == "" {
+		return nil
+	}
+	canonical := canonicalGoModule(specDoc, v)
+	var issues []string
+	if planWrongModuleRE.FindStringIndex(doc) != nil {
+		issues = append(issues, fmt.Sprintf("%s uses placeholder module path (example/...) — SPEC/module is %q", docName, canonical))
+	}
+	if canonical == "" {
+		return issues
+	}
+	if m := goModModuleLineRE.FindStringSubmatch(doc); len(m) >= 2 && m[1] != canonical {
+		issues = append(issues, fmt.Sprintf("%s declares module %s but SPEC expects %s", docName, m[1], canonical))
+	}
+	return issues
+}
+
+func canonicalGoModule(specDoc string, v WorkflowValidation) string {
+	if m := goModModuleLineRE.FindStringSubmatch(specDoc); len(m) >= 2 {
+		return m[1]
+	}
+	layout := strings.Trim(strings.TrimSpace(v.LayoutRoot), "/")
+	if layout != "" && layout != "." {
+		return layout
+	}
+	return ""
+}
+
+func checkPlanTestMandate(planDoc string, v WorkflowValidation) []string {
+	if strings.TrimSpace(planDoc) == "" || profileRequiresTestBeads(v) {
+		return nil
+	}
+	var issues []string
+	for _, re := range planMandatoryTestRE {
+		if loc := re.FindStringIndex(planDoc); loc != nil {
+			issues = append(issues, fmt.Sprintf("plan.md mandates tests (%q) but active phase required_files has no *_test.go — match SPEC/MVP scope", planDoc[loc[0]:loc[1]]))
+			break
+		}
+	}
+	return issues
+}
+
+func profileRequiresTestBeads(v WorkflowValidation) bool {
+	v = v.ForActivePhase()
+	for _, f := range v.RequiredFiles {
+		f = filepath.ToSlash(f)
+		if strings.HasSuffix(f, "_test.go") || strings.Contains(f, "/tests/test_") || strings.HasSuffix(f, "_test.py") {
+			return true
+		}
+	}
+	return false
+}
+
+func checkPlanIntegrationContract(planDoc string, v WorkflowValidation) []string {
+	if strings.TrimSpace(planDoc) == "" || !profileHasServerEntrypoint(v) {
+		return nil
+	}
+	if integrationContractHeadingRE.FindStringIndex(planDoc) != nil {
+		return nil
+	}
+	return []string{"plan.md missing ## Integration contract (entrypoint bead in profile — wire order, route table, exported symbols per SPEC)"}
+}
+
+func profileHasServerEntrypoint(v WorkflowValidation) bool {
+	v = v.ForActivePhase()
+	for _, f := range v.RequiredFiles {
+		f = filepath.ToSlash(f)
+		if strings.Contains(f, "/cmd/") && strings.HasSuffix(f, "main.go") {
+			return true
+		}
+	}
+	return false
+}
+
+func sortedKeys(m map[string]bool) []string {
+	var out []string
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
