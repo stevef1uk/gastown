@@ -281,6 +281,7 @@ For Go profiles with `web/` + `cmd/server/main.go`, **`ImplementationPhaseVerify
 
 - [x] Implementation cannot complete (`validateImplementationArtifacts`) if smoke fails on mayor/rig tree.
 - [x] `implement_runtime_smoke_test.go` integration tests (smoke pass/fail + `ImplementationPhaseVerifyOK` on minimal fixture).
+- [x] On smoke failure with all beads closed: `ReopenImplementationBeadsAfterSmokeFailure` + `FormatImplementationSmokeFailureBlock` (GT_SMOKE markers); `ensure_implement_smoke_ready` pre_run; early reject of success JSON (`implementation_guard.go`).
 
 ---
 

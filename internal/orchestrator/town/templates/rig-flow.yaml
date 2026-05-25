@@ -148,7 +148,7 @@ states:
       on_timeout: [recover_implementation_stall]
       on_state_timeout: [reset_implementation_phase]
       cmd_timeout_seconds: 900
-      max_cmd_turns: 12
+      max_cmd_turns: 20
       omit_orchestrator_context: true
       system_prompt_footer: |
         Prefer READ:/EDIT:/WRITE: for source and test files; `CMD: <shell>` for bd and Verify only. Add/update unit tests from plan.md acceptance before bd close. JSON success in a later message (not with CMD or native tools).
@@ -156,7 +156,7 @@ states:
       failure_prompt_context: [implementation_queue, implement_bead_context]
       empty_response_suffix: "Reply with EDIT:/WRITE:/READ: or CMD: lines. Implement code and unit tests per plan.md; WRITE for new *_test.go or tests/test_*.py. Use Verify from Next bead."
       prompt_context: [implementation_queue, implement_bead_context]
-      pre_run: [close_project_setup_beads, enforce_implement_bead_queue, prune_stale_layout_go, repair_requirements, refresh_codeindex, reconcile_implement_beads]
+      pre_run: [ensure_implement_smoke_ready, close_project_setup_beads, enforce_implement_bead_queue, prune_stale_layout_go, repair_requirements, refresh_codeindex, reconcile_implement_beads]
       per_turn: [repair_requirements]
       cmd_guard: implementation
       cmd_rewrites: [rig_placeholders, backend_path_after_cd, bd_list_implement_scope, unittest_workdir, bd_list_limit, unwrap_bash_lc]

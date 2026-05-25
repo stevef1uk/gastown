@@ -238,9 +238,15 @@ func BuildRuntimeSmokeShell(workDir string, spec APISmokeSpec) string {
 	parts = append(parts, "cd "+workDir)
 	parts = append(parts, "rm -f .gt-smoke.pid")
 	parts = append(parts, "(go run ./cmd/server >/dev/null 2>&1 & echo $! >.gt-smoke.pid)")
+	if m := smokeStepMarker("wait_root"); m != "" {
+		parts = append(parts, m)
+	}
 	parts = append(parts, fmt.Sprintf(`_gtok=0; for _i in 1 2 3 4 5; do curl -sf --connect-timeout 1 --max-time 2 %s/ >/dev/null && _gtok=1 && break; sleep 1; done`, base))
 	parts = append(parts, `test "$_gtok" = 1`)
 	for _, asset := range spec.StaticAssets {
+		if m := smokeStepMarker("GET:" + asset); m != "" {
+			parts = append(parts, m)
+		}
 		parts = append(parts, fmt.Sprintf(`curl -sf --connect-timeout 1 --max-time 2 %s%s >/dev/null`, base, asset))
 	}
 	emptySet := map[string]bool{}
@@ -251,6 +257,9 @@ func BuildRuntimeSmokeShell(workDir string, spec APISmokeSpec) string {
 		if path == "/" {
 			continue
 		}
+		if m := smokeStepMarker("GET:" + path); m != "" {
+			parts = append(parts, m)
+		}
 		if emptySet[path] {
 			parts = append(parts, fmt.Sprintf(`test "$(curl -s --connect-timeout 1 --max-time 2 %s%s)" = "[]"`, base, path))
 		} else {
@@ -258,6 +267,9 @@ func BuildRuntimeSmokeShell(workDir string, spec APISmokeSpec) string {
 		}
 	}
 	for _, post := range spec.POSTProbes {
+		if m := smokeStepMarker("POST:" + post.Path); m != "" {
+			parts = append(parts, m)
+		}
 		body := strings.ReplaceAll(post.Body, `'`, `'\''`)
 		parts = append(parts, fmt.Sprintf(`curl -sf --connect-timeout 1 --max-time 2 -X POST -H 'Content-Type: application/json' -d '%s' %s%s >/dev/null`, body, base, post.Path))
 	}

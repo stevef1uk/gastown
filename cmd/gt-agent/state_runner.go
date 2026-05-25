@@ -132,8 +132,15 @@ func (r *stateRunner) implementationArtifactFailureExtra(err error) string {
 	if strings.Contains(em, "failed commands") || strings.Contains(em, "placeholder") {
 		b.WriteString("Do not use template placeholders (`<identified-bead-id>`, `BEAD_ID`, etc.). Copy bead IDs exactly from `bd list` output.\n")
 	}
+	if strings.Contains(em, "runtime smoke") || strings.Contains(em, "compile or runtime smoke failed") {
+		reopened, _ := orchestrator.ReopenImplementationBeadsAfterSmokeFailure(r.townRoot, r.rig, r.v, err)
+		if block := orchestrator.FormatImplementationSmokeFailureBlock(r.townRoot, r.rig, r.v, err, reopened); block != "" {
+			b.WriteString(block)
+			b.WriteString("\n")
+		}
+	}
 	next, nerr := orchestrator.NextOpenImplementBead(r.townRoot, r.rig, r.v)
-	if nerr == nil && next == nil && (strings.Contains(em, "failed commands") || r.hasQAPendingRework()) {
+	if nerr == nil && next == nil && (strings.Contains(em, "failed commands") || strings.Contains(em, "runtime smoke") || r.hasQAPendingRework()) {
 		example := beadIDExample(r.townRoot, r.rig)
 		b.WriteString("All implement beads are closed but work is not done. ")
 		if r.hasQAPendingRework() {

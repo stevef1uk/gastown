@@ -22,7 +22,7 @@ import (
 
 const (
 	defaultOrchPollInterval           = 15 * time.Second
-	implementationLLMHealthMinTurns   = 10 // rig-flow implementation uses 12; ping before long loops
+	implementationLLMHealthMinTurns   = 10 // rig-flow implementation uses 20; ping before long loops
 	implementationLLMHealthTimeout    = 8 * time.Second
 	maxOrchestratedCmdTurns           = 5
 	maxOrchestratedQACmdTurns    = 8
@@ -1787,8 +1787,8 @@ func validateImplementationArtifacts(townRoot, rig string, hadCmdFailure, beadCl
 		return fmt.Errorf("profile verification must pass in this session before success (%s)", strings.TrimSpace(v.QAVerifyCommand))
 	}
 	if openImpl == 0 && orchestrator.WorkflowUsesGo(v) {
-		if err := orchestrator.ImplementationPhaseVerifyOK(townRoot, rig, v); err != nil {
-			return fmt.Errorf("all implement beads are closed but compile or runtime smoke failed — reopen affected beads and fix handlers/web: %w", err)
+		if err := orchestrator.HandleImplementationPhaseVerifyFailure(townRoot, rig, v); err != nil {
+			return fmt.Errorf("all implement beads are closed but compile or runtime smoke failed: %w", err)
 		}
 	}
 	if err := validateRequiredWorkFiles(townRoot, rig, v); err != nil {

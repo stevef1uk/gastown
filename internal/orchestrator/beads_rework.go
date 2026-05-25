@@ -33,6 +33,9 @@ func EnsureImplementBeadsAvailable(townRoot, rig string, v WorkflowValidation) (
 	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
 	if ImplementationDiskWorkReady(rigDir, v) == nil {
 		if err := ImplementationPhaseVerifyOK(townRoot, rig, v); err != nil {
+			if ImplementationVerifyNeedsRuntimeRework(err) {
+				return ReopenImplementationBeadsAfterSmokeFailure(townRoot, rig, v, err)
+			}
 			return reopenClosedImplementBeads(townRoot, rig, v)
 		}
 		return nil, nil

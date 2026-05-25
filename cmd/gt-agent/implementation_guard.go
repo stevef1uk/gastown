@@ -54,6 +54,19 @@ func (r *stateRunner) rejectImplementationPrematureSuccess(outcome string) (stri
 		return "", false
 	}
 	openImpl := openImplementBeadCount(r)
+	if openImpl == 0 && orchestrator.WorkflowUsesGo(r.v) && orchestrator.WorkflowNeedsRuntimeSmoke(r.v) {
+		if err := orchestrator.ImplementationPhaseVerifyOK(r.townRoot, r.rig, r.v); err != nil {
+			if orchestrator.ImplementationVerifyNeedsRuntimeRework(err) {
+				reopened, _ := orchestrator.ReopenImplementationBeadsAfterSmokeFailure(r.townRoot, r.rig, r.v, err)
+				block := orchestrator.FormatImplementationSmokeFailureBlock(r.townRoot, r.rig, r.v, err, reopened)
+				if block != "" {
+					return "**Rejected:** success JSON while runtime smoke still fails.\n\n" + block, true
+				}
+			}
+			return "**Rejected:** success JSON while phase verify still fails: " + err.Error() + "\n\nFix compile/smoke, reopen affected beads, then verify before success.", true
+		}
+		return "", false
+	}
 	if openImpl == 0 {
 		return "", false
 	}
