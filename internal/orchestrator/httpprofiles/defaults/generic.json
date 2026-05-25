@@ -1,0 +1,20 @@
+{
+  "id": "generic",
+  "stack": "generic",
+  "enabled": false,
+  "web_disk_dir": "web",
+  "handler_path_substrings": ["/api/handlers"],
+  "test_path_suffix": "_test.go",
+  "write_guards": [],
+  "test_output_matchers": {},
+  "hints": {},
+  "implement_guidance": {
+    "common": [
+      "Match HTTP routes and static paths from **architecture.md** / SPEC — do not invent URL prefixes.",
+      "Serve assets from the on-disk tree declared in architecture (often `{{web_disk_dir}}/`)."
+    ]
+  },
+  "traversal_probe_path": "",
+  "static_route_register_prefix": "",
+  "early_traversal_fields": []
+}

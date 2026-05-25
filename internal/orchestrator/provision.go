@@ -75,6 +75,9 @@ func syncFromFS(townRoot string, assets fs.FS, root string, updateChanged bool) 
 		}
 		return nil
 	})
+	if err == nil {
+		_ = InstallDefaultHTTPProfiles(townRoot)
+	}
 	return res, err
 }
 
@@ -111,6 +114,9 @@ func syncFromOS(townRoot, sourceDir string, updateChanged bool) (SyncResult, err
 		}
 		return nil
 	})
+	if err == nil {
+		_ = InstallDefaultHTTPProfiles(townRoot)
+	}
 	return res, err
 }
 

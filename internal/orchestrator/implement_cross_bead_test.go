@@ -141,7 +141,7 @@ func TestValidateImplementWrittenContent_crossBead(t *testing.T) {
 		"package store\n\nfunc InitSchema() error { return nil }\n",
 		"",
 	)
-	err := ValidateImplementWrittenContent(rigDir, "linkshelf/internal/store/store.go", "func InitSchema() {}\n", v)
+	err := ValidateImplementWrittenContent("", "", rigDir, "linkshelf/internal/store/store.go", "func InitSchema() {}\n", v)
 	if err == nil {
 		t.Fatal("expected error")
 	}

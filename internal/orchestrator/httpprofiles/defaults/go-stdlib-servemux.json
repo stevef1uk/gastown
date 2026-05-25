@@ -1,0 +1,85 @@
+{
+  "id": "go-stdlib-servemux",
+  "stack": "go-stdlib-servemux",
+  "enabled": true,
+  "web_disk_dir": "web",
+  "handler_path_substrings": ["/api/handlers"],
+  "test_path_suffix": "_test.go",
+  "write_guards": [
+    {
+      "id": "no_bad_web_join",
+      "handler_source_regex": "filepath\\.Join\\([^)]*\\.\\.[^)]*[\"']web[\"']",
+      "message": "do not serve web/ via filepath.Join(\"..\", …) — use filepath.Join(\"web\", file) from module root"
+    },
+    {
+      "id": "static_route_trailing_slash",
+      "when_static_prefix": "/static",
+      "handler_source_regex": "HandleFunc\\(\\s*\"/static\"\\s*,",
+      "unless_regex": "HandleFunc\\(\\s*\"/static/\"\\s*,",
+      "message": "register static handler as mux.HandleFunc(\"/static/\", …) not \"/static\" — required for style.css and traversal tests"
+    },
+    {
+      "id": "static_early_traversal",
+      "when_static_prefix": "/static",
+      "requires_route_regex": "HandleFunc\\(\\s*\"/static/\"\\s*,",
+      "static_handler_block_guard": true,
+      "message": "in the /static/ handler (first lines of the HandleFunc callback) reject \"..\" on r.URL.RequestURI() or RawPath — ServeMux redirects before nested helpers run"
+    }
+  ],
+  "test_output_matchers": {
+    "traversal_redirect": ["traversal request returned 307", "traversal", "307", "404"],
+    "root_404": ["handlers_test.go", "GET / returned 404"],
+    "static_404": ["handlers_test.go", "GET /static/", "returned 404"]
+  },
+  "hints": {
+    "traversal_redirect": {
+      "title": "Handler test: path traversal (got 307, want 404)",
+      "cause": "**Cause:** `net/http.ServeMux` redirects (`307`) **before** your `{{static_pattern}}` handler runs; checks only inside nested helpers or on trimmed `r.URL.Path` are too late.",
+      "fixes": [
+        "Register static routes as **`mux.HandleFunc({{static_pattern}}, …)`** (trailing slash when architecture uses `/static/{file}`).",
+        "At the **first line** of the **`{{static_pattern}}` handler** (not only in a nested helper), reject traversal on the raw request:",
+        "  `if strings.Contains(r.URL.RequestURI(), \"..\") || strings.Contains(r.URL.RawPath, \"..\") { http.NotFound(w, r); return }`",
+        "Serve files from **`filepath.Join(\"{{web_disk_dir}}\", name)`** with `name` from `strings.TrimPrefix(r.URL.Path, {{static_prefix}})` — do **not** use `../../web`.",
+        "Do **not** switch to `HandleFunc(\"/static\", …)` without a trailing slash to avoid redirects — that breaks normal static asset GETs.",
+        "End native **EDIT:** blocks with a line containing only **`>>>>>>> REPLACE`** (never `---END EDIT---`)."
+      ]
+    },
+    "test_cwd": {
+      "title": "Handler test 404 (go test working directory)",
+      "cause": "**Cause:** `go test ./internal/...` runs with cwd = the **package directory**, but handlers use relative paths like `{{web_disk_dir}}/index.html` from the **module root**.",
+      "fixes_handlers_bead": [
+        "**While handlers.go is active:** prefer fixing GET / via **`serveWebFile(w, r, \"index.html\")`** in the `/` handler (helper that finds `{{web_disk_dir}}/`), not more `filepath.Join(\"{{web_disk_dir}}\", …)` on `ServeFile` alone.",
+        "**Alternatively (handlers_test.go bead):** open the test bead, then at Test start:"
+      ],
+      "fixes_test_bead": [
+        "At Test start, before `RegisterHandlers`:"
+      ],
+      "chdir_line": "`if err := os.Chdir({{chdir_expr}}); err != nil { t.Fatal(err) }`",
+      "footer": "Do **not** use `../../web` in handlers.go. **Verify:** `cd {{layout_root}} && go test -count=1 ./internal/api/...` from mayor/rig."
+    },
+    "root_404_serve_helper": {
+      "title": "Handler test 404 on GET / (fix on **this** handlers.go bead)",
+      "cause": "**Cause:** `http.ServeFile(w, r, filepath.Join(\"{{web_disk_dir}}\", \"index.html\"))` resolves `{{web_disk_dir}}/` from the **test package cwd**, not the module root.",
+      "fixes": [
+        "In the `/` handler call your **`serveWebFile(w, r, \"index.html\")`** helper (walks up to `{{web_disk_dir}}/`).",
+        "Put `RequestURI`/`RawPath` `..` checks on the **first line** of the `{{static_pattern}}` `HandleFunc` callback."
+      ]
+    }
+  },
+  "implement_guidance": {
+    "common": [
+      "Production serves files from **`{{web_disk_dir}}/`** on disk — do **not** use temp dirs with `index.html` at module root unless architecture says so.",
+      "Use a fixed **webRoot** (e.g. discovered via `go.mod` or `os.Getwd` walk-up to `{{web_disk_dir}}/`)."
+    ],
+    "handler_bead": [
+      "**Static route:** `mux.HandleFunc({{static_pattern}}, …)`; first line: reject `..` on `r.URL.RequestURI()` / `RawPath`; then serve from `filepath.Join(\"{{web_disk_dir}}\", …)`."
+    ],
+    "test_bead": [
+      "**Handler tests:** `go test` cwd is the **package dir** — `os.Chdir({{chdir_expr}})` at Test start so `{{web_disk_dir}}/index.html` paths work.",
+      "Table cases from architecture: `GET /`, static assets, traversal probe `{{traversal_probe_path}}` → **404** (not **307**)."
+    ]
+  },
+  "traversal_probe_path": "/static/../go.mod",
+  "static_route_register_prefix": "HandleFunc(\"/static/\"",
+  "early_traversal_fields": ["RequestURI", "RawPath"]
+}

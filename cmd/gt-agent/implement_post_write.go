@@ -100,5 +100,11 @@ func (r *stateRunner) runPostWriteHTTPContract(relPath string, combined *strings
 		msg := fmt.Sprintf("HTTP contract check failed after %s: %v\nReconcile handlers.go with web/index.html per architecture.md before bd close.\n\n", relPath, err)
 		combined.WriteString(msg)
 		orchestratedFprintfStderr("[gt-agent] %s", msg)
+		errStr := err.Error()
+		if strings.Contains(errStr, "RequestURI") || strings.Contains(errStr, "ServeMux") {
+			if hint := orchestrator.FormatHandlerTraversalRedirectHint(r.townRoot, r.rig, relPath, r.v); hint != "" {
+				combined.WriteString(hint + "\n\n")
+			}
+		}
 	}
 }

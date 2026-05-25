@@ -25,6 +25,7 @@ Root cause was not missing tests but **misaligned contracts**: architecture said
 | [GT-VERIFY-008](#gt-verify-008-prompts-single-source-of-truth-for-static-urls) | P2 | Prompts: one static URL story |
 | [GT-VERIFY-009](#gt-verify-009-module-compileok-after-implementation) | P2 | Post-implementation integration probe |
 | [GT-VERIFY-010](#gt-verify-010-static-traversal-307-and-native-edit-terminators) | P0 | Static traversal 307 + native EDIT terminators |
+| [GT-VERIFY-011](#gt-verify-011-pluggable-http-implementation-profiles) | P1 | Pluggable HTTP implementation profiles (JSON, no rebuild) |
 
 ---
 
@@ -42,7 +43,7 @@ Root cause was not missing tests but **misaligned contracts**: architecture said
 ### Generic behavior (implemented)
 
 1. **`FormatHandlerTraversalRedirectHint`** — injected on verify failure when test output matches traversal+307 (via `FormatGoTestFailureHints` / compile context).
-2. **`HandlerStaticServePatternIssues` / `ValidateImplementWrittenContent`** — reject `../../web` joins, `HandleFunc("/static",` without `/static/`, and `/static/` handlers that only check trimmed path (must guard `r.URL.RequestURI()` / `RawPath` for `..`).
+2. **`HandlerStaticServePatternIssues` / `ValidateImplementWrittenContent`** — reject `../../web` joins, `HandleFunc("/static",` without `/static/`, and `/static/` handlers that only check `..` in a nested helper (must guard `RequestURI`/`RawPath` on the **first lines** of the `/static/` callback — ServeMux redirects before `serveWebFile`).
 3. **`normalizeNativeEditEndLines` + `isOrchestratedShellNoiseLine`** — strip `---END EDIT---` from CMD parse path; never execute as shell.
 4. **`FormatMalformedNativeEditFeedback`** — explicit nudge to use `>>>>>>> REPLACE` only.
 
@@ -52,6 +53,43 @@ Root cause was not missing tests but **misaligned contracts**: architecture said
 - [x] Native EDIT ending with `---END EDIT---` does not run as a shell command.
 - [x] Handler WRITE/EDIT with `filepath.Join("..", "..", "web"` fails post-write validation.
 - [x] Handler WRITE/EDIT with `/static/` but no `RequestURI`/`RawPath` `..` check fails post-write validation (blocks 307 loop before verify).
+
+---
+
+## GT-VERIFY-011: Pluggable HTTP implementation profiles
+
+**Priority:** P1  
+**Files:** `internal/orchestrator/http_implementation_profile.go`, `internal/orchestrator/httpprofiles/defaults/*.json`, `{town}/orchestrator/http-profiles/`, `{rig}/mayor/rig/.gastown/http-implementation.json`
+
+### Problem
+
+GT-VERIFY-010 hard-coded **Go `net/http.ServeMux`** advice (`HandleFunc`, `RequestURI`, etc.). A different HTTP stack (chi, echo, embed.FS) would need Go changes and a **gt-agent rebuild** to adjust guards/hints.
+
+### Behavior
+
+1. **Town profiles** — `gt orchestrator sync` / `make install` copies `orchestrator/http-profiles/*.json` from gastown (embedded defaults: `go-stdlib-servemux`, `generic`).
+2. **Rig config** — `{rig}/mayor/rig/.gastown/http-implementation.json` is **auto-created** (`ensure_http_implementation_config` on spec-index, project_setup, implementation pre_run) when the workflow needs HTTP verify. Operators only edit it to override profile or hints (no rebuild):
+
+```json
+{
+  "profile": "go-stdlib-servemux",
+  "overrides": {
+    "web_disk_dir": "web",
+    "traversal_probe_path": "/static/../go.mod"
+  }
+}
+```
+
+3. **Architecture merge** — `LoadWebStaticMappingFromRig` still sets `static_url_prefix` / traversal probe path; templates use `{{static_pattern}}`, `{{web_disk_dir}}`, etc.
+4. **`profile: generic`** — disables stack-specific write guards; implement guidance stays architecture-driven only.
+
+### Acceptance criteria
+
+- [x] Write guards and verify hints read from JSON (editable on disk).
+- [x] Rig `http-implementation.json` selects profile without recompiling gt-agent.
+- [x] Town sync installs default profile files.
+- [x] Tests cover town override and `generic` disable path.
+- [x] Rig `http-implementation.json` auto-provisioned from SPEC/architecture (never overwrites existing file).
 
 ---
 
@@ -82,7 +120,8 @@ Polecats are told to write tests mapped to architecture, but nothing forbids **h
 
 - [x] New rig-flow guidance merged in `implementation.md` + `FormatHTTPRoutingGuidanceForBead` in implement context.
 - [x] Example tests in `implement_bead_context_test.go` and `http_contract_test.go`.
-- [x] `ValidateImplementWrittenContent` rejects `os.Chdir` in handler `*_test.go` (native EDIT/WRITE guard).
+- [x] `ValidateImplementWrittenContent` rejects `os.Chdir` in **handlers.go** (not for module-root `os.Chdir` in tests).
+- [x] Handler `*_test.go` without module-root chdir → write-time hint; `GET / returned 404` in `handlers_test.go` → `FormatHandlerTestCwdHint` (GT-VERIFY-001 cwd).
 
 ---
 

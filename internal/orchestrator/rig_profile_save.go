@@ -119,5 +119,9 @@ func WriteRigWorkflowProfile(townRoot, rig string, v WorkflowValidation, source,
 	if err := os.WriteFile(tmp, raw, 0644); err != nil {
 		return err
 	}
-	return os.Rename(tmp, path)
+	if err := os.Rename(tmp, path); err != nil {
+		return err
+	}
+	_, _ = EnsureHTTPImplementationRigConfig(townRoot, rig, env.Validation)
+	return nil
 }

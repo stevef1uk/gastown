@@ -31,6 +31,36 @@ gt rig spec-index <rig> --force
 `rig-flow.yaml` in this directory carries **placeholder** `validation:` defaults only.
 At runtime, **profile overrides template overrides Go defaults**.
 
+## HTTP implementation profiles (GT-VERIFY-011)
+
+Stack-specific handler **write guards** and **verify hints** (ServeMux traversal, test cwd, etc.) live in JSON — not in compiled gt-agent:
+
+| Location | Purpose |
+|----------|---------|
+| `{townRoot}/orchestrator/http-profiles/<name>.json` | Town-wide profiles (synced from gastown) |
+| `{rig}/mayor/rig/.gastown/http-implementation.json` | Per-rig profile selection + overrides |
+
+**You do not create these by hand.** `gt rig spec-index`, `project_setup`, and `implementation` pre_run call `ensure_http_implementation_config`, which writes `http-implementation.json` when the rig is Go + HTTP (web/server, handler beads, or `/static/` in architecture). Profile name and `traversal_probe_path` come from **SPEC/architecture** only. Edit the JSON only when you need different stack guards or hints (no gt-agent rebuild).
+
+Example rig file (auto-created; tweak if needed):
+
+```json
+{
+  "profile": "go-stdlib-servemux",
+  "overrides": {
+    "hints": {
+      "traversal_redirect": {
+        "fixes": ["Custom line injected without rebuilding gt-agent."]
+      }
+    }
+  }
+}
+```
+
+Use `"profile": "generic"` to disable stack-specific guards when architecture uses a non-stdlib router. Routes and smoke paths still come from **architecture.md** via `ParseWebStaticMapping` / `LoadAPISmokeSpecFromRig`.
+
+After editing JSON, restart or nudge the polecat — no `go build` required.
+
 ## Prompt variables
 
 Rig-flow prompts (`prompts/rig-flow/*.md`) are spec-driven. Common placeholders:

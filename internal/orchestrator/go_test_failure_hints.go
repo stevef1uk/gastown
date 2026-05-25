@@ -196,13 +196,20 @@ func FormatGoTestFailureHints(townRoot, rig, activeBeadPath, cmdOutput string, e
 		return hint
 	}
 	var b strings.Builder
+	if hint := FormatHandlerRoot404ServeWebHint(townRoot, rig, activeBeadPath, cmdOutput, v); hint != "" {
+		b.WriteString(hint)
+		b.WriteString("\n")
+	}
+	if hint := FormatHandlerTestCwdHint(townRoot, rig, activeBeadPath, cmdOutput, v); hint != "" {
+		b.WriteString(hint)
+		b.WriteString("\n")
+	}
 	if hint := FormatHandlerStatic404Hint(townRoot, rig, activeBeadPath, cmdOutput, v); hint != "" {
 		b.WriteString(hint)
 		b.WriteString("\n")
 	}
-	if GoTestOutputSuggestsTraversalRedirect(cmdOutput) {
-		mapping := LoadWebStaticMappingFromRig(townRoot, rig, v)
-		if hint := FormatHandlerTraversalRedirectHint(mapping); hint != "" {
+	if GoTestOutputSuggestsTraversalRedirect(townRoot, rig, v, cmdOutput) {
+		if hint := FormatHandlerTraversalRedirectHint(townRoot, rig, activeBeadPath, v); hint != "" {
 			b.WriteString(hint)
 			b.WriteString("\n")
 		}

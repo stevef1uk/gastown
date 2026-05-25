@@ -167,8 +167,14 @@ func TestRigFlowYAML_projectSetupHasAutoVerifyAndVenvCreate(t *testing.T) {
 	if !hasGo || !hasPip {
 		t.Fatalf("auto_verify: go=%v pip=%v rules=%v", hasGo, hasPip, h.AutoVerify)
 	}
-	if len(h.PostArtifactSuccess) != 1 || h.PostArtifactSuccess[0] != "close_project_setup_beads" {
-		t.Fatalf("post_artifact_success = %v", h.PostArtifactSuccess)
+	wantPost := []string{"ensure_http_implementation_config", "close_project_setup_beads"}
+	if len(h.PostArtifactSuccess) != len(wantPost) {
+		t.Fatalf("post_artifact_success = %v, want %v", h.PostArtifactSuccess, wantPost)
+	}
+	for i, w := range wantPost {
+		if h.PostArtifactSuccess[i] != w {
+			t.Fatalf("post_artifact_success = %v, want %v", h.PostArtifactSuccess, wantPost)
+		}
 	}
 	if !h.AutoVerifyOKClearsCmdFailure {
 		t.Fatal("expected auto_verify_ok_clears_cmd_failure on project_setup")

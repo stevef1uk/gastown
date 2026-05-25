@@ -119,6 +119,8 @@ func RunPreRunHook(step, townRoot, rig string, v WorkflowValidation) (string, er
 			return "", err
 		}
 		return log, nil
+	case "ensure_http_implementation_config":
+		return EnsureHTTPImplementationRigConfigLog(townRoot, rig, v)
 	case "ensure_implement_smoke_ready":
 		return EnsureImplementSmokeReadyLog(townRoot, rig, v)
 	case "reopen_implement_beads", "reconcile_implement_beads":

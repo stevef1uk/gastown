@@ -467,7 +467,7 @@ func (r *stateRunner) executeNativeEditOp(op nativeEditOp, workDir string) (stri
 			replace = stripped
 			orchestratedPrintf("[gt-agent] stripped duplicate package types from EDIT %s (already on earlier implement file)\n", rel)
 		}
-		if err := orchestrator.ValidateImplementWrittenContent(rigDir, rel, replace, r.v); err != nil {
+		if err := orchestrator.ValidateImplementWrittenContent(r.townRoot, r.rig, rigDir, rel, replace, r.v); err != nil {
 			return "", err
 		}
 		if err := orchestrator.ValidateImplementExportedSymbols(r.mayorRigWorkDir(), rel, replace, r.v); err != nil {
@@ -494,7 +494,7 @@ func (r *stateRunner) executeNativeEditOp(op nativeEditOp, workDir string) (stri
 			content = stripped
 			orchestratedPrintf("[gt-agent] stripped duplicate package types from WRITE %s (already on earlier implement file)\n", rel)
 		}
-		if err := orchestrator.ValidateImplementWrittenContent(rigDir, rel, content, r.v); err != nil {
+		if err := orchestrator.ValidateImplementWrittenContent(r.townRoot, r.rig, rigDir, rel, content, r.v); err != nil {
 			return "", err
 		}
 		if err := orchestrator.ValidateImplementExportedSymbols(r.mayorRigWorkDir(), rel, content, r.v); err != nil {

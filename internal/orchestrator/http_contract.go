@@ -61,7 +61,7 @@ func ValidateHTTPContract(townRoot, rig string, v WorkflowValidation) error {
 	if path := firstHandlerImplementPath(v); path != "" {
 		body, err := os.ReadFile(filepath.Join(rigDir, filepath.FromSlash(path)))
 		if err == nil {
-			issues = append(issues, handlerContractIssues(string(body), contract.Static)...)
+			issues = append(issues, handlerContractIssues(townRoot, rig, string(body), v)...)
 		}
 	}
 	if len(issues) == 0 {
@@ -116,39 +116,44 @@ func validateWebHTMLContract(rigDir string, v WorkflowValidation, mapping WebSta
 	return issues
 }
 
-func handlerContractIssues(body string, mapping WebStaticMapping) []string {
+func handlerContractIssues(townRoot, rig, body string, v WorkflowValidation) []string {
+	mapping := LoadWebStaticMappingFromRig(townRoot, rig, v)
 	var issues []string
 	lower := strings.ToLower(body)
 	if strings.Contains(body, "os.Chdir") {
 		issues = append(issues, "handlers.go must not use os.Chdir — use a fixed webRoot (e.g. filepath.Join(moduleDir, \"web\"))")
 	}
-	if strings.Contains(lower, "index.html") && !strings.Contains(lower, "/web/") && !strings.Contains(lower, `"web"`) && !strings.Contains(lower, "`web`") {
-		issues = append(issues, "serve index from web/index.html per architecture, not CWD index.html")
+	webDir := LoadHTTPImplementationProfile(townRoot, rig, v).WebDiskDir
+	if webDir == "" {
+		webDir = "web"
 	}
-	if mapping.StaticURLPrefix != "" && strings.Contains(lower, "static/") && !strings.Contains(lower, "/web/") && !strings.Contains(lower, `"web"`) {
-		issues = append(issues, "static files should be read from web/ on disk with URL prefix "+mapping.StaticURLPrefix)
+	if strings.Contains(lower, "index.html") && !strings.Contains(lower, "/"+webDir+"/") && !strings.Contains(lower, `"`+webDir+`"`) {
+		issues = append(issues, "serve index from "+webDir+"/index.html per architecture, not CWD index.html")
 	}
-	issues = append(issues, HandlerStaticServePatternIssues(body, mapping)...)
+	if mapping.StaticURLPrefix != "" && strings.Contains(lower, "static/") && !strings.Contains(lower, "/"+webDir+"/") && !strings.Contains(lower, `"`+webDir+`"`) {
+		issues = append(issues, "static files should be read from "+webDir+"/ on disk with URL prefix "+mapping.StaticURLPrefix)
+	}
+	issues = append(issues, HandlerStaticServePatternIssues(townRoot, rig, body, v)...)
 	return issues
 }
 
 // ValidateImplementWrittenContent rejects polecat patterns that break HTTP contract (GT-VERIFY-001)
 // and cross-bead symbol duplication in shared Go packages.
-func ValidateImplementWrittenContent(mayorRigDir, relPath, content string, v WorkflowValidation) error {
+func ValidateImplementWrittenContent(townRoot, rig, mayorRigDir, relPath, content string, v WorkflowValidation) error {
 	relPath = filepath.ToSlash(strings.TrimSpace(relPath))
 	if relPath == "" {
 		return nil
 	}
-	if IsHTTPHandlerTestPath(relPath) || (IsHTTPHandlerImplementPath(relPath) && strings.Contains(content, "os.Chdir")) {
-		if strings.Contains(content, "os.Chdir") {
-			return fmt.Errorf("%s must not use os.Chdir — tests and handlers must use the real web/ tree (webRoot=\"web\" or filepath.Join from the module directory); table cases should hit architecture paths (GET /, static assets, .. traversal)", relPath)
+	if IsHTTPHandlerTestPath(relPath) {
+		for _, issue := range HandlerTestMissingModuleChdirIssues(townRoot, rig, relPath, content, v) {
+			return fmt.Errorf("%s: %s", relPath, issue)
 		}
 	}
+	if IsHTTPHandlerImplementPath(relPath) && strings.Contains(content, "os.Chdir") {
+		return fmt.Errorf("%s must not use os.Chdir — use a fixed webRoot (e.g. filepath.Join(moduleDir, \"web\")); table cases should hit architecture paths (GET /, static assets, .. traversal)", relPath)
+	}
 	if IsHTTPHandlerImplementPath(relPath) {
-		if handlerBadWebPathRE.MatchString(content) {
-			return fmt.Errorf("%s must serve from filepath.Join(\"web\", name) — not filepath.Join(\"..\", \"..\", \"web\", …)", relPath)
-		}
-		for _, issue := range HandlerStaticServePatternIssues(content, WebStaticMapping{StaticURLPrefix: "/static"}) {
+		for _, issue := range HandlerStaticServePatternIssues(townRoot, rig, content, v) {
 			return fmt.Errorf("%s: %s", relPath, issue)
 		}
 	}
@@ -163,21 +168,17 @@ func FormatHTTPRoutingGuidanceForBead(townRoot, rig, beadPath string, v Workflow
 	if !IsHTTPRoutingGuidanceBead(beadPath) {
 		return ""
 	}
+	prof := LoadHTTPImplementationProfile(townRoot, rig, v)
+	if block := prof.FormatHTTPImplementGuidance(beadPath, v); block != "" {
+		return block
+	}
 	mapping := LoadWebStaticMappingFromRig(townRoot, rig, v)
 	var b strings.Builder
 	b.WriteString("### HTTP routing / tests (architecture)\n")
-	b.WriteString("- Production serves files from **`web/`** on disk — do **not** use `os.Chdir`, temp dirs with `index.html` at module root, or a separate on-disk `static/` folder unless architecture says so.\n")
-	b.WriteString("- In handlers use a fixed **`webRoot`** (e.g. `filepath.Join(moduleDir, \"web\")`) or pass `webRoot` into the handler under test.\n")
 	if mapping.StaticURLPrefix != "" {
-		b.WriteString(fmt.Sprintf("- Static URLs use prefix **%s** (e.g. `%s/app.js` → file `web/app.js`). HTML must use the same paths.\n", mapping.StaticURLPrefix, mapping.StaticURLPrefix))
+		b.WriteString(fmt.Sprintf("- Static URLs use prefix **%s** (see architecture HTTP table).\n", mapping.StaticURLPrefix))
 	} else {
-		b.WriteString("- Match static `src`/`href` paths in `web/index.html` to how the handler mounts files (see architecture HTTP table).\n")
-	}
-	if IsHTTPHandlerTestPath(beadPath) || strings.Contains(filepath.ToSlash(beadPath), "/api/handlers") {
-		b.WriteString("- **Handler tests:** table-driven cases for `GET /`, each static asset path from architecture, and `GET /static/../` or `..` traversal → **404** (not 307 redirect); run tests against the real `web/` tree, not a chdir temp layout.\n")
-	}
-	if mapping.StaticURLPrefix != "" && IsHTTPHandlerImplementPath(beadPath) {
-		b.WriteString("- **Static route:** use `mux.HandleFunc(\"/static/\", …)`; at handler start: `if strings.Contains(r.URL.RequestURI(), \"..\") || strings.Contains(r.URL.RawPath, \"..\") { http.NotFound(w, r); return }`; then `filepath.Join(\"web\", strings.TrimPrefix(r.URL.Path, \"/static/\"))`.\n")
+		b.WriteString("- Match static paths in `web/index.html` to the architecture HTTP table.\n")
 	}
 	return strings.TrimSpace(b.String())
 }

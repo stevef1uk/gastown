@@ -79,10 +79,16 @@ func TestValidateHTTPContract_passesAlignedContract(t *testing.T) {
 import (
   "net/http"
   "path/filepath"
+  "strings"
 )
 func Mount(mux *http.ServeMux, webRoot string) {
   webRoot = filepath.Join(webRoot, "web")
-  mux.HandleFunc("/static/", func(w http.ResponseWriter, r *http.Request) {})
+  mux.HandleFunc("/static/", func(w http.ResponseWriter, r *http.Request) {
+    if strings.Contains(r.URL.RequestURI(), "..") {
+      http.NotFound(w, r)
+      return
+    }
+  })
 }
 `)
 	if err := ValidateHTTPContract(dir, rig, v); err != nil {
@@ -90,15 +96,16 @@ func Mount(mux *http.ServeMux, webRoot string) {
 	}
 }
 
-func TestValidateImplementWrittenContent_rejectsChdirInHandlerTest(t *testing.T) {
+func TestValidateImplementWrittenContent_requiresModuleChdirInHandlerTest(t *testing.T) {
 	t.Parallel()
 	body := `package api
-import "os"
 func TestX(t *testing.T) {
-  os.Chdir(t.TempDir())
+  mux := http.NewServeMux()
+  RegisterHandlers(mux, db)
+  httptest.NewRequest("GET", "/", nil)
 }
 `
-	err := ValidateImplementWrittenContent(t.TempDir(), "linkshelf/internal/api/handlers_test.go", body, linkshelfHTTPProfile())
+	err := ValidateImplementWrittenContent("", "", t.TempDir(), "linkshelf/internal/api/handlers_test.go", body, linkshelfHTTPProfile())
 	if err == nil || !strings.Contains(err.Error(), "os.Chdir") {
 		t.Fatalf("got %v", err)
 	}
@@ -110,7 +117,7 @@ func TestFormatHTTPRoutingGuidanceForBead_includesWebLayout(t *testing.T) {
 	rig := "mockrig"
 	writeHTTPContractFixture(t, dir, rig, "<html></html>", "package api\n")
 	got := FormatHTTPRoutingGuidanceForBead(dir, rig, "linkshelf/internal/api/handlers_test.go", linkshelfHTTPProfile())
-	for _, want := range []string{"os.Chdir", "/static/", "web/", "table-driven"} {
+	for _, want := range []string{`filepath.Join("..", "..")`, "/static/", "web/", "profile:"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("missing %q in:\n%s", want, got)
 		}
