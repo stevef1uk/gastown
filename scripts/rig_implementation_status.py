@@ -148,16 +148,98 @@ def order_required_files(files: list[str]) -> list[str]:
     return [p for p, _ in items]
 
 
-def extract_path_from_title(title: str, prefix: str) -> str:
+def extract_path_from_bead_title(title: str, title_prefix: str) -> str:
+    """Mirror orchestrator.ExtractPathFromBeadTitle."""
     t = title.strip()
-    pfx = prefix.strip()
-    if pfx and pfx.lower() in t.lower():
-        idx = t.lower().index(pfx.lower())
-        t = t[idx + len(pfx) :].strip()
+    prefix = (title_prefix or "").strip()
+    if prefix:
+        lower_t = t.lower()
+        lower_pfx = prefix.lower()
+        idx = lower_t.find(lower_pfx)
+        if idx >= 0:
+            t = t[idx + len(prefix) :].strip()
+        elif lower_t.startswith("implement") and lower_pfx.startswith("implement"):
+            t = t[len("Implement") :].strip()
     for sep in (" per architecture", " per arch"):
         if sep in t:
             t = t.split(sep, 1)[0].strip()
     return t.replace("\\", "/")
+
+
+def extract_path_from_title(title: str, prefix: str) -> str:
+    return extract_path_from_bead_title(title, prefix)
+
+
+def is_valid_implement_bead_path(path: str) -> bool:
+    """Mirror orchestrator.IsValidImplementBeadPath (subset for status script)."""
+    path = path.replace("\\", "/").strip()
+    if not path or ".." in path:
+        return False
+    if any(x in path for x in ("`", "**", "[]", " per ", "<<<<<<<", ">>>>>>>", "=======")):
+        return False
+    lower = path.lower()
+    if "command to create" in lower or "per architecture" in lower:
+        return False
+    if lower.startswith("command ") or " blocks." in lower:
+        return False
+    if path.endswith("/") or path.endswith("-"):
+        return False
+    base = os.path.basename(path)
+    if not base or base in (".", "architecture", "Implement"):
+        return False
+    if " " in base:
+        return False
+    if "/" not in path and "." not in base:
+        return base in ("Dockerfile", "Makefile", "LICENSE", "README", "Containerfile")
+    parts = path.split("/")
+    if any(not seg or "[" in seg or "]" in seg for seg in parts):
+        return False
+    if len(parts) >= 2 and parts[0] == parts[1]:
+        return False
+    return True
+
+
+def matches_implement_bead_title(title: str, val: dict, required: list[str] | None = None) -> bool:
+    """Mirror orchestrator.MatchesImplementBeadTitle."""
+    title = title.strip()
+    if not title:
+        return False
+    pfx = (val.get("bead_title_contains") or "Implement ").strip()
+    lower_title = title.lower()
+    if pfx and lower_title.startswith(pfx.lower()):
+        return True
+    if lower_title.startswith("implement ") and (
+        " per architecture" in lower_title or " per arch" in lower_title
+    ):
+        path = extract_path_from_bead_title(title, pfx)
+        if not path or not is_valid_implement_bead_path(path):
+            return False
+        req = required if required is not None else active_required_files(val)
+        if not req:
+            union = val.get("required_files") or []
+            req = [str(x).replace("\\", "/").strip() for x in union if str(x).strip()] if isinstance(union, list) else []
+        if not req:
+            return not pfx or lower_title.startswith(pfx.lower())
+        return path_matches_required(path, req) is not None
+    return False
+
+
+def normalize_bead_path_for_layout(bead_path: str, layout_root: str) -> str:
+    """Mirror orchestrator.NormalizeBeadPathForLayout."""
+    path = bead_path.replace("\\", "/").strip()
+    layout = layout_root.strip().strip("/")
+    if not path or not layout or layout == ".":
+        return path
+    if path.startswith(layout + "/") or path == layout:
+        return path
+    if ".." in path:
+        return path
+    if path in ("go.mod", "go.sum"):
+        return f"{layout}/{path}"
+    for prefix in ("internal/", "cmd/", "pkg/", "api/", "web/"):
+        if path.startswith(prefix):
+            return f"{layout}/{path}"
+    return path
 
 
 def path_matches_required(path: str, required: list[str]) -> str | None:
@@ -174,28 +256,13 @@ def path_matches_required(path: str, required: list[str]) -> str | None:
 
 
 def normalize_bead_path(path: str, layout_root: str, required: list[str]) -> str:
-    """Mirror orchestrator.NormalizeBeadPathForLayout + required_files matching."""
-    path = path.replace("\\", "/").strip()
+    """Canonical required_files path for a bead title extract."""
+    path = normalize_bead_path_for_layout(path.replace("\\", "/").strip(), layout_root)
     if not path:
         return path
     hit = path_matches_required(path, required)
     if hit:
         return hit
-    layout = layout_root.strip().strip("/")
-    if not layout:
-        return path
-    if path.startswith(layout + "/") or path == layout:
-        return path
-    if ".." in path:
-        return path
-    candidate = f"{layout}/{path}"
-    if path_matches_required(candidate, required):
-        return candidate
-    if path in ("go.mod", "go.sum"):
-        return candidate
-    for prefix in ("internal/", "cmd/", "pkg/", "api/", "web/", "backend/"):
-        if path.startswith(prefix):
-            return candidate
     return path
 
 
@@ -339,26 +406,32 @@ def run(cmd: list[str], *, cwd: Path | None = None, env: dict | None = None) -> 
         return 127, str(e)
 
 
-def parse_bd_flat_lines(text: str, title_filter: str) -> list[dict]:
-    rows: list[dict] = []
-    if not title_filter:
-        return rows
-    title_lower = title_filter.lower()
+def parse_bd_flat_line(line: str) -> dict | None:
+    line = line.strip()
+    if not line or line[0] not in "○◐✓✗":
+        return None
     line_re = re.compile(r"^([○◐✓✗])\s+(\S+)\s+.*?\s+-\s+(.+)$")
+    m = line_re.match(line)
+    if not m:
+        alt = re.compile(r"^([○◐✓✗])\s+(\S+)\s+.*?\b(Implement\s+.+)$")
+        m = alt.match(line)
+    if not m:
+        return None
+    sym, bead_id, title = m.group(1), m.group(2), m.group(3).strip()
+    status = {"○": "open", "◐": "in_progress", "✓": "closed", "✗": "blocked"}.get(sym, sym)
+    return {"id": bead_id, "status": status, "title": title}
+
+
+def parse_bd_flat_lines(text: str, val: dict, required: list[str] | None = None) -> list[dict]:
+    rows: list[dict] = []
     for line in text.splitlines():
-        line = line.strip()
-        if not line or title_lower not in line.lower():
-            continue
-        m = line_re.match(line)
-        if not m:
-            continue
-        sym, bead_id, title = m.group(1), m.group(2), m.group(3).strip()
-        status = {"○": "open", "◐": "in_progress", "✓": "closed", "✗": "blocked"}.get(sym, sym)
-        rows.append({"id": bead_id, "status": status, "title": title})
+        row = parse_bd_flat_line(line)
+        if row and matches_implement_bead_title(row["title"], val, required):
+            rows.append(row)
     return rows
 
 
-def list_implement_beads(mayor_rig: Path, beads_dir: Path, title_contains: str) -> tuple[list[dict], bool]:
+def list_implement_beads(mayor_rig: Path, beads_dir: Path, val: dict) -> tuple[list[dict], bool]:
     beads_env = os.environ.copy()
     beads_env["BEADS_DIR"] = str(beads_dir)
     beads_raw: list[dict] = []
@@ -373,7 +446,7 @@ def list_implement_beads(mayor_rig: Path, beads_dir: Path, title_contains: str) 
         if code != 0:
             bd_failed = True
             continue
-        for row in parse_bd_flat_lines(bd_out, title_contains):
+        for row in parse_bd_flat_lines(bd_out, val):
             if row["id"] not in seen_ids:
                 seen_ids.add(row["id"])
                 beads_raw.append(row)
@@ -384,7 +457,10 @@ def list_implement_beads(mayor_rig: Path, beads_dir: Path, title_contains: str) 
             env=beads_env,
         )
         if code == 0:
-            beads_raw = parse_bd_flat_lines(bd_out, title_contains)
+            for row in parse_bd_flat_lines(bd_out, val):
+                if row["id"] not in seen_ids:
+                    seen_ids.add(row["id"])
+                    beads_raw.append(row)
         else:
             bd_failed = True
     return beads_raw, bd_failed
@@ -585,10 +661,10 @@ def main() -> int:
     print(f"  detected_stack:      {kind}")
     print()
 
-    beads_raw, bd_failed = list_implement_beads(mayor_rig, rig_dir / ".beads", title_contains)
+    beads_raw, bd_failed = list_implement_beads(mayor_rig, rig_dir / ".beads", val)
     beads_by_path: dict[str, dict] = {}
     for b in beads_raw:
-        path = extract_path_from_title(b["title"], title_contains)
+        path = extract_path_from_bead_title(b["title"], title_contains)
         path = normalize_bead_path(path, layout, required)
         if path:
             beads_by_path[path] = b
@@ -609,7 +685,14 @@ def main() -> int:
     if in_prog:
         for b in in_prog:
             print(f"    → {b['id']}: {b['title']}")
-    extras = [b for b in beads_raw if not path_matches_required(normalize_bead_path(extract_path_from_title(b["title"], title_contains), layout, required), required)]
+    extras = [
+        b
+        for b in beads_raw
+        if not path_matches_required(
+            normalize_bead_path(extract_path_from_bead_title(b["title"], title_contains), layout, required),
+            required,
+        )
+    ]
     if extras and required:
         print(f"  extra beads: {len(extras)} (not in required_files)")
         for b in extras[:5]:
