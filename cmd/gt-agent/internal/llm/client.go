@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"strings"
 	"time"
 )
 
@@ -16,6 +18,63 @@ type Client struct {
 	model    string
 	role     string
 	client   *http.Client
+}
+
+// Endpoint returns the configured chat-completions URL.
+func (c *Client) Endpoint() string {
+	if c == nil {
+		return ""
+	}
+	return c.endpoint
+}
+
+// HealthCheckURL derives a lightweight GET URL from an OpenAI-compatible chat endpoint.
+func HealthCheckURL(chatEndpoint string) string {
+	chatEndpoint = strings.TrimSpace(chatEndpoint)
+	if chatEndpoint == "" {
+		return ""
+	}
+	u, err := url.Parse(chatEndpoint)
+	if err != nil {
+		return ""
+	}
+	path := u.Path
+	switch {
+	case strings.HasSuffix(path, "/chat/completions"):
+		u.Path = strings.TrimSuffix(path, "/chat/completions") + "/models"
+	case path == "" || path == "/":
+		u.Path = "/v1/models"
+	default:
+		u.Path = strings.TrimRight(path, "/") + "/models"
+	}
+	u.RawQuery = ""
+	u.Fragment = ""
+	return u.String()
+}
+
+// Ping checks that the LLM HTTP server accepts connections before a long agent loop.
+func (c *Client) Ping(ctx context.Context) error {
+	if c == nil || strings.TrimSpace(c.endpoint) == "" {
+		return fmt.Errorf("LLM endpoint not configured")
+	}
+	checkURL := HealthCheckURL(c.endpoint)
+	if checkURL == "" {
+		return fmt.Errorf("invalid LLM endpoint %q", c.endpoint)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, checkURL, nil)
+	if err != nil {
+		return err
+	}
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("%w (GET %s)", err, checkURL)
+	}
+	defer resp.Body.Close()
+	_, _ = io.Copy(io.Discard, resp.Body)
+	if resp.StatusCode >= 200 && resp.StatusCode < 500 {
+		return nil
+	}
+	return fmt.Errorf("status %d from GET %s", resp.StatusCode, checkURL)
 }
 
 // NewClient creates a new LLM client.

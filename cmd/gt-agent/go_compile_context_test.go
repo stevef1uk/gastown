@@ -14,7 +14,7 @@ func TestExtractGoSourcePathsFromOutput(t *testing.T) {
 	out := `go: linkshelf/cmd/server imports
 	github.com/modernc.org/sqlite: cannot find module
 internal/api/handlers.go:8:2: /home/u/store.go:9:2: invalid import path: modernc.org/sqlite driver`
-	got := extractGoSourcePathsFromOutput(out, "linkshelf")
+	got := extractGoSourcePathsFromOutput(out, "linkshelf", nil, "")
 	found := false
 	for _, p := range got {
 		if strings.HasSuffix(p, "handlers.go") {
@@ -40,7 +40,12 @@ func TestExtractGoSourcePathsFromOutput_cmdServerImports(t *testing.T) {
 	t.Parallel()
 	out := `go: linkshelf/cmd/server imports
 	github.com/modernc.org/sqlite: cannot find module`
-	got := extractGoSourcePathsFromOutput(out, "linkshelf")
+	required := []string{
+		"linkshelf/cmd/server/main.go",
+		"linkshelf/internal/store/store.go",
+		"linkshelf/internal/api/handlers.go",
+	}
+	got := extractGoSourcePathsFromOutput(out, "linkshelf", required, "")
 	foundMain := false
 	for _, p := range got {
 		if strings.HasSuffix(p, "cmd/server/main.go") {
@@ -57,7 +62,7 @@ func TestExtractGoSourcePathsFromOutput_cmdServerImports(t *testing.T) {
 		}
 	}
 	if !foundStore {
-		t.Fatalf("expected store.go when module resolution fails, got %v", got)
+		t.Fatalf("expected store.go from profile required_files on module failure, got %v", got)
 	}
 }
 
@@ -66,7 +71,7 @@ func TestExtractGoSourcePathsFromOutput_moduleRelative(t *testing.T) {
 	out := `# linkshelf/internal/store
 internal/store/sqlite.go:16:1: syntax error
 internal/store/store.go:20:1: syntax error`
-	got := extractGoSourcePathsFromOutput(out, "linkshelf")
+	got := extractGoSourcePathsFromOutput(out, "linkshelf", nil, "")
 	for _, wantSuffix := range []string{"linkshelf/internal/store/sqlite.go", "linkshelf/internal/store/store.go"} {
 		found := false
 		for _, p := range got {

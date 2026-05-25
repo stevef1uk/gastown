@@ -21,8 +21,10 @@ import (
 )
 
 const (
-	defaultOrchPollInterval      = 15 * time.Second
-	maxOrchestratedCmdTurns      = 5
+	defaultOrchPollInterval           = 15 * time.Second
+	implementationLLMHealthMinTurns   = 10 // rig-flow implementation uses 12; ping before long loops
+	implementationLLMHealthTimeout    = 8 * time.Second
+	maxOrchestratedCmdTurns           = 5
 	maxOrchestratedQACmdTurns    = 8
 	maxOrchestratedRetryFeedback = 6000 // chars persisted for next fetch_task attempt
 )
@@ -121,6 +123,21 @@ func runOrchestrated(ctx context.Context, client *llm.Client, townRoot, role, ri
 	return nil
 }
 
+// ensureLLMReachableForImplementation fails fast when the local LLM proxy is down (avoids burning max_cmd_turns).
+func ensureLLMReachableForImplementation(ctx context.Context, client *llm.Client, task *orchestrator.Task, maxTurns int) error {
+	if task == nil || client == nil || task.State != "implementation" || maxTurns < implementationLLMHealthMinTurns {
+		return nil
+	}
+	pingCtx, cancel := context.WithTimeout(ctx, implementationLLMHealthTimeout)
+	defer cancel()
+	if err := client.Ping(pingCtx); err != nil {
+		checkURL := llm.HealthCheckURL(client.Endpoint())
+		return fmt.Errorf("LLM endpoint unreachable before %d-turn implementation loop: %w (GET %s — start freeride/Ollama or fix LLM_ENDPOINT)", maxTurns, err, checkURL)
+	}
+	orchestratedPrintf("[gt-agent] LLM health check OK (%s)\n", llm.HealthCheckURL(client.Endpoint()))
+	return nil
+}
+
 func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, rig, sessionName string, task *orchestrator.Task, priorRetry *OrchestratedRetry) (outcome, summary, attemptLog string, err error) {
 	rig = resolveOrchestratedRigName(townRoot, rig)
 	if rig == "" {
@@ -186,6 +203,9 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 	}
 
 	maxTurns := runner.maxTurns()
+	if err := ensureLLMReachableForImplementation(ctx, client, task, maxTurns); err != nil {
+		return "failure", err.Error(), "", err
+	}
 	for turn := 1; turn <= maxTurns; turn++ {
 		if rig != "" && orchestrator.IsRigWorkflowPaused(townRoot, rig) {
 			return "failure", "workflow paused", lastAttemptFeedback.String(), orchestrator.ErrWorkflowPaused

@@ -485,7 +485,8 @@ func (r *stateRunner) executeNativeEditOp(op nativeEditOp, workDir string) (stri
 			return "", err
 		}
 		content := sanitizeNativeFileContent(op.content)
-		if err := validateNativeGoContent(rel, content); err != nil {
+		content, err = validateAndNormalizeNativeGoContent(rel, content)
+		if err != nil {
 			return "", err
 		}
 		rigDir := r.mayorRigWorkDir()
@@ -542,20 +543,35 @@ func applyNativeSearchReplace(abs, search, replace string) (string, error) {
 	return applyNativeSearchReplaceValidated(filepath.Base(abs), abs, search, replace)
 }
 
-func validateNativeGoContent(relPath, content string) error {
+func normalizeNativeGoFileContent(relPath, content string) (string, error) {
 	if !strings.HasSuffix(filepath.ToSlash(relPath), ".go") {
-		return nil
+		return content, nil
+	}
+	out, removed, err := orchestrator.NormalizeGoTestFileContent(relPath, []byte(content))
+	if err != nil {
+		return "", err
+	}
+	if len(removed) > 0 {
+		orchestratedPrintf("[gt-agent] deduped duplicate test funcs in %s: %s\n", relPath, strings.Join(removed, ", "))
+	}
+	return string(out), nil
+}
+
+func validateAndNormalizeNativeGoContent(relPath, content string) (string, error) {
+	content, err := normalizeNativeGoFileContent(relPath, content)
+	if err != nil {
+		return "", err
 	}
 	if !strings.Contains(content, "package ") {
-		return nil
+		return content, nil
 	}
 	if strings.Contains(content, "}; if err") || strings.Contains(content, "}||") || strings.Contains(content, "Descriptionn") {
-		return fmt.Errorf("EDIT/WRITE body contains merged patch fragments — use one full WRITE with a complete file per SPEC Store contract")
+		return "", fmt.Errorf("EDIT/WRITE body contains merged patch fragments — use one full WRITE with a complete file per architecture/SPEC")
 	}
 	if err := orchestrator.GoSourceBytesValid([]byte(content)); err != nil {
-		return fmt.Errorf("Go syntax invalid — fix WRITE/EDIT body before saving (%v). If the file on disk is already broken, use one full WRITE with a complete file per SPEC", err)
+		return "", fmt.Errorf("Go syntax invalid — fix WRITE/EDIT body before saving (%v). If the file on disk is already broken, use one full WRITE with a complete file per SPEC", err)
 	}
-	return nil
+	return content, nil
 }
 
 func applyNativeSearchReplaceValidated(relPath, abs, search, replace string) (string, error) {
@@ -568,7 +584,8 @@ func applyNativeSearchReplaceValidated(relPath, abs, search, replace string) (st
 	if err != nil {
 		return "", err
 	}
-	if err := validateNativeGoContent(relPath, updated); err != nil {
+	updated, err = validateAndNormalizeNativeGoContent(relPath, updated)
+	if err != nil {
 		return "", err
 	}
 	if err := os.WriteFile(abs, []byte(updated), 0644); err != nil {

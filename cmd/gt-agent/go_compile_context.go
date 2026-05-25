@@ -38,7 +38,7 @@ func goToolOutputLooksFailed(cmd, output string) bool {
 	return strings.Contains(output, ": error:")
 }
 
-func extractGoSourcePathsFromOutput(output, layoutRoot string) []string {
+func extractGoSourcePathsFromOutput(output, layoutRoot string, required []string, mayorRigDir string) []string {
 	layout := strings.Trim(strings.TrimSpace(layoutRoot), "/")
 	seen := map[string]bool{}
 	var paths []string
@@ -74,34 +74,36 @@ func extractGoSourcePathsFromOutput(output, layoutRoot string) []string {
 			}
 		}
 	}
-	if len(paths) == 0 && layout != "" {
-		for _, p := range requiredGoPathsUnderLayout(layout) {
+	prodPaths := orchestrator.ProductionGoPathsFromRequired(required)
+	if len(paths) == 0 && len(prodPaths) > 0 {
+		for _, p := range prodPaths {
 			add(p)
 		}
 	}
-	// Module/import tidy failures often cite one package; include sibling sources for context.
-	if layout != "" && (strings.Contains(output, "finding module for package") ||
-		strings.Contains(output, "cannot find module")) {
-		for _, p := range requiredGoPathsUnderLayout(layout) {
+	// Module/import tidy failures often cite one package; include production sources from profile.
+	if strings.Contains(output, "finding module for package") ||
+		strings.Contains(output, "cannot find module") {
+		for _, p := range prodPaths {
 			add(p)
 		}
 	}
-	// Undefined selector failures often cite only the caller; include sibling sources
-	// so the agent can see whether the referenced API actually exists.
-	if layout != "" && strings.Contains(output, "undefined:") {
-		for _, p := range requiredGoPathsUnderLayout(layout) {
-			add(p)
+	// Undefined selector failures often cite only the caller; include production sources
+	// from required_files so the agent can see whether the referenced API exists.
+	if strings.Contains(output, "undefined:") {
+		if orchestrator.GoCompileErrorsOnlyInTestFiles(output, layout) {
+			for _, p := range orchestrator.GoTestFailureProductionPaths(output, layout) {
+				add(p)
+			}
+		} else {
+			for _, p := range prodPaths {
+				add(p)
+			}
+			for _, p := range orchestrator.ProductionPathsFromImportedPackages(mayorRigDir, layout, paths) {
+				add(p)
+			}
 		}
 	}
 	return paths
-}
-
-func requiredGoPathsUnderLayout(layout string) []string {
-	return []string{
-		layout + "/cmd/server/main.go",
-		layout + "/internal/store/store.go",
-		layout + "/internal/api/handlers.go",
-	}
 }
 
 const (
@@ -116,7 +118,7 @@ func appendGoCompileSourceContext(b *strings.Builder, townRoot, rig, mayorRigDir
 	if !goToolOutputLooksFailed(cmd, cmdOutput) {
 		return
 	}
-	paths := extractGoSourcePathsFromOutput(cmdOutput, layoutRoot)
+	paths := extractGoSourcePathsFromOutput(cmdOutput, layoutRoot, v.RequiredFiles, mayorRigDir)
 	paths = orchestrator.CompileErrorPathsIncludingClosedDeps(townRoot, rig, activeBeadPath, paths, cmdOutput, v)
 	if len(paths) == 0 {
 		return
@@ -158,7 +160,12 @@ func appendGoCompileSourceContext(b *strings.Builder, townRoot, rig, mayorRigDir
 	if strings.Contains(cmdOutput, "undefined:") {
 		b.WriteString("\nHint: an undefined Go symbol means the referenced API is missing or misnamed. Inspect the defining package files above; either add the missing export or change the caller to use an API that exists, then re-run verify.\n")
 	}
-	if hint := orchestrator.FormatClosedDependencyCompileHints(townRoot, rig, activeBeadPath, paths, v); hint != "" {
+	if hint := orchestrator.FormatSamePackageTestAPIHint(activeBeadPath, cmdOutput, v); hint != "" {
+		b.WriteString("\n")
+		b.WriteString(hint)
+		b.WriteString("\n")
+	}
+	if hint := orchestrator.FormatClosedDependencyCompileHints(townRoot, rig, activeBeadPath, paths, cmdOutput, v); hint != "" {
 		b.WriteString("\n")
 		b.WriteString(hint)
 		b.WriteString("\n")

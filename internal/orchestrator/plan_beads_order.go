@@ -217,7 +217,8 @@ func ClosedImplementBeadForPath(townRoot, rig, filePath string, v WorkflowValida
 }
 
 // FormatClosedDependencyCompileHints explains verify failures in earlier implement files whose beads are closed.
-func FormatClosedDependencyCompileHints(townRoot, rig, activeBeadPath string, errorPaths []string, v WorkflowValidation) string {
+// cmdOutput is the failed go command output; when empty, hints are conservative (resume without stored output).
+func FormatClosedDependencyCompileHints(townRoot, rig, activeBeadPath string, errorPaths []string, cmdOutput string, v WorkflowValidation) string {
 	activeBeadPath = filepath.ToSlash(strings.TrimSpace(activeBeadPath))
 	if activeBeadPath == "" || len(errorPaths) == 0 {
 		return ""
@@ -237,20 +238,22 @@ func FormatClosedDependencyCompileHints(townRoot, rig, activeBeadPath string, er
 		if !ok {
 			continue
 		}
+		if !ShouldSuggestReopenClosedDep(activeBeadPath, p, cmdOutput, v) {
+			continue
+		}
 		lines = append(lines, fmt.Sprintf(
-			"- `%s` belongs to closed bead **%s** — you cannot edit it on the active `%s` bead. Reopen: `bd update %s --status=open` → **EDIT:** / **WRITE:** → Verify → `bd close %s`, then continue this bead.",
-			p, id, activeBeadPath, id, id,
+			"- `%s` belongs to closed bead **%s** — go output cites this file (or a cross-package import). Reopen only if that file needs changes: `bd update %s --status=open` → **EDIT:** / **WRITE:** → Verify → `bd close %s`, then continue **`%s`**.",
+			p, id, id, id, activeBeadPath,
 		))
 	}
 	if len(lines) == 0 {
 		return ""
 	}
-	return strings.TrimSpace("### Reopen closed implement beads (compile errors in dependencies)\n" +
+	return strings.TrimSpace("### Reopen closed implement beads (only when go output cites that file)\n" +
 		strings.Join(lines, "\n") +
-		"\n\n**First:** run `CMD:` lines to reopen and fix each closed dependency bead (`bd update <id> --status=open` → **EDIT:** / **WRITE:** → Verify → `bd close <id>`), then continue the active bead. " +
-		"Copy bead IDs from `bd list --status=closed`. Do **not** send JSON `failure` until you have run those `bd update` / fix steps in this session. " +
-		"Do **not** keep editing only the active file or use `bd update --status=failed` (invalid). " +
-		"Use JSON `failure` only if reopen/fix is impossible and name the bead ID + compile error.")
+		"\n\n**When go output cites a closed dependency file above:** run `CMD:` `bd update <id> --status=open` → fix that file → Verify → `bd close <id>`, then continue the active bead. " +
+		"If errors are only in `*_test.go`, fix tests to match the active production file first — do not reopen other closed beads in the same package unless go output cites them. " +
+		"Copy bead IDs from `bd list --status=closed`. Use JSON `failure` only if reopen/fix is impossible (name bead ID + error).")
 }
 
 // AllowedEarlierImplementDependencyWrite reports whether written is a profile required_file

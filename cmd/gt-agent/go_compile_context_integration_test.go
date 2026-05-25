@@ -104,7 +104,14 @@ func TestImplementationGoFailureFeedback_includesSourceContext(t *testing.T) {
 func TestImplementationGoFailureFeedback_undefinedSymbolIncludesSiblingContext(t *testing.T) {
 	town := t.TempDir()
 	rig := "testrig"
-	v := orchestrator.WorkflowValidation{LayoutRoot: "linkshelf"}
+	v := orchestrator.WorkflowValidation{
+		LayoutRoot: "linkshelf",
+		RequiredFiles: []string{
+			"linkshelf/cmd/server/main.go",
+			"linkshelf/internal/api/handlers.go",
+			"linkshelf/internal/store/store.go",
+		},
+	}
 	mayor := filepath.Join(town, rig, "mayor", "rig")
 	files := map[string]string{
 		"linkshelf/cmd/server/main.go": `package main

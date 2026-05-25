@@ -28,6 +28,7 @@ type ImplementationProgress struct {
 	LastVerifyFailBead   string          `json:"last_verify_fail_bead,omitempty"`
 	LastVerifyFailPath   string          `json:"last_verify_fail_path,omitempty"`
 	LastVerifyFailPaths  []string        `json:"last_verify_fail_paths,omitempty"`
+	LastVerifyFailOutput string          `json:"last_verify_fail_output,omitempty"`
 }
 
 func implementationProgressPath(townRoot, rig string) string {
@@ -171,6 +172,7 @@ func (r *stateRunner) clearStaleImplementationVerifyFailureOnResume() {
 	r.implProgress.LastVerifyFailBead = ""
 	r.implProgress.LastVerifyFailPath = ""
 	r.implProgress.LastVerifyFailPaths = nil
+	r.implProgress.LastVerifyFailOutput = ""
 	r.track.verifyOK = true
 	r.implProgress.mark(implVerifyKey(r.track.activeBead))
 	if saveErr := saveImplementationProgress(r.townRoot, r.rig, r.implProgress); saveErr != nil {
@@ -213,6 +215,7 @@ func (r *stateRunner) persistImplementationProgress(cmd string) {
 			r.implProgress.LastVerifyFailBead = ""
 			r.implProgress.LastVerifyFailPath = ""
 			r.implProgress.LastVerifyFailPaths = nil
+			r.implProgress.LastVerifyFailOutput = ""
 			changed = true
 		}
 	}
@@ -229,6 +232,7 @@ func (r *stateRunner) persistImplementationProgress(cmd string) {
 		r.implProgress.LastVerifyFailBead = ""
 		r.implProgress.LastVerifyFailPath = ""
 		r.implProgress.LastVerifyFailPaths = nil
+		r.implProgress.LastVerifyFailOutput = ""
 	}
 	if isBeadCloseCommand(cmd) && cmd != "" {
 		if id := extractBeadIDFromBdClose(cmd); id != "" {
@@ -255,12 +259,13 @@ func (r *stateRunner) noteImplementationVerifyFailure(cmd, cmdOutput string) {
 	activePath := r.activeImplementBeadPath()
 	paths := orchestrator.CompileErrorPathsIncludingClosedDeps(
 		r.townRoot, r.rig, activePath,
-		extractGoSourcePathsFromOutput(cmdOutput, r.v.LayoutRoot),
+		extractGoSourcePathsFromOutput(cmdOutput, r.v.LayoutRoot, r.v.RequiredFiles, rigMayorRigDir(r.townRoot, r.rig)),
 		cmdOutput, r.v,
 	)
 	r.implProgress.LastVerifyFailBead = r.track.activeBead
 	r.implProgress.LastVerifyFailPath = activePath
 	r.implProgress.LastVerifyFailPaths = paths
+	r.implProgress.LastVerifyFailOutput = truncateForProgress(cmdOutput, 12000)
 	r.track.lastVerifyOutput = cmdOutput
 	if r.implProgress.Completed != nil && r.track.activeBead != "" {
 		delete(r.implProgress.Completed, implVerifyKey(r.track.activeBead))
@@ -316,15 +321,24 @@ func (r *stateRunner) formatImplementationProgressBlock() string {
 	}
 
 	if hasResume && r.track != nil && r.implProgress.LastVerifyFailBead == r.track.activeBead {
+		failOut := r.implProgress.LastVerifyFailOutput
+		if failOut == "" && r.track != nil {
+			failOut = r.track.lastVerifyOutput
+		}
 		if hint := orchestrator.FormatClosedDependencyCompileHints(
-			r.townRoot, r.rig, r.implProgress.LastVerifyFailPath, r.implProgress.LastVerifyFailPaths, r.v,
+			r.townRoot, r.rig, r.implProgress.LastVerifyFailPath, r.implProgress.LastVerifyFailPaths, failOut, r.v,
 		); hint != "" {
 			b.WriteString("\n")
 			b.WriteString(hint)
 			b.WriteString("\n")
 		}
+		if hint := orchestrator.FormatSamePackageTestAPIHint(r.implProgress.LastVerifyFailPath, failOut, r.v); hint != "" {
+			b.WriteString("\n")
+			b.WriteString(hint)
+			b.WriteString("\n")
+		}
 		if hint := orchestrator.FormatGoTestFailureHints(
-			r.townRoot, r.rig, r.implProgress.LastVerifyFailPath, "", r.implProgress.LastVerifyFailPaths, r.v,
+			r.townRoot, r.rig, r.implProgress.LastVerifyFailPath, failOut, r.implProgress.LastVerifyFailPaths, r.v,
 		); hint != "" {
 			b.WriteString("\n")
 			b.WriteString(hint)
@@ -334,6 +348,14 @@ func (r *stateRunner) formatImplementationProgressBlock() string {
 
 	b.WriteString(fmt.Sprintf("\nProgress file: `%s/qa/implementation-progress.json` (cleared when leaving implementation).\n", r.implProgress.Rig))
 	return b.String()
+}
+
+func truncateForProgress(s string, max int) string {
+	s = strings.TrimSpace(s)
+	if max <= 0 || len(s) <= max {
+		return s
+	}
+	return s[:max] + "\n... (truncated)\n"
 }
 
 func clearImplementationProgressIfLeaving(townRoot, rig, fromState, nextState string) {

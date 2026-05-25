@@ -591,3 +591,22 @@ func TestStatic(t *testing.T) {
 		t.Fatalf("feedback:\n%s", combined.String())
 	}
 }
+
+func TestValidateAndNormalizeNativeGoContent_dedupesDuplicateTests(t *testing.T) {
+	t.Parallel()
+	body := `package pkg
+
+import "testing"
+
+func TestWidget(t *testing.T) {}
+
+func TestWidget(t *testing.T) { t.Fatal("dup") }
+`
+	out, err := validateAndNormalizeNativeGoContent("app/internal/pkg/widget_test.go", body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Count(out, "func TestWidget") != 1 {
+		t.Fatalf("want one TestWidget, got:\n%s", out)
+	}
+}

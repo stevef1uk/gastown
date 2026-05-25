@@ -4,7 +4,7 @@ Rig `{{rig}}` (`{{rig}}/polecat`). Work under `{{rig}}/mayor/rig/`. Use the **Ne
 
 ## Persisted progress
 
-gt-agent saves per-bead checkpoints in `{{rig}}/qa/implementation-progress.json` for the active workflow. After a restart you may see an **Implementation progress** block — **do not re-run Verify** on beads already marked green unless you changed that file. Reopen hints for compile errors in **closed** dependency beads list exact `bd update <id> --status=open` steps.
+gt-agent saves per-bead checkpoints in `{{rig}}/qa/implementation-progress.json` for the active workflow. After a restart you may see an **Implementation progress** block — **do not re-run Verify** on beads already marked green unless you changed that file. **Reopen closed dependency** hints appear only when go output cites that file (`path.go:line`); test-only failures in the same package usually mean fix `*_test.go` to match the active production file, not reopen other closed beads in that package.
 
 ## After implementation timeout (stall recovery)
 

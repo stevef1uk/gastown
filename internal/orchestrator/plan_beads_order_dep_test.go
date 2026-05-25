@@ -48,16 +48,14 @@ func TestFormatClosedDependencyCompileHints(t *testing.T) {
 		}
 	})
 
+	out := "linkshelf/cmd/server/main.go:42:9: undefined: api.GetLinks"
 	got := FormatClosedDependencyCompileHints("", "", "linkshelf/cmd/server/main.go",
-		[]string{"linkshelf/internal/api/handlers.go"}, v)
+		[]string{"linkshelf/internal/api/handlers.go"}, out, v)
 	if got == "" || !strings.Contains(got, "te-h") || !strings.Contains(got, "closed") {
 		t.Fatalf("want closed-bead hint, got %q", got)
 	}
 	if !strings.Contains(got, "bd update te-h --status=open") {
 		t.Fatalf("want explicit bd update step, got %q", got)
-	}
-	if !strings.Contains(got, "**First:**") || strings.Contains(got, "finish with JSON only") {
-		t.Fatalf("want CMD-first reopen guidance, not failure-json default, got %q", got)
 	}
 }
 

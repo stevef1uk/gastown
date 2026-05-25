@@ -11,7 +11,7 @@ import (
 
 func TestValidateNativeGoContent_rejectsSyntaxError(t *testing.T) {
 	src := "package store\n\nfunc f() {}\n}n err\n"
-	err := validateNativeGoContent("linkshelf/internal/store/store.go", src)
+	_, err := validateAndNormalizeNativeGoContent("linkshelf/internal/store/store.go", src)
 	if err == nil {
 		t.Fatal("expected syntax rejection")
 	}
@@ -22,7 +22,7 @@ func TestValidateNativeGoContent_rejectsSyntaxError(t *testing.T) {
 
 func TestValidateNativeGoContent_rejectsMergeFragments(t *testing.T) {
 	src := "package store\n\nfunc f() {}\n}; if err != nil {\n"
-	err := validateNativeGoContent("store.go", src)
+	_, err := validateAndNormalizeNativeGoContent("store.go", src)
 	if err == nil {
 		t.Fatal("expected merge-fragment rejection")
 	}
@@ -33,13 +33,13 @@ func TestValidateNativeGoContent_rejectsMergeFragments(t *testing.T) {
 
 func TestValidateNativeGoContent_acceptsValidPackage(t *testing.T) {
 	src := "package store\n\nfunc List() {}\n"
-	if err := validateNativeGoContent("store.go", src); err != nil {
+	if _, err := validateAndNormalizeNativeGoContent("store.go", src); err != nil {
 		t.Fatal(err)
 	}
 }
 
 func TestValidateNativeGoContent_skipsNonPackageSnippet(t *testing.T) {
-	if err := validateNativeGoContent("notes.go", "not go at all\n"); err != nil {
+	if _, err := validateAndNormalizeNativeGoContent("notes.go", "not go at all\n"); err != nil {
 		t.Fatal("non-package snippets should skip validation")
 	}
 }

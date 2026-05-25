@@ -192,7 +192,7 @@ func FormatGoTestFailureHints(townRoot, rig, activeBeadPath, cmdOutput string, e
 	}
 	prod := GoTestFailureProductionPaths(cmdOutput, v.LayoutRoot)
 	merged := append(append([]string{}, errorPaths...), prod...)
-	if hint := FormatClosedDependencyCompileHints(townRoot, rig, activeBeadPath, merged, v); hint != "" {
+	if hint := FormatClosedDependencyCompileHints(townRoot, rig, activeBeadPath, merged, cmdOutput, v); hint != "" {
 		return hint
 	}
 	var b strings.Builder

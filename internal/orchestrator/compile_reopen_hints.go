@@ -44,7 +44,8 @@ func CompileErrorPathsIncludingClosedDeps(townRoot, rig, activeBeadPath string, 
 		if closedOnly, err := ImplementPathHasOnlyClosedBeads(townRoot, rig, dep, v); err != nil || !closedOnly {
 			continue
 		}
-		if outputMentionsPath(cmdOutput, dep, v.LayoutRoot) {
+		// Include closed deps in source context when cited or implicated; reopen *hints* are softer (see FormatClosedDependencyCompileHints).
+		if outputMentionsPath(cmdOutput, dep, v.LayoutRoot) || GoCompileOutputCitesFile(cmdOutput, dep, v.LayoutRoot) {
 			add(dep)
 		}
 	}
