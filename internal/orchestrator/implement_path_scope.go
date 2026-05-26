@@ -54,6 +54,9 @@ func ValidateImplementReadPath(townRoot, rig, activeBead, relPath string, v Work
 			}
 		}
 	}
+	if allowedPath != "" && AllowedCorrelatedPackageImplementWrite(allowedPath, relPath, v) {
+		return nil
+	}
 	if allowedPath != "" && AllowedEarlierImplementDependencyWrite(townRoot, rig, allowedPath, relPath, v) {
 		return nil
 	}
@@ -82,7 +85,8 @@ func validateImplementWriteScope(townRoot, rig, activeBead, written string, v Wo
 	if AllowClosedDepFixForVerifyFailure(townRoot, rig, allowedPath, written, verifyOutput, v) {
 		return nil
 	}
-	if closedOnly, err := ImplementPathHasOnlyClosedBeads(townRoot, rig, written, v); err == nil && closedOnly {
+	if closedOnly, err := ImplementPathHasOnlyClosedBeads(townRoot, rig, written, v); err == nil && closedOnly &&
+		!AllowedCorrelatedPackageImplementWrite(allowedPath, written, v) {
 		if allowedPath != "" {
 			return fmt.Errorf("do not overwrite %q — its implement bead is closed (reopen that bead or edit only %s for %s)",
 				written, allowedPath, allowedID)
@@ -108,6 +112,12 @@ func validateImplementWriteScope(townRoot, rig, activeBead, written string, v Wo
 				return nil
 			}
 		}
+	}
+	if AllowedCorrelatedPackageImplementWrite(allowedPath, written, v) {
+		if err := ValidateHTTPHandlerBeadPrerequisites(filepath.Join(townRoot, rig, "mayor", "rig"), written, v); err != nil {
+			return err
+		}
+		return nil
 	}
 	if AllowedEarlierImplementDependencyWrite(townRoot, rig, allowedPath, written, v) {
 		return nil
@@ -148,6 +158,10 @@ func OpenImplementBeadForPath(townRoot, rig, filePath string, v WorkflowValidati
 func NewImplementWriteScopeError(townRoot, rig, allowedID, allowedPath, written string, v WorkflowValidation) error {
 	base := fmt.Errorf("write only the active/next implement file (%s for bead %s), not %q",
 		allowedPath, allowedID, written)
+	if AllowedCorrelatedPackageImplementWrite(allowedPath, written, v) {
+		return fmt.Errorf("%w — use **EDIT:**/**WRITE:** on %q to align the same Go package, then **Verify** (go test on this package)",
+			base, written)
+	}
 	if targetID, targetPath, ok := OpenImplementBeadForPath(townRoot, rig, written, v); ok && targetID != "" && targetID != allowedID {
 		return fmt.Errorf("%w — %q belongs to open bead %s (%s); finish bead %s (%s) first, then `CMD: bd update %s --status=in_progress` → **EDIT:** → Verify → `bd close %s`",
 			base, written, targetID, targetPath, allowedID, allowedPath, targetID, targetID)

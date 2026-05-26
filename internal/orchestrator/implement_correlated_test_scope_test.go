@@ -14,6 +14,32 @@ func TestCorrelatedTestPathForSource_schemaBead(t *testing.T) {
 	}
 }
 
+func TestValidateImplementWritePath_testBeadAllowsCorrelatedProduction(t *testing.T) {
+	dir := t.TempDir()
+	rig := "mockrig"
+	v := DefaultWorkflowValidation()
+	v.LayoutRoot = "linkshelf"
+	v.QAVerifyCommand = "cd linkshelf && go test ./..."
+	v.RequiredFiles = []string{
+		"linkshelf/internal/api/handlers.go",
+		"linkshelf/internal/api/handlers_test.go",
+	}
+	setListImplementBeadsByStatusHook(t, dir, rig, func(_, _ string, _ WorkflowValidation, status string) ([]PlanBead, error) {
+		switch status {
+		case "closed":
+			return []PlanBead{{ID: "te-h", Title: "Implement linkshelf/internal/api/handlers.go per architecture"}}, nil
+		case "in_progress":
+			return []PlanBead{{ID: "te-ht", Title: "Implement linkshelf/internal/api/handlers_test.go per architecture"}}, nil
+		default:
+			return nil, nil
+		}
+	})
+	err := ValidateImplementWritePath(dir, rig, "te-ht", "linkshelf/internal/api/handlers.go", v, true, "undefined: getLinksHandler")
+	if err != nil {
+		t.Fatalf("test bead should allow editing correlated handlers.go: %v", err)
+	}
+}
+
 func TestValidateImplementReadPath_correlatedGoTest(t *testing.T) {
 	dir := t.TempDir()
 	rig := "mockrig"
@@ -49,6 +75,8 @@ func TestValidateImplementWritePath_correlatedGoTest_table(t *testing.T) {
 	v.RequiredFiles = []string{
 		"linkshelf/internal/store/schema.go",
 		"linkshelf/internal/store/store.go",
+		"linkshelf/internal/api/handlers.go",
+		"linkshelf/internal/api/handlers_test.go",
 	}
 	setListImplementBeadsByStatusHook(t, dir, rig, nil)
 	setActive := func(id, title string) {
@@ -98,6 +126,19 @@ func TestValidateImplementWritePath_correlatedGoTest_table(t *testing.T) {
 			title:  "Implement linkshelf/internal/store/store.go per architecture",
 			write:  "linkshelf/internal/store/store_test.go",
 			full:   true,
+		},
+		{
+			beadID: "te-api-test",
+			title:  "Implement linkshelf/internal/api/handlers_test.go per architecture",
+			write:  "linkshelf/internal/api/handlers.go",
+			full:   true,
+		},
+		{
+			beadID:   "te-api-test",
+			title:    "Implement linkshelf/internal/api/handlers_test.go per architecture",
+			write:    "linkshelf/cmd/server/main.go",
+			full:     true,
+			wantFail: true,
 		},
 	}
 	for _, tc := range cases {

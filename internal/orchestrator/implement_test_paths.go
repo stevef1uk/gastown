@@ -77,6 +77,50 @@ func TestPathListedInRequired(sourcePath string, required []string, layoutRoot s
 	return false
 }
 
+// AllowedCorrelatedPackageImplementWrite allows editing the paired production or *_test.go
+// file in the same Go package while a different implement bead is active (e.g. fix handlers.go
+// while working the handlers_test.go bead so go test ./internal/api/... compiles).
+func AllowedCorrelatedPackageImplementWrite(activePath, writtenPath string, v WorkflowValidation) bool {
+	if !WorkflowUsesGo(v) {
+		return false
+	}
+	activePath = filepath.ToSlash(strings.TrimSpace(activePath))
+	writtenPath = filepath.ToSlash(strings.TrimSpace(writtenPath))
+	if activePath == "" || writtenPath == "" || activePath == writtenPath {
+		return false
+	}
+	if !sameGoImplementPackage(activePath, writtenPath, v.LayoutRoot) {
+		return false
+	}
+	if IsTestImplementPath(activePath) && !IsTestImplementPath(writtenPath) {
+		if src := SourcePathForCorrelatedTest(activePath, v.LayoutRoot); src != "" &&
+			PathMatchesImplementWrite(writtenPath, src, v.RequiredFiles) {
+			return true
+		}
+		return productionGoPathInRequiredFiles(writtenPath, v)
+	}
+	if !IsTestImplementPath(activePath) && IsTestImplementPath(writtenPath) {
+		if test := CorrelatedTestPathForSource(activePath, v.LayoutRoot); test != "" &&
+			PathMatchesImplementWrite(writtenPath, test, v.RequiredFiles) {
+			return true
+		}
+	}
+	return false
+}
+
+func productionGoPathInRequiredFiles(path string, v WorkflowValidation) bool {
+	path = filepath.ToSlash(strings.TrimSpace(path))
+	if path == "" || IsTestImplementPath(path) || !strings.HasSuffix(path, ".go") {
+		return false
+	}
+	for _, want := range v.RequiredFiles {
+		if pathMatchesRequired(path, []string{want}) {
+			return true
+		}
+	}
+	return false
+}
+
 func mayorRigTestFileExists(townRoot, rig, relPath string) bool {
 	relPath = filepath.ToSlash(strings.TrimSpace(relPath))
 	if relPath == "" {

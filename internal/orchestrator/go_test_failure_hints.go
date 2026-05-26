@@ -224,6 +224,10 @@ func FormatGoTestFailureHints(townRoot, rig, activeBeadPath, cmdOutput string, e
 			if p == activeBeadPath {
 				continue
 			}
+			if IsTestImplementPath(activeBeadPath) && AllowedCorrelatedPackageImplementWrite(activeBeadPath, p, v) {
+				b.WriteString(fmt.Sprintf("\nYou may **EDIT:** or **WRITE:** **`%s`** while this test bead is active — same Go package, separate implement bead.\n", p))
+				continue
+			}
 			id, ok := ClosedImplementBeadForPath(townRoot, rig, p, v)
 			if ok {
 				b.WriteString(fmt.Sprintf("\nFailure references **`%s`** (closed bead **%s**) while active bead is **`%s`**. Reopen **%s**, fix with **EDIT:**, Verify, `bd close %s`, then continue the active bead.\n",
@@ -231,5 +235,29 @@ func FormatGoTestFailureHints(townRoot, rig, activeBeadPath, cmdOutput string, e
 			}
 		}
 	}
+	if hint := FormatSamePackageCompileUnblockHint(activeBeadPath, cmdOutput, v); hint != "" {
+		if b.Len() > 0 {
+			b.WriteString("\n")
+		}
+		b.WriteString(hint)
+	}
 	return strings.TrimSpace(b.String())
+}
+
+// FormatSamePackageCompileUnblockHint tells the polecat it may edit correlated production
+// source while working a *_test.go implement bead when package compile/test fails.
+func FormatSamePackageCompileUnblockHint(activeBeadPath, cmdOutput string, v WorkflowValidation) string {
+	activeBeadPath = filepath.ToSlash(strings.TrimSpace(activeBeadPath))
+	if activeBeadPath == "" || !IsTestImplementPath(activeBeadPath) || !verifyOutputSuggestsCrossFile(cmdOutput) {
+		return ""
+	}
+	src := SourcePathForCorrelatedTest(activeBeadPath, v.LayoutRoot)
+	if src == "" || !productionGoPathInRequiredFiles(src, v) {
+		return ""
+	}
+	return strings.TrimSpace(fmt.Sprintf(`### Same package — you may edit production source
+While **`+"`%s`"+`** is the active bead, you may **EDIT:** or **WRITE:** **`+"`%s`"+`** so tests and production compile together (separate implement beads, one `+"`go test`"+` package).
+
+Prefer one API shape: either named handler funcs **or** `+"`http.HandleFunc`"+` in `+"`init`"+`, with tests calling the same symbols — not mismatched names like `+"`getLinksHandler`"+` in tests when production only registers mux routes.`,
+		activeBeadPath, src))
 }
