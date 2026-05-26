@@ -138,3 +138,42 @@ func TestFormatSpecStoreContractBlock_generic(t *testing.T) {
 		t.Fatalf("want SPEC content: %s", got)
 	}
 }
+
+func TestExtractContractSymbolsFromDocs_plainLayoutFencesIgnored(t *testing.T) {
+	t.Parallel()
+	spec := "# Goal\n\n```bash\ncd app && go test ./...\n```\n\n## Layout\n\n```\napp/store.go\n```\n\n## Store API\n\n```go\nfunc List(ctx context.Context) ([]Link, error)\nfunc Create(ctx context.Context, title, url string) (Link, error)\nfunc Delete(ctx context.Context, id int64) error\n```\n"
+	got := extractContractSymbolsFromDocs(spec, "", "", "linkshelf/internal/store/store.go", "linkshelf")
+	for _, sym := range []string{"List", "Create", "Delete"} {
+		found := false
+		for _, g := range got {
+			if g == sym {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("missing %q in %v", sym, got)
+		}
+	}
+}
+
+func TestValidateImplementExportedSymbols_skipsWhenOnDiskCorrupt(t *testing.T) {
+	dir := t.TempDir()
+	rigDir := filepath.Join(dir, "rig", "mayor", "rig")
+	rel := "linkshelf/internal/store/store.go"
+	abs := filepath.Join(rigDir, rel)
+	if err := os.MkdirAll(filepath.Dir(abs), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(abs, []byte("`---END WRITE---`\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(rigDir, "SPEC.md"), []byte("## Store\n```go\nfunc List() error\n```\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	v := WorkflowValidation{LayoutRoot: "linkshelf", QAVerifyCommand: "cd linkshelf && go test ./..."}
+	body := "package store\n\nfunc List() {}\nfunc Create() {}\nfunc Delete() {}\n"
+	if err := validateImplementExportedSymbols(rigDir, rel, body, v, true); err != nil {
+		t.Fatalf("corrupt on-disk file should allow recovery WRITE: %v", err)
+	}
+}

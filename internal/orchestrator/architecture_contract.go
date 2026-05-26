@@ -16,7 +16,8 @@ var (
 	goExportedTypeRE     = regexp.MustCompile(`(?m)^type\s+([A-Z][A-Za-z0-9_]*)\s+(?:struct|interface)`)
 	goExportedMethodRE   = regexp.MustCompile(`(?m)^func\s+\([^)]*\*?([A-Z][A-Za-z0-9_]*)\)\s+([A-Z][A-Za-z0-9_]*)\s*\(`)
 	goInlineSnippetRE    = regexp.MustCompile("`([^`]*(?:\\bfunc\\s+|\\btype\\s+)[^`]*)`")
-	goCodeFenceRE        = regexp.MustCompile("(?s)```(?:go|golang)?\\s*\\n(.*?)```")
+	// Require go/golang tag — optional tag matched plain ``` layout trees and swallowed SPEC prose.
+	goCodeFenceRE = regexp.MustCompile("(?s)```(?:go|golang)\\s*\\n(.*?)```")
 	archTestNameRE       = regexp.MustCompile(`\b(Test[A-Za-z0-9_]+)\b`)
 )
 
@@ -359,11 +360,22 @@ func BuildImplementSymbolAllowlist(mayorRigDir, beadPath string, v WorkflowValid
 	for _, sym := range ArchitectureContractSymbolNames(mayorRigDir, beadPath, v) {
 		allowed[sym] = true
 	}
+	// Store beads: SPEC Store/Data model sections are authoritative (package-level List/Create/Delete).
+	if IsStorePackageBeadPath(beadPath) && !IsSQLiteSchemaBeadPath(beadPath) {
+		for sym := range canonicalStoreSymbolsFromSPEC(readRigDoc(mayorRigDir, "SPEC.md")) {
+			allowed[sym] = true
+		}
+	}
 	return allowed
 }
 
 // ValidateImplementExportedSymbols rejects new exported funcs/types not in the design allowlist.
 func ValidateImplementExportedSymbols(mayorRigDir, relPath, content string, v WorkflowValidation) error {
+	return validateImplementExportedSymbols(mayorRigDir, relPath, content, v, true)
+}
+
+// validateImplementExportedSymbols is the allowlist check; skipWhenCorruptOnDisk allows full WRITE recovery.
+func validateImplementExportedSymbols(mayorRigDir, relPath, content string, v WorkflowValidation, skipWhenCorruptOnDisk bool) error {
 	if !WorkflowUsesGo(v) || strings.HasSuffix(relPath, "_test.go") {
 		return nil
 	}
@@ -374,6 +386,13 @@ func ValidateImplementExportedSymbols(mayorRigDir, relPath, content string, v Wo
 	content = strings.TrimSpace(content)
 	if relPath == "" || content == "" {
 		return nil
+	}
+	if skipWhenCorruptOnDisk {
+		abs := filepath.Join(mayorRigDir, filepath.FromSlash(relPath))
+		if data, err := os.ReadFile(abs); err == nil && GoSourceBytesValid(data) != nil {
+			// Corrupted on-disk file: full WRITE recovery must not be blocked by a stale codeindex allowlist.
+			return nil
+		}
 	}
 	allowed := BuildImplementSymbolAllowlist(mayorRigDir, relPath, v)
 	if len(allowed) == 0 {
