@@ -2170,17 +2170,16 @@ func validateQAArtifacts(townRoot, rig, outcome string, hadCmdFailure, bdListClo
 			return err
 		}
 	}
-	openImpl, err := countOpenMatchingBeads(townRoot, rig, v)
-	if err != nil {
-		return err
-	}
 	switch outcome {
-	case "all_passed":
-		if openImpl > 0 {
+	case "all_passed", "task_passed":
+		openImpl, err := countOpenMatchingBeads(townRoot, rig, v)
+		if err != nil {
+			return err
+		}
+		if outcome == "all_passed" && openImpl > 0 {
 			return fmt.Errorf("cannot use all_passed: %d open implement bead(s) remain for active phase", openImpl)
 		}
-	case "task_passed":
-		if openImpl == 0 {
+		if outcome == "task_passed" && openImpl == 0 {
 			return fmt.Errorf("use all_passed when no open implement beads remain for active phase")
 		}
 	}
