@@ -34,6 +34,12 @@ func TestGoToolOutputLooksFailed(t *testing.T) {
 	if goToolOutputLooksFailed("go mod tidy", "go: downloading example.com v1.0.0\n") {
 		t.Fatal("expected success output not failed")
 	}
+	if goToolOutputLooksFailed("cd linkshelf && go mod tidy", `go: warning: "all" matched no packages`) {
+		t.Fatal("empty module go mod tidy must not look failed")
+	}
+	if !goToolOutputLooksFailed("go test ./...", `go: warning: "all" matched no packages`) {
+		t.Fatal("go test with no packages must still look failed")
+	}
 }
 
 func TestExtractGoSourcePathsFromOutput_cmdServerImports(t *testing.T) {

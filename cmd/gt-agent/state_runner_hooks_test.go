@@ -129,6 +129,16 @@ func TestStateRunner_rigFlowHooksTrackAndArtifacts(t *testing.T) {
 	}
 }
 
+func TestGoAutoVerifyNoPackagesIsError(t *testing.T) {
+	t.Parallel()
+	if goAutoVerifyNoPackagesIsError("go_setup", "project_setup") {
+		t.Fatal("project_setup go mod tidy with no .go files must not fail auto-verify")
+	}
+	if !goAutoVerifyNoPackagesIsError("go_implementation", "implementation") {
+		t.Fatal("implementation verify must still fail on matched no packages")
+	}
+}
+
 // TestStateRunner_rigFlowAutoVerifyHooksMatchCommands proves YAML auto_verify when clauses match intent.
 func TestStateRunner_rigFlowAutoVerifyHooksMatchCommands(t *testing.T) {
 	t.Parallel()

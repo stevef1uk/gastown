@@ -13,6 +13,21 @@ func GoToolOutputMatchedNoPackages(output string) bool {
 	return strings.Contains(lower, "matched no packages") || strings.Contains(lower, "no packages to test")
 }
 
+// GoModTidyOnlyCommand reports verify/shell commands that only run go mod tidy (no test/build/run).
+// Empty modules warn "matched no packages" on tidy; that is expected before any .go files exist.
+func GoModTidyOnlyCommand(cmd string) bool {
+	lower := strings.ToLower(strings.TrimSpace(cmd))
+	if !strings.Contains(lower, "go mod tidy") {
+		return false
+	}
+	for _, blocked := range []string{"go test", "go build", "go run", "go vet"} {
+		if strings.Contains(lower, blocked) {
+			return false
+		}
+	}
+	return true
+}
+
 // WorkflowUsesGo reports whether the rig workflow profile targets a Go module
 // (go test / go mod in qa_verify_command, or test_runner: go).
 func WorkflowUsesGo(v WorkflowValidation) bool {

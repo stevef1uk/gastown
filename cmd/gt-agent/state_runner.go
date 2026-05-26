@@ -436,6 +436,15 @@ func (r *stateRunner) shutdownStartedServers() {
 	shutdownStartedDevServers(r.servers)
 }
 
+// goAutoVerifyNoPackagesIsError reports whether "matched no packages" output should fail auto-verify.
+// project_setup / go_setup only scaffold go.mod — no .go files exist yet.
+func goAutoVerifyNoPackagesIsError(verifyKind, state string) bool {
+	if verifyKind == "go_setup" || state == "project_setup" {
+		return false
+	}
+	return true
+}
+
 func (r *stateRunner) runAutoVerify(cmd, workDir, sessionName string, cmdEnv []string, combined *strings.Builder) {
 	for _, hook := range r.hooks.AutoVerify {
 		if !r.autoVerifyMatches(cmd, hook.When) {
@@ -468,7 +477,9 @@ func (r *stateRunner) runAutoVerify(cmd, workDir, sessionName string, cmdEnv []s
 			if strings.EqualFold(strings.TrimSpace(r.hooks.Track), "qa") {
 				appendQAFailureReportNudge(combined, verifyCmd, verifyErr)
 			}
-		} else if orchestrator.GoToolOutputMatchedNoPackages(string(verifyOut)) {
+		} else if orchestrator.GoToolOutputMatchedNoPackages(string(verifyOut)) &&
+			goAutoVerifyNoPackagesIsError(hook.Verify, r.task.State) {
+			// project_setup leaves only go.mod/go.sum (no .go yet); go mod tidy warns but exits 0.
 			r.track.hadCmdFailure = true
 			r.track.verifyOK = false
 			r.track.lastVerifyOutput = string(verifyOut)
