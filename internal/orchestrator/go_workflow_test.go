@@ -25,7 +25,7 @@ func TestWorkflowUsesGo(t *testing.T) {
 
 func TestGoProjectSetupVerifyCommand(t *testing.T) {
 	t.Parallel()
-	got := GoProjectSetupVerifyCommand(WorkflowValidation{LayoutRoot: "linkshelf"})
+	got := GoProjectSetupVerifyCommand(WorkflowValidation{LayoutRoot: "linkshelf"}, "")
 	if got != "cd linkshelf && go mod tidy" {
 		t.Fatalf("got %q", got)
 	}
@@ -36,7 +36,7 @@ func TestGoProjectSetupVerifyCommand(t *testing.T) {
 
 func TestGoCompileOnlyVerifyCommand(t *testing.T) {
 	t.Parallel()
-	got := GoCompileOnlyVerifyCommand(WorkflowValidation{LayoutRoot: "linkshelf"})
+	got := GoCompileOnlyVerifyCommand(WorkflowValidation{LayoutRoot: "linkshelf"}, "")
 	if !strings.Contains(got, "go build") || strings.Contains(got, "curl") {
 		t.Fatalf("got %q", got)
 	}
@@ -124,7 +124,7 @@ func TestGoVerifyCommandWithTidy(t *testing.T) {
 		LayoutRoot:      "linkshelf",
 		QAVerifyCommand: "cd linkshelf && go test ./...",
 	}
-	got := GoVerifyCommandWithTidy(v)
+	got := GoVerifyCommandWithTidy(v, "")
 	if !strings.Contains(got, "go mod tidy") || !strings.Contains(got, "go test") {
 		t.Fatalf("got %q", got)
 	}

@@ -101,6 +101,81 @@ func TestRunOnTimeoutHook_resetImplementationPhase_unknownTypo(t *testing.T) {
 	}
 }
 
+func TestRemoveImplementBeadArtifactFiles(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	layout := filepath.Join(dir, "app")
+	web := filepath.Join(layout, "web")
+	if err := os.MkdirAll(web, 0755); err != nil {
+		t.Fatal(err)
+	}
+	files := map[string]string{
+		"app/internal/handler.go": "package x\n",
+		"app/web/index.html":      "<html></html>\n",
+		"app/go.mod":              "module app\n",
+	}
+	for rel, body := range files {
+		path := filepath.Join(dir, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(body), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	removed, err := RemoveImplementBeadArtifactFiles(dir, []string{"app/internal/handler.go", "app/web/index.html", "app/go.mod"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(removed) != 2 {
+		t.Fatalf("removed=%v want 2 (go.mod kept)", removed)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "app/go.mod")); err != nil {
+		t.Fatal("go.mod should remain")
+	}
+}
+
+func TestImplementArtifactPathsForActiveBeads(t *testing.T) {
+	t.Parallel()
+	v := DefaultWorkflowValidation()
+	v.LayoutRoot = "linkshelf"
+	v.BeadTitleContains = "Implement"
+	v.RequiredFiles = []string{
+		"linkshelf/internal/store/store.go",
+		"linkshelf/web/index.html",
+	}
+	prev := ListImplementBeadsByStatusHook
+	defer func() { ListImplementBeadsByStatusHook = prev }()
+	ListImplementBeadsByStatusHook = func(townRoot, rig string, v WorkflowValidation, status string) ([]PlanBead, error) {
+		switch status {
+		case "open":
+			return []PlanBead{{ID: "te-open", Title: "Implement linkshelf/web/index.html per architecture"}}, nil
+		case "in_progress":
+			return []PlanBead{{ID: "te-ip", Title: "Implement linkshelf/internal/api/handlers.go per architecture"}}, nil
+		case "closed":
+			return []PlanBead{{ID: "te-cl", Title: "Implement linkshelf/internal/store/store.go per architecture"}}, nil
+		default:
+			return nil, nil
+		}
+	}
+	paths, err := implementArtifactPathsForActiveBeads("/gt", "rig", v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]bool{
+		"linkshelf/web/index.html":         true,
+		"linkshelf/internal/api/handlers.go": true,
+	}
+	if len(paths) != len(want) {
+		t.Fatalf("paths=%v want %v", paths, want)
+	}
+	for _, p := range paths {
+		if !want[p] {
+			t.Fatalf("unexpected path %q", p)
+		}
+	}
+}
+
 func TestClearImplementationProgressFile(t *testing.T) {
 	t.Parallel()
 	town := t.TempDir()

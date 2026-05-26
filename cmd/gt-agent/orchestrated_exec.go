@@ -240,11 +240,14 @@ func isToolchainExecutionCommand(cmd string) bool {
 }
 
 // isGoDevServerSmokeCommand reports go run ./cmd/server (with or without curl).
-// QA often sends only "go run … & sleep N"; that must still rewrite to the background
-// profile probe so the shell does not block and curls actually run.
 func isGoDevServerSmokeCommand(cmd string) bool {
 	lower := strings.ToLower(cmd)
 	return strings.Contains(lower, "go run") && strings.Contains(lower, "cmd/server")
+}
+
+// isDevServerSmokeCommand reports Go or Python local server CMDs that gt-agent can rewrite to doc-derived curls.
+func isDevServerSmokeCommand(cmd string) bool {
+	return orchestrator.IsDevServerSmokeCommand(cmd)
 }
 
 // wrapStrictBashSmoke prefixes agent-invented go run+curl chains with set -euo pipefail
@@ -276,7 +279,7 @@ func rewriteUnittestToWorkdir(cmd, rig string, v orchestrator.WorkflowValidation
 	layout := strings.Trim(strings.TrimSpace(v.LayoutRoot), "/")
 	// Profile-relative "cd linkshelf && go run …" smoke must not get a second prefix; bare
 	// "go run ./cmd/server" from town root still needs cd into layout_root (see goLayout test).
-	if isGoDevServerSmokeCommand(cmd) && (commandHasMayorRigCD(cmd, rig) || commandHasLayoutCD(cmd, layout)) {
+	if isDevServerSmokeCommand(cmd) && (commandHasMayorRigCD(cmd, rig) || commandHasLayoutCD(cmd, layout)) {
 		return cmd, false
 	}
 	changed := false
@@ -293,12 +296,12 @@ func rewriteUnittestToWorkdir(cmd, rig string, v orchestrator.WorkflowValidation
 	mayorRig := rigMayorRigPath(rig)
 	// Python venv lives under mayor/rig only — never cd into layout_root for pip/pytest/compileall.
 	workPath := mayorRig
-	if layout != "" && layout != "." && orchestrator.WorkflowUsesGo(v) {
-		workPath = mayorRig + "/" + layout
+	if orchestrator.WorkflowUsesGo(v) {
+		workPath = orchestrator.GoModuleWorkPathRelative(mayorRig, layout)
 	}
 	if !commandHasMayorRigCD(cmd, rig) {
 		if !commandHasLayoutCD(cmd, layout) {
-			cmd = "cd " + workPath + " && " + strings.TrimSpace(cmd)
+			cmd = "cd " + workPath + " && " + stripLeadingCDDot(strings.TrimSpace(cmd))
 			changed = true
 		} else if layout != "" && layout != "." {
 			// Profile verify uses bare "cd layout" (mayor/rig-relative); orchestrated cwd is town root.
@@ -314,6 +317,18 @@ func rewriteUnittestToWorkdir(cmd, rig string, v orchestrator.WorkflowValidation
 		changed = true
 	}
 	return cmd, changed
+}
+
+// stripLeadingCDDot removes a leading "cd . &&" when mayor/rig workdir is prepended separately.
+func stripLeadingCDDot(cmd string) string {
+	trimmed := strings.TrimSpace(cmd)
+	lower := strings.ToLower(trimmed)
+	for _, p := range []string{"cd . && ", "cd ./ && "} {
+		if strings.HasPrefix(lower, p) {
+			return strings.TrimSpace(trimmed[len(p):])
+		}
+	}
+	return trimmed
 }
 
 // stripFirstCDPrefix removes a leading "cd <path> &&" so rewrite can replace with one module cd.
@@ -455,29 +470,26 @@ func normalizeGoCommandTypos(cmd string) (string, bool) {
 	return cmd, changed
 }
 
-// normalizeGoDevServerSmokeCommand fixes polecat-invented go run smoke chains: gt-agent
-// already stops listeners and go run processes — pkill is unreliable; go build ./...
-// before go run is redundant and slow.
+// normalizeGoDevServerSmokeCommand fixes polecat-invented server smoke chains (Go or Python).
 func normalizeGoDevServerSmokeCommand(cmd, townRoot, rig string, v orchestrator.WorkflowValidation) (string, bool) {
-	lower := strings.ToLower(cmd)
-	if !strings.Contains(lower, "go run") || !strings.Contains(lower, "cmd/server") {
+	if !isDevServerSmokeCommand(cmd) {
 		return cmd, false
 	}
 	out := cmd
 	changed := false
-	if goSmokeStripPkillRE.MatchString(out) {
+	if orchestrator.WorkflowUsesGo(v) && goSmokeStripPkillRE.MatchString(out) {
 		out = goSmokeStripPkillRE.ReplaceAllString(out, "")
 		changed = true
 	}
-	if goSmokeStripBuildRE.MatchString(out) {
+	if orchestrator.WorkflowUsesGo(v) && goSmokeStripBuildRE.MatchString(out) {
 		out = goSmokeStripBuildRE.ReplaceAllString(out, "")
 		changed = true
 	}
-	if goSmokeStripTidyRE.MatchString(out) {
+	if orchestrator.WorkflowUsesGo(v) && goSmokeStripTidyRE.MatchString(out) {
 		out = goSmokeStripTidyRE.ReplaceAllString(out, "")
 		changed = true
 	}
-	if short, ok := simplifyGoDevServerSmoke(out, townRoot, rig, v); ok {
+	if short, ok := simplifyDevServerSmoke(out, townRoot, rig, v); ok {
 		return short, true
 	}
 	if strings.Contains(strings.ToLower(out), "curl ") && !strings.Contains(out, "--max-time") {
@@ -524,10 +536,14 @@ func ensureGoSmokeShellReturns(cmd string) (string, bool) {
 	return strings.TrimSpace(out) + `; kill ${_gtsrv} 2>/dev/null`, true
 }
 
-// simplifyGoDevServerSmoke replaces agent go run ./cmd/server CMDs with the profile-derived
-// background-server + curl probe (including bare "go run … & sleep" with no curls).
+// simplifyGoDevServerSmoke is an alias for tests and legacy call sites.
 func simplifyGoDevServerSmoke(cmd, townRoot, rig string, v orchestrator.WorkflowValidation) (string, bool) {
-	if !isGoDevServerSmokeCommand(cmd) {
+	return simplifyDevServerSmoke(cmd, townRoot, rig, v)
+}
+
+// simplifyDevServerSmoke replaces agent server CMDs with doc-derived background server + curl probes.
+func simplifyDevServerSmoke(cmd, townRoot, rig string, v orchestrator.WorkflowValidation) (string, bool) {
+	if !isDevServerSmokeCommand(cmd) {
 		return cmd, false
 	}
 	workDir := smokeWorkDirFromCommand(cmd)
@@ -548,7 +564,8 @@ func smokeWorkDirFromCommand(cmd string) string {
 	for _, p := range strings.Split(cmd, "&&") {
 		p = strings.TrimSpace(p)
 		lower := strings.ToLower(p)
-		if strings.Contains(lower, "go run") {
+		if strings.Contains(lower, "go run") || strings.Contains(lower, "uvicorn") ||
+			strings.Contains(lower, "gunicorn") || strings.Contains(lower, "flask run") {
 			break
 		}
 		if !strings.HasPrefix(lower, "cd ") {

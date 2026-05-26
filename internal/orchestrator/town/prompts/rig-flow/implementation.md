@@ -11,7 +11,7 @@ gt-agent saves per-bead checkpoints in `{{rig}}/qa/implementation-progress.json`
 If the prompt includes **Prior step failed** from a **timeout**:
 
 - **Max CMD turns** (`recover_implementation_stall`): dev servers stopped, `in_progress` beads → **open**, one bead selected.
-- **Wall-clock state timeout** (`reset_implementation_phase`): **targeted** reset — **all `.go` and `.py`** under `layout_root` were **deleted** (`go.mod`, `go.sum`, `requirements.txt` kept; SPEC/plan/architecture unchanged), **all implement beads reopened**, `implementation-progress.json` cleared. Re-implement from **Next bead** in plan order.
+- **Wall-clock state timeout** (`reset_implementation_phase`): **targeted** reset — on-disk files for **open** and **in_progress** implement beads only were removed (closed beads and finished files unchanged), `in_progress` beads moved back to **open**, `implementation-progress.json` cleared. Re-implement from **Next bead** in plan order.
 
 ## Per bead
 

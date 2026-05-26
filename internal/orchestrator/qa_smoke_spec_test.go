@@ -32,6 +32,36 @@ visit http://localhost:8080
 	}
 }
 
+func TestStaticAssetsFromRig_staticPrefixFromArchitecture(t *testing.T) {
+	dir := t.TempDir()
+	rig := "mockrig"
+	rigDir := filepath.Join(dir, rig, "mayor", "rig")
+	webDir := filepath.Join(rigDir, "linkshelf", "web")
+	if err := os.MkdirAll(webDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	arch := "| GET | /static/{file} | serves web/{file} |\n"
+	if err := os.WriteFile(filepath.Join(rigDir, "architecture.md"), []byte(arch), 0644); err != nil {
+		t.Fatal(err)
+	}
+	html := `<html><head><link href="style.css"><script src="app.js"></script></head></html>`
+	if err := os.WriteFile(filepath.Join(webDir, "index.html"), []byte(html), 0644); err != nil {
+		t.Fatal(err)
+	}
+	v := WorkflowValidation{
+		LayoutRoot:    "linkshelf",
+		RequiredFiles: []string{"linkshelf/web/index.html"},
+	}
+	mapping := LoadWebStaticMappingFromRig(dir, rig, v)
+	got := staticAssetsFromRig(rigDir, v, mapping)
+	if !contains(got, "/static/app.js") || !contains(got, "/static/style.css") {
+		t.Fatalf("assets=%v want /static/app.js and /static/style.css", got)
+	}
+	if contains(got, "/app.js") {
+		t.Fatalf("must not probe bare /app.js when architecture uses /static/: %v", got)
+	}
+}
+
 func TestLoadAPISmokeSpecFromRig_readsSPEC(t *testing.T) {
 	dir := t.TempDir()
 	rig := "mockrig"

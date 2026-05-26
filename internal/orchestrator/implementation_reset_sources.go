@@ -60,3 +60,65 @@ func RemoveLayoutSourceCodeFiles(rigDir string, v WorkflowValidation) ([]string,
 	})
 	return removed, err
 }
+
+// implementArtifactPathsForActiveBeads returns rig-relative paths for open and in_progress implement beads only.
+func implementArtifactPathsForActiveBeads(townRoot, rig string, v WorkflowValidation) ([]string, error) {
+	v = v.ForActivePhase()
+	var out []string
+	seen := map[string]bool{}
+	add := func(p string) {
+		p = NormalizeBeadPathForLayout(filepath.ToSlash(strings.TrimSpace(p)), v.LayoutRoot)
+		if p == "" || IsProjectSetupArtifactPath(p, v) {
+			return
+		}
+		if layoutSetupBasenames[strings.ToLower(filepath.Base(p))] {
+			return
+		}
+		if seen[p] {
+			return
+		}
+		seen[p] = true
+		out = append(out, p)
+	}
+	for _, status := range []string{"open", "in_progress"} {
+		beads, err := listImplementBeadsForGuard(townRoot, rig, v, status)
+		if err != nil {
+			return nil, err
+		}
+		for _, b := range beads {
+			if !MatchesImplementBeadTitle(b.Title, v) {
+				continue
+			}
+			add(ExtractPathFromBeadTitle(b.Title, v.BeadTitleContains))
+		}
+	}
+	return out, nil
+}
+
+// RemoveImplementBeadArtifactFiles deletes on-disk files for the given rig-relative paths (any extension).
+func RemoveImplementBeadArtifactFiles(rigDir string, relPaths []string) ([]string, error) {
+	rigDir = filepath.Clean(rigDir)
+	var removed []string
+	for _, rel := range relPaths {
+		rel = filepath.ToSlash(strings.TrimSpace(rel))
+		if rel == "" {
+			continue
+		}
+		base := strings.ToLower(filepath.Base(rel))
+		if layoutSetupBasenames[base] {
+			continue
+		}
+		abs := filepath.Join(rigDir, filepath.FromSlash(rel))
+		if _, err := os.Stat(abs); err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return removed, err
+		}
+		if err := os.Remove(abs); err != nil {
+			return removed, err
+		}
+		removed = append(removed, rel)
+	}
+	return removed, nil
+}

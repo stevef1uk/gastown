@@ -11,11 +11,17 @@ import (
 
 // APISmokeSpec is derived from rig SPEC/architecture/plan (not hardcoded routes).
 type APISmokeSpec struct {
-	Port              int
-	GETPaths          []string // paths to probe with curl -sf
-	GETEmptyJSONArray []string // subset of GETPaths that must return literal []
+	Port   int
+	Probes []HTTPEndpointProbe // canonical: one curl per documented endpoint
+	// Derived from Probes (kept for plan alignment and legacy callers).
+	GETPaths          []string
+	GETEmptyJSONArray []string
 	POSTProbes        []POSTSmokeProbe
-	StaticAssets      []string // root-relative paths e.g. /app.js
+	StaticAssets      []string
+	// ResetPaths are removed under the smoke workDir before starting the server (doc-driven).
+	ResetPaths []string
+	// ServerStart is the background server shell fragment (e.g. go run ./cmd/server).
+	ServerStart string
 }
 
 // POSTSmokeProbe is a POST endpoint plus minimal JSON body for QA smoke.
@@ -45,46 +51,19 @@ func LoadAPISmokeSpecFromRig(townRoot, rig string, v WorkflowValidation) (APISmo
 		return APISmokeSpec{Port: devServerPortFromText("", v)}, nil
 	}
 	spec := parseAPISmokeSpecText(merged, v)
-	spec.StaticAssets = staticAssetsFromRig(rigDir, v)
+	mapping := LoadWebStaticMappingFromRig(townRoot, rig, v)
+	appendStaticProbes(&spec, staticAssetsFromRig(rigDir, v, mapping))
+	syncAPISmokeSpecDerivedFields(&spec)
+	enrichAPISmokeSpec(&spec, merged, v)
 	return spec, nil
 }
 
 func parseAPISmokeSpecText(text string, v WorkflowValidation) APISmokeSpec {
 	spec := APISmokeSpec{Port: devServerPortFromText(text, v)}
-	getSeen := map[string]bool{}
-	postSeen := map[string]bool{}
-
+	seen := map[string]bool{}
 	record := func(method, path, detail string) {
-		path = normalizeSmokePath(path)
-		if path == "" || !strings.HasPrefix(path, "/") {
-			return
-		}
-		method = strings.ToUpper(strings.TrimSpace(method))
-		detailLower := strings.ToLower(detail)
-		switch method {
-		case "GET":
-			if getSeen[path] {
-				return
-			}
-			getSeen[path] = true
-			spec.GETPaths = append(spec.GETPaths, path)
-			if strings.Contains(detailLower, "json array") || strings.Contains(detailLower, "`[]`") ||
-				strings.Contains(detailLower, "returns `[]`") || strings.Contains(detailLower, "not `null`") ||
-				strings.Contains(detailLower, "[]") && strings.Contains(detailLower, "empty") {
-				spec.GETEmptyJSONArray = append(spec.GETEmptyJSONArray, path)
-			}
-		case "POST":
-			if postSeen[path] || strings.Contains(path, "{") {
-				return
-			}
-			postSeen[path] = true
-			spec.POSTProbes = append(spec.POSTProbes, POSTSmokeProbe{
-				Path: path,
-				Body: defaultPOSTBodyFromSpec(text),
-			})
-		}
+		appendAPIProbe(&spec, seen, method, path, detail, text)
 	}
-
 	for _, m := range apiTableRowRE.FindAllStringSubmatch(text, -1) {
 		if len(m) >= 3 {
 			detail := m[0]
@@ -96,11 +75,10 @@ func parseAPISmokeSpecText(text string, v WorkflowValidation) APISmokeSpec {
 	}
 	for _, m := range apiBacktickPathRE.FindAllStringSubmatch(text, -1) {
 		if len(m) >= 3 {
-			record(m[1], "/"+strings.Trim(m[2], "/"), "")
+			record(m[1], "/"+strings.Trim(m[2], "/"), text)
 		}
 	}
-	sort.Strings(spec.GETPaths)
-	sort.Strings(spec.GETEmptyJSONArray)
+	syncAPISmokeSpecDerivedFields(&spec)
 	return spec
 }
 
@@ -158,7 +136,7 @@ func parsePort(s string) (int, error) {
 	return port, nil
 }
 
-func staticAssetsFromRig(rigDir string, v WorkflowValidation) []string {
+func staticAssetsFromRig(rigDir string, v WorkflowValidation, mapping WebStaticMapping) []string {
 	seen := map[string]bool{}
 	var out []string
 	for _, htmlRel := range webHTMLPaths(v) {
@@ -172,20 +150,15 @@ func staticAssetsFromRig(rigDir string, v WorkflowValidation) []string {
 				continue
 			}
 			ref := strings.TrimSpace(m[2])
-			if ref == "" || strings.HasPrefix(ref, "#") || strings.HasPrefix(ref, "http") || strings.HasPrefix(ref, "/api/") {
+			if ref == "" || strings.HasPrefix(ref, "#") {
 				continue
 			}
-			if !strings.HasSuffix(strings.ToLower(ref), ".js") && !strings.HasSuffix(strings.ToLower(ref), ".css") {
+			url := mapping.SmokeURLForHTMLRef(ref)
+			if url == "" || seen[url] {
 				continue
 			}
-			if !strings.HasPrefix(ref, "/") {
-				ref = "/" + strings.TrimPrefix(filepath.ToSlash(ref), "/")
-			}
-			if seen[ref] {
-				continue
-			}
-			seen[ref] = true
-			out = append(out, ref)
+			seen[url] = true
+			out = append(out, url)
 		}
 	}
 	sort.Strings(out)
@@ -221,13 +194,16 @@ func webRootDir(rigDir, htmlRel string, v WorkflowValidation) string {
 // SmokeShellStrictPrefix enables fail-fast behavior when the probe runs under bash -c.
 const SmokeShellStrictPrefix = "set -euo pipefail; "
 
-// BuildRuntimeSmokeShell returns a bash go run + curl probe from profile/docs.
-// Steps after the background server are joined with && so a failed GET / cannot be
-// masked by a later passing API curl (GT-VERIFY-003).
+// BuildRuntimeSmokeShell returns bash that starts the app server then runs doc-derived curl probes.
+// Each HTTPEndpointProbe becomes one curl (same routes as architecture contract validation).
 func BuildRuntimeSmokeShell(workDir string, spec APISmokeSpec) string {
 	workDir = strings.Trim(strings.TrimSpace(workDir), `"'`)
 	if workDir == "" {
 		return ""
+	}
+	serverStart := strings.TrimSpace(spec.ServerStart)
+	if serverStart == "" {
+		serverStart = "go run ./cmd/server"
 	}
 	port := spec.Port
 	if port == 0 {
@@ -235,53 +211,28 @@ func BuildRuntimeSmokeShell(workDir string, spec APISmokeSpec) string {
 	}
 	base := fmt.Sprintf("http://127.0.0.1:%d", port)
 	var parts []string
-	parts = append(parts, "cd "+workDir)
+	parts = append(parts, "cd "+bashSingleQuote(workDir))
+	parts = append(parts, smokeResetShellParts(spec.ResetPaths)...)
 	parts = append(parts, "rm -f .gt-smoke.pid")
-	parts = append(parts, "(go run ./cmd/server >/dev/null 2>&1 & echo $! >.gt-smoke.pid)")
+	parts = append(parts, "("+serverStart+" >/dev/null 2>&1 & echo $! >.gt-smoke.pid)")
 	if m := smokeStepMarker("wait_root"); m != "" {
 		parts = append(parts, m)
 	}
 	parts = append(parts, fmt.Sprintf(`_gtok=0; for _i in 1 2 3 4 5; do curl -sf --connect-timeout 1 --max-time 2 %s/ >/dev/null && _gtok=1 && break; sleep 1; done`, base))
 	parts = append(parts, `test "$_gtok" = 1`)
-	for _, asset := range spec.StaticAssets {
-		if m := smokeStepMarker("GET:" + asset); m != "" {
-			parts = append(parts, m)
-		}
-		parts = append(parts, fmt.Sprintf(`curl -sf --connect-timeout 1 --max-time 2 %s%s >/dev/null`, base, asset))
-	}
-	emptySet := map[string]bool{}
-	for _, p := range spec.GETEmptyJSONArray {
-		emptySet[p] = true
-	}
-	for _, path := range spec.GETPaths {
-		if path == "/" {
-			continue
-		}
-		if m := smokeStepMarker("GET:" + path); m != "" {
-			parts = append(parts, m)
-		}
-		if emptySet[path] {
-			parts = append(parts, fmt.Sprintf(`test "$(curl -s --connect-timeout 1 --max-time 2 %s%s)" = "[]"`, base, path))
-		} else {
-			parts = append(parts, fmt.Sprintf(`curl -sf --connect-timeout 1 --max-time 2 %s%s >/dev/null`, base, path))
-		}
-	}
-	for _, post := range spec.POSTProbes {
-		if m := smokeStepMarker("POST:" + post.Path); m != "" {
-			parts = append(parts, m)
-		}
-		body := strings.ReplaceAll(post.Body, `'`, `'\''`)
-		parts = append(parts, fmt.Sprintf(`curl -sf --connect-timeout 1 --max-time 2 -X POST -H 'Content-Type: application/json' -d '%s' %s%s >/dev/null`, body, base, post.Path))
+	for _, probe := range spec.orderedSmokeProbes() {
+		parts = append(parts, probe.shellSteps(base)...)
 	}
 	parts = append(parts, `(_gtsrv=$(cat .gt-smoke.pid 2>/dev/null); kill ${_gtsrv} 2>/dev/null || true; rm -f .gt-smoke.pid)`)
+	if len(spec.orderedSmokeProbes()) == 0 {
+		return ""
+	}
 	return SmokeShellStrictPrefix + strings.Join(parts, " && ")
 }
 
-// IsProfileDerivedSmokeCommand reports whether cmd is the canonical probe built from rig docs.
+// IsProfileDerivedSmokeCommand reports whether cmd is gt-agent's doc-derived curl smoke script.
 func IsProfileDerivedSmokeCommand(cmd string) bool {
 	lower := strings.ToLower(cmd)
 	return strings.Contains(lower, ".gt-smoke.pid") &&
-		strings.Contains(lower, "go run") &&
-		strings.Contains(lower, "cmd/server") &&
-		strings.Contains(lower, "--connect-timeout")
+		strings.Contains(lower, strings.ToLower(smokeStepMarkerPrefix))
 }

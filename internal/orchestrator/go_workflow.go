@@ -6,6 +6,13 @@ import (
 	"strings"
 )
 
+// GoToolOutputMatchedNoPackages reports go build/test output where the package pattern matched nothing
+// (exit code can still be 0 when the directory has no .go files).
+func GoToolOutputMatchedNoPackages(output string) bool {
+	lower := strings.ToLower(output)
+	return strings.Contains(lower, "matched no packages") || strings.Contains(lower, "no packages to test")
+}
+
 // WorkflowUsesGo reports whether the rig workflow profile targets a Go module
 // (go test / go mod in qa_verify_command, or test_runner: go).
 func WorkflowUsesGo(v WorkflowValidation) bool {
@@ -24,35 +31,32 @@ func WorkflowUsesGo(v WorkflowValidation) bool {
 
 // GoProjectSetupVerifyCommand is the green check for project_setup only: module
 // toolchain under layout_root, not go build/test/run (polecat implements code).
-func GoProjectSetupVerifyCommand(v WorkflowValidation) string {
-	layout := strings.Trim(strings.TrimSpace(v.LayoutRoot), "/")
-	if layout == "" {
-		layout = "."
-	}
-	return "cd " + layout + " && go mod tidy"
+func GoProjectSetupVerifyCommand(v WorkflowValidation, mayorRigDir string) string {
+	return GoShellCDClause(mayorRigDir, v.LayoutRoot) + "go mod tidy"
 }
 
 // GoVerifyCommandWithTidy returns the verify shell chain for Go rigs, always
 // running go mod tidy before tests when tidy is not already present.
-func GoVerifyCommandWithTidy(v WorkflowValidation) string {
-	layout := strings.Trim(strings.TrimSpace(v.LayoutRoot), "/")
-	if layout == "" {
-		layout = "."
-	}
+func GoVerifyCommandWithTidy(v WorkflowValidation, mayorRigDir string) string {
+	cdClause := GoShellCDClause(mayorRigDir, v.LayoutRoot)
 	base := strings.TrimSpace(v.QAVerifyCommand)
 	if base == "" {
-		return "cd " + layout + " && go mod tidy && go test ./... && go vet ./..."
+		return cdClause + "go mod tidy && go test ./... && go vet ./..."
 	}
 	lower := strings.ToLower(base)
 	if strings.Contains(lower, "go mod tidy") {
 		return base
 	}
-	prefix := "cd " + layout + " && "
+	prefix := cdClause
+	if prefix == "" && mayorRigDir == "" {
+		prefix = "cd . && "
+	}
 	chain := base
 	if !strings.Contains(lower, "cd ") {
 		chain = prefix + chain
 	}
-	if strings.HasPrefix(strings.ToLower(chain), prefix) {
+	lowerChain := strings.ToLower(chain)
+	if prefix != "" && strings.HasPrefix(lowerChain, strings.ToLower(prefix)) {
 		return prefix + "go mod tidy && " + strings.TrimSpace(chain[len(prefix):])
 	}
 	return prefix + "go mod tidy && " + chain
@@ -80,12 +84,8 @@ func IsServerMainImplementBead(beadPath string) bool {
 }
 
 // GoCompileOnlyVerifyCommand is the compile verify chain (tidy + build) for polecat prompts and go.mod beads.
-func GoCompileOnlyVerifyCommand(v WorkflowValidation) string {
-	layout := strings.Trim(strings.TrimSpace(v.LayoutRoot), "/")
-	if layout == "" {
-		layout = "."
-	}
-	return "cd " + layout + " && go mod tidy && go build ./..."
+func GoCompileOnlyVerifyCommand(v WorkflowValidation, mayorRigDir string) string {
+	return GoShellCDClause(mayorRigDir, v.LayoutRoot) + "go mod tidy && go build ./..."
 }
 
 // GoImplementationVerifyCommand is the verify chain during implementation: compile-only
@@ -96,26 +96,18 @@ func GoImplementationVerifyCommand(v WorkflowValidation, mayorRigDir string) str
 
 // GoImplementationVerifyCommandForBead picks verify for the active implement bead path.
 func GoImplementationVerifyCommandForBead(v WorkflowValidation, mayorRigDir, beadPath string) string {
-	layout := strings.Trim(strings.TrimSpace(v.LayoutRoot), "/")
-	if layout == "" {
-		layout = "."
-	}
 	beadPath = filepath.ToSlash(strings.TrimSpace(beadPath))
 	if strings.HasSuffix(beadPath, "go.mod") {
-		return GoModBeadVerifyCommand(v)
+		return GoModBeadVerifyCommand(v, mayorRigDir)
 	}
 	// Integration (go run/curl) only on the server main bead; other beads build their package only.
 	if IsServerMainImplementBead(beadPath) && GoServerMainExists(mayorRigDir, v) {
-		return GoVerifyCommandWithTidy(v)
+		return GoVerifyCommandWithTidy(v, mayorRigDir)
 	}
 	return GoCompileVerifyCommandForBead(v, mayorRigDir, beadPath)
 }
 
 // GoModBeadVerifyCommand is verify for the go.mod implement bead only (module graph, not full build).
-func GoModBeadVerifyCommand(v WorkflowValidation) string {
-	layout := strings.Trim(strings.TrimSpace(v.LayoutRoot), "/")
-	if layout == "" {
-		layout = "."
-	}
-	return "cd " + layout + " && go mod tidy"
+func GoModBeadVerifyCommand(v WorkflowValidation, mayorRigDir string) string {
+	return GoShellCDClause(mayorRigDir, v.LayoutRoot) + "go mod tidy"
 }

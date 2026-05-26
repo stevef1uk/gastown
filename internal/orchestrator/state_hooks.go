@@ -142,7 +142,7 @@ func resolveRetryHintKey(key string, v WorkflowValidation, vars map[string]strin
 			return "Go rig: run go mod init/get/tidy under " + layout +
 				" only — never cat/heredoc/touch source files (.go/.js/.html/.css) under " + layout +
 				"/ (polecat implements them). No heredoc go.mod/go.sum, no go build/run/curl in setup. Green verify: " +
-				GoProjectSetupVerifyCommand(v) + ". Then JSON success in a separate message."
+				GoProjectSetupVerifyCommand(v, "") + ". Then JSON success in a separate message."
 		}
 		if WorkflowUsesPython(v) {
 			req := v.RequirementsFilePath()
@@ -175,7 +175,11 @@ func (h StateHooks) EffectiveMaxCmdTurns() int {
 }
 
 // EffectiveStateTimeoutSeconds returns the wall-clock limit for this state (0 = disabled).
+// When StateTimeoutEnvVar is set to a positive integer, it overrides the YAML value.
 func (h StateHooks) EffectiveStateTimeoutSeconds() int {
+	if n, ok := stateTimeoutFromEnv(); ok {
+		return n
+	}
 	if h.StateTimeoutSeconds > 0 {
 		return h.StateTimeoutSeconds
 	}

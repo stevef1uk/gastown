@@ -112,7 +112,7 @@ func FormatImplementationSmokeFailureBlock(townRoot, rig string, v WorkflowValid
 
 	var b strings.Builder
 	b.WriteString("### Runtime smoke failed (implementation gate)\n")
-	b.WriteString("Unit tests may pass while **go run + curl** still fails. Do not send JSON success until phase verify is green.\n\n")
+	b.WriteString("Unit tests may pass while **runtime HTTP smoke** (doc-derived curls) still fails. Do not send JSON success until phase verify is green.\n\n")
 	if detail.FailedStep != "" {
 		b.WriteString("**Failed probe:** `")
 		b.WriteString(smokeStepHumanLabel(detail.FailedStep))

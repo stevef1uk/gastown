@@ -146,6 +146,11 @@ func formatImplementBeadContextForPath(townRoot, rig, beadPath string, v Workflo
 		b.WriteString(block)
 		b.WriteString("\n")
 	}
+	if block := FormatImplementBeadCompileFailureBlock(rigDir, beadPath, v); block != "" {
+		b.WriteString("\n")
+		b.WriteString(block)
+		b.WriteString("\n")
+	}
 	if block := FormatNilSliceListUnblockHint(townRoot, rig, beadPath, v); block != "" {
 		b.WriteString("\n")
 		b.WriteString(block)

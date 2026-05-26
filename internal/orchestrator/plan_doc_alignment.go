@@ -28,6 +28,8 @@ var (
 		regexp.MustCompile(`(?i)every\s+bead\s+must\s+include\s+.*_test\.go`),
 	}
 	integrationContractHeadingRE = regexp.MustCompile(`(?im)^##\s+integration\s+contract\b`)
+	planBeadSectionPathRE        = regexp.MustCompile(`(?m)^###\s+[^:]+:\s*(\S+)`)
+	bareModuleRelPathRE          = regexp.MustCompile(`(?:^|[\s\-*])((?:internal|cmd|pkg|api|web)/[^\s` + "`" + `",:;)]+)`)
 )
 
 // WriteAlignedPlanningDocsForTest writes minimal SPEC/architecture/plan stubs for gt-agent tests.
@@ -70,6 +72,7 @@ func architectureDocAlignmentIssues(rigDir, specDoc string, v WorkflowValidation
 	issues = append(issues, checkHTTPDocAlignment("architecture.md", archDoc, specDoc, v)...)
 	issues = append(issues, checkStoreAPIAlignment("architecture.md", archDoc, specDoc)...)
 	issues = append(issues, checkGoModuleAlignment("architecture.md", archDoc, specDoc, v)...)
+	issues = append(issues, checkDocLayoutPathPrefix("architecture.md", archDoc, v)...)
 	return issues
 }
 
@@ -89,8 +92,93 @@ func ValidatePlanningDocAlignment(rigDir string, v WorkflowValidation) error {
 	issues = append(issues, checkGoModuleAlignment("plan.md", planDoc, specDoc, v)...)
 	issues = append(issues, checkPlanTestMandate(planDoc, v)...)
 	issues = append(issues, checkPlanIntegrationContract(planDoc, v)...)
+	issues = append(issues, checkDocLayoutPathPrefix("plan.md", planDoc, v)...)
 
 	return formatDocAlignmentError("SPEC/architecture/plan misaligned", issues)
+}
+
+// checkDocLayoutPathPrefix rejects bare module-relative paths (internal/..., cmd/...) when the
+// workflow profile lists required_files under layout_root/ (e.g. linkshelf/internal/store/...).
+func checkDocLayoutPathPrefix(docName, doc string, v WorkflowValidation) []string {
+	layout := strings.Trim(filepath.ToSlash(strings.TrimSpace(v.LayoutRoot)), "/")
+	if layout == "" || layout == "." || strings.TrimSpace(doc) == "" {
+		return nil
+	}
+	if !profileRequiredFilesUseLayoutPrefix(v, layout) {
+		return nil
+	}
+	var issues []string
+	for _, p := range extractDocImplementPaths(doc, layout) {
+		if !needsLayoutPathPrefix(p, layout) {
+			continue
+		}
+		want := layout + "/" + strings.TrimPrefix(filepath.ToSlash(p), "/")
+		issues = append(issues, fmt.Sprintf("%s references %q; use %q to match workflow required_files under layout_root", docName, p, want))
+	}
+	return dedupeStrings(issues)
+}
+
+func profileRequiredFilesUseLayoutPrefix(v WorkflowValidation, layout string) bool {
+	for _, f := range v.UnionRequiredFiles() {
+		f = filepath.ToSlash(strings.TrimSpace(f))
+		if strings.HasPrefix(f, layout+"/") {
+			return true
+		}
+	}
+	for _, f := range v.RequiredFiles {
+		f = filepath.ToSlash(strings.TrimSpace(f))
+		if strings.HasPrefix(f, layout+"/") {
+			return true
+		}
+	}
+	return false
+}
+
+func needsLayoutPathPrefix(p, layout string) bool {
+	p = filepath.ToSlash(strings.TrimSpace(p))
+	layout = strings.Trim(filepath.ToSlash(strings.TrimSpace(layout)), "/")
+	if p == "" || layout == "" {
+		return false
+	}
+	if strings.HasPrefix(p, layout+"/") || p == layout {
+		return false
+	}
+	if p == "go.mod" || p == "go.sum" {
+		return true
+	}
+	for _, pre := range []string{"internal/", "cmd/", "pkg/", "api/", "web/"} {
+		if strings.HasPrefix(p, pre) {
+			return true
+		}
+	}
+	return false
+}
+
+func extractDocImplementPaths(doc, layoutRoot string) []string {
+	seen := map[string]bool{}
+	var out []string
+	add := func(p string) {
+		p = filepath.ToSlash(strings.TrimSpace(p))
+		if p == "" || seen[p] || !isLikelyRepoFilePath(p, layoutRoot) {
+			return
+		}
+		seen[p] = true
+		out = append(out, p)
+	}
+	for _, p := range extractArchPaths(doc, layoutRoot) {
+		add(p)
+	}
+	for _, m := range planBeadSectionPathRE.FindAllStringSubmatch(doc, -1) {
+		if len(m) >= 2 {
+			add(m[1])
+		}
+	}
+	for _, m := range bareModuleRelPathRE.FindAllStringSubmatch(doc, -1) {
+		if len(m) >= 2 {
+			add(m[1])
+		}
+	}
+	return out
 }
 
 func checkHTTPDocAlignment(docName, doc, specDoc string, v WorkflowValidation) []string {

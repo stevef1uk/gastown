@@ -28,8 +28,11 @@ func validateImplementationBeadClose(cmd, townRoot, rig string, v orchestrator.W
 			return fmt.Errorf("cannot bd close %s: %w — implement and run Verify first", id, err)
 		}
 		if testPath := orchestrator.CorrelatedTestPathForSource(beadPath, v.LayoutRoot); testPath != "" {
-			if err := orchestrator.ValidateBeadArtifactOnDisk(rigDir, testPath, v); err != nil {
-				return fmt.Errorf("cannot bd close %s: %w — add/pass tests before close", id, err)
+			// Separate *_test.go implement bead (e.g. handlers_test.go) — do not require test file when closing handlers.go.
+			if !orchestrator.TestPathListedInRequired(beadPath, v.RequiredFiles, v.LayoutRoot) {
+				if err := orchestrator.ValidateBeadArtifactOnDisk(rigDir, testPath, v); err != nil {
+					return fmt.Errorf("cannot bd close %s: %w — add/pass tests before close", id, err)
+				}
 			}
 		}
 	}

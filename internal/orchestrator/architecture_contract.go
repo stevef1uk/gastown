@@ -78,20 +78,24 @@ func formatHTTPContractForBead(specDoc, archDoc, planDoc, beadPath string, v Wor
 	}
 	merged := specDoc + "\n" + archDoc + "\n" + planDoc
 	api := parseAPISmokeSpecText(merged, v)
-	if len(api.GETPaths) == 0 && len(api.POSTProbes) == 0 {
+	if len(api.Probes) == 0 {
 		return ""
 	}
 	var b strings.Builder
-	b.WriteString("**HTTP API (from SPEC/architecture tables):**\n")
-	for _, p := range api.GETPaths {
-		b.WriteString("- `GET ")
-		b.WriteString(p)
-		b.WriteString("`\n")
-	}
-	for _, p := range api.POSTProbes {
-		b.WriteString("- `POST ")
-		b.WriteString(p.Path)
-		b.WriteString("`\n")
+	b.WriteString("**HTTP endpoints (from SPEC/architecture — same as runtime smoke curls):**\n")
+	for _, p := range api.Probes {
+		if p.Source == "static" {
+			continue
+		}
+		b.WriteString("- `")
+		b.WriteString(strings.ToUpper(strings.TrimSpace(p.Method)))
+		b.WriteString(" ")
+		b.WriteString(normalizeSmokePath(p.Path))
+		b.WriteString("`")
+		if p.Expect == SmokeExpectEmptyJSONArray {
+			b.WriteString(" (must return `[]` on fresh server)")
+		}
+		b.WriteString("\n")
 	}
 	if len(api.StaticAssets) > 0 {
 		b.WriteString("**Static assets (from web/):** ")

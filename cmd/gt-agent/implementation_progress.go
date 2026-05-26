@@ -133,9 +133,60 @@ func (r *stateRunner) initImplementationProgress() string {
 	} else {
 		r.implProgress = newImplementationProgress(r.task.WorkflowID, r.task.State, r.rig)
 	}
+	r.scrubStaleImplementationProgressMilestones()
 	r.applyImplementationProgressToTrack()
 	r.clearStaleImplementationVerifyFailureOnResume()
-	return r.formatImplementationProgressBlock()
+	block := r.formatImplementationProgressBlock()
+	if nudge := r.formatActiveBeadReadyToCloseBlock(); nudge != "" {
+		if block != "" {
+			block += "\n\n" + nudge
+		} else {
+			block = nudge
+		}
+	}
+	return block
+}
+
+// formatActiveBeadReadyToCloseBlock nudges the polecat when the active bead file already exists
+// and package tests pass but bd close was never run (common after timeout/retry).
+func (r *stateRunner) formatActiveBeadReadyToCloseBlock() string {
+	if r.track == nil || r.implProgress == nil {
+		return ""
+	}
+	beadID := strings.TrimSpace(r.track.activeBead)
+	beadPath := strings.TrimSpace(r.activeImplementBeadPath())
+	if beadID == "" || beadPath == "" {
+		return ""
+	}
+	if r.implProgress.done(implClosedKey(beadID)) {
+		return ""
+	}
+	rigDir := rigMayorRigDir(r.townRoot, r.rig)
+	if err := orchestrator.ValidateBeadArtifactOnDisk(rigDir, beadPath, r.v); err != nil {
+		return ""
+	}
+	if orchestrator.WorkflowUsesGo(r.v) && strings.HasSuffix(beadPath, ".go") {
+		verifyCmd := orchestrator.GoCompileVerifyCommandForBead(r.v, rigDir, beadPath)
+		if verifyCmd == "" {
+			return ""
+		}
+		if fixed, ok := rewriteUnittestToWorkdir(verifyCmd, r.rig, r.v); ok {
+			verifyCmd = fixed
+		}
+		out, err := r.runShellCommand(verifyCmd, r.workDir(), "", r.commandEnv(os.Environ()))
+		if err != nil || goToolOutputLooksFailed(verifyCmd, string(out)) {
+			return ""
+		}
+	}
+	var b strings.Builder
+	b.WriteString("## Active bead looks complete on disk\n")
+	b.WriteString(fmt.Sprintf("**%s** (`%s`) already satisfies the profile on disk", beadID, beadPath))
+	if orchestrator.WorkflowUsesGo(r.v) {
+		b.WriteString(" and Verify is green")
+	}
+	b.WriteString(fmt.Sprintf(".\n\nDo **not** send failure JSON for this bead. Run **Verify** from the Next bead line if needed, then:\n`CMD: export BEADS_DIR=$GT_ROOT/%s/.beads && cd %s/mayor/rig && bd close %s`\n",
+		r.rig, r.rig, beadID))
+	return b.String()
 }
 
 // clearStaleImplementationVerifyFailureOnResume drops persisted verify-fail state when the
@@ -179,6 +230,45 @@ func (r *stateRunner) clearStaleImplementationVerifyFailureOnResume() {
 		orchestratedFprintfStderr("[gt-agent] implementation progress save: %v\n", saveErr)
 	} else {
 		orchestratedPrintf("[gt-agent] cleared stale verify-fail for bead %s (verify green on resume)\n", r.track.activeBead)
+	}
+}
+
+// scrubStaleImplementationProgressMilestones drops closed/verify checkpoints when the bead file is gone
+// (e.g. after ResetImplementationPhase removed in_progress/open artifacts).
+func (r *stateRunner) scrubStaleImplementationProgressMilestones() {
+	if r.implProgress == nil || r.implProgress.Completed == nil {
+		return
+	}
+	rigDir := rigMayorRigDir(r.townRoot, r.rig)
+	changed := false
+	for key := range r.implProgress.Completed {
+		var beadID string
+		switch {
+		case strings.HasPrefix(key, implMilestoneClosedPrefix):
+			beadID = strings.TrimPrefix(key, implMilestoneClosedPrefix)
+		case strings.HasPrefix(key, implMilestoneVerifyPrefix):
+			beadID = strings.TrimPrefix(key, implMilestoneVerifyPrefix)
+		default:
+			continue
+		}
+		if beadID == "" {
+			continue
+		}
+		path := orchestrator.ImplementBeadPathForID(r.townRoot, r.rig, beadID, r.v)
+		if path == "" {
+			continue
+		}
+		if err := orchestrator.ValidateBeadArtifactOnDisk(rigDir, path, r.v); err != nil {
+			delete(r.implProgress.Completed, key)
+			changed = true
+			if r.implProgress.ActiveBead == beadID {
+				r.implProgress.ActiveBead = ""
+				r.implProgress.ActiveBeadPath = ""
+			}
+		}
+	}
+	if changed {
+		_ = saveImplementationProgress(r.townRoot, r.rig, r.implProgress)
 	}
 }
 
@@ -302,11 +392,18 @@ func (r *stateRunner) formatImplementationProgressBlock() string {
 		id := strings.TrimPrefix(key, implMilestoneVerifyPrefix)
 		b.WriteString(fmt.Sprintf("- ✓ Verify passed for bead **%s** in a prior run — re-run **Verify** after any edit to that file.\n", id))
 	}
+	rigDir := rigMayorRigDir(r.townRoot, r.rig)
 	for key := range r.implProgress.Completed {
 		if !strings.HasPrefix(key, implMilestoneClosedPrefix) {
 			continue
 		}
 		id := strings.TrimPrefix(key, implMilestoneClosedPrefix)
+		path := orchestrator.ImplementBeadPathForID(r.townRoot, r.rig, id, r.v)
+		if path != "" {
+			if err := orchestrator.ValidateBeadArtifactOnDisk(rigDir, path, r.v); err != nil {
+				continue
+			}
+		}
 		b.WriteString(fmt.Sprintf("- ✓ Bead **%s** was closed in a prior run.\n", id))
 	}
 

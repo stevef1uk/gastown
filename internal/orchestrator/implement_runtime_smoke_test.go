@@ -24,13 +24,13 @@ func linkshelfLikeValidation() WorkflowValidation {
 func TestWorkflowNeedsRuntimeSmoke(t *testing.T) {
 	t.Parallel()
 	v := linkshelfLikeValidation()
-	if !WorkflowNeedsRuntimeSmoke(v) {
+	if !WorkflowNeedsRuntimeSmoke("", "", v) {
 		t.Fatal("expected web+server profile to need runtime smoke")
 	}
 	v2 := DefaultWorkflowValidation()
 	v2.LayoutRoot = "linkshelf"
 	v2.RequiredFiles = []string{"linkshelf/cmd/server/main.go"}
-	if WorkflowNeedsRuntimeSmoke(v2) {
+	if WorkflowNeedsRuntimeSmoke("", "", v2) {
 		t.Fatal("expected missing web assets to skip smoke")
 	}
 }

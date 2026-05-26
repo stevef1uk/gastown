@@ -22,7 +22,7 @@ func NeedsHTTPImplementationProfile(townRoot, rig string, v WorkflowValidation) 
 	if !WorkflowUsesGo(v) {
 		return false
 	}
-	if WorkflowNeedsRuntimeSmoke(v) {
+	if WorkflowNeedsRuntimeSmoke(townRoot, rig, v) {
 		return true
 	}
 	if m := LoadWebStaticMappingFromRig(townRoot, rig, v); m.StaticURLPrefix != "" {
@@ -65,7 +65,7 @@ func SelectHTTPImplementationProfileID(townRoot, rig string, v WorkflowValidatio
 	if architectureSuggestsNonStdlibHTTP(townRoot, rig) {
 		return "generic"
 	}
-	if WorkflowNeedsRuntimeSmoke(v) {
+	if WorkflowNeedsRuntimeSmoke(townRoot, rig, v) {
 		return defaultHTTPProfileID
 	}
 	m := LoadWebStaticMappingFromRig(townRoot, rig, v)

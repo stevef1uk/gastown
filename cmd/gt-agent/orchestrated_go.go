@@ -188,14 +188,18 @@ func validateProjectSetupArtifacts(townRoot, rig string, hadCmdFailure, verifyOK
 	if !orchestrator.WorkflowUsesGo(v) {
 		return nil
 	}
+	rigDir := rigMayorRigDir(townRoot, rig)
 	if !verifyOK {
-		return fmt.Errorf("project_setup requires green verify: %s", orchestrator.GoProjectSetupVerifyCommand(v))
+		return fmt.Errorf("project_setup requires green verify: %s", orchestrator.GoProjectSetupVerifyCommand(v, rigDir))
 	}
-	layout := strings.TrimSpace(v.LayoutRoot)
-	if layout == "" {
-		layout = "."
+	goMod := orchestrator.ResolveRequiredFileOnDisk(rigDir, "go.mod", v.LayoutRoot)
+	if !strings.HasSuffix(filepath.ToSlash(goMod), "go.mod") {
+		layout := strings.TrimSpace(v.LayoutRoot)
+		if layout == "" {
+			layout = "."
+		}
+		goMod = filepath.Join(rigDir, layout, "go.mod")
 	}
-	goMod := filepath.Join(rigMayorRigDir(townRoot, rig), layout, "go.mod")
 	if _, err := os.Stat(goMod); err != nil {
 		return fmt.Errorf("go.mod missing at %s after setup", goMod)
 	}

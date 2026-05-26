@@ -325,19 +325,46 @@ def python_qa_verify_command(val: dict, mayor_rig: Path) -> str:
     return cmd
 
 
-def go_compile_verify_for_bead(val: dict, bead_path: str) -> str:
-    layout = (val.get("layout_root") or "").strip() or "."
+def go_module_cd(val: dict, mayor_rig: Path) -> str:
+    layout = (val.get("layout_root") or "").strip().strip("/")
+    if not layout:
+        return "."
+    nested = mayor_rig / layout
+    if (nested / "go.mod").is_file():
+        return layout
+    if (mayor_rig / "go.mod").is_file():
+        return "."
+    return layout
+
+
+def resolve_file_on_disk(mayor_rig: Path, want: str, layout: str) -> Path:
+    want = want.replace("\\", "/")
+    candidates = [want]
+    layout = layout.strip().strip("/")
+    if layout and want.startswith(layout + "/"):
+        candidates.append(want[len(layout) + 1 :])
+    elif layout:
+        candidates.append(f"{layout}/{want}")
+    for c in candidates:
+        p = mayor_rig / c
+        if p.is_file():
+            return p
+    return mayor_rig / want
+
+
+def go_compile_verify_for_bead(val: dict, mayor_rig: Path, bead_path: str, required: list[str]) -> str:
+    cd = go_module_cd(val, mayor_rig)
     p = bead_path.replace("\\", "/")
     if p.endswith("go.mod"):
-        return f"cd {layout} && go mod tidy"
+        return f"cd {cd} && go mod tidy"
     pkg = go_build_rel_package(val.get("layout_root") or "", bead_path)
     if pkg and p.endswith("cmd/server/main.go"):
         qa = (val.get("qa_verify_command") or "").strip()
         if qa:
             return qa
     if pkg:
-        return f"cd {layout} && go mod tidy && go build ./{pkg}/..."
-    return f"cd {layout} && go mod tidy && go build ./..."
+        return f"cd {cd} && go mod tidy && go build ./{pkg}/..."
+    return f"cd {cd} && go mod tidy && go build ./..."
 
 
 def find_go_module_dir(mayor_rig: Path, layout_root: str, required: list[str]) -> Path | None:
@@ -494,13 +521,13 @@ def bead_rows(
                 if os.path.basename(p) == os.path.basename(want):
                     bead = b
                     break
-        full = mayor_rig / want
+        full = resolve_file_on_disk(mayor_rig, want, layout)
         exists = full.is_file()
         size = full.stat().st_size if exists else 0
         verify = ""
         if workflow_uses_go(val):
             if want.endswith(".go") or want.endswith("go.mod"):
-                verify = go_compile_verify_for_bead(val, want)
+                verify = go_compile_verify_for_bead(val, mayor_rig, want, required)
             else:
                 verify = "(non-Go bead — see qa_verify_command)"
         elif (val.get("qa_verify_command") or "").strip():

@@ -360,23 +360,27 @@ func CodeindexPolecatCMDExamples(beadPath string, v WorkflowValidation) []string
 
 // FormatCodeindexContextForBead injects blast-radius impact and polecat CMD hints for the active implement path.
 func FormatCodeindexContextForBead(mayorRigDir, beadPath string, v WorkflowValidation) string {
-	if !CodeindexEnabled() {
-		return ""
-	}
 	beadPath = NormalizeBeadPathForLayout(filepath.ToSlash(strings.TrimSpace(beadPath)), v.LayoutRoot)
 	if beadPath == "" {
 		return ""
 	}
 	mayorRigDir = strings.TrimSpace(mayorRigDir)
+	if !CodeindexEnabled() {
+		return ""
+	}
 	indexPath := CodeindexIndexPath(mayorRigDir)
 	if _, err := os.Stat(indexPath); err != nil {
 		return ""
 	}
+	fileMissing := implementBeadSourceMissing(mayorRigDir, beadPath, v)
 	candidates := codeindexImpactCandidates(beadPath, v)
 	var b strings.Builder
 	// Auto-inject symbol tables (polecats rarely run codeindex CMD voluntarily).
 	for _, depPkg := range codeindexDependencySymbolPaths(beadPath, v) {
 		if sym := fetchCodeindexSymbols(indexPath, []string{depPkg}); sym != "" {
+			if fileMissing {
+				return codeindexStaleIndexMissingFileBlock(beadPath)
+			}
 			b.WriteString(formatCodeindexSymbolsSection("dependency "+depPkg, depPkg, sym, codeindexDepSymbolsMax))
 		}
 	}
@@ -388,6 +392,9 @@ func FormatCodeindexContextForBead(mayorRigDir, beadPath string, v WorkflowValid
 	archNames := ArchitectureContractSymbolNames(mayorRigDir, beadPath, v)
 
 	if indexSym != "" {
+		if fileMissing {
+			return codeindexStaleIndexMissingFileBlock(beadPath)
+		}
 		if b.Len() > 0 {
 			b.WriteString("\n")
 		}
@@ -680,4 +687,17 @@ func AllowedCodeindexSymbolNames(mayorRigDir, beadPath string, v WorkflowValidat
 		}
 	}
 	return allowed
+}
+
+func implementBeadSourceMissing(mayorRigDir, beadPath string, v WorkflowValidation) bool {
+	abs := ResolveRequiredFileOnDisk(mayorRigDir, beadPath, v.LayoutRoot)
+	if abs == "" {
+		return false
+	}
+	_, err := os.Stat(abs)
+	return err != nil && os.IsNotExist(err)
+}
+
+func codeindexStaleIndexMissingFileBlock(beadPath string) string {
+	return fmt.Sprintf("### Codeindex\n\n**`%s` is not on disk** — do not assume symbols from a prior index exist. Create the file with **WRITE:** or `CMD:` heredoc this session.\n", beadPath)
 }

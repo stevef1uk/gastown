@@ -159,9 +159,25 @@ func listImplementBeadsForGuard(townRoot, rig string, v WorkflowValidation, stat
 			// Another parallel test's hook is active — do not call bd against this townRoot/rig.
 			return nil, nil
 		}
-		return beads, err
+		if err != nil {
+			return nil, err
+		}
+		return filterImplementBeads(beads, v), nil
 	}
 	return listImplementBeadsByStatus(townRoot, rig, v, status)
+}
+
+func filterImplementBeads(beads []PlanBead, v WorkflowValidation) []PlanBead {
+	if len(beads) == 0 {
+		return nil
+	}
+	out := make([]PlanBead, 0, len(beads))
+	for _, b := range beads {
+		if MatchesImplementBeadTitle(b.Title, v) {
+			out = append(out, b)
+		}
+	}
+	return out
 }
 
 // ImplementPathHasOnlyClosedBeads reports whether every implement bead for writtenPath is closed

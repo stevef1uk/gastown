@@ -38,7 +38,7 @@ func main() {
 	for _, issue := range orchestrator.AuditRequiredImplementFiles(rigDir, v) {
 		fmt.Println(" ", issue)
 	}
-	mismatches, err := orchestrator.AuditClosedImplementBeadMismatches(*townRoot, *rig, v)
+	mismatches, err := orchestrator.AuditClosedImplementBeadMismatches(*townRoot, *rig, v, nil)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "audit closed beads: %v\n", err)
 		os.Exit(1)

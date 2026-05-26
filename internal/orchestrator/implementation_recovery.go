@@ -113,10 +113,9 @@ func stopRigDevServersScriptPath() string {
 	return ""
 }
 
-// ResetImplementationPhase is a deterministic targeted hard reset when implementation is stuck
-// past state_timeout_seconds: stop dev servers, delete all .go/.py under layout_root (keep go.mod,
-// go.sum, requirements.txt, pyproject.toml), reopen all implement beads, reset in_progress→open,
-// and clear implementation-progress.json.
+// ResetImplementationPhase runs when implementation exceeds state_timeout_seconds: stop dev servers,
+// delete on-disk files for open and in_progress implement beads only (closed beads and their files
+// are left alone), reset in_progress→open, and clear implementation-progress.json.
 func ResetImplementationPhase(townRoot, rig string, v WorkflowValidation) (string, error) {
 	if rig == "" || townRoot == "" {
 		return "", nil
@@ -136,12 +135,16 @@ func ResetImplementationPhase(townRoot, rig string, v WorkflowValidation) (strin
 	} else {
 		parts = append(parts, "stopped dev servers")
 	}
-	removed, err := RemoveLayoutSourceCodeFiles(mayorRig, v)
+	activePaths, err := implementArtifactPathsForActiveBeads(townRoot, rig, v)
+	if err != nil {
+		return joinStrings(parts, "; "), err
+	}
+	removed, err := RemoveImplementBeadArtifactFiles(mayorRig, activePaths)
 	if err != nil {
 		return joinStrings(parts, "; "), err
 	}
 	if len(removed) > 0 {
-		parts = append(parts, "removed .go/.py: "+joinStrings(removed, ", "))
+		parts = append(parts, "removed active bead files: "+joinStrings(removed, ", "))
 	}
 	junk, err := RemoveMalformedLayoutArtifactFiles(mayorRig, v)
 	if err != nil {
@@ -149,13 +152,6 @@ func ResetImplementationPhase(townRoot, rig string, v WorkflowValidation) (strin
 	}
 	if len(junk) > 0 {
 		parts = append(parts, "removed malformed artifacts: "+joinStrings(junk, ", "))
-	}
-	reopened, err := ReopenAllImplementBeadsForReset(townRoot, rig, v)
-	if err != nil {
-		return joinStrings(parts, "; "), err
-	}
-	if len(reopened) > 0 {
-		parts = append(parts, "reopened implement beads: "+joinStrings(reopened, ", "))
 	}
 	reset, err := ResetInProgressImplementBeads(townRoot, rig, v)
 	if err != nil {
@@ -177,7 +173,8 @@ func ResetImplementationPhase(townRoot, rig string, v WorkflowValidation) (strin
 	return joinStrings(parts, "; "), nil
 }
 
-// ReopenAllImplementBeadsForReset moves every closed implement bead back to open (hard reset).
+// ReopenAllImplementBeadsForReset moves every closed implement bead back to open (manual full reset only;
+// wall-clock timeout uses ResetImplementationPhase and does not call this).
 func ReopenAllImplementBeadsForReset(townRoot, rig string, v WorkflowValidation) ([]string, error) {
 	closed, err := listImplementBeadsByStatus(townRoot, rig, v, "closed")
 	if err != nil {

@@ -65,11 +65,29 @@ func TestAPISmokeHasHTTPAPI_matrix(t *testing.T) {
 	}
 }
 
+func writeMatrixRigArch(t *testing.T, dir, rig, arch string) {
+	t.Helper()
+	if strings.TrimSpace(arch) == "" {
+		return
+	}
+	rigDir := filepath.Join(dir, rig, "mayor", "rig")
+	if err := os.MkdirAll(rigDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(rigDir, "architecture.md"), []byte(arch), 0644); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestWorkflowNeedsRuntimeSmoke_matrix(t *testing.T) {
 	t.Parallel()
+	const archAPI = `| GET | /api/links | JSON array |
+| POST | /api/links | create |
+`
 	cases := []struct {
 		name          string
 		v             WorkflowValidation
+		arch          string
 		wantImplSmoke bool
 	}{
 		{
@@ -97,19 +115,35 @@ func TestWorkflowNeedsRuntimeSmoke_matrix(t *testing.T) {
 			wantImplSmoke: false,
 		},
 		{
-			name: "python_backend",
+			name: "python_backend_no_http_docs",
 			v: WorkflowValidation{
 				QAVerifyCommand: "python3 -m pytest -q",
 				RequiredFiles:   []string{"backend/app.py"},
+				PythonVenvDir:   ".venv",
 			},
 			wantImplSmoke: false,
+		},
+		{
+			name: "python_with_api",
+			v: WorkflowValidation{
+				LayoutRoot:      "backend",
+				QAVerifyCommand: "python3 -m pytest -q",
+				RequiredFiles:   []string{"backend/app.py"},
+				PythonVenvDir:   ".venv",
+			},
+			arch:          archAPI,
+			wantImplSmoke: true,
 		},
 	}
 	for _, tc := range cases {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			if got := WorkflowNeedsRuntimeSmoke(tc.v); got != tc.wantImplSmoke {
+			dir := t.TempDir()
+			rig := "rig"
+			writeMatrixRigArch(t, dir, rig, tc.arch)
+			got := WorkflowNeedsRuntimeSmoke(dir, rig, tc.v)
+			if got != tc.wantImplSmoke {
 				t.Fatalf("WorkflowNeedsRuntimeSmoke=%v want %v", got, tc.wantImplSmoke)
 			}
 		})

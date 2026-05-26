@@ -98,6 +98,55 @@ func linkshelfSmokeTestRig(t *testing.T) (townRoot, rig string, v orchestrator.W
 	return townRoot, rig, v
 }
 
+func pythonAPISmokeTestRig(t *testing.T) (townRoot, rig string, v orchestrator.WorkflowValidation) {
+	t.Helper()
+	townRoot = t.TempDir()
+	rig = "pyrig"
+	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
+	spec := "| GET | /api/items | 200, JSON array when empty |\n| POST | /api/items | 201 |\n"
+	serverDoc := "## Runtime smoke server\n.venv/bin/python3 -m uvicorn backend.app:app --host 127.0.0.1 --port 8080\n"
+	if err := os.MkdirAll(filepath.Join(rigDir, "backend"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(rigDir, "SPEC.md"), []byte(spec+serverDoc), 0644); err != nil {
+		t.Fatal(err)
+	}
+	v = orchestrator.WorkflowValidation{
+		LayoutRoot:      "backend",
+		QAVerifyCommand: "python3 -m pytest -q",
+		RequiredFiles:   []string{"backend/app.py"},
+		PythonVenvDir:   ".venv",
+	}
+	return townRoot, rig, v
+}
+
+func TestSimplifyDevServerSmoke_pythonUvicorn(t *testing.T) {
+	townRoot, rig, v := pythonAPISmokeTestRig(t)
+	in := `cd pyrig/mayor/rig/backend && .venv/bin/python3 -m uvicorn app:app --port 8080 & sleep 4`
+	got, ok := simplifyDevServerSmoke(in, townRoot, rig, v)
+	if !ok {
+		t.Fatal("expected profile-derived smoke for uvicorn CMD")
+	}
+	if strings.Contains(got, "go run") {
+		t.Fatalf("python smoke must not use go run: %q", got)
+	}
+	if !strings.Contains(got, "uvicorn") || !strings.Contains(got, ".gt-smoke.pid") {
+		t.Fatalf("want uvicorn background probe: %q", got)
+	}
+	if !strings.Contains(got, "/api/items") || !strings.Contains(got, `= "[]"`) {
+		t.Fatalf("want doc-derived API curls: %q", got)
+	}
+	if !strings.Contains(got, "for _i in") {
+		t.Fatalf("want root health poll: %q", got)
+	}
+	if !orchestrator.IsProfileDerivedSmokeCommand(got) {
+		t.Fatalf("expected GT_SMOKE profile script: %q", got)
+	}
+	if !isQARuntimeSmokeCommandOK(got, townRoot, rig, v) {
+		t.Fatalf("rewritten python smoke should qualify as QA runtime smoke: %q", got)
+	}
+}
+
 func TestNormalizeGoDevServerSmokeCommand(t *testing.T) {
 	townRoot, rig, v := linkshelfSmokeTestRig(t)
 	in := `cd testgt3/mayor/rig && cd linkshelf && go mod tidy && go build ./... && go run ./cmd/server & sleep 2 && curl -s http://localhost:8080 > /dev/null && pkill -f "go run ./cmd/server"`
@@ -447,14 +496,25 @@ func TestRewriteUnittestToWorkdir_bareLayoutCD(t *testing.T) {
 }
 
 func TestRewriteUnittestToWorkdir_mayorRigCDIntoModule(t *testing.T) {
+	town := t.TempDir()
+	rig := "testgt3"
+	mayor := filepath.Join(town, rig, "mayor", "rig")
+	if err := os.MkdirAll(mayor, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(mayor, "go.mod"), []byte("module linkshelf\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(town)
+
 	v := orchestrator.WorkflowValidation{LayoutRoot: "linkshelf", TestRunner: "custom", QAVerifyCommand: "go build ./..."}
 	cmd := "cd testgt3/mayor/rig && go build ./..."
-	fixed, ok := rewriteUnittestToWorkdir(cmd, "testgt3", v)
+	fixed, ok := rewriteUnittestToWorkdir(cmd, rig, v)
 	if !ok {
 		t.Fatal("expected rewrite")
 	}
-	want := "cd testgt3/mayor/rig/linkshelf && go build ./..."
+	want := "cd testgt3/mayor/rig && go build ./..."
 	if fixed != want {
-		t.Fatalf("got %q want %q", fixed, want)
+		t.Fatalf("got %q want %q (flat module at mayor/rig)", fixed, want)
 	}
 }

@@ -711,7 +711,7 @@ func writeImplementationBackendFiles(t *testing.T, townRoot, rig string) {
 }
 
 func TestValidateImplementationArtifacts_openBeadsRemain(t *testing.T) {
-	countOpenMatchingBeadsHook = func(_, _, _ string) (int, error) { return 2, nil }
+	countOpenMatchingBeadsHook = func(_, _ string, _ orchestrator.WorkflowValidation) (int, error) { return 2, nil }
 	defer func() { countOpenMatchingBeadsHook = nil }()
 	v := orchestrator.DefaultWorkflowValidation()
 	v.BeadTitleContains = "Implement backend/"
@@ -722,7 +722,7 @@ func TestValidateImplementationArtifacts_openBeadsRemain(t *testing.T) {
 }
 
 func TestValidateImplementationArtifacts(t *testing.T) {
-	countOpenMatchingBeadsHook = func(_, _, _ string) (int, error) { return 0, nil }
+	countOpenMatchingBeadsHook = func(_, _ string, _ orchestrator.WorkflowValidation) (int, error) { return 0, nil }
 	defer func() { countOpenMatchingBeadsHook = nil }()
 
 	dir := t.TempDir()
@@ -748,11 +748,11 @@ func TestValidateImplementationArtifacts(t *testing.T) {
 	if err := validateImplementationArtifacts(dir, "mockrig", false, true, false, vGo); err == nil || !strings.Contains(err.Error(), "verification must pass") {
 		t.Fatalf("go profile requires green session verify before success: %v", err)
 	}
-	countOpenMatchingBeadsHook = func(_, _, _ string) (int, error) { return 1, nil }
+	countOpenMatchingBeadsHook = func(_, _ string, _ orchestrator.WorkflowValidation) (int, error) { return 1, nil }
 	if err := validateImplementationArtifacts(dir, "mockrig", false, true, false, vGo); err == nil {
 		t.Fatal("expected error when open implement beads remain without session verify")
 	}
-	countOpenMatchingBeadsHook = func(_, _, _ string) (int, error) { return 0, nil }
+	countOpenMatchingBeadsHook = func(_, _ string, _ orchestrator.WorkflowValidation) (int, error) { return 0, nil }
 }
 
 func TestValidateImplementationBeadFileWrite_rejectsClosedPath(t *testing.T) {

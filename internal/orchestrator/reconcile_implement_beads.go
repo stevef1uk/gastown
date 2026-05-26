@@ -29,7 +29,11 @@ func ReconcileClosedImplementBeads(townRoot, rig string, v WorkflowValidation) (
 	if !BeadsDatabaseReady(townRoot, rig) {
 		return nil, nil
 	}
-	return reopenClosedImplementBeads(townRoot, rig, v.ForActivePhase())
+	v = v.ForActivePhase()
+	if ImplementationQueueGreen(townRoot, rig, v) {
+		return nil, nil
+	}
+	return reopenClosedImplementBeads(townRoot, rig, v)
 }
 
 // requiredFileAtOrBeforeQueueHead reports whether rel is the queue head or an earlier required_files entry.
@@ -53,10 +57,29 @@ func requiredFileAtOrBeforeQueueHead(rel, headPath string, v WorkflowValidation)
 // AuditRequiredImplementFiles reports required_files that are missing, empty, or stubbed on disk.
 // When townRoot and rig are set, files after the open queue head are skipped (not implemented yet).
 func AuditRequiredImplementFiles(rigDir string, v WorkflowValidation) []string {
-	return auditRequiredImplementFiles(rigDir, "", "", v)
+	return auditRequiredImplementFiles(rigDir, "", "", v, nil)
 }
 
-func auditRequiredImplementFiles(rigDir, townRoot, rig string, v WorkflowValidation) []string {
+// FormatMissingImplementFilesBlock returns prompt text when queue-head required files are absent on disk.
+func FormatMissingImplementFilesBlock(townRoot, rig string, v WorkflowValidation) string {
+	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
+	issues := auditRequiredImplementFiles(rigDir, townRoot, rig, v.ForActivePhase(), nil)
+	if len(issues) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("## Required implement files missing on disk\n")
+	b.WriteString("Pre-run reconcile found artifacts that are **not on disk** (often after an implementation timeout reset removed open/in_progress bead files). ")
+	b.WriteString("JSON success does not create files — use **WRITE:** or `CMD:` heredoc in this session, then Verify and `bd close`.\n\n")
+	for _, issue := range issues {
+		b.WriteString("- ")
+		b.WriteString(issue)
+		b.WriteString("\n")
+	}
+	return strings.TrimSpace(b.String())
+}
+
+func auditRequiredImplementFiles(rigDir, townRoot, rig string, v WorkflowValidation, eval *implementBeadVerifyEvaluator) []string {
 	v = v.ForActivePhase()
 	headPath := ""
 	if townRoot != "" && rig != "" && BeadsDatabaseReady(townRoot, rig) {
@@ -66,12 +89,15 @@ func auditRequiredImplementFiles(rigDir, townRoot, rig string, v WorkflowValidat
 		}
 	}
 	var issues []string
-	for _, rel := range v.RequiredFiles {
+	for _, rel := range orderedImplementBeadPaths(v) {
 		rel = filepath.ToSlash(strings.TrimSpace(rel))
 		if rel == "" {
 			continue
 		}
 		if headPath != "" && !requiredFileAtOrBeforeQueueHead(rel, headPath, v) {
+			continue
+		}
+		if eval != nil && eval.GoSatisfied(rel) {
 			continue
 		}
 		path := filepath.Join(rigDir, filepath.FromSlash(rel))
@@ -104,43 +130,59 @@ func auditRequiredImplementFiles(rigDir, townRoot, rig string, v WorkflowValidat
 }
 
 // AuditClosedImplementBeadMismatches reports closed beads whose on-disk artifact still needs work.
-func AuditClosedImplementBeadMismatches(townRoot, rig string, v WorkflowValidation) ([]string, error) {
+func AuditClosedImplementBeadMismatches(townRoot, rig string, v WorkflowValidation, eval *implementBeadVerifyEvaluator) ([]string, error) {
 	v = v.ForActivePhase()
-	closed, err := listImplementBeadsByStatus(townRoot, rig, v, "closed")
+	closed, err := implementBeadsIndexedByPath(townRoot, rig, v, "closed")
 	if err != nil {
 		return nil, err
 	}
 	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
 	var issues []string
-	for _, b := range closed {
-		if b.ID == "" {
+	for _, rel := range orderedImplementBeadPaths(v) {
+		b, ok := closed[filepath.ToSlash(rel)]
+		if !ok {
 			continue
 		}
-		p := resolveImplementBeadPath(b.Title, v)
-		if p == "" || IsProjectSetupArtifactPath(p, v) {
+		if IsProjectSetupArtifactPath(rel, v) {
 			continue
 		}
-		if beadImplementationNeedsRework(rigDir, p, v) {
-			issues = append(issues, fmt.Sprintf("closed %s should not be closed (%s)", b.ID, p))
+		if eval != nil && eval.GoSatisfied(rel) {
+			continue
+		}
+		if beadImplementationNeedsRework(rigDir, rel, v) {
+			issues = append(issues, fmt.Sprintf("closed %s should not be closed (%s)", b.ID, rel))
 		}
 	}
 	return issues, nil
 }
 
-// ReconcileImplementBeads audits disk vs required_files, reopens mismatched closed beads,
-// then runs EnsureImplementBeadsAvailable when no implement work is in flight.
+// ReconcileImplementBeads runs a deterministic pipeline for Go rigs (same order every pre_run):
+//  1. Auto-close open/in_progress beads whose on-disk file passes profile Verify (go test/build per bead).
+//  2. Audit required_files and closed-bead mismatches (Verify-green paths skip stub heuristics).
+//  3. Reopen closed beads that still fail Verify, in profile build order (never reopen Verify-green).
+//  4. EnsureImplementBeadsAvailable when the queue is idle and disk work is incomplete.
 func ReconcileImplementBeads(townRoot, rig string, v WorkflowValidation) (string, error) {
 	if rig == "" || townRoot == "" {
 		return "", nil
 	}
 	v = v.ForActivePhase()
 	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
+	eval := newImplementBeadVerifyEvaluator(rigDir, v)
 	var parts []string
 
-	for _, issue := range auditRequiredImplementFiles(rigDir, townRoot, rig, v) {
+	// Deterministic reconcile: close green Go beads first, then audit, then reopen only what still fails Verify.
+	autoClosed, err := CloseImplementBeadsWithGreenGoVerify(townRoot, rig, v, eval)
+	if err != nil {
+		return "", err
+	}
+	if len(autoClosed) > 0 {
+		parts = append(parts, "auto-closed (verify green): "+joinStrings(autoClosed, ", "))
+	}
+
+	for _, issue := range auditRequiredImplementFiles(rigDir, townRoot, rig, v, eval) {
 		parts = append(parts, issue)
 	}
-	mismatches, err := AuditClosedImplementBeadMismatches(townRoot, rig, v)
+	mismatches, err := AuditClosedImplementBeadMismatches(townRoot, rig, v, eval)
 	if err != nil {
 		return joinStrings(parts, "; "), err
 	}
@@ -148,7 +190,7 @@ func ReconcileImplementBeads(townRoot, rig string, v WorkflowValidation) (string
 		parts = append(parts, m)
 	}
 
-	reopened, err := ReconcileClosedImplementBeads(townRoot, rig, v)
+	reopened, err := reopenClosedImplementBeadsOrdered(townRoot, rig, v, eval)
 	if err != nil {
 		return joinStrings(parts, "; "), err
 	}

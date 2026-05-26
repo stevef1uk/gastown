@@ -152,10 +152,10 @@ After timeout, expect fresh implement beads (`Implement <path> per architecture`
 
 | Mechanism | Config | When it fires |
 |-----------|--------|---------------|
-| **Wall-clock timeout** | `state_timeout_seconds: 3600` | Implementation state exceeds 1h without transition |
+| **Wall-clock timeout** | `state_timeout_seconds: 7200` | Implementation state exceeds 2h without transition (override: `GT_STATE_TIMEOUT_SECONDS`) |
 | **Per-CMD timeout** | `cmd_timeout_seconds: 900` | Any single shell CMD (heredoc, `go run`, build) exceeds 15m |
 | **Light cleanup** | `on_timeout: [recover_implementation_stall]` | **gt-agent max CMD turns**: stop dev servers, `in_progress` → `open`, one active bead |
-| **Hard targeted reset** | `on_state_timeout: [reset_implementation_phase]` | **Orchestrator wall-clock timeout**: delete **all `.go` / `.py`** under `layout_root` (keep `go.mod`, `go.sum`, `requirements.txt`), reopen **all** implement beads, clear `implementation-progress.json` |
+| **Hard targeted reset** | `on_state_timeout: [reset_implementation_phase]` | **Orchestrator wall-clock timeout**: delete files for **open / in_progress** implement beads only, reset `in_progress`→`open`, clear `implementation-progress.json` (closed beads untouched) |
 | **FSM edge** | `transitions.timeout.to: implementation` | Polecat gets a fresh turn with `pending_rework` |
 
 Manual hard reset (same as `reset_implementation_phase`):

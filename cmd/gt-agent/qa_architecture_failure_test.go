@@ -23,11 +23,11 @@ func webServerQAValidation() orchestrator.WorkflowValidation {
 
 func TestValidateQAArtifacts_architectureFailure_scenario(t *testing.T) {
 	v := webServerQAValidation()
-	if !orchestrator.WorkflowNeedsRuntimeSmoke(v) {
-		t.Fatal("test profile should require runtime smoke")
-	}
 	dir := t.TempDir()
 	rig := "testrig"
+	if !orchestrator.WorkflowNeedsRuntimeSmoke(dir, rig, v) {
+		t.Fatal("test profile should require runtime smoke")
+	}
 	rigDir := rigMayorRigDir(dir, rig)
 	writeLinkshelfArchitecture(t, rigDir, false)
 	layout := filepath.Join(rigDir, "linkshelf")

@@ -89,6 +89,33 @@ func normalizeWebURLRef(ref string) string {
 	return strings.Split(ref, "#")[0]
 }
 
+// SmokeURLForHTMLRef maps an index.html src/href to the root-relative URL runtime smoke should curl.
+// Relative refs (app.js) follow architecture: /static/ when GET /static/{file} is defined.
+func (m WebStaticMapping) SmokeURLForHTMLRef(ref string) string {
+	ref = normalizeWebURLRef(ref)
+	if ref == "" || strings.HasPrefix(ref, "http") || strings.HasPrefix(ref, "/api/") {
+		return ""
+	}
+	if !strings.HasSuffix(strings.ToLower(ref), ".js") && !strings.HasSuffix(strings.ToLower(ref), ".css") {
+		return ""
+	}
+	if strings.HasPrefix(ref, "/") {
+		if m.StaticURLPrefix != "" && !m.RootServeStatic &&
+			!strings.HasPrefix(ref, m.StaticURLPrefix+"/") {
+			base := filepath.Base(ref)
+			if base != "" && base != "." && base != "/" {
+				return m.StaticURLPrefix + "/" + base
+			}
+		}
+		return ref
+	}
+	base := filepath.ToSlash(filepath.Base(ref))
+	if m.StaticURLPrefix != "" {
+		return m.StaticURLPrefix + "/" + strings.TrimPrefix(base, "/")
+	}
+	return "/" + strings.TrimPrefix(base, "/")
+}
+
 // StaticRefMismatchHint returns a validation hint when ref disagrees with architecture mapping.
 func (m WebStaticMapping) StaticRefMismatchHint(ref string) string {
 	ref = normalizeWebURLRef(ref)

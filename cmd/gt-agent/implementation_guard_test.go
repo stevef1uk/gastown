@@ -20,7 +20,7 @@ func TestIsRetriableLLMError(t *testing.T) {
 }
 
 func TestRejectImplementationNoOpFailure_blocksWithoutFixWork(t *testing.T) {
-	countOpenMatchingBeadsHook = func(_, _, _ string) (int, error) { return 2, nil }
+	countOpenMatchingBeadsHook = func(_, _ string, _ orchestrator.WorkflowValidation) (int, error) { return 2, nil }
 	defer func() { countOpenMatchingBeadsHook = nil }()
 
 	task := &orchestrator.Task{
@@ -40,7 +40,7 @@ func TestRejectImplementationNoOpFailure_blocksWithoutFixWork(t *testing.T) {
 }
 
 func TestRejectImplementationNoOpFailure_allowsAfterFixWork(t *testing.T) {
-	countOpenMatchingBeadsHook = func(_, _, _ string) (int, error) { return 1, nil }
+	countOpenMatchingBeadsHook = func(_, _ string, _ orchestrator.WorkflowValidation) (int, error) { return 1, nil }
 	defer func() { countOpenMatchingBeadsHook = nil }()
 
 	task := &orchestrator.Task{
@@ -56,7 +56,7 @@ func TestRejectImplementationNoOpFailure_allowsAfterFixWork(t *testing.T) {
 }
 
 func TestRejectImplementationNoOpFailure_blocksAfterEditSearchMiss(t *testing.T) {
-	countOpenMatchingBeadsHook = func(_, _, _ string) (int, error) { return 3, nil }
+	countOpenMatchingBeadsHook = func(_, _ string, _ orchestrator.WorkflowValidation) (int, error) { return 3, nil }
 	defer func() { countOpenMatchingBeadsHook = nil }()
 
 	task := &orchestrator.Task{
@@ -73,7 +73,7 @@ func TestRejectImplementationNoOpFailure_blocksAfterEditSearchMiss(t *testing.T)
 }
 
 func TestRejectImplementationPrematureSuccess_blocksUnusedImport(t *testing.T) {
-	countOpenMatchingBeadsHook = func(_, _, _ string) (int, error) { return 2, nil }
+	countOpenMatchingBeadsHook = func(_, _ string, _ orchestrator.WorkflowValidation) (int, error) { return 2, nil }
 	defer func() { countOpenMatchingBeadsHook = nil }()
 
 	task := &orchestrator.Task{
@@ -92,7 +92,7 @@ func TestRejectImplementationPrematureSuccess_blocksUnusedImport(t *testing.T) {
 }
 
 func TestRejectImplementationPrematureSuccess_allowsAfterVerifyOK(t *testing.T) {
-	countOpenMatchingBeadsHook = func(_, _, _ string) (int, error) { return 1, nil }
+	countOpenMatchingBeadsHook = func(_, _ string, _ orchestrator.WorkflowValidation) (int, error) { return 1, nil }
 	defer func() { countOpenMatchingBeadsHook = nil }()
 
 	task := &orchestrator.Task{
@@ -109,7 +109,7 @@ func TestRejectImplementationPrematureSuccess_allowsAfterVerifyOK(t *testing.T) 
 }
 
 func TestTryAutoOutcome_blockedOnQAPendingRework(t *testing.T) {
-	countOpenMatchingBeadsHook = func(_, _, _ string) (int, error) { return 0, nil }
+	countOpenMatchingBeadsHook = func(_, _ string, _ orchestrator.WorkflowValidation) (int, error) { return 0, nil }
 	defer func() { countOpenMatchingBeadsHook = nil }()
 
 	task := &orchestrator.Task{

@@ -8,6 +8,10 @@ import (
 // RigFlowQARuntimeSmokeBlock is injected into qa_review.md from the rig profile and SPEC.
 func RigFlowQARuntimeSmokeBlock(townRoot, rig string, v WorkflowValidation) string {
 	if WorkflowUsesPython(v) {
+		if WorkflowNeedsQARuntimeSmoke(townRoot, rig, v) {
+			spec, _ := LoadAPISmokeSpecFromRig(townRoot, rig, v)
+			return rigFlowQAPythonWebAPISmokeBlock(v, spec)
+		}
 		return rigFlowQAPythonVerifyBlock(v)
 	}
 	if !WorkflowUsesGo(v) {
@@ -20,7 +24,7 @@ func RigFlowQARuntimeSmokeBlock(townRoot, rig string, v WorkflowValidation) stri
 	if APISmokeHasHTTPAPI(spec) {
 		return rigFlowQAGoWebAPISmokeBlock(v, spec)
 	}
-	if len(spec.StaticAssets) > 0 || smokeHasNonRootGET(spec) {
+	if len(spec.StaticAssets) > 0 || smokeHasNonRootGETProbes(spec) {
 		return rigFlowQAGoWebStaticSmokeBlock(v)
 	}
 	return rigFlowQAGoLibraryVerifyBlock(v)
@@ -62,6 +66,55 @@ func rigFlowQAPythonVerifyBlock(v WorkflowValidation) string {
 	return block
 }
 
+func rigFlowQAPythonWebAPISmokeBlock(v WorkflowValidation, spec APISmokeSpec) string {
+	layout := strings.Trim(strings.TrimSpace(v.LayoutRoot), "/")
+	if layout == "" {
+		layout = "."
+	}
+	var paths []string
+	for _, p := range spec.Probes {
+		if p.Source == "static" {
+			continue
+		}
+		path := normalizeSmokePath(p.Path)
+		if path == "" {
+			continue
+		}
+		method := strings.ToUpper(strings.TrimSpace(p.Method))
+		if method == "POST" {
+			paths = append(paths, "POST "+path)
+		} else if path != "/" {
+			paths = append(paths, path)
+		}
+	}
+	routeNote := "routes from SPEC/architecture"
+	if len(paths) > 0 {
+		routeNote = strings.Join(paths, ", ")
+	}
+	return fmt.Sprintf(`## Web/API runtime smoke (Python — %s)
+
+Run **pytest** from layout, then one server CMD. gt-agent rewrites uvicorn/gunicorn/flask into background server + **curl for each documented route** (same HTTP table as implementation).
+
+Document the server under **## Runtime smoke server** in SPEC/architecture, or put uvicorn/gunicorn in qa_verify_command, e.g.:
+
+`+"```"+`
+## Runtime smoke server
+.venv/bin/python3 -m uvicorn %s.app:app --host 127.0.0.1 --port 8080
+`+"```"+`
+
+`+"```"+`
+CMD: cd {{rig}}/mayor/rig/%s && .venv/bin/python3 -m uvicorn %s.app:app --host 127.0.0.1 --port 8080
+`+"```"+`
+
+| Check | How |
+|-------|-----|
+| Unit tests | %s |
+| HTTP probes | gt-agent curls **only** paths from SPEC (GET/POST table) |
+| Fresh state | **## Runtime smoke reset** or persistence paths in architecture |
+
+%s`, routeNote, layout, layout, layout, v.UnittestCommandHint(), RigFlowStaticURLContractGuidance)
+}
+
 func rigFlowQAGoWebStaticSmokeBlock(v WorkflowValidation) string {
 	layout := strings.Trim(strings.TrimSpace(v.LayoutRoot), "/")
 	if layout == "" {
@@ -88,14 +141,19 @@ func rigFlowQAGoWebAPISmokeBlock(v WorkflowValidation, spec APISmokeSpec) string
 		layout = "."
 	}
 	var paths []string
-	for _, p := range spec.GETPaths {
-		if p != "" {
-			paths = append(paths, p)
+	for _, p := range spec.Probes {
+		if p.Source == "static" {
+			continue
 		}
-	}
-	for _, post := range spec.POSTProbes {
-		if post.Path != "" {
-			paths = append(paths, "POST "+post.Path)
+		path := normalizeSmokePath(p.Path)
+		if path == "" {
+			continue
+		}
+		method := strings.ToUpper(strings.TrimSpace(p.Method))
+		if method == "POST" {
+			paths = append(paths, "POST "+path)
+		} else if path != "/" {
+			paths = append(paths, path)
 		}
 	}
 	routeNote := "routes from SPEC/architecture"
@@ -115,10 +173,11 @@ CMD: cd {{rig}}/mayor/rig/%s && go run ./cmd/server
 | Static assets | curl -sf each path from index.html (see architecture) |
 | Empty API list | GET list endpoints must return JSON **[]** not **null** |
 | Create API | POST endpoints from SPEC must not **405** |
+| Fresh state | Document persistence under **## Runtime smoke reset** (or name DB paths in architecture); gt-agent removes those files before smoke when empty-array GETs are defined |
 
 %s
 
-gt-agent rewrites `+"`go run ./cmd/server`"+` into background server + curls for **only** paths in SPEC/architecture/plan — not invented API routes.
+gt-agent rewrites `+"`go run ./cmd/server`"+` into background server + curls for **only** paths in SPEC/architecture/plan — not invented API routes. Persistence files listed in docs are deleted before the probe so prior QA runs do not leave rows that fail empty-array checks.
 
 If smoke fails, next message **JSON only** with HTTP status and bead IDs — do not repeat long smoke CMDs.`, routeNote, layout, RigFlowStaticURLContractGuidance)
 }

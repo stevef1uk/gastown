@@ -228,8 +228,8 @@ var artifactFailureHints = map[string]func(*stateRunner) string{
 	"implementation": func(r *stateRunner) string {
 		hint := fmt.Sprintf("One bead at a time from %s (BEADS_DIR=$GT_ROOT/%s/.beads): bd update → heredoc under %s/ → %s → bd close → JSON.",
 			rigMayorRigPath(r.rig), r.rig, strings.TrimSpace(r.v.LayoutRoot), r.v.UnittestCommandHint())
-		if orchestrator.WorkflowNeedsRuntimeSmoke(r.v) {
-			hint += " Before success, gt-agent runs go test + architecture/index.html runtime smoke on the real server — green unit tests alone are not enough."
+		if orchestrator.WorkflowNeedsRuntimeSmoke(r.townRoot, r.rig, r.v) {
+			hint += " Before success, gt-agent runs unit tests + doc-derived HTTP smoke (curl each route in SPEC/architecture) — green tests alone are not enough."
 		}
 		return hint
 	},
@@ -251,13 +251,13 @@ type verifyKindFn func(r *stateRunner) string
 var verifyKindHandlers = map[string]verifyKindFn{
 	"go_setup": func(r *stateRunner) string {
 		if orchestrator.WorkflowUsesGo(r.v) {
-			return orchestrator.GoProjectSetupVerifyCommand(r.v)
+			return orchestrator.GoProjectSetupVerifyCommand(r.v, r.mayorRigWorkDir())
 		}
 		return ""
 	},
 	"go_with_tidy": func(r *stateRunner) string {
 		if orchestrator.WorkflowUsesGo(r.v) {
-			return orchestrator.GoVerifyCommandWithTidy(r.v)
+			return orchestrator.GoVerifyCommandWithTidy(r.v, r.mayorRigWorkDir())
 		}
 		return ""
 	},

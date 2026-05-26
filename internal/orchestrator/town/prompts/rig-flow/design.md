@@ -34,6 +34,7 @@ Polecat implements code later from SPEC. Your architecture doc should **describe
    If under the minimum, expand the heredoc (per-file API/behavior, data model, error cases, acceptance mapping) and rewrite `architecture.md` — do not report success until `wc -c` meets the threshold.
 4. Architecture must reference the real SPEC goals and planned layout under `{{layout_root}}/` (or paths SPEC defines) without creating those files.
 5. **HTTP route table and store API names in architecture.md must match SPEC.md verbatim** (e.g. `/static/{file}` not `/web/*`; `List`/`Create`/`Delete`/`InitSchema` not `GetLinks`/`Store` struct/`InitDB`). gt-agent rejects design success on drift.
+6. **Implement file paths must use the `{{layout_root}}/` prefix** when the profile lists `{{layout_root}}/…` in required_files (e.g. write `{{layout_root}}/internal/store/schema.go`, not bare `internal/store/schema.go`). Module-relative paths without `{{layout_root}}/` are rejected at design and planning gates.
 
 ## Required write pattern
 
@@ -47,7 +48,7 @@ CMD: cat > {{rig}}/mayor/rig/architecture.md <<'EOF'
 (Brief design aligned with SPEC — purpose, major components, constraints)
 
 ## Planned file layout
-- (list key paths from SPEC / {{required_files}} — describe only; do not create)
+- (list key paths from SPEC / {{required_files}} using the **`{{layout_root}}/`** prefix on every implement path — e.g. `{{layout_root}}/internal/store/schema.go`; describe only; do not create)
 - **When SPEC requires SQL persistence:** name one file that owns DDL/migrations (e.g. `schema.go`, `migrate.go`, or `schema.sql` under the store package) and state that app startup and tests call it — do not scatter duplicate `CREATE TABLE` only in entrypoints or each `*_test.go`. Match table/column names to SPEC (not a fixed example schema).
 
 ## Go package / bead ownership (required when multiple `.go` files share one package)

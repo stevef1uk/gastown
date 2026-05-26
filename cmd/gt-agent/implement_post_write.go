@@ -68,14 +68,18 @@ func (r *stateRunner) runPostNativeWriteVerify(relPath string, sessionName strin
 			out, err = r.runShellCommand(verifyCmd, workDir, sessionName, cmdEnv)
 		}
 	}
-	if err != nil {
+	outStr := string(out)
+	if err != nil || orchestrator.GoToolOutputMatchedNoPackages(outStr) {
+		if err == nil {
+			err = fmt.Errorf("go matched no packages (no .go sources in target path)")
+		}
 		r.track.hadCmdFailure = true
 		r.track.verifyOK = false
-		combined.WriteString(fmt.Sprintf("Post-write verify: %s\nError: %v\nOutput: %s\n\n", verifyCmd, err, string(out)))
+		combined.WriteString(fmt.Sprintf("Post-write verify: %s\nError: %v\nOutput: %s\n\n", verifyCmd, err, outStr))
 		if r.hooks.AppendGoCompileContext {
 			appendGoCompileSourceContext(combined, r.townRoot, r.rig, mayorDir, r.v.LayoutRoot,
-				relPath, r.v, verifyCmd, string(out))
-			r.noteImplementationVerifyFailure(verifyCmd, string(out))
+				relPath, r.v, verifyCmd, outStr)
+			r.noteImplementationVerifyFailure(verifyCmd, outStr)
 		}
 		return
 	}

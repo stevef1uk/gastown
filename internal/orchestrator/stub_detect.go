@@ -113,7 +113,7 @@ func ValidateWorkNotStubbed(rigDir string, v WorkflowValidation) error {
 		if rel == "" {
 			continue
 		}
-		path := filepath.Join(rigDir, filepath.FromSlash(rel))
+		path := ResolveRequiredFileOnDisk(rigDir, rel, v.LayoutRoot)
 		checked[path] = true
 		if err := CheckPathNotStub(path, rel, optsForPath(rel, opts)); err != nil {
 			return err

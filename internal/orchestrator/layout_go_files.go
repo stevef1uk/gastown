@@ -22,16 +22,12 @@ func GoBuildRelPackage(layoutRoot, beadPath string) string {
 }
 
 // GoTestVerifyCommandForPackage runs unit tests for the package containing beadPath.
-func GoTestVerifyCommandForPackage(v WorkflowValidation, beadPath string) string {
-	layout := strings.Trim(strings.TrimSpace(v.LayoutRoot), "/")
-	if layout == "" {
-		layout = "."
-	}
+func GoTestVerifyCommandForPackage(v WorkflowValidation, mayorRigDir, beadPath string) string {
 	pkg := GoBuildRelPackage(v.LayoutRoot, beadPath)
 	if pkg == "" {
-		return GoCompileOnlyVerifyCommand(v)
+		return GoCompileOnlyVerifyCommand(v, mayorRigDir)
 	}
-	return fmt.Sprintf("cd %s && go mod tidy && go test -count=1 ./%s/...", layout, pkg)
+	return fmt.Sprintf("%sgo mod tidy && go test -count=1 ./%s/...", GoShellCDClause(mayorRigDir, v.LayoutRoot), pkg)
 }
 
 // GoCompileVerifyCommandForBead is verify scoped to the active implement file's package.
@@ -42,27 +38,24 @@ func GoCompileVerifyCommandForBead(v WorkflowValidation, mayorRigDir, beadPath s
 	beadPath = filepath.ToSlash(strings.TrimSpace(beadPath))
 	if strings.HasSuffix(beadPath, ".go") && !strings.HasSuffix(beadPath, "go.mod") && !IsServerMainImplementBead(beadPath) {
 		if IsTestImplementPath(beadPath) {
-			return GoTestVerifyCommandForPackage(v, beadPath)
+			return GoTestVerifyCommandForPackage(v, mayorRigDir, beadPath)
 		}
 		testPath := CorrelatedTestPathForSource(beadPath, v.LayoutRoot)
 		if testPath != "" {
-			if _, err := os.Stat(filepath.Join(mayorRigDir, testPath)); os.IsNotExist(err) {
+			testAbs := ResolveRequiredFileOnDisk(mayorRigDir, testPath, v.LayoutRoot)
+			if _, err := os.Stat(testAbs); os.IsNotExist(err) {
 				if TestPathListedInRequired(beadPath, v.RequiredFiles, v.LayoutRoot) {
-					return goBuildVerifyForPackage(v, beadPath)
+					return goBuildVerifyForPackage(v, mayorRigDir, beadPath)
 				}
 			} else if scoped := goTestVerifyScopedToBead(v, mayorRigDir, beadPath, testPath); scoped != "" {
 				return scoped
 			} else {
-				return GoTestVerifyCommandForPackage(v, beadPath)
+				return GoTestVerifyCommandForPackage(v, mayorRigDir, beadPath)
 			}
 		}
-		return GoTestVerifyCommandForPackage(v, beadPath)
+		return GoTestVerifyCommandForPackage(v, mayorRigDir, beadPath)
 	}
-	layout := strings.Trim(strings.TrimSpace(v.LayoutRoot), "/")
-	if layout == "" {
-		layout = "."
-	}
-	return goBuildVerifyForPackage(v, beadPath)
+	return goBuildVerifyForPackage(v, mayorRigDir, beadPath)
 }
 
 // goTestVerifyScopedToBead runs go test -run for this bead's Test* funcs when sibling *_test.go
@@ -71,36 +64,28 @@ func goTestVerifyScopedToBead(v WorkflowValidation, mayorRigDir, beadPath, corre
 	if !packageNeedsScopedGoTest(beadPath, v, mayorRigDir) {
 		return ""
 	}
-	layout := strings.Trim(strings.TrimSpace(v.LayoutRoot), "/")
-	if layout == "" {
-		layout = "."
-	}
 	pkg := GoBuildRelPackage(v.LayoutRoot, beadPath)
 	if pkg == "" {
 		return ""
 	}
-	data, err := os.ReadFile(filepath.Join(mayorRigDir, correlatedTest))
+	data, err := os.ReadFile(ResolveRequiredFileOnDisk(mayorRigDir, correlatedTest, v.LayoutRoot))
 	if err != nil {
-		return goBuildVerifyForPackage(v, beadPath)
+		return goBuildVerifyForPackage(v, mayorRigDir, beadPath)
 	}
 	names := TestFuncNamesFromGoTestFile(data)
 	if len(names) == 0 {
-		return goBuildVerifyForPackage(v, beadPath)
+		return goBuildVerifyForPackage(v, mayorRigDir, beadPath)
 	}
-	return fmt.Sprintf("cd %s && go mod tidy && go test -count=1 ./%s/... -run '%s'",
-		layout, pkg, strings.Join(names, "|"))
+	return fmt.Sprintf("%sgo mod tidy && go test -count=1 ./%s/... -run '%s'",
+		GoShellCDClause(mayorRigDir, v.LayoutRoot), pkg, strings.Join(names, "|"))
 }
 
-func goBuildVerifyForPackage(v WorkflowValidation, beadPath string) string {
-	layout := strings.Trim(strings.TrimSpace(v.LayoutRoot), "/")
-	if layout == "" {
-		layout = "."
-	}
+func goBuildVerifyForPackage(v WorkflowValidation, mayorRigDir, beadPath string) string {
 	pkg := GoBuildRelPackage(v.LayoutRoot, beadPath)
 	if pkg == "" {
-		return GoCompileOnlyVerifyCommand(v)
+		return GoCompileOnlyVerifyCommand(v, mayorRigDir)
 	}
-	return fmt.Sprintf("cd %s && go mod tidy && go build ./%s/...", layout, pkg)
+	return fmt.Sprintf("%sgo mod tidy && go build ./%s/...", GoShellCDClause(mayorRigDir, v.LayoutRoot), pkg)
 }
 
 // layoutGoRelPathsProtectedFromPrune returns layout-relative .go paths that must not be deleted

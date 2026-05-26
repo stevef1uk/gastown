@@ -44,6 +44,49 @@ func (r *stateRunner) noteImplementationFixAttempt(cmd string, hadSuccessfulNati
 	}
 }
 
+// rejectImplementationSuccessWithoutDisk blocks success JSON when the active/next bead file is absent.
+func (r *stateRunner) rejectImplementationSuccessWithoutDisk(outcome string) (string, bool) {
+	if r == nil || r.task == nil || r.task.State != "implementation" {
+		return "", false
+	}
+	if !isOrchestratedSuccessOutcome(outcome) {
+		return "", false
+	}
+	beadPath := strings.TrimSpace(r.activeImplementBeadPath())
+	beadID := strings.TrimSpace(r.track.activeBead)
+	if beadPath == "" {
+		next, err := orchestrator.NextOpenImplementBead(r.townRoot, r.rig, r.v)
+		if err != nil || next == nil {
+			return "", false
+		}
+		beadID = next.ID
+		beadPath = orchestrator.NormalizeBeadPathForLayout(
+			orchestrator.ExtractPathFromBeadTitle(next.Title, r.v.BeadTitleContains), r.v.LayoutRoot)
+	}
+	if beadPath == "" {
+		return "", false
+	}
+	rigDir := rigMayorRigDir(r.townRoot, r.rig)
+	artifactErr := orchestrator.ValidateBeadArtifactOnDisk(rigDir, beadPath, r.v)
+	if artifactErr == nil {
+		return "", false
+	}
+	var b strings.Builder
+	b.WriteString("**Rejected:** success JSON does not write files — `")
+	b.WriteString(beadPath)
+	b.WriteString("` is missing on disk (")
+	b.WriteString(artifactErr.Error())
+	b.WriteString(").\n\n")
+	b.WriteString("Use **WRITE:** or `CMD:` heredoc for this bead in **this** session, run **Verify**, then `bd close ")
+	if beadID != "" {
+		b.WriteString(beadID)
+	} else {
+		b.WriteString("<id-from-bd-list>")
+	}
+	b.WriteString("`. Do not claim the file is written until it exists on disk.")
+	return b.String(), true
+}
+
 // rejectImplementationPrematureSuccess blocks success JSON while verify/compile still fails
 // (e.g. unused import in handlers_test.go while the active bead is handlers.go).
 func (r *stateRunner) rejectImplementationPrematureSuccess(outcome string) (string, bool) {
@@ -54,7 +97,7 @@ func (r *stateRunner) rejectImplementationPrematureSuccess(outcome string) (stri
 		return "", false
 	}
 	openImpl := openImplementBeadCount(r)
-	if openImpl == 0 && orchestrator.WorkflowUsesGo(r.v) && orchestrator.WorkflowNeedsRuntimeSmoke(r.v) {
+	if openImpl == 0 && orchestrator.WorkflowNeedsRuntimeSmoke(r.townRoot, r.rig, r.v) {
 		if err := orchestrator.ImplementationPhaseVerifyOK(r.townRoot, r.rig, r.v); err != nil {
 			if orchestrator.ImplementationVerifyNeedsRuntimeRework(err) {
 				reopened, _ := orchestrator.ReopenImplementationBeadsAfterSmokeFailure(r.townRoot, r.rig, r.v, err)
@@ -130,15 +173,33 @@ func (r *stateRunner) rejectImplementationNoOpFailure(outcome string) (string, b
 	return r.implementationNoOpFailureNudge(openImpl), true
 }
 
+func (r *stateRunner) formatActiveBeadCompileFailureForNudge() string {
+	if r == nil || !orchestrator.WorkflowUsesGo(r.v) {
+		return ""
+	}
+	beadPath := strings.TrimSpace(r.activeImplementBeadPath())
+	if beadPath == "" {
+		next, err := orchestrator.NextOpenImplementBead(r.townRoot, r.rig, r.v)
+		if err != nil || next == nil {
+			return ""
+		}
+		beadPath = orchestrator.NormalizeBeadPathForLayout(
+			orchestrator.ExtractPathFromBeadTitle(next.Title, r.v.BeadTitleContains), r.v.LayoutRoot)
+	}
+	if beadPath == "" {
+		return ""
+	}
+	return orchestrator.FormatImplementBeadCompileFailureBlock(rigMayorRigDir(r.townRoot, r.rig), beadPath, r.v)
+}
+
 func openImplementBeadCount(r *stateRunner) int {
 	if r == nil {
 		return 0
 	}
-	title := strings.TrimSpace(r.v.BeadTitleContains)
-	if title == "" {
+	if strings.TrimSpace(r.v.BeadTitleContains) == "" && len(r.v.RequiredFiles) == 0 {
 		return 0
 	}
-	n, err := countOpenMatchingBeads(r.townRoot, r.rig, title)
+	n, err := countOpenMatchingBeads(r.townRoot, r.rig, r.v)
 	if err != nil {
 		return 0
 	}
@@ -159,6 +220,10 @@ func (r *stateRunner) implementationNoOpFailureNudge(openImpl int) string {
 	example := beadIDExample(r.townRoot, r.rig)
 	var b strings.Builder
 	b.WriteString("**Rejected:** You cannot send `{\"outcome\":\"failure\"}` without doing fix work in this session.\n\n")
+	if block := r.formatActiveBeadCompileFailureForNudge(); block != "" {
+		b.WriteString(block)
+		b.WriteString("\n\n")
+	}
 	if r.hasQAPendingRework() {
 		b.WriteString("QA returned this rig for implementation rework — read **Prior step failed** above and fix routes/code.\n")
 	}

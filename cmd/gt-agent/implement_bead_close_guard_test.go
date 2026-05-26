@@ -32,6 +32,35 @@ func TestValidateImplementationBeadClose_rejectsMissingArtifact(t *testing.T) {
 	}
 }
 
+func TestValidateImplementationBeadClose_skipsCorrelatedTestWhenSeparateBead(t *testing.T) {
+	dir := t.TempDir()
+	town := filepath.Join(dir, "gt")
+	rig := "mockrig"
+	mayor := filepath.Join(town, rig, "mayor", "rig")
+	apiDir := filepath.Join(mayor, "linkshelf", "internal", "api")
+	if err := os.MkdirAll(apiDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	body := "package api\n\nimport \"net/http\"\n\nfunc F() http.Handler { return nil }\n"
+	if err := os.WriteFile(filepath.Join(apiDir, "handlers.go"), []byte(body), 0644); err != nil {
+		t.Fatal(err)
+	}
+	v := orchestrator.WorkflowValidation{
+		LayoutRoot:                 "linkshelf",
+		BeadTitleContains:          "Implement linkshelf/",
+		MinImplementationFileBytes: 10,
+		MinSubstantiveLines:        2,
+		RequiredFiles: []string{
+			"linkshelf/internal/api/handlers.go",
+			"linkshelf/internal/api/handlers_test.go",
+		},
+	}
+	cmd := `export BEADS_DIR=x && cd mockrig/mayor/rig && bd close te-xhq`
+	if err := validateImplementationBeadClose(cmd, town, rig, v, true); err != nil {
+		t.Fatalf("handlers.go close should not require handlers_test.go bead file yet: %v", err)
+	}
+}
+
 func TestValidateImplementationBeadClose_requiresCorrelatedTestFile(t *testing.T) {
 	dir := t.TempDir()
 	town := filepath.Join(dir, "gt")

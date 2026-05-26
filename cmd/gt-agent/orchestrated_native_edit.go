@@ -524,6 +524,7 @@ func resolveNativeEditAbsPath(workDir, path, layoutRoot string) (rel, abs string
 	if rel == "" || !orchestrator.IsValidImplementBeadPath(rel) {
 		return "", "", fmt.Errorf("invalid path %q (use repo-relative paths like %s/internal/foo.go, not markdown prose)", path, strings.Trim(layoutRoot, "/"))
 	}
+	rel = orchestrator.ResolveImplementRelPathOnDisk(workDir, rel, layoutRoot)
 	abs = filepath.Join(workDir, filepath.FromSlash(rel))
 	workClean, err := filepath.Abs(workDir)
 	if err != nil {

@@ -81,13 +81,17 @@ func TestRigFlowYAML_allPipelineStatesHaveHooks(t *testing.T) {
 }
 
 func TestRigFlowYAML_implementationHasStallRecoveryHooks(t *testing.T) {
+	t.Setenv(StateTimeoutEnvVar, "")
 	tpl := loadRigFlowTemplate(t)
 	st, ok := tpl.States["implementation"]
 	if !ok {
 		t.Fatal("missing implementation state")
 	}
-	if st.Hooks.EffectiveStateTimeoutSeconds() != 3600 {
-		t.Fatalf("state_timeout_seconds = %d, want 3600", st.Hooks.StateTimeoutSeconds)
+	if st.Hooks.StateTimeoutSeconds != 7200 {
+		t.Fatalf("state_timeout_seconds = %d, want 7200", st.Hooks.StateTimeoutSeconds)
+	}
+	if st.Hooks.EffectiveStateTimeoutSeconds() != 7200 {
+		t.Fatalf("effective state timeout = %d, want 7200", st.Hooks.EffectiveStateTimeoutSeconds())
 	}
 	if len(st.Hooks.OnTimeout) != 1 || st.Hooks.OnTimeout[0] != "recover_implementation_stall" {
 		t.Fatalf("on_timeout = %v, want [recover_implementation_stall]", st.Hooks.OnTimeout)
@@ -108,6 +112,7 @@ func TestRigFlowYAML_implementationHasStallRecoveryHooks(t *testing.T) {
 }
 
 func TestRigFlowYAML_qaReviewHasFastFailHooks(t *testing.T) {
+	t.Setenv(StateTimeoutEnvVar, "")
 	tpl := loadRigFlowTemplate(t)
 	st, ok := tpl.States["qa_review"]
 	if !ok {
@@ -129,6 +134,7 @@ func TestRigFlowYAML_qaReviewHasFastFailHooks(t *testing.T) {
 }
 
 func TestRigFlowYAML_planningHasTimeoutHooks(t *testing.T) {
+	t.Setenv(StateTimeoutEnvVar, "")
 	tpl := loadRigFlowTemplate(t)
 	st, ok := tpl.States["planning"]
 	if !ok {

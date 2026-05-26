@@ -420,7 +420,7 @@ func (v WorkflowValidation) ForbiddenRigRootBasenames() []string {
 // Always compile-only — per-bead verify (incl. go run/curl on non-go.mod beads) is enforced by gt-agent.
 func (v WorkflowValidation) ImplementationVerifyHint(mayorRigDir string) string {
 	if WorkflowUsesGo(v) {
-		return GoCompileOnlyVerifyCommand(v)
+		return GoCompileOnlyVerifyCommand(v, mayorRigDir)
 	}
 	if WorkflowUsesPython(v) {
 		return PythonVerifyCommand(v)
@@ -434,7 +434,7 @@ func (v WorkflowValidation) ImplementationVerifyHint(mayorRigDir string) string 
 // ProjectSetupVerifyHint returns the verify command agents should run in project_setup.
 func (v WorkflowValidation) ProjectSetupVerifyHint() string {
 	if WorkflowUsesGo(v) {
-		return GoProjectSetupVerifyCommand(v)
+		return GoProjectSetupVerifyCommand(v, "")
 	}
 	if WorkflowUsesPython(v) {
 		return PythonProjectSetupVerifyCommand(v)

@@ -251,6 +251,13 @@ func TestPromptContextBlock_implementBeadContext_includesCodeindexEarly(t *testi
 	if err := os.WriteFile(filepath.Join(rigDir, "architecture.md"), []byte("`linkshelf/internal/api/handlers.go` routes\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
+	apiDir := filepath.Join(rigDir, "linkshelf", "internal", "api")
+	if err := os.MkdirAll(apiDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(apiDir, "handlers.go"), []byte("package api\n\nfunc RegisterHandlers() {}\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
 	v := WorkflowValidation{
 		BeadTitleContains: "Implement ",
 		LayoutRoot:        "linkshelf",

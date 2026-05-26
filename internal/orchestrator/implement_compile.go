@@ -68,3 +68,52 @@ func ImplementationModuleCompileOK(rigDir string, v WorkflowValidation) error {
 	}
 	return nil
 }
+
+// ImplementationQueueGreen reports no open/in_progress implement beads and go mod tidy + go test pass under layout_root.
+// FormatImplementBeadCompileFailureBlock returns prompt text when the bead's Go package does not build.
+func FormatImplementBeadCompileFailureBlock(mayorRigDir, beadPath string, v WorkflowValidation) string {
+	if !WorkflowUsesGo(v) || !strings.HasSuffix(filepath.ToSlash(beadPath), ".go") {
+		return ""
+	}
+	pkg := GoBuildRelPackage(v.LayoutRoot, beadPath)
+	if pkg == "" {
+		return ""
+	}
+	layout := strings.Trim(filepath.ToSlash(strings.TrimSpace(v.LayoutRoot)), "/")
+	if layout == "" {
+		layout = "."
+	}
+	moduleDir := filepath.Join(mayorRigDir, layout)
+	goBin, err := exec.LookPath("go")
+	if err != nil {
+		return ""
+	}
+	cmd := exec.Command(goBin, "build", "./"+pkg+"/...")
+	cmd.Dir = moduleDir
+	cmd.Env = os.Environ()
+	out, runErr := cmd.CombinedOutput()
+	if runErr == nil {
+		return ""
+	}
+	text := strings.TrimSpace(string(out))
+	if text == "" {
+		text = runErr.Error()
+	}
+	if len(text) > 2000 {
+		text = text[:2000] + "\n... (truncated)\n"
+	}
+	return fmt.Sprintf("### Package does not compile yet\n\n**%s** — `go build ./%s/...` failed. Do **not** send failure JSON without **EDIT:**/**WRITE:** fix work in this session.\n\n```\n%s\n```",
+		filepath.ToSlash(beadPath), pkg, text)
+}
+
+func ImplementationQueueGreen(townRoot, rig string, v WorkflowValidation) bool {
+	if townRoot == "" || rig == "" {
+		return false
+	}
+	active, err := ListImplementBeadsOpenOrInProgress(townRoot, rig, v.ForActivePhase())
+	if err != nil || len(active) > 0 {
+		return false
+	}
+	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
+	return ImplementationModuleCompileOK(rigDir, v.ForActivePhase()) == nil
+}

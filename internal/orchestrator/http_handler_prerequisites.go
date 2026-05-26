@@ -12,7 +12,7 @@ var handlerStatic404TestRE = regexp.MustCompile(`(?i)TestServe(Index|Static)\b`)
 
 // ProfileRequiresWebAssets reports whether the workflow expects a web/ tree for HTTP serving.
 func ProfileRequiresWebAssets(v WorkflowValidation) bool {
-	if WorkflowNeedsRuntimeSmoke(v) {
+	if workflowHasGoWebAndServer(v) {
 		return true
 	}
 	for _, f := range append(append([]string(nil), v.RequiredFiles...), v.UnionRequiredFiles()...) {

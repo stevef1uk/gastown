@@ -239,7 +239,7 @@ If a workflow step sits too long in one state, the orchestrator can fire a **`ti
 
 | Hook / field | Role |
 |--------------|------|
-| `state_timeout_seconds` | Wall-clock limit for the current state (seconds). Checked on each `fetch_task`. |
+| `state_timeout_seconds` | Wall-clock limit for the current state (seconds). Checked on each `fetch_task`. Implementation default is **7200** (2h). Override any state: `GT_STATE_TIMEOUT_SECONDS` (e.g. `3600` for faster paid models). |
 | `on_timeout` | Named cleanup hooks run **before** the FSM advances (planning: `reset_planning_phase`). |
 | `transitions.timeout` | Outcome key (e.g. `timeout: { to: planning }`). |
 | `max_cmd_turns` | Per-invocation LLM turn cap; if exhausted and `timeout` is allowed, cleanup runs and outcome is `timeout` instead of `failure`. |

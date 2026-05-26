@@ -31,7 +31,18 @@ func StopDevServersForRig(v WorkflowValidation, mayorRigDir string) error {
 	if tr.goRunSeen {
 		killGoRunServerProcesses()
 	}
+	killPythonDevServerProcesses()
 	return nil
+}
+
+func killPythonDevServerProcesses() {
+	pkill, err := exec.LookPath("pkill")
+	if err != nil {
+		return
+	}
+	for _, pat := range []string{`uvicorn`, `gunicorn`, `hypercorn`} {
+		_, _ = exec.Command(pkill, "-f", pat).CombinedOutput()
+	}
 }
 
 type devServerTracker struct {

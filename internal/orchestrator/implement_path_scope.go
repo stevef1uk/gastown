@@ -67,6 +67,9 @@ func ValidateImplementReadPath(townRoot, rig, activeBead, relPath string, v Work
 }
 
 func validateImplementWriteScope(townRoot, rig, activeBead, written string, v WorkflowValidation, verifyOutput string) error {
+	if ImplementationQueueGreen(townRoot, rig, v) {
+		return fmt.Errorf("implementation queue is finished and go test ./... passes — do not EDIT/WRITE implement files; send JSON {\"outcome\":\"success\",\"summary\":\"...\"} only")
+	}
 	allowedID := strings.TrimSpace(activeBead)
 	if allowedID == "" {
 		next, err := NextOpenImplementBead(townRoot, rig, v)

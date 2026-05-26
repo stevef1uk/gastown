@@ -164,6 +164,10 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 	// pre_run (refresh_codeindex, bead queue, reconcile) must run before prompt_context so
 	// implement_bead_context sees a fresh codeindex.json and the correct queue head.
 	runner.runPreRun()
+	if block := orchestrator.FormatMissingImplementFilesBlock(townRoot, rig, runner.v); block != "" {
+		contextBlocks = append(contextBlocks, block)
+		orchestratedPrintf("[gt-agent] injecting missing implement files context for %s/%s\n", task.WorkflowID, task.State)
+	}
 	if block := runner.initQAReviewProgress(); block != "" {
 		contextBlocks = append(contextBlocks, block)
 		orchestratedPrintf("[gt-agent] loaded qa-review-progress for %s/%s\n", task.WorkflowID, task.State)
@@ -331,8 +335,14 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 				messages = append(messages, llm.Message{Role: "user", Content: msg})
 				continue
 			}
+			if msg, reject := runner.rejectImplementationSuccessWithoutDisk(o); reject {
+				orchestratedPrintf("[gt-agent] rejecting implementation success JSON while active bead file missing on disk\n")
+				recordAttemptFeedback(msg + "\n")
+				messages = append(messages, llm.Message{Role: "user", Content: msg})
+				continue
+			}
 			if msg, reject := runner.rejectImplementationPrematureSuccess(o); reject {
-				orchestratedPrintf("[gt-agent] rejecting implementation success JSON while compile still blocked\n")
+				orchestratedPrintf("[gt-agent] rejecting implementation success JSON while phase verify still blocked\n")
 				recordAttemptFeedback(msg + "\n")
 				messages = append(messages, llm.Message{Role: "user", Content: msg})
 				continue
@@ -540,6 +550,9 @@ func formatOrchestratedRetryBlock(prior *OrchestratedRetry, task *orchestrator.T
 		b.WriteString("\n")
 	}
 	b.WriteString("\nFix the issues above. Use bead IDs and paths from command output — do not invent IDs.\n")
+	if task.State == "implementation" && prior.Outcome == "failure" {
+		b.WriteString("\nIf **Implementation progress** or **Active bead looks complete on disk** says the file is already done, run **Verify** + `bd close` for that bead — do not repeat failure JSON.\n")
+	}
 	if task.State == "implementation" {
 		b.WriteString("\nUse **sed -i** or **patch** on internal .go files; **cmd/…/main.go may use heredoc** when Source context shows duplicate or stub handlers. Match APIs in **Dependency packages**.\n")
 	}
@@ -1298,6 +1311,9 @@ func validateImplementationCommandWithState(cmd, townRoot, rig, activeBead strin
 	if err := validateImplementationBeadClose(cmd, townRoot, rig, v, verifyOK); err != nil {
 		return err
 	}
+	if err := validateImplementationBeadReopen(cmd, townRoot, rig, v); err != nil {
+		return err
+	}
 	if activeBead == "" || !isBeadUpdateInProgressCommand(cmd) {
 		return nil
 	}
@@ -1305,6 +1321,22 @@ func validateImplementationCommandWithState(cmd, townRoot, rig, activeBead strin
 		return fmt.Errorf("only one implement bead may be in_progress at a time (active: %s)", activeBead)
 	}
 	return nil
+}
+
+// validateImplementationBeadReopen blocks reopening implement beads when the queue is done and module tests pass.
+func validateImplementationBeadReopen(cmd, townRoot, rig string, v orchestrator.WorkflowValidation) error {
+	lower := strings.ToLower(cmd)
+	if !strings.Contains(lower, "bd update") || !strings.Contains(lower, "--status=open") {
+		return nil
+	}
+	if !orchestrator.ImplementationQueueGreen(townRoot, rig, v) {
+		return nil
+	}
+	id := extractBeadIDFromBdUpdate(cmd)
+	if id == "" {
+		return nil
+	}
+	return fmt.Errorf("do not reopen implement beads (%s) — go test ./... already passes; send JSON success only", id)
 }
 
 // validateImplementationBeadFileWrite rejects heredoc/touch writes to paths outside the active or next implement bead.
@@ -1625,7 +1657,7 @@ func validatePlanMDBeadIDs(townRoot, rig, planPath string, v orchestrator.Workfl
 	}
 	openIDs := map[string]bool{}
 	for _, b := range open {
-		if strings.Contains(strings.ToLower(b.Title), strings.ToLower(strings.TrimSpace(v.BeadTitleContains))) {
+		if orchestrator.MatchesImplementBeadTitle(b.Title, v) {
 			openIDs[b.ID] = true
 		}
 	}
@@ -1759,16 +1791,15 @@ func validatePlanningBeadSet(townRoot, rig string, v orchestrator.WorkflowValida
 }
 
 // countOpenMatchingBeadsHook is set by tests to avoid calling bd list.
-var countOpenMatchingBeadsHook func(townRoot, rig, titleContains string) (int, error)
+var countOpenMatchingBeadsHook func(townRoot, rig string, v orchestrator.WorkflowValidation) (int, error)
 
 func validateImplementationArtifacts(townRoot, rig string, hadCmdFailure, beadCloseOK, verifyOK bool, v orchestrator.WorkflowValidation) error {
 	rigDir := rigMayorRigDir(townRoot, rig)
 	scoped := v.ForActivePhase()
 	diskReady := len(scoped.RequiredFiles) > 0 && orchestrator.ImplementationDiskWorkReady(rigDir, scoped) == nil
-	titleContains := strings.TrimSpace(v.BeadTitleContains)
 	openImpl := 0
-	if titleContains != "" {
-		n, err := countOpenMatchingBeads(townRoot, rig, titleContains)
+	if strings.TrimSpace(scoped.BeadTitleContains) != "" || len(scoped.RequiredFiles) > 0 {
+		n, err := countOpenMatchingBeads(townRoot, rig, scoped)
 		if err != nil {
 			return err
 		}
@@ -2071,34 +2102,15 @@ func validatePlanReviewArtifacts(townRoot, rig string, hadCmdFailure, listOpenOK
 	return nil
 }
 
-func countOpenMatchingBeads(townRoot, rig, titleContains string) (int, error) {
+func countOpenMatchingBeads(townRoot, rig string, v orchestrator.WorkflowValidation) (int, error) {
 	if countOpenMatchingBeadsHook != nil {
-		return countOpenMatchingBeadsHook(townRoot, rig, titleContains)
+		return countOpenMatchingBeadsHook(townRoot, rig, v)
 	}
-	beadsDir := config.ResolveBeadsDirForRig(townRoot, rig)
-	if beadsDir == "" {
-		return 0, nil
-	}
-	if _, err := os.Stat(beadsDir); err != nil {
-		if os.IsNotExist(err) {
-			return 0, nil
-		}
+	active, err := orchestrator.ListImplementBeadsOpenOrInProgress(townRoot, rig, v)
+	if err != nil {
 		return 0, err
 	}
-	cmd := exec.Command("bd", "list", "--status=open", "--limit=0")
-	cmd.Env = withEnvKey(os.Environ(), "BEADS_DIR", beadsDir)
-	cmd.Dir = rigMayorRigDir(townRoot, rig)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return 0, fmt.Errorf("bd list open: %w: %s", err, strings.TrimSpace(string(out)))
-	}
-	n := 0
-	for _, line := range strings.Split(string(out), "\n") {
-		if strings.Contains(line, titleContains) {
-			n++
-		}
-	}
-	return n, nil
+	return len(active), nil
 }
 
 func beadIDExample(townRoot, rig string) string {
@@ -2158,18 +2170,18 @@ func validateQAArtifacts(townRoot, rig, outcome string, hadCmdFailure, bdListClo
 			return err
 		}
 	}
-	openImpl, err := countOpenMatchingBeads(townRoot, rig, v.BeadTitleContains)
+	openImpl, err := countOpenMatchingBeads(townRoot, rig, v)
 	if err != nil {
 		return err
 	}
 	switch outcome {
 	case "all_passed":
 		if openImpl > 0 {
-			return fmt.Errorf("cannot use all_passed: %d open beads matching %q remain", openImpl, v.BeadTitleContains)
+			return fmt.Errorf("cannot use all_passed: %d open implement bead(s) remain for active phase", openImpl)
 		}
 	case "task_passed":
 		if openImpl == 0 {
-			return fmt.Errorf("use all_passed when no open beads matching %q remain", v.BeadTitleContains)
+			return fmt.Errorf("use all_passed when no open implement beads remain for active phase")
 		}
 	}
 	return nil
@@ -2188,6 +2200,9 @@ func isQARuntimeSmokeCommandOK(cmd, townRoot, rig string, v orchestrator.Workflo
 	}
 	lower := strings.ToLower(strings.Join(strings.Fields(cmd), " "))
 	if orchestrator.WorkflowUsesPython(v) {
+		if orchestrator.IsProfileDerivedSmokeCommand(cmd) {
+			return true
+		}
 		return strings.Contains(lower, "curl ") &&
 			(strings.Contains(lower, "localhost") || strings.Contains(lower, "127.0.0.1"))
 	}
@@ -2351,7 +2366,7 @@ func goServerDefinesRoute(rigDir string, v orchestrator.WorkflowValidation, ref 
 func validateRequiredWorkFiles(townRoot, rig string, v orchestrator.WorkflowValidation) error {
 	rigDir := rigMayorRigDir(townRoot, rig)
 	for _, rel := range v.RequiredFiles {
-		path := filepath.Join(rigDir, filepath.FromSlash(rel))
+		path := orchestrator.ResolveRequiredFileOnDisk(rigDir, rel, v.LayoutRoot)
 		info, err := os.Stat(path)
 		if err != nil {
 			return fmt.Errorf("missing %s (implement and commit before success)", path)

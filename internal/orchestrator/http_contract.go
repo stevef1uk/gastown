@@ -51,7 +51,7 @@ var htmlAttrRefContractRE = regexp.MustCompile(`(?i)\b(src|href)\s*=\s*["']([^"'
 
 // ValidateHTTPContract checks HTML refs and handler source against architecture static routing.
 func ValidateHTTPContract(townRoot, rig string, v WorkflowValidation) error {
-	if !WorkflowNeedsRuntimeSmoke(v) {
+	if !WorkflowNeedsRuntimeSmoke(townRoot, rig, v) {
 		return nil
 	}
 	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")

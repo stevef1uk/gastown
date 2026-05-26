@@ -34,22 +34,6 @@ func workflowHasGoWebAndServer(v WorkflowValidation) bool {
 	return hasWeb && hasServer
 }
 
-// WorkflowNeedsRuntimeSmoke reports Go web+server profiles that may run HTTP smoke
-// during implementation verify (GT-VERIFY-002/009). Probe paths come from SPEC only.
-func WorkflowNeedsRuntimeSmoke(v WorkflowValidation) bool {
-	return workflowHasGoWebAndServer(v)
-}
-
-// APISmokeHasHTTPAPI reports whether rig docs define HTTP API paths beyond serving "/".
-func APISmokeHasHTTPAPI(spec APISmokeSpec) bool {
-	for _, p := range spec.GETPaths {
-		if smokeProbeAPIPath(p) {
-			return true
-		}
-	}
-	return len(spec.POSTProbes) > 0
-}
-
 func smokeProbeAPIPath(path string) bool {
 	path = normalizeSmokePath(path)
 	if path == "" || path == "/" {
@@ -58,17 +42,7 @@ func smokeProbeAPIPath(path string) bool {
 	return strings.HasPrefix(path, "/api/") || strings.Contains(path, "{")
 }
 
-func smokeHasNonRootGET(spec APISmokeSpec) bool {
-	for _, p := range spec.GETPaths {
-		if normalizeSmokePath(p) != "" && normalizeSmokePath(p) != "/" {
-			return true
-		}
-	}
-	return false
-}
-
 // WorkflowNeedsQARuntimeSmoke reports whether QA must run a live server smoke CMD this session.
-// Python rigs use pytest unless SPEC documents HTTP. Go rigs skip API curls when SPEC has no API table.
 func WorkflowNeedsQARuntimeSmoke(townRoot, rig string, v WorkflowValidation) bool {
 	if WorkflowUsesPython(v) {
 		return pythonWorkflowNeedsQARuntimeSmoke(townRoot, rig, v)
@@ -77,35 +51,18 @@ func WorkflowNeedsQARuntimeSmoke(townRoot, rig string, v WorkflowValidation) boo
 		return false
 	}
 	spec, _ := LoadAPISmokeSpecFromRig(townRoot, rig, v)
-	if APISmokeHasHTTPAPI(spec) || len(spec.StaticAssets) > 0 || smokeHasNonRootGET(spec) {
-		return true
-	}
-	for _, p := range spec.GETPaths {
-		if normalizeSmokePath(p) == "/" {
-			return true
-		}
-	}
-	return false
+	return specHasRuntimeSmokeProbes(spec)
 }
 
 func pythonWorkflowNeedsQARuntimeSmoke(townRoot, rig string, v WorkflowValidation) bool {
+	if !pythonWorkflowHasServerEntry(v) {
+		return false
+	}
 	spec, err := LoadAPISmokeSpecFromRig(townRoot, rig, v)
 	if err != nil || !APISmokeHasHTTPAPI(spec) {
 		return false
 	}
-	for _, f := range append(append([]string(nil), v.RequiredFiles...), v.UnionRequiredFiles()...) {
-		lower := strings.ToLower(filepath.ToSlash(strings.TrimSpace(f)))
-		switch {
-		case strings.HasSuffix(lower, "app.py"),
-			strings.HasSuffix(lower, "main.py"),
-			strings.Contains(lower, "/api/"),
-			strings.Contains(lower, "wsgi"),
-			strings.Contains(lower, "asgi"),
-			strings.Contains(lower, "server.py"):
-			return true
-		}
-	}
-	return false
+	return true
 }
 
 func implementationModuleDir(townRoot, rig string, v WorkflowValidation) string {
@@ -116,26 +73,39 @@ func implementationModuleDir(townRoot, rig string, v WorkflowValidation) string 
 	return filepath.Join(townRoot, rig, "mayor", "rig", layout)
 }
 
-// ImplementationRuntimeSmokeOK runs profile-derived go run + curl smoke from layout_root.
+// ImplementationRuntimeSmokeOK runs doc-derived server start + curl probes from layout_root.
 func ImplementationRuntimeSmokeOK(townRoot, rig string, v WorkflowValidation) error {
-	if SkipImplementationRuntimeSmoke() || !WorkflowNeedsRuntimeSmoke(v) {
+	if SkipImplementationRuntimeSmoke() || !WorkflowNeedsRuntimeSmoke(townRoot, rig, v) {
 		return nil
 	}
 	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
 	moduleDir := implementationModuleDir(townRoot, rig, v)
-	if _, err := os.Stat(filepath.Join(moduleDir, "go.mod")); err != nil {
-		return fmt.Errorf("runtime smoke module %s: %w", moduleDir, err)
+	if WorkflowUsesGo(v) {
+		if _, err := os.Stat(filepath.Join(moduleDir, "go.mod")); err != nil {
+			return fmt.Errorf("runtime smoke module %s: %w", moduleDir, err)
+		}
+		if !GoServerMainExists(rigDir, v) {
+			return nil
+		}
 	}
-	if !GoServerMainExists(rigDir, v) {
-		return nil
+	if WorkflowUsesPython(v) {
+		if !pythonWorkflowHasServerEntry(v) {
+			return nil
+		}
 	}
 	spec, err := LoadAPISmokeSpecFromRig(townRoot, rig, v)
 	if err != nil {
 		return fmt.Errorf("load runtime smoke spec: %w", err)
 	}
+	if !specHasRuntimeSmokeProbes(spec) {
+		return nil
+	}
 	script := BuildRuntimeSmokeShell(moduleDir, spec)
 	if strings.TrimSpace(script) == "" {
 		return fmt.Errorf("empty runtime smoke script for %s", moduleDir)
+	}
+	if strings.TrimSpace(spec.ServerStart) == "" {
+		return fmt.Errorf("runtime smoke: document server start under ## Runtime smoke server in SPEC/architecture, or include uvicorn/gunicorn/flask in qa_verify_command")
 	}
 	_ = StopDevServersForRig(v, rigDir)
 	cmd := exec.Command("/bin/bash", "-c", script)
@@ -152,12 +122,19 @@ func ImplementationRuntimeSmokeOK(townRoot, rig string, v WorkflowValidation) er
 	return nil
 }
 
-// ImplementationPhaseVerifyOK runs go mod tidy + tests and, for web+server Go profiles,
-// profile runtime smoke before implementation may complete (GT-VERIFY-002/009).
+// ImplementationPhaseVerifyOK runs module tests and, when the profile defines HTTP routes,
+// doc-derived runtime smoke before implementation may complete (GT-VERIFY-002/009).
 func ImplementationPhaseVerifyOK(townRoot, rig string, v WorkflowValidation) error {
 	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
-	if err := ImplementationModuleCompileOK(rigDir, v); err != nil {
-		return err
+	if WorkflowUsesGo(v) {
+		if err := ImplementationModuleCompileOK(rigDir, v); err != nil {
+			return err
+		}
+	}
+	if WorkflowUsesPython(v) {
+		if err := ImplementationPythonModuleOK(rigDir, v); err != nil {
+			return err
+		}
 	}
 	if err := ImplementationRuntimeSmokeOK(townRoot, rig, v); err != nil {
 		return err

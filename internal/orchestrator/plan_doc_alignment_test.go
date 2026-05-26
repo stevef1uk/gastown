@@ -139,6 +139,92 @@ main calls InitSchema; handlers use store.List.
 	}
 }
 
+func TestValidateArchitectureDocAlignment_rejectsBareModulePaths(t *testing.T) {
+	dir := t.TempDir()
+	spec := `# Spec
+| GET | /api/links | 200 | — |
+## Store
+` + "```go\nfunc List() ([]Link, error)\n```" + `
+module linkshelf
+`
+	arch := `# Architecture
+- internal/store/schema.go: Link struct and InitSchema
+- internal/store/store.go: List, Create, Delete
+`
+	for name, body := range map[string]string{"SPEC.md": spec, "architecture.md": arch} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	v := WorkflowValidation{
+		LayoutRoot:    "linkshelf",
+		RequiredFiles: []string{"linkshelf/internal/store/schema.go", "linkshelf/internal/store/store.go"},
+	}
+	err := ValidateArchitectureDocAlignment(dir, v)
+	if err == nil {
+		t.Fatal("expected layout path prefix error")
+	}
+	if !strings.Contains(err.Error(), "internal/store/schema.go") || !strings.Contains(err.Error(), "linkshelf/internal/store/schema.go") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestValidateArchitectureDocAlignment_acceptsLayoutPrefixedPaths(t *testing.T) {
+	dir := t.TempDir()
+	spec := `# Spec
+| GET | /api/links | 200 | — |
+module linkshelf
+`
+	arch := `# Architecture
+- linkshelf/internal/store/schema.go: schema
+- linkshelf/internal/store/store.go: CRUD
+`
+	for name, body := range map[string]string{"SPEC.md": spec, "architecture.md": arch} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	v := WorkflowValidation{
+		LayoutRoot:    "linkshelf",
+		RequiredFiles: []string{"linkshelf/internal/store/schema.go"},
+	}
+	if err := ValidateArchitectureDocAlignment(dir, v); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestValidatePlanningDocAlignment_rejectsPlanBareModulePaths(t *testing.T) {
+	dir := t.TempDir()
+	spec := `# Spec
+| GET | /api/links | 200 | — |
+module linkshelf
+`
+	arch := `Routes GET /api/links. Store in linkshelf/internal/store.`
+	plan := `# Plan
+## Bead map
+### te-1: internal/store/schema.go
+- Scope: schema
+### te-2: internal/store/store.go
+- Scope: store
+`
+	for name, body := range map[string]string{"SPEC.md": spec, "architecture.md": arch, "plan.md": plan} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	v := WorkflowValidation{
+		LayoutRoot:    "linkshelf",
+		RequiredFiles: []string{"linkshelf/internal/store/schema.go", "linkshelf/internal/store/store.go"},
+	}
+	err := ValidatePlanningDocAlignment(dir, v)
+	if err == nil {
+		t.Fatal("expected plan layout path error")
+	}
+	if !strings.Contains(err.Error(), "plan.md references") || !strings.Contains(err.Error(), "internal/store/schema.go") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestValidatePlanningDocAlignment_passesAlignedDocs(t *testing.T) {
 	dir := t.TempDir()
 	spec := `# Spec

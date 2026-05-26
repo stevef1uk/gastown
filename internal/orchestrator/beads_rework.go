@@ -16,14 +16,14 @@ import (
 // EnsureImplementBeadsAvailable reopens closed implement beads only when polecat work is incomplete
 // (missing/stub files). It does not reopen when all implement beads are closed and disk work is ready.
 func EnsureImplementBeadsAvailable(townRoot, rig string, v WorkflowValidation) ([]string, error) {
-	open, err := listImplementBeadsByStatus(townRoot, rig, v, "open")
+	open, err := listImplementBeadsForGuard(townRoot, rig, v, "open")
 	if err != nil {
 		return nil, err
 	}
 	if len(open) > 0 {
 		return nil, nil
 	}
-	inProgress, err := listImplementBeadsByStatus(townRoot, rig, v, "in_progress")
+	inProgress, err := listImplementBeadsForGuard(townRoot, rig, v, "in_progress")
 	if err != nil {
 		return nil, err
 	}
@@ -32,12 +32,10 @@ func EnsureImplementBeadsAvailable(townRoot, rig string, v WorkflowValidation) (
 	}
 	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
 	if ImplementationDiskWorkReady(rigDir, v) == nil {
-		if err := ImplementationPhaseVerifyOK(townRoot, rig, v); err != nil {
-			if ImplementationVerifyNeedsRuntimeRework(err) {
-				return ReopenImplementationBeadsAfterSmokeFailure(townRoot, rig, v, err)
-			}
-			return reopenClosedImplementBeads(townRoot, rig, v)
-		}
+		// Queue is idle (no open/in_progress) and required files exist on disk.
+		// Do not reopen closed beads here: pre_run runs every fetch_task and would undo
+		// finished work when runtime smoke fails while unit tests pass. Phase verify
+		// (including smoke) still runs on implementation success JSON in gt-agent.
 		return nil, nil
 	}
 	return reopenClosedImplementBeads(townRoot, rig, v)
@@ -57,7 +55,7 @@ func ReopenImplementationBeadsAfterQAFailure(townRoot, rig string, v WorkflowVal
 		return nil, nil
 	}
 
-	open, err := listImplementBeadsByStatus(townRoot, rig, v, "open")
+	open, err := listImplementBeadsForGuard(townRoot, rig, v, "open")
 	if err != nil {
 		return nil, err
 	}
@@ -236,38 +234,9 @@ func beadImplementationNeedsRework(rigDir, beadPath string, v WorkflowValidation
 }
 
 func reopenClosedImplementBeads(townRoot, rig string, v WorkflowValidation) ([]string, error) {
-	closed, err := listImplementBeadsByStatus(townRoot, rig, v, "closed")
-	if err != nil {
-		return nil, err
-	}
-	if len(closed) == 0 {
-		return nil, nil
-	}
-	beadsDir := config.ResolveBeadsDirForRig(townRoot, rig)
 	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
-	workDir := rigDir
-	var reopened []string
-	for _, b := range closed {
-		if b.ID == "" {
-			continue
-		}
-		p := resolveImplementBeadPath(b.Title, v)
-		if IsProjectSetupArtifactPath(p, v) {
-			continue
-		}
-		if !beadImplementationNeedsRework(rigDir, p, v) {
-			continue
-		}
-		cmd := exec.Command("bd", "update", b.ID, "--status=open")
-		cmd.Env = append(os.Environ(), "BEADS_DIR="+beadsDir)
-		cmd.Dir = workDir
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			return reopened, fmt.Errorf("bd update %s --status=open: %w: %s", b.ID, err, strings.TrimSpace(string(out)))
-		}
-		reopened = append(reopened, b.ID)
-	}
-	return reopened, nil
+	eval := newImplementBeadVerifyEvaluator(rigDir, v)
+	return reopenClosedImplementBeadsOrdered(townRoot, rig, v, eval)
 }
 
 func stubbedRequiredFiles(rigDir string, v WorkflowValidation) []string {

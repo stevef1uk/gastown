@@ -132,6 +132,17 @@ func (r *stateRunner) implementationArtifactFailureExtra(err error) string {
 	if strings.Contains(em, "failed commands") || strings.Contains(em, "placeholder") {
 		b.WriteString("Do not use template placeholders (`<identified-bead-id>`, `BEAD_ID`, etc.). Copy bead IDs exactly from `bd list` output.\n")
 	}
+	if strings.Contains(em, "open implement bead(s) remain") {
+		rigDir := rigMayorRigDir(r.townRoot, r.rig)
+		if issues := orchestrator.AuditRequiredImplementFiles(rigDir, r.v.ForActivePhase()); len(issues) > 0 {
+			b.WriteString("Missing or stubbed on disk (write files before `bd close`):\n")
+			for _, issue := range issues {
+				b.WriteString("- ")
+				b.WriteString(issue)
+				b.WriteString("\n")
+			}
+		}
+	}
 	if strings.Contains(em, "runtime smoke") || strings.Contains(em, "compile or runtime smoke failed") {
 		reopened, _ := orchestrator.ReopenImplementationBeadsAfterSmokeFailure(r.townRoot, r.rig, r.v, err)
 		if block := orchestrator.FormatImplementationSmokeFailureBlock(r.townRoot, r.rig, r.v, err, reopened); block != "" {
@@ -234,7 +245,7 @@ func (r *stateRunner) rewriteCommand(cmd string) string {
 	// Runtime smoke rewrite is for implementation/QA only — planner must not go run the server.
 	if r.hooks.CmdGuard != "planning" && r.hooks.CmdGuard != "plan_review" && r.hooks.CmdGuard != "design" {
 		if fixed, ok := normalizeGoDevServerSmokeCommand(cmd, r.townRoot, r.rig, r.v); ok {
-			orchestratedPrintf("[gt-agent] rewrote go dev-server smoke → %s\n", fixed)
+			orchestratedPrintf("[gt-agent] rewrote dev-server smoke → %s\n", fixed)
 			cmd = fixed
 		}
 	}
@@ -457,6 +468,13 @@ func (r *stateRunner) runAutoVerify(cmd, workDir, sessionName string, cmdEnv []s
 			if strings.EqualFold(strings.TrimSpace(r.hooks.Track), "qa") {
 				appendQAFailureReportNudge(combined, verifyCmd, verifyErr)
 			}
+		} else if orchestrator.GoToolOutputMatchedNoPackages(string(verifyOut)) {
+			r.track.hadCmdFailure = true
+			r.track.verifyOK = false
+			r.track.lastVerifyOutput = string(verifyOut)
+			errNoPkg := fmt.Errorf("go matched no packages (no .go sources in target path)")
+			orchestratedFprintfStderr("[gt-agent] auto-verify failed: %v\n%s\n", errNoPkg, string(verifyOut))
+			combined.WriteString(fmt.Sprintf("Auto-verify: %s\nError: %v\nOutput: %s\n\n", verifyCmd, errNoPkg, string(verifyOut)))
 		} else {
 			r.track.verifyOK = true
 			if r.hooks.AutoVerifyOKClearsCmdFailure {

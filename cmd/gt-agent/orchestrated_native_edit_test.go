@@ -359,7 +359,7 @@ func TestNativeEdit_READ_returnsFileContent(t *testing.T) {
 }
 
 func TestNativeEdit_autoReadAfterSearchMiss(t *testing.T) {
-	countOpenMatchingBeadsHook = func(_, _, _ string) (int, error) { return 2, nil }
+	countOpenMatchingBeadsHook = func(_, _ string, _ orchestrator.WorkflowValidation) (int, error) { return 2, nil }
 	defer func() { countOpenMatchingBeadsHook = nil }()
 
 	dir := t.TempDir()
