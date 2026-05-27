@@ -1843,13 +1843,13 @@ func validateImplementationArtifacts(townRoot, rig string, hadCmdFailure, beadCl
 			return fmt.Errorf("all implement beads are closed but compile or runtime smoke failed: %w", err)
 		}
 	}
-	if err := validateRequiredWorkFiles(townRoot, rig, v); err != nil {
+	if err := validateRequiredWorkFiles(townRoot, rig, scoped); err != nil {
 		return err
 	}
-	if err := orchestrator.ValidateLayoutPythonSources(rigDir, v); err != nil {
-		return fmt.Errorf("invalid Python under %s: %w", v.LayoutRoot, err)
+	if err := orchestrator.ValidateLayoutPythonSources(rigDir, scoped); err != nil {
+		return fmt.Errorf("invalid Python under %s: %w", scoped.LayoutRoot, err)
 	}
-	if err := orchestrator.ValidateWorkNotStubbed(rigDir, v); err != nil {
+	if err := orchestrator.ValidateWorkNotStubbed(rigDir, scoped); err != nil {
 		return fmt.Errorf("implementation still looks like stubs: %w", err)
 	}
 	return nil
@@ -2143,6 +2143,7 @@ func beadIDExample(townRoot, rig string) string {
 }
 
 func validateQAArtifacts(townRoot, rig, outcome string, hadCmdFailure, bdListClosedOK, unittestOK, qaSmokeOK bool, v orchestrator.WorkflowValidation) error {
+	scoped := v.ForActivePhase()
 	sendToImpl := outcome == "failure"
 	sendToArchitect := outcome == "architecture_failure"
 	if hadCmdFailure && !sendToImpl && !sendToArchitect {
@@ -2155,39 +2156,39 @@ func validateQAArtifacts(townRoot, rig, outcome string, hadCmdFailure, bdListClo
 		if !unittestOK {
 			return fmt.Errorf("architecture_failure requires green %s in this session — use outcome failure for test failures", v.UnittestCommandHint())
 		}
-		if requiresQARuntimeSmoke(townRoot, rig, v) && qaSmokeOK {
+		if requiresQARuntimeSmoke(townRoot, rig, scoped) && qaSmokeOK {
 			return fmt.Errorf("architecture_failure requires failed runtime smoke while unit tests pass — use all_passed if smoke passed")
 		}
-		if err := validateRequiredWorkFiles(townRoot, rig, v); err != nil {
+		if err := validateRequiredWorkFiles(townRoot, rig, scoped); err != nil {
 			return err
 		}
-		if err := orchestrator.ValidateWorkNotStubbed(rigMayorRigDir(townRoot, rig), v); err != nil {
+		if err := orchestrator.ValidateWorkNotStubbed(rigMayorRigDir(townRoot, rig), scoped); err != nil {
 			return fmt.Errorf("stub/placeholder code cannot use architecture_failure — use outcome failure: %w", err)
 		}
 		return nil
 	}
-	if sendToImpl && unittestOK && requiresQARuntimeSmoke(townRoot, rig, v) && !qaSmokeOK {
+	if sendToImpl && unittestOK && requiresQARuntimeSmoke(townRoot, rig, scoped) && !qaSmokeOK {
 		return fmt.Errorf("unit tests passed but runtime smoke failed — if implementation matches architecture.md, use outcome architecture_failure (architect revises design); use failure only for code bugs")
 	}
 	if !sendToImpl {
 		if !unittestOK {
 			return fmt.Errorf("run `%s` from %s before reporting QA outcome", v.UnittestCommandHint(), rigMayorRigPath(rig))
 		}
-		if err := validateRequiredWorkFiles(townRoot, rig, v); err != nil {
+		if err := validateRequiredWorkFiles(townRoot, rig, scoped); err != nil {
 			return err
 		}
-		if err := orchestrator.ValidateWorkNotStubbed(rigMayorRigDir(townRoot, rig), v); err != nil {
+		if err := orchestrator.ValidateWorkNotStubbed(rigMayorRigDir(townRoot, rig), scoped); err != nil {
 			return fmt.Errorf("implementation files look like stubs (QA must use outcome failure): %w", err)
 		}
-		if err := validateWebStaticReferences(townRoot, rig, v); err != nil {
+		if err := validateWebStaticReferences(townRoot, rig, scoped); err != nil {
 			return err
 		}
-		if requiresQARuntimeSmoke(townRoot, rig, v) && !qaSmokeOK {
+		if requiresQARuntimeSmoke(townRoot, rig, scoped) && !qaSmokeOK {
 			return fmt.Errorf("QA requires a successful runtime smoke CMD in this gt-agent session before all_passed (qa-review-progress.json does not count); probes come from SPEC/architecture only — no invented API routes")
 		}
 	}
 	if sendToImpl {
-		if err := validateRequiredWorkFiles(townRoot, rig, v); err != nil {
+		if err := validateRequiredWorkFiles(townRoot, rig, scoped); err != nil {
 			return err
 		}
 	}
