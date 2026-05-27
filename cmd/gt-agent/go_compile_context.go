@@ -163,7 +163,7 @@ func appendGoCompileSourceContext(b *strings.Builder, townRoot, rig, mayorRigDir
 	if strings.Contains(cmdOutput, "undefined:") {
 		b.WriteString("\nHint: an undefined Go symbol means the referenced API is missing or misnamed. Inspect the defining package files above; either add the missing export or change the caller to use an API that exists, then re-run verify.\n")
 	}
-	if hint := orchestrator.FormatSamePackageTestAPIHint(activeBeadPath, cmdOutput, v); hint != "" {
+	if hint := orchestrator.FormatSamePackageTestAPIHint(activeBeadPath, mayorRigDir, cmdOutput, v); hint != "" {
 		b.WriteString("\n")
 		b.WriteString(hint)
 		b.WriteString("\n")

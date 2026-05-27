@@ -31,6 +31,7 @@ states:
     instructions: |
       1. Read `{{rig}}/mayor/rig/SPEC.md`.
       2. Write `{{rig}}/mayor/rig/architecture.md` (≥{{min_architecture_bytes}} bytes).
+      3. You MUST prefix ALL file paths (both in lists and in prose) with the root directory name from the SPEC (e.g. `linkshelf/cmd/server/main.go`, not `cmd/server/main.go`).
     hooks:
       max_cmd_turns: 8
       cmd_guard: design

@@ -429,7 +429,7 @@ func (r *stateRunner) formatImplementationProgressBlock() string {
 			b.WriteString(hint)
 			b.WriteString("\n")
 		}
-		if hint := orchestrator.FormatSamePackageTestAPIHint(r.implProgress.LastVerifyFailPath, failOut, r.v); hint != "" {
+		if hint := orchestrator.FormatSamePackageTestAPIHint(r.implProgress.LastVerifyFailPath, rigMayorRigDir(r.townRoot, r.rig), failOut, r.v); hint != "" {
 			b.WriteString("\n")
 			b.WriteString(hint)
 			b.WriteString("\n")

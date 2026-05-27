@@ -57,7 +57,7 @@ FAIL`
 	if strings.Contains(got, closedID) || strings.Contains(got, "ddl.go") {
 		t.Fatalf("should not suggest reopening earlier closed file for test-only errors, got %q", got)
 	}
-	if hint := FormatSamePackageTestAPIHint(active, out, v); hint == "" || !strings.Contains(hint, "Do **not** reopen") {
+	if hint := FormatSamePackageTestAPIHint(active, "", out, v); hint == "" || !strings.Contains(hint, "Do **not** reopen") {
 		t.Fatalf("want same-package test hint, got %q", hint)
 	}
 }

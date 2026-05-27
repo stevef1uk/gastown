@@ -1,13 +1,19 @@
 package orchestrator
 
 import (
-	"fmt"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
 )
 
 var goCompileFileLineRE = regexp.MustCompile(`(?m)(?:^|\s|\])([a-zA-Z0-9_./-]+\.go):(\d+)`)
+
+// goAllFuncsRE matches any func declaration (exported or unexported) in Go source.
+var goAllFuncsRE = regexp.MustCompile(`(?m)^func\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(`)
+
+// goUndefinedSymbolRE extracts the symbol name from "undefined: SymbolName" compile diagnostics.
+var goUndefinedSymbolRE = regexp.MustCompile(`undefined:\s+(\w+)`)
 
 // SameImplementGoPackage reports whether two layout-relative paths are in the same Go package directory.
 func SameImplementGoPackage(pathA, pathB, layoutRoot string) bool {
@@ -120,20 +126,65 @@ func ShouldSuggestReopenClosedDep(activeBeadPath, depPath, cmdOutput string, v W
 }
 
 // FormatSamePackageTestAPIHint guides fixing *_test.go to match on-disk production API in the active bead.
-func FormatSamePackageTestAPIHint(activeBeadPath, cmdOutput string, v WorkflowValidation) string {
+// When the production file was rewritten with new function names, it lists the specific mismatched symbols.
+// mayorRigDir is {townRoot}/{rig}/mayor/rig (needed to read the production file from disk).
+func FormatSamePackageTestAPIHint(activeBeadPath, mayorRigDir, cmdOutput string, v WorkflowValidation) string {
 	activeBeadPath = filepath.ToSlash(strings.TrimSpace(activeBeadPath))
 	if activeBeadPath == "" || IsTestImplementPath(activeBeadPath) || !GoCompileErrorsOnlyInTestFiles(cmdOutput, v.LayoutRoot) {
 		return ""
 	}
 	corr := CorrelatedTestPathForSource(activeBeadPath, v.LayoutRoot)
+
+	// Extract undefined symbols referenced by tests but missing from production.
+	var missing []string
+	seen := map[string]bool{}
+	for _, m := range goUndefinedSymbolRE.FindAllStringSubmatch(cmdOutput, -1) {
+		if len(m) >= 2 && !seen[m[1]] {
+			seen[m[1]] = true
+			missing = append(missing, m[1])
+		}
+	}
+
+	// Read the production file and list available function names.
+	var available []string
+	if mayorRigDir != "" {
+		activeAbs := filepath.Join(mayorRigDir, filepath.FromSlash(activeBeadPath))
+		if data, err := os.ReadFile(activeAbs); err == nil {
+			fseen := map[string]bool{}
+			for _, m := range goAllFuncsRE.FindAllStringSubmatch(string(data), -1) {
+				if len(m) >= 2 && !fseen[m[1]] {
+					fseen[m[1]] = true
+					available = append(available, m[1])
+				}
+			}
+		}
+	}
+
 	var b strings.Builder
 	b.WriteString("### Fix tests vs production API (same package)\n")
 	b.WriteString("Go reported errors only in `*_test.go`, not in closed production files for this package. ")
 	b.WriteString("Do **not** reopen other closed beads in this package unless go output cites `path.go:line` for that file.\n")
-	if corr != "" {
-		b.WriteString(fmt.Sprintf("- Align **`%s`** with the symbols and signatures already in **`%s`** (see Source context above).\n", corr, activeBeadPath))
+	if len(missing) > 0 {
+		b.WriteString("\n**Tests call these functions that don't exist on disk:** `")
+		b.WriteString(strings.Join(missing, "`, `"))
+		b.WriteString("`\n")
+	}
+	if len(available) > 0 {
+		b.WriteString("**Production file `" + activeBeadPath + "` provides:** `")
+		b.WriteString(strings.Join(available, "`, `"))
+		b.WriteString("`\n\n")
+	}
+	if len(missing) > 0 && len(available) > 0 {
+		b.WriteString("**Choose one approach:**\n")
+		b.WriteString("- **EDIT `" + activeBeadPath + "`** to rename your functions back to what the tests expect (add `" + strings.Join(missing, "`, `") + "`), OR\n")
+		if corr != "" {
+			b.WriteString("- **EDIT `" + corr + "`** to call the new function names (`" + strings.Join(available, "`, `") + "`) instead — you **may** edit the test file while this production bead is active.\n")
+		}
+		b.WriteString("- Do **not** rewrite the whole file again — use targeted **EDIT:** with SEARCH/REPLACE for specific function renames or test updates.\n")
+	} else if corr != "" {
+		b.WriteString("- Align **`" + corr + "`** with the symbols and signatures already in **`" + activeBeadPath + "`** (see Source context above).\n")
 	} else {
-		b.WriteString(fmt.Sprintf("- Fix tests to call the API implemented in **`%s`** (see Source context above).\n", activeBeadPath))
+		b.WriteString("- Fix tests to call the API implemented in **`" + activeBeadPath + "`** (see Source context above).\n")
 	}
 	b.WriteString("- Duplicate `func Test…` names are auto-deduped on **EDIT:**/**WRITE:** (first wins); prefer **EDIT:** on the test bead path, not a full **WRITE:** rewrite.\n")
 	b.WriteString("- Re-run **Verify** from the Next bead line.\n")
