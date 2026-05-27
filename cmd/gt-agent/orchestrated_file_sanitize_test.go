@@ -138,6 +138,13 @@ func TestStateRunner_executeNativeEdit_stripsEOFMarkerOnWrite(t *testing.T) {
 	}
 }
 
+func TestValidateAndNormalizeNativeGoContent_rejectsMarkerOnly(t *testing.T) {
+	_, err := validateAndNormalizeNativeGoContent("linkshelf/internal/api/handlers.go", ">>>>>>> REPLACE")
+	if err == nil {
+		t.Fatal("marker-only WRITE must be rejected")
+	}
+}
+
 func TestSanitizeNativeFileContent_realWorldStoreSnippet(t *testing.T) {
 	// Regression: polecat wrote user's store.go with ```go prefix and ```/EOF suffix.
 	in := "```go\npackage store\n\nimport (\n\t\"database/sql\"\n\t\"fmt\"\n)\n\ntype Bookmark struct{}\n```\nEOF\n"

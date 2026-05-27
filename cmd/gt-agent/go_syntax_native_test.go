@@ -38,9 +38,13 @@ func TestValidateNativeGoContent_acceptsValidPackage(t *testing.T) {
 	}
 }
 
-func TestValidateNativeGoContent_skipsNonPackageSnippet(t *testing.T) {
-	if _, err := validateAndNormalizeNativeGoContent("notes.go", "not go at all\n"); err != nil {
-		t.Fatal("non-package snippets should skip validation")
+func TestValidateNativeGoContent_rejectsNonPackageSnippet(t *testing.T) {
+	_, err := validateAndNormalizeNativeGoContent("notes.go", "not go at all\n")
+	if err == nil {
+		t.Fatal("expected rejection for non-package Go content")
+	}
+	if !strings.Contains(err.Error(), "Go syntax invalid") {
+		t.Fatalf("err=%v", err)
 	}
 }
 

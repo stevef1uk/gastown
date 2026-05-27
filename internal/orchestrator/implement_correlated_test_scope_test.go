@@ -34,7 +34,7 @@ func TestValidateImplementWritePath_testBeadAllowsCorrelatedProduction(t *testin
 			return nil, nil
 		}
 	})
-	err := ValidateImplementWritePath(dir, rig, "te-ht", "linkshelf/internal/api/handlers.go", v, true, "undefined: getLinksHandler")
+	err := ValidateImplementWritePath(dir, rig, "te-ht", "linkshelf/internal/api/handlers.go", v, true, "undefined: getLinksHandler", nil)
 	if err != nil {
 		t.Fatalf("test bead should allow editing correlated handlers.go: %v", err)
 	}
@@ -145,7 +145,7 @@ func TestValidateImplementWritePath_correlatedGoTest_table(t *testing.T) {
 		tc := tc
 		t.Run(tc.write+"_"+tc.beadID, func(t *testing.T) {
 			setActive(tc.beadID, tc.title)
-			err := ValidateImplementWritePath(dir, rig, tc.beadID, tc.write, v, tc.full, "")
+			err := ValidateImplementWritePath(dir, rig, tc.beadID, tc.write, v, tc.full, "", nil)
 			if tc.wantFail {
 				if err == nil {
 					t.Fatal("expected error")

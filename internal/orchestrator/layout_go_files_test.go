@@ -6,6 +6,29 @@ import (
 	"testing"
 )
 
+func TestGoCompileVerifyCommandForBead_frontendReturnsEmpty(t *testing.T) {
+	t.Parallel()
+	v := WorkflowValidation{
+		LayoutRoot: "linkshelf",
+		RequiredFiles: []string{
+			"linkshelf/web/index.html",
+			"linkshelf/web/style.css",
+			"linkshelf/web/app.js",
+		},
+	}
+	dir := t.TempDir()
+	for _, path := range []string{
+		"linkshelf/web/index.html",
+		"linkshelf/web/style.css",
+		"linkshelf/web/app.js",
+	} {
+		got := GoCompileVerifyCommandForBead(v, dir, path)
+		if got != "" {
+			t.Errorf("frontend path %q should return empty verify cmd, got %q", path, got)
+		}
+	}
+}
+
 func TestGoCompileVerifyCommandForBead_storePackage(t *testing.T) {
 	t.Parallel()
 	v := WorkflowValidation{

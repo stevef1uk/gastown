@@ -19,11 +19,13 @@ func HTTPContractFromRig(townRoot, rig string, v WorkflowValidation) HTTPContrac
 }
 
 // IsHTTPContractRelevantPath reports paths whose writes can affect HTTP routing.
+// Only HTML files and handler source (.go) trigger contract validation — CSS/JS
+// files are the referenced content, not routing definitions, and don't need re-validation.
 func IsHTTPContractRelevantPath(relPath string) bool {
 	rel := filepath.ToSlash(strings.TrimSpace(relPath))
 	if strings.Contains(rel, "/web/") {
 		lower := strings.ToLower(rel)
-		if strings.HasSuffix(lower, ".html") || strings.HasSuffix(lower, ".js") || strings.HasSuffix(lower, ".css") {
+		if strings.HasSuffix(lower, ".html") {
 			return true
 		}
 	}

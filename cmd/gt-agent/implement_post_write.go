@@ -7,6 +7,32 @@ import (
 	"github.com/steveyegge/gastown/internal/orchestrator"
 )
 
+// scrubGoFileAfterNativeWrite removes edit/merge conflict markers from .go files after write.
+func (r *stateRunner) scrubGoFileAfterNativeWrite(relPath string, combined *strings.Builder) {
+	if !strings.EqualFold(strings.TrimSpace(r.hooks.Track), "implementation") {
+		return
+	}
+	if !orchestrator.WorkflowUsesGo(r.v) {
+		return
+	}
+	relPath = orchestrator.NormalizeBeadPathForLayout(relPath, r.v.LayoutRoot)
+	if relPath == "" || !strings.HasSuffix(relPath, ".go") {
+		return
+	}
+	mayorDir := rigMayorRigDir(r.townRoot, r.rig)
+	absPath := orchestrator.ResolveRequiredFileOnDisk(mayorDir, relPath, r.v.LayoutRoot)
+	changed, n, err := orchestrator.ScrubFileConflictMarkers(absPath)
+	if err != nil {
+		orchestratedPrintf("[gt-agent] scrub %s: %v\n", relPath, err)
+		combined.WriteString(fmt.Sprintf("Failed to scrub %s: %v\n\n", relPath, err))
+		return
+	}
+	if changed {
+		orchestratedPrintf("[gt-agent] scrubbed %d conflict marker line(s) from %s\n", n, relPath)
+		combined.WriteString(fmt.Sprintf("Scrubbed %d conflict marker line(s) from %s\n\n", n, relPath))
+	}
+}
+
 // tidyGoFileAfterNativeWrite runs goimports on relPath when available (fixes unused imports after partial EDITs).
 func (r *stateRunner) tidyGoFileAfterNativeWrite(relPath string, combined *strings.Builder) {
 	if !strings.EqualFold(strings.TrimSpace(r.hooks.Track), "implementation") {
@@ -62,13 +88,19 @@ func (r *stateRunner) runPostNativeWriteVerify(relPath string, sessionName strin
 	workDir := r.workDir()
 	orchestratedPrintf("[gt-agent] post-write verify: %s\n", verifyCmd)
 	out, err := r.runShellCommand(verifyCmd, workDir, sessionName, cmdEnv)
-	if err != nil && orchestrator.GoCompileOutputHasUnusedImport(string(out)) {
-		if r.tryGoimportsForCompileFailure(mayorDir, string(out), combined) {
+	outStr := string(out)
+	if err != nil && orchestrator.GoCompileOutputHasUnusedImport(outStr) {
+		if r.tryGoimportsForCompileFailure(mayorDir, outStr, combined) {
 			orchestratedPrintf("[gt-agent] retrying verify after goimports package tidy\n")
 			out, err = r.runShellCommand(verifyCmd, workDir, sessionName, cmdEnv)
+			outStr = string(out)
 		}
 	}
-	outStr := string(out)
+	if err != nil && r.tryHandlerWebCwdAutoFix(mayorDir, outStr, combined) {
+		orchestratedPrintf("[gt-agent] retrying verify after handler web cwd auto-fix\n")
+		out, err = r.runShellCommand(verifyCmd, workDir, sessionName, cmdEnv)
+		outStr = string(out)
+	}
 	if err != nil || orchestrator.GoToolOutputMatchedNoPackages(outStr) {
 		if err == nil {
 			err = fmt.Errorf("go matched no packages (no .go sources in target path)")

@@ -136,6 +136,190 @@ func TestImplementBeadVerifyEvaluator_memoizes(t *testing.T) {
 	}
 }
 
+func TestCloseImplementBeadsWithGreenGoVerify_autoClosesFrontendArtifact(t *testing.T) {
+	dir := t.TempDir()
+	rig := "rig"
+	rigDir := filepath.Join(dir, rig, "mayor", "rig")
+	writeMinimalGoModule(t, rigDir)
+	webDir := filepath.Join(rigDir, "app", "web")
+	if err := os.MkdirAll(webDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	html := "<!DOCTYPE html>\n<html>\n<body>\n<ul id=\"links\"></ul>\n</body>\n</html>\n"
+	if err := os.WriteFile(filepath.Join(webDir, "index.html"), []byte(html), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	v := WorkflowValidation{
+		LayoutRoot:        "app",
+		BeadTitleContains: "Implement app/",
+		QAVerifyCommand:   "cd app && go test ./...",
+		RequiredFiles:     []string{"app/web/index.html"},
+		MinImplementationFileBytes: 20,
+		MinSubstantiveLines:        2,
+	}
+
+	var closed []string
+	bdCloseImplementBeadHook = func(_, _, id string) error {
+		closed = append(closed, id)
+		return nil
+	}
+	defer func() { bdCloseImplementBeadHook = nil }()
+
+	prevList := ListImplementBeadsByStatusHook
+	ListImplementBeadsByStatusHook = func(townRoot, rig string, v WorkflowValidation, status string) ([]PlanBead, error) {
+		if status == "open" {
+			return []PlanBead{{ID: "zz-html", Title: "Implement app/web/index.html per architecture"}}, nil
+		}
+		return nil, nil
+	}
+	defer func() { ListImplementBeadsByStatusHook = prevList }()
+
+	eval := newImplementBeadVerifyEvaluator(rigDir, v)
+	if !eval.VerifySatisfied("app/web/index.html") {
+		t.Fatal("frontend artifact should be satisfied")
+	}
+	got, err := CloseImplementBeadsWithGreenGoVerify(dir, rig, v, eval)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0] != "zz-html" {
+		t.Fatalf("closed=%v want zz-html", got)
+	}
+}
+
+func TestCloseImplementBeadsWithGreenFrontendVerify_closesInProgress(t *testing.T) {
+	dir := t.TempDir()
+	rig := "rig"
+	rigDir := filepath.Join(dir, rig, "mayor", "rig")
+	writeMinimalGoModule(t, rigDir)
+	webDir := filepath.Join(rigDir, "app", "web")
+	if err := os.MkdirAll(webDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	css := "/* LinkShelf styles */\nheader { color: #333; }\nmain { padding: 1em; }\n"
+	if err := os.WriteFile(filepath.Join(webDir, "style.css"), []byte(css), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	v := WorkflowValidation{
+		LayoutRoot:        "app",
+		BeadTitleContains: "Implement app/",
+		QAVerifyCommand:   "cd app && go test ./...",
+		RequiredFiles: []string{
+			"app/web/style.css",
+			"app/internal/api/handlers.go",
+			"app/cmd/server/main.go",
+		},
+		MinImplementationFileBytes: 20,
+		MinSubstantiveLines:        2,
+	}
+
+	var closed []string
+	bdCloseImplementBeadHook = func(_, _, id string) error {
+		closed = append(closed, id)
+		return nil
+	}
+	defer func() { bdCloseImplementBeadHook = nil }()
+
+	prevList := ListImplementBeadsByStatusHook
+	ListImplementBeadsByStatusHook = func(townRoot, rig string, v WorkflowValidation, status string) ([]PlanBead, error) {
+		switch status {
+		case "in_progress":
+			return []PlanBead{{ID: "b-css", Title: "Implement app/web/style.css per architecture"}}, nil
+		case "open":
+			return []PlanBead{{ID: "b-handlers", Title: "Implement app/internal/api/handlers.go per architecture"}}, nil
+		default:
+			return nil, nil
+		}
+	}
+	defer func() { ListImplementBeadsByStatusHook = prevList }()
+
+	eval := newImplementBeadVerifyEvaluator(rigDir, v)
+	if !eval.VerifySatisfied("app/web/style.css") {
+		t.Fatal("frontend artifact should be satisfied")
+	}
+	got, err := CloseImplementBeadsWithGreenFrontendVerify(dir, rig, v, eval)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0] != "b-css" {
+		t.Fatalf("closed=%v want b-css only", got)
+	}
+	if len(closed) != 1 || closed[0] != "b-css" {
+		t.Fatalf("bd close hook=%v want b-css", closed)
+	}
+}
+
+func TestReconcileImplementBeads_autoClosesFrontendWhenPhaseVerifyRed(t *testing.T) {
+	dir := t.TempDir()
+	rig := "rig"
+	rigDir := filepath.Join(dir, rig, "mayor", "rig")
+	writeMinimalGoModule(t, rigDir)
+	webDir := filepath.Join(rigDir, "app", "web")
+	apiDir := filepath.Join(rigDir, "app", "internal", "api")
+	if err := os.MkdirAll(webDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(apiDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	css := "/* LinkShelf styles */\nheader { color: #333; }\nmain { padding: 1em; }\n"
+	if err := os.WriteFile(filepath.Join(webDir, "style.css"), []byte(css), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(apiDir, "handlers.go"), []byte(">>>>>>> REPLACE"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	v := WorkflowValidation{
+		LayoutRoot:        "app",
+		BeadTitleContains: "Implement app/",
+		QAVerifyCommand:   "cd app && go test ./...",
+		RequiredFiles: []string{
+			"app/web/style.css",
+			"app/internal/api/handlers.go",
+			"app/cmd/server/main.go",
+		},
+		MinImplementationFileBytes: 20,
+		MinSubstantiveLines:        2,
+	}
+
+	var closed []string
+	bdCloseImplementBeadHook = func(_, _, id string) error {
+		closed = append(closed, id)
+		return nil
+	}
+	defer func() { bdCloseImplementBeadHook = nil }()
+
+	prevList := ListImplementBeadsByStatusHook
+	ListImplementBeadsByStatusHook = func(townRoot, rig string, v WorkflowValidation, status string) ([]PlanBead, error) {
+		switch status {
+		case "in_progress":
+			return []PlanBead{{ID: "b-css", Title: "Implement app/web/style.css per architecture"}}, nil
+		case "open":
+			return []PlanBead{{ID: "b-handlers", Title: "Implement app/internal/api/handlers.go per architecture"}}, nil
+		default:
+			return nil, nil
+		}
+	}
+	defer func() { ListImplementBeadsByStatusHook = prevList }()
+
+	log, err := ReconcileImplementBeads(dir, rig, v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(log, "skipped Go auto-close: phase verify not green") {
+		t.Fatalf("want Go auto-close skip in log: %q", log)
+	}
+	if !strings.Contains(log, "auto-closed frontend (verify green): b-css") {
+		t.Fatalf("want frontend auto-close in log: %q", log)
+	}
+	if len(closed) != 1 || closed[0] != "b-css" {
+		t.Fatalf("closed=%v want b-css only", closed)
+	}
+}
+
 func TestReconcileImplementBeads_deterministicLogOrder(t *testing.T) {
 	dir := t.TempDir()
 	rig := "rig"

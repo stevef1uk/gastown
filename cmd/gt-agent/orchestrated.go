@@ -329,6 +329,12 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 				messages = append(messages, llm.Message{Role: "user", Content: msg})
 				continue
 			}
+			if msg, reject := runner.rejectImplementationFalseBeadInfraFailure(o, s); reject {
+				orchestratedPrintf("[gt-agent] rejecting false bead-infra failure JSON\n")
+				recordAttemptFeedback(msg + "\n")
+				messages = append(messages, llm.Message{Role: "user", Content: msg})
+				continue
+			}
 			if msg, reject := runner.rejectImplementationNoOpFailure(o); reject {
 				orchestratedPrintf("[gt-agent] rejecting implementation failure JSON without fix work this attempt\n")
 				recordAttemptFeedback(msg + "\n")
@@ -1291,7 +1297,7 @@ func extractBeadIDFromBdClose(cmd string) string {
 	return strings.Trim(id, `"'`)
 }
 
-func validateImplementationCommandWithState(cmd, townRoot, rig, activeBead string, v orchestrator.WorkflowValidation, verifyOK bool) error {
+func validateImplementationCommandWithState(cmd, townRoot, rig, activeBead string, v orchestrator.WorkflowValidation, verifyOK bool, scope *orchestrator.ImplementWriteScope) error {
 	if err := validateImplementationCommand(cmd, rig); err != nil {
 		return err
 	}
@@ -1305,13 +1311,13 @@ func validateImplementationCommandWithState(cmd, townRoot, rig, activeBead strin
 	if err := validateCustomImplementationCommand(cmd, townRoot, rig, activeBead, v, verifyOK); err != nil {
 		return err
 	}
-	if err := validateImplementationBeadFileWrite(cmd, townRoot, rig, activeBead, v); err != nil {
+	if err := validateImplementationBeadFileWrite(cmd, townRoot, rig, activeBead, v, scope); err != nil {
 		return err
 	}
 	if err := validateImplementationBeadClose(cmd, townRoot, rig, v, verifyOK); err != nil {
 		return err
 	}
-	if err := validateImplementationBeadReopen(cmd, townRoot, rig, v); err != nil {
+	if err := validateImplementationBeadReopen(cmd, townRoot, rig, v, scope); err != nil {
 		return err
 	}
 	if activeBead == "" || !isBeadUpdateInProgressCommand(cmd) {
@@ -1324,23 +1330,26 @@ func validateImplementationCommandWithState(cmd, townRoot, rig, activeBead strin
 }
 
 // validateImplementationBeadReopen blocks reopening implement beads when the queue is done and module tests pass.
-func validateImplementationBeadReopen(cmd, townRoot, rig string, v orchestrator.WorkflowValidation) error {
+func validateImplementationBeadReopen(cmd, townRoot, rig string, v orchestrator.WorkflowValidation, scope *orchestrator.ImplementWriteScope) error {
 	lower := strings.ToLower(cmd)
 	if !strings.Contains(lower, "bd update") || !strings.Contains(lower, "--status=open") {
-		return nil
-	}
-	if !orchestrator.ImplementationQueueGreen(townRoot, rig, v) {
 		return nil
 	}
 	id := extractBeadIDFromBdUpdate(cmd)
 	if id == "" {
 		return nil
 	}
+	if scope != nil && scope.QAReworkFromQAReview && scope.BeadCited(id) {
+		return nil
+	}
+	if !orchestrator.ImplementationQueueGreen(townRoot, rig, v) {
+		return nil
+	}
 	return fmt.Errorf("do not reopen implement beads (%s) — go test ./... already passes; send JSON success only", id)
 }
 
 // validateImplementationBeadFileWrite rejects heredoc/touch writes to paths outside the active or next implement bead.
-func validateImplementationBeadFileWrite(cmd, townRoot, rig, activeBead string, v orchestrator.WorkflowValidation) error {
+func validateImplementationBeadFileWrite(cmd, townRoot, rig, activeBead string, v orchestrator.WorkflowValidation, scope *orchestrator.ImplementWriteScope) error {
 	if reason := orchestrator.RejectFullFileHeredocReason(cmd, townRoot, rig, activeBead, v); reason != "" {
 		return fmt.Errorf("%s", reason)
 	}
@@ -1358,17 +1367,23 @@ func validateImplementationBeadFileWrite(cmd, townRoot, rig, activeBead string, 
 	}
 	allowedPath := orchestrator.ImplementBeadPathForID(townRoot, rig, allowedID, v)
 	if closedOnly, err := orchestrator.ImplementPathHasOnlyClosedBeads(townRoot, rig, written, v); err == nil && closedOnly {
-		if allowedPath != "" {
-			return fmt.Errorf("do not overwrite %q — its implement bead is closed (fix via QA rework reopening that bead, or edit only %s for %s)",
-				written, allowedPath, allowedID)
+		var sc orchestrator.ImplementWriteScope
+		if scope != nil {
+			sc = *scope
 		}
-		return fmt.Errorf("do not overwrite %q — its implement bead is closed (active bead %s)", written, allowedID)
+		if !orchestrator.AllowedQAReworkWebImplementWrite(townRoot, rig, allowedID, allowedPath, written, sc, v) {
+			if allowedPath != "" {
+				return fmt.Errorf("do not overwrite %q — its implement bead is closed (fix via QA rework reopening that bead, or edit only %s for %s)",
+					written, allowedPath, allowedID)
+			}
+			return fmt.Errorf("do not overwrite %q — its implement bead is closed (active bead %s)", written, allowedID)
+		}
 	}
 	if allowedPath == "" {
 		return nil
 	}
 	// Scope only (fullReplace false): heredoc/WRITE incremental rules handled above via RejectFullFileHeredocReason.
-	return orchestrator.ValidateImplementWritePath(townRoot, rig, activeBead, written, v, false, "")
+	return orchestrator.ValidateImplementWritePath(townRoot, rig, activeBead, written, v, false, "", scope)
 }
 
 func validatePlanningRuntimeCommands(lower string) error {
@@ -1546,6 +1561,12 @@ func validateImplementationCommand(cmd, rig string) error {
 	}
 	if strings.Contains(lower, "git push") {
 		return fmt.Errorf("do not push to remote during orchestrator implementation (local commits only)")
+	}
+	if strings.Contains(lower, ".beads") && (strings.Contains(lower, "rm -rf") || strings.Contains(lower, "rm -r ")) {
+		return fmt.Errorf("do not delete the rig .beads database during implementation — use bd list --status=closed and bd update <id> --status=open")
+	}
+	if strings.Contains(lower, "bd init") {
+		return fmt.Errorf("do not run bd init during implementation — beads already exist; use bd list --status=closed")
 	}
 	if isGitAddEntireWorktree(lower) {
 		return fmt.Errorf("do not git add entire worktree — stage a path (e.g. git add -A <layout_root>/) from %s", rigMayorRigPath(rig))

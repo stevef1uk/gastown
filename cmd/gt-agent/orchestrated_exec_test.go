@@ -378,6 +378,20 @@ func TestRewriteBdListImplementScope(t *testing.T) {
 	}
 }
 
+func TestRewriteBdListImplementScope_bareListShowsClosed(t *testing.T) {
+	cmd := "export BEADS_DIR=$GT_ROOT/testgt3/.beads && cd testgt3/mayor/rig && bd list"
+	fixed, ok := rewriteBdListImplementScope(cmd, "Implement linkshelf/")
+	if !ok {
+		t.Fatal("expected rewrite for bare bd list")
+	}
+	if !strings.Contains(fixed, "open/in_progress implement") || !strings.Contains(fixed, "closed implement") {
+		t.Fatalf("want open+closed sections: %q", fixed)
+	}
+	if !strings.Contains(fixed, "--status=closed") {
+		t.Fatalf("want closed status: %q", fixed)
+	}
+}
+
 func TestRewriteBdListLimit(t *testing.T) {
 	cmd := "export BEADS_DIR=x && bd list --status=open | grep foo"
 	fixed, ok := rewriteBdListLimit(cmd)
@@ -492,6 +506,27 @@ func TestRewriteUnittestToWorkdir_bareLayoutCD(t *testing.T) {
 	want := "cd testgt4/mayor/rig/tasklist && go mod tidy"
 	if fixed != want {
 		t.Fatalf("got %q want %q", fixed, want)
+	}
+}
+
+func TestRewriteUnittestToWorkdir_stripsLayoutPrefixFromGoTest(t *testing.T) {
+	v := orchestrator.WorkflowValidation{
+		LayoutRoot:      "linkshelf",
+		QAVerifyCommand: "cd linkshelf && go test ./...",
+	}
+	cmd := "cd testgt3/mayor/rig && go test -count=1 ./linkshelf/internal/api/..."
+	fixed, ok := rewriteUnittestToWorkdir(cmd, "testgt3", v)
+	if !ok {
+		t.Fatal("expected rewrite")
+	}
+	if strings.Contains(fixed, "./linkshelf/") {
+		t.Fatalf("must rewrite ./linkshelf/ package paths: %q", fixed)
+	}
+	if !strings.Contains(fixed, "cd testgt3/mayor/rig/linkshelf") {
+		t.Fatalf("must cd into module root: %q", fixed)
+	}
+	if !strings.Contains(fixed, "./internal/api/") {
+		t.Fatalf("want ./internal/api/: %q", fixed)
 	}
 }
 

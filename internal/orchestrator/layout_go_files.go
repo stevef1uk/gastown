@@ -36,26 +36,36 @@ func GoTestVerifyCommandForPackage(v WorkflowValidation, mayorRigDir, beadPath s
 // When the package contains another bead's *_test.go, verify runs only this bead's Test* functions (-run).
 func GoCompileVerifyCommandForBead(v WorkflowValidation, mayorRigDir, beadPath string) string {
 	beadPath = filepath.ToSlash(strings.TrimSpace(beadPath))
+	if isFrontendImplementPath(beadPath) {
+		return ""
+	}
+	var cmd string
 	if strings.HasSuffix(beadPath, ".go") && !strings.HasSuffix(beadPath, "go.mod") && !IsServerMainImplementBead(beadPath) {
 		if IsTestImplementPath(beadPath) {
-			return GoTestVerifyCommandForPackage(v, mayorRigDir, beadPath)
-		}
-		testPath := CorrelatedTestPathForSource(beadPath, v.LayoutRoot)
-		if testPath != "" {
-			testAbs := ResolveRequiredFileOnDisk(mayorRigDir, testPath, v.LayoutRoot)
-			if _, err := os.Stat(testAbs); os.IsNotExist(err) {
-				if TestPathListedInRequired(beadPath, v.RequiredFiles, v.LayoutRoot) {
-					return goBuildVerifyForPackage(v, mayorRigDir, beadPath)
+			cmd = GoTestVerifyCommandForPackage(v, mayorRigDir, beadPath)
+		} else {
+			testPath := CorrelatedTestPathForSource(beadPath, v.LayoutRoot)
+			if testPath != "" {
+				testAbs := ResolveRequiredFileOnDisk(mayorRigDir, testPath, v.LayoutRoot)
+				if _, err := os.Stat(testAbs); os.IsNotExist(err) {
+					if TestPathListedInRequired(beadPath, v.RequiredFiles, v.LayoutRoot) {
+						cmd = goBuildVerifyForPackage(v, mayorRigDir, beadPath)
+					} else {
+						cmd = GoTestVerifyCommandForPackage(v, mayorRigDir, beadPath)
+					}
+				} else if scoped := goTestVerifyScopedToBead(v, mayorRigDir, beadPath, testPath); scoped != "" {
+					cmd = scoped
+				} else {
+					cmd = GoTestVerifyCommandForPackage(v, mayorRigDir, beadPath)
 				}
-			} else if scoped := goTestVerifyScopedToBead(v, mayorRigDir, beadPath, testPath); scoped != "" {
-				return scoped
 			} else {
-				return GoTestVerifyCommandForPackage(v, mayorRigDir, beadPath)
+				cmd = GoTestVerifyCommandForPackage(v, mayorRigDir, beadPath)
 			}
 		}
-		return GoTestVerifyCommandForPackage(v, mayorRigDir, beadPath)
+	} else {
+		cmd = goBuildVerifyForPackage(v, mayorRigDir, beadPath)
 	}
-	return goBuildVerifyForPackage(v, mayorRigDir, beadPath)
+	return AppendGoBuildCmdServerToVerify(cmd, mayorRigDir, beadPath, v)
 }
 
 // goTestVerifyScopedToBead runs go test -run for this bead's Test* funcs when sibling *_test.go

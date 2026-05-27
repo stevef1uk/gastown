@@ -37,5 +37,27 @@ func FormatMainDependencyExportsBlock(rigDir, beadPath string, v WorkflowValidat
 		b.WriteString(p)
 		b.WriteString("\n")
 	}
-	return strings.TrimSpace(b.String())
+	out := strings.TrimSpace(b.String())
+	handlersRel := firstRequiredPathSuffix(v, "/internal/api/handlers.go")
+	if handlersRel == "" {
+		return out
+	}
+	sym := readExportedGoSymbolsFromRig(rigDir, handlersRel)
+	if len(sym.Funcs) > 0 || len(sym.Types) > 0 {
+		return out
+	}
+	var extra strings.Builder
+	extra.WriteString("\n**Handlers (`")
+	extra.WriteString(handlersRel)
+	extra.WriteString("`) export nothing yet.** Do not wire `api.serveIndex` or other unexported names from `main` — ")
+	extra.WriteString("reopen the handlers implement bead and add `RegisterHandlers(mux *http.ServeMux)` (or exported handlers) first.\n")
+	extra.WriteString("**Verify:** `cd ")
+	layout := strings.Trim(strings.TrimSpace(v.LayoutRoot), "/")
+	if layout != "" {
+		extra.WriteString(layout)
+	} else {
+		extra.WriteString(".")
+	}
+	extra.WriteString(" && go build ./cmd/server/...` before `bd close` on this bead.\n")
+	return out + extra.String()
 }

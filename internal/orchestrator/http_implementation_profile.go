@@ -440,8 +440,7 @@ func (p HTTPImplementationProfile) GoTestOutputSuggestsHandlerWebCwd404(cmdOutpu
 	if p.Enabled && len(p.TestOutputMatchers["root_404"]) > 0 {
 		return p.testOutputMatches("root_404", cmdOutput)
 	}
-	return strings.Contains(cmdOutput, "handlers_test.go") &&
-		strings.Contains(cmdOutput, "GET / returned 404")
+	return goTestOutputSuggestsHandlerWebCwd404Legacy(cmdOutput)
 }
 
 func formatHintBlock(block HTTPHintBlock, vars map[string]string) string {

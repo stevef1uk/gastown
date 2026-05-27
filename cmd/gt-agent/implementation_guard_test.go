@@ -2,6 +2,8 @@ package main
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -127,6 +129,36 @@ func TestTryAutoOutcome_blockedOnQAPendingRework(t *testing.T) {
 	r.track.verifyOK = true
 	if _, _, ok := r.tryAutoOutcome(); ok {
 		t.Fatal("must not auto-complete implementation while QA rework is pending")
+	}
+}
+
+func TestSummaryClaimsFalseBeadInfraFailure(t *testing.T) {
+	if !summaryClaimsFalseBeadInfraFailure("Bead system corruption detected; reset .beads") {
+		t.Fatal("expected corruption claim")
+	}
+	if summaryClaimsFalseBeadInfraFailure("handlers_test.go undefined: getLinksHandler") {
+		t.Fatal("compile errors are not bead infra claims")
+	}
+}
+
+func TestRejectImplementationFalseBeadInfraFailure_blocksHallucination(t *testing.T) {
+	townRoot := "/home/stevef/gt"
+	rig := "testgt3"
+	if _, err := os.Stat(filepath.Join(townRoot, rig, "mayor", "rig")); err != nil {
+		t.Skip("testgt3 rig not present")
+	}
+	if !orchestrator.BeadsDatabaseReady(townRoot, rig) {
+		t.Skip("testgt3 beads DB not ready")
+	}
+	task := &orchestrator.Task{
+		WorkflowID: "wf-1",
+		State:      "implementation",
+		Hooks:      orchestrator.StateHooks{Track: "implementation", Artifacts: "implementation"},
+	}
+	r := newStateRunner(task, townRoot, rig)
+	msg, reject := r.rejectImplementationFalseBeadInfraFailure("failure", "Bead system corruption detected; reset .beads")
+	if !reject || !strings.Contains(msg, "do **not** reset") {
+		t.Fatalf("reject=%v msg=%q", reject, msg)
 	}
 }
 

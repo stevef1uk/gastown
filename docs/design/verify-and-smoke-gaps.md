@@ -26,6 +26,32 @@ Root cause was not missing tests but **misaligned contracts**: architecture said
 | [GT-VERIFY-009](#gt-verify-009-module-compileok-after-implementation) | P2 | Post-implementation integration probe |
 | [GT-VERIFY-010](#gt-verify-010-static-traversal-307-and-native-edit-terminators) | P0 | Static traversal 307 + native EDIT terminators |
 | [GT-VERIFY-011](#gt-verify-011-pluggable-http-implementation-profiles) | P1 | Pluggable HTTP implementation profiles (JSON, no rebuild) |
+| [GT-VERIFY-012](./python-web-cwd-autofix.md) | P1 | Python static/template cwd auto-fix (planned) |
+| GT-VERIFY-013 | P0 | Handler bead verify includes `go build ./cmd/server/...` + export guidance for `main` |
+
+---
+
+## GT-VERIFY-013: Handler ↔ main wiring verify (May 2026)
+
+**Priority:** P0  
+**Files:** `internal/orchestrator/handler_main_wiring.go`, `layout_go_files.go`, `implement_bead_context.go`, `implement_main_dependency_exports.go`
+
+### Problem
+
+`handlers.go` bead verify ran only `go test ./internal/api/...`. Polecat closed the bead while `cmd/server/main.go` still had `undefined: api` (unexported `serveIndex`, missing import).
+
+### Behavior (implemented)
+
+1. **`FormatHandlerExportsForMainBlock`** — on handlers implement bead when `cmd/server/main.go` exists: lists exported names for `main` or warns to add `RegisterHandlers(mux)` before `bd close`.
+2. **`AppendGoBuildCmdServerToVerify`** — appends `go build ./cmd/server/...` to per-bead verify for handler production beads when server main exists on disk.
+3. **`FormatMainDependencyExportsBlock`** — on main bead, extra warning when handlers export nothing (do not wire `api.serveIndex`).
+
+### Acceptance criteria
+
+- [x] Handler bead verify command chains `go build ./cmd/server/...` when main.go exists.
+- [x] Implement context injects export guidance on handlers bead.
+- [x] Main bead context warns when handlers have no exports.
+- [x] Unit tests in `handler_main_wiring_test.go`.
 
 ---
 
@@ -122,6 +148,7 @@ Polecats are told to write tests mapped to architecture, but nothing forbids **h
 - [x] Example tests in `implement_bead_context_test.go` and `http_contract_test.go`.
 - [x] `ValidateImplementWrittenContent` rejects `os.Chdir` in **handlers.go** (not for module-root `os.Chdir` in tests).
 - [x] Handler `*_test.go` without module-root chdir → write-time hint; `GET / returned 404` in `handlers_test.go` → `FormatHandlerTestCwdHint` (GT-VERIFY-001 cwd).
+- [x] Post-verify **auto-fix** (`TryAutoFixHandlerWebCwd404`): when `web/` exists but `TestServeIndex`/`TestServeStatic` 404, patch `serveIndex` off `os.Getwd` → `runtime.Caller` and replace fragile `filepath.Join("..", "..")` test chdir with `findModuleRootWithWeb()` walk-up; gt-agent retries verify (like goimports recovery).
 
 ---
 

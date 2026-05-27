@@ -107,6 +107,22 @@ func GoShellCDClause(mayorRigDir, layoutRoot string) string {
 	return "cd " + dir + " && "
 }
 
+// NormalizeGoLayoutPackagePaths fixes profile paths like ./linkshelf/... when the shell cwd is
+// already the Go module root (mayor/rig/linkshelf) or a flat module at mayor/rig.
+func NormalizeGoLayoutPackagePaths(cmd, workPath, layoutRoot string) string {
+	layoutRoot = strings.Trim(filepath.ToSlash(strings.TrimSpace(layoutRoot)), "/")
+	if layoutRoot == "" {
+		return cmd
+	}
+	prefix := "./" + layoutRoot + "/"
+	wp := strings.Trim(filepath.ToSlash(strings.TrimSpace(workPath)), "/")
+	if strings.HasSuffix(wp, layoutRoot) {
+		cmd = strings.ReplaceAll(cmd, "./"+layoutRoot+"/...", "./...")
+		return strings.ReplaceAll(cmd, prefix, "./")
+	}
+	return strings.ReplaceAll(cmd, prefix, "./")
+}
+
 // GoModuleWorkPathRelative returns the shell workdir for Go commands (town-root-relative),
 // e.g. testgt3/mayor/rig when the module is flat at mayor/rig instead of mayor/rig/linkshelf.
 func GoModuleWorkPathRelative(mayorRigRel, layoutRoot string) string {

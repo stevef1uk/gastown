@@ -9,7 +9,7 @@ import (
 // ValidateImplementWritePath checks whether relPath may be written during implementation.
 // fullReplace true simulates heredoc/WRITE (rejects incremental-edit files); false allows partial edits (EDIT/sed).
 // verifyOutput is recent go test/build stderr (optional); enables closed-dep fixes for nil-slice List failures.
-func ValidateImplementWritePath(townRoot, rig, activeBead, relPath string, v WorkflowValidation, fullReplace bool, verifyOutput string) error {
+func ValidateImplementWritePath(townRoot, rig, activeBead, relPath string, v WorkflowValidation, fullReplace bool, verifyOutput string, scope *ImplementWriteScope) error {
 	relPath = NormalizeBeadPathForLayout(SanitizeNativeEditRelPath(relPath), v.LayoutRoot)
 	if relPath == "" {
 		return fmt.Errorf("empty path")
@@ -23,7 +23,11 @@ func ValidateImplementWritePath(townRoot, rig, activeBead, relPath string, v Wor
 			return fmt.Errorf("%s", reason)
 		}
 	}
-	return validateImplementWriteScope(townRoot, rig, activeBead, relPath, v, verifyOutput)
+	var sc ImplementWriteScope
+	if scope != nil {
+		sc = *scope
+	}
+	return validateImplementWriteScope(townRoot, rig, activeBead, relPath, v, verifyOutput, sc)
 }
 
 // ValidateImplementReadPath allows reads for the active bead, open/next implement paths, and earlier dependencies.
@@ -69,7 +73,7 @@ func ValidateImplementReadPath(townRoot, rig, activeBead, relPath string, v Work
 		strings.Trim(v.LayoutRoot, "/"), allowedID)
 }
 
-func validateImplementWriteScope(townRoot, rig, activeBead, written string, v WorkflowValidation, verifyOutput string) error {
+func validateImplementWriteScope(townRoot, rig, activeBead, written string, v WorkflowValidation, verifyOutput string, scope ImplementWriteScope) error {
 	if ImplementationQueueGreen(townRoot, rig, v) {
 		return fmt.Errorf("implementation queue is finished and go test ./... passes — do not EDIT/WRITE implement files; send JSON {\"outcome\":\"success\",\"summary\":\"...\"} only")
 	}
@@ -82,6 +86,12 @@ func validateImplementWriteScope(townRoot, rig, activeBead, written string, v Wo
 		allowedID = next.ID
 	}
 	allowedPath := ImplementBeadPathForID(townRoot, rig, allowedID, v)
+	if AllowedQAReworkWebImplementWrite(townRoot, rig, allowedID, allowedPath, written, scope, v) {
+		if err := ValidateHTTPHandlerBeadPrerequisites(filepath.Join(townRoot, rig, "mayor", "rig"), written, v); err != nil {
+			return err
+		}
+		return nil
+	}
 	if AllowClosedDepFixForVerifyFailure(townRoot, rig, allowedPath, written, verifyOutput, v) {
 		return nil
 	}

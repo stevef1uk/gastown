@@ -59,6 +59,33 @@ func ListRigBeadIDSet(townRoot, rig string) (map[string]bool, string, error) {
 	return ids, prefix, nil
 }
 
+// ExtractKnownRigBeadIDsFromSummary returns rig-prefixed bead IDs mentioned in text that exist in known.
+// rigPrefix comes from bd config (issue_prefix) for this rig — not a hard-coded prefix.
+func ExtractKnownRigBeadIDsFromSummary(summary, rigPrefix string, known map[string]bool) []string {
+	summary = strings.TrimSpace(summary)
+	if summary == "" || len(known) == 0 {
+		return nil
+	}
+	rigPrefix = strings.ToLower(strings.TrimSpace(rigPrefix))
+	var out []string
+	seen := map[string]bool{}
+	for _, m := range summaryBeadIDRE.FindAllStringSubmatch(summary, -1) {
+		id := strings.ToLower(m[1])
+		if seen[id] || isIgnoredSummaryToken(id) || summaryMentionsAgentIdentityBead(summary, id) {
+			continue
+		}
+		if rigPrefix != "" && !strings.HasPrefix(id, rigPrefix+"-") {
+			continue
+		}
+		if !known[id] {
+			continue
+		}
+		seen[id] = true
+		out = append(out, id)
+	}
+	return out
+}
+
 // ValidateSummaryBeadIDs rejects hallucinated bead IDs in QA/planner summaries.
 func ValidateSummaryBeadIDs(summary string, known map[string]bool, rigPrefix string) error {
 	summary = strings.TrimSpace(summary)

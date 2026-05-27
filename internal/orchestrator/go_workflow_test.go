@@ -72,6 +72,25 @@ func TestGoImplementationVerifyCommand_beforeMain(t *testing.T) {
 	}
 }
 
+func TestGoImplementationVerifyCommandForBead_frontendReturnsEmpty(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	v := WorkflowValidation{
+		LayoutRoot:      "linkshelf",
+		QAVerifyCommand: "cd linkshelf && go run ./cmd/server & curl -s http://localhost:8080/",
+	}
+	for _, path := range []string{
+		"linkshelf/web/index.html",
+		"linkshelf/web/style.css",
+		"linkshelf/web/app.js",
+	} {
+		got := GoImplementationVerifyCommandForBead(v, dir, path)
+		if got != "" {
+			t.Errorf("frontend path %q should return empty verify cmd, got %q", path, got)
+		}
+	}
+}
+
 func TestGoImplementationVerifyCommandForBead_goMod(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()

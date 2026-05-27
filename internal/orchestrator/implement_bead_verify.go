@@ -48,6 +48,30 @@ func (e *implementBeadVerifyEvaluator) GoSatisfied(beadPath string) bool {
 	return green
 }
 
+// VerifySatisfied reports whether an implement bead's on-disk artifact is ready to close:
+// Go paths use package verify; frontend paths (.html/.css/.js) use non-stub artifact checks.
+func (e *implementBeadVerifyEvaluator) VerifySatisfied(beadPath string) bool {
+	if e == nil {
+		return false
+	}
+	beadPath = filepath.ToSlash(strings.TrimSpace(beadPath))
+	if beadPath == "" || IsProjectSetupArtifactPath(beadPath, e.v) {
+		return false
+	}
+	if e.GoSatisfied(beadPath) {
+		return true
+	}
+	if !isFrontendImplementPath(beadPath) {
+		return false
+	}
+	if v, ok := e.memo[beadPath]; ok {
+		return v
+	}
+	green := !beadImplementationNeedsRework(e.rigDir, beadPath, e.v)
+	e.memo[beadPath] = green
+	return green
+}
+
 func bdCloseImplementBead(townRoot, rig, beadID string) error {
 	if bdCloseImplementBeadHook != nil {
 		return bdCloseImplementBeadHook(townRoot, rig, beadID)
@@ -134,8 +158,8 @@ func orderedImplementBeadPaths(v WorkflowValidation) []string {
 	return OrderRequiredFilesForImplementation(v.RequiredFiles)
 }
 
-// CloseImplementBeadsWithGreenGoVerify closes open/in_progress Go implement beads whose Verify passes,
-// in profile build order (deterministic).
+// CloseImplementBeadsWithGreenGoVerify closes open implement beads whose verify/artifact
+// checks pass (Go: go test/build per bead; frontend: non-stub file on disk), in profile build order.
 func CloseImplementBeadsWithGreenGoVerify(townRoot, rig string, v WorkflowValidation, eval *implementBeadVerifyEvaluator) ([]string, error) {
 	if townRoot == "" || rig == "" || !WorkflowUsesGo(v) {
 		return nil, nil
@@ -148,7 +172,8 @@ func CloseImplementBeadsWithGreenGoVerify(townRoot, rig string, v WorkflowValida
 		eval = newImplementBeadVerifyEvaluator(rigDir, v)
 	}
 	v = v.ForActivePhase()
-	active, err := implementBeadsIndexedByPath(townRoot, rig, v, "in_progress", "open")
+	// Only auto-close open beads — never in_progress (polecat may be mid-edit; reconcile runs every fetch_task).
+	active, err := implementBeadsIndexedByPath(townRoot, rig, v, "open")
 	if err != nil {
 		return nil, err
 	}
@@ -158,7 +183,47 @@ func CloseImplementBeadsWithGreenGoVerify(townRoot, rig string, v WorkflowValida
 		if !ok {
 			continue
 		}
-		if !eval.GoSatisfied(rel) {
+		if !eval.VerifySatisfied(rel) {
+			continue
+		}
+		if err := bdCloseImplementBead(townRoot, rig, b.ID); err != nil {
+			return closed, err
+		}
+		closed = append(closed, b.ID)
+	}
+	sort.Strings(closed)
+	return closed, nil
+}
+
+// CloseImplementBeadsWithGreenFrontendVerify closes open and in_progress implement beads whose
+// frontend artifacts pass VerifySatisfied. Used when phase verify is still red so Go/handler beads
+// stay open until compile and smoke pass, but finished web assets can leave the queue.
+func CloseImplementBeadsWithGreenFrontendVerify(townRoot, rig string, v WorkflowValidation, eval *implementBeadVerifyEvaluator) ([]string, error) {
+	if townRoot == "" || rig == "" || !WorkflowUsesGo(v) {
+		return nil, nil
+	}
+	if bdCloseImplementBeadHook == nil && !BeadsDatabaseReady(townRoot, rig) {
+		return nil, nil
+	}
+	if eval == nil {
+		rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
+		eval = newImplementBeadVerifyEvaluator(rigDir, v)
+	}
+	v = v.ForActivePhase()
+	active, err := implementBeadsIndexedByPath(townRoot, rig, v, "open", "in_progress")
+	if err != nil {
+		return nil, err
+	}
+	var closed []string
+	for _, rel := range orderedImplementBeadPaths(v) {
+		if !isFrontendImplementPath(rel) {
+			continue
+		}
+		b, ok := active[filepath.ToSlash(rel)]
+		if !ok {
+			continue
+		}
+		if !eval.VerifySatisfied(rel) {
 			continue
 		}
 		if err := bdCloseImplementBead(townRoot, rig, b.ID); err != nil {
@@ -185,9 +250,7 @@ func reopenClosedImplementBeadsOrdered(townRoot, rig string, v WorkflowValidatio
 	if len(closed) == 0 {
 		return nil, nil
 	}
-	beadsDir := config.ResolveBeadsDirForRig(townRoot, rig)
-	workDir := filepath.Join(townRoot, rig, "mayor", "rig")
-	rigDir := workDir
+	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
 	var reopened []string
 	for _, rel := range orderedImplementBeadPaths(v) {
 		b, ok := closed[filepath.ToSlash(rel)]
@@ -200,15 +263,11 @@ func reopenClosedImplementBeadsOrdered(townRoot, rig string, v WorkflowValidatio
 		if !beadImplementationNeedsRework(rigDir, rel, v) {
 			continue
 		}
-		if eval.GoSatisfied(rel) {
+		if eval.VerifySatisfied(rel) {
 			continue
 		}
-		cmd := exec.Command("bd", "update", b.ID, "--status=open")
-		cmd.Env = append(os.Environ(), "BEADS_DIR="+beadsDir)
-		cmd.Dir = workDir
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			return reopened, fmt.Errorf("bd update %s --status=open: %w: %s", b.ID, err, strings.TrimSpace(string(out)))
+		if err := bdUpdateImplementBeadStatus(townRoot, rig, b.ID, "open"); err != nil {
+			return reopened, err
 		}
 		reopened = append(reopened, b.ID)
 	}

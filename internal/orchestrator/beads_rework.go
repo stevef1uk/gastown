@@ -13,6 +13,9 @@ import (
 	"github.com/steveyegge/gastown/internal/config"
 )
 
+// bdUpdateImplementBeadStatusHook is set by tests to avoid calling bd update.
+var bdUpdateImplementBeadStatusHook func(townRoot, rig, beadID, status string) error
+
 // EnsureImplementBeadsAvailable reopens closed implement beads only when polecat work is incomplete
 // (missing/stub files). It does not reopen when all implement beads are closed and disk work is ready.
 func EnsureImplementBeadsAvailable(townRoot, rig string, v WorkflowValidation) ([]string, error) {
@@ -61,6 +64,18 @@ func ReopenImplementationBeadsAfterQAFailure(townRoot, rig string, v WorkflowVal
 	}
 	runtimeRework := qaFailed && qaRuntimeFailureSummary(summary)
 	var reopened []string
+
+	prefix, _ := RigIssuePrefix(townRoot, rig)
+	known, _, _ := ListRigBeadIDSet(townRoot, rig)
+	citedIDs := ExtractKnownRigBeadIDsFromSummary(summary, prefix, known)
+	if qaFailed && len(citedIDs) > 0 {
+		more, err := reopenClosedImplementBeadsForIDs(townRoot, rig, v, citedIDs)
+		if err != nil {
+			return reopened, err
+		}
+		reopened = append(reopened, more...)
+	}
+
 	if runtimeRework {
 		more, err := reopenClosedImplementBeadsForPaths(townRoot, rig, v, implementPathsForRuntimeRework(v))
 		if err != nil {
@@ -70,7 +85,11 @@ func ReopenImplementationBeadsAfterQAFailure(townRoot, rig string, v WorkflowVal
 	}
 	if len(open) > 0 && len(stubFiles) == 0 && !runtimeRework {
 		// Open implement work exists and only tests failed — leave beads as-is.
-		return reopened, nil
+		return dedupeStrings(reopened), nil
+	}
+	if qaFailed && len(citedIDs) > 0 && len(stubFiles) == 0 {
+		// Targeted QA reopen only — avoid reopening the whole queue.
+		return dedupeStrings(reopened), nil
 	}
 
 	more, err := reopenClosedImplementBeads(townRoot, rig, v)
@@ -117,6 +136,34 @@ func implementPathsForRuntimeRework(v WorkflowValidation) []string {
 	return out
 }
 
+func reopenClosedImplementBeadsForIDs(townRoot, rig string, v WorkflowValidation, ids []string) ([]string, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	want := map[string]bool{}
+	for _, id := range ids {
+		id = strings.ToLower(strings.TrimSpace(id))
+		if id != "" {
+			want[id] = true
+		}
+	}
+	closed, err := listImplementBeadsForGuard(townRoot, rig, v, "closed")
+	if err != nil {
+		return nil, err
+	}
+	var reopened []string
+	for _, b := range closed {
+		if b.ID == "" || !want[strings.ToLower(b.ID)] {
+			continue
+		}
+		if err := bdUpdateImplementBeadStatus(townRoot, rig, b.ID, "open"); err != nil {
+			return reopened, err
+		}
+		reopened = append(reopened, b.ID)
+	}
+	return reopened, nil
+}
+
 func reopenClosedImplementBeadsForPaths(townRoot, rig string, v WorkflowValidation, paths []string) ([]string, error) {
 	if len(paths) == 0 {
 		return nil, nil
@@ -125,12 +172,10 @@ func reopenClosedImplementBeadsForPaths(townRoot, rig string, v WorkflowValidati
 	for _, p := range paths {
 		want[filepath.ToSlash(strings.TrimSpace(p))] = true
 	}
-	closed, err := listImplementBeadsByStatus(townRoot, rig, v, "closed")
+	closed, err := listImplementBeadsForGuard(townRoot, rig, v, "closed")
 	if err != nil {
 		return nil, err
 	}
-	beadsDir := config.ResolveBeadsDirForRig(townRoot, rig)
-	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
 	var reopened []string
 	for _, b := range closed {
 		if b.ID == "" {
@@ -140,16 +185,28 @@ func reopenClosedImplementBeadsForPaths(townRoot, rig string, v WorkflowValidati
 		if !want[p] {
 			continue
 		}
-		cmd := exec.Command("bd", "update", b.ID, "--status=open")
-		cmd.Env = append(os.Environ(), "BEADS_DIR="+beadsDir)
-		cmd.Dir = rigDir
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			return reopened, fmt.Errorf("bd update %s --status=open: %w: %s", b.ID, err, strings.TrimSpace(string(out)))
+		if err := bdUpdateImplementBeadStatus(townRoot, rig, b.ID, "open"); err != nil {
+			return reopened, err
 		}
 		reopened = append(reopened, b.ID)
 	}
 	return reopened, nil
+}
+
+func bdUpdateImplementBeadStatus(townRoot, rig, beadID, status string) error {
+	if bdUpdateImplementBeadStatusHook != nil {
+		return bdUpdateImplementBeadStatusHook(townRoot, rig, beadID, status)
+	}
+	beadsDir := config.ResolveBeadsDirForRig(townRoot, rig)
+	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
+	cmd := exec.Command("bd", "update", beadID, "--status="+status)
+	cmd.Env = append(os.Environ(), "BEADS_DIR="+beadsDir)
+	cmd.Dir = rigDir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("bd update %s --status=%s: %w: %s", beadID, status, err, strings.TrimSpace(string(out)))
+	}
+	return nil
 }
 
 // qaFailureRequiresImplementationRework reports whether a QA failure summary should reopen implement beads.
@@ -166,6 +223,7 @@ func qaFailureRequiresImplementationRework(summary string) bool {
 		"command not found", "verification", "verify failed", "web assets", "not served",
 		"imports must appear", "expected declaration", "found db", "setup failed",
 		"compile/test failed", "module compile",
+		"dom", "element id", "mismatch", "inconsistent", "ui break", "violates",
 	} {
 		if strings.Contains(lower, needle) {
 			return true

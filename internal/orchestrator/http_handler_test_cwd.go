@@ -5,9 +5,12 @@ import (
 	"strings"
 )
 
-// GoTestOutputSuggestsHandlerWebCwd404 reports httptest 404 on GET / or static (profile matchers).
+// GoTestOutputSuggestsHandlerWebCwd404 reports httptest 404 on GET / or static (profile matchers + legacy).
 func GoTestOutputSuggestsHandlerWebCwd404(townRoot, rig string, v WorkflowValidation, cmdOutput string) bool {
-	return LoadHTTPImplementationProfile(townRoot, rig, v).GoTestOutputSuggestsHandlerWebCwd404(cmdOutput)
+	if LoadHTTPImplementationProfile(townRoot, rig, v).GoTestOutputSuggestsHandlerWebCwd404(cmdOutput) {
+		return true
+	}
+	return goTestOutputSuggestsHandlerWebCwd404Legacy(cmdOutput)
 }
 
 // FormatHandlerRoot404ServeWebHint suggests using serveWebFile for GET / (profile text).

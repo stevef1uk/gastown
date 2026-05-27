@@ -50,7 +50,7 @@ func TestValidateImplementWritePath_rejectsWhenQueueGreen(t *testing.T) {
 	if !ImplementationQueueGreen(dir, rig, v) {
 		t.Skip("module tests not green in temp rig (go toolchain)")
 	}
-	err := ValidateImplementWritePath(dir, rig, "", layout+"/cmd/server/main.go", v, false, "")
+	err := ValidateImplementWritePath(dir, rig, "", layout+"/cmd/server/main.go", v, false, "", nil)
 	if err == nil {
 		t.Fatal("expected reject when queue green")
 	}

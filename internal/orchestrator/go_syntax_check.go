@@ -19,6 +19,31 @@ func GoSourceBytesValid(src []byte) error {
 	return err
 }
 
+// ImplementGoFileCorrupted reports whether on-disk implement Go is missing, marker-only, or does not parse.
+func ImplementGoFileCorrupted(townRoot, rig, relPath string) bool {
+	relPath = filepath.ToSlash(strings.TrimSpace(relPath))
+	if relPath == "" || !strings.HasSuffix(relPath, ".go") {
+		return false
+	}
+	abs := filepath.Join(townRoot, rig, "mayor", "rig", filepath.FromSlash(relPath))
+	data, err := os.ReadFile(abs)
+	if err != nil {
+		return false
+	}
+	return ImplementGoBytesCorrupted(data)
+}
+
+// ImplementGoBytesCorrupted reports whether bytes are unusable Go (empty, EDIT markers only, or syntax error).
+func ImplementGoBytesCorrupted(data []byte) bool {
+	if len(strings.TrimSpace(string(data))) == 0 {
+		return true
+	}
+	if !strings.Contains(string(data), "package ") {
+		return true
+	}
+	return GoSourceBytesValid(data) != nil
+}
+
 // GoFileAtMayorRigParses reports whether an on-disk implement file parses as Go.
 func GoFileAtMayorRigParses(townRoot, rig, relPath string) bool {
 	relPath = filepath.ToSlash(strings.TrimSpace(relPath))
@@ -30,7 +55,7 @@ func GoFileAtMayorRigParses(townRoot, rig, relPath string) bool {
 	if err != nil {
 		return true
 	}
-	return GoSourceBytesValid(data) == nil
+	return !ImplementGoBytesCorrupted(data)
 }
 
 // FormatCorruptedGoFileRecoveryHint returns feedback when verify shows syntax errors on the active file.

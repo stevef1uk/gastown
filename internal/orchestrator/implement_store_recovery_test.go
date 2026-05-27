@@ -41,7 +41,7 @@ func TestValidateImplementWritePath_allowsFullWriteWhenGoCorrupt(t *testing.T) {
 	if PreferIncrementalEdit(dir, rig, rel, v) {
 		t.Fatal("corrupt Go must not prefer incremental edit")
 	}
-	if err := ValidateImplementWritePath(dir, rig, "te-store", rel, v, true, ""); err != nil {
+	if err := ValidateImplementWritePath(dir, rig, "te-store", rel, v, true, "", nil); err != nil {
 		t.Fatalf("full WRITE should be allowed on corrupt file: %v", err)
 	}
 }
@@ -57,7 +57,7 @@ func TestFormatIncrementalEditBlock_corruptedGoFile(t *testing.T) {
 	if got == "" {
 		t.Fatal("expected corrupted-file block")
 	}
-	for _, want := range []string{"full WRITE", "syntax errors", rel} {
+	for _, want := range []string{"full WRITE", "not valid Go", rel} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("missing %q in:\n%s", want, got)
 		}

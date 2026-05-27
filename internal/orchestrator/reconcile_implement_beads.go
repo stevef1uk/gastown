@@ -97,7 +97,7 @@ func auditRequiredImplementFiles(rigDir, townRoot, rig string, v WorkflowValidat
 		if headPath != "" && !requiredFileAtOrBeforeQueueHead(rel, headPath, v) {
 			continue
 		}
-		if eval != nil && eval.GoSatisfied(rel) {
+		if eval != nil && eval.VerifySatisfied(rel) {
 			continue
 		}
 		path := filepath.Join(rigDir, filepath.FromSlash(rel))
@@ -146,7 +146,7 @@ func AuditClosedImplementBeadMismatches(townRoot, rig string, v WorkflowValidati
 		if IsProjectSetupArtifactPath(rel, v) {
 			continue
 		}
-		if eval != nil && eval.GoSatisfied(rel) {
+		if eval != nil && eval.VerifySatisfied(rel) {
 			continue
 		}
 		if beadImplementationNeedsRework(rigDir, rel, v) {
@@ -157,7 +157,8 @@ func AuditClosedImplementBeadMismatches(townRoot, rig string, v WorkflowValidati
 }
 
 // ReconcileImplementBeads runs a deterministic pipeline for Go rigs (same order every pre_run):
-//  1. Auto-close open/in_progress beads whose on-disk file passes profile Verify (go test/build per bead).
+//  1. Auto-close beads whose on-disk file passes profile Verify (go test/build per bead; frontend: non-stub).
+//     When phase verify is red, only frontend beads auto-close (open or in_progress); Go beads stay open.
 //  2. Audit required_files and closed-bead mismatches (Verify-green paths skip stub heuristics).
 //  3. Reopen closed beads that still fail Verify, in profile build order (never reopen Verify-green).
 //  4. EnsureImplementBeadsAvailable when the queue is idle and disk work is incomplete.
@@ -170,13 +171,44 @@ func ReconcileImplementBeads(townRoot, rig string, v WorkflowValidation) (string
 	eval := newImplementBeadVerifyEvaluator(rigDir, v)
 	var parts []string
 
-	// Deterministic reconcile: close green Go beads first, then audit, then reopen only what still fails Verify.
-	autoClosed, err := CloseImplementBeadsWithGreenGoVerify(townRoot, rig, v, eval)
-	if err != nil {
-		return "", err
+	// Deterministic reconcile: close green beads first, then audit, then reopen only what still fails verify.
+	// When phase verify is red, still auto-close frontend beads that pass per-bead verify so the queue
+	// can advance (e.g. style.css done while handlers.go compile is broken). Go beads stay open until
+	// phase verify passes — premature success JSON is still blocked by implementation guards.
+	var autoClosed []string
+	phaseErr := error(nil)
+	if WorkflowNeedsRuntimeSmoke(townRoot, rig, v) {
+		phaseErr = ImplementationPhaseVerifyOK(townRoot, rig, v)
+	}
+	if phaseErr == nil {
+		var err error
+		autoClosed, err = CloseImplementBeadsWithGreenGoVerify(townRoot, rig, v, eval)
+		if err != nil {
+			return "", err
+		}
+	} else {
+		parts = append(parts, "skipped Go auto-close: phase verify not green")
+		var err error
+		autoClosed, err = CloseImplementBeadsWithGreenFrontendVerify(townRoot, rig, v, eval)
+		if err != nil {
+			return "", err
+		}
 	}
 	if len(autoClosed) > 0 {
-		parts = append(parts, "auto-closed (verify green): "+joinStrings(autoClosed, ", "))
+		label := "auto-closed (verify green)"
+		if phaseErr != nil {
+			label = "auto-closed frontend (verify green)"
+		}
+		parts = append(parts, label+": "+joinStrings(autoClosed, ", "))
+	}
+	if phaseErr != nil && ImplementationVerifyNeedsRuntimeRework(phaseErr) {
+		reopened, rerr := ReopenImplementationBeadsAfterSmokeFailure(townRoot, rig, v, phaseErr)
+		if rerr != nil {
+			return joinStrings(parts, "; "), rerr
+		}
+		if len(reopened) > 0 {
+			parts = append(parts, "reopened (phase verify blocked): "+joinStrings(reopened, ", "))
+		}
 	}
 
 	for _, issue := range auditRequiredImplementFiles(rigDir, townRoot, rig, v, eval) {

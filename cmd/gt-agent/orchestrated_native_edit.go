@@ -407,6 +407,7 @@ func (r *stateRunner) executeNativeEdits(ops []nativeEditOp, editDir, sessionNam
 		orchestratedPrintf("[gt-agent] %s ok\n", label)
 		combined.WriteString(fmt.Sprintf("%s\n%s\n\n", label, feedback))
 		if op.kind == "edit" || op.kind == "write" {
+			r.scrubGoFileAfterNativeWrite(op.path, combined)
 			r.tidyGoFileAfterNativeWrite(op.path, combined)
 			r.runPostNativeWriteVerify(op.path, sessionName, cmdEnv, combined)
 			r.runPostWriteHTTPContract(op.path, combined)
@@ -458,7 +459,7 @@ func (r *stateRunner) executeNativeEditOp(op nativeEditOp, workDir string) (stri
 		}
 		return string(data), nil
 	case "edit":
-		if err := orchestrator.ValidateImplementWritePath(r.townRoot, r.rig, r.track.activeBead, rel, r.v, false, r.track.lastVerifyOutput); err != nil {
+		if err := orchestrator.ValidateImplementWritePath(r.townRoot, r.rig, r.track.activeBead, rel, r.v, false, r.track.lastVerifyOutput, r.qaReworkWriteScope()); err != nil {
 			return "", err
 		}
 		replace := sanitizeNativeFileContent(op.replace)
@@ -475,7 +476,7 @@ func (r *stateRunner) executeNativeEditOp(op nativeEditOp, workDir string) (stri
 		}
 		return applyNativeSearchReplaceValidated(rel, abs, op.search, replace)
 	case "write":
-		if err := orchestrator.ValidateImplementWritePath(r.townRoot, r.rig, r.track.activeBead, rel, r.v, true, r.track.lastVerifyOutput); err != nil {
+		if err := orchestrator.ValidateImplementWritePath(r.townRoot, r.rig, r.track.activeBead, rel, r.v, true, r.track.lastVerifyOutput, r.qaReworkWriteScope()); err != nil {
 			return "", err
 		}
 		if len(op.content) > nativeWriteMaxBytes {
@@ -563,14 +564,21 @@ func validateAndNormalizeNativeGoContent(relPath, content string) (string, error
 	if err != nil {
 		return "", err
 	}
-	if !strings.Contains(content, "package ") {
+	if strings.HasSuffix(filepath.ToSlash(relPath), ".go") {
+		content = strings.TrimSpace(content)
+		if content == "" {
+			return "", fmt.Errorf("WRITE/EDIT body is empty after removing EDIT markers — send a complete Go file starting with package")
+		}
+		if strings.Contains(content, "}; if err") || strings.Contains(content, "}||") || strings.Contains(content, "Descriptionn") {
+			return "", fmt.Errorf("EDIT/WRITE body contains merged patch fragments — use one full WRITE with a complete file per architecture/SPEC")
+		}
+		if err := orchestrator.GoSourceBytesValid([]byte(content)); err != nil {
+			return "", fmt.Errorf("Go syntax invalid — fix WRITE/EDIT body before saving (%v). Use one full WRITE with a complete file per SPEC/architecture", err)
+		}
+		if !strings.HasSuffix(content, "\n") {
+			content += "\n"
+		}
 		return content, nil
-	}
-	if strings.Contains(content, "}; if err") || strings.Contains(content, "}||") || strings.Contains(content, "Descriptionn") {
-		return "", fmt.Errorf("EDIT/WRITE body contains merged patch fragments — use one full WRITE with a complete file per architecture/SPEC")
-	}
-	if err := orchestrator.GoSourceBytesValid([]byte(content)); err != nil {
-		return "", fmt.Errorf("Go syntax invalid — fix WRITE/EDIT body before saving (%v). If the file on disk is already broken, use one full WRITE with a complete file per SPEC", err)
 	}
 	return content, nil
 }
@@ -642,12 +650,20 @@ func (r *stateRunner) runAutoVerifyForNativeLayoutWrite(sessionName string, cmdE
 	}
 	workDir := r.workDir()
 	verifyOut, verifyErr := r.runShellCommand(verifyCmd, workDir, sessionName, cmdEnv)
+	outStr := string(verifyOut)
+	if verifyErr != nil {
+		mayorDir := rigMayorRigDir(r.townRoot, r.rig)
+		if r.tryHandlerWebCwdAutoFix(mayorDir, outStr, combined) {
+			orchestratedPrintf("[gt-agent] retrying auto-verify after handler web cwd auto-fix\n")
+			verifyOut, verifyErr = r.runShellCommand(verifyCmd, workDir, sessionName, cmdEnv)
+			outStr = string(verifyOut)
+		}
+	}
 	if verifyErr != nil {
 		r.track.hadCmdFailure = true
 		r.track.verifyOK = false
-		combined.WriteString(fmt.Sprintf("Auto-verify (after native edit): %s\nError: %v\nOutput: %s\n\n", verifyCmd, verifyErr, string(verifyOut)))
+		combined.WriteString(fmt.Sprintf("Auto-verify (after native edit): %s\nError: %v\nOutput: %s\n\n", verifyCmd, verifyErr, outStr))
 		if r.hooks.AppendGoCompileContext && orchestrator.WorkflowUsesGo(r.v) {
-			outStr := string(verifyOut)
 			appendGoCompileSourceContext(combined, r.townRoot, r.rig, rigMayorRigDir(r.townRoot, r.rig), r.v.LayoutRoot,
 				r.activeImplementBeadPath(), r.v, verifyCmd, outStr)
 			r.noteImplementationVerifyFailure(verifyCmd, outStr)

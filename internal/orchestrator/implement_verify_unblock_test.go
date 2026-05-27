@@ -52,7 +52,7 @@ func (s *Store) List(ctx context.Context) ([]Link, error) {
 	if !AllowClosedDepFixForVerifyFailure(dir, rig, active, written, out, v) {
 		t.Fatal("expected allow EDIT on closed store.go from test bead")
 	}
-	if err := ValidateImplementWritePath(dir, rig, "te-thd", written, v, false, out); err != nil {
+	if err := ValidateImplementWritePath(dir, rig, "te-thd", written, v, false, out, nil); err != nil {
 		t.Fatalf("ValidateImplementWritePath: %v", err)
 	}
 	hint := FormatNilSliceListUnblockHint(dir, rig, active, v)

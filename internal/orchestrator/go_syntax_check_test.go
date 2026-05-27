@@ -21,6 +21,15 @@ func TestGoSourceBytesValid_acceptsMinimalPackage(t *testing.T) {
 	}
 }
 
+func TestImplementGoBytesCorrupted_markerOnly(t *testing.T) {
+	if !ImplementGoBytesCorrupted([]byte(">>>>>>> REPLACE")) {
+		t.Fatal("marker-only file should be corrupted")
+	}
+	if ImplementGoBytesCorrupted([]byte("package api\n\nfunc f() {}\n")) {
+		t.Fatal("valid minimal Go should not be corrupted")
+	}
+}
+
 func TestGoFileAtMayorRigParses_corruptReturnsFalse(t *testing.T) {
 	dir := t.TempDir()
 	rig := "mockrig"

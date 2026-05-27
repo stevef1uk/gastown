@@ -316,6 +316,13 @@ func rewriteUnittestToWorkdir(cmd, rig string, v orchestrator.WorkflowValidation
 		cmd = "cd " + workPath + " && " + rest
 		changed = true
 	}
+	if orchestrator.WorkflowUsesGo(v) {
+		normalized := orchestrator.NormalizeGoLayoutPackagePaths(cmd, workPath, layout)
+		if normalized != cmd {
+			cmd = normalized
+			changed = true
+		}
+	}
 	return cmd, changed
 }
 
@@ -353,9 +360,7 @@ func commandHasLayoutCD(cmd, layout string) bool {
 	layoutLower := strings.ToLower(layout)
 	return strings.Contains(lower, "cd "+layoutLower) ||
 		strings.Contains(lower, "cd ./"+layoutLower) ||
-		strings.Contains(lower, "/"+layoutLower+"/") ||
-		strings.Contains(lower, "/"+layoutLower+" &&") ||
-		strings.Contains(lower, "/"+layoutLower+" ")
+		strings.Contains(lower, "/"+layoutLower+" &&")
 }
 
 // commandHasMayorRigCD reports whether cmd already cds into the rig mayor/rig worktree.
@@ -388,17 +393,35 @@ func rewriteBdListImplementScope(cmd, titleContains string) (string, bool) {
 	if !strings.Contains(lower, "bd list") || strings.Contains(lower, "grep") {
 		return cmd, false
 	}
-	if !strings.Contains(lower, "--status=open") && !strings.Contains(lower, "--status=in_progress") &&
-		!strings.Contains(lower, "--status=closed") {
-		return cmd, false
-	}
+	q := "'" + strings.ReplaceAll(titleContains, "'", `'"'"'`) + "'"
 	out := strings.TrimSpace(cmd)
+	hasStatus := strings.Contains(lower, "--status=open") || strings.Contains(lower, "--status=in_progress") ||
+		strings.Contains(lower, "--status=closed") || strings.Contains(lower, "--status open")
+	if !hasStatus {
+		// Bare `bd list` only shows open issues (often role beads). Show implement beads across statuses.
+		openList := injectBdListStatusFlags(out, "open,in_progress")
+		closedList := injectBdListStatusFlags(out, "closed")
+		script := fmt.Sprintf(
+			`(echo '=== open/in_progress implement ==='; %s | grep -Fi %s || true; echo '=== closed implement ==='; %s | grep -Fi %s | head -30 || true)`,
+			openList, q, closedList, q,
+		)
+		return script, true
+	}
 	if strings.Contains(lower, "--status=open") && !strings.Contains(lower, "--status=in_progress") {
 		out = strings.Replace(out, "--status=open", "--status=open,in_progress", 1)
 		out = strings.Replace(out, "--status open", "--status open,in_progress", 1)
 	}
-	q := "'" + strings.ReplaceAll(titleContains, "'", `'"'"'`) + "'"
 	return out + " | grep -Fi " + q + " || true", true
+}
+
+// injectBdListStatusFlags adds --status/--flat/--limit=0 to a bd list command that lacks --status.
+func injectBdListStatusFlags(cmd, status string) string {
+	lower := strings.ToLower(cmd)
+	if strings.Contains(lower, "--status=") || strings.Contains(lower, "--status ") {
+		return cmd
+	}
+	re := regexp.MustCompile(`(?i)\bbd\s+list\b`)
+	return re.ReplaceAllString(cmd, "bd list --status="+status+" --flat --limit=0")
 }
 
 // isScopedImplementBdListGrep reports bd list output filtered to implement bead titles.

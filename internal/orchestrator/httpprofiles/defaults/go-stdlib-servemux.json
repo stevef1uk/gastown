@@ -28,8 +28,8 @@
   ],
   "test_output_matchers": {
     "traversal_redirect": ["traversal request returned 307", "traversal", "307", "404"],
-    "root_404": ["handlers_test.go", "GET / returned 404"],
-    "static_404": ["handlers_test.go", "GET /static/", "returned 404"]
+    "root_404": ["handlers_test.go", "404"],
+    "static_404": ["handlers_test.go", "/static/", "404"]
   },
   "hints": {
     "traversal_redirect": {

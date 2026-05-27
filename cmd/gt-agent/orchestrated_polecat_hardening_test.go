@@ -140,7 +140,7 @@ func TestReconcileActiveImplementBeadWithQueue_allowsBdUpdateOnHead(t *testing.T
 
 	r.reconcileActiveImplementBeadWithQueue()
 	cmd := "export BEADS_DIR=x && cd mockrig/mayor/rig && bd update te-tua --status=in_progress"
-	if err := validateImplementationCommandWithState(cmd, dir, rig, "", v, false); err != nil {
+	if err := validateImplementationCommandWithState(cmd, dir, rig, "", v, false, nil); err != nil {
 		t.Fatalf("bd update on queue head should be allowed after reconcile: %v", err)
 	}
 }

@@ -27,7 +27,7 @@ var cmdGuardHandlers = map[string]cmdGuardFn{
 		return validateProjectSetupCommand(cmd, r.rig, r.v)
 	},
 	"implementation": func(r *stateRunner, cmd string) error {
-		if err := validateImplementationCommandWithState(cmd, r.townRoot, r.rig, r.track.activeBead, r.v, r.track.verifyOK); err != nil {
+		if err := validateImplementationCommandWithState(cmd, r.townRoot, r.rig, r.track.activeBead, r.v, r.track.verifyOK, r.qaReworkWriteScope()); err != nil {
 			return err
 		}
 		if err := r.validateImplementationFencedCodeGuard(cmd); err != nil {

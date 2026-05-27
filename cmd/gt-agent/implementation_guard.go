@@ -71,12 +71,25 @@ func (r *stateRunner) rejectImplementationSuccessWithoutDisk(outcome string) (st
 	if artifactErr == nil {
 		return "", false
 	}
+	cleaned, cleanErr := r.cleanupCorruptedOpenImplementBeadFiles()
+	if cleanErr != nil {
+		orchestratedFprintfStderr("[gt-agent] corrupted-bead cleanup: %v\n", cleanErr)
+	}
 	var b strings.Builder
 	b.WriteString("**Rejected:** success JSON does not write files — `")
 	b.WriteString(beadPath)
 	b.WriteString("` is missing on disk (")
 	b.WriteString(artifactErr.Error())
 	b.WriteString(").\n\n")
+	if len(cleaned) > 0 {
+		b.WriteString("Auto-cleanup removed corrupted open-bead artifacts so they can be rewritten:\n")
+		for _, rel := range cleaned {
+			b.WriteString("- `")
+			b.WriteString(rel)
+			b.WriteString("`\n")
+		}
+		b.WriteString("\n")
+	}
 	b.WriteString("Use **WRITE:** or `CMD:` heredoc for this bead in **this** session, run **Verify**, then `bd close ")
 	if beadID != "" {
 		b.WriteString(beadID)
@@ -97,20 +110,10 @@ func (r *stateRunner) rejectImplementationPrematureSuccess(outcome string) (stri
 		return "", false
 	}
 	openImpl := openImplementBeadCount(r)
-	if openImpl == 0 && orchestrator.WorkflowNeedsRuntimeSmoke(r.townRoot, r.rig, r.v) {
-		if err := orchestrator.ImplementationPhaseVerifyOK(r.townRoot, r.rig, r.v); err != nil {
-			if orchestrator.ImplementationVerifyNeedsRuntimeRework(err) {
-				reopened, _ := orchestrator.ReopenImplementationBeadsAfterSmokeFailure(r.townRoot, r.rig, r.v, err)
-				block := orchestrator.FormatImplementationSmokeFailureBlock(r.townRoot, r.rig, r.v, err, reopened)
-				if block != "" {
-					return "**Rejected:** success JSON while runtime smoke still fails.\n\n" + block, true
-				}
-			}
-			return "**Rejected:** success JSON while phase verify still fails: " + err.Error() + "\n\nFix compile/smoke, reopen affected beads, then verify before success.", true
-		}
-		return "", false
-	}
 	if openImpl == 0 {
+		if msg, blocked := r.implementationNoOpenBeadsButWorkRemainsNudge(); blocked {
+			return "**Rejected:** success JSON while phase verify still blocked.\n\n" + msg, true
+		}
 		return "", false
 	}
 	out := strings.TrimSpace(r.track.lastVerifyOutput)
@@ -151,6 +154,48 @@ func (r *stateRunner) implementationPrematureSuccessNudge(openImpl int) string {
 	return b.String()
 }
 
+// rejectImplementationFalseBeadInfraFailure blocks hallucinated "beads corrupted / reset .beads" failure JSON.
+func (r *stateRunner) rejectImplementationFalseBeadInfraFailure(outcome, summary string) (string, bool) {
+	if r == nil || r.task == nil || r.task.State != "implementation" {
+		return "", false
+	}
+	if !isOrchestratedFailureOutcome(outcome) || !summaryClaimsFalseBeadInfraFailure(summary) {
+		return "", false
+	}
+	if r.track != nil && r.track.bdInfraFailed {
+		return "", false
+	}
+	if r.townRoot == "" || r.rig == "" || !orchestrator.BeadsDatabaseReady(r.townRoot, r.rig) {
+		return "", false
+	}
+	example := beadIDExample(r.townRoot, r.rig)
+	var b strings.Builder
+	b.WriteString("**Rejected:** the beads database is working — do **not** reset or reinitialize `.beads`.\n\n")
+	b.WriteString("Plain `bd list` only shows **open** issues (often role beads like witness/qa). Implement beads may be **closed**.\n")
+	b.WriteString("Use:\n")
+	b.WriteString("`CMD: export BEADS_DIR=$GT_ROOT/" + r.rig + "/.beads && cd " + r.rig + "/mayor/rig && bd list --status=closed --flat --limit=0`\n")
+	b.WriteString("Pick a closed implement bead ID from that output, then `bd update " + example + " --status=open`, fix code, Verify, `bd close " + example + "`.\n")
+	b.WriteString("Do not send failure JSON about bead corruption.")
+	return b.String(), true
+}
+
+func summaryClaimsFalseBeadInfraFailure(summary string) bool {
+	lower := strings.ToLower(strings.TrimSpace(summary))
+	if lower == "" {
+		return false
+	}
+	for _, needle := range []string{
+		"bead system corrupt", "beads corrupt", "bead corruption", "corrupted bead",
+		"reset .beads", "reinitialize bead", "re-init", "restore bead state",
+		"bd list shows help", "bd list output to identify",
+	} {
+		if strings.Contains(lower, needle) {
+			return true
+		}
+	}
+	return false
+}
+
 // rejectImplementationNoOpFailure blocks failure JSON when the polecat did not attempt a fix
 // while open implement beads or QA rework still require hands-on work (prevents complete_task loops).
 func (r *stateRunner) rejectImplementationNoOpFailure(outcome string) (string, bool) {
@@ -168,9 +213,49 @@ func (r *stateRunner) rejectImplementationNoOpFailure(outcome string) (string, b
 		return "", false
 	}
 	if openImpl == 0 && !r.hasQAPendingRework() {
+		if msg, blocked := r.implementationNoOpenBeadsButWorkRemainsNudge(); blocked {
+			return msg, true
+		}
 		return "", false
 	}
 	return r.implementationNoOpFailureNudge(openImpl), true
+}
+
+// implementationNoOpenBeadsButWorkRemainsNudge blocks failure/success hand-waving when the queue is empty
+// but phase verify or QA rework still requires code changes.
+func (r *stateRunner) implementationNoOpenBeadsButWorkRemainsNudge() (string, bool) {
+	if r == nil {
+		return "", false
+	}
+	if r.track != nil && r.track.bdInfraFailed {
+		return "", false
+	}
+	if r.townRoot != "" && r.rig != "" && !orchestrator.BeadsDatabaseReady(r.townRoot, r.rig) {
+		return "", false
+	}
+	if r.hasQAPendingRework() {
+		return r.implementationNoOpFailureNudge(0), true
+	}
+	if orchestrator.WorkflowNeedsRuntimeSmoke(r.townRoot, r.rig, r.v) {
+		if err := orchestrator.ImplementationPhaseVerifyOK(r.townRoot, r.rig, r.v); err != nil {
+			var b strings.Builder
+			b.WriteString("**Rejected:** all implement beads are closed but **phase verify** (compile + runtime smoke) still fails — implementation is not done.\n\n")
+			if orchestrator.ImplementationVerifyNeedsRuntimeRework(err) {
+				reopened, _ := orchestrator.ReopenImplementationBeadsAfterSmokeFailure(r.townRoot, r.rig, r.v, err)
+				if block := orchestrator.FormatImplementationSmokeFailureBlock(r.townRoot, r.rig, r.v, err, reopened); block != "" {
+					b.WriteString(block)
+					b.WriteString("\n\n")
+				}
+			} else {
+				b.WriteString(err.Error())
+				b.WriteString("\n\n")
+			}
+			example := beadIDExample(r.townRoot, r.rig)
+			b.WriteString("Reopen the affected bead (`bd list --status=closed`), `bd update " + example + " --status=open`, fix code, Verify, `bd close`. Do not send failure JSON.")
+			return b.String(), true
+		}
+	}
+	return "", false
 }
 
 func (r *stateRunner) formatActiveBeadCompileFailureForNudge() string {
@@ -190,6 +275,32 @@ func (r *stateRunner) formatActiveBeadCompileFailureForNudge() string {
 		return ""
 	}
 	return orchestrator.FormatImplementBeadCompileFailureBlock(rigMayorRigDir(r.townRoot, r.rig), beadPath, r.v)
+}
+
+// appendBdListImplementationHintIfNeeded clarifies when bd list omits closed implement beads.
+func appendBdListImplementationHintIfNeeded(r *stateRunner, cmd, output string, combined *strings.Builder) {
+	if r == nil || r.task == nil || r.task.State != "implementation" {
+		return
+	}
+	lower := strings.ToLower(cmd)
+	if !strings.Contains(lower, "bd list") || strings.Contains(lower, "grep -fi") {
+		return
+	}
+	title := strings.TrimSpace(r.v.BeadTitleContains)
+	if title == "" {
+		return
+	}
+	outLower := strings.ToLower(output)
+	if strings.Contains(outLower, strings.ToLower(title)) {
+		return
+	}
+	if strings.Contains(outLower, "usage:") && strings.Contains(outLower, "bd [command]") {
+		combined.WriteString("\n**Note:** bd printed CLI help — check command flags. Use `bd list --status=open,in_progress --flat --limit=0` or `--status=closed`.\n")
+		return
+	}
+	combined.WriteString("\n**Note:** no implement beads in this output (titles containing ")
+	combined.WriteString(title)
+	combined.WriteString("). Closed implement beads are hidden unless you use `bd list --status=closed`. Phase verify may still require reopening them.\n")
 }
 
 func openImplementBeadCount(r *stateRunner) int {

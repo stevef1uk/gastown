@@ -785,7 +785,7 @@ func TestValidateImplementationBeadFileWrite_rejectsClosedPath(t *testing.T) {
 	cmd := `cd mockrig/mayor/rig && cat > linkshelf/internal/api/handlers.go <<'EOF'
 package api
 EOF`
-	err := validateImplementationBeadFileWrite(cmd, dir, "mockrig", "te-main", v)
+	err := validateImplementationBeadFileWrite(cmd, dir, "mockrig", "te-main", v, nil)
 	if err == nil {
 		t.Fatal("expected reject write to closed-only path while active bead is main")
 	}
@@ -823,7 +823,7 @@ func TestValidateImplementationBeadFileWrite_rejectsFullHeredocAllowsSed(t *test
 	heredoc := `cd mockrig/mayor/rig && cat > linkshelf/internal/store/store.go <<'EOF'
 package store
 EOF`
-	errHeredoc := validateImplementationBeadFileWrite(heredoc, dir, rig, "te-store", v)
+	errHeredoc := validateImplementationBeadFileWrite(heredoc, dir, rig, "te-store", v, nil)
 	if errHeredoc == nil {
 		t.Fatal("expected reject full heredoc on existing file")
 	}
@@ -831,11 +831,11 @@ EOF`
 		t.Fatalf("err = %v", errHeredoc)
 	}
 	sedCmd := `cd mockrig/mayor/rig && sed -i 's/x/y/' linkshelf/internal/store/store.go`
-	if err := validateImplementationBeadFileWrite(sedCmd, dir, rig, "te-store", v); err != nil {
+	if err := validateImplementationBeadFileWrite(sedCmd, dir, rig, "te-store", v, nil); err != nil {
 		t.Fatalf("sed should be allowed: %v", err)
 	}
 	patchCmd := `cd mockrig/mayor/rig && patch -p0 linkshelf/internal/store/store.go < fix.patch`
-	if err := validateImplementationBeadFileWrite(patchCmd, dir, rig, "te-store", v); err != nil {
+	if err := validateImplementationBeadFileWrite(patchCmd, dir, rig, "te-store", v, nil); err != nil {
 		t.Fatalf("patch should be allowed: %v", err)
 	}
 
@@ -861,7 +861,7 @@ EOF`
 	mainHeredoc := `cd mockrig/mayor/rig && cat > linkshelf/cmd/server/main.go <<'EOF'
 package main
 EOF`
-	if err := validateImplementationBeadFileWrite(mainHeredoc, dir, rig, "te-main", vMain); err != nil {
+	if err := validateImplementationBeadFileWrite(mainHeredoc, dir, rig, "te-main", vMain, nil); err != nil {
 		t.Fatalf("cmd/main heredoc should be allowed: %v", err)
 	}
 }
@@ -875,10 +875,10 @@ func TestValidateImplementationCommand_oneInProgressBead(t *testing.T) {
 	if err := validateImplementationCommand(`bd update BEAD_ID --status=in_progress`, "mockrig"); err == nil {
 		t.Fatal("expected reject BEAD_ID template")
 	}
-	if err := validateImplementationCommandWithState(cmd, dir, "mockrig", "tg-xyz", orchestrator.DefaultWorkflowValidation(), false); err == nil {
+	if err := validateImplementationCommandWithState(cmd, dir, "mockrig", "tg-xyz", orchestrator.DefaultWorkflowValidation(), false, nil); err == nil {
 		t.Fatal("expected reject second in_progress bead")
 	}
-	if err := validateImplementationCommandWithState(cmd, dir, "mockrig", "tg-abc", orchestrator.DefaultWorkflowValidation(), false); err != nil {
+	if err := validateImplementationCommandWithState(cmd, dir, "mockrig", "tg-abc", orchestrator.DefaultWorkflowValidation(), false, nil); err != nil {
 		t.Fatalf("same bead should be allowed: %v", err)
 	}
 }

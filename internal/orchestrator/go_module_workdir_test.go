@@ -3,6 +3,7 @@ package orchestrator
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -37,6 +38,26 @@ func TestGoModuleCDDir_nestedLayoutDir(t *testing.T) {
 	}
 }
 
+func TestGoCompileVerifyCommandForBead_noCorrelatedTestFile(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	storeDir := filepath.Join(dir, "linkshelf", "internal", "store")
+	if err := os.MkdirAll(storeDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "linkshelf", "go.mod"), []byte("module linkshelf\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(storeDir, "store.go"), []byte("package store\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	v := WorkflowValidation{LayoutRoot: "linkshelf", TestRunner: "go"}
+	cmd := GoCompileVerifyCommandForBead(v, dir, "linkshelf/internal/store/store.go")
+	if cmd == "" || !strings.Contains(cmd, "go test -count=1 ./internal/store/...") {
+		t.Fatalf("want package go test when *_test.go absent, got %q", cmd)
+	}
+}
+
 func TestGoCompileVerifyCommandForBead_flatLayout(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
@@ -60,6 +81,26 @@ func TestGoCompileVerifyCommandForBead_flatLayout(t *testing.T) {
 	cmd := GoCompileVerifyCommandForBead(v, dir, "linkshelf/internal/store/schema.go")
 	if want := "go mod tidy && go test -count=1 ./internal/store/..."; cmd != want {
 		t.Fatalf("verify cmd = %q, want %q", cmd, want)
+	}
+}
+
+func TestNormalizeGoLayoutPackagePaths_nestedModule(t *testing.T) {
+	t.Parallel()
+	cmd := "cd testgt3/mayor/rig/linkshelf && go test -count=1 ./linkshelf/internal/api/..."
+	want := "cd testgt3/mayor/rig/linkshelf && go test -count=1 ./internal/api/..."
+	got := NormalizeGoLayoutPackagePaths(cmd, "testgt3/mayor/rig/linkshelf", "linkshelf")
+	if got != want {
+		t.Fatalf("got %q want %q", got, want)
+	}
+}
+
+func TestNormalizeGoLayoutPackagePaths_flatModule(t *testing.T) {
+	t.Parallel()
+	cmd := "cd testgt3/mayor/rig && go test ./linkshelf/internal/api/..."
+	want := "cd testgt3/mayor/rig && go test ./internal/api/..."
+	got := NormalizeGoLayoutPackagePaths(cmd, "testgt3/mayor/rig", "linkshelf")
+	if got != want {
+		t.Fatalf("got %q want %q", got, want)
 	}
 }
 

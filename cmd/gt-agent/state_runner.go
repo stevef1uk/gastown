@@ -55,6 +55,18 @@ type stateRunner struct {
 	turnHadSuccessfulNative bool // true after a successful WRITE/EDIT this turn
 }
 
+func (r *stateRunner) qaReworkWriteScope() *orchestrator.ImplementWriteScope {
+	if r == nil || r.task == nil || r.task.PendingRework == nil {
+		return nil
+	}
+	pr := r.task.PendingRework
+	sc := orchestrator.QAReworkWriteScopeFromTransition(r.townRoot, r.rig, pr.FromState, r.task.State, pr.Summary)
+	if !sc.QAReworkFromQAReview {
+		return nil
+	}
+	return &sc
+}
+
 func newStateRunner(task *orchestrator.Task, townRoot, rig string) *stateRunner {
 	v := taskValidation(task)
 	vars := map[string]string{"rig": rig}
@@ -401,6 +413,7 @@ func (r *stateRunner) afterCommand(cmd string, cmdErr error, workDir, sessionNam
 			r.persistImplementationProgress(cmd)
 		}
 		r.noteImplementationFixAttempt(cmd, false)
+		appendBdListImplementationHintIfNeeded(r, cmd, combined.String(), combined)
 		r.runAutoVerify(cmd, workDir, sessionName, cmdEnv, combined)
 		return
 	}

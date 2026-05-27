@@ -99,8 +99,8 @@ func PreferIncrementalEdit(townRoot, rig, relPath string, v WorkflowValidation) 
 	if err != nil || !exists || size < IncrementalEditMinBytes {
 		return false
 	}
-	// Corrupted Go does not parse — allow one-shot WRITE/heredoc recovery instead of more EDIT fragments.
-	if WorkflowUsesGo(v) && strings.HasSuffix(filepath.ToSlash(relPath), ".go") && !GoFileAtMayorRigParses(townRoot, rig, relPath) {
+	// Corrupted Go (marker-only, no package, syntax error) — allow one-shot WRITE/heredoc recovery.
+	if WorkflowUsesGo(v) && strings.HasSuffix(filepath.ToSlash(relPath), ".go") && ImplementGoFileCorrupted(townRoot, rig, relPath) {
 		return false
 	}
 	abs := filepath.Join(townRoot, rig, "mayor", "rig", filepath.FromSlash(relPath))
@@ -139,12 +139,12 @@ func FormatIncrementalEditBlock(townRoot, rig, beadPath string, v WorkflowValida
 	if beadPath == "" {
 		return ""
 	}
-	if WorkflowUsesGo(v) && strings.HasSuffix(beadPath, ".go") && !GoFileAtMayorRigParses(townRoot, rig, beadPath) {
+	if WorkflowUsesGo(v) && strings.HasSuffix(beadPath, ".go") && ImplementGoFileCorrupted(townRoot, rig, beadPath) {
 		return strings.TrimSpace(fmt.Sprintf(`### Corrupted file — full WRITE required
-**%s** on disk has Go **syntax errors** (broken EDIT merges). Do **not** use small EDIT/search-replace patches.
+**%s** on disk is **not valid Go** (often only `+"`"+`>>>>>>> REPLACE`+"`"+` / SEARCH markers from a failed EDIT). Do **not** use more EDIT or small patches.
 
-Use **WRITE:** %s with a complete valid file body until `+"`---END WRITE---`"+`, matching **SPEC Store contract** in Implement context, then run **Verify**.`,
-			beadPath, beadPath))
+Use **WRITE:** %s with a **complete** valid Go file until `+"`---END WRITE---`"+` (must start with `+"`"+`package …`+"`"+`), or `+"`"+`CMD: cat > %s <<'EOF'`+"`"+` … `+"`"+`EOF`+"`"+`. Shell **sed** on this path is OK. Then run **Verify** before `+"`"+`bd close`+"`"+`.`,
+			beadPath, beadPath, beadPath))
 	}
 	if !PreferIncrementalEdit(townRoot, rig, beadPath, v) {
 		return ""
