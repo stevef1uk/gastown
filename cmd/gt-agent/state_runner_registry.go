@@ -36,6 +36,12 @@ var cmdGuardHandlers = map[string]cmdGuardFn{
 		if err := r.validateImplementationMissingFileRead(cmd); err != nil {
 			return err
 		}
+		if r.hooks.NativeEditTools {
+			lower := strings.ToLower(cmd)
+			if strings.Contains(lower, "cat >") || strings.Contains(lower, "cat>>") || strings.Contains(lower, "<<") {
+				return fmt.Errorf("do not use shell heredocs (cat >) when NativeEditTools is enabled — use WRITE: and EDIT: tags instead")
+			}
+		}
 		return validateImplementationBeadOrder(r.townRoot, r.rig, cmd, r.v)
 	},
 	"plan_review": func(r *stateRunner, cmd string) error {
