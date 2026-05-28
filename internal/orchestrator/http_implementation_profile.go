@@ -375,6 +375,21 @@ func handlerStaticHandlerBlock(body, routePrefix string) string {
 		return ""
 	}
 	rest := body[idx+len(routePrefix):]
+	comma := strings.Index(rest, ",")
+	if comma >= 0 && comma < 50 {
+		afterComma := strings.TrimSpace(rest[comma+1:])
+		closeParen := strings.Index(afterComma, ")")
+		if !strings.HasPrefix(afterComma, "func") && closeParen > 0 {
+			handlerName := strings.TrimSpace(afterComma[:closeParen])
+			if !strings.ContainsAny(handlerName, " \t\n\r(){}") {
+				funcDef := "func " + handlerName
+				funcIdx := strings.Index(body, funcDef)
+				if funcIdx >= 0 {
+					rest = body[funcIdx+len(funcDef):]
+				}
+			}
+		}
+	}
 	brace := strings.Index(rest, "{")
 	if brace < 0 {
 		if len(rest) > 280 {
