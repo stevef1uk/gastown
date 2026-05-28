@@ -412,3 +412,29 @@ func TestSpecSummaryExcerptForBead_longParagraph(t *testing.T) {
 		t.Fatalf("want path in excerpt: %q", got)
 	}
 }
+
+func TestFormatGoModuleImportContext(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	rigDir := filepath.Join(dir, "rig", "mayor", "rig")
+	if err := os.MkdirAll(filepath.Join(rigDir, "linkshelf"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	v := WorkflowValidation{LayoutRoot: "linkshelf"}
+
+	// No go.mod
+	if got := formatGoModuleImportContext(rigDir, v); got != "" {
+		t.Errorf("expected empty string when go.mod is missing, got %q", got)
+	}
+
+	// Write go.mod
+	goModContent := "module github.com/user/linkshelf\n\ngo 1.22\n"
+	if err := os.WriteFile(filepath.Join(rigDir, "linkshelf", "go.mod"), []byte(goModContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	got := formatGoModuleImportContext(rigDir, v)
+	if !strings.Contains(got, "The Go module name for this project is `github.com/user/linkshelf`") {
+		t.Errorf("missing expected module name in output: %q", got)
+	}
+}
