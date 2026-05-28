@@ -9,7 +9,7 @@ import (
 )
 
 // IncrementalEditMinBytes is the on-disk size above which full-file heredoc overwrites are rejected.
-const IncrementalEditMinBytes int64 = 120
+const IncrementalEditMinBytes int64 = 4096
 
 var (
 	implementCatPathRE = regexp.MustCompile(`(?i)cat\s*>\s*([^\s<;|&]+)`)
