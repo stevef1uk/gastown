@@ -297,7 +297,7 @@ func TestValidateImplementWritePath_rejectsClosedHeredoc(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(abs), 0755); err != nil {
 		t.Fatal(err)
 	}
-	body := "package store\n\nimport \"errors\"\n\ntype Store struct{}\n\nfunc (s *Store) AddLink(url string) error {\n\tif url == \"\" {\n\t\treturn errors.New(\"empty\")\n\t}\n\treturn nil\n}\n"
+	body := "package store\n\nimport \"errors\"\n\ntype Store struct{}\n\nfunc (s *Store) AddLink(url string) error {\n\tif url == \"\" {\n\t\treturn errors.New(\"empty\")\n\t}\n\treturn nil\n}\n" + strings.Repeat("// padding padding padding\n", 200)
 	if err := os.WriteFile(abs, []byte(body), 0644); err != nil {
 		t.Fatal(err)
 	}

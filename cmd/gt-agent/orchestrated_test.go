@@ -802,7 +802,7 @@ func TestValidateImplementationBeadFileWrite_rejectsFullHeredocAllowsSed(t *test
 	if err := os.MkdirAll(path, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	body := "package store\n\n" + strings.Repeat("type Link struct { ID int; URL string }\nfunc (s *Store) GetAll() ([]Link, error) { return nil, nil }\n", 8)
+	body := "package store\n\n" + strings.Repeat("type Link struct { ID int; URL string }\nfunc (s *Store) GetAll() ([]Link, error) { return nil, nil }\n", 80)
 	if err := os.WriteFile(filepath.Join(path, "store.go"), []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
