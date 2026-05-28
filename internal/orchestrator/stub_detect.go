@@ -236,8 +236,8 @@ func CheckContentNotStub(data []byte, displayRel string, opts StubCheckOptions) 
 	}
 
 	minBytes := opts.MinFileBytes
-	if looksSubstantiveImplementation(text, substantive, opts) {
-		// Small but complete modules may be well under 400 bytes.
+	if looksSubstantiveImplementation(text, substantive, opts) || IsFrontendImplementPath(displayRel) {
+		// Small but complete modules or frontend files may be well under 400 bytes.
 		if minBytes > MinImplementationFileBytesFloor {
 			minBytes = MinImplementationFileBytesFloor
 		}
