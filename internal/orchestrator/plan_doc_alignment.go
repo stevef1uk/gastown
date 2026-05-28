@@ -29,7 +29,7 @@ var (
 	}
 	integrationContractHeadingRE = regexp.MustCompile(`(?im)^##\s+integration\s+contract\b`)
 	planBeadSectionPathRE        = regexp.MustCompile(`(?m)^###\s+[^:]+:\s*(\S+)`)
-	bareModuleRelPathRE          = regexp.MustCompile(`(?:^|[\s\-*])((?:internal|cmd|pkg|api|web)/[^\s` + "`" + `",:;)]+)`)
+	bareModuleRelPathRE          = regexp.MustCompile(`(?:^|[\s\-*` + "`" + `])(?:\./)?((?:internal|cmd|pkg|api|web)/[^\s` + "`" + `",:;)]+)`)
 )
 
 // WriteAlignedPlanningDocsForTest writes minimal SPEC/architecture/plan stubs for gt-agent tests.
