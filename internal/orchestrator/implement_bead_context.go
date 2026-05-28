@@ -90,6 +90,13 @@ func formatImplementBeadContextForPath(townRoot, rig, beadPath string, v Workflo
 		b.WriteString(block)
 		b.WriteString("\n")
 	}
+	if WorkflowUsesGo(v) {
+		if modCtx := formatGoModuleImportContext(filepath.Join(townRoot, rig, "mayor", "rig"), v); modCtx != "" {
+			b.WriteString("\n")
+			b.WriteString(modCtx)
+			b.WriteString("\n")
+		}
+	}
 	if note := formatUnitTestGuidanceForBead(townRoot, rig, beadPath, v); note != "" {
 		b.WriteString("\n")
 		b.WriteString(note)
@@ -374,4 +381,19 @@ func readMayorRigFileSnippet(townRoot, rig, relPath string, maxBytes int) string
 		return s[:maxBytes] + "\n... (truncated)\n"
 	}
 	return s
+}
+
+func formatGoModuleImportContext(rigDir string, v WorkflowValidation) string {
+	goModPath := filepath.Join(rigDir, v.LayoutRoot, "go.mod")
+	data, err := os.ReadFile(goModPath)
+	if err != nil {
+		return ""
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "module ") {
+			modName := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), "module "))
+			return "### Go Module Context\nThe Go module name for this project is `" + modName + "`. When importing internal packages (like `store` or `api`), use `" + modName + "/internal/...` rather than the physical folder path or absolute test rig paths.\n"
+		}
+	}
+	return ""
 }
