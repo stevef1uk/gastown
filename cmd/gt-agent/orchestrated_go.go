@@ -237,7 +237,12 @@ func validateGoImplementationCommand(cmd, townRoot, rig, mayorRigDir, activeBead
 		}
 	}
 	if isBeadCloseCommand(cmd) && !verifyOK {
-		return fmt.Errorf("run green verify before bd close: %s", verifyHint)
+		if orchestrator.IsFrontendImplementPath(beadPath) && verifyHint == "" {
+			if err := orchestrator.ValidateBeadArtifactOnDisk(mayorRigDir, beadPath, v); err == nil {
+				return nil
+			}
+		}
+		return fmt.Errorf("run green verify before bd close: %s (in this session, since verify clears on restart)", verifyHint)
 	}
 	return nil
 }

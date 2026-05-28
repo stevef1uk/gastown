@@ -30,6 +30,29 @@ func ReconcileClosedImplementBeads(townRoot, rig string, v WorkflowValidation) (
 		return nil, nil
 	}
 	v = v.ForActivePhase()
+	active, err := ListImplementBeadsOpenOrInProgress(townRoot, rig, v)
+	if err == nil && len(active) > 0 {
+		// Active phase: Only reopen if beads are missing/stubbed, ignore full-project compile errors.
+		rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
+		var reopened []string
+		closed, err := implementBeadsIndexedByPath(townRoot, rig, v, "closed")
+		if err != nil || len(closed) == 0 {
+			return nil, err
+		}
+		for _, rel := range orderedImplementBeadPaths(v) {
+			b, ok := closed[filepath.ToSlash(rel)]
+			if !ok || IsProjectSetupArtifactPath(rel, v) {
+				continue
+			}
+			if beadImplementationNeedsRework(rigDir, rel, v) {
+				if err := bdUpdateImplementBeadStatus(townRoot, rig, b.ID, "open"); err == nil {
+					reopened = append(reopened, b.ID)
+				}
+			}
+		}
+		return reopened, nil
+	}
+
 	if ImplementationQueueGreen(townRoot, rig, v) {
 		return nil, nil
 	}

@@ -64,7 +64,7 @@ func validateCustomImplementationCommand(cmd, townRoot, rig, activeBead string, 
 		mayorDir := rigMayorRigDir(townRoot, rig)
 		beadPath := orchestrator.ImplementBeadPathForID(townRoot, rig, activeBead, v)
 		hint := orchestrator.ImplementationVerifyCommandForBead(v, mayorDir, beadPath)
-		return fmt.Errorf("run green verify before bd close: %s", hint)
+		return fmt.Errorf("run green verify before bd close: %s (in this session, since verify clears on restart)", hint)
 	}
 	return nil
 }
@@ -84,7 +84,12 @@ func validatePythonImplementationCommand(cmd, townRoot, rig, activeBead string, 
 		mayorDir := rigMayorRigDir(townRoot, rig)
 		beadPath := orchestrator.ImplementBeadPathForID(townRoot, rig, activeBead, v)
 		hint := orchestrator.PythonImplementationVerifyCommandForBead(v, mayorDir, beadPath)
-		return fmt.Errorf("run green verify before bd close: %s", hint)
+		if orchestrator.IsFrontendImplementPath(beadPath) && hint == "" {
+			if err := orchestrator.ValidateBeadArtifactOnDisk(mayorDir, beadPath, v); err == nil {
+				return nil
+			}
+		}
+		return fmt.Errorf("run green verify before bd close: %s (in this session, since verify clears on restart)", hint)
 	}
 	return nil
 }

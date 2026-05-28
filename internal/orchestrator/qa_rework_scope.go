@@ -42,7 +42,7 @@ func (s ImplementWriteScope) BeadCited(id string) bool {
 	return s.QACitedBeadIDs[strings.ToLower(strings.TrimSpace(id))]
 }
 
-func isFrontendImplementPath(path string) bool {
+func IsFrontendImplementPath(path string) bool {
 	lower := strings.ToLower(filepath.ToSlash(strings.TrimSpace(path)))
 	return strings.HasSuffix(lower, ".html") ||
 		strings.HasSuffix(lower, ".css") ||
@@ -57,19 +57,19 @@ func AllowedQAReworkWebImplementWrite(townRoot, rig, activeBead, activePath, wri
 	}
 	activePath = filepath.ToSlash(strings.TrimSpace(activePath))
 	written = filepath.ToSlash(strings.TrimSpace(written))
-	if !isFrontendImplementPath(written) {
+	if !IsFrontendImplementPath(written) {
 		return false
 	}
 	if !pathMatchesRequired(written, v.RequiredFiles) {
 		return false
 	}
-	if activePath != "" && !isFrontendImplementPath(activePath) {
+	if activePath != "" && !IsFrontendImplementPath(activePath) {
 		return false
 	}
 	if scope.BeadCited(activeBead) {
 		for citedID := range scope.QACitedBeadIDs {
 			p := ImplementBeadPathForID(townRoot, rig, citedID, v)
-			if p != "" && isFrontendImplementPath(p) &&
+			if p != "" && IsFrontendImplementPath(p) &&
 				PathMatchesImplementWrite(written, p, v.RequiredFiles) {
 				return true
 			}

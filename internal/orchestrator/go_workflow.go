@@ -115,7 +115,7 @@ func GoImplementationVerifyCommandForBead(v WorkflowValidation, mayorRigDir, bea
 	if strings.HasSuffix(beadPath, "go.mod") {
 		return GoModBeadVerifyCommand(v, mayorRigDir)
 	}
-	if isFrontendImplementPath(beadPath) {
+	if IsFrontendImplementPath(beadPath) {
 		return ""
 	}
 	// Integration (go run/curl) only on the server main bead; other beads build their package only.

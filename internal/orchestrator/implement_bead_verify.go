@@ -61,7 +61,7 @@ func (e *implementBeadVerifyEvaluator) VerifySatisfied(beadPath string) bool {
 	if e.GoSatisfied(beadPath) {
 		return true
 	}
-	if !isFrontendImplementPath(beadPath) {
+	if !IsFrontendImplementPath(beadPath) {
 		return false
 	}
 	if v, ok := e.memo[beadPath]; ok {
@@ -216,7 +216,7 @@ func CloseImplementBeadsWithGreenFrontendVerify(townRoot, rig string, v Workflow
 	}
 	var closed []string
 	for _, rel := range orderedImplementBeadPaths(v) {
-		if !isFrontendImplementPath(rel) {
+		if !IsFrontendImplementPath(rel) {
 			continue
 		}
 		b, ok := active[filepath.ToSlash(rel)]
