@@ -83,8 +83,7 @@ func TestFormatImplementBeadContextForPath_includesSpecStoreContract(t *testing.
 	}
 	got := formatImplementBeadContextForPath(dir, rig, rel, v)
 	for _, want := range []string{
-		"### Store API (SPEC.md",
-		"List(ctx context.Context)",
+		"Store package (from SPEC.md)",
 		"same names/signatures",
 		":memory:",
 	} {

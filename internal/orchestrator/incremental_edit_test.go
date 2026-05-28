@@ -84,7 +84,7 @@ func TestPreferIncrementalEdit_substantiveFile(t *testing.T) {
 	if err := os.MkdirAll(absDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	body := "package store\n\n" + strings.Repeat("func (s *Store) GetAll() ([]Link, error) { return nil, nil }\n", 10)
+	body := "package store\n\n" + strings.Repeat("func (s *Store) GetAll() ([]Link, error) { return nil, nil }\n", 100)
 	if err := os.WriteFile(filepath.Join(absDir, "store.go"), []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -145,7 +145,7 @@ func TestRejectFullFileHeredocReason_existingFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	file := filepath.Join(path, "store.go")
-	body := "package store\n\n" + strings.Repeat("type Link struct { ID int; URL string }\nfunc (s *Store) GetAll() ([]Link, error) { return nil, nil }\n", 8)
+	body := "package store\n\n" + strings.Repeat("type Link struct { ID int; URL string }\nfunc (s *Store) GetAll() ([]Link, error) { return nil, nil }\n", 80)
 	if err := os.WriteFile(file, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}

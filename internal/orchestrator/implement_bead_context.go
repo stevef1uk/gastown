@@ -137,11 +137,6 @@ func formatImplementBeadContextForPath(townRoot, rig, beadPath string, v Workflo
 		b.WriteString(excerpt)
 		b.WriteString("\n")
 	}
-	if excerpt := specSummaryExcerptForBead(v.SpecSummary, beadPath, v.LayoutRoot); excerpt != "" {
-		b.WriteString("\n### From workflow profile\n")
-		b.WriteString(excerpt)
-		b.WriteString("\n")
-	}
 	if snippet := readMayorRigFileSnippet(townRoot, rig, beadPath, maxImplementBeadOnDiskBytes); snippet != "" {
 		b.WriteString("\n### Current file on disk\n")
 		b.WriteString("```\n")

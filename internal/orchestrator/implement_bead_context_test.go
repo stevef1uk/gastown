@@ -55,7 +55,7 @@ Do not add separate model packages.
 		LayoutRoot:        "linkshelf",
 	}
 
-	substantiveBody := "package store\nimport \"linkshelf/internal/model\"\n\n" + strings.Repeat("func (s *Store) GetAll() ([]Link, error) { return nil, nil }\n", 10)
+	substantiveBody := "package store\nimport \"linkshelf/internal/model\"\n\n" + strings.Repeat("func (s *Store) GetAll() ([]Link, error) { return nil, nil }\n", 100)
 	if err := os.WriteFile(storePath, []byte(substantiveBody), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -67,8 +67,6 @@ Do not add separate model packages.
 		"### From architecture.md",
 		"List, Create, Delete",
 		"Do not add separate model packages",
-		"### From workflow profile",
-		"SQLite for links",
 		"### Current file on disk",
 		"linkshelf/internal/model",
 		"### Incremental edit required",
@@ -119,7 +117,6 @@ func TestFormatImplementBeadContextBlock_linkshelfTitlePrefix(t *testing.T) {
 		"## Implement context for `linkshelf/internal/store/store.go`",
 		"### From architecture.md",
 		"List, Create, Delete",
-		"### From workflow profile",
 		"### Current file on disk",
 		"package store // stale",
 	} {
@@ -195,7 +192,7 @@ func TestFormatIncrementalEditBlock_direct(t *testing.T) {
 	if err := os.MkdirAll(abs, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	body := "package main\n\n" + strings.Repeat("func main() { println(1) }\n", 12)
+	body := "package main\n\n" + strings.Repeat("func main() { println(1) }\n", 200)
 	if err := os.WriteFile(filepath.Join(dir, rig, "mayor", "rig", rel), []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}

@@ -179,6 +179,9 @@ func TestRunOnTimeoutHook_resetPlanningPhase_delegates(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	if err := os.WriteFile(filepath.Join(rigDir, "plan.md"), []byte("### te-1: Dockerfile\n- Acceptance: per architecture"), 0644); err != nil {
+		t.Fatal(err)
+	}
 	init := exec.Command("bd", "init")
 	init.Env = append(os.Environ(), "BEADS_DIR="+beadsDir)
 	init.Dir = rigDir

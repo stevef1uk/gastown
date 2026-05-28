@@ -30,7 +30,7 @@ func TestFormatSpecSchemaContractBlock_schemaBead(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := FormatSpecSchemaContractBlock(dir, rig, "linkshelf/internal/store/schema.go")
-	for _, want := range []string{"Schema bead", "DDL", "Data model (SPEC.md)"} {
+	for _, want := range []string{"Schema bead", "DDL"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("missing %q in:\n%s", want, got)
 		}
@@ -60,11 +60,8 @@ func TestFormatSpecStoreContractBlock_storeBead(t *testing.T) {
 		},
 	}
 	got := FormatSpecStoreContractBlock(dir, rig, "linkshelf/internal/store/store.go", v)
-	if !strings.Contains(got, "List(ctx context.Context)") {
-		t.Fatalf("got %q", got)
-	}
 	if !strings.Contains(got, "same names/signatures") {
-		t.Fatal("expected generic alignment warning")
+		t.Fatalf("expected generic alignment warning, got %q", got)
 	}
 }
 

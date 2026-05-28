@@ -28,7 +28,7 @@ func (s *Store) AddLink(url string) error {
 	}
 	return nil
 }
-`) + "\n"
+`) + "\n" + strings.Repeat("// padding padding padding\n", 200)
 	if err := os.WriteFile(abs, []byte(body), 0644); err != nil {
 		t.Fatal(err)
 	}

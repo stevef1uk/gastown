@@ -89,17 +89,12 @@ func FormatSpecSchemaContractBlock(townRoot, rig, beadPath string) string {
 	if !IsSQLiteSchemaBeadPath(beadPath) {
 		return ""
 	}
-	contract := LoadSpecStoreContractFromRig(townRoot, rig)
 	var b strings.Builder
 	b.WriteString("### Schema bead (from SPEC.md)\n")
 	b.WriteString("This bead owns **schema/migration DDL only** for the store package.\n")
 	b.WriteString("- Export schema helpers named in **Architecture contract** / SPEC **Data model** (e.g. `InitSchema`).\n")
 	b.WriteString("- Do **not** implement persistence/query methods here — those belong on the **store.go** bead.\n")
 	b.WriteString("- Tests may use `:memory:` SQLite and assert tables from SPEC DDL.\n")
-	if contract != "" {
-		b.WriteString("\n")
-		b.WriteString(contract)
-	}
 	return strings.TrimSpace(b.String())
 }
 
@@ -108,7 +103,6 @@ func FormatSpecStoreContractBlock(townRoot, rig, beadPath string, v WorkflowVali
 	if !IsStorePackageBeadPath(beadPath) || IsSQLiteSchemaBeadPath(beadPath) {
 		return ""
 	}
-	contract := LoadSpecStoreContractFromRig(townRoot, rig)
 	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
 	var b strings.Builder
 	b.WriteString("### Store package (from SPEC.md)\n")
@@ -127,10 +121,6 @@ func FormatSpecStoreContractBlock(townRoot, rig, beadPath string, v WorkflowVali
 		}
 	}
 	b.WriteString("- Use a **fresh DB per test** (`:memory:` or temp file) — not a shared on-disk DB from prior runs.\n")
-	if contract != "" {
-		b.WriteString("\n")
-		b.WriteString(contract)
-	}
 	return strings.TrimSpace(b.String())
 }
 

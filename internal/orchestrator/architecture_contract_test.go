@@ -134,8 +134,8 @@ func TestFormatSpecStoreContractBlock_generic(t *testing.T) {
 	if strings.Contains(got, "AddBookmark") {
 		t.Fatalf("should not mention bookmark-specific names: %s", got)
 	}
-	if !strings.Contains(got, "List") {
-		t.Fatalf("want SPEC content: %s", got)
+	if !strings.Contains(got, "Store package (from SPEC.md)") {
+		t.Fatalf("want Store package header: %s", got)
 	}
 }
 
