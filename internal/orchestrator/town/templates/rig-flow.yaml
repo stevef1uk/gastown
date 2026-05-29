@@ -31,7 +31,7 @@ states:
     instructions: |
       1. Read `{{rig}}/mayor/rig/SPEC.md`.
       2. Write `{{rig}}/mayor/rig/architecture.md` (≥{{min_architecture_bytes}} bytes).
-      3. You MUST prefix ALL file paths (both in lists and in prose) with the root directory name from the SPEC (e.g. `linkshelf/cmd/server/main.go`, not `cmd/server/main.go`).
+      3. CRITICAL: You MUST prefix ALL file paths (in lists, prose, tables, and code blocks) with the root directory name from the SPEC (e.g. `linkshelf/cmd/server/main.go`, not `cmd/server/main.go`, and `linkshelf/web/` not `web/`).
     hooks:
       max_cmd_turns: 8
       cmd_guard: design
@@ -42,7 +42,7 @@ states:
         One CMD: per line. Read SPEC with head; write architecture.md via a single-quoted heredoc (≥200 bytes).
         Prose may mention python3 or backend/ paths — that is fine inside the document.
       failure_hint: |
-        Write architecture.md with a heredoc CMD in this session (stale files from prior runs do not count). Read SPEC with head -n 60. HTTP paths and store symbols must match SPEC verbatim (gt-agent rejects /web/* vs /static/, ListLinks vs List, etc.).
+        Write architecture.md with a heredoc CMD in this session (stale files from prior runs do not count). Read SPEC with head -n 60. HTTP paths and store symbols must match SPEC verbatim (gt-agent rejects /web/* vs /static/, ListLinks vs List, etc.). If validation fails due to missing path prefixes, you MUST execute a new CMD: cat << 'EOF' > ... heredoc to rewrite the entire file with the correct prefixes (e.g. linkshelf/web/index.html). Do not just reply with JSON success!
     transitions:
       success:
         to: planning
