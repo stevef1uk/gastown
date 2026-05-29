@@ -164,9 +164,11 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 	// pre_run (refresh_codeindex, bead queue, reconcile) must run before prompt_context so
 	// implement_bead_context sees a fresh codeindex.json and the correct queue head.
 	runner.runPreRun()
-	if block := orchestrator.FormatMissingImplementFilesBlock(townRoot, rig, runner.v); block != "" {
-		contextBlocks = append(contextBlocks, block)
-		orchestratedPrintf("[gt-agent] injecting missing implement files context for %s/%s\n", task.WorkflowID, task.State)
+	if task.State == "implementation" || task.State == "qa_review" || task.State == "project_setup" {
+		if block := orchestrator.FormatMissingImplementFilesBlock(townRoot, rig, runner.v); block != "" {
+			contextBlocks = append(contextBlocks, block)
+			orchestratedPrintf("[gt-agent] injecting missing implement files context for %s/%s\n", task.WorkflowID, task.State)
+		}
 	}
 	if block := runner.initQAReviewProgress(); block != "" {
 		contextBlocks = append(contextBlocks, block)
