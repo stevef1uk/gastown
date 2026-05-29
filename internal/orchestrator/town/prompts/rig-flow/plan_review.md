@@ -81,4 +81,4 @@ Example success (after CMDs ran):
 `{"outcome":"success","summary":"Open beads match required_files; plan.md ≥ {{min_plan_bytes}}B; SPEC/architecture/plan agree on /api/links and List/Create/Delete store API; integration contract present"}`
 
 Example failure:
-`{"outcome":"failure","summary":"plan.md uses GET /links and ListLinks; SPEC requires /api/links and List/Create. Planner must rewrite plan.md and fix architecture store table."}`
+`{"outcome":"failure","summary":"plan.md incorrectly specifies <wrong_route> instead of <correct_route_from_SPEC>. Planner must rewrite plan.md to match SPEC exactly."}`
