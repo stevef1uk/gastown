@@ -26,6 +26,15 @@
 
 set -euo pipefail
 
+# bash 3.2 (macOS) + set -u: expanding "${arr[@]}" on a zero-length array is an error.
+# Pre-declare arrays and iterate with ${arr[@]+"${arr[@]}"} (see loops below).
+RIG_NAMES=()
+AGENT_PIDS=()
+NATS_PIDS=()
+AGENT_STATES=()
+STRAY_BEADS=()
+UNREGISTERED_RIGS=()
+
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -64,16 +73,18 @@ find_town_root() {
 load_rig_names() {
     RIG_NAMES=()
     [[ -f "$TOWN_ROOT/rigs.json" ]] || return 0
-    while IFS= read -r name; do
-        [[ -n "$name" ]] && RIG_NAMES+=("$name")
-    done < <(python3 -c "
+    local names name
+    names="$(python3 -c "
 import json
 try:
     d = json.load(open('$TOWN_ROOT/rigs.json'))
     for name in d.get('rigs', {}):
         print(name)
 except Exception:
-    pass" 2>/dev/null)
+    pass" 2>/dev/null)" || true
+    while IFS= read -r name; do
+        [[ -n "$name" ]] && RIG_NAMES+=("$name")
+    done <<< "$names"
 }
 
 # get_rig_prefix prints the beads prefix used for a rig's session log
@@ -738,7 +749,7 @@ json.dump(d, open(p, 'w'), indent=2)
                 rig_targets+=("$SINGLE_RIG/crew/$cw_name")
             done
         fi
-        for tgt in "${rig_targets[@]}"; do
+        for tgt in ${rig_targets[@]+"${rig_targets[@]}"}; do
             result=$(gt mail clear "$tgt" 2>&1 | tail -1 || true)
             log_ok "  ${tgt}: ${result}"
         done
@@ -970,14 +981,12 @@ for d in "$TOWN_ROOT"/*/; do
     
     # Check if it's in RIG_NAMES
     is_registered=false
-    if ((${#RIG_NAMES[@]} > 0)); then
-        for r in "${RIG_NAMES[@]}"; do
-            if [[ "$name" == "$r" ]]; then
-                is_registered=true
-                break
-            fi
-        done
-    fi
+    for r in ${RIG_NAMES[@]+"${RIG_NAMES[@]}"}; do
+        if [[ "$name" == "$r" ]]; then
+            is_registered=true
+            break
+        fi
+    done
     
     if [[ "$is_registered" == false ]]; then
         # Check if it looks like a rig (contains .beads, gt-agent-state.json, or rigs.json)
@@ -1019,7 +1028,7 @@ echo "    • .dolt-data/  (issues: ~${DOLT_ISSUES}, wisps: ~${DOLT_WISPS})"
 echo ""
 echo "  Rig directories to delete:"
 if [[ ${#RIG_NAMES[@]} -gt 0 ]]; then
-    for rig in "${RIG_NAMES[@]}"; do
+    for rig in ${RIG_NAMES[@]+"${RIG_NAMES[@]}"}; do
         if [[ -d "$TOWN_ROOT/$rig" ]]; then
             echo "    • ${rig}/"
         fi
@@ -1031,7 +1040,7 @@ fi
 if [[ ${#UNREGISTERED_RIGS[@]} -gt 0 ]]; then
     echo ""
     echo "  Unregistered rigs (dirs in town root that look like rigs but aren't in rigs.json):"
-    for rig in "${UNREGISTERED_RIGS[@]}"; do
+    for rig in ${UNREGISTERED_RIGS[@]+"${UNREGISTERED_RIGS[@]}"}; do
         echo "    • ${rig}/"
     done
 fi
@@ -1039,7 +1048,7 @@ fi
 echo ""
 echo "  Agent state files to delete:"
 if [[ ${#AGENT_STATES[@]} -gt 0 ]]; then
-    for f in "${AGENT_STATES[@]}"; do
+    for f in ${AGENT_STATES[@]+"${AGENT_STATES[@]}"}; do
         rel="${f#$TOWN_ROOT/}"
         echo "    • ${rel}"
     done
@@ -1059,7 +1068,7 @@ echo "  Other artifacts to delete:"
 if [[ ${#STRAY_BEADS[@]} -gt 0 || -n "$GLOBAL_DOLT_DATA" ]]; then
     echo ""
     echo "  Stray global directories:"
-    for d in "${STRAY_BEADS[@]}"; do
+    for d in ${STRAY_BEADS[@]+"${STRAY_BEADS[@]}"}; do
         echo "    • ${d}  (global beads cache)"
     done
     [[ -n "$GLOBAL_DOLT_DATA" ]] && echo "    • ${GLOBAL_DOLT_DATA}  (global dolt data)"
@@ -1107,19 +1116,19 @@ echo ""
 log_info "Stopping processes..."
 
 if [[ ${#AGENT_PIDS[@]} -gt 0 ]]; then
-    for pid in "${AGENT_PIDS[@]}"; do
+    for pid in ${AGENT_PIDS[@]+"${AGENT_PIDS[@]}"}; do
         kill "$pid" 2>/dev/null || true
     done
     sleep 1
     # Force kill any stragglers
-    for pid in "${AGENT_PIDS[@]}"; do
+    for pid in ${AGENT_PIDS[@]+"${AGENT_PIDS[@]}"}; do
         kill -9 "$pid" 2>/dev/null || true
     done
     log_ok "Stopped ${#AGENT_PIDS[@]} gt-agent process(es)"
 fi
 
 if [[ ${#NATS_PIDS[@]} -gt 0 ]]; then
-    for pid in "${NATS_PIDS[@]}"; do
+    for pid in ${NATS_PIDS[@]+"${NATS_PIDS[@]}"}; do
         kill -9 "$pid" 2>/dev/null || true
     done
     log_ok "Stopped ${#NATS_PIDS[@]} nats-wrapper process(es)"
@@ -1156,23 +1165,21 @@ fi
 
 log_info "Deleting rig directories..."
 DELETED_RIGS=0
-if ((${#RIG_NAMES[@]} > 0)); then
-    for rig in "${RIG_NAMES[@]}"; do
-        rig_dir="$TOWN_ROOT/$rig"
-        if [[ -d "$rig_dir" ]]; then
-            rm -rf "$rig_dir"
-            log_ok "Deleted rig directory: ${rig}/"
-            ((DELETED_RIGS++)) || true
-        fi
-    done
-fi
+for rig in ${RIG_NAMES[@]+"${RIG_NAMES[@]}"}; do
+    rig_dir="$TOWN_ROOT/$rig"
+    if [[ -d "$rig_dir" ]]; then
+        rm -rf "$rig_dir"
+        log_ok "Deleted rig directory: ${rig}/"
+        ((DELETED_RIGS++)) || true
+    fi
+done
 if [[ $DELETED_RIGS -eq 0 ]]; then
     log_warn "No rig directories found to delete"
 fi
 
 if [[ ${#UNREGISTERED_RIGS[@]} -gt 0 ]]; then
     log_info "Deleting unregistered rig directories..."
-    for rig in "${UNREGISTERED_RIGS[@]}"; do
+    for rig in ${UNREGISTERED_RIGS[@]+"${UNREGISTERED_RIGS[@]}"}; do
         rm -rf "$TOWN_ROOT/$rig"
         log_ok "Deleted unregistered rig: ${rig}/"
     done
@@ -1254,7 +1261,7 @@ fi
 
 if [[ ${#STRAY_BEADS[@]} -gt 0 ]]; then
     log_info "Cleaning up stray beads directories..."
-    for d in "${STRAY_BEADS[@]}"; do
+    for d in ${STRAY_BEADS[@]+"${STRAY_BEADS[@]}"}; do
         rm -rf "$d"
         log_ok "Deleted ${d}"
     done
@@ -1270,16 +1277,14 @@ fi
 
 log_info "Deleting agent state files..."
 DELETED_STATES=0
-if ((${#AGENT_STATES[@]} > 0)); then
-    for f in "${AGENT_STATES[@]}"; do
-        if [[ -f "$f" ]]; then
-            rm -f "$f"
-            rel="${f#$TOWN_ROOT/}"
-            log_ok "Deleted ${rel}"
-            ((DELETED_STATES++)) || true
-        fi
-    done
-fi
+for f in ${AGENT_STATES[@]+"${AGENT_STATES[@]}"}; do
+    if [[ -f "$f" ]]; then
+        rm -f "$f"
+        rel="${f#$TOWN_ROOT/}"
+        log_ok "Deleted ${rel}"
+        ((DELETED_STATES++)) || true
+    fi
+done
 if [[ $DELETED_STATES -eq 0 ]]; then
     log_warn "No agent state files found"
 fi
