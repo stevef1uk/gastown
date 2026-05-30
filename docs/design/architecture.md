@@ -513,6 +513,41 @@ an in-process **orchestrator** with YAML templates under `{townRoot}/orchestrato
 Agents started with `--orchestrated` poll NATS subject `gt.orchestrator.mcp` for tasks
 instead of using the hook/mail patrol loop for that work.
 
+![rig-flow pipeline with Freeride proxy](pictures/gastown_architecture_rig_flow.png)
+
+### Dependencies
+
+**Required** (install once per machine; most services are started by `gt up`):
+
+| Dependency | Purpose | Notes |
+|------------|---------|--------|
+| **Docker** | Runs NATS | `gt up` starts container `gt-nats` (`nats:latest`, ports **4222** client / **8222** monitor). Docker daemon must be running before `gt up`. |
+| **Dolt** 1.82+ | Beads / issue storage | SQL server on port **3307**; started and managed by the Gas Town daemon. Install: `brew install dolt` (macOS) or [dolthub/dolt](https://github.com/dolthub/dolt). |
+| **beads (`bd`)** 0.55+ | Issue CLI | Planner, polecat, and QA run `bd create` / `bd list` / `bd close`. Installed with Gas Town (`make install` or `brew install gastown`). |
+| **Git** 2.25+ | Rigs, worktrees, checkpoints | Orchestrator commits on FSM transitions and pushes on `completed`. Worktree support required for polecats. |
+| **Go** 1.25+ | Build `gt` / `gt-agent` | `make install` → `~/.local/bin` (or `brew install gastown` on macOS). |
+| **LLM endpoint** | Agent inference | OpenAI-compatible API; typical setup uses [Freeride](https://github.com/stevef1uk/freeride) proxy on **:11434**. **Stop local Ollama first** — it binds the same port. Configure `LLM_ENDPOINT` / `LLM_MODEL` in `settings/config.json`. |
+| **Gas Town town** (`~/gt`) | Orchestrator + rig state | `gt install ~/gt --git`, then `"session_transport": "nats"` in `settings/config.json`. Templates sync to `{townRoot}/orchestrator/` via `gt orchestrator sync`. |
+
+**Rig toolchain** (per project language — scaffolded during `project_setup`, not host prerequisites):
+
+| Dependency | When |
+|------------|------|
+| **Go** (`go`, `go mod`, `go test`) | Go rigs — module init/tidy in setup; implement + QA run tests |
+| **Python 3** + **venv** + **pip** | Python rigs — venv + `requirements.txt` in setup; pytest/unittest in implement + QA |
+
+**Optional host tools** (same machine as the polecat NATS session):
+
+| Tool | Purpose |
+|------|---------|
+| **codeindex** (`pip install codeindex`) | Dependency blast radius in implement-bead prompts; disable with `GT_CODEINDEX=0` — see [rig-flow operator notes](../../internal/orchestrator/town/README.md) |
+| **goimports** | Auto-fix unused imports after native **EDIT:**/**WRITE:** on Go rigs |
+| **Standalone NATS** | Only if you cannot use Docker — run `nats-server` on **4222** yourself; `gt up` still expects NATS reachable |
+
+**Not required for rig-flow:** tmux (legacy transport only when `"session_transport": "tmux"`).
+
+**Port conflict:** Local **Ollama** and **Freeride** both default to port **11434** — stop Ollama before starting Freeride.
+
 - Conceptual overview: [Orchestrator (concept)](../concepts/orchestrator.md)
 - Technical reference: [Orchestrator (technical)](orchestrator.md)
 

@@ -60,6 +60,22 @@ find_town_root() {
     return 1
 }
 
+# Populate RIG_NAMES from rigs.json (python3 only — portable on macOS; no grep -P).
+load_rig_names() {
+    RIG_NAMES=()
+    [[ -f "$TOWN_ROOT/rigs.json" ]] || return 0
+    while IFS= read -r name; do
+        [[ -n "$name" ]] && RIG_NAMES+=("$name")
+    done < <(python3 -c "
+import json
+try:
+    d = json.load(open('$TOWN_ROOT/rigs.json'))
+    for name in d.get('rigs', {}):
+        print(name)
+except Exception:
+    pass" 2>/dev/null)
+}
+
 # get_rig_prefix prints the beads prefix used for a rig's session log
 # filenames and tmux session names. Used to glob `<prefix>-*.log` files in
 # logs/sessions/. Mirrors internal/rig/manager.go:deriveBeadsPrefix.
@@ -913,12 +929,7 @@ if [[ -f "$TOWN_ROOT/daemon/daemon.pid" ]]; then
 fi
 
 # Find rig directories from rigs.json
-RIG_NAMES=()
-if [[ -f "$TOWN_ROOT/rigs.json" ]]; then
-    # Try python3 for robust JSON parsing, fall back to grep
-    RIG_NAMES=($(python3 -c "import json; d=json.load(open('$TOWN_ROOT/rigs.json')); print(' '.join(d.get('rigs', {}).keys()))" 2>/dev/null || \
-                 cat "$TOWN_ROOT/rigs.json" | grep -oP '"\K[^"]+(?=":\s*\{)' | grep -vE "^(rigs|beads|version)$" 2>/dev/null || true))
-fi
+load_rig_names
 
 # Find agent state files
 AGENT_STATES=($(find "$TOWN_ROOT" -maxdepth 3 -name "gt-agent-state.json" 2>/dev/null || true))
@@ -959,12 +970,14 @@ for d in "$TOWN_ROOT"/*/; do
     
     # Check if it's in RIG_NAMES
     is_registered=false
-    for r in "${RIG_NAMES[@]}"; do
-        if [[ "$name" == "$r" ]]; then
-            is_registered=true
-            break
-        fi
-    done
+    if ((${#RIG_NAMES[@]} > 0)); then
+        for r in "${RIG_NAMES[@]}"; do
+            if [[ "$name" == "$r" ]]; then
+                is_registered=true
+                break
+            fi
+        done
+    fi
     
     if [[ "$is_registered" == false ]]; then
         # Check if it looks like a rig (contains .beads, gt-agent-state.json, or rigs.json)
@@ -1143,14 +1156,16 @@ fi
 
 log_info "Deleting rig directories..."
 DELETED_RIGS=0
-for rig in "${RIG_NAMES[@]}"; do
-    rig_dir="$TOWN_ROOT/$rig"
-    if [[ -d "$rig_dir" ]]; then
-        rm -rf "$rig_dir"
-        log_ok "Deleted rig directory: ${rig}/"
-        ((DELETED_RIGS++)) || true
-    fi
-done
+if ((${#RIG_NAMES[@]} > 0)); then
+    for rig in "${RIG_NAMES[@]}"; do
+        rig_dir="$TOWN_ROOT/$rig"
+        if [[ -d "$rig_dir" ]]; then
+            rm -rf "$rig_dir"
+            log_ok "Deleted rig directory: ${rig}/"
+            ((DELETED_RIGS++)) || true
+        fi
+    done
+fi
 if [[ $DELETED_RIGS -eq 0 ]]; then
     log_warn "No rig directories found to delete"
 fi
@@ -1255,14 +1270,16 @@ fi
 
 log_info "Deleting agent state files..."
 DELETED_STATES=0
-for f in "${AGENT_STATES[@]}"; do
-    if [[ -f "$f" ]]; then
-        rm -f "$f"
-        rel="${f#$TOWN_ROOT/}"
-        log_ok "Deleted ${rel}"
-        ((DELETED_STATES++)) || true
-    fi
-done
+if ((${#AGENT_STATES[@]} > 0)); then
+    for f in "${AGENT_STATES[@]}"; do
+        if [[ -f "$f" ]]; then
+            rm -f "$f"
+            rel="${f#$TOWN_ROOT/}"
+            log_ok "Deleted ${rel}"
+            ((DELETED_STATES++)) || true
+        fi
+    done
+fi
 if [[ $DELETED_STATES -eq 0 ]]; then
     log_warn "No agent state files found"
 fi
