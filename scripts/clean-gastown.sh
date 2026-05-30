@@ -84,7 +84,7 @@ except Exception:
     pass" 2>/dev/null)" || true
     while IFS= read -r name; do
         [[ -n "$name" ]] && RIG_NAMES+=("$name")
-    done <<< "$names"
+    done <<< "$names" || true
 }
 
 # Bash 3.2 (macOS) + set -u: arr=($(cmd)) unsets arr when cmd prints nothing.
@@ -751,7 +751,7 @@ json.dump(d, open(p, 'w'), indent=2)
                 log_warn "  could not delete origin/${ref#refs/heads/}"
                 ((local_failures++)) || true
             fi
-        done <<< "$STALE_REMOTE_BRANCHES"
+        done <<< "$STALE_REMOTE_BRANCHES" || true
         if [[ "$local_failures" -eq 0 ]]; then
             log_ok "All stale remote branches pruned"
         else
@@ -976,16 +976,17 @@ log_info "Target town: ${YELLOW}${TOWN_ROOT}${NC}"
 echo ""
 
 # ─── Phase 0: Discovery ──────────────────────────────────────────────
+log_info "Discovering town state..."
 
 # Find running processes
 AGENT_PIDS=()
 while IFS= read -r pid; do
     [[ -n "$pid" ]] && AGENT_PIDS+=("$pid")
-done < <(pgrep -f "gt-agent" 2>/dev/null || true)
+done < <(pgrep -f "gt-agent" 2>/dev/null || true) || true
 NATS_PIDS=()
 while IFS= read -r pid; do
     [[ -n "$pid" ]] && NATS_PIDS+=("$pid")
-done < <(pgrep -f "nats-wrapper" 2>/dev/null || true)
+done < <(pgrep -f "nats-wrapper" 2>/dev/null || true) || true
 DAEMON_PID=""
 if [[ -f "$TOWN_ROOT/daemon/daemon.pid" ]]; then
     DAEMON_PID="$(cat "$TOWN_ROOT/daemon/daemon.pid" 2>/dev/null || true)"
@@ -998,7 +999,7 @@ load_rig_names
 AGENT_STATES=()
 while IFS= read -r f; do
     [[ -n "$f" ]] && AGENT_STATES+=("$f")
-done < <(find "$TOWN_ROOT" -maxdepth 3 -name "gt-agent-state.json" 2>/dev/null || true)
+done < <(find "$TOWN_ROOT" -maxdepth 3 -name "gt-agent-state.json" 2>/dev/null || true) || true
 
 # Count Dolt issues (best-effort; may be 0 if dolt is slow or locked)
 DOLT_ISSUES=0
