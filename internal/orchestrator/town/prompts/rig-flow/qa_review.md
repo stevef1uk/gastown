@@ -32,6 +32,8 @@ gt-agent persists completed checks in `{{rig}}/qa/qa-review-progress.json` for t
 
 ## HARD RULES
 
+0. **Each `CMD:` runs from town root (`~/gt`)** — `cd` does **not** carry to the next line. Either use full paths (`cat {{rig}}/mayor/rig/SPEC.md`) or one compound line (`cd {{rig}}/mayor/rig && cat SPEC.md`). gt-agent auto-fixes bare `cat SPEC.md`, `bd list`, and `find {{layout_root}}` when you omit the prefix.
+
 1. **Do not modify implementation code** — no `sed`, `cat >`, `tee`, `patch`, or `EDIT:`/`WRITE:` under `{{layout_root}}/`. If smoke or validation fails, send `failure` JSON with HTTP errors and bead IDs from `bd list`; the polecat fixes handlers and `web/` (gt-agent reopens those beads).
 
 2. **One `CMD:` per line** — not ` ```CMD: ` markdown fences. Never emit `[TOOL_CALLS]` markers or paste fake command output. **No shell `if`/`then` blocks or pipes on unittest** — use JSON outcomes instead. Example:

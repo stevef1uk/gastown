@@ -1926,10 +1926,15 @@ func isQAReadOnlyCommand(cmd string) bool {
 	return strings.Contains(lower, "bd list")
 }
 
-func validateQACommand(cmd, rig string, v orchestrator.WorkflowValidation) error {
+func validateQACommand(cmd, rig, townRoot string, v orchestrator.WorkflowValidation) error {
 	lower := strings.ToLower(cmd)
 	if strings.Contains(lower, "[tool_calls]") {
 		return fmt.Errorf("do not emit [TOOL_CALLS] markers — use CMD: lines only")
+	}
+	if townRoot != "" && rig != "" && !orchestrator.WorkflowNeedsQARuntimeSmoke(townRoot, rig, v) {
+		if strings.Contains(lower, "curl ") || strings.Contains(lower, "go run") {
+			return fmt.Errorf("this rig profile does not require runtime smoke — run %s only (no curl/go run)", v.UnittestCommandHint())
+		}
 	}
 	if strings.Contains(lower, "if [") || strings.Contains(lower, "then ") || strings.Contains(lower, "fi\n") {
 		return fmt.Errorf("do not use shell if/then blocks in QA — use simple CMD: lines and JSON outcomes")

@@ -224,12 +224,12 @@ func (r *stateRunner) processOrchestratedTools(response, sessionName string, com
 			combined.WriteString(fmt.Sprintf("Command skipped (native tool line, not shell): %s\n\n", cmd))
 			continue
 		}
+		cmd = r.rewriteCommand(cmd)
 		if err := r.validateCommand(cmd); err != nil {
 			orchestratedFprintfStderr("[gt-agent] rejected command: %v\n", err)
 			combined.WriteString(fmt.Sprintf("Command REJECTED (%s): %s\nReason: %v\n\n", r.rejectScope(), cmd, err))
 			continue
 		}
-		cmd = r.rewriteCommand(cmd)
 		r.repairPipBeforeRun(cmd)
 		cmdEnv := r.commandEnv(os.Environ())
 		runCmd := r.rewritePythonCmd(cmd, cmdEnv)
@@ -349,12 +349,12 @@ func (r *stateRunner) runInProgressBeadUpdatesBeforeNativeEdits(response, sessio
 		if !isBeadUpdateInProgressCommand(cmd) {
 			continue
 		}
+		cmd = r.rewriteCommand(cmd)
 		if err := r.validateCommand(cmd); err != nil {
 			orchestratedFprintfStderr("[gt-agent] pre-native rejected command: %v\n", err)
 			combined.WriteString(fmt.Sprintf("Command REJECTED (%s, before native tools): %s\nReason: %v\n\n", r.rejectScope(), cmd, err))
 			continue
 		}
-		cmd = r.rewriteCommand(cmd)
 		r.repairPipBeforeRun(cmd)
 		cmdEnv := r.commandEnv(os.Environ())
 		runCmd := r.rewritePythonCmd(cmd, cmdEnv)

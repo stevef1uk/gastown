@@ -386,6 +386,51 @@ func commandHasMayorRigCD(cmd, rig string) bool {
 	return false
 }
 
+// commandHasRigPathContext reports whether cmd already references the rig tree (full paths or cd into mayor/rig).
+func commandHasRigPathContext(cmd, rig string) bool {
+	if commandHasMayorRigCD(cmd, rig) {
+		return true
+	}
+	rigLower := strings.ToLower(strings.TrimSpace(rig))
+	if rigLower == "" {
+		return false
+	}
+	lower := strings.ToLower(cmd)
+	return strings.Contains(lower, rigLower+"/") || strings.Contains(lower, "$gt_root/"+rigLower)
+}
+
+// rewriteQAMayorRigPrefix prepends mayor/rig (and BEADS_DIR for bd) when QA uses bare relative paths.
+// gt-agent cwd is town root; cd in one CMD line does not persist to the next.
+func rewriteQAMayorRigPrefix(cmd, rig string) (string, bool) {
+	trimmed := strings.TrimSpace(cmd)
+	if trimmed == "" || commandHasRigPathContext(trimmed, rig) {
+		return cmd, false
+	}
+	lower := strings.ToLower(trimmed)
+	if strings.HasPrefix(lower, "export ") && !strings.Contains(lower, "bd ") {
+		return cmd, false
+	}
+	if strings.HasPrefix(lower, "cd ") {
+		return cmd, false
+	}
+	needsPrefix := false
+	for _, p := range []string{"cat ", "head ", "tail ", "test ", "find ", "wc ", "ls ", "stat ", "grep ", "bd ", "bd\t"} {
+		if strings.HasPrefix(lower, p) {
+			needsPrefix = true
+			break
+		}
+	}
+	if !needsPrefix {
+		return cmd, false
+	}
+	mayorPath := rigMayorRigPath(rig)
+	prefix := "cd " + mayorPath + " && "
+	if strings.Contains(lower, "bd ") || strings.Contains(lower, "bd\t") {
+		prefix = "export BEADS_DIR=$GT_ROOT/" + rig + "/.beads && " + prefix
+	}
+	return prefix + trimmed, true
+}
+
 // rewriteBdListImplementScope scopes bd list to implement beads and includes in_progress work.
 func rewriteBdListImplementScope(cmd, titleContains string) (string, bool) {
 	titleContains = strings.TrimSpace(titleContains)

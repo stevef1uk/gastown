@@ -48,7 +48,7 @@ var cmdGuardHandlers = map[string]cmdGuardFn{
 		return validatePlanReviewCommand(cmd, r.rig)
 	},
 	"qa": func(r *stateRunner, cmd string) error {
-		return validateQACommand(cmd, r.rig, r.v)
+		return validateQACommand(cmd, r.rig, r.townRoot, r.v)
 	},
 }
 

@@ -409,6 +409,50 @@ func TestNeedsOrchestratedScriptFile(t *testing.T) {
 	}
 }
 
+func TestRewriteQAMayorRigPrefix(t *testing.T) {
+	rig := testrig.Name
+	cases := []struct {
+		in   string
+		ok   bool
+		want string
+	}{
+		{"cat SPEC.md", true, "cd " + rig + "/mayor/rig && cat SPEC.md"},
+		{"bd list --status=closed", true, "export BEADS_DIR=$GT_ROOT/" + rig + "/.beads && cd " + rig + "/mayor/rig && bd list --status=closed"},
+		{"find pingapp -type f", true, "cd " + rig + "/mayor/rig && find pingapp -type f"},
+		{"cd " + rig + "/mayor/rig && cat SPEC.md", false, ""},
+		{"cat " + rig + "/mayor/rig/SPEC.md", false, ""},
+	}
+	for _, tc := range cases {
+		got, ok := rewriteQAMayorRigPrefix(tc.in, rig)
+		if ok != tc.ok {
+			t.Fatalf("rewriteQAMayorRigPrefix(%q) ok=%v want %v (got %q)", tc.in, ok, tc.ok, got)
+		}
+		if tc.ok && got != tc.want {
+			t.Fatalf("rewriteQAMayorRigPrefix(%q) = %q want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
+func TestValidateQACommand_rejectsCurlWhenNoRuntimeSmoke(t *testing.T) {
+	town := t.TempDir()
+	rig := "ping_rig"
+	rigDir := filepath.Join(town, rig, "mayor", "rig")
+	if err := os.MkdirAll(rigDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(rigDir, "SPEC.md"), []byte("# ping\n\nGET /ping\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	v := orchestrator.WorkflowValidation{
+		LayoutRoot:      "pingapp",
+		QAVerifyCommand: "cd pingapp && go test ./...",
+		TestRunner:      "go",
+	}
+	if err := validateQACommand("curl -s http://localhost:8080/ping", rig, town, v); err == nil {
+		t.Fatal("expected curl rejected for library-only ping rig")
+	}
+}
+
 func TestOrchestratedCommandWorkDir_rigFlowUsesTownRoot(t *testing.T) {
 	town := "/gt"
 	rig := testrig.Name

@@ -261,6 +261,12 @@ func (r *stateRunner) rewriteCommand(cmd string) string {
 			cmd = fixed
 		}
 	}
+	if r.hooks.CmdGuard == "qa" {
+		if fixed, ok := rewriteQAMayorRigPrefix(cmd, r.rig); ok {
+			orchestratedPrintf("[gt-agent] rewrote QA cmd for mayor/rig workdir: %s\n", fixed)
+			cmd = fixed
+		}
+	}
 	if orchestrator.WorkflowUsesDocker(r.v) {
 		if fixed := orchestrator.NormalizeDockerCommand(cmd); fixed != cmd {
 			orchestratedPrintf("[gt-agent] rewrote docker command typo → %s\n", fixed)

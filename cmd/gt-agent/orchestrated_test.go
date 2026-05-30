@@ -359,22 +359,22 @@ func TestRunOrchestratedCommand_heredocWritesGoWithClosingBraces(t *testing.T) {
 
 func TestValidateQACommand_rejectsWorkspace(t *testing.T) {
 	v := orchestrator.DefaultWorkflowValidation()
-	if err := validateQACommand("cat /workspace/mockrig/src/foo.py", "mockrig", v); err == nil {
+	if err := validateQACommand("cat /workspace/mockrig/src/foo.py", "mockrig", "", v); err == nil {
 		t.Fatal("expected reject")
 	}
-	if err := validateQACommand("cd mockrig/mayor/rig && python3 -m unittest backend.test_fizzbuzz", "mockrig", v); err != nil {
+	if err := validateQACommand("cd mockrig/mayor/rig && python3 -m unittest backend.test_fizzbuzz", "mockrig", "", v); err != nil {
 		t.Fatalf("unittest should be allowed: %v", err)
 	}
-	if err := validateQACommand("python3 -m unittest backend.test_fizzbuzz -v", "mockrig", v); err == nil {
+	if err := validateQACommand("python3 -m unittest backend.test_fizzbuzz -v", "mockrig", "", v); err == nil {
 		t.Fatal("unittest without cd should be rejected")
 	}
-	if err := validateQACommand("python3 -m unittest backend.test_fizzbuzz -v | grep ok", "mockrig", v); err == nil {
+	if err := validateQACommand("python3 -m unittest backend.test_fizzbuzz -v | grep ok", "mockrig", "", v); err == nil {
 		t.Fatal("unittest piped to grep should be rejected")
 	}
-	if err := validateQACommand(`if [ "$API_RESPONSE" != "[]" ]; then echo fail; fi`, "mockrig", v); err == nil {
+	if err := validateQACommand(`if [ "$API_RESPONSE" != "[]" ]; then echo fail; fi`, "mockrig", "", v); err == nil {
 		t.Fatal("expected reject shell if-block in QA")
 	}
-	if err := validateQACommand(`bd update <identified-bead-id> --status=open`, "mockrig", v); err == nil {
+	if err := validateQACommand(`bd update <identified-bead-id> --status=open`, "mockrig", "", v); err == nil {
 		t.Fatal("expected reject placeholder bead ID in QA")
 	}
 }
@@ -1048,13 +1048,13 @@ func TestValidateQACommand_rejectsLayoutWrites(t *testing.T) {
 		`cd mockrig/mayor/rig/linkshelf && tee web/index.html <<'EOF'\n<html></html>\nEOF`,
 	}
 	for _, cmd := range cases {
-		if err := validateQACommand(cmd, "mockrig", v); err == nil {
+		if err := validateQACommand(cmd, "mockrig", "", v); err == nil {
 			t.Fatalf("expected reject for %q", cmd)
 		} else if !strings.Contains(err.Error(), "must not modify") {
 			t.Fatalf("unexpected error for %q: %v", cmd, err)
 		}
 	}
-	if err := validateQACommand(`cd mockrig/mayor/rig && head -n 5 linkshelf/web/index.html`, "mockrig", v); err != nil {
+	if err := validateQACommand(`cd mockrig/mayor/rig && head -n 5 linkshelf/web/index.html`, "mockrig", "", v); err != nil {
 		t.Fatalf("read-only head should pass: %v", err)
 	}
 }
