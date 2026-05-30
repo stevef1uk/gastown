@@ -68,6 +68,16 @@ func ExtractPathFromBeadTitle(title, titlePrefix string) string {
 		lowerPfx := strings.ToLower(prefix)
 		if idx := strings.Index(lowerTitle, lowerPfx); idx >= 0 {
 			title = strings.TrimSpace(title[idx+len(prefix):])
+			// If the prefix included a layout root (e.g. "Implement pingapp/"), restore it
+			if strings.HasSuffix(prefix, "/") {
+				parts := strings.Split(strings.TrimSuffix(prefix, "/"), " ")
+				if len(parts) > 0 {
+					layout := parts[len(parts)-1]
+					if layout != "" && !strings.EqualFold(layout, "implement") {
+						title = layout + "/" + title
+					}
+				}
+			}
 		} else if strings.HasPrefix(lowerTitle, "implement") && strings.HasPrefix(lowerPfx, "implement") {
 			// Glued typo: ImplementDockerfile, Implement.env.example
 			title = strings.TrimSpace(title[len("Implement"):])
