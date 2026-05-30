@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -1926,6 +1927,50 @@ func isQAReadOnlyCommand(cmd string) bool {
 	return strings.Contains(lower, "bd list")
 }
 
+func validateQARuntimeSmokeCommand(cmd, rig, townRoot string, v orchestrator.WorkflowValidation) error {
+	if townRoot == "" || rig == "" || !orchestrator.WorkflowNeedsQARuntimeSmoke(townRoot, rig, v) {
+		return nil
+	}
+	lower := strings.ToLower(cmd)
+	if !strings.Contains(lower, "curl ") {
+		return nil
+	}
+	if orchestrator.IsProfileDerivedSmokeCommand(cmd) {
+		return nil
+	}
+	spec, _ := orchestrator.LoadAPISmokeSpecFromRig(townRoot, rig, v)
+	port := spec.Port
+	if port <= 0 {
+		port = 8080
+	}
+	layout := v.LayoutRootDir()
+	if orchestrator.WorkflowUsesPython(v) {
+		if !strings.Contains(lower, "uvicorn") && !strings.Contains(lower, "gunicorn") &&
+			!strings.Contains(lower, "flask run") && !strings.Contains(lower, "hypercorn") {
+			return fmt.Errorf("Python runtime smoke must start the server in the same CMD (e.g. cd %s/%s && uvicorn main:app --host 127.0.0.1 --port %d & sleep 1 && curl http://127.0.0.1:%d/ping) — bare curl with no server running always fails", rigMayorRigPath(rig), layout, port, port)
+		}
+	}
+	if orchestrator.WorkflowUsesGo(v) {
+		if !strings.Contains(lower, "go run") {
+			return fmt.Errorf("Go runtime smoke must include go run ./cmd/server in the same CMD as curl — bare curl with no server running always fails")
+		}
+	}
+	if spec.Port <= 0 {
+		return nil
+	}
+	for _, m := range localhostPortRE.FindAllStringSubmatch(cmd, -1) {
+		if len(m) < 2 {
+			continue
+		}
+		port, err := strconv.Atoi(m[1])
+		if err != nil || port == spec.Port {
+			continue
+		}
+		return fmt.Errorf("curl uses port %d but SPEC/architecture documents port %d — use http://127.0.0.1:%d", port, spec.Port, spec.Port)
+	}
+	return nil
+}
+
 func validateQACommand(cmd, rig, townRoot string, v orchestrator.WorkflowValidation) error {
 	lower := strings.ToLower(cmd)
 	if strings.Contains(lower, "[tool_calls]") {
@@ -1935,6 +1980,9 @@ func validateQACommand(cmd, rig, townRoot string, v orchestrator.WorkflowValidat
 		if strings.Contains(lower, "curl ") || strings.Contains(lower, "go run") {
 			return fmt.Errorf("this rig profile does not require runtime smoke — run %s only (no curl/go run)", v.UnittestCommandHint())
 		}
+	}
+	if err := validateQARuntimeSmokeCommand(cmd, rig, townRoot, v); err != nil {
+		return err
 	}
 	if strings.Contains(lower, "if [") || strings.Contains(lower, "then ") || strings.Contains(lower, "fi\n") {
 		return fmt.Errorf("do not use shell if/then blocks in QA — use simple CMD: lines and JSON outcomes")

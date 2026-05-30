@@ -433,6 +433,40 @@ func TestRewriteQAMayorRigPrefix(t *testing.T) {
 	}
 }
 
+func TestValidateQACommand_rejectsBarePythonCurlWrongPort(t *testing.T) {
+	town := t.TempDir()
+	rig := "ping_rig"
+	rigDir := filepath.Join(town, rig, "mayor", "rig", "pingapp")
+	if err := os.MkdirAll(rigDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	spec := `# PingApp
+| Method | Path | Success |
+| GET | /ping | 200 |
+
+cd pingapp && uvicorn main:app --port 8080
+`
+	if err := os.WriteFile(filepath.Join(town, rig, "mayor", "rig", "SPEC.md"), []byte(spec), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	v := orchestrator.WorkflowValidation{
+		LayoutRoot:      "pingapp",
+		QAVerifyCommand: "cd pingapp && pytest test_main.py",
+		TestRunner:      "pytest",
+		RequiredFiles:   []string{"pingapp/main.py", "pingapp/test_main.py"},
+	}
+	if err := validateQACommand("curl -I http://localhost:8000/ping", rig, town, v); err == nil {
+		t.Fatal("expected wrong-port bare curl rejected")
+	}
+	if err := validateQACommand("curl -I http://localhost:8080/ping", rig, town, v); err == nil {
+		t.Fatal("expected bare curl without uvicorn rejected")
+	}
+	ok := "cd ping_rig/mayor/rig/pingapp && uvicorn main:app --port 8080 & sleep 1 && curl -sf http://127.0.0.1:8080/ping"
+	if err := validateQACommand(ok, rig, town, v); err != nil {
+		t.Fatalf("compound uvicorn+curl should pass: %v", err)
+	}
+}
+
 func TestValidateQACommand_rejectsCurlWhenNoRuntimeSmoke(t *testing.T) {
 	town := t.TempDir()
 	rig := "ping_rig"

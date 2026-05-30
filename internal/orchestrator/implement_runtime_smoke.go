@@ -59,10 +59,10 @@ func pythonWorkflowNeedsQARuntimeSmoke(townRoot, rig string, v WorkflowValidatio
 		return false
 	}
 	spec, err := LoadAPISmokeSpecFromRig(townRoot, rig, v)
-	if err != nil || !APISmokeHasHTTPAPI(spec) {
+	if err != nil {
 		return false
 	}
-	return true
+	return specHasRuntimeSmokeProbes(spec)
 }
 
 func implementationModuleDir(townRoot, rig string, v WorkflowValidation) string {
