@@ -940,6 +940,33 @@ func TestValidateGoImplementationCommand(t *testing.T) {
 	}
 }
 
+func TestValidateGoImplementationCommand_flatLayoutBlocksCmdTree(t *testing.T) {
+	dir := t.TempDir()
+	mayor := filepath.Join(dir, "mockrig", "mayor", "rig")
+	if err := os.MkdirAll(filepath.Join(mayor, "pingapp"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	v := orchestrator.WorkflowValidation{
+		LayoutRoot: "pingapp",
+		RequiredFiles: []string{
+			"pingapp/main.go",
+			"pingapp/main_test.go",
+		},
+		QAVerifyCommand: "cd pingapp && go test ./...",
+	}
+	town := dir
+	rig := "mockrig"
+	if err := validateGoImplementationCommand("cd pingapp && rm -rf cmd && mkdir -p cmd && go build ./cmd/...", town, rig, mayor, "", v, true); err == nil {
+		t.Fatal("expected reject rm -rf cmd on flat layout")
+	}
+	if err := validateGoImplementationCommand("cd pingapp && go build ./cmd/...", town, rig, mayor, "", v, true); err == nil {
+		t.Fatal("expected reject go build ./cmd on flat layout")
+	}
+	if err := validateImplementationCommand("cd mockrig/mayor/rig/pingapp && rm -rf cmd", rig); err == nil {
+		t.Fatal("expected reject rm -rf under mayor/rig")
+	}
+}
+
 func TestOrchestratedArtifactAutoOutcome_design(t *testing.T) {
 	dir := t.TempDir()
 	rigDir := filepath.Join(dir, "myrig", "mayor", "rig")

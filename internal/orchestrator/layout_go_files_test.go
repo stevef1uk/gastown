@@ -122,6 +122,43 @@ func TestPruneStaleLayoutGoFiles_keepsCorrelatedTest(t *testing.T) {
 	}
 }
 
+func TestPruneStaleLayoutGoFiles_keepsFlatMainWhenBeadsUseCmdPath(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	rig := "rig"
+	layout := filepath.Join(dir, rig, "mayor", "rig", "pingapp")
+	if err := os.MkdirAll(layout, 0755); err != nil {
+		t.Fatal(err)
+	}
+	for name, body := range map[string]string{
+		"main.go":      "package main\n",
+		"main_test.go": "package main\n",
+	} {
+		if err := os.WriteFile(filepath.Join(layout, name), []byte(body), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	v := WorkflowValidation{
+		LayoutRoot: "pingapp",
+		RequiredFiles: []string{
+			"pingapp/cmd/main.go",
+			"pingapp/cmd/main_test.go",
+		},
+	}
+	removed, err := PruneStaleLayoutGoFiles(dir, rig, v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(removed) != 0 {
+		t.Fatalf("flat main.go should survive cmd-path bead drift, removed = %v", removed)
+	}
+	for _, name := range []string{"main.go", "main_test.go"} {
+		if _, err := os.Stat(filepath.Join(layout, name)); err != nil {
+			t.Fatalf("%s should remain: %v", name, err)
+		}
+	}
+}
+
 func TestLayoutGoRelPathsProtectedFromPrune_includesCorrelatedTest(t *testing.T) {
 	t.Parallel()
 	v := WorkflowValidation{

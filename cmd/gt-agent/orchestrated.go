@@ -1575,6 +1575,12 @@ func validateImplementationCommand(cmd, rig string) error {
 	if strings.Contains(lower, ".beads") && (strings.Contains(lower, "rm -rf") || strings.Contains(lower, "rm -r ")) {
 		return fmt.Errorf("do not delete the rig .beads database during implementation — use bd list --status=closed and bd update <id> --status=open")
 	}
+	if strings.Contains(lower, "rm -rf") || strings.Contains(lower, "rm -r ") {
+		mayor := strings.ToLower(rigMayorRigPath(rig))
+		if strings.Contains(lower, mayor) && !strings.Contains(lower, ".beads") {
+			return fmt.Errorf("do not rm -rf under %s during implementation — use EDIT:/WRITE: on the active bead file", rigMayorRigPath(rig))
+		}
+	}
 	if strings.Contains(lower, "bd init") {
 		return fmt.Errorf("do not run bd init during implementation — beads already exist; use bd list --status=closed")
 	}

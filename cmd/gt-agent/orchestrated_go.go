@@ -31,6 +31,36 @@ func destroysGoMod(cmd string) bool {
 	return strings.Contains(lower, "go.mod") || strings.Contains(lower, "go.sum")
 }
 
+func goRequiredFilesUseCmdTree(v orchestrator.WorkflowValidation) bool {
+	for _, f := range v.UnionRequiredFiles() {
+		if strings.Contains(filepath.ToSlash(f), "/cmd/") {
+			return true
+		}
+	}
+	return false
+}
+
+func commandRemovesLayoutTree(cmd string, v orchestrator.WorkflowValidation) bool {
+	lower := strings.ToLower(cmd)
+	if !strings.Contains(lower, "rm ") {
+		return false
+	}
+	if strings.Contains(lower, ".beads") {
+		return false
+	}
+	layout := strings.Trim(filepath.ToSlash(strings.TrimSpace(v.LayoutRoot)), "/")
+	if layout != "" && layout != "." {
+		if strings.Contains(lower, "rm -rf "+layout) || strings.Contains(lower, "rm -r "+layout) {
+			return true
+		}
+		if strings.Contains(lower, "rm -rf cmd") || strings.Contains(lower, "rm -r cmd") {
+			return true
+		}
+	}
+	return strings.Contains(lower, "rm -rf") &&
+		(strings.Contains(lower, "main.go") || strings.Contains(lower, "main_test.go") || strings.Contains(lower, "/cmd"))
+}
+
 func isGoModTidyCommand(cmd string) bool {
 	lower := strings.ToLower(cmd)
 	return strings.Contains(lower, "go mod tidy")
@@ -226,9 +256,19 @@ func validateGoImplementationCommand(cmd, townRoot, rig, mayorRigDir, activeBead
 	if destroysGoMod(cmd) {
 		return fmt.Errorf("do not delete go.mod or go.sum — use go mod edit, go get, and go mod tidy")
 	}
+	if commandRemovesLayoutTree(cmd, v) {
+		return fmt.Errorf("do not rm source trees under %s/ during implementation — use EDIT:/WRITE: on the active bead", v.LayoutRootDir())
+	}
+	lower := strings.ToLower(cmd)
+	if strings.Contains(lower, "./cmd/") || strings.Contains(lower, " cmd/") {
+		if strings.Contains(lower, "go build") || strings.Contains(lower, "go run") || strings.Contains(lower, "go test") {
+			if !goRequiredFilesUseCmdTree(v) {
+				return fmt.Errorf("required_files use flat layout under %s/ (main.go at module root) — do not use cmd/ paths from linkshelf examples", v.LayoutRootDir())
+			}
+		}
+	}
 	beadPath := orchestrator.ImplementBeadPathForID(townRoot, rig, activeBead, v)
 	verifyHint := orchestrator.ImplementationVerifyCommandForBead(v, mayorRigDir, beadPath)
-	lower := strings.ToLower(cmd)
 	onGoModBead := strings.HasSuffix(filepath.ToSlash(beadPath), "go.mod")
 	onServerMainBead := orchestrator.IsServerMainImplementBead(beadPath)
 	if strings.Contains(lower, "go run") || strings.Contains(lower, "curl ") {

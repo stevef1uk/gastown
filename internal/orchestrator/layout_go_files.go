@@ -124,6 +124,30 @@ func layoutGoRelPathsProtectedFromPrune(v WorkflowValidation) map[string]bool {
 	return protected
 }
 
+// layoutGoBasenamesProtectedFromPrune guards flat layouts (pingapp/main.go) when beads or
+// architecture drift to linkshelf-style paths (pingapp/cmd/main.go).
+func layoutGoBasenamesProtectedFromPrune(v WorkflowValidation) map[string]bool {
+	if len(v.RequiredFiles) == 0 {
+		return nil
+	}
+	bases := map[string]bool{}
+	add := func(fullPath string) {
+		p := filepath.ToSlash(strings.TrimSpace(fullPath))
+		if strings.HasSuffix(p, ".go") {
+			bases[filepath.Base(p)] = true
+		}
+	}
+	for _, f := range v.RequiredFiles {
+		add(f)
+		if WorkflowUsesGo(v) && !IsTestImplementPath(f) {
+			if testPath := CorrelatedTestPathForSource(f, v.LayoutRoot); testPath != "" {
+				add(testPath)
+			}
+		}
+	}
+	return bases
+}
+
 // PruneStaleLayoutGoFiles removes .go files under layout_root that are not listed in required_files.
 func PruneStaleLayoutGoFiles(townRoot, rig string, v WorkflowValidation) ([]string, error) {
 	layout := strings.Trim(filepath.ToSlash(strings.TrimSpace(v.LayoutRoot)), "/")
@@ -132,6 +156,7 @@ func PruneStaleLayoutGoFiles(townRoot, rig string, v WorkflowValidation) ([]stri
 	}
 	root := filepath.Join(townRoot, rig, "mayor", "rig", layout)
 	required := layoutGoRelPathsProtectedFromPrune(v)
+	basenameProtected := layoutGoBasenamesProtectedFromPrune(v)
 	if len(required) == 0 {
 		return nil, nil
 	}
@@ -146,6 +171,9 @@ func PruneStaleLayoutGoFiles(townRoot, rig string, v WorkflowValidation) ([]stri
 		}
 		rel = filepath.ToSlash(rel)
 		if required[rel] {
+			return nil
+		}
+		if basenameProtected[filepath.Base(rel)] {
 			return nil
 		}
 		if err := os.Remove(path); err != nil {
