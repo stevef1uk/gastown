@@ -41,16 +41,17 @@ func parseOrchestratedNativeEdits(response string) []nativeEditOp {
 	for i < len(lines) {
 		line := lines[i]
 		trimmed := strings.TrimSpace(line)
-		upper := strings.ToUpper(trimmed)
+		trimmedClean := strings.Trim(trimmed, "`")
+		upper := strings.ToUpper(trimmedClean)
 		switch {
 		case strings.HasPrefix(upper, "READ:"):
-			path := orchestrator.SanitizeNativeEditRelPath(trimmed[len("READ:"):])
+			path := orchestrator.SanitizeNativeEditRelPath(trimmedClean[len("READ:"):])
 			if path != "" {
 				ops = append(ops, nativeEditOp{kind: "read", path: path})
 			}
 			i++
 		case strings.HasPrefix(upper, "EDIT:"):
-			path := orchestrator.SanitizeNativeEditRelPath(trimmed[len("EDIT:"):])
+			path := orchestrator.SanitizeNativeEditRelPath(trimmedClean[len("EDIT:"):])
 			i++
 			if path != "" && !orchestrator.IsValidImplementBeadPath(path) {
 				i = skipNativeEditBlock(lines, i)
@@ -64,7 +65,7 @@ func parseOrchestratedNativeEdits(response string) []nativeEditOp {
 			ops = append(ops, nativeEditOp{kind: "edit", path: path, search: search, replace: replace})
 			i = next
 		case strings.HasPrefix(upper, "WRITE:"):
-			path := orchestrator.SanitizeNativeEditRelPath(trimmed[len("WRITE:"):])
+			path := orchestrator.SanitizeNativeEditRelPath(trimmedClean[len("WRITE:"):])
 			i++
 			if path != "" && !orchestrator.IsValidImplementBeadPath(path) {
 				continue
@@ -144,7 +145,8 @@ func parseNativeWriteBody(lines []string, start int) (content string, next int) 
 	var body []string
 	for i := start; i < len(lines); i++ {
 		trimmed := strings.TrimSpace(lines[i])
-		if trimmed == nativeEditWriteEnd || strings.EqualFold(trimmed, "---END WRITE---") {
+		trimmedClean := strings.Trim(trimmed, "`")
+		if trimmedClean == nativeEditWriteEnd || strings.EqualFold(trimmedClean, "---END WRITE---") {
 			return strings.Join(body, "\n"), i + 1
 		}
 		// Model sometimes splits ---END WRITE--- across two lines after fence stripping.

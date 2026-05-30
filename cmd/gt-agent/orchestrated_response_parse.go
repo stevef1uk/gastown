@@ -24,6 +24,7 @@ func preprocessOrchestratedResponse(response string) string {
 	response = gluedCmdToToolRE.ReplaceAllString(response, "$1\n$2")
 	response = inlineToolRE.ReplaceAllString(response, "$1\n$2")
 	response = unwrapMarkdownInlineToolLines(response)
+	response = unwrapMarkdownBoldToolLines(response)
 	response = unwrapMarkdownFencedToolBlocks(response)
 	response = stripMarkdownFenceOnlyLines(response)
 	response = normalizeNativeEditEndLines(response)
@@ -122,6 +123,7 @@ func unwrapMarkdownFencedToolBlocks(response string) string {
 	lines := strings.Split(response, "\n")
 	var out []string
 	inFence := false
+	var fenceLang string
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
 		if !inFence {
@@ -133,8 +135,9 @@ func unwrapMarkdownFencedToolBlocks(response string) string {
 					out = append(out, inner)
 					continue
 				}
-				if isMarkdownToolFenceLang(inner) {
+				if isMarkdownToolFenceLang(inner) || upper == "CMD" {
 					inFence = true
+					fenceLang = upper
 					continue
 				}
 			}
@@ -143,9 +146,14 @@ func unwrapMarkdownFencedToolBlocks(response string) string {
 		}
 		if trimmed == "```" {
 			inFence = false
+			fenceLang = ""
 			continue
 		}
-		out = append(out, line)
+		if fenceLang == "CMD" {
+			out = append(out, "CMD: "+line)
+		} else {
+			out = append(out, line)
+		}
 	}
 	return strings.Join(out, "\n")
 }
@@ -261,6 +269,27 @@ func unwrapMarkdownInlineToolLines(response string) string {
 				out = append(out, unwrapped)
 			}
 			continue
+		}
+		out = append(out, line)
+	}
+	return strings.Join(out, "\n")
+}
+
+// unwrapMarkdownBoldToolLines strips `**` from `**CMD: ...**` or `**CMD:` (common model mistake).
+func unwrapMarkdownBoldToolLines(response string) string {
+	var out []string
+	for _, line := range strings.Split(response, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "**") {
+			inner := strings.TrimPrefix(trimmed, "**")
+			inner = strings.TrimSuffix(inner, "**")
+			inner = strings.TrimSpace(inner)
+			upper := strings.ToUpper(inner)
+			if strings.HasPrefix(upper, "CMD:") || strings.HasPrefix(upper, "READ:") ||
+				strings.HasPrefix(upper, "EDIT:") || strings.HasPrefix(upper, "WRITE:") {
+				out = append(out, inner)
+				continue
+			}
 		}
 		out = append(out, line)
 	}

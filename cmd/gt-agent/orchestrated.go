@@ -639,7 +639,7 @@ func stripGluedOutcomeJSONFromLine(line string) string {
 }
 
 // Matches ```cmd: / ```CMD / ```cmd (LLMs often omit the colon).
-var markdownFencedCMDRE = regexp.MustCompile("(?im)^```\\s*cmd:?\\s*")
+var markdownFencedCMDRE = regexp.MustCompile("(?im)^```\\s*cmd:?\\s*$")
 
 // stripOutcomeLines removes JSON/outcome lines so they are not fed into shell scripts.
 // Heredoc bodies are copied verbatim so Go lines containing only "}" are preserved.
@@ -804,7 +804,7 @@ func stripModelToolArtifacts(response string) string {
 
 // normalizeMarkdownFencedCMD converts ```CMD: / ```cmd: blocks to plain CMD: lines.
 func normalizeMarkdownFencedCMD(response string) string {
-	response = markdownFencedCMDRE.ReplaceAllString(response, "CMD: ")
+	response = markdownFencedCMDRE.ReplaceAllString(response, "```CMD")
 	response = unwrapMarkdownFencedToolBlocks(response)
 	response = strings.ReplaceAll(response, "```[TOOL_CALLS]", "\n")
 	response = strings.ReplaceAll(response, "[TOOL_CALLS]", "")
@@ -886,8 +886,9 @@ func rewriteOrchestratedRigPlaceholders(cmd, townRoot, rig string) (string, bool
 		}
 	}
 	replacements := []struct{ from, to string }{
+		{"{{rig}}/mayor/rig", work},
+		{"{{rig}}", rig},
 		{"RIG/mayor/rig", work},
-		{"rig/mayor/rig", work}, // empty {{rig}} substitution
 		{"$GT_ROOT/RIG/.beads", "$GT_ROOT/" + rig + "/.beads"},
 		{"GT_ROOT/RIG/.beads", "GT_ROOT/" + rig + "/.beads"},
 		{"cd RIG/mayor/rig", "cd " + work},
@@ -899,6 +900,12 @@ func rewriteOrchestratedRigPlaceholders(cmd, townRoot, rig string) (string, bool
 			out = strings.ReplaceAll(out, r.from, r.to)
 			changed = true
 		}
+	}
+	// Safely replace "rig/mayor/rig" if the LLM output it literally, but avoid matching "ping_rig/..."
+	re := regexp.MustCompile(`(^|[^a-zA-Z0-9_])rig/mayor/rig`)
+	if re.MatchString(out) {
+		out = re.ReplaceAllString(out, "${1}"+work)
+		changed = true
 	}
 	return out, changed
 }

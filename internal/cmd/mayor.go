@@ -138,6 +138,7 @@ func init() {
 	mayorWorkflowCmd.AddCommand(mayorWorkflowStartCmd)
 	mayorWorkflowCmd.AddCommand(mayorWorkflowCompleteCmd)
 	mayorWorkflowCmd.AddCommand(mayorWorkflowStatusCmd)
+	mayorWorkflowCmd.AddCommand(mayorWorkflowListCmd)
 	mayorWorkflowCmd.AddCommand(mayorWorkflowResetCmd)
 	mayorWorkflowCmd.AddCommand(mayorWorkflowPauseCmd)
 	mayorWorkflowCmd.AddCommand(mayorWorkflowResumeCmd)
@@ -169,6 +170,13 @@ var mayorWorkflowStatusCmd = &cobra.Command{
 	Use:   "status [workflow-id]",
 	Short: "Show workflow instance status",
 	Args:  cobra.MaximumNArgs(1),
+	RunE:  runMayorWorkflowStatus,
+}
+
+var mayorWorkflowListCmd = &cobra.Command{
+	Use:   "list",
+	Short: "List all workflow instances",
+	Args:  cobra.NoArgs,
 	RunE:  runMayorWorkflowStatus,
 }
 

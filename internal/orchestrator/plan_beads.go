@@ -105,7 +105,9 @@ func NormalizeBeadPathForLayout(beadPath, layoutRoot string) string {
 		strings.HasPrefix(beadPath, "cmd/"),
 		strings.HasPrefix(beadPath, "pkg/"),
 		strings.HasPrefix(beadPath, "api/"),
-		strings.HasPrefix(beadPath, "web/"):
+		strings.HasPrefix(beadPath, "web/"),
+		beadPath == "main.go",
+		beadPath == "main_test.go":
 		return layoutRoot + "/" + beadPath
 	}
 	return beadPath
