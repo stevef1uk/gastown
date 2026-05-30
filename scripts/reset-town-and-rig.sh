@@ -206,14 +206,22 @@ echo "=== clean-gastown (nuclear, --force) ==="
 bash "$CLEAN_SCRIPT" --force "$GT_ROOT"
 
 echo "=== gt up ==="
-(cd "$GT_ROOT" && gt up)
+if ! (cd "$GT_ROOT" && gt up); then
+  echo "FATAL: gt up failed — is Docker running? (NATS). Fix and run:" >&2
+  echo "  cd $GT_ROOT && gt up && gt rig add $RIG '$RIG_URL'" >&2
+  exit 1
+fi
 normalize_town_agent_settings
 sync_orchestrator_assets
 
 drain_hq_mail
 
 echo "=== gt rig add $RIG ==="
-(cd "$GT_ROOT" && gt rig add "$RIG" "$RIG_URL")
+if ! (cd "$GT_ROOT" && gt rig add "$RIG" "$RIG_URL"); then
+  echo "FATAL: gt rig add failed for $RIG ($RIG_URL)" >&2
+  echo "  Ensure spec repo exists: ls -la ${RIG_URL#file://}" >&2
+  exit 1
+fi
 
 clean_rig_pipeline_artifacts "$RIG"
 drain_hq_mail
