@@ -121,7 +121,21 @@ Patrol agents (witness, refinery, deacon, **town mechanic**) stay on the legacy 
 
 Full reference: [Orchestrator (concept)](docs/concepts/orchestrator.md) · [Technical design](docs/design/orchestrator.md)
 
-#### Try `rig-flow` on a rig (e.g. `testgt2`)
+#### Run the sample tests (Go or Python)
+
+To quickly test the orchestrator end-to-end on a generated `ping_rig`, you can use the provided test script. From your gastown checkout directory, run:
+
+```bash
+# Test with a sample Go project (default)
+./scripts/run_simple_go_test.sh
+
+# Test with a sample Python project
+./scripts/run_simple_go_test.sh python
+```
+
+This will automatically create a local rig with the appropriate specification and launch the `rig-flow` pipeline. You can monitor the progress using the Agent Console (http://127.0.0.1:8081).
+
+#### Try `rig-flow` on a custom rig
 
 Prerequisites: town with at least one rig, Dolt/beads healthy, NATS transport, and an LLM endpoint (Ollama or Freeride proxy on port 11434).
 
