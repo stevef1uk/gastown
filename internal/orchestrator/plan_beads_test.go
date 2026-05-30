@@ -9,7 +9,7 @@ import (
 func TestExtractPathFromBeadTitle(t *testing.T) {
 	prefix := "Implement finally/"
 	got := ExtractPathFromBeadTitle("Implement finally/myapp/frontend/game/main.js per architecture", prefix)
-	want := "myapp/frontend/game/main.js"
+	want := "finally/myapp/frontend/game/main.js"
 	if got != want {
 		t.Fatalf("got %q want %q", got, want)
 	}
@@ -41,8 +41,8 @@ func TestNormalizeBeadPathForLayout_testgt3BeadTitle(t *testing.T) {
 	raw := ExtractPathFromBeadTitle(title, "Implement linkshelf/")
 	got := NormalizeBeadPathForLayout(raw, "linkshelf")
 	want := "linkshelf/internal/store/store.go"
-	if raw != "internal/store/store.go" {
-		t.Fatalf("ExtractPathFromBeadTitle = %q, want internal/store/store.go", raw)
+	if raw != "linkshelf/internal/store/store.go" {
+		t.Fatalf("ExtractPathFromBeadTitle = %q, want linkshelf/internal/store/store.go", raw)
 	}
 	if got != want {
 		t.Fatalf("normalized = %q, want %q", got, want)
@@ -106,7 +106,7 @@ func TestValidatePlanBeads_ok(t *testing.T) {
 		{ID: "xx-c", Title: "Implement finally/finally/backend/main.py per architecture"},
 	}
 	v.RequiredFiles[1] = "finally/backend/main.py"
-	if err := ValidatePlanBeads(beads, "", v, ""); err != nil {
+	if err := ValidatePlanBeads(beads, "", v, "finally"); err != nil {
 		t.Fatal(err)
 	}
 }

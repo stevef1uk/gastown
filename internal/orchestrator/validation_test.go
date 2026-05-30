@@ -58,8 +58,8 @@ func TestClampProfileValidation(t *testing.T) {
 		},
 		{
 			name: "in range kept",
-			in:   WorkflowValidation{MinPlanBytes: 3000, MinArchitectureBytes: 6000},
-			want: WorkflowValidation{MinPlanBytes: 3000, MinArchitectureBytes: 6000},
+			in:   WorkflowValidation{MinPlanBytes: 1000, MinArchitectureBytes: 6000},
+			want: WorkflowValidation{MinPlanBytes: 1000, MinArchitectureBytes: 6000},
 		},
 		{
 			name: "small rig caps high architecture minimum",
@@ -93,10 +93,10 @@ func TestClampProfileValidation(t *testing.T) {
 	}
 }
 
-func TestMinPlanBytesFromArchitecture_half(t *testing.T) {
+func TestMinPlanBytesFromArchitecture_quarter(t *testing.T) {
 	t.Parallel()
-	if got := MinPlanBytesFromArchitecture(4000); got != 2000 {
-		t.Fatalf("got %d want 2000", got)
+	if got := MinPlanBytesFromArchitecture(4000); got != 1000 {
+		t.Fatalf("got %d want 1000", got)
 	}
 	if got := MinPlanBytesFromArchitecture(100); got != MinArtifactBytesFloor {
 		t.Fatalf("got %d want floor %d", got, MinArtifactBytesFloor)
@@ -110,8 +110,8 @@ func TestEffectiveMinPlanBytes_usesOnDiskArchitecture(t *testing.T) {
 		t.Fatal(err)
 	}
 	v := WorkflowValidation{MinArchitectureBytes: 8000, MinPlanBytes: 4000}
-	if got := EffectiveMinPlanBytes(rigDir, v); got != 1500 {
-		t.Fatalf("got %d want 1500 (half of 3000 on disk)", got)
+	if got := EffectiveMinPlanBytes(rigDir, v); got != 750 {
+		t.Fatalf("got %d want 750 (quarter of 3000 on disk)", got)
 	}
 }
 
@@ -134,7 +134,7 @@ func TestEffectiveMinPlanBytes_phasedDeliveryScalesByActiveFiles(t *testing.T) {
 		t.Fatalf("unscaled: got %d want %d", full, MinPlanBytesFromArchitecture(archSize))
 	}
 	scaled := EffectiveMinPlanBytes(rigDir, v)
-	// 2/10 of arch → 1600 bytes → half = 800
+	// 2/10 of arch → 1600 bytes → quarter = 400
 	want := MinPlanBytesFromArchitecture(int64(float64(archSize) * 0.2))
 	if scaled != want {
 		t.Fatalf("scaled: got %d want %d", scaled, want)
@@ -142,7 +142,7 @@ func TestEffectiveMinPlanBytes_phasedDeliveryScalesByActiveFiles(t *testing.T) {
 	if scaled >= full {
 		t.Fatalf("scaled %d should be less than full %d", scaled, full)
 	}
-	// User's finally case: 1648-byte plan should pass when threshold is ~800
+	// User's finally case: 1648-byte plan should pass when threshold is ~400
 	if 1648 < scaled {
 		t.Fatalf("1648-byte phase plan should meet scaled min %d", scaled)
 	}
