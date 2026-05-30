@@ -52,12 +52,12 @@ func DefaultWorkflowValidation() WorkflowValidation {
 	}
 }
 
-// MinPlanBytesFromArchitecture returns the minimum plan.md size: half of architecture bytes (floored/capped).
+// MinPlanBytesFromArchitecture returns the minimum plan.md size: quarter of architecture bytes (floored/capped).
 func MinPlanBytesFromArchitecture(architectureBytes int64) int64 {
 	if architectureBytes < 0 {
 		architectureBytes = 0
 	}
-	n := architectureBytes / 2
+	n := architectureBytes / 4
 	if n < MinArtifactBytesFloor {
 		n = MinArtifactBytesFloor
 	}
@@ -86,8 +86,8 @@ func (v WorkflowValidation) phasedPlanByteScale() float64 {
 	return ratio
 }
 
-// EffectiveMinPlanBytes returns the plan.md minimum for a rig: half of on-disk architecture.md when present
-// (scaled by active delivery phase when phased), otherwise half of min_architecture_bytes from the profile.
+// EffectiveMinPlanBytes returns the plan.md minimum for a rig: quarter of on-disk architecture.md when present
+// (scaled by active delivery phase when phased), otherwise quarter of min_architecture_bytes from the profile.
 func EffectiveMinPlanBytes(rigDir string, v WorkflowValidation) int64 {
 	var archBytes int64
 	archPath := filepath.Join(rigDir, "architecture.md")
@@ -112,11 +112,11 @@ func (v WorkflowValidation) PlanMinSizeHint() string {
 			}
 		}
 		if id != "" {
-			return fmt.Sprintf("half of architecture.md scaled for delivery phase %q", id)
+			return fmt.Sprintf("quarter of architecture.md scaled for delivery phase %q", id)
 		}
-		return "half of architecture.md scaled for active delivery phase"
+		return "quarter of architecture.md scaled for active delivery phase"
 	}
-	return "half of architecture.md"
+	return "quarter of architecture.md"
 }
 
 // ClampProfileValidation normalizes min_*_bytes from spec-index LLM output or hand-edited profiles.
