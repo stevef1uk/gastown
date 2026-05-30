@@ -301,6 +301,7 @@ func TestBuildRuntimeSmokeShell_matrix(t *testing.T) {
 		{
 			name: "api_and_static",
 			spec: APISmokeSpec{
+				ServerStart:       "go run ./cmd/server",
 				Port:              8080,
 				GETPaths:          []string{"/", "/api/links"},
 				GETEmptyJSONArray: []string{"/api/links"},
@@ -313,6 +314,7 @@ func TestBuildRuntimeSmokeShell_matrix(t *testing.T) {
 		{
 			name: "static_only",
 			spec: APISmokeSpec{
+				ServerStart:  "go run ./cmd/server",
 				Port:         8080,
 				GETPaths:     []string{"/"},
 				StaticAssets: []string{"/static/app.js"},

@@ -231,6 +231,9 @@ func isToolchainExecutionCommand(cmd string) bool {
 		return strings.Contains(lower, "cd ") || strings.Contains(lower, " -q") ||
 			strings.Contains(lower, " -v") || strings.Contains(lower, " -k")
 	}
+	if orchestrator.IsPythonImportCheckCommand(cmd) {
+		return true
+	}
 	if strings.Contains(lower, "go test") || strings.Contains(lower, "go run") ||
 		strings.Contains(lower, "go build") || strings.Contains(lower, "go vet") ||
 		strings.Contains(lower, "go mod") {
@@ -574,6 +577,13 @@ func simplifyDevServerSmoke(cmd, townRoot, rig string, v orchestrator.WorkflowVa
 		return cmd, false
 	}
 	spec, _ := orchestrator.LoadAPISmokeSpecFromRig(townRoot, rig, v)
+	if spec.ServerStart == "" {
+		if orchestrator.WorkflowUsesPython(v) {
+			spec.ServerStart = orchestrator.ExtractPythonServerStartFromText(cmd)
+		} else {
+			spec.ServerStart = "go run ./cmd/server"
+		}
+	}
 	built := orchestrator.BuildRuntimeSmokeShell(workDir, spec)
 	if built == "" {
 		return cmd, false

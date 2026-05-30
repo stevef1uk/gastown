@@ -85,7 +85,7 @@ func TestLoadAPISmokeSpecFromRig_readsSPEC(t *testing.T) {
 
 func TestBuildRuntimeSmokeShell_includesPOSTAndEmptyArray(t *testing.T) {
 	spec := APISmokeSpec{
-		Port:              8080,
+		Port:              8080, ServerStart: "go run ./cmd/server",
 		GETPaths:          []string{"/", "/api/links"},
 		GETEmptyJSONArray: []string{"/api/links"},
 		POSTProbes:        []POSTSmokeProbe{{Path: "/api/links", Body: `{"title":"qa","url":"https://example.com"}`}},

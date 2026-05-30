@@ -203,7 +203,7 @@ func BuildRuntimeSmokeShell(workDir string, spec APISmokeSpec) string {
 	}
 	serverStart := strings.TrimSpace(spec.ServerStart)
 	if serverStart == "" {
-		serverStart = "go run ./cmd/server"
+		return ""
 	}
 	port := spec.Port
 	if port == 0 {

@@ -21,6 +21,7 @@ func TestParseSmokeFailureFromOutput_lastMarker(t *testing.T) {
 func TestBuildRuntimeSmokeShell_hasGTSmokeMarkers(t *testing.T) {
 	t.Parallel()
 	script := BuildRuntimeSmokeShell("/tmp/work", APISmokeSpec{
+		ServerStart:  "go run ./cmd/server",
 		Port:         8080,
 		GETPaths:     []string{"/", "/api/links"},
 		StaticAssets: []string{"/static/app.js"},

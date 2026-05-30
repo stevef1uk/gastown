@@ -130,14 +130,14 @@ func trimSmokeServerCommand(cmd string) string {
 
 func extractPythonServerStartFromQA(v WorkflowValidation) string {
 	for _, src := range []string{v.QAVerifyCommand, v.ActivePhaseQAVerifyCommand()} {
-		if cmd := extractPythonServerStartFromText(src); cmd != "" {
+		if cmd := ExtractPythonServerStartFromText(src); cmd != "" {
 			return cmd
 		}
 	}
 	return ""
 }
 
-func extractPythonServerStartFromText(text string) string {
+func ExtractPythonServerStartFromText(text string) string {
 	text = strings.TrimSpace(text)
 	if text == "" {
 		return ""
