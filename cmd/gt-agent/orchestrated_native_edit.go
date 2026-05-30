@@ -232,10 +232,10 @@ func (r *stateRunner) processOrchestratedTools(response, sessionName string, com
 		cmd = r.rewriteCommand(cmd)
 		r.repairPipBeforeRun(cmd)
 		cmdEnv := r.commandEnv(os.Environ())
-		cmd = r.rewritePythonCmd(cmd, cmdEnv)
-		r.beforeDevServerCommand(cmd)
-		orchestratedPrintf("[gt-agent] $ %s\n", cmd)
-		if needsOrchestratedScriptFile(cmd) {
+		runCmd := r.rewritePythonCmd(cmd, cmdEnv)
+		r.beforeDevServerCommand(runCmd)
+		orchestratedPrintf("[gt-agent] $ %s\n", runCmd)
+		if needsOrchestratedScriptFile(runCmd) {
 			orchestratedPrintf("[gt-agent] running multiline/heredoc via temp script\n")
 		}
 		workDir := r.workDir()
@@ -244,7 +244,7 @@ func (r *stateRunner) processOrchestratedTools(response, sessionName string, com
 			combined.WriteString(fmt.Sprintf("Command skipped (stray heredoc delimiter): %s\n\n", cmd))
 			continue
 		}
-		out, cmdErr := r.runShellCommand(cmd, workDir, sessionName, cmdEnv)
+		out, cmdErr := r.runShellCommand(runCmd, workDir, sessionName, cmdEnv)
 		if isBdInfrastructureFailure(cmdErr, string(out)) {
 			r.track.bdInfraFailed = true
 		}
@@ -357,11 +357,11 @@ func (r *stateRunner) runInProgressBeadUpdatesBeforeNativeEdits(response, sessio
 		cmd = r.rewriteCommand(cmd)
 		r.repairPipBeforeRun(cmd)
 		cmdEnv := r.commandEnv(os.Environ())
-		cmd = r.rewritePythonCmd(cmd, cmdEnv)
-		r.beforeDevServerCommand(cmd)
-		orchestratedPrintf("[gt-agent] (pre-native) $ %s\n", cmd)
+		runCmd := r.rewritePythonCmd(cmd, cmdEnv)
+		r.beforeDevServerCommand(runCmd)
+		orchestratedPrintf("[gt-agent] (pre-native) $ %s\n", runCmd)
 		workDir := r.workDir()
-		out, cmdErr := r.runShellCommand(cmd, workDir, sessionName, cmdEnv)
+		out, cmdErr := r.runShellCommand(runCmd, workDir, sessionName, cmdEnv)
 		r.afterCommand(cmd, cmdErr, workDir, sessionName, cmdEnv, combined)
 		if cmdErr != nil {
 			orchestratedFprintfStderr("[gt-agent] pre-native command failed: %v\n%s\n", cmdErr, string(out))
