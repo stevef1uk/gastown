@@ -44,6 +44,14 @@ if [[ ! -f "$CLEAN_SCRIPT" ]]; then
   exit 1
 fi
 if [[ ! -f "$GT_ROOT/settings/config.json" ]]; then
+  echo "=== gt install (no town at $GT_ROOT yet) ==="
+  if ! command -v gt &>/dev/null; then
+    echo "FATAL: gt not on PATH — run 'make install' in gastown first" >&2
+    exit 1
+  fi
+  gt install "$GT_ROOT" --git
+fi
+if [[ ! -f "$GT_ROOT/settings/config.json" ]]; then
   echo "FATAL: not a Gas Town root (no settings/config.json): $GT_ROOT" >&2
   exit 1
 fi

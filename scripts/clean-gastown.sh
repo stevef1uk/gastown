@@ -87,6 +87,52 @@ except Exception:
     done <<< "$names"
 }
 
+# Bash 3.2 (macOS) + set -u: arr=($(cmd)) unsets arr when cmd prints nothing.
+# Use while/read loops instead (see Phase 0 discovery below).
+
+# bash 3.2 treats a quoted =~ operand as a literal string, not ERE — use case.
+is_town_infra_dir() {
+    case "$1" in
+        logs|daemon|mayor|deacon|planner|setup|mechanic|boot|orchestrator|plugins|settings|static|templates|bin|cmd|internal|scripts|vendor)
+            return 0 ;;
+        .git|.dolt-data|.beads|.runtime|.gt-nats-pids|.github|.vscode)
+            return 0 ;;
+    esac
+    return 1
+}
+
+# dolt sql can hang after gt down (server stopped, stale lock); cap preview counts.
+count_dolt_table_rows() {
+    local db_dir="$1" table="$2"
+    if ! command -v dolt &>/dev/null || [[ ! -d "$db_dir" ]]; then
+        echo "0"
+        return 0
+    fi
+    local tmp pid i=0 n
+    tmp="$(mktemp "${TMPDIR:-/tmp}/clean-gastown-dolt.XXXXXX")"
+    ( cd "$db_dir" && dolt sql -q "SELECT COUNT(*) FROM ${table};" >"$tmp" 2>/dev/null ) &
+    pid=$!
+    while (( i < 8 )); do
+        if ! kill -0 "$pid" 2>/dev/null; then
+            break
+        fi
+        sleep 1
+        i=$((i + 1))
+    done
+    if kill -0 "$pid" 2>/dev/null; then
+        kill "$pid" 2>/dev/null || true
+        wait "$pid" 2>/dev/null || true
+        rm -f "$tmp"
+        echo "0"
+        return 0
+    fi
+    wait "$pid" 2>/dev/null || true
+    n="$(tail -1 "$tmp" 2>/dev/null | tr -cd '0-9' || true)"
+    rm -f "$tmp"
+    [[ -n "$n" ]] || n="0"
+    echo "$n"
+}
+
 # get_rig_prefix prints the beads prefix used for a rig's session log
 # filenames and tmux session names. Used to glob `<prefix>-*.log` files in
 # logs/sessions/. Mirrors internal/rig/manager.go:deriveBeadsPrefix.
@@ -932,8 +978,14 @@ echo ""
 # ─── Phase 0: Discovery ──────────────────────────────────────────────
 
 # Find running processes
-AGENT_PIDS=($(pgrep -f "gt-agent" 2>/dev/null || true))
-NATS_PIDS=($(pgrep -f "nats-wrapper" 2>/dev/null || true))
+AGENT_PIDS=()
+while IFS= read -r pid; do
+    [[ -n "$pid" ]] && AGENT_PIDS+=("$pid")
+done < <(pgrep -f "gt-agent" 2>/dev/null || true)
+NATS_PIDS=()
+while IFS= read -r pid; do
+    [[ -n "$pid" ]] && NATS_PIDS+=("$pid")
+done < <(pgrep -f "nats-wrapper" 2>/dev/null || true)
 DAEMON_PID=""
 if [[ -f "$TOWN_ROOT/daemon/daemon.pid" ]]; then
     DAEMON_PID="$(cat "$TOWN_ROOT/daemon/daemon.pid" 2>/dev/null || true)"
@@ -943,14 +995,17 @@ fi
 load_rig_names
 
 # Find agent state files
-AGENT_STATES=($(find "$TOWN_ROOT" -maxdepth 3 -name "gt-agent-state.json" 2>/dev/null || true))
+AGENT_STATES=()
+while IFS= read -r f; do
+    [[ -n "$f" ]] && AGENT_STATES+=("$f")
+done < <(find "$TOWN_ROOT" -maxdepth 3 -name "gt-agent-state.json" 2>/dev/null || true)
 
-# Count Dolt issues
+# Count Dolt issues (best-effort; may be 0 if dolt is slow or locked)
 DOLT_ISSUES=0
 DOLT_WISPS=0
-if command -v dolt &>/dev/null && [[ -d "$TOWN_ROOT/.dolt-data/hq" ]]; then
-    DOLT_ISSUES=$(cd "$TOWN_ROOT/.dolt-data/hq" && dolt sql -q "SELECT COUNT(*) FROM issues;" 2>/dev/null | tail -1 || echo "0")
-    DOLT_WISPS=$(cd "$TOWN_ROOT/.dolt-data/hq" && dolt sql -q "SELECT COUNT(*) FROM wisps;" 2>/dev/null | tail -1 || echo "0")
+if [[ -d "$TOWN_ROOT/.dolt-data/hq" ]]; then
+    DOLT_ISSUES="$(count_dolt_table_rows "$TOWN_ROOT/.dolt-data/hq" issues)"
+    DOLT_WISPS="$(count_dolt_table_rows "$TOWN_ROOT/.dolt-data/hq" wisps)"
 fi
 
 # Find stray beads directories. Skip anything that lives inside
@@ -975,9 +1030,10 @@ UNREGISTERED_RIGS=()
 for d in "$TOWN_ROOT"/*/; do
     [[ -d "$d" ]] || continue
     name=$(basename "$d")
-    # Skip known infrastructure dirs
-    [[ "$name" =~ ^(logs|daemon|mayor|deacon|planner|settings|static|templates|bin|cmd|internal|scripts|vendor)$ ]] && continue
-    [[ "$name" =~ ^(\.git|\.dolt-data|\.beads|\.runtime|\.gt-nats-pids|\.github|\.vscode)$ ]] && continue
+    # Skip known infrastructure dirs (case, not =~ — bash 3.2 quoted =~ is literal)
+    if is_town_infra_dir "$name"; then
+        continue
+    fi
     
     # Check if it's in RIG_NAMES
     is_registered=false
