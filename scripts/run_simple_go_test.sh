@@ -5,7 +5,10 @@ set -euo pipefail
 LANG_CHOICE="${1:-Go}"
 LANG_CHOICE=$(echo "$LANG_CHOICE" | tr '[:upper:]' '[:lower:]')
 
-SPEC_DIR="/home/stevef/dev/freeride/gastown/internal/orchestrator/example_specs"
+# Find gastown root from script location (works on any machine)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+GASTOWN_DIR="$(dirname "$SCRIPT_DIR")"
+SPEC_DIR="$GASTOWN_DIR/internal/orchestrator/example_specs"
 
 if [[ "$LANG_CHOICE" == "python" ]]; then
     SPEC_FILE="$SPEC_DIR/SPEC_python.md"
@@ -22,10 +25,6 @@ fi
 GT_ROOT="${GT_ROOT:-$HOME/gt}"
 REPO_DIR="/tmp/ping_repo"
 RIG_NAME="ping_rig"
-
-# Find gastown root automatically (assuming the script is inside gastown/scripts/)
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-GASTOWN_DIR="$(dirname "$SCRIPT_DIR")"
 
 echo "=== 1. Creating clean local repository for $LANG_CHOICE ==="
 rm -rf "$REPO_DIR"
