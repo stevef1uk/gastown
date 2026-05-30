@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -336,36 +337,58 @@ func (r *stateRunner) repairPipBeforeRun(cmd string) {
 
 func (r *stateRunner) commandEnv(base []string) []string {
 	env := agentenv.WithPython3(agentenv.EnsurePATH(base))
-	if r.rig == "" || r.townRoot == "" || !r.hooks.Env.BeadsDir {
+	if r.rig == "" || r.townRoot == "" {
 		return env
 	}
-	beadsDir := config.ResolveBeadsDirForRig(r.townRoot, r.rig)
-	env = withEnvKey(env, "BEADS_DIR", beadsDir)
 	workDir := rigMayorRigDir(r.townRoot, r.rig)
-	if !r.v.UsesPythonVenv() {
-		return env
+	if r.hooks.Env.BeadsDir {
+		beadsDir := config.ResolveBeadsDirForRig(r.townRoot, r.rig)
+		env = withEnvKey(env, "BEADS_DIR", beadsDir)
 	}
+	if r.v.UsesPythonVenv() {
+		env = r.applyPythonVenvEnv(env, workDir)
+	}
+	return env
+}
+
+func (r *stateRunner) applyPythonVenvEnv(env []string, workDir string) []string {
 	venvRel := r.v.PythonVenvRelDir()
 	switch strings.ToLower(strings.TrimSpace(r.hooks.Env.PythonVenv)) {
 	case "create":
-		var created bool
-		var venvErr error
-		env, _, created, venvErr = agentenv.WithRigVenv(env, workDir, venvRel)
-		if venvErr != nil {
-			orchestratedFprintfStderr("[gt-agent] venv %s: %v (using host python)\n", venvRel, venvErr)
-		} else if created {
-			orchestratedPrintf("[gt-agent] created python venv at %s/%s\n", rigMayorRigPath(r.rig), venvRel)
-			if err := rigpkg.EnsureGitignorePatterns(workDir); err != nil {
-				orchestratedFprintfStderr("[gt-agent] gitignore: %v\n", err)
-			}
-		}
+		return r.ensureRigVenvEnv(env, workDir, venvRel)
 	case "activate":
 		if r.hooks.Env.PythonPATH {
 			env = prependEnvPath(env, "PYTHONPATH", workDir)
 		}
-		env = agentenv.ActivateRigVenvIfExists(env, workDir, venvRel)
+		venvPy := agentenv.VenvPython(workDir, venvRel)
+		if !isExecutablePath(venvPy) {
+			orchestratedFprintfStderr("[gt-agent] venv %s missing at %s — creating (project_setup may have been skipped)\n", venvRel, rigMayorRigPath(r.rig))
+			return r.ensureRigVenvEnv(env, workDir, venvRel)
+		}
+		return agentenv.ActivateRigVenvIfExists(env, workDir, venvRel)
+	default:
+		return env
+	}
+}
+
+func (r *stateRunner) ensureRigVenvEnv(env []string, workDir, venvRel string) []string {
+	env, _, created, venvErr := agentenv.WithRigVenv(env, workDir, venvRel)
+	if venvErr != nil {
+		orchestratedFprintfStderr("[gt-agent] venv %s: %v (using host python)\n", venvRel, venvErr)
+		return env
+	}
+	if created {
+		orchestratedPrintf("[gt-agent] created python venv at %s/%s\n", rigMayorRigPath(r.rig), venvRel)
+		if err := rigpkg.EnsureGitignorePatterns(workDir); err != nil {
+			orchestratedFprintfStderr("[gt-agent] gitignore: %v\n", err)
+		}
 	}
 	return env
+}
+
+func isExecutablePath(path string) bool {
+	st, err := os.Stat(path)
+	return err == nil && !st.IsDir() && st.Mode()&0o111 != 0
 }
 
 func (r *stateRunner) rewritePythonCmd(cmd string, cmdEnv []string) string {
