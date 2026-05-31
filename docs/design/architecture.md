@@ -513,7 +513,7 @@ an in-process **orchestrator** with YAML templates under `{townRoot}/orchestrato
 Agents started with `--orchestrated` poll NATS subject `gt.orchestrator.mcp` for tasks
 instead of using the hook/mail patrol loop for that work.
 
-![rig-flow pipeline with Freeride proxy](pictures/gastown_architecture_rig_flow.png)
+![rig-flow pipeline with Freeride proxy and optional CodeIndex](pictures/gastown_architecture_rig_flow.png)
 
 ### Dependencies
 
