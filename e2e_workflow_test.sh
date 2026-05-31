@@ -12,7 +12,7 @@ echo "=== E2E Workflow Test ==="
 
 # 1. Start services
 echo "[1] Starting GT services..."
-mkdir -p "$GT_DIR"
+gt install "$GT_DIR" || true
 cd "$GT_DIR"
 
 if [ ! -d "$GT_DIR/$RIG" ] || ! grep -q "\"$RIG\"" "$GT_DIR/mayor/rigs.json" 2>/dev/null; then
