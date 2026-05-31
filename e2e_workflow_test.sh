@@ -6,7 +6,7 @@ set -e
 set -x
 
 GT_DIR="${GT_ROOT:-$HOME/gt}"
-RIG="testgt2"
+RIG="ping_rig"
 
 echo "=== E2E Workflow Test ==="
 
@@ -33,13 +33,13 @@ if [ ! -d "$GT_DIR/$RIG" ] || ! grep -q "\"$RIG\"" "$GT_DIR/mayor/rigs.json" 2>/
     gt rig add "$RIG" "file://$DUMMY_DIR"
     
     mkdir -p "$GT_DIR/$RIG/mayor/rig/.gastown"
-    echo '{"qa_verify_command": "python -m pytest -v", "spec_summary": "Minimal Python FizzBuzz."}' > "$GT_DIR/$RIG/mayor/rig/.gastown/workflow-profile.json"
+    echo '{"qa_verify_command": "python3 -m pytest -v pingapp/test_main.py", "spec_summary": "FastAPI ping app."}' > "$GT_DIR/$RIG/mayor/rig/.gastown/workflow-profile.json"
     
     cat > "$GT_DIR/$RIG/mayor/rig/SPEC.md" << 'EOF'
-# FizzBuzz Service
-Create a Python script `fizzbuzz.py` that provides a `fizzbuzz(n)` function.
-It should take a number `n` and return the standard FizzBuzz string logic.
-Also include pytest tests in `test_fizzbuzz.py`.
+# Ping Service
+Create a Python FastAPI script in `pingapp/main.py` that provides a simple `/ping` endpoint returning `{"ping": "pong"}`.
+Also include pytest tests in `pingapp/test_main.py` that verify the endpoint works.
+Also include a `requirements.txt`.
 EOF
     (
         cd "$GT_DIR/$RIG/mayor/rig"
@@ -93,7 +93,7 @@ fi
 # architect with that bead. Stage 1 onward proceeds as before.
 
 echo "[2] Mailing mayor with free-form project request (Stage 0 kickoff)..."
-gt mail send mayor/ -s "Project: testgt2 FizzBuzz" --stdin <<KICKOFFMAIL
+gt mail send mayor/ -s "Project: $RIG Ping Webserver" --stdin <<KICKOFFMAIL
 Rig: $RIG
 Spec: $GT_DIR/$RIG/mayor/rig/SPEC.md
 
