@@ -458,6 +458,8 @@ func (m *Manager) workflowValidationFor(inst *WorkflowInstance, tpl *WorkflowTem
 		if prof, ok, err := LoadRigWorkflowProfileFile(m.townRoot, rig); err == nil && ok {
 			v = mergeValidationFields(v, prof)
 		}
+		mayorDir := filepath.Join(m.townRoot, rig, "mayor", "rig")
+		v = EnrichWorkflowValidationFromArchitecture(v, mayorDir)
 	}
 	v = v.WithDefaults()
 	return v.ForActivePhase()

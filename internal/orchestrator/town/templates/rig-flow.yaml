@@ -107,9 +107,10 @@ states:
     role: setup
     prompt_file: prompts/rig-flow/project_setup.md
     instructions: |
-      1. Go: scaffold module (go mod init/tidy), split beads one file each, green verify.
-      2. Python: create venv, pip install -r requirements.txt once, split beads, green pytest/unittest.
+      Use only the **{{project_setup_stack_kind}}** stack for this rig (see injected block below).
+      Run `{{project_setup_verify_hint}}` green, split implement beads one file each, then JSON success.
     hooks:
+      prompt_context: [project_setup_stack]
       pre_run: [enforce_implement_bead_queue]
       cmd_guard: project_setup
       cmd_rewrites: [rig_placeholders, bd_list_implement_scope, unittest_workdir, bd_list_limit, unwrap_bash_lc]
@@ -133,7 +134,7 @@ states:
       artifacts: project_setup
       retry_hint_key: project_setup
       failure_hint: |
-        project_setup scaffolds the Go module only (go mod init/get/tidy under {{layout_root}}/). Do NOT cat/heredoc/touch source files. Duplicate implement beads are auto-deleted on pre_run — do not bd create more. Run {{project_setup_verify_hint}} green, then JSON success only (no CMD in that message).
+        {{project_setup_failure_hint}} Duplicate implement beads are auto-deleted on pre_run — do not bd create more.
     transitions:
       success:
         to: implementation

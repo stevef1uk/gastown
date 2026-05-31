@@ -117,6 +117,8 @@ func (m *Manager) BuildTaskPayload(inst *WorkflowInstance, tpl *WorkflowTemplate
 		} else if ok {
 			validation = mergeValidationFields(validation, prof)
 		}
+		mayorDir := filepath.Join(m.townRoot, rig, "mayor", "rig")
+		validation = EnrichWorkflowValidationFromArchitecture(validation, mayorDir)
 	}
 	validation = validation.WithDefaults()
 	for k, v := range validation.PromptVars() {

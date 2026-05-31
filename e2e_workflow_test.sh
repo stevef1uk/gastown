@@ -74,9 +74,16 @@ run_freeride_bootstrap ensure-gt-orchestrator-singleton.sh || true
 gt up
 
 if freeride_bootstrap_dir >/dev/null && [[ "${DO_IT_ALL:-}" == "1" || -n "$FREERIDE_ROOT" ]]; then
+    # Do not run ensure-gt-orchestrator-singleton here — it used to kill the sole
+    # orchestrator that gt up just started, leaving 0 processes until timeout.
     run_freeride_bootstrap wait-for-gt-stack.sh --with-orchestrator
     echo "[bootstrap] restarting rig $RIG after stack ready..."
     gt rig restart "$RIG" || true
+    # spec-index calls the LLM; run only after the town stack is up (avoid pre-up hangs).
+    if command -v gt >/dev/null 2>&1; then
+        echo "[1a] Indexing workflow profile from SPEC/architecture..."
+        gt rig spec-index "$RIG" --force || true
+    fi
 else
     sleep 5
 fi
