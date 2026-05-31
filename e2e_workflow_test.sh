@@ -5,6 +5,7 @@
 set -e
 set -x
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 GT_DIR="${GT_ROOT:-$HOME/gt}"
 RIG="ping_rig"
 
@@ -35,7 +36,7 @@ if [ ! -d "$GT_DIR/$RIG" ] || ! grep -q "\"$RIG\"" "$GT_DIR/mayor/rigs.json" 2>/
     mkdir -p "$GT_DIR/$RIG/mayor/rig/.gastown"
     echo '{"qa_verify_command": "python3 -m pytest -v pingapp/test_main.py", "spec_summary": "FastAPI ping app."}' > "$GT_DIR/$RIG/mayor/rig/.gastown/workflow-profile.json"
     
-    cp "$GT_DIR/../gastown/internal/orchestrator/example_specs/SPEC_python.md" "$GT_DIR/$RIG/mayor/rig/SPEC.md"
+    cp "$SCRIPT_DIR/internal/orchestrator/example_specs/SPEC_python.md" "$GT_DIR/$RIG/mayor/rig/SPEC.md"
 
     (
         cd "$GT_DIR/$RIG/mayor/rig"
