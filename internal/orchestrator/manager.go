@@ -132,27 +132,24 @@ func (m *Manager) StartWorkflow(templateID string, vars map[string]string) (stri
 	return id, nil
 }
 
-// FetchTask finds the next available task for an agent.
 func (m *Manager) FetchTask(agentID string) (map[string]interface{}, error) {
 	fmt.Printf("[Manager] FetchTask for agent: %q\n", agentID)
-	for {
-		instID, timedOut := m.findTaskInstanceID(agentID)
-		if instID == "" {
-			return nil, fmt.Errorf("%w for agent %q", ErrNoTask, agentID)
-		}
-		if timedOut {
-			if _, err := m.applyStateTimeout(instID); err != nil {
-				fmt.Printf("[Manager] Warning: state timeout %s: %v\n", instID, err)
-			}
-			continue
-		}
-		payload, err := m.buildTaskPayloadForInstance(instID)
-		if err != nil {
-			fmt.Printf("[Manager] Warning: %v\n", err)
-			continue
-		}
-		return payload, nil
+	instID, timedOut := m.findTaskInstanceID(agentID)
+	if instID == "" {
+		return nil, fmt.Errorf("%w for agent %q", ErrNoTask, agentID)
 	}
+	if timedOut {
+		if _, err := m.applyStateTimeout(instID); err != nil {
+			fmt.Printf("[Manager] Warning: state timeout %s: %v\n", instID, err)
+		}
+		return nil, fmt.Errorf("%w for agent %q (applying timeout)", ErrNoTask, agentID)
+	}
+	payload, err := m.buildTaskPayloadForInstance(instID)
+	if err != nil {
+		fmt.Printf("[Manager] Warning: build payload failed for %s: %v\n", instID, err)
+		return nil, fmt.Errorf("build payload failed: %w", err)
+	}
+	return payload, nil
 }
 
 func (m *Manager) findTaskInstanceID(agentID string) (instID string, timedOut bool) {
