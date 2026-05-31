@@ -110,7 +110,17 @@ func ImplementationRuntimeSmokeOK(townRoot, rig string, v WorkflowValidation) er
 	_ = StopDevServersForRig(v, rigDir)
 	cmd := exec.Command("/bin/bash", "-c", script)
 	cmd.Dir = townRoot
-	cmd.Env = os.Environ()
+	env := os.Environ()
+	if WorkflowUsesPython(v) && v.UsesPythonVenv() {
+		venvBin := filepath.Join(rigDir, v.PythonVenvRelDir(), "bin")
+		for i, e := range env {
+			if strings.HasPrefix(e, "PATH=") {
+				env[i] = "PATH=" + venvBin + string(os.PathListSeparator) + e[5:]
+				break
+			}
+		}
+	}
+	cmd.Env = env
 	out, runErr := cmd.CombinedOutput()
 	if runErr != nil {
 		text := strings.TrimSpace(string(out))
