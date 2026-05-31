@@ -3,6 +3,7 @@
 # Tests the full orchestration: Mayor -> Architect -> Planner -> Polecat -> QA
 
 set -e
+set -x
 
 GT_DIR="${GT_ROOT:-$HOME/gt}"
 RIG="testgt2"
