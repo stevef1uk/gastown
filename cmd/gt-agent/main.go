@@ -1295,6 +1295,9 @@ func isMarkdownStructure(trimmed string) bool {
 	if strings.HasPrefix(trimmed, "> ") {
 		return true
 	}
+	if strings.HasPrefix(trimmed, "|") {
+		return true
+	}
 	return false
 }
 
