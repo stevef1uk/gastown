@@ -210,7 +210,7 @@ func ReconcileImplementBeads(townRoot, rig string, v WorkflowValidation) (string
 			return "", err
 		}
 	} else {
-		parts = append(parts, "skipped Go auto-close: phase verify not green")
+		parts = append(parts, fmt.Sprintf("skipped Go auto-close: phase verify not green (%v)", phaseErr))
 		var err error
 		autoClosed, err = CloseImplementBeadsWithGreenFrontendVerify(townRoot, rig, v, eval)
 		if err != nil {

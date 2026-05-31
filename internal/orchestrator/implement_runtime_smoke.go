@@ -101,11 +101,11 @@ func ImplementationRuntimeSmokeOK(townRoot, rig string, v WorkflowValidation) er
 		return nil
 	}
 	script := BuildRuntimeSmokeShell(moduleDir, spec)
-	if strings.TrimSpace(script) == "" {
-		return fmt.Errorf("empty runtime smoke script for %s", moduleDir)
-	}
 	if strings.TrimSpace(spec.ServerStart) == "" {
 		return fmt.Errorf("runtime smoke: document server start under ## Runtime smoke server in SPEC/architecture, or include uvicorn/gunicorn/flask in qa_verify_command")
+	}
+	if strings.TrimSpace(script) == "" {
+		return fmt.Errorf("empty runtime smoke script for %s", moduleDir)
 	}
 	_ = StopDevServersForRig(v, rigDir)
 	cmd := exec.Command("/bin/bash", "-c", script)
