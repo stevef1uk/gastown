@@ -92,19 +92,9 @@ fi
 # creates the project bead with `bd create`, and slings/mails the
 # architect with that bead. Stage 1 onward proceeds as before.
 
-echo "[2] Mailing mayor with free-form project request (Stage 0 kickoff)..."
-gt mail send mayor/ -s "Project: $RIG Ping Webserver" --stdin <<KICKOFFMAIL
-Rig: $RIG
-Spec: $GT_DIR/$RIG/mayor/rig/SPEC.md
-
-Please build the project described by the SPEC at the path above
-(default work item is FizzBuzz). Design -> plan -> implement -> review
-via your normal pipeline. Output a real code artifact in the rig
-working tree.
-
-Operator: e2e_workflow_test.sh
-KICKOFFMAIL
-gt nudge mayor "New project request, check your inbox (Stage 0 kickoff)"
+echo "[2] Kicking off workflow explicitly..."
+gt mayor workflow start rig-flow --rig="$RIG"
+echo "✓ Workflow started."
 
 # 4. Monitor flow. Planner is town-level (no rig prefix). Mayor will
 #    create the project bead during Stage 0 — we can't bind PROJECT_BEAD
