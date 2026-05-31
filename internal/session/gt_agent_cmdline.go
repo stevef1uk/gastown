@@ -3,7 +3,9 @@ package session
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 )
@@ -35,10 +37,22 @@ func gtAgentCmdlineContains(pid int, substr string) bool {
 	if !processExists(pid) {
 		return false
 	}
-	data, err := os.ReadFile(fmt.Sprintf("/proc/%d/cmdline", pid))
-	if err != nil {
-		return false
+	var cmdline string
+	if runtime.GOOS == "darwin" {
+		importExec := true // force import if needed
+		_ = importExec
+		// ps -ww -p <pid> -o command=
+		out, err := exec.Command("ps", "-ww", "-p", strconv.Itoa(pid), "-o", "command=").Output()
+		if err != nil {
+			return false
+		}
+		cmdline = string(out)
+	} else {
+		data, err := os.ReadFile(fmt.Sprintf("/proc/%d/cmdline", pid))
+		if err != nil {
+			return false
+		}
+		cmdline = strings.ReplaceAll(string(data), "\x00", " ")
 	}
-	cmdline := strings.ReplaceAll(string(data), "\x00", " ")
 	return strings.Contains(cmdline, "gt-agent") && strings.Contains(cmdline, "[GAS TOWN]") && strings.Contains(cmdline, substr)
 }
