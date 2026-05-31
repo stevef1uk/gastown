@@ -11,7 +11,8 @@ echo "=== E2E Workflow Test ==="
 
 # 1. Start services
 echo "[1] Starting GT services..."
-cd $GT_DIR
+mkdir -p "$GT_DIR"
+cd "$GT_DIR"
 
 if [ ! -d "$GT_DIR/$RIG" ] || ! grep -q "\"$RIG\"" "$GT_DIR/mayor/rigs.json" 2>/dev/null; then
     echo "[$RIG is missing or not registered in rigs.json! Creating a dummy rig to test against...]"
