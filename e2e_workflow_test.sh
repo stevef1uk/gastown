@@ -4,7 +4,7 @@
 
 set -e
 
-GT_DIR="/home/stevef/gt"
+GT_DIR="${GT_ROOT:-$HOME/gt}"
 RIG="testgt2"
 
 echo "=== E2E Workflow Test ==="
@@ -59,7 +59,7 @@ fi
 echo "[2] Mailing mayor with free-form project request (Stage 0 kickoff)..."
 gt mail send mayor/ -s "Project: testgt2 FizzBuzz" --stdin <<KICKOFFMAIL
 Rig: $RIG
-Spec: /home/stevef/gt/$RIG/mayor/rig/SPEC.md
+Spec: $GT_DIR/$RIG/mayor/rig/SPEC.md
 
 Please build the project described by the SPEC at the path above
 (default work item is FizzBuzz). Design -> plan -> implement -> review
