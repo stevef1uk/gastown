@@ -101,11 +101,11 @@ for i in {1..20}; do
     sleep 15
     echo "=== Check $i (T+$((i*15))s) ==="
     echo "--- Mayor hook ---"
-    gt hook show mayor 2>/dev/null | head -4 || echo "empty"
+    (cd $GT_DIR 2>/dev/null && gt hook show mayor 2>/dev/null) || true
     echo "--- Architect hook ---"
-    gt hook show $RIG/architect 2>/dev/null | head -4 || echo "empty"
+    (cd $GT_DIR/$RIG 2>/dev/null && gt hook show architect 2>/dev/null) || true
     echo "--- Planner hook ---"
-    gt hook show planner 2>/dev/null | head -4 || echo "empty"
+    (cd $GT_DIR 2>/dev/null && gt hook show planner 2>/dev/null) || true
     echo "--- Recent HQ beads ---"
     (cd $GT_DIR && bd list --status=open --limit=8 2>/dev/null | head -10) || true
     echo "--- Recent rig beads ---"
