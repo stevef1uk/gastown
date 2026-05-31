@@ -8,6 +8,29 @@ set -x
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 GT_DIR="${GT_ROOT:-$HOME/gt}"
 RIG="ping_rig"
+FREERIDE_ROOT="${FREERIDE_ROOT:-}"
+
+freeride_bootstrap_dir() {
+    if [[ -n "$FREERIDE_ROOT" && -d "$FREERIDE_ROOT/scripts" ]]; then
+        echo "$FREERIDE_ROOT/scripts"
+        return 0
+    fi
+    return 1
+}
+
+run_freeride_bootstrap() {
+    local script="$1"
+    shift
+    local dir
+    if ! dir="$(freeride_bootstrap_dir)"; then
+        return 0
+    fi
+    if [[ ! -x "$dir/$script" ]]; then
+        chmod +x "$dir/$script" 2>/dev/null || true
+    fi
+    echo "[bootstrap] $dir/$script $*"
+    bash "$dir/$script" "$@"
+}
 
 echo "=== E2E Workflow Test ==="
 
@@ -45,10 +68,18 @@ if [ ! -d "$GT_DIR/$RIG" ] || ! grep -q "\"$RIG\"" "$GT_DIR/mayor/rigs.json" 2>/
     )
 fi
 
+run_freeride_bootstrap ensure-gt-orchestrator-singleton.sh || true
 gt down 2>/dev/null || true
+run_freeride_bootstrap ensure-gt-orchestrator-singleton.sh || true
 gt up
 
-sleep 5
+if freeride_bootstrap_dir >/dev/null && [[ "${DO_IT_ALL:-}" == "1" || -n "$FREERIDE_ROOT" ]]; then
+    run_freeride_bootstrap wait-for-gt-stack.sh --with-orchestrator
+    echo "[bootstrap] restarting rig $RIG after stack ready..."
+    gt rig restart "$RIG" || true
+else
+    sleep 5
+fi
 
 # 1b. Seed HQ issue_prefix if missing (Fix #101).
 # `gt down` wipes the HQ beads dolt dir, and `gt up` recreates an
