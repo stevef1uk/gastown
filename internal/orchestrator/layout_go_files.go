@@ -44,11 +44,11 @@ func GoCompileVerifyCommandForBead(v WorkflowValidation, mayorRigDir, beadPath s
 		if IsTestImplementPath(beadPath) {
 			cmd = GoTestVerifyCommandForPackage(v, mayorRigDir, beadPath)
 		} else {
-			testPath := CorrelatedTestPathForSource(beadPath, v.LayoutRoot)
+			testPath := CorrelatedTestPathForSource(beadPath, v)
 			if testPath != "" {
 				testAbs := ResolveRequiredFileOnDisk(mayorRigDir, testPath, v.LayoutRoot)
 				if _, err := os.Stat(testAbs); os.IsNotExist(err) {
-					if TestPathListedInRequired(beadPath, v.RequiredFiles, v.LayoutRoot) {
+					if TestPathListedInRequired(beadPath, v) {
 						cmd = goBuildVerifyForPackage(v, mayorRigDir, beadPath)
 					} else {
 						cmd = GoTestVerifyCommandForPackage(v, mayorRigDir, beadPath)
@@ -116,7 +116,7 @@ func layoutGoRelPathsProtectedFromPrune(v WorkflowValidation) map[string]bool {
 	for _, f := range v.RequiredFiles {
 		add(f)
 		if WorkflowUsesGo(v) && !IsTestImplementPath(f) {
-			if testPath := CorrelatedTestPathForSource(f, v.LayoutRoot); testPath != "" {
+			if testPath := CorrelatedTestPathForSource(f, v); testPath != "" {
 				add(testPath)
 			}
 		}
@@ -140,7 +140,7 @@ func layoutGoBasenamesProtectedFromPrune(v WorkflowValidation) map[string]bool {
 	for _, f := range v.RequiredFiles {
 		add(f)
 		if WorkflowUsesGo(v) && !IsTestImplementPath(f) {
-			if testPath := CorrelatedTestPathForSource(f, v.LayoutRoot); testPath != "" {
+			if testPath := CorrelatedTestPathForSource(f, v); testPath != "" {
 				add(testPath)
 			}
 		}

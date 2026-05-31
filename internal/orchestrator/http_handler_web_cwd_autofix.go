@@ -76,7 +76,7 @@ func HandlerHTTPPathsForAutoFix(mayorRigDir string, v WorkflowValidation) (handl
 		abs := filepath.Join(mayorRigDir, filepath.FromSlash(c))
 		if _, err := os.Stat(abs); err == nil {
 			handlersRel = c
-			testRel = CorrelatedTestPathForSource(c, v.LayoutRoot)
+			testRel = CorrelatedTestPathForSource(c, v)
 			return handlersRel, testRel
 		}
 	}

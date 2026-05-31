@@ -29,7 +29,7 @@ func planAcceptanceBullets(beadPath string, v WorkflowValidation) []string {
 		}, common...)
 	}
 	if WorkflowUsesGo(v) && strings.HasSuffix(beadPath, ".go") && !strings.HasSuffix(beadPath, "go.mod") {
-		testPath := CorrelatedTestPathForSource(beadPath, v.LayoutRoot)
+		testPath := CorrelatedTestPathForSource(beadPath, v)
 		if testPath != "" {
 			common = append(common,
 				"Package has unit tests in `"+testPath+"` (same bead or dedicated test bead) covering SPEC behavior before close.",
@@ -43,7 +43,7 @@ func planAcceptanceBullets(beadPath string, v WorkflowValidation) []string {
 		}
 	}
 	if WorkflowUsesPython(v) && strings.HasSuffix(beadPath, ".py") && !IsTestImplementPath(beadPath) {
-		if testPath := CorrelatedTestPathForSource(beadPath, v.LayoutRoot); testPath != "" {
+		if testPath := CorrelatedTestPathForSource(beadPath, v); testPath != "" {
 			common = append(common,
 				"Add or update `"+testPath+"` with pytest cases tied to SPEC/plan acceptance before close.",
 			)

@@ -54,7 +54,7 @@ func handlerTestPathForHints(activeBeadPath, cmdOutput string, v WorkflowValidat
 		return activeBeadPath
 	}
 	if IsHTTPHandlerImplementPath(activeBeadPath) {
-		return CorrelatedTestPathForSource(activeBeadPath, v.LayoutRoot)
+		return CorrelatedTestPathForSource(activeBeadPath, v)
 	}
 	if strings.Contains(cmdOutput, "handlers_test.go") {
 		layout := strings.Trim(strings.TrimSpace(v.LayoutRoot), "/")

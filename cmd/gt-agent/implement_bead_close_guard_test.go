@@ -84,7 +84,7 @@ func TestValidateImplementationBeadClose_requiresCorrelatedTestFile(t *testing.T
 	if err := orchestrator.ValidateBeadArtifactOnDisk(mayor, beadPath, v); err != nil {
 		t.Fatalf("handlers.go should exist: %v", err)
 	}
-	testPath := orchestrator.CorrelatedTestPathForSource(beadPath, v.LayoutRoot)
+	testPath := orchestrator.CorrelatedTestPathForSource(beadPath, v)
 	err := orchestrator.ValidateBeadArtifactOnDisk(mayor, testPath, v)
 	if err == nil || !strings.Contains(err.Error(), "handlers_test.go") {
 		t.Fatalf("want correlated test reject, got %v", err)

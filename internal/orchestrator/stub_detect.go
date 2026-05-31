@@ -142,7 +142,7 @@ func ValidateWorkNotStubbed(rigDir string, v WorkflowValidation) error {
 		}
 		if d.IsDir() {
 			base := d.Name()
-			if base == ".git" || base == "node_modules" || base == "__pycache__" || base == ".gastown" {
+			if base == ".git" || base == "node_modules" || base == "__pycache__" || base == ".gastown" || base == ".venv" || base == "venv" {
 				return filepath.SkipDir
 			}
 			return nil

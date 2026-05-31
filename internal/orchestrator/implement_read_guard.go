@@ -116,7 +116,7 @@ func ImplementMissingFileReadNudge(townRoot, rig, activeBead, activeBeadPath, re
 
 	if WorkflowUsesGo(v) && strings.HasSuffix(relPath, "_test.go") {
 		if activePath != "" && !IsTestImplementPath(activePath) {
-			testBead := CorrelatedTestPathForSource(activePath, v.LayoutRoot)
+			testBead := CorrelatedTestPathForSource(activePath, v)
 			if testBead != "" && PathMatchesImplementWrite(relPath, testBead, v.RequiredFiles) {
 				b.WriteString("Unit tests live on a **separate implement bead** (`")
 				b.WriteString(testBead)

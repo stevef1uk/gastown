@@ -163,7 +163,7 @@ func PackageHasForeignTestFiles(beadPath string, v WorkflowValidation, mayorRigD
 	if err != nil {
 		return false
 	}
-	myTest := CorrelatedTestPathForSource(beadPath, v.LayoutRoot)
+	myTest := CorrelatedTestPathForSource(beadPath, v)
 	for _, e := range entries {
 		if e.IsDir() || !strings.HasSuffix(e.Name(), "_test.go") {
 			continue

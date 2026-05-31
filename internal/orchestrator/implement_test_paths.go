@@ -24,12 +24,12 @@ func IsTestImplementPath(beadPath string) bool {
 }
 
 // CorrelatedTestPathForSource returns the conventional unit-test path for a source bead, or "".
-func CorrelatedTestPathForSource(beadPath, layoutRoot string) string {
+func CorrelatedTestPathForSource(beadPath string, v WorkflowValidation) string {
 	beadPath = filepath.ToSlash(strings.TrimSpace(beadPath))
 	if beadPath == "" || IsTestImplementPath(beadPath) {
 		return ""
 	}
-	layout := strings.Trim(strings.TrimSpace(layoutRoot), "/")
+	layout := strings.Trim(strings.TrimSpace(v.LayoutRoot), "/")
 	rel := beadPath
 	if layout != "" && strings.HasPrefix(rel, layout+"/") {
 		rel = strings.TrimPrefix(rel, layout+"/")
@@ -50,26 +50,38 @@ func CorrelatedTestPathForSource(beadPath, layoutRoot string) string {
 		testName := "test_" + base + ".py"
 		dir := filepath.ToSlash(filepath.Dir(rel))
 		candidates := []string{
-			filepath.ToSlash(filepath.Join("tests", testName)),
+			filepath.ToSlash(filepath.Join(dir, testName)),
 			filepath.ToSlash(filepath.Join(dir, "tests", testName)),
+			filepath.ToSlash(filepath.Join("tests", testName)),
 		}
+		var formatted []string
 		for _, c := range candidates {
 			if layout != "" && !strings.HasPrefix(c, layout+"/") {
 				c = layout + "/" + c
 			}
-			return c
+			formatted = append(formatted, c)
 		}
+		if len(v.RequiredFiles) > 0 {
+			for _, c := range formatted {
+				for _, req := range v.RequiredFiles {
+					if pathMatchesRequired(c, []string{req}) {
+						return c
+					}
+				}
+			}
+		}
+		return formatted[0]
 	}
 	return ""
 }
 
 // TestPathListedInRequired reports whether path or its correlated test is in required_files.
-func TestPathListedInRequired(sourcePath string, required []string, layoutRoot string) bool {
-	corr := CorrelatedTestPathForSource(sourcePath, layoutRoot)
+func TestPathListedInRequired(sourcePath string, v WorkflowValidation) bool {
+	corr := CorrelatedTestPathForSource(sourcePath, v)
 	if corr == "" {
 		return false
 	}
-	for _, want := range required {
+	for _, want := range v.RequiredFiles {
 		if pathMatchesRequired(corr, []string{want}) {
 			return true
 		}
@@ -100,7 +112,7 @@ func AllowedCorrelatedPackageImplementWrite(activePath, writtenPath string, v Wo
 		return productionGoPathInRequiredFiles(writtenPath, v)
 	}
 	if !IsTestImplementPath(activePath) && IsTestImplementPath(writtenPath) {
-		if test := CorrelatedTestPathForSource(activePath, v.LayoutRoot); test != "" &&
+		if test := CorrelatedTestPathForSource(activePath, v); test != "" &&
 			PathMatchesImplementWrite(writtenPath, test, v.RequiredFiles) {
 			return true
 		}

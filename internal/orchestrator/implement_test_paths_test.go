@@ -22,7 +22,7 @@ func TestIsTestImplementPath(t *testing.T) {
 
 func TestCorrelatedTestPathForSource_go(t *testing.T) {
 	t.Parallel()
-	got := CorrelatedTestPathForSource("linkshelf/internal/store/store.go", "linkshelf")
+	got := CorrelatedTestPathForSource("linkshelf/internal/store/store.go", WorkflowValidation{LayoutRoot: "linkshelf"})
 	if got != "linkshelf/internal/store/store_test.go" {
 		t.Fatalf("got %q", got)
 	}

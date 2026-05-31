@@ -332,11 +332,11 @@ func formatUnitTestGuidanceForBead(townRoot, rig, beadPath string, v WorkflowVal
 			"Use table-driven or case-per-requirement tests; run **Verify** (go test / pytest -v) before bd close.")
 	}
 	if WorkflowUsesGo(v) && strings.HasSuffix(beadPath, ".go") && !IsServerMainImplementBead(beadPath) && !strings.HasSuffix(beadPath, "go.mod") {
-		testPath := CorrelatedTestPathForSource(beadPath, v.LayoutRoot)
+		testPath := CorrelatedTestPathForSource(beadPath, v)
 		if testPath == "" {
 			return ""
 		}
-		if TestPathListedInRequired(beadPath, v.RequiredFiles, v.LayoutRoot) && !mayorRigTestFileExists(townRoot, rig, testPath) {
+		if TestPathListedInRequired(beadPath, v) && !mayorRigTestFileExists(townRoot, rig, testPath) {
 			return strings.TrimSpace("### Unit tests (separate bead)\n" +
 				"This bead is **production code only** (`" + beadPath + "`). **Verify** runs `go build` for this package.\n" +
 				"Do **not** `cat` `" + testPath + "` — it does not exist until the **`" + testPath + "` implement bead**.\n" +
@@ -350,7 +350,7 @@ func formatUnitTestGuidanceForBead(townRoot, rig, beadPath string, v WorkflowVal
 		return strings.TrimSpace(msg)
 	}
 	if WorkflowUsesPython(v) && strings.HasSuffix(beadPath, ".py") && !IsTestImplementPath(beadPath) {
-		testPath := CorrelatedTestPathForSource(beadPath, v.LayoutRoot)
+		testPath := CorrelatedTestPathForSource(beadPath, v)
 		if testPath == "" {
 			return ""
 		}

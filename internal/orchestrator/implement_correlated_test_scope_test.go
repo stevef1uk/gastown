@@ -7,7 +7,7 @@ import (
 
 func TestCorrelatedTestPathForSource_schemaBead(t *testing.T) {
 	t.Parallel()
-	got := CorrelatedTestPathForSource("linkshelf/internal/store/schema.go", "linkshelf")
+	got := CorrelatedTestPathForSource("linkshelf/internal/store/schema.go", WorkflowValidation{LayoutRoot: "linkshelf"})
 	want := "linkshelf/internal/store/schema_test.go"
 	if got != want {
 		t.Fatalf("got %q want %q", got, want)

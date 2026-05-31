@@ -133,7 +133,7 @@ func FormatSamePackageTestAPIHint(activeBeadPath, mayorRigDir, cmdOutput string,
 	if activeBeadPath == "" || IsTestImplementPath(activeBeadPath) || !GoCompileErrorsOnlyInTestFiles(cmdOutput, v.LayoutRoot) {
 		return ""
 	}
-	corr := CorrelatedTestPathForSource(activeBeadPath, v.LayoutRoot)
+	corr := CorrelatedTestPathForSource(activeBeadPath, v)
 
 	// Extract undefined symbols referenced by tests but missing from production.
 	var missing []string

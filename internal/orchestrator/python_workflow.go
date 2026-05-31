@@ -125,7 +125,7 @@ func PythonImplementationVerifyCommandForBead(v WorkflowValidation, mayorRigDir,
 	}
 
 	if strings.HasSuffix(beadPath, ".py") {
-		if testPath := CorrelatedTestPathForSource(beadPath, v.LayoutRoot); testPath != "" {
+		if testPath := CorrelatedTestPathForSource(beadPath, v); testPath != "" {
 			if info, err := os.Stat(filepath.Join(mayorRigDir, testPath)); err == nil && info.Size() > 0 {
 				return py + " -m pytest -v " + testPath
 			}
