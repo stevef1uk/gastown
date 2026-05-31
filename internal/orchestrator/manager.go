@@ -10,6 +10,7 @@ import (
 
 	"github.com/steveyegge/gastown/internal/events"
 	"github.com/steveyegge/gastown/internal/refinery"
+	"github.com/steveyegge/gastown/internal/telemetry"
 	"gopkg.in/yaml.v3"
 )
 
@@ -309,6 +310,7 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summa
 		fmt.Printf("[Manager] Warning: rig-flow mayor/rig git (commit/push): %v\n", cerr)
 	}
 	m.logWorkflowFeed(events.TypeWorkflowTransition, workflowID, inst.TemplateID, fromState, next, outcome, state.Role, rig)
+	telemetry.RecordWorkflowStateChange(nil, rig, workflowID, fromState, next, nil)
 	return next, nil
 }
 
@@ -349,6 +351,7 @@ func (m *Manager) ResetWorkflow(workflowID, toState string) (string, error) {
 		role = state.Role
 	}
 	m.logWorkflowFeed(events.TypeWorkflowTransition, workflowID, inst.TemplateID, fromState, toState, "reset", role, rig)
+	telemetry.RecordWorkflowStateChange(nil, rig, workflowID, fromState, toState, nil)
 	return toState, nil
 }
 

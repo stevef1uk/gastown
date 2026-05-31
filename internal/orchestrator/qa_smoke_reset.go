@@ -140,7 +140,10 @@ func deriveRuntimeSmokeServerStart(v WorkflowValidation, mergedDocs string) stri
 		return "go run ./cmd/server"
 	}
 	if WorkflowUsesPython(v) {
-		return extractPythonServerStartFromQA(v)
+		if cmd := extractPythonServerStartFromQA(v); cmd != "" {
+			return cmd
+		}
+		return ExtractPythonServerStartFromText(mergedDocs)
 	}
 	return ""
 }

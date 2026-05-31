@@ -6,6 +6,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/steveyegge/gastown/internal/telemetry"
 )
 
 // SkipImplementationRuntimeSmoke is set when GT_SKIP_IMPLEMENTATION_SMOKE=1 (tests/CI).
@@ -136,17 +138,26 @@ func ImplementationRuntimeSmokeOK(townRoot, rig string, v WorkflowValidation) er
 // doc-derived runtime smoke before implementation may complete (GT-VERIFY-002/009).
 func ImplementationPhaseVerifyOK(townRoot, rig string, v WorkflowValidation) error {
 	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
+	
+	// Default to success
+	var err error
+	
+	defer func() {
+		// Log the overall phase verification to OTEL
+		telemetry.RecordPhaseVerification(nil, rig, "", "implementation", "ImplementationPhaseVerifyOK", err)
+	}()
+
 	if WorkflowUsesGo(v) {
-		if err := ImplementationModuleCompileOK(rigDir, v); err != nil {
+		if err = ImplementationModuleCompileOK(rigDir, v); err != nil {
 			return err
 		}
 	}
 	if WorkflowUsesPython(v) {
-		if err := ImplementationPythonModuleOK(rigDir, v); err != nil {
+		if err = ImplementationPythonModuleOK(rigDir, v); err != nil {
 			return err
 		}
 	}
-	if err := ImplementationRuntimeSmokeOK(townRoot, rig, v); err != nil {
+	if err = ImplementationRuntimeSmokeOK(townRoot, rig, v); err != nil {
 		return err
 	}
 	return nil

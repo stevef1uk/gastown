@@ -105,6 +105,10 @@ type recorderInstruments struct {
 	molBurnTotal          metric.Int64Counter
 	beadCreateTotal       metric.Int64Counter
 
+	// Orchestrator Counters
+	workflowStateTotal    metric.Int64Counter
+	phaseVerifyTotal      metric.Int64Counter
+
 	// Histograms
 	bdDurationHist metric.Float64Histogram
 }
@@ -217,6 +221,12 @@ func initInstruments() {
 		)
 		inst.beadCreateTotal, _ = m.Int64Counter("gastown.bead.creates.total",
 			metric.WithDescription("Total bead creations from molecule instantiation"),
+		)
+		inst.workflowStateTotal, _ = m.Int64Counter("gastown.orchestrator.workflow_states.total",
+			metric.WithDescription("Total workflow state transitions"),
+		)
+		inst.phaseVerifyTotal, _ = m.Int64Counter("gastown.orchestrator.phase_verifications.total",
+			metric.WithDescription("Total workflow phase verifications (e.g. pytest or smoke test)"),
 		)
 
 		// Histograms
@@ -832,4 +842,46 @@ func RecordAgentEvent(ctx context.Context, sessionID, agentType, eventType, role
 	)
 	addRunID(ctx, &r)
 	logger.Emit(ctx, r)
+}
+
+// RecordWorkflowStateChange records an orchestrator workflow state transition.
+func RecordWorkflowStateChange(ctx context.Context, rig, workflowID, oldState, newState string, err error) {
+	initInstruments()
+	status := statusStr(err)
+	inst.workflowStateTotal.Add(ctx, 1,
+		metric.WithAttributes(
+			attribute.String("status", status),
+			attribute.String("old_state", oldState),
+			attribute.String("new_state", newState),
+		),
+	)
+	emit(ctx, "orchestrator.workflow_state", severity(err),
+		otellog.String("rig", rig),
+		otellog.String("workflow_id", workflowID),
+		otellog.String("old_state", oldState),
+		otellog.String("new_state", newState),
+		otellog.String("status", status),
+		errKV(err),
+	)
+}
+
+// RecordPhaseVerification records an orchestrator phase verification check.
+func RecordPhaseVerification(ctx context.Context, rig, workflowID, phase, checkName string, err error) {
+	initInstruments()
+	status := statusStr(err)
+	inst.phaseVerifyTotal.Add(ctx, 1,
+		metric.WithAttributes(
+			attribute.String("status", status),
+			attribute.String("phase", phase),
+			attribute.String("check_name", checkName),
+		),
+	)
+	emit(ctx, "orchestrator.phase_verify", severity(err),
+		otellog.String("rig", rig),
+		otellog.String("workflow_id", workflowID),
+		otellog.String("phase", phase),
+		otellog.String("check_name", checkName),
+		otellog.String("status", status),
+		errKV(err),
+	)
 }
