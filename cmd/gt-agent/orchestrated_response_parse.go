@@ -606,7 +606,7 @@ func stripMarkdownCodeFencesFromSource(content string) string {
 
 func isStrayFileTerminatorLine(line string) bool {
 	switch strings.ToUpper(strings.TrimSpace(line)) {
-	case "EOF", "EOT", "END":
+	case "EOF", "EOT", "END", "---":
 		return true
 	}
 	t := strings.TrimSpace(line)
