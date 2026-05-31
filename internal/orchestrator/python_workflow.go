@@ -77,7 +77,15 @@ func PythonVerifyCommand(v WorkflowValidation) string {
 	} else {
 		base = NormalizePytestCommand(base)
 	}
-	return pythonVerifyWithLayout(base, v)
+	
+	cmd := pythonVerifyWithLayout(base, v)
+
+	if v.UsesPythonVenv() && !strings.Contains(cmd, "source ") && !strings.Contains(cmd, ".venv/") && !strings.Contains(cmd, "pipenv") && !strings.Contains(cmd, "poetry") {
+		venv := v.PythonVenvRelDir()
+		cmd = "source " + venv + "/bin/activate && " + cmd
+	}
+
+	return cmd
 }
 
 // PythonProjectSetupVerifyCommand is the green check for project_setup only: venv
@@ -118,7 +126,7 @@ func PythonImplementationVerifyCommandForBead(v WorkflowValidation, mayorRigDir,
 
 	if strings.HasSuffix(beadPath, ".py") {
 		if testPath := CorrelatedTestPathForSource(beadPath, v.LayoutRoot); testPath != "" {
-			if _, err := os.Stat(filepath.Join(mayorRigDir, testPath)); err == nil {
+			if info, err := os.Stat(filepath.Join(mayorRigDir, testPath)); err == nil && info.Size() > 0 {
 				return py + " -m pytest -v " + testPath
 			}
 		}
@@ -135,11 +143,22 @@ func pythonVerifyWithLayout(cmd string, v WorkflowValidation) string {
 	}
 	lower := strings.ToLower(cmd)
 	testScope := layout + "/tests"
-	// Run pytest from mayor/rig (venv lives there); collect only layout/tests.
-	if strings.Contains(lower, "pytest") && !strings.Contains(lower, testScope) {
-		return strings.TrimSpace(cmd) + " " + testScope
+	
+	isPytest := strings.Contains(lower, "pytest")
+	hasCD := strings.Contains(lower, "cd "+strings.ToLower(layout))
+	
+	if isPytest {
+		if hasCD {
+			return cmd
+		}
+		// Run pytest from mayor/rig (venv lives there); collect only layout/tests.
+		if !strings.Contains(lower, testScope) {
+			return strings.TrimSpace(cmd) + " " + testScope
+		}
+		return cmd
 	}
-	if strings.Contains(lower, "cd "+strings.ToLower(layout)) {
+	
+	if hasCD {
 		return cmd
 	}
 	return "cd " + layout + " && " + cmd

@@ -30,6 +30,15 @@ func SanitizeNativeEditRelPath(path string) string {
 			path = strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(path), "**"))
 			changed = true
 		}
+		
+		// Strip JSON noise from hallucinated {"cmd": "READ: path"} lines.
+		for _, suffix := range []string{`"}`, `"`, `'`, `}`, `,`} {
+			if strings.HasSuffix(strings.TrimSpace(path), suffix) {
+				path = strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(path), suffix))
+				changed = true
+			}
+		}
+
 		if !changed {
 			break
 		}
