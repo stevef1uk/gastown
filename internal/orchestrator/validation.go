@@ -380,7 +380,7 @@ func (v WorkflowValidation) PromptVars() map[string]string {
 		"phase_scope_note":        v.PhaseScopeNote(),
 		"requirements_file":       req,
 		"spec_summary":            v.SpecSummary,
-		"unittest_command_hint":     v.UnittestCommandHint(),
+		"unittest_command_hint":     v.QAVerifyHint(),
 		"implementation_verify_hint": "(resolved per rig at fetch_task — use go build until server main exists)",
 		"project_setup_verify_hint": v.ProjectSetupVerifyHint(),
 		"python_venv_dir":         v.PythonVenvRelDir(),
@@ -449,6 +449,14 @@ func (v WorkflowValidation) ProjectSetupVerifyHint() string {
 			layout = "."
 		}
 		return dockerVerifyWithLayout(scoped.ActivePhaseQAVerifyCommand(), layout)
+	}
+	return v.UnittestCommandHint()
+}
+
+// QAVerifyHint returns the suggested QA command for error messages.
+func (v WorkflowValidation) QAVerifyHint() string {
+	if WorkflowUsesPython(v) {
+		return PythonVerifyCommand(v)
 	}
 	return v.UnittestCommandHint()
 }

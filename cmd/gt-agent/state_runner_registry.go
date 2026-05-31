@@ -233,14 +233,14 @@ var artifactFailureHints = map[string]func(*stateRunner) string{
 	},
 	"implementation": func(r *stateRunner) string {
 		hint := fmt.Sprintf("One bead at a time from %s (BEADS_DIR=$GT_ROOT/%s/.beads): bd update → heredoc under %s/ → %s → bd close → JSON.",
-			rigMayorRigPath(r.rig), r.rig, strings.TrimSpace(r.v.LayoutRoot), r.v.UnittestCommandHint())
+			rigMayorRigPath(r.rig), r.rig, strings.TrimSpace(r.v.LayoutRoot), r.v.QAVerifyHint())
 		if orchestrator.WorkflowNeedsRuntimeSmoke(r.townRoot, r.rig, r.v) {
 			hint += " Before success, gt-agent runs unit tests + doc-derived HTTP smoke (curl each route in SPEC/architecture) — green tests alone are not enough."
 		}
 		return hint
 	},
 	"qa": func(r *stateRunner) string {
-		hint := "Run real CMD: lines (not markdown fences): bd list --status=closed, head SPEC.md, " + r.v.UnittestCommandHint() + " from " + rigMayorRigPath(r.rig) + "."
+		hint := "Run real CMD: lines (not markdown fences): bd list --status=closed, head SPEC.md, " + r.v.QAVerifyHint() + " from " + rigMayorRigPath(r.rig) + "."
 		if requiresQARuntimeSmoke(r.townRoot, r.rig, r.v) {
 			if orchestrator.WorkflowUsesPython(r.v) {
 				hint += " HTTP smoke only if SPEC documents API routes and profile includes a server entrypoint."

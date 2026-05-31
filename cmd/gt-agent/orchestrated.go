@@ -1984,7 +1984,7 @@ func validateQACommand(cmd, rig, townRoot string, v orchestrator.WorkflowValidat
 	}
 	if townRoot != "" && rig != "" && !orchestrator.WorkflowNeedsQARuntimeSmoke(townRoot, rig, v) {
 		if strings.Contains(lower, "curl ") || strings.Contains(lower, "go run") {
-			return fmt.Errorf("this rig profile does not require runtime smoke — run %s only (no curl/go run)", v.UnittestCommandHint())
+			return fmt.Errorf("this rig profile does not require runtime smoke — run %s only (no curl/go run)", v.QAVerifyHint())
 		}
 	}
 	if err := validateQARuntimeSmokeCommand(cmd, rig, townRoot, v); err != nil {
@@ -2004,7 +2004,7 @@ func validateQACommand(cmd, rig, townRoot string, v orchestrator.WorkflowValidat
 		return fmt.Errorf("run pytest as a single CMD from %s; do not use pipes or shell if-blocks", rigMayorRigPath(rig))
 	}
 	if strings.Contains(lower, "pytest") && tr != "pytest" && tr != "custom" {
-		return fmt.Errorf("pytest not allowed for this workflow test_runner=%q — use %s or update rig workflow profile", v.TestRunner, v.UnittestCommandHint())
+		return fmt.Errorf("pytest not allowed for this workflow test_runner=%q — use %s or update rig workflow profile", v.TestRunner, v.QAVerifyHint())
 	}
 	if strings.Contains(lower, "pytest") && !strings.Contains(lower, "cd ") && !strings.Contains(lower, strings.ToLower(rigMayorRigPath(rig))) {
 		return fmt.Errorf("pytest must run from under %s (e.g. cd %s && …)", rigMayorRigPath(rig), rigMayorRigPath(rig))
@@ -2222,7 +2222,7 @@ func validateQAArtifacts(townRoot, rig, outcome string, hadCmdFailure, bdListClo
 	}
 	if sendToArchitect {
 		if !unittestOK {
-			return fmt.Errorf("architecture_failure requires green %s in this session — use outcome failure for test failures", v.UnittestCommandHint())
+			return fmt.Errorf("architecture_failure requires green %s in this session — use outcome failure for test failures", v.QAVerifyHint())
 		}
 		if requiresQARuntimeSmoke(townRoot, rig, scoped) && qaSmokeOK {
 			return fmt.Errorf("architecture_failure requires failed runtime smoke while unit tests pass — use all_passed if smoke passed")
@@ -2240,7 +2240,7 @@ func validateQAArtifacts(townRoot, rig, outcome string, hadCmdFailure, bdListClo
 	}
 	if !sendToImpl {
 		if !unittestOK {
-			return fmt.Errorf("run `%s` from %s before reporting QA outcome", v.UnittestCommandHint(), rigMayorRigPath(rig))
+			return fmt.Errorf("run `%s` from %s before reporting QA outcome", v.QAVerifyHint(), rigMayorRigPath(rig))
 		}
 		if err := validateRequiredWorkFiles(townRoot, rig, scoped); err != nil {
 			return err

@@ -80,9 +80,9 @@ func PythonVerifyCommand(v WorkflowValidation) string {
 	
 	cmd := pythonVerifyWithLayout(base, v)
 
-	if v.UsesPythonVenv() && !strings.Contains(cmd, "source ") && !strings.Contains(cmd, ".venv/") && !strings.Contains(cmd, "pipenv") && !strings.Contains(cmd, "poetry") {
+	if v.UsesPythonVenv() && !strings.Contains(cmd, "source ") && !strings.Contains(cmd, ". ") && !strings.Contains(cmd, ".venv/") && !strings.Contains(cmd, "pipenv") && !strings.Contains(cmd, "poetry") {
 		venv := v.PythonVenvRelDir()
-		cmd = "source " + venv + "/bin/activate && " + cmd
+		cmd = ". " + venv + "/bin/activate && " + cmd
 	}
 
 	return cmd

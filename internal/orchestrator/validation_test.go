@@ -176,11 +176,11 @@ func TestWithDefaults_partial(t *testing.T) {
 func TestPromptVars_includesUnittestCommandHint(t *testing.T) {
 	v := WorkflowValidation{QAVerifyCommand: "pytest -q"}.WithDefaults()
 	vars := v.PromptVars()
-	if vars["unittest_command_hint"] != "python3 -m pytest -q" {
+	if vars["unittest_command_hint"] != ". .venv/bin/activate && python3 -m pytest -q" {
 		t.Fatalf("hint: %q", vars["unittest_command_hint"])
 	}
 	v2 := WorkflowValidation{UnittestModule: "pkg.t"}.WithDefaults()
-	if h := v2.PromptVars()["unittest_command_hint"]; h != "python3 -m unittest pkg.t" {
+	if h := v2.PromptVars()["unittest_command_hint"]; h != ". .venv/bin/activate && python3 -m unittest pkg.t" {
 		t.Fatalf("hint: %q", h)
 	}
 }

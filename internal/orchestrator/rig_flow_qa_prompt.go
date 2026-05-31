@@ -35,7 +35,7 @@ func rigFlowQAGenericVerifyBlock(v WorkflowValidation) string {
 
 Run profile verification only: %s
 
-Do **not** invent HTTP smoke unless SPEC.md documents a server and HTTP table.`, v.UnittestCommandHint())
+Do **not** invent HTTP smoke unless SPEC.md documents a server and HTTP table.`, v.QAVerifyHint())
 }
 
 func rigFlowQAGoLibraryVerifyBlock(v WorkflowValidation) string {
@@ -43,7 +43,7 @@ func rigFlowQAGoLibraryVerifyBlock(v WorkflowValidation) string {
 
 This phase has **no** `+"`cmd/server/main.go`"+` + `+"`web/`"+` pair — **skip** `+"`go run`"+` and **curl**.
 
-Run: %s`, v.UnittestCommandHint())
+Run: %s`, v.QAVerifyHint())
 }
 
 func rigFlowQAPythonVerifyBlock(v WorkflowValidation) string {
@@ -52,7 +52,7 @@ func rigFlowQAPythonVerifyBlock(v WorkflowValidation) string {
 
 | Do | Do not |
 |----|--------|
-| Run %s from mayor/rig`, v.LayoutRootDir(), v.UnittestCommandHint())
+| Run %s from mayor/rig`, v.LayoutRootDir(), v.QAVerifyHint())
 	if venv != "" {
 		block += fmt.Sprintf(" (venv `%s/` under mayor/rig)", venv)
 	}
@@ -112,7 +112,7 @@ CMD: cd {{rig}}/mayor/rig/%s && .venv/bin/python3 -m uvicorn %s.app:app --host 1
 | HTTP probes | gt-agent curls **only** paths from SPEC (GET/POST table) |
 | Fresh state | **## Runtime smoke reset** or persistence paths in architecture |
 
-%s`, routeNote, layout, layout, layout, v.UnittestCommandHint(), RigFlowStaticURLContractGuidance)
+%s`, routeNote, layout, layout, layout, v.QAVerifyHint(), RigFlowStaticURLContractGuidance)
 }
 
 func rigFlowQAGoWebStaticSmokeBlock(v WorkflowValidation) string {
