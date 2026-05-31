@@ -12,6 +12,39 @@ echo "=== E2E Workflow Test ==="
 # 1. Start services
 echo "[1] Starting GT services..."
 cd $GT_DIR
+
+if [ ! -d "$GT_DIR/$RIG" ]; then
+    echo "[$RIG is missing! Creating a dummy rig to test against...]"
+    DUMMY_DIR="/tmp/gt-dummy-repo-$$"
+    rm -rf "$DUMMY_DIR"
+    mkdir -p "$DUMMY_DIR"
+    (
+        cd "$DUMMY_DIR"
+        git init
+        echo "# Dummy Project" > README.md
+        git add README.md
+        git config user.email "test@example.com"
+        git config user.name "Test Bot"
+        git commit -m "Initial commit"
+    )
+    gt rig add "$RIG" "file://$DUMMY_DIR"
+    
+    mkdir -p "$GT_DIR/$RIG/mayor/rig/.gastown"
+    echo '{"qa_verify_command": "python -m pytest -v", "spec_summary": "Minimal Python FizzBuzz."}' > "$GT_DIR/$RIG/mayor/rig/.gastown/workflow-profile.json"
+    
+    cat > "$GT_DIR/$RIG/mayor/rig/SPEC.md" << 'EOF'
+# FizzBuzz Service
+Create a Python script `fizzbuzz.py` that provides a `fizzbuzz(n)` function.
+It should take a number `n` and return the standard FizzBuzz string logic.
+Also include pytest tests in `test_fizzbuzz.py`.
+EOF
+    (
+        cd "$GT_DIR/$RIG/mayor/rig"
+        git add .gastown/workflow-profile.json SPEC.md
+        git commit -m "Add spec and workflow profile" || true
+    )
+fi
+
 gt down 2>/dev/null || true
 gt up
 
