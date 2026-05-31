@@ -13,8 +13,9 @@ echo "=== E2E Workflow Test ==="
 echo "[1] Starting GT services..."
 cd $GT_DIR
 
-if [ ! -d "$GT_DIR/$RIG" ]; then
-    echo "[$RIG is missing! Creating a dummy rig to test against...]"
+if [ ! -d "$GT_DIR/$RIG" ] || ! grep -q "\"$RIG\"" "$GT_DIR/mayor/rigs.json" 2>/dev/null; then
+    echo "[$RIG is missing or not registered in rigs.json! Creating a dummy rig to test against...]"
+    rm -rf "$GT_DIR/$RIG"
     DUMMY_DIR="/tmp/gt-dummy-repo-$$"
     rm -rf "$DUMMY_DIR"
     mkdir -p "$DUMMY_DIR"
