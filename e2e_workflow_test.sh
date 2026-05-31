@@ -35,12 +35,8 @@ if [ ! -d "$GT_DIR/$RIG" ] || ! grep -q "\"$RIG\"" "$GT_DIR/mayor/rigs.json" 2>/
     mkdir -p "$GT_DIR/$RIG/mayor/rig/.gastown"
     echo '{"qa_verify_command": "python3 -m pytest -v pingapp/test_main.py", "spec_summary": "FastAPI ping app."}' > "$GT_DIR/$RIG/mayor/rig/.gastown/workflow-profile.json"
     
-    cat > "$GT_DIR/$RIG/mayor/rig/SPEC.md" << 'EOF'
-# Ping Service
-Create a Python FastAPI script in `pingapp/main.py` that provides a simple `/ping` endpoint returning `{"ping": "pong"}`.
-Also include pytest tests in `pingapp/test_main.py` that verify the endpoint works.
-Also include a `requirements.txt`.
-EOF
+    cp "$GT_DIR/../gastown/internal/orchestrator/example_specs/SPEC_python.md" "$GT_DIR/$RIG/mayor/rig/SPEC.md"
+
     (
         cd "$GT_DIR/$RIG/mayor/rig"
         git add .gastown/workflow-profile.json SPEC.md
