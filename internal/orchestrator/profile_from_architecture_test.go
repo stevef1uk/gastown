@@ -10,9 +10,9 @@ import (
 func TestEnrichWorkflowValidationFromArchitecture_pythonPingapp(t *testing.T) {
 	dir := t.TempDir()
 	arch := `# Architecture
-- pingapp/requirements.txt
-- pingapp/main.py
-- pingapp/test_main.py
+- ` + "`pingapp/requirements.txt`" + `
+- ` + "`pingapp/main.py`" + `
+- ` + "`pingapp/test_main.py`" + `
 `
 	if err := os.WriteFile(filepath.Join(dir, "architecture.md"), []byte(arch), 0644); err != nil {
 		t.Fatal(err)
