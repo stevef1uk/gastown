@@ -120,7 +120,7 @@ func trimSmokeServerCommand(cmd string) string {
 	if i := strings.Index(cmd, "&"); i > 0 {
 		cmd = strings.TrimSpace(cmd[:i])
 	}
-	for _, sep := range []string{"&&", "||", "; curl", " curl "} {
+	for _, sep := range []string{"&&", "||", "; curl", " curl ", "`", "\n", `"`} {
 		if i := strings.Index(strings.ToLower(cmd), sep); i > 0 {
 			cmd = strings.TrimSpace(cmd[:i])
 		}
