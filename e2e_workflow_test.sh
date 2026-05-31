@@ -89,7 +89,7 @@ fi
 # architect with that bead. Stage 1 onward proceeds as before.
 
 echo "[2] Kicking off workflow explicitly..."
-gt mayor workflow start rig-flow --rig="$RIG"
+gt mayor workflow start rig-flow --rig="$RIG" || true
 echo "✓ Workflow started."
 
 # 4. Monitor flow. Planner is town-level (no rig prefix). Mayor will
