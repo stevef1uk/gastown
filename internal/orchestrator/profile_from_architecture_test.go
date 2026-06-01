@@ -35,6 +35,62 @@ func TestEnrichWorkflowValidationFromArchitecture_pythonPingapp(t *testing.T) {
 	}
 }
 
+func TestEnrichWorkflowValidation_prefersSpecOverBadProfile(t *testing.T) {
+	dir := t.TempDir()
+	spec := `# PingApp
+
+## Layout
+
+` + "```" + `
+pingapp/
+├── requirements.txt
+├── main.py
+└── test_main.py
+` + "```" + `
+
+## HTTP API
+| GET | /ping |
+`
+	arch := `# Architecture
+- ./requirements.txt
+- ./main.py
+`
+	if err := os.WriteFile(filepath.Join(dir, "SPEC.md"), []byte(spec), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "architecture.md"), []byte(arch), 0644); err != nil {
+		t.Fatal(err)
+	}
+	// Bad spec-index profile (flat layout) — SPEC must win.
+	v := WorkflowValidation{
+		LayoutRoot:        ".",
+		BeadTitleContains: "Implement ./",
+		RequiredFiles:     []string{"requirements.txt", "main.py", "test_main.py"},
+		QAVerifyCommand:   "cd . && pytest",
+	}
+	got := EnrichWorkflowValidationFromArchitecture(v, dir)
+	if got.LayoutRoot != "pingapp" {
+		t.Fatalf("layout_root = %q, want pingapp from SPEC", got.LayoutRoot)
+	}
+	if got.RequirementsFilePath() != "pingapp/requirements.txt" {
+		t.Fatalf("requirements = %q", got.RequirementsFilePath())
+	}
+	if !strings.Contains(got.BeadTitleContains, "pingapp") {
+		t.Fatalf("bead_title_contains = %q", got.BeadTitleContains)
+	}
+}
+
+func TestParseSpecLayoutTree(t *testing.T) {
+	spec := "## Layout\n\n```\npingapp/\n├── requirements.txt\n├── main.py\n└── test_main.py\n```\n"
+	got := parseSpecLayoutTree(spec)
+	if len(got) != 3 {
+		t.Fatalf("paths = %v", got)
+	}
+	if got[0] != "pingapp/requirements.txt" {
+		t.Fatalf("first = %q", got[0])
+	}
+}
+
 func TestFormatProjectSetupStackBlock_pythonForbidsGo(t *testing.T) {
 	v := WorkflowValidation{
 		QAVerifyCommand: "python3 -m pytest -v pingapp/test_main.py",

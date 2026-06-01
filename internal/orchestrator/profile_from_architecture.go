@@ -3,15 +3,26 @@ package orchestrator
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
 
-// EnrichWorkflowValidationFromArchitecture aligns the rig profile with on-disk
-// architecture.md (and optional SPEC.md) so project_setup/implementation use the
-// stack and paths from the design artifacts — not a generic dual Go/Python prompt.
+var (
+	specLayoutDirRe   = regexp.MustCompile(`(?m)^([a-zA-Z][a-zA-Z0-9_-]*)/\s*$`)
+	specTreeFileInLine = regexp.MustCompile(`([a-zA-Z0-9_.-]+\.(?:py|go|txt|md|yaml|yml|json|toml))`)
+)
+
+// EnrichWorkflowValidationFromArchitecture aligns the rig profile with mayor/rig docs.
+// SPEC.md is authoritative for layout_root and required_files when it lists project paths;
+// architecture.md is used only when SPEC has no usable layout. Not platform-specific.
 func EnrichWorkflowValidationFromArchitecture(v WorkflowValidation, mayorRigDir string) WorkflowValidation {
 	archPath := filepath.Join(mayorRigDir, "architecture.md")
 	v = AlignProfileLayoutWithArchitecture(v, archPath)
+
+	if specPaths, ok := extractSpecLayoutPaths(mayorRigDir); ok {
+		v = applySpecPathsToValidation(v, specPaths)
+		return SanitizeRigFlowProfile(v)
+	}
 
 	if len(v.UnionRequiredFiles()) > 0 {
 		return SanitizeRigFlowProfile(v)
@@ -33,6 +44,109 @@ func EnrichWorkflowValidationFromArchitecture(v WorkflowValidation, mayorRigDir 
 	}
 	v = inferTestRunnerFromPaths(v, paths)
 	return SanitizeRigFlowProfile(v)
+}
+
+// extractSpecLayoutPaths reads SPEC.md and returns repo-relative paths (e.g. pingapp/main.py).
+func extractSpecLayoutPaths(mayorRigDir string) ([]string, bool) {
+	specPath := filepath.Join(mayorRigDir, "SPEC.md")
+	data, err := os.ReadFile(specPath)
+	if err != nil || len(data) == 0 {
+		return nil, false
+	}
+	text := string(data)
+
+	var paths []string
+	paths = append(paths, extractArchPaths(text, "")...)
+	paths = append(paths, parseSpecLayoutTree(text)...)
+	paths = dedupeStrings(paths)
+
+	if len(paths) == 0 {
+		return nil, false
+	}
+	// Prefer paths with a shared layout prefix (pingapp/...) over flat ./main.py-only lists.
+	if root := inferLayoutRootFromPaths(paths); root != "" && root != "." {
+		var prefixed []string
+		for _, p := range paths {
+			p = filepath.ToSlash(strings.TrimSpace(p))
+			if strings.HasPrefix(p, root+"/") {
+				prefixed = append(prefixed, p)
+			}
+		}
+		if len(prefixed) > 0 {
+			return prefixed, true
+		}
+	}
+	// SPEC lists files at repo root (layout_root ".") — still authoritative.
+	if len(paths) >= 1 {
+		return paths, true
+	}
+	return nil, false
+}
+
+// parseSpecLayoutTree extracts paths from markdown tree blocks under "## Layout" in SPEC.md.
+func parseSpecLayoutTree(specText string) []string {
+	section := specLayoutSection(specText)
+	dir := ""
+	var out []string
+	for _, line := range strings.Split(section, "\n") {
+		line = strings.TrimSpace(line)
+		line = strings.Trim(line, "`")
+		if line == "```" || strings.HasPrefix(line, "```") {
+			continue
+		}
+		if m := specLayoutDirRe.FindStringSubmatch(line); len(m) == 2 {
+			dir = m[1]
+			continue
+		}
+		if dir == "" {
+			continue
+		}
+		if m := specTreeFileInLine.FindStringSubmatch(line); len(m) == 2 {
+			out = append(out, dir+"/"+m[1])
+		}
+	}
+	return out
+}
+
+func specLayoutSection(specText string) string {
+	lower := strings.ToLower(specText)
+	i := strings.Index(lower, "## layout")
+	if i < 0 {
+		return specText
+	}
+	section := specText[i:]
+	if j := strings.Index(section[1:], "\n## "); j >= 0 {
+		return section[:1+j]
+	}
+	return section
+}
+
+func applySpecPathsToValidation(v WorkflowValidation, specPaths []string) WorkflowValidation {
+	v.RequiredFiles = append([]string(nil), specPaths...)
+	if root := inferLayoutRootFromPaths(specPaths); root != "" {
+		v.LayoutRoot = root
+		if root != "." {
+			v.BeadTitleContains = "Implement " + root + "/"
+		}
+	}
+	v = inferTestRunnerFromPaths(v, specPaths)
+	if v.QAVerifyCommand == "" || strings.Contains(v.QAVerifyCommand, "cd .") {
+		v = inferQAVerifyFromSpecPaths(v, specPaths)
+	}
+	return v
+}
+
+func inferQAVerifyFromSpecPaths(v WorkflowValidation, paths []string) WorkflowValidation {
+	root := v.LayoutRootDir()
+	v = inferTestRunnerFromPaths(v, paths)
+	if WorkflowUsesPython(v) {
+		if root != "" && root != "." {
+			v.QAVerifyCommand = "cd " + root + " && pytest"
+		} else {
+			v.QAVerifyCommand = "pytest"
+		}
+	}
+	return v
 }
 
 func inferLayoutRootFromPaths(paths []string) string {
@@ -112,7 +226,7 @@ func ProjectSetupFailureHint(v WorkflowValidation) string {
 }
 
 // FormatProjectSetupStackBlock is injected via hooks.prompt_context so setup agents
-// see one stack — derived from profile + architecture, not the full dual-stack prompt file.
+// see one stack — derived from profile + SPEC, not the full dual-stack prompt file.
 func FormatProjectSetupStackBlock(v WorkflowValidation) string {
 	kind := ProjectSetupStackKind(v)
 	verify := v.ProjectSetupVerifyHint()
@@ -123,7 +237,7 @@ func FormatProjectSetupStackBlock(v WorkflowValidation) string {
 	layout := v.LayoutRootDir()
 
 	var b strings.Builder
-	b.WriteString("## Active stack for this rig (from SPEC, architecture, and workflow profile)\n\n")
+	b.WriteString("## Active stack for this rig (from SPEC.md, architecture, and workflow profile)\n\n")
 	b.WriteString("**Stack:** " + kind + "\n\n")
 	b.WriteString("**Do not use the other language's toolchain.** ")
 	switch kind {
