@@ -267,7 +267,7 @@ func extractArchPaths(archText, layoutRoot string) []string {
 }
 
 func isLikelyRepoFilePath(p, layoutRoot string) bool {
-	if strings.Contains(p, " ") {
+	if strings.Contains(p, " ") || p == "/" || p == "." || p == "./" {
 		return false
 	}
 	lower := strings.ToLower(p)

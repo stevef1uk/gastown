@@ -412,7 +412,7 @@ func (v WorkflowValidation) ForbiddenRigRootBasenames() []string {
 	for _, f := range v.RequiredFiles {
 		if strings.Contains(f, "/") {
 			base := filepath.Base(f)
-			if base != "" && !seen[base] {
+			if base != "" && base != "/" && base != "." && !seen[base] {
 				seen[base] = true
 				out = append(out, base)
 			}
