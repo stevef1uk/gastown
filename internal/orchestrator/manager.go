@@ -1,6 +1,7 @@
 package orchestrator
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -309,7 +310,7 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summa
 		fmt.Printf("[Manager] Warning: rig-flow mayor/rig git (commit/push): %v\n", cerr)
 	}
 	m.logWorkflowFeed(events.TypeWorkflowTransition, workflowID, inst.TemplateID, fromState, next, outcome, state.Role, rig)
-	telemetry.RecordWorkflowStateChange(nil, rig, workflowID, fromState, next, nil)
+	telemetry.RecordWorkflowStateChange(context.Background(), rig, workflowID, fromState, next, nil)
 	return next, nil
 }
 
@@ -350,7 +351,7 @@ func (m *Manager) ResetWorkflow(workflowID, toState string) (string, error) {
 		role = state.Role
 	}
 	m.logWorkflowFeed(events.TypeWorkflowTransition, workflowID, inst.TemplateID, fromState, toState, "reset", role, rig)
-	telemetry.RecordWorkflowStateChange(nil, rig, workflowID, fromState, toState, nil)
+	telemetry.RecordWorkflowStateChange(context.Background(), rig, workflowID, fromState, toState, nil)
 	return toState, nil
 }
 

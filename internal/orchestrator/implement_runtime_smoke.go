@@ -1,6 +1,7 @@
 package orchestrator
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -138,13 +139,13 @@ func ImplementationRuntimeSmokeOK(townRoot, rig string, v WorkflowValidation) er
 // doc-derived runtime smoke before implementation may complete (GT-VERIFY-002/009).
 func ImplementationPhaseVerifyOK(townRoot, rig string, v WorkflowValidation) error {
 	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
-	
+
 	// Default to success
 	var err error
-	
+
 	defer func() {
 		// Log the overall phase verification to OTEL
-		telemetry.RecordPhaseVerification(nil, rig, "", "implementation", "ImplementationPhaseVerifyOK", err)
+		telemetry.RecordPhaseVerification(context.Background(), rig, "", "implementation", "ImplementationPhaseVerifyOK", err)
 	}()
 
 	if WorkflowUsesGo(v) {
