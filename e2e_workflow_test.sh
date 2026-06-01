@@ -34,6 +34,10 @@ run_freeride_bootstrap() {
 
 echo "=== E2E Workflow Test ==="
 
+if freeride_bootstrap_dir >/dev/null; then
+    run_freeride_bootstrap check-do-it-all-deps.sh
+fi
+
 # 1. Start services
 echo "[1] Starting GT services..."
 gt install "$GT_DIR" || true
