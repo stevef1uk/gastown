@@ -109,7 +109,7 @@ func ImplementMissingFileReadNudge(townRoot, rig, activeBead, activeBeadPath, re
 	b.WriteString(relPath)
 	b.WriteString("` — file does not exist on disk yet.\n")
 
-	if activePath != "" && PathMatchesImplementWrite(relPath, activePath, v.RequiredFiles) {
+	if activePath != "" && PathMatchesImplementWrite(relPath, activePath, v.RequiredFiles, v) {
 		b.WriteString("This path is the **active implement bead** — use **WRITE:** to create it (or **EDIT:** after it exists), not `cat`.\n")
 		return strings.TrimSpace(b.String())
 	}
@@ -117,7 +117,7 @@ func ImplementMissingFileReadNudge(townRoot, rig, activeBead, activeBeadPath, re
 	if WorkflowUsesGo(v) && strings.HasSuffix(relPath, "_test.go") {
 		if activePath != "" && !IsTestImplementPath(activePath) {
 			testBead := CorrelatedTestPathForSource(activePath, v)
-			if testBead != "" && PathMatchesImplementWrite(relPath, testBead, v.RequiredFiles) {
+			if testBead != "" && PathMatchesImplementWrite(relPath, testBead, v.RequiredFiles, v) {
 				b.WriteString("Unit tests live on a **separate implement bead** (`")
 				b.WriteString(testBead)
 				b.WriteString("`). Finish production code on `")
@@ -138,7 +138,7 @@ func ImplementMissingFileReadNudge(townRoot, rig, activeBead, activeBeadPath, re
 			ExtractPathFromBeadTitle(next.Title, v.BeadTitleContains),
 			v.LayoutRoot,
 		)
-		if nextPath != "" && PathMatchesImplementWrite(relPath, nextPath, v.RequiredFiles) {
+		if nextPath != "" && PathMatchesImplementWrite(relPath, nextPath, v.RequiredFiles, v) {
 			b.WriteString("Finish the current bead first — **Next bead** is `")
 			b.WriteString(nextPath)
 			b.WriteString("` (")

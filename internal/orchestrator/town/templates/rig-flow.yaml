@@ -58,7 +58,7 @@ states:
       prompt_context: [planning_bead_bootstrap]
       pre_run: [sync_planning_artifacts]
       state_timeout_seconds: 1800
-      on_timeout: [reset_planning_phase]
+      on_timeout: [sync_planning_on_timeout]
       max_cmd_turns: 8
       cmd_guard: planning
       cmd_rewrites: [rig_placeholders, spec_md_case, plan_md_after_cd, bd_list_limit, unwrap_bash_lc]
@@ -70,7 +70,7 @@ states:
         One CMD: per line. After `cd {{rig}}/mayor/rig`, write plan.md with a relative path (not {{rig}}/mayor/rig/plan.md).
         Heredoc must end with a line containing only EOF. Verify with wc -c from town root.
       failure_hint: |
-        Do not send success JSON until CMD: lines ran in this session. If beads exist, bd list only — do not duplicate bd create. plan.md must be ≥ {{min_plan_bytes}} bytes (expand ### per-bead sections — not a short checklist). Heredoc ends with a line containing only EOF. Run wc -c plan.md; if too small, rewrite plan.md before JSON. Work from {{rig}}/mayor/rig with BEADS_DIR=$GT_ROOT/{{rig}}/.beads.
+        Do not send success JSON until CMD: lines ran in this session. If sync_planning_artifacts already created beads, bd list only — gt-agent rejects bd create when required_files are covered. plan.md must be ≥ {{min_plan_bytes}} bytes (expand ### per-bead sections — not a short checklist). Heredoc ends with a line containing only EOF. Run wc -c plan.md; if too small, rewrite plan.md before JSON. Work from {{rig}}/mayor/rig with BEADS_DIR=$GT_ROOT/{{rig}}/.beads.
     transitions:
       success:
         to: plan_review
@@ -86,6 +86,7 @@ states:
       2. Reject duplicate or path-less beads; send planner back to fix.
       3. Reject when SPEC.md, architecture.md, and plan.md disagree on HTTP routes, store API names, module path, or integration contract (gt-agent enforces on success).
     hooks:
+      pre_run: [sync_planning_artifacts, enforce_implement_bead_queue]
       max_cmd_turns: 8
       cmd_guard: plan_review
       cmd_rewrites: [rig_placeholders, spec_md_case, bd_list_limit, unwrap_bash_lc]
@@ -108,10 +109,10 @@ states:
     prompt_file: prompts/rig-flow/project_setup.md
     instructions: |
       Use only the **{{project_setup_stack_kind}}** stack for this rig (see injected block below).
-      Run `{{project_setup_verify_hint}}` green, split implement beads one file each, then JSON success.
+      Run `{{project_setup_verify_hint}}` green. Beads and plan.md are synced from required_files on pre_run — do not `bd create` unless sync left gaps. Then JSON success.
     hooks:
       prompt_context: [project_setup_stack]
-      pre_run: [enforce_implement_bead_queue]
+      pre_run: [sync_planning_artifacts, enforce_implement_bead_queue]
       cmd_guard: project_setup
       cmd_rewrites: [rig_placeholders, bd_list_implement_scope, unittest_workdir, bd_list_limit, unwrap_bash_lc]
       env:
@@ -121,7 +122,7 @@ states:
       python3_rewrite: true
       track: project_setup
       auto_verify_ok_clears_cmd_failure: true
-      post_artifact_success: [ensure_http_implementation_config, close_project_setup_beads]
+      post_artifact_success: [sync_planning_artifacts, ensure_http_implementation_config, close_project_setup_beads]
       auto_verify:
         - when: go_mod_tidy
           verify: go_setup
@@ -158,7 +159,7 @@ states:
       failure_prompt_context: [implementation_queue, implement_bead_context]
       empty_response_suffix: "Reply with EDIT:/WRITE:/READ: or CMD: lines. Implement code and unit tests per plan.md; WRITE for new *_test.go or tests/test_*.py. Use Verify from Next bead."
       prompt_context: [implementation_queue, implement_bead_context]
-      pre_run: [ensure_http_implementation_config, ensure_implement_smoke_ready, close_project_setup_beads, enforce_implement_bead_queue, prune_stale_layout_go, repair_requirements, refresh_codeindex, reconcile_implement_beads]
+      pre_run: [sync_planning_artifacts, ensure_http_implementation_config, ensure_implement_smoke_ready, close_project_setup_beads, enforce_implement_bead_queue, prune_stale_layout_go, repair_requirements, refresh_codeindex, reconcile_implement_beads]
       per_turn: [repair_requirements]
       cmd_guard: implementation
       cmd_rewrites: [rig_placeholders, backend_path_after_cd, bd_list_implement_scope, unittest_workdir, bd_list_limit, unwrap_bash_lc]

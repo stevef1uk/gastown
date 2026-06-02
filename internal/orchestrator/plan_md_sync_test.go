@@ -30,6 +30,32 @@ func TestPlanningPlanMDNeedsRefresh_missingFile(t *testing.T) {
 	}
 }
 
+func TestPlanningPlanMDNeedsRefresh_flatBeadMapPaths(t *testing.T) {
+	t.Parallel()
+	town := t.TempDir()
+	rig := "mockrig"
+	rigDir := filepath.Join(town, rig, "mayor", "rig")
+	if err := os.MkdirAll(rigDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	plan := strings.Join([]string{
+		"# Implementation plan",
+		"## Bead map",
+		"### te-h: linkshelf/handlers.go",
+		"- Scope: flat path",
+	}, "\n")
+	if err := os.WriteFile(filepath.Join(rigDir, "plan.md"), []byte(plan), 0644); err != nil {
+		t.Fatal(err)
+	}
+	v := WorkflowValidation{
+		LayoutRoot:    "linkshelf",
+		RequiredFiles: []string{"linkshelf/internal/api/handlers.go"},
+	}
+	if !PlanningPlanMDNeedsRefresh(town, rig, v) {
+		t.Fatal("expected refresh when plan.md bead map uses flattened paths")
+	}
+}
+
 func TestPadPlanningPlanMD_meetsMin(t *testing.T) {
 	body := "# plan\n"
 	got := padPlanningPlanMD(body, 500)

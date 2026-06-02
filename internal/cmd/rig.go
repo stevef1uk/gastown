@@ -742,6 +742,7 @@ func runRigAdd(cmd *cobra.Command, args []string) error {
 	}
 
 	maybeSpecIndexFromSPEC(townRoot, name)
+	maybeAutoSyncPlanningAfterRigSetup(townRoot, name)
 
 	// Commit town-level config changes (rigs.json, daemon.json, routes.jsonl)
 	// so they aren't reverted by git restore/checkout operations.
@@ -811,6 +812,31 @@ func maybeSpecIndexFromSPEC(townRoot, rigName string) {
 			fmt.Printf("  %s\n", style.Dim.Render(line))
 		}
 		fmt.Printf("\n")
+	}
+}
+
+// maybeAutoSyncPlanningAfterRigSetup canonicalizes implement beads + plan.md after rig add/adopt.
+// This prevents stale or legacy implement bead titles from leaking into a fresh rig-flow run.
+// Set GT_SKIP_AUTO_SYNC_PLANNING=1 to disable.
+func maybeAutoSyncPlanningAfterRigSetup(townRoot, rigName string) {
+	if os.Getenv("GT_SKIP_AUTO_SYNC_PLANNING") != "" {
+		return
+	}
+	prof, ok, err := orchestrator.LoadRigWorkflowProfileFile(townRoot, rigName)
+	if err != nil || !ok {
+		return
+	}
+	prof = orchestrator.ClampProfileValidationForRig(townRoot, rigName, prof)
+	if len(prof.ForActivePhase().RequiredFiles) == 0 {
+		return
+	}
+	logLine, err := orchestrator.SyncPlanningArtifacts(townRoot, rigName, prof, true)
+	if err != nil {
+		fmt.Printf("  %s planning sync after rig setup: %v\n", style.Warning.Render("!"), err)
+		return
+	}
+	if strings.TrimSpace(logLine) != "" {
+		fmt.Printf("  %s Planning artifacts synced after rig setup\n", style.Success.Render("✓"))
 	}
 }
 
@@ -1676,6 +1702,7 @@ func runRigAdopt(_ *cobra.Command, args []string) error {
 	autoAssignNamepoolTheme(townRoot, name, mgr)
 
 	maybeSpecIndexFromSPEC(townRoot, name)
+	maybeAutoSyncPlanningAfterRigSetup(townRoot, name)
 
 	// Print results
 	fmt.Printf("\n%s Rig %s adopted\n", style.Success.Render("✓"), name)

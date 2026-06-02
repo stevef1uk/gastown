@@ -17,22 +17,12 @@ import (
 // upEnsureFreshPipelineSession stops a pipeline session when gt-agent is dead or missing
 // --orchestrated while the orchestrator is active. Returns true if the session was stopped.
 func upEnsureFreshPipelineSession(ctx context.Context, sp session.Provider, townRoot, sessionID string, wantOrchestrated bool) bool {
-	if sp == nil || sessionID == "" {
-		return false
-	}
-	running, err := sp.Exists(ctx, sessionID)
-	if err != nil || !running {
-		return false
-	}
-	if !session.PipelineSessionNeedsRestart(ctx, sp, townRoot, sessionID, wantOrchestrated) {
-		return false
-	}
-	_ = sp.Stop(ctx, sessionID, false)
-	if !upQuiet {
+	stopped := session.RestartStalePipelineSession(ctx, sp, townRoot, sessionID, wantOrchestrated)
+	if stopped && !upQuiet {
 		fmt.Fprintf(os.Stderr, "%s Restarting pipeline session %s (gt-agent dead or not orchestrated)\n",
 			style.Warning.Render("!"), sessionID)
 	}
-	return true
+	return stopped
 }
 
 // reconcileOrchestratedPipelineAgents re-checks rig-flow pipeline sessions after the

@@ -234,7 +234,7 @@ Package-level List, Create, Delete, InitSchema on var DB — no Store struct.
 	if err == nil {
 		t.Fatal("expected design validation error for misaligned architecture")
 	}
-	if !strings.Contains(err.Error(), "align architecture.md with SPEC.md") {
+	if !strings.Contains(err.Error(), "design success blocked") && !strings.Contains(err.Error(), "SPEC/architecture misaligned") {
 		t.Fatalf("want design gate error, got: %v", err)
 	}
 	for _, frag := range []string{"/web", "GetLinks", "Store struct", "InitDB"} {

@@ -31,7 +31,34 @@ func SyncPlanningArtifacts(townRoot, rig string, v WorkflowValidation, forcePlan
 			parts = append(parts, "wrote plan.md from open implement beads")
 		}
 	}
+	if err := ValidateNoLegacyImplementBeads(townRoot, rig, v); err != nil {
+		return joinStrings(parts, "; "), err
+	}
 	return joinStrings(parts, "; "), nil
+}
+
+// ValidateNoLegacyImplementBeads fails when open implement-like beads remain without the profile prefix.
+func ValidateNoLegacyImplementBeads(townRoot, rig string, v WorkflowValidation) error {
+	v = v.ForActivePhase()
+	pfx := strings.TrimSpace(v.BeadTitleContains)
+	if pfx == "" || !RequiresExactImplementPaths(v) {
+		return nil
+	}
+	open, err := listAllOpenBeads(townRoot, rig)
+	if err != nil {
+		return err
+	}
+	var bad []string
+	for _, b := range open {
+		if !isNonCanonicalImplementBeadTitle(b.Title, v) {
+			continue
+		}
+		bad = append(bad, fmt.Sprintf("%s (%q)", b.ID, b.Title))
+	}
+	if len(bad) == 0 {
+		return nil
+	}
+	return fmt.Errorf("legacy implement beads remain (delete or re-run sync after rebuild): %s", strings.Join(bad, "; "))
 }
 
 // PlanningPlanMDNeedsRefresh reports whether plan.md should be regenerated from bd state.
@@ -53,13 +80,19 @@ func PlanningPlanMDNeedsRefresh(townRoot, rig string, v WorkflowValidation) bool
 	if planPlaceholderBeadIDRE.Match(data) {
 		return true
 	}
+	if len(checkPlanBeadMapExactPaths(string(data), v)) > 0 {
+		return true
+	}
 	open, err := ListOpenImplementBeads(townRoot, rig, v)
 	if err != nil || len(open) == 0 {
 		return true
 	}
-	if err := ValidatePlanBeads(open, filepath.Join(rigDir, "architecture.md"), v, rig); err != nil {
-		return true
-	}
+		if err := ValidatePlanBeads(open, filepath.Join(rigDir, "architecture.md"), v, rig); err != nil {
+			return true
+		}
+		if err := ValidatePlanBeadPathsExact(open, v, rig); err != nil {
+			return true
+		}
 	pathToID, _ := openImplementPathMap(townRoot, rig, v)
 	for _, want := range v.RequiredFiles {
 		want = filepath.ToSlash(strings.TrimSpace(want))
@@ -70,24 +103,51 @@ func PlanningPlanMDNeedsRefresh(townRoot, rig string, v WorkflowValidation) bool
 		if id == "" {
 			return true
 		}
-		if !planSectionCovers(data, want, id) {
+		if !planSectionCovers(data, want, id, v) {
 			return true
 		}
 	}
 	return false
 }
 
-func planSectionCovers(data []byte, want, id string) bool {
+func planSectionCovers(data []byte, want, id string, v WorkflowValidation) bool {
+	exact := RequiresExactImplementPaths(v)
 	for _, m := range planBeadSectionRE.FindAllStringSubmatch(string(data), -1) {
 		if strings.TrimSpace(m[1]) != id {
 			continue
 		}
 		rest := strings.TrimSpace(m[2])
-		if rest == want || filepath.Base(rest) == filepath.Base(want) {
+		if rest == want {
+			return true
+		}
+		if !exact && filepath.Base(rest) == filepath.Base(want) {
 			return true
 		}
 	}
 	return false
+}
+
+// OpenImplementCoversRequiredFiles reports whether every active-phase required_files path
+// has a matching open implement bead (used to block redundant bd create in planning).
+func OpenImplementCoversRequiredFiles(townRoot, rig string, v WorkflowValidation) (bool, error) {
+	v = v.ForActivePhase()
+	if len(v.RequiredFiles) == 0 {
+		return false, nil
+	}
+	pathToID, err := openImplementPathMap(townRoot, rig, v)
+	if err != nil {
+		return false, err
+	}
+	for _, want := range v.RequiredFiles {
+		want = filepath.ToSlash(strings.TrimSpace(want))
+		if want == "" {
+			continue
+		}
+		if pathToID[want] == "" {
+			return false, nil
+		}
+	}
+	return true, nil
 }
 
 func openImplementPathMap(townRoot, rig string, v WorkflowValidation) (map[string]string, error) {
@@ -104,7 +164,7 @@ func openImplementPathMap(townRoot, rig string, v WorkflowValidation) (map[strin
 		}
 		for _, want := range v.RequiredFiles {
 			want = filepath.ToSlash(strings.TrimSpace(want))
-			if want != "" && pathMatchesRequired(p, []string{want}) {
+			if want != "" && pathMatchesRequiredForProfile(p, []string{want}, v) {
 				pathToID[want] = b.ID
 			}
 		}

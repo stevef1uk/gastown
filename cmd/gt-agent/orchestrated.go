@@ -165,6 +165,10 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 	// pre_run (refresh_codeindex, bead queue, reconcile) must run before prompt_context so
 	// implement_bead_context sees a fresh codeindex.json and the correct queue head.
 	runner.runPreRun()
+	if o, s, ok := runner.tryAutoOutcome(); ok {
+		orchestratedPrintf("[gt-agent] skipping LLM: %s artifacts already valid after pre_run\n", task.State)
+		return o, s, "", nil
+	}
 	if task.State == "implementation" || task.State == "qa_review" || task.State == "project_setup" {
 		if block := orchestrator.FormatMissingImplementFilesBlock(townRoot, rig, runner.v); block != "" {
 			contextBlocks = append(contextBlocks, block)
@@ -1532,13 +1536,13 @@ func validatePlanningCommand(cmd, rig string) error {
 	return nil
 }
 
-func validatePlanningCommandWithProfile(cmd, rig string, v orchestrator.WorkflowValidation) error {
+func validatePlanningCommandWithProfile(cmd, townRoot, rig string, v orchestrator.WorkflowValidation) error {
 	if err := validatePlanningCommand(cmd, rig); err != nil {
 		return err
 	}
 	if isBeadCreateCommand(cmd) {
 		if title := extractBeadCreateTitle(cmd); title != "" {
-			if err := orchestrator.ValidateImplementBeadCreateTitle(title, v); err != nil {
+			if err := orchestrator.ValidatePlanningBeadCreate(townRoot, rig, title, v); err != nil {
 				return err
 			}
 		}
@@ -1644,25 +1648,8 @@ func validateBdCommandBeadID(cmd, townRoot, rig string) error {
 }
 
 func validatePlanningArtifacts(townRoot, rig string, hadCmdFailure, beadCreateOK, beadDeleteOK bool, v orchestrator.WorkflowValidation) error {
-	if err := validatePlanningBeadSet(townRoot, rig, v); err != nil {
-		if beadDeleteOK {
-			return fmt.Errorf("bead set still invalid after bd delete: %w", err)
-		}
-		if !beadCreateOK {
-			return fmt.Errorf("run `bd create` for missing paths or `bd delete` for duplicates in %s, then ensure open beads match architecture: %w", rigMayorRigPath(rig), err)
-		}
-		return fmt.Errorf("open implement beads must match active phase required_files: %w", err)
-	}
 	rigDir := rigMayorRigDir(townRoot, rig)
 	path := filepath.Join(rigDir, "plan.md")
-	info, err := os.Stat(path)
-	if err != nil {
-		return fmt.Errorf("plan.md missing at %s", path)
-	}
-	minPlan := orchestrator.EffectiveMinPlanBytes(rigDir, v)
-	if info.Size() < minPlan {
-		return fmt.Errorf("plan.md too small (%d bytes); need ≥%d (%s)", info.Size(), minPlan, v.PlanMinSizeHint())
-	}
 	if err := validatePlanMDBeadIDs(townRoot, rig, path, v); err != nil {
 		return err
 	}
@@ -1671,8 +1658,14 @@ func validatePlanningArtifacts(townRoot, rig string, hadCmdFailure, beadCreateOK
 			return err
 		}
 	}
-	if err := orchestrator.ValidatePlanningDocAlignment(rigDir, v); err != nil {
-		return fmt.Errorf("align SPEC.md, architecture.md, and plan.md before plan review: %w", err)
+	if err := orchestrator.ValidatePlanningPhaseGate(townRoot, rig, "planning", v); err != nil {
+		if beadDeleteOK {
+			return fmt.Errorf("bead set still invalid after bd delete: %w", err)
+		}
+		if !beadCreateOK {
+			return fmt.Errorf("run `bd create` for missing paths or `bd delete` for duplicates in %s: %w", rigMayorRigPath(rig), err)
+		}
+		return err
 	}
 	if hadCmdFailure {
 		return fmt.Errorf("planning step had failed commands; fix errors before completing")
@@ -2167,26 +2160,8 @@ func validatePlanReviewArtifacts(townRoot, rig string, hadCmdFailure, listOpenOK
 	if !listOpenOK {
 		return fmt.Errorf("run `bd list --status=open` from %s before reporting plan review outcome", rigMayorRigPath(rig))
 	}
-	rigDir := rigMayorRigDir(townRoot, rig)
-	planPath := filepath.Join(rigDir, "plan.md")
-	info, err := os.Stat(planPath)
-	if err != nil {
-		return fmt.Errorf("plan.md missing at %s", planPath)
-	}
-	minPlan := orchestrator.EffectiveMinPlanBytes(rigDir, v)
-	if info.Size() < minPlan {
-		return fmt.Errorf("plan.md too small (%d bytes); need ≥%d (%s)", info.Size(), minPlan, v.PlanMinSizeHint())
-	}
-	open, err := listOpenImplementationBeads(townRoot, rig)
-	if err != nil {
+	if err := orchestrator.ValidatePlanningPhaseGate(townRoot, rig, "plan_review", v); err != nil {
 		return err
-	}
-	archPath := filepath.Join(rigMayorRigDir(townRoot, rig), "architecture.md")
-	if err := orchestrator.ValidatePlanBeads(open, archPath, v, rig); err != nil {
-		return fmt.Errorf("plan beads do not match architecture/profile: %w", err)
-	}
-	if err := orchestrator.ValidatePlanningDocAlignment(rigDir, v); err != nil {
-		return fmt.Errorf("SPEC/architecture/plan must agree before build: %w", err)
 	}
 	return nil
 }
@@ -2495,8 +2470,8 @@ func validateDesignArtifacts(townRoot, rig string, writtenThisRun bool, v orches
 			return fmt.Errorf("implementation file %q must not exist in mayor/rig/ (only architecture.md)", name)
 		}
 	}
-	if err := orchestrator.ValidateArchitectureDocAlignment(rigDir, v); err != nil {
-		return fmt.Errorf("align architecture.md with SPEC.md before planning: %w", err)
+	if err := orchestrator.ValidatePlanningPhaseGate(townRoot, rig, "design", v); err != nil {
+		return err
 	}
 	return nil
 }

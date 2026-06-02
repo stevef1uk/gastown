@@ -8,7 +8,7 @@ Use **Go** or **Python** instructions below based on the profile (`{{project_set
 
 1. Prepare the repo so the Polecat implements **one file per bead** without toolchain churn.
 2. Run `{{project_setup_verify_hint}}` green before implementation starts (module/venv only — **not** full app build or curl).
-3. Refine beads: **one open implement bead per file**, ordered by dependency.
+3. **Beads:** `sync_planning_artifacts` already created one open bead per `required_files` path. Use `bd list` only — **do not `bd create`** unless a required path has no open bead (then run `gt rig sync-planning {{rig}} --force` via mayor, not ad-hoc titles).
 
 ### Shared scope
 
@@ -34,7 +34,7 @@ Use **Go** or **Python** instructions below based on the profile (`{{project_set
    CMD: export BEADS_DIR=$GT_ROOT/{{rig}}/.beads && cd {{rig}}/mayor/rig && bd list --status=open --flat --limit=0 | grep -Fi '{{bead_title_contains}}' || true
    ```
 
-3. If one bead covers multiple files, split it (`bd delete` + `bd create` one bead per path in the title). Use **real** bead IDs from `bd list` — never example IDs like `B-123`.
+3. If beads look wrong (flat paths like `linkshelf/handlers.go`, duplicates, or missing `required_files`), **do not** hand-fix with `bd create`. Report failure or ask for `gt rig sync-planning {{rig}} --force` — pre_run/post_success hooks repair the set.
 
 ---
 

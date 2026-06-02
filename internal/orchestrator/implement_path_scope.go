@@ -48,12 +48,12 @@ func ValidateImplementReadPath(townRoot, rig, activeBead, relPath string, v Work
 		allowedID = next.ID
 	}
 	allowedPath := ImplementBeadPathForID(townRoot, rig, allowedID, v)
-	if allowedPath != "" && PathMatchesImplementWrite(relPath, allowedPath, v.RequiredFiles) {
+	if allowedPath != "" && PathMatchesImplementWrite(relPath, allowedPath, v.RequiredFiles, v) {
 		return nil
 	}
 	if allowedPath != "" && WorkflowUsesGo(v) && !IsTestImplementPath(allowedPath) {
 		if testPath := CorrelatedTestPathForSource(allowedPath, v); testPath != "" {
-			if PathMatchesImplementWrite(relPath, testPath, v.RequiredFiles) {
+			if PathMatchesImplementWrite(relPath, testPath, v.RequiredFiles, v) {
 				return nil
 			}
 		}
@@ -65,7 +65,7 @@ func ValidateImplementReadPath(townRoot, rig, activeBead, relPath string, v Work
 		return nil
 	}
 	for _, want := range v.RequiredFiles {
-		if PathMatchesImplementWrite(relPath, want, v.RequiredFiles) {
+		if PathMatchesImplementWrite(relPath, want, v.RequiredFiles, v) {
 			return nil
 		}
 	}
@@ -109,7 +109,7 @@ func validateImplementWriteScope(townRoot, rig, activeBead, written string, v Wo
 		}
 		return nil
 	}
-	if PathMatchesImplementWrite(written, allowedPath, v.RequiredFiles) {
+	if PathMatchesImplementWrite(written, allowedPath, v.RequiredFiles, v) {
 		if err := ValidateHTTPHandlerBeadPrerequisites(filepath.Join(townRoot, rig, "mayor", "rig"), written, v); err != nil {
 			return err
 		}
@@ -118,7 +118,7 @@ func validateImplementWriteScope(townRoot, rig, activeBead, written string, v Wo
 	// Same-bead unit tests (e.g. schema.go → schema_test.go) are not separate implement beads.
 	if WorkflowUsesGo(v) && !IsTestImplementPath(allowedPath) {
 		if testPath := CorrelatedTestPathForSource(allowedPath, v); testPath != "" {
-			if PathMatchesImplementWrite(written, testPath, v.RequiredFiles) {
+			if PathMatchesImplementWrite(written, testPath, v.RequiredFiles, v) {
 				return nil
 			}
 		}
@@ -134,7 +134,7 @@ func validateImplementWriteScope(townRoot, rig, activeBead, written string, v Wo
 	}
 	if strings.HasSuffix(filepath.ToSlash(allowedPath), "go.mod") && strings.HasSuffix(written, ".go") {
 		for _, want := range v.RequiredFiles {
-			if PathMatchesImplementWrite(written, want, v.RequiredFiles) {
+			if PathMatchesImplementWrite(written, want, v.RequiredFiles, v) {
 				return nil
 			}
 		}
@@ -157,7 +157,7 @@ func OpenImplementBeadForPath(townRoot, rig, filePath string, v WorkflowValidati
 		if p == "" {
 			continue
 		}
-		if PathMatchesImplementWrite(filePath, p, v.RequiredFiles) {
+		if PathMatchesImplementWrite(filePath, p, v.RequiredFiles, v) {
 			return b.ID, p, true
 		}
 	}

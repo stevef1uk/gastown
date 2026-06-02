@@ -43,8 +43,16 @@ func stateTimedOut(inst *WorkflowInstance, state State, now time.Time) bool {
 // RunOnTimeoutHook runs hooks.on_timeout steps from rig-flow.yaml (e.g. reset_planning_phase).
 func RunOnTimeoutHook(step, townRoot, rig string, v WorkflowValidation) (string, error) {
 	switch step {
-	case "reset_planning_phase":
-		return ResetPlanningPhase(townRoot, rig, v)
+	case "reset_planning_phase", "sync_planning_on_timeout":
+		// Deterministic repair (canonical beads + plan.md); avoid ResetPlanningPhase flat recreate.
+		logLine, err := SyncPlanningArtifacts(townRoot, rig, v, true)
+		if err != nil {
+			return "", err
+		}
+		if logLine == "" {
+			logLine = "synced planning artifacts (timeout recovery)"
+		}
+		return logLine, nil
 	case "recover_implementation_stall":
 		return RecoverImplementationStall(townRoot, rig, v)
 	case "reset_implementation_phase":

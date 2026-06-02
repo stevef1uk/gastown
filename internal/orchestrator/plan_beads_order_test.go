@@ -25,6 +25,7 @@ func TestMatchesImplementBeadTitle_gluedTypo(t *testing.T) {
 func TestMatchesImplementBeadTitle_pathInRequiredFilesWithoutPrefix(t *testing.T) {
 	t.Parallel()
 	v := WorkflowValidation{
+		LayoutRoot:        "linkshelf",
 		BeadTitleContains: "Implement linkshelf/",
 		RequiredFiles:     []string{"linkshelf/go.mod", "linkshelf/internal/store/schema.go"},
 	}
@@ -46,6 +47,47 @@ func TestExtractPathFromBeadTitle_gluedImplement(t *testing.T) {
 	if got != ".env.example" {
 		t.Fatalf("got %q want .env.example", got)
 	}
+}
+
+func TestExtractPathFromBeadTitle_legacyImplementWithAlternateProfilePrefix(t *testing.T) {
+	t.Parallel()
+	got := ExtractPathFromBeadTitle("Implement linkshelf/main.go per architecture", "Link Shelf /")
+	if got != "linkshelf/main.go" {
+		t.Fatalf("got %q want linkshelf/main.go", got)
+	}
+}
+
+func TestIsNonCanonicalImplementBeadTitle(t *testing.T) {
+	t.Parallel()
+	v := WorkflowValidation{
+		LayoutRoot:        "linkshelf",
+		BeadTitleContains: "Link Shelf /",
+	}
+	if !isNonCanonicalImplementBeadTitle("Implement linkshelf/main.go per architecture", v) {
+		t.Fatal("legacy per-arch title should be non-canonical")
+	}
+	if !isNonCanonicalImplementBeadTitle("Implement linkshelf/schema.go", v) {
+		t.Fatal("legacy title without per architecture should be non-canonical")
+	}
+	if isNonCanonicalImplementBeadTitle("Link Shelf /linkshelf/go.mod per architecture", v) {
+		t.Fatal("canonical title should not be legacy")
+	}
+}
+
+func TestMatchesImplementBeadTitle_legacyFlatPathWithCanonicalPrefix(t *testing.T) {
+	t.Parallel()
+	v := WorkflowValidation{
+		LayoutRoot:        "linkshelf",
+		BeadTitleContains: "Link Shelf /",
+		RequiredFiles:     []string{"linkshelf/cmd/server/main.go"},
+	}
+	if !MatchesImplementBeadTitle("Implement linkshelf/main.go per architecture", v) {
+		t.Fatal("legacy flat title should match for pruning")
+	}
+	if MatchesImplementBeadTitle("Link Shelf /linkshelf/cmd/server/main.go per architecture", v) {
+		return
+	}
+	t.Fatal("canonical title should match")
 }
 
 func TestPruneMalformedImplementBeads_keepsCanonicalTitles(t *testing.T) {
@@ -110,6 +152,28 @@ func TestIsValidImplementBeadPath(t *testing.T) {
 	}
 }
 
+func TestValidatePlanBeads_rejectsBasenameOnlyPaths(t *testing.T) {
+	t.Parallel()
+	v := WorkflowValidation{
+		BeadTitleContains: "Implement linkshelf/",
+		LayoutRoot:        "linkshelf",
+		RequiredFiles: []string{
+			"linkshelf/internal/store/schema.go",
+			"linkshelf/cmd/server/main.go",
+		},
+	}
+	beads := []PlanBead{
+		{ID: "te-1", Title: "Implement linkshelf/schema.go per architecture"},
+		{ID: "te-2", Title: "Implement linkshelf/main.go per architecture"},
+	}
+	if err := ValidatePlanBeads(beads, "", v, "testgt3"); err == nil {
+		t.Fatal("expected reject flattened paths")
+	}
+	if err := ValidatePlanBeadPathsExact(beads, v, "testgt3"); err == nil {
+		t.Fatal("expected exact path validation error")
+	}
+}
+
 func TestValidatePlanBeads_rejectsExtras(t *testing.T) {
 	t.Parallel()
 	v := WorkflowValidation{
@@ -162,6 +226,40 @@ func TestFormatImplementationQueueBlock_nextOnly(t *testing.T) {
 	}
 	if got == "" {
 		t.Fatal("expected non-empty when required_files set")
+	}
+}
+
+func TestValidatePlanningBeadCreate_blocksWhenRequiredFilesCovered(t *testing.T) {
+	t.Parallel()
+	v := WorkflowValidation{
+		LayoutRoot:        "linkshelf",
+		BeadTitleContains: "Link Shelf /",
+		RequiredFiles: []string{
+			"linkshelf/go.mod",
+			"linkshelf/cmd/server/main.go",
+		},
+	}
+	open := []PlanBead{
+		{ID: "te-1", Title: "Link Shelf /linkshelf/go.mod per architecture"},
+		{ID: "te-2", Title: "Link Shelf /linkshelf/cmd/server/main.go per architecture"},
+	}
+	listImplementBeadsHookMu.Lock()
+	prev := ListImplementBeadsByStatusHook
+	ListImplementBeadsByStatusHook = func(_, _ string, _ WorkflowValidation, status string) ([]PlanBead, error) {
+		if status == "open" {
+			return open, nil
+		}
+		return nil, nil
+	}
+	listImplementBeadsHookMu.Unlock()
+	defer func() {
+		listImplementBeadsHookMu.Lock()
+		ListImplementBeadsByStatusHook = prev
+		listImplementBeadsHookMu.Unlock()
+	}()
+	err := ValidatePlanningBeadCreate("/tmp", "rig", "Implement linkshelf/main.go per architecture", v)
+	if err == nil || !strings.Contains(err.Error(), "already cover") {
+		t.Fatalf("expected block when covered, got %v", err)
 	}
 }
 
@@ -265,6 +363,78 @@ func TestOrderRequiredFilesForImplementation_webBeforeHandlers(t *testing.T) {
 	}
 	if webIdx < 0 || handlerIdx < 0 || webIdx > handlerIdx {
 		t.Fatalf("web before handlers: %v", got)
+	}
+}
+
+func TestEnforceSingleImplementInProgress_reopensOffHeadBead(t *testing.T) {
+	if _, err := exec.LookPath("bd"); err != nil {
+		t.Skip("bd not in PATH")
+	}
+	townRoot := t.TempDir()
+	rig := "mockrig"
+	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
+	beadsDir := filepath.Join(townRoot, rig, ".beads")
+	for _, d := range []string{rigDir, beadsDir} {
+		if err := os.MkdirAll(d, 0755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	init := exec.Command("bd", "init")
+	init.Env = append(os.Environ(), "BEADS_DIR="+beadsDir)
+	init.Dir = rigDir
+	if out, err := init.CombinedOutput(); err != nil {
+		t.Fatalf("bd init: %v\n%s", err, out)
+	}
+	v := WorkflowValidation{
+		LayoutRoot:        "linkshelf",
+		BeadTitleContains: "Implement linkshelf/",
+		RequiredFiles: []string{
+			"linkshelf/go.mod",
+			"linkshelf/internal/store/schema.go",
+			"linkshelf/internal/api/handlers.go",
+		},
+	}
+	create := func(title string) string {
+		cmd := exec.Command("bd", "create", "--type", "task", "--title", title, "--description=test")
+		cmd.Env = append(os.Environ(), "BEADS_DIR="+beadsDir)
+		cmd.Dir = rigDir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("bd create: %v\n%s", err, out)
+		}
+		open, err := ListOpenImplementBeads(townRoot, rig, v)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, b := range open {
+			if b.Title == title {
+				return b.ID
+			}
+		}
+		t.Fatalf("no open bead for title %q", title)
+		return ""
+	}
+	gomodID := create("Implement linkshelf/go.mod per architecture")
+	_ = create("Implement linkshelf/internal/store/schema.go per architecture")
+	handlersID := create("Implement linkshelf/internal/api/handlers.go per architecture")
+	up := exec.Command("bd", "update", handlersID, "--status=in_progress")
+	up.Env = append(os.Environ(), "BEADS_DIR="+beadsDir)
+	up.Dir = rigDir
+	if out, err := up.CombinedOutput(); err != nil {
+		t.Fatalf("bd update in_progress: %v\n%s", err, out)
+	}
+	reopened, err := EnforceSingleImplementInProgress(townRoot, rig, v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reopened) != 1 || reopened[0] != handlersID {
+		t.Fatalf("reopened = %v, want [%s]", reopened, handlersID)
+	}
+	next, err := NextOpenImplementBead(townRoot, rig, v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next == nil || next.ID != gomodID {
+		t.Fatalf("next bead = %v, want %s (queue head)", next, gomodID)
 	}
 }
 

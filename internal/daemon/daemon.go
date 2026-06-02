@@ -1915,6 +1915,9 @@ func (d *Daemon) ensureArchitectRunning(rigName string) {
 	architectDir := filepath.Join(d.config.TownRoot, rigName, constants.DirArchitect)
 	_ = os.MkdirAll(architectDir, 0755)
 
+	wantOrch := d.orchestratedForRole(constants.RoleArchitect)
+	d.restartStalePipelineSession(sessionID, wantOrch)
+
 	if running, _ := d.sp.Exists(d.ctx, sessionID); running {
 		return
 	}
@@ -1966,6 +1969,9 @@ func (d *Daemon) ensureQARunning(rigName string) {
 	qaDir := filepath.Join(d.config.TownRoot, rigName, constants.DirQA)
 	_ = os.MkdirAll(qaDir, 0755)
 
+	wantOrch := d.orchestratedForRole(constants.RoleQA)
+	d.restartStalePipelineSession(sessionID, wantOrch)
+
 	if running, _ := d.sp.Exists(d.ctx, sessionID); running {
 		return
 	}
@@ -2006,6 +2012,13 @@ func (d *Daemon) ensureRigPolecatsRunning() {
 
 // ensureRigPolecatRunning ensures the pipeline polecat for a specific rig is running.
 func (d *Daemon) ensureRigPolecatRunning(rigName string) {
+	if orchestrator.IsRigWorkflowPaused(d.config.TownRoot, rigName) {
+		return
+	}
+	if reason := orchestrator.SkipRigAgentStartReason(d.config.TownRoot, rigName); reason != "" {
+		d.logger.Printf("Skipping rig polecat auto-start for %s: %s", rigName, reason)
+		return
+	}
 	if operational, reason := d.isRigOperational(rigName); !operational {
 		d.logger.Printf("Skipping rig polecat auto-start for %s: %s", rigName, reason)
 		name := session.RigPolecatSessionName(session.PrefixFor(rigName), rigName)
@@ -2019,6 +2032,8 @@ func (d *Daemon) ensureRigPolecatRunning(rigName string) {
 	sessionID := session.RigPolecatSessionName(session.PrefixFor(rigName), rigName)
 	polecatDir := filepath.Join(d.config.TownRoot, rigName, constants.DirPolecat)
 	_ = os.MkdirAll(polecatDir, 0755)
+
+	d.restartStalePipelineSession(sessionID, true)
 
 	if running, _ := d.sp.Exists(d.ctx, sessionID); running {
 		_ = session.RepairTownRoleRigIdentity(d.ctx, d.sp, sessionID, polecatDir, constants.RolePolecat, rigName)
@@ -2116,20 +2131,15 @@ func (d *Daemon) ensurePlannerRunning() {
 	plannerDir := filepath.Join(d.config.TownRoot, constants.DirPlanner)
 	_ = os.MkdirAll(plannerDir, 0755)
 
+	wantOrch := d.orchestratedForRole(constants.RolePlanner)
+	d.restartStalePipelineSession(sessionID, wantOrch)
+
 	if running, _ := d.sp.Exists(d.ctx, sessionID); running {
-		wantOrch := d.orchestratedForRole(constants.RolePlanner)
-		hasOrch := session.GTAgentHasFlagInSession(d.config.TownRoot, sessionID, "--orchestrated")
-		if wantOrch && !hasOrch {
-			d.logger.Printf("Planner session %s is in patrol mode but orchestrator is running — restarting with --orchestrated", sessionID)
-			_ = d.sp.Stop(d.ctx, sessionID, false)
-		} else {
-			return
-		}
+		return
 	}
 
-	orch := d.orchestratedForRole(constants.RolePlanner)
 	beaconTopic := "patrol"
-	if orch {
+	if wantOrch {
 		beaconTopic = "orchestrated"
 	}
 	_, err := session.StartSession(d.ctx, d.sp, &session.SessionConfig{
@@ -2137,7 +2147,7 @@ func (d *Daemon) ensurePlannerRunning() {
 		WorkDir:      plannerDir,
 		Role:         constants.RolePlanner,
 		TownRoot:     d.config.TownRoot,
-		Orchestrated: orch,
+		Orchestrated: wantOrch,
 		Beacon:       session.BeaconConfig{Recipient: "planner", Sender: "daemon", Topic: beaconTopic},
 		WaitForAgent: false,
 		AutoRespawn:  true,
@@ -2159,20 +2169,15 @@ func (d *Daemon) ensureSetupRunning() {
 	setupDir := filepath.Join(d.config.TownRoot, constants.DirSetup)
 	_ = os.MkdirAll(setupDir, 0755)
 
+	wantOrch := d.orchestratedForRole(constants.RoleSetup)
+	d.restartStalePipelineSession(sessionID, wantOrch)
+
 	if running, _ := d.sp.Exists(d.ctx, sessionID); running {
-		wantOrch := d.orchestratedForRole(constants.RoleSetup)
-		hasOrch := session.GTAgentHasFlagInSession(d.config.TownRoot, sessionID, "--orchestrated")
-		if wantOrch && !hasOrch {
-			d.logger.Printf("Setup session %s is not orchestrated but orchestrator is running — restarting with --orchestrated", sessionID)
-			_ = d.sp.Stop(d.ctx, sessionID, false)
-		} else {
-			return
-		}
+		return
 	}
 
-	orch := d.orchestratedForRole(constants.RoleSetup)
 	beaconTopic := "orchestrated"
-	if !orch {
+	if !wantOrch {
 		beaconTopic = "patrol"
 	}
 	_, err := session.StartSession(d.ctx, d.sp, &session.SessionConfig{
@@ -2180,7 +2185,7 @@ func (d *Daemon) ensureSetupRunning() {
 		WorkDir:      setupDir,
 		Role:         constants.RoleSetup,
 		TownRoot:     d.config.TownRoot,
-		Orchestrated: orch,
+		Orchestrated: wantOrch,
 		Beacon:       session.BeaconConfig{Recipient: "setup", Sender: "daemon", Topic: beaconTopic},
 		WaitForAgent: false,
 		AutoRespawn:  true,
@@ -2203,16 +2208,10 @@ func (d *Daemon) ensureMayorRunning() {
 	mgr := mayor.NewManager(d.config.TownRoot)
 	sessionID := mgr.SessionName()
 
-	if running, _ := d.sp.Exists(d.ctx, sessionID); running {
-		wantOrch := d.orchestratedForRole(constants.RoleMayor)
-		hasOrch := session.GTAgentHasFlagInSession(d.config.TownRoot, sessionID, "--orchestrated")
-		if wantOrch && !hasOrch {
-			d.logger.Printf("Mayor session %s is in patrol mode but orchestrator is running — restarting with --orchestrated", sessionID)
-			_ = d.sp.Stop(d.ctx, sessionID, false)
-		}
-	}
+	wantOrch := d.orchestratedForRole(constants.RoleMayor)
+	d.restartStalePipelineSession(sessionID, wantOrch)
 
-	if err := mgr.Start("", d.orchestratedForRole(constants.RoleMayor)); err != nil {
+	if err := mgr.Start("", wantOrch); err != nil {
 		if err == mayor.ErrAlreadyRunning {
 			// Session exists — verify agent is actually alive.
 			// During handoffs or heavy work (long shell pipelines, local LLM),

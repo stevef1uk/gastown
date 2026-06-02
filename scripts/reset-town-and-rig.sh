@@ -9,10 +9,16 @@
 # Optional:
 #   DOCTOR_RESTART_SESSIONS=1  — pass --restart-sessions to gt doctor --fix
 #                                (helps stale patrol tmux after reset)
-#   START_RIG_FLOW=1         — after reset, run:
+#   START_RIG_FLOW=1         — after reset, wait for orchestrator MCP, then:
 #                                gt mayor workflow start rig-flow --rig "$RIG"
+#   GT_UP_FLAGS=--orchestrator-only  — passed to each gt up (default when START_RIG_FLOW=1)
+#   ORCHESTRATOR_WAIT_SECS=90 — max wait for NATS + orchestrator MCP before workflow start
 #   SKIP_ORCHESTRATOR_SYNC=1 — do not refresh $GT_ROOT/orchestrator/ from gastown
 #   RESET_ORCHESTRATOR_INSTANCES=0 — keep orchestrator/instances.json (default: clear it)
+#   SKIP_PLANNING_VERIFY=1   — do not fail if legacy implement beads remain (not recommended)
+#
+# After rig add this script runs `gt rig sync-planning --force` when workflow-profile.json
+# exists (from SPEC.md spec-index) and verifies no legacy "Implement <layout>/..." beads remain.
 #
 # Orchestrator workflow state (wf-*, design/planning, …) is persisted in
 # $GT_ROOT/orchestrator/instances.json (removed when RESET_ORCHESTRATOR_INSTANCES=1).
@@ -37,7 +43,39 @@ GT_ROOT="${GT_ROOT:-$HOME/gt}"
 GASTOWN="${GASTOWN:-$(cd "$(dirname "$0")/.." && pwd)}"
 CLEAN_SCRIPT="${GASTOWN}/scripts/clean-gastown.sh"
 RIG="${RIG_NAME:-testgt3}"
-RIG_URL="${RIG_URL:-https://github.com/stevef1uk/testgt3_go}"
+RIG_URL="${RIG_URL:-https://github.com/stevef1uk/testgt3}"
+ORCHESTRATOR_WAIT_SECS="${ORCHESTRATOR_WAIT_SECS:-90}"
+# rig-flow is orchestrator-driven; --orchestrator-only skips legacy town hq architect/qa/polecat.
+if [[ "${START_RIG_FLOW:-0}" == "1" && -z "${GT_UP_FLAGS:-}" ]]; then
+  GT_UP_FLAGS="--orchestrator-only"
+fi
+GT_UP_FLAGS="${GT_UP_FLAGS:-}"
+
+gt_up() {
+  # shellcheck disable=SC2086
+  (cd "$GT_ROOT" && gt up $GT_UP_FLAGS "$@")
+}
+
+# gt mayor workflow start uses NATS → orchestrator MCP; it does not wait for agent sessions.
+wait_for_orchestrator_mcp() {
+  local deadline=$((SECONDS + ORCHESTRATOR_WAIT_SECS))
+  local n=0
+  echo "[orchestrator] waiting for NATS + orchestrator MCP (up to ${ORCHESTRATOR_WAIT_SECS}s)..."
+  while (( SECONDS < deadline )); do
+    n=$((n + 1))
+    if (cd "$GT_ROOT" && gt orchestrator status 2>&1) | grep -Fq 'MCP ping OK'; then
+      echo "[orchestrator] MCP ready"
+      return 0
+    fi
+    if (( n == 1 || n % 5 == 0 )); then
+      gt_up >/dev/null 2>&1 || true
+    fi
+    sleep 2
+  done
+  echo "FATAL: orchestrator MCP not ready — is Docker/NATS up? Try:" >&2
+  echo "  cd $GT_ROOT && gt up $GT_UP_FLAGS && gt orchestrator status" >&2
+  return 1
+}
 
 if [[ ! -f "$CLEAN_SCRIPT" ]]; then
   echo "FATAL: clean script not found: $CLEAN_SCRIPT" >&2
@@ -102,12 +140,61 @@ clean_rig_pipeline_artifacts() {
     rm -rf "$rig_dir/backend"
     echo "  removed backend/ (polecat recreates during implementation)"
   fi
-  for f in fizzbuzz.py main.py test_fizzbuzz.py dummy.py plan_complete.js; do
-    if [[ -f "$rig_dir/$f" ]]; then
-      rm -f "$rig_dir/$f"
-      echo "  removed stray $f"
+  # Prior implementation runs (flat layout, wrong module root, stale index).
+  for d in linkshelf frontend backend; do
+    if [[ -d "$rig_dir/$d" ]]; then
+      rm -rf "$rig_dir/$d"
+      echo "  removed stale $d/"
     fi
   done
+  for f in fizzbuzz.py main.py test_fizzbuzz.py dummy.py plan_complete.js \
+    go.mod go.sum codeindex.json implementation-progress.json plan.md; do
+    if [[ -f "$rig_dir/$f" ]]; then
+      rm -f "$rig_dir/$f"
+      echo "  removed stale $f (recreated by rig-flow / spec clone)"
+    fi
+  done
+}
+
+# Canonicalize implement beads + plan.md when workflow-profile exists; verify clean bead set.
+finalize_rig_planning_state() {
+  local r="$1"
+  local rig_dir="$GT_ROOT/$r/mayor/rig"
+  local profile="$rig_dir/.gastown/workflow-profile.json"
+  if [[ ! -f "$profile" ]]; then
+    echo "[planning] no workflow-profile.json yet — beads/plan sync skipped (spec-index runs on rig add when SPEC.md exists)"
+    return 0
+  fi
+  echo "=== gt rig sync-planning $r --force ==="
+  if ! (cd "$GT_ROOT" && gt rig sync-planning "$r" --force); then
+    echo "FATAL: gt rig sync-planning failed — rebuild gt from gastown and retry" >&2
+    exit 1
+  fi
+  if [[ "${SKIP_PLANNING_VERIFY:-0}" == "1" ]]; then
+    echo "[planning] verify skipped (SKIP_PLANNING_VERIFY=1)"
+    return 0
+  fi
+  local beads_dir="$GT_ROOT/$r/.beads"
+  # Flat layout titles only (canonical beads are Implement linkshelf/internal/... or cmd/... or web/...).
+  local legacy
+  legacy="$(BEADS_DIR="$beads_dir" bd list --status=open --flat --limit=0 2>/dev/null \
+    | rg ' - Implement linkshelf/(main|handlers|store|schema|store_test)\.go per' || true)"
+  if [[ -n "$legacy" ]]; then
+    echo "FATAL: flat-layout implement beads remain after sync-planning:" >&2
+    echo "$legacy" >&2
+    echo "  Run: gt rig sync-planning $r --force" >&2
+    exit 1
+  fi
+  if [[ -f "$rig_dir/plan.md" ]]; then
+    local flat
+    flat="$(rg -n '^### [^:]+: linkshelf/(main|handlers|store|schema|store_test)\.go' "$rig_dir/plan.md" 2>/dev/null || true)"
+    if [[ -n "$flat" ]]; then
+      echo "FATAL: plan.md still has flat layout paths (expected linkshelf/internal/..., cmd/server/...):" >&2
+      echo "$flat" >&2
+      exit 1
+    fi
+  fi
+  echo "[planning] verify OK — no legacy Implement-prefix open beads; plan.md paths look canonical"
 }
 
 # Install orchestrator FSM templates + prompts from gastown into the town.
@@ -205,8 +292,8 @@ reset_orchestrator_instances
 echo "=== clean-gastown (nuclear, --force) ==="
 bash "$CLEAN_SCRIPT" --force "$GT_ROOT"
 
-echo "=== gt up ==="
-if ! (cd "$GT_ROOT" && gt up); then
+echo "=== gt up ${GT_UP_FLAGS:+$GT_UP_FLAGS} ==="
+if ! gt_up; then
   echo "FATAL: gt up failed — is Docker running? (NATS). Fix and run:" >&2
   echo "  cd $GT_ROOT && gt up && gt rig add $RIG '$RIG_URL'" >&2
   exit 1
@@ -224,11 +311,12 @@ if ! (cd "$GT_ROOT" && gt rig add "$RIG" "$RIG_URL"); then
 fi
 
 clean_rig_pipeline_artifacts "$RIG"
+finalize_rig_planning_state "$RIG"
 drain_hq_mail
 drain_rig_mail "$RIG"
 
-echo "=== gt up (pick up new rig agents) ==="
-(cd "$GT_ROOT" && gt up)
+echo "=== gt up (pick up new rig agents) ${GT_UP_FLAGS:+$GT_UP_FLAGS} ==="
+gt_up
 
 sync_orchestrator_assets
 drain_hq_mail
@@ -250,12 +338,24 @@ echo "=== gt doctor (read-only summary) ==="
 (cd "$GT_ROOT" && gt doctor) || true
 
 if [[ "${START_RIG_FLOW:-0}" == "1" ]]; then
+  wait_for_orchestrator_mcp
   echo "=== gt mayor workflow start rig-flow ==="
-  if (cd "$GT_ROOT" && gt mayor workflow start rig-flow --rig "$RIG"); then
-    echo "[orchestrator] workflow started — tail logs/orchestrator.log and */typescript"
-  else
-    echo "[orchestrator] workflow start failed (is orchestrator running? gt orchestrator status)" >&2
+  if ! (cd "$GT_ROOT" && gt mayor workflow start rig-flow --rig "$RIG"); then
+    echo "FATAL: gt mayor workflow start failed (orchestrator MCP or duplicate workflow)" >&2
+    exit 1
   fi
+  echo "[orchestrator] workflow started — ensuring rig pipeline sessions..."
+  gt_up || true
+  if [[ -f "$GT_ROOT/orchestrator/instances.json" ]]; then
+    echo "[orchestrator] instances.json:"
+    rg '"id"|current_state|status' "$GT_ROOT/orchestrator/instances.json" || true
+  else
+    echo "FATAL: workflow start succeeded but $GT_ROOT/orchestrator/instances.json missing" >&2
+    exit 1
+  fi
+  echo "[orchestrator] verify agents: cd $GT_ROOT && gt status -v"
+  echo "[orchestrator] note: planner may recreate legacy Implement-* beads during planning;"
+  echo "  after planning: gt rig sync-planning $RIG --force"
 fi
 
 echo "=== done ==="

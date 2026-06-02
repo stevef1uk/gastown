@@ -28,7 +28,7 @@ var (
 		regexp.MustCompile(`(?i)every\s+bead\s+must\s+include\s+.*_test\.go`),
 	}
 	integrationContractHeadingRE = regexp.MustCompile(`(?im)^##\s+integration\s+contract\b`)
-	planBeadSectionPathRE        = regexp.MustCompile(`(?m)^###\s+[^:]+:\s*(\S+)`)
+	planBeadSectionPathRE        = regexp.MustCompile(`(?m)^###\s+([a-zA-Z0-9][a-zA-Z0-9_-]*):\s*(.+)$`)
 	bareModuleRelPathRE          = regexp.MustCompile(`(?:^|[\s\-*` + "`" + `])(?:\./)?((?:internal|cmd|pkg|api|web)/[^\s` + "`" + `",:;)]+)`)
 )
 
@@ -91,7 +91,8 @@ func ValidatePlanningDocAlignment(rigDir string, v WorkflowValidation) error {
 	issues = append(issues, checkStoreAPIAlignment("plan.md", planDoc, specDoc)...)
 	issues = append(issues, checkGoModuleAlignment("plan.md", planDoc, specDoc, v)...)
 	issues = append(issues, checkPlanTestMandate(planDoc, v)...)
-	issues = append(issues, checkPlanIntegrationContract(planDoc, v)...)
+	issues = append(issues, checkPlanIntegrationContract(planDoc, specDoc, v)...)
+	issues = append(issues, checkPlanBeadMapExactPaths(planDoc, v)...)
 	issues = append(issues, checkDocLayoutPathPrefix("plan.md", planDoc, v)...)
 
 	return formatDocAlignmentError("SPEC/architecture/plan misaligned", issues)
@@ -392,14 +393,75 @@ func profileRequiresTestBeads(v WorkflowValidation) bool {
 	return false
 }
 
-func checkPlanIntegrationContract(planDoc string, v WorkflowValidation) []string {
+func checkPlanIntegrationContract(planDoc, specDoc string, v WorkflowValidation) []string {
 	if strings.TrimSpace(planDoc) == "" || !profileHasServerEntrypoint(v) {
 		return nil
 	}
-	if integrationContractHeadingRE.FindStringIndex(planDoc) != nil {
+	contract := ExtractSpecMarkdownSection(planDoc, "Integration contract")
+	if contract == "" {
+		return []string{"plan.md missing ## Integration contract (entrypoint bead in profile — wire order, route table, exported symbols per SPEC)"}
+	}
+	if !RequiresExactImplementPaths(v) {
 		return nil
 	}
-	return []string{"plan.md missing ## Integration contract (entrypoint bead in profile — wire order, route table, exported symbols per SPEC)"}
+	specAPI := parseAPISmokeSpecText(specDoc, v)
+	paths := apiPathSet(specAPI)
+	if len(paths) == 0 {
+		return nil
+	}
+	var issues []string
+	for p := range paths {
+		if !strings.Contains(contract, p) {
+			issues = append(issues, fmt.Sprintf("plan.md integration contract must mention SPEC HTTP route %q", p))
+		}
+	}
+	return issues
+}
+
+// extractPlanBeadMapPath parses the file path from a ### <id>: … plan.md bead-map header.
+func extractPlanBeadMapPath(sectionLine string) string {
+	m := planBeadSectionPathRE.FindStringSubmatch(sectionLine)
+	if len(m) < 3 {
+		return ""
+	}
+	rest := strings.TrimSpace(m[2])
+	if before, _, ok := strings.Cut(rest, " per architecture"); ok {
+		rest = strings.TrimSpace(before)
+	}
+	if before, _, ok := strings.Cut(rest, " per arch"); ok {
+		rest = strings.TrimSpace(before)
+	}
+	if strings.HasPrefix(strings.ToLower(rest), "implement ") {
+		rest = strings.TrimSpace(rest[len("implement "):])
+	}
+	return filepath.ToSlash(strings.TrimSpace(rest))
+}
+
+// checkPlanBeadMapExactPaths rejects ### bead-map paths that are not exact required_files entries.
+func checkPlanBeadMapExactPaths(planDoc string, v WorkflowValidation) []string {
+	if !RequiresExactImplementPaths(v) || strings.TrimSpace(planDoc) == "" {
+		return nil
+	}
+	v = v.ForActivePhase()
+	expected := make(map[string]bool)
+	for _, f := range v.RequiredFiles {
+		f = filepath.ToSlash(strings.TrimSpace(f))
+		if f != "" {
+			expected[f] = true
+		}
+	}
+	var issues []string
+	for _, line := range strings.Split(planDoc, "\n") {
+		if !strings.HasPrefix(strings.TrimSpace(line), "### ") {
+			continue
+		}
+		p := extractPlanBeadMapPath(line)
+		if p == "" || expected[p] {
+			continue
+		}
+		issues = append(issues, fmt.Sprintf("plan.md bead map uses %q; required_files expects full path (e.g. under %s/internal/ or %s/cmd/)", p, v.LayoutRoot, v.LayoutRoot))
+	}
+	return issues
 }
 
 func profileHasServerEntrypoint(v WorkflowValidation) bool {

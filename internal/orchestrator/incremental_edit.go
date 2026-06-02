@@ -163,11 +163,17 @@ Use full heredoc only when creating a **new** file (path missing on disk) or rep
 }
 
 // PathMatchesImplementWrite reports whether written path matches the allowed implement bead path.
-func PathMatchesImplementWrite(written, allowed string, required []string) bool {
+func PathMatchesImplementWrite(written, allowed string, required []string, v WorkflowValidation) bool {
 	written = filepath.ToSlash(strings.TrimSpace(written))
 	allowed = filepath.ToSlash(strings.TrimSpace(allowed))
+	if written == "" || allowed == "" {
+		return false
+	}
 	if written == allowed {
 		return true
+	}
+	if RequiresExactImplementPaths(v) {
+		return false
 	}
 	for _, want := range required {
 		want = filepath.ToSlash(strings.TrimSpace(want))

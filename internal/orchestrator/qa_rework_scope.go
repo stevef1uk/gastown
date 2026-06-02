@@ -70,7 +70,7 @@ func AllowedQAReworkWebImplementWrite(townRoot, rig, activeBead, activePath, wri
 		for citedID := range scope.QACitedBeadIDs {
 			p := ImplementBeadPathForID(townRoot, rig, citedID, v)
 			if p != "" && IsFrontendImplementPath(p) &&
-				PathMatchesImplementWrite(written, p, v.RequiredFiles) {
+				PathMatchesImplementWrite(written, p, v.RequiredFiles, v) {
 				return true
 			}
 		}

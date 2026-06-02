@@ -21,7 +21,7 @@ var cmdGuardHandlers = map[string]cmdGuardFn{
 		return validateDesignCommand(cmd, r.rig)
 	},
 	"planning": func(r *stateRunner, cmd string) error {
-		return validatePlanningCommandWithProfile(cmd, r.rig, r.v)
+		return validatePlanningCommandWithProfile(cmd, r.townRoot, r.rig, r.v)
 	},
 	"project_setup": func(r *stateRunner, cmd string) error {
 		return validateProjectSetupCommand(cmd, r.rig, r.v)

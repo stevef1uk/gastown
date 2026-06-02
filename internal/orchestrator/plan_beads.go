@@ -48,13 +48,22 @@ func MatchesImplementBeadTitle(title string, v WorkflowValidation) bool {
 	if strings.HasPrefix(lowerTitle, "implement ") &&
 		(strings.Contains(lowerTitle, " per architecture") || strings.Contains(lowerTitle, " per arch")) {
 		path := ExtractPathFromBeadTitle(title, v.BeadTitleContains)
+		path = NormalizeBeadPathForLayout(path, strings.Trim(strings.TrimSpace(v.LayoutRoot), "/"))
 		if path == "" || !IsValidImplementBeadPath(path) {
 			return false
 		}
 		if len(v.RequiredFiles) == 0 {
 			return pfx == "" || strings.HasPrefix(lowerTitle, strings.ToLower(pfx))
 		}
-		return pathMatchesRequired(path, v.RequiredFiles)
+		if pathMatchesRequiredForProfile(path, v.RequiredFiles, v) {
+			return true
+		}
+		// Legacy titles under layout_root (wrong prefix / flattened paths) — repair prunes these.
+		layout := strings.Trim(strings.TrimSpace(v.LayoutRoot), "/")
+		if layout != "" && (path == layout || strings.HasPrefix(path, layout+"/")) {
+			return true
+		}
+		return false
 	}
 	return false
 }
@@ -80,6 +89,9 @@ func ExtractPathFromBeadTitle(title, titlePrefix string) string {
 			}
 		} else if strings.HasPrefix(lowerTitle, "implement") && strings.HasPrefix(lowerPfx, "implement") {
 			// Glued typo: ImplementDockerfile, Implement.env.example
+			title = strings.TrimSpace(title[len("Implement"):])
+		} else if strings.HasPrefix(lowerTitle, "implement ") {
+			// Legacy planner titles when profile prefix differs (e.g. "Link Shelf /" vs "Implement linkshelf/").
 			title = strings.TrimSpace(title[len("Implement"):])
 		}
 	}
@@ -171,14 +183,28 @@ func ValidatePlanBeads(beads []PlanBead, archPath string, v WorkflowValidation, 
 	var missing []string
 	var dupes []string
 
+	exact := RequiresExactImplementPaths(v)
 	for _, want := range expected {
-		ids := beadIDsForPath(pathToIDs, want)
+		ids := beadIDsForPathProfile(pathToIDs, want, v)
 		if len(ids) == 0 {
 			missing = append(missing, want)
 			continue
 		}
 		if len(ids) > 1 {
 			dupes = append(dupes, fmt.Sprintf("%s (%s)", want, strings.Join(ids, ", ")))
+		}
+		if exact {
+			for _, id := range ids {
+				for _, b := range impl {
+					if b.ID != id {
+						continue
+					}
+					p := NormalizePlannerBeadPath(ExtractPathFromBeadTitle(b.Title, v.BeadTitleContains), v.LayoutRoot, rig)
+					if p != want {
+						dupes = append(dupes, fmt.Sprintf("%s bead %s path %q (want exact %q)", want, id, p, want))
+					}
+				}
+			}
 		}
 	}
 
@@ -193,10 +219,14 @@ func ValidatePlanBeads(beads []PlanBead, archPath string, v WorkflowValidation, 
 		if data, err := os.ReadFile(archPath); err == nil {
 			for _, p := range extractArchPaths(string(data), v.LayoutRoot) {
 				for _, want := range expected {
-					if want != p && filepath.Base(want) != filepath.Base(p) {
+					if exact {
+						if want != p {
+							continue
+						}
+					} else if want != p && filepath.Base(want) != filepath.Base(p) {
 						continue
 					}
-					if len(beadIDsForPath(pathToIDs, want)) == 0 {
+					if len(beadIDsForPathProfile(pathToIDs, want, v)) == 0 {
 						missing = append(missing, want)
 					}
 					break
@@ -213,7 +243,7 @@ func ValidatePlanBeads(beads []PlanBead, archPath string, v WorkflowValidation, 
 	}
 	var extra []string
 	for p, ids := range pathToIDs {
-		if !pathMatchesRequired(p, expected) || !IsValidImplementBeadPath(p) {
+		if !pathMatchesRequiredForProfile(p, expected, v) || !IsValidImplementBeadPath(p) {
 			extra = append(extra, fmt.Sprintf("%s (%s)", p, strings.Join(ids, ", ")))
 		}
 	}

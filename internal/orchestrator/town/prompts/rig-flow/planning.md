@@ -10,7 +10,7 @@ When the workflow profile lists paths under `{{layout_root}}/`, every implement 
 
 ## After a planning timeout (FSM `timeout`)
 
-If the prompt includes **Prior step failed** from a **timeout** (wall-clock or exhausted CMD turns), the orchestrator already ran **`reset_planning_phase`**: open implement beads for this phase were deleted, `plan.md` was removed, and fresh canonical beads were recreated. Run `bd list --status=open`, copy **real** IDs into a new `plan.md` (≥ {{min_plan_bytes}} bytes), then JSON success.
+If the prompt includes **Prior step failed** from a **timeout** (wall-clock or exhausted CMD turns), the orchestrator already ran **`sync_planning_on_timeout`** (`gt rig sync-planning` repair). Run `bd list --status=open` and `wc -c plan.md` — **do not `bd create`** if open beads already cover `required_files`. Expand `plan.md` acceptance bullets only if needed (≥ {{min_plan_bytes}} bytes), then JSON success.
 
 ## After plan review failure (rework)
 

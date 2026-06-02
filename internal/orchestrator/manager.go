@@ -236,13 +236,30 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summa
 	}
 
 	fromState := inst.CurrentState
+	rig := ""
+	if inst.Variables != nil {
+		rig = inst.Variables["rig"]
+	}
+	if IsPlanningGateSuccessOutcome(outcome) && IsPlanningGateState(fromState) && rig != "" {
+		prof, hasProf, perr := LoadRigWorkflowProfileFile(m.townRoot, rig)
+		if perr != nil {
+			return "", fmt.Errorf("load rig workflow profile: %w", perr)
+		}
+		if hasProf && len(prof.ForActivePhase().RequiredFiles) > 0 {
+			v := m.workflowValidationFor(inst, tpl)
+			if err := ValidatePlanningPhaseGate(m.townRoot, rig, fromState, v); err != nil {
+				return "", err
+			}
+		}
+	}
 	next, err := inst.Transition(tpl, outcome)
 	if err != nil {
 		return "", err
 	}
-	rig := ""
-	if inst.Variables != nil {
-		rig = inst.Variables["rig"]
+	if next == "implementation" && rig != "" {
+		if err := m.prepareImplementationPhase(rig, inst, tpl); err != nil {
+			return "", err
+		}
 	}
 	var phaseAdvance *WorkflowRework
 	if fromState == "qa_review" && outcome == "all_passed" && next == "completed" && rig != "" {
@@ -466,6 +483,30 @@ func (m *Manager) workflowValidationFor(inst *WorkflowInstance, tpl *WorkflowTem
 	}
 	v = v.WithDefaults()
 	return v.ForActivePhase()
+}
+
+// prepareImplementationPhase canonicalizes plan.md and implement beads before the polecat runs.
+// Planners often rewrite plan.md with flattened paths; sync + doc alignment prevents implementation drift.
+func (m *Manager) prepareImplementationPhase(rig string, inst *WorkflowInstance, tpl *WorkflowTemplate) error {
+	prof, ok, err := LoadRigWorkflowProfileFile(m.townRoot, rig)
+	if err != nil {
+		return fmt.Errorf("load rig workflow profile: %w", err)
+	}
+	if !ok || len(prof.ForActivePhase().RequiredFiles) == 0 {
+		return nil
+	}
+	v := m.workflowValidationFor(inst, tpl)
+	if _, err := SyncPlanningArtifacts(m.townRoot, rig, v, true); err != nil {
+		return fmt.Errorf("sync planning before implementation: %w", err)
+	}
+	rigDir := filepath.Join(m.townRoot, rig, "mayor", "rig")
+	if err := ValidatePlanningDocAlignment(rigDir, v); err != nil {
+		return fmt.Errorf("implementation entry blocked: %w", err)
+	}
+	if _, err := EnforceSingleImplementInProgress(m.townRoot, rig, v); err != nil {
+		return fmt.Errorf("implement bead queue before implementation: %w", err)
+	}
+	return nil
 }
 
 func validateTemplateSchema(tpl *WorkflowTemplate, filename string) string {

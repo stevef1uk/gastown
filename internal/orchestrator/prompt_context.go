@@ -107,7 +107,9 @@ func RunPreRunHook(step, townRoot, rig string, v WorkflowValidation) (string, er
 			return "planning bead repair: " + logLine, nil
 		}
 	case "sync_planning_artifacts":
-		logLine, err := SyncPlanningArtifacts(townRoot, rig, v, false)
+		// Nested layouts need plan.md rewritten from required_files; setup/planner must not leave flat paths.
+		forcePlan := RequiresExactImplementPaths(v)
+		logLine, err := SyncPlanningArtifacts(townRoot, rig, v, forcePlan)
 		if err != nil {
 			return "", err
 		}

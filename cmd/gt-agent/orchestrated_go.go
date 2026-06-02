@@ -233,15 +233,8 @@ func validateProjectSetupArtifacts(townRoot, rig string, hadCmdFailure, verifyOK
 	if _, err := os.Stat(goMod); err != nil {
 		return fmt.Errorf("go.mod missing at %s after setup", goMod)
 	}
-	if len(v.RequiredFiles) > 0 {
-		open, err := orchestrator.ListOpenImplementBeads(townRoot, rig, v)
-		if err != nil {
-			return fmt.Errorf("list implement beads: %w", err)
-		}
-		archPath := filepath.Join(rigMayorRigDir(townRoot, rig), "architecture.md")
-		if err := orchestrator.ValidatePlanBeads(open, archPath, v, rig); err != nil {
-			return fmt.Errorf("bead set must match required_files exactly (bd delete junk, one bead per path): %w", err)
-		}
+	if err := orchestrator.ValidatePlanningPhaseGate(townRoot, rig, "project_setup", v); err != nil {
+		return err
 	}
 	return nil
 }
