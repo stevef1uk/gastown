@@ -41,31 +41,65 @@ func MatchesImplementBeadTitle(title string, v WorkflowValidation) bool {
 	pfx := v.BeadTitleContains
 	lowerTitle := strings.ToLower(title)
 	if strings.TrimSpace(pfx) != "" && strings.HasPrefix(lowerTitle, strings.ToLower(pfx)) {
-		return true
+		return implementBeadTitlePathOK(title, v)
 	}
 	// Fallback when profile prefix is layout-specific (e.g. "Implement linkshelf/") but the
 	// planner emitted canonical "Implement go.mod per architecture".
 	if strings.HasPrefix(lowerTitle, "implement ") &&
 		(strings.Contains(lowerTitle, " per architecture") || strings.Contains(lowerTitle, " per arch")) {
-		path := ExtractPathFromBeadTitle(title, v.BeadTitleContains)
-		path = NormalizeBeadPathForLayout(path, strings.Trim(strings.TrimSpace(v.LayoutRoot), "/"))
-		if path == "" || !IsValidImplementBeadPath(path) {
-			return false
-		}
-		if len(v.RequiredFiles) == 0 {
-			return pfx == "" || strings.HasPrefix(lowerTitle, strings.ToLower(pfx))
-		}
-		if pathMatchesRequiredForProfile(path, v.RequiredFiles, v) {
-			return true
-		}
-		// Legacy titles under layout_root (wrong prefix / flattened paths) — repair prunes these.
-		layout := strings.Trim(strings.TrimSpace(v.LayoutRoot), "/")
-		if layout != "" && (path == layout || strings.HasPrefix(path, layout+"/")) {
-			return true
-		}
-		return false
+		return implementBeadTitlePathOK(title, v)
 	}
 	return false
+}
+
+// implementBeadTitlePathOK validates the file path embedded in an implement-like title.
+func implementBeadTitlePathOK(title string, v WorkflowValidation) bool {
+	path := ExtractPathFromBeadTitle(title, v.BeadTitleContains)
+	layout := effectiveLayoutRootForBeadTitle(v)
+	path = NormalizeBeadPathForLayout(path, layout)
+	if layout != "" {
+		path = fixDoubledLayoutPath(path, layout)
+	}
+	if path == "" || !IsValidImplementBeadPath(path) {
+		return false
+	}
+	if len(v.RequiredFiles) == 0 {
+		pfx := strings.TrimSpace(v.BeadTitleContains)
+		if pfx == "" {
+			return true
+		}
+		return strings.HasPrefix(strings.ToLower(strings.TrimSpace(title)), strings.ToLower(pfx))
+	}
+	if pathMatchesRequiredForProfile(path, v.RequiredFiles, v) {
+		return true
+	}
+	// Legacy flattened paths under layout_root — only for flat rigs (basename matching allowed).
+	if RequiresExactImplementPaths(v) {
+		return false
+	}
+	layoutRoot := effectiveLayoutRootForBeadTitle(v)
+	return layoutRoot != "" && (path == layoutRoot || strings.HasPrefix(path, layoutRoot+"/"))
+}
+
+// effectiveLayoutRootForBeadTitle returns LayoutRoot or infers it from BeadTitleContains (e.g. "Implement finally/").
+func effectiveLayoutRootForBeadTitle(v WorkflowValidation) string {
+	layout := strings.Trim(strings.TrimSpace(v.LayoutRoot), "/")
+	if layout != "" && layout != "." {
+		return layout
+	}
+	pfx := strings.TrimSpace(v.BeadTitleContains)
+	if !strings.HasSuffix(pfx, "/") {
+		return ""
+	}
+	parts := strings.Split(strings.TrimSuffix(pfx, "/"), " ")
+	if len(parts) == 0 {
+		return ""
+	}
+	candidate := parts[len(parts)-1]
+	if strings.EqualFold(candidate, "implement") {
+		return ""
+	}
+	return candidate
 }
 
 // ExtractPathFromBeadTitle returns a repo-relative file path from an implementation bead title.
@@ -154,14 +188,22 @@ func ValidatePlanBeads(beads []PlanBead, archPath string, v WorkflowValidation, 
 	}
 
 	var impl []PlanBead
+	var nonRequired []string
 	for _, b := range beads {
 		if b.ID == "" {
+			continue
+		}
+		if RequiresExactImplementPaths(v) && looksLikeOpenImplementBeadTitle(b.Title, v) && !MatchesImplementBeadTitle(b.Title, v) {
+			nonRequired = append(nonRequired, fmt.Sprintf("%s (%q)", b.ID, b.Title))
 			continue
 		}
 		if !MatchesImplementBeadTitle(b.Title, v) {
 			continue
 		}
 		impl = append(impl, b)
+	}
+	if len(nonRequired) > 0 {
+		return fmt.Errorf("open implement bead(s) with non-required path(s): %s", strings.Join(dedupeStrings(nonRequired), "; "))
 	}
 	if len(impl) == 0 {
 		return fmt.Errorf("no open beads matching %q", v.BeadTitleContains)

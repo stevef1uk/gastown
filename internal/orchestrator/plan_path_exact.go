@@ -128,7 +128,14 @@ func ValidatePlanBeadPathsExact(beads []PlanBead, v WorkflowValidation, rig stri
 	}
 	var bad []string
 	for _, b := range beads {
+		if !looksLikeOpenImplementBeadTitle(b.Title, v) {
+			continue
+		}
 		if !MatchesImplementBeadTitle(b.Title, v) {
+			p := NormalizePlannerBeadPath(ExtractPathFromBeadTitle(b.Title, v.BeadTitleContains), v.LayoutRoot, rig)
+			if p != "" {
+				bad = append(bad, fmt.Sprintf("%s (%q)", b.ID, p))
+			}
 			continue
 		}
 		p := NormalizePlannerBeadPath(ExtractPathFromBeadTitle(b.Title, v.BeadTitleContains), v.LayoutRoot, rig)

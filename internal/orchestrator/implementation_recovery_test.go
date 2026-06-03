@@ -142,6 +142,7 @@ func TestImplementArtifactPathsForActiveBeads(t *testing.T) {
 	v.BeadTitleContains = "Implement"
 	v.RequiredFiles = []string{
 		"linkshelf/internal/store/store.go",
+		"linkshelf/internal/api/handlers.go",
 		"linkshelf/web/index.html",
 	}
 	prev := ListImplementBeadsByStatusHook

@@ -81,13 +81,35 @@ func TestMatchesImplementBeadTitle_legacyFlatPathWithCanonicalPrefix(t *testing.
 		BeadTitleContains: "Link Shelf /",
 		RequiredFiles:     []string{"linkshelf/cmd/server/main.go"},
 	}
-	if !MatchesImplementBeadTitle("Implement linkshelf/main.go per architecture", v) {
-		t.Fatal("legacy flat title should match for pruning")
+	if MatchesImplementBeadTitle("Implement linkshelf/main.go per architecture", v) {
+		t.Fatal("flattened main.go must not be a queue implement bead when profile requires cmd/server")
 	}
-	if MatchesImplementBeadTitle("Link Shelf /linkshelf/cmd/server/main.go per architecture", v) {
-		return
+	if !looksLikeOpenImplementBeadTitle("Implement linkshelf/main.go per architecture", v) {
+		t.Fatal("flattened title should still be detectable for pruning")
 	}
-	t.Fatal("canonical title should match")
+	if !MatchesImplementBeadTitle("Link Shelf /linkshelf/cmd/server/main.go per architecture", v) {
+		t.Fatal("canonical title should match")
+	}
+}
+
+func TestMatchesImplementBeadTitle_flatHandlersNotQueueBead(t *testing.T) {
+	t.Parallel()
+	v := WorkflowValidation{
+		LayoutRoot:        "linkshelf",
+		BeadTitleContains: "Implement linkshelf/",
+		RequiredFiles: []string{
+			"linkshelf/go.mod",
+			"linkshelf/internal/api/handlers.go",
+		},
+	}
+	flat := "Implement linkshelf/handlers.go per architecture"
+	if MatchesImplementBeadTitle(flat, v) {
+		t.Fatal("flattened handlers bead must not match nested required_files profile")
+	}
+	canonical := "Implement linkshelf/internal/api/handlers.go per architecture"
+	if !MatchesImplementBeadTitle(canonical, v) {
+		t.Fatal("canonical nested handlers bead should match")
+	}
 }
 
 func TestPruneMalformedImplementBeads_keepsCanonicalTitles(t *testing.T) {

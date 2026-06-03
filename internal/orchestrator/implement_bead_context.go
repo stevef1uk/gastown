@@ -64,7 +64,7 @@ func formatImplementBeadContextForPath(townRoot, rig, beadPath string, v Workflo
 		b.WriteString(block)
 		b.WriteString("\n")
 	}
-	if plan := PlanExcerptForBead(townRoot, rig, beadPath); plan != "" {
+	if plan := PlanExcerptForBead(townRoot, rig, beadPath, v); plan != "" {
 		b.WriteString("\n### From plan.md (acceptance for this bead)\n")
 		b.WriteString(plan)
 		b.WriteString("\n")

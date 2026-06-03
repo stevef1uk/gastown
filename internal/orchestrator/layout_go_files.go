@@ -157,6 +157,9 @@ func PruneStaleLayoutGoFiles(townRoot, rig string, v WorkflowValidation) ([]stri
 	root := filepath.Join(townRoot, rig, "mayor", "rig", layout)
 	required := layoutGoRelPathsProtectedFromPrune(v)
 	basenameProtected := layoutGoBasenamesProtectedFromPrune(v)
+	if RequiresExactImplementPaths(v) {
+		basenameProtected = nil
+	}
 	if len(required) == 0 {
 		return nil, nil
 	}

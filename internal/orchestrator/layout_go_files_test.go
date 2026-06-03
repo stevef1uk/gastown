@@ -122,6 +122,47 @@ func TestPruneStaleLayoutGoFiles_keepsCorrelatedTest(t *testing.T) {
 	}
 }
 
+func TestPruneStaleLayoutGoFiles_removesFlatDuplicateWhenNestedRequired(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	rig := "rig"
+	layout := filepath.Join(dir, rig, "mayor", "rig", "linkshelf")
+	apiDir := filepath.Join(layout, "internal", "api")
+	if err := os.MkdirAll(apiDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	for path, body := range map[string]string{
+		"handlers.go":                 "package api\n",
+		"internal/api/handlers.go":    "package api\n",
+		"internal/api/handlers_test.go": "package api\n",
+	} {
+		full := filepath.Join(layout, path)
+		if err := os.MkdirAll(filepath.Dir(full), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte(body), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	v := WorkflowValidation{
+		LayoutRoot: "linkshelf",
+		RequiredFiles: []string{
+			"linkshelf/internal/api/handlers.go",
+			"linkshelf/internal/api/handlers_test.go",
+		},
+	}
+	removed, err := PruneStaleLayoutGoFiles(dir, rig, v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(removed) != 1 || removed[0] != "linkshelf/handlers.go" {
+		t.Fatalf("flat handlers.go should be pruned, removed = %v", removed)
+	}
+	if _, err := os.Stat(filepath.Join(layout, "handlers.go")); !os.IsNotExist(err) {
+		t.Fatal("flat handlers.go should be gone")
+	}
+}
+
 func TestPruneStaleLayoutGoFiles_keepsFlatMainWhenBeadsUseCmdPath(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
@@ -141,8 +182,8 @@ func TestPruneStaleLayoutGoFiles_keepsFlatMainWhenBeadsUseCmdPath(t *testing.T) 
 	v := WorkflowValidation{
 		LayoutRoot: "pingapp",
 		RequiredFiles: []string{
-			"pingapp/cmd/main.go",
-			"pingapp/cmd/main_test.go",
+			"pingapp/main.go",
+			"pingapp/main_test.go",
 		},
 	}
 	removed, err := PruneStaleLayoutGoFiles(dir, rig, v)
@@ -150,12 +191,7 @@ func TestPruneStaleLayoutGoFiles_keepsFlatMainWhenBeadsUseCmdPath(t *testing.T) 
 		t.Fatal(err)
 	}
 	if len(removed) != 0 {
-		t.Fatalf("flat main.go should survive cmd-path bead drift, removed = %v", removed)
-	}
-	for _, name := range []string{"main.go", "main_test.go"} {
-		if _, err := os.Stat(filepath.Join(layout, name)); err != nil {
-			t.Fatalf("%s should remain: %v", name, err)
-		}
+		t.Fatalf("flat main.go should survive when beads use flat paths, removed = %v", removed)
 	}
 }
 

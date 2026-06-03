@@ -22,8 +22,8 @@ func SyncPlanningArtifacts(townRoot, rig string, v WorkflowValidation, forcePlan
 	} else if repairLog != "" {
 		parts = append(parts, repairLog)
 	}
-	if forcePlan || PlanningPlanMDNeedsRefresh(townRoot, rig, v) {
-		wrote, err := WritePlanningPlanMD(townRoot, rig, v)
+	if forcePlan || RequiresExactImplementPaths(v) || PlanningPlanMDNeedsRefresh(townRoot, rig, v) {
+		wrote, err := writePlanningPlanMDWithRetry(townRoot, rig, v)
 		if err != nil {
 			return joinStrings(parts, "; "), err
 		}
@@ -235,6 +235,24 @@ func WritePlanningPlanMD(townRoot, rig string, v WorkflowValidation) (bool, erro
 		return false, err
 	}
 	return true, nil
+}
+
+func writePlanningPlanMDWithRetry(townRoot, rig string, v WorkflowValidation) (bool, error) {
+	wrote, err := WritePlanningPlanMD(townRoot, rig, v)
+	if err == nil {
+		return wrote, nil
+	}
+	if !strings.Contains(err.Error(), "missing open implement beads") {
+		return false, err
+	}
+	created, createErr := EnsurePlanningImplementBeads(townRoot, rig, v)
+	if createErr != nil {
+		return false, err
+	}
+	if len(created) == 0 {
+		return false, err
+	}
+	return WritePlanningPlanMD(townRoot, rig, v)
 }
 
 func padPlanningPlanMD(body string, minBytes int64) string {

@@ -640,9 +640,18 @@ func (d *Daemon) Run() (err error) {
 	// Note: PATCH-010 uses per-session hooks in deacon/manager.go (SetAutoRespawnHook).
 	// Global pane-died hooks don't fire reliably in tmux 3.2a, so we rely on the
 	// per-session approach which has been tested to work for continuous recovery.
+	// NATS transport uses NatsProvider auto-respawn (session/nats_provider.go).
 
-	// Initial heartbeat
+	var pipelineKeepaliveTicker *time.Ticker
+	var pipelineKeepaliveChan <-chan time.Time
+	pipelineKeepaliveTicker = time.NewTicker(pipelineKeepaliveInterval)
+	pipelineKeepaliveChan = pipelineKeepaliveTicker.C
+	defer pipelineKeepaliveTicker.Stop()
+	d.logger.Printf("Orchestrated pipeline keepalive ticker started (interval %v)", pipelineKeepaliveInterval)
+
+	// Initial heartbeat and pipeline keepalive
 	d.heartbeat(state)
+	d.ensureOrchestratedPipelineKeepalive()
 	startupComplete = true
 
 	for {
@@ -746,6 +755,11 @@ func (d *Daemon) Run() (err error) {
 				d.runQuotaDog()
 			}
 
+		case <-pipelineKeepaliveChan:
+			if !d.isShutdownInProgress() {
+				d.ensureOrchestratedPipelineKeepalive()
+			}
+
 		case <-timer.C:
 			d.heartbeat(state)
 
@@ -817,55 +831,64 @@ func (d *Daemon) heartbeat(state *State) {
 	// 0c. Orchestrator MCP: start if missing, restart if NATS ping or heartbeat says stuck.
 	d.ensureOrchestratorHealthy()
 
-	// 1. Ensure Deacon is running (restart if dead)
-	// Check patrol config - can be disabled in mayor/daemon.json
-	if d.isPatrolActive("deacon") {
-		d.ensureDeaconRunning()
-	} else {
-		d.logger.Printf("Deacon patrol disabled in config, skipping")
-		// Kill leftover deacon/boot sessions from before patrol was disabled.
-		// Without this, a stale deacon keeps running its own patrol loop,
-		// spawning witnesses and refineries despite daemon config. (hq-2mstj)
+	// Pipeline-only rig-flow: suppress patrol LLM agents (deacon, boot, witness, refinery, mechanic).
+	if orchestrator.SuppressPatrolAgents(d.config.TownRoot) {
+		d.logger.Printf("Pipeline-only: suppressing patrol LLM agents (deacon, boot, witness, refinery, mechanic)")
 		d.killDeaconSessions()
-	}
-
-	// 2. Poke Boot for intelligent triage (stuck/nudge/interrupt)
-	// Boot handles nuanced "is Deacon responsive" decisions
-	// Only run if Deacon patrol is enabled
-	if d.isPatrolActive("deacon") {
-		d.ensureBootRunning()
-	}
-
-	// 3. Direct Deacon heartbeat check (belt-and-suspenders)
-	// Boot may not detect all stuck states; this provides a fallback
-	// Only run if Deacon patrol is enabled
-	if d.isPatrolActive("deacon") {
-		d.checkDeaconHeartbeat()
-	}
-
-	// 4. Ensure Witnesses are running for all rigs (restart if dead)
-	// Check patrol config - can be disabled in mayor/daemon.json
-	if d.isPatrolActive("witness") {
-		d.ensureWitnessesRunning()
-	} else {
-		d.logger.Printf("Witness patrol disabled in config, skipping")
-		// Kill leftover witness sessions from before patrol was disabled. (hq-2mstj)
 		d.killWitnessSessions()
-	}
-
-	// 5. Ensure Refineries are running for all rigs (restart if dead)
-	// Check patrol config - can be disabled in mayor/daemon.json
-	// Pressure-gated: refineries consume API credits, defer when system is loaded.
-	if d.isPatrolActive("refinery") {
-		if p := d.checkPressure("refinery"); !p.OK {
-			d.logger.Printf("Deferring refinery spawn: %s", p.Reason)
-		} else {
-			d.ensureRefineriesRunning()
-		}
-	} else {
-		d.logger.Printf("Refinery patrol disabled in config, skipping")
-		// Kill leftover refinery sessions from before patrol was disabled. (hq-2mstj)
 		d.killRefinerySessions()
+		d.killMechanicSessions()
+	} else {
+		// 1. Ensure Deacon is running (restart if dead)
+		// Check patrol config - can be disabled in mayor/daemon.json
+		if d.isPatrolActive("deacon") {
+			d.ensureDeaconRunning()
+		} else {
+			d.logger.Printf("Deacon patrol disabled in config, skipping")
+			// Kill leftover deacon/boot sessions from before patrol was disabled.
+			// Without this, a stale deacon keeps running its own patrol loop,
+			// spawning witnesses and refineries despite daemon config. (hq-2mstj)
+			d.killDeaconSessions()
+		}
+
+		// 2. Poke Boot for intelligent triage (stuck/nudge/interrupt)
+		// Boot handles nuanced "is Deacon responsive" decisions
+		// Only run if Deacon patrol is enabled
+		if d.isPatrolActive("deacon") {
+			d.ensureBootRunning()
+		}
+
+		// 3. Direct Deacon heartbeat check (belt-and-suspenders)
+		// Boot may not detect all stuck states; this provides a fallback
+		// Only run if Deacon patrol is enabled
+		if d.isPatrolActive("deacon") {
+			d.checkDeaconHeartbeat()
+		}
+
+		// 4. Ensure Witnesses are running for all rigs (restart if dead)
+		// Check patrol config - can be disabled in mayor/daemon.json
+		if d.isPatrolActive("witness") {
+			d.ensureWitnessesRunning()
+		} else {
+			d.logger.Printf("Witness patrol disabled in config, skipping")
+			// Kill leftover witness sessions from before patrol was disabled. (hq-2mstj)
+			d.killWitnessSessions()
+		}
+
+		// 5. Ensure Refineries are running for all rigs (restart if dead)
+		// Check patrol config - can be disabled in mayor/daemon.json
+		// Pressure-gated: refineries consume API credits, defer when system is loaded.
+		if d.isPatrolActive("refinery") {
+			if p := d.checkPressure("refinery"); !p.OK {
+				d.logger.Printf("Deferring refinery spawn: %s", p.Reason)
+			} else {
+				d.ensureRefineriesRunning()
+			}
+		} else {
+			d.logger.Printf("Refinery patrol disabled in config, skipping")
+			// Kill leftover refinery sessions from before patrol was disabled. (hq-2mstj)
+			d.killRefinerySessions()
+		}
 	}
 
 	// 5.5. Ensure Architects are running for all rigs (restart if dead)
@@ -907,7 +930,9 @@ func (d *Daemon) heartbeat(state *State) {
 	}
 
 	// 5.6.5. Ensure Mechanics are running for all rigs (restart if dead)
-	if d.isPatrolActive("mechanic") {
+	if orchestrator.SuppressPatrolAgents(d.config.TownRoot) {
+		// Already killed in patrol-suppress block above.
+	} else if d.isPatrolActive("mechanic") {
 		if p := d.checkPressure("mechanic"); !p.OK {
 			d.logger.Printf("Deferring mechanic spawn: %s", p.Reason)
 		} else {

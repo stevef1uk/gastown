@@ -103,7 +103,7 @@ gt feed --plain                    # workflow_start / workflow_transition events
 tail -f ~/gt/logs/orchestrator.log
 ```
 
-Optional: **Agent console** (`gt-agent-console`, default `http://127.0.0.1:8081`) lists the orchestrator, rig agents (Architect, QA, Polecat pipeline), workflow badges on the active step, and tails each role’s `typescript` log.
+Optional: **Agent console** (`gt-agent-console`, default `http://127.0.0.1:8091`) lists the orchestrator, rig agents (Architect, QA, Polecat pipeline), workflow badges on the active step, and tails each role’s `typescript` log. Override with `--port` / `--bind` or `GT_AGENT_CONSOLE_PORT` / `GT_AGENT_CONSOLE_BIND`.
 
 ### 3. Tail the right session per state
 

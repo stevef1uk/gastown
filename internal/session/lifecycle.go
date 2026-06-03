@@ -223,11 +223,13 @@ func StartSession(ctx context.Context, p Provider, cfg *SessionConfig) (*StartRe
 
 	// 4. Create session with command and env vars
 	opts := StartOptions{
-		SessionID: cfg.SessionID,
-		WorkDir:   cfg.WorkDir,
-		Command:   command,
-		Env:       envVars,
-		Theme:     cfg.Theme,
+		SessionID:    cfg.SessionID,
+		WorkDir:      cfg.WorkDir,
+		Command:      command,
+		Env:          envVars,
+		Orchestrated: cfg.Orchestrated,
+		AutoRespawn:  cfg.AutoRespawn,
+		Theme:        cfg.Theme,
 	}
 	if err := p.Start(ctx, opts); err != nil {
 		return nil, fmt.Errorf("creating session: %w", err)

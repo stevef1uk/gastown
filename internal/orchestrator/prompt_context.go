@@ -116,6 +116,18 @@ func RunPreRunHook(step, townRoot, rig string, v WorkflowValidation) (string, er
 		if logLine != "" {
 			return "planning sync: " + logLine, nil
 		}
+	case "refresh_plan_md_if_stale":
+		if !PlanningPlanMDNeedsRefresh(townRoot, rig, v) {
+			return "", nil
+		}
+		forcePlan := RequiresExactImplementPaths(v)
+		logLine, err := SyncPlanningArtifacts(townRoot, rig, v, forcePlan)
+		if err != nil {
+			return "", err
+		}
+		if logLine != "" {
+			return "plan.md refresh: " + logLine, nil
+		}
 	case "refresh_codeindex":
 		mayorRig := filepath.Join(townRoot, rig, "mayor", "rig")
 		log, err := RefreshCodeindexIndex(mayorRig, v)

@@ -132,9 +132,10 @@ Use --restore to also start:
   • Polecats   - Those with pinned beads (work attached)
 
 Use --orchestrator-only (or settings orchestrator.pipeline_only) with the orchestrator
-running to skip legacy pipeline agents: per-bead polecats, crew restore, and town
-hq-polecat / hq-architect / hq-qa. Witness, refinery, deacon, and orchestrated rig
-roles (mayor, planner, architect, polecat, qa) still start.
+running to skip legacy pipeline agents (per-bead polecats, crew restore, town
+hq-polecat / hq-architect / hq-qa) and patrol LLM agents (deacon, boot, mechanic,
+witness, refinery). Orchestrated rig-flow roles still start: mayor, planner, setup,
+architect, qa, polecat.
 
 Running 'gt up' multiple times is safe - it only starts services that
 aren't already running.`,
@@ -151,7 +152,7 @@ var (
 func init() {
 	upCmd.Flags().BoolVarP(&upQuiet, "quiet", "q", false, "Only show errors (ignored with --json)")
 	upCmd.Flags().BoolVar(&upRestore, "restore", false, "Also restore crew (from settings) and polecats (from hooks)")
-	upCmd.Flags().BoolVar(&upOrchestratorOnly, "orchestrator-only", false, "Skip legacy pipeline agents when orchestrator is running (per-bead polecats, crew restore, town hq-polecat/architect/qa)")
+	upCmd.Flags().BoolVar(&upOrchestratorOnly, "orchestrator-only", false, "Rig-flow only: skip legacy pipeline and patrol LLM agents (deacon, mechanic, witness, refinery, per-bead polecats, crew restore)")
 	upCmd.Flags().BoolVar(&upJSON, "json", false, "Output as JSON")
 	rootCmd.AddCommand(upCmd)
 }
@@ -184,6 +185,11 @@ func runUp(cmd *cobra.Command, args []string) error {
 
 	// Discover rigs early so we can prefetch while daemon/deacon/mayor start
 	rigs := discoverRigs(townRoot)
+
+	if upOrchestratorOnly {
+		_ = orchestrator.SetPipelineOnlyMarker(townRoot, true)
+	}
+	pipelineOnlyMode := orchestrator.PipelineOnlyEnabled(townRoot, upOrchestratorOnly)
 
 	// Safety: bring current agent out of DND on startup so orchestration nudges
 	// are not silently muted after a previous incident/debug session.
@@ -294,6 +300,10 @@ func runUp(cmd *cobra.Command, args []string) error {
 	// 3. Deacon
 	go func() {
 		defer startupWg.Done()
+		if pipelineOnlyMode {
+			deaconResult = agentStartResult{name: "Deacon", ok: true, detail: "skipped (--orchestrator-only)"}
+			return
+		}
 		orchRunning, _, _ := orchestrator.IsRunning(townRoot)
 		deaconMgr := deacon.NewManager(townRoot)
 		if err := deaconMgr.Start("", orchestrator.OrchestratedForRole(orchRunning, constants.RoleDeacon)); err != nil {
@@ -337,6 +347,10 @@ func runUp(cmd *cobra.Command, args []string) error {
 	}()
 	go func() {
 		defer startupWg.Done()
+		if pipelineOnlyMode {
+			mechanicResult = agentStartResult{name: "Mechanic", ok: true, detail: "skipped (--orchestrator-only)"}
+			return
+		}
 		mechanicResult = upStartMechanic(townRoot)
 	}()
 
@@ -423,10 +437,11 @@ func runUp(cmd *cobra.Command, args []string) error {
 	}
 
 	var orchestrated, _, _ = orchestrator.IsRunning(townRoot)
-	pipelineOnly := orchestrated && orchestrator.PipelineOnlyEnabled(townRoot, upOrchestratorOnly)
+	pipelineOnly := orchestrated && pipelineOnlyMode
 	var architectResult, qaResult, polecatResult agentStartResult
 	if orchestrated {
 		if pipelineOnly {
+			orchestrator.StopPatrolLLMAgents(townRoot)
 			stopLegacyTownPolecat(townRoot)
 			architectResult = agentStartResult{name: "Architect (Town)", ok: true, detail: "skipped (--orchestrator-only)"}
 			qaResult = agentStartResult{name: "QA (Town)", ok: true, detail: "skipped (--orchestrator-only)"}
@@ -516,7 +531,7 @@ func runUp(cmd *cobra.Command, args []string) error {
 		// above (e.g. Dolt "already running" returns before readiness in the
 		// starter goroutine, or general startup ordering). Retry once now that
 		// Dolt is known ready and connection env is set.
-		if !deaconResult.ok {
+		if !pipelineOnly && !deaconResult.ok {
 			deaconMgr := deacon.NewManager(townRoot)
 			orchestrated, _, _ := orchestrator.IsRunning(townRoot)
 			if err := deaconMgr.Start("", orchestrator.OrchestratedForRole(orchestrated, constants.RoleDeacon)); err == nil {
@@ -529,7 +544,7 @@ func runUp(cmd *cobra.Command, args []string) error {
 			services[deaconServiceIdx].OK = deaconResult.ok
 			services[deaconServiceIdx].Detail = deaconResult.detail
 		}
-		if !mechanicResult.ok {
+		if !pipelineOnly && !mechanicResult.ok {
 			mechanicResult = upStartMechanic(townRoot)
 			services[mechanicServiceIdx].OK = mechanicResult.ok
 			services[mechanicServiceIdx].Detail = mechanicResult.detail
@@ -548,7 +563,7 @@ func runUp(cmd *cobra.Command, args []string) error {
 	// 5 & 6. Witnesses, Refineries, Architects, QAs (using prefetched rigs)
 	// Mechanic is town-level only — the single hq-mechanic patrols logs for
 	// the whole town, including all rigs. See `mechanicPatrolScript`.
-	witnessResults, refineryResults, architectResults, qaResults, polecatResults := startRigAgentsWithPrefetch(rigs, prefetchedRigs, rigErrors, orchestrated)
+	witnessResults, refineryResults, architectResults, qaResults, polecatResults := startRigAgentsWithPrefetch(rigs, prefetchedRigs, rigErrors, orchestrated, pipelineOnly)
 
 	if orchestrated {
 		for _, rigName := range rigs {
@@ -918,7 +933,7 @@ type agentResultMsg struct {
 // Mechanic is intentionally NOT included here: it is a town-level role
 // (see `TownLevelRoles` in internal/beads/agent_ids.go). A single town
 // mechanic patrols logs for the whole town, including all rigs.
-func startRigAgentsWithPrefetch(rigNames []string, prefetchedRigs map[string]*rig.Rig, rigErrors map[string]error, orchestrated bool) (witnessResults, refineryResults, architectResults, qaResults, polecatResults map[string]agentStartResult) {
+func startRigAgentsWithPrefetch(rigNames []string, prefetchedRigs map[string]*rig.Rig, rigErrors map[string]error, orchestrated, skipPatrolAgents bool) (witnessResults, refineryResults, architectResults, qaResults, polecatResults map[string]agentStartResult) {
 	n := len(rigNames)
 	witnessResults = make(map[string]agentStartResult, n)
 	refineryResults = make(map[string]agentStartResult, n)
@@ -946,8 +961,15 @@ func startRigAgentsWithPrefetch(rigNames []string, prefetchedRigs map[string]*ri
 		return
 	}
 
-	witnessResults = startRigAgentPhase(rigNames, prefetchedRigs, constants.RoleWitness)
-	refineryResults = startRigAgentPhase(rigNames, prefetchedRigs, constants.RoleRefinery)
+	if skipPatrolAgents {
+		for rigName := range prefetchedRigs {
+			witnessResults[rigName] = agentStartResult{name: "Witness (" + rigName + ")", ok: true, detail: "skipped (--orchestrator-only)"}
+			refineryResults[rigName] = agentStartResult{name: "Refinery (" + rigName + ")", ok: true, detail: "skipped (--orchestrator-only)"}
+		}
+	} else {
+		witnessResults = startRigAgentPhase(rigNames, prefetchedRigs, constants.RoleWitness)
+		refineryResults = startRigAgentPhase(rigNames, prefetchedRigs, constants.RoleRefinery)
+	}
 	architectResults = startRigAgentPhase(rigNames, prefetchedRigs, constants.RoleArchitect)
 
 	for rigName, r := range prefetchedRigs {

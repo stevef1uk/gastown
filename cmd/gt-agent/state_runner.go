@@ -198,9 +198,17 @@ func (r *stateRunner) emptyResponseNudge() string {
 
 func (r *stateRunner) runPerTurn() {
 	for _, step := range r.hooks.PerTurn {
-		switch step {
-		case "repair_requirements":
+		if step == "repair_requirements" {
 			maybeRepairWorkflowRequirements(r.townRoot, r.rig, r.v)
+			continue
+		}
+		logLine, err := orchestrator.RunPreRunHook(step, r.townRoot, r.rig, r.v)
+		if err != nil {
+			orchestratedFprintfStderr("[gt-agent] per_turn %s: %v\n", step, err)
+			continue
+		}
+		if logLine != "" {
+			orchestratedPrintf("[gt-agent] %s: %s\n", step, logLine)
 		}
 	}
 }

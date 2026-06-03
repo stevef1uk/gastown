@@ -474,7 +474,7 @@ func NextOpenImplementBead(townRoot, rig string, v WorkflowValidation) (*PlanBea
 			titleByID[b.ID] = b.Title
 		}
 		for _, want := range v.RequiredFiles {
-			if pathMatchesRequired(p, []string{want}) {
+			if pathMatchesRequiredForProfile(p, []string{want}, v) {
 				if _, ok := idByPath[want]; !ok {
 					idByPath[want] = b.ID
 					titleByID[b.ID] = b.Title
@@ -488,7 +488,7 @@ func NextOpenImplementBead(townRoot, rig string, v WorkflowValidation) (*PlanBea
 			continue
 		}
 		for p, id := range idByPath {
-			if pathMatchesRequired(p, []string{want}) {
+			if pathMatchesRequiredForProfile(p, []string{want}, v) {
 				title := titleByID[id]
 				if title == "" {
 					title = want
@@ -593,6 +593,13 @@ func RepairPlanningBeadSet(townRoot, rig string, v WorkflowValidation) (string, 
 	}
 	if len(legacy) > 0 {
 		parts = append(parts, "pruned legacy titles: "+joinStrings(legacy, ", "))
+	}
+	flat, err := PruneNonRequiredOpenImplementBeads(townRoot, rig, v)
+	if err != nil {
+		return "", err
+	}
+	if len(flat) > 0 {
+		parts = append(parts, "pruned non-required paths: "+joinStrings(flat, ", "))
 	}
 	if removed, err := RemoveStalePlanMD(townRoot, rig, v); err != nil {
 		return "", err
@@ -782,6 +789,52 @@ func PruneOpenImplementBeadsOutsideRequired(townRoot, rig string, v WorkflowVali
 		deleted = append(deleted, b.ID)
 	}
 	return deleted, nil
+}
+
+// PruneNonRequiredOpenImplementBeads deletes open implement-like beads whose path is not an exact
+// required_files entry (e.g. linkshelf/handlers.go when the profile lists linkshelf/internal/api/handlers.go).
+func PruneNonRequiredOpenImplementBeads(townRoot, rig string, v WorkflowValidation) ([]string, error) {
+	v = v.ForActivePhase()
+	if len(v.RequiredFiles) == 0 {
+		return nil, nil
+	}
+	open, err := listAllOpenBeads(townRoot, rig)
+	if err != nil {
+		return nil, err
+	}
+	beadsDir := config.ResolveBeadsDirForRig(townRoot, rig)
+	workDir := filepath.Join(townRoot, rig, "mayor", "rig")
+	var deleted []string
+	for _, b := range open {
+		if !looksLikeOpenImplementBeadTitle(b.Title, v) {
+			continue
+		}
+		p := NormalizePlannerBeadPath(ExtractPathFromBeadTitle(b.Title, v.BeadTitleContains), v.LayoutRoot, rig)
+		if !IsValidImplementBeadPath(p) || pathMatchesRequiredForProfile(p, v.RequiredFiles, v) {
+			continue
+		}
+		cmd := exec.Command("bd", "delete", b.ID, "--force")
+		cmd.Env = append(os.Environ(), "BEADS_DIR="+beadsDir)
+		cmd.Dir = workDir
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			return deleted, fmt.Errorf("bd delete %s: %w: %s", b.ID, err, strings.TrimSpace(string(out)))
+		}
+		deleted = append(deleted, b.ID)
+	}
+	return deleted, nil
+}
+
+func looksLikeOpenImplementBeadTitle(title string, v WorkflowValidation) bool {
+	if MatchesImplementBeadTitle(title, v) {
+		return true
+	}
+	lower := strings.ToLower(strings.TrimSpace(title))
+	if strings.HasPrefix(lower, "implement ") {
+		return true
+	}
+	pfx := strings.TrimSpace(v.BeadTitleContains)
+	return pfx != "" && strings.HasPrefix(lower, strings.ToLower(pfx))
 }
 
 // PruneLegacyImplementBeadTitles deletes open implement-like beads that do not use the profile's
@@ -1143,14 +1196,14 @@ func FormatImplementationQueueBlock(townRoot, rig string, v WorkflowValidation) 
 		return "**Next bead:** none open — `bd list --status=closed` or JSON success if all implement beads are closed."
 	}
 	step, total := 0, len(order)
+	beadPath := NormalizeBeadPathForLayout(ExtractPathFromBeadTitle(next.Title, v.BeadTitleContains), v.LayoutRoot)
 	for i, want := range order {
-		if pathMatchesRequired(next.Title, []string{want}) {
+		if pathMatchesRequiredForProfile(beadPath, []string{want}, v) {
 			step = i + 1
 			break
 		}
 	}
 	mayorDir := filepath.Join(townRoot, rig, "mayor", "rig")
-	beadPath := ExtractPathFromBeadTitle(next.Title, v.BeadTitleContains)
 	verify := ImplementationVerifyCommandForBead(v, mayorDir, beadPath)
 	if step > 0 {
 		return fmt.Sprintf("**Next bead (%d/%d):** %s → `%s` — work only this ID until `bd close`. Verify: `%s`.",

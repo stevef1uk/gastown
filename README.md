@@ -21,7 +21,7 @@ Gas Town is a workspace manager that coordinates multiple AI coding agents worki
 graph TB
     Mayor[The Mayor<br/>gt-agent via NATS]
     Deacon[Deacon<br/>Patrol agent]
-    Console[Agent Console<br/>Web UI :8081]
+    Console[Agent Console<br/>Web UI :8091]
     Town[Town Workspace<br/>~/gt/]
     NATS[NATS Server<br/>nats://localhost:4222]
 
@@ -112,7 +112,7 @@ Workflow templates that coordinate multi-step work. Formulas (TOML definitions) 
 - **Gastown repo** — build `gt`, `gt-agent`, templates (`make install` syncs `internal/orchestrator/town/` into your town)
 - **NATS** — orchestrator MCP on `gt.orchestrator.mcp` (requires `"session_transport": "nats"` in town settings)
 - **Freeride proxy** (optional) — OpenAI-compatible LLM at `http://localhost:11434` for `gt-agent`; routes models by role
-- **`gt-agent-console`** — web UI on port **8081** to watch orchestrator + rig agents, workflow state, and `typescript` logs (see [Agent Console](#agent-console-))
+- **`gt-agent-console`** — web UI on port **8091** (configurable) to watch orchestrator + rig agents, workflow state, and `typescript` logs (see [Agent Console](#agent-console-))
 - **codeindex** (optional, polecat host) — `pip install codeindex` for implementation blast-radius context; see freeride `README.md` (**Polecat host tools**) or [town operator notes](internal/orchestrator/town/README.md)
 
 Patrol agents (witness, refinery, deacon, **town mechanic**) stay on the legacy loop. Pipeline roles (mayor, architect, planner, polecat, qa) use orchestrated mode when the orchestrator is running.
@@ -133,7 +133,7 @@ To quickly test the orchestrator end-to-end on a generated `ping_rig`, you can u
 ./scripts/run_simple_go_test.sh python
 ```
 
-This will automatically create a local rig with the appropriate specification and launch the `rig-flow` pipeline. You can monitor the progress using the Agent Console (http://127.0.0.1:8081).
+This will automatically create a local rig with the appropriate specification and launch the `rig-flow` pipeline. You can monitor the progress using the Agent Console (http://127.0.0.1:8091).
 
 #### Try `rig-flow` on a custom rig
 
@@ -172,7 +172,7 @@ tail -f testgt2/qa/typescript           # qa_review
 
 # 6. Agent console (recommended while debugging rig-flow)
 gt-agent-console
-# Open http://127.0.0.1:8081 — see Agent Console section below
+# Open http://127.0.0.1:8091 — see Agent Console section below
 ```
 
 While the workflow runs, use **`gt-agent-console`** alongside `gt mayor workflow status`:
@@ -340,7 +340,7 @@ gt up
 
 # Open the agent console in another terminal (orchestrator + all agents)
 gt-agent-console
-# http://localhost:8081 — see "Agent Console" section
+# http://localhost:8091 — see "Agent Console" section
 
 # Send a nudge to the Mayor from the command line
 gt nudge mayor "Set up the project and create initial issues"
@@ -353,7 +353,7 @@ export GIT_USER="<your name>"
 export GIT_EMAIL="<your email>"
 export FOLDER="/Users/you/code"
 export DASHBOARD_PORT=8080   # optional, host port for the convoy dashboard
-export CONSOLE_PORT=8081     # optional, host port for the agent console
+export GT_AGENT_CONSOLE_PORT=8091  # optional; or: gt-agent-console --port 8091
 
 docker compose build              # only needed on first run or after code changes
 docker compose up -d
@@ -742,7 +742,7 @@ Gas Town includes built-in formulas for common workflows. See `internal/formula/
 
 ## Activity Feed
 
-`gt feed` launches an interactive terminal dashboard for monitoring all agent activity in real-time. It combines beads activity, agent events, and merge queue updates into a three-panel TUI. This is an alternative to the web-based Agent Console (`gt-agent-console` on port 8081):
+`gt feed` launches an interactive terminal dashboard for monitoring all agent activity in real-time. It combines beads activity, agent events, and merge queue updates into a three-panel TUI. This is an alternative to the web-based Agent Console (`gt-agent-console` on port 8091):
 
 - **Agent Tree** - Hierarchical view of all agents grouped by rig and role
 - **Convoy Panel** - In-progress and recently-landed convoys
@@ -778,16 +778,18 @@ Press `p` in `gt feed` (or start with `gt feed --problems`) to toggle the proble
 
 The **`gt-agent-console`** binary is a web UI for monitoring and interacting with
 Gas Town agents. It is installed with `make install` / `brew install gastown`
-alongside `gt` and `gt-agent`. Default URL: **http://127.0.0.1:8081**.
+alongside `gt` and `gt-agent`. Default URL: **http://127.0.0.1:8091**.
 
 ```bash
-# Start the agent console (default port 8081)
+# Start the agent console (default port 8091)
 gt-agent-console
 
-# Start on a custom port
+# Custom port (CLI or env; CLI wins)
+gt-agent-console --port 3000
 GT_AGENT_CONSOLE_PORT=3000 gt-agent-console
 
 # Bind to all interfaces (default is 127.0.0.1)
+gt-agent-console --bind 0.0.0.0
 GT_AGENT_CONSOLE_BIND=0.0.0.0 gt-agent-console
 ```
 

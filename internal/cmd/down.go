@@ -102,6 +102,8 @@ func runDown(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("not in a Gas Town workspace: %w", err)
 	}
 
+	_ = orchestrator.SetPipelineOnlyMarker(townRoot, false)
+
 	sp := session.GetDefaultProvider(townRoot)
 	t := tmux.NewTmux()
 	tmuxAvailable := t.IsAvailable()
