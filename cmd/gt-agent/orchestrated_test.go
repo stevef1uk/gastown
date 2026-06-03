@@ -508,7 +508,14 @@ func TestValidatePlanningCommand_forbidsImplementation(t *testing.T) {
 	}
 	plan := "cat > mockrig/mayor/rig/plan.md <<'EOF'\n# Plan\nEOF"
 	if err := validatePlanningCommand(plan, "mockrig"); err != nil {
-		t.Fatalf("plan heredoc should be allowed: %v", err)
+		t.Fatalf("plan heredoc should be allowed for flat rigs: %v", err)
+	}
+	nestedV := orchestrator.WorkflowValidation{
+		LayoutRoot:    "linkshelf",
+		RequiredFiles: []string{"linkshelf/internal/api/handlers.go", "linkshelf/cmd/server/main.go"},
+	}
+	if err := validatePlanningCommandWithProfile(plan, "", "testgt3", nestedV); err == nil {
+		t.Fatal("plan heredoc must be rejected when required_files use nested layout paths")
 	}
 	planBackend := "bash -lc 'cat > mockrig/mayor/rig/plan.md <<'EOF'\nBead 1: Implement backend/fizzbuzz.py\nEOF'"
 	if err := validatePlanningCommand(planBackend, "mockrig"); err != nil {

@@ -34,7 +34,7 @@ Polecat implements code later from SPEC. Your architecture doc should **describe
    If under the minimum, expand the heredoc (per-file API/behavior, data model, error cases, acceptance mapping) and rewrite `architecture.md` — do not report success until `wc -c` meets the threshold.
 4. Architecture must reference the real SPEC goals and planned layout under `{{layout_root}}/` (or paths SPEC defines) without creating those files.
 5. **HTTP route table and store API names in architecture.md must match SPEC.md verbatim** (e.g. `/static/{file}` not `/web/*`; `List`/`Create`/`Delete`/`InitSchema` not `GetLinks`/`Store` struct/`InitDB`). gt-agent rejects design success on drift.
-6. **Implement file paths must use the `{{layout_root}}/` prefix** when the profile lists `{{layout_root}}/…` in required_files (e.g. write `{{layout_root}}/internal/store/schema.go`, not bare `internal/store/schema.go`). Module-relative paths without `{{layout_root}}/` are rejected at design and planning gates.
+6. **Implement file paths** in lists, tables, and bead-style bullets must use the `{{layout_root}}/` prefix when required_files use it (e.g. `{{layout_root}}/internal/store/schema.go`). Prose may reference packages as `store.List` or `schema.InitSchema` without the prefix.
 
 ## Required write pattern
 
@@ -77,10 +77,12 @@ EOF
 
 ## Finish
 
-In a **separate** message with **no** `CMD:` lines:
+After a successful heredoc write and `wc -c` ≥ {{min_architecture_bytes}}, gt-agent **auto-completes** design when validation passes — you do not need a JSON turn.
+
+Optional: in a **separate** message with **no** `CMD:` lines:
 
 `{"outcome":"success","summary":"architecture.md written"}`
 
-**CRITICAL RULE**: Do **not** emit JSON in the same message as `CMD:` lines. You MUST wait to see the actual command outputs in the next turn before deciding on the outcome. Do not provide placeholder summaries.
+**CRITICAL RULE**: Do **not** emit JSON in the same message as `CMD:` lines. Wait for command outputs before JSON success if you send it manually.
 
 Forbidden commands are **rejected** by the agent runtime; `success` is rejected if `architecture.md` is too small (need ≥ {{min_architecture_bytes}} bytes).

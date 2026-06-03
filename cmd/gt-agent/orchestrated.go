@@ -252,6 +252,9 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 			feedbackBuilder.WriteString(combined.String())
 			recordAttemptFeedback(feedbackBuilder.String())
 			feedbackBuilder.WriteString("\n\nCommands executed. If the step is complete, reply with JSON only (no CMD lines): {\"outcome\":\"...\",\"summary\":\"...\"}")
+			if runner.hooks.Artifacts == "design" && runner.track.designArchWritten {
+				feedbackBuilder.WriteString("\n\nDesign: when architecture.md meets the byte minimum and validates, this step auto-completes — no JSON turn required.")
+			}
 			if turn == maxTurns {
 				feedbackBuilder.WriteString(" Use an allowed outcome.")
 			}
@@ -1537,6 +1540,9 @@ func validatePlanningCommand(cmd, rig string) error {
 }
 
 func validatePlanningCommandWithProfile(cmd, townRoot, rig string, v orchestrator.WorkflowValidation) error {
+	if orchestrator.RequiresExactImplementPaths(v) && isPlanMDWriteCommand(cmd) {
+		return fmt.Errorf("do not write plan.md (heredoc or redirect) — sync_planning_artifacts already builds plan.md from required_files and open bead IDs; run bd list and wc -c plan.md only, then JSON success")
+	}
 	if err := validatePlanningCommand(cmd, rig); err != nil {
 		return err
 	}
@@ -1651,6 +1657,9 @@ func validatePlanningArtifacts(townRoot, rig string, hadCmdFailure, beadCreateOK
 	rigDir := rigMayorRigDir(townRoot, rig)
 	path := filepath.Join(rigDir, "plan.md")
 	if err := validatePlanMDBeadIDs(townRoot, rig, path, v); err != nil {
+		return err
+	}
+	if err := orchestrator.ValidatePlanMDBeadPathAlignment(townRoot, rig, v); err != nil {
 		return err
 	}
 	if rig != "" {

@@ -64,6 +64,9 @@ func validatePlanningGateArtifacts(townRoot, rig, rigDir, fromState string, v Wo
 	if err := ValidatePlanningDocAlignment(rigDir, v); err != nil {
 		return err
 	}
+	if err := ValidatePlanMDBeadPathAlignment(townRoot, rig, v); err != nil {
+		return err
+	}
 	if len(v.RequiredFiles) == 0 {
 		return nil
 	}

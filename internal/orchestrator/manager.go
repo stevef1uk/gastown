@@ -247,6 +247,12 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summa
 		}
 		if hasProf && len(prof.ForActivePhase().RequiredFiles) > 0 {
 			v := m.workflowValidationFor(inst, tpl)
+			switch fromState {
+			case "planning", "plan_review", "project_setup":
+				if _, err := SyncPlanningArtifacts(m.townRoot, rig, v, true); err != nil {
+					return "", fmt.Errorf("sync planning before %s success: %w", fromState, err)
+				}
+			}
 			if err := ValidatePlanningPhaseGate(m.townRoot, rig, fromState, v); err != nil {
 				return "", err
 			}

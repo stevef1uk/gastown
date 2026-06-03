@@ -175,11 +175,25 @@ func extractDocImplementPaths(doc, layoutRoot string) []string {
 		}
 	}
 	for _, m := range bareModuleRelPathRE.FindAllStringSubmatch(doc, -1) {
-		if len(m) >= 2 {
+		if len(m) >= 2 && pathNeedsLayoutPrefixCheck(m[1]) {
 			add(m[1])
 		}
 	}
 	return out
+}
+
+// pathNeedsLayoutPrefixCheck limits layout_root prefix lint to implement file paths (e.g.
+// linkshelf/internal/store/store.go), not package qualifiers (internal/store.List) or
+// directory fragments (cmd/server from "go run ./cmd/server").
+func pathNeedsLayoutPrefixCheck(p string) bool {
+	p = filepath.ToSlash(strings.TrimSpace(p))
+	if p == "" {
+		return false
+	}
+	if p == "go.mod" || p == "go.sum" {
+		return true
+	}
+	return strings.Contains(filepath.Base(p), ".")
 }
 
 func checkHTTPDocAlignment(docName, doc, specDoc string, v WorkflowValidation) []string {

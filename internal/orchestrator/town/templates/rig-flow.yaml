@@ -33,7 +33,7 @@ states:
       2. Write `{{rig}}/mayor/rig/architecture.md` (≥{{min_architecture_bytes}} bytes).
       3. CRITICAL: You MUST prefix ALL file paths (in lists, prose, tables, and code blocks) with the root directory name from the SPEC (e.g. `layout_root/cmd/server/main.go`, not `cmd/server/main.go`, and `layout_root/web/` not `web/`).
     hooks:
-      max_cmd_turns: 8
+      max_cmd_turns: 12
       cmd_guard: design
       cmd_rewrites: [rig_placeholders, spec_md_case, unwrap_bash_lc]
       track: design
@@ -41,8 +41,9 @@ states:
       retry_hint: |
         One CMD: per line. Read SPEC with head; write architecture.md via a single-quoted heredoc (≥200 bytes).
         Prose may mention python3 or backend/ paths — that is fine inside the document.
+        After a successful heredoc write and `wc -c` meeting the minimum, gt-agent auto-completes design when validation passes (JSON success optional).
       failure_hint: |
-        Write architecture.md with a heredoc CMD in this session (stale files from prior runs do not count). Read SPEC with head -n 60. HTTP paths and store symbols must match SPEC verbatim (gt-agent rejects /web/* vs /static/, ListLinks vs List, etc.). If validation fails due to missing path prefixes, you MUST execute a new CMD: cat << 'EOF' > ... heredoc to rewrite the entire file with the correct prefixes (e.g. layout_root/web/index.html). Do not just reply with JSON success!
+        Write architecture.md with a heredoc CMD in this session (stale files from prior runs do not count). Read SPEC with head -n 60. HTTP paths and store symbols must match SPEC verbatim (gt-agent rejects /web/* vs /static/, ListLinks vs List, etc.). Prefix **implement file paths** in lists/tables with layout_root (e.g. linkshelf/internal/store/store.go); prose may say store.List or schema.InitSchema without the prefix. If validation fails on file paths, rewrite architecture.md via heredoc. After wc -c passes, the step may auto-complete — or send JSON success only (no CMD lines).
     transitions:
       success:
         to: planning
@@ -66,11 +67,12 @@ states:
         beads_dir: true
       track: planning
       artifacts: planning
+      post_artifact_success: [sync_planning_artifacts]
       retry_hint: |
         One CMD: per line. After `cd {{rig}}/mayor/rig`, write plan.md with a relative path (not {{rig}}/mayor/rig/plan.md).
         Heredoc must end with a line containing only EOF. Verify with wc -c from town root.
       failure_hint: |
-        Do not send success JSON until CMD: lines ran in this session. If sync_planning_artifacts already created beads, bd list only — gt-agent rejects bd create when required_files are covered. plan.md must be ≥ {{min_plan_bytes}} bytes (expand ### per-bead sections — not a short checklist). Heredoc ends with a line containing only EOF. Run wc -c plan.md; if too small, rewrite plan.md before JSON. Work from {{rig}}/mayor/rig with BEADS_DIR=$GT_ROOT/{{rig}}/.beads.
+        Do not send success JSON until CMD: lines ran in this session. If sync_planning_artifacts already created beads, bd list only — gt-agent rejects bd create when required_files are covered. Do **not** heredoc plan.md when required_files use {{layout_root}}/internal/ or {{layout_root}}/cmd/ — sync builds plan.md with full paths. Run wc -c plan.md (≥ {{min_plan_bytes}} bytes). Work from {{rig}}/mayor/rig with BEADS_DIR=$GT_ROOT/{{rig}}/.beads.
     transitions:
       success:
         to: plan_review

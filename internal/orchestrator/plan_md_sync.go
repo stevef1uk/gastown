@@ -83,6 +83,9 @@ func PlanningPlanMDNeedsRefresh(townRoot, rig string, v WorkflowValidation) bool
 	if len(checkPlanBeadMapExactPaths(string(data), v)) > 0 {
 		return true
 	}
+	if err := ValidatePlanMDBeadPathAlignment(townRoot, rig, v); err != nil {
+		return true
+	}
 	open, err := ListOpenImplementBeads(townRoot, rig, v)
 	if err != nil || len(open) == 0 {
 		return true
@@ -108,6 +111,61 @@ func PlanningPlanMDNeedsRefresh(townRoot, rig string, v WorkflowValidation) bool
 		}
 	}
 	return false
+}
+
+// ValidatePlanMDBeadPathAlignment ensures each ### <id>: <path> header uses the path from that
+// bead's title and matches required_files (prevents planner heredocs that cite real IDs with flat paths).
+func ValidatePlanMDBeadPathAlignment(townRoot, rig string, v WorkflowValidation) error {
+	v = v.ForActivePhase()
+	if !RequiresExactImplementPaths(v) {
+		return nil
+	}
+	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
+	data, err := os.ReadFile(filepath.Join(rigDir, "plan.md"))
+	if err != nil {
+		return err
+	}
+	planDoc := string(data)
+	if issues := checkPlanBeadMapExactPaths(planDoc, v); len(issues) > 0 {
+		return fmt.Errorf("%s", strings.Join(issues, "; "))
+	}
+	open, err := ListOpenImplementBeads(townRoot, rig, v)
+	if err != nil {
+		return err
+	}
+	idToPath := map[string]string{}
+	for _, b := range open {
+		if !MatchesImplementBeadTitle(b.Title, v) {
+			continue
+		}
+		p := NormalizePlannerBeadPath(ExtractPathFromBeadTitle(b.Title, v.BeadTitleContains), v.LayoutRoot, rig)
+		if p != "" {
+			idToPath[b.ID] = p
+		}
+	}
+	var mismatches []string
+	for _, line := range strings.Split(planDoc, "\n") {
+		if !strings.HasPrefix(strings.TrimSpace(line), "### ") {
+			continue
+		}
+		m := planBeadSectionRE.FindStringSubmatch(line)
+		if len(m) < 2 {
+			continue
+		}
+		id := strings.TrimSpace(m[1])
+		got := extractPlanBeadMapPath(line)
+		want, ok := idToPath[id]
+		if !ok || got == "" {
+			continue
+		}
+		if got != want {
+			mismatches = append(mismatches, fmt.Sprintf("plan.md ### %s lists %q but bd title path is %q", id, got, want))
+		}
+	}
+	if len(mismatches) == 0 {
+		return nil
+	}
+	return fmt.Errorf("%s", strings.Join(mismatches, "; "))
 }
 
 func planSectionCovers(data []byte, want, id string, v WorkflowValidation) bool {
