@@ -2672,12 +2672,13 @@ func (d *Daemon) isRigOperational(rigName string) (bool, string) {
 			}
 		}
 	} else {
-		// Log when rig bead lookup fails - this helps debug transient Dolt issues
-		// FAIL-SAFE: When we can't verify docked status (Dolt down, network issue, etc.),
-		// assume the rig is NOT operational. This prevents wasting API credits starting
-		// witnesses that might be docked. Better to delay work than burn credits unnecessarily.
+		// FAIL-SAFE: cannot verify docked/parked when Show fails.
+		reason := "cannot verify rig status (Dolt unavailable)"
+		if errors.Is(err, beads.ErrNotFound) {
+			reason = "rig identity bead missing (run gt doctor --fix or gt rig add)"
+		}
 		d.logger.Printf("Warning: failed to check rig bead %s for docked/parked status: %v (assuming not operational)", rigBeadID, err)
-		return false, "cannot verify rig status (Dolt unavailable)"
+		return false, reason
 	}
 
 	// Check auto_restart config

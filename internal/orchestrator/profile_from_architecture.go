@@ -20,6 +20,11 @@ func EnrichWorkflowValidationFromArchitecture(v WorkflowValidation, mayorRigDir 
 	v = AlignProfileLayoutWithArchitecture(v, archPath)
 
 	if specPaths, ok := extractSpecLayoutPaths(mayorRigDir); ok {
+		// Profile from spec-index already lists canonical nested paths; SPEC layout tree
+		// parsing only captures leaf filenames (linkshelf/handlers.go not internal/api/handlers.go).
+		if !shouldReplaceProfileRequiredFilesWithSpec(v, specPaths) {
+			return SanitizeRigFlowProfile(v)
+		}
 		v = applySpecPathsToValidation(v, specPaths)
 		return SanitizeRigFlowProfile(v)
 	}
@@ -119,6 +124,22 @@ func specLayoutSection(specText string) string {
 		return section[:1+j]
 	}
 	return section
+}
+
+// shouldReplaceProfileRequiredFilesWithSpec returns false when the saved profile already
+// requires nested layout paths but SPEC extraction produced flat basename-only paths.
+func shouldReplaceProfileRequiredFilesWithSpec(v WorkflowValidation, specPaths []string) bool {
+	if len(v.RequiredFiles) == 0 {
+		return true
+	}
+	if !RequiresExactImplementPaths(v) {
+		return true
+	}
+	specV := WorkflowValidation{
+		RequiredFiles: append([]string(nil), specPaths...),
+		LayoutRoot:    inferLayoutRootFromPaths(specPaths),
+	}
+	return RequiresExactImplementPaths(specV)
 }
 
 func applySpecPathsToValidation(v WorkflowValidation, specPaths []string) WorkflowValidation {

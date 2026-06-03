@@ -13,6 +13,8 @@
 #                                gt mayor workflow start rig-flow --rig "$RIG"
 #   GT_UP_FLAGS=--orchestrator-only  — passed to each gt up (default when START_RIG_FLOW=1)
 #   ORCHESTRATOR_WAIT_SECS=90 — max wait for NATS + orchestrator MCP before workflow start
+#   PLANNING_RESYNC_WAIT_SECS=180 — after rig-flow start, wait for planning state then
+#                                profile-only sync-planning (see finalize_rig_planning_state)
 #   SKIP_ORCHESTRATOR_SYNC=1 — do not refresh $GT_ROOT/orchestrator/ from gastown
 #   RESET_ORCHESTRATOR_INSTANCES=0 — keep orchestrator/instances.json (default: clear it)
 #   SKIP_PLANNING_VERIFY=1   — do not fail if legacy implement beads remain (not recommended)
@@ -45,6 +47,7 @@ CLEAN_SCRIPT="${GASTOWN}/scripts/clean-gastown.sh"
 RIG="${RIG_NAME:-testgt3}"
 RIG_URL="${RIG_URL:-https://github.com/stevef1uk/testgt3}"
 ORCHESTRATOR_WAIT_SECS="${ORCHESTRATOR_WAIT_SECS:-90}"
+PLANNING_RESYNC_WAIT_SECS="${PLANNING_RESYNC_WAIT_SECS:-180}"
 # rig-flow is orchestrator-driven; --orchestrator-only skips legacy town hq architect/qa/polecat.
 if [[ "${START_RIG_FLOW:-0}" == "1" && -z "${GT_UP_FLAGS:-}" ]]; then
   GT_UP_FLAGS="--orchestrator-only"
@@ -154,6 +157,80 @@ clean_rig_pipeline_artifacts() {
       echo "  removed stale $f (recreated by rig-flow / spec clone)"
     fi
   done
+}
+
+# Rig identity bead must exist and must not be status:docked — otherwise the daemon
+# SIGTERM-kills te-*-polecat (isRigOperational fail-safe). gt doctor --fix used to
+# create the bead with status:docked; we undock and verify here after every doctor pass.
+ensure_rig_identity_operational() {
+  local r="$1"
+  echo "[rig] ensure identity bead operational for $r..."
+  if ! (cd "$GT_ROOT" && gt rig undock "$r" 2>/dev/null); then
+    true
+  fi
+  local rig_work="$GT_ROOT/$r/mayor/rig"
+  if [[ ! -e "$rig_work/.beads" ]] && [[ ! -d "$rig_work/.beads" ]]; then
+    rig_work="$GT_ROOT/$r"
+  fi
+  local prefix rig_bead
+  prefix="$(python3 - "$GT_ROOT" "$r" <<'PY'
+import json, sys
+town, rig = sys.argv[1], sys.argv[2]
+data = json.load(open(f"{town}/mayor/rigs.json"))
+print(data["rigs"][rig]["beads"]["prefix"])
+PY
+)"
+  rig_bead="${prefix}-rig-${r}"
+  if ! (cd "$rig_work" && bd show "$rig_bead" >/dev/null 2>&1); then
+    echo "FATAL: rig identity bead $rig_bead missing — run: cd $GT_ROOT && gt doctor --fix" >&2
+    return 1
+  fi
+  if (cd "$rig_work" && bd label list "$rig_bead" 2>/dev/null | grep -q 'status:docked'); then
+    echo "FATAL: $rig_bead still has status:docked after gt rig undock" >&2
+    (cd "$rig_work" && bd label list "$rig_bead") >&2 || true
+    return 1
+  fi
+  echo "[rig] OK — $rig_bead exists and is not docked"
+}
+
+# After rig-flow reaches planning, re-sync from workflow-profile.json (not SPEC layout enrich).
+# Planning pre_run uses EnrichWorkflowValidationFromArchitecture, which can replace profile
+# required_files with flat paths from SPEC ## Layout; this recenters beads before the planner runs.
+wait_and_resync_at_planning() {
+  local r="$1"
+  local inst="$GT_ROOT/orchestrator/instances.json"
+  [[ -f "$inst" ]] || return 0
+  local deadline=$((SECONDS + PLANNING_RESYNC_WAIT_SECS))
+  echo "[planning] waiting up to ${PLANNING_RESYNC_WAIT_SECS}s for rig-flow planning on $r..."
+  while (( SECONDS < deadline )); do
+    local st
+    st="$(python3 - "$inst" "$r" <<'PY'
+import json, sys
+path, rig = sys.argv[1], sys.argv[2]
+data = json.load(open(path))
+for inst in data.get("instances", []):
+    vars = inst.get("variables") or {}
+    if vars.get("rig") != rig:
+        continue
+    if inst.get("template_id") != "rig-flow":
+        continue
+    if inst.get("status") in ("completed", "failed", "cancelled"):
+        continue
+    print(inst.get("current_state") or "")
+    break
+PY
+)"
+    case "$st" in
+      planning|plan_review|project_setup|implementation)
+        echo "[planning] rig-flow state=$st — profile sync after SPEC enrich"
+        finalize_rig_planning_state "$r"
+        return 0
+        ;;
+    esac
+    sleep 5
+  done
+  echo "[planning] no planning state within ${PLANNING_RESYNC_WAIT_SECS}s (design may still be running)"
+  echo "  When planning starts, run: gt rig sync-planning $r --force"
 }
 
 # Canonicalize implement beads + plan.md when workflow-profile exists; verify clean bead set.
@@ -333,6 +410,7 @@ fi
 sleep 3
 # shellcheck disable=SC2086
 (cd "$GT_ROOT" && gt doctor $doc_flags) || true
+ensure_rig_identity_operational "$RIG"
 
 echo "=== gt doctor (read-only summary) ==="
 (cd "$GT_ROOT" && gt doctor) || true
@@ -345,7 +423,11 @@ if [[ "${START_RIG_FLOW:-0}" == "1" ]]; then
     exit 1
   fi
   echo "[orchestrator] workflow started — ensuring rig pipeline sessions..."
+  ensure_rig_identity_operational "$RIG"
+  finalize_rig_planning_state "$RIG"
+  wait_and_resync_at_planning "$RIG"
   gt_up || true
+  ensure_rig_identity_operational "$RIG"
   if [[ -f "$GT_ROOT/orchestrator/instances.json" ]]; then
     echo "[orchestrator] instances.json:"
     rg '"id"|current_state|status' "$GT_ROOT/orchestrator/instances.json" || true

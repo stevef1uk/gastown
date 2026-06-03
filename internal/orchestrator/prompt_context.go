@@ -99,7 +99,8 @@ func RunPreRunHook(step, townRoot, rig string, v WorkflowValidation) (string, er
 			return "implement bead queue: " + joinStrings(logParts, "; "), nil
 		}
 	case "repair_planning_beads":
-		logLine, err := RepairPlanningBeadSet(townRoot, rig, v)
+		syncV := ValidationForPlanningSync(townRoot, rig, v)
+		logLine, err := RepairPlanningBeadSet(townRoot, rig, syncV)
 		if err != nil {
 			return "", err
 		}
@@ -108,8 +109,9 @@ func RunPreRunHook(step, townRoot, rig string, v WorkflowValidation) (string, er
 		}
 	case "sync_planning_artifacts":
 		// Nested layouts need plan.md rewritten from required_files; setup/planner must not leave flat paths.
-		forcePlan := RequiresExactImplementPaths(v)
-		logLine, err := SyncPlanningArtifacts(townRoot, rig, v, forcePlan)
+		syncV := ValidationForPlanningSync(townRoot, rig, v)
+		forcePlan := RequiresExactImplementPaths(syncV)
+		logLine, err := SyncPlanningArtifacts(townRoot, rig, syncV, forcePlan)
 		if err != nil {
 			return "", err
 		}
@@ -117,11 +119,12 @@ func RunPreRunHook(step, townRoot, rig string, v WorkflowValidation) (string, er
 			return "planning sync: " + logLine, nil
 		}
 	case "refresh_plan_md_if_stale":
-		if !PlanningPlanMDNeedsRefresh(townRoot, rig, v) {
+		syncV := ValidationForPlanningSync(townRoot, rig, v)
+		if !PlanningPlanMDNeedsRefresh(townRoot, rig, syncV) {
 			return "", nil
 		}
-		forcePlan := RequiresExactImplementPaths(v)
-		logLine, err := SyncPlanningArtifacts(townRoot, rig, v, forcePlan)
+		forcePlan := RequiresExactImplementPaths(syncV)
+		logLine, err := SyncPlanningArtifacts(townRoot, rig, syncV, forcePlan)
 		if err != nil {
 			return "", err
 		}

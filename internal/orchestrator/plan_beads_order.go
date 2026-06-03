@@ -798,14 +798,14 @@ func PruneNonRequiredOpenImplementBeads(townRoot, rig string, v WorkflowValidati
 	if len(v.RequiredFiles) == 0 {
 		return nil, nil
 	}
-	open, err := listAllOpenBeads(townRoot, rig)
+	beads, err := listImplementBeadsForPrune(townRoot, rig, v)
 	if err != nil {
 		return nil, err
 	}
 	beadsDir := config.ResolveBeadsDirForRig(townRoot, rig)
 	workDir := filepath.Join(townRoot, rig, "mayor", "rig")
 	var deleted []string
-	for _, b := range open {
+	for _, b := range beads {
 		if !looksLikeOpenImplementBeadTitle(b.Title, v) {
 			continue
 		}
@@ -823,6 +823,65 @@ func PruneNonRequiredOpenImplementBeads(townRoot, rig string, v WorkflowValidati
 		deleted = append(deleted, b.ID)
 	}
 	return deleted, nil
+}
+
+func listImplementBeadsForPrune(townRoot, rig string, v WorkflowValidation) ([]PlanBead, error) {
+	if RequiresExactImplementPaths(v) {
+		// Flat invalid titles (linkshelf/handlers.go) fail MatchesImplementBeadTitle but must
+		// still be pruned when they are not exact required_files entries.
+		return listImplementLikeBeadsOpenOrInProgress(townRoot, rig, v)
+	}
+	return listAllOpenBeads(townRoot, rig)
+}
+
+// listImplementLikeBeadsOpenOrInProgress lists open and in_progress beads whose titles look
+// implement-like (Implement … / bead_title_contains), without requiring MatchesImplementBeadTitle.
+func listImplementLikeBeadsOpenOrInProgress(townRoot, rig string, v WorkflowValidation) ([]PlanBead, error) {
+	var out []PlanBead
+	for _, status := range []string{"open", "in_progress"} {
+		beads, err := listAllBeadsByStatus(townRoot, rig, status)
+		if err != nil {
+			return nil, err
+		}
+		for _, b := range beads {
+			if looksLikeOpenImplementBeadTitle(b.Title, v) {
+				out = append(out, b)
+			}
+		}
+	}
+	return out, nil
+}
+
+func listAllBeadsByStatus(townRoot, rig, status string) ([]PlanBead, error) {
+	beadsDir := config.ResolveBeadsDirForRig(townRoot, rig)
+	args := beads.InjectFlatForListJSON([]string{"list", "--status=" + status, "--json", "--limit=0"})
+	cmd := exec.Command("bd", args...)
+	cmd.Env = append(os.Environ(), "BEADS_DIR="+beadsDir)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return nil, fmt.Errorf("bd list %s: %w: %s", status, err, strings.TrimSpace(string(out)))
+	}
+	out = beads.StripStdoutWarnings(out)
+	var rows []struct {
+		ID    string `json:"id"`
+		Title string `json:"title"`
+	}
+	if err := json.Unmarshal(out, &rows); err != nil {
+		return nil, err
+	}
+	var result []PlanBead
+	for _, r := range rows {
+		id := strings.TrimSpace(beads.ExtractIssueID(r.ID))
+		if id == "" {
+			continue
+		}
+		result = append(result, PlanBead{ID: id, Title: strings.TrimSpace(r.Title)})
+	}
+	return result, nil
+}
+
+func listAllOpenBeads(townRoot, rig string) ([]PlanBead, error) {
+	return listAllBeadsByStatus(townRoot, rig, "open")
 }
 
 func looksLikeOpenImplementBeadTitle(title string, v WorkflowValidation) bool {
@@ -983,34 +1042,6 @@ func RemoveStalePlanMD(townRoot, rig string, v WorkflowValidation) (bool, error)
 		return false, err
 	}
 	return true, nil
-}
-
-func listAllOpenBeads(townRoot, rig string) ([]PlanBead, error) {
-	beadsDir := config.ResolveBeadsDirForRig(townRoot, rig)
-	args := beads.InjectFlatForListJSON([]string{"list", "--status=open", "--json", "--limit=0"})
-	cmd := exec.Command("bd", args...)
-	cmd.Env = append(os.Environ(), "BEADS_DIR="+beadsDir)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return nil, fmt.Errorf("bd list open: %w: %s", err, strings.TrimSpace(string(out)))
-	}
-	out = beads.StripStdoutWarnings(out)
-	var rows []struct {
-		ID    string `json:"id"`
-		Title string `json:"title"`
-	}
-	if err := json.Unmarshal(out, &rows); err != nil {
-		return nil, err
-	}
-	var result []PlanBead
-	for _, r := range rows {
-		id := strings.TrimSpace(beads.ExtractIssueID(r.ID))
-		if id == "" {
-			continue
-		}
-		result = append(result, PlanBead{ID: id, Title: strings.TrimSpace(r.Title)})
-	}
-	return result, nil
 }
 
 // PlanningBeadTitle returns the canonical open-task title for a required_files path.

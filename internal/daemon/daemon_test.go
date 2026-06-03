@@ -557,12 +557,11 @@ func TestHasPendingEvents_IgnoresNonEventFiles(t *testing.T) {
 	}
 }
 
-// TestIsRigOperational_FailSafeOnDoltUnavailable verifies that when Dolt is
-// unavailable and we can't check the rig bead for docked status, we fail-safe
-// by assuming the rig is NOT operational. This prevents wasting API credits
-// starting witnesses for potentially docked rigs. (Regression test for
-// bug where witnesses started for docked rigs during Dolt outage)
-func TestIsRigOperational_FailSafeOnDoltUnavailable(t *testing.T) {
+// TestIsRigOperational_FailSafeWithoutRigBead verifies that when the rig
+// identity bead cannot be loaded (missing bead or Dolt down), isRigOperational
+// fail-safes to NOT operational. This prevents starting pipeline agents for
+// docked rigs we cannot verify.
+func TestIsRigOperational_FailSafeWithoutRigBead(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	// Create a minimal rig structure without a beads database
@@ -604,17 +603,17 @@ func TestIsRigOperational_FailSafeOnDoltUnavailable(t *testing.T) {
 		logger: log.New(io.Discard, "", 0), // Suppress log output
 	}
 
-	// When Dolt is unavailable, isRigOperational should return false
-	// (fail-safe: assume not operational rather than risk starting docked rig)
 	operational, reason := d.isRigOperational(rigName)
 	if operational {
-		t.Error("isRigOperational should return false when Dolt is unavailable (fail-safe)")
+		t.Error("isRigOperational should return false when rig bead cannot be verified (fail-safe)")
 	}
 	if reason == "" {
 		t.Error("isRigOperational should provide a reason when returning false")
 	}
-	if !strings.Contains(reason, "Dolt unavailable") && !strings.Contains(reason, "cannot verify") {
-		t.Errorf("reason should mention Dolt unavailable, got: %q", reason)
+	if !strings.Contains(reason, "rig identity bead missing") &&
+		!strings.Contains(reason, "Dolt unavailable") &&
+		!strings.Contains(reason, "cannot verify") {
+		t.Errorf("reason should explain fail-safe, got: %q", reason)
 	}
 }
 

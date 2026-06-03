@@ -10,6 +10,16 @@ import (
 
 var planBeadSectionRE = regexp.MustCompile(`(?m)^###\s+([a-zA-Z0-9][a-zA-Z0-9_-]*):\s+(.+)$`)
 
+// ValidationForPlanningSync returns profile-file required_files for bead repair and plan.md sync.
+// Runtime polecat validation (EnrichWorkflowValidationFromArchitecture) must not drive prune/create —
+// it can flatten paths and recreate invalid beads like linkshelf/handlers.go after manual sync.
+func ValidationForPlanningSync(townRoot, rig string, runtime WorkflowValidation) WorkflowValidation {
+	if prof, ok, err := LoadRigWorkflowProfileFile(townRoot, rig); err == nil && ok {
+		return prof.ForActivePhase()
+	}
+	return runtime.ForActivePhase()
+}
+
 // SyncPlanningArtifacts repairs open implement beads to match required_files and writes plan.md when needed.
 func SyncPlanningArtifacts(townRoot, rig string, v WorkflowValidation, forcePlan bool) (string, error) {
 	if townRoot == "" || rig == "" {

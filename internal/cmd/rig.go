@@ -715,7 +715,7 @@ func runRigAdd(cmd *cobra.Command, args []string) error {
 			Prefix: newRig.Config.Prefix,
 			State:  beads.RigStateActive,
 		}
-		if _, err := bd.CreateRigBead(name, fields); err != nil {
+		if _, err := bd.EnsureRigBead(name, fields); err != nil {
 			// Non-fatal: rig is functional without the identity bead
 			fmt.Printf("  %s Could not create rig identity bead: %v\n", style.Warning.Render("!"), err)
 		} else {
@@ -1663,7 +1663,7 @@ func runRigAdopt(_ *cobra.Command, args []string) error {
 				Prefix: result.BeadsPrefix,
 				State:  beads.RigStateActive,
 			}
-			if _, err := bd.CreateRigBead(name, fields); err != nil {
+			if _, err := bd.EnsureRigBead(name, fields); err != nil {
 				fmt.Printf("  %s Could not create rig identity bead: %v\n", style.Warning.Render("!"), err)
 			} else {
 				fmt.Printf("  %s Created rig identity bead: %s\n", style.Success.Render("✓"), rigBeadID)

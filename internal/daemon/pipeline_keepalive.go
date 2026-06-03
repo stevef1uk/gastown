@@ -35,28 +35,30 @@ func (d *Daemon) ensureOrchestratedPipelineKeepalive() {
 		d.ensureSetupRunning()
 	}
 
-	if !d.isPatrolActive("architect") && !d.isPatrolActive("qa") {
-		return
-	}
+	architectPatrol := d.isPatrolActive("architect")
+	qaPatrol := d.isPatrolActive("qa")
 
 	for _, rigName := range d.getKnownRigs() {
 		if orchestrator.RigWorkflowActivityForRig(d.config.TownRoot, rigName) != orchestrator.RigWorkflowRunning {
 			continue
 		}
-		if operational, reason := d.isRigOperational(rigName); !operational {
+		operational, reason := d.isRigOperational(rigName)
+		if !operational {
 			d.logger.Printf("Pipeline keepalive: skip %s (%s)", rigName, reason)
 			continue
 		}
-		if d.isPatrolActive("architect") {
+		if architectPatrol {
 			if p := d.checkPressure("architect"); p.OK {
 				d.ensureArchitectRunning(rigName)
 			}
 		}
-		if d.isPatrolActive("qa") {
+		if qaPatrol {
 			if p := d.checkPressure("qa"); p.OK {
 				d.ensureQARunning(rigName)
 			}
 		}
+		// Rig-flow polecat must stay up during implementation even when architect/qa
+		// patrols are absent from mayor/daemon.json (common in orchestrator-only towns).
 		d.ensureRigPolecatRunning(rigName)
 	}
 }

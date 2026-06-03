@@ -603,14 +603,8 @@ func (c *RigConfigSyncCheck) Fix(ctx *CheckContext) error {
 			Prefix: info.prefix,
 			State:  beads.RigStateActive,
 		}
-		if _, err := bd.CreateRigBead(info.rigName, fields); err != nil {
+		if _, err := bd.EnsureRigBead(info.rigName, fields); err != nil {
 			return fmt.Errorf("could not create rig bead for %s: %w", info.rigName, err)
-		}
-
-		// Add status:docked label if not town root
-		if !info.isTownRoot {
-			rigBeadID := beads.RigBeadIDWithPrefix(info.prefix, info.rigName)
-			_ = bd.Update(rigBeadID, beads.UpdateOptions{AddLabels: []string{"gt:rig", "status:docked"}})
 		}
 	}
 
