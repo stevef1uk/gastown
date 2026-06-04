@@ -162,7 +162,9 @@ states:
       empty_response_suffix: "Reply with EDIT:/WRITE:/READ: or CMD: lines. Implement code and unit tests per plan.md; WRITE for new *_test.go or tests/test_*.py. Use Verify from Next bead."
       prompt_context: [implementation_queue, implement_bead_context]
       pre_run: [sync_planning_artifacts, ensure_http_implementation_config, ensure_implement_smoke_ready, close_project_setup_beads, enforce_implement_bead_queue, prune_stale_layout_go, repair_requirements, refresh_codeindex, reconcile_implement_beads]
-      per_turn: [repair_planning_beads, refresh_plan_md_if_stale, prune_stale_layout_go, repair_requirements]
+      # Do not run repair_planning_beads / refresh_plan_md_if_stale per turn — they create beads and
+      # rewrite plan.md mid-implementation (see pre_run sync + reconcile). Planning-only repair stays in planning state hooks.
+      per_turn: [prune_stale_layout_go, repair_requirements]
       cmd_guard: implementation
       cmd_rewrites: [rig_placeholders, backend_path_after_cd, bd_list_implement_scope, unittest_workdir, bd_list_limit, unwrap_bash_lc]
       env:

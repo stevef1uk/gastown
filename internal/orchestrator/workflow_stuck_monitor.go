@@ -96,7 +96,7 @@ func RunWorkflowStuckMonitorTick(townRoot string, polecatRunning PolecatSessionC
 			continue
 		}
 
-		repairLog, err := RunWorkflowStuckRepair(townRoot, rig, v, eval.Signals)
+		repairLog, err := RunWorkflowStuckRepair(townRoot, rig, v, eval.Signals, inst.CurrentState)
 		if err != nil {
 			lines = append(lines, fmt.Sprintf("[workflow-stuck] %s: repair failed (%s): %v", rig, eval.Detail, err))
 			continue

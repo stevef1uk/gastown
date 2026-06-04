@@ -39,7 +39,7 @@ func TestRunWorkflowStuckRepair_patchesIntegrationContract(t *testing.T) {
 	}
 
 	v := ValidationForPlanningSync(dir, rig, DefaultWorkflowValidation())
-	log, err := RunWorkflowStuckRepair(dir, rig, v, []WorkflowStuckSignal{SignalMissingIntegrationContract})
+	log, err := RunWorkflowStuckRepair(dir, rig, v, []WorkflowStuckSignal{SignalMissingIntegrationContract}, "planning")
 	if err != nil {
 		t.Fatal(err)
 	}

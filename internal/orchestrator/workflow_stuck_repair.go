@@ -14,7 +14,8 @@ type WorkflowStuckRepairLog struct {
 }
 
 // RunWorkflowStuckRepair runs idempotent corrective actions in a fixed order.
-func RunWorkflowStuckRepair(townRoot, rig string, v WorkflowValidation, signals []WorkflowStuckSignal) (*WorkflowStuckRepairLog, error) {
+// currentState is the rig-flow FSM state (e.g. implementation); used to avoid planning bead repair mid-implementation.
+func RunWorkflowStuckRepair(townRoot, rig string, v WorkflowValidation, signals []WorkflowStuckSignal, currentState string) (*WorkflowStuckRepairLog, error) {
 	if townRoot == "" || rig == "" {
 		return nil, nil
 	}
@@ -46,10 +47,19 @@ func RunWorkflowStuckRepair(townRoot, rig string, v WorkflowValidation, signals 
 			appendStep(syncLog)
 		}
 
-		if repairLog, err := RepairPlanningBeadSet(townRoot, rig, v); err != nil {
-			return log, fmt.Errorf("repair planning beads: %w", err)
+		implRework := currentState == "implementation" && containsSignal(signals, SignalPendingReworkLinger)
+		if implRework {
+			if stallLog, err := RecoverImplementationStall(townRoot, rig, v); err != nil {
+				return log, fmt.Errorf("recover implementation stall: %w", err)
+			} else {
+				appendStep(stallLog)
+			}
 		} else {
-			appendStep(repairLog)
+			if repairLog, err := RepairPlanningBeadSet(townRoot, rig, v); err != nil {
+				return log, fmt.Errorf("repair planning beads: %w", err)
+			} else {
+				appendStep(repairLog)
+			}
 		}
 
 		if containsSignal(signals, SignalNonRequiredImplementBeads) {
