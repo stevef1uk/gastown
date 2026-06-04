@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/steveyegge/gastown/internal/orchestrator"
+	"github.com/steveyegge/gastown/internal/session"
 )
 
 // pipelineKeepaliveInterval is how often the daemon re-checks rig-flow pipeline agents
@@ -61,4 +62,18 @@ func (d *Daemon) ensureOrchestratedPipelineKeepalive() {
 		// patrols are absent from mayor/daemon.json (common in orchestrator-only towns).
 		d.ensureRigPolecatRunning(rigName)
 	}
+
+	for _, line := range orchestrator.RunWorkflowStuckMonitorTick(d.config.TownRoot, d.rigPolecatSessionRunning) {
+		d.logger.Println(line)
+	}
+}
+
+// rigPolecatSessionRunning reports whether the orchestrated rig polecat tmux session exists.
+func (d *Daemon) rigPolecatSessionRunning(rigName string) bool {
+	if d.sp == nil || rigName == "" {
+		return false
+	}
+	name := session.RigPolecatSessionName(session.PrefixFor(rigName), rigName)
+	running, err := d.sp.Exists(d.ctx, name)
+	return err == nil && running
 }
