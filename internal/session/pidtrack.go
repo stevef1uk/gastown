@@ -220,12 +220,13 @@ func KillNatsPIDs(townRoot string) (killed int, errSessions []string) {
 			continue
 		}
 
-		// Process is alive — SIGKILL (orphan cleanup is forceful)
-		if err := proc.Signal(syscall.SIGKILL); err != nil {
-			errSessions = append(errSessions, fmt.Sprintf("%s (PID %d): SIGKILL failed: %v", sessionID, pid, err))
+		// Kill wrapper and descendants (gt-agent, script(1), etc.).
+		if err := killProcessTree(pid); err != nil {
+			errSessions = append(errSessions, fmt.Sprintf("%s (PID %d): kill tree failed: %v", sessionID, pid, err))
 		} else {
 			killed++
 		}
+		_ = killAgentBySessionID(sessionID, townRoot)
 
 		_ = os.Remove(path)
 	}

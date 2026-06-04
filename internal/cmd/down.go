@@ -296,6 +296,19 @@ func runDown(cmd *cobra.Command, args []string) error {
 		}
 	}
 	
+	// Phase 3.9: Kill leftover NATS/gt-agent trees (macOS cannot use /proc/cwd in older stops).
+	if !downDryRun {
+		natsKilled, natsWarn := session.KillNatsPIDs(townRoot)
+		agentKilled := session.KillTownGasTownProcesses(townRoot)
+		if natsKilled > 0 || agentKilled > 0 {
+			printDownStatus("Session processes", true,
+				fmt.Sprintf("killed %d nats tree(s), %d agent tree(s)", natsKilled, agentKilled))
+		}
+		for _, w := range natsWarn {
+			fmt.Printf("  NATS cleanup: %s\n", w)
+		}
+	}
+
 	// Phase 4: Stop Daemon
 	running, pid, daemonErr := daemon.IsRunning(townRoot)
 	if daemonErr != nil {
@@ -467,10 +480,13 @@ func runDown(cmd *cobra.Command, args []string) error {
 		// tmux PID tracking in .runtime/pids/.
 		natsKilled, natsErrs := session.KillNatsPIDs(townRoot)
 		if natsKilled > 0 {
-			fmt.Printf("  Killed %d NATS orphan process(es)\n", natsKilled)
+			fmt.Printf("  Killed %d NATS orphan process tree(s)\n", natsKilled)
 		}
 		for _, e := range natsErrs {
 			fmt.Printf("  NATS PID cleanup warning: %s\n", e)
+		}
+		if extra := session.KillTownGasTownProcesses(townRoot); extra > 0 {
+			fmt.Printf("  Killed %d additional gt-agent/nats-wrapper tree(s)\n", extra)
 		}
 
 		fmt.Println("Cleaning up orphaned agent processes...")

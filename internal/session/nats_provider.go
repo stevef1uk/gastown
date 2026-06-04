@@ -279,18 +279,7 @@ func killAgentBySessionID(sessionID, townRoot string) error {
 			continue
 		}
 
-		// Check cwd via /proc — only kill if inside this town
-		cwd, cwdErr := os.Readlink(fmt.Sprintf("/proc/%d/cwd", pid))
-		if cwdErr != nil {
-			continue
-		}
-		absCwd, _ := filepath.Abs(cwd)
-		if absCwd == "" {
-			absCwd = cwd
-		}
-
-		// Match if cwd is within the town root
-		if !strings.HasPrefix(absCwd, absTownRoot+string(filepath.Separator)) && absCwd != absTownRoot {
+		if !processBelongsToTown(pid, absTownRoot) {
 			continue
 		}
 
