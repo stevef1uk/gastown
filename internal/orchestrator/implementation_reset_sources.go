@@ -61,14 +61,41 @@ func RemoveLayoutSourceCodeFiles(rigDir string, v WorkflowValidation) ([]string,
 	return removed, err
 }
 
+func closedImplementPathSet(townRoot, rig string, v WorkflowValidation) (map[string]bool, error) {
+	v = v.ForActivePhase()
+	closed, err := listImplementBeadsForGuard(townRoot, rig, v, "closed")
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]bool{}
+	for _, b := range closed {
+		if !MatchesImplementBeadTitle(b.Title, v) {
+			continue
+		}
+		p := NormalizePlannerBeadPath(ExtractPathFromBeadTitle(b.Title, v.BeadTitleContains), v.LayoutRoot, rig)
+		if p != "" {
+			out[p] = true
+		}
+	}
+	return out, nil
+}
+
 // implementArtifactPathsForActiveBeads returns rig-relative paths for open and in_progress implement beads only.
+// Paths already covered by a closed implement bead are omitted so hard reset does not delete finished work.
 func implementArtifactPathsForActiveBeads(townRoot, rig string, v WorkflowValidation) ([]string, error) {
 	v = v.ForActivePhase()
+	closedPaths, err := closedImplementPathSet(townRoot, rig, v)
+	if err != nil {
+		return nil, err
+	}
 	var out []string
 	seen := map[string]bool{}
 	add := func(p string) {
 		p = NormalizeBeadPathForLayout(filepath.ToSlash(strings.TrimSpace(p)), v.LayoutRoot)
 		if p == "" || IsProjectSetupArtifactPath(p, v) {
+			return
+		}
+		if closedPaths[p] {
 			return
 		}
 		if layoutSetupBasenames[strings.ToLower(filepath.Base(p))] {

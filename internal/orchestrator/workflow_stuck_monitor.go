@@ -64,6 +64,7 @@ func RunWorkflowStuckMonitorTick(townRoot string, polecatRunning PolecatSessionC
 		}
 		rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
 		missingContract := PlanMissingIntegrationContract(rigDir, v)
+		docsMisaligned := PlanningDocsMisaligned(rigDir, v)
 
 		st := stateSnap.rigState(rig)
 		lastFP := st.LastBeadFingerprint
@@ -81,7 +82,8 @@ func RunWorkflowStuckMonitorTick(townRoot string, polecatRunning PolecatSessionC
 			LastBeadFingerprint:  lastFP,
 			PolecatRunning:       polecatUp,
 			NonRequiredBeadCount: nonReq,
-			MissingIntegration:   missingContract,
+			MissingIntegration:     missingContract,
+			PlanningDocsMisaligned: docsMisaligned,
 		})
 
 		if fp != "" && fp != lastFP {

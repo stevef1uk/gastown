@@ -18,6 +18,7 @@ const (
 	SignalPolecatSessionMissing      WorkflowStuckSignal = "polecat_session_missing"
 	SignalNonRequiredImplementBeads  WorkflowStuckSignal = "non_required_implement_beads"
 	SignalMissingIntegrationContract WorkflowStuckSignal = "missing_integration_contract"
+	SignalPlanningDocsMisaligned       WorkflowStuckSignal = "planning_docs_misaligned"
 )
 
 // WorkflowStuckEvalInput is the pure snapshot for stuck detection (testable without daemon).
@@ -30,8 +31,9 @@ type WorkflowStuckEvalInput struct {
 	BeadFingerprint     string
 	LastBeadFingerprint   string
 	PolecatRunning      bool
-	NonRequiredBeadCount int
-	MissingIntegration  bool
+	NonRequiredBeadCount  int
+	MissingIntegration    bool
+	PlanningDocsMisaligned bool
 }
 
 // WorkflowStuckEvalResult lists fired signals and whether repair should run.
@@ -84,6 +86,11 @@ func EvalWorkflowStuck(in WorkflowStuckEvalInput) WorkflowStuckEvalResult {
 	if in.MissingIntegration && planningStateNeedsContract(in.CurrentState) {
 		signals = append(signals, SignalMissingIntegrationContract)
 		parts = append(parts, "plan.md missing Integration contract (server profile)")
+	}
+
+	if in.PlanningDocsMisaligned && planningOrImplementationState(in.CurrentState) {
+		signals = append(signals, SignalPlanningDocsMisaligned)
+		parts = append(parts, "SPEC/architecture/plan doc alignment failed")
 	}
 
 	if len(signals) == 0 {

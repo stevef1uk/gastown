@@ -613,6 +613,11 @@ func RepairPlanningBeadSet(townRoot, rig string, v WorkflowValidation) (string, 
 	if len(dupes) > 0 {
 		parts = append(parts, "deduped: "+joinStrings(dupes, ", "))
 	}
+	if pruned, err := PruneOpenImplementBeadsForClosedPaths(townRoot, rig, v); err != nil {
+		return "", err
+	} else if len(pruned) > 0 {
+		parts = append(parts, "pruned open dupes of closed paths: "+joinStrings(pruned, ", "))
+	}
 	deleted, err := PruneExtraImplementBeads(townRoot, rig, v)
 	if err != nil {
 		return "", err
@@ -628,6 +633,57 @@ func RepairPlanningBeadSet(townRoot, rig string, v WorkflowValidation) (string, 
 		parts = append(parts, "created: "+joinStrings(created, ", "))
 	}
 	return joinStrings(parts, "; "), nil
+}
+
+// PruneOpenImplementBeadsForClosedPaths deletes open/in_progress implement beads when another
+// closed bead already covers the same file path (prevents reset_implementation_phase from
+// deleting on-disk files for work that was already closed on a duplicate bead ID).
+func PruneOpenImplementBeadsForClosedPaths(townRoot, rig string, v WorkflowValidation) ([]string, error) {
+	v = v.ForActivePhase()
+	closed, err := listImplementBeadsByStatus(townRoot, rig, v, "closed")
+	if err != nil {
+		return nil, err
+	}
+	closedPaths := map[string]bool{}
+	for _, b := range closed {
+		if !MatchesImplementBeadTitle(b.Title, v) {
+			continue
+		}
+		p := NormalizePlannerBeadPath(ExtractPathFromBeadTitle(b.Title, v.BeadTitleContains), v.LayoutRoot, rig)
+		if p != "" {
+			closedPaths[p] = true
+		}
+	}
+	if len(closedPaths) == 0 {
+		return nil, nil
+	}
+	beadsDir := config.ResolveBeadsDirForRig(townRoot, rig)
+	workDir := filepath.Join(townRoot, rig, "mayor", "rig")
+	var deleted []string
+	for _, status := range []string{"open", "in_progress"} {
+		beads, err := listImplementBeadsByStatus(townRoot, rig, v, status)
+		if err != nil {
+			return deleted, err
+		}
+		for _, b := range beads {
+			if !MatchesImplementBeadTitle(b.Title, v) {
+				continue
+			}
+			p := NormalizePlannerBeadPath(ExtractPathFromBeadTitle(b.Title, v.BeadTitleContains), v.LayoutRoot, rig)
+			if p == "" || !closedPaths[p] {
+				continue
+			}
+			cmd := exec.Command("bd", "delete", b.ID, "--force")
+			cmd.Env = append(os.Environ(), "BEADS_DIR="+beadsDir)
+			cmd.Dir = workDir
+			out, err := cmd.CombinedOutput()
+			if err != nil {
+				return deleted, fmt.Errorf("bd delete %s: %w: %s", b.ID, err, strings.TrimSpace(string(out)))
+			}
+			deleted = append(deleted, b.ID+" ("+p+")")
+		}
+	}
+	return deleted, nil
 }
 
 // PruneDuplicateImplementBeads deletes duplicate open beads for the same required_files path,
@@ -1068,6 +1124,10 @@ func EnsurePlanningImplementBeads(townRoot, rig string, v WorkflowValidation) ([
 	if err != nil {
 		return nil, err
 	}
+	closedPaths, err := closedImplementPathSet(townRoot, rig, v)
+	if err != nil {
+		return nil, err
+	}
 	pathToID := map[string]string{}
 	for _, b := range open {
 		p := NormalizePlannerBeadPath(ExtractPathFromBeadTitle(b.Title, v.BeadTitleContains), v.LayoutRoot, rig)
@@ -1091,6 +1151,9 @@ func EnsurePlanningImplementBeads(townRoot, rig string, v WorkflowValidation) ([
 	for _, want := range v.RequiredFiles {
 		want = filepath.ToSlash(strings.TrimSpace(want))
 		if want == "" {
+			continue
+		}
+		if closedPaths[want] {
 			continue
 		}
 		has := false

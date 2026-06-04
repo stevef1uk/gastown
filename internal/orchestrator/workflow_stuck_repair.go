@@ -40,7 +40,8 @@ func RunWorkflowStuckRepair(townRoot, rig string, v WorkflowValidation, signals 
 	}
 
 	if beadsReady {
-		forcePlan := RequiresExactImplementPaths(v) || containsSignal(signals, SignalMissingIntegrationContract)
+		forcePlan := RequiresExactImplementPaths(v) || containsSignal(signals, SignalMissingIntegrationContract) ||
+			containsSignal(signals, SignalPlanningDocsMisaligned)
 		if syncLog, err := SyncPlanningArtifacts(townRoot, rig, v, forcePlan); err != nil {
 			return log, fmt.Errorf("sync planning: %w", err)
 		} else {

@@ -262,7 +262,12 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summa
 	if err != nil {
 		return "", err
 	}
-	if next == "implementation" && rig != "" {
+	if fromState == "plan_review" && IsFailureOutcome(outcome) && PlanReviewFailureNeedsArchitect(summary) {
+		next = "design"
+		inst.CurrentState = next
+		inst.touchStateEnteredAt()
+	}
+	if next == "implementation" && rig != "" && fromState != "implementation" {
 		if err := m.prepareImplementationPhase(rig, inst, tpl); err != nil {
 			return "", err
 		}

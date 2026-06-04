@@ -48,28 +48,27 @@ func renderPlanIntegrationContract(rigDir string, v WorkflowValidation) string {
 		b.WriteString("- Open DB, run `InitSchema`, assign `store.DB`, register handlers on `http.DefaultServeMux`, listen on `:8080`.\n")
 	}
 
-	api := parseAPISmokeSpecText(specDoc+"\n"+archDoc, v)
-	if len(api.Probes) > 0 {
+	routes := parseSpecHTTPRouteTable(specDoc)
+	if len(routes) == 0 {
+		api := parseAPISmokeSpecText(specDoc, v)
+		for _, p := range api.Probes {
+			if p.Path == "" {
+				continue
+			}
+			routes = append(routes, specHTTPRouteRow{
+				Method: strings.ToUpper(strings.TrimSpace(p.Method)),
+				Path:   p.Path,
+			})
+		}
+	}
+	if len(routes) > 0 {
 		b.WriteString("\n**HTTP routes (SPEC verbatim):**\n\n")
 		b.WriteString("| Method | Path |\n|--------|------|\n")
-		seen := map[string]bool{}
-		for _, p := range api.Probes {
-			if p.Source == "static" && p.Path == "" {
-				continue
-			}
-			path := normalizeSmokePath(p.Path)
-			if path == "" {
-				continue
-			}
-			key := strings.ToUpper(strings.TrimSpace(p.Method)) + " " + path
-			if seen[key] {
-				continue
-			}
-			seen[key] = true
+		for _, row := range routes {
 			b.WriteString("| ")
-			b.WriteString(strings.ToUpper(strings.TrimSpace(p.Method)))
+			b.WriteString(row.Method)
 			b.WriteString(" | `")
-			b.WriteString(path)
+			b.WriteString(row.Path)
 			b.WriteString("` |\n")
 		}
 	}
@@ -142,7 +141,63 @@ func extractArchitectureOwnershipRows(archDoc string) []string {
 	return out
 }
 
-// ensurePlanIntegrationContract patches plan.md when the section is missing (idempotent).
+func splicePlanIntegrationContract(planDoc, block string) string {
+	planDoc = strings.TrimSpace(planDoc)
+	block = strings.TrimSpace(block)
+	if block == "" {
+		return planDoc
+	}
+	if planDoc == "" {
+		return "# Implementation plan\n\n" + block
+	}
+	if head, tail, ok := splitPlanIntegrationContractSection(planDoc); ok {
+		var b strings.Builder
+		b.WriteString(strings.TrimRight(head, "\n"))
+		b.WriteString("\n\n")
+		b.WriteString(block)
+		if tail != "" {
+			b.WriteString("\n")
+			b.WriteString(tail)
+		}
+		return b.String()
+	}
+	if strings.HasPrefix(planDoc, "# Implementation plan") {
+		if idx := strings.Index(planDoc, "\n## "); idx >= 0 {
+			return planDoc[:idx] + "\n\n" + block + strings.TrimPrefix(planDoc[idx:], "\n")
+		}
+		return planDoc + "\n\n" + block
+	}
+	return "# Implementation plan\n\n" + block + "\n\n" + planDoc
+}
+
+func splitPlanIntegrationContractSection(planDoc string) (head, tail string, ok bool) {
+	lines := strings.Split(planDoc, "\n")
+	start := -1
+	for i, line := range lines {
+		if integrationContractHeadingRE.MatchString(line) {
+			start = i
+			break
+		}
+	}
+	if start < 0 {
+		return "", "", false
+	}
+	end := len(lines)
+	for i := start + 1; i < len(lines); i++ {
+		trim := strings.TrimSpace(lines[i])
+		if strings.HasPrefix(trim, "## ") && !integrationContractHeadingRE.MatchString(trim) {
+			end = i
+			break
+		}
+	}
+	head = strings.Join(lines[:start], "\n")
+	if end < len(lines) {
+		tail = strings.Join(lines[end:], "\n")
+	}
+	return head, tail, true
+}
+
+// ensurePlanIntegrationContract patches plan.md when the section is missing or has stale HTTP paths.
 func ensurePlanIntegrationContract(rigDir string, v WorkflowValidation) (bool, error) {
 	if !profileHasServerEntrypoint(v) {
 		return false, nil
@@ -153,31 +208,16 @@ func ensurePlanIntegrationContract(rigDir string, v WorkflowValidation) (bool, e
 		return false, err
 	}
 	planDoc := string(data)
-	if ExtractSpecMarkdownSection(planDoc, "Integration contract") != "" {
+	specDoc := readRigDoc(rigDir, "SPEC.md")
+	existing := ExtractSpecMarkdownSection(planDoc, "Integration contract")
+	if existing != "" && len(checkPlanIntegrationContract(planDoc, specDoc, v)) == 0 {
 		return false, nil
 	}
 	block := renderPlanIntegrationContract(rigDir, v)
 	if block == "" {
 		return false, nil
 	}
-	var out strings.Builder
-	if strings.HasPrefix(planDoc, "# Implementation plan") {
-		if idx := strings.Index(planDoc, "\n## "); idx >= 0 {
-			out.WriteString(planDoc[:idx])
-			out.WriteString("\n\n")
-			out.WriteString(block)
-			out.WriteString(strings.TrimPrefix(planDoc[idx:], "\n"))
-		} else {
-			out.WriteString(planDoc)
-			out.WriteString("\n\n")
-			out.WriteString(block)
-		}
-	} else {
-		out.WriteString("# Implementation plan\n\n")
-		out.WriteString(block)
-		out.WriteString(planDoc)
-	}
-	body := out.String()
+	body := splicePlanIntegrationContract(planDoc, block)
 	tmp := path + ".tmp"
 	if err := os.WriteFile(tmp, []byte(body), 0644); err != nil {
 		return false, err

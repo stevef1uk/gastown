@@ -60,6 +60,19 @@ func TestEvalWorkflowStuck_polecatMissing(t *testing.T) {
 	}
 }
 
+func TestEvalWorkflowStuck_planningDocsMisaligned(t *testing.T) {
+	got := EvalWorkflowStuck(WorkflowStuckEvalInput{
+		Now:                    time.Now().UTC(),
+		Config:                 WorkflowStuckConfig{StateGrace: time.Minute},
+		CurrentState:           "planning",
+		StateEnteredAt:         time.Now().UTC().Add(-2 * time.Minute).Format(time.RFC3339),
+		PlanningDocsMisaligned: true,
+	})
+	if !containsStuckSignal(got.Signals, SignalPlanningDocsMisaligned) {
+		t.Fatalf("expected planning_docs_misaligned signal, got %v", got.Signals)
+	}
+}
+
 func TestEvalWorkflowStuck_missingIntegrationContract(t *testing.T) {
 	got := EvalWorkflowStuck(WorkflowStuckEvalInput{
 		Now:                time.Now().UTC(),

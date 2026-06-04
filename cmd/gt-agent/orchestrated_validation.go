@@ -7,27 +7,49 @@ import (
 	"github.com/steveyegge/gastown/internal/orchestrator"
 )
 
-func pythonVerifyCommandMatches(cmd, verify string) bool {
+func pythonVerifyCommandMatches(cmd, verify string, v orchestrator.WorkflowValidation) bool {
 	if commandMatchesQAVerify(cmd, verify) {
 		return true
 	}
 	c := strings.ToLower(cmd)
-	v := strings.ToLower(verify)
-	if strings.Contains(v, "import pytest") {
+	verifyLow := strings.ToLower(verify)
+	if strings.Contains(verifyLow, "import pytest") {
 		return strings.Contains(c, "import pytest")
 	}
-	if strings.Contains(v, "-m pytest") {
-		return strings.Contains(c, "pytest")
+	if strings.Contains(verifyLow, "-m pytest") || strings.Contains(verifyLow, "pytest") {
+		if strings.Contains(c, "pytest") {
+			return true
+		}
 	}
-	if !strings.Contains(c, "compileall") || !strings.Contains(v, "compileall") {
+	if strings.Contains(c, "compileall") && strings.Contains(verifyLow, "compileall") {
+		cPath := pythonCompileallTarget(c)
+		vPath := pythonCompileallTarget(verifyLow)
+		if cPath != "" && vPath != "" {
+			if cPath == vPath || strings.HasSuffix(vPath, "/"+cPath) || strings.HasSuffix(cPath, "/"+vPath) {
+				return true
+			}
+		}
+	}
+	layout := strings.Trim(strings.TrimSpace(v.LayoutRoot), "/")
+	if layout == "" || layout == "." {
 		return false
 	}
-	cPath := pythonCompileallTarget(c)
-	vPath := pythonCompileallTarget(v)
-	if cPath == "" || vPath == "" {
+	if !strings.Contains(c, layout) {
 		return false
 	}
-	return cPath == vPath || strings.HasSuffix(vPath, "/"+cPath) || strings.HasSuffix(cPath, "/"+vPath)
+	for _, part := range strings.Split(verify, "&&") {
+		p := strings.ToLower(strings.TrimSpace(part))
+		if strings.HasPrefix(p, "cd ") {
+			continue
+		}
+		if p == "" {
+			continue
+		}
+		if !strings.Contains(c, p) {
+			return false
+		}
+	}
+	return len(strings.Fields(verify)) > 0
 }
 
 func pythonCompileallTarget(lowerCmd string) string {
@@ -73,8 +95,21 @@ func isProjectSetupVerifyCommandOK(cmd string, v orchestrator.WorkflowValidation
 }
 
 func isQATestCommandOK(cmd string, v orchestrator.WorkflowValidation) bool {
-	if strings.TrimSpace(v.QAVerifyCommand) != "" {
-		return commandMatchesQAVerify(cmd, v.QAVerifyCommand)
+	verify := strings.TrimSpace(v.QAVerifyCommand)
+	if verify != "" {
+		if commandMatchesQAVerify(cmd, verify) {
+			return true
+		}
+		if orchestrator.WorkflowUsesGo(v) && goVerifyCommandMatches(cmd, verify, v) {
+			return true
+		}
+		if orchestrator.WorkflowUsesPython(v) && pythonVerifyCommandMatches(cmd, verify, v) {
+			return true
+		}
+		if orchestrator.WorkflowUsesDocker(v) && dockerVerifyCommandMatches(cmd, verify) {
+			return true
+		}
+		return false
 	}
 	return isUnittestCommand(cmd, v.UnittestModule)
 }
@@ -87,7 +122,7 @@ func isImplementationVerifyCommandOK(cmd, townRoot, rig, activeBead string, v or
 		mayorDir := filepath.Join(townRoot, rig, "mayor", "rig")
 		beadPath := orchestrator.ImplementBeadPathForID(townRoot, rig, activeBead, v)
 		impl := orchestrator.PythonImplementationVerifyCommandForBead(v, mayorDir, beadPath)
-		if pythonVerifyCommandMatches(cmd, impl) {
+		if pythonVerifyCommandMatches(cmd, impl, v) {
 			return true
 		}
 	}
@@ -117,7 +152,7 @@ func isImplementationVerifyCommandOK(cmd, townRoot, rig, activeBead string, v or
 		}
 	}
 	if orchestrator.WorkflowUsesPython(v) {
-		if pythonVerifyCommandMatches(cmd, impl) {
+		if pythonVerifyCommandMatches(cmd, impl, v) {
 			return true
 		}
 	}

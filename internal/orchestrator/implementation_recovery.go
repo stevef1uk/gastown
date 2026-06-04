@@ -135,6 +135,11 @@ func ResetImplementationPhase(townRoot, rig string, v WorkflowValidation) (strin
 	} else {
 		parts = append(parts, "stopped dev servers")
 	}
+	if pruned, err := PruneOpenImplementBeadsForClosedPaths(townRoot, rig, v); err != nil {
+		return joinStrings(parts, "; "), err
+	} else if len(pruned) > 0 {
+		parts = append(parts, "pruned open dupes of closed paths: "+joinStrings(pruned, ", "))
+	}
 	activePaths, err := implementArtifactPathsForActiveBeads(townRoot, rig, v)
 	if err != nil {
 		return joinStrings(parts, "; "), err

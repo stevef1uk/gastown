@@ -165,9 +165,13 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 	// pre_run (refresh_codeindex, bead queue, reconcile) must run before prompt_context so
 	// implement_bead_context sees a fresh codeindex.json and the correct queue head.
 	runner.runPreRun()
-	if o, s, ok := runner.tryAutoOutcome(); ok {
-		orchestratedPrintf("[gt-agent] skipping LLM: %s artifacts already valid after pre_run\n", task.State)
-		return o, s, "", nil
+	if !shouldSkipPlanningAutoComplete(task, townRoot, rig, runner.v) {
+		if o, s, ok := runner.tryAutoOutcome(); ok {
+			orchestratedPrintf("[gt-agent] skipping LLM: %s artifacts already valid after pre_run\n", task.State)
+			return o, s, "", nil
+		}
+	} else {
+		orchestratedPrintf("[gt-agent] plan review rework pending — running planner LLM (no auto-complete)\n")
 	}
 	if task.State == "implementation" || task.State == "qa_review" || task.State == "project_setup" {
 		if block := orchestrator.FormatMissingImplementFilesBlock(townRoot, rig, runner.v); block != "" {
@@ -448,6 +452,23 @@ func sanitizeRetryFeedbackForLLM(s string) string {
 		s = htmlRetryDumpRE.ReplaceAllString(s, "\n[verify output: unrelated HTML on :8080 — not Link Shelf; use go mod tidy only in project_setup]\n")
 	}
 	return s
+}
+
+// shouldSkipPlanningAutoComplete blocks planning auto-complete while plan_review rework is pending
+// or while docs would still fail plan_review (e.g. architecture store API drift).
+func shouldSkipPlanningAutoComplete(task *orchestrator.Task, townRoot, rig string, v orchestrator.WorkflowValidation) bool {
+	if task == nil || task.State != "planning" {
+		return false
+	}
+	if task.PendingRework != nil && task.PendingRework.FromState == "plan_review" {
+		return true
+	}
+	if townRoot != "" && rig != "" {
+		if err := orchestrator.ValidatePlanningPhaseGate(townRoot, rig, "plan_review", v); err != nil {
+			return true
+		}
+	}
+	return false
 }
 
 // formatWorkflowReworkBlock returns cross-step failure context (e.g. QA plan_review → planner).

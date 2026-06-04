@@ -17,6 +17,30 @@ func SQLiteSchemaBeadPath(layoutRoot string) string {
 	return layout + "/" + SQLiteSchemaRelPath
 }
 
+// SQLiteStoreRelPath is the canonical store API bead (under layout_root).
+const SQLiteStoreRelPath = "internal/store/store.go"
+
+// SQLiteStoreBeadPath returns layout_root/internal/store/store.go when layout is set.
+func SQLiteStoreBeadPath(layoutRoot string) string {
+	layout := strings.Trim(strings.TrimSpace(layoutRoot), "/")
+	if layout == "" || layout == "." {
+		return SQLiteStoreRelPath
+	}
+	return layout + "/" + SQLiteStoreRelPath
+}
+
+// StoreBeadPathFromProfile returns the profile store.go required_files path, or SQLiteStoreBeadPath(layout_root).
+func StoreBeadPathFromProfile(v WorkflowValidation) string {
+	v = v.ForActivePhase()
+	for _, f := range v.RequiredFiles {
+		f = filepath.ToSlash(strings.TrimSpace(f))
+		if strings.HasSuffix(strings.ToLower(f), "/internal/store/store.go") {
+			return f
+		}
+	}
+	return SQLiteStoreBeadPath(v.LayoutRoot)
+}
+
 // IsSQLiteSchemaBeadPath reports whether path is the injected schema/migrate bead.
 func IsSQLiteSchemaBeadPath(path string) bool {
 	lower := strings.ToLower(filepath.ToSlash(strings.TrimSpace(path)))

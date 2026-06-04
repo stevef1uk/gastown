@@ -913,7 +913,7 @@ func TestPythonImplementationVerifyAcceptance(t *testing.T) {
 	}
 	impl := orchestrator.ImplementationVerifyCommandForBead(v, t.TempDir(), "tasklist/requirements.txt")
 	cmd := "cd testgt5/mayor/rig && test -x .venv/bin/python3 && .venv/bin/python3 -c 'import pytest'"
-	if !commandMatchesQAVerify(cmd, impl) && !pythonVerifyCommandMatches(cmd, impl) {
+	if !commandMatchesQAVerify(cmd, impl) && !pythonVerifyCommandMatches(cmd, impl, v) {
 		t.Fatalf("import pytest should satisfy per-bead verify %q", impl)
 	}
 }

@@ -13,7 +13,7 @@ func planAcceptanceBullets(beadPath string, v WorkflowValidation) []string {
 			"Exports `InitSchema(*sql.DB) error` (or equivalent) with `CREATE TABLE IF NOT EXISTS` DDL from architecture.md.",
 			"DDL matches architecture.md; production entrypoint and package tests call this helper — no duplicated `CREATE TABLE` strings in tests or main.",
 			"Polecat runs **Verify** from the Next bead line before `bd close`.",
-			"Bead is implemented before `internal/store/store.go` in build order.",
+			"Bead is implemented before `" + StoreBeadPathFromProfile(v) + "` in build order.",
 		}
 	}
 	common := []string{
@@ -29,21 +29,20 @@ func planAcceptanceBullets(beadPath string, v WorkflowValidation) []string {
 		}, common...)
 	}
 	if WorkflowUsesGo(v) && strings.HasSuffix(beadPath, ".go") && !strings.HasSuffix(beadPath, "go.mod") {
-		testPath := CorrelatedTestPathForSource(beadPath, v)
-		if testPath != "" {
+		if testPath := CorrelatedTestPathForSource(beadPath, v); testPath != "" && TestPathListedInRequired(beadPath, v) {
 			common = append(common,
 				"Package has unit tests in `"+testPath+"` (same bead or dedicated test bead) covering SPEC behavior before close.",
 				"`go test` for this package must pass (Verify runs `go test -count=1 ./<pkg>/...`).",
 			)
-			if strings.Contains(beadPath, "internal/store/store.go") {
-				common = append(common,
-					"Store methods match SPEC (`List`/`Create`/`Delete` with `context.Context`); tests use `:memory:` + `InitSchema` — not a shared `./links.db`.",
-				)
-			}
+		}
+		if strings.Contains(beadPath, "internal/store/store.go") {
+			common = append(common,
+				"Store methods match SPEC (`List`/`Create`/`Delete` with `context.Context`); tests use `:memory:` + `InitSchema` — not a shared `./links.db`.",
+			)
 		}
 	}
 	if WorkflowUsesPython(v) && strings.HasSuffix(beadPath, ".py") && !IsTestImplementPath(beadPath) {
-		if testPath := CorrelatedTestPathForSource(beadPath, v); testPath != "" {
+		if testPath := CorrelatedTestPathForSource(beadPath, v); testPath != "" && TestPathListedInRequired(beadPath, v) {
 			common = append(common,
 				"Add or update `"+testPath+"` with pytest cases tied to SPEC/plan acceptance before close.",
 			)

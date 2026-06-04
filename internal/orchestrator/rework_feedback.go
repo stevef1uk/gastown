@@ -259,6 +259,19 @@ func preparePhaseAdvanceToPlanningFeedback(fromPhase, toPhase string, v Workflow
 	return strings.TrimSpace(b.String())
 }
 
+// PlanReviewFailureNeedsArchitect reports plan_review failures that require architecture.md edits
+// (planner cannot write architecture.md — send workflow to design instead of planning loop).
+func PlanReviewFailureNeedsArchitect(summary string) bool {
+	lower := strings.ToLower(summary)
+	if !strings.Contains(lower, "architecture.md") {
+		return false
+	}
+	return strings.Contains(lower, "store api") ||
+		strings.Contains(lower, "signature") ||
+		strings.Contains(lower, "context.context") ||
+		strings.Contains(lower, "package-level")
+}
+
 // PlanReviewSummarySaysPlanOK reports whether QA explicitly accepted plan.md size.
 func PlanReviewSummarySaysPlanOK(summary string) bool {
 	lower := strings.ToLower(summary)

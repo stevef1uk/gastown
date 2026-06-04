@@ -69,11 +69,30 @@ func ValidateArchitectureDocAlignment(rigDir string, v WorkflowValidation) error
 func architectureDocAlignmentIssues(rigDir, specDoc string, v WorkflowValidation) []string {
 	archDoc := readRigDoc(rigDir, "architecture.md")
 	var issues []string
+	issues = append(issues, checkArchitectureStoreSignatureDrift("architecture.md", archDoc, specDoc)...)
 	issues = append(issues, checkHTTPDocAlignment("architecture.md", archDoc, specDoc, v)...)
 	issues = append(issues, checkStoreAPIAlignment("architecture.md", archDoc, specDoc)...)
 	issues = append(issues, checkGoModuleAlignment("architecture.md", archDoc, specDoc, v)...)
 	issues = append(issues, checkDocLayoutPathPrefix("architecture.md", archDoc, v)...)
 	return issues
+}
+
+// PlanningDocsMisaligned reports whether SPEC/architecture/plan fail alignment for the active profile.
+// Used by planning sync refresh and workflow-stuck repair (layout_root-prefixed required_files).
+func PlanningDocsMisaligned(rigDir string, v WorkflowValidation) bool {
+	rigDir = strings.TrimSpace(rigDir)
+	if rigDir == "" {
+		return false
+	}
+	v = v.ForActivePhase()
+	layout := strings.Trim(filepath.ToSlash(strings.TrimSpace(v.LayoutRoot)), "/")
+	if layout == "" || layout == "." || !profileRequiredFilesUseLayoutPrefix(v, layout) {
+		return false
+	}
+	if _, err := os.Stat(filepath.Join(rigDir, "plan.md")); err != nil {
+		return false
+	}
+	return ValidatePlanningDocAlignment(rigDir, v) != nil
 }
 
 // ValidatePlanningDocAlignment ensures SPEC.md, architecture.md, and plan.md agree on HTTP routes,
@@ -407,6 +426,30 @@ func profileRequiresTestBeads(v WorkflowValidation) bool {
 	return false
 }
 
+// checkArchitectureStoreSignatureDrift rejects architecture store signatures that use *sql.DB
+// receivers/params when SPEC documents package-level context.Context APIs.
+func checkArchitectureStoreSignatureDrift(docName, archDoc, specDoc string) []string {
+	if strings.TrimSpace(archDoc) == "" || strings.TrimSpace(specDoc) == "" {
+		return nil
+	}
+	specWantsCtx := strings.Contains(specDoc, "context.Context") &&
+		(strings.Contains(specDoc, "package-level") || strings.Contains(specDoc, "var DB *sql.DB") || strings.Contains(specDoc, "store.DB"))
+	if !specWantsCtx {
+		return nil
+	}
+	var issues []string
+	if strings.Contains(archDoc, "func List(db *sql.DB)") || strings.Contains(archDoc, "func List(*sql.DB)") {
+		issues = append(issues, fmt.Sprintf("%s store API uses List(db *sql.DB); SPEC requires package-level List(ctx context.Context)", docName))
+	}
+	if strings.Contains(archDoc, "func Create(db *sql.DB") || strings.Contains(archDoc, "Create(db *sql.DB, link") {
+		issues = append(issues, fmt.Sprintf("%s store API uses Create(db *sql.DB, …); SPEC requires Create(ctx context.Context, title, url string)", docName))
+	}
+	if strings.Contains(archDoc, "func Delete(db *sql.DB") {
+		issues = append(issues, fmt.Sprintf("%s store API uses Delete(db *sql.DB, …); SPEC requires Delete(ctx context.Context, id int64)", docName))
+	}
+	return issues
+}
+
 func checkPlanIntegrationContract(planDoc, specDoc string, v WorkflowValidation) []string {
 	if strings.TrimSpace(planDoc) == "" || !profileHasServerEntrypoint(v) {
 		return nil
@@ -418,15 +461,14 @@ func checkPlanIntegrationContract(planDoc, specDoc string, v WorkflowValidation)
 	if !RequiresExactImplementPaths(v) {
 		return nil
 	}
-	specAPI := parseAPISmokeSpecText(specDoc, v)
-	paths := apiPathSet(specAPI)
-	if len(paths) == 0 {
+	routes := parseSpecHTTPRouteTable(specDoc)
+	if len(routes) == 0 {
 		return nil
 	}
 	var issues []string
-	for p := range paths {
-		if !strings.Contains(contract, p) {
-			issues = append(issues, fmt.Sprintf("plan.md integration contract must mention SPEC HTTP route %q", p))
+	for _, row := range routes {
+		if !strings.Contains(contract, row.Path) {
+			issues = append(issues, fmt.Sprintf("plan.md integration contract must include SPEC route %q (got truncated paths like /static or /api/links without path params)", row.Path))
 		}
 	}
 	return issues

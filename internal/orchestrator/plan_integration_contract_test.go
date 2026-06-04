@@ -13,6 +13,7 @@ func TestRenderPlanIntegrationContract_includesAPIRoutes(t *testing.T) {
 | GET | /api/links | 200 | — |
 | POST | /api/links | 201 | — |
 | DELETE | /api/links/{id} | 204 | — |
+| GET | /static/{file} | 200 | — |
 | GET | / | index | — |
 `
 	arch := `# Architecture
@@ -36,10 +37,13 @@ func TestRenderPlanIntegrationContract_includesAPIRoutes(t *testing.T) {
 	if out == "" {
 		t.Fatal("expected contract block")
 	}
-	for _, path := range []string{"/api/links", "/"} {
+	for _, path := range []string{"/api/links", "/api/links/{id}", "/static/{file}", "/"} {
 		if !strings.Contains(out, path) {
 			t.Fatalf("contract missing route %q:\n%s", path, out)
 		}
+	}
+	if strings.Contains(out, "| GET | `/static` |") || strings.Contains(out, "| DELETE | `/api/links` |") {
+		t.Fatalf("contract must not strip path params:\n%s", out)
 	}
 }
 

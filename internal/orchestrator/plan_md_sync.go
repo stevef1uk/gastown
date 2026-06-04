@@ -102,17 +102,33 @@ func PlanningPlanMDNeedsRefresh(townRoot, rig string, v WorkflowValidation) bool
 	if err := ValidatePlanMDBeadPathAlignment(townRoot, rig, v); err != nil {
 		return true
 	}
-	open, err := ListOpenImplementBeads(townRoot, rig, v)
-	if err != nil || len(open) == 0 {
+	if PlanningDocsMisaligned(rigDir, v) {
 		return true
 	}
+	if planDoc, err := os.ReadFile(path); err == nil {
+		specDoc := readRigDoc(rigDir, "SPEC.md")
+		if len(checkPlanIntegrationContract(string(planDoc), specDoc, v)) > 0 {
+			return true
+		}
+	}
+	open, err := ListOpenImplementBeads(townRoot, rig, v)
+	if err != nil {
+		return true
+	}
+	if len(open) == 0 {
+		covered, coverErr := implementPathsCoveredForPlanMD(townRoot, rig, v)
+		if coverErr != nil || !covered {
+			return true
+		}
+	} else {
 		if err := ValidatePlanBeads(open, filepath.Join(rigDir, "architecture.md"), v, rig); err != nil {
 			return true
 		}
 		if err := ValidatePlanBeadPathsExact(open, v, rig); err != nil {
 			return true
 		}
-	pathToID, _ := openImplementPathMap(townRoot, rig, v)
+	}
+	pathToID, _ := implementPathMapForPlanMD(townRoot, rig, v)
 	for _, want := range v.RequiredFiles {
 		want = filepath.ToSlash(strings.TrimSpace(want))
 		if want == "" {
@@ -246,10 +262,51 @@ func openImplementPathMap(townRoot, rig string, v WorkflowValidation) (map[strin
 	return pathToID, nil
 }
 
+// implementPathMapForPlanMD maps each required_files path to an open implement bead ID, or a closed ID when all beads on that path are closed.
+func implementPathMapForPlanMD(townRoot, rig string, v WorkflowValidation) (map[string]string, error) {
+	pathToID, err := openImplementPathMap(townRoot, rig, v)
+	if err != nil {
+		return nil, err
+	}
+	v = v.ForActivePhase()
+	for _, want := range v.RequiredFiles {
+		want = filepath.ToSlash(strings.TrimSpace(want))
+		if want == "" || pathToID[want] != "" {
+			continue
+		}
+		if id, ok := ClosedImplementBeadForPath(townRoot, rig, want, v); ok {
+			pathToID[want] = id
+		}
+	}
+	return pathToID, nil
+}
+
+// implementPathsCoveredForPlanMD reports whether every required_files path has an open or closed implement bead.
+func implementPathsCoveredForPlanMD(townRoot, rig string, v WorkflowValidation) (bool, error) {
+	v = v.ForActivePhase()
+	if len(v.RequiredFiles) == 0 {
+		return false, nil
+	}
+	pathToID, err := implementPathMapForPlanMD(townRoot, rig, v)
+	if err != nil {
+		return false, err
+	}
+	for _, want := range v.RequiredFiles {
+		want = filepath.ToSlash(strings.TrimSpace(want))
+		if want == "" {
+			continue
+		}
+		if pathToID[want] == "" {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
 // WritePlanningPlanMD writes plan.md with one ### section per required_files path and real open bead IDs.
 func WritePlanningPlanMD(townRoot, rig string, v WorkflowValidation) (bool, error) {
 	v = v.ForActivePhase()
-	pathToID, err := openImplementPathMap(townRoot, rig, v)
+	pathToID, err := implementPathMapForPlanMD(townRoot, rig, v)
 	if err != nil {
 		return false, err
 	}
@@ -264,7 +321,7 @@ func WritePlanningPlanMD(townRoot, rig string, v WorkflowValidation) (bool, erro
 		}
 	}
 	if len(missing) > 0 {
-		return false, fmt.Errorf("missing open implement beads for: %s (run bead repair first)", strings.Join(missing, ", "))
+		return false, fmt.Errorf("missing implement beads for: %s (run bead repair first)", strings.Join(missing, ", "))
 	}
 
 	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
@@ -311,6 +368,9 @@ func WritePlanningPlanMD(townRoot, rig string, v WorkflowValidation) (bool, erro
 		_ = os.Remove(tmp)
 		return false, err
 	}
+	if err := ValidatePlanningDocAlignment(rigDir, v); err != nil {
+		return false, fmt.Errorf("plan.md regeneration failed alignment check: %w", err)
+	}
 	return true, nil
 }
 
@@ -319,8 +379,13 @@ func writePlanningPlanMDWithRetry(townRoot, rig string, v WorkflowValidation) (b
 	if err == nil {
 		return wrote, nil
 	}
-	if !strings.Contains(err.Error(), "missing open implement beads") {
+	if !strings.Contains(err.Error(), "missing implement beads") {
 		return false, err
+	}
+	if covered, coverErr := implementPathsCoveredForPlanMD(townRoot, rig, v); coverErr != nil {
+		return false, coverErr
+	} else if covered {
+		return WritePlanningPlanMD(townRoot, rig, v)
 	}
 	created, createErr := EnsurePlanningImplementBeads(townRoot, rig, v)
 	if createErr != nil {
