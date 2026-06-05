@@ -161,10 +161,10 @@ func (r *stateRunner) formatActiveBeadReadyToCloseBlock() string {
 	if r.implProgress.done(implClosedKey(beadID)) {
 		return ""
 	}
-	rigDir := rigMayorRigDir(r.townRoot, r.rig)
-	if err := orchestrator.ValidateBeadArtifactOnDisk(rigDir, beadPath, r.v); err != nil {
+	if !r.implementBeadCloseArtifactsReady() {
 		return ""
 	}
+	rigDir := rigMayorRigDir(r.townRoot, r.rig)
 	// Trust persisted verify milestone when the artifact is still on disk — avoids
 	// re-running a slow first-time CGO sqlite build on every turn just to nudge bd close.
 	if !r.implProgress.done(implVerifyKey(beadID)) && orchestrator.WorkflowUsesGo(r.v) && strings.HasSuffix(beadPath, ".go") {
@@ -191,6 +191,30 @@ func (r *stateRunner) formatActiveBeadReadyToCloseBlock() string {
 	return b.String()
 }
 
+// implementBeadCloseArtifactsReady reports whether the active bead's production file and any
+// required correlated *_test.go (same-bead, not a separate implement bead) exist on disk.
+func (r *stateRunner) implementBeadCloseArtifactsReady() bool {
+	if r == nil || r.track == nil {
+		return false
+	}
+	beadPath := strings.TrimSpace(r.activeImplementBeadPath())
+	if beadPath == "" {
+		return false
+	}
+	rigDir := rigMayorRigDir(r.townRoot, r.rig)
+	if err := orchestrator.ValidateBeadArtifactOnDisk(rigDir, beadPath, r.v); err != nil {
+		return false
+	}
+	if testPath := orchestrator.CorrelatedTestPathForSource(beadPath, r.v); testPath != "" {
+		if !orchestrator.TestPathListedInRequired(beadPath, r.v) {
+			if err := orchestrator.ValidateBeadArtifactOnDisk(rigDir, testPath, r.v); err != nil {
+				return false
+			}
+		}
+	}
+	return true
+}
+
 // rejectRedundantImplementEditAfterVerify blocks cosmetic EDIT/WRITE churn once verify is green.
 func (r *stateRunner) rejectRedundantImplementEditAfterVerify(relPath string) error {
 	if r == nil || r.track == nil {
@@ -211,6 +235,9 @@ func (r *stateRunner) rejectRedundantImplementEditAfterVerify(relPath string) er
 		verifyGreen = true
 	}
 	if !verifyGreen {
+		return nil
+	}
+	if !r.implementBeadCloseArtifactsReady() {
 		return nil
 	}
 	layout := strings.Trim(strings.TrimSpace(r.v.LayoutRoot), "/")
@@ -240,7 +267,7 @@ func (r *stateRunner) formatImplementBeadCloseNudge() string {
 		return ""
 	}
 	verifyGreen := r.track.verifyOK || (r.implProgress != nil && r.implProgress.done(implVerifyKey(beadID)))
-	if !verifyGreen {
+	if !verifyGreen || !r.implementBeadCloseArtifactsReady() {
 		return ""
 	}
 	return fmt.Sprintf("\n**Verify green** for active bead **%s** (`%s`). Stop editing — close the bead:\n`CMD: export BEADS_DIR=$GT_ROOT/%s/.beads && cd %s/mayor/rig && bd close %s`\n\n",

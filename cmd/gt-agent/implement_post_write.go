@@ -115,13 +115,20 @@ func (r *stateRunner) runPostNativeWriteVerify(relPath string, sessionName strin
 		}
 		return
 	}
-	r.track.verifyOK = true
-	r.track.hadCmdFailure = false
-	r.persistImplementationProgress(verifyCmd)
 	combined.WriteString(fmt.Sprintf("Post-write verify: %s\n%s", verifyCmd, formatSuccessCommandOutput(out)))
-	orchestratedPrintf("[gt-agent] post-write verify OK for %s\n", relPath)
-	if nudge := r.formatImplementBeadCloseNudge(); nudge != "" {
-		combined.WriteString(nudge)
+	r.track.hadCmdFailure = false
+	if r.implementBeadCloseArtifactsReady() {
+		r.track.verifyOK = true
+		r.persistImplementationProgress(verifyCmd)
+		orchestratedPrintf("[gt-agent] post-write verify OK for %s\n", relPath)
+		if nudge := r.formatImplementBeadCloseNudge(); nudge != "" {
+			combined.WriteString(nudge)
+		}
+	} else {
+		r.track.verifyOK = false
+		if testPath := orchestrator.CorrelatedTestPathForSource(r.activeImplementBeadPath(), r.v); testPath != "" {
+			combined.WriteString(fmt.Sprintf("\nPackage verify passed. Add **WRITE:** `%s`, re-run Verify, then `bd close`.\n\n", testPath))
+		}
 	}
 }
 
