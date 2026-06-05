@@ -23,12 +23,12 @@ import (
 const DoltDockerImage = "dolthub/dolt-sql-server:1.83.0"
 
 var (
-	doltCtr      *dolt.DoltContainer
-	doltCtrOnce  sync.Once
-	doltCtrErr   error
-	doltCtrPort  string
-	dockerOnce   sync.Once
-	dockerAvail  bool
+	doltCtr     *dolt.DoltContainer
+	doltCtrMu   sync.Mutex
+	doltCtrErr  error
+	doltCtrPort string
+	dockerOnce  sync.Once
+	dockerAvail bool
 )
 
 // isDockerAvailable returns true if the Docker daemon is reachable.
@@ -40,18 +40,25 @@ func isDockerAvailable() bool {
 	return dockerAvail
 }
 
-// isReaperRemovingErr returns true if the error is a transient "removing"
-// status from the testcontainers Ryuk reaper. This happens when a previous
-// test run's reaper container is still being cleaned up by Docker.
-func isReaperRemovingErr(err error) bool {
-	return err != nil && strings.Contains(err.Error(), "unexpected container status") &&
-		strings.Contains(err.Error(), "removing")
+// isTransientDoltContainerErr returns true for Docker/Dolt startup flakes that
+// often clear on retry (Ryuk reaper still removing, Dolt SQL ping not ready).
+func isTransientDoltContainerErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	if strings.Contains(msg, "unexpected container status") && strings.Contains(msg, "removing") {
+		return true
+	}
+	return strings.Contains(msg, "error pinging db") ||
+		strings.Contains(msg, "invalid connection") ||
+		strings.Contains(msg, "unexpected EOF") ||
+		strings.Contains(msg, "connection refused")
 }
 
-// runDoltContainerWithRetry calls dolt.Run, retrying on transient reaper
-// "removing" errors up to 3 times with exponential backoff.
+// runDoltContainerWithRetry calls dolt.Run, retrying on transient startup errors.
 func runDoltContainerWithRetry(ctx context.Context) (*dolt.DoltContainer, error) {
-	const maxRetries = 3
+	const maxRetries = 5
 	delay := 2 * time.Second
 	var lastErr error
 	for attempt := range maxRetries {
@@ -63,12 +70,14 @@ func runDoltContainerWithRetry(ctx context.Context) (*dolt.DoltContainer, error)
 			return ctr, nil
 		}
 		lastErr = err
-		if !isReaperRemovingErr(err) {
+		if !isTransientDoltContainerErr(err) {
 			return nil, err
 		}
 		if attempt < maxRetries-1 {
 			time.Sleep(delay)
-			delay *= 2
+			if delay < 8*time.Second {
+				delay *= 2
+			}
 		}
 	}
 	return nil, lastErr
@@ -128,6 +137,22 @@ func StartIsolatedDoltContainer(t *testing.T) string {
 	return portStr
 }
 
+// ensureSharedDoltContainer starts the shared Dolt container once; retries when
+// a prior attempt failed with a transient Docker/Dolt startup error.
+func ensureSharedDoltContainer() error {
+	doltCtrMu.Lock()
+	defer doltCtrMu.Unlock()
+	if doltCtr != nil {
+		return nil
+	}
+	if doltCtrErr != nil && !isTransientDoltContainerErr(doltCtrErr) {
+		return doltCtrErr
+	}
+	doltCtrErr = nil
+	startSharedDoltContainer()
+	return doltCtrErr
+}
+
 // EnsureDoltContainerForTestMain starts a shared Dolt container for use in
 // TestMain functions. Call TerminateDoltContainer() after m.Run() to clean up.
 // Sets both GT_DOLT_PORT and BEADS_DOLT_PORT process-wide.
@@ -135,9 +160,7 @@ func EnsureDoltContainerForTestMain() error {
 	if !isDockerAvailable() {
 		return fmt.Errorf("Docker not available")
 	}
-
-	doltCtrOnce.Do(startSharedDoltContainer)
-	return doltCtrErr
+	return ensureSharedDoltContainer()
 }
 
 // RequireDoltContainer ensures a shared Dolt container is running. Skips the
@@ -147,10 +170,8 @@ func RequireDoltContainer(t *testing.T) {
 	if !isDockerAvailable() {
 		t.Skip("Docker not available, skipping test")
 	}
-
-	doltCtrOnce.Do(startSharedDoltContainer)
-	if doltCtrErr != nil {
-		t.Fatalf("Dolt container setup failed: %v", doltCtrErr)
+	if err := ensureSharedDoltContainer(); err != nil {
+		t.Fatalf("Dolt container setup failed: %v", err)
 	}
 }
 
@@ -167,8 +188,12 @@ func DoltContainerPort() string {
 // TerminateDoltContainer stops and removes the shared Dolt container.
 // Called from TestMain after m.Run().
 func TerminateDoltContainer() {
+	doltCtrMu.Lock()
+	defer doltCtrMu.Unlock()
 	if doltCtr != nil {
 		_ = testcontainers.TerminateContainer(doltCtr)
 		doltCtr = nil
 	}
+	doltCtrErr = nil
+	doltCtrPort = ""
 }

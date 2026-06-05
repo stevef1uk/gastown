@@ -1093,7 +1093,12 @@ func RegisterAgentForTesting(name string, info AgentPresetInfo) {
 	registryMu.Lock()
 	initRegistryLocked()
 	defer registryMu.Unlock()
-	globalRegistry.Agents[name] = &info
+	stored := new(AgentPresetInfo)
+	*stored = info
+	if len(info.ProcessNames) > 0 {
+		stored.ProcessNames = append([]string(nil), info.ProcessNames...)
+	}
+	globalRegistry.Agents[name] = stored
 }
 
 // ResolveACPConfig determines the correct ACP configuration for an agent

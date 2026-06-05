@@ -276,7 +276,7 @@ func TestGetProcessNamesRespectsRegistryOverride(t *testing.T) {
 }
 
 func TestResolveProcessNames(t *testing.T) {
-	t.Parallel()
+	// Uses global agent registry — must not run parallel with other registry tests.
 	ResetRegistryForTesting()
 	t.Cleanup(ResetRegistryForTesting)
 
@@ -1440,7 +1440,6 @@ func TestAllHookSupportingAgentsHaveHookFields(t *testing.T) {
 }
 
 func TestResolveACPConfig(t *testing.T) {
-	t.Parallel()
 	ResetRegistryForTesting()
 	t.Cleanup(ResetRegistryForTesting)
 
@@ -1525,7 +1524,6 @@ func TestSupportsACPWithCustomAgent(t *testing.T) {
 }
 
 func TestGetACPCommand(t *testing.T) {
-	t.Parallel()
 	ResetRegistryForTesting()
 	t.Cleanup(ResetRegistryForTesting)
 
