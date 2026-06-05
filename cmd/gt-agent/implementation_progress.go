@@ -165,7 +165,9 @@ func (r *stateRunner) formatActiveBeadReadyToCloseBlock() string {
 	if err := orchestrator.ValidateBeadArtifactOnDisk(rigDir, beadPath, r.v); err != nil {
 		return ""
 	}
-	if orchestrator.WorkflowUsesGo(r.v) && strings.HasSuffix(beadPath, ".go") {
+	// Trust persisted verify milestone when the artifact is still on disk — avoids
+	// re-running a slow first-time CGO sqlite build on every turn just to nudge bd close.
+	if !r.implProgress.done(implVerifyKey(beadID)) && orchestrator.WorkflowUsesGo(r.v) && strings.HasSuffix(beadPath, ".go") {
 		verifyCmd := orchestrator.GoCompileVerifyCommandForBead(r.v, rigDir, beadPath)
 		if verifyCmd == "" {
 			return ""
@@ -184,9 +186,65 @@ func (r *stateRunner) formatActiveBeadReadyToCloseBlock() string {
 	if orchestrator.WorkflowUsesGo(r.v) {
 		b.WriteString(" and Verify is green")
 	}
-	b.WriteString(fmt.Sprintf(".\n\nDo **not** send failure JSON for this bead. Run **Verify** from the Next bead line if needed, then:\n`CMD: export BEADS_DIR=$GT_ROOT/%s/.beads && cd %s/mayor/rig && bd close %s`\n",
+	b.WriteString(fmt.Sprintf(".\n\nDo **not** re-EDIT this file for formatting. Run:\n`CMD: export BEADS_DIR=$GT_ROOT/%s/.beads && cd %s/mayor/rig && bd close %s`\n",
 		r.rig, r.rig, beadID))
 	return b.String()
+}
+
+// rejectRedundantImplementEditAfterVerify blocks cosmetic EDIT/WRITE churn once verify is green.
+func (r *stateRunner) rejectRedundantImplementEditAfterVerify(relPath string) error {
+	if r == nil || r.track == nil {
+		return nil
+	}
+	beadID := strings.TrimSpace(r.track.activeBead)
+	if beadID == "" {
+		return nil
+	}
+	if r.implProgress != nil && r.implProgress.done(implClosedKey(beadID)) {
+		return nil
+	}
+	verifyGreen := r.track.verifyOK
+	if !verifyGreen && (r.implProgress == nil || !r.implProgress.done(implVerifyKey(beadID))) {
+		return nil
+	}
+	if !verifyGreen && r.implProgress != nil && r.implProgress.done(implVerifyKey(beadID)) {
+		verifyGreen = true
+	}
+	if !verifyGreen {
+		return nil
+	}
+	layout := strings.Trim(strings.TrimSpace(r.v.LayoutRoot), "/")
+	rel := orchestrator.NormalizeBeadPathForLayout(relPath, layout)
+	active := strings.TrimSpace(r.activeImplementBeadPath())
+	if active == "" {
+		return nil
+	}
+	corrTest := orchestrator.CorrelatedTestPathForSource(active, r.v)
+	if rel != active && (corrTest == "" || rel != corrTest) {
+		return nil
+	}
+	return fmt.Errorf("verify already green for active bead %s — run `bd close %s` instead of editing %s", beadID, beadID, rel)
+}
+
+// formatImplementBeadCloseNudge returns a per-turn reminder after green verify.
+func (r *stateRunner) formatImplementBeadCloseNudge() string {
+	if r == nil || r.track == nil {
+		return ""
+	}
+	beadID := strings.TrimSpace(r.track.activeBead)
+	beadPath := strings.TrimSpace(r.activeImplementBeadPath())
+	if beadID == "" || beadPath == "" {
+		return ""
+	}
+	if r.implProgress != nil && r.implProgress.done(implClosedKey(beadID)) {
+		return ""
+	}
+	verifyGreen := r.track.verifyOK || (r.implProgress != nil && r.implProgress.done(implVerifyKey(beadID)))
+	if !verifyGreen {
+		return ""
+	}
+	return fmt.Sprintf("\n**Verify green** for active bead **%s** (`%s`). Stop editing — close the bead:\n`CMD: export BEADS_DIR=$GT_ROOT/%s/.beads && cd %s/mayor/rig && bd close %s`\n\n",
+		beadID, beadPath, r.rig, r.rig, beadID)
 }
 
 // clearStaleImplementationVerifyFailureOnResume drops persisted verify-fail state when the
@@ -407,10 +465,10 @@ func (r *stateRunner) formatImplementationProgressBlock() string {
 		b.WriteString(fmt.Sprintf("- ✓ Bead **%s** was closed in a prior run.\n", id))
 	}
 
-	if r.track != nil && r.track.activeBead != "" && r.implProgress.done(implVerifyKey(r.track.activeBead)) && r.track.verifyOK {
+	if r.track != nil && r.track.activeBead != "" && r.implProgress.done(implVerifyKey(r.track.activeBead)) {
 		if next, err := orchestrator.NextOpenImplementBead(r.townRoot, r.rig, r.v); err == nil && next != nil && next.ID != "" && next.ID == r.track.activeBead {
-			b.WriteString(fmt.Sprintf("\nActive bead **%s** (`%s`) has green Verify in this session — proceed to **EDIT:**/**WRITE:** fixes or `bd close` if the file is done.\n",
-				r.track.activeBead, r.activeImplementBeadPath()))
+			b.WriteString(fmt.Sprintf("\nActive bead **%s** (`%s`) has green Verify — if the file is complete, run `bd close %s` (do not re-EDIT for formatting).\n",
+				r.track.activeBead, r.activeImplementBeadPath(), r.track.activeBead))
 		} else if next != nil && next.ID != "" && next.ID != r.track.activeBead {
 			b.WriteString(fmt.Sprintf("\nPersisted active bead **%s** is not the queue head — **Next bead** is **%s**. Run `CMD: bd update %s --status=in_progress` (gt-agent cleared stale in_progress lock).\n",
 				r.track.activeBead, next.ID, next.ID))

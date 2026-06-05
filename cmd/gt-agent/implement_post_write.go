@@ -119,6 +119,10 @@ func (r *stateRunner) runPostNativeWriteVerify(relPath string, sessionName strin
 	r.track.hadCmdFailure = false
 	r.persistImplementationProgress(verifyCmd)
 	combined.WriteString(fmt.Sprintf("Post-write verify: %s\n%s", verifyCmd, formatSuccessCommandOutput(out)))
+	orchestratedPrintf("[gt-agent] post-write verify OK for %s\n", relPath)
+	if nudge := r.formatImplementBeadCloseNudge(); nudge != "" {
+		combined.WriteString(nudge)
+	}
 }
 
 // runPostNativeWriteFrontendVerify validates frontend implement files after native WRITE/EDIT.

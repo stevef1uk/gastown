@@ -398,6 +398,9 @@ func (r *stateRunner) executeNativeEdits(ops []nativeEditOp, editDir, sessionNam
 			if op.kind == "edit" && isNativeEditSearchNotFound(err) {
 				r.attemptEditSearchMiss = true
 				r.appendAutoReadAfterEditSearchMiss(combined, op.path, editDir)
+				if nudge := r.formatImplementBeadCloseNudge(); nudge != "" {
+					combined.WriteString(nudge)
+				}
 			}
 			continue
 		}
@@ -462,6 +465,9 @@ func (r *stateRunner) executeNativeEditOp(op nativeEditOp, workDir string) (stri
 		}
 		return string(data), nil
 	case "edit":
+		if err := r.rejectRedundantImplementEditAfterVerify(rel); err != nil {
+			return "", err
+		}
 		if err := orchestrator.ValidateImplementWritePath(r.townRoot, r.rig, r.track.activeBead, rel, r.v, false, r.track.lastVerifyOutput, r.qaReworkWriteScope()); err != nil {
 			return "", err
 		}
@@ -479,6 +485,9 @@ func (r *stateRunner) executeNativeEditOp(op nativeEditOp, workDir string) (stri
 		}
 		return applyNativeSearchReplaceValidated(rel, abs, op.search, replace)
 	case "write":
+		if err := r.rejectRedundantImplementEditAfterVerify(rel); err != nil {
+			return "", err
+		}
 		if err := orchestrator.ValidateImplementWritePath(r.townRoot, r.rig, r.track.activeBead, rel, r.v, true, r.track.lastVerifyOutput, r.qaReworkWriteScope()); err != nil {
 			return "", err
 		}
