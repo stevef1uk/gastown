@@ -56,7 +56,7 @@ func IsForeignBeadTestFileForActive(activeBeadPath, testPath string, v WorkflowV
 		return false
 	}
 	for _, foreign := range ForeignTestFilesForActiveBead(activeBeadPath, v, mayorRigDir) {
-		if PathMatchesImplementWrite(testPath, foreign, v.RequiredFiles) {
+		if PathMatchesImplementWrite(testPath, foreign, v.RequiredFiles, v) {
 			return true
 		}
 	}
