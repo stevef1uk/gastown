@@ -93,12 +93,6 @@ func cmdlineMatchesTownSession(cmd string, sessionIDs []string) bool {
 }
 
 func processPIDBelongsToTown(pid int, absTown string, sessionIDs []string) bool {
-	if cwd := processWorkingDir(pid); cwd != "" {
-		absCwd, _ := filepath.Abs(cwd)
-		if absCwd == absTown || strings.HasPrefix(absCwd, absTown+string(filepath.Separator)) {
-			return true
-		}
-	}
 	cmd := processCmdline(pid)
 	if cmd == "" {
 		return false
@@ -117,7 +111,18 @@ func processPIDBelongsToTown(pid int, absTown string, sessionIDs []string) bool 
 		return true
 	}
 	if strings.Contains(cmd, "gt-agent") && strings.Contains(cmd, "[GAS TOWN]") {
-		return strings.Contains(cmd, absTown) || cmdlineMatchesTownSession(cmd, sessionIDs)
+		if strings.Contains(cmd, absTown) || cmdlineMatchesTownSession(cmd, sessionIDs) {
+			return true
+		}
+	}
+	// Cwd alone is not a town signal (sleep/tests can chdir into a temp townRoot).
+	if isGasTownProcessCmd(cmd) {
+		if cwd := processWorkingDir(pid); cwd != "" {
+			absCwd, _ := filepath.Abs(cwd)
+			if absCwd == absTown || strings.HasPrefix(absCwd, absTown+string(filepath.Separator)) {
+				return true
+			}
+		}
 	}
 	return false
 }

@@ -179,8 +179,8 @@ func listImplementBeadsForGuard(townRoot, rig string, v WorkflowValidation, stat
 	if hook != nil {
 		beads, err := hook(townRoot, rig, v, status)
 		if errors.Is(err, errImplementBeadsUseRealList) {
-			// Another parallel test's hook is active — do not call bd against this townRoot/rig.
-			return nil, nil
+			// Scoped hook from another parallel test — use real bd for this townRoot/rig.
+			return listImplementBeadsByStatus(townRoot, rig, v, status)
 		}
 		if err != nil {
 			return nil, err
