@@ -151,7 +151,9 @@ func (r *stateRunner) runPostNativeWriteFrontendVerify(relPath string, combined 
 	}
 	r.track.verifyOK = true
 	r.track.hadCmdFailure = false
-	combined.WriteString(fmt.Sprintf("Frontend artifact OK: %s\n\n", relPath))
+	r.persistImplementationProgress("")
+	combined.WriteString(fmt.Sprintf("Frontend artifact OK: %s (ready for bd close after queue order)\n\n", relPath))
+	orchestratedPrintf("[gt-agent] post-write frontend artifact OK: %s\n", relPath)
 }
 
 // runPostWriteHTTPContract validates cross-file HTTP routing after handler/web writes (GT-VERIFY-007).

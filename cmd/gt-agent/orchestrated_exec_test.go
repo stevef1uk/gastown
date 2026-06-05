@@ -608,6 +608,31 @@ func TestRewriteUnittestToWorkdir_stripsLayoutPrefixFromGoTest(t *testing.T) {
 	}
 }
 
+func TestRewriteUnittestToWorkdir_layoutRelativeTestF(t *testing.T) {
+	v := orchestrator.WorkflowValidation{LayoutRoot: "linkshelf"}
+	cmd := "cd linkshelf && test -f web/index.html"
+	fixed, ok := rewriteUnittestToWorkdir(cmd, "testgt3", v)
+	if !ok {
+		t.Fatal("expected rewrite for layout-relative test -f")
+	}
+	want := "cd testgt3/mayor/rig/linkshelf && test -f web/index.html"
+	if fixed != want {
+		t.Fatalf("got %q want %q", fixed, want)
+	}
+}
+
+func TestRewriteUnittestToWorkdir_layoutRelativeMkdir(t *testing.T) {
+	v := orchestrator.WorkflowValidation{LayoutRoot: "linkshelf"}
+	cmd := "mkdir -p linkshelf/web"
+	fixed, ok := rewriteUnittestToWorkdir(cmd, "testgt3", v)
+	if !ok {
+		t.Fatal("expected rewrite for layout-relative mkdir")
+	}
+	if !strings.HasPrefix(fixed, "cd testgt3/mayor/rig/linkshelf && mkdir -p web") {
+		t.Fatalf("got %q", fixed)
+	}
+}
+
 func TestRewriteUnittestToWorkdir_mayorRigCDIntoModule(t *testing.T) {
 	town := t.TempDir()
 	rig := "testgt3"

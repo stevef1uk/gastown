@@ -457,6 +457,38 @@ func EnforceSingleImplementInProgress(townRoot, rig string, v WorkflowValidation
 	return reopened, nil
 }
 
+// PromoteImplementQueueHead enforces a single in_progress implement bead and promotes the
+// profile-order queue head from open→in_progress when needed.
+func PromoteImplementQueueHead(townRoot, rig string, v WorkflowValidation) (promoted string, reopened []string, err error) {
+	reopened, err = EnforceSingleImplementInProgress(townRoot, rig, v)
+	if err != nil {
+		return "", reopened, err
+	}
+	next, err := NextOpenImplementBead(townRoot, rig, v)
+	if err != nil || next == nil || strings.TrimSpace(next.ID) == "" {
+		return "", reopened, nil
+	}
+	inProg, err := listImplementBeadsForGuard(townRoot, rig, v, "in_progress")
+	if err != nil {
+		return "", reopened, err
+	}
+	for _, b := range inProg {
+		if b.ID == next.ID {
+			return "", reopened, nil
+		}
+	}
+	beadsDir := config.ResolveBeadsDirForRig(townRoot, rig)
+	workDir := filepath.Join(townRoot, rig, "mayor", "rig")
+	cmd := exec.Command("bd", "update", next.ID, "--status=in_progress")
+	cmd.Env = append(os.Environ(), "BEADS_DIR="+beadsDir)
+	cmd.Dir = workDir
+	out, runErr := cmd.CombinedOutput()
+	if runErr != nil {
+		return "", reopened, fmt.Errorf("bd update %s --status=in_progress: %w: %s", next.ID, runErr, strings.TrimSpace(string(out)))
+	}
+	return next.ID, reopened, nil
+}
+
 // NextOpenImplementBead returns the next bead to implement following profile order (open or in_progress).
 func NextOpenImplementBead(townRoot, rig string, v WorkflowValidation) (*PlanBead, error) {
 	if len(v.RequiredFiles) == 0 {
@@ -1361,7 +1393,7 @@ func FormatImplementationQueueBlock(townRoot, rig string, v WorkflowValidation) 
 		}
 	}
 	mayorDir := filepath.Join(townRoot, rig, "mayor", "rig")
-	verify := ImplementationVerifyCommandForBead(v, mayorDir, beadPath)
+	verify := AgentShellVerifyCommand(rig, v, mayorDir, beadPath)
 	if step > 0 {
 		return fmt.Sprintf("**Next bead (%d/%d):** %s → `%s` — work only this ID until `bd close`. Verify: `%s`.",
 			step, total, next.ID, next.Title, verify)

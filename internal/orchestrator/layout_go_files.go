@@ -48,7 +48,7 @@ func GoCompileVerifyCommandForBead(v WorkflowValidation, mayorRigDir, beadPath s
 			if testPath != "" {
 				testAbs := ResolveRequiredFileOnDisk(mayorRigDir, testPath, v.LayoutRoot)
 				if _, err := os.Stat(testAbs); os.IsNotExist(err) {
-					if TestPathListedInRequired(beadPath, v) {
+					if TestPathListedInRequired(beadPath, v) || PackageHasForeignTestFiles(beadPath, v, mayorRigDir) {
 						cmd = goBuildVerifyForPackage(v, mayorRigDir, beadPath)
 					} else {
 						cmd = GoTestVerifyCommandForPackage(v, mayorRigDir, beadPath)

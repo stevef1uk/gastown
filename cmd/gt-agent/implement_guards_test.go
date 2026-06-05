@@ -47,6 +47,55 @@ func TestImplementationTrack_clearsVerifyOnFailedCommand(t *testing.T) {
 	}
 }
 
+func TestImplementationTrack_preservesVerifyOnFailedGoTestWhenCanonicalIsGoBuild(t *testing.T) {
+	town := t.TempDir()
+	rig := "testgt3"
+	rigDir := filepath.Join(town, rig, "mayor", "rig", "linkshelf")
+	storeDir := filepath.Join(rigDir, "internal", "store")
+	if err := os.MkdirAll(storeDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(rigDir, "go.mod"), []byte("module linkshelf\n\ngo 1.22\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(storeDir, "store_test.go"), []byte("package store\nfunc TestBroken(t *testing.T) {}\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	v := orchestrator.WorkflowValidation{
+		LayoutRoot:      "linkshelf",
+		TestRunner:      "go",
+		QAVerifyCommand: "cd linkshelf && go test ./...",
+		RequiredFiles: []string{
+			"linkshelf/internal/store/schema.go",
+			"linkshelf/internal/store/store.go",
+			"linkshelf/internal/store/store_test.go",
+		},
+	}
+	orchestrator.ListImplementBeadsByStatusHook = func(_, _ string, _ orchestrator.WorkflowValidation, status string) ([]orchestrator.PlanBead, error) {
+		if status == "in_progress" {
+			return []orchestrator.PlanBead{{ID: "te-schema", Title: "Implement linkshelf/internal/store/schema.go"}}, nil
+		}
+		return nil, nil
+	}
+	t.Cleanup(func() { orchestrator.ListImplementBeadsByStatusHook = nil })
+	task := &orchestrator.Task{
+		State:      "implementation",
+		Hooks:      orchestrator.StateHooks{Track: "implementation"},
+		Validation: v,
+	}
+	r := newStateRunner(task, town, rig)
+	r.track.verifyOK = true
+	r.track.activeBead = "te-schema"
+	r.track.activeBeadPath = "linkshelf/internal/store/schema.go"
+	trackHandlers["implementation"](r, "cd testgt3/mayor/rig/linkshelf && go test -count=1 ./internal/store/...", errFake{})
+	if !r.track.verifyOK {
+		t.Fatal("verifyOK must stay true when canonical verify is go build and foreign go test fails")
+	}
+	if !r.track.hadCmdFailure {
+		t.Fatal("expected hadCmdFailure")
+	}
+}
+
 func TestImplementationTrack_bdCloseWithoutVerifyDoesNotSetBeadCloseOK(t *testing.T) {
 	task := &orchestrator.Task{
 		State: "implementation",

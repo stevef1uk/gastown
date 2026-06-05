@@ -56,6 +56,30 @@ func TestGoCompileVerifyCommandForBead_storePackage(t *testing.T) {
 	}
 }
 
+func TestGoCompileVerifyCommandForBead_foreignTestWithoutOwnTest(t *testing.T) {
+	t.Parallel()
+	v := WorkflowValidation{
+		LayoutRoot: "linkshelf",
+		RequiredFiles: []string{
+			"linkshelf/internal/store/schema.go",
+			"linkshelf/internal/store/store.go",
+			"linkshelf/internal/store/store_test.go",
+		},
+	}
+	dir := t.TempDir()
+	storeDir := filepath.Join(dir, "linkshelf/internal/store")
+	if err := os.MkdirAll(storeDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(storeDir, "store_test.go"), []byte("package store\nfunc TestStore(t *testing.T) {}\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	got := GoCompileVerifyCommandForBead(v, dir, "linkshelf/internal/store/schema.go")
+	if got != "cd linkshelf && go mod tidy && go build ./internal/store/..." {
+		t.Fatalf("schema bead with foreign store_test.go on disk: got %q", got)
+	}
+}
+
 func TestPruneStaleLayoutGoFiles(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()

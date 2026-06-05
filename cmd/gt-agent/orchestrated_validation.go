@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"path/filepath"
 	"strings"
 
@@ -246,6 +247,51 @@ func commandMatchesQAVerify(cmd, verify string) bool {
 		return true
 	}
 	return strings.Contains(c, v)
+}
+
+// rejectInventedBdVerifyCommand blocks the common polecat mistake `bd verify <id>` (no such subcommand).
+func rejectInventedBdVerifyCommand(cmd, townRoot, rig, activeBead string, v orchestrator.WorkflowValidation) error {
+	lower := strings.ToLower(strings.TrimSpace(cmd))
+	if !strings.Contains(lower, "bd verify") && !strings.Contains(lower, "bd  verify") {
+		return nil
+	}
+	mayorDir := filepath.Join(townRoot, rig, "mayor", "rig")
+	beadPath := orchestrator.ImplementBeadPathForID(townRoot, rig, activeBead, v)
+	if beadPath == "" {
+		if next, err := orchestrator.NextOpenImplementBead(townRoot, rig, v); err == nil && next != nil {
+			beadPath = orchestrator.ImplementBeadPathForID(townRoot, rig, next.ID, v)
+		}
+	}
+	hint := orchestrator.AgentShellVerifyCommand(rig, v, mayorDir, beadPath)
+	if hint == "" && orchestrator.IsFrontendImplementPath(beadPath) {
+		return fmt.Errorf("bd has no verify subcommand — frontend bead %s: use WRITE:/EDIT: on the file, then bd close when the artifact validates", beadPath)
+	}
+	if hint == "" {
+		return fmt.Errorf("bd has no verify subcommand — run Verify from the Next bead line as CMD: <shell verify>")
+	}
+	return fmt.Errorf("bd has no verify subcommand — run Verify from the Next bead line: %s", hint)
+}
+
+// verifyFailureSupersededByCanonicalBuild reports failed go test CMDs that must not clear
+// verifyOK when post-write or an explicit go build verify already passed for the active bead
+// (foreign *_test.go from other beads makes go test fail while go build is the canonical verify).
+func verifyFailureSupersededByCanonicalBuild(townRoot, rig, activeBead, activeBeadPath string, verifyOK bool, v orchestrator.WorkflowValidation, cmd string) bool {
+	if !verifyOK || strings.TrimSpace(activeBead) == "" {
+		return false
+	}
+	lower := strings.ToLower(strings.TrimSpace(cmd))
+	if !strings.Contains(lower, "go test") {
+		return false
+	}
+	mayorDir := filepath.Join(townRoot, rig, "mayor", "rig")
+	beadPath := strings.TrimSpace(activeBeadPath)
+	if beadPath == "" {
+		beadPath = orchestrator.ImplementBeadPathForID(townRoot, rig, activeBead, v)
+	}
+	if beadPath == "" {
+		return false
+	}
+	return orchestrator.CanonicalImplementationVerifyIsGoBuildOnly(v, mayorDir, beadPath)
 }
 
 // isBenignImplementationCmdFailure reports bd read/list/show failures that must not

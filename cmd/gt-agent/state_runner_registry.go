@@ -27,6 +27,9 @@ var cmdGuardHandlers = map[string]cmdGuardFn{
 		return validateProjectSetupCommand(cmd, r.rig, r.v)
 	},
 	"implementation": func(r *stateRunner, cmd string) error {
+		if err := rejectInventedBdVerifyCommand(cmd, r.townRoot, r.rig, r.track.activeBead, r.v); err != nil {
+			return err
+		}
 		if err := validateImplementationCommandWithState(cmd, r.townRoot, r.rig, r.track.activeBead, r.v, r.track.verifyOK, r.qaReworkWriteScope()); err != nil {
 			return err
 		}
@@ -93,7 +96,8 @@ var trackHandlers = map[string]trackFn{
 		if cmdErr != nil {
 			r.track.hadCmdFailure = true
 			// Stale verifyOK must not allow bd close after a failed go test/build in the same turn.
-			if !isBenignImplementationCmdFailure(cmd) {
+			if !isBenignImplementationCmdFailure(cmd) &&
+				!verifyFailureSupersededByCanonicalBuild(r.townRoot, r.rig, r.track.activeBead, r.track.activeBeadPath, r.track.verifyOK, r.v, cmd) {
 				r.track.verifyOK = false
 			}
 		}

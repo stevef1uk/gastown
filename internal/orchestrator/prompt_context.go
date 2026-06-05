@@ -88,12 +88,15 @@ func RunPreRunHook(step, townRoot, rig string, v WorkflowValidation) (string, er
 		if len(deleted) > 0 {
 			logParts = append(logParts, "pruned extras: "+joinStrings(deleted, ", "))
 		}
-		reopened, err := EnforceSingleImplementInProgress(townRoot, rig, v)
+		promoted, reopened, err := PromoteImplementQueueHead(townRoot, rig, v)
 		if err != nil {
 			return "", err
 		}
 		if len(reopened) > 0 {
 			logParts = append(logParts, "single in_progress: reopened "+joinStrings(reopened, ", "))
+		}
+		if promoted != "" {
+			logParts = append(logParts, "promoted queue head: "+promoted)
 		}
 		if len(logParts) > 0 {
 			return "implement bead queue: " + joinStrings(logParts, "; "), nil

@@ -7,115 +7,52 @@ import (
 	"testing"
 )
 
-func TestGoModuleCDDir_flatModuleAtMayorRig(t *testing.T) {
+func TestAgentShellVerifyCommand_rewritesLayoutCD(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module linkshelf\n"), 0644); err != nil {
+	rigDir := filepath.Join(dir, "testgt3", "mayor", "rig", "linkshelf")
+	if err := os.MkdirAll(rigDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(filepath.Join(dir, "internal", "store"), 0755); err != nil {
-		t.Fatal(err)
-	}
-	got := GoModuleCDDir(dir, "linkshelf")
-	if got != "." {
-		t.Fatalf("GoModuleCDDir = %q, want . for flat module", got)
-	}
-}
-
-func TestGoModuleCDDir_nestedLayoutDir(t *testing.T) {
-	t.Parallel()
-	dir := t.TempDir()
-	layout := filepath.Join(dir, "linkshelf")
-	if err := os.MkdirAll(layout, 0755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(layout, "go.mod"), []byte("module linkshelf\n"), 0644); err != nil {
-		t.Fatal(err)
-	}
-	got := GoModuleCDDir(dir, "linkshelf")
-	if got != "linkshelf" {
-		t.Fatalf("GoModuleCDDir = %q, want linkshelf", got)
-	}
-}
-
-func TestGoCompileVerifyCommandForBead_noCorrelatedTestFile(t *testing.T) {
-	t.Parallel()
-	dir := t.TempDir()
-	storeDir := filepath.Join(dir, "linkshelf", "internal", "store")
-	if err := os.MkdirAll(storeDir, 0755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "linkshelf", "go.mod"), []byte("module linkshelf\n"), 0644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(storeDir, "store.go"), []byte("package store\n"), 0644); err != nil {
-		t.Fatal(err)
-	}
-	v := WorkflowValidation{LayoutRoot: "linkshelf", TestRunner: "go"}
-	cmd := GoCompileVerifyCommandForBead(v, dir, "linkshelf/internal/store/store.go")
-	if cmd == "" || !strings.Contains(cmd, "go test -count=1 ./internal/store/...") {
-		t.Fatalf("want package go test when *_test.go absent, got %q", cmd)
-	}
-}
-
-func TestGoCompileVerifyCommandForBead_flatLayout(t *testing.T) {
-	t.Parallel()
-	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module linkshelf\n"), 0644); err != nil {
-		t.Fatal(err)
-	}
-	store := filepath.Join(dir, "internal", "store")
-	if err := os.MkdirAll(store, 0755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(store, "schema.go"), []byte("package store\n"), 0644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(store, "schema_test.go"), []byte("package store\nfunc TestInitSchema(t *testing.T) {}\n"), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(rigDir, "go.mod"), []byte("module linkshelf\n\ngo 1.22\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
 	v := WorkflowValidation{
-		LayoutRoot:    "linkshelf",
-		RequiredFiles: []string{"linkshelf/internal/store/schema.go"},
+		LayoutRoot:      "linkshelf",
+		TestRunner:      "go",
+		QAVerifyCommand: "cd linkshelf && go test ./...",
+		RequiredFiles: []string{
+			"linkshelf/internal/store/schema.go",
+			"linkshelf/internal/store/store.go",
+			"linkshelf/internal/store/store_test.go",
+		},
 	}
-	cmd := GoCompileVerifyCommandForBead(v, dir, "linkshelf/internal/store/schema.go")
-	if want := "go mod tidy && go test -count=1 ./internal/store/..."; cmd != want {
-		t.Fatalf("verify cmd = %q, want %q", cmd, want)
-	}
-}
-
-func TestNormalizeGoLayoutPackagePaths_nestedModule(t *testing.T) {
-	t.Parallel()
-	cmd := "cd testgt3/mayor/rig/linkshelf && go test -count=1 ./linkshelf/internal/api/..."
-	want := "cd testgt3/mayor/rig/linkshelf && go test -count=1 ./internal/api/..."
-	got := NormalizeGoLayoutPackagePaths(cmd, "testgt3/mayor/rig/linkshelf", "linkshelf")
-	if got != want {
-		t.Fatalf("got %q want %q", got, want)
-	}
-}
-
-func TestNormalizeGoLayoutPackagePaths_flatModule(t *testing.T) {
-	t.Parallel()
-	cmd := "cd testgt3/mayor/rig && go test ./linkshelf/internal/api/..."
-	want := "cd testgt3/mayor/rig && go test ./internal/api/..."
-	got := NormalizeGoLayoutPackagePaths(cmd, "testgt3/mayor/rig", "linkshelf")
-	if got != want {
-		t.Fatalf("got %q want %q", got, want)
-	}
-}
-
-func TestResolveImplementRelPathOnDisk_flatLayout(t *testing.T) {
-	t.Parallel()
-	dir := t.TempDir()
-	p := filepath.Join(dir, "internal", "store", "schema.go")
-	if err := os.MkdirAll(filepath.Dir(p), 0755); err != nil {
+	storeDir := filepath.Join(rigDir, "internal", "store")
+	if err := os.MkdirAll(storeDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(p, []byte("x"), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(storeDir, "store_test.go"), []byte("package store\nfunc TestX(t *testing.T) {}\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
-	got := ResolveImplementRelPathOnDisk(dir, "linkshelf/internal/store/schema.go", "linkshelf")
-	if got != "internal/store/schema.go" {
-		t.Fatalf("got %q want internal/store/schema.go", got)
+	mayorDir := filepath.Join(dir, "testgt3", "mayor", "rig")
+	got := AgentShellVerifyCommand("testgt3", v, mayorDir, "linkshelf/internal/store/schema.go")
+	if !strings.Contains(got, "cd testgt3/mayor/rig/linkshelf &&") {
+		t.Fatalf("want town-root cd, got %q", got)
+	}
+	if !strings.Contains(got, "go build ./internal/store/...") {
+		t.Fatalf("want go build for foreign store_test.go, got %q", got)
+	}
+	if strings.Contains(got, "go test") {
+		t.Fatalf("must not suggest go test: %q", got)
+	}
+}
+
+func TestRewriteVerifyCDForWorkPath(t *testing.T) {
+	t.Parallel()
+	in := "cd linkshelf && go mod tidy && go build ./internal/store/..."
+	got := RewriteVerifyCDForWorkPath(in, "linkshelf", "testgt3/mayor/rig/linkshelf")
+	want := "cd testgt3/mayor/rig/linkshelf && go mod tidy && go build ./internal/store/..."
+	if got != want {
+		t.Fatalf("got %q want %q", got, want)
 	}
 }

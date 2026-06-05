@@ -261,7 +261,7 @@ func validateGoImplementationCommand(cmd, townRoot, rig, mayorRigDir, activeBead
 		}
 	}
 	beadPath := orchestrator.ImplementBeadPathForID(townRoot, rig, activeBead, v)
-	verifyHint := orchestrator.ImplementationVerifyCommandForBead(v, mayorRigDir, beadPath)
+	verifyHint := orchestrator.AgentShellVerifyCommand(rig, v, mayorRigDir, beadPath)
 	onGoModBead := strings.HasSuffix(filepath.ToSlash(beadPath), "go.mod")
 	onServerMainBead := orchestrator.IsServerMainImplementBead(beadPath)
 	if strings.Contains(lower, "go run") || strings.Contains(lower, "curl ") {

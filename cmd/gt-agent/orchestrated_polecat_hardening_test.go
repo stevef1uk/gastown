@@ -102,11 +102,11 @@ func TestReconcileActiveImplementBeadWithQueue_clearsStale(t *testing.T) {
 	t.Cleanup(func() { orchestrator.ListImplementBeadsByStatusHook = nil })
 
 	r.reconcileActiveImplementBeadWithQueue()
-	if r.track.activeBead != "" {
-		t.Fatalf("want cleared active bead, got %q", r.track.activeBead)
+	if r.track.activeBead != "te-tua" {
+		t.Fatalf("want queue head as active bead, got %q", r.track.activeBead)
 	}
 	if r.track.verifyOK {
-		t.Fatal("verifyOK should be cleared with stale active bead")
+		t.Fatal("verifyOK should be cleared when realigning away from stale active bead")
 	}
 }
 
@@ -139,8 +139,11 @@ func TestReconcileActiveImplementBeadWithQueue_allowsBdUpdateOnHead(t *testing.T
 	t.Cleanup(func() { orchestrator.ListImplementBeadsByStatusHook = nil })
 
 	r.reconcileActiveImplementBeadWithQueue()
+	if r.track.activeBead != "te-tua" {
+		t.Fatalf("want queue head promoted to active, got %q", r.track.activeBead)
+	}
 	cmd := "export BEADS_DIR=x && cd mockrig/mayor/rig && bd update te-tua --status=in_progress"
-	if err := validateImplementationCommandWithState(cmd, dir, rig, "", v, false, nil); err != nil {
+	if err := validateImplementationCommandWithState(cmd, dir, rig, r.track.activeBead, v, false, nil); err != nil {
 		t.Fatalf("bd update on queue head should be allowed after reconcile: %v", err)
 	}
 }

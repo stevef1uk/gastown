@@ -274,12 +274,44 @@ func writesRequirementsFile(cmd string) bool {
 		(strings.Contains(lower, "<<") || strings.Contains(lower, "cat >") || strings.Contains(lower, "cat>>"))
 }
 
+// isLayoutRelativeShellCommand reports shell file checks and mkdir/cat paths that use layout_root
+// without cd into mayor/rig (orchestrated cwd is town root).
+func isLayoutRelativeShellCommand(cmd, rig, layout string) bool {
+	layout = strings.Trim(strings.TrimSpace(layout), "/")
+	if layout == "" {
+		return false
+	}
+	if commandHasMayorRigCD(cmd, rig) {
+		return false
+	}
+	lower := strings.ToLower(cmd)
+	layoutLower := strings.ToLower(layout)
+	if commandHasLayoutCD(cmd, layout) {
+		for _, tool := range []string{"test -f", "test -d", "test -e", "mkdir", "wc -c", "wc -l", "ls ", "cat ", "head ", "tail ", "rm ", "touch "} {
+			if strings.Contains(lower, tool) {
+				return true
+			}
+		}
+		return strings.Contains(lower, "&&")
+	}
+	for _, prefix := range []string{layoutLower + "/", "./" + layoutLower + "/"} {
+		if strings.Contains(lower, prefix) {
+			for _, tool := range []string{"test -f", "test -d", "test -e", "mkdir", "wc -c", "wc -l"} {
+				if strings.Contains(lower, tool) {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
 // rewriteUnittestToWorkdir prepends cd into mayor/rig (and layout_root for Go modules) when omitted.
 func rewriteUnittestToWorkdir(cmd, rig string, v orchestrator.WorkflowValidation) (string, bool) {
-	if !isToolchainExecutionCommand(cmd) {
+	layout := strings.Trim(strings.TrimSpace(v.LayoutRoot), "/")
+	if !isToolchainExecutionCommand(cmd) && !isLayoutRelativeShellCommand(cmd, rig, layout) {
 		return cmd, false
 	}
-	layout := strings.Trim(strings.TrimSpace(v.LayoutRoot), "/")
 	// Profile-relative "cd linkshelf && go run …" smoke must not get a second prefix; bare
 	// "go run ./cmd/server" from town root still needs cd into layout_root (see goLayout test).
 	if isDevServerSmokeCommand(cmd) && (commandHasMayorRigCD(cmd, rig) || commandHasLayoutCD(cmd, layout)) {
@@ -297,9 +329,10 @@ func rewriteUnittestToWorkdir(cmd, rig string, v orchestrator.WorkflowValidation
 		changed = true
 	}
 	mayorRig := rigMayorRigPath(rig)
+	layoutShell := isLayoutRelativeShellCommand(cmd, rig, layout)
 	// Python venv lives under mayor/rig only — never cd into layout_root for pip/pytest/compileall.
 	workPath := mayorRig
-	if orchestrator.WorkflowUsesGo(v) {
+	if orchestrator.WorkflowUsesGo(v) || (layout != "" && layoutShell) {
 		workPath = orchestrator.GoModuleWorkPathRelative(mayorRig, layout)
 	}
 	if !commandHasMayorRigCD(cmd, rig) {
@@ -326,7 +359,28 @@ func rewriteUnittestToWorkdir(cmd, rig string, v orchestrator.WorkflowValidation
 			changed = true
 		}
 	}
+	if layout != "" && layout != "." {
+		normalized := normalizeLayoutShellPaths(cmd, layout)
+		if normalized != cmd {
+			cmd = normalized
+			changed = true
+		}
+	}
 	return cmd, changed
+}
+
+// normalizeLayoutShellPaths strips redundant layout_root/ prefixes after cd into the module workdir.
+func normalizeLayoutShellPaths(cmd, layout string) string {
+	layout = strings.Trim(strings.TrimSpace(layout), "/")
+	if layout == "" {
+		return cmd
+	}
+	for _, needle := range []string{layout + "/", "./" + layout + "/"} {
+		for _, tool := range []string{"mkdir -p ", "test -f ", "test -d ", "test -e ", "wc -c ", "wc -l ", "cat ", "head ", "tail "} {
+			cmd = strings.ReplaceAll(cmd, tool+needle, tool)
+		}
+	}
+	return cmd
 }
 
 // stripLeadingCDDot removes a leading "cd . &&" when mayor/rig workdir is prepended separately.

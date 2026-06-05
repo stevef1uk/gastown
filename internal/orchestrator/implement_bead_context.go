@@ -342,7 +342,17 @@ func formatUnitTestGuidanceForBead(townRoot, rig, beadPath string, v WorkflowVal
 				"Do **not** `cat` `" + testPath + "` — it does not exist until the **`" + testPath + "` implement bead**.\n" +
 				"Implement tests on that later bead (table-driven cases from SPEC/plan acceptance).")
 		}
-		msg := "### Unit tests (required with this code)\nBefore `bd close`, `" + testPath + "` must exist and **Verify** (`go test -count=1`) must pass.\n"
+		mayorDir := filepath.Join(townRoot, rig, "mayor", "rig")
+		verifyKind := "go test -count=1"
+		if CanonicalImplementationVerifyIsGoBuildOnly(v, mayorDir, beadPath) {
+			verifyKind = "go build"
+		}
+		msg := "### Unit tests (required with this code)\nBefore `bd close`, `" + testPath + "` must exist"
+		if verifyKind == "go build" {
+			msg += ".\nWhile other beads' `*_test.go` files exist in this package, **Verify** uses **`go build`** on production code — do not run full **`go test`** (it recompiles foreign tests and clears session verify).\n"
+		} else {
+			msg += " and **Verify** (`go test -count=1`) must pass.\n"
+		}
 		msg += "Create tests with **WRITE:** or **EDIT:** in this session — do not fail because the file is missing; write it.\n"
 		if strings.Contains(filepath.ToSlash(beadPath), "internal/store/store.go") {
 			msg += "SQLite store tests must use a **fresh DB per test** (`:memory:` or `filepath.Join(t.TempDir(), \"test.db\")` passed into `OpenDB`) — never reuse `./links.db` from prior runs.\n"
