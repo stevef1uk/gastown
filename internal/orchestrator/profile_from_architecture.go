@@ -17,8 +17,6 @@ var (
 // architecture.md is used only when SPEC has no usable layout. Not platform-specific.
 func EnrichWorkflowValidationFromArchitecture(v WorkflowValidation, mayorRigDir string) WorkflowValidation {
 	archPath := filepath.Join(mayorRigDir, "architecture.md")
-	v = AlignProfileLayoutWithArchitecture(v, archPath)
-
 	if specPaths, ok := extractSpecLayoutPaths(mayorRigDir); ok {
 		// Profile from spec-index already lists canonical nested paths; SPEC layout tree
 		// parsing only captures leaf filenames (linkshelf/handlers.go not internal/api/handlers.go).
@@ -28,6 +26,10 @@ func EnrichWorkflowValidationFromArchitecture(v WorkflowValidation, mayorRigDir 
 		v = applySpecPathsToValidation(v, specPaths)
 		return SanitizeRigFlowProfile(v)
 	}
+
+	// When SPEC.md layout tree can't be parsed, fall back to aligning the profile with
+	// architecture.md to handle flat mayor/rig worktrees and spec-index prefix confusion.
+	v = AlignProfileLayoutWithArchitecture(v, archPath)
 
 	if len(v.UnionRequiredFiles()) > 0 {
 		return SanitizeRigFlowProfile(v)
@@ -135,11 +137,39 @@ func shouldReplaceProfileRequiredFilesWithSpec(v WorkflowValidation, specPaths [
 	if !RequiresExactImplementPaths(v) {
 		return true
 	}
+	layout := strings.Trim(filepath.ToSlash(strings.TrimSpace(v.LayoutRoot)), "/")
+	if layout != "" && layout != "." && profilePathsUseLayoutPrefix(v.RequiredFiles, layout) {
+		prefixed := 0
+		for _, p := range specPaths {
+			p = filepath.ToSlash(strings.TrimSpace(p))
+			if strings.HasPrefix(p, layout+"/") {
+				prefixed++
+			}
+		}
+		// SPEC layout tree parsing often yields flat cmd/internal/web paths without the
+		// layout_root prefix; keep canonical profile paths from spec-index in that case.
+		if prefixed < len(specPaths) {
+			return false
+		}
+	}
 	specV := WorkflowValidation{
 		RequiredFiles: append([]string(nil), specPaths...),
 		LayoutRoot:    inferLayoutRootFromPaths(specPaths),
 	}
 	return RequiresExactImplementPaths(specV)
+}
+
+func profilePathsUseLayoutPrefix(paths []string, layout string) bool {
+	if layout == "" || layout == "." {
+		return false
+	}
+	for _, f := range paths {
+		f = filepath.ToSlash(strings.TrimSpace(f))
+		if f == "" || !strings.HasPrefix(f, layout+"/") {
+			return false
+		}
+	}
+	return len(paths) > 0
 }
 
 func applySpecPathsToValidation(v WorkflowValidation, specPaths []string) WorkflowValidation {

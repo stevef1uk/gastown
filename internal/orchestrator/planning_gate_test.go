@@ -65,6 +65,15 @@ GET /api/links only.
 		},
 	}
 	writeTestRigProfile(t, townRoot, rig, prof)
+	setListImplementBeadsByStatusHook(t, townRoot, rig, func(_, _ string, _ WorkflowValidation, status string) ([]PlanBead, error) {
+		if status == "open" {
+			return []PlanBead{
+				{ID: "te-main", Title: "Implement linkshelf/cmd/server/main.go per architecture"},
+				{ID: "te-schema", Title: "Implement linkshelf/internal/store/schema.go per architecture"},
+			}, nil
+		}
+		return nil, nil
+	})
 
 	m := NewManager(townRoot)
 	m.LoadTemplate(&WorkflowTemplate{

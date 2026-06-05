@@ -211,10 +211,16 @@ func ReconcileImplementBeads(townRoot, rig string, v WorkflowValidation) (string
 		}
 	} else {
 		parts = append(parts, fmt.Sprintf("skipped Go auto-close: phase verify not green (%v)", phaseErr))
-		var err error
-		autoClosed, err = CloseImplementBeadsWithGreenFrontendVerify(townRoot, rig, v, eval)
-		if err != nil {
-			return "", err
+		// Runtime smoke failure reopens handler/web beads — auto-closing frontend first causes
+		// close/reopen churn every pre_run and blocks polecat from fixing closed paths.
+		if !ImplementationVerifyNeedsRuntimeRework(phaseErr) {
+			var err error
+			autoClosed, err = CloseImplementBeadsWithGreenFrontendVerify(townRoot, rig, v, eval)
+			if err != nil {
+				return "", err
+			}
+		} else {
+			parts = append(parts, "skipped frontend auto-close: runtime smoke rework pending")
 		}
 	}
 	if len(autoClosed) > 0 {

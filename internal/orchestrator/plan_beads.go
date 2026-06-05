@@ -70,15 +70,19 @@ func implementBeadTitlePathOK(title string, v WorkflowValidation) bool {
 		}
 		return strings.HasPrefix(strings.ToLower(strings.TrimSpace(title)), strings.ToLower(pfx))
 	}
-	if pathMatchesRequiredForProfile(path, v.RequiredFiles, v) {
+	// For nested/exact profiles, only accept bead titles whose embedded path matches
+	// required_files (prevents queue-matching flattened handlers/main.go titles).
+	if RequiresExactImplementPaths(v) {
+		return pathMatchesRequiredForProfile(path, v.RequiredFiles, v)
+	}
+
+	// For flat/non-exact profiles, accept any valid implement path.
+	// ValidatePlanBeads will later classify mismatches as "extra open bead(s)".
+	layoutRoot := effectiveLayoutRootForBeadTitle(v)
+	if layoutRoot == "" {
 		return true
 	}
-	// Legacy flattened paths under layout_root — only for flat rigs (basename matching allowed).
-	if RequiresExactImplementPaths(v) {
-		return false
-	}
-	layoutRoot := effectiveLayoutRootForBeadTitle(v)
-	return layoutRoot != "" && (path == layoutRoot || strings.HasPrefix(path, layoutRoot+"/"))
+	return path == layoutRoot || strings.HasPrefix(path, layoutRoot+"/")
 }
 
 // effectiveLayoutRootForBeadTitle returns LayoutRoot or infers it from BeadTitleContains (e.g. "Implement finally/").

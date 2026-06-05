@@ -121,6 +121,28 @@ func (r *stateRunner) runPostNativeWriteVerify(relPath string, sessionName strin
 	combined.WriteString(fmt.Sprintf("Post-write verify: %s\n%s", verifyCmd, formatSuccessCommandOutput(out)))
 }
 
+// runPostNativeWriteFrontendVerify validates frontend implement files after native WRITE/EDIT.
+func (r *stateRunner) runPostNativeWriteFrontendVerify(relPath string, combined *strings.Builder) {
+	if !strings.EqualFold(strings.TrimSpace(r.hooks.Track), "implementation") {
+		return
+	}
+	relPath = orchestrator.NormalizeBeadPathForLayout(relPath, r.v.LayoutRoot)
+	if relPath == "" || !orchestrator.IsFrontendImplementPath(relPath) {
+		return
+	}
+	mayorDir := rigMayorRigDir(r.townRoot, r.rig)
+	if err := orchestrator.ValidateBeadArtifactOnDisk(mayorDir, relPath, r.v); err != nil {
+		r.track.hadCmdFailure = true
+		r.track.verifyOK = false
+		combined.WriteString(fmt.Sprintf("Frontend artifact check failed after %s: %v\n\n", relPath, err))
+		orchestratedFprintfStderr("[gt-agent] frontend verify %s: %v\n", relPath, err)
+		return
+	}
+	r.track.verifyOK = true
+	r.track.hadCmdFailure = false
+	combined.WriteString(fmt.Sprintf("Frontend artifact OK: %s\n\n", relPath))
+}
+
 // runPostWriteHTTPContract validates cross-file HTTP routing after handler/web writes (GT-VERIFY-007).
 func (r *stateRunner) runPostWriteHTTPContract(relPath string, combined *strings.Builder) {
 	if !strings.EqualFold(strings.TrimSpace(r.hooks.Track), "implementation") {

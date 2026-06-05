@@ -267,6 +267,28 @@ func ImplementationDiskWorkReady(rigDir string, v WorkflowValidation) error {
 	return nil
 }
 
+// EnsureOpenImplementBeadForRework reopens a closed implement bead when its artifact still
+// needs on-disk fixes (e.g. concatenated app.js after a premature bd close).
+func EnsureOpenImplementBeadForRework(townRoot, rig, filePath string, v WorkflowValidation) (string, error) {
+	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
+	filePath = filepath.ToSlash(strings.TrimSpace(filePath))
+	if filePath == "" || !beadImplementationNeedsRework(rigDir, filePath, v) {
+		return "", nil
+	}
+	id, ok := ClosedImplementBeadForPath(townRoot, rig, filePath, v)
+	if !ok {
+		return "", nil
+	}
+	if err := bdUpdateImplementBeadStatus(townRoot, rig, id, "open"); err != nil {
+		// Best-effort reopen: when bd is unavailable, callers still enforce closed-bead guards.
+		if bdUpdateImplementBeadStatusHook != nil {
+			return "", err
+		}
+		return "", nil
+	}
+	return id, nil
+}
+
 func beadImplementationNeedsRework(rigDir, beadPath string, v WorkflowValidation) bool {
 	beadPath = filepath.ToSlash(strings.TrimSpace(beadPath))
 	if beadPath == "" {
@@ -287,6 +309,11 @@ func beadImplementationNeedsRework(rigDir, beadPath string, v WorkflowValidation
 	}
 	if err := CheckPythonSourceValid(data, beadPath); err != nil {
 		return true
+	}
+	if strings.HasSuffix(strings.ToLower(beadPath), ".js") {
+		if err := CheckJavaScriptFileHealthy(data); err != nil {
+			return true
+		}
 	}
 	return false
 }
@@ -345,7 +372,10 @@ func listImplementBeadsByStatus(townRoot, rig string, v WorkflowValidation, stat
 		if id == "" {
 			continue
 		}
-		if !MatchesImplementBeadTitle(title, v) {
+		// For listing open/in-progress beads we want implement-like titles, not
+		// required_files membership filtering. Required/extra classification is
+		// validated elsewhere (plan.md bead validation, plan sync alignment, etc.).
+		if !looksLikeOpenImplementBeadTitle(title, v) {
 			continue
 		}
 		result = append(result, PlanBead{ID: id, Title: title})

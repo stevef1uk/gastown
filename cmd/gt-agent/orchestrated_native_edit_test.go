@@ -422,7 +422,8 @@ func TestNativeEdit_EDIT_rejectsClosedBeadPath(t *testing.T) {
 	if err := os.MkdirAll(handlers, 0755); err != nil {
 		t.Fatal(err)
 	}
-	body := "package api\n\nfunc X() {}\n"
+	// Substantive file so stub heuristics do not trigger auto-reopen of the closed handlers bead.
+	body := "package api\n\nimport \"net/http\"\n\n// Handlers registers HTTP routes for the Link Shelf API.\nfunc Register(mux *http.ServeMux) {\n\tmux.HandleFunc(\"/api/links\", handleLinks)\n}\n\nfunc handleLinks(w http.ResponseWriter, r *http.Request) {\n\tw.WriteHeader(http.StatusOK)\n}\n"
 	if err := os.WriteFile(filepath.Join(handlers, "handlers.go"), []byte(body), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -439,9 +440,13 @@ func TestNativeEdit_EDIT_rejectsClosedBeadPath(t *testing.T) {
 
 	response := `EDIT: linkshelf/internal/api/handlers.go
 <<<<<<< SEARCH
-func X() {}
+func handleLinks(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusOK)
+}
 =======
-func Y() {}
+func handleLinks(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNoContent)
+}
 >>>>>>> REPLACE
 `
 	var combined strings.Builder
@@ -454,7 +459,7 @@ func Y() {}
 		t.Fatalf("want closed-bead rejection, got:\n%s", got)
 	}
 	data, _ := os.ReadFile(filepath.Join(handlers, "handlers.go"))
-	if strings.Contains(string(data), "func Y()") {
+	if strings.Contains(string(data), "StatusNoContent") {
 		t.Fatal("closed file must not be modified")
 	}
 }

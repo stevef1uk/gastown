@@ -116,7 +116,7 @@ func TestStateRunner_executeNativeEdit_stripsEOFMarkerOnWrite(t *testing.T) {
 		if status == "in_progress" {
 			return []orchestrator.PlanBead{{
 				ID:    "te-phq",
-				Title: "Implement linkshelf/internal/store/schema.go per architecture",
+				Title: "Implement linkshelf/internal/store/schema_test.go per architecture",
 			}}, nil
 		}
 		return nil, nil

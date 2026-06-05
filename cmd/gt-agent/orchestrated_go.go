@@ -269,11 +269,15 @@ func validateGoImplementationCommand(cmd, townRoot, rig, mayorRigDir, activeBead
 			return fmt.Errorf("for this bead use compile verify only — use: %s", verifyHint)
 		}
 	}
+	if orchestrator.IsFrontendImplementPath(beadPath) && strings.Contains(lower, "go test") {
+		return fmt.Errorf("frontend bead %s: go test does not apply to web assets — use EDIT:/WRITE: on the file, then bd close after the artifact validates", beadPath)
+	}
 	if isBeadCloseCommand(cmd) && !verifyOK {
-		if orchestrator.IsFrontendImplementPath(beadPath) && verifyHint == "" {
-			if err := orchestrator.ValidateBeadArtifactOnDisk(mayorRigDir, beadPath, v); err == nil {
-				return nil
+		if orchestrator.IsFrontendImplementPath(beadPath) {
+			if err := orchestrator.ValidateBeadArtifactOnDisk(mayorRigDir, beadPath, v); err != nil {
+				return fmt.Errorf("cannot bd close %s: %w — fix the file with EDIT:/WRITE: first", activeBead, err)
 			}
+			return fmt.Errorf("bd close %s requires a successful EDIT:/WRITE: to %s in this session (frontend beads have no go test verify)", activeBead, beadPath)
 		}
 		return fmt.Errorf("run green verify before bd close: %s (in this session, since verify clears on restart)", verifyHint)
 	}

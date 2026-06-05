@@ -97,6 +97,11 @@ func validateImplementWriteScope(townRoot, rig, activeBead, written string, v Wo
 	}
 	if closedOnly, err := ImplementPathHasOnlyClosedBeads(townRoot, rig, written, v); err == nil && closedOnly &&
 		!AllowedCorrelatedPackageImplementWrite(allowedPath, written, v) {
+		if reopened, rerr := EnsureOpenImplementBeadForRework(townRoot, rig, written, v); rerr != nil {
+			return rerr
+		} else if reopened != "" {
+			return nil
+		}
 		if allowedPath != "" {
 			return fmt.Errorf("do not overwrite %q — its implement bead is closed (reopen that bead or edit only %s for %s)",
 				written, allowedPath, allowedID)

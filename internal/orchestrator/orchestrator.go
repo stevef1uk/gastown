@@ -18,6 +18,15 @@ import (
 const (
 	// PidFile is the path to the orchestrator PID file relative to the town root.
 	PidFile = "daemon/orchestrator.pid"
+
+	// OrchestratorCallTimeout is the NATS round-trip budget for lightweight MCP calls.
+	OrchestratorCallTimeout = 2 * time.Second
+	// OrchestratorWorkflowCallTimeout covers fetch_task / complete_task paths that run
+	// bd subprocesses, planning sync, and phase transitions (often >2s).
+	OrchestratorWorkflowCallTimeout = 60 * time.Second
+
+	// OrchestratorNATSTimeoutEnv overrides OrchestratorWorkflowCallTimeout (e.g. "90s").
+	OrchestratorNATSTimeoutEnv = "GT_ORCHESTRATOR_NATS_TIMEOUT"
 )
 
 // orchestratorNATSURL returns the NATS URL for MCP calls (GT_ORCHESTRATOR_NATS_URL overrides in tests).
@@ -147,15 +156,25 @@ func Stop(townRoot string) error {
 	return nil
 }
 
+// orchestratorWorkflowCallTimeout returns the NATS request budget for workflow MCP tools.
+func orchestratorWorkflowCallTimeout() time.Duration {
+	if v := strings.TrimSpace(os.Getenv(OrchestratorNATSTimeoutEnv)); v != "" {
+		if d, err := time.ParseDuration(v); err == nil && d > 0 {
+			return d
+		}
+	}
+	return OrchestratorWorkflowCallTimeout
+}
+
 // Call calls a tool on the orchestrator via NATS.
 func Call(townRoot string, method string, params any) (json.RawMessage, error) {
-	return CallWithTimeout(townRoot, method, params, 2*time.Second)
+	return CallWithTimeout(townRoot, method, params, OrchestratorCallTimeout)
 }
 
 // CallWithTimeout calls the orchestrator MCP service with a custom NATS request timeout.
 func CallWithTimeout(townRoot string, method string, params any, timeout time.Duration) (json.RawMessage, error) {
 	if timeout <= 0 {
-		timeout = 2 * time.Second
+		timeout = OrchestratorCallTimeout
 	}
 	nc, err := nats.Connect(orchestratorNATSURL())
 	if err != nil {
@@ -243,7 +262,7 @@ func FetchTask(townRoot string, agentID string) (*Task, error) {
 		},
 	}
 
-	result, err := Call(townRoot, "call_tool", params)
+	result, err := CallWithTimeout(townRoot, "call_tool", params, orchestratorWorkflowCallTimeout())
 	if err != nil {
 		if strings.Contains(err.Error(), "no task available") {
 			return nil, nil
@@ -304,7 +323,7 @@ func ResetWorkflow(townRoot, workflowID, toState string) (string, error) {
 			"to_state":    toState,
 		},
 	}
-	result, err := Call(townRoot, "call_tool", params)
+	result, err := CallWithTimeout(townRoot, "call_tool", params, orchestratorWorkflowCallTimeout())
 	if err != nil {
 		return "", err
 	}
@@ -337,7 +356,7 @@ func CompleteTask(townRoot string, workflowID string, outcome string, agentID, s
 		"arguments": args,
 	}
 
-	result, err := Call(townRoot, "call_tool", params)
+	result, err := CallWithTimeout(townRoot, "call_tool", params, orchestratorWorkflowCallTimeout())
 	if err != nil {
 		return "", err
 	}

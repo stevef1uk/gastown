@@ -412,6 +412,7 @@ func (r *stateRunner) executeNativeEdits(ops []nativeEditOp, editDir, sessionNam
 			r.scrubGoFileAfterNativeWrite(op.path, combined)
 			r.tidyGoFileAfterNativeWrite(op.path, combined)
 			r.runPostNativeWriteVerify(op.path, sessionName, cmdEnv, combined)
+			r.runPostNativeWriteFrontendVerify(op.path, combined)
 			r.runPostWriteHTTPContract(op.path, combined)
 			r.runAutoVerifyForNativeLayoutWrite(sessionName, cmdEnv, combined)
 		}

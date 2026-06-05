@@ -764,6 +764,11 @@ func TestValidateImplementationArtifacts(t *testing.T) {
 
 func TestValidateImplementationBeadFileWrite_rejectsClosedPath(t *testing.T) {
 	dir := t.TempDir()
+	rig := "mockrig"
+	rigDir := filepath.Join(dir, rig, "mayor", "rig")
+	if err := os.MkdirAll(filepath.Join(rigDir, "linkshelf", "internal", "api"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	v := orchestrator.WorkflowValidation{
 		LayoutRoot:        "linkshelf",
 		BeadTitleContains: "Implement ",
@@ -792,7 +797,7 @@ func TestValidateImplementationBeadFileWrite_rejectsClosedPath(t *testing.T) {
 	cmd := `cd mockrig/mayor/rig && cat > linkshelf/internal/api/handlers.go <<'EOF'
 package api
 EOF`
-	err := validateImplementationBeadFileWrite(cmd, dir, "mockrig", "te-main", v, nil)
+	err := validateImplementationBeadFileWrite(cmd, dir, rig, "te-main", v, nil)
 	if err == nil {
 		t.Fatal("expected reject write to closed-only path while active bead is main")
 	}

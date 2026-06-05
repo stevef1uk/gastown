@@ -1409,6 +1409,11 @@ func validateImplementationBeadFileWrite(cmd, townRoot, rig, activeBead string, 
 		if scope != nil {
 			sc = *scope
 		}
+		if reopened, rerr := orchestrator.EnsureOpenImplementBeadForRework(townRoot, rig, written, v); rerr != nil {
+			return rerr
+		} else if reopened != "" {
+			return nil
+		}
 		if !orchestrator.AllowedQAReworkWebImplementWrite(townRoot, rig, allowedID, allowedPath, written, sc, v) {
 			if allowedPath != "" {
 				return fmt.Errorf("do not overwrite %q — its implement bead is closed (fix via QA rework reopening that bead, or edit only %s for %s)",

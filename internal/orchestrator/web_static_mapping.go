@@ -116,6 +116,29 @@ func (m WebStaticMapping) SmokeURLForHTMLRef(ref string) string {
 	return "/" + strings.TrimPrefix(base, "/")
 }
 
+// WebFileFromStaticURL maps a runtime smoke GET path (e.g. /static/app.js) to a layout-relative
+// web file (e.g. linkshelf/web/app.js).
+func WebFileFromStaticURL(urlPath string, m WebStaticMapping, layoutRoot string) string {
+	urlPath = normalizeWebURLRef(urlPath)
+	layoutRoot = strings.Trim(strings.TrimSpace(layoutRoot), "/")
+	if urlPath == "" || layoutRoot == "" {
+		return ""
+	}
+	prefix := strings.TrimSpace(m.StaticURLPrefix)
+	if prefix == "" {
+		prefix = "/static"
+	}
+	if !strings.HasPrefix(urlPath, prefix+"/") {
+		return ""
+	}
+	rest := strings.TrimPrefix(urlPath, prefix)
+	rest = strings.TrimPrefix(rest, "/")
+	if rest == "" || strings.Contains(rest, "..") {
+		return ""
+	}
+	return filepath.ToSlash(layoutRoot + "/web/" + rest)
+}
+
 // StaticRefMismatchHint returns a validation hint when ref disagrees with architecture mapping.
 func (m WebStaticMapping) StaticRefMismatchHint(ref string) string {
 	ref = normalizeWebURLRef(ref)

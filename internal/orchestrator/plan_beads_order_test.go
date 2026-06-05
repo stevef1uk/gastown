@@ -302,6 +302,7 @@ func TestRunOnTimeoutHook_resetPlanningPhase_delegates(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(rigDir, "plan.md"), []byte("### te-1: Dockerfile\n- Acceptance: per architecture"), 0644); err != nil {
 		t.Fatal(err)
 	}
+	writeMinimalPlanningRigDocs(t, rigDir)
 	init := exec.Command("bd", "init")
 	init.Env = append(os.Environ(), "BEADS_DIR="+beadsDir)
 	init.Dir = rigDir
@@ -465,5 +466,91 @@ func TestBeadsDatabaseReady_falseWithoutInit(t *testing.T) {
 	town := t.TempDir()
 	if BeadsDatabaseReady(town, "myrig") {
 		t.Fatal("expected false when rig has no beads database")
+	}
+}
+
+func TestReopenClosedImplementBeadsForMissingOpenRequired_reopensClosedOnlyPaths(t *testing.T) {
+	if _, err := exec.LookPath("bd"); err != nil {
+		t.Skip("bd not in PATH")
+	}
+	townRoot := t.TempDir()
+	rig := "mockrig"
+	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
+	beadsDir := filepath.Join(townRoot, rig, ".beads")
+	for _, d := range []string{rigDir, beadsDir} {
+		if err := os.MkdirAll(d, 0755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	init := exec.Command("bd", "init")
+	init.Env = append(os.Environ(), "BEADS_DIR="+beadsDir)
+	init.Dir = rigDir
+	if out, err := init.CombinedOutput(); err != nil {
+		t.Fatalf("bd init: %v\n%s", err, out)
+	}
+	v := WorkflowValidation{
+		LayoutRoot:        ".",
+		BeadTitleContains: "Implement ",
+		RequiredFiles: []string{
+			"go.mod",
+			"cmd/server/main.go",
+			"internal/store/schema.go",
+		},
+	}
+	create := func(title string) string {
+		cmd := exec.Command("bd", "create", "--type", "task", "--title", title, "--description=test")
+		cmd.Env = append(os.Environ(), "BEADS_DIR="+beadsDir)
+		cmd.Dir = rigDir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("bd create: %v\n%s", err, out)
+		}
+		open, err := ListOpenImplementBeads(townRoot, rig, v)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, b := range open {
+			if b.Title == title {
+				return b.ID
+			}
+		}
+		t.Fatalf("no open bead for title %q", title)
+		return ""
+	}
+	closeBead := func(id string) {
+		cmd := exec.Command("bd", "close", id, "--reason=test")
+		cmd.Env = append(os.Environ(), "BEADS_DIR="+beadsDir)
+		cmd.Dir = rigDir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("bd close %s: %v\n%s", id, err, out)
+		}
+	}
+	gomodID := create("Implement go.mod per architecture")
+	mainID := create("Implement cmd/server/main.go per architecture")
+	schemaID := create("Implement internal/store/schema.go per architecture")
+	closeBead(gomodID)
+	closeBead(mainID)
+
+	reopened, err := ReopenClosedImplementBeadsForMissingOpenRequired(townRoot, rig, v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reopened) != 2 {
+		t.Fatalf("reopened = %v, want 2 entries", reopened)
+	}
+	open, err := ListOpenImplementBeads(townRoot, rig, v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := map[string]bool{}
+	for _, b := range open {
+		seen[b.ID] = true
+	}
+	for _, id := range []string{gomodID, mainID, schemaID} {
+		if !seen[id] {
+			t.Fatalf("expected open bead %s, got open set %v", id, open)
+		}
+	}
+	if err := ValidatePlanBeads(open, "", v, rig); err != nil {
+		t.Fatalf("ValidatePlanBeads after reopen: %v", err)
 	}
 }

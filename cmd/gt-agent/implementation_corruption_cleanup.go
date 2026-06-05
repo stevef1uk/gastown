@@ -76,7 +76,7 @@ func (r *stateRunner) cleanupCorruptedOpenImplementBeadFiles() ([]string, error)
 			continue
 		}
 		lower := strings.ToLower(rel)
-		if !strings.HasSuffix(lower, ".go") && !strings.HasSuffix(lower, ".py") {
+		if !strings.HasSuffix(lower, ".go") && !strings.HasSuffix(lower, ".py") && !strings.HasSuffix(lower, ".js") {
 			continue
 		}
 		abs := filepath.Join(rigDir, filepath.FromSlash(rel))
@@ -89,6 +89,8 @@ func (r *stateRunner) cleanupCorruptedOpenImplementBeadFiles() ([]string, error)
 			corrupted = goLooksCorruptedForRewrite(data)
 		} else if strings.HasSuffix(lower, ".py") {
 			corrupted = pythonLooksCorruptedForRewrite(data, rel)
+		} else if strings.HasSuffix(lower, ".js") {
+			corrupted = orchestrator.CheckJavaScriptFileHealthy(data) != nil || containsNativeCorruptionMarker(string(data))
 		}
 		if !corrupted {
 			continue

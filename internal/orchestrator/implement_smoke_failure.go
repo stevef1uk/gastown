@@ -89,11 +89,41 @@ func ReopenImplementationBeadsAfterSmokeFailure(townRoot, rig string, v Workflow
 	if !ImplementationVerifyNeedsRuntimeRework(verifyErr) {
 		return nil, nil
 	}
-	paths := implementationReworkPathsForSmoke(v)
+	paths := implementationReworkPathsForSmokeDetail(townRoot, rig, v, verifyErr)
 	if len(paths) == 0 {
 		return reopenClosedImplementBeads(townRoot, rig, v)
 	}
 	return reopenClosedImplementBeadsForPaths(townRoot, rig, v, paths)
+}
+
+// implementationReworkPathsForSmokeDetail extends handler/web paths with the specific static
+// asset named in a failed smoke GET probe (e.g. GET:/static/app.js → linkshelf/web/app.js).
+func implementationReworkPathsForSmokeDetail(townRoot, rig string, v WorkflowValidation, verifyErr error) []string {
+	seen := map[string]bool{}
+	var out []string
+	add := func(rel string) {
+		rel = filepath.ToSlash(strings.TrimSpace(rel))
+		if rel == "" || seen[rel] {
+			return
+		}
+		seen[rel] = true
+		out = append(out, rel)
+	}
+	for _, rel := range implementationReworkPathsForSmoke(v) {
+		add(rel)
+	}
+	if verifyErr != nil {
+		detail := ParseSmokeFailureFromOutput(verifyErr.Error())
+		if step := strings.TrimSpace(detail.FailedStep); strings.HasPrefix(step, "GET:") {
+			urlPath := strings.TrimPrefix(step, "GET:")
+			mapping := LoadWebStaticMappingFromRig(townRoot, rig, v)
+			if webRel := WebFileFromStaticURL(urlPath, mapping, v.LayoutRoot); webRel != "" {
+				add(webRel)
+			}
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 // FormatImplementationSmokeFailureBlock gives polecat guidance after smoke failure at success gate.
