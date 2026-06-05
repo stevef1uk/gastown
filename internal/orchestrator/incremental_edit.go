@@ -64,13 +64,20 @@ func IsImplementHeredocWrite(cmd string) bool {
 	return ExtractImplementWritePathFromCmd(cmd, "") != "" || strings.Contains(lower, "cat >")
 }
 
-// ImplementFileOnDisk returns size and whether the path exists under mayor/rig.
-func ImplementFileOnDisk(townRoot, rig, relPath string) (size int64, exists bool, err error) {
+// ImplementFileOnDisk returns size and whether relPath exists under mayor/rig.
+// layoutRoot enables flat-module resolution (go.mod at mayor/rig, files at internal/...).
+func ImplementFileOnDisk(townRoot, rig, relPath, layoutRoot string) (size int64, exists bool, err error) {
+	mayorRig := filepath.Join(townRoot, rig, "mayor", "rig")
+	return implementFileOnDiskAtMayorRig(mayorRig, relPath, layoutRoot)
+}
+
+func implementFileOnDiskAtMayorRig(mayorRigDir, relPath, layoutRoot string) (size int64, exists bool, err error) {
 	relPath = filepath.ToSlash(strings.TrimSpace(relPath))
 	if relPath == "" {
 		return 0, false, nil
 	}
-	abs := filepath.Join(townRoot, rig, "mayor", "rig", filepath.FromSlash(relPath))
+	resolved := ResolveImplementRelPathOnDisk(mayorRigDir, relPath, layoutRoot)
+	abs := filepath.Join(mayorRigDir, filepath.FromSlash(resolved))
 	info, err := os.Stat(abs)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -95,12 +102,12 @@ func PreferIncrementalEdit(townRoot, rig, relPath string, v WorkflowValidation) 
 	if IsCmdMainImplementPath(relPath) {
 		return false
 	}
-	size, exists, err := ImplementFileOnDisk(townRoot, rig, relPath)
+	size, exists, err := ImplementFileOnDisk(townRoot, rig, relPath, v.LayoutRoot)
 	if err != nil || !exists || size < IncrementalEditMinBytes {
 		return false
 	}
 	// Corrupted Go (marker-only, no package, syntax error) — allow one-shot WRITE/heredoc recovery.
-	if WorkflowUsesGo(v) && strings.HasSuffix(filepath.ToSlash(relPath), ".go") && ImplementGoFileCorrupted(townRoot, rig, relPath) {
+	if WorkflowUsesGo(v) && strings.HasSuffix(filepath.ToSlash(relPath), ".go") && ImplementGoFileCorrupted(townRoot, rig, relPath, v.LayoutRoot) {
 		return false
 	}
 	abs := filepath.Join(townRoot, rig, "mayor", "rig", filepath.FromSlash(relPath))
@@ -139,7 +146,7 @@ func FormatIncrementalEditBlock(townRoot, rig, beadPath string, v WorkflowValida
 	if beadPath == "" {
 		return ""
 	}
-	if WorkflowUsesGo(v) && strings.HasSuffix(beadPath, ".go") && ImplementGoFileCorrupted(townRoot, rig, beadPath) {
+	if WorkflowUsesGo(v) && strings.HasSuffix(beadPath, ".go") && ImplementGoFileCorrupted(townRoot, rig, beadPath, v.LayoutRoot) {
 		return strings.TrimSpace(fmt.Sprintf(`### Corrupted file — full WRITE required
 **%s** on disk is **not valid Go** (often only `+"`"+`>>>>>>> REPLACE`+"`"+` / SEARCH markers from a failed EDIT). Do **not** use more EDIT or small patches.
 

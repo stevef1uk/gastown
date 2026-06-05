@@ -91,7 +91,7 @@ func ValidateImplementReadMissingFile(townRoot, rig, activeBead, activeBeadPath,
 	if isImplementPlanningDocPath(relPath) {
 		return nil
 	}
-	if _, exists, err := ImplementFileOnDisk(townRoot, rig, relPath); err != nil || exists {
+	if _, exists, err := ImplementFileOnDisk(townRoot, rig, relPath, v.LayoutRoot); err != nil || exists {
 		return err
 	}
 	return fmt.Errorf("%s", ImplementMissingFileReadNudge(townRoot, rig, activeBead, activeBeadPath, relPath, v))
