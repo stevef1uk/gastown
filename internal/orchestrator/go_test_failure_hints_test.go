@@ -85,11 +85,11 @@ func TestInitSchema(t *testing.T) {}
 		t.Fatal(err)
 	}
 	got := GoCompileVerifyCommandForBead(v, dir, "linkshelf/internal/store/schema.go")
-	if !strings.Contains(got, "-run 'TestInitSchema'") {
-		t.Fatalf("expected scoped -run for schema bead, got %q", got)
+	if !strings.Contains(got, "go build ./internal/store/...") {
+		t.Fatalf("expected go build when foreign store_test.go is on disk (go test would compile it), got %q", got)
 	}
-	if strings.Contains(got, "go build") {
-		t.Fatalf("expected go test not build when schema_test exists: %q", got)
+	if strings.Contains(got, "-run ") {
+		t.Fatalf("expected go build not scoped go test when foreign *_test.go present: %q", got)
 	}
 }
 

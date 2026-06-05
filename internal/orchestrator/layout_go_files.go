@@ -68,9 +68,13 @@ func GoCompileVerifyCommandForBead(v WorkflowValidation, mayorRigDir, beadPath s
 	return AppendGoBuildCmdServerToVerify(cmd, mayorRigDir, beadPath, v)
 }
 
-// goTestVerifyScopedToBead runs go test -run for this bead's Test* funcs when sibling *_test.go
-// files in the same package belong to other implement beads (e.g. schema.go vs store_test.go).
+// goTestVerifyScopedToBead runs go test -run for this bead's Test* funcs when sibling production
+// .go files belong to other implement beads. Foreign *_test.go files from other beads always
+// compile under go test (even with -run), so verify falls back to go build for production only.
 func goTestVerifyScopedToBead(v WorkflowValidation, mayorRigDir, beadPath, correlatedTest string) string {
+	if PackageHasForeignTestFiles(beadPath, v, mayorRigDir) {
+		return goBuildVerifyForPackage(v, mayorRigDir, beadPath)
+	}
 	if !packageNeedsScopedGoTest(beadPath, v, mayorRigDir) {
 		return ""
 	}

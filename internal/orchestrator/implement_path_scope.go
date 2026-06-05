@@ -31,7 +31,8 @@ func ValidateImplementWritePath(townRoot, rig, activeBead, relPath string, v Wor
 }
 
 // ValidateImplementReadPath allows reads for the active bead, open/next implement paths, and earlier dependencies.
-func ValidateImplementReadPath(townRoot, rig, activeBead, relPath string, v WorkflowValidation) error {
+// verifyOutput is optional recent go test/build stderr; enables read of foreign *_test.go cited in verify failures.
+func ValidateImplementReadPath(townRoot, rig, activeBead, relPath string, v WorkflowValidation, verifyOutput string) error {
 	relPath = NormalizeBeadPathForLayout(filepath.ToSlash(strings.TrimSpace(relPath)), v.LayoutRoot)
 	if relPath == "" {
 		return fmt.Errorf("empty path")
@@ -64,6 +65,17 @@ func ValidateImplementReadPath(townRoot, rig, activeBead, relPath string, v Work
 	if allowedPath != "" && AllowedEarlierImplementDependencyWrite(townRoot, rig, allowedPath, relPath, v) {
 		return nil
 	}
+	mayorRigDir := filepath.Join(townRoot, rig, "mayor", "rig")
+	if allowedPath != "" && IsForeignBeadTestFileForActive(allowedPath, relPath, v, mayorRigDir) {
+		if AllowForeignOpenBeadCompileFixForVerifyFailure(townRoot, rig, allowedPath, relPath, verifyOutput, v) {
+			return nil
+		}
+		if src := SourcePathForCorrelatedTest(relPath, v.LayoutRoot); src != "" {
+			if _, _, ok := OpenImplementBeadForPath(townRoot, rig, src, v); ok {
+				return nil
+			}
+		}
+	}
 	for _, want := range v.RequiredFiles {
 		if PathMatchesImplementWrite(relPath, want, v.RequiredFiles, v) {
 			return nil
@@ -93,6 +105,9 @@ func validateImplementWriteScope(townRoot, rig, activeBead, written string, v Wo
 		return nil
 	}
 	if AllowClosedDepFixForVerifyFailure(townRoot, rig, allowedPath, written, verifyOutput, v) {
+		return nil
+	}
+	if AllowForeignOpenBeadCompileFixForVerifyFailure(townRoot, rig, allowedPath, written, verifyOutput, v) {
 		return nil
 	}
 	if closedOnly, err := ImplementPathHasOnlyClosedBeads(townRoot, rig, written, v); err == nil && closedOnly &&

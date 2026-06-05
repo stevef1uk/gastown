@@ -58,6 +58,7 @@ func GoTestFailureProductionPaths(cmdOutput, layoutRoot string) []string {
 func goTestOutputSuggestsFailure(cmdOutput string) bool {
 	return strings.Contains(cmdOutput, "--- FAIL:") ||
 		strings.Contains(cmdOutput, "nil slice, want empty slice") ||
+		strings.Contains(cmdOutput, "[build failed]") ||
 		(strings.Contains(cmdOutput, "FAIL\n") && strings.Contains(cmdOutput, "_test.go"))
 }
 
@@ -195,6 +196,10 @@ func FormatGoTestFailureHints(townRoot, rig, activeBeadPath, cmdOutput string, e
 	if hint := FormatClosedDependencyCompileHints(townRoot, rig, activeBeadPath, merged, cmdOutput, v); hint != "" {
 		return hint
 	}
+	if hint := FormatForeignOpenBeadTestCompileHint(townRoot, rig, activeBeadPath, cmdOutput, v); hint != "" {
+		return hint
+	}
+	mayorRigDir := filepath.Join(townRoot, rig, "mayor", "rig")
 	var b strings.Builder
 	if hint := FormatHandlerRoot404ServeWebHint(townRoot, rig, activeBeadPath, cmdOutput, v); hint != "" {
 		b.WriteString(hint)
@@ -236,6 +241,13 @@ func FormatGoTestFailureHints(townRoot, rig, activeBeadPath, cmdOutput string, e
 		}
 	}
 	if hint := FormatSamePackageCompileUnblockHint(activeBeadPath, cmdOutput, v); hint != "" {
+		if b.Len() > 0 {
+			b.WriteString("\n")
+		}
+		b.WriteString(hint)
+	}
+	if hint := FormatSamePackageTestAPIHint(activeBeadPath, mayorRigDir, cmdOutput, v); hint != "" &&
+		!foreignTestErrorsCiteOtherBeadTests(activeBeadPath, cmdOutput, v, mayorRigDir) {
 		if b.Len() > 0 {
 			b.WriteString("\n")
 		}

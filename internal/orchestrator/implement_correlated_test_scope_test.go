@@ -58,10 +58,10 @@ func TestValidateImplementReadPath_correlatedGoTest(t *testing.T) {
 	})
 
 	testPath := "linkshelf/internal/store/schema_test.go"
-	if err := ValidateImplementReadPath(dir, rig, "te-phq", testPath, v); err != nil {
+	if err := ValidateImplementReadPath(dir, rig, "te-phq", testPath, v, ""); err != nil {
 		t.Fatalf("read correlated test: %v", err)
 	}
-	if err := ValidateImplementReadPath(dir, rig, "te-phq", "linkshelf/internal/store/store.go", v); err == nil {
+	if err := ValidateImplementReadPath(dir, rig, "te-phq", "linkshelf/internal/store/store.go", v, ""); err == nil {
 		t.Fatal("expected read reject for store.go while on schema bead")
 	}
 }

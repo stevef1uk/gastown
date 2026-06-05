@@ -449,7 +449,7 @@ func (r *stateRunner) executeNativeEditOp(op nativeEditOp, workDir string) (stri
 	}
 	switch op.kind {
 	case "read":
-		if err := orchestrator.ValidateImplementReadPath(r.townRoot, r.rig, r.track.activeBead, rel, r.v); err != nil {
+		if err := orchestrator.ValidateImplementReadPath(r.townRoot, r.rig, r.track.activeBead, rel, r.v, r.track.lastVerifyOutput); err != nil {
 			return "", err
 		}
 		data, err := os.ReadFile(abs)
