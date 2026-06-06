@@ -1727,13 +1727,13 @@ func validatePlanningArtifacts(townRoot, rig string, hadCmdFailure, beadCreateOK
 
 var planBeadIDLineRE = regexp.MustCompile(`(?m)^###\s+([a-zA-Z0-9][a-zA-Z0-9_-]*):\s+`)
 
-// validatePlanMDBeadIDs rejects plan.md sections that cite bead IDs not open in bd list.
+// validatePlanMDBeadIDs rejects plan.md sections that cite bead IDs not open/in_progress in bd list.
 func validatePlanMDBeadIDs(townRoot, rig, planPath string, v orchestrator.WorkflowValidation) error {
 	data, err := os.ReadFile(planPath)
 	if err != nil {
 		return err
 	}
-	open, err := listOpenImplementationBeads(townRoot, rig)
+	open, err := orchestrator.ListImplementBeadsOpenOrInProgress(townRoot, rig, v)
 	if err != nil {
 		return err
 	}
@@ -1754,7 +1754,7 @@ func validatePlanMDBeadIDs(townRoot, rig, planPath string, v orchestrator.Workfl
 	if len(missing) == 0 {
 		return nil
 	}
-	return fmt.Errorf("plan.md cites bead ID(s) not open in bd list (run bd create first, then rewrite plan.md): %s", strings.Join(missing, ", "))
+	return fmt.Errorf("plan.md cites bead ID(s) not open/in_progress in bd list (run bd list --status=open,in_progress, then rewrite or run gt rig sync-planning %s --force): %s", rig, strings.Join(missing, ", "))
 }
 
 func maybeRepairWorkflowRequirements(townRoot, rig string, v orchestrator.WorkflowValidation) {

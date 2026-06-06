@@ -115,6 +115,9 @@ func PlanningPlanMDNeedsRefresh(townRoot, rig string, v WorkflowValidation) bool
 		if len(checkPlanIntegrationContract(string(planDoc), specDoc, v)) > 0 {
 			return true
 		}
+		if planMDHasUnknownBeadIDs(string(planDoc), townRoot, rig, v) {
+			return true
+		}
 	}
 	// When the beads store isn't available, we can't reliably validate open/closed bead
 	// coverage for required_files. In that case, rely on the disk-based validations above
@@ -122,7 +125,7 @@ func PlanningPlanMDNeedsRefresh(townRoot, rig string, v WorkflowValidation) bool
 	if !BeadsDatabaseReady(townRoot, rig) {
 		return false
 	}
-	open, err := ListOpenImplementBeads(townRoot, rig, v)
+	open, err := ListImplementBeadsOpenOrInProgress(townRoot, rig, v)
 	if err != nil {
 		return true
 	}
@@ -172,7 +175,7 @@ func ValidatePlanMDBeadPathAlignment(townRoot, rig string, v WorkflowValidation)
 	if issues := checkPlanBeadMapExactPaths(planDoc, v); len(issues) > 0 {
 		return fmt.Errorf("%s", strings.Join(issues, "; "))
 	}
-	open, err := ListOpenImplementBeads(townRoot, rig, v)
+	open, err := ListImplementBeadsOpenOrInProgress(townRoot, rig, v)
 	if err != nil {
 		return err
 	}
@@ -228,8 +231,32 @@ func planSectionCovers(data []byte, want, id string, v WorkflowValidation) bool 
 	return false
 }
 
+// planMDHasUnknownBeadIDs reports whether plan.md ### headers cite IDs with no open/in_progress implement bead.
+func planMDHasUnknownBeadIDs(planDoc, townRoot, rig string, v WorkflowValidation) bool {
+	if !BeadsDatabaseReady(townRoot, rig) {
+		return false
+	}
+	active, err := ListImplementBeadsOpenOrInProgress(townRoot, rig, v)
+	if err != nil {
+		return true
+	}
+	activeIDs := map[string]bool{}
+	for _, b := range active {
+		if MatchesImplementBeadTitle(b.Title, v) {
+			activeIDs[b.ID] = true
+		}
+	}
+	for _, m := range planBeadSectionRE.FindAllStringSubmatch(planDoc, -1) {
+		id := strings.TrimSpace(m[1])
+		if id != "" && !activeIDs[id] {
+			return true
+		}
+	}
+	return false
+}
+
 // OpenImplementCoversRequiredFiles reports whether every active-phase required_files path
-// has a matching open implement bead (used to block redundant bd create in planning).
+// has a matching open or in_progress implement bead (used to block redundant bd create in planning).
 func OpenImplementCoversRequiredFiles(townRoot, rig string, v WorkflowValidation) (bool, error) {
 	v = v.ForActivePhase()
 	if len(v.RequiredFiles) == 0 {
@@ -253,12 +280,12 @@ func OpenImplementCoversRequiredFiles(townRoot, rig string, v WorkflowValidation
 
 func openImplementPathMap(townRoot, rig string, v WorkflowValidation) (map[string]string, error) {
 	v = v.ForActivePhase()
-	open, err := ListOpenImplementBeads(townRoot, rig, v)
+	active, err := ListImplementBeadsOpenOrInProgress(townRoot, rig, v)
 	if err != nil {
 		return nil, err
 	}
 	pathToID := map[string]string{}
-	for _, b := range open {
+	for _, b := range active {
 		p := NormalizePlannerBeadPath(ExtractPathFromBeadTitle(b.Title, v.BeadTitleContains), v.LayoutRoot, rig)
 		if p == "" {
 			continue
