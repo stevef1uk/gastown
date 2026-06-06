@@ -2165,29 +2165,33 @@ func listOpenImplementationBeads(townRoot, rig string) ([]orchestrator.PlanBead,
 		return listOpenImplementationBeadsHook(townRoot, rig)
 	}
 	beadsDir := config.ResolveBeadsDirForRig(townRoot, rig)
-	args := beads.InjectFlatForListJSON([]string{"list", "--status=open", "--json", "--limit=0"})
-	cmd := exec.Command("bd", args...)
-	cmd.Env = withEnvKey(os.Environ(), "BEADS_DIR", beadsDir)
-	cmd.Dir = rigMayorRigDir(townRoot, rig)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return nil, fmt.Errorf("bd list open: %w: %s", err, strings.TrimSpace(string(out)))
-	}
-	out = beads.StripStdoutWarnings(out)
-	var rows []struct {
-		ID    string `json:"id"`
-		Title string `json:"title"`
-	}
-	if err := json.Unmarshal(out, &rows); err != nil {
-		return nil, fmt.Errorf("parse open beads: %w", err)
-	}
-	result := make([]orchestrator.PlanBead, 0, len(rows))
-	for _, r := range rows {
-		id := strings.TrimSpace(beads.ExtractIssueID(r.ID))
-		if id == "" {
-			continue
+	var result []orchestrator.PlanBead
+	seen := map[string]bool{}
+	for _, status := range []string{"open", "in_progress"} {
+		args := beads.InjectFlatForListJSON([]string{"list", "--status=" + status, "--json", "--limit=0"})
+		cmd := exec.Command("bd", args...)
+		cmd.Env = withEnvKey(os.Environ(), "BEADS_DIR", beadsDir)
+		cmd.Dir = rigMayorRigDir(townRoot, rig)
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			return nil, fmt.Errorf("bd list %s: %w: %s", status, err, strings.TrimSpace(string(out)))
 		}
-		result = append(result, orchestrator.PlanBead{ID: id, Title: strings.TrimSpace(r.Title)})
+		out = beads.StripStdoutWarnings(out)
+		var rows []struct {
+			ID    string `json:"id"`
+			Title string `json:"title"`
+		}
+		if err := json.Unmarshal(out, &rows); err != nil {
+			return nil, fmt.Errorf("parse %s beads: %w", status, err)
+		}
+		for _, r := range rows {
+			id := strings.TrimSpace(beads.ExtractIssueID(r.ID))
+			if id == "" || seen[id] {
+				continue
+			}
+			seen[id] = true
+			result = append(result, orchestrator.PlanBead{ID: id, Title: strings.TrimSpace(r.Title)})
+		}
 	}
 	return result, nil
 }

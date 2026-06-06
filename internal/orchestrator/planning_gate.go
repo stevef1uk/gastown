@@ -70,7 +70,7 @@ func validatePlanningGateArtifacts(townRoot, rig, rigDir, fromState string, v Wo
 	if len(v.RequiredFiles) == 0 {
 		return nil
 	}
-	open, err := ListOpenImplementBeads(townRoot, rig, v)
+	open, err := ListImplementBeadsOpenOrInProgress(townRoot, rig, v)
 	if err != nil {
 		return fmt.Errorf("list implement beads: %w", err)
 	}

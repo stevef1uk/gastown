@@ -13,6 +13,14 @@ func TestValidateSummaryBeadIDs_wrongPrefix(t *testing.T) {
 	}
 }
 
+func TestValidateSummaryBeadIDs_ignoresDeliveryPhaseSlug(t *testing.T) {
+	known := map[string]bool{"te-xoo": true}
+	summary := "active phase api-handlers requires an implement bead for handlers.go"
+	if err := ValidateSummaryBeadIDs(summary, known, "te"); err != nil {
+		t.Fatalf("delivery phase slug must not be treated as bead ID: %v", err)
+	}
+}
+
 func TestValidateSummaryBeadIDs_knownIDs(t *testing.T) {
 	known := map[string]bool{"de-5d0": true}
 	if err := ValidateSummaryBeadIDs("reopen de-5d0; stub main.py", known, "de"); err != nil {

@@ -111,6 +111,9 @@ func ValidateSummaryBeadIDs(summary string, known map[string]bool, rigPrefix str
 			continue
 		}
 		if rigPrefix != "" && !strings.HasPrefix(id, rigPrefix+"-") {
+			if !looksLikeBeadIssueID(id) {
+				continue
+			}
 			unknown = append(unknown, id+" (wrong prefix; rig uses "+rigPrefix+"-*)")
 			continue
 		}
@@ -128,6 +131,19 @@ func isIgnoredSummaryToken(id string) bool {
 		return true
 	}
 	return isAgentIdentityBeadID(id)
+}
+
+// looksLikeBeadIssueID reports issue_prefix-id tokens (e.g. te-xoo), not delivery phase slugs (api-handlers).
+func looksLikeBeadIssueID(id string) bool {
+	parts := strings.Split(strings.ToLower(id), "-")
+	if len(parts) != 2 {
+		return false
+	}
+	if len(parts[0]) < 2 || len(parts[0]) > 4 {
+		return false
+	}
+	suffix := parts[1]
+	return len(suffix) >= 2 && len(suffix) <= 5
 }
 
 // summaryMentionsAgentIdentityBead returns true when the regex matched a prefix of a role bead (xx-<rig>-architect).
