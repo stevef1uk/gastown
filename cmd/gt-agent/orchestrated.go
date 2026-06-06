@@ -337,6 +337,16 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 					continue
 				}
 			}
+			if o, s, ok := runner.tryPlanReviewFailureToSuccess(o); ok {
+				orchestratedPrintf("[gt-agent] ignoring plan_review failure JSON — artifacts already satisfy success\n")
+				return o, s, lastAttemptFeedback.String(), nil
+			}
+			if msg, reject := runner.rejectPlanReviewSpuriousFailure(o, s); reject {
+				orchestratedPrintf("[gt-agent] rejecting spurious plan_review failure JSON\n")
+				recordAttemptFeedback(msg + "\n")
+				messages = append(messages, llm.Message{Role: "user", Content: msg})
+				continue
+			}
 			if vErr := validateOutcomeForTask(task, townRoot, rig, o, s); vErr != nil {
 				orchestratedPrintf("[gt-agent] summary validation failed: %v\n", vErr)
 				msg := "Validation failed: " + vErr.Error() + ". Run `bd list` and copy bead IDs exactly into the summary."

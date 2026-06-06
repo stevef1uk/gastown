@@ -554,3 +554,72 @@ func TestReopenClosedImplementBeadsForMissingOpenRequired_reopensClosedOnlyPaths
 		t.Fatalf("ValidatePlanBeads after reopen: %v", err)
 	}
 }
+
+func TestPruneDuplicateImplementBeads_openAndInProgressSamePath(t *testing.T) {
+	if _, err := exec.LookPath("bd"); err != nil {
+		t.Skip("bd not in PATH")
+	}
+	townRoot := t.TempDir()
+	rig := "mockrig"
+	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
+	beadsDir := filepath.Join(townRoot, rig, ".beads")
+	for _, d := range []string{rigDir, beadsDir} {
+		if err := os.MkdirAll(d, 0755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	init := exec.Command("bd", "init")
+	init.Env = append(os.Environ(), "BEADS_DIR="+beadsDir)
+	init.Dir = rigDir
+	if out, err := init.CombinedOutput(); err != nil {
+		t.Fatalf("bd init: %v\n%s", err, out)
+	}
+	v := WorkflowValidation{
+		LayoutRoot:        "linkshelf",
+		BeadTitleContains: "Implement linkshelf/",
+		RequiredFiles:     []string{"linkshelf/internal/api/handlers.go"},
+	}
+	create := func(title string) string {
+		cmd := exec.Command("bd", "create", "--type", "task", "--title", title, "--description=test")
+		cmd.Env = append(os.Environ(), "BEADS_DIR="+beadsDir)
+		cmd.Dir = rigDir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("bd create: %v\n%s", err, out)
+		}
+		open, err := ListOpenImplementBeads(townRoot, rig, v)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, b := range open {
+			if b.Title == title {
+				return b.ID
+			}
+		}
+		t.Fatalf("no open bead for title %q", title)
+		return ""
+	}
+	path := "linkshelf/internal/api/handlers.go"
+	canonical := PlanningBeadTitle(path, v)
+	headID := create(canonical)
+	dupID := create("Implement linkshelf/internal/api/handlers.go per architecture duplicate")
+	up := exec.Command("bd", "update", headID, "--status=in_progress")
+	up.Env = append(os.Environ(), "BEADS_DIR="+beadsDir)
+	up.Dir = rigDir
+	if out, err := up.CombinedOutput(); err != nil {
+		t.Fatalf("bd update in_progress: %v\n%s", err, out)
+	}
+	deleted, err := PruneDuplicateImplementBeads(townRoot, rig, v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(deleted) != 1 || deleted[0] != dupID {
+		t.Fatalf("deleted = %v, want [%s]", deleted, dupID)
+	}
+	active, err := ListImplementBeadsOpenOrInProgress(townRoot, rig, v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(active) != 1 || active[0].ID != headID {
+		t.Fatalf("active beads = %v, want single %s", active, headID)
+	}
+}

@@ -253,24 +253,14 @@ func preparePhaseAdvanceToPlanningFeedback(fromPhase, toPhase string, v Workflow
 		b.WriteString("\n\n")
 	}
 	b.WriteString("Planner steps:\n")
-	b.WriteString("1. `bd list --status=open` — beads for this phase should already exist (do not duplicate `bd create`).\n")
+	b.WriteString("1. `bd list --status=open,in_progress` — beads for this phase should already exist (do not duplicate `bd create`).\n")
 	b.WriteString("2. `wc -c plan.md` — expand per-file acceptance from SPEC/architecture if under minimum.\n")
 	b.WriteString("3. JSON success when bead set matches required_files for this phase only.\n")
 	return strings.TrimSpace(b.String())
 }
 
-// PlanReviewFailureNeedsArchitect reports plan_review failures that require architecture.md edits
-// (planner cannot write architecture.md — send workflow to design instead of planning loop).
-func PlanReviewFailureNeedsArchitect(summary string) bool {
-	lower := strings.ToLower(summary)
-	if !strings.Contains(lower, "architecture.md") {
-		return false
-	}
-	return strings.Contains(lower, "store api") ||
-		strings.Contains(lower, "signature") ||
-		strings.Contains(lower, "context.context") ||
-		strings.Contains(lower, "package-level")
-}
+// PlanReviewFailureNeedsArchitect reports plan_review failures that require architecture.md edits.
+// Implemented in plan_review_guard.go.
 
 // PlanReviewSummarySaysPlanOK reports whether QA explicitly accepted plan.md size.
 func PlanReviewSummarySaysPlanOK(summary string) bool {

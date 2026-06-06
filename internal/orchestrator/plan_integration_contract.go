@@ -10,6 +10,30 @@ import (
 
 var archOwnershipPathRE = regexp.MustCompile("`(linkshelf/[^`]+)`")
 
+// IntegrationContractScopeNote tells plan_review/planning when ## Integration contract is required
+// for the active delivery phase (not the full profile union).
+func (v WorkflowValidation) IntegrationContractScopeNote() string {
+	v = v.ForActivePhase()
+	if profileHasServerEntrypoint(v) {
+		mainPath := ""
+		for _, f := range v.RequiredFiles {
+			f = filepath.ToSlash(strings.TrimSpace(f))
+			if strings.Contains(f, "/cmd/") && strings.HasSuffix(f, "main.go") {
+				mainPath = f
+				break
+			}
+		}
+		if mainPath != "" {
+			return fmt.Sprintf("**Integration contract (this phase):** required — active phase includes `%s`. `plan.md` must have **## Integration contract** with SPEC HTTP routes, dependency order, and exported symbols.", mainPath)
+		}
+		return "**Integration contract (this phase):** required — active phase includes a server entrypoint. `plan.md` must have **## Integration contract**."
+	}
+	if !v.HasPhasedDelivery() {
+		return ""
+	}
+	return "**Integration contract (this phase):** **not required** — active phase `required_files` has no `cmd/.../main.go`. Do **not** fail plan review for a missing ## Integration contract; that section belongs in the phase that implements the server entrypoint."
+}
+
 // renderPlanIntegrationContract builds ## Integration contract from SPEC/architecture when
 // the profile includes a server entrypoint. Used by planning sync so implementation is not
 // blocked waiting for the planner LLM to paste this section.

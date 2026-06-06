@@ -99,9 +99,9 @@ states:
       artifacts: plan_review
       bead_ids_in_summary: true
       retry_hint: |
-        One CMD: per line. Run bd list --status=open from {{rig}}/mayor/rig; compare titles to architecture required_files.
+        One CMD: per line. Run bd list --status=open,in_progress from {{rig}}/mayor/rig; compare titles to active-phase required_files ({{required_files}}).
       failure_hint: |
-        Run `bd list --status=open` from {{rig}}/mayor/rig with BEADS_DIR set; compare titles to required_files. Read SPEC HTTP table and Store API — plan.md and architecture.md must use the same paths and symbols (e.g. /api/links not /links; List not ListLinks). Use outcome failure to send the Planner back.
+        Run `bd list --status=open,in_progress` from {{rig}}/mayor/rig with BEADS_DIR set. Count implement beads for **this phase only** ({{required_files}}). {{integration_contract_scope_note}} Use outcome failure for duplicate/missing beads or plan drift — not for integration contract when the active phase has no cmd/.../main.go.
     transitions:
       success:
         to: project_setup

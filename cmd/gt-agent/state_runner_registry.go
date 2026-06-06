@@ -210,6 +210,9 @@ var artifactAutoCompleters = map[string]artifactAutoCompleteFn{
 	"planning": func(r *stateRunner) error {
 		return r.validateArtifacts("success")
 	},
+	"plan_review": func(r *stateRunner) error {
+		return validatePlanReviewArtifacts(r.townRoot, r.rig, r.track.hadCmdFailure, r.track.listOpenOK, r.track.didDelete, r.v)
+	},
 	"implementation": func(r *stateRunner) error {
 		if false {
 			return fmt.Errorf("QA rework pending — fix runtime/smoke issues in Prior step failed (handlers, web/, routes); go test ./... alone is not enough")

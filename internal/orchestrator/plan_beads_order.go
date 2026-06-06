@@ -733,16 +733,116 @@ func PruneOpenImplementBeadsForClosedPaths(townRoot, rig string, v WorkflowValid
 	return deleted, nil
 }
 
-// PruneDuplicateImplementBeads deletes duplicate open beads for the same required_files path,
-// keeping the canonical planner title when present.
+// PruneDuplicateImplementBeads deletes duplicate open/in_progress beads for the same required_files path,
+// keeping the in_progress queue head or canonical planner title when present.
 func PruneDuplicateImplementBeads(townRoot, rig string, v WorkflowValidation) ([]string, error) {
-	return pruneDuplicateImplementBeadsByStatus(townRoot, rig, v, "open")
+	return pruneDuplicateActiveImplementBeads(townRoot, rig, v)
 }
 
 // PruneDuplicateClosedImplementBeads deletes duplicate closed beads for the same path
 // (e.g. two closed go.mod beads). Keeps one closed bead per path for audit; removes extras.
 func PruneDuplicateClosedImplementBeads(townRoot, rig string, v WorkflowValidation) ([]string, error) {
 	return pruneDuplicateImplementBeadsByStatus(townRoot, rig, v, "closed")
+}
+
+type activeImplementBead struct {
+	PlanBead
+	status string
+}
+
+func pruneDuplicateActiveImplementBeads(townRoot, rig string, v WorkflowValidation) ([]string, error) {
+	v = v.ForActivePhase()
+	if len(v.RequiredFiles) == 0 {
+		return nil, nil
+	}
+	var beads []activeImplementBead
+	for _, status := range []string{"open", "in_progress"} {
+		list, err := listImplementBeadsByStatus(townRoot, rig, v, status)
+		if err != nil {
+			return nil, err
+		}
+		for _, b := range list {
+			beads = append(beads, activeImplementBead{PlanBead: b, status: status})
+		}
+	}
+	pathToIDs := map[string][]string{}
+	for _, b := range beads {
+		p := NormalizePlannerBeadPath(ExtractPathFromBeadTitle(b.Title, v.BeadTitleContains), v.LayoutRoot, rig)
+		if p == "" || !IsValidImplementBeadPath(p) {
+			continue
+		}
+		pathToIDs[p] = append(pathToIDs[p], b.ID)
+	}
+	toDelete := map[string]bool{}
+	for _, want := range v.RequiredFiles {
+		ids := dedupeStrings(beadIDsForPathProfile(pathToIDs, want, v))
+		if len(ids) <= 1 {
+			continue
+		}
+		keeper := selectKeeperActiveImplementBead(beads, want, ids, v)
+		for _, id := range ids {
+			if id != keeper {
+				toDelete[id] = true
+			}
+		}
+	}
+	for p, ids := range pathToIDs {
+		if len(ids) <= 1 {
+			continue
+		}
+		if pathMatchesRequiredForProfile(p, v.RequiredFiles, v) {
+			continue
+		}
+		keeper := selectKeeperActiveImplementBead(beads, p, dedupeStrings(ids), v)
+		for _, id := range ids {
+			if id != keeper {
+				toDelete[id] = true
+			}
+		}
+	}
+	if len(toDelete) == 0 {
+		return nil, nil
+	}
+	beadsDir := config.ResolveBeadsDirForRig(townRoot, rig)
+	workDir := filepath.Join(townRoot, rig, "mayor", "rig")
+	var deleted []string
+	for id := range toDelete {
+		cmd := exec.Command("bd", "delete", id, "--force")
+		cmd.Env = append(os.Environ(), "BEADS_DIR="+beadsDir)
+		cmd.Dir = workDir
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			return deleted, fmt.Errorf("bd delete %s: %w: %s", id, err, strings.TrimSpace(string(out)))
+		}
+		deleted = append(deleted, id)
+	}
+	return deleted, nil
+}
+
+func selectKeeperActiveImplementBead(beads []activeImplementBead, want string, ids []string, v WorkflowValidation) string {
+	idSet := map[string]bool{}
+	for _, id := range ids {
+		idSet[id] = true
+	}
+	var inProgress []string
+	for _, b := range beads {
+		if !idSet[b.ID] {
+			continue
+		}
+		if b.status == "in_progress" {
+			inProgress = append(inProgress, b.ID)
+		}
+	}
+	if len(inProgress) == 1 {
+		return inProgress[0]
+	}
+	planOnly := make([]PlanBead, 0, len(ids))
+	for _, b := range beads {
+		if idSet[b.ID] {
+			planOnly = append(planOnly, b.PlanBead)
+		}
+	}
+	return selectKeeperImplementBead(planOnly, want, ids, v)
 }
 
 func pruneDuplicateImplementBeadsByStatus(townRoot, rig string, v WorkflowValidation, status string) ([]string, error) {

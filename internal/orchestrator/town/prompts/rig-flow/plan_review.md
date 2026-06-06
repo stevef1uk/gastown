@@ -9,13 +9,15 @@ Work from town root (`~/gt`). Paths like `{{rig}}/mayor/rig/` are correct.
 | outcome | When |
 |---------|------|
 | `success` | Beads match `required_files`; `plan.md` ≥ {{min_plan_bytes}} bytes; **SPEC / architecture / plan** agree on HTTP routes, store API names, module path, and integration wiring |
-| `failure` | Duplicates, missing paths, weak plan, or **any contract drift** vs SPEC — sends **Planner** back to `planning` |
+| `failure` | Duplicates, missing paths, weak plan, or **contract drift** vs SPEC — sends **Planner** back to `planning` |
 
 ## Rig context (from SPEC profile)
 
 {{spec_summary}}
 
 {{phase_scope_note}}
+
+{{integration_contract_scope_note}}
 
 ## Scope (strict)
 
@@ -32,7 +34,7 @@ gt-agent also runs **mechanical** checks on success; you must catch the same iss
 1. **HTTP routes (authoritative: SPEC.md table)**
    - Copy the SPEC `| GET |` / `| POST |` paths (e.g. `/api/links`, not `/links`).
    - `architecture.md` and `plan.md` must use **the same paths** — no shortened aliases (`/links` when SPEC says `/api/links`).
-   - `plan.md` **## Integration contract** must repeat the SPEC route table for the server entrypoint.
+   - When **Integration contract is required this phase** (see note above), `plan.md` **## Integration contract** must repeat the SPEC route table for the server entrypoint.
 
 2. **Store / package API (authoritative: SPEC `## Store` and ` ```go ` fences)**
    - Use **exact** function/type names from SPEC (e.g. `List`, `Create`, `Delete`, `InitSchema`, package `var DB`).
@@ -43,24 +45,26 @@ gt-agent also runs **mechanical** checks on success; you must catch the same iss
    - Module name must match SPEC / rig layout (`{{layout_root}}` when SPEC says so).
 
 4. **Beads vs profile**
-   - `bd list --status=open`: exactly one implement bead per path in **this phase** `required_files` ({{required_files}}).
+   - `bd list --status=open,in_progress`: exactly one implement bead per path in **this phase** `required_files` ({{required_files}}).
    - Titles contain `{{bead_title_contains}}` and the full repo-relative path.
-   - `plan.md` **## Bead map**: one `### <real-id>: <path>` per open bead; IDs from **this session's** `bd list` only.
+   - `plan.md` **## Bead map**: one `### <real-id>: <path>` per active bead; IDs from **this session's** `bd list` only.
 
 5. **Tests scope**
    - If `required_files` has **no** `*_test.go` / `tests/test_*.py`, plan must **not** mandate httptest, eslint, or “every bead must have unit tests”.
    - When tests are in profile, plan acceptance bullets may name them; otherwise defer to SPEC optional tests.
 
-6. **Integration contract**
-   - When profile includes `cmd/.../main.go`, `plan.md` needs **## Integration contract**: dependency order, route registration, exported symbols per file (from architecture ownership table).
+6. **Integration contract (active phase only)**
+   - Follow **Integration contract (this phase)** above — not `all_required_files` or later delivery phases.
+   - When required: `plan.md` needs **## Integration contract** with dependency order, route registration, exported symbols per file (from architecture ownership table).
+   - When **not required this phase**: missing ## Integration contract is **correct** — do **not** use it as a failure reason.
 
 ## HARD RULES
 
 1. **One `CMD:` per line** — read-only inspection only.
 
-2. List open implementation beads:
+2. List open/in_progress implementation beads:
    ```
-   CMD: export BEADS_DIR=$GT_ROOT/{{rig}}/.beads && cd {{rig}}/mayor/rig && bd list --status=open --limit=0
+   CMD: export BEADS_DIR=$GT_ROOT/{{rig}}/.beads && cd {{rig}}/mayor/rig && bd list --status=open,in_progress --limit=0
    ```
 
 3. Read all three design docs:
@@ -71,14 +75,17 @@ gt-agent also runs **mechanical** checks on success; you must catch the same iss
    CMD: wc -c {{rig}}/mayor/rig/plan.md
    ```
 
-4. On **failure**, name **concrete fixes** (wrong route, wrong symbol, missing bead path, expand plan section) so the Planner can rework in one pass.
+4. On **failure**, name **concrete fixes** (wrong route, wrong symbol, missing bead path, duplicate bead ID, expand plan section) so the Planner can rework in one pass.
 
-5. On **success**, summary must state that SPEC HTTP table, store API names, beads, and plan integration contract were verified.
+5. On **success**, summary must state that SPEC HTTP table, store API names, and beads were verified; mention integration contract **only** when required this phase.
 
 6. **CRITICAL:** Do not emit JSON in the same message as `CMD:` lines. Wait for command output on the next turn before choosing outcome.
 
-Example success (after CMDs ran):
-`{"outcome":"success","summary":"Open beads match required_files; plan.md ≥ {{min_plan_bytes}}B; SPEC/architecture/plan agree on /api/links and List/Create/Delete store API; integration contract present"}`
+Example success (after CMDs ran, no integration contract this phase):
+`{"outcome":"success","summary":"Open/in_progress beads match required_files; plan.md ≥ {{min_plan_bytes}}B; SPEC/architecture/plan agree on /api/links and List/Create/Delete store API"}`
+
+Example success (server-setup phase with integration contract):
+`{"outcome":"success","summary":"Beads match required_files; plan.md ≥ {{min_plan_bytes}}B; SPEC routes and store API verified; integration contract present for cmd/server/main.go"}`
 
 Example failure:
-`{"outcome":"failure","summary":"plan.md incorrectly specifies <wrong_route> instead of <correct_route_from_SPEC>. Planner must rewrite plan.md to match SPEC exactly."}`
+`{"outcome":"failure","summary":"Duplicate open beads te-xz1 and te-u4h for linkshelf/internal/api/handlers.go — Planner must bd delete the extra ID."}`

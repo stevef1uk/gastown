@@ -76,3 +76,35 @@ func TestEnsurePlanIntegrationContract_patchesMissingSection(t *testing.T) {
 		t.Fatal("plan.md contract missing route")
 	}
 }
+
+func TestIntegrationContractScopeNote_phasedWithoutServer(t *testing.T) {
+	t.Parallel()
+	v := WorkflowValidation{
+		DeliveryPhases: []DeliveryPhase{
+			{ID: "api-handlers", RequiredFiles: []string{"linkshelf/internal/api/handlers.go"}},
+			{ID: "server-setup", RequiredFiles: []string{"linkshelf/cmd/server/main.go"}},
+		},
+		ActivePhaseIDField: "api-handlers",
+	}
+	note := v.IntegrationContractScopeNote()
+	if !strings.Contains(note, "not required") {
+		t.Fatalf("expected not required note, got %q", note)
+	}
+	if strings.Contains(note, "must have") {
+		t.Fatalf("should not require contract in api-handlers phase: %q", note)
+	}
+}
+
+func TestIntegrationContractScopeNote_serverPhase(t *testing.T) {
+	t.Parallel()
+	v := WorkflowValidation{
+		DeliveryPhases: []DeliveryPhase{
+			{ID: "server-setup", RequiredFiles: []string{"linkshelf/cmd/server/main.go"}},
+		},
+		ActivePhaseIDField: "server-setup",
+	}
+	note := v.IntegrationContractScopeNote()
+	if !strings.Contains(note, "required") || !strings.Contains(note, "linkshelf/cmd/server/main.go") {
+		t.Fatalf("expected required note with main path, got %q", note)
+	}
+}
