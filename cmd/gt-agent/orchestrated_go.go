@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/steveyegge/gastown/internal/orchestrator"
+	rigpkg "github.com/steveyegge/gastown/internal/rig"
 )
 
 // writesGoModuleFilesViaHeredoc reports heredoc/redirect writes to go.mod or go.sum.
@@ -101,6 +102,9 @@ func isLLMPlaceholderCommand(cmd string) bool {
 }
 
 func validateProjectSetupCommand(cmd, rig string, v orchestrator.WorkflowValidation) error {
+	if err := rigpkg.RejectMayorRigRootShellCommand(cmd, v.LayoutRoot); err != nil {
+		return err
+	}
 	lower := strings.ToLower(cmd)
 	if isLLMPlaceholderCommand(cmd) {
 		return fmt.Errorf("do not run markdown example placeholders — use real package names and paths")

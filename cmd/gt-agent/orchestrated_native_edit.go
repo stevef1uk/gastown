@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/steveyegge/gastown/internal/orchestrator"
+	rigpkg "github.com/steveyegge/gastown/internal/rig"
 )
 
 const (
@@ -475,6 +476,9 @@ func (r *stateRunner) executeNativeEditOp(op nativeEditOp, workDir string) (stri
 		}
 		return string(data), nil
 	case "edit":
+		if err := rigpkg.RejectDisallowedMayorRigWrite(rel, r.v.LayoutRoot, r.v.RequiredFiles); err != nil {
+			return "", err
+		}
 		if err := r.rejectRedundantImplementEditAfterVerify(rel); err != nil {
 			return "", err
 		}
@@ -495,6 +499,9 @@ func (r *stateRunner) executeNativeEditOp(op nativeEditOp, workDir string) (stri
 		}
 		return applyNativeSearchReplaceValidated(rel, abs, op.search, replace)
 	case "write":
+		if err := rigpkg.RejectDisallowedMayorRigWrite(rel, r.v.LayoutRoot, r.v.RequiredFiles); err != nil {
+			return "", err
+		}
 		if err := r.rejectRedundantImplementEditAfterVerify(rel); err != nil {
 			return "", err
 		}

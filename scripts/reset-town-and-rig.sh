@@ -131,9 +131,8 @@ drain_rig_mail() {
   fi
 }
 
-# Remove polecat implementation cruft from a prior bad architect/planner run.
-# SPEC and rig git history come from the remote on gt rig add; this only
-# clears obvious stale artifacts under mayor/rig/.
+# Remove polecat/agent junk from a prior bad run (npm/jest placeholders, wrong-path venv).
+# SPEC and rig git history come from the remote on gt rig add; this clears rig-root cruft.
 clean_rig_pipeline_artifacts() {
   local r="$1"
   local rig_dir="$GT_ROOT/$r/mayor/rig"
@@ -143,6 +142,12 @@ clean_rig_pipeline_artifacts() {
     rm -rf "$rig_dir/backend"
     echo "  removed backend/ (polecat recreates during implementation)"
   fi
+  for d in node_modules env .venv venv tests polecat; do
+    if [[ -d "$rig_dir/$d" ]]; then
+      rm -rf "$rig_dir/$d"
+      echo "  removed $d/"
+    fi
+  done
   # Prior implementation runs (flat layout, wrong module root, stale index).
   for d in linkshelf frontend backend; do
     if [[ -d "$rig_dir/$d" ]]; then
@@ -151,7 +156,9 @@ clean_rig_pipeline_artifacts() {
     fi
   done
   for f in fizzbuzz.py main.py test_fizzbuzz.py dummy.py plan_complete.js \
-    go.mod go.sum codeindex.json implementation-progress.json plan.md; do
+    package.json package-lock.json test-execution-command tests_skipped.txt \
+    spec_file_path.txt run-tests run-tests.sh run-tests.sh_backup \
+    go.mod go.sum codeindex.json implementation-progress.json plan.md architecture.md; do
     if [[ -f "$rig_dir/$f" ]]; then
       rm -f "$rig_dir/$f"
       echo "  removed stale $f (recreated by rig-flow / spec clone)"

@@ -19,6 +19,7 @@ import (
 	"github.com/steveyegge/gastown/internal/nudge"
 	"github.com/steveyegge/gastown/internal/agentenv"
 	"github.com/steveyegge/gastown/internal/orchestrator"
+	rigpkg "github.com/steveyegge/gastown/internal/rig"
 )
 
 const (
@@ -1339,6 +1340,9 @@ func validateImplementationCommandWithState(cmd, townRoot, rig, activeBead strin
 	if err := validateImplementationCommand(cmd, rig); err != nil {
 		return err
 	}
+	if err := rigpkg.RejectMayorRigRootShellCommand(cmd, v.LayoutRoot); err != nil {
+		return err
+	}
 	mayorDir := rigMayorRigDir(townRoot, rig)
 	if err := validateGoImplementationCommand(cmd, townRoot, rig, mayorDir, activeBead, v, verifyOK); err != nil {
 		return err
@@ -1570,6 +1574,9 @@ func validatePlanningCommandWithProfile(cmd, townRoot, rig string, v orchestrato
 		return fmt.Errorf("do not write plan.md (heredoc or redirect) — sync_planning_artifacts already builds plan.md from required_files and open bead IDs; run bd list and wc -c plan.md only, then JSON success")
 	}
 	if err := validatePlanningCommand(cmd, rig); err != nil {
+		return err
+	}
+	if err := rigpkg.RejectMayorRigRootShellCommand(cmd, v.LayoutRoot); err != nil {
 		return err
 	}
 	if isBeadCreateCommand(cmd) {

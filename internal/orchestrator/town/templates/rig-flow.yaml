@@ -33,6 +33,7 @@ states:
       2. Write `{{rig}}/mayor/rig/architecture.md` (≥{{min_architecture_bytes}} bytes).
       3. CRITICAL: You MUST prefix ALL file paths (in lists, prose, tables, and code blocks) with the root directory name from the SPEC (e.g. `layout_root/cmd/server/main.go`, not `cmd/server/main.go`, and `layout_root/web/` not `web/`).
     hooks:
+      pre_run: [reset_layout_pre_implementation, prune_rig_root_junk]
       max_cmd_turns: 12
       cmd_guard: design
       cmd_rewrites: [rig_placeholders, spec_md_case, unwrap_bash_lc]
@@ -114,7 +115,7 @@ states:
       Run `{{project_setup_verify_hint}}` green. Beads and plan.md are synced from required_files on pre_run — do not `bd create` unless sync left gaps. Then JSON success.
     hooks:
       prompt_context: [project_setup_stack]
-      pre_run: [sync_planning_artifacts, enforce_implement_bead_queue]
+      pre_run: [sync_planning_artifacts, enforce_implement_bead_queue, prune_rig_root_junk]
       cmd_guard: project_setup
       cmd_rewrites: [rig_placeholders, bd_list_implement_scope, unittest_workdir, bd_list_limit, unwrap_bash_lc]
       env:
@@ -151,7 +152,7 @@ states:
     hooks:
       state_timeout_seconds: 7200
       on_timeout: [recover_implementation_stall]
-      on_state_timeout: [reset_implementation_phase]
+      on_state_timeout: [recover_implementation_stall]
       cmd_timeout_seconds: 900
       max_cmd_turns: 20
       omit_orchestrator_context: true
@@ -161,7 +162,7 @@ states:
       failure_prompt_context: [implementation_queue, implement_bead_context]
       empty_response_suffix: "Reply with EDIT:/WRITE:/READ: or CMD: lines. Implement code and unit tests per plan.md; WRITE for new *_test.go or tests/test_*.py. Use Verify from Next bead."
       prompt_context: [implementation_queue, implement_bead_context]
-      pre_run: [sync_planning_artifacts, ensure_http_implementation_config, ensure_implement_smoke_ready, close_project_setup_beads, enforce_implement_bead_queue, prune_stale_layout_go, repair_requirements, refresh_codeindex, reconcile_implement_beads]
+      pre_run: [prune_rig_root_junk, sync_planning_artifacts, ensure_http_implementation_config, ensure_implement_smoke_ready, close_project_setup_beads, enforce_implement_bead_queue, prune_stale_layout_go, repair_requirements, refresh_codeindex, reconcile_implement_beads]
       # Do not run repair_planning_beads / refresh_plan_md_if_stale per turn — they create beads and
       # rewrite plan.md mid-implementation (see pre_run sync + reconcile). Planning-only repair stays in planning state hooks.
       per_turn: [prune_stale_layout_go, repair_requirements]

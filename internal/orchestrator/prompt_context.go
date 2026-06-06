@@ -24,6 +24,9 @@ package orchestrator
 import (
 	"fmt"
 	"path/filepath"
+	"strings"
+
+	rigpkg "github.com/steveyegge/gastown/internal/rig"
 )
 
 // PromptContextBlock returns injected user-prompt text for a rig-flow prompt_context hook name.
@@ -155,6 +158,29 @@ func RunPreRunHook(step, townRoot, rig string, v WorkflowValidation) (string, er
 		}
 	case "prune_stale_layout_go":
 		return PruneStaleLayoutGoFilesLog(townRoot, rig, v)
+	case "prune_rig_root_junk":
+		mayorRig := filepath.Join(townRoot, rig, "mayor", "rig")
+		return rigpkg.RemoveMayorRigAgentJunkLog(mayorRig)
+	case "reset_layout_pre_implementation":
+		mayorRig := filepath.Join(townRoot, rig, "mayor", "rig")
+		layout := strings.Trim(filepath.ToSlash(strings.TrimSpace(v.LayoutRoot)), "/")
+		if layout == "" {
+			layout = rigpkg.InferLayoutRootFromMayorRig(mayorRig)
+		}
+		if layout == "" {
+			return "", nil
+		}
+		removed, err := rigpkg.ResetLayoutPreImplementation(mayorRig, layout)
+		if err != nil {
+			return "", err
+		}
+		if len(removed) == 0 {
+			return "", nil
+		}
+		if len(removed) > 8 {
+			return fmt.Sprintf("reset layout pre-implementation: removed %d stale files under %s/", len(removed), layout), nil
+		}
+		return fmt.Sprintf("reset layout pre-implementation: removed %s", joinStrings(removed, ", ")), nil
 	case "close_project_setup_beads":
 		closed, err := CloseProjectSetupBeads(townRoot, rig, v)
 		if err != nil {

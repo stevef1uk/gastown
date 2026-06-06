@@ -100,6 +100,9 @@ func TestPruneStaleLayoutGoFiles(t *testing.T) {
 			"linkshelf/internal/store/store.go",
 		},
 	}
+	setListImplementBeadsByStatusHook(t, dir, rig, func(_, _ string, _ WorkflowValidation, _ string) ([]PlanBead, error) {
+		return nil, nil
+	})
 	removed, err := PruneStaleLayoutGoFiles(dir, rig, v)
 	if err != nil {
 		t.Fatal(err)
@@ -134,6 +137,9 @@ func TestPruneStaleLayoutGoFiles_keepsCorrelatedTest(t *testing.T) {
 		QAVerifyCommand: "cd linkshelf && go test ./...",
 		RequiredFiles: []string{"linkshelf/internal/store/store.go"},
 	}
+	setListImplementBeadsByStatusHook(t, dir, rig, func(_, _ string, _ WorkflowValidation, _ string) ([]PlanBead, error) {
+		return nil, nil
+	})
 	removed, err := PruneStaleLayoutGoFiles(dir, rig, v)
 	if err != nil {
 		t.Fatal(err)
@@ -210,12 +216,50 @@ func TestPruneStaleLayoutGoFiles_keepsFlatMainWhenBeadsUseCmdPath(t *testing.T) 
 			"pingapp/main_test.go",
 		},
 	}
+	setListImplementBeadsByStatusHook(t, dir, rig, func(_, _ string, _ WorkflowValidation, _ string) ([]PlanBead, error) {
+		return nil, nil
+	})
 	removed, err := PruneStaleLayoutGoFiles(dir, rig, v)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(removed) != 0 {
 		t.Fatalf("flat main.go should survive when beads use flat paths, removed = %v", removed)
+	}
+}
+
+func TestPruneStaleLayoutGoFiles_skipsWhenImplementBeadsActive(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	rig := "rig"
+	layout := filepath.Join(dir, rig, "mayor", "rig", "linkshelf", "internal", "store")
+	if err := os.MkdirAll(layout, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(layout, "sqlite.go"), []byte("package store\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	v := WorkflowValidation{
+		LayoutRoot: "linkshelf",
+		RequiredFiles: []string{
+			"linkshelf/internal/store/store.go",
+		},
+	}
+	setListImplementBeadsByStatusHook(t, dir, rig, func(_, _ string, _ WorkflowValidation, status string) ([]PlanBead, error) {
+		if status == "open" {
+			return []PlanBead{{ID: "te-1", Title: "Implement linkshelf/internal/store/store.go per architecture"}}, nil
+		}
+		return nil, nil
+	})
+	removed, err := PruneStaleLayoutGoFiles(dir, rig, v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(removed) != 0 {
+		t.Fatalf("expected no prune while beads active, removed = %v", removed)
+	}
+	if _, err := os.Stat(filepath.Join(layout, "sqlite.go")); err != nil {
+		t.Fatalf("sqlite.go should remain: %v", err)
 	}
 }
 

@@ -1637,6 +1637,11 @@ func runRigAdopt(_ *cobra.Command, args []string) error {
 		} else {
 			fmt.Printf("  %s Configured mayor/rig .gitignore (orchestrator checkpoint hygiene)\n", style.Success.Render("✓"))
 		}
+		if removed, err := rig.ResetMayorRigCloneState(mayorRigPath); err != nil {
+			fmt.Printf("  %s Could not reset mayor/rig clone state: %v\n", style.Warning.Render("!"), err)
+		} else if len(removed) > 0 {
+			fmt.Printf("  %s Reset mayor/rig clone state (%d stale items removed)\n", style.Success.Render("✓"), len(removed))
+		}
 	}
 
 	// Repair rig-level .beads permissions (e.g. legacy 0755 from umask or clone).

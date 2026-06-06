@@ -153,7 +153,12 @@ func layoutGoBasenamesProtectedFromPrune(v WorkflowValidation) map[string]bool {
 }
 
 // PruneStaleLayoutGoFiles removes .go files under layout_root that are not listed in required_files.
+// Skipped while any open or in_progress implement beads exist so overnight stalls do not wipe work.
 func PruneStaleLayoutGoFiles(townRoot, rig string, v WorkflowValidation) ([]string, error) {
+	active, err := ListImplementBeadsOpenOrInProgress(townRoot, rig, v)
+	if err == nil && len(active) > 0 {
+		return nil, nil
+	}
 	layout := strings.Trim(filepath.ToSlash(strings.TrimSpace(v.LayoutRoot)), "/")
 	if layout == "" || len(v.RequiredFiles) == 0 {
 		return nil, nil
@@ -168,7 +173,7 @@ func PruneStaleLayoutGoFiles(townRoot, rig string, v WorkflowValidation) ([]stri
 		return nil, nil
 	}
 	var removed []string
-	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+	err = filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
 		if err != nil || info.IsDir() || !strings.HasSuffix(path, ".go") {
 			return err
 		}

@@ -119,13 +119,21 @@ clean_rig_pipeline_artifacts() {
     rm -rf "$rig_dir/backend"
     echo "  removed backend/"
   fi
+  for d in node_modules env .venv venv tests polecat; do
+    if [[ -d "$rig_dir/$d" ]]; then
+      rm -rf "$rig_dir/$d"
+      echo "  removed $d/"
+    fi
+  done
   for f in architecture.md plan.md; do
     if [[ -f "$rig_dir/$f" ]]; then
       rm -f "$rig_dir/$f"
       echo "  removed $f"
     fi
   done
-  for f in fizzbuzz.py main.py test_fizzbuzz.py dummy.py plan_complete.js; do
+  for f in fizzbuzz.py main.py test_fizzbuzz.py dummy.py plan_complete.js \
+           package.json package-lock.json test-execution-command tests_skipped.txt \
+           spec_file_path.txt run-tests run-tests.sh run-tests.sh_backup; do
     if [[ -f "$rig_dir/$f" ]]; then
       rm -f "$rig_dir/$f"
       echo "  removed stray $f"
