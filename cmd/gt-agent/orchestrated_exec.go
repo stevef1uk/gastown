@@ -671,6 +671,10 @@ func simplifyDevServerSmoke(cmd, townRoot, rig string, v orchestrator.WorkflowVa
 	if !isDevServerSmokeCommand(cmd) {
 		return cmd, false
 	}
+	if townRoot != "" && rig != "" && !orchestrator.WorkflowNeedsQARuntimeSmoke(townRoot, rig, v) &&
+		!orchestrator.WorkflowNeedsRuntimeSmoke(townRoot, rig, v) {
+		return cmd, false
+	}
 	workDir := smokeWorkDirFromCommand(cmd)
 	if workDir == "" {
 		return cmd, false

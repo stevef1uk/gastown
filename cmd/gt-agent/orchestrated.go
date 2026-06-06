@@ -152,7 +152,7 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 		contextBlocks = append(contextBlocks, block)
 		orchestratedPrintf("[gt-agent] injected drained nudge(s) for %s/%s\n", task.WorkflowID, task.State)
 	}
-	if block := formatWorkflowReworkBlock(task, rig); block != "" {
+	if block := formatWorkflowReworkBlock(task, townRoot, rig); block != "" {
 		contextBlocks = append(contextBlocks, block)
 		orchestratedPrintf("[gt-agent] injecting QA/review rework context for %s/%s\n", task.WorkflowID, task.State)
 	}
@@ -473,7 +473,7 @@ func shouldSkipPlanningAutoComplete(task *orchestrator.Task, townRoot, rig strin
 }
 
 // formatWorkflowReworkBlock returns cross-step failure context (e.g. QA plan_review → planner).
-func formatWorkflowReworkBlock(task *orchestrator.Task, rig string) string {
+func formatWorkflowReworkBlock(task *orchestrator.Task, townRoot, rig string) string {
 	if task == nil || task.PendingRework == nil {
 		return ""
 	}
@@ -502,7 +502,7 @@ func formatWorkflowReworkBlock(task *orchestrator.Task, rig string) string {
 	} else {
 		b.WriteString("\nAddress the issues above. Use bead IDs and paths from command output — do not invent IDs.\n")
 	}
-	v := taskValidation(task)
+	v := taskValidation(townRoot, task)
 	b.WriteString(workflowReworkHints(r.FromState, task.State, rig, r.Summary, v))
 	if task.State == "implementation" && (r.Outcome == "failure" || r.Outcome == "timeout") {
 		b.WriteString("\nUse **sed -i** or **patch** on internal packages; **cmd/…/main.go may use heredoc** when wiring is broken. Use store/handler APIs from **Dependency packages** — do not invent symbols.\n")
@@ -2239,7 +2239,7 @@ func validateQAArtifacts(townRoot, rig, outcome string, hadCmdFailure, bdListClo
 	}
 	if sendToArchitect {
 		if !unittestOK {
-			return fmt.Errorf("architecture_failure requires green %s in this session — use outcome failure for test failures", v.QAVerifyHint())
+			return fmt.Errorf("architecture_failure requires green %s in this session — use outcome failure for test failures", scoped.QAVerifyHint())
 		}
 		if requiresQARuntimeSmoke(townRoot, rig, scoped) && qaSmokeOK {
 			return fmt.Errorf("architecture_failure requires failed runtime smoke while unit tests pass — use all_passed if smoke passed")
@@ -2257,7 +2257,7 @@ func validateQAArtifacts(townRoot, rig, outcome string, hadCmdFailure, bdListClo
 	}
 	if !sendToImpl {
 		if !unittestOK {
-			return fmt.Errorf("run `%s` from %s before reporting QA outcome", v.QAVerifyHint(), rigMayorRigPath(rig))
+			return fmt.Errorf("run `%s` from %s before reporting QA outcome", scoped.QAVerifyHint(), rigMayorRigPath(rig))
 		}
 		if err := validateRequiredWorkFiles(townRoot, rig, scoped); err != nil {
 			return err
@@ -2279,7 +2279,7 @@ func validateQAArtifacts(townRoot, rig, outcome string, hadCmdFailure, bdListClo
 	}
 	switch outcome {
 	case "all_passed", "task_passed":
-		openImpl, err := countOpenMatchingBeads(townRoot, rig, v)
+		openImpl, err := countOpenMatchingBeads(townRoot, rig, scoped)
 		if err != nil {
 			return err
 		}
@@ -2379,7 +2379,7 @@ func validateWebStaticReferences(townRoot, rig string, v orchestrator.WorkflowVa
 func webHTMLRequiredFiles(v orchestrator.WorkflowValidation) []string {
 	seen := map[string]bool{}
 	var out []string
-	for _, f := range append(append([]string(nil), v.RequiredFiles...), v.UnionRequiredFiles()...) {
+	for _, f := range v.RequiredFilesForSmokeScope() {
 		f = filepath.ToSlash(strings.TrimSpace(f))
 		if f == "" || seen[f] || !strings.HasSuffix(strings.ToLower(f), ".html") || !strings.Contains(f, "/web/") {
 			continue
@@ -2566,7 +2566,7 @@ func orchestratorPromptVars(task *orchestrator.Task, townRoot string) map[string
 		vars[k] = val
 	}
 	if townRoot != "" && task.Rig != "" {
-		vars["qa_runtime_smoke_block"] = orchestrator.RigFlowQARuntimeSmokeBlock(townRoot, task.Rig, v)
+		vars["qa_runtime_smoke_block"] = orchestrator.RigFlowQARuntimeSmokeBlock(townRoot, task.Rig, v.ForActivePhase())
 	}
 	return vars
 }

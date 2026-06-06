@@ -261,6 +261,43 @@ func TestWorkflowNeedsQARuntimeSmoke_matrix(t *testing.T) {
 			writeWeb: true,
 			wantQA:   false, // no HTTP table in docs — unittest only
 		},
+		{
+			name: "go_phased_backend_core_skips_smoke",
+			v: WorkflowValidation{
+				LayoutRoot:         "linkshelf",
+				ActivePhaseIDField: "backend-core",
+				QAVerifyCommand:    "cd linkshelf && go test ./...",
+				RequiredFiles: []string{
+					"linkshelf/go.mod",
+					"linkshelf/internal/store/schema.go",
+					"linkshelf/internal/store/store.go",
+					"linkshelf/internal/api/handlers.go",
+					"linkshelf/cmd/server/main.go",
+					"linkshelf/web/index.html",
+				},
+				DeliveryPhases: []DeliveryPhase{
+					{
+						ID: "backend-core",
+						RequiredFiles: []string{
+							"linkshelf/go.mod",
+							"linkshelf/internal/store/schema.go",
+							"linkshelf/internal/store/store.go",
+						},
+						QAVerifyCommand: "cd linkshelf && go test ./internal/store",
+					},
+					{
+						ID: "server-setup",
+						RequiredFiles: []string{
+							"linkshelf/cmd/server/main.go",
+							"linkshelf/web/index.html",
+						},
+					},
+				},
+			},
+			arch:    archAPI,
+			wantQA:  false,
+			wantAPI: true,
+		},
 	}
 
 	for _, tc := range cases {

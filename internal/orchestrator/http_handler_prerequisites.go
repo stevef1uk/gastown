@@ -15,7 +15,7 @@ func ProfileRequiresWebAssets(v WorkflowValidation) bool {
 	if workflowHasGoWebAndServer(v) {
 		return true
 	}
-	for _, f := range append(append([]string(nil), v.RequiredFiles...), v.UnionRequiredFiles()...) {
+	for _, f := range v.RequiredFilesForSmokeScope() {
 		if strings.Contains(filepath.ToSlash(f), "/web/") {
 			return true
 		}

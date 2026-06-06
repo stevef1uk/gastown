@@ -69,7 +69,7 @@ func (r *stateRunner) qaReworkWriteScope() *orchestrator.ImplementWriteScope {
 }
 
 func newStateRunner(task *orchestrator.Task, townRoot, rig string) *stateRunner {
-	v := taskValidation(task)
+	v := taskValidation(townRoot, task)
 	vars := map[string]string{"rig": rig}
 	for k, val := range v.PromptVars() {
 		vars[k] = val

@@ -38,7 +38,7 @@ func pythonWorkflowHasServerEntry(v WorkflowValidation) bool {
 	if !WorkflowUsesPython(v) {
 		return false
 	}
-	for _, f := range append(append([]string(nil), v.RequiredFiles...), v.UnionRequiredFiles()...) {
+	for _, f := range v.RequiredFilesForSmokeScope() {
 		lower := strings.ToLower(filepath.ToSlash(strings.TrimSpace(f)))
 		switch {
 		case strings.HasSuffix(lower, "app.py"),

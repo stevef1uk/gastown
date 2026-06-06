@@ -16,13 +16,12 @@ func SkipImplementationRuntimeSmoke() bool {
 	return os.Getenv("GT_SKIP_IMPLEMENTATION_SMOKE") == "1"
 }
 
-// workflowHasGoWebAndServer reports required_files includes web assets and cmd/server/main.go.
+// workflowHasGoWebAndServer reports scoped required_files includes web assets and cmd/server/main.go.
 func workflowHasGoWebAndServer(v WorkflowValidation) bool {
 	if !WorkflowUsesGo(v) {
 		return false
 	}
-	files := append([]string(nil), v.RequiredFiles...)
-	files = append(files, v.UnionRequiredFiles()...)
+	files := v.RequiredFilesForSmokeScope()
 	hasWeb := false
 	hasServer := false
 	for _, f := range files {

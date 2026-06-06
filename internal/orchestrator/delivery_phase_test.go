@@ -91,6 +91,47 @@ func TestNextDeliveryPhaseID(t *testing.T) {
 	}
 }
 
+func TestRequiredFilesForSmokeScope_phasedUsesActiveOnly(t *testing.T) {
+	v := WorkflowValidation{
+		LayoutRoot:         "linkshelf",
+		QAVerifyCommand:    "cd linkshelf && go test ./...",
+		ActivePhaseIDField: "backend-core",
+		RequiredFiles: []string{
+			"linkshelf/go.mod",
+			"linkshelf/internal/store/schema.go",
+			"linkshelf/internal/store/store.go",
+			"linkshelf/internal/api/handlers.go",
+			"linkshelf/cmd/server/main.go",
+			"linkshelf/web/index.html",
+		},
+		DeliveryPhases: []DeliveryPhase{
+			{ID: "backend-core", RequiredFiles: []string{
+				"linkshelf/go.mod",
+				"linkshelf/internal/store/schema.go",
+				"linkshelf/internal/store/store.go",
+			}},
+			{ID: "server-setup", RequiredFiles: []string{
+				"linkshelf/cmd/server/main.go",
+				"linkshelf/web/index.html",
+			}},
+		},
+	}
+	got := v.RequiredFilesForSmokeScope()
+	if len(got) != 3 {
+		t.Fatalf("smoke scope = %v, want 3 store paths", got)
+	}
+	if workflowHasGoWebAndServer(v) {
+		t.Fatal("backend-core phase must not require web+server smoke")
+	}
+	if workflowHasGoWebAndServer(v.ForActivePhase()) {
+		t.Fatal("scoped backend-core must not require web+server smoke")
+	}
+	v.ActivePhaseIDField = "server-setup"
+	if !workflowHasGoWebAndServer(v) {
+		t.Fatal("server-setup phase should require web+server smoke")
+	}
+}
+
 func TestValidatePlanBeads_activePhaseOnly(t *testing.T) {
 	v := WorkflowValidation{
 		BeadTitleContains:  "Implement ",

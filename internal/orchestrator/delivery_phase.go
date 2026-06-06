@@ -87,6 +87,25 @@ func (v WorkflowValidation) UnionRequiredFiles() []string {
 	return union
 }
 
+// RequiredFilesForSmokeScope returns paths that gate runtime smoke and web-asset checks for the
+// current workflow step. Phased rigs use the active delivery phase only — not later phases.
+func (v WorkflowValidation) RequiredFilesForSmokeScope() []string {
+	if v.HasPhasedDelivery() {
+		return v.ActiveRequiredFiles()
+	}
+	seen := make(map[string]bool)
+	var out []string
+	for _, f := range append(v.UnionRequiredFiles(), v.RequiredFiles...) {
+		f = filepath.ToSlash(strings.TrimSpace(f))
+		if f == "" || seen[f] {
+			continue
+		}
+		seen[f] = true
+		out = append(out, f)
+	}
+	return out
+}
+
 // ForActivePhase returns a copy of v with RequiredFiles and QAVerifyCommand scoped to the active phase.
 func (v WorkflowValidation) ForActivePhase() WorkflowValidation {
 	if !v.HasPhasedDelivery() {

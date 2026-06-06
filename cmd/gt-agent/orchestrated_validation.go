@@ -68,11 +68,18 @@ func pythonCompileallTarget(lowerCmd string) string {
 	return strings.Trim(fields[len(fields)-1], `"'`)
 }
 
-func taskValidation(task *orchestrator.Task) orchestrator.WorkflowValidation {
+func taskValidation(townRoot string, task *orchestrator.Task) orchestrator.WorkflowValidation {
 	if task == nil {
 		return orchestrator.DefaultWorkflowValidation()
 	}
 	v := orchestrator.ClampProfileValidation(task.Validation.WithDefaults())
+	// fetch_task JSON can omit delivery_phases; always prefer the rig profile on disk so
+	// phased QA smoke and bead scope match workflow-profile.json.
+	if townRoot != "" && task.Rig != "" {
+		if prof, ok, err := orchestrator.LoadRigWorkflowProfileFile(townRoot, task.Rig); err == nil && ok {
+			v = orchestrator.ClampProfileValidation(prof.WithDefaults())
+		}
+	}
 	return v.ForActivePhase()
 }
 
