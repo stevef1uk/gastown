@@ -100,6 +100,10 @@ var trackHandlers = map[string]trackFn{
 				!verifyFailureSupersededByCanonicalBuild(r.townRoot, r.rig, r.track.activeBead, r.track.activeBeadPath, r.track.verifyOK, r.v, cmd) {
 				r.track.verifyOK = false
 			}
+			if isImplementationVerifyCommandAttempt(cmd, r.townRoot, r.rig, r.track.activeBead, r.track.activeBeadPath, r.v) &&
+				!verifyFailureSupersededByCanonicalBuild(r.townRoot, r.rig, r.track.activeBead, r.track.activeBeadPath, r.track.verifyOK, r.v, cmd) {
+				r.clearPersistedVerifyOnFailedVerifyCmd(cmd)
+			}
 		}
 		if isBeadCloseCommand(cmd) && cmdErr == nil {
 			if r.track.verifyOK {

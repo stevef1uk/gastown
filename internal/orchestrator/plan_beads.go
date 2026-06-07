@@ -109,6 +109,11 @@ func effectiveLayoutRootForBeadTitle(v WorkflowValidation) string {
 // ExtractPathFromBeadTitle returns a repo-relative file path from an implementation bead title.
 func ExtractPathFromBeadTitle(title, titlePrefix string) string {
 	title = strings.TrimSpace(title)
+	if strings.TrimSpace(titlePrefix) == "" {
+		if strings.HasPrefix(strings.ToLower(title), "implement ") {
+			title = strings.TrimSpace(title[len("Implement"):])
+		}
+	}
 	prefix := titlePrefix
 	if strings.TrimSpace(prefix) != "" {
 		lowerTitle := strings.ToLower(title)

@@ -168,6 +168,46 @@ func isImplementationVerifyCommandOK(cmd, townRoot, rig, activeBead string, v or
 	return isQATestCommandOK(cmd, v)
 }
 
+// isImplementationVerifyCommandAttempt reports whether cmd is a verify attempt for the active bead
+// (shape match only — exit code not checked).
+func isImplementationVerifyCommandAttempt(cmd, townRoot, rig, activeBead, activeBeadPath string, v orchestrator.WorkflowValidation) bool {
+	if isImplementationVerifyCommandOK(cmd, townRoot, rig, activeBead, v) {
+		return true
+	}
+	if !orchestrator.WorkflowUsesGo(v) || rig == "" || strings.TrimSpace(activeBead) == "" {
+		return false
+	}
+	beadPath := orchestrator.ImplementBeadPathForID(townRoot, rig, activeBead, v)
+	if beadPath == "" {
+		beadPath = strings.TrimSpace(activeBeadPath)
+	}
+	if beadPath == "" {
+		return false
+	}
+	mayorDir := filepath.Join(townRoot, rig, "mayor", "rig")
+	compile := orchestrator.GoCompileVerifyCommandForBead(v, mayorDir, beadPath)
+	if compile != "" && (goVerifyCommandMatches(cmd, compile, v) || commandMatchesQAVerify(cmd, compile)) {
+		return true
+	}
+	lower := strings.ToLower(cmd)
+	layout := strings.Trim(strings.TrimSpace(v.LayoutRoot), "/")
+	if layout == "" || !strings.Contains(lower, layout) {
+		return false
+	}
+	if !strings.Contains(lower, "go test") && !strings.Contains(lower, "go build") {
+		return false
+	}
+	pkgDir := filepath.ToSlash(filepath.Dir(beadPath))
+	if strings.Contains(lower, strings.ToLower(pkgDir)) {
+		return true
+	}
+	relPkg := strings.TrimPrefix(pkgDir, layout+"/")
+	if relPkg != "" && strings.Contains(lower, "./"+strings.ToLower(relPkg)) {
+		return true
+	}
+	return false
+}
+
 // goVerifyCommandMatches accepts agent commands that cd into layout via rig/mayor/rig paths
 // while verify hints use layout-relative cd (cd linkshelf && go mod tidy).
 func goVerifyCommandMatches(cmd, verify string, v orchestrator.WorkflowValidation) bool {

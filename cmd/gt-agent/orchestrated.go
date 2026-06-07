@@ -1733,7 +1733,7 @@ func validatePlanMDBeadIDs(townRoot, rig, planPath string, v orchestrator.Workfl
 	if err != nil {
 		return err
 	}
-	open, err := orchestrator.ListImplementBeadsOpenOrInProgress(townRoot, rig, v)
+	open, err := listOpenImplementationBeads(townRoot, rig)
 	if err != nil {
 		return err
 	}

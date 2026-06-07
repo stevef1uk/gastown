@@ -382,7 +382,16 @@ func implementationPathScore(p string) int {
 	case strings.Contains(lower, "/internal/store/"):
 		return 10
 	case strings.Contains(lower, "/web/"):
-		return 15
+		if strings.HasSuffix(lower, "index.html") {
+			return 18
+		}
+		if strings.HasSuffix(lower, ".css") {
+			return 15
+		}
+		if strings.HasSuffix(lower, ".js") {
+			return 16
+		}
+		return 17
 	case strings.Contains(lower, "/internal/api/"):
 		return 20
 	case strings.HasSuffix(lower, "_test.go"):

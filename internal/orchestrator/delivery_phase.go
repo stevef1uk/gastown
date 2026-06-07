@@ -212,8 +212,105 @@ func moveDockerPathsToFinalDeliveryPhase(v WorkflowValidation) WorkflowValidatio
 	return v
 }
 
+// inferDefaultDeliveryPhases splits flat Go+web required_files into delivery waves when the
+// profile omitted delivery_phases (common for Link Shelf–scale specs).
+func inferDefaultDeliveryPhases(v WorkflowValidation) []DeliveryPhase {
+	files := normalizePathList(v.RequiredFiles)
+	if len(files) < 5 || len(files) > 25 || !WorkflowUsesGo(v) {
+		return nil
+	}
+	layout := strings.Trim(strings.TrimSpace(v.LayoutRoot), "/")
+	var goMod, store, api, server, webStatic, webHTML []string
+	for _, f := range files {
+		lower := strings.ToLower(f)
+		switch {
+		case strings.HasSuffix(lower, "go.mod"):
+			goMod = append(goMod, f)
+		case strings.Contains(lower, "/internal/store/"):
+			store = append(store, f)
+		case strings.Contains(lower, "/internal/api/"):
+			api = append(api, f)
+		case strings.Contains(lower, "/cmd/"):
+			server = append(server, f)
+		case strings.Contains(lower, "/web/") && strings.HasSuffix(lower, "index.html"):
+			webHTML = append(webHTML, f)
+		case strings.Contains(lower, "/web/"):
+			webStatic = append(webStatic, f)
+		}
+	}
+	if len(goMod) == 0 || len(store) == 0 {
+		return nil
+	}
+	if len(webStatic) == 0 && len(webHTML) == 0 {
+		return nil
+	}
+	modQA := goModVerifyCommand(layout)
+	fullQA := strings.TrimSpace(v.QAVerifyCommand)
+	var phases []DeliveryPhase
+	phases = append(phases, DeliveryPhase{
+		ID: "go-module", Title: "Go module", RequiredFiles: goMod, QAVerifyCommand: modQA,
+	})
+	if len(store) > 0 {
+		phases = append(phases, DeliveryPhase{
+			ID: "store-layer", Title: "Store layer",
+			RequiredFiles:   OrderRequiredFilesForImplementation(store),
+			QAVerifyCommand: goPackageVerifyCommand(layout, "./internal/store/..."),
+		})
+	}
+	if len(api) > 0 {
+		phases = append(phases, DeliveryPhase{
+			ID: "api-handlers", Title: "HTTP handlers", RequiredFiles: api,
+			QAVerifyCommand: goPackageVerifyCommand(layout, "./internal/api/..."),
+		})
+	}
+	if len(server) > 0 {
+		phases = append(phases, DeliveryPhase{
+			ID: "server-main", Title: "Server entrypoint", RequiredFiles: server,
+			QAVerifyCommand: goPackageVerifyCommand(layout, "./cmd/server/..."),
+		})
+	}
+	if len(webStatic) > 0 {
+		phases = append(phases, DeliveryPhase{
+			ID: "web-static", Title: "Web static assets",
+			RequiredFiles: OrderRequiredFilesForImplementation(webStatic),
+		})
+	}
+	if len(webHTML) > 0 {
+		q := fullQA
+		if q == "" {
+			q = goPackageVerifyCommand(layout, "./...")
+		}
+		phases = append(phases, DeliveryPhase{
+			ID: "web-shell", Title: "Web HTML shell", RequiredFiles: webHTML, QAVerifyCommand: q,
+		})
+	}
+	if len(phases) < 2 {
+		return nil
+	}
+	return phases
+}
+
+func goModVerifyCommand(layout string) string {
+	if layout == "" || layout == "." {
+		return "go mod tidy"
+	}
+	return "cd " + layout + " && go mod tidy"
+}
+
+func goPackageVerifyCommand(layout, pkg string) string {
+	if layout == "" || layout == "." {
+		return "go test " + pkg
+	}
+	return "cd " + layout + " && go test " + pkg
+}
+
 // FinalizeDeliveryPhases unions phase file lists into RequiredFiles, sets default active phase, normalizes paths.
 func FinalizeDeliveryPhases(v WorkflowValidation) WorkflowValidation {
+	if len(v.DeliveryPhases) == 0 {
+		if inferred := inferDefaultDeliveryPhases(v); len(inferred) > 0 {
+			v.DeliveryPhases = inferred
+		}
+	}
 	if len(v.DeliveryPhases) == 0 {
 		return v
 	}

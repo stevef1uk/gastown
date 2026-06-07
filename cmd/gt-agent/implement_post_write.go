@@ -165,17 +165,27 @@ func (r *stateRunner) runPostWriteHTTPContract(relPath string, combined *strings
 	if !orchestrator.IsHTTPContractRelevantPath(relPath) {
 		return
 	}
-	if err := orchestrator.ValidateHTTPContract(r.townRoot, r.rig, r.v); err != nil {
-		r.track.hadCmdFailure = true
-		r.track.verifyOK = false
-		msg := fmt.Sprintf("HTTP contract check failed after %s: %v\nReconcile handlers.go with web/index.html per architecture.md before bd close.\n\n", relPath, err)
-		combined.WriteString(msg)
-		orchestratedFprintfStderr("[gt-agent] %s", msg)
-		errStr := err.Error()
-		if strings.Contains(errStr, "RequestURI") || strings.Contains(errStr, "ServeMux") {
-			if hint := orchestrator.FormatHandlerTraversalRedirectHint(r.townRoot, r.rig, relPath, r.v); hint != "" {
-				combined.WriteString(hint + "\n\n")
-			}
+	blocking, warnings, err := orchestrator.ValidateHTTPContractSplit(r.townRoot, r.rig, r.v)
+	if err != nil {
+		orchestratedFprintfStderr("[gt-agent] HTTP contract check: %v\n", err)
+		return
+	}
+	for _, w := range warnings {
+		combined.WriteString(fmt.Sprintf("HTTP contract note (non-blocking): %s\n", w))
+		orchestratedPrintf("[gt-agent] HTTP contract note: %s\n", w)
+	}
+	if len(blocking) == 0 {
+		return
+	}
+	r.track.hadCmdFailure = true
+	r.track.verifyOK = false
+	msg := fmt.Sprintf("HTTP contract check failed after %s: %s\nReconcile handlers.go with web/index.html per architecture.md before bd close.\n\n", relPath, strings.Join(blocking, "; "))
+	combined.WriteString(msg)
+	orchestratedFprintfStderr("[gt-agent] %s", msg)
+	errStr := strings.Join(blocking, "; ")
+	if strings.Contains(errStr, "RequestURI") || strings.Contains(errStr, "ServeMux") {
+		if hint := orchestrator.FormatHandlerTraversalRedirectHint(r.townRoot, r.rig, relPath, r.v); hint != "" {
+			combined.WriteString(hint + "\n\n")
 		}
 	}
 }

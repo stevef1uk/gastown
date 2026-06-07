@@ -136,6 +136,7 @@ func (r *stateRunner) initImplementationProgress() string {
 	r.scrubStaleImplementationProgressMilestones()
 	r.applyImplementationProgressToTrack()
 	r.clearStaleImplementationVerifyFailureOnResume()
+	r.clearStaleImplementationVerifyMilestoneOnResume()
 	block := r.formatImplementationProgressBlock()
 	if nudge := r.formatActiveBeadReadyToCloseBlock(); nudge != "" {
 		if block != "" {
@@ -215,7 +216,9 @@ func (r *stateRunner) implementBeadCloseArtifactsReady() bool {
 	return true
 }
 
-// rejectRedundantImplementEditAfterVerify blocks cosmetic EDIT/WRITE churn once verify is green.
+// rejectRedundantImplementEditAfterVerify blocks cosmetic EDIT/WRITE churn once verify is green
+// in this session. Persisted verify milestones alone must not block fixes (bd close still requires
+// a green Verify run this session).
 func (r *stateRunner) rejectRedundantImplementEditAfterVerify(relPath string) error {
 	if r == nil || r.track == nil {
 		return nil
@@ -227,14 +230,7 @@ func (r *stateRunner) rejectRedundantImplementEditAfterVerify(relPath string) er
 	if r.implProgress != nil && r.implProgress.done(implClosedKey(beadID)) {
 		return nil
 	}
-	verifyGreen := r.track.verifyOK
-	if !verifyGreen && (r.implProgress == nil || !r.implProgress.done(implVerifyKey(beadID))) {
-		return nil
-	}
-	if !verifyGreen && r.implProgress != nil && r.implProgress.done(implVerifyKey(beadID)) {
-		verifyGreen = true
-	}
-	if !verifyGreen {
+	if !r.track.verifyOK {
 		return nil
 	}
 	if !r.implementBeadCloseArtifactsReady() {
@@ -266,7 +262,7 @@ func (r *stateRunner) formatImplementBeadCloseNudge() string {
 	if r.implProgress != nil && r.implProgress.done(implClosedKey(beadID)) {
 		return ""
 	}
-	verifyGreen := r.track.verifyOK || (r.implProgress != nil && r.implProgress.done(implVerifyKey(beadID)))
+	verifyGreen := r.track.verifyOK
 	if !verifyGreen || !r.implementBeadCloseArtifactsReady() {
 		return ""
 	}
@@ -316,6 +312,94 @@ func (r *stateRunner) clearStaleImplementationVerifyFailureOnResume() {
 	} else {
 		orchestratedPrintf("[gt-agent] cleared stale verify-fail for bead %s (verify green on resume)\n", r.track.activeBead)
 	}
+}
+
+// clearStaleImplementationVerifyMilestoneOnResume drops a persisted verify checkpoint when the
+// active bead's verify command is red again (e.g. broken *_test.go after a prior flaky green run).
+func (r *stateRunner) clearStaleImplementationVerifyMilestoneOnResume() {
+	if r.implProgress == nil || r.track == nil || r.track.activeBead == "" {
+		return
+	}
+	if !r.implProgress.done(implVerifyKey(r.track.activeBead)) {
+		return
+	}
+	if r.track.verifyOK {
+		return
+	}
+	out, failed := r.runActiveBeadVerifyCommand()
+	if !failed {
+		r.track.verifyOK = true
+		if saveErr := saveImplementationProgress(r.townRoot, r.rig, r.implProgress); saveErr != nil {
+			orchestratedFprintfStderr("[gt-agent] implementation progress save: %v\n", saveErr)
+		}
+		return
+	}
+	r.clearPersistedVerifyMilestone(r.track.activeBead)
+	if orchestrator.WorkflowUsesGo(r.v) {
+		r.noteImplementationVerifyFailure(r.activeBeadVerifyCommand(), out)
+		return
+	}
+	if saveErr := saveImplementationProgress(r.townRoot, r.rig, r.implProgress); saveErr != nil {
+		orchestratedFprintfStderr("[gt-agent] implementation progress save: %v\n", saveErr)
+	} else {
+		orchestratedPrintf("[gt-agent] cleared stale verify milestone for bead %s (verify red on resume)\n", r.track.activeBead)
+	}
+}
+
+func (r *stateRunner) activeBeadVerifyCommand() string {
+	beadPath := strings.TrimSpace(r.activeImplementBeadPath())
+	if beadPath == "" {
+		return ""
+	}
+	mayorDir := rigMayorRigDir(r.townRoot, r.rig)
+	verifyCmd := orchestrator.GoCompileVerifyCommandForBead(r.v, mayorDir, beadPath)
+	if verifyCmd == "" {
+		verifyCmd = orchestrator.ImplementationVerifyCommandForBead(r.v, mayorDir, beadPath)
+	}
+	if verifyCmd == "" {
+		return ""
+	}
+	if fixed, ok := rewriteUnittestToWorkdir(verifyCmd, r.rig, r.v); ok {
+		verifyCmd = fixed
+	}
+	return verifyCmd
+}
+
+func (r *stateRunner) runActiveBeadVerifyCommand() (string, bool) {
+	verifyCmd := r.activeBeadVerifyCommand()
+	if verifyCmd == "" {
+		return "", false
+	}
+	out, err := r.runShellCommand(verifyCmd, r.workDir(), "", r.commandEnv(os.Environ()))
+	outStr := string(out)
+	if err != nil || goToolOutputLooksFailed(verifyCmd, outStr) {
+		return outStr, true
+	}
+	return outStr, false
+}
+
+func (r *stateRunner) clearPersistedVerifyMilestone(beadID string) {
+	beadID = strings.TrimSpace(beadID)
+	if r.implProgress == nil || beadID == "" || r.implProgress.Completed == nil {
+		return
+	}
+	if !r.implProgress.Completed[implVerifyKey(beadID)] {
+		return
+	}
+	delete(r.implProgress.Completed, implVerifyKey(beadID))
+	if saveErr := saveImplementationProgress(r.townRoot, r.rig, r.implProgress); saveErr != nil {
+		orchestratedFprintfStderr("[gt-agent] implementation progress save: %v\n", saveErr)
+	}
+}
+
+func (r *stateRunner) clearPersistedVerifyOnFailedVerifyCmd(cmd string) {
+	if r == nil || r.track == nil || r.track.activeBead == "" {
+		return
+	}
+	if !isImplementationVerifyCommandAttempt(cmd, r.townRoot, r.rig, r.track.activeBead, r.track.activeBeadPath, r.v) {
+		return
+	}
+	r.clearPersistedVerifyMilestone(r.track.activeBead)
 }
 
 // scrubStaleImplementationProgressMilestones drops closed/verify checkpoints when the bead file is gone
@@ -492,9 +576,9 @@ func (r *stateRunner) formatImplementationProgressBlock() string {
 		b.WriteString(fmt.Sprintf("- ✓ Bead **%s** was closed in a prior run.\n", id))
 	}
 
-	if r.track != nil && r.track.activeBead != "" && r.implProgress.done(implVerifyKey(r.track.activeBead)) {
+	if r.track != nil && r.track.activeBead != "" && r.track.verifyOK {
 		if next, err := orchestrator.NextOpenImplementBead(r.townRoot, r.rig, r.v); err == nil && next != nil && next.ID != "" && next.ID == r.track.activeBead {
-			b.WriteString(fmt.Sprintf("\nActive bead **%s** (`%s`) has green Verify — if the file is complete, run `bd close %s` (do not re-EDIT for formatting).\n",
+			b.WriteString(fmt.Sprintf("\nActive bead **%s** (`%s`) has green Verify this session — run `bd close %s` (do not re-EDIT for formatting).\n",
 				r.track.activeBead, r.activeImplementBeadPath(), r.track.activeBead))
 		} else if next != nil && next.ID != "" && next.ID != r.track.activeBead {
 			b.WriteString(fmt.Sprintf("\nPersisted active bead **%s** is not the queue head — **Next bead** is **%s**. Run `CMD: bd update %s --status=in_progress` (gt-agent cleared stale in_progress lock).\n",
