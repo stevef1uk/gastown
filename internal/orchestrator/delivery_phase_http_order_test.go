@@ -33,6 +33,24 @@ func TestReorderDeliveryPhasesWebBeforeHTTPHandlers(t *testing.T) {
 		t.Fatalf("web phases must precede handler phase: handlerIdx=%d firstWebIdx=%d phases=%v",
 			handlerIdx, firstWebIdx, phaseIDs(got.DeliveryPhases))
 	}
+	wantOrder := []string{"go-module", "store-layer", "web-static", "web-shell", "api-handlers", "server-main"}
+	if ids := phaseIDs(got.DeliveryPhases); strings.Join(ids, ",") != strings.Join(wantOrder, ",") {
+		t.Fatalf("phase order = %v, want %v", ids, wantOrder)
+	}
+}
+
+func TestReorderDeliveryPhasesWebBeforeHTTPHandlers_preservesUnrelatedOrder(t *testing.T) {
+	v := WorkflowValidation{
+		DeliveryPhases: []DeliveryPhase{
+			{ID: "setup-infrastructure", RequiredFiles: []string{"backend/main.py"}},
+			{ID: "backend-core", RequiredFiles: []string{"backend/db/schema.sql", "Dockerfile", "docker-compose.yml"}},
+		},
+	}
+	got := reorderDeliveryPhasesWebBeforeHTTPHandlers(v)
+	want := []string{"setup-infrastructure", "backend-core"}
+	if ids := phaseIDs(got.DeliveryPhases); strings.Join(ids, ",") != strings.Join(want, ",") {
+		t.Fatalf("phase order = %v, want %v", ids, want)
+	}
 }
 
 func phaseIDs(phases []DeliveryPhase) []string {

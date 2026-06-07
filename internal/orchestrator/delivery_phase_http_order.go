@@ -5,72 +5,67 @@ import (
 	"strings"
 )
 
-type deliveryPhaseScored struct {
-	phase DeliveryPhase
-	score int
-	web   bool
-	http  bool
-}
-
-// reorderDeliveryPhasesWebBeforeHTTPHandlers moves delivery phases whose paths are
-// all web assets ahead of phases that include HTTP handler production files.
-// Spec-index LLMs often emit api-handlers before web-static; handler unit tests need web/ on disk.
+// reorderDeliveryPhasesWebBeforeHTTPHandlers moves web-only delivery phases that appear
+// after the first HTTP handler phase to just before that handler phase. Other phase order
+// (store before main, docker in final phase, etc.) is preserved.
 func reorderDeliveryPhasesWebBeforeHTTPHandlers(v WorkflowValidation) WorkflowValidation {
-	if len(v.DeliveryPhases) < 2 {
+	phases := v.DeliveryPhases
+	if len(phases) < 2 {
 		return v
 	}
-	items := make([]deliveryPhaseScored, 0, len(v.DeliveryPhases))
-	for _, p := range v.DeliveryPhases {
-		if len(p.RequiredFiles) == 0 {
-			items = append(items, deliveryPhaseScored{phase: p, score: 999})
+	handlerIdx := firstHTTPHandlerPhaseIndex(phases)
+	if handlerIdx < 0 {
+		return v
+	}
+	var webLate []DeliveryPhase
+	rest := make([]DeliveryPhase, 0, len(phases))
+	for i, p := range phases {
+		if isWebOnlyDeliveryPhase(p) && i > handlerIdx {
+			webLate = append(webLate, p)
 			continue
 		}
-		minScore := 999
-		webOnly := true
-		hasHTTP := false
-		for _, f := range p.RequiredFiles {
-			f = filepath.ToSlash(strings.TrimSpace(f))
-			if f == "" {
-				continue
-			}
-			s := implementationPathScore(f)
-			if s < minScore {
-				minScore = s
-			}
-			if !strings.Contains(f, "/web/") {
-				webOnly = false
-			}
-			if IsHTTPHandlerImplementPath(f) {
-				hasHTTP = true
-			}
-		}
-		items = append(items, deliveryPhaseScored{phase: p, score: minScore, web: webOnly, http: hasHTTP})
+		rest = append(rest, p)
 	}
-	for i := 0; i < len(items); i++ {
-		for j := i + 1; j < len(items); j++ {
-			if deliveryPhaseOrderLess(items[j], items[i]) {
-				items[i], items[j] = items[j], items[i]
-			}
-		}
+	if len(webLate) == 0 {
+		return v
 	}
-	out := make([]DeliveryPhase, len(items))
-	for i := range items {
-		out[i] = items[i].phase
+	insertAt := firstHTTPHandlerPhaseIndex(rest)
+	if insertAt < 0 {
+		return v
 	}
+	out := append(append([]DeliveryPhase{}, rest[:insertAt]...), webLate...)
+	out = append(out, rest[insertAt:]...)
 	v.DeliveryPhases = out
 	return v
 }
 
-func deliveryPhaseOrderLess(a, b deliveryPhaseScored) bool {
-	// Web-only phases before any phase that ships HTTP handler production code.
-	if a.web && !a.http && b.http {
-		return true
+func firstHTTPHandlerPhaseIndex(phases []DeliveryPhase) int {
+	for i, p := range phases {
+		if deliveryPhaseHasHTTPHandler(p) {
+			return i
+		}
 	}
-	if b.web && !b.http && a.http {
+	return -1
+}
+
+func deliveryPhaseHasHTTPHandler(p DeliveryPhase) bool {
+	for _, f := range p.RequiredFiles {
+		if IsHTTPHandlerImplementPath(filepath.ToSlash(strings.TrimSpace(f))) {
+			return true
+		}
+	}
+	return false
+}
+
+func isWebOnlyDeliveryPhase(p DeliveryPhase) bool {
+	if len(p.RequiredFiles) == 0 {
 		return false
 	}
-	if a.score != b.score {
-		return a.score < b.score
+	for _, f := range p.RequiredFiles {
+		f = filepath.ToSlash(strings.TrimSpace(f))
+		if f == "" || !strings.Contains(f, "/web/") {
+			return false
+		}
 	}
-	return strings.TrimSpace(a.phase.ID) < strings.TrimSpace(b.phase.ID)
+	return true
 }
