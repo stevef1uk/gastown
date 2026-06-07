@@ -148,6 +148,8 @@ func RunPreRunHook(step, townRoot, rig string, v WorkflowValidation) (string, er
 		return EnsureHTTPImplementationRigConfigLog(townRoot, rig, v)
 	case "ensure_implement_smoke_ready":
 		return EnsureImplementSmokeReadyLog(townRoot, rig, v)
+	case "ensure_handler_phase_prerequisites":
+		return EnsureHandlerPhasePrerequisitesLog(townRoot, rig, v)
 	case "reopen_implement_beads", "reconcile_implement_beads":
 		log, err := ReconcileImplementBeads(townRoot, rig, v)
 		if err != nil {

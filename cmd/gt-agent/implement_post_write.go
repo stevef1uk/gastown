@@ -101,6 +101,11 @@ func (r *stateRunner) runPostNativeWriteVerify(relPath string, sessionName strin
 		out, err = r.runShellCommand(verifyCmd, workDir, sessionName, cmdEnv)
 		outStr = string(out)
 	}
+	if err != nil && r.tryHandlerTestStoreDBAutoFix(mayorDir, outStr, combined) {
+		orchestratedPrintf("[gt-agent] retrying verify after handler TestMain store.DB auto-fix\n")
+		out, err = r.runShellCommand(verifyCmd, workDir, sessionName, cmdEnv)
+		outStr = string(out)
+	}
 	if err != nil || orchestrator.GoToolOutputMatchedNoPackages(outStr) {
 		if err == nil {
 			err = fmt.Errorf("go matched no packages (no .go sources in target path)")

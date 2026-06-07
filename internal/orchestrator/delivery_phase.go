@@ -315,6 +315,7 @@ func FinalizeDeliveryPhases(v WorkflowValidation) WorkflowValidation {
 		return v
 	}
 	v = moveDockerPathsToFinalDeliveryPhase(v)
+	v = reorderDeliveryPhasesWebBeforeHTTPHandlers(v)
 	seen := make(map[string]bool)
 	var union []string
 	add := func(paths []string) {
