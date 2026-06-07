@@ -213,6 +213,10 @@ func FormatGoTestFailureHints(townRoot, rig, activeBeadPath, cmdOutput string, e
 		b.WriteString(hint)
 		b.WriteString("\n")
 	}
+	if hint := FormatHandlerDeleteNotFoundHint(cmdOutput, v); hint != "" {
+		b.WriteString(hint)
+		b.WriteString("\n")
+	}
 	if GoTestOutputSuggestsTraversalRedirect(townRoot, rig, v, cmdOutput) {
 		if hint := FormatHandlerTraversalRedirectHint(townRoot, rig, activeBeadPath, v); hint != "" {
 			b.WriteString(hint)

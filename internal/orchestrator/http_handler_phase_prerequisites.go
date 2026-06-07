@@ -58,7 +58,7 @@ func EnsureHandlerPhasePrerequisitesLog(townRoot, rig string, v WorkflowValidati
 }
 
 func ensureMinimalWebAssetsForHandlerTests(rigDir string, v WorkflowValidation) ([]string, error) {
-	missing := MissingWebAssetPaths(rigDir, v)
+	missing := MissingWebAssetPaths(rigDir, webAssetValidationProfile(v))
 	if len(missing) == 0 {
 		return nil, nil
 	}
@@ -150,6 +150,60 @@ func TryAutoFixHandlerTestStoreDB(mayorRigDir string, v WorkflowValidation, cmdO
 		return nil, nil
 	}
 	return ensureHandlerTestMainStoreDB(mayorRigDir, v)
+}
+
+// webAssetValidationProfile uses the full phased file union so handler-phase pre_run
+// scaffolds web/ even when active_phase required_files is only handlers.go.
+func webAssetValidationProfile(v WorkflowValidation) WorkflowValidation {
+	if len(v.DeliveryPhases) == 0 {
+		return v
+	}
+	union := v.UnionRequiredFiles()
+	if len(union) == 0 {
+		return v
+	}
+	out := v
+	out.RequiredFiles = append([]string(nil), union...)
+	return out
+}
+
+// GoTestOutputSuggestsHandlerWebMissing reports handler httptest 404s that need web/ on disk.
+func GoTestOutputSuggestsHandlerWebMissing(cmdOutput string) bool {
+	if !goTestOutputSuggestsFailure(cmdOutput) || !strings.Contains(cmdOutput, "handlers_test.go") {
+		return false
+	}
+	if !strings.Contains(cmdOutput, "got 404") && !strings.Contains(cmdOutput, "StatusNotFound") {
+		return false
+	}
+	return strings.Contains(cmdOutput, "TestHandleRoot") || strings.Contains(cmdOutput, "TestHandleStatic")
+}
+
+// TryScaffoldWebAssetsForHandlerTestFailure creates minimal web/ assets when handler tests 404.
+func TryScaffoldWebAssetsForHandlerTestFailure(mayorRigDir string, v WorkflowValidation, cmdOutput string) ([]string, error) {
+	if mayorRigDir == "" || !GoTestOutputSuggestsHandlerWebMissing(cmdOutput) {
+		return nil, nil
+	}
+	return ensureMinimalWebAssetsForHandlerTests(mayorRigDir, v)
+}
+
+// FormatHandlerDeleteNotFoundHint explains DELETE 404 tests that get 204 from silent store.Delete.
+func FormatHandlerDeleteNotFoundHint(cmdOutput string, v WorkflowValidation) string {
+	if !strings.Contains(cmdOutput, "TestHandleDeleteLinkNotFound") {
+		return ""
+	}
+	if !strings.Contains(cmdOutput, "got 204") && !strings.Contains(cmdOutput, "StatusNoContent") {
+		return ""
+	}
+	layout := strings.Trim(strings.TrimSpace(v.LayoutRoot), "/")
+	storePath := layout + "/internal/store/store.go"
+	var b strings.Builder
+	b.WriteString("### Handler test: DELETE missing ID must return 404\n")
+	b.WriteString("`TestHandleDeleteLinkNotFound` expects **404**, not **204**. `store.Delete` likely succeeds when zero rows are deleted.\n")
+	b.WriteString("Fix options (then re-run **Verify**):\n")
+	b.WriteString("1. **EDIT:** `" + storePath + "` — after `DELETE`, check `RowsAffected()` and return an error when zero rows (handler maps that to 404).\n")
+	b.WriteString("2. **EDIT:** active `handleDeleteLink` — return 404 when `store.Delete` returns a not-found error.\n")
+	b.WriteString("Do **not** send JSON success until `go test ./internal/api/...` is green in this session.\n")
+	return strings.TrimSpace(b.String())
 }
 
 func handlerTestRelForHarness(rigDir string, v WorkflowValidation) string {

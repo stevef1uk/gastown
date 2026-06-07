@@ -96,6 +96,11 @@ func (r *stateRunner) runPostNativeWriteVerify(relPath string, sessionName strin
 			outStr = string(out)
 		}
 	}
+	if err != nil && r.tryHandlerWebScaffoldAutoFix(mayorDir, outStr, combined) {
+		orchestratedPrintf("[gt-agent] retrying verify after handler web scaffold auto-fix\n")
+		out, err = r.runShellCommand(verifyCmd, workDir, sessionName, cmdEnv)
+		outStr = string(out)
+	}
 	if err != nil && r.tryHandlerWebCwdAutoFix(mayorDir, outStr, combined) {
 		orchestratedPrintf("[gt-agent] retrying verify after handler web cwd auto-fix\n")
 		out, err = r.runShellCommand(verifyCmd, workDir, sessionName, cmdEnv)

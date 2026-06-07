@@ -59,6 +59,31 @@ func TestMain(m *testing.M) {
 	}
 }
 
+func TestTryScaffoldWebAssetsForHandlerTestFailure(t *testing.T) {
+	dir := t.TempDir()
+	rigDir := filepath.Join(dir, "mayor", "rig")
+	v := handlerPrereqProfile()
+	out := `--- FAIL: TestHandleRoot (0.00s)
+    handlers_test.go:40: expected status 200, got 404
+FAIL`
+	created, err := TryScaffoldWebAssetsForHandlerTestFailure(rigDir, v, out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(created) != 3 {
+		t.Fatalf("created = %v", created)
+	}
+}
+
+func TestFormatHandlerDeleteNotFoundHint(t *testing.T) {
+	out := `--- FAIL: TestHandleDeleteLinkNotFound (0.00s)
+    handlers_test.go:164: expected status 404, got 204`
+	h := FormatHandlerDeleteNotFoundHint(out, WorkflowValidation{LayoutRoot: "linkshelf"})
+	if h == "" || !strings.Contains(h, "RowsAffected") {
+		t.Fatalf("hint = %q", h)
+	}
+}
+
 func TestEnsureMinimalWebAssetsForHandlerTests(t *testing.T) {
 	dir := t.TempDir()
 	rigDir := filepath.Join(dir, "mayor", "rig")
