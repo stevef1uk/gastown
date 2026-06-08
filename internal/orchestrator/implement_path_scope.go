@@ -96,7 +96,8 @@ func validateImplementWriteScope(townRoot, rig, activeBead, written string, v Wo
 				break
 			}
 		}
-		if !allowStubFix {
+		// Allow writes during QA rework even when the queue is green (QA sent work back).
+		if !allowStubFix && !scope.QAReworkFromQAReview {
 			return fmt.Errorf("implementation queue is finished and go test ./... passes — do not EDIT/WRITE implement files; send JSON {\"outcome\":\"success\",\"summary\":\"...\"} only")
 		}
 	}

@@ -238,7 +238,32 @@ func ReconcileImplementBeads(townRoot, rig string, v WorkflowValidation) (string
 		if phaseErr != nil {
 			label = "auto-closed frontend (verify green)"
 		}
-		parts = append(parts, label+": "+joinStrings(autoClosed, ", "))
+		// During QA rework, reopen beads that QA explicitly cited so the polecat
+		// sees them as open and the implement_bead_context injector shows the SPEC contract.
+		qaIDs := QAReopenedBeadIDs(townRoot, rig)
+		if len(qaIDs) > 0 {
+			qaSet := make(map[string]bool, len(qaIDs))
+			for _, id := range qaIDs {
+				qaSet[strings.TrimSpace(id)] = true
+			}
+			remaining := autoClosed[:0]
+			for _, closedID := range autoClosed {
+				if qaSet[closedID] {
+					if err := bdUpdateImplementBeadStatus(townRoot, rig, closedID, "open"); err != nil {
+						parts = append(parts, fmt.Sprintf("could not reopen QA bead %s: %v", closedID, err))
+						remaining = append(remaining, closedID)
+						continue
+					}
+					parts = append(parts, "reopened for QA rework: "+closedID)
+					continue
+				}
+				remaining = append(remaining, closedID)
+			}
+			autoClosed = remaining
+		}
+		if len(autoClosed) > 0 {
+			parts = append(parts, label+": "+joinStrings(autoClosed, ", "))
+		}
 	}
 	if phaseErr != nil && ImplementationVerifyNeedsRuntimeRework(phaseErr) {
 		reopened, rerr := ReopenImplementationBeadsAfterSmokeFailure(townRoot, rig, v, phaseErr)

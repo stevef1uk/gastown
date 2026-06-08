@@ -44,6 +44,35 @@ func EnsureImplementBeadsAvailable(townRoot, rig string, v WorkflowValidation) (
 	return reopenClosedImplementBeads(townRoot, rig, v)
 }
 
+// QAReopenedBeadIDs returns the IDs of beads that were reopened due to a pending QA failure
+// rework. During QA rework the reconcile step must not auto-close these beads — the polecat
+// needs them open so the implement_bead_context injector shows the SPEC contract to fix.
+func QAReopenedBeadIDs(townRoot, rig string) []string {
+	if townRoot == "" || rig == "" {
+		return nil
+	}
+	snap, err := LoadInstancesSnapshot(townRoot)
+	if err != nil || snap == nil {
+		return nil
+	}
+	for _, inst := range snap.Instances {
+		if inst.TemplateID != "rig-flow" {
+			continue
+		}
+		if inst.Variables == nil || inst.Variables["rig"] != rig {
+			continue
+		}
+		rw := inst.PendingRework
+		if rw == nil || rw.FromState != "qa_review" {
+			return nil
+		}
+		prefix, _ := RigIssuePrefix(townRoot, rig)
+		known, _, _ := ListRigBeadIDSet(townRoot, rig)
+		return ExtractKnownRigBeadIDsFromSummary(rw.Summary, prefix, known)
+	}
+	return nil
+}
+
 // ReopenImplementationBeadsAfterQAFailure reopens closed implement beads when QA sends
 // polecat back so work can continue without manual bd update.
 func ReopenImplementationBeadsAfterQAFailure(townRoot, rig string, v WorkflowValidation, summary string) ([]string, error) {
