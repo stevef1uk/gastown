@@ -123,6 +123,29 @@ func TestSanitizeBdListCommand_limitGluedWithProse(t *testing.T) {
 	}
 }
 
+func TestSanitizeOrchestratedShellCommand_stripsLeadingMarkdownBold(t *testing.T) {
+	t.Parallel()
+	in := "** export BEADS_DIR=$GT_ROOT/testgt3/.beads && cd testgt3/mayor/rig && bd list --status=closed"
+	fixed, changed := sanitizeOrchestratedShellCommand(in)
+	if !changed {
+		t.Fatal("expected change")
+	}
+	if strings.HasPrefix(fixed, "**") {
+		t.Fatalf("leading ** still present: %q", fixed)
+	}
+	if !strings.HasPrefix(fixed, "export BEADS_DIR") {
+		t.Fatalf("want export command: %q", fixed)
+	}
+}
+
+func TestNormalizeOrchestratedToolLabel_cmdBoldColon(t *testing.T) {
+	t.Parallel()
+	got := normalizeOrchestratedToolLabel("CMD:** export BEADS_DIR=x && bd list")
+	if got != "CMD: export BEADS_DIR=x && bd list" {
+		t.Fatalf("got %q", got)
+	}
+}
+
 func TestSanitizeBdListCommand_stripsPastedOutput(t *testing.T) {
 	cmd := "export BEADS_DIR=x && cd testgt3/mayor/rig && bd list --limit=0 --status=closed(no output) | grep -Fi 'Implement linkshelf/' || true"
 	fixed, changed := sanitizeBdListCommand(cmd)

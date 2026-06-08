@@ -327,7 +327,7 @@ func unwrapMarkdownBoldToolLines(response string) string {
 			upper := strings.ToUpper(inner)
 			if strings.HasPrefix(upper, "CMD:") || strings.HasPrefix(upper, "READ:") ||
 				strings.HasPrefix(upper, "EDIT:") || strings.HasPrefix(upper, "WRITE:") {
-				out = append(out, inner)
+				out = append(out, normalizeOrchestratedToolLabel(inner))
 				continue
 			}
 		}
@@ -371,9 +371,42 @@ func scrubNativeEditLinesFromShellCommand(cmd string) (string, bool) {
 	return out, changed
 }
 
+// normalizeOrchestratedToolLabel fixes `CMD:** export` (markdown bold glued to colon).
+func normalizeOrchestratedToolLabel(line string) string {
+	line = strings.TrimSpace(line)
+	upper := strings.ToUpper(line)
+	for _, prefix := range []string{"CMD:", "READ:", "EDIT:", "WRITE:"} {
+		if !strings.HasPrefix(upper, prefix) {
+			continue
+		}
+		rest := strings.TrimSpace(line[len(prefix):])
+		rest = strings.TrimPrefix(rest, ":")
+		rest = strings.TrimPrefix(rest, "**")
+		rest = strings.TrimSpace(rest)
+		return prefix + " " + rest
+	}
+	return line
+}
+
+// stripLeadingMarkdownBoldFromShell removes leading `**` the model pastes before shell commands.
+func stripLeadingMarkdownBoldFromShell(cmd string) string {
+	trimmed := strings.TrimSpace(cmd)
+	for strings.HasPrefix(trimmed, "**") {
+		trimmed = strings.TrimSpace(strings.TrimPrefix(trimmed, "**"))
+	}
+	if strings.HasPrefix(strings.ToUpper(trimmed), "CMD:") {
+		trimmed = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(trimmed[4:]), ":"))
+	}
+	return trimmed
+}
+
 // sanitizeOrchestratedShellCommand trims model prose/JSON glued onto shell commands.
 func sanitizeOrchestratedShellCommand(cmd string) (string, bool) {
 	changed := false
+	if stripped := stripLeadingMarkdownBoldFromShell(cmd); stripped != cmd {
+		cmd = stripped
+		changed = true
+	}
 	if scrubbed, ok := scrubNativeEditLinesFromShellCommand(cmd); ok {
 		cmd = scrubbed
 		changed = true

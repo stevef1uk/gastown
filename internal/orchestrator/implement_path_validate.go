@@ -6,9 +6,18 @@ import (
 	"strings"
 )
 
+// StripMayorRigPathPrefix removes erroneous rig/mayor/rig/ prefixes from model paths.
+func StripMayorRigPathPrefix(relPath string) string {
+	relPath = filepath.ToSlash(strings.TrimSpace(relPath))
+	if i := strings.Index(relPath, "mayor/rig/"); i >= 0 {
+		return relPath[i+len("mayor/rig/"):]
+	}
+	return relPath
+}
+
 // SanitizeNativeEditRelPath strips markdown/backtick junk from READ/EDIT/WRITE paths.
 func SanitizeNativeEditRelPath(path string) string {
-	path = filepath.ToSlash(strings.TrimSpace(path))
+	path = StripMayorRigPathPrefix(filepath.ToSlash(strings.TrimSpace(path)))
 	for {
 		trimmed := strings.TrimSpace(path)
 		changed := false

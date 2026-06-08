@@ -1909,6 +1909,16 @@ func validatePlanningBeadSet(townRoot, rig string, v orchestrator.WorkflowValida
 // countOpenMatchingBeadsHook is set by tests to avoid calling bd list.
 var countOpenMatchingBeadsHook func(townRoot, rig string, v orchestrator.WorkflowValidation) (int, error)
 
+// implementationPhaseVerifyOKHook overrides on-disk phase verify (tests only).
+var implementationPhaseVerifyOKHook func(townRoot, rig string, v orchestrator.WorkflowValidation) error
+
+func implementationPhaseVerifyOKOnDisk(townRoot, rig string, v orchestrator.WorkflowValidation) error {
+	if implementationPhaseVerifyOKHook != nil {
+		return implementationPhaseVerifyOKHook(townRoot, rig, v)
+	}
+	return orchestrator.ImplementationPhaseVerifyOK(townRoot, rig, v)
+}
+
 func validateImplementationArtifacts(townRoot, rig string, hadCmdFailure, beadCloseOK, verifyOK bool, v orchestrator.WorkflowValidation) error {
 	rigDir := rigMayorRigDir(townRoot, rig)
 	scoped := v.ForActivePhase()
@@ -1938,7 +1948,7 @@ func validateImplementationArtifacts(townRoot, rig string, hadCmdFailure, beadCl
 	}
 	phaseVerify := strings.TrimSpace(scoped.QAVerifyCommand)
 	if phaseVerify != "" && !verifyOK {
-		if openImpl == 0 && orchestrator.ImplementationPhaseVerifyOK(townRoot, rig, scoped) == nil {
+		if openImpl == 0 && implementationPhaseVerifyOKOnDisk(townRoot, rig, scoped) == nil {
 			// Queue empty and phase verify is green on disk — do not require a manual verify CMD
 			// in this session after gt-agent restarts (verifyOK clears on new sessions).
 		} else {
@@ -1956,7 +1966,11 @@ func validateImplementationArtifacts(townRoot, rig string, hadCmdFailure, beadCl
 	if err := orchestrator.ValidateLayoutPythonSources(rigDir, scoped); err != nil {
 		return fmt.Errorf("invalid Python under %s: %w", scoped.LayoutRoot, err)
 	}
-	if err := orchestrator.ValidateWorkNotStubbed(rigDir, scoped); err != nil {
+	stubScope := scoped
+	if v.HasPhasedDelivery() {
+		stubScope.RequiredFiles = v.UnionRequiredFiles()
+	}
+	if err := orchestrator.ValidateRequiredFilesNotStubbed(rigDir, stubScope); err != nil {
 		return fmt.Errorf("implementation still looks like stubs: %w", err)
 	}
 	return nil

@@ -102,6 +102,47 @@ func IsDependencyManifest(displayRel string) bool {
 	return dependencyManifestNames[lower]
 }
 
+// ValidateRequiredFilesNotStubbed checks only v.RequiredFiles (no layout tree walk).
+func ValidateRequiredFilesNotStubbed(rigDir string, v WorkflowValidation) error {
+	opts := StubCheckOptionsFromValidation(v)
+	for _, rel := range v.RequiredFiles {
+		rel = filepath.ToSlash(strings.TrimSpace(rel))
+		if rel == "" {
+			continue
+		}
+		path := ResolveRequiredFileOnDisk(rigDir, rel, v.LayoutRoot)
+		if err := CheckPathNotStub(path, rel, optsForPath(rel, opts)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// UnionStubArtifactsOnDisk returns union required files that exist but still fail stub checks.
+func UnionStubArtifactsOnDisk(rigDir string, v WorkflowValidation) []string {
+	chk := v
+	if v.HasPhasedDelivery() {
+		chk.RequiredFiles = v.UnionRequiredFiles()
+	}
+	opts := StubCheckOptionsFromValidation(chk)
+	var stubbed []string
+	for _, rel := range chk.RequiredFiles {
+		rel = filepath.ToSlash(strings.TrimSpace(rel))
+		if rel == "" {
+			continue
+		}
+		path := ResolveRequiredFileOnDisk(rigDir, rel, chk.LayoutRoot)
+		data, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		if err := CheckContentNotStub(data, rel, optsForPath(rel, opts)); err != nil {
+			stubbed = append(stubbed, rel)
+		}
+	}
+	return stubbed
+}
+
 // ValidateWorkNotStubbed rejects placeholder implementations under the rig worktree.
 // Checks required_files and, when layout_root is set, other source files in that tree.
 func ValidateWorkNotStubbed(rigDir string, v WorkflowValidation) error {
@@ -118,6 +159,12 @@ func ValidateWorkNotStubbed(rigDir string, v WorkflowValidation) error {
 		if err := CheckPathNotStub(path, rel, optsForPath(rel, opts)); err != nil {
 			return err
 		}
+	}
+
+	// Phased rigs validate explicit union paths at success time; skip layout walk so
+	// earlier-phase stubs are fixed via rework writes instead of blocking unrelated work.
+	if v.HasPhasedDelivery() {
+		return nil
 	}
 
 	layout := strings.TrimSpace(v.LayoutRoot)

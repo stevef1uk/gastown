@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,12 +14,21 @@ func TestValidateImplementationArtifacts_requiresVerifyNotDiskReady(t *testing.T
 	dir := t.TempDir()
 	rig := "mockrig"
 	rigDir := setupMockRigImplementFiles(t, dir, rig)
+	countOpenMatchingBeadsHook = func(_, _ string, _ orchestrator.WorkflowValidation) (int, error) {
+		return 0, nil
+	}
+	t.Cleanup(func() { countOpenMatchingBeadsHook = nil })
+	// Force on-disk phase verify to fail — do not rely on go test timing/toolchain in CI.
+	implementationPhaseVerifyOKHook = func(_, _ string, _ orchestrator.WorkflowValidation) error {
+		return fmt.Errorf("disk verify not green")
+	}
+	t.Cleanup(func() { implementationPhaseVerifyOKHook = nil })
 	v := orchestrator.DefaultWorkflowValidation()
 	v.LayoutRoot = "linkshelf"
 	v.BeadTitleContains = "Implement "
 	v.RequiredFiles = []string{"linkshelf/internal/foo/foo.go"}
 	v.QAVerifyCommand = "cd linkshelf && go test ./..."
-	// All files on disk, no open beads, but verify never ran.
+	// All files on disk, no open beads, but verify never ran in this session.
 	err := validateImplementationArtifacts(dir, rig, false, true, false, v)
 	if err == nil {
 		t.Fatal("expected verify required")
@@ -136,7 +146,17 @@ func setupMockRigImplementFiles(t *testing.T, town, rig string) string {
 	if err := os.MkdirAll(layout, 0755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(layout, "foo.go"), []byte("package foo\n\nfunc X() {}\n"), 0644); err != nil {
+	fooGo := `package foo
+
+func X() int {
+	return 1
+}
+
+func Y() int {
+	return X() + 1
+}
+`
+	if err := os.WriteFile(filepath.Join(layout, "foo.go"), []byte(fooGo), 0644); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(rigDir, "linkshelf", "go.mod"), []byte("module linkshelf\n\ngo 1.22\n"), 0644); err != nil {

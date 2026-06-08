@@ -277,6 +277,9 @@ func validateGoImplementationCommand(cmd, townRoot, rig, mayorRigDir, activeBead
 	if orchestrator.IsFrontendImplementPath(beadPath) && strings.Contains(lower, "go test") {
 		return fmt.Errorf("frontend bead %s: go test does not apply to web assets — use EDIT:/WRITE: on the file, then bd close after the artifact validates", beadPath)
 	}
+	if strings.Contains(lower, "go test") && isFrontendGoTestCommand(lower) {
+		return fmt.Errorf("go test does not apply to web static assets (./web/...) — use EDIT:/WRITE: on CSS/JS/HTML files, then bd close when the artifact validates")
+	}
 	if isBeadCloseCommand(cmd) && !verifyOK {
 		if orchestrator.IsFrontendImplementPath(beadPath) {
 			if err := orchestrator.ValidateBeadArtifactOnDisk(mayorRigDir, beadPath, v); err != nil {
@@ -289,4 +292,13 @@ func validateGoImplementationCommand(cmd, townRoot, rig, mayorRigDir, activeBead
 		return fmt.Errorf("run green verify before bd close: %s (in this session, since verify clears on restart)", verifyHint)
 	}
 	return nil
+}
+
+func isFrontendGoTestCommand(lower string) bool {
+	for _, needle := range []string{"./web/", "./web/...", " ./web/", "go test ./web", "go test -count=1 ./web"} {
+		if strings.Contains(lower, needle) {
+			return true
+		}
+	}
+	return false
 }

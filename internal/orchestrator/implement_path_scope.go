@@ -86,8 +86,19 @@ func ValidateImplementReadPath(townRoot, rig, activeBead, relPath string, v Work
 }
 
 func validateImplementWriteScope(townRoot, rig, activeBead, written string, v WorkflowValidation, verifyOutput string, scope ImplementWriteScope) error {
+	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
 	if ImplementationQueueGreen(townRoot, rig, v) {
-		return fmt.Errorf("implementation queue is finished and go test ./... passes — do not EDIT/WRITE implement files; send JSON {\"outcome\":\"success\",\"summary\":\"...\"} only")
+		written = NormalizeBeadPathForLayout(filepath.ToSlash(strings.TrimSpace(written)), v.LayoutRoot)
+		allowStubFix := false
+		for _, stub := range UnionStubArtifactsOnDisk(rigDir, v) {
+			if PathMatchesImplementWrite(written, stub, v.RequiredFiles, v) {
+				allowStubFix = true
+				break
+			}
+		}
+		if !allowStubFix {
+			return fmt.Errorf("implementation queue is finished and go test ./... passes — do not EDIT/WRITE implement files; send JSON {\"outcome\":\"success\",\"summary\":\"...\"} only")
+		}
 	}
 	allowedID := strings.TrimSpace(activeBead)
 	if allowedID == "" {
