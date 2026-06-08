@@ -304,6 +304,10 @@ func FormatClosedDependencyCompileHints(townRoot, rig, activeBeadPath string, er
 // Returns false when writtenPath's implement bead(s) are closed — fixes must use that bead reopened.
 func AllowedEarlierImplementDependencyWrite(townRoot, rig, activePath, writtenPath string, v WorkflowValidation) bool {
 	required := v.RequiredFiles
+	// During phased delivery, also accept files from earlier phases as valid dependencies.
+	if v.HasPhasedDelivery() {
+		required = v.UnionRequiredFiles()
+	}
 	if len(required) == 0 || !pathMatchesRequired(writtenPath, required) {
 		return false
 	}
