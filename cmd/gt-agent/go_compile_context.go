@@ -110,9 +110,9 @@ func extractGoSourcePathsFromOutput(output, layoutRoot string, required []string
 }
 
 const (
-	maxGoCompileContextFiles = 4
-	maxGoCompileContextBytes = 4500
-	maxGoCompileSnippetBytes = 1200
+	maxGoCompileContextFiles = 3
+	maxGoCompileContextBytes = 2400
+	maxGoCompileSnippetBytes = 400
 )
 
 // appendGoCompileSourceContext adds file snippets to LLM feedback after failed go commands.
