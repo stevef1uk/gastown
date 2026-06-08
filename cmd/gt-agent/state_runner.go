@@ -662,6 +662,14 @@ func (r *stateRunner) failureHint() string {
 }
 
 func validateOutcomeForTask(task *orchestrator.Task, townRoot, rig, outcome, summary string) error {
+	if task != nil && task.State == "qa_review" && isOrchestratedFailureOutcome(outcome) {
+		lower := strings.ToLower(strings.TrimSpace(summary))
+		if strings.Contains(lower, "syntax error") || strings.Contains(lower, "syntaxerror") ||
+			strings.Contains(lower, "command not found") || strings.Contains(lower, "no such file") &&
+			strings.Contains(lower, "bd list") {
+			return fmt.Errorf("QA failure rejected — summary blames a shell syntax error, not a code quality issue. Retry the command with correct shell syntax and re-evaluate")
+		}
+	}
 	if !task.Hooks.BeadIDsInSummary {
 		return nil
 	}
