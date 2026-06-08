@@ -1968,7 +1968,9 @@ func validateImplementationArtifacts(townRoot, rig string, hadCmdFailure, beadCl
 	}
 	stubScope := scoped
 	if v.HasPhasedDelivery() {
-		stubScope.RequiredFiles = v.UnionRequiredFiles()
+		// During phased delivery, only validate files from active + past phases.
+		// Future-phase files don't exist yet and are validated when their phase activates.
+		stubScope.RequiredFiles = v.PhasedActiveAndPastRequiredFiles()
 	}
 	if err := orchestrator.ValidateRequiredFilesNotStubbed(rigDir, stubScope); err != nil {
 		return fmt.Errorf("implementation still looks like stubs: %w", err)
@@ -2560,7 +2562,7 @@ func validateRequiredWorkFiles(townRoot, rig string, v orchestrator.WorkflowVali
 			return fmt.Errorf("%s is empty", path)
 		}
 		if strings.HasSuffix(filepath.ToSlash(rel), "/go.mod") || rel == "go.mod" {
-			if err := orchestrator.ValidateGoModFile(rigDir, v); err != nil {
+			if err := orchestrator.ValidateGoModFileForBeadClose(rigDir, v); err != nil {
 				return err
 			}
 		}

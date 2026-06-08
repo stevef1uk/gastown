@@ -136,28 +136,29 @@ func ImplementationRuntimeSmokeOK(townRoot, rig string, v WorkflowValidation) er
 
 // ImplementationPhaseVerifyOK runs module tests and, when the profile defines HTTP routes,
 // doc-derived runtime smoke before implementation may complete (GT-VERIFY-002/009).
+// Scopes checks to the active delivery phase so non-Go phases (web-static, web-shell) do not
+// fail on missing Go packages.
 func ImplementationPhaseVerifyOK(townRoot, rig string, v WorkflowValidation) error {
 	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
+	scoped := v.ForActivePhase()
 
-	// Default to success
 	var err error
 
 	defer func() {
-		// Log the overall phase verification to OTEL
 		telemetry.RecordPhaseVerification(context.Background(), rig, "", "implementation", "ImplementationPhaseVerifyOK", err)
 	}()
 
-	if WorkflowUsesGo(v) {
-		if err = ImplementationModuleCompileOK(rigDir, v); err != nil {
+	if WorkflowUsesGo(scoped) {
+		if err = ImplementationModuleCompileOK(rigDir, scoped); err != nil {
 			return err
 		}
 	}
-	if WorkflowUsesPython(v) {
-		if err = ImplementationPythonModuleOK(rigDir, v); err != nil {
+	if WorkflowUsesPython(scoped) {
+		if err = ImplementationPythonModuleOK(rigDir, scoped); err != nil {
 			return err
 		}
 	}
-	if err = ImplementationRuntimeSmokeOK(townRoot, rig, v); err != nil {
+	if err = ImplementationRuntimeSmokeOK(townRoot, rig, scoped); err != nil {
 		return err
 	}
 	return nil

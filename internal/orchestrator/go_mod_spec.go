@@ -2,6 +2,7 @@ package orchestrator
 
 import (
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -100,6 +101,25 @@ func RepairGoModRequiresFromSpec(rigDir string, v WorkflowValidation) (string, e
 	return "restored SPEC require(s) in " + filepath.ToSlash(filepath.Join(layout, "go.mod")), nil
 }
 
+// goModModuleHasGoSource reports whether at least one .go file exists under the module directory.
+func goModModuleHasGoSource(rigDir, layout string) bool {
+	modDir := filepath.Join(rigDir, layout)
+	if _, err := os.Stat(modDir); err != nil {
+		return false
+	}
+	hasGo := false
+	_ = filepath.WalkDir(modDir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || hasGo {
+			return nil
+		}
+		if !d.IsDir() && strings.HasSuffix(strings.ToLower(d.Name()), ".go") {
+			hasGo = true
+		}
+		return nil
+	})
+	return hasGo
+}
+
 // ValidateGoModFile checks go.mod against SPEC.md module name and require directives.
 func ValidateGoModFile(rigDir string, v WorkflowValidation) error {
 	if !WorkflowUsesGo(v) {
@@ -135,6 +155,55 @@ func ValidateGoModFile(rigDir string, v WorkflowValidation) error {
 		mod, ver := parts[0], strings.Trim(parts[1], "`")
 		if !GoModFileHasRequire(data, mod, ver) {
 			return fmt.Errorf("go.mod missing SPEC requirement %q — READ SPEC.md Module section and EDIT go.mod", mod+" "+ver)
+		}
+	}
+	return nil
+}
+
+// ValidateGoModFileForBeadClose checks go.mod before bd close.
+// Require-directive enforcement is relaxed when the module has no .go source files,
+// because go mod tidy correctly strips unused requires from empty modules.
+// Module name must always match SPEC.
+func ValidateGoModFileForBeadClose(rigDir string, v WorkflowValidation) error {
+	if !WorkflowUsesGo(v) {
+		return nil
+	}
+	layout := strings.Trim(strings.TrimSpace(v.LayoutRoot), "/")
+	if layout == "" {
+		layout = "."
+	}
+	modPath := filepath.Join(rigDir, layout, "go.mod")
+	data, err := os.ReadFile(modPath)
+	if err != nil {
+		return fmt.Errorf("go.mod missing at %s", filepath.ToSlash(filepath.Join(layout, "go.mod")))
+	}
+	specPath := filepath.Join(rigDir, "SPEC.md")
+	specData, _ := os.ReadFile(specPath)
+	specDoc := string(specData)
+	canonical := canonicalGoModule(specDoc, v)
+	if canonical != "" {
+		if m := goModModuleLineRE.FindStringSubmatch(string(data)); len(m) >= 2 {
+			if strings.TrimSpace(m[1]) != canonical {
+				return fmt.Errorf("go.mod module %q must be %q per SPEC.md", m[1], canonical)
+			}
+		} else {
+			return fmt.Errorf("go.mod missing module %q line from SPEC.md", canonical)
+		}
+	}
+	// Do not enforce require directives when the module has no .go source files.
+	// go mod tidy correctly removes requires that no source file imports yet.
+	// The requires will be pulled in by go mod tidy when .go files get created.
+	if !goModModuleHasGoSource(rigDir, layout) {
+		return nil
+	}
+	for _, req := range RequiredGoModRequireDirectives(rigDir) {
+		parts := strings.Fields(strings.TrimPrefix(req, "require "))
+		if len(parts) < 2 {
+			continue
+		}
+		mod, ver := parts[0], strings.Trim(parts[1], "`")
+		if !GoModFileHasRequire(data, mod, ver) {
+			return fmt.Errorf("go.mod missing SPEC requirement %q — run go get %s@%s", mod+" "+ver, mod, ver)
 		}
 	}
 	return nil

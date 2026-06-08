@@ -30,7 +30,7 @@ func validateImplementationBeadClose(cmd, townRoot, rig string, v orchestrator.W
 		} else if logLine != "" {
 			orchestratedPrintf("[gt-agent] %s\n", logLine)
 		}
-		if err := orchestrator.ValidateGoModFile(rigDir, v); err != nil {
+		if err := orchestrator.ValidateGoModFileForBeadClose(rigDir, v); err != nil {
 			return fmt.Errorf("cannot bd close %s: %w — READ SPEC.md Module section and EDIT go.mod", id, err)
 		}
 	}

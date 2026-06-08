@@ -106,6 +106,32 @@ func (v WorkflowValidation) RequiredFilesForSmokeScope() []string {
 	return out
 }
 
+// PhasedActiveAndPastRequiredFiles returns required files from the active phase and all earlier phases,
+// but NOT from future phases. Used for stub/artifact validation during phased delivery so future-phase
+// files that haven't been created yet don't block the current phase from completing.
+func (v WorkflowValidation) PhasedActiveAndPastRequiredFiles() []string {
+	if !v.HasPhasedDelivery() {
+		return normalizePathList(v.RequiredFiles)
+	}
+	activeID := v.ActivePhaseID()
+	seen := make(map[string]bool)
+	var out []string
+	for _, p := range v.DeliveryPhases {
+		add := normalizePathList(p.RequiredFiles)
+		for _, f := range add {
+			if f == "" || seen[f] {
+				continue
+			}
+			seen[f] = true
+			out = append(out, f)
+		}
+		if strings.TrimSpace(p.ID) == activeID {
+			break // stop at active phase; future phases' files don't exist yet
+		}
+	}
+	return out
+}
+
 // ForActivePhase returns a copy of v with RequiredFiles and QAVerifyCommand scoped to the active phase.
 func (v WorkflowValidation) ForActivePhase() WorkflowValidation {
 	if !v.HasPhasedDelivery() {

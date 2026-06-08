@@ -59,6 +59,12 @@ var configFileExtensions = map[string]bool{
 	".lock": true, ".mod": true, ".sum": true,
 }
 
+// webAssetExtension marks extensions that are naturally small (HTML/CSS/JS/SCSS) — non-empty with ≥1 line.
+var webAssetExtension = map[string]bool{
+	".html": true, ".htm": true, ".css": true, ".scss": true,
+	".js": true, ".mjs": true, ".cjs": true,
+}
+
 // dependencyManifestNames are lockfiles and dependency lists — non-empty only, no min byte/line counts.
 var dependencyManifestNames = map[string]bool{
 	"requirements.txt":      true,
@@ -221,6 +227,17 @@ func optsForPath(displayRel string, opts StubCheckOptions) StubCheckOptions {
 		return StubCheckOptions{MinFileBytes: 1, MinSubstantiveLines: 0}
 	}
 	ext := strings.ToLower(filepath.Ext(displayRel))
+	// Web assets are naturally small — accept non-empty with at least 1 substantive line.
+	if webAssetExtension[ext] {
+		relaxed := opts
+		if relaxed.MinFileBytes > 80 {
+			relaxed.MinFileBytes = 80
+		}
+		if relaxed.MinSubstantiveLines > 1 {
+			relaxed.MinSubstantiveLines = 1
+		}
+		return relaxed
+	}
 	if !configFileExtensions[ext] {
 		return opts
 	}

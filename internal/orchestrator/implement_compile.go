@@ -48,6 +48,7 @@ func PhaseRequiresGoPackages(v WorkflowValidation) bool {
 // ImplementationModuleCompileOK runs phase-appropriate compile checks from mayor/rig layout_root.
 // Go-mod-only phases use go mod download (no tidy — empty modules drop SPEC requires).
 // Phases with .go files run go mod tidy + go test per QAVerifyCommand.
+// Phases without .go files on disk (e.g. web-static, web-shell) verify go.mod exists only.
 func ImplementationModuleCompileOK(rigDir string, v WorkflowValidation) error {
 	if !WorkflowUsesGo(v) {
 		return nil
@@ -79,6 +80,11 @@ func ImplementationModuleCompileOK(rigDir string, v WorkflowValidation) error {
 			}
 			return fmt.Errorf("module scaffold verify failed: %w\n%s", runErr, text)
 		}
+		return nil
+	}
+	// If no .go source files exist on disk in the module, skip compilation tests.
+	// This handles web-only phases and partial modules that have go.mod but no source yet.
+	if !goModModuleHasGoSource(rigDir, layout) {
 		return nil
 	}
 	goBin, err := exec.LookPath("go")

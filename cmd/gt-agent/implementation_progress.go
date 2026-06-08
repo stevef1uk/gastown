@@ -209,7 +209,7 @@ func (r *stateRunner) implementBeadCloseArtifactsReady() bool {
 	}
 	rigDir := rigMayorRigDir(r.townRoot, r.rig)
 	if strings.HasSuffix(filepath.ToSlash(beadPath), "/go.mod") || filepath.ToSlash(beadPath) == "go.mod" {
-		if err := orchestrator.ValidateGoModFile(rigDir, r.v); err != nil {
+		if err := orchestrator.ValidateGoModFileForBeadClose(rigDir, r.v); err != nil {
 			return false
 		}
 	} else if err := orchestrator.ValidateBeadArtifactOnDisk(rigDir, beadPath, r.v); err != nil {
