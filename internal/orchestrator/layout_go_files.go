@@ -163,6 +163,11 @@ func layoutGoBasenamesProtectedFromPrune(v WorkflowValidation) map[string]bool {
 // (full union when delivery phases are configured). Junk like internal/app/ from hallucinated writes
 // is removed even while implement beads are open.
 func PruneStaleLayoutGoFiles(townRoot, rig string, v WorkflowValidation) ([]string, error) {
+	if v.HasPhasedDelivery() {
+		// During phased delivery, source files from earlier phases are valid
+		// dependencies for the active phase. Never prune them.
+		return nil, nil
+	}
 	layout := strings.Trim(filepath.ToSlash(strings.TrimSpace(v.LayoutRoot)), "/")
 	if layout == "" {
 		return nil, nil
