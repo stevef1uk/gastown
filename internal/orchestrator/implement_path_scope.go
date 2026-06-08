@@ -18,19 +18,26 @@ func ValidateImplementWritePath(townRoot, rig, activeBead, relPath string, v Wor
 	if !IsValidImplementBeadPath(relPath) {
 		return fmt.Errorf("invalid implement path %q", relPath)
 	}
-	// Block writes to cmd/server/main.go when the api handlers package exists on disk
-	// but has zero exports. The polecat invents fake function names instead.
+	// Generic: when writing to cmd/server/main.go, verify that handler dependency files
+	// have real content — not empty stubs. Otherwise the polecat invents fake exports.
 	if IsCmdMainImplementPath(relPath) && WorkflowUsesGo(v) {
 		rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
-		handlersRel := firstRequiredPathSuffix(v, "/internal/api/handlers.go")
-		if handlersRel == "" {
-			handlersRel = filepath.Join(v.LayoutRoot, "internal/api/handlers.go")
-		}
-		handlerPath := filepath.Join(rigDir, filepath.FromSlash(handlersRel))
-		if _, statErr := os.Stat(handlerPath); statErr == nil {
-			sym := readExportedGoSymbolsFromRig(rigDir, handlersRel)
-			if len(sym.Funcs) == 0 && len(sym.Types) == 0 {
-				return fmt.Errorf("cannot write %s: %s exists but has zero exported symbols. Reopen the handlers bead and add a RegisterHandlers(mux) function or exported handler names first", relPath, handlersRel)
+		for _, dep := range requiredFilesBeforePath(relPath, v) {
+			dep = filepath.ToSlash(dep)
+			if !strings.HasSuffix(dep, ".go") || IsTestImplementPath(dep) || strings.HasSuffix(dep, "/go.mod") {
+				continue
+			}
+			// Only guard handler-style files — not store/schema deps which are fine as stubs.
+			if !strings.Contains(dep, "/api/") && !strings.Contains(dep, "/handlers/") && !strings.HasSuffix(dep, "handlers.go") {
+				continue
+			}
+			depPath := filepath.Join(rigDir, filepath.FromSlash(dep))
+			info, statErr := os.Stat(depPath)
+			if statErr != nil {
+				continue
+			}
+			if info.Size() < 40 {
+				return fmt.Errorf("cannot write %s: handler dependency %s is an empty stub (%d bytes). Reopen that bead and implement it first", relPath, dep, info.Size())
 			}
 		}
 	}
@@ -189,6 +196,25 @@ func validateImplementWriteScope(townRoot, rig, activeBead, written string, v Wo
 		}
 	}
 	return NewImplementWriteScopeError(townRoot, rig, allowedID, allowedPath, written, v)
+}
+
+// requiredFilesBeforePath returns required_files that come before relPath in build order
+// (dependencies that cmd/server/main.go would import).
+func requiredFilesBeforePath(relPath string, v WorkflowValidation) []string {
+	relPath = filepath.ToSlash(strings.TrimSpace(relPath))
+	ordered := orderedImplementBeadPaths(v)
+	var before []string
+	score := implementationPathScore(relPath)
+	for _, f := range ordered {
+		f = filepath.ToSlash(strings.TrimSpace(f))
+		if f == "" || f == relPath {
+			continue
+		}
+		if implementationPathScore(f) < score {
+			before = append(before, f)
+		}
+	}
+	return before
 }
 
 // OpenImplementBeadForPath returns an open or in_progress implement bead that owns filePath.
