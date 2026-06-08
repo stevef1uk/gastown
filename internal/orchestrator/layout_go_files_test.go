@@ -244,9 +244,6 @@ func TestPruneStaleLayoutGoFiles_skipsWhenImplementBeadsActive(t *testing.T) {
 		RequiredFiles: []string{
 			"linkshelf/internal/store/store.go",
 		},
-		DeliveryPhases: []DeliveryPhase{
-			{ID: "store-layer", RequiredFiles: []string{"linkshelf/internal/store/store.go"}},
-		},
 	}
 	setListImplementBeadsByStatusHook(t, dir, rig, func(_, _ string, _ WorkflowValidation, status string) ([]PlanBead, error) {
 		if status == "open" {
