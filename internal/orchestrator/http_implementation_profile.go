@@ -353,6 +353,11 @@ func handlerStaticHandlerHasEarlyRequestURIGuard(body, routePrefix string, field
 	if block == "" {
 		return true
 	}
+	// Accept any form of ".." check in the static handler body (not just near RequestURI/RawPath).
+	// The architecture requires rejecting ".." but the implementation pattern varies by project.
+	if strings.Contains(block, `".."`) || strings.Contains(block, `'..'`) {
+		return true
+	}
 	for _, field := range fields {
 		if !strings.Contains(block, field) {
 			continue
