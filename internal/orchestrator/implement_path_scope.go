@@ -2,6 +2,7 @@ package orchestrator
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 )
@@ -16,6 +17,22 @@ func ValidateImplementWritePath(townRoot, rig, activeBead, relPath string, v Wor
 	}
 	if !IsValidImplementBeadPath(relPath) {
 		return fmt.Errorf("invalid implement path %q", relPath)
+	}
+	// Block writes to cmd/server/main.go when the api handlers package exists on disk
+	// but has zero exports. The polecat invents fake function names instead.
+	if IsCmdMainImplementPath(relPath) && WorkflowUsesGo(v) {
+		rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
+		handlersRel := firstRequiredPathSuffix(v, "/internal/api/handlers.go")
+		if handlersRel == "" {
+			handlersRel = filepath.Join(v.LayoutRoot, "internal/api/handlers.go")
+		}
+		handlerPath := filepath.Join(rigDir, filepath.FromSlash(handlersRel))
+		if _, statErr := os.Stat(handlerPath); statErr == nil {
+			sym := readExportedGoSymbolsFromRig(rigDir, handlersRel)
+			if len(sym.Funcs) == 0 && len(sym.Types) == 0 {
+				return fmt.Errorf("cannot write %s: %s exists but has zero exported symbols. Reopen the handlers bead and add a RegisterHandlers(mux) function or exported handler names first", relPath, handlersRel)
+			}
+		}
 	}
 	if fullReplace {
 		fake := fmt.Sprintf("cat > %s <<'EOF'", relPath)
