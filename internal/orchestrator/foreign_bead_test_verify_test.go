@@ -87,7 +87,6 @@ func TestAllowForeignOpenBeadCompileFixForVerifyFailure_schemaBlockedByStoreTest
 }
 
 func TestFormatForeignOpenBeadTestCompileHint(t *testing.T) {
-	t.Parallel()
 	dir := t.TempDir()
 	rig := "testgt3"
 	storeDir := filepath.Join(dir, rig, "mayor", "rig", "linkshelf/internal/store")

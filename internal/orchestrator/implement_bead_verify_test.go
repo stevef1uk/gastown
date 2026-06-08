@@ -78,6 +78,56 @@ func TestCloseImplementBeadsWithGreenGoVerify_profileOrder(t *testing.T) {
 	}
 }
 
+func TestCloseImplementBeadsWithGreenGoVerify_autoClosesGoModBead(t *testing.T) {
+	dir := t.TempDir()
+	rig := "rig"
+	rigDir := filepath.Join(dir, rig, "mayor", "rig")
+	layout := filepath.Join(rigDir, "app")
+	if err := os.MkdirAll(layout, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(layout, "go.mod"), []byte("module app\n\ngo 1.22\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	v := WorkflowValidation{
+		LayoutRoot:        "app",
+		BeadTitleContains: "Implement",
+		QAVerifyCommand:   "cd app && go test ./...",
+		RequiredFiles:     []string{"app/go.mod"},
+		MinImplementationFileBytes: 1,
+		MinSubstantiveLines:        1,
+	}
+
+	var closed []string
+	bdCloseImplementBeadHook = func(_, _, id string) error {
+		closed = append(closed, id)
+		return nil
+	}
+	defer func() { bdCloseImplementBeadHook = nil }()
+
+	prev := ListImplementBeadsByStatusHook
+	ListImplementBeadsByStatusHook = func(townRoot, rig string, v WorkflowValidation, status string) ([]PlanBead, error) {
+		if status == "open" {
+			return []PlanBead{{ID: "b-mod", Title: "Implement app/go.mod per architecture"}}, nil
+		}
+		return nil, nil
+	}
+	defer func() { ListImplementBeadsByStatusHook = prev }()
+
+	eval := newImplementBeadVerifyEvaluator(rigDir, v)
+	if !eval.GoSatisfied("app/go.mod") {
+		t.Fatal("GoSatisfied(app/go.mod) want true")
+	}
+	got, err := CloseImplementBeadsWithGreenGoVerify(dir, rig, v, eval)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0] != "b-mod" {
+		t.Fatalf("closed=%v want b-mod", got)
+	}
+}
+
 func TestReopenClosedImplementBeadsOrdered_skipsGreenVerify(t *testing.T) {
 	dir := t.TempDir()
 	rig := "rig"

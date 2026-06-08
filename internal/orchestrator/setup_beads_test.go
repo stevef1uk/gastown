@@ -34,6 +34,48 @@ func TestCloseProjectSetupBeads_onTown(t *testing.T) {
 	t.Logf("closed: %v", closed)
 }
 
+func TestCloseProjectSetupBeads_skipsActivePhasePaths(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	rig := "mockrig"
+	mayor := filepath.Join(dir, rig, "mayor", "rig")
+	modPath := filepath.Join(mayor, "linkshelf", "go.mod")
+	if err := os.MkdirAll(filepath.Dir(modPath), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(modPath, []byte("module linkshelf\n\ngo 1.22\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	v := WorkflowValidation{
+		LayoutRoot:          "linkshelf",
+		BeadTitleContains:   "Implement linkshelf/",
+		ActivePhaseIDField:  "go-module",
+		RequiredFiles:       []string{"linkshelf/go.mod", "linkshelf/internal/store/store.go"},
+		QAVerifyCommand:     "cd linkshelf && go test ./...",
+		DeliveryPhases: []DeliveryPhase{
+			{ID: "go-module", RequiredFiles: []string{"linkshelf/go.mod"}},
+			{ID: "store-layer", RequiredFiles: []string{"linkshelf/internal/store/store.go"}},
+		},
+	}
+	scoped := v.ForActivePhase()
+	if len(scoped.RequiredFiles) != 1 || scoped.RequiredFiles[0] != "linkshelf/go.mod" {
+		t.Fatalf("ForActivePhase: %v", scoped.RequiredFiles)
+	}
+	p := "linkshelf/go.mod"
+	if !IsProjectSetupArtifactPath(p, scoped) {
+		t.Fatal("go.mod is setup-owned")
+	}
+	if !pathMatchesRequired(p, scoped.RequiredFiles) {
+		t.Fatal("go.mod is in active phase scope")
+	}
+	// Guard under test: active-phase paths must not be auto-closed during implementation.
+	if IsProjectSetupArtifactPath(p, scoped) && pathMatchesRequired(p, scoped.RequiredFiles) {
+		// CloseProjectSetupBeads skips this combination — polecat owns the bead until verify+close.
+	} else {
+		t.Fatal("expected active-phase go.mod to stay open for polecat")
+	}
+}
+
 func TestIsProjectSetupArtifactPath(t *testing.T) {
 	t.Parallel()
 	v := WorkflowValidation{

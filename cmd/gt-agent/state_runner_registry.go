@@ -30,7 +30,7 @@ var cmdGuardHandlers = map[string]cmdGuardFn{
 		if err := rejectInventedBdVerifyCommand(cmd, r.townRoot, r.rig, r.track.activeBead, r.v); err != nil {
 			return err
 		}
-		if err := validateImplementationCommandWithState(cmd, r.townRoot, r.rig, r.track.activeBead, r.v, r.track.verifyOK, r.qaReworkWriteScope()); err != nil {
+		if err := validateImplementationCommandWithState(cmd, r.townRoot, r.rig, r.effectiveImplementBeadID(), r.v, r.track.verifyOK, r.qaReworkWriteScope()); err != nil {
 			return err
 		}
 		if err := r.validateImplementationFencedCodeGuard(cmd); err != nil {
@@ -302,8 +302,20 @@ func verifyImplementationBead(r *stateRunner) string {
 		return ""
 	}
 	mayor := filepath.Join(r.townRoot, r.rig, "mayor", "rig")
-	beadPath := orchestrator.ImplementBeadPathForID(r.townRoot, r.rig, r.track.activeBead, r.v)
+	_, beadPath := r.effectiveImplementBead()
 	return orchestrator.ImplementationVerifyCommandForBead(r.v, mayor, beadPath)
+}
+
+func (r *stateRunner) effectiveImplementBead() (id, path string) {
+	if r == nil || r.track == nil {
+		return "", ""
+	}
+	return orchestrator.ResolveImplementBeadForVerify(r.townRoot, r.rig, r.track.activeBead, r.v)
+}
+
+func (r *stateRunner) effectiveImplementBeadID() string {
+	id, _ := r.effectiveImplementBead()
+	return id
 }
 
 func (r *stateRunner) activeImplementBeadPath() string {

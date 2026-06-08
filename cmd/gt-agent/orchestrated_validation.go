@@ -148,7 +148,8 @@ func isImplementationVerifyCommandOK(cmd, townRoot, rig, activeBead string, v or
 	if !orchestrator.WorkflowUsesGo(v) || rig == "" {
 		return false
 	}
-	mayorDir := filepath.Join(townRoot, rig, "mayor", "rig")
+	mayorDir := rigMayorRigDir(townRoot, rig)
+	activeBead, _ = orchestrator.ResolveImplementBeadForVerify(townRoot, rig, activeBead, v)
 	beadPath := orchestrator.ImplementBeadPathForID(townRoot, rig, activeBead, v)
 	impl := orchestrator.ImplementationVerifyCommandForBead(v, mayorDir, beadPath)
 	if commandMatchesQAVerify(cmd, impl) {

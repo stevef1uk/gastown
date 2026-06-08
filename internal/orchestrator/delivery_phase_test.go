@@ -37,6 +37,61 @@ func TestForActivePhase_scopesFilesAndQA(t *testing.T) {
 	}
 }
 
+func TestForActivePhase_webStaticKeepsGoTest(t *testing.T) {
+	v := WorkflowValidation{
+		LayoutRoot:         "linkshelf",
+		QAVerifyCommand:    "cd linkshelf && go test ./...",
+		ActivePhaseIDField: "web-static",
+		DeliveryPhases: []DeliveryPhase{
+			{
+				ID:            "web-static",
+				RequiredFiles: []string{"linkshelf/web/style.css", "linkshelf/web/app.js"},
+			},
+		},
+	}
+	scoped := v.ForActivePhase()
+	want := "cd linkshelf && go test ./..."
+	if scoped.QAVerifyCommand != want {
+		t.Fatalf("qa = %q want %q", scoped.QAVerifyCommand, want)
+	}
+}
+
+func TestPhaseIsGoModOnly(t *testing.T) {
+	if !PhaseIsGoModOnly(WorkflowValidation{RequiredFiles: []string{"linkshelf/go.mod"}}) {
+		t.Fatal("go.mod only")
+	}
+	if PhaseIsGoModOnly(WorkflowValidation{RequiredFiles: []string{"linkshelf/web/app.js"}}) {
+		t.Fatal("frontend only")
+	}
+	if PhaseIsGoModOnly(WorkflowValidation{RequiredFiles: nil}) {
+		t.Fatal("empty required_files")
+	}
+}
+
+func TestForActivePhase_goModuleUsesDownload(t *testing.T) {
+	v := WorkflowValidation{
+		LayoutRoot:         "linkshelf",
+		QAVerifyCommand:    "cd linkshelf && go test ./...",
+		ActivePhaseIDField: "go-module",
+		DeliveryPhases: []DeliveryPhase{
+			{
+				ID:              "go-module",
+				RequiredFiles:   []string{"linkshelf/go.mod"},
+				QAVerifyCommand: "cd linkshelf && go mod tidy",
+			},
+			{ID: "store-layer", RequiredFiles: []string{"linkshelf/internal/store/store.go"}},
+		},
+	}
+	scoped := v.ForActivePhase()
+	want := "cd linkshelf && go mod download"
+	if scoped.QAVerifyCommand != want {
+		t.Fatalf("qa = %q want %q", scoped.QAVerifyCommand, want)
+	}
+	if vars := scoped.PromptVars()["unittest_command_hint"]; vars != want {
+		t.Fatalf("hint = %q want %q", vars, want)
+	}
+}
+
 func TestMoveDockerPathsToFinalDeliveryPhase(t *testing.T) {
 	v := WorkflowValidation{
 		ActivePhaseIDField: "setup-infrastructure",

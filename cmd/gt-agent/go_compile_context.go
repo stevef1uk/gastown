@@ -35,7 +35,7 @@ func goToolOutputLooksFailed(cmd, output string) bool {
 			return true
 		}
 	}
-	if orchestrator.GoToolOutputMatchedNoPackages(output) && !orchestrator.GoModTidyOnlyCommand(cmd) {
+	if orchestrator.GoToolOutputMatchedNoPackages(output) && !orchestrator.GoModScaffoldOnlyCommand(cmd) {
 		return true
 	}
 	return strings.Contains(output, ": error:")

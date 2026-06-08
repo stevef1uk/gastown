@@ -264,6 +264,7 @@ func validateGoImplementationCommand(cmd, townRoot, rig, mayorRigDir, activeBead
 			}
 		}
 	}
+	activeBead, _ = orchestrator.ResolveImplementBeadForVerify(townRoot, rig, activeBead, v)
 	beadPath := orchestrator.ImplementBeadPathForID(townRoot, rig, activeBead, v)
 	verifyHint := orchestrator.AgentShellVerifyCommand(rig, v, mayorRigDir, beadPath)
 	onGoModBead := strings.HasSuffix(filepath.ToSlash(beadPath), "go.mod")

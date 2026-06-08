@@ -244,6 +244,9 @@ func TestPruneStaleLayoutGoFiles_skipsWhenImplementBeadsActive(t *testing.T) {
 		RequiredFiles: []string{
 			"linkshelf/internal/store/store.go",
 		},
+		DeliveryPhases: []DeliveryPhase{
+			{ID: "store-layer", RequiredFiles: []string{"linkshelf/internal/store/store.go"}},
+		},
 	}
 	setListImplementBeadsByStatusHook(t, dir, rig, func(_, _ string, _ WorkflowValidation, status string) ([]PlanBead, error) {
 		if status == "open" {
@@ -255,11 +258,8 @@ func TestPruneStaleLayoutGoFiles_skipsWhenImplementBeadsActive(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(removed) != 0 {
-		t.Fatalf("expected no prune while beads active, removed = %v", removed)
-	}
-	if _, err := os.Stat(filepath.Join(layout, "sqlite.go")); err != nil {
-		t.Fatalf("sqlite.go should remain: %v", err)
+	if len(removed) != 1 || removed[0] != "linkshelf/internal/store/sqlite.go" {
+		t.Fatalf("expected unlisted sqlite.go pruned while store bead active, removed = %v", removed)
 	}
 }
 

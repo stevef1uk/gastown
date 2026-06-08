@@ -13,6 +13,21 @@ func GoToolOutputMatchedNoPackages(output string) bool {
 	return strings.Contains(lower, "matched no packages") || strings.Contains(lower, "no packages to test")
 }
 
+// GoModScaffoldOnlyCommand reports verify commands that only touch the module graph
+// (go mod tidy or go mod download — no test/build/run). Empty modules may warn "matched no packages".
+func GoModScaffoldOnlyCommand(cmd string) bool {
+	lower := strings.ToLower(strings.TrimSpace(cmd))
+	if !strings.Contains(lower, "go mod tidy") && !strings.Contains(lower, "go mod download") {
+		return false
+	}
+	for _, blocked := range []string{"go test", "go build", "go run", "go vet"} {
+		if strings.Contains(lower, blocked) {
+			return false
+		}
+	}
+	return true
+}
+
 // GoModTidyOnlyCommand reports verify/shell commands that only run go mod tidy (no test/build/run).
 // Empty modules warn "matched no packages" on tidy; that is expected before any .go files exist.
 func GoModTidyOnlyCommand(cmd string) bool {
@@ -44,10 +59,19 @@ func WorkflowUsesGo(v WorkflowValidation) bool {
 	return false
 }
 
+// GoModPhaseQAVerifyCommand is phase QA for go.mod-only delivery (no .go sources yet).
+func GoModPhaseQAVerifyCommand(v WorkflowValidation) string {
+	layout := strings.Trim(strings.TrimSpace(v.LayoutRoot), "/")
+	if layout == "" || layout == "." {
+		return "go mod download"
+	}
+	return "cd " + layout + " && go mod download"
+}
+
 // GoProjectSetupVerifyCommand is the green check for project_setup only: module
 // toolchain under layout_root, not go build/test/run (polecat implements code).
 func GoProjectSetupVerifyCommand(v WorkflowValidation, mayorRigDir string) string {
-	return GoShellCDClause(mayorRigDir, v.LayoutRoot) + "go mod tidy"
+	return GoModScaffoldVerifyCommand(v, mayorRigDir)
 }
 
 // GoVerifyCommandWithTidy returns the verify shell chain for Go rigs, always
@@ -112,6 +136,15 @@ func GoImplementationVerifyCommand(v WorkflowValidation, mayorRigDir string) str
 // GoImplementationVerifyCommandForBead picks verify for the active implement bead path.
 func GoImplementationVerifyCommandForBead(v WorkflowValidation, mayorRigDir, beadPath string) string {
 	beadPath = filepath.ToSlash(strings.TrimSpace(beadPath))
+	if beadPath == "" {
+		scoped := v.ForActivePhase()
+		for _, f := range scoped.RequiredFiles {
+			f = filepath.ToSlash(strings.TrimSpace(f))
+			if strings.HasSuffix(f, "/go.mod") || f == "go.mod" {
+				return GoModBeadVerifyCommand(v, mayorRigDir)
+			}
+		}
+	}
 	if strings.HasSuffix(beadPath, "go.mod") {
 		return GoModBeadVerifyCommand(v, mayorRigDir)
 	}
@@ -126,6 +159,12 @@ func GoImplementationVerifyCommandForBead(v WorkflowValidation, mayorRigDir, bea
 }
 
 // GoModBeadVerifyCommand is verify for the go.mod implement bead only (module graph, not full build).
+// Uses go mod download — go mod tidy strips SPEC requires before any .go sources exist.
 func GoModBeadVerifyCommand(v WorkflowValidation, mayorRigDir string) string {
-	return GoShellCDClause(mayorRigDir, v.LayoutRoot) + "go mod tidy"
+	return GoModScaffoldVerifyCommand(v, mayorRigDir)
+}
+
+// GoModScaffoldVerifyCommand checks the module graph without mutating go.mod (no tidy on empty modules).
+func GoModScaffoldVerifyCommand(v WorkflowValidation, mayorRigDir string) string {
+	return GoShellCDClause(mayorRigDir, v.LayoutRoot) + "go mod download"
 }

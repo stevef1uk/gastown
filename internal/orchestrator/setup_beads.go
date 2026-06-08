@@ -51,6 +51,10 @@ func CloseProjectSetupBeads(townRoot, rig string, v WorkflowValidation) ([]strin
 		if !IsProjectSetupArtifactPath(p, v) {
 			continue
 		}
+		// Active delivery phase still owns this path — polecat must verify and bd close it.
+		if pathMatchesRequired(p, v.RequiredFiles) {
+			continue
+		}
 		if !projectSetupArtifactReady(workDir, p, v) {
 			continue
 		}

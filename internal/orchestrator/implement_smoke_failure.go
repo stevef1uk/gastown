@@ -229,11 +229,44 @@ func HandleImplementationPhaseVerifyFailure(townRoot, rig string, v WorkflowVali
 	if ImplementationVerifyNeedsRuntimeRework(err) {
 		reopened, _ = ReopenImplementationBeadsAfterSmokeFailure(townRoot, rig, v, err)
 	}
-	block := FormatImplementationSmokeFailureBlock(townRoot, rig, v, err, reopened)
+	block := FormatImplementationVerifyFailureBlock(townRoot, rig, v, err, reopened)
 	if block == "" {
 		return err
 	}
 	return fmt.Errorf("%w\n\n%s", err, block)
+}
+
+// FormatImplementationVerifyFailureBlock returns actionable feedback for phase verify failures.
+func FormatImplementationVerifyFailureBlock(townRoot, rig string, v WorkflowValidation, verifyErr error, reopened []string) string {
+	if verifyErr == nil {
+		return ""
+	}
+	if ImplementationVerifyNeedsRuntimeRework(verifyErr) {
+		return FormatImplementationSmokeFailureBlock(townRoot, rig, v, verifyErr, reopened)
+	}
+	var b strings.Builder
+	b.WriteString("### Phase verify failed (implementation gate)\n")
+	b.WriteString("Do not send JSON success until **active phase** verify is green")
+	if v.HasPhasedDelivery() {
+		if id := v.ActivePhaseID(); id != "" {
+			b.WriteString(" (`")
+			b.WriteString(id)
+			b.WriteString("`")
+		}
+	}
+	b.WriteString(".\n\n")
+	if q := strings.TrimSpace(v.QAVerifyCommand); q != "" {
+		b.WriteString("**Phase verify:** `")
+		b.WriteString(q)
+		b.WriteString("`\n\n")
+	}
+	if PhaseIsGoModOnly(v) {
+		b.WriteString("This phase is **go.mod only** — no `go test ./...` until later phases add `.go` files.\n\n")
+	}
+	b.WriteString("**Output (tail):**\n```\n")
+	b.WriteString(truncateWorkflowText(strings.TrimSpace(verifyErr.Error()), 2000))
+	b.WriteString("\n```\n")
+	return strings.TrimSpace(b.String())
 }
 
 // EnsureImplementSmokeReadyLog runs EnsureImplementBeadsAvailable for pre_run (smoke/verify reopen).

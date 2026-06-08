@@ -118,7 +118,30 @@ func (v WorkflowValidation) ForActivePhase() WorkflowValidation {
 	if q := v.ActivePhaseQAVerifyCommand(); q != "" {
 		out.QAVerifyCommand = q
 	}
+	if WorkflowUsesGo(out) && PhaseIsGoModOnly(out) {
+		out.QAVerifyCommand = GoModPhaseQAVerifyCommand(out)
+	}
 	return out
+}
+
+// PhaseIsGoModOnly reports active required_files are only go.mod (no .go, web, or other artifacts).
+func PhaseIsGoModOnly(v WorkflowValidation) bool {
+	if len(v.RequiredFiles) == 0 {
+		return false
+	}
+	hasGoMod := false
+	for _, f := range v.RequiredFiles {
+		f = filepath.ToSlash(strings.TrimSpace(f))
+		if f == "" {
+			continue
+		}
+		if strings.HasSuffix(f, "/go.mod") || f == "go.mod" {
+			hasGoMod = true
+			continue
+		}
+		return false
+	}
+	return hasGoMod
 }
 
 // IsDockerPackagingPath reports container packaging files (Dockerfile, compose, .dockerignore).
@@ -292,9 +315,9 @@ func inferDefaultDeliveryPhases(v WorkflowValidation) []DeliveryPhase {
 
 func goModVerifyCommand(layout string) string {
 	if layout == "" || layout == "." {
-		return "go mod tidy"
+		return "go mod download"
 	}
-	return "cd " + layout + " && go mod tidy"
+	return "cd " + layout + " && go mod download"
 }
 
 func goPackageVerifyCommand(layout, pkg string) string {

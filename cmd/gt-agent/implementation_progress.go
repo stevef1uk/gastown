@@ -154,8 +154,9 @@ func (r *stateRunner) formatActiveBeadReadyToCloseBlock() string {
 	if r.track == nil || r.implProgress == nil {
 		return ""
 	}
-	beadID := strings.TrimSpace(r.track.activeBead)
-	beadPath := strings.TrimSpace(r.activeImplementBeadPath())
+	beadID, beadPath := r.effectiveImplementBead()
+	beadID = strings.TrimSpace(beadID)
+	beadPath = strings.TrimSpace(beadPath)
 	if beadID == "" || beadPath == "" {
 		return ""
 	}
@@ -200,10 +201,18 @@ func (r *stateRunner) implementBeadCloseArtifactsReady() bool {
 	}
 	beadPath := strings.TrimSpace(r.activeImplementBeadPath())
 	if beadPath == "" {
+		_, beadPath = r.effectiveImplementBead()
+		beadPath = strings.TrimSpace(beadPath)
+	}
+	if beadPath == "" {
 		return false
 	}
 	rigDir := rigMayorRigDir(r.townRoot, r.rig)
-	if err := orchestrator.ValidateBeadArtifactOnDisk(rigDir, beadPath, r.v); err != nil {
+	if strings.HasSuffix(filepath.ToSlash(beadPath), "/go.mod") || filepath.ToSlash(beadPath) == "go.mod" {
+		if err := orchestrator.ValidateGoModFile(rigDir, r.v); err != nil {
+			return false
+		}
+	} else if err := orchestrator.ValidateBeadArtifactOnDisk(rigDir, beadPath, r.v); err != nil {
 		return false
 	}
 	if testPath := orchestrator.CorrelatedTestPathForSource(beadPath, r.v); testPath != "" {
@@ -423,6 +432,13 @@ func (r *stateRunner) scrubStaleImplementationProgressMilestones() {
 		if beadID == "" {
 			continue
 		}
+		if orchestrator.ImplementBeadIsStillOpen(r.townRoot, r.rig, beadID, r.v) {
+			if strings.HasPrefix(key, implMilestoneClosedPrefix) {
+				delete(r.implProgress.Completed, key)
+				changed = true
+			}
+			continue
+		}
 		path := orchestrator.ImplementBeadPathForID(r.townRoot, r.rig, beadID, r.v)
 		if path == "" {
 			continue
@@ -494,7 +510,7 @@ func (r *stateRunner) persistImplementationProgress(cmd string) {
 		r.implProgress.LastVerifyFailOutput = ""
 	}
 	if isBeadCloseCommand(cmd) && cmd != "" {
-		if id := extractBeadIDFromBdClose(cmd); id != "" {
+		if id := extractBeadIDFromBdClose(cmd); id != "" && !orchestrator.ImplementBeadIsStillOpen(r.townRoot, r.rig, id, r.v) {
 			if r.implProgress.mark(implClosedKey(id)) {
 				changed = true
 			}
@@ -560,6 +576,18 @@ func (r *stateRunner) formatImplementationProgressBlock() string {
 		}
 		id := strings.TrimPrefix(key, implMilestoneVerifyPrefix)
 		b.WriteString(fmt.Sprintf("- ✓ Verify passed for bead **%s** in a prior run — re-run **Verify** after any edit to that file.\n", id))
+		if r.implProgress.done(implClosedKey(id)) {
+			continue
+		}
+		if open, err := orchestrator.ListImplementBeadsOpenOrInProgress(r.townRoot, r.rig, r.v.ForActivePhase()); err == nil {
+			for _, bead := range open {
+				if bead.ID == id {
+					b.WriteString(fmt.Sprintf("  **%s is still OPEN** — run `CMD: export BEADS_DIR=$GT_ROOT/%s/.beads && cd %s/mayor/rig && bd close %s` (do not send JSON success until closed).\n",
+						id, r.rig, r.rig, id))
+					break
+				}
+			}
+		}
 	}
 	rigDir := rigMayorRigDir(r.townRoot, r.rig)
 	for key := range r.implProgress.Completed {
@@ -568,6 +596,10 @@ func (r *stateRunner) formatImplementationProgressBlock() string {
 		}
 		id := strings.TrimPrefix(key, implMilestoneClosedPrefix)
 		path := orchestrator.ImplementBeadPathForID(r.townRoot, r.rig, id, r.v)
+		if path != "" && orchestrator.ImplementBeadIsStillOpen(r.townRoot, r.rig, id, r.v) {
+			b.WriteString(fmt.Sprintf("- ⚠ Progress says **%s** was closed but it is **OPEN** — run `bd close %s`.\n", id, id))
+			continue
+		}
 		if path != "" {
 			if err := orchestrator.ValidateBeadArtifactOnDisk(rigDir, path, r.v); err != nil {
 				continue

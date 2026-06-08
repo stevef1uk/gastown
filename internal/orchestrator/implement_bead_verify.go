@@ -34,8 +34,19 @@ func (e *implementBeadVerifyEvaluator) GoSatisfied(beadPath string) bool {
 		return false
 	}
 	beadPath = filepath.ToSlash(strings.TrimSpace(beadPath))
-	if beadPath == "" || IsProjectSetupArtifactPath(beadPath, e.v) {
+	if beadPath == "" {
 		return false
+	}
+	if IsProjectSetupArtifactPath(beadPath, e.v) {
+		if !isActivePhaseGoModBead(beadPath, e.v) {
+			return false
+		}
+		if v, ok := e.memo[beadPath]; ok {
+			return v
+		}
+		green := goModBeadVerifyGreen(e.rigDir, e.v)
+		e.memo[beadPath] = green
+		return green
 	}
 	if !strings.HasSuffix(beadPath, ".go") && !strings.HasSuffix(beadPath, "go.mod") {
 		return false
@@ -48,6 +59,33 @@ func (e *implementBeadVerifyEvaluator) GoSatisfied(beadPath string) bool {
 	return green
 }
 
+func isActivePhaseGoModBead(beadPath string, v WorkflowValidation) bool {
+	beadPath = filepath.ToSlash(strings.TrimSpace(beadPath))
+	if beadPath == "" || (!strings.HasSuffix(beadPath, "/go.mod") && beadPath != "go.mod") {
+		return false
+	}
+	return pathMatchesRequired(beadPath, v.RequiredFiles)
+}
+
+func goModBeadVerifyGreen(rigDir string, v WorkflowValidation) bool {
+	if err := ValidateGoModFile(rigDir, v); err != nil {
+		return false
+	}
+	verify := strings.TrimSpace(GoModBeadVerifyCommand(v, rigDir))
+	if verify == "" {
+		return false
+	}
+	cmd := exec.Command("/bin/bash", "-c", verify)
+	cmd.Dir = rigDir
+	cmd.Env = os.Environ()
+	if out, runErr := cmd.CombinedOutput(); runErr != nil {
+		return false
+	} else if strings.Contains(strings.ToLower(string(out)), "build failed") {
+		return false
+	}
+	return true
+}
+
 // VerifySatisfied reports whether an implement bead's on-disk artifact is ready to close:
 // Go paths use package verify; frontend paths (.html/.css/.js) use non-stub artifact checks.
 func (e *implementBeadVerifyEvaluator) VerifySatisfied(beadPath string) bool {
@@ -55,7 +93,13 @@ func (e *implementBeadVerifyEvaluator) VerifySatisfied(beadPath string) bool {
 		return false
 	}
 	beadPath = filepath.ToSlash(strings.TrimSpace(beadPath))
-	if beadPath == "" || IsProjectSetupArtifactPath(beadPath, e.v) {
+	if beadPath == "" {
+		return false
+	}
+	if IsProjectSetupArtifactPath(beadPath, e.v) {
+		if isActivePhaseGoModBead(beadPath, e.v) {
+			return e.GoSatisfied(beadPath)
+		}
 		return false
 	}
 	if e.GoSatisfied(beadPath) {
@@ -156,6 +200,44 @@ func normalizeImplementBeadPath(title string, v WorkflowValidation) string {
 // orderedImplementBeadPaths returns required_files build order (stable sort).
 func orderedImplementBeadPaths(v WorkflowValidation) []string {
 	return OrderRequiredFilesForImplementation(v.RequiredFiles)
+}
+
+// CloseGreenGoModBeads closes open/in_progress go.mod implement beads when SPEC validation and download verify pass.
+func CloseGreenGoModBeads(townRoot, rig string, v WorkflowValidation, eval *implementBeadVerifyEvaluator) ([]string, error) {
+	if townRoot == "" || rig == "" || !WorkflowUsesGo(v) {
+		return nil, nil
+	}
+	if bdCloseImplementBeadHook == nil && !BeadsDatabaseReady(townRoot, rig) {
+		return nil, nil
+	}
+	v = v.ForActivePhase()
+	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
+	if eval == nil {
+		eval = newImplementBeadVerifyEvaluator(rigDir, v)
+	}
+	active, err := implementBeadsIndexedByPath(townRoot, rig, v, "open", "in_progress")
+	if err != nil {
+		return nil, err
+	}
+	var closed []string
+	for _, rel := range orderedImplementBeadPaths(v) {
+		if !isActivePhaseGoModBead(rel, v) {
+			continue
+		}
+		b, ok := active[filepath.ToSlash(rel)]
+		if !ok {
+			continue
+		}
+		if !eval.VerifySatisfied(rel) {
+			continue
+		}
+		if err := bdCloseImplementBead(townRoot, rig, b.ID); err != nil {
+			return closed, err
+		}
+		closed = append(closed, b.ID)
+	}
+	sort.Strings(closed)
+	return closed, nil
 }
 
 // CloseImplementBeadsWithGreenGoVerify closes open implement beads whose verify/artifact

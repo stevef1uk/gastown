@@ -106,7 +106,14 @@ func goBuildVerifyForPackage(v WorkflowValidation, mayorRigDir, beadPath string)
 // (required_files plus correlated *_test.go for each production source bead).
 func layoutGoRelPathsProtectedFromPrune(v WorkflowValidation) map[string]bool {
 	layout := strings.Trim(filepath.ToSlash(strings.TrimSpace(v.LayoutRoot)), "/")
-	if layout == "" || len(v.RequiredFiles) == 0 {
+	if layout == "" {
+		return nil
+	}
+	files := v.RequiredFiles
+	if v.HasPhasedDelivery() {
+		files = v.UnionRequiredFiles()
+	}
+	if len(files) == 0 {
 		return nil
 	}
 	protected := map[string]bool{}
@@ -117,7 +124,7 @@ func layoutGoRelPathsProtectedFromPrune(v WorkflowValidation) map[string]bool {
 			protected[p] = true
 		}
 	}
-	for _, f := range v.RequiredFiles {
+	for _, f := range files {
 		add(f)
 		if WorkflowUsesGo(v) && !IsTestImplementPath(f) {
 			if testPath := CorrelatedTestPathForSource(f, v); testPath != "" {
@@ -152,30 +159,27 @@ func layoutGoBasenamesProtectedFromPrune(v WorkflowValidation) map[string]bool {
 	return bases
 }
 
-// PruneStaleLayoutGoFiles removes .go files under layout_root that are not listed in required_files.
-// Skipped while any open or in_progress implement beads exist so overnight stalls do not wipe work.
+// PruneStaleLayoutGoFiles removes .go files under layout_root that are not listed in required_files
+// (full union when delivery phases are configured). Junk like internal/app/ from hallucinated writes
+// is removed even while implement beads are open.
 func PruneStaleLayoutGoFiles(townRoot, rig string, v WorkflowValidation) ([]string, error) {
-	active, err := ListImplementBeadsOpenOrInProgress(townRoot, rig, v)
-	if err == nil && len(active) > 0 {
+	layout := strings.Trim(filepath.ToSlash(strings.TrimSpace(v.LayoutRoot)), "/")
+	if layout == "" {
 		return nil, nil
 	}
-	layout := strings.Trim(filepath.ToSlash(strings.TrimSpace(v.LayoutRoot)), "/")
-	if layout == "" || len(v.RequiredFiles) == 0 {
+	required := layoutGoRelPathsProtectedFromPrune(v)
+	if len(required) == 0 {
 		return nil, nil
 	}
 	root := filepath.Join(townRoot, rig, "mayor", "rig", layout)
-	required := layoutGoRelPathsProtectedFromPrune(v)
 	basenameProtected := layoutGoBasenamesProtectedFromPrune(v)
 	if RequiresExactImplementPaths(v) {
 		basenameProtected = nil
 	}
-	if len(required) == 0 {
-		return nil, nil
-	}
 	var removed []string
-	err = filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
-		if err != nil || info.IsDir() || !strings.HasSuffix(path, ".go") {
-			return err
+	err := filepath.Walk(root, func(path string, info os.FileInfo, walkErr error) error {
+		if walkErr != nil || info.IsDir() || !strings.HasSuffix(path, ".go") {
+			return walkErr
 		}
 		rel, err := filepath.Rel(root, path)
 		if err != nil {

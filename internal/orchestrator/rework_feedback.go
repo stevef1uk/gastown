@@ -84,12 +84,20 @@ func prepareQAReviewToImplementationFeedback(summary, raw string, v WorkflowVali
 		b.WriteString("\n")
 	}
 	if paths := extractStubPathsFromFeedback(summary, raw); len(paths) > 0 {
-		b.WriteString("\nFiles to fix (stubs or broken Python):\n")
+		b.WriteString("\nFiles to fix (stubs, wrong paths, or broken sources):\n")
 		for _, p := range paths {
 			b.WriteString("- ")
 			b.WriteString(p)
 			b.WriteString("\n")
 		}
+	}
+	if strings.Contains(strings.ToLower(summary+" "+raw), "go.mod") {
+		b.WriteString("\n**go.mod rework:** READ `SPEC.md` Module block — include the `module` line and every `require` line from SPEC. `go mod tidy` alone is not enough.\n")
+	}
+	if strings.Contains(strings.ToLower(summary+" "+raw), "directory structure") ||
+		strings.Contains(strings.ToLower(summary+" "+raw), "not in architecture") ||
+		strings.Contains(strings.ToLower(summary+" "+raw), "not listed") {
+		b.WriteString("\n**Layout:** Remove source files under paths not in architecture.md / required_files. Implement only scoped bead paths.\n")
 	}
 	if err := extractLastTestFailure(raw); err != "" {
 		b.WriteString("\nLast test failure:\n")
@@ -140,7 +148,9 @@ func extractStubPathsFromFeedback(summary, raw string) []string {
 	for _, s := range []string{summary, raw} {
 		for _, m := range strings.Split(s, " ") {
 			m = strings.Trim(m, ".,;:\"'")
-			if strings.Contains(m, "/") && (strings.HasSuffix(m, ".py") || strings.HasSuffix(m, ".js") || strings.HasSuffix(m, ".html")) {
+			if strings.Contains(m, "/") && (strings.HasSuffix(m, ".py") || strings.HasSuffix(m, ".js") ||
+				strings.HasSuffix(m, ".html") || strings.HasSuffix(m, ".go") || strings.HasSuffix(m, ".mod") ||
+				strings.HasSuffix(m, ".css")) {
 				if !seen[m] {
 					seen[m] = true
 					out = append(out, m)

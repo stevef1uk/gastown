@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"regexp"
 	"strconv"
 	"strings"
@@ -19,6 +20,7 @@ var (
 
 // preprocessOrchestratedResponse normalizes glued CMD/READ/EDIT markers before parsing.
 func preprocessOrchestratedResponse(response string) string {
+	response = unwrapJSONOrchestratedCommands(response)
 	response = normalizeGluedCMDMarkers(response)
 	response = gluedNativeToolRE.ReplaceAllString(response, "$1\n$2")
 	response = gluedCmdToToolRE.ReplaceAllString(response, "$1\n$2")
@@ -29,6 +31,43 @@ func preprocessOrchestratedResponse(response string) string {
 	response = stripMarkdownFenceOnlyLines(response)
 	response = normalizeNativeEditEndLines(response)
 	return response
+}
+
+// unwrapJSONOrchestratedCommands converts {"CMD":"..."} / {"cmd":"..."} lines local LLMs emit into CMD: lines.
+func unwrapJSONOrchestratedCommands(response string) string {
+	var out []string
+	for _, line := range strings.Split(response, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if !strings.HasPrefix(trimmed, "{") {
+			out = append(out, line)
+			continue
+		}
+		if cmd := jsonOrchestratedCommand(trimmed); cmd != "" {
+			out = append(out, "CMD: "+cmd)
+			continue
+		}
+		out = append(out, line)
+	}
+	return strings.Join(out, "\n")
+}
+
+func jsonOrchestratedCommand(line string) string {
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(line), &obj); err != nil {
+		return ""
+	}
+	for _, key := range []string{"CMD", "cmd", "Cmd"} {
+		raw, ok := obj[key]
+		if !ok || len(raw) == 0 {
+			continue
+		}
+		var cmd string
+		if err := json.Unmarshal(raw, &cmd); err != nil || strings.TrimSpace(cmd) == "" {
+			continue
+		}
+		return strings.TrimSpace(cmd)
+	}
+	return ""
 }
 
 // normalizeNativeEditEndLines fixes common model typos (e.g. >>>>>> REPLACE → >>>>>>> REPLACE).

@@ -223,6 +223,7 @@ func qaFailureRequiresImplementationRework(summary string) bool {
 		"command not found", "verification", "verify failed", "web assets", "not served",
 		"imports must appear", "expected declaration", "found db", "setup failed",
 		"compile/test failed", "module compile",
+		"go.mod", "go.sum", "directory structure", "not in architecture", "sqlite3",
 		"dom", "element id", "mismatch", "inconsistent", "ui break", "violates",
 	} {
 		if strings.Contains(lower, needle) {
@@ -247,6 +248,11 @@ func ImplementationDiskWorkReady(rigDir string, v WorkflowValidation) error {
 		}
 		if info.Size() == 0 {
 			return fmt.Errorf("empty %s", rel)
+		}
+		if strings.HasSuffix(strings.ToLower(rel), "/go.mod") || rel == "go.mod" {
+			if err := ValidateGoModFile(rigDir, v); err != nil {
+				return err
+			}
 		}
 	}
 	var polecatRequired []string

@@ -294,3 +294,24 @@ new
 		t.Fatalf("ops = %+v", ops)
 	}
 }
+
+func TestParseOrchestratedCommands_jsonCMDObject(t *testing.T) {
+	t.Parallel()
+	in := `{ "CMD": "export BEADS_DIR=$GT_ROOT/testgt3/.beads && cd testgt3/mayor/rig && bd list --status=open" }`
+	cmds := parseOrchestratedCommands(in)
+	if len(cmds) != 1 {
+		t.Fatalf("cmds = %#v", cmds)
+	}
+	if !strings.Contains(cmds[0], "bd list --status=open") {
+		t.Fatalf("unexpected cmd: %q", cmds[0])
+	}
+}
+
+func TestParseOrchestratedCommands_jsonLowercaseCmd(t *testing.T) {
+	t.Parallel()
+	in := `{"cmd":"cd testgt3/mayor/rig/linkshelf && go mod tidy"}`
+	cmds := parseOrchestratedCommands(in)
+	if len(cmds) != 1 || !strings.Contains(cmds[0], "go mod tidy") {
+		t.Fatalf("cmds = %#v", cmds)
+	}
+}

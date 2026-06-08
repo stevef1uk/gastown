@@ -158,6 +158,12 @@ func RunPreRunHook(step, townRoot, rig string, v WorkflowValidation) (string, er
 		if log != "" && log != "implement beads and required_files are consistent" {
 			return "reconcile implement beads: " + log, nil
 		}
+	case "ensure_go_mod_from_spec":
+		logLine, err := EnsureGoModFromSpec(townRoot, rig, v)
+		if err != nil {
+			return "", err
+		}
+		return logLine, nil
 	case "prune_stale_layout_go":
 		return PruneStaleLayoutGoFilesLog(townRoot, rig, v)
 	case "prune_rig_root_junk":

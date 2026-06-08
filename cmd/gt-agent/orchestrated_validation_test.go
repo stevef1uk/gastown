@@ -1,10 +1,35 @@
 package main
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/steveyegge/gastown/internal/orchestrator"
 )
+
+func TestValidateQACommand_rejectsGoTestOnGoModPhase(t *testing.T) {
+	v := orchestrator.WorkflowValidation{
+		LayoutRoot:         "linkshelf",
+		QAVerifyCommand:    "cd linkshelf && go mod download",
+		ActivePhaseIDField: "go-module",
+		TestRunner:         "custom",
+		DeliveryPhases: []orchestrator.DeliveryPhase{
+			{ID: "go-module", RequiredFiles: []string{"linkshelf/go.mod"}},
+		},
+	}
+	v = v.ForActivePhase()
+	err := validateQACommand("cd testgt3/mayor/rig && cd linkshelf && go test ./...", "testgt3", "/tmp", v)
+	if err == nil {
+		t.Fatal("expected go test rejection during go-module QA")
+	}
+	if !strings.Contains(err.Error(), "go.mod only") {
+		t.Fatalf("err = %v", err)
+	}
+	download := "cd testgt3/mayor/rig && cd linkshelf && go mod download"
+	if err := validateQACommand(download, "testgt3", "/tmp", v); err != nil {
+		t.Fatalf("download cmd: %v", err)
+	}
+}
 
 func TestIsQATestCommandOK_goTestMayorRigPath(t *testing.T) {
 	v := orchestrator.WorkflowValidation{

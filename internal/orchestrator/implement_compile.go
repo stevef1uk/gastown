@@ -31,8 +31,23 @@ func goTestArgsFromVerify(v WorkflowValidation) []string {
 	return []string{"test", "./..."}
 }
 
-// ImplementationModuleCompileOK runs go mod tidy + go test from mayor/rig layout_root.
-// HTTP/runtime checks are in ImplementationPhaseVerifyOK (GT-VERIFY-009), not here.
+// phaseIsGoModOnly is an alias for PhaseIsGoModOnly (package-local call sites).
+func phaseIsGoModOnly(v WorkflowValidation) bool { return PhaseIsGoModOnly(v) }
+
+// PhaseRequiresGoPackages reports whether scoped required_files include Go source (not go.mod-only).
+func PhaseRequiresGoPackages(v WorkflowValidation) bool {
+	for _, f := range v.RequiredFiles {
+		f = filepath.ToSlash(strings.TrimSpace(f))
+		if strings.HasSuffix(f, ".go") {
+			return true
+		}
+	}
+	return false
+}
+
+// ImplementationModuleCompileOK runs phase-appropriate compile checks from mayor/rig layout_root.
+// Go-mod-only phases use go mod download (no tidy — empty modules drop SPEC requires).
+// Phases with .go files run go mod tidy + go test per QAVerifyCommand.
 func ImplementationModuleCompileOK(rigDir string, v WorkflowValidation) error {
 	if !WorkflowUsesGo(v) {
 		return nil
@@ -44,6 +59,27 @@ func ImplementationModuleCompileOK(rigDir string, v WorkflowValidation) error {
 	moduleDir := filepath.Join(rigDir, layout)
 	if _, err := os.Stat(filepath.Join(moduleDir, "go.mod")); err != nil {
 		return fmt.Errorf("module %s: %w", moduleDir, err)
+	}
+	if phaseIsGoModOnly(v) {
+		if err := ValidateGoModFile(rigDir, v); err != nil {
+			return err
+		}
+		script := strings.TrimSpace(GoModScaffoldVerifyCommand(v, rigDir))
+		if script == "" {
+			return nil
+		}
+		cmd := exec.Command("/bin/bash", "-c", script)
+		cmd.Dir = rigDir
+		cmd.Env = os.Environ()
+		out, runErr := cmd.CombinedOutput()
+		if runErr != nil {
+			text := strings.TrimSpace(string(out))
+			if text == "" {
+				text = runErr.Error()
+			}
+			return fmt.Errorf("module scaffold verify failed: %w\n%s", runErr, text)
+		}
+		return nil
 	}
 	goBin, err := exec.LookPath("go")
 	if err != nil {

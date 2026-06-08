@@ -381,7 +381,7 @@ func (v WorkflowValidation) PromptVars() map[string]string {
 		"integration_contract_scope_note": v.IntegrationContractScopeNote(),
 		"requirements_file":       req,
 		"spec_summary":            v.SpecSummary,
-		"unittest_command_hint":     v.QAVerifyHint(),
+		"unittest_command_hint":     scoped.QAVerifyHint(),
 		"implementation_verify_hint": "(resolved per rig at fetch_task — use go build until server main exists)",
 		"project_setup_verify_hint":   v.ProjectSetupVerifyHint(),
 		"project_setup_failure_hint":  ProjectSetupFailureHint(v),

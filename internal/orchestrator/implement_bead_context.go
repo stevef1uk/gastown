@@ -91,7 +91,15 @@ func formatImplementBeadContextForPath(townRoot, rig, beadPath string, v Workflo
 		b.WriteString("\n")
 	}
 	if WorkflowUsesGo(v) {
-		if modCtx := formatGoModuleImportContext(filepath.Join(townRoot, rig, "mayor", "rig"), v); modCtx != "" {
+		rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
+		if strings.HasSuffix(filepath.ToSlash(beadPath), "/go.mod") || beadPath == "go.mod" {
+			if block := FormatGoModBeadContext(rigDir, v); block != "" {
+				b.WriteString("\n")
+				b.WriteString(block)
+				b.WriteString("\n")
+			}
+		}
+		if modCtx := formatGoModuleImportContext(rigDir, v); modCtx != "" {
 			b.WriteString("\n")
 			b.WriteString(modCtx)
 			b.WriteString("\n")

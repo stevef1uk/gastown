@@ -100,6 +100,52 @@ func (r *stateRunner) rejectImplementationSuccessWithoutDisk(outcome string) (st
 	return b.String(), true
 }
 
+// rejectImplementationOpenBeadsSuccess blocks success JSON while implement beads remain open
+// (common when stale progress claims a bead was closed but sync_planning reopened it).
+func (r *stateRunner) rejectImplementationOpenBeadsSuccess(outcome, summary string) (string, bool) {
+	if r == nil || r.task == nil || r.task.State != "implementation" {
+		return "", false
+	}
+	if !isOrchestratedSuccessOutcome(outcome) {
+		return "", false
+	}
+	openImpl := openImplementBeadCount(r)
+	if openImpl == 0 {
+		return "", false
+	}
+	var b strings.Builder
+	b.WriteString("**Rejected:** success JSON while implement beads are still **open** — do not trust stale progress.\n\n")
+	if r.implProgress != nil {
+		for key := range r.implProgress.Completed {
+			if !strings.HasPrefix(key, implMilestoneClosedPrefix) {
+				continue
+			}
+			id := strings.TrimPrefix(key, implMilestoneClosedPrefix)
+			if orchestrator.ImplementBeadIsStillOpen(r.townRoot, r.rig, id, r.v) {
+				b.WriteString(fmt.Sprintf("- Progress file says **%s** was closed but beads DB shows it **OPEN**.\n", id))
+			}
+		}
+	}
+	next, err := orchestrator.NextOpenImplementBead(r.townRoot, r.rig, r.v)
+	if err == nil && next != nil && next.ID != "" {
+		path := orchestrator.ImplementBeadPathForID(r.townRoot, r.rig, next.ID, r.v)
+		b.WriteString(fmt.Sprintf("\n**Next bead:** %s (`%s`)\n", next.ID, path))
+		if r.implProgress != nil && r.implProgress.done(implVerifyKey(next.ID)) {
+			b.WriteString(fmt.Sprintf("`CMD: export BEADS_DIR=$GT_ROOT/%s/.beads && cd %s/mayor/rig && bd close %s`\n", r.rig, r.rig, next.ID))
+		} else {
+			b.WriteString(fmt.Sprintf("`CMD: export BEADS_DIR=$GT_ROOT/%s/.beads && cd %s/mayor/rig && bd update %s --status=in_progress`\n", r.rig, r.rig, next.ID))
+			b.WriteString("Then Verify from Next bead, then `bd close`.\n")
+		}
+	}
+	b.WriteString("\nRun `CMD: bd list --status=open` — send JSON success only when no implement beads are open.\n")
+	if strings.TrimSpace(summary) != "" {
+		b.WriteString("\nYour summary claimed: ")
+		b.WriteString(strings.TrimSpace(summary))
+		b.WriteString("\n")
+	}
+	return b.String(), true
+}
+
 // rejectImplementationPrematureSuccess blocks success JSON while verify/compile still fails
 // (e.g. unused import in handlers_test.go while the active bead is handlers.go).
 func (r *stateRunner) rejectImplementationPrematureSuccess(outcome string) (string, bool) {

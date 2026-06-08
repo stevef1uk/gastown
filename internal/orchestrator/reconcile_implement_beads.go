@@ -203,12 +203,22 @@ func ReconcileImplementBeads(townRoot, rig string, v WorkflowValidation) (string
 	if WorkflowNeedsRuntimeSmoke(townRoot, rig, v) {
 		phaseErr = ImplementationPhaseVerifyOK(townRoot, rig, v)
 	}
+	// Always auto-close green go.mod beads (go-module phase) even when full phase verify is red.
+	goModClosed, err := CloseGreenGoModBeads(townRoot, rig, v, eval)
+	if err != nil {
+		return "", err
+	}
+	if len(goModClosed) > 0 {
+		autoClosed = append(autoClosed, goModClosed...)
+	}
+
 	if phaseErr == nil {
 		var err error
-		autoClosed, err = CloseImplementBeadsWithGreenGoVerify(townRoot, rig, v, eval)
+		moreClosed, err := CloseImplementBeadsWithGreenGoVerify(townRoot, rig, v, eval)
 		if err != nil {
 			return "", err
 		}
+		autoClosed = append(autoClosed, moreClosed...)
 	} else {
 		parts = append(parts, fmt.Sprintf("skipped Go auto-close: phase verify not green (%v)", phaseErr))
 		// Runtime smoke failure reopens handler/web beads — auto-closing frontend first causes

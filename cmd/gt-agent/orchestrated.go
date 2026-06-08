@@ -166,7 +166,8 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 	// pre_run (refresh_codeindex, bead queue, reconcile) must run before prompt_context so
 	// implement_bead_context sees a fresh codeindex.json and the correct queue head.
 	runner.runPreRun()
-	if !shouldSkipPlanningAutoComplete(task, townRoot, rig, runner.v) {
+	if !shouldSkipPlanningAutoComplete(task, townRoot, rig, runner.v) &&
+		!shouldSkipImplementationAutoComplete(task, townRoot, rig, runner.v) {
 		if o, s, ok := runner.tryAutoOutcome(); ok {
 			orchestratedPrintf("[gt-agent] skipping LLM: %s artifacts already valid after pre_run\n", task.State)
 			return o, s, "", nil
@@ -378,6 +379,12 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 				messages = append(messages, llm.Message{Role: "user", Content: msg})
 				continue
 			}
+			if msg, reject := runner.rejectImplementationOpenBeadsSuccess(o, s); reject {
+				orchestratedPrintf("[gt-agent] rejecting implementation success JSON while open beads remain\n")
+				recordAttemptFeedback(msg + "\n")
+				messages = append(messages, llm.Message{Role: "user", Content: msg})
+				continue
+			}
 			if vErr := runner.validateArtifacts(o); vErr != nil {
 				orchestratedPrintf("[gt-agent] artifact validation failed: %v\n", vErr)
 				msg := runner.artifactFailureFeedback(vErr)
@@ -480,6 +487,33 @@ func shouldSkipPlanningAutoComplete(task *orchestrator.Task, townRoot, rig strin
 		}
 	}
 	return false
+}
+
+// shouldSkipImplementationAutoComplete blocks auto-complete after QA rework or while go.mod
+// still fails SPEC validation (go mod tidy alone is not enough).
+func shouldSkipImplementationAutoComplete(task *orchestrator.Task, townRoot, rig string, v orchestrator.WorkflowValidation) bool {
+	if task == nil || task.State != "implementation" {
+		return false
+	}
+	if task.PendingRework != nil && task.PendingRework.FromState == "qa_review" {
+		return true
+	}
+	if townRoot == "" || rig == "" || !orchestrator.WorkflowUsesGo(v) {
+		return false
+	}
+	scoped := v.ForActivePhase()
+	hasGoMod := false
+	for _, f := range scoped.RequiredFiles {
+		if strings.HasSuffix(filepath.ToSlash(f), "/go.mod") || f == "go.mod" {
+			hasGoMod = true
+			break
+		}
+	}
+	if !hasGoMod {
+		return false
+	}
+	rigDir := rigMayorRigDir(townRoot, rig)
+	return orchestrator.ValidateGoModFile(rigDir, scoped) != nil
 }
 
 // formatWorkflowReworkBlock returns cross-step failure context (e.g. QA plan_review → planner).
@@ -1888,6 +1922,12 @@ func validateImplementationArtifacts(townRoot, rig string, hadCmdFailure, beadCl
 		openImpl = n
 	}
 	if openImpl > 0 {
+		next, nerr := orchestrator.NextOpenImplementBead(townRoot, rig, scoped)
+		if nerr == nil && next != nil && next.ID != "" {
+			path := orchestrator.ImplementBeadPathForID(townRoot, rig, next.ID, scoped)
+			return fmt.Errorf("%d open implement bead(s) remain — Next bead: %s (%s, `%s`). Run `bd update %s --status=in_progress`, implement, Verify, then `bd close %s`; send JSON success only when none are open",
+				openImpl, next.ID, next.Title, path, next.ID, next.ID)
+		}
 		return fmt.Errorf("%d open implement bead(s) remain — continue with Next bead (bd update → heredoc → verify → bd close); send JSON success only when none are open", openImpl)
 	}
 	if hadCmdFailure {
@@ -1896,12 +1936,12 @@ func validateImplementationArtifacts(townRoot, rig string, hadCmdFailure, beadCl
 	if !beadCloseOK && !diskReady {
 		return fmt.Errorf("at least one successful `bd close` in %s is required before success", rigMayorRigPath(rig))
 	}
-	if strings.TrimSpace(v.QAVerifyCommand) != "" && !verifyOK {
-		return fmt.Errorf("profile verification must pass in this session before success (%s)", strings.TrimSpace(v.QAVerifyCommand))
+	if strings.TrimSpace(scoped.QAVerifyCommand) != "" && !verifyOK {
+		return fmt.Errorf("profile verification must pass in this session before success (%s)", strings.TrimSpace(scoped.QAVerifyCommand))
 	}
-	if openImpl == 0 && orchestrator.WorkflowUsesGo(v) {
-		if err := orchestrator.HandleImplementationPhaseVerifyFailure(townRoot, rig, v); err != nil {
-			return fmt.Errorf("all implement beads are closed but compile or runtime smoke failed: %w", err)
+	if openImpl == 0 && orchestrator.WorkflowUsesGo(scoped) {
+		if err := orchestrator.HandleImplementationPhaseVerifyFailure(townRoot, rig, scoped); err != nil {
+			return fmt.Errorf("all implement beads are closed but phase verify failed: %w", err)
 		}
 	}
 	if err := validateRequiredWorkFiles(townRoot, rig, scoped); err != nil {
@@ -2026,6 +2066,11 @@ func validateQACommand(cmd, rig, townRoot string, v orchestrator.WorkflowValidat
 	lower := strings.ToLower(cmd)
 	if strings.Contains(lower, "[tool_calls]") {
 		return fmt.Errorf("do not emit [TOOL_CALLS] markers — use CMD: lines only")
+	}
+	if orchestrator.WorkflowUsesGo(v) && orchestrator.PhaseIsGoModOnly(v) {
+		if strings.Contains(lower, "go test") || strings.Contains(lower, "go build") {
+			return fmt.Errorf("active phase is go.mod only — run %s (no go test until .go sources exist)", v.QAVerifyHint())
+		}
 	}
 	if townRoot != "" && rig != "" && !orchestrator.WorkflowNeedsQARuntimeSmoke(townRoot, rig, v) {
 		if strings.Contains(lower, "curl ") || strings.Contains(lower, "go run") {
@@ -2494,6 +2539,11 @@ func validateRequiredWorkFiles(townRoot, rig string, v orchestrator.WorkflowVali
 		if info.Size() == 0 {
 			return fmt.Errorf("%s is empty", path)
 		}
+		if strings.HasSuffix(filepath.ToSlash(rel), "/go.mod") || rel == "go.mod" {
+			if err := orchestrator.ValidateGoModFile(rigDir, v); err != nil {
+				return err
+			}
+		}
 	}
 	return nil
 }
@@ -2575,12 +2625,12 @@ func buildOrchestratedSystemPrompt(task *orchestrator.Task, townRoot string) str
 
 func orchestratorPromptVars(task *orchestrator.Task, townRoot string) map[string]string {
 	vars := map[string]string{"rig": task.Rig}
-	v := task.Validation.WithDefaults()
+	v := taskValidation(townRoot, task)
 	for k, val := range v.PromptVars() {
 		vars[k] = val
 	}
 	if townRoot != "" && task.Rig != "" {
-		vars["qa_runtime_smoke_block"] = orchestrator.RigFlowQARuntimeSmokeBlock(townRoot, task.Rig, v.ForActivePhase())
+		vars["qa_runtime_smoke_block"] = orchestrator.RigFlowQARuntimeSmokeBlock(townRoot, task.Rig, v)
 	}
 	return vars
 }

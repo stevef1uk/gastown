@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/steveyegge/gastown/internal/orchestrator"
@@ -23,6 +24,16 @@ func validateImplementationBeadClose(cmd, townRoot, rig string, v orchestrator.W
 	}
 	rigDir := rigMayorRigDir(townRoot, rig)
 	beadPath := orchestrator.ImplementBeadPathForID(townRoot, rig, id, v)
+	if beadPath != "" && strings.HasSuffix(filepath.ToSlash(beadPath), "/go.mod") {
+		if logLine, repairErr := orchestrator.RepairGoModRequiresFromSpec(rigDir, v); repairErr != nil {
+			return fmt.Errorf("cannot bd close %s: %w", id, repairErr)
+		} else if logLine != "" {
+			orchestratedPrintf("[gt-agent] %s\n", logLine)
+		}
+		if err := orchestrator.ValidateGoModFile(rigDir, v); err != nil {
+			return fmt.Errorf("cannot bd close %s: %w — READ SPEC.md Module section and EDIT go.mod", id, err)
+		}
+	}
 	if beadPath != "" && !orchestrator.IsProjectSetupArtifactPath(beadPath, v) {
 		if err := orchestrator.ValidateBeadArtifactOnDisk(rigDir, beadPath, v); err != nil {
 			return fmt.Errorf("cannot bd close %s: %w — implement and run Verify first", id, err)

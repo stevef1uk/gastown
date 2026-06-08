@@ -26,7 +26,7 @@ func TestWorkflowUsesGo(t *testing.T) {
 func TestGoProjectSetupVerifyCommand(t *testing.T) {
 	t.Parallel()
 	got := GoProjectSetupVerifyCommand(WorkflowValidation{LayoutRoot: "linkshelf"}, "")
-	if got != "cd linkshelf && go mod tidy" {
+	if got != "cd linkshelf && go mod download" {
 		t.Fatalf("got %q", got)
 	}
 	if strings.Contains(got, "go build") || strings.Contains(got, "curl") {
@@ -107,10 +107,10 @@ func TestGoImplementationVerifyCommandForBead_goMod(t *testing.T) {
 	}
 	got := GoImplementationVerifyCommandForBead(v, dir, "linkshelf/go.mod")
 	if strings.Contains(got, "curl") || strings.Contains(got, "go run") || strings.Contains(got, "go build") {
-		t.Fatalf("go.mod bead wants tidy only: %q", got)
+		t.Fatalf("go.mod bead wants scaffold verify only: %q", got)
 	}
-	if !strings.Contains(got, "go mod tidy") {
-		t.Fatalf("want go mod tidy: %q", got)
+	if !strings.Contains(got, "go mod download") {
+		t.Fatalf("want go mod download: %q", got)
 	}
 }
 

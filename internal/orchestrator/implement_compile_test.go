@@ -72,6 +72,45 @@ func goVersionTag(s string) string {
 	return ""
 }
 
+func TestImplementationModuleCompileOK_goModulePhaseOnly(t *testing.T) {
+	requireGoToolchain(t)
+	townRoot := t.TempDir()
+	rig := "rig"
+	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
+	if err := os.MkdirAll(rigDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(rigDir, "SPEC.md"), []byte("## Module\n\n```\nmodule linkshelf\n\ngo 1.22\n\nrequire github.com/mattn/go-sqlite3 v1.14.22\n```\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	layout := filepath.Join(rigDir, "linkshelf")
+	if err := os.MkdirAll(layout, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(layout, "go.mod"), []byte("module linkshelf\n\ngo 1.22\n\nrequire github.com/mattn/go-sqlite3 v1.14.22\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	v := WorkflowValidation{
+		LayoutRoot:         "linkshelf",
+		ActivePhaseIDField: "go-module",
+		QAVerifyCommand:    "cd linkshelf && go mod tidy",
+		RequiredFiles:      []string{"linkshelf/go.mod"},
+		DeliveryPhases: []DeliveryPhase{
+			{ID: "go-module", RequiredFiles: []string{"linkshelf/go.mod"}, QAVerifyCommand: "cd linkshelf && go mod tidy"},
+		},
+	}
+	scoped := v.ForActivePhase()
+	if err := ImplementationModuleCompileOK(rigDir, scoped); err != nil {
+		if strings.Contains(err.Error(), "command not found") || strings.Contains(err.Error(), "not in PATH") {
+			t.Skip("go not available in test shell")
+		}
+		t.Fatal(err)
+	}
+	if err := ImplementationPhaseVerifyOK(townRoot, rig, scoped); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestImplementationModuleCompileOK_passesCleanModule(t *testing.T) {
 	requireGoToolchain(t)
 	dir := t.TempDir()

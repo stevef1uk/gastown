@@ -162,7 +162,7 @@ states:
       failure_prompt_context: [implementation_queue, implement_bead_context]
       empty_response_suffix: "Reply with EDIT:/WRITE:/READ: or CMD: lines. Implement code and unit tests per plan.md; WRITE for new *_test.go or tests/test_*.py. Use Verify from Next bead."
       prompt_context: [implementation_queue, implement_bead_context]
-      pre_run: [prune_rig_root_junk, sync_planning_artifacts, ensure_http_implementation_config, ensure_handler_phase_prerequisites, ensure_implement_smoke_ready, close_project_setup_beads, enforce_implement_bead_queue, prune_stale_layout_go, repair_requirements, refresh_codeindex, reconcile_implement_beads]
+      pre_run: [prune_rig_root_junk, sync_planning_artifacts, ensure_http_implementation_config, ensure_handler_phase_prerequisites, ensure_implement_smoke_ready, ensure_go_mod_from_spec, enforce_implement_bead_queue, prune_stale_layout_go, repair_requirements, refresh_codeindex, reconcile_implement_beads]
       # Do not run repair_planning_beads / refresh_plan_md_if_stale per turn — they create beads and
       # rewrite plan.md mid-implementation (see pre_run sync + reconcile). Planning-only repair stays in planning state hooks.
       per_turn: [prune_stale_layout_go, repair_requirements]
@@ -180,7 +180,9 @@ states:
       empty_bd_list_ok: true
       auto_verify:
         - when: go_mod_tidy
-          verify: go_implementation
+          verify: go_setup
+        - when: go_mod_init
+          verify: go_setup
         - when: go_write_layout
           verify: go_implementation
         - when: python_import_check

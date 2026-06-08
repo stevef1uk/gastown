@@ -1320,6 +1320,26 @@ func ReopenClosedImplementBeadsForMissingOpenRequired(townRoot, rig string, v Wo
 	return reopened, nil
 }
 
+// ImplementBeadIsStillOpen reports whether beadID is open or in_progress in the beads store.
+func ImplementBeadIsStillOpen(townRoot, rig, beadID string, v WorkflowValidation) bool {
+	beadID = strings.TrimSpace(beadID)
+	if beadID == "" {
+		return false
+	}
+	for _, status := range []string{"open", "in_progress"} {
+		beads, err := listImplementBeadsByStatus(townRoot, rig, v, status)
+		if err != nil {
+			continue
+		}
+		for _, b := range beads {
+			if b.ID == beadID {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // EnsurePlanningImplementBeads creates open implement beads for any missing required_files paths.
 func EnsurePlanningImplementBeads(townRoot, rig string, v WorkflowValidation) ([]string, error) {
 	v = v.ForActivePhase()
@@ -1363,6 +1383,10 @@ func EnsurePlanningImplementBeads(townRoot, rig string, v WorkflowValidation) ([
 			continue
 		}
 		if id, ok := ClosedImplementBeadForPath(townRoot, rig, want, v); ok {
+			rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
+			if newImplementBeadVerifyEvaluator(rigDir, v).VerifySatisfied(want) {
+				continue
+			}
 			if err := bdUpdateImplementBeadStatus(townRoot, rig, id, "open"); err != nil {
 				return created, err
 			}
