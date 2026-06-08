@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -341,14 +342,14 @@ func rewriteUnittestToWorkdir(cmd, rig string, v orchestrator.WorkflowValidation
 			changed = true
 		} else if layout != "" && layout != "." {
 			// Profile verify uses bare "cd layout" (mayor/rig-relative); orchestrated cwd is town root.
-			rest := stripFirstCDPrefix(cmd)
+			rest := stripRedundantLayoutCD(stripFirstCDPrefix(cmd), workPath, layout)
 			cmd = "cd " + workPath + " && " + rest
 			changed = true
 		}
 	} else if orchestrator.WorkflowUsesGo(v) && layout != "" && layout != "." &&
 		commandHasMayorRigCD(cmd, rig) && !commandHasLayoutCD(cmd, layout) {
 		// Already under mayor/rig but not in layout module dir — one cd to module root.
-		rest := stripFirstCDPrefix(cmd)
+		rest := stripRedundantLayoutCD(stripFirstCDPrefix(cmd), workPath, layout)
 		cmd = "cd " + workPath + " && " + rest
 		changed = true
 	}
@@ -393,6 +394,22 @@ func stripLeadingCDDot(cmd string) string {
 		}
 	}
 	return trimmed
+}
+
+// stripRedundantLayoutCD drops embedded "cd layout" when workPath already ends in layout.
+func stripRedundantLayoutCD(cmd, workPath, layout string) string {
+	layout = strings.Trim(filepath.ToSlash(strings.TrimSpace(layout)), "/")
+	wp := strings.Trim(filepath.ToSlash(strings.TrimSpace(workPath)), "/")
+	if layout == "" || wp == "" || !strings.HasSuffix(wp, layout) {
+		return strings.TrimSpace(cmd)
+	}
+	for _, pat := range []string{
+		"&& cd " + layout + " && ",
+		"&& cd ./" + layout + " && ",
+	} {
+		cmd = strings.ReplaceAll(cmd, pat, "&& ")
+	}
+	return strings.TrimSpace(cmd)
 }
 
 // stripFirstCDPrefix removes a leading "cd <path> &&" so rewrite can replace with one module cd.

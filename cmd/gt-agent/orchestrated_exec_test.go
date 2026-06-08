@@ -537,6 +537,24 @@ func TestRewriteUnittestToWorkdir_goLayout(t *testing.T) {
 	}
 }
 
+func TestRewriteUnittestToWorkdir_exportThenLayoutCD(t *testing.T) {
+	v := orchestrator.WorkflowValidation{
+		LayoutRoot:      "linkshelf",
+		QAVerifyCommand: "cd linkshelf && go test ./internal/store/...",
+	}
+	cmd := "export BEADS_DIR=$GT_ROOT/testgt3/.beads && cd linkshelf && go test -count=1 ./internal/store/..."
+	fixed, ok := rewriteUnittestToWorkdir(cmd, "testgt3", v)
+	if !ok {
+		t.Fatal("expected rewrite")
+	}
+	if strings.Contains(fixed, "linkshelf && export") && strings.Contains(fixed, "&& cd linkshelf &&") {
+		t.Fatalf("must not double-cd layout after export: %q", fixed)
+	}
+	if !strings.Contains(fixed, "cd testgt3/mayor/rig/linkshelf &&") {
+		t.Fatalf("want module workdir cd: %q", fixed)
+	}
+}
+
 func TestRewriteUnittestToWorkdir_alreadyInModule(t *testing.T) {
 	v := orchestrator.WorkflowValidation{
 		LayoutRoot:      "linkshelf",

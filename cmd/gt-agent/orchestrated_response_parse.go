@@ -13,8 +13,9 @@ var (
 	gluedNativeToolRE = regexp.MustCompile(`(?i)(>>>>>>>\s*REPLACE|---END\s+EDIT|---END\s+WRITE)\s*(CMD:|READ:|EDIT:|WRITE:)`)
 	gluedCmdToToolRE  = regexp.MustCompile(`(?i)(CMD:\s*)(READ:|EDIT:|WRITE:)`)
 	inlineToolRE      = regexp.MustCompile(`(?i)([^\s\n])(READ:|EDIT:|WRITE:)`)
-	bdListLimitValueRE = regexp.MustCompile(`(?i)--limit(?:=|\s+)(\S+)`)
-	bdListWordRE      = regexp.MustCompile(`(?i)\bbd\s+list\b`)
+	bdListLimitValueRE   = regexp.MustCompile(`(?i)--limit(?:=|\s+)(\S+)`)
+	bdListWordRE         = regexp.MustCompile(`(?i)\bbd\s+list\b`)
+	bdListStatusGluedRE  = regexp.MustCompile(`(?i)--status=([a-z_,]+)\([^)]*\)`)
 	bdBeadNumericIDRE = regexp.MustCompile(`^\d+$`)
 )
 
@@ -450,6 +451,11 @@ func sanitizeBdListCommand(cmd string) (string, bool) {
 		return cmd, false
 	}
 	changed := false
+	if cleaned := stripCommandOutputArtifacts(cmd); cleaned != cmd {
+		cmd = cleaned
+		changed = true
+		lower = strings.ToLower(cmd)
+	}
 	if m := bdListLimitValueRE.FindStringSubmatch(cmd); len(m) >= 2 {
 		val := strings.TrimSpace(m[1])
 		digits := limitDigitsPrefix(val)
@@ -467,6 +473,15 @@ func sanitizeBdListCommand(cmd string) (string, bool) {
 		changed = true
 	}
 	return cmd, changed
+}
+
+// stripCommandOutputArtifacts removes pasted tool output from shell commands (e.g. "(no output)").
+func stripCommandOutputArtifacts(cmd string) string {
+	for _, junk := range []string{"(exit 0, no output)", "(no output)"} {
+		cmd = strings.ReplaceAll(cmd, junk, "")
+	}
+	cmd = bdListStatusGluedRE.ReplaceAllString(cmd, "--status=$1")
+	return strings.TrimSpace(cmd)
 }
 
 func fixBdListGluedToWord(cmd string) (string, bool) {

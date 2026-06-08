@@ -123,6 +123,20 @@ func TestSanitizeBdListCommand_limitGluedWithProse(t *testing.T) {
 	}
 }
 
+func TestSanitizeBdListCommand_stripsPastedOutput(t *testing.T) {
+	cmd := "export BEADS_DIR=x && cd testgt3/mayor/rig && bd list --limit=0 --status=closed(no output) | grep -Fi 'Implement linkshelf/' || true"
+	fixed, changed := sanitizeBdListCommand(cmd)
+	if !changed {
+		t.Fatal("expected change")
+	}
+	if strings.Contains(fixed, "(no output)") {
+		t.Fatalf("output artifact still present: %q", fixed)
+	}
+	if !strings.Contains(fixed, "--status=closed") {
+		t.Fatalf("want clean status flag: %q", fixed)
+	}
+}
+
 func TestValidateBdCommandBeadID_rejectsNumericClose(t *testing.T) {
 	err := validateBdCommandBeadID("bd close 12", "", "testgt3")
 	if err == nil || !strings.Contains(err.Error(), "bare number") {

@@ -1936,12 +1936,18 @@ func validateImplementationArtifacts(townRoot, rig string, hadCmdFailure, beadCl
 	if !beadCloseOK && !diskReady {
 		return fmt.Errorf("at least one successful `bd close` in %s is required before success", rigMayorRigPath(rig))
 	}
-	if strings.TrimSpace(scoped.QAVerifyCommand) != "" && !verifyOK {
-		return fmt.Errorf("profile verification must pass in this session before success (%s)", strings.TrimSpace(scoped.QAVerifyCommand))
+	phaseVerify := strings.TrimSpace(scoped.QAVerifyCommand)
+	if phaseVerify != "" && !verifyOK {
+		if openImpl == 0 && orchestrator.ImplementationPhaseVerifyOK(townRoot, rig, scoped) == nil {
+			// Queue empty and phase verify is green on disk — do not require a manual verify CMD
+			// in this session after gt-agent restarts (verifyOK clears on new sessions).
+		} else {
+			return fmt.Errorf("profile verification must pass in this session before success (%s)", phaseVerify)
+		}
 	}
 	if openImpl == 0 && orchestrator.WorkflowUsesGo(scoped) {
 		if err := orchestrator.HandleImplementationPhaseVerifyFailure(townRoot, rig, scoped); err != nil {
-			return fmt.Errorf("all implement beads are closed but phase verify failed: %w", err)
+			return fmt.Errorf("all implement beads are closed but compile or runtime smoke failed: %w", err)
 		}
 	}
 	if err := validateRequiredWorkFiles(townRoot, rig, scoped); err != nil {

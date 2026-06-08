@@ -98,8 +98,8 @@ func isProjectSetupVerifyCommandOK(cmd string, v orchestrator.WorkflowValidation
 		strings.Contains(lower, "go test") || strings.Contains(lower, "curl ") {
 		return false
 	}
-	return strings.Contains(lower, "go mod tidy") || strings.Contains(lower, "go mod init") ||
-		strings.Contains(lower, "go get ")
+	return strings.Contains(lower, "go mod tidy") || strings.Contains(lower, "go mod download") ||
+		strings.Contains(lower, "go mod init") || strings.Contains(lower, "go get ")
 }
 
 func isQATestCommandOK(cmd string, v orchestrator.WorkflowValidation) bool {
