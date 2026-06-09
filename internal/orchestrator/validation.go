@@ -491,6 +491,9 @@ func NormalizePytestCommand(cmd string) string {
 	if strings.Contains(lower, "python3 -m pytest") || strings.Contains(lower, "python -m pytest") {
 		return cmd
 	}
+	if strings.Contains(lower, "pip install") {
+		return cmd
+	}
 	re := regexp.MustCompile(`(?i)(^|[;&|]\s*|\s+)pytest\b`)
 	return re.ReplaceAllString(cmd, `${1}python3 -m pytest`)
 }
