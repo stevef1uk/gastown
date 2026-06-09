@@ -328,3 +328,39 @@ func readFileString(path string) string {
 	}
 	return string(data)
 }
+
+// CheckMainMissingDriverImports verifies cmd/server/main.go imports database drivers
+// listed in SPEC.md require directives (e.g. _ "github.com/mattn/go-sqlite3").
+func CheckMainMissingDriverImports(rigDir, mainRel string, v WorkflowValidation) ([]string, error) {
+	data, err := os.ReadFile(filepath.Join(rigDir, filepath.FromSlash(mainRel)))
+	if err != nil {
+		return nil, nil
+	}
+	content := string(data)
+	// Known database driver packages from SPEC require directives.
+	driverMap := map[string]string{
+		"github.com/mattn/go-sqlite3":        `_ "github.com/mattn/go-sqlite3"`,
+		"github.com/lib/pq":                  `_ "github.com/lib/pq"`,
+		"github.com/go-sql-driver/mysql":     `_ "github.com/go-sql-driver/mysql"`,
+		"github.com/jackc/pgx/v5/stdlib":     `_ "github.com/jackc/pgx/v5/stdlib"`,
+		"modernc.org/sqlite":                 `_ "modernc.org/sqlite"`,
+	}
+	specReqs := RequiredGoModRequireDirectives(rigDir)
+	var missing []string
+	for _, req := range specReqs {
+		parts := strings.Fields(strings.TrimPrefix(req, "require "))
+		if len(parts) < 2 {
+			continue
+		}
+		mod := parts[0]
+		importPath, ok := driverMap[mod]
+		if !ok {
+			continue
+		}
+		if strings.Contains(content, importPath) {
+			continue
+		}
+		missing = append(missing, importPath)
+	}
+	return missing, nil
+}

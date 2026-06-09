@@ -202,3 +202,29 @@ func (r *stateRunner) runPostWriteHTTPContract(relPath string, combined *strings
 		}
 	}
 }
+
+// runPostNativeWriteMainImportCheck verifies cmd/server/main.go imports required
+// database drivers from SPEC.md (e.g. _ "github.com/mattn/go-sqlite3").
+func (r *stateRunner) runPostNativeWriteMainImportCheck(relPath string, combined *strings.Builder) {
+	if !strings.EqualFold(strings.TrimSpace(r.hooks.Track), "implementation") || !orchestrator.WorkflowUsesGo(r.v) {
+		return
+	}
+	relPath = orchestrator.NormalizeBeadPathForLayout(relPath, r.v.LayoutRoot)
+	if !orchestrator.IsCmdMainImplementPath(relPath) {
+		return
+	}
+	mayorDir := rigMayorRigDir(r.townRoot, r.rig)
+	missing, err := orchestrator.CheckMainMissingDriverImports(mayorDir, relPath, r.v)
+	if err != nil {
+		r.track.hadCmdFailure = true
+		r.track.verifyOK = false
+		combined.WriteString(fmt.Sprintf("Missing driver import in %s: %v\n\n", relPath, err))
+		return
+	}
+	if len(missing) > 0 {
+		r.track.hadCmdFailure = true
+		r.track.verifyOK = false
+		combined.WriteString(fmt.Sprintf("Missing driver import(s) in %s: %s\nAdd blank imports (e.g. _ \"%s\") before bd close.\n\n",
+			relPath, strings.Join(missing, ", "), missing[0]))
+	}
+}
