@@ -1938,7 +1938,7 @@ func validateImplementationArtifacts(townRoot, rig string, hadCmdFailure, beadCl
 			return fmt.Errorf("%d open implement bead(s) remain — Next bead: %s (%s, `%s`). Run `bd update %s --status=in_progress`, implement, Verify, then `bd close %s`; send JSON success only when none are open",
 				openImpl, next.ID, next.Title, path, next.ID, next.ID)
 		}
-		return fmt.Errorf("%d open implement bead(s) remain — continue with Next bead (bd update → heredoc → verify → bd close); send JSON success only when none are open", openImpl)
+		return fmt.Errorf("%d open implement bead(s) remain — run `bd close <id>` (bead is written and verify passes), then send JSON success. Use `bd list --status=open` for bead IDs", openImpl)
 	}
 	if hadCmdFailure {
 		return fmt.Errorf("implementation step had failed commands; fix errors before completing")
