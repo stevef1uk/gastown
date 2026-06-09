@@ -23,6 +23,7 @@ var (
 func preprocessOrchestratedResponse(response string) string {
 	response = unwrapJSONOrchestratedCommands(response)
 	response = unwrapJSONCommandArray(response)
+	response = normalizeGluedWriteBody(response)
 	response = normalizeGluedCMDMarkers(response)
 	response = gluedNativeToolRE.ReplaceAllString(response, "$1\n$2")
 	response = gluedCmdToToolRE.ReplaceAllString(response, "$1\n$2")
@@ -116,6 +117,22 @@ func normalizeNativeEditEndLines(response string) string {
 	for _, line := range strings.Split(response, "\n") {
 		if isShortNativeEditEndMarker(strings.TrimSpace(line)) {
 			out = append(out, nativeEditEndMarker)
+			continue
+		}
+		out = append(out, line)
+	}
+	return strings.Join(out, "\n")
+}
+
+var gluedWriteBodyRE = regexp.MustCompile(`(?i)^(WRITE:\s*\S+)\s+(package\s|import\s|from\s|#include\b|<\?php\b)`)
+
+func normalizeGluedWriteBody(response string) string {
+	var out []string
+	for _, line := range strings.Split(response, "\n") {
+		if m := gluedWriteBodyRE.FindStringSubmatch(line); len(m) >= 2 {
+			out = append(out, m[1])
+			rest := strings.TrimSpace(line[len(m[1]):])
+			out = append(out, rest)
 			continue
 		}
 		out = append(out, line)
