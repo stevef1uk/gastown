@@ -154,6 +154,9 @@ func filterHallucinatedScriptLines(body string) string {
 		if looksLikeHallucinatedShellOutput(t) {
 			continue
 		}
+		if looksLikeMarkdownStepLine(t) {
+			continue
+		}
 		if outcomeJSONLeadingColonRE.MatchString(t) {
 			continue
 		}
