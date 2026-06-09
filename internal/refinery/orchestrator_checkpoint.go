@@ -99,6 +99,12 @@ func CommitMayorRigOrchestratorCheckpoint(townRoot, rigName, workflowID, templat
 		return nil
 	}
 
+	// Always stage new files first — bd auto-export may have failed for
+	// files created by the polecat. git add -A is idempotent and safe.
+	if err := g.Add("-A"); err != nil {
+		return fmt.Errorf("git add: %w", err)
+	}
+
 	dirty, err := g.HasUncommittedChanges()
 	if err != nil {
 		return fmt.Errorf("mayor/rig status: %w", err)
@@ -110,10 +116,7 @@ func CommitMayorRigOrchestratorCheckpoint(townRoot, rigName, workflowID, templat
 			fmt.Printf("[Orchestrator] rig %s: SKIP checkpoint commit — binary files detected in worktree\n", rigName)
 			return maybePushMayorRigOnCompleted(townRoot, rigName, templateID, fromState, toState)
 		}
-		if err := g.Add("-A"); err != nil {
-			return fmt.Errorf("git add: %w", err)
-		}
-
+		// git add already done above; skip the redundant add inside the dirty block.
 		msg := buildOrchestratorTransitionMessage(workflowID, fromState, toState, outcome)
 		if err := g.Commit(msg); err != nil {
 			if strings.Contains(err.Error(), "nothing to commit") {
@@ -153,6 +156,10 @@ func SyncMayorRigUpstream(townRoot, rigName string) error {
 	if !g.IsRepo() {
 		return fmt.Errorf("%s is not a git repository", mayorRig)
 	}
+	// Always stage new files first — bd auto-export may have failed.
+	if err := g.Add("-A"); err != nil {
+		return fmt.Errorf("git add: %w", err)
+	}
 	dirty, err := g.HasUncommittedChanges()
 	if err != nil {
 		return fmt.Errorf("status: %w", err)
@@ -163,9 +170,6 @@ func SyncMayorRigUpstream(townRoot, rigName string) error {
 		} else if hasBin {
 			fmt.Printf("[Orchestrator] rig %s: SKIP sync commit — binary files detected in worktree\n", rigName)
 			return maybePushMayorRigOnCompleted(townRoot, rigName, "rig-flow", "sync", "completed")
-		}
-		if err := g.Add("-A"); err != nil {
-			return fmt.Errorf("git add: %w", err)
 		}
 		msg := "chore(orchestrator): sync upstream (manual)"
 		if err := g.Commit(msg); err != nil && !strings.Contains(err.Error(), "nothing to commit") {
