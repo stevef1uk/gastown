@@ -428,7 +428,11 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 			return "timeout", summary, lastAttemptFeedback.String(), fmt.Errorf("no structured outcome after %d turns", maxTurns)
 		}
 	}
-	return "fail", "", lastAttemptFeedback.String(), fmt.Errorf("no structured outcome after %d turns", maxTurns)
+	fb := lastAttemptFeedback.String()
+	if task != nil && task.State == "qa_review" && fb != "" {
+		summary = "QA exhausted turns; " + fb
+	}
+	return "fail", summary, fb, fmt.Errorf("no structured outcome after %d turns", maxTurns)
 }
 
 func isOrchestratedFailureOutcome(outcome string) bool {
