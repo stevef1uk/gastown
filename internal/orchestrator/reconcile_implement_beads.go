@@ -203,6 +203,12 @@ func ReconcileImplementBeads(townRoot, rig string, v WorkflowValidation) (string
 	if WorkflowNeedsRuntimeSmoke(townRoot, rig, v) {
 		phaseErr = ImplementationPhaseVerifyOK(townRoot, rig, v)
 	}
+	if phaseErr != nil && WorkflowUsesPython(v) && pythonVerifyNeedsVenvRebuild(phaseErr) {
+		if logLine, recovered := RecoverPythonVenvAndRetry(townRoot, rig, v, phaseErr); recovered {
+			parts = append(parts, logLine)
+			phaseErr = ImplementationPhaseVerifyOK(townRoot, rig, v)
+		}
+	}
 	// Always auto-close green go.mod beads (go-module phase) even when full phase verify is red.
 	goModClosed, err := CloseGreenGoModBeads(townRoot, rig, v, eval)
 	if err != nil {

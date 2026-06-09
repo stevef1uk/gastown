@@ -181,3 +181,60 @@ func ImplementationPythonModuleOK(rigDir string, v WorkflowValidation) error {
 	}
 	return nil
 }
+
+var pythonVenvCorruptionPatterns = []string{
+	"ModuleNotFoundError:",
+	"ImportError:",
+	"No module named",
+	"cannot import name",
+}
+
+// pythonVerifyNeedsVenvRebuild reports whether a phase verify failure looks like
+// a corrupted/missing venv rather than a code bug.
+func pythonVerifyNeedsVenvRebuild(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	for _, pat := range pythonVenvCorruptionPatterns {
+		if strings.Contains(msg, pat) {
+			return true
+		}
+	}
+	return false
+}
+
+// RecoverPythonVenvAndRetry deletes and recreates the Python venv and pip-installs from
+// requirements.txt. Returns a log line and true if recovery succeeded (verify should retry).
+func RecoverPythonVenvAndRetry(townRoot, rig string, v WorkflowValidation, originalErr error) (string, bool) {
+	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
+	venvPath := filepath.Join(rigDir, strings.Trim(v.PythonVenvRelDir(), "/"))
+	reqPath := filepath.Join(rigDir, v.RequirementsFilePath())
+	if _, err := os.Stat(reqPath); err != nil {
+		return fmt.Sprintf("venv corrupted but %s missing — cannot rebuild", v.RequirementsFilePath()), false
+	}
+	if err := os.RemoveAll(venvPath); err != nil && !os.IsNotExist(err) {
+		return fmt.Sprintf("venv rebuild: cannot remove %s: %v", venvPath, err), false
+	}
+	create := exec.Command("/bin/bash", "-c", "python3 -m venv "+shellescape(venvPath))
+	create.Dir = rigDir
+	create.Env = os.Environ()
+	if out, err := create.CombinedOutput(); err != nil {
+		return fmt.Sprintf("venv rebuild: python3 -m venv failed: %v\n%s", err, string(out)), false
+	}
+	install := exec.Command("/bin/bash", "-c", venvPath+"/bin/pip install -r "+shellescape(reqPath))
+	install.Dir = rigDir
+	install.Env = os.Environ()
+	if out, err := install.CombinedOutput(); err != nil {
+		return fmt.Sprintf("venv rebuild: pip install -r failed: %v\n%s", err, string(out)), false
+	}
+	return fmt.Sprintf("rebuilt venv (ModuleNotFoundError — pip conflict detected and resolved)"), true
+}
+
+// shellescape wraps a path in single quotes for safe shell use.
+func shellescape(s string) string {
+	if !strings.ContainsAny(s, " \t\n'\"") {
+		return s
+	}
+	return "'" + strings.ReplaceAll(s, "'", `'"'"'`) + "'"
+}
