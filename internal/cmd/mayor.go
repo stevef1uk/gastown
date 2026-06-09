@@ -309,11 +309,22 @@ func runMayorWorkflowStatus(cmd *cobra.Command, args []string) error {
 	}
 	for _, s := range statuses {
 		rig := s.Variables["rig"]
+		rigStr := ""
+		phaseStr := ""
 		if rig != "" {
-			rig = " rig=" + rig
+			rigStr = " rig=" + rig
+			if prof, ok, _ := orchestrator.LoadRigWorkflowProfileFile(townRoot, rig); ok {
+				if p, pok := prof.ForActivePhase().ActivePhase(); pok && p.ID != "" {
+					name := p.Title
+					if name == "" {
+						name = p.ID
+					}
+					phaseStr = fmt.Sprintf(" phase=%s", name)
+				}
+			}
 		}
-		fmt.Printf("%s  template=%s state=%s status=%s role=%s%s\n",
-			s.ID, s.TemplateID, s.CurrentState, s.Status, s.Role, rig)
+		fmt.Printf("%s  template=%s state=%s status=%s role=%s%s%s\n",
+			s.ID, s.TemplateID, s.CurrentState, s.Status, s.Role, rigStr, phaseStr)
 	}
 	if warn := orchestrator.DuplicateActiveWarning(statuses); warn != "" {
 		fmt.Printf("\n%s %s\n", style.Warning.Render("!"), warn)
