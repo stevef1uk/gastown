@@ -20,6 +20,7 @@ var (
 	staticRouteTableRE = regexp.MustCompile(`(?im)\|\s*GET\s*\|\s*/static/\{[^}]+\}\s*\|`)
 	staticMapsWebRE    = regexp.MustCompile(`(?i)/static/\{[^}]+\}[^\n|]*\bweb/\{`)
 	rootStaticGETRE    = regexp.MustCompile(`(?i)\bGET\s+/\{[^}]+\}[^\n|]*\bweb/`)
+	staticPathRefRE    = regexp.MustCompile("`"+`(?i)/static/\{[^}]+\}`+"`")
 )
 
 // ParseWebStaticMapping derives static URL rules from architecture/SPEC text.
@@ -28,6 +29,7 @@ func ParseWebStaticMapping(archText string) WebStaticMapping {
 	lower := strings.ToLower(archText)
 	hasStatic := staticRouteGETRE.MatchString(archText) ||
 		staticRouteTableRE.MatchString(archText) ||
+		staticPathRefRE.MatchString(archText) ||
 		staticMapsWebRE.MatchString(archText) ||
 		(strings.Contains(lower, "/static/{file}") && strings.Contains(lower, "web/{file}"))
 	if hasStatic {

@@ -67,3 +67,13 @@ func TestStaticRefMismatchHint(t *testing.T) {
 		t.Fatal("expected no hint for correct prefix")
 	}
 }
+
+func TestParseWebStaticMapping_singleColumnTable(t *testing.T) {
+	t.Parallel()
+	arch := `| **Static UI** – ` + "`" + `/static/{file}` + "`" + ` serves web files | Handler ` + "`" + `ServeStatic` + "`" + ` |
+`
+	m := ParseWebStaticMapping(arch)
+	if m.StaticURLPrefix != "/static" {
+		t.Fatalf("StaticURLPrefix = %q want /static", m.StaticURLPrefix)
+	}
+}
