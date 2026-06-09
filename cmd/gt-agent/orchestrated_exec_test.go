@@ -674,3 +674,64 @@ func TestRewriteUnittestToWorkdir_mayorRigCDIntoModule(t *testing.T) {
 		t.Fatalf("got %q want %q (flat module at mayor/rig)", fixed, want)
 	}
 }
+
+func TestNormalizeRigPrefixShellPaths(t *testing.T) {
+	tests := []struct {
+		name string
+		cmd  string
+		rig  string
+		lay  string
+		want string
+	}{
+		{
+			name: "full_town_root_path_cat",
+			cmd:  "cat testgt3/mayor/rig/linkshelf/web/index.html",
+			rig:  "testgt3",
+			lay:  "linkshelf",
+			want: "cat linkshelf/web/index.html",
+		},
+		{
+			name: "full_town_root_path_wc",
+			cmd:  "wc -l testgt3/mayor/rig/linkshelf/web/style.css",
+			rig:  "testgt3",
+			lay:  "linkshelf",
+			want: "wc -l linkshelf/web/style.css",
+		},
+		{
+			name: "full_town_root_path_ls_la",
+			cmd:  "ls -la testgt3/mayor/rig/linkshelf/web/",
+			rig:  "testgt3",
+			lay:  "linkshelf",
+			want: "ls -la linkshelf/web/",
+		},
+		{
+			name: "already_relative_path_untouched",
+			cmd:  "cat linkshelf/web/index.html",
+			rig:  "testgt3",
+			lay:  "linkshelf",
+			want: "cat linkshelf/web/index.html",
+		},
+		{
+			name: "no_rig_prefix_in_path",
+			cmd:  "wc -l linkshelf/web/app.js",
+			rig:  "testgt3",
+			lay:  "linkshelf",
+			want: "wc -l linkshelf/web/app.js",
+		},
+		{
+			name: "multiple_tools_single_cmd",
+			cmd:  "cat testgt3/mayor/rig/linkshelf/web/index.html && wc -l linkshelf/web/app.js",
+			rig:  "testgt3",
+			lay:  "linkshelf",
+			want: "cat linkshelf/web/index.html && wc -l linkshelf/web/app.js",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := normalizeRigPrefixShellPaths(tt.cmd, tt.rig, tt.lay)
+			if got != tt.want {
+				t.Fatalf("got %q want %q", got, tt.want)
+			}
+		})
+	}
+}

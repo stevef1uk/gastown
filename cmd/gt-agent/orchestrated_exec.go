@@ -364,12 +364,12 @@ func rewriteUnittestToWorkdir(cmd, rig string, v orchestrator.WorkflowValidation
 		}
 	}
 	if layout != "" && layout != "." {
+		cmd = normalizeRigPrefixShellPaths(cmd, rig, layout)
 		normalized := normalizeLayoutShellPaths(cmd, layout)
 		if normalized != cmd {
 			cmd = normalized
 			changed = true
 		}
-		cmd = normalizeRigPrefixShellPaths(cmd, rig, layout)
 	}
 	return cmd, changed
 }
