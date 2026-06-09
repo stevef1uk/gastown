@@ -2,6 +2,7 @@ package orchestrator
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -142,6 +143,7 @@ func TestImplementArtifactPathsForActiveBeads(t *testing.T) {
 	v.BeadTitleContains = "Implement"
 	v.RequiredFiles = []string{
 		"linkshelf/internal/store/store.go",
+		"linkshelf/internal/api/handlers.go",
 		"linkshelf/web/index.html",
 	}
 	prev := ListImplementBeadsByStatusHook
@@ -193,6 +195,61 @@ func TestClearImplementationProgressFile(t *testing.T) {
 	}
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		t.Fatal("expected removed")
+	}
+}
+
+func TestHardResetImplementationPhase_removesActiveBeadFiles(t *testing.T) {
+	if _, err := exec.LookPath("bd"); err != nil {
+		t.Skip("bd not in PATH")
+	}
+	dir := t.TempDir()
+	rig := "rig"
+	rigDir := filepath.Join(dir, rig, "mayor", "rig")
+	beadsDir := filepath.Join(dir, rig, ".beads")
+	if err := os.MkdirAll(rigDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(beadsDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	init := exec.Command("bd", "init")
+	init.Env = append(os.Environ(), "BEADS_DIR="+beadsDir)
+	init.Dir = rigDir
+	if out, err := init.CombinedOutput(); err != nil {
+		t.Fatalf("bd init: %v\n%s", err, out)
+	}
+	handler := filepath.Join(rigDir, "linkshelf", "internal", "api", "handlers.go")
+	if err := os.MkdirAll(filepath.Dir(handler), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(handler, []byte("package api\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	v := WorkflowValidation{
+		LayoutRoot:        "linkshelf",
+		BeadTitleContains: "Implement",
+		RequiredFiles:     []string{"linkshelf/internal/api/handlers.go"},
+	}
+	prev := ListImplementBeadsByStatusHook
+	defer func() { ListImplementBeadsByStatusHook = prev }()
+	ListImplementBeadsByStatusHook = func(townRoot, rigName string, _ WorkflowValidation, status string) ([]PlanBead, error) {
+		if townRoot != dir || rigName != rig {
+			return nil, nil
+		}
+		if status == "open" {
+			return []PlanBead{{ID: "te-open", Title: "Implement linkshelf/internal/api/handlers.go per architecture"}}, nil
+		}
+		return nil, nil
+	}
+	logLine, err := HardResetImplementationPhase(dir, rig, v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(logLine, "removed active bead files") {
+		t.Fatalf("hard reset should delete active bead files, log=%q", logLine)
+	}
+	if _, err := os.Stat(handler); !os.IsNotExist(err) {
+		t.Fatalf("handlers.go should be removed by hard reset: %v", err)
 	}
 }
 

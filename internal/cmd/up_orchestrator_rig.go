@@ -84,8 +84,10 @@ func EnsureOrchestratedRigAgents(townRoot, rigName string) {
 }
 
 func ensureOrchestratedRigAgentsRunning(townRoot, rigName string, r *rig.Rig) {
-	_ = upStartWitness(rigName, r)
-	_ = upStartRefinery(rigName, r)
+	if !orchestrator.PipelineOnlyEnabled(townRoot, false) {
+		_ = upStartWitness(rigName, r)
+		_ = upStartRefinery(rigName, r)
+	}
 
 	sp := session.GetDefaultProvider(townRoot)
 	ctx := context.Background()

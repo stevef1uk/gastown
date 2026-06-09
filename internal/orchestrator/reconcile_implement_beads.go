@@ -203,18 +203,34 @@ func ReconcileImplementBeads(townRoot, rig string, v WorkflowValidation) (string
 	if WorkflowNeedsRuntimeSmoke(townRoot, rig, v) {
 		phaseErr = ImplementationPhaseVerifyOK(townRoot, rig, v)
 	}
+	// Always auto-close green go.mod beads (go-module phase) even when full phase verify is red.
+	goModClosed, err := CloseGreenGoModBeads(townRoot, rig, v, eval)
+	if err != nil {
+		return "", err
+	}
+	if len(goModClosed) > 0 {
+		autoClosed = append(autoClosed, goModClosed...)
+	}
+
 	if phaseErr == nil {
 		var err error
-		autoClosed, err = CloseImplementBeadsWithGreenGoVerify(townRoot, rig, v, eval)
+		moreClosed, err := CloseImplementBeadsWithGreenGoVerify(townRoot, rig, v, eval)
 		if err != nil {
 			return "", err
 		}
+		autoClosed = append(autoClosed, moreClosed...)
 	} else {
 		parts = append(parts, fmt.Sprintf("skipped Go auto-close: phase verify not green (%v)", phaseErr))
-		var err error
-		autoClosed, err = CloseImplementBeadsWithGreenFrontendVerify(townRoot, rig, v, eval)
-		if err != nil {
-			return "", err
+		// Runtime smoke failure reopens handler/web beads — auto-closing frontend first causes
+		// close/reopen churn every pre_run and blocks polecat from fixing closed paths.
+		if !ImplementationVerifyNeedsRuntimeRework(phaseErr) {
+			var err error
+			autoClosed, err = CloseImplementBeadsWithGreenFrontendVerify(townRoot, rig, v, eval)
+			if err != nil {
+				return "", err
+			}
+		} else {
+			parts = append(parts, "skipped frontend auto-close: runtime smoke rework pending")
 		}
 	}
 	if len(autoClosed) > 0 {
@@ -222,7 +238,32 @@ func ReconcileImplementBeads(townRoot, rig string, v WorkflowValidation) (string
 		if phaseErr != nil {
 			label = "auto-closed frontend (verify green)"
 		}
-		parts = append(parts, label+": "+joinStrings(autoClosed, ", "))
+		// During QA rework, reopen beads that QA explicitly cited so the polecat
+		// sees them as open and the implement_bead_context injector shows the SPEC contract.
+		qaIDs := QAReopenedBeadIDs(townRoot, rig)
+		if len(qaIDs) > 0 {
+			qaSet := make(map[string]bool, len(qaIDs))
+			for _, id := range qaIDs {
+				qaSet[strings.TrimSpace(id)] = true
+			}
+			remaining := autoClosed[:0]
+			for _, closedID := range autoClosed {
+				if qaSet[closedID] {
+					if err := bdUpdateImplementBeadStatus(townRoot, rig, closedID, "open"); err != nil {
+						parts = append(parts, fmt.Sprintf("could not reopen QA bead %s: %v", closedID, err))
+						remaining = append(remaining, closedID)
+						continue
+					}
+					parts = append(parts, "reopened for QA rework: "+closedID)
+					continue
+				}
+				remaining = append(remaining, closedID)
+			}
+			autoClosed = remaining
+		}
+		if len(autoClosed) > 0 {
+			parts = append(parts, label+": "+joinStrings(autoClosed, ", "))
+		}
 	}
 	if phaseErr != nil && ImplementationVerifyNeedsRuntimeRework(phaseErr) {
 		reopened, rerr := ReopenImplementationBeadsAfterSmokeFailure(townRoot, rig, v, phaseErr)

@@ -1,10 +1,10 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"net/http"
 	"os"
-	"strconv"
 	"time"
 
 	"github.com/steveyegge/gastown/internal/agentconsole"
@@ -12,18 +12,18 @@ import (
 )
 
 func main() {
-	port := 8090 // Default changed from 8081 to avoid conflict with dev servers
-	if p := os.Getenv("GT_AGENT_CONSOLE_PORT"); p != "" {
-		if v, err := strconv.Atoi(p); err == nil {
-			port = v
-		}
-	}
-	bind := "127.0.0.1"
-	if b := os.Getenv("GT_AGENT_CONSOLE_BIND"); b != "" {
-		bind = b
+	var portFlag int
+	var bindFlag string
+	flag.IntVar(&portFlag, "port", 0, "HTTP listen port (overrides GT_AGENT_CONSOLE_PORT)")
+	flag.StringVar(&bindFlag, "bind", "", "HTTP bind address (overrides GT_AGENT_CONSOLE_BIND)")
+	flag.Parse()
+
+	listen, err := agentconsole.ResolveListenConfig(portFlag, bindFlag)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
 	}
 
-	// Find town root
 	townRoot, err := workspace.FindFromCwdOrError()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: not in a Gas Town workspace: %v\n", err)
@@ -40,12 +40,11 @@ func main() {
 	mux := http.NewServeMux()
 	server.RegisterRoutes(mux)
 
-	listenAddr := fmt.Sprintf("%s:%d", bind, port)
-	fmt.Printf("Agent Console starting at http://%s\n", listenAddr)
+	fmt.Printf("Agent Console starting at %s\n", listen.URL())
 	fmt.Println("Press Ctrl+C to stop")
 
 	srv := &http.Server{
-		Addr:              listenAddr,
+		Addr:              listen.Addr(),
 		Handler:           mux,
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,

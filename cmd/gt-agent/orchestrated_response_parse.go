@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"regexp"
 	"strconv"
 	"strings"
@@ -12,13 +13,15 @@ var (
 	gluedNativeToolRE = regexp.MustCompile(`(?i)(>>>>>>>\s*REPLACE|---END\s+EDIT|---END\s+WRITE)\s*(CMD:|READ:|EDIT:|WRITE:)`)
 	gluedCmdToToolRE  = regexp.MustCompile(`(?i)(CMD:\s*)(READ:|EDIT:|WRITE:)`)
 	inlineToolRE      = regexp.MustCompile(`(?i)([^\s\n])(READ:|EDIT:|WRITE:)`)
-	bdListLimitValueRE = regexp.MustCompile(`(?i)--limit(?:=|\s+)(\S+)`)
-	bdListWordRE      = regexp.MustCompile(`(?i)\bbd\s+list\b`)
+	bdListLimitValueRE   = regexp.MustCompile(`(?i)--limit(?:=|\s+)(\S+)`)
+	bdListWordRE         = regexp.MustCompile(`(?i)\bbd\s+list\b`)
+	bdListStatusGluedRE  = regexp.MustCompile(`(?i)--status=([a-z_,]+)\([^)]*\)`)
 	bdBeadNumericIDRE = regexp.MustCompile(`^\d+$`)
 )
 
 // preprocessOrchestratedResponse normalizes glued CMD/READ/EDIT markers before parsing.
 func preprocessOrchestratedResponse(response string) string {
+	response = unwrapJSONOrchestratedCommands(response)
 	response = normalizeGluedCMDMarkers(response)
 	response = gluedNativeToolRE.ReplaceAllString(response, "$1\n$2")
 	response = gluedCmdToToolRE.ReplaceAllString(response, "$1\n$2")
@@ -29,6 +32,43 @@ func preprocessOrchestratedResponse(response string) string {
 	response = stripMarkdownFenceOnlyLines(response)
 	response = normalizeNativeEditEndLines(response)
 	return response
+}
+
+// unwrapJSONOrchestratedCommands converts {"CMD":"..."} / {"cmd":"..."} lines local LLMs emit into CMD: lines.
+func unwrapJSONOrchestratedCommands(response string) string {
+	var out []string
+	for _, line := range strings.Split(response, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if !strings.HasPrefix(trimmed, "{") {
+			out = append(out, line)
+			continue
+		}
+		if cmd := jsonOrchestratedCommand(trimmed); cmd != "" {
+			out = append(out, "CMD: "+cmd)
+			continue
+		}
+		out = append(out, line)
+	}
+	return strings.Join(out, "\n")
+}
+
+func jsonOrchestratedCommand(line string) string {
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(line), &obj); err != nil {
+		return ""
+	}
+	for _, key := range []string{"CMD", "cmd", "Cmd"} {
+		raw, ok := obj[key]
+		if !ok || len(raw) == 0 {
+			continue
+		}
+		var cmd string
+		if err := json.Unmarshal(raw, &cmd); err != nil || strings.TrimSpace(cmd) == "" {
+			continue
+		}
+		return strings.TrimSpace(cmd)
+	}
+	return ""
 }
 
 // normalizeNativeEditEndLines fixes common model typos (e.g. >>>>>> REPLACE → >>>>>>> REPLACE).
@@ -287,7 +327,7 @@ func unwrapMarkdownBoldToolLines(response string) string {
 			upper := strings.ToUpper(inner)
 			if strings.HasPrefix(upper, "CMD:") || strings.HasPrefix(upper, "READ:") ||
 				strings.HasPrefix(upper, "EDIT:") || strings.HasPrefix(upper, "WRITE:") {
-				out = append(out, inner)
+				out = append(out, normalizeOrchestratedToolLabel(inner))
 				continue
 			}
 		}
@@ -331,9 +371,42 @@ func scrubNativeEditLinesFromShellCommand(cmd string) (string, bool) {
 	return out, changed
 }
 
+// normalizeOrchestratedToolLabel fixes `CMD:** export` (markdown bold glued to colon).
+func normalizeOrchestratedToolLabel(line string) string {
+	line = strings.TrimSpace(line)
+	upper := strings.ToUpper(line)
+	for _, prefix := range []string{"CMD:", "READ:", "EDIT:", "WRITE:"} {
+		if !strings.HasPrefix(upper, prefix) {
+			continue
+		}
+		rest := strings.TrimSpace(line[len(prefix):])
+		rest = strings.TrimPrefix(rest, ":")
+		rest = strings.TrimPrefix(rest, "**")
+		rest = strings.TrimSpace(rest)
+		return prefix + " " + rest
+	}
+	return line
+}
+
+// stripLeadingMarkdownBoldFromShell removes leading `**` the model pastes before shell commands.
+func stripLeadingMarkdownBoldFromShell(cmd string) string {
+	trimmed := strings.TrimSpace(cmd)
+	for strings.HasPrefix(trimmed, "**") {
+		trimmed = strings.TrimSpace(strings.TrimPrefix(trimmed, "**"))
+	}
+	if strings.HasPrefix(strings.ToUpper(trimmed), "CMD:") {
+		trimmed = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(trimmed[4:]), ":"))
+	}
+	return trimmed
+}
+
 // sanitizeOrchestratedShellCommand trims model prose/JSON glued onto shell commands.
 func sanitizeOrchestratedShellCommand(cmd string) (string, bool) {
 	changed := false
+	if stripped := stripLeadingMarkdownBoldFromShell(cmd); stripped != cmd {
+		cmd = stripped
+		changed = true
+	}
 	if scrubbed, ok := scrubNativeEditLinesFromShellCommand(cmd); ok {
 		cmd = scrubbed
 		changed = true
@@ -411,6 +484,11 @@ func sanitizeBdListCommand(cmd string) (string, bool) {
 		return cmd, false
 	}
 	changed := false
+	if cleaned := stripCommandOutputArtifacts(cmd); cleaned != cmd {
+		cmd = cleaned
+		changed = true
+		lower = strings.ToLower(cmd)
+	}
 	if m := bdListLimitValueRE.FindStringSubmatch(cmd); len(m) >= 2 {
 		val := strings.TrimSpace(m[1])
 		digits := limitDigitsPrefix(val)
@@ -428,6 +506,15 @@ func sanitizeBdListCommand(cmd string) (string, bool) {
 		changed = true
 	}
 	return cmd, changed
+}
+
+// stripCommandOutputArtifacts removes pasted tool output from shell commands (e.g. "(no output)").
+func stripCommandOutputArtifacts(cmd string) string {
+	for _, junk := range []string{"(exit 0, no output)", "(no output)"} {
+		cmd = strings.ReplaceAll(cmd, junk, "")
+	}
+	cmd = bdListStatusGluedRE.ReplaceAllString(cmd, "--status=$1")
+	return strings.TrimSpace(cmd)
 }
 
 func fixBdListGluedToWord(cmd string) (string, bool) {

@@ -113,9 +113,9 @@ func stopRigDevServersScriptPath() string {
 	return ""
 }
 
-// ResetImplementationPhase runs when implementation exceeds state_timeout_seconds: stop dev servers,
-// delete on-disk files for open and in_progress implement beads only (closed beads and their files
-// are left alone), reset in_progress→open, and clear implementation-progress.json.
+// ResetImplementationPhase is a soft stall recovery: stop dev servers, reset in_progress→open,
+// enforce a single in_progress bead, and clear implementation-progress.json. It does not delete
+// on-disk source files (use HardResetImplementationPhase for that).
 func ResetImplementationPhase(townRoot, rig string, v WorkflowValidation) (string, error) {
 	if rig == "" || townRoot == "" {
 		return "", nil
@@ -135,23 +135,10 @@ func ResetImplementationPhase(townRoot, rig string, v WorkflowValidation) (strin
 	} else {
 		parts = append(parts, "stopped dev servers")
 	}
-	activePaths, err := implementArtifactPathsForActiveBeads(townRoot, rig, v)
-	if err != nil {
+	if pruned, err := PruneOpenImplementBeadsForClosedPaths(townRoot, rig, v); err != nil {
 		return joinStrings(parts, "; "), err
-	}
-	removed, err := RemoveImplementBeadArtifactFiles(mayorRig, activePaths)
-	if err != nil {
-		return joinStrings(parts, "; "), err
-	}
-	if len(removed) > 0 {
-		parts = append(parts, "removed active bead files: "+joinStrings(removed, ", "))
-	}
-	junk, err := RemoveMalformedLayoutArtifactFiles(mayorRig, v)
-	if err != nil {
-		return joinStrings(parts, "; "), err
-	}
-	if len(junk) > 0 {
-		parts = append(parts, "removed malformed artifacts: "+joinStrings(junk, ", "))
+	} else if len(pruned) > 0 {
+		parts = append(parts, "pruned open dupes of closed paths: "+joinStrings(pruned, ", "))
 	}
 	reset, err := ResetInProgressImplementBeads(townRoot, rig, v)
 	if err != nil {
@@ -169,6 +156,47 @@ func ResetImplementationPhase(townRoot, rig string, v WorkflowValidation) (strin
 		return joinStrings(parts, "; "), err
 	} else if cleared {
 		parts = append(parts, "cleared implementation-progress.json")
+	}
+	return joinStrings(parts, "; "), nil
+}
+
+// HardResetImplementationPhase deletes on-disk files for open and in_progress implement beads,
+// removes malformed layout artifacts, then runs ResetImplementationPhase. Intended for manual
+// recovery only — not for automatic wall-clock timeouts.
+func HardResetImplementationPhase(townRoot, rig string, v WorkflowValidation) (string, error) {
+	if rig == "" || townRoot == "" {
+		return "", nil
+	}
+	if !BeadsDatabaseReady(townRoot, rig) {
+		return "", nil
+	}
+	v = v.ForActivePhase()
+	mayorRig := filepath.Join(townRoot, rig, "mayor", "rig")
+	var parts []string
+	activePaths, err := implementArtifactPathsForActiveBeads(townRoot, rig, v)
+	if err != nil {
+		return "", err
+	}
+	removed, err := RemoveImplementBeadArtifactFiles(mayorRig, activePaths)
+	if err != nil {
+		return joinStrings(parts, "; "), err
+	}
+	if len(removed) > 0 {
+		parts = append(parts, "removed active bead files: "+joinStrings(removed, ", "))
+	}
+	junk, err := RemoveMalformedLayoutArtifactFiles(mayorRig, v)
+	if err != nil {
+		return joinStrings(parts, "; "), err
+	}
+	if len(junk) > 0 {
+		parts = append(parts, "removed malformed artifacts: "+joinStrings(junk, ", "))
+	}
+	soft, err := ResetImplementationPhase(townRoot, rig, v)
+	if err != nil {
+		return joinStrings(parts, "; "), err
+	}
+	if soft != "" {
+		parts = append(parts, soft)
 	}
 	return joinStrings(parts, "; "), nil
 }

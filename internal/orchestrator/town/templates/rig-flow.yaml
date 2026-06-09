@@ -33,7 +33,8 @@ states:
       2. Write `{{rig}}/mayor/rig/architecture.md` (≥{{min_architecture_bytes}} bytes).
       3. CRITICAL: You MUST prefix ALL file paths (in lists, prose, tables, and code blocks) with the root directory name from the SPEC (e.g. `layout_root/cmd/server/main.go`, not `cmd/server/main.go`, and `layout_root/web/` not `web/`).
     hooks:
-      max_cmd_turns: 8
+      pre_run: [reset_layout_pre_implementation, prune_rig_root_junk]
+      max_cmd_turns: 12
       cmd_guard: design
       cmd_rewrites: [rig_placeholders, spec_md_case, unwrap_bash_lc]
       track: design
@@ -41,8 +42,9 @@ states:
       retry_hint: |
         One CMD: per line. Read SPEC with head; write architecture.md via a single-quoted heredoc (≥200 bytes).
         Prose may mention python3 or backend/ paths — that is fine inside the document.
+        After a successful heredoc write and `wc -c` meeting the minimum, gt-agent auto-completes design when validation passes (JSON success optional).
       failure_hint: |
-        Write architecture.md with a heredoc CMD in this session (stale files from prior runs do not count). Read SPEC with head -n 60. HTTP paths and store symbols must match SPEC verbatim (gt-agent rejects /web/* vs /static/, ListLinks vs List, etc.). If validation fails due to missing path prefixes, you MUST execute a new CMD: cat << 'EOF' > ... heredoc to rewrite the entire file with the correct prefixes (e.g. layout_root/web/index.html). Do not just reply with JSON success!
+        Write architecture.md with a heredoc CMD in this session (stale files from prior runs do not count). Read SPEC with head -n 60. HTTP paths and store symbols must match SPEC verbatim (gt-agent rejects /web/* vs /static/, ListLinks vs List, etc.). Prefix **implement file paths** in lists/tables with layout_root (e.g. linkshelf/internal/store/store.go); prose may say store.List or schema.InitSchema without the prefix. If validation fails on file paths, rewrite architecture.md via heredoc. After wc -c passes, the step may auto-complete — or send JSON success only (no CMD lines).
     transitions:
       success:
         to: planning
@@ -58,7 +60,7 @@ states:
       prompt_context: [planning_bead_bootstrap]
       pre_run: [sync_planning_artifacts]
       state_timeout_seconds: 1800
-      on_timeout: [reset_planning_phase]
+      on_timeout: [sync_planning_on_timeout]
       max_cmd_turns: 8
       cmd_guard: planning
       cmd_rewrites: [rig_placeholders, spec_md_case, plan_md_after_cd, bd_list_limit, unwrap_bash_lc]
@@ -66,11 +68,12 @@ states:
         beads_dir: true
       track: planning
       artifacts: planning
+      post_artifact_success: [sync_planning_artifacts]
       retry_hint: |
         One CMD: per line. After `cd {{rig}}/mayor/rig`, write plan.md with a relative path (not {{rig}}/mayor/rig/plan.md).
         Heredoc must end with a line containing only EOF. Verify with wc -c from town root.
       failure_hint: |
-        Do not send success JSON until CMD: lines ran in this session. If beads exist, bd list only — do not duplicate bd create. plan.md must be ≥ {{min_plan_bytes}} bytes (expand ### per-bead sections — not a short checklist). Heredoc ends with a line containing only EOF. Run wc -c plan.md; if too small, rewrite plan.md before JSON. Work from {{rig}}/mayor/rig with BEADS_DIR=$GT_ROOT/{{rig}}/.beads.
+        Do not send success JSON until CMD: lines ran in this session. If sync_planning_artifacts already created beads, bd list only — gt-agent rejects bd create when required_files are covered. Do **not** heredoc plan.md when required_files use {{layout_root}}/internal/ or {{layout_root}}/cmd/ — sync builds plan.md with full paths. Run wc -c plan.md (≥ {{min_plan_bytes}} bytes). Work from {{rig}}/mayor/rig with BEADS_DIR=$GT_ROOT/{{rig}}/.beads.
     transitions:
       success:
         to: plan_review
@@ -86,6 +89,7 @@ states:
       2. Reject duplicate or path-less beads; send planner back to fix.
       3. Reject when SPEC.md, architecture.md, and plan.md disagree on HTTP routes, store API names, module path, or integration contract (gt-agent enforces on success).
     hooks:
+      pre_run: [sync_planning_artifacts, enforce_implement_bead_queue]
       max_cmd_turns: 8
       cmd_guard: plan_review
       cmd_rewrites: [rig_placeholders, spec_md_case, bd_list_limit, unwrap_bash_lc]
@@ -95,9 +99,9 @@ states:
       artifacts: plan_review
       bead_ids_in_summary: true
       retry_hint: |
-        One CMD: per line. Run bd list --status=open from {{rig}}/mayor/rig; compare titles to architecture required_files.
+        One CMD: per line. Run bd list --status=open,in_progress from {{rig}}/mayor/rig; compare titles to active-phase required_files ({{required_files}}).
       failure_hint: |
-        Run `bd list --status=open` from {{rig}}/mayor/rig with BEADS_DIR set; compare titles to required_files. Read SPEC HTTP table and Store API — plan.md and architecture.md must use the same paths and symbols (e.g. /api/links not /links; List not ListLinks). Use outcome failure to send the Planner back.
+        Run `bd list --status=open,in_progress` from {{rig}}/mayor/rig with BEADS_DIR set. Count implement beads for **this phase only** ({{required_files}}). {{integration_contract_scope_note}} Use outcome failure for duplicate/missing beads or plan drift — not for integration contract when the active phase has no cmd/.../main.go.
     transitions:
       success:
         to: project_setup
@@ -108,10 +112,10 @@ states:
     prompt_file: prompts/rig-flow/project_setup.md
     instructions: |
       Use only the **{{project_setup_stack_kind}}** stack for this rig (see injected block below).
-      Run `{{project_setup_verify_hint}}` green, split implement beads one file each, then JSON success.
+      Run `{{project_setup_verify_hint}}` green. Beads and plan.md are synced from required_files on pre_run — do not `bd create` unless sync left gaps. Then JSON success.
     hooks:
       prompt_context: [project_setup_stack]
-      pre_run: [enforce_implement_bead_queue]
+      pre_run: [sync_planning_artifacts, enforce_implement_bead_queue, prune_rig_root_junk]
       cmd_guard: project_setup
       cmd_rewrites: [rig_placeholders, bd_list_implement_scope, unittest_workdir, bd_list_limit, unwrap_bash_lc]
       env:
@@ -121,7 +125,7 @@ states:
       python3_rewrite: true
       track: project_setup
       auto_verify_ok_clears_cmd_failure: true
-      post_artifact_success: [ensure_http_implementation_config, close_project_setup_beads]
+      post_artifact_success: [sync_planning_artifacts, ensure_http_implementation_config, close_project_setup_beads]
       auto_verify:
         - when: go_mod_tidy
           verify: go_setup
@@ -148,7 +152,7 @@ states:
     hooks:
       state_timeout_seconds: 7200
       on_timeout: [recover_implementation_stall]
-      on_state_timeout: [reset_implementation_phase]
+      on_state_timeout: [recover_implementation_stall]
       cmd_timeout_seconds: 900
       max_cmd_turns: 20
       omit_orchestrator_context: true
@@ -158,8 +162,10 @@ states:
       failure_prompt_context: [implementation_queue, implement_bead_context]
       empty_response_suffix: "Reply with EDIT:/WRITE:/READ: or CMD: lines. Implement code and unit tests per plan.md; WRITE for new *_test.go or tests/test_*.py. Use Verify from Next bead."
       prompt_context: [implementation_queue, implement_bead_context]
-      pre_run: [ensure_http_implementation_config, ensure_implement_smoke_ready, close_project_setup_beads, enforce_implement_bead_queue, prune_stale_layout_go, repair_requirements, refresh_codeindex, reconcile_implement_beads]
-      per_turn: [repair_requirements]
+      pre_run: [prune_rig_root_junk, sync_planning_artifacts, ensure_http_implementation_config, ensure_handler_phase_prerequisites, ensure_implement_smoke_ready, ensure_go_mod_from_spec, enforce_implement_bead_queue, prune_stale_layout_go, repair_requirements, refresh_codeindex, reconcile_implement_beads]
+      # Do not run repair_planning_beads / refresh_plan_md_if_stale per turn — they create beads and
+      # rewrite plan.md mid-implementation (see pre_run sync + reconcile). Planning-only repair stays in planning state hooks.
+      per_turn: [prune_stale_layout_go, repair_requirements]
       cmd_guard: implementation
       cmd_rewrites: [rig_placeholders, backend_path_after_cd, bd_list_implement_scope, unittest_workdir, bd_list_limit, unwrap_bash_lc]
       env:
@@ -174,7 +180,9 @@ states:
       empty_bd_list_ok: true
       auto_verify:
         - when: go_mod_tidy
-          verify: go_implementation
+          verify: go_setup
+        - when: go_mod_init
+          verify: go_setup
         - when: go_write_layout
           verify: go_implementation
         - when: python_import_check

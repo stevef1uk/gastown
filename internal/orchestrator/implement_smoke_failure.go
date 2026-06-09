@@ -89,11 +89,41 @@ func ReopenImplementationBeadsAfterSmokeFailure(townRoot, rig string, v Workflow
 	if !ImplementationVerifyNeedsRuntimeRework(verifyErr) {
 		return nil, nil
 	}
-	paths := implementationReworkPathsForSmoke(v)
+	paths := implementationReworkPathsForSmokeDetail(townRoot, rig, v, verifyErr)
 	if len(paths) == 0 {
 		return reopenClosedImplementBeads(townRoot, rig, v)
 	}
 	return reopenClosedImplementBeadsForPaths(townRoot, rig, v, paths)
+}
+
+// implementationReworkPathsForSmokeDetail extends handler/web paths with the specific static
+// asset named in a failed smoke GET probe (e.g. GET:/static/app.js → linkshelf/web/app.js).
+func implementationReworkPathsForSmokeDetail(townRoot, rig string, v WorkflowValidation, verifyErr error) []string {
+	seen := map[string]bool{}
+	var out []string
+	add := func(rel string) {
+		rel = filepath.ToSlash(strings.TrimSpace(rel))
+		if rel == "" || seen[rel] {
+			return
+		}
+		seen[rel] = true
+		out = append(out, rel)
+	}
+	for _, rel := range implementationReworkPathsForSmoke(v) {
+		add(rel)
+	}
+	if verifyErr != nil {
+		detail := ParseSmokeFailureFromOutput(verifyErr.Error())
+		if step := strings.TrimSpace(detail.FailedStep); strings.HasPrefix(step, "GET:") {
+			urlPath := strings.TrimPrefix(step, "GET:")
+			mapping := LoadWebStaticMappingFromRig(townRoot, rig, v)
+			if webRel := WebFileFromStaticURL(urlPath, mapping, v.LayoutRoot); webRel != "" {
+				add(webRel)
+			}
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 // FormatImplementationSmokeFailureBlock gives polecat guidance after smoke failure at success gate.
@@ -199,11 +229,44 @@ func HandleImplementationPhaseVerifyFailure(townRoot, rig string, v WorkflowVali
 	if ImplementationVerifyNeedsRuntimeRework(err) {
 		reopened, _ = ReopenImplementationBeadsAfterSmokeFailure(townRoot, rig, v, err)
 	}
-	block := FormatImplementationSmokeFailureBlock(townRoot, rig, v, err, reopened)
+	block := FormatImplementationVerifyFailureBlock(townRoot, rig, v, err, reopened)
 	if block == "" {
 		return err
 	}
 	return fmt.Errorf("%w\n\n%s", err, block)
+}
+
+// FormatImplementationVerifyFailureBlock returns actionable feedback for phase verify failures.
+func FormatImplementationVerifyFailureBlock(townRoot, rig string, v WorkflowValidation, verifyErr error, reopened []string) string {
+	if verifyErr == nil {
+		return ""
+	}
+	if ImplementationVerifyNeedsRuntimeRework(verifyErr) {
+		return FormatImplementationSmokeFailureBlock(townRoot, rig, v, verifyErr, reopened)
+	}
+	var b strings.Builder
+	b.WriteString("### Phase verify failed (implementation gate)\n")
+	b.WriteString("Do not send JSON success until **active phase** verify is green")
+	if v.HasPhasedDelivery() {
+		if id := v.ActivePhaseID(); id != "" {
+			b.WriteString(" (`")
+			b.WriteString(id)
+			b.WriteString("`")
+		}
+	}
+	b.WriteString(".\n\n")
+	if q := strings.TrimSpace(v.QAVerifyCommand); q != "" {
+		b.WriteString("**Phase verify:** `")
+		b.WriteString(q)
+		b.WriteString("`\n\n")
+	}
+	if PhaseIsGoModOnly(v) {
+		b.WriteString("This phase is **go.mod only** — no `go test ./...` until later phases add `.go` files.\n\n")
+	}
+	b.WriteString("**Output (tail):**\n```\n")
+	b.WriteString(truncateWorkflowText(strings.TrimSpace(verifyErr.Error()), 2000))
+	b.WriteString("\n```\n")
+	return strings.TrimSpace(b.String())
 }
 
 // EnsureImplementSmokeReadyLog runs EnsureImplementBeadsAvailable for pre_run (smoke/verify reopen).

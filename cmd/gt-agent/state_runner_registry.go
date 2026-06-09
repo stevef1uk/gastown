@@ -21,13 +21,16 @@ var cmdGuardHandlers = map[string]cmdGuardFn{
 		return validateDesignCommand(cmd, r.rig)
 	},
 	"planning": func(r *stateRunner, cmd string) error {
-		return validatePlanningCommandWithProfile(cmd, r.rig, r.v)
+		return validatePlanningCommandWithProfile(cmd, r.townRoot, r.rig, r.v)
 	},
 	"project_setup": func(r *stateRunner, cmd string) error {
 		return validateProjectSetupCommand(cmd, r.rig, r.v)
 	},
 	"implementation": func(r *stateRunner, cmd string) error {
-		if err := validateImplementationCommandWithState(cmd, r.townRoot, r.rig, r.track.activeBead, r.v, r.track.verifyOK, r.qaReworkWriteScope()); err != nil {
+		if err := rejectInventedBdVerifyCommand(cmd, r.townRoot, r.rig, r.track.activeBead, r.v); err != nil {
+			return err
+		}
+		if err := validateImplementationCommandWithState(cmd, r.townRoot, r.rig, r.effectiveImplementBeadID(), r.v, r.track.verifyOK, r.qaReworkWriteScope()); err != nil {
 			return err
 		}
 		if err := r.validateImplementationFencedCodeGuard(cmd); err != nil {
@@ -93,8 +96,13 @@ var trackHandlers = map[string]trackFn{
 		if cmdErr != nil {
 			r.track.hadCmdFailure = true
 			// Stale verifyOK must not allow bd close after a failed go test/build in the same turn.
-			if !isBenignImplementationCmdFailure(cmd) {
+			if !isBenignImplementationCmdFailure(cmd) &&
+				!verifyFailureSupersededByCanonicalBuild(r.townRoot, r.rig, r.track.activeBead, r.track.activeBeadPath, r.track.verifyOK, r.v, cmd) {
 				r.track.verifyOK = false
+			}
+			if isImplementationVerifyCommandAttempt(cmd, r.townRoot, r.rig, r.track.activeBead, r.track.activeBeadPath, r.v) &&
+				!verifyFailureSupersededByCanonicalBuild(r.townRoot, r.rig, r.track.activeBead, r.track.activeBeadPath, r.track.verifyOK, r.v, cmd) {
+				r.clearPersistedVerifyOnFailedVerifyCmd(cmd)
 			}
 		}
 		if isBeadCloseCommand(cmd) && cmdErr == nil {
@@ -206,6 +214,9 @@ var artifactAutoCompleters = map[string]artifactAutoCompleteFn{
 	"planning": func(r *stateRunner) error {
 		return r.validateArtifacts("success")
 	},
+	"plan_review": func(r *stateRunner) error {
+		return validatePlanReviewArtifacts(r.townRoot, r.rig, r.track.hadCmdFailure, r.track.listOpenOK, r.track.didDelete, r.v)
+	},
 	"implementation": func(r *stateRunner) error {
 		if false {
 			return fmt.Errorf("QA rework pending — fix runtime/smoke issues in Prior step failed (handlers, web/, routes); go test ./... alone is not enough")
@@ -291,8 +302,20 @@ func verifyImplementationBead(r *stateRunner) string {
 		return ""
 	}
 	mayor := filepath.Join(r.townRoot, r.rig, "mayor", "rig")
-	beadPath := orchestrator.ImplementBeadPathForID(r.townRoot, r.rig, r.track.activeBead, r.v)
+	_, beadPath := r.effectiveImplementBead()
 	return orchestrator.ImplementationVerifyCommandForBead(r.v, mayor, beadPath)
+}
+
+func (r *stateRunner) effectiveImplementBead() (id, path string) {
+	if r == nil || r.track == nil {
+		return "", ""
+	}
+	return orchestrator.ResolveImplementBeadForVerify(r.townRoot, r.rig, r.track.activeBead, r.v)
+}
+
+func (r *stateRunner) effectiveImplementBeadID() string {
+	id, _ := r.effectiveImplementBead()
+	return id
 }
 
 func (r *stateRunner) activeImplementBeadPath() string {

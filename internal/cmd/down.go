@@ -102,6 +102,8 @@ func runDown(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("not in a Gas Town workspace: %w", err)
 	}
 
+	_ = orchestrator.SetPipelineOnlyMarker(townRoot, false)
+
 	sp := session.GetDefaultProvider(townRoot)
 	t := tmux.NewTmux()
 	tmuxAvailable := t.IsAvailable()
@@ -221,63 +223,16 @@ func runDown(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Phase 1b: Stop architects
+	// Phase 1b–d: Stop orchestrated pipeline agents (architect, QA, rig polecat).
+	// Uses the session provider (NATS or tmux), not tmux-only checks — see session.StopRigPipelineSessions.
 	for _, rigName := range rigs {
-		sessionName := session.ArchitectSessionName(session.PrefixFor(rigName), rigName)
-		if downDryRun {
-			if running, _ := t.HasSession(sessionName); running {
-				printDownStatus(fmt.Sprintf("Architect (%s)", rigName), true, "would stop")
+		if err := stopRigPipelineForDown(ctx, sp, t, tmuxAvailable, rigName, downForce, downDryRun, func(label string, ok bool, detail string) {
+			printDownStatus(fmt.Sprintf("%s (%s)", label, rigName), ok, detail)
+			if !ok {
+				allOK = false
 			}
-			continue
-		}
-		wasRunning, err := stopSession(t, sessionName)
-		if err != nil {
-			printDownStatus(fmt.Sprintf("Architect (%s)", rigName), false, err.Error())
+		}); err != nil {
 			allOK = false
-		} else if wasRunning {
-			printDownStatus(fmt.Sprintf("Architect (%s)", rigName), true, "stopped")
-		} else {
-			printDownStatus(fmt.Sprintf("Architect (%s)", rigName), true, "not running")
-		}
-	}
-
-	// Phase 1c: Stop qa agents
-	for _, rigName := range rigs {
-		sessionName := session.QASessionName(session.PrefixFor(rigName), rigName)
-		if downDryRun {
-			if running, _ := t.HasSession(sessionName); running {
-				printDownStatus(fmt.Sprintf("QA (%s)", rigName), true, "would stop")
-			}
-			continue
-		}
-		wasRunning, err := stopSession(t, sessionName)
-		if err != nil {
-			printDownStatus(fmt.Sprintf("QA (%s)", rigName), false, err.Error())
-			allOK = false
-		} else if wasRunning {
-			printDownStatus(fmt.Sprintf("QA (%s)", rigName), true, "stopped")
-		} else {
-			printDownStatus(fmt.Sprintf("QA (%s)", rigName), true, "not running")
-		}
-	}
-
-	// Phase 1d: Stop rig pipeline polecats (orchestrated rig-flow)
-	for _, rigName := range rigs {
-		sessionName := session.RigPolecatSessionName(session.PrefixFor(rigName), rigName)
-		if downDryRun {
-			if running, _ := t.HasSession(sessionName); running {
-				printDownStatus(fmt.Sprintf("Polecat (%s)", rigName), true, "would stop")
-			}
-			continue
-		}
-		wasRunning, err := stopSession(t, sessionName)
-		if err != nil {
-			printDownStatus(fmt.Sprintf("Polecat (%s)", rigName), false, err.Error())
-			allOK = false
-		} else if wasRunning {
-			printDownStatus(fmt.Sprintf("Polecat (%s)", rigName), true, "stopped")
-		} else {
-			printDownStatus(fmt.Sprintf("Polecat (%s)", rigName), true, "not running")
 		}
 	}
 
@@ -341,6 +296,19 @@ func runDown(cmd *cobra.Command, args []string) error {
 		}
 	}
 	
+	// Phase 3.9: Kill leftover NATS/gt-agent trees (macOS cannot use /proc/cwd in older stops).
+	if !downDryRun {
+		natsKilled, natsWarn := session.KillNatsPIDs(townRoot)
+		agentKilled := session.KillTownGasTownProcesses(townRoot)
+		if natsKilled > 0 || agentKilled > 0 {
+			printDownStatus("Session processes", true,
+				fmt.Sprintf("killed %d nats tree(s), %d agent tree(s)", natsKilled, agentKilled))
+		}
+		for _, w := range natsWarn {
+			fmt.Printf("  NATS cleanup: %s\n", w)
+		}
+	}
+
 	// Phase 4: Stop Daemon
 	running, pid, daemonErr := daemon.IsRunning(townRoot)
 	if daemonErr != nil {
@@ -512,10 +480,13 @@ func runDown(cmd *cobra.Command, args []string) error {
 		// tmux PID tracking in .runtime/pids/.
 		natsKilled, natsErrs := session.KillNatsPIDs(townRoot)
 		if natsKilled > 0 {
-			fmt.Printf("  Killed %d NATS orphan process(es)\n", natsKilled)
+			fmt.Printf("  Killed %d NATS orphan process tree(s)\n", natsKilled)
 		}
 		for _, e := range natsErrs {
 			fmt.Printf("  NATS PID cleanup warning: %s\n", e)
+		}
+		if extra := session.KillTownGasTownProcesses(townRoot); extra > 0 {
+			fmt.Printf("  Killed %d additional gt-agent/nats-wrapper tree(s)\n", extra)
 		}
 
 		fmt.Println("Cleaning up orphaned agent processes...")
@@ -601,6 +572,93 @@ func runDown(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("not all services stopped")
 	}
 
+	return nil
+}
+
+type rigPipelineRole struct {
+	label     string
+	sessionID string
+}
+
+func rigPipelineRoles(rigName string) []rigPipelineRole {
+	prefix := session.PrefixFor(rigName)
+	return []rigPipelineRole{
+		{"Architect", session.ArchitectSessionName(prefix, rigName)},
+		{"QA", session.QASessionName(prefix, rigName)},
+		{"Polecat", session.RigPolecatSessionName(prefix, rigName)},
+	}
+}
+
+// pipelineSessionRunning reports whether a pipeline agent exists on the session provider
+// or (legacy) as a tmux session.
+func pipelineSessionRunning(ctx context.Context, sp session.Provider, t *tmux.Tmux, tmuxOK bool, sessionID string) (bool, error) {
+	if sp != nil {
+		running, err := sp.Exists(ctx, sessionID)
+		if err != nil {
+			return false, err
+		}
+		if running {
+			return true, nil
+		}
+	}
+	if tmuxOK && t != nil {
+		return t.HasSession(sessionID)
+	}
+	return false, nil
+}
+
+type rigPipelineDownReporter func(label string, ok bool, detail string)
+
+// stopRigPipelineForDown stops architect/QA/rig-polecat via the session provider, with
+// tmux fallback for legacy tmux-only pipeline sessions.
+func stopRigPipelineForDown(ctx context.Context, sp session.Provider, t *tmux.Tmux, tmuxOK bool, rigName string, force, dryRun bool, report rigPipelineDownReporter) error {
+	roles := rigPipelineRoles(rigName)
+	if dryRun {
+		for _, role := range roles {
+			running, err := pipelineSessionRunning(ctx, sp, t, tmuxOK, role.sessionID)
+			if err != nil {
+				report(role.label, false, err.Error())
+				continue
+			}
+			if running {
+				report(role.label, true, "would stop")
+			} else {
+				report(role.label, true, "not running")
+			}
+		}
+		return nil
+	}
+
+	stoppedIDs, stopErr := session.StopRigPipelineSessions(sp, rigName, !force)
+	stoppedSet := make(map[string]struct{}, len(stoppedIDs))
+	for _, id := range stoppedIDs {
+		stoppedSet[id] = struct{}{}
+	}
+
+	var errs []string
+	for _, role := range roles {
+		if _, ok := stoppedSet[role.sessionID]; ok {
+			report(role.label, true, "stopped")
+			continue
+		}
+		wasRunning, err := stopSession(t, role.sessionID)
+		if err != nil {
+			report(role.label, false, err.Error())
+			errs = append(errs, fmt.Sprintf("%s: %v", role.sessionID, err))
+			continue
+		}
+		if wasRunning {
+			report(role.label, true, "stopped")
+		} else {
+			report(role.label, true, "not running")
+		}
+	}
+	if stopErr != nil {
+		errs = append(errs, stopErr.Error())
+	}
+	if len(errs) > 0 {
+		return fmt.Errorf("%s", strings.Join(errs, "; "))
+	}
 	return nil
 }
 

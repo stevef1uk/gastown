@@ -11,6 +11,7 @@ func TestSanitizeNativeEditRelPath(t *testing.T) {
 	tests := []struct{ in, want string }{
 		{"`linkshelf/go.mod`", "linkshelf/go.mod"},
 		{"**linkshelf/foo.go**", "linkshelf/foo.go"},
+		{"testgt3/mayor/rig/linkshelf/web/style.css", "linkshelf/web/style.css"},
 		{"` command to create the file.", "command to create the file."},
 	}
 	for _, tc := range tests {

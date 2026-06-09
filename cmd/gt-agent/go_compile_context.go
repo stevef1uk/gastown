@@ -35,7 +35,7 @@ func goToolOutputLooksFailed(cmd, output string) bool {
 			return true
 		}
 	}
-	if orchestrator.GoToolOutputMatchedNoPackages(output) && !orchestrator.GoModTidyOnlyCommand(cmd) {
+	if orchestrator.GoToolOutputMatchedNoPackages(output) && !orchestrator.GoModScaffoldOnlyCommand(cmd) {
 		return true
 	}
 	return strings.Contains(output, ": error:")
@@ -110,9 +110,9 @@ func extractGoSourcePathsFromOutput(output, layoutRoot string, required []string
 }
 
 const (
-	maxGoCompileContextFiles = 4
-	maxGoCompileContextBytes = 4500
-	maxGoCompileSnippetBytes = 1200
+	maxGoCompileContextFiles = 3
+	maxGoCompileContextBytes = 2400
+	maxGoCompileSnippetBytes = 400
 )
 
 // appendGoCompileSourceContext adds file snippets to LLM feedback after failed go commands.
@@ -123,6 +123,7 @@ func appendGoCompileSourceContext(b *strings.Builder, townRoot, rig, mayorRigDir
 	}
 	paths := extractGoSourcePathsFromOutput(cmdOutput, layoutRoot, v.RequiredFiles, mayorRigDir)
 	paths = orchestrator.CompileErrorPathsIncludingClosedDeps(townRoot, rig, activeBeadPath, paths, cmdOutput, v)
+	paths = dedupeStringsKeepOrder(paths)
 	if len(paths) == 0 {
 		return
 	}
@@ -197,4 +198,17 @@ func appendGoCompileSourceContext(b *strings.Builder, townRoot, rig, mayorRigDir
 		b.WriteString("\n")
 	}
 	b.WriteString("\nHint: fix internal packages with **sed -i** or a small **patch**. **cmd/…/main.go** may use `cat > … <<'EOF'` when the file has duplicate handlers or stub bodies; use symbols from **Dependency packages** / Source context, not invented names.\n")
+}
+
+func dedupeStringsKeepOrder(items []string) []string {
+	seen := make(map[string]bool, len(items))
+	out := items[:0]
+	for _, s := range items {
+		if seen[s] {
+			continue
+		}
+		seen[s] = true
+		out = append(out, s)
+	}
+	return out
 }

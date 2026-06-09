@@ -123,6 +123,84 @@ func NormalizeGoLayoutPackagePaths(cmd, workPath, layoutRoot string) string {
 	return strings.ReplaceAll(cmd, prefix, "./")
 }
 
+// StripFirstShellCDPrefix removes a leading "cd <path> &&" from a shell command chain.
+func StripFirstShellCDPrefix(cmd string) string {
+	trimmed := strings.TrimSpace(cmd)
+	lower := strings.ToLower(trimmed)
+	if !strings.HasPrefix(lower, "cd ") {
+		return trimmed
+	}
+	if idx := strings.Index(lower, " && "); idx >= 0 {
+		return strings.TrimSpace(trimmed[idx+4:])
+	}
+	return ""
+}
+
+// GoModuleWorkPathForMayorRigDir returns the town-root-relative workdir for shell commands,
+// using go.mod location under mayorRigDir when layout_root is set.
+func GoModuleWorkPathForMayorRigDir(mayorRigDir, mayorRigRel, layoutRoot string) string {
+	mayorRigRel = strings.Trim(filepath.ToSlash(strings.TrimSpace(mayorRigRel)), "/")
+	layoutRoot = strings.Trim(filepath.ToSlash(strings.TrimSpace(layoutRoot)), "/")
+	if mayorRigRel == "" {
+		return "."
+	}
+	if layoutRoot == "" || layoutRoot == "." {
+		return mayorRigRel
+	}
+	nestedMod := filepath.Join(mayorRigDir, layoutRoot, "go.mod")
+	if fi, err := os.Stat(nestedMod); err == nil && !fi.IsDir() {
+		return mayorRigRel + "/" + layoutRoot
+	}
+	if fi, err := os.Stat(filepath.Join(mayorRigDir, "go.mod")); err == nil && !fi.IsDir() {
+		return mayorRigRel
+	}
+	return mayorRigRel + "/" + layoutRoot
+}
+
+// RewriteVerifyCDForWorkPath rewrites profile-relative "cd layout &&" verify hints to a full town-root cd.
+func RewriteVerifyCDForWorkPath(verify, layoutRoot, workPath string) string {
+	verify = strings.TrimSpace(verify)
+	if verify == "" || strings.TrimSpace(workPath) == "" {
+		return verify
+	}
+	layoutRoot = strings.Trim(filepath.ToSlash(strings.TrimSpace(layoutRoot)), "/")
+	workPath = strings.Trim(filepath.ToSlash(strings.TrimSpace(workPath)), "/")
+	if layoutRoot != "" && layoutRoot != "." {
+		lower := strings.ToLower(verify)
+		layoutLower := strings.ToLower(layoutRoot)
+		if strings.HasPrefix(lower, "cd "+layoutLower+" &&") ||
+			strings.HasPrefix(lower, "cd ./"+layoutLower+" &&") {
+			return "cd " + workPath + " && " + StripFirstShellCDPrefix(verify)
+		}
+	}
+	if !strings.Contains(strings.ToLower(verify), "cd ") {
+		return "cd " + workPath + " && " + verify
+	}
+	return verify
+}
+
+// AgentShellVerifyCommand returns per-bead verify with town-root-relative cd for polecat CMD hints.
+func AgentShellVerifyCommand(rig string, v WorkflowValidation, mayorRigDir, beadPath string) string {
+	verify := ImplementationVerifyCommandForBead(v, mayorRigDir, beadPath)
+	rig = strings.TrimSpace(rig)
+	if rig == "" {
+		return verify
+	}
+	mayorRigRel := filepath.ToSlash(filepath.Join(rig, "mayor", "rig"))
+	workPath := GoModuleWorkPathForMayorRigDir(mayorRigDir, mayorRigRel, v.LayoutRoot)
+	return RewriteVerifyCDForWorkPath(verify, v.LayoutRoot, workPath)
+}
+
+// CanonicalImplementationVerifyIsGoBuildOnly reports whether package verify for beadPath is go build only
+// (no go test), e.g. when foreign *_test.go from other beads would break go test.
+func CanonicalImplementationVerifyIsGoBuildOnly(v WorkflowValidation, mayorRigDir, beadPath string) bool {
+	if !WorkflowUsesGo(v) {
+		return false
+	}
+	cmd := strings.ToLower(GoCompileVerifyCommandForBead(v, mayorRigDir, beadPath))
+	return strings.Contains(cmd, "go build") && !strings.Contains(cmd, "go test")
+}
+
 // GoModuleWorkPathRelative returns the shell workdir for Go commands (town-root-relative),
 // e.g. testgt3/mayor/rig when the module is flat at mayor/rig instead of mayor/rig/linkshelf.
 func GoModuleWorkPathRelative(mayorRigRel, layoutRoot string) string {

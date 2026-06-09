@@ -92,6 +92,7 @@ func TestStartRigAgentsWithPrefetch_EmptyRigs(t *testing.T) {
 		make(map[string]*rig.Rig),
 		make(map[string]error),
 		false,
+		false,
 	)
 
 	if len(witnessResults) != 0 {
@@ -122,6 +123,7 @@ func TestStartRigAgentsWithPrefetch_RecordsErrors(t *testing.T) {
 		make(map[string]*rig.Rig),
 		rigErrors,
 		true,
+		false,
 	)
 
 	if len(witnessResults) != 1 {

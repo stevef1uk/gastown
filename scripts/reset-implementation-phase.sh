@@ -2,7 +2,7 @@
 #
 # reset-implementation-phase.sh — targeted implementation hard reset for one rig
 #
-# Mirrors orchestrator hook reset_implementation_phase (wall-clock state timeout):
+# Mirrors orchestrator hook hard_reset_implementation_phase (manual recovery only):
 #   - stop dev servers on tracked ports
 #   - delete on-disk files for open and in_progress implement beads only
 #   - reset in_progress implement beads → open

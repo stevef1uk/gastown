@@ -35,6 +35,9 @@ type StartOptions struct {
 	Command   string
 	Env          map[string]string
 	Orchestrated bool
+	// AutoRespawn restarts the session when the wrapper exits (NATS: respawn goroutine;
+	// tmux: pane-died hook). Pipeline respawn is gated by orchestrator/rig workflow.
+	AutoRespawn bool
 	Theme        any // Provider-specific theme (e.g. *tmux.Theme)
 }
 

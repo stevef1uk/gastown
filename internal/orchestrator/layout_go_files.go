@@ -48,7 +48,7 @@ func GoCompileVerifyCommandForBead(v WorkflowValidation, mayorRigDir, beadPath s
 			if testPath != "" {
 				testAbs := ResolveRequiredFileOnDisk(mayorRigDir, testPath, v.LayoutRoot)
 				if _, err := os.Stat(testAbs); os.IsNotExist(err) {
-					if TestPathListedInRequired(beadPath, v) {
+					if TestPathListedInRequired(beadPath, v) || PackageHasForeignTestFiles(beadPath, v, mayorRigDir) {
 						cmd = goBuildVerifyForPackage(v, mayorRigDir, beadPath)
 					} else {
 						cmd = GoTestVerifyCommandForPackage(v, mayorRigDir, beadPath)
@@ -68,9 +68,13 @@ func GoCompileVerifyCommandForBead(v WorkflowValidation, mayorRigDir, beadPath s
 	return AppendGoBuildCmdServerToVerify(cmd, mayorRigDir, beadPath, v)
 }
 
-// goTestVerifyScopedToBead runs go test -run for this bead's Test* funcs when sibling *_test.go
-// files in the same package belong to other implement beads (e.g. schema.go vs store_test.go).
+// goTestVerifyScopedToBead runs go test -run for this bead's Test* funcs when sibling production
+// .go files belong to other implement beads. Foreign *_test.go files from other beads always
+// compile under go test (even with -run), so verify falls back to go build for production only.
 func goTestVerifyScopedToBead(v WorkflowValidation, mayorRigDir, beadPath, correlatedTest string) string {
+	if PackageHasForeignTestFiles(beadPath, v, mayorRigDir) {
+		return goBuildVerifyForPackage(v, mayorRigDir, beadPath)
+	}
 	if !packageNeedsScopedGoTest(beadPath, v, mayorRigDir) {
 		return ""
 	}
@@ -102,7 +106,14 @@ func goBuildVerifyForPackage(v WorkflowValidation, mayorRigDir, beadPath string)
 // (required_files plus correlated *_test.go for each production source bead).
 func layoutGoRelPathsProtectedFromPrune(v WorkflowValidation) map[string]bool {
 	layout := strings.Trim(filepath.ToSlash(strings.TrimSpace(v.LayoutRoot)), "/")
-	if layout == "" || len(v.RequiredFiles) == 0 {
+	if layout == "" {
+		return nil
+	}
+	files := v.RequiredFiles
+	if v.HasPhasedDelivery() {
+		files = v.UnionRequiredFiles()
+	}
+	if len(files) == 0 {
 		return nil
 	}
 	protected := map[string]bool{}
@@ -113,7 +124,7 @@ func layoutGoRelPathsProtectedFromPrune(v WorkflowValidation) map[string]bool {
 			protected[p] = true
 		}
 	}
-	for _, f := range v.RequiredFiles {
+	for _, f := range files {
 		add(f)
 		if WorkflowUsesGo(v) && !IsTestImplementPath(f) {
 			if testPath := CorrelatedTestPathForSource(f, v); testPath != "" {
@@ -148,7 +159,9 @@ func layoutGoBasenamesProtectedFromPrune(v WorkflowValidation) map[string]bool {
 	return bases
 }
 
-// PruneStaleLayoutGoFiles removes .go files under layout_root that are not listed in required_files.
+// PruneStaleLayoutGoFiles removes .go files under layout_root that are not listed in required_files
+// (full union when delivery phases are configured). Junk like internal/app/ from hallucinated writes
+// is removed even while implement beads are open.
 func PruneStaleLayoutGoFiles(townRoot, rig string, v WorkflowValidation) ([]string, error) {
 	if v.HasPhasedDelivery() {
 		return nil, nil
@@ -157,16 +170,19 @@ func PruneStaleLayoutGoFiles(townRoot, rig string, v WorkflowValidation) ([]stri
 	if layout == "" || len(v.RequiredFiles) == 0 {
 		return nil, nil
 	}
-	root := filepath.Join(townRoot, rig, "mayor", "rig", layout)
 	required := layoutGoRelPathsProtectedFromPrune(v)
-	basenameProtected := layoutGoBasenamesProtectedFromPrune(v)
 	if len(required) == 0 {
 		return nil, nil
 	}
+	root := filepath.Join(townRoot, rig, "mayor", "rig", layout)
+	basenameProtected := layoutGoBasenamesProtectedFromPrune(v)
+	if RequiresExactImplementPaths(v) {
+		basenameProtected = nil
+	}
 	var removed []string
-	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
-		if err != nil || info.IsDir() || !strings.HasSuffix(path, ".go") {
-			return err
+	err := filepath.Walk(root, func(path string, info os.FileInfo, walkErr error) error {
+		if walkErr != nil || info.IsDir() || !strings.HasSuffix(path, ".go") {
+			return walkErr
 		}
 		rel, err := filepath.Rel(root, path)
 		if err != nil {

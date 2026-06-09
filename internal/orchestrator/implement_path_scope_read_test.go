@@ -28,10 +28,10 @@ func TestValidateImplementReadPath_allowsClosedDependency(t *testing.T) {
 		"linkshelf/cmd/server/main.go",
 	}
 	// Active main bead may READ closed handlers dependency.
-	if err := ValidateImplementReadPath(dir, rig, "te-main", "linkshelf/internal/api/handlers.go", v); err != nil {
+	if err := ValidateImplementReadPath(dir, rig, "te-main", "linkshelf/internal/api/handlers.go", v, ""); err != nil {
 		t.Fatalf("read closed dependency: %v", err)
 	}
-	if err := ValidateImplementReadPath(dir, rig, "te-main", "linkshelf/not-in-plan.go", v); err == nil {
+	if err := ValidateImplementReadPath(dir, rig, "te-main", "linkshelf/not-in-plan.go", v, ""); err == nil {
 		t.Fatal("expected reject read outside required_files")
 	}
 }

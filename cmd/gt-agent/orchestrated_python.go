@@ -84,10 +84,11 @@ func validatePythonImplementationCommand(cmd, townRoot, rig, activeBead string, 
 		mayorDir := rigMayorRigDir(townRoot, rig)
 		beadPath := orchestrator.ImplementBeadPathForID(townRoot, rig, activeBead, v)
 		hint := orchestrator.PythonImplementationVerifyCommandForBead(v, mayorDir, beadPath)
-		if orchestrator.IsFrontendImplementPath(beadPath) && hint == "" {
-			if err := orchestrator.ValidateBeadArtifactOnDisk(mayorDir, beadPath, v); err == nil {
-				return nil
+		if orchestrator.IsFrontendImplementPath(beadPath) {
+			if err := orchestrator.ValidateBeadArtifactOnDisk(mayorDir, beadPath, v); err != nil {
+				return fmt.Errorf("cannot bd close %s: %w — fix the file with EDIT:/WRITE: first", activeBead, err)
 			}
+			return fmt.Errorf("bd close %s requires a successful EDIT:/WRITE: to %s in this session", activeBead, beadPath)
 		}
 		return fmt.Errorf("run green verify before bd close: %s (in this session, since verify clears on restart)", hint)
 	}

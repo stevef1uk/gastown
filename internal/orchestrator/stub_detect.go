@@ -59,6 +59,12 @@ var configFileExtensions = map[string]bool{
 	".lock": true, ".mod": true, ".sum": true,
 }
 
+// webAssetExtension marks extensions that are naturally small (HTML/CSS/JS/SCSS) — non-empty with ≥1 line.
+var webAssetExtension = map[string]bool{
+	".html": true, ".htm": true, ".css": true, ".scss": true,
+	".js": true, ".mjs": true, ".cjs": true,
+}
+
 // dependencyManifestNames are lockfiles and dependency lists — non-empty only, no min byte/line counts.
 var dependencyManifestNames = map[string]bool{
 	"requirements.txt":      true,
@@ -102,6 +108,47 @@ func IsDependencyManifest(displayRel string) bool {
 	return dependencyManifestNames[lower]
 }
 
+// ValidateRequiredFilesNotStubbed checks only v.RequiredFiles (no layout tree walk).
+func ValidateRequiredFilesNotStubbed(rigDir string, v WorkflowValidation) error {
+	opts := StubCheckOptionsFromValidation(v)
+	for _, rel := range v.RequiredFiles {
+		rel = filepath.ToSlash(strings.TrimSpace(rel))
+		if rel == "" {
+			continue
+		}
+		path := ResolveRequiredFileOnDisk(rigDir, rel, v.LayoutRoot)
+		if err := CheckPathNotStub(path, rel, optsForPath(rel, opts)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// UnionStubArtifactsOnDisk returns union required files that exist but still fail stub checks.
+func UnionStubArtifactsOnDisk(rigDir string, v WorkflowValidation) []string {
+	chk := v
+	if v.HasPhasedDelivery() {
+		chk.RequiredFiles = v.UnionRequiredFiles()
+	}
+	opts := StubCheckOptionsFromValidation(chk)
+	var stubbed []string
+	for _, rel := range chk.RequiredFiles {
+		rel = filepath.ToSlash(strings.TrimSpace(rel))
+		if rel == "" {
+			continue
+		}
+		path := ResolveRequiredFileOnDisk(rigDir, rel, chk.LayoutRoot)
+		data, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		if err := CheckContentNotStub(data, rel, optsForPath(rel, opts)); err != nil {
+			stubbed = append(stubbed, rel)
+		}
+	}
+	return stubbed
+}
+
 // ValidateWorkNotStubbed rejects placeholder implementations under the rig worktree.
 // Checks required_files and, when layout_root is set, other source files in that tree.
 func ValidateWorkNotStubbed(rigDir string, v WorkflowValidation) error {
@@ -118,6 +165,12 @@ func ValidateWorkNotStubbed(rigDir string, v WorkflowValidation) error {
 		if err := CheckPathNotStub(path, rel, optsForPath(rel, opts)); err != nil {
 			return err
 		}
+	}
+
+	// Phased rigs validate explicit union paths at success time; skip layout walk so
+	// earlier-phase stubs are fixed via rework writes instead of blocking unrelated work.
+	if v.HasPhasedDelivery() {
+		return nil
 	}
 
 	layout := strings.TrimSpace(v.LayoutRoot)
@@ -174,6 +227,17 @@ func optsForPath(displayRel string, opts StubCheckOptions) StubCheckOptions {
 		return StubCheckOptions{MinFileBytes: 1, MinSubstantiveLines: 0}
 	}
 	ext := strings.ToLower(filepath.Ext(displayRel))
+	// Web assets are naturally small — accept non-empty with at least 1 substantive line.
+	if webAssetExtension[ext] {
+		relaxed := opts
+		if relaxed.MinFileBytes > 80 {
+			relaxed.MinFileBytes = 80
+		}
+		if relaxed.MinSubstantiveLines > 1 {
+			relaxed.MinSubstantiveLines = 1
+		}
+		return relaxed
+	}
 	if !configFileExtensions[ext] {
 		return opts
 	}

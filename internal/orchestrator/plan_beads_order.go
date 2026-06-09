@@ -78,6 +78,24 @@ func IsValidImplementBeadPath(path string) bool {
 	return true
 }
 
+// ValidatePlanningBeadCreate guards bd create during planning (profile prefix, required_files, no duplicates).
+func ValidatePlanningBeadCreate(townRoot, rig, title string, v WorkflowValidation) error {
+	v = v.ForActivePhase()
+	if strings.TrimSpace(title) == "" {
+		return fmt.Errorf("bead title is empty")
+	}
+	if townRoot != "" && rig != "" && len(v.RequiredFiles) > 0 {
+		covered, err := OpenImplementCoversRequiredFiles(townRoot, rig, v)
+		if err != nil {
+			return err
+		}
+		if covered {
+			return fmt.Errorf("open implement beads already cover required_files — do not bd create; run bd list --status=open, expand plan.md if needed, then JSON success (or: gt rig sync-planning %s --force)", rig)
+		}
+	}
+	return ValidateImplementBeadCreateTitle(title, v)
+}
+
 // ValidateImplementBeadCreateTitle ensures bd create titles map to a profile required path.
 func ValidateImplementBeadCreateTitle(title string, v WorkflowValidation) error {
 	v = v.ForActivePhase()
@@ -94,7 +112,7 @@ func ValidateImplementBeadCreateTitle(title string, v WorkflowValidation) error 
 	if len(v.RequiredFiles) == 0 {
 		return nil
 	}
-	if !pathMatchesRequired(path, v.RequiredFiles) {
+	if !pathMatchesRequiredForProfile(path, v.RequiredFiles, v) {
 		msg := fmt.Sprintf("bead path %q is not in active-phase required_files", path)
 		if id := v.ActivePhaseID(); id != "" {
 			msg += fmt.Sprintf(" (phase %q)", id)
@@ -107,6 +125,11 @@ func ValidateImplementBeadCreateTitle(title string, v WorkflowValidation) error 
 // PathMatchesRequiredFile reports whether path is a profile required_files entry (or same basename).
 func PathMatchesRequiredFile(path string, required string) bool {
 	return pathMatchesRequired(path, []string{required})
+}
+
+// PathMatchesRequiredFileForProfile is like PathMatchesRequiredFile but honors exact-path profiles.
+func PathMatchesRequiredFileForProfile(path string, required string, v WorkflowValidation) bool {
+	return pathMatchesRequiredForProfile(path, []string{required}, v)
 }
 
 func pathMatchesRequired(path string, required []string) bool {
@@ -156,8 +179,8 @@ func listImplementBeadsForGuard(townRoot, rig string, v WorkflowValidation, stat
 	if hook != nil {
 		beads, err := hook(townRoot, rig, v, status)
 		if errors.Is(err, errImplementBeadsUseRealList) {
-			// Another parallel test's hook is active — do not call bd against this townRoot/rig.
-			return nil, nil
+			// Scoped hook from another parallel test — use real bd for this townRoot/rig.
+			return listImplementBeadsByStatus(townRoot, rig, v, status)
 		}
 		if err != nil {
 			return nil, err
@@ -173,7 +196,11 @@ func filterImplementBeads(beads []PlanBead, v WorkflowValidation) []PlanBead {
 	}
 	out := make([]PlanBead, 0, len(beads))
 	for _, b := range beads {
-		if MatchesImplementBeadTitle(b.Title, v) {
+		// Listing open/in-progress implement beads is used for "what's open" /
+		// "what can be worked on" checks. It should not filter by whether the
+		// embedded path is currently part of v.RequiredFiles; that filtering is
+		// validated later by plan.bead validation logic.
+		if looksLikeOpenImplementBeadTitle(b.Title, v) {
 			out = append(out, b)
 		}
 	}
@@ -195,7 +222,7 @@ func ImplementPathHasOnlyClosedBeads(townRoot, rig, writtenPath string, v Workfl
 		}
 		for _, b := range beads {
 			p := NormalizePlannerBeadPath(ExtractPathFromBeadTitle(b.Title, v.BeadTitleContains), v.LayoutRoot, rig)
-			if PathMatchesImplementFile(writtenPath, p) {
+			if PathMatchesImplementFileForProfile(writtenPath, p, v) {
 				return false, nil
 			}
 		}
@@ -206,7 +233,7 @@ func ImplementPathHasOnlyClosedBeads(townRoot, rig, writtenPath string, v Workfl
 	}
 	for _, b := range closed {
 		p := NormalizePlannerBeadPath(ExtractPathFromBeadTitle(b.Title, v.BeadTitleContains), v.LayoutRoot, rig)
-		if PathMatchesImplementFile(writtenPath, p) {
+		if PathMatchesImplementFileForProfile(writtenPath, p, v) {
 			return true, nil
 		}
 	}
@@ -225,7 +252,7 @@ func ClosedImplementBeadForPath(townRoot, rig, filePath string, v WorkflowValida
 	}
 	for _, b := range closed {
 		p := NormalizePlannerBeadPath(ExtractPathFromBeadTitle(b.Title, v.BeadTitleContains), v.LayoutRoot, rig)
-		if PathMatchesImplementFile(filePath, p) {
+		if PathMatchesImplementFileForProfile(filePath, p, v) {
 			return b.ID, true
 		}
 	}
@@ -247,7 +274,7 @@ func FormatClosedDependencyCompileHints(townRoot, rig, activeBeadPath string, er
 			continue
 		}
 		seen[p] = true
-		if PathMatchesImplementWrite(p, activeBeadPath, v.RequiredFiles) {
+		if PathMatchesImplementWrite(p, activeBeadPath, v.RequiredFiles, v) {
 			continue
 		}
 		id, ok := ClosedImplementBeadForPath(townRoot, rig, p, v)
@@ -277,6 +304,10 @@ func FormatClosedDependencyCompileHints(townRoot, rig, activeBeadPath string, er
 // Returns false when writtenPath's implement bead(s) are closed — fixes must use that bead reopened.
 func AllowedEarlierImplementDependencyWrite(townRoot, rig, activePath, writtenPath string, v WorkflowValidation) bool {
 	required := v.RequiredFiles
+	// During phased delivery, also accept files from earlier phases as valid dependencies.
+	if v.HasPhasedDelivery() {
+		required = v.UnionRequiredFiles()
+	}
 	if len(required) == 0 || !pathMatchesRequired(writtenPath, required) {
 		return false
 	}
@@ -355,7 +386,16 @@ func implementationPathScore(p string) int {
 	case strings.Contains(lower, "/internal/store/"):
 		return 10
 	case strings.Contains(lower, "/web/"):
-		return 15
+		if strings.HasSuffix(lower, "index.html") {
+			return 18
+		}
+		if strings.HasSuffix(lower, ".css") {
+			return 15
+		}
+		if strings.HasSuffix(lower, ".js") {
+			return 16
+		}
+		return 17
 	case strings.Contains(lower, "/internal/api/"):
 		return 20
 	case strings.HasSuffix(lower, "_test.go"):
@@ -397,7 +437,7 @@ func EnforceSingleImplementInProgress(townRoot, rig string, v WorkflowValidation
 	if err != nil {
 		return nil, err
 	}
-	if len(inProg) <= 1 {
+	if len(inProg) == 0 {
 		return nil, nil
 	}
 	next, err := NextOpenImplementBead(townRoot, rig, v)
@@ -430,6 +470,38 @@ func EnforceSingleImplementInProgress(townRoot, rig string, v WorkflowValidation
 	return reopened, nil
 }
 
+// PromoteImplementQueueHead enforces a single in_progress implement bead and promotes the
+// profile-order queue head from open→in_progress when needed.
+func PromoteImplementQueueHead(townRoot, rig string, v WorkflowValidation) (promoted string, reopened []string, err error) {
+	reopened, err = EnforceSingleImplementInProgress(townRoot, rig, v)
+	if err != nil {
+		return "", reopened, err
+	}
+	next, err := NextOpenImplementBead(townRoot, rig, v)
+	if err != nil || next == nil || strings.TrimSpace(next.ID) == "" {
+		return "", reopened, nil
+	}
+	inProg, err := listImplementBeadsForGuard(townRoot, rig, v, "in_progress")
+	if err != nil {
+		return "", reopened, err
+	}
+	for _, b := range inProg {
+		if b.ID == next.ID {
+			return "", reopened, nil
+		}
+	}
+	beadsDir := config.ResolveBeadsDirForRig(townRoot, rig)
+	workDir := filepath.Join(townRoot, rig, "mayor", "rig")
+	cmd := exec.Command("bd", "update", next.ID, "--status=in_progress")
+	cmd.Env = append(os.Environ(), "BEADS_DIR="+beadsDir)
+	cmd.Dir = workDir
+	out, runErr := cmd.CombinedOutput()
+	if runErr != nil {
+		return "", reopened, fmt.Errorf("bd update %s --status=in_progress: %w: %s", next.ID, runErr, strings.TrimSpace(string(out)))
+	}
+	return next.ID, reopened, nil
+}
+
 // NextOpenImplementBead returns the next bead to implement following profile order (open or in_progress).
 func NextOpenImplementBead(townRoot, rig string, v WorkflowValidation) (*PlanBead, error) {
 	if len(v.RequiredFiles) == 0 {
@@ -451,7 +523,7 @@ func NextOpenImplementBead(townRoot, rig string, v WorkflowValidation) (*PlanBea
 			titleByID[b.ID] = b.Title
 		}
 		for _, want := range v.RequiredFiles {
-			if pathMatchesRequired(p, []string{want}) {
+			if pathMatchesRequiredForProfile(p, []string{want}, v) {
 				if _, ok := idByPath[want]; !ok {
 					idByPath[want] = b.ID
 					titleByID[b.ID] = b.Title
@@ -459,19 +531,25 @@ func NextOpenImplementBead(townRoot, rig string, v WorkflowValidation) (*PlanBea
 			}
 		}
 	}
+	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
+	eval := newImplementBeadVerifyEvaluator(rigDir, v)
 	order := OrderRequiredFilesForImplementation(v.RequiredFiles)
 	for _, want := range order {
 		if IsProjectSetupArtifactPath(want, v) {
 			continue
 		}
 		for p, id := range idByPath {
-			if pathMatchesRequired(p, []string{want}) {
-				title := titleByID[id]
-				if title == "" {
-					title = want
-				}
-				return &PlanBead{ID: id, Title: title}, nil
+			if !pathMatchesRequiredForProfile(p, []string{want}, v) {
+				continue
 			}
+			if eval.VerifySatisfied(want) {
+				continue
+			}
+			title := titleByID[id]
+			if title == "" {
+				title = want
+			}
+			return &PlanBead{ID: id, Title: title}, nil
 		}
 	}
 	return nil, nil
@@ -564,6 +642,20 @@ func RepairPlanningBeadSet(townRoot, rig string, v WorkflowValidation) (string, 
 	if len(malformed) > 0 {
 		parts = append(parts, "pruned malformed: "+joinStrings(malformed, ", "))
 	}
+	legacy, err := PruneLegacyImplementBeadTitles(townRoot, rig, v)
+	if err != nil {
+		return "", err
+	}
+	if len(legacy) > 0 {
+		parts = append(parts, "pruned legacy titles: "+joinStrings(legacy, ", "))
+	}
+	flat, err := PruneNonRequiredOpenImplementBeads(townRoot, rig, v)
+	if err != nil {
+		return "", err
+	}
+	if len(flat) > 0 {
+		parts = append(parts, "pruned non-required paths: "+joinStrings(flat, ", "))
+	}
 	if removed, err := RemoveStalePlanMD(townRoot, rig, v); err != nil {
 		return "", err
 	} else if removed {
@@ -575,6 +667,16 @@ func RepairPlanningBeadSet(townRoot, rig string, v WorkflowValidation) (string, 
 	}
 	if len(dupes) > 0 {
 		parts = append(parts, "deduped: "+joinStrings(dupes, ", "))
+	}
+	if pruned, err := PruneOpenImplementBeadsForClosedPaths(townRoot, rig, v); err != nil {
+		return "", err
+	} else if len(pruned) > 0 {
+		parts = append(parts, "pruned open dupes of closed paths: "+joinStrings(pruned, ", "))
+	}
+	if reopened, err := ReopenClosedImplementBeadsForMissingOpenRequired(townRoot, rig, v); err != nil {
+		return "", err
+	} else if len(reopened) > 0 {
+		parts = append(parts, "reopened closed for missing open required: "+joinStrings(reopened, ", "))
 	}
 	deleted, err := PruneExtraImplementBeads(townRoot, rig, v)
 	if err != nil {
@@ -593,16 +695,167 @@ func RepairPlanningBeadSet(townRoot, rig string, v WorkflowValidation) (string, 
 	return joinStrings(parts, "; "), nil
 }
 
-// PruneDuplicateImplementBeads deletes duplicate open beads for the same required_files path,
-// keeping the canonical planner title when present.
+// PruneOpenImplementBeadsForClosedPaths deletes open/in_progress implement beads when another
+// closed bead already covers the same file path (prevents reset_implementation_phase from
+// deleting on-disk files for work that was already closed on a duplicate bead ID).
+func PruneOpenImplementBeadsForClosedPaths(townRoot, rig string, v WorkflowValidation) ([]string, error) {
+	v = v.ForActivePhase()
+	closed, err := listImplementBeadsByStatus(townRoot, rig, v, "closed")
+	if err != nil {
+		return nil, err
+	}
+	closedPaths := map[string]bool{}
+	for _, b := range closed {
+		if !MatchesImplementBeadTitle(b.Title, v) {
+			continue
+		}
+		p := NormalizePlannerBeadPath(ExtractPathFromBeadTitle(b.Title, v.BeadTitleContains), v.LayoutRoot, rig)
+		if p != "" {
+			closedPaths[p] = true
+		}
+	}
+	if len(closedPaths) == 0 {
+		return nil, nil
+	}
+	beadsDir := config.ResolveBeadsDirForRig(townRoot, rig)
+	workDir := filepath.Join(townRoot, rig, "mayor", "rig")
+	var deleted []string
+	for _, status := range []string{"open", "in_progress"} {
+		beads, err := listImplementBeadsByStatus(townRoot, rig, v, status)
+		if err != nil {
+			return deleted, err
+		}
+		for _, b := range beads {
+			if !MatchesImplementBeadTitle(b.Title, v) {
+				continue
+			}
+			p := NormalizePlannerBeadPath(ExtractPathFromBeadTitle(b.Title, v.BeadTitleContains), v.LayoutRoot, rig)
+			if p == "" || !closedPaths[p] {
+				continue
+			}
+			cmd := exec.Command("bd", "delete", b.ID, "--force")
+			cmd.Env = append(os.Environ(), "BEADS_DIR="+beadsDir)
+			cmd.Dir = workDir
+			out, err := cmd.CombinedOutput()
+			if err != nil {
+				return deleted, fmt.Errorf("bd delete %s: %w: %s", b.ID, err, strings.TrimSpace(string(out)))
+			}
+			deleted = append(deleted, b.ID+" ("+p+")")
+		}
+	}
+	return deleted, nil
+}
+
+// PruneDuplicateImplementBeads deletes duplicate open/in_progress beads for the same required_files path,
+// keeping the in_progress queue head or canonical planner title when present.
 func PruneDuplicateImplementBeads(townRoot, rig string, v WorkflowValidation) ([]string, error) {
-	return pruneDuplicateImplementBeadsByStatus(townRoot, rig, v, "open")
+	return pruneDuplicateActiveImplementBeads(townRoot, rig, v)
 }
 
 // PruneDuplicateClosedImplementBeads deletes duplicate closed beads for the same path
 // (e.g. two closed go.mod beads). Keeps one closed bead per path for audit; removes extras.
 func PruneDuplicateClosedImplementBeads(townRoot, rig string, v WorkflowValidation) ([]string, error) {
 	return pruneDuplicateImplementBeadsByStatus(townRoot, rig, v, "closed")
+}
+
+type activeImplementBead struct {
+	PlanBead
+	status string
+}
+
+func pruneDuplicateActiveImplementBeads(townRoot, rig string, v WorkflowValidation) ([]string, error) {
+	v = v.ForActivePhase()
+	if len(v.RequiredFiles) == 0 {
+		return nil, nil
+	}
+	var beads []activeImplementBead
+	for _, status := range []string{"open", "in_progress"} {
+		list, err := listImplementBeadsByStatus(townRoot, rig, v, status)
+		if err != nil {
+			return nil, err
+		}
+		for _, b := range list {
+			beads = append(beads, activeImplementBead{PlanBead: b, status: status})
+		}
+	}
+	pathToIDs := map[string][]string{}
+	for _, b := range beads {
+		p := NormalizePlannerBeadPath(ExtractPathFromBeadTitle(b.Title, v.BeadTitleContains), v.LayoutRoot, rig)
+		if p == "" || !IsValidImplementBeadPath(p) {
+			continue
+		}
+		pathToIDs[p] = append(pathToIDs[p], b.ID)
+	}
+	toDelete := map[string]bool{}
+	for _, want := range v.RequiredFiles {
+		ids := dedupeStrings(beadIDsForPathProfile(pathToIDs, want, v))
+		if len(ids) <= 1 {
+			continue
+		}
+		keeper := selectKeeperActiveImplementBead(beads, want, ids, v)
+		for _, id := range ids {
+			if id != keeper {
+				toDelete[id] = true
+			}
+		}
+	}
+	for p, ids := range pathToIDs {
+		if len(ids) <= 1 {
+			continue
+		}
+		if pathMatchesRequiredForProfile(p, v.RequiredFiles, v) {
+			continue
+		}
+		keeper := selectKeeperActiveImplementBead(beads, p, dedupeStrings(ids), v)
+		for _, id := range ids {
+			if id != keeper {
+				toDelete[id] = true
+			}
+		}
+	}
+	if len(toDelete) == 0 {
+		return nil, nil
+	}
+	beadsDir := config.ResolveBeadsDirForRig(townRoot, rig)
+	workDir := filepath.Join(townRoot, rig, "mayor", "rig")
+	var deleted []string
+	for id := range toDelete {
+		cmd := exec.Command("bd", "delete", id, "--force")
+		cmd.Env = append(os.Environ(), "BEADS_DIR="+beadsDir)
+		cmd.Dir = workDir
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			return deleted, fmt.Errorf("bd delete %s: %w: %s", id, err, strings.TrimSpace(string(out)))
+		}
+		deleted = append(deleted, id)
+	}
+	return deleted, nil
+}
+
+func selectKeeperActiveImplementBead(beads []activeImplementBead, want string, ids []string, v WorkflowValidation) string {
+	idSet := map[string]bool{}
+	for _, id := range ids {
+		idSet[id] = true
+	}
+	var inProgress []string
+	for _, b := range beads {
+		if !idSet[b.ID] {
+			continue
+		}
+		if b.status == "in_progress" {
+			inProgress = append(inProgress, b.ID)
+		}
+	}
+	if len(inProgress) == 1 {
+		return inProgress[0]
+	}
+	planOnly := make([]PlanBead, 0, len(ids))
+	for _, b := range beads {
+		if idSet[b.ID] {
+			planOnly = append(planOnly, b.PlanBead)
+		}
+	}
+	return selectKeeperImplementBead(planOnly, want, ids, v)
 }
 
 func pruneDuplicateImplementBeadsByStatus(townRoot, rig string, v WorkflowValidation, status string) ([]string, error) {
@@ -624,7 +877,7 @@ func pruneDuplicateImplementBeadsByStatus(townRoot, rig string, v WorkflowValida
 	}
 	toDelete := map[string]bool{}
 	for _, want := range v.RequiredFiles {
-		ids := dedupeStrings(beadIDsForPath(pathToIDs, want))
+		ids := dedupeStrings(beadIDsForPathProfile(pathToIDs, want, v))
 		if len(ids) <= 1 {
 			continue
 		}
@@ -639,7 +892,7 @@ func pruneDuplicateImplementBeadsByStatus(townRoot, rig string, v WorkflowValida
 		if len(ids) <= 1 {
 			continue
 		}
-		if pathMatchesRequired(p, v.RequiredFiles) {
+		if pathMatchesRequiredForProfile(p, v.RequiredFiles, v) {
 			continue // already handled via required_files loop
 		}
 		keeper := selectKeeperImplementBead(beads, p, dedupeStrings(ids), v)
@@ -754,6 +1007,165 @@ func PruneOpenImplementBeadsOutsideRequired(townRoot, rig string, v WorkflowVali
 	return deleted, nil
 }
 
+// PruneNonRequiredOpenImplementBeads deletes open implement-like beads whose path is not an exact
+// required_files entry (e.g. linkshelf/handlers.go when the profile lists linkshelf/internal/api/handlers.go).
+func PruneNonRequiredOpenImplementBeads(townRoot, rig string, v WorkflowValidation) ([]string, error) {
+	v = v.ForActivePhase()
+	if len(v.RequiredFiles) == 0 {
+		return nil, nil
+	}
+	beads, err := listImplementBeadsForPrune(townRoot, rig, v)
+	if err != nil {
+		return nil, err
+	}
+	beadsDir := config.ResolveBeadsDirForRig(townRoot, rig)
+	workDir := filepath.Join(townRoot, rig, "mayor", "rig")
+	var deleted []string
+	for _, b := range beads {
+		if !looksLikeOpenImplementBeadTitle(b.Title, v) {
+			continue
+		}
+		p := NormalizePlannerBeadPath(ExtractPathFromBeadTitle(b.Title, v.BeadTitleContains), v.LayoutRoot, rig)
+		if !IsValidImplementBeadPath(p) || pathMatchesRequiredForProfile(p, v.RequiredFiles, v) {
+			continue
+		}
+		cmd := exec.Command("bd", "delete", b.ID, "--force")
+		cmd.Env = append(os.Environ(), "BEADS_DIR="+beadsDir)
+		cmd.Dir = workDir
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			return deleted, fmt.Errorf("bd delete %s: %w: %s", b.ID, err, strings.TrimSpace(string(out)))
+		}
+		deleted = append(deleted, b.ID)
+	}
+	return deleted, nil
+}
+
+func listImplementBeadsForPrune(townRoot, rig string, v WorkflowValidation) ([]PlanBead, error) {
+	if RequiresExactImplementPaths(v) {
+		// Flat invalid titles (linkshelf/handlers.go) fail MatchesImplementBeadTitle but must
+		// still be pruned when they are not exact required_files entries.
+		return listImplementLikeBeadsOpenOrInProgress(townRoot, rig, v)
+	}
+	return listAllOpenBeads(townRoot, rig)
+}
+
+// listImplementLikeBeadsOpenOrInProgress lists open and in_progress beads whose titles look
+// implement-like (Implement … / bead_title_contains), without requiring MatchesImplementBeadTitle.
+func listImplementLikeBeadsOpenOrInProgress(townRoot, rig string, v WorkflowValidation) ([]PlanBead, error) {
+	var out []PlanBead
+	for _, status := range []string{"open", "in_progress"} {
+		beads, err := listAllBeadsByStatus(townRoot, rig, status)
+		if err != nil {
+			return nil, err
+		}
+		for _, b := range beads {
+			if looksLikeOpenImplementBeadTitle(b.Title, v) {
+				out = append(out, b)
+			}
+		}
+	}
+	return out, nil
+}
+
+func listAllBeadsByStatus(townRoot, rig, status string) ([]PlanBead, error) {
+	beadsDir := config.ResolveBeadsDirForRig(townRoot, rig)
+	args := beads.InjectFlatForListJSON([]string{"list", "--status=" + status, "--json", "--limit=0"})
+	cmd := exec.Command("bd", args...)
+	cmd.Env = append(os.Environ(), "BEADS_DIR="+beadsDir)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return nil, fmt.Errorf("bd list %s: %w: %s", status, err, strings.TrimSpace(string(out)))
+	}
+	out = beads.StripStdoutWarnings(out)
+	var rows []struct {
+		ID    string `json:"id"`
+		Title string `json:"title"`
+	}
+	if err := json.Unmarshal(out, &rows); err != nil {
+		return nil, err
+	}
+	var result []PlanBead
+	for _, r := range rows {
+		id := strings.TrimSpace(beads.ExtractIssueID(r.ID))
+		if id == "" {
+			continue
+		}
+		result = append(result, PlanBead{ID: id, Title: strings.TrimSpace(r.Title)})
+	}
+	return result, nil
+}
+
+func listAllOpenBeads(townRoot, rig string) ([]PlanBead, error) {
+	return listAllBeadsByStatus(townRoot, rig, "open")
+}
+
+func looksLikeOpenImplementBeadTitle(title string, v WorkflowValidation) bool {
+	if MatchesImplementBeadTitle(title, v) {
+		return true
+	}
+	lower := strings.ToLower(strings.TrimSpace(title))
+	if strings.HasPrefix(lower, "implement ") {
+		return true
+	}
+	pfx := strings.TrimSpace(v.BeadTitleContains)
+	return pfx != "" && strings.HasPrefix(lower, strings.ToLower(pfx))
+}
+
+// PruneLegacyImplementBeadTitles deletes open implement-like beads that do not use the profile's
+// canonical title prefix (e.g. legacy "Implement linkshelf/main.go" when the profile expects
+// "Link Shelf /linkshelf/...").
+func PruneLegacyImplementBeadTitles(townRoot, rig string, v WorkflowValidation) ([]string, error) {
+	v = v.ForActivePhase()
+	pfx := strings.TrimSpace(v.BeadTitleContains)
+	if pfx == "" {
+		return nil, nil
+	}
+	open, err := listAllOpenBeads(townRoot, rig)
+	if err != nil {
+		return nil, err
+	}
+	beadsDir := config.ResolveBeadsDirForRig(townRoot, rig)
+	workDir := filepath.Join(townRoot, rig, "mayor", "rig")
+	var deleted []string
+	for _, b := range open {
+		if !isNonCanonicalImplementBeadTitle(b.Title, v) {
+			continue
+		}
+		cmd := exec.Command("bd", "delete", b.ID, "--force")
+		cmd.Env = append(os.Environ(), "BEADS_DIR="+beadsDir)
+		cmd.Dir = workDir
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			return deleted, fmt.Errorf("bd delete %s: %w: %s", b.ID, err, strings.TrimSpace(string(out)))
+		}
+		deleted = append(deleted, b.ID)
+	}
+	return deleted, nil
+}
+
+// isNonCanonicalImplementBeadTitle reports legacy planner titles (e.g. "Implement linkshelf/main.go")
+// when the profile expects a different prefix (e.g. "Link Shelf /linkshelf/...").
+func isNonCanonicalImplementBeadTitle(title string, v WorkflowValidation) bool {
+	pfx := strings.TrimSpace(v.BeadTitleContains)
+	if pfx == "" {
+		return false
+	}
+	lower := strings.ToLower(strings.TrimSpace(title))
+	lowerPfx := strings.ToLower(pfx)
+	if strings.HasPrefix(lower, lowerPfx) {
+		return false
+	}
+	if strings.HasPrefix(lower, "implement ") {
+		return true
+	}
+	layout := strings.Trim(strings.TrimSpace(v.LayoutRoot), "/")
+	if layout != "" && strings.Contains(lower, "implement") && strings.Contains(lower, layout) {
+		return true
+	}
+	return false
+}
+
 // PruneExtraImplementBeads deletes open implement beads whose paths are invalid or not in required_files.
 func PruneExtraImplementBeads(townRoot, rig string, v WorkflowValidation) ([]string, error) {
 	v = v.ForActivePhase()
@@ -769,7 +1181,7 @@ func PruneExtraImplementBeads(townRoot, rig string, v WorkflowValidation) ([]str
 	var deleted []string
 	for _, b := range open {
 		p := NormalizePlannerBeadPath(ExtractPathFromBeadTitle(b.Title, v.BeadTitleContains), v.LayoutRoot, rig)
-		if IsValidImplementBeadPath(p) && pathMatchesRequired(p, v.RequiredFiles) {
+		if IsValidImplementBeadPath(p) && pathMatchesRequiredForProfile(p, v.RequiredFiles, v) {
 			continue
 		}
 		cmd := exec.Command("bd", "delete", b.ID, "--force")
@@ -848,34 +1260,6 @@ func RemoveStalePlanMD(townRoot, rig string, v WorkflowValidation) (bool, error)
 	return true, nil
 }
 
-func listAllOpenBeads(townRoot, rig string) ([]PlanBead, error) {
-	beadsDir := config.ResolveBeadsDirForRig(townRoot, rig)
-	args := beads.InjectFlatForListJSON([]string{"list", "--status=open", "--json", "--limit=0"})
-	cmd := exec.Command("bd", args...)
-	cmd.Env = append(os.Environ(), "BEADS_DIR="+beadsDir)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return nil, fmt.Errorf("bd list open: %w: %s", err, strings.TrimSpace(string(out)))
-	}
-	out = beads.StripStdoutWarnings(out)
-	var rows []struct {
-		ID    string `json:"id"`
-		Title string `json:"title"`
-	}
-	if err := json.Unmarshal(out, &rows); err != nil {
-		return nil, err
-	}
-	var result []PlanBead
-	for _, r := range rows {
-		id := strings.TrimSpace(beads.ExtractIssueID(r.ID))
-		if id == "" {
-			continue
-		}
-		result = append(result, PlanBead{ID: id, Title: strings.TrimSpace(r.Title)})
-	}
-	return result, nil
-}
-
 // PlanningBeadTitle returns the canonical open-task title for a required_files path.
 func PlanningBeadTitle(requiredPath string, v WorkflowValidation) string {
 	path := filepath.ToSlash(strings.TrimSpace(requiredPath))
@@ -888,6 +1272,76 @@ func PlanningBeadTitle(requiredPath string, v WorkflowValidation) string {
 		path = strings.TrimPrefix(path, layout+"/")
 	}
 	return strings.TrimSpace(pfx + path) + " per architecture"
+}
+
+// openBeadCoversRequiredPath reports whether an open or in_progress implement bead covers want.
+func openBeadCoversRequiredPath(townRoot, rig, want string, v WorkflowValidation) (bool, error) {
+	active, err := ListImplementBeadsOpenOrInProgress(townRoot, rig, v)
+	if err != nil {
+		return false, err
+	}
+	for _, b := range active {
+		if !looksLikeOpenImplementBeadTitle(b.Title, v) {
+			continue
+		}
+		p := NormalizePlannerBeadPath(ExtractPathFromBeadTitle(b.Title, v.BeadTitleContains), v.LayoutRoot, rig)
+		if pathMatchesRequiredForProfile(p, []string{want}, v) {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// ReopenClosedImplementBeadsForMissingOpenRequired reopens closed implement beads when a
+// required_files path has no open/in_progress bead (e.g. go.mod closed after project_setup).
+func ReopenClosedImplementBeadsForMissingOpenRequired(townRoot, rig string, v WorkflowValidation) ([]string, error) {
+	v = v.ForActivePhase()
+	if len(v.RequiredFiles) == 0 {
+		return nil, nil
+	}
+	var reopened []string
+	for _, want := range v.RequiredFiles {
+		want = filepath.ToSlash(strings.TrimSpace(want))
+		if want == "" {
+			continue
+		}
+		covered, err := openBeadCoversRequiredPath(townRoot, rig, want, v)
+		if err != nil {
+			return reopened, err
+		}
+		if covered {
+			continue
+		}
+		id, ok := ClosedImplementBeadForPath(townRoot, rig, want, v)
+		if !ok {
+			continue
+		}
+		if err := bdUpdateImplementBeadStatus(townRoot, rig, id, "open"); err != nil {
+			return reopened, err
+		}
+		reopened = append(reopened, id+" ("+want+")")
+	}
+	return reopened, nil
+}
+
+// ImplementBeadIsStillOpen reports whether beadID is open or in_progress in the beads store.
+func ImplementBeadIsStillOpen(townRoot, rig, beadID string, v WorkflowValidation) bool {
+	beadID = strings.TrimSpace(beadID)
+	if beadID == "" {
+		return false
+	}
+	for _, status := range []string{"open", "in_progress"} {
+		beads, err := listImplementBeadsByStatus(townRoot, rig, v, status)
+		if err != nil {
+			continue
+		}
+		for _, b := range beads {
+			if b.ID == beadID {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // EnsurePlanningImplementBeads creates open implement beads for any missing required_files paths.
@@ -910,7 +1364,7 @@ func EnsurePlanningImplementBeads(townRoot, rig string, v WorkflowValidation) ([
 			pathToID[p] = b.ID
 		}
 		for _, want := range v.RequiredFiles {
-			if pathMatchesRequired(p, []string{want}) {
+			if pathMatchesRequiredForProfile(p, []string{want}, v) {
 				if _, ok := pathToID[want]; !ok {
 					pathToID[want] = b.ID
 				}
@@ -925,14 +1379,23 @@ func EnsurePlanningImplementBeads(townRoot, rig string, v WorkflowValidation) ([
 		if want == "" {
 			continue
 		}
-		has := false
-		for p, id := range pathToID {
-			if id != "" && pathMatchesRequired(p, []string{want}) {
-				has = true
-				break
-			}
+		covered, err := openBeadCoversRequiredPath(townRoot, rig, want, v)
+		if err != nil {
+			return created, err
 		}
-		if has {
+		if covered {
+			continue
+		}
+		if id, ok := ClosedImplementBeadForPath(townRoot, rig, want, v); ok {
+			rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
+			if newImplementBeadVerifyEvaluator(rigDir, v).VerifySatisfied(want) {
+				continue
+			}
+			if err := bdUpdateImplementBeadStatus(townRoot, rig, id, "open"); err != nil {
+				return created, err
+			}
+			created = append(created, id)
+			pathToID[want] = id
 			continue
 		}
 		title := PlanningBeadTitle(want, v)
@@ -1001,7 +1464,8 @@ func FormatPlanningBeadBootstrapBlock(townRoot, rig string, v WorkflowValidation
 		}
 		b.WriteString(fmt.Sprintf("**Active phase `%s` only** — do not `bd create` for paths that appear in architecture.md but are not listed below.\n\n", id))
 	}
-	b.WriteString("You must run **CMD:** `bd create` lines in this session before JSON success. ")
+	b.WriteString("If open implement beads already cover every path below, **do not `bd create`** — run `bd list --status=open`, write or expand `plan.md` only, then JSON success. ")
+	b.WriteString("Otherwise run **CMD:** `bd create` lines in this session before JSON success. ")
 	b.WriteString("Do not claim beads exist without command output showing new bead IDs. ")
 	b.WriteString("Titles must include a **space** after `Implement` (e.g. `Implement Dockerfile per architecture`, never `ImplementDockerfile`).\n\n")
 	b.WriteString("One `bd create` per path below (do not add extras):\n\n")
@@ -1058,15 +1522,15 @@ func FormatImplementationQueueBlock(townRoot, rig string, v WorkflowValidation) 
 		return "**Next bead:** none open — `bd list --status=closed` or JSON success if all implement beads are closed."
 	}
 	step, total := 0, len(order)
+	beadPath := NormalizeBeadPathForLayout(ExtractPathFromBeadTitle(next.Title, v.BeadTitleContains), v.LayoutRoot)
 	for i, want := range order {
-		if pathMatchesRequired(next.Title, []string{want}) {
+		if pathMatchesRequiredForProfile(beadPath, []string{want}, v) {
 			step = i + 1
 			break
 		}
 	}
 	mayorDir := filepath.Join(townRoot, rig, "mayor", "rig")
-	beadPath := ExtractPathFromBeadTitle(next.Title, v.BeadTitleContains)
-	verify := ImplementationVerifyCommandForBead(v, mayorDir, beadPath)
+	verify := AgentShellVerifyCommand(rig, v, mayorDir, beadPath)
 	if step > 0 {
 		return fmt.Sprintf("**Next bead (%d/%d):** %s → `%s` — work only this ID until `bd close`. Verify: `%s`.",
 			step, total, next.ID, next.Title, verify)

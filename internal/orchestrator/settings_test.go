@@ -40,4 +40,17 @@ func TestPipelineOnlyEnabled(t *testing.T) {
 	if PipelineOnlyEnabled(dir, false) {
 		t.Fatal("expected disabled")
 	}
+
+	if err := SetPipelineOnlyMarker(dir, true); err != nil {
+		t.Fatal(err)
+	}
+	if !PipelineOnlyEnabled(dir, false) {
+		t.Fatal("expected marker file")
+	}
+	if err := SetPipelineOnlyMarker(dir, false); err != nil {
+		t.Fatal(err)
+	}
+	if PipelineOnlyEnabled(dir, false) {
+		t.Fatal("expected marker cleared")
+	}
 }

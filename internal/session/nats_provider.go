@@ -20,6 +20,17 @@ import (
 	"github.com/steveyegge/gastown/internal/util"
 )
 
+const natsAutoRespawnDelay = 2 * time.Second
+
+// natsSessionMeta tracks a NATS session for optional auto-respawn after exit.
+type natsSessionMeta struct {
+	workDir      string
+	command      string
+	env          map[string]string
+	autoRespawn  bool
+	stopRespawn  bool // set on explicit Stop
+}
+
 // NatsProvider implements session.Provider using NATS for coordination
 // and direct OS processes for execution.
 type NatsProvider struct {
@@ -28,7 +39,8 @@ type NatsProvider struct {
 	nc           *nats.Conn
 	mu           sync.RWMutex
 	lastActivity map[string]time.Time           // sessionID -> last activity timestamp
-	sessionEnv  map[string]map[string]string // sessionID -> env vars
+	sessionEnv   map[string]map[string]string   // sessionID -> env vars
+	sessionMeta  map[string]*natsSessionMeta    // sessionID -> respawn state
 }
 
 // NewNatsProvider creates a new NatsProvider.
@@ -52,7 +64,8 @@ func NewNatsProvider(townRoot string, natsURL string) (*NatsProvider, error) {
 		natsURL:      natsURL,
 		nc:           nc,
 		lastActivity: make(map[string]time.Time),
-		sessionEnv:  make(map[string]map[string]string),
+		sessionEnv:   make(map[string]map[string]string),
+		sessionMeta:  make(map[string]*natsSessionMeta),
 	}, nil
 }
 
@@ -74,18 +87,22 @@ func (p *NatsProvider) recordActivity(sessionID string) {
 
 func (p *NatsProvider) Start(ctx context.Context, opts StartOptions) error {
 	// NATS doesn't support themes, ignore opts.Theme
-	return p.startInternal(ctx, opts.SessionID, opts.WorkDir, opts.Command, opts.Env)
+	return p.startInternal(ctx, opts.SessionID, opts.WorkDir, opts.Command, opts.Env, opts.AutoRespawn)
 }
 
-func (p *NatsProvider) startInternal(ctx context.Context, sessionID, workDir, command string, env map[string]string) error {
+func (p *NatsProvider) startInternal(ctx context.Context, sessionID, workDir, command string, env map[string]string, autoRespawn bool) error {
 	p.recordActivity(sessionID)
 
-	// Store env for GetEnvironment calls
-	if len(env) > 0 {
-		p.mu.Lock()
-		p.sessionEnv[sessionID] = env
-		p.mu.Unlock()
+	p.mu.Lock()
+	envCopy := copyStringMap(env)
+	p.sessionEnv[sessionID] = envCopy
+	p.sessionMeta[sessionID] = &natsSessionMeta{
+		workDir:     workDir,
+		command:     command,
+		env:         envCopy,
+		autoRespawn: autoRespawn,
 	}
+	p.mu.Unlock()
 
 	gtPath, err := os.Executable()
 	if err != nil {
@@ -138,13 +155,54 @@ func (p *NatsProvider) startInternal(ctx context.Context, sessionID, workDir, co
 		return fmt.Errorf("writing PID file: %w", err)
 	}
 
-	// Start a goroutine to wait for the process and clean up
-	go func() {
-		_ = cmd.Wait()
-		_ = os.Remove(pidFile)
-	}()
+	go p.waitAndMaybeRespawn(sessionID, pidFile, cmd)
 
 	return nil
+}
+
+func copyStringMap(m map[string]string) map[string]string {
+	if len(m) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(m))
+	for k, v := range m {
+		out[k] = v
+	}
+	return out
+}
+
+func (p *NatsProvider) waitAndMaybeRespawn(sessionID, pidFile string, cmd *exec.Cmd) {
+	_ = cmd.Wait()
+	_ = os.Remove(pidFile)
+
+	p.mu.RLock()
+	meta := p.sessionMeta[sessionID]
+	should := meta != nil && meta.autoRespawn && !meta.stopRespawn
+	workDir, command, env := "", "", map[string]string(nil)
+	if meta != nil {
+		workDir, command, env = meta.workDir, meta.command, meta.env
+	}
+	p.mu.RUnlock()
+
+	if !should || workDir == "" || command == "" {
+		return
+	}
+	if !natsSessionShouldRespawn(p.townRoot, sessionID) {
+		return
+	}
+
+	time.Sleep(natsAutoRespawnDelay)
+
+	p.mu.RLock()
+	meta = p.sessionMeta[sessionID]
+	if meta == nil || meta.stopRespawn || !meta.autoRespawn {
+		p.mu.RUnlock()
+		return
+	}
+	workDir, command, env = meta.workDir, meta.command, meta.env
+	p.mu.RUnlock()
+
+	_ = p.startInternal(context.Background(), sessionID, workDir, command, env, true)
 }
 
 func (p *NatsProvider) Stop(ctx context.Context, sessionID string, graceful bool) error {
@@ -180,9 +238,11 @@ func (p *NatsProvider) Stop(ctx context.Context, sessionID string, graceful bool
 
 	_ = os.Remove(filepath.Join(p.townRoot, ".gt-nats-pids", sessionID))
 
-	// Clean up stored environment
 	p.mu.Lock()
 	delete(p.sessionEnv, sessionID)
+	if meta := p.sessionMeta[sessionID]; meta != nil {
+		meta.stopRespawn = true
+	}
 	p.mu.Unlock()
 
 	return nil
@@ -219,18 +279,7 @@ func killAgentBySessionID(sessionID, townRoot string) error {
 			continue
 		}
 
-		// Check cwd via /proc — only kill if inside this town
-		cwd, cwdErr := os.Readlink(fmt.Sprintf("/proc/%d/cwd", pid))
-		if cwdErr != nil {
-			continue
-		}
-		absCwd, _ := filepath.Abs(cwd)
-		if absCwd == "" {
-			absCwd = cwd
-		}
-
-		// Match if cwd is within the town root
-		if !strings.HasPrefix(absCwd, absTownRoot+string(filepath.Separator)) && absCwd != absTownRoot {
+		if !processBelongsToTown(pid, absTownRoot) {
 			continue
 		}
 

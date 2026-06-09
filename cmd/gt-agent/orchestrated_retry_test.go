@@ -57,7 +57,7 @@ func TestFormatWorkflowReworkBlock_planOKSkipsRewriteHint(t *testing.T) {
 			Feedback:  "QA summary: duplicate beads; plan.md size 1020 bytes (≥1000) ok",
 		},
 	}
-	block := formatWorkflowReworkBlock(task, "mockrig")
+	block := formatWorkflowReworkBlock(task, "", "mockrig")
 	if !strings.Contains(block, "plan.md is OK") || strings.Contains(block, "Rewrite `plan.md`") {
 		t.Fatalf("expected plan-ok hints only, got:\n%s", block)
 	}
@@ -75,7 +75,7 @@ func TestFormatWorkflowReworkBlock_qaToPlanner(t *testing.T) {
 			AgentID:   "mockrigb/qa",
 		},
 	}
-	block := formatWorkflowReworkBlock(task, "mockrigb")
+	block := formatWorkflowReworkBlock(task, "", "mockrigb")
 	if block == "" {
 		t.Fatal("expected rework block")
 	}
@@ -93,7 +93,7 @@ func TestFormatWorkflowReworkBlock_sameStateIgnored(t *testing.T) {
 			Summary:   "x",
 		},
 	}
-	if formatWorkflowReworkBlock(task, "mockrigb") != "" {
+	if formatWorkflowReworkBlock(task, "", "mockrigb") != "" {
 		t.Fatal("same-state rework should use OrchestratedRetry, not workflow block")
 	}
 }

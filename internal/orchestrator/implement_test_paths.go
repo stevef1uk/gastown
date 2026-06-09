@@ -106,14 +106,14 @@ func AllowedCorrelatedPackageImplementWrite(activePath, writtenPath string, v Wo
 	}
 	if IsTestImplementPath(activePath) && !IsTestImplementPath(writtenPath) {
 		if src := SourcePathForCorrelatedTest(activePath, v.LayoutRoot); src != "" &&
-			PathMatchesImplementWrite(writtenPath, src, v.RequiredFiles) {
+			PathMatchesImplementWrite(writtenPath, src, v.RequiredFiles, v) {
 			return true
 		}
 		return productionGoPathInRequiredFiles(writtenPath, v)
 	}
 	if !IsTestImplementPath(activePath) && IsTestImplementPath(writtenPath) {
 		if test := CorrelatedTestPathForSource(activePath, v); test != "" &&
-			PathMatchesImplementWrite(writtenPath, test, v.RequiredFiles) {
+			PathMatchesImplementWrite(writtenPath, test, v.RequiredFiles, v) {
 			return true
 		}
 	}

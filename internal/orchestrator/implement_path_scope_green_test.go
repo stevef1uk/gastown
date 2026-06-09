@@ -58,3 +58,51 @@ func TestValidateImplementWritePath_rejectsWhenQueueGreen(t *testing.T) {
 		t.Fatalf("err=%v", err)
 	}
 }
+
+func TestValidateImplementWritePath_allowsWhenQueueGreenButUnionStubRemains(t *testing.T) {
+	dir := t.TempDir()
+	rig := "rig"
+	layout := "linkshelf"
+	rigDir := filepath.Join(dir, rig, "mayor", "rig")
+	cssPath := filepath.Join(rigDir, layout, "web", "style.css")
+	if err := os.MkdirAll(filepath.Dir(cssPath), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(cssPath, []byte("body {}\nh1 {}\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	goMod := filepath.Join(rigDir, layout, "go.mod")
+	if err := os.MkdirAll(filepath.Dir(goMod), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(goMod, []byte("module linkshelf\n\ngo 1.22\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	v := WorkflowValidation{
+		LayoutRoot:        layout,
+		BeadTitleContains: "Implement",
+		QAVerifyCommand:   "cd linkshelf && go test ./...",
+		MinImplementationFileBytes: 80,
+		MinSubstantiveLines:        3,
+		DeliveryPhases: []DeliveryPhase{
+			{ID: "web-static", RequiredFiles: []string{layout + "/web/style.css"}},
+			{ID: "web-shell", RequiredFiles: []string{layout + "/web/index.html"}},
+		},
+		ActivePhaseIDField: "web-shell",
+		RequiredFiles:      []string{layout + "/web/index.html"},
+	}
+
+	prev := ListImplementBeadsByStatusHook
+	defer func() { ListImplementBeadsByStatusHook = prev }()
+	ListImplementBeadsByStatusHook = func(townRoot, rig string, v WorkflowValidation, status string) ([]PlanBead, error) {
+		return nil, nil
+	}
+
+	if !ImplementationQueueGreen(dir, rig, v) {
+		t.Skip("module tests not green in temp rig (go toolchain)")
+	}
+	if err := ValidateImplementWritePath(dir, rig, "", layout+"/web/style.css", v, false, "", nil); err != nil {
+		t.Fatalf("expected write allowed to fix union stub, got: %v", err)
+	}
+}

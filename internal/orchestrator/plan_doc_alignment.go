@@ -28,7 +28,7 @@ var (
 		regexp.MustCompile(`(?i)every\s+bead\s+must\s+include\s+.*_test\.go`),
 	}
 	integrationContractHeadingRE = regexp.MustCompile(`(?im)^##\s+integration\s+contract\b`)
-	planBeadSectionPathRE        = regexp.MustCompile(`(?m)^###\s+[^:]+:\s*(\S+)`)
+	planBeadSectionPathRE        = regexp.MustCompile(`(?m)^###\s+([a-zA-Z0-9][a-zA-Z0-9_-]*):\s*(.+)$`)
 	bareModuleRelPathRE          = regexp.MustCompile(`(?:^|[\s\-*` + "`" + `])(?:\./)?((?:internal|cmd|pkg|api|web)/[^\s` + "`" + `",:;)]+)`)
 )
 
@@ -69,11 +69,30 @@ func ValidateArchitectureDocAlignment(rigDir string, v WorkflowValidation) error
 func architectureDocAlignmentIssues(rigDir, specDoc string, v WorkflowValidation) []string {
 	archDoc := readRigDoc(rigDir, "architecture.md")
 	var issues []string
+	issues = append(issues, checkArchitectureStoreSignatureDrift("architecture.md", archDoc, specDoc)...)
 	issues = append(issues, checkHTTPDocAlignment("architecture.md", archDoc, specDoc, v)...)
 	issues = append(issues, checkStoreAPIAlignment("architecture.md", archDoc, specDoc)...)
 	issues = append(issues, checkGoModuleAlignment("architecture.md", archDoc, specDoc, v)...)
 	issues = append(issues, checkDocLayoutPathPrefix("architecture.md", archDoc, v)...)
 	return issues
+}
+
+// PlanningDocsMisaligned reports whether SPEC/architecture/plan fail alignment for the active profile.
+// Used by planning sync refresh and workflow-stuck repair (layout_root-prefixed required_files).
+func PlanningDocsMisaligned(rigDir string, v WorkflowValidation) bool {
+	rigDir = strings.TrimSpace(rigDir)
+	if rigDir == "" {
+		return false
+	}
+	v = v.ForActivePhase()
+	layout := strings.Trim(filepath.ToSlash(strings.TrimSpace(v.LayoutRoot)), "/")
+	if layout == "" || layout == "." || !profileRequiredFilesUseLayoutPrefix(v, layout) {
+		return false
+	}
+	if _, err := os.Stat(filepath.Join(rigDir, "plan.md")); err != nil {
+		return false
+	}
+	return ValidatePlanningDocAlignment(rigDir, v) != nil
 }
 
 // ValidatePlanningDocAlignment ensures SPEC.md, architecture.md, and plan.md agree on HTTP routes,
@@ -91,7 +110,8 @@ func ValidatePlanningDocAlignment(rigDir string, v WorkflowValidation) error {
 	issues = append(issues, checkStoreAPIAlignment("plan.md", planDoc, specDoc)...)
 	issues = append(issues, checkGoModuleAlignment("plan.md", planDoc, specDoc, v)...)
 	issues = append(issues, checkPlanTestMandate(planDoc, v)...)
-	issues = append(issues, checkPlanIntegrationContract(planDoc, v)...)
+	issues = append(issues, checkPlanIntegrationContract(planDoc, specDoc, v)...)
+	issues = append(issues, checkPlanBeadMapExactPaths(planDoc, v)...)
 	issues = append(issues, checkDocLayoutPathPrefix("plan.md", planDoc, v)...)
 
 	return formatDocAlignmentError("SPEC/architecture/plan misaligned", issues)
@@ -174,11 +194,25 @@ func extractDocImplementPaths(doc, layoutRoot string) []string {
 		}
 	}
 	for _, m := range bareModuleRelPathRE.FindAllStringSubmatch(doc, -1) {
-		if len(m) >= 2 {
+		if len(m) >= 2 && pathNeedsLayoutPrefixCheck(m[1]) {
 			add(m[1])
 		}
 	}
 	return out
+}
+
+// pathNeedsLayoutPrefixCheck limits layout_root prefix lint to implement file paths (e.g.
+// linkshelf/internal/store/store.go), not package qualifiers (internal/store.List) or
+// directory fragments (cmd/server from "go run ./cmd/server").
+func pathNeedsLayoutPrefixCheck(p string) bool {
+	p = filepath.ToSlash(strings.TrimSpace(p))
+	if p == "" {
+		return false
+	}
+	if p == "go.mod" || p == "go.sum" {
+		return true
+	}
+	return strings.Contains(filepath.Base(p), ".")
 }
 
 func checkHTTPDocAlignment(docName, doc, specDoc string, v WorkflowValidation) []string {
@@ -392,14 +426,98 @@ func profileRequiresTestBeads(v WorkflowValidation) bool {
 	return false
 }
 
-func checkPlanIntegrationContract(planDoc string, v WorkflowValidation) []string {
+// checkArchitectureStoreSignatureDrift rejects architecture store signatures that use *sql.DB
+// receivers/params when SPEC documents package-level context.Context APIs.
+func checkArchitectureStoreSignatureDrift(docName, archDoc, specDoc string) []string {
+	if strings.TrimSpace(archDoc) == "" || strings.TrimSpace(specDoc) == "" {
+		return nil
+	}
+	specWantsCtx := strings.Contains(specDoc, "context.Context") &&
+		(strings.Contains(specDoc, "package-level") || strings.Contains(specDoc, "var DB *sql.DB") || strings.Contains(specDoc, "store.DB"))
+	if !specWantsCtx {
+		return nil
+	}
+	var issues []string
+	if strings.Contains(archDoc, "func List(db *sql.DB)") || strings.Contains(archDoc, "func List(*sql.DB)") {
+		issues = append(issues, fmt.Sprintf("%s store API uses List(db *sql.DB); SPEC requires package-level List(ctx context.Context)", docName))
+	}
+	if strings.Contains(archDoc, "func Create(db *sql.DB") || strings.Contains(archDoc, "Create(db *sql.DB, link") {
+		issues = append(issues, fmt.Sprintf("%s store API uses Create(db *sql.DB, …); SPEC requires Create(ctx context.Context, title, url string)", docName))
+	}
+	if strings.Contains(archDoc, "func Delete(db *sql.DB") {
+		issues = append(issues, fmt.Sprintf("%s store API uses Delete(db *sql.DB, …); SPEC requires Delete(ctx context.Context, id int64)", docName))
+	}
+	return issues
+}
+
+func checkPlanIntegrationContract(planDoc, specDoc string, v WorkflowValidation) []string {
 	if strings.TrimSpace(planDoc) == "" || !profileHasServerEntrypoint(v) {
 		return nil
 	}
-	if integrationContractHeadingRE.FindStringIndex(planDoc) != nil {
+	contract := ExtractSpecMarkdownSection(planDoc, "Integration contract")
+	if contract == "" {
+		return []string{"plan.md missing ## Integration contract (entrypoint bead in profile — wire order, route table, exported symbols per SPEC)"}
+	}
+	if !RequiresExactImplementPaths(v) {
 		return nil
 	}
-	return []string{"plan.md missing ## Integration contract (entrypoint bead in profile — wire order, route table, exported symbols per SPEC)"}
+	routes := parseSpecHTTPRouteTable(specDoc)
+	if len(routes) == 0 {
+		return nil
+	}
+	var issues []string
+	for _, row := range routes {
+		if !strings.Contains(contract, row.Path) {
+			issues = append(issues, fmt.Sprintf("plan.md integration contract must include SPEC route %q (got truncated paths like /static or /api/links without path params)", row.Path))
+		}
+	}
+	return issues
+}
+
+// extractPlanBeadMapPath parses the file path from a ### <id>: … plan.md bead-map header.
+func extractPlanBeadMapPath(sectionLine string) string {
+	m := planBeadSectionPathRE.FindStringSubmatch(sectionLine)
+	if len(m) < 3 {
+		return ""
+	}
+	rest := strings.TrimSpace(m[2])
+	if before, _, ok := strings.Cut(rest, " per architecture"); ok {
+		rest = strings.TrimSpace(before)
+	}
+	if before, _, ok := strings.Cut(rest, " per arch"); ok {
+		rest = strings.TrimSpace(before)
+	}
+	if strings.HasPrefix(strings.ToLower(rest), "implement ") {
+		rest = strings.TrimSpace(rest[len("implement "):])
+	}
+	return filepath.ToSlash(strings.TrimSpace(rest))
+}
+
+// checkPlanBeadMapExactPaths rejects ### bead-map paths that are not exact required_files entries.
+func checkPlanBeadMapExactPaths(planDoc string, v WorkflowValidation) []string {
+	if !RequiresExactImplementPaths(v) || strings.TrimSpace(planDoc) == "" {
+		return nil
+	}
+	v = v.ForActivePhase()
+	expected := make(map[string]bool)
+	for _, f := range v.RequiredFiles {
+		f = filepath.ToSlash(strings.TrimSpace(f))
+		if f != "" {
+			expected[f] = true
+		}
+	}
+	var issues []string
+	for _, line := range strings.Split(planDoc, "\n") {
+		if !strings.HasPrefix(strings.TrimSpace(line), "### ") {
+			continue
+		}
+		p := extractPlanBeadMapPath(line)
+		if p == "" || expected[p] {
+			continue
+		}
+		issues = append(issues, fmt.Sprintf("plan.md bead map uses %q; required_files expects full path (e.g. under %s/internal/ or %s/cmd/)", p, v.LayoutRoot, v.LayoutRoot))
+	}
+	return issues
 }
 
 func profileHasServerEntrypoint(v WorkflowValidation) bool {

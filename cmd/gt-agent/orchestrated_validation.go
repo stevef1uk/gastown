@@ -1,33 +1,56 @@
 package main
 
 import (
+	"fmt"
 	"path/filepath"
 	"strings"
 
 	"github.com/steveyegge/gastown/internal/orchestrator"
 )
 
-func pythonVerifyCommandMatches(cmd, verify string) bool {
+func pythonVerifyCommandMatches(cmd, verify string, v orchestrator.WorkflowValidation) bool {
 	if commandMatchesQAVerify(cmd, verify) {
 		return true
 	}
 	c := strings.ToLower(cmd)
-	v := strings.ToLower(verify)
-	if strings.Contains(v, "import pytest") {
+	verifyLow := strings.ToLower(verify)
+	if strings.Contains(verifyLow, "import pytest") {
 		return strings.Contains(c, "import pytest")
 	}
-	if strings.Contains(v, "-m pytest") {
-		return strings.Contains(c, "pytest")
+	if strings.Contains(verifyLow, "-m pytest") || strings.Contains(verifyLow, "pytest") {
+		if strings.Contains(c, "pytest") {
+			return true
+		}
 	}
-	if !strings.Contains(c, "compileall") || !strings.Contains(v, "compileall") {
+	if strings.Contains(c, "compileall") && strings.Contains(verifyLow, "compileall") {
+		cPath := pythonCompileallTarget(c)
+		vPath := pythonCompileallTarget(verifyLow)
+		if cPath != "" && vPath != "" {
+			if cPath == vPath || strings.HasSuffix(vPath, "/"+cPath) || strings.HasSuffix(cPath, "/"+vPath) {
+				return true
+			}
+		}
+	}
+	layout := strings.Trim(strings.TrimSpace(v.LayoutRoot), "/")
+	if layout == "" || layout == "." {
 		return false
 	}
-	cPath := pythonCompileallTarget(c)
-	vPath := pythonCompileallTarget(v)
-	if cPath == "" || vPath == "" {
+	if !strings.Contains(c, layout) {
 		return false
 	}
-	return cPath == vPath || strings.HasSuffix(vPath, "/"+cPath) || strings.HasSuffix(cPath, "/"+vPath)
+	for _, part := range strings.Split(verify, "&&") {
+		p := strings.ToLower(strings.TrimSpace(part))
+		if strings.HasPrefix(p, "cd ") {
+			continue
+		}
+		if p == "" {
+			continue
+		}
+		if !strings.Contains(c, p) {
+			return false
+		}
+	}
+	return len(strings.Fields(verify)) > 0
 }
 
 func pythonCompileallTarget(lowerCmd string) string {
@@ -45,11 +68,18 @@ func pythonCompileallTarget(lowerCmd string) string {
 	return strings.Trim(fields[len(fields)-1], `"'`)
 }
 
-func taskValidation(task *orchestrator.Task) orchestrator.WorkflowValidation {
+func taskValidation(townRoot string, task *orchestrator.Task) orchestrator.WorkflowValidation {
 	if task == nil {
 		return orchestrator.DefaultWorkflowValidation()
 	}
 	v := orchestrator.ClampProfileValidation(task.Validation.WithDefaults())
+	// fetch_task JSON can omit delivery_phases; always prefer the rig profile on disk so
+	// phased QA smoke and bead scope match workflow-profile.json.
+	if townRoot != "" && task.Rig != "" {
+		if prof, ok, err := orchestrator.LoadRigWorkflowProfileFile(townRoot, task.Rig); err == nil && ok {
+			v = orchestrator.ClampProfileValidation(prof.WithDefaults())
+		}
+	}
 	return v.ForActivePhase()
 }
 
@@ -68,13 +98,26 @@ func isProjectSetupVerifyCommandOK(cmd string, v orchestrator.WorkflowValidation
 		strings.Contains(lower, "go test") || strings.Contains(lower, "curl ") {
 		return false
 	}
-	return strings.Contains(lower, "go mod tidy") || strings.Contains(lower, "go mod init") ||
-		strings.Contains(lower, "go get ")
+	return strings.Contains(lower, "go mod tidy") || strings.Contains(lower, "go mod download") ||
+		strings.Contains(lower, "go mod init") || strings.Contains(lower, "go get ")
 }
 
 func isQATestCommandOK(cmd string, v orchestrator.WorkflowValidation) bool {
-	if strings.TrimSpace(v.QAVerifyCommand) != "" {
-		return commandMatchesQAVerify(cmd, v.QAVerifyCommand)
+	verify := strings.TrimSpace(v.QAVerifyCommand)
+	if verify != "" {
+		if commandMatchesQAVerify(cmd, verify) {
+			return true
+		}
+		if orchestrator.WorkflowUsesGo(v) && goVerifyCommandMatches(cmd, verify, v) {
+			return true
+		}
+		if orchestrator.WorkflowUsesPython(v) && pythonVerifyCommandMatches(cmd, verify, v) {
+			return true
+		}
+		if orchestrator.WorkflowUsesDocker(v) && dockerVerifyCommandMatches(cmd, verify) {
+			return true
+		}
+		return false
 	}
 	return isUnittestCommand(cmd, v.UnittestModule)
 }
@@ -87,7 +130,7 @@ func isImplementationVerifyCommandOK(cmd, townRoot, rig, activeBead string, v or
 		mayorDir := filepath.Join(townRoot, rig, "mayor", "rig")
 		beadPath := orchestrator.ImplementBeadPathForID(townRoot, rig, activeBead, v)
 		impl := orchestrator.PythonImplementationVerifyCommandForBead(v, mayorDir, beadPath)
-		if pythonVerifyCommandMatches(cmd, impl) {
+		if pythonVerifyCommandMatches(cmd, impl, v) {
 			return true
 		}
 	}
@@ -105,7 +148,8 @@ func isImplementationVerifyCommandOK(cmd, townRoot, rig, activeBead string, v or
 	if !orchestrator.WorkflowUsesGo(v) || rig == "" {
 		return false
 	}
-	mayorDir := filepath.Join(townRoot, rig, "mayor", "rig")
+	mayorDir := rigMayorRigDir(townRoot, rig)
+	activeBead, _ = orchestrator.ResolveImplementBeadForVerify(townRoot, rig, activeBead, v)
 	beadPath := orchestrator.ImplementBeadPathForID(townRoot, rig, activeBead, v)
 	impl := orchestrator.ImplementationVerifyCommandForBead(v, mayorDir, beadPath)
 	if commandMatchesQAVerify(cmd, impl) {
@@ -117,12 +161,52 @@ func isImplementationVerifyCommandOK(cmd, townRoot, rig, activeBead string, v or
 		}
 	}
 	if orchestrator.WorkflowUsesPython(v) {
-		if pythonVerifyCommandMatches(cmd, impl) {
+		if pythonVerifyCommandMatches(cmd, impl, v) {
 			return true
 		}
 	}
 	// Full-suite QA verify (e.g. final pytest -v) — only after per-bead checks miss.
 	return isQATestCommandOK(cmd, v)
+}
+
+// isImplementationVerifyCommandAttempt reports whether cmd is a verify attempt for the active bead
+// (shape match only — exit code not checked).
+func isImplementationVerifyCommandAttempt(cmd, townRoot, rig, activeBead, activeBeadPath string, v orchestrator.WorkflowValidation) bool {
+	if isImplementationVerifyCommandOK(cmd, townRoot, rig, activeBead, v) {
+		return true
+	}
+	if !orchestrator.WorkflowUsesGo(v) || rig == "" || strings.TrimSpace(activeBead) == "" {
+		return false
+	}
+	beadPath := orchestrator.ImplementBeadPathForID(townRoot, rig, activeBead, v)
+	if beadPath == "" {
+		beadPath = strings.TrimSpace(activeBeadPath)
+	}
+	if beadPath == "" {
+		return false
+	}
+	mayorDir := filepath.Join(townRoot, rig, "mayor", "rig")
+	compile := orchestrator.GoCompileVerifyCommandForBead(v, mayorDir, beadPath)
+	if compile != "" && (goVerifyCommandMatches(cmd, compile, v) || commandMatchesQAVerify(cmd, compile)) {
+		return true
+	}
+	lower := strings.ToLower(cmd)
+	layout := strings.Trim(strings.TrimSpace(v.LayoutRoot), "/")
+	if layout == "" || !strings.Contains(lower, layout) {
+		return false
+	}
+	if !strings.Contains(lower, "go test") && !strings.Contains(lower, "go build") {
+		return false
+	}
+	pkgDir := filepath.ToSlash(filepath.Dir(beadPath))
+	if strings.Contains(lower, strings.ToLower(pkgDir)) {
+		return true
+	}
+	relPkg := strings.TrimPrefix(pkgDir, layout+"/")
+	if relPkg != "" && strings.Contains(lower, "./"+strings.ToLower(relPkg)) {
+		return true
+	}
+	return false
 }
 
 // goVerifyCommandMatches accepts agent commands that cd into layout via rig/mayor/rig paths
@@ -211,6 +295,51 @@ func commandMatchesQAVerify(cmd, verify string) bool {
 		return true
 	}
 	return strings.Contains(c, v)
+}
+
+// rejectInventedBdVerifyCommand blocks the common polecat mistake `bd verify <id>` (no such subcommand).
+func rejectInventedBdVerifyCommand(cmd, townRoot, rig, activeBead string, v orchestrator.WorkflowValidation) error {
+	lower := strings.ToLower(strings.TrimSpace(cmd))
+	if !strings.Contains(lower, "bd verify") && !strings.Contains(lower, "bd  verify") {
+		return nil
+	}
+	mayorDir := filepath.Join(townRoot, rig, "mayor", "rig")
+	beadPath := orchestrator.ImplementBeadPathForID(townRoot, rig, activeBead, v)
+	if beadPath == "" {
+		if next, err := orchestrator.NextOpenImplementBead(townRoot, rig, v); err == nil && next != nil {
+			beadPath = orchestrator.ImplementBeadPathForID(townRoot, rig, next.ID, v)
+		}
+	}
+	hint := orchestrator.AgentShellVerifyCommand(rig, v, mayorDir, beadPath)
+	if hint == "" && orchestrator.IsFrontendImplementPath(beadPath) {
+		return fmt.Errorf("bd has no verify subcommand — frontend bead %s: use WRITE:/EDIT: on the file, then bd close when the artifact validates", beadPath)
+	}
+	if hint == "" {
+		return fmt.Errorf("bd has no verify subcommand — run Verify from the Next bead line as CMD: <shell verify>")
+	}
+	return fmt.Errorf("bd has no verify subcommand — run Verify from the Next bead line: %s", hint)
+}
+
+// verifyFailureSupersededByCanonicalBuild reports failed go test CMDs that must not clear
+// verifyOK when post-write or an explicit go build verify already passed for the active bead
+// (foreign *_test.go from other beads makes go test fail while go build is the canonical verify).
+func verifyFailureSupersededByCanonicalBuild(townRoot, rig, activeBead, activeBeadPath string, verifyOK bool, v orchestrator.WorkflowValidation, cmd string) bool {
+	if !verifyOK || strings.TrimSpace(activeBead) == "" {
+		return false
+	}
+	lower := strings.ToLower(strings.TrimSpace(cmd))
+	if !strings.Contains(lower, "go test") {
+		return false
+	}
+	mayorDir := filepath.Join(townRoot, rig, "mayor", "rig")
+	beadPath := strings.TrimSpace(activeBeadPath)
+	if beadPath == "" {
+		beadPath = orchestrator.ImplementBeadPathForID(townRoot, rig, activeBead, v)
+	}
+	if beadPath == "" {
+		return false
+	}
+	return orchestrator.CanonicalImplementationVerifyIsGoBuildOnly(v, mayorDir, beadPath)
 }
 
 // isBenignImplementationCmdFailure reports bd read/list/show failures that must not

@@ -123,6 +123,43 @@ func TestSanitizeBdListCommand_limitGluedWithProse(t *testing.T) {
 	}
 }
 
+func TestSanitizeOrchestratedShellCommand_stripsLeadingMarkdownBold(t *testing.T) {
+	t.Parallel()
+	in := "** export BEADS_DIR=$GT_ROOT/testgt3/.beads && cd testgt3/mayor/rig && bd list --status=closed"
+	fixed, changed := sanitizeOrchestratedShellCommand(in)
+	if !changed {
+		t.Fatal("expected change")
+	}
+	if strings.HasPrefix(fixed, "**") {
+		t.Fatalf("leading ** still present: %q", fixed)
+	}
+	if !strings.HasPrefix(fixed, "export BEADS_DIR") {
+		t.Fatalf("want export command: %q", fixed)
+	}
+}
+
+func TestNormalizeOrchestratedToolLabel_cmdBoldColon(t *testing.T) {
+	t.Parallel()
+	got := normalizeOrchestratedToolLabel("CMD:** export BEADS_DIR=x && bd list")
+	if got != "CMD: export BEADS_DIR=x && bd list" {
+		t.Fatalf("got %q", got)
+	}
+}
+
+func TestSanitizeBdListCommand_stripsPastedOutput(t *testing.T) {
+	cmd := "export BEADS_DIR=x && cd testgt3/mayor/rig && bd list --limit=0 --status=closed(no output) | grep -Fi 'Implement linkshelf/' || true"
+	fixed, changed := sanitizeBdListCommand(cmd)
+	if !changed {
+		t.Fatal("expected change")
+	}
+	if strings.Contains(fixed, "(no output)") {
+		t.Fatalf("output artifact still present: %q", fixed)
+	}
+	if !strings.Contains(fixed, "--status=closed") {
+		t.Fatalf("want clean status flag: %q", fixed)
+	}
+}
+
 func TestValidateBdCommandBeadID_rejectsNumericClose(t *testing.T) {
 	err := validateBdCommandBeadID("bd close 12", "", "testgt3")
 	if err == nil || !strings.Contains(err.Error(), "bare number") {
@@ -292,5 +329,26 @@ new
 	ops := parseOrchestratedNativeEdits(in)
 	if len(ops) != 1 || ops[0].kind != "edit" || ops[0].search != "old" {
 		t.Fatalf("ops = %+v", ops)
+	}
+}
+
+func TestParseOrchestratedCommands_jsonCMDObject(t *testing.T) {
+	t.Parallel()
+	in := `{ "CMD": "export BEADS_DIR=$GT_ROOT/testgt3/.beads && cd testgt3/mayor/rig && bd list --status=open" }`
+	cmds := parseOrchestratedCommands(in)
+	if len(cmds) != 1 {
+		t.Fatalf("cmds = %#v", cmds)
+	}
+	if !strings.Contains(cmds[0], "bd list --status=open") {
+		t.Fatalf("unexpected cmd: %q", cmds[0])
+	}
+}
+
+func TestParseOrchestratedCommands_jsonLowercaseCmd(t *testing.T) {
+	t.Parallel()
+	in := `{"cmd":"cd testgt3/mayor/rig/linkshelf && go mod tidy"}`
+	cmds := parseOrchestratedCommands(in)
+	if len(cmds) != 1 || !strings.Contains(cmds[0], "go mod tidy") {
+		t.Fatalf("cmds = %#v", cmds)
 	}
 }

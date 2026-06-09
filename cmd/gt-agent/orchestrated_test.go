@@ -234,7 +234,7 @@ Package-level List, Create, Delete, InitSchema on var DB — no Store struct.
 	if err == nil {
 		t.Fatal("expected design validation error for misaligned architecture")
 	}
-	if !strings.Contains(err.Error(), "align architecture.md with SPEC.md") {
+	if !strings.Contains(err.Error(), "design success blocked") && !strings.Contains(err.Error(), "SPEC/architecture misaligned") {
 		t.Fatalf("want design gate error, got: %v", err)
 	}
 	for _, frag := range []string{"/web", "GetLinks", "Store struct", "InitDB"} {
@@ -508,7 +508,14 @@ func TestValidatePlanningCommand_forbidsImplementation(t *testing.T) {
 	}
 	plan := "cat > mockrig/mayor/rig/plan.md <<'EOF'\n# Plan\nEOF"
 	if err := validatePlanningCommand(plan, "mockrig"); err != nil {
-		t.Fatalf("plan heredoc should be allowed: %v", err)
+		t.Fatalf("plan heredoc should be allowed for flat rigs: %v", err)
+	}
+	nestedV := orchestrator.WorkflowValidation{
+		LayoutRoot:    "linkshelf",
+		RequiredFiles: []string{"linkshelf/internal/api/handlers.go", "linkshelf/cmd/server/main.go"},
+	}
+	if err := validatePlanningCommandWithProfile(plan, "", "testgt3", nestedV); err == nil {
+		t.Fatal("plan heredoc must be rejected when required_files use nested layout paths")
 	}
 	planBackend := "bash -lc 'cat > mockrig/mayor/rig/plan.md <<'EOF'\nBead 1: Implement backend/fizzbuzz.py\nEOF'"
 	if err := validatePlanningCommand(planBackend, "mockrig"); err != nil {
@@ -757,6 +764,11 @@ func TestValidateImplementationArtifacts(t *testing.T) {
 
 func TestValidateImplementationBeadFileWrite_rejectsClosedPath(t *testing.T) {
 	dir := t.TempDir()
+	rig := "mockrig"
+	rigDir := filepath.Join(dir, rig, "mayor", "rig")
+	if err := os.MkdirAll(filepath.Join(rigDir, "linkshelf", "internal", "api"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	v := orchestrator.WorkflowValidation{
 		LayoutRoot:        "linkshelf",
 		BeadTitleContains: "Implement ",
@@ -785,7 +797,7 @@ func TestValidateImplementationBeadFileWrite_rejectsClosedPath(t *testing.T) {
 	cmd := `cd mockrig/mayor/rig && cat > linkshelf/internal/api/handlers.go <<'EOF'
 package api
 EOF`
-	err := validateImplementationBeadFileWrite(cmd, dir, "mockrig", "te-main", v, nil)
+	err := validateImplementationBeadFileWrite(cmd, dir, rig, "te-main", v, nil)
 	if err == nil {
 		t.Fatal("expected reject write to closed-only path while active bead is main")
 	}
@@ -906,7 +918,7 @@ func TestPythonImplementationVerifyAcceptance(t *testing.T) {
 	}
 	impl := orchestrator.ImplementationVerifyCommandForBead(v, t.TempDir(), "tasklist/requirements.txt")
 	cmd := "cd testgt5/mayor/rig && test -x .venv/bin/python3 && .venv/bin/python3 -c 'import pytest'"
-	if !commandMatchesQAVerify(cmd, impl) && !pythonVerifyCommandMatches(cmd, impl) {
+	if !commandMatchesQAVerify(cmd, impl) && !pythonVerifyCommandMatches(cmd, impl, v) {
 		t.Fatalf("import pytest should satisfy per-bead verify %q", impl)
 	}
 }

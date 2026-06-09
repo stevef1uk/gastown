@@ -2,6 +2,7 @@ package orchestrator
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 )
@@ -17,6 +18,29 @@ func ValidateImplementWritePath(townRoot, rig, activeBead, relPath string, v Wor
 	if !IsValidImplementBeadPath(relPath) {
 		return fmt.Errorf("invalid implement path %q", relPath)
 	}
+	// Generic: when writing to cmd/server/main.go, verify that handler dependency files
+	// have real content — not empty stubs. Otherwise the polecat invents fake exports.
+	if IsCmdMainImplementPath(relPath) && WorkflowUsesGo(v) {
+		rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
+		for _, dep := range requiredFilesBeforePath(relPath, v) {
+			dep = filepath.ToSlash(dep)
+			if !strings.HasSuffix(dep, ".go") || IsTestImplementPath(dep) || strings.HasSuffix(dep, "/go.mod") {
+				continue
+			}
+			// Only guard handler-style files — not store/schema deps which are fine as stubs.
+			if !strings.Contains(dep, "/api/") && !strings.Contains(dep, "/handlers/") && !strings.HasSuffix(dep, "handlers.go") {
+				continue
+			}
+			depPath := filepath.Join(rigDir, filepath.FromSlash(dep))
+			info, statErr := os.Stat(depPath)
+			if statErr != nil {
+				continue
+			}
+			if info.Size() < 40 {
+				return fmt.Errorf("cannot write %s: handler dependency %s is an empty stub (%d bytes). Reopen that bead and implement it first", relPath, dep, info.Size())
+			}
+		}
+	}
 	if fullReplace {
 		fake := fmt.Sprintf("cat > %s <<'EOF'", relPath)
 		if reason := RejectFullFileHeredocReason(fake, townRoot, rig, activeBead, v); reason != "" {
@@ -31,7 +55,8 @@ func ValidateImplementWritePath(townRoot, rig, activeBead, relPath string, v Wor
 }
 
 // ValidateImplementReadPath allows reads for the active bead, open/next implement paths, and earlier dependencies.
-func ValidateImplementReadPath(townRoot, rig, activeBead, relPath string, v WorkflowValidation) error {
+// verifyOutput is optional recent go test/build stderr; enables read of foreign *_test.go cited in verify failures.
+func ValidateImplementReadPath(townRoot, rig, activeBead, relPath string, v WorkflowValidation, verifyOutput string) error {
 	relPath = NormalizeBeadPathForLayout(filepath.ToSlash(strings.TrimSpace(relPath)), v.LayoutRoot)
 	if relPath == "" {
 		return fmt.Errorf("empty path")
@@ -48,12 +73,12 @@ func ValidateImplementReadPath(townRoot, rig, activeBead, relPath string, v Work
 		allowedID = next.ID
 	}
 	allowedPath := ImplementBeadPathForID(townRoot, rig, allowedID, v)
-	if allowedPath != "" && PathMatchesImplementWrite(relPath, allowedPath, v.RequiredFiles) {
+	if allowedPath != "" && PathMatchesImplementWrite(relPath, allowedPath, v.RequiredFiles, v) {
 		return nil
 	}
 	if allowedPath != "" && WorkflowUsesGo(v) && !IsTestImplementPath(allowedPath) {
 		if testPath := CorrelatedTestPathForSource(allowedPath, v); testPath != "" {
-			if PathMatchesImplementWrite(relPath, testPath, v.RequiredFiles) {
+			if PathMatchesImplementWrite(relPath, testPath, v.RequiredFiles, v) {
 				return nil
 			}
 		}
@@ -64,8 +89,19 @@ func ValidateImplementReadPath(townRoot, rig, activeBead, relPath string, v Work
 	if allowedPath != "" && AllowedEarlierImplementDependencyWrite(townRoot, rig, allowedPath, relPath, v) {
 		return nil
 	}
+	mayorRigDir := filepath.Join(townRoot, rig, "mayor", "rig")
+	if allowedPath != "" && IsForeignBeadTestFileForActive(allowedPath, relPath, v, mayorRigDir) {
+		if AllowForeignOpenBeadCompileFixForVerifyFailure(townRoot, rig, allowedPath, relPath, verifyOutput, v) {
+			return nil
+		}
+		if src := SourcePathForCorrelatedTest(relPath, v.LayoutRoot); src != "" {
+			if _, _, ok := OpenImplementBeadForPath(townRoot, rig, src, v); ok {
+				return nil
+			}
+		}
+	}
 	for _, want := range v.RequiredFiles {
-		if PathMatchesImplementWrite(relPath, want, v.RequiredFiles) {
+		if PathMatchesImplementWrite(relPath, want, v.RequiredFiles, v) {
 			return nil
 		}
 	}
@@ -74,8 +110,20 @@ func ValidateImplementReadPath(townRoot, rig, activeBead, relPath string, v Work
 }
 
 func validateImplementWriteScope(townRoot, rig, activeBead, written string, v WorkflowValidation, verifyOutput string, scope ImplementWriteScope) error {
+	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
 	if ImplementationQueueGreen(townRoot, rig, v) {
-		return fmt.Errorf("implementation queue is finished and go test ./... passes — do not EDIT/WRITE implement files; send JSON {\"outcome\":\"success\",\"summary\":\"...\"} only")
+		written = NormalizeBeadPathForLayout(filepath.ToSlash(strings.TrimSpace(written)), v.LayoutRoot)
+		allowStubFix := false
+		for _, stub := range UnionStubArtifactsOnDisk(rigDir, v) {
+			if PathMatchesImplementWrite(written, stub, v.RequiredFiles, v) {
+				allowStubFix = true
+				break
+			}
+		}
+		// Allow writes during QA rework even when the queue is green (QA sent work back).
+		if !allowStubFix && !scope.QAReworkFromQAReview {
+			return fmt.Errorf("implementation queue is finished and go test ./... passes — do not EDIT/WRITE implement files; send JSON {\"outcome\":\"success\",\"summary\":\"...\"} only")
+		}
 	}
 	allowedID := strings.TrimSpace(activeBead)
 	if allowedID == "" {
@@ -95,8 +143,16 @@ func validateImplementWriteScope(townRoot, rig, activeBead, written string, v Wo
 	if AllowClosedDepFixForVerifyFailure(townRoot, rig, allowedPath, written, verifyOutput, v) {
 		return nil
 	}
+	if AllowForeignOpenBeadCompileFixForVerifyFailure(townRoot, rig, allowedPath, written, verifyOutput, v) {
+		return nil
+	}
 	if closedOnly, err := ImplementPathHasOnlyClosedBeads(townRoot, rig, written, v); err == nil && closedOnly &&
 		!AllowedCorrelatedPackageImplementWrite(allowedPath, written, v) {
+		if reopened, rerr := EnsureOpenImplementBeadForRework(townRoot, rig, written, v); rerr != nil {
+			return rerr
+		} else if reopened != "" {
+			return nil
+		}
 		if allowedPath != "" {
 			return fmt.Errorf("do not overwrite %q — its implement bead is closed (reopen that bead or edit only %s for %s)",
 				written, allowedPath, allowedID)
@@ -109,7 +165,7 @@ func validateImplementWriteScope(townRoot, rig, activeBead, written string, v Wo
 		}
 		return nil
 	}
-	if PathMatchesImplementWrite(written, allowedPath, v.RequiredFiles) {
+	if PathMatchesImplementWrite(written, allowedPath, v.RequiredFiles, v) {
 		if err := ValidateHTTPHandlerBeadPrerequisites(filepath.Join(townRoot, rig, "mayor", "rig"), written, v); err != nil {
 			return err
 		}
@@ -118,7 +174,7 @@ func validateImplementWriteScope(townRoot, rig, activeBead, written string, v Wo
 	// Same-bead unit tests (e.g. schema.go → schema_test.go) are not separate implement beads.
 	if WorkflowUsesGo(v) && !IsTestImplementPath(allowedPath) {
 		if testPath := CorrelatedTestPathForSource(allowedPath, v); testPath != "" {
-			if PathMatchesImplementWrite(written, testPath, v.RequiredFiles) {
+			if PathMatchesImplementWrite(written, testPath, v.RequiredFiles, v) {
 				return nil
 			}
 		}
@@ -134,12 +190,31 @@ func validateImplementWriteScope(townRoot, rig, activeBead, written string, v Wo
 	}
 	if strings.HasSuffix(filepath.ToSlash(allowedPath), "go.mod") && strings.HasSuffix(written, ".go") {
 		for _, want := range v.RequiredFiles {
-			if PathMatchesImplementWrite(written, want, v.RequiredFiles) {
+			if PathMatchesImplementWrite(written, want, v.RequiredFiles, v) {
 				return nil
 			}
 		}
 	}
 	return NewImplementWriteScopeError(townRoot, rig, allowedID, allowedPath, written, v)
+}
+
+// requiredFilesBeforePath returns required_files that come before relPath in build order
+// (dependencies that cmd/server/main.go would import).
+func requiredFilesBeforePath(relPath string, v WorkflowValidation) []string {
+	relPath = filepath.ToSlash(strings.TrimSpace(relPath))
+	ordered := orderedImplementBeadPaths(v)
+	var before []string
+	score := implementationPathScore(relPath)
+	for _, f := range ordered {
+		f = filepath.ToSlash(strings.TrimSpace(f))
+		if f == "" || f == relPath {
+			continue
+		}
+		if implementationPathScore(f) < score {
+			before = append(before, f)
+		}
+	}
+	return before
 }
 
 // OpenImplementBeadForPath returns an open or in_progress implement bead that owns filePath.
@@ -157,7 +232,7 @@ func OpenImplementBeadForPath(townRoot, rig, filePath string, v WorkflowValidati
 		if p == "" {
 			continue
 		}
-		if PathMatchesImplementWrite(filePath, p, v.RequiredFiles) {
+		if PathMatchesImplementWrite(filePath, p, v.RequiredFiles, v) {
 			return b.ID, p, true
 		}
 	}

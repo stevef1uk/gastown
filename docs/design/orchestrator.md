@@ -33,6 +33,7 @@ with multiple rigs, full template schema unification for all bundled YAML exampl
 | hq-polecat + legacy pause | Done | `LegacyPolecatsPaused`; `GT_POLECAT` identity fix |
 | Per-state YAML `hooks:` | Done | `StateHooks` in `state_hooks.go`; `rig-flow.yaml`; delivered on `fetch_task` |
 | Planning state timeout | Done | `state_timeout_seconds`, `on_timeout`, `transitions.timeout`; `workflow_timeout*.go` |
+| Workflow stuck monitor | Done | Daemon pipeline keepalive (45s); `workflow_stuck*.go`; deterministic repair |
 | Hook interpreter (`state_runner`) | Done | `cmd/gt-agent/state_runner.go` — no FSM state-name switches in `orchestrated.go` |
 | Rig-flow checkpoint commits | Done | After each **rig-flow** FSM edge, `refinery.CommitMayorRigOrchestratorCheckpoint` commits dirty `mayor/rig` (**runs inside `gt orchestrator`**, not the refinery tmux patrol). On **completed**, pushes `origin` via `git push -u`. Opt out: `GT_SKIP_WORKFLOW_GIT_COMMIT`, `GT_WORKFLOW_SKIP_PUSH`. `gt rig add` seeds mayor/rig `.gitignore` / `.git/info/exclude` so checkpoints skip beads, DBs, codeindex, and build artifacts. Look for `[Orchestrator] rig … mayor/rig` lines in `{town}/logs/orchestrator.log`. |
 | Bundled non-rig-flow templates | Partial | Some examples still use old schema |
@@ -257,6 +258,58 @@ Validate `outcome` against keys in `state.transitions` before advancing FSM.
 - **`reset_planning_phase`** (`plan_beads_order.go`) — delete phase implement beads, remove stale `plan.md`, `EnsurePlanningImplementBeads`, then prune/dedupe.
 
 Allowed outcomes include `timeout` when `transitions.timeout` exists (`State.AcceptsOutcome`). Timeout sets `PendingRework` even for same-state transitions (unlike `failure`, which only sets rework when `next != fromState`).
+
+### Workflow stuck monitor
+
+Rig-flow can stall when beads drift, the rig identity bead is docked, the polecat session dies, or
+`plan.md` lacks **Integration contract** while the profile expects a server entrypoint. The
+**workflow stuck monitor** runs on the same **daemon pipeline keepalive** tick as agent revival
+(45s) and applies **deterministic** repairs—no LLM.
+
+**Package:** `internal/orchestrator/workflow_stuck*.go`  
+**Daemon hook:** `internal/daemon/pipeline_keepalive.go` → `RunWorkflowStuckMonitorTick`  
+**State file:** `{townRoot}/orchestrator/workflow-stuck-state.json` (bead fingerprints, last repair time per rig)
+
+**Prerequisites:** orchestrator running; active `rig-flow` instance in `instances.json` with
+`RigWorkflowRunning` for that rig.
+
+#### Stuck signals
+
+| Signal | Condition |
+|--------|-----------|
+| `phase_idle_no_bead_progress` | State in `planning`, `plan_review`, `project_setup`, `implementation`, or `qa_review`; past grace (default 10m); implement-bead fingerprint unchanged for ≥ idle threshold (default 30m) |
+| `pending_rework_linger` | `pending_rework` set and same state for ≥ rework threshold (default 20m) |
+| `polecat_session_missing` | `implementation` for >5m and rig polecat tmux session not running |
+| `non_required_implement_beads` | Open/in_progress implement-like beads off `required_files` during planning/implementation |
+| `missing_integration_contract` | Server profile (`cmd/.../main.go` in required files) and `plan.md` missing `## Integration contract` |
+
+Repair runs when **any** signal fires and per-rig **cooldown** (default 10m) has elapsed since the last repair.
+
+#### Repair order (idempotent)
+
+1. `EnsureRigBeadOperationalForWorkflow` — clear `status:docked` / `status:parked` on rig bead (beads DB ready)
+2. `SyncPlanningArtifacts(..., force)` — same family as `gt rig sync-planning --force`
+3. `RepairPlanningBeadSet` — same as `repair_planning_beads` hook
+4. `PruneNonRequiredOpenImplementBeads` — when flat/off-profile bead signal fired
+5. `ensurePlanIntegrationContract` — patch `plan.md` when contract signal fired
+6. `EnforceSingleImplementInProgress` — on idle or rework-linger signals
+
+Polecat session restart is **not** duplicated here; the keepalive pass already calls
+`ensureRigPolecatRunning` for rigs with a running workflow.
+
+Pure detection for tests: `EvalWorkflowStuck(WorkflowStuckEvalInput)`.
+
+#### Environment
+
+| Variable | Default | Meaning |
+|----------|---------|---------|
+| `GT_WORKFLOW_STUCK_MONITOR` | on (`1`) | Set `0` / `false` to disable |
+| `GT_WORKFLOW_STUCK_IDLE_MINUTES` | `30` | No implement-bead fingerprint change |
+| `GT_WORKFLOW_STUCK_REWORK_MINUTES` | `20` | `pending_rework` linger |
+| `GT_WORKFLOW_STUCK_COOLDOWN_MINUTES` | `10` | Minimum gap between repairs per rig |
+| `GT_WORKFLOW_STUCK_GRACE_MINUTES` | `10` | Suppress idle detection immediately after state entry |
+
+Daemon logs: `[workflow-stuck] <rig>: repaired (<signals>): <steps>` in `{town}/daemon/daemon.log`.
 
 **Artifact validation** thresholds still come from `workflow-profile.json` when present (merged into `task.validation`).
 

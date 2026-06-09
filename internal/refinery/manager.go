@@ -118,7 +118,11 @@ func (m *Manager) Start(foreground bool, agentOverride string, orchestrated bool
 
 	// Check if session already exists
 	if running, _ := sp.Exists(ctx, sessionID); running {
-		return ErrAlreadyRunning
+		alive, _ := sp.IsAgentRunning(ctx, sessionID)
+		if alive {
+			return ErrAlreadyRunning
+		}
+		_ = sp.Stop(ctx, sessionID, false)
 	}
 
 	// Working directory is the refinery worktree

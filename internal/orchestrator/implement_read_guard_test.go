@@ -49,6 +49,31 @@ func TestValidateImplementReadMissingFile_separateTestBead(t *testing.T) {
 	}
 }
 
+func TestValidateImplementReadMissingFile_flatModuleAtMayorRig(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	rig := "testgt3"
+	mayorRig := filepath.Join(dir, rig, "mayor", "rig")
+	store := filepath.Join(mayorRig, "internal", "store")
+	if err := os.MkdirAll(store, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(mayorRig, "go.mod"), []byte("module linkshelf\n\ngo 1.22\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(store, "store.go"), []byte("package store\n\nfunc X() {}\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	v := WorkflowValidation{
+		LayoutRoot:    "linkshelf",
+		TestRunner:    "go",
+		RequiredFiles: []string{"linkshelf/internal/store/store.go"},
+	}
+	if err := ValidateImplementReadMissingFile(dir, rig, "te-store", "linkshelf/internal/store/store.go", "linkshelf/internal/store/store.go", v); err != nil {
+		t.Fatalf("flat module file should resolve via layout_root: %v", err)
+	}
+}
+
 func TestEnsureTestBeadSkeletonForPath_go(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()

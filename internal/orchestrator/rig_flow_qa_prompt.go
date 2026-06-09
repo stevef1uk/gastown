@@ -7,6 +7,7 @@ import (
 
 // RigFlowQARuntimeSmokeBlock is injected into qa_review.md from the rig profile and SPEC.
 func RigFlowQARuntimeSmokeBlock(townRoot, rig string, v WorkflowValidation) string {
+	v = v.ForActivePhase()
 	if WorkflowUsesPython(v) {
 		if WorkflowNeedsQARuntimeSmoke(townRoot, rig, v) {
 			spec, _ := LoadAPISmokeSpecFromRig(townRoot, rig, v)

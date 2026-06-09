@@ -640,9 +640,18 @@ func (d *Daemon) Run() (err error) {
 	// Note: PATCH-010 uses per-session hooks in deacon/manager.go (SetAutoRespawnHook).
 	// Global pane-died hooks don't fire reliably in tmux 3.2a, so we rely on the
 	// per-session approach which has been tested to work for continuous recovery.
+	// NATS transport uses NatsProvider auto-respawn (session/nats_provider.go).
 
-	// Initial heartbeat
+	var pipelineKeepaliveTicker *time.Ticker
+	var pipelineKeepaliveChan <-chan time.Time
+	pipelineKeepaliveTicker = time.NewTicker(pipelineKeepaliveInterval)
+	pipelineKeepaliveChan = pipelineKeepaliveTicker.C
+	defer pipelineKeepaliveTicker.Stop()
+	d.logger.Printf("Orchestrated pipeline keepalive ticker started (interval %v)", pipelineKeepaliveInterval)
+
+	// Initial heartbeat and pipeline keepalive
 	d.heartbeat(state)
+	d.ensureOrchestratedPipelineKeepalive()
 	startupComplete = true
 
 	for {
@@ -746,6 +755,11 @@ func (d *Daemon) Run() (err error) {
 				d.runQuotaDog()
 			}
 
+		case <-pipelineKeepaliveChan:
+			if !d.isShutdownInProgress() {
+				d.ensureOrchestratedPipelineKeepalive()
+			}
+
 		case <-timer.C:
 			d.heartbeat(state)
 
@@ -817,55 +831,64 @@ func (d *Daemon) heartbeat(state *State) {
 	// 0c. Orchestrator MCP: start if missing, restart if NATS ping or heartbeat says stuck.
 	d.ensureOrchestratorHealthy()
 
-	// 1. Ensure Deacon is running (restart if dead)
-	// Check patrol config - can be disabled in mayor/daemon.json
-	if d.isPatrolActive("deacon") {
-		d.ensureDeaconRunning()
-	} else {
-		d.logger.Printf("Deacon patrol disabled in config, skipping")
-		// Kill leftover deacon/boot sessions from before patrol was disabled.
-		// Without this, a stale deacon keeps running its own patrol loop,
-		// spawning witnesses and refineries despite daemon config. (hq-2mstj)
+	// Pipeline-only rig-flow: suppress patrol LLM agents (deacon, boot, witness, refinery, mechanic).
+	if orchestrator.SuppressPatrolAgents(d.config.TownRoot) {
+		d.logger.Printf("Pipeline-only: suppressing patrol LLM agents (deacon, boot, witness, refinery, mechanic)")
 		d.killDeaconSessions()
-	}
-
-	// 2. Poke Boot for intelligent triage (stuck/nudge/interrupt)
-	// Boot handles nuanced "is Deacon responsive" decisions
-	// Only run if Deacon patrol is enabled
-	if d.isPatrolActive("deacon") {
-		d.ensureBootRunning()
-	}
-
-	// 3. Direct Deacon heartbeat check (belt-and-suspenders)
-	// Boot may not detect all stuck states; this provides a fallback
-	// Only run if Deacon patrol is enabled
-	if d.isPatrolActive("deacon") {
-		d.checkDeaconHeartbeat()
-	}
-
-	// 4. Ensure Witnesses are running for all rigs (restart if dead)
-	// Check patrol config - can be disabled in mayor/daemon.json
-	if d.isPatrolActive("witness") {
-		d.ensureWitnessesRunning()
-	} else {
-		d.logger.Printf("Witness patrol disabled in config, skipping")
-		// Kill leftover witness sessions from before patrol was disabled. (hq-2mstj)
 		d.killWitnessSessions()
-	}
-
-	// 5. Ensure Refineries are running for all rigs (restart if dead)
-	// Check patrol config - can be disabled in mayor/daemon.json
-	// Pressure-gated: refineries consume API credits, defer when system is loaded.
-	if d.isPatrolActive("refinery") {
-		if p := d.checkPressure("refinery"); !p.OK {
-			d.logger.Printf("Deferring refinery spawn: %s", p.Reason)
-		} else {
-			d.ensureRefineriesRunning()
-		}
-	} else {
-		d.logger.Printf("Refinery patrol disabled in config, skipping")
-		// Kill leftover refinery sessions from before patrol was disabled. (hq-2mstj)
 		d.killRefinerySessions()
+		d.killMechanicSessions()
+	} else {
+		// 1. Ensure Deacon is running (restart if dead)
+		// Check patrol config - can be disabled in mayor/daemon.json
+		if d.isPatrolActive("deacon") {
+			d.ensureDeaconRunning()
+		} else {
+			d.logger.Printf("Deacon patrol disabled in config, skipping")
+			// Kill leftover deacon/boot sessions from before patrol was disabled.
+			// Without this, a stale deacon keeps running its own patrol loop,
+			// spawning witnesses and refineries despite daemon config. (hq-2mstj)
+			d.killDeaconSessions()
+		}
+
+		// 2. Poke Boot for intelligent triage (stuck/nudge/interrupt)
+		// Boot handles nuanced "is Deacon responsive" decisions
+		// Only run if Deacon patrol is enabled
+		if d.isPatrolActive("deacon") {
+			d.ensureBootRunning()
+		}
+
+		// 3. Direct Deacon heartbeat check (belt-and-suspenders)
+		// Boot may not detect all stuck states; this provides a fallback
+		// Only run if Deacon patrol is enabled
+		if d.isPatrolActive("deacon") {
+			d.checkDeaconHeartbeat()
+		}
+
+		// 4. Ensure Witnesses are running for all rigs (restart if dead)
+		// Check patrol config - can be disabled in mayor/daemon.json
+		if d.isPatrolActive("witness") {
+			d.ensureWitnessesRunning()
+		} else {
+			d.logger.Printf("Witness patrol disabled in config, skipping")
+			// Kill leftover witness sessions from before patrol was disabled. (hq-2mstj)
+			d.killWitnessSessions()
+		}
+
+		// 5. Ensure Refineries are running for all rigs (restart if dead)
+		// Check patrol config - can be disabled in mayor/daemon.json
+		// Pressure-gated: refineries consume API credits, defer when system is loaded.
+		if d.isPatrolActive("refinery") {
+			if p := d.checkPressure("refinery"); !p.OK {
+				d.logger.Printf("Deferring refinery spawn: %s", p.Reason)
+			} else {
+				d.ensureRefineriesRunning()
+			}
+		} else {
+			d.logger.Printf("Refinery patrol disabled in config, skipping")
+			// Kill leftover refinery sessions from before patrol was disabled. (hq-2mstj)
+			d.killRefinerySessions()
+		}
 	}
 
 	// 5.5. Ensure Architects are running for all rigs (restart if dead)
@@ -907,7 +930,9 @@ func (d *Daemon) heartbeat(state *State) {
 	}
 
 	// 5.6.5. Ensure Mechanics are running for all rigs (restart if dead)
-	if d.isPatrolActive("mechanic") {
+	if orchestrator.SuppressPatrolAgents(d.config.TownRoot) {
+		// Already killed in patrol-suppress block above.
+	} else if d.isPatrolActive("mechanic") {
 		if p := d.checkPressure("mechanic"); !p.OK {
 			d.logger.Printf("Deferring mechanic spawn: %s", p.Reason)
 		} else {
@@ -1915,6 +1940,9 @@ func (d *Daemon) ensureArchitectRunning(rigName string) {
 	architectDir := filepath.Join(d.config.TownRoot, rigName, constants.DirArchitect)
 	_ = os.MkdirAll(architectDir, 0755)
 
+	wantOrch := d.orchestratedForRole(constants.RoleArchitect)
+	d.restartStalePipelineSession(sessionID, wantOrch)
+
 	if running, _ := d.sp.Exists(d.ctx, sessionID); running {
 		return
 	}
@@ -1966,6 +1994,9 @@ func (d *Daemon) ensureQARunning(rigName string) {
 	qaDir := filepath.Join(d.config.TownRoot, rigName, constants.DirQA)
 	_ = os.MkdirAll(qaDir, 0755)
 
+	wantOrch := d.orchestratedForRole(constants.RoleQA)
+	d.restartStalePipelineSession(sessionID, wantOrch)
+
 	if running, _ := d.sp.Exists(d.ctx, sessionID); running {
 		return
 	}
@@ -2006,6 +2037,13 @@ func (d *Daemon) ensureRigPolecatsRunning() {
 
 // ensureRigPolecatRunning ensures the pipeline polecat for a specific rig is running.
 func (d *Daemon) ensureRigPolecatRunning(rigName string) {
+	if orchestrator.IsRigWorkflowPaused(d.config.TownRoot, rigName) {
+		return
+	}
+	if reason := orchestrator.SkipRigAgentStartReason(d.config.TownRoot, rigName); reason != "" {
+		d.logger.Printf("Skipping rig polecat auto-start for %s: %s", rigName, reason)
+		return
+	}
 	if operational, reason := d.isRigOperational(rigName); !operational {
 		d.logger.Printf("Skipping rig polecat auto-start for %s: %s", rigName, reason)
 		name := session.RigPolecatSessionName(session.PrefixFor(rigName), rigName)
@@ -2019,6 +2057,8 @@ func (d *Daemon) ensureRigPolecatRunning(rigName string) {
 	sessionID := session.RigPolecatSessionName(session.PrefixFor(rigName), rigName)
 	polecatDir := filepath.Join(d.config.TownRoot, rigName, constants.DirPolecat)
 	_ = os.MkdirAll(polecatDir, 0755)
+
+	d.restartStalePipelineSession(sessionID, true)
 
 	if running, _ := d.sp.Exists(d.ctx, sessionID); running {
 		_ = session.RepairTownRoleRigIdentity(d.ctx, d.sp, sessionID, polecatDir, constants.RolePolecat, rigName)
@@ -2116,20 +2156,15 @@ func (d *Daemon) ensurePlannerRunning() {
 	plannerDir := filepath.Join(d.config.TownRoot, constants.DirPlanner)
 	_ = os.MkdirAll(plannerDir, 0755)
 
+	wantOrch := d.orchestratedForRole(constants.RolePlanner)
+	d.restartStalePipelineSession(sessionID, wantOrch)
+
 	if running, _ := d.sp.Exists(d.ctx, sessionID); running {
-		wantOrch := d.orchestratedForRole(constants.RolePlanner)
-		hasOrch := session.GTAgentHasFlagInSession(d.config.TownRoot, sessionID, "--orchestrated")
-		if wantOrch && !hasOrch {
-			d.logger.Printf("Planner session %s is in patrol mode but orchestrator is running — restarting with --orchestrated", sessionID)
-			_ = d.sp.Stop(d.ctx, sessionID, false)
-		} else {
-			return
-		}
+		return
 	}
 
-	orch := d.orchestratedForRole(constants.RolePlanner)
 	beaconTopic := "patrol"
-	if orch {
+	if wantOrch {
 		beaconTopic = "orchestrated"
 	}
 	_, err := session.StartSession(d.ctx, d.sp, &session.SessionConfig{
@@ -2137,7 +2172,7 @@ func (d *Daemon) ensurePlannerRunning() {
 		WorkDir:      plannerDir,
 		Role:         constants.RolePlanner,
 		TownRoot:     d.config.TownRoot,
-		Orchestrated: orch,
+		Orchestrated: wantOrch,
 		Beacon:       session.BeaconConfig{Recipient: "planner", Sender: "daemon", Topic: beaconTopic},
 		WaitForAgent: false,
 		AutoRespawn:  true,
@@ -2159,20 +2194,15 @@ func (d *Daemon) ensureSetupRunning() {
 	setupDir := filepath.Join(d.config.TownRoot, constants.DirSetup)
 	_ = os.MkdirAll(setupDir, 0755)
 
+	wantOrch := d.orchestratedForRole(constants.RoleSetup)
+	d.restartStalePipelineSession(sessionID, wantOrch)
+
 	if running, _ := d.sp.Exists(d.ctx, sessionID); running {
-		wantOrch := d.orchestratedForRole(constants.RoleSetup)
-		hasOrch := session.GTAgentHasFlagInSession(d.config.TownRoot, sessionID, "--orchestrated")
-		if wantOrch && !hasOrch {
-			d.logger.Printf("Setup session %s is not orchestrated but orchestrator is running — restarting with --orchestrated", sessionID)
-			_ = d.sp.Stop(d.ctx, sessionID, false)
-		} else {
-			return
-		}
+		return
 	}
 
-	orch := d.orchestratedForRole(constants.RoleSetup)
 	beaconTopic := "orchestrated"
-	if !orch {
+	if !wantOrch {
 		beaconTopic = "patrol"
 	}
 	_, err := session.StartSession(d.ctx, d.sp, &session.SessionConfig{
@@ -2180,7 +2210,7 @@ func (d *Daemon) ensureSetupRunning() {
 		WorkDir:      setupDir,
 		Role:         constants.RoleSetup,
 		TownRoot:     d.config.TownRoot,
-		Orchestrated: orch,
+		Orchestrated: wantOrch,
 		Beacon:       session.BeaconConfig{Recipient: "setup", Sender: "daemon", Topic: beaconTopic},
 		WaitForAgent: false,
 		AutoRespawn:  true,
@@ -2203,16 +2233,10 @@ func (d *Daemon) ensureMayorRunning() {
 	mgr := mayor.NewManager(d.config.TownRoot)
 	sessionID := mgr.SessionName()
 
-	if running, _ := d.sp.Exists(d.ctx, sessionID); running {
-		wantOrch := d.orchestratedForRole(constants.RoleMayor)
-		hasOrch := session.GTAgentHasFlagInSession(d.config.TownRoot, sessionID, "--orchestrated")
-		if wantOrch && !hasOrch {
-			d.logger.Printf("Mayor session %s is in patrol mode but orchestrator is running — restarting with --orchestrated", sessionID)
-			_ = d.sp.Stop(d.ctx, sessionID, false)
-		}
-	}
+	wantOrch := d.orchestratedForRole(constants.RoleMayor)
+	d.restartStalePipelineSession(sessionID, wantOrch)
 
-	if err := mgr.Start("", d.orchestratedForRole(constants.RoleMayor)); err != nil {
+	if err := mgr.Start("", wantOrch); err != nil {
 		if err == mayor.ErrAlreadyRunning {
 			// Session exists — verify agent is actually alive.
 			// During handoffs or heavy work (long shell pipelines, local LLM),
@@ -2648,12 +2672,13 @@ func (d *Daemon) isRigOperational(rigName string) (bool, string) {
 			}
 		}
 	} else {
-		// Log when rig bead lookup fails - this helps debug transient Dolt issues
-		// FAIL-SAFE: When we can't verify docked status (Dolt down, network issue, etc.),
-		// assume the rig is NOT operational. This prevents wasting API credits starting
-		// witnesses that might be docked. Better to delay work than burn credits unnecessarily.
+		// FAIL-SAFE: cannot verify docked/parked when Show fails.
+		reason := "cannot verify rig status (Dolt unavailable)"
+		if errors.Is(err, beads.ErrNotFound) {
+			reason = "rig identity bead missing (run gt doctor --fix or gt rig add)"
+		}
 		d.logger.Printf("Warning: failed to check rig bead %s for docked/parked status: %v (assuming not operational)", rigBeadID, err)
-		return false, "cannot verify rig status (Dolt unavailable)"
+		return false, reason
 	}
 
 	// Check auto_restart config

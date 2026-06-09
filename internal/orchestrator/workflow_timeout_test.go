@@ -237,6 +237,7 @@ func TestResetPlanningPhase_integration(t *testing.T) {
 	if err := os.WriteFile(planPath, []byte("### fi-001: fake\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
+	writeMinimalPlanningRigDocs(t, rigDir)
 
 	logLine, err := ResetPlanningPhase(townRoot, rig, v)
 	if err != nil {

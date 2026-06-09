@@ -19,6 +19,7 @@ import (
 	"github.com/steveyegge/gastown/internal/nudge"
 	"github.com/steveyegge/gastown/internal/agentenv"
 	"github.com/steveyegge/gastown/internal/orchestrator"
+	rigpkg "github.com/steveyegge/gastown/internal/rig"
 )
 
 const (
@@ -151,7 +152,7 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 		contextBlocks = append(contextBlocks, block)
 		orchestratedPrintf("[gt-agent] injected drained nudge(s) for %s/%s\n", task.WorkflowID, task.State)
 	}
-	if block := formatWorkflowReworkBlock(task, rig); block != "" {
+	if block := formatWorkflowReworkBlock(task, townRoot, rig); block != "" {
 		contextBlocks = append(contextBlocks, block)
 		orchestratedPrintf("[gt-agent] injecting QA/review rework context for %s/%s\n", task.WorkflowID, task.State)
 	}
@@ -165,6 +166,15 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 	// pre_run (refresh_codeindex, bead queue, reconcile) must run before prompt_context so
 	// implement_bead_context sees a fresh codeindex.json and the correct queue head.
 	runner.runPreRun()
+	if !shouldSkipPlanningAutoComplete(task, townRoot, rig, runner.v) &&
+		!shouldSkipImplementationAutoComplete(task, townRoot, rig, runner.v) {
+		if o, s, ok := runner.tryAutoOutcome(); ok {
+			orchestratedPrintf("[gt-agent] skipping LLM: %s artifacts already valid after pre_run\n", task.State)
+			return o, s, "", nil
+		}
+	} else {
+		orchestratedPrintf("[gt-agent] plan review rework pending — running planner LLM (no auto-complete)\n")
+	}
 	if task.State == "implementation" || task.State == "qa_review" || task.State == "project_setup" {
 		if block := orchestrator.FormatMissingImplementFilesBlock(townRoot, rig, runner.v); block != "" {
 			contextBlocks = append(contextBlocks, block)
@@ -248,6 +258,9 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 			feedbackBuilder.WriteString(combined.String())
 			recordAttemptFeedback(feedbackBuilder.String())
 			feedbackBuilder.WriteString("\n\nCommands executed. If the step is complete, reply with JSON only (no CMD lines): {\"outcome\":\"...\",\"summary\":\"...\"}")
+			if runner.hooks.Artifacts == "design" && runner.track.designArchWritten {
+				feedbackBuilder.WriteString("\n\nDesign: when architecture.md meets the byte minimum and validates, this step auto-completes — no JSON turn required.")
+			}
 			if turn == maxTurns {
 				feedbackBuilder.WriteString(" Use an allowed outcome.")
 			}
@@ -325,6 +338,16 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 					continue
 				}
 			}
+			if o, s, ok := runner.tryPlanReviewFailureToSuccess(o); ok {
+				orchestratedPrintf("[gt-agent] ignoring plan_review failure JSON — artifacts already satisfy success\n")
+				return o, s, lastAttemptFeedback.String(), nil
+			}
+			if msg, reject := runner.rejectPlanReviewSpuriousFailure(o, s); reject {
+				orchestratedPrintf("[gt-agent] rejecting spurious plan_review failure JSON\n")
+				recordAttemptFeedback(msg + "\n")
+				messages = append(messages, llm.Message{Role: "user", Content: msg})
+				continue
+			}
 			if vErr := validateOutcomeForTask(task, townRoot, rig, o, s); vErr != nil {
 				orchestratedPrintf("[gt-agent] summary validation failed: %v\n", vErr)
 				msg := "Validation failed: " + vErr.Error() + ". Run `bd list` and copy bead IDs exactly into the summary."
@@ -352,6 +375,12 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 			}
 			if msg, reject := runner.rejectImplementationPrematureSuccess(o); reject {
 				orchestratedPrintf("[gt-agent] rejecting implementation success JSON while phase verify still blocked\n")
+				recordAttemptFeedback(msg + "\n")
+				messages = append(messages, llm.Message{Role: "user", Content: msg})
+				continue
+			}
+			if msg, reject := runner.rejectImplementationOpenBeadsSuccess(o, s); reject {
+				orchestratedPrintf("[gt-agent] rejecting implementation success JSON while open beads remain\n")
 				recordAttemptFeedback(msg + "\n")
 				messages = append(messages, llm.Message{Role: "user", Content: msg})
 				continue
@@ -443,8 +472,52 @@ func sanitizeRetryFeedbackForLLM(s string) string {
 	return s
 }
 
+// shouldSkipPlanningAutoComplete blocks planning auto-complete while plan_review rework is pending
+// or while docs would still fail plan_review (e.g. architecture store API drift).
+func shouldSkipPlanningAutoComplete(task *orchestrator.Task, townRoot, rig string, v orchestrator.WorkflowValidation) bool {
+	if task == nil || task.State != "planning" {
+		return false
+	}
+	if task.PendingRework != nil && task.PendingRework.FromState == "plan_review" {
+		return true
+	}
+	if townRoot != "" && rig != "" {
+		if err := orchestrator.ValidatePlanningPhaseGate(townRoot, rig, "plan_review", v); err != nil {
+			return true
+		}
+	}
+	return false
+}
+
+// shouldSkipImplementationAutoComplete blocks auto-complete after QA rework or while go.mod
+// still fails SPEC validation (go mod tidy alone is not enough).
+func shouldSkipImplementationAutoComplete(task *orchestrator.Task, townRoot, rig string, v orchestrator.WorkflowValidation) bool {
+	if task == nil || task.State != "implementation" {
+		return false
+	}
+	if task.PendingRework != nil && task.PendingRework.FromState == "qa_review" {
+		return true
+	}
+	if townRoot == "" || rig == "" || !orchestrator.WorkflowUsesGo(v) {
+		return false
+	}
+	scoped := v.ForActivePhase()
+	hasGoMod := false
+	for _, f := range scoped.RequiredFiles {
+		if strings.HasSuffix(filepath.ToSlash(f), "/go.mod") || f == "go.mod" {
+			hasGoMod = true
+			break
+		}
+	}
+	if !hasGoMod {
+		return false
+	}
+	rigDir := rigMayorRigDir(townRoot, rig)
+	return orchestrator.ValidateGoModFile(rigDir, scoped) != nil
+}
+
 // formatWorkflowReworkBlock returns cross-step failure context (e.g. QA plan_review → planner).
-func formatWorkflowReworkBlock(task *orchestrator.Task, rig string) string {
+func formatWorkflowReworkBlock(task *orchestrator.Task, townRoot, rig string) string {
 	if task == nil || task.PendingRework == nil {
 		return ""
 	}
@@ -473,7 +546,7 @@ func formatWorkflowReworkBlock(task *orchestrator.Task, rig string) string {
 	} else {
 		b.WriteString("\nAddress the issues above. Use bead IDs and paths from command output — do not invent IDs.\n")
 	}
-	v := taskValidation(task)
+	v := taskValidation(townRoot, task)
 	b.WriteString(workflowReworkHints(r.FromState, task.State, rig, r.Summary, v))
 	if task.State == "implementation" && (r.Outcome == "failure" || r.Outcome == "timeout") {
 		b.WriteString("\nUse **sed -i** or **patch** on internal packages; **cmd/…/main.go may use heredoc** when wiring is broken. Use store/handler APIs from **Dependency packages** — do not invent symbols.\n")
@@ -1311,6 +1384,9 @@ func validateImplementationCommandWithState(cmd, townRoot, rig, activeBead strin
 	if err := validateImplementationCommand(cmd, rig); err != nil {
 		return err
 	}
+	if err := rigpkg.RejectMayorRigRootShellCommand(cmd, v.LayoutRoot); err != nil {
+		return err
+	}
 	mayorDir := rigMayorRigDir(townRoot, rig)
 	if err := validateGoImplementationCommand(cmd, townRoot, rig, mayorDir, activeBead, v, verifyOK); err != nil {
 		return err
@@ -1352,8 +1428,14 @@ func validateImplementationBeadReopen(cmd, townRoot, rig string, v orchestrator.
 	if scope != nil && scope.QAReworkFromQAReview && scope.BeadCited(id) {
 		return nil
 	}
-	if !orchestrator.ImplementationQueueGreen(townRoot, rig, v) {
+	// Allow reopen only for the next open implement bead (the one the polecat should work on).
+	next, err := orchestrator.NextOpenImplementBead(townRoot, rig, v)
+	if err == nil && next != nil && strings.EqualFold(strings.TrimSpace(next.ID), strings.TrimSpace(id)) {
 		return nil
+	}
+	// Block reopening closed beads — the polecat should only work on the active/next open bead.
+	if !orchestrator.ImplementationQueueGreen(townRoot, rig, v) {
+		return fmt.Errorf("do not reopen %s — work on the current open bead `bd list --status=open`", id)
 	}
 	return fmt.Errorf("do not reopen implement beads (%s) — go test ./... already passes; send JSON success only", id)
 }
@@ -1380,6 +1462,11 @@ func validateImplementationBeadFileWrite(cmd, townRoot, rig, activeBead string, 
 		var sc orchestrator.ImplementWriteScope
 		if scope != nil {
 			sc = *scope
+		}
+		if reopened, rerr := orchestrator.EnsureOpenImplementBeadForRework(townRoot, rig, written, v); rerr != nil {
+			return rerr
+		} else if reopened != "" {
+			return nil
 		}
 		if !orchestrator.AllowedQAReworkWebImplementWrite(townRoot, rig, allowedID, allowedPath, written, sc, v) {
 			if allowedPath != "" {
@@ -1532,13 +1619,19 @@ func validatePlanningCommand(cmd, rig string) error {
 	return nil
 }
 
-func validatePlanningCommandWithProfile(cmd, rig string, v orchestrator.WorkflowValidation) error {
+func validatePlanningCommandWithProfile(cmd, townRoot, rig string, v orchestrator.WorkflowValidation) error {
+	if orchestrator.RequiresExactImplementPaths(v) && isPlanMDWriteCommand(cmd) {
+		return fmt.Errorf("do not write plan.md (heredoc or redirect) — sync_planning_artifacts already builds plan.md from required_files and open bead IDs; run bd list and wc -c plan.md only, then JSON success")
+	}
 	if err := validatePlanningCommand(cmd, rig); err != nil {
+		return err
+	}
+	if err := rigpkg.RejectMayorRigRootShellCommand(cmd, v.LayoutRoot); err != nil {
 		return err
 	}
 	if isBeadCreateCommand(cmd) {
 		if title := extractBeadCreateTitle(cmd); title != "" {
-			if err := orchestrator.ValidateImplementBeadCreateTitle(title, v); err != nil {
+			if err := orchestrator.ValidatePlanningBeadCreate(townRoot, rig, title, v); err != nil {
 				return err
 			}
 		}
@@ -1644,26 +1737,12 @@ func validateBdCommandBeadID(cmd, townRoot, rig string) error {
 }
 
 func validatePlanningArtifacts(townRoot, rig string, hadCmdFailure, beadCreateOK, beadDeleteOK bool, v orchestrator.WorkflowValidation) error {
-	if err := validatePlanningBeadSet(townRoot, rig, v); err != nil {
-		if beadDeleteOK {
-			return fmt.Errorf("bead set still invalid after bd delete: %w", err)
-		}
-		if !beadCreateOK {
-			return fmt.Errorf("run `bd create` for missing paths or `bd delete` for duplicates in %s, then ensure open beads match architecture: %w", rigMayorRigPath(rig), err)
-		}
-		return fmt.Errorf("open implement beads must match active phase required_files: %w", err)
-	}
 	rigDir := rigMayorRigDir(townRoot, rig)
 	path := filepath.Join(rigDir, "plan.md")
-	info, err := os.Stat(path)
-	if err != nil {
-		return fmt.Errorf("plan.md missing at %s", path)
-	}
-	minPlan := orchestrator.EffectiveMinPlanBytes(rigDir, v)
-	if info.Size() < minPlan {
-		return fmt.Errorf("plan.md too small (%d bytes); need ≥%d (%s)", info.Size(), minPlan, v.PlanMinSizeHint())
-	}
 	if err := validatePlanMDBeadIDs(townRoot, rig, path, v); err != nil {
+		return err
+	}
+	if err := orchestrator.ValidatePlanMDBeadPathAlignment(townRoot, rig, v); err != nil {
 		return err
 	}
 	if rig != "" {
@@ -1671,8 +1750,14 @@ func validatePlanningArtifacts(townRoot, rig string, hadCmdFailure, beadCreateOK
 			return err
 		}
 	}
-	if err := orchestrator.ValidatePlanningDocAlignment(rigDir, v); err != nil {
-		return fmt.Errorf("align SPEC.md, architecture.md, and plan.md before plan review: %w", err)
+	if err := orchestrator.ValidatePlanningPhaseGate(townRoot, rig, "planning", v); err != nil {
+		if beadDeleteOK {
+			return fmt.Errorf("bead set still invalid after bd delete: %w", err)
+		}
+		if !beadCreateOK {
+			return fmt.Errorf("run `bd create` for missing paths or `bd delete` for duplicates in %s: %w", rigMayorRigPath(rig), err)
+		}
+		return err
 	}
 	if hadCmdFailure {
 		return fmt.Errorf("planning step had failed commands; fix errors before completing")
@@ -1682,7 +1767,7 @@ func validatePlanningArtifacts(townRoot, rig string, hadCmdFailure, beadCreateOK
 
 var planBeadIDLineRE = regexp.MustCompile(`(?m)^###\s+([a-zA-Z0-9][a-zA-Z0-9_-]*):\s+`)
 
-// validatePlanMDBeadIDs rejects plan.md sections that cite bead IDs not open in bd list.
+// validatePlanMDBeadIDs rejects plan.md sections that cite bead IDs not open/in_progress in bd list.
 func validatePlanMDBeadIDs(townRoot, rig, planPath string, v orchestrator.WorkflowValidation) error {
 	data, err := os.ReadFile(planPath)
 	if err != nil {
@@ -1709,7 +1794,7 @@ func validatePlanMDBeadIDs(townRoot, rig, planPath string, v orchestrator.Workfl
 	if len(missing) == 0 {
 		return nil
 	}
-	return fmt.Errorf("plan.md cites bead ID(s) not open in bd list (run bd create first, then rewrite plan.md): %s", strings.Join(missing, ", "))
+	return fmt.Errorf("plan.md cites bead ID(s) not open/in_progress in bd list (run bd list --status=open,in_progress, then rewrite or run gt rig sync-planning %s --force): %s", rig, strings.Join(missing, ", "))
 }
 
 func maybeRepairWorkflowRequirements(townRoot, rig string, v orchestrator.WorkflowValidation) {
@@ -1830,6 +1915,16 @@ func validatePlanningBeadSet(townRoot, rig string, v orchestrator.WorkflowValida
 // countOpenMatchingBeadsHook is set by tests to avoid calling bd list.
 var countOpenMatchingBeadsHook func(townRoot, rig string, v orchestrator.WorkflowValidation) (int, error)
 
+// implementationPhaseVerifyOKHook overrides on-disk phase verify (tests only).
+var implementationPhaseVerifyOKHook func(townRoot, rig string, v orchestrator.WorkflowValidation) error
+
+func implementationPhaseVerifyOKOnDisk(townRoot, rig string, v orchestrator.WorkflowValidation) error {
+	if implementationPhaseVerifyOKHook != nil {
+		return implementationPhaseVerifyOKHook(townRoot, rig, v)
+	}
+	return orchestrator.ImplementationPhaseVerifyOK(townRoot, rig, v)
+}
+
 func validateImplementationArtifacts(townRoot, rig string, hadCmdFailure, beadCloseOK, verifyOK bool, v orchestrator.WorkflowValidation) error {
 	rigDir := rigMayorRigDir(townRoot, rig)
 	scoped := v.ForActivePhase()
@@ -1843,7 +1938,13 @@ func validateImplementationArtifacts(townRoot, rig string, hadCmdFailure, beadCl
 		openImpl = n
 	}
 	if openImpl > 0 {
-		return fmt.Errorf("%d open implement bead(s) remain — continue with Next bead (bd update → heredoc → verify → bd close); send JSON success only when none are open", openImpl)
+		next, nerr := orchestrator.NextOpenImplementBead(townRoot, rig, scoped)
+		if nerr == nil && next != nil && next.ID != "" {
+			path := orchestrator.ImplementBeadPathForID(townRoot, rig, next.ID, scoped)
+			return fmt.Errorf("%d open implement bead(s) remain — Next bead: %s (%s, `%s`). Run `bd update %s --status=in_progress`, implement, Verify, then `bd close %s`; send JSON success only when none are open",
+				openImpl, next.ID, next.Title, path, next.ID, next.ID)
+		}
+		return fmt.Errorf("%d open implement bead(s) remain — run `bd close <id>` (bead is written and verify passes), then send JSON success. Use `bd list --status=open` for bead IDs", openImpl)
 	}
 	if hadCmdFailure {
 		return fmt.Errorf("implementation step had failed commands; fix errors before completing")
@@ -1851,11 +1952,17 @@ func validateImplementationArtifacts(townRoot, rig string, hadCmdFailure, beadCl
 	if !beadCloseOK && !diskReady {
 		return fmt.Errorf("at least one successful `bd close` in %s is required before success", rigMayorRigPath(rig))
 	}
-	if strings.TrimSpace(v.QAVerifyCommand) != "" && !verifyOK {
-		return fmt.Errorf("profile verification must pass in this session before success (%s)", strings.TrimSpace(v.QAVerifyCommand))
+	phaseVerify := strings.TrimSpace(scoped.QAVerifyCommand)
+	if phaseVerify != "" && !verifyOK {
+		if openImpl == 0 && implementationPhaseVerifyOKOnDisk(townRoot, rig, scoped) == nil {
+			// Queue empty and phase verify is green on disk — do not require a manual verify CMD
+			// in this session after gt-agent restarts (verifyOK clears on new sessions).
+		} else {
+			return fmt.Errorf("profile verification must pass in this session before success (%s)", phaseVerify)
+		}
 	}
-	if openImpl == 0 && orchestrator.WorkflowUsesGo(v) {
-		if err := orchestrator.HandleImplementationPhaseVerifyFailure(townRoot, rig, v); err != nil {
+	if openImpl == 0 && orchestrator.WorkflowUsesGo(scoped) {
+		if err := orchestrator.HandleImplementationPhaseVerifyFailure(townRoot, rig, scoped); err != nil {
 			return fmt.Errorf("all implement beads are closed but compile or runtime smoke failed: %w", err)
 		}
 	}
@@ -1865,7 +1972,13 @@ func validateImplementationArtifacts(townRoot, rig string, hadCmdFailure, beadCl
 	if err := orchestrator.ValidateLayoutPythonSources(rigDir, scoped); err != nil {
 		return fmt.Errorf("invalid Python under %s: %w", scoped.LayoutRoot, err)
 	}
-	if err := orchestrator.ValidateWorkNotStubbed(rigDir, scoped); err != nil {
+	stubScope := scoped
+	if v.HasPhasedDelivery() {
+		// During phased delivery, only validate files from active + past phases.
+		// Future-phase files don't exist yet and are validated when their phase activates.
+		stubScope.RequiredFiles = v.PhasedActiveAndPastRequiredFiles()
+	}
+	if err := orchestrator.ValidateRequiredFilesNotStubbed(rigDir, stubScope); err != nil {
 		return fmt.Errorf("implementation still looks like stubs: %w", err)
 	}
 	return nil
@@ -1981,6 +2094,11 @@ func validateQACommand(cmd, rig, townRoot string, v orchestrator.WorkflowValidat
 	lower := strings.ToLower(cmd)
 	if strings.Contains(lower, "[tool_calls]") {
 		return fmt.Errorf("do not emit [TOOL_CALLS] markers — use CMD: lines only")
+	}
+	if orchestrator.WorkflowUsesGo(v) && orchestrator.PhaseIsGoModOnly(v) {
+		if strings.Contains(lower, "go test") || strings.Contains(lower, "go build") {
+			return fmt.Errorf("active phase is go.mod only — run %s (no go test until .go sources exist)", v.QAVerifyHint())
+		}
 	}
 	if townRoot != "" && rig != "" && !orchestrator.WorkflowNeedsQARuntimeSmoke(townRoot, rig, v) {
 		if strings.Contains(lower, "curl ") || strings.Contains(lower, "go run") {
@@ -2130,29 +2248,33 @@ func listOpenImplementationBeads(townRoot, rig string) ([]orchestrator.PlanBead,
 		return listOpenImplementationBeadsHook(townRoot, rig)
 	}
 	beadsDir := config.ResolveBeadsDirForRig(townRoot, rig)
-	args := beads.InjectFlatForListJSON([]string{"list", "--status=open", "--json", "--limit=0"})
-	cmd := exec.Command("bd", args...)
-	cmd.Env = withEnvKey(os.Environ(), "BEADS_DIR", beadsDir)
-	cmd.Dir = rigMayorRigDir(townRoot, rig)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return nil, fmt.Errorf("bd list open: %w: %s", err, strings.TrimSpace(string(out)))
-	}
-	out = beads.StripStdoutWarnings(out)
-	var rows []struct {
-		ID    string `json:"id"`
-		Title string `json:"title"`
-	}
-	if err := json.Unmarshal(out, &rows); err != nil {
-		return nil, fmt.Errorf("parse open beads: %w", err)
-	}
-	result := make([]orchestrator.PlanBead, 0, len(rows))
-	for _, r := range rows {
-		id := strings.TrimSpace(beads.ExtractIssueID(r.ID))
-		if id == "" {
-			continue
+	var result []orchestrator.PlanBead
+	seen := map[string]bool{}
+	for _, status := range []string{"open", "in_progress"} {
+		args := beads.InjectFlatForListJSON([]string{"list", "--status=" + status, "--json", "--limit=0"})
+		cmd := exec.Command("bd", args...)
+		cmd.Env = withEnvKey(os.Environ(), "BEADS_DIR", beadsDir)
+		cmd.Dir = rigMayorRigDir(townRoot, rig)
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			return nil, fmt.Errorf("bd list %s: %w: %s", status, err, strings.TrimSpace(string(out)))
 		}
-		result = append(result, orchestrator.PlanBead{ID: id, Title: strings.TrimSpace(r.Title)})
+		out = beads.StripStdoutWarnings(out)
+		var rows []struct {
+			ID    string `json:"id"`
+			Title string `json:"title"`
+		}
+		if err := json.Unmarshal(out, &rows); err != nil {
+			return nil, fmt.Errorf("parse %s beads: %w", status, err)
+		}
+		for _, r := range rows {
+			id := strings.TrimSpace(beads.ExtractIssueID(r.ID))
+			if id == "" || seen[id] {
+				continue
+			}
+			seen[id] = true
+			result = append(result, orchestrator.PlanBead{ID: id, Title: strings.TrimSpace(r.Title)})
+		}
 	}
 	return result, nil
 }
@@ -2167,26 +2289,8 @@ func validatePlanReviewArtifacts(townRoot, rig string, hadCmdFailure, listOpenOK
 	if !listOpenOK {
 		return fmt.Errorf("run `bd list --status=open` from %s before reporting plan review outcome", rigMayorRigPath(rig))
 	}
-	rigDir := rigMayorRigDir(townRoot, rig)
-	planPath := filepath.Join(rigDir, "plan.md")
-	info, err := os.Stat(planPath)
-	if err != nil {
-		return fmt.Errorf("plan.md missing at %s", planPath)
-	}
-	minPlan := orchestrator.EffectiveMinPlanBytes(rigDir, v)
-	if info.Size() < minPlan {
-		return fmt.Errorf("plan.md too small (%d bytes); need ≥%d (%s)", info.Size(), minPlan, v.PlanMinSizeHint())
-	}
-	open, err := listOpenImplementationBeads(townRoot, rig)
-	if err != nil {
+	if err := orchestrator.ValidatePlanningPhaseGate(townRoot, rig, "plan_review", v); err != nil {
 		return err
-	}
-	archPath := filepath.Join(rigMayorRigDir(townRoot, rig), "architecture.md")
-	if err := orchestrator.ValidatePlanBeads(open, archPath, v, rig); err != nil {
-		return fmt.Errorf("plan beads do not match architecture/profile: %w", err)
-	}
-	if err := orchestrator.ValidatePlanningDocAlignment(rigDir, v); err != nil {
-		return fmt.Errorf("SPEC/architecture/plan must agree before build: %w", err)
 	}
 	return nil
 }
@@ -2222,7 +2326,7 @@ func validateQAArtifacts(townRoot, rig, outcome string, hadCmdFailure, bdListClo
 	}
 	if sendToArchitect {
 		if !unittestOK {
-			return fmt.Errorf("architecture_failure requires green %s in this session — use outcome failure for test failures", v.QAVerifyHint())
+			return fmt.Errorf("architecture_failure requires green %s in this session — use outcome failure for test failures", scoped.QAVerifyHint())
 		}
 		if requiresQARuntimeSmoke(townRoot, rig, scoped) && qaSmokeOK {
 			return fmt.Errorf("architecture_failure requires failed runtime smoke while unit tests pass — use all_passed if smoke passed")
@@ -2240,7 +2344,7 @@ func validateQAArtifacts(townRoot, rig, outcome string, hadCmdFailure, bdListClo
 	}
 	if !sendToImpl {
 		if !unittestOK {
-			return fmt.Errorf("run `%s` from %s before reporting QA outcome", v.QAVerifyHint(), rigMayorRigPath(rig))
+			return fmt.Errorf("run `%s` from %s before reporting QA outcome", scoped.QAVerifyHint(), rigMayorRigPath(rig))
 		}
 		if err := validateRequiredWorkFiles(townRoot, rig, scoped); err != nil {
 			return err
@@ -2262,7 +2366,7 @@ func validateQAArtifacts(townRoot, rig, outcome string, hadCmdFailure, bdListClo
 	}
 	switch outcome {
 	case "all_passed", "task_passed":
-		openImpl, err := countOpenMatchingBeads(townRoot, rig, v)
+		openImpl, err := countOpenMatchingBeads(townRoot, rig, scoped)
 		if err != nil {
 			return err
 		}
@@ -2362,7 +2466,7 @@ func validateWebStaticReferences(townRoot, rig string, v orchestrator.WorkflowVa
 func webHTMLRequiredFiles(v orchestrator.WorkflowValidation) []string {
 	seen := map[string]bool{}
 	var out []string
-	for _, f := range append(append([]string(nil), v.RequiredFiles...), v.UnionRequiredFiles()...) {
+	for _, f := range v.RequiredFilesForSmokeScope() {
 		f = filepath.ToSlash(strings.TrimSpace(f))
 		if f == "" || seen[f] || !strings.HasSuffix(strings.ToLower(f), ".html") || !strings.Contains(f, "/web/") {
 			continue
@@ -2463,6 +2567,11 @@ func validateRequiredWorkFiles(townRoot, rig string, v orchestrator.WorkflowVali
 		if info.Size() == 0 {
 			return fmt.Errorf("%s is empty", path)
 		}
+		if strings.HasSuffix(filepath.ToSlash(rel), "/go.mod") || rel == "go.mod" {
+			if err := orchestrator.ValidateGoModFileForBeadClose(rigDir, v); err != nil {
+				return err
+			}
+		}
 	}
 	return nil
 }
@@ -2495,8 +2604,8 @@ func validateDesignArtifacts(townRoot, rig string, writtenThisRun bool, v orches
 			return fmt.Errorf("implementation file %q must not exist in mayor/rig/ (only architecture.md)", name)
 		}
 	}
-	if err := orchestrator.ValidateArchitectureDocAlignment(rigDir, v); err != nil {
-		return fmt.Errorf("align architecture.md with SPEC.md before planning: %w", err)
+	if err := orchestrator.ValidatePlanningPhaseGate(townRoot, rig, "design", v); err != nil {
+		return err
 	}
 	return nil
 }
@@ -2544,7 +2653,7 @@ func buildOrchestratedSystemPrompt(task *orchestrator.Task, townRoot string) str
 
 func orchestratorPromptVars(task *orchestrator.Task, townRoot string) map[string]string {
 	vars := map[string]string{"rig": task.Rig}
-	v := task.Validation.WithDefaults()
+	v := taskValidation(townRoot, task)
 	for k, val := range v.PromptVars() {
 		vars[k] = val
 	}

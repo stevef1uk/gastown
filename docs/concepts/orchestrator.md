@@ -103,7 +103,7 @@ gt feed --plain                    # workflow_start / workflow_transition events
 tail -f ~/gt/logs/orchestrator.log
 ```
 
-Optional: **Agent console** (`gt-agent-console`, default `http://127.0.0.1:8081`) lists the orchestrator, rig agents (Architect, QA, Polecat pipeline), workflow badges on the active step, and tails each role’s `typescript` log.
+Optional: **Agent console** (`gt-agent-console`, default `http://127.0.0.1:8091`) lists the orchestrator, rig agents (Architect, QA, Polecat pipeline), workflow badges on the active step, and tails each role’s `typescript` log. Override with `--port` / `--bind` or `GT_AGENT_CONSOLE_PORT` / `GT_AGENT_CONSOLE_BIND`.
 
 ### 3. Tail the right session per state
 
@@ -401,6 +401,39 @@ workflow is started with `--rig testgt2`.
 finish a bead). **Failure** on implementation loops in `implementation` (see `rig-flow.yaml`).
 
 ## Troubleshooting
+
+### Rig-flow stuck (daemon self-heal)
+
+When a rig-flow pipeline stops making progress (same FSM state for a long time, flat implement
+beads, polecat down during `implementation`, or `pending_rework` after a timeout), the **daemon
+workflow stuck monitor** may repair it automatically on the 45s pipeline keepalive tick.
+
+1. Confirm orchestrator and daemon are up: `gt orchestrator status`, `gt daemon status`.
+2. Inspect workflow state:
+   ```bash
+   gt mayor workflow status
+   cat ~/gt/orchestrator/instances.json
+   ```
+3. Watch daemon log for repairs:
+   ```bash
+   tail -f ~/gt/daemon/daemon.log | grep workflow-stuck
+   ```
+   A line like `[workflow-stuck] testgt3: repaired (...)` means sync-planning, bead prune, rig-bead
+   fix, or `plan.md` Integration contract patch ran.
+
+Manual equivalents if you need to force recovery immediately:
+
+```bash
+gt doctor --fix
+gt rig sync-planning <rig> --force
+gt up --orchestrator-only
+```
+
+Tune or disable the monitor with `GT_WORKFLOW_STUCK_*` env vars (see
+[Orchestrator (technical) — Workflow stuck monitor](../design/orchestrator.md#workflow-stuck-monitor)).
+Set `GT_WORKFLOW_STUCK_MONITOR=0` on the daemon process to turn it off.
+
+Fingerprint state lives in `~/gt/orchestrator/workflow-stuck-state.json`.
 
 ### QA never gets a task (`ORCHESTRATED` only, no `Task wf=...`)
 

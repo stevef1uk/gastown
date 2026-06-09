@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/steveyegge/gastown/internal/orchestrator"
+	rigpkg "github.com/steveyegge/gastown/internal/rig"
 )
 
 // writesGoModuleFilesViaHeredoc reports heredoc/redirect writes to go.mod or go.sum.
@@ -101,6 +102,9 @@ func isLLMPlaceholderCommand(cmd string) bool {
 }
 
 func validateProjectSetupCommand(cmd, rig string, v orchestrator.WorkflowValidation) error {
+	if err := rigpkg.RejectMayorRigRootShellCommand(cmd, v.LayoutRoot); err != nil {
+		return err
+	}
 	lower := strings.ToLower(cmd)
 	if isLLMPlaceholderCommand(cmd) {
 		return fmt.Errorf("do not run markdown example placeholders — use real package names and paths")
@@ -233,15 +237,8 @@ func validateProjectSetupArtifacts(townRoot, rig string, hadCmdFailure, verifyOK
 	if _, err := os.Stat(goMod); err != nil {
 		return fmt.Errorf("go.mod missing at %s after setup", goMod)
 	}
-	if len(v.RequiredFiles) > 0 {
-		open, err := orchestrator.ListOpenImplementBeads(townRoot, rig, v)
-		if err != nil {
-			return fmt.Errorf("list implement beads: %w", err)
-		}
-		archPath := filepath.Join(rigMayorRigDir(townRoot, rig), "architecture.md")
-		if err := orchestrator.ValidatePlanBeads(open, archPath, v, rig); err != nil {
-			return fmt.Errorf("bead set must match required_files exactly (bd delete junk, one bead per path): %w", err)
-		}
+	if err := orchestrator.ValidatePlanningPhaseGate(townRoot, rig, "project_setup", v); err != nil {
+		return err
 	}
 	return nil
 }
@@ -267,8 +264,9 @@ func validateGoImplementationCommand(cmd, townRoot, rig, mayorRigDir, activeBead
 			}
 		}
 	}
+	activeBead, _ = orchestrator.ResolveImplementBeadForVerify(townRoot, rig, activeBead, v)
 	beadPath := orchestrator.ImplementBeadPathForID(townRoot, rig, activeBead, v)
-	verifyHint := orchestrator.ImplementationVerifyCommandForBead(v, mayorRigDir, beadPath)
+	verifyHint := orchestrator.AgentShellVerifyCommand(rig, v, mayorRigDir, beadPath)
 	onGoModBead := strings.HasSuffix(filepath.ToSlash(beadPath), "go.mod")
 	onServerMainBead := orchestrator.IsServerMainImplementBead(beadPath)
 	if strings.Contains(lower, "go run") || strings.Contains(lower, "curl ") {
@@ -276,13 +274,31 @@ func validateGoImplementationCommand(cmd, townRoot, rig, mayorRigDir, activeBead
 			return fmt.Errorf("for this bead use compile verify only — use: %s", verifyHint)
 		}
 	}
+	if orchestrator.IsFrontendImplementPath(beadPath) && strings.Contains(lower, "go test") {
+		return fmt.Errorf("frontend bead %s: go test does not apply to web assets — use EDIT:/WRITE: on the file, then bd close after the artifact validates", beadPath)
+	}
+	if strings.Contains(lower, "go test") && isFrontendGoTestCommand(lower) {
+		return fmt.Errorf("go test does not apply to web static assets (./web/...) — use EDIT:/WRITE: on CSS/JS/HTML files, then bd close when the artifact validates")
+	}
 	if isBeadCloseCommand(cmd) && !verifyOK {
-		if orchestrator.IsFrontendImplementPath(beadPath) && verifyHint == "" {
-			if err := orchestrator.ValidateBeadArtifactOnDisk(mayorRigDir, beadPath, v); err == nil {
-				return nil
+		if orchestrator.IsFrontendImplementPath(beadPath) {
+			if err := orchestrator.ValidateBeadArtifactOnDisk(mayorRigDir, beadPath, v); err != nil {
+				return fmt.Errorf("cannot bd close %s: %w — fix the file with EDIT:/WRITE: first", activeBead, err)
 			}
+			// Frontend beads use post-write artifact validation, not go test. Allow close when the
+			// artifact is valid (verifyOK may be cleared by deferred HTTP contract notes).
+			return nil
 		}
 		return fmt.Errorf("run green verify before bd close: %s (in this session, since verify clears on restart)", verifyHint)
 	}
 	return nil
+}
+
+func isFrontendGoTestCommand(lower string) bool {
+	for _, needle := range []string{"./web/", "./web/...", " ./web/", "go test ./web", "go test -count=1 ./web"} {
+		if strings.Contains(lower, needle) {
+			return true
+		}
+	}
+	return false
 }

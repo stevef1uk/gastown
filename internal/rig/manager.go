@@ -565,6 +565,11 @@ func (m *Manager) AddRig(opts AddRigOptions) (*Rig, error) {
 	} else {
 		fmt.Printf("   ✓ Configured mayor/rig .gitignore (orchestrator checkpoint hygiene)\n")
 	}
+	if removed, err := ResetMayorRigCloneState(mayorRigPath); err != nil {
+		fmt.Printf("  Warning: Could not reset mayor/rig clone state: %v\n", err)
+	} else if len(removed) > 0 {
+		fmt.Printf("   ✓ Reset mayor/rig clone state (%d stale items removed)\n", len(removed))
+	}
 
 	// Create server-side database and ensure metadata.json is correctly
 	// configured BEFORE any bd commands. This prevents bd from

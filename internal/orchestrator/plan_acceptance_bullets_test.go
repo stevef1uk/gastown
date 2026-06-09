@@ -15,11 +15,23 @@ func TestPlanAcceptanceBullets_sqliteSchemaPath(t *testing.T) {
 	for _, want := range []string{
 		"InitSchema",
 		"CREATE TABLE",
-		"before `internal/store/store.go`",
+		"before `linkshelf/internal/store/store.go`",
 	} {
 		if !strings.Contains(joined, want) {
 			t.Fatalf("missing %q in:\n%s", want, joined)
 		}
+	}
+}
+
+func TestPlanAcceptanceBullets_noBareModulePathsWithLayoutRoot(t *testing.T) {
+	t.Parallel()
+	v := WorkflowValidation{
+		LayoutRoot:    "linkshelf",
+		RequiredFiles: []string{"linkshelf/internal/store/schema.go", "linkshelf/internal/store/store.go"},
+	}
+	doc := strings.Join(planAcceptanceBullets("linkshelf/internal/store/schema.go", v), "\n")
+	if issues := checkDocLayoutPathPrefix("plan.md", doc, v); len(issues) > 0 {
+		t.Fatalf("layout path lint: %v", issues)
 	}
 }
 
@@ -34,10 +46,10 @@ func TestPlanAcceptanceBullets_storeGoUsesDefaultBullets(t *testing.T) {
 	if strings.Contains(joined, "CREATE TABLE") || strings.Contains(joined, "before `internal/store/store.go`") {
 		t.Fatalf("store.go should not get schema-bead-only bullets:\n%s", joined)
 	}
-	if !strings.Contains(joined, "go test") {
-		t.Fatal("expected correlated test bullet for store.go")
+	if strings.Contains(joined, "store_test.go") {
+		t.Fatalf("MVP required_files has no *_test.go — plan must not mandate correlated test path:\n%s", joined)
 	}
 	if !strings.Contains(joined, ":memory:") {
-		t.Fatalf("expected store test isolation bullet:\n%s", joined)
+		t.Fatalf("expected store API bullet:\n%s", joined)
 	}
 }

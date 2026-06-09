@@ -2,7 +2,6 @@ package orchestrator
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -51,27 +50,6 @@ func IsHTTPRoutingGuidanceBead(relPath string) bool {
 
 var htmlAttrRefContractRE = regexp.MustCompile(`(?i)\b(src|href)\s*=\s*["']([^"'#][^"']*)["']`)
 
-// ValidateHTTPContract checks HTML refs and handler source against architecture static routing.
-func ValidateHTTPContract(townRoot, rig string, v WorkflowValidation) error {
-	if !WorkflowNeedsRuntimeSmoke(townRoot, rig, v) {
-		return nil
-	}
-	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
-	contract := HTTPContractFromRig(townRoot, rig, v)
-	var issues []string
-	issues = append(issues, validateWebHTMLContract(rigDir, v, contract.Static)...)
-	if path := firstHandlerImplementPath(v); path != "" {
-		body, err := os.ReadFile(filepath.Join(rigDir, filepath.FromSlash(path)))
-		if err == nil {
-			issues = append(issues, handlerContractIssues(townRoot, rig, string(body), v)...)
-		}
-	}
-	if len(issues) == 0 {
-		return nil
-	}
-	return fmt.Errorf("%s", strings.Join(issues, "; "))
-}
-
 func firstHandlerImplementPath(v WorkflowValidation) string {
 	for _, rel := range append(append([]string(nil), v.RequiredFiles...), v.UnionRequiredFiles()...) {
 		if IsHTTPHandlerImplementPath(rel) {
@@ -79,43 +57,6 @@ func firstHandlerImplementPath(v WorkflowValidation) string {
 		}
 	}
 	return ""
-}
-
-func validateWebHTMLContract(rigDir string, v WorkflowValidation, mapping WebStaticMapping) []string {
-	var issues []string
-	for _, htmlRel := range webHTMLPaths(v) {
-		abs := filepath.Join(rigDir, filepath.FromSlash(htmlRel))
-		body, err := os.ReadFile(abs)
-		if err != nil {
-			continue
-		}
-		webRoot := webRootDir(rigDir, htmlRel, v)
-		for _, m := range htmlAttrRefContractRE.FindAllStringSubmatch(string(body), -1) {
-			if len(m) < 3 {
-				continue
-			}
-			ref := strings.TrimSpace(m[2])
-			if ref == "" || strings.HasPrefix(ref, "#") || strings.HasPrefix(ref, "http") || strings.HasPrefix(ref, "/api/") {
-				continue
-			}
-			lower := strings.ToLower(ref)
-			if !strings.HasSuffix(lower, ".js") && !strings.HasSuffix(lower, ".css") {
-				continue
-			}
-			if hint := mapping.StaticRefMismatchHint(ref); hint != "" {
-				issues = append(issues, fmt.Sprintf("%s: %s", htmlRel, hint))
-				continue
-			}
-			disk := mapping.WebDiskPathForURLRef(webRoot, htmlRel, ref)
-			if disk == "" {
-				continue
-			}
-			if info, err := os.Stat(disk); err != nil || info.IsDir() {
-				issues = append(issues, fmt.Sprintf("%s references %q but %s is missing under web/", htmlRel, ref, filepath.Base(disk)))
-			}
-		}
-	}
-	return issues
 }
 
 func handlerContractIssues(townRoot, rig, body string, v WorkflowValidation) []string {

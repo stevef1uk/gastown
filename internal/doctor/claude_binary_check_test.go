@@ -64,6 +64,7 @@ func writeFakeClaude(t *testing.T, dir string, script string, batScript string) 
 }
 
 func TestClaudeBinaryCheck_HermeticSuccess(t *testing.T) {
+	deps.ResetClaudeCodeCheckCache()
 	fakeDir := t.TempDir()
 	writeFakeClaude(t, fakeDir,
 		fmt.Sprintf("#!/bin/sh\necho '%s (Claude Code)'\n", deps.RecommendedClaudeCodeVersion),
@@ -89,6 +90,7 @@ func TestClaudeBinaryCheck_HermeticSuccess(t *testing.T) {
 }
 
 func TestClaudeBinaryCheck_NotInPath(t *testing.T) {
+	deps.ResetClaudeCodeCheckCache()
 	emptyDir := t.TempDir()
 	t.Setenv("PATH", emptyDir)
 
@@ -105,6 +107,7 @@ func TestClaudeBinaryCheck_NotInPath(t *testing.T) {
 }
 
 func TestClaudeBinaryCheck_TooOld(t *testing.T) {
+	deps.ResetClaudeCodeCheckCache()
 	fakeDir := t.TempDir()
 	writeFakeClaude(t, fakeDir,
 		"#!/bin/sh\necho '1.0.62 (Claude Code)'\n",
@@ -132,6 +135,7 @@ func TestClaudeBinaryCheck_TooOld(t *testing.T) {
 }
 
 func TestClaudeBinaryCheck_OldButOK(t *testing.T) {
+	deps.ResetClaudeCodeCheckCache()
 	fakeDir := t.TempDir()
 	writeFakeClaude(t, fakeDir,
 		"#!/bin/sh\necho '2.0.25 (Claude Code)'\n",
@@ -157,6 +161,7 @@ func TestClaudeBinaryCheck_OldButOK(t *testing.T) {
 }
 
 func TestClaudeBinaryCheck_Unparseable(t *testing.T) {
+	deps.ResetClaudeCodeCheckCache()
 	fakeDir := t.TempDir()
 	writeFakeClaude(t, fakeDir,
 		"#!/bin/sh\necho 'some garbage output'\n",

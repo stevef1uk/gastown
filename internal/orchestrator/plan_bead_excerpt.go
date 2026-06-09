@@ -7,7 +7,7 @@ import (
 )
 
 // PlanExcerptForBead returns the ### bead section from plan.md for the given path, if present.
-func PlanExcerptForBead(townRoot, rig, beadPath string) string {
+func PlanExcerptForBead(townRoot, rig, beadPath string, v WorkflowValidation) string {
 	beadPath = filepath.ToSlash(strings.TrimSpace(beadPath))
 	if beadPath == "" {
 		return ""
@@ -16,6 +16,7 @@ func PlanExcerptForBead(townRoot, rig, beadPath string) string {
 	if err != nil {
 		return ""
 	}
+	exactOnly := RequiresExactImplementPaths(v)
 	lines := strings.Split(string(data), "\n")
 	var section []string
 	inSection := false
@@ -26,8 +27,8 @@ func PlanExcerptForBead(townRoot, rig, beadPath string) string {
 			}
 			rest := strings.TrimPrefix(line, "### ")
 			if idx := strings.Index(rest, ": "); idx >= 0 {
-				pathPart := strings.TrimSpace(rest[idx+2:])
-				if pathPart == beadPath || strings.HasSuffix(pathPart, "/"+filepath.Base(beadPath)) {
+				pathPart := filepath.ToSlash(strings.TrimSpace(rest[idx+2:]))
+				if planExcerptPathMatches(beadPath, pathPart, exactOnly) {
 					inSection = true
 					section = append(section, line)
 					continue
@@ -51,4 +52,14 @@ func PlanExcerptForBead(townRoot, rig, beadPath string) string {
 		return out[:maxPlanExcerpt] + "\n…"
 	}
 	return out
+}
+
+func planExcerptPathMatches(beadPath, planPath string, exactOnly bool) bool {
+	if planPath == beadPath {
+		return true
+	}
+	if exactOnly {
+		return false
+	}
+	return strings.HasSuffix(planPath, "/"+filepath.Base(beadPath))
 }

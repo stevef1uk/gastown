@@ -82,6 +82,35 @@ func parseAPISmokeSpecText(text string, v WorkflowValidation) APISmokeSpec {
 	return spec
 }
 
+// specHTTPRouteRow is a method+path pair from a markdown API table (path params preserved).
+type specHTTPRouteRow struct {
+	Method string
+	Path   string
+}
+
+// parseSpecHTTPRouteTable extracts HTTP routes from SPEC-style tables without stripping {id}/{file}.
+func parseSpecHTTPRouteTable(specDoc string) []specHTTPRouteRow {
+	var out []specHTTPRouteRow
+	seen := map[string]bool{}
+	for _, m := range apiTableRowRE.FindAllStringSubmatch(specDoc, -1) {
+		if len(m) < 3 {
+			continue
+		}
+		method := strings.ToUpper(strings.TrimSpace(m[1]))
+		path := strings.Trim(strings.TrimSpace(m[2]), " `'\"")
+		if path == "" || !strings.HasPrefix(path, "/") {
+			continue
+		}
+		key := method + " " + path
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		out = append(out, specHTTPRouteRow{Method: method, Path: path})
+	}
+	return out
+}
+
 func normalizeSmokePath(path string) string {
 	path = strings.TrimSpace(path)
 	path = strings.Trim(path, "`\"'")

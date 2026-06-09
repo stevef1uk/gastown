@@ -28,3 +28,20 @@ func PipelineSessionNeedsRestart(ctx context.Context, p Provider, townRoot, sess
 	}
 	return !GTAgentHasFlagInSession(townRoot, sessionID, "--orchestrated")
 }
+
+// RestartStalePipelineSession stops sessionID when PipelineSessionNeedsRestart is true.
+// Returns true if the session was stopped (caller should start a fresh session).
+func RestartStalePipelineSession(ctx context.Context, p Provider, townRoot, sessionID string, wantOrchestrated bool) bool {
+	if p == nil || sessionID == "" {
+		return false
+	}
+	running, err := p.Exists(ctx, sessionID)
+	if err != nil || !running {
+		return false
+	}
+	if !PipelineSessionNeedsRestart(ctx, p, townRoot, sessionID, wantOrchestrated) {
+		return false
+	}
+	_ = p.Stop(ctx, sessionID, false)
+	return true
+}

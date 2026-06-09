@@ -197,3 +197,151 @@ func TestImplementationProgressPath_underRigQA(t *testing.T) {
 		t.Fatalf("path = %q want %q", got, want)
 	}
 }
+
+func TestRejectRedundantImplementEditAfterVerify_allowsEditWhenOnlyPersistedMilestone(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	rig := "mockrig"
+	mayor := filepath.Join(dir, rig, "mayor", "rig")
+	storeDir := filepath.Join(mayor, "linkshelf", "internal", "store")
+	if err := os.MkdirAll(storeDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(mayor, "linkshelf", "go.mod"), []byte("module linkshelf\n\ngo 1.22\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(storeDir, "schema.go"), []byte("package store\n\nfunc Schema() string { return \"ok\" }\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(storeDir, "schema_test.go"), []byte("package store\n\nfunc TestSchema(t *testing.T) {}\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	runner := newStateRunner(&orchestrator.Task{
+		WorkflowID: "wf-1",
+		State:      "implementation",
+		Hooks:      orchestrator.StateHooks{Track: "implementation"},
+	}, dir, rig)
+	runner.v = orchestrator.WorkflowValidation{
+		LayoutRoot:                 "linkshelf",
+		TestRunner:                 "go",
+		MinImplementationFileBytes: 1,
+		MinSubstantiveLines:        1,
+		RequiredFiles:              []string{"linkshelf/internal/store/schema.go"},
+	}
+	runner.implProgress = newImplementationProgress("wf-1", "implementation", rig)
+	runner.implProgress.mark(implVerifyKey("te-g7q"))
+	runner.track.activeBead = "te-g7q"
+	runner.track.activeBeadPath = "linkshelf/internal/store/schema.go"
+	runner.track.verifyOK = false
+	if err := runner.rejectRedundantImplementEditAfterVerify("linkshelf/internal/store/schema_test.go"); err != nil {
+		t.Fatalf("edit should be allowed without session verifyOK: %v", err)
+	}
+	runner.track.verifyOK = true
+	if err := runner.rejectRedundantImplementEditAfterVerify("linkshelf/internal/store/schema_test.go"); err == nil {
+		t.Fatal("edit should be blocked when verifyOK is true this session")
+	}
+}
+
+func TestClearStaleImplementationVerifyMilestoneOnResume(t *testing.T) {
+	if _, err := exec.LookPath("go"); err != nil {
+		t.Skip("go toolchain not available")
+	}
+	dir := t.TempDir()
+	rig := "mockrig"
+	wf := "wf-stale-milestone"
+	mayor := filepath.Join(dir, rig, "mayor", "rig")
+	storeDir := filepath.Join(mayor, "linkshelf", "internal", "store")
+	if err := os.MkdirAll(storeDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(mayor, "linkshelf/go.mod"), []byte("module linkshelf\n\ngo 1.22\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(storeDir, "schema.go"), []byte("package store\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	// Broken test — verify must fail on resume.
+	if err := os.WriteFile(filepath.Join(storeDir, "schema_test.go"), []byte("package store\n\nfunc TestSchema(t *testing.T) { t.Fatal(\"fail\") }\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	p := newImplementationProgress(wf, "implementation", rig)
+	p.mark(implVerifyKey("te-g7q"))
+	p.ActiveBead = "te-g7q"
+	p.ActiveBeadPath = "linkshelf/internal/store/schema.go"
+	if err := saveImplementationProgress(dir, rig, p); err != nil {
+		t.Fatal(err)
+	}
+	runner := newStateRunner(&orchestrator.Task{
+		WorkflowID: wf,
+		State:      "implementation",
+		Hooks:      orchestrator.StateHooks{Track: "implementation"},
+	}, dir, rig)
+	runner.v = orchestrator.WorkflowValidation{
+		LayoutRoot:      "linkshelf",
+		TestRunner:      "go",
+		QAVerifyCommand: "cd linkshelf && go test ./...",
+		RequiredFiles:   []string{"linkshelf/internal/store/schema.go", "linkshelf/internal/store/schema_test.go"},
+	}
+	runner.track.activeBead = "te-g7q"
+	runner.track.activeBeadPath = "linkshelf/internal/store/schema.go"
+	runner.implProgress = loadImplementationProgress(dir, rig, wf, "implementation")
+	runner.clearStaleImplementationVerifyMilestoneOnResume()
+	got := loadImplementationProgress(dir, rig, wf, "implementation")
+	if got == nil || got.done(implVerifyKey("te-g7q")) {
+		t.Fatalf("stale verify milestone should be cleared, got %+v", got)
+	}
+	if runner.track.verifyOK {
+		t.Fatal("verifyOK must stay false when verify is red on resume")
+	}
+}
+
+func TestImplementationTrack_clearsPersistedVerifyOnFailedVerifyCmd(t *testing.T) {
+	dir := t.TempDir()
+	rig := "mockrig"
+	wf := "wf-fail"
+	mayor := filepath.Join(dir, rig, "mayor", "rig")
+	storeDir := filepath.Join(mayor, "linkshelf", "internal", "store")
+	if err := os.MkdirAll(storeDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(mayor, "linkshelf/go.mod"), []byte("module linkshelf\n\ngo 1.22\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(storeDir, "schema.go"), []byte("package store\n\nfunc Schema() string { return \"ok\" }\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(storeDir, "schema_test.go"), []byte("package store\n\nfunc TestSchema(t *testing.T) { t.Fatal(\"fail\") }\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	p := newImplementationProgress(wf, "implementation", rig)
+	p.mark(implVerifyKey("te-g7q"))
+	p.ActiveBead = "te-g7q"
+	p.ActiveBeadPath = "linkshelf/internal/store/schema.go"
+	if err := saveImplementationProgress(dir, rig, p); err != nil {
+		t.Fatal(err)
+	}
+	task := &orchestrator.Task{
+		WorkflowID: wf,
+		State:      "implementation",
+		Hooks:      orchestrator.StateHooks{Track: "implementation"},
+	}
+	r := newStateRunner(task, dir, rig)
+	r.v = orchestrator.WorkflowValidation{
+		LayoutRoot:      "linkshelf",
+		TestRunner:      "go",
+		QAVerifyCommand: "cd linkshelf && go test ./...",
+		RequiredFiles:   []string{"linkshelf/internal/store/schema.go", "linkshelf/internal/store/schema_test.go"},
+	}
+	r.implProgress = loadImplementationProgress(dir, rig, wf, "implementation")
+	r.track.activeBead = "te-g7q"
+	r.track.activeBeadPath = "linkshelf/internal/store/schema.go"
+	r.track.verifyOK = false
+	trackHandlers["implementation"](r, "cd mockrig/mayor/rig/linkshelf && go test -count=1 ./internal/store/...", errFake{})
+	if r.track.verifyOK {
+		t.Fatal("verifyOK should stay false after failed verify command")
+	}
+	got := loadImplementationProgress(dir, rig, wf, "implementation")
+	if got == nil || got.done(implVerifyKey("te-g7q")) {
+		t.Fatalf("persisted verify milestone should clear on failed verify, got %+v", got)
+	}
+}

@@ -20,12 +20,14 @@ func GoSourceBytesValid(src []byte) error {
 }
 
 // ImplementGoFileCorrupted reports whether on-disk implement Go is missing, marker-only, or does not parse.
-func ImplementGoFileCorrupted(townRoot, rig, relPath string) bool {
+func ImplementGoFileCorrupted(townRoot, rig, relPath, layoutRoot string) bool {
 	relPath = filepath.ToSlash(strings.TrimSpace(relPath))
 	if relPath == "" || !strings.HasSuffix(relPath, ".go") {
 		return false
 	}
-	abs := filepath.Join(townRoot, rig, "mayor", "rig", filepath.FromSlash(relPath))
+	mayorRig := filepath.Join(townRoot, rig, "mayor", "rig")
+	resolved := ResolveImplementRelPathOnDisk(mayorRig, relPath, layoutRoot)
+	abs := filepath.Join(mayorRig, filepath.FromSlash(resolved))
 	data, err := os.ReadFile(abs)
 	if err != nil {
 		return false

@@ -120,7 +120,7 @@ Call schema.InitSchema from main, then store.List and store.Create.
 `
 	plan := `# Plan
 ## Integration contract
-main calls InitSchema; handlers use store.List.
+main calls InitSchema; registers GET /api/links; handlers use store.List and store.Create.
 ## Bead map
 ### te-1: linkshelf/cmd/server/main.go
 - Acceptance: wire store.List
@@ -166,6 +166,69 @@ module linkshelf
 	}
 	if !strings.Contains(err.Error(), "internal/store/schema.go") || !strings.Contains(err.Error(), "linkshelf/internal/store/schema.go") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestValidatePlanMDBeadPathAlignment_rejectsFlatPathWithRealBeadID(t *testing.T) {
+	town := t.TempDir()
+	rig := "testgt3"
+	rigDir := filepath.Join(town, rig, "mayor", "rig")
+	beadsDir := filepath.Join(town, rig, ".beads")
+	for _, d := range []string{rigDir, beadsDir} {
+		if err := os.MkdirAll(d, 0755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	plan := "### te-9oq: linkshelf/handlers.go\n- Scope: wrong flat path\n"
+	if err := os.WriteFile(filepath.Join(rigDir, "plan.md"), []byte(plan), 0644); err != nil {
+		t.Fatal(err)
+	}
+	// Simulate open bead with correct path (no bd required — validation reads titles from ListOpenImplementBeads)
+	// Use WritePlanningPlanMD path: we need beads in DB or mock ListOpenImplementBeads — use integration with bd if available
+	v := WorkflowValidation{
+		LayoutRoot:        "linkshelf",
+		BeadTitleContains: "Implement linkshelf/",
+		RequiredFiles:     []string{"linkshelf/internal/api/handlers.go"},
+	}
+	// Without bd, skip — test checkPlanBeadMapExactPaths path only
+	err := ValidatePlanMDBeadPathAlignment(town, rig, v)
+	if err == nil {
+		t.Fatal("expected error for flat plan path")
+	}
+	if !strings.Contains(err.Error(), "linkshelf/handlers.go") {
+		t.Fatalf("unexpected: %v", err)
+	}
+}
+
+func TestValidateArchitectureDocAlignment_allowsPackageRefsWithoutBarePathLint(t *testing.T) {
+	dir := t.TempDir()
+	spec := `# Spec
+| GET | /api/links | 200 | — |
+## Store
+` + "```go\nfunc List() ([]Link, error)\nfunc Create(title, url string) (Link, error)\n```" + `
+module linkshelf
+`
+	arch := `# Architecture
+## Integration
+1. linkshelf/cmd/server/main.go opens linkshelf.db, calls schema.InitSchema, assigns store.DB.
+2. Handlers use store.List and store.Create.
+3. Run ` + "`cd linkshelf && go run ./cmd/server`" + ` for smoke.
+## Files
+- linkshelf/internal/store/schema.go
+- linkshelf/internal/store/store.go
+- linkshelf/cmd/server/main.go
+`
+	for name, body := range map[string]string{"SPEC.md": spec, "architecture.md": arch} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	v := WorkflowValidation{
+		LayoutRoot:    "linkshelf",
+		RequiredFiles: []string{"linkshelf/cmd/server/main.go", "linkshelf/internal/store/store.go"},
+	}
+	if err := ValidateArchitectureDocAlignment(dir, v); err != nil {
+		t.Fatalf("package refs must not trigger bare internal/ or cmd/ path lint: %v", err)
 	}
 }
 
@@ -225,6 +288,41 @@ module linkshelf
 	}
 }
 
+func TestValidatePlanningDocAlignment_rejectsFlattenedBeadMapPaths(t *testing.T) {
+	dir := t.TempDir()
+	spec := `# Spec
+| GET | /api/links | 200 | — |
+module linkshelf
+`
+	arch := `Routes GET /api/links.`
+	plan := `# Plan
+## Integration contract
+Registers GET /api/links on DefaultServeMux.
+
+## Bead map
+### te-1: Implement linkshelf/schema.go per architecture
+- Scope: schema
+### te-2: Implement linkshelf/main.go per architecture
+- Scope: main
+`
+	for name, body := range map[string]string{"SPEC.md": spec, "architecture.md": arch, "plan.md": plan} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	v := WorkflowValidation{
+		LayoutRoot:    "linkshelf",
+		RequiredFiles: []string{"linkshelf/internal/store/schema.go", "linkshelf/cmd/server/main.go"},
+	}
+	err := ValidatePlanningDocAlignment(dir, v)
+	if err == nil {
+		t.Fatal("expected reject flattened plan bead map paths")
+	}
+	if !strings.Contains(err.Error(), "linkshelf/schema.go") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestValidatePlanningDocAlignment_passesAlignedDocs(t *testing.T) {
 	dir := t.TempDir()
 	spec := `# Spec
@@ -237,7 +335,7 @@ module linkshelf
 	arch := `Routes: GET/POST /api/links. Store: List, Create.`
 	plan := `# Plan
 ## Integration contract
-Entrypoint imports store; registers GET/POST /api/links; exports List, Create.
+Entrypoint imports store; registers GET /api/links and POST /api/links; exports List, Create.
 
 ## Bead map
 ### fi-1: linkshelf/cmd/server/main.go

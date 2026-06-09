@@ -51,6 +51,56 @@ func TestRigFlowQARuntimeSmokeBlock_goNoAPI(t *testing.T) {
 	}
 }
 
+func TestRigFlowQARuntimeSmokeBlock_phasedBackendCoreSkipsGoRun(t *testing.T) {
+	dir := t.TempDir()
+	rig := "rig"
+	rigDir := filepath.Join(dir, rig, "mayor", "rig")
+	if err := os.MkdirAll(rigDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	arch := "| GET | /api/links | list |\n| POST | /api/links | create |\n"
+	if err := os.WriteFile(filepath.Join(rigDir, "architecture.md"), []byte(arch), 0644); err != nil {
+		t.Fatal(err)
+	}
+	v := WorkflowValidation{
+		LayoutRoot:         "linkshelf",
+		ActivePhaseIDField: "backend-core",
+		QAVerifyCommand:    "cd linkshelf && go test ./...",
+		RequiredFiles: []string{
+			"linkshelf/go.mod",
+			"linkshelf/internal/store/schema.go",
+			"linkshelf/internal/store/store.go",
+			"linkshelf/cmd/server/main.go",
+			"linkshelf/web/index.html",
+		},
+		DeliveryPhases: []DeliveryPhase{
+			{
+				ID: "backend-core",
+				RequiredFiles: []string{
+					"linkshelf/go.mod",
+					"linkshelf/internal/store/schema.go",
+					"linkshelf/internal/store/store.go",
+				},
+				QAVerifyCommand: "cd linkshelf && go test ./internal/store",
+			},
+			{
+				ID: "server-setup",
+				RequiredFiles: []string{
+					"linkshelf/cmd/server/main.go",
+					"linkshelf/web/index.html",
+				},
+			},
+		},
+	}
+	block := RigFlowQARuntimeSmokeBlock(dir, rig, v)
+	if strings.Contains(block, "go run ./cmd/server") {
+		t.Fatalf("backend-core QA block must not require go run: %q", block)
+	}
+	if !strings.Contains(block, "skip") || !strings.Contains(block, "go test") {
+		t.Fatalf("want library-only QA guidance: %q", block)
+	}
+}
+
 func TestWorkflowNeedsQARuntimeSmoke_pythonWithoutAPI(t *testing.T) {
 	v := WorkflowValidation{
 		QAVerifyCommand: "python3 -m pytest -q",

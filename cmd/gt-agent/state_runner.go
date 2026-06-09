@@ -69,7 +69,7 @@ func (r *stateRunner) qaReworkWriteScope() *orchestrator.ImplementWriteScope {
 }
 
 func newStateRunner(task *orchestrator.Task, townRoot, rig string) *stateRunner {
-	v := taskValidation(task)
+	v := taskValidation(townRoot, task)
 	vars := map[string]string{"rig": rig}
 	for k, val := range v.PromptVars() {
 		vars[k] = val
@@ -155,6 +155,14 @@ func (r *stateRunner) implementationArtifactFailureExtra(err error) string {
 				b.WriteString("\n")
 			}
 		}
+		if next, nerr := orchestrator.NextOpenImplementBead(r.townRoot, r.rig, r.v); nerr == nil && next != nil && next.ID != "" {
+			path := orchestrator.ImplementBeadPathForID(r.townRoot, r.rig, next.ID, r.v)
+			b.WriteString(fmt.Sprintf("\n**Next bead:** %s (`%s`)\n", next.ID, path))
+			b.WriteString(fmt.Sprintf("`CMD: export BEADS_DIR=$GT_ROOT/%s/.beads && cd %s/mayor/rig && bd update %s --status=in_progress`\n", r.rig, r.rig, next.ID))
+			if r.implProgress != nil && r.implProgress.done(implVerifyKey(next.ID)) {
+				b.WriteString(fmt.Sprintf("`CMD: export BEADS_DIR=$GT_ROOT/%s/.beads && cd %s/mayor/rig && bd close %s`\n", r.rig, r.rig, next.ID))
+			}
+		}
 	}
 	if strings.Contains(em, "runtime smoke") || strings.Contains(em, "compile or runtime smoke failed") {
 		reopened, _ := orchestrator.ReopenImplementationBeadsAfterSmokeFailure(r.townRoot, r.rig, r.v, err)
@@ -198,9 +206,17 @@ func (r *stateRunner) emptyResponseNudge() string {
 
 func (r *stateRunner) runPerTurn() {
 	for _, step := range r.hooks.PerTurn {
-		switch step {
-		case "repair_requirements":
+		if step == "repair_requirements" {
 			maybeRepairWorkflowRequirements(r.townRoot, r.rig, r.v)
+			continue
+		}
+		logLine, err := orchestrator.RunPreRunHook(step, r.townRoot, r.rig, r.v)
+		if err != nil {
+			orchestratedFprintfStderr("[gt-agent] per_turn %s: %v\n", step, err)
+			continue
+		}
+		if logLine != "" {
+			orchestratedPrintf("[gt-agent] %s: %s\n", step, logLine)
 		}
 	}
 }
@@ -422,6 +438,27 @@ func (r *stateRunner) runShellCommand(cmd, workDir, sessionName string, env []st
 	return runOrchestratedCommand(cmd, workDir, sessionName, env, r.effectiveCommandTimeoutSec(cmd))
 }
 
+func (r *stateRunner) repairGoModRequiresAfterTidy(combined *strings.Builder) {
+	if r == nil {
+		return
+	}
+	rigDir := rigMayorRigDir(r.townRoot, r.rig)
+	logLine, err := orchestrator.RepairGoModRequiresFromSpec(rigDir, r.v)
+	if err != nil {
+		orchestratedFprintfStderr("[gt-agent] repair go.mod requires: %v\n", err)
+		if combined != nil {
+			combined.WriteString("go.mod repair failed: " + err.Error() + "\n")
+		}
+		return
+	}
+	if logLine != "" {
+		orchestratedPrintf("[gt-agent] %s\n", logLine)
+		if combined != nil {
+			combined.WriteString(logLine + "\n")
+		}
+	}
+}
+
 func (r *stateRunner) afterCommand(cmd string, cmdErr error, workDir, sessionName string, cmdEnv []string, combined *strings.Builder) {
 	if trackNeedsDevServerCleanup(r.hooks.Track) {
 		r.servers.noteCommand(cmd)
@@ -443,6 +480,9 @@ func (r *stateRunner) afterCommand(cmd string, cmdErr error, workDir, sessionNam
 		}
 		r.noteImplementationFixAttempt(cmd, false)
 		appendBdListImplementationHintIfNeeded(r, cmd, combined.String(), combined)
+		if isGoModTidyCommand(cmd) && orchestrator.WorkflowUsesGo(r.v) {
+			r.repairGoModRequiresAfterTidy(combined)
+		}
 		r.runAutoVerify(cmd, workDir, sessionName, cmdEnv, combined)
 		return
 	}
@@ -479,9 +519,12 @@ func (r *stateRunner) shutdownStartedServers() {
 }
 
 // goAutoVerifyNoPackagesIsError reports whether "matched no packages" output should fail auto-verify.
-// project_setup / go_setup only scaffold go.mod — no .go files exist yet.
-func goAutoVerifyNoPackagesIsError(verifyKind, state string) bool {
+// project_setup / go_setup / go mod tidy only scaffold go.mod — no .go files exist yet.
+func goAutoVerifyNoPackagesIsError(verifyKind, state, verifyCmd string) bool {
 	if verifyKind == "go_setup" || state == "project_setup" {
+		return false
+	}
+	if orchestrator.GoModScaffoldOnlyCommand(verifyCmd) {
 		return false
 	}
 	return true
@@ -520,7 +563,7 @@ func (r *stateRunner) runAutoVerify(cmd, workDir, sessionName string, cmdEnv []s
 				appendQAFailureReportNudge(combined, verifyCmd, verifyErr)
 			}
 		} else if orchestrator.GoToolOutputMatchedNoPackages(string(verifyOut)) &&
-			goAutoVerifyNoPackagesIsError(hook.Verify, r.task.State) {
+			goAutoVerifyNoPackagesIsError(hook.Verify, r.task.State, verifyCmd) {
 			// project_setup leaves only go.mod/go.sum (no .go yet); go mod tidy warns but exits 0.
 			r.track.hadCmdFailure = true
 			r.track.verifyOK = false
@@ -532,6 +575,9 @@ func (r *stateRunner) runAutoVerify(cmd, workDir, sessionName string, cmdEnv []s
 			r.track.verifyOK = true
 			if r.hooks.AutoVerifyOKClearsCmdFailure {
 				r.track.hadCmdFailure = false
+			}
+			if hook.When == "go_mod_tidy" && orchestrator.WorkflowUsesGo(r.v) {
+				r.repairGoModRequiresAfterTidy(combined)
 			}
 			orchestratedPrintf("[gt-agent] auto-verify ok: %s\n", verifyCmd)
 			combined.WriteString(fmt.Sprintf("Auto-verify: %s\n%s", verifyCmd, formatSuccessCommandOutput(verifyOut)))
@@ -616,6 +662,14 @@ func (r *stateRunner) failureHint() string {
 }
 
 func validateOutcomeForTask(task *orchestrator.Task, townRoot, rig, outcome, summary string) error {
+	if task != nil && task.State == "qa_review" && isOrchestratedFailureOutcome(outcome) {
+		lower := strings.ToLower(strings.TrimSpace(summary))
+		if strings.Contains(lower, "syntax error") || strings.Contains(lower, "syntaxerror") ||
+			strings.Contains(lower, "command not found") || strings.Contains(lower, "no such file") &&
+			strings.Contains(lower, "bd list") {
+			return fmt.Errorf("QA failure rejected — summary blames a shell syntax error, not a code quality issue. Retry the command with correct shell syntax and re-evaluate")
+		}
+	}
 	if !task.Hooks.BeadIDsInSummary {
 		return nil
 	}

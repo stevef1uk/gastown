@@ -12,7 +12,7 @@ func FormatPlanAcceptanceChecklist(townRoot, rig, beadPath string, v WorkflowVal
 		return ""
 	}
 	var bullets []string
-	if excerpt := PlanExcerptForBead(townRoot, rig, beadPath); excerpt != "" {
+	if excerpt := PlanExcerptForBead(townRoot, rig, beadPath, v); excerpt != "" {
 		bullets = append(bullets, acceptanceBulletsFromPlanExcerpt(excerpt)...)
 	}
 	for _, b := range planAcceptanceBullets(beadPath, v) {

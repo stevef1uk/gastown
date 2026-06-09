@@ -56,6 +56,30 @@ func TestGoCompileVerifyCommandForBead_storePackage(t *testing.T) {
 	}
 }
 
+func TestGoCompileVerifyCommandForBead_foreignTestWithoutOwnTest(t *testing.T) {
+	t.Parallel()
+	v := WorkflowValidation{
+		LayoutRoot: "linkshelf",
+		RequiredFiles: []string{
+			"linkshelf/internal/store/schema.go",
+			"linkshelf/internal/store/store.go",
+			"linkshelf/internal/store/store_test.go",
+		},
+	}
+	dir := t.TempDir()
+	storeDir := filepath.Join(dir, "linkshelf/internal/store")
+	if err := os.MkdirAll(storeDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(storeDir, "store_test.go"), []byte("package store\nfunc TestStore(t *testing.T) {}\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	got := GoCompileVerifyCommandForBead(v, dir, "linkshelf/internal/store/schema.go")
+	if got != "cd linkshelf && go mod tidy && go build ./internal/store/..." {
+		t.Fatalf("schema bead with foreign store_test.go on disk: got %q", got)
+	}
+}
+
 func TestPruneStaleLayoutGoFiles(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
@@ -76,6 +100,9 @@ func TestPruneStaleLayoutGoFiles(t *testing.T) {
 			"linkshelf/internal/store/store.go",
 		},
 	}
+	setListImplementBeadsByStatusHook(t, dir, rig, func(_, _ string, _ WorkflowValidation, _ string) ([]PlanBead, error) {
+		return nil, nil
+	})
 	removed, err := PruneStaleLayoutGoFiles(dir, rig, v)
 	if err != nil {
 		t.Fatal(err)
@@ -110,6 +137,9 @@ func TestPruneStaleLayoutGoFiles_keepsCorrelatedTest(t *testing.T) {
 		QAVerifyCommand: "cd linkshelf && go test ./...",
 		RequiredFiles: []string{"linkshelf/internal/store/store.go"},
 	}
+	setListImplementBeadsByStatusHook(t, dir, rig, func(_, _ string, _ WorkflowValidation, _ string) ([]PlanBead, error) {
+		return nil, nil
+	})
 	removed, err := PruneStaleLayoutGoFiles(dir, rig, v)
 	if err != nil {
 		t.Fatal(err)
@@ -119,6 +149,47 @@ func TestPruneStaleLayoutGoFiles_keepsCorrelatedTest(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(layout, "store_test.go")); err != nil {
 		t.Fatalf("store_test.go should remain: %v", err)
+	}
+}
+
+func TestPruneStaleLayoutGoFiles_removesFlatDuplicateWhenNestedRequired(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	rig := "rig"
+	layout := filepath.Join(dir, rig, "mayor", "rig", "linkshelf")
+	apiDir := filepath.Join(layout, "internal", "api")
+	if err := os.MkdirAll(apiDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	for path, body := range map[string]string{
+		"handlers.go":                 "package api\n",
+		"internal/api/handlers.go":    "package api\n",
+		"internal/api/handlers_test.go": "package api\n",
+	} {
+		full := filepath.Join(layout, path)
+		if err := os.MkdirAll(filepath.Dir(full), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte(body), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	v := WorkflowValidation{
+		LayoutRoot: "linkshelf",
+		RequiredFiles: []string{
+			"linkshelf/internal/api/handlers.go",
+			"linkshelf/internal/api/handlers_test.go",
+		},
+	}
+	removed, err := PruneStaleLayoutGoFiles(dir, rig, v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(removed) != 1 || removed[0] != "linkshelf/handlers.go" {
+		t.Fatalf("flat handlers.go should be pruned, removed = %v", removed)
+	}
+	if _, err := os.Stat(filepath.Join(layout, "handlers.go")); !os.IsNotExist(err) {
+		t.Fatal("flat handlers.go should be gone")
 	}
 }
 
@@ -141,21 +212,51 @@ func TestPruneStaleLayoutGoFiles_keepsFlatMainWhenBeadsUseCmdPath(t *testing.T) 
 	v := WorkflowValidation{
 		LayoutRoot: "pingapp",
 		RequiredFiles: []string{
-			"pingapp/cmd/main.go",
-			"pingapp/cmd/main_test.go",
+			"pingapp/main.go",
+			"pingapp/main_test.go",
 		},
 	}
+	setListImplementBeadsByStatusHook(t, dir, rig, func(_, _ string, _ WorkflowValidation, _ string) ([]PlanBead, error) {
+		return nil, nil
+	})
 	removed, err := PruneStaleLayoutGoFiles(dir, rig, v)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(removed) != 0 {
-		t.Fatalf("flat main.go should survive cmd-path bead drift, removed = %v", removed)
+		t.Fatalf("flat main.go should survive when beads use flat paths, removed = %v", removed)
 	}
-	for _, name := range []string{"main.go", "main_test.go"} {
-		if _, err := os.Stat(filepath.Join(layout, name)); err != nil {
-			t.Fatalf("%s should remain: %v", name, err)
+}
+
+func TestPruneStaleLayoutGoFiles_skipsWhenImplementBeadsActive(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	rig := "rig"
+	layout := filepath.Join(dir, rig, "mayor", "rig", "linkshelf", "internal", "store")
+	if err := os.MkdirAll(layout, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(layout, "sqlite.go"), []byte("package store\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	v := WorkflowValidation{
+		LayoutRoot: "linkshelf",
+		RequiredFiles: []string{
+			"linkshelf/internal/store/store.go",
+		},
+	}
+	setListImplementBeadsByStatusHook(t, dir, rig, func(_, _ string, _ WorkflowValidation, status string) ([]PlanBead, error) {
+		if status == "open" {
+			return []PlanBead{{ID: "te-1", Title: "Implement linkshelf/internal/store/store.go per architecture"}}, nil
 		}
+		return nil, nil
+	})
+	removed, err := PruneStaleLayoutGoFiles(dir, rig, v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(removed) != 1 || removed[0] != "linkshelf/internal/store/sqlite.go" {
+		t.Fatalf("expected unlisted sqlite.go pruned while store bead active, removed = %v", removed)
 	}
 }
 

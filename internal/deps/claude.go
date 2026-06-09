@@ -5,6 +5,7 @@ import (
 	"os/exec"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/steveyegge/gastown/internal/util"
@@ -34,9 +35,32 @@ const (
 	ClaudeCodeUnknown                            // claude version ran but output couldn't be parsed
 )
 
+var (
+	claudeCodeCheckOnce    sync.Once
+	claudeCodeCheckStatus  ClaudeCodeStatus
+	claudeCodeCheckVersion string
+)
+
 // CheckClaudeCode checks if Claude Code is installed and compatible.
 // Returns status and the installed version (if found).
+// The result is cached for the lifetime of the process: doctor and gt-agent may
+// invoke this many times (including in parallel fix re-runs); claude --version
+// is slow and can spawn Claude Code startup side effects.
 func CheckClaudeCode() (ClaudeCodeStatus, string) {
+	claudeCodeCheckOnce.Do(func() {
+		claudeCodeCheckStatus, claudeCodeCheckVersion = checkClaudeCodeUncached()
+	})
+	return claudeCodeCheckStatus, claudeCodeCheckVersion
+}
+
+// ResetClaudeCodeCheckCache clears the CheckClaudeCode cache (for tests).
+func ResetClaudeCodeCheckCache() {
+	claudeCodeCheckOnce = sync.Once{}
+	claudeCodeCheckStatus = 0
+	claudeCodeCheckVersion = ""
+}
+
+func checkClaudeCodeUncached() (ClaudeCodeStatus, string) {
 	path, err := exec.LookPath("claude")
 	if err != nil {
 		return ClaudeCodeNotFound, ""

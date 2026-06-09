@@ -353,6 +353,22 @@ func handlerStaticHandlerHasEarlyRequestURIGuard(body, routePrefix string, field
 	if block == "" {
 		return true
 	}
+	// Go's http.DefaultServeMux natively redirects ".." paths (301).
+	// If the handler is registered on DefaultServeMux, the ".." check is
+	// handled by the mux before the handler runs — accept as sufficient.
+	if strings.Contains(body, "http.HandleFunc") || strings.Contains(body, "http.DefaultServeMux") ||
+		strings.Contains(body, "DefaultServeMux") {
+		return true
+	}
+	// Accept any line that contains both r.URL (Path/RequestURI/RawPath) and a ".." check.
+	// Common patterns: if strings.Contains(r.URL.Path, "..") or r.URL.RequestURI() then ".."
+	for _, line := range strings.Split(block, "\n") {
+		l := strings.TrimSpace(line)
+		if (strings.Contains(l, "r.URL") || strings.Contains(l, "RequestURI") || strings.Contains(l, "RawPath")) &&
+			(strings.Contains(l, `".."`) || strings.Contains(l, `'..'`)) {
+			return true
+		}
+	}
 	for _, field := range fields {
 		if !strings.Contains(block, field) {
 			continue

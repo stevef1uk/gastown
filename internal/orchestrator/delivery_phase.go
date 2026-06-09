@@ -87,6 +87,51 @@ func (v WorkflowValidation) UnionRequiredFiles() []string {
 	return union
 }
 
+// RequiredFilesForSmokeScope returns paths that gate runtime smoke and web-asset checks for the
+// current workflow step. Phased rigs use the active delivery phase only — not later phases.
+func (v WorkflowValidation) RequiredFilesForSmokeScope() []string {
+	if v.HasPhasedDelivery() {
+		return v.ActiveRequiredFiles()
+	}
+	seen := make(map[string]bool)
+	var out []string
+	for _, f := range append(v.UnionRequiredFiles(), v.RequiredFiles...) {
+		f = filepath.ToSlash(strings.TrimSpace(f))
+		if f == "" || seen[f] {
+			continue
+		}
+		seen[f] = true
+		out = append(out, f)
+	}
+	return out
+}
+
+// PhasedActiveAndPastRequiredFiles returns required files from the active phase and all earlier phases,
+// but NOT from future phases. Used for stub/artifact validation during phased delivery so future-phase
+// files that haven't been created yet don't block the current phase from completing.
+func (v WorkflowValidation) PhasedActiveAndPastRequiredFiles() []string {
+	if !v.HasPhasedDelivery() {
+		return normalizePathList(v.RequiredFiles)
+	}
+	activeID := v.ActivePhaseID()
+	seen := make(map[string]bool)
+	var out []string
+	for _, p := range v.DeliveryPhases {
+		add := normalizePathList(p.RequiredFiles)
+		for _, f := range add {
+			if f == "" || seen[f] {
+				continue
+			}
+			seen[f] = true
+			out = append(out, f)
+		}
+		if strings.TrimSpace(p.ID) == activeID {
+			break // stop at active phase; future phases' files don't exist yet
+		}
+	}
+	return out
+}
+
 // ForActivePhase returns a copy of v with RequiredFiles and QAVerifyCommand scoped to the active phase.
 func (v WorkflowValidation) ForActivePhase() WorkflowValidation {
 	if !v.HasPhasedDelivery() {
@@ -99,7 +144,30 @@ func (v WorkflowValidation) ForActivePhase() WorkflowValidation {
 	if q := v.ActivePhaseQAVerifyCommand(); q != "" {
 		out.QAVerifyCommand = q
 	}
+	if WorkflowUsesGo(out) && PhaseIsGoModOnly(out) {
+		out.QAVerifyCommand = GoModPhaseQAVerifyCommand(out)
+	}
 	return out
+}
+
+// PhaseIsGoModOnly reports active required_files are only go.mod (no .go, web, or other artifacts).
+func PhaseIsGoModOnly(v WorkflowValidation) bool {
+	if len(v.RequiredFiles) == 0 {
+		return false
+	}
+	hasGoMod := false
+	for _, f := range v.RequiredFiles {
+		f = filepath.ToSlash(strings.TrimSpace(f))
+		if f == "" {
+			continue
+		}
+		if strings.HasSuffix(f, "/go.mod") || f == "go.mod" {
+			hasGoMod = true
+			continue
+		}
+		return false
+	}
+	return hasGoMod
 }
 
 // IsDockerPackagingPath reports container packaging files (Dockerfile, compose, .dockerignore).
@@ -193,12 +261,110 @@ func moveDockerPathsToFinalDeliveryPhase(v WorkflowValidation) WorkflowValidatio
 	return v
 }
 
+// inferDefaultDeliveryPhases splits flat Go+web required_files into delivery waves when the
+// profile omitted delivery_phases (common for Link Shelf–scale specs).
+func inferDefaultDeliveryPhases(v WorkflowValidation) []DeliveryPhase {
+	files := normalizePathList(v.RequiredFiles)
+	if len(files) < 5 || len(files) > 25 || !WorkflowUsesGo(v) {
+		return nil
+	}
+	layout := strings.Trim(strings.TrimSpace(v.LayoutRoot), "/")
+	var goMod, store, api, server, webStatic, webHTML []string
+	for _, f := range files {
+		lower := strings.ToLower(f)
+		switch {
+		case strings.HasSuffix(lower, "go.mod"):
+			goMod = append(goMod, f)
+		case strings.Contains(lower, "/internal/store/"):
+			store = append(store, f)
+		case strings.Contains(lower, "/internal/api/"):
+			api = append(api, f)
+		case strings.Contains(lower, "/cmd/"):
+			server = append(server, f)
+		case strings.Contains(lower, "/web/") && strings.HasSuffix(lower, "index.html"):
+			webHTML = append(webHTML, f)
+		case strings.Contains(lower, "/web/"):
+			webStatic = append(webStatic, f)
+		}
+	}
+	if len(goMod) == 0 || len(store) == 0 {
+		return nil
+	}
+	if len(webStatic) == 0 && len(webHTML) == 0 {
+		return nil
+	}
+	modQA := goModVerifyCommand(layout)
+	fullQA := strings.TrimSpace(v.QAVerifyCommand)
+	var phases []DeliveryPhase
+	phases = append(phases, DeliveryPhase{
+		ID: "go-module", Title: "Go module", RequiredFiles: goMod, QAVerifyCommand: modQA,
+	})
+	if len(store) > 0 {
+		phases = append(phases, DeliveryPhase{
+			ID: "store-layer", Title: "Store layer",
+			RequiredFiles:   OrderRequiredFilesForImplementation(store),
+			QAVerifyCommand: goPackageVerifyCommand(layout, "./internal/store/..."),
+		})
+	}
+	if len(api) > 0 {
+		phases = append(phases, DeliveryPhase{
+			ID: "api-handlers", Title: "HTTP handlers", RequiredFiles: api,
+			QAVerifyCommand: goPackageVerifyCommand(layout, "./internal/api/..."),
+		})
+	}
+	if len(server) > 0 {
+		phases = append(phases, DeliveryPhase{
+			ID: "server-main", Title: "Server entrypoint", RequiredFiles: server,
+			QAVerifyCommand: goPackageVerifyCommand(layout, "./cmd/server/..."),
+		})
+	}
+	if len(webStatic) > 0 {
+		phases = append(phases, DeliveryPhase{
+			ID: "web-static", Title: "Web static assets",
+			RequiredFiles: OrderRequiredFilesForImplementation(webStatic),
+		})
+	}
+	if len(webHTML) > 0 {
+		q := fullQA
+		if q == "" {
+			q = goPackageVerifyCommand(layout, "./...")
+		}
+		phases = append(phases, DeliveryPhase{
+			ID: "web-shell", Title: "Web HTML shell", RequiredFiles: webHTML, QAVerifyCommand: q,
+		})
+	}
+	if len(phases) < 2 {
+		return nil
+	}
+	return phases
+}
+
+func goModVerifyCommand(layout string) string {
+	if layout == "" || layout == "." {
+		return "go mod download"
+	}
+	return "cd " + layout + " && go mod download"
+}
+
+func goPackageVerifyCommand(layout, pkg string) string {
+	if layout == "" || layout == "." {
+		return "go test " + pkg
+	}
+	return "cd " + layout + " && go test " + pkg
+}
+
 // FinalizeDeliveryPhases unions phase file lists into RequiredFiles, sets default active phase, normalizes paths.
 func FinalizeDeliveryPhases(v WorkflowValidation) WorkflowValidation {
+	if len(v.DeliveryPhases) == 0 {
+		if inferred := inferDefaultDeliveryPhases(v); len(inferred) > 0 {
+			v.DeliveryPhases = inferred
+		}
+	}
 	if len(v.DeliveryPhases) == 0 {
 		return v
 	}
 	v = moveDockerPathsToFinalDeliveryPhase(v)
+	v = reorderDeliveryPhasesWebBeforeHTTPHandlers(v)
 	seen := make(map[string]bool)
 	var union []string
 	add := func(paths []string) {

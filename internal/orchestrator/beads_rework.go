@@ -44,6 +44,35 @@ func EnsureImplementBeadsAvailable(townRoot, rig string, v WorkflowValidation) (
 	return reopenClosedImplementBeads(townRoot, rig, v)
 }
 
+// QAReopenedBeadIDs returns the IDs of beads that were reopened due to a pending QA failure
+// rework. During QA rework the reconcile step must not auto-close these beads — the polecat
+// needs them open so the implement_bead_context injector shows the SPEC contract to fix.
+func QAReopenedBeadIDs(townRoot, rig string) []string {
+	if townRoot == "" || rig == "" {
+		return nil
+	}
+	snap, err := LoadInstancesSnapshot(townRoot)
+	if err != nil || snap == nil {
+		return nil
+	}
+	for _, inst := range snap.Instances {
+		if inst.TemplateID != "rig-flow" {
+			continue
+		}
+		if inst.Variables == nil || inst.Variables["rig"] != rig {
+			continue
+		}
+		rw := inst.PendingRework
+		if rw == nil || rw.FromState != "qa_review" {
+			return nil
+		}
+		prefix, _ := RigIssuePrefix(townRoot, rig)
+		known, _, _ := ListRigBeadIDSet(townRoot, rig)
+		return ExtractKnownRigBeadIDsFromSummary(rw.Summary, prefix, known)
+	}
+	return nil
+}
+
 // ReopenImplementationBeadsAfterQAFailure reopens closed implement beads when QA sends
 // polecat back so work can continue without manual bd update.
 func ReopenImplementationBeadsAfterQAFailure(townRoot, rig string, v WorkflowValidation, summary string) ([]string, error) {
@@ -223,6 +252,7 @@ func qaFailureRequiresImplementationRework(summary string) bool {
 		"command not found", "verification", "verify failed", "web assets", "not served",
 		"imports must appear", "expected declaration", "found db", "setup failed",
 		"compile/test failed", "module compile",
+		"go.mod", "go.sum", "directory structure", "not in architecture", "sqlite3",
 		"dom", "element id", "mismatch", "inconsistent", "ui break", "violates",
 	} {
 		if strings.Contains(lower, needle) {
@@ -248,6 +278,11 @@ func ImplementationDiskWorkReady(rigDir string, v WorkflowValidation) error {
 		if info.Size() == 0 {
 			return fmt.Errorf("empty %s", rel)
 		}
+		if strings.HasSuffix(strings.ToLower(rel), "/go.mod") || rel == "go.mod" {
+			if err := ValidateGoModFile(rigDir, v); err != nil {
+				return err
+			}
+		}
 	}
 	var polecatRequired []string
 	for _, rel := range v.RequiredFiles {
@@ -265,6 +300,28 @@ func ImplementationDiskWorkReady(rigDir string, v WorkflowValidation) error {
 		}
 	}
 	return nil
+}
+
+// EnsureOpenImplementBeadForRework reopens a closed implement bead when its artifact still
+// needs on-disk fixes (e.g. concatenated app.js after a premature bd close).
+func EnsureOpenImplementBeadForRework(townRoot, rig, filePath string, v WorkflowValidation) (string, error) {
+	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
+	filePath = filepath.ToSlash(strings.TrimSpace(filePath))
+	if filePath == "" || !beadImplementationNeedsRework(rigDir, filePath, v) {
+		return "", nil
+	}
+	id, ok := ClosedImplementBeadForPath(townRoot, rig, filePath, v)
+	if !ok {
+		return "", nil
+	}
+	if err := bdUpdateImplementBeadStatus(townRoot, rig, id, "open"); err != nil {
+		// Best-effort reopen: when bd is unavailable, callers still enforce closed-bead guards.
+		if bdUpdateImplementBeadStatusHook != nil {
+			return "", err
+		}
+		return "", nil
+	}
+	return id, nil
 }
 
 func beadImplementationNeedsRework(rigDir, beadPath string, v WorkflowValidation) bool {
@@ -287,6 +344,11 @@ func beadImplementationNeedsRework(rigDir, beadPath string, v WorkflowValidation
 	}
 	if err := CheckPythonSourceValid(data, beadPath); err != nil {
 		return true
+	}
+	if strings.HasSuffix(strings.ToLower(beadPath), ".js") {
+		if err := CheckJavaScriptFileHealthy(data); err != nil {
+			return true
+		}
 	}
 	return false
 }
@@ -345,7 +407,10 @@ func listImplementBeadsByStatus(townRoot, rig string, v WorkflowValidation, stat
 		if id == "" {
 			continue
 		}
-		if !MatchesImplementBeadTitle(title, v) {
+		// For listing open/in-progress beads we want implement-like titles, not
+		// required_files membership filtering. Required/extra classification is
+		// validated elsewhere (plan.md bead validation, plan sync alignment, etc.).
+		if !looksLikeOpenImplementBeadTitle(title, v) {
 			continue
 		}
 		result = append(result, PlanBead{ID: id, Title: title})

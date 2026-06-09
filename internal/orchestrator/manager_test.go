@@ -471,6 +471,71 @@ func TestCompleteTask_qaArchitectureFailureResetsToDesign(t *testing.T) {
 	}
 }
 
+func TestCompleteTask_implementationFailureSkipsPreparePhase(t *testing.T) {
+	dir := t.TempDir()
+	townRoot := filepath.Join(dir, "gt")
+	rig := "mockrig"
+	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
+	if err := os.MkdirAll(rigDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(rigDir, "architecture.md"), []byte(strings.Repeat("arch line\n", 80)), 0644); err != nil {
+		t.Fatal(err)
+	}
+	prof := WorkflowValidation{
+		LayoutRoot:        "app",
+		BeadTitleContains: "Implement app/",
+		MinPlanBytes:      50,
+		RequiredFiles:     []string{"app/main.go"},
+	}
+	writeTestRigProfile(t, townRoot, rig, prof)
+	plan := strings.Join([]string{
+		"# Implementation plan",
+		"## Bead map",
+		"### te-main: app/main.go",
+		"- Scope: main",
+		strings.Repeat("- planning sync padding\n", 30),
+	}, "\n")
+	if err := os.WriteFile(filepath.Join(rigDir, "plan.md"), []byte(plan), 0644); err != nil {
+		t.Fatal(err)
+	}
+	setListImplementBeadsByStatusHook(t, townRoot, rig, func(_, _ string, _ WorkflowValidation, status string) ([]PlanBead, error) {
+		if status == "closed" {
+			return []PlanBead{{ID: "te-main", Title: "Implement app/main.go per architecture"}}, nil
+		}
+		return nil, nil
+	})
+
+	m := NewManager(townRoot)
+	m.LoadTemplate(&WorkflowTemplate{
+		ID:           "rig-flow",
+		InitialState: "implementation",
+		States: map[string]State{
+			"implementation": {
+				Role: "polecat",
+				Transitions: map[string]Transition{
+					"failure": {To: "implementation"},
+					"success": {To: "qa_review"},
+				},
+			},
+			"qa_review": {Role: "qa"},
+		},
+	})
+	id, err := m.StartWorkflow("rig-flow", map[string]string{"rig": rig})
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.instances[id].CurrentState = "implementation"
+
+	next, err := m.CompleteTask(id, "failure", rig+"/polecat", "tests red", "go test failed")
+	if err != nil {
+		t.Fatalf("implementation→implementation failure should not re-sync planning: %v", err)
+	}
+	if next != "implementation" {
+		t.Fatalf("next=%q want implementation", next)
+	}
+}
+
 func TestCompleteTask_sameStateFailureKeepsPendingRework(t *testing.T) {
 	dir := t.TempDir()
 	m := NewManager(dir)

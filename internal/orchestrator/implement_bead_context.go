@@ -64,7 +64,7 @@ func formatImplementBeadContextForPath(townRoot, rig, beadPath string, v Workflo
 		b.WriteString(block)
 		b.WriteString("\n")
 	}
-	if plan := PlanExcerptForBead(townRoot, rig, beadPath); plan != "" {
+	if plan := PlanExcerptForBead(townRoot, rig, beadPath, v); plan != "" {
 		b.WriteString("\n### From plan.md (acceptance for this bead)\n")
 		b.WriteString(plan)
 		b.WriteString("\n")
@@ -91,7 +91,15 @@ func formatImplementBeadContextForPath(townRoot, rig, beadPath string, v Workflo
 		b.WriteString("\n")
 	}
 	if WorkflowUsesGo(v) {
-		if modCtx := formatGoModuleImportContext(filepath.Join(townRoot, rig, "mayor", "rig"), v); modCtx != "" {
+		rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
+		if strings.HasSuffix(filepath.ToSlash(beadPath), "/go.mod") || beadPath == "go.mod" {
+			if block := FormatGoModBeadContext(rigDir, v); block != "" {
+				b.WriteString("\n")
+				b.WriteString(block)
+				b.WriteString("\n")
+			}
+		}
+		if modCtx := formatGoModuleImportContext(rigDir, v); modCtx != "" {
 			b.WriteString("\n")
 			b.WriteString(modCtx)
 			b.WriteString("\n")
@@ -122,6 +130,11 @@ func formatImplementBeadContextForPath(townRoot, rig, beadPath string, v Workflo
 		b.WriteString(block)
 		b.WriteString("\n")
 	} else if block := FormatSpecStoreContractBlock(townRoot, rig, beadPath, v); block != "" {
+		b.WriteString("\n")
+		b.WriteString(block)
+		b.WriteString("\n")
+	}
+	if block := FormatFrontendBeadChecklist(rigDir, beadPath, v); block != "" {
 		b.WriteString("\n")
 		b.WriteString(block)
 		b.WriteString("\n")
@@ -342,7 +355,17 @@ func formatUnitTestGuidanceForBead(townRoot, rig, beadPath string, v WorkflowVal
 				"Do **not** `cat` `" + testPath + "` — it does not exist until the **`" + testPath + "` implement bead**.\n" +
 				"Implement tests on that later bead (table-driven cases from SPEC/plan acceptance).")
 		}
-		msg := "### Unit tests (required with this code)\nBefore `bd close`, `" + testPath + "` must exist and **Verify** (`go test -count=1`) must pass.\n"
+		mayorDir := filepath.Join(townRoot, rig, "mayor", "rig")
+		verifyKind := "go test -count=1"
+		if CanonicalImplementationVerifyIsGoBuildOnly(v, mayorDir, beadPath) {
+			verifyKind = "go build"
+		}
+		msg := "### Unit tests (required with this code)\nBefore `bd close`, `" + testPath + "` must exist"
+		if verifyKind == "go build" {
+			msg += ".\nWhile other beads' `*_test.go` files exist in this package, **Verify** uses **`go build`** on production code — do not run full **`go test`** (it recompiles foreign tests and clears session verify).\n"
+		} else {
+			msg += " and **Verify** (`go test -count=1`) must pass.\n"
+		}
 		msg += "Create tests with **WRITE:** or **EDIT:** in this session — do not fail because the file is missing; write it.\n"
 		if strings.Contains(filepath.ToSlash(beadPath), "internal/store/store.go") {
 			msg += "SQLite store tests must use a **fresh DB per test** (`:memory:` or `filepath.Join(t.TempDir(), \"test.db\")` passed into `OpenDB`) — never reuse `./links.db` from prior runs.\n"
@@ -391,4 +414,164 @@ func formatGoModuleImportContext(rigDir string, v WorkflowValidation) string {
 		}
 	}
 	return ""
+}
+
+// FormatFrontendBeadChecklist returns concrete implementation requirements for HTML/JS/CSS
+// beads extracted from SPEC.md and architecture.md. The LLM must check off each item before
+// closing the bead — this prevents generic/placeholder frontend code.
+func FormatFrontendBeadChecklist(rigDir, beadPath string, v WorkflowValidation) string {
+	beadPath = filepath.ToSlash(strings.TrimSpace(beadPath))
+	if !IsFrontendImplementPath(beadPath) {
+		return ""
+	}
+	specData, err := os.ReadFile(filepath.Join(rigDir, "SPEC.md"))
+	if err != nil {
+		return ""
+	}
+	archData, err := os.ReadFile(filepath.Join(rigDir, "architecture.md"))
+	if err != nil {
+		archData = nil
+	}
+	specDoc := string(specData)
+	archDoc := ""
+	if archData != nil {
+		archDoc = string(archData)
+	}
+
+	var b strings.Builder
+	b.WriteString("### Frontend implementation checklist\n")
+
+	if strings.HasSuffix(strings.ToLower(beadPath), ".html") {
+		// Extract form fields from the SPEC's POST body JSON example.
+		fields := extractSpecFormFields(specDoc)
+		if len(fields) > 0 {
+			b.WriteString("**Required form inputs (from SPEC POST body):**\n")
+			for _, f := range fields {
+				b.WriteString("- `<input>` for `" + f + "` (id must match app.js)\n")
+			}
+		}
+		// Extract HTML IDs from architecture or existing app.js.
+		jsIDs := extractJSReferencedIDs(rigDir, beadPath)
+		if len(jsIDs) > 0 {
+			b.WriteString("\n**DOM IDs used by app.js (must match exactly):**\n")
+			for _, id := range jsIDs {
+				b.WriteString("- `" + id + "`\n")
+			}
+		}
+		// Extract static asset references from architecture HTTP table.
+		staticRefs := extractArchStaticRefs(archDoc)
+		if len(staticRefs) > 0 {
+			b.WriteString("\n**Static asset references (paths from architecture HTTP table):**\n")
+			for _, ref := range staticRefs {
+				b.WriteString("- `" + ref + "`\n")
+			}
+		}
+		b.WriteString("\n**Rules:**\n")
+		b.WriteString("- Use EXACT IDs from the list above — do not invent names like `links-list` vs `links`\n")
+		b.WriteString("- Every POST body field in SPEC needs a corresponding input element\n")
+		b.WriteString("- Static references use paths from architecture.md only — not `/app.js` or guessed paths\n")
+		b.WriteString("- Read the existing app.js and style.css in the same directory to align IDs and classes\n")
+		b.WriteString("- Write the COMPLETE file — no `<!-- your HTML here -->` placeholders\n")
+	}
+
+	if strings.HasSuffix(strings.ToLower(beadPath), ".js") {
+		endpoints := extractSpecAPIEndpoints(specDoc)
+		if len(endpoints) > 0 {
+			b.WriteString("**API endpoints to call (from SPEC HTTP table):**\n")
+			for _, ep := range endpoints {
+				b.WriteString("- " + ep + "\n")
+			}
+		}
+		b.WriteString("\n**Rules:**\n")
+		b.WriteString("- Use EXACT DOM IDs matching index.html\n")
+		b.WriteString("- URL paths must match SPEC HTTP table exactly\n")
+		b.WriteString("- Include error handling for every fetch call\n")
+	}
+
+	if strings.HasSuffix(strings.ToLower(beadPath), ".css") {
+		b.WriteString("Provide minimal, functional CSS. At minimum style the form, list, and container elements referenced in index.html.\n")
+		b.WriteString("Match class names and IDs used in index.html — do not invent selectors.\n")
+	}
+	return strings.TrimSpace(b.String())
+}
+
+// extractSpecFormFields returns field names from SPEC POST body JSON examples like {"title":"...","url":"..."}.
+func extractSpecFormFields(specDoc string) []string {
+	re := regexp.MustCompile(`"(\w+)"\s*:\s*"`)
+	seen := map[string]bool{}
+	var fields []string
+	for _, m := range re.FindAllStringSubmatch(specDoc, -1) {
+		if len(m) >= 2 {
+			f := strings.TrimSpace(m[1])
+			if f == "error" || seen[f] {
+				continue
+			}
+			seen[f] = true
+			fields = append(fields, f)
+		}
+	}
+	return fields
+}
+
+// extractJSReferencedIDs parses the existing app.js (if present) for DOM element IDs.
+func extractJSReferencedIDs(rigDir, htmlPath string) []string {
+	dir := filepath.Dir(filepath.Join(rigDir, filepath.FromSlash(htmlPath)))
+	jsPath := filepath.Join(dir, "app.js")
+	data, err := os.ReadFile(jsPath)
+	if err != nil {
+		return nil
+	}
+	// Match getElementById('id'), querySelector('#id'), or dataset references.
+	re := regexp.MustCompile(`(?:getElementById|querySelector)\s*\(\s*['"]([^'"]+)['"]`)
+	seen := map[string]bool{}
+	var ids []string
+	for _, m := range re.FindAllStringSubmatch(string(data), -1) {
+		if len(m) >= 2 {
+			id := strings.TrimSpace(m[1])
+			if id != "" && !seen[id] {
+				seen[id] = true
+				ids = append(ids, id)
+			}
+		}
+	}
+	return ids
+}
+
+// extractArchStaticRefs parses architecture.md for /static/{file} style references.
+func extractArchStaticRefs(archDoc string) []string {
+	re := regexp.MustCompile(`/static/\{?(\w+)`)
+	seen := map[string]bool{}
+	var refs []string
+	for _, m := range re.FindAllStringSubmatch(archDoc, -1) {
+		if len(m) >= 2 {
+			r := "/static/" + strings.TrimRight(m[1], "}")
+			if !seen[r] {
+				seen[r] = true
+				refs = append(refs, r)
+			}
+		}
+	}
+	return refs
+}
+
+// extractSpecAPIEndpoints parses the SPEC HTTP table for API endpoint paths.
+func extractSpecAPIEndpoints(specDoc string) []string {
+	re := regexp.MustCompile(`\| (GET|POST|DELETE) \| ([^\|]+) \|`)
+	seen := map[string]bool{}
+	var eps []string
+	for _, m := range re.FindAllStringSubmatch(specDoc, -1) {
+		if len(m) >= 3 {
+			method := strings.TrimSpace(m[1])
+			path := strings.TrimSpace(m[2])
+			if path == "/" || path == "/static/{file}" {
+				continue
+			}
+			key := method + " " + path
+			if !seen[key] {
+				seen[key] = true
+				eps = append(eps, key)
+			}
+		}
+	}
+	return eps
 }

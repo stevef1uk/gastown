@@ -51,6 +51,7 @@ func TestNormalizeBeadPathForLayout_testgt3BeadTitle(t *testing.T) {
 
 func TestValidatePlanBeads_duplicates(t *testing.T) {
 	v := WorkflowValidation{
+		LayoutRoot:        "finally",
 		BeadTitleContains: "Implement finally/",
 		RequiredFiles: []string{
 			"myapp/frontend/game/main.js",
@@ -93,8 +94,22 @@ func TestValidatePlanBeads_archBacktickBasenameMatch(t *testing.T) {
 	}
 }
 
+func TestImplementBeadTitlePathOK_finallyDoubledBackend(t *testing.T) {
+	t.Parallel()
+	v := WorkflowValidation{
+		LayoutRoot:        "finally",
+		BeadTitleContains: "Implement finally/",
+		RequiredFiles:     []string{"finally/backend/main.py"},
+	}
+	title := "Implement finally/finally/backend/main.py per architecture"
+	if !implementBeadTitlePathOK(title, v) {
+		t.Fatal("doubled finally backend path should match required_files after normalization")
+	}
+}
+
 func TestValidatePlanBeads_ok(t *testing.T) {
 	v := WorkflowValidation{
+		LayoutRoot:        "finally",
 		BeadTitleContains: "Implement finally/",
 		RequiredFiles: []string{
 			"myapp/frontend/game/main.js",
@@ -105,7 +120,6 @@ func TestValidatePlanBeads_ok(t *testing.T) {
 		{ID: "xx-a", Title: "Implement finally/myapp/frontend/game/main.js per architecture"},
 		{ID: "xx-c", Title: "Implement finally/finally/backend/main.py per architecture"},
 	}
-	v.RequiredFiles[1] = "finally/backend/main.py"
 	if err := ValidatePlanBeads(beads, "", v, "finally"); err != nil {
 		t.Fatal(err)
 	}

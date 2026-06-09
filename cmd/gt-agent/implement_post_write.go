@@ -16,7 +16,10 @@ func (r *stateRunner) scrubGoFileAfterNativeWrite(relPath string, combined *stri
 		return
 	}
 	relPath = orchestrator.NormalizeBeadPathForLayout(relPath, r.v.LayoutRoot)
-	if relPath == "" || !strings.HasSuffix(relPath, ".go") {
+	if relPath == "" {
+		return
+	}
+	if !strings.HasSuffix(relPath, ".go") && !strings.HasSuffix(relPath, "/go.mod") && relPath != "go.mod" {
 		return
 	}
 	mayorDir := rigMayorRigDir(r.townRoot, r.rig)
@@ -96,8 +99,18 @@ func (r *stateRunner) runPostNativeWriteVerify(relPath string, sessionName strin
 			outStr = string(out)
 		}
 	}
+	if err != nil && r.tryHandlerWebScaffoldAutoFix(mayorDir, outStr, combined) {
+		orchestratedPrintf("[gt-agent] retrying verify after handler web scaffold auto-fix\n")
+		out, err = r.runShellCommand(verifyCmd, workDir, sessionName, cmdEnv)
+		outStr = string(out)
+	}
 	if err != nil && r.tryHandlerWebCwdAutoFix(mayorDir, outStr, combined) {
 		orchestratedPrintf("[gt-agent] retrying verify after handler web cwd auto-fix\n")
+		out, err = r.runShellCommand(verifyCmd, workDir, sessionName, cmdEnv)
+		outStr = string(out)
+	}
+	if err != nil && r.tryHandlerTestStoreDBAutoFix(mayorDir, outStr, combined) {
+		orchestratedPrintf("[gt-agent] retrying verify after handler TestMain store.DB auto-fix\n")
 		out, err = r.runShellCommand(verifyCmd, workDir, sessionName, cmdEnv)
 		outStr = string(out)
 	}
@@ -115,10 +128,45 @@ func (r *stateRunner) runPostNativeWriteVerify(relPath string, sessionName strin
 		}
 		return
 	}
+	combined.WriteString(fmt.Sprintf("Post-write verify: %s\n%s", verifyCmd, formatSuccessCommandOutput(out)))
+	r.track.hadCmdFailure = false
+	if r.implementBeadCloseArtifactsReady() {
+		r.track.verifyOK = true
+		r.persistImplementationProgress(verifyCmd)
+		orchestratedPrintf("[gt-agent] post-write verify OK for %s\n", relPath)
+		if nudge := r.formatImplementBeadCloseNudge(); nudge != "" {
+			combined.WriteString(nudge)
+		}
+	} else {
+		r.track.verifyOK = false
+		if testPath := orchestrator.CorrelatedTestPathForSource(r.activeImplementBeadPath(), r.v); testPath != "" {
+			combined.WriteString(fmt.Sprintf("\nPackage verify passed. Add **WRITE:** `%s`, re-run Verify, then `bd close`.\n\n", testPath))
+		}
+	}
+}
+
+// runPostNativeWriteFrontendVerify validates frontend implement files after native WRITE/EDIT.
+func (r *stateRunner) runPostNativeWriteFrontendVerify(relPath string, combined *strings.Builder) {
+	if !strings.EqualFold(strings.TrimSpace(r.hooks.Track), "implementation") {
+		return
+	}
+	relPath = orchestrator.NormalizeBeadPathForLayout(relPath, r.v.LayoutRoot)
+	if relPath == "" || !orchestrator.IsFrontendImplementPath(relPath) {
+		return
+	}
+	mayorDir := rigMayorRigDir(r.townRoot, r.rig)
+	if err := orchestrator.ValidateBeadArtifactOnDisk(mayorDir, relPath, r.v); err != nil {
+		r.track.hadCmdFailure = true
+		r.track.verifyOK = false
+		combined.WriteString(fmt.Sprintf("Frontend artifact check failed after %s: %v\n\n", relPath, err))
+		orchestratedFprintfStderr("[gt-agent] frontend verify %s: %v\n", relPath, err)
+		return
+	}
 	r.track.verifyOK = true
 	r.track.hadCmdFailure = false
-	r.persistImplementationProgress(verifyCmd)
-	combined.WriteString(fmt.Sprintf("Post-write verify: %s\n%s", verifyCmd, formatSuccessCommandOutput(out)))
+	r.persistImplementationProgress("")
+	combined.WriteString(fmt.Sprintf("Frontend artifact OK: %s (ready for bd close after queue order)\n\n", relPath))
+	orchestratedPrintf("[gt-agent] post-write frontend artifact OK: %s\n", relPath)
 }
 
 // runPostWriteHTTPContract validates cross-file HTTP routing after handler/web writes (GT-VERIFY-007).
@@ -130,17 +178,53 @@ func (r *stateRunner) runPostWriteHTTPContract(relPath string, combined *strings
 	if !orchestrator.IsHTTPContractRelevantPath(relPath) {
 		return
 	}
-	if err := orchestrator.ValidateHTTPContract(r.townRoot, r.rig, r.v); err != nil {
+	blocking, warnings, err := orchestrator.ValidateHTTPContractSplit(r.townRoot, r.rig, r.v)
+	if err != nil {
+		orchestratedFprintfStderr("[gt-agent] HTTP contract check: %v\n", err)
+		return
+	}
+	for _, w := range warnings {
+		combined.WriteString(fmt.Sprintf("HTTP contract note (non-blocking): %s\n", w))
+		orchestratedPrintf("[gt-agent] HTTP contract note: %s\n", w)
+	}
+	if len(blocking) == 0 {
+		return
+	}
+	r.track.hadCmdFailure = true
+	r.track.verifyOK = false
+	msg := fmt.Sprintf("HTTP contract check failed after %s: %s\nReconcile handlers.go with web/index.html per architecture.md before bd close.\n\n", relPath, strings.Join(blocking, "; "))
+	combined.WriteString(msg)
+	orchestratedFprintfStderr("[gt-agent] %s", msg)
+	errStr := strings.Join(blocking, "; ")
+	if strings.Contains(errStr, "RequestURI") || strings.Contains(errStr, "ServeMux") {
+		if hint := orchestrator.FormatHandlerTraversalRedirectHint(r.townRoot, r.rig, relPath, r.v); hint != "" {
+			combined.WriteString(hint + "\n\n")
+		}
+	}
+}
+
+// runPostNativeWriteMainImportCheck verifies cmd/server/main.go imports required
+// database drivers from SPEC.md (e.g. _ "github.com/mattn/go-sqlite3").
+func (r *stateRunner) runPostNativeWriteMainImportCheck(relPath string, combined *strings.Builder) {
+	if !strings.EqualFold(strings.TrimSpace(r.hooks.Track), "implementation") || !orchestrator.WorkflowUsesGo(r.v) {
+		return
+	}
+	relPath = orchestrator.NormalizeBeadPathForLayout(relPath, r.v.LayoutRoot)
+	if !orchestrator.IsCmdMainImplementPath(relPath) {
+		return
+	}
+	mayorDir := rigMayorRigDir(r.townRoot, r.rig)
+	missing, err := orchestrator.CheckMainMissingDriverImports(mayorDir, relPath, r.v)
+	if err != nil {
 		r.track.hadCmdFailure = true
 		r.track.verifyOK = false
-		msg := fmt.Sprintf("HTTP contract check failed after %s: %v\nReconcile handlers.go with web/index.html per architecture.md before bd close.\n\n", relPath, err)
-		combined.WriteString(msg)
-		orchestratedFprintfStderr("[gt-agent] %s", msg)
-		errStr := err.Error()
-		if strings.Contains(errStr, "RequestURI") || strings.Contains(errStr, "ServeMux") {
-			if hint := orchestrator.FormatHandlerTraversalRedirectHint(r.townRoot, r.rig, relPath, r.v); hint != "" {
-				combined.WriteString(hint + "\n\n")
-			}
-		}
+		combined.WriteString(fmt.Sprintf("Missing driver import in %s: %v\n\n", relPath, err))
+		return
+	}
+	if len(missing) > 0 {
+		r.track.hadCmdFailure = true
+		r.track.verifyOK = false
+		combined.WriteString(fmt.Sprintf("Missing driver import(s) in %s: %s\nAdd blank imports (e.g. _ \"%s\") before bd close.\n\n",
+			relPath, strings.Join(missing, ", "), missing[0]))
 	}
 }

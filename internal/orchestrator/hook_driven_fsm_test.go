@@ -96,10 +96,10 @@ func TestRigFlowYAML_implementationHasStallRecoveryHooks(t *testing.T) {
 	if len(st.Hooks.OnTimeout) != 1 || st.Hooks.OnTimeout[0] != "recover_implementation_stall" {
 		t.Fatalf("on_timeout = %v, want [recover_implementation_stall]", st.Hooks.OnTimeout)
 	}
-	if len(st.Hooks.OnStateTimeout) != 1 || st.Hooks.OnStateTimeout[0] != "reset_implementation_phase" {
-		t.Fatalf("on_state_timeout = %v, want [reset_implementation_phase]", st.Hooks.OnStateTimeout)
+	if len(st.Hooks.OnStateTimeout) != 1 || st.Hooks.OnStateTimeout[0] != "recover_implementation_stall" {
+		t.Fatalf("on_state_timeout = %v, want [recover_implementation_stall]", st.Hooks.OnStateTimeout)
 	}
-	if got := st.Hooks.EffectiveOnStateTimeoutHooks(); len(got) != 1 || got[0] != "reset_implementation_phase" {
+	if got := st.Hooks.EffectiveOnStateTimeoutHooks(); len(got) != 1 || got[0] != "recover_implementation_stall" {
 		t.Fatalf("EffectiveOnStateTimeoutHooks = %v", got)
 	}
 	if st.Hooks.EffectiveCmdTimeoutSeconds() != 900 {
@@ -143,8 +143,8 @@ func TestRigFlowYAML_planningHasTimeoutHooks(t *testing.T) {
 	if st.Hooks.EffectiveStateTimeoutSeconds() != 1800 {
 		t.Fatalf("state_timeout_seconds = %d, want 1800", st.Hooks.StateTimeoutSeconds)
 	}
-	if len(st.Hooks.OnTimeout) != 1 || st.Hooks.OnTimeout[0] != "reset_planning_phase" {
-		t.Fatalf("on_timeout = %v, want [reset_planning_phase]", st.Hooks.OnTimeout)
+	if len(st.Hooks.OnTimeout) != 1 || st.Hooks.OnTimeout[0] != "sync_planning_on_timeout" {
+		t.Fatalf("on_timeout = %v, want [sync_planning_on_timeout]", st.Hooks.OnTimeout)
 	}
 	trans, ok := st.Transitions["timeout"]
 	if !ok || trans.To != "planning" {
@@ -173,7 +173,7 @@ func TestRigFlowYAML_projectSetupHasAutoVerifyAndVenvCreate(t *testing.T) {
 	if !hasGo || !hasPip {
 		t.Fatalf("auto_verify: go=%v pip=%v rules=%v", hasGo, hasPip, h.AutoVerify)
 	}
-	wantPost := []string{"ensure_http_implementation_config", "close_project_setup_beads"}
+	wantPost := []string{"sync_planning_artifacts", "ensure_http_implementation_config", "close_project_setup_beads"}
 	if len(h.PostArtifactSuccess) != len(wantPost) {
 		t.Fatalf("post_artifact_success = %v, want %v", h.PostArtifactSuccess, wantPost)
 	}

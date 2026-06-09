@@ -72,19 +72,7 @@ func responseLooksLikeMarkdownTutorialImplementation(response string) bool {
 
 // FormatFencedGoWithoutNativeWriteFeedback tells the polecat how to emit real native edits.
 func FormatFencedGoWithoutNativeWriteFeedback() string {
-	return strings.TrimSpace(`**Rejected:** Your reply included markdown ` + "```go" + ` code samples but no successful **WRITE:** or **EDIT:** was applied to disk.
-
-Use native tools only:
-- **WRITE:** linkshelf/path/file.go  
-  then the full file body (no ` + "```go" + ` fence)
-- **EDIT:** linkshelf/path/file.go  
-  <<<<<<< SEARCH  
-  exact lines from **Current file on disk**  
-  =======  
-  replacement  
-  >>>>>>> REPLACE
-
-Do not put CMD:/EDIT:/WRITE: only inside tutorial ` + "```bash" + ` blocks without SEARCH/REPLACE content. Run Verify only after the log shows EDIT:/WRITE: ok.`)
+	return strings.TrimSpace(`**Rejected:** no WRITE: or EDIT: applied to disk. Use:**WRITE:** path/file  (then body, no ` + "```go" + ` fence)  or  **EDIT:** path/file  <<<<<<< SEARCH  exact-lines  =======  replacement  >>>>>>> REPLACE`)
 }
 
 func (r *stateRunner) validateImplementationFencedCodeGuard(cmd string) error {

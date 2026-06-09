@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/steveyegge/gastown/internal/orchestrator"
+	rigpkg "github.com/steveyegge/gastown/internal/rig"
 )
 
 const (
@@ -299,7 +300,7 @@ func isMarkdownFenceOnlyLine(t string) bool {
 	return false
 }
 
-// reconcileActiveImplementBeadWithQueue clears a stale persisted active bead when the queue head moved on.
+// reconcileActiveImplementBeadWithQueue aligns track state with the profile-order queue head.
 func (r *stateRunner) reconcileActiveImplementBeadWithQueue() {
 	if r.track == nil || !strings.EqualFold(strings.TrimSpace(r.hooks.Track), "implementation") {
 		return
@@ -307,27 +308,37 @@ func (r *stateRunner) reconcileActiveImplementBeadWithQueue() {
 	if len(r.v.RequiredFiles) == 0 {
 		return
 	}
+	promoted, reopened, err := orchestrator.PromoteImplementQueueHead(r.townRoot, r.rig, r.v)
+	if err != nil {
+		orchestratedFprintfStderr("[gt-agent] promote implement queue head: %v\n", err)
+	}
 	next, err := orchestrator.NextOpenImplementBead(r.townRoot, r.rig, r.v)
 	if err != nil || next == nil || next.ID == "" {
 		return
 	}
 	active := strings.TrimSpace(r.track.activeBead)
-	if active == "" {
-		r.track.activeBead = next.ID
-		r.track.activeBeadPath = orchestrator.ImplementBeadPathForID(r.townRoot, r.rig, next.ID, r.v)
-		return
-	}
+	headPath := orchestrator.ImplementBeadPathForID(r.townRoot, r.rig, next.ID, r.v)
 	if active == next.ID {
+		if r.track.activeBeadPath == "" && headPath != "" {
+			r.track.activeBeadPath = headPath
+		}
 		return
 	}
-	orchestratedPrintf("[gt-agent] clearing stale active bead %s (queue head is %s); use CMD: bd update %s --status=in_progress before EDIT\n",
-		active, next.ID, next.ID)
-	r.track.activeBead = ""
-	r.track.activeBeadPath = ""
-	r.track.verifyOK = false
-	if r.implProgress != nil && r.implProgress.ActiveBead == active {
-		r.implProgress.ActiveBead = ""
-		r.implProgress.ActiveBeadPath = ""
+	if active != "" || len(reopened) > 0 || promoted != "" {
+		if active != "" {
+			orchestratedPrintf("[gt-agent] realigned active bead %s → queue head %s (%s)\n", active, next.ID, next.Title)
+		} else if promoted != "" || len(reopened) > 0 {
+			orchestratedPrintf("[gt-agent] implement queue head %s (%s) is in_progress\n", next.ID, next.Title)
+		}
+	}
+	if active != "" && active != next.ID {
+		r.track.verifyOK = false
+	}
+	r.track.activeBead = next.ID
+	r.track.activeBeadPath = headPath
+	if r.implProgress != nil {
+		r.implProgress.ActiveBead = next.ID
+		r.implProgress.ActiveBeadPath = headPath
 		if err := saveImplementationProgress(r.townRoot, r.rig, r.implProgress); err != nil {
 			orchestratedFprintfStderr("[gt-agent] implementation progress save: %v\n", err)
 		}
@@ -398,6 +409,9 @@ func (r *stateRunner) executeNativeEdits(ops []nativeEditOp, editDir, sessionNam
 			if op.kind == "edit" && isNativeEditSearchNotFound(err) {
 				r.attemptEditSearchMiss = true
 				r.appendAutoReadAfterEditSearchMiss(combined, op.path, editDir)
+				if nudge := r.formatImplementBeadCloseNudge(); nudge != "" {
+					combined.WriteString(nudge)
+				}
 			}
 			continue
 		}
@@ -412,6 +426,8 @@ func (r *stateRunner) executeNativeEdits(ops []nativeEditOp, editDir, sessionNam
 			r.scrubGoFileAfterNativeWrite(op.path, combined)
 			r.tidyGoFileAfterNativeWrite(op.path, combined)
 			r.runPostNativeWriteVerify(op.path, sessionName, cmdEnv, combined)
+			r.runPostNativeWriteFrontendVerify(op.path, combined)
+			r.runPostNativeWriteMainImportCheck(op.path, combined)
 			r.runPostWriteHTTPContract(op.path, combined)
 			r.runAutoVerifyForNativeLayoutWrite(sessionName, cmdEnv, combined)
 		}
@@ -445,7 +461,7 @@ func (r *stateRunner) executeNativeEditOp(op nativeEditOp, workDir string) (stri
 	}
 	switch op.kind {
 	case "read":
-		if err := orchestrator.ValidateImplementReadPath(r.townRoot, r.rig, r.track.activeBead, rel, r.v); err != nil {
+		if err := orchestrator.ValidateImplementReadPath(r.townRoot, r.rig, r.track.activeBead, rel, r.v, r.track.lastVerifyOutput); err != nil {
 			return "", err
 		}
 		data, err := os.ReadFile(abs)
@@ -461,6 +477,12 @@ func (r *stateRunner) executeNativeEditOp(op nativeEditOp, workDir string) (stri
 		}
 		return string(data), nil
 	case "edit":
+		if err := rigpkg.RejectDisallowedMayorRigWrite(rel, r.v.LayoutRoot, r.v.RequiredFiles); err != nil {
+			return "", err
+		}
+		if err := r.rejectRedundantImplementEditAfterVerify(rel); err != nil {
+			return "", err
+		}
 		if err := orchestrator.ValidateImplementWritePath(r.townRoot, r.rig, r.track.activeBead, rel, r.v, false, r.track.lastVerifyOutput, r.qaReworkWriteScope()); err != nil {
 			return "", err
 		}
@@ -478,6 +500,12 @@ func (r *stateRunner) executeNativeEditOp(op nativeEditOp, workDir string) (stri
 		}
 		return applyNativeSearchReplaceValidated(rel, abs, op.search, replace)
 	case "write":
+		if err := rigpkg.RejectDisallowedMayorRigWrite(rel, r.v.LayoutRoot, r.v.RequiredFiles); err != nil {
+			return "", err
+		}
+		if err := r.rejectRedundantImplementEditAfterVerify(rel); err != nil {
+			return "", err
+		}
 		if err := orchestrator.ValidateImplementWritePath(r.townRoot, r.rig, r.track.activeBead, rel, r.v, true, r.track.lastVerifyOutput, r.qaReworkWriteScope()); err != nil {
 			return "", err
 		}

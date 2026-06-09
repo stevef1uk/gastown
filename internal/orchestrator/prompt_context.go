@@ -24,6 +24,9 @@ package orchestrator
 import (
 	"fmt"
 	"path/filepath"
+	"strings"
+
+	rigpkg "github.com/steveyegge/gastown/internal/rig"
 )
 
 // PromptContextBlock returns injected user-prompt text for a rig-flow prompt_context hook name.
@@ -88,18 +91,22 @@ func RunPreRunHook(step, townRoot, rig string, v WorkflowValidation) (string, er
 		if len(deleted) > 0 {
 			logParts = append(logParts, "pruned extras: "+joinStrings(deleted, ", "))
 		}
-		reopened, err := EnforceSingleImplementInProgress(townRoot, rig, v)
+		promoted, reopened, err := PromoteImplementQueueHead(townRoot, rig, v)
 		if err != nil {
 			return "", err
 		}
 		if len(reopened) > 0 {
 			logParts = append(logParts, "single in_progress: reopened "+joinStrings(reopened, ", "))
 		}
+		if promoted != "" {
+			logParts = append(logParts, "promoted queue head: "+promoted)
+		}
 		if len(logParts) > 0 {
 			return "implement bead queue: " + joinStrings(logParts, "; "), nil
 		}
 	case "repair_planning_beads":
-		logLine, err := RepairPlanningBeadSet(townRoot, rig, v)
+		syncV := ValidationForPlanningSync(townRoot, rig, v)
+		logLine, err := RepairPlanningBeadSet(townRoot, rig, syncV)
 		if err != nil {
 			return "", err
 		}
@@ -107,12 +114,28 @@ func RunPreRunHook(step, townRoot, rig string, v WorkflowValidation) (string, er
 			return "planning bead repair: " + logLine, nil
 		}
 	case "sync_planning_artifacts":
-		logLine, err := SyncPlanningArtifacts(townRoot, rig, v, false)
+		// Nested layouts need plan.md rewritten from required_files; setup/planner must not leave flat paths.
+		syncV := ValidationForPlanningSync(townRoot, rig, v)
+		forcePlan := RequiresExactImplementPaths(syncV)
+		logLine, err := SyncPlanningArtifacts(townRoot, rig, syncV, forcePlan)
 		if err != nil {
 			return "", err
 		}
 		if logLine != "" {
 			return "planning sync: " + logLine, nil
+		}
+	case "refresh_plan_md_if_stale":
+		syncV := ValidationForPlanningSync(townRoot, rig, v)
+		if !PlanningPlanMDNeedsRefresh(townRoot, rig, syncV) {
+			return "", nil
+		}
+		forcePlan := RequiresExactImplementPaths(syncV)
+		logLine, err := SyncPlanningArtifacts(townRoot, rig, syncV, forcePlan)
+		if err != nil {
+			return "", err
+		}
+		if logLine != "" {
+			return "plan.md refresh: " + logLine, nil
 		}
 	case "refresh_codeindex":
 		mayorRig := filepath.Join(townRoot, rig, "mayor", "rig")
@@ -125,6 +148,8 @@ func RunPreRunHook(step, townRoot, rig string, v WorkflowValidation) (string, er
 		return EnsureHTTPImplementationRigConfigLog(townRoot, rig, v)
 	case "ensure_implement_smoke_ready":
 		return EnsureImplementSmokeReadyLog(townRoot, rig, v)
+	case "ensure_handler_phase_prerequisites":
+		return EnsureHandlerPhasePrerequisitesLog(townRoot, rig, v)
 	case "reopen_implement_beads", "reconcile_implement_beads":
 		log, err := ReconcileImplementBeads(townRoot, rig, v)
 		if err != nil {
@@ -133,8 +158,37 @@ func RunPreRunHook(step, townRoot, rig string, v WorkflowValidation) (string, er
 		if log != "" && log != "implement beads and required_files are consistent" {
 			return "reconcile implement beads: " + log, nil
 		}
+	case "ensure_go_mod_from_spec":
+		logLine, err := EnsureGoModFromSpec(townRoot, rig, v)
+		if err != nil {
+			return "", err
+		}
+		return logLine, nil
 	case "prune_stale_layout_go":
 		return PruneStaleLayoutGoFilesLog(townRoot, rig, v)
+	case "prune_rig_root_junk":
+		mayorRig := filepath.Join(townRoot, rig, "mayor", "rig")
+		return rigpkg.RemoveMayorRigAgentJunkLog(mayorRig)
+	case "reset_layout_pre_implementation":
+		mayorRig := filepath.Join(townRoot, rig, "mayor", "rig")
+		layout := strings.Trim(filepath.ToSlash(strings.TrimSpace(v.LayoutRoot)), "/")
+		if layout == "" {
+			layout = rigpkg.InferLayoutRootFromMayorRig(mayorRig)
+		}
+		if layout == "" {
+			return "", nil
+		}
+		removed, err := rigpkg.ResetLayoutPreImplementation(mayorRig, layout)
+		if err != nil {
+			return "", err
+		}
+		if len(removed) == 0 {
+			return "", nil
+		}
+		if len(removed) > 8 {
+			return fmt.Sprintf("reset layout pre-implementation: removed %d stale files under %s/", len(removed), layout), nil
+		}
+		return fmt.Sprintf("reset layout pre-implementation: removed %s", joinStrings(removed, ", ")), nil
 	case "close_project_setup_beads":
 		closed, err := CloseProjectSetupBeads(townRoot, rig, v)
 		if err != nil {
