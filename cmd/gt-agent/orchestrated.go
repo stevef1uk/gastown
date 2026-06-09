@@ -1437,6 +1437,11 @@ func validateImplementationBeadReopen(cmd, townRoot, rig string, v orchestrator.
 	if !orchestrator.ImplementationQueueGreen(townRoot, rig, v) {
 		return fmt.Errorf("do not reopen %s — work on the current open bead `bd list --status=open`", id)
 	}
+	if orchestrator.WorkflowNeedsRuntimeSmoke(townRoot, rig, v) {
+		if err := orchestrator.ImplementationPhaseVerifyOK(townRoot, rig, v); err != nil {
+			return nil
+		}
+	}
 	return fmt.Errorf("do not reopen implement beads (%s) — go test ./... already passes; send JSON success only", id)
 }
 

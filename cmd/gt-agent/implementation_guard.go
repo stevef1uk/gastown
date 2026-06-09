@@ -292,12 +292,13 @@ func (r *stateRunner) implementationNoOpenBeadsButWorkRemainsNudge() (string, bo
 					b.WriteString(block)
 					b.WriteString("\n\n")
 				}
+				b.WriteString("Fix the code per the smoke failure above, run Verify, then `bd close`. Do not reopen beads — the system already reopened the affected ones for you. Do not send failure JSON.")
 			} else {
 				b.WriteString(err.Error())
 				b.WriteString("\n\n")
+				example := beadIDExample(r.townRoot, r.rig)
+				b.WriteString("Reopen the affected bead (`bd list --status=closed`), `bd update " + example + " --status=open`, fix code, Verify, `bd close`. Do not send failure JSON.")
 			}
-			example := beadIDExample(r.townRoot, r.rig)
-			b.WriteString("Reopen the affected bead (`bd list --status=closed`), `bd update " + example + " --status=open`, fix code, Verify, `bd close`. Do not send failure JSON.")
 			return b.String(), true
 		}
 	}
