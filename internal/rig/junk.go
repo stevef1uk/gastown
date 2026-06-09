@@ -25,11 +25,12 @@ var mayorRigJunkFiles = map[string]bool{
 }
 
 // mayorRigJunkDirs are directories agents sometimes create at mayor/rig root by mistake.
+// .venv and venv are intentionally excluded — Python agents are allowed to create them
+// at mayor/rig root (see RejectMayorRigRootShellCommand which permits python -m venv .venv).
+// Deleting an actively-used venv breaks the pipeline irrecoverably.
 var mayorRigJunkDirs = map[string]bool{
 	"node_modules": true,
 	"env":          true,
-	".venv":        true,
-	"venv":         true,
 	"tests":        true,
 	"polecat":      true,
 	"backend":      true,
