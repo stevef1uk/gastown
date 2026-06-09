@@ -89,6 +89,52 @@ func TestPathListedInRequired(sourcePath string, v WorkflowValidation) bool {
 	return false
 }
 
+// TestPathCoveredByOtherOpenBead reports whether the test file path belongs to a different
+// open/in_progress implement bead (not the bead being closed). When true, the close guard
+// defers the test check — the owning bead will verify and write the test file.
+func TestPathCoveredByOtherOpenBead(townRoot, rig, closingBeadID, testPath string, v WorkflowValidation) bool {
+	if townRoot == "" || rig == "" || closingBeadID == "" {
+		return false
+	}
+	if !BeadsDatabaseReady(townRoot, rig) {
+		return false
+	}
+	open, err := ListImplementBeadsOpenOrInProgress(townRoot, rig, v)
+	if err != nil || len(open) == 0 {
+		return false
+	}
+	for _, b := range open {
+		if b.ID == closingBeadID {
+			continue
+		}
+		beadPath := filepath.ToSlash(NormalizeBeadPathForLayout(
+			ExtractPathFromBeadTitle(b.Title, v.BeadTitleContains), v.LayoutRoot))
+		if pathMatchesRequired(beadPath, []string{testPath}) {
+			return true
+		}
+	}
+	return false
+}
+
+// OpenBeadIDForPath returns the open/in_progress bead ID that owns the given path, or "".
+func OpenBeadIDForPath(townRoot, rig, path string, v WorkflowValidation) string {
+	if townRoot == "" || rig == "" || !BeadsDatabaseReady(townRoot, rig) {
+		return ""
+	}
+	open, err := ListImplementBeadsOpenOrInProgress(townRoot, rig, v)
+	if err != nil {
+		return ""
+	}
+	for _, b := range open {
+		beadPath := filepath.ToSlash(NormalizeBeadPathForLayout(
+			ExtractPathFromBeadTitle(b.Title, v.BeadTitleContains), v.LayoutRoot))
+		if pathMatchesRequired(beadPath, []string{path}) {
+			return b.ID
+		}
+	}
+	return ""
+}
+
 // AllowedCorrelatedPackageImplementWrite allows editing the paired production or *_test.go
 // file in the same Go package while a different implement bead is active (e.g. fix handlers.go
 // while working the handlers_test.go bead so go test ./internal/api/... compiles).
