@@ -199,8 +199,8 @@ var nilDBPointerHintPatterns = []string{
 	"nil pointer",
 }
 
-// GoNilDBPointerHint reports a targeted hint when verify output contains a nil-*sql.DB panic
-// (the package-level store.DB was not initialized in the test file).
+// GoNilDBPointerHint returns a targeted hint when verify output contains a nil-*sql.DB panic
+// (a package-level *sql.DB variable or database handle was not initialized before use).
 func GoNilDBPointerHint(output string) string {
 	if strings.TrimSpace(output) == "" {
 		return ""
@@ -220,22 +220,23 @@ func GoNilDBPointerHint(output string) string {
 	if !hasNil || !hasDB {
 		return ""
 	}
-	return strings.TrimSpace(`### store.DB is nil (panic from uninitialized database handle)
+	return strings.TrimSpace(`### Package-level *sql.DB is nil (uninitialized)
 
-` + "`panic: runtime error: invalid memory address or nil pointer dereference`" + ` at a ` + "`*sql.DB`" + ` call means the package-level ` + "`store.DB`" + ` variable was never initialized.
+` + "`panic: runtime error: invalid memory address or nil pointer dereference`" + ` in a ` + "`*sql.DB`" + ` method means a package-level database handle was never set before a test or handler called into it.
 
-**Fix in the test file:** add DB init at the top of each test function that calls into store:
+**Fix:** add a DB init block at the top of the failing test function:
 
 ` + "```go" + `
 db, err := sql.Open("sqlite3", ":memory:")
 if err != nil {
     t.Fatal(err)
 }
-store.DB = db
-schema.InitSchema(db)
+// set the package-level DB variable (e.g. store.DB, pkg.DB, etc.)
+// from the package the trace points to
+<package>.DB = db
+// initialize the schema (call the InitSchema-like function from that package)
+<package>.InitSchema(db)
 ` + "```" + `
 
-` + "`\"database/sql\"`" + `, ` + "`\"linkshelf/internal/store\"`" + `, and ` + "`\"linkshelf/internal/store\"`" + ` must be imported.
-
-Do **not** rename handler functions or rewrite proven code — the nil pointer is a test setup-only issue.`)
+Import ` + "`\"database/sql\"`" + ` and the package owning the DB variable. Do **not** rename handler functions or refactor proven code — the nil pointer is a test setup-only issue.`)
 }
