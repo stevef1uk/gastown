@@ -16,7 +16,10 @@ func (r *stateRunner) scrubGoFileAfterNativeWrite(relPath string, combined *stri
 		return
 	}
 	relPath = orchestrator.NormalizeBeadPathForLayout(relPath, r.v.LayoutRoot)
-	if relPath == "" || !strings.HasSuffix(relPath, ".go") {
+	if relPath == "" {
+		return
+	}
+	if !strings.HasSuffix(relPath, ".go") && !strings.HasSuffix(relPath, "/go.mod") && relPath != "go.mod" {
 		return
 	}
 	mayorDir := rigMayorRigDir(r.townRoot, r.rig)
