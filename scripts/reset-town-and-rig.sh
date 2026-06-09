@@ -262,7 +262,7 @@ finalize_rig_planning_state() {
   # Flat layout titles only (canonical beads are Implement linkshelf/internal/... or cmd/... or web/...).
   local legacy
   legacy="$(BEADS_DIR="$beads_dir" bd list --status=open --flat --limit=0 2>/dev/null \
-    | rg ' - Implement linkshelf/(main|handlers|store|schema|store_test)\.go per' || true)"
+    | grep -E ' - Implement linkshelf/(main|handlers|store|schema|store_test)\.go per' || true)"
   if [[ -n "$legacy" ]]; then
     echo "FATAL: flat-layout implement beads remain after sync-planning:" >&2
     echo "$legacy" >&2
@@ -271,7 +271,7 @@ finalize_rig_planning_state() {
   fi
   if [[ -f "$rig_dir/plan.md" ]]; then
     local flat
-    flat="$(rg -n '^### [^:]+: linkshelf/(main|handlers|store|schema|store_test)\.go' "$rig_dir/plan.md" 2>/dev/null || true)"
+    flat="$(grep -En '^### [^:]+: linkshelf/(main|handlers|store|schema|store_test)\.go' "$rig_dir/plan.md" 2>/dev/null || true)"
     if [[ -n "$flat" ]]; then
       echo "FATAL: plan.md still has flat layout paths (expected linkshelf/internal/..., cmd/server/...):" >&2
       echo "$flat" >&2
@@ -437,7 +437,7 @@ if [[ "${START_RIG_FLOW:-0}" == "1" ]]; then
   ensure_rig_identity_operational "$RIG"
   if [[ -f "$GT_ROOT/orchestrator/instances.json" ]]; then
     echo "[orchestrator] instances.json:"
-    rg '"id"|current_state|status' "$GT_ROOT/orchestrator/instances.json" || true
+    grep -E '"id"|current_state|status' "$GT_ROOT/orchestrator/instances.json" || true
   else
     echo "FATAL: workflow start succeeded but $GT_ROOT/orchestrator/instances.json missing" >&2
     exit 1
