@@ -150,6 +150,9 @@ func layoutGoBasenamesProtectedFromPrune(v WorkflowValidation) map[string]bool {
 
 // PruneStaleLayoutGoFiles removes .go files under layout_root that are not listed in required_files.
 func PruneStaleLayoutGoFiles(townRoot, rig string, v WorkflowValidation) ([]string, error) {
+	if v.HasPhasedDelivery() {
+		return nil, nil
+	}
 	layout := strings.Trim(filepath.ToSlash(strings.TrimSpace(v.LayoutRoot)), "/")
 	if layout == "" || len(v.RequiredFiles) == 0 {
 		return nil, nil
