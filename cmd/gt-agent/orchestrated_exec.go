@@ -369,6 +369,7 @@ func rewriteUnittestToWorkdir(cmd, rig string, v orchestrator.WorkflowValidation
 			cmd = normalized
 			changed = true
 		}
+		cmd = normalizeRigPrefixShellPaths(cmd, rig, layout)
 	}
 	return cmd, changed
 }
@@ -383,6 +384,22 @@ func normalizeLayoutShellPaths(cmd, layout string) string {
 		for _, tool := range []string{"mkdir -p ", "test -f ", "test -d ", "test -e ", "wc -c ", "wc -l ", "cat ", "head ", "tail "} {
 			cmd = strings.ReplaceAll(cmd, tool+needle, tool)
 		}
+	}
+	return cmd
+}
+
+// normalizeRigPrefixShellPaths strips `rig/mayor/rig/` prefixes from file paths
+// when the workdir has been set to `rig/mayor/rig/layout/`. Without this, commands like
+// `wc -l testgt3/mayor/rig/linkshelf/web/index.html` resolve double-nested under that workdir.
+func normalizeRigPrefixShellPaths(cmd, rig, layout string) string {
+	rig = strings.TrimSpace(rig)
+	layout = strings.Trim(filepath.ToSlash(strings.TrimSpace(layout)), "/")
+	if rig == "" || layout == "" {
+		return cmd
+	}
+	prefix := rig + "/mayor/rig/"
+	for _, tool := range []string{"ls -la ", "ls -l ", "ls ", "cat ", "wc -l ", "wc -c ", "head ", "tail ", "test -f ", "test -d ", "test -e "} {
+		cmd = strings.ReplaceAll(cmd, tool+prefix, tool)
 	}
 	return cmd
 }
