@@ -197,6 +197,11 @@ func (r *stateRunner) implementationPrematureSuccessNudge(openImpl int) string {
 		b.WriteString(h)
 		b.WriteString("\n")
 	}
+	if h := orchestrator.GoNilDBPointerHint(r.track.lastVerifyOutput); h != "" {
+		b.WriteString("\n")
+		b.WriteString(h)
+		b.WriteString("\n")
+	}
 	return b.String()
 }
 
@@ -296,6 +301,10 @@ func (r *stateRunner) implementationNoOpenBeadsButWorkRemainsNudge() (string, bo
 			} else {
 				b.WriteString(err.Error())
 				b.WriteString("\n\n")
+				if h := orchestrator.GoNilDBPointerHint(err.Error()); h != "" {
+					b.WriteString(h)
+					b.WriteString("\n\n")
+				}
 				example := beadIDExample(r.townRoot, r.rig)
 				b.WriteString("Reopen the affected bead (`bd list --status=closed`), `bd update " + example + " --status=open`, fix code, Verify, `bd close`. Do not send failure JSON.")
 			}

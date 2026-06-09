@@ -192,3 +192,50 @@ func RunGoimportsOnCompileOutput(mayorRigDir, layoutRoot, output string) (touche
 	}
 	return touched, ran, nil
 }
+
+var nilDBPointerHintPatterns = []string{
+	"nil pointer dereference",
+	"invalid memory address",
+	"nil pointer",
+}
+
+// GoNilDBPointerHint reports a targeted hint when verify output contains a nil-*sql.DB panic
+// (the package-level store.DB was not initialized in the test file).
+func GoNilDBPointerHint(output string) string {
+	if strings.TrimSpace(output) == "" {
+		return ""
+	}
+	hasNil := false
+	hasDB := false
+	for _, pat := range nilDBPointerHintPatterns {
+		if strings.Contains(output, pat) {
+			hasNil = true
+			break
+		}
+	}
+	if strings.Contains(output, "*sql.DB") || strings.Contains(output, "DB.QueryContext") ||
+		strings.Contains(output, "database/sql.(*DB)") {
+		hasDB = true
+	}
+	if !hasNil || !hasDB {
+		return ""
+	}
+	return strings.TrimSpace(`### store.DB is nil (panic from uninitialized database handle)
+
+` + "`panic: runtime error: invalid memory address or nil pointer dereference`" + ` at a ` + "`*sql.DB`" + ` call means the package-level ` + "`store.DB`" + ` variable was never initialized.
+
+**Fix in the test file:** add DB init at the top of each test function that calls into store:
+
+` + "```go" + `
+db, err := sql.Open("sqlite3", ":memory:")
+if err != nil {
+    t.Fatal(err)
+}
+store.DB = db
+schema.InitSchema(db)
+` + "```" + `
+
+` + "`\"database/sql\"`" + `, ` + "`\"linkshelf/internal/store\"`" + `, and ` + "`\"linkshelf/internal/store\"`" + ` must be imported.
+
+Do **not** rename handler functions or rewrite proven code — the nil pointer is a test setup-only issue.`)
+}
