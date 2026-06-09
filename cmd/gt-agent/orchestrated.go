@@ -1428,8 +1428,14 @@ func validateImplementationBeadReopen(cmd, townRoot, rig string, v orchestrator.
 	if scope != nil && scope.QAReworkFromQAReview && scope.BeadCited(id) {
 		return nil
 	}
-	if !orchestrator.ImplementationQueueGreen(townRoot, rig, v) {
+	// Allow reopen only for the next open implement bead (the one the polecat should work on).
+	next, err := orchestrator.NextOpenImplementBead(townRoot, rig, v)
+	if err == nil && next != nil && strings.EqualFold(strings.TrimSpace(next.ID), strings.TrimSpace(id)) {
 		return nil
+	}
+	// Block reopening closed beads — the polecat should only work on the active/next open bead.
+	if !orchestrator.ImplementationQueueGreen(townRoot, rig, v) {
+		return fmt.Errorf("do not reopen %s — work on the current open bead `bd list --status=open`", id)
 	}
 	return fmt.Errorf("do not reopen implement beads (%s) — go test ./... already passes; send JSON success only", id)
 }
