@@ -250,10 +250,46 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summa
 			switch fromState {
 			case "planning", "plan_review", "project_setup":
 				if _, err := SyncPlanningArtifacts(m.townRoot, rig, v, true); err != nil {
+					if planningSyncNeedsArchitect(err, m.townRoot, rig, v) {
+						next, _ := inst.Transition(tpl, "architecture_failure")
+						if next == "" {
+							next = "design"
+						}
+						inst.CurrentState = next
+						inst.touchStateEnteredAt()
+						inst.PendingRework = &WorkflowRework{
+							FromState: fromState,
+							Outcome:   "architecture_failure",
+							Summary:   truncateWorkflowText("plan.md could not be generated — architecture.md is misaligned with SPEC.md", maxWorkflowReworkSummary),
+							Feedback:  fmt.Sprintf("The orchestrator could not generate plan.md because architecture.md does not match SPEC.md.\n\nPlease revise architecture.md to align with SPEC.md, then re-run planning.\n\nError: %v", err),
+						}
+						if perr := m.persistLocked(); perr != nil {
+							return "", fmt.Errorf("persist after architecture redirect: %w", perr)
+						}
+						return next, nil
+					}
 					return "", fmt.Errorf("sync planning before %s success: %w", fromState, err)
 				}
 			}
 			if err := ValidatePlanningPhaseGate(m.townRoot, rig, fromState, v); err != nil {
+				if planningGateNeedsArchitect(err, rig, v, fromState) {
+					next, _ := inst.Transition(tpl, "architecture_failure")
+					if next == "" {
+						next = "design"
+					}
+					inst.CurrentState = next
+					inst.touchStateEnteredAt()
+					inst.PendingRework = &WorkflowRework{
+						FromState: fromState,
+						Outcome:   "architecture_failure",
+						Summary:   truncateWorkflowText("planning gate blocked — architecture.md is misaligned with SPEC.md", maxWorkflowReworkSummary),
+						Feedback:  fmt.Sprintf("The planning phase gate failed because architecture.md does not match SPEC.md.\n\nPlease revise architecture.md to align with SPEC.md.\n\nError: %v", err),
+					}
+					if perr := m.persistLocked(); perr != nil {
+						return "", fmt.Errorf("persist after architecture redirect: %w", perr)
+					}
+					return next, nil
+				}
 				return "", err
 			}
 		}

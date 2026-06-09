@@ -79,6 +79,8 @@ func architectureDocAlignmentIssues(rigDir, specDoc string, v WorkflowValidation
 
 // PlanningDocsMisaligned reports whether SPEC/architecture/plan fail alignment for the active profile.
 // Used by planning sync refresh and workflow-stuck repair (layout_root-prefixed required_files).
+// When plan.md is missing, also checks architecture-vs-SPEC alignment — a hallucinated
+// architecture.md can prevent plan.md generation, and the stuck detector must catch this.
 func PlanningDocsMisaligned(rigDir string, v WorkflowValidation) bool {
 	rigDir = strings.TrimSpace(rigDir)
 	if rigDir == "" {
@@ -89,10 +91,14 @@ func PlanningDocsMisaligned(rigDir string, v WorkflowValidation) bool {
 	if layout == "" || layout == "." || !profileRequiredFilesUseLayoutPrefix(v, layout) {
 		return false
 	}
+	planMissing := false
 	if _, err := os.Stat(filepath.Join(rigDir, "plan.md")); err != nil {
-		return false
+		planMissing = true
 	}
-	return ValidatePlanningDocAlignment(rigDir, v) != nil
+	if !planMissing {
+		return ValidatePlanningDocAlignment(rigDir, v) != nil
+	}
+	return ValidateArchitectureDocAlignment(rigDir, v) != nil
 }
 
 // ValidatePlanningDocAlignment ensures SPEC.md, architecture.md, and plan.md agree on HTTP routes,
@@ -538,4 +544,48 @@ func sortedKeys(m map[string]bool) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+var planningArchitectRedirectErrors = []string{
+	"misaligned",
+	"alignment",
+	"architecture.md",
+}
+
+// planningSyncNeedsArchitect reports whether a SyncPlanningArtifacts failure means
+// architecture.md must be revised (plan.md cannot be generated until architecture matches SPEC).
+func planningSyncNeedsArchitect(err error, townRoot, rig string, v WorkflowValidation) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	hasAlignment := false
+	for _, needle := range planningArchitectRedirectErrors {
+		if strings.Contains(msg, needle) {
+			hasAlignment = true
+			break
+		}
+	}
+	if !hasAlignment || townRoot == "" || rig == "" {
+		return false
+	}
+	planPath := filepath.Join(townRoot, rig, "mayor", "rig", "plan.md")
+	_, statErr := os.Stat(planPath)
+	return statErr != nil
+}
+
+// planningGateNeedsArchitect reports whether a ValidatePlanningPhaseGate failure
+// means architecture.md is the root cause (not bead/plan.md issues that the planner can fix).
+func planningGateNeedsArchitect(err error, rig string, v WorkflowValidation, fromState string) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	if !strings.Contains(msg, "misaligned") && !strings.Contains(msg, "alignment") {
+		return false
+	}
+	if strings.Contains(msg, "plan.md") && !strings.Contains(msg, "architecture.md") {
+		return false
+	}
+	return true
 }
