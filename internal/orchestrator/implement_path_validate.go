@@ -95,7 +95,58 @@ func RemoveMalformedLayoutArtifactFiles(rigDir string, v WorkflowValidation) ([]
 		removed = append(removed, rel)
 		return nil
 	})
-	return removed, err
+	if err != nil {
+		return removed, err
+	}
+	// Remove spurious nested rig-path directories under the layout root.
+	// E.g. linkshelf/testgt3/mayor/rig/linkshelf/ created by commands with
+	// full path prefixes.
+	if dirs, dirErr := removeNestedRigLayoutDirs(root, rigDir, v); dirErr != nil {
+		return removed, dirErr
+	} else {
+		removed = append(removed, dirs...)
+	}
+	return removed, nil
+}
+
+// removeNestedRigLayoutDirs removes empty subdirectories under layoutRoot that
+// form a spurious nested rig path (e.g. linkshelf/testgt3/mayor/rig/linkshelf/...).
+func removeNestedRigLayoutDirs(root, rigDir string, v WorkflowValidation) ([]string, error) {
+	rigBase := filepath.Base(rigDir) // "rig"
+	if rigBase == "" || rigBase == "." {
+		return nil, nil
+	}
+	var removed []string
+	// Walk in reverse (bottom-up) to handle empty child directories first.
+	var dirs []string
+	_ = filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+		if err != nil || !info.IsDir() || path == root {
+			return nil
+		}
+		// Collect only directories that look like rig-path components.
+		name := info.Name()
+		if name == rigBase || name == "mayor" {
+			dirs = append(dirs, path)
+		}
+		return nil
+	})
+	// Remove deepest first.
+	for i := len(dirs) - 1; i >= 0; i-- {
+		if isEmptyDir(dirs[i]) {
+			if err := os.Remove(dirs[i]); err == nil {
+				rel, _ := filepath.Rel(root, dirs[i])
+				if rel != "" && rel != "." {
+					removed = append(removed, filepath.ToSlash(rel)+"/")
+				}
+			}
+		}
+	}
+	return removed, nil
+}
+
+func isEmptyDir(path string) bool {
+	entries, err := os.ReadDir(path)
+	return err == nil && len(entries) == 0
 }
 
 // IsMalformedLayoutArtifact reports paths written by mistake (prose/backticks, not real files).
