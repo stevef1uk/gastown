@@ -352,3 +352,89 @@ func TestParseOrchestratedCommands_jsonLowercaseCmd(t *testing.T) {
 		t.Fatalf("cmds = %#v", cmds)
 	}
 }
+
+func TestUnwrapJSONCommandArray_convertsKeystrokesToMarkers(t *testing.T) {
+	t.Parallel()
+	in := `{
+  "state_analysis": "need to fix tests",
+  "commands": [
+    {
+      "keystrokes": "export BEADS_DIR=$GT_ROOT/testgt3/.beads && cd testgt3/mayor/rig && bd update te-toa --status=in_progress",
+      "is_blocking": true,
+      "timeout_sec": 10
+    },
+    {
+      "keystrokes": "READ: linkshelf/internal/api/handlers_test.go",
+      "is_blocking": true,
+      "timeout_sec": 10
+    }
+  ],
+  "is_task_complete": false
+}`
+	got := unwrapJSONCommandArray(in)
+	if !strings.Contains(got, "CMD: export BEADS_DIR") {
+		t.Fatalf("want CMD: prefix, got %q", got)
+	}
+	if !strings.Contains(got, "bd update te-toa --status=in_progress") {
+		t.Fatalf("missing bd update: %q", got)
+	}
+	if !strings.Contains(got, "READ: linkshelf/internal/api/handlers_test.go") {
+		t.Fatalf("missing READ: %q", got)
+	}
+}
+
+func TestUnwrapJSONCommandArray_existingCMDKeystrokes(t *testing.T) {
+	t.Parallel()
+	in := `{"commands": [{"keystrokes": "CMD: export BEADS_DIR=$GT_ROOT/testgt3/.beads && cd testgt3/mayor/rig && bd list --status=open"}]}`
+	got := unwrapJSONCommandArray(in)
+	if !strings.Contains(got, "CMD: export BEADS_DIR") {
+		t.Fatalf("want CMD preserved: %q", got)
+	}
+	// Should not double-prefix
+	if strings.Contains(got, "CMD: CMD:") {
+		t.Fatalf("double CMD: prefix: %q", got)
+	}
+}
+
+func TestUnwrapJSONCommandArray_emptyCommands(t *testing.T) {
+	t.Parallel()
+	in := `{"commands": []}`
+	got := unwrapJSONCommandArray(in)
+	if got != in {
+		t.Fatalf("empty array should return unchanged: %q", got)
+	}
+}
+
+func TestUnwrapJSONCommandArray_noCommandsKey(t *testing.T) {
+	t.Parallel()
+	in := `{"outcome":"success","summary":"done"}`
+	got := unwrapJSONCommandArray(in)
+	if got != in {
+		t.Fatalf("no commands key should return unchanged: %q", got)
+	}
+}
+
+func TestPreprocessOrchestratedResponse_jsonCommandArray(t *testing.T) {
+	t.Parallel()
+	in := `{"commands": [{"keystrokes": "cd testgt3/mayor/rig/linkshelf && go test -count=1 ./internal/api/..."}]}`
+	got := preprocessOrchestratedResponse(in)
+	if !strings.Contains(got, "CMD: cd testgt3") {
+		t.Fatalf("want CMD: prefix after preprocessing: %q", got)
+	}
+	cmds := parseOrchestratedCommands(in)
+	if len(cmds) != 1 || !strings.Contains(cmds[0], "go test") {
+		t.Fatalf("cmds = %v", cmds)
+	}
+}
+
+func TestUnwrapJSONCommandArray_whitespaceOnlyKeystrokes(t *testing.T) {
+	t.Parallel()
+	in := `{"commands": [{"keystrokes": "   "}, {"keystrokes": "real command here"}]}`
+	got := unwrapJSONCommandArray(in)
+	if !strings.Contains(got, "CMD: real command here") {
+		t.Fatalf("want CMD: real command: %q", got)
+	}
+	if strings.Count(got, "CMD:") != 1 {
+		t.Fatalf("want exactly 1 CMD:, got %q", got)
+	}
+}

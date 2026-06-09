@@ -22,6 +22,7 @@ var (
 // preprocessOrchestratedResponse normalizes glued CMD/READ/EDIT markers before parsing.
 func preprocessOrchestratedResponse(response string) string {
 	response = unwrapJSONOrchestratedCommands(response)
+	response = unwrapJSONCommandArray(response)
 	response = normalizeGluedCMDMarkers(response)
 	response = gluedNativeToolRE.ReplaceAllString(response, "$1\n$2")
 	response = gluedCmdToToolRE.ReplaceAllString(response, "$1\n$2")
@@ -69,6 +70,44 @@ func jsonOrchestratedCommand(line string) string {
 		return strings.TrimSpace(cmd)
 	}
 	return ""
+}
+
+// unwrapJSONCommandArray extracts keystrokes from {"commands": [{"keystrokes":"...","is_blocking":true},...]}
+// JSON arrays that some LLMs (e.g. Gemini) emit natively. Converts to inline CMD:/READ:/EDIT:/WRITE: markers.
+func unwrapJSONCommandArray(response string) string {
+	if !strings.Contains(response, `"commands"`) {
+		return response
+	}
+	var obj struct {
+		Commands []struct {
+			Keystrokes string `json:"keystrokes"`
+		} `json:"commands"`
+	}
+	if err := json.Unmarshal([]byte(response), &obj); err != nil {
+		return response
+	}
+	if len(obj.Commands) == 0 {
+		return response
+	}
+	// Extract just the commands and append them as inline markers to the response
+	var parts []string
+	for _, c := range obj.Commands {
+		s := strings.TrimSpace(c.Keystrokes)
+		if s == "" {
+			continue
+		}
+		lower := strings.ToLower(s)
+		if strings.HasPrefix(lower, "read:") || strings.HasPrefix(lower, "edit:") ||
+			strings.HasPrefix(lower, "write:") || strings.HasPrefix(lower, "cmd:") {
+			parts = append(parts, s)
+		} else {
+			parts = append(parts, "CMD: "+s)
+		}
+	}
+	if len(parts) == 0 {
+		return response
+	}
+	return response + "\n" + strings.Join(parts, "\n")
 }
 
 // normalizeNativeEditEndLines fixes common model typos (e.g. >>>>>> REPLACE → >>>>>>> REPLACE).
