@@ -15,9 +15,13 @@ var planBeadSectionRE = regexp.MustCompile(`(?m)^###\s+([a-zA-Z0-9][a-zA-Z0-9_-]
 // it can flatten paths and recreate invalid beads like linkshelf/handlers.go after manual sync.
 func ValidationForPlanningSync(townRoot, rig string, runtime WorkflowValidation) WorkflowValidation {
 	if prof, ok, err := LoadRigWorkflowProfileFile(townRoot, rig); err == nil && ok {
-		return prof.ForActivePhase()
+		v := prof.ForActivePhase()
+		if len(v.RequiredFiles) > 0 {
+			return v
+		}
 	}
-	return runtime.ForActivePhase()
+	mayorRig := filepath.Join(townRoot, rig, "mayor", "rig")
+	return EnrichWorkflowValidationFromArchitecture(runtime, mayorRig).ForActivePhase()
 }
 
 // SyncPlanningArtifacts repairs open implement beads to match required_files and writes plan.md when needed.
