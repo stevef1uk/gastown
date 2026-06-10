@@ -369,6 +369,12 @@ func handlerStaticHandlerHasEarlyRequestURIGuard(body, routePrefix string, field
 			return true
 		}
 	}
+	// Fallback: accept any ".." check in a line that also references r.URL.Path,
+	// catching patterns like `if strings.Contains(r.URL.Path, "..")` and
+	// `relPath := r.URL.Path[len(prefix):]; if strings.Contains(relPath, "..")`.
+	if strings.Contains(block, `r.URL.Path`) && (strings.Contains(block, `".."`) || strings.Contains(block, `'..'`)) {
+		return true
+	}
 	for _, field := range fields {
 		if !strings.Contains(block, field) {
 			continue

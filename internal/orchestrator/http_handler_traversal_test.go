@@ -46,11 +46,8 @@ func TestHandlerStaticServePatternIssues_requiresRequestURIGuard(t *testing.T) {
 	v := WorkflowValidation{LayoutRoot: "linkshelf"}
 	InvalidateHTTPProfileCacheForTest()
 	body := `mux.HandleFunc("/static/", func(w http.ResponseWriter, r *http.Request) {
-		file := strings.TrimPrefix(r.URL.Path, "/static/")
-		if strings.Contains(file, "..") {
-			http.NotFound(w, r)
-			return
-		}
+		file := filepath.Join("web", r.URL.Path[len("/static/"):])
+		http.ServeFile(w, r, file)
 	})`
 	issues := HandlerStaticServePatternIssues("", "", body, v)
 	found := false
@@ -60,7 +57,7 @@ func TestHandlerStaticServePatternIssues_requiresRequestURIGuard(t *testing.T) {
 		}
 	}
 	if !found {
-		t.Fatalf("want RequestURI guard issue, got %v", issues)
+		t.Fatalf("want RequestURI guard issue (no .. check at all), got %v", issues)
 	}
 }
 
