@@ -105,6 +105,9 @@ func ValidateImplementReadPath(townRoot, rig, activeBead, relPath string, v Work
 			return nil
 		}
 	}
+	if isClosedImplementBeadPath(townRoot, rig, relPath, v) {
+		return nil
+	}
 	return fmt.Errorf("read only files under %s from required_files or dependency packages (active bead %s)",
 		strings.Trim(v.LayoutRoot, "/"), allowedID)
 }
@@ -252,4 +255,24 @@ func NewImplementWriteScopeError(townRoot, rig, allowedID, allowedPath, written 
 			base, written, targetID, targetPath, allowedID, allowedPath, targetID, targetID)
 	}
 	return base
+}
+
+func isClosedImplementBeadPath(townRoot, rig, relPath string, v WorkflowValidation) bool {
+	if townRoot == "" || rig == "" || !BeadsDatabaseReady(townRoot, rig) {
+		return false
+	}
+	closed, err := implementBeadsIndexedByPath(townRoot, rig, v, "closed")
+	if err != nil || len(closed) == 0 {
+		return false
+	}
+	rel := filepath.ToSlash(NormalizeBeadPathForLayout(strings.TrimSpace(relPath), v.LayoutRoot))
+	for path, b := range closed {
+		if b.ID == "" {
+			continue
+		}
+		if pathMatchesRequired(rel, []string{path}) {
+			return true
+		}
+	}
+	return false
 }
