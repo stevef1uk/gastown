@@ -100,8 +100,7 @@ type Message struct {
 type CompletionResponse struct {
 	Choices []struct {
 		Message struct {
-			Content          string `json:"content"`
-			ReasoningContent string `json:"reasoning_content"`
+			Content string `json:"content"`
 		} `json:"message"`
 	} `json:"choices"`
 }
@@ -162,9 +161,5 @@ func (c *Client) CompleteMessages(ctx context.Context, messages []Message) (stri
 	if len(result.Choices) == 0 {
 		return "", fmt.Errorf("no choices in response")
 	}
-	content := result.Choices[0].Message.Content
-	if content == "" {
-		content = result.Choices[0].Message.ReasoningContent
-	}
-	return content, nil
+	return result.Choices[0].Message.Content, nil
 }
