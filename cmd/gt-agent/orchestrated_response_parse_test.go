@@ -438,3 +438,24 @@ func TestUnwrapJSONCommandArray_whitespaceOnlyKeystrokes(t *testing.T) {
 		t.Fatalf("want exactly 1 CMD:, got %q", got)
 	}
 }
+
+func TestUnwrapJSONCommandArray_cmdKey(t *testing.T) {
+	t.Parallel()
+	in := `{"outcome":"failure","summary":"need to read","commands":[{"cmd":"READ: linkshelf/internal/api/handlers_test.go"}]}`
+	got := unwrapJSONCommandArray(in)
+	if !strings.Contains(got, "READ: linkshelf/internal/api/handlers_test.go") {
+		t.Fatalf("want READ: command extracted, got %q", got)
+	}
+}
+
+func TestUnwrapJSONCommandArray_cmdKeyWithExtraFields(t *testing.T) {
+	t.Parallel()
+	in := `{"outcome":"failure","summary":"...","commands":[{"cmd":"export BEADS_DIR=x && cd testgt3/mayor/rig && bd update te-h2i --status=in_progress"},{"cmd":"READ: linkshelf/internal/api/handlers_test.go"}]}`
+	got := unwrapJSONCommandArray(in)
+	if !strings.Contains(got, "CMD: export BEADS_DIR") {
+		t.Fatalf("want CMD: prefix added: %q", got)
+	}
+	if !strings.Contains(got, "READ: linkshelf/internal/api/handlers_test.go") {
+		t.Fatalf("want READ: preserved: %q", got)
+	}
+}

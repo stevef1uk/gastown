@@ -82,6 +82,7 @@ func unwrapJSONCommandArray(response string) string {
 	var obj struct {
 		Commands []struct {
 			Keystrokes string `json:"keystrokes"`
+			Cmd        string `json:"cmd"`
 		} `json:"commands"`
 	}
 	if err := json.Unmarshal([]byte(response), &obj); err != nil {
@@ -94,6 +95,9 @@ func unwrapJSONCommandArray(response string) string {
 	var parts []string
 	for _, c := range obj.Commands {
 		s := strings.TrimSpace(c.Keystrokes)
+		if s == "" {
+			s = strings.TrimSpace(c.Cmd)
+		}
 		if s == "" {
 			continue
 		}
