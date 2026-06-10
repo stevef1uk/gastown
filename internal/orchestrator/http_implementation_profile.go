@@ -369,12 +369,6 @@ func handlerStaticHandlerHasEarlyRequestURIGuard(body, routePrefix string, field
 			return true
 		}
 	}
-	// For custom mux handlers (mux.HandleFunc), accept any ".." check in the handler body
-	// even on local variables derived from r.URL.Path.
-	if strings.Contains(body, `mux.HandleFunc`) &&
-		(strings.Contains(block, `".."`) || strings.Contains(block, `'..'`)) {
-		return true
-	}
 	for _, field := range fields {
 		if !strings.Contains(block, field) {
 			continue
