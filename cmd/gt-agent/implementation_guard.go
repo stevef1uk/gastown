@@ -150,6 +150,10 @@ func (r *stateRunner) rejectImplementationOpenBeadsSuccess(outcome, summary stri
 		b.WriteString(strings.TrimSpace(summary))
 		b.WriteString("\n")
 	}
+	r.track.openBeadRejects++
+	if r.track.openBeadRejects >= 2 {
+		b.WriteString("\n**DO NOT send JSON.** Your summary describes what you *want* to do — it does not execute commands. Use **CMD:** for shell, **WRITE:** for new files, **EDIT:** for changes. JSON `{\"outcome\":\"success\"}` only after all beads are closed.\n")
+	}
 	return b.String(), true
 }
 

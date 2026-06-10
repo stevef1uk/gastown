@@ -38,6 +38,7 @@ type cmdTracker struct {
 	lastVerifyOutput  string
 	bdInfraFailed     bool
 	noDiskRejects     int
+	openBeadRejects   int
 }
 
 type stateRunner struct {
