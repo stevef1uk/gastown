@@ -641,15 +641,15 @@ func formatOrchestratedRetryBlock(prior *OrchestratedRetry, task *orchestrator.T
 	if task.State == "implementation" {
 		b.WriteString("\nUse **sed -i** or **patch** on internal .go files; **cmd/…/main.go may use heredoc** when Source context shows duplicate or stub handlers. Match APIs in **Dependency packages**.\n")
 		if strings.Contains(prior.Feedback, "invalid memory address") && strings.Contains(prior.Feedback, "nil pointer") {
-			b.WriteString("\n### LIKELY CAUSE: store.DB is nil\n")
-			b.WriteString("The test calls handler functions that touch `store.DB` (package-level `*sql.DB`). Initialize it in the test:\n")
-			b.WriteString("```go\ndb, _ := sql.Open(\"sqlite3\", \":memory:\")\nschema.InitSchema(db)\nstore.DB = db\n```\n")
-			b.WriteString("This must be in the test function or TestMain. Do NOT rename handler functions — the nil pointer is a test setup issue.\n")
+			b.WriteString("\n### LIKELY CAUSE: package-level DB variable is nil\n")
+			b.WriteString("The test calls functions that use a package-level `*sql.DB` which was never initialized. Add at the top of the failing test or TestMain:\n")
+			b.WriteString("```go\ndb, err := sql.Open(\"sqlite3\", \":memory:\")\nif err != nil { t.Fatal(err) }\n\n// Set the package-level DB variable (check the owning package for the variable name)\npkg.DB = db\n// Call the schema init function from that same package\npkg.InitSchema(db)\n```\n")
+			b.WriteString("Import `\"database/sql\"` and the package that owns the DB variable. Do NOT rename handler functions — the nil pointer is a test setup issue only.\n")
 		}
 		if strings.Contains(prior.Feedback, "got 500 want 200") || strings.Contains(prior.Feedback, "got 404 want 200") {
-			b.WriteString("\n### LIKELY CAUSE: wrong working directory\n")
-			b.WriteString("Go tests run with cwd set to the package directory. Add to TestMain:\n")
-			b.WriteString("```go\nos.Chdir(filepath.Join(\"..\", \"..\"))\n```\n")
+			b.WriteString("\n### LIKELY CAUSE: wrong working directory for file serving\n")
+			b.WriteString("Go tests run with cwd set to the package directory. If the handler serves files relative to the module root, add to TestMain:\n")
+			b.WriteString("```go\nfunc TestMain(m *testing.M) {\n    os.Chdir(filepath.Join(\"..\", \"..\")) // go up to module root\n    os.Exit(m.Run())\n}\n```\n")
 		}
 	}
 	runner := newStateRunner(task, "", rig)
