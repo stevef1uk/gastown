@@ -102,6 +102,9 @@ func PreferIncrementalEdit(townRoot, rig, relPath string, v WorkflowValidation) 
 	if IsCmdMainImplementPath(relPath) {
 		return false
 	}
+	if IsTestImplementPath(relPath) {
+		return false
+	}
 	size, exists, err := ImplementFileOnDisk(townRoot, rig, relPath, v.LayoutRoot)
 	if err != nil || !exists || size < IncrementalEditMinBytes {
 		return false
