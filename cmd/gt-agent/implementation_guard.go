@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/steveyegge/gastown/internal/orchestrator"
@@ -81,6 +82,7 @@ func (r *stateRunner) rejectImplementationSuccessWithoutDisk(outcome string) (st
 	b.WriteString("` is missing on disk (")
 	b.WriteString(artifactErr.Error())
 	b.WriteString(").\n\n")
+	r.track.noDiskRejects++
 	if len(cleaned) > 0 {
 		b.WriteString("Auto-cleanup removed corrupted open-bead artifacts so they can be rewritten:\n")
 		for _, rel := range cleaned {
@@ -89,6 +91,11 @@ func (r *stateRunner) rejectImplementationSuccessWithoutDisk(outcome string) (st
 			b.WriteString("`\n")
 		}
 		b.WriteString("\n")
+	}
+	template := r.injectWriteTemplateIfStuck(beadPath, beadID)
+	if template != "" {
+		b.WriteString(template)
+		b.WriteString("\n\n")
 	}
 	b.WriteString("Use **WRITE:** or `CMD:` heredoc for this bead in **this** session, run **Verify**, then `bd close ")
 	if beadID != "" {
@@ -404,4 +411,47 @@ func (r *stateRunner) implementationNoOpFailureNudge(openImpl int) string {
 		b.WriteString(h)
 	}
 	return b.String()
+}
+
+func (r *stateRunner) injectWriteTemplateIfStuck(beadPath, beadID string) string {
+	if r == nil || r.track == nil || r.track.noDiskRejects < 3 {
+		return ""
+	}
+	ext := strings.ToLower(filepath.Ext(beadPath))
+	beadID = strings.TrimSpace(beadID)
+	var body string
+	switch ext {
+	case ".go":
+		body = `**The file must be created NOW.** Send exactly this, then nothing else:
+
+WRITE: ` + beadPath + `
+package ` + goPackageNameFromPath(beadPath) + `
+
+func init() {
+    // TODO: implement per SPEC architecture and plan.md
+}
+---END WRITE---`
+	case ".py":
+		body = `**The file must be created NOW.** Send exactly this, then nothing else:
+
+WRITE: ` + beadPath + `
+# TODO: implement per SPEC architecture and plan.md
+---END WRITE---`
+	default:
+		body = `**The file must be created NOW.** Send exactly this, then nothing else:
+
+WRITE: ` + beadPath + `
+[content per SPEC]
+---END WRITE---`
+	}
+	return body
+}
+
+func goPackageNameFromPath(path string) string {
+	path = filepath.ToSlash(strings.TrimSpace(path))
+	parts := strings.Split(filepath.Dir(path), "/")
+	if len(parts) > 0 {
+		return parts[len(parts)-1]
+	}
+	return "main"
 }

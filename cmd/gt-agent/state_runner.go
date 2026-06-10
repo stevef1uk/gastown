@@ -37,6 +37,7 @@ type cmdTracker struct {
 	activeBeadPath    string
 	lastVerifyOutput  string
 	bdInfraFailed     bool
+	noDiskRejects     int
 }
 
 type stateRunner struct {
