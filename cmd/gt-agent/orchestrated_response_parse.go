@@ -23,6 +23,7 @@ var (
 func preprocessOrchestratedResponse(response string) string {
 	response = unwrapJSONOrchestratedCommands(response)
 	response = unwrapJSONCommandArray(response)
+	response = unwrapJSONActionCommands(response)
 	response = normalizeGluedWriteBody(response)
 	response = normalizeGluedCMDMarkers(response)
 	response = gluedNativeToolRE.ReplaceAllString(response, "$1\n$2")
@@ -69,6 +70,61 @@ func jsonOrchestratedCommand(line string) string {
 			continue
 		}
 		return strings.TrimSpace(cmd)
+	}
+	return ""
+}
+
+// unwrapJSONActionCommands converts {"action":"CMD","command":"..."} / {"action":"READ","path":"..."}
+// JSON objects that some models emit into inline CMD:/READ: markers.
+func unwrapJSONActionCommands(response string) string {
+	var out []string
+	for _, line := range strings.Split(response, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if !strings.HasPrefix(trimmed, "{") {
+			out = append(out, line)
+			continue
+		}
+		converted := convertJSONActionCommand(trimmed)
+		if converted != "" {
+			out = append(out, converted)
+			continue
+		}
+		out = append(out, line)
+	}
+	return strings.Join(out, "\n")
+}
+
+func convertJSONActionCommand(line string) string {
+	var obj struct {
+		Action  string `json:"action"`
+		Command string `json:"command"`
+		Path    string `json:"path"`
+	}
+	if err := json.Unmarshal([]byte(line), &obj); err != nil {
+		return ""
+	}
+	switch strings.ToUpper(obj.Action) {
+	case "CMD", "COMMAND":
+		if cmd := strings.TrimSpace(obj.Command); cmd != "" {
+			lower := strings.ToLower(cmd)
+			if strings.HasPrefix(lower, "read:") || strings.HasPrefix(lower, "edit:") ||
+				strings.HasPrefix(lower, "write:") || strings.HasPrefix(lower, "cmd:") {
+				return cmd
+			}
+			return "CMD: " + cmd
+		}
+	case "READ":
+		if path := strings.TrimSpace(obj.Path); path != "" {
+			return "READ: " + path
+		}
+	case "EDIT":
+		if path := strings.TrimSpace(obj.Path); path != "" {
+			return "EDIT: " + path
+		}
+	case "WRITE":
+		if path := strings.TrimSpace(obj.Path); path != "" {
+			return "WRITE: " + path
+		}
 	}
 	return ""
 }
