@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -727,29 +726,91 @@ func applyUnifiedDiffPatch(filePath, diffBody string) (string, error) {
 	if scrubbed == "" {
 		return "", fmt.Errorf("empty diff body")
 	}
-	var buf strings.Builder
-	buf.WriteString("--- ")
-	buf.WriteString(filePath)
-	buf.WriteString("\n+++ ")
-	buf.WriteString(filePath)
-	buf.WriteString("\n")
-	for _, line := range strings.Split(scrubbed, "\n") {
-		if strings.HasPrefix(strings.TrimSpace(line), "@@") && !strings.Contains(line, "@@ -") {
-			buf.WriteString("@@ -1,1 +1,1 @@")
-		} else {
-			buf.WriteString(line)
-		}
-		buf.WriteByte('\n')
-	}
-	cmd := exec.Command("patch", "-u", "--fuzz=3", filePath)
-	cmd.Stdin = strings.NewReader(buf.String())
-	out, err := cmd.CombinedOutput()
+	orig, err := os.ReadFile(filePath)
 	if err != nil {
-		tail := strings.TrimSpace(string(out))
-		if tail == "" {
-			tail = err.Error()
-		}
-		return "", fmt.Errorf("patch failed: %s", tail)
+		return "", fmt.Errorf("cannot read file for patching: %w", err)
 	}
-	return strings.TrimSpace(string(out)), nil
+	patched := string(orig)
+	var hunks []string
+	for _, part := range strings.Split(scrubbed, "@@") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		hunks = append(hunks, part)
+	}
+	for _, hunk := range hunks {
+		search, replace := extractSearchReplaceFromDiffHunk(hunk)
+		if search == "" && replace == "" {
+			continue
+		}
+		count := strings.Count(patched, search)
+		if count == 0 {
+			return "", fmt.Errorf("patch failed: SEARCH block not found in file: %q", truncateForError(search))
+		}
+		if count > 1 {
+			return "", fmt.Errorf("patch failed: ambiguous SEARCH block (%d matches)", count)
+		}
+		patched = strings.Replace(patched, search, replace, 1)
+	}
+	if patched == string(orig) {
+		return "", fmt.Errorf("patch applied no changes")
+	}
+	if err := os.WriteFile(filePath, []byte(patched), 0644); err != nil {
+		return "", fmt.Errorf("patch write: %w", err)
+	}
+	return fmt.Sprintf("applied %d diff hunk(s)", len(hunks)), nil
+}
+
+func extractSearchReplaceFromDiffHunk(hunk string) (search, replace string) {
+	var searchLines, replaceLines []string
+	lines := strings.Split(hunk, "\n")
+	start := 0
+	if len(lines) > 0 {
+		t := strings.TrimSpace(lines[0])
+		if strings.HasPrefix(t, "@@") || isDiffHeaderLine(t) {
+			start = 1
+		}
+	}
+	for i := start; i < len(lines); i++ {
+		l := lines[i]
+		t := strings.TrimSpace(l)
+		if strings.HasPrefix(t, ">>>>>>> REPLACE") || strings.HasPrefix(t, ">>>>>>>REPLACE") {
+			break
+		}
+		if strings.HasPrefix(t, "--- ") || strings.HasPrefix(t, "+++ ") {
+			continue
+		}
+		switch {
+		case strings.HasPrefix(l, "-"):
+			searchLines = append(searchLines, l[1:])
+		case strings.HasPrefix(l, "+"):
+			replaceLines = append(replaceLines, l[1:])
+		case strings.HasPrefix(l, " "):
+			searchLines = append(searchLines, l[1:])
+			replaceLines = append(replaceLines, l[1:])
+		default:
+			searchLines = append(searchLines, l)
+			replaceLines = append(replaceLines, l)
+		}
+	}
+	return strings.TrimRight(strings.Join(searchLines, "\n"), "\n"),
+		strings.TrimRight(strings.Join(replaceLines, "\n"), "\n")
+}
+
+func truncateForError(s string) string {
+	if len(s) > 200 {
+		return s[:200] + "..."
+	}
+	return s
+}
+
+func isDiffHeaderLine(t string) bool {
+	if strings.HasPrefix(t, "@@") {
+		return true
+	}
+	if strings.HasPrefix(t, "-") && len(t) > 1 && (t[1] >= '0' && t[1] <= '9') {
+		return true
+	}
+	return false
 }

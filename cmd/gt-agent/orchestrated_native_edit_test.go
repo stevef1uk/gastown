@@ -694,3 +694,83 @@ func TestIsUnifiedDiffEditBody(t *testing.T) {
 		t.Fatal("empty string not a diff")
 	}
 }
+
+func TestApplyUnifiedDiffPatch_qwenBareAtFormat(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "handlers.go")
+	orig := `package api
+
+import (
+	"fmt"
+	"net/http"
+)
+
+func Serve(w http.ResponseWriter, r *http.Request) {
+	fmt.Fprintf(w, "hello")
+}
+`
+	if err := os.WriteFile(path, []byte(orig), 0644); err != nil {
+		t.Fatal(err)
+	}
+	diff := `@@
+-func Serve(w http.ResponseWriter, r *http.Request) {
+-	fmt.Fprintf(w, "hello")
+-}
++func Handle(w http.ResponseWriter, r *http.Request) {
++	w.WriteHeader(http.StatusOK)
++	w.Write([]byte("ok"))
++}
+>>>>>>> REPLACE`
+	out, err := applyUnifiedDiffPatch(path, diff)
+	if err != nil {
+		t.Fatalf("patch failed: %v\noutput: %s", err, out)
+	}
+	got, _ := os.ReadFile(path)
+	if !strings.Contains(string(got), "func Handle(") {
+		t.Fatalf("want Handle function, got:\n%s", string(got))
+	}
+	if strings.Contains(string(got), "func Serve(") {
+		t.Fatal("old function not removed")
+	}
+}
+
+func TestApplyUnifiedDiffPatch_multiHunkBareAt(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "handlers.go")
+	orig := `package api
+
+import "fmt"
+
+func A() { fmt.Println("a") }
+
+func B() { fmt.Println("b") }
+`
+	if err := os.WriteFile(path, []byte(orig), 0644); err != nil {
+		t.Fatal(err)
+	}
+	diff := `@@
+ import "fmt"
++import "net/http"
+ 
+@@
+-func A() { fmt.Println("a") }
++func A(w http.ResponseWriter, r *http.Request) {}
+ 
+@@
+-func B() { fmt.Println("b") }
++func B(w http.ResponseWriter, r *http.Request) {}
+>>>>>>> REPLACE`
+	out, err := applyUnifiedDiffPatch(path, diff)
+	if err != nil {
+		t.Fatalf("patch failed: %v\noutput: %s", err, out)
+	}
+	got, _ := os.ReadFile(path)
+	if !strings.Contains(string(got), `"net/http"`) {
+		t.Fatal("import not added")
+	}
+	if !strings.Contains(string(got), "func A(w http.ResponseWriter") {
+		t.Fatalf("A signature not updated:\n%s", string(got))
+	}
+}
