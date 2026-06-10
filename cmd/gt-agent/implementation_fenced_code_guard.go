@@ -125,7 +125,9 @@ func extractAndApplyFencedGoCode(r *stateRunner) bool {
 	rigDir := rigMayorRigDir(r.townRoot, r.rig)
 	path := filepath.Join(rigDir, filepath.FromSlash(beadPath))
 	if _, err := os.Stat(path); err == nil {
-		return false
+		if !orchestrator.IsTestImplementPath(beadPath) {
+			return false
+		}
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		return false
