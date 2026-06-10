@@ -2,6 +2,8 @@ package main
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/steveyegge/gastown/internal/orchestrator"
@@ -88,6 +90,9 @@ func (r *stateRunner) validateImplementationFencedCodeGuard(cmd string) error {
 	if !responseLooksLikeMarkdownTutorialImplementation(r.turnResponse) {
 		return nil
 	}
+	if extractAndApplyFencedGoCode(r) {
+		return nil
+	}
 	if isBeadCloseCommand(cmd) && !r.track.verifyOK {
 		return fmt.Errorf("apply code with WRITE: or EDIT: before bd close — markdown ```go fences are not written to disk")
 	}
@@ -95,6 +100,67 @@ func (r *stateRunner) validateImplementationFencedCodeGuard(cmd string) error {
 		return fmt.Errorf("apply code with WRITE: or EDIT: before Verify — markdown ```go fences are not written to disk")
 	}
 	return nil
+}
+
+func extractAndApplyFencedGoCode(r *stateRunner) bool {
+	if r == nil || r.townRoot == "" || r.rig == "" {
+		return false
+	}
+	beadPath := strings.TrimSpace(r.activeImplementBeadPath())
+	if beadPath == "" {
+		next, err := orchestrator.NextOpenImplementBead(r.townRoot, r.rig, r.v)
+		if err != nil || next == nil {
+			return false
+		}
+		beadPath = orchestrator.NormalizeBeadPathForLayout(
+			orchestrator.ExtractPathFromBeadTitle(next.Title, r.v.BeadTitleContains), r.v.LayoutRoot)
+	}
+	if beadPath == "" {
+		return false
+	}
+	goCode := extractFencedGoCode(r.turnResponse)
+	if goCode == "" {
+		return false
+	}
+	rigDir := rigMayorRigDir(r.townRoot, r.rig)
+	path := filepath.Join(rigDir, filepath.FromSlash(beadPath))
+	if _, err := os.Stat(path); err == nil {
+		return false
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return false
+	}
+	if err := os.WriteFile(path, []byte(goCode), 0644); err != nil {
+		return false
+	}
+	orchestratedPrintf("[gt-agent] auto-extracted ```go code to %s (%d bytes)\n", beadPath, len(goCode))
+	r.turnHadSuccessfulNative = true
+	return true
+}
+
+func extractFencedGoCode(response string) string {
+	lines := strings.Split(response, "\n")
+	inGo := false
+	var body strings.Builder
+	for _, line := range lines {
+		t := strings.TrimSpace(line)
+		if !inGo {
+			if strings.HasPrefix(t, "```") {
+				lang := strings.ToLower(strings.TrimSpace(strings.TrimPrefix(t, "```")))
+				if lang == "go" || lang == "golang" {
+					inGo = true
+					continue
+				}
+			}
+			continue
+		}
+		if t == "```" {
+			return strings.TrimSpace(body.String()) + "\n"
+		}
+		body.WriteString(line)
+		body.WriteByte('\n')
+	}
+	return ""
 }
 
 func (r *stateRunner) looksLikeImplementVerifyCommand(cmd string) bool {
