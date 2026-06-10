@@ -640,6 +640,17 @@ func formatOrchestratedRetryBlock(prior *OrchestratedRetry, task *orchestrator.T
 	}
 	if task.State == "implementation" {
 		b.WriteString("\nUse **sed -i** or **patch** on internal .go files; **cmd/…/main.go may use heredoc** when Source context shows duplicate or stub handlers. Match APIs in **Dependency packages**.\n")
+		if strings.Contains(prior.Feedback, "invalid memory address") && strings.Contains(prior.Feedback, "nil pointer") {
+			b.WriteString("\n### LIKELY CAUSE: store.DB is nil\n")
+			b.WriteString("The test calls handler functions that touch `store.DB` (package-level `*sql.DB`). Initialize it in the test:\n")
+			b.WriteString("```go\ndb, _ := sql.Open(\"sqlite3\", \":memory:\")\nschema.InitSchema(db)\nstore.DB = db\n```\n")
+			b.WriteString("This must be in the test function or TestMain. Do NOT rename handler functions — the nil pointer is a test setup issue.\n")
+		}
+		if strings.Contains(prior.Feedback, "got 500 want 200") || strings.Contains(prior.Feedback, "got 404 want 200") {
+			b.WriteString("\n### LIKELY CAUSE: wrong working directory\n")
+			b.WriteString("Go tests run with cwd set to the package directory. Add to TestMain:\n")
+			b.WriteString("```go\nos.Chdir(filepath.Join(\"..\", \"..\"))\n```\n")
+		}
 	}
 	runner := newStateRunner(task, "", rig)
 	b.WriteString(runner.retryHint())
