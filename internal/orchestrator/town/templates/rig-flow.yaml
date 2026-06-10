@@ -158,6 +158,34 @@ states:
       omit_orchestrator_context: true
       system_prompt_footer: |
         Prefer READ:/EDIT:/WRITE: for source and test files; `CMD: <shell>` for bd and Verify only. Add/update unit tests from plan.md acceptance before bd close. JSON success in a later message (not with CMD or native tools).
+
+        ## Required format (follow exactly — no JSON wrappers, no markdown fences)
+
+        **New file:**
+        WRITE: {{layout_root}}/path/file.go
+        package pkg
+
+        func main() {
+        }
+        ---END WRITE---
+
+        **Edit existing file:**
+        EDIT: {{layout_root}}/path/file.go
+        <<<<<<< SEARCH
+        old code
+        =======
+        new code
+        >>>>>>> REPLACE
+
+        **Shell commands (one per line):**
+        CMD: export BEADS_DIR=$GT_ROOT/{{rig}}/.beads && cd {{rig}}/mayor/rig && bd update BEAD_ID --status=in_progress
+        CMD: cd {{rig}}/mayor/rig/{{layout_root}} && go test -count=1 ./...
+
+        **Close bead after verify passes:**
+        CMD: export BEADS_DIR=$GT_ROOT/{{rig}}/.beads && cd {{rig}}/mayor/rig && bd close BEAD_ID
+
+        **Result (SEPARATE message, NO CMD/WRITE/EDIT lines):**
+        {"outcome":"success","summary":"Implemented handlers.go and tests; go test passes"}
       user_prompt_wrapper: none
       failure_prompt_context: [implementation_queue, implement_bead_context]
       empty_response_suffix: "Reply with EDIT:/WRITE:/READ: or CMD: lines. Implement code and unit tests per plan.md; WRITE for new *_test.go or tests/test_*.py. Use Verify from Next bead."
