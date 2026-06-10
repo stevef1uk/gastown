@@ -274,6 +274,12 @@ func (r *stateRunner) rejectImplementationNoOpFailure(outcome string) (string, b
 	if r.attemptFixWork {
 		return "", false
 	}
+	r.track.noDiskRejects++
+	if r.track.noDiskRejects >= 2 {
+		if tmpl := r.forceJSONStopTemplate(); tmpl != "" {
+			return tmpl, true
+		}
+	}
 	if openImpl == 0 && !r.hasQAPendingRework() {
 		if msg, blocked := r.implementationNoOpenBeadsButWorkRemainsNudge(); blocked {
 			return msg, true
@@ -281,6 +287,31 @@ func (r *stateRunner) rejectImplementationNoOpFailure(outcome string) (string, b
 		return "", false
 	}
 	return r.implementationNoOpFailureNudge(openImpl), true
+}
+
+func (r *stateRunner) forceJSONStopTemplate() string {
+	beadPath := strings.TrimSpace(r.activeImplementBeadPath())
+	if beadPath == "" {
+		next, _ := orchestrator.NextOpenImplementBead(r.townRoot, r.rig, r.v)
+		if next != nil {
+			beadPath = orchestrator.NormalizeBeadPathForLayout(
+				orchestrator.ExtractPathFromBeadTitle(next.Title, r.v.BeadTitleContains), r.v.LayoutRoot)
+		}
+	}
+	if beadPath == "" {
+		return ""
+	}
+	ext := strings.ToLower(filepath.Ext(beadPath))
+	var template string
+	switch {
+	case ext == ".go" && orchestrator.IsTestImplementPath(beadPath):
+		template = "WRITE: " + beadPath + "\npackage " + goPackageNameFromPath(beadPath) + "\n\nimport \"testing\"\n\nfunc TestPlaceholder(t *testing.T) {}\n---END WRITE---"
+	case ext == ".go":
+		template = "WRITE: " + beadPath + "\npackage " + goPackageNameFromPath(beadPath) + "\n---END WRITE---"
+	default:
+		template = "WRITE: " + beadPath + "\n---END WRITE---"
+	}
+	return "\n\n**STOP sending JSON.** Copy this exact template and fill in the code:\n\n```\n" + template + "\n```\n\nThen run Verify and bd close."
 }
 
 // implementationNoOpenBeadsButWorkRemainsNudge blocks failure/success hand-waving when the queue is empty
