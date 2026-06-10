@@ -622,3 +622,23 @@ func TestWidget(t *testing.T) { t.Fatal("dup") }
 		t.Fatalf("want one TestWidget, got:\n%s", out)
 	}
 }
+
+func TestParseOrchestratedNativeEdits_editWithoutSearchTreatsAsWrite(t *testing.T) {
+	t.Parallel()
+	in := `EDIT: linkshelf/internal/api/handlers.go
+package api
+
+func Handler() {
+}
+>>>>>>> REPLACE`
+	ops := parseOrchestratedNativeEdits(in)
+	if len(ops) != 1 {
+		t.Fatalf("want 1 op, got %d", len(ops))
+	}
+	if ops[0].kind != "write" {
+		t.Fatalf("want write (EDIT without SEARCH), got %s", ops[0].kind)
+	}
+	if !strings.Contains(ops[0].content, "package api") {
+		t.Fatalf("want package api in content, got %q", ops[0].content)
+	}
+}

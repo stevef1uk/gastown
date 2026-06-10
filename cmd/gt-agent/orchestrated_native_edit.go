@@ -59,11 +59,13 @@ func parseOrchestratedNativeEdits(response string) []nativeEditOp {
 				continue
 			}
 			search, replace, next, ok := parseNativeEditSearchReplace(lines, i)
-			if !ok || path == "" {
-				i = next
-				continue
+			if ok && path != "" {
+				if search == "" {
+					ops = append(ops, nativeEditOp{kind: "write", path: path, content: replace})
+				} else {
+					ops = append(ops, nativeEditOp{kind: "edit", path: path, search: search, replace: replace})
+				}
 			}
-			ops = append(ops, nativeEditOp{kind: "edit", path: path, search: search, replace: replace})
 			i = next
 		case strings.HasPrefix(upper, "WRITE:"):
 			path := orchestrator.SanitizeNativeEditRelPath(trimmedClean[len("WRITE:"):])
@@ -97,12 +99,13 @@ func parseNativeEditSearchReplace(lines []string, start int) (search, replace st
 			}
 			mode = "replace"
 		case isNativeEditEndMarker(t):
-			if mode != "replace" {
-				return "", "", i + 1, false
+			if mode == "replace" {
+				search = strings.TrimRight(strings.Join(searchLines, "\n"), "\n")
+				replace = strings.TrimRight(strings.Join(replaceLines, "\n"), "\n")
+				return search, replace, i + 1, search != ""
 			}
-			search = strings.TrimRight(strings.Join(searchLines, "\n"), "\n")
 			replace = strings.TrimRight(strings.Join(replaceLines, "\n"), "\n")
-			return search, replace, i + 1, search != ""
+			return "", replace, i + 1, replace != ""
 		default:
 			if isMarkdownFenceOnlyLine(t) {
 				continue
@@ -111,6 +114,8 @@ func parseNativeEditSearchReplace(lines []string, start int) (search, replace st
 			case "search":
 				searchLines = append(searchLines, lines[i])
 			case "replace":
+				replaceLines = append(replaceLines, lines[i])
+			default:
 				replaceLines = append(replaceLines, lines[i])
 			}
 		}
