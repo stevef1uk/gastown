@@ -642,3 +642,55 @@ func Handler() {
 		t.Fatalf("want package api in content, got %q", ops[0].content)
 	}
 }
+
+func TestApplyUnifiedDiffPatch_simple(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.go")
+	orig := "package main\n\nimport \"fmt\"\n"
+	if err := os.WriteFile(path, []byte(orig), 0644); err != nil {
+		t.Fatal(err)
+	}
+	diff := "@@ -1,3 +1,3 @@\n package main\n \n-import \"fmt\"\n+import \"os\"\n"
+	out, err := applyUnifiedDiffPatch(path, diff)
+	if err != nil {
+		t.Fatalf("patch failed: %v\noutput: %s", err, out)
+	}
+	got, _ := os.ReadFile(path)
+	want := "package main\n\nimport \"os\"\n"
+	if string(got) != want {
+		t.Fatalf("got %q, want %q", string(got), want)
+	}
+}
+
+func TestApplyUnifiedDiffPatch_endOfFileMarker(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.go")
+	orig := "package main\n\nfunc main() {}\n"
+	if err := os.WriteFile(path, []byte(orig), 0644); err != nil {
+		t.Fatal(err)
+	}
+	diff := "@@ -1,3 +1,3 @@\n package main\n \n-func main() {}\n+func init() {}\n*** End of File ***\n"
+	_, err := applyUnifiedDiffPatch(path, diff)
+	if err != nil {
+		t.Fatalf("patch failed: %v", err)
+	}
+	got, _ := os.ReadFile(path)
+	want := "package main\n\nfunc init() {}\n"
+	if string(got) != want {
+		t.Fatalf("got %q, want %q", string(got), want)
+	}
+}
+
+func TestIsUnifiedDiffEditBody(t *testing.T) {
+	if !isUnifiedDiffEditBody("@@ -1,3 +1,3 @@") {
+		t.Fatal("expected unified diff detection")
+	}
+	if isUnifiedDiffEditBody("package main") {
+		t.Fatal("should not detect diff in Go code")
+	}
+	if isUnifiedDiffEditBody("") {
+		t.Fatal("empty string not a diff")
+	}
+}

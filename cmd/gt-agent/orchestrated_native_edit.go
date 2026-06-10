@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -121,6 +122,10 @@ func parseNativeEditSearchReplace(lines []string, start int) (search, replace st
 		}
 	}
 	return "", "", len(lines), false
+}
+
+func isUnifiedDiffEditBody(body string) bool {
+	return strings.HasPrefix(strings.TrimSpace(body), "@@")
 }
 
 // skipNativeEditBlock advances past a malformed EDIT block (e.g. prose path, missing SEARCH).
@@ -492,6 +497,9 @@ func (r *stateRunner) executeNativeEditOp(op nativeEditOp, workDir string) (stri
 			return "", err
 		}
 		replace := sanitizeNativeFileContent(op.replace)
+		if isUnifiedDiffEditBody(replace) {
+			return applyUnifiedDiffPatch(abs, replace)
+		}
 		rigDir := r.mayorRigWorkDir()
 		if stripped, ok := orchestrator.PrepareImplementPackageWrite(rigDir, rel, replace, r.v); ok {
 			replace = stripped
@@ -709,4 +717,20 @@ func (r *stateRunner) runAutoVerifyForNativeLayoutWrite(sessionName string, cmdE
 	r.track.hadCmdFailure = false
 	r.persistImplementationProgress(verifyCmd)
 	combined.WriteString(fmt.Sprintf("Auto-verify (after native edit): %s\n%s", verifyCmd, formatSuccessCommandOutput(verifyOut)))
+}
+
+func applyUnifiedDiffPatch(filePath, diffBody string) (string, error) {
+	scrubbed := strings.ReplaceAll(diffBody, "*** End of File ***", "")
+	scrubbed = strings.TrimSpace(scrubbed) + "\n"
+	cmd := exec.Command("patch", "-u", filePath)
+	cmd.Stdin = strings.NewReader(scrubbed)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		tail := strings.TrimSpace(string(out))
+		if tail == "" {
+			tail = err.Error()
+		}
+		return "", fmt.Errorf("patch failed: %s", tail)
+	}
+	return strings.TrimSpace(string(out)), nil
 }
