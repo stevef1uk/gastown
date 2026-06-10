@@ -723,9 +723,26 @@ func (r *stateRunner) runAutoVerifyForNativeLayoutWrite(sessionName string, cmdE
 
 func applyUnifiedDiffPatch(filePath, diffBody string) (string, error) {
 	scrubbed := strings.ReplaceAll(diffBody, "*** End of File ***", "")
-	scrubbed = strings.TrimSpace(scrubbed) + "\n"
-	cmd := exec.Command("patch", "-u", filePath)
-	cmd.Stdin = strings.NewReader(scrubbed)
+	scrubbed = strings.TrimSpace(scrubbed)
+	if scrubbed == "" {
+		return "", fmt.Errorf("empty diff body")
+	}
+	var buf strings.Builder
+	buf.WriteString("--- ")
+	buf.WriteString(filePath)
+	buf.WriteString("\n+++ ")
+	buf.WriteString(filePath)
+	buf.WriteString("\n")
+	for _, line := range strings.Split(scrubbed, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "@@") && !strings.Contains(line, "@@ -") {
+			buf.WriteString("@@ -1,1 +1,1 @@")
+		} else {
+			buf.WriteString(line)
+		}
+		buf.WriteByte('\n')
+	}
+	cmd := exec.Command("patch", "-u", "--fuzz=3", filePath)
+	cmd.Stdin = strings.NewReader(buf.String())
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		tail := strings.TrimSpace(string(out))
