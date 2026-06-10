@@ -61,7 +61,9 @@ func parseOrchestratedNativeEdits(response string) []nativeEditOp {
 			}
 			search, replace, next, ok := parseNativeEditSearchReplace(lines, i)
 			if ok && path != "" {
-				if search == "" {
+				if search == "" && isUnifiedDiffEditBody(replace) {
+					ops = append(ops, nativeEditOp{kind: "edit", path: path, search: "", replace: replace})
+				} else if search == "" {
 					ops = append(ops, nativeEditOp{kind: "write", path: path, content: replace})
 				} else {
 					ops = append(ops, nativeEditOp{kind: "edit", path: path, search: search, replace: replace})
