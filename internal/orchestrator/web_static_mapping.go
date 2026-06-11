@@ -144,10 +144,7 @@ func WebFileFromStaticURL(urlPath string, m WebStaticMapping, layoutRoot string)
 // StaticRefMismatchHint returns a validation hint when ref disagrees with architecture mapping.
 func (m WebStaticMapping) StaticRefMismatchHint(ref string) string {
 	ref = normalizeWebURLRef(ref)
-	if ref == "" || !strings.HasPrefix(ref, "/") {
-		return ""
-	}
-	if m.StaticURLPrefix == "" {
+	if ref == "" {
 		return ""
 	}
 	if strings.HasPrefix(ref, m.StaticURLPrefix+"/") {
@@ -155,6 +152,16 @@ func (m WebStaticMapping) StaticRefMismatchHint(ref string) string {
 	}
 	lower := strings.ToLower(ref)
 	if !strings.HasSuffix(lower, ".js") && !strings.HasSuffix(lower, ".css") {
+		return ""
+	}
+	if !strings.HasPrefix(ref, "/") {
+		if m.StaticURLPrefix != "" {
+			suggested := m.StaticURLPrefix + "/" + ref
+			return "architecture serves static files under " + m.StaticURLPrefix + "/ (use " + suggested + ", not " + ref + ")"
+		}
+		return ""
+	}
+	if m.StaticURLPrefix == "" {
 		return ""
 	}
 	suggested := m.StaticURLPrefix + ref
