@@ -2479,8 +2479,51 @@ func validateWebStaticReferences(townRoot, rig string, v orchestrator.WorkflowVa
 			}
 		}
 	}
+	if err := validateJSDOMReferencesMatchHTML(rigDir, v); err != nil {
+		return err
+	}
 	return nil
 }
+
+var jsGetElementByIDRE = regexp.MustCompile(`(?i)getElementById\s*\(\s*["']([^"']+)["']\s*\)`)
+
+func validateJSDOMReferencesMatchHTML(rigDir string, v orchestrator.WorkflowValidation) error {
+	htmlIDs := make(map[string]string)
+	for _, rel := range webHTMLRequiredFiles(v) {
+		abs := filepath.Join(rigDir, filepath.FromSlash(rel))
+		body, err := os.ReadFile(abs)
+		if err != nil {
+			continue
+		}
+		for _, m := range htmlIDRE.FindAllStringSubmatch(string(body), -1) {
+			if len(m) >= 2 {
+				htmlIDs[strings.TrimSpace(m[1])] = rel
+			}
+		}
+	}
+	for _, rel := range v.RequiredFilesForSmokeScope() {
+		rel = filepath.ToSlash(strings.TrimSpace(rel))
+		if !strings.HasSuffix(strings.ToLower(rel), ".js") || !strings.Contains(rel, "/web/") {
+			continue
+		}
+		abs := filepath.Join(rigDir, filepath.FromSlash(rel))
+		body, err := os.ReadFile(abs)
+		if err != nil {
+			continue
+		}
+		for _, m := range jsGetElementByIDRE.FindAllStringSubmatch(string(body), -1) {
+			if len(m) >= 2 {
+				id := strings.TrimSpace(m[1])
+				if _, ok := htmlIDs[id]; !ok {
+					return fmt.Errorf("%s references DOM id %q not found in any HTML file; check index.html for the correct id", rel, id)
+				}
+			}
+		}
+	}
+	return nil
+}
+
+var htmlIDRE = regexp.MustCompile(`(?i)\bid\s*=\s*["']([^"']+)["']`)
 
 func webHTMLRequiredFiles(v orchestrator.WorkflowValidation) []string {
 	seen := map[string]bool{}
