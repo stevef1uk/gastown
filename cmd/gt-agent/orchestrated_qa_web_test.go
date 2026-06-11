@@ -69,7 +69,7 @@ func writeLinkshelfWebFixtureArch(t *testing.T, townRoot, rig string, indexHTML 
 	if err := os.WriteFile(filepath.Join(webDir, "index.html"), []byte(indexHTML), 0644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(webDir, "app.js"), []byte("export {};\n"), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(webDir, "app.js"), []byte("// frontend app.js\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
 	serverDir := filepath.Join(rigDir, "linkshelf", "cmd", "server")
@@ -274,7 +274,7 @@ func TestValidateQAArtifacts_requiresRuntimeSmokeWhenProfileHasWebAPI(t *testing
 	v := linkshelfWebProfile()
 	v = orchestrator.ClampProfileValidation(v)
 	rigDir := filepath.Join(dir, rig, "mayor", "rig")
-	appJS := strings.Repeat(`export async function loadBookmarks() {
+	appJS := strings.Repeat(`async function loadBookmarks() {
   const res = await fetch("/api/bookmarks");
   const data = await res.json();
   return data.map(b => b.title);

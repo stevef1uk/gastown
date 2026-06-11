@@ -28,7 +28,7 @@ func writeLinkshelfSmokeFingerprintFixture(t *testing.T, townRoot, rig string, i
 	if err := os.WriteFile(filepath.Join(webDir, "index.html"), []byte(indexHTML), 0644); err != nil {
 		t.Fatal(err)
 	}
-	appJS := strings.Repeat("export function init() { return 1; }\n", 20)
+	appJS := strings.Repeat("document.addEventListener('DOMContentLoaded', function() { console.log('loaded'); });\n", 20)
 	if err := os.WriteFile(filepath.Join(webDir, "app.js"), []byte(appJS), 0644); err != nil {
 		t.Fatal(err)
 	}
