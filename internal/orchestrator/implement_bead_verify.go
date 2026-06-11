@@ -269,6 +269,9 @@ func CloseImplementBeadsWithGreenGoVerify(townRoot, rig string, v WorkflowValida
 		if !eval.VerifySatisfied(rel) {
 			continue
 		}
+		if IsFrontendImplementPath(rel) && validateFrontendArtifactConsistency(townRoot, rig, v) != nil {
+			continue
+		}
 		if err := bdCloseImplementBead(townRoot, rig, b.ID); err != nil {
 			return closed, err
 		}
