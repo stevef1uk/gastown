@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -308,6 +309,9 @@ func CloseImplementBeadsWithGreenFrontendVerify(townRoot, rig string, v Workflow
 		if !eval.VerifySatisfied(rel) {
 			continue
 		}
+		if err := validateFrontendArtifactConsistency(townRoot, rig, v); err != nil {
+			continue
+		}
 		if err := bdCloseImplementBead(townRoot, rig, b.ID); err != nil {
 			return closed, err
 		}
@@ -356,3 +360,63 @@ func reopenClosedImplementBeadsOrdered(townRoot, rig string, v WorkflowValidatio
 	sort.Strings(reopened)
 	return reopened, nil
 }
+
+var htmlIDRE = regexp.MustCompile(`(?i)\bid\s*=\s*["']([^"']+)["']`)
+var jsGetElementByIDRE = regexp.MustCompile(`(?i)getElementById\s*\(\s*["']([^"']+)["']\s*\)`)
+
+func validateFrontendArtifactConsistency(townRoot, rig string, v WorkflowValidation) error {
+	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
+	staticMap := LoadWebStaticMappingFromRig(townRoot, rig, v)
+	htmlIDs := make(map[string]string)
+	for _, rel := range v.ForActivePhase().RequiredFiles {
+		rel = filepath.ToSlash(strings.TrimSpace(rel))
+		if !strings.HasSuffix(strings.ToLower(rel), ".html") || !strings.Contains(rel, "/web/") {
+			continue
+		}
+		abs := filepath.Join(rigDir, filepath.FromSlash(rel))
+		body, err := os.ReadFile(abs)
+		if err != nil {
+			continue
+		}
+		text := string(body)
+		for _, m := range htmlIDRE.FindAllStringSubmatch(text, -1) {
+			if len(m) >= 2 {
+				htmlIDs[strings.TrimSpace(m[1])] = rel
+			}
+		}
+		for _, m := range htmlAttrRefRE.FindAllStringSubmatch(text, -1) {
+			attr := strings.ToLower(m[1])
+			ref := strings.TrimSpace(m[2])
+			if ref == "" || strings.HasPrefix(ref, "#") || strings.HasPrefix(ref, "http") {
+				continue
+			}
+			if attr == "src" || strings.HasSuffix(strings.ToLower(ref), ".js") || strings.HasSuffix(strings.ToLower(ref), ".css") {
+				if hint := staticMap.StaticRefMismatchHint(ref); hint != "" {
+					return fmt.Errorf("HTML %s: %s", rel, hint)
+				}
+			}
+		}
+	}
+	for _, rel := range v.ForActivePhase().RequiredFiles {
+		rel = filepath.ToSlash(strings.TrimSpace(rel))
+		if !strings.HasSuffix(strings.ToLower(rel), ".js") || !strings.Contains(rel, "/web/") {
+			continue
+		}
+		abs := filepath.Join(rigDir, filepath.FromSlash(rel))
+		body, err := os.ReadFile(abs)
+		if err != nil {
+			continue
+		}
+		for _, m := range jsGetElementByIDRE.FindAllStringSubmatch(string(body), -1) {
+			if len(m) >= 2 {
+				id := strings.TrimSpace(m[1])
+				if _, ok := htmlIDs[id]; !ok && len(htmlIDs) > 0 {
+					return fmt.Errorf("JS %s references DOM id %q not found in HTML", rel, id)
+				}
+			}
+		}
+	}
+	return nil
+}
+
+var htmlAttrRefRE = regexp.MustCompile(`(?i)\b(src|href)\s*=\s*["']([^"'#][^"']*)["']`)
