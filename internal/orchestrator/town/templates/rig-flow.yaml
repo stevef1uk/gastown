@@ -188,6 +188,8 @@ states:
         {"outcome":"success","summary":"Implemented handlers.go and tests; go test passes"}
 
         **When verify fails:** First READ the failing file and the dependencies it calls. Then explain the failure in ONE sentence, then apply the fix with EDIT:/WRITE:. Do not try random edits — diagnose from the error output.
+
+        **Web frontend (app.js, index.html):** Use plain JavaScript — no ES module imports/exports (browsers cannot load them without a bundler). Use `fetch()` + DOM APIs. No server-side function calls (InitSchema, DB.Exec) in frontend code. Match DOM IDs between index.html and app.js exactly.
       user_prompt_wrapper: none
       failure_prompt_context: [implementation_queue, implement_bead_context]
       empty_response_suffix: "Reply with EDIT:/WRITE:/READ: or CMD: lines. Implement code and unit tests per plan.md; WRITE for new *_test.go or tests/test_*.py. Use Verify from Next bead."

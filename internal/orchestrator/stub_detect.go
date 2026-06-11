@@ -299,6 +299,15 @@ func CheckContentNotStub(data []byte, displayRel string, opts StubCheckOptions) 
 		}
 	}
 
+	if strings.HasSuffix(strings.ToLower(displayRel), ".js") {
+		if jsHasESModuleImports(text) {
+			return fmt.Errorf("%s uses ES module import/export — browsers cannot load this without a bundler; use plain fetch()+DOM APIs instead", displayRel)
+		}
+		if jsHasServerSideCalls(text) {
+			return fmt.Errorf("%s calls server-side-only functions (e.g. InitSchema) — these belong in Go code, not frontend JS", displayRel)
+		}
+	}
+
 	minBytes := opts.MinFileBytes
 	if looksSubstantiveImplementation(text, substantive, opts) || IsFrontendImplementPath(displayRel) {
 		// Small but complete modules or frontend files may be well under 400 bytes.
@@ -393,4 +402,16 @@ func isCommentOnlyLine(line string) bool {
 		return true
 	}
 	return false
+}
+
+var esModuleImportRE = regexp.MustCompile(`(?m)^\s*import\s+`)
+
+func jsHasESModuleImports(text string) bool {
+	return esModuleImportRE.MatchString(text) || strings.Contains(text, "export ")
+}
+
+var serverSideFuncRE = regexp.MustCompile(`\b(InitSchema|DB\.Exec|sql\.Open|store\.DB)\b`)
+
+func jsHasServerSideCalls(text string) bool {
+	return serverSideFuncRE.MatchString(text)
 }
