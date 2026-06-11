@@ -77,6 +77,21 @@ func requiredFileAtOrBeforeQueueHead(rel, headPath string, v WorkflowValidation)
 	return false
 }
 
+func frontendAutoClosedIDs(ids []string, townRoot, rig string, v WorkflowValidation) []string {
+	var out []string
+	for _, id := range ids {
+		if isFrontendBeadForPath(townRoot, rig, id, v) {
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
+func isFrontendBeadForPath(townRoot, rig, beadID string, v WorkflowValidation) bool {
+	path := ImplementBeadPathForID(townRoot, rig, beadID, v)
+	return IsFrontendImplementPath(path)
+}
+
 // AuditRequiredImplementFiles reports required_files that are missing, empty, or stubbed on disk.
 // When townRoot and rig are set, files after the open queue head are skipped (not implemented yet).
 func AuditRequiredImplementFiles(rigDir string, v WorkflowValidation) []string {
@@ -269,6 +284,24 @@ func ReconcileImplementBeads(townRoot, rig string, v WorkflowValidation) (string
 		}
 		if len(autoClosed) > 0 {
 			parts = append(parts, label+": "+joinStrings(autoClosed, ", "))
+		}
+	}
+	// Reopen frontend beads that were auto-closed but fail web artifact consistency checks.
+	// This prevents the close/reopen cycle when QA rejects frontend work for static path/DOM ID
+	// mismatches but reconcile immediately re-closes the beads on the next pre_run.
+	if len(autoClosed) > 0 && len(frontendAutoClosedIDs(autoClosed, townRoot, rig, v)) > 0 {
+		if err := validateFrontendArtifactConsistency(townRoot, rig, v); err != nil {
+			var reopened []string
+			for _, id := range autoClosed {
+				if isFrontendBeadForPath(townRoot, rig, id, v) {
+					if rerr := bdUpdateImplementBeadStatus(townRoot, rig, id, "open"); rerr == nil {
+						reopened = append(reopened, id)
+					}
+				}
+			}
+			if len(reopened) > 0 {
+				parts = append(parts, "reopened frontend (artifact mismatch): "+joinStrings(reopened, ", "))
+			}
 		}
 	}
 	if phaseErr != nil && ImplementationVerifyNeedsRuntimeRework(phaseErr) {
