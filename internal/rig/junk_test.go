@@ -28,7 +28,7 @@ func TestRemoveMayorRigAgentJunk(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(removed) < 4 {
+	if len(removed) < 3 {
 		t.Fatalf("removed = %v", removed)
 	}
 	if _, err := os.Stat(filepath.Join(dir, "SPEC.md")); err != nil {

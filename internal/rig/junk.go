@@ -25,14 +25,10 @@ var mayorRigJunkFiles = map[string]bool{
 }
 
 // mayorRigJunkDirs are directories agents sometimes create at mayor/rig root by mistake.
-// .venv and venv are intentionally excluded — Python agents are allowed to create them
-// at mayor/rig root (see RejectMayorRigRootShellCommand which permits python -m venv .venv).
-// Deleting an actively-used venv breaks the pipeline irrecoverably.
+// Only Gastown-internal directories belong here. Project directories like backend, frontend,
+// tests, node_modules, env, etc. are legitimate project content.
 var mayorRigJunkDirs = map[string]bool{
-	"node_modules": true,
-	"env":          true,
-	"tests":        true,
-	"polecat":      true,
+	"polecat": true,
 }
 
 // mayorRigRootAllowedFiles may exist at mayor/rig root (workflow + spec artifacts).
