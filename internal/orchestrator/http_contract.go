@@ -103,6 +103,21 @@ func ValidateImplementWrittenContent(townRoot, rig, mayorRigDir, relPath, conten
 	if err := ValidateImplementCrossBeadContent(mayorRigDir, relPath, content, v); err != nil {
 		return err
 	}
+	if IsCmdMainImplementPath(relPath) {
+		if err := validateServerEntrypointWiring(relPath, content); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateServerEntrypointWiring(relPath, content string) error {
+	if !strings.Contains(content, "HandleFunc") && !strings.Contains(content, "Handle(") {
+		return fmt.Errorf("%s must register HTTP routes with http.HandleFunc or mux.HandleFunc — see SPEC HTTP table", relPath)
+	}
+	if !strings.Contains(content, "sql.Open") && !strings.Contains(content, "InitSchema") && !strings.Contains(content, "store.DB") {
+		return fmt.Errorf("%s must open database and call InitSchema before registering handlers", relPath)
+	}
 	return nil
 }
 
