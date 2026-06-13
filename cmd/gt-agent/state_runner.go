@@ -203,6 +203,12 @@ func (r *stateRunner) emptyResponseNudge() string {
 	} else {
 		msg += " Send CMD: lines only (no blank turns)."
 	}
+	if orchestrator.WorkflowUsesPython(r.v) {
+		msg += " This is a Python project — use .venv/bin/python3, pytest, pip, uvicorn. No go/cmd/build."
+	}
+	if orchestrator.WorkflowUsesGo(r.v) {
+		msg += " This is a Go project — use go test, go build, go mod tidy."
+	}
 	return msg
 }
 
