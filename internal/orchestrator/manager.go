@@ -298,6 +298,11 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summa
 	if err != nil {
 		return "", err
 	}
+	if fromState == "qa_review" && IsArchitectureReworkOutcome(outcome) && next == "design" && rig != "" {
+		if reason := rejectSpuriousArchitectureRework(m.townRoot, rig, summary); reason != "" {
+			return "", fmt.Errorf("architecture_failure rejected: %s", reason)
+		}
+	}
 	if fromState == "plan_review" && IsFailureOutcome(outcome) && PlanReviewFailureNeedsArchitect(summary) {
 		next = "design"
 		inst.CurrentState = next

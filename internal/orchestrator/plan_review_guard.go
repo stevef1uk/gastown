@@ -1,6 +1,12 @@
 package orchestrator
 
-import "strings"
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"regexp"
+	"strings"
+)
 
 // PlanReviewFailureNeedsArchitect reports plan_review failures that require architecture.md edits
 // (planner cannot write architecture.md — send workflow to design instead of planning loop).
@@ -104,3 +110,50 @@ func allRequiredPathsCoveredByActiveBeads(townRoot, rig string, v WorkflowValida
 func PlanReviewGateSatisfied(townRoot, rig string, v WorkflowValidation) error {
 	return ValidatePlanningPhaseGate(townRoot, rig, "plan_review", v.ForActivePhase())
 }
+
+// rejectSpuriousArchitectureRework validates QA architecture_failure claims against
+// actual file content before allowing the workflow to reset to design. Returns a
+// rejection reason when the claim is contradicted by files on disk.
+func rejectSpuriousArchitectureRework(townRoot, rig, summary string) string {
+	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
+	lower := strings.ToLower(strings.TrimSpace(summary))
+	if strings.Contains(lower, "static") || strings.Contains(lower, "prefix") ||
+		strings.Contains(lower, ".js") || strings.Contains(lower, ".css") {
+		findFiles := []string{"linkshelf/web/index.html", "web/index.html"}
+		for _, rel := range findFiles {
+			abs := filepath.Join(rigDir, filepath.FromSlash(rel))
+			body, err := os.ReadFile(abs)
+			if err != nil {
+				continue
+			}
+			text := string(body)
+			if strings.Contains(text, "/static/") {
+				return fmt.Sprintf("QA claims missing /static/ prefix but %s already uses /static/ paths on disk", rel)
+			}
+		}
+	}
+	if strings.Contains(summary, `"links"`) || strings.Contains(summary, "DOM id") {
+		findFiles := []string{"linkshelf/web/index.html", "web/index.html", "linkshelf/web/app.js", "web/app.js"}
+		for _, rel := range findFiles {
+			abs := filepath.Join(rigDir, filepath.FromSlash(rel))
+			body, err := os.ReadFile(abs)
+			if err != nil {
+				continue
+			}
+			text := string(body)
+			if htmlGetElementByIDRE.MatchString(text) {
+				for _, m := range htmlGetElementByIDRE.FindAllStringSubmatch(text, -1) {
+					if len(m) >= 2 {
+						id := strings.TrimSpace(m[1])
+						if strings.Contains(string(body), `id="`+id+`"`) || strings.Contains(string(body), `id='`+id+`'`) {
+							return fmt.Sprintf("QA claims DOM id %q mismatch but it exists in on-disk files", id)
+						}
+					}
+				}
+			}
+		}
+	}
+	return ""
+}
+
+var htmlGetElementByIDRE = regexp.MustCompile(`getElementById\s*\(\s*["']([^"']+)["']\s*\)`)
