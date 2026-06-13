@@ -33,7 +33,6 @@ var mayorRigJunkDirs = map[string]bool{
 	"env":          true,
 	"tests":        true,
 	"polecat":      true,
-	"backend":      true,
 }
 
 // mayorRigRootAllowedFiles may exist at mayor/rig root (workflow + spec artifacts).
