@@ -112,10 +112,50 @@ func ValidateImplementWrittenContent(townRoot, rig, mayorRigDir, relPath, conten
 }
 
 func validateServerEntrypointWiring(relPath, content string) error {
-	if strings.Contains(content, "ListenAndServe") && !strings.Contains(content, "HandleFunc") && !strings.Contains(content, "Handle(") {
-		return fmt.Errorf("%s starts a server but registers no HTTP routes — add http.HandleFunc calls per SPEC HTTP table", relPath)
+	hasServer := strings.Contains(content, "ListenAndServe")
+	if !hasServer {
+		return nil
+	}
+	if !strings.Contains(content, "HandleFunc") && !strings.Contains(content, "Handle(") {
+		return fmt.Errorf("%s starts a server but registers no routes — add http.HandleFunc calls per SPEC HTTP table", relPath)
+	}
+	if !hasNonStdlibImport(content) {
+		return fmt.Errorf("%s only imports standard library — import local handler/store packages to register API routes", relPath)
 	}
 	return nil
+}
+
+var stdlibPrefixes = []string{
+	"archive/", "bufio", "builtin", "bytes", "cmp", "compress/", "container/",
+	"context", "crypto/", "database/", "debug/", "embed", "encoding/", "errors",
+	"expvar", "flag", "fmt", "go/", "hash/", "html/", "image/", "index/",
+	"io", "log", "maps", "math/", "mime", "net/", "os", "path/", "plugin",
+	"reflect", "regexp", "runtime/", "slices", "sort", "strconv", "strings",
+	"structs", "sync", "syscall", "testing", "text/", "time", "unicode",
+	"unique", "unsafe",
+}
+
+var goImportRE = regexp.MustCompile(`^\s*"[^"]+"\s*$`)
+
+func hasNonStdlibImport(content string) bool {
+	for _, line := range strings.Split(content, "\n") {
+		t := strings.TrimSpace(line)
+		if !goImportRE.MatchString(t) {
+			continue
+		}
+		imp := strings.Trim(t, `"`)
+		isStd := false
+		for _, p := range stdlibPrefixes {
+			if strings.HasPrefix(imp, p) || imp == p || imp == p[:len(p)-1] {
+				isStd = true
+				break
+			}
+		}
+		if !isStd && !strings.Contains(imp, "_test") {
+			return true
+		}
+	}
+	return false
 }
 
 // FormatHTTPRoutingGuidanceForBead returns implement-context notes for handler/web beads.
