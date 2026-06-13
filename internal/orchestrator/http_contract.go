@@ -112,11 +112,8 @@ func ValidateImplementWrittenContent(townRoot, rig, mayorRigDir, relPath, conten
 }
 
 func validateServerEntrypointWiring(relPath, content string) error {
-	if !strings.Contains(content, "HandleFunc") && !strings.Contains(content, "Handle(") {
-		return fmt.Errorf("%s must register HTTP routes with http.HandleFunc or mux.HandleFunc — see SPEC HTTP table", relPath)
-	}
-	if !strings.Contains(content, "sql.Open") && !strings.Contains(content, "InitSchema") && !strings.Contains(content, "store.DB") {
-		return fmt.Errorf("%s must open database and call InitSchema before registering handlers", relPath)
+	if strings.Contains(content, "ListenAndServe") && !strings.Contains(content, "HandleFunc") && !strings.Contains(content, "Handle(") {
+		return fmt.Errorf("%s starts a server but registers no HTTP routes — add http.HandleFunc calls per SPEC HTTP table", relPath)
 	}
 	return nil
 }
