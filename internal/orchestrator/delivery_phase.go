@@ -265,9 +265,19 @@ func moveDockerPathsToFinalDeliveryPhase(v WorkflowValidation) WorkflowValidatio
 // profile omitted delivery_phases (common for Link Shelf–scale specs).
 func inferDefaultDeliveryPhases(v WorkflowValidation) []DeliveryPhase {
 	files := normalizePathList(v.RequiredFiles)
-	if len(files) < 5 || len(files) > 25 || !WorkflowUsesGo(v) {
+	if len(files) < 5 || len(files) > 25 {
 		return nil
 	}
+	if WorkflowUsesGo(v) {
+		return inferGoDeliveryPhases(files, v)
+	}
+	if WorkflowUsesPython(v) {
+		return inferPythonDeliveryPhases(files, v)
+	}
+	return nil
+}
+
+func inferGoDeliveryPhases(files []string, v WorkflowValidation) []DeliveryPhase {
 	layout := strings.Trim(strings.TrimSpace(v.LayoutRoot), "/")
 	var goMod, store, api, server, webStatic, webHTML []string
 	for _, f := range files {
@@ -337,6 +347,78 @@ func inferDefaultDeliveryPhases(v WorkflowValidation) []DeliveryPhase {
 		return nil
 	}
 	return phases
+}
+
+func inferPythonDeliveryPhases(files []string, v WorkflowValidation) []DeliveryPhase {
+	layout := strings.Trim(strings.TrimSpace(v.LayoutRoot), "/")
+	var requirements, backendSrc, backendTests, frontendJS, frontendHTML []string
+	for _, f := range files {
+		lower := strings.ToLower(f)
+		switch {
+		case strings.HasSuffix(lower, "requirements.txt"):
+			requirements = append(requirements, f)
+		case strings.Contains(lower, "/test") || strings.HasPrefix(filepath.Base(lower), "test_"):
+			backendTests = append(backendTests, f)
+		case strings.HasSuffix(lower, ".py"):
+			backendSrc = append(backendSrc, f)
+		case strings.Contains(lower, "/frontend/") || strings.Contains(lower, "/game/"):
+			if strings.HasSuffix(lower, ".js") {
+				frontendJS = append(frontendJS, f)
+			} else if strings.HasSuffix(lower, ".html") || strings.HasSuffix(lower, ".css") {
+				frontendHTML = append(frontendHTML, f)
+			}
+		case strings.HasSuffix(lower, ".html") || strings.HasSuffix(lower, ".css"):
+			frontendHTML = append(frontendHTML, f)
+		case strings.HasSuffix(lower, ".js"):
+			frontendJS = append(frontendJS, f)
+		}
+	}
+	requirements = append(requirements, backendSrc...)
+	if len(requirements)+len(backendTests)+len(frontendJS) == 0 {
+		return nil
+	}
+	fullQA := strings.TrimSpace(v.QAVerifyCommand)
+	var phases []DeliveryPhase
+	if len(requirements) > 0 {
+		phases = append(phases, DeliveryPhase{
+			ID: "backend-src", Title: "Backend source",
+			RequiredFiles:   OrderRequiredFilesForImplementation(requirements),
+			QAVerifyCommand: pythonVerifyCommand(layout, ".", fullQA),
+		})
+	}
+	if len(backendTests) > 0 {
+		phases = append(phases, DeliveryPhase{
+			ID: "backend-tests", Title: "Backend tests",
+			RequiredFiles:   OrderRequiredFilesForImplementation(backendTests),
+			QAVerifyCommand: pythonVerifyCommand(layout, ".", fullQA),
+		})
+	}
+	if len(frontendJS) > 0 {
+		phases = append(phases, DeliveryPhase{
+			ID: "frontend-js", Title: "Frontend JavaScript",
+			RequiredFiles: OrderRequiredFilesForImplementation(frontendJS),
+		})
+	}
+	if len(frontendHTML) > 0 {
+		phases = append(phases, DeliveryPhase{
+			ID: "frontend-html", Title: "Frontend HTML/CSS",
+			RequiredFiles: OrderRequiredFilesForImplementation(frontendHTML),
+		})
+	}
+	if len(phases) < 2 {
+		return nil
+	}
+	return phases
+}
+
+func pythonVerifyCommand(layout, relDir, defaultQA string) string {
+	if q := strings.TrimSpace(defaultQA); q != "" {
+		return q
+	}
+	if layout == "" || layout == "." {
+		return "pytest " + relDir
+	}
+	return "cd " + layout + " && pytest " + relDir
 }
 
 func goModVerifyCommand(layout string) string {
