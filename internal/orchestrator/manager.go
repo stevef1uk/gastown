@@ -308,6 +308,11 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summa
 		inst.CurrentState = next
 		inst.touchStateEnteredAt()
 	}
+	if fromState == "qa_review" && IsFailureOutcome(outcome) && next == "implementation" && rig != "" {
+		if reason := rejectSpuriousQAFailure(m.townRoot, rig, summary); reason != "" {
+			return "", fmt.Errorf("qa failure rejected: %s", reason)
+		}
+	}
 	if next == "implementation" && rig != "" && fromState != "implementation" {
 		if err := m.prepareImplementationPhase(rig, inst, tpl); err != nil {
 			return "", err

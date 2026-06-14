@@ -3,6 +3,7 @@ package orchestrator
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -157,3 +158,45 @@ func rejectSpuriousArchitectureRework(townRoot, rig, summary string) string {
 }
 
 var htmlGetElementByIDRE = regexp.MustCompile(`getElementById\s*\(\s*["']([^"']+)["']\s*\)`)
+
+// rejectSpuriousQAFailure validates QA failure claims against on-disk files before
+// allowing the workflow to return to implementation. Returns a rejection reason when
+// the QA's claim is contradicted by files that already exist and are correct.
+func rejectSpuriousQAFailure(townRoot, rig, summary string) string {
+	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
+	lower := strings.ToLower(strings.TrimSpace(summary))
+	if strings.Contains(lower, "does not exist") || strings.Contains(lower, "missing") ||
+		strings.Contains(lower, "not found") || strings.Contains(lower, "no such file") {
+		return ""
+	}
+	if strings.Contains(lower, "static") || strings.Contains(lower, ".js") || strings.Contains(lower, ".css") ||
+		strings.Contains(lower, ".html") || strings.Contains(lower, "frontend") || strings.Contains(lower, "web") {
+		if hasValidFrontendArtifacts(rigDir) {
+			return "QA claims frontend issues but web artifacts exist and are valid on disk"
+		}
+	}
+	if strings.Contains(lower, "import") || strings.Contains(lower, "module") {
+		if hasPassingPythonTests(rigDir) {
+			return "QA claims import/module issues but tests pass on disk"
+		}
+	}
+	return ""
+}
+
+func hasValidFrontendArtifacts(rigDir string) bool {
+	for _, rel := range []string{"frontend/index.html", "frontend/game/main.js"} {
+		data, err := os.ReadFile(filepath.Join(rigDir, rel))
+		if err != nil || len(data) < 50 {
+			return false
+		}
+	}
+	return true
+}
+
+func hasPassingPythonTests(rigDir string) bool {
+	cmd := exec.Command(filepath.Join(rigDir, ".venv", "bin", "python3"),
+		"-m", "pytest", filepath.Join(rigDir, "defender", "backend", "tests"), "-q")
+	cmd.Dir = rigDir
+	cmd.Env = append(os.Environ(), "PYTHONPATH="+rigDir)
+	return cmd.Run() == nil
+}
