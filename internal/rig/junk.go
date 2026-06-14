@@ -136,6 +136,10 @@ func RejectMayorRigRootShellCommand(cmd, layoutRoot string) error {
 			return fmt.Errorf("do not create placeholder file %q at mayor/rig root", junk)
 		}
 	}
+	if (strings.Contains(lower, "rm ") || strings.Contains(lower, "rm\t")) &&
+		(strings.Contains(lower, ".venv/") || strings.Contains(lower, "venv/")) {
+		return fmt.Errorf("do not delete .venv/ files — the Python virtual environment is managed by the pipeline")
+	}
 	return nil
 }
 
