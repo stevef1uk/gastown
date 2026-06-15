@@ -227,6 +227,22 @@ var artifactAutoCompleters = map[string]artifactAutoCompleteFn{
 		}
 		return validateImplementationArtifacts(r.townRoot, r.rig, r.track.hadCmdFailure, r.track.beadCloseOK, r.track.verifyOK, r.v)
 	},
+	"qa_review": func(r *stateRunner) error {
+		return validateQAAutoComplete(r)
+	},
+}
+
+func validateQAAutoComplete(r *stateRunner) error {
+	if !r.track.verifyOK && !r.track.qaSmokeOK {
+		return fmt.Errorf("QA requires verify or smoke to pass before auto-complete")
+	}
+	if r.townRoot != "" && r.rig != "" && orchestrator.BeadsDatabaseReady(r.townRoot, r.rig) {
+		open, err := orchestrator.ListOpenImplementBeads(r.townRoot, r.rig, r.v)
+		if err == nil && len(open) > 0 {
+			return fmt.Errorf("%d open implement bead(s) remain", len(open))
+		}
+	}
+	return nil
 }
 
 var artifactFailureHints = map[string]func(*stateRunner) string{
