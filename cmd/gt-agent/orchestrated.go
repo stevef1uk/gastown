@@ -1405,8 +1405,13 @@ func validateImplementationCommandWithState(cmd, townRoot, rig, activeBead strin
 	if err := validateGoImplementationCommand(cmd, townRoot, rig, mayorDir, activeBead, v, verifyOK); err != nil {
 		return err
 	}
-	if err := validatePythonImplementationCommand(cmd, townRoot, rig, activeBead, v, verifyOK, lastVerifyOutput); err != nil {
+	if err := validatePythonImplementationCommand(cmd, townRoot, rig, activeBead, v, verifyOK); err != nil {
 		return err
+	}
+	if isPipInstallRequirementsCommand(cmd) {
+		if !pythonVerifyOutputSuggestsMissingDeps(lastVerifyOutput) {
+			return fmt.Errorf("install dependencies in project_setup — venv and pip install already ran there")
+		}
 	}
 	if err := validateCustomImplementationCommand(cmd, townRoot, rig, activeBead, v, verifyOK); err != nil {
 		return err

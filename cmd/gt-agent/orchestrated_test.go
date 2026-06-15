@@ -901,10 +901,10 @@ func TestValidatePythonImplementationCommand(t *testing.T) {
 		RequiredFiles:   []string{"backend/requirements.txt"},
 		QAVerifyCommand: "cd backend && python3 -m pytest -q",
 	}
-	if err := validatePythonImplementationCommand("python3 -m pip install -r backend/requirements.txt", dir, "mockrig", "", v, true, ""); err == nil {
+	if err := validatePythonImplementationCommand("python3 -m pip install -r backend/requirements.txt", dir, "mockrig", "", v, true); err == nil {
 		t.Fatal("expected pip install rejected in implementation")
 	}
-	if err := validatePythonImplementationCommand("bd close tg-1", dir, "mockrig", "tg-1", v, false, ""); err == nil {
+	if err := validatePythonImplementationCommand("bd close tg-1", dir, "mockrig", "tg-1", v, false); err == nil {
 		t.Fatal("expected bd close without verify rejected")
 	}
 }
