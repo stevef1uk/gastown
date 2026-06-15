@@ -29,6 +29,16 @@ func CheckPythonSourceValid(data []byte, displayRel string) error {
 	return nil
 }
 
+// PythonFileCorrupted reports whether a .py file has syntax errors and should be replaced wholesale.
+func PythonFileCorrupted(townRoot, rig, relPath, layoutRoot string) bool {
+	path := filepath.Join(townRoot, rig, "mayor", "rig", filepath.FromSlash(relPath))
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+	return CheckPythonSourceValid(data, relPath) != nil
+}
+
 // ValidateLayoutPythonSources scans .py files under layout_root in the rig worktree.
 func ValidateLayoutPythonSources(rigDir string, v WorkflowValidation) error {
 	layout := strings.TrimSpace(v.LayoutRoot)

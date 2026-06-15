@@ -113,6 +113,10 @@ func PreferIncrementalEdit(townRoot, rig, relPath string, v WorkflowValidation) 
 	if WorkflowUsesGo(v) && strings.HasSuffix(filepath.ToSlash(relPath), ".go") && ImplementGoFileCorrupted(townRoot, rig, relPath, v.LayoutRoot) {
 		return false
 	}
+	// Corrupted Python (syntax error, shell paste) — allow full-file replacement.
+	if WorkflowUsesPython(v) && strings.HasSuffix(filepath.ToSlash(relPath), ".py") && PythonFileCorrupted(townRoot, rig, relPath, v.LayoutRoot) {
+		return false
+	}
 	abs := filepath.Join(townRoot, rig, "mayor", "rig", filepath.FromSlash(relPath))
 	data, err := os.ReadFile(abs)
 	if err != nil {
