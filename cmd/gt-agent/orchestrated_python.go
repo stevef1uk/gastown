@@ -29,10 +29,21 @@ func validatePythonProjectSetupCommand(cmd string, v orchestrator.WorkflowValida
 	}
 	if req := v.RequirementsFilePath(); req != "" && strings.Contains(lower, strings.ToLower(req)) {
 		if strings.Contains(lower, "echo ") || strings.Contains(lower, "<<") || strings.Contains(lower, "cat >") {
-			return nil
+			return fmt.Errorf("do not create %s with echo/heredoc — use EDIT:/WRITE: for the implement bead", req)
 		}
 	}
 	return nil
+}
+
+func pythonVerifyOutputSuggestsMissingDeps(output string) bool {
+	if output == "" {
+		return false
+	}
+	lower := strings.ToLower(output)
+	return strings.Contains(lower, "no module named") ||
+		strings.Contains(lower, "modulenotfounderror") ||
+		strings.Contains(lower, "import error") ||
+		strings.Contains(lower, "requires the") && strings.Contains(lower, "package")
 }
 
 func validatePythonProjectSetupArtifacts(townRoot, rig string, hadCmdFailure, verifyOK bool, v orchestrator.WorkflowValidation) error {
@@ -69,7 +80,7 @@ func validateCustomImplementationCommand(cmd, townRoot, rig, activeBead string, 
 	return nil
 }
 
-func validatePythonImplementationCommand(cmd, townRoot, rig, activeBead string, v orchestrator.WorkflowValidation, verifyOK bool) error {
+func validatePythonImplementationCommand(cmd, townRoot, rig, activeBead string, v orchestrator.WorkflowValidation, verifyOK bool, lastVerifyOutput string) error {
 	if !orchestrator.WorkflowUsesPython(v) {
 		return nil
 	}
@@ -78,7 +89,7 @@ func validatePythonImplementationCommand(cmd, townRoot, rig, activeBead string, 
 		return fmt.Errorf("do not run go toolchain on Python rig — use pip/pytest/compileall per Next bead verify")
 	}
 	if isPipInstallRequirementsCommand(cmd) {
-		if verifyOK {
+		if verifyOK && !pythonVerifyOutputSuggestsMissingDeps(lastVerifyOutput) {
 			return fmt.Errorf("install dependencies in project_setup — venv and pip install already ran there")
 		}
 	}

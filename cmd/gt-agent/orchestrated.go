@@ -1405,7 +1405,7 @@ func validateImplementationCommandWithState(cmd, townRoot, rig, activeBead strin
 	if err := validateGoImplementationCommand(cmd, townRoot, rig, mayorDir, activeBead, v, verifyOK); err != nil {
 		return err
 	}
-	if err := validatePythonImplementationCommand(cmd, townRoot, rig, activeBead, v, verifyOK); err != nil {
+	if err := validatePythonImplementationCommand(cmd, townRoot, rig, activeBead, v, verifyOK, lastVerifyOutput); err != nil {
 		return err
 	}
 	if err := validateCustomImplementationCommand(cmd, townRoot, rig, activeBead, v, verifyOK); err != nil {
