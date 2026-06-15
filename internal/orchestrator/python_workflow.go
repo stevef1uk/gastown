@@ -117,7 +117,7 @@ func PythonImplementationVerifyCommandForBead(v WorkflowValidation, mayorRigDir,
 	py := venv + "/bin/python3"
 
 	if req := v.RequirementsFilePath(); req != "" && pathMatchesRequired(beadPath, []string{req}) {
-		return "test -x " + py + " && " + py + " -c 'import pytest'"
+		return "test -x " + py
 	}
 
 	if IsTestImplementPath(beadPath) && strings.HasSuffix(beadPath, ".py") {

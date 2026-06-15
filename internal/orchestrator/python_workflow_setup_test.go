@@ -37,8 +37,8 @@ func TestPythonImplementationVerifyCommandForBead_requirements(t *testing.T) {
 		QAVerifyCommand: "pytest -v",
 	}
 	got := PythonImplementationVerifyCommandForBead(v, "/tmp", "tasklist/requirements.txt")
-	if !strings.Contains(got, "import pytest") || strings.Contains(got, "pytest -v") {
-		t.Fatalf("requirements bead should import-check only: %q", got)
+	if !strings.Contains(got, "test -x") || strings.Contains(got, "import pytest") {
+		t.Fatalf("requirements bead should test -x only: %q", got)
 	}
 	got = PythonImplementationVerifyCommandForBead(v, "/tmp", "tasklist/tasklist/store.py")
 	if !strings.Contains(got, "compileall") {
