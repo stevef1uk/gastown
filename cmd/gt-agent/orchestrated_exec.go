@@ -637,9 +637,16 @@ func normalizeGoDevServerSmokeCommand(cmd, townRoot, rig string, v orchestrator.
 	if !isDevServerSmokeCommand(cmd) {
 		return cmd, false
 	}
+	lower := strings.ToLower(cmd)
+	if orchestrator.WorkflowUsesPython(v) && strings.Contains(lower, "uvicorn") {
+		return normalizePythonDevServerSmoke(cmd), true
+	}
+	if !orchestrator.WorkflowUsesGo(v) {
+		return cmd, false
+	}
 	out := cmd
 	changed := false
-	if orchestrator.WorkflowUsesGo(v) && goSmokeStripPkillRE.MatchString(out) {
+	if goSmokeStripPkillRE.MatchString(out) {
 		out = goSmokeStripPkillRE.ReplaceAllString(out, "")
 		changed = true
 	}
@@ -675,6 +682,22 @@ func normalizeGoDevServerSmokeCommand(cmd, townRoot, rig string, v orchestrator.
 		changed = true
 	}
 	return strings.TrimSpace(out), changed
+}
+
+func normalizePythonDevServerSmoke(cmd string) string {
+	cmd = strings.ReplaceAll(cmd, "--host 127.0.0.1", "--host 127.0.0.1")
+	if !strings.Contains(cmd, "--max-time") {
+		for _, pair := range []struct{ old, new string }{
+			{"curl -sf ", "curl -sf --max-time 10 "},
+			{"curl -sSf ", "curl -sSf --max-time 10 "},
+			{"curl -s ", "curl -s --max-time 10 "},
+		} {
+			if strings.Contains(cmd, pair.old) {
+				cmd = strings.ReplaceAll(cmd, pair.old, pair.new)
+			}
+		}
+	}
+	return cmd
 }
 
 // ensureGoSmokeShellReturns appends kill/wait so sh -c does not block until go run exits.
