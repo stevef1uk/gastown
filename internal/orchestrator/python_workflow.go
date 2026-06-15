@@ -129,6 +129,9 @@ func PythonImplementationVerifyCommandForBead(v WorkflowValidation, mayorRigDir,
 			if info, err := os.Stat(filepath.Join(mayorRigDir, testPath)); err == nil && info.Size() > 0 {
 				return py + " -m pytest -v " + testPath
 			}
+			if TestPathListedInRequired(beadPath, v) {
+				return py + " -m pytest -v " + testPath
+			}
 		}
 		return py + " -m compileall -q " + beadPath
 	}
