@@ -887,10 +887,10 @@ func TestValidateImplementationCommand_oneInProgressBead(t *testing.T) {
 	if err := validateImplementationCommand(`bd update BEAD_ID --status=in_progress`, "mockrig"); err == nil {
 		t.Fatal("expected reject BEAD_ID template")
 	}
-	if err := validateImplementationCommandWithState(cmd, dir, "mockrig", "tg-xyz", orchestrator.DefaultWorkflowValidation(), false, nil); err == nil {
+	if err := validateImplementationCommandWithState(cmd, dir, "mockrig", "tg-xyz", orchestrator.DefaultWorkflowValidation(), false, nil, ""); err == nil {
 		t.Fatal("expected reject second in_progress bead")
 	}
-	if err := validateImplementationCommandWithState(cmd, dir, "mockrig", "tg-abc", orchestrator.DefaultWorkflowValidation(), false, nil); err != nil {
+	if err := validateImplementationCommandWithState(cmd, dir, "mockrig", "tg-abc", orchestrator.DefaultWorkflowValidation(), false, nil, ""); err != nil {
 		t.Fatalf("same bead should be allowed: %v", err)
 	}
 }

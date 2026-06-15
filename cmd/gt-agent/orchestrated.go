@@ -1394,7 +1394,7 @@ func extractBeadIDFromBdClose(cmd string) string {
 	return strings.Trim(id, `"'`)
 }
 
-func validateImplementationCommandWithState(cmd, townRoot, rig, activeBead string, v orchestrator.WorkflowValidation, verifyOK bool, scope *orchestrator.ImplementWriteScope) error {
+func validateImplementationCommandWithState(cmd, townRoot, rig, activeBead string, v orchestrator.WorkflowValidation, verifyOK bool, scope *orchestrator.ImplementWriteScope, lastVerifyOutput string) error {
 	if err := validateImplementationCommand(cmd, rig); err != nil {
 		return err
 	}
@@ -1417,7 +1417,7 @@ func validateImplementationCommandWithState(cmd, townRoot, rig, activeBead strin
 	if err := validateImplementationBeadClose(cmd, townRoot, rig, v, verifyOK); err != nil {
 		return err
 	}
-	if err := validateImplementationBeadReopen(cmd, townRoot, rig, v, scope); err != nil {
+	if err := validateImplementationBeadReopen(cmd, townRoot, rig, v, scope, lastVerifyOutput); err != nil {
 		return err
 	}
 	if activeBead == "" || !isBeadUpdateInProgressCommand(cmd) {
@@ -1430,7 +1430,7 @@ func validateImplementationCommandWithState(cmd, townRoot, rig, activeBead strin
 }
 
 // validateImplementationBeadReopen blocks reopening implement beads when the queue is done and module tests pass.
-func validateImplementationBeadReopen(cmd, townRoot, rig string, v orchestrator.WorkflowValidation, scope *orchestrator.ImplementWriteScope) error {
+func validateImplementationBeadReopen(cmd, townRoot, rig string, v orchestrator.WorkflowValidation, scope *orchestrator.ImplementWriteScope, lastVerifyOutput string) error {
 	lower := strings.ToLower(cmd)
 	if !strings.Contains(lower, "bd update") || !strings.Contains(lower, "--status=open") {
 		return nil
@@ -1456,7 +1456,21 @@ func validateImplementationBeadReopen(cmd, townRoot, rig string, v orchestrator.
 			return nil
 		}
 	}
+	if verifyOutputCitesClosedBead(lastVerifyOutput, townRoot, rig, id, v) {
+		return nil
+	}
 	return fmt.Errorf("do not reopen implement beads (%s) — go test ./... already passes; send JSON success only", id)
+}
+
+func verifyOutputCitesClosedBead(output, townRoot, rig, beadID string, v orchestrator.WorkflowValidation) bool {
+	if output == "" || townRoot == "" || rig == "" || beadID == "" {
+		return false
+	}
+	beadPath := orchestrator.ImplementBeadPathForID(townRoot, rig, beadID, v)
+	if beadPath == "" {
+		return false
+	}
+	return strings.Contains(strings.ToLower(output), strings.ToLower(beadPath))
 }
 
 // validateImplementationBeadFileWrite rejects heredoc/touch writes to paths outside the active or next implement bead.

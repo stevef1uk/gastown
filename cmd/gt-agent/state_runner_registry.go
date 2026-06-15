@@ -30,7 +30,7 @@ var cmdGuardHandlers = map[string]cmdGuardFn{
 		if err := rejectInventedBdVerifyCommand(cmd, r.townRoot, r.rig, r.track.activeBead, r.v); err != nil {
 			return err
 		}
-		if err := validateImplementationCommandWithState(cmd, r.townRoot, r.rig, r.effectiveImplementBeadID(), r.v, r.track.verifyOK, r.qaReworkWriteScope()); err != nil {
+		if err := validateImplementationCommandWithState(cmd, r.townRoot, r.rig, r.effectiveImplementBeadID(), r.v, r.track.verifyOK, r.qaReworkWriteScope(), r.track.lastVerifyOutput); err != nil {
 			return err
 		}
 		if err := r.validateImplementationFencedCodeGuard(cmd); err != nil {
