@@ -1409,6 +1409,9 @@ func validateImplementationCommandWithState(cmd, townRoot, rig, activeBead strin
 		return err
 	}
 	if isPipInstallRequirementsCommand(cmd) {
+		if !verifyOK && isPipInstallForActiveBead(cmd, townRoot, rig, activeBead, v) {
+			return nil
+		}
 		if !pythonVerifyOutputSuggestsMissingDeps(lastVerifyOutput) {
 			return fmt.Errorf("install dependencies in project_setup — venv and pip install already ran there")
 		}

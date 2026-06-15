@@ -16,6 +16,18 @@ func isPipInstallRequirementsCommand(cmd string) bool {
 		(strings.Contains(lower, "-r ") || strings.Contains(lower, "install -r"))
 }
 
+func isPipInstallForActiveBead(cmd, townRoot, rig, activeBead string, v orchestrator.WorkflowValidation) bool {
+	beadPath := orchestrator.ImplementBeadPathForID(townRoot, rig, activeBead, v)
+	if beadPath == "" {
+		return false
+	}
+	reqPath := v.RequirementsFilePath()
+	if reqPath == "" {
+		return false
+	}
+	return orchestrator.PathMatchesImplementWrite(beadPath, reqPath, v.RequiredFiles, v)
+}
+
 func validatePythonProjectSetupCommand(cmd string, v orchestrator.WorkflowValidation) error {
 	lower := strings.ToLower(cmd)
 	if strings.Contains(lower, "go mod") || strings.Contains(lower, "go test") || strings.Contains(lower, "go build") {
