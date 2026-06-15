@@ -88,6 +88,9 @@ func validatePythonImplementationCommand(cmd, townRoot, rig, activeBead string, 
 	if strings.Contains(lower, "go mod") || strings.Contains(lower, "go test") || strings.Contains(lower, "go build") {
 		return fmt.Errorf("do not run go toolchain on Python rig — use pip/pytest/compileall per Next bead verify")
 	}
+	if isPipInstallRequirementsCommand(cmd) && verifyOK {
+		return fmt.Errorf("install dependencies in project_setup — venv and pip install already ran there")
+	}
 	if isBeadCloseCommand(cmd) && !verifyOK {
 		mayorDir := rigMayorRigDir(townRoot, rig)
 		beadPath := orchestrator.ImplementBeadPathForID(townRoot, rig, activeBead, v)
