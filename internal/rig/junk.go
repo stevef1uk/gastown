@@ -140,6 +140,10 @@ func RejectMayorRigRootShellCommand(cmd, layoutRoot string) error {
 		(strings.Contains(lower, ".venv/") || strings.Contains(lower, "venv/")) {
 		return fmt.Errorf("do not delete .venv/ files — the Python virtual environment is managed by the pipeline")
 	}
+	if (strings.Contains(lower, "chmod ") || strings.Contains(lower, "ln -")) &&
+		(strings.Contains(lower, ".venv/") || strings.Contains(lower, "venv/")) {
+		return fmt.Errorf("do not modify .venv/ permissions or symlinks — the Python virtual environment is managed by the pipeline")
+	}
 	return nil
 }
 
