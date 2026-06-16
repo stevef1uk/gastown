@@ -60,9 +60,6 @@ func pythonWorkflowNeedsQARuntimeSmoke(townRoot, rig string, v WorkflowValidatio
 	if !pythonWorkflowHasServerEntry(v) {
 		return false
 	}
-	if !activePhaseHasFrontendFiles(v) {
-		return false
-	}
 	spec, err := LoadAPISmokeSpecFromRig(townRoot, rig, v)
 	if err != nil {
 		return false
