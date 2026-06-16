@@ -186,6 +186,8 @@ states:
 
         **Frontend beads (JS/CSS/HTML):** No verify step needed. Write the file, then `bd close` immediately. Do not run compileall/pytest/go test on web assets.
 
+        **One bead at a time:** Update ONE bead to in_progress → WRITE/EDIT that file → `bd close`. Do not batch multiple beads.
+
         **Result (SEPARATE message, NO CMD/WRITE/EDIT lines):**
         {"outcome":"success","summary":"Implemented handlers.go and tests; go test passes"}
 
