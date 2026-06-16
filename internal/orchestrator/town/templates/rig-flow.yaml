@@ -184,6 +184,8 @@ states:
         **Close bead after verify passes:**
         CMD: export BEADS_DIR=$GT_ROOT/{{rig}}/.beads && cd {{rig}}/mayor/rig && bd close BEAD_ID
 
+        **Frontend beads (JS/CSS/HTML):** No verify step needed. Write the file, then `bd close` immediately. Do not run compileall/pytest/go test on web assets.
+
         **Result (SEPARATE message, NO CMD/WRITE/EDIT lines):**
         {"outcome":"success","summary":"Implemented handlers.go and tests; go test passes"}
 
