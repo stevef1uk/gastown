@@ -300,9 +300,6 @@ func CheckContentNotStub(data []byte, displayRel string, opts StubCheckOptions) 
 	}
 
 	if strings.HasSuffix(strings.ToLower(displayRel), ".js") {
-		if jsHasESModuleImports(text) {
-			return fmt.Errorf("%s uses ES module import/export — browsers cannot load this without a bundler; use plain fetch()+DOM APIs instead", displayRel)
-		}
 		if jsHasServerSideCalls(text) {
 			return fmt.Errorf("%s calls server-side-only functions (e.g. InitSchema) — these belong in Go code, not frontend JS", displayRel)
 		}
