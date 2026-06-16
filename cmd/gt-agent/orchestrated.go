@@ -2504,6 +2504,53 @@ func validateWebStaticReferences(townRoot, rig string, v orchestrator.WorkflowVa
 	if err := validateJSDOMReferencesMatchHTML(rigDir, v); err != nil {
 		return err
 	}
+	if err := validateFrontendJSIntegration(rigDir, v); err != nil {
+		return err
+	}
+	return nil
+}
+
+var jsGlobalFuncDefRE = regexp.MustCompile(`(?m)^function\s+([A-Z][A-Za-z0-9_]*)\s*\(`)
+var jsGlobalFuncRefRE = regexp.MustCompile(`(?:window\.)?([A-Z][A-Za-z0-9_]*)\s*[\(\.]`)
+
+func validateFrontendJSIntegration(rigDir string, v orchestrator.WorkflowValidation) error {
+	defined := make(map[string]string)
+	referenced := make(map[string]string)
+	for _, rel := range v.ForActivePhase().RequiredFiles {
+		rel = filepath.ToSlash(strings.TrimSpace(rel))
+		if !strings.HasSuffix(strings.ToLower(rel), ".js") || !strings.Contains(rel, "/game/") {
+			continue
+		}
+		abs := filepath.Join(rigDir, filepath.FromSlash(rel))
+		body, err := os.ReadFile(abs)
+		if err != nil {
+			continue
+		}
+		text := string(body)
+		for _, m := range jsGlobalFuncDefRE.FindAllStringSubmatch(text, -1) {
+			if len(m) >= 2 {
+				defined[m[1]] = rel
+			}
+		}
+		for _, m := range jsGlobalFuncRefRE.FindAllStringSubmatch(text, -1) {
+			name := m[1]
+			if name != "Math" && name != "JSON" && name != "Object" && name != "Array" && name != "Date" &&
+				!strings.Contains(text, "function "+name+"(") {
+				if _, ok := referenced[name]; !ok {
+					referenced[name] = rel
+				}
+			}
+		}
+	}
+	var issues []string
+	for name, refFile := range referenced {
+		if _, ok := defined[name]; !ok {
+			issues = append(issues, fmt.Sprintf("%s references %s() but no file defines function %s", refFile, name, name))
+		}
+	}
+	if len(issues) > 0 {
+		return fmt.Errorf("frontend JS integration: %s", strings.Join(issues, "; "))
+	}
 	return nil
 }
 
