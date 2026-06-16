@@ -60,11 +60,24 @@ func pythonWorkflowNeedsQARuntimeSmoke(townRoot, rig string, v WorkflowValidatio
 	if !pythonWorkflowHasServerEntry(v) {
 		return false
 	}
+	if !activePhaseHasFrontendFiles(v) {
+		return false
+	}
 	spec, err := LoadAPISmokeSpecFromRig(townRoot, rig, v)
 	if err != nil {
 		return false
 	}
 	return specHasRuntimeSmokeProbes(spec)
+}
+
+func activePhaseHasFrontendFiles(v WorkflowValidation) bool {
+	for _, f := range v.ForActivePhase().RequiredFiles {
+		f = strings.ToLower(filepath.ToSlash(f))
+		if strings.HasSuffix(f, ".html") || strings.HasSuffix(f, ".js") || strings.HasSuffix(f, ".css") {
+			return true
+		}
+	}
+	return false
 }
 
 func implementationModuleDir(townRoot, rig string, v WorkflowValidation) string {
