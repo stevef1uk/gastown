@@ -12,6 +12,7 @@ import (
 var (
 	gluedNativeToolRE = regexp.MustCompile(`(?i)(>>>>>>>\s*REPLACE|---END\s+EDIT|---END\s+WRITE)\s*(CMD:|READ:|EDIT:|WRITE:)`)
 	gluedCmdToToolRE  = regexp.MustCompile(`(?i)(CMD:\s*)(READ:|EDIT:|WRITE:)`)
+	cmdGluedToToolRE  = regexp.MustCompile(`(?i)(CMD:\s+.+?)\s+(EDIT:|WRITE:|READ:)`)
 	inlineToolRE      = regexp.MustCompile(`(?i)([^\s\n])(READ:|EDIT:|WRITE:)`)
 	bdListLimitValueRE   = regexp.MustCompile(`(?i)--limit(?:=|\s+)(\S+)`)
 	bdListWordRE         = regexp.MustCompile(`(?i)\bbd\s+list\b`)
@@ -28,6 +29,7 @@ func preprocessOrchestratedResponse(response string) string {
 	response = normalizeGluedCMDMarkers(response)
 	response = gluedNativeToolRE.ReplaceAllString(response, "$1\n$2")
 	response = gluedCmdToToolRE.ReplaceAllString(response, "$1\n$2")
+	response = cmdGluedToToolRE.ReplaceAllString(response, "$1\n$2")
 	response = inlineToolRE.ReplaceAllString(response, "$1\n$2")
 	response = unwrapMarkdownInlineToolLines(response)
 	response = unwrapMarkdownBoldToolLines(response)
