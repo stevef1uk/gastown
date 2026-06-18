@@ -1421,10 +1421,10 @@ func normalizeGluedCMDMarkers(cmd string) string {
     cmd = genericGlued.ReplaceAllStringFunc(cmd, func(m string) string {
         // m is like "<char>CMD:"; if char is '/', drop it (matches existing expectations)
         if len(m) > 0 && m[0] == '/' {
-            return "\nCMD:"
+            return "\nCMD: "
         }
         // otherwise keep the prefix char
-        return string(m[0]) + "\nCMD:"
+        return string(m[0]) + "\nCMD: "
     })
     cmd = gluedPathCMDRE.ReplaceAllString(cmd, "\nCMD: ")
     cmd = gluedExtCMDRE.ReplaceAllString(cmd, "$1\nCMD: ")

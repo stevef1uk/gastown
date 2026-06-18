@@ -1026,7 +1026,7 @@ func PruneNonRequiredOpenImplementBeads(townRoot, rig string, v WorkflowValidati
 			continue
 		}
 		p := NormalizePlannerBeadPath(ExtractPathFromBeadTitle(b.Title, v.BeadTitleContains), v.LayoutRoot, rig)
-		if !IsValidImplementBeadPath(p) || pathMatchesRequiredForProfile(p, v.RequiredFiles, v) {
+		if !IsValidImplementBeadPath(p) || pathMatchesRequiredForProfile(p, requiredFilesWithCorrelatedTests(v.RequiredFiles, v), v) {
 			continue
 		}
 		cmd := exec.Command("bd", "delete", b.ID, "--force")
@@ -1181,7 +1181,7 @@ func PruneExtraImplementBeads(townRoot, rig string, v WorkflowValidation) ([]str
 	var deleted []string
 	for _, b := range open {
 		p := NormalizePlannerBeadPath(ExtractPathFromBeadTitle(b.Title, v.BeadTitleContains), v.LayoutRoot, rig)
-		if IsValidImplementBeadPath(p) && pathMatchesRequiredForProfile(p, v.RequiredFiles, v) {
+		if IsValidImplementBeadPath(p) && pathMatchesRequiredForProfile(p, requiredFilesWithCorrelatedTests(v.RequiredFiles, v), v) {
 			continue
 		}
 		cmd := exec.Command("bd", "delete", b.ID, "--force")
@@ -1374,7 +1374,15 @@ func EnsurePlanningImplementBeads(townRoot, rig string, v WorkflowValidation) ([
 	beadsDir := config.ResolveBeadsDirForRig(townRoot, rig)
 	workDir := filepath.Join(townRoot, rig, "mayor", "rig")
 	var created []string
-	for _, want := range v.RequiredFiles {
+
+	// Include correlated test paths so each source file gets a paired test bead
+	// (e.g. main.py → test_main.py). Without this, the phase verify runs pytest
+	// against test files that have no bead, deadlocking bead auto-close.
+	wants := v.RequiredFiles
+	if !WorkflowUsesDocker(v) {
+		wants = requiredFilesWithCorrelatedTests(v.RequiredFiles, v)
+	}
+	for _, want := range wants {
 		want = filepath.ToSlash(strings.TrimSpace(want))
 		if want == "" {
 			continue
@@ -1414,6 +1422,32 @@ func EnsurePlanningImplementBeads(townRoot, rig string, v WorkflowValidation) ([
 		}
 	}
 	return created, nil
+}
+
+// requiredFilesWithCorrelatedTests returns RequiredFiles augmented with the
+// correlated test path (test_*.[py|go]) for each source file, when that test
+// path is not already in the list. This ensures the planner creates a bead for
+// every test file the phase verify expects to exist.
+func requiredFilesWithCorrelatedTests(files []string, v WorkflowValidation) []string {
+	seen := make(map[string]bool, len(files))
+	for _, f := range files {
+		seen[filepath.ToSlash(strings.TrimSpace(f))] = true
+	}
+	out := make([]string, 0, len(files)+len(files)/2)
+	for _, f := range files {
+		f = filepath.ToSlash(strings.TrimSpace(f))
+		out = append(out, f)
+		if IsTestImplementPath(f) {
+			continue
+		}
+		testPath := CorrelatedTestPathForSource(f, v)
+		if testPath == "" || seen[testPath] {
+			continue
+		}
+		out = append(out, testPath)
+		seen[testPath] = true
+	}
+	return out
 }
 
 func parseBeadIDFromCreateOutput(out string) string {

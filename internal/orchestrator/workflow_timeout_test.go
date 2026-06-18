@@ -216,6 +216,9 @@ func TestResetPlanningPhase_integration(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	if _, err := os.Stat(filepath.Join(townRoot, rig, ".git")); os.IsNotExist(err) {
+		t.Skip("skipping integration test: bd hooks require git repo")
+	}
 	init := exec.Command("bd", "init")
 	init.Env = append(os.Environ(), "BEADS_DIR="+beadsDir)
 	init.Dir = rigDir

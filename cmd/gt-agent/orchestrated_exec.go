@@ -349,6 +349,13 @@ func rewriteUnittestToWorkdir(cmd, rig string, v orchestrator.WorkflowValidation
 			cmd = "cd " + workPath + " && " + rest
 			changed = true
 		}
+	} else if !orchestrator.WorkflowUsesGo(v) && layout != "" && layout != "." &&
+		commandHasMayorRigCD(cmd, rig) && commandHasLayoutCD(cmd, layout) {
+		// Python: cd path includes layout subdir but .venv lives at mayor/rig only.
+		// Strip layout so ".venv/bin/python3" resolves correctly.
+		rest := stripRedundantLayoutCD(stripFirstCDPrefix(cmd), mayorRig, layout)
+		cmd = "cd " + mayorRig + " && " + rest
+		changed = true
 	} else if orchestrator.WorkflowUsesGo(v) && layout != "" && layout != "." &&
 		commandHasMayorRigCD(cmd, rig) && !commandHasLayoutCD(cmd, layout) {
 		// Already under mayor/rig but not in layout module dir — one cd to module root.
@@ -685,6 +692,10 @@ func normalizeGoDevServerSmokeCommand(cmd, townRoot, rig string, v orchestrator.
 }
 
 func normalizePythonDevServerSmoke(cmd string) string {
+	for _, bad := range []string{"--stdout", "--no-access-log"} {
+		cmd = strings.ReplaceAll(cmd, " "+bad+" ", " ")
+		cmd = strings.ReplaceAll(cmd, " "+bad, "")
+	}
 	cmd = strings.ReplaceAll(cmd, "--host 127.0.0.1", "--host 127.0.0.1")
 	if !strings.Contains(cmd, "--max-time") {
 		for _, pair := range []struct{ old, new string }{

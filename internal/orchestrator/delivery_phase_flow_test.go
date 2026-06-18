@@ -1,8 +1,10 @@
 package orchestrator
 
 import (
+	"context"
 	"os"
 	"os/exec"
+	"time"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -144,12 +146,15 @@ func closeAllOpenImplementBeads(t *testing.T, townRoot, rig, beadsDir, workDir s
 		t.Fatal(err)
 	}
 	for _, b := range open {
-		cmd := exec.Command("bd", "close", b.ID, "--reason=test")
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		cmd := exec.CommandContext(ctx, "bd", "close", b.ID, "--reason=test")
 		cmd.Env = append(os.Environ(), "BEADS_DIR="+beadsDir)
 		cmd.Dir = workDir
 		if out, err := cmd.CombinedOutput(); err != nil {
+			cancel()
 			t.Fatalf("bd close %s: %v\n%s", b.ID, err, out)
 		}
+		cancel()
 	}
 }
 
@@ -180,6 +185,10 @@ func assertOpenBeadPaths(t *testing.T, townRoot, rig string, v WorkflowValidatio
 // QA all_passed advances active_phase_id and FSM to planning, final phase completes.
 func TestDeliveryPhaseWorkflow_integration(t *testing.T) {
 	townRoot, rig, rigDir, beadsDir := setupPhasedRigTown(t)
+	// bd init installs git hooks; close may block if git remote is unavailable.
+	if _, err := os.Stat(filepath.Join(townRoot, rig, ".git")); os.IsNotExist(err) {
+		t.Skip("skipping integration test: bd hooks require git repo")
+	}
 	writeTestPhasedProfile(t, townRoot, rig, "backend")
 
 	backend := WorkflowValidation{
@@ -264,6 +273,9 @@ func TestDeliveryPhaseWorkflow_integration(t *testing.T) {
 // TestTryAdvanceDeliveryPhaseAfterQA_integration verifies phase advance + bead/plan sync without the manager.
 func TestTryAdvanceDeliveryPhaseAfterQA_integration(t *testing.T) {
 	townRoot, rig, rigDir, beadsDir := setupPhasedRigTown(t)
+	if _, err := os.Stat(filepath.Join(townRoot, rig, ".git")); os.IsNotExist(err) {
+		t.Skip("skipping integration test: bd hooks require git repo")
+	}
 	writeTestPhasedProfile(t, townRoot, rig, "backend")
 
 	v, ok, err := LoadRigWorkflowProfileFile(townRoot, rig)

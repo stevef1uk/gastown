@@ -245,7 +245,7 @@ func qaFailureRequiresImplementationRework(summary string) bool {
 		return false
 	}
 	for _, needle := range []string{
-		"stub", "pytest", "unittest", "reopen", "syntax", "import", "failed",
+		"stub", "unittest", "reopen", "syntax", "import", "failed",
 		"404", "405", "/api/", "null not", "not []", "smoke failed", "smoke test failed",
 		"curl", "route", "http status", "returned 4", "returned 5",
 		"method not allowed", "address already in use", "bd list", "exit status 127",
@@ -258,6 +258,15 @@ func qaFailureRequiresImplementationRework(summary string) bool {
 		if strings.Contains(lower, needle) {
 			return true
 		}
+	}
+	// pytest mention alone is not a failure — "collected 0 items" / "no tests ran" just means
+	// the test bead hasn't been implemented yet.
+	if strings.Contains(lower, "pytest") {
+		if strings.Contains(lower, "collected 0") || strings.Contains(lower, "no tests") ||
+			strings.Contains(lower, "not found:") {
+			return false
+		}
+		return true
 	}
 	return false
 }

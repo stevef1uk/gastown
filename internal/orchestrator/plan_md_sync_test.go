@@ -196,6 +196,9 @@ func TestSyncPlanningArtifacts_integration(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	if _, err := os.Stat(filepath.Join(townRoot, rig, ".git")); os.IsNotExist(err) {
+		t.Skip("skipping integration test: bd hooks require git repo")
+	}
 	init := exec.Command("bd", "init")
 	init.Env = append(os.Environ(), "BEADS_DIR="+beadsDir)
 	init.Dir = rigDir
@@ -228,8 +231,8 @@ func TestSyncPlanningArtifacts_integration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(open) != len(v.RequiredFiles) {
-		t.Fatalf("open implement beads = %d, want %d: %v", len(open), len(v.RequiredFiles), open)
+	if len(open) != len(requiredFilesWithCorrelatedTests(v.RequiredFiles, v)) {
+		t.Fatalf("open implement beads = %d, want %d: %v", len(open), len(requiredFilesWithCorrelatedTests(v.RequiredFiles, v)), open)
 	}
 	if err := ValidatePlanBeads(open, filepath.Join(rigDir, "architecture.md"), v, rig); err != nil {
 		t.Fatalf("ValidatePlanBeads: %v", err)
