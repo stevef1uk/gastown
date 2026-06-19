@@ -696,6 +696,8 @@ func normalizePythonDevServerSmoke(cmd string) string {
 		cmd = strings.ReplaceAll(cmd, " "+bad+" ", " ")
 		cmd = strings.ReplaceAll(cmd, " "+bad, "")
 	}
+	// &> /dev/null is bash-only; replace with POSIX redirect.
+	cmd = strings.ReplaceAll(cmd, "&> /dev/null", ">/dev/null 2>&1")
 	cmd = strings.ReplaceAll(cmd, "--host 127.0.0.1", "--host 127.0.0.1")
 	if !strings.Contains(cmd, "--max-time") {
 		for _, pair := range []struct{ old, new string }{
@@ -707,6 +709,11 @@ func normalizePythonDevServerSmoke(cmd string) string {
 				cmd = strings.ReplaceAll(cmd, pair.old, pair.new)
 			}
 		}
+	}
+	// Polecat often forgets kill after backgrounding uvicorn; append it.
+	if strings.Contains(cmd, "uvicorn") && strings.Contains(cmd, " &") &&
+		strings.Contains(cmd, "curl ") && !strings.Contains(cmd, "kill") {
+		cmd = strings.TrimRight(cmd, " ;&") + " ; kill %1 2>/dev/null"
 	}
 	return cmd
 }
