@@ -430,7 +430,11 @@ func (r *stateRunner) rewritePythonCmd(cmd string, cmdEnv []string) string {
 }
 
 func (r *stateRunner) workDir() string {
-	return orchestratedCommandWorkDir(r.townRoot, r.rig, "")
+	state := ""
+	if r.task != nil {
+		state = r.task.State
+	}
+	return orchestratedCommandWorkDir(r.townRoot, r.rig, state)
 }
 
 // effectiveCommandTimeoutSec returns per-CMD wall clock: yaml cmd_timeout_seconds, else track defaults.
