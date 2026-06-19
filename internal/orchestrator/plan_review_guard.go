@@ -176,6 +176,12 @@ func rejectSpuriousQAFailure(townRoot, rig, summary string) string {
 			return "QA claims missing/empty tests but no test file exists on disk — test bead not yet implemented"
 		}
 	}
+	if (strings.Contains(lower, "test failed") || strings.Contains(lower, "tests failed") ||
+		strings.Contains(lower, "status 0")) && strings.Contains(lower, "no output") {
+		if hasPassingPythonTests(rigDir) {
+			return "QA claims test failure but pytest passes on disk — hallucinated failure"
+		}
+	}
 	if strings.Contains(lower, "static") || strings.Contains(lower, ".js") || strings.Contains(lower, ".css") ||
 		strings.Contains(lower, ".html") || strings.Contains(lower, "frontend") || strings.Contains(lower, "web") {
 		if hasValidFrontendArtifacts(rigDir) {
