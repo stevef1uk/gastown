@@ -52,7 +52,12 @@ func parseOrchestratedNativeEdits(response string) []nativeEditOp {
 			}
 			i++
 		case strings.HasPrefix(upper, "EDIT:"):
-			path := orchestrator.SanitizeNativeEditRelPath(trimmedClean[len("EDIT:"):])
+			rest := strings.TrimSpace(trimmedClean[len("EDIT:"):])
+			// Inline SEARCH/REPLACE on same line: split path from markers.
+			if idx := strings.Index(rest, "<<<<<<<"); idx >= 0 {
+				rest = strings.TrimSpace(rest[:idx])
+			}
+			path := orchestrator.SanitizeNativeEditRelPath(rest)
 			i++
 			if path != "" && !orchestrator.IsValidImplementBeadPath(path) {
 				i = skipNativeEditBlock(lines, i)
