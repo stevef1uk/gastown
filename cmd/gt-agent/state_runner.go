@@ -556,19 +556,26 @@ func (r *stateRunner) runAutoVerify(cmd, workDir, sessionName string, cmdEnv []s
 		}
 		verifyOut, verifyErr := r.runShellCommand(verifyCmd, workDir, sessionName, cmdEnv)
 		if verifyErr != nil {
-			r.track.hadCmdFailure = true
-			r.track.verifyOK = false
-			r.track.lastVerifyOutput = string(verifyOut)
-			orchestratedFprintfStderr("[gt-agent] auto-verify failed: %v\n%s\n", verifyErr, string(verifyOut))
-			combined.WriteString(fmt.Sprintf("Auto-verify: %s\nError: %v\nOutput: %s\n\n", verifyCmd, verifyErr, string(verifyOut)))
-			if r.hooks.AppendGoCompileContext && orchestrator.WorkflowUsesGo(r.v) {
-				out := string(verifyOut)
-				appendGoCompileSourceContext(combined, r.townRoot, r.rig, rigMayorRigDir(r.townRoot, r.rig), r.v.LayoutRoot,
-					r.activeImplementBeadPath(), r.v, verifyCmd, out)
-				r.noteImplementationVerifyFailure(verifyCmd, out)
-			}
-			if strings.EqualFold(strings.TrimSpace(r.hooks.Track), "qa") {
-				appendQAFailureReportNudge(combined, verifyCmd, verifyErr)
+			// Python pytest "no tests ran" (exit 4/5) is not a code failure —
+			// the test file simply doesn't exist yet (test bead not implemented).
+			if orchestrator.WorkflowUsesPython(r.v) && orchestrator.PythonVerifyNoTestsOK(string(verifyOut)) {
+				r.track.verifyOK = true
+				r.track.lastVerifyOutput = string(verifyOut)
+			} else {
+				r.track.hadCmdFailure = true
+				r.track.verifyOK = false
+				r.track.lastVerifyOutput = string(verifyOut)
+				orchestratedFprintfStderr("[gt-agent] auto-verify failed: %v\n%s\n", verifyErr, string(verifyOut))
+				combined.WriteString(fmt.Sprintf("Auto-verify: %s\nError: %v\nOutput: %s\n\n", verifyCmd, verifyErr, string(verifyOut)))
+				if r.hooks.AppendGoCompileContext && orchestrator.WorkflowUsesGo(r.v) {
+					out := string(verifyOut)
+					appendGoCompileSourceContext(combined, r.townRoot, r.rig, rigMayorRigDir(r.townRoot, r.rig), r.v.LayoutRoot,
+						r.activeImplementBeadPath(), r.v, verifyCmd, out)
+					r.noteImplementationVerifyFailure(verifyCmd, out)
+				}
+				if strings.EqualFold(strings.TrimSpace(r.hooks.Track), "qa") {
+					appendQAFailureReportNudge(combined, verifyCmd, verifyErr)
+				}
 			}
 		} else if orchestrator.GoToolOutputMatchedNoPackages(string(verifyOut)) &&
 			goAutoVerifyNoPackagesIsError(hook.Verify, r.task.State, verifyCmd) {

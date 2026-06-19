@@ -174,7 +174,7 @@ func ImplementationPythonModuleOK(rigDir string, v WorkflowValidation) error {
 	out, runErr := cmd.CombinedOutput()
 	if runErr != nil {
 		text := strings.TrimSpace(string(out))
-		if pythonVerifyNoTestsOK(text) {
+		if PythonVerifyNoTestsOK(text) {
 			return nil
 		}
 		if text == "" {
@@ -185,10 +185,10 @@ func ImplementationPythonModuleOK(rigDir string, v WorkflowValidation) error {
 	return nil
 }
 
-// pythonVerifyNoTestsOK reports whether a failed pytest run is acceptable because
+// PythonVerifyNoTestsOK reports whether a failed pytest run is acceptable because
 // the test file simply hasn't been written yet (test bead not yet active). This is
 // not a code failure — it just means "no tests collected / no tests ran".
-func pythonVerifyNoTestsOK(text string) bool {
+func PythonVerifyNoTestsOK(text string) bool {
 	lower := strings.ToLower(text)
 	if !strings.Contains(lower, "no tests ran") && !strings.Contains(lower, "collected 0 items") {
 		return false
