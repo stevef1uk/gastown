@@ -1,8 +1,10 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -467,6 +469,11 @@ func (r *stateRunner) repairGoModRequiresAfterTidy(combined *strings.Builder) {
 	}
 }
 
+func isExit143(err error) bool {
+	var exitErr *exec.ExitError
+	return errors.As(err, &exitErr) && exitErr.ExitCode() == 143
+}
+
 func (r *stateRunner) afterCommand(cmd string, cmdErr error, workDir, sessionName string, cmdEnv []string, combined *strings.Builder) {
 	if trackNeedsDevServerCleanup(r.hooks.Track) {
 		r.servers.noteCommand(cmd)
@@ -474,6 +481,10 @@ func (r *stateRunner) afterCommand(cmd string, cmdErr error, workDir, sessionNam
 	if r.hooks.EmptyBdListOK && isScopedImplementBdListEmpty(cmd, cmdErr) {
 		cmdErr = nil
 		combined.WriteString("(no matching open/in_progress implement beads)\n")
+	}
+	// Dev-server smoke with kill/wait returns 143 (SIGTERM) — not a real failure.
+	if cmdErr != nil && commandStartsDevServer(cmd) && isExit143(cmdErr) {
+		cmdErr = nil
 	}
 	if cmdErr == nil && writesRequirementsFile(cmd) {
 		maybeRepairWorkflowRequirements(r.townRoot, r.rig, r.v)

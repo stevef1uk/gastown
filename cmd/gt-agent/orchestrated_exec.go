@@ -736,7 +736,7 @@ func normalizePythonDevServerSmoke(cmd string) string {
 				cmd += "; sleep 2"
 			}
 			cmd += " && " + rest
-			cmd = strings.TrimRight(cmd, " ;&") + " ; kill $_uvpid 2>/dev/null ; wait $_uvpid 2>/dev/null"
+			cmd = strings.TrimRight(cmd, " ;&") + " ; kill $_uvpid 2>/dev/null || true; wait $_uvpid 2>/dev/null || true"
 		}
 	}
 	return cmd
