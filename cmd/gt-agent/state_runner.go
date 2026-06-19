@@ -572,6 +572,13 @@ func (r *stateRunner) runAutoVerify(cmd, workDir, sessionName string, cmdEnv []s
 			if orchestrator.WorkflowUsesPython(r.v) && orchestrator.PythonVerifyNoTestsOK(string(verifyOut)) {
 				r.track.verifyOK = true
 				r.track.lastVerifyOutput = string(verifyOut)
+			} else if hook.Verify == "go_setup" &&
+				strings.EqualFold(strings.TrimSpace(r.task.State), "project_setup") &&
+				orchestrator.GoToolOutputMatchedNoPackages(string(verifyOut)) {
+				// Go module scaffold (go mod download) fails on empty go.mod —
+				// no packages exist yet (polecat writes them in implementation).
+				r.track.verifyOK = true
+				r.track.lastVerifyOutput = string(verifyOut)
 			} else {
 				r.track.hadCmdFailure = true
 				r.track.verifyOK = false

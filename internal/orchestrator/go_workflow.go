@@ -10,7 +10,10 @@ import (
 // (exit code can still be 0 when the directory has no .go files).
 func GoToolOutputMatchedNoPackages(output string) bool {
 	lower := strings.ToLower(output)
-	return strings.Contains(lower, "matched no packages") || strings.Contains(lower, "no packages to test")
+	return strings.Contains(lower, "matched no packages") ||
+		strings.Contains(lower, "no packages to test") ||
+		strings.Contains(lower, "no modules specified") ||
+		strings.Contains(lower, "no module dependencies to download")
 }
 
 // GoModScaffoldOnlyCommand reports verify commands that only touch the module graph
