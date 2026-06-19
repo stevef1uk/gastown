@@ -277,13 +277,6 @@ func (r *stateRunner) rewriteCommand(cmd string) string {
 		orchestratedPrintf("[gt-agent] trimmed glued prose/JSON from command → %s\n", fixed)
 		cmd = fixed
 	}
-	// Strip redundant mayor/rig prefix from mkdir/echo/cd when workdir is already under it.
-	// Prevents double-nesting: mkdir -p ping_rig/mayor/rig/pingapp creates ping_rig/mayor/rig/... again.
-	if r.rig != "" {
-		if fixed, ok := stripRedundantWorkDirPrefix(cmd, r.rig); ok {
-			cmd = fixed
-		}
-	}
 	if fixed, ok := normalizeGoCommandTypos(cmd); ok {
 		orchestratedPrintf("[gt-agent] rewrote go command typo → %s\n", fixed)
 		cmd = fixed
@@ -479,19 +472,6 @@ func (r *stateRunner) repairGoModRequiresAfterTidy(combined *strings.Builder) {
 func isExit143(err error) bool {
 	var exitErr *exec.ExitError
 	return errors.As(err, &exitErr) && exitErr.ExitCode() == 143
-}
-
-func stripRedundantWorkDirPrefix(cmd, rig string) (string, bool) {
-	lower := strings.ToLower(cmd)
-	if !strings.HasPrefix(lower, "mkdir ") && !strings.HasPrefix(lower, "echo ") &&
-		!strings.HasPrefix(lower, "cd ") {
-		return cmd, false
-	}
-	redundant := rigMayorRigPath(rig) + "/"
-	if !strings.Contains(cmd, redundant) {
-		return cmd, false
-	}
-	return strings.ReplaceAll(cmd, redundant, ""), true
 }
 
 func (r *stateRunner) afterCommand(cmd string, cmdErr error, workDir, sessionName string, cmdEnv []string, combined *strings.Builder) {
