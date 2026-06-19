@@ -369,10 +369,13 @@ func rewriteUnittestToWorkdir(cmd, rig string, v orchestrator.WorkflowValidation
 	} else if !orchestrator.WorkflowUsesGo(v) && layout != "" && layout != "." &&
 		commandHasMayorRigCD(cmd, rig) && commandHasLayoutCD(cmd, layout) {
 		// Python: cd path includes layout subdir but .venv lives at mayor/rig only.
-		// Strip layout so ".venv/bin/python3" resolves correctly.
-		rest := stripRedundantLayoutCD(stripFirstCDPrefix(cmd), mayorRig, layout)
-		cmd = "cd " + mayorRig + " && " + rest
-		changed = true
+		// Strip layout so ".venv/bin/python3" resolves correctly — BUT keep it
+		// for pip -r install so requirements.txt can be found in the layout dir.
+		if !strings.Contains(strings.ToLower(cmd), "-r ") {
+			rest := stripRedundantLayoutCD(stripFirstCDPrefix(cmd), mayorRig, layout)
+			cmd = "cd " + mayorRig + " && " + rest
+			changed = true
+		}
 	} else if orchestrator.WorkflowUsesGo(v) && layout != "" && layout != "." &&
 		commandHasMayorRigCD(cmd, rig) && !commandHasLayoutCD(cmd, layout) {
 		// Already under mayor/rig but not in layout module dir — one cd to module root.
