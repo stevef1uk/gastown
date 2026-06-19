@@ -332,6 +332,11 @@ func rewriteUnittestToWorkdir(cmd, rig string, v orchestrator.WorkflowValidation
 		cmd = fixed
 		changed = true
 	}
+	// Strip source .venv/bin/activate && so pip runs in venv context.
+	if strings.Contains(cmd, ".venv/bin/activate") && strings.Contains(cmd, "pip install") {
+		cmd = regexp.MustCompile(`(\.|source)\s+\S*venv/\S*activate\s*&&\s*`).ReplaceAllString(cmd, "")
+		changed = true
+	}
 	// In project_setup, force pip install to use the venv python so packages
 	// land in .venv/ and the verify (import pytest) succeeds.
 	// Don't rewrite pip install --upgrade pip (targets system pip, not venv).

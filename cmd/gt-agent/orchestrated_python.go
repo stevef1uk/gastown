@@ -36,7 +36,7 @@ func validatePythonProjectSetupCommand(cmd string, v orchestrator.WorkflowValida
 	if strings.Contains(lower, "bd close") {
 		return fmt.Errorf("do not bd close in project_setup")
 	}
-	if strings.Contains(lower, "source ") {
+	if strings.Contains(lower, "source ") && !strings.Contains(lower, "pip install") {
 		return fmt.Errorf("do not use source/activate — gt-agent runs pip/pytest with the venv python automatically")
 	}
 	if strings.Contains(lower, "pip") && !strings.Contains(lower, ".venv/bin/python3 -m pip") &&
@@ -44,8 +44,13 @@ func validatePythonProjectSetupCommand(cmd string, v orchestrator.WorkflowValida
 		return fmt.Errorf("in project_setup, use .venv/bin/python3 -m pip install (not bare pip) so packages go into the venv")
 	}
 	if req := v.RequirementsFilePath(); req != "" && strings.Contains(lower, strings.ToLower(req)) {
+		// In project_setup, allow echo/cat heredoc for requirements.txt; the implement bead
+		// handles the proper WRITE: later. Setup just needs the file to exist for pip install.
+		if strings.Contains(lower, "pip install") {
+			return nil
+		}
 		if strings.Contains(lower, "echo ") || strings.Contains(lower, "<<") || strings.Contains(lower, "cat >") {
-			return fmt.Errorf("do not create %s with echo/heredoc — use EDIT:/WRITE: for the implement bead", req)
+			return nil
 		}
 	}
 	return nil
