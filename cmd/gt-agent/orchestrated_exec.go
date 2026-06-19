@@ -965,9 +965,8 @@ func runOrchestratedCommand(cmd, workDir, sessionName string, env []string, cmdT
 // All rig-flow prompts tell agents to work from town root with paths like {{rig}}/mayor/rig/....
 // Using mayor/rig as cwd makes those paths resolve into a nested {{rig}}/mayor/rig/ subtree.
 func orchestratedCommandWorkDir(townRoot, rig, taskState string) string {
-	_ = taskState
-	if rig == "" || townRoot == "" {
-		return townRoot
+	if rig != "" && townRoot != "" && strings.EqualFold(strings.TrimSpace(taskState), "project_setup") {
+		return filepath.Join(townRoot, rig, "mayor", "rig")
 	}
 	return townRoot
 }

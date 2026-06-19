@@ -490,10 +490,13 @@ func TestValidateQACommand_rejectsCurlWhenNoRuntimeSmoke(t *testing.T) {
 func TestOrchestratedCommandWorkDir_rigFlowUsesTownRoot(t *testing.T) {
 	town := "/gt"
 	rig := testrig.Name
-	for _, state := range []string{"kickoff", "design", "planning", "plan_review", "project_setup", "implementation", "qa_review"} {
+	for _, state := range []string{"kickoff", "design", "planning", "plan_review", "implementation", "qa_review"} {
 		if got := orchestratedCommandWorkDir(town, rig, state); got != town {
 			t.Fatalf("%s cwd = %q, want town root %q", state, got, town)
 		}
+	}
+	if got := orchestratedCommandWorkDir(town, rig, "project_setup"); got != filepath.Join(town, rig, "mayor", "rig") {
+		t.Fatalf("project_setup cwd = %q, want mayor/rig %q", got, filepath.Join(town, rig, "mayor", "rig"))
 	}
 }
 
