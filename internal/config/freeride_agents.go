@@ -45,7 +45,7 @@ func DefaultFreerideRoleAgents() map[string]string {
 		"planner":   "gt-agent-local",
 		"setup":     "gt-agent-local",
 		"polecat":   "gt-agent-gemini",
-		"qa":        "gt-agent-gemini",
+		"qa":        "gt-agent-local",
 		"refinery":  "gt-agent-local",
 		"witness":   "gt-agent-local",
 	}
