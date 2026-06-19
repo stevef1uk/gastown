@@ -722,13 +722,20 @@ func normalizePythonDevServerSmoke(cmd string) string {
 			}
 		}
 	}
-	// Polecat often forgets kill after backgrounding uvicorn; append it.
-	// Use $! to capture PID — kill %1 requires job control which may be off.
-	if strings.Contains(cmd, "uvicorn") && strings.Contains(cmd, "curl ") &&
-		!strings.Contains(cmd, "kill") && !strings.Contains(cmd, "_uvpid") {
-		// Find the & that backgrounds uvicorn (last & in the uvicorn segment).
+	// Force uvicorn stdout redirect + sleep + PID capture so sh -c doesn't
+	// block and curl has a running server to hit.
+	if strings.Contains(cmd, "uvicorn") && strings.Contains(cmd, "curl") {
+		// Strip any prior broken _uvpid/kill so we can rewrite cleanly.
+		cmd = strings.ReplaceAll(cmd, " & _uvpid=$! ", " & ")
+		cmd = regexp.MustCompile(`\s*;\s*kill\s+\$?_uvpid\b[^;]*`).ReplaceAllString(cmd, "")
+		cmd = regexp.MustCompile(`\s*;\s*wait\s+\$?_uvpid\b[^;]*`).ReplaceAllString(cmd, "")
 		if idx := strings.LastIndex(cmd, " & "); idx >= 0 && strings.Contains(cmd[:idx], "uvicorn") {
-			cmd = cmd[:idx] + " & _uvpid=$! " + cmd[idx+3:]
+			rest := strings.TrimSpace(cmd[idx+3:])
+			cmd = cmd[:idx] + " >/dev/null 2>&1 & _uvpid=$!"
+			if !strings.Contains(strings.ToLower(rest), "sleep ") {
+				cmd += "; sleep 2"
+			}
+			cmd += " && " + rest
 			cmd = strings.TrimRight(cmd, " ;&") + " ; kill $_uvpid 2>/dev/null ; wait $_uvpid 2>/dev/null"
 		}
 	}
