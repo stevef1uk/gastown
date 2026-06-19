@@ -488,6 +488,9 @@ func TestReopenClosedImplementBeadsForMissingOpenRequired_reopensClosedOnlyPaths
 	if out, err := init.CombinedOutput(); err != nil {
 		t.Fatalf("bd init: %v\n%s", err, out)
 	}
+	if _, err := os.Stat(filepath.Join(townRoot, rig, ".git")); os.IsNotExist(err) {
+		t.Skip("skipping integration test: bd hooks require git repo")
+	}
 	v := WorkflowValidation{
 		LayoutRoot:        ".",
 		BeadTitleContains: "Implement ",

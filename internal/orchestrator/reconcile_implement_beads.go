@@ -77,6 +77,26 @@ func requiredFileAtOrBeforeQueueHead(rel, headPath string, v WorkflowValidation)
 	return false
 }
 
+// workflowIsInQAReview reports whether the active rig-flow workflow is in qa_review state.
+// When true, reconcile should not auto-reopen QA-cited beads — QA stage means implement
+// is done; beads stay in their current state until QA completes (all_passed) or fails.
+func workflowIsInQAReview(townRoot, rig string) bool {
+	snap, err := LoadInstancesSnapshot(townRoot)
+	if err != nil || snap == nil {
+		return false
+	}
+	for _, inst := range snap.Instances {
+		if inst.TemplateID != "rig-flow" {
+			continue
+		}
+		if inst.Variables == nil || inst.Variables["rig"] != rig {
+			continue
+		}
+		return inst.CurrentState == "qa_review"
+	}
+	return false
+}
+
 func frontendAutoClosedIDs(ids []string, townRoot, rig string, v WorkflowValidation) []string {
 	var out []string
 	for _, id := range ids {
@@ -209,6 +229,13 @@ func ReconcileImplementBeads(townRoot, rig string, v WorkflowValidation) (string
 	eval := newImplementBeadVerifyEvaluator(rigDir, v)
 	var parts []string
 
+	// During qa_review, leave beads in their current state. QA verifies and
+	// reports pass/fail; implementation rework handles bead changes in its own
+	// reconcile cycle. Auto-close/reopen here causes churn with QA failure loops.
+	if workflowIsInQAReview(townRoot, rig) {
+		return "", nil
+	}
+
 	// Deterministic reconcile: close green beads first, then audit, then reopen only what still fails verify.
 	// When phase verify is red, still auto-close frontend beads that pass per-bead verify so the queue
 	// can advance (e.g. style.css done while handlers.go compile is broken). Go beads stay open until
@@ -261,8 +288,10 @@ func ReconcileImplementBeads(townRoot, rig string, v WorkflowValidation) (string
 		}
 		// During QA rework, reopen beads that QA explicitly cited so the polecat
 		// sees them as open and the implement_bead_context injector shows the SPEC contract.
+		// Only during implementation rework (not qa_review itself) — once QA stage is
+		// reached, beads stay closed; QA verifies, implementation fixes in its own cycle.
 		qaIDs := QAReopenedBeadIDs(townRoot, rig)
-		if len(qaIDs) > 0 {
+		if len(qaIDs) > 0 && !workflowIsInQAReview(townRoot, rig) {
 			qaSet := make(map[string]bool, len(qaIDs))
 			for _, id := range qaIDs {
 				qaSet[strings.TrimSpace(id)] = true
