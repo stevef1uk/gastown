@@ -39,6 +39,10 @@ func validatePythonProjectSetupCommand(cmd string, v orchestrator.WorkflowValida
 	if strings.Contains(lower, "source ") {
 		return fmt.Errorf("do not use source/activate — gt-agent runs pip/pytest with the venv python automatically")
 	}
+	if strings.Contains(lower, "pip") && !strings.Contains(lower, ".venv/bin/python3 -m pip") &&
+		!strings.Contains(lower, ".venv/bin/pip") {
+		return fmt.Errorf("in project_setup, use .venv/bin/python3 -m pip install (not bare pip) so packages go into the venv")
+	}
 	if req := v.RequirementsFilePath(); req != "" && strings.Contains(lower, strings.ToLower(req)) {
 		if strings.Contains(lower, "echo ") || strings.Contains(lower, "<<") || strings.Contains(lower, "cat >") {
 			return fmt.Errorf("do not create %s with echo/heredoc — use EDIT:/WRITE: for the implement bead", req)

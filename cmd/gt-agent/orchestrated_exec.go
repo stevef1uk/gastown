@@ -332,6 +332,18 @@ func rewriteUnittestToWorkdir(cmd, rig string, v orchestrator.WorkflowValidation
 		cmd = fixed
 		changed = true
 	}
+	// In project_setup, force pip install to use the venv python so packages
+	// land in .venv/ and the verify (import pytest) succeeds.
+	// Don't rewrite pip install --upgrade pip (targets system pip, not venv).
+	if orchestrator.WorkflowUsesPython(v) &&
+		strings.Contains(strings.ToLower(cmd), "pip install") &&
+		!strings.Contains(strings.ToLower(cmd), "--upgrade pip") &&
+		!strings.Contains(cmd, ".venv/") && !strings.Contains(cmd, "venv/") {
+		if venvPy := v.PythonVenvRelDir() + "/bin/python3"; !strings.Contains(cmd, venvPy) {
+			cmd = strings.Replace(cmd, "python3 -m pip", venvPy+" -m pip", 1)
+			changed = true
+		}
+	}
 	mayorRig := rigMayorRigPath(rig)
 	layoutShell := isLayoutRelativeShellCommand(cmd, rig, layout)
 	// Python venv lives under mayor/rig only — never cd into layout_root for pip/pytest/compileall.
