@@ -711,9 +711,14 @@ func normalizePythonDevServerSmoke(cmd string) string {
 		}
 	}
 	// Polecat often forgets kill after backgrounding uvicorn; append it.
-	if strings.Contains(cmd, "uvicorn") && strings.Contains(cmd, " &") &&
-		strings.Contains(cmd, "curl ") && !strings.Contains(cmd, "kill") {
-		cmd = strings.TrimRight(cmd, " ;&") + " ; kill %1 2>/dev/null"
+	// Use $! to capture PID — kill %1 requires job control which may be off.
+	if strings.Contains(cmd, "uvicorn") && strings.Contains(cmd, "curl ") &&
+		!strings.Contains(cmd, "kill") && !strings.Contains(cmd, "_uvpid") {
+		// Find the & that backgrounds uvicorn (last & in the uvicorn segment).
+		if idx := strings.LastIndex(cmd, " & "); idx >= 0 && strings.Contains(cmd[:idx], "uvicorn") {
+			cmd = cmd[:idx] + " & _uvpid=$! " + cmd[idx+3:]
+			cmd = strings.TrimRight(cmd, " ;&") + " ; kill $_uvpid 2>/dev/null ; wait $_uvpid 2>/dev/null"
+		}
 	}
 	return cmd
 }
@@ -826,7 +831,28 @@ func orchestratedCommandTimeout(cmd string) time.Duration {
 	if strings.Contains(lower, "go build ./...") || strings.Contains(lower, "go test ./...") {
 		return 5 * time.Minute
 	}
-	return 0
+	// Python smoke: uvicorn/gunicorn + curl.
+	if (strings.Contains(lower, "uvicorn") || strings.Contains(lower, "gunicorn")) &&
+		strings.Contains(lower, "curl") {
+		return 30 * time.Second
+	}
+	// Python test suite.
+	if strings.Contains(lower, "pytest") || strings.Contains(lower, "python3 -m unittest") {
+		return 2 * time.Minute
+	}
+	// Bare server start (no curl) — safety cap, shouldn't happen after guards.
+	// Go compile can be slow; give it more time.
+	if strings.Contains(lower, "go run") && !strings.Contains(lower, "curl") {
+		return 2 * time.Minute
+	}
+	if strings.Contains(lower, "uvicorn") || strings.Contains(lower, "gunicorn") {
+		return 15 * time.Second
+	}
+	// Any other long-running command.
+	if strings.Contains(lower, "pip install") || strings.Contains(lower, "go mod") {
+		return 2 * time.Minute
+	}
+	return 60 * time.Second
 }
 
 func commandTimeoutDur(cmd string, overrideSec int) time.Duration {

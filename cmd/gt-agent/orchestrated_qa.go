@@ -15,6 +15,15 @@ func orchestratedCommandTimeoutForTrack(track, cmd string) time.Duration {
 		if strings.Contains(lower, "go build ./...") || strings.Contains(lower, "go test ./...") {
 			return 2 * time.Minute
 		}
+		// Python QA smoke: uvicorn/gunicorn + curl.
+		if (strings.Contains(lower, "uvicorn") || strings.Contains(lower, "gunicorn")) &&
+			strings.Contains(lower, "curl") {
+			return 30 * time.Second
+		}
+		// Python QA test verify.
+		if strings.Contains(lower, "pytest") || strings.Contains(lower, "python3 -m unittest") {
+			return 2 * time.Minute
+		}
 	}
 	return orchestratedCommandTimeout(cmd)
 }
