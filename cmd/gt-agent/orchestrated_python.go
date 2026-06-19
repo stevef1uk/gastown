@@ -110,6 +110,9 @@ func validatePythonImplementationCommand(cmd, townRoot, rig, activeBead string, 
 	if isBeadCloseCommand(cmd) && !verifyOK {
 		mayorDir := rigMayorRigDir(townRoot, rig)
 		beadPath := orchestrator.ImplementBeadPathForID(townRoot, rig, activeBead, v)
+		if orchestrator.IsTestImplementPath(beadPath) || orchestrator.WorkflowUsesPython(v) {
+			return allowBeadCloseWhenVerifyIsPointless(mayorDir, beadPath, activeBead, v)
+		}
 		hint := orchestrator.PythonImplementationVerifyCommandForBead(v, mayorDir, beadPath)
 		if orchestrator.IsFrontendImplementPath(beadPath) {
 			if err := orchestrator.ValidateBeadArtifactOnDisk(mayorDir, beadPath, v); err != nil {
@@ -118,6 +121,29 @@ func validatePythonImplementationCommand(cmd, townRoot, rig, activeBead string, 
 			return fmt.Errorf("bd close %s requires a successful EDIT:/WRITE: to %s in this session", activeBead, beadPath)
 		}
 		return fmt.Errorf("run green verify before bd close: %s (in this session, since verify clears on restart)", hint)
+	}
+	return nil
+}
+
+// allowBeadCloseWhenVerifyIsPointless lets bd close through when the per-bead
+// verify is a no-op (compileall for source bead when test file doesn't exist yet,
+// or pytest for a test bead that hasn't been written). This avoids the deadlock
+// where verifyOK can't be set because the auto-verify chain has no matching handler.
+func allowBeadCloseWhenVerifyIsPointless(mayorDir, beadPath, activeBead string, v orchestrator.WorkflowValidation) error {
+	if orchestrator.IsTestImplementPath(beadPath) {
+		fullPath := filepath.Join(mayorDir, beadPath)
+		info, err := os.Stat(fullPath)
+		if err != nil {
+			return fmt.Errorf("cannot bd close %s: test file %s does not exist — write it first with EDIT:/WRITE:", activeBead, beadPath)
+		}
+		if info.Size() == 0 {
+			return fmt.Errorf("cannot bd close %s: test file %s is empty", activeBead, beadPath)
+		}
+		return nil
+	}
+	fullPath := filepath.Join(mayorDir, beadPath)
+	if _, err := os.Stat(fullPath); err != nil {
+		return fmt.Errorf("cannot bd close %s: source file %s does not exist", activeBead, beadPath)
 	}
 	return nil
 }
