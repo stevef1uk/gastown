@@ -2109,6 +2109,9 @@ func validateQARuntimeSmokeCommand(cmd, rig, townRoot string, v orchestrator.Wor
 			!strings.Contains(lower, "flask run") && !strings.Contains(lower, "hypercorn") {
 			return fmt.Errorf("Python runtime smoke must start the server in the same CMD (e.g. cd %s/%s && uvicorn main:app --host 127.0.0.1 --port %d & sleep 1 && curl http://127.0.0.1:%d/ping) — bare curl with no server running always fails", rigMayorRigPath(rig), layout, port, port)
 		}
+		if !strings.Contains(lower, "curl") && !strings.Contains(lower, "wget") {
+			return fmt.Errorf("Python runtime smoke must include curl in the same CMD as the server (e.g. cd %s/%s && uvicorn main:app --host 127.0.0.1 --port %d & sleep 1 && curl http://127.0.0.1:%d/ping) — bare server with no curl hangs forever", rigMayorRigPath(rig), layout, port, port)
+		}
 	}
 	if orchestrator.WorkflowUsesGo(v) {
 		if !strings.Contains(lower, "go run") {

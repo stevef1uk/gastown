@@ -727,7 +727,12 @@ func normalizePythonDevServerSmoke(cmd string) string {
 			}
 		}
 	}
-	// Force uvicorn stdout redirect + sleep + PID capture so sh -c doesn't
+	// Uvicorn without curl runs in foreground — will hang forever. Background it
+	// with redirect, then kill it so port doesn't stay occupied.
+	if strings.Contains(cmd, "uvicorn") && !strings.Contains(cmd, "curl") &&
+		!strings.Contains(cmd, " &") && !strings.Contains(cmd, "& ") {
+		cmd = strings.TrimSpace(cmd) + " >/dev/null 2>&1 & _uvpid=$!; sleep 1; kill $_uvpid 2>/dev/null || true; wait $_uvpid 2>/dev/null || true"
+	}
 	// block and curl has a running server to hit.
 	if strings.Contains(cmd, "uvicorn") && strings.Contains(cmd, "curl") {
 		// Strip any prior broken _uvpid/kill so we can rewrite cleanly.
