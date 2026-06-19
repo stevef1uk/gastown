@@ -221,6 +221,8 @@ states:
           verify: go_setup
         - when: go_write_layout
           verify: go_implementation
+        - when: python_test
+          verify: python_implementation
         - when: python_import_check
           verify: python_implementation
         - when: python_compileall

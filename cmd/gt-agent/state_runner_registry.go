@@ -357,4 +357,10 @@ var autoVerifyWhenHandlers = map[string]autoVerifyWhenFn{
 	"go_write_layout":       func(r *stateRunner, cmd string) bool { return orchestratedWritesGoUnderLayout(cmd, r.v) },
 	"python_import_check":   func(r *stateRunner, cmd string) bool { return orchestrator.IsPythonImportCheckCommand(cmd) },
 	"python_compileall":     func(r *stateRunner, cmd string) bool { return strings.Contains(strings.ToLower(cmd), "compileall") },
+	"python_test":           func(r *stateRunner, cmd string) bool { return isPythonTestCommand(cmd) },
+}
+
+func isPythonTestCommand(cmd string) bool {
+	lower := strings.ToLower(cmd)
+	return strings.Contains(lower, "pytest") || strings.Contains(lower, "python3 -m unittest")
 }
