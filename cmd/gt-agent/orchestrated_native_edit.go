@@ -512,6 +512,9 @@ func (r *stateRunner) executeNativeEditOp(op nativeEditOp, workDir string) (stri
 		if err := orchestrator.ValidateImplementExportedSymbols(r.mayorRigWorkDir(), rel, replace, r.v); err != nil {
 			return "", err
 		}
+		if strings.TrimSpace(op.search) == strings.TrimSpace(replace) {
+			return "", fmt.Errorf("SEARCH and REPLACE are identical — this edit would change nothing. If the file already matches what you want, use CMD: bd close instead of another identical EDIT.")
+		}
 		return applyNativeSearchReplaceValidated(rel, abs, op.search, replace)
 	case "write":
 		if err := rigpkg.RejectDisallowedMayorRigWrite(rel, r.v.LayoutRoot, r.v.RequiredFiles); err != nil {
