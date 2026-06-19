@@ -732,7 +732,8 @@ func normalizePythonDevServerSmoke(cmd string) string {
 	}
 	// Uvicorn without curl: background + redirect so shell doesn't hang, then kill.
 	if strings.Contains(cmd, "uvicorn") && !strings.Contains(cmd, "curl") {
-		cmd = strings.ReplaceAll(cmd, " &", " >/dev/null 2>&1 &")
+		// Replace only standalone & (not &&) with redirect.
+		cmd = regexp.MustCompile(`([^&]|^)\s&\s`).ReplaceAllString(cmd, "${1} >/dev/null 2>&1 & ")
 		cmd = strings.TrimSpace(cmd) + " _uvpid=$!; sleep 1; kill $_uvpid 2>/dev/null || true; wait $_uvpid 2>/dev/null || true"
 	}
 	// block and curl has a running server to hit.

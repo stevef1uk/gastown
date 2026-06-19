@@ -547,8 +547,12 @@ func sanitizeOrchestratedShellCommand(cmd string) (string, bool) {
 	}
 	// bd list --limit fixes stay in rewriteBdListLimit (CmdRewrites), not here — injecting
 	// --limit=0 during parse broke tests and changes commands that already omit --limit by design.
+	// Strip trailing ** from model markdown-bold leakage (e.g. "pytest**").
+	cmd = trailingStarsRE.ReplaceAllString(cmd, "")
 	return strings.TrimSpace(cmd), changed
 }
+
+var trailingStarsRE = regexp.MustCompile(`\*{1,3}\s*$`)
 
 func trimJSONGluedToShellCommand(cmd string) (string, bool) {
 	for _, needle := range []string{`{"outcome"`, `{" outcome"`} {
