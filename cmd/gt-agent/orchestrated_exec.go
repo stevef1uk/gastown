@@ -729,9 +729,17 @@ func normalizePythonDevServerSmoke(cmd string) string {
 		cmd = strings.ReplaceAll(cmd, " & _uvpid=$! ", " & ")
 		cmd = regexp.MustCompile(`\s*;\s*kill\s+\$?_uvpid\b[^;]*`).ReplaceAllString(cmd, "")
 		cmd = regexp.MustCompile(`\s*;\s*wait\s+\$?_uvpid\b[^;]*`).ReplaceAllString(cmd, "")
-		if idx := strings.LastIndex(cmd, " & "); idx >= 0 && strings.Contains(cmd[:idx], "uvicorn") {
-			rest := strings.TrimSpace(cmd[idx+3:])
-			cmd = cmd[:idx] + " >/dev/null 2>&1 & _uvpid=$!"
+		// Find the & that backgrounds uvicorn. It may be followed by space, ), ;, or end-of-cmd.
+		bgRE := regexp.MustCompile(`\buvicorn\b.*?\s&\s*[)\s;]`)
+		if loc := bgRE.FindStringIndex(cmd); loc != nil {
+			ampIdx := loc[1] - 1
+			for ampIdx > 0 && cmd[ampIdx] != '&' {
+				ampIdx--
+			}
+			rest := strings.TrimSpace(cmd[ampIdx+1:])
+			rest = strings.TrimLeft(rest, " );\t&")
+			rest = strings.TrimSpace(rest)
+			cmd = cmd[:ampIdx] + " >/dev/null 2>&1 & _uvpid=$!"
 			if !strings.Contains(strings.ToLower(rest), "sleep ") {
 				cmd += "; sleep 2"
 			}
