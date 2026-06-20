@@ -120,7 +120,7 @@ func ValidatePlanBeadPathsExact(beads []PlanBead, v WorkflowValidation, rig stri
 	}
 	v = v.ForActivePhase()
 	expected := make(map[string]bool)
-	for _, f := range v.RequiredFiles {
+	for _, f := range requiredFilesWithCorrelatedTests(v.RequiredFiles, v) {
 		f = filepath.ToSlash(strings.TrimSpace(f))
 		if f != "" {
 			expected[f] = true
