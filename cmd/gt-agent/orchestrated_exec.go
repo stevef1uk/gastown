@@ -222,7 +222,8 @@ func isToolchainExecutionCommand(cmd string) bool {
 	if strings.Contains(lower, "-m pip") || strings.Contains(lower, "pip install") || strings.Contains(lower, "pip3 install") {
 		return true
 	}
-	if strings.Contains(lower, "-m compileall") || strings.Contains(lower, "compileall") {
+	if strings.Contains(lower, "-m compileall") || strings.Contains(lower, "compileall") ||
+		strings.Contains(lower, "-m py_compile") {
 		return true
 	}
 	if strings.Contains(lower, "-m pytest") || strings.Contains(lower, "-m unittest") {
