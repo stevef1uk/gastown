@@ -151,8 +151,11 @@ func pythonVerifyWithLayout(cmd string, v WorkflowValidation) string {
 	hasCD := strings.Contains(lower, "cd "+strings.ToLower(layout))
 	
 	if isPytest {
+		// Strip cd layout from command — pytest needs to run from mayor/rig
+		// so that imports like 'defender.backend.main' resolve correctly.
+		// Scope to the layout directory instead of cd'ing into it.
 		if hasCD {
-			return cmd
+			cmd = stripCDLayout(cmd, layout)
 		}
 		// Run pytest from mayor/rig (venv lives there); collect only layout/tests.
 		if !strings.Contains(lower, testScope) {
@@ -165,4 +168,27 @@ func pythonVerifyWithLayout(cmd string, v WorkflowValidation) string {
 		return cmd
 	}
 	return "cd " + layout + " && " + cmd
+}
+
+func stripCDLayout(cmd, layout string) string {
+	layoutLower := strings.ToLower(strings.TrimSpace(layout))
+	for _, pat := range []string{
+		"cd " + layoutLower + " && ",
+		"cd ./" + layoutLower + " && ",
+		"cd " + layoutLower + "/ && ",
+	} {
+		if idx := strings.Index(strings.ToLower(cmd), pat); idx >= 0 {
+			return strings.TrimSpace(cmd[:idx] + cmd[idx+len(pat):])
+		}
+	}
+	// cd layout/subdir && — strip the cd prefix, keep the rest.
+	for _, pat := range []string{"cd " + layoutLower + "/"} {
+		if idx := strings.Index(strings.ToLower(cmd), pat); idx >= 0 {
+			rest := cmd[idx+len(pat):]
+			if sIdx := strings.Index(rest, " && "); sIdx >= 0 {
+				return strings.TrimSpace(cmd[:idx] + rest[sIdx+4:])
+			}
+		}
+	}
+	return cmd
 }
