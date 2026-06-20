@@ -433,6 +433,18 @@ func normalizeRigPrefixShellPaths(cmd, rig, layout string) string {
 }
 
 // stripLeadingCDDot removes a leading "cd . &&" when mayor/rig workdir is prepended separately.
+func isUvicornCommand(cmd string) bool {
+	// Only treat as uvicorn if it appears as a command (uvicorn, python3 -m uvicorn),
+	// not in echo "uvicorn[standard]", cat output, or string literals.
+	lower := strings.ToLower(cmd)
+	return strings.Contains(lower, "uvicorn") &&
+		!strings.Contains(lower, "echo") &&
+		!strings.Contains(lower, "cat ") &&
+		!strings.Contains(lower, ">>") &&
+		!strings.Contains(lower, "'uvicorn") &&
+		!strings.Contains(lower, "\"uvicorn")
+}
+
 func stripCDLayoutPrefix(cmd, layout string) string {
 	layout = strings.Trim(strings.TrimSpace(layout), "/")
 	if layout == "" {
@@ -759,13 +771,14 @@ func normalizePythonDevServerSmoke(cmd string) string {
 		}
 	}
 	// Uvicorn without curl: background + redirect so shell doesn't hang, then kill.
-	if strings.Contains(cmd, "uvicorn") && !strings.Contains(cmd, "curl") {
+	// Skip if uvicorn appears only in echo/cat/string context (not as a command).
+	if strings.Contains(cmd, "uvicorn") && isUvicornCommand(cmd) && !strings.Contains(cmd, "curl") {
 		// Replace only standalone & (not &&) with redirect.
 		cmd = regexp.MustCompile(`([^&]|^)\s&\s`).ReplaceAllString(cmd, "${1} >/dev/null 2>&1 & ")
 		cmd = strings.TrimSpace(cmd) + " _uvpid=$!; sleep 1; kill $_uvpid 2>/dev/null || true; wait $_uvpid 2>/dev/null || true"
 	}
 	// block and curl has a running server to hit.
-	if strings.Contains(cmd, "uvicorn") && strings.Contains(cmd, "curl") {
+	if strings.Contains(cmd, "uvicorn") && isUvicornCommand(cmd) && strings.Contains(cmd, "curl") {
 		// Strip any prior broken _uvpid/kill so we can rewrite cleanly.
 		cmd = strings.ReplaceAll(cmd, " & _uvpid=$! ", " & ")
 		cmd = regexp.MustCompile(`\s*;\s*kill\s+\$?_uvpid\b[^;]*`).ReplaceAllString(cmd, "")
