@@ -73,7 +73,7 @@ func implementBeadTitlePathOK(title string, v WorkflowValidation) bool {
 	// For nested/exact profiles, only accept bead titles whose embedded path matches
 	// required_files (prevents queue-matching flattened handlers/main.go titles).
 	if RequiresExactImplementPaths(v) {
-		return pathMatchesRequiredForProfile(path, v.RequiredFiles, v)
+		return pathMatchesRequiredForProfile(path, requiredFilesWithCorrelatedTests(v.RequiredFiles, v), v)
 	}
 
 	// For flat/non-exact profiles, accept any valid implement path.
