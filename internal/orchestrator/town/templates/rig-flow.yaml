@@ -232,6 +232,7 @@ states:
       retry_hint_key: implementation
       failure_hint: |
         One bead at a time: bd update → **EDIT:** / **WRITE:** (include *_test.go or tests/test_*.py mapped to SPEC/plan) → verify from Next bead (go test / pytest) → bd close. Use CMD only for bd/verify. go run/curl only on cmd/server/main.go bead.
+        After QA failure rework: READ the QA-cited file on disk first. If the file already exists and verify passes, bd close it — do NOT rewrite files that QA falsely claimed as missing/broken. Only make changes when QA's claim is confirmed.
     transitions:
       success:
         to: qa_review
