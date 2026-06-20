@@ -370,10 +370,10 @@ func rewriteUnittestToWorkdir(cmd, rig string, v orchestrator.WorkflowValidation
 	} else if !orchestrator.WorkflowUsesGo(v) && layout != "" && layout != "." &&
 		commandHasMayorRigCD(cmd, rig) && commandHasLayoutCD(cmd, layout) {
 		// Python: cd path includes layout subdir but .venv lives at mayor/rig only.
-		// Strip layout so ".venv/bin/python3" resolves correctly — BUT keep it
-		// for pip -r install so requirements.txt can be found in the layout dir.
+		// Strip layout cd so paths resolve correctly (no double defender/defender/...).
 		if !strings.Contains(strings.ToLower(cmd), "-r ") {
 			rest := stripRedundantLayoutCD(stripFirstCDPrefix(cmd), mayorRig, layout)
+			rest = stripCDLayoutPrefix(rest, layout)
 			cmd = "cd " + mayorRig + " && " + rest
 			changed = true
 		}
@@ -433,6 +433,33 @@ func normalizeRigPrefixShellPaths(cmd, rig, layout string) string {
 }
 
 // stripLeadingCDDot removes a leading "cd . &&" when mayor/rig workdir is prepended separately.
+func stripCDLayoutPrefix(cmd, layout string) string {
+	layout = strings.Trim(strings.TrimSpace(layout), "/")
+	if layout == "" {
+		return cmd
+	}
+	lower := strings.ToLower(cmd)
+	for _, pat := range []string{
+		"cd " + layout + " && ",
+		"cd ./" + layout + " && ",
+		"cd " + layout + "/ && ",
+	} {
+		if idx := strings.Index(lower, pat); idx >= 0 {
+			return strings.TrimSpace(cmd[:idx] + cmd[idx+len(pat):])
+		}
+	}
+	// cd layout/subdir/something && — strip to just the remaining command.
+	for _, prefix := range []string{"cd " + layout + "/"} {
+		if idx := strings.Index(lower, prefix); idx >= 0 {
+			rest := cmd[idx+len(prefix):]
+			if sIdx := strings.Index(rest, " && "); sIdx >= 0 {
+				return strings.TrimSpace(cmd[:idx] + rest[sIdx+4:])
+			}
+		}
+	}
+	return cmd
+}
+
 func stripLeadingCDDot(cmd string) string {
 	trimmed := strings.TrimSpace(cmd)
 	lower := strings.ToLower(trimmed)
