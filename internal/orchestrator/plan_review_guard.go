@@ -193,7 +193,32 @@ func rejectSpuriousQAFailure(townRoot, rig, summary string) string {
 			return "QA claims import/module issues but tests pass on disk"
 		}
 	}
+	// If QA reports ANY failure but phase verify passes on disk, the QA claim is wrong.
+	// Prevents wasteful polecat re-implementation of already-correct code.
+	if isFailureKeyWord(summary) && phaseVerifyPasses(townRoot, rig) {
+		return "QA reports failure but phase verify passes on disk — QA claim is spurious"
+	}
 	return ""
+}
+
+func isFailureKeyWord(summary string) bool {
+	lower := strings.ToLower(summary)
+	for _, w := range []string{"missing", "not found", "no such", "does not exist",
+		"broken", "incomplete", "truncated", "missing file", "doesn't exist"} {
+		if strings.Contains(lower, w) {
+			return true
+		}
+	}
+	return false
+}
+
+func phaseVerifyPasses(townRoot, rig string) bool {
+	v, ok, err := LoadRigWorkflowProfileFile(townRoot, rig)
+	if err != nil || !ok {
+		return false
+	}
+	v = v.ForActivePhase()
+	return ImplementationPhaseVerifyOK(townRoot, rig, v) == nil
 }
 
 func hasPassingPythonTests(rigDir string) bool {
