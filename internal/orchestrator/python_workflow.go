@@ -153,9 +153,15 @@ func pythonVerifyWithLayout(cmd string, v WorkflowValidation) string {
 	if isPytest {
 		// Strip cd layout from command — pytest needs to run from mayor/rig
 		// so that imports like 'defender.backend.main' resolve correctly.
-		// Scope to the layout directory instead of cd'ing into it.
+		// Preserve the original cd path as the test scope.
 		if hasCD {
+			scope := extractLayoutScope(cmd, layout)
 			cmd = stripCDLayout(cmd, layout)
+			if scope != "" {
+				cmd = strings.TrimSpace(cmd) + " " + scope
+				// Extracted scope replaces the default layout/tests fallback below.
+				return cmd
+			}
 		}
 		// Run pytest from mayor/rig (venv lives there); collect only layout/tests.
 		if !strings.Contains(lower, testScope) {
@@ -168,6 +174,26 @@ func pythonVerifyWithLayout(cmd string, v WorkflowValidation) string {
 		return cmd
 	}
 	return "cd " + layout + " && " + cmd
+}
+
+func extractLayoutScope(cmd, layout string) string {
+	layoutLower := strings.ToLower(strings.TrimSpace(layout))
+	lower := strings.ToLower(cmd)
+	for _, pat := range []string{"cd " + layoutLower + "/", "cd ./" + layoutLower + "/"} {
+		if idx := strings.Index(lower, pat); idx >= 0 {
+			rest := cmd[idx+len(pat):]
+			// Take everything up to && as the scope, preserving layout prefix.
+			if sIdx := strings.Index(rest, " && "); sIdx >= 0 {
+				sub := strings.TrimSpace(rest[:sIdx])
+				return layout + "/" + sub + "/"
+			}
+			if space := strings.IndexByte(rest, ' '); space >= 0 {
+				return layout + "/" + strings.TrimSpace(rest[:space]) + "/"
+			}
+			return layout + "/" + strings.TrimSpace(rest) + "/"
+		}
+	}
+	return ""
 }
 
 func stripCDLayout(cmd, layout string) string {
