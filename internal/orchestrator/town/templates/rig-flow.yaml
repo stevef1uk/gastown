@@ -61,7 +61,8 @@ states:
       pre_run: [sync_planning_artifacts]
       state_timeout_seconds: 1800
       on_timeout: [sync_planning_on_timeout]
-      max_cmd_turns: 8
+      max_cmd_turns: 20
+      empty_response_suffix: "Reply with CMD: lines. Run: CMD: cd {{rig}}/mayor/rig && export BEADS_DIR=$GT_ROOT/{{rig}}/.beads && bd list --status=open && wc -c plan.md. If beads exist and plan.md >= {{min_plan_bytes}} bytes, send {\"outcome\":\"success\",\"summary\":\"beads and plan.md ready\"}. Otherwise bd create missing beads."
       cmd_guard: planning
       cmd_rewrites: [rig_placeholders, spec_md_case, plan_md_after_cd, bd_list_limit, unwrap_bash_lc]
       env:
