@@ -173,6 +173,12 @@ func pythonVerifyWithLayout(cmd string, v WorkflowValidation) string {
 	if hasCD {
 		return cmd
 	}
+	// For commands that already reference files under the layout (e.g.
+	// "python -m py_compile defender/backend/main.py"), run from mayor/rig
+	// directly — no cd needed.
+	if strings.Contains(cmd, layout+"/") || strings.Contains(cmd, layout+"\\") {
+		return cmd
+	}
 	return "cd " + layout + " && " + cmd
 }
 
