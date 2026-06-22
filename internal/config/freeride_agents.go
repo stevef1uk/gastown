@@ -21,7 +21,7 @@ func freerideGTAgent(model string, extra map[string]string) *RuntimeConfig {
 // DefaultFreerideAgents returns named gt-agent profiles routed through Freeride.
 func DefaultFreerideAgents() map[string]*RuntimeConfig {
 	return map[string]*RuntimeConfig{
-		"gt-agent-local": freerideGTAgent("meta/llama-3.3-70b-instruct", nil),
+		"gt-agent-local": freerideGTAgent("google/gemini-3.5-flash", nil),
 		"gt-agent-nvidia": freerideGTAgent("nvidia/llama-3.3-nemotron-super-49b-v1", nil),
 		// gt-agent-gemini: Google AI Studio free tier via Freeride geminiModels (models.yaml).
 		"gt-agent-gemini": freerideGTAgent("google/gemini-3.5-flash", nil),
@@ -45,7 +45,7 @@ func DefaultFreerideRoleAgents() map[string]string {
 		"planner":   "gt-agent-local",
 		"setup":     "gt-agent-local",
 		"polecat":   "gt-agent-gemini",
-		"qa":        "gt-agent-local",
+		"qa":        "gt-agent-gemini",
 		"refinery":  "gt-agent-local",
 		"witness":   "gt-agent-local",
 	}

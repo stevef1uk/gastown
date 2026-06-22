@@ -44,8 +44,8 @@ GT_ROOT="${GT_ROOT:-$HOME/gt}"
 # Directory containing this repo (parent of scripts/)
 GASTOWN="${GASTOWN:-$(cd "$(dirname "$0")/.." && pwd)}"
 CLEAN_SCRIPT="${GASTOWN}/scripts/clean-gastown.sh"
-RIG="${RIG_NAME:-testgt1}"
-RIG_URL="${RIG_URL:-https://github.com/stevef1uk/testgt1}"
+RIG="${RIG_NAME:-testgt4}"
+RIG_URL="${RIG_URL:-https://github.com/stevef1uk/testgt4}"
 ORCHESTRATOR_WAIT_SECS="${ORCHESTRATOR_WAIT_SECS:-90}"
 PLANNING_RESYNC_WAIT_SECS="${PLANNING_RESYNC_WAIT_SECS:-180}"
 # rig-flow is orchestrator-driven; --orchestrator-only skips legacy town hq architect/qa/polecat.

@@ -60,6 +60,13 @@ func pythonWorkflowNeedsQARuntimeSmoke(townRoot, rig string, v WorkflowValidatio
 	if !pythonWorkflowHasServerEntry(v) {
 		return false
 	}
+	// Compile-only phases (py_compile, no pytest/curl) don't need runtime smoke.
+	v = v.ForActivePhase()
+	if qa := strings.ToLower(strings.TrimSpace(v.QAVerifyCommand)); qa != "" &&
+		!strings.Contains(qa, "pytest") && !strings.Contains(qa, "curl") &&
+		!strings.Contains(qa, "go test") && !strings.Contains(qa, "go run") {
+		return false
+	}
 	spec, err := LoadAPISmokeSpecFromRig(townRoot, rig, v)
 	if err != nil {
 		return false
