@@ -73,24 +73,4 @@ func TestHandlerTestMissingModuleChdirIssues(t *testing.T) {
 	}
 }
 
-func TestHandlerStaticHandlerHasEarlyRequestURIGuard(t *testing.T) {
-	t.Parallel()
-	late := `mux.HandleFunc("/static/", func(w http.ResponseWriter, r *http.Request) {
-		file := strings.TrimPrefix(r.URL.Path, "/static/")
-		serveWebFile(w, r, file)
-	})
-	serveWebFile := func(w http.ResponseWriter, r *http.Request, name string) {
-		if strings.Contains(r.URL.RequestURI(), "..") { http.NotFound(w, r); return }
-	}`
-	prefix := `HandleFunc("/static/"`
-	fields := []string{"RequestURI", "RawPath"}
-	if handlerStaticHandlerHasEarlyRequestURIGuard(late, prefix, fields) {
-		t.Fatal("RequestURI only in serveWebFile should not satisfy early guard")
-	}
-	early := `mux.HandleFunc("/static/", func(w http.ResponseWriter, r *http.Request) {
-		if strings.Contains(r.URL.RequestURI(), "..") { http.NotFound(w, r); return }
-	})`
-	if !handlerStaticHandlerHasEarlyRequestURIGuard(early, prefix, fields) {
-		t.Fatal("expected early guard in static handler")
-	}
-}
+

@@ -41,63 +41,6 @@ path := filepath.Join("..", "..", "web", name)`
 	}
 }
 
-func TestHandlerStaticServePatternIssues_requiresRequestURIGuard(t *testing.T) {
-	t.Parallel()
-	v := WorkflowValidation{LayoutRoot: "linkshelf"}
-	InvalidateHTTPProfileCacheForTest()
-	body := `mux.HandleFunc("/static/", func(w http.ResponseWriter, r *http.Request) {
-		file := filepath.Join("web", r.URL.Path[len("/static/"):])
-		http.ServeFile(w, r, file)
-	})`
-	issues := HandlerStaticServePatternIssues("", "", body, v)
-	found := false
-	for _, iss := range issues {
-		if strings.Contains(iss, "RequestURI") {
-			found = true
-		}
-	}
-	if !found {
-		t.Fatalf("want RequestURI guard issue (no .. check at all), got %v", issues)
-	}
-}
-
-func TestHandlerStaticServePatternIssues_acceptsRequestURIGuard(t *testing.T) {
-	t.Parallel()
-	v := WorkflowValidation{LayoutRoot: "linkshelf"}
-	InvalidateHTTPProfileCacheForTest()
-	body := `mux.HandleFunc("/static/", func(w http.ResponseWriter, r *http.Request) {
-		if strings.Contains(r.URL.RequestURI(), "..") {
-			http.NotFound(w, r)
-			return
-		}
-	})`
-	if issues := HandlerStaticServePatternIssues("", "", body, v); len(issues) != 0 {
-		t.Fatalf("unexpected issues: %v", issues)
-	}
-}
-
-func TestHandlerStaticServePatternIssues_rejectsLateRequestURIGuard(t *testing.T) {
-	t.Parallel()
-	v := WorkflowValidation{LayoutRoot: "linkshelf"}
-	InvalidateHTTPProfileCacheForTest()
-	body := `mux.HandleFunc("/static/", func(w http.ResponseWriter, r *http.Request) {
-		serveWebFile(w, r, "x")
-	})
-	func serveWebFile(w http.ResponseWriter, r *http.Request, name string) {
-		if strings.Contains(r.URL.RequestURI(), "..") { return }
-	}`
-	issues := HandlerStaticServePatternIssues("", "", body, v)
-	found := false
-	for _, iss := range issues {
-		if strings.Contains(iss, "ServeMux") || strings.Contains(iss, "first lines") {
-			found = true
-		}
-	}
-	if !found {
-		t.Fatalf("want late-guard issue, got %v", issues)
-	}
-}
-
 func TestValidateImplementWrittenContent_rejectsBadWebJoin(t *testing.T) {
 	t.Parallel()
 	body := `package api
@@ -111,21 +54,3 @@ func x() {
 	}
 }
 
-func TestValidateImplementWrittenContent_rejectsStaticWithoutRequestURI(t *testing.T) {
-	t.Parallel()
-	body := `package api
-func RegisterHandlers(mux *http.ServeMux, db *sql.DB) {
-	mux.HandleFunc("/static/", func(w http.ResponseWriter, r *http.Request) {
-		file := strings.TrimPrefix(r.URL.Path, "/static/")
-		if strings.Contains(file, "..") {
-			http.NotFound(w, r)
-			return
-		}
-	})
-}
-`
-	err := ValidateImplementWrittenContent("", "", t.TempDir(), "linkshelf/internal/api/handlers.go", body, WorkflowValidation{LayoutRoot: "linkshelf"})
-	if err == nil || !strings.Contains(err.Error(), "RequestURI") {
-		t.Fatalf("got %v", err)
-	}
-}

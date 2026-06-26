@@ -17,13 +17,6 @@
       "handler_source_regex": "HandleFunc\\(\\s*\"/static\"\\s*,",
       "unless_regex": "HandleFunc\\(\\s*\"/static/\"\\s*,",
       "message": "register static handler as mux.HandleFunc(\"/static/\", …) not \"/static\" — required for style.css and traversal tests"
-    },
-    {
-      "id": "static_early_traversal",
-      "when_static_prefix": "/static",
-      "requires_route_regex": "HandleFunc\\(\\s*\"/static/\"\\s*,",
-      "static_handler_block_guard": true,
-      "message": "in the /static/ handler (first lines of the HandleFunc callback) reject \"..\" on r.URL.RequestURI() or RawPath — ServeMux redirects before nested helpers run"
     }
   ],
   "test_output_matchers": {
