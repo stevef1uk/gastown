@@ -265,7 +265,6 @@ func TestValidatePlanningBeadCreate_blocksWhenRequiredFilesCovered(t *testing.T)
 		{ID: "te-1", Title: "Link Shelf /linkshelf/go.mod per architecture"},
 		{ID: "te-2", Title: "Link Shelf /linkshelf/cmd/server/main.go per architecture"},
 	}
-	listImplementBeadsHookMu.Lock()
 	prev := ListImplementBeadsByStatusHook
 	ListImplementBeadsByStatusHook = func(_, _ string, _ WorkflowValidation, status string) ([]PlanBead, error) {
 		if status == "open" {
@@ -273,12 +272,7 @@ func TestValidatePlanningBeadCreate_blocksWhenRequiredFilesCovered(t *testing.T)
 		}
 		return nil, nil
 	}
-	listImplementBeadsHookMu.Unlock()
-	defer func() {
-		listImplementBeadsHookMu.Lock()
-		ListImplementBeadsByStatusHook = prev
-		listImplementBeadsHookMu.Unlock()
-	}()
+	t.Cleanup(func() { ListImplementBeadsByStatusHook = prev })
 	err := ValidatePlanningBeadCreate("/tmp", "rig", "Implement linkshelf/main.go per architecture", v)
 	if err == nil || !strings.Contains(err.Error(), "already cover") {
 		t.Fatalf("expected block when covered, got %v", err)

@@ -2,7 +2,6 @@ package orchestrator
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -162,26 +161,33 @@ func PathMatchesImplementFile(written, beadPath string) bool {
 	return strings.HasSuffix(written, "/"+beadPath) || strings.HasSuffix(beadPath, "/"+written)
 }
 
-// ListImplementBeadsByStatusHook is set by tests to stub bd list for implement-path guards.
-// Return errImplementBeadsUseRealList from the hook (or use setListImplementBeadsByStatusHook with
-// a mismatched townRoot/rig) to fall through to real bd list — required for t.Parallel() safety.
+// implementBeadsHookMap provides per-(townRoot, rig) hooks, safe for t.Parallel().
+// Tests should use setListImplementBeadsByStatusHook instead of assigning
+// ListImplementBeadsByStatusHook directly, which is only for global overrides.
+var implementBeadsHookMap sync.Map
+
+func implementBeadsHookKey(townRoot, rig string) string {
+	return townRoot + "\x00" + rig
+}
+
+// ListImplementBeadsByStatusHook is the global (non-parallel-safe) hook for bd list stubs.
+// Prefer setListImplementBeadsByStatusHook for per-(townRoot, rig) overrides.
 var ListImplementBeadsByStatusHook func(townRoot, rig string, v WorkflowValidation, status string) ([]PlanBead, error)
 
-// errImplementBeadsUseRealList signals listImplementBeadsForGuard to call bd list for real.
-var errImplementBeadsUseRealList = errors.New("orchestrator: implement beads hook passthrough")
-
-var listImplementBeadsHookMu sync.Mutex
-
 func listImplementBeadsForGuard(townRoot, rig string, v WorkflowValidation, status string) ([]PlanBead, error) {
-	listImplementBeadsHookMu.Lock()
-	hook := ListImplementBeadsByStatusHook
-	listImplementBeadsHookMu.Unlock()
-	if hook != nil {
-		beads, err := hook(townRoot, rig, v, status)
-		if errors.Is(err, errImplementBeadsUseRealList) {
-			// Scoped hook from another parallel test — use real bd for this townRoot/rig.
-			return listImplementBeadsByStatus(townRoot, rig, v, status)
+	key := implementBeadsHookKey(townRoot, rig)
+	if raw, ok := implementBeadsHookMap.Load(key); ok {
+		hook, ok2 := raw.(func(townRoot, rig string, v WorkflowValidation, status string) ([]PlanBead, error))
+		if ok2 && hook != nil {
+			beads, err := hook(townRoot, rig, v, status)
+			if err != nil {
+				return nil, err
+			}
+			return filterImplementBeads(beads, v), nil
 		}
+	}
+	if ListImplementBeadsByStatusHook != nil {
+		beads, err := ListImplementBeadsByStatusHook(townRoot, rig, v, status)
 		if err != nil {
 			return nil, err
 		}

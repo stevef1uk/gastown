@@ -915,18 +915,18 @@ func (d *Daemon) heartbeat(state *State) {
 		d.killQASessions()
 	}
 
-	// 5.6.2. Ensure rig pipeline polecats when orchestrator is running (rig-flow).
+	// 5.6.2. Polecat is managed by ensureOrchestratedPipelineKeepalive (45s ticker).
+	// Do NOT call ensureRigPolecatsRunning here — it races with the pipeline
+	// keepalive to start te-<rig>-polecat and spawns duplicate sessions.
+	// Only handle the kill side (when orchestrator is down).
 	orchestrated, _, _ := orchestrator.IsRunning(d.config.TownRoot)
-	if orchestrated {
-		d.ensureRigPolecatsRunning()
-		if p := d.checkPressure("setup"); !p.OK {
-			d.logger.Printf("Deferring setup spawn: %s", p.Reason)
-		} else {
-			d.ensureSetupRunning()
-		}
-	} else {
+	if !orchestrated {
 		d.killRigPolecatSessions()
 		d.killSetupSessions()
+	} else if p := d.checkPressure("setup"); !p.OK {
+		d.logger.Printf("Deferring setup spawn: %s", p.Reason)
+	} else {
+		d.ensureSetupRunning()
 	}
 
 	// 5.6.5. Ensure Mechanics are running for all rigs (restart if dead)

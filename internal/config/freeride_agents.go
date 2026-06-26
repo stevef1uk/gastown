@@ -24,7 +24,9 @@ func DefaultFreerideAgents() map[string]*RuntimeConfig {
 		"gt-agent-local": freerideGTAgent("google/gemini-3.5-flash", nil),
 		"gt-agent-nvidia": freerideGTAgent("nvidia/llama-3.3-nemotron-super-49b-v1", nil),
 		// gt-agent-gemini: Google AI Studio free tier via Freeride geminiModels (models.yaml).
-		"gt-agent-gemini": freerideGTAgent("google/gemini-3.5-flash", nil),
+		"gt-agent-gemini": freerideGTAgent("google/gemini-3.5-flash", map[string]string{
+			"LLM_TIMEOUT": "1200s",
+		}),
 		"gt-agent-powerful": freerideGTAgent("ollama/llama3.3", nil),
 		"gt-agent-fast": freerideGTAgent("ollama/ministral-3:8b", nil),
 		"gt-agent-mayor-fast": freerideGTAgent("ollama/ministral-3:8b", map[string]string{
