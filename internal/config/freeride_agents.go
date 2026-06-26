@@ -39,7 +39,7 @@ func DefaultFreerideAgents() map[string]*RuntimeConfig {
 // DefaultFreerideRoleAgents maps Gas Town roles to Freeride-backed gt-agent profiles.
 func DefaultFreerideRoleAgents() map[string]string {
 	return map[string]string{
-		"architect": "gt-agent-powerful",
+		"architect": "gt-agent-gemini",
 		"crew":      "gt-agent-local",
 		"deacon":    "gt-agent-local",
 		"mechanic":  "gt-agent-local",
