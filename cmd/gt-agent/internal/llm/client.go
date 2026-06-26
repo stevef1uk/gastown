@@ -12,6 +12,10 @@ import (
 	"time"
 )
 
+// maxResponseBodyBytes limits LLM HTTP response bodies to prevent OOM crashes
+// from large model outputs (e.g. when the agent embeds store.go content).
+const maxResponseBodyBytes = 10 << 20 // 10 MB
+
 // Client is a simple HTTP client for OpenAI-compatible LLM APIs.
 type Client struct {
 	endpoint string
@@ -142,6 +146,9 @@ func (c *Client) CompleteMessages(ctx context.Context, messages []Message) (stri
 		return "", fmt.Errorf("HTTP request failed: %w", err)
 	}
 	defer resp.Body.Close()
+
+	// Limit response body to prevent OOM crashes from large LLM output.
+	resp.Body = http.MaxBytesReader(nil, resp.Body, maxResponseBodyBytes)
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)

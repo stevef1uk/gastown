@@ -94,6 +94,12 @@ func (p *NatsProvider) startInternal(ctx context.Context, sessionID, workDir, co
 	p.recordActivity(sessionID)
 
 	p.mu.Lock()
+	// Cancel any pending auto-respawn from a previous session instance
+	// so the old waitAndMaybeRespawn goroutine does not spawn a duplicate
+	// after its 2-second delay.
+	if old := p.sessionMeta[sessionID]; old != nil {
+		old.stopRespawn = true
+	}
 	envCopy := copyStringMap(env)
 	p.sessionEnv[sessionID] = envCopy
 	p.sessionMeta[sessionID] = &natsSessionMeta{
@@ -192,6 +198,12 @@ func (p *NatsProvider) waitAndMaybeRespawn(sessionID, pidFile string, cmd *exec.
 	}
 
 	time.Sleep(natsAutoRespawnDelay)
+
+	// If the PID file was recreated while we slept, another session is already
+	// running — do not spawn a duplicate.
+	if _, err := os.Stat(pidFile); err == nil {
+		return
+	}
 
 	p.mu.RLock()
 	meta = p.sessionMeta[sessionID]
