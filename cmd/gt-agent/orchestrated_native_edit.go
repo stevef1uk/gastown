@@ -514,7 +514,7 @@ func (r *stateRunner) executeNativeEditOp(op nativeEditOp, workDir string) (stri
 		if err := orchestrator.ValidateImplementWrittenContent(r.townRoot, r.rig, rigDir, rel, replace, r.v); err != nil {
 			return "", err
 		}
-		if err := orchestrator.ValidateImplementExportedSymbols(r.mayorRigWorkDir(), rel, replace, r.v); err != nil {
+		if err := orchestrator.ValidateImplementExportedSymbols(r.mayorRigWorkDir(), rel, replace, r.v, r.task.State == "implementation"); err != nil {
 			return "", err
 		}
 		if strings.TrimSpace(op.search) == strings.TrimSpace(replace) {
@@ -550,7 +550,7 @@ func (r *stateRunner) executeNativeEditOp(op nativeEditOp, workDir string) (stri
 		if err := orchestrator.ValidateImplementWrittenContent(r.townRoot, r.rig, rigDir, rel, content, r.v); err != nil {
 			return "", err
 		}
-		if err := orchestrator.ValidateImplementExportedSymbols(r.mayorRigWorkDir(), rel, content, r.v); err != nil {
+		if err := orchestrator.ValidateImplementExportedSymbols(r.mayorRigWorkDir(), rel, content, r.v, r.task.State == "implementation"); err != nil {
 			return "", err
 		}
 		if err := os.WriteFile(abs, []byte(content), 0644); err != nil {

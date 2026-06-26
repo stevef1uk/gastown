@@ -370,12 +370,13 @@ func BuildImplementSymbolAllowlist(mayorRigDir, beadPath string, v WorkflowValid
 }
 
 // ValidateImplementExportedSymbols rejects new exported funcs/types not in the design allowlist.
-func ValidateImplementExportedSymbols(mayorRigDir, relPath, content string, v WorkflowValidation) error {
-	return validateImplementExportedSymbols(mayorRigDir, relPath, content, v, true)
+// When allowNew is true, the allowlist check is skipped (use during implementation to permit legitimate new exports).
+func ValidateImplementExportedSymbols(mayorRigDir, relPath, content string, v WorkflowValidation, allowNew bool) error {
+	return validateImplementExportedSymbols(mayorRigDir, relPath, content, v, true, allowNew)
 }
 
 // validateImplementExportedSymbols is the allowlist check; skipWhenCorruptOnDisk allows full WRITE recovery.
-func validateImplementExportedSymbols(mayorRigDir, relPath, content string, v WorkflowValidation, skipWhenCorruptOnDisk bool) error {
+func validateImplementExportedSymbols(mayorRigDir, relPath, content string, v WorkflowValidation, skipWhenCorruptOnDisk, allowNew bool) error {
 	if !WorkflowUsesGo(v) || strings.HasSuffix(relPath, "_test.go") {
 		return nil
 	}
@@ -393,6 +394,9 @@ func validateImplementExportedSymbols(mayorRigDir, relPath, content string, v Wo
 			// Corrupted on-disk file: full WRITE recovery must not be blocked by a stale codeindex allowlist.
 			return nil
 		}
+	}
+	if allowNew {
+		return nil
 	}
 	allowed := BuildImplementSymbolAllowlist(mayorRigDir, relPath, v)
 	if len(allowed) == 0 {

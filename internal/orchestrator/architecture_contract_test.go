@@ -47,7 +47,7 @@ func TestValidateImplementExportedSymbols_rejectsUndocumentedExport(t *testing.T
 		QAVerifyCommand: "cd myapp && go test ./...",
 	}
 	body := "package store\n\nfunc InventedAPI() error { return nil }\n"
-	err := ValidateImplementExportedSymbols(rigDir, "myapp/internal/store/store.go", body, v)
+	err := ValidateImplementExportedSymbols(rigDir, "myapp/internal/store/store.go", body, v, false)
 	if err == nil || !strings.Contains(err.Error(), "InventedAPI") {
 		t.Fatalf("got %v", err)
 	}
@@ -92,7 +92,7 @@ func TestValidateImplementExportedSymbols_allowsStoreAndNewStoreFromReceiverSpec
 	}
 	v := WorkflowValidation{LayoutRoot: "myapp", QAVerifyCommand: "cd myapp && go test ./..."}
 	body := "package store\n\ntype Store struct{ db *sql.DB }\nfunc NewStore(db *sql.DB) *Store { return &Store{db: db} }\n"
-	if err := ValidateImplementExportedSymbols(rigDir, "myapp/internal/store/store.go", body, v); err != nil {
+	if err := ValidateImplementExportedSymbols(rigDir, "myapp/internal/store/store.go", body, v, false); err != nil {
 		t.Fatalf("got %v", err)
 	}
 }
@@ -112,7 +112,7 @@ func TestValidateImplementExportedSymbols_allowsSpecNames(t *testing.T) {
 		QAVerifyCommand: "cd myapp && go test ./...",
 	}
 	body := "package store\n\nfunc List(ctx context.Context) ([]Item, error) { return nil, nil }\n"
-	if err := ValidateImplementExportedSymbols(rigDir, "myapp/internal/store/store.go", body, v); err != nil {
+	if err := ValidateImplementExportedSymbols(rigDir, "myapp/internal/store/store.go", body, v, false); err != nil {
 		t.Fatalf("got %v", err)
 	}
 }
@@ -173,7 +173,7 @@ func TestValidateImplementExportedSymbols_skipsWhenOnDiskCorrupt(t *testing.T) {
 	}
 	v := WorkflowValidation{LayoutRoot: "linkshelf", QAVerifyCommand: "cd linkshelf && go test ./..."}
 	body := "package store\n\nfunc List() {}\nfunc Create() {}\nfunc Delete() {}\n"
-	if err := validateImplementExportedSymbols(rigDir, rel, body, v, true); err != nil {
+	if err := validateImplementExportedSymbols(rigDir, rel, body, v, true, false); err != nil {
 		t.Fatalf("corrupt on-disk file should allow recovery WRITE: %v", err)
 	}
 }
