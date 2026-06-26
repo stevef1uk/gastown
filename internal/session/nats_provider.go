@@ -261,8 +261,8 @@ func (p *NatsProvider) Stop(ctx context.Context, sessionID string, graceful bool
 }
 
 // killAgentBySessionID finds and kills gt-agent processes that belong to
-// this town. This is a fallback for when the wrapper process tree kill
-// fails (e.g., wrapper already dead, children reparented).
+// this town and session. This is a fallback for when the wrapper process
+// tree kill fails (e.g., wrapper already dead, children reparented).
 func killAgentBySessionID(sessionID, townRoot string) error {
 	// Find all gt-agent processes and check their cwd. gt-agent processes
 	// run from subdirectories of the town root (e.g., ~/gt/mayor/,
@@ -276,6 +276,8 @@ func killAgentBySessionID(sessionID, townRoot string) error {
 	if absTownRoot == "" {
 		absTownRoot = townRoot
 	}
+
+	sessionPrefix := "GT_SESSION_ID=" + sessionID
 
 	for _, line := range strings.Split(string(out), "\n") {
 		line = strings.TrimSpace(line)
@@ -294,10 +296,30 @@ func killAgentBySessionID(sessionID, townRoot string) error {
 		if !processBelongsToTown(pid, absTownRoot) {
 			continue
 		}
+		// Must match the specific session — otherwise this fallback kills
+		// every gt-agent in the town when any single session is stopped.
+		if !processBelongsToSession(pid, sessionPrefix) {
+			continue
+		}
 
 		_ = killProcessTree(pid)
 	}
 	return nil
+}
+
+// processBelongsToSession checks whether the process at pid has the given
+// session identifier in its environment (set by nats-wrapper via GT_SESSION_ID).
+func processBelongsToSession(pid int, sessionPrefix string) bool {
+	data, err := os.ReadFile(fmt.Sprintf("/proc/%d/environ", pid))
+	if err != nil {
+		return false
+	}
+	for _, env := range strings.Split(string(data), "\x00") {
+		if strings.HasPrefix(env, sessionPrefix) {
+			return true
+		}
+	}
+	return false
 }
 
 // killProcessTree recursively kills a process and all its descendants.
