@@ -141,9 +141,7 @@ func (v WorkflowValidation) ForActivePhase() WorkflowValidation {
 	if files := v.ActiveRequiredFiles(); len(files) > 0 {
 		out.RequiredFiles = append([]string(nil), files...)
 	}
-	if q := v.ActivePhaseQAVerifyCommand(); q != "" {
-		out.QAVerifyCommand = q
-	}
+	out.QAVerifyCommand = v.ActivePhaseQAVerifyCommand()
 	if WorkflowUsesGo(out) && PhaseIsGoModOnly(out) {
 		out.QAVerifyCommand = GoModPhaseQAVerifyCommand(out)
 	}
@@ -304,7 +302,6 @@ func inferGoDeliveryPhases(files []string, v WorkflowValidation) []DeliveryPhase
 		return nil
 	}
 	modQA := goModVerifyCommand(layout)
-	fullQA := strings.TrimSpace(v.QAVerifyCommand)
 	var phases []DeliveryPhase
 	phases = append(phases, DeliveryPhase{
 		ID: "go-module", Title: "Go module", RequiredFiles: goMod, QAVerifyCommand: modQA,
@@ -335,12 +332,8 @@ func inferGoDeliveryPhases(files []string, v WorkflowValidation) []DeliveryPhase
 		})
 	}
 	if len(webHTML) > 0 {
-		q := fullQA
-		if q == "" {
-			q = goPackageVerifyCommand(layout, "./...")
-		}
 		phases = append(phases, DeliveryPhase{
-			ID: "web-shell", Title: "Web HTML shell", RequiredFiles: webHTML, QAVerifyCommand: q,
+			ID: "web-shell", Title: "Web HTML shell", RequiredFiles: webHTML,
 		})
 	}
 	if len(phases) < 2 {

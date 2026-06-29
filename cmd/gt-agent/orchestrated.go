@@ -2387,7 +2387,8 @@ func validateQAArtifacts(townRoot, rig, outcome string, hadCmdFailure, bdListClo
 		return fmt.Errorf("unit tests passed but runtime smoke failed — if implementation matches architecture.md, use outcome architecture_failure (architect revises design); use failure only for code bugs")
 	}
 	if !sendToImpl {
-		if !unittestOK {
+		hasTest := strings.TrimSpace(scoped.QAVerifyCommand) != ""
+		if hasTest && !unittestOK {
 			return fmt.Errorf("run `%s` from %s before reporting QA outcome", scoped.QAVerifyHint(), rigMayorRigPath(rig))
 		}
 		if err := validateRequiredWorkFiles(townRoot, rig, scoped); err != nil {

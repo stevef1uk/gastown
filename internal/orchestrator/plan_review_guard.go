@@ -119,8 +119,10 @@ func PlanReviewGateSatisfied(townRoot, rig string, v WorkflowValidation) error {
 func rejectSpuriousArchitectureRework(townRoot, rig, summary string) string {
 	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
 	lower := strings.ToLower(strings.TrimSpace(summary))
-	if strings.Contains(lower, "static") || strings.Contains(lower, "prefix") ||
-		strings.Contains(lower, ".js") || strings.Contains(lower, ".css") {
+
+	// Check for static path complaints — only reject when QA is actively
+	// faulting the static prefix, not just mentioning it in passing.
+	if isStaticPrefixComplaint(lower) {
 		findFiles := []string{"linkshelf/web/index.html", "web/index.html"}
 		for _, rel := range findFiles {
 			abs := filepath.Join(rigDir, filepath.FromSlash(rel))
@@ -134,7 +136,10 @@ func rejectSpuriousArchitectureRework(townRoot, rig, summary string) string {
 			}
 		}
 	}
-	if strings.Contains(summary, `"links"`) || strings.Contains(summary, "DOM id") {
+
+	// Check for DOM id / field name complaints — only reject when QA mentions
+	// a DOM element mismatch that actually exists on disk.
+	if isDOMIdComplaint(summary) {
 		findFiles := []string{"linkshelf/web/index.html", "web/index.html", "linkshelf/web/app.js", "web/app.js"}
 		for _, rel := range findFiles {
 			abs := filepath.Join(rigDir, filepath.FromSlash(rel))
@@ -156,6 +161,44 @@ func rejectSpuriousArchitectureRework(townRoot, rig, summary string) string {
 		}
 	}
 	return ""
+}
+
+// isStaticPrefixComplaint reports whether summary actively faults the /static/ URL prefix.
+func isStaticPrefixComplaint(lower string) bool {
+	if !strings.Contains(lower, "static") {
+		return false
+	}
+	// Positive/acknowledging mentions of static paths are not complaints.
+	negators := []string{
+		"correct static",
+		"static path",
+		"references correct",
+		"already uses",
+	}
+	for _, n := range negators {
+		if strings.Contains(lower, n) {
+			return false
+		}
+	}
+	return strings.Contains(lower, "missing") ||
+		strings.Contains(lower, "should use") ||
+		strings.Contains(lower, "needs /static") ||
+		strings.Contains(lower, "require /static") ||
+		strings.Contains(lower, "expects /static") ||
+		strings.Contains(lower, "not at /static") ||
+		strings.Contains(lower, "prefix") ||
+		strings.Contains(lower, ".js") ||
+		strings.Contains(lower, ".css")
+}
+
+// isDOMIdComplaint reports whether summary actively faults a DOM element ID mismatch.
+func isDOMIdComplaint(summary string) bool {
+	lower := strings.ToLower(strings.TrimSpace(summary))
+	if !strings.Contains(lower, "dom") && !strings.Contains(lower, "getelementbyid") &&
+		!strings.Contains(lower, "id mismatch") && !strings.Contains(lower, "id not found") {
+		return false
+	}
+	return true
 }
 
 var htmlGetElementByIDRE = regexp.MustCompile(`getElementById\s*\(\s*["']([^"']+)["']\s*\)`)

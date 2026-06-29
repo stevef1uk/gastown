@@ -22,6 +22,7 @@ var (
 
 // preprocessOrchestratedResponse normalizes glued CMD/READ/EDIT markers before parsing.
 func preprocessOrchestratedResponse(response string) string {
+	response = stripChannelMarkers(response)
 	response = unwrapJSONOrchestratedCommands(response)
 	response = unwrapJSONCommandArray(response)
 	response = unwrapJSONActionCommands(response)
@@ -37,6 +38,15 @@ func preprocessOrchestratedResponse(response string) string {
 	response = stripMarkdownFenceOnlyLines(response)
 	response = normalizeNativeEditEndLines(response)
 	return response
+}
+
+// stripChannelMarkers removes LLM channel/role markers like <|message|>, <|start|>,
+// <|channel|>analysis and any trailing text after the last marker on the same line.
+// These appear inline with CMD/EDIT lines, breaking shell syntax when preserved.
+var channelMarkerRE = regexp.MustCompile(`(?:<\|[^|]+\|>[^<\n]*)+`)
+
+func stripChannelMarkers(response string) string {
+	return channelMarkerRE.ReplaceAllString(response, "")
 }
 
 // unwrapJSONOrchestratedCommands converts {"CMD":"..."} / {"cmd":"..."} lines local LLMs emit into CMD: lines.
