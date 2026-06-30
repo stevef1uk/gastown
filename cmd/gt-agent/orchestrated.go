@@ -1355,10 +1355,10 @@ func takeShellWord(s string) string {
 	}
 }
 
+var bdCloseRE = regexp.MustCompile(`\bbd\s+close\b`)
+
 func isBeadCloseCommand(cmd string) bool {
-	lower := strings.ToLower(cmd)
-	return strings.Contains(lower, "bd close") ||
-		(strings.Contains(lower, "bd") && strings.Contains(lower, " close"))
+	return bdCloseRE.MatchString(strings.ToLower(cmd))
 }
 
 func isBeadUpdateInProgressCommand(cmd string) bool {
