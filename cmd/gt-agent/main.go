@@ -1410,6 +1410,11 @@ var gluedParenCMDRE = regexp.MustCompile(`\)CMD:\s*`)
 var gluedEOFCMDRE = regexp.MustCompile(`(?i)EOF\s*'?\s*CMD:\s*`)
 var gluedOutcomeAfterQuoteRE = regexp.MustCompile(`'\s*\{[\s]*"outcome"`)
 
+// gluedCMDProseRE matches trailing English prose appended to a CMD line
+// (no newline between command and reasoning). Shell commands don't start with
+// these sentence-initial words, so we can safely strip from the match.
+var gluedCMDProseRE = regexp.MustCompile(`(?i)(CMD:\s+\S[^\n]*?)\s+(We\s+need|If\s+no|Maybe\s+the|Let's\s+try|The tool|We haven't|It seems|Perhaps\b|Let's\s+test|Let's\s+see|I'll|We'll|The earlier|In earlier|So\s+let's).*`)
+
 // normalizeGluedCMDMarkers turns model glitches like rig/CMD:, SPEC.mdCMD:, or
 // 'open'CMD: into newline-separated CMD markers so splitInlineCMDs can separate
 // them without eating filename extensions or shell quoting.
@@ -1433,6 +1438,10 @@ func normalizeGluedCMDMarkers(cmd string) string {
 	cmd = gluedParenCMDRE.ReplaceAllString(cmd, ")\nCMD: ")
 	cmd = gluedEOFCMDRE.ReplaceAllString(cmd, "EOF\nCMD: ")
 	cmd = gluedOutcomeAfterQuoteRE.ReplaceAllString(cmd, "'\n")
+	// CMD: ...CMD: on same line — split between commands
+	cmd = regexp.MustCompile(`(CMD:\s[^\n]*?)CMD:\s`).ReplaceAllString(cmd, "$1\nCMD: ")
+	// Strip trailing English prose glued to CMD lines (no newline between command and reasoning)
+	cmd = gluedCMDProseRE.ReplaceAllString(cmd, "$1")
 	// Polecat bursts: ---END EDIT---CMD:, .goCMD:, REPLACECMD:
 	cmd = regexp.MustCompile(`(?i)---END\s+EDIT---\s*CMD:\s*`).ReplaceAllString(cmd, "---END EDIT---\nCMD: ")
 	cmd = regexp.MustCompile(`(?i)---END\s+WRITE---\s*CMD:\s*`).ReplaceAllString(cmd, "---END WRITE---\nCMD: ")
