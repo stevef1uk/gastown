@@ -42,12 +42,17 @@ func preprocessOrchestratedResponse(response string) string {
 
 // stripChannelMarkers removes LLM channel/role markers like <|message|>, <|start|>,
 // <|channel|>analysis that some models emit inline with CMD/EDIT/READ lines.
-// Only the tag itself is removed — trailing text (CMD:, analysis, etc.) is left
-// in place so that command labels and separators are preserved.
+// Each tag is replaced with a space so that surrounding text (flags, command
+// labels, prose) does not get concatenated. Without the space:
+//   --pretty<|message|>CMD: → --prettyCMD: (CMD: split fails, unknown flag)
+//   --pretty<|message|>Now  → --prettyNow       (invalid flag)
+// With the space:
+//   --pretty CMD:           → proper CMD: split preserves command separation
+//   --pretty Now            → shell-safe extra args (tool ignores unknowns)
 var channelMarkerRE = regexp.MustCompile(`<\|[^|]+\|>`)
 
 func stripChannelMarkers(s string) string {
-	return channelMarkerRE.ReplaceAllString(s, "")
+	return channelMarkerRE.ReplaceAllString(s, " ")
 }
 
 // unwrapJSONOrchestratedCommands converts {"CMD":"..."} / {"cmd":"..."} lines local LLMs emit into CMD: lines.
