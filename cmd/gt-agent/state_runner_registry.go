@@ -108,8 +108,8 @@ var trackHandlers = map[string]trackFn{
 		if isBeadCloseCommand(cmd) && cmdErr == nil {
 			if r.track.verifyOK {
 				r.track.beadCloseOK = true
-				r.track.hadCmdFailure = false
 			}
+			r.track.hadCmdFailure = false
 			if id := extractBeadIDFromBdClose(cmd); id != "" && id == r.track.activeBead {
 				r.track.activeBead = ""
 				r.track.activeBeadPath = ""
