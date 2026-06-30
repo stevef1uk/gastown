@@ -1547,8 +1547,7 @@ func ImplementBeadPathForID(townRoot, rig, beadID string, v WorkflowValidation) 
 	return ""
 }
 
-// FormatImplementationQueueBlock returns a single-line "next bead" hint for the polecat.
-// Build order is enforced by gt-agent guards and NextOpenImplementBead — no full list needed.
+// FormatImplementationQueueBlock returns a "next bead" hint and full queue table for the polecat.
 func FormatImplementationQueueBlock(townRoot, rig string, v WorkflowValidation) string {
 	if len(v.RequiredFiles) == 0 {
 		return ""
@@ -1558,8 +1557,30 @@ func FormatImplementationQueueBlock(townRoot, rig string, v WorkflowValidation) 
 	if err != nil {
 		return fmt.Sprintf("**Next bead:** (error: %v)", err)
 	}
+
+	all, _ := ListImplementBeadsOpenOrInProgress(townRoot, rig, v)
+	var b strings.Builder
+	if len(all) > 1 {
+		b.WriteString("### Queue (all open/in_progress beads)\n\n")
+		b.WriteString("| Bead ID | Path |\n")
+		b.WriteString("|---------|------|\n")
+		for _, bead := range all {
+			p := NormalizeBeadPathForLayout(ExtractPathFromBeadTitle(bead.Title, v.BeadTitleContains), v.LayoutRoot)
+			if p == "" {
+				p = bead.Title
+			}
+			marker := ""
+			if next != nil && bead.ID == next.ID {
+				marker = " ← next"
+			}
+			b.WriteString(fmt.Sprintf("| `%s` | `%s`%s |\n", bead.ID, p, marker))
+		}
+		b.WriteString("\n")
+	}
+
 	if next == nil {
-		return "**Next bead:** none open — `bd list --status=closed` or JSON success if all implement beads are closed."
+		b.WriteString("**Next bead:** none open — `bd list --status=closed` or JSON success if all implement beads are closed.")
+		return b.String()
 	}
 	step, total := 0, len(order)
 	beadPath := NormalizeBeadPathForLayout(ExtractPathFromBeadTitle(next.Title, v.BeadTitleContains), v.LayoutRoot)
@@ -1572,9 +1593,11 @@ func FormatImplementationQueueBlock(townRoot, rig string, v WorkflowValidation) 
 	mayorDir := filepath.Join(townRoot, rig, "mayor", "rig")
 	verify := AgentShellVerifyCommand(rig, v, mayorDir, beadPath)
 	if step > 0 {
-		return fmt.Sprintf("**Next bead (%d/%d):** %s → `%s` — work only this ID until `bd close`. Verify: `%s`.",
-			step, total, next.ID, next.Title, verify)
+		b.WriteString(fmt.Sprintf("**Next bead (%d/%d):** %s → `%s` — work only this ID until `bd close`. Verify: `%s`.",
+			step, total, next.ID, next.Title, verify))
+	} else {
+		b.WriteString(fmt.Sprintf("**Next bead:** %s → `%s` — work only this ID until `bd close`. Verify: `%s`.",
+			next.ID, next.Title, verify))
 	}
-	return fmt.Sprintf("**Next bead:** %s → `%s` — work only this ID until `bd close`. Verify: `%s`.",
-		next.ID, next.Title, verify)
+	return b.String()
 }

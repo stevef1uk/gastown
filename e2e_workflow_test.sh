@@ -58,6 +58,16 @@ if [ ! -d "$GT_DIR/$RIG" ] || ! grep -q "\"$RIG\"" "$GT_DIR/mayor/rigs.json" 2>/
         git config user.name "Test Bot"
         git commit -m "Initial commit"
     )
+    if ! gt dolt status >/dev/null 2>&1; then
+        echo "[Dolt not running, starting Dolt server for rig registration...]"
+        gt dolt start 2>/dev/null || true
+        for i in {1..10}; do
+            if gt dolt status >/dev/null 2>&1; then
+                break
+            fi
+            sleep 2
+        done
+    fi
     gt rig add "$RIG" "file://$DUMMY_DIR"
     
     mkdir -p "$GT_DIR/$RIG/mayor/rig/.gastown"
