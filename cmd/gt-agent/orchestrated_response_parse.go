@@ -42,28 +42,21 @@ func preprocessOrchestratedResponse(response string) string {
 
 // stripChannelMarkers removes LLM channel/role markers like <|message|>, <|start|>,
 // <|channel|>analysis that some models emit inline with CMD/EDIT/READ lines.
-// Each tag is replaced with a newline so that prose following the marker lands
-// on its own line and is ignored by the command parser. The LLM often emits
-// the entire response as ONE physical line (no \n), using channel markers as
-// separators between commands and prose.
+// Each tag is replaced with \n\n (blank line) so that the script accumulator in
+// parseLLMResponse flushes the current command and ignores the prose that follows.
+// The LLM often emits the entire response as ONE physical line (no \n), using
+// channel markers as separators between commands and internal reasoning prose.
 //
-// Without any replacement:
-//   --limit=0<|message|>proseCMD: next --flag
-//   → --limit=0proseCMD: next --flag      (CMD: split fails, unknown flag)
-//
-// With space replacement:
-//   --limit=0 prose CMD: next --flag
-//   → bd list: no positional arguments    (tool rejects "prose" as arg)
-//
-// With newline replacement (this):
-//   --limit=0
-//   prose
-//   CMD: next --flag
-//   → first CMD is clean; inline CMD: splits on newline, prose is ignored
+// Without replacement:
+//   --limit=0proseCMD: next --flag    (unknown flag, shell error)
+// With \n (single newline):
+//   --limit=0\nprose                  (inScript=true slurps "prose" into cmd)
+// With \n\n (blank line, this):
+//   --limit=0\n\nprose                (blank line flushes script, prose ignored)
 var channelMarkerRE = regexp.MustCompile(`<\|[^|]+\|>`)
 
 func stripChannelMarkers(s string) string {
-	return channelMarkerRE.ReplaceAllString(s, "\n")
+	return channelMarkerRE.ReplaceAllString(s, "\n\n")
 }
 
 // unwrapJSONOrchestratedCommands converts {"CMD":"..."} / {"cmd":"..."} lines local LLMs emit into CMD: lines.

@@ -459,3 +459,172 @@ func TestUnwrapJSONCommandArray_cmdKeyWithExtraFields(t *testing.T) {
 		t.Fatalf("want READ: preserved: %q", got)
 	}
 }
+
+func TestStripChannelMarkers_replacesWithNewline(t *testing.T) {
+	in := "CMD: bd list --limit=0<|message|>prose text"
+	got := stripChannelMarkers(in)
+	if !strings.Contains(got, "\n") {
+		t.Fatalf("want newline inserted, got %q", got)
+	}
+	// CMD line must end at --limit=0, prose on its own line
+	cmds := parseOrchestratedCommands(got)
+	if len(cmds) != 1 {
+		t.Fatalf("want 1 cmd, got %d: %v", len(cmds), cmds)
+	}
+	if strings.Contains(cmds[0], "prose") {
+		t.Fatalf("cmd contains prose: %q", cmds[0])
+	}
+	if !strings.Contains(cmds[0], "--limit=0") {
+		t.Fatalf("cmd missing --limit=0: %q", cmds[0])
+	}
+}
+
+func TestStripChannelMarkers_inlineCmdAfterProseSentence(t *testing.T) {
+	// Realistic LLM output: prose sentence ending with "." followed by CMD:
+	// normalizeGluedCMDMarkers splits on .CMD: → . is non-alphanumeric
+	in := "CMD: bd list --all<|message|>We need output.CMD: bd close te-abc"
+	got := stripChannelMarkers(in)
+	if strings.Count(got, "CMD:") != 2 {
+		t.Fatalf("want 2 CMD: markers, got %q", got)
+	}
+	cmds := parseOrchestratedCommands(got)
+	if len(cmds) != 2 {
+		t.Fatalf("want 2 cmds, got %d: %v", len(cmds), cmds)
+	}
+	if !strings.Contains(cmds[0], "bd list --all") {
+		t.Fatalf("cmd[0] wrong: %q", cmds[0])
+	}
+	if !strings.Contains(cmds[1], "bd close te-abc") {
+		t.Fatalf("cmd[1] wrong: %q", cmds[1])
+	}
+}
+
+func TestStripChannelMarkers_proseAfterCommand(t *testing.T) {
+	// Prose after a command on the same line should not be slurped
+	in := "CMD: bd list --all<|message|>We need output."
+	cmds := parseOrchestratedCommands(in)
+	if len(cmds) != 1 {
+		t.Fatalf("want 1 cmd, got %d: %v", len(cmds), cmds)
+	}
+	if strings.Contains(cmds[0], "We need") {
+		t.Fatalf("cmd contains prose: %q", cmds[0])
+	}
+	if !strings.Contains(cmds[0], "bd list --all") {
+		t.Fatalf("cmd wrong: %q", cmds[0])
+	}
+}
+
+func TestStripChannelMarkers_roleAndChannelTags(t *testing.T) {
+	in := "<|start|>assistant<|channel|>analysis<|message|>CMD: bd list --limit=0"
+	got := stripChannelMarkers(in)
+	// Each tag replaced with \n; CMD: should be on its own line
+	if !strings.Contains(got, "\nCMD:") || !strings.Contains(got, "bd list --limit=0") {
+		t.Fatalf("got %q", got)
+	}
+	cmds := parseOrchestratedCommands(got)
+	if len(cmds) != 1 {
+		t.Fatalf("want 1 cmd, got %d: %v", len(cmds), cmds)
+	}
+	if strings.Contains(cmds[0], "assistant") || strings.Contains(cmds[0], "analysis") {
+		t.Fatalf("cmd contains role/channel text: %q", cmds[0])
+	}
+}
+
+func TestStripChannelMarkers_noMarkersPassthrough(t *testing.T) {
+	in := "CMD: bd list --limit=0\nCMD: bd close te-abc"
+	got := stripChannelMarkers(in)
+	if got != in {
+		t.Fatalf("expected passthrough, got %q", got)
+	}
+}
+
+func TestStripChannelMarkers_emptyReplacementBug_regression(t *testing.T) {
+	// Empty string replacement caused:
+	//   --limit=0<|message|>CMD: → --limit=0CMD: (CMD: split fails)
+	// Newline replacement fixes it:
+	//   --limit=0\nCMD: (CMD: on own line, split works)
+	in := "CMD: bd list --limit=0<|message|>CMD: bd close te-abc"
+	got := parseOrchestratedCommands(in)
+	if len(got) != 2 {
+		t.Fatalf("want 2 cmds (empty-replacement regression), got %d: %v", len(got), got)
+	}
+	if !strings.Contains(got[0], "bd list --limit=0") {
+		t.Fatalf("cmd[0] wrong: %q", got[0])
+	}
+	if !strings.Contains(got[1], "bd close te-abc") {
+		t.Fatalf("cmd[1] wrong: %q", got[1])
+	}
+}
+
+func TestStripChannelMarkers_spaceReplacementBug_regression(t *testing.T) {
+	// Space replacement caused bd list positional arg error:
+	//   --limit=0<|message|>assistant analysis We need output.
+	//   → --limit=0  assistant analysis We need output.
+	//   → "bd list does not accept positional arguments"
+	// Newline: prose lands on ignored lines.
+	in := "CMD: export BEADS_DIR=x && cd rig && bd list --status=closed --limit=0<|message|><|start|>assistant<|channel|>analysis<|message|>We need output; likely shows closed beads."
+	got := parseOrchestratedCommands(in)
+	if len(got) != 1 {
+		t.Fatalf("want 1 cmd, got %d: %v", len(got), got)
+	}
+	if strings.Contains(got[0], "We need") || strings.Contains(got[0], "assistant") || strings.Contains(got[0], "analysis") {
+		t.Fatalf("cmd contains prose leftover: %q", got[0])
+	}
+	if !strings.HasSuffix(strings.TrimSpace(got[0]), "--limit=0") {
+		t.Fatalf("cmd should end with --limit=0, got %q", got[0])
+	}
+}
+
+func TestStripChannelMarkers_fullTurnRegression(t *testing.T) {
+	// Exact reproduction of the LLM turn 8 pattern: single line, no \n, markers
+	// as separators between commands and prose. After stripping, all CMDs must
+	// be clean and the JSON outcome must be stripped.
+	in := "CMD: export BEADS_DIR=$GT_ROOT/testgt4/.beads && cd $GT_ROOT/testgt4/mayor/rig && bd list --status=closed --limit=0<|message|><|start|>assistant<|channel|>analysis<|message|>We need output; likely shows many closed beads including one for index.html. Once we have ID, we will reopen and create file.CMD: export BEADS_DIR=$GT_ROOT/testgt4/.beads && cd $GT_ROOT/testgt4/mayor/rig && bd list --status=closed --limit=0<|message|><|start|>assistant<|channel|>analysis<|message|>We still need output; maybe the system not returning. Could be path issue.CMD: export BEADS_DIR=$GT_ROOT/testgt4/.beads && cd testgt4/mayor/rig && bd list --status=closed --limit=0<|message|><|start|>assistant<|channel|>analysis<|message|>We need output.{\"outcome\":\"failure\",\"summary\":\"Unable to list closed beads\"}"
+	cmds := parseOrchestratedCommands(in)
+	if len(cmds) < 3 {
+		t.Fatalf("want >=3 cmds, got %d: %v", len(cmds), cmds)
+	}
+	for i, c := range cmds {
+		if strings.Contains(c, "We need") || strings.Contains(c, "assistant") || strings.Contains(c, "analysis") || strings.Contains(c, "outcome") {
+			t.Fatalf("cmd[%d] contains prose or JSON: %q", i, c)
+		}
+		if !strings.Contains(c, "bd list") {
+			t.Fatalf("cmd[%d] missing bd list: %q", i, c)
+		}
+	}
+}
+
+func TestIsBeadCloseCommand_noFalsePositiveOnScopedBdList(t *testing.T) {
+	// The old strings.Contains("bd") && strings.Contains(" close") matched
+	// scoped bd list output containing '=== closed implement ==='.
+	forbidden := []struct {
+		name string
+		line string
+	}{
+		{"scoped bd list echo prefix", "echo '=== closed implement ==='"},
+		{"scoped bd list inline", "bd list --status=closed"},
+		{"scoped bd list open", "bd list --status=open"},
+	}
+	for _, tc := range forbidden {
+		t.Run(tc.name, func(t *testing.T) {
+			if isBeadCloseCommand(tc.line) {
+				t.Fatalf("isBeadCloseCommand(%q) = true, want false", tc.line)
+			}
+		})
+	}
+	allowed := []struct {
+		name string
+		line string
+	}{
+		{"bd close", "bd close te-abc"},
+		{"bd close no id", "bd close"},
+		{"bd close space id", "bd close te-def"},
+	}
+	for _, tc := range allowed {
+		t.Run(tc.name, func(t *testing.T) {
+			if !isBeadCloseCommand(tc.line) {
+				t.Fatalf("isBeadCloseCommand(%q) = false, want true", tc.line)
+			}
+		})
+	}
+}
