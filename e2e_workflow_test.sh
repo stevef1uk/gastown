@@ -58,15 +58,20 @@ if [ ! -d "$GT_DIR/$RIG" ] || ! grep -q "\"$RIG\"" "$GT_DIR/mayor/rigs.json" 2>/
         git config user.name "Test Bot"
         git commit -m "Initial commit"
     )
-    if ! gt dolt status >/dev/null 2>&1; then
-        echo "[Dolt not running, starting Dolt server for rig registration...]"
+    dolt_port="${GT_DOLT_PORT:-3307}"
+    if ! ss -tlnp "sport = :$dolt_port" 2>/dev/null | grep -q dolt; then
+        echo "[Dolt port $dolt_port not listening, starting Dolt server for rig registration...]"
         gt dolt start 2>/dev/null || true
-        for i in {1..10}; do
-            if gt dolt status >/dev/null 2>&1; then
+        for i in {1..20}; do
+            if ss -tlnp "sport = :$dolt_port" 2>/dev/null | grep -q dolt; then
+                echo "[Dolt ready on port $dolt_port after ${i}s]"
                 break
             fi
-            sleep 2
+            sleep 1
         done
+        if ! ss -tlnp "sport = :$dolt_port" 2>/dev/null | grep -q dolt; then
+            echo "[WARNING: Dolt still not listening after 20s, attempting gt rig add anyway...]"
+        fi
     fi
     gt rig add "$RIG" "file://$DUMMY_DIR"
     

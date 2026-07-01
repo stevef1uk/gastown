@@ -57,10 +57,31 @@ func TestDeriveRuntimeSmokeServerStart_pythonFromQA(t *testing.T) {
 
 func TestIsDevServerSmokeCommand(t *testing.T) {
 	t.Parallel()
-	if !IsDevServerSmokeCommand("cd app && uvicorn app:app --port 8080") {
-		t.Fatal("uvicorn should be dev server smoke")
+
+	// Should match: real server starts
+	cases := []string{
+		"cd app && uvicorn app:app --port 8080",
+		".venv/bin/python -m uvicorn pingapp.main:app --host 127.0.0.1",
+		"cd rig && .venv/bin/python3 -m hypercorn app:app",
+		"gunicorn myapp:app",
+		"flask run",
 	}
-	if IsDevServerSmokeCommand("python3 -m pytest -q") {
-		t.Fatal("pytest alone is not dev server smoke")
+	for _, c := range cases {
+		if !IsDevServerSmokeCommand(c) {
+			t.Fatalf("should match as dev server smoke: %q", c)
+		}
+	}
+
+	// Should NOT match: pip install, python -c imports, pytest
+	noCases := []string{
+		"python3 -m pytest -q",
+		"pip install uvicorn fastapi pytest",
+		".venv/bin/pip3 install --quiet fastapi uvicorn pytest httpx",
+		`python3 -c "import fastapi,uvicorn,httpx,pytest;print(fastapi.__version__)"`,
+	}
+	for _, c := range noCases {
+		if IsDevServerSmokeCommand(c) {
+			t.Fatalf("should NOT match as dev server smoke: %q", c)
+		}
 	}
 }

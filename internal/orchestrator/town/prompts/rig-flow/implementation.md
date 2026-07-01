@@ -32,15 +32,20 @@ CMD: cd {{rig}}/mayor/rig && ...
 {"outcome":"success","summary":"..."}
 ```
 
-## Per bead
+## Per bead — strict sequential (one bead per turn group)
 
-1. `CMD: bd update BEAD_ID --status=in_progress`
+**Touch exactly one bead per "turn group"** (a message + verify/retry loop). A turn group ends when you send the next CMD/WRITE/EDIT or JSON. Do NOT skip ahead in the Queue.
+
+1. `CMD: bd update QUEUE_HEAD_ID --status=in_progress`
 2. **WRITE:** / **EDIT:** the file (use paths from **Next bead** / **Implement context**)
 3. Add/update unit tests from **plan.md** acceptance before `bd close`
 4. `CMD: cd {{rig}}/mayor/rig && ...` — run **Verify** (command in **Next bead** line)
-5. `CMD: bd close BEAD_ID`
-6. If **Queue** shows more open beads, repeat steps 1–5
-7. When **Next bead** says none open, JSON success in next message
+5. **If verify fails**: READ the failing file, check its path. Fix in the next turn group. Do NOT reopen the bead.
+6. `CMD: bd close BEAD_ID`
+7. Look at the **Queue** table. If another bead is **open** (○) or **in_progress** (◐), repeat from step 1 with the next queue bead.
+8. When all implement beads in **Queue** are **closed** (✓), send JSON success in the **next** message.
+
+**CRITICAL: Do NOT re-verify or re-close already-closed beads. Do NOT add dependencies or edit files after all beads are closed. Once Queue shows all ✓, send JSON success immediately.**
 
 ## Rules
 

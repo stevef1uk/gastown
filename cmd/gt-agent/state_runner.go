@@ -572,6 +572,13 @@ func (r *stateRunner) runAutoVerify(cmd, workDir, sessionName string, cmdEnv []s
 			if orchestrator.WorkflowUsesPython(r.v) && orchestrator.PythonVerifyNoTestsOK(string(verifyOut)) {
 				r.track.verifyOK = true
 				r.track.lastVerifyOutput = string(verifyOut)
+			} else if orchestrator.WorkflowUsesPython(r.v) && orchestrator.PythonTestsAllPassed(string(verifyOut)) {
+				r.track.verifyOK = true
+				if r.hooks.AutoVerifyOKClearsCmdFailure {
+					r.track.hadCmdFailure = false
+				}
+				r.track.lastVerifyOutput = string(verifyOut)
+				orchestratedPrintf("[gt-agent] auto-verify ok (all tests passed despite exit code): %s\n", verifyCmd)
 			} else if hook.Verify == "go_setup" &&
 				strings.EqualFold(strings.TrimSpace(r.task.State), "project_setup") &&
 				orchestrator.GoToolOutputMatchedNoPackages(string(verifyOut)) {

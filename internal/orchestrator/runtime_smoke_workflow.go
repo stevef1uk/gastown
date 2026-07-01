@@ -71,17 +71,22 @@ func specHasRuntimeSmokeProbes(spec APISmokeSpec) bool {
 	return spec.hasRootGET()
 }
 
+var uvicornServerRE = regexp.MustCompile(`(?i)\buvicorn\s+\S+:\S+`)
+
 // IsDevServerSmokeCommand reports agent CMDs that start a local HTTP server (Go or Python).
+// Uses module:app syntax to distinguish running a server from pip install / python -c imports.
 func IsDevServerSmokeCommand(cmd string) bool {
 	lower := strings.ToLower(strings.TrimSpace(cmd))
 	if strings.Contains(lower, "go run") && strings.Contains(lower, "cmd/server") {
 		return true
 	}
-	if strings.Contains(lower, "pytest") && !strings.Contains(lower, "uvicorn") &&
-		!strings.Contains(lower, "gunicorn") && !strings.Contains(lower, "flask run") {
+	if strings.Contains(lower, "pytest") {
 		return false
 	}
-	return strings.Contains(lower, "uvicorn") ||
+	if strings.Contains(lower, "pip ") || strings.Contains(lower, "pip3") || strings.Contains(lower, "python -c") || strings.Contains(lower, "python3 -c") {
+		return false
+	}
+	return uvicornServerRE.MatchString(lower) ||
 		strings.Contains(lower, "gunicorn") ||
 		strings.Contains(lower, "flask run") ||
 		strings.Contains(lower, "hypercorn")
@@ -200,6 +205,36 @@ func PythonVerifyNoTestsOK(text string) bool {
 	}
 	for _, pat := range []string{"syntaxerror", "nameerror", "indentationerror",
 		"typeerror", "attributeerror", "keyerror", "valueerror", "recursionerror"} {
+		if strings.Contains(lower, pat) {
+			return false
+		}
+	}
+	return true
+}
+
+// PythonTestsAllPassed reports whether a failed pytest run is a false positive:
+// all collected tests PASSED but the exit code is non-zero (e.g. due to
+// DeprecationWarning from a dependency). Only true when every collected
+// test passed and none failed.
+func PythonTestsAllPassed(text string) bool {
+	lower := strings.ToLower(text)
+	if strings.Contains(lower, "failed") {
+		return false
+	}
+	if !strings.Contains(lower, "passed") {
+		return false
+	}
+	if strings.Contains(lower, "collected 0 items") || strings.Contains(lower, "no tests ran") {
+		return false
+	}
+	for _, pat := range pythonVenvCorruptionPatterns {
+		if strings.Contains(lower, strings.ToLower(pat)) {
+			return false
+		}
+	}
+	for _, pat := range []string{"syntaxerror", "nameerror", "indentationerror",
+		"typeerror", "attributeerror", "keyerror", "valueerror", "recursionerror",
+		"error:", "traceback"} {
 		if strings.Contains(lower, pat) {
 			return false
 		}
