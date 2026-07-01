@@ -84,19 +84,63 @@ gt down 2>/dev/null || true
 run_freeride_bootstrap ensure-gt-orchestrator-singleton.sh || true
 gt up || true
 
-# Now Dolt is running (gt up handles empty database initialization).
+# Ensure Dolt is actually listening. gt up starts Dolt but may fail silently
+# if databases are corrupted (e.g. from unclean shutdown during development).
+# Detect corruption via Dolt logs, wipe if necessary, and retry.
+dolt_port="${GT_DOLT_PORT:-3307}"
+ensure_dolt() {
+    local retries=3
+    while [ $retries -gt 0 ]; do
+        for i in $(seq 1 10); do
+            if is_dolt_listening "$dolt_port"; then
+                echo "[Dolt ready on port $dolt_port]"
+                return 0
+            fi
+            sleep 1
+        done
+        # Not listening after 10s — try starting explicitly.
+        echo "[Dolt not reachable — attempting start (retries left: $retries)...]"
+        gt dolt start 2>/dev/null || true
+        for i in $(seq 1 5); do
+            if is_dolt_listening "$dolt_port"; then
+                echo "[Dolt ready on port $dolt_port]"
+                return 0
+            fi
+            sleep 1
+        done
+        # Still not listening — check for corruption in logs.
+        if gt dolt logs 2>/dev/null | grep -qi "root hash doesn.t exist\|corrupt\|checksum mismatch\|storage version"; then
+            echo "[Dolt database corruption detected — wiping .dolt-data and retrying...]"
+            gt down 2>/dev/null || true
+            sleep 1
+            rm -rf "$GT_DIR/.dolt-data"
+            gt up 2>/dev/null || true
+        else
+            echo "[Dolt not reachable and no corruption detected — retrying gt up...]"
+            gt down 2>/dev/null || true
+            sleep 1
+            gt up 2>/dev/null || true
+        fi
+        retries=$((retries - 1))
+    done
+    echo "[WARNING: Dolt still not reachable after all retries]"
+    return 1
+}
+ensure_dolt || echo "[Continuing despite Dolt issues]"
+
 # Register rig if needed.
 if [ "$rig_needs_creation" = true ]; then
     echo "[$RIG needs creation — registering with Dolt live...]"
-    dolt_port="${GT_DOLT_PORT:-3307}"
-    for i in {1..10}; do
-        if is_dolt_listening "$dolt_port"; then
-            echo "[Dolt ready on port $dolt_port after ${i}s]"
-            break
-        fi
-        sleep 1
-    done
-    gt rig add "$RIG" "file://$DUMMY_DIR"
+    if ! is_dolt_listening "$dolt_port"; then
+        echo "[WARNING: Dolt not listening — rig add may fail]"
+    fi
+    gt rig add "$RIG" "file://$DUMMY_DIR" || true
+    if [ ! -d "$GT_DIR/$RIG/mayor" ]; then
+        echo "[FATAL: gt rig add failed. Dolt status follows:]"
+        gt dolt status 2>/dev/null || echo "(gt dolt status unavailable)"
+        echo "[Aborting]"
+        exit 1
+    fi
     
     mkdir -p "$GT_DIR/$RIG/mayor/rig/.gastown"
     echo '{"qa_verify_command": "python3 -m pytest -v pingapp/test_main.py", "spec_summary": "FastAPI ping app."}' > "$GT_DIR/$RIG/mayor/rig/.gastown/workflow-profile.json"
