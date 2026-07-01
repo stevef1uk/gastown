@@ -36,6 +36,7 @@ func preprocessOrchestratedResponse(response string) string {
 	response = unwrapMarkdownBoldToolLines(response)
 	response = unwrapMarkdownFencedToolBlocks(response)
 	response = stripMarkdownFenceOnlyLines(response)
+	response = unwrapJSONToolCallCommand(response)
 	response = normalizeNativeEditEndLines(response)
 	return response
 }
@@ -149,6 +150,43 @@ func convertJSONActionCommand(line string) string {
 		}
 	}
 	return ""
+}
+
+// unwrapJSONToolCallCommand converts {"toolCall":"toolCall","tool":"CMD","arguments":{"command":"..."}}
+// JSON objects that some models emit as structured function call output.
+func unwrapJSONToolCallCommand(response string) string {
+	if !strings.Contains(response, `"toolCall"`) {
+		return response
+	}
+	var obj struct {
+		ToolCall  string `json:"toolCall"`
+		Tool      string `json:"tool"`
+		Arguments struct {
+			Command string `json:"command"`
+			Path    string `json:"path"`
+		} `json:"arguments"`
+	}
+	if err := json.Unmarshal([]byte(response), &obj); err != nil {
+		return response
+	}
+	if obj.ToolCall == "" || obj.Tool == "" {
+		return response
+	}
+	switch strings.ToUpper(obj.Tool) {
+	case "CMD":
+		if cmd := strings.TrimSpace(obj.Arguments.Command); cmd != "" {
+			return "CMD: " + cmd
+		}
+	case "READ":
+		if path := strings.TrimSpace(obj.Arguments.Path); path != "" {
+			return "READ: " + path
+		}
+	case "WRITE":
+		if path := strings.TrimSpace(obj.Arguments.Path); path != "" {
+			return "WRITE: " + path
+		}
+	}
+	return response
 }
 
 // unwrapJSONCommandArray extracts keystrokes from {"commands": [{"keystrokes":"...","is_blocking":true},...]}

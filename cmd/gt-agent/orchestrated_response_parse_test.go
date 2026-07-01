@@ -448,6 +448,57 @@ func TestUnwrapJSONCommandArray_cmdKey(t *testing.T) {
 	}
 }
 
+func TestUnwrapJSONToolCallCommand(t *testing.T) {
+	t.Parallel()
+	in := `{"toolCall":"toolCall","tool":"CMD","arguments":{"command":"bd update pr-1mv --status=in_progress","description":"Set bead in progress"}}`
+	got := unwrapJSONToolCallCommand(in)
+	if !strings.Contains(got, "CMD: bd update pr-1mv") {
+		t.Fatalf("want CMD extracted, got %q", got)
+	}
+	if strings.Contains(got, "toolCall") || strings.Contains(got, "description") {
+		t.Fatalf("still contains JSON: %q", got)
+	}
+}
+
+func TestUnwrapJSONToolCallCommand_notToolCall(t *testing.T) {
+	t.Parallel()
+	in := `{"notToolCall":true,"tool":"CMD","arguments":{"command":"echo hi"}}`
+	got := unwrapJSONToolCallCommand(in)
+	if got != in {
+		t.Fatalf("should return unchanged, got %q", got)
+	}
+}
+
+func TestUnwrapJSONToolCallCommand_unknownToolReturnsOriginal(t *testing.T) {
+	t.Parallel()
+	in := `{"toolCall":"toolCall","tool":"UNKNOWN","arguments":{"command":"echo hi"}}`
+	got := unwrapJSONToolCallCommand(in)
+	if got != in {
+		t.Fatalf("unknown tool should return original, got %q", got)
+	}
+}
+
+func TestUnwrapJSONToolCallCommand_readTool(t *testing.T) {
+	t.Parallel()
+	in := `{"toolCall":"toolCall","tool":"READ","arguments":{"path":"pingapp/test_main.py"}}`
+	got := unwrapJSONToolCallCommand(in)
+	if !strings.Contains(got, "READ: pingapp/test_main.py") {
+		t.Fatalf("want READ extracted, got %q", got)
+	}
+}
+
+func TestPreprocessOrchestratedResponse_toolCallCommand(t *testing.T) {
+	t.Parallel()
+	in := "```json\n{\"toolCall\":\"toolCall\",\"tool\":\"CMD\",\"arguments\":{\"command\":\"export BEADS_DIR=x && bd close pr-1mv\"}}\n```\n"
+	cmds := parseOrchestratedCommands(in)
+	if len(cmds) != 1 || !strings.Contains(cmds[0], "bd close pr-1mv") {
+		t.Fatalf("want 1 cmd with bd close, got %v", cmds)
+	}
+	if strings.Contains(cmds[0], "toolCall") || strings.Contains(cmds[0], "arguments") {
+		t.Fatalf("cmd contains JSON artifact: %q", cmds[0])
+	}
+}
+
 func TestUnwrapJSONCommandArray_cmdKeyWithExtraFields(t *testing.T) {
 	t.Parallel()
 	in := `{"outcome":"failure","summary":"...","commands":[{"cmd":"export BEADS_DIR=x && cd testgt3/mayor/rig && bd update te-h2i --status=in_progress"},{"cmd":"READ: linkshelf/internal/api/handlers_test.go"}]}`
