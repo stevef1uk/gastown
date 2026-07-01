@@ -708,7 +708,7 @@ func updateOrchestratedRetry(state *AgentState, task *orchestrator.Task, outcome
 }
 
 // outcomeJSONTailRE strips outcome JSON glued onto the end of a CMD line.
-var outcomeJSONTailRE = regexp.MustCompile(`(?i)\s*\{[\s]*"outcome"[\s\S]*$`)
+var outcomeJSONTailRE = regexp.MustCompile(`(?i)(?:\s*\{[\s]*"outcome"[\s\S]*$)|\s*\{\s*\}\s*$`)
 
 // outcomeJSONLeadingColonRE strips partial JSON the model glues after verify (e.g. :"success","summary":...).
 var outcomeJSONLeadingColonRE = regexp.MustCompile(`(?i)^\s*:\s*"success"\s*,\s*"summary"\s*:[\s\S]*$`)
@@ -761,7 +761,7 @@ func stripOutcomeLinesForCmdParse(response string) string {
 			}
 			continue
 		}
-		if !inOutcomeJSON && (t == "{" || (strings.HasPrefix(t, "{") && strings.Contains(strings.ToLower(t), "outcome"))) {
+		if !inOutcomeJSON && (t == "{" || t == "{}" || t == "{ }" || (strings.HasPrefix(t, "{") && strings.Contains(strings.ToLower(t), "outcome"))) {
 			inOutcomeJSON = true
 			braceDepth = strings.Count(t, "{") - strings.Count(t, "}")
 			if braceDepth <= 0 {

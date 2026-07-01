@@ -623,6 +623,9 @@ func trimJSONGluedToShellCommand(cmd string) (string, bool) {
 		if strings.HasPrefix(rest, "{") && (strings.Contains(rest, `"outcome"`) || strings.Contains(rest, `"summary"`)) {
 			return strings.TrimSpace(cmd[:i]), true
 		}
+		if rest == "{}" || rest == "{ }" {
+			return strings.TrimSpace(cmd[:i]), true
+		}
 	}
 	return cmd, false
 }

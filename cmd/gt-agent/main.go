@@ -1172,6 +1172,7 @@ func parseLLMResponse(response string) (cmds []string, doneSummary string, hallu
 		// Outcome JSON glued after a heredoc (common architect/planner mistake)
 		// must not be appended to the shell script (Fix: outcome:: not found).
 		if isOrchestratedOutcomeLine(trimmed) ||
+			trimmed == "{}" || trimmed == "{ }" ||
 			(strings.HasPrefix(trimmed, "{") && strings.Contains(strings.ToLower(trimmed), "outcome")) {
 			flushScript()
 			inScript = false
