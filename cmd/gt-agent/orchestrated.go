@@ -1525,6 +1525,9 @@ func validateImplementationBeadFileWrite(cmd, townRoot, rig, activeBead string, 
 			return fmt.Errorf("do not overwrite %q — its implement bead is closed (active bead %s)", written, allowedID)
 		}
 	}
+	if orchestrator.IsStructuralInfraPath(written) {
+		return nil
+	}
 	if allowedPath == "" {
 		return nil
 	}

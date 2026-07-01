@@ -98,6 +98,21 @@ func IsPackageInitFile(displayRel string) bool {
 	return base == "__init__.py"
 }
 
+// IsStructuralInfraPath reports paths that are infrastructure/structural files not tied to
+// any specific implement bead. These are allowed to be written freely regardless of bead queue
+// order (e.g. Python __init__.py package markers, go.mod, go.sum).
+func IsStructuralInfraPath(relPath string) bool {
+	if IsPackageInitFile(relPath) {
+		return true
+	}
+	base := filepath.Base(filepath.ToSlash(strings.TrimSpace(relPath)))
+	switch base {
+	case "go.mod", "go.sum":
+		return true
+	}
+	return false
+}
+
 // IsDependencyManifest reports whether rel is a dependency/manifest file (size guards do not apply).
 func IsDependencyManifest(displayRel string) bool {
 	base := filepath.Base(filepath.ToSlash(strings.TrimSpace(displayRel)))
