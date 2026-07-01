@@ -373,6 +373,7 @@ func rewriteUnittestToWorkdir(cmd, rig string, v orchestrator.WorkflowValidation
 		if !strings.Contains(strings.ToLower(cmd), "-r ") {
 			rest := stripRedundantLayoutCD(stripFirstCDPrefix(cmd), mayorRig, layout)
 			rest = stripCDLayoutPrefix(rest, layout)
+			rest = adjustPytestPathsAfterLayoutStrip(rest, layout)
 			cmd = "cd " + mayorRig + " && " + rest
 			changed = true
 		}
@@ -1007,6 +1008,28 @@ func runOrchestratedCommand(cmd, workDir, sessionName string, env []string, cmdT
 		return out, fmt.Errorf("%w (script exceeded %s)", err, commandTimeoutDur(cmd, cmdTimeoutSec))
 	}
 	return out, err
+}
+
+// adjustPytestPathsAfterLayoutStrip prepends the layout root to bare .py file
+// arguments in pytest commands when a cd into the layout subdirectory was stripped.
+// E.g. "pytest -v test_main.py" → "pytest -v layout/test_main.py"
+func adjustPytestPathsAfterLayoutStrip(cmd, layout string) string {
+	lower := strings.ToLower(cmd)
+	if !strings.Contains(lower, "pytest") || layout == "" || layout == "." {
+		return cmd
+	}
+	tokens := strings.Fields(cmd)
+	changed := false
+	for i, tok := range tokens {
+		if strings.HasSuffix(tok, ".py") && !strings.Contains(tok, "/") && !strings.Contains(tok, "\\") {
+			tokens[i] = layout + "/" + tok
+			changed = true
+		}
+	}
+	if !changed {
+		return cmd
+	}
+	return strings.Join(tokens, " ")
 }
 
 // orchestratedCommandWorkDir is the subprocess cwd for rig workflow shell commands.
