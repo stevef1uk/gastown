@@ -379,6 +379,29 @@ func TestValidateQACommand_rejectsWorkspace(t *testing.T) {
 	}
 }
 
+func TestValidateQACommand_rejectsHallucinatedAbsPath(t *testing.T) {
+	v := orchestrator.DefaultWorkflowValidation()
+	town := t.TempDir()
+	rig := "ping_rig"
+	if err := validateQACommand("cat /home/lane/AIArchives/archives/neonstrike/app/public/vite.svg", rig, town, v); err == nil {
+		t.Fatal("expected reject hallucinated absolute path outside project")
+	}
+	if err := validateQACommand("head /nonexistent/global/path/file.txt", rig, town, v); err == nil {
+		t.Fatal("expected reject absolute path outside project")
+	}
+	if err := validateQACommand("cat $GT_ROOT/ping_rig/mayor/rig/SPEC.md", rig, town, v); err != nil {
+		t.Fatalf("env-var path should be allowed: %v", err)
+	}
+	if err := validateQACommand("ls "+filepath.Join(town, "ping_rig", "mayor", "rig"), rig, town, v); err != nil {
+		t.Fatalf("path under town root should be allowed: %v", err)
+	}
+	if err := validateQACommand("cat /tmp/gt-agent.log", rig, town, v); err != nil {
+		t.Fatalf("/tmp path should be allowed: %v", err)
+	}
+	// bd list is not a read-file command, so validateQAReadPath doesn't apply
+	// (other QA validators may still reject it based on rig context)
+}
+
 func TestValidateDesignCommand_forbidsImplementation(t *testing.T) {
 	cases := []string{
 		"git -C mockrig/mayor/rig commit -m x",

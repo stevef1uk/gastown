@@ -2211,6 +2211,46 @@ func validateQACommand(cmd, rig, townRoot string, v orchestrator.WorkflowValidat
 	if path, mutates := orchestrator.QACommandMutatesLayoutSource(cmd, v); mutates {
 		return fmt.Errorf("QA must not modify implementation files (blocked write to %q) — send outcome failure with bead IDs so the polecat fixes handlers/web; do not sed or redirect-edit under %s", path, strings.TrimSpace(v.LayoutRoot))
 	}
+	if err := validateQAReadPath(cmd, townRoot); err != nil {
+		return err
+	}
+	return nil
+}
+
+func validateQAReadPath(cmd, townRoot string) error {
+	lower := strings.ToLower(strings.TrimSpace(cmd))
+	readPrefixes := []string{"head ", "tail ", "cat ", "wc ", "ls ", "stat ", "grep ", "find "}
+	hasReadPrefix := false
+	for _, p := range readPrefixes {
+		if strings.HasPrefix(lower, p) {
+			hasReadPrefix = true
+			break
+		}
+	}
+	if !hasReadPrefix {
+		return nil
+	}
+	townRoot = filepath.ToSlash(filepath.Clean(townRoot))
+	if townRoot == "" || townRoot == "." || townRoot == "/" {
+		return nil
+	}
+	tokens := strings.Fields(cmd)
+	for _, tok := range tokens {
+		if !strings.HasPrefix(tok, "/") {
+			continue
+		}
+		cleaned := filepath.ToSlash(filepath.Clean(tok))
+		if strings.HasPrefix(cleaned, townRoot) {
+			continue
+		}
+		if strings.HasPrefix(cleaned, "/tmp") {
+			continue
+		}
+		if strings.HasPrefix(cleaned, "/proc") || strings.HasPrefix(cleaned, "/dev") || cleaned == "/dev/null" {
+			continue
+		}
+		return fmt.Errorf("read path %q is outside the project tree (%s) — use relative paths under the rig directory", tok, townRoot)
+	}
 	return nil
 }
 
