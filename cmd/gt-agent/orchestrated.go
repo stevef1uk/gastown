@@ -890,6 +890,9 @@ func stripModelToolArtifacts(response string) string {
 		if strings.Contains(upper, "[TOOL_CALLS]") {
 			continue
 		}
+		if strings.HasPrefix(upper, "TOOL RESULT:") || strings.HasPrefix(upper, "[TOOL RESULT]") || strings.HasPrefix(upper, "TOOL(RESULT)") {
+			continue
+		}
 		if looksLikeHallucinatedShellOutput(t) {
 			continue
 		}
