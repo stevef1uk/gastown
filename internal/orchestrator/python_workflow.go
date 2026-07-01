@@ -199,6 +199,11 @@ func extractLayoutScope(cmd, layout string) string {
 			return layout + "/" + strings.TrimSpace(rest) + "/"
 		}
 	}
+	// Match "cd layout &&" (no trailing slash — cd to layout root).
+	pat := "cd " + layoutLower + " &&"
+	if idx := strings.Index(lower, pat); idx >= 0 {
+		return layout + "/"
+	}
 	return ""
 }
 
