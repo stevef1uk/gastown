@@ -95,10 +95,14 @@ endif
 
 install: check-up-to-date build
 	@mkdir -p $(INSTALL_DIR)
-	@rm -f $(INSTALL_DIR)/$(BINARY)
-	@cp $(BUILD_DIR)/$(BINARY) $(INSTALL_DIR)/$(BINARY)
-	@cp $(BUILD_DIR)/$(BINARY)-agent $(INSTALL_DIR)/$(BINARY)-agent
-	@cp $(BUILD_DIR)/$(BINARY)-agent-console $(INSTALL_DIR)/$(BINARY)-agent-console
+	@# Atomic replace: cp to .new then mv (rename on same filesystem never touches open inode,
+	@# avoiding ETXTBUSY when a running gt-agent process holds the old binary open).
+	@cp $(BUILD_DIR)/$(BINARY) $(INSTALL_DIR)/$(BINARY).new
+	@mv $(INSTALL_DIR)/$(BINARY).new $(INSTALL_DIR)/$(BINARY)
+	@cp $(BUILD_DIR)/$(BINARY)-agent $(INSTALL_DIR)/$(BINARY)-agent.new
+	@mv $(INSTALL_DIR)/$(BINARY)-agent.new $(INSTALL_DIR)/$(BINARY)-agent
+	@cp $(BUILD_DIR)/$(BINARY)-agent-console $(INSTALL_DIR)/$(BINARY)-agent-console.new
+	@mv $(INSTALL_DIR)/$(BINARY)-agent-console.new $(INSTALL_DIR)/$(BINARY)-agent-console
 	@if [ "$$(uname)" = "Darwin" ]; then \
 		echo "Signing binaries for macOS Gatekeeper compatibility..."; \
 		codesign -s - $(INSTALL_DIR)/$(BINARY) 2>/dev/null || true; \
