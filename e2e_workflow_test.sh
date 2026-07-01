@@ -10,6 +10,22 @@ GT_DIR="${GT_ROOT:-$HOME/gt}"
 RIG="ping_rig"
 FREERIDE_ROOT="${FREERIDE_ROOT:-}"
 
+# Portable check: is port $1 listening with "dolt" in the process name?
+is_dolt_listening() {
+    local port="${1:-3307}"
+    case "$(uname -s)" in
+        Darwin)
+            lsof -iTCP:"$port" -sTCP:LISTEN 2>/dev/null | grep -qi dolt
+            ;;
+        Linux)
+            ss -tlnp "sport = :$port" 2>/dev/null | grep -qi dolt
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
 freeride_bootstrap_dir() {
     if [[ -n "$FREERIDE_ROOT" && -d "$FREERIDE_ROOT/scripts" ]]; then
         echo "$FREERIDE_ROOT/scripts"
@@ -43,8 +59,11 @@ echo "[1] Starting GT services..."
 gt install "$GT_DIR" || true
 cd "$GT_DIR"
 
-if [ ! -d "$GT_DIR/$RIG" ] || ! grep -q "\"$RIG\"" "$GT_DIR/mayor/rigs.json" 2>/dev/null; then
-    echo "[$RIG is missing or not registered in rigs.json! Creating a dummy rig to test against...]"
+# Prepare git repo for rig registration (no Dolt needed yet)
+rig_needs_creation=false
+if [ ! -d "$GT_DIR/$RIG/mayor" ]; then
+    rig_needs_creation=true
+    echo "[$RIG is missing or not registered in rigs.json! Will create after stack is up...]"
     rm -rf "$GT_DIR/$RIG"
     DUMMY_DIR="/tmp/gt-dummy-repo-$$"
     rm -rf "$DUMMY_DIR"
@@ -58,21 +77,25 @@ if [ ! -d "$GT_DIR/$RIG" ] || ! grep -q "\"$RIG\"" "$GT_DIR/mayor/rigs.json" 2>/
         git config user.name "Test Bot"
         git commit -m "Initial commit"
     )
+fi
+
+run_freeride_bootstrap ensure-gt-orchestrator-singleton.sh || true
+gt down 2>/dev/null || true
+run_freeride_bootstrap ensure-gt-orchestrator-singleton.sh || true
+gt up || true
+
+# Now Dolt is running (gt up handles empty database initialization).
+# Register rig if needed.
+if [ "$rig_needs_creation" = true ]; then
+    echo "[$RIG needs creation — registering with Dolt live...]"
     dolt_port="${GT_DOLT_PORT:-3307}"
-    if ! ss -tlnp "sport = :$dolt_port" 2>/dev/null | grep -q dolt; then
-        echo "[Dolt port $dolt_port not listening, starting Dolt server for rig registration...]"
-        gt dolt start 2>/dev/null || true
-        for i in {1..20}; do
-            if ss -tlnp "sport = :$dolt_port" 2>/dev/null | grep -q dolt; then
-                echo "[Dolt ready on port $dolt_port after ${i}s]"
-                break
-            fi
-            sleep 1
-        done
-        if ! ss -tlnp "sport = :$dolt_port" 2>/dev/null | grep -q dolt; then
-            echo "[WARNING: Dolt still not listening after 20s, attempting gt rig add anyway...]"
+    for i in {1..10}; do
+        if is_dolt_listening "$dolt_port"; then
+            echo "[Dolt ready on port $dolt_port after ${i}s]"
+            break
         fi
-    fi
+        sleep 1
+    done
     gt rig add "$RIG" "file://$DUMMY_DIR"
     
     mkdir -p "$GT_DIR/$RIG/mayor/rig/.gastown"
@@ -86,11 +109,6 @@ if [ ! -d "$GT_DIR/$RIG" ] || ! grep -q "\"$RIG\"" "$GT_DIR/mayor/rigs.json" 2>/
         git commit -m "Add spec and workflow profile" || true
     )
 fi
-
-run_freeride_bootstrap ensure-gt-orchestrator-singleton.sh || true
-gt down 2>/dev/null || true
-run_freeride_bootstrap ensure-gt-orchestrator-singleton.sh || true
-gt up
 
 if freeride_bootstrap_dir >/dev/null && [[ "${DO_IT_ALL:-}" == "1" || -n "$FREERIDE_ROOT" ]]; then
     # Do not run ensure-gt-orchestrator-singleton here — it used to kill the sole
