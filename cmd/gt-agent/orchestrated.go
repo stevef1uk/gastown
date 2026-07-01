@@ -464,6 +464,10 @@ func truncateOrchestratedFeedback(s string, max int) string {
 // htmlRetryDumpRE matches curl false-positives (agent-console Svelte HTML on :8080).
 var htmlRetryDumpRE = regexp.MustCompile(`(?is)<!doctype html>[\s\S]*?</html>`)
 
+// assistantToolCallRE strips model-native tool-call format emitted by some API
+// providers (e.g. "ASSISTANT (tool call) Write\n...\nASSISTANT (tool result)").
+var assistantToolCallRE = regexp.MustCompile(`(?is)\bASSISTANT\s*\(tool\s+(call|result)\)[^\n]*\n?`)
+
 // sanitizeRetryFeedbackForLLM strips huge HTML verify noise before the next LLM turn.
 func sanitizeRetryFeedbackForLLM(s string) string {
 	if s == "" {
@@ -868,9 +872,13 @@ func expandGluedOrchestratedCommands(cmds []string) []string {
 	return out
 }
 
-// stripModelToolArtifacts removes [TOOL_CALLS] markers and hallucinated shell output
-// the model pastes after CMD lines (common with local LLMs in QA step).
+// stripModelToolArtifacts removes [TOOL_CALLS] markers, ASSISTANT (tool call)
+// blocks, and hallucinated shell output the model pastes after CMD lines
+// (common with local LLMs in QA step).
 func stripModelToolArtifacts(response string) string {
+	// Strip ASSISTANT (tool call) Write/Edit/Read blocks the model may emit
+	// in Anthropic-compatible API output format.
+	response = assistantToolCallRE.ReplaceAllString(response, "")
 	var kept []string
 	for _, line := range strings.Split(response, "\n") {
 		t := strings.TrimSpace(line)

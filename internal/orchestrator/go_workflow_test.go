@@ -137,6 +137,49 @@ func TestGoImplementationVerifyCommandForBead_storeCompileOnly(t *testing.T) {
 	}
 }
 
+func TestGoToolOutputMissingDeps(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		output string
+		want   bool
+	}{
+		{"go: no required module provides github.com/foo/bar", true},
+		{"missing go.sum entry for module github.com/foo/bar", true},
+		{"go.sum is out of date", true},
+		{"cannot find module providing package foo/bar", true},
+		{"# github.com/foo/bar\n./foo.go:5:2: undefined: Something", false},
+		{"matched no packages", false},
+		{"ok   github.com/foo/bar  0.001s", false},
+	}
+	for _, c := range cases {
+		got := GoToolOutputMissingDeps(c.output)
+		if got != c.want {
+			t.Fatalf("GoToolOutputMissingDeps(%q) = %v, want %v", c.output, got, c.want)
+		}
+	}
+}
+
+func TestGoToolOutputMatchedNoPackages(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		output string
+		want   bool
+	}{
+		{"matched no packages", true},
+		{"no packages to test", true},
+		{"no modules specified", true},
+		{"no module dependencies to download", true},
+		{"ok   github.com/foo/bar  0.001s", false},
+		{"# github.com/foo/bar\n./foo.go:5:2: undefined: Something", false},
+	}
+	for _, c := range cases {
+		got := GoToolOutputMatchedNoPackages(c.output)
+		if got != c.want {
+			t.Fatalf("GoToolOutputMatchedNoPackages(%q) = %v, want %v", c.output, got, c.want)
+		}
+	}
+}
+
 func TestGoVerifyCommandWithTidy(t *testing.T) {
 	t.Parallel()
 	v := WorkflowValidation{

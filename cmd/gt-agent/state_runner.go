@@ -347,6 +347,55 @@ func (r *stateRunner) rewriteCommand(cmd string) string {
 	return cmd
 }
 
+func (r *stateRunner) autoInstallDepsAndRetry(verifyCmd, workDir, sessionName string, cmdEnv []string, combined *strings.Builder) ([]byte, error) {
+	rigDir := rigMayorRigDir(r.townRoot, r.rig)
+	reqRel := r.v.RequirementsFilePath()
+	reqPath := filepath.Join(rigDir, reqRel)
+	if reqRel == "" {
+		out, err := r.runShellCommand(verifyCmd, workDir, sessionName, cmdEnv)
+		return out, err
+	}
+	if _, err := os.Stat(reqPath); err != nil {
+		orchestratedFprintfStderr("[gt-agent] cannot auto-install deps: %s missing: %v\n", reqRel, err)
+		combined.WriteString(fmt.Sprintf("Auto-install deps skipped (%s missing)\n", reqRel))
+		out, err := r.runShellCommand(verifyCmd, workDir, sessionName, cmdEnv)
+		return out, err
+	}
+	venvPip := filepath.Join(rigDir, r.v.PythonVenvRelDir(), "bin", "pip")
+	pipCmd := venvPip + " install -r " + reqPath
+	orchestratedPrintf("[gt-agent] auto-installing deps: %s\n", pipCmd)
+	installOut, installErr := r.runShellCommand(pipCmd, rigDir, sessionName, cmdEnv)
+	if installErr != nil {
+		orchestratedFprintfStderr("[gt-agent] auto-install deps failed: %v\n%s\n", installErr, string(installOut))
+		combined.WriteString(fmt.Sprintf("Auto-install deps failed: %v\n%s\n", installErr, string(installOut)))
+	}
+	out, err := r.runShellCommand(verifyCmd, workDir, sessionName, cmdEnv)
+	return out, err
+}
+
+func (r *stateRunner) goModTidyAndRetry(verifyCmd, workDir, sessionName string, cmdEnv []string, combined *strings.Builder) ([]byte, error) {
+	rigDir := rigMayorRigDir(r.townRoot, r.rig)
+	layout := strings.Trim(strings.TrimSpace(r.v.LayoutRoot), "/")
+	tidyDir := rigDir
+	goModDir := rigDir
+	if layout != "" && layout != "." {
+		goModDir = filepath.Join(rigDir, layout)
+	}
+	if _, err := os.Stat(filepath.Join(goModDir, "go.mod")); err != nil {
+		out, err := r.runShellCommand(verifyCmd, workDir, sessionName, cmdEnv)
+		return out, err
+	}
+	tidyCmd := "cd " + goModDir + " && go mod tidy"
+	orchestratedPrintf("[gt-agent] auto-running go mod tidy: %s\n", tidyCmd)
+	tidyOut, tidyErr := r.runShellCommand(tidyCmd, tidyDir, sessionName, cmdEnv)
+	if tidyErr != nil {
+		orchestratedFprintfStderr("[gt-agent] go mod tidy failed: %v\n%s\n", tidyErr, string(tidyOut))
+		combined.WriteString(fmt.Sprintf("go mod tidy failed: %v\n%s\n", tidyErr, string(tidyOut)))
+	}
+	out, err := r.runShellCommand(verifyCmd, workDir, sessionName, cmdEnv)
+	return out, err
+}
+
 func (r *stateRunner) repairPipBeforeRun(cmd string) {
 	if !r.hooks.PipRepairBeforeRun {
 		return
@@ -579,6 +628,30 @@ func (r *stateRunner) runAutoVerify(cmd, workDir, sessionName string, cmdEnv []s
 				}
 				r.track.lastVerifyOutput = string(verifyOut)
 				orchestratedPrintf("[gt-agent] auto-verify ok (all tests passed despite exit code): %s\n", verifyCmd)
+			} else if orchestrator.WorkflowUsesPython(r.v) && pythonVerifyOutputSuggestsMissingDeps(string(verifyOut)) {
+				// Auto-install from requirements.txt and retry once.
+				verifyOut, verifyErr = r.autoInstallDepsAndRetry(verifyCmd, workDir, sessionName, cmdEnv, combined)
+				if verifyErr == nil {
+					r.track.verifyOK = true
+					if r.hooks.AutoVerifyOKClearsCmdFailure {
+						r.track.hadCmdFailure = false
+					}
+					r.track.lastVerifyOutput = string(verifyOut)
+					orchestratedPrintf("[gt-agent] auto-verify ok (after pip install): %s\n", verifyCmd)
+				} else if orchestrator.PythonTestsAllPassed(string(verifyOut)) {
+					r.track.verifyOK = true
+					if r.hooks.AutoVerifyOKClearsCmdFailure {
+						r.track.hadCmdFailure = false
+					}
+					r.track.lastVerifyOutput = string(verifyOut)
+					orchestratedPrintf("[gt-agent] auto-verify ok (after pip install, all tests passed): %s\n", verifyCmd)
+				} else {
+					r.track.hadCmdFailure = true
+					r.track.verifyOK = false
+					r.track.lastVerifyOutput = string(verifyOut)
+					orchestratedFprintfStderr("[gt-agent] auto-verify failed (after pip install): %v\n%s\n", verifyErr, string(verifyOut))
+					combined.WriteString(fmt.Sprintf("Auto-verify (after pip install): %s\nError: %v\nOutput: %s\n\n", verifyCmd, verifyErr, string(verifyOut)))
+				}
 			} else if hook.Verify == "go_setup" &&
 				strings.EqualFold(strings.TrimSpace(r.task.State), "project_setup") &&
 				orchestrator.GoToolOutputMatchedNoPackages(string(verifyOut)) {
@@ -586,6 +659,24 @@ func (r *stateRunner) runAutoVerify(cmd, workDir, sessionName string, cmdEnv []s
 				// no packages exist yet (polecat writes them in implementation).
 				r.track.verifyOK = true
 				r.track.lastVerifyOutput = string(verifyOut)
+			} else if orchestrator.WorkflowUsesGo(r.v) && orchestrator.GoToolOutputMissingDeps(string(verifyOut)) &&
+				hook.Verify != "go_setup" && !goAutoVerifyNoPackagesIsError(hook.Verify, r.task.State, verifyCmd) {
+				// Go verify failed due to missing modules — run go mod tidy and retry once.
+				verifyOut, verifyErr = r.goModTidyAndRetry(verifyCmd, workDir, sessionName, cmdEnv, combined)
+				if verifyErr == nil {
+					r.track.verifyOK = true
+					if r.hooks.AutoVerifyOKClearsCmdFailure {
+						r.track.hadCmdFailure = false
+					}
+					r.track.lastVerifyOutput = string(verifyOut)
+					orchestratedPrintf("[gt-agent] auto-verify ok (after go mod tidy): %s\n", verifyCmd)
+				} else {
+					r.track.hadCmdFailure = true
+					r.track.verifyOK = false
+					r.track.lastVerifyOutput = string(verifyOut)
+					orchestratedFprintfStderr("[gt-agent] auto-verify failed (after go mod tidy): %v\n%s\n", verifyErr, string(verifyOut))
+					combined.WriteString(fmt.Sprintf("Auto-verify (after go mod tidy): %s\nError: %v\nOutput: %s\n\n", verifyCmd, verifyErr, string(verifyOut)))
+				}
 			} else {
 				r.track.hadCmdFailure = true
 				r.track.verifyOK = false

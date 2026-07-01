@@ -594,6 +594,36 @@ func TestStripChannelMarkers_fullTurnRegression(t *testing.T) {
 	}
 }
 
+func TestParseOrchestratedCommands_stripsAssistantToolCallBlocks(t *testing.T) {
+	t.Parallel()
+	in := `ASSISTANT (tool call) Write input={"file_path": "/foo/bar.py", "content": "package foo"}
+CMD: export BEADS_DIR=x && bd close te-abc`
+	cmds := parseOrchestratedCommands(in)
+	if len(cmds) != 1 {
+		t.Fatalf("want 1 cmd, got %d: %v", len(cmds), cmds)
+	}
+	if !strings.Contains(cmds[0], "bd close te-abc") {
+		t.Fatalf("cmd wrong: %q", cmds[0])
+	}
+	if strings.Contains(cmds[0], "ASSISTANT") || strings.Contains(cmds[0], "tool call") {
+		t.Fatalf("cmd contains tool call block: %q", cmds[0])
+	}
+}
+
+func TestParseOrchestratedCommands_stripsAssistantToolResultBlocks(t *testing.T) {
+	t.Parallel()
+	in := `ASSISTANT (tool result)
+Tool ran without output or errors
+CMD: export BEADS_DIR=x && bd list --limit=0`
+	cmds := parseOrchestratedCommands(in)
+	if len(cmds) != 1 {
+		t.Fatalf("want 1 cmd, got %d: %v", len(cmds), cmds)
+	}
+	if strings.Contains(cmds[0], "ASSISTANT") || strings.Contains(cmds[0], "Tool ran") {
+		t.Fatalf("cmd contains tool result block: %q", cmds[0])
+	}
+}
+
 func TestIsBeadCloseCommand_noFalsePositiveOnScopedBdList(t *testing.T) {
 	// The old strings.Contains("bd") && strings.Contains(" close") matched
 	// scoped bd list output containing '=== closed implement ==='.

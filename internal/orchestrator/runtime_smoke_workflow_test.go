@@ -55,6 +55,46 @@ func TestDeriveRuntimeSmokeServerStart_pythonFromQA(t *testing.T) {
 	}
 }
 
+func TestPythonTestsAllPassed(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		output string
+		want   bool
+	}{
+		{"collected 3 items\ntest_main.py ...\n1 passed, 2 warnings", true},
+		{"collected 3 items\ntest_main.py ...\n3 passed", true},
+		{"collected 1 item\ntest_main.py F\n1 failed", false},
+		{"collected 0 items", false},
+		{"ModuleNotFoundError: No module named 'fastapi'", false},
+		{"ERROR collecting test_main.py\nimport error", false},
+	}
+	for _, c := range cases {
+		got := PythonTestsAllPassed(c.output)
+		if got != c.want {
+			t.Fatalf("PythonTestsAllPassed(%q) = %v, want %v", c.output, got, c.want)
+		}
+	}
+}
+
+func TestPythonVerifyNoTestsOK(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		output string
+		want   bool
+	}{
+		{"no tests ran", true},
+		{"collected 0 items", true},
+		{"collected 3 items\ntest_main.py ...\n3 passed", false},
+		{"collected 1 item\ntest_main.py F\n1 failed", false},
+	}
+	for _, c := range cases {
+		got := PythonVerifyNoTestsOK(c.output)
+		if got != c.want {
+			t.Fatalf("PythonVerifyNoTestsOK(%q) = %v, want %v", c.output, got, c.want)
+		}
+	}
+}
+
 func TestIsDevServerSmokeCommand(t *testing.T) {
 	t.Parallel()
 

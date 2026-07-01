@@ -6,6 +6,16 @@ import (
 	"strings"
 )
 
+// GoToolOutputMissingDeps reports go build/test output where a required module is missing
+// (not yet downloaded or not in go.mod). Running go mod tidy in the layout root should fix it.
+func GoToolOutputMissingDeps(output string) bool {
+	lower := strings.ToLower(output)
+	return strings.Contains(lower, "no required module") ||
+		strings.Contains(lower, "missing go.sum") ||
+		strings.Contains(lower, "go.sum is out of date") ||
+		strings.Contains(lower, "cannot find module")
+}
+
 // GoToolOutputMatchedNoPackages reports go build/test output where the package pattern matched nothing
 // (exit code can still be 0 when the directory has no .go files).
 func GoToolOutputMatchedNoPackages(output string) bool {
