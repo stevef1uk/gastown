@@ -1,0 +1,42 @@
+{
+  "agents": {
+    "gt-agent-local": {
+      "model": "google/gemini-3.5-flash"
+    },
+    "gt-agent-nvidia": {
+      "model": "nvidia/llama-3.3-nemotron-super-49b-v1"
+    },
+    "gt-agent-gemini": {
+      "model": "google/gemini-3.5-flash",
+      "extra_env": {
+        "LLM_TIMEOUT": "1200s"
+      }
+    },
+    "gt-agent-powerful": {
+      "model": "ollama/llama3.3"
+    },
+    "gt-agent-fast": {
+      "model": "ollama/ministral-3:8b"
+    },
+    "gt-agent-mayor-fast": {
+      "model": "ollama/ministral-3:8b",
+      "extra_env": {
+        "LLM_TURN_TIMEOUT": "30s",
+        "GT_AGENT_CMD_TIMEOUT": "75s"
+      }
+    }
+  },
+  "role_agents": {
+    "architect": "gt-agent-gemini",
+    "crew": "gt-agent-local",
+    "deacon": "gt-agent-local",
+    "mechanic": "gt-agent-local",
+    "mayor": "gt-agent-local",
+    "planner": "gt-agent-local",
+    "setup": "gt-agent-local",
+    "polecat": "gt-agent-gemini",
+    "qa": "gt-agent-gemini",
+    "refinery": "gt-agent-local",
+    "witness": "gt-agent-local"
+  }
+}
