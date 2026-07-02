@@ -784,7 +784,7 @@ func normalizePythonDevServerSmoke(cmd string) string {
 		cmd = regexp.MustCompile(`\s*;\s*kill\s+\$?_uvpid\b[^;]*`).ReplaceAllString(cmd, "")
 		cmd = regexp.MustCompile(`\s*;\s*wait\s+\$?_uvpid\b[^;]*`).ReplaceAllString(cmd, "")
 		// Find the & that backgrounds uvicorn. It may be followed by space, ), ;, or end-of-cmd.
-		bgRE := regexp.MustCompile(`\buvicorn\b.*?\s&\s*[)\s;]`)
+		bgRE := regexp.MustCompile(`\buvicorn\b.*?\s&(?:\s|[);]|$)`)
 		if loc := bgRE.FindStringIndex(cmd); loc != nil {
 			ampIdx := loc[1] - 1
 			for ampIdx > 0 && cmd[ampIdx] != '&' {
