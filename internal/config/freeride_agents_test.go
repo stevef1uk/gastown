@@ -8,7 +8,7 @@ import (
 )
 
 func TestDefaultInstalledTownSettings_FreerideDefaults(t *testing.T) {
-	t.Parallel()
+	t.Setenv("FREERIDE_MODELS_CONFIG", "/nonexistent")
 	ts := DefaultInstalledTownSettings()
 
 	if ts.DefaultAgent != "gt-agent-local" {
@@ -17,8 +17,8 @@ func TestDefaultInstalledTownSettings_FreerideDefaults(t *testing.T) {
 	if ts.SessionTransport != "nats" {
 		t.Errorf("SessionTransport = %q, want nats", ts.SessionTransport)
 	}
-	if ts.RoleAgents["polecat"] != "gt-agent-gemini" {
-		t.Errorf("role_agents[polecat] = %q, want gt-agent-gemini", ts.RoleAgents["polecat"])
+	if ts.RoleAgents["polecat"] != "gt-agent-deepseek" {
+		t.Errorf("role_agents[polecat] = %q, want gt-agent-deepseek", ts.RoleAgents["polecat"])
 	}
 	gemini := ts.Agents["gt-agent-gemini"]
 	if gemini == nil {
@@ -37,12 +37,26 @@ func TestDefaultInstalledTownSettings_FreerideDefaults(t *testing.T) {
 	if nvidia.Env["LLM_MODEL"] != "nvidia/llama-3.3-nemotron-super-49b-v1" {
 		t.Errorf("gt-agent-nvidia LLM_MODEL = %q", nvidia.Env["LLM_MODEL"])
 	}
+	deepseek := ts.Agents["gt-agent-deepseek"]
+	if deepseek == nil {
+		t.Fatal("missing gt-agent-deepseek agent")
+	}
+	if deepseek.Env["LLM_MODEL"] != "deepseek/deepseek-v4-flash" {
+		t.Errorf("gt-agent-deepseek LLM_MODEL = %q", deepseek.Env["LLM_MODEL"])
+	}
+	if deepseek.Env["LLM_TIMEOUT"] != "1200s" {
+		t.Errorf("gt-agent-deepseek LLM_TIMEOUT = %q", deepseek.Env["LLM_TIMEOUT"])
+	}
 }
 
-func TestDefaultFreerideRoleAgents_PolecatUsesGemini(t *testing.T) {
+func TestDefaultFreerideRoleAgents_PolecatUsesDeepSeek(t *testing.T) {
+	t.Setenv("FREERIDE_MODELS_CONFIG", "/nonexistent")
 	roles := DefaultFreerideRoleAgents()
-	if roles["polecat"] != "gt-agent-gemini" {
-		t.Fatalf("polecat role agent = %q, want gt-agent-gemini", roles["polecat"])
+	if roles["polecat"] != "gt-agent-deepseek" {
+		t.Fatalf("polecat role agent = %q, want gt-agent-deepseek", roles["polecat"])
+	}
+	if roles["architect"] != "gt-agent-deepseek" {
+		t.Fatalf("architect role agent = %q, want gt-agent-deepseek", roles["architect"])
 	}
 }
 
@@ -61,7 +75,7 @@ func TestDefaultFreerideAgents_GeminiProfile(t *testing.T) {
 }
 
 func TestEnsureTownSettingsFile(t *testing.T) {
-	t.Parallel()
+	t.Setenv("FREERIDE_MODELS_CONFIG", "/nonexistent")
 	tmpDir := t.TempDir()
 	path := TownSettingsPath(tmpDir)
 
@@ -80,7 +94,7 @@ func TestEnsureTownSettingsFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadOrCreateTownSettings: %v", err)
 	}
-	if loaded.RoleAgents["polecat"] != "gt-agent-gemini" {
+	if loaded.RoleAgents["polecat"] != "gt-agent-deepseek" {
 		t.Errorf("loaded polecat role = %q", loaded.RoleAgents["polecat"])
 	}
 

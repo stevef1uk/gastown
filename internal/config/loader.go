@@ -1100,7 +1100,37 @@ func EnsureTownSettingsFile(townRoot string) (bool, error) {
 	if err := SaveTownSettings(path, DefaultInstalledTownSettings()); err != nil {
 		return false, err
 	}
+	if err := EnsureFreerideModelsFile(townRoot); err != nil {
+		return false, err
+	}
 	return true, nil
+}
+
+// FreerideModelsPath returns the path to the freeride_models.json file for a town.
+func FreerideModelsPath(townRoot string) string {
+	return filepath.Join(townRoot, "gastown", "freeride_models.json")
+}
+
+// EnsureFreerideModelsFile writes the default freeride_models.json to the town's gastown directory
+// if it does not already exist.
+func EnsureFreerideModelsFile(townRoot string) error {
+	path := FreerideModelsPath(townRoot)
+	if _, err := os.Stat(path); err == nil {
+		return nil
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return fmt.Errorf("creating directory: %w", err)
+	}
+	data, err := json.MarshalIndent(DefaultFreerideModelsConfig(), "", "  ")
+	if err != nil {
+		return fmt.Errorf("encoding freeride models: %w", err)
+	}
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		return fmt.Errorf("writing freeride models: %w", err)
+	}
+	return nil
 }
 
 // SaveTownSettings saves town settings to a file.
