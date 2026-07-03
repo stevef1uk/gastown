@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 )
 
@@ -394,6 +395,8 @@ func (v WorkflowValidation) PromptVars() map[string]string {
 		"bead_id_example":                  beadIDExample(v),
 		"static_url_contract_guidance":     RigFlowStaticURLContractGuidance,
 		"static_url_contract_short":        RigFlowStaticURLContractShort,
+		"target_os":                        runtime.GOOS,
+		"target_arch":                      runtime.GOARCH,
 	}
 }
 

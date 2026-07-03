@@ -158,6 +158,7 @@ states:
       max_cmd_turns: 40
       omit_orchestrator_context: true
       system_prompt_footer: |
+        **Target platform: {{target_os}}/{{target_arch}}** — use Unix paths only. Do NOT use Windows paths (C:\) or macOS-only conventions.
         Prefer READ:/EDIT:/WRITE: for source and test files; `CMD: <shell>` for bd and Verify only. Add/update unit tests from plan.md acceptance before bd close. JSON success in a later message (not with CMD or native tools).
 
         ## Required format (follow exactly — no JSON wrappers, no markdown fences)
