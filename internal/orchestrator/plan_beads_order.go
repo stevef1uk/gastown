@@ -1311,6 +1311,11 @@ func ReopenClosedImplementBeadsForMissingOpenRequired(townRoot, rig string, v Wo
 		if want == "" {
 			continue
 		}
+		// Skip project_setup artifacts (go.mod, go.sum, requirements.txt, pyproject.toml)
+		// These are handled by the setup phase, not polecat implementation.
+		if IsProjectSetupArtifactPath(want, v) {
+			continue
+		}
 		covered, err := openBeadCoversRequiredPath(townRoot, rig, want, v)
 		if err != nil {
 			return reopened, err
