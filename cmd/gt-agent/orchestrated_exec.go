@@ -321,6 +321,11 @@ func rewriteUnittestToWorkdir(cmd, rig string, v orchestrator.WorkflowValidation
 	if isDevServerSmokeCommand(cmd) && (commandHasMayorRigCD(cmd, rig) || commandHasLayoutCD(cmd, layout)) {
 		return cmd, false
 	}
+	// Rewriting cd for a command that creates a symlink with a relative target
+	// would break path resolution (e.g. ln -sfn ../../web web).
+	if hasSymlinkWithRelativeTarget(cmd) {
+		return cmd, false
+	}
 	changed := false
 	if !orchestrator.IsPythonImportCheckCommand(cmd) {
 		if fixed := orchestrator.NormalizePytestCommand(cmd); fixed != cmd {

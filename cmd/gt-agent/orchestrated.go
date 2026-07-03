@@ -1110,9 +1110,22 @@ func planMDMeetsMinSize(townRoot, rig string, v orchestrator.WorkflowValidation)
 	return info.Size() >= orchestrator.EffectiveMinPlanBytes(rigDir, v)
 }
 
+// symlinkRelativeTargetRE matches `ln -s` (or `ln -sf`, `ln -sfn`, etc.) followed by a relative
+// target path (starting with ../ or ./ or ../...). Rewriting the cd prefix of such a command
+// would break the relative-path resolution.
+var symlinkRelativeTargetRE = regexp.MustCompile(`\bln\s+(?:-\S+\s+)*-s\w*\s+(\.\.?/)`)
+
+// hasSymlinkWithRelativeTarget reports whether cmd creates a symlink with a relative target.
+func hasSymlinkWithRelativeTarget(cmd string) bool {
+	return symlinkRelativeTargetRE.MatchString(strings.ToLower(cmd))
+}
+
 // rewriteBackendPathAfterCD fixes paths like rig/mayor/rig/<layout>/... after cd into mayor/rig.
 // Uses profile layout_root when set; otherwise "backend" for legacy Python rigs.
 func rewriteBackendPathAfterCD(cmd, rig, layoutRoot string) (string, bool) {
+	if hasSymlinkWithRelativeTarget(cmd) {
+		return cmd, false
+	}
 	rigName := strings.TrimSpace(rig)
 	layout := strings.Trim(strings.TrimSpace(layoutRoot), "/")
 	if layout == "" || layout == "." {

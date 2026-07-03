@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/steveyegge/gastown/internal/orchestrator"
@@ -58,8 +59,17 @@ func commandRemovesLayoutTree(cmd string, v orchestrator.WorkflowValidation) boo
 			return true
 		}
 	}
-	return strings.Contains(lower, "rm -rf") &&
-		(strings.Contains(lower, "main.go") || strings.Contains(lower, "main_test.go") || strings.Contains(lower, "/cmd"))
+	if strings.Contains(lower, "rm -rf") &&
+		(strings.Contains(lower, "main.go") || strings.Contains(lower, "main_test.go") || strings.Contains(lower, "/cmd")) {
+		return true
+	}
+	// Reject any rm command that targets .go files (e.g. rm -f cmd/server/*.go, rm main.go).
+	// This catches glob deletion patterns not covered by the -rf checks above.
+	if !strings.Contains(lower, "rm -rf") && !strings.Contains(lower, "rm -r ") &&
+		strings.Contains(lower, ".go") && regexp.MustCompile(`\brm\b`).MatchString(lower) {
+		return true
+	}
+	return false
 }
 
 func isGoModTidyCommand(cmd string) bool {
@@ -255,6 +265,12 @@ func validateGoImplementationCommand(cmd, townRoot, rig, mayorRigDir, activeBead
 	}
 	if commandRemovesLayoutTree(cmd, v) {
 		return fmt.Errorf("do not rm source trees under %s/ during implementation — use EDIT:/WRITE: on the active bead", v.LayoutRootDir())
+	}
+	if !orchestrator.WorkflowUsesPython(v) {
+		lower := strings.ToLower(cmd)
+		if strings.Contains(lower, "pip install") || strings.Contains(lower, ".venv/bin/python") || strings.Contains(lower, "python -m pytest") || strings.Contains(lower, "python3 -m pytest") {
+			return fmt.Errorf("this project uses Go, not Python — remove pip/pytest/.venv commands and use only Go toolchain (go test, go build, go fmt)")
+		}
 	}
 	lower := strings.ToLower(cmd)
 	if strings.Contains(lower, "./cmd/") || strings.Contains(lower, " cmd/") {
