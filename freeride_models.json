@@ -12,6 +12,12 @@
         "LLM_TIMEOUT": "1200s"
       }
     },
+    "gt-agent-deepseek": {
+      "model": "deepseek/deepseek-v4-flash",
+      "extra_env": {
+        "LLM_TIMEOUT": "1200s"
+      }
+    },
     "gt-agent-powerful": {
       "model": "ollama/llama3.3"
     },
@@ -27,14 +33,14 @@
     }
   },
   "role_agents": {
-    "architect": "gt-agent-gemini",
+    "architect": "gt-agent-deepseek",
     "crew": "gt-agent-local",
     "deacon": "gt-agent-local",
     "mechanic": "gt-agent-local",
     "mayor": "gt-agent-local",
     "planner": "gt-agent-local",
     "setup": "gt-agent-local",
-    "polecat": "gt-agent-gemini",
+    "polecat": "gt-agent-deepseek",
     "qa": "gt-agent-gemini",
     "refinery": "gt-agent-local",
     "witness": "gt-agent-local"
