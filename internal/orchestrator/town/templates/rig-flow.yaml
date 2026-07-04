@@ -155,7 +155,7 @@ states:
       on_timeout: [recover_implementation_stall]
       on_state_timeout: [recover_implementation_stall]
       cmd_timeout_seconds: 900
-      max_cmd_turns: 40
+      max_cmd_turns: 80
       omit_orchestrator_context: true
       system_prompt_footer: |
         **Target platform: {{target_os}}/{{target_arch}}** — use Unix paths only. Do NOT use Windows paths (C:\) or macOS-only conventions.
