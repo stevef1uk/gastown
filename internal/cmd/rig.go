@@ -730,19 +730,22 @@ func runRigAdd(cmd *cobra.Command, args []string) error {
 	// Auto-assign a namepool theme that doesn't collide with other rigs (gas-21k).
 	autoAssignNamepoolTheme(townRoot, name, mgr)
 
-	if wfID, err := orchestrator.MaybeAutoStartWorkflow(townRoot, name); err != nil {
-		fmt.Printf("  %s Orchestrator auto-start: %v\n", style.Warning.Render("!"), err)
-	} else if wfID != "" {
-		fmt.Printf("  Started orchestrator workflow: %s\n", wfID)
-	}
+	// Generate workflow-profile.json from SPEC.md BEFORE auto-starting the workflow,
+	// so the orchestrator has the full profile (layout_root, required_files, etc.)
+	// when planning begins.
+	maybeSpecIndexFromSPEC(townRoot, name)
+	maybeAutoSyncPlanningAfterRigSetup(townRoot, name)
 
 	// Sync hooks for the new rig's targets
 	if err := syncRigHooks(townRoot, name); err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: failed to sync hooks for new rig: %v\n", err)
 	}
 
-	maybeSpecIndexFromSPEC(townRoot, name)
-	maybeAutoSyncPlanningAfterRigSetup(townRoot, name)
+	if wfID, err := orchestrator.MaybeAutoStartWorkflow(townRoot, name); err != nil {
+		fmt.Printf("  %s Orchestrator auto-start: %v\n", style.Warning.Render("!"), err)
+	} else if wfID != "" {
+		fmt.Printf("  Started orchestrator workflow: %s\n", wfID)
+	}
 
 	// Commit town-level config changes (rigs.json, daemon.json, routes.jsonl)
 	// so they aren't reverted by git restore/checkout operations.
