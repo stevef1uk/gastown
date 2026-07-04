@@ -297,6 +297,9 @@ func validateGoImplementationCommand(cmd, townRoot, rig, mayorRigDir, activeBead
 		return fmt.Errorf("go test does not apply to web static assets (./web/...) — use EDIT:/WRITE: on CSS/JS/HTML files, then bd close when the artifact validates")
 	}
 	if isBeadCloseCommand(cmd) && !verifyOK {
+		if implementationVerifyAttemptBeforeBdClose(cmd, townRoot, rig, activeBead, v) {
+			return nil
+		}
 		if orchestrator.IsFrontendImplementPath(beadPath) {
 			if err := orchestrator.ValidateBeadArtifactOnDisk(mayorRigDir, beadPath, v); err != nil {
 				return fmt.Errorf("cannot bd close %s: %w — fix the file with EDIT:/WRITE: first", activeBead, err)

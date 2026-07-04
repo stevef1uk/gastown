@@ -170,6 +170,9 @@ func validatePythonImplementationCommand(cmd, townRoot, rig, activeBead string, 
 		}
 	}
 	if isBeadCloseCommand(cmd) && !verifyOK {
+		if implementationVerifyAttemptBeforeBdClose(cmd, townRoot, rig, activeBead, v) {
+			return nil
+		}
 		mayorDir := rigMayorRigDir(townRoot, rig)
 		beadPath := orchestrator.ImplementBeadPathForID(townRoot, rig, activeBead, v)
 		if orchestrator.IsTestImplementPath(beadPath) || orchestrator.WorkflowUsesPython(v) {

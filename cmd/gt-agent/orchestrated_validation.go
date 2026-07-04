@@ -209,6 +209,24 @@ func isImplementationVerifyCommandAttempt(cmd, townRoot, rig, activeBead, active
 	return false
 }
 
+func implementationVerifyAttemptBeforeBdClose(cmd, townRoot, rig, activeBead string, v orchestrator.WorkflowValidation) bool {
+	if !strings.Contains(strings.ToLower(cmd), "bd close") || !strings.Contains(cmd, "&&") {
+		return false
+	}
+	parts := strings.Split(cmd, "&&")
+	for i, part := range parts {
+		if isBeadCloseCommand(part) {
+			for j := 0; j < i; j++ {
+				if isImplementationVerifyCommandOK(strings.TrimSpace(parts[j]), townRoot, rig, activeBead, v) {
+					return true
+				}
+			}
+			return false
+		}
+	}
+	return false
+}
+
 // goVerifyCommandMatches accepts agent commands that cd into layout via rig/mayor/rig paths
 // while verify hints use layout-relative cd (cd linkshelf && go mod tidy).
 func goVerifyCommandMatches(cmd, verify string, v orchestrator.WorkflowValidation) bool {

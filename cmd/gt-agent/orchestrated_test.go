@@ -932,6 +932,20 @@ func TestValidatePythonImplementationCommand(t *testing.T) {
 	}
 }
 
+func TestValidatePythonImplementationCommand_allowsBdCloseAfterPriorVerifyAttempt(t *testing.T) {
+	dir := t.TempDir()
+	v := orchestrator.WorkflowValidation{
+		LayoutRoot:      "backend",
+		PythonVenvDir:   ".venv",
+		RequiredFiles:   []string{"backend/routes/__init__.py"},
+		QAVerifyCommand: "cd backend && python3 -m pytest -q",
+	}
+	cmd := `export BEADS_DIR=$GT_ROOT/fin/.beads && cd fin/mayor/rig && cd backend && python3 -m pytest -q && bd close tg-1`
+	if err := validatePythonImplementationCommand(cmd, dir, "fin", "tg-1", v, false); err != nil {
+		t.Fatalf("expected bd close allowed when prior verify attempt exists: %v", err)
+	}
+}
+
 func TestPythonImplementationVerifyAcceptance(t *testing.T) {
 	v := orchestrator.WorkflowValidation{
 		LayoutRoot:      "tasklist",
