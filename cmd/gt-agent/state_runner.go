@@ -94,7 +94,27 @@ func newStateRunner(task *orchestrator.Task, townRoot, rig string) *stateRunner 
 }
 
 func (r *stateRunner) maxTurns() int {
-	return r.hooks.EffectiveMaxCmdTurns()
+	base := r.hooks.EffectiveMaxCmdTurns()
+	if base <= 0 {
+		base = 40
+	}
+	phase := r.v.ForActivePhase()
+	if len(phase.RequiredFiles) > 0 {
+		openCount := 0
+		for _, f := range phase.RequiredFiles {
+			if strings.Contains(f, "Implement ") || strings.Contains(f, "implement ") {
+				openCount++
+			}
+		}
+		if openCount > 0 {
+			dynamic := base + openCount*5
+			if dynamic > 500 {
+				dynamic = 500
+			}
+			return dynamic
+		}
+	}
+	return base
 }
 
 func (r *stateRunner) runPreRun() {
