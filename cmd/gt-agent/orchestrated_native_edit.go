@@ -193,9 +193,11 @@ func (r *stateRunner) processOrchestratedTools(response, sessionName string, com
 		combined.WriteString(hint)
 		combined.WriteString("\n\n")
 	}
+	if msg := r.syncActiveImplementBeadFromQueue(); msg != "" {
+		combined.WriteString(fmt.Sprintf("\n**NOTE:** %s\n\n", msg))
+	}
 	var ranPreInProgress bool
 	if r.hooks.NativeEditTools {
-		r.syncActiveImplementBeadFromQueue()
 		ranPreInProgress = r.runInProgressBeadUpdatesBeforeNativeEdits(response, sessionName, combined)
 		ops := parseOrchestratedNativeEdits(response)
 		reads := 0
@@ -317,12 +319,13 @@ func isMarkdownFenceOnlyLine(t string) bool {
 }
 
 // reconcileActiveImplementBeadWithQueue aligns track state with the profile-order queue head.
-func (r *stateRunner) reconcileActiveImplementBeadWithQueue() {
+// Returns a non-empty message for the LLM-visible output when realignment occurred.
+func (r *stateRunner) reconcileActiveImplementBeadWithQueue() string {
 	if r.track == nil || !strings.EqualFold(strings.TrimSpace(r.hooks.Track), "implementation") {
-		return
+		return ""
 	}
 	if len(r.v.RequiredFiles) == 0 {
-		return
+		return ""
 	}
 	promoted, reopened, err := orchestrator.PromoteImplementQueueHead(r.townRoot, r.rig, r.v)
 	if err != nil {
@@ -330,7 +333,7 @@ func (r *stateRunner) reconcileActiveImplementBeadWithQueue() {
 	}
 	next, err := orchestrator.NextOpenImplementBead(r.townRoot, r.rig, r.v)
 	if err != nil || next == nil || next.ID == "" {
-		return
+		return ""
 	}
 	active := strings.TrimSpace(r.track.activeBead)
 	headPath := orchestrator.ImplementBeadPathForID(r.townRoot, r.rig, next.ID, r.v)
@@ -338,12 +341,15 @@ func (r *stateRunner) reconcileActiveImplementBeadWithQueue() {
 		if r.track.activeBeadPath == "" && headPath != "" {
 			r.track.activeBeadPath = headPath
 		}
-		return
+		return ""
 	}
+	var msg string
 	if active != "" || len(reopened) > 0 || promoted != "" {
 		if active != "" {
+			msg = fmt.Sprintf("Active bead realigned from %s to %s — work on %s", active, next.ID, next.Title)
 			orchestratedPrintf("[gt-agent] realigned active bead %s → queue head %s (%s)\n", active, next.ID, next.Title)
 		} else if promoted != "" || len(reopened) > 0 {
+			msg = fmt.Sprintf("Implement queue head %s — %s", next.ID, next.Title)
 			orchestratedPrintf("[gt-agent] implement queue head %s (%s) is in_progress\n", next.ID, next.Title)
 		}
 	}
@@ -359,11 +365,13 @@ func (r *stateRunner) reconcileActiveImplementBeadWithQueue() {
 			orchestratedFprintfStderr("[gt-agent] implementation progress save: %v\n", err)
 		}
 	}
+	return msg
 }
 
 // syncActiveImplementBeadFromQueue aligns track.activeBead with the implementation queue head.
-func (r *stateRunner) syncActiveImplementBeadFromQueue() {
-	r.reconcileActiveImplementBeadWithQueue()
+// Returns a non-empty message for the LLM-visible output when realignment occurred.
+func (r *stateRunner) syncActiveImplementBeadFromQueue() string {
+	return r.reconcileActiveImplementBeadWithQueue()
 }
 
 // runInProgressBeadUpdatesBeforeNativeEdits runs bd update --status=in_progress before EDIT/WRITE in the same turn.

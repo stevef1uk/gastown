@@ -88,6 +88,48 @@ func validatePythonProjectSetupArtifacts(townRoot, rig string, hadCmdFailure, ve
 	return nil
 }
 
+// isPythonVerifyCommand returns true when cmd is a compileall or pytest invocation
+// that serves as a per-bead verify (not pip install or other pip invocation).
+func isPythonVerifyCommand(cmd string) bool {
+	lower := strings.ToLower(cmd)
+	if strings.Contains(lower, "pip install") {
+		return false
+	}
+	return strings.Contains(lower, "compileall") || strings.Contains(lower, "pytest")
+}
+
+// pythonVerifyTarget extracts the file/directory path from a compileall or pytest command.
+// Returns empty string if no path is found.
+func pythonVerifyTarget(cmd string) string {
+	parts := strings.Fields(cmd)
+	if strings.Contains(strings.ToLower(cmd), "compileall") {
+		for i, p := range parts {
+			if p == "-q" && i+1 < len(parts) {
+				return parts[i+1]
+			}
+		}
+		// Fallback: last non-flag argument
+		for i := len(parts) - 1; i >= 0; i-- {
+			if !strings.HasPrefix(parts[i], "-") {
+				return parts[i]
+			}
+		}
+		return ""
+	}
+	if strings.Contains(strings.ToLower(cmd), "pytest") {
+		for _, p := range parts {
+			if p == "pytest" || strings.HasPrefix(p, "-") || strings.HasPrefix(p, ".") {
+				continue
+			}
+			if strings.Contains(p, "/") || strings.HasSuffix(p, ".py") || strings.HasSuffix(p, ".pyx") {
+				return p
+			}
+		}
+		return ""
+	}
+	return ""
+}
+
 func validateCustomImplementationCommand(cmd, townRoot, rig, activeBead string, v orchestrator.WorkflowValidation, verifyOK bool) error {
 	if orchestrator.WorkflowUsesGo(v) || orchestrator.WorkflowUsesPython(v) {
 		return nil
@@ -117,6 +159,15 @@ func validatePythonImplementationCommand(cmd, townRoot, rig, activeBead string, 
 	}
 	if isPipInstallRequirementsCommand(cmd) && verifyOK {
 		return fmt.Errorf("install dependencies in project_setup — venv and pip install already ran there")
+	}
+	if activeBead != "" && isPythonVerifyCommand(cmd) {
+		beadPath := orchestrator.ImplementBeadPathForID(townRoot, rig, activeBead, v)
+		if beadPath != "" {
+			target := pythonVerifyTarget(cmd)
+			if target != "" && !strings.HasPrefix(target, beadPath) && !strings.HasPrefix(beadPath, target) {
+				return fmt.Errorf("verify command targets %s but active bead is %s (%s) — finish the queue head bead first", target, activeBead, beadPath)
+			}
+		}
 	}
 	if isBeadCloseCommand(cmd) && !verifyOK {
 		mayorDir := rigMayorRigDir(townRoot, rig)
