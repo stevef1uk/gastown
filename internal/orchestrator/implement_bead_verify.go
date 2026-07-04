@@ -64,6 +64,26 @@ func (e *implementBeadVerifyEvaluator) GoSatisfied(beadPath string) bool {
 	return green
 }
 
+func (e *implementBeadVerifyEvaluator) PythonSatisfied(beadPath string) bool {
+	if e == nil || !WorkflowUsesPython(e.v) {
+		return false
+	}
+	beadPath = filepath.ToSlash(strings.TrimSpace(beadPath))
+	if beadPath == "" {
+		return false
+	}
+	if IsProjectSetupArtifactPath(beadPath, e.v) {
+		// project setup artifacts are not closed via per-bead verify here.
+		return false
+	}
+	if v, ok := e.memo[beadPath]; ok {
+		return v
+	}
+	green := implementBeadPythonVerifyGreenUncached(e.rigDir, beadPath, e.v)
+	e.memo[beadPath] = green
+	return green
+}
+
 func isActivePhaseGoModBead(beadPath string, v WorkflowValidation) bool {
 	beadPath = filepath.ToSlash(strings.TrimSpace(beadPath))
 	if beadPath == "" || (!strings.HasSuffix(beadPath, "/go.mod") && beadPath != "go.mod") {
@@ -108,6 +128,9 @@ func (e *implementBeadVerifyEvaluator) VerifySatisfied(beadPath string) bool {
 		return false
 	}
 	if e.GoSatisfied(beadPath) {
+		return true
+	}
+	if e.PythonSatisfied(beadPath) {
 		return true
 	}
 	if !IsFrontendImplementPath(beadPath) {
@@ -169,11 +192,45 @@ func RunGoCompileVerifyForBead(mayorRigDir, beadPath string, v WorkflowValidatio
 	return nil
 }
 
+func RunPythonVerifyForBead(mayorRigDir, beadPath string, v WorkflowValidation) error {
+	if !WorkflowUsesPython(v) {
+		return fmt.Errorf("not a Python workflow")
+	}
+	verify := strings.TrimSpace(ImplementationVerifyCommandForBead(v, mayorRigDir, beadPath))
+	if verify == "" {
+		return fmt.Errorf("empty verify command for %s", beadPath)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), beadVerifyTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "/bin/bash", "-c", verify)
+	cmd.Dir = mayorRigDir
+	cmd.Env = os.Environ()
+	out, runErr := cmd.CombinedOutput()
+	if runErr != nil {
+		text := strings.TrimSpace(string(out))
+		if text == "" {
+			text = runErr.Error()
+		}
+		if ctx.Err() == context.DeadlineExceeded {
+			return fmt.Errorf("verify timed out after %v: %s", beadVerifyTimeout, text)
+		}
+		return fmt.Errorf("verify failed: %w\n%s", runErr, text)
+	}
+	return nil
+}
+
 func implementBeadGoVerifyGreenUncached(rigDir, beadPath string, v WorkflowValidation) bool {
 	if err := ValidateBeadArtifactOnDisk(rigDir, beadPath, v); err != nil {
 		return false
 	}
 	return RunGoCompileVerifyForBead(rigDir, beadPath, v) == nil
+}
+
+func implementBeadPythonVerifyGreenUncached(rigDir, beadPath string, v WorkflowValidation) bool {
+	if err := ValidateBeadArtifactOnDisk(rigDir, beadPath, v); err != nil {
+		return false
+	}
+	return RunPythonVerifyForBead(rigDir, beadPath, v) == nil
 }
 
 // ImplementBeadGoVerifyGreen reports whether a Go implement bead's file exists and its Verify passes.
@@ -348,7 +405,6 @@ func reopenClosedImplementBeadsOrdered(townRoot, rig string, v WorkflowValidatio
 	if len(closed) == 0 {
 		return nil, nil
 	}
-	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
 	var reopened []string
 	for _, rel := range orderedImplementBeadPaths(v) {
 		b, ok := closed[filepath.ToSlash(rel)]
@@ -358,9 +414,7 @@ func reopenClosedImplementBeadsOrdered(townRoot, rig string, v WorkflowValidatio
 		if IsProjectSetupArtifactPath(rel, v) {
 			continue
 		}
-		if !beadImplementationNeedsRework(rigDir, rel, v) {
-			continue
-		}
+		// Keep beads closed when on-disk validation passes.
 		if eval.VerifySatisfied(rel) {
 			continue
 		}

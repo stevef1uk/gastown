@@ -2,6 +2,7 @@ package orchestrator
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -21,6 +22,28 @@ func writeMinimalGoModule(t *testing.T, rigDir string) {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(storeDir, "store_test.go"), []byte("package store\n\nimport \"testing\"\n\nfunc TestList(t *testing.T) {}\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func writeMinimalPythonProject(t *testing.T, rigDir string) {
+	t.Helper()
+	layout := filepath.Join(rigDir, "app")
+	if err := os.MkdirAll(layout, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(layout, "main.py"), []byte("def main():\n    return 42\n\nif __name__ == '__main__':\n    print(main())\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	venvBin := filepath.Join(rigDir, ".venv", "bin")
+	if err := os.MkdirAll(venvBin, 0755); err != nil {
+		t.Fatal(err)
+	}
+	sysPython, err := exec.LookPath("python3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(sysPython, filepath.Join(venvBin, "python3")); err != nil && !os.IsExist(err) {
 		t.Fatal(err)
 	}
 }
@@ -159,6 +182,224 @@ func TestReopenClosedImplementBeadsOrdered_skipsGreenVerify(t *testing.T) {
 	}
 	if len(reopened) != 0 {
 		t.Fatalf("reopened=%v want none when go test passes", reopened)
+	}
+}
+
+func TestReopenClosedImplementBeadsOrdered_reopensWhenGoVerifyFails(t *testing.T) {
+	dir := t.TempDir()
+	rig := "rig"
+	rigDir := filepath.Join(dir, rig, "mayor", "rig")
+	writeMinimalGoModule(t, rigDir)
+	if err := os.WriteFile(filepath.Join(rigDir, "app", "internal", "store", "store.go"), []byte("package store\n\nfunc List() int { return broken }\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	v := WorkflowValidation{
+		LayoutRoot:        "app",
+		BeadTitleContains: "Implement",
+		QAVerifyCommand:   "cd app && go test ./...",
+		RequiredFiles:     []string{"app/internal/store/store.go"},
+		MinImplementationFileBytes: 1,
+		MinSubstantiveLines:        1,
+	}
+
+	prev := ListImplementBeadsByStatusHook
+	ListImplementBeadsByStatusHook = func(townRoot, rig string, v WorkflowValidation, status string) ([]PlanBead, error) {
+		if status == "closed" {
+			return []PlanBead{{ID: "b1", Title: "Implement app/internal/store/store.go per architecture"}}, nil
+		}
+		return nil, nil
+	}
+	prevUpdate := bdUpdateImplementBeadStatusHook
+	bdUpdateImplementBeadStatusHook = func(townRoot, rig, beadID, status string) error {
+		return nil
+	}
+	defer func() {
+		ListImplementBeadsByStatusHook = prev
+		bdUpdateImplementBeadStatusHook = prevUpdate
+	}()
+
+	eval := newImplementBeadVerifyEvaluator(rigDir, v)
+	reopened, err := reopenClosedImplementBeadsOrdered(dir, rig, v, eval)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reopened) != 1 || reopened[0] != "b1" {
+		t.Fatalf("reopened=%v want [b1] when go test fails", reopened)
+	}
+}
+
+func TestReopenClosedImplementBeadsOrdered_skipsPythonGreenVerify(t *testing.T) {
+	dir := t.TempDir()
+	rig := "rig"
+	rigDir := filepath.Join(dir, rig, "mayor", "rig")
+	writeMinimalPythonProject(t, rigDir)
+
+	v := WorkflowValidation{
+		LayoutRoot:        "app",
+		BeadTitleContains: "Implement",
+		PythonVenvDir:     ".venv",
+		RequiredFiles:     []string{"app/main.py"},
+		MinImplementationFileBytes: 1,
+		MinSubstantiveLines:        1,
+	}
+
+	prev := ListImplementBeadsByStatusHook
+	ListImplementBeadsByStatusHook = func(townRoot, rig string, v WorkflowValidation, status string) ([]PlanBead, error) {
+		if status == "closed" {
+			return []PlanBead{{ID: "b1", Title: "Implement app/main.py per architecture"}}, nil
+		}
+		return nil, nil
+	}
+	prevUpdate := bdUpdateImplementBeadStatusHook
+	bdUpdateImplementBeadStatusHook = func(townRoot, rig, beadID, status string) error {
+		return nil
+	}
+	defer func() {
+		ListImplementBeadsByStatusHook = prev
+		bdUpdateImplementBeadStatusHook = prevUpdate
+	}()
+
+	eval := newImplementBeadVerifyEvaluator(rigDir, v)
+	reopened, err := reopenClosedImplementBeadsOrdered(dir, rig, v, eval)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reopened) != 0 {
+		t.Fatalf("reopened=%v want none when python verify passes", reopened)
+	}
+}
+
+func TestReopenClosedImplementBeadsOrdered_reopensWhenPythonVerifyFails(t *testing.T) {
+	dir := t.TempDir()
+	rig := "rig"
+	rigDir := filepath.Join(dir, rig, "mayor", "rig")
+	writeMinimalPythonProject(t, rigDir)
+	if err := os.WriteFile(filepath.Join(rigDir, "app", "main.py"), []byte("def main(\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	v := WorkflowValidation{
+		LayoutRoot:        "app",
+		BeadTitleContains: "Implement",
+		PythonVenvDir:     ".venv",
+		RequiredFiles:     []string{"app/main.py"},
+		MinImplementationFileBytes: 1,
+		MinSubstantiveLines:        1,
+	}
+
+	prev := ListImplementBeadsByStatusHook
+	ListImplementBeadsByStatusHook = func(townRoot, rig string, v WorkflowValidation, status string) ([]PlanBead, error) {
+		if status == "closed" {
+			return []PlanBead{{ID: "b1", Title: "Implement app/main.py per architecture"}}, nil
+		}
+		return nil, nil
+	}
+	prevUpdate := bdUpdateImplementBeadStatusHook
+	bdUpdateImplementBeadStatusHook = func(townRoot, rig, beadID, status string) error {
+		return nil
+	}
+	defer func() {
+		ListImplementBeadsByStatusHook = prev
+		bdUpdateImplementBeadStatusHook = prevUpdate
+	}()
+
+	eval := newImplementBeadVerifyEvaluator(rigDir, v)
+	reopened, err := reopenClosedImplementBeadsOrdered(dir, rig, v, eval)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reopened) != 1 || reopened[0] != "b1" {
+		t.Fatalf("reopened=%v want [b1] when python verify fails", reopened)
+	}
+}
+
+func TestReopenClosedImplementBeadsForMissingOpenRequired_skipsGreenGoVerify(t *testing.T) {
+	dir := t.TempDir()
+	rig := "rig"
+	rigDir := filepath.Join(dir, rig, "mayor", "rig")
+	writeMinimalGoModule(t, rigDir)
+
+	v := WorkflowValidation{
+		LayoutRoot:        "app",
+		BeadTitleContains: "Implement",
+		QAVerifyCommand:   "cd app && go test ./...",
+		RequiredFiles:     []string{"app/internal/store/store.go"},
+		MinImplementationFileBytes: 1,
+		MinSubstantiveLines:        1,
+	}
+
+	prev := ListImplementBeadsByStatusHook
+	ListImplementBeadsByStatusHook = func(townRoot, rig string, v WorkflowValidation, status string) ([]PlanBead, error) {
+		if status == "closed" {
+			return []PlanBead{{ID: "b1", Title: "Implement app/internal/store/store.go per architecture"}}, nil
+		}
+		return nil, nil
+	}
+	prevUpdate := bdUpdateImplementBeadStatusHook
+	bdUpdateImplementBeadStatusHook = func(townRoot, rig, beadID, status string) error {
+		t.Fatalf("should not reopen a closed bead when verify passes")
+		return nil
+	}
+	defer func() {
+		ListImplementBeadsByStatusHook = prev
+		bdUpdateImplementBeadStatusHook = prevUpdate
+	}()
+
+	reopened, err := ReopenClosedImplementBeadsForMissingOpenRequired(dir, rig, v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reopened) != 0 {
+		t.Fatalf("reopened=%v want none when file verify passes", reopened)
+	}
+}
+
+func TestReopenClosedImplementBeadsForMissingOpenRequired_reopensWhenGoVerifyFails(t *testing.T) {
+	dir := t.TempDir()
+	rig := "rig"
+	rigDir := filepath.Join(dir, rig, "mayor", "rig")
+	writeMinimalGoModule(t, rigDir)
+	if err := os.WriteFile(filepath.Join(rigDir, "app", "internal", "store", "store.go"), []byte("package store\n\nfunc List() int { return broken }\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	v := WorkflowValidation{
+		LayoutRoot:        "app",
+		BeadTitleContains: "Implement",
+		QAVerifyCommand:   "cd app && go test ./...",
+		RequiredFiles:     []string{"app/internal/store/store.go"},
+		MinImplementationFileBytes: 1,
+		MinSubstantiveLines:        1,
+	}
+
+	prev := ListImplementBeadsByStatusHook
+	ListImplementBeadsByStatusHook = func(townRoot, rig string, v WorkflowValidation, status string) ([]PlanBead, error) {
+		if status == "closed" {
+			return []PlanBead{{ID: "b1", Title: "Implement app/internal/store/store.go per architecture"}}, nil
+		}
+		return nil, nil
+	}
+	var reopenedIDs []string
+	prevUpdate := bdUpdateImplementBeadStatusHook
+	bdUpdateImplementBeadStatusHook = func(townRoot, rig, beadID, status string) error {
+		reopenedIDs = append(reopenedIDs, beadID)
+		return nil
+	}
+	defer func() {
+		ListImplementBeadsByStatusHook = prev
+		bdUpdateImplementBeadStatusHook = prevUpdate
+	}()
+
+	reopened, err := ReopenClosedImplementBeadsForMissingOpenRequired(dir, rig, v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reopened) != 1 || reopened[0] != "b1 (app/internal/store/store.go)" {
+		t.Fatalf("reopened=%v want [b1 (app/internal/store/store.go)]", reopened)
+	}
+	if len(reopenedIDs) != 1 || reopenedIDs[0] != "b1" {
+		t.Fatalf("bdUpdate called=%v want [b1]", reopenedIDs)
 	}
 }
 

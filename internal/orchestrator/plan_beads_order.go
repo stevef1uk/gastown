@@ -1305,6 +1305,8 @@ func ReopenClosedImplementBeadsForMissingOpenRequired(townRoot, rig string, v Wo
 	if len(v.RequiredFiles) == 0 {
 		return nil, nil
 	}
+	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
+	eval := newImplementBeadVerifyEvaluator(rigDir, v)
 	var reopened []string
 	for _, want := range v.RequiredFiles {
 		want = filepath.ToSlash(strings.TrimSpace(want))
@@ -1321,6 +1323,9 @@ func ReopenClosedImplementBeadsForMissingOpenRequired(townRoot, rig string, v Wo
 			return reopened, err
 		}
 		if covered {
+			continue
+		}
+		if eval.VerifySatisfied(want) {
 			continue
 		}
 		id, ok := ClosedImplementBeadForPath(townRoot, rig, want, v)
