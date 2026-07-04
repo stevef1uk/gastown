@@ -127,6 +127,9 @@ func ImplementationRuntimeSmokeOK(townRoot, rig string, v WorkflowValidation) er
 		return fmt.Errorf("empty runtime smoke script for %s", moduleDir)
 	}
 	_ = StopDevServersForRig(v, rigDir)
+	if p := spec.Port; p > 0 {
+		_, _ = KillTCPListenersOnPort(p)
+	}
 	cmd := exec.Command("/bin/bash", "-c", script)
 	cmd.Dir = townRoot
 	env := os.Environ()
