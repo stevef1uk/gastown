@@ -95,6 +95,12 @@ func validateCustomImplementationCommand(cmd, townRoot, rig, activeBead string, 
 	if isBeadCloseCommand(cmd) && !verifyOK {
 		mayorDir := rigMayorRigDir(townRoot, rig)
 		beadPath := orchestrator.ImplementBeadPathForID(townRoot, rig, activeBead, v)
+		if beadPath != "" {
+			fullPath := filepath.Join(mayorDir, beadPath)
+			if info, err := os.Stat(fullPath); err == nil && info.Size() > 0 {
+				return nil
+			}
+		}
 		hint := orchestrator.ImplementationVerifyCommandForBead(v, mayorDir, beadPath)
 		return fmt.Errorf("run green verify before bd close: %s (in this session, since verify clears on restart)", hint)
 	}
