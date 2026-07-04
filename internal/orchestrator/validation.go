@@ -27,6 +27,10 @@ type WorkflowValidation struct {
 	MinSubstantiveLines        int      `yaml:"min_substantive_lines" json:"min_substantive_lines"`
 	// PythonVenvDir is the venv directory under mayor/rig (default ".venv"). Set "off" to disable.
 	PythonVenvDir string `yaml:"python_venv_dir" json:"python_venv_dir"`
+	// DevServerPort is the port the dev server listens on when the project is a web server.
+	// 0 means the project is not a server (CLI, library) — no port cleanup needed.
+	// Set during spec-index from SPEC.md; used by StopDevServersForRig.
+	DevServerPort int `yaml:"dev_server_port" json:"dev_server_port"`
 }
 
 // Artifact size guard defaults for rig-flow (gt rig spec-index / workflow-profile.json).
@@ -297,6 +301,9 @@ func mergeValidationFields(base, overlay WorkflowValidation) WorkflowValidation 
 	}
 	if overlay.PythonVenvDir != "" {
 		base.PythonVenvDir = overlay.PythonVenvDir
+	}
+	if overlay.DevServerPort > 0 {
+		base.DevServerPort = overlay.DevServerPort
 	}
 	base.QAVerifyCommand = NormalizePytestCommand(strings.TrimSpace(base.QAVerifyCommand))
 	return base

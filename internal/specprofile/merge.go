@@ -42,6 +42,9 @@ func mergeIndexedProfiles(parts []orchestrator.WorkflowValidation) orchestrator.
 		if p.MinArchitectureBytes > out.MinArchitectureBytes {
 			out.MinArchitectureBytes = p.MinArchitectureBytes
 		}
+		if p.DevServerPort > 0 && out.DevServerPort == 0 {
+			out.DevServerPort = p.DevServerPort
+		}
 		out.DeliveryPhases = appendPhaseList(out.DeliveryPhases, p.DeliveryPhases)
 		out.RequiredFiles = unionPaths(out.RequiredFiles, p.RequiredFiles)
 	}

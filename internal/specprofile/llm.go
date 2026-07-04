@@ -102,6 +102,7 @@ The JSON must match this shape (use sensible defaults for small tutorials; for l
   "spec_summary": string,
   "min_architecture_bytes": number,
   "min_plan_bytes": number,
+  "dev_server_port": number,
   "confidence": string
 }
 
@@ -116,6 +117,7 @@ Rules:
 - spec_summary: 400–2500 characters summarizing goals, stack, directory layout, functional requirements to cover in unit tests, and how to run the test suite—so downstream agents need not re-read the full spec.
 - min_architecture_bytes: target 2500–5000 for most rigs; use 6000–8000 only when required_files has 15+ paths or the spec is very large. For ≤10 required_files use 2000–3500. Use 200–8192 only; NEVER copy SPEC byte length.
 - min_plan_bytes: ignored at runtime — plan.md must be ≥ half of architecture.md bytes (set min_architecture_bytes only).
+- dev_server_port: The port the dev server listens on. Set 0 if the project is NOT a web server (CLI tool, library, background worker, etc.). If the project IS a web server (handles HTTP requests, serves a web UI/API), set the port number explicitly if the spec mentions one (e.g. 8080, 3000, 5000, 8000), otherwise default to 8080 for Go servers and 8000 for Python servers.
 - confidence: "high", "medium", or "low".
 
 Output JSON only.`
@@ -132,6 +134,7 @@ type specIndexPayload struct {
 	SpecSummary          string                      `json:"spec_summary"`
 	MinArchitectureBytes int64                       `json:"min_architecture_bytes"`
 	MinPlanBytes         int64                       `json:"min_plan_bytes"`
+	DevServerPort        int                         `json:"dev_server_port"`
 	Confidence           string                      `json:"confidence"`
 }
 
@@ -151,6 +154,7 @@ func parseSpecIndexPayload(content string) (orchestrator.WorkflowValidation, str
 		SpecSummary:          strings.TrimSpace(payload.SpecSummary),
 		MinArchitectureBytes: payload.MinArchitectureBytes,
 		MinPlanBytes:         payload.MinPlanBytes,
+		DevServerPort:        payload.DevServerPort,
 	}
 	if v.LayoutRoot == "." {
 		v.LayoutRoot = ""

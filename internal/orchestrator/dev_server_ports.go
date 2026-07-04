@@ -55,10 +55,12 @@ func buildDevServerTracker(v WorkflowValidation, mayorRigDir string) *devServerT
 	for _, q := range []string{v.QAVerifyCommand, v.ActivePhaseQAVerifyCommand()} {
 		tr.noteCommand(q)
 	}
-	if WorkflowUsesGo(v) && GoServerMainExists(mayorRigDir, v) {
-		tr.goRunSeen = true
-		if len(tr.ports) == 0 {
-			tr.ports[8080] = struct{}{}
+	if v.DevServerPort > 0 {
+		if !protectedDevPorts[v.DevServerPort] {
+			tr.ports[v.DevServerPort] = struct{}{}
+		}
+		if WorkflowUsesGo(v) && GoServerMainExists(mayorRigDir, v) {
+			tr.goRunSeen = true
 		}
 	}
 	return tr
