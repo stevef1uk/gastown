@@ -18,12 +18,44 @@ func TestGoToolchainMismatch(t *testing.T) {
 	}
 }
 
-func TestGoTestArgsFromVerify(t *testing.T) {
+func TestGoToolArgsFromVerify_test(t *testing.T) {
 	t.Parallel()
 	v := DefaultWorkflowValidation()
 	v.QAVerifyCommand = "cd linkshelf && go test -count=1 ./internal/api/..."
-	got := goTestArgsFromVerify(v)
+	got := goToolArgsFromVerify(v)
 	want := []string{"test", "-count=1", "./internal/api/..."}
+	if len(got) != len(want) {
+		t.Fatalf("got %v want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("got %v want %v", got, want)
+		}
+	}
+}
+
+func TestGoToolArgsFromVerify_build(t *testing.T) {
+	t.Parallel()
+	v := DefaultWorkflowValidation()
+	v.QAVerifyCommand = "cd linkshelf && go build ./cmd/server/..."
+	got := goToolArgsFromVerify(v)
+	want := []string{"build", "./cmd/server/..."}
+	if len(got) != len(want) {
+		t.Fatalf("got %v want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("got %v want %v", got, want)
+		}
+	}
+}
+
+func TestGoToolArgsFromVerify_default(t *testing.T) {
+	t.Parallel()
+	v := DefaultWorkflowValidation()
+	v.QAVerifyCommand = "cd linkshelf && make test"
+	got := goToolArgsFromVerify(v)
+	want := []string{"test", "./..."}
 	if len(got) != len(want) {
 		t.Fatalf("got %v want %v", got, want)
 	}

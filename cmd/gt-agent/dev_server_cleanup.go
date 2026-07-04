@@ -116,6 +116,8 @@ func killGoRunServerProcesses() {
 	patterns := []string{
 		`go run.*cmd/server`,
 		`go run.*\/server/main`,
+		`go-build.*server\.test`,
+		`server\.test.*test\.`,
 	}
 	for _, pat := range patterns {
 		out, _ := exec.Command(pkill, "-f", pat).CombinedOutput()

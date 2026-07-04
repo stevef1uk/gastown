@@ -1,12 +1,16 @@
 package orchestrator
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 )
+
+const goTestTimeout = 5 * time.Minute
 
 // GoToolchainMismatch reports broken local Go installs (compiler vs go tool version skew).
 func GoToolchainMismatch(err error, output string) bool {
@@ -18,14 +22,18 @@ func GoToolchainMismatch(err error, output string) bool {
 	return strings.Contains(text, "does not match go tool version")
 }
 
-// goTestArgsFromVerify extracts `go test` arguments from a profile qa_verify_command.
-func goTestArgsFromVerify(v WorkflowValidation) []string {
+// goToolArgsFromVerify extracts `go test` or `go build` arguments from a profile qa_verify_command.
+// Falls back to `go test ./...` when neither is found.
+func goToolArgsFromVerify(v WorkflowValidation) []string {
 	cmd := strings.TrimSpace(v.QAVerifyCommand)
 	lower := strings.ToLower(cmd)
-	if idx := strings.Index(lower, "go test"); idx >= 0 {
-		rest := strings.Fields(cmd[idx+len("go test"):])
-		if len(rest) > 0 {
-			return append([]string{"test"}, rest...)
+	for _, tool := range []string{"go test", "go build"} {
+		if idx := strings.Index(lower, tool); idx >= 0 {
+			rest := strings.Fields(cmd[idx+len(tool):])
+			if len(rest) > 0 {
+				toolName := strings.TrimSpace(strings.Fields(tool)[1])
+				return append([]string{toolName}, rest...)
+			}
 		}
 	}
 	return []string{"test", "./..."}
@@ -92,11 +100,13 @@ func ImplementationModuleCompileOK(rigDir string, v WorkflowValidation) error {
 		return fmt.Errorf("go not in PATH: %w", err)
 	}
 	var combined strings.Builder
-	for _, args := range [][]string{{"mod", "tidy"}, goTestArgsFromVerify(v)} {
-		cmd := exec.Command(goBin, args...)
+	for _, args := range [][]string{{"mod", "tidy"}, goToolArgsFromVerify(v)} {
+		ctx, cancel := context.WithTimeout(context.Background(), goTestTimeout)
+		cmd := exec.CommandContext(ctx, goBin, args...)
 		cmd.Dir = moduleDir
 		cmd.Env = os.Environ()
 		out, runErr := cmd.CombinedOutput()
+		cancel()
 		if len(out) > 0 {
 			combined.Write(out)
 		}
@@ -104,6 +114,9 @@ func ImplementationModuleCompileOK(rigDir string, v WorkflowValidation) error {
 			text := strings.TrimSpace(combined.String())
 			if text == "" {
 				text = runErr.Error()
+			}
+			if ctx.Err() == context.DeadlineExceeded {
+				return fmt.Errorf("module compile/test timed out after %v: %s", goTestTimeout, text)
 			}
 			return fmt.Errorf("module compile/test failed: %w\n%s", runErr, text)
 		}

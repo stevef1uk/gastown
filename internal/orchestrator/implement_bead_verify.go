@@ -1,6 +1,7 @@
 package orchestrator
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -8,9 +9,12 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/steveyegge/gastown/internal/config"
 )
+
+const beadVerifyTimeout = 5 * time.Minute
 
 // bdCloseImplementBeadHook is set by tests to avoid calling bd close.
 var bdCloseImplementBeadHook func(townRoot, rig, beadID string) error
@@ -146,7 +150,9 @@ func RunGoCompileVerifyForBead(mayorRigDir, beadPath string, v WorkflowValidatio
 	if verify == "" {
 		return fmt.Errorf("empty verify command for %s", beadPath)
 	}
-	cmd := exec.Command("/bin/bash", "-c", verify)
+	ctx, cancel := context.WithTimeout(context.Background(), beadVerifyTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "/bin/bash", "-c", verify)
 	cmd.Dir = mayorRigDir
 	cmd.Env = os.Environ()
 	out, runErr := cmd.CombinedOutput()
@@ -154,6 +160,9 @@ func RunGoCompileVerifyForBead(mayorRigDir, beadPath string, v WorkflowValidatio
 		text := strings.TrimSpace(string(out))
 		if text == "" {
 			text = runErr.Error()
+		}
+		if ctx.Err() == context.DeadlineExceeded {
+			return fmt.Errorf("verify timed out after %v: %s", beadVerifyTimeout, text)
 		}
 		return fmt.Errorf("verify failed: %w\n%s", runErr, text)
 	}
