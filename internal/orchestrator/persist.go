@@ -16,6 +16,14 @@ func InstancesPath(townRoot string) string {
 	return filepath.Join(townRoot, "orchestrator", instancesFileName)
 }
 
+// EnsureInstancesDir creates orchestrator/ under town root so atomic persist cannot fail on rename.
+func EnsureInstancesDir(townRoot string) error {
+	if strings.TrimSpace(townRoot) == "" {
+		return nil
+	}
+	return os.MkdirAll(filepath.Dir(InstancesPath(townRoot)), 0755)
+}
+
 type instancesSnapshot struct {
 	Instances []*WorkflowInstance `json:"instances"`
 	NextSeq   int                 `json:"next_seq"`
@@ -83,6 +91,9 @@ func maxInstanceSeq(instances map[string]*WorkflowInstance) int {
 }
 
 func (m *Manager) persistLocked() error {
+	if err := EnsureInstancesDir(m.townRoot); err != nil {
+		return err
+	}
 	snap := instancesSnapshot{
 		Instances: make([]*WorkflowInstance, 0, len(m.instances)),
 		NextSeq:   m.nextSeq,

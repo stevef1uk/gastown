@@ -65,7 +65,8 @@ func (r *stateRunner) qaReworkWriteScope() *orchestrator.ImplementWriteScope {
 		return nil
 	}
 	pr := r.task.PendingRework
-	sc := orchestrator.QAReworkWriteScopeFromTransition(r.townRoot, r.rig, pr.FromState, r.task.State, pr.Summary)
+	sc := orchestrator.QAReworkWriteScopeFromTransition(r.townRoot, r.rig, pr.FromState, r.task.State,
+		orchestrator.CombineQAReworkText(pr.Summary, pr.Feedback))
 	if !sc.QAReworkFromQAReview {
 		return nil
 	}
@@ -309,6 +310,14 @@ func (r *stateRunner) rewriteCommand(cmd string) string {
 		}
 	}
 	if r.hooks.CmdGuard == "qa" {
+		if fixed, ok := rewriteQALayoutVerifyCommand(cmd, r.rig, r.v); ok {
+			orchestratedPrintf("[gt-agent] rewrote QA layout verify cmd: %s\n", fixed)
+			cmd = fixed
+		}
+		if fixed, ok := rewriteUnittestToWorkdir(cmd, r.rig, r.v); ok {
+			orchestratedPrintf("[gt-agent] rewrote QA toolchain cmd for mayor/rig workdir: %s\n", fixed)
+			cmd = fixed
+		}
 		if fixed, ok := rewriteQAMayorRigPrefix(cmd, r.rig); ok {
 			orchestratedPrintf("[gt-agent] rewrote QA cmd for mayor/rig workdir: %s\n", fixed)
 			cmd = fixed

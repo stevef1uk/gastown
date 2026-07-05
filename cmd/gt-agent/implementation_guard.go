@@ -286,6 +286,9 @@ func (r *stateRunner) rejectImplementationNoOpFailure(outcome string) (string, b
 		}
 		return "", false
 	}
+	if openImpl == 0 && r.hasQAPendingRework() && r.pendingQAReworkShouldNotBlockPolecat() {
+		return "", false
+	}
 	return r.implementationNoOpFailureNudge(openImpl), true
 }
 
@@ -327,6 +330,9 @@ func (r *stateRunner) implementationNoOpenBeadsButWorkRemainsNudge() (string, bo
 		return "", false
 	}
 	if r.hasQAPendingRework() {
+		if r.pendingQAReworkShouldNotBlockPolecat() {
+			return "", false
+		}
 		return r.implementationNoOpFailureNudge(0), true
 	}
 	if orchestrator.WorkflowNeedsRuntimeSmoke(r.townRoot, r.rig, r.v) {
@@ -354,6 +360,28 @@ func (r *stateRunner) implementationNoOpenBeadsButWorkRemainsNudge() (string, bo
 		}
 	}
 	return "", false
+}
+
+// pendingQAReworkShouldNotBlockPolecat reports QA rework that should not trap polecat in a no-op loop
+// (spurious shell/cd failure or active-phase work already green on disk with an empty bead queue).
+func (r *stateRunner) pendingQAReworkShouldNotBlockPolecat() bool {
+	if !r.hasQAPendingRework() || r.task == nil || r.task.PendingRework == nil {
+		return false
+	}
+	pr := r.task.PendingRework
+	text := orchestrator.CombineQAReworkText(pr.Summary, pr.Feedback)
+	if orchestrator.IsQAAgentShellError(text) &&
+		orchestrator.ImplementationPhaseVerifyOK(r.townRoot, r.rig, r.v) == nil {
+		return true
+	}
+	if openImplementBeadCount(r) != 0 {
+		return false
+	}
+	if orchestrator.ImplementationPhaseVerifyOK(r.townRoot, r.rig, r.v) != nil {
+		return false
+	}
+	rigDir := rigMayorRigDir(r.townRoot, r.rig)
+	return orchestrator.ImplementationDiskWorkReady(rigDir, r.v.ForActivePhase()) == nil
 }
 
 func (r *stateRunner) formatActiveBeadCompileFailureForNudge() string {

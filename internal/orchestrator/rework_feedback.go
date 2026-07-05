@@ -77,6 +77,29 @@ func extractLastSmokeFailure(raw string) string {
 }
 
 func prepareQAReviewToImplementationFeedback(summary, raw string, v WorkflowValidation) string {
+	if IsQAAgentShellError(summary) {
+		var b strings.Builder
+		b.WriteString("QA command failed due to wrong working directory (not an implementation defect).\n\n")
+		if summary != "" {
+			b.WriteString("QA summary: ")
+			b.WriteString(summary)
+			b.WriteString("\n")
+		}
+		verify := strings.TrimSpace(v.ActivePhaseQAVerifyCommand())
+		if verify == "" {
+			verify = strings.TrimSpace(v.QAVerifyCommand)
+		}
+		layout := v.LayoutRootDir()
+		b.WriteString("\nPolecat: active-phase work on disk is valid — send JSON **success** to return to qa_review.\n")
+		b.WriteString("QA (on retry): from mayor/rig run `")
+		if verify != "" {
+			b.WriteString(verify)
+		} else {
+			b.WriteString("cd " + layout + " && go mod download")
+		}
+		b.WriteString("` (gt-agent rewrites layout-relative cd paths).\n")
+		return strings.TrimSpace(b.String())
+	}
 	var b strings.Builder
 	if summary != "" {
 		b.WriteString("QA summary: ")
@@ -131,10 +154,14 @@ func prepareQAReviewToImplementationFeedback(summary, raw string, v WorkflowVali
 	b.WriteString("3. Run verification: `")
 	b.WriteString(verify)
 	b.WriteString("` — never paste shell into .py files.\n")
-	layout := v.LayoutRootDir()
-	b.WriteString("4. Replace stub/broken files under `")
-	b.WriteString(layout)
-	b.WriteString("/`; run tests until green; `bd close` each bead.\n")
+	if PhaseIsGoModOnly(v) {
+		b.WriteString("4. Active phase is **go-module** only — fix the go.mod bead path(s) from required_files if needed, then `bd close`; do not implement later-phase files until QA advances the delivery phase.\n")
+	} else {
+		layout := v.LayoutRootDir()
+		b.WriteString("4. Replace stub/broken files under `")
+		b.WriteString(layout)
+		b.WriteString("/`; run tests until green; `bd close` each bead.\n")
+	}
 	out := strings.TrimSpace(b.String())
 	if out != "" {
 		return out

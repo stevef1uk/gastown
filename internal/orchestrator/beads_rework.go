@@ -244,6 +244,9 @@ func qaFailureRequiresImplementationRework(summary string) bool {
 	if lower == "" {
 		return false
 	}
+	if IsQAAgentShellError(summary) {
+		return false
+	}
 	for _, needle := range []string{
 		"stub", "unittest", "reopen", "syntax", "import", "failed",
 		"404", "405", "/api/", "null not", "not []", "smoke failed", "smoke test failed",

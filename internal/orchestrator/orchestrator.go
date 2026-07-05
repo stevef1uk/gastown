@@ -99,6 +99,7 @@ func Start(townRoot string) error {
 	// Create a log file for the orchestrator
 	logDir := filepath.Join(townRoot, "logs")
 	_ = os.MkdirAll(logDir, 0755)
+	_ = EnsureInstancesDir(townRoot)
 	logFile, err := os.Create(filepath.Join(logDir, "orchestrator.log"))
 	if err == nil {
 		cmd.Stdout = logFile

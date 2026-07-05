@@ -573,6 +573,31 @@ func commandHasRigPathContext(cmd, rig string) bool {
 	return strings.Contains(lower, rigLower+"/") || strings.Contains(lower, "$gt_root/"+rigLower)
 }
 
+// rewriteQALayoutVerifyCommand fixes common QA agent mistakes: cd layout from town root,
+// or cd layout && cd mayor/rig before go mod/test verify.
+func rewriteQALayoutVerifyCommand(cmd, rig string, v orchestrator.WorkflowValidation) (string, bool) {
+	layout := strings.Trim(filepath.ToSlash(strings.TrimSpace(v.LayoutRoot)), "/")
+	if layout == "" || layout == "." {
+		return cmd, false
+	}
+	mayorRig := rigMayorRigPath(rig)
+	modulePath := orchestrator.GoModuleWorkPathRelative(mayorRig, layout)
+	trimmed := strings.TrimSpace(cmd)
+	lower := strings.ToLower(trimmed)
+
+	badPrefix := "cd " + layout + " && cd " + mayorRig + " && "
+	if strings.HasPrefix(lower, strings.ToLower(badPrefix)) {
+		rest := strings.TrimSpace(trimmed[len(badPrefix):])
+		return "cd " + modulePath + " && " + rest, true
+	}
+	goodPrefix := "cd " + layout + " && "
+	if strings.HasPrefix(lower, strings.ToLower(goodPrefix)) && !commandHasMayorRigCD(trimmed, rig) {
+		rest := strings.TrimSpace(trimmed[len(goodPrefix):])
+		return "cd " + modulePath + " && " + rest, true
+	}
+	return cmd, false
+}
+
 // rewriteQAMayorRigPrefix prepends mayor/rig (and BEADS_DIR for bd) when QA uses bare relative paths.
 // gt-agent cwd is town root; cd in one CMD line does not persist to the next.
 func rewriteQAMayorRigPrefix(cmd, rig string) (string, bool) {

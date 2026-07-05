@@ -309,7 +309,7 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summa
 		inst.touchStateEnteredAt()
 	}
 	if fromState == "qa_review" && IsFailureOutcome(outcome) && next == "implementation" && rig != "" {
-		if reason := rejectSpuriousQAFailure(m.townRoot, rig, summary); reason != "" {
+		if reason := rejectSpuriousQAFailure(m.townRoot, rig, summary, feedback); reason != "" {
 			return "", fmt.Errorf("qa failure rejected: %s", reason)
 		}
 	}
@@ -354,7 +354,8 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summa
 			rig = inst.Variables["rig"]
 		}
 		if fromState == "qa_review" && next == "implementation" && rig != "" && phaseAdvance == nil {
-			if reopened, rerr := ReopenImplementationBeadsAfterQAFailure(m.townRoot, rig, v, summary); rerr != nil {
+			reopenText := CombineQAReworkText(summary, feedback)
+			if reopened, rerr := ReopenImplementationBeadsAfterQAFailure(m.townRoot, rig, v, reopenText); rerr != nil {
 				fmt.Printf("[Manager] Warning: reopen implement beads after QA failure: %v\n", rerr)
 			} else if len(reopened) > 0 {
 				reworkFeedback = strings.TrimSpace(reworkFeedback + "\n\nAuto-reopened closed implement beads: " + strings.Join(reopened, ", "))

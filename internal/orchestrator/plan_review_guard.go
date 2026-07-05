@@ -206,7 +206,11 @@ var htmlGetElementByIDRE = regexp.MustCompile(`getElementById\s*\(\s*["']([^"']+
 // rejectSpuriousQAFailure validates QA failure claims against on-disk files before
 // allowing the workflow to return to implementation. Returns a rejection reason when
 // the QA's claim is contradicted by files that already exist and are correct.
-func rejectSpuriousQAFailure(townRoot, rig, summary string) string {
+func rejectSpuriousQAFailure(townRoot, rig, summary, rawFeedback string) string {
+	combined := CombineQAReworkText(summary, rawFeedback)
+	if IsQAAgentShellError(combined) && phaseVerifyPasses(townRoot, rig) {
+		return "QA command failed due to wrong working directory — phase verify passes on disk; QA must re-run verify from mayor/rig (do not send workflow to implementation)"
+	}
 	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
 	lower := strings.ToLower(strings.TrimSpace(summary))
 	if strings.Contains(lower, "does not exist") || strings.Contains(lower, "missing") ||
@@ -238,7 +242,7 @@ func rejectSpuriousQAFailure(townRoot, rig, summary string) string {
 	}
 	// If QA reports ANY failure but phase verify passes on disk, the QA claim is wrong.
 	// Prevents wasteful polecat re-implementation of already-correct code.
-	if isFailureKeyWord(summary) && phaseVerifyPasses(townRoot, rig) {
+	if (isFailureKeyWord(summary) || IsQAAgentShellError(combined)) && phaseVerifyPasses(townRoot, rig) {
 		return "QA reports failure but phase verify passes on disk — QA claim is spurious"
 	}
 	return ""
@@ -247,7 +251,8 @@ func rejectSpuriousQAFailure(townRoot, rig, summary string) string {
 func isFailureKeyWord(summary string) bool {
 	lower := strings.ToLower(summary)
 	for _, w := range []string{"missing", "not found", "no such", "does not exist",
-		"broken", "incomplete", "truncated", "missing file", "doesn't exist"} {
+		"broken", "incomplete", "truncated", "missing file", "doesn't exist",
+		"exit status", "can't cd", "cannot cd", "command not found"} {
 		if strings.Contains(lower, w) {
 			return true
 		}
