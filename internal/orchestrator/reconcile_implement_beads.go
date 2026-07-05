@@ -3,8 +3,11 @@ package orchestrator
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/steveyegge/gastown/internal/config"
 )
 
 // ValidateBeadArtifactOnDisk reports whether a layout-relative implement path exists and is not stubbed.
@@ -259,6 +262,16 @@ func ReconcileImplementBeads(townRoot, rig string, v WorkflowValidation) (string
 	if len(goModClosed) > 0 {
 		autoClosed = append(autoClosed, goModClosed...)
 	}
+	// Conservative auto-close: inert frontend/config beads (empty or stubbed files)
+	// This helps rigs progress past trivial frontend placeholders while leaving
+	// implementation queue semantics intact for core code.
+	inertClosed, cerr := CloseInertImplementBeads(townRoot, rig, v)
+	if cerr != nil {
+		return "", cerr
+	}
+	if len(inertClosed) > 0 {
+		autoClosed = append(autoClosed, inertClosed...)
+	}
 
 	if phaseErr == nil {
 		var err error
@@ -384,4 +397,71 @@ func containsString(ss []string, s string) bool {
 		}
 	}
 	return false
+}
+
+// CloseInertImplementBeads closes open/in_progress implement beads whose on-disk
+// artifact is empty or clearly a trivial stub and where the path is a frontend
+// or small config/manifest file. This is conservative: only frontend-like
+// artifacts are auto-closed here to avoid hiding missing implementation work.
+func CloseInertImplementBeads(townRoot, rig string, v WorkflowValidation) ([]string, error) {
+	v = v.ForActivePhase()
+	if townRoot == "" || rig == "" {
+		return nil, nil
+	}
+	if !BeadsDatabaseReady(townRoot, rig) {
+		return nil, nil
+	}
+	active, err := ListImplementBeadsOpenOrInProgress(townRoot, rig, v)
+	if err != nil || len(active) == 0 {
+		return nil, err
+	}
+	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
+	var closed []string
+	for _, b := range active {
+		rel := resolveImplementBeadPath(b.Title, v)
+		if rel == "" || IsProjectSetupArtifactPath(rel, v) {
+			continue
+		}
+		// Only consider frontend / small assets or dependency manifests for inert auto-close.
+		if !IsFrontendImplementPath(rel) && !IsDependencyManifest(rel) {
+			continue
+		}
+		full := filepath.Join(rigDir, filepath.FromSlash(rel))
+		info, err := os.Stat(full)
+		if err != nil {
+			continue
+		}
+		// Empty file -> inert
+		if info.Size() == 0 {
+			beadsDir := config.ResolveBeadsDirForRig(townRoot, rig)
+			cmd := exec.Command("bd", "close", b.ID, "--reason=auto:inert-bead")
+			cmd.Env = append(os.Environ(), "BEADS_DIR="+beadsDir)
+			cmd.Dir = rigDir
+			out, err := cmd.CombinedOutput()
+			if err == nil {
+				closed = append(closed, b.ID)
+				continue
+			}
+			return closed, fmt.Errorf("bd close %s: %w: %s", b.ID, err, strings.TrimSpace(string(out)))
+		}
+		// Non-empty but stubbed according to heuristics -> inert
+		data, err := os.ReadFile(full)
+		if err != nil {
+			continue
+		}
+		opts := StubCheckOptionsFromValidation(v)
+		if err := CheckContentNotStub(data, rel, optsForPath(rel, opts)); err != nil {
+			beadsDir := config.ResolveBeadsDirForRig(townRoot, rig)
+			cmd := exec.Command("bd", "close", b.ID, "--reason=auto:inert-bead")
+			cmd.Env = append(os.Environ(), "BEADS_DIR="+beadsDir)
+			cmd.Dir = rigDir
+			out, err := cmd.CombinedOutput()
+			if err == nil {
+				closed = append(closed, b.ID)
+				continue
+			}
+			return closed, fmt.Errorf("bd close %s: %w: %s", b.ID, err, strings.TrimSpace(string(out)))
+		}
+	}
+	return closed, nil
 }
