@@ -946,6 +946,25 @@ func TestValidatePythonImplementationCommand_allowsBdCloseAfterPriorVerifyAttemp
 	}
 }
 
+func TestAllowBeadCloseWhenVerifyIsPointless_rejectsPythonSourceWithRequiredTest(t *testing.T) {
+	dir := t.TempDir()
+	mayor := filepath.Join(dir, "mockrig", "mayor", "rig")
+	if err := os.MkdirAll(filepath.Join(mayor, "backend", "app"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(mayor, "backend", "app", "market_data.py"), []byte("print('ok')\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	v := orchestrator.WorkflowValidation{
+		LayoutRoot:    "backend",
+		RequiredFiles: []string{"backend/app/market_data.py", "backend/tests/test_market_data.py"},
+	}
+	err := allowBeadCloseWhenVerifyIsPointless(mayor, "backend/app/market_data.py", "tg-1", v)
+	if err == nil || !strings.Contains(err.Error(), "requires green verify") {
+		t.Fatalf("expected source bead close rejected when required test path exists, got %v", err)
+	}
+}
+
 func TestPythonImplementationVerifyAcceptance(t *testing.T) {
 	v := orchestrator.WorkflowValidation{
 		LayoutRoot:      "tasklist",

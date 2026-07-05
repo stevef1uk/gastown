@@ -175,7 +175,7 @@ func validatePythonImplementationCommand(cmd, townRoot, rig, activeBead string, 
 		}
 		mayorDir := rigMayorRigDir(townRoot, rig)
 		beadPath := orchestrator.ImplementBeadPathForID(townRoot, rig, activeBead, v)
-		if orchestrator.IsTestImplementPath(beadPath) || orchestrator.WorkflowUsesPython(v) {
+		if orchestrator.IsTestImplementPath(beadPath) {
 			return allowBeadCloseWhenVerifyIsPointless(mayorDir, beadPath, activeBead, v)
 		}
 		hint := orchestrator.PythonImplementationVerifyCommandForBead(v, mayorDir, beadPath)
@@ -205,6 +205,11 @@ func allowBeadCloseWhenVerifyIsPointless(mayorDir, beadPath, activeBead string, 
 			return fmt.Errorf("cannot bd close %s: test file %s is empty", activeBead, beadPath)
 		}
 		return nil
+	}
+	if beadPath != "" {
+		if testPath := orchestrator.CorrelatedTestPathForSource(beadPath, v); testPath != "" && orchestrator.TestPathListedInRequired(beadPath, v) {
+			return fmt.Errorf("cannot bd close %s: source file %s requires green verify because correlated test %s is required", activeBead, beadPath, testPath)
+		}
 	}
 	fullPath := filepath.Join(mayorDir, beadPath)
 	if _, err := os.Stat(fullPath); err != nil {
