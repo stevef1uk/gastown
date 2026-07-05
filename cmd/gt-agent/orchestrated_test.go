@@ -946,6 +946,13 @@ func TestValidatePythonImplementationCommand_allowsBdCloseAfterPriorVerifyAttemp
 	}
 }
 
+func TestPythonVerifyTargetMatchesActiveBead_allowsCorrelatedTestPath(t *testing.T) {
+	v := orchestrator.WorkflowValidation{LayoutRoot: "backend"}
+	if !pythonVerifyTargetMatchesActiveBead("backend/test_database.py", "backend/database.py", v) {
+		t.Fatal("expected correlated test path to be accepted for source bead")
+	}
+}
+
 func TestAllowBeadCloseWhenVerifyIsPointless_rejectsPythonSourceWithRequiredTest(t *testing.T) {
 	dir := t.TempDir()
 	mayor := filepath.Join(dir, "mockrig", "mayor", "rig")

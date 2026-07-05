@@ -82,6 +82,21 @@ func TestPrepareOrchestratedScript_scrubsOrphanQuote(t *testing.T) {
 	}
 }
 
+func TestPrepareOrchestratedScript_rewritesMultilinePythonC(t *testing.T) {
+	in := "cd mockrig/mayor/rig && python3 -c \"\nprint('hello')\nprint(\"world\")\n\""
+	got := prepareOrchestratedScript(in)
+	if !strings.Contains(got, "python3 - <<'PY'") {
+		t.Fatalf("expected heredoc rewrite, got %q", got)
+	}
+	scriptPath := filepath.Join(t.TempDir(), "t.sh")
+	if err := os.WriteFile(scriptPath, []byte("#!/bin/bash\nset -euo pipefail\n"+got+"\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := exec.Command("/bin/bash", "-n", scriptPath).CombinedOutput(); err != nil {
+		t.Fatalf("bash -n syntax check: %v\n%s", err, out)
+	}
+}
+
 func linkshelfSmokeTestRig(t *testing.T) (townRoot, rig string, v orchestrator.WorkflowValidation) {
 	t.Helper()
 	townRoot = t.TempDir()
@@ -165,6 +180,27 @@ func TestNormalizeGoDevServerSmokeCommand(t *testing.T) {
 	}
 	if strings.Contains(got, "go mod tidy") || strings.Contains(got, "wait ${_gtsrv}") {
 		t.Fatalf("want short smoke without tidy or wait: %q", got)
+	}
+}
+
+func TestNormalizeGoDevServerSmokeCommand_pythonJobControlKillPercent(t *testing.T) {
+	townRoot, rig, v := pythonAPISmokeTestRig(t)
+	in := `cd fin/mayor/rig && .venv/bin/python3 -m uvicorn backend.main:app --host 127.0.0.1 --port 8000 & sleep 3
+	echo "---Testing endpoints---"
+	curl -sf --connect-timeout 1 --max-time 2 'http://127.0.0.1:8000/api/health' && echo " OK: /api/health" || echo "FAIL: /api/health"
+	kill %1 2>/dev/null || true`
+	got, ok := normalizeGoDevServerSmokeCommand(in, townRoot, rig, v)
+	if !ok {
+		t.Fatal("expected rewrite")
+	}
+	if strings.Contains(got, "kill %1") || strings.Contains(got, "wait %1") {
+		t.Fatalf("expected job control references removed: %q", got)
+	}
+	if !strings.Contains(got, "_uvpid=$!") {
+		t.Fatalf("expected pid-based uvicorn background tracking: %q", got)
+	}
+	if !strings.Contains(got, "kill $_uvpid") {
+		t.Fatalf("expected pid-based kill of uvicorn: %q", got)
 	}
 }
 
@@ -733,5 +769,32 @@ func TestNormalizeRigPrefixShellPaths(t *testing.T) {
 				t.Fatalf("got %q want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestNormalizeGoDevServerSmokeCommand_pythonMultilineCleanup(t *testing.T) {
+	townRoot, rig, v := pythonAPISmokeTestRig(t)
+	in := `cd fin/mayor/rig && .venv/bin/python3 -m uvicorn backend.app.main:app --host 0.0.0.0 --port 8099 &
+sleep 2
+echo "--- Root ---" && curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8099/
+echo ""
+echo "--- / ---" && curl -s -o /dev/null -w "%{http_code}" http://localhost:8099/
+echo ""
+kill %1 2>/dev/null || true`
+	got, ok := normalizeGoDevServerSmokeCommand(in, townRoot, rig, v)
+	if !ok {
+		t.Fatal("expected rewrite")
+	}
+	if strings.Contains(got, "kill %1") || strings.Contains(got, "wait %1") {
+		t.Fatalf("expected job control references removed: %q", got)
+	}
+	if !strings.Contains(got, "_uvpid=$!") {
+		t.Fatalf("expected uvicorn pid capture: %q", got)
+	}
+	if !strings.Contains(got, "kill $_uvpid") {
+		t.Fatalf("expected uvicorn cleanup to use _uvpid: %q", got)
+	}
+	if strings.Contains(got, "_uvpid: unbound") {
+		t.Fatalf("rewrite must not leave unbound _uvpid cleanup: %q", got)
 	}
 }

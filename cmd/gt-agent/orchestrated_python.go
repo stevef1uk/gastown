@@ -98,6 +98,23 @@ func isPythonVerifyCommand(cmd string) bool {
 	return strings.Contains(lower, "compileall") || strings.Contains(lower, "pytest")
 }
 
+func pythonVerifyTargetMatchesActiveBead(target, beadPath string, v orchestrator.WorkflowValidation) bool {
+	if target == "" || beadPath == "" {
+		return false
+	}
+	if strings.HasPrefix(target, beadPath) || strings.HasPrefix(beadPath, target) ||
+		orchestrator.PathMatchesImplementFile(target, beadPath) {
+		return true
+	}
+	if corrTestPath := orchestrator.CorrelatedTestPathForSource(beadPath, v); corrTestPath != "" {
+		if strings.HasPrefix(target, corrTestPath) || strings.HasPrefix(corrTestPath, target) ||
+			orchestrator.PathMatchesImplementFile(target, corrTestPath) {
+			return true
+		}
+	}
+	return false
+}
+
 // pythonVerifyTarget extracts the file/directory path from a compileall or pytest command.
 // Returns empty string if no path is found.
 func pythonVerifyTarget(cmd string) string {
@@ -164,7 +181,7 @@ func validatePythonImplementationCommand(cmd, townRoot, rig, activeBead string, 
 		beadPath := orchestrator.ImplementBeadPathForID(townRoot, rig, activeBead, v)
 		if beadPath != "" {
 			target := pythonVerifyTarget(cmd)
-			if target != "" && !strings.HasPrefix(target, beadPath) && !strings.HasPrefix(beadPath, target) {
+			if target != "" && !pythonVerifyTargetMatchesActiveBead(target, beadPath, v) {
 				return fmt.Errorf("verify command targets %s but active bead is %s (%s) — finish the queue head bead first", target, activeBead, beadPath)
 			}
 		}

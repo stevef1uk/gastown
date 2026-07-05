@@ -130,7 +130,27 @@ func trimSmokeServerCommand(cmd string) string {
 			cmd = strings.TrimSpace(cmd[:i])
 		}
 	}
+	cmd = stripTrailingParenthesizedComment(cmd)
 	return cmd
+}
+
+func stripTrailingParenthesizedComment(cmd string) string {
+	cmd = strings.TrimSpace(cmd)
+	idx := strings.LastIndex(cmd, " (")
+	if idx < 0 || !strings.HasSuffix(cmd, ")") {
+		return cmd
+	}
+	comment := strings.TrimSpace(cmd[idx+2 : len(cmd)-1])
+	if comment == "" {
+		return cmd
+	}
+	if strings.ContainsAny(comment, ";&|$<>`\n") {
+		return cmd
+	}
+	if !strings.ContainsAny(comment, " \t") {
+		return cmd
+	}
+	return strings.TrimSpace(cmd[:idx])
 }
 
 func extractPythonServerStartFromQA(v WorkflowValidation) string {

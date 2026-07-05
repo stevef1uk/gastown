@@ -55,6 +55,15 @@ func TestDeriveRuntimeSmokeServerStart_pythonFromQA(t *testing.T) {
 	}
 }
 
+func TestDeriveRuntimeSmokeServerStart_stripsTrailingParenthesizedDocsComments(t *testing.T) {
+	t.Parallel()
+	docs := "## Runtime smoke server\nnpm run build (produces static export)\n"
+	got := deriveRuntimeSmokeServerStart(WorkflowValidation{}, docs)
+	if got != "npm run build" {
+		t.Fatalf("got %q", got)
+	}
+}
+
 func TestPythonTestsAllPassed(t *testing.T) {
 	t.Parallel()
 	cases := []struct {

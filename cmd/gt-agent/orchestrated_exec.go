@@ -25,10 +25,21 @@ func prepareOrchestratedScript(cmd string) string {
 	body := unwrapBashLcMultiline(strings.TrimSpace(cmd))
 	body = strings.ReplaceAll(body, `\$`, "$")
 	body = normalizeHeredocDelimiters(body)
+	body = rewriteMultilinePythonCToHeredoc(body)
 	body = filterHallucinatedScriptLines(body)
 	body = scrubOrphanHeredocDelimiterLines(body)
 	body = stripMarkdownFencesInHeredocScripts(body)
 	return scrubOrphanBashLcQuoteLines(body)
+}
+
+func rewriteMultilinePythonCToHeredoc(cmd string) string {
+	for _, quote := range []string{"\"", "'"} {
+		re := regexp.MustCompile(`(?ms)(python3?\s+)-c\s*` + regexp.QuoteMeta(quote) + `\n([\s\S]*?)\n[ \t]*` + regexp.QuoteMeta(quote))
+		cmd = re.ReplaceAllString(cmd, `$1- <<'PY'
+$2
+PY`)
+	}
+	return cmd
 }
 
 // stripMarkdownFencesInHeredocScripts removes ```lang / ``` wrappers inside heredoc bodies.
@@ -675,12 +686,13 @@ func rewriteBdListLimit(cmd string) (string, bool) {
 }
 
 var (
-	goSmokeStripPkillRE  = regexp.MustCompile(`(?i)\s*&&\s*pkill\s+-f\s+[^&|;]+`)
-	goSmokeStripBuildRE  = regexp.MustCompile(`(?i)go\s+build\s+\./\.\.\.\s*&&\s*`)
-	goSmokeStripTidyRE   = regexp.MustCompile(`(?i)go\s+mod\s+tidy\s*&&\s*`)
-	goSmokeServerBgRE    = regexp.MustCompile(`(?i)(go\s+run\s+(?:\.\/)?cmd/server[^\s&;]*)\s*&`)
-	goSmokeWorkDirRE     = regexp.MustCompile(`(?i)cd\s+([^\s&;]+linkshelf[^\s&;]*)`)
-	goSmokeLocalhostRE   = regexp.MustCompile(`(?i)(?:localhost|127\.0\.0\.1):(\d{2,5})`)
+	goSmokeStripPkillRE   = regexp.MustCompile(`(?i)\s*&&\s*pkill\s+-f\s+[^&|;]+`)
+	goSmokeStripBuildRE   = regexp.MustCompile(`(?i)go\s+build\s+\./\.\.\.\s*&&\s*`)
+	goSmokeStripTidyRE    = regexp.MustCompile(`(?i)go\s+mod\s+tidy\s*&&\s*`)
+	goSmokeServerBgRE     = regexp.MustCompile(`(?i)(go\s+run\s+(?:\.\/)?cmd/server[^\s&;]*)\s*&`)
+	goSmokeWorkDirRE      = regexp.MustCompile(`(?i)cd\s+([^\s&;]+linkshelf[^\s&;]*)`)
+	goSmokeLocalhostRE    = regexp.MustCompile(`(?i)(?:localhost|127\.0\.0\.1):(\d{2,5})`)
+	pythonSmokeJobCtrlRE  = regexp.MustCompile(`(?i)\b(kill|wait)\b((?:\s+-[^ \t;|]+)*)\s+%[0-9]+\b`)
 )
 
 // normalizeGoCommandTypos fixes common model mistakes in go subcommands (e.g. "go build./...").
@@ -761,6 +773,11 @@ func normalizePythonDevServerSmoke(cmd string) string {
 		cmd = strings.ReplaceAll(cmd, " "+bad+" ", " ")
 		cmd = strings.ReplaceAll(cmd, " "+bad, "")
 	}
+	// Convert shell job-control references such as `kill %1` / `wait %1` into
+	// pid-based shutdowns before rewriting the command.
+	cmd = pythonSmokeJobCtrlRE.ReplaceAllString(cmd, `${1}${2} $$_uvpid`)
+	cmd = strings.ReplaceAll(cmd, "kill  $$_uvpid", "kill $$_uvpid")
+	cmd = strings.ReplaceAll(cmd, "wait  $$_uvpid", "wait $$_uvpid")
 	// &> /dev/null is bash-only; replace with POSIX redirect.
 	cmd = strings.ReplaceAll(cmd, "&> /dev/null", ">/dev/null 2>&1")
 	cmd = strings.ReplaceAll(cmd, "--host 127.0.0.1", "--host 127.0.0.1")
@@ -789,7 +806,8 @@ func normalizePythonDevServerSmoke(cmd string) string {
 		cmd = regexp.MustCompile(`\s*;\s*kill\s+\$?_uvpid\b[^;]*`).ReplaceAllString(cmd, "")
 		cmd = regexp.MustCompile(`\s*;\s*wait\s+\$?_uvpid\b[^;]*`).ReplaceAllString(cmd, "")
 		// Find the & that backgrounds uvicorn. It may be followed by space, ), ;, or end-of-cmd.
-		bgRE := regexp.MustCompile(`\buvicorn\b.*?\s&(?:\s|[);]|$)`)
+		// Match across newlines because LLM-generated smoke commands often split the shell body.
+		bgRE := regexp.MustCompile(`(?ms)\buvicorn\b.*?\s&(?:\s|[);]|$)`)
 		if loc := bgRE.FindStringIndex(cmd); loc != nil {
 			ampIdx := loc[1] - 1
 			for ampIdx > 0 && cmd[ampIdx] != '&' {
@@ -805,6 +823,12 @@ func normalizePythonDevServerSmoke(cmd string) string {
 			cmd += " && " + rest
 			cmd = strings.TrimRight(cmd, " ;&") + " ; kill $_uvpid 2>/dev/null || true; wait $_uvpid 2>/dev/null || true"
 		}
+	}
+	if strings.Contains(cmd, "uvicorn") && strings.Contains(cmd, "kill $_uvpid") && !strings.Contains(cmd, "_uvpid=$!") {
+		cmd = strings.ReplaceAll(cmd, " & ", " >/dev/null 2>&1 & _uvpid=$! ")
+		cmd = strings.ReplaceAll(cmd, "&\n", ">/dev/null 2>&1 & _uvpid=$!\n")
+		cmd = strings.ReplaceAll(cmd, "&\r\n", ">/dev/null 2>&1 & _uvpid=$!\r\n")
+		cmd = strings.ReplaceAll(cmd, "&;", ">/dev/null 2>&1 & _uvpid=$!;")
 	}
 	return cmd
 }
