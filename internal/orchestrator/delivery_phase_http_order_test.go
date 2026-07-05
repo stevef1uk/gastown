@@ -5,9 +5,41 @@ import (
 	"testing"
 )
 
-func TestReorderDeliveryPhasesWebBeforeHTTPHandlers(t *testing.T) {
+func TestReorderDeliveryPhasesWebAfterBackend(t *testing.T) {
 	v := WorkflowValidation{
-		ActivePhaseIDField: "api-handlers",
+		DeliveryPhases: []DeliveryPhase{
+			{ID: "go-module", RequiredFiles: []string{"linkshelf/go.mod"}},
+			{ID: "web-static", RequiredFiles: []string{"linkshelf/web/style.css", "linkshelf/web/app.js"}},
+			{ID: "web-shell", RequiredFiles: []string{"linkshelf/web/index.html"}},
+			{ID: "store-layer", RequiredFiles: []string{"linkshelf/internal/store/store.go"}},
+			{ID: "api-handlers", RequiredFiles: []string{"linkshelf/internal/api/handlers.go"}, QAVerifyCommand: "cd linkshelf && go test ./internal/api/..."},
+			{ID: "server-main", RequiredFiles: []string{"linkshelf/cmd/server/main.go"}},
+		},
+	}
+	got := reorderDeliveryPhasesWebAfterBackend(v)
+	var handlerIdx, lastWebIdx = -1, -1
+	for i, p := range got.DeliveryPhases {
+		for _, f := range p.RequiredFiles {
+			if IsHTTPHandlerImplementPath(f) && handlerIdx < 0 {
+				handlerIdx = i
+			}
+			if strings.Contains(f, "/web/") {
+				lastWebIdx = i
+			}
+		}
+	}
+	if handlerIdx < 0 || lastWebIdx < 0 || lastWebIdx < handlerIdx {
+		t.Fatalf("web phases must follow handler phase: handlerIdx=%d lastWebIdx=%d phases=%v",
+			handlerIdx, lastWebIdx, phaseIDs(got.DeliveryPhases))
+	}
+	wantOrder := []string{"go-module", "store-layer", "api-handlers", "server-main", "web-static", "web-shell"}
+	if ids := phaseIDs(got.DeliveryPhases); strings.Join(ids, ",") != strings.Join(wantOrder, ",") {
+		t.Fatalf("phase order = %v, want %v", ids, wantOrder)
+	}
+}
+
+func TestReorderDeliveryPhasesWebAfterBackend_preservesCorrectOrder(t *testing.T) {
+	v := WorkflowValidation{
 		DeliveryPhases: []DeliveryPhase{
 			{ID: "go-module", RequiredFiles: []string{"linkshelf/go.mod"}},
 			{ID: "store-layer", RequiredFiles: []string{"linkshelf/internal/store/store.go"}},
@@ -17,36 +49,21 @@ func TestReorderDeliveryPhasesWebBeforeHTTPHandlers(t *testing.T) {
 			{ID: "web-shell", RequiredFiles: []string{"linkshelf/web/index.html"}},
 		},
 	}
-	got := reorderDeliveryPhasesWebBeforeHTTPHandlers(v)
-	var handlerIdx, firstWebIdx = -1, -1
-	for i, p := range got.DeliveryPhases {
-		for _, f := range p.RequiredFiles {
-			if IsHTTPHandlerImplementPath(f) && handlerIdx < 0 {
-				handlerIdx = i
-			}
-			if strings.Contains(f, "/web/") && firstWebIdx < 0 {
-				firstWebIdx = i
-			}
-		}
-	}
-	if handlerIdx < 0 || firstWebIdx < 0 || firstWebIdx > handlerIdx {
-		t.Fatalf("web phases must precede handler phase: handlerIdx=%d firstWebIdx=%d phases=%v",
-			handlerIdx, firstWebIdx, phaseIDs(got.DeliveryPhases))
-	}
-	wantOrder := []string{"go-module", "store-layer", "web-static", "web-shell", "api-handlers", "server-main"}
-	if ids := phaseIDs(got.DeliveryPhases); strings.Join(ids, ",") != strings.Join(wantOrder, ",") {
-		t.Fatalf("phase order = %v, want %v", ids, wantOrder)
+	got := reorderDeliveryPhasesWebAfterBackend(v)
+	want := []string{"go-module", "store-layer", "api-handlers", "server-main", "web-static", "web-shell"}
+	if ids := phaseIDs(got.DeliveryPhases); strings.Join(ids, ",") != strings.Join(want, ",") {
+		t.Fatalf("phase order = %v, want %v", ids, want)
 	}
 }
 
-func TestReorderDeliveryPhasesWebBeforeHTTPHandlers_preservesUnrelatedOrder(t *testing.T) {
+func TestReorderDeliveryPhasesWebAfterBackend_preservesUnrelatedOrder(t *testing.T) {
 	v := WorkflowValidation{
 		DeliveryPhases: []DeliveryPhase{
 			{ID: "setup-infrastructure", RequiredFiles: []string{"backend/main.py"}},
 			{ID: "backend-core", RequiredFiles: []string{"backend/db/schema.sql", "Dockerfile", "docker-compose.yml"}},
 		},
 	}
-	got := reorderDeliveryPhasesWebBeforeHTTPHandlers(v)
+	got := reorderDeliveryPhasesWebAfterBackend(v)
 	want := []string{"setup-infrastructure", "backend-core"}
 	if ids := phaseIDs(got.DeliveryPhases); strings.Join(ids, ",") != strings.Join(want, ",") {
 		t.Fatalf("phase order = %v, want %v", ids, want)

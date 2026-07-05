@@ -187,19 +187,51 @@ func (m *Manager) findTaskInstanceID(agentID string) (instID string, timedOut bo
 	return "", false
 }
 
+// reloadInstancesFromDisk merges instances from disk into memory without
+// overwriting existing in-memory state. This recovers from external edits to
+// instances.json (e.g. from another process or CLI) without restarting.
+func (m *Manager) reloadInstancesFromDisk() {
+	snap, err := LoadInstancesSnapshot(m.townRoot)
+	if err != nil || snap == nil {
+		return
+	}
+	for _, candidate := range snap.Instances {
+		if candidate == nil || candidate.ID == "" {
+			continue
+		}
+		if _, exists := m.instances[candidate.ID]; !exists {
+			cp := *candidate
+			if cp.Variables == nil {
+				cp.Variables = map[string]string{}
+			}
+			m.instances[candidate.ID] = &cp
+		}
+	}
+	if snap.NextSeq > m.nextSeq {
+		m.nextSeq = snap.NextSeq
+	}
+}
+
 func (m *Manager) buildTaskPayloadForInstance(instID string) (map[string]interface{}, error) {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
+	m.mu.Lock()
 	inst := m.instances[instID]
 	if inst == nil {
+		m.reloadInstancesFromDisk()
+		inst = m.instances[instID]
+	}
+	if inst == nil {
+		m.mu.Unlock()
 		return nil, fmt.Errorf("workflow instance %q not found", instID)
 	}
 	tpl := m.templates[inst.TemplateID]
 	if tpl == nil {
+		m.mu.Unlock()
 		return nil, fmt.Errorf("template %q not found", inst.TemplateID)
 	}
 	state, _ := inst.GetCurrentTask(tpl)
-	return m.BuildTaskPayload(inst, tpl, state)
+	payload, err := m.BuildTaskPayload(inst, tpl, state)
+	m.mu.Unlock()
+	return payload, err
 }
 
 const maxWorkflowReworkSummary = 2000
@@ -428,6 +460,27 @@ func (m *Manager) ResetWorkflow(workflowID, toState string) (string, error) {
 	m.logWorkflowFeed(events.TypeWorkflowTransition, workflowID, inst.TemplateID, fromState, toState, "reset", role, rig)
 	telemetry.RecordWorkflowStateChange(context.Background(), rig, workflowID, fromState, toState, nil)
 	return toState, nil
+}
+
+// DeleteWorkflow removes a workflow instance entirely.
+func (m *Manager) DeleteWorkflow(workflowID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	inst, ok := m.instances[workflowID]
+	if !ok {
+		return fmt.Errorf("workflow instance %q not found", workflowID)
+	}
+	delete(m.instances, workflowID)
+	if err := m.persistLocked(); err != nil {
+		return fmt.Errorf("persist instances: %w", err)
+	}
+	rig := ""
+	if inst.Variables != nil {
+		rig = inst.Variables["rig"]
+	}
+	m.logWorkflowFeed(events.TypeWorkflowTransition, workflowID, inst.TemplateID, inst.CurrentState, "deleted", "deleted", "", rig)
+	return nil
 }
 
 func truncateWorkflowText(s string, max int) string {

@@ -182,17 +182,28 @@ func (s *Server) handleRequest(req MCPRequest) MCPResponse {
 							},
 						},
 					},
-					{
-						"name":        "resume_workflow",
-						"description": "Resume a paused workflow instance",
-						"inputSchema": map[string]interface{}{
-							"type": "object",
-							"properties": map[string]interface{}{
-								"workflow_id": map[string]string{"type": "string"},
-							},
-							"required": []string{"workflow_id"},
+				{
+					"name":        "delete_workflow",
+					"description": "Permanently delete a workflow instance from the registry",
+					"inputSchema": map[string]interface{}{
+						"type": "object",
+						"properties": map[string]interface{}{
+							"workflow_id": map[string]string{"type": "string"},
 						},
+						"required": []string{"workflow_id"},
 					},
+				},
+				{
+					"name":        "resume_workflow",
+					"description": "Resume a paused workflow instance",
+					"inputSchema": map[string]interface{}{
+						"type": "object",
+						"properties": map[string]interface{}{
+							"workflow_id": map[string]string{"type": "string"},
+						},
+						"required": []string{"workflow_id"},
+					},
+				},
 				},
 			},
 		}
@@ -318,6 +329,15 @@ func (s *Server) handleCallTool(req MCPRequest) MCPResponse {
 			"workflow_id": args.WorkflowID,
 			"rig":         rig,
 		}}
+	case "delete_workflow":
+		var args struct {
+			WorkflowID string `json:"workflow_id"`
+		}
+		json.Unmarshal(params.Arguments, &args)
+		if err := s.orchestrator.DeleteWorkflow(args.WorkflowID); err != nil {
+			return MCPResponse{JSONRPC: "2.0", ID: req.ID, Error: &MCPError{Code: -32000, Message: err.Error()}}
+		}
+		return MCPResponse{JSONRPC: "2.0", ID: req.ID, Result: map[string]string{"workflow_id": args.WorkflowID, "status": "deleted"}}
 	case "resume_workflow":
 		var args struct {
 			WorkflowID string `json:"workflow_id"`

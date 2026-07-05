@@ -112,9 +112,14 @@ func Stop() error {
 	if !dockerInspectExistsFn() {
 		return nil
 	}
-	_ = dockerStopFn()
+	stopErr := dockerStopFn()
+	if stopErr != nil {
+		_ = exec.Command("docker", "kill", ContainerName).Run()
+	}
 	if err := dockerRmFn(); err != nil {
-		return fmt.Errorf("removing nats container: %w", err)
+		if rmErr := exec.Command("docker", "rm", "-f", ContainerName).Run(); rmErr != nil {
+			return fmt.Errorf("removing nats container: stop=%v rm=%v", stopErr, rmErr)
+		}
 	}
 	return nil
 }

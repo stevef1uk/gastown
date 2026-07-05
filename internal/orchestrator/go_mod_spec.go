@@ -295,27 +295,43 @@ func FormatGoModBeadContext(rigDir string, v WorkflowValidation) string {
 	if layout != "" && layout != "." {
 		modRel = layout + "/go.mod"
 	}
-	b.WriteString("### go.mod bead — match SPEC.md exactly\n")
-	b.WriteString("Use **WRITE:** `" + modRel + "` with the full Module block from SPEC (not EDIT/search-replace). Example:\n```\n")
-	if block := GoModBlockFromSpec(rigDir); block != "" {
-		b.WriteString(block)
-	} else if reqs := RequiredGoModRequireDirectives(rigDir); len(reqs) > 0 {
-		if canonical := canonicalGoModule(readFileString(filepath.Join(rigDir, "SPEC.md")), v); canonical != "" {
-			b.WriteString("module " + canonical + "\n\n")
-		}
-		for _, req := range reqs {
-			b.WriteString(req)
-			b.WriteString("\n")
-		}
-	}
-	b.WriteString("```\n")
+	modPath := filepath.Join(rigDir, modRel)
+	_, exists := os.Stat(modPath)
 	canonical := canonicalGoModule(readFileString(filepath.Join(rigDir, "SPEC.md")), v)
-	if canonical != "" {
-		b.WriteString("Module name: `")
-		b.WriteString(canonical)
-		b.WriteString("`. Verify: `")
-		b.WriteString(GoModBeadVerifyCommand(v, rigDir))
-		b.WriteString("` then `bd close`.\n")
+
+	if exists == nil {
+		b.WriteString("### go.mod bead — already exists, verify and close\n")
+		b.WriteString("The file `" + modRel + "` already exists on disk. Verify its content matches SPEC.md, then close the bead.\n")
+		if canonical != "" {
+			b.WriteString("Expected module name: `" + canonical + "`.\n")
+		}
+		if reqs := RequiredGoModRequireDirectives(rigDir); len(reqs) > 0 {
+			b.WriteString("Expected require directives:\n")
+			for _, req := range reqs {
+				b.WriteString("- `" + strings.TrimSpace(req) + "`\n")
+			}
+		}
+		b.WriteString("Verify: `" + GoModBeadVerifyCommand(v, rigDir) + "` then `bd close`.\n")
+	} else {
+		b.WriteString("### go.mod bead — create from SPEC\n")
+		b.WriteString("Use **WRITE:** `" + modRel + "` with the full Module block from SPEC (not EDIT/search-replace). Example:\n```\n")
+		if block := GoModBlockFromSpec(rigDir); block != "" {
+			b.WriteString(block)
+		} else if reqs := RequiredGoModRequireDirectives(rigDir); len(reqs) > 0 {
+			if canonical != "" {
+				b.WriteString("module " + canonical + "\n\n")
+			}
+			for _, req := range reqs {
+				b.WriteString(req)
+				b.WriteString("\n")
+			}
+		}
+		b.WriteString("```\n")
+		if canonical != "" {
+			b.WriteString("Module name: `" + canonical + "`. Verify: `")
+			b.WriteString(GoModBeadVerifyCommand(v, rigDir))
+			b.WriteString("` then `bd close`.\n")
+		}
 	}
 	b.WriteString("Do not add source files under paths not listed in architecture.md / required_files.\n")
 	return strings.TrimSpace(b.String())

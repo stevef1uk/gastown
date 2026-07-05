@@ -144,6 +144,29 @@ func runDown(cmd *cobra.Command, args []string) error {
 		fmt.Println()
 	}
 
+	// Phase 0a: Stop Daemon FIRST — before killing any agents. Otherwise the
+	// daemon's watch loop restarts agents as fast as they're killed by later phases.
+	if downDryRun {
+		if running, pid, _ := daemon.IsRunning(townRoot); running {
+			printDownStatus("Daemon", true, fmt.Sprintf("would stop (PID %d)", pid))
+		}
+	} else {
+		running, pid, daemonErr := daemon.IsRunning(townRoot)
+		if daemonErr != nil {
+			printDownStatus("Daemon", false, fmt.Sprintf("status check failed: %v", daemonErr))
+			allOK = false
+		} else if running {
+			if err := daemon.StopDaemon(townRoot); err != nil {
+				printDownStatus("Daemon", false, err.Error())
+				allOK = false
+			} else {
+				printDownStatus("Daemon", true, fmt.Sprintf("stopped (was PID %d)", pid))
+			}
+		} else {
+			printDownStatus("Daemon", true, "not running")
+		}
+	}
+
 	rigs := discoverRigs(townRoot)
 	ctx := context.Background()
 

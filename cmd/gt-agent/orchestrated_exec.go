@@ -399,6 +399,13 @@ func rewriteUnittestToWorkdir(cmd, rig string, v orchestrator.WorkflowValidation
 		rest := stripRedundantLayoutCD(stripFirstCDPrefix(cmd), workPath, layout)
 		cmd = "cd " + workPath + " && " + rest
 		changed = true
+	} else if orchestrator.WorkflowUsesGo(v) && layout != "" && layout != "." &&
+		commandHasMayorRigCD(cmd, rig) && commandHasLayoutCD(cmd, layout) {
+		// Go: command has both "cd mayor/rig && cd layout" — strip both and
+		// replace with single cd to the module root to avoid broken relative paths.
+		rest := stripCDLayoutPrefix(stripFirstCDPrefix(cmd), layout)
+		cmd = "cd " + workPath + " && " + strings.TrimSpace(rest)
+		changed = true
 	}
 	if orchestrator.WorkflowUsesGo(v) {
 		normalized := orchestrator.NormalizeGoLayoutPackagePaths(cmd, workPath, layout)

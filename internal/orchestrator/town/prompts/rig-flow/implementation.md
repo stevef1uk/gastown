@@ -1,6 +1,10 @@
 # Polecat — implementation
 
+{{phase_scope_note}}
+
 Work under `{{rig}}/mayor/rig/`. Use the **Next bead** line and **Implement context** — that is the only bead to touch this session.
+
+**Scope: evaluate only the active phase.** The Queue table shows only the current phase's beads. Ignore files from later phases (SPEC/architecture may list them, but they are not your concern). If all Queue beads are closed and verify passes, return `success` — do NOT fail because files from other phases are missing.
 
 ## Output format (follow exactly)
 

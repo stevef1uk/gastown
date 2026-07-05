@@ -118,7 +118,7 @@ states:
       prompt_context: [project_setup_stack]
       pre_run: [sync_planning_artifacts, enforce_implement_bead_queue, prune_rig_root_junk]
       cmd_guard: project_setup
-      cmd_rewrites: [rig_placeholders, bd_list_implement_scope, unittest_workdir, bd_list_limit, unwrap_bash_lc]
+      cmd_rewrites: [rig_placeholders, unwrap_bash_lc, bd_list_implement_scope, unittest_workdir, bd_list_limit]
       env:
         beads_dir: true
         python_venv: create
@@ -205,7 +205,7 @@ states:
       # rewrite plan.md mid-implementation (see pre_run sync + reconcile). Planning-only repair stays in planning state hooks.
       per_turn: [prune_stale_layout_go, repair_requirements]
       cmd_guard: implementation
-      cmd_rewrites: [rig_placeholders, backend_path_after_cd, bd_list_implement_scope, unittest_workdir, bd_list_limit, unwrap_bash_lc]
+      cmd_rewrites: [rig_placeholders, unwrap_bash_lc, backend_path_after_cd, bd_list_implement_scope, unittest_workdir, bd_list_limit]
       env:
         beads_dir: true
         pythonpath: true
@@ -256,7 +256,7 @@ states:
       pre_run: [reconcile_implement_beads]
       per_turn: [repair_requirements]
       cmd_guard: qa
-      cmd_rewrites: [rig_placeholders, bd_list_implement_scope, unittest_workdir, bd_list_limit, unwrap_bash_lc]
+      cmd_rewrites: [rig_placeholders, unwrap_bash_lc, bd_list_implement_scope, unittest_workdir, bd_list_limit]
       env:
         beads_dir: true
         pythonpath: true

@@ -35,7 +35,7 @@ func PromptContextBlock(key, townRoot, rig string, v WorkflowValidation) string 
 	case "planning_bead_bootstrap":
 		return FormatPlanningBeadBootstrapBlock(townRoot, rig, v.ForActivePhase())
 	case "implementation_queue":
-		return FormatImplementationQueueBlock(townRoot, rig, v)
+		return FormatImplementationQueueBlock(townRoot, rig, v.ForActivePhase())
 	case "implement_bead_context":
 		return FormatImplementBeadContextBlock(townRoot, rig, v)
 	case "project_setup_stack":

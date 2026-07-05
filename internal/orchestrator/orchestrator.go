@@ -372,6 +372,33 @@ func CompleteTask(townRoot string, workflowID string, outcome string, agentID, s
 	return data.NextState, nil
 }
 
+// DeleteWorkflow removes a workflow instance entirely.
+func DeleteWorkflow(townRoot, workflowID string) error {
+	// Check if orchestrator process seems alive (PID file + process exists).
+	// Even if the PID is a zombie, we try MCP first and fall back to offline
+	// when the NATS request fails (no responder).
+	if running, _, _ := IsRunning(townRoot); running {
+		if err := deleteWorkflowViaMCP(townRoot, workflowID); err != nil {
+			// If NATS has no responder (orchestrator not listening), use offline path.
+			if strings.Contains(err.Error(), "nats: no responders") ||
+				strings.Contains(err.Error(), "connection refused") {
+				return deleteWorkflowOffline(townRoot, workflowID)
+			}
+			return err
+		}
+		return nil
+	}
+	return deleteWorkflowOffline(townRoot, workflowID)
+}
+
+func deleteWorkflowOffline(townRoot, workflowID string) error {
+	mgr := NewManager(townRoot)
+	if err := mgr.LoadTownTemplates(); err != nil {
+		return err
+	}
+	return mgr.DeleteWorkflow(workflowID)
+}
+
 // PauseWorkflow pauses an instance via the running orchestrator (or offline manager).
 func PauseWorkflow(townRoot, workflowID string) (rig string, err error) {
 	if running, _, _ := IsRunning(townRoot); running {
@@ -430,6 +457,16 @@ func pauseWorkflowViaMCP(townRoot, workflowID string) (string, error) {
 func resumeWorkflowViaMCP(townRoot, workflowID string) error {
 	_, err := Call(townRoot, "call_tool", map[string]interface{}{
 		"name": "resume_workflow",
+		"arguments": map[string]interface{}{
+			"workflow_id": workflowID,
+		},
+	})
+	return err
+}
+
+func deleteWorkflowViaMCP(townRoot, workflowID string) error {
+	_, err := Call(townRoot, "call_tool", map[string]interface{}{
+		"name": "delete_workflow",
 		"arguments": map[string]interface{}{
 			"workflow_id": workflowID,
 		},

@@ -140,6 +140,7 @@ func init() {
 	mayorWorkflowCmd.AddCommand(mayorWorkflowStatusCmd)
 	mayorWorkflowCmd.AddCommand(mayorWorkflowListCmd)
 	mayorWorkflowCmd.AddCommand(mayorWorkflowResetCmd)
+	mayorWorkflowCmd.AddCommand(mayorWorkflowDeleteCmd)
 	mayorWorkflowCmd.AddCommand(mayorWorkflowPauseCmd)
 	mayorWorkflowCmd.AddCommand(mayorWorkflowResumeCmd)
 
@@ -209,6 +210,18 @@ Example:
 	RunE: runMayorWorkflowResume,
 }
 
+var mayorWorkflowDeleteCmd = &cobra.Command{
+	Use:   "delete <workflow-id>",
+	Short: "Permanently delete a workflow instance",
+	Long: `Removes a workflow instance from the registry entirely.
+Use this to clean up stale or unwanted workflows.
+
+Example:
+  gt mayor workflow delete wf-1`,
+	Args: cobra.ExactArgs(1),
+	RunE: runMayorWorkflowDelete,
+}
+
 var mayorWorkflowResetCmd = &cobra.Command{
 	Use:   "reset <workflow-id>",
 	Short: "Rewind a workflow to an earlier state",
@@ -268,6 +281,7 @@ func runMayorWorkflowStart(cmd *cobra.Command, args []string) error {
 	}
 
 	if rig := vars["rig"]; rig != "" {
+		maybeSpecIndexFromSPEC(townRoot, rig)
 		if running, _, _ := orchestrator.IsRunning(townRoot); running {
 			mgr := orchestrator.NewManager(townRoot)
 			if mgr.HasActiveWorkflow(templateID, rig) {
@@ -420,6 +434,19 @@ func runMayorWorkflowReset(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	fmt.Printf("%s Workflow %s reset to state: %s (status=running)\n", style.SuccessPrefix, workflowID, next)
+	return nil
+}
+
+func runMayorWorkflowDelete(cmd *cobra.Command, args []string) error {
+	townRoot, err := resolveMayorWorkflowTownRoot()
+	if err != nil {
+		return err
+	}
+	workflowID := args[0]
+	if err := orchestrator.DeleteWorkflow(townRoot, workflowID); err != nil {
+		return err
+	}
+	fmt.Printf("%s Workflow %s deleted\n", style.SuccessPrefix, workflowID)
 	return nil
 }
 
