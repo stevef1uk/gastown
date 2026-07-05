@@ -63,6 +63,64 @@ func (v WorkflowValidation) ActivePhaseQAVerifyCommand() string {
 	return strings.TrimSpace(v.QAVerifyCommand)
 }
 
+// FindDeliveryPhaseForFile returns the index of the delivery phase that contains the given file,
+// or -1 if not found in any phase. Works with unphased validation too.
+func (v WorkflowValidation) FindDeliveryPhaseForFile(filePath string) int {
+	filePath = filepath.ToSlash(strings.TrimSpace(filePath))
+	if filePath == "" || len(v.DeliveryPhases) == 0 {
+		return -1
+	}
+	for i, p := range v.DeliveryPhases {
+		for _, f := range p.RequiredFiles {
+			f = filepath.ToSlash(strings.TrimSpace(f))
+			if f == filePath {
+				return i
+			}
+		}
+	}
+	return -1
+}
+
+// FileInCompletedPhase reports whether the file belongs to a phase that has already completed
+// (i.e., its phase index is strictly less than the active phase index).
+func (v WorkflowValidation) FileInCompletedPhase(filePath string) bool {
+	idx := v.FindDeliveryPhaseForFile(filePath)
+	if idx < 0 {
+		return false
+	}
+	activeIdx := v.ActivePhaseIndex()
+	if activeIdx < 0 {
+		return false
+	}
+	return idx < activeIdx
+}
+
+// IsFinalDeliveryPhase reports whether the currently active delivery phase is the last one.
+func (v WorkflowValidation) IsFinalDeliveryPhase() bool {
+	if !v.HasPhasedDelivery() {
+		return false
+	}
+	activeIdx := v.ActivePhaseIndex()
+	if activeIdx < 0 {
+		return false
+	}
+	return activeIdx == len(v.DeliveryPhases)-1
+}
+
+// ActivePhaseIndex returns the index of the active delivery phase, or -1 if not found.
+func (v WorkflowValidation) ActivePhaseIndex() int {
+	if !v.HasPhasedDelivery() {
+		return -1
+	}
+	want := v.ActivePhaseID()
+	for i, p := range v.DeliveryPhases {
+		if strings.TrimSpace(p.ID) == want {
+			return i
+		}
+	}
+	return -1
+}
+
 // UnionRequiredFiles returns all paths across delivery phases (deduped), or RequiredFiles when unphased.
 // Safe to call on ForActivePhase-scoped validation: phases still hold the full union.
 func (v WorkflowValidation) UnionRequiredFiles() []string {

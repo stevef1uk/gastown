@@ -325,6 +325,11 @@ func AllowedEarlierImplementDependencyWrite(townRoot, rig, activePath, writtenPa
 	if implementationPathScore(writtenPath) >= implementationPathScore(activePath) {
 		return false
 	}
+	// Prevent rewriting files from completed phases (earlier than active phase),
+	// unless we're in the final phase where integration fixes are expected.
+	if v.HasPhasedDelivery() && v.FileInCompletedPhase(writtenPath) && !v.IsFinalDeliveryPhase() {
+		return false
+	}
 	closedOnly, err := ImplementPathHasOnlyClosedBeads(townRoot, rig, writtenPath, v)
 	if err == nil && closedOnly {
 		return false
