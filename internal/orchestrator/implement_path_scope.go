@@ -149,6 +149,9 @@ func validateImplementWriteScope(townRoot, rig, activeBead, written string, v Wo
 	if AllowForeignOpenBeadCompileFixForVerifyFailure(townRoot, rig, allowedPath, written, verifyOutput, v) {
 		return nil
 	}
+	if AllowForeignOpenBeadProductionCompileFixForVerifyFailure(townRoot, rig, allowedPath, written, verifyOutput, v) {
+		return nil
+	}
 	if closedOnly, err := ImplementPathHasOnlyClosedBeads(townRoot, rig, written, v); err == nil && closedOnly &&
 		!AllowedCorrelatedPackageImplementWrite(allowedPath, written, v) {
 		if reopened, rerr := EnsureOpenImplementBeadForRework(townRoot, rig, written, v); rerr != nil {

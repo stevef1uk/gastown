@@ -109,6 +109,121 @@ func AllowForeignOpenBeadCompileFixForVerifyFailure(townRoot, rig, activeBeadPat
 	return true
 }
 
+// AllowForeignOpenBeadProductionCompileFixForVerifyFailure allows the polecat to edit a production file
+// from another open bead within the same package when a compile error blocks the active bead's verify.
+// Handles both Go (.go) and Python (.py). Two files in the same package (e.g. schema.go and store.go in
+// internal/store/, or models.py and views.py in backend/app/) can belong to different beads, and a
+// compile/syntax error in the later bead's file prevents the package from compiling — blocking the
+// earlier bead from being verified and closed.
+func AllowForeignOpenBeadProductionCompileFixForVerifyFailure(townRoot, rig, activeBeadPath, writtenPath, verifyOutput string, v WorkflowValidation) bool {
+	activeBeadPath = filepath.ToSlash(strings.TrimSpace(activeBeadPath))
+	writtenPath = filepath.ToSlash(strings.TrimSpace(writtenPath))
+	if activeBeadPath == "" || writtenPath == "" {
+		return false
+	}
+	if !WorkflowUsesGo(v) && !WorkflowUsesPython(v) {
+		return false
+	}
+	isGo := WorkflowUsesGo(v)
+	if IsTestImplementPath(activeBeadPath) {
+		return false
+	}
+	if IsTestImplementPath(writtenPath) {
+		return false
+	}
+	if isGo {
+		if !strings.HasSuffix(activeBeadPath, ".go") || !strings.HasSuffix(writtenPath, ".go") {
+			return false
+		}
+	} else {
+		if !strings.HasSuffix(activeBeadPath, ".py") || !strings.HasSuffix(writtenPath, ".py") {
+			return false
+		}
+	}
+	if !samePackagePath(activeBeadPath, writtenPath, v.LayoutRoot) {
+		return false
+	}
+	if !pathMatchesRequired(writtenPath, v.RequiredFiles) {
+		return false
+	}
+	closedOnly, err := ImplementPathHasOnlyClosedBeads(townRoot, rig, writtenPath, v)
+	if err != nil || closedOnly {
+		return false
+	}
+	out := strings.TrimSpace(verifyOutput)
+	if out == "" {
+		return false
+	}
+	if isGo {
+		if !strings.Contains(out, "[build failed]") && !GoCompileErrorsOnlyInTestFiles(out, v.LayoutRoot) {
+			return false
+		}
+		if !GoCompileOutputCitesFile(out, writtenPath, v.LayoutRoot) {
+			return false
+		}
+	} else {
+		if !strings.Contains(out, "[build failed]") && !pythonOutputHasCompileError(out) {
+			return false
+		}
+		if !compileOutputCitesFilename(out, writtenPath) {
+			return false
+		}
+	}
+	return true
+}
+
+// samePackagePath reports whether two layout-relative paths are in the same directory (package/module).
+func samePackagePath(pathA, pathB, layoutRoot string) bool {
+	pathA = filepath.ToSlash(strings.TrimSpace(pathA))
+	pathB = filepath.ToSlash(strings.TrimSpace(pathB))
+	if pathA == "" || pathB == "" {
+		return false
+	}
+	layout := strings.Trim(strings.TrimSpace(layoutRoot), "/")
+	relA, relB := pathA, pathB
+	if layout != "" {
+		if strings.HasPrefix(relA, layout+"/") {
+			relA = strings.TrimPrefix(relA, layout+"/")
+		}
+		if strings.HasPrefix(relB, layout+"/") {
+			relB = strings.TrimPrefix(relB, layout+"/")
+		}
+	}
+	return filepath.ToSlash(filepath.Dir(relA)) == filepath.ToSlash(filepath.Dir(relB))
+}
+
+// pythonOutputHasCompileError reports whether verify output contains Python compilation errors.
+func pythonOutputHasCompileError(output string) bool {
+	lower := strings.ToLower(output)
+	signals := []string{
+		"syntaxerror",
+		"importerror",
+		"modulenotfounderror",
+		"indentationerror",
+		"taberror",
+		"collection failure",
+		"error during collection",
+		"failed: error",
+	}
+	for _, s := range signals {
+		if strings.Contains(lower, s) {
+			return true
+		}
+	}
+	return false
+}
+
+// compileOutputCitesFilename reports whether the output mentions the given relative file path.
+func compileOutputCitesFilename(output, filePath string) bool {
+	output = strings.TrimSpace(output)
+	filePath = filepath.ToSlash(strings.TrimSpace(filePath))
+	if output == "" || filePath == "" {
+		return false
+	}
+	base := filepath.Base(filePath)
+	return strings.Contains(output, base) || strings.Contains(output, filePath)
+}
+
 // FormatForeignOpenBeadTestCompileHint explains verify failures in another bead's *_test.go while
 // a production bead is active, and how to fix or switch beads.
 func FormatForeignOpenBeadTestCompileHint(townRoot, rig, activeBeadPath, cmdOutput string, v WorkflowValidation) string {
