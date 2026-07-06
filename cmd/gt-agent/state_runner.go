@@ -840,16 +840,19 @@ func validateOutcomeForTask(task *orchestrator.Task, townRoot, rig, outcome, sum
 // so subsequent retries can reuse it instead of regenerating from scratch.
 func (r *stateRunner) cacheValidatedContent(relPath string) {
 	if r == nil || r.task == nil || r.task.WorkflowID == "" || relPath == "" {
+		orchestratedPrintf("[gt-agent] cache skip: nil runner=%v task=%v wf=%q path=%q\n", r == nil, r.task == nil, r.task.WorkflowID, relPath)
 		return
 	}
 	rigDir := rigMayorRigDir(r.townRoot, r.rig)
 	cache, err := orchestrator.OpenCodeCache(rigDir, r.task.WorkflowID)
 	if err != nil {
+		orchestratedPrintf("[gt-agent] cache open error: %v (rigDir=%s, wf=%s)\n", err, rigDir, r.task.WorkflowID)
 		return
 	}
 	abs := filepath.Join(rigDir, filepath.FromSlash(relPath))
 	data, err := os.ReadFile(abs)
 	if err != nil {
+		orchestratedPrintf("[gt-agent] cache read error: %v (abs=%s)\n", err, abs)
 		return
 	}
 	phaseIdx := r.v.ActivePhaseIndex()
