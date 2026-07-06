@@ -21,6 +21,11 @@ func RigFlowQARuntimeSmokeBlock(townRoot, rig string, v WorkflowValidation) stri
 	if !workflowHasGoWebAndServer(v) {
 		return rigFlowQAGoLibraryVerifyBlock(v)
 	}
+	// Runtime smoke only runs in the final delivery phase when every
+	// component (store, handlers, server, web assets) is assembled.
+	if v.HasPhasedDelivery() && v.ActivePhaseID() != "" && !v.IsFinalDeliveryPhase() {
+		return rigFlowQAGoLibraryVerifyBlock(v)
+	}
 	spec, _ := LoadAPISmokeSpecFromRig(townRoot, rig, v)
 	if APISmokeHasHTTPAPI(spec) {
 		return rigFlowQAGoWebAPISmokeBlock(v, spec)

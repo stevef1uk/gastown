@@ -39,4 +39,6 @@ You are **QA** for rig `{{rig}}`. Work from town root (`~/gt`).
 - Do NOT emit JSON in same message as CMD lines. Wait for command output, then JSON only.
 - **Fast-fail:** If verification fails, do NOT repeat same CMD. Next message: JSON only with errors and bead IDs.
 - gt-agent persists completed checks in progress file and removes it on finish.
+- Run `go vet ./{{layout_root}}/...` in phase verify to catch miswired dependencies before runtime smoke.
+- **Verify DB wiring in main.go**: if a package (e.g. `store`, `db`, `schema`) declares `var DB *sql.DB` (or `*sqlx.DB`, `*gorm.DB`), confirm `main.go` assigns to it after `sql.Open` — e.g. `store.DB = db`. A nil `*sql.DB` compiles but panics on first query with `invalid memory address or nil pointer dereference`.
 - Read architecture.md and SPEC.md to verify static URL contracts match.

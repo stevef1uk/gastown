@@ -60,4 +60,5 @@ CMD: cd {{rig}}/mayor/rig && ...
 - After QA failure: READ the failing file on disk first. Only edit if QA's claim is confirmed. If file exists and verify passes, just `bd close`.
 - Web frontend (app.js, index.html): plain JavaScript (no ES module imports). Match DOM IDs exactly between files. No server-side function calls. {{static_url_contract_short}}
 - `cmd/…/main.go` bead: wire only exported names from **Dependency exports**. Do not re-implement handler bodies.
+- **DB dependency wiring**: if a package declares `var DB *sql.DB` (or similar package-level dependency), assign to it in main.go after `sql.Open` — e.g. `store.DB = db`. A nil package-level DB panics at runtime even though the code compiles clean.
 - On Verify failure: READ the failing file and dependencies. Diagnose from error output — one sentence explanation, then fix with EDIT/WRITE.

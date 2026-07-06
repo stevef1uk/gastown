@@ -21,7 +21,9 @@ func workflowHasGoWebAndServer(v WorkflowValidation) bool {
 	if !WorkflowUsesGo(v) {
 		return false
 	}
-	files := v.RequiredFilesForSmokeScope()
+	// Use past+active phase files so web-static phases can still find
+	// cmd/server/main.go (written in an earlier phase) and run the server.
+	files := v.PhasedActiveAndPastRequiredFiles()
 	hasWeb := false
 	hasServer := false
 	for _, f := range files {
