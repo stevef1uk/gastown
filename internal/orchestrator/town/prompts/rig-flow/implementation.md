@@ -59,6 +59,6 @@ CMD: cd {{rig}}/mayor/rig && ...
 - After EDIT/WRITE, gt-agent runs post-write verify automatically
 - After QA failure: READ the failing file on disk first. Only edit if QA's claim is confirmed. If file exists and verify passes, just `bd close`.
 - Web frontend (app.js, index.html): plain JavaScript (no ES module imports). Match DOM IDs exactly between files. No server-side function calls. {{static_url_contract_short}}
-- `cmd/…/main.go` bead: wire only exported names from **Dependency exports**. Do not re-implement handler bodies.
+- `cmd/…/main.go` bead: wire only exported names from **Dependency exports**. Do NOT write inline handler bodies that return hardcoded JSON. For example, prefer `h.ListLinks(w, r)` over `w.Write([]byte("[]"))`. The handler logic belongs in `internal/api/`, not inlined in main.go.
 - **DB dependency wiring**: if a package declares `var DB *sql.DB` (or similar package-level dependency), assign to it in main.go after `sql.Open` — e.g. `store.DB = db`. A nil package-level DB panics at runtime even though the code compiles clean.
 - On Verify failure: READ the failing file and dependencies. Diagnose from error output — one sentence explanation, then fix with EDIT/WRITE.

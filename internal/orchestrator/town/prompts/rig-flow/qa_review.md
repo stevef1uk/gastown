@@ -41,4 +41,5 @@ You are **QA** for rig `{{rig}}`. Work from town root (`~/gt`).
 - gt-agent persists completed checks in progress file and removes it on finish.
 - Run `go vet ./{{layout_root}}/...` in phase verify to catch miswired dependencies before runtime smoke.
 - **Verify DB wiring in main.go**: if a package (e.g. `store`, `db`, `schema`) declares `var DB *sql.DB` (or `*sqlx.DB`, `*gorm.DB`), confirm `main.go` assigns to it after `sql.Open` — e.g. `store.DB = db`. A nil `*sql.DB` compiles but panics on first query with `invalid memory address or nil pointer dereference`.
+- **Reject inline stub handlers in main.go**: scan `cmd/server/main.go` for `HandleFunc` or `Handle` calls whose handler body returns hardcoded JSON/strings (e.g. `w.Write([]byte("[]"))` or `fmt.Fprint(w, "...")`) instead of delegating to an imported handler package (e.g. `api.ListLinks`, `h.CreateLink`). The handler implementation belongs in `internal/api/`, not inlined in main.go.
 - Read architecture.md and SPEC.md to verify static URL contracts match.

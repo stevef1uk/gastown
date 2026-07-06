@@ -196,6 +196,14 @@ func ImplementationPhaseVerifyOK(townRoot, rig string, v WorkflowValidation) err
 				}
 			}
 		}
+		// Auto-fix inline stub handlers in main.go that return hardcoded JSON instead of delegating.
+		if WorkflowUsesGo(scoped) {
+			if rel, fixErr := HandleInlineHandlerRefactoring(rigDir, v); fixErr == nil && rel != "" {
+				if retryErr := ImplementationRuntimeSmokeOK(townRoot, rig, scoped); retryErr == nil {
+					return nil
+				}
+			}
+		}
 		return smokeErr
 	}
 	return nil
