@@ -604,7 +604,18 @@ func handlerTestUsesModuleRootChdir(content string) bool {
 	if strings.Contains(content, "t.TempDir()") && strings.Contains(content, "Chdir") {
 		return false
 	}
-	return strings.Contains(content, `filepath.Join(".."`) || strings.Contains(content, "filepath.Join(..")
+	// Match filepath.Join( ... ".." ... ) where ".." is any argument.
+	joinIdx := strings.Index(content, `filepath.Join(`)
+	if joinIdx < 0 {
+		return false
+	}
+	rest := content[joinIdx:]
+	closeIdx := strings.Index(rest, ")")
+	if closeIdx < 0 {
+		return false
+	}
+	args := rest[:closeIdx]
+	return strings.Contains(args, `".."`)
 }
 
 // InstallDefaultHTTPProfiles copies embedded defaults into town orchestrator/http-profiles/.

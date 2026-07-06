@@ -130,6 +130,7 @@ func (r *stateRunner) runPostNativeWriteVerify(relPath string, sessionName strin
 	}
 	combined.WriteString(fmt.Sprintf("Post-write verify: %s\n%s", verifyCmd, formatSuccessCommandOutput(out)))
 	r.track.hadCmdFailure = false
+	r.cacheValidatedContent(relPath)
 	if r.implementBeadCloseArtifactsReady() {
 		r.track.verifyOK = true
 		r.persistImplementationProgress(verifyCmd)

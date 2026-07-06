@@ -836,6 +836,28 @@ func validateOutcomeForTask(task *orchestrator.Task, townRoot, rig, outcome, sum
 	return validateOutcomeSummaryBeadIDs(townRoot, rig, outcome, summary)
 }
 
+// cacheValidatedContent stores a successfully-verified file in the code cache
+// so subsequent retries can reuse it instead of regenerating from scratch.
+func (r *stateRunner) cacheValidatedContent(relPath string) {
+	if r == nil || r.task == nil || r.task.WorkflowID == "" || relPath == "" {
+		return
+	}
+	rigDir := rigMayorRigDir(r.townRoot, r.rig)
+	cache, err := orchestrator.OpenCodeCache(rigDir, r.task.WorkflowID)
+	if err != nil {
+		return
+	}
+	abs := filepath.Join(rigDir, filepath.FromSlash(relPath))
+	data, err := os.ReadFile(abs)
+	if err != nil {
+		return
+	}
+	phaseIdx := r.v.ActivePhaseIndex()
+	cache.Put(phaseIdx, relPath, string(data))
+	cache.MarkValidated(phaseIdx, relPath)
+	orchestratedPrintf("[gt-agent] cached validated: %s (phase %d)\n", relPath, phaseIdx)
+}
+
 // validateOutcomeSummaryBeadIDs when hooks require it (plan_review, qa).
 func validateOutcomeSummaryBeadIDs(townRoot, rig, outcome, summary string) error {
 	if !isOrchestratedFailureOutcome(outcome) {

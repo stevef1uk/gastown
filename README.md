@@ -1033,6 +1033,7 @@ For deeper technical details, see the design docs in `docs/`:
 | Convoy lifecycle | [docs/design/convoy/](docs/design/convoy/) |
 | Polecat lifecycle | [docs/design/polecat-lifecycle-patrol.md](docs/design/polecat-lifecycle-patrol.md) |
 | Plugin system | [docs/design/plugin-system.md](docs/design/plugin-system.md) |
+| Code cache | [docs/design/code-cache.md](docs/design/code-cache.md) |
 | Agent providers | [docs/agent-provider-integration.md](docs/agent-provider-integration.md) |
 | Hooks | [docs/HOOKS.md](docs/HOOKS.md) |
 | Installation guide | [docs/INSTALLING.md](docs/INSTALLING.md) |
