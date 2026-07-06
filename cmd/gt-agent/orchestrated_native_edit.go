@@ -297,6 +297,10 @@ func (r *stateRunner) processOrchestratedTools(response, sessionName string, com
 			feedbackOut := formatSuccessCommandOutput(out)
 			orchestratedPrintf("[gt-agent] output: %s\n", strings.TrimSpace(feedbackOut))
 			combined.WriteString(feedbackOut)
+			// Silent cat/read failure: cmd exited 0 with no output but referenced a layout dir path.
+			if r.v.LayoutRoot != "" && len(out) == 0 {
+				appendLayoutPathHint(combined, cmd, "(no output)", r.v.LayoutRoot, r.rig)
+			}
 		}
 	}
 	return hadNative, hadSuccessfulNative, cmdCount
@@ -306,7 +310,7 @@ func isNativeEditSearchNotFound(err error) bool {
 	return err != nil && strings.Contains(err.Error(), "SEARCH block not found")
 }
 
-// appendLayoutPathHint injects a hint when a command fails with "No such file"
+// appendLayoutPathHint injects a hint when a command exits with no output or "No such file"
 // and the referenced path is missing the layout_root prefix. This helps agents
 // adjust paths when working from mayor/rig instead of mayor/rig/<layout>.
 func appendLayoutPathHint(b *strings.Builder, cmd, output, layoutRoot, rig string) {
@@ -314,7 +318,8 @@ func appendLayoutPathHint(b *strings.Builder, cmd, output, layoutRoot, rig strin
 		return
 	}
 	outputLower := strings.ToLower(output)
-	if !strings.Contains(outputLower, "no such file") {
+	silent := strings.Contains(outputLower, "no output") || strings.Contains(outputLower, "no such file")
+	if !silent {
 		return
 	}
 	layoutPrefix := layoutRoot + "/"

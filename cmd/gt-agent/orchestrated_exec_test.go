@@ -711,6 +711,43 @@ func TestRewriteUnittestToWorkdir_mayorRigCDIntoModule(t *testing.T) {
 	}
 }
 
+func TestRewriteUnittestToWorkdir_stripsNonLeadingMayorRigCD(t *testing.T) {
+	town := t.TempDir()
+	rig := "testgt3"
+	layout := "linkshelf"
+	mayor := filepath.Join(town, rig, "mayor", "rig")
+	modDir := filepath.Join(mayor, layout)
+	if err := os.MkdirAll(modDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	// go.mod lives in the layout subdir, not at mayor/rig root
+	if err := os.WriteFile(filepath.Join(modDir, "go.mod"), []byte("module linkshelf\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(town)
+
+	v := orchestrator.WorkflowValidation{
+		LayoutRoot:      layout,
+		TestRunner:      "custom",
+		QAVerifyCommand: "cd linkshelf && go test ./...",
+	}
+	// Command has export + cd mayor/rig (non-leading) + go test
+	cmd := "export BEADS_DIR=$GT_ROOT/testgt3/.beads && cd testgt3/mayor/rig && go test -count=1 ./internal/store/..."
+	fixed, ok := rewriteUnittestToWorkdir(cmd, rig, v)
+	if !ok {
+		t.Fatal("expected rewrite")
+	}
+	if strings.Contains(fixed, "&& cd testgt3/mayor/rig &&") {
+		t.Fatalf("must strip non-leading cd mayor/rig to avoid broken relative chain: %q", fixed)
+	}
+	if !strings.Contains(fixed, "cd testgt3/mayor/rig/linkshelf &&") {
+		t.Fatalf("must cd into module root: %q", fixed)
+	}
+	if !strings.Contains(fixed, "go test -count=1 ./internal/store/...") {
+		t.Fatalf("must keep the test command: %q", fixed)
+	}
+}
+
 func TestNormalizeRigPrefixShellPaths(t *testing.T) {
 	tests := []struct {
 		name string

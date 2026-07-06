@@ -397,6 +397,7 @@ func rewriteUnittestToWorkdir(cmd, rig string, v orchestrator.WorkflowValidation
 		commandHasMayorRigCD(cmd, rig) && !commandHasLayoutCD(cmd, layout) {
 		// Already under mayor/rig but not in layout module dir — one cd to module root.
 		rest := stripRedundantLayoutCD(stripFirstCDPrefix(cmd), workPath, layout)
+		rest = stripMayorRigCDCmd(rest, rig)
 		cmd = "cd " + workPath + " && " + rest
 		changed = true
 	} else if orchestrator.WorkflowUsesGo(v) && layout != "" && layout != "." &&
@@ -404,6 +405,7 @@ func rewriteUnittestToWorkdir(cmd, rig string, v orchestrator.WorkflowValidation
 		// Go: command has both "cd mayor/rig && cd layout" — strip both and
 		// replace with single cd to the module root to avoid broken relative paths.
 		rest := stripCDLayoutPrefix(stripFirstCDPrefix(cmd), layout)
+		rest = stripMayorRigCDCmd(rest, rig)
 		cmd = "cd " + workPath + " && " + strings.TrimSpace(rest)
 		changed = true
 	}
@@ -518,6 +520,31 @@ func stripRedundantLayoutCD(cmd, workPath, layout string) string {
 		"&& cd ./" + layout + " && ",
 	} {
 		cmd = strings.ReplaceAll(cmd, pat, "&& ")
+	}
+	return strings.TrimSpace(cmd)
+}
+
+// stripMayorRigCDCmd removes non-leading "&& cd <rig>/mayor/rig" from the command body
+// so a subsequent prepended cd into the layout subdir does not chain two relative cd's.
+func stripMayorRigCDCmd(cmd, rig string) string {
+	mayorRig := strings.ToLower(rigMayorRigPath(rig))
+	if mayorRig == "" {
+		return cmd
+	}
+	// Match "&& cd <mayor/rig>" optionally followed by " && ".
+	pat := "&& cd " + mayorRig
+	for {
+		lower := strings.ToLower(cmd)
+		idx := strings.Index(lower, pat)
+		if idx < 0 {
+			break
+		}
+		after := cmd[idx+len(pat):]
+		if strings.HasPrefix(after, " && ") {
+			cmd = cmd[:idx] + " && " + after[4:]
+		} else {
+			cmd = cmd[:idx] + after
+		}
 	}
 	return strings.TrimSpace(cmd)
 }
