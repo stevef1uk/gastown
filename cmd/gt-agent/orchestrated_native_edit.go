@@ -290,6 +290,9 @@ func (r *stateRunner) processOrchestratedTools(response, sessionName string, com
 			if strings.EqualFold(strings.TrimSpace(r.hooks.Track), "qa") {
 				appendQAFailureReportNudge(combined, cmd, cmdErr)
 			}
+			if r.v.LayoutRoot != "" {
+				appendLayoutPathHint(combined, cmd, string(out), r.v.LayoutRoot, r.rig)
+			}
 		} else {
 			feedbackOut := formatSuccessCommandOutput(out)
 			orchestratedPrintf("[gt-agent] output: %s\n", strings.TrimSpace(feedbackOut))
@@ -301,6 +304,33 @@ func (r *stateRunner) processOrchestratedTools(response, sessionName string, com
 
 func isNativeEditSearchNotFound(err error) bool {
 	return err != nil && strings.Contains(err.Error(), "SEARCH block not found")
+}
+
+// appendLayoutPathHint injects a hint when a command fails with "No such file"
+// and the referenced path is missing the layout_root prefix. This helps agents
+// adjust paths when working from mayor/rig instead of mayor/rig/<layout>.
+func appendLayoutPathHint(b *strings.Builder, cmd, output, layoutRoot, rig string) {
+	if b == nil || layoutRoot == "" {
+		return
+	}
+	outputLower := strings.ToLower(output)
+	if !strings.Contains(outputLower, "no such file") {
+		return
+	}
+	layoutPrefix := layoutRoot + "/"
+	cmdLower := strings.ToLower(cmd)
+	if strings.Contains(cmdLower, layoutPrefix) || strings.Contains(cmdLower, rig+"/mayor/rig/"+layoutPrefix) {
+		return // already uses the correct prefix
+	}
+	// Check if the command references a layout-relative path without the prefix.
+	layoutDirs := []string{"internal/", "cmd/", "web/", "pkg/", "api/"}
+	for _, dir := range layoutDirs {
+		if strings.Contains(cmdLower, dir) {
+			b.WriteString("\n---\n**Hint:** file not found — paths under `" + layoutRoot + "/` need that prefix when working from `" + rig + "/mayor/rig/`. ")
+			b.WriteString("Try `" + layoutRoot + "/<path>` or `cd " + rig + "/mayor/rig/" + layoutRoot + "` before the command.\n")
+			return
+		}
+	}
 }
 
 func isMarkdownFenceOnlyLine(t string) bool {

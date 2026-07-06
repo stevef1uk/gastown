@@ -180,8 +180,23 @@ func ImplementationPhaseVerifyOK(townRoot, rig string, v WorkflowValidation) err
 			return err
 		}
 	}
-	if err = ImplementationRuntimeSmokeOK(townRoot, rig, scoped); err != nil {
-		return err
+	if smokeErr := ImplementationRuntimeSmokeOK(townRoot, rig, scoped); smokeErr != nil {
+		errText := smokeErr.Error()
+		// Auto-fix missing store.DB = db in main.go when smoke panic is a nil-DB.
+		if rel, fixErr := TryAutoFixMainGoStoreDBFromOutput(rigDir, v, errText); fixErr == nil && rel != "" {
+			if retryErr := ImplementationRuntimeSmokeOK(townRoot, rig, scoped); retryErr == nil {
+				return nil
+			}
+		}
+		// Auto-fix missing global in Python entrypoint when smoke panics on NoneType DB.
+		if WorkflowUsesPython(scoped) {
+			if rel, fixErr := TryAutoFixMainPyStoreDBFromOutput(rigDir, v, errText); fixErr == nil && rel != "" {
+				if retryErr := ImplementationRuntimeSmokeOK(townRoot, rig, scoped); retryErr == nil {
+					return nil
+				}
+			}
+		}
+		return smokeErr
 	}
 	return nil
 }
