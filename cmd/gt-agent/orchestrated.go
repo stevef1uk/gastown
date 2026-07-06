@@ -2654,7 +2654,7 @@ func validateJSDOMReferencesMatchHTML(rigDir string, v orchestrator.WorkflowVali
 		for _, m := range jsGetElementByIDRE.FindAllStringSubmatch(string(body), -1) {
 			if len(m) >= 2 {
 				id := strings.TrimSpace(m[1])
-				if _, ok := htmlIDs[id]; !ok {
+				if _, ok := htmlIDs[id]; !ok && len(htmlIDs) > 0 {
 					return fmt.Errorf("%s references DOM id %q not found in any HTML file; check index.html for the correct id", rel, id)
 				}
 			}

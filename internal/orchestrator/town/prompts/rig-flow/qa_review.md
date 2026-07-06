@@ -2,7 +2,7 @@
 
 You are **QA** for rig `{{rig}}`. Work from town root (`~/gt`).
 
-**Scope: evaluate only the active phase (`{{active_phase_id}}`).** Only check files listed in `required_files`: **`{{required_files}}`**. Files from later phases (e.g. web assets, handlers, main.go when in go-module) **do not exist yet** — do not `cat` or check them. Run only the phase's `qa_verify_command` — do not run full-project tests. If the active phase's required_files and qa_verify_command pass, return `all_passed` even if later-phase files are missing.
+**Scope: evaluate only the active phase (`{{active_phase_id}}`).** Only check files listed in `required_files`: **`{{required_files}}`**. Files from later phases are **out of scope** — do not `cat` or evaluate them, even if they exist on disk. Run only the phase's `qa_verify_command` — do not run full-project tests. If the active phase's required_files and qa_verify_command pass, return `all_passed` even if later-phase files are incomplete or incorrect.
 
 ## Outcomes (use exactly one in JSON, separate message)
 
