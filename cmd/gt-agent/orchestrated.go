@@ -1172,6 +1172,33 @@ func rewritePlanMDPathAfterCD(cmd, rig string) (string, bool) {
 	return strings.ReplaceAll(cmd, wrong, "plan.md"), true
 }
 
+// rewritePlanMDWCFromTownRoot rewrites bare `wc -c plan.md` to `wc -c <rig>/mayor/rig/plan.md`
+// so the LLM checks the correct location from townRoot (where sync wrote plan.md).
+// Does NOT fire when a `cd` prefix is present — plan_md_after_cd handles that case.
+func rewritePlanMDWCFromTownRoot(cmd, rig string) (string, bool) {
+	rigName := strings.TrimSpace(rig)
+	if rigName == "" {
+		return cmd, false
+	}
+	lower := strings.ToLower(cmd)
+	if !strings.Contains(lower, "wc") || !strings.Contains(lower, "plan.md") {
+		return cmd, false
+	}
+	// If there's already a cd, let plan_md_after_cd handle it.
+	if strings.Contains(lower, "cd ") {
+		return cmd, false
+	}
+	// Only rewrite bare "plan.md" — not paths like "backend/plan.md".
+	idx := strings.LastIndex(cmd, "plan.md")
+	if idx > 0 && cmd[idx-1] != ' ' && cmd[idx-1] != '\t' && cmd[idx-1] != '=' {
+		return cmd, false
+	}
+	fullPath := rigName + "/mayor/rig/plan.md"
+	before := cmd[:idx]
+	after := strings.Replace(cmd[idx:], "plan.md", fullPath, 1)
+	return before + after, true
+}
+
 // designCommandShellPortion returns the shell preamble before a heredoc delimiter (<<).
 // Architecture.md bodies often mention python3, gt bd, etc. in prose; those must not
 // trigger design-step side-effect checks.
@@ -1841,6 +1868,8 @@ func validatePlanMDBeadIDs(townRoot, rig, planPath string, v orchestrator.Workfl
 	if err != nil {
 		return err
 	}
+	// Use the same validation scope as sync_planning_artifacts: active phase only
+	v = v.ForActivePhase()
 	open, err := listOpenImplementationBeads(townRoot, rig)
 	if err != nil {
 		return err

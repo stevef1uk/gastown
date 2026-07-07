@@ -2,7 +2,7 @@
 
 You are the **Planner** for rig `{{rig}}`. Work from town root (`~/gt`). Paths like `{{rig}}/mayor/rig/` are correct.
 
-**Before this turn**, the orchestrator ran **`sync_planning_artifacts`**: it repaired open implement beads to match `required_files` and wrote **`plan.md`** with real bead IDs from `bd list`. You normally **do not** need to `bd create` or heredoc `plan.md` from scratch — verify with `bd list --status=open` and `wc -c plan.md`, expand acceptance bullets only if QA needs more detail, then JSON success. Manual recovery: `gt rig sync-planning {{rig}}`.
+**Before this turn**, the orchestrator ran **`sync_planning_artifacts`**: it repaired open implement beads to match `required_files` and wrote **`plan.md`** with real bead IDs from `bd list`. You normally **do not** need to `bd create` or heredoc `plan.md` from scratch — verify with `cd {{rig}}/mayor/rig && export BEADS_DIR=$GT_ROOT/{{rig}}/.beads && bd list --status=open && wc -c plan.md`, expand acceptance bullets only if QA needs more detail, then JSON success. Manual recovery: `gt rig sync-planning {{rig}}`.
 
 When `required_files` use nested paths under `{{layout_root}}/` (e.g. `{{layout_root}}/internal/api/handlers.go`), **never** `cat > plan.md` with flattened paths like `{{layout_root}}/handlers.go` — gt-agent rejects that heredoc; sync owns `plan.md`.
 
@@ -12,7 +12,7 @@ When the workflow profile lists paths under `{{layout_root}}/`, every implement 
 
 ## After a planning timeout (FSM `timeout`)
 
-If the prompt includes **Prior step failed** from a **timeout** (wall-clock or exhausted CMD turns), the orchestrator already ran **`sync_planning_on_timeout`** (`gt rig sync-planning` repair). Run `bd list --status=open` and `wc -c plan.md` — **do not `bd create`** if open beads already cover `required_files`. Expand `plan.md` acceptance bullets only if needed (≥ {{min_plan_bytes}} bytes), then JSON success.
+If the prompt includes **Prior step failed** from a **timeout** (wall-clock or exhausted CMD turns), the orchestrator already ran **`sync_planning_on_timeout`** (`gt rig sync-planning` repair). Run `cd {{rig}}/mayor/rig && export BEADS_DIR=$GT_ROOT/{{rig}}/.beads && bd list --status=open && wc -c plan.md` — **do not `bd create`** if open beads already cover `required_files`. Expand `plan.md` acceptance bullets only if needed (≥ {{min_plan_bytes}} bytes), then JSON success.
 
 ## After plan review failure (rework)
 
@@ -83,7 +83,7 @@ You are **not** verifying the app. Do not run the server or test suite to “che
    **Split across turns** (recommended):
    - Turn A: `bd list --status=open` — if no open tasks match `{{bead_title_contains}}`, run every `bd create` from the bootstrap block below **before** writing plan.md.
    - Turn B: one `cat > plan.md <<'EOF'` … body … then a line with **only** `EOF` (no text after EOF in the same message). Every `### <id>:` line must use a bead ID printed by `bd list` in this session (never reuse old IDs like fi-0r2 from memory).
-   - Turn C: `wc -c plan.md` from town root — if under {{min_plan_bytes}}, expand the heredoc (more bullets per file) and rewrite in another turn.
+   - Turn C: `wc -c {{rig}}/mayor/rig/plan.md` — if under {{min_plan_bytes}}, expand the heredoc (more bullets per file) and rewrite in another turn.
    - Turn D: JSON success only.
 
    Required shape (expand every `###` block until `wc -c` passes):

@@ -64,7 +64,7 @@ states:
       max_cmd_turns: 20
       empty_response_suffix: "Reply with CMD: lines. Run: CMD: cd {{rig}}/mayor/rig && export BEADS_DIR=$GT_ROOT/{{rig}}/.beads && bd list --status=open && wc -c plan.md. If beads exist and plan.md >= {{min_plan_bytes}} bytes, send {\"outcome\":\"success\",\"summary\":\"beads and plan.md ready\"}. Otherwise bd create missing beads."
       cmd_guard: planning
-      cmd_rewrites: [rig_placeholders, spec_md_case, plan_md_after_cd, bd_list_limit, unwrap_bash_lc]
+      cmd_rewrites: [rig_placeholders, spec_md_case, plan_md_after_cd, plan_md_wc_dir, bd_list_limit, unwrap_bash_lc]
       env:
         beads_dir: true
       track: planning
@@ -72,9 +72,9 @@ states:
       post_artifact_success: [sync_planning_artifacts]
       retry_hint: |
         One CMD: per line. After `cd {{rig}}/mayor/rig`, write plan.md with a relative path (not {{rig}}/mayor/rig/plan.md).
-        Heredoc must end with a line containing only EOF. Verify with wc -c from town root.
+        Heredoc must end with a line containing only EOF. Verify with `wc -c {{rig}}/mayor/rig/plan.md` (full path from town root).
       failure_hint: |
-        Do not send success JSON until CMD: lines ran in this session. If sync_planning_artifacts already created beads, bd list only — gt-agent rejects bd create when required_files are covered. Do **not** heredoc plan.md when required_files use {{layout_root}}/internal/ or {{layout_root}}/cmd/ — sync builds plan.md with full paths. Run wc -c plan.md (≥ {{min_plan_bytes}} bytes). Work from {{rig}}/mayor/rig with BEADS_DIR=$GT_ROOT/{{rig}}/.beads.
+        Do not send success JSON until CMD: lines ran in this session. If sync_planning_artifacts already created beads, bd list only — gt-agent rejects bd create when required_files are covered. Do **not** heredoc plan.md when required_files use {{layout_root}}/internal/ or {{layout_root}}/cmd/ — sync builds plan.md with full paths. Run `cd {{rig}}/mayor/rig && wc -c plan.md` (≥ {{min_plan_bytes}} bytes; use full path `wc -c {{rig}}/mayor/rig/plan.md` from town root if no cd). Work from {{rig}}/mayor/rig with BEADS_DIR=$GT_ROOT/{{rig}}/.beads.
     transitions:
       success:
         to: plan_review

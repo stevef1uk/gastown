@@ -13,15 +13,29 @@ var planBeadSectionRE = regexp.MustCompile(`(?m)^###\s+([a-zA-Z0-9][a-zA-Z0-9_-]
 // ValidationForPlanningSync returns profile-file required_files for bead repair and plan.md sync.
 // Runtime polecat validation (EnrichWorkflowValidationFromArchitecture) must not drive prune/create —
 // it can flatten paths and recreate invalid beads like linkshelf/handlers.go after manual sync.
+// The runtime parameter carries the orchestrator's current active phase (from taskValidation),
+// which is authoritative for this planner invocation. We merge it with the on-disk profile
+// to get the correct required_files for the active phase.
 func ValidationForPlanningSync(townRoot, rig string, runtime WorkflowValidation) WorkflowValidation {
+	// Start with the runtime validation which already has the correct active phase from taskValidation
+	v := runtime
+	// Merge with on-disk profile for any profile-level settings (bead_title_contains, layout_root, etc.)
 	if prof, ok, err := LoadRigWorkflowProfileFile(townRoot, rig); err == nil && ok {
-		v := prof.ForActivePhase()
-		if len(v.RequiredFiles) > 0 {
-			return v
+		// Preserve runtime's active phase ID but use profile's other settings
+		activePhaseID := v.ActivePhaseID()
+		v = prof
+		// Restore the correct active phase from runtime (orchestrator's current phase)
+		if activePhaseID != "" {
+			v.ActivePhaseIDField = activePhaseID
 		}
 	}
-	mayorRig := filepath.Join(townRoot, rig, "mayor", "rig")
-	return EnrichWorkflowValidationFromArchitecture(runtime, mayorRig).ForActivePhase()
+	// Ensure we scope to the active phase's required_files
+	v = v.ForActivePhase()
+	if len(v.RequiredFiles) == 0 {
+		mayorRig := filepath.Join(townRoot, rig, "mayor", "rig")
+		v = EnrichWorkflowValidationFromArchitecture(v, mayorRig).ForActivePhase()
+	}
+	return v
 }
 
 // SyncPlanningArtifacts repairs open implement beads to match required_files and writes plan.md when needed.

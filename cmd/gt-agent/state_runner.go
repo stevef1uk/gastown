@@ -345,6 +345,11 @@ func (r *stateRunner) rewriteCommand(cmd string) string {
 				orchestratedPrintf("[gt-agent] rewrote plan.md path after cd: %s\n", fixed)
 				cmd = fixed
 			}
+		case "plan_md_wc_dir":
+			if fixed, ok := rewritePlanMDWCFromTownRoot(cmd, r.rig); ok {
+				orchestratedPrintf("[gt-agent] rewrote plan.md wc path for rig dir: %s\n", fixed)
+				cmd = fixed
+			}
 		case "backend_path_after_cd":
 			if fixed, ok := rewriteBackendPathAfterCD(cmd, r.rig, r.v.LayoutRoot); ok {
 				orchestratedPrintf("[gt-agent] rewrote layout path after cd: %s\n", fixed)
