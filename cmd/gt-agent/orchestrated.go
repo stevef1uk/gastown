@@ -161,6 +161,11 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 		orchestratedPrintf("[gt-agent] injecting prior failure context for %s/%s\n", task.WorkflowID, task.State)
 	}
 	runner := newStateRunner(task, townRoot, rig)
+	// Reload hooks from the agent's embedded rig-flow.yaml — task.Hooks may have been baked
+	// from an older YAML version (cached at task creation time). Agent-side YAML wins.
+	if fresh, err := orchestrator.RigFlowStateHooks(task.State); err == nil {
+		runner.hooks = runner.hooks.ApplyOverrides(fresh)
+	}
 	runner.scrubStaleDevServersAtTaskStart()
 	defer runner.shutdownStartedServers()
 	// pre_run (refresh_codeindex, bead queue, reconcile) must run before prompt_context so

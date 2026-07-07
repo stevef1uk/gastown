@@ -102,6 +102,103 @@ type AutoVerifyHook struct {
 	Verify string `yaml:"verify" json:"verify"` // go_with_tidy | python | profile
 }
 
+// ApplyOverrides merges non-zero fields from override into the receiver, returning the merged result.
+// Fields with zero-value in override are left unchanged (preserving the receiver's value).
+// This lets lazy-loaded YAML hooks override baked task hooks without wiping unset fields.
+func (h StateHooks) ApplyOverrides(override StateHooks) StateHooks {
+	if override.MaxCmdTurns > 0 {
+		h.MaxCmdTurns = override.MaxCmdTurns
+	}
+	if len(override.PreRun) > 0 {
+		h.PreRun = override.PreRun
+	}
+	if len(override.OnTimeout) > 0 {
+		h.OnTimeout = override.OnTimeout
+	}
+	if len(override.OnStateTimeout) > 0 {
+		h.OnStateTimeout = override.OnStateTimeout
+	}
+	if override.StateTimeoutSeconds > 0 {
+		h.StateTimeoutSeconds = override.StateTimeoutSeconds
+	}
+	if override.CmdTimeoutSeconds > 0 {
+		h.CmdTimeoutSeconds = override.CmdTimeoutSeconds
+	}
+	if len(override.PerTurn) > 0 {
+		h.PerTurn = override.PerTurn
+	}
+	if len(override.PromptContext) > 0 {
+		h.PromptContext = override.PromptContext
+	}
+	if override.CmdGuard != "" {
+		h.CmdGuard = override.CmdGuard
+	}
+	if len(override.CmdRewrites) > 0 {
+		h.CmdRewrites = override.CmdRewrites
+	}
+	if override.Env != (StateEnvHooks{}) {
+		h.Env = override.Env
+	}
+	if override.PipRepairBeforeRun {
+		h.PipRepairBeforeRun = true
+	}
+	if override.Python3Rewrite {
+		h.Python3Rewrite = true
+	}
+	if override.Track != "" {
+		h.Track = override.Track
+	}
+	if len(override.AutoVerify) > 0 {
+		h.AutoVerify = override.AutoVerify
+	}
+	if override.Artifacts != "" {
+		h.Artifacts = override.Artifacts
+	}
+	if len(override.PostArtifactSuccess) > 0 {
+		h.PostArtifactSuccess = override.PostArtifactSuccess
+	}
+	if override.AutoVerifyOKClearsCmdFailure {
+		h.AutoVerifyOKClearsCmdFailure = true
+	}
+	if override.RetryHint != "" {
+		h.RetryHint = override.RetryHint
+	}
+	if override.RetryHintKey != "" {
+		h.RetryHintKey = override.RetryHintKey
+	}
+	if override.FailureHint != "" {
+		h.FailureHint = override.FailureHint
+	}
+	if override.BeadIDsInSummary {
+		h.BeadIDsInSummary = true
+	}
+	if override.EmptyBdListOK {
+		h.EmptyBdListOK = true
+	}
+	if override.OmitOrchestratorContext {
+		h.OmitOrchestratorContext = true
+	}
+	if override.SystemPromptFooter != "" {
+		h.SystemPromptFooter = override.SystemPromptFooter
+	}
+	if override.UserPromptWrapper != "" {
+		h.UserPromptWrapper = override.UserPromptWrapper
+	}
+	if len(override.FailurePromptContext) > 0 {
+		h.FailurePromptContext = override.FailurePromptContext
+	}
+	if override.EmptyResponseSuffix != "" {
+		h.EmptyResponseSuffix = override.EmptyResponseSuffix
+	}
+	if override.AppendGoCompileContext {
+		h.AppendGoCompileContext = true
+	}
+	if override.NativeEditTools {
+		h.NativeEditTools = true
+	}
+	return h
+}
+
 // RetryHintText returns retry guidance for agents (YAML text or computed key).
 func (h StateHooks) RetryHintText(v WorkflowValidation, vars map[string]string) string {
 	if t := strings.TrimSpace(h.RetryHint); t != "" {
