@@ -309,6 +309,10 @@ func (r *stateRunner) rewriteCommand(cmd string) string {
 			cmd = fixed
 		}
 	}
+	if fixed, ok := cdPrefixMayorRig(cmd, r.rig); ok {
+		orchestratedPrintf("[gt-agent] prepended cd mayor/rig: %s\n", fixed)
+		cmd = fixed
+	}
 	if r.hooks.CmdGuard == "planning" {
 		if fixed, ok := rewritePlanMDWCFromTownRoot(cmd, r.rig); ok {
 			orchestratedPrintf("[gt-agent] rewrote plan.md wc path for rig dir: %s\n", fixed)

@@ -1154,6 +1154,39 @@ func rewriteBackendPathAfterCD(cmd, rig, layoutRoot string) (string, bool) {
 	return strings.ReplaceAll(cmd, wrong, layout+"/"), true
 }
 
+// cdPrefixMayorRig prepends `cd <rig>/mayor/rig &&` to bare CMD: lines that lack a cd prefix
+// but reference file paths. This fixes the common LLM mistake of dropping the cd prefix in
+// multi-CMD responses — each CMD: line is processed independently so a cd on line 1 does not
+// carry to line 2.
+func cdPrefixMayorRig(cmd, rig string) (string, bool) {
+	rig = strings.TrimSpace(rig)
+	if rig == "" || cmd == "" {
+		return cmd, false
+	}
+	lower := strings.TrimSpace(strings.ToLower(cmd))
+	if lower == "" {
+		return cmd, false
+	}
+	if strings.HasPrefix(lower, "cd ") || strings.HasPrefix(lower, "export ") || strings.HasPrefix(lower, "source ") {
+		return cmd, false
+	}
+	if strings.HasPrefix(lower, ". ") {
+		return cmd, false
+	}
+	if strings.Contains(lower, "$gt_root") || strings.Contains(lower, "~/gt") {
+		return cmd, false
+	}
+	if strings.HasPrefix(lower, "#") || strings.HasPrefix(lower, "echo ") {
+		return cmd, false
+	}
+	// If command already references the rig path, skip (likely a qt nudge or mail cmd).
+	work := strings.ToLower(rig + "/mayor/rig")
+	if strings.Contains(lower, work) {
+		return cmd, false
+	}
+	return "cd " + rig + "/mayor/rig && " + cmd, true
+}
+
 // rewritePlanMDPathAfterCD fixes a common planner mistake: after `cd rig/mayor/rig`,
 // the model still writes to `rig/mayor/rig/plan.md` (missing from that cwd).
 func rewritePlanMDPathAfterCD(cmd, rig string) (string, bool) {
