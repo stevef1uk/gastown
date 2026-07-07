@@ -196,6 +196,10 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 		orchestratedPrintf("[gt-agent] injecting prompt_context for %s/%s: %v\n", task.WorkflowID, task.State, runner.hooks.PromptContext)
 	}
 	runner.logCodeindexInjectionForActiveBead()
+	if block := runner.formatCachedContentBlock(); block != "" {
+		contextBlocks = append(contextBlocks, block)
+		orchestratedPrintf("[gt-agent] injecting cached-content reuse hints for %s/%s\n", task.WorkflowID, task.State)
+	}
 	if len(contextBlocks) > 0 {
 		userPrompt = strings.Join(contextBlocks, "\n\n") + "\n\n" + userPrompt
 	}

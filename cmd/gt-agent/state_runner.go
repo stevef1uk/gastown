@@ -872,6 +872,31 @@ func (r *stateRunner) cacheValidatedContent(relPath string) {
 	orchestratedPrintf("[gt-agent] cached validated: %s (phase %d)\n", relPath, phaseIdx)
 }
 
+// formatCachedContentBlock returns a prompt hint block listing validated cached
+// files for the active phase, so the LLM reuses them instead of regenerating.
+func (r *stateRunner) formatCachedContentBlock() string {
+	if r == nil || r.task == nil || r.task.WorkflowID == "" {
+		return ""
+	}
+	phaseIdx := r.v.ActivePhaseIndex()
+	rigDir := rigMayorRigDir(r.townRoot, r.rig)
+	cache, err := orchestrator.OpenCodeCache(rigDir, r.task.WorkflowID)
+	if err != nil {
+		return ""
+	}
+	scoped := r.v.ForActivePhase()
+	var hints []string
+	for _, p := range scoped.RequiredFiles {
+		if _, ok := cache.GetValidated(phaseIdx, p); ok {
+			hints = append(hints, "  - "+p+" (validated \u2014 reuse existing content)")
+		}
+	}
+	if len(hints) == 0 {
+		return ""
+	}
+	return "Cached validated content available:\n" + strings.Join(hints, "\n")
+}
+
 // validateOutcomeSummaryBeadIDs when hooks require it (plan_review, qa).
 func validateOutcomeSummaryBeadIDs(townRoot, rig, outcome, summary string) error {
 	if !isOrchestratedFailureOutcome(outcome) {

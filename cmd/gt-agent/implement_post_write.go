@@ -66,83 +66,122 @@ func (r *stateRunner) runPostNativeWriteVerify(relPath string, sessionName strin
 	if !strings.EqualFold(strings.TrimSpace(r.hooks.Track), "implementation") {
 		return
 	}
-	if !orchestrator.WorkflowUsesGo(r.v) {
-		return
-	}
 	relPath = orchestrator.NormalizeBeadPathForLayout(relPath, r.v.LayoutRoot)
-	if relPath == "" || !strings.HasSuffix(relPath, ".go") {
+	if relPath == "" {
 		return
 	}
 	mayorDir := rigMayorRigDir(r.townRoot, r.rig)
-	if err := orchestrator.ValidateHTTPHandlerBeadPrerequisites(mayorDir, relPath, r.v); err != nil {
-		r.track.hadCmdFailure = true
-		r.track.verifyOK = false
-		combined.WriteString(err.Error() + "\n\n")
-		orchestratedFprintfStderr("[gt-agent] %s\n", err)
-		return
-	}
-	verifyCmd := orchestrator.GoCompileVerifyCommandForBead(r.v, mayorDir, relPath)
-	if verifyCmd == "" {
-		return
-	}
-	if fixed, ok := rewriteUnittestToWorkdir(verifyCmd, r.rig, r.v); ok {
-		verifyCmd = fixed
-	}
-	workDir := r.workDir()
-	orchestratedPrintf("[gt-agent] post-write verify: %s\n", verifyCmd)
-	out, err := r.runShellCommand(verifyCmd, workDir, sessionName, cmdEnv)
-	outStr := string(out)
-	if err != nil && orchestrator.GoCompileOutputHasUnusedImport(outStr) {
-		if r.tryGoimportsForCompileFailure(mayorDir, outStr, combined) {
-			orchestratedPrintf("[gt-agent] retrying verify after goimports package tidy\n")
+
+	if orchestrator.WorkflowUsesGo(r.v) {
+		if !strings.HasSuffix(relPath, ".go") {
+			return
+		}
+		if err := orchestrator.ValidateHTTPHandlerBeadPrerequisites(mayorDir, relPath, r.v); err != nil {
+			r.track.hadCmdFailure = true
+			r.track.verifyOK = false
+			combined.WriteString(err.Error() + "\n\n")
+			orchestratedFprintfStderr("[gt-agent] %s\n", err)
+			return
+		}
+		verifyCmd := orchestrator.GoCompileVerifyCommandForBead(r.v, mayorDir, relPath)
+		if verifyCmd == "" {
+			return
+		}
+		if fixed, ok := rewriteUnittestToWorkdir(verifyCmd, r.rig, r.v); ok {
+			verifyCmd = fixed
+		}
+		workDir := r.workDir()
+		orchestratedPrintf("[gt-agent] post-write verify: %s\n", verifyCmd)
+		out, err := r.runShellCommand(verifyCmd, workDir, sessionName, cmdEnv)
+		outStr := string(out)
+		if err != nil && orchestrator.GoCompileOutputHasUnusedImport(outStr) {
+			if r.tryGoimportsForCompileFailure(mayorDir, outStr, combined) {
+				orchestratedPrintf("[gt-agent] retrying verify after goimports package tidy\n")
+				out, err = r.runShellCommand(verifyCmd, workDir, sessionName, cmdEnv)
+				outStr = string(out)
+			}
+		}
+		if err != nil && r.tryHandlerWebScaffoldAutoFix(mayorDir, outStr, combined) {
+			orchestratedPrintf("[gt-agent] retrying verify after handler web scaffold auto-fix\n")
 			out, err = r.runShellCommand(verifyCmd, workDir, sessionName, cmdEnv)
 			outStr = string(out)
 		}
-	}
-	if err != nil && r.tryHandlerWebScaffoldAutoFix(mayorDir, outStr, combined) {
-		orchestratedPrintf("[gt-agent] retrying verify after handler web scaffold auto-fix\n")
-		out, err = r.runShellCommand(verifyCmd, workDir, sessionName, cmdEnv)
-		outStr = string(out)
-	}
-	if err != nil && r.tryHandlerWebCwdAutoFix(mayorDir, outStr, combined) {
-		orchestratedPrintf("[gt-agent] retrying verify after handler web cwd auto-fix\n")
-		out, err = r.runShellCommand(verifyCmd, workDir, sessionName, cmdEnv)
-		outStr = string(out)
-	}
-	if err != nil && r.tryHandlerTestStoreDBAutoFix(mayorDir, outStr, combined) {
-		orchestratedPrintf("[gt-agent] retrying verify after handler TestMain store.DB auto-fix\n")
-		out, err = r.runShellCommand(verifyCmd, workDir, sessionName, cmdEnv)
-		outStr = string(out)
-	}
-	if err != nil || orchestrator.GoToolOutputMatchedNoPackages(outStr) {
-		if err == nil {
-			err = fmt.Errorf("go matched no packages (no .go sources in target path)")
+		if err != nil && r.tryHandlerWebCwdAutoFix(mayorDir, outStr, combined) {
+			orchestratedPrintf("[gt-agent] retrying verify after handler web cwd auto-fix\n")
+			out, err = r.runShellCommand(verifyCmd, workDir, sessionName, cmdEnv)
+			outStr = string(out)
 		}
-		r.track.hadCmdFailure = true
-		r.track.verifyOK = false
-		combined.WriteString(fmt.Sprintf("Post-write verify: %s\nError: %v\nOutput: %s\n\n", verifyCmd, err, outStr))
-		if r.hooks.AppendGoCompileContext {
-			appendGoCompileSourceContext(combined, r.townRoot, r.rig, mayorDir, r.v.LayoutRoot,
-				relPath, r.v, verifyCmd, outStr)
-			r.noteImplementationVerifyFailure(verifyCmd, outStr)
+		if err != nil && r.tryHandlerTestStoreDBAutoFix(mayorDir, outStr, combined) {
+			orchestratedPrintf("[gt-agent] retrying verify after handler TestMain store.DB auto-fix\n")
+			out, err = r.runShellCommand(verifyCmd, workDir, sessionName, cmdEnv)
+			outStr = string(out)
+		}
+		if err != nil || orchestrator.GoToolOutputMatchedNoPackages(outStr) {
+			if err == nil {
+				err = fmt.Errorf("go matched no packages (no .go sources in target path)")
+			}
+			r.track.hadCmdFailure = true
+			r.track.verifyOK = false
+			combined.WriteString(fmt.Sprintf("Post-write verify: %s\nError: %v\nOutput: %s\n\n", verifyCmd, err, outStr))
+			if r.hooks.AppendGoCompileContext {
+				appendGoCompileSourceContext(combined, r.townRoot, r.rig, mayorDir, r.v.LayoutRoot,
+					relPath, r.v, verifyCmd, outStr)
+				r.noteImplementationVerifyFailure(verifyCmd, outStr)
+			}
+			return
+		}
+		combined.WriteString(fmt.Sprintf("Post-write verify: %s\n%s", verifyCmd, formatSuccessCommandOutput(out)))
+		r.cacheValidatedContent(relPath)
+		r.track.hadCmdFailure = false
+		if r.implementBeadCloseArtifactsReady() {
+			r.track.verifyOK = true
+			r.persistImplementationProgress(verifyCmd)
+			orchestratedPrintf("[gt-agent] post-write verify OK for %s\n", relPath)
+			if nudge := r.formatImplementBeadCloseNudge(); nudge != "" {
+				combined.WriteString(nudge)
+			}
+		} else {
+			r.track.verifyOK = false
+			if testPath := orchestrator.CorrelatedTestPathForSource(r.activeImplementBeadPath(), r.v); testPath != "" {
+				combined.WriteString(fmt.Sprintf("\nPackage verify passed. Add **WRITE:** `%s`, re-run Verify, then `bd close`.\n\n", testPath))
+			}
 		}
 		return
 	}
-	combined.WriteString(fmt.Sprintf("Post-write verify: %s\n%s", verifyCmd, formatSuccessCommandOutput(out)))
-	r.track.hadCmdFailure = false
-	r.cacheValidatedContent(relPath)
-	if r.implementBeadCloseArtifactsReady() {
-		r.track.verifyOK = true
-		r.persistImplementationProgress(verifyCmd)
+
+	if orchestrator.WorkflowUsesPython(r.v) {
+		if !strings.HasSuffix(relPath, ".py") {
+			return
+		}
+		workDir := r.workDir()
+		verifyCmd := orchestrator.PythonImplementationVerifyCommandForBead(r.v, mayorDir, relPath)
+		if verifyCmd == "" {
+			r.cacheValidatedContent(relPath)
+			return
+		}
+		orchestratedPrintf("[gt-agent] post-write verify: %s\n", verifyCmd)
+		out, err := r.runShellCommand(verifyCmd, workDir, sessionName, cmdEnv)
+		outStr := string(out)
+		if err != nil {
+			r.track.hadCmdFailure = true
+			r.track.verifyOK = false
+			combined.WriteString(fmt.Sprintf("Post-write verify: %s\nError: %v\nOutput: %s\n\n", verifyCmd, err, outStr))
+			return
+		}
+		combined.WriteString(fmt.Sprintf("Post-write verify: %s\n%s", verifyCmd, formatSuccessCommandOutput(out)))
+		r.cacheValidatedContent(relPath)
+		r.track.hadCmdFailure = false
 		orchestratedPrintf("[gt-agent] post-write verify OK for %s\n", relPath)
-		if nudge := r.formatImplementBeadCloseNudge(); nudge != "" {
-			combined.WriteString(nudge)
+		if r.implementBeadCloseArtifactsReady() {
+			r.track.verifyOK = true
+			r.persistImplementationProgress(verifyCmd)
+			if nudge := r.formatImplementBeadCloseNudge(); nudge != "" {
+				combined.WriteString(nudge)
+			}
+		} else {
+			r.track.verifyOK = false
 		}
-	} else {
-		r.track.verifyOK = false
-		if testPath := orchestrator.CorrelatedTestPathForSource(r.activeImplementBeadPath(), r.v); testPath != "" {
-			combined.WriteString(fmt.Sprintf("\nPackage verify passed. Add **WRITE:** `%s`, re-run Verify, then `bd close`.\n\n", testPath))
-		}
+		return
 	}
 }
 
