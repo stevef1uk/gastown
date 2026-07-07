@@ -119,3 +119,5 @@ You are **not** verifying the app. Do not run the server or test suite to “che
 ## Anti-hallucination
 
 Only reference bead IDs shown in `bd create` / `bd list` output. Paths are case-sensitive: `SPEC.md`, not `spec.md`. Forbidden in `plan.md`: `te-xxx`, `fi-xxx`, `(copy id here)`, or any ID not printed by `bd list` this session.
+
+**Never prepend the rig name (`{{rig}}`) to file paths.** Paths like `finally/backend/main.py` or `testgt2/backend/main.py` are WRONG — the system cannot match them against `required_files`. Use bare paths exactly as listed in `required_files`: `backend/main.py`, `Dockerfile`, `cmd/server/main.go`. The rig name is not a directory component of any file path.
