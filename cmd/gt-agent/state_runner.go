@@ -309,6 +309,12 @@ func (r *stateRunner) rewriteCommand(cmd string) string {
 			cmd = fixed
 		}
 	}
+	if r.hooks.CmdGuard == "planning" {
+		if fixed, ok := rewritePlanMDWCFromTownRoot(cmd, r.rig); ok {
+			orchestratedPrintf("[gt-agent] rewrote plan.md wc path for rig dir: %s\n", fixed)
+			cmd = fixed
+		}
+	}
 	if r.hooks.CmdGuard == "qa" {
 		if fixed, ok := rewriteQALayoutVerifyCommand(cmd, r.rig, r.v); ok {
 			orchestratedPrintf("[gt-agent] rewrote QA layout verify cmd: %s\n", fixed)
