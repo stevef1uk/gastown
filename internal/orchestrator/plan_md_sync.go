@@ -486,14 +486,21 @@ func refreshPlanMDBeadIDsInPlace(townRoot, rig string, v WorkflowValidation) (bo
 	}
 
 	// Build path->current_id map from open beads
+	// Keys are normalized (rig-name prefix stripped) so the lookup below
+	// always uses the canonical path regardless of which prefix the plan.md
+	// header or bead title uses.
 	pathToCurrentID := map[string]string{}
 	for _, b := range open {
 		p := NormalizePlannerBeadPath(ExtractPathFromBeadTitle(b.Title, v.BeadTitleContains), v.LayoutRoot, rig)
 		if p != "" {
 			for _, want := range v.RequiredFiles {
 				want = filepath.ToSlash(strings.TrimSpace(want))
-				if want != "" && pathMatchesRequiredForProfile(p, []string{want}, v) {
-					pathToCurrentID[want] = b.ID
+				if want == "" {
+					continue
+				}
+				if pathMatchesRequiredForProfile(p, []string{want}, v) {
+					// Normalize the key so it matches lookup from normalized plan.md header paths
+					pathToCurrentID[NormalizePlannerBeadPath(want, v.LayoutRoot, rig)] = b.ID
 				}
 			}
 		}
@@ -509,13 +516,17 @@ func refreshPlanMDBeadIDsInPlace(townRoot, rig string, v WorkflowValidation) (bo
 			return m
 		}
 		oldID := strings.TrimSpace(parts[1])
-		path := strings.TrimSpace(parts[2])
-		newID, ok := pathToCurrentID[path]
+		headerPath := strings.TrimSpace(parts[2])
+		// Normalize the header path to strip hallucinated rig-name prefix
+		// (e.g. "finally/backend/pyproject.toml" → "backend/pyproject.toml")
+		// so it matches the normalized keys in pathToCurrentID.
+		normalizedPath := NormalizePlannerBeadPath(headerPath, v.LayoutRoot, rig)
+		newID, ok := pathToCurrentID[normalizedPath]
 		if !ok || newID == oldID {
 			return m
 		}
 		changed = true
-		return fmt.Sprintf("### %s: %s", newID, path)
+		return fmt.Sprintf("### %s: %s", newID, normalizedPath)
 	})
 	if !changed {
 		return false, nil
