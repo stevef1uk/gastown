@@ -1184,9 +1184,8 @@ func cdPrefixMayorRig(cmd, rig string) (string, bool) {
 	if strings.HasPrefix(lower, "#") || strings.HasPrefix(lower, "echo ") {
 		return cmd, false
 	}
-	// If command already references the rig path, skip (likely a qt nudge or mail cmd).
-	work := strings.ToLower(rig + "/mayor/rig")
-	if strings.Contains(lower, work) {
+	// If command already references the rig path or has a mayor/rig cd, skip.
+	if commandHasRigPathContext(cmd, rig) {
 		return cmd, false
 	}
 	return "cd " + rig + "/mayor/rig && " + cmd, true
