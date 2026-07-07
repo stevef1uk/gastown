@@ -1608,10 +1608,19 @@ func runRigAdopt(_ *cobra.Command, args []string) error {
 			}
 			// Dolt server is required for beads init.
 			if running, _, sErr := doltserver.IsRunning(townRoot); sErr != nil || !running {
-				fmt.Printf("  %s Could not init bd database: Dolt server is not running\n", style.Warning.Render("!"))
-				break
-			}
-			if err := mgr.InitBeads(rigPath, prefix, name); err != nil {
+				// Fallback: initialize in embedded mode (JSONL only) when Dolt server is not running.
+				// This allows the rig to be used immediately; beads will be migrated to server mode
+				// when gt up starts the Dolt server and bd bootstrap is run.
+				fmt.Printf("  %s Dolt server not running — initializing beads in embedded mode\n", style.Warning.Render("!"))
+				bdCmd := exec.Command("bd", "init", "--prefix", prefix)
+				bdCmd.Dir = rigPath
+				bdCmd.Env = append(os.Environ(), "BEADS_DIR="+beadsDir)
+				if out, bdErr := bdCmd.CombinedOutput(); bdErr != nil {
+					fmt.Printf("  %s Could not init bd database: %v\n%s\n", style.Warning.Render("!"), bdErr, out)
+				} else {
+					fmt.Printf("  %s Initialized beads database (embedded mode)\n", style.Success.Render("✓"))
+				}
+			} else if err := mgr.InitBeads(rigPath, prefix, name); err != nil {
 				fmt.Printf("  %s Could not init bd database: %v\n", style.Warning.Render("!"), err)
 			} else {
 				fmt.Printf("  %s Initialized beads database (Dolt)\n", style.Success.Render("✓"))
@@ -1625,7 +1634,21 @@ func runRigAdopt(_ *cobra.Command, args []string) error {
 	if !foundBeadsCandidate && result.BeadsPrefix != "" {
 		// Dolt server is required for beads init.
 		if running, _, sErr := doltserver.IsRunning(townRoot); sErr != nil || !running {
-			fmt.Printf("  %s Could not init beads database: Dolt server is not running\n", style.Warning.Render("!"))
+			// Fallback: initialize in embedded mode (JSONL only) when Dolt server is not running.
+			fmt.Printf("  %s Dolt server not running — initializing beads in embedded mode\n", style.Warning.Render("!"))
+			rigBeadsDir := filepath.Join(rigPath, ".beads")
+			if mkErr := os.MkdirAll(rigBeadsDir, 0700); mkErr != nil {
+				fmt.Printf("  %s Could not create .beads directory: %v\n", style.Warning.Render("!"), mkErr)
+			} else {
+				bdCmd := exec.Command("bd", "init", "--prefix", result.BeadsPrefix)
+				bdCmd.Dir = rigPath
+				bdCmd.Env = append(os.Environ(), "BEADS_DIR="+rigBeadsDir)
+				if out, bdErr := bdCmd.CombinedOutput(); bdErr != nil {
+					fmt.Printf("  %s Could not init beads database: %v\n%s\n", style.Warning.Render("!"), bdErr, out)
+				} else {
+					fmt.Printf("  %s Initialized beads database (embedded mode)\n", style.Success.Render("✓"))
+				}
+			}
 		} else if err := mgr.InitBeads(rigPath, result.BeadsPrefix, name); err != nil {
 			fmt.Printf("  %s Could not init beads database: %v\n", style.Warning.Render("!"), err)
 		} else {

@@ -1190,8 +1190,22 @@ func (m *Manager) InitBeads(rigPath, prefix, rigName string) error {
 	cmd.Env = filteredEnv
 	_, bdInitErr := cmd.CombinedOutput()
 	if bdInitErr != nil {
-		// bd might not be installed or failed — the shared helper below will
-		// create config.yaml with the required defaults as a fallback.
+		// bd init --server failed (Dolt server not running?) — fallback to embedded mode.
+		// This allows the rig to be used immediately; beads will be migrated to server mode
+		// when gt up starts the Dolt server and bd bootstrap is run.
+		fmt.Printf("  Warning: bd init --server failed, falling back to embedded mode: %v\n", bdInitErr)
+		fallbackArgs := []string{"init"}
+		if prefix != "" {
+			fallbackArgs = append(fallbackArgs, "--prefix", prefix)
+		}
+		fallbackCmd := exec.Command("bd", fallbackArgs...)
+		fallbackCmd.Dir = rigPath
+		fallbackCmd.Env = filteredEnv
+		if fallbackOut, fallbackErr := fallbackCmd.CombinedOutput(); fallbackErr != nil {
+			fmt.Printf("  Warning: bd init (embedded fallback) also failed: %v\n%s\n", fallbackErr, fallbackOut)
+		} else {
+			fmt.Printf("  Initialized beads database (embedded mode — run bd bootstrap after gt up to migrate)\n")
+		}
 	} else {
 		// bd init succeeded - configure the Dolt database
 
