@@ -876,8 +876,8 @@ func (r *stateRunner) cacheValidatedContent(relPath string) {
 	orchestratedPrintf("[gt-agent] cached validated: %s (phase %d)\n", relPath, phaseIdx)
 }
 
-// formatCachedContentBlock returns a prompt hint block listing validated cached
-// files for the active phase, so the LLM reuses them instead of regenerating.
+// formatCachedContentBlock returns a prompt block injecting validated cached file
+// content for the active phase, so the LLM reuses them instead of regenerating.
 func (r *stateRunner) formatCachedContentBlock() string {
 	if r == nil || r.task == nil || r.task.WorkflowID == "" {
 		return ""
@@ -889,16 +889,67 @@ func (r *stateRunner) formatCachedContentBlock() string {
 		return ""
 	}
 	scoped := r.v.ForActivePhase()
-	var hints []string
+	const maxInjectedTotal = 8192
+	const maxInjectedPerFile = 2048
+	var totalInjected int
+	var b strings.Builder
+	b.WriteString("## Cached validated content (do not modify)\n\nThe following files already have validated content. Include them as-is rather than regenerating:\n\n")
 	for _, p := range scoped.RequiredFiles {
-		if _, ok := cache.GetValidated(phaseIdx, p); ok {
-			hints = append(hints, "  - "+p+" (validated \u2014 reuse existing content)")
+		content, ok := cache.GetValidated(phaseIdx, p)
+		if !ok {
+			continue
 		}
+		if len(content) > maxInjectedPerFile {
+			b.WriteString(fmt.Sprintf("- `%s` (validated, %d bytes \u2014 too large to inline, reuse existing)\n", p, len(content)))
+			continue
+		}
+		if totalInjected+len(content) > maxInjectedTotal {
+			b.WriteString(fmt.Sprintf("- `%s` (validated, %d bytes \u2014 inline limit reached, reuse existing)\n", p, len(content)))
+			continue
+		}
+		lang := cacheContentLang(p)
+		b.WriteString(fmt.Sprintf("### %s\n```%s\n%s\n```\n\n", p, lang, content))
+		totalInjected += len(content)
 	}
-	if len(hints) == 0 {
+	if totalInjected == 0 {
 		return ""
 	}
-	return "Cached validated content available:\n" + strings.Join(hints, "\n")
+	return b.String()
+}
+
+func cacheContentLang(path string) string {
+	ext := strings.ToLower(filepath.Ext(path))
+	switch ext {
+	case ".go":
+		return "go"
+	case ".py":
+		return "python"
+	case ".js", ".jsx":
+		return "javascript"
+	case ".ts", ".tsx":
+		return "typescript"
+	case ".html":
+		return "html"
+	case ".css":
+		return "css"
+	case ".json":
+		return "json"
+	case ".yaml", ".yml":
+		return "yaml"
+	case ".md":
+		return "markdown"
+	case ".sh":
+		return "bash"
+	case ".sql":
+		return "sql"
+	case ".dockerfile", "":
+		if strings.Contains(strings.ToLower(path), "dockerfile") {
+			return "dockerfile"
+		}
+		return ""
+	default:
+		return ""
+	}
 }
 
 // validateOutcomeSummaryBeadIDs when hooks require it (plan_review, qa).
