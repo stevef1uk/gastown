@@ -20,8 +20,10 @@ func NormalizePlannerBeadPath(path, layoutRoot, rig string) string {
 	path = filepath.ToSlash(strings.TrimSpace(path))
 	layoutRoot = strings.Trim(filepath.ToSlash(strings.TrimSpace(layoutRoot)), "/")
 	rig = strings.TrimSpace(rig)
-	if layoutRoot == "" || layoutRoot == "." {
-		if rig != "" && strings.HasPrefix(path, rig+"/") {
+	// Strip hallucinated rig-name prefix (e.g. "finally/backend/tests/" -> "backend/tests/")
+	// regardless of layoutRoot — bead titles may include the rig name as a directory prefix.
+	if rig != "" {
+		for strings.HasPrefix(path, rig+"/") {
 			path = strings.TrimPrefix(path, rig+"/")
 		}
 	}
@@ -152,11 +154,27 @@ func ExtractPathFromBeadTitle(title, titlePrefix string) string {
 func NormalizeBeadPathForLayout(beadPath, layoutRoot string) string {
 	beadPath = filepath.ToSlash(strings.TrimSpace(beadPath))
 	layoutRoot = strings.Trim(strings.TrimSpace(layoutRoot), "/")
-	if beadPath == "" || layoutRoot == "" || layoutRoot == "." {
+	if beadPath == "" {
+		return beadPath
+	}
+	if layoutRoot == "" || layoutRoot == "." {
+		// With no layout root, we can't use layout-based stripping, but we can
+		// still normalize paths that look like they have a non-layout prefix segment.
+		// This handles paths like "finally/Dockerfile" where the rig name is a prefix.
+		parts := strings.SplitN(beadPath, "/", 3)
+		if len(parts) == 2 && !knownLayoutPrefix(parts[0]) {
+			beadPath = parts[1]
+		}
 		return beadPath
 	}
 	if strings.HasPrefix(beadPath, layoutRoot+"/") || beadPath == layoutRoot {
 		return beadPath
+	}
+	// Strip hallucinated rig-name prefix before the layout root
+	// (e.g. bead title "Implement finally/backend/tests/test_market.py" when layoutRoot is "backend").
+	// The rig name is not a directory component in the project.
+	if idx := strings.Index(beadPath, layoutRoot+"/"); idx > 0 {
+		beadPath = beadPath[idx:]
 	}
 	if strings.Contains(beadPath, "..") {
 		return beadPath
@@ -176,6 +194,27 @@ func NormalizeBeadPathForLayout(beadPath, layoutRoot string) string {
 		return layoutRoot + "/" + beadPath
 	}
 	return beadPath
+}
+
+// knownLayoutPrefix reports whether path starts with a Go module-relative prefix
+// that should never be stripped as a hallucinated rig-name segment.
+func knownLayoutPrefix(path string) bool {
+	path = filepath.ToSlash(strings.TrimSpace(path))
+	switch {
+	case strings.HasPrefix(path, "internal/"),
+		strings.HasPrefix(path, "cmd/"),
+		strings.HasPrefix(path, "pkg/"),
+		strings.HasPrefix(path, "api/"),
+		strings.HasPrefix(path, "web/"),
+		strings.HasPrefix(path, "backend/"),
+		strings.HasPrefix(path, "frontend/"),
+		strings.HasPrefix(path, "tests/"),
+		strings.HasPrefix(path, "migrations/"),
+		strings.HasPrefix(path, "scripts/"),
+		strings.HasPrefix(path, "docker/"):
+		return true
+	}
+	return false
 }
 
 // ValidatePlanBeads checks open implementation beads against architecture and profile.
