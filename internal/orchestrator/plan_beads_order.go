@@ -15,6 +15,23 @@ import (
 	"github.com/steveyegge/gastown/internal/config"
 )
 
+// deleteImplementBead removes a bead by ID, ignoring "not found" errors (the bead may have
+// been deleted by an earlier prune step). Returns true if the bead was actually deleted.
+func deleteImplementBead(beadsDir, workDir, id string) (bool, error) {
+	cmd := exec.Command("bd", "delete", id, "--force")
+	cmd.Env = append(os.Environ(), "BEADS_DIR="+beadsDir)
+	cmd.Dir = workDir
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		return true, nil
+	}
+	output := strings.TrimSpace(string(out))
+	if strings.Contains(output, "not found") || strings.Contains(output, "does not exist") {
+		return false, nil
+	}
+	return false, fmt.Errorf("bd delete %s: %w: %s", id, err, output)
+}
+
 // IsValidImplementBeadPath reports whether a path extracted from a bead title is a real repo file path.
 func IsValidImplementBeadPath(path string) bool {
 	path = SanitizeNativeEditRelPath(path)
@@ -608,14 +625,11 @@ func ResetPlanningPhase(townRoot, rig string, v WorkflowValidation) (string, err
 		if !strings.Contains(lower, "implement") || !strings.Contains(lower, "per arch") {
 			continue
 		}
-		cmd := exec.Command("bd", "delete", b.ID, "--force")
-		cmd.Env = append(os.Environ(), "BEADS_DIR="+beadsDir)
-		cmd.Dir = workDir
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			return joinStrings(parts, "; "), fmt.Errorf("bd delete %s: %w: %s", b.ID, err, strings.TrimSpace(string(out)))
+		if ok, err := deleteImplementBead(beadsDir, workDir, b.ID); err != nil {
+			return joinStrings(parts, "; "), err
+		} else if ok {
+			deleted = append(deleted, b.ID)
 		}
-		deleted = append(deleted, b.ID)
 	}
 	if len(deleted) > 0 {
 		parts = append(parts, "deleted implement beads: "+joinStrings(deleted, ", "))
@@ -744,14 +758,11 @@ func PruneOpenImplementBeadsForClosedPaths(townRoot, rig string, v WorkflowValid
 			if p == "" || !closedPaths[p] {
 				continue
 			}
-			cmd := exec.Command("bd", "delete", b.ID, "--force")
-			cmd.Env = append(os.Environ(), "BEADS_DIR="+beadsDir)
-			cmd.Dir = workDir
-			out, err := cmd.CombinedOutput()
-			if err != nil {
-				return deleted, fmt.Errorf("bd delete %s: %w: %s", b.ID, err, strings.TrimSpace(string(out)))
+			if ok, err := deleteImplementBead(beadsDir, workDir, b.ID); err != nil {
+				return deleted, err
+			} else if ok {
+				deleted = append(deleted, b.ID+" ("+p+")")
 			}
-			deleted = append(deleted, b.ID+" ("+p+")")
 		}
 	}
 	return deleted, nil
@@ -831,14 +842,11 @@ func pruneDuplicateActiveImplementBeads(townRoot, rig string, v WorkflowValidati
 	workDir := filepath.Join(townRoot, rig, "mayor", "rig")
 	var deleted []string
 	for id := range toDelete {
-		cmd := exec.Command("bd", "delete", id, "--force")
-		cmd.Env = append(os.Environ(), "BEADS_DIR="+beadsDir)
-		cmd.Dir = workDir
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			return deleted, fmt.Errorf("bd delete %s: %w: %s", id, err, strings.TrimSpace(string(out)))
+		if ok, err := deleteImplementBead(beadsDir, workDir, id); err != nil {
+			return deleted, err
+		} else if ok {
+			deleted = append(deleted, id)
 		}
-		deleted = append(deleted, id)
 	}
 	return deleted, nil
 }
@@ -920,14 +928,11 @@ func pruneDuplicateImplementBeadsByStatus(townRoot, rig string, v WorkflowValida
 	workDir := filepath.Join(townRoot, rig, "mayor", "rig")
 	var deleted []string
 	for id := range toDelete {
-		cmd := exec.Command("bd", "delete", id, "--force")
-		cmd.Env = append(os.Environ(), "BEADS_DIR="+beadsDir)
-		cmd.Dir = workDir
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			return deleted, fmt.Errorf("bd delete %s: %w: %s", id, err, strings.TrimSpace(string(out)))
+		if ok, err := deleteImplementBead(beadsDir, workDir, id); err != nil {
+			return deleted, err
+		} else if ok {
+			deleted = append(deleted, id)
 		}
-		deleted = append(deleted, id)
 	}
 	return deleted, nil
 }
@@ -1006,14 +1011,11 @@ func PruneOpenImplementBeadsOutsideRequired(townRoot, rig string, v WorkflowVali
 		if p == "" || required[p] {
 			continue
 		}
-		cmd := exec.Command("bd", "delete", b.ID, "--force")
-		cmd.Env = append(os.Environ(), "BEADS_DIR="+beadsDir)
-		cmd.Dir = workDir
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			return deleted, fmt.Errorf("bd delete %s: %w: %s", b.ID, err, strings.TrimSpace(string(out)))
+		if ok, err := deleteImplementBead(beadsDir, workDir, b.ID); err != nil {
+			return deleted, err
+		} else if ok {
+			deleted = append(deleted, b.ID)
 		}
-		deleted = append(deleted, b.ID)
 	}
 	return deleted, nil
 }
@@ -1040,14 +1042,11 @@ func PruneNonRequiredOpenImplementBeads(townRoot, rig string, v WorkflowValidati
 		if !IsValidImplementBeadPath(p) || pathMatchesRequiredForProfile(p, requiredFilesWithCorrelatedTests(v.RequiredFiles, v), v) {
 			continue
 		}
-		cmd := exec.Command("bd", "delete", b.ID, "--force")
-		cmd.Env = append(os.Environ(), "BEADS_DIR="+beadsDir)
-		cmd.Dir = workDir
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			return deleted, fmt.Errorf("bd delete %s: %w: %s", b.ID, err, strings.TrimSpace(string(out)))
+		if ok, err := deleteImplementBead(beadsDir, workDir, b.ID); err != nil {
+			return deleted, err
+		} else if ok {
+			deleted = append(deleted, b.ID)
 		}
-		deleted = append(deleted, b.ID)
 	}
 	return deleted, nil
 }
@@ -1143,14 +1142,11 @@ func PruneLegacyImplementBeadTitles(townRoot, rig string, v WorkflowValidation) 
 		if !isNonCanonicalImplementBeadTitle(b.Title, v) {
 			continue
 		}
-		cmd := exec.Command("bd", "delete", b.ID, "--force")
-		cmd.Env = append(os.Environ(), "BEADS_DIR="+beadsDir)
-		cmd.Dir = workDir
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			return deleted, fmt.Errorf("bd delete %s: %w: %s", b.ID, err, strings.TrimSpace(string(out)))
+		if ok, err := deleteImplementBead(beadsDir, workDir, b.ID); err != nil {
+			return deleted, err
+		} else if ok {
+			deleted = append(deleted, b.ID)
 		}
-		deleted = append(deleted, b.ID)
 	}
 	return deleted, nil
 }
@@ -1195,14 +1191,11 @@ func PruneExtraImplementBeads(townRoot, rig string, v WorkflowValidation) ([]str
 		if IsValidImplementBeadPath(p) && pathMatchesRequiredForProfile(p, requiredFilesWithCorrelatedTests(v.RequiredFiles, v), v) {
 			continue
 		}
-		cmd := exec.Command("bd", "delete", b.ID, "--force")
-		cmd.Env = append(os.Environ(), "BEADS_DIR="+beadsDir)
-		cmd.Dir = workDir
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			return deleted, fmt.Errorf("bd delete %s: %w: %s", b.ID, err, strings.TrimSpace(string(out)))
+		if ok, err := deleteImplementBead(beadsDir, workDir, b.ID); err != nil {
+			return deleted, err
+		} else if ok {
+			deleted = append(deleted, b.ID)
 		}
-		deleted = append(deleted, b.ID)
 	}
 	return deleted, nil
 }
@@ -1229,14 +1222,11 @@ func PruneMalformedImplementBeads(townRoot, rig string, v WorkflowValidation) ([
 		if canonical && IsValidImplementBeadPath(p) {
 			continue
 		}
-		cmd := exec.Command("bd", "delete", b.ID, "--force")
-		cmd.Env = append(os.Environ(), "BEADS_DIR="+beadsDir)
-		cmd.Dir = workDir
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			return deleted, fmt.Errorf("bd delete %s: %w: %s", b.ID, err, strings.TrimSpace(string(out)))
+		if ok, err := deleteImplementBead(beadsDir, workDir, b.ID); err != nil {
+			return deleted, err
+		} else if ok {
+			deleted = append(deleted, b.ID)
 		}
-		deleted = append(deleted, b.ID)
 	}
 	return deleted, nil
 }
