@@ -52,6 +52,14 @@ func SyncPlanningArtifacts(townRoot, rig string, v WorkflowValidation, forcePlan
 	}
 	beadsReady := BeadsDatabaseReady(townRoot, rig)
 	if beadsReady && (forcePlan || RequiresExactImplementPaths(v) || PlanningPlanMDNeedsRefresh(townRoot, rig, v)) {
+		// Try in-place ID refresh first — preserves LLM's plan.md structure/content
+		// when bead IDs changed (e.g. LLM deleted and recreated beads).
+		if !forcePlan && !RequiresExactImplementPaths(v) {
+			if refreshed, _ := refreshPlanMDBeadIDsInPlace(townRoot, rig, v); refreshed {
+				parts = append(parts, "refreshed plan.md bead IDs in place")
+				goto afterPlanWrite
+			}
+		}
 		wrote, err := writePlanningPlanMDWithRetry(townRoot, rig, v)
 		if err != nil {
 			return joinStrings(parts, "; "), err
@@ -60,6 +68,7 @@ func SyncPlanningArtifacts(townRoot, rig string, v WorkflowValidation, forcePlan
 			parts = append(parts, "wrote plan.md from open implement beads")
 		}
 	}
+afterPlanWrite:
 	if err := ValidateNoLegacyImplementBeads(townRoot, rig, v); err != nil {
 		return joinStrings(parts, "; "), err
 	}
@@ -457,6 +466,64 @@ func writePlanningPlanMDWithRetry(townRoot, rig string, v WorkflowValidation) (b
 		return false, err
 	}
 	return WritePlanningPlanMD(townRoot, rig, v)
+}
+
+// refreshPlanMDBeadIDsInPlace reads plan.md, finds ### <id>: <path> headers whose bead ID
+// no longer matches the current open bead for that path, and replaces the ID in-place.
+// This preserves the LLM's plan.md structure and content when beads were recreated.
+func refreshPlanMDBeadIDsInPlace(townRoot, rig string, v WorkflowValidation) (bool, error) {
+	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
+	path := filepath.Join(rigDir, "plan.md")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return false, err
+	}
+	planDoc := string(data)
+
+	open, err := ListImplementBeadsOpenOrInProgress(townRoot, rig, v)
+	if err != nil {
+		return false, err
+	}
+
+	// Build path->current_id map from open beads
+	pathToCurrentID := map[string]string{}
+	for _, b := range open {
+		p := NormalizePlannerBeadPath(ExtractPathFromBeadTitle(b.Title, v.BeadTitleContains), v.LayoutRoot, rig)
+		if p != "" {
+			for _, want := range v.RequiredFiles {
+				want = filepath.ToSlash(strings.TrimSpace(want))
+				if want != "" && pathMatchesRequiredForProfile(p, []string{want}, v) {
+					pathToCurrentID[want] = b.ID
+				}
+			}
+		}
+	}
+	if len(pathToCurrentID) == 0 {
+		return false, nil
+	}
+
+	var changed bool
+	replaced := planBeadSectionRE.ReplaceAllStringFunc(planDoc, func(m string) string {
+		parts := planBeadSectionRE.FindStringSubmatch(m)
+		if len(parts) < 3 {
+			return m
+		}
+		oldID := strings.TrimSpace(parts[1])
+		path := strings.TrimSpace(parts[2])
+		newID, ok := pathToCurrentID[path]
+		if !ok || newID == oldID {
+			return m
+		}
+		changed = true
+		return fmt.Sprintf("### %s: %s", newID, path)
+	})
+	if !changed {
+		return false, nil
+	}
+	if err := os.WriteFile(path, []byte(replaced), 0644); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 func padPlanningPlanMD(body string, minBytes int64) string {

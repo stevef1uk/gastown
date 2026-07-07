@@ -59,6 +59,8 @@ You are **not** verifying the app. Do not run the server or test suite to “che
 
 ## HARD RULES
 
+0. **Never `bd delete` beads unless the prompt explicitly says you are on a QA rework retry with duplicate beads.** The orchestrator's `sync_planning_artifacts` pre_run hook already creates the correct bead set for `required_files`. Deleting and recreating beads makes `plan.md` bead IDs stale and triggers a plan.md rewrite, losing your work. If you need to change a bead's scope, use `bd update <id>` instead. If you see "path has unknown bead IDs" in a pre_run log, it's because you deleted beads — stop doing that.
+
 1. **One shell command per line.** Each command starts with `CMD: ` on its own line.
 
 2. Inspect inputs (read-only):
