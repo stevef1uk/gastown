@@ -1035,12 +1035,24 @@ func PruneNonRequiredOpenImplementBeads(townRoot, rig string, v WorkflowValidati
 	beadsDir := config.ResolveBeadsDirForRig(townRoot, rig)
 	workDir := filepath.Join(townRoot, rig, "mayor", "rig")
 	var deleted []string
+	augmented := requiredFilesWithCorrelatedTests(v.RequiredFiles, v)
 	for _, b := range beads {
 		if !looksLikeOpenImplementBeadTitle(b.Title, v) {
 			continue
 		}
 		p := NormalizePlannerBeadPath(ExtractPathFromBeadTitle(b.Title, v.BeadTitleContains), v.LayoutRoot, rig)
-		if !IsValidImplementBeadPath(p) || pathMatchesRequiredForProfile(p, requiredFilesWithCorrelatedTests(v.RequiredFiles, v), v) {
+		if !IsValidImplementBeadPath(p) || pathMatchesRequiredForProfile(p, augmented, v) {
+			continue
+		}
+		// Try with normalized augmented entries (rig prefix stripped) for exact mode
+		matched := false
+		for _, a := range augmented {
+			if n := NormalizePlannerBeadPath(a, v.LayoutRoot, rig); n != "" && pathMatchesRequiredForProfile(p, []string{n}, v) {
+				matched = true
+				break
+			}
+		}
+		if matched {
 			continue
 		}
 		if ok, err := deleteImplementBead(beadsDir, workDir, b.ID); err != nil {
@@ -1187,9 +1199,21 @@ func PruneExtraImplementBeads(townRoot, rig string, v WorkflowValidation) ([]str
 	beadsDir := config.ResolveBeadsDirForRig(townRoot, rig)
 	workDir := filepath.Join(townRoot, rig, "mayor", "rig")
 	var deleted []string
+	augmented := requiredFilesWithCorrelatedTests(v.RequiredFiles, v)
 	for _, b := range open {
 		p := NormalizePlannerBeadPath(ExtractPathFromBeadTitle(b.Title, v.BeadTitleContains), v.LayoutRoot, rig)
-		if IsValidImplementBeadPath(p) && pathMatchesRequiredForProfile(p, requiredFilesWithCorrelatedTests(v.RequiredFiles, v), v) {
+		if IsValidImplementBeadPath(p) && pathMatchesRequiredForProfile(p, augmented, v) {
+			continue
+		}
+		// Try with normalized augmented entries for exact mode
+		matched := false
+		for _, a := range augmented {
+			if n := NormalizePlannerBeadPath(a, v.LayoutRoot, rig); n != "" && pathMatchesRequiredForProfile(p, []string{n}, v) {
+				matched = true
+				break
+			}
+		}
+		if matched {
 			continue
 		}
 		if ok, err := deleteImplementBead(beadsDir, workDir, b.ID); err != nil {
