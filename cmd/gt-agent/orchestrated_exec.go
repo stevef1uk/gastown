@@ -769,6 +769,28 @@ func rewriteBdCloseWithAutoCommit(cmd string) string {
 	return cmd[:insertPoint] + " --dolt-auto-commit=on" + cmd[insertPoint:]
 }
 
+// rewriteBdStripBeadsDir strips "export BEADS_DIR=... &&" or "BEADS_DIR=... " from
+// all bd commands so bd auto-discovers the .beads directory from cwd. The redirect
+// at <rig>/.beads can have a broken Dolt database; the local mayor/rig/.beads is
+// the one that works. Without this, bd close writes to one database while bd list
+// reads from another.
+var beadsDirExportRE = regexp.MustCompile(`(?i)\s*(?:export\s+)?BEADS_DIR=\S+\s*(?:&&|;)\s*`)
+
+func rewriteBdStripBeadsDir(cmd string) (string, bool) {
+	lower := strings.ToLower(cmd)
+	if !strings.Contains(lower, " bd ") && !strings.Contains(lower, " bd\t") {
+		// Still strip for commands like "export BEADS_DIR=... && cd ... && bd list"
+		if !strings.Contains(lower, "bd ") {
+			return cmd, false
+		}
+	}
+	stripped := beadsDirExportRE.ReplaceAllString(cmd, "")
+	if stripped != cmd {
+		return stripped, true
+	}
+	return cmd, false
+}
+
 var (
 	goSmokeStripPkillRE   = regexp.MustCompile(`(?i)\s*&&\s*pkill\s+-f\s+[^&|;]+`)
 	goSmokeStripBuildRE   = regexp.MustCompile(`(?i)go\s+build\s+\./\.\.\.\s*&&\s*`)

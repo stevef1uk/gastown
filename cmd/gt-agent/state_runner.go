@@ -391,6 +391,11 @@ func (r *stateRunner) rewriteCommand(cmd string) string {
 				orchestratedPrintf("[gt-agent] added --dolt-auto-commit=on to bd close\n")
 				cmd = fixed
 			}
+		case "bd_strip_beads_dir":
+			if fixed, ok := rewriteBdStripBeadsDir(cmd); ok {
+				orchestratedPrintf("[gt-agent] stripped BEADS_DIR redirect from bd command\n")
+				cmd = fixed
+			}
 		}
 	}
 	return cmd
