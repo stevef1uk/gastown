@@ -21,7 +21,7 @@ func commitDoltWorkingSet(townRoot, rig string) error {
 		return nil
 	}
 	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
-	cmd := exec.Command("bd", "dolt", "commit", "-m", "reconcile: auto-commit bead state changes")
+	cmd := exec.Command("bd", "dolt", "commit", "--all", "-m", "reconcile: auto-commit bead state changes")
 	cmd.Env = append(os.Environ(), "BEADS_DIR="+beadsDir)
 	cmd.Dir = rigDir
 	out, err := cmd.CombinedOutput()
