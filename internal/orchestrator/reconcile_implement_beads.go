@@ -384,6 +384,13 @@ func ReconcileImplementBeads(townRoot, rig string, v WorkflowValidation) (string
 			parts = append(parts, "reopened: "+id)
 		}
 	}
+	// Commit Dolt working set after bead state changes to ensure the SQL server
+	// sees the changes when BD_DOLT_AUTO_COMMIT=off (polecat/daemon environments).
+	if len(autoClosed) > 0 || len(reopened) > 0 || len(more) > 0 {
+		if commitErr := commitDoltWorkingSet(townRoot, rig); commitErr != nil {
+			parts = append(parts, "dolt commit warning: "+commitErr.Error())
+		}
+	}
 	if len(parts) == 0 {
 		return "implement beads and required_files are consistent", nil
 	}

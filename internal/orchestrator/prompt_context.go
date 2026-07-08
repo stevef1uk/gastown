@@ -164,6 +164,10 @@ func RunPreRunHook(step, townRoot, rig string, v WorkflowValidation) (string, er
 			return "", err
 		}
 		return logLine, nil
+	case "ensure_dolt_schema_health":
+		if err := ensureDoltSchemaHealth(townRoot, rig); err != nil {
+			return "", err
+		}
 	case "prune_stale_layout_go":
 		return PruneStaleLayoutGoFilesLog(townRoot, rig, v)
 	case "prune_rig_root_junk":
