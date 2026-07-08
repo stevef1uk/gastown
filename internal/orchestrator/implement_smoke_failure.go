@@ -96,8 +96,9 @@ func ReopenImplementationBeadsAfterSmokeFailure(townRoot, rig string, v Workflow
 	return reopenClosedImplementBeadsForPaths(townRoot, rig, v, paths)
 }
 
-// implementationReworkPathsForSmokeDetail extends handler/web paths with the specific static
-// asset named in a failed smoke GET probe (e.g. GET:/static/app.js → linkshelf/web/app.js).
+// implementationReworkPathsForSmokeDetail collects server/handler paths for smoke rework.
+// Frontend files (web/*.html, web/*.js, web/*.css) are NOT reopened — smoke failures are
+// caused by the server not serving them correctly, not by the frontend files themselves.
 func implementationReworkPathsForSmokeDetail(townRoot, rig string, v WorkflowValidation, verifyErr error) []string {
 	seen := map[string]bool{}
 	var out []string
@@ -111,16 +112,6 @@ func implementationReworkPathsForSmokeDetail(townRoot, rig string, v WorkflowVal
 	}
 	for _, rel := range implementationReworkPathsForSmoke(v) {
 		add(rel)
-	}
-	if verifyErr != nil {
-		detail := ParseSmokeFailureFromOutput(verifyErr.Error())
-		if step := strings.TrimSpace(detail.FailedStep); strings.HasPrefix(step, "GET:") {
-			urlPath := strings.TrimPrefix(step, "GET:")
-			mapping := LoadWebStaticMappingFromRig(townRoot, rig, v)
-			if webRel := WebFileFromStaticURL(urlPath, mapping, v.LayoutRoot); webRel != "" {
-				add(webRel)
-			}
-		}
 	}
 	sort.Strings(out)
 	return out

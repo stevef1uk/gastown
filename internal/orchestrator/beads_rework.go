@@ -156,7 +156,9 @@ func implementPathsForRuntimeRework(v WorkflowValidation) []string {
 			continue
 		}
 		lower := strings.ToLower(rel)
-		if strings.Contains(lower, "/api/handlers") || strings.Contains(lower, "/web/") {
+		// Only reopen server/handler beads for smoke failures — frontend files
+		// (index.html, app.js, style.css) are not the cause of server smoke failures.
+		if strings.Contains(lower, "/api/handlers") || strings.Contains(lower, "/cmd/server/") {
 			seen[rel] = true
 			out = append(out, rel)
 		}
