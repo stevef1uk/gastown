@@ -153,11 +153,9 @@ func AgentEnv(cfg AgentEnvConfig) map[string]string {
 		if cfg.AgentName != "" {
 			env["GT_POLECAT"] = cfg.AgentName
 		}
-		// Disable Dolt auto-commit for polecats. With branch-per-polecat,
-		// individual commits are pointless — all changes merge at gt done time
-		// via DOLT_MERGE. Without this, concurrent polecats cause manifest
-		// contention leading to Dolt read-only mode (gt-5cc2p).
-		env["BD_DOLT_AUTO_COMMIT"] = "off"
+		// Enable Dolt auto-commit for polecats so bd close writes are
+		// immediately visible to bd list (SQL server sees committed state).
+		env["BD_DOLT_AUTO_COMMIT"] = "on"
 
 	case constants.RoleCrew:
 		env["GT_ROLE"] = fmt.Sprintf("%s/crew/%s", cfg.Rig, cfg.AgentName)
