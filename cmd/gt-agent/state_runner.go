@@ -567,62 +567,28 @@ func isExit143(err error) bool {
 	return errors.As(err, &exitErr) && exitErr.ExitCode() == 143
 }
 
-// retryBdCloseIfPhantom checks that a bd close actually persisted (Dolt can return
-// success under load but not commit the write). It re-runs bd close up to maxRetries
-// times if bd show still reports the bead as open.
-func (r *stateRunner) retryBdCloseIfPhantom(cmd, workDir, sessionName string, cmdEnv []string, combined *strings.Builder) {
-	id := extractBeadIDFromBdClose(cmd)
-	if id == "" {
-		return
-	}
-	// Build a bd show command reusing the same BEADS_DIR/cd prefix from the original close cmd.
-	showCmd := buildBdShowCommand(cmd, id)
-	if showCmd == "" {
-		return
-	}
-	const maxRetries = 3
-	for attempt := 1; attempt <= maxRetries; attempt++ {
-		time.Sleep(time.Duration(attempt) * time.Second)
-		out, err := r.runShellCommand(showCmd, workDir, sessionName, cmdEnv)
-		if err != nil {
-			// bd show itself failed (dolt unreachable) — bail out, not much we can do
-			orchestratedFprintfStderr("[gt-agent] bd close verify: bd show %s failed: %v\n", id, err)
-			return
-		}
-		showOut := string(out)
-		// If the bead is confirmed closed, we're done.
-		if strings.Contains(showOut, "CLOSED") || strings.Contains(showOut, "✓") {
-			if attempt > 1 {
-				orchestratedPrintf("[gt-agent] bd close %s confirmed after %d retries\n", id, attempt-1)
-			}
-			return
-		}
-		// Still open — retry the close.
-		orchestratedPrintf("[gt-agent] bd close %s not persisted (dolt overload?), retrying (%d/%d)...\n", id, attempt, maxRetries)
-		_, retryErr := r.runShellCommand(cmd, workDir, sessionName, cmdEnv)
-		if retryErr != nil {
-			orchestratedFprintfStderr("[gt-agent] bd close retry %d for %s failed: %v\n", attempt, id, retryErr)
-		}
-	}
-	// Final check after last retry.
-	out, err := r.runShellCommand(showCmd, workDir, sessionName, cmdEnv)
-	if err == nil && !strings.Contains(string(out), "CLOSED") && !strings.Contains(string(out), "✓") {
-		msg := fmt.Sprintf("Warning: bd close %s may not have persisted after %d retries — bead still open\n", id, maxRetries)
-		orchestratedFprintfStderr("[gt-agent] %s", msg)
-		combined.WriteString(msg)
-	}
-}
-
-// buildBdShowCommand constructs a bd show <id> command that reuses the BEADS_DIR export
-// and cd prefix from an existing bd close command.
-func buildBdShowCommand(closeCmd, id string) string {
-	// Extract everything up to the final 'bd close <id>' and replace with 'bd show <id>'.
-	lower := strings.ToLower(closeCmd)
+// commitDoltAfterClose runs `bd dolt commit` after a successful bd close to ensure
+// the Dolt SQL server sees the change (BD_DOLT_AUTO_COMMIT=off in polecat/daemon env).
+// This extracts the BEADS_DIR/cd prefix from the original close command so the commit
+// targets the same Dolt database.
+func (r *stateRunner) commitDoltAfterClose(cmd, workDir, sessionName string, cmdEnv []string) {
+	// Extract the prefix (BEADS_DIR export + cd) from the close command.
+	lower := strings.ToLower(cmd)
 	idx := strings.Index(lower, "bd close")
 	if idx < 0 {
-		return ""
+		return
 	}
-	return strings.TrimSpace(closeCmd[:idx]) + "bd show " + id
+	prefix := strings.TrimSpace(cmd[:idx])
+	commitCmd := prefix + "bd dolt commit -m \"auto-commit after bd close\""
+	out, err := r.runShellCommand(commitCmd, workDir, sessionName, cmdEnv)
+	if err != nil {
+		// "nothing to commit" is fine — the close might already be committed.
+		outStr := strings.ToLower(string(out))
+		if strings.Contains(outStr, "nothing to commit") || strings.Contains(outStr, "no changes") {
+			return
+		}
+		orchestratedFprintfStderr("[gt-agent] bd dolt commit after close: %v\n", err)
+	}
 }
 
 func (r *stateRunner) afterCommand(cmd string, cmdErr error, workDir, sessionName string, cmdEnv []string, combined *strings.Builder) {
@@ -640,9 +606,10 @@ func (r *stateRunner) afterCommand(cmd string, cmdErr error, workDir, sessionNam
 	if cmdErr == nil && writesRequirementsFile(cmd) {
 		maybeRepairWorkflowRequirements(r.townRoot, r.rig, r.v)
 	}
-	// Harden against Dolt overload: verify that bd close actually persisted.
+	// Harden against Dolt overload: commit the working set after bd close so the
+	// SQL server sees the change (BD_DOLT_AUTO_COMMIT=off in polecat/daemon env).
 	if cmdErr == nil && isBeadCloseCommand(cmd) {
-		r.retryBdCloseIfPhantom(cmd, workDir, sessionName, cmdEnv, combined)
+		r.commitDoltAfterClose(cmd, workDir, sessionName, cmdEnv)
 	}
 	r.trackCommand(cmd, cmdErr)
 	if cmdErr == nil {
