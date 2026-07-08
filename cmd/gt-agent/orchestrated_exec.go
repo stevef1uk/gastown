@@ -769,26 +769,31 @@ func rewriteBdCloseWithAutoCommit(cmd string) string {
 	return cmd[:insertPoint] + " --dolt-auto-commit=on" + cmd[insertPoint:]
 }
 
-// rewriteBdStripBeadsDir strips "export BEADS_DIR=... &&" or "BEADS_DIR=... " from
-// all bd commands so bd auto-discovers the .beads directory from cwd. The redirect
-// at <rig>/.beads can have a broken Dolt database; the local mayor/rig/.beads is
-// the one that works. Without this, bd close writes to one database while bd list
-// reads from another.
+// rewriteBdStripBeadsDir strips "export BEADS_DIR=... &&" from bd commands AND
+// prepends "unset BEADS_DIR &&" so the env var (set by beads_dir: true in YAML)
+// doesn't redirect bd to a broken Dolt database. bd must auto-discover from cwd.
 var beadsDirExportRE = regexp.MustCompile(`(?i)\s*(?:export\s+)?BEADS_DIR=\S+\s*(?:&&|;)\s*`)
 
 func rewriteBdStripBeadsDir(cmd string) (string, bool) {
 	lower := strings.ToLower(cmd)
-	if !strings.Contains(lower, " bd ") && !strings.Contains(lower, " bd\t") {
-		// Still strip for commands like "export BEADS_DIR=... && cd ... && bd list"
-		if !strings.Contains(lower, "bd ") {
-			return cmd, false
-		}
+	if !strings.Contains(lower, "bd ") {
+		return cmd, false
 	}
+	changed := false
+	// Strip "export BEADS_DIR=... &&" from the command text
 	stripped := beadsDirExportRE.ReplaceAllString(cmd, "")
 	if stripped != cmd {
-		return stripped, true
+		changed = true
+		cmd = stripped
 	}
-	return cmd, false
+	// Also unset the BEADS_DIR env var (set by beads_dir: true in rig-flow.yaml)
+	// so bd auto-discovers .beads from cwd. Insert "unset BEADS_DIR && " at the
+	// very beginning of the command (before any cd).
+	if !strings.Contains(strings.ToLower(cmd), "unset beads_dir") {
+		cmd = "unset BEADS_DIR && " + cmd
+		changed = true
+	}
+	return cmd, changed
 }
 
 var (
