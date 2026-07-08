@@ -234,7 +234,7 @@ func filterImplementBeads(beads []PlanBead, v WorkflowValidation) []PlanBead {
 // (no open or in_progress bead for that path). Used to block polecat from stomping finished files.
 func ImplementPathHasOnlyClosedBeads(townRoot, rig, writtenPath string, v WorkflowValidation) (bool, error) {
 	v = v.ForActivePhase()
-	writtenPath = filepath.ToSlash(strings.TrimSpace(writtenPath))
+	writtenPath = NormalizePlannerBeadPath(writtenPath, v.LayoutRoot, rig)
 	if writtenPath == "" {
 		return false, nil
 	}
@@ -265,6 +265,7 @@ func ImplementPathHasOnlyClosedBeads(townRoot, rig, writtenPath string, v Workfl
 
 // ClosedImplementBeadForPath returns the closed implement bead ID for filePath, if all beads on that path are closed.
 func ClosedImplementBeadForPath(townRoot, rig, filePath string, v WorkflowValidation) (beadID string, ok bool) {
+	filePath = NormalizePlannerBeadPath(filePath, v.LayoutRoot, rig)
 	closedOnly, err := ImplementPathHasOnlyClosedBeads(townRoot, rig, filePath, v)
 	if err != nil || !closedOnly {
 		return "", false
@@ -1281,6 +1282,7 @@ func openBeadCoversRequiredPath(townRoot, rig, want string, v WorkflowValidation
 	if err != nil {
 		return false, err
 	}
+	want = NormalizePlannerBeadPath(want, v.LayoutRoot, rig)
 	for _, b := range active {
 		if !looksLikeOpenImplementBeadTitle(b.Title, v) {
 			continue
