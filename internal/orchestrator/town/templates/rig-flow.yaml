@@ -209,7 +209,6 @@ states:
       cmd_guard: implementation
       cmd_rewrites: [rig_placeholders, unwrap_bash_lc, backend_path_after_cd, bd_list_implement_scope, unittest_workdir, bd_list_limit, bd_close_auto_commit, bd_strip_beads_dir]
       env:
-        beads_dir: true
         pythonpath: true
         python_venv: activate
       pip_repair_before_run: true
@@ -260,7 +259,6 @@ states:
       cmd_guard: qa
       cmd_rewrites: [rig_placeholders, unwrap_bash_lc, bd_list_implement_scope, unittest_workdir, bd_list_limit, bd_close_auto_commit, bd_strip_beads_dir]
       env:
-        beads_dir: true
         pythonpath: true
         python_venv: activate
       pip_repair_before_run: true
