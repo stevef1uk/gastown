@@ -158,13 +158,33 @@ func implementPathsForRuntimeRework(v WorkflowValidation) []string {
 		lower := strings.ToLower(rel)
 		// Only reopen server/handler beads for smoke failures — frontend files
 		// (index.html, app.js, style.css) are not the cause of server smoke failures.
-		if strings.Contains(lower, "/api/handlers") || strings.Contains(lower, "/cmd/server/") {
+		if isServerOrHandlerPath(lower) {
 			seen[rel] = true
 			out = append(out, rel)
 		}
 	}
 	sort.Strings(out)
 	return out
+}
+
+// isServerOrHandlerPath reports whether a path is a server entrypoint or API handler
+// (Go or Python). Frontend files (html, js, css) and test files are excluded.
+func isServerOrHandlerPath(lower string) bool {
+	// Go server/handler paths
+	if strings.Contains(lower, "/api/handlers") || strings.Contains(lower, "/cmd/server/") {
+		return true
+	}
+	// Python server entrypoints
+	if strings.HasSuffix(lower, "app.py") || strings.HasSuffix(lower, "main.py") ||
+		strings.HasSuffix(lower, "server.py") || strings.Contains(lower, "wsgi") ||
+		strings.Contains(lower, "asgi") {
+		return true
+	}
+	// Python API/route handlers
+	if strings.Contains(lower, "/api/") && strings.HasSuffix(lower, ".py") {
+		return true
+	}
+	return false
 }
 
 func reopenClosedImplementBeadsForIDs(townRoot, rig string, v WorkflowValidation, ids []string) ([]string, error) {
