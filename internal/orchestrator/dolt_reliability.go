@@ -10,6 +10,28 @@ import (
 	"github.com/steveyegge/gastown/internal/config"
 )
 
+// ensureDoltAutoCommit sets dolt.auto-commit=on in the rig's beads config.
+// This ensures bd close persists immediately (the BD_DOLT_AUTO_COMMIT env var
+// is not recognized by bd — only the config key or --dolt-auto-commit flag works).
+func ensureDoltAutoCommit(townRoot, rig string) error {
+	if townRoot == "" || rig == "" {
+		return nil
+	}
+	beadsDir := config.ResolveBeadsDirForRig(townRoot, rig)
+	if beadsDir == "" {
+		return nil
+	}
+	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
+	cmd := exec.Command("bd", "config", "set", "dolt.auto-commit", "on")
+	cmd.Env = append(os.Environ(), "BEADS_DIR="+beadsDir)
+	cmd.Dir = rigDir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("bd config set dolt.auto-commit on: %w: %s", err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
 // commitDoltWorkingSet commits pending Dolt changes for a rig's beads database.
 // This ensures the SQL server sees bead state changes made with BD_DOLT_AUTO_COMMIT=off.
 func commitDoltWorkingSet(townRoot, rig string) error {
