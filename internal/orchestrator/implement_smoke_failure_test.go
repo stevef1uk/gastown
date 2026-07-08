@@ -45,10 +45,15 @@ func TestImplementationReworkPathsForSmoke_includesServerMain(t *testing.T) {
 	}
 	paths := implementationReworkPathsForSmoke(v)
 	joined := strings.Join(paths, " ")
-	for _, want := range []string{"handlers.go", "web/index.html", "cmd/server/main.go"} {
+	// Frontend files (web/*.html) are intentionally excluded — smoke failures
+	// are caused by the server not serving them, not by the files themselves.
+	for _, want := range []string{"handlers.go", "cmd/server/main.go"} {
 		if !strings.Contains(joined, want) {
 			t.Fatalf("paths=%v missing %q", paths, want)
 		}
+	}
+	if strings.Contains(joined, "web/index.html") {
+		t.Fatalf("paths=%v should not contain frontend files", paths)
 	}
 }
 

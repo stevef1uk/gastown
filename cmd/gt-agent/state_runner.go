@@ -816,8 +816,12 @@ func (r *stateRunner) verifyCommand(kind string) string {
 
 func (r *stateRunner) validateArtifacts(outcome string) error {
 	if r.track != nil && r.track.bdInfraFailed && isOrchestratedSuccessOutcome(outcome) {
-		return fmt.Errorf("bd/Dolt unavailable for rig %s — fix beads (bd doctor, bd bootstrap, ensure Dolt serves this rig) before JSON success; do not claim tests passed or beads closed",
-			r.rig)
+		// Re-probe dolt health — the failure may have been transient or already fixed.
+		if err := r.probeDoltHealth(); err != nil {
+			return fmt.Errorf("bd/Dolt unavailable for rig %s — fix beads (bd doctor, bd bootstrap, ensure Dolt serves this rig) before JSON success; do not claim tests passed or beads closed: %w",
+				r.rig, err)
+		}
+		r.track.bdInfraFailed = false
 	}
 	if outcome != "success" && outcome != "task_passed" && outcome != "all_passed" {
 		return nil
@@ -830,6 +834,21 @@ func (r *stateRunner) validateArtifacts(outcome string) error {
 		return err
 	}
 	return r.runPostArtifactSuccess()
+}
+
+func (r *stateRunner) probeDoltHealth() error {
+	workDir := rigMayorRigDir(r.townRoot, r.rig)
+	cmd := exec.Command("bd", "list", "--limit", "1")
+	cmd.Dir = workDir
+	cmd.Env = append(os.Environ(), "BEADS_DIR="+filepath.Join(workDir, ".beads"))
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("dolt probe failed: %w\n%s", err, string(out))
+	}
+	if strings.Contains(string(out), "Error 1146") || strings.Contains(string(out), "table not found") {
+		return fmt.Errorf("dolt schema corrupted: %s", string(out))
+	}
+	return nil
 }
 
 func (r *stateRunner) runPostArtifactSuccess() error {
