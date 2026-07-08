@@ -136,6 +136,10 @@ func PythonImplementationVerifyCommandForBead(v WorkflowValidation, mayorRigDir,
 		return py + " -m compileall -q " + beadPath
 	}
 
+	if strings.HasSuffix(beadPath, ".sql") {
+		return py + ` -c "import sqlite3; conn = sqlite3.connect(':memory:'); conn.executescript(open('` + beadPath + `').read()); print('SCHEMA_VALID'); conn.close()"`
+	}
+
 	return PythonVerifyCommand(v)
 }
 

@@ -188,6 +188,8 @@ states:
 
         **Frontend beads (JS/CSS/HTML):** No verify step needed. Write the file, then `bd close` immediately. Do not run compileall/pytest/go test on web assets.
 
+        **SQL beads (.sql):** Validate with the sqlite3 verify command shown in the Next bead line. Do NOT run pytest on .sql files.
+
         **One bead at a time:** Update ONE bead to in_progress → WRITE/EDIT that file → `bd close`. Do not batch multiple beads.
 
         **Result (SEPARATE message, NO CMD/WRITE/EDIT lines):**
