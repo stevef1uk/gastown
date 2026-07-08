@@ -24,6 +24,11 @@ var (
 
 // WorkflowNeedsRuntimeSmoke reports profiles that run doc-derived HTTP smoke during implementation verify.
 func WorkflowNeedsRuntimeSmoke(townRoot, rig string, v WorkflowValidation) bool {
+	// Only run runtime smoke in the final delivery phase — earlier phases haven't
+	// wired up the server yet.
+	if v.HasPhasedDelivery() && !v.IsFinalDeliveryPhase() {
+		return false
+	}
 	if workflowHasGoWebAndServer(v) {
 		return true
 	}
