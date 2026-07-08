@@ -746,7 +746,7 @@ func rewriteBdListLimit(cmd string) (string, bool) {
 
 // rewriteBdCloseWithAutoCommit appends --dolt-auto-commit=on to bd close commands
 // so the close persists immediately (BD_DOLT_AUTO_COMMIT env var is not recognized by bd).
-// It also strips BEADS_DIR exports so bd auto-discovers the rig's local .beads directory
+// It also strips/replaces BEADS_DIR so bd auto-discovers the rig's local .beads directory
 // (the redirect at <rig>/.beads can have a separate Dolt database that doesn't commit correctly).
 func rewriteBdCloseWithAutoCommit(cmd string) string {
 	lower := strings.ToLower(cmd)
@@ -758,16 +758,19 @@ func rewriteBdCloseWithAutoCommit(cmd string) string {
 	if strings.Contains(lower, "--dolt-auto-commit") {
 		return cmd
 	}
-	// Strip BEADS_DIR=... export/assignment so bd auto-discovers from cwd.
-	// This avoids the redirect directory's separate Dolt database.
+	// Strip BEADS_DIR=... export/assignment from the command text.
 	stripped := stripBeadsDirExport(cmd)
 	if stripped != cmd {
 		cmd = stripped
-		lower = strings.ToLower(cmd)
-		idx = strings.Index(lower, "bd close")
-		if idx < 0 {
-			return cmd
-		}
+	}
+	// Prepend "unset BEADS_DIR &&" before bd close so the env var (set by beads_dir: true
+	// in rig-flow.yaml) doesn't redirect to a broken Dolt database.
+	cmd = injectUnsetBeadsDirBeforeBdClose(cmd)
+	// Recalculate idx after modifications
+	lower = strings.ToLower(cmd)
+	idx = strings.Index(lower, "bd close")
+	if idx < 0 {
+		return cmd
 	}
 	// Find the end of the bd close command (next && or end of string)
 	rest := cmd[idx:]
@@ -780,6 +783,20 @@ func rewriteBdCloseWithAutoCommit(cmd string) string {
 	}
 	// Insert --dolt-auto-commit=on before any trailing && or at end
 	return cmd[:insertPoint] + " --dolt-auto-commit=on" + cmd[insertPoint:]
+}
+
+// injectUnsetBeadsDirBeforeBdClose inserts "unset BEADS_DIR && " before the "bd close" token.
+func injectUnsetBeadsDirBeforeBdClose(cmd string) string {
+	lower := strings.ToLower(cmd)
+	idx := strings.Index(lower, "bd close")
+	if idx < 0 {
+		return cmd
+	}
+	// Check if unset BEADS_DIR is already present
+	if strings.Contains(lower, "unset beads_dir") {
+		return cmd
+	}
+	return cmd[:idx] + "unset BEADS_DIR && " + cmd[idx:]
 }
 
 // stripBeadsDirExport removes "export BEADS_DIR=... &&" or "BEADS_DIR=... " prefixes
