@@ -13,23 +13,6 @@ func RequiresExactImplementPaths(v WorkflowValidation) bool {
 	v = v.ForActivePhase()
 	layout := strings.Trim(filepath.ToSlash(strings.TrimSpace(v.LayoutRoot)), "/")
 	nested := []string{"/internal/", "/cmd/", "/pkg/", "/api/", "/web/"}
-	for _, f := range v.UnionRequiredFiles() {
-		f = filepath.ToSlash(strings.TrimSpace(f))
-		if f == "" {
-			continue
-		}
-		for _, pre := range nested {
-			if strings.Contains(f, pre) {
-				return true
-			}
-		}
-		if layout != "" && layout != "." && strings.HasPrefix(f, layout+"/") {
-			rest := strings.TrimPrefix(f, layout+"/")
-			if strings.Count(rest, "/") >= 2 {
-				return true
-			}
-		}
-	}
 	for _, f := range v.RequiredFiles {
 		f = filepath.ToSlash(strings.TrimSpace(f))
 		if f == "" {

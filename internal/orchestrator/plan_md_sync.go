@@ -312,14 +312,20 @@ func openImplementPathMap(townRoot, rig string, v WorkflowValidation) (map[strin
 		return nil, err
 	}
 	pathToID := map[string]string{}
+	exactOnly := RequiresExactImplementPaths(v)
 	for _, b := range active {
-		p := NormalizePlannerBeadPath(ExtractPathFromBeadTitle(b.Title, v.BeadTitleContains), v.LayoutRoot, rig)
-		if p == "" {
+		raw := ExtractPathFromBeadTitle(b.Title, v.BeadTitleContains)
+		p := NormalizePlannerBeadPath(raw, v.LayoutRoot, rig)
+		matchPath := p
+		if exactOnly {
+			matchPath = raw
+		}
+		if matchPath == "" {
 			continue
 		}
 		for _, want := range v.RequiredFiles {
 			want = filepath.ToSlash(strings.TrimSpace(want))
-			if want != "" && pathMatchesRequiredForProfile(p, []string{want}, v) {
+			if want != "" && pathMatchesRequiredMode(matchPath, []string{want}, exactOnly) {
 				pathToID[want] = b.ID
 			}
 		}
