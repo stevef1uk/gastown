@@ -386,6 +386,11 @@ func (r *stateRunner) rewriteCommand(cmd string) string {
 			if fixed, ok := rewriteBdListLimit(cmd); ok {
 				cmd = fixed
 			}
+		case "bd_close_auto_commit":
+			if fixed := rewriteBdCloseWithAutoCommit(cmd); fixed != cmd {
+				orchestratedPrintf("[gt-agent] added --dolt-auto-commit=on to bd close\n")
+				cmd = fixed
+			}
 		}
 	}
 	return cmd

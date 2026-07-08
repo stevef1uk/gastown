@@ -744,6 +744,31 @@ func rewriteBdListLimit(cmd string) (string, bool) {
 	return sanitizeBdListCommand(cmd)
 }
 
+// rewriteBdCloseWithAutoCommit appends --dolt-auto-commit=on to bd close commands
+// so the close persists immediately (BD_DOLT_AUTO_COMMIT env var is not recognized by bd).
+func rewriteBdCloseWithAutoCommit(cmd string) string {
+	lower := strings.ToLower(cmd)
+	idx := strings.Index(lower, "bd close")
+	if idx < 0 {
+		return cmd
+	}
+	// Already has --dolt-auto-commit
+	if strings.Contains(lower, "--dolt-auto-commit") {
+		return cmd
+	}
+	// Find the end of the bd close command (next && or end of string)
+	rest := cmd[idx:]
+	endIdx := strings.Index(rest, "&&")
+	var insertPoint int
+	if endIdx >= 0 {
+		insertPoint = idx + endIdx
+	} else {
+		insertPoint = len(cmd)
+	}
+	// Insert --dolt-auto-commit=on before any trailing && or at end
+	return cmd[:insertPoint] + " --dolt-auto-commit=on" + cmd[insertPoint:]
+}
+
 var (
 	goSmokeStripPkillRE   = regexp.MustCompile(`(?i)\s*&&\s*pkill\s+-f\s+[^&|;]+`)
 	goSmokeStripBuildRE   = regexp.MustCompile(`(?i)go\s+build\s+\./\.\.\.\s*&&\s*`)
