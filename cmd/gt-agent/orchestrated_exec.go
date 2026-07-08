@@ -683,7 +683,7 @@ func rewriteBdListImplementScope(cmd, titleContains string) (string, bool) {
 		openList := injectBdListStatusFlags(out, "open,in_progress")
 		closedList := injectBdListStatusFlags(out, "closed")
 		script := fmt.Sprintf(
-			`(echo '=== open/in_progress implement ==='; %s | grep -Fi %s || true; echo '=== closed implement ==='; %s | grep -Fi %s | head -30 || true)`,
+			`(echo '=== open/in_progress implement ==='; ( %s ) | grep -Fi %s || true; echo '=== closed implement ==='; ( %s ) | grep -Fi %s | head -30 || true)`,
 			openList, q, closedList, q,
 		)
 		return script, true
