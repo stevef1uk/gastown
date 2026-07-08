@@ -134,8 +134,16 @@ func pythonVerifyTarget(cmd string) string {
 		return ""
 	}
 	if strings.Contains(strings.ToLower(cmd), "pytest") {
+		afterPytest := false
 		for _, p := range parts {
-			if p == "pytest" || strings.HasPrefix(p, "-") || strings.HasPrefix(p, ".") {
+			if p == "pytest" || p == "-m" {
+				afterPytest = true
+				continue
+			}
+			if !afterPytest {
+				continue
+			}
+			if strings.HasPrefix(p, "-") {
 				continue
 			}
 			if strings.Contains(p, "/") || strings.HasSuffix(p, ".py") || strings.HasSuffix(p, ".pyx") {
