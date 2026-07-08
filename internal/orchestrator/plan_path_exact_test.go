@@ -1,6 +1,30 @@
 package orchestrator
 
-import "testing"
+import (
+	"testing"
+)
+
+func TestValidatePlanBeadPathsExact_normalizesBothSides(t *testing.T) {
+	t.Parallel()
+	v := WorkflowValidation{
+		LayoutRoot:        "finally",
+		BeadTitleContains: "Implement finally/",
+		RequiredFiles:     []string{"finally/backend/services/massive.py"},
+	}
+	beads := []PlanBead{
+		{ID: "fi-3fz", Title: "Implement finally/backend/services/massive.py per architecture"},
+	}
+	if err := ValidatePlanBeadPathsExact(beads, v, "finally"); err != nil {
+		t.Fatalf("expected no error when both sides normalize to same path, got: %v", err)
+	}
+	// Bead with non-matching path should still be rejected
+	badBeads := []PlanBead{
+		{ID: "fi-xxx", Title: "Implement finally/backend/wrong.py per architecture"},
+	}
+	if err := ValidatePlanBeadPathsExact(badBeads, v, "finally"); err == nil {
+		t.Fatal("expected error for bead path not in required_files")
+	}
+}
 
 func TestRequiresExactImplementPaths_nestedLayout(t *testing.T) {
 	t.Parallel()
