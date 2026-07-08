@@ -49,6 +49,9 @@ func orchestratorPollInterval() time.Duration {
 }
 
 func runOrchestrated(ctx context.Context, client *llm.Client, townRoot, role, rig, sessionName, stateFile string, state AgentState) error {
+	defer closeOrchestratedOutputMirror()
+	defer closeOrchestratedLogger()
+
 	agentID := orchestrator.OrchestratorAgentID(role, rig)
 	pollEvery := orchestratorPollInterval()
 	initOrchestratedLogger(townRoot, sessionName)
@@ -57,6 +60,11 @@ func runOrchestrated(ctx context.Context, client *llm.Client, townRoot, role, ri
 	}
 
 	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
 		if isShutdownRequested() {
 			break
 		}

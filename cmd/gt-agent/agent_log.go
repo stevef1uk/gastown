@@ -9,7 +9,10 @@ import (
 	"strings"
 )
 
-var orchestratedLogger *log.Logger
+var (
+	orchestratedLogger   *log.Logger
+	orchestratedLogFile  *os.File
+)
 
 // initOrchestratedLogger sends operational lines to stderr and, when available,
 // appends to logs/sessions/<session>.log (same file nats-wrapper uses).
@@ -20,10 +23,19 @@ func initOrchestratedLogger(townRoot, sessionName string) {
 		_ = os.MkdirAll(logDir, 0755)
 		path := filepath.Join(logDir, sessionName+".log")
 		if f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); err == nil {
+			orchestratedLogFile = f
 			w = io.MultiWriter(w, f)
 		}
 	}
 	orchestratedLogger = log.New(w, "[gt-agent] ", log.LstdFlags)
+}
+
+// closeOrchestratedLogger closes the session log file opened by initOrchestratedLogger.
+func closeOrchestratedLogger() {
+	if orchestratedLogFile != nil {
+		orchestratedLogFile.Close()
+		orchestratedLogFile = nil
+	}
 }
 
 func orchestratedLog(format string, args ...interface{}) {

@@ -199,11 +199,15 @@ func (m *ConvoyManager) runEventPoll() {
 	currentInterval := eventPollInterval
 	ticker := time.NewTicker(currentInterval)
 	defer ticker.Stop()
+	pruneTicker := time.NewTicker(30 * time.Minute)
+	defer pruneTicker.Stop()
 
 	for {
 		select {
 		case <-m.ctx.Done():
 			return
+		case <-pruneTicker.C:
+			m.processedLifecycleEvents = sync.Map{}
 		case <-ticker.C:
 			m.storesMu.Lock()
 			// Lazy store initialization: retry if stores not yet available

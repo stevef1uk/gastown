@@ -5,8 +5,10 @@
 package events
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"time"
@@ -15,6 +17,10 @@ import (
 	"github.com/steveyegge/gastown/internal/workspace"
 	"github.com/steveyegge/gastown/internal/natsutil"
 )
+
+// maxEventsFileSize is the maximum .events.jsonl size before truncation.
+// When exceeded, the file is truncated to keep the newest half.
+const maxEventsFileSize int64 = 10 * 1024 * 1024 // 10MB
 
 // Event represents an activity event in Gas Town.
 type Event struct {
@@ -159,6 +165,11 @@ func writeAt(townRoot string, event Event) error {
 	}
 	defer fl.Unlock() //nolint:errcheck // best-effort unlock
 
+	// Truncate if file exceeds max size (keep newest half to avoid thrashing)
+	if info, err := os.Stat(eventsPath); err == nil && info.Size() > maxEventsFileSize {
+		truncateEventsFile(eventsPath, info.Size())
+	}
+
 	f, err := os.OpenFile(eventsPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644) //nolint:gosec // G302: events file is non-sensitive operational data
 	if err != nil {
 		return fmt.Errorf("opening events file: %w", err)
@@ -178,6 +189,48 @@ func writeAt(townRoot string, event Event) error {
 	publishToNats(event)
 
 	return nil
+}
+
+// truncateEventsFile keeps the newest half of the events file using atomic rename.
+// Must be called under the events file flock.
+func truncateEventsFile(eventsPath string, currentSize int64) {
+	keepBytes := currentSize / 2
+
+	f, err := os.Open(eventsPath)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+
+	startOffset := currentSize - keepBytes
+	if _, err := f.Seek(startOffset, io.SeekStart); err != nil {
+		return
+	}
+
+	reader := bufio.NewReader(f)
+	if _, err := reader.ReadString('\n'); err != nil {
+		return
+	}
+
+	tmpPath := eventsPath + ".truncate.tmp"
+	tmp, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+	if err != nil {
+		return
+	}
+
+	if _, err := io.Copy(tmp, reader); err != nil {
+		tmp.Close()
+		os.Remove(tmpPath)
+		return
+	}
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		os.Remove(tmpPath)
+		return
+	}
+	tmp.Close()
+	f.Close()
+	os.Rename(tmpPath, eventsPath) //nolint:errcheck // best-effort truncation
 }
 
 func publishToNats(event Event) {

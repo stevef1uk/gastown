@@ -66,6 +66,13 @@ func setupOrchestratedOutputMirror(townRoot, role, rig string) {
 	})
 }
 
+func closeOrchestratedOutputMirror() {
+	if orchestratedRoleLog != nil {
+		orchestratedRoleLog.Close()
+		orchestratedRoleLog = nil
+	}
+}
+
 func orchestratedPrintf(format string, args ...interface{}) {
 	_, _ = fmt.Fprintf(orchestratedStdoutWriters, format, args...)
 }
