@@ -275,7 +275,8 @@ func ValidatePlanBeads(beads []PlanBead, archPath string, v WorkflowValidation, 
 
 	exact := RequiresExactImplementPaths(v)
 	for _, want := range expected {
-		ids := beadIDsForPathProfile(pathToIDs, want, v)
+		lookupWant := NormalizePlannerBeadPath(want, v.LayoutRoot, rig)
+		ids := beadIDsForPathProfile(pathToIDs, lookupWant, v)
 		if len(ids) == 0 {
 			missing = append(missing, want)
 			continue
@@ -290,8 +291,8 @@ func ValidatePlanBeads(beads []PlanBead, archPath string, v WorkflowValidation, 
 						continue
 					}
 					p := NormalizePlannerBeadPath(ExtractPathFromBeadTitle(b.Title, v.BeadTitleContains), v.LayoutRoot, rig)
-					if p != want {
-						dupes = append(dupes, fmt.Sprintf("%s bead %s path %q (want exact %q)", want, id, p, want))
+					if p != lookupWant {
+						dupes = append(dupes, fmt.Sprintf("%s bead %s path %q (want exact %q)", want, id, p, lookupWant))
 					}
 				}
 			}
@@ -316,7 +317,8 @@ func ValidatePlanBeads(beads []PlanBead, archPath string, v WorkflowValidation, 
 					} else if want != p && filepath.Base(want) != filepath.Base(p) {
 						continue
 					}
-					if len(beadIDsForPathProfile(pathToIDs, want, v)) == 0 {
+					lookupWant := NormalizePlannerBeadPath(want, v.LayoutRoot, rig)
+					if len(beadIDsForPathProfile(pathToIDs, lookupWant, v)) == 0 {
 						missing = append(missing, want)
 					}
 					break
@@ -334,7 +336,18 @@ func ValidatePlanBeads(beads []PlanBead, archPath string, v WorkflowValidation, 
 	augmented := requiredFilesWithCorrelatedTests(v.RequiredFiles, v)
 	var extra []string
 	for p, ids := range pathToIDs {
-		if !pathMatchesRequiredForProfile(p, augmented, v) || !IsValidImplementBeadPath(p) {
+		matched := false
+		for _, a := range augmented {
+			if pathMatchesRequiredForProfile(p, []string{a}, v) {
+				matched = true
+				break
+			}
+			if n := NormalizePlannerBeadPath(a, v.LayoutRoot, rig); n != "" && pathMatchesRequiredForProfile(p, []string{n}, v) {
+				matched = true
+				break
+			}
+		}
+		if !matched || !IsValidImplementBeadPath(p) {
 			extra = append(extra, fmt.Sprintf("%s (%s)", p, strings.Join(ids, ", ")))
 		}
 	}

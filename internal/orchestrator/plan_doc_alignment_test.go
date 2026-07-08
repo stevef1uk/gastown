@@ -354,3 +354,31 @@ Entrypoint imports store; registers GET /api/links and POST /api/links; exports 
 		t.Fatal(err)
 	}
 }
+
+func TestCheckPlanBeadMapExactPaths_normalizesPaths(t *testing.T) {
+	t.Parallel()
+	v := WorkflowValidation{
+		LayoutRoot:    "finally",
+		RequiredFiles: []string{"finally/backend/pyproject.toml", "finally/backend/app/main.py"},
+	}
+	planDoc := strings.Join([]string{
+		"# Implementation plan",
+		"## Bead map",
+		"### te-1: finally/backend/pyproject.toml",
+		"- Scope: pyproject",
+	}, "\n")
+	issues := checkPlanBeadMapExactPaths(planDoc, v, "finally")
+	if len(issues) > 0 {
+		t.Fatalf("expected no issues with normalized paths, got: %v", issues)
+	}
+	badPlan := strings.Join([]string{
+		"# Implementation plan",
+		"## Bead map",
+		"### te-1: finally/backend/wrong_name.py",
+		"- Scope: wrong",
+	}, "\n")
+	issues = checkPlanBeadMapExactPaths(badPlan, v, "finally")
+	if len(issues) == 0 {
+		t.Fatal("expected issue for path not in required_files")
+	}
+}

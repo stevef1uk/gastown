@@ -255,3 +255,116 @@ func TestSyncPlanningArtifacts_integration(t *testing.T) {
 		t.Fatal("plan.md should be fresh after sync")
 	}
 }
+
+func TestOpenImplementPathMap_exactUsesRawPath(t *testing.T) {
+	t.Parallel()
+	town := t.TempDir()
+	rig := "finally"
+	rigDir := filepath.Join(town, rig, "mayor", "rig")
+	if err := os.MkdirAll(rigDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	// Bead title includes rig-name prefix; raw extracted path = "finally/backend/pyproject.toml"
+	beadTitle := "Implement finally/backend/pyproject.toml per architecture"
+	setListImplementBeadsByStatusHook(t, town, rig, func(_, _ string, _ WorkflowValidation, status string) ([]PlanBead, error) {
+		if status == "open" {
+			return []PlanBead{{ID: "te-1", Title: beadTitle}}, nil
+		}
+		return nil, nil
+	})
+	// Include at least one file with 2+ slashes after stripping layout root to trigger exact mode
+	v := WorkflowValidation{
+		LayoutRoot:        "finally",
+		BeadTitleContains: "Implement finally/",
+		RequiredFiles:     []string{"finally/backend/pyproject.toml", "finally/backend/app/main.py"},
+	}
+	if !RequiresExactImplementPaths(v) {
+		t.Fatal("test setup: expected exact paths (contains backend/app/ with 2+ slashes)")
+	}
+	pathToID, err := openImplementPathMap(town, rig, v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The raw path "finally/backend/pyproject.toml" should match required file and map to te-1
+	if id := pathToID["finally/backend/pyproject.toml"]; id != "te-1" {
+		t.Fatalf("expected te-1 for finally/backend/pyproject.toml, got %q; map: %v", id, pathToID)
+	}
+}
+
+func TestOpenImplementPathMap_nonExactUsesNormalizedPath(t *testing.T) {
+	t.Parallel()
+	town := t.TempDir()
+	rig := "testrig"
+	rigDir := filepath.Join(town, rig, "mayor", "rig")
+	if err := os.MkdirAll(rigDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	// Flat layout bead with rig-prefix path
+	beadTitle := "Implement testrig/Dockerfile per architecture"
+	setListImplementBeadsByStatusHook(t, town, rig, func(_, _ string, _ WorkflowValidation, status string) ([]PlanBead, error) {
+		if status == "open" {
+			return []PlanBead{{ID: "te-dkr", Title: beadTitle}}, nil
+		}
+		return nil, nil
+	})
+	v := WorkflowValidation{
+		LayoutRoot:        ".",
+		BeadTitleContains: "Implement testrig/",
+		RequiredFiles:     []string{"Dockerfile"},
+	}
+	if RequiresExactImplementPaths(v) {
+		t.Fatal("test setup: expected non-exact (flat layout)")
+	}
+	pathToID, err := openImplementPathMap(town, rig, v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Normalized path "Dockerfile" should match required file
+	if id := pathToID["Dockerfile"]; id != "te-dkr" {
+		t.Fatalf("expected te-dkr for Dockerfile, got %q; map: %v", id, pathToID)
+	}
+}
+
+func TestValidatePlanMDBeadPathAlignment_normalizesPaths(t *testing.T) {
+	t.Parallel()
+	town := t.TempDir()
+	rig := "finally"
+	rigDir := filepath.Join(town, rig, "mayor", "rig")
+	if err := os.MkdirAll(rigDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	// Plan.md uses paths WITH rig prefix
+	planBody := strings.Join([]string{
+		"# Implementation plan",
+		"## Bead map",
+		"### te-1: finally/backend/pyproject.toml",
+		"- Scope: pyproject",
+		"### te-2: finally/backend/app/main.py",
+		"- Scope: main",
+	}, "\n")
+	if err := os.WriteFile(filepath.Join(rigDir, "plan.md"), []byte(planBody), 0644); err != nil {
+		t.Fatal(err)
+	}
+	// Bead titles also use rig prefix — both sides normalize to same paths
+	setListImplementBeadsByStatusHook(t, town, rig, func(_, _ string, _ WorkflowValidation, status string) ([]PlanBead, error) {
+		if status == "in_progress" {
+			return []PlanBead{
+				{ID: "te-1", Title: "Implement finally/backend/pyproject.toml per architecture"},
+			}, nil
+		}
+		if status == "open" {
+			return []PlanBead{
+				{ID: "te-2", Title: "Implement finally/backend/app/main.py per architecture"},
+			}, nil
+		}
+		return nil, nil
+	})
+	v := WorkflowValidation{
+		LayoutRoot:        "finally",
+		BeadTitleContains: "Implement finally/",
+		RequiredFiles:     []string{"finally/backend/pyproject.toml", "finally/backend/app/main.py"},
+	}
+	if err := ValidatePlanMDBeadPathAlignment(town, rig, v); err != nil {
+		t.Fatalf("expected no alignment error with normalized paths, got: %v", err)
+	}
+}

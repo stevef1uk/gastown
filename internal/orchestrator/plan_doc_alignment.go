@@ -117,7 +117,8 @@ func ValidatePlanningDocAlignment(rigDir string, v WorkflowValidation) error {
 	issues = append(issues, checkGoModuleAlignment("plan.md", planDoc, specDoc, v)...)
 	issues = append(issues, checkPlanTestMandate(planDoc, v)...)
 	issues = append(issues, checkPlanIntegrationContract(planDoc, specDoc, v)...)
-	issues = append(issues, checkPlanBeadMapExactPaths(planDoc, v)...)
+	rigName := filepath.Base(filepath.Dir(filepath.Dir(rigDir)))
+	issues = append(issues, checkPlanBeadMapExactPaths(planDoc, v, rigName)...)
 	issues = append(issues, checkDocLayoutPathPrefix("plan.md", planDoc, v)...)
 
 	return formatDocAlignmentError("SPEC/architecture/plan misaligned", issues)
@@ -500,16 +501,21 @@ func extractPlanBeadMapPath(sectionLine string) string {
 }
 
 // checkPlanBeadMapExactPaths rejects ### bead-map paths that are not exact required_files entries.
-func checkPlanBeadMapExactPaths(planDoc string, v WorkflowValidation) []string {
+func checkPlanBeadMapExactPaths(planDoc string, v WorkflowValidation, rig string) []string {
 	if !RequiresExactImplementPaths(v) || strings.TrimSpace(planDoc) == "" {
 		return nil
 	}
 	v = v.ForActivePhase()
+	normalize := func(p string) string {
+		if rig != "" {
+			return NormalizePlannerBeadPath(p, v.LayoutRoot, rig)
+		}
+		return filepath.ToSlash(strings.TrimSpace(p))
+	}
 	expected := make(map[string]bool)
 	for _, f := range v.RequiredFiles {
-		f = filepath.ToSlash(strings.TrimSpace(f))
-		if f != "" {
-			expected[f] = true
+		if p := normalize(f); p != "" {
+			expected[p] = true
 		}
 	}
 	var issues []string
@@ -517,7 +523,7 @@ func checkPlanBeadMapExactPaths(planDoc string, v WorkflowValidation) []string {
 		if !strings.HasPrefix(strings.TrimSpace(line), "### ") {
 			continue
 		}
-		p := extractPlanBeadMapPath(line)
+		p := normalize(extractPlanBeadMapPath(line))
 		if p == "" || expected[p] {
 			continue
 		}
