@@ -82,7 +82,7 @@ func TestAgentEnv_Polecat(t *testing.T) {
 	assertEnv(t, env, "BD_ACTOR", "myrig/polecats/Toast")
 	assertEnv(t, env, "GIT_AUTHOR_NAME", "Toast")
 	assertEnv(t, env, "BEADS_AGENT_NAME", "myrig/Toast")
-	assertEnv(t, env, "BD_DOLT_AUTO_COMMIT", "off") // gt-5cc2p: prevent manifest contention
+	assertEnv(t, env, "BD_DOLT_AUTO_COMMIT", "on") // bd close writes visible to bd list immediately
 	assertEnv(t, env, "NODE_OPTIONS", "")            // cleared to prevent debugger inheritance
 	assertEnv(t, env, "CLAUDECODE", "")              // cleared to prevent nested session detection
 }
