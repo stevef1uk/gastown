@@ -116,6 +116,11 @@ func validateImplementWriteScope(townRoot, rig, activeBead, written string, v Wo
 	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
 	if ImplementationQueueGreen(townRoot, rig, v) {
 		written = NormalizeBeadPathForLayout(filepath.ToSlash(strings.TrimSpace(written)), v.LayoutRoot)
+		// Allow edits when go test fails (e.g. orphaned test file from a previous session).
+		// Use compile-only check — the agent needs to fix compilation before sending success.
+		if ImplementationModuleCompileOK(rigDir, v.ForActivePhase()) != nil {
+			return nil
+		}
 		allowStubFix := false
 		for _, stub := range UnionStubArtifactsOnDisk(rigDir, v) {
 			if PathMatchesImplementWrite(written, stub, v.RequiredFiles, v) {

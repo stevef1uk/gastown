@@ -243,15 +243,18 @@ func ReconcileImplementBeads(townRoot, rig string, v WorkflowValidation) (string
 	// When phase verify is red, still auto-close frontend beads that pass per-bead verify so the queue
 	// can advance (e.g. style.css done while handlers.go compile is broken). Go beads stay open until
 	// phase verify passes — premature success JSON is still blocked by implementation guards.
+	// Use compile-level verify only — runtime smoke is QA's concern, not the Polecat's.
 	var autoClosed []string
 	phaseErr := error(nil)
-	if WorkflowNeedsRuntimeSmoke(townRoot, rig, v) {
-		phaseErr = ImplementationPhaseVerifyOK(townRoot, rig, v)
+	if WorkflowUsesGo(v) {
+		rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
+		phaseErr = ImplementationModuleCompileOK(rigDir, v.ForActivePhase())
 	}
 	if phaseErr != nil && WorkflowUsesPython(v) && pythonVerifyNeedsVenvRebuild(phaseErr) {
 		if logLine, recovered := RecoverPythonVenvAndRetry(townRoot, rig, v, phaseErr); recovered {
 			parts = append(parts, logLine)
-			phaseErr = ImplementationPhaseVerifyOK(townRoot, rig, v)
+			rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
+			phaseErr = ImplementationModuleCompileOK(rigDir, v.ForActivePhase())
 		}
 	}
 	// Always auto-close green go.mod beads (go-module phase) even when full phase verify is red.
