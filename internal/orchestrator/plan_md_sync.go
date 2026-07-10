@@ -316,10 +316,10 @@ func openImplementPathMap(townRoot, rig string, v WorkflowValidation) (map[strin
 	for _, b := range active {
 		raw := ExtractPathFromBeadTitle(b.Title, v.BeadTitleContains)
 		p := NormalizePlannerBeadPath(raw, v.LayoutRoot, rig)
+		// Always use normalized path for matching — NormalizePlannerBeadPath strips
+		// rig-name prefixes that ExtractPathFromBeadTitle restores. Even in exact mode,
+		// the rig prefix must be stripped because required_files never includes it.
 		matchPath := p
-		if exactOnly {
-			matchPath = raw
-		}
 		if matchPath == "" {
 			continue
 		}
