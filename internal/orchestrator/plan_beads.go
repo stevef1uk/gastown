@@ -23,6 +23,10 @@ func NormalizePlannerBeadPath(path, layoutRoot, rig string) string {
 	path = filepath.ToSlash(strings.TrimSpace(path))
 	layoutRoot = strings.Trim(filepath.ToSlash(strings.TrimSpace(layoutRoot)), "/")
 	rig = strings.TrimSpace(rig)
+	// Strip leading ./ (bead titles like "Implement FinAlly/./backend/llm/client.py")
+	for strings.HasPrefix(path, "./") {
+		path = path[2:]
+	}
 	// Strip hallucinated rig-name prefix only when it's not the layout root.
 	// When layout_root == rig, the rig name is a legitimate directory in the project.
 	if rig != "" && !strings.EqualFold(rig, layoutRoot) {
@@ -79,6 +83,10 @@ func implementBeadTitlePathOK(title string, v WorkflowValidation) bool {
 		if layout != "" && !strings.EqualFold(layout, "implement") && strings.HasPrefix(path, layout+"/") {
 			path = path[len(layout)+1:]
 		}
+	}
+	// Strip leading ./ (bead titles like "Implement FinAlly/./backend/llm/client.py")
+	for strings.HasPrefix(path, "./") {
+		path = path[2:]
 	}
 	if layout != "" {
 		path = fixDoubledLayoutPath(path, layout)
