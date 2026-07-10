@@ -106,9 +106,10 @@ var trackHandlers = map[string]trackFn{
 			}
 		}
 		if isBeadCloseCommand(cmd) && cmdErr == nil {
-			if r.track.verifyOK {
-				r.track.beadCloseOK = true
-			}
+			// A successful bd close means the bead guards passed; do not also
+			// require verifyOK here.  Frontend/web beads and other artifacts
+			// may close after EDIT:/WRITE: without a separate verify command.
+			r.track.beadCloseOK = true
 			r.track.hadCmdFailure = false
 			if id := extractBeadIDFromBdClose(cmd); id != "" && id == r.track.activeBead {
 				r.track.activeBead = ""
