@@ -72,6 +72,14 @@ func implementBeadTitlePathOK(title string, v WorkflowValidation) bool {
 	path := ExtractPathFromBeadTitle(title, v.BeadTitleContains)
 	layout := effectiveLayoutRootForBeadTitle(v)
 	path = NormalizeBeadPathForLayout(path, layout)
+	// When LayoutRoot is ".", the inferred layout is the rig-name prefix from
+	// BeadTitleContains (e.g. "FinAlly/").  Strip it so the path matches
+	// required_files which never include the rig-name prefix.
+	if v.LayoutRoot == "." || v.LayoutRoot == "" {
+		if layout != "" && !strings.EqualFold(layout, "implement") && strings.HasPrefix(path, layout+"/") {
+			path = path[len(layout)+1:]
+		}
+	}
 	if layout != "" {
 		path = fixDoubledLayoutPath(path, layout)
 	}
