@@ -36,6 +36,16 @@ Opens ` + "`linkshelf.db`" + ` in the working directory.
 	}
 }
 
+func TestCollectSmokeResetPaths_inferredBareBacktickFilename(t *testing.T) {
+	t.Parallel()
+	text := "Open SQLite file `linkshelf.db` in the current working directory."
+	spec := APISmokeSpec{GETEmptyJSONArray: []string{"/api/links"}}
+	got := collectSmokeResetPaths(text, spec)
+	if !contains(got, "linkshelf.db") {
+		t.Fatalf("want linkshelf.db inferred from bare backtick filename, got %v", got)
+	}
+}
+
 func TestCollectSmokeResetPaths_skipsInferenceWithoutEmptyArrayContract(t *testing.T) {
 	t.Parallel()
 	text := "Opens `linkshelf.db`"

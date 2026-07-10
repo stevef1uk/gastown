@@ -14,9 +14,9 @@ var (
 	smokeResetHeadingRE = regexp.MustCompile(`(?im)^##\s+.*\bsmoke\s+reset\b`)
 	smokeResetBulletRE  = regexp.MustCompile(`^\s*[-*]\s+(.+?)\s*$`)
 	smokeResetKVRE      = regexp.MustCompile(`(?im)^\s*smoke_reset:\s*(\S+)\s*$`)
-	docBacktickDBRE     = regexp.MustCompile("`(\\./?[a-zA-Z0-9][a-zA-Z0-9_.-]*\\.(?:db|sqlite3?|wal))`")
+	docBacktickDBRE     = regexp.MustCompile("`(\\.?/?[a-zA-Z0-9][a-zA-Z0-9_.-]*\\.(?:db|sqlite3?|wal))`")
 	sqlOpenPathRE       = regexp.MustCompile(`(?i)sql\.Open\([^,]+,\s*["']([^"']+)["']`)
-	relativePersistRE   = regexp.MustCompile(`(?:^|[\s"'(])(\./?[a-zA-Z0-9][a-zA-Z0-9_.-]*\.(?:db|sqlite3?|wal))\b`)
+	relativePersistRE   = regexp.MustCompile(`(?:^|[\s"'(])(\.?/?[a-zA-Z0-9][a-zA-Z0-9_.-]*\.(?:db|sqlite3?|wal))\b`)
 	goRunServerRE       = regexp.MustCompile(`(?i)\bgo\s+run\s+(?:\./)?cmd/server(?:/main\.go)?\b`)
 )
 
