@@ -339,3 +339,52 @@ func TestManager_CompleteTask_qaAllPassed_noPhasesGoesCompleted(t *testing.T) {
 		t.Fatalf("status = %q", m.instances[wfID].Status)
 	}
 }
+
+// TestTryAdvanceDeliveryPhaseAfterQA_succeedsWithBdErrors verifies that phase advance
+// returns redirected=true even when PruneOpenImplementBeadsOutsideRequired or
+// SyncPlanningArtifacts fail (e.g. Dolt unreachable). The phase was already advanced
+// on disk by SetRigActivePhase, so the workflow must continue at planning, not complete.
+func TestTryAdvanceDeliveryPhaseAfterQA_succeedsWithBdErrors(t *testing.T) {
+	townRoot := t.TempDir()
+	rig := "errrig"
+	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
+	if err := os.MkdirAll(rigDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	// No bd init, no git repo — bd commands will fail, but SetRigActivePhase (JSON write) should still work.
+	writeTestPhasedProfile(t, townRoot, rig, "backend")
+
+	// Verify setup
+	v, ok, err := LoadRigWorkflowProfileFile(townRoot, rig)
+	if err != nil || !ok {
+		t.Fatalf("load profile: ok=%v err=%v", ok, err)
+	}
+	if !v.HasPhasedDelivery() {
+		t.Fatal("expected phased delivery")
+	}
+	if v.ActivePhaseID() != "backend" {
+		t.Fatalf("active phase = %q, want backend", v.ActivePhaseID())
+	}
+
+	// TryAdvanceDeliveryPhaseAfterQA should succeed even though bd operations will fail
+	redirected, fromID, toID, logLine, err := TryAdvanceDeliveryPhaseAfterQA(townRoot, rig)
+
+	// The key assertion: redirected must be true because SetRigActivePhase succeeded
+	if !redirected {
+		t.Fatalf("expected redirected=true (phase advanced on disk), got false; err=%v logLine=%q", err, logLine)
+	}
+	if fromID != "backend" {
+		t.Fatalf("fromID = %q, want backend", fromID)
+	}
+	if toID != "frontend" {
+		t.Fatalf("toID = %q, want frontend", toID)
+	}
+
+	// Verify the phase was actually persisted
+	assertActivePhase(t, townRoot, rig, "frontend")
+
+	// Log line should contain the phase advance message
+	if !strings.Contains(logLine, "delivery phase advanced backend → frontend") {
+		t.Fatalf("logLine = %q", logLine)
+	}
+}

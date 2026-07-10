@@ -615,6 +615,10 @@ func (v WorkflowValidation) NextDeliveryPhaseID() (string, bool) {
 // TryAdvanceDeliveryPhaseAfterQA moves active_phase_id to the next phase and syncs planning beads/plan.md.
 // Call when QA reports all_passed for the current phase. Returns redirected=true when the workflow should
 // continue at planning instead of completed.
+//
+// Once SetRigActivePhase succeeds, redirected is always true — pruning and sync failures are non-fatal
+// (logged as warnings in logLine) so that transient issues like Dolt being down don't cause the workflow
+// to prematurely complete.
 func TryAdvanceDeliveryPhaseAfterQA(townRoot, rig string) (redirected bool, fromID, toID, logLine string, err error) {
 	if townRoot == "" || rig == "" {
 		return false, "", "", "", nil
@@ -639,24 +643,25 @@ func TryAdvanceDeliveryPhaseAfterQA(townRoot, rig string) (redirected bool, from
 	if err := SetRigActivePhase(townRoot, rig, nextID); err != nil {
 		return false, fromID, "", "", err
 	}
+	// Phase advanced on disk — from here on, always return redirected=true.
+	// Pruning and sync are best-effort; failures are warnings, not fatal.
+	redirected = true
 	full, ok, err = LoadRigWorkflowProfileFile(townRoot, rig)
 	if err != nil || !ok {
-		return false, fromID, nextID, "", err
-	}
-	pruned, err := PruneOpenImplementBeadsOutsideRequired(townRoot, rig, full)
-	if err != nil {
-		return false, fromID, nextID, "", err
-	}
-	syncLog, err := SyncPlanningArtifacts(townRoot, rig, full, true)
-	if err != nil {
-		return false, fromID, nextID, "", err
+		return true, fromID, nextID, "", err
 	}
 	logLine = fmt.Sprintf("delivery phase advanced %s → %s", fromID, nextID)
 	var parts []string
-	if len(pruned) > 0 {
+	pruned, pruneErr := PruneOpenImplementBeadsOutsideRequired(townRoot, rig, full)
+	if pruneErr != nil {
+		parts = append(parts, "prune warning: "+pruneErr.Error())
+	} else if len(pruned) > 0 {
 		parts = append(parts, "pruned prior-phase open beads: "+joinStrings(pruned, ", "))
 	}
-	if syncLog != "" {
+	syncLog, syncErr := SyncPlanningArtifacts(townRoot, rig, full, true)
+	if syncErr != nil {
+		parts = append(parts, "sync warning: "+syncErr.Error())
+	} else if syncLog != "" {
 		parts = append(parts, syncLog)
 	}
 	if len(parts) > 0 {
