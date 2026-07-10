@@ -16,13 +16,16 @@ type PlanBead struct {
 
 // NormalizePlannerBeadPath canonicalizes paths from bead titles for flat mayor/rig worktrees.
 // Models often prefix paths with the rig name (e.g. finally/Dockerfile) even when layout_root is ".".
+// NormalizePlannerBeadPath normalizes a bead path for planning and matching.
+// It strips the rig-name prefix when it's not the layout root (hallucinated prefix),
+// but preserves it when layout_root matches the rig name (legitimate project directory).
 func NormalizePlannerBeadPath(path, layoutRoot, rig string) string {
 	path = filepath.ToSlash(strings.TrimSpace(path))
 	layoutRoot = strings.Trim(filepath.ToSlash(strings.TrimSpace(layoutRoot)), "/")
 	rig = strings.TrimSpace(rig)
-	// Strip hallucinated rig-name prefix (e.g. "finally/backend/tests/" -> "backend/tests/")
-	// regardless of layoutRoot — bead titles may include the rig name as a directory prefix.
-	if rig != "" {
+	// Strip hallucinated rig-name prefix only when it's not the layout root.
+	// When layout_root == rig, the rig name is a legitimate directory in the project.
+	if rig != "" && !strings.EqualFold(rig, layoutRoot) {
 		for strings.HasPrefix(path, rig+"/") {
 			path = strings.TrimPrefix(path, rig+"/")
 		}
