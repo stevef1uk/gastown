@@ -122,6 +122,7 @@ func ValidateImplementBeadCreateTitle(title string, v WorkflowValidation) error 
 		}
 	}
 	path := ExtractPathFromBeadTitle(title, v.BeadTitleContains)
+	path = NormalizeBeadPathForLayout(path, v.LayoutRoot)
 	if !IsValidImplementBeadPath(path) {
 		return fmt.Errorf("bead title must be %q<file-path> per architecture (got invalid path %q)", v.BeadTitleContains, path)
 	}

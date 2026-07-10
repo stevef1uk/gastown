@@ -158,12 +158,19 @@ func NormalizeBeadPathForLayout(beadPath, layoutRoot string) string {
 		return beadPath
 	}
 	if layoutRoot == "" || layoutRoot == "." {
-		// With no layout root, we can't use layout-based stripping, but we can
-		// still normalize paths that look like they have a non-layout prefix segment.
-		// This handles paths like "finally/Dockerfile" where the rig name is a prefix.
-		parts := strings.SplitN(beadPath, "/", 3)
-		if len(parts) == 2 && !knownLayoutPrefix(parts[0]) {
-			beadPath = parts[1]
+		// With no layout root, strip rig-name prefixes that are not known layout directories.
+		// This handles paths like "finally/Dockerfile", "FinAlly/backend/main.py", etc.
+		// Walk from the left, stripping segments that are not known layout prefixes.
+		for {
+			idx := strings.Index(beadPath, "/")
+			if idx <= 0 {
+				break
+			}
+			firstSeg := beadPath[:idx]
+			if knownLayoutPrefix(firstSeg + "/") {
+				break
+			}
+			beadPath = beadPath[idx+1:]
 		}
 		return beadPath
 	}
