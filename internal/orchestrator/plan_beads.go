@@ -26,8 +26,18 @@ func NormalizePlannerBeadPath(path, layoutRoot, rig string) string {
 	// Strip hallucinated rig-name prefix only when it's not the layout root.
 	// When layout_root == rig, the rig name is a legitimate directory in the project.
 	if rig != "" && !strings.EqualFold(rig, layoutRoot) {
-		for strings.HasPrefix(path, rig+"/") {
-			path = strings.TrimPrefix(path, rig+"/")
+		// Case-insensitive rig prefix stripping: bead titles may use mixed case
+		// (e.g. "FinAlly/") while rig name is lowercase ("finally").
+		for {
+			idx := strings.Index(path, "/")
+			if idx <= 0 {
+				break
+			}
+			firstSeg := path[:idx]
+			if !strings.EqualFold(firstSeg, rig) {
+				break
+			}
+			path = path[idx+1:]
 		}
 	}
 	if layoutRoot != "" && layoutRoot != "." {
