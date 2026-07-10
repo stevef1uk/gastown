@@ -35,7 +35,7 @@ func TestGoCompileVerifyCommandForBead_runsPackageTests(t *testing.T) {
 		RequiredFiles: []string{"linkshelf/internal/store/store_test.go"},
 	}
 	dir := t.TempDir()
-	wantTest := "cd linkshelf && go mod tidy && go test -count=1 ./internal/store/..."
+	wantTest := "cd linkshelf && go mod tidy && go test -timeout 30s -count=1 ./internal/store/..."
 	gotTest := GoCompileVerifyCommandForBead(v, dir, "linkshelf/internal/store/store_test.go")
 	if gotTest != wantTest {
 		t.Fatalf("test bead got %q", gotTest)

@@ -51,7 +51,7 @@ func TestGoCompileVerifyCommandForBead_storePackage(t *testing.T) {
 		t.Fatal(err)
 	}
 	got = GoCompileVerifyCommandForBead(v, dir, "linkshelf/internal/store/store.go")
-	if got != "cd linkshelf && go mod tidy && go test -count=1 ./internal/store/..." {
+	if got != "cd linkshelf && go mod tidy && go test -timeout 30s -count=1 ./internal/store/..." {
 		t.Fatalf("production bead after test file exists: got %q", got)
 	}
 }

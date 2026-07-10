@@ -93,7 +93,7 @@ func GoVerifyCommandWithTidy(v WorkflowValidation, mayorRigDir string) string {
 	cdClause := GoShellCDClause(mayorRigDir, v.LayoutRoot)
 	base := strings.TrimSpace(v.QAVerifyCommand)
 	if base == "" {
-		return cdClause + "go mod tidy && go test ./... && go vet ./..."
+		return cdClause + "go mod tidy && go test -timeout 30s ./... && go vet ./..."
 	}
 	lower := strings.ToLower(base)
 	if strings.Contains(lower, "go mod tidy") {

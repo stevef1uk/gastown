@@ -27,7 +27,7 @@ func GoTestVerifyCommandForPackage(v WorkflowValidation, mayorRigDir, beadPath s
 	if pkg == "" {
 		return GoCompileOnlyVerifyCommand(v, mayorRigDir)
 	}
-	return fmt.Sprintf("%sgo mod tidy && go test -count=1 ./%s/...", GoShellCDClause(mayorRigDir, v.LayoutRoot), pkg)
+	return fmt.Sprintf("%sgo mod tidy && go test -timeout 30s -count=1 ./%s/...", GoShellCDClause(mayorRigDir, v.LayoutRoot), pkg)
 }
 
 // GoCompileVerifyCommandForBead is verify scoped to the active implement file's package.
@@ -90,7 +90,7 @@ func goTestVerifyScopedToBead(v WorkflowValidation, mayorRigDir, beadPath, corre
 	if len(names) == 0 {
 		return goBuildVerifyForPackage(v, mayorRigDir, beadPath)
 	}
-	return fmt.Sprintf("%sgo mod tidy && go test -count=1 ./%s/... -run '%s'",
+	return fmt.Sprintf("%sgo mod tidy && go test -timeout 30s -count=1 ./%s/... -run '%s'",
 		GoShellCDClause(mayorRigDir, v.LayoutRoot), pkg, strings.Join(names, "|"))
 }
 
