@@ -108,7 +108,32 @@ func ValidateImplementWrittenContent(townRoot, rig, mayorRigDir, relPath, conten
 			return err
 		}
 	}
+	if isMainDockerfile(relPath, v.LayoutRoot) {
+		archDoc := readRigDoc(mayorRigDir, "architecture.md")
+		if err := ValidateDockerfileAgainstArchitecture(content, archDoc, relPath); err != nil {
+			return err
+		}
+	}
 	return nil
+}
+
+// isMainDockerfile reports whether relPath is the project's primary Dockerfile
+// (not a test/ subdirectory image like Playwright).
+func isMainDockerfile(relPath, layoutRoot string) bool {
+	relPath = filepath.ToSlash(strings.TrimSpace(relPath))
+	if !strings.HasSuffix(strings.ToLower(relPath), "dockerfile") {
+		return false
+	}
+	if strings.Contains(relPath, "/test/") || strings.HasPrefix(relPath, "test/") {
+		return false
+	}
+	base := filepath.Base(relPath)
+	if strings.ToLower(base) != "dockerfile" {
+		return false
+	}
+	dir := filepath.ToSlash(filepath.Dir(relPath))
+	layoutRoot = strings.Trim(filepath.ToSlash(strings.TrimSpace(layoutRoot)), "/")
+	return dir == "." || dir == "" || dir == layoutRoot
 }
 
 func validateServerEntrypointWiring(relPath, content string) error {

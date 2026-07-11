@@ -1,9 +1,11 @@
 package orchestrator
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 )
@@ -184,6 +186,89 @@ func dockerVerifyWithLayout(cmd, layout string) string {
 		return cmd
 	}
 	return "cd " + layout + " && " + cmd
+}
+
+// DockerfileExpectation captures the concrete build/runtime requirements from architecture.md.
+type DockerfileExpectation struct {
+	BaseImages []string // e.g. "node:20-slim", "python:3.12-slim"
+	ExposePort string   // e.g. "8000"
+	CmdParts   []string // e.g. "uvicorn", "backend.main:app", "--port", "8000"
+	HasSection bool
+}
+
+// ExtractDockerfileExpectationFromArchitecture parses the ## Docker & Deployment section
+// in architecture.md and returns the images, port, and command the Dockerfile must use.
+func ExtractDockerfileExpectationFromArchitecture(archDoc string) DockerfileExpectation {
+	var exp DockerfileExpectation
+	loc := dockerDeploymentHeadingRE.FindStringIndex(archDoc)
+	if loc == nil {
+		return exp
+	}
+	exp.HasSection = true
+	section := extractMarkdownSection(archDoc, loc[0])
+
+	// Extract FROM images from code fences or inline FROM lines.
+	fromRE := regexp.MustCompile(`(?im)^FROM\s+(\S+)`)
+	for _, m := range fromRE.FindAllStringSubmatch(section, -1) {
+		exp.BaseImages = append(exp.BaseImages, m[1])
+	}
+
+	// Extract EXPOSE port.
+	exposeRE := regexp.MustCompile(`(?im)^EXPOSE\s+(\d+)`)
+	if m := exposeRE.FindStringSubmatch(section); len(m) >= 2 {
+		exp.ExposePort = m[1]
+	}
+
+	// Extract CMD array elements from CMD ["a", "b"] or CMD a b.
+	cmdArrayRE := regexp.MustCompile(`CMD\s*\[\s*([^\]]+)\s*\]`)
+	if m := cmdArrayRE.FindStringSubmatch(section); len(m) >= 2 {
+		inner := m[1]
+		for _, part := range regexp.MustCompile(`"([^"]+)"`).FindAllStringSubmatch(inner, -1) {
+			if len(part) >= 2 {
+				exp.CmdParts = append(exp.CmdParts, part[1])
+			}
+		}
+	}
+	if len(exp.CmdParts) == 0 {
+		cmdShellRE := regexp.MustCompile(`(?im)^CMD\s+(.+)$`)
+		if m := cmdShellRE.FindStringSubmatch(section); len(m) >= 2 {
+			exp.CmdParts = strings.Fields(m[1])
+		}
+	}
+
+	return exp
+}
+
+// ValidateDockerfileAgainstArchitecture rejects Dockerfile content that does not match
+// the images, port, and command documented in architecture.md.
+func ValidateDockerfileAgainstArchitecture(dockerfileContent, archDoc, relPath string) error {
+	exp := ExtractDockerfileExpectationFromArchitecture(archDoc)
+	if !exp.HasSection {
+		return nil
+	}
+	lower := strings.ToLower(dockerfileContent)
+
+	for _, img := range exp.BaseImages {
+		if !strings.Contains(lower, strings.ToLower(img)) {
+			return fmt.Errorf("%s must use base image %s documented in architecture.md ## Docker & Deployment", relPath, img)
+		}
+	}
+	if exp.ExposePort != "" && !strings.Contains(lower, "expose "+exp.ExposePort) {
+		return fmt.Errorf("%s must EXPOSE port %s per architecture.md", relPath, exp.ExposePort)
+	}
+	if len(exp.CmdParts) > 0 {
+		missing := false
+		for _, part := range exp.CmdParts {
+			if !strings.Contains(dockerfileContent, part) {
+				missing = true
+				break
+			}
+		}
+		if missing {
+			return fmt.Errorf("%s CMD must include %v per architecture.md ## Docker & Deployment", relPath, exp.CmdParts)
+		}
+	}
+	return nil
 }
 
 // DoubledLayoutPath reports paths like finally/finally/Dockerfile when layout_root is finally.

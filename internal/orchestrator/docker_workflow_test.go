@@ -222,6 +222,50 @@ func TestDockerVerifyWithLayout_flatRepoNoBrokenCd(t *testing.T) {
 	}
 }
 
+func TestExtractDockerfileExpectationFromArchitecture(t *testing.T) {
+	arch := "# Architecture\n\n## Docker & Deployment\n\n```dockerfile\nFROM node:20-slim AS builder\nRUN npm run build\nFROM python:3.12-slim\nEXPOSE 8000\nCMD [\"uvicorn\", \"backend.main:app\", \"--host\", \"0.0.0.0\", \"--port\", \"8000\"]\n```\n"
+	exp := ExtractDockerfileExpectationFromArchitecture(arch)
+	if !exp.HasSection {
+		t.Fatal("expected section found")
+	}
+	wantImgs := []string{"node:20-slim", "python:3.12-slim"}
+	if len(exp.BaseImages) != len(wantImgs) {
+		t.Fatalf("images = %v, want %v", exp.BaseImages, wantImgs)
+	}
+	if exp.ExposePort != "8000" {
+		t.Fatalf("port = %q, want 8000", exp.ExposePort)
+	}
+	if len(exp.CmdParts) == 0 || exp.CmdParts[0] != "uvicorn" {
+		t.Fatalf("cmd = %v", exp.CmdParts)
+	}
+}
+
+func TestValidateDockerfileAgainstArchitecture(t *testing.T) {
+	arch := "# Architecture\n\n## Docker & Deployment\n\n```dockerfile\nFROM node:20-slim AS builder\nFROM python:3.12-slim\nEXPOSE 8000\nCMD [\"uvicorn\", \"backend.main:app\", \"--host\", \"0.0.0.0\", \"--port\", \"8000\"]\n```\n"
+
+	good := "FROM node:20-slim\nFROM python:3.12-slim\nEXPOSE 8000\nCMD [\"uvicorn\", \"backend.main:app\", \"--host\", \"0.0.0.0\", \"--port\", \"8000\"]\n"
+	if err := ValidateDockerfileAgainstArchitecture(good, arch, "Dockerfile"); err != nil {
+		t.Fatalf("expected good Dockerfile to pass: %v", err)
+	}
+
+	bad := "FROM python:3.11-slim\nEXPOSE 5000\nCMD [\"python\", \"-m\", \"flask\", \"run\"]\n"
+	if err := ValidateDockerfileAgainstArchitecture(bad, arch, "Dockerfile"); err == nil {
+		t.Fatal("expected bad Dockerfile to fail")
+	}
+}
+
+func TestIsMainDockerfile(t *testing.T) {
+	if !isMainDockerfile("Dockerfile", ".") {
+		t.Fatal("Dockerfile at root should be main")
+	}
+	if !isMainDockerfile("finally/Dockerfile", "finally") {
+		t.Fatal("Dockerfile under layout root should be main")
+	}
+	if isMainDockerfile("test/Dockerfile", ".") {
+		t.Fatal("test/Dockerfile should not be main")
+	}
+}
+
 func TestDoubledLayoutPath(t *testing.T) {
 	if !DoubledLayoutPath("finally/finally/Dockerfile", "finally") {
 		t.Fatal("expected doubled path detection")
