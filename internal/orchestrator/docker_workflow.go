@@ -107,12 +107,31 @@ func DockerImplementationVerifyCommandForBead(v WorkflowValidation, mayorRigDir,
 		layout = "."
 	}
 	beadPath = filepath.ToSlash(strings.TrimSpace(beadPath))
+	lower := strings.ToLower(beadPath)
 
 	switch {
-	case strings.HasSuffix(strings.ToLower(beadPath), "dockerfile"):
+	case strings.HasSuffix(lower, "dockerfile"):
 		return dockerVerifyWithLayout("docker build -f Dockerfile .", layout)
-	case strings.Contains(strings.ToLower(beadPath), "docker-compose"):
-		return dockerVerifyWithLayout(DockerComposeCLI()+" -f docker-compose.yml config", layout)
+	case strings.HasSuffix(lower, ".sh"):
+		return dockerVerifyWithLayout("bash -n "+beadPath, layout)
+	case strings.HasSuffix(lower, ".ps1"):
+		return dockerVerifyWithLayout("test -f "+beadPath, layout)
+	case strings.Contains(lower, "docker-compose"):
+		// Use the actual compose file named in the bead path, relative to layout_root.
+		composeFile := beadPath
+		if layout != "." && strings.HasPrefix(beadPath, layout+"/") {
+			composeFile = strings.TrimPrefix(beadPath, layout+"/")
+		}
+		return dockerVerifyWithLayout(DockerComposeCLI()+" -f "+composeFile+" config", layout)
+	case IsE2ETestPath(beadPath):
+		// E2E beads run the test suite; prefer the phase QA command, fall back to a compose run.
+		if q := strings.TrimSpace(v.ActivePhaseQAVerifyCommand()); q != "" {
+			return dockerVerifyWithLayout(q, layout)
+		}
+		if q := strings.TrimSpace(v.QAVerifyCommand); q != "" {
+			return dockerVerifyWithLayout(q, layout)
+		}
+		return dockerVerifyWithLayout(DockerComposeCLI()+" -f test/docker-compose.test.yml up --exit-code-from playwright", layout)
 	case strings.HasSuffix(beadPath, ".env.example"), strings.HasSuffix(beadPath, ".env"):
 		return "test -f " + beadPath
 	default:

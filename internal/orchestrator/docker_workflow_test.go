@@ -76,6 +76,48 @@ func TestDockerImplementationVerifyCommandForBead(t *testing.T) {
 	}
 }
 
+func TestDockerImplementationVerifyCommandForBead_testCompose(t *testing.T) {
+	prev := dockerComposeCLIOverride
+	t.Cleanup(func() { dockerComposeCLIOverride = prev })
+	dockerComposeCLIOverride = "docker-compose"
+
+	flat := WorkflowValidation{LayoutRoot: "."}
+	got := DockerImplementationVerifyCommandForBead(flat, "/tmp/rig", "test/docker-compose.test.yml")
+	want := "docker-compose -f test/docker-compose.test.yml config"
+	if got != want {
+		t.Fatalf("test compose got %q want %q", got, want)
+	}
+}
+
+func TestDockerImplementationVerifyCommandForBead_shellScript(t *testing.T) {
+	prev := dockerComposeCLIOverride
+	t.Cleanup(func() { dockerComposeCLIOverride = prev })
+	dockerComposeCLIOverride = "docker-compose"
+
+	flat := WorkflowValidation{LayoutRoot: "."}
+	got := DockerImplementationVerifyCommandForBead(flat, "/tmp/rig", "scripts/start_mac.sh")
+	want := "bash -n scripts/start_mac.sh"
+	if got != want {
+		t.Fatalf("shell script got %q want %q", got, want)
+	}
+}
+
+func TestDockerImplementationVerifyCommandForBead_e2eSpec(t *testing.T) {
+	prev := dockerComposeCLIOverride
+	t.Cleanup(func() { dockerComposeCLIOverride = prev })
+	dockerComposeCLIOverride = "docker compose"
+
+	v := WorkflowValidation{
+		LayoutRoot:      ".",
+		QAVerifyCommand: "docker compose -f test/docker-compose.test.yml up --exit-code-from playwright",
+	}
+	got := DockerImplementationVerifyCommandForBead(v, "/tmp/rig", "test/e2e/trading_flow.spec.ts")
+	want := "docker compose -f test/docker-compose.test.yml up --exit-code-from playwright"
+	if got != want {
+		t.Fatalf("e2e spec got %q want %q", got, want)
+	}
+}
+
 func TestNormalizeDockerCommand_buildDotTypo(t *testing.T) {
 	in := "cd finally/mayor/rig && docker build."
 	want := "cd finally/mayor/rig && docker build ."
