@@ -35,6 +35,7 @@ Polecat implements code later from SPEC. Your architecture doc should **describe
 4. Architecture must reference the real SPEC goals and planned layout under `{{layout_root}}/` (or paths SPEC defines) without creating those files.
 5. **HTTP route table and store API names in architecture.md must match SPEC.md verbatim** (e.g. `/static/{file}` not `/web/*`; `List`/`Create`/`Delete`/`InitSchema` not `GetLinks`/`Store` struct/`InitDB`). gt-agent rejects design success on drift.
 6. **Implement file paths** in lists, tables, and bead-style bullets must use the `{{layout_root}}/` prefix when required_files use it (e.g. `{{layout_root}}/internal/store/schema.go`). Prose may reference packages as `store.List` or `schema.InitSchema` without the prefix.
+7. **Every section listed in the write pattern below must contain substantive content.** Empty headings (e.g. `## Docker & Deployment` followed by a blank line) cause the polecat to guess and produce broken artifacts. If a section truly does not apply, omit the heading; do not leave it empty.
 
 ## Required write pattern
 
@@ -59,7 +60,7 @@ When several implement paths live in the **same Go package directory**, document
 - In table cells, use **backtick Go fragments** for every exported symbol (types, constructors, methods) so implementation allowlists match architecture.
 - State which symbols belong on which implement path so polecat does not duplicate types across beads.
 
-## HTTP + entrypoint integration (required when profile includes `cmd/.../main.go`)
+## HTTP + entrypoint integration (required when profile includes a server entrypoint)
 - Copy the SPEC **HTTP API** table into architecture (methods + paths).
 - State how the **server entrypoint** wires dependencies: one consistent story (instance + handler factories, package-level funcs, or same-package `registerHandlers`) — match what earlier beads actually export.
 - Route paths in architecture must match SPEC exactly — do not invent alternate URL shapes (e.g. extra path segments when SPEC uses method + single path).
@@ -70,13 +71,23 @@ When several implement paths live in the **same Go package directory**, document
 ## Integration and testing
 (how pieces connect; full-suite command e.g. `go test ./...` / `pytest -v`; polecat runs package tests during implementation)
 
+## Docker & Deployment (required when profile lists Dockerfile, docker-compose.yml, or deployment scripts)
+If `required_files` contains a `Dockerfile`, `docker-compose*.yml`, or deployment scripts, this section must be **fully specified**. Do not leave it as an empty heading. Include:
+
+1. **Base images and stages:** language versions, OS tags (e.g. `node:20-slim`, `python:3.12-slim`).
+2. **Build steps per stage:** what files are copied, what commands are run (`npm ci && npm run build`, `uv sync`, etc.).
+3. **Final image contents:** what gets copied from earlier stages, working directory, exposed port, CMD/ENTRYPOINT.
+4. **Port and protocol:** the exact port the app listens on (e.g. `8000`) and whether it is HTTP or HTTPS.
+5. **How the app is started in production/dev:** `docker build` command, `docker-compose up` service name, or script invocation.
+6. **Static asset serving:** when the app has a frontend, state which directory the backend serves at which URL path (e.g. `frontend/out/` at `/`).
+
 ## E2E / integration testing (required when profile lists e2e, playwright, or docker-compose paths)
 If `required_files` contains e2e tests (`*.spec.ts`, `*.spec.js`, `test/e2e/...`, `playwright.config.*`), `docker-compose*.yml`, or a `playwright.config.*`, document the **exact** setup here so the polecat does not guess:
 
 1. **How the app under test is started:**
    - Local dev server command and port (e.g. `npm run dev` on `localhost:3000`).
-   - OR the docker-compose service name and image/Dockerfile that builds and runs the app.
-   - If using docker-compose, the `app`/`web` service must **actually build/run the application** — not `sleep infinity` or a placeholder image.
+   - OR the docker-compose service name and Dockerfile that builds and runs the app.
+   - If using docker-compose, the `app`/`web` service must **actually build/run the application** — not `sleep infinity` or a placeholder image. State the service name and the command it runs.
 
 2. **How e2e tests are executed:**
    - Exact command(s) the polecat should run as **Verify** for the e2e bead (e.g. `npx playwright test`, `docker compose -f test/docker-compose.test.yml up --exit-code-from playwright`).
