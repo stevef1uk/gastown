@@ -355,6 +355,56 @@ Entrypoint imports store; registers GET /api/links and POST /api/links; exports 
 	}
 }
 
+func TestCheckArchitectureDockerSection_requiresSubstantiveSection(t *testing.T) {
+	dir := t.TempDir()
+	spec := "# Spec\nDocker project.\n"
+	arch := "# Architecture\nMinimal.\n"
+	for name, body := range map[string]string{"SPEC.md": spec, "architecture.md": arch} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	v := WorkflowValidation{
+		LayoutRoot:      ".",
+		TestRunner:      "custom",
+		QAVerifyCommand: "docker build .",
+		RequiredFiles:   []string{"Dockerfile"},
+	}
+	if err := ValidateArchitectureDocAlignment(dir, v); err == nil {
+		t.Fatal("expected error for missing Docker & Deployment section")
+	} else if !strings.Contains(err.Error(), "## Docker & Deployment") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Now write a substantive section and verify it passes.
+	arch = "# Architecture\nMinimal.\n\n## Docker & Deployment\n\nFROM node:20-slim, build frontend. FROM python:3.12-slim, expose port 8000, CMD uvicorn backend.main:app.\n"
+	if err := os.WriteFile(filepath.Join(dir, "architecture.md"), []byte(arch), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateArchitectureDocAlignment(dir, v); err != nil {
+		t.Fatalf("expected pass, got: %v", err)
+	}
+}
+
+func TestCheckArchitectureDockerSection_ignoredForNonDocker(t *testing.T) {
+	dir := t.TempDir()
+	spec := "# Spec\nPython project.\n"
+	arch := "# Architecture\nMinimal.\n"
+	for name, body := range map[string]string{"SPEC.md": spec, "architecture.md": arch} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	v := WorkflowValidation{
+		LayoutRoot:    ".",
+		TestRunner:    "pytest",
+		RequiredFiles: []string{"main.py"},
+	}
+	if err := ValidateArchitectureDocAlignment(dir, v); err != nil {
+		t.Fatalf("expected no Docker section error for Python project, got: %v", err)
+	}
+}
+
 func TestCheckPlanBeadMapExactPaths_normalizesPaths(t *testing.T) {
 	t.Parallel()
 	v := WorkflowValidation{

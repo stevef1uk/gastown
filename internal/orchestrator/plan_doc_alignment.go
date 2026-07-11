@@ -30,6 +30,7 @@ var (
 	integrationContractHeadingRE = regexp.MustCompile(`(?im)^##\s+integration\s+contract\b`)
 	planBeadSectionPathRE        = regexp.MustCompile(`(?m)^###\s+([a-zA-Z0-9][a-zA-Z0-9_-]*):\s*(.+)$`)
 	bareModuleRelPathRE          = regexp.MustCompile(`(?:^|[\s\-*` + "`" + `])(?:\./)?((?:internal|cmd|pkg|api|web)/[^\s` + "`" + `",:;)]+)`)
+	dockerDeploymentHeadingRE    = regexp.MustCompile(`(?im)^##\s+docker\s*(?:&|and)\s*deployment\b`)
 )
 
 // WriteAlignedPlanningDocsForTest writes minimal SPEC/architecture/plan stubs for gt-agent tests.
@@ -74,6 +75,7 @@ func architectureDocAlignmentIssues(rigDir, specDoc string, v WorkflowValidation
 	issues = append(issues, checkStoreAPIAlignment("architecture.md", archDoc, specDoc)...)
 	issues = append(issues, checkGoModuleAlignment("architecture.md", archDoc, specDoc, v)...)
 	issues = append(issues, checkDocLayoutPathPrefix("architecture.md", archDoc, v)...)
+	issues = append(issues, checkArchitectureDockerSection(archDoc, v)...)
 	return issues
 }
 
@@ -122,6 +124,56 @@ func ValidatePlanningDocAlignment(rigDir string, v WorkflowValidation) error {
 	issues = append(issues, checkDocLayoutPathPrefix("plan.md", planDoc, v)...)
 
 	return formatDocAlignmentError("SPEC/architecture/plan misaligned", issues)
+}
+
+// checkArchitectureDockerSection requires a substantive ## Docker & Deployment section when
+// the profile indicates a Docker-based project. This prevents the polecat from guessing images,
+// ports, and compose services.
+func checkArchitectureDockerSection(archDoc string, v WorkflowValidation) []string {
+	if !WorkflowUsesDocker(v) {
+		return nil
+	}
+	if strings.TrimSpace(archDoc) == "" {
+		return []string{"architecture.md missing required ## Docker & Deployment section for Docker project"}
+	}
+	loc := dockerDeploymentHeadingRE.FindStringIndex(archDoc)
+	if loc == nil {
+		return []string{"architecture.md must have a ## Docker & Deployment section with base images, build steps, exposed port, and CMD (Docker files are in profile)"}
+	}
+	section := extractMarkdownSection(archDoc, loc[0])
+	// Require some concrete build-related keywords in the section body.
+	lower := strings.ToLower(section)
+	mustHave := []string{"from ", "port", "cmd", "build"}
+	var missing []string
+	for _, kw := range mustHave {
+		if !strings.Contains(lower, kw) {
+			missing = append(missing, kw)
+		}
+	}
+	if len(missing) > 0 {
+		return []string{"## Docker & Deployment section is too vague; add details for: " + strings.Join(missing, ", ")}
+	}
+	return nil
+}
+
+// extractMarkdownSection returns the body under a heading until the next same-or-higher-level heading.
+func extractMarkdownSection(doc string, headingStart int) string {
+	rest := doc[headingStart:]
+	lines := strings.Split(rest, "\n")
+	if len(lines) == 0 {
+		return ""
+	}
+	var out []string
+	for i, line := range lines {
+		if i == 0 {
+			continue // skip heading line
+		}
+		if strings.HasPrefix(line, "#") {
+			break
+		}
+		out = append(out, line)
+	}
+	return strings.Join(out, "\n")
 }
 
 // checkDocLayoutPathPrefix rejects bare module-relative paths (internal/..., cmd/...) when the
