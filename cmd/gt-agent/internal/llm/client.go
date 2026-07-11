@@ -120,6 +120,9 @@ func (c *Client) Complete(ctx context.Context, systemPrompt, userPrompt string) 
 
 // CompleteMessages sends a sequence of messages to the LLM.
 func (c *Client) CompleteMessages(ctx context.Context, messages []Message) (string, error) {
+	start := time.Now()
+	fmt.Printf("[llm] request start: model=%s messages=%d endpoint=%s\n", c.model, len(messages), c.endpoint)
+
 	reqBody := map[string]interface{}{
 		"model":    c.model,
 		"messages": messages,
@@ -159,6 +162,8 @@ func (c *Client) CompleteMessages(ctx context.Context, messages []Message) (stri
 	if err != nil {
 		return "", fmt.Errorf("reading response: %w", err)
 	}
+
+	fmt.Printf("[llm] response received: status=%d duration=%s bytes=%d\n", resp.StatusCode, time.Since(start).Round(time.Millisecond), len(body))
 
 	var result CompletionResponse
 	if err := json.Unmarshal(body, &result); err != nil {

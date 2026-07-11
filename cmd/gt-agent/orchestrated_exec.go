@@ -20,6 +20,15 @@ func needsOrchestratedScriptFile(cmd string) bool {
 	return strings.Contains(cmd, "\n") || strings.Contains(cmd, "<<")
 }
 
+// truncateCmdForLog returns a shortened, single-line representation of a command for logging.
+func truncateCmdForLog(cmd string, maxLen int) string {
+	cmd = strings.Join(strings.Fields(cmd), " ")
+	if len(cmd) <= maxLen {
+		return cmd
+	}
+	return cmd[:maxLen-3] + "..."
+}
+
 // prepareOrchestratedScript turns a model CMD block into a bash script body.
 func prepareOrchestratedScript(cmd string) string {
 	body := unwrapBashLcMultiline(strings.TrimSpace(cmd))
@@ -1092,6 +1101,10 @@ func formatSuccessCommandOutput(out []byte) string {
 }
 
 func runOrchestratedCommand(cmd, workDir, sessionName string, env []string, cmdTimeoutSec int) ([]byte, error) {
+	cmdStart := time.Now()
+	logCmd := truncateCmdForLog(cmd, 120)
+	orchestratedPrintf("[gt-agent] exec start: %s\n", logCmd)
+
 	if sessionName != "" {
 		env = append(env, "GT_SESSION="+sessionName)
 	}
@@ -1114,6 +1127,7 @@ func runOrchestratedCommand(cmd, workDir, sessionName string, env []string, cmdT
 		c.Env = env
 		c.Dir = workDir
 		out, err := c.CombinedOutput()
+		orchestratedPrintf("[gt-agent] exec done: %s (duration=%s)\n", logCmd, time.Since(cmdStart).Round(time.Millisecond))
 		if err != nil && ctx.Err() == context.DeadlineExceeded {
 			return out, fmt.Errorf("%w (command exceeded %s)", err, commandTimeoutDur(cmd, cmdTimeoutSec))
 		}
@@ -1144,6 +1158,7 @@ func runOrchestratedCommand(cmd, workDir, sessionName string, env []string, cmdT
 	c.Env = env
 	c.Dir = workDir
 	out, err := c.CombinedOutput()
+	orchestratedPrintf("[gt-agent] exec done: %s (duration=%s)\n", logCmd, time.Since(cmdStart).Round(time.Millisecond))
 	if err != nil && ctx.Err() == context.DeadlineExceeded {
 		return out, fmt.Errorf("%w (script exceeded %s)", err, commandTimeoutDur(cmd, cmdTimeoutSec))
 	}
