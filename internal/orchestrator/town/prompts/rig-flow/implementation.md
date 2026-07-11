@@ -62,4 +62,9 @@ CMD: cd {{rig}}/mayor/rig && ...
 - SQL beads (.sql): validate with the sqlite3 verify command in the Next bead line — do NOT run pytest on .sql files
 - `cmd/…/main.go` bead: wire only exported names from **Dependency exports**. Do NOT write inline handler bodies that return hardcoded JSON. For example, prefer `h.ListLinks(w, r)` over `w.Write([]byte("[]"))`. The handler logic belongs in `internal/api/`, not inlined in main.go.
 - **DB dependency wiring**: if a package declares `var DB *sql.DB` (or similar package-level dependency), assign to it in main.go after `sql.Open` — e.g. `store.DB = db`. A nil package-level DB panics at runtime even though the code compiles clean.
+- **Docker / docker-compose beads:** the `app`/`web` service must **actually build and run the application** (not `sleep infinity` or a placeholder image). If the compose only validates config (`docker-compose -f ... config`), the app service can be minimal, but e2e compose must start a real server on the port the tests target.
+- **E2E / Playwright / Cypress beads:**
+  - Use **only** selectors and URLs documented in architecture.md / SPEC.md. Do not invent DOM IDs like `#chat-panel` unless they are listed in the Implement context.
+  - Verify must start the app/dev-server first, or use docker-compose that starts it.
+  - Do not write e2e tests that assert UI elements that do not exist in the implemented `index.html` / `app.js`.
 - On Verify failure: READ the failing file and dependencies. Diagnose from error output — one sentence explanation, then fix with EDIT/WRITE.

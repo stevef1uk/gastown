@@ -70,6 +70,25 @@ When several implement paths live in the **same Go package directory**, document
 ## Integration and testing
 (how pieces connect; full-suite command e.g. `go test ./...` / `pytest -v`; polecat runs package tests during implementation)
 
+## E2E / integration testing (required when profile lists e2e, playwright, or docker-compose paths)
+If `required_files` contains e2e tests (`*.spec.ts`, `*.spec.js`, `test/e2e/...`, `playwright.config.*`), `docker-compose*.yml`, or a `playwright.config.*`, document the **exact** setup here so the polecat does not guess:
+
+1. **How the app under test is started:**
+   - Local dev server command and port (e.g. `npm run dev` on `localhost:3000`).
+   - OR the docker-compose service name and image/Dockerfile that builds and runs the app.
+   - If using docker-compose, the `app`/`web` service must **actually build/run the application** — not `sleep infinity` or a placeholder image.
+
+2. **How e2e tests are executed:**
+   - Exact command(s) the polecat should run as **Verify** for the e2e bead (e.g. `npx playwright test`, `docker compose -f test/docker-compose.test.yml up --exit-code-from playwright`).
+   - Required dependencies and config file path.
+
+3. **What the e2e tests cover:**
+   - Page URLs, DOM selectors/IDs, and user flows. Prefer selectors already present in `index.html` / `app.js`.
+   - Do **not** let the polecat invent selectors like `#chat-panel` unless they are documented here or in SPEC.
+
+4. **Test data / environment:**
+   - Any seed data, env vars, or service dependencies the e2e suite needs.
+
 ## Acceptance mapping
 (how architecture satisfies SPEC goals)
 EOF

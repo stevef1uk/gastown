@@ -49,6 +49,30 @@ func IsFrontendImplementPath(path string) bool {
 		strings.HasSuffix(lower, ".js")
 }
 
+// IsE2ETestPath reports whether the implement bead path is an end-to-end test file
+// (Playwright, Cypress, or a dedicated e2e directory).
+func IsE2ETestPath(path string) bool {
+	lower := strings.ToLower(filepath.ToSlash(strings.TrimSpace(path)))
+	if strings.Contains(lower, "/e2e/") ||
+		strings.Contains(lower, "/playwright/") ||
+		strings.Contains(lower, "/cypress/") {
+		return true
+	}
+	if strings.HasSuffix(lower, ".spec.ts") ||
+		strings.HasSuffix(lower, ".spec.js") ||
+		strings.HasSuffix(lower, ".cy.ts") ||
+		strings.HasSuffix(lower, ".cy.js") ||
+		strings.HasSuffix(lower, ".test.ts") ||
+		strings.HasSuffix(lower, ".test.js") {
+		return true
+	}
+	base := strings.ToLower(filepath.Base(path))
+	return base == "playwright.config.ts" ||
+		base == "playwright.config.js" ||
+		base == "cypress.config.ts" ||
+		base == "cypress.config.js"
+}
+
 // AllowedQAReworkWebImplementWrite allows editing cited web/ files across beads after QA failure
 // (e.g. align index.html and app.js when QA names both), even when one implement bead is closed.
 func AllowedQAReworkWebImplementWrite(townRoot, rig, activeBead, activePath, written string, scope ImplementWriteScope, v WorkflowValidation) bool {

@@ -96,17 +96,19 @@ You are **not** verifying the app. Do not run the server or test suite to “che
 
    ## Bead map
 
-   ### {{bead_id_example}}: finally/Dockerfile
-   - Scope: …
-   - Architecture: …
-   - Acceptance: … (for `*_test.go` / `tests/test_*.py`, list SPEC functional requirements each test case proves)
+    ### {{bead_id_example}}: finally/Dockerfile
+    - Scope: …
+    - Architecture: …
+    - Acceptance: … (for `*_test.go` / `tests/test_*.py`, list SPEC functional requirements each test case proves)
+    - Verify: <exact shell command the polecat must run before `bd close`> (e.g. `cd finally && docker build -f Dockerfile .`, `cd finally && go test ./internal/store/...`, `npx playwright test test/e2e/trading_flow.spec.ts`)
 
-   Include implement beads for unit test paths from architecture.md (`*_test.go`, `tests/test_*.py`) — not only production source.
+    Include implement beads for unit test paths from architecture.md (`*_test.go`, `tests/test_*.py`) — not only production source.
 
-   ### {{bead_id_example}}: finally/docker-compose.yml
-   - Scope: …
-   …
-   EOF
+    ### {{bead_id_example}}: finally/docker-compose.yml
+    - Scope: …
+    - Verify: <exact docker-compose command; if the compose includes an `app` service it must build/run the real app>
+    …
+    EOF
    ```
    Do **not** wrap this in `bash -lc "..."` with embedded newlines. After `cd {{rig}}/mayor/rig`, use relative `plan.md` only (not `{{rig}}/mayor/rig/plan.md`).
 

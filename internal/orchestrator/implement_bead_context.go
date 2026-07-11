@@ -144,6 +144,11 @@ func formatImplementBeadContextForPath(townRoot, rig, beadPath string, v Workflo
 		b.WriteString(block)
 		b.WriteString("\n")
 	}
+	if block := FormatE2ETestBeadChecklist(rigDir, beadPath, v); block != "" {
+		b.WriteString("\n")
+		b.WriteString(block)
+		b.WriteString("\n")
+	}
 
 	if excerpt := architectureExcerptForBead(townRoot, rig, beadPath, v); excerpt != "" {
 		b.WriteString("\n### From architecture.md\n")
