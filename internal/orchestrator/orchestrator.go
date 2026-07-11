@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/nats-io/nats.go"
+	"github.com/steveyegge/gastown/internal/natsutil"
 	"github.com/steveyegge/gastown/internal/util"
 )
 
@@ -177,7 +178,7 @@ func CallWithTimeout(townRoot string, method string, params any, timeout time.Du
 	if timeout <= 0 {
 		timeout = OrchestratorCallTimeout
 	}
-	nc, err := nats.Connect(orchestratorNATSURL())
+	nc, err := natsutil.ConnectRobust(orchestratorNATSURL(), "gt-orchestrator-client")
 	if err != nil {
 		return nil, fmt.Errorf("connecting to NATS: %w", err)
 	}

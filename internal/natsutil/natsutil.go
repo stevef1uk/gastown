@@ -3,6 +3,8 @@ package natsutil
 import (
 	"encoding/json"
 	"fmt"
+	"log"
+	"os"
 	"time"
 
 	"github.com/nats-io/nats.go"
@@ -10,6 +12,60 @@ import (
 
 // DefaultURL is the default NATS connection URL.
 const DefaultURL = "nats://127.0.0.1:4222"
+
+// connectOptions returns the shared reconnect/keepalive options used by all
+// Gas Town NATS clients. The exitOnClose flag is only safe for standalone
+// processes that have a supervisor (daemon) to restart them.
+func connectOptions(name string, exitOnClose bool) []nats.Option {
+	opts := []nats.Option{
+		nats.Name(name),
+		nats.Timeout(5 * time.Second),
+		nats.ReconnectWait(1 * time.Second),
+		nats.MaxReconnects(-1), // unlimited
+		nats.PingInterval(30 * time.Second),
+		nats.MaxPingsOutstanding(3),
+		nats.DisconnectErrHandler(func(nc *nats.Conn, err error) {
+			if err != nil {
+				log.Printf("[nats:%s] disconnected: %v", name, err)
+			} else {
+				log.Printf("[nats:%s] disconnected", name)
+			}
+		}),
+		nats.ReconnectHandler(func(nc *nats.Conn) {
+			log.Printf("[nats:%s] reconnected to %s", name, nc.ConnectedUrl())
+		}),
+	}
+	if exitOnClose {
+		opts = append(opts, nats.ClosedHandler(func(nc *nats.Conn) {
+			log.Printf("[nats:%s] connection closed permanently", name)
+			// Standalone services should be restarted by their supervisor.
+			// Exiting here ensures a dead connection is never silently ignored.
+			if os.Getenv("GT_NATS_EXIT_ON_CLOSE") != "0" {
+				os.Exit(1)
+			}
+		}))
+	}
+	return opts
+}
+
+// ConnectRobust opens a NATS connection with aggressive reconnect behavior.
+// Use this for clients that run inside another process (daemon, web server).
+func ConnectRobust(url, name string) (*nats.Conn, error) {
+	if url == "" {
+		url = DefaultURL
+	}
+	return nats.Connect(url, connectOptions(name, false)...)
+}
+
+// ConnectRobustService opens a NATS connection with aggressive reconnect behavior
+// and exits the process if the connection is permanently closed. Use this only
+// for standalone processes that have a supervisor to restart them.
+func ConnectRobustService(url, name string) (*nats.Conn, error) {
+	if url == "" {
+		url = DefaultURL
+	}
+	return nats.Connect(url, connectOptions(name, true)...)
+}
 
 // ActivityEvent represents a real-time agent activity update.
 type ActivityEvent struct {

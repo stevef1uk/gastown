@@ -16,6 +16,7 @@ import (
 	"github.com/nats-io/nats.go"
 	"github.com/steveyegge/gastown/internal/config"
 	"github.com/steveyegge/gastown/internal/constants"
+	"github.com/steveyegge/gastown/internal/natsutil"
 	"github.com/steveyegge/gastown/internal/nudge"
 	"github.com/steveyegge/gastown/internal/util"
 )
@@ -48,7 +49,7 @@ func NewNatsProvider(townRoot string, natsURL string) (*NatsProvider, error) {
 	if natsURL == "" {
 		natsURL = nats.DefaultURL
 	}
-	nc, err := nats.Connect(natsURL)
+	nc, err := natsutil.ConnectRobust(natsURL, "gt-session-provider")
 	if err != nil {
 		return nil, fmt.Errorf("connecting to NATS: %w", err)
 	}

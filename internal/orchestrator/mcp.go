@@ -4,9 +4,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"os"
 
 	"github.com/nats-io/nats.go"
+	"github.com/steveyegge/gastown/internal/natsutil"
 )
 
 // MCPRequest represents a JSON-RPC request from an MCP client.
@@ -34,11 +36,17 @@ type MCPError struct {
 // Server implements a minimal MCP server over stdio.
 type Server struct {
 	orchestrator *Manager
+	nc           *nats.Conn
 }
 
 // NewServer creates a new MCP server.
 func NewServer(mgr *Manager) *Server {
 	return &Server{orchestrator: mgr}
+}
+
+// IsConnected reports whether the NATS connection is alive.
+func (s *Server) IsConnected() bool {
+	return s.nc != nil && s.nc.IsConnected()
 }
 
 // Serve starts the MCP server loop reading from stdin and writing to stdout.
@@ -60,23 +68,43 @@ func (s *Server) Serve() error {
 
 // ListenNATS starts a NATS listener for MCP requests.
 func (s *Server) ListenNATS(url string) error {
-	nc, err := nats.Connect(url)
+	if s.nc != nil {
+		s.nc.Close()
+		s.nc = nil
+	}
+	nc, err := natsutil.ConnectRobustService(url, "gt-orchestrator")
 	if err != nil {
 		return err
 	}
+	s.nc = nc
 
-	_, err = nc.Subscribe("gt.orchestrator.mcp", func(msg *nats.Msg) {
+	sub, err := nc.Subscribe("gt.orchestrator.mcp", func(msg *nats.Msg) {
 		var req MCPRequest
 		if err := json.Unmarshal(msg.Data, &req); err != nil {
+			log.Printf("[orchestrator] bad MCP request: %v", err)
 			return
 		}
 
 		resp := s.handleRequest(req)
 		respData, _ := json.Marshal(resp)
-		msg.Respond(respData)
+		if err := msg.Respond(respData); err != nil {
+			log.Printf("[orchestrator] failed to respond to MCP request: %v", err)
+		}
 	})
+	if err != nil {
+		nc.Close()
+		s.nc = nil
+		return err
+	}
+	if err := nc.Flush(); err != nil {
+		sub.Unsubscribe()
+		nc.Close()
+		s.nc = nil
+		return fmt.Errorf("flushing NATS subscription: %w", err)
+	}
 
-	return err
+	log.Printf("[orchestrator] subscribed to gt.orchestrator.mcp on %s", url)
+	return nil
 }
 
 func (s *Server) handleRequest(req MCPRequest) MCPResponse {

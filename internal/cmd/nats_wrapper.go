@@ -14,6 +14,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/steveyegge/gastown/internal/agentenv"
+	"github.com/steveyegge/gastown/internal/natsutil"
 )
 
 var (
@@ -42,7 +43,7 @@ func runNatsWrapper(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("command is required")
 	}
 
-	nc, err := nats.Connect(natsWrapperURL)
+	nc, err := natsutil.ConnectRobust(natsWrapperURL, "gt-nats-wrapper:"+natsWrapperSessionID)
 	if err != nil {
 		return fmt.Errorf("connecting to NATS: %w", err)
 	}

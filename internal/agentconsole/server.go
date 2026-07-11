@@ -17,6 +17,7 @@ import (
 	"github.com/nats-io/nats.go"
 	"github.com/steveyegge/gastown/internal/constants"
 	"github.com/steveyegge/gastown/internal/events"
+	"github.com/steveyegge/gastown/internal/natsutil"
 	"github.com/steveyegge/gastown/internal/orchestrator"
 	"github.com/steveyegge/gastown/internal/session"
 )
@@ -105,7 +106,7 @@ func NewServer(townRoot string) (*Server, error) {
 	if natsURL == "" {
 		natsURL = nats.DefaultURL
 	}
-	nc, err := nats.Connect(natsURL)
+	nc, err := natsutil.ConnectRobust(natsURL, "gt-agent-console")
 	if err == nil {
 		s.nc = nc
 		s.natsURL = natsURL
