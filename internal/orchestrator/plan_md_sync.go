@@ -410,6 +410,9 @@ func WritePlanningPlanMD(townRoot, rig string, v WorkflowValidation) (bool, erro
 		b.WriteString(fmt.Sprintf("### %s: %s\n", id, displayPath))
 		b.WriteString(fmt.Sprintf("- Scope: Implement `%s` per `architecture.md` and SPEC.md.\n", displayPath))
 		b.WriteString("- Architecture: see architecture.md (paths and data model for this file).\n")
+		if verify := ImplementationVerifyCommandForBead(v, rigDir, want); verify != "" {
+			b.WriteString(fmt.Sprintf("- Verify: `%s`\n", verify))
+		}
 		b.WriteString("- Acceptance:\n")
 		for _, bullet := range planAcceptanceBullets(want, v) {
 			b.WriteString("  - ")
