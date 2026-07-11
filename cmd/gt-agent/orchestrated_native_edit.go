@@ -482,13 +482,14 @@ func (r *stateRunner) executeNativeEdits(ops []nativeEditOp, editDir, sessionNam
 		orchestratedPrintf("[gt-agent] %s ok\n", label)
 		combined.WriteString(fmt.Sprintf("%s\n%s\n\n", label, feedback))
 		if op.kind == "edit" || op.kind == "write" {
-			r.scrubGoFileAfterNativeWrite(op.path, combined)
-			r.tidyGoFileAfterNativeWrite(op.path, combined)
-			r.runPostNativeWriteVerify(op.path, sessionName, cmdEnv, combined)
-			r.runPostNativeWriteFrontendVerify(op.path, combined)
-			r.runPostNativeWriteMainImportCheck(op.path, combined)
-			r.runPostWriteHTTPContract(op.path, combined)
-			r.runAutoVerifyForNativeLayoutWrite(sessionName, cmdEnv, combined)
+		r.scrubGoFileAfterNativeWrite(op.path, combined)
+		r.tidyGoFileAfterNativeWrite(op.path, combined)
+		r.runPostNativeWriteVerify(op.path, sessionName, cmdEnv, combined)
+		r.runPostNativeWriteFrontendVerify(op.path, combined)
+		r.runPostNativeWriteDockerVerify(op.path, combined)
+		r.runPostNativeWriteMainImportCheck(op.path, combined)
+		r.runPostWriteHTTPContract(op.path, combined)
+		r.runAutoVerifyForNativeLayoutWrite(sessionName, cmdEnv, combined)
 		}
 	}
 	return any, success

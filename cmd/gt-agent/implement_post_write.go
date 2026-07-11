@@ -2,6 +2,8 @@ package main
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/steveyegge/gastown/internal/orchestrator"
@@ -204,9 +206,54 @@ func (r *stateRunner) runPostNativeWriteFrontendVerify(relPath string, combined 
 	}
 	r.track.verifyOK = true
 	r.track.hadCmdFailure = false
+	r.cacheValidatedContent(relPath)
 	r.persistImplementationProgress("")
 	combined.WriteString(fmt.Sprintf("Frontend artifact OK: %s (ready for bd close after queue order)\n\n", relPath))
 	orchestratedPrintf("[gt-agent] post-write frontend artifact OK: %s\n", relPath)
+}
+
+// runPostNativeWriteDockerVerify validates Docker artifacts against architecture and caches them.
+func (r *stateRunner) runPostNativeWriteDockerVerify(relPath string, combined *strings.Builder) {
+	if !strings.EqualFold(strings.TrimSpace(r.hooks.Track), "implementation") {
+		return
+	}
+	relPath = orchestrator.NormalizeBeadPathForLayout(relPath, r.v.LayoutRoot)
+	if relPath == "" {
+		return
+	}
+	if !orchestrator.WorkflowUsesDocker(r.v) {
+		return
+	}
+	lower := strings.ToLower(relPath)
+	mayorDir := rigMayorRigDir(r.townRoot, r.rig)
+
+	if strings.HasSuffix(lower, "dockerfile") {
+		abs := filepath.Join(mayorDir, filepath.FromSlash(relPath))
+		content, err := os.ReadFile(abs)
+		if err != nil {
+			return
+		}
+		archDoc := ""
+		if data, err := os.ReadFile(filepath.Join(mayorDir, "architecture.md")); err == nil {
+			archDoc = string(data)
+		}
+		if err := orchestrator.ValidateDockerfileAgainstArchitecture(string(content), archDoc, relPath); err != nil {
+			combined.WriteString(fmt.Sprintf("Dockerfile architecture check failed after %s: %v\n\n", relPath, err))
+			orchestratedFprintfStderr("[gt-agent] Dockerfile architecture check %s: %v\n", relPath, err)
+			return
+		}
+		r.cacheValidatedContent(relPath)
+		combined.WriteString(fmt.Sprintf("Dockerfile OK: %s (matches architecture.md)\n\n", relPath))
+		orchestratedPrintf("[gt-agent] post-write Dockerfile OK: %s\n", relPath)
+		return
+	}
+
+	if strings.Contains(lower, "docker-compose") || strings.HasSuffix(lower, ".env.example") || strings.HasSuffix(lower, ".env") {
+		// docker-compose*.yml and env files are cached after successful write.
+		r.cacheValidatedContent(relPath)
+		combined.WriteString(fmt.Sprintf("Docker artifact OK: %s (cached)\n\n", relPath))
+		orchestratedPrintf("[gt-agent] post-write docker artifact cached: %s\n", relPath)
+	}
 }
 
 // runPostWriteHTTPContract validates cross-file HTTP routing after handler/web writes (GT-VERIFY-007).
