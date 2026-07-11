@@ -2124,6 +2124,15 @@ func validateImplementationArtifacts(townRoot, rig string, hadCmdFailure, beadCl
 	if err := orchestrator.ValidateLayoutPythonSources(rigDir, scoped); err != nil {
 		return fmt.Errorf("invalid Python under %s: %w", scoped.LayoutRoot, err)
 	}
+	// Final-phase safety net: if the active phase is the last one but earlier phases still
+	// have missing/stubbed required files, rewind active_phase_id to the earliest problematic
+	// phase and reopen/create implement beads so the polecat fixes them.
+	if v.IsFinalDeliveryPhase() {
+		if rewindLog, err := orchestrator.MaybeRewindToProblemPhaseForFinalPhase(townRoot, rig, v); err != nil {
+			return fmt.Errorf("final-phase validation failed: %s", rewindLog)
+		}
+	}
+
 	stubScope := scoped
 	if v.HasPhasedDelivery() {
 		// During phased delivery, only validate files from active + past phases.
