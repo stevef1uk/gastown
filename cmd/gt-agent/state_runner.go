@@ -82,7 +82,7 @@ func newStateRunner(task *orchestrator.Task, townRoot, rig string) *stateRunner 
 	if townRoot != "" && rig != "" {
 		vars["qa_runtime_smoke_block"] = orchestrator.RigFlowQARuntimeSmokeBlock(townRoot, rig, v)
 	}
-	return &stateRunner{
+	r := &stateRunner{
 		task:       task,
 		townRoot:   townRoot,
 		rig:        rig,
@@ -92,6 +92,10 @@ func newStateRunner(task *orchestrator.Task, townRoot, rig string) *stateRunner 
 		track:      &cmdTracker{},
 		servers:    newDevServerTracker(),
 	}
+	if task.State == "implementation" {
+		r.backfillCodeCache()
+	}
+	return r
 }
 
 func (r *stateRunner) maxTurns() int {
@@ -908,6 +912,72 @@ func validateOutcomeForTask(task *orchestrator.Task, townRoot, rig, outcome, sum
 		return nil
 	}
 	return validateOutcomeSummaryBeadIDs(townRoot, rig, outcome, summary)
+}
+
+// backfillCodeCache scans existing files in the active phase and caches any that
+// are already valid on disk. This catches files written before the cache feature
+// was active, or files written by a previous polecat session.
+func (r *stateRunner) backfillCodeCache() {
+	if r == nil || r.task == nil || r.task.WorkflowID == "" {
+		return
+	}
+	rigDir := rigMayorRigDir(r.townRoot, r.rig)
+	cache, err := orchestrator.OpenCodeCache(rigDir, r.task.WorkflowID)
+	if err != nil {
+		orchestratedPrintf("[gt-agent] cache backfill open error: %v\n", err)
+		return
+	}
+	phaseIdx := r.v.ActivePhaseIndex()
+	scoped := r.v.ForActivePhase()
+	mayorDir := rigMayorRigDir(r.townRoot, r.rig)
+	archDoc := ""
+	if data, err := os.ReadFile(filepath.Join(mayorDir, "architecture.md")); err == nil {
+		archDoc = string(data)
+	}
+
+	backfilled := 0
+	for _, relPath := range scoped.RequiredFiles {
+		relPath = orchestrator.NormalizeBeadPathForLayout(relPath, r.v.LayoutRoot)
+		if relPath == "" {
+			continue
+		}
+		if _, ok := cache.GetValidated(phaseIdx, relPath); ok {
+			continue
+		}
+		abs := filepath.Join(rigDir, filepath.FromSlash(relPath))
+		data, err := os.ReadFile(abs)
+		if err != nil {
+			continue
+		}
+		content := string(data)
+		lower := strings.ToLower(relPath)
+
+		var valid bool
+		switch {
+		case orchestrator.IsMainDockerfile(relPath, r.v.LayoutRoot):
+			if err := orchestrator.ValidateDockerfileAgainstArchitecture(content, archDoc, relPath); err == nil {
+				valid = true
+			}
+		case orchestrator.IsFrontendImplementPath(relPath):
+			if err := orchestrator.ValidateBeadArtifactOnDisk(mayorDir, relPath, r.v); err == nil {
+				valid = true
+			}
+		case strings.Contains(lower, "docker-compose") || strings.HasSuffix(lower, ".env.example") || strings.HasSuffix(lower, ".env"):
+			valid = true
+		case strings.HasSuffix(lower, ".sh") || strings.HasSuffix(lower, ".ps1"):
+			valid = true
+		}
+
+		if valid {
+			cache.Put(phaseIdx, relPath, content)
+			cache.MarkValidated(phaseIdx, relPath)
+			backfilled++
+			orchestratedPrintf("[gt-agent] cache backfilled: %s (phase %d)\n", relPath, phaseIdx)
+		}
+	}
+	if backfilled > 0 {
+		orchestratedPrintf("[gt-agent] cache backfilled %d existing artifact(s)\n", backfilled)
+	}
 }
 
 // cacheValidatedContent stores a successfully-verified file in the code cache

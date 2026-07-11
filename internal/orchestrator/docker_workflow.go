@@ -257,7 +257,7 @@ func ExtractDockerfileSnippetFromArchitecture(archDoc string) string {
 // FormatDockerfileBeadContext returns the exact Dockerfile snippet from architecture.md
 // for the polecat to use as a template when implementing the Dockerfile bead.
 func FormatDockerfileBeadContext(rigDir, beadPath string, v WorkflowValidation) string {
-	if !isMainDockerfile(beadPath, v.LayoutRoot) {
+	if !IsMainDockerfile(beadPath, v.LayoutRoot) {
 		return ""
 	}
 	archDoc := readRigDoc(rigDir, "architecture.md")

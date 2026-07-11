@@ -280,13 +280,13 @@ func TestValidateDockerfileAgainstArchitecture(t *testing.T) {
 }
 
 func TestIsMainDockerfile(t *testing.T) {
-	if !isMainDockerfile("Dockerfile", ".") {
+	if !IsMainDockerfile("Dockerfile", ".") {
 		t.Fatal("Dockerfile at root should be main")
 	}
-	if !isMainDockerfile("finally/Dockerfile", "finally") {
+	if !IsMainDockerfile("finally/Dockerfile", "finally") {
 		t.Fatal("Dockerfile under layout root should be main")
 	}
-	if isMainDockerfile("test/Dockerfile", ".") {
+	if IsMainDockerfile("test/Dockerfile", ".") {
 		t.Fatal("test/Dockerfile should not be main")
 	}
 }
