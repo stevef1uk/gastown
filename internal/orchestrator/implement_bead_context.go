@@ -139,6 +139,11 @@ func formatImplementBeadContextForPath(townRoot, rig, beadPath string, v Workflo
 		b.WriteString(block)
 		b.WriteString("\n")
 	}
+	if block := FormatDockerfileBeadContext(rigDir, beadPath, v); block != "" {
+		b.WriteString("\n")
+		b.WriteString(block)
+		b.WriteString("\n")
+	}
 	if block := FormatStoreTestBeadChecklist(townRoot, rig, beadPath); block != "" {
 		b.WriteString("\n")
 		b.WriteString(block)

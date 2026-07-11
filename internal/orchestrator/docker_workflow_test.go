@@ -222,6 +222,31 @@ func TestDockerVerifyWithLayout_flatRepoNoBrokenCd(t *testing.T) {
 	}
 }
 
+func TestExtractDockerfileSnippetFromArchitecture(t *testing.T) {
+	arch := "# Architecture\n\n## Docker & Deployment\n\n```dockerfile\nFROM node:20-slim\nRUN npm run build\nFROM python:3.12-slim\nCMD [\"uvicorn\", \"backend.main:app\"]\n```\n"
+	got := ExtractDockerfileSnippetFromArchitecture(arch)
+	want := "FROM node:20-slim\nRUN npm run build\nFROM python:3.12-slim\nCMD [\"uvicorn\", \"backend.main:app\"]"
+	if got != want {
+		t.Fatalf("snippet mismatch:\nGot:\n%s\n\nWant:\n%s", got, want)
+	}
+}
+
+func TestFormatDockerfileBeadContext(t *testing.T) {
+	dir := t.TempDir()
+	rigDir := filepath.Join(dir, "mayor", "rig")
+	if err := os.MkdirAll(rigDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	arch := "# Architecture\n\n## Docker & Deployment\n\n```dockerfile\nFROM node:20-slim\nFROM python:3.12-slim\nEXPOSE 8000\nCMD [\"uvicorn\", \"backend.main:app\"]\n```\n"
+	if err := os.WriteFile(filepath.Join(rigDir, "architecture.md"), []byte(arch), 0644); err != nil {
+		t.Fatal(err)
+	}
+	got := FormatDockerfileBeadContext(rigDir, "Dockerfile", WorkflowValidation{LayoutRoot: "."})
+	if !strings.Contains(got, "FROM node:20-slim") || !strings.Contains(got, "FROM python:3.12-slim") {
+		t.Fatalf("context missing expected images:\n%s", got)
+	}
+}
+
 func TestExtractDockerfileExpectationFromArchitecture(t *testing.T) {
 	arch := "# Architecture\n\n## Docker & Deployment\n\n```dockerfile\nFROM node:20-slim AS builder\nRUN npm run build\nFROM python:3.12-slim\nEXPOSE 8000\nCMD [\"uvicorn\", \"backend.main:app\", \"--host\", \"0.0.0.0\", \"--port\", \"8000\"]\n```\n"
 	exp := ExtractDockerfileExpectationFromArchitecture(arch)

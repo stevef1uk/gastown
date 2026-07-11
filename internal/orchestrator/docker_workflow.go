@@ -239,6 +239,37 @@ func ExtractDockerfileExpectationFromArchitecture(archDoc string) DockerfileExpe
 	return exp
 }
 
+// ExtractDockerfileSnippetFromArchitecture returns the Dockerfile code block from the
+// ## Docker & Deployment section of architecture.md, if present.
+func ExtractDockerfileSnippetFromArchitecture(archDoc string) string {
+	loc := dockerDeploymentHeadingRE.FindStringIndex(archDoc)
+	if loc == nil {
+		return ""
+	}
+	section := extractMarkdownSection(archDoc, loc[0])
+	fenceRE := regexp.MustCompile("(?s)```(?:dockerfile|docker)?\\n(.*?)\\n```")
+	if m := fenceRE.FindStringSubmatch(section); len(m) >= 2 {
+		return strings.TrimSpace(m[1])
+	}
+	return ""
+}
+
+// FormatDockerfileBeadContext returns the exact Dockerfile snippet from architecture.md
+// for the polecat to use as a template when implementing the Dockerfile bead.
+func FormatDockerfileBeadContext(rigDir, beadPath string, v WorkflowValidation) string {
+	if !isMainDockerfile(beadPath, v.LayoutRoot) {
+		return ""
+	}
+	archDoc := readRigDoc(rigDir, "architecture.md")
+	snippet := ExtractDockerfileSnippetFromArchitecture(archDoc)
+	if snippet == "" {
+		return ""
+	}
+	return strings.TrimSpace("### Dockerfile template (from architecture.md)\n" +
+		"Use this as the starting point for `" + beadPath + "`. You may adapt paths, but the base images, port, and CMD must match.\n" +
+		"```dockerfile\n" + snippet + "\n```")
+}
+
 // ValidateDockerfileAgainstArchitecture rejects Dockerfile content that does not match
 // the images, port, and command documented in architecture.md.
 func ValidateDockerfileAgainstArchitecture(dockerfileContent, archDoc, relPath string) error {
