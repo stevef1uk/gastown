@@ -239,7 +239,33 @@ func (r *stateRunner) emptyResponseNudge() string {
 	return msg
 }
 
+// reloadValidationIfPhaseChanged reloads r.v from the rig profile on disk when the
+// active_phase_id has changed since this stateRunner was created. Returns true when a
+// reload happened. This keeps path guards and prompt context in sync with phase rewinds.
+func (r *stateRunner) reloadValidationIfPhaseChanged() bool {
+	if r == nil || r.townRoot == "" || r.rig == "" || r.task == nil {
+		return false
+	}
+	newV := taskValidation(r.townRoot, r.task)
+	if newV.ActivePhaseID() == r.v.ActivePhaseID() {
+		return false
+	}
+	r.v = newV
+	r.promptVars = map[string]string{"rig": r.rig}
+	for k, val := range r.v.PromptVars() {
+		r.promptVars[k] = val
+	}
+	r.promptVars["qa_runtime_smoke_block"] = orchestrator.RigFlowQARuntimeSmokeBlock(r.townRoot, r.rig, r.v)
+	return true
+}
+
 func (r *stateRunner) runPerTurn() {
+	// The active delivery phase can change on disk between turns (e.g. final-phase
+	// rewind after validation failure). Reload validation from workflow-profile.json
+	// when that happens so guards, path checks, and prompt vars use the current phase.
+	if r.reloadValidationIfPhaseChanged() {
+		orchestratedPrintf("[gt-agent] reloaded workflow profile: active phase is now %s\n", r.v.ActivePhaseID())
+	}
 	for _, step := range r.hooks.PerTurn {
 		if step == "repair_requirements" {
 			maybeRepairWorkflowRequirements(r.townRoot, r.rig, r.v)
