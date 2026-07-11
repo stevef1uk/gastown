@@ -106,7 +106,7 @@ func TestImplementationTrack_preservesVerifyOnFailedGoTestWhenCanonicalIsGoBuild
 	}
 }
 
-func TestImplementationTrack_bdCloseWithoutVerifyDoesNotSetBeadCloseOK(t *testing.T) {
+func TestImplementationTrack_bdCloseSetsBeadCloseOKRegardlessOfVerify(t *testing.T) {
 	task := &orchestrator.Task{
 		State: "implementation",
 		Hooks: orchestrator.StateHooks{Track: "implementation", CmdGuard: "implementation"},
@@ -115,8 +115,8 @@ func TestImplementationTrack_bdCloseWithoutVerifyDoesNotSetBeadCloseOK(t *testin
 	r := newStateRunner(task, t.TempDir(), "mockrig")
 	r.track.verifyOK = false
 	trackHandlers["implementation"](r, "bd close te-abc", nil)
-	if r.track.beadCloseOK {
-		t.Fatal("bd close without verify must not set beadCloseOK")
+	if !r.track.beadCloseOK {
+		t.Fatal("successful bd close must set beadCloseOK even when verifyOK is false (bead guards already verified the bead)")
 	}
 }
 
