@@ -53,8 +53,9 @@ func TestStateRunner_reloadValidationIfPhaseChanged(t *testing.T) {
 	if r.v.ActivePhaseID() != "frontend" {
 		t.Fatalf("reloaded active phase = %q, want frontend", r.v.ActivePhaseID())
 	}
-	if got := r.v.RequiredFiles; len(got) != 1 || got[0] != "frontend/app.tsx" {
-		t.Fatalf("reloaded required files = %v, want [frontend/app.tsx]", got)
+	want := []string{"package.json", "tsconfig.json", "frontend/app.tsx"}
+	if got := r.v.RequiredFiles; len(got) != len(want) || got[0] != want[0] || got[1] != want[1] || got[2] != want[2] {
+		t.Fatalf("reloaded required files = %v, want %v", got, want)
 	}
 	if _, ok := r.promptVars["qa_runtime_smoke_block"]; !ok {
 		t.Fatal("qa_runtime_smoke_block missing from reloaded prompt vars")
