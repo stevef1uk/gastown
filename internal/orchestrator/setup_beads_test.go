@@ -96,6 +96,20 @@ func TestIsProjectSetupArtifactPath(t *testing.T) {
 	if !IsProjectSetupArtifactPath("linkshelf/go.mod", goV) {
 		t.Fatal("go.mod is setup-owned")
 	}
+	jsV := WorkflowValidation{
+		LayoutRoot:      "app",
+		RequiredFiles:   []string{"app/frontend/package.json", "app/frontend/components/Chart.tsx"},
+		QAVerifyCommand: "cd app && npm test",
+	}
+	if !IsProjectSetupArtifactPath("app/frontend/package.json", jsV) {
+		t.Fatal("package.json is setup-owned for npm projects")
+	}
+	if !IsProjectSetupArtifactPath("app/frontend/tsconfig.json", jsV) {
+		t.Fatal("tsconfig.json is setup-owned for npm projects")
+	}
+	if IsProjectSetupArtifactPath("app/frontend/components/Chart.tsx", jsV) {
+		t.Fatal("Chart.tsx is polecat-owned, not setup-owned")
+	}
 }
 
 func TestNextOpenImplementBead_skipsSetupArtifacts(t *testing.T) {

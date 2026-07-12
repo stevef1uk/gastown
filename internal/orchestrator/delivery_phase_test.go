@@ -1,6 +1,9 @@
 package orchestrator
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestFinalizeDeliveryPhases_unionAndDefaultActive(t *testing.T) {
 	v := WorkflowValidation{
@@ -89,6 +92,96 @@ func TestForActivePhase_goModuleUsesDownload(t *testing.T) {
 	}
 	if vars := scoped.PromptVars()["unittest_command_hint"]; vars != want {
 		t.Fatalf("hint = %q want %q", vars, want)
+	}
+}
+
+func TestPairPhaseInfraFiles_addsNodeFilesToFrontendPhase(t *testing.T) {
+	v := WorkflowValidation{
+		QAVerifyCommand: "cd app && npm test",
+		ActivePhaseIDField: "frontend-ui",
+		DeliveryPhases: []DeliveryPhase{
+			{
+				ID:    "backend-api",
+				RequiredFiles: []string{"app/backend/api.py"},
+			},
+			{
+				ID:    "frontend-ui",
+				RequiredFiles: []string{
+					"app/frontend/components/Chart.tsx",
+					"app/frontend/__tests__/Chart.test.tsx",
+				},
+			},
+		},
+	}
+	got := FinalizeDeliveryPhases(v)
+	var frontendPhase *DeliveryPhase
+	for i := range got.DeliveryPhases {
+		if got.DeliveryPhases[i].ID == "frontend-ui" {
+			frontendPhase = &got.DeliveryPhases[i]
+			break
+		}
+	}
+	if frontendPhase == nil {
+		t.Fatal("frontend-ui phase not found")
+	}
+	hasPackageJSON := false
+	hasTsconfig := false
+	for _, f := range frontendPhase.RequiredFiles {
+		if f == "app/frontend/package.json" {
+			hasPackageJSON = true
+		}
+		if f == "app/frontend/tsconfig.json" {
+			hasTsconfig = true
+		}
+	}
+	if !hasPackageJSON {
+		t.Fatal("frontend-ui missing app/frontend/package.json")
+	}
+	if !hasTsconfig {
+		t.Fatal("frontend-ui missing app/frontend/tsconfig.json")
+	}
+	hasUnionPackageJSON := false
+	hasUnionTsconfig := false
+	for _, f := range got.RequiredFiles {
+		if f == "app/frontend/package.json" {
+			hasUnionPackageJSON = true
+		}
+		if f == "app/frontend/tsconfig.json" {
+			hasUnionTsconfig = true
+		}
+	}
+	if !hasUnionPackageJSON {
+		t.Fatal("union required_files missing app/frontend/package.json")
+	}
+	if !hasUnionTsconfig {
+		t.Fatal("union required_files missing app/frontend/tsconfig.json")
+	}
+	// Backend phase should not get Node infra files
+	backendPhase := got.DeliveryPhases[0]
+	for _, f := range backendPhase.RequiredFiles {
+		if strings.HasSuffix(f, "package.json") || strings.HasSuffix(f, "tsconfig.json") {
+			t.Fatalf("backend phase got infra file %q", f)
+		}
+	}
+}
+
+func TestPairPhaseInfraFiles_skipsNonNodePhases(t *testing.T) {
+	v := WorkflowValidation{
+		QAVerifyCommand: "cd app && go test ./...",
+		ActivePhaseIDField: "backend",
+		DeliveryPhases: []DeliveryPhase{
+			{
+				ID:    "backend",
+				RequiredFiles: []string{"app/main.go", "app/handler.go"},
+			},
+		},
+	}
+	got := FinalizeDeliveryPhases(v)
+	phase := got.DeliveryPhases[0]
+	for _, f := range phase.RequiredFiles {
+		if f == "app/package.json" || f == "app/tsconfig.json" {
+			t.Fatalf("Go phase should not get Node infra files, got %q", f)
+		}
 	}
 }
 

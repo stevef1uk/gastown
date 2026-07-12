@@ -30,6 +30,12 @@ func IsProjectSetupArtifactPath(path string, v WorkflowValidation) bool {
 			return true
 		}
 	}
+	if WorkflowUsesNodeJS(v) {
+		if strings.HasSuffix(path, "/package.json") || path == "package.json" ||
+			strings.HasSuffix(path, "/tsconfig.json") || path == "tsconfig.json" {
+			return true
+		}
+	}
 	return false
 }
 
