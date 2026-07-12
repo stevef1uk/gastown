@@ -486,8 +486,136 @@ func goPackageVerifyCommand(layout, pkg string) string {
 	return "cd " + layout + " && go test " + pkg
 }
 
+// maxFilesPerPhase caps how many files a single delivery phase can hold.
+// With ~100 max LLM calls and ~10 calls needed per file, no phase should exceed 10 files.
+const maxFilesPerPhase = 10
+
+// splitOverlargePhases splits any delivery phase with more than maxFilesPerPhase files
+// into multiple sequential phases, each capped at maxFilesPerPhase files.
+func splitOverlargePhases(v WorkflowValidation) WorkflowValidation {
+	if len(v.DeliveryPhases) == 0 {
+		return v
+	}
+	var split []DeliveryPhase
+	for _, p := range v.DeliveryPhases {
+		if len(p.RequiredFiles) <= maxFilesPerPhase {
+			split = append(split, p)
+			continue
+		}
+		chunks := chunkStrings(p.RequiredFiles, maxFilesPerPhase)
+		for i, chunk := range chunks {
+			partID := fmt.Sprintf("%s-%d", p.ID, i+1)
+			partTitle := p.Title
+			if partTitle == "" {
+				partTitle = p.ID
+			}
+			partTitle = fmt.Sprintf("%s (part %d/%d)", partTitle, i+1, len(chunks))
+			dp := DeliveryPhase{
+				ID:              partID,
+				Title:           partTitle,
+				RequiredFiles:   chunk,
+				QAVerifyCommand: p.QAVerifyCommand,
+				DependsOn:       nil, // recalculated below
+				SpecFocus:       p.SpecFocus,
+			}
+			if i == 0 {
+				dp.DependsOn = p.DependsOn
+			} else {
+				dp.DependsOn = []string{fmt.Sprintf("%s-%d", p.ID, i)}
+			}
+			split = append(split, dp)
+		}
+	}
+	v.DeliveryPhases = split
+	return v
+}
+
+// chunkStrings splits a slice into sub-slices of at most chunkSize elements.
+func chunkStrings(s []string, chunkSize int) [][]string {
+	if len(s) == 0 {
+		return nil
+	}
+	var chunks [][]string
+	for i := 0; i < len(s); i += chunkSize {
+		end := i + chunkSize
+		if end > len(s) {
+			end = len(s)
+		}
+		chunks = append(chunks, s[i:end])
+	}
+	return chunks
+}
+
+// pairPhaseTests removes test files from phases where their source file
+// lives in a different phase, keeping source+test pairs together for
+// implementation bead creation without bloating the RequiredFiles list.
+func pairPhaseTests(v WorkflowValidation) WorkflowValidation {
+	if len(v.DeliveryPhases) == 0 {
+		return v
+	}
+	// Build a map of test file → phase index for tests whose source is in another phase
+	testToSourcePhase := make(map[string]int) // test path → phase index containing its source
+	for i := range v.DeliveryPhases {
+		for _, f := range v.DeliveryPhases[i].RequiredFiles {
+			test := CorrelatedTestPathForSource(f, v)
+			if test == "" {
+				continue
+			}
+			// Check if this test exists in a different phase
+			for j := range v.DeliveryPhases {
+				if j == i {
+					continue
+				}
+				for _, rf := range v.DeliveryPhases[j].RequiredFiles {
+					if pathMatchesRequired(test, []string{rf}) {
+						testToSourcePhase[test] = i
+					}
+				}
+			}
+		}
+	}
+	if len(testToSourcePhase) == 0 {
+		return v
+	}
+	// Remove tests from phases where their source isn't present
+	for i := range v.DeliveryPhases {
+		var kept []string
+		for _, f := range v.DeliveryPhases[i].RequiredFiles {
+			if !IsTestImplementPath(f) {
+				kept = append(kept, f)
+				continue
+			}
+			sourcePhase, moved := testToSourcePhase[f]
+			if moved && sourcePhase != i {
+				// Test's source is in another phase — drop from here
+				continue
+			}
+			kept = append(kept, f)
+		}
+		v.DeliveryPhases[i].RequiredFiles = kept
+	}
+	// Also strip moved test files from the union RequiredFiles so QA scope doesn't include them
+	movedTests := make(map[string]bool, len(testToSourcePhase))
+	for test := range testToSourcePhase {
+		movedTests[test] = true
+	}
+	var keptUnion []string
+	for _, f := range v.RequiredFiles {
+		if IsTestImplementPath(f) && movedTests[f] {
+			continue
+		}
+		keptUnion = append(keptUnion, f)
+	}
+	if len(keptUnion) < len(v.RequiredFiles) {
+		v.RequiredFiles = keptUnion
+	}
+	return v
+}
+
 // FinalizeDeliveryPhases unions phase file lists into RequiredFiles, sets default active phase, normalizes paths.
 func FinalizeDeliveryPhases(v WorkflowValidation) WorkflowValidation {
+	v = splitOverlargePhases(v)
+	v = pairPhaseTests(v)
 	if len(v.DeliveryPhases) == 0 {
 		if inferred := inferDefaultDeliveryPhases(v); len(inferred) > 0 {
 			v.DeliveryPhases = inferred

@@ -621,7 +621,7 @@ func run() error {
 			}
 
 			// Record raw response
-			fmt.Printf("[gt-agent] LLM response (%d chars):\n%s\n---\n", len(response), response)
+			fmt.Printf("[gt-agent] LLM response (%d chars) [model=%s]:\n%s\n---\n", len(response), client.LastModel, response)
 			recordMoleculeState("LLM RESPONSE", response)
 			messages = append(messages, llm.Message{Role: "assistant", Content: response})
 

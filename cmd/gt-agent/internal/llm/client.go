@@ -18,10 +18,11 @@ const maxResponseBodyBytes = 10 << 20 // 10 MB
 
 // Client is a simple HTTP client for OpenAI-compatible LLM APIs.
 type Client struct {
-	endpoint string
-	model    string
-	role     string
-	client   *http.Client
+	endpoint  string
+	model     string
+	role      string
+	client    *http.Client
+	LastModel string // actual model used per the last response
 }
 
 // Endpoint returns the configured chat-completions URL.
@@ -102,6 +103,7 @@ type Message struct {
 
 // CompletionResponse is an OpenAI-compatible chat completion response.
 type CompletionResponse struct {
+	Model   string `json:"model"`
 	Choices []struct {
 		Message struct {
 			Content string `json:"content"`
@@ -163,12 +165,16 @@ func (c *Client) CompleteMessages(ctx context.Context, messages []Message) (stri
 		return "", fmt.Errorf("reading response: %w", err)
 	}
 
-	fmt.Printf("[llm] response received: status=%d duration=%s bytes=%d\n", resp.StatusCode, time.Since(start).Round(time.Millisecond), len(body))
-
 	var result CompletionResponse
 	if err := json.Unmarshal(body, &result); err != nil {
 		return "", fmt.Errorf("parsing response: %w", err)
 	}
+
+	c.LastModel = result.Model
+	if c.LastModel == "" {
+		c.LastModel = c.model
+	}
+	fmt.Printf("[llm] response received: status=%d duration=%s bytes=%d model=%s\n", resp.StatusCode, time.Since(start).Round(time.Millisecond), len(body), c.LastModel)
 
 	if len(result.Choices) == 0 {
 		return "", fmt.Errorf("no choices in response")

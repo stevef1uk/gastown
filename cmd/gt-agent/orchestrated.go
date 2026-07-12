@@ -249,7 +249,7 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 		if llmErr != nil {
 			return "fail", "", lastAttemptFeedback.String(), llmErr
 		}
-		orchestratedPrintf("[gt-agent] LLM response (turn %d):\n%s\n", turn, response)
+		orchestratedPrintf("[gt-agent] LLM response (turn %d) [model=%s]:\n%s\n", turn, client.LastModel, response)
 		messages = append(messages, llm.Message{Role: "assistant", Content: response})
 
 		runner.runPerTurn()

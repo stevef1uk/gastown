@@ -37,6 +37,7 @@ func preprocessOrchestratedResponse(response string) string {
 	response = unwrapMarkdownFencedToolBlocks(response)
 	response = stripMarkdownFenceOnlyLines(response)
 	response = unwrapJSONToolCallCommand(response)
+	response = unwrapDSMLToolCalls(response)
 	response = normalizeNativeEditEndLines(response)
 	return response
 }
@@ -229,6 +230,72 @@ func unwrapJSONCommandArray(response string) string {
 		return response
 	}
 	return response + "\n" + strings.Join(parts, "\n")
+}
+
+// unwrapDSMLToolCalls converts DSML XML tool call blocks into CMD: lines.
+// Some LLMs emit <DSML><invoke name="bash"><parameter name="command" string="true">CMD</parameter></invoke></DSML>
+func unwrapDSMLToolCalls(response string) string {
+	if !strings.Contains(response, "<DSML") {
+		return response
+	}
+	var out []string
+	for _, block := range splitDSMLBlocks(response) {
+		cmd := extractDSMLCommand(block)
+		if cmd != "" {
+			out = append(out, cmd)
+		}
+	}
+	if len(out) == 0 {
+		return response
+	}
+	return response + "\n" + strings.Join(out, "\n")
+}
+
+// splitDSMLBlocks finds all <DSML>...</DSML> blocks in a string.
+func splitDSMLBlocks(s string) []string {
+	var blocks []string
+	for {
+		start := strings.Index(s, "<DSML")
+		if start < 0 {
+			break
+		}
+		end := strings.Index(s[start:], "</DSML>")
+		if end < 0 {
+			break
+		}
+		end += start + 7 // len("</DSML>")
+		blocks = append(blocks, s[start:end])
+		s = s[end:]
+	}
+	return blocks
+}
+
+// extractDSMLCommand extracts the bash command from a DSML block.
+func extractDSMLCommand(block string) string {
+	// Try to find name="command" or name="bash" parameter
+	nameTag := `<parameter name="command" string="true">`
+	i := strings.Index(block, nameTag)
+	if i < 0 {
+		// Try name="bash"
+		nameTag = `<parameter name="bash" string="true">`
+		i = strings.Index(block, nameTag)
+	}
+	if i < 0 {
+		return ""
+	}
+	i += len(nameTag)
+	end := strings.Index(block[i:], "</parameter>")
+	if end < 0 {
+		return ""
+	}
+	cmd := strings.TrimSpace(block[i : i+end])
+	// Also try extract the invoke name to map to proper prefix
+	lower := strings.ToLower(cmd)
+	if strings.HasPrefix(lower, "read:") || strings.HasPrefix(lower, "edit:") ||
+		strings.HasPrefix(lower, "write:") || strings.HasPrefix(lower, "cmd:") {
+		return cmd
+	}
+	return "CMD: " + cmd
 }
 
 // normalizeNativeEditEndLines fixes common model typos (e.g. >>>>>> REPLACE → >>>>>>> REPLACE).

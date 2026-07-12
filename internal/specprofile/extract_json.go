@@ -2,6 +2,7 @@ package specprofile
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 )
 
@@ -11,10 +12,15 @@ func ExtractJSONObject(s string, out any) error {
 	if strings.HasPrefix(s, "```") {
 		s = stripMarkdownFence(s)
 	}
+	// Strip any remaining prose before the first { or after the last }
 	start := strings.Index(s, "{")
 	end := strings.LastIndex(s, "}")
 	if start < 0 || end <= start {
-		return json.Unmarshal([]byte(s), out)
+		// Try to unmarshal the whole string as-is (may be raw JSON without braces for array)
+		if err := json.Unmarshal([]byte(s), out); err != nil {
+			return fmt.Errorf("no JSON object found in response: %w (response: %.300s)", err, s)
+		}
+		return nil
 	}
 	return json.Unmarshal([]byte(s[start:end+1]), out)
 }

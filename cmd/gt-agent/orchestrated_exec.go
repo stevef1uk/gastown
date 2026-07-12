@@ -1165,26 +1165,61 @@ func runOrchestratedCommand(cmd, workDir, sessionName string, env []string, cmdT
 	return out, err
 }
 
-// adjustPytestPathsAfterLayoutStrip prepends the layout root to bare .py file
-// arguments in pytest commands when a cd into the layout subdirectory was stripped.
-// E.g. "pytest -v test_main.py" → "pytest -v layout/test_main.py"
+// adjustPytestPathsAfterLayoutStrip prepends the layout root to paths in pytest
+// commands when a cd into the layout subdirectory was stripped and the working
+// directory is now mayor/rig instead of mayor/rig/<layout>.
+// E.g. "pytest -v backend/tests/test_main.py" → "pytest -v layout/backend/tests/test_main.py"
 func adjustPytestPathsAfterLayoutStrip(cmd, layout string) string {
 	lower := strings.ToLower(cmd)
 	if !strings.Contains(lower, "pytest") || layout == "" || layout == "." {
 		return cmd
 	}
-	tokens := strings.Fields(cmd)
+	// Find the "pytest" token and only adjust arguments after it
+	parts := strings.Fields(cmd)
+	pytestIdx := -1
+	for i, p := range parts {
+		if strings.ToLower(p) == "pytest" {
+			pytestIdx = i
+			break
+		}
+	}
+	if pytestIdx < 0 {
+		return cmd
+	}
+	layoutPrefix := layout + "/"
 	changed := false
-	for i, tok := range tokens {
-		if strings.HasSuffix(tok, ".py") && !strings.Contains(tok, "/") && !strings.Contains(tok, "\\") {
-			tokens[i] = layout + "/" + tok
+	for i := pytestIdx + 1; i < len(parts); i++ {
+		tok := parts[i]
+		// Skip flags, flag values, and already-prefixed paths
+		if strings.HasPrefix(tok, "-") || strings.Contains(tok, "=") {
+			continue
+		}
+		if strings.HasPrefix(tok, layoutPrefix) || strings.HasPrefix(tok, "/") {
+			continue
+		}
+		// Looks like a relative path — prepend layout root
+		if hasRelPathSuffix(tok) {
+			parts[i] = layoutPrefix + tok
 			changed = true
 		}
 	}
 	if !changed {
 		return cmd
 	}
-	return strings.Join(tokens, " ")
+	return strings.Join(parts, " ")
+}
+
+// hasRelPathSuffix reports whether a token looks like a relative file path
+// (ends with .py, contains / or looks like a directory).
+func hasRelPathSuffix(tok string) bool {
+	tok = strings.Trim(tok, "\"'")
+	if strings.HasSuffix(tok, ".py") || strings.HasSuffix(tok, ".go") {
+		return true
+	}
+	if strings.Contains(tok, "/") || strings.Contains(tok, "\\") {
+		return true
+	}
+	return false
 }
 
 // orchestratedCommandWorkDir is the subprocess cwd for rig workflow shell commands.
