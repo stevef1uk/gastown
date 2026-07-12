@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -58,6 +59,7 @@ type stateRunner struct {
 	attemptEditSearchMiss bool // implementation: EDIT failed SEARCH-not-found this attempt (auto-READ may have run)
 	turnResponse           string // current LLM turn (for fenced-code vs native-tool guards)
 	turnHadSuccessfulNative bool // true after a successful WRITE/EDIT this turn
+	consecutiveCmdTimeouts  int  // consecutive command timeout counter for auto-warrant
 }
 
 func (r *stateRunner) qaReworkWriteScope() *orchestrator.ImplementWriteScope {
@@ -578,7 +580,88 @@ func (r *stateRunner) effectiveCommandTimeoutSec(cmd string) int {
 }
 
 func (r *stateRunner) runShellCommand(cmd, workDir, sessionName string, env []string) ([]byte, error) {
-	return runOrchestratedCommand(cmd, workDir, sessionName, env, r.effectiveCommandTimeoutSec(cmd))
+	out, err := runOrchestratedCommand(cmd, workDir, sessionName, env, r.effectiveCommandTimeoutSec(cmd))
+	if err != nil {
+		if isCmdTimeoutError(err) {
+			r.consecutiveCmdTimeouts++
+			threshold := r.hooks.EffectiveConsecutiveCmdTimeoutThreshold()
+			if threshold > 0 && r.consecutiveCmdTimeouts >= threshold {
+				r.consecutiveCmdTimeouts = 0
+				fileSelfWarrant(r.townRoot, r.rig, r.hooks.Track, cmd)
+			}
+		} else {
+			r.consecutiveCmdTimeouts = 0
+		}
+	} else {
+		r.consecutiveCmdTimeouts = 0
+	}
+	return out, err
+}
+
+func isCmdTimeoutError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "command exceeded") || strings.Contains(msg, "script exceeded")
+}
+
+// handleCmdError tracks consecutive command timeouts and files a warrant when threshold reached.
+// Exposed for testing.
+func (r *stateRunner) handleCmdError(err error) {
+	if isCmdTimeoutError(err) {
+		r.consecutiveCmdTimeouts++
+		threshold := r.hooks.EffectiveConsecutiveCmdTimeoutThreshold()
+		if threshold > 0 && r.consecutiveCmdTimeouts >= threshold {
+			r.consecutiveCmdTimeouts = 0
+			fileSelfWarrant(r.townRoot, r.rig, r.hooks.Track, "")
+		}
+	} else {
+		r.consecutiveCmdTimeouts = 0
+	}
+}
+
+func fileSelfWarrant(townRoot, rig, track, cmd string) {
+	warrantDir := filepath.Join(townRoot, "warrants")
+	if err := os.MkdirAll(warrantDir, 0755); err != nil {
+		orchestratedFprintfStderr("[gt-agent] auto-warrant: mkdir %s: %v\n", warrantDir, err)
+		return
+	}
+	target := "finally/" + rig
+	if rig == "" {
+		target = "polecat"
+	}
+	if track != "" {
+		target = target + "/" + track
+	}
+	summary := fmt.Sprintf("Auto-warrant: %d consecutive command timeouts: %s", 3, truncateCmdForLog(cmd, 80))
+	w := struct {
+		ID       string    `json:"id"`
+		Target   string    `json:"target"`
+		Reason   string    `json:"reason"`
+		FiledBy  string    `json:"filed_by"`
+		FiledAt  time.Time `json:"filed_at"`
+		Executed bool      `json:"executed,omitempty"`
+	}{
+		ID:       fmt.Sprintf("auto-warrant-%d", time.Now().UnixMilli()),
+		Target:   target,
+		Reason:   summary,
+		FiledBy:  "gt-agent/state-runner",
+		FiledAt:  time.Now(),
+		Executed: false,
+	}
+	data, err := json.MarshalIndent(w, "", "  ")
+	if err != nil {
+		orchestratedFprintfStderr("[gt-agent] auto-warrant: marshal: %v\n", err)
+		return
+	}
+	safe := strings.ReplaceAll(target, "/", "_")
+	warrantPath := filepath.Join(warrantDir, safe+".warrant.json")
+	if err := os.WriteFile(warrantPath, data, 0644); err != nil {
+		orchestratedFprintfStderr("[gt-agent] auto-want: write %s: %v\n", warrantPath, err)
+		return
+	}
+	orchestratedPrintf("[gt-agent] AUTO-WARRANT filed for %s (threshold reached)\n", target)
 }
 
 func (r *stateRunner) repairGoModRequiresAfterTidy(combined *strings.Builder) {

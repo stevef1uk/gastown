@@ -17,6 +17,10 @@ type StateHooks struct {
 	StateTimeoutSeconds int `yaml:"state_timeout_seconds,omitempty" json:"state_timeout_seconds,omitempty"`
 	// CmdTimeoutSeconds caps each shell CMD in gt-agent for this state (0 = default per command type).
 	CmdTimeoutSeconds int `yaml:"cmd_timeout_seconds,omitempty" json:"cmd_timeout_seconds,omitempty"`
+	// ConsecutiveCmdTimeoutThreshold sets how many consecutive command timeouts trigger automatic filing of a death warrant.
+	// After this many timeouts in a row, the agent files a death warrant for itself which boot will execute.
+	// 0 means disabled (default); 1 would cause a warrant to be filed after a single timeout.
+	ConsecutiveCmdTimeoutThreshold int `yaml:"consecutive_cmd_timeout_threshold,omitempty" json:"consecutive_cmd_timeout_threshold,omitempty"`
 	PerTurn  []string `yaml:"per_turn,omitempty" json:"per_turn,omitempty"`
 	// PromptContext lists prompt_context hook names (see orchestrator.PromptContextBlock).
 	// Example keys: planning_bead_bootstrap, implementation_queue.
@@ -297,4 +301,11 @@ func (h StateHooks) EffectiveCmdTimeoutSeconds() int {
 		return h.CmdTimeoutSeconds
 	}
 	return 0
+}
+
+func (h StateHooks) EffectiveConsecutiveCmdTimeoutThreshold() int {
+	if h.ConsecutiveCmdTimeoutThreshold > 0 {
+		return h.ConsecutiveCmdTimeoutThreshold
+	}
+	return 3 // default threshold
 }
