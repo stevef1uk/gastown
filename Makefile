@@ -139,8 +139,12 @@ install: check-up-to-date build
 safe-install: check-up-to-date check-forward-only build
 	@mkdir -p $(INSTALL_DIR)
 	@# Atomic-ish replace: copy to temp then move (move is atomic on same filesystem)
-	@cp $(BUILD_DIR)/$(BINARY) $(INSTALL_DIR)/$(BINARY).new
-	@mv $(INSTALL_DIR)/$(BINARY).new $(INSTALL_DIR)/$(BINARY)
+	@for bin in $(BINARY) $(BINARY)-agent $(BINARY)-agent-console; do \
+		if [ -f "$(BUILD_DIR)/$$bin" ]; then \
+			cp $(BUILD_DIR)/$$bin $(INSTALL_DIR)/$$bin.new && \
+			mv $(INSTALL_DIR)/$$bin.new $(INSTALL_DIR)/$$bin; \
+		fi; \
+	done
 	@# Nuke any stale go-install binaries that shadow the canonical location
 	@for bad in $(HOME)/go/bin/$(BINARY) $(HOME)/bin/$(BINARY); do \
 		if [ -f "$$bad" ]; then \
@@ -148,7 +152,7 @@ safe-install: check-up-to-date check-forward-only build
 			rm -f "$$bad"; \
 		fi; \
 	done
-	@echo "Installed $(BINARY) to $(INSTALL_DIR)/$(BINARY) (daemon NOT restarted)"
+	@echo "Installed $(BINARY), $(BINARY)-agent, $(BINARY)-agent-console to $(INSTALL_DIR)/ (daemon NOT restarted)"
 	@echo "Sessions will pick up new binary on next cycle."
 	@$(MAKE) sync-town-config
 
