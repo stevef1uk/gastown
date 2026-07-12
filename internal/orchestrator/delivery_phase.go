@@ -652,7 +652,7 @@ func pairPhaseInfraFiles(v WorkflowValidation) WorkflowValidation {
 			}
 		}
 		if len(pending) > 0 {
-			v.DeliveryPhases[i].RequiredFiles = append(v.DeliveryPhases[i].RequiredFiles, pending...)
+			v.DeliveryPhases[i].RequiredFiles = append(pending, v.DeliveryPhases[i].RequiredFiles...)
 			for _, p := range pending {
 				if !unionSet[p] {
 					v.RequiredFiles = append(v.RequiredFiles, p)
@@ -666,9 +666,10 @@ func pairPhaseInfraFiles(v WorkflowValidation) WorkflowValidation {
 
 // FinalizeDeliveryPhases unions phase file lists into RequiredFiles, sets default active phase, normalizes paths.
 func FinalizeDeliveryPhases(v WorkflowValidation) WorkflowValidation {
-	v = splitOverlargePhases(v)
-	v = pairPhaseTests(v)
 	v = pairPhaseInfraFiles(v)
+	v = splitOverlargePhases(v)
+	v = pairPhaseInfraFiles(v)
+	v = pairPhaseTests(v)
 	if len(v.DeliveryPhases) == 0 {
 		if inferred := inferDefaultDeliveryPhases(v); len(inferred) > 0 {
 			v.DeliveryPhases = inferred
