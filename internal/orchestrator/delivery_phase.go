@@ -612,10 +612,88 @@ func pairPhaseTests(v WorkflowValidation) WorkflowValidation {
 	return v
 }
 
+// infraFileRules define infrastructure files that must travel with code files
+// in the same delivery phase. Key is a glob-like pattern for a code file;
+// values are the infra files to add at a computed base directory.
+var infraFileRules = []struct {
+	codeSuffix string         // code file path suffix to match
+	infraFiles func(dir string) []string // returns infra file paths for the given code dir
+}{
+	// Frontend: .tsx/.ts/.js files need package.json and tsconfig.json at the project root
+	{
+		codeSuffix: ".tsx",
+		infraFiles: func(dir string) []string {
+			// Walk up from file dir to find package.json level
+			// Usually one level up from components/ or __tests__/
+			return []string{filepath.ToSlash(filepath.Join(dir, "..", "package.json")),
+				filepath.ToSlash(filepath.Join(dir, "..", "tsconfig.json"))}
+		},
+	},
+	{
+		codeSuffix: ".ts",
+		infraFiles: func(dir string) []string {
+			return []string{filepath.ToSlash(filepath.Join(dir, "..", "package.json")),
+				filepath.ToSlash(filepath.Join(dir, "..", "tsconfig.json"))}
+		},
+	},
+	{
+		codeSuffix: ".js",
+		infraFiles: func(dir string) []string {
+			return []string{filepath.ToSlash(filepath.Join(dir, "..", "package.json"))}
+		},
+	},
+}
+
+// pairPhaseInfraFiles ensures each phase includes infrastructure files (package.json,
+// tsconfig.json, etc.) needed by its code files, adding them to both the phase and
+// the union RequiredFiles when missing.
+func pairPhaseInfraFiles(v WorkflowValidation) WorkflowValidation {
+	if len(v.DeliveryPhases) == 0 {
+		return v
+	}
+	unionSet := make(map[string]bool, len(v.RequiredFiles))
+	for _, f := range v.RequiredFiles {
+		unionSet[filepath.ToSlash(strings.TrimSpace(f))] = true
+	}
+	for i := range v.DeliveryPhases {
+		phaseSet := make(map[string]bool, len(v.DeliveryPhases[i].RequiredFiles))
+		for _, f := range v.DeliveryPhases[i].RequiredFiles {
+			phaseSet[filepath.ToSlash(strings.TrimSpace(f))] = true
+		}
+		var pending []string
+		for _, f := range v.DeliveryPhases[i].RequiredFiles {
+			for _, rule := range infraFileRules {
+				if !strings.HasSuffix(f, rule.codeSuffix) {
+					continue
+				}
+				dir := filepath.ToSlash(filepath.Dir(f))
+				for _, infra := range rule.infraFiles(dir) {
+					if phaseSet[infra] {
+						continue
+					}
+					pending = append(pending, infra)
+					phaseSet[infra] = true
+				}
+			}
+		}
+		if len(pending) > 0 {
+			v.DeliveryPhases[i].RequiredFiles = append(v.DeliveryPhases[i].RequiredFiles, pending...)
+			for _, p := range pending {
+				if !unionSet[p] {
+					v.RequiredFiles = append(v.RequiredFiles, p)
+					unionSet[p] = true
+				}
+			}
+		}
+	}
+	return v
+}
+
 // FinalizeDeliveryPhases unions phase file lists into RequiredFiles, sets default active phase, normalizes paths.
 func FinalizeDeliveryPhases(v WorkflowValidation) WorkflowValidation {
 	v = splitOverlargePhases(v)
 	v = pairPhaseTests(v)
+	v = pairPhaseInfraFiles(v)
 	if len(v.DeliveryPhases) == 0 {
 		if inferred := inferDefaultDeliveryPhases(v); len(inferred) > 0 {
 			v.DeliveryPhases = inferred
