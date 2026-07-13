@@ -43,3 +43,16 @@ func TestRejectMayorRigRootShellCommand_blocksNpm(t *testing.T) {
 		t.Fatal("expected npm init rejection")
 	}
 }
+
+func TestRejectMayorRigRootShellCommand_blocksRootJunkOnly(t *testing.T) {
+	t.Parallel()
+	if err := RejectMayorRigRootShellCommand("cd finally/mayor/rig && cat > main.py <<'EOF'\ndef main(): pass\nEOF", "finally"); err == nil {
+		t.Fatal("expected rejection for creating main.py at root")
+	}
+	if err := RejectMayorRigRootShellCommand("cd finally/mayor/rig && cat > backend/tests/test_main.py <<'EOF'\ndef test(): pass\nEOF", "finally"); err != nil {
+		t.Fatalf("did not expect rejection for test_main.py under backend/tests: %v", err)
+	}
+	if err := RejectMayorRigRootShellCommand("cd finally/mayor/rig && printf 'def test(): pass\\n' > backend/tests/test_main.py", "finally"); err != nil {
+		t.Fatalf("did not expect rejection for printf-created test_main.py under backend/tests: %v", err)
+	}
+}

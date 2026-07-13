@@ -20,8 +20,8 @@ func TestPythonVerifyCommand_layoutScopedTests(t *testing.T) {
 func TestPythonImplementationVerifyCommandForBead_store(t *testing.T) {
 	t.Parallel()
 	v := WorkflowValidation{
-		LayoutRoot:    "tasklist",
-		RequiredFiles: []string{"tasklist/store.py"},
+		LayoutRoot:      "tasklist",
+		RequiredFiles:   []string{"tasklist/store.py"},
 		QAVerifyCommand: "pytest -v",
 	}
 	got := PythonImplementationVerifyCommandForBead(v, "/tmp/rig", "tasklist/store.py")
@@ -62,6 +62,19 @@ func TestPythonVerifyCommand_layoutCDStrippedKeepsScope(t *testing.T) {
 	}
 	if !strings.Contains(got, "defender/backend/tests") {
 		t.Fatalf("expected scope preserved: %q", got)
+	}
+}
+
+func TestPythonImplementationVerifyCommandForBead_envExample(t *testing.T) {
+	t.Parallel()
+	v := WorkflowValidation{
+		LayoutRoot:      "finally",
+		RequiredFiles:   []string{"finally/.env.example"},
+		QAVerifyCommand: "cd finally && python3 -m pytest backend/tests/test_main.py",
+	}
+	got := PythonImplementationVerifyCommandForBead(v, "/tmp/rig", ".env.example")
+	if got != "test -s .env.example" {
+		t.Fatalf("expected generic existence verify for .env.example, got %q", got)
 	}
 }
 

@@ -153,6 +153,37 @@ func TestCheckContentNotStub_acceptsDependencyManifests(t *testing.T) {
 	}
 }
 
+func TestValidateBeadArtifactOnDisk_acceptsSmallConfigDotfiles(t *testing.T) {
+	rigDir := t.TempDir()
+	content := `# Required: OpenRouter API key for LLM chat functionality
+OPENROUTER_API_KEY=your-openrouter-api-key-here
+
+# Optional: Massive (Polygon.io) API key for real market data
+MASSIVE_API_KEY=
+
+# Optional: Set to "true" for deterministic mock LLM responses (testing)
+LLM_MOCK=false
+`
+	envPath := filepath.Join(rigDir, ".env.example")
+	if err := os.WriteFile(envPath, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+	gitignorePath := filepath.Join(rigDir, ".gitignore")
+	if err := os.WriteFile(gitignorePath, []byte(".venv\n__pycache__\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	v := WorkflowValidation{
+		MinImplementationFileBytes: 400,
+		MinSubstantiveLines:        3,
+	}
+	if err := ValidateBeadArtifactOnDisk(rigDir, ".env.example", v); err != nil {
+		t.Fatalf(".env.example should not be rejected as stub: %v", err)
+	}
+	if err := ValidateBeadArtifactOnDisk(rigDir, ".gitignore", v); err != nil {
+		t.Fatalf(".gitignore should not be rejected as stub: %v", err)
+	}
+}
+
 func TestCheckContentNotStub_rejectsTypicalStubs(t *testing.T) {
 	html := `<!DOCTYPE html>
 <html><body>Hello</body></html>`

@@ -77,7 +77,7 @@ func PythonVerifyCommand(v WorkflowValidation) string {
 	} else {
 		base = NormalizePytestCommand(base)
 	}
-	
+
 	cmd := pythonVerifyWithLayout(base, v)
 
 	if v.UsesPythonVenv() && !strings.Contains(cmd, "source ") && !strings.Contains(cmd, ". ") && !strings.Contains(cmd, ".venv/") && !strings.Contains(cmd, "pipenv") && !strings.Contains(cmd, "poetry") {
@@ -140,7 +140,10 @@ func PythonImplementationVerifyCommandForBead(v WorkflowValidation, mayorRigDir,
 		return py + ` -c "import sqlite3; conn = sqlite3.connect(':memory:'); conn.executescript(open('` + beadPath + `').read()); print('SCHEMA_VALID'); conn.close()"`
 	}
 
-	return PythonVerifyCommand(v)
+	// Non-Python artifacts (e.g. .env.example, .gitignore) just need to exist
+	// and be non-empty. Using the project-wide pytest here creates a deadlock
+	// because pytest targets files owned by other beads.
+	return "test -s " + beadPath
 }
 
 func pythonVerifyWithLayout(cmd string, v WorkflowValidation) string {
@@ -150,10 +153,10 @@ func pythonVerifyWithLayout(cmd string, v WorkflowValidation) string {
 	}
 	lower := strings.ToLower(cmd)
 	testScope := layout + "/tests"
-	
+
 	isPytest := strings.Contains(lower, "pytest")
 	hasCD := strings.Contains(lower, "cd "+strings.ToLower(layout))
-	
+
 	if isPytest {
 		// Strip cd layout from command — pytest needs to run from mayor/rig
 		// so that imports like 'defender.backend.main' resolve correctly.
@@ -173,7 +176,7 @@ func pythonVerifyWithLayout(cmd string, v WorkflowValidation) string {
 		}
 		return cmd
 	}
-	
+
 	if hasCD {
 		return cmd
 	}

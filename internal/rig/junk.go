@@ -130,10 +130,21 @@ func RejectMayorRigRootShellCommand(cmd, layoutRoot string) error {
 			return fmt.Errorf("do not create Python venv at mayor/rig root — use go mod under %s/ for this rig", layout)
 		}
 	}
-	for junk := range mayorRigJunkFiles {
-		if strings.Contains(lower, junk) && (strings.Contains(lower, "cat >") || strings.Contains(lower, "<<") ||
-			strings.Contains(lower, "echo ") && strings.Contains(lower, ">") || strings.Contains(lower, "touch ")) {
-			return fmt.Errorf("do not create placeholder file %q at mayor/rig root", junk)
+	if strings.Contains(lower, ">") || strings.Contains(lower, "touch ") || strings.Contains(lower, "touch\t") {
+		for _, f := range strings.Fields(lower) {
+			f = strings.TrimSpace(f)
+			if f == "" {
+				continue
+			}
+			if strings.HasPrefix(f, "./") {
+				f = f[2:]
+			}
+			if strings.Contains(f, "/") {
+				continue
+			}
+			if mayorRigJunkFiles[f] {
+				return fmt.Errorf("do not create placeholder file %q at mayor/rig root", f)
+			}
 		}
 	}
 	if (strings.Contains(lower, "rm ") || strings.Contains(lower, "rm\t")) &&

@@ -372,7 +372,7 @@ func beadImplementationNeedsRework(rigDir, beadPath string, v WorkflowValidation
 	if err != nil {
 		return true
 	}
-	opts := StubCheckOptionsFromValidation(v)
+	opts := optsForPath(beadPath, StubCheckOptionsFromValidation(v))
 	if err := CheckContentNotStub(data, beadPath, opts); err != nil {
 		return true
 	}
@@ -407,7 +407,7 @@ func stubbedRequiredFiles(rigDir string, v WorkflowValidation) []string {
 			stubbed = append(stubbed, rel+" (missing)")
 			continue
 		}
-		if err := CheckContentNotStub(data, rel, opts); err != nil {
+		if err := CheckContentNotStub(data, rel, optsForPath(rel, opts)); err != nil {
 			stubbed = append(stubbed, rel)
 		}
 		if err := CheckPythonSourceValid(data, rel); err != nil {

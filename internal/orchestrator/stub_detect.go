@@ -15,7 +15,7 @@ const (
 	DefaultMinImplementationFileBytes int64 = 400
 	MinImplementationFileBytesFloor   int64 = 80
 	MaxMinImplementationFileBytes     int64 = 8192
-	DefaultMinSubstantiveLines          int   = 3
+	DefaultMinSubstantiveLines        int   = 3
 )
 
 // StubCheckOptions configures heuristic stub detection for a source file.
@@ -90,6 +90,18 @@ var dependencyManifestNames = map[string]bool{
 	"composer.lock":         true,
 	"Gemfile":               true,
 	"Gemfile.lock":          true,
+}
+
+// smallConfigFileNames are dotfiles / small example configs that are inherently
+// short (e.g. .env.example). They are verified by existence and a few key tokens
+// rather than by implementation-size heuristics.
+var smallConfigFileNames = map[string]bool{
+	".env.example":   true,
+	".env":           true,
+	".gitignore":     true,
+	".dockerignore":  true,
+	".gitattributes": true,
+	".editorconfig":  true,
 }
 
 // IsPackageInitFile reports package entrypoints that are intentionally minimal (e.g. Python __init__.py).
@@ -240,6 +252,15 @@ func optsForPath(displayRel string, opts StubCheckOptions) StubCheckOptions {
 	}
 	if IsDependencyManifest(displayRel) {
 		return StubCheckOptions{MinFileBytes: 1, MinSubstantiveLines: 0}
+	}
+	base := strings.ToLower(filepath.Base(filepath.ToSlash(strings.TrimSpace(displayRel))))
+	if smallConfigFileNames[base] {
+		relaxed := opts
+		relaxed.MinFileBytes = 1
+		if relaxed.MinSubstantiveLines > 1 {
+			relaxed.MinSubstantiveLines = 1
+		}
+		return relaxed
 	}
 	ext := strings.ToLower(filepath.Ext(displayRel))
 	// Web assets are naturally small — accept non-empty with at least 1 substantive line.
