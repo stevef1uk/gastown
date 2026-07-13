@@ -161,9 +161,27 @@ func benignPlanningShellNoise(cmd string, cmdErr error) bool {
 }
 
 // filterHallucinatedScriptLines drops model junk glued onto shell scripts.
+// Lines inside heredoc bodies (between <<'EOF' and EOF) are preserved verbatim.
 func filterHallucinatedScriptLines(body string) string {
 	var kept []string
+	inHeredoc := false
+	var heredocTerm string
 	for _, line := range strings.Split(body, "\n") {
+		// Track heredoc state — preserve all lines inside heredoc bodies
+		if inHeredoc {
+			kept = append(kept, line)
+			if strings.TrimSpace(line) == heredocTerm {
+				inHeredoc = false
+				heredocTerm = ""
+			}
+			continue
+		}
+		if t := detectHeredocTerm(line); t != "" {
+			inHeredoc = true
+			heredocTerm = t
+			kept = append(kept, line)
+			continue
+		}
 		t := strings.TrimSpace(line)
 		if isOrchestratedNativeToolLine(line) {
 			continue
