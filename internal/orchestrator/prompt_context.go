@@ -67,7 +67,8 @@ func FormatDesignDraftContextBlock(townRoot, rig string) string {
 	}
 	var b strings.Builder
 	b.WriteString("## Current architecture.md draft (from prior turns)\n\n")
-	b.WriteString("The following is the current content of `architecture.md`. **Do not discard it** — revise and extend it. Preserve all existing sections unless they need correction.\n\n")
+	b.WriteString("The following is the current content of `architecture.md`. **Do not send JSON success yet** — you MUST write the full revised content via a heredoc CMD (`cat > .../architecture.md <<'EOF'`) in this session. The validator rejects success without a heredoc write in the current run.\n\n")
+	b.WriteString("Use the content below as your starting point. Fix any issues, then rewrite the complete file via heredoc. Do NOT wrap CMD in angle brackets — use plain `CMD: cat > ... <<'EOF'`.\n\n")
 	b.WriteString("```markdown\n")
 	b.WriteString(content)
 	b.WriteString("\n```\n")
