@@ -1164,9 +1164,9 @@ func planMDMeetsMinSize(townRoot, rig string, v orchestrator.WorkflowValidation)
 }
 
 // symlinkRelativeTargetRE matches `ln -s` (or `ln -sf`, `ln -sfn`, etc.) followed by a relative
-// target path (starting with ../ or ./ or ../...). Rewriting the cd prefix of such a command
+// target path (starting with . or ..). Rewriting the cd prefix of such a command
 // would break the relative-path resolution.
-var symlinkRelativeTargetRE = regexp.MustCompile(`\bln\s+(?:-\S+\s+)*-s\w*\s+(\.\.?/)`)
+var symlinkRelativeTargetRE = regexp.MustCompile(`\bln\s+(?:-\S+\s+)*-s\w*\s+(\.\.?)(?:/|\s|$)`)
 
 // hasSymlinkWithRelativeTarget reports whether cmd creates a symlink with a relative target.
 func hasSymlinkWithRelativeTarget(cmd string) bool {

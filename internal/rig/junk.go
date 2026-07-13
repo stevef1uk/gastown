@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
 
@@ -179,6 +180,15 @@ func RejectMayorRigRootShellCommand(cmd, layoutRoot string) error {
 	if (strings.Contains(lower, "chmod ") || strings.Contains(lower, "ln -")) &&
 		(strings.Contains(lower, ".venv/") || strings.Contains(lower, "venv/")) {
 		return fmt.Errorf("do not modify .venv/ permissions or symlinks — the Python virtual environment is managed by the pipeline")
+	}
+	// Block circular symlinks (ln -s . <target>) — these create infinite loops.
+	if strings.Contains(lower, "ln ") && strings.Contains(lower, "-s") {
+		// Check for "ln -s . <target>" or "ln -s ./" patterns.
+		if regexp.MustCompile(`\bln\s+(?:-\S+\s+)*-s\w*\s+\.\s`).MatchString(lower) ||
+			strings.HasSuffix(strings.TrimSpace(lower), " .") ||
+			strings.Contains(lower, " ./") {
+			return fmt.Errorf("do not create circular symlink to current directory — write the file content directly")
+		}
 	}
 	return nil
 }
