@@ -907,3 +907,31 @@ echo done`
 		t.Fatalf("final command stripped: %q", got)
 	}
 }
+
+func TestPrepareOrchestratedScript_heredocEOFpreserved(t *testing.T) {
+	// The full pipeline must preserve the EOF terminator after all transformations.
+	cmd := `cat > finally/mayor/rig/architecture.md <<'EOF'
+## Integration & Testing Workflow
+1. **Build**: ` + "`docker build -t finally:latest .`" + `
+2. **Run**: ` + "`docker run -p 8000:8000`" + `
+3. **Backend unit tests**: ` + "`pytest -vv backend/`" + `
+## Docker & Deployment
+- **Stage 1**: node:20-slim builder
+- **Stage 2**: python:3.12-slim runtime
+EOF
+wc -c finally/mayor/rig/architecture.md`
+	got := prepareOrchestratedScript(cmd)
+	if !strings.Contains(got, "1. **Build**") {
+		t.Fatalf("numbered step inside heredoc was stripped by pipeline: %q", got)
+	}
+	if !strings.Contains(got, "- **Stage 1**") {
+		t.Fatalf("bullet inside heredoc was stripped by pipeline: %q", got)
+	}
+	// Critical: EOF terminator must be present or bash will error
+	if !strings.Contains(got, "\nEOF\n") && !strings.HasSuffix(got, "\nEOF") {
+		t.Fatalf("EOF terminator missing from prepared script: %q", got)
+	}
+	if !strings.Contains(got, "wc -c") {
+		t.Fatalf("post-heredoc command missing: %q", got)
+	}
+}

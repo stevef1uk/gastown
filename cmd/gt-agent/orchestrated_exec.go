@@ -35,9 +35,21 @@ func prepareOrchestratedScript(cmd string) string {
 	body = strings.ReplaceAll(body, `\$`, "$")
 	body = normalizeHeredocDelimiters(body)
 	body = rewriteMultilinePythonCToHeredoc(body)
+	if os.Getenv("GT_DEBUG_SCRIPT") != "" {
+		orchestratedPrintf("[DEBUG] after rewriteMultilinePythonCToHeredoc:\n%s\n---\n", body)
+	}
 	body = filterHallucinatedScriptLines(body)
+	if os.Getenv("GT_DEBUG_SCRIPT") != "" {
+		orchestratedPrintf("[DEBUG] after filterHallucinatedScriptLines:\n%s\n---\n", body)
+	}
 	body = scrubOrphanHeredocDelimiterLines(body)
+	if os.Getenv("GT_DEBUG_SCRIPT") != "" {
+		orchestratedPrintf("[DEBUG] after scrubOrphanHeredocDelimiterLines:\n%s\n---\n", body)
+	}
 	body = stripMarkdownFencesInHeredocScripts(body)
+	if os.Getenv("GT_DEBUG_SCRIPT") != "" {
+		orchestratedPrintf("[DEBUG] after stripMarkdownFencesInHeredocScripts:\n%s\n---\n", body)
+	}
 	return scrubOrphanBashLcQuoteLines(body)
 }
 
