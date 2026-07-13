@@ -23,6 +23,7 @@ package orchestrator
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -40,9 +41,37 @@ func PromptContextBlock(key, townRoot, rig string, v WorkflowValidation) string 
 		return FormatImplementBeadContextBlock(townRoot, rig, v)
 	case "project_setup_stack":
 		return FormatProjectSetupStackBlock(v)
+	case "design_draft_context":
+		return FormatDesignDraftContextBlock(townRoot, rig)
 	default:
 		return ""
 	}
+}
+
+const maxDesignDraftInjectBytes = 4096
+
+// FormatDesignDraftContextBlock injects the current architecture.md content
+// into the prompt so the architect can build on prior work across turns.
+func FormatDesignDraftContextBlock(townRoot, rig string) string {
+	if rig == "" {
+		return ""
+	}
+	archPath := filepath.Join(townRoot, rig, "mayor", "rig", "architecture.md")
+	data, err := os.ReadFile(archPath)
+	if err != nil || len(data) == 0 {
+		return ""
+	}
+	content := string(data)
+	if len(content) > maxDesignDraftInjectBytes {
+		content = content[:maxDesignDraftInjectBytes] + "\n... (truncated)"
+	}
+	var b strings.Builder
+	b.WriteString("## Current architecture.md draft (from prior turns)\n\n")
+	b.WriteString("The following is the current content of `architecture.md`. **Do not discard it** — revise and extend it. Preserve all existing sections unless they need correction.\n\n")
+	b.WriteString("```markdown\n")
+	b.WriteString(content)
+	b.WriteString("\n```\n")
+	return b.String()
 }
 
 // PromptContextBlocks resolves all keys from a state's hooks.prompt_context list.

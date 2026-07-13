@@ -33,6 +33,7 @@ states:
       2. Write `{{rig}}/mayor/rig/architecture.md` (≥{{min_architecture_bytes}} bytes).
       3. CRITICAL: You MUST prefix ALL file paths (in lists, prose, tables, and code blocks) with the root directory name from the SPEC (e.g. `layout_root/cmd/server/main.go`, not `cmd/server/main.go`, and `layout_root/web/` not `web/`).
     hooks:
+      prompt_context: [design_draft_context]
       pre_run: [reset_layout_pre_implementation, prune_rig_root_junk]
       max_cmd_turns: 12
       cmd_guard: design
