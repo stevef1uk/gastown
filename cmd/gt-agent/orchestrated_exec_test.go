@@ -835,3 +835,75 @@ kill %1 2>/dev/null || true`
 		t.Fatalf("rewrite must not leave unbound _uvpid cleanup: %q", got)
 	}
 }
+
+func TestFilterHallucinatedScriptLines_preservesHeredocBody(t *testing.T) {
+	// Lines inside heredoc bodies must NOT be stripped by markdown step filters.
+	in := `cat > architecture.md <<'EOF'
+## Integration & Testing Workflow
+1. **Build**: ` + "`docker build -t finally:latest .`" + `
+2. **Run**: ` + "`docker run -p 8000:8000`" + `
+3. **Backend unit tests**: ` + "`pytest -vv backend/`" + `
+4. **E2E tests**: ` + "`docker compose up`" + `
+## Docker & Deployment
+- **Stage 1**: node:20-slim builder
+- **Stage 2**: python:3.12-slim runtime
+EOF
+wc -c architecture.md`
+	got := filterHallucinatedScriptLines(in)
+	if !strings.Contains(got, "1. **Build**") {
+		t.Fatalf("numbered step inside heredoc was stripped: %q", got)
+	}
+	if !strings.Contains(got, "- **Stage 1**") {
+		t.Fatalf("bullet inside heredoc was stripped: %q", got)
+	}
+	if !strings.Contains(got, "4. **E2E tests**") {
+		t.Fatalf("fourth step inside heredoc was stripped: %q", got)
+	}
+	if !strings.Contains(got, "wc -c architecture.md") {
+		t.Fatalf("post-heredoc command missing: %q", got)
+	}
+}
+
+func TestFilterHallucinatedScriptLines_stripsOutsideHeredoc(t *testing.T) {
+	// Lines OUTSIDE heredocs should still be stripped.
+	in := `echo "start"
+1. This is a hallucinated step line
+- **This is a hallucinated bullet**
+cat > file.txt <<'EOF'
+real content here
+EOF`
+	got := filterHallucinatedScriptLines(in)
+	if strings.Contains(got, "1. This is a hallucinated") {
+		t.Fatalf("step line outside heredoc was NOT stripped: %q", got)
+	}
+	if strings.Contains(got, "- **This is a hallucinated") {
+		t.Fatalf("bullet outside heredoc was NOT stripped: %q", got)
+	}
+	if !strings.Contains(got, "real content here") {
+		t.Fatalf("heredoc body was stripped: %q", got)
+	}
+	if !strings.Contains(got, "echo \"start\"") {
+		t.Fatalf("normal command was stripped: %q", got)
+	}
+}
+
+func TestFilterHallucinatedScriptLines_multipleHeredocs(t *testing.T) {
+	// Multiple heredocs in one command should all be preserved.
+	in := `cat > a.md <<'EOF'
+1. First doc step
+EOF
+cat > b.md <<'BODY'
+- Second doc bullet
+BODY
+echo done`
+	got := filterHallucinatedScriptLines(in)
+	if !strings.Contains(got, "1. First doc step") {
+		t.Fatalf("first heredoc body stripped: %q", got)
+	}
+	if !strings.Contains(got, "- Second doc bullet") {
+		t.Fatalf("second heredoc body stripped: %q", got)
+	}
+	if !strings.Contains(got, "echo done") {
+		t.Fatalf("final command stripped: %q", got)
+	}
+}
