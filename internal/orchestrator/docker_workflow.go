@@ -69,9 +69,6 @@ func replaceComposeInvocation(cmd, from, to string) string {
 
 // WorkflowUsesDocker reports Docker-based verify (custom runner + docker in QA command or Dockerfile paths).
 func WorkflowUsesDocker(v WorkflowValidation) bool {
-	if WorkflowUsesGo(v) || WorkflowUsesPython(v) {
-		return false
-	}
 	qa := strings.ToLower(strings.TrimSpace(v.QAVerifyCommand))
 	if strings.Contains(qa, "docker") {
 		return true
