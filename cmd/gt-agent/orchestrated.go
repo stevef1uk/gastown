@@ -994,6 +994,14 @@ func rewriteOrchestratedRigPlaceholders(cmd, townRoot, rig string) (string, bool
 	work := rig + "/mayor/rig"
 	out := cmd
 	changed := false
+
+	// Protect .beads paths from being made relative (cwd is mayor/rig, so relative "rig/.beads" breaks)
+	beadsPlaceholder := "__BEADS_ABS_PLACEHOLDER__"
+	beadsPaths := extractBeadsPaths(out)
+	for _, p := range beadsPaths {
+		out = strings.ReplaceAll(out, p, beadsPlaceholder)
+	}
+
 	if townRoot != "" {
 		townRoot = strings.TrimRight(filepath.Clean(townRoot), string(filepath.Separator))
 		if alt, ok := rewriteHallucinatedAbsoluteTownRoot(out, townRoot, rig, work); ok {
@@ -1017,6 +1025,11 @@ func rewriteOrchestratedRigPlaceholders(cmd, townRoot, rig string) (string, bool
 			changed = true
 		}
 	}
+	// Restore .beads paths
+	for _, p := range beadsPaths {
+		out = strings.ReplaceAll(out, beadsPlaceholder, p)
+	}
+
 	// Safely replace "rig/mayor/rig" if the LLM output it literally, but avoid matching "ping_rig/..."
 	re := regexp.MustCompile(`(^|[^a-zA-Z0-9_])rig/mayor/rig`)
 	if re.MatchString(out) {
@@ -1061,14 +1074,37 @@ func rewriteHallucinatedAbsoluteTownRoot(cmd, townRoot, rig, work string) (strin
 	}
 	rigAbs := townRoot + string(filepath.Separator) + rig
 	if strings.Contains(out, rigAbs+"/") {
+		// Don't rewrite .beads paths — they must stay absolute since cwd is mayor/rig
+		// and relative "rig/.beads" would resolve to mayor/rig/rig/.beads (wrong).
+		// Use a placeholder for the beads path, replace others, then restore.
+		beadsPlaceholder := "__BEADS_PLACEHOLDER__"
+		out = strings.ReplaceAll(out, rigAbs+"/.beads", beadsPlaceholder)
 		repl := rig + "/"
 		if strings.Contains(out, "$GT_ROOT") {
 			repl = "$GT_ROOT/" + rig + "/"
 		}
 		out = strings.ReplaceAll(out, rigAbs+"/", repl)
+		out = strings.ReplaceAll(out, beadsPlaceholder, rigAbs+"/.beads")
 		changed = true
 	}
 	return out, changed
+}
+
+// extractBeadsPaths finds all absolute filesystem paths containing ".beads" in the command.
+// These must stay absolute because the working directory is mayor/rig and
+// relative "rig/.beads" would resolve to mayor/rig/rig/.beads (wrong).
+func extractBeadsPaths(cmd string) []string {
+	var paths []string
+	// Match absolute paths like /home/.../rig/.beads or /path/to/rig/.beads
+	// Exclude placeholder patterns like $GT_ROOT/RIG/.beads
+	re := regexp.MustCompile(`/[^\s;&|()<>"']*\.beads`)
+	matches := re.FindAllString(cmd, -1)
+	for _, m := range matches {
+		if filepath.IsAbs(m) && !strings.Contains(m, "RIG") && !strings.Contains(m, "GT_ROOT") {
+			paths = append(paths, m)
+		}
+	}
+	return paths
 }
 
 func rigMayorRigDir(townRoot, rig string) string {
