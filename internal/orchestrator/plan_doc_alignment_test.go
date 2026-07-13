@@ -405,6 +405,100 @@ func TestCheckArchitectureDockerSection_ignoredForNonDocker(t *testing.T) {
 	}
 }
 
+func TestCheckArchitectureIntegrationTestingSection_requiresHeadingForTestFiles(t *testing.T) {
+	arch := "# Architecture\nMinimal.\n"
+	v := WorkflowValidation{RequiredFiles: []string{"linkshelf/internal/store/store_test.go"}}
+	issues := checkArchitectureIntegrationTestingSection(arch, v)
+	if len(issues) == 0 || !strings.Contains(issues[0], "## Integration and testing") {
+		t.Fatalf("expected missing integration testing section error, got: %v", issues)
+	}
+}
+
+func TestCheckArchitectureIntegrationTestingSection_rejectsEmptySection(t *testing.T) {
+	arch := "# Architecture\n\n## Integration and testing\n\n"
+	v := WorkflowValidation{QAVerifyCommand: "cd linkshelf && go test ./..."}
+	issues := checkArchitectureIntegrationTestingSection(arch, v)
+	if len(issues) == 0 || !strings.Contains(issues[0], "empty") {
+		t.Fatalf("expected empty section error, got: %v", issues)
+	}
+}
+
+func TestCheckArchitectureIntegrationTestingSection_rejectsVagueSection(t *testing.T) {
+	arch := "# Architecture\n\n## Integration and testing\nWe will verify correctness.\n"
+	v := WorkflowValidation{QAVerifyCommand: "pytest -v"}
+	issues := checkArchitectureIntegrationTestingSection(arch, v)
+	if len(issues) == 0 || !strings.Contains(issues[0], "too vague") {
+		t.Fatalf("expected vague section error, got: %v", issues)
+	}
+}
+
+func TestCheckArchitectureIntegrationTestingSection_acceptsSubstantiveSection(t *testing.T) {
+	arch := `# Architecture
+
+## Integration and testing
+Run unit tests with pytest for store modules. After deployment run a smoke test against the health endpoint.
+`
+	v := WorkflowValidation{RequiredFiles: []string{"tasklist/tests/test_store.py"}}
+	if issues := checkArchitectureIntegrationTestingSection(arch, v); len(issues) > 0 {
+		t.Fatalf("expected pass, got: %v", issues)
+	}
+}
+
+func TestCheckArchitectureIntegrationTestingSection_ignoredWithoutTestEvidence(t *testing.T) {
+	arch := "# Architecture\nMinimal.\n"
+	v := WorkflowValidation{RequiredFiles: []string{"linkshelf/cmd/server/main.go"}}
+	if issues := checkArchitectureIntegrationTestingSection(arch, v); len(issues) > 0 {
+		t.Fatalf("expected no issues without test files or test command, got: %v", issues)
+	}
+}
+
+func TestCheckArchitectureE2ETestingSection_requiresHeadingForE2EFiles(t *testing.T) {
+	arch := "# Architecture\nMinimal.\n"
+	v := WorkflowValidation{RequiredFiles: []string{"linkshelf/docker-compose.yml"}}
+	issues := checkArchitectureE2ETestingSection(arch, v)
+	if len(issues) == 0 || !strings.Contains(issues[0], "## E2E / integration testing") {
+		t.Fatalf("expected missing e2e testing section error, got: %v", issues)
+	}
+}
+
+func TestCheckArchitectureE2ETestingSection_rejectsEmptySection(t *testing.T) {
+	arch := "# Architecture\n\n## E2E / integration testing\n\n"
+	v := WorkflowValidation{RequiredFiles: []string{"linkshelf/e2e/home.spec.ts"}}
+	issues := checkArchitectureE2ETestingSection(arch, v)
+	if len(issues) == 0 || !strings.Contains(issues[0], "empty") {
+		t.Fatalf("expected empty section error, got: %v", issues)
+	}
+}
+
+func TestCheckArchitectureE2ETestingSection_rejectsVagueSection(t *testing.T) {
+	arch := "# Architecture\n\n## E2E / integration testing\nE2E tests cover the app.\n"
+	v := WorkflowValidation{RequiredFiles: []string{"linkshelf/playwright.config.ts"}}
+	issues := checkArchitectureE2ETestingSection(arch, v)
+	if len(issues) == 0 || !strings.Contains(issues[0], "too vague") {
+		t.Fatalf("expected vague section error, got: %v", issues)
+	}
+}
+
+func TestCheckArchitectureE2ETestingSection_acceptsSubstantiveSection(t *testing.T) {
+	arch := `# Architecture
+
+## E2E / integration testing
+Start the stack with docker compose up. Run Playwright tests with npx playwright test. Tests cover the login flow and page selectors.
+`
+	v := WorkflowValidation{RequiredFiles: []string{"linkshelf/docker-compose.yml", "linkshelf/e2e/login.spec.ts"}}
+	if issues := checkArchitectureE2ETestingSection(arch, v); len(issues) > 0 {
+		t.Fatalf("expected pass, got: %v", issues)
+	}
+}
+
+func TestCheckArchitectureE2ETestingSection_ignoredWithoutE2EFiles(t *testing.T) {
+	arch := "# Architecture\nMinimal.\n"
+	v := WorkflowValidation{RequiredFiles: []string{"linkshelf/cmd/server/main.go"}}
+	if issues := checkArchitectureE2ETestingSection(arch, v); len(issues) > 0 {
+		t.Fatalf("expected no issues without e2e files, got: %v", issues)
+	}
+}
+
 func TestCheckPlanBeadMapExactPaths_normalizesPaths(t *testing.T) {
 	t.Parallel()
 	v := WorkflowValidation{

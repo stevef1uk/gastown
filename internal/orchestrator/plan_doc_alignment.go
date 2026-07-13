@@ -76,6 +76,8 @@ func architectureDocAlignmentIssues(rigDir, specDoc string, v WorkflowValidation
 	issues = append(issues, checkGoModuleAlignment("architecture.md", archDoc, specDoc, v)...)
 	issues = append(issues, checkDocLayoutPathPrefix("architecture.md", archDoc, v)...)
 	issues = append(issues, checkArchitectureDockerSection(archDoc, v)...)
+	issues = append(issues, checkArchitectureIntegrationTestingSection(archDoc, v)...)
+	issues = append(issues, checkArchitectureE2ETestingSection(archDoc, v)...)
 	return issues
 }
 
@@ -152,7 +154,89 @@ func checkArchitectureDockerSection(archDoc string, v WorkflowValidation) []stri
 	return nil
 }
 
-// extractMarkdownSection returns the body under a heading until the next same-or-higher-level heading.
+// hasTestRequiredFiles reports whether the profile explicitly lists test files
+// (e.g. *_test.go, *.test.*, files under a test/ directory).
+func hasTestRequiredFiles(v WorkflowValidation) bool {
+	for _, f := range v.UnionRequiredFiles() {
+		lower := strings.ToLower(filepath.ToSlash(strings.TrimSpace(f)))
+		if strings.Contains(lower, "_test.") || strings.Contains(lower, ".test.") ||
+			strings.Contains(lower, "/test/") || strings.Contains(lower, "/tests/") ||
+			strings.Contains(lower, "test_") {
+			return true
+		}
+		base := filepath.Base(lower)
+		switch base {
+		case "conftest.py", "pytest.ini", "jest.config.js", "jest.config.ts",
+			"vitest.config.ts", "vitest.config.js", "karma.conf.js":
+			return true
+		}
+	}
+	return false
+}
+
+// checkArchitectureIntegrationTestingSection ensures the ## Integration and testing section
+// is present and contains substantive content when the profile lists test files in required_files
+// or the QA verify command runs tests.
+func checkArchitectureIntegrationTestingSection(archDoc string, v WorkflowValidation) []string {
+	if !hasTestRequiredFiles(v) && !strings.Contains(strings.ToLower(v.QAVerifyCommand), "test") {
+		return nil
+	}
+	loc := integrationTestingHeadingRE.FindStringIndex(archDoc)
+	if loc == nil {
+		return []string{"architecture.md must have an ## Integration and testing section with test strategy, unit test structure, and runtime smoke test"}
+	}
+	section := extractMarkdownSection(archDoc, loc[0])
+	if strings.TrimSpace(section) == "" {
+		return []string{"## Integration and testing section is empty; add test strategy, unit test structure, and runtime smoke test"}
+	}
+	// Require at least some test-related keywords
+	lower := strings.ToLower(section)
+	hasTestContent := strings.Contains(lower, "test") || strings.Contains(lower, "pytest") ||
+		strings.Contains(lower, "go test") || strings.Contains(lower, "jest") ||
+		strings.Contains(lower, "smoke") || strings.Contains(lower, "unit")
+	if !hasTestContent {
+		return []string{"## Integration and testing section is too vague; add test strategy, unit test structure, and runtime smoke test"}
+	}
+	return nil
+}
+
+// checkArchitectureE2ETestingSection ensures the ## E2E / integration testing section
+// is present and contains substantive content when the profile lists e2e/docker-compose files.
+func checkArchitectureE2ETestingSection(archDoc string, v WorkflowValidation) []string {
+	hasE2EFiles := false
+	for _, f := range v.UnionRequiredFiles() {
+		lower := strings.ToLower(filepath.ToSlash(strings.TrimSpace(f)))
+		if strings.Contains(lower, "e2e") || strings.Contains(lower, "playwright") ||
+			strings.Contains(lower, "docker-compose") || strings.Contains(lower, "docker_compose") {
+			hasE2EFiles = true
+			break
+		}
+	}
+	if !hasE2EFiles {
+		return nil
+	}
+	loc := e2eTestingHeadingRE.FindStringIndex(archDoc)
+	if loc == nil {
+		return []string{"architecture.md must have an ## E2E / integration testing section when e2e/playwright/docker-compose files are in required_files"}
+	}
+	section := extractMarkdownSection(archDoc, loc[0])
+	if strings.TrimSpace(section) == "" {
+		return []string{"## E2E / integration testing section is empty; add how app under test is started, how e2e tests are executed, what they cover, and test data/env requirements"}
+	}
+	// Check for required content
+	lower := strings.ToLower(section)
+	hasStart := strings.Contains(lower, "start") || strings.Contains(lower, "run") || strings.Contains(lower, "docker compose") || strings.Contains(lower, "up ")
+	hasExec := strings.Contains(lower, "test") || strings.Contains(lower, "playwright") || strings.Contains(lower, "cypress")
+	hasCover := strings.Contains(lower, "cover") || strings.Contains(lower, "scenario") || strings.Contains(lower, "flow") || strings.Contains(lower, "selector")
+	if !(hasStart && hasExec && hasCover) {
+		return []string{"## E2E / integration testing section is too vague; add how app under test is started, how e2e tests are executed, what they cover, and test data/env requirements"}
+	}
+	return nil
+}
+
+var integrationTestingHeadingRE = regexp.MustCompile(`(?im)^##\s+Integration\s+and\s+testing\b`)
+var e2eTestingHeadingRE = regexp.MustCompile(`(?im)^##\s+E2E\s*/\s*integration\s+testing\b`)
+
 func extractMarkdownSection(doc string, headingStart int) string {
 	rest := doc[headingStart:]
 	lines := strings.Split(rest, "\n")
