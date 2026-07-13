@@ -126,15 +126,11 @@ func ValidatePlanningDocAlignment(rigDir string, v WorkflowValidation) error {
 	return formatDocAlignmentError("SPEC/architecture/plan misaligned", issues)
 }
 
-// checkArchitectureDockerSection requires a substantive ## Docker & Deployment section when
-// the profile indicates a Docker-based project. This prevents the polecat from guessing images,
-// ports, and compose services.
+// checkArchitectureDockerSection requires a substantive ## Docker & Deployment section
+// when the workflow uses Docker (Dockerfile in required_files or docker in QA command).
 func checkArchitectureDockerSection(archDoc string, v WorkflowValidation) []string {
 	if !WorkflowUsesDocker(v) {
 		return nil
-	}
-	if strings.TrimSpace(archDoc) == "" {
-		return []string{"architecture.md missing required ## Docker & Deployment section for Docker project"}
 	}
 	loc := dockerDeploymentHeadingRE.FindStringIndex(archDoc)
 	if loc == nil {
