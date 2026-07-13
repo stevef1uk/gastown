@@ -28,6 +28,18 @@ func TestCorrelatedTestPathForSource_go(t *testing.T) {
 	}
 }
 
+func TestCorrelatedTestPathForSource_python_prefersRequiredTest(t *testing.T) {
+	t.Parallel()
+	v := WorkflowValidation{
+		LayoutRoot:    "finally",
+		RequiredFiles: []string{"finally/backend/tests/test_main.py"},
+	}
+	got := CorrelatedTestPathForSource("finally/backend/app/main.py", v)
+	if got != "finally/backend/tests/test_main.py" {
+		t.Fatalf("got %q", got)
+	}
+}
+
 func TestGoCompileVerifyCommandForBead_runsPackageTests(t *testing.T) {
 	t.Parallel()
 	v := WorkflowValidation{

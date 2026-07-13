@@ -47,28 +47,35 @@ func CorrelatedTestPathForSource(beadPath string, v WorkflowValidation) string {
 	}
 	if strings.HasSuffix(rel, ".py") && !strings.HasPrefix(filepath.Base(rel), "test_") {
 		base := strings.TrimSuffix(filepath.Base(rel), ".py")
-		testName := "test_" + base + ".py"
+		testNames := []string{"test_" + base + ".py", base + "_test.py"}
+
+		// Use the project-specific test path from required_files when available.
+		// Matching by basename avoids hardcoding tests/ vs app/ layout conventions.
+		for _, req := range v.RequiredFiles {
+			req = filepath.ToSlash(strings.TrimSpace(req))
+			reqBase := filepath.Base(req)
+			for _, tn := range testNames {
+				if reqBase == tn {
+					return req
+				}
+			}
+		}
+
+		// Fallback to conventional locations.
 		dir := filepath.ToSlash(filepath.Dir(rel))
 		candidates := []string{
-			filepath.ToSlash(filepath.Join(dir, testName)),
-			filepath.ToSlash(filepath.Join(dir, "tests", testName)),
-			filepath.ToSlash(filepath.Join("tests", testName)),
+			filepath.ToSlash(filepath.Join(dir, testNames[0])),
 		}
+		if dir != "." {
+			candidates = append(candidates, filepath.ToSlash(filepath.Join(dir, "tests", testNames[0])))
+		}
+		candidates = append(candidates, filepath.ToSlash(filepath.Join("tests", testNames[0])))
 		var formatted []string
 		for _, c := range candidates {
 			if layout != "" && !strings.HasPrefix(c, layout+"/") {
 				c = layout + "/" + c
 			}
 			formatted = append(formatted, c)
-		}
-		if len(v.RequiredFiles) > 0 {
-			for _, c := range formatted {
-				for _, req := range v.RequiredFiles {
-					if pathMatchesRequired(c, []string{req}) {
-						return c
-					}
-				}
-			}
 		}
 		return formatted[0]
 	}
