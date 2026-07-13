@@ -107,7 +107,13 @@ func implementBeadTitlePathOK(title string, v WorkflowValidation) bool {
 // effectiveLayoutRootForBeadTitle returns LayoutRoot or infers it from BeadTitleContains (e.g. "Implement finally/").
 func effectiveLayoutRootForBeadTitle(v WorkflowValidation) string {
 	layout := strings.Trim(strings.TrimSpace(v.LayoutRoot), "/")
-	if layout != "" && layout != "." {
+	if layout == "." {
+		// layout_root "." means no real layout root — do NOT infer from prefix.
+		// The prefix may contain a rig-name (e.g. "Implement FinAlly/") which is NOT
+		// a real directory and should be stripped by NormalizeBeadPathForLayout.
+		return ""
+	}
+	if layout != "" {
 		return layout
 	}
 	pfx := strings.TrimSpace(v.BeadTitleContains)
