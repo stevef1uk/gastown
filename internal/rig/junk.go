@@ -119,9 +119,34 @@ func RejectMayorRigRootShellCommand(cmd, layoutRoot string) error {
 	for _, blocked := range []string{
 		"npm init", "npm install", "npm ci", "npx jest", "yarn init", "yarn add", "pnpm init", "pnpm add",
 	} {
-		if strings.Contains(lower, blocked) {
-			return fmt.Errorf("do not run %q at mayor/rig root — use go test under %s/", strings.TrimSpace(blocked), strings.Trim(layoutRoot, "/"))
+		if !strings.Contains(lower, blocked) {
+			continue
 		}
+		// Allow npm install in subdirectories (e.g. cd frontend && npm install).
+		// Only block when running at the rig root.
+		if layoutRoot != "" && layoutRoot != "." {
+			// Check if there's a "cd <subdir>" before the npm command — that's OK.
+			cleaned := strings.ReplaceAll(lower, "&&", ";")
+			parts := strings.Split(cleaned, ";")
+			runsAtRoot := true
+			for _, part := range parts {
+				part = strings.TrimSpace(part)
+				if strings.HasPrefix(part, "cd ") {
+					target := strings.TrimPrefix(part, "cd ")
+					target = strings.TrimSpace(target)
+					// If cd target is the rig root or parent, it's still root-level.
+					if target == "." || target == "" || strings.HasSuffix(target, "/mayor/rig") || target == strings.Trim(layoutRoot, "/") {
+						// Root-level cd — stay blocked.
+					} else {
+						runsAtRoot = false
+					}
+				}
+			}
+			if !runsAtRoot {
+				continue
+			}
+		}
+		return fmt.Errorf("do not run %q at mayor/rig root — use go test under %s/", strings.TrimSpace(blocked), strings.Trim(layoutRoot, "/"))
 	}
 	if strings.Contains(lower, "python3 -m venv") || strings.Contains(lower, "python -m venv") {
 		layout := strings.Trim(filepath.ToSlash(strings.TrimSpace(layoutRoot)), "/")
