@@ -271,6 +271,10 @@ func pathNeedsLayoutPrefixCheck(p string) bool {
 	if p == "go.mod" || p == "go.sum" {
 		return true
 	}
+	// Skip Go test patterns (internal/... or ./internal/...)
+	if strings.HasSuffix(p, "/...") || strings.HasSuffix(p, "/...") || strings.Contains(p, "/...") {
+		return false
+	}
 	return strings.Contains(filepath.Base(p), ".")
 }
 
