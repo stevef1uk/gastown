@@ -455,6 +455,9 @@ func (v WorkflowValidation) ProjectSetupVerifyHint() string {
 	if WorkflowUsesPython(v) {
 		return PythonProjectSetupVerifyCommand(v)
 	}
+	if WorkflowUsesNodeJS(v) {
+		return NodeProjectSetupVerifyCommand(v)
+	}
 	if WorkflowUsesDocker(v) {
 		scoped := v.ForActivePhase()
 		layout := strings.Trim(strings.TrimSpace(scoped.LayoutRoot), "/")
