@@ -362,7 +362,96 @@ func SanitizeRigFlowProfile(v WorkflowValidation) WorkflowValidation {
 			v.BeadTitleContains = "Implement "
 		}
 	}
+	sanitizeFrontendOnlyPhaseQA(&v)
 	return v
+}
+
+// sanitizeFrontendOnlyPhaseQA replaces npm test with typecheck-only in frontend-only
+// delivery phases that have no unit-test files. Playwright/E2E tests belong in a
+// dedicated e2e/deployment phase with a running server, not in the frontend build phase.
+func sanitizeFrontendOnlyPhaseQA(v *WorkflowValidation) {
+	for i := range v.DeliveryPhases {
+		p := &v.DeliveryPhases[i]
+		frontendDir := frontendPhaseRoot(p.RequiredFiles)
+		if frontendDir == "" {
+			continue
+		}
+		if hasFrontendUnitTests(p.RequiredFiles) {
+			continue
+		}
+		p.QAVerifyCommand = sanitizeFrontendQACommand(p.QAVerifyCommand, frontendDir)
+	}
+}
+
+// frontendPhaseRoot returns the common frontend directory (e.g. "frontend") when
+// all required files live under it and look like Node/TS files, otherwise "".
+func frontendPhaseRoot(files []string) string {
+	var dir string
+	var hasNodeFile bool
+	for _, f := range files {
+		f = filepath.ToSlash(strings.TrimSpace(f))
+		if f == "" {
+			continue
+		}
+		if !looksLikeNodeFile(f) {
+			continue
+		}
+		hasNodeFile = true
+		idx := strings.Index(f, "/")
+		if idx <= 0 {
+			return ""
+		}
+		first := f[:idx]
+		if dir == "" {
+			dir = first
+		} else if dir != first {
+			return ""
+		}
+	}
+	if !hasNodeFile || dir == "" {
+		return ""
+	}
+	return dir
+}
+
+// hasFrontendUnitTests reports whether the required files include frontend unit
+// test files (e.g. *.test.tsx, *.test.ts) — distinct from Playwright E2E specs.
+func hasFrontendUnitTests(files []string) bool {
+	for _, f := range files {
+		lower := strings.ToLower(filepath.ToSlash(strings.TrimSpace(f)))
+		if strings.Contains(lower, ".test.") || strings.Contains(lower, ".spec.") {
+			// Playwright E2E specs live in a dedicated test/ directory and are not
+			// frontend unit tests.
+			if strings.HasPrefix(lower, "test/") || strings.Contains(lower, "/test/") {
+				continue
+			}
+			return true
+		}
+	}
+	return false
+}
+
+// sanitizeFrontendQACommand rewrites a frontend QA verify command so it typechecks
+// instead of running E2E tests that require a live server.
+func sanitizeFrontendQACommand(cmd, frontendDir string) string {
+	cmd = strings.TrimSpace(cmd)
+	if cmd == "" {
+		return cmd
+	}
+	lower := strings.ToLower(cmd)
+	if !strings.Contains(lower, "npm") && !strings.Contains(lower, "yarn") && !strings.Contains(lower, "pnpm") {
+		return cmd
+	}
+	// Replace npm/yarn/pnpm test with typecheck (case-insensitive).
+	testRE := regexp.MustCompile(`(?i)\b(npm|yarn|pnpm)\s+test\b`)
+	cmd = testRE.ReplaceAllString(cmd, "npx tsc --noEmit")
+	// Deduplicate consecutive typecheck runs if the command already had tsc.
+	cmd = strings.ReplaceAll(cmd, "npx tsc --noEmit && npx tsc --noEmit", "npx tsc --noEmit")
+	// Ensure the command cds to the frontend directory.
+	if !strings.Contains(strings.ToLower(cmd), "cd "+frontendDir) {
+		cmd = "cd " + frontendDir + " && " + cmd
+	}
+	return cmd
 }
 
 func stripLayoutPrefixFromPaths(files []string, layout string) []string {

@@ -206,6 +206,45 @@ func TestSanitizeRigFlowProfile_preservesLayoutSubdirPrefix(t *testing.T) {
 	}
 }
 
+func TestSanitizeRigFlowProfile_frontendPhaseTypecheckOnly(t *testing.T) {
+	v := WorkflowValidation{
+		LayoutRoot:        ".",
+		BeadTitleContains: "Implement finally/",
+		DeliveryPhases: []DeliveryPhase{{
+			ID:              "frontend-ui",
+			Title:           "Frontend",
+			RequiredFiles:   []string{"frontend/package.json", "frontend/app/page.tsx"},
+			QAVerifyCommand: "cd frontend && npm install && npx tsc --noEmit && npm test",
+		}},
+	}
+	got := SanitizeRigFlowProfile(v)
+	q := got.DeliveryPhases[0].QAVerifyCommand
+	if strings.Contains(strings.ToLower(q), "npm test") {
+		t.Fatalf("frontend QA should not run npm test, got %q", q)
+	}
+	if !strings.Contains(q, "npx tsc --noEmit") {
+		t.Fatalf("frontend QA should typecheck, got %q", q)
+	}
+}
+
+func TestSanitizeRigFlowProfile_frontendPhaseKeepsUnitTests(t *testing.T) {
+	v := WorkflowValidation{
+		LayoutRoot:        ".",
+		BeadTitleContains: "Implement finally/",
+		DeliveryPhases: []DeliveryPhase{{
+			ID:              "frontend-ui",
+			Title:           "Frontend",
+			RequiredFiles:   []string{"frontend/package.json", "frontend/components/Widget.test.tsx"},
+			QAVerifyCommand: "cd frontend && npm install && npm test",
+		}},
+	}
+	got := SanitizeRigFlowProfile(v)
+	q := got.DeliveryPhases[0].QAVerifyCommand
+	if !strings.Contains(strings.ToLower(q), "npm test") {
+		t.Fatalf("frontend QA with unit tests should keep npm test, got %q", q)
+	}
+}
+
 func TestDockerVerifyWithLayout_flatRepoNoBrokenCd(t *testing.T) {
 	prev := dockerComposeCLIOverride
 	t.Cleanup(func() { dockerComposeCLIOverride = prev })
