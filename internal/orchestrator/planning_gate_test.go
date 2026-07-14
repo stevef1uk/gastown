@@ -145,3 +145,71 @@ GET /api/links
 		t.Fatalf("expected flattened path error, got %v", err)
 	}
 }
+
+// TestValidatePlanningPhaseGate_projectSetupSkipsBeadCoverage proves project_setup
+// can succeed even when required_files have no open beads (e.g. a phase that was
+// already implemented and its beads were closed, then the workflow returned to
+// project_setup for recovery).
+func TestValidatePlanningPhaseGate_projectSetupSkipsBeadCoverage(t *testing.T) {
+	dir := t.TempDir()
+	townRoot := filepath.Join(dir, "gt")
+	rig := "mockrig"
+	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
+	if err := os.MkdirAll(rigDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	spec := `# Spec
+| GET | /api/links | 200 | — |
+`
+	arch := `# Architecture
+- frontend/app/page.tsx
+- frontend/components/Widget.tsx
+`
+	plan := `# Plan
+
+## Bead map
+
+### x1: frontend/app/page.tsx
+- Scope: implement the main page component for the frontend application per architecture.md.
+- Acceptance: file exists, non-empty, and matches the planned layout.
+
+### x2: frontend/components/Widget.tsx
+- Scope: implement the reusable Widget component per architecture.md.
+- Acceptance: file exists, non-empty, and matches the planned layout.
+
+Additional context so the plan document exceeds the minimum size threshold required by the planning gate validator.
+`
+	for name, body := range map[string]string{"SPEC.md": spec, "architecture.md": arch, "plan.md": plan} {
+		if err := os.WriteFile(filepath.Join(rigDir, name), []byte(body), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	v := WorkflowValidation{
+		LayoutRoot:        ".",
+		BeadTitleContains: "Implement mockrig/",
+		MinPlanBytes:      50,
+		MinArchitectureBytes: 50,
+		RequiredFiles: []string{
+			"frontend/app/page.tsx",
+			"frontend/components/Widget.tsx",
+		},
+		DeliveryPhases: []DeliveryPhase{{
+			ID:            "frontend-ui",
+			Title:         "Frontend",
+			RequiredFiles: []string{"frontend/app/page.tsx", "frontend/components/Widget.tsx"},
+		}},
+		ActivePhaseIDField: "frontend-ui",
+	}
+	setListImplementBeadsByStatusHook(t, townRoot, rig, func(_, _ string, _ WorkflowValidation, status string) ([]PlanBead, error) {
+		return nil, nil
+	})
+	// No open beads — project_setup should still pass because bead coverage is a
+	// planning concern, not a setup concern.
+	if err := ValidatePlanningPhaseGate(townRoot, rig, "project_setup", v); err != nil {
+		t.Fatalf("expected project_setup gate to pass without open beads, got %v", err)
+	}
+	// planning state must still enforce bead coverage.
+	if err := ValidatePlanningPhaseGate(townRoot, rig, "planning", v); err == nil || (!strings.Contains(err.Error(), "missing open bead") && !strings.Contains(err.Error(), "no open beads matching")) {
+		t.Fatalf("expected planning gate to require open beads, got %v", err)
+	}
+}

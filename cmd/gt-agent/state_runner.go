@@ -795,6 +795,21 @@ func goAutoVerifyNoPackagesIsError(verifyKind, state, verifyCmd string) bool {
 	return true
 }
 
+// prepareProjectSetupVerifyCommand prepends the rig workdir to python_setup/node_setup
+// auto-verify commands so they run from {{rig}}/mayor/rig instead of town root.
+func prepareProjectSetupVerifyCommand(verifyCmd, townRoot, rig string) string {
+	if strings.TrimSpace(verifyCmd) == "" {
+		return verifyCmd
+	}
+	if !strings.Contains(verifyCmd, "{{rig}}/mayor/rig") && !strings.Contains(verifyCmd, rig+"/mayor/rig") {
+		verifyCmd = "cd {{rig}}/mayor/rig && " + verifyCmd
+	}
+	if fixed, ok := rewriteOrchestratedRigPlaceholders(verifyCmd, townRoot, rig); ok {
+		verifyCmd = fixed
+	}
+	return verifyCmd
+}
+
 func (r *stateRunner) runAutoVerify(cmd, workDir, sessionName string, cmdEnv []string, combined *strings.Builder) {
 	for _, hook := range r.hooks.AutoVerify {
 		if !r.autoVerifyMatches(cmd, hook.When) {
@@ -808,8 +823,8 @@ func (r *stateRunner) runAutoVerify(cmd, workDir, sessionName string, cmdEnv []s
 			if fixed, ok := rewriteUnittestToWorkdir(verifyCmd, r.rig, r.v); ok {
 				verifyCmd = fixed
 			}
-		} else if fixed, ok := rewriteOrchestratedRigPlaceholders(verifyCmd, r.townRoot, r.rig); ok {
-			verifyCmd = fixed
+		} else {
+			verifyCmd = prepareProjectSetupVerifyCommand(verifyCmd, r.townRoot, r.rig)
 		}
 		verifyOut, verifyErr := r.runShellCommand(verifyCmd, workDir, sessionName, cmdEnv)
 		if verifyErr != nil {

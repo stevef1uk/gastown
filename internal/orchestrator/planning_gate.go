@@ -75,11 +75,16 @@ func validatePlanningGateArtifacts(townRoot, rig, rigDir, fromState string, v Wo
 		return fmt.Errorf("list implement beads: %w", err)
 	}
 	archPath := filepath.Join(rigDir, "architecture.md")
-	if err := ValidatePlanBeads(open, archPath, v, rig); err != nil {
-		return err
-	}
-	if err := ValidatePlanBeadPathsExact(open, v, rig); err != nil {
-		return err
+	// Bead coverage is a planning concern; project_setup only prepares the
+	// toolchain. Requiring open beads here prevents recovery when a phase was
+	// already implemented and its beads were closed.
+	if fromState != "project_setup" {
+		if err := ValidatePlanBeads(open, archPath, v, rig); err != nil {
+			return err
+		}
+		if err := ValidatePlanBeadPathsExact(open, v, rig); err != nil {
+			return err
+		}
 	}
 	if fromState == "project_setup" && WorkflowUsesGo(v) {
 		goMod := ResolveRequiredFileOnDisk(rigDir, "go.mod", v.LayoutRoot)

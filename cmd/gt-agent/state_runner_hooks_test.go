@@ -164,6 +164,29 @@ func TestStateRunner_rigFlowAutoVerifyHooksMatchCommands(t *testing.T) {
 	if got := r.verifyCommand("python_setup"); got == "" || !strings.Contains(got, "import pytest") {
 		t.Fatalf("expected python_setup verify, got %q", got)
 	}
+
+	nodeSetup := rigFlowTask(t, "project_setup", orchestrator.WorkflowValidation{
+		RequiredFiles: []string{
+			"frontend/package.json",
+			"frontend/app/page.tsx",
+		},
+		QAVerifyCommand: "cd frontend && npm install && npx tsc --noEmit && npm test",
+		DeliveryPhases: []orchestrator.DeliveryPhase{{
+			ID:              "frontend-ui",
+			Title:           "Frontend",
+			RequiredFiles:   []string{"frontend/package.json", "frontend/app/page.tsx"},
+			QAVerifyCommand: "cd frontend && npm install && npx tsc --noEmit && npm test",
+		}},
+		ActivePhaseIDField: "frontend-ui",
+	})
+	r = newStateRunner(nodeSetup, t.TempDir(), "myrig")
+	if got := r.verifyCommand("node_setup"); got == "" || !strings.Contains(got, "npm install") {
+		t.Fatalf("expected node_setup verify, got %q", got)
+	}
+	prefixed := prepareProjectSetupVerifyCommand(r.verifyCommand("node_setup"), r.townRoot, r.rig)
+	if !strings.Contains(prefixed, "myrig/mayor/rig") {
+		t.Fatalf("node_setup verify must include rig workdir prefix from town root, got %q", prefixed)
+	}
 }
 
 // TestStateRunner_customYAMLHooksDriveBehavior proves a novel FSM state (not rig-flow) works via hooks alone.
