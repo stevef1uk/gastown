@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -35,6 +36,10 @@ func validateImplementationBeadClose(cmd, townRoot, rig string, v orchestrator.W
 		}
 	}
 	if beadPath != "" && !orchestrator.IsProjectSetupArtifactPath(beadPath, v) {
+		fullPath := filepath.Join(rigDir, filepath.FromSlash(beadPath))
+		if fi, err := os.Lstat(fullPath); err == nil && fi.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("cannot bd close %s: %s is a symlink — write the file at its exact path, not a symlink", id, beadPath)
+		}
 		if err := orchestrator.ValidateBeadArtifactOnDisk(rigDir, beadPath, v); err != nil {
 			return fmt.Errorf("cannot bd close %s: %w — implement and run Verify first", id, err)
 		}

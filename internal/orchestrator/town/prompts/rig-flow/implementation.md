@@ -43,7 +43,7 @@ CMD: cd {{rig}}/mayor/rig && ...
 1. `CMD: bd update QUEUE_HEAD_ID --status=in_progress`
 2. **WRITE:** / **EDIT:** the file (use paths from **Next bead** / **Implement context**)
 3. Add/update unit tests from **plan.md** acceptance before `bd close`
-4. `CMD: cd {{rig}}/mayor/rig && ...` — run **Verify** (command in **Next bead** line)
+4. `CMD: cd {{rig}}/mayor/rig && ...` — run **Verify** (command in **Next bead** line) **exactly as given, including the full relative path. Do NOT shorten it to a basename.**
 5. **If verify fails**: READ the failing file, check its path. Fix in the next turn group. Do NOT reopen the bead.
 6. `CMD: bd close BEAD_ID`
 7. Look at the **Queue** table. If another bead is **open** (○) or **in_progress** (◐), repeat from step 1 with the next queue bead.

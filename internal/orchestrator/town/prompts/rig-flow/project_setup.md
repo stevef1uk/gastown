@@ -151,6 +151,8 @@ When the profile uses Docker (not Go/Python), **project_setup** only splits bead
 
 Verify runs **inside** `{{layout_root}}/` (e.g. `cd finally && docker build -f Dockerfile .`). Paths in bead titles must be `finally/Dockerfile`, never `finally/finally/Dockerfile`.
 
+If the phase includes a `docker-compose.test.yml` (or any docker-compose file), run `docker-compose -f <file> config` as a pre-check before the full verify. A compose file that fails `config` will fail QA later — fix it now.
+
 Success JSON: `{"outcome":"success","summary":"Docker phase scaffolded; beads OK; verify passed"}`
 
 ---
