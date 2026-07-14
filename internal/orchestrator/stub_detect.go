@@ -65,6 +65,11 @@ var webAssetExtension = map[string]bool{
 	".js": true, ".mjs": true, ".cjs": true,
 }
 
+// shellScriptExtension marks shell/PowerShell scripts that are often short utility wrappers.
+var shellScriptExtension = map[string]bool{
+	".sh": true, ".bash": true, ".zsh": true, ".fish": true, ".ps1": true,
+}
+
 // dependencyManifestNames are lockfiles and dependency lists — non-empty only, no min byte/line counts.
 var dependencyManifestNames = map[string]bool{
 	"requirements.txt":      true,
@@ -265,6 +270,16 @@ func optsForPath(displayRel string, opts StubCheckOptions) StubCheckOptions {
 	ext := strings.ToLower(filepath.Ext(displayRel))
 	// Web assets are naturally small — accept non-empty with at least 1 substantive line.
 	if webAssetExtension[ext] {
+		relaxed := opts
+		if relaxed.MinFileBytes > 80 {
+			relaxed.MinFileBytes = 80
+		}
+		if relaxed.MinSubstantiveLines > 1 {
+			relaxed.MinSubstantiveLines = 1
+		}
+		return relaxed
+	}
+	if shellScriptExtension[ext] {
 		relaxed := opts
 		if relaxed.MinFileBytes > 80 {
 			relaxed.MinFileBytes = 80

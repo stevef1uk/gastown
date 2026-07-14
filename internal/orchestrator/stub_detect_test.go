@@ -204,3 +204,25 @@ func TestCheckContentNotStub_rejectsTypicalStubs(t *testing.T) {
 		})
 	}
 }
+
+func TestCheckContentNotStub_acceptsShortShellScripts(t *testing.T) {
+	v := WorkflowValidation{}.WithDefaults()
+	opts := StubCheckOptionsFromValidation(v)
+	sh := "#!/bin/bash\n# Start FinAlly trading workstation on macOS/Linux\n# Pull latest images and bring services up\ndocker compose -f docker-compose.yml up -d\necho \"FinAlly running at http://localhost:8000\"\n"
+	ps1 := "#!/usr/bin/env powershell\n# Stop FinAlly\ndocker-compose -f docker-compose.yml down\n"
+	for _, tc := range []struct {
+		name    string
+		content string
+		rel     string
+	}{
+		{"sh", sh, "scripts/start_mac.sh"},
+		{"ps1", ps1, "scripts/stop_windows.ps1"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			pathOpts := optsForPath(tc.rel, opts)
+			if err := CheckContentNotStub([]byte(tc.content), tc.rel, pathOpts); err != nil {
+				t.Fatalf("expected short %s script to pass: %v", tc.name, err)
+			}
+		})
+	}
+}
