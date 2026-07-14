@@ -804,7 +804,7 @@ func (r *stateRunner) runAutoVerify(cmd, workDir, sessionName string, cmdEnv []s
 		if verifyCmd == "" {
 			continue
 		}
-		if hook.Verify != "python_setup" {
+		if hook.Verify != "python_setup" && hook.Verify != "node_setup" {
 			if fixed, ok := rewriteUnittestToWorkdir(verifyCmd, r.rig, r.v); ok {
 				verifyCmd = fixed
 			}

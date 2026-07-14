@@ -790,6 +790,54 @@ func TestValidateProjectSetupArtifacts_dualStackPythonPhase(t *testing.T) {
 	}
 }
 
+func TestIsNodeInstallCommand(t *testing.T) {
+	cases := []struct {
+		cmd    string
+		mgr    string
+		wantOK bool
+	}{
+		{"cd frontend && npm install", "npm", true},
+		{"cd frontend && npm ci", "npm", true},
+		{"npm install", "npm", true},
+		{"cd frontend && yarn install", "yarn", true},
+		{"pnpm install", "pnpm", true},
+		{"cd frontend && npm test", "npm", false},
+		{"cd frontend && yarn build", "yarn", false},
+	}
+	for _, tc := range cases {
+		if got := isNodeInstallCommand(tc.cmd, tc.mgr); got != tc.wantOK {
+			t.Errorf("isNodeInstallCommand(%q, %q) = %v, want %v", tc.cmd, tc.mgr, got, tc.wantOK)
+		}
+	}
+}
+
+func TestVerifyKindHandler_nodeSetup(t *testing.T) {
+	v := orchestrator.WorkflowValidation{
+		LayoutRoot:         ".",
+		BeadTitleContains:  "Implement finally/",
+		QAVerifyCommand:    "cd backend && pytest && cd ../frontend && npm test",
+		TestRunner:         "pytest",
+		ActivePhaseIDField: "frontend-ui",
+		DeliveryPhases: []orchestrator.DeliveryPhase{
+			{
+				ID:              "frontend-ui",
+				RequiredFiles:   []string{"frontend/components/Watchlist.tsx"},
+				QAVerifyCommand: "cd frontend && npm test",
+			},
+		},
+	}
+	r := &stateRunner{townRoot: "/tmp", rig: "finally", v: v}
+	fn, ok := verifyKindHandlers["node_setup"]
+	if !ok {
+		t.Fatal("node_setup verify kind not registered")
+	}
+	got := fn(r)
+	want := "cd frontend && npm install"
+	if got != want {
+		t.Fatalf("node_setup verify = %q, want %q", got, want)
+	}
+}
+
 func TestOrchestratedArtifactAutoOutcome_planningRequiresBeads(t *testing.T) {
 	dir := t.TempDir()
 	rigDir := filepath.Join(dir, "mockrig", "mayor", "rig")

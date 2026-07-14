@@ -137,6 +137,12 @@ states:
           verify: python_setup
         - when: python_venv
           verify: python_setup
+        - when: npm_install
+          verify: node_setup
+        - when: yarn_install
+          verify: node_setup
+        - when: pnpm_install
+          verify: node_setup
       artifacts: project_setup
       retry_hint_key: project_setup
       failure_hint: |

@@ -309,6 +309,13 @@ var verifyKindHandlers = map[string]verifyKindFn{
 		}
 		return ""
 	},
+	"node_setup": func(r *stateRunner) string {
+		scoped := r.v.ForActivePhase()
+		if orchestrator.WorkflowUsesNodeJS(scoped) {
+			return orchestrator.NodeProjectSetupVerifyCommand(scoped)
+		}
+		return ""
+	},
 	"profile": func(r *stateRunner) string {
 		return strings.TrimSpace(r.v.QAVerifyCommand)
 	},
@@ -354,11 +361,19 @@ var autoVerifyWhenHandlers = map[string]autoVerifyWhenFn{
 	"go_mod_init":           func(r *stateRunner, cmd string) bool { return isGoModInitCommand(cmd) },
 	"pip_install":           func(r *stateRunner, cmd string) bool { return isPipInstallRequirementsCommand(cmd) },
 	"python_venv":           func(r *stateRunner, cmd string) bool { return strings.Contains(strings.ToLower(cmd), "python3 -m venv") },
+	"npm_install":           func(r *stateRunner, cmd string) bool { return isNodeInstallCommand(cmd, "npm") },
+	"yarn_install":          func(r *stateRunner, cmd string) bool { return isNodeInstallCommand(cmd, "yarn") },
+	"pnpm_install":          func(r *stateRunner, cmd string) bool { return isNodeInstallCommand(cmd, "pnpm") },
 	"qa_test_ok":            func(r *stateRunner, cmd string) bool { return isQATestCommandOK(cmd, r.v) },
 	"go_write_layout":       func(r *stateRunner, cmd string) bool { return orchestratedWritesGoUnderLayout(cmd, r.v) },
 	"python_import_check":   func(r *stateRunner, cmd string) bool { return orchestrator.IsPythonImportCheckCommand(cmd) },
 	"python_compileall":     func(r *stateRunner, cmd string) bool { return strings.Contains(strings.ToLower(cmd), "compileall") },
 	"python_test":           func(r *stateRunner, cmd string) bool { return isPythonTestCommand(cmd) },
+}
+
+func isNodeInstallCommand(cmd, manager string) bool {
+	lower := strings.ToLower(cmd)
+	return strings.Contains(lower, manager+" install") || strings.Contains(lower, manager+" ci")
 }
 
 func isPythonTestCommand(cmd string) bool {
