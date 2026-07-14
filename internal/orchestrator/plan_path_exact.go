@@ -8,11 +8,14 @@ import (
 
 // RequiresExactImplementPaths reports whether implement beads and plan.md must use full
 // repo-relative paths from required_files (no basename-only matching). Enabled when the
-// active phase lists nested module paths (internal/, cmd/, etc.) under layout_root.
+// active phase lists nested module paths (internal/, cmd/, etc.) under layout_root, or
+// when multiple required files share the same basename (e.g. frontend/package.json and
+// test/package.json) so basename matching would be ambiguous.
 func RequiresExactImplementPaths(v WorkflowValidation) bool {
 	v = v.ForActivePhase()
 	layout := strings.Trim(filepath.ToSlash(strings.TrimSpace(v.LayoutRoot)), "/")
 	nested := []string{"/internal/", "/cmd/", "/pkg/", "/api/", "/web/"}
+	baseCount := map[string]int{}
 	for _, f := range v.RequiredFiles {
 		f = filepath.ToSlash(strings.TrimSpace(f))
 		if f == "" {
@@ -28,6 +31,12 @@ func RequiresExactImplementPaths(v WorkflowValidation) bool {
 			if strings.Count(rest, "/") >= 2 {
 				return true
 			}
+		}
+		baseCount[filepath.Base(f)]++
+	}
+	for _, count := range baseCount {
+		if count > 1 {
+			return true
 		}
 	}
 	return false

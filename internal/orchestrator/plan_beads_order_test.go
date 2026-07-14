@@ -620,3 +620,112 @@ func TestPruneDuplicateImplementBeads_openAndInProgressSamePath(t *testing.T) {
 		t.Fatalf("active beads = %v, want single %s", active, headID)
 	}
 }
+
+func TestPruneDuplicateImplementBeads_duplicateBasenames(t *testing.T) {
+	if _, err := exec.LookPath("bd"); err != nil {
+		t.Skip("bd not in PATH")
+	}
+	townRoot := t.TempDir()
+	rig := "finally"
+	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
+	beadsDir := filepath.Join(townRoot, rig, ".beads")
+	for _, d := range []string{rigDir, beadsDir} {
+		if err := os.MkdirAll(d, 0755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	init := exec.Command("bd", "init")
+	init.Env = append(os.Environ(), "BEADS_DIR="+beadsDir)
+	init.Dir = rigDir
+	if out, err := init.CombinedOutput(); err != nil {
+		t.Fatalf("bd init: %v\n%s", err, out)
+	}
+	v := WorkflowValidation{
+		LayoutRoot:        ".",
+		BeadTitleContains: "Implement FinAlly/",
+		RequiredFiles: []string{
+			"frontend/package.json",
+			"frontend/tsconfig.json",
+			"test/package.json",
+			"test/tsconfig.json",
+		},
+	}
+	create := func(title string) string {
+		cmd := exec.Command("bd", "create", "--type", "task", "--title", title, "--description=test")
+		cmd.Env = append(os.Environ(), "BEADS_DIR="+beadsDir)
+		cmd.Dir = rigDir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("bd create: %v\n%s", err, out)
+		}
+		open, err := ListOpenImplementBeads(townRoot, rig, v)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, b := range open {
+			if b.Title == title {
+				return b.ID
+			}
+		}
+		t.Fatalf("no open bead for title %q", title)
+		return ""
+	}
+	createUnique := func(title string, exclude map[string]bool) string {
+		cmd := exec.Command("bd", "create", "--type", "task", "--title", title, "--description=test")
+		cmd.Env = append(os.Environ(), "BEADS_DIR="+beadsDir)
+		cmd.Dir = rigDir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("bd create: %v\n%s", err, out)
+		}
+		open, err := ListOpenImplementBeads(townRoot, rig, v)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, b := range open {
+			if b.Title == title && !exclude[b.ID] {
+				return b.ID
+			}
+		}
+		t.Fatalf("no new open bead for title %q", title)
+		return ""
+	}
+	frontendPkg := create("Implement FinAlly/frontend/package.json per architecture")
+	frontendTS := create("Implement FinAlly/frontend/tsconfig.json per architecture")
+	testPkg1 := create("Implement FinAlly/test/package.json per architecture")
+	testPkg2 := createUnique("Implement FinAlly/test/package.json per architecture", map[string]bool{testPkg1: true})
+	testTS := create("Implement FinAlly/test/tsconfig.json per architecture")
+
+	deleted, err := PruneDuplicateImplementBeads(townRoot, rig, v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(deleted) != 1 {
+		t.Fatalf("deleted = %v, want 1 duplicate", deleted)
+	}
+	if deleted[0] != testPkg1 && deleted[0] != testPkg2 {
+		t.Fatalf("deleted wrong bead: %v", deleted)
+	}
+
+	active, err := ListImplementBeadsOpenOrInProgress(townRoot, rig, v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(active) != 4 {
+		t.Fatalf("active beads = %v, want 4", active)
+	}
+	activeIDs := map[string]bool{}
+	for _, b := range active {
+		activeIDs[b.ID] = true
+	}
+	if !activeIDs[frontendPkg] {
+		t.Fatal("frontend/package.json bead was incorrectly deleted")
+	}
+	if !activeIDs[frontendTS] {
+		t.Fatal("frontend/tsconfig.json bead was incorrectly deleted")
+	}
+	if !activeIDs[testTS] {
+		t.Fatal("test/tsconfig.json bead was incorrectly deleted")
+	}
+	if activeIDs[testPkg1] && activeIDs[testPkg2] {
+		t.Fatal("duplicate test/package.json beads both remain")
+	}
+}

@@ -51,6 +51,17 @@ func TestRequiresExactImplementPaths_flatDockerfile(t *testing.T) {
 	}
 }
 
+func TestRequiresExactImplementPaths_duplicateBasenames(t *testing.T) {
+	t.Parallel()
+	v := WorkflowValidation{
+		LayoutRoot:    ".",
+		RequiredFiles: []string{"frontend/package.json", "test/package.json", "frontend/tsconfig.json", "test/tsconfig.json"},
+	}
+	if !RequiresExactImplementPaths(v) {
+		t.Fatal("duplicate basenames must force exact path matching")
+	}
+}
+
 func TestPathMatchesRequiredForProfile_exactRejectsBasename(t *testing.T) {
 	t.Parallel()
 	v := WorkflowValidation{
