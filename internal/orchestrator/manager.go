@@ -326,6 +326,10 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summa
 			}
 		}
 	}
+	// Reconcile profile with architecture.md backtick paths on design success.
+	if fromState == "design" && outcome == "success" && rig != "" {
+		ReconcileProfileWithArchitecture(m.townRoot, rig)
+	}
 	next, err := inst.Transition(tpl, outcome)
 	if err != nil {
 		return "", err

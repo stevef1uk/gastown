@@ -144,3 +144,100 @@ func TestProjectSetupFailureHint_nodejs(t *testing.T) {
 		t.Fatalf("Node.js failure hint should not mention Python, got: %s", hint)
 	}
 }
+
+func TestReconcileProfileWithArchitecture_addsNewPaths(t *testing.T) {
+	townRoot := t.TempDir()
+	rig := "testrig"
+	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
+	profileDir := filepath.Join(rigDir, ".gastown")
+	if err := os.MkdirAll(profileDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	profile := rigProfileEnvelope{
+		Version: 1,
+		Validation: WorkflowValidation{
+			RequiredFiles: []string{"backend/main.py", "frontend/app.tsx"},
+			DeliveryPhases: []DeliveryPhase{
+				{
+					ID:            "backend-core",
+					RequiredFiles: []string{"backend/main.py"},
+				},
+				{
+					ID:            "frontend-ui",
+					RequiredFiles: []string{"frontend/app.tsx"},
+				},
+				{
+					ID:            "e2e-deploy",
+					RequiredFiles: []string{"Dockerfile"},
+				},
+			},
+		},
+	}
+	data, _ := marshalRigProfileJSON(profile)
+	if err := os.WriteFile(filepath.Join(profileDir, "workflow-profile.json"), data, 0644); err != nil {
+		t.Fatal(err)
+	}
+	arch := "# Architecture\n\n- `scripts/start.sh`\n- `scripts/stop.sh`\n- `backend/main.py`\n"
+	if err := os.WriteFile(filepath.Join(rigDir, "architecture.md"), []byte(arch), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := ReconcileProfileWithArchitecture(townRoot, rig); err != nil {
+		t.Fatal(err)
+	}
+	saved, _, err := LoadRigWorkflowProfileFile(townRoot, rig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := map[string]bool{}
+	for _, f := range saved.RequiredFiles {
+		found[f] = true
+	}
+	if !found["scripts/start.sh"] || !found["scripts/stop.sh"] {
+		t.Fatalf("expected scripts/ in required_files, got %v", saved.RequiredFiles)
+	}
+	if found["backend/main.py"] != true {
+		t.Fatal("backend/main.py should still be present")
+	}
+	lastPhase := saved.DeliveryPhases[len(saved.DeliveryPhases)-1]
+	phaseFound := map[string]bool{}
+	for _, f := range lastPhase.RequiredFiles {
+		phaseFound[f] = true
+	}
+	if !phaseFound["scripts/start.sh"] || !phaseFound["scripts/stop.sh"] {
+		t.Fatalf("expected scripts/ in final phase, got %v", lastPhase.RequiredFiles)
+	}
+}
+
+func TestReconcileProfileWithArchitecture_noNewPaths(t *testing.T) {
+	townRoot := t.TempDir()
+	rig := "testrig"
+	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
+	profileDir := filepath.Join(rigDir, ".gastown")
+	if err := os.MkdirAll(profileDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	profile := rigProfileEnvelope{
+		Version: 1,
+		Validation: WorkflowValidation{
+			RequiredFiles: []string{"backend/main.py"},
+		},
+	}
+	data, _ := marshalRigProfileJSON(profile)
+	if err := os.WriteFile(filepath.Join(profileDir, "workflow-profile.json"), data, 0644); err != nil {
+		t.Fatal(err)
+	}
+	arch := "# Architecture\n\n- `backend/main.py`\n"
+	if err := os.WriteFile(filepath.Join(rigDir, "architecture.md"), []byte(arch), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := ReconcileProfileWithArchitecture(townRoot, rig); err != nil {
+		t.Fatal(err)
+	}
+	saved, _, err := LoadRigWorkflowProfileFile(townRoot, rig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(saved.RequiredFiles) != 1 || saved.RequiredFiles[0] != "backend/main.py" {
+		t.Fatalf("expected no change, got %v", saved.RequiredFiles)
+	}
+}

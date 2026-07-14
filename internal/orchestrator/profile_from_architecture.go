@@ -1,6 +1,7 @@
 package orchestrator
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -320,4 +321,61 @@ func FormatProjectSetupStackBlock(v WorkflowValidation) string {
 		b.WriteString("**Verify:** `" + verify + "`\n")
 	}
 	return b.String()
+}
+
+// ReconcileProfileWithArchitecture merges architecture.md backtick paths into
+// the workflow profile, ensuring files the architect specifies but spec-index
+// missed are added to required_files and the final delivery phase.
+func ReconcileProfileWithArchitecture(townRoot, rig string) error {
+	if rig == "" || townRoot == "" {
+		return nil
+	}
+	path := filepath.Join(townRoot, rig, "mayor", "rig", rigProfileDir, rigProfileFile)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil // no profile yet
+	}
+	var env rigProfileEnvelope
+	if err := json.Unmarshal(data, &env); err != nil {
+		return nil
+	}
+	archPath := filepath.Join(townRoot, rig, "mayor", "rig", "architecture.md")
+	archData, err := os.ReadFile(archPath)
+	if err != nil || len(archData) == 0 {
+		return nil
+	}
+	archPaths := extractArchPaths(string(archData), env.Validation.LayoutRootDir())
+	if len(archPaths) == 0 {
+		return nil
+	}
+	changed := false
+	existing := map[string]bool{}
+	for _, f := range env.Validation.RequiredFiles {
+		existing[filepath.ToSlash(strings.TrimSpace(f))] = true
+	}
+	for _, p := range archPaths {
+		if !existing[p] {
+			env.Validation.RequiredFiles = append(env.Validation.RequiredFiles, p)
+			existing[p] = true
+			changed = true
+		}
+	}
+	if changed && len(env.Validation.DeliveryPhases) > 0 {
+		last := len(env.Validation.DeliveryPhases) - 1
+		phaseExisting := map[string]bool{}
+		for _, f := range env.Validation.DeliveryPhases[last].RequiredFiles {
+			phaseExisting[filepath.ToSlash(strings.TrimSpace(f))] = true
+		}
+		for _, p := range archPaths {
+			if !phaseExisting[p] {
+				env.Validation.DeliveryPhases[last].RequiredFiles = append(
+					env.Validation.DeliveryPhases[last].RequiredFiles, p)
+				phaseExisting[p] = true
+			}
+		}
+	}
+	if !changed {
+		return nil
+	}
+	return SaveRigWorkflowProfileEnvelope(townRoot, rig, env)
 }
