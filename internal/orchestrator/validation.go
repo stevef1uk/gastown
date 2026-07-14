@@ -391,9 +391,9 @@ func (v WorkflowValidation) PromptVars() map[string]string {
 		"spec_summary":            v.SpecSummary,
 		"unittest_command_hint":     scoped.QAVerifyHint(),
 		"implementation_verify_hint": "(resolved per rig at fetch_task — use go build until server main exists)",
-		"project_setup_verify_hint":   v.ProjectSetupVerifyHint(),
-		"project_setup_failure_hint":  ProjectSetupFailureHint(v),
-		"project_setup_stack_kind":    ProjectSetupStackKind(v),
+		"project_setup_verify_hint":   scoped.ProjectSetupVerifyHint(),
+		"project_setup_failure_hint":  ProjectSetupFailureHint(scoped),
+		"project_setup_stack_kind":    ProjectSetupStackKind(scoped),
 		"python_venv_dir":             v.PythonVenvRelDir(),
 		"min_architecture_bytes":        fmt.Sprintf("%d", v.MinArchitectureBytes),
 		"min_plan_bytes":                fmt.Sprintf("%d", v.MinPlanBytes),
@@ -452,11 +452,13 @@ func (v WorkflowValidation) ProjectSetupVerifyHint() string {
 	if WorkflowUsesGo(v) {
 		return GoProjectSetupVerifyCommand(v, "")
 	}
-	if WorkflowUsesPython(v) {
-		return PythonProjectSetupVerifyCommand(v)
-	}
+	// Check Node.js before Python so dual-stack rigs (Python backend + Node frontend)
+	// scope each delivery phase to its actual stack.
 	if WorkflowUsesNodeJS(v) {
 		return NodeProjectSetupVerifyCommand(v)
+	}
+	if WorkflowUsesPython(v) {
+		return PythonProjectSetupVerifyCommand(v)
 	}
 	if WorkflowUsesDocker(v) {
 		scoped := v.ForActivePhase()

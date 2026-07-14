@@ -235,25 +235,30 @@ func (h StateHooks) UserPromptWrapsWithCompleteStep() bool {
 func resolveRetryHintKey(key string, v WorkflowValidation, vars map[string]string) string {
 	switch key {
 	case "project_setup":
-		if WorkflowUsesGo(v) {
-			layout := v.LayoutRootDir()
+		scoped := v.ForActivePhase()
+		if WorkflowUsesGo(scoped) {
+			layout := scoped.LayoutRootDir()
 			if layout == "" {
 				layout = "."
 			}
 			return "Go rig: run go mod init/get/tidy under " + layout +
 				" only — never cat/heredoc/touch source files (.go/.js/.html/.css) under " + layout +
 				"/ (polecat implements them). No heredoc go.mod/go.sum, no go build/run/curl in setup. Green verify: " +
-				GoProjectSetupVerifyCommand(v, "") + ". Then JSON success in a separate message."
+				GoProjectSetupVerifyCommand(scoped, "") + ". Then JSON success in a separate message."
 		}
-		if WorkflowUsesPython(v) {
-			req := v.RequirementsFilePath()
+		if WorkflowUsesNodeJS(scoped) {
+			return "Node.js rig: run " + NodeProjectSetupVerifyCommand(scoped) +
+				" to install dependencies. No go mod, no python venv, no source files in setup. Then JSON success."
+		}
+		if WorkflowUsesPython(scoped) {
+			req := scoped.RequirementsFilePath()
 			if req == "" {
 				req = "requirements.txt"
 			}
-			return "Python rig: create " + v.PythonVenvRelDir() + " with python3 -m venv, pip install -r " + req +
-				" once, split beads one file each. Green verify: " + PythonProjectSetupVerifyCommand(v)
+			return "Python rig: create " + scoped.PythonVenvRelDir() + " with python3 -m venv, pip install -r " + req +
+				" once, split beads one file each. Green verify: " + PythonProjectSetupVerifyCommand(scoped)
 		}
-		return "Run project_setup per profile (Go or Python); do not skip with empty success."
+		return "Run project_setup per profile (Go, Python, or Node.js); do not skip with empty success."
 	case "implementation":
 		layout := v.LayoutRootDir()
 		return "One CMD: per line. Run `bd list` first; use only bead IDs from that output. " +

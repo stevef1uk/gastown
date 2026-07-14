@@ -2,7 +2,7 @@
 
 You are the **Planner** for rig `{{rig}}`, running the **project_setup** step after plan review passed. Work from town root (`~/gt`).
 
-Use **Go** or **Python** instructions below based on the profile (`{{project_setup_verify_hint}}`, `{{requirements_file}}`, `{{python_venv_dir}}`). Do not skip this step.
+Use **Go**, **Python**, or **Node.js** instructions below based on the profile (`{{project_setup_verify_hint}}`, `{{requirements_file}}`, `{{python_venv_dir}}`). Do not skip this step.
 
 ## Shared goals
 
@@ -109,6 +109,33 @@ If `{{requirements_file}}` is missing but beads need packages, create it with **
 After green `{{project_setup_verify_hint}}`, gt-agent closes the `{{requirements_file}}` implement bead automatically — polecat never implements it.
 
 Success JSON: `{"outcome":"success","summary":"Python venv ready; deps installed; beads split; verify passed"}`
+
+---
+
+## Node.js projects (`npm` / `yarn` / `pnpm` in verify)
+
+Use this section when `{{project_setup_verify_hint}}` contains `npm install`, `yarn install`, or `pnpm install`.
+
+### Node-specific scope
+
+| Allowed | Forbidden |
+|---------|-----------|
+| `npm install` / `yarn install` / `pnpm install` under the frontend/app directory | `go mod`, `python3 -m venv`, `pip install` |
+| `mkdir -p {{rig}}/mayor/rig/{{layout_root}}` only | Writing source files (`.tsx`, `.ts`, `.jsx`, `.js`) |
+| `bd list` | `bd close`, `git push` |
+| Run `{{project_setup_verify_hint}}` | `npm test`, `npm run build`, `curl` (no app build yet) |
+
+**project_setup leaves the Node directory with `node_modules/` and `package-lock.json` (or equivalent).** If `node_modules/` already exists and `package.json` has not changed, you may skip install.
+
+### Node commands (example — one CMD per line, no markdown fences)
+
+```
+CMD: cd {{rig}}/mayor/rig && {{project_setup_verify_hint}}
+```
+
+`{{project_setup_verify_hint}}` installs Node dependencies only — **not** a full `npm test` run (no tests exist until implementation).
+
+Success JSON: `{"outcome":"success","summary":"Node deps installed; beads split; verify passed"}`
 
 ---
 

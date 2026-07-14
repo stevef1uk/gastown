@@ -238,10 +238,13 @@ func inferTestRunnerFromPaths(v WorkflowValidation, paths []string) WorkflowVali
 	return v
 }
 
-// ProjectSetupStackKind returns a short label for prompts (go, python, docker, generic).
+// ProjectSetupStackKind returns a short label for prompts (go, python, nodejs, docker, generic).
 func ProjectSetupStackKind(v WorkflowValidation) string {
 	if WorkflowUsesGo(v) {
 		return "go"
+	}
+	if WorkflowUsesNodeJS(v) {
+		return "nodejs"
 	}
 	if WorkflowUsesPython(v) {
 		return "python"
@@ -268,6 +271,9 @@ func ProjectSetupFailureHint(v WorkflowValidation) string {
 		return "Python rig only — no go mod. Create " + v.PythonVenvRelDir() +
 			", pip install -r " + req + " once. Green verify: " +
 			PythonProjectSetupVerifyCommand(v) + " (import pytest, not unittest). JSON success only after verify."
+	case "nodejs":
+		return "Node.js rig only — no go mod or python venv. Run " + NodeProjectSetupVerifyCommand(v) +
+			". JSON success only after verify."
 	case "docker":
 		return "Docker rig: split beads for the active phase; confirm layout exists. Green verify: " +
 			v.ProjectSetupVerifyHint() + ". No application source in project_setup."
@@ -279,13 +285,14 @@ func ProjectSetupFailureHint(v WorkflowValidation) string {
 // FormatProjectSetupStackBlock is injected via hooks.prompt_context so setup agents
 // see one stack — derived from profile + SPEC, not the full dual-stack prompt file.
 func FormatProjectSetupStackBlock(v WorkflowValidation) string {
-	kind := ProjectSetupStackKind(v)
-	verify := v.ProjectSetupVerifyHint()
-	req := v.RequirementsFilePath()
+	scoped := v.ForActivePhase()
+	kind := ProjectSetupStackKind(scoped)
+	verify := scoped.ProjectSetupVerifyHint()
+	req := scoped.RequirementsFilePath()
 	if req == "" {
 		req = "requirements.txt"
 	}
-	layout := v.LayoutRootDir()
+	layout := scoped.LayoutRootDir()
 
 	var b strings.Builder
 	b.WriteString("## Active stack for this rig (from SPEC.md, architecture, and workflow profile)\n\n")
@@ -296,11 +303,15 @@ func FormatProjectSetupStackBlock(v WorkflowValidation) string {
 		b.WriteString("This is a **Python** rig. Forbidden in project_setup: `go mod`, `go build`, `go test`, `python -m unittest` (no tests exist yet).\n\n")
 		b.WriteString("**Required verify (run exactly):** `" + verify + "`\n\n")
 		b.WriteString("**Layout root:** `" + layout + "/` — requirements file: `" + req + "`\n\n")
-		b.WriteString("**Allowed:** `python3 -m venv " + v.PythonVenvRelDir() + "`, pip install -r " + req + ", `bd list`/`bd delete` for bead splits.\n")
+		b.WriteString("**Allowed:** `python3 -m venv " + scoped.PythonVenvRelDir() + "`, pip install -r " + req + ", `bd list`/`bd delete` for bead splits.\n")
 	case "go":
 		b.WriteString("This is a **Go** rig. Forbidden in project_setup: Python venv, pip, unittest, writing `.go` sources.\n\n")
 		b.WriteString("**Required verify (run exactly):** `" + verify + "`\n\n")
 		b.WriteString("**Layout root:** `" + layout + "/` — only `go mod init/get/tidy` under that directory.\n")
+	case "nodejs":
+		b.WriteString("This is a **Node.js** rig. Forbidden in project_setup: `go mod`, `python3 -m venv`, `pip install`, writing app source files.\n\n")
+		b.WriteString("**Required verify (run exactly):** `" + verify + "`\n\n")
+		b.WriteString("**Layout root:** `" + layout + "/` — only `npm install`/`yarn install`/`pnpm install` under the Node directory.\n")
 	case "docker":
 		b.WriteString("This is a **Docker/custom** rig. Follow the Docker section of the prompt only.\n\n")
 		b.WriteString("**Required verify:** `" + verify + "`\n")
