@@ -490,6 +490,86 @@ func goPackageVerifyCommand(layout, pkg string) string {
 // With ~100 max LLM calls and ~10 calls needed per file, no phase should exceed 10 files.
 const maxFilesPerPhase = 10
 
+// collapseSplitDeliveryPhases merges phases that were previously split (e.g.
+// e2e-and-deployment-1, e2e-and-deployment-2 back into e2e-and-deployment).
+// This prevents recursive splitting when ClampProfileValidation runs on save.
+func collapseSplitDeliveryPhases(v WorkflowValidation) WorkflowValidation {
+	if len(v.DeliveryPhases) == 0 {
+		return v
+	}
+	baseID := func(id string) string {
+		id = strings.TrimSpace(id)
+		for {
+			idx := strings.LastIndex(id, "-")
+			if idx < 0 {
+				return id
+			}
+			suffix := id[idx+1:]
+			if suffix == "" {
+				return id
+			}
+			numeric := true
+			for _, r := range suffix {
+				if r < '0' || r > '9' {
+					numeric = false
+					break
+				}
+			}
+			if !numeric {
+				return id
+			}
+			id = id[:idx]
+		}
+	}
+	groups := map[string][]DeliveryPhase{}
+	order := []string{}
+	for _, p := range v.DeliveryPhases {
+		b := baseID(p.ID)
+		if _, ok := groups[b]; !ok {
+			order = append(order, b)
+		}
+		groups[b] = append(groups[b], p)
+	}
+	var collapsed []DeliveryPhase
+	for _, b := range order {
+		parts := groups[b]
+		if len(parts) == 1 {
+			collapsed = append(collapsed, parts[0])
+			continue
+		}
+		baseTitle := strings.TrimSpace(parts[0].Title)
+		for {
+			idx := strings.LastIndex(baseTitle, " (part ")
+			if idx <= 0 {
+				break
+			}
+			baseTitle = strings.TrimSpace(baseTitle[:idx])
+		}
+		merged := DeliveryPhase{
+			ID:              b,
+			Title:           baseTitle,
+			RequiredFiles:   []string{},
+			QAVerifyCommand: parts[0].QAVerifyCommand,
+			DependsOn:       parts[0].DependsOn,
+			SpecFocus:       parts[0].SpecFocus,
+		}
+		seen := map[string]bool{}
+		for _, p := range parts {
+			for _, f := range p.RequiredFiles {
+				f = filepath.ToSlash(strings.TrimSpace(f))
+				if f == "" || seen[f] {
+					continue
+				}
+				seen[f] = true
+				merged.RequiredFiles = append(merged.RequiredFiles, f)
+			}
+		}
+		collapsed = append(collapsed, merged)
+	}
+	v.DeliveryPhases = collapsed
+	return v
+}
+
 // splitOverlargePhases splits any delivery phase with more than maxFilesPerPhase files
 // into multiple sequential phases, each capped at maxFilesPerPhase files.
 func splitOverlargePhases(v WorkflowValidation) WorkflowValidation {
@@ -501,6 +581,14 @@ func splitOverlargePhases(v WorkflowValidation) WorkflowValidation {
 		if len(p.RequiredFiles) <= maxFilesPerPhase {
 			split = append(split, p)
 			continue
+		}
+		// Skip phases already split (IDs ending with a numeric suffix like "-1", "-3-2").
+		if id := strings.TrimSpace(p.ID); len(id) > 0 {
+			last := id[len(id)-1]
+			if last >= '0' && last <= '9' {
+				split = append(split, p)
+				continue
+			}
 		}
 		chunks := chunkStrings(p.RequiredFiles, maxFilesPerPhase)
 		for i, chunk := range chunks {
@@ -666,6 +754,7 @@ func pairPhaseInfraFiles(v WorkflowValidation) WorkflowValidation {
 
 // FinalizeDeliveryPhases unions phase file lists into RequiredFiles, sets default active phase, normalizes paths.
 func FinalizeDeliveryPhases(v WorkflowValidation) WorkflowValidation {
+	v = collapseSplitDeliveryPhases(v)
 	v = pairPhaseInfraFiles(v)
 	v = splitOverlargePhases(v)
 	v = pairPhaseInfraFiles(v)
@@ -701,6 +790,26 @@ func FinalizeDeliveryPhases(v WorkflowValidation) WorkflowValidation {
 	}
 	if v.ActivePhaseID() == "" && len(v.DeliveryPhases) > 0 {
 		v.ActivePhaseIDField = strings.TrimSpace(v.DeliveryPhases[0].ID)
+	}
+	// If the active phase ID no longer matches (e.g. after splitting), map it to the
+	// first sub-phase that starts with the old ID prefix.
+	if v.ActivePhaseID() != "" && len(v.DeliveryPhases) > 0 {
+		found := false
+		for _, p := range v.DeliveryPhases {
+			if strings.TrimSpace(p.ID) == v.ActivePhaseID() {
+				found = true
+				break
+			}
+		}
+		if !found {
+			prefix := v.ActivePhaseID()
+			for _, p := range v.DeliveryPhases {
+				if strings.HasPrefix(strings.TrimSpace(p.ID), prefix) {
+					v.ActivePhaseIDField = strings.TrimSpace(p.ID)
+					break
+				}
+			}
+		}
 	}
 	return v
 }

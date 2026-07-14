@@ -21,6 +21,46 @@ func TestFinalizeDeliveryPhases_unionAndDefaultActive(t *testing.T) {
 	}
 }
 
+func TestFinalizeDeliveryPhases_collapseAndSplit(t *testing.T) {
+	v := WorkflowValidation{
+		ActivePhaseIDField: "e2e",
+		DeliveryPhases: []DeliveryPhase{
+			{ID: "e2e-1", Title: "E2E (part 1/2)", RequiredFiles: []string{"a.sh", "b.sh", "c.sh", "d.sh", "e.sh", "f.sh", "g.sh", "h.sh", "i.sh", "j.sh", "k.sh"}},
+			{ID: "e2e-2", Title: "E2E (part 2/2)", RequiredFiles: []string{"l.sh", "m.sh"}},
+		},
+	}
+	got := FinalizeDeliveryPhases(v)
+	if len(got.DeliveryPhases) != 2 {
+		t.Fatalf("phases = %d, want 2 (collapsed then split once): %v", len(got.DeliveryPhases), got.DeliveryPhases)
+	}
+	if got.DeliveryPhases[0].ID != "e2e-1" || got.DeliveryPhases[1].ID != "e2e-2" {
+		t.Fatalf("phase IDs = %v, want e2e-1, e2e-2", []string{got.DeliveryPhases[0].ID, got.DeliveryPhases[1].ID})
+	}
+	if strings.Contains(got.DeliveryPhases[0].Title, "(part 1/2)") && strings.Contains(got.DeliveryPhases[0].Title, "(part 2/2)") {
+		t.Fatalf("title still nested: %q", got.DeliveryPhases[0].Title)
+	}
+	if got.ActivePhaseIDField != "e2e-1" {
+		t.Fatalf("active_phase_id = %q, want e2e-1", got.ActivePhaseIDField)
+	}
+}
+
+func TestFinalizeDeliveryPhases_activePhaseMapsToSplit(t *testing.T) {
+	v := WorkflowValidation{
+		ActivePhaseIDField: "e2e",
+		DeliveryPhases: []DeliveryPhase{
+			{ID: "backend", RequiredFiles: []string{"main.py"}},
+			{ID: "e2e", RequiredFiles: []string{
+				"a.sh", "b.sh", "c.sh", "d.sh", "e.sh",
+				"f.sh", "g.sh", "h.sh", "i.sh", "j.sh", "k.sh",
+			}},
+		},
+	}
+	got := FinalizeDeliveryPhases(v)
+	if got.ActivePhaseIDField != "e2e-1" {
+		t.Fatalf("active_phase_id = %q, want e2e-1", got.ActivePhaseIDField)
+	}
+}
+
 func TestForActivePhase_scopesFilesAndQA(t *testing.T) {
 	v := WorkflowValidation{
 		RequiredFiles:      []string{"a.go", "b.go", "c.go"},
