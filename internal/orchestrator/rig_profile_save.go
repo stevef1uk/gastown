@@ -46,6 +46,8 @@ func NormalizeRigWorkflowProfile(townRoot, rig string) (WorkflowValidation, erro
 	if rig == "" || townRoot == "" {
 		return WorkflowValidation{}, fmt.Errorf("town root and rig name required")
 	}
+	// Reconcile architecture.md paths into the profile before normalizing.
+	ReconcileProfileWithArchitecture(townRoot, rig)
 	path := filepath.Join(townRoot, rig, "mayor", "rig", rigProfileDir, rigProfileFile)
 	data, err := os.ReadFile(path)
 	if err != nil {
