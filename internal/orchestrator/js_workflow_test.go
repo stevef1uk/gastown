@@ -39,6 +39,21 @@ func TestNodeProjectSetupVerifyCommand(t *testing.T) {
 			},
 			want: "npm install",
 		},
+		{
+			name: "preserves cd prefix with multiple ands",
+			v:    WorkflowValidation{QAVerifyCommand: "cd frontend && npm install && npx tsc --noEmit && npm test"},
+			want: "cd frontend && npm install",
+		},
+		{
+			name: "yarn in subdirectory",
+			v:    WorkflowValidation{QAVerifyCommand: "cd app && yarn test"},
+			want: "cd app && yarn install",
+		},
+		{
+			name: "pnpm in subdirectory",
+			v:    WorkflowValidation{QAVerifyCommand: "cd frontend && pnpm test"},
+			want: "cd frontend && pnpm install",
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -115,5 +130,43 @@ func TestProjectSetupStackKindMultiLanguageGlobal(t *testing.T) {
 	scoped := v.ForActivePhase()
 	if got := ProjectSetupStackKind(scoped); got != "python" {
 		t.Errorf("active phase is Python but stack = %q, want python", got)
+	}
+}
+
+// TestNodeProjectSetupVerifyCommand_noNodeFiles verifies we don't mis-detect
+// non-Node rigs as Node.js.
+func TestWorkflowUsesNodeJS(t *testing.T) {
+	cases := []struct {
+		name string
+		v    WorkflowValidation
+		want bool
+	}{
+		{
+			name: "tsx required files",
+			v:    WorkflowValidation{RequiredFiles: []string{"frontend/app.tsx"}},
+			want: true,
+		},
+		{
+			name: "npm in qa command",
+			v:    WorkflowValidation{QAVerifyCommand: "cd frontend && npm test"},
+			want: true,
+		},
+		{
+			name: "python only",
+			v:    WorkflowValidation{RequiredFiles: []string{"backend/main.py"}, QAVerifyCommand: "pytest"},
+			want: false,
+		},
+		{
+			name: "go only",
+			v:    WorkflowValidation{RequiredFiles: []string{"cmd/server/main.go"}, QAVerifyCommand: "go test ./..."},
+			want: false,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := WorkflowUsesNodeJS(tc.v); got != tc.want {
+				t.Errorf("WorkflowUsesNodeJS() = %v, want %v", got, tc.want)
+			}
+		})
 	}
 }

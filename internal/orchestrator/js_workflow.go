@@ -25,26 +25,35 @@ func (v WorkflowValidation) detectsNodeProject() bool {
 }
 
 // NodeProjectSetupVerifyCommand returns the green check for project_setup only:
-// install Node dependencies (npm install) so later npm test can run.
+// install Node dependencies (npm/yarn/pnpm install) so later tests can run.
 func NodeProjectSetupVerifyCommand(v WorkflowValidation) string {
 	base := strings.TrimSpace(v.QAVerifyCommand)
 	lower := strings.ToLower(base)
+
+	pm := "npm"
+	for _, candidate := range []string{"pnpm", "yarn", "npm"} {
+		if strings.Contains(lower, candidate) {
+			pm = candidate
+			break
+		}
+	}
+
 	// Preserve cd prefix from the QA command (e.g. "cd frontend && npm test").
-	if strings.Contains(lower, "cd ") && strings.Contains(lower, "npm") {
+	if strings.Contains(lower, "cd ") {
 		parts := strings.SplitN(base, "&&", 2)
 		if len(parts) == 2 {
 			prefix := strings.TrimSpace(parts[0])
 			if strings.HasPrefix(strings.ToLower(prefix), "cd ") {
-				return prefix + " && npm install"
+				return prefix + " && " + pm + " install"
 			}
 		}
 	}
 	// If QA command has no cd prefix but required files live under a subdirectory,
 	// install there. This protects against agents running npm install at mayor/rig root.
 	if dir := nodeInstallDirFromRequiredFiles(v.RequiredFiles); dir != "" {
-		return "cd " + dir + " && npm install"
+		return "cd " + dir + " && " + pm + " install"
 	}
-	return "npm install"
+	return pm + " install"
 }
 
 // nodeInstallDirFromRequiredFiles returns the common Node directory prefix

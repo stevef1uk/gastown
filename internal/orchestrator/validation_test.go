@@ -185,6 +185,44 @@ func TestPromptVars_includesUnittestCommandHint(t *testing.T) {
 	}
 }
 
+func TestPromptVars_projectSetupVerifyHintIsPhaseScoped(t *testing.T) {
+	v := WorkflowValidation{
+		LayoutRoot:         ".",
+		QAVerifyCommand:    "cd backend && pytest && cd ../frontend && npm test",
+		TestRunner:         "pytest",
+		ActivePhaseIDField: "frontend-ui",
+		DeliveryPhases: []DeliveryPhase{
+			{
+				ID:              "backend-core-data",
+				RequiredFiles:   []string{"backend/market_data/simulator.py"},
+				QAVerifyCommand: "cd backend && pytest backend/market_data",
+			},
+			{
+				ID:              "frontend-ui",
+				RequiredFiles:   []string{"frontend/components/Watchlist.tsx"},
+				QAVerifyCommand: "cd frontend && npm test",
+			},
+		},
+	}
+	vars := v.PromptVars()
+	if got := vars["project_setup_verify_hint"]; got != "cd frontend && npm install" {
+		t.Fatalf("frontend phase setup verify = %q, want cd frontend && npm install", got)
+	}
+	if got := vars["project_setup_stack_kind"]; got != "nodejs" {
+		t.Fatalf("frontend phase stack kind = %q, want nodejs", got)
+	}
+
+	v.ActivePhaseIDField = "backend-core-data"
+	vars = v.PromptVars()
+	wantPy := PythonProjectSetupVerifyCommand(v.ForActivePhase())
+	if got := vars["project_setup_verify_hint"]; got != wantPy {
+		t.Fatalf("backend phase setup verify = %q, want %q", got, wantPy)
+	}
+	if got := vars["project_setup_stack_kind"]; got != "python" {
+		t.Fatalf("backend phase stack kind = %q, want python", got)
+	}
+}
+
 func TestUsesPythonVenv(t *testing.T) {
 	v := WorkflowValidation{RequiredFiles: []string{"backend/requirements.txt"}}
 	if !v.UsesPythonVenv() {

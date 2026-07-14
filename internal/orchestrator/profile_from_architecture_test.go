@@ -103,3 +103,44 @@ func TestFormatProjectSetupStackBlock_pythonForbidsGo(t *testing.T) {
 		t.Fatalf("expected python-only block with go forbidden: %s", block)
 	}
 }
+
+func TestFormatProjectSetupStackBlock_nodejsPhase(t *testing.T) {
+	v := WorkflowValidation{
+		LayoutRoot:         ".",
+		BeadTitleContains:  "Implement finally/",
+		QAVerifyCommand:    "cd backend && pytest && cd ../frontend && npm test",
+		TestRunner:         "pytest",
+		ActivePhaseIDField: "frontend-ui",
+		DeliveryPhases: []DeliveryPhase{
+			{
+				ID:              "frontend-ui",
+				RequiredFiles:   []string{"frontend/components/Watchlist.tsx"},
+				QAVerifyCommand: "cd frontend && npm test",
+			},
+		},
+	}
+	block := FormatProjectSetupStackBlock(v)
+	if !strings.Contains(block, "Node.js") {
+		t.Fatalf("expected Node.js stack block, got: %s", block)
+	}
+	if !strings.Contains(block, "cd frontend && npm install") {
+		t.Fatalf("expected Node verify command in block, got: %s", block)
+	}
+	if strings.Contains(block, "Python") {
+		t.Fatalf("Node.js block should not mention Python, got: %s", block)
+	}
+}
+
+func TestProjectSetupFailureHint_nodejs(t *testing.T) {
+	v := WorkflowValidation{
+		QAVerifyCommand: "cd frontend && npm test",
+		RequiredFiles:   []string{"frontend/app.tsx"},
+	}
+	hint := ProjectSetupFailureHint(v)
+	if !strings.Contains(hint, "npm install") {
+		t.Fatalf("expected npm install in failure hint, got: %s", hint)
+	}
+	if strings.Contains(hint, "Python") {
+		t.Fatalf("Node.js failure hint should not mention Python, got: %s", hint)
+	}
+}

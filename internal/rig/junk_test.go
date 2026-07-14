@@ -56,3 +56,39 @@ func TestRejectMayorRigRootShellCommand_blocksRootJunkOnly(t *testing.T) {
 		t.Fatalf("did not expect rejection for printf-created test_main.py under backend/tests: %v", err)
 	}
 }
+
+func TestRejectMayorRigRootShellCommand_allowsNpmInSubdir(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		cmd  string
+		want bool
+	}{
+		{"cd finally/mayor/rig/frontend && npm install", false},
+		{"cd finally/mayor/rig/frontend && npm ci", false},
+		{"cd app && npm install", false},
+		{"npm install", true},
+		{"cd finally/mayor/rig && npm install", true},
+		{"cd finally/mayor/rig && yarn install", true},
+	}
+	for _, tc := range cases {
+		err := RejectMayorRigRootShellCommand(tc.cmd, ".")
+		got := err != nil
+		if got != tc.want {
+			t.Errorf("RejectMayorRigRootShellCommand(%q) rejected=%v, want %v (err=%v)", tc.cmd, got, tc.want, err)
+		}
+	}
+}
+
+func TestRejectMayorRigRootShellCommand_blocksCircularSymlink(t *testing.T) {
+	t.Parallel()
+	cases := []string{
+		"ln -s . backend/backend",
+		"ln -s ./ backend/backend",
+		"cd finally/mayor/rig && ln -s . backend/backend",
+	}
+	for _, cmd := range cases {
+		if err := RejectMayorRigRootShellCommand(cmd, "."); err == nil {
+			t.Errorf("expected rejection for circular symlink: %q", cmd)
+		}
+	}
+}

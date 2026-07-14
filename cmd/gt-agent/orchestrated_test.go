@@ -674,6 +674,122 @@ func TestValidateProjectSetupArtifacts_rejectsHadCmdFailureForCustomGo(t *testin
 	}
 }
 
+// TestValidateProjectSetupCommand_dualStackNodePhase verifies that a dual-stack
+// rig's frontend delivery phase is treated as Node.js, not Python.
+func TestValidateProjectSetupCommand_dualStackNodePhase(t *testing.T) {
+	v := orchestrator.WorkflowValidation{
+		LayoutRoot:         ".",
+		BeadTitleContains:  "Implement finally/",
+		QAVerifyCommand:    "cd backend && pytest && cd ../frontend && npm test",
+		TestRunner:         "pytest",
+		ActivePhaseIDField: "frontend-ui",
+		DeliveryPhases: []orchestrator.DeliveryPhase{
+			{
+				ID:              "backend-core-data",
+				RequiredFiles:   []string{"backend/market_data/simulator.py"},
+				QAVerifyCommand: "cd backend && pytest backend/market_data",
+			},
+			{
+				ID:              "frontend-ui",
+				RequiredFiles:   []string{"frontend/components/Watchlist.tsx"},
+				QAVerifyCommand: "cd frontend && npm test",
+			},
+		},
+	}
+
+	allowed := []string{
+		"cd finally/mayor/rig && cd frontend && npm install",
+		"cd finally/mayor/rig/frontend && npm install",
+		"cd frontend && npm install",
+		"cd finally/mayor/rig && cd frontend && yarn install",
+	}
+	for _, cmd := range allowed {
+		if err := validateProjectSetupCommand(cmd, "finally", v); err != nil {
+			t.Errorf("expected allow %q: %v", cmd, err)
+		}
+	}
+
+	rejected := []string{
+		"cd finally/mayor/rig && npm install",
+		"npm install",
+	}
+	for _, cmd := range rejected {
+		if err := validateProjectSetupCommand(cmd, "finally", v); err == nil {
+			t.Errorf("expected reject root npm install: %q", cmd)
+		}
+	}
+}
+
+// TestValidateProjectSetupArtifacts_dualStackNodePhase verifies artifact validation
+// for a Node.js delivery phase requires the Node setup verify, not Python venv.
+func TestValidateProjectSetupArtifacts_dualStackNodePhase(t *testing.T) {
+	v := orchestrator.WorkflowValidation{
+		LayoutRoot:         ".",
+		BeadTitleContains:  "Implement finally/",
+		QAVerifyCommand:    "cd backend && pytest && cd ../frontend && npm test",
+		TestRunner:         "pytest",
+		ActivePhaseIDField: "frontend-ui",
+		DeliveryPhases: []orchestrator.DeliveryPhase{
+			{
+				ID:              "backend-core-data",
+				RequiredFiles:   []string{"backend/market_data/simulator.py"},
+				QAVerifyCommand: "cd backend && pytest backend/market_data",
+			},
+			{
+				ID:              "frontend-ui",
+				RequiredFiles:   []string{"frontend/components/Watchlist.tsx"},
+				QAVerifyCommand: "cd frontend && npm test",
+			},
+		},
+	}
+
+	err := validateProjectSetupArtifacts("/tmp", "finally", false, false, v)
+	if err == nil {
+		t.Fatal("expected failure without verifyOK")
+	}
+	want := "cd frontend && npm install"
+	if !strings.Contains(err.Error(), want) {
+		t.Fatalf("error should mention Node verify %q, got: %v", want, err)
+	}
+
+	if err := validateProjectSetupArtifacts("/tmp", "finally", false, true, v); err != nil {
+		t.Fatalf("expected success with verifyOK=true: %v", err)
+	}
+}
+
+// TestValidateProjectSetupArtifacts_dualStackPythonPhase verifies Python phases
+// still require Python setup verify.
+func TestValidateProjectSetupArtifacts_dualStackPythonPhase(t *testing.T) {
+	v := orchestrator.WorkflowValidation{
+		LayoutRoot:         ".",
+		BeadTitleContains:  "Implement finally/",
+		QAVerifyCommand:    "cd backend && pytest && cd ../frontend && npm test",
+		TestRunner:         "pytest",
+		ActivePhaseIDField: "backend-core-data",
+		DeliveryPhases: []orchestrator.DeliveryPhase{
+			{
+				ID:              "backend-core-data",
+				RequiredFiles:   []string{"backend/market_data/simulator.py"},
+				QAVerifyCommand: "cd backend && pytest backend/market_data",
+			},
+			{
+				ID:              "frontend-ui",
+				RequiredFiles:   []string{"frontend/components/Watchlist.tsx"},
+				QAVerifyCommand: "cd frontend && npm test",
+			},
+		},
+	}
+
+	err := validateProjectSetupArtifacts("/tmp", "finally", false, false, v)
+	if err == nil {
+		t.Fatal("expected failure without verifyOK")
+	}
+	want := ".venv/bin/python3 -c 'import pytest'"
+	if !strings.Contains(err.Error(), want) {
+		t.Fatalf("error should mention Python verify, got: %v", err)
+	}
+}
+
 func TestOrchestratedArtifactAutoOutcome_planningRequiresBeads(t *testing.T) {
 	dir := t.TempDir()
 	rigDir := filepath.Join(dir, "mockrig", "mayor", "rig")

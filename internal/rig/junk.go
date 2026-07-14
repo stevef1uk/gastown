@@ -118,34 +118,17 @@ func RejectMayorRigRootShellCommand(cmd, layoutRoot string) error {
 		return nil
 	}
 	for _, blocked := range []string{
-		"npm init", "npm install", "npm ci", "npx jest", "yarn init", "yarn add", "pnpm init", "pnpm add",
+		"npm init", "npm install", "npm ci", "npx jest",
+		"yarn init", "yarn install", "yarn add",
+		"pnpm init", "pnpm install", "pnpm add",
 	} {
 		if !strings.Contains(lower, blocked) {
 			continue
 		}
-		// Allow npm install in subdirectories (e.g. cd frontend && npm install).
-		// Only block when running at the rig root.
-		if layoutRoot != "" && layoutRoot != "." {
-			// Check if there's a "cd <subdir>" before the npm command — that's OK.
-			cleaned := strings.ReplaceAll(lower, "&&", ";")
-			parts := strings.Split(cleaned, ";")
-			runsAtRoot := true
-			for _, part := range parts {
-				part = strings.TrimSpace(part)
-				if strings.HasPrefix(part, "cd ") {
-					target := strings.TrimPrefix(part, "cd ")
-					target = strings.TrimSpace(target)
-					// If cd target is the rig root or parent, it's still root-level.
-					if target == "." || target == "" || strings.HasSuffix(target, "/mayor/rig") || target == strings.Trim(layoutRoot, "/") {
-						// Root-level cd — stay blocked.
-					} else {
-						runsAtRoot = false
-					}
-				}
-			}
-			if !runsAtRoot {
-				continue
-			}
+		// Allow package-manager commands when they run inside a subdirectory
+		// (e.g. "cd frontend && npm install"). Block only root-level installs.
+		if runsInSubdirectory(lower, layoutRoot) {
+			continue
 		}
 		return fmt.Errorf("do not run %q at mayor/rig root — use go test under %s/", strings.TrimSpace(blocked), strings.Trim(layoutRoot, "/"))
 	}
@@ -191,6 +174,38 @@ func RejectMayorRigRootShellCommand(cmd, layoutRoot string) error {
 		}
 	}
 	return nil
+}
+
+// runsInSubdirectory reports whether a command explicitly cds into a
+// subdirectory before running a package-manager or similar command.
+// It treats "cd frontend && npm install" as subdirectory, but
+// "cd .", "cd mayor/rig", or "cd <layoutRoot>" as still root-level.
+func runsInSubdirectory(lower, layoutRoot string) bool {
+	layout := strings.Trim(filepath.ToSlash(strings.TrimSpace(layoutRoot)), "/")
+	cleaned := strings.ReplaceAll(lower, "&&", ";")
+	cleaned = strings.ReplaceAll(cleaned, "||", ";")
+	for _, part := range strings.Split(cleaned, ";") {
+		part = strings.TrimSpace(part)
+		if !strings.HasPrefix(part, "cd ") {
+			continue
+		}
+		target := strings.TrimSpace(strings.TrimPrefix(part, "cd "))
+		target = strings.Trim(target, "'\"")
+		if target == "" || target == "." {
+			continue
+		}
+		// cd into a path that ends at the rig root is still root-level.
+		if strings.HasSuffix(target, "/mayor/rig") || strings.HasSuffix(target, "/mayor/rig/") {
+			continue
+		}
+		// cd into the layout root itself is still root-level.
+		if layout != "" && layout != "." && (target == layout || strings.HasSuffix(target, "/"+layout)) {
+			continue
+		}
+		// Anything else is a subdirectory.
+		return true
+	}
+	return false
 }
 
 // RejectDisallowedMayorRigWrite rejects native WRITE/EDIT paths outside layout and workflow artifacts.

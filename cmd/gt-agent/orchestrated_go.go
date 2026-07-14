@@ -128,20 +128,33 @@ func validateProjectSetupCommand(cmd, rig string, v orchestrator.WorkflowValidat
 	if strings.Contains(lower, "gt bd ") {
 		return fmt.Errorf("use bare `bd` from %s", rigMayorRigPath(rig))
 	}
-	if orchestrator.WorkflowUsesPython(v) {
-		if err := validatePythonProjectSetupCommand(cmd, v); err != nil {
+	scoped := v.ForActivePhase()
+	// Check Node.js before Python so dual-stack rigs scope each delivery phase.
+	if orchestrator.WorkflowUsesNodeJS(scoped) {
+		// Node setup only runs package-manager installs in subdirectories.
+		// RejectMayorRigRootShellCommand already blocks root-level installs.
+		return nil
+	}
+	if orchestrator.WorkflowUsesPython(scoped) {
+		if err := validatePythonProjectSetupCommand(cmd, scoped); err != nil {
 			return err
 		}
-		if written := orchestrator.ExtractImplementWritePathFromCmd(cmd, v.LayoutRoot); written != "" {
-			if req := v.RequirementsFilePath(); req == "" || !orchestrator.PathMatchesRequiredFile(written, req) {
+		if written := orchestrator.ExtractImplementWritePathFromCmd(cmd, scoped.LayoutRoot); written != "" {
+			if req := scoped.RequirementsFilePath(); req == "" || !orchestrator.PathMatchesRequiredFile(written, req) {
 				return fmt.Errorf("project_setup may only write %s (not %q) before implementation", req, written)
 			}
 		}
 		return nil
 	}
-	if !orchestrator.WorkflowUsesGo(v) {
-		return nil
+	if orchestrator.WorkflowUsesGo(scoped) {
+		return validateGoProjectSetupCommand(cmd, rig, scoped)
 	}
+	// Node.js and other stacks: allow npm install/yarn/pnpm in subdirectories.
+	return nil
+}
+
+func validateGoProjectSetupCommand(cmd, rig string, v orchestrator.WorkflowValidation) error {
+	lower := strings.ToLower(cmd)
 	if isBeadCreateCommand(cmd) {
 		if title := extractBeadCreateTitle(cmd); title != "" {
 			if err := orchestrator.ValidateImplementBeadCreateTitle(title, v); err != nil {
@@ -226,29 +239,37 @@ func validateProjectSetupArtifacts(townRoot, rig string, hadCmdFailure, verifyOK
 	if hadCmdFailure {
 		return fmt.Errorf("project_setup had failed commands; fix errors before completing")
 	}
-	if orchestrator.WorkflowUsesPython(v) {
-		return validatePythonProjectSetupArtifacts(townRoot, rig, hadCmdFailure, verifyOK, v)
-	}
-	if !orchestrator.WorkflowUsesGo(v) {
+	scoped := v.ForActivePhase()
+	// Check Node.js before Python so dual-stack rigs scope each delivery phase.
+	if orchestrator.WorkflowUsesNodeJS(scoped) {
+		if !verifyOK {
+			return fmt.Errorf("project_setup requires green verify: %s", orchestrator.NodeProjectSetupVerifyCommand(scoped))
+		}
 		return nil
 	}
-	rigDir := rigMayorRigDir(townRoot, rig)
-	if !verifyOK {
-		return fmt.Errorf("project_setup requires green verify: %s", orchestrator.GoProjectSetupVerifyCommand(v, rigDir))
+	if orchestrator.WorkflowUsesPython(scoped) {
+		return validatePythonProjectSetupArtifacts(townRoot, rig, hadCmdFailure, verifyOK, scoped)
 	}
-	goMod := orchestrator.ResolveRequiredFileOnDisk(rigDir, "go.mod", v.LayoutRoot)
-	if !strings.HasSuffix(filepath.ToSlash(goMod), "go.mod") {
-		layout := strings.TrimSpace(v.LayoutRoot)
-		if layout == "" {
-			layout = "."
+	if orchestrator.WorkflowUsesGo(scoped) {
+		rigDir := rigMayorRigDir(townRoot, rig)
+		if !verifyOK {
+			return fmt.Errorf("project_setup requires green verify: %s", orchestrator.GoProjectSetupVerifyCommand(scoped, rigDir))
 		}
-		goMod = filepath.Join(rigDir, layout, "go.mod")
-	}
-	if _, err := os.Stat(goMod); err != nil {
-		return fmt.Errorf("go.mod missing at %s after setup", goMod)
-	}
-	if err := orchestrator.ValidatePlanningPhaseGate(townRoot, rig, "project_setup", v); err != nil {
-		return err
+		goMod := orchestrator.ResolveRequiredFileOnDisk(rigDir, "go.mod", scoped.LayoutRoot)
+		if !strings.HasSuffix(filepath.ToSlash(goMod), "go.mod") {
+			layout := strings.TrimSpace(scoped.LayoutRoot)
+			if layout == "" {
+				layout = "."
+			}
+			goMod = filepath.Join(rigDir, layout, "go.mod")
+		}
+		if _, err := os.Stat(goMod); err != nil {
+			return fmt.Errorf("go.mod missing at %s after setup", goMod)
+		}
+		if err := orchestrator.ValidatePlanningPhaseGate(townRoot, rig, "project_setup", scoped); err != nil {
+			return err
+		}
+		return nil
 	}
 	return nil
 }
