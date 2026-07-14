@@ -723,10 +723,22 @@ func pairPhaseInfraFiles(v WorkflowValidation) WorkflowValidation {
 				continue
 			}
 			ext := strings.ToLower(filepath.Ext(f))
+			base := strings.ToLower(filepath.Base(f))
 			if ext != ".tsx" && ext != ".ts" && ext != ".js" && ext != ".jsx" {
 				continue
 			}
+			// Don't generate a parent package.json/tsconfig.json for the infra files themselves.
+			if base == "package.json" || base == "tsconfig.json" {
+				continue
+			}
 			dir := filepath.ToSlash(filepath.Dir(f))
+			parent := filepath.ToSlash(filepath.Dir(dir))
+			// Only add parent package.json/tsconfig.json; never generate a manifest
+			// at the rig root (e.g. for files directly under test/ or frontend/). Those
+			// files are covered by their own dir-level manifests when present.
+			if parent == "" || parent == "." {
+				continue
+			}
 			candidates := []string{
 				filepath.ToSlash(filepath.Join(dir, "..", "package.json")),
 				filepath.ToSlash(filepath.Join(dir, "..", "tsconfig.json")),

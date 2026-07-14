@@ -53,8 +53,10 @@ func TestStateRunner_reloadValidationIfPhaseChanged(t *testing.T) {
 	if r.v.ActivePhaseID() != "frontend" {
 		t.Fatalf("reloaded active phase = %q, want frontend", r.v.ActivePhaseID())
 	}
-	want := []string{"package.json", "tsconfig.json", "frontend/app.tsx"}
-	if got := r.v.RequiredFiles; len(got) != len(want) || got[0] != want[0] || got[1] != want[1] || got[2] != want[2] {
+	// With the fix to avoid generating root package.json/tsconfig.json, a lone
+	// frontend/app.tsx at the package root does not auto-create manifests.
+	want := []string{"frontend/app.tsx"}
+	if got := r.v.RequiredFiles; len(got) != len(want) || got[0] != want[0] {
 		t.Fatalf("reloaded required files = %v, want %v", got, want)
 	}
 	if _, ok := r.promptVars["qa_runtime_smoke_block"]; !ok {

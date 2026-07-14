@@ -320,6 +320,54 @@ func TestRequiredFilesForSmokeScope_phasedUsesActiveOnly(t *testing.T) {
 	}
 }
 
+func TestFinalizeDeliveryPhases_noRootPackageJsonForTestDir(t *testing.T) {
+	v := WorkflowValidation{
+		RequiredFiles: []string{
+			"frontend/app/page.tsx",
+			"test/playwright.config.ts",
+			"test/e2e/trading_flow.spec.ts",
+		},
+		DeliveryPhases: []DeliveryPhase{
+			{ID: "frontend-ui", RequiredFiles: []string{
+				"frontend/services/api.ts",
+				"frontend/app/page.tsx",
+			}},
+			{ID: "e2e-and-deployment", RequiredFiles: []string{
+				"test/package.json",
+				"test/tsconfig.json",
+				"test/e2e/trading_flow.spec.ts",
+				"test/playwright.config.ts",
+			}},
+		},
+	}
+	got := FinalizeDeliveryPhases(v)
+	for _, p := range got.DeliveryPhases {
+		for _, f := range p.RequiredFiles {
+			if f == "package.json" || f == "tsconfig.json" {
+				t.Fatalf("phase %q must not contain root %q", p.ID, f)
+			}
+		}
+	}
+	for _, f := range got.RequiredFiles {
+		if f == "package.json" || f == "tsconfig.json" {
+			t.Fatalf("top-level required_files must not contain %q", f)
+		}
+	}
+	// Ensure parent manifests are still inferred when the source is in a subdir.
+	wantFrontend := map[string]bool{"frontend/package.json": true, "frontend/tsconfig.json": true}
+	for _, p := range got.DeliveryPhases {
+		if p.ID != "frontend-ui" {
+			continue
+		}
+		for _, f := range p.RequiredFiles {
+			delete(wantFrontend, f)
+		}
+	}
+	if len(wantFrontend) > 0 {
+		t.Fatalf("frontend-ui missing inferred manifests: %v", wantFrontend)
+	}
+}
+
 func TestValidatePlanBeads_activePhaseOnly(t *testing.T) {
 	v := WorkflowValidation{
 		BeadTitleContains:  "Implement ",
