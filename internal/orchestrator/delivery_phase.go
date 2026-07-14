@@ -266,27 +266,46 @@ func sortDockerPackagingPaths(paths []string) []string {
 	return out
 }
 
+// qaVerifyCommandReferencesDocker reports whether a QA verify command needs Docker
+// packaging files (docker-compose, docker build, Dockerfile) to run.
+func qaVerifyCommandReferencesDocker(cmd string) bool {
+	lower := strings.ToLower(cmd)
+	return strings.Contains(lower, "docker-compose") ||
+		strings.Contains(lower, "docker compose") ||
+		strings.Contains(lower, "docker build") ||
+		strings.Contains(lower, "dockerfile")
+}
+
 // moveDockerPathsToFinalDeliveryPhase pulls Dockerfile/compose paths out of early phases
 // and appends them to the last phase so polecats implement real code before container wiring.
+// If an earlier phase's QA verify command referenced those Docker files, the command is
+// moved to the last phase as well so each phase only runs a command it has files for.
 func moveDockerPathsToFinalDeliveryPhase(v WorkflowValidation) WorkflowValidation {
 	if len(v.DeliveryPhases) == 0 {
 		return v
 	}
 	seen := make(map[string]bool)
 	var dockerPaths []string
+	movedCmd := ""
 	for i := range v.DeliveryPhases {
 		var kept []string
+		movedDockerFromPhase := false
 		for _, f := range v.DeliveryPhases[i].RequiredFiles {
 			if IsDockerPackagingPath(f) {
 				if !seen[f] {
 					seen[f] = true
 					dockerPaths = append(dockerPaths, f)
 				}
+				movedDockerFromPhase = true
 				continue
 			}
 			kept = append(kept, f)
 		}
 		v.DeliveryPhases[i].RequiredFiles = kept
+		if movedDockerFromPhase && movedCmd == "" && qaVerifyCommandReferencesDocker(v.DeliveryPhases[i].QAVerifyCommand) {
+			movedCmd = v.DeliveryPhases[i].QAVerifyCommand
+			v.DeliveryPhases[i].QAVerifyCommand = ""
+		}
 	}
 	if len(dockerPaths) == 0 {
 		return v
@@ -298,6 +317,9 @@ func moveDockerPathsToFinalDeliveryPhase(v WorkflowValidation) WorkflowValidatio
 		normalizePathList(v.DeliveryPhases[last].RequiredFiles),
 		dockerPaths...,
 	)
+	if movedCmd != "" {
+		v.DeliveryPhases[last].QAVerifyCommand = movedCmd
+	}
 
 	active := v.ActivePhaseID()
 	var phases []DeliveryPhase

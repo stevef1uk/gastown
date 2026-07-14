@@ -368,6 +368,58 @@ func TestFinalizeDeliveryPhases_noRootPackageJsonForTestDir(t *testing.T) {
 	}
 }
 
+func TestFinalizeDeliveryPhases_dockerVerifyFollowsDockerFiles(t *testing.T) {
+	// Simulate a single E2E phase that gets split; its Docker-based verify command
+	// should follow the Docker files into the final sub-phase.
+	v := WorkflowValidation{
+		DeliveryPhases: []DeliveryPhase{
+			{ID: "e2e-and-deployment", RequiredFiles: []string{
+				"test/package.json",
+				"test/tsconfig.json",
+				"test/e2e/trading_flow.spec.ts",
+				".env.example",
+				"scripts/start_mac.sh",
+				"scripts/stop_mac.sh",
+				"scripts/start_windows.ps1",
+				"scripts/stop_windows.ps1",
+				"test/docker-compose.test.yml",
+				"Dockerfile",
+				"docker-compose.yml",
+			}, QAVerifyCommand: "cd test && docker-compose -f docker-compose.test.yml up --exit-code-from playwright"},
+		},
+	}
+	got := FinalizeDeliveryPhases(v)
+	if len(got.DeliveryPhases) != 2 {
+		t.Fatalf("expected 2 phases, got %d: %+v", len(got.DeliveryPhases), got.DeliveryPhases)
+	}
+	var phase1, phase2 *DeliveryPhase
+	for i := range got.DeliveryPhases {
+		p := &got.DeliveryPhases[i]
+		if strings.HasPrefix(p.ID, "e2e-and-deployment-1") {
+			phase1 = p
+		}
+		if strings.HasPrefix(p.ID, "e2e-and-deployment-2") {
+			phase2 = p
+		}
+	}
+	if phase1 == nil || phase2 == nil {
+		t.Fatalf("missing phases: got %+v", got.DeliveryPhases)
+	}
+	for _, f := range []string{"Dockerfile", "test/docker-compose.test.yml", "docker-compose.yml"} {
+		for _, pf := range phase1.RequiredFiles {
+			if pf == f {
+				t.Fatalf("phase 1 still contains docker file %q", f)
+			}
+		}
+	}
+	if qaVerifyCommandReferencesDocker(phase1.QAVerifyCommand) {
+		t.Fatalf("phase 1 QA command still references docker: %q", phase1.QAVerifyCommand)
+	}
+	if phase2.QAVerifyCommand != "cd test && docker-compose -f docker-compose.test.yml up --exit-code-from playwright" {
+		t.Fatalf("phase 2 QA command = %q, want docker compose command", phase2.QAVerifyCommand)
+	}
+}
+
 func TestValidatePlanBeads_activePhaseOnly(t *testing.T) {
 	v := WorkflowValidation{
 		BeadTitleContains:  "Implement ",
