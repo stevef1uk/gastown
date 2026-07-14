@@ -23,6 +23,22 @@ func TestNodeProjectSetupVerifyCommand(t *testing.T) {
 			v:    WorkflowValidation{QAVerifyCommand: "cd app && npm test"},
 			want: "cd app && npm install",
 		},
+		{
+			name: "fallback to required files directory",
+			v: WorkflowValidation{
+				QAVerifyCommand: "npm test",
+				RequiredFiles:   []string{"frontend/components/Watchlist.tsx", "frontend/app/page.tsx"},
+			},
+			want: "cd frontend && npm install",
+		},
+		{
+			name: "no fallback when node files are at root",
+			v: WorkflowValidation{
+				QAVerifyCommand: "npm test",
+				RequiredFiles:   []string{"app.tsx", "backend/main.py"},
+			},
+			want: "npm install",
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

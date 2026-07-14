@@ -1,6 +1,9 @@
 package orchestrator
 
-import "strings"
+import (
+	"path/filepath"
+	"strings"
+)
 
 // WorkflowUsesNodeJS reports whether the workflow runs npm/yarn tests (frontend/Node).
 func WorkflowUsesNodeJS(v WorkflowValidation) bool {
@@ -36,5 +39,40 @@ func NodeProjectSetupVerifyCommand(v WorkflowValidation) string {
 			}
 		}
 	}
+	// If QA command has no cd prefix but required files live under a subdirectory,
+	// install there. This protects against agents running npm install at mayor/rig root.
+	if dir := nodeInstallDirFromRequiredFiles(v.RequiredFiles); dir != "" {
+		return "cd " + dir + " && npm install"
+	}
 	return "npm install"
+}
+
+// nodeInstallDirFromRequiredFiles returns the common Node directory prefix
+// (e.g. "frontend", "app") when all required files share one, or "".
+func nodeInstallDirFromRequiredFiles(files []string) string {
+	var dir string
+	for _, f := range files {
+		f = filepath.ToSlash(strings.TrimSpace(f))
+		if !looksLikeNodeFile(f) {
+			continue
+		}
+		idx := strings.Index(f, "/")
+		if idx <= 0 {
+			return ""
+		}
+		first := f[:idx]
+		if dir == "" {
+			dir = first
+		} else if dir != first {
+			return ""
+		}
+	}
+	return dir
+}
+
+func looksLikeNodeFile(path string) bool {
+	lower := strings.ToLower(path)
+	return strings.HasSuffix(lower, ".tsx") || strings.HasSuffix(lower, ".ts") ||
+		strings.HasSuffix(lower, ".jsx") || strings.HasSuffix(lower, ".js") ||
+		strings.HasSuffix(lower, "/package.json") || path == "package.json"
 }
