@@ -348,12 +348,25 @@ func ReconcileProfileWithArchitecture(townRoot, rig string) error {
 	if len(archPaths) == 0 {
 		return nil
 	}
+	var filePaths []string
+	for _, p := range archPaths {
+		p = filepath.ToSlash(strings.TrimSpace(p))
+		for strings.HasPrefix(p, "./") {
+			p = p[2:]
+		}
+		if isImplementableFilePath(p) {
+			filePaths = append(filePaths, p)
+		}
+	}
+	if len(filePaths) == 0 {
+		return nil
+	}
 	changed := false
 	existing := map[string]bool{}
 	for _, f := range env.Validation.RequiredFiles {
 		existing[filepath.ToSlash(strings.TrimSpace(f))] = true
 	}
-	for _, p := range archPaths {
+	for _, p := range filePaths {
 		if !existing[p] {
 			env.Validation.RequiredFiles = append(env.Validation.RequiredFiles, p)
 			existing[p] = true
@@ -361,16 +374,30 @@ func ReconcileProfileWithArchitecture(townRoot, rig string) error {
 		}
 	}
 	if changed && len(env.Validation.DeliveryPhases) > 0 {
-		last := len(env.Validation.DeliveryPhases) - 1
-		phaseExisting := map[string]bool{}
-		for _, f := range env.Validation.DeliveryPhases[last].RequiredFiles {
-			phaseExisting[filepath.ToSlash(strings.TrimSpace(f))] = true
-		}
-		for _, p := range archPaths {
+		// Place each new file in the phase whose existing files share the longest
+		// directory prefix (scripts/config/deployment go to the final phase).
+		for _, p := range filePaths {
+			bestIdx := -1
+			bestLen := 0
+			for i, phase := range env.Validation.DeliveryPhases {
+				for _, f := range phase.RequiredFiles {
+					prefix := longestCommonPathPrefix(p, f)
+					if prefix != "" && len(prefix) > bestLen {
+						bestLen = len(prefix)
+						bestIdx = i
+					}
+				}
+			}
+			if bestIdx < 0 {
+				bestIdx = len(env.Validation.DeliveryPhases) - 1
+			}
+			phaseExisting := map[string]bool{}
+			for _, f := range env.Validation.DeliveryPhases[bestIdx].RequiredFiles {
+				phaseExisting[filepath.ToSlash(strings.TrimSpace(f))] = true
+			}
 			if !phaseExisting[p] {
-				env.Validation.DeliveryPhases[last].RequiredFiles = append(
-					env.Validation.DeliveryPhases[last].RequiredFiles, p)
-				phaseExisting[p] = true
+				env.Validation.DeliveryPhases[bestIdx].RequiredFiles = append(
+					env.Validation.DeliveryPhases[bestIdx].RequiredFiles, p)
 			}
 		}
 	}
@@ -378,4 +405,57 @@ func ReconcileProfileWithArchitecture(townRoot, rig string) error {
 		return nil
 	}
 	return SaveRigWorkflowProfileEnvelope(townRoot, rig, env)
+}
+
+// longestCommonPathPrefix returns the longest directory prefix shared by a and b,
+// or "" if there is none. The prefix always ends at a path separator.
+func longestCommonPathPrefix(a, b string) string {
+	a = filepath.ToSlash(strings.TrimSpace(a))
+	b = filepath.ToSlash(strings.TrimSpace(b))
+	min := len(a)
+	if len(b) < min {
+		min = len(b)
+	}
+	var i int
+	for i = 0; i < min && a[i] == b[i]; i++ {
+	}
+	if i == 0 {
+		return ""
+	}
+	// Walk back to the last separator so the prefix is a directory.
+	for i > 0 && a[i-1] != '/' {
+		i--
+	}
+	return strings.TrimRight(a[:i], "/")
+}
+
+// isImplementableFilePath reports whether p looks like a source/config file that
+// should have an implement bead, as opposed to API endpoints, URLs, Docker
+// images, or directory references.
+func isImplementableFilePath(p string) bool {
+	p = filepath.ToSlash(strings.TrimSpace(p))
+	for strings.HasPrefix(p, "./") {
+		p = p[2:]
+	}
+	if p == "" || p == "." || p == "/" {
+		return false
+	}
+	if strings.Contains(p, "://") || strings.Contains(p, "{") || strings.Contains(p, "}") || strings.Contains(p, ":") {
+		return false
+	}
+	if strings.HasPrefix(p, "/api/") || strings.HasPrefix(p, "/") {
+		return false
+	}
+	if strings.HasSuffix(p, "/") {
+		return false
+	}
+	base := filepath.Base(p)
+	known := map[string]bool{
+		"dockerfile": true, "docker-compose.yml": true, "docker-compose.yaml": true,
+		".dockerignore": true, ".env": true, ".env.example": true, ".gitignore": true,
+	}
+	if known[strings.ToLower(base)] {
+		return true
+	}
+	return strings.Contains(base, ".")
 }
