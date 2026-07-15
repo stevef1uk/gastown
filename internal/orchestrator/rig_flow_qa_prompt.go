@@ -18,6 +18,9 @@ func RigFlowQARuntimeSmokeBlock(townRoot, rig string, v WorkflowValidation) stri
 	if report := DetectStaticExportAndServing(mayorRigDir); !report.IsClean() {
 		guidance = append(guidance, FormatStaticExportGuidance(report))
 	}
+	if report := DetectTestComposeIssues(mayorRigDir); !report.IsClean() {
+		guidance = append(guidance, FormatTestComposeGuidance(report))
+	}
 
 	base := ""
 	switch {
