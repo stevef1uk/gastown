@@ -20,6 +20,9 @@ func (v WorkflowValidation) detectsNodeProject() bool {
 		if strings.HasSuffix(lower, ".tsx") || strings.HasSuffix(lower, ".ts") || strings.HasSuffix(lower, ".js") || strings.HasSuffix(lower, ".jsx") {
 			return true
 		}
+		if strings.HasSuffix(lower, "/package.json") || lower == "package.json" {
+			return true
+		}
 	}
 	return false
 }
