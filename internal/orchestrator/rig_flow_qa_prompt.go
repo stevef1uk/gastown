@@ -10,9 +10,13 @@ import (
 func RigFlowQARuntimeSmokeBlock(townRoot, rig string, v WorkflowValidation) string {
 	v = v.ForActivePhase()
 	mayorRigDir := filepath.Join(townRoot, rig, "mayor", "rig")
-	contractGUID := ""
+
+	var guidance []string
 	if report, err := LoadAPIContractFromRig(mayorRigDir); err == nil && !report.IsClean() {
-		contractGUID = FormatAPIContractGuidance(report)
+		guidance = append(guidance, FormatAPIContractGuidance(report))
+	}
+	if report := DetectStaticExportAndServing(mayorRigDir); !report.IsClean() {
+		guidance = append(guidance, FormatStaticExportGuidance(report))
 	}
 
 	base := ""
@@ -39,10 +43,10 @@ func RigFlowQARuntimeSmokeBlock(townRoot, rig string, v WorkflowValidation) stri
 		}
 	}
 
-	if contractGUID == "" {
+	if len(guidance) == 0 {
 		return base
 	}
-	return base + "\n\n" + contractGUID
+	return base + "\n\n" + strings.Join(guidance, "\n\n")
 }
 
 func rigFlowQAGenericVerifyBlock(v WorkflowValidation) string {
