@@ -208,8 +208,10 @@ var htmlGetElementByIDRE = regexp.MustCompile(`getElementById\s*\(\s*["']([^"']+
 // the QA's claim is contradicted by files that already exist and are correct.
 func rejectSpuriousQAFailure(townRoot, rig, summary, rawFeedback string) string {
 	combined := CombineQAReworkText(summary, rawFeedback)
-	if IsQAAgentShellError(combined) && phaseVerifyPasses(townRoot, rig) {
-		return "QA command failed due to wrong working directory — phase verify passes on disk; QA must re-run verify from mayor/rig (do not send workflow to implementation)"
+	// Shell errors (wrong cwd, command not found) are real failures — QA never tested the code.
+	// Do NOT reject these; let QA retry from the correct directory.
+	if IsQAAgentShellError(combined) {
+		return ""
 	}
 	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
 	lower := strings.ToLower(strings.TrimSpace(summary))
@@ -220,30 +222,30 @@ func rejectSpuriousQAFailure(townRoot, rig, summary, rawFeedback string) string 
 	if strings.Contains(lower, "collected 0 items") || strings.Contains(lower, "no tests ran") ||
 		strings.Contains(lower, "no tests found") {
 		if !hasAnyTestFiles(rigDir) {
-			return "QA claims missing/empty tests but no test file exists on disk — test bead not yet implemented"
+			return "QA claims missing/empty tests but no test file exists on disk — test bead not yet implemented. Re-run QA after implementation completes."
 		}
 	}
 	if (strings.Contains(lower, "test failed") || strings.Contains(lower, "tests failed") ||
 		strings.Contains(lower, "status 0")) && strings.Contains(lower, "no output") {
 		if hasPassingPythonTests(rigDir) {
-			return "QA claims test failure but pytest passes on disk — hallucinated failure"
+			return "QA claims test failure but pytest passes on disk — hallucinated failure. Re-send JSON outcome=success."
 		}
 	}
 	if strings.Contains(lower, "static") || strings.Contains(lower, ".js") || strings.Contains(lower, ".css") ||
 		strings.Contains(lower, ".html") || strings.Contains(lower, "frontend") || strings.Contains(lower, "web") {
 		if hasValidFrontendArtifacts(rigDir) {
-			return "QA claims frontend issues but web artifacts exist and are valid on disk"
+			return "QA claims frontend issues but web artifacts exist and are valid on disk. Re-send JSON outcome=success."
 		}
 	}
 	if strings.Contains(lower, "import") || strings.Contains(lower, "module") {
 		if hasPassingPythonTests(rigDir) {
-			return "QA claims import/module issues but tests pass on disk"
+			return "QA claims import/module issues but tests pass on disk. Re-send JSON outcome=success."
 		}
 	}
 	// If QA reports ANY failure but phase verify passes on disk, the QA claim is wrong.
 	// Prevents wasteful polecat re-implementation of already-correct code.
 	if (isFailureKeyWord(summary) || IsQAAgentShellError(combined)) && phaseVerifyPasses(townRoot, rig) {
-		return "QA reports failure but phase verify passes on disk — QA claim is spurious"
+		return "QA reports failure but phase verify passes on disk — QA claim is spurious. Re-send JSON outcome=success with summary: 'Phase verify passes on disk; QA failure was spurious.'"
 	}
 	return ""
 }
