@@ -137,3 +137,71 @@ func TestWorkflowNeedsQARuntimeSmoke_pythonWithoutAPI(t *testing.T) {
 		t.Fatal("python without SPEC API should not require smoke")
 	}
 }
+
+func TestRigFlowQARuntimeSmokeBlock_includesE2ESmokeWhenSpecHasPlaywright(t *testing.T) {
+	v := WorkflowValidation{
+		RequiredFiles: []string{
+			"backend/app.py",
+			"test/e2e/trading_flow.spec.ts",
+			"test/playwright.config.ts",
+		},
+		DeliveryPhases: []DeliveryPhase{
+			{
+				ID:            "e2e-and-deployment",
+				RequiredFiles: []string{"backend/app.py", "test/e2e/trading_flow.spec.ts", "test/playwright.config.ts"},
+			},
+		},
+		ActivePhaseIDField: "e2e-and-deployment",
+	}
+	block := RigFlowQARuntimeSmokeBlock(t.TempDir(), "rig", v)
+	if !strings.Contains(block, "E2E / browser smoke test") {
+		t.Fatalf("expected E2E smoke block, got:\n%s", block)
+	}
+	if !strings.Contains(block, "npx playwright test") {
+		t.Fatalf("expected playwright command hint, got:\n%s", block)
+	}
+	if !strings.Contains(block, "exercises real UI and API") {
+		t.Fatalf("expected UI/API language, got:\n%s", block)
+	}
+}
+
+func TestRigFlowQARuntimeSmokeBlock_includesE2ESmokeWithDockerCompose(t *testing.T) {
+	v := WorkflowValidation{
+		RequiredFiles: []string{
+			"backend/app.py",
+			"test/e2e/trading_flow.spec.ts",
+			"test/docker-compose.test.yml",
+		},
+		DeliveryPhases: []DeliveryPhase{
+			{
+				ID:            "e2e-and-deployment",
+				RequiredFiles: []string{"backend/app.py", "test/e2e/trading_flow.spec.ts", "test/docker-compose.test.yml"},
+			},
+		},
+		ActivePhaseIDField: "e2e-and-deployment",
+	}
+	block := RigFlowQARuntimeSmokeBlock(t.TempDir(), "rig", v)
+	if !strings.Contains(block, "E2E / browser smoke test") {
+		t.Fatalf("expected E2E smoke block, got:\n%s", block)
+	}
+	if !strings.Contains(block, "docker compose") {
+		t.Fatalf("expected docker compose command for compose-based E2E, got:\n%s", block)
+	}
+}
+
+func TestRigFlowQARuntimeSmokeBlock_skipsE2ESmokeWhenNoE2EFiles(t *testing.T) {
+	v := WorkflowValidation{
+		RequiredFiles: []string{"backend/app.py", "backend/routes.py"},
+		DeliveryPhases: []DeliveryPhase{
+			{
+				ID:            "backend",
+				RequiredFiles: []string{"backend/app.py", "backend/routes.py"},
+			},
+		},
+		ActivePhaseIDField: "backend",
+	}
+	block := RigFlowQARuntimeSmokeBlock(t.TempDir(), "rig", v)
+	if strings.Contains(block, "E2E / browser smoke test") {
+		t.Fatalf("should not include E2E block when no E2E files in phase, got:\n%s", block)
+	}
+}

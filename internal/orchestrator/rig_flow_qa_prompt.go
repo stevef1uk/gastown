@@ -46,6 +46,10 @@ func RigFlowQARuntimeSmokeBlock(townRoot, rig string, v WorkflowValidation) stri
 		}
 	}
 
+	if e2e := rigFlowE2ESmokeBlock(v, mayorRigDir); e2e != "" {
+		guidance = append(guidance, e2e)
+	}
+
 	if len(guidance) == 0 {
 		return base
 	}
@@ -202,4 +206,41 @@ CMD: cd {{rig}}/mayor/rig/%s && go run ./cmd/server
 gt-agent rewrites `+"`go run ./cmd/server`"+` into background server + curls for **only** paths in SPEC/architecture/plan — not invented API routes. Persistence files listed in docs are deleted before the probe so prior QA runs do not leave rows that fail empty-array checks.
 
 If smoke fails, next message **JSON only** with HTTP status and bead IDs — do not repeat long smoke CMDs.`, routeNote, layout, RigFlowStaticURLContractGuidance)
+}
+
+func rigFlowE2ESmokeBlock(v WorkflowValidation, mayorRigDir string) string {
+	scoped := v.ForActivePhase()
+	var e2eFiles []string
+	for _, f := range scoped.RequiredFiles {
+		if IsE2ETestPath(f) {
+			e2eFiles = append(e2eFiles, f)
+		}
+	}
+	if len(e2eFiles) == 0 {
+		return ""
+	}
+	hasCompose := false
+	for _, f := range scoped.RequiredFiles {
+		base := strings.ToLower(filepath.Base(f))
+		if strings.HasPrefix(base, "docker-compose") {
+			hasCompose = true
+			break
+		}
+	}
+	var b strings.Builder
+	b.WriteString("## E2E / browser smoke test (exercises real UI and API)\n\n")
+	b.WriteString("The active phase includes E2E test files in `required_files`. Before returning `all_passed`, **run the E2E tests** so they exercise the real UI and API in a browser — curl alone is not enough.\n\n")
+	if hasCompose {
+		b.WriteString("| Check | How |\n|-------|-----|\n")
+		b.WriteString("| E2E tests pass | `cd {{rig}}/mayor/rig && docker compose -f test/docker-compose.test.yml up --exit-code-from playwright` |\n")
+		b.WriteString("| Page loads | Tests use `page.goto` / `page.locator` against the running app |\n")
+		b.WriteString("| API exercised | Tests call the real backend through the browser (fetch/XHR), not mocks |\n\n")
+	} else {
+		b.WriteString("| Check | How |\n|-------|-----|\n")
+		b.WriteString("| E2E tests pass | `cd {{rig}}/mayor/rig && npx playwright test` (or the project's configured test runner) |\n")
+		b.WriteString("| Page loads | Tests use `page.goto` / `page.locator` against the running app |\n")
+		b.WriteString("| API exercised | Tests call the real backend through the browser (fetch/XHR), not mocks |\n\n")
+	}
+	b.WriteString("If E2E tests fail, return `failure` with the test output — do not advance the phase.\n")
+	return b.String()
 }
