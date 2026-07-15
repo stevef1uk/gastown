@@ -493,6 +493,50 @@ func normalizeLayoutShellPaths(cmd, layout string) string {
 			cmd = strings.ReplaceAll(cmd, tool+needle, tool)
 		}
 	}
+	// Strip layout/ prefix from space-separated paths in commands like:
+	// "wc -c frontend/package.json finally/frontend/tsconfig.json"
+	// After cd into layout root, "finally/frontend/tsconfig.json" should be "frontend/tsconfig.json".
+	// Only strip when layout/ is a redundant prefix, not when it's part of a nested path like layout/layout/.
+	cmd = stripLayoutPrefixFromSpaceSeparatedPaths(cmd, layout)
+	return cmd
+}
+
+// stripLayoutPrefixFromSpaceSeparatedPaths strips layout/ prefix from space-separated file paths.
+// Only strips when the prefix is redundant (after cd into layout root).
+// Does NOT strip when the path is layout/layout/... (legitimate nested path).
+func stripLayoutPrefixFromSpaceSeparatedPaths(cmd, layout string) string {
+	layout = strings.Trim(strings.TrimSpace(layout), "/")
+	if layout == "" {
+		return cmd
+	}
+	// Split command into parts and strip layout/ prefix from file paths
+	parts := strings.Fields(cmd)
+	changed := false
+	for i, part := range parts {
+		// Skip shell operators and environment variables
+		if part == "&&" || part == ";" || part == "|" || part == ">" || part == "<" ||
+			strings.HasPrefix(part, "$") || strings.HasPrefix(part, "export") ||
+			strings.HasPrefix(part, "cd") || strings.HasPrefix(part, "bash") {
+			continue
+		}
+		// Strip layout/ prefix from file paths
+		for _, prefix := range []string{layout + "/", "./" + layout + "/"} {
+			if strings.HasPrefix(part, prefix) {
+				rest := part[len(prefix):]
+				// Do NOT strip if the path is layout/layout/... (legitimate nested path)
+				// e.g., tasklist/tasklist/__init__.py should NOT become tasklist/__init__.py
+				if strings.HasPrefix(rest, layout+"/") || strings.HasPrefix(rest, "./"+layout+"/") {
+					continue
+				}
+				parts[i] = rest
+				changed = true
+				break
+			}
+		}
+	}
+	if changed {
+		return strings.Join(parts, " ")
+	}
 	return cmd
 }
 
