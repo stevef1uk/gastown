@@ -752,7 +752,13 @@ func commandHasRigPathContext(cmd, rig string) bool {
 		return false
 	}
 	lower := strings.ToLower(cmd)
-	return strings.Contains(lower, rigLower+"/") || strings.Contains(lower, "$gt_root/"+rigLower)
+	// Only consider as "has rig context" if the command references the rig path
+	// correctly (e.g., "finally/mayor/rig" or "$GT_ROOT/finally").
+	// Bare "finally/" without "mayor/rig" is NOT valid rig context — it's a bare
+	// layout path that needs cd mayor/rig prepended.
+	return strings.Contains(lower, rigLower+"/mayor/rig") ||
+		strings.Contains(lower, rigLower+"/mayor/") ||
+		strings.Contains(lower, "$gt_root/"+rigLower)
 }
 
 // rewriteQALayoutVerifyCommand fixes common QA agent mistakes: cd layout from town root,
