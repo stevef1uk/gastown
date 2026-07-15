@@ -82,6 +82,12 @@ func PythonVerifyCommand(v WorkflowValidation) string {
 
 	if v.UsesPythonVenv() && !strings.Contains(cmd, "source ") && !strings.Contains(cmd, ". ") && !strings.Contains(cmd, ".venv/") && !strings.Contains(cmd, "pipenv") && !strings.Contains(cmd, "poetry") {
 		venv := v.PythonVenvRelDir()
+		// When layout root is set and qa_verify_command cd's into it,
+		// the venv path must be relative to the layout, not mayor/rig.
+		layout := strings.Trim(strings.TrimSpace(v.LayoutRoot), "/")
+		if layout != "" && layout != "." && strings.Contains(strings.ToLower(base), "cd "+strings.ToLower(layout)) {
+			venv = layout + "/" + venv
+		}
 		cmd = ". " + venv + "/bin/activate && " + cmd
 	}
 

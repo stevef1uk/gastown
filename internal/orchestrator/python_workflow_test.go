@@ -90,3 +90,18 @@ func TestPythonVerifyCommand_noCDStillScoped(t *testing.T) {
 		t.Fatalf("expected defender/tests scope: %q", got)
 	}
 }
+
+func TestPythonVerifyCommand_venvActivationWithLayout(t *testing.T) {
+	t.Parallel()
+	// Dual-stack rig: qa_verify_command cd's into layout, venv is inside layout.
+	// The venv path must be relative to mayor/rig, not the layout cwd.
+	v := WorkflowValidation{
+		LayoutRoot:      "finally",
+		PythonVenvDir:   ".venv",
+		QAVerifyCommand: "cd finally && pytest && cd frontend && npm test",
+	}
+	got := PythonVerifyCommand(v)
+	if !strings.Contains(got, ". finally/.venv/bin/activate") {
+		t.Fatalf("venv activation must be finally/.venv/bin/activate (relative to mayor/rig): %q", got)
+	}
+}
