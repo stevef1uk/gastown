@@ -43,6 +43,8 @@ func PromptContextBlock(key, townRoot, rig string, v WorkflowValidation) string 
 		return FormatProjectSetupStackBlock(v)
 	case "design_draft_context":
 		return FormatDesignDraftContextBlock(townRoot, rig)
+	case "phase_test_guards":
+		return FormatPhaseTestGuards(townRoot, rig, v)
 	default:
 		return ""
 	}
@@ -75,7 +77,49 @@ func FormatDesignDraftContextBlock(townRoot, rig string) string {
 	return b.String()
 }
 
-// PromptContextBlocks resolves all keys from a state's hooks.prompt_context list.
+// FormatPhaseTestGuards injects test-environment rules based on required_files patterns.
+// For example, Next.js test files (*.test.tsx) need a @jest-environment jsdom docblock
+// because next/jest's createJestConfig may override testEnvironment.
+func FormatPhaseTestGuards(townRoot, rig string, v WorkflowValidation) string {
+	scoped := v.ForActivePhase()
+	files := scoped.RequiredFiles
+	if len(files) == 0 {
+		files = v.UnionRequiredFiles()
+	}
+	var hasJSDOMTest bool
+	var hasGoTest bool
+	var hasPythonTest bool
+	for _, f := range files {
+		lower := strings.ToLower(filepath.ToSlash(strings.TrimSpace(f)))
+		if strings.HasSuffix(lower, ".test.tsx") || strings.HasSuffix(lower, ".test.ts") {
+			if !strings.HasPrefix(lower, "e2e/") && !strings.HasPrefix(lower, "playwright/") && !strings.HasPrefix(lower, "cypress/") &&
+				!strings.Contains(lower, "/e2e/") && !strings.Contains(lower, "/playwright/") && !strings.Contains(lower, "/cypress/") {
+				hasJSDOMTest = true
+			}
+		}
+		if strings.HasSuffix(lower, "_test.go") {
+			hasGoTest = true
+		}
+		if strings.HasSuffix(lower, "_test.py") || strings.HasSuffix(lower, "test_.py") {
+			hasPythonTest = true
+		}
+	}
+	if !hasJSDOMTest && !hasGoTest && !hasPythonTest {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("## Test file conventions\n\n")
+	if hasJSDOMTest {
+		b.WriteString("- **Next.js test files (`*.test.tsx`, `*.test.ts`):** Add `// @jest-environment jsdom` as the first line of every test file. `next/jest`'s `createJestConfig` may override `testEnvironment` to `node`, causing `document is not defined` errors. The docblock forces jsdom per-file.\n")
+	}
+	if hasGoTest {
+		b.WriteString("- **Go test files (`*_test.go`):** Use `package pkg_test` (external test package) for black-box tests. Import `testing` and use `t *testing.T` parameter. Run `go test -count=1 ./...` from the layout root.\n")
+	}
+	if hasPythonTest {
+		b.WriteString("- **Python test files (`test_*.py`, `*_test.py`):** Use `unittest.TestCase` or `pytest` functions. Run `python3 -m pytest path/to/test_file.py -v` from the layout root.\n")
+	}
+	return b.String()
+}
 func PromptContextBlocks(keys []string, townRoot, rig string, v WorkflowValidation) []string {
 	var out []string
 	for _, key := range keys {

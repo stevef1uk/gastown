@@ -352,7 +352,7 @@ func TestPromptContextBlocks_implementationHooks(t *testing.T) {
 func TestRigFlowYAML_implementationHasImplementBeadContext(t *testing.T) {
 	tpl := loadRigFlowTemplate(t)
 	h := tpl.States["implementation"].Hooks
-	want := []string{"implementation_queue", "implement_bead_context"}
+	want := []string{"implementation_queue", "implement_bead_context", "phase_test_guards"}
 	if len(h.PromptContext) != len(want) {
 		t.Fatalf("prompt_context = %v, want %v", h.PromptContext, want)
 	}

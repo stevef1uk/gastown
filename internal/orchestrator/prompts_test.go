@@ -127,6 +127,73 @@ func TestPromptVars_includesStaticURLContractGuidance(t *testing.T) {
 	}
 }
 
+func TestFormatPhaseTestGuards_jsdoc(t *testing.T) {
+	t.Parallel()
+	v := WorkflowValidation{
+		RequiredFiles: []string{"frontend/components/Widget.test.tsx", "frontend/package.json"},
+	}
+	block := FormatPhaseTestGuards("", "", v)
+	if !strings.Contains(block, "@jest-environment jsdom") {
+		t.Fatalf("expected jsdom docblock hint for .test.tsx files:\n%s", block)
+	}
+	if !strings.Contains(block, "Test file conventions") {
+		t.Fatalf("expected header")
+	}
+}
+
+func TestFormatPhaseTestGuards_goTest(t *testing.T) {
+	t.Parallel()
+	v := WorkflowValidation{
+		RequiredFiles: []string{"internal/store/store_test.go", "internal/api/handler_test.go"},
+	}
+	block := FormatPhaseTestGuards("", "", v)
+	if !strings.Contains(block, "_test.go") {
+		t.Fatalf("expected Go test conventions:\n%s", block)
+	}
+	if strings.Contains(block, "jsdom") {
+		t.Fatalf("should not mention jsdom for Go-only files:\n%s", block)
+	}
+}
+
+func TestFormatPhaseTestGuards_empty(t *testing.T) {
+	t.Parallel()
+	v := WorkflowValidation{
+		RequiredFiles: []string{"internal/store/store.go", "cmd/server/main.go"},
+	}
+	block := FormatPhaseTestGuards("", "", v)
+	if block != "" {
+		t.Fatalf("expected empty block for no test files:\n%s", block)
+	}
+}
+
+func TestFormatPhaseTestGuards_jsdomAndGo(t *testing.T) {
+	t.Parallel()
+	v := WorkflowValidation{
+		RequiredFiles: []string{
+			"frontend/components/Widget.test.tsx",
+			"internal/store/store_test.go",
+		},
+	}
+	block := FormatPhaseTestGuards("", "", v)
+	if !strings.Contains(block, "@jest-environment jsdom") {
+		t.Fatalf("expected jsdom hint:\n%s", block)
+	}
+	if !strings.Contains(block, "_test.go") {
+		t.Fatalf("expected Go test hint:\n%s", block)
+	}
+}
+
+func TestFormatPhaseTestGuards_skipsE2E(t *testing.T) {
+	t.Parallel()
+	v := WorkflowValidation{
+		RequiredFiles: []string{"e2e/login.test.ts", "playwright/smoke.test.ts"},
+	}
+	block := FormatPhaseTestGuards("", "", v)
+	if block != "" {
+		t.Fatalf("expected empty for e2e/playwright test files:\n%s", block)
+	}
+}
+
 func TestRigFlowYAML_qaInstructionsMentionArchitectureStaticURLs(t *testing.T) {
 	tpl := loadRigFlowTemplate(t)
 	inst := tpl.States["qa_review"].Instructions
