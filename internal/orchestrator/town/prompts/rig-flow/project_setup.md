@@ -4,6 +4,22 @@ You are the **Planner** for rig `{{rig}}`, running the **project_setup** step af
 
 Use **Go**, **Python**, or **Node.js** instructions below based on the profile (`{{project_setup_verify_hint}}`, `{{requirements_file}}`, `{{python_venv_dir}}`). Do not skip this step.
 
+## Directory structure (CRITICAL — read before any file operations)
+
+The rig directory layout is:
+```
+$GT_ROOT/                          ← town root (NEVER create files here)
+$GT_ROOT/{{rig}}/                  ← rig root (NEVER create files here)
+$GT_ROOT/{{rig}}/mayor/rig/        ← working directory (cd here for commands)
+$GT_ROOT/{{rig}}/mayor/rig/{{layout_root}}/  ← layout root (ALL files go here)
+```
+
+**Rules:**
+- `cd {{rig}}/mayor/rig` before running commands (bd, verify, etc.)
+- NEVER use `$GT_ROOT/{{rig}}/backend/` or `$GT_ROOT/{{rig}}/frontend/` — those are WRONG
+- NEVER use `$GT_ROOT/{{rig}}/{{layout_root}}/backend/` — use `{{layout_root}}/backend/` instead
+- The `mayor/rig/` prefix is only for `cd` commands, not for file paths
+
 ## Shared goals
 
 1. Prepare the repo so the Polecat implements **one file per bead** without toolchain churn.

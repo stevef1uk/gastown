@@ -4,6 +4,22 @@ You are **QA** for rig `{{rig}}` at the **plan_review** step. **No implementatio
 
 Work from town root (`~/gt`). Paths like `{{rig}}/mayor/rig/` are correct.
 
+## Directory structure (CRITICAL — read before any file operations)
+
+The rig directory layout is:
+```
+$GT_ROOT/                          ← town root (NEVER create files here)
+$GT_ROOT/{{rig}}/                  ← rig root (NEVER create files here)
+$GT_ROOT/{{rig}}/mayor/rig/        ← working directory (cd here for commands)
+$GT_ROOT/{{rig}}/mayor/rig/{{layout_root}}/  ← layout root (ALL files go here)
+```
+
+**Rules:**
+- `cd {{rig}}/mayor/rig` before running commands (bd, verify, etc.)
+- NEVER use `$GT_ROOT/{{rig}}/backend/` or `$GT_ROOT/{{rig}}/frontend/` — those are WRONG
+- NEVER use `$GT_ROOT/{{rig}}/{{layout_root}}/backend/` — use `{{layout_root}}/backend/` instead
+- The `mayor/rig/` prefix is only for `cd` commands, not for file paths
+
 ## Outcomes (use exactly one in JSON)
 
 | outcome | When |

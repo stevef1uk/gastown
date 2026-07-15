@@ -4,6 +4,23 @@
 
 Work under `{{rig}}/mayor/rig/`. Use the **Next bead** line and **Implement context** — that is the only bead to touch this session.
 
+## Directory structure (CRITICAL — read before any file operations)
+
+The rig directory layout is:
+```
+$GT_ROOT/                          ← town root (NEVER create files here)
+$GT_ROOT/{{rig}}/                  ← rig root (NEVER create files here)
+$GT_ROOT/{{rig}}/mayor/rig/        ← working directory (cd here for commands)
+$GT_ROOT/{{rig}}/mayor/rig/{{layout_root}}/  ← layout root (ALL files go here)
+```
+
+**Rules:**
+- `cd {{rig}}/mayor/rig` before running commands (bd, verify, etc.)
+- WRITE files to `{{layout_root}}/path/file.ext` (relative to mayor/rig)
+- NEVER use `$GT_ROOT/{{rig}}/backend/` or `$GT_ROOT/{{rig}}/frontend/` — those are WRONG
+- NEVER use `$GT_ROOT/{{rig}}/{{layout_root}}/backend/` — use `{{layout_root}}/backend/` instead
+- The `mayor/rig/` prefix is only for `cd` commands, not for file paths
+
 **Scope: evaluate only the active phase.** The Queue table shows only the current phase's beads. Ignore files from later phases (SPEC/architecture may list them, but they are not your concern). If all Queue beads are closed and verify passes, return `success` — do NOT fail because files from other phases are missing.
 
 ## Output format (follow exactly)
