@@ -935,3 +935,34 @@ wc -c finally/mayor/rig/architecture.md`
 		t.Fatalf("post-heredoc command missing: %q", got)
 	}
 }
+
+func TestRewriteUnittestToWorkdir_pythonVenvLayoutCD(t *testing.T) {
+	// Dual-stack rig: qa_verify_command cd's into layout, venv is inside layout.
+	// After rewrite, the venv activation must be relative to workPath.
+	v := orchestrator.WorkflowValidation{
+		LayoutRoot:      "finally",
+		PythonVenvDir:   ".venv",
+		QAVerifyCommand: "cd finally && pytest && cd frontend && npm test",
+	}
+	cmd := ". .venv/bin/activate && cd finally && pytest && cd frontend && npm test"
+	fixed, ok := rewriteUnittestToWorkdir(cmd, "testgt", v)
+	if !ok {
+		t.Fatal("expected rewrite for layout CD command")
+	}
+	// workPath = testgt/mayor/rig/finally, venv should be .venv relative to it.
+	if !strings.Contains(fixed, ".venv/bin/activate") {
+		t.Fatalf("venv activation missing: %q", fixed)
+	}
+	// Must NOT double the layout: no /finally/finally/.venv
+	if strings.Contains(fixed, "finally/finally") {
+		t.Fatalf("double layout prefix in venv path: %q", fixed)
+	}
+	// Must cd into workPath (testgt/mayor/rig/finally)
+	if !strings.Contains(fixed, "cd testgt/mayor/rig/finally") {
+		t.Fatalf("expected cd into workPath, got: %q", fixed)
+	}
+	// Venv activation must be ". .venv/bin/activate" (source syntax)
+	if !strings.Contains(fixed, ". .venv/bin/activate") {
+		t.Fatalf("venv activation must use '. .venv/bin/activate' syntax: %q", fixed)
+	}
+}

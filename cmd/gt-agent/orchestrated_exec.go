@@ -387,10 +387,16 @@ func rewriteUnittestToWorkdir(cmd, rig string, v orchestrator.WorkflowValidation
 		cmd = fixed
 		changed = true
 	}
-	// Strip source .venv/bin/activate && so pip runs in venv context.
-	if strings.Contains(cmd, ".venv/bin/activate") && strings.Contains(cmd, "pip install") {
-		cmd = regexp.MustCompile(`(\.|source)\s+\S*venv/\S*activate\s*&&\s*`).ReplaceAllString(cmd, "")
-		changed = true
+	// Strip source .venv/bin/activate && — the cd rewrite below may change the
+	// working directory, so the venv path must be recomputed relative to workPath.
+	venvActivate := ""
+	if strings.Contains(cmd, ".venv/bin/activate") || strings.Contains(cmd, "venv/bin/activate") {
+		re := regexp.MustCompile(`(\.|source)\s+\S*venv/\S*activate\s*&&\s*`)
+		if m := re.FindString(cmd); m != "" {
+			venvActivate = strings.TrimSpace(m[:len(m)-3]) // strip trailing "&&"
+			cmd = re.ReplaceAllString(cmd, "")
+			changed = true
+		}
 	}
 	// In project_setup, force pip install to use the venv python so packages
 	// land in .venv/ and the verify (import pytest) succeeds.
@@ -462,6 +468,16 @@ func rewriteUnittestToWorkdir(cmd, rig string, v orchestrator.WorkflowValidation
 			cmd = normalized
 			changed = true
 		}
+	}
+	// Re-add venv activation after cd rewrite — path must be relative to workPath.
+	if venvActivate != "" && orchestrator.WorkflowUsesPython(v) && v.UsesPythonVenv() {
+		venvRel := v.PythonVenvRelDir()
+		// If workPath ends with layout, venv is under layout — use bare .venv relative to cwd.
+		if layout != "" && layout != "." && strings.HasSuffix(strings.Trim(workPath, "/"), layout) {
+			venvRel = ".venv"
+		}
+		cmd = ". " + venvRel + "/bin/activate && " + cmd
+		changed = true
 	}
 	return cmd, changed
 }
