@@ -89,6 +89,7 @@ func FormatPhaseTestGuards(townRoot, rig string, v WorkflowValidation) string {
 	var hasJSDOMTest bool
 	var hasGoTest bool
 	var hasPythonTest bool
+	var hasFrontendSource bool
 	for _, f := range files {
 		lower := strings.ToLower(filepath.ToSlash(strings.TrimSpace(f)))
 		if strings.HasSuffix(lower, ".test.tsx") || strings.HasSuffix(lower, ".test.ts") {
@@ -103,6 +104,17 @@ func FormatPhaseTestGuards(townRoot, rig string, v WorkflowValidation) string {
 		if strings.HasSuffix(lower, "_test.py") || strings.HasSuffix(lower, "test_.py") {
 			hasPythonTest = true
 		}
+		if strings.HasSuffix(lower, ".tsx") || strings.HasSuffix(lower, ".jsx") ||
+			strings.HasSuffix(lower, "/package.json") || lower == "package.json" {
+			if !strings.HasPrefix(lower, "e2e/") && !strings.HasPrefix(lower, "playwright/") && !strings.HasPrefix(lower, "cypress/") &&
+				!strings.Contains(lower, "/e2e/") && !strings.Contains(lower, "/playwright/") && !strings.Contains(lower, "/cypress/") {
+				hasFrontendSource = true
+			}
+		}
+	}
+	// Trigger jsdom guard when frontend source files exist (test files are implementation artifacts, not listed in required_files).
+	if hasFrontendSource {
+		hasJSDOMTest = true
 	}
 	if !hasJSDOMTest && !hasGoTest && !hasPythonTest {
 		return ""

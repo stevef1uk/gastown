@@ -141,6 +141,17 @@ func TestFormatPhaseTestGuards_jsdoc(t *testing.T) {
 	}
 }
 
+func TestFormatPhaseTestGuards_frontendSource(t *testing.T) {
+	t.Parallel()
+	v := WorkflowValidation{
+		RequiredFiles: []string{"finally/frontend/package.json", "finally/frontend/tsconfig.json"},
+	}
+	block := FormatPhaseTestGuards("", "", v)
+	if !strings.Contains(block, "@jest-environment jsdom") {
+		t.Fatalf("expected jsdom hint from frontend source files (no .test.tsx):\n%s", block)
+	}
+}
+
 func TestFormatPhaseTestGuards_goTest(t *testing.T) {
 	t.Parallel()
 	v := WorkflowValidation{
