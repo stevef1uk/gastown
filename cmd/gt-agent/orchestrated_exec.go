@@ -719,7 +719,7 @@ func commandHasLayoutCD(cmd, layout string) bool {
 	lower := strings.ToLower(cmd)
 	layoutLower := strings.ToLower(layout)
 	// Match "cd layout" or "cd ./layout" followed by " && " or end of string
-	// but NOT when it's part of "cd <rig>/mayor/rig" (combined path)
+	// but NOT when it's part of "cd <rig>/mayor/rig" (combined path).
 	patterns := []string{
 		"cd " + layoutLower + " && ",
 		"cd " + layoutLower + " ",
