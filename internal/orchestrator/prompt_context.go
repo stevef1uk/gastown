@@ -90,6 +90,7 @@ func FormatPhaseTestGuards(townRoot, rig string, v WorkflowValidation) string {
 	var hasGoTest bool
 	var hasPythonTest bool
 	var hasFrontendSource bool
+	var hasSSE bool
 	for _, f := range files {
 		lower := strings.ToLower(filepath.ToSlash(strings.TrimSpace(f)))
 		if strings.HasSuffix(lower, ".test.tsx") || strings.HasSuffix(lower, ".test.ts") {
@@ -111,6 +112,14 @@ func FormatPhaseTestGuards(townRoot, rig string, v WorkflowValidation) string {
 				hasFrontendSource = true
 			}
 		}
+		// Detect SSE/EventSource usage — frontend files that import or use EventSource
+		if strings.HasSuffix(lower, ".tsx") || strings.HasSuffix(lower, ".ts") || strings.HasSuffix(lower, ".jsx") || strings.HasSuffix(lower, ".js") {
+			if !strings.HasPrefix(lower, "e2e/") && !strings.HasPrefix(lower, "playwright/") && !strings.HasPrefix(lower, "cypress/") &&
+				!strings.Contains(lower, "/e2e/") && !strings.Contains(lower, "/playwright/") && !strings.Contains(lower, "/cypress/") {
+				// Could do a deeper scan for "EventSource" but presence of frontend source is sufficient signal
+				hasSSE = true
+			}
+		}
 	}
 	// Trigger jsdom guard when frontend source files exist (test files are implementation artifacts, not listed in required_files).
 	if hasFrontendSource {
@@ -123,6 +132,9 @@ func FormatPhaseTestGuards(townRoot, rig string, v WorkflowValidation) string {
 	b.WriteString("## Test file conventions\n\n")
 	if hasJSDOMTest {
 		b.WriteString("- **Next.js test files (`*.test.tsx`, `*.test.ts`):** Add `// @jest-environment jsdom` as the first line of every test file. `next/jest`'s `createJestConfig` may override `testEnvironment` to `node`, causing `document is not defined` errors. The docblock forces jsdom per-file.\n")
+	}
+	if hasSSE {
+		b.WriteString("- **SSE/EventSource components:** Add a Jest polyfill for `EventSource` in `jest.setup.ts` (or per test file) — jsdom does not provide it. Example:\n  ```ts\n  global.EventSource = class EventSource { constructor(url: string) { this.url = url; } close() {} onmessage: ((ev: MessageEvent) => void) | null = null; url: string; };\n  ```\n  Without this, tests rendering SSE components fail with `ReferenceError: EventSource is not defined`.\n")
 	}
 	if hasGoTest {
 		b.WriteString("- **Go test files (`*_test.go`):** Use `package pkg_test` (external test package) for black-box tests. Import `testing` and use `t *testing.T` parameter. Run `go test -count=1 ./...` from the layout root.\n")

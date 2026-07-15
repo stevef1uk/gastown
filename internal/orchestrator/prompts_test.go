@@ -152,6 +152,20 @@ func TestFormatPhaseTestGuards_frontendSource(t *testing.T) {
 	}
 }
 
+func TestFormatPhaseTestGuards_sse(t *testing.T) {
+	t.Parallel()
+	v := WorkflowValidation{
+		RequiredFiles: []string{"frontend/components/Watchlist.tsx", "frontend/package.json"},
+	}
+	block := FormatPhaseTestGuards("", "", v)
+	if !strings.Contains(block, "EventSource") {
+		t.Fatalf("expected EventSource polyfill hint for SSE component:\n%s", block)
+	}
+	if !strings.Contains(block, "jest.setup.ts") {
+		t.Fatalf("expected jest.setup.ts mention:\n%s", block)
+	}
+}
+
 func TestFormatPhaseTestGuards_goTest(t *testing.T) {
 	t.Parallel()
 	v := WorkflowValidation{
