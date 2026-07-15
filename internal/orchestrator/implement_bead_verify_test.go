@@ -314,7 +314,7 @@ func TestReopenClosedImplementBeadsOrdered_reopensWhenPythonVerifyFails(t *testi
 	}
 }
 
-func TestReopenClosedImplementBeadsForMissingOpenRequired_skipsGreenGoVerify(t *testing.T) {
+func TestReopenClosedImplementBeadsForMissingOpenRequired_reopensGreenGoVerify(t *testing.T) {
 	dir := t.TempDir()
 	rig := "rig"
 	rigDir := filepath.Join(dir, rig, "mayor", "rig")
@@ -336,9 +336,10 @@ func TestReopenClosedImplementBeadsForMissingOpenRequired_skipsGreenGoVerify(t *
 		}
 		return nil, nil
 	}
+	var reopenedIDs []string
 	prevUpdate := bdUpdateImplementBeadStatusHook
 	bdUpdateImplementBeadStatusHook = func(townRoot, rig, beadID, status string) error {
-		t.Fatalf("should not reopen a closed bead when verify passes")
+		reopenedIDs = append(reopenedIDs, beadID)
 		return nil
 	}
 	defer func() {
@@ -350,8 +351,8 @@ func TestReopenClosedImplementBeadsForMissingOpenRequired_skipsGreenGoVerify(t *
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(reopened) != 0 {
-		t.Fatalf("reopened=%v want none when file verify passes", reopened)
+	if len(reopened) == 0 {
+		t.Fatal("closed bead still in required_files must be reopened even when verify passes")
 	}
 }
 
