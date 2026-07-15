@@ -710,6 +710,7 @@ func stripFirstCDPrefix(cmd string) string {
 	return ""
 }
 
+// commandHasLayoutCD reports whether cmd has a separate "cd <layout>" command (not part of cd <rig>/mayor/rig).
 func commandHasLayoutCD(cmd, layout string) bool {
 	layout = strings.Trim(strings.TrimSpace(layout), "/")
 	if layout == "" {
@@ -717,9 +718,25 @@ func commandHasLayoutCD(cmd, layout string) bool {
 	}
 	lower := strings.ToLower(cmd)
 	layoutLower := strings.ToLower(layout)
-	return strings.Contains(lower, "cd "+layoutLower) ||
-		strings.Contains(lower, "cd ./"+layoutLower) ||
-		strings.Contains(lower, "/"+layoutLower+" &&")
+	// Match "cd layout" or "cd ./layout" followed by " && " or end of string
+	// but NOT when it's part of "cd <rig>/mayor/rig" (combined path)
+	patterns := []string{
+		"cd " + layoutLower + " && ",
+		"cd " + layoutLower + " ",
+		"cd ./" + layoutLower + " && ",
+		"cd ./" + layoutLower + " ",
+	}
+	for _, p := range patterns {
+		if strings.Contains(lower, p) {
+			// Ensure it's not part of "cd <rig>/mayor/rig"
+			if strings.Contains(lower, p+"mayor/rig") {
+				continue
+			}
+			return true
+		}
+	}
+	// Also check "/layout &&" patterns (e.g. in complex chains)
+	return strings.Contains(lower, "/"+layoutLower+" &&")
 }
 
 // commandHasMayorRigCD reports whether cmd already cds into the rig mayor/rig worktree.
