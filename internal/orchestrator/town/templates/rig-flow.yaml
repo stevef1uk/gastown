@@ -193,6 +193,8 @@ states:
         **Close bead after verify passes:**
         CMD: export BEADS_DIR=$GT_ROOT/{{rig}}/.beads && cd {{rig}}/mayor/rig && bd close BEAD_ID
 
+        **Do NOT wrap CMD in angle brackets** — use plain `CMD: ...` not `<CMD: ...>`.
+
         **Frontend beads (JS/CSS/HTML):** No verify step needed. Write the file, then `bd close` immediately. Do not run compileall/pytest/go test on web assets.
 
         **SQL beads (.sql):** Validate with the sqlite3 verify command shown in the Next bead line. Do NOT run pytest on .sql files.
