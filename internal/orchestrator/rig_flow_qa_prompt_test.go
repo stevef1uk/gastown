@@ -7,6 +7,33 @@ import (
 	"testing"
 )
 
+func TestRigFlowQARuntimeSmokeBlock_includesAPIContractGuidance(t *testing.T) {
+	dir := t.TempDir()
+	rig := "finally-like"
+	mayorRigDir := filepath.Join(dir, rig, "mayor", "rig")
+	if err := os.MkdirAll(filepath.Join(mayorRigDir, "frontend", "services"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(mayorRigDir, "backend", "api"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(mayorRigDir, "frontend", "services", "api.ts"), []byte("fetch('/api/missing')"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(mayorRigDir, "backend", "api", "routes.py"), []byte(`@api_router.get("/existing")`), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	v := WorkflowValidation{}
+	block := RigFlowQARuntimeSmokeBlock(dir, rig, v)
+	if !strings.Contains(block, "Cross-stack API contract issues") {
+		t.Fatalf("expected API contract guidance in block, got:\n%s", block)
+	}
+	if !strings.Contains(block, "/api/missing") {
+		t.Fatalf("expected missing backend path in guidance, got:\n%s", block)
+	}
+}
+
 func TestRigFlowQARuntimeSmokeBlock_pythonSkipsGoRun(t *testing.T) {
 	v := WorkflowValidation{
 		LayoutRoot:        "backend",

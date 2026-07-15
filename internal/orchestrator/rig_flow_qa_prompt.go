@@ -2,33 +2,47 @@ package orchestrator
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 )
 
 // RigFlowQARuntimeSmokeBlock is injected into qa_review.md from the rig profile and SPEC.
 func RigFlowQARuntimeSmokeBlock(townRoot, rig string, v WorkflowValidation) string {
 	v = v.ForActivePhase()
-	if WorkflowUsesPython(v) {
+	mayorRigDir := filepath.Join(townRoot, rig, "mayor", "rig")
+	contractGUID := ""
+	if report, err := LoadAPIContractFromRig(mayorRigDir); err == nil && !report.IsClean() {
+		contractGUID = FormatAPIContractGuidance(report)
+	}
+
+	base := ""
+	switch {
+	case WorkflowUsesPython(v):
 		if WorkflowNeedsQARuntimeSmoke(townRoot, rig, v) {
 			spec, _ := LoadAPISmokeSpecFromRig(townRoot, rig, v)
-			return rigFlowQAPythonWebAPISmokeBlock(v, spec)
+			base = rigFlowQAPythonWebAPISmokeBlock(v, spec)
+		} else {
+			base = rigFlowQAPythonVerifyBlock(v)
 		}
-		return rigFlowQAPythonVerifyBlock(v)
+	case !WorkflowUsesGo(v):
+		base = rigFlowQAGenericVerifyBlock(v)
+	case !WorkflowNeedsQARuntimeSmoke(townRoot, rig, v):
+		base = rigFlowQAGoLibraryVerifyBlock(v)
+	default:
+		spec, _ := LoadAPISmokeSpecFromRig(townRoot, rig, v)
+		if APISmokeHasHTTPAPI(spec) {
+			base = rigFlowQAGoWebAPISmokeBlock(v, spec)
+		} else if len(spec.StaticAssets) > 0 || smokeHasNonRootGETProbes(spec) {
+			base = rigFlowQAGoWebStaticSmokeBlock(v)
+		} else {
+			base = rigFlowQAGoLibraryVerifyBlock(v)
+		}
 	}
-	if !WorkflowUsesGo(v) {
-		return rigFlowQAGenericVerifyBlock(v)
+
+	if contractGUID == "" {
+		return base
 	}
-	if !WorkflowNeedsQARuntimeSmoke(townRoot, rig, v) {
-		return rigFlowQAGoLibraryVerifyBlock(v)
-	}
-	spec, _ := LoadAPISmokeSpecFromRig(townRoot, rig, v)
-	if APISmokeHasHTTPAPI(spec) {
-		return rigFlowQAGoWebAPISmokeBlock(v, spec)
-	}
-	if len(spec.StaticAssets) > 0 || smokeHasNonRootGETProbes(spec) {
-		return rigFlowQAGoWebStaticSmokeBlock(v)
-	}
-	return rigFlowQAGoLibraryVerifyBlock(v)
+	return base + "\n\n" + contractGUID
 }
 
 func rigFlowQAGenericVerifyBlock(v WorkflowValidation) string {
