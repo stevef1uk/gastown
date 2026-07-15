@@ -470,16 +470,65 @@ func rewriteUnittestToWorkdir(cmd, rig string, v orchestrator.WorkflowValidation
 		}
 	}
 	// Re-add venv activation after cd rewrite — path must be relative to workPath.
+	// Insert AFTER any cd commands so venv resolves from the correct directory.
 	if venvActivate != "" && orchestrator.WorkflowUsesPython(v) && v.UsesPythonVenv() {
 		venvRel := v.PythonVenvRelDir()
 		// If workPath ends with layout, venv is under layout — use bare .venv relative to cwd.
 		if layout != "" && layout != "." && strings.HasSuffix(strings.Trim(workPath, "/"), layout) {
 			venvRel = ".venv"
 		}
-		cmd = ". " + venvRel + "/bin/activate && " + cmd
+		venvCmd := ". " + venvRel + "/bin/activate"
+		// Find the end of the cd chain and insert venv activation after it.
+		// e.g., "cd foo && cd bar && pytest" → "cd foo && cd bar && . .venv/bin/activate && pytest"
+		if cdEnd := findCDChainEnd(cmd); cdEnd > 0 {
+			cmd = cmd[:cdEnd] + " && " + venvCmd + cmd[cdEnd:]
+		} else {
+			cmd = venvCmd + " && " + cmd
+		}
 		changed = true
 	}
 	return cmd, changed
+}
+
+// findCDChainEnd returns the index after the last "&&" in a leading cd chain.
+// e.g., "cd foo && cd bar && pytest" → index after "cd foo && cd bar && "
+func findCDChainEnd(cmd string) int {
+	lower := strings.ToLower(cmd)
+	idx := 0
+	for {
+		// Find next "cd " at the start or after "&& "
+		cdIdx := -1
+		if idx == 0 && strings.HasPrefix(lower[idx:], "cd ") {
+			cdIdx = idx
+		} else {
+			// Look for "&& cd " or "&& cd\t" or "&& cd\n"
+			afterAnd := strings.Index(lower[idx:], "&& cd ")
+			if afterAnd < 0 {
+				afterAnd = strings.Index(lower[idx:], "&&\tcd ")
+			}
+			if afterAnd >= 0 {
+				cdIdx = idx + afterAnd + 4 // skip "&& "
+			}
+		}
+		if cdIdx < 0 {
+			break
+		}
+		// Find the end of this cd command (&& or end of string)
+		cdEnd := strings.Index(lower[cdIdx:], " && ")
+		if cdEnd < 0 {
+			// Check if there's more after the cd path
+			spaceIdx := strings.Index(lower[cdIdx+3:], " ")
+			if spaceIdx >= 0 {
+				// There's more after the cd path — this is the last cd in the chain
+				idx = cdIdx + 3 + spaceIdx + 1
+				break
+			}
+			// cd is the entire command
+			return len(cmd)
+		}
+		idx = cdIdx + cdEnd + 4 // skip " && "
+	}
+	return idx
 }
 
 // normalizeLayoutShellPaths strips redundant layout_root/ prefixes after cd into the module workdir.
