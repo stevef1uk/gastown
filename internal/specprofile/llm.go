@@ -122,6 +122,8 @@ Rules:
 - dev_server_port: The port the dev server listens on. Set 0 if the project is NOT a web server (CLI tool, library, background worker, etc.). If the project IS a web server (handles HTTP requests, serves a web UI/API), set the port number explicitly if the spec mentions one (e.g. 8080, 3000, 5000, 8000), otherwise default to 8080 for Go servers and 8000 for Python servers.
 - confidence: "high", "medium", or "low".
 
+CRITICAL: The agent's working directory when running QA commands is $GT_ROOT/<rig>/mayor/rig/. All qa_verify_command values (root and per-phase) must be relative to that directory. For example, if layout_root is "finally", the command should be "cd finally/frontend && npm test" NOT "cd frontend && npm test".
+
 Output JSON only.`
 }
 
