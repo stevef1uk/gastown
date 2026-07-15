@@ -69,6 +69,7 @@ func TestRejectMayorRigRootShellCommand_allowsNpmInSubdir(t *testing.T) {
 		{"npm install", true},
 		{"cd finally/mayor/rig && npm install", true},
 		{"cd finally/mayor/rig && yarn install", true},
+		{"cd finally/mayor/rig/finally && npm install", false},
 	}
 	for _, tc := range cases {
 		err := RejectMayorRigRootShellCommand(tc.cmd, ".")

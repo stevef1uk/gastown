@@ -200,7 +200,11 @@ func runsInSubdirectory(lower, layoutRoot string) bool {
 		}
 		// cd into the layout root itself is still root-level.
 		if layout != "" && layout != "." && (target == layout || strings.HasSuffix(target, "/"+layout)) {
-			continue
+			// Exception: the rewritten path includes the full rig->layout path
+			// (e.g. "finally/mayor/rig/finally") — that's inside the layout, not root.
+			if !strings.Contains(target, "/mayor/rig/") {
+				continue
+			}
 		}
 		// Anything else is a subdirectory.
 		return true
