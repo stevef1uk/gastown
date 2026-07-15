@@ -463,10 +463,13 @@ func rewriteUnittestToWorkdir(cmd, rig string, v orchestrator.WorkflowValidation
 	}
 	if layout != "" && layout != "." {
 		cmd = normalizeRigPrefixShellPaths(cmd, rig, layout)
-		normalized := normalizeLayoutShellPaths(cmd, layout)
-		if normalized != cmd {
-			cmd = normalized
-			changed = true
+		// Only strip layout/ prefix when we're actually in the layout root (Go modules or layoutShell).
+		if strings.HasSuffix(strings.Trim(workPath, "/"), layout) {
+			normalized := normalizeLayoutShellPaths(cmd, layout)
+			if normalized != cmd {
+				cmd = normalized
+				changed = true
+			}
 		}
 	}
 	// Re-add venv activation after cd rewrite — path must be relative to workPath.
