@@ -1048,6 +1048,12 @@ func rewriteHallucinatedAbsoluteTownRoot(cmd, townRoot, rig, work string) (strin
 		out = strings.ReplaceAll(out, "~/gt/", "")
 		changed = true
 	}
+	// Handle ~/gt/mayor/rig (missing rig name) → <rig>/mayor/rig
+	// The LLM sometimes omits the rig name, using ~/gt/mayor/rig instead of ~/gt/<rig>/mayor/rig
+	if strings.Contains(out, "mayor/rig") && !strings.Contains(out, rig+"/mayor/rig") {
+		out = strings.ReplaceAll(out, "mayor/rig", rig+"/mayor/rig")
+		changed = true
+	}
 	if strings.Contains(out, "~$GT_ROOT") {
 		out = strings.ReplaceAll(out, "~$GT_ROOT", "$GT_ROOT")
 		changed = true
