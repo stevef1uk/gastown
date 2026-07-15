@@ -26,6 +26,7 @@ func preprocessOrchestratedResponse(response string) string {
 	response = unwrapJSONOrchestratedCommands(response)
 	response = unwrapJSONCommandArray(response)
 	response = unwrapJSONActionCommands(response)
+	response = unwrapFunctionToolCalls(response)
 	response = normalizeGluedWriteBody(response)
 	response = normalizeGluedCMDMarkers(response)
 	response = gluedNativeToolRE.ReplaceAllString(response, "$1\n$2")
@@ -309,6 +310,81 @@ func normalizeNativeEditEndLines(response string) string {
 		out = append(out, line)
 	}
 	return strings.Join(out, "\n")
+}
+
+// unwrapFunctionToolCalls converts <Function><functionName>cmdi</functionName><functionArgs>{...}</functionArgs></Function>
+// blocks into CMD: lines. Some LLMs emit this XML format for tool calls.
+func unwrapFunctionToolCalls(response string) string {
+	if !strings.Contains(response, "<Function>") {
+		return response
+	}
+	var out []string
+	for _, block := range splitFunctionBlocks(response) {
+		cmd := extractFunctionCommand(block)
+		if cmd != "" {
+			out = append(out, cmd)
+		}
+	}
+	if len(out) == 0 {
+		return response
+	}
+	return response + "\n" + strings.Join(out, "\n")
+}
+
+// splitFunctionBlocks finds all <Function>...</Function> blocks in a string.
+func splitFunctionBlocks(s string) []string {
+	var blocks []string
+	for {
+		start := strings.Index(s, "<Function>")
+		if start < 0 {
+			break
+		}
+		end := strings.Index(s[start:], "</Function>")
+		if end < 0 {
+			break
+		}
+		end += start + 11 // len("</Function>")
+		blocks = append(blocks, s[start:end])
+		s = s[end:]
+	}
+	return blocks
+}
+
+// extractFunctionCommand extracts the command from a Function block.
+func extractFunctionCommand(block string) string {
+	// Extract functionName
+	fnStart := strings.Index(block, "<functionName>")
+	fnEnd := strings.Index(block, "</functionName>")
+	if fnStart < 0 || fnEnd < 0 || fnEnd <= fnStart {
+		return ""
+	}
+	fnName := strings.TrimSpace(block[fnStart+12 : fnEnd])
+
+	// Extract functionArgs
+	argsStart := strings.Index(block, "<functionArgs>")
+	argsEnd := strings.Index(block, "</functionArgs>")
+	if argsStart < 0 || argsEnd < 0 || argsEnd <= argsStart {
+		return ""
+	}
+	argsJSON := strings.TrimSpace(block[argsStart+13 : argsEnd])
+
+	// Only handle "cmdi" function for now
+	if fnName != "cmdi" {
+		return ""
+	}
+
+	// Parse JSON args to get cmd
+	var args struct {
+		Cmd string `json:"cmd"`
+	}
+	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
+		return ""
+	}
+	cmd := strings.TrimSpace(args.Cmd)
+	if cmd == "" {
+		return ""
+	}
+	return "CMD: " + cmd
 }
 
 var gluedWriteBodyRE = regexp.MustCompile(`(?i)^(WRITE:\s*\S+)\s+(package\s|import\s|from\s|#include\b|<\?php\b)`)
