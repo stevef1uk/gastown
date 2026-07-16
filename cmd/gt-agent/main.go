@@ -1047,6 +1047,8 @@ func parseLLMResponse(response string) (cmds []string, doneSummary string, hallu
 			for i := range subs {
 				subs[i] = trailingMarkdownBoldRE.ReplaceAllString(subs[i], "")
 				subs[i] = strings.TrimSpace(subs[i])
+				subs[i] = stripTrailingProse(subs[i])
+				subs[i] = strings.TrimSpace(subs[i])
 				if fixed, ok := sanitizeOrchestratedShellCommand(subs[i]); ok {
 					subs[i] = fixed
 				}
@@ -1414,7 +1416,7 @@ var gluedOutcomeAfterQuoteRE = regexp.MustCompile(`'\s*\{[\s]*"outcome"`)
 // gluedCMDProseRE matches trailing English prose appended to a CMD line
 // (no newline between command and reasoning). Shell commands don't start with
 // these sentence-initial words, so we can safely strip from the match.
-var gluedCMDProseRE = regexp.MustCompile(`(?i)(CMD:\s+\S[^\n]*?)\s+(We\s+need|If\s+no|Maybe\s+the|Let's\s+try|The tool|We haven't|It seems|Perhaps\b|Let's\s+test|Let's\s+see|I'll|We'll|The earlier|In earlier|So\s+let's).*`)
+var gluedCMDProseRE = regexp.MustCompile(`(?i)(CMD:\s+\S[^\n]*?)\s+(We\s+need|If\s+no|Maybe\s+the|Let's\s+try|The\s+tool|The\s+architecture|The\s+document|We\s+haven't|It\s+seems|Perhaps\b|Let's\s+test|Let's\s+see|I'll|We'll|The\s+earlier|In\s+earlier|So\s+let's).*`)
 
 // normalizeGluedCMDMarkers turns model glitches like rig/CMD:, SPEC.mdCMD:, or
 // 'open'CMD: into newline-separated CMD markers so splitInlineCMDs can separate

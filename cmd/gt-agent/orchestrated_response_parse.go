@@ -803,6 +803,25 @@ func trimJSONGluedToShellCommand(cmd string) (string, bool) {
 	return cmd, false
 }
 
+// proseAfterExtRE matches when a file extension is immediately followed by an
+// English sentence-starting word with no delimiter (e.g. "SPEC.mdThe arch...").
+// This catches the common model mistake of gluing reasoning prose after a CMD.
+var proseAfterExtRE = regexp.MustCompile(`(?i)(\.[a-z]{2,4})(The\s+(?:architecture|document|tool|project|above|following|next|previous|current)|We\s+(?:need|can|will|have|are|should|must)|This\s+(?:is|was|has)|It\s+(?:is|was|has|seems)|Let's\s+(?:try|see|test)|So\s+(?:the|let's)|In\s+(?:earlier|summary|order))`)
+
+// stripTrailingProse removes English prose glued to the end of a shell command
+// (common model mistake when the LLM continues reasoning on the same line).
+func stripTrailingProse(cmd string) string {
+	if m := proseAfterExtRE.FindStringSubmatch(cmd); len(m) >= 3 {
+		ext := m[1]   // .md, .go, etc.
+		prose := m[2] // "The architecture...", "We need...", etc.
+		// Find the extension in the command and truncate at that point.
+		if idx := strings.Index(cmd, ext+prose); idx >= 0 {
+			return strings.TrimSpace(cmd[:idx+len(ext)])
+		}
+	}
+	return cmd
+}
+
 func trimProseGluedAfterGoTestEllipsis(cmd string) (string, bool) {
 	return trimProseGluedAfterGoSubcommandEllipsis(cmd, "go test")
 }
