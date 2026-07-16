@@ -484,7 +484,7 @@ func rewriteUnittestToWorkdir(cmd, rig string, v orchestrator.WorkflowValidation
 		// Find the end of the cd chain and insert venv activation after it.
 		// e.g., "cd foo && cd bar && pytest" → "cd foo && cd bar && . .venv/bin/activate && pytest"
 		if cdEnd := findCDChainEnd(cmd); cdEnd > 0 {
-			cmd = cmd[:cdEnd] + " && " + venvCmd + cmd[cdEnd:]
+			cmd = cmd[:cdEnd] + venvCmd + " && " + cmd[cdEnd:]
 		} else {
 			cmd = venvCmd + " && " + cmd
 		}
