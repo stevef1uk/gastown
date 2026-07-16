@@ -964,10 +964,14 @@ func (r *stateRunner) validateArtifacts(outcome string) error {
 }
 
 func (r *stateRunner) probeDoltHealth() error {
+	beadsDir := config.ResolveBeadsDirForRig(r.townRoot, r.rig)
+	if beadsDir == "" {
+		return fmt.Errorf("beads dir not resolved for rig %s", r.rig)
+	}
 	workDir := rigMayorRigDir(r.townRoot, r.rig)
 	cmd := exec.Command("bd", "list", "--limit", "1")
 	cmd.Dir = workDir
-	cmd.Env = append(os.Environ(), "BEADS_DIR="+filepath.Join(workDir, ".beads"))
+	cmd.Env = append(os.Environ(), "BEADS_DIR="+beadsDir)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("dolt probe failed: %w\n%s", err, string(out))
