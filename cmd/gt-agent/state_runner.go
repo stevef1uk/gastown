@@ -154,7 +154,7 @@ func (r *stateRunner) failurePromptContextBlocks() []string {
 }
 
 func (r *stateRunner) artifactFailureFeedback(err error) string {
-	msg := "Validation failed: " + err.Error()
+	msg := "Validation failed: " + err.Error() + " Do NOT send JSON success — fix the file with CMD: or WRITE: lines, then send JSON."
 	if extra := r.implementationArtifactFailureExtra(err); extra != "" {
 		msg += "\n\n" + extra
 	}

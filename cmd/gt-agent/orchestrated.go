@@ -297,15 +297,22 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 			} else if o != "" {
 				if vErr := validateOutcomeForTask(task, townRoot, rig, o, s); vErr != nil {
 					orchestratedPrintf("[gt-agent] summary validation failed: %v\n", vErr)
-					msg := "Validation failed: " + vErr.Error()
-					recordAttemptFeedback(msg + "\n")
-					feedbackBuilder.WriteString("\n\n" + msg)
+					feedbackBuilder.Reset()
+					feedbackBuilder.WriteString(combined.String())
+					recordAttemptFeedback("Summary validation failed: " + vErr.Error() + "\n")
+					feedbackBuilder.WriteString("\n\nSummary validation failed: " + vErr.Error() + "\nSend JSON success only after fixing the summary.")
 					feedback = feedbackBuilder.String()
 				} else if vErr := runner.validateArtifacts(o); vErr != nil {
 					orchestratedPrintf("[gt-agent] artifact validation failed: %v\n", vErr)
-					msg := "Validation failed: " + vErr.Error()
-					recordAttemptFeedback(msg + "\n")
-					feedbackBuilder.WriteString("\n\n" + msg)
+					feedbackBuilder.Reset()
+					feedbackBuilder.WriteString(combined.String())
+					recordAttemptFeedback("Validation failed: " + vErr.Error() + "\n")
+					feedbackBuilder.WriteString("\n\nValidation failed: " + vErr.Error() + "\n")
+					if runner.hooks.Artifacts == "design" {
+						feedbackBuilder.WriteString("Rewrite architecture.md with a heredoc CMD: cat > ... <<'EOF' ... EOF — do NOT send JSON success until the validation passes.")
+					} else {
+						feedbackBuilder.WriteString("Fix the issues above with EDIT:/WRITE:/CMD: lines — do NOT send JSON success until the validation passes.")
+					}
 					feedback = feedbackBuilder.String()
 				} else {
 					return o, s, lastAttemptFeedback.String(), nil
@@ -339,9 +346,10 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 						orchestratedPrintf("[gt-agent] rejecting implementation failure JSON without fix work this attempt\n")
 						recordAttemptFeedback(msg + "\n")
 					} else if vErr := runner.validateArtifacts(o); vErr != nil {
-						msg := "Validation failed: " + vErr.Error()
-						recordAttemptFeedback(msg + "\n")
-						feedbackBuilder.WriteString("\n\n" + msg)
+						feedbackBuilder.Reset()
+						feedbackBuilder.WriteString(combined.String())
+						recordAttemptFeedback("Validation failed: " + vErr.Error() + "\n")
+						feedbackBuilder.WriteString("\n\nValidation failed: " + vErr.Error() + "\nFix the issues above with EDIT:/WRITE:/CMD: lines — do NOT send JSON success until the validation passes.")
 						feedback = feedbackBuilder.String()
 					} else {
 						return o, s, lastAttemptFeedback.String(), nil
