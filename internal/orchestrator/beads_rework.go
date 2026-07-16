@@ -363,6 +363,10 @@ func beadImplementationNeedsRework(rigDir, beadPath string, v WorkflowValidation
 	if beadPath == "" {
 		return true
 	}
+	// Placeholder files (.gitkeep, .gitignore, .keep) are intentionally small — never rework.
+	if IsPlaceholderFile(beadPath) {
+		return false
+	}
 	path := filepath.Join(rigDir, filepath.FromSlash(beadPath))
 	info, err := os.Stat(path)
 	if err != nil || info.Size() == 0 {

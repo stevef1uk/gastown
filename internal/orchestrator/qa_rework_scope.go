@@ -107,3 +107,10 @@ func AllowedQAReworkWebImplementWrite(townRoot, rig, activeBead, activePath, wri
 	}
 	return false
 }
+
+// IsPlaceholderFile reports whether the path is a placeholder file that is
+// intentionally small (e.g., .gitkeep files to keep directories in git).
+func IsPlaceholderFile(path string) bool {
+	base := strings.ToLower(filepath.Base(path))
+	return base == ".gitkeep" || base == ".gitignore" || base == ".keep"
+}
