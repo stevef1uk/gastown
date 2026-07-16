@@ -1312,6 +1312,7 @@ func validateDesignShellSideEffects(lower string) error {
 		{gitCmd, "must not run git add/commit/push in design step"},
 		{strings.Contains(lower, "python3"), "must not run python in design step"},
 		{strings.Contains(lower, "pip install"), "must not install packages in design step"},
+		{strings.Contains(lower, "uvicorn"), "must not run server commands in design step"},
 		{strings.Contains(lower, "gt bd"), "must not create beads in design step (planner)"},
 		{strings.Contains(lower, "bd add"), "must not create beads in design step (planner)"},
 		{strings.Contains(lower, "mkdir"), "must not mkdir in design step"},
