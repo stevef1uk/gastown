@@ -311,6 +311,10 @@ func CheckPathNotStub(path, displayRel string, opts StubCheckOptions) error {
 
 // CheckContentNotStub applies stub heuristics to file bytes.
 func CheckContentNotStub(data []byte, displayRel string, opts StubCheckOptions) error {
+	// Placeholder files like .gitkeep, .gitignore are intentionally minimal.
+	if IsPlaceholderFile(displayRel) {
+		return nil
+	}
 	if IsPackageInitFile(displayRel) {
 		return nil
 	}
