@@ -390,11 +390,18 @@ func rewriteUnittestToWorkdir(cmd, rig string, v orchestrator.WorkflowValidation
 	// Strip source .venv/bin/activate && — the cd rewrite below may change the
 	// working directory, so the venv path must be recomputed relative to workPath.
 	venvActivate := ""
-	if strings.Contains(cmd, ".venv/bin/activate") || strings.Contains(cmd, "venv/bin/activate") {
-		re := regexp.MustCompile(`(\.|source)\s+\S*venv/\S*activate\s*&&\s*`)
+	if strings.Contains(cmd, "venv") && strings.Contains(cmd, "activate") {
+		re := regexp.MustCompile(`(?:(?:\.|source)\s+)?\S*venv/\S*activate\s*&&\s*`)
 		if m := re.FindString(cmd); m != "" {
 			venvActivate = strings.TrimSpace(m[:len(m)-3]) // strip trailing "&&"
 			cmd = re.ReplaceAllString(cmd, "")
+			changed = true
+		}
+	}
+	if orchestrator.WorkflowUsesPython(v) {
+		rePy := regexp.MustCompile(`(^|\s|&&|\||;)(?:\S*venv/\S*python3?)(\s+)`)
+		if rePy.MatchString(cmd) {
+			cmd = rePy.ReplaceAllString(cmd, "${1}python3${2}")
 			changed = true
 		}
 	}
