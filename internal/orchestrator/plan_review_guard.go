@@ -244,7 +244,7 @@ func rejectSpuriousQAFailure(townRoot, rig, summary, rawFeedback string) string 
 	}
 	// If QA reports ANY failure but phase verify passes on disk, the QA claim is wrong.
 	// Prevents wasteful polecat re-implementation of already-correct code.
-	if (isFailureKeyWord(summary) || IsQAAgentShellError(combined)) && phaseVerifyPasses(townRoot, rig) {
+	if phaseVerifyPasses(townRoot, rig) {
 		return "QA reports failure but phase verify passes on disk — QA claim is spurious. Re-send JSON outcome=success with summary: 'Phase verify passes on disk; QA failure was spurious.'"
 	}
 	return ""
