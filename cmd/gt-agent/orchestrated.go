@@ -913,11 +913,6 @@ func stripModelToolArtifacts(response string) string {
 		if looksLikeHallucinatedShellOutput(t) {
 			continue
 		}
-		// Strip model-injected XML/HTML tags (e.g. <rewriting_and_reframing_attempt>)
-		// that can leak `>` into CMD text and confuse command guards.
-		if looksLikeModelTag(t) {
-			continue
-		}
 		kept = append(kept, line)
 	}
 	return strings.Join(kept, "\n")
@@ -1353,11 +1348,18 @@ func validateDesignCommand(cmd, rig string) error {
 		return fmt.Errorf("must not create or modify backend/ (polecat implements code)")
 	}
 
-	if strings.Contains(lower, ">") {
-		if strings.Contains(lower, "architecture.md") {
+	// Only check the first line for `>` — trailing model-injected tags (e.g.
+	// </rewriting_and_reframing_attempt>) on subsequent lines must not trigger
+	// a false-positive file-write rejection.
+	firstLine := lower
+	if idx := strings.IndexByte(lower, '\n'); idx >= 0 {
+		firstLine = lower[:idx]
+	}
+	if strings.Contains(firstLine, ">") {
+		if strings.Contains(firstLine, "architecture.md") {
 			return nil
 		}
-		if strings.Contains(lower, rigSlash) || strings.Contains(lower, "mayor/rig/") {
+		if strings.Contains(firstLine, rigSlash) || strings.Contains(firstLine, "mayor/rig/") {
 			if rig == "" {
 				return fmt.Errorf("may only write architecture.md under <rig>/mayor/rig/")
 			}
