@@ -703,7 +703,7 @@ func (r *stateRunner) commitDoltAfterClose(cmd, workDir, sessionName string, cmd
 	}
 	prefix := strings.TrimSpace(cmd[:idx])
 	// Use bd dolt commit --all to stage and commit all pending changes in one shot.
-	commitCmd := prefix + "bd dolt commit --all -m \"auto-commit after bd close\""
+	commitCmd := prefix + " bd dolt commit --all -m \"auto-commit after bd close\""
 	out, err := r.runShellCommand(commitCmd, workDir, sessionName, cmdEnv)
 	if err != nil {
 		// "nothing to commit" is fine — the close might already be committed.
@@ -1024,14 +1024,6 @@ func (r *stateRunner) failureHint() string {
 }
 
 func validateOutcomeForTask(task *orchestrator.Task, townRoot, rig, outcome, summary string) error {
-	if task != nil && task.State == "qa_review" && isOrchestratedFailureOutcome(outcome) {
-		lower := strings.ToLower(strings.TrimSpace(summary))
-		if strings.Contains(lower, "syntax error") || strings.Contains(lower, "syntaxerror") ||
-			strings.Contains(lower, "command not found") || strings.Contains(lower, "no such file") &&
-			strings.Contains(lower, "bd list") {
-			return fmt.Errorf("QA failure rejected — summary blames a shell syntax error, not a code quality issue. Retry the command with correct shell syntax and re-evaluate")
-		}
-	}
 	if !task.Hooks.BeadIDsInSummary {
 		return nil
 	}

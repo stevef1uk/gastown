@@ -208,15 +208,16 @@ var htmlGetElementByIDRE = regexp.MustCompile(`getElementById\s*\(\s*["']([^"']+
 // the QA's claim is contradicted by files that already exist and are correct.
 func rejectSpuriousQAFailure(townRoot, rig, summary, rawFeedback string) string {
 	combined := CombineQAReworkText(summary, rawFeedback)
+	// Ground-truth check first: if phase verify passes on disk, any QA failure claim is spurious.
+	// This runs BEFORE the shell-error check so that a broken test command (toolchain bug)
+	// doesn't prevent advancing when the code is verified correct on disk.
+	if phaseVerifyPasses(townRoot, rig) {
+		return "QA reports failure but phase verify passes on disk — QA claim is spurious. Re-send JSON outcome=success with summary: 'Phase verify passes on disk; QA failure was spurious.'"
+	}
 	// Shell errors (wrong cwd, command not found) are real failures — QA never tested the code.
 	// Do NOT reject these; let QA retry from the correct directory.
 	if IsQAAgentShellError(combined) {
 		return ""
-	}
-	// Ground-truth check first: if phase verify passes on disk, any QA failure claim is spurious.
-	// This must run BEFORE heuristic keyword matching, which can incorrectly block it.
-	if phaseVerifyPasses(townRoot, rig) {
-		return "QA reports failure but phase verify passes on disk — QA claim is spurious. Re-send JSON outcome=success with summary: 'Phase verify passes on disk; QA failure was spurious.'"
 	}
 	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
 	lower := strings.ToLower(strings.TrimSpace(summary))

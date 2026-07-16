@@ -1,9 +1,11 @@
 package orchestrator
 
 import (
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -73,4 +75,61 @@ func TestPlanReviewSpuriousFailureReason_missingBead(t *testing.T) {
 	if reason == "" {
 		t.Fatal("expected spurious missing-bead reason when bead exists")
 	}
+}
+
+func TestRejectSpuriousQAFailure_verifyPassesBeforeShellError(t *testing.T) {
+	townRoot := t.TempDir()
+	rig := "rigqa"
+
+	profDir := filepath.Join(townRoot, rig, "mayor", "rig", rigProfileDir)
+	if err := os.MkdirAll(profDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	env := rigProfileEnvelope{
+		Version: 1,
+		Source:  "test",
+		Validation: WorkflowValidation{
+			// No Go/Python/smoke triggers — phaseVerifyPasses returns nil (passes).
+		},
+	}
+	raw, err := json.Marshal(env)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(profDir, rigProfileFile), raw, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("verify passes — even shell error summary is rejected as spurious", func(t *testing.T) {
+		reason := rejectSpuriousQAFailure(townRoot, rig, "syntax error in command", "")
+		if reason == "" {
+			t.Fatal("expected spurious rejection when phase verify passes")
+		}
+		if !strings.Contains(reason, "phase verify passes") {
+			t.Fatalf("want phase-verify reason, got: %s", reason)
+		}
+	})
+
+	t.Run("verify passes — command not found also rejected", func(t *testing.T) {
+		reason := rejectSpuriousQAFailure(townRoot, rig, "command not found", "")
+		if reason == "" {
+			t.Fatal("expected spurious rejection when phase verify passes")
+		}
+	})
+
+	t.Run("no profile — shell error not rejected (genuine failure)", func(t *testing.T) {
+		other := t.TempDir()
+		reason := rejectSpuriousQAFailure(other, rig, "command not found", "")
+		if reason != "" {
+			t.Fatalf("expected no rejection for shell error without profile: %s", reason)
+		}
+	})
+
+	t.Run("no profile — syntax error not rejected (no code quality claim)", func(t *testing.T) {
+		other := t.TempDir()
+		reason := rejectSpuriousQAFailure(other, rig, "syntax error in command", "")
+		if reason != "" {
+			t.Fatalf("expected no rejection for syntax error: %s", reason)
+		}
+	})
 }

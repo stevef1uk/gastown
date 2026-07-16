@@ -28,6 +28,25 @@ func TestImplementationArtifactFailureExtra_allClosedAfterQA(t *testing.T) {
 	}
 }
 
+func TestValidateOutcomeForTask_shellErrorNoLongerRejected(t *testing.T) {
+	task := &orchestrator.Task{
+		State: "qa_review",
+		Hooks: orchestrator.StateHooks{BeadIDsInSummary: false},
+	}
+	// Shell-error summaries must NOT be rejected — the orchestrator handles them.
+	for _, summary := range []string{
+		"syntax error",
+		"syntaxerror",
+		"command not found",
+		"no such file",
+		"pytest failed with exit status 2, syntax error in command",
+	} {
+		if err := validateOutcomeForTask(task, t.TempDir(), "mockrig", "failure", summary); err != nil {
+			t.Fatalf("summary %q must not be rejected: %v", summary, err)
+		}
+	}
+}
+
 func TestImplementationArtifactFailureExtra_notForPlanning(t *testing.T) {
 	task := &orchestrator.Task{
 		State: "planning",
