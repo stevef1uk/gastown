@@ -398,8 +398,11 @@ func rewriteUnittestToWorkdir(cmd, rig string, v orchestrator.WorkflowValidation
 			changed = true
 		}
 	}
+	// Strip hallucinated venv python paths with relative (../) or absolute (/) prefixes.
+	// Only strip paths like ../.venv/bin/python3 or /home/user/.venv/bin/python3,
+	// NOT valid .venv/bin/python3 (relative to workdir) which rewritePythonCmd handles.
 	if orchestrator.WorkflowUsesPython(v) {
-		rePy := regexp.MustCompile(`(^|\s|&&|\||;)(?:\S*venv/\S*python3?)(\s+)`)
+		rePy := regexp.MustCompile(`(^|\s|&&|\||;)(?:(?:\.\.[\/]|\/)\S*venv/\S*python3?)(\s+)`)
 		if rePy.MatchString(cmd) {
 			cmd = rePy.ReplaceAllString(cmd, "${1}python3${2}")
 			changed = true

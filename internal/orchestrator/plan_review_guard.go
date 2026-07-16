@@ -213,6 +213,11 @@ func rejectSpuriousQAFailure(townRoot, rig, summary, rawFeedback string) string 
 	if IsQAAgentShellError(combined) {
 		return ""
 	}
+	// Ground-truth check first: if phase verify passes on disk, any QA failure claim is spurious.
+	// This must run BEFORE heuristic keyword matching, which can incorrectly block it.
+	if phaseVerifyPasses(townRoot, rig) {
+		return "QA reports failure but phase verify passes on disk — QA claim is spurious. Re-send JSON outcome=success with summary: 'Phase verify passes on disk; QA failure was spurious.'"
+	}
 	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
 	lower := strings.ToLower(strings.TrimSpace(summary))
 	if strings.Contains(lower, "does not exist") || strings.Contains(lower, "missing") ||
@@ -241,11 +246,6 @@ func rejectSpuriousQAFailure(townRoot, rig, summary, rawFeedback string) string 
 		if hasPassingPythonTests(rigDir) {
 			return "QA claims import/module issues but tests pass on disk. Re-send JSON outcome=success."
 		}
-	}
-	// If QA reports ANY failure but phase verify passes on disk, the QA claim is wrong.
-	// Prevents wasteful polecat re-implementation of already-correct code.
-	if phaseVerifyPasses(townRoot, rig) {
-		return "QA reports failure but phase verify passes on disk — QA claim is spurious. Re-send JSON outcome=success with summary: 'Phase verify passes on disk; QA failure was spurious.'"
 	}
 	return ""
 }
