@@ -294,17 +294,23 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 				} else if msg, reject := runner.rejectImplementationNoOpFailure(o); reject {
 					orchestratedPrintf("[gt-agent] rejecting implementation failure JSON without fix work this attempt\n")
 					recordAttemptFeedback(msg + "\n")
-				} else if o != "" {
-					if vErr := validateOutcomeForTask(task, townRoot, rig, o, s); vErr != nil {
-						orchestratedPrintf("[gt-agent] summary validation failed: %v\n", vErr)
-						recordAttemptFeedback("Validation failed: " + vErr.Error() + "\n")
-					} else if vErr := runner.validateArtifacts(o); vErr != nil {
-						orchestratedPrintf("[gt-agent] artifact validation failed: %v\n", vErr)
-						recordAttemptFeedback("Validation failed: " + vErr.Error() + "\n")
-					} else {
-						return o, s, lastAttemptFeedback.String(), nil
-					}
+			} else if o != "" {
+				if vErr := validateOutcomeForTask(task, townRoot, rig, o, s); vErr != nil {
+					orchestratedPrintf("[gt-agent] summary validation failed: %v\n", vErr)
+					msg := "Validation failed: " + vErr.Error()
+					recordAttemptFeedback(msg + "\n")
+					feedbackBuilder.WriteString("\n\n" + msg)
+					feedback = feedbackBuilder.String()
+				} else if vErr := runner.validateArtifacts(o); vErr != nil {
+					orchestratedPrintf("[gt-agent] artifact validation failed: %v\n", vErr)
+					msg := "Validation failed: " + vErr.Error()
+					recordAttemptFeedback(msg + "\n")
+					feedbackBuilder.WriteString("\n\n" + msg)
+					feedback = feedbackBuilder.String()
+				} else {
+					return o, s, lastAttemptFeedback.String(), nil
 				}
+			}
 			}
 			if o, s, ok := runner.tryAutoOutcome(); ok {
 				return o, s, lastAttemptFeedback.String(), nil
@@ -333,7 +339,10 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 						orchestratedPrintf("[gt-agent] rejecting implementation failure JSON without fix work this attempt\n")
 						recordAttemptFeedback(msg + "\n")
 					} else if vErr := runner.validateArtifacts(o); vErr != nil {
-						recordAttemptFeedback("Validation failed: " + vErr.Error() + "\n")
+						msg := "Validation failed: " + vErr.Error()
+						recordAttemptFeedback(msg + "\n")
+						feedbackBuilder.WriteString("\n\n" + msg)
+						feedback = feedbackBuilder.String()
 					} else {
 						return o, s, lastAttemptFeedback.String(), nil
 					}
