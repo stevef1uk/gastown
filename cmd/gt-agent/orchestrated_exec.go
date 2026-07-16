@@ -424,6 +424,10 @@ func rewriteUnittestToWorkdir(cmd, rig string, v orchestrator.WorkflowValidation
 		} else if layout != "" && layout != "." {
 			// Profile verify uses bare "cd layout" (mayor/rig-relative); orchestrated cwd is town root.
 			rest := stripRedundantLayoutCD(stripFirstCDPrefix(cmd), workPath, layout)
+			if !orchestrator.WorkflowUsesGo(v) {
+				rest = stripCDLayoutPrefix(rest, layout)
+				rest = adjustPytestPathsAfterLayoutStrip(rest, layout)
+			}
 			cmd = "cd " + workPath + " && " + rest
 			changed = true
 		}
