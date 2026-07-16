@@ -788,8 +788,12 @@ func commandHasRigPathContext(cmd, rig string) bool {
 	lower := strings.ToLower(cmd)
 	// Only consider as "has rig context" if the command references the rig path
 	// correctly (e.g., "finally/mayor/rig" or "$GT_ROOT/finally").
-	// Bare "finally/" without "mayor/rig" is NOT valid rig context — it's a bare
-	// layout path that needs cd mayor/rig prepended.
+	// Bare "finally/" without "mayor/rig" is a bare layout path that needs cd mayor/rig prepended.
+	// EXCEPTION: layout-relative paths (e.g., "finally/.gitignore") used in verify
+	// commands should run from town root, so don't prepend cd mayor/rig for them.
+	if strings.HasPrefix(lower, rigLower+"/") {
+		return true
+	}
 	return strings.Contains(lower, rigLower+"/mayor/rig") ||
 		strings.Contains(lower, rigLower+"/mayor/") ||
 		strings.Contains(lower, "$gt_root/"+rigLower)

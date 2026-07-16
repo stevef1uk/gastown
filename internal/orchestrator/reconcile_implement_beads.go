@@ -370,26 +370,27 @@ func ReconcileImplementBeads(townRoot, rig string, v WorkflowValidation) (string
 		parts = append(parts, m)
 	}
 
-	reopened, err := reopenClosedImplementBeadsOrdered(townRoot, rig, v, eval)
-	if err != nil {
-		return joinStrings(parts, "; "), err
-	}
-	if len(reopened) > 0 {
-		parts = append(parts, "reopened: "+joinStrings(reopened, ", "))
-	}
+	// Don't broadly reopen all closed beads that fail verify — only QA-cited
+	// beads (handled above) and runtime smoke failures (handled above) should
+	// trigger reopens. Broad reopening causes wasteful churn.
+	// reopened, err := reopenClosedImplementBeadsOrdered(townRoot, rig, v, eval)
+	// if err != nil {
+	// 	return joinStrings(parts, "; "), err
+	// }
+	// if len(reopened) > 0 {
+	// 	parts = append(parts, "reopened: "+joinStrings(reopened, ", "))
+	// }
 
 	more, err := EnsureImplementBeadsAvailable(townRoot, rig, v)
 	if err != nil {
 		return joinStrings(parts, "; "), err
 	}
 	for _, id := range more {
-		if !containsString(reopened, id) {
-			parts = append(parts, "reopened: "+id)
-		}
+		parts = append(parts, "reopened: "+id)
 	}
 	// Commit Dolt working set after bead state changes to ensure the SQL server
 	// sees the changes when BD_DOLT_AUTO_COMMIT=off (polecat/daemon environments).
-	if len(autoClosed) > 0 || len(reopened) > 0 || len(more) > 0 {
+	if len(autoClosed) > 0 || len(more) > 0 {
 		if commitErr := commitDoltWorkingSet(townRoot, rig); commitErr != nil {
 			parts = append(parts, "dolt commit warning: "+commitErr.Error())
 		}

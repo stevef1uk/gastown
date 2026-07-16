@@ -103,7 +103,7 @@ func newStateRunner(task *orchestrator.Task, townRoot, rig string) *stateRunner 
 func (r *stateRunner) maxTurns() int {
 	base := r.hooks.EffectiveMaxCmdTurns()
 	if base <= 0 {
-		base = 40
+		base = 200
 	}
 	phase := r.v.ForActivePhase()
 	if len(phase.RequiredFiles) > 0 {
