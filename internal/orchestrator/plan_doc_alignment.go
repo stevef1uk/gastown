@@ -140,8 +140,9 @@ func checkArchitectureDockerSection(archDoc string, v WorkflowValidation) []stri
 	}
 	section := extractMarkdownSection(archDoc, loc[0])
 	// Require some concrete build-related keywords in the section body.
+	// Match common forms: "from:", "from ", "port", "port:", "cmd", "cmd:", "build", "build:", "expose".
 	lower := strings.ToLower(section)
-	mustHave := []string{"from ", "port", "cmd", "build"}
+	mustHave := []string{"from", "port", "cmd", "build"}
 	var missing []string
 	for _, kw := range mustHave {
 		if !strings.Contains(lower, kw) {
