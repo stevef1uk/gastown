@@ -236,7 +236,7 @@ func checkArchitectureE2ETestingSection(archDoc string, v WorkflowValidation) []
 }
 
 var integrationTestingHeadingRE = regexp.MustCompile(`(?im)^##\s+Integration\s+and\s+testing\b`)
-var e2eTestingHeadingRE = regexp.MustCompile(`(?im)^##\s+E2E\s*/\s*integration\s+testing\b`)
+var e2eTestingHeadingRE = regexp.MustCompile(`(?im)^##\s+(E2E\s*/\s*integration\s+testing|Integration\s+and\s+testing)\b`)
 
 func extractMarkdownSection(doc string, headingStart int) string {
 	rest := doc[headingStart:]
@@ -249,7 +249,9 @@ func extractMarkdownSection(doc string, headingStart int) string {
 		if i == 0 {
 			continue // skip heading line
 		}
-		if strings.HasPrefix(line, "#") {
+		// Only break on same-level (## ) or higher (# ) headings, not subheadings (###)
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "## ") || strings.HasPrefix(trimmed, "# ") {
 			break
 		}
 		out = append(out, line)
