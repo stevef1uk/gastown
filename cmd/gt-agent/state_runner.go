@@ -702,8 +702,7 @@ func (r *stateRunner) commitDoltAfterClose(cmd, workDir, sessionName string, cmd
 		return
 	}
 	prefix := strings.TrimSpace(cmd[:idx])
-	// Use bd dolt commit --all to stage and commit all pending changes in one shot.
-	commitCmd := prefix + " bd dolt commit --all -m \"auto-commit after bd close\""
+	commitCmd := prefix + " bd dolt commit -m \"auto-commit after bd close\""
 	out, err := r.runShellCommand(commitCmd, workDir, sessionName, cmdEnv)
 	if err != nil {
 		// "nothing to commit" is fine — the close might already be committed.
