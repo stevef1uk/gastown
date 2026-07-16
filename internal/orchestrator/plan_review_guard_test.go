@@ -100,20 +100,20 @@ func TestRejectSpuriousQAFailure_verifyPassesBeforeShellError(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	t.Run("verify passes — even shell error summary is rejected as spurious", func(t *testing.T) {
-		reason := rejectSpuriousQAFailure(townRoot, rig, "syntax error in command", "")
+	t.Run("verify passes — shell error (command not found) rejected as spurious", func(t *testing.T) {
+		reason := rejectSpuriousQAFailure(townRoot, rig, "command not found: pytest", "")
 		if reason == "" {
-			t.Fatal("expected spurious rejection when phase verify passes")
+			t.Fatal("expected spurious rejection when shell error + verify passes")
 		}
 		if !strings.Contains(reason, "phase verify passes") {
 			t.Fatalf("want phase-verify reason, got: %s", reason)
 		}
 	})
 
-	t.Run("verify passes — command not found also rejected", func(t *testing.T) {
-		reason := rejectSpuriousQAFailure(townRoot, rig, "command not found", "")
-		if reason == "" {
-			t.Fatal("expected spurious rejection when phase verify passes")
+	t.Run("verify passes — 'syntax error' (not a recognized shell error) NOT rejected", func(t *testing.T) {
+		reason := rejectSpuriousQAFailure(townRoot, rig, "syntax error in command", "")
+		if reason != "" {
+			t.Fatalf("expected no rejection for vague 'syntax error' summary: %s", reason)
 		}
 	})
 
@@ -130,6 +130,13 @@ func TestRejectSpuriousQAFailure_verifyPassesBeforeShellError(t *testing.T) {
 		reason := rejectSpuriousQAFailure(other, rig, "syntax error in command", "")
 		if reason != "" {
 			t.Fatalf("expected no rejection for syntax error: %s", reason)
+		}
+	})
+
+	t.Run("verify passes — non-shell error is NOT rejected (legitimate QA finding)", func(t *testing.T) {
+		reason := rejectSpuriousQAFailure(townRoot, rig, "Frontend/Backend API contract mismatch: index.html uses 'description' but spec defines 'title'", "")
+		if reason != "" {
+			t.Fatalf("expected no rejection for legitimate QA finding: %s", reason)
 		}
 	})
 }
