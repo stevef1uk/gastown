@@ -1422,16 +1422,14 @@ var gluedCMDProseRE = regexp.MustCompile(`(?i)(CMD:\s+\S[^\n]*?)\s+(We\s+need|If
 // 'open'CMD: into newline-separated CMD markers so splitInlineCMDs can separate
 // them without eating filename extensions or shell quoting.
 func normalizeGluedCMDMarkers(cmd string) string {
-    // Generic fix: insert newline when CMD: is glued after a non-alphanumeric, non-quote char
-    // Avoid splitting inside strings like "prefixCMD:notamarker"
+    // Generic fix: insert newline when CMD: is glued after a non-alphanumeric,
+    // non-quote, non-asterisk char (avoid splitting markdown **CMD:).
     // e.g. "...limit=0CMD: next" -> "...limit=0\nCMD: next"
-    genericGlued := regexp.MustCompile(`([^A-Za-z0-9"'\n])CMD:\s*`)
+    genericGlued := regexp.MustCompile(`([^A-Za-z0-9"'*\n])CMD:\s*`)
     cmd = genericGlued.ReplaceAllStringFunc(cmd, func(m string) string {
-        // m is like "<char>CMD:"; if char is '/', drop it (matches existing expectations)
         if len(m) > 0 && m[0] == '/' {
             return "\nCMD: "
         }
-        // otherwise keep the prefix char
         return string(m[0]) + "\nCMD: "
     })
     cmd = gluedPathCMDRE.ReplaceAllString(cmd, "\nCMD: ")
