@@ -1302,6 +1302,10 @@ func designCommandShellPortion(cmd string) string {
 	return strings.TrimSpace(cmd[:idx])
 }
 
+// designExecRE matches commands that execute code, start servers, compile, or install
+// packages — all forbidden in the design state (architect writes architecture.md only).
+var designExecRE = regexp.MustCompile(`(?i)\b(go\s+(run|build|test|mod|install|tool)|python\d?\s|uvicorn|gunicorn|flask\s|django|fastapi|node\s|npm\s|npx\s|yarn\s|pnpm\s|cargo\s|rustc|dotnet\s|docker\s|docker-compose|make\s|cmake\s|pytest|nosetests|pip\s|pip3\s|conda\s|gem\s|bundler)\b`)
+
 func validateDesignShellSideEffects(lower string) error {
 	gitCmd := strings.Contains(lower, "git") &&
 		(strings.Contains(lower, " commit") || strings.Contains(lower, " push") || strings.Contains(lower, " add"))
@@ -1310,9 +1314,8 @@ func validateDesignShellSideEffects(lower string) error {
 		msg  string
 	}{
 		{gitCmd, "must not run git add/commit/push in design step"},
-		{strings.Contains(lower, "python3"), "must not run python in design step"},
+		{designExecRE.MatchString(lower), "must not run code, servers, builds, or tests in design step — write architecture.md only"},
 		{strings.Contains(lower, "pip install"), "must not install packages in design step"},
-		{strings.Contains(lower, "uvicorn"), "must not run server commands in design step"},
 		{strings.Contains(lower, "gt bd"), "must not create beads in design step (planner)"},
 		{strings.Contains(lower, "bd add"), "must not create beads in design step (planner)"},
 		{strings.Contains(lower, "mkdir"), "must not mkdir in design step"},
