@@ -913,6 +913,11 @@ func stripModelToolArtifacts(response string) string {
 		if looksLikeHallucinatedShellOutput(t) {
 			continue
 		}
+		// Strip model-injected XML/HTML tags (e.g. <rewriting_and_reframing_attempt>)
+		// that can leak `>` into CMD text and confuse command guards.
+		if looksLikeModelTag(t) {
+			continue
+		}
 		kept = append(kept, line)
 	}
 	return strings.Join(kept, "\n")

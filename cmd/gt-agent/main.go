@@ -1400,6 +1400,14 @@ func checkShellSyntax(script string) (diag string, ok bool) {
 	return "", true
 }
 
+// modelTagLineRE matches lines that are purely XML/HTML tags (model-injected formatting).
+// Examples: <rewriting_and_reframing_attempt>, </rewriting_and_reframing_attempt>, <thinking>
+var modelTagLineRE = regexp.MustCompile(`^\s*<\s*[/]?\s*\w[\w-]*(?:\s[^>]*)?\s*>\s*$`)
+
+func looksLikeModelTag(trimmed string) bool {
+	return modelTagLineRE.MatchString(trimmed)
+}
+
 // inlineCMDMarkerRE matches space- or newline-separated inline CMD markers.
 var inlineCMDMarkerRE = regexp.MustCompile(`(?:\s+CMD:|\nCMD:)\s*`)
 
