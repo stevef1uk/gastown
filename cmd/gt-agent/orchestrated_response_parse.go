@@ -28,6 +28,7 @@ func preprocessOrchestratedResponse(response string) string {
 	response = unwrapJSONActionCommands(response)
 	response = unwrapFunctionToolCalls(response)
 	response = normalizeGluedWriteBody(response)
+	response = unwrapAngleBracketCMD(response)
 	response = normalizeGluedCMDMarkers(response)
 	response = gluedNativeToolRE.ReplaceAllString(response, "$1\n$2")
 	response = gluedCmdToToolRE.ReplaceAllString(response, "$1\n$2")
@@ -191,7 +192,36 @@ func unwrapJSONToolCallCommand(response string) string {
 	return response
 }
 
-// unwrapJSONCommandArray extracts keystrokes from {"commands": [{"keystrokes":"...","is_blocking":true},...]}
+// unwrapAngleBracketCMD converts `<CMD: command>` and `<CMD: command</CMD>` to `CMD: command`.
+// Some models emit XML-style tags around CMD lines instead of the plain CMD: prefix.
+func unwrapAngleBracketCMD(response string) string {
+	if !strings.Contains(response, "<CMD:") && !strings.Contains(response, "<cmd:") {
+		return response
+	}
+	var out []string
+	for _, line := range strings.Split(response, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "</CMD>") || strings.HasPrefix(trimmed, "</cmd>") {
+			continue
+		}
+		upper := strings.ToUpper(trimmed)
+		if strings.HasPrefix(upper, "<CMD:") {
+			inner := strings.TrimSpace(trimmed[5:]) // after "<CMD:"
+			// Strip trailing `>` (self-closing tag) or `</CMD>` (tag pair).
+			if idx := strings.Index(inner, "</CMD>"); idx >= 0 {
+				inner = strings.TrimSpace(inner[:idx])
+			} else {
+				inner = strings.TrimSuffix(inner, ">")
+			}
+			if inner != "" {
+				out = append(out, "CMD: "+inner)
+				continue
+			}
+		}
+		out = append(out, line)
+	}
+	return strings.Join(out, "\n")
+}
 // JSON arrays that some LLMs (e.g. Gemini) emit natively. Converts to inline CMD:/READ:/EDIT:/WRITE: markers.
 func unwrapJSONCommandArray(response string) string {
 	if !strings.Contains(response, `"commands"`) {
