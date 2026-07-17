@@ -105,6 +105,15 @@ func (r *stateRunner) maxTurns() int {
 	if base <= 0 {
 		base = 200
 	}
+	openCount := 0
+	if r.implProgress != nil && r.implProgress.BeadTurns != nil {
+		for beadID := range r.implProgress.BeadTurns {
+			if beadID != "" {
+				openCount++
+			}
+		}
+	}
+	base += openCount * 5
 	phase := r.v.ForActivePhase()
 	if len(phase.RequiredFiles) > 0 {
 		openCount := 0
@@ -1085,6 +1094,14 @@ func (r *stateRunner) backfillCodeCache() {
 			valid = true
 		case strings.HasSuffix(lower, ".sh") || strings.HasSuffix(lower, ".ps1"):
 			valid = true
+		default:
+			// Source code files (.go, .py, .js, .ts, etc.) — cache if they
+			// exist on disk with real content. These were likely verified
+			// before the bead was closed in a prior session. The verify
+			// step will catch any stale content.
+			if len(data) > 100 {
+				valid = true
+			}
 		}
 
 		if valid {

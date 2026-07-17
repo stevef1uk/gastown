@@ -29,6 +29,9 @@ type ImplementationProgress struct {
 	LastVerifyFailPath   string          `json:"last_verify_fail_path,omitempty"`
 	LastVerifyFailPaths  []string        `json:"last_verify_fail_paths,omitempty"`
 	LastVerifyFailOutput string          `json:"last_verify_fail_output,omitempty"`
+	// Per-bead turn tracking
+	BeadTurns            map[string]int    `json:"bead_turns,omitempty"`
+	BeadTurnsLimit       int               `json:"bead_turns_limit,omitempty"`
 }
 
 func implementationProgressPath(townRoot, rig string) string {
@@ -40,11 +43,13 @@ func implementationProgressPath(townRoot, rig string) string {
 
 func newImplementationProgress(workflowID, state, rig string) *ImplementationProgress {
 	return &ImplementationProgress{
-		WorkflowID: workflowID,
-		State:      state,
-		Rig:        rig,
-		UpdatedAt:  time.Now().UTC(),
-		Completed:  map[string]bool{},
+		WorkflowID:     workflowID,
+		State:          state,
+		Rig:            rig,
+		UpdatedAt:      time.Now().UTC(),
+		Completed:      map[string]bool{},
+		BeadTurns:      map[string]int{},
+		BeadTurnsLimit: 20,
 	}
 }
 
@@ -540,7 +545,10 @@ func (r *stateRunner) noteImplementationVerifyFailure(cmd, cmdOutput string) {
 	r.implProgress.LastVerifyFailBead = r.track.activeBead
 	r.implProgress.LastVerifyFailPath = activePath
 	r.implProgress.LastVerifyFailPaths = paths
-	r.implProgress.LastVerifyFailOutput = truncateForProgress(cmdOutput, 12000)
+	r.implProgress.LastVerifyFailOutput = strings.TrimSpace(cmdOutput)
+	if len(r.implProgress.LastVerifyFailOutput) > 12000 {
+		r.implProgress.LastVerifyFailOutput = r.implProgress.LastVerifyFailOutput[:12000] + "\n... (truncated)\n"
+	}
 	r.track.lastVerifyOutput = cmdOutput
 	if r.implProgress.Completed != nil && r.track.activeBead != "" {
 		delete(r.implProgress.Completed, implVerifyKey(r.track.activeBead))
@@ -648,18 +656,51 @@ func (r *stateRunner) formatImplementationProgressBlock() string {
 	return b.String()
 }
 
-func truncateForProgress(s string, max int) string {
-	s = strings.TrimSpace(s)
-	if max <= 0 || len(s) <= max {
-		return s
-	}
-	return s[:max] + "\n... (truncated)\n"
-}
-
 func clearImplementationProgressIfLeaving(townRoot, rig, fromState, nextState string) {
 	if fromState != "implementation" || nextState == "implementation" {
 		return
 	}
 	clearImplementationProgress(townRoot, rig)
 	orchestratedPrintf("[gt-agent] cleared implementation-progress for rig %s (left implementation → %s)\n", rig, nextState)
+}
+
+// addBeadTurn increments the turn counter for a bead and returns true if the limit is exceeded.
+func (r *stateRunner) addBeadTurn(beadID string) bool {
+	if r.implProgress == nil {
+		return false
+	}
+	if r.implProgress.BeadTurns == nil {
+		r.implProgress.BeadTurns = make(map[string]int)
+	}
+	if r.implProgress.BeadTurnsLimit <= 0 {
+		r.implProgress.BeadTurnsLimit = 20
+	}
+	r.implProgress.BeadTurns[r.track.activeBead]++
+	turns := r.implProgress.BeadTurns[r.track.activeBead]
+	if turns > r.implProgress.BeadTurnsLimit {
+		// Exceeded limit - delete the bead file so it gets regenerated
+		beadID := r.track.activeBead
+		beadPath := r.activeImplementBeadPath()
+		if beadPath != "" {
+			rigDir := filepath.Join(r.townRoot, r.rig, "mayor", "rig")
+			path := filepath.Join(rigDir, filepath.FromSlash(beadPath))
+			if err := os.Remove(path); err != nil {
+				orchestratedFprintfStderr("[gt-agent] failed to delete bead file %s after %d turns: %v\n", path, r.implProgress.BeadTurnsLimit, err)
+			} else {
+				orchestratedPrintf("[gt-agent] deleted bead file %s after %d turns (limit %d) — will be regenerated\n", path, turns, r.implProgress.BeadTurnsLimit)
+			}
+		}
+		// Reset turn count for this bead since file was deleted
+		r.implProgress.BeadTurns[beadID] = 0
+		return true // limit exceeded
+	}
+	return false
+}
+
+// getBeadTurns returns the current turn count for a bead.
+func (r *stateRunner) getBeadTurns(beadID string) int {
+	if r.implProgress == nil || r.implProgress.BeadTurns == nil {
+		return 0
+	}
+	return r.implProgress.BeadTurns[beadID]
 }

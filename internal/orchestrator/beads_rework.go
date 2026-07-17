@@ -210,6 +210,10 @@ func reopenClosedImplementBeadsForIDs(townRoot, rig string, v WorkflowValidation
 		if err := bdUpdateImplementBeadStatus(townRoot, rig, b.ID, "open"); err != nil {
 			return reopened, err
 		}
+		// Reset turn count for reopened bead
+		if err := resetBeadTurnCount(townRoot, rig, b.ID); err != nil {
+			// Non-fatal, just log
+		}
 		reopened = append(reopened, b.ID)
 	}
 	return reopened, nil
@@ -238,6 +242,10 @@ func reopenClosedImplementBeadsForPaths(townRoot, rig string, v WorkflowValidati
 		}
 		if err := bdUpdateImplementBeadStatus(townRoot, rig, b.ID, "open"); err != nil {
 			return reopened, err
+		}
+		// Reset turn count for reopened bead
+		if err := resetBeadTurnCount(townRoot, rig, b.ID); err != nil {
+			// Non-fatal
 		}
 		reopened = append(reopened, b.ID)
 	}
@@ -299,9 +307,10 @@ func qaFailureRequiresImplementationRework(summary string) bool {
 // ImplementationDiskWorkReady reports nil when active-phase required_files exist and are not stubs.
 func ImplementationDiskWorkReady(rigDir string, v WorkflowValidation) error {
 	v = v.ForActivePhase()
+	var checkFiles []string
 	for _, rel := range v.RequiredFiles {
 		rel = filepath.ToSlash(strings.TrimSpace(rel))
-		if rel == "" {
+		if rel == "" || IsProjectSetupArtifactPath(rel, v) || IsPlaceholderFile(rel) {
 			continue
 		}
 		path := filepath.Join(rigDir, filepath.FromSlash(rel))
@@ -317,18 +326,11 @@ func ImplementationDiskWorkReady(rigDir string, v WorkflowValidation) error {
 				return err
 			}
 		}
+		checkFiles = append(checkFiles, rel)
 	}
-	var polecatRequired []string
-	for _, rel := range v.RequiredFiles {
-		rel = filepath.ToSlash(strings.TrimSpace(rel))
-		if rel == "" || IsProjectSetupArtifactPath(rel, v) {
-			continue
-		}
-		polecatRequired = append(polecatRequired, rel)
-	}
-	if len(polecatRequired) > 0 {
+	if len(checkFiles) > 0 {
 		vStub := v
-		vStub.RequiredFiles = polecatRequired
+		vStub.RequiredFiles = checkFiles
 		if stubs := stubbedRequiredFiles(rigDir, vStub); len(stubs) > 0 {
 			return fmt.Errorf("stub or invalid: %s", strings.Join(stubs, ", "))
 		}

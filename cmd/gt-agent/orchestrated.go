@@ -245,6 +245,15 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 			return "failure", "workflow paused", lastAttemptFeedback.String(), orchestrator.ErrWorkflowPaused
 		}
 		orchestratedPrintf("[gt-agent] LLM request (turn %d)...\n", turn)
+
+		// Track per-bead turns; if a bead exceeds 20 turns, delete its file for regeneration
+		if runner.track.activeBead != "" {
+			if runner.addBeadTurn(runner.track.activeBead) {
+				// File deleted — it will be regenerated on next turn
+				orchestratedPrintf("[gt-agent] bead %s exceeded 20 turns; file deleted for regeneration\n", runner.track.activeBead)
+			}
+		}
+
 		response, llmErr := client.CompleteMessages(ctx, messages)
 		if llmErr != nil {
 			return "fail", "", lastAttemptFeedback.String(), llmErr
@@ -458,6 +467,12 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 			summary := fmt.Sprintf("%s exhausted %d CMD turns", task.State, maxTurns)
 			if logLine != "" {
 				summary += "; " + logLine
+			}
+			// Reopen all beads in current delivery phase when timeout occurs
+			if reopened, err := orchestrator.ReopenAllPhaseImplementBeads(townRoot, rig, runner.v); err != nil {
+				orchestratedFprintfStderr("[gt-agent] failed to reopen phase beads on timeout: %v\n", err)
+			} else if len(reopened) > 0 {
+				orchestratedPrintf("[gt-agent] reopened %d beads in current delivery phase due to timeout\n", len(reopened))
 			}
 			return "timeout", summary, lastAttemptFeedback.String(), fmt.Errorf("no structured outcome after %d turns", maxTurns)
 		}

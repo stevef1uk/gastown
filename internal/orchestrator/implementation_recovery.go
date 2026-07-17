@@ -1,6 +1,7 @@
 package orchestrator
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -201,9 +202,11 @@ func HardResetImplementationPhase(townRoot, rig string, v WorkflowValidation) (s
 	return joinStrings(parts, "; "), nil
 }
 
-// ReopenAllImplementBeadsForReset moves every closed implement bead back to open (manual full reset only;
-// wall-clock timeout uses ResetImplementationPhase and does not call this).
-func ReopenAllImplementBeadsForReset(townRoot, rig string, v WorkflowValidation) ([]string, error) {
+// ReopenAllPhaseImplementBeads reopens all implement beads in the current active phase
+// (not just the failed ones). This is called on timeout to reset the entire implementation phase.
+// Also clears implementation progress so turn counts are reset.
+func ReopenAllPhaseImplementBeads(townRoot, rig string, v WorkflowValidation) ([]string, error) {
+	v = v.ForActivePhase()
 	closed, err := listImplementBeadsByStatus(townRoot, rig, v, "closed")
 	if err != nil {
 		return nil, err
@@ -218,6 +221,10 @@ func ReopenAllImplementBeadsForReset(townRoot, rig string, v WorkflowValidation)
 		if b.ID == "" {
 			continue
 		}
+		// Only reopen beads in the current active phase
+		if !strings.Contains(b.Title, v.ActivePhaseID()) && !strings.Contains(b.Title, strings.TrimPrefix(v.ActivePhaseID(), "phase_")) {
+			continue
+		}
 		cmd := exec.Command("bd", "update", b.ID, "--status=open")
 		cmd.Env = append(os.Environ(), "BEADS_DIR="+beadsDir)
 		cmd.Dir = workDir
@@ -227,7 +234,40 @@ func ReopenAllImplementBeadsForReset(townRoot, rig string, v WorkflowValidation)
 		}
 		reopened = append(reopened, b.ID)
 	}
+	// Clear implementation progress so turn counts are reset
+	if _, err := ClearImplementationProgressFile(townRoot, rig); err != nil {
+		// Non-fatal, just log
+	}
 	return reopened, nil
+}
+
+// resetBeadTurnCount sets the turn count for a bead back to 0 in the implementation progress file.
+func resetBeadTurnCount(townRoot, rig, beadID string) error {
+	if townRoot == "" || rig == "" || beadID == "" {
+		return nil
+	}
+	path := filepath.Join(townRoot, rig, "qa", "implementation-progress.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	var progress struct {
+		BeadTurns map[string]int `json:"bead_turns"`
+	}
+	if err := json.Unmarshal(data, &progress); err != nil {
+		return nil // non-fatal
+	}
+	if progress.BeadTurns != nil {
+		delete(progress.BeadTurns, beadID)
+	}
+	updated, err := json.Marshal(progress)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, updated, 0644)
 }
 
 // ClearImplementationProgressFile removes qa/implementation-progress.json so polecat does not skip verify.
