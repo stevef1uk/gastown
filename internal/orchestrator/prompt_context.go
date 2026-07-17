@@ -91,6 +91,7 @@ func FormatPhaseTestGuards(townRoot, rig string, v WorkflowValidation) string {
 	var hasPythonTest bool
 	var hasFrontendSource bool
 	var hasSSE bool
+	var hasTypeScriptTest bool
 	for _, f := range files {
 		lower := strings.ToLower(filepath.ToSlash(strings.TrimSpace(f)))
 		if strings.HasSuffix(lower, ".test.tsx") || strings.HasSuffix(lower, ".test.ts") {
@@ -120,12 +121,20 @@ func FormatPhaseTestGuards(townRoot, rig string, v WorkflowValidation) string {
 				hasSSE = true
 			}
 		}
+		// Detect TypeScript test files for comprehensive stack guidance
+		if strings.HasSuffix(lower, ".test.tsx") || strings.HasSuffix(lower, ".test.ts") ||
+			strings.HasSuffix(lower, ".spec.tsx") || strings.HasSuffix(lower, ".spec.ts") {
+			if !strings.HasPrefix(lower, "e2e/") && !strings.HasPrefix(lower, "playwright/") && !strings.HasPrefix(lower, "cypress/") &&
+				!strings.Contains(lower, "/e2e/") && !strings.Contains(lower, "/playwright/") && !strings.Contains(lower, "/cypress/") {
+				hasTypeScriptTest = true
+			}
+		}
 	}
 	// Trigger jsdom guard when frontend source files exist (test files are implementation artifacts, not listed in required_files).
 	if hasFrontendSource {
 		hasJSDOMTest = true
 	}
-	if !hasJSDOMTest && !hasGoTest && !hasPythonTest {
+	if !hasJSDOMTest && !hasGoTest && !hasPythonTest && !hasTypeScriptTest {
 		return ""
 	}
 	var b strings.Builder
@@ -135,6 +144,24 @@ func FormatPhaseTestGuards(townRoot, rig string, v WorkflowValidation) string {
 	}
 	if hasSSE {
 		b.WriteString("- **SSE/EventSource components:** Add a Jest polyfill for `EventSource` in `jest.setup.ts` (or per test file) — jsdom does not provide it. Example:\n  ```ts\n  global.EventSource = class EventSource { constructor(url: string) { this.url = url; } close() {} onmessage: ((ev: MessageEvent) => void) | null = null; url: string; };\n  ```\n  Without this, tests rendering SSE components fail with `ReferenceError: EventSource is not defined`.\n")
+	}
+	if hasGoTest {
+		b.WriteString("- **Go test files (`*_test.go`):** Use `package pkg_test` (external test package) for black-box tests. Import `testing` and use `t *testing.T` parameter. Run `go test -count=1 ./...` from the layout root.\n")
+	}
+	if hasPythonTest {
+		b.WriteString("- **Python test files (`test_*.py`, `*_test.py`):** Use `unittest.TestCase` or `pytest` functions. Run `python3 -m pytest path/to/test_file.py -v` from the layout root.\n")
+	}
+	if hasTypeScriptTest {
+		b.WriteString("- **TypeScript/Next.js test stack requirements:**\n")
+		b.WriteString("  - **tsconfig.json:** Add `\"isolatedModules\": true` to compilerOptions. Without this, `ts-jest` emits `TS151002` warning and module resolution can fail.\n")
+		b.WriteString("  - **Install dev deps:** `@types/jest`, `ts-jest` (or use `babel-jest` with `@babel/preset-typescript`), `identity-obj-proxy` for CSS modules.\n")
+		b.WriteString("  - **jest.config.js:** Use `babel-jest` (not `ts-jest`) for faster transforms. Set `transformIgnorePatterns: ['/node_modules/(?!(recharts|@recharts)/)']` for ESM packages. Add `haste: { throwOnModuleCollision: false }` to silence naming collisions between `package.json` and `src/package.json`.\n")
+		b.WriteString("  - **babel.config.js:** Use `@babel/preset-env` with `targets: { node: 'current' }`, `@babel/preset-react` with `runtime: 'automatic'`, `@babel/preset-typescript`. Add `@babel/preset-env` for ESM transpilation.\n")
+		b.WriteString("  - **Install dev deps:** `@types/jest`, `@types/react`, `@types/react-dom`, `@babel/preset-env`, `@babel/preset-react`, `@babel/preset-typescript`, `babel-jest`, `identity-obj-proxy`, `jest-environment-jsdom`, `ts-jest` (optional, if not using babel-jest).\n")
+		b.WriteString("  - **Test file imports:** Import components from `../components/Component` (relative to test file), NOT `../src/components/Component`. Test files live in `src/__tests__/`.\n")
+		b.WriteString("  - **Component props:** Always pass required props in tests (e.g., `<PriceFlash priceChange={0} />`). TypeScript enforces this.\n")
+		b.WriteString("  - **Jest setup:** Create `jest.setup.ts` with `@testing-library/jest-dom` import and any polyfills (EventSource, etc.). Reference it in `jest.config.js` via `setupFilesAfterLoad`.\n")
+		b.WriteString("  - **Run command:** `cd {{rig}}/mayor/rig/{{layout_root}}/frontend && npm install && npx jest --no-cache` from rig root.\n")
 	}
 	if hasGoTest {
 		b.WriteString("- **Go test files (`*_test.go`):** Use `package pkg_test` (external test package) for black-box tests. Import `testing` and use `t *testing.T` parameter. Run `go test -count=1 ./...` from the layout root.\n")
