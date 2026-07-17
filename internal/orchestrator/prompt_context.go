@@ -22,6 +22,7 @@
 package orchestrator
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -283,6 +284,8 @@ func RunPreRunHook(step, townRoot, rig string, v WorkflowValidation) (string, er
 		if log != "" && log != "implement beads and required_files are consistent" {
 			return "reconcile implement beads: " + log, nil
 		}
+	case "ensure_test_stack_ready":
+		return EnsureTestStackReadyLog(townRoot, rig, v)
 	case "ensure_go_mod_from_spec":
 		logLine, err := EnsureGoModFromSpec(townRoot, rig, v)
 		if err != nil {
@@ -330,6 +333,171 @@ func RunPreRunHook(step, townRoot, rig string, v WorkflowValidation) (string, er
 		if len(closed) > 0 {
 			return "closed project_setup beads: " + joinStrings(closed, ", "), nil
 		}
+	}
+	return "", nil
+}
+
+func EnsureTestStackReadyLog(townRoot, rig string, v WorkflowValidation) (string, error) {
+	scoped := v.ForActivePhase()
+	files := scoped.RequiredFiles
+	if len(files) == 0 {
+		files = v.UnionRequiredFiles()
+	}
+	hasFrontend := false
+	hasTypeScriptTest := false
+	for _, f := range files {
+		lower := strings.ToLower(filepath.ToSlash(strings.TrimSpace(f)))
+		if strings.HasSuffix(lower, ".tsx") || strings.HasSuffix(lower, ".jsx") ||
+			strings.HasSuffix(lower, "/package.json") || lower == "package.json" {
+			if !strings.HasPrefix(lower, "e2e/") && !strings.HasPrefix(lower, "playwright/") && !strings.HasPrefix(lower, "cypress/") &&
+				!strings.Contains(lower, "/e2e/") && !strings.Contains(lower, "/playwright/") && !strings.Contains(lower, "/cypress/") {
+				hasFrontend = true
+			}
+		}
+		if strings.HasSuffix(lower, ".test.tsx") || strings.HasSuffix(lower, ".test.ts") ||
+			strings.HasSuffix(lower, ".spec.tsx") || strings.HasSuffix(lower, ".spec.ts") {
+			if !strings.HasPrefix(lower, "e2e/") && !strings.HasPrefix(lower, "playwright/") && !strings.HasPrefix(lower, "cypress/") &&
+				!strings.Contains(lower, "/e2e/") && !strings.Contains(lower, "/playwright/") && !strings.Contains(lower, "/cypress/") {
+				hasTypeScriptTest = true
+			}
+		}
+	}
+	if !hasFrontend && !hasTypeScriptTest {
+		return "", nil
+	}
+
+	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
+	layout := strings.Trim(filepath.ToSlash(strings.TrimSpace(v.LayoutRoot)), "/")
+	if layout == "" {
+		return "", nil
+	}
+	layoutDir := filepath.Join(rigDir, layout)
+
+	var actions []string
+
+	// Check tsconfig.json for isolatedModules
+	tsconfigPath := filepath.Join(layoutDir, "tsconfig.json")
+	if data, err := os.ReadFile(tsconfigPath); err == nil {
+		var cfg map[string]interface{}
+		if json.Unmarshal(data, &cfg) == nil {
+			if co, ok := cfg["compilerOptions"].(map[string]interface{}); ok {
+				if _, ok := co["isolatedModules"]; !ok {
+					co["isolatedModules"] = true
+					cfg["compilerOptions"] = co
+					newData, _ := json.MarshalIndent(cfg, "", "  ")
+					os.WriteFile(tsconfigPath, newData, 0644)
+					actions = append(actions, "tsconfig.json: added isolatedModules=true")
+				}
+			}
+		}
+	}
+
+	// Check package.json for required dev deps
+	pkgPath := filepath.Join(layoutDir, "package.json")
+	if data, err := os.ReadFile(pkgPath); err == nil {
+		var pkg map[string]interface{}
+		if json.Unmarshal(data, &pkg) == nil {
+			deps := map[string]bool{}
+			if dd, ok := pkg["devDependencies"].(map[string]interface{}); ok {
+				for k := range dd {
+					deps[k] = true
+				}
+			}
+			required := []string{
+				"@types/jest", "ts-jest", "babel-jest", "@babel/preset-env",
+				"@babel/preset-typescript", "@babel/preset-react", "identity-obj-proxy",
+				"jest-environment-jsdom", "ts-jest",
+			}
+			missing := []string{}
+			for _, d := range required {
+				if !deps[d] {
+					missing = append(missing, d)
+				}
+			}
+			if len(missing) > 0 {
+				if pkg["devDependencies"] == nil {
+					pkg["devDependencies"] = map[string]interface{}{}
+				}
+				dd := pkg["devDependencies"].(map[string]interface{})
+				for _, d := range missing {
+					dd[d] = "^29.0.0"
+				}
+				pkg["devDependencies"] = dd
+				newData, _ := json.MarshalIndent(pkg, "", "  ")
+				os.WriteFile(pkgPath, newData, 0644)
+				actions = append(actions, fmt.Sprintf("package.json: added missing deps: %s", strings.Join(missing, ", ")))
+			}
+		}
+	}
+
+	// Check jest.config.js for haste collision fix
+	jestConfigPath := filepath.Join(layoutDir, "jest.config.js")
+	if _, err := os.Stat(jestConfigPath); err == nil {
+		data, _ := os.ReadFile(jestConfigPath)
+		content := string(data)
+		if !strings.Contains(content, "throwOnModuleCollision: false") && !strings.Contains(content, "throwOnModuleCollision") {
+			content = strings.Replace(content, "};", `  haste: {
+    forceNodeFilesystemAPI: true,
+    throwOnModuleCollision: false,
+  },
+};`, 1)
+			os.WriteFile(jestConfigPath, []byte(content), 0644)
+			actions = append(actions, "jest.config.js: added haste collision fix")
+		}
+	}
+
+	// Check babel.config.js for proper presets
+	babelPath := filepath.Join(layoutDir, "babel.config.js")
+	if _, err := os.Stat(babelPath); err == nil {
+		data, _ := os.ReadFile(babelPath)
+		content := string(data)
+		updated := false
+		if !strings.Contains(content, "@babel/preset-env") {
+			content = strings.Replace(content, "presets: [", `presets: [
+    ["@babel/preset-env", { targets: { node: "current" } }],`, 1)
+			updated = true
+		}
+		if !strings.Contains(content, "@babel/preset-typescript") {
+			content = strings.Replace(content, `"@babel/preset-react"`, `"@babel/preset-typescript", "@babel/preset-react"`, 1)
+			updated = true
+		}
+		if updated {
+			os.WriteFile(babelPath, []byte(content), 0644)
+			actions = append(actions, "babel.config.js: added @babel/preset-env and @babel/preset-typescript")
+		}
+	}
+
+	// Check jest.setup.ts for EventSource polyfill
+	setupPath := filepath.Join(layoutDir, "jest.setup.ts")
+	if _, err := os.Stat(setupPath); err == nil {
+		data, _ := os.ReadFile(setupPath)
+		content := string(data)
+		if !strings.Contains(content, "EventSource") {
+			content += "\n// Polyfill for EventSource in jsdom\nif (typeof global.EventSource === 'undefined') {\n  global.EventSource = class EventSource {\n    constructor(url) { this.url = url; }\n    close() {}\n    onmessage: ((ev: MessageEvent) => void) | null = null;\n    url: string;\n  };\n}"
+			os.WriteFile(setupPath, []byte(content), 0644)
+			actions = append(actions, "jest.setup.ts: added EventSource polyfill")
+		}
+	} else {
+		content := "// Polyfill for EventSource in jsdom\nif (typeof global.EventSource === 'undefined') {\n  global.EventSource = class EventSource {\n    constructor(url) { this.url = url; }\n    close() {}\n    onmessage: ((ev: MessageEvent) => void) | null = null;\n    url: string;\n  };\n}\nimport \"@testing-library/jest-dom\";\n"
+		os.WriteFile(setupPath, []byte(content), 0644)
+		actions = append(actions, "jest.setup.ts: created with EventSource polyfill and @testing-library/jest-dom")
+	}
+
+	// Ensure jest.config.js references jest.setup.ts
+	jestConfigPath = filepath.Join(layoutDir, "jest.config.js")
+	if _, err := os.Stat(jestConfigPath); err == nil {
+		data, _ := os.ReadFile(jestConfigPath)
+		content := string(data)
+		if !strings.Contains(content, "setupFilesAfterLoad") && !strings.Contains(content, "setupFilesAfterLoad") {
+			content = strings.Replace(content, "};", `  setupFilesAfterLoad: ["<rootDir>/jest.setup.ts"],
+};`, 1)
+			os.WriteFile(jestConfigPath, []byte(content), 0644)
+			actions = append(actions, "jest.config.js: added setupFilesAfterLoad")
+		}
+	}
+
+	if len(actions) > 0 {
+		return "test stack auto-fix: " + strings.Join(actions, "; "), nil
 	}
 	return "", nil
 }
