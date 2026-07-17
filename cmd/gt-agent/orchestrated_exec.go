@@ -490,8 +490,11 @@ func rewriteUnittestToWorkdir(cmd, rig string, v orchestrator.WorkflowValidation
 	// Insert AFTER any cd commands so venv resolves from the correct directory.
 	if venvActivate != "" && orchestrator.WorkflowUsesPython(v) && v.UsesPythonVenv() {
 		venvRel := v.PythonVenvRelDir()
+		// If workPath is the rig root (mayor/rig), venv is at .venv relative to cwd.
 		// If workPath ends with layout, venv is under layout — use bare .venv relative to cwd.
-		if layout != "" && layout != "." && strings.HasSuffix(strings.Trim(workPath, "/"), layout) {
+		if workPath == mayorRig {
+			venvRel = ".venv"
+		} else if layout != "" && layout != "." && strings.HasSuffix(strings.Trim(workPath, "/"), layout) {
 			venvRel = ".venv"
 		}
 		venvCmd := ". " + venvRel + "/bin/activate"
