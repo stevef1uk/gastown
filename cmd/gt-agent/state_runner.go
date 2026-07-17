@@ -1069,9 +1069,6 @@ func (r *stateRunner) backfillCodeCache() {
 		if relPath == "" {
 			continue
 		}
-		if _, ok := cache.GetValidated(phaseIdx, relPath); ok {
-			continue
-		}
 		abs := filepath.Join(rigDir, filepath.FromSlash(relPath))
 		data, err := os.ReadFile(abs)
 		if err != nil {
