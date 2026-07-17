@@ -810,17 +810,19 @@ func prepareProjectSetupVerifyCommand(verifyCmd, townRoot, rig, kind string) str
 		return verifyCmd
 	}
 	// node_setup: Node.js projects have package.json at rig root (townRoot/rig), not under mayor/rig
-	// python_setup: runs from mayor/rig where go.mod/pyproject.toml typically live
+	// python_setup/go_setup: run from mayor/rig where go.mod/pyproject.toml typically live
 	prefix := "{{rig}}/mayor/rig"
 	if kind == "node_setup" {
 		prefix = "{{rig}}"
 	}
-	if !strings.Contains(verifyCmd, prefix) && !strings.Contains(verifyCmd, rig+"/mayor/rig") && kind != "node_setup" {
-		// For node_setup, also check if rig prefix is already present
-		if !strings.Contains(verifyCmd, rig) || strings.HasPrefix(strings.TrimSpace(verifyCmd), "cd ") {
-			verifyCmd = "cd " + prefix + " && " + verifyCmd
-		}
-	} else if !strings.Contains(verifyCmd, prefix) && !strings.Contains(verifyCmd, rig+"/mayor/rig") {
+	trimmed := strings.TrimSpace(verifyCmd)
+	// If verifyCmd already starts with "cd <rig>/..." (absolute from town root), don't prepend
+	// But if it starts with "cd <relative>" (relative to rig root), we DO need the rig prefix
+	hasAbsoluteRigPath := strings.HasPrefix(trimmed, "cd "+rig+"/") ||
+		strings.HasPrefix(trimmed, "cd "+rig+" ") ||
+		strings.Contains(trimmed, "&& cd "+rig+"/") ||
+		strings.Contains(trimmed, "&& cd "+rig+" ")
+	if !hasAbsoluteRigPath && !strings.Contains(verifyCmd, prefix) && !strings.Contains(verifyCmd, rig+"/mayor/rig") {
 		verifyCmd = "cd " + prefix + " && " + verifyCmd
 	}
 	if fixed, ok := rewriteOrchestratedRigPlaceholders(verifyCmd, townRoot, rig); ok {
