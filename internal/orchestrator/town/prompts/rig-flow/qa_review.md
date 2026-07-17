@@ -51,9 +51,10 @@ $GT_ROOT/{{rig}}/mayor/rig/{{layout_root}}/  ← layout root (ALL files go here)
 ## Rules
 
 - Review only beads whose title contains `{{bead_title_contains}}`. Ignore patrol/agent identity beads.
-- One `CMD:` per line. No markdown fences, no `[TOOL_CALLS]`, no shell `if/then`.
+- One `CMD:` per line. No markdown fences, no `жите`, no shell `if/then`.
 - Reject stubs in source files (≥{{min_implementation_file_bytes}} bytes). Dependency manifests exempt. Config files (postcss.config.js, tailwind.config.js, next.config.js, jest.config.js, etc.) are naturally small and exempt.
-- **Do not apply your own file-size stub size-based stub detection.** Run the phase's `qa_verify_command` and trust its result. The auto-verify validates correctly; your job is to check test/smoke output, not file sizes.
+- **Do not apply your own file-size based stub detection.** Run the phase's `qa_verify_command` and trust its result. The auto-verify validates correctly; your job is to check test/smoke output, not file sizes.
+- **Files exist under `{{rig}}/mayor/rig/{{layout_root}}/` — NEVER check `$GT_ROOT/{{layout_root}}/` directly.** The verify command runs from `{{rig}}/mayor/rig/` and finds files correctly. Do NOT do manual `ls`/`cat` checks at `$GT_ROOT/{{layout_root}}/`.
 - Do NOT emit JSON in same message as CMD lines. Wait for command output, then JSON only.
 - **Fast-fail:** If verification fails, do NOT repeat same CMD. Next message: JSON only with errors and bead IDs.
 - gt-agent persists completed checks in progress file and removes it on finish.
