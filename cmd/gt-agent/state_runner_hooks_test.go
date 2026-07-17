@@ -183,9 +183,9 @@ func TestStateRunner_rigFlowAutoVerifyHooksMatchCommands(t *testing.T) {
 	if got := r.verifyCommand("node_setup"); got == "" || !strings.Contains(got, "npm install") {
 		t.Fatalf("expected node_setup verify, got %q", got)
 	}
-	prefixed := prepareProjectSetupVerifyCommand(r.verifyCommand("node_setup"), r.townRoot, r.rig)
-	if !strings.Contains(prefixed, "myrig/mayor/rig") {
-		t.Fatalf("node_setup verify must include rig workdir prefix from town root, got %q", prefixed)
+	prefixed := prepareProjectSetupVerifyCommand(r.verifyCommand("node_setup"), r.townRoot, r.rig, "node_setup")
+	if !strings.Contains(prefixed, "myrig") || strings.Contains(prefixed, "myrig/mayor/rig") {
+		t.Fatalf("node_setup verify must include rig root prefix (not mayor/rig), got %q", prefixed)
 	}
 }
 

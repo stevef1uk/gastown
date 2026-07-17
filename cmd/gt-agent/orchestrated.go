@@ -955,6 +955,9 @@ func stripModelToolArtifacts(response string) string {
 // normalizeMarkdownFencedCMD converts ```CMD: / ```cmd: blocks to plain CMD: lines.
 func normalizeMarkdownFencedCMD(response string) string {
 	response = markdownFencedCMDRE.ReplaceAllString(response, "```CMD")
+	// Handle `` ```cmd <command> `` on the same line BEFORE unwrapMarkdownFencedToolBlocks,
+	// so the inline regex can match the backtick prefix before it gets stripped.
+	response = markdownFencedCmdInlineRE.ReplaceAllString(response, "CMD: $1")
 	response = unwrapMarkdownFencedToolBlocks(response)
 	response = strings.ReplaceAll(response, "```[TOOL_CALLS]", "\n")
 	response = strings.ReplaceAll(response, "[TOOL_CALLS]", "")
@@ -963,6 +966,8 @@ func normalizeMarkdownFencedCMD(response string) string {
 	response = strings.ReplaceAll(response, "```", "")
 	return response
 }
+
+var markdownFencedCmdInlineRE = regexp.MustCompile("```\\s*cmd:?\\s+(.+)")
 
 // orchestratedTaskRig returns the workflow rig (from fetch_task) when the agent has no GT_RIG.
 func orchestratedTaskRig(task *orchestrator.Task, agentRig string) string {

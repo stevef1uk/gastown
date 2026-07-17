@@ -519,11 +519,16 @@ func unwrapMarkdownFencedToolBlocks(response string) string {
 			if strings.HasPrefix(trimmed, "```") {
 				inner := strings.TrimSpace(strings.TrimPrefix(trimmed, "```"))
 				upper := strings.ToUpper(inner)
-				if strings.HasPrefix(upper, "CMD:") || strings.HasPrefix(upper, "READ:") ||
-					strings.HasPrefix(upper, "EDIT:") || strings.HasPrefix(upper, "WRITE:") {
-					out = append(out, inner)
-					continue
+			if strings.HasPrefix(upper, "CMD:") || strings.HasPrefix(upper, "READ:") ||
+				strings.HasPrefix(upper, "EDIT:") || strings.HasPrefix(upper, "WRITE:") {
+				parts := strings.SplitN(inner, " ", 2)
+				if len(parts) == 2 {
+					out = append(out, strings.ToUpper(parts[0])+" "+parts[1])
+				} else {
+					out = append(out, strings.ToUpper(inner))
 				}
+				continue
+			}
 				if isMarkdownToolFenceLang(inner) || upper == "CMD" {
 					inFence = true
 					fenceLang = upper

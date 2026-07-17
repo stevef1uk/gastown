@@ -313,6 +313,64 @@ func TestParseOrchestratedCommands_markdownFencedCMDNoColon(t *testing.T) {
 	}
 }
 
+func TestParseOrchestratedCommands_markdownFencedCmdInline(t *testing.T) {
+	in := "```cmd cd mockrig/mayor/rig && bd list --status=closed\n```\n"
+	cmds := parseOrchestratedCommands(in)
+	if len(cmds) != 1 {
+		t.Fatalf("want 1 cmd from inline lowercase ```cmd, got %d: %v", len(cmds), cmds)
+	}
+	if !strings.Contains(cmds[0], "bd list") {
+		t.Fatalf("got %q", cmds[0])
+	}
+}
+
+func TestParseOrchestratedCommands_markdownFencedCmdInlineColon(t *testing.T) {
+	in := "```cmd: cd mockrig/mayor/rig && bd list --status=closed\n```\n"
+	cmds := parseOrchestratedCommands(in)
+	if len(cmds) != 1 {
+		t.Fatalf("want 1 cmd from inline ```cmd:, got %d: %v", len(cmds), cmds)
+	}
+	if !strings.Contains(cmds[0], "bd list") {
+		t.Fatalf("got %q", cmds[0])
+	}
+}
+
+func TestParseOrchestratedCommands_markdownFencedCmdInlineWithHeredoc(t *testing.T) {
+	in := "```cmd cd mockrig/mayor/rig && cat > test.txt <<'EOF'\nhello world\nEOF\n```\n"
+	cmds := parseOrchestratedCommands(in)
+	if len(cmds) != 1 {
+		t.Fatalf("want 1 cmd from inline ```cmd with heredoc, got %d: %v", len(cmds), cmds)
+	}
+	if !strings.Contains(cmds[0], "cat > test.txt") {
+		t.Fatalf("got %q", cmds[0])
+	}
+	if !strings.Contains(cmds[0], "hello world") {
+		t.Fatalf("heredoc body lost:\n%s", cmds[0])
+	}
+}
+
+func TestParseOrchestratedCommands_markdownFencedCmdInlineWithJSON(t *testing.T) {
+	in := "```cmd cd mockrig/mayor/rig && npm install\n```\n```json\n{\"outcome\":\"success\",\"summary\":\"done\"}\n```\n"
+	cmds := parseOrchestratedCommands(in)
+	if len(cmds) != 1 {
+		t.Fatalf("want 1 cmd from inline ```cmd with JSON in same message, got %d: %v", len(cmds), cmds)
+	}
+	if !strings.Contains(cmds[0], "npm install") {
+		t.Fatalf("got %q", cmds[0])
+	}
+}
+
+func TestParseOrchestratedCommands_markdownFencedCmdLowercaseOwnLine(t *testing.T) {
+	in := "```cmd\ncd mockrig/mayor/rig && bd list --status=closed\n```\n"
+	cmds := parseOrchestratedCommands(in)
+	if len(cmds) != 1 {
+		t.Fatalf("want 1 cmd from lowercase ```cmd on its own line, got %d: %v", len(cmds), cmds)
+	}
+	if !strings.Contains(cmds[0], "bd list") {
+		t.Fatalf("got %q", cmds[0])
+	}
+}
+
 func TestParseOrchestratedCommands_heredocPreservesGoClosingBraces(t *testing.T) {
 	t.Parallel()
 	in := `CMD: cd mockrig/mayor/rig && cat > linkshelf/internal/store/store.go <<'EOF'

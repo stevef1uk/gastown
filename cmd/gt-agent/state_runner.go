@@ -804,13 +804,24 @@ func goAutoVerifyNoPackagesIsError(verifyKind, state, verifyCmd string) bool {
 }
 
 // prepareProjectSetupVerifyCommand prepends the rig workdir to python_setup/node_setup
-// auto-verify commands so they run from {{rig}}/mayor/rig instead of town root.
-func prepareProjectSetupVerifyCommand(verifyCmd, townRoot, rig string) string {
+// auto-verify commands so they run from the correct directory.
+func prepareProjectSetupVerifyCommand(verifyCmd, townRoot, rig, kind string) string {
 	if strings.TrimSpace(verifyCmd) == "" {
 		return verifyCmd
 	}
-	if !strings.Contains(verifyCmd, "{{rig}}/mayor/rig") && !strings.Contains(verifyCmd, rig+"/mayor/rig") {
-		verifyCmd = "cd {{rig}}/mayor/rig && " + verifyCmd
+	// node_setup: Node.js projects have package.json at rig root (townRoot/rig), not under mayor/rig
+	// python_setup: runs from mayor/rig where go.mod/pyproject.toml typically live
+	prefix := "{{rig}}/mayor/rig"
+	if kind == "node_setup" {
+		prefix = "{{rig}}"
+	}
+	if !strings.Contains(verifyCmd, prefix) && !strings.Contains(verifyCmd, rig+"/mayor/rig") && kind != "node_setup" {
+		// For node_setup, also check if rig prefix is already present
+		if !strings.Contains(verifyCmd, rig) || strings.HasPrefix(strings.TrimSpace(verifyCmd), "cd ") {
+			verifyCmd = "cd " + prefix + " && " + verifyCmd
+		}
+	} else if !strings.Contains(verifyCmd, prefix) && !strings.Contains(verifyCmd, rig+"/mayor/rig") {
+		verifyCmd = "cd " + prefix + " && " + verifyCmd
 	}
 	if fixed, ok := rewriteOrchestratedRigPlaceholders(verifyCmd, townRoot, rig); ok {
 		verifyCmd = fixed
@@ -832,7 +843,7 @@ func (r *stateRunner) runAutoVerify(cmd, workDir, sessionName string, cmdEnv []s
 				verifyCmd = fixed
 			}
 		} else {
-			verifyCmd = prepareProjectSetupVerifyCommand(verifyCmd, r.townRoot, r.rig)
+			verifyCmd = prepareProjectSetupVerifyCommand(verifyCmd, r.townRoot, r.rig, hook.Verify)
 		}
 		verifyOut, verifyErr := r.runShellCommand(verifyCmd, workDir, sessionName, cmdEnv)
 		if verifyErr != nil {
