@@ -82,12 +82,31 @@ func PythonVerifyCommand(v WorkflowValidation) string {
 
 	cmd := pythonVerifyWithLayout(base, v)
 
-	if v.UsesPythonVenv() && !strings.Contains(cmd, "source ") && !strings.Contains(cmd, ". ") && !strings.Contains(cmd, ".venv/") && !strings.Contains(cmd, "pipenv") && !strings.Contains(cmd, "poetry") {
+	// Only add venv activation for actual Python commands (pytest, python, unittest).
+	// Skip for Node.js/npm commands that may appear in multi-stack workflows.
+	if v.UsesPythonVenv() && IsPythonCommand(cmd) && !strings.Contains(cmd, "source ") && !strings.Contains(cmd, ". ") && !strings.Contains(cmd, ".venv/") && !strings.Contains(cmd, "pipenv") && !strings.Contains(cmd, "poetry") {
 		venv := v.PythonVenvRelDir()
 		cmd = ". " + venv + "/bin/activate && " + cmd
 	}
 
 	return cmd
+}
+
+// IsPythonCommand reports whether the command uses Python tooling that needs venv activation.
+func IsPythonCommand(cmd string) bool {
+	lower := strings.ToLower(cmd)
+	// Check for Python-specific tools/commands that need venv
+	pythonTools := []string{"pytest", "python3 -m pytest", "python -m pytest", "python3 ", "python ", "unittest", "py.test"}
+	for _, tool := range pythonTools {
+		if strings.Contains(lower, tool) {
+			return true
+		}
+	}
+	// Also check for pip install (but not npm/yarn/pnpm)
+	if strings.Contains(lower, "pip install") && !strings.Contains(lower, "npm") && !strings.Contains(lower, "yarn") && !strings.Contains(lower, "pnpm") {
+		return true
+	}
+	return false
 }
 
 // PythonProjectSetupVerifyCommand is the green check for project_setup only: venv

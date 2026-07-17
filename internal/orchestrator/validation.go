@@ -473,10 +473,17 @@ func (v WorkflowValidation) ProjectSetupVerifyHint() string {
 
 // QAVerifyHint returns the suggested QA command for error messages.
 func (v WorkflowValidation) QAVerifyHint() string {
+	// For Python workflows, use PythonVerifyCommand which handles venv and layout correctly
 	if WorkflowUsesPython(v) {
 		return PythonVerifyCommand(v)
 	}
-	return v.UnittestCommandHint()
+	// For other workflows, use the scoped QAVerifyCommand which already has
+	// phase-specific overrides applied (e.g., Go mod phase uses "go mod download").
+	cmd := strings.TrimSpace(v.QAVerifyCommand)
+	if cmd == "" {
+		return v.UnittestCommandHint()
+	}
+	return NormalizePytestCommand(cmd)
 }
 
 // UnittestCommandHint returns the suggested QA command for error messages.
