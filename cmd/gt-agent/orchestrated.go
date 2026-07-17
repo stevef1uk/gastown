@@ -1593,6 +1593,9 @@ func validateImplementationCommandWithState(cmd, townRoot, rig, activeBead strin
 	if err := validatePythonImplementationCommand(cmd, townRoot, rig, activeBead, v, verifyOK); err != nil {
 		return err
 	}
+	if err := validateNodeImplementationCommand(cmd, v); err != nil {
+		return err
+	}
 	if isPipInstallRequirementsCommand(cmd) {
 		if !verifyOK && isPipInstallForActiveBead(cmd, townRoot, rig, activeBead, v) {
 			return nil
@@ -3210,4 +3213,17 @@ func normalizeOrchestratedOutcome(outcome string, allowed []string) string {
 		}
 	}
 	return ""
+}
+
+func validateNodeImplementationCommand(cmd string, v orchestrator.WorkflowValidation) error {
+	if orchestrator.WorkflowUsesNodeJS(v) {
+		return nil
+	}
+	lower := strings.ToLower(cmd)
+	for _, tok := range []string{"npm ", "node ", "yarn ", "pnpm ", "npx "} {
+		if strings.Contains(lower, tok) {
+			return fmt.Errorf("do not run Node.js toolchain (%s) — this rig has no frontend/Node dependency", strings.TrimSpace(tok))
+		}
+	}
+	return nil
 }
