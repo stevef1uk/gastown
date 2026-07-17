@@ -32,7 +32,9 @@ func (v WorkflowValidation) PythonVenvRelDir() string {
 		return DefaultPythonVenvDirName
 	}
 	d = filepath.ToSlash(d)
-	if strings.Contains(d, "..") || filepath.IsAbs(d) {
+	// Allow ../ paths that resolve within mayor/rig (e.g., "../.venv" when layout_root is a subdir).
+	// Reject absolute paths or paths that escape mayor/rig (e.g., "../../").
+	if filepath.IsAbs(d) || strings.HasPrefix(d, "../../") {
 		return DefaultPythonVenvDirName
 	}
 	return d
