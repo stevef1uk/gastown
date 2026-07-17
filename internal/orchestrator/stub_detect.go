@@ -101,12 +101,29 @@ var dependencyManifestNames = map[string]bool{
 // short (e.g. .env.example). They are verified by existence and a few key tokens
 // rather than by implementation-size heuristics.
 var smallConfigFileNames = map[string]bool{
-	".env.example":   true,
-	".env":           true,
-	".gitignore":     true,
-	".dockerignore":  true,
-	".gitattributes": true,
-	".editorconfig":  true,
+	".env.example":        true,
+	".env":                true,
+	".gitignore":          true,
+	".dockerignore":       true,
+	".gitattributes":      true,
+	".editorconfig":       true,
+	"postcss.config.js":   true,
+	"postcss.config.ts":   true,
+	"tailwind.config.js":  true,
+	"tailwind.config.ts":  true,
+	"next.config.js":      true,
+	"next.config.ts":      true,
+	"jest.config.js":      true,
+	"jest.config.ts":      true,
+	".eslintrc.js":        true,
+	".eslintrc.json":      true,
+	".eslintrc.yaml":      true,
+	".prettierrc.js":      true,
+	".prettierrc.json":    true,
+	"webpack.config.js":   true,
+	"vite.config.js":      true,
+	"rollup.config.js":    true,
+	"karma.conf.js":       true,
 }
 
 // IsPackageInitFile reports package entrypoints that are intentionally minimal (e.g. Python __init__.py).
