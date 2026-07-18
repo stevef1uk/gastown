@@ -164,6 +164,9 @@ func PythonImplementationVerifyCommandForBead(v WorkflowValidation, mayorRigDir,
 	// Non-Python artifacts (e.g. .env.example, .gitignore) just need to exist
 	// and be non-empty. Using the project-wide pytest here creates a deadlock
 	// because pytest targets files owned by other beads.
+	if IsBareDirectoryPath(beadPath) {
+		return "test -d " + beadPath + " && ls -A " + beadPath + " | head -1 > /dev/null"
+	}
 	return "test -s " + beadPath
 }
 

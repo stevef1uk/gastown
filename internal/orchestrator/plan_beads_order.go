@@ -96,6 +96,23 @@ func IsValidImplementBeadPath(path string) bool {
 	return true
 }
 
+// IsBareDirectoryPath reports whether a required-file path looks like a directory
+// (no file extension in the basename and not a well-known extensionless file).
+func IsBareDirectoryPath(path string) bool {
+	base := filepath.Base(path)
+	if base == "" || base == "." || base == ".." {
+		return false
+	}
+	if strings.Contains(base, ".") {
+		return false
+	}
+	switch base {
+	case "Dockerfile", "Makefile", "LICENSE", "README", "Containerfile":
+		return false
+	}
+	return true
+}
+
 // ValidatePlanningBeadCreate guards bd create during planning (profile prefix, required_files, no duplicates).
 func ValidatePlanningBeadCreate(townRoot, rig, title string, v WorkflowValidation) error {
 	v = v.ForActivePhase()

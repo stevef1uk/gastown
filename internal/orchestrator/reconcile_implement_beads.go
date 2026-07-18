@@ -167,6 +167,13 @@ func auditRequiredImplementFiles(rigDir, townRoot, rig string, v WorkflowValidat
 			issues = append(issues, fmt.Sprintf("missing %s", rel))
 			continue
 		}
+		if info.IsDir() {
+			entries, err := os.ReadDir(path)
+			if err != nil || len(entries) == 0 {
+				issues = append(issues, fmt.Sprintf("empty %s", rel))
+			}
+			continue
+		}
 		if info.Size() == 0 {
 			issues = append(issues, fmt.Sprintf("empty %s", rel))
 			continue

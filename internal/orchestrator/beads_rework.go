@@ -371,7 +371,17 @@ func beadImplementationNeedsRework(rigDir, beadPath string, v WorkflowValidation
 	}
 	path := filepath.Join(rigDir, filepath.FromSlash(beadPath))
 	info, err := os.Stat(path)
-	if err != nil || info.Size() == 0 {
+	if err != nil {
+		return true
+	}
+	if info.IsDir() {
+		entries, err := os.ReadDir(path)
+		if err != nil || len(entries) == 0 {
+			return true
+		}
+		return false
+	}
+	if info.Size() == 0 {
 		return true
 	}
 	data, err := os.ReadFile(path)

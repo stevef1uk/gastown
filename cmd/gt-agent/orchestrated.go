@@ -1040,6 +1040,12 @@ func rewriteOrchestratedRigPlaceholders(cmd, townRoot, rig string) (string, bool
 	for _, p := range beadsPaths {
 		out = strings.ReplaceAll(out, p, beadsPlaceholder)
 	}
+	// Protect {{rig}}/mayor/rig placeholder from rewriteHallucinatedAbsoluteTownRoot,
+	// which would replace "mayor/rig" with "<rig>/mayor/rig" → "{{rig}}/finally/mayor/rig".
+	rigPlaceholder := "__RIG_MAYOR_RIG_PLACEHOLDER__"
+	if strings.Contains(out, "{{rig}}/mayor/rig") {
+		out = strings.ReplaceAll(out, "{{rig}}/mayor/rig", rigPlaceholder)
+	}
 
 	if townRoot != "" {
 		townRoot = strings.TrimRight(filepath.Clean(townRoot), string(filepath.Separator))
@@ -1063,6 +1069,11 @@ func rewriteOrchestratedRigPlaceholders(cmd, townRoot, rig string) (string, bool
 			out = strings.ReplaceAll(out, r.from, r.to)
 			changed = true
 		}
+	}
+	// Restore {{rig}}/mayor/rig placeholder (protected from rewriteHallucinatedAbsoluteTownRoot).
+	if strings.Contains(out, rigPlaceholder) {
+		out = strings.ReplaceAll(out, rigPlaceholder, "{{rig}}/mayor/rig")
+		changed = true
 	}
 	// Restore .beads paths
 	for _, p := range beadsPaths {
