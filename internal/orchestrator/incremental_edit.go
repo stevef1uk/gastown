@@ -195,5 +195,20 @@ func PathMatchesImplementWrite(written, allowed string, required []string, v Wor
 			return true
 		}
 	}
+	// Support wildcard in allowed path (e.g., "test_*.py" matches "test_portfolio.py")
+	if matchesWildcard(written, allowed) {
+		return true
+	}
 	return filepath.Base(written) == filepath.Base(allowed)
+}
+
+func matchesWildcard(written, pattern string) bool {
+	// Convert glob pattern to regex
+	if !strings.Contains(pattern, "*") {
+		return false
+	}
+	// Escape special regex chars except *
+	regex := "^" + strings.ReplaceAll(regexp.QuoteMeta(pattern), "\\*", ".*") + "$"
+	matched, _ := regexp.MatchString(regex, filepath.Base(written))
+	return matched
 }

@@ -1309,6 +1309,9 @@ func RemoveStalePlanMD(townRoot, rig string, v WorkflowValidation) (bool, error)
 // PlanningBeadTitle returns the canonical open-task title for a required_files path.
 func PlanningBeadTitle(requiredPath string, v WorkflowValidation) string {
 	path := filepath.ToSlash(strings.TrimSpace(requiredPath))
+	if strings.Contains(path, "*") {
+		return "INVALID: wildcards not allowed in required_files — use concrete paths"
+	}
 	pfx := v.BeadTitleContains
 	if strings.TrimSpace(pfx) == "" {
 		pfx = "Implement "
