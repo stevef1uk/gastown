@@ -234,6 +234,17 @@ func ValidateWorkNotStubbed(rigDir string, v WorkflowValidation) error {
 		}
 		path := ResolveRequiredFileOnDisk(rigDir, rel, v.LayoutRoot)
 		checked[path] = true
+		if IsBareDirectoryPath(rel) {
+			info, err := os.Stat(path)
+			if err != nil || !info.IsDir() {
+				return fmt.Errorf("%s missing or not a directory", rel)
+			}
+			entries, err := os.ReadDir(path)
+			if err != nil || len(entries) == 0 {
+				return fmt.Errorf("%s is an empty directory", rel)
+			}
+			continue
+		}
 		if err := CheckPathNotStub(path, rel, optsForPath(rel, opts)); err != nil {
 			return err
 		}
