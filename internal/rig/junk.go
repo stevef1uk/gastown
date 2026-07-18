@@ -148,6 +148,13 @@ func RejectMayorRigRootShellCommand(cmd, layoutRoot string) error {
 			if strings.Contains(f, "/") {
 				continue
 			}
+			// Allow files at layout_root level (e.g., "finally/package.json" when layout_root="finally")
+			if layoutRoot != "" && layoutRoot != "." {
+				layout := strings.Trim(filepath.ToSlash(strings.TrimSpace(layoutRoot)), "/")
+				if strings.HasPrefix(f, layout+"/") {
+					continue
+				}
+			}
 			if mayorRigJunkFiles[f] {
 				return fmt.Errorf("do not create placeholder file %q at mayor/rig root", f)
 			}
@@ -195,13 +202,20 @@ func runsInSubdirectory(lower, layoutRoot string) bool {
 		if strings.HasSuffix(target, "/mayor/rig") || strings.HasSuffix(target, "/mayor/rig/") {
 			continue
 		}
-		// cd into the layout root itself is still root-level.
-		if layout != "" && layout != "." && (target == layout || strings.HasSuffix(target, "/"+layout)) {
-			// Exception: the rewritten path includes the full rig->layout path
-			// (e.g. "finally/mayor/rig/finally") — that's inside the layout, not root.
-			if !strings.Contains(target, "/mayor/rig/") {
+		// cd into the layout root from town root is still root-level,
+		// BUT cd into layout root from mayor/rig IS a subdirectory (allowed).
+		// Detect if target is exactly the layout root name (e.g., "finally").
+		if layout != "" && layout != "." && target == layout {
+			return true
+		}
+		// cd into layout root with full path (e.g., "finally/mayor/rig/finally")
+		if layout != "" && layout != "." && strings.HasSuffix(target, "/"+layout) {
+			// If it includes /mayor/rig/, it's from town root → root-level.
+			// If it's just layout (e.g., "finally") or "path/layout", it's from mayor/rig → subdirectory.
+			if strings.Contains(target, "/mayor/rig/") {
 				continue
 			}
+			return true
 		}
 		// Anything else is a subdirectory.
 		return true

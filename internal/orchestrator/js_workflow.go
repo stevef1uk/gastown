@@ -63,6 +63,7 @@ func NodeProjectSetupVerifyCommand(v WorkflowValidation) string {
 // (e.g. "frontend", "app") when all required files share one, or "".
 func nodeInstallDirFromRequiredFiles(files []string) string {
 	var dir string
+	hasRootPackage := false
 	for _, f := range files {
 		f = filepath.ToSlash(strings.TrimSpace(f))
 		if !looksLikeNodeFile(f) {
@@ -70,7 +71,9 @@ func nodeInstallDirFromRequiredFiles(files []string) string {
 		}
 		idx := strings.Index(f, "/")
 		if idx <= 0 {
-			return ""
+			// Root-level Node file (e.g., package.json at root)
+			hasRootPackage = true
+			continue
 		}
 		first := f[:idx]
 		if dir == "" {
@@ -78,6 +81,14 @@ func nodeInstallDirFromRequiredFiles(files []string) string {
 		} else if dir != first {
 			return ""
 		}
+	}
+	if hasRootPackage && dir == "" {
+		// Root package.json with no other Node files in subdirs
+		return "."
+	}
+	if hasRootPackage && dir != "" {
+		// Root package.json AND subdir Node files - ambiguous, let framework decide
+		return ""
 	}
 	return dir
 }
