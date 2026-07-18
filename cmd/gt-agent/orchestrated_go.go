@@ -128,26 +128,27 @@ func validateProjectSetupCommand(cmd, rig string, v orchestrator.WorkflowValidat
 	if strings.Contains(lower, "gt bd ") {
 		return fmt.Errorf("use bare `bd` from %s", rigMayorRigPath(rig))
 	}
-	scoped := v.ForActivePhase()
-	// Check Node.js before Python so dual-stack rigs scope each delivery phase.
-	if orchestrator.WorkflowUsesNodeJS(scoped) {
+	// project_setup applies to ALL stacks in the profile, not just the active phase.
+	// Use full validation v (not v.ForActivePhase()) to detect all stacks.
+	// Check Node.js before Python so dual-stack rigs install both.
+	if orchestrator.WorkflowUsesNodeJS(v) {
 		// Node setup only runs package-manager installs in subdirectories.
 		// RejectMayorRigRootShellCommand already blocks root-level installs.
 		return nil
 	}
-	if orchestrator.WorkflowUsesPython(scoped) {
-		if err := validatePythonProjectSetupCommand(cmd, scoped); err != nil {
+	if orchestrator.WorkflowUsesPython(v) {
+		if err := validatePythonProjectSetupCommand(cmd, v); err != nil {
 			return err
 		}
-		if written := orchestrator.ExtractImplementWritePathFromCmd(cmd, scoped.LayoutRoot); written != "" {
-			if req := scoped.RequirementsFilePath(); req == "" || !orchestrator.PathMatchesRequiredFile(written, req) {
+		if written := orchestrator.ExtractImplementWritePathFromCmd(cmd, v.LayoutRoot); written != "" {
+			if req := v.RequirementsFilePath(); req == "" || !orchestrator.PathMatchesRequiredFile(written, req) {
 				return fmt.Errorf("project_setup may only write %s (not %q) before implementation", req, written)
 			}
 		}
 		return nil
 	}
-	if orchestrator.WorkflowUsesGo(scoped) {
-		return validateGoProjectSetupCommand(cmd, rig, scoped)
+	if orchestrator.WorkflowUsesGo(v) {
+		return validateGoProjectSetupCommand(cmd, rig, v)
 	}
 	// Node.js and other stacks: allow npm install/yarn/pnpm in subdirectories.
 	return nil
