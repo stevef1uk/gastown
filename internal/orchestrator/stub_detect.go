@@ -166,6 +166,17 @@ func ValidateRequiredFilesNotStubbed(rigDir string, v WorkflowValidation) error 
 			continue
 		}
 		path := ResolveRequiredFileOnDisk(rigDir, rel, v.LayoutRoot)
+		if IsBareDirectoryPath(rel) {
+			info, err := os.Stat(path)
+			if err != nil || !info.IsDir() {
+				return fmt.Errorf("%s missing or not a directory", rel)
+			}
+			entries, err := os.ReadDir(path)
+			if err != nil || len(entries) == 0 {
+				return fmt.Errorf("%s is an empty directory", rel)
+			}
+			continue
+		}
 		if err := CheckPathNotStub(path, rel, optsForPath(rel, opts)); err != nil {
 			return err
 		}
@@ -187,6 +198,18 @@ func UnionStubArtifactsOnDisk(rigDir string, v WorkflowValidation) []string {
 			continue
 		}
 		path := ResolveRequiredFileOnDisk(rigDir, rel, chk.LayoutRoot)
+		if IsBareDirectoryPath(rel) {
+			info, err := os.Stat(path)
+			if err != nil || !info.IsDir() {
+				stubbed = append(stubbed, rel)
+				continue
+			}
+			entries, err := os.ReadDir(path)
+			if err != nil || len(entries) == 0 {
+				stubbed = append(stubbed, rel)
+			}
+			continue
+		}
 		data, err := os.ReadFile(path)
 		if err != nil {
 			continue
