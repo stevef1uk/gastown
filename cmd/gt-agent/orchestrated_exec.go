@@ -769,10 +769,18 @@ func commandHasMayorRigCD(cmd, rig string) bool {
 	if strings.Contains(lower, "cd "+work) {
 		return true
 	}
-	// Model may use ~/gt/<rig>/mayor/rig or $GT_ROOT/<rig>/mayor/rig.
+	// Model may use ~/gt/<rig>/mayor/rig or $GT_ROOT/<rig>/mayor/rig or just "cd <rig>".
 	if strings.Contains(lower, "/mayor/rig") {
 		rigLower := strings.ToLower(strings.TrimSpace(rig))
-		if rigLower != "" && strings.Contains(lower, rigLower+"/mayor/rig") {
+		if rigLower != "" && (strings.Contains(lower, rigLower+"/mayor/rig") || strings.Contains(lower, "$gt_root/"+rigLower+"/mayor/rig")) {
+			return true
+		}
+	}
+	// Bare "cd <rig>" from rig root (some profiles use this)
+	rigLower := strings.ToLower(strings.TrimSpace(rig))
+	if rigLower != "" {
+		cdRig := "cd " + rigLower
+		if strings.Contains(lower, cdRig+" ") || strings.Contains(lower, cdRig+"&&") || strings.Contains(lower, cdRig+" &&") {
 			return true
 		}
 	}

@@ -16,7 +16,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/steveyegge/gastown/cmd/gt-agent/internal/llm"
+	"github.com/steveyegge/gastown/internal/llm"
 	"github.com/steveyegge/gastown/internal/nudge"
 	"github.com/steveyegge/gastown/internal/orchestrator"
 	"github.com/steveyegge/gastown/internal/templates"

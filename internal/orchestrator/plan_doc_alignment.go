@@ -1,12 +1,16 @@
 package orchestrator
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
+	"time"
+
+	"github.com/steveyegge/gastown/internal/llm"
 )
 
 var (
@@ -146,22 +150,37 @@ func checkArchitectureDockerSection(archDoc string, v WorkflowValidation) []stri
 		return []string{"architecture.md must have a ## Docker & Deployment section with base images, build steps, exposed port, and CMD (Docker files are in profile)"}
 	}
 	section := extractMarkdownSection(archDoc, loc[0])
-	// Require some concrete build-related keywords in the section body.
-	// Match common forms: "from:", "from ", "port", "port:", "cmd", "cmd:", "build", "build:", "expose".
-	lower := strings.ToLower(section)
-	mustHave := []string{"from", "port", "build"}
-	hasCmd := strings.Contains(lower, "cmd") || strings.Contains(lower, "command")
-	var missing []string
-	for _, kw := range mustHave {
-		if !strings.Contains(lower, kw) {
-			missing = append(missing, kw)
-		}
+	if len(strings.TrimSpace(section)) < 200 {
+		return []string{"## Docker & Deployment section is too brief; add base images, build steps, exposed port, and CMD"}
 	}
-	if !hasCmd {
-		missing = append(missing, "cmd")
+
+	// Use LLM judge for deeper validation
+	client := llm.NewClient(
+		"http://localhost:11434/v1/chat/completions",
+		"deepseek/deepseek-v4-flash",
+		"",
+		60*time.Second,
+	)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	pass, reason, err := ValidateDocumentWithJudge(ctx, client, JudgeConfig{
+		DocumentName: "architecture.md (## Docker & Deployment section)",
+		Content:      archDoc,
+		Criteria: []string{
+			"Documents the base images used in the Dockerfile (e.g., node:20-slim, python:3.12-slim)",
+			"Describes the multi-stage build steps clearly",
+			"Specifies the exposed port (e.g., 8000)",
+			"Documents the CMD/entrypoint used to run the server",
+		},
+		MinLength: 200,
+	})
+	if err != nil {
+		return []string{fmt.Sprintf("judge error: %v", err)}
 	}
-	if len(missing) > 0 {
-		return []string{"## Docker & Deployment section is too vague; add details for: " + strings.Join(missing, ", ")}
+	if !pass {
+		return []string{fmt.Sprintf("## Docker & Deployment section failed judge: %s", reason)}
 	}
 	return nil
 }
@@ -201,13 +220,9 @@ func checkArchitectureIntegrationTestingSection(archDoc string, v WorkflowValida
 	if strings.TrimSpace(section) == "" {
 		return []string{"## Integration and testing section is empty; add test strategy, unit test structure, and runtime smoke test"}
 	}
-	// Require at least some test-related keywords
-	lower := strings.ToLower(section)
-	hasTestContent := strings.Contains(lower, "test") || strings.Contains(lower, "pytest") ||
-		strings.Contains(lower, "go test") || strings.Contains(lower, "jest") ||
-		strings.Contains(lower, "smoke") || strings.Contains(lower, "unit")
-	if !hasTestContent {
-		return []string{"## Integration and testing section is too vague; add test strategy, unit test structure, and runtime smoke test"}
+	// Require substantive content.
+	if len(strings.TrimSpace(section)) < 200 {
+		return []string{"## Integration and testing section is too brief; add test strategy, unit test structure, and runtime smoke test"}
 	}
 	return nil
 }
@@ -235,13 +250,9 @@ func checkArchitectureE2ETestingSection(archDoc string, v WorkflowValidation) []
 	if strings.TrimSpace(section) == "" {
 		return []string{"## E2E / integration testing section is empty; add how app under test is started, how e2e tests are executed, what they cover, and test data/env requirements"}
 	}
-	// Check for required content
-	lower := strings.ToLower(section)
-	hasStart := strings.Contains(lower, "start") || strings.Contains(lower, "run") || strings.Contains(lower, "docker compose") || strings.Contains(lower, "up ")
-	hasExec := strings.Contains(lower, "test") || strings.Contains(lower, "playwright") || strings.Contains(lower, "cypress")
-	hasCover := strings.Contains(lower, "cover") || strings.Contains(lower, "scenario") || strings.Contains(lower, "flow") || strings.Contains(lower, "selector")
-	if !(hasStart && hasExec && hasCover) {
-		return []string{"## E2E / integration testing section is too vague; add how app under test is started, how e2e tests are executed, what they cover, and test data/env requirements"}
+	// Require substantive content.
+	if len(strings.TrimSpace(section)) < 200 {
+		return []string{"## E2E / integration testing section is too brief; add how app under test is started, how e2e tests are executed, what they cover, and test data/env requirements"}
 	}
 	return nil
 }

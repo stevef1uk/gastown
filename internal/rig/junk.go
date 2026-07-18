@@ -61,13 +61,10 @@ func IsKnownMayorRigJunkRel(rel string) bool {
 	if strings.HasPrefix(rel, ".gastown/") || strings.HasPrefix(rel, ".beads/") {
 		return false
 	}
-	base := filepath.Base(rel)
-	if mayorRigJunkFiles[base] || mayorRigJunkFiles[rel] {
-		return true
-	}
+	// Only consider junk if at rig root (no "/") or first component is a junk dir.
 	parts := strings.Split(rel, "/")
 	if len(parts) == 1 {
-		return mayorRigJunkDirs[parts[0]]
+		return mayorRigJunkFiles[parts[0]] || mayorRigJunkDirs[parts[0]]
 	}
 	return mayorRigJunkDirs[parts[0]]
 }

@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/steveyegge/gastown/cmd/gt-agent/internal/llm"
+	"github.com/steveyegge/gastown/internal/llm"
 	"github.com/steveyegge/gastown/internal/beads"
 	"github.com/steveyegge/gastown/internal/config"
 	"github.com/steveyegge/gastown/internal/nudge"
