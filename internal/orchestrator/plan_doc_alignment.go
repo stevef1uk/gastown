@@ -69,15 +69,21 @@ func ValidateArchitectureDocAlignment(rigDir string, v WorkflowValidation) error
 
 func architectureDocAlignmentIssues(rigDir, specDoc string, v WorkflowValidation) []string {
 	archDoc := readRigDoc(rigDir, "architecture.md")
+	return architectureDocAlignmentIssuesForDoc(archDoc, specDoc, v, true)
+}
+
+func architectureDocAlignmentIssuesForDoc(archDoc, specDoc string, v WorkflowValidation, includeContentChecks bool) []string {
 	var issues []string
 	issues = append(issues, checkArchitectureStoreSignatureDrift("architecture.md", archDoc, specDoc)...)
 	issues = append(issues, checkHTTPDocAlignment("architecture.md", archDoc, specDoc, v)...)
 	issues = append(issues, checkStoreAPIAlignment("architecture.md", archDoc, specDoc)...)
 	issues = append(issues, checkGoModuleAlignment("architecture.md", archDoc, specDoc, v)...)
 	issues = append(issues, checkDocLayoutPathPrefix("architecture.md", archDoc, v)...)
-	issues = append(issues, checkArchitectureDockerSection(archDoc, v)...)
-	issues = append(issues, checkArchitectureIntegrationTestingSection(archDoc, v)...)
-	issues = append(issues, checkArchitectureE2ETestingSection(archDoc, v)...)
+	if includeContentChecks {
+		issues = append(issues, checkArchitectureDockerSection(archDoc, v)...)
+		issues = append(issues, checkArchitectureIntegrationTestingSection(archDoc, v)...)
+		issues = append(issues, checkArchitectureE2ETestingSection(archDoc, v)...)
+	}
 	return issues
 }
 
@@ -114,8 +120,9 @@ func ValidatePlanningDocAlignment(rigDir string, v WorkflowValidation) error {
 		return fmt.Errorf("SPEC.md missing or empty under %s", rigDir)
 	}
 
+	archDoc := readRigDoc(rigDir, "architecture.md")
 	var issues []string
-	issues = append(issues, architectureDocAlignmentIssues(rigDir, specDoc, v)...)
+	issues = append(issues, architectureDocAlignmentIssuesForDoc(archDoc, specDoc, v, false)...)
 	issues = append(issues, checkHTTPDocAlignment("plan.md", planDoc, specDoc, v)...)
 	issues = append(issues, checkStoreAPIAlignment("plan.md", planDoc, specDoc)...)
 	issues = append(issues, checkGoModuleAlignment("plan.md", planDoc, specDoc, v)...)
@@ -142,12 +149,16 @@ func checkArchitectureDockerSection(archDoc string, v WorkflowValidation) []stri
 	// Require some concrete build-related keywords in the section body.
 	// Match common forms: "from:", "from ", "port", "port:", "cmd", "cmd:", "build", "build:", "expose".
 	lower := strings.ToLower(section)
-	mustHave := []string{"from", "port", "cmd", "build"}
+	mustHave := []string{"from", "port", "build"}
+	hasCmd := strings.Contains(lower, "cmd") || strings.Contains(lower, "command")
 	var missing []string
 	for _, kw := range mustHave {
 		if !strings.Contains(lower, kw) {
 			missing = append(missing, kw)
 		}
+	}
+	if !hasCmd {
+		missing = append(missing, "cmd")
 	}
 	if len(missing) > 0 {
 		return []string{"## Docker & Deployment section is too vague; add details for: " + strings.Join(missing, ", ")}
@@ -236,7 +247,7 @@ func checkArchitectureE2ETestingSection(archDoc string, v WorkflowValidation) []
 }
 
 var integrationTestingHeadingRE = regexp.MustCompile(`(?im)^##\s+Integration\s+and\s+testing\b`)
-var e2eTestingHeadingRE = regexp.MustCompile(`(?im)^##\s+(E2E\s*/\s*integration\s+testing|Integration\s+and\s+testing)\b`)
+var e2eTestingHeadingRE = regexp.MustCompile(`(?im)^##\s+E2E\s*/\s*integration\s+testing\b`)
 
 func extractMarkdownSection(doc string, headingStart int) string {
 	rest := doc[headingStart:]

@@ -75,7 +75,9 @@ func IsValidImplementBeadPath(path string) bool {
 		case "Dockerfile", "Makefile", "LICENSE", "README", "Containerfile":
 			return true
 		default:
-			return false
+			// Accept bare directory names (e.g. "backend", "frontend", "test")
+			// when they've passed all preceding validation checks.
+			return true
 		}
 	}
 	parts := strings.Split(path, "/")

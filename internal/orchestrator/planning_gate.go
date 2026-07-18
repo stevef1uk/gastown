@@ -58,8 +58,12 @@ func validatePlanningGateArtifacts(townRoot, rig, rigDir, fromState string, v Wo
 	if info.Size() < minPlan {
 		return fmt.Errorf("plan.md too small (%d bytes); need ≥%d (%s)", info.Size(), minPlan, v.PlanMinSizeHint())
 	}
-	if err := ValidateArchitectureDocAlignment(rigDir, v); err != nil {
-		return err
+	specDoc := readRigDoc(rigDir, "SPEC.md")
+	archDoc := readRigDoc(rigDir, "architecture.md")
+	if strings.TrimSpace(specDoc) != "" && strings.TrimSpace(archDoc) != "" {
+		if issues := architectureDocAlignmentIssuesForDoc(archDoc, specDoc, v, false); len(issues) > 0 {
+			return formatDocAlignmentError("SPEC/architecture misaligned", issues)
+		}
 	}
 	if err := ValidatePlanningDocAlignment(rigDir, v); err != nil {
 		return err

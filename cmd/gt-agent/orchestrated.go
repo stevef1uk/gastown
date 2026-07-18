@@ -2018,14 +2018,25 @@ func validatePlanMDBeadIDs(townRoot, rig, planPath string, v orchestrator.Workfl
 	if err != nil {
 		return err
 	}
+	orchestratedPrintf("[gt-agent] validatePlanMDBeadIDs: %d open beads from listOpenImplementationBeads", len(open))
+	for _, b := range open {
+		match := orchestrator.MatchesImplementBeadTitle(b.Title, v)
+		orchestratedPrintf("[gt-agent]   bead %s title=%q MatchesImplementBeadTitle=%v", b.ID, b.Title, match)
+	}
 	openIDs := map[string]bool{}
 	for _, b := range open {
 		if orchestrator.MatchesImplementBeadTitle(b.Title, v) {
 			openIDs[b.ID] = true
 		}
 	}
+	planIDs := planBeadIDLineRE.FindAllStringSubmatch(string(data), -1)
+	orchestratedPrintf("[gt-agent] validatePlanMDBeadIDs: %d bead IDs found in plan.md", len(planIDs))
+	for _, m := range planIDs {
+		id := strings.TrimSpace(m[1])
+		orchestratedPrintf("[gt-agent]   plan.md bead %s open=%v", id, openIDs[id])
+	}
 	var missing []string
-	for _, m := range planBeadIDLineRE.FindAllStringSubmatch(string(data), -1) {
+	for _, m := range planIDs {
 		id := strings.TrimSpace(m[1])
 		if id == "" || openIDs[id] {
 			continue
@@ -2547,6 +2558,7 @@ func listOpenImplementationBeads(townRoot, rig string) ([]orchestrator.PlanBead,
 		return listOpenImplementationBeadsHook(townRoot, rig)
 	}
 	beadsDir := config.ResolveBeadsDirForRig(townRoot, rig)
+	orchestratedPrintf("[gt-agent] listOpenImplementationBeads: BEADS_DIR=%s", beadsDir)
 	var result []orchestrator.PlanBead
 	seen := map[string]bool{}
 	for _, status := range []string{"open", "in_progress"} {
@@ -2559,19 +2571,22 @@ func listOpenImplementationBeads(townRoot, rig string) ([]orchestrator.PlanBead,
 			return nil, fmt.Errorf("bd list %s: %w: %s", status, err, strings.TrimSpace(string(out)))
 		}
 		out = beads.StripStdoutWarnings(out)
+		orchestratedPrintf("[gt-agent] listOpenImplementationBeads %s: raw output length=%d", status, len(out))
 		var rows []struct {
 			ID    string `json:"id"`
 			Title string `json:"title"`
 		}
 		if err := json.Unmarshal(out, &rows); err != nil {
-			return nil, fmt.Errorf("parse %s beads: %w", status, err)
+			return nil, fmt.Errorf("parse %s beads: %w: raw=%s", status, err, string(out))
 		}
+		orchestratedPrintf("[gt-agent] listOpenImplementationBeads %s: %d rows parsed", status, len(rows))
 		for _, r := range rows {
 			id := strings.TrimSpace(beads.ExtractIssueID(r.ID))
 			if id == "" || seen[id] {
 				continue
 			}
 			seen[id] = true
+			orchestratedPrintf("[gt-agent]   bead %s title=%q", id, r.Title)
 			result = append(result, orchestrator.PlanBead{ID: id, Title: strings.TrimSpace(r.Title)})
 		}
 	}

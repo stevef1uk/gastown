@@ -63,7 +63,7 @@ states:
       state_timeout_seconds: 1800
       on_timeout: [sync_planning_on_timeout]
       max_cmd_turns: 20
-      empty_response_suffix: "Reply with CMD: lines. Run: CMD: cd {{rig}}/mayor/rig && export BEADS_DIR=$GT_ROOT/{{rig}}/.beads && bd list --status=open && wc -c plan.md. If beads exist and plan.md >= {{min_plan_bytes}} bytes, send {\"outcome\":\"success\",\"summary\":\"beads and plan.md ready\"}. Otherwise bd create missing beads."
+      empty_response_suffix: "Reply with CMD: lines. Run: CMD: cd {{rig}}/mayor/rig && bd list --status=open && wc -c plan.md. If beads exist and plan.md >= {{min_plan_bytes}} bytes, send {\"outcome\":\"success\",\"summary\":\"beads and plan.md ready\"}. Otherwise bd create missing beads."
       cmd_guard: planning
       cmd_rewrites: [rig_placeholders, spec_md_case, plan_md_after_cd, plan_md_wc_dir, bd_list_limit, unwrap_bash_lc]
       env:
@@ -75,7 +75,7 @@ states:
         One CMD: per line. After `cd {{rig}}/mayor/rig`, write plan.md with a relative path (not {{rig}}/mayor/rig/plan.md).
         Heredoc must end with a line containing only EOF. Verify with `wc -c {{rig}}/mayor/rig/plan.md` (full path from town root).
       failure_hint: |
-        Do not send success JSON until CMD: lines ran in this session. If sync_planning_artifacts already created beads, bd list only — gt-agent rejects bd create when required_files are covered. Do **not** heredoc plan.md when required_files use {{layout_root}}/internal/ or {{layout_root}}/cmd/ — sync builds plan.md with full paths. Run `cd {{rig}}/mayor/rig && wc -c plan.md` (≥ {{min_plan_bytes}} bytes; use full path `wc -c {{rig}}/mayor/rig/plan.md` from town root if no cd). Work from {{rig}}/mayor/rig with BEADS_DIR=$GT_ROOT/{{rig}}/.beads.
+        Do not send success JSON until CMD: lines ran in this session. If sync_planning_artifacts already created beads, bd list only — gt-agent rejects bd create when required_files are covered. Do **not** heredoc plan.md when required_files use {{layout_root}}/internal/ or {{layout_root}}/cmd/ — sync builds plan.md with full paths. Run `cd {{rig}}/mayor/rig && wc -c plan.md` (≥ {{min_plan_bytes}} bytes; use full path `wc -c {{rig}}/mayor/rig/plan.md` from town root if no cd). Work from {{rig}}/mayor/rig — the environment already has BEADS_DIR set to the rig's beads database.
     transitions:
       success:
         to: plan_review
@@ -187,11 +187,11 @@ states:
         >>>>>>> REPLACE
 
         **Shell commands (one per line):**
-        CMD: export BEADS_DIR=$GT_ROOT/{{rig}}/.beads && cd {{rig}}/mayor/rig && bd update BEAD_ID --status=in_progress
+        CMD: cd {{rig}}/mayor/rig && bd update BEAD_ID --status=in_progress
         CMD: cd {{rig}}/mayor/rig/{{layout_root}} && go test -count=1 ./...
 
         **Close bead after verify passes:**
-        CMD: export BEADS_DIR=$GT_ROOT/{{rig}}/.beads && cd {{rig}}/mayor/rig && bd close BEAD_ID
+        CMD: cd {{rig}}/mayor/rig && bd close BEAD_ID
 
         **Do NOT wrap CMD in angle brackets** — use plain `CMD: ...` not `<CMD: ...>`.
 

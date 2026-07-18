@@ -47,7 +47,7 @@ $GT_ROOT/{{rig}}/mayor/rig/{{layout_root}}/  ← layout root (ALL files go here)
 
 2. List open implement beads:
    ```
-   CMD: export BEADS_DIR=$GT_ROOT/{{rig}}/.beads && cd {{rig}}/mayor/rig && bd list --status=open --flat --limit=0 | grep -Fi '{{bead_title_contains}}' || true
+   CMD: cd {{rig}}/mayor/rig && bd list --status=open --flat --limit=0 | grep -Fi '{{bead_title_contains}}' || true
    ```
 
 3. If beads look wrong (flat paths like `linkshelf/handlers.go`, duplicates, or missing `required_files`), **do not** hand-fix with `bd create`. Report failure or ask for `gt rig sync-planning {{rig}} --force` — pre_run/post_success hooks repair the set.

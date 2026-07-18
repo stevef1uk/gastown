@@ -8,6 +8,23 @@ import (
 	"strings"
 )
 
+var planBeadsDebug bool
+
+func init() {
+	for _, v := range strings.Split(os.Getenv("GT_DEBUG"), ",") {
+		if strings.TrimSpace(v) == "plan_beads" {
+			planBeadsDebug = true
+			break
+		}
+	}
+}
+
+func pbDebug(format string, args ...interface{}) {
+	if planBeadsDebug {
+		fmt.Fprintf(os.Stderr, "[plan_beads] "+format+"\n", args...)
+	}
+}
+
 // PlanBead is a minimal open-task view for plan-bead validation.
 type PlanBead struct {
 	ID    string
@@ -60,14 +77,19 @@ func MatchesImplementBeadTitle(title string, v WorkflowValidation) bool {
 	pfx := v.BeadTitleContains
 	lowerTitle := strings.ToLower(title)
 	if strings.TrimSpace(pfx) != "" && strings.HasPrefix(lowerTitle, strings.ToLower(pfx)) {
-		return implementBeadTitlePathOK(title, v)
+		ok := implementBeadTitlePathOK(title, v)
+		pbDebug("MatchesImplementBeadTitle (branch1) title=%q pfx=%q => %v", title, pfx, ok)
+		return ok
 	}
 	// Fallback when profile prefix is layout-specific (e.g. "Implement linkshelf/") but the
 	// planner emitted canonical "Implement go.mod per architecture".
 	if strings.HasPrefix(lowerTitle, "implement ") &&
 		(strings.Contains(lowerTitle, " per architecture") || strings.Contains(lowerTitle, " per arch")) {
-		return implementBeadTitlePathOK(title, v)
+		ok := implementBeadTitlePathOK(title, v)
+		pbDebug("MatchesImplementBeadTitle (branch2 fallback) title=%q pfx=%q => %v", title, pfx, ok)
+		return ok
 	}
+	pbDebug("MatchesImplementBeadTitle false (no branch): title=%q pfx=%q lowerTitle=%q lowerPfx=%q", title, pfx, lowerTitle, strings.ToLower(pfx))
 	return false
 }
 
@@ -80,6 +102,7 @@ func implementBeadTitlePathOK(title string, v WorkflowValidation) bool {
 		path = fixDoubledLayoutPath(path, layout)
 	}
 	if path == "" || !IsValidImplementBeadPath(path) {
+		pbDebug("implementBeadTitlePathOK false: title=%q BeadTitleContains=%q LayoutRoot=%q path=%q IsValid=%v layout=%q", title, v.BeadTitleContains, v.LayoutRoot, path, IsValidImplementBeadPath(path), layout)
 		return false
 	}
 	if len(v.RequiredFiles) == 0 {
@@ -92,16 +115,21 @@ func implementBeadTitlePathOK(title string, v WorkflowValidation) bool {
 	// For nested/exact profiles, only accept bead titles whose embedded path matches
 	// required_files (prevents queue-matching flattened handlers/main.go titles).
 	if RequiresExactImplementPaths(v) {
-		return pathMatchesRequiredForProfile(path, requiredFilesWithCorrelatedTests(v.RequiredFiles, v), v)
+		result := pathMatchesRequiredForProfile(path, requiredFilesWithCorrelatedTests(v.RequiredFiles, v), v)
+		pbDebug("implementBeadTitlePathOK exact: title=%q path=%q result=%v v.RequiredFiles=%v", title, path, result, v.RequiredFiles)
+		return result
 	}
 
 	// For flat/non-exact profiles, accept any valid implement path.
 	// ValidatePlanBeads will later classify mismatches as "extra open bead(s)".
 	layoutRoot := effectiveLayoutRootForBeadTitle(v)
-	if layoutRoot == "" {
-		return true
+	if layoutRoot != "" {
+		result := path == layoutRoot || strings.HasPrefix(path, layoutRoot+"/")
+		pbDebug("implementBeadTitlePathOK layoutRoot: title=%q path=%q layoutRoot=%q result=%v", title, path, layoutRoot, result)
+		return result
 	}
-	return path == layoutRoot || strings.HasPrefix(path, layoutRoot+"/")
+	// layoutRoot is empty — accepted
+	return true
 }
 
 // effectiveLayoutRootForBeadTitle returns LayoutRoot or infers it from BeadTitleContains (e.g. "Implement finally/").

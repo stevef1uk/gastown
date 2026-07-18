@@ -18,7 +18,15 @@ $GT_ROOT/{{rig}}/mayor/rig/{{layout_root}}/  ← layout root (ALL files go here)
 - NEVER use `$GT_ROOT/{{rig}}/{{layout_root}}/backend/` — use `{{layout_root}}/backend/` instead
 - The `mayor/rig/` prefix is only for `cd` commands, not for file paths
 
-**Before this turn**, the orchestrator ran **`sync_planning_artifacts`**: it repaired open implement beads to match `required_files` and wrote **`plan.md`** with real bead IDs from `bd list`. You normally **do not** need to `bd create` or heredoc `plan.md` from scratch — verify with `cd {{rig}}/mayor/rig && export BEADS_DIR=$GT_ROOT/{{rig}}/.beads && bd list --status=open && wc -c plan.md`, expand acceptance bullets only if QA needs more detail, then JSON success. Manual recovery: `gt rig sync-planning {{rig}}`.
+**BEFORE THIS TURN**, the orchestrator ran **`sync_planning_artifacts` pre_run hook**:
+- It repaired open implement beads to match `required_files`
+- It wrote **`plan.md`** with real bead IDs from `bd list`
+
+**YOUR JOB IS NOT TO CREATE BEADS.** The correct implement beads ALREADY EXIST.
+1. **VERIFY ONLY**: Run `cd {{rig}}/mayor/rig && bd list --status=open && wc -c plan.md`
+2. If `plan.md` ≥ {{min_plan_bytes}} bytes and open beads cover `required_files`, send JSON `{"outcome":"success","summary":"..."}` immediately.
+3. **DO NOT `bd create`** — the pre_run hook already created the correct beads. Creating more causes "unknown bead IDs" in plan.md validation.
+4. If validation fails with "unknown bead IDs", run `gt rig sync-planning {{rig}} --force` (NOT `bd create`).
 
 When `required_files` use nested paths under `{{layout_root}}/` (e.g. `{{layout_root}}/internal/api/handlers.go`), **never** `cat > plan.md` with flattened paths like `{{layout_root}}/handlers.go` — gt-agent rejects that heredoc; sync owns `plan.md`.
 
@@ -28,7 +36,7 @@ When the workflow profile lists paths under `{{layout_root}}/`, every implement 
 
 ## After a planning timeout (FSM `timeout`)
 
-If the prompt includes **Prior step failed** from a **timeout** (wall-clock or exhausted CMD turns), the orchestrator already ran **`sync_planning_on_timeout`** (`gt rig sync-planning` repair). Run `cd {{rig}}/mayor/rig && export BEADS_DIR=$GT_ROOT/{{rig}}/.beads && bd list --status=open && wc -c plan.md` — **do not `bd create`** if open beads already cover `required_files`. Expand `plan.md` acceptance bullets only if needed (≥ {{min_plan_bytes}} bytes), then JSON success.
+If the prompt includes **Prior step failed** from a **timeout** (wall-clock or exhausted CMD turns), the orchestrator already ran **`sync_planning_on_timeout`** (`gt rig sync-planning` repair). Run `cd {{rig}}/mayor/rig && bd list --status=open && wc -c plan.md` — **do not `bd create`** if open beads already cover `required_files`. Expand `plan.md` acceptance bullets only if needed (≥ {{min_plan_bytes}} bytes), then JSON success.
 
 ## After plan review failure (rework)
 
@@ -86,11 +94,11 @@ You are **not** verifying the app. Do not run the server or test suite to “che
    CMD: cat {{rig}}/mayor/rig/architecture.md
    ```
 
-3. Create implementation beads in the **rig** beads DB (not town `~/gt/.beads`). Export `BEADS_DIR` before every `bd` command:
+3. Create implementation beads in the **rig** beads DB (not town `~/gt/.beads`). The environment already has `BEADS_DIR` set to the rig's beads database:
    ```
    When phased delivery is active, create **exactly one** `bd create` per path in **this step's** `required_files` only ({{required_files}}) — **not** every path in `architecture.md`. Later phases add their own beads. Titles must contain `{{bead_title_contains}}` and the repo-relative path, ending with ` per architecture`. Example:
-   CMD: bash -lc 'export BEADS_DIR=$GT_ROOT/{{rig}}/.beads && cd {{rig}}/mayor/rig && bd create --type task --title "{{bead_title_contains}}<path-from-architecture> per architecture" --description="Implement <path>: see architecture.md §…"'
-   CMD: bash -lc 'export BEADS_DIR=$GT_ROOT/{{rig}}/.beads && cd {{rig}}/mayor/rig && bd list --status=open --flat --limit=0'
+    CMD: bash -lc 'cd {{rig}}/mayor/rig && bd create --type task --title "{{bead_title_contains}}<path-from-architecture> per architecture" --description="Implement <path>: see architecture.md §…"'
+    CMD: bash -lc 'cd {{rig}}/mayor/rig && bd list --status=open --flat --limit=0'
    ```
    **No duplicate paths** and **no extra-phase paths** (gt-agent rejects `bd create` outside `required_files`). Paths must match `required_files` exactly. On retry after QA `failure`, delete duplicate beads (`bd delete <id> --force`) before creating missing ones. Do **not** use `gt bd add`.
 
@@ -107,7 +115,7 @@ You are **not** verifying the app. Do not run the server or test suite to “che
    Required shape (expand every `###` block until `wc -c` passes):
 
    ```
-   CMD: export BEADS_DIR=$GT_ROOT/{{rig}}/.beads && cd {{rig}}/mayor/rig && cat > plan.md <<'EOF'
+    CMD: cd {{rig}}/mayor/rig && cat > plan.md <<'EOF'
    # Implementation plan
 
    ## Bead map

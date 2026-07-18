@@ -80,7 +80,7 @@ gt-agent also runs **mechanical** checks on success; you must catch the same iss
 
 2. List open/in_progress implementation beads:
    ```
-   CMD: export BEADS_DIR=$GT_ROOT/{{rig}}/.beads && cd {{rig}}/mayor/rig && bd list --status=open,in_progress --limit=0
+   CMD: cd {{rig}}/mayor/rig && bd list --status=open,in_progress --limit=0
    ```
 
 3. Read all three design docs:
