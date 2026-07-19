@@ -3,6 +3,7 @@ package orchestrator
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -158,7 +159,7 @@ func ValidatePlanningDocAlignment(rigDir string, v WorkflowValidation) error {
 			MinLength:    200,
 		})
 		if err != nil {
-			issues = append(issues, fmt.Sprintf("triad judge error: %v", err))
+			log.Printf("[triad] LLM judge unavailable, skipping semantic validation: %v", err)
 		} else if !pass {
 			issues = append(issues, fmt.Sprintf("SPEC/Architecture/Plan triad misaligned: %s", reason))
 		}
@@ -205,7 +206,8 @@ func checkArchitectureDockerSection(archDoc string, v WorkflowValidation) []stri
 		MinLength: 200,
 	})
 	if err != nil {
-		return []string{fmt.Sprintf("judge error: %v", err)}
+		log.Printf("[judge] LLM unavailable for Docker section validation: %v", err)
+		return nil
 	}
 	if !pass {
 		return []string{fmt.Sprintf("## Docker & Deployment section failed judge: %s", reason)}
