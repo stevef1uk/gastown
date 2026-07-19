@@ -28,6 +28,9 @@ const (
 
 	// OrchestratorNATSTimeoutEnv overrides OrchestratorWorkflowCallTimeout (e.g. "90s").
 	OrchestratorNATSTimeoutEnv = "GT_ORCHESTRATOR_NATS_TIMEOUT"
+
+	// maxCallRetries is the number of retries for transient NATS errors (timeout, no responders).
+	maxCallRetries = 3
 )
 
 // orchestratorNATSURL returns the NATS URL for MCP calls (GT_ORCHESTRATOR_NATS_URL overrides in tests).
@@ -174,15 +177,12 @@ func Call(townRoot string, method string, params any) (json.RawMessage, error) {
 }
 
 // CallWithTimeout calls the orchestrator MCP service with a custom NATS request timeout.
+// Retries on transient NATS errors (timeout, no responders) up to maxCallRetries times
+// with exponential backoff to handle proxy restarts and temporary network issues.
 func CallWithTimeout(townRoot string, method string, params any, timeout time.Duration) (json.RawMessage, error) {
 	if timeout <= 0 {
 		timeout = OrchestratorCallTimeout
 	}
-	nc, err := natsutil.ConnectRobust(orchestratorNATSURL(), "gt-orchestrator-client")
-	if err != nil {
-		return nil, fmt.Errorf("connecting to NATS: %w", err)
-	}
-	defer nc.Close()
 
 	req := map[string]interface{}{
 		"jsonrpc": "2.0",
@@ -192,26 +192,54 @@ func CallWithTimeout(townRoot string, method string, params any, timeout time.Du
 	}
 	data, _ := json.Marshal(req)
 
-	msg, err := nc.Request("gt.orchestrator.mcp", data, timeout)
-	if err != nil {
-		return nil, fmt.Errorf("request to orchestrator failed: %w", err)
-	}
+	var lastErr error
+	for attempt := 0; attempt <= maxCallRetries; attempt++ {
+		if attempt > 0 {
+			backoff := time.Duration(attempt) * 2 * time.Second
+			time.Sleep(backoff)
+		}
 
-	var resp struct {
-		Result json.RawMessage `json:"result"`
-		Error  *struct {
-			Message string `json:"message"`
-		} `json:"error"`
-	}
-	if err := json.Unmarshal(msg.Data, &resp); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
-	}
+		nc, err := natsutil.ConnectRobust(orchestratorNATSURL(), "gt-orchestrator-client")
+		if err != nil {
+			lastErr = fmt.Errorf("connecting to NATS: %w", err)
+			continue
+		}
 
-	if resp.Error != nil {
-		return nil, fmt.Errorf("orchestrator error: %s", resp.Error.Message)
-	}
+		msg, err := nc.Request("gt.orchestrator.mcp", data, timeout)
+		nc.Close()
 
-	return resp.Result, nil
+		if err != nil {
+			lastErr = fmt.Errorf("request to orchestrator failed: %w", err)
+			if isRetriableNATSError(err) {
+				continue
+			}
+			return nil, lastErr
+		}
+
+		var resp struct {
+			Result json.RawMessage `json:"result"`
+			Error  *struct {
+				Message string `json:"message"`
+			} `json:"error"`
+		}
+		if err := json.Unmarshal(msg.Data, &resp); err != nil {
+			return nil, fmt.Errorf("failed to decode response: %w", err)
+		}
+
+		if resp.Error != nil {
+			return nil, fmt.Errorf("orchestrator error: %s", resp.Error.Message)
+		}
+
+		return resp.Result, nil
+	}
+	return nil, lastErr
+}
+
+func isRetriableNATSError(err error) bool {
+	msg := err.Error()
+	return strings.Contains(msg, "nats: timeout") ||
+		strings.Contains(msg, "nats: no responders") ||
+		strings.Contains(msg, "connection refused")
 }
 
 // StartWorkflow initiates a workflow via the orchestrator.
