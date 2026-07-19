@@ -29,12 +29,12 @@ func ValidationForPlanningSync(townRoot, rig string, runtime WorkflowValidation)
 			v.ActivePhaseIDField = activePhaseID
 		}
 	}
-	// Ensure we scope to the active phase's required_files
-	v = v.ForActivePhase()
-	if len(v.RequiredFiles) == 0 {
-		mayorRig := filepath.Join(townRoot, rig, "mayor", "rig")
-		v = EnrichWorkflowValidationFromArchitecture(v, mayorRig).ForActivePhase()
-	}
+	// Always enrich from architecture to ensure required_files includes all paths
+	// from SPEC.md and architecture.md, even when the profile has a non-empty list.
+	// This prevents missing files like go.mod that the architecture lists but the
+	// profile was generated without (common when profile predates architecture updates).
+	mayorRig := filepath.Join(townRoot, rig, "mayor", "rig")
+	v = EnrichWorkflowValidationFromArchitecture(v, mayorRig).ForActivePhase()
 	return v
 }
 

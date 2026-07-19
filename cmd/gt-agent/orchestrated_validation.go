@@ -79,6 +79,12 @@ func taskValidation(townRoot string, task *orchestrator.Task) orchestrator.Workf
 		if prof, ok, err := orchestrator.LoadRigWorkflowProfileFile(townRoot, task.Rig); err == nil && ok {
 			v = orchestrator.ClampProfileValidation(prof.WithDefaults())
 		}
+		// Always enrich from architecture to ensure required_files includes all paths
+		// from SPEC.md and architecture.md. Without this, the profile may lack files
+		// like go.mod that the architecture lists, causing the planner to skip creating
+		// beads for them while the triad judge detects the mismatch (infinite loop).
+		mayorRig := filepath.Join(townRoot, task.Rig, "mayor", "rig")
+		v = orchestrator.EnrichWorkflowValidationFromArchitecture(v, mayorRig)
 	}
 	return v.ForActivePhase()
 }

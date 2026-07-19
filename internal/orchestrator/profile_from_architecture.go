@@ -2,6 +2,7 @@ package orchestrator
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -10,43 +11,71 @@ import (
 
 var (
 	specLayoutDirRe   = regexp.MustCompile(`(?m)^([a-zA-Z][a-zA-Z0-9_-]*)/\s*$`)
-	specTreeFileInLine = regexp.MustCompile(`([a-zA-Z0-9_.-]+\.(?:py|go|txt|md|yaml|yml|json|toml))`)
+	specTreeFileInLine = regexp.MustCompile(`([a-zA-Z0-9_.-]+\.(?:py|go|txt|md|yaml|yml|json|toml|mod|js|ts|jsx|tsx|css|html|sum))`)
+	profileArchDebug bool
 )
+
+func init() {
+	for _, v := range strings.Split(os.Getenv("GT_DEBUG"), ",") {
+		if strings.TrimSpace(v) == "profile_arch" {
+			profileArchDebug = true
+			break
+		}
+	}
+}
+
+func archDebug(format string, args ...interface{}) {
+	if profileArchDebug {
+		fmt.Fprintf(os.Stderr, "[profile_arch] "+format+"\n", args...)
+	}
+}
 
 // EnrichWorkflowValidationFromArchitecture aligns the rig profile with mayor/rig docs.
 // SPEC.md is authoritative for layout_root and required_files when it lists project paths;
 // architecture.md is used only when SPEC has no usable layout. Not platform-specific.
 func EnrichWorkflowValidationFromArchitecture(v WorkflowValidation, mayorRigDir string) WorkflowValidation {
 	archPath := filepath.Join(mayorRigDir, "architecture.md")
+	archDebug("EnrichWorkflowValidationFromArchitecture: mayorRigDir=%s, current RequiredFiles=%v", mayorRigDir, v.RequiredFiles)
 	if specPaths, ok := extractSpecLayoutPaths(mayorRigDir); ok {
+		archDebug("SPEC paths found: %v", specPaths)
 		// Profile from spec-index already lists canonical nested paths; SPEC layout tree
 		// parsing only captures leaf filenames (linkshelf/handlers.go not internal/api/handlers.go).
 		if !shouldReplaceProfileRequiredFilesWithSpec(v, specPaths) {
+			archDebug("shouldReplaceProfileRequiredFilesWithSpec=false — keeping profile RequiredFiles=%v", v.RequiredFiles)
 			return SanitizeRigFlowProfile(v)
 		}
 		v = applySpecPathsToValidation(v, specPaths)
+		archDebug("applied SPEC paths: RequiredFiles=%v, LayoutRoot=%s", v.RequiredFiles, v.LayoutRoot)
 		return SanitizeRigFlowProfile(v)
 	}
+	archDebug("no SPEC paths — falling back to architecture.md")
 
 	// When SPEC.md layout tree can't be parsed, fall back to aligning the profile with
 	// architecture.md to handle flat mayor/rig worktrees and spec-index prefix confusion.
+	archDebug("AlignProfileLayoutWithArchitecture before: RequiredFiles=%v", v.RequiredFiles)
 	v = AlignProfileLayoutWithArchitecture(v, archPath)
+	archDebug("AlignProfileLayoutWithArchitecture after: RequiredFiles=%v", v.RequiredFiles)
 
 	if len(v.UnionRequiredFiles()) > 0 {
+		archDebug("UnionRequiredFiles non-empty after alignment — keeping: %v", v.UnionRequiredFiles())
 		return SanitizeRigFlowProfile(v)
 	}
 
 	data, err := os.ReadFile(archPath)
 	if err != nil || len(data) == 0 {
+		archDebug("cannot read architecture.md: %v", err)
 		return SanitizeRigFlowProfile(v)
 	}
 
 	paths := extractArchPaths(string(data), v.LayoutRootDir())
+	archDebug("extractArchPaths from architecture.md: %v (layoutRoot=%s)", paths, v.LayoutRootDir())
 	if len(paths) == 0 {
+		archDebug("no paths found in architecture.md")
 		return SanitizeRigFlowProfile(v)
 	}
 
 	v.RequiredFiles = paths
+	archDebug("set RequiredFiles from architecture.md: %v", paths)
 	if root := inferLayoutRootFromPaths(paths); root != "" && root != "." {
 		v.LayoutRoot = root
 	}
@@ -59,16 +88,23 @@ func extractSpecLayoutPaths(mayorRigDir string) ([]string, bool) {
 	specPath := filepath.Join(mayorRigDir, "SPEC.md")
 	data, err := os.ReadFile(specPath)
 	if err != nil || len(data) == 0 {
+		archDebug("no SPEC.md at %s: %v", specPath, err)
 		return nil, false
 	}
 	text := string(data)
 
 	var paths []string
-	paths = append(paths, extractArchPaths(text, "")...)
-	paths = append(paths, parseSpecLayoutTree(text)...)
+	archPaths := extractArchPaths(text, "")
+	archDebug("extractArchPaths from SPEC: %v", archPaths)
+	treePaths := parseSpecLayoutTree(text)
+	archDebug("parseSpecLayoutTree from SPEC: %v", treePaths)
+	paths = append(paths, archPaths...)
+	paths = append(paths, treePaths...)
 	paths = dedupeStrings(paths)
+	archDebug("extractSpecLayoutPaths combined: %v", paths)
 
 	if len(paths) == 0 {
+		archDebug("no paths found in SPEC.md")
 		return nil, false
 	}
 	// Prefer paths with a shared layout prefix (pingapp/...) over flat ./main.py-only lists.
