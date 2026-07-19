@@ -50,6 +50,7 @@ Polecat implements code later from SPEC. Your architecture doc should **describe
    If under the minimum, expand the heredoc (per-file API/behavior, data model, error cases, acceptance mapping) and rewrite `architecture.md` — do not report success until `wc -c` meets the threshold.
 4. Architecture must reference the real SPEC goals and planned layout under `{{layout_root}}/` (or paths SPEC defines) without creating those files.
 5. **HTTP route table and store API names in architecture.md must match SPEC.md verbatim** (e.g. `/static/{file}` not `/web/*`; `List`/`Create`/`Delete`/`InitSchema` not `GetLinks`/`Store` struct/`InitDB`). gt-agent rejects design success on drift.
+5b. **`required_files` must NOT contain wildcards** (e.g. `test_*.py`, `*_test.go`). Each path must be a concrete, literal file path (e.g. `tests/test_portfolio.py`, `internal/store/store_test.go`). gt-agent rejects design success on wildcards.
 6. **Implement file paths** in lists, tables, and bead-style bullets must use the `{{layout_root}}/` prefix when required_files use it (e.g. `{{layout_root}}/internal/store/schema.go`). Prose may reference packages as `store.List` or `schema.InitSchema` without the prefix.
 7. **Every section listed in the write pattern below must contain substantive content.** Empty headings (e.g. `## Docker & Deployment` followed by a blank line) cause the polecat to guess and produce broken artifacts. If a section truly does not apply, omit the heading; do not leave it empty.
 
