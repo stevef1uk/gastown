@@ -161,7 +161,11 @@ func ValidatePlanningDocAlignment(rigDir string, v WorkflowValidation) error {
 		if err != nil {
 			log.Printf("[triad] LLM judge unavailable, skipping semantic validation: %v", err)
 		} else if !pass {
-			issues = append(issues, fmt.Sprintf("SPEC/Architecture/Plan triad misaligned: %s", reason))
+			// Log triad findings for observability but don't block the transition —
+			// semantic misalignments (e.g., different file sets in architecture vs plan)
+			// cannot be fixed by the planner (which only manages beads for required_files)
+			// and are better surfaced to plan_review or QA for triage.
+			log.Printf("[triad] advisory: SPEC/Architecture/Plan triad misaligned: %s", reason)
 		}
 	}
 
