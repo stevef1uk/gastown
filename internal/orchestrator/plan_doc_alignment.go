@@ -136,6 +136,34 @@ func ValidatePlanningDocAlignment(rigDir string, v WorkflowValidation) error {
 	issues = append(issues, checkPlanBeadMapExactPaths(planDoc, v, rigName)...)
 	issues = append(issues, checkDocLayoutPathPrefix("plan.md", planDoc, v)...)
 
+	// Semantic triad validation using LLM judge
+	// Only run if all three documents have substantive content (>200 chars each)
+	const triadMinLength = 200
+	if len(strings.TrimSpace(specDoc)) >= triadMinLength &&
+		len(strings.TrimSpace(archDoc)) >= triadMinLength &&
+		len(strings.TrimSpace(planDoc)) >= triadMinLength {
+		client := llm.NewClient(
+			"http://localhost:11434/v1/chat/completions",
+			GetModel("judge"),
+			"",
+			120*time.Second,
+		)
+		ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+		defer cancel()
+
+		pass, reason, err := ValidateTriadWithJudge(ctx, client, TriadValidationConfig{
+			SPEC:         specDoc,
+			Architecture: archDoc,
+			Plan:         planDoc,
+			MinLength:    200,
+		})
+		if err != nil {
+			issues = append(issues, fmt.Sprintf("triad judge error: %v", err))
+		} else if !pass {
+			issues = append(issues, fmt.Sprintf("SPEC/Architecture/Plan triad misaligned: %s", reason))
+		}
+	}
+
 	return formatDocAlignmentError("SPEC/architecture/plan misaligned", issues)
 }
 

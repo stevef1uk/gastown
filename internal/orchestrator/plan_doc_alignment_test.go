@@ -377,7 +377,11 @@ func TestCheckArchitectureDockerSection_requiresSubstantiveSection(t *testing.T)
 	}
 
 	// Now write a substantive section and verify it passes.
-	arch = "# Architecture\nMinimal.\n\n## Docker & Deployment\n\nFROM node:20-slim, build frontend. FROM python:3.12-slim, expose port 8000, CMD uvicorn backend.main:app.\n"
+	arch = `# Architecture
+
+## Docker & Deployment
+Multi-stage build: Stage 1 uses node:20-slim to build the frontend assets (npm ci && npm run build). Stage 2 uses python:3.12-slim to install backend dependencies via pip install -r requirements.txt. The final image exposes port 8000 and runs the application with CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]. The docker-compose.yml defines services for app, postgres, and redis with appropriate volumes and networks for local development and CI environments.
+`
 	if err := os.WriteFile(filepath.Join(dir, "architecture.md"), []byte(arch), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -424,11 +428,15 @@ func TestCheckArchitectureIntegrationTestingSection_rejectsEmptySection(t *testi
 }
 
 func TestCheckArchitectureIntegrationTestingSection_rejectsVagueSection(t *testing.T) {
-	arch := "# Architecture\n\n## Integration and testing\nWe will verify correctness.\n"
-	v := WorkflowValidation{QAVerifyCommand: "pytest -v"}
+	arch := `# Architecture
+
+## Integration and testing
+We will run some tests.
+`
+	v := WorkflowValidation{RequiredFiles: []string{"tasklist/tests/test_store.py"}, QAVerifyCommand: "pytest -v"}
 	issues := checkArchitectureIntegrationTestingSection(arch, v)
-	if len(issues) == 0 || !strings.Contains(issues[0], "too vague") {
-		t.Fatalf("expected vague section error, got: %v", issues)
+	if len(issues) == 0 || !strings.Contains(issues[0], "too brief") {
+		t.Fatalf("expected too brief section error, got: %v", issues)
 	}
 }
 
@@ -436,7 +444,7 @@ func TestCheckArchitectureIntegrationTestingSection_acceptsSubstantiveSection(t 
 	arch := `# Architecture
 
 ## Integration and testing
-Run unit tests with pytest for store modules. After deployment run a smoke test against the health endpoint.
+We run unit tests with pytest for the store modules. After deployment we run a smoke test against the health endpoint to ensure the server starts correctly and responds to requests. We also run integration tests against the API endpoints using a test database.
 `
 	v := WorkflowValidation{RequiredFiles: []string{"tasklist/tests/test_store.py"}}
 	if issues := checkArchitectureIntegrationTestingSection(arch, v); len(issues) > 0 {
@@ -471,11 +479,15 @@ func TestCheckArchitectureE2ETestingSection_rejectsEmptySection(t *testing.T) {
 }
 
 func TestCheckArchitectureE2ETestingSection_rejectsVagueSection(t *testing.T) {
-	arch := "# Architecture\n\n## E2E / integration testing\nE2E tests cover the app.\n"
+	arch := `# Architecture
+
+## E2E / integration testing
+We will run some e2e tests.
+`
 	v := WorkflowValidation{RequiredFiles: []string{"linkshelf/playwright.config.ts"}}
 	issues := checkArchitectureE2ETestingSection(arch, v)
-	if len(issues) == 0 || !strings.Contains(issues[0], "too vague") {
-		t.Fatalf("expected vague section error, got: %v", issues)
+	if len(issues) == 0 || !strings.Contains(issues[0], "too brief") {
+		t.Fatalf("expected too brief section error, got: %v", issues)
 	}
 }
 
@@ -483,7 +495,10 @@ func TestCheckArchitectureE2ETestingSection_acceptsSubstantiveSection(t *testing
 	arch := `# Architecture
 
 ## E2E / integration testing
-Start the stack with docker compose up. Run Playwright tests with npx playwright test. Tests cover the login flow and page selectors.
+Start the application stack with docker compose up. The Playwright test suite is executed with npx playwright test against the running services.
+Tests cover the login flow, page selectors, and core user workflows like adding items to cart.
+The test environment uses a seeded database with known test data to ensure consistent results.
+The docker-compose.test.yml file defines the test services including the app and Playwright runner.
 `
 	v := WorkflowValidation{RequiredFiles: []string{"linkshelf/docker-compose.yml", "linkshelf/e2e/login.spec.ts"}}
 	if issues := checkArchitectureE2ETestingSection(arch, v); len(issues) > 0 {
