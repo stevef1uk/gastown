@@ -1345,6 +1345,12 @@ func runOrchestratedCommand(cmd, workDir, sessionName string, env []string, cmdT
 			c.SysProcAttr = &syscall.SysProcAttr{}
 		}
 		c.SysProcAttr.Setpgid = true
+		c.Cancel = func() error {
+			if c.Process != nil {
+				return syscall.Kill(-c.Process.Pid, syscall.SIGKILL)
+			}
+			return nil
+		}
 		out, err := c.CombinedOutput()
 		orchestratedPrintf("[gt-agent] exec done: %s (duration=%s)\n", logCmd, time.Since(cmdStart).Round(time.Millisecond))
 		if err != nil && ctx.Err() == context.DeadlineExceeded {
@@ -1380,6 +1386,12 @@ func runOrchestratedCommand(cmd, workDir, sessionName string, env []string, cmdT
 		c.SysProcAttr = &syscall.SysProcAttr{}
 	}
 	c.SysProcAttr.Setpgid = true
+	c.Cancel = func() error {
+		if c.Process != nil {
+			return syscall.Kill(-c.Process.Pid, syscall.SIGKILL)
+		}
+		return nil
+	}
 	out, err := c.CombinedOutput()
 	orchestratedPrintf("[gt-agent] exec done: %s (duration=%s)\n", logCmd, time.Since(cmdStart).Round(time.Millisecond))
 	if err != nil && ctx.Err() == context.DeadlineExceeded {
