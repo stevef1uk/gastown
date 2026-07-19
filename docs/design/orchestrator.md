@@ -311,10 +311,149 @@ Pure detection for tests: `EvalWorkflowStuck(WorkflowStuckEvalInput)`.
 
 Daemon logs: `[workflow-stuck] <rig>: repaired (<signals>): <steps>` in `{town}/daemon/daemon.log`.
 
-**Artifact validation** thresholds still come from `workflow-profile.json` when present (merged into `task.validation`).
-
 **Validation merge order:** defaults → `rig-flow.yaml` `validation:` → `{rig}/mayor/rig/.gastown/workflow-profile.json`.
 Prompt substitution uses the same merged struct (`PromptVars`).
+
+## Wildcard Rejection in `required_files`
+
+**Planner validation:** `PlanningBeadTitle` rejects paths containing `*`. Architect prompt explicitly forbids wildcards (`test_*.py`, `*_test.go`, `test/*.test.ts`). Each entry must be a concrete, resolvable file path.
+
+## LLM Judge Semantic Validation
+
+**Config:** `gastown/models.json` (or `GASTOWN_MODELS_CONFIG` env)
+
+Three judges run as semantic validators, replacing brittle keyword matching:
+
+| Judge | Function | Validates |
+|-------|----------|-----------|
+| **Triad** | `ValidateTriadWithJudge` | SPEC ↔ Architecture ↔ Plan coherence (HTTP routes, store API, module names, bead map paths, integration contract) |
+| **Test Quality** | `ValidateTestQualityWithJudge` | Test file vs SPEC/Architecture: meaningful names, real assertions, SPEC coverage, no trivial tests |
+| **Integration Contract** | `ValidateIntegrationContractWithJudge` | Plan's `## Integration contract` completeness (entrypoint wiring, route registration, exported symbols, DI) |
+
+**Model config** (`gastown/models.json`):
+```json
+{
+  "models": {
+    "judge": "deepseek/deepseek-v4-flash",
+    "architect": "deepseek/deepseek-v4-flash",
+    "planner": "google/gemini-3.5-flash",
+    "polecat": "deepseek/deepseek-v4-flash",
+    "qa": "google/gemini-3.5-flash",
+    "mayor": "google/gemini-3.5-flash",
+    "default": "google/gemini-3.5-flash"
+  }
+}
+```
+
+**Fallback:** If LLM endpoint unreachable (connection refused), judges return `pass` with reason "LLM judge unavailable (connection refused), skipping" instead of failing. Configure via `GASTOWN_MODELS_CONFIG` env or place `gastown/models.json` in cwd or `~/gt/gastown/`.
+
+**Integration in validation pipeline:**
+
+| Function | Judge used |
+|----------|------------|
+| `ValidatePlanningDocAlignment` | Triad (SPEC/Architecture/Plan) |
+| `checkArchitectureDockerSection` | Document-level (Docker section) |
+| `checkArchitectureIntegrationTestingSection` | Document-level (Integration section) |
+| `checkArchitectureE2ETestingSection` | Document-level (E2E section) |
+| `ValidatePlanningDocAlignment` | Triad (full SPEC/Architecture/Plan) |
+
+---
+
+## Test Quality & Stubs
+
+**Judge-based:** `ValidateTestQualityWithJudge` evaluates test files against SPEC/Architecture:
+- Meaningful test names (not `Test1`, `testFunction`)
+- Real assertions (not `assert True`, `assert err == nil`)
+- SPEC coverage (happy path, errors, edge cases from acceptance bullets)
+- Realistic test data (not "foo", "bar", "test")
+- No trivial tests (empty bodies, import-only)
+
+**Deterministic fallback:** `CheckContentNotStub` (byte length, substantive lines, placeholder patterns) runs regardless.
+
+---
+
+## Integration Contract Validation
+
+**Judge-based:** `ValidateIntegrationContractWithJudge` checks Plan's `## Integration contract` for:
+1. Entrypoint wiring (how main wires dependencies, initialization order)
+2. Route registration (exact SPEC HTTP paths)
+3. Exported symbols per file (from Architecture ownership table)
+4. DI pattern (constructors, package-level funcs, `registerHandlers`)
+
+---
+
+## Node.js Setup Fix
+
+`nodeInstallDirFromRequiredFiles` now only treats actual manifest files as root packages:
+- `package.json`, `pnpm-lock.yaml`, `yarn.lock`, `package-lock.json` → root package
+- Other files at root → not treated as package root
+
+Prevents spurious `cd . && npm install` when only source files exist at root.
+
+---
+
+## Directory Handling in Artifact Validation
+
+`beadImplementationNeedsRework` and `auditRequiredImplementFiles` now detect directories via `os.Stat().IsDir()` and validate via `os.ReadDir()` (non-empty) instead of `ReadFile`/`info.Size()`.
+
+---
+
+## Prompt Updates
+
+**Architect prompt** (`town/prompts/rig-flow/design.md`): Explicit rule against wildcards in `required_files`. Each path must be concrete (`tests/test_portfolio.py`, not `tests/test_*.py`).
+
+**Planner prompt** (`town/prompts/rig-flow/planning.md`): Examples updated to concrete paths (`tests/test_portfolio.py` not `tests/test_*.py`).
+
+---
+
+## Model Configuration
+
+**File:** `gastown/models.json` (or `GASTOWN_MODELS_CONFIG` env)
+
+| Key | Default | Role |
+|-----|---------|------|
+| `judge` | `deepseek/deepseek-v4-flash` | All three judges |
+| `architect` | `deepseek/deepseek-v4-flash` | Architecture generation |
+| `planner` | `google/gemini-3.5-flash` | Plan generation |
+| `polecat` | `deepseek/deepseek-v4-flash` | Implementation |
+| `qa` | `google/gemini-3.5-flash` | QA review |
+| `mayor` | `google/gemini-3.5-flash` | Workflow management |
+| `default` | `google/gemini-3.5-flash` | Fallback |
+
+Environment override: `GASTOWN_MODELS_CONFIG=/path/to/models.json`.
+
+---
+
+## Judge Fallback Behavior
+
+If LLM endpoint unreachable (connection refused), judges return:
+```json
+{ "pass": true, "reason": "LLM judge unavailable (connection refused), skipping" }
+```
+Instead of failing. Allows CI/dev without live LLM.
+
+---
+
+## Integration Tests
+
+**File:** `internal/orchestrator/llm_judge_integration_test.go` (build tag `integration`)
+
+Run with freeride proxy:
+```bash
+# Start proxy
+go run ./cmd/freeride proxy --port 11434 &
+
+# Run integration tests
+GASTOWN_TEST_FREERIDE=1 go test -tags=integration -run TestJudgeWithFreerideProxy ./internal/orchestrator/
+```
+
+Tests:
+1. `ValidateDocumentWithJudge` - architecture.md sections
+2. `ValidateTriadWithJudge` - SPEC/Architecture/Plan coherence
+3. `ValidateTestQualityWithJudge` - test file quality
+4. `ValidateIntegrationContractWithJudge` - integration contract completeness
+
+---
 
 ## Agent matching (`AgentMatchesTask`)
 

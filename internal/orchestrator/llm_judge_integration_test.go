@@ -1,4 +1,4 @@
-// +build ignore
+// +build integration
 
 package orchestrator
 
@@ -36,7 +36,7 @@ func TestJudgeWithFreerideProxy(t *testing.T) {
 
 	// Test 1: ValidateDocumentWithJudge
 	t.Run("ValidateDocumentWithJudge", func(t *testing.T) {
-		pass, reason, err := ValidateDocumentWithJudge(ctx, nil, JudgeConfig{
+		pass, reason, err := ValidateDocumentWithJudge(ctx, client, JudgeConfig{
 			DocumentName: "test doc",
 			Content: `# Test Architecture
 
@@ -86,7 +86,7 @@ Entrypoint main.py wires dependencies. Registers GET /api/health and POST /api/u
 ## Bead map
 ### fi-1: main.py
 `
-		pass, reason, err := ValidateTriadWithJudge(context.Background(), nil, TriadValidationConfig{
+		pass, reason, err := ValidateTriadWithJudge(ctx, client, TriadValidationConfig{
 			SPEC:         spec,
 			Architecture: arch,
 			Plan:         plan,
@@ -103,9 +103,9 @@ Entrypoint main.py wires dependencies. Registers GET /api/health and POST /api/u
 		}
 	})
 
-// Test 3: Test quality
+	// Test 3: Test quality
 	t.Run("TestQualityJudge", func(t *testing.T) {
-		_, _, err := ValidateTestQualityWithJudge(context.Background(), nil, TestQualityConfig{
+		pass, reason, err := ValidateTestQualityWithJudge(ctx, client, TestQualityConfig{
 			TestFileContent: `"""Tests for portfolio trade execution and P&L calculation."""
 
 import pytest
@@ -282,5 +282,14 @@ Handles trade execution and P&L calculation.`,
 			FilePath:  "backend/tests/test_portfolio.py",
 			MinLength: 200,
 		})
+		if err != nil {
+			t.Logf("Test quality judge error: %v", err)
+			return
+		}
+		if !pass {
+			t.Logf("Test quality judge rejected: %s", reason)
+		} else {
+			t.Logf("Test quality judge passed: %s", reason)
+		}
 	})
 }
