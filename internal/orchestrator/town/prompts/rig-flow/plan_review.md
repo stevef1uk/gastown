@@ -66,7 +66,7 @@ gt-agent also runs **mechanical** checks on success; you must catch the same iss
    - `plan.md` **## Bead map**: one `### <real-id>: <path>` per active bead; IDs from **this session's** `bd list` only.
 
 5. **Tests scope**
-   - If `required_files` has **no** `*_test.go` / `tests/test_*.py`, plan must **not** mandate httptest, eslint, or “every bead must have unit tests”.
+   - If `required_files` has **no** `*_test.go` / `tests/test_portfolio.py`, plan must **not** mandate httptest, eslint, or "every bead must have unit tests".
    - When tests are in profile, plan acceptance bullets may name them; otherwise defer to SPEC optional tests.
 
 6. **Integration contract (active phase only)**

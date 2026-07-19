@@ -157,7 +157,7 @@ func checkArchitectureDockerSection(archDoc string, v WorkflowValidation) []stri
 	// Use LLM judge for deeper validation
 	client := llm.NewClient(
 		"http://localhost:11434/v1/chat/completions",
-		"deepseek/deepseek-v4-flash",
+		GetModel("judge"),
 		"",
 		60*time.Second,
 	)

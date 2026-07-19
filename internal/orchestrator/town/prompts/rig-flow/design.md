@@ -82,7 +82,7 @@ When several implement paths live in the **same Go package directory**, document
 - Route paths in architecture must match SPEC exactly — do not invent alternate URL shapes (e.g. extra path segments when SPEC uses method + single path).
 
 ## Unit tests
-(Map SPEC functional requirements to test files: Go `*_test.go` per package, Python `tests/test_*.py`. Name cases after FR/acceptance bullets.)
+(Map SPEC functional requirements to test files: Go `*_test.go` per package, Python `tests/test_portfolio.py`. Name cases after FR/acceptance bullets.)
 
 ## Integration and testing
 (how pieces connect; full-suite command e.g. `go test ./...` / `pytest -v`; polecat runs package tests during implementation)

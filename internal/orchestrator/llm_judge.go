@@ -41,7 +41,7 @@ CRITERIA:
 	if client == nil {
 		client = llm.NewClient(
 			"http://localhost:11434/v1/chat/completions",
-			"deepseek/deepseek-v4-flash",
+			GetModel("judge"),
 			"",
 			60*time.Second,
 		)

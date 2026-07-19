@@ -1,0 +1,9 @@
+{
+  "agentModels": {
+    "gt-agent-local": "google/gemini-3.5-flash",
+    "gt-agent-gemini": "google/gemini-3.5-flash",
+    "gt-agent-deepseek": "deepseek/deepseek-v4-flash"
+  },
+  "judgeModel": "deepseek/deepseek-v4-flash",
+  "defaultTimeoutSeconds": 120
+}

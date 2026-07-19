@@ -123,10 +123,10 @@ You are **not** verifying the app. Do not run the server or test suite to “che
     ### {{bead_id_example}}: finally/Dockerfile
     - Scope: …
     - Architecture: …
-    - Acceptance: … (for `*_test.go` / `tests/test_*.py`, list SPEC functional requirements each test case proves)
+    - Acceptance: … (for `*_test.go` / `tests/test_portfolio.py`, list SPEC functional requirements each test case proves)
     - Verify: <exact shell command the polecat must run before `bd close`> (e.g. `cd finally && docker build -f Dockerfile .`, `cd finally && go test ./internal/store/...`, `npx playwright test test/e2e/trading_flow.spec.ts`)
 
-    Include implement beads for unit test paths from architecture.md (`*_test.go`, `tests/test_*.py`) — not only production source.
+    Include implement beads for unit test paths from architecture.md (`*_test.go`, `tests/test_portfolio.py`) — not only production source.
 
     ### {{bead_id_example}}: finally/docker-compose.yml
     - Scope: …

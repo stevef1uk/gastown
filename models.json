@@ -1,0 +1,16 @@
+{
+  "models": {
+    "judge": "deepseek/deepseek-v4-flash",
+    "architect": "deepseek/deepseek-v4-flash",
+    "planner": "google/gemini-3.5-flash",
+    "polecat": "deepseek/deepseek-v4-flash",
+    "qa": "google/gemini-3.5-flash",
+    "mayor": "google/gemini-3.5-flash",
+    "default": "google/gemini-3.5-flash"
+  },
+  "agentModels": {
+    "gt-agent-local": "google/gemini-3.5-flash",
+    "gt-agent-gemini": "google/gemini-3.5-flash",
+    "gt-agent-deepseek": "deepseek/deepseek-v4-flash"
+  }
+}

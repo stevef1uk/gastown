@@ -71,8 +71,10 @@ func nodeInstallDirFromRequiredFiles(files []string) string {
 		}
 		idx := strings.Index(f, "/")
 		if idx <= 0 {
-			// Root-level Node file (e.g., package.json at root)
-			hasRootPackage = true
+			// Root-level Node file - only counts as package root if it's a manifest
+			if f == "package.json" || f == "pnpm-lock.yaml" || f == "yarn.lock" || f == "package-lock.json" {
+				hasRootPackage = true
+			}
 			continue
 		}
 		first := f[:idx]
