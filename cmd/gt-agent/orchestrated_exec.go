@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/steveyegge/gastown/internal/orchestrator"
@@ -1340,6 +1341,10 @@ func runOrchestratedCommand(cmd, workDir, sessionName string, env []string, cmdT
 		c := exec.CommandContext(ctx, shell, flag, cmd)
 		c.Env = env
 		c.Dir = workDir
+		if c.SysProcAttr == nil {
+			c.SysProcAttr = &syscall.SysProcAttr{}
+		}
+		c.SysProcAttr.Setpgid = true
 		out, err := c.CombinedOutput()
 		orchestratedPrintf("[gt-agent] exec done: %s (duration=%s)\n", logCmd, time.Since(cmdStart).Round(time.Millisecond))
 		if err != nil && ctx.Err() == context.DeadlineExceeded {
@@ -1371,6 +1376,10 @@ func runOrchestratedCommand(cmd, workDir, sessionName string, env []string, cmdT
 	c := exec.CommandContext(ctx, "/bin/bash", tmpPath)
 	c.Env = env
 	c.Dir = workDir
+	if c.SysProcAttr == nil {
+		c.SysProcAttr = &syscall.SysProcAttr{}
+	}
+	c.SysProcAttr.Setpgid = true
 	out, err := c.CombinedOutput()
 	orchestratedPrintf("[gt-agent] exec done: %s (duration=%s)\n", logCmd, time.Since(cmdStart).Round(time.Millisecond))
 	if err != nil && ctx.Err() == context.DeadlineExceeded {

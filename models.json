@@ -1,6 +1,6 @@
 {
   "models": {
-    "judge": "deepseek/deepseek-v4-flash",
+    "judge": "google/gemini-3.5-flash",
     "architect": "deepseek/deepseek-v4-flash",
     "planner": "google/gemini-3.5-flash",
     "polecat": "deepseek/deepseek-v4-flash",
