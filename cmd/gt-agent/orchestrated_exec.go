@@ -1379,16 +1379,19 @@ func runOrchestratedCommand(cmd, workDir, sessionName string, env []string, cmdT
 			return nil, err
 		}
 		orchestratedPrintf("[gt-agent] exec pid: %d\n", c.Process.Pid)
+		debugLog(fmt.Sprintf("EXEC START pid=%d dur=%s cmd=%s", c.Process.Pid, dur, logCmd))
 		var timedOut atomic.Bool
 		if dur > 0 {
 			go func() {
 				time.Sleep(dur)
+				debugLog(fmt.Sprintf("TIMEOUT FIRED pid=%d cmd=%s", c.Process.Pid, logCmd))
 				timedOut.Store(true)
 				killProcessTree(c.Process.Pid)
 			}()
 		}
 		waitErr := c.Wait()
 		out := append(stdout.Bytes(), stderr.Bytes()...)
+		debugLog(fmt.Sprintf("EXEC DONE pid=%d duration=%s timedOut=%v err=%v", c.Process.Pid, time.Since(cmdStart).Round(time.Millisecond), timedOut.Load(), waitErr))
 		orchestratedPrintf("[gt-agent] exec done: %s pid=%d duration=%s err=%v\n", logCmd, c.Process.Pid, time.Since(cmdStart).Round(time.Millisecond), waitErr)
 		if timedOut.Load() {
 			fails := trackCmdFailure(cmd)
@@ -1433,16 +1436,19 @@ func runOrchestratedCommand(cmd, workDir, sessionName string, env []string, cmdT
 		return nil, err
 	}
 	orchestratedPrintf("[gt-agent] exec pid (script): %d\n", c.Process.Pid)
+	debugLog(fmt.Sprintf("EXEC START (script) pid=%d dur=%s cmd=%s", c.Process.Pid, dur, logCmd))
 	var timedOut atomic.Bool
 	if dur > 0 {
 		go func() {
 			time.Sleep(dur)
+			debugLog(fmt.Sprintf("TIMEOUT FIRED (script) pid=%d cmd=%s", c.Process.Pid, logCmd))
 			timedOut.Store(true)
 			killProcessTree(c.Process.Pid)
 		}()
 	}
 	waitErr := c.Wait()
 	out := append(stdout.Bytes(), stderr.Bytes()...)
+	debugLog(fmt.Sprintf("EXEC DONE (script) pid=%d duration=%s timedOut=%v err=%v", c.Process.Pid, time.Since(cmdStart).Round(time.Millisecond), timedOut.Load(), waitErr))
 	orchestratedPrintf("[gt-agent] exec done (script): %s pid=%d duration=%s err=%v\n", logCmd, c.Process.Pid, time.Since(cmdStart).Round(time.Millisecond), waitErr)
 	if timedOut.Load() {
 		fails := trackCmdFailure(cmd)
@@ -1456,14 +1462,27 @@ func runOrchestratedCommand(cmd, workDir, sessionName string, env []string, cmdT
 	return out, waitErr
 }
 
+// debugLog writes directly to a file, bypassing script/pipe buffering.
+func debugLog(msg string) {
+	f, err := os.OpenFile("/tmp/gt-agent-debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	fmt.Fprintf(f, "%s %s\n", time.Now().Format("15:04:05.000"), msg)
+}
+
 // killProcessTree kills a process and all its children by reading /proc.
 func killProcessTree(pid int) {
+	debugLog(fmt.Sprintf("KILL TREE pid=%d", pid))
 	orchestratedPrintf("[gt-agent] killing process tree: pid=%d\n", pid)
 	children := childPids(pid)
 	for _, cpid := range children {
+		debugLog(fmt.Sprintf("KILL CHILD pid=%d", cpid))
 		orchestratedPrintf("[gt-agent] killing child: pid=%d\n", cpid)
 		syscall.Kill(cpid, syscall.SIGKILL)
 	}
+	debugLog(fmt.Sprintf("KILL PARENT pid=%d", pid))
 	orchestratedPrintf("[gt-agent] killing parent: pid=%d\n", pid)
 	syscall.Kill(pid, syscall.SIGKILL)
 }

@@ -161,7 +161,7 @@ states:
       state_timeout_seconds: 7200
       on_timeout: [recover_implementation_stall]
       on_state_timeout: [recover_implementation_stall]
-      cmd_timeout_seconds: 900
+      cmd_timeout_seconds: 120
       max_cmd_turns: 100
       omit_orchestrator_context: true
       system_prompt_footer: |
