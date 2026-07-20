@@ -1,7 +1,7 @@
 package main
 
 import (
-	"context"
+	"bytes"
 	"errors"
 	"fmt"
 	"os"
@@ -10,6 +10,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -1315,6 +1317,37 @@ func formatSuccessCommandOutput(out []byte) string {
 	return "(exit 0, no output)\n"
 }
 
+// cmdFailureTracker detects repeated failures of the same command (infinite loops).
+var (
+	cmdFailureMu   sync.Mutex
+	cmdFailureHash = map[string]int{} // normalized cmd → consecutive failure count
+)
+
+const cmdLoopThreshold = 3
+
+func normalizedCmdKey(cmd string) string {
+	s := strings.TrimSpace(cmd)
+	s = strings.ReplaceAll(s, "\t", " ")
+	for strings.Contains(s, "  ") {
+		s = strings.ReplaceAll(s, "  ", " ")
+	}
+	return s
+}
+
+func trackCmdFailure(cmd string) int {
+	cmdFailureMu.Lock()
+	defer cmdFailureMu.Unlock()
+	key := normalizedCmdKey(cmd)
+	cmdFailureHash[key]++
+	return cmdFailureHash[key]
+}
+
+func clearCmdFailure(cmd string) {
+	cmdFailureMu.Lock()
+	defer cmdFailureMu.Unlock()
+	delete(cmdFailureHash, normalizedCmdKey(cmd))
+}
+
 func runOrchestratedCommand(cmd, workDir, sessionName string, env []string, cmdTimeoutSec int) ([]byte, error) {
 	cmdStart := time.Now()
 	logCmd := truncateCmdForLog(cmd, 120)
@@ -1326,46 +1359,48 @@ func runOrchestratedCommand(cmd, workDir, sessionName string, env []string, cmdT
 	if workDir == "" {
 		workDir = "."
 	}
-	ctx := context.Background()
 	dur := commandTimeoutDur(cmd, cmdTimeoutSec)
 	orchestratedPrintf("[gt-agent] exec timeout: cmdTimeoutSec=%d dur=%s cmd=%s\n", cmdTimeoutSec, dur, logCmd)
-	if dur > 0 {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, dur)
-		defer cancel()
-	}
+
 	if !needsOrchestratedScriptFile(cmd) {
 		shell, flag := "/bin/sh", "-c"
 		if isGoDevServerSmokeCommand(cmd) {
 			shell, flag = "/bin/bash", "-c"
 			cmd = wrapStrictBashSmoke(cmd)
 		}
-		c := exec.CommandContext(ctx, shell, flag, cmd)
+		c := exec.Command(shell, flag, cmd)
 		c.Env = env
 		c.Dir = workDir
-		if c.SysProcAttr == nil {
-			c.SysProcAttr = &syscall.SysProcAttr{}
+		c.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+		var stdout, stderr bytes.Buffer
+		c.Stdout = &stdout
+		c.Stderr = &stderr
+		if err := c.Start(); err != nil {
+			return nil, err
 		}
-		c.SysProcAttr.Setpgid = true
-		c.Cancel = func() error {
-			if c.Process != nil {
-				orchestratedPrintf("[gt-agent] CANCEL KILL: pid=%d pgid=%d\n", c.Process.Pid, -c.Process.Pid)
-				err := syscall.Kill(-c.Process.Pid, syscall.SIGKILL)
-				orchestratedPrintf("[gt-agent] CANCEL KILL result: %v\n", err)
-				return err
+		orchestratedPrintf("[gt-agent] exec pid: %d\n", c.Process.Pid)
+		var timedOut atomic.Bool
+		if dur > 0 {
+			go func() {
+				time.Sleep(dur)
+				timedOut.Store(true)
+				killProcessTree(c.Process.Pid)
+			}()
+		}
+		waitErr := c.Wait()
+		out := append(stdout.Bytes(), stderr.Bytes()...)
+		orchestratedPrintf("[gt-agent] exec done: %s pid=%d duration=%s err=%v\n", logCmd, c.Process.Pid, time.Since(cmdStart).Round(time.Millisecond), waitErr)
+		if timedOut.Load() {
+			fails := trackCmdFailure(cmd)
+			orchestratedPrintf("[gt-agent] exec loop: cmd=%s consecutive_failures=%d threshold=%d\n", logCmd, fails, cmdLoopThreshold)
+			if fails >= cmdLoopThreshold {
+				clearCmdFailure(cmd)
+				return out, fmt.Errorf("LOOP DETECTED: command timed out %d times in a row, aborting: %s", fails, logCmd)
 			}
-			return nil
+			return out, fmt.Errorf("command exceeded %s: %s", dur, logCmd)
 		}
-		out, err := c.CombinedOutput()
-		pgid := -1
-		if c.Process != nil {
-			pgid, _ = syscall.Getpgid(c.Process.Pid)
-		}
-		orchestratedPrintf("[gt-agent] exec done: %s pid=%d pgid=%d duration=%s err=%v\n", logCmd, c.Process.Pid, pgid, time.Since(cmdStart).Round(time.Millisecond), err)
-		if err != nil && ctx.Err() == context.DeadlineExceeded {
-			return out, fmt.Errorf("%w (command exceeded %s)", err, commandTimeoutDur(cmd, cmdTimeoutSec))
-		}
-		return out, err
+		clearCmdFailure(cmd)
+		return out, waitErr
 	}
 
 	script := prepareOrchestratedScript(cmd)
@@ -1388,31 +1423,81 @@ func runOrchestratedCommand(cmd, workDir, sessionName string, env []string, cmdT
 		return nil, err
 	}
 
-	c := exec.CommandContext(ctx, "/bin/bash", tmpPath)
+	c := exec.Command("/bin/bash", tmpPath)
 	c.Env = env
 	c.Dir = workDir
-	if c.SysProcAttr == nil {
-		c.SysProcAttr = &syscall.SysProcAttr{}
+	c.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	var stdout, stderr bytes.Buffer
+	c.Stdout = &stdout
+	c.Stderr = &stderr
+	if err := c.Start(); err != nil {
+		return nil, err
 	}
-	c.SysProcAttr.Setpgid = true
-	c.Cancel = func() error {
-		if c.Process != nil {
-			pgid, _ := syscall.Getpgid(c.Process.Pid)
-			orchestratedPrintf("[gt-agent] exec cancel (script): killing pid=%d pgid=%d\n", c.Process.Pid, pgid)
-			return syscall.Kill(-c.Process.Pid, syscall.SIGKILL)
+	orchestratedPrintf("[gt-agent] exec pid (script): %d\n", c.Process.Pid)
+	var timedOut atomic.Bool
+	if dur > 0 {
+		go func() {
+			time.Sleep(dur)
+			timedOut.Store(true)
+			killProcessTree(c.Process.Pid)
+		}()
+	}
+	waitErr := c.Wait()
+	out := append(stdout.Bytes(), stderr.Bytes()...)
+	orchestratedPrintf("[gt-agent] exec done (script): %s pid=%d duration=%s err=%v\n", logCmd, c.Process.Pid, time.Since(cmdStart).Round(time.Millisecond), waitErr)
+	if timedOut.Load() {
+		fails := trackCmdFailure(cmd)
+		orchestratedPrintf("[gt-agent] exec loop: cmd=%s consecutive_failures=%d threshold=%d\n", logCmd, fails, cmdLoopThreshold)
+		if fails >= cmdLoopThreshold {
+			clearCmdFailure(cmd)
+			return out, fmt.Errorf("LOOP DETECTED: command timed out %d times in a row, aborting: %s", fails, logCmd)
 		}
-		return nil
+		return out, fmt.Errorf("command exceeded %s: %s", dur, logCmd)
 	}
-	out, err := c.CombinedOutput()
-	pgid := -1
-	if c.Process != nil {
-		pgid, _ = syscall.Getpgid(c.Process.Pid)
+	clearCmdFailure(cmd)
+	return out, waitErr
+}
+
+// killProcessTree kills a process and all its children by reading /proc.
+func killProcessTree(pid int) {
+	orchestratedPrintf("[gt-agent] killing process tree: pid=%d\n", pid)
+	children := childPids(pid)
+	for _, cpid := range children {
+		orchestratedPrintf("[gt-agent] killing child: pid=%d\n", cpid)
+		syscall.Kill(cpid, syscall.SIGKILL)
 	}
-	orchestratedPrintf("[gt-agent] exec done (script): %s pid=%d pgid=%d duration=%s err=%v\n", logCmd, c.Process.Pid, pgid, time.Since(cmdStart).Round(time.Millisecond), err)
-	if err != nil && ctx.Err() == context.DeadlineExceeded {
-		return out, fmt.Errorf("%w (script exceeded %s)", err, commandTimeoutDur(cmd, cmdTimeoutSec))
+	orchestratedPrintf("[gt-agent] killing parent: pid=%d\n", pid)
+	syscall.Kill(pid, syscall.SIGKILL)
+}
+
+// childPids returns the direct child PIDs of a process by reading /proc.
+func childPids(pid int) []int {
+	var pids []int
+	entries, err := os.ReadDir("/proc")
+	if err != nil {
+		return pids
 	}
-	return out, err
+	for _, e := range entries {
+		if e.Type()&os.ModeDir == 0 {
+			continue
+		}
+		var p int
+		if _, err := fmt.Sscanf(e.Name(), "%d", &p); err != nil {
+			continue
+		}
+		data, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", p))
+		if err != nil {
+			continue
+		}
+		fields := strings.Fields(string(data))
+		if len(fields) >= 4 {
+			var ppid int
+			if _, err := fmt.Sscanf(fields[3], "%d", &ppid); err == nil && ppid == pid {
+				pids = append(pids, p)
+			}
+		}
+	}
+	return pids
 }
 
 // adjustPytestPathsAfterLayoutStrip prepends the layout root to paths in pytest
