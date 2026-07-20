@@ -1394,8 +1394,7 @@ func runOrchestratedCommand(cmd, workDir, sessionName string, env []string, cmdT
 			fails := trackCmdFailure(cmd)
 			orchestratedPrintf("[gt-agent] exec loop: cmd=%s consecutive_failures=%d threshold=%d\n", logCmd, fails, cmdLoopThreshold)
 			if fails >= cmdLoopThreshold {
-				clearCmdFailure(cmd)
-				return out, fmt.Errorf("LOOP DETECTED: command timed out %d times in a row, aborting: %s", fails, logCmd)
+				return out, fmt.Errorf("LOOP DETECTED: command '%s' has timed out %d times in a row. Do NOT retry this exact command. The working directory or paths may be wrong — verify the CWD exists and files are at the expected paths before retrying with a different approach.", logCmd)
 			}
 			return out, fmt.Errorf("command exceeded %s: %s", dur, logCmd)
 		}
@@ -1449,8 +1448,7 @@ func runOrchestratedCommand(cmd, workDir, sessionName string, env []string, cmdT
 		fails := trackCmdFailure(cmd)
 		orchestratedPrintf("[gt-agent] exec loop: cmd=%s consecutive_failures=%d threshold=%d\n", logCmd, fails, cmdLoopThreshold)
 		if fails >= cmdLoopThreshold {
-			clearCmdFailure(cmd)
-			return out, fmt.Errorf("LOOP DETECTED: command timed out %d times in a row, aborting: %s", fails, logCmd)
+			return out, fmt.Errorf("LOOP DETECTED: command '%s' has timed out %d times in a row. Do NOT retry this exact command. The working directory or paths may be wrong — verify the CWD exists and files are at the expected paths before retrying with a different approach.", logCmd)
 		}
 		return out, fmt.Errorf("command exceeded %s: %s", dur, logCmd)
 	}
