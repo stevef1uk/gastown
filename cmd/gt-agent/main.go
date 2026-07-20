@@ -687,10 +687,29 @@ func run() error {
 					continue
 				}
 
-				c := exec.Command("/bin/sh", "-c", safeCmd)
+				cmdTimeoutSec := int(orchestratedCommandTimeout(safeCmd).Seconds())
+				if cmdTimeoutSec <= 0 {
+					cmdTimeoutSec = 120
+				}
+				fmt.Printf("[gt-agent] patrol timeout: %ds cmd=%s\n", cmdTimeoutSec, safeCmd)
+				cmdCtx, cmdCancel := context.WithTimeout(context.Background(), time.Duration(cmdTimeoutSec)*time.Second)
+				c := exec.CommandContext(cmdCtx, "/bin/sh", "-c", safeCmd)
 				c.Env = os.Environ()
-				c.Env = append(c.Env, "GT_SESSION=" + sessionName)
+				c.Env = append(c.Env, "GT_SESSION="+sessionName)
+				if c.SysProcAttr == nil {
+					c.SysProcAttr = &syscall.SysProcAttr{}
+				}
+				c.SysProcAttr.Setpgid = true
+				c.Cancel = func() error {
+					if c.Process != nil {
+						pgid, _ := syscall.Getpgid(c.Process.Pid)
+						fmt.Printf("[gt-agent] patrol cancel: killing pid=%d pgid=%d\n", c.Process.Pid, pgid)
+						return syscall.Kill(-c.Process.Pid, syscall.SIGKILL)
+					}
+					return nil
+				}
 				out, err := c.CombinedOutput()
+				cmdCancel()
 				recordMoleculeState(safeCmd, string(out))
 
 				if err != nil {
@@ -698,7 +717,22 @@ func run() error {
 					if strings.Contains(string(out), "circuit breaker is open") {
 						fmt.Println("[gt-agent] Dolt circuit breaker open, retrying in 5s...")
 						time.Sleep(5 * time.Second)
-						out, err = exec.Command("/bin/sh", "-c", safeCmd).CombinedOutput()
+						retryCtx, retryCancel := context.WithTimeout(context.Background(), time.Duration(cmdTimeoutSec)*time.Second)
+						retryC := exec.CommandContext(retryCtx, "/bin/sh", "-c", safeCmd)
+						retryC.Env = os.Environ()
+						retryC.Env = append(retryC.Env, "GT_SESSION="+sessionName)
+						if retryC.SysProcAttr == nil {
+							retryC.SysProcAttr = &syscall.SysProcAttr{}
+						}
+						retryC.SysProcAttr.Setpgid = true
+						retryC.Cancel = func() error {
+							if retryC.Process != nil {
+								return syscall.Kill(-retryC.Process.Pid, syscall.SIGKILL)
+							}
+							return nil
+						}
+						out, err = retryC.CombinedOutput()
+						retryCancel()
 						recordMoleculeState(safeCmd, string(out))
 						if err == nil {
 							cmdFailed = false

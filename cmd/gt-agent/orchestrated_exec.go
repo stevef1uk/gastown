@@ -1327,9 +1327,11 @@ func runOrchestratedCommand(cmd, workDir, sessionName string, env []string, cmdT
 		workDir = "."
 	}
 	ctx := context.Background()
-	if d := commandTimeoutDur(cmd, cmdTimeoutSec); d > 0 {
+	dur := commandTimeoutDur(cmd, cmdTimeoutSec)
+	orchestratedPrintf("[gt-agent] exec timeout: cmdTimeoutSec=%d dur=%s cmd=%s\n", cmdTimeoutSec, dur, logCmd)
+	if dur > 0 {
 		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, d)
+		ctx, cancel = context.WithTimeout(ctx, dur)
 		defer cancel()
 	}
 	if !needsOrchestratedScriptFile(cmd) {
@@ -1347,12 +1349,19 @@ func runOrchestratedCommand(cmd, workDir, sessionName string, env []string, cmdT
 		c.SysProcAttr.Setpgid = true
 		c.Cancel = func() error {
 			if c.Process != nil {
-				return syscall.Kill(-c.Process.Pid, syscall.SIGKILL)
+				orchestratedPrintf("[gt-agent] CANCEL KILL: pid=%d pgid=%d\n", c.Process.Pid, -c.Process.Pid)
+				err := syscall.Kill(-c.Process.Pid, syscall.SIGKILL)
+				orchestratedPrintf("[gt-agent] CANCEL KILL result: %v\n", err)
+				return err
 			}
 			return nil
 		}
 		out, err := c.CombinedOutput()
-		orchestratedPrintf("[gt-agent] exec done: %s (duration=%s)\n", logCmd, time.Since(cmdStart).Round(time.Millisecond))
+		pgid := -1
+		if c.Process != nil {
+			pgid, _ = syscall.Getpgid(c.Process.Pid)
+		}
+		orchestratedPrintf("[gt-agent] exec done: %s pid=%d pgid=%d duration=%s err=%v\n", logCmd, c.Process.Pid, pgid, time.Since(cmdStart).Round(time.Millisecond), err)
 		if err != nil && ctx.Err() == context.DeadlineExceeded {
 			return out, fmt.Errorf("%w (command exceeded %s)", err, commandTimeoutDur(cmd, cmdTimeoutSec))
 		}
@@ -1388,12 +1397,18 @@ func runOrchestratedCommand(cmd, workDir, sessionName string, env []string, cmdT
 	c.SysProcAttr.Setpgid = true
 	c.Cancel = func() error {
 		if c.Process != nil {
+			pgid, _ := syscall.Getpgid(c.Process.Pid)
+			orchestratedPrintf("[gt-agent] exec cancel (script): killing pid=%d pgid=%d\n", c.Process.Pid, pgid)
 			return syscall.Kill(-c.Process.Pid, syscall.SIGKILL)
 		}
 		return nil
 	}
 	out, err := c.CombinedOutput()
-	orchestratedPrintf("[gt-agent] exec done: %s (duration=%s)\n", logCmd, time.Since(cmdStart).Round(time.Millisecond))
+	pgid := -1
+	if c.Process != nil {
+		pgid, _ = syscall.Getpgid(c.Process.Pid)
+	}
+	orchestratedPrintf("[gt-agent] exec done (script): %s pid=%d pgid=%d duration=%s err=%v\n", logCmd, c.Process.Pid, pgid, time.Since(cmdStart).Round(time.Millisecond), err)
 	if err != nil && ctx.Err() == context.DeadlineExceeded {
 		return out, fmt.Errorf("%w (script exceeded %s)", err, commandTimeoutDur(cmd, cmdTimeoutSec))
 	}
