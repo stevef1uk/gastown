@@ -1625,7 +1625,7 @@ func validateImplementationCommandWithState(cmd, townRoot, rig, activeBead strin
 	if err := validateCustomImplementationCommand(cmd, townRoot, rig, activeBead, v, verifyOK); err != nil {
 		return err
 	}
-	if err := validateImplementationBeadFileWrite(cmd, townRoot, rig, activeBead, v, scope); err != nil {
+	if err := validateImplementationBeadFileWrite(cmd, townRoot, rig, activeBead, v, scope, lastVerifyOutput); err != nil {
 		return err
 	}
 	if err := validateImplementationBeadClose(cmd, townRoot, rig, v, verifyOK); err != nil {
@@ -1688,7 +1688,7 @@ func verifyOutputCitesClosedBead(output, townRoot, rig, beadID string, v orchest
 }
 
 // validateImplementationBeadFileWrite rejects heredoc/touch writes to paths outside the active or next implement bead.
-func validateImplementationBeadFileWrite(cmd, townRoot, rig, activeBead string, v orchestrator.WorkflowValidation, scope *orchestrator.ImplementWriteScope) error {
+func validateImplementationBeadFileWrite(cmd, townRoot, rig, activeBead string, v orchestrator.WorkflowValidation, scope *orchestrator.ImplementWriteScope, lastVerifyOutput string) error {
 	if reason := orchestrator.RejectFullFileHeredocReason(cmd, townRoot, rig, activeBead, v); reason != "" {
 		return fmt.Errorf("%s", reason)
 	}
@@ -1710,6 +1710,13 @@ func validateImplementationBeadFileWrite(cmd, townRoot, rig, activeBead string, 
 		if scope != nil {
 			sc = *scope
 		}
+		if lastVerifyOutput != "" {
+			if reopened, rerr := orchestrator.ReopenClosedBeadForRework(townRoot, rig, written, v); rerr != nil {
+				return rerr
+			} else if reopened != "" {
+				return nil
+			}
+		}
 		if reopened, rerr := orchestrator.EnsureOpenImplementBeadForRework(townRoot, rig, written, v); rerr != nil {
 			return rerr
 		} else if reopened != "" {
@@ -1730,7 +1737,7 @@ func validateImplementationBeadFileWrite(cmd, townRoot, rig, activeBead string, 
 		return nil
 	}
 	// Scope only (fullReplace false): heredoc/WRITE incremental rules handled above via RejectFullFileHeredocReason.
-	return orchestrator.ValidateImplementWritePath(townRoot, rig, activeBead, written, v, false, "", scope)
+	return orchestrator.ValidateImplementWritePath(townRoot, rig, activeBead, written, v, false, lastVerifyOutput, scope)
 }
 
 func validatePlanningRuntimeCommands(lower string) error {

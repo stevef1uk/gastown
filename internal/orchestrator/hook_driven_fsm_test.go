@@ -102,8 +102,8 @@ func TestRigFlowYAML_implementationHasStallRecoveryHooks(t *testing.T) {
 	if got := st.Hooks.EffectiveOnStateTimeoutHooks(); len(got) != 1 || got[0] != "recover_implementation_stall" {
 		t.Fatalf("EffectiveOnStateTimeoutHooks = %v", got)
 	}
-	if st.Hooks.EffectiveCmdTimeoutSeconds() != 900 {
-		t.Fatalf("cmd_timeout_seconds = %d, want 900", st.Hooks.CmdTimeoutSeconds)
+	if st.Hooks.EffectiveCmdTimeoutSeconds() != 10 {
+		t.Fatalf("cmd_timeout_seconds = %d, want 10", st.Hooks.CmdTimeoutSeconds)
 	}
 	trans, ok := st.Transitions["timeout"]
 	if !ok || trans.To != "implementation" {
@@ -118,8 +118,8 @@ func TestRigFlowYAML_qaReviewHasFastFailHooks(t *testing.T) {
 	if !ok {
 		t.Fatal("missing qa_review state")
 	}
-	if st.Hooks.EffectiveCmdTimeoutSeconds() != 120 {
-		t.Fatalf("cmd_timeout_seconds = %d, want 120", st.Hooks.CmdTimeoutSeconds)
+	if st.Hooks.EffectiveCmdTimeoutSeconds() != 10 {
+		t.Fatalf("cmd_timeout_seconds = %d, want 10", st.Hooks.CmdTimeoutSeconds)
 	}
 	if st.Hooks.EffectiveStateTimeoutSeconds() != 1800 {
 		t.Fatalf("state_timeout_seconds = %d, want 1800", st.Hooks.StateTimeoutSeconds)

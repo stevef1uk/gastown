@@ -689,7 +689,7 @@ func run() error {
 
 				cmdTimeoutSec := int(orchestratedCommandTimeout(safeCmd).Seconds())
 				if cmdTimeoutSec <= 0 {
-					cmdTimeoutSec = 120
+					cmdTimeoutSec = 10
 				}
 				fmt.Printf("[gt-agent] patrol timeout: %ds cmd=%s\n", cmdTimeoutSec, safeCmd)
 				cmdCtx, cmdCancel := context.WithTimeout(context.Background(), time.Duration(cmdTimeoutSec)*time.Second)

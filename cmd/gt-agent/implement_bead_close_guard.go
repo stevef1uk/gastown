@@ -17,6 +17,9 @@ func validateImplementationBeadClose(cmd, townRoot, rig string, v orchestrator.W
 		return nil
 	}
 	if !verifyOK {
+		return fmt.Errorf("run green verify before bd close: %s", cmd)
+	}
+	if !verifyOK {
 		return nil
 	}
 	id := strings.Trim(extractBeadIDFromBdClose(cmd), `"'`)

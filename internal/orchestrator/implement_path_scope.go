@@ -159,6 +159,13 @@ func validateImplementWriteScope(townRoot, rig, activeBead, written string, v Wo
 	}
 	if closedOnly, err := ImplementPathHasOnlyClosedBeads(townRoot, rig, written, v); err == nil && closedOnly &&
 		!AllowedCorrelatedPackageImplementWrite(allowedPath, written, v) {
+		if verifyOutput != "" {
+			if reopened, rerr := ReopenClosedBeadForRework(townRoot, rig, written, v); rerr != nil {
+				return rerr
+			} else if reopened != "" {
+				return nil
+			}
+		}
 		if reopened, rerr := EnsureOpenImplementBeadForRework(townRoot, rig, written, v); rerr != nil {
 			return rerr
 		} else if reopened != "" {

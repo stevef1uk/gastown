@@ -135,18 +135,22 @@ func (r *stateRunner) maxTurns() int {
 
 func (r *stateRunner) runPreRun() {
 	for _, step := range r.hooks.PreRun {
+		orchestratedPrintf("[gt-agent] pre_run_step starting: %s\n", step)
 		if step == "repair_requirements" {
 			maybeRepairWorkflowRequirements(r.townRoot, r.rig, r.v)
+			orchestratedPrintf("[gt-agent] pre_run_step done: %s\n", step)
 			continue
 		}
 		logLine, err := orchestrator.RunPreRunHook(step, r.townRoot, r.rig, r.v)
 		if err != nil {
 			orchestratedFprintfStderr("[gt-agent] pre_run %s: %v\n", step, err)
+			orchestratedPrintf("[gt-agent] pre_run_step done (err): %s\n", step)
 			continue
 		}
 		if logLine != "" {
 			orchestratedPrintf("[gt-agent] %s: %s\n", step, logLine)
 		}
+		orchestratedPrintf("[gt-agent] pre_run_step done: %s\n", step)
 	}
 }
 

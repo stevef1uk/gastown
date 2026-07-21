@@ -161,7 +161,7 @@ states:
       state_timeout_seconds: 7200
       on_timeout: [recover_implementation_stall]
       on_state_timeout: [recover_implementation_stall]
-      cmd_timeout_seconds: 120
+      cmd_timeout_seconds: 10
       max_cmd_turns: 100
       omit_orchestrator_context: true
       system_prompt_footer: |
@@ -260,7 +260,7 @@ states:
       3. Use outcome task_passed (more work), all_passed (done), or failure (rework).
     hooks:
       state_timeout_seconds: 1800
-      cmd_timeout_seconds: 120
+      cmd_timeout_seconds: 10
       append_go_compile_context: true
       max_cmd_turns: 8
       pre_run: [ensure_dolt_auto_commit, ensure_dolt_schema_health, reconcile_implement_beads]

@@ -360,6 +360,29 @@ func EnsureOpenImplementBeadForRework(townRoot, rig, filePath string, v Workflow
 	return id, nil
 }
 
+// ReopenClosedBeadForRework reopens a closed implement bead that owns the given path.
+// Unlike EnsureOpenImplementBeadForRework, this ignores the on-disk file state and
+// always reopens when a closed bead owns the path. It is intended for scenarios where
+// verify has failed and the LLM needs to edit the source code to fix tests — even if
+// the source file is not structurally broken.
+func ReopenClosedBeadForRework(townRoot, rig, filePath string, v WorkflowValidation) (string, error) {
+	filePath = filepath.ToSlash(strings.TrimSpace(filePath))
+	if filePath == "" {
+		return "", nil
+	}
+	id, ok := ClosedImplementBeadForPath(townRoot, rig, filePath, v)
+	if !ok {
+		return "", nil
+	}
+	if err := bdUpdateImplementBeadStatus(townRoot, rig, id, "open"); err != nil {
+		if bdUpdateImplementBeadStatusHook != nil {
+			return "", err
+		}
+		return "", nil
+	}
+	return id, nil
+}
+
 func beadImplementationNeedsRework(rigDir, beadPath string, v WorkflowValidation) bool {
 	beadPath = filepath.ToSlash(strings.TrimSpace(beadPath))
 	if beadPath == "" {

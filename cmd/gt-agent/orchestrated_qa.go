@@ -22,7 +22,7 @@ func orchestratedCommandTimeoutForTrack(track, cmd string) time.Duration {
 		}
 		// Python QA test verify.
 		if strings.Contains(lower, "pytest") || strings.Contains(lower, "python3 -m unittest") {
-			return 2 * time.Minute
+			return 10 * time.Second
 		}
 	}
 	return orchestratedCommandTimeout(cmd)

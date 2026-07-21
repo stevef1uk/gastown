@@ -14,7 +14,7 @@ import (
 	"github.com/steveyegge/gastown/internal/config"
 )
 
-const beadVerifyTimeout = 5 * time.Minute
+const beadVerifyTimeout = 10 * time.Second
 
 // bdCloseImplementBeadHook is set by tests to avoid calling bd close.
 var bdCloseImplementBeadHook func(townRoot, rig, beadID string) error

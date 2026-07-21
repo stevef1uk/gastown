@@ -1285,7 +1285,7 @@ func orchestratedCommandTimeout(cmd string) time.Duration {
 	}
 	// Python test suite.
 	if strings.Contains(lower, "pytest") || strings.Contains(lower, "python3 -m unittest") {
-		return 2 * time.Minute
+		return 10 * time.Second
 	}
 	// Bare server start (no curl) — safety cap, shouldn't happen after guards.
 	// Go compile can be slow; give it more time.
@@ -1349,6 +1349,7 @@ func clearCmdFailure(cmd string) {
 }
 
 func runOrchestratedCommand(cmd, workDir, sessionName string, env []string, cmdTimeoutSec int) ([]byte, error) {
+	os.WriteFile("/tmp/r1.txt", []byte(fmt.Sprintf("HIT cmd=%s timeoutSec=%d\n", cmd[:min(len(cmd), 100)], cmdTimeoutSec)), 0644)
 	cmdStart := time.Now()
 	logCmd := truncateCmdForLog(cmd, 120)
 	orchestratedPrintf("[gt-agent] exec start: %s\n", logCmd)
@@ -1397,7 +1398,7 @@ func runOrchestratedCommand(cmd, workDir, sessionName string, env []string, cmdT
 			fails := trackCmdFailure(cmd)
 			orchestratedPrintf("[gt-agent] exec loop: cmd=%s consecutive_failures=%d threshold=%d\n", logCmd, fails, cmdLoopThreshold)
 			if fails >= cmdLoopThreshold {
-				return out, fmt.Errorf("LOOP DETECTED: command '%s' has timed out %d times in a row. Do NOT retry this exact command. The working directory or paths may be wrong — verify the CWD exists and files are at the expected paths before retrying with a different approach.", logCmd)
+return out, fmt.Errorf("LOOP DETECTED: command '%s' has timed out %d times in a row. Do NOT retry this exact command. The working directory or paths may be wrong — verify the CWD exists and files are at the expected paths before retrying with a different approach.", logCmd, fails)
 			}
 			return out, fmt.Errorf("command exceeded %s: %s", dur, logCmd)
 		}
@@ -1454,7 +1455,7 @@ func runOrchestratedCommand(cmd, workDir, sessionName string, env []string, cmdT
 		fails := trackCmdFailure(cmd)
 		orchestratedPrintf("[gt-agent] exec loop: cmd=%s consecutive_failures=%d threshold=%d\n", logCmd, fails, cmdLoopThreshold)
 		if fails >= cmdLoopThreshold {
-			return out, fmt.Errorf("LOOP DETECTED: command '%s' has timed out %d times in a row. Do NOT retry this exact command. The working directory or paths may be wrong — verify the CWD exists and files are at the expected paths before retrying with a different approach.", logCmd)
+			return out, fmt.Errorf("LOOP DETECTED: command '%s' has timed out %d times in a row. Do NOT retry this exact command. The working directory or paths may be wrong — verify the CWD exists and files are at the expected paths before retrying with a different approach.", logCmd, fails)
 		}
 		return out, fmt.Errorf("command exceeded %s: %s", dur, logCmd)
 	}
