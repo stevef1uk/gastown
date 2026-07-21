@@ -42,7 +42,7 @@ $GT_ROOT/{{rig}}/mayor/rig/{{layout_root}}/  ← layout root (ALL files go here)
 
 1. List closed beads: `CMD: cd {{rig}}/mayor/rig && bd list --status=closed --limit=0`
 2. List open beads: `CMD: cd {{rig}}/mayor/rig && bd list --status=open --limit=0`
-3. Read SPEC.md for context (but only verify `required_files` for the active phase): `CMD: cat {{rig}}/mayor/rig/SPEC.md`
+3. Read SPEC.md for context (but only verify `required_files` for the active phase): `CMD: cat SPEC.md`
 4. **Docker/Compose pre-check:** If the phase's `qa_verify_command` uses `docker-compose` (or `docker compose`), first run `docker-compose -f <file> config` to validate the file parses. If this fails, return `failure` with the exact error — do not run the full test.
 5. Install requirements if needed, then verify: `CMD: cd {{rig}}/mayor/rig && {{unittest_command_hint}}`
 6. {{qa_runtime_smoke_block}}
