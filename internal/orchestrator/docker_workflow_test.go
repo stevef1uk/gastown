@@ -142,15 +142,20 @@ func TestSanitizeRigFlowProfile_finally(t *testing.T) {
 			RequiredFiles:   []string{"finally/Dockerfile", "finally/planning/PLAN.md"},
 		}},
 	}
-	got := SanitizeRigFlowProfile(v)
-	for _, bad := range []string{"planning/PLAN.md", "finally/finally/"} {
+	got := SanitizeRigFlowProfile(v, "finally")
+	// Auto-corrects spec-index bug: layout_root "finally" → "." since all files share "finally/" prefix
+	if got.LayoutRoot != "." {
+		t.Fatalf("layout_root = %q want .", got.LayoutRoot)
+	}
+	for _, bad := range []string{"planning/PLAN.md", "finally/", "finally/finally/"} {
 		for _, f := range got.RequiredFiles {
 			if strings.Contains(f, bad) {
 				t.Fatalf("required_files still contains %q: %v", bad, got.RequiredFiles)
 			}
 		}
 	}
-	if !strings.Contains(got.QAVerifyCommand, "cd finally &&") {
+	// qa_verify_command should have cd . (not cd finally)
+	if !strings.Contains(got.QAVerifyCommand, "cd . &&") {
 		t.Fatalf("qa_verify = %q", got.QAVerifyCommand)
 	}
 }

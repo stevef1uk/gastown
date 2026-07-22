@@ -331,9 +331,46 @@ func filterRigFlowRequiredFiles(files []string, layoutRoot string) []string {
 }
 
 // SanitizeRigFlowProfile fixes spec-index / hand-edited profiles for rig-flow execution.
-func SanitizeRigFlowProfile(v WorkflowValidation) WorkflowValidation {
+// rig is the rig directory name (optional) — used to auto-correct spec-index confusion
+// when layout_root equals rig name on flat mayor/rig worktrees.
+func SanitizeRigFlowProfile(v WorkflowValidation, rig ...string) WorkflowValidation {
 	layout := strings.Trim(filepath.ToSlash(strings.TrimSpace(v.LayoutRoot)), "/")
 	if layout == "" {
+		v.LayoutRoot = "."
+		layout = "."
+	}
+	rigName := ""
+	if len(rig) > 0 {
+		rigName = rig[0]
+	}
+	// Auto-correct spec-index bug: rig name confused with layout_root on flat mayor/rig worktrees.
+	// If all required_files share a common prefix matching the rig name, the project is at rig root.
+	rigPrefix := commonPathPrefix(v.UnionRequiredFiles())
+	if rigPrefix != "" && rigPrefix != "." && layout == rigPrefix && rigPrefix == rigName {
+		// Strip the rig prefix from all file paths BEFORE setting layout to "."
+		v.RequiredFiles = stripLayoutPrefixFromPaths(v.RequiredFiles, rigPrefix)
+		for i := range v.DeliveryPhases {
+			v.DeliveryPhases[i].RequiredFiles = stripLayoutPrefixFromPaths(v.DeliveryPhases[i].RequiredFiles, rigPrefix)
+		}
+		// Fix qa_verify_command: replace "cd <rigPrefix>" with "cd .", or add "cd . &&" if missing
+		if q := strings.TrimSpace(v.QAVerifyCommand); q != "" {
+			lower := strings.ToLower(q)
+			if strings.HasPrefix(lower, "cd "+rigPrefix) {
+				v.QAVerifyCommand = strings.Replace(q, "cd "+rigPrefix, "cd .", 1)
+			} else if !strings.Contains(lower, "cd .") && !strings.Contains(lower, "cd ") {
+				v.QAVerifyCommand = "cd . && " + q
+			}
+		}
+		for i := range v.DeliveryPhases {
+			if q := strings.TrimSpace(v.DeliveryPhases[i].QAVerifyCommand); q != "" {
+				lower := strings.ToLower(q)
+				if strings.HasPrefix(lower, "cd "+rigPrefix) {
+					v.DeliveryPhases[i].QAVerifyCommand = strings.Replace(q, "cd "+rigPrefix, "cd .", 1)
+				} else if !strings.Contains(lower, "cd .") && !strings.Contains(lower, "cd ") {
+					v.DeliveryPhases[i].QAVerifyCommand = "cd . && " + q
+				}
+			}
+		}
 		v.LayoutRoot = "."
 		layout = "."
 	}
