@@ -142,9 +142,130 @@ func ClampProfileValidation(v WorkflowValidation) WorkflowValidation {
 		v.MinPlanBytes = minPlan
 	}
 	v = FinalizeDeliveryPhases(v)
+	v = validatePhaseVerifyCommands(v)
 	v = InjectSQLiteSchemaBead(v)
 	v = SanitizeRigFlowProfile(v)
 	return v
+}
+
+// validatePhaseVerifyCommands ensures each delivery phase's QA verify command can run
+// with the files provided by that phase and its dependencies. If a phase's command
+// references tools/scripts not available (e.g., "npm test" without test script in
+// package.json), it adds the missing files to the phase's required_files.
+func validatePhaseVerifyCommands(v WorkflowValidation) WorkflowValidation {
+	if !v.HasPhasedDelivery() {
+		return v
+	}
+	for i := range v.DeliveryPhases {
+		cmd := strings.TrimSpace(v.DeliveryPhases[i].QAVerifyCommand)
+		if cmd == "" {
+			continue
+		}
+		// npm test requires package.json with "test" script
+		if strings.Contains(cmd, "npm test") || strings.Contains(cmd, "npm run test") {
+			hasPackageJSON := false
+			for _, f := range v.DeliveryPhases[i].RequiredFiles {
+				if strings.HasSuffix(f, "package.json") {
+					hasPackageJSON = true
+					break
+				}
+			}
+			if !hasPackageJSON {
+				// Check earlier phases for package.json
+				found := false
+				for j := 0; j < i; j++ {
+					for _, f := range v.DeliveryPhases[j].RequiredFiles {
+						if strings.HasSuffix(f, "package.json") {
+							found = true
+							break
+						}
+					}
+					if found {
+						break
+					}
+				}
+				if !found && len(v.DeliveryPhases[i].RequiredFiles) > 0 {
+					// Find the correct package.json location - for frontend, it should be at the project root
+					// not in src/. Look for the most likely project root from the phase's files.
+					base := findProjectRootForNPM(v.DeliveryPhases[i].RequiredFiles)
+					if base == "" {
+						base = filepath.Dir(v.DeliveryPhases[i].RequiredFiles[0])
+					}
+					if base == "." {
+						v.DeliveryPhases[i].RequiredFiles = append(v.DeliveryPhases[i].RequiredFiles, "package.json")
+					} else {
+						v.DeliveryPhases[i].RequiredFiles = append(v.DeliveryPhases[i].RequiredFiles, base+"/package.json")
+					}
+				}
+			}
+		}
+		// pytest requires pyproject.toml
+		if strings.Contains(cmd, "pytest") {
+			hasPyproject := false
+			for _, f := range v.DeliveryPhases[i].RequiredFiles {
+				if strings.HasSuffix(f, "pyproject.toml") {
+					hasPyproject = true
+					break
+				}
+			}
+			if !hasPyproject {
+				found := false
+				for j := 0; j < i; j++ {
+					for _, f := range v.DeliveryPhases[j].RequiredFiles {
+						if strings.HasSuffix(f, "pyproject.toml") {
+							found = true
+							break
+						}
+					}
+					if found {
+						break
+					}
+				}
+				if !found && len(v.DeliveryPhases[i].RequiredFiles) > 0 {
+					base := filepath.Dir(v.DeliveryPhases[i].RequiredFiles[0])
+					if base == "." {
+						v.DeliveryPhases[i].RequiredFiles = append(v.DeliveryPhases[i].RequiredFiles, "pyproject.toml")
+					} else {
+						v.DeliveryPhases[i].RequiredFiles = append(v.DeliveryPhases[i].RequiredFiles, base+"/pyproject.toml")
+					}
+				}
+			}
+		}
+	}
+	return v
+}
+
+// findProjectRootForNPM determines the correct project root for npm commands.
+// It avoids placing package.json in src/ subdirectories by finding the most
+// likely project root from the phase's required files.
+func findProjectRootForNPM(files []string) string {
+	// Common patterns for project roots in frontend projects
+	for _, f := range files {
+		dir := filepath.Dir(f)
+		// Look for common frontend project root indicators
+		parts := strings.Split(dir, "/")
+		for i := len(parts) - 1; i >= 0; i-- {
+			if parts[i] == "frontend" || parts[i] == "app" || parts[i] == "web" {
+				// The project root is likely the parent of this directory
+				if i > 0 {
+					return strings.Join(parts[:i+1], "/")
+				}
+			}
+		}
+	}
+	// Fallback: find the shortest common directory path that isn't "src"
+	for _, f := range files {
+		dir := filepath.Dir(f)
+		parts := strings.Split(dir, "/")
+		for i := len(parts) - 1; i >= 0; i-- {
+			if parts[i] == "src" {
+				if i > 0 {
+					return strings.Join(parts[:i], "/")
+				}
+			}
+		}
+	}
+	return ""
 }
 
 // ClampProfileValidationForRig applies ClampProfileValidation and, when architecture.md exists,
