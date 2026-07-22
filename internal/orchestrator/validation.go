@@ -143,6 +143,10 @@ func ClampProfileValidation(v WorkflowValidation) WorkflowValidation {
 	}
 	v = FinalizeDeliveryPhases(v)
 	v = validatePhaseVerifyCommands(v)
+	v.RequiredFiles = deduplicateRequiredFiles(v.RequiredFiles)
+	for i := range v.DeliveryPhases {
+		v.DeliveryPhases[i].RequiredFiles = deduplicateRequiredFiles(v.DeliveryPhases[i].RequiredFiles)
+	}
 	v = InjectSQLiteSchemaBead(v)
 	v = SanitizeRigFlowProfile(v)
 	return v
@@ -266,6 +270,37 @@ func findProjectRootForNPM(files []string) string {
 		}
 	}
 	return ""
+}
+
+// deduplicateRequiredFiles removes obviously incorrect nested paths when the
+// correct parent path is already present. E.g., if both "X/package.json" and
+// "X/src/package.json" are in the list, the src/ one is wrong (the LLM placed
+// the file at the wrong depth).
+func deduplicateRequiredFiles(files []string) []string {
+	// Build a set of all files for O(1) lookup
+	fileSet := make(map[string]bool, len(files))
+	for _, f := range files {
+		fileSet[f] = true
+	}
+	out := make([]string, 0, len(files))
+	for _, f := range files {
+		dir := filepath.Dir(f)
+		base := filepath.Base(f)
+		parts := strings.Split(dir, "/")
+		// Walk up one level: if X/Y/file exists and X/file also exists, skip this one
+		skip := false
+		if len(parts) >= 2 {
+			parentDir := strings.Join(parts[:len(parts)-1], "/")
+			parentPath := parentDir + "/" + base
+			if fileSet[parentPath] && parentPath != f {
+				skip = true
+			}
+		}
+		if !skip {
+			out = append(out, f)
+		}
+	}
+	return out
 }
 
 // ClampProfileValidationForRig applies ClampProfileValidation and, when architecture.md exists,
