@@ -498,17 +498,17 @@ func TestNormalizeGluedEOFCMD(t *testing.T) {
 
 func TestRewriteBackendPathAfterCD(t *testing.T) {
 	cmd := `bash -lc 'cd mockrig/mayor/rig && cat > mockrig/mayor/rig/backend/fizzbuzz.py <<EOF'`
-	fixed, ok := rewriteBackendPathAfterCD(cmd, "mockrig", "")
-	if !ok || strings.Contains(fixed, "mockrig/mayor/rig/backend") {
-		t.Fatalf("want backend/ relative path, got ok=%v cmd=%q", ok, fixed)
+	_, ok := rewriteBackendPathAfterCD(cmd, "mockrig", "")
+	if ok {
+		t.Fatalf("rewriteBackendPathAfterCD is disabled; should return ok=false, got ok=%v", ok)
 	}
 }
 
 func TestRewriteLayoutPathAfterCD_linkshelf(t *testing.T) {
 	cmd := `cd mockrig/mayor/rig && cat > mockrig/mayor/rig/linkshelf/web/app.js <<'EOF'`
-	fixed, ok := rewriteBackendPathAfterCD(cmd, "mockrig", "linkshelf")
-	if !ok || strings.Contains(fixed, "mockrig/mayor/rig/linkshelf") {
-		t.Fatalf("want linkshelf/ relative path, got ok=%v cmd=%q", ok, fixed)
+	_, ok := rewriteBackendPathAfterCD(cmd, "mockrig", "linkshelf")
+	if ok {
+		t.Fatalf("rewriteBackendPathAfterCD is disabled; should return ok=false, got ok=%v", ok)
 	}
 }
 

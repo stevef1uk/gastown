@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -57,6 +59,11 @@ func TestValidateImplementationFencedCodeGuard_rejectsVerify(t *testing.T) {
 
 func TestProcessOrchestratedTools_tutorialTurnRejectsVerify(t *testing.T) {
 	t.Parallel()
+	dir := t.TempDir()
+	rigDir := filepath.Join(dir, "testgt3", "mayor", "rig")
+	if err := os.MkdirAll(rigDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
 	task := &orchestrator.Task{
 		State: "implementation",
 		Hooks: orchestrator.StateHooks{
@@ -70,7 +77,7 @@ func TestProcessOrchestratedTools_tutorialTurnRejectsVerify(t *testing.T) {
 			BeadTitleContains: "Implement linkshelf/",
 		},
 	}
-	r := newStateRunner(task, t.TempDir(), "testgt3")
+	r := newStateRunner(task, dir, "testgt3")
 	r.track.activeBead = "te-de1"
 	var combined strings.Builder
 	_, _, cmdCount := r.processOrchestratedTools(handlersTutorialTurn, "sess", &combined)

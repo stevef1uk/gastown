@@ -23,6 +23,7 @@ func TestValidateQAArtifacts_rejectsStubs(t *testing.T) {
 		"myapp/frontend/game/renderer.js": "def render():\n    pass\n",
 		"myapp/backend/main.py":           "def hello():\n    return 'Hello'\n",
 		"myapp/backend/requirements.txt":  "flask\n",
+		"myapp/backend/pyproject.toml":    "[tool.pytest.ini_options]\n",
 	}
 	for rel, body := range files {
 		path := filepath.Join(rigDir, filepath.FromSlash(rel))
