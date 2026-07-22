@@ -118,7 +118,8 @@ func PlanningDocsMisaligned(rigDir string, v WorkflowValidation) bool {
 
 // ValidatePlanningDocAlignment ensures SPEC.md, architecture.md, and plan.md agree on HTTP routes,
 // store API names, and module identity before project_setup / implementation.
-func ValidatePlanningDocAlignment(rigDir string, v WorkflowValidation) error {
+// fromState controls the triad LLM judge: only runs for "planning" or "plan_review".
+func ValidatePlanningDocAlignment(rigDir string, v WorkflowValidation, fromState ...string) error {
 	specDoc := readRigDoc(rigDir, "SPEC.md")
 	planDoc := readRigDoc(rigDir, "plan.md")
 	if strings.TrimSpace(specDoc) == "" {
@@ -138,9 +139,15 @@ func ValidatePlanningDocAlignment(rigDir string, v WorkflowValidation) error {
 	issues = append(issues, checkDocLayoutPathPrefix("plan.md", planDoc, v)...)
 
 	// Semantic triad validation using LLM judge
-	// Only run if all three documents have substantive content (>200 chars each)
+	// Only run after planning or plan_review (not project_setup/implementation where
+	// the documents are already finalized and re-validation wastes LLM calls).
+	triadState := ""
+	if len(fromState) > 0 {
+		triadState = fromState[0]
+	}
+	runTriad := triadState == "planning" || triadState == "plan_review"
 	const triadMinLength = 200
-	if len(strings.TrimSpace(specDoc)) >= triadMinLength &&
+	if runTriad && len(strings.TrimSpace(specDoc)) >= triadMinLength &&
 		len(strings.TrimSpace(archDoc)) >= triadMinLength &&
 		len(strings.TrimSpace(planDoc)) >= triadMinLength {
 		client := llm.NewClient(
