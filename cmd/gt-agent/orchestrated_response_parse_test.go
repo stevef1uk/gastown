@@ -709,3 +709,33 @@ func TestIsBeadCloseCommand_noFalsePositiveOnScopedBdList(t *testing.T) {
 		})
 	}
 }
+
+func TestUnwrapAngleBracketCMD_multilineBlock(t *testing.T) {
+	t.Parallel()
+	in := `<CMD>
+cd finally/mayor/rig && bd list --status=closed --limit=0 --filter="title:^Implement finally/"
+</CMD>
+
+<CMD>
+cd finally/mayor/rig && bd list --status=open --limit=0 --filter="title:^Implement finally/"
+</CMD>
+
+<CMD>cd finally/mayor/rig && cat SPEC.md</CMD>`
+	got := unwrapAngleBracketCMD(in)
+	if strings.Contains(got, "<CMD") || strings.Contains(got, "</CMD>") {
+		t.Fatalf("should strip CMD tags, got:\n%s", got)
+	}
+	if !strings.Contains(got, "CMD: cd finally/mayor/rig && bd list --status=closed") {
+		t.Fatalf("want first CMD extracted, got:\n%s", got)
+	}
+	if !strings.Contains(got, "CMD: cd finally/mayor/rig && bd list --status=open") {
+		t.Fatalf("want second CMD extracted, got:\n%s", got)
+	}
+	if !strings.Contains(got, "CMD: cd finally/mayor/rig && cat SPEC.md") {
+		t.Fatalf("want inline CMD extracted, got:\n%s", got)
+	}
+	cmds := parseOrchestratedCommands(in)
+	if len(cmds) != 3 {
+		t.Fatalf("want 3 cmds parsed, got %d: %v", len(cmds), cmds)
+	}
+}

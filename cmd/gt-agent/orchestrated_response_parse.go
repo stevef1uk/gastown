@@ -192,19 +192,23 @@ func unwrapJSONToolCallCommand(response string) string {
 	return response
 }
 
-// unwrapAngleBracketCMD converts `<CMD: command>` and `<CMD: command</CMD>` to `CMD: command`.
+// unwrapAngleBracketCMD converts `<CMD: command>`, `<CMD: command</CMD>`, and
+// multi-line `<CMD>\ncommand\n</CMD>` to `CMD: command`.
 // Some models emit XML-style tags around CMD lines instead of the plain CMD: prefix.
 func unwrapAngleBracketCMD(response string) string {
-	if !strings.Contains(response, "<CMD:") && !strings.Contains(response, "<cmd:") {
+	if !strings.Contains(response, "<CMD:") && !strings.Contains(response, "<cmd:") &&
+		!strings.Contains(response, "<CMD>") && !strings.Contains(response, "<cmd>") {
 		return response
 	}
 	var out []string
+	inCMDBlock := false
 	for _, line := range strings.Split(response, "\n") {
 		trimmed := strings.TrimSpace(line)
+		upper := strings.ToUpper(trimmed)
 		if strings.HasPrefix(trimmed, "</CMD>") || strings.HasPrefix(trimmed, "</cmd>") {
+			inCMDBlock = false
 			continue
 		}
-		upper := strings.ToUpper(trimmed)
 		if strings.HasPrefix(upper, "<CMD:") {
 			inner := strings.TrimSpace(trimmed[5:]) // after "<CMD:"
 			// Strip trailing `>` (self-closing tag) or `</CMD>` (tag pair).
@@ -217,6 +221,27 @@ func unwrapAngleBracketCMD(response string) string {
 				out = append(out, "CMD: "+inner)
 				continue
 			}
+		}
+		if upper == "<CMD>" || upper == "<CMD />" {
+			inCMDBlock = true
+			continue
+		}
+		// Handle inline <CMD>text</CMD> on a single line.
+		if strings.HasPrefix(upper, "<CMD>") && strings.Contains(upper, "</CMD>") {
+			inner := strings.TrimSpace(trimmed[5:]) // after "<CMD>"
+			if idx := strings.Index(strings.ToUpper(inner), "</CMD>"); idx >= 0 {
+				inner = strings.TrimSpace(inner[:idx])
+			}
+			if inner != "" {
+				out = append(out, "CMD: "+inner)
+				continue
+			}
+		}
+		if inCMDBlock {
+			if trimmed != "" {
+				out = append(out, "CMD: "+trimmed)
+			}
+			continue
 		}
 		out = append(out, line)
 	}
