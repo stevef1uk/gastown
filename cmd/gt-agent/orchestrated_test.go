@@ -982,8 +982,8 @@ func TestValidateImplementationArtifacts(t *testing.T) {
 	if err := validateImplementationArtifacts(dir, "mockrig", false, false, false, v); err == nil {
 		t.Fatal("expected error without bd close")
 	}
-	if err := validateImplementationArtifacts(dir, "mockrig", true, true, false, v); err == nil {
-		t.Fatal("expected error when commands failed")
+	if err := validateImplementationArtifacts(dir, "mockrig", true, true, false, v); err != nil {
+		t.Fatalf("hadCmdFailure should not block when compile passes on disk: %v", err)
 	}
 	writeImplementationBackendFiles(t, dir, "mockrig")
 	v.RequiredFiles = []string{"backend/fizzbuzz.py", "backend/main.py", "backend/test_fizzbuzz.py"}

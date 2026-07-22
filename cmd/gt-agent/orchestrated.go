@@ -2228,11 +2228,10 @@ func validateImplementationArtifacts(townRoot, rig string, hadCmdFailure, beadCl
 		return fmt.Errorf("%d open implement bead(s) remain — run `bd close <id>` (bead is written and verify passes), then send JSON success. Use `bd list --status=open` for bead IDs", openImpl)
 	}
 	if hadCmdFailure {
-		// Re-check on-disk compilation — the failure may have been from an orphaned
+		// Re-check on-disk state — the failure may have been from an orphaned
 		// file that the agent already fixed, or a transient issue that resolved.
-		// For Go rigs: only block if open beads remain or compile still fails.
-		// For other rigs: block unconditionally (no on-disk re-check available).
-		if !orchestrator.WorkflowUsesGo(scoped) || openImpl > 0 || orchestrator.ImplementationModuleCompileOK(rigDir, scoped) != nil {
+		// Block only if open beads remain or compile/check still fails.
+		if openImpl > 0 || orchestrator.ImplementationModuleCompileOK(rigDir, scoped) != nil {
 			return fmt.Errorf("implementation step had failed commands; fix errors before completing")
 		}
 	}
