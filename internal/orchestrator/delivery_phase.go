@@ -961,8 +961,20 @@ func TryAdvanceDeliveryPhaseAfterQA(townRoot, rig string) (redirected bool, from
 			fromID = strings.TrimSpace(p.ID)
 		}
 	}
-	nextID, has := full.NextDeliveryPhaseID()
-	if !has {
+	// Capture the phase list from the first load so spec-index re-runs
+	// mid-session don't change which phase we advance from/to.
+	phaseIDs := make([]string, len(full.DeliveryPhases))
+	for i, p := range full.DeliveryPhases {
+		phaseIDs[i] = strings.TrimSpace(p.ID)
+	}
+	nextID := ""
+	for i, id := range phaseIDs {
+		if id == fromID && i+1 < len(phaseIDs) {
+			nextID = phaseIDs[i+1]
+			break
+		}
+	}
+	if nextID == "" {
 		return false, fromID, "", "", nil
 	}
 	if err := SetRigActivePhase(townRoot, rig, nextID); err != nil {
