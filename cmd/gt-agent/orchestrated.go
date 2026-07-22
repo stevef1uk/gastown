@@ -1243,31 +1243,12 @@ func hasSymlinkWithRelativeTarget(cmd string) bool {
 // rewriteBackendPathAfterCD fixes paths like rig/mayor/rig/<layout>/... after cd into mayor/rig.
 // Uses profile layout_root when set; otherwise "backend" for legacy Python rigs.
 func rewriteBackendPathAfterCD(cmd, rig, layoutRoot string) (string, bool) {
-	if hasSymlinkWithRelativeTarget(cmd) {
-		return cmd, false
-	}
-	rigName := strings.TrimSpace(rig)
-	layout := strings.Trim(strings.TrimSpace(layoutRoot), "/")
-	if layout == "" || layout == "." {
-		layout = "backend"
-	}
-	if rigName == "" {
-		return cmd, false
-	}
-	mayorRig := rigName + "/mayor/rig"
-	lower := strings.ToLower(cmd)
-	needle := strings.ToLower(layout) + "/"
-	if !strings.Contains(lower, needle) || !strings.Contains(lower, "cd ") {
-		return cmd, false
-	}
-	if !strings.Contains(lower, strings.ToLower(mayorRig)) {
-		return cmd, false
-	}
-	wrong := mayorRig + "/" + layout + "/"
-	if !strings.Contains(cmd, wrong) {
-		return cmd, false
-	}
-	return strings.ReplaceAll(cmd, wrong, layout+"/"), true
+	// Disabled: CWD is town root (not mayor/rig), so the full path including
+	// mayor/rig/ is correct. Stripping it produces a path that doesn't exist.
+	_ = cmd
+	_ = rig
+	_ = layoutRoot
+	return cmd, false
 }
 
 // cdPrefixMayorRig prepends `cd <rig>/mayor/rig &&` to bare CMD: lines that lack a cd prefix
