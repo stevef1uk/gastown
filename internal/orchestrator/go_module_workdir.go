@@ -219,5 +219,11 @@ func GoModuleWorkPathRelative(mayorRigRel, layoutRoot string) string {
 	if fi, err := os.Stat(filepath.Join(mayorRigRel, "go.mod")); err == nil && !fi.IsDir() {
 		return mayorRigRel
 	}
+	// When neither path has a go.mod, fall back to mayorRigRel if nested would be
+	// circular (layout root is already the rig name, e.g. finally/mayor/rig/finally).
+	// Otherwise return nested so Go projects get the layout subdir as workdir.
+	if layoutRoot == filepath.Base(mayorRigRel) || strings.HasPrefix(mayorRigRel+"/", layoutRoot+"/") {
+		return mayorRigRel
+	}
 	return nested
 }
