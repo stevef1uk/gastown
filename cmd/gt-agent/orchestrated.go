@@ -242,6 +242,7 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 	if err := ensureLLMReachableForImplementation(ctx, client, task, maxTurns); err != nil {
 		return "failure", err.Error(), "", err
 	}
+	var qaCmdsRan bool
 	for turn := 1; turn <= maxTurns; turn++ {
 		if rig != "" && orchestrator.IsRigWorkflowPaused(townRoot, rig) {
 			return "failure", "workflow paused", lastAttemptFeedback.String(), orchestrator.ErrWorkflowPaused
@@ -282,6 +283,7 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 			continue
 		}
 		if cmdCount > 0 || hadNative {
+			qaCmdsRan = true
 			var feedbackBuilder strings.Builder
 			feedbackBuilder.WriteString(combined.String())
 			recordAttemptFeedback(feedbackBuilder.String())
@@ -373,6 +375,15 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 
 		if o, s, ok := parseOrchestratedResult(response, task.AllowedOutcomes); ok {
 			o = normalizeOrchestratedOutcome(o, task.AllowedOutcomes)
+			if task.State == "qa_review" && !qaCmdsRan {
+				orchestratedPrintf("[gt-agent] rejecting QA outcome on turn %d — no commands executed yet; run verify first\n", turn)
+				msg := "You reported a result without running any commands. You MUST execute the verify command first:\n" +
+					"CMD: cd {{rig}}/mayor/rig && {{qa_verify_command}}\n\n" +
+					"Then report the actual output as your summary. Do NOT guess or assume — run the command and report what it says."
+				recordAttemptFeedback(msg + "\n")
+				messages = append(messages, llm.Message{Role: "user", Content: msg})
+				continue
+			}
 			if isOrchestratedFailureOutcome(o) && runner.hooks.Artifacts == "planning" {
 				if vErr := runner.validateArtifacts("success"); vErr == nil {
 					minPlan := orchestrator.EffectiveMinPlanBytes(rigMayorRigDir(townRoot, rig), runner.v)
