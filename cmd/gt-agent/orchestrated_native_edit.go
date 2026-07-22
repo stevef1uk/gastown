@@ -511,6 +511,25 @@ func (r *stateRunner) appendAutoReadAfterEditSearchMiss(combined *strings.Builde
 	combined.WriteString(fmt.Sprintf("Retry **EDIT:** %s with `<<<<<<< SEARCH` copied exactly from Auto-READ above (or ### Current file on disk), then run Verify.\n\n", relPath))
 }
 
+// removeCaseInsensitiveDuplicate removes a file with the same name (case-insensitive)
+// in the same directory. On Linux (case-sensitive fs), both "app.tsx" and "App.tsx" can
+// coexist, causing TypeScript compilation errors. This ensures only one exists.
+func removeCaseInsensitiveDuplicate(abs string) {
+	dir := filepath.Dir(abs)
+	base := filepath.Base(abs)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+	lower := strings.ToLower(base)
+	for _, e := range entries {
+		if strings.ToLower(e.Name()) == lower && e.Name() != base {
+			_ = os.Remove(filepath.Join(dir, e.Name()))
+			orchestratedPrintf("[gt-agent] removed case-insensitive duplicate: %s (kept %s)\n", e.Name(), base)
+		}
+	}
+}
+
 func (r *stateRunner) executeNativeEditOp(op nativeEditOp, workDir string) (string, error) {
 	if strings.EqualFold(strings.TrimSpace(r.hooks.Track), "qa") && (op.kind == "edit" || op.kind == "write") {
 		return "", fmt.Errorf("QA must not use EDIT/WRITE on implementation files — send outcome failure so the polecat can fix them")
@@ -597,6 +616,7 @@ func (r *stateRunner) executeNativeEditOp(op nativeEditOp, workDir string) (stri
 		if err := orchestrator.ValidateImplementExportedSymbols(r.mayorRigWorkDir(), rel, content, r.v, r.task.State == "implementation"); err != nil {
 			return "", err
 		}
+		removeCaseInsensitiveDuplicate(abs)
 		if err := os.WriteFile(abs, []byte(content), 0644); err != nil {
 			return "", err
 		}
@@ -693,6 +713,7 @@ func applyNativeSearchReplaceValidated(relPath, abs, search, replace string) (st
 	if err != nil {
 		return "", err
 	}
+	removeCaseInsensitiveDuplicate(abs)
 	if err := os.WriteFile(abs, []byte(updated), 0644); err != nil {
 		return "", err
 	}
@@ -808,6 +829,7 @@ func applyUnifiedDiffPatch(filePath, diffBody string) (string, error) {
 	if patched == string(orig) {
 		return "", fmt.Errorf("patch applied no changes")
 	}
+	removeCaseInsensitiveDuplicate(filePath)
 	if err := os.WriteFile(filePath, []byte(patched), 0644); err != nil {
 		return "", fmt.Errorf("patch write: %w", err)
 	}
