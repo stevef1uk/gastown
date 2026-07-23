@@ -25,6 +25,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -392,45 +393,37 @@ func EnsureTestStackReadyLog(townRoot, rig string, v WorkflowValidation) (string
 		}
 	}
 
-	// Check package.json for required dev deps
+	// Check package.json for required dev deps and install missing ones with npm.
 	pkgPath := filepath.Join(layoutDir, "package.json")
 	if data, err := os.ReadFile(pkgPath); err == nil {
 		var pkg map[string]interface{}
 		if json.Unmarshal(data, &pkg) == nil {
-			deps := map[string]bool{}
+			existing := map[string]bool{}
 			if dd, ok := pkg["devDependencies"].(map[string]interface{}); ok {
 				for k := range dd {
-					deps[k] = true
+					existing[k] = true
 				}
 			}
-			required := map[string]string{
-				"@types/jest":               "^29.5.0",
-				"ts-jest":                   "^29.1.0",
-				"babel-jest":                "^29.7.0",
-				"@babel/preset-env":         "^7.24.0",
-				"@babel/preset-typescript":  "^7.24.0",
-				"@babel/preset-react":       "^7.24.0",
-				"identity-obj-proxy":        "^3.0.0",
-				"jest-environment-jsdom":    "^29.7.0",
+			required := []string{
+				"@types/jest", "ts-jest", "babel-jest", "@babel/preset-env",
+				"@babel/preset-typescript", "@babel/preset-react", "identity-obj-proxy",
+				"jest-environment-jsdom",
 			}
-			missing := []string{}
-			for d := range required {
-				if !deps[d] {
+			var missing []string
+			for _, d := range required {
+				if !existing[d] {
 					missing = append(missing, d)
 				}
 			}
 			if len(missing) > 0 {
-				if pkg["devDependencies"] == nil {
-					pkg["devDependencies"] = map[string]interface{}{}
+				args := append([]string{"install", "--save-dev"}, missing...)
+				cmd := exec.Command("npm", args...)
+				cmd.Dir = layoutDir
+				if out, err := cmd.CombinedOutput(); err != nil {
+					actions = append(actions, fmt.Sprintf("npm install --save-dev failed for %s: %v\n%s", strings.Join(missing, ", "), err, string(out)))
+				} else {
+					actions = append(actions, fmt.Sprintf("npm install --save-dev %s", strings.Join(missing, ", ")))
 				}
-				dd := pkg["devDependencies"].(map[string]interface{})
-				for _, d := range missing {
-					dd[d] = required[d]
-				}
-				pkg["devDependencies"] = dd
-				newData, _ := json.MarshalIndent(pkg, "", "  ")
-				os.WriteFile(pkgPath, newData, 0644)
-				actions = append(actions, fmt.Sprintf("package.json: added missing deps: %s", strings.Join(missing, ", ")))
 			}
 		}
 	}
