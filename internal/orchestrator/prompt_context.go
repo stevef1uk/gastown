@@ -157,8 +157,8 @@ func FormatPhaseTestGuards(townRoot, rig string, v WorkflowValidation) string {
 		b.WriteString("  - **tsconfig.json:** Add `\"isolatedModules\": true` to compilerOptions. Without this, `ts-jest` emits `TS151002` warning and module resolution can fail.\n")
 		b.WriteString("  - **Install dev deps:** `@types/jest`, `ts-jest` (or use `babel-jest` with `@babel/preset-typescript`), `identity-obj-proxy` for CSS modules.\n")
 		b.WriteString("  - **jest.config.js:** Use `babel-jest` (not `ts-jest`) for faster transforms. Set `transformIgnorePatterns: ['/node_modules/(?!(recharts|@recharts)/)']` for ESM packages. Add `haste: { throwOnModuleCollision: false }` to silence naming collisions between `package.json` and `src/package.json`.\n")
-		b.WriteString("  - **babel.config.js:** Use `@babel/preset-env` with `targets: { node: 'current' }`, `@babel/preset-react` with `runtime: 'automatic'`, `@babel/preset-typescript`. Add `@babel/preset-env` for ESM transpilation.\n")
-		b.WriteString("  - **Install dev deps:** `@types/jest`, `@types/react`, `@types/react-dom`, `@babel/preset-env`, `@babel/preset-react`, `@babel/preset-typescript`, `babel-jest`, `identity-obj-proxy`, `jest-environment-jsdom`, `ts-jest` (optional, if not using babel-jest).\n")
+		b.WriteString("  - **babel.config.js:** Use `@babel/preset-env` (^7.24.0) with `targets: { node: 'current' }`, `@babel/preset-react` with `runtime: 'automatic'`, `@babel/preset-typescript`. Add `@babel/preset-env` for ESM transpilation.\n")
+		b.WriteString("  - **Install dev deps:** `@types/jest` (^29.5), `@types/react`, `@types/react-dom`, `@babel/preset-env` (^7.24, NOT ^29), `@babel/preset-react` (^7.24), `@babel/preset-typescript` (^7.24), `babel-jest` (^29.7), `identity-obj-proxy` (^3.0), `jest-environment-jsdom` (^29.7), `ts-jest` (^29.1, optional).\n")
 		b.WriteString("  - **Test file imports:** Import components from `../components/Component` (relative to test file), NOT `../src/components/Component`. Test files live in `src/__tests__/`.\n")
 		b.WriteString("  - **Component props:** Always pass required props in tests (e.g., `<PriceFlash priceChange={0} />`). TypeScript enforces this.\n")
 		b.WriteString("  - **Jest setup:** Create `jest.setup.ts` with `@testing-library/jest-dom` import and any polyfills (EventSource, etc.). Reference it in `jest.config.js` via `setupFilesAfterLoad`.\n")
@@ -403,13 +403,18 @@ func EnsureTestStackReadyLog(townRoot, rig string, v WorkflowValidation) (string
 					deps[k] = true
 				}
 			}
-			required := []string{
-				"@types/jest", "ts-jest", "babel-jest", "@babel/preset-env",
-				"@babel/preset-typescript", "@babel/preset-react", "identity-obj-proxy",
-				"jest-environment-jsdom", "ts-jest",
+			required := map[string]string{
+				"@types/jest":               "^29.5.0",
+				"ts-jest":                   "^29.1.0",
+				"babel-jest":                "^29.7.0",
+				"@babel/preset-env":         "^7.24.0",
+				"@babel/preset-typescript":  "^7.24.0",
+				"@babel/preset-react":       "^7.24.0",
+				"identity-obj-proxy":        "^3.0.0",
+				"jest-environment-jsdom":    "^29.7.0",
 			}
 			missing := []string{}
-			for _, d := range required {
+			for d := range required {
 				if !deps[d] {
 					missing = append(missing, d)
 				}
@@ -420,7 +425,7 @@ func EnsureTestStackReadyLog(townRoot, rig string, v WorkflowValidation) (string
 				}
 				dd := pkg["devDependencies"].(map[string]interface{})
 				for _, d := range missing {
-					dd[d] = "^29.0.0"
+					dd[d] = required[d]
 				}
 				pkg["devDependencies"] = dd
 				newData, _ := json.MarshalIndent(pkg, "", "  ")
