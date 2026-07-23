@@ -1299,6 +1299,13 @@ func orchestratedCommandTimeout(cmd string) time.Duration {
 	if strings.Contains(lower, "pip install") || strings.Contains(lower, "go mod") {
 		return 2 * time.Minute
 	}
+	// npm install can be slow; npm run build needs time for large frontends.
+	if strings.Contains(lower, "npm install") {
+		return 60 * time.Second
+	}
+	if strings.Contains(lower, "npm run") || strings.Contains(lower, "npx") {
+		return 30 * time.Second
+	}
 	return 60 * time.Second
 }
 
