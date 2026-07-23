@@ -307,19 +307,26 @@ func unwrapDSMLToolCalls(response string) string {
 	return response + "\n" + strings.Join(out, "\n")
 }
 
-// splitDSMLBlocks finds all <DSML>...</DSML> blocks in a string.
+// splitDSMLBlocks finds all DSML blocks in a string (both <DSML> and <｜DSML｜ formats).
 func splitDSMLBlocks(s string) []string {
 	var blocks []string
 	for {
-		start := strings.Index(s, "<DSML")
+		// Try <｜DSML｜ first (DeepSeek v4 full-width bar format)
+		start := strings.Index(s, "<\uFF5CDSML\uFF5C")
+		endTag := "</\uFF5CDSML\uFF5C"
+		if start < 0 {
+			// Fall back to original <DSML format
+			start = strings.Index(s, "<DSML")
+			endTag = "</DSML>"
+		}
 		if start < 0 {
 			break
 		}
-		end := strings.Index(s[start:], "</DSML>")
+		end := strings.Index(s[start:], endTag)
 		if end < 0 {
 			break
 		}
-		end += start + 7 // len("</DSML>")
+		end += start + len(endTag)
 		blocks = append(blocks, s[start:end])
 		s = s[end:]
 	}
@@ -1105,6 +1112,432 @@ func isStrayFileTerminatorLine(line string) bool {
 	return strings.EqualFold(t, nativeEditWriteEnd) ||
 		strings.EqualFold(t, "---END EDIT---") ||
 		strings.EqualFold(t, "---END WRITE---")
+}
+
+// ToolCall represents an extracted tool invocation from any format.
+type ToolCall struct {
+	Tool    string
+	Content string
+}
+
+var ff = "\uFF5C"
+
+// mapToolName maps various LLM tool names to canonical codes.
+func mapToolName(name string) string {
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "bash", "cmd", "command", "cmdi", "shell":
+		return "CMD"
+	case "read", "read_file":
+		return "READ"
+	case "write", "write_file", "wf":
+		return "WRITE"
+	case "edit", "edit_file", "ef":
+		return "EDIT"
+	default:
+		return ""
+	}
+}
+
+// parseOrchestrated tries all sub-parsers in priority order and combines unique results.
+func parseOrchestrated(s string) []ToolCall {
+	var result []ToolCall
+	seen := make(map[string]bool)
+	add := func(tcs []ToolCall) {
+		for _, tc := range tcs {
+			key := tc.Tool + ":" + tc.Content
+			if !seen[key] {
+				seen[key] = true
+				result = append(result, tc)
+			}
+		}
+	}
+	add(parseDSML(s))
+	add(parseFunctionXML(s))
+	add(parseCmdTag(s))
+	add(parseJSON(s))
+	add(parseMarkdownFence(s))
+	return result
+}
+
+func findToolName(block string) string {
+	// Try <invoke name="X"> or <｜DSML｜invoke name="X"
+	prefixes := []string{`<invoke name="`, `<` + ff + `DSML` + ff + `invoke name="`}
+	for _, p := range prefixes {
+		i := strings.Index(block, p)
+		if i >= 0 {
+			start := i + len(p)
+			end := strings.IndexByte(block[start:], '"')
+			if end >= 0 {
+				return block[start : start+end]
+			}
+		}
+	}
+	return ""
+}
+
+func extractDSMLParams(block string) map[string]string {
+	params := make(map[string]string)
+	// Standard <parameter name="X" ...>content</parameter>
+	paramPattern := `<parameter name="`
+	rest := block
+	for {
+		i := strings.Index(rest, paramPattern)
+		if i < 0 {
+			break
+		}
+		rest = rest[i+len(paramPattern):]
+		j := strings.IndexByte(rest, '"')
+		if j < 0 {
+			break
+		}
+		name := rest[:j]
+		rest = rest[j+1:]
+		gt := strings.IndexByte(rest, '>')
+		if gt < 0 {
+			break
+		}
+		content := rest[gt+1:]
+		closeTag := "</parameter>"
+		k := strings.Index(content, closeTag)
+		if k >= 0 {
+			params[name] = content[:k]
+			rest = content[k+len(closeTag):]
+		}
+	}
+	// DSML style: ｜DSML｜parameter name="X" ...>content</｜DSML｜parameter>
+	dsmlPattern := ff + `DSML` + ff + `parameter name="`
+	rest = block
+	for {
+		i := strings.Index(rest, dsmlPattern)
+		if i < 0 {
+			break
+		}
+		rest = rest[i+len(dsmlPattern):]
+		j := strings.IndexByte(rest, '"')
+		if j < 0 {
+			break
+		}
+		name := rest[:j]
+		rest = rest[j+1:]
+		gt := strings.IndexByte(rest, '>')
+		if gt < 0 {
+			break
+		}
+		content := rest[gt+1:]
+		closeTag := "</" + ff + `DSML` + ff + `parameter>`
+		k := strings.Index(content, closeTag)
+		if k >= 0 {
+			params[name] = content[:k]
+			rest = content[k+len(closeTag):]
+		}
+	}
+	return params
+}
+
+func extractDSMLParamByTool(params map[string]string, tool string) string {
+	var keys []string
+	switch tool {
+	case "CMD":
+		keys = []string{"command", "cmd", "bash"}
+	case "READ", "WRITE", "EDIT":
+		keys = []string{"file_path", "path", "fp"}
+	}
+	for _, k := range keys {
+		if v, ok := params[k]; ok && v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+func extractStandardDSMLBlock(block string) ToolCall {
+	toolName := findToolName(block)
+	if toolName == "" {
+		return ToolCall{}
+	}
+	tool := mapToolName(toolName)
+	if tool == "" {
+		return ToolCall{}
+	}
+	params := extractDSMLParams(block)
+	content := extractDSMLParamByTool(params, tool)
+	if content == "" {
+		return ToolCall{}
+	}
+	return ToolCall{Tool: tool, Content: content}
+}
+
+func extractDeepSeekDSMLBlock(block string) []ToolCall {
+	var result []ToolCall
+	lines := strings.Split(block, "\n")
+	for i := 0; i < len(lines); i++ {
+		trimmed := strings.TrimSpace(lines[i])
+		invokePrefix := "<" + ff + `DSML` + ff + `invoke name="`
+		if !strings.HasPrefix(trimmed, invokePrefix) {
+			continue
+		}
+		rest := trimmed[len(invokePrefix):]
+		end := strings.IndexByte(rest, '"')
+		if end < 0 {
+			continue
+		}
+		toolName := rest[:end]
+		tool := mapToolName(toolName)
+		if tool == "" {
+			continue
+		}
+		// Collect all params for this invoke
+		params := make(map[string]string)
+		i++
+		for i < len(lines) {
+			inner := strings.TrimSpace(lines[i])
+			// Check for next invoke or end of wrapper
+			if strings.HasPrefix(inner, invokePrefix) ||
+				strings.HasPrefix(inner, "</"+ff+"DSML"+ff+"tool_calls>") {
+				i--
+				break
+			}
+			// Check for close invoke marker
+			if strings.HasPrefix(inner, "/"+ff+"DSML"+ff+"invoke") ||
+				strings.HasPrefix(inner, "</"+ff+"DSML"+ff+"invoke>") {
+				break
+			}
+			// Extract parameter content
+			lineParams := extractDSMLParams(lines[i])
+			for k, v := range lineParams {
+				params[k] = v
+			}
+			i++
+		}
+		content := extractDSMLParamByTool(params, tool)
+		if content != "" {
+			result = append(result, ToolCall{Tool: tool, Content: content})
+		}
+	}
+	return result
+}
+
+func parseDSML(s string) []ToolCall {
+	var result []ToolCall
+	remain := s
+	for {
+		// Try DeepSeek v4 format first: <｜DSML｜tool_calls>...</｜DSML｜tool_calls>
+		dsmlWrapper := "<" + ff + `DSML` + ff + `tool_calls>`
+		dsmlEnd := "</" + ff + `DSML` + ff + `tool_calls>`
+		start := strings.Index(remain, dsmlWrapper)
+		endTag := dsmlEnd
+		if start < 0 {
+			// Try standard: <DSML>...</DSML>
+			start = strings.Index(remain, "<DSML")
+			endTag = "</DSML>"
+		}
+		if start < 0 {
+			break
+		}
+		end := strings.Index(remain[start:], endTag)
+		if end < 0 {
+			break
+		}
+		end += start + len(endTag)
+		block := remain[start:end]
+		if endTag == dsmlEnd {
+			result = append(result, extractDeepSeekDSMLBlock(block)...)
+		} else {
+			if tc := extractStandardDSMLBlock(block); tc.Tool != "" {
+				result = append(result, tc)
+			}
+		}
+		remain = remain[end:]
+	}
+	return result
+}
+
+func parseFunctionXML(s string) []ToolCall {
+	var result []ToolCall
+	remain := s
+	for {
+		start := strings.Index(remain, "<invoke")
+		if start < 0 {
+			break
+		}
+		end := strings.Index(remain[start:], "</invoke>")
+		if end < 0 {
+			break
+		}
+		end += start + len("</invoke>")
+		block := remain[start:end]
+		tc := extractStandardDSMLBlock(block)
+		if tc.Tool != "" {
+			result = append(result, tc)
+		}
+		remain = remain[end:]
+	}
+	return result
+}
+
+func parseCmdTag(s string) []ToolCall {
+	var result []ToolCall
+	remain := s
+	for {
+		start := strings.Index(remain, "<cmd>")
+		if start < 0 {
+			start = strings.Index(remain, "<CMD>")
+		}
+		if start < 0 {
+			break
+		}
+		end := strings.Index(remain[start:], "</cmd>")
+		if end < 0 {
+			end = strings.Index(remain[start:], "</CMD>")
+		}
+		if end < 0 {
+			break
+		}
+		end += start
+		content := strings.TrimSpace(remain[start+5 : end])
+		if content == "" {
+			remain = remain[end:]
+			continue
+		}
+		result = append(result, ToolCall{Tool: "CMD", Content: content})
+		remain = remain[end:]
+	}
+	return result
+}
+
+func parseJSON(s string) []ToolCall {
+	clean := s
+	// Strip markdown code fence if present
+	if strings.HasPrefix(clean, "```") || strings.HasPrefix(clean, "````") {
+		lines := strings.Split(clean, "\n")
+		first := strings.TrimSpace(lines[0])
+		lang := strings.TrimSpace(first[3:])
+		if strings.ToLower(lang) == "json" || lang == "" {
+			// Find closing fence
+			for i := len(lines) - 1; i > 0; i-- {
+				if strings.TrimSpace(lines[i]) == "```" {
+					clean = strings.TrimSpace(strings.Join(lines[1:i], "\n"))
+					break
+				}
+			}
+		}
+	}
+
+	// Try tool_calls format first
+	var toolCallsObj struct {
+		ToolCalls []struct {
+			Name string                 `json:"name"`
+			Args map[string]interface{} `json:"args"`
+		} `json:"tool_calls"`
+	}
+
+	if err := json.Unmarshal([]byte(clean), &toolCallsObj); err == nil && len(toolCallsObj.ToolCalls) > 0 {
+		var result []ToolCall
+		for _, tc := range toolCallsObj.ToolCalls {
+			tool := mapToolName(tc.Name)
+			if tool == "" {
+				continue
+			}
+			content := ""
+			keys := []string{"cmd", "command", "file_path", "path", "fp"}
+			for _, key := range keys {
+				if v, ok := tc.Args[key]; ok {
+					if s, ok := v.(string); ok && strings.TrimSpace(s) != "" {
+						content = strings.TrimSpace(s)
+						break
+					}
+				}
+			}
+			if content == "" {
+				continue
+			}
+			result = append(result, ToolCall{Tool: tool, Content: content})
+		}
+		return result
+	}
+
+	// Try function format: {"function":"X","args":"..."} or {"function":"X","args":{...}}
+	var funcObj struct {
+		Function string          `json:"function"`
+		Args     json.RawMessage `json:"args"`
+	}
+	if err := json.Unmarshal([]byte(clean), &funcObj); err == nil && funcObj.Function != "" {
+		tool := mapToolName(funcObj.Function)
+		if tool != "" {
+			content := ""
+			// Try args as object
+			var argsObj map[string]interface{}
+			if err := json.Unmarshal(funcObj.Args, &argsObj); err == nil {
+				keys := []string{"cmd", "command", "file_path", "path", "fp"}
+				for _, key := range keys {
+					if v, ok := argsObj[key]; ok {
+						if s, ok := v.(string); ok && strings.TrimSpace(s) != "" {
+							content = strings.TrimSpace(s)
+							break
+						}
+					}
+				}
+			} else {
+				// Try args as string (JSON string)
+				var argsStr string
+				if err := json.Unmarshal(funcObj.Args, &argsStr); err == nil {
+					var inner map[string]interface{}
+					if err := json.Unmarshal([]byte(argsStr), &inner); err == nil {
+						keys := []string{"cmd", "command", "file_path", "path", "fp"}
+						for _, key := range keys {
+							if v, ok := inner[key]; ok {
+								if s, ok := v.(string); ok && strings.TrimSpace(s) != "" {
+									content = strings.TrimSpace(s)
+									break
+								}
+							}
+						}
+					}
+				}
+			}
+			if content != "" {
+				return []ToolCall{{Tool: tool, Content: content}}
+			}
+		}
+	}
+
+	return nil
+}
+
+func parseMarkdownFence(s string) []ToolCall {
+	var result []ToolCall
+	lines := strings.Split(s, "\n")
+	i := 0
+	for i < len(lines) {
+		trimmed := strings.TrimSpace(lines[i])
+		if strings.HasPrefix(trimmed, "```") {
+			lang := strings.TrimSpace(trimmed[3:])
+			// Determine if this language indicates a tool command
+			isShellLang := false
+			switch strings.ToLower(lang) {
+			case "", "bash", "sh", "shell":
+				isShellLang = true
+			}
+			// Find closing fence
+			j := i + 1
+			for j < len(lines) {
+				if strings.TrimSpace(lines[j]) == "```" {
+					break
+				}
+				j++
+			}
+			if j < len(lines) {
+				content := strings.TrimSpace(strings.Join(lines[i+1:j], "\n"))
+				if isShellLang && content != "" {
+					result = append(result, ToolCall{Tool: "CMD", Content: content})
+				}
+				i = j + 1
+				continue
+			}
+		}
+		i++
+	}
+	return result
 }
 
 // isNativeEditArtifactLine reports EDIT/WRITE marker lines the model glued into file bodies
