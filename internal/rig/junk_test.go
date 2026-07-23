@@ -10,7 +10,6 @@ func TestRemoveMayorRigAgentJunk(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	for name, body := range map[string]string{
-		"package.json":           `{}`,
 		"test-execution-command": "#!/bin/sh\n",
 		"tests_skipped.txt":      "skip\n",
 	} {
@@ -24,15 +23,21 @@ func TestRemoveMayorRigAgentJunk(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "SPEC.md"), []byte("# spec\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(dir, "package.json"), []byte("{}"), 0644); err != nil {
+		t.Fatal(err)
+	}
 	removed, err := RemoveMayorRigAgentJunk(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(removed) < 3 {
+	if len(removed) < 2 {
 		t.Fatalf("removed = %v", removed)
 	}
 	if _, err := os.Stat(filepath.Join(dir, "SPEC.md")); err != nil {
 		t.Fatal("SPEC.md should remain")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "package.json")); err != nil {
+		t.Fatal("package.json should remain (allowed file)")
 	}
 }
 

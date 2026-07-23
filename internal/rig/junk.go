@@ -10,8 +10,6 @@ import (
 
 // mayorRigJunkFiles are agent placeholder artifacts that must never live at mayor/rig root.
 var mayorRigJunkFiles = map[string]bool{
-	"package.json":           true,
-	"package-lock.json":      true,
 	"test-execution-command": true,
 	"tests_skipped.txt":      true,
 	"spec_file_path.txt":     true,
@@ -47,6 +45,8 @@ var mayorRigRootAllowedFiles = map[string]bool{
 	"README":          true,
 	"LICENSE":         true,
 	"Containerfile":   true,
+	"package.json":    true,
+	"package-lock.json": true,
 }
 
 // IsKnownMayorRigJunkRel reports junk paths relative to mayor/rig (not under layout_root).
