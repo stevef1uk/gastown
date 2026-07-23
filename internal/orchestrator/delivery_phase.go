@@ -1007,6 +1007,62 @@ func TryAdvanceDeliveryPhaseAfterQA(townRoot, rig string) (redirected bool, from
 	return true, fromID, nextID, logLine, nil
 }
 
+// TryFastForwardDeliveryPhase advances through consecutive phases that have all beads closed,
+// stopping at the first phase with open beads (or the last phase). Returns the final phase ID.
+// This allows fast-forwarding through already-complete intermediate phases after QA passes.
+func TryFastForwardDeliveryPhase(townRoot, rig string, v WorkflowValidation) (string, error) {
+	if !v.HasPhasedDelivery() {
+		return "", nil
+	}
+	activeID := v.ActivePhaseID()
+	if activeID == "" {
+		return "", nil
+	}
+	phaseIDs := make([]string, len(v.DeliveryPhases))
+	for i, p := range v.DeliveryPhases {
+		phaseIDs[i] = strings.TrimSpace(p.ID)
+	}
+	activeIdx := -1
+	for i, id := range phaseIDs {
+		if id == activeID {
+			activeIdx = i
+			break
+		}
+	}
+	if activeIdx < 0 {
+		return "", nil
+	}
+	// Scan forward from active phase
+	for i := activeIdx; i < len(phaseIDs); i++ {
+		// Check if this phase has open beads
+		phaseFiles := v.DeliveryPhases[i].RequiredFiles
+		if len(phaseFiles) == 0 {
+			continue // skip empty phases
+		}
+		phaseValidation := v.ForActivePhase()
+		// Create a validation scoped to this phase
+		phaseValidation.DeliveryPhases = []DeliveryPhase{v.DeliveryPhases[i]}
+		open, err := ListImplementBeadsOpenOrInProgress(townRoot, rig, phaseValidation)
+		if err != nil {
+			return "", err
+		}
+		if len(open) > 0 {
+			// This phase has open beads - stop here
+			if i != activeIdx {
+				return phaseIDs[i], SetRigActivePhase(townRoot, rig, phaseIDs[i])
+			}
+			return activeID, nil
+		}
+		// All beads in this phase are closed - continue to next phase
+	}
+	// All remaining phases have no open beads - advance to last phase
+	lastID := phaseIDs[len(phaseIDs)-1]
+	if lastID != activeID {
+		return lastID, SetRigActivePhase(townRoot, rig, lastID)
+	}
+	return activeID, nil
+}
+
 // PhaseSummaryLines returns human-readable phase list for operator notices.
 func (v WorkflowValidation) PhaseSummaryLines() []string {
 	if !v.HasPhasedDelivery() {

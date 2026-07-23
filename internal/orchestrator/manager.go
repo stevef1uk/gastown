@@ -377,6 +377,29 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summa
 					Feedback:  truncateWorkflowText(preparePhaseAdvanceToPlanningFeedback(fromPhase, toPhase, full.ForActivePhase()), maxWorkflowReworkFeedback),
 				}
 			}
+			// Fast-forward: if we advanced a phase, check if further phases
+			// have no open beads and jump directly to the furthest ready phase.
+			if phaseAdvance != nil && rig != "" {
+				v := m.workflowValidationFor(inst, tpl)
+				ffPhase, ffErr := TryFastForwardDeliveryPhase(m.townRoot, rig, v)
+				if ffErr != nil {
+					fmt.Printf("[Manager] Warning: fast-forward delivery phase: %v\n", ffErr)
+				} else if ffPhase != "" && ffPhase != toPhase {
+					full2, ok2, _ := LoadRigWorkflowProfileFile(m.townRoot, rig)
+					if ok2 && full2.HasPhasedDelivery() {
+						inst.CurrentState = "planning"
+						inst.Status = "running"
+						inst.touchStateEnteredAt()
+						full2.ActivePhaseIDField = ffPhase
+						phaseAdvance = &WorkflowRework{
+							FromState: fromState,
+							Outcome:   outcome,
+							Summary:   truncateWorkflowText(summary, maxWorkflowReworkSummary),
+							Feedback:  truncateWorkflowText(preparePhaseAdvanceToPlanningFeedback(fromPhase, ffPhase, full2.ForActivePhase()), maxWorkflowReworkFeedback),
+						}
+					}
+				}
+			}
 		}
 	}
 	// Timeout keeps PendingRework even on same-state transitions (planning → planning).
