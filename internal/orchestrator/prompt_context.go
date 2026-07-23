@@ -25,7 +25,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -388,41 +387,6 @@ func EnsureTestStackReadyLog(townRoot, rig string, v WorkflowValidation) (string
 					newData, _ := json.MarshalIndent(cfg, "", "  ")
 					os.WriteFile(tsconfigPath, newData, 0644)
 					actions = append(actions, "tsconfig.json: added isolatedModules=true")
-				}
-			}
-		}
-	}
-
-	// Check package.json for required dev deps and install missing ones with npm.
-	pkgPath := filepath.Join(layoutDir, "package.json")
-	if data, err := os.ReadFile(pkgPath); err == nil {
-		var pkg map[string]interface{}
-		if json.Unmarshal(data, &pkg) == nil {
-			existing := map[string]bool{}
-			if dd, ok := pkg["devDependencies"].(map[string]interface{}); ok {
-				for k := range dd {
-					existing[k] = true
-				}
-			}
-			required := []string{
-				"@types/jest", "ts-jest", "babel-jest", "@babel/preset-env",
-				"@babel/preset-typescript", "@babel/preset-react", "identity-obj-proxy",
-				"jest-environment-jsdom",
-			}
-			var missing []string
-			for _, d := range required {
-				if !existing[d] {
-					missing = append(missing, d)
-				}
-			}
-			if len(missing) > 0 {
-				args := append([]string{"install", "--save-dev"}, missing...)
-				cmd := exec.Command("npm", args...)
-				cmd.Dir = layoutDir
-				if out, err := cmd.CombinedOutput(); err != nil {
-					actions = append(actions, fmt.Sprintf("npm install --save-dev failed for %s: %v\n%s", strings.Join(missing, ", "), err, string(out)))
-				} else {
-					actions = append(actions, fmt.Sprintf("npm install --save-dev %s", strings.Join(missing, ", ")))
 				}
 			}
 		}
