@@ -40,6 +40,10 @@ func preprocessOrchestratedResponse(response string) string {
 	response = stripMarkdownFenceOnlyLines(response)
 	response = unwrapJSONToolCallCommand(response)
 	response = unwrapDSMLToolCalls(response)
+	response = unwrapFunctionToolCalls(response)
+	response = unwrapCmdTagToolCalls(response)
+	response = unwrapJSONToolCallsFSM(response)
+	response = unwrapMarkdownFenceToolCalls(response)
 	response = normalizeNativeEditEndLines(response)
 	return response
 }
@@ -291,74 +295,18 @@ func unwrapJSONCommandArray(response string) string {
 // unwrapDSMLToolCalls converts DSML XML tool call blocks into CMD: lines.
 // Some LLMs emit <DSML><invoke name="bash"><parameter name="command" string="true">CMD</parameter></invoke></DSML>
 func unwrapDSMLToolCalls(response string) string {
-	if !strings.Contains(response, "<DSML") {
+	if !strings.Contains(response, "<DSML") && !strings.Contains(response, ff+"DSML"+ff) {
+		return response
+	}
+	tcs := parseDSML(response)
+	if len(tcs) == 0 {
 		return response
 	}
 	var out []string
-	for _, block := range splitDSMLBlocks(response) {
-		cmd := extractDSMLCommand(block)
-		if cmd != "" {
-			out = append(out, cmd)
-		}
-	}
-	if len(out) == 0 {
-		return response
+	for _, tc := range tcs {
+		out = append(out, tc.Tool+": "+tc.Content)
 	}
 	return response + "\n" + strings.Join(out, "\n")
-}
-
-// splitDSMLBlocks finds all DSML blocks in a string (both <DSML> and <｜DSML｜ formats).
-func splitDSMLBlocks(s string) []string {
-	var blocks []string
-	for {
-		// Try <｜DSML｜ first (DeepSeek v4 full-width bar format)
-		start := strings.Index(s, "<\uFF5CDSML\uFF5C")
-		endTag := "</\uFF5CDSML\uFF5C"
-		if start < 0 {
-			// Fall back to original <DSML format
-			start = strings.Index(s, "<DSML")
-			endTag = "</DSML>"
-		}
-		if start < 0 {
-			break
-		}
-		end := strings.Index(s[start:], endTag)
-		if end < 0 {
-			break
-		}
-		end += start + len(endTag)
-		blocks = append(blocks, s[start:end])
-		s = s[end:]
-	}
-	return blocks
-}
-
-// extractDSMLCommand extracts the bash command from a DSML block.
-func extractDSMLCommand(block string) string {
-	// Try to find name="command" or name="bash" parameter
-	nameTag := `<parameter name="command" string="true">`
-	i := strings.Index(block, nameTag)
-	if i < 0 {
-		// Try name="bash"
-		nameTag = `<parameter name="bash" string="true">`
-		i = strings.Index(block, nameTag)
-	}
-	if i < 0 {
-		return ""
-	}
-	i += len(nameTag)
-	end := strings.Index(block[i:], "</parameter>")
-	if end < 0 {
-		return ""
-	}
-	cmd := strings.TrimSpace(block[i : i+end])
-	// Also try extract the invoke name to map to proper prefix
-	lower := strings.ToLower(cmd)
-	if strings.HasPrefix(lower, "read:") || strings.HasPrefix(lower, "edit:") ||
-		strings.HasPrefix(lower, "write:") || strings.HasPrefix(lower, "cmd:") {
-		return cmd
-	}
-	return "CMD: " + cmd
 }
 
 // normalizeNativeEditEndLines fixes common model typos (e.g. >>>>>> REPLACE → >>>>>>> REPLACE).
@@ -377,76 +325,63 @@ func normalizeNativeEditEndLines(response string) string {
 // unwrapFunctionToolCalls converts <Function><functionName>cmdi</functionName><functionArgs>{...}</functionArgs></Function>
 // blocks into CMD: lines. Some LLMs emit this XML format for tool calls.
 func unwrapFunctionToolCalls(response string) string {
-	if !strings.Contains(response, "<Function>") {
+	if !strings.Contains(response, "<invoke") {
+		return response
+	}
+	tcs := parseFunctionXML(response)
+	if len(tcs) == 0 {
 		return response
 	}
 	var out []string
-	for _, block := range splitFunctionBlocks(response) {
-		cmd := extractFunctionCommand(block)
-		if cmd != "" {
-			out = append(out, cmd)
-		}
-	}
-	if len(out) == 0 {
-		return response
+	for _, tc := range tcs {
+		out = append(out, tc.Tool+": "+tc.Content)
 	}
 	return response + "\n" + strings.Join(out, "\n")
 }
 
-// splitFunctionBlocks finds all <Function>...</Function> blocks in a string.
-func splitFunctionBlocks(s string) []string {
-	var blocks []string
-	for {
-		start := strings.Index(s, "<Function>")
-		if start < 0 {
-			break
-		}
-		end := strings.Index(s[start:], "</Function>")
-		if end < 0 {
-			break
-		}
-		end += start + 11 // len("</Function>")
-		blocks = append(blocks, s[start:end])
-		s = s[end:]
+func unwrapCmdTagToolCalls(response string) string {
+	if !strings.Contains(response, "<cmd>") && !strings.Contains(response, "<CMD>") {
+		return response
 	}
-	return blocks
+	tcs := parseCmdTag(response)
+	if len(tcs) == 0 {
+		return response
+	}
+	var out []string
+	for _, tc := range tcs {
+		out = append(out, tc.Tool+": "+tc.Content)
+	}
+	return response + "\n" + strings.Join(out, "\n")
 }
 
-// extractFunctionCommand extracts the command from a Function block.
-func extractFunctionCommand(block string) string {
-	// Extract functionName
-	fnStart := strings.Index(block, "<functionName>")
-	fnEnd := strings.Index(block, "</functionName>")
-	if fnStart < 0 || fnEnd < 0 || fnEnd <= fnStart {
-		return ""
+func unwrapJSONToolCallsFSM(response string) string {
+	if !strings.Contains(response, `"tool_calls"`) && !strings.Contains(response, `"function"`) {
+		return response
 	}
-	fnName := strings.TrimSpace(block[fnStart+12 : fnEnd])
+	tcs := parseJSON(response)
+	if len(tcs) == 0 {
+		return response
+	}
+	var out []string
+	for _, tc := range tcs {
+		out = append(out, tc.Tool+": "+tc.Content)
+	}
+	return response + "\n" + strings.Join(out, "\n")
+}
 
-	// Extract functionArgs
-	argsStart := strings.Index(block, "<functionArgs>")
-	argsEnd := strings.Index(block, "</functionArgs>")
-	if argsStart < 0 || argsEnd < 0 || argsEnd <= argsStart {
-		return ""
+func unwrapMarkdownFenceToolCalls(response string) string {
+	if !strings.Contains(response, "```") {
+		return response
 	}
-	argsJSON := strings.TrimSpace(block[argsStart+13 : argsEnd])
-
-	// Only handle "cmdi" function for now
-	if fnName != "cmdi" {
-		return ""
+	tcs := parseMarkdownFence(response)
+	if len(tcs) == 0 {
+		return response
 	}
-
-	// Parse JSON args to get cmd
-	var args struct {
-		Cmd string `json:"cmd"`
+	var out []string
+	for _, tc := range tcs {
+		out = append(out, tc.Tool+": "+tc.Content)
 	}
-	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
-		return ""
-	}
-	cmd := strings.TrimSpace(args.Cmd)
-	if cmd == "" {
-		return ""
-	}
-	return "CMD: " + cmd
+	return response + "\n" + strings.Join(out, "\n")
 }
 
 var gluedWriteBodyRE = regexp.MustCompile(`(?i)^(WRITE:\s*\S+)\s+(package\s|import\s|from\s|#include\b|<\?php\b)`)
