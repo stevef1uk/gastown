@@ -283,10 +283,19 @@ states:
       task_passed:
         to: implementation
       all_passed:
-        to: completed
+        to: advance_phase
       failure:
         to: implementation
       architecture_failure:
         to: design
       timeout:
         to: implementation
+  advance_phase:
+    role: ""
+    prompt_file: ""
+    instructions: "Internal: orchestrator advances delivery phase and reroutes to planning or completed."
+    hooks:
+      state_timeout_seconds: 86400
+    transitions:
+      timeout:
+        to: planning

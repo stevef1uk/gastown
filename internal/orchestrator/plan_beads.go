@@ -459,6 +459,13 @@ func isLikelyRepoFilePath(p, layoutRoot string) bool {
 	if strings.Contains(p, " ") || p == "/" || p == "." || p == "./" {
 		return false
 	}
+	if strings.HasPrefix(p, "/") {
+		return false
+	}
+
+	if strings.HasSuffix(p, "/") || strings.HasSuffix(p, "\\") {
+		return false
+	}
 	lower := strings.ToLower(p)
 	for _, prefix := range []string{"python3 ", "python ", "node ", "npm ", "npx ", "cd ", "export "} {
 		if strings.HasPrefix(lower, prefix) {
