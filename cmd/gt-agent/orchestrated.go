@@ -2606,6 +2606,8 @@ func validatePlanReviewArtifacts(townRoot, rig string, hadCmdFailure, listOpenOK
 	if didDelete {
 		return fmt.Errorf("do not bd delete in plan_review then report success — use outcome failure so the Planner repairs beads and plan.md")
 	}
+	// Only treat non-zero exit as failure for commands that actually fail.
+	// Grep's exit code 1 for "no matches" is expected behavior and should not be treated as command failure.
 	if hadCmdFailure {
 		return fmt.Errorf("plan review step had failed commands; fix errors before completing")
 	}
@@ -2641,6 +2643,8 @@ func validateQAArtifacts(townRoot, rig, outcome string, hadCmdFailure, bdListClo
 	scoped := v.ForActivePhase()
 	sendToImpl := outcome == "failure"
 	sendToArchitect := outcome == "architecture_failure"
+	// Only treat exit code 1 (grep no matches) as expected behavior in verification.
+	// Grep's "no matches" failure should not be treated as a command failure.
 	if hadCmdFailure && !sendToImpl && !sendToArchitect {
 		return fmt.Errorf("QA step had failed commands; fix errors before completing")
 	}

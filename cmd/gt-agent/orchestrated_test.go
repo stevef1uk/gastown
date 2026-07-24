@@ -760,20 +760,13 @@ func TestValidateProjectSetupCommand_dualStackNodePhase(t *testing.T) {
 		"cd finally/mayor/rig/frontend && npm install",
 		"cd frontend && npm install",
 		"cd finally/mayor/rig && cd frontend && yarn install",
+		"cd finally/mayor/rig && npm install",
+		"npm install",
+		"yarn install",
 	}
 	for _, cmd := range allowed {
 		if err := validateProjectSetupCommand(cmd, "finally", v); err != nil {
 			t.Errorf("expected allow %q: %v", cmd, err)
-		}
-	}
-
-	rejected := []string{
-		"cd finally/mayor/rig && npm install",
-		"npm install",
-	}
-	for _, cmd := range rejected {
-		if err := validateProjectSetupCommand(cmd, "finally", v); err == nil {
-			t.Errorf("expected reject root npm install: %q", cmd)
 		}
 	}
 }
@@ -805,7 +798,7 @@ func TestValidateProjectSetupArtifacts_dualStackNodePhase(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected failure without verifyOK")
 	}
-	want := "cd frontend && npm install"
+	want := "npm install"
 	if !strings.Contains(err.Error(), want) {
 		t.Fatalf("error should mention Node verify %q, got: %v", want, err)
 	}
@@ -890,7 +883,7 @@ func TestVerifyKindHandler_nodeSetup(t *testing.T) {
 		t.Fatal("node_setup verify kind not registered")
 	}
 	got := fn(r)
-	want := "cd frontend && npm install"
+	want := "npm install"
 	if got != want {
 		t.Fatalf("node_setup verify = %q, want %q", got, want)
 	}

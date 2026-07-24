@@ -929,6 +929,23 @@ func isScopedImplementBdListEmpty(cmd string, cmdErr error) bool {
 	return true
 }
 
+// isGrepExitCode1 reports whether the command is a grep invocation that exited
+// with code 1 (no matches found). This is expected behavior, not a failure.
+func isGrepExitCode1(cmd string, cmdErr error) bool {
+	if cmdErr == nil {
+		return false
+	}
+	lower := strings.ToLower(cmd)
+	if !strings.Contains(lower, "grep") {
+		return false
+	}
+	var exitErr *exec.ExitError
+	if !errors.As(cmdErr, &exitErr) || exitErr.ExitCode() != 1 {
+		return false
+	}
+	return true
+}
+
 // orchestratedWritesGoUnderLayout reports heredoc/redirect commands that write .go under layout_root.
 func orchestratedWritesGoUnderLayout(cmd string, v orchestrator.WorkflowValidation) bool {
 	layout := strings.Trim(strings.TrimSpace(v.LayoutRoot), "/")

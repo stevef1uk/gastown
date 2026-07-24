@@ -27,6 +27,7 @@ func taskHooks(task *orchestrator.Task) orchestrator.StateHooks {
 type cmdTracker struct {
 	designArchWritten bool
 	hadCmdFailure     bool
+	hadExpectedFailure bool
 	verifyOK          bool
 	beadCreateOK      bool
 	beadDeleteOK      bool
@@ -39,6 +40,7 @@ type cmdTracker struct {
 	activeBead        string
 	activeBeadPath    string
 	lastVerifyOutput  string
+	lastExitCode      *int
 	bdInfraFailed     bool
 	noDiskRejects     int
 	openBeadRejects   int
@@ -604,6 +606,9 @@ func (r *stateRunner) runShellCommand(cmd, workDir, sessionName string, env []st
 			}
 		} else {
 			r.consecutiveCmdTimeouts = 0
+		}
+		if isGrepExitCode1(cmd, err) {
+			err = nil
 		}
 	} else {
 		r.consecutiveCmdTimeouts = 0

@@ -162,7 +162,7 @@ func FormatPhaseTestGuards(townRoot, rig string, v WorkflowValidation) string {
 		b.WriteString("  - **Test file imports:** Import components from `../components/Component` (relative to test file), NOT `../src/components/Component`. Test files live in `src/__tests__/`.\n")
 		b.WriteString("  - **Component props:** Always pass required props in tests (e.g., `<PriceFlash priceChange={0} />`). TypeScript enforces this.\n")
 		b.WriteString("  - **Jest setup:** Create `jest.setup.ts` with `@testing-library/jest-dom` import and any polyfills (EventSource, etc.). Reference it in `jest.config.js` via `setupFilesAfterLoad`.\n")
-		b.WriteString("  - **Run command:** `cd {{rig}}/mayor/rig/{{layout_root}}/frontend && npm install && npx jest --no-cache` from rig root.\n")
+		b.WriteString("  - **Run command:** From the rig root (`{{rig}}/mayor/rig/`), run `npm install`, then `cd {{layout_root}} && npx jest --no-cache`.\n")
 	}
 	if hasGoTest {
 		b.WriteString("- **Go test files (`*_test.go`):** Use `package pkg_test` (external test package) for black-box tests. Import `testing` and use `t *testing.T` parameter. Run `go test -count=1 ./...` from the layout root.\n")

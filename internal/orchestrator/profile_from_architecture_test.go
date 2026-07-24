@@ -123,7 +123,7 @@ func TestFormatProjectSetupStackBlock_nodejsPhase(t *testing.T) {
 	if !strings.Contains(block, "Node.js") {
 		t.Fatalf("expected Node.js stack block, got: %s", block)
 	}
-	if !strings.Contains(block, "cd frontend && npm install") {
+	if !strings.Contains(block, "npm install") {
 		t.Fatalf("expected Node verify command in block, got: %s", block)
 	}
 	if strings.Contains(block, "Python") {

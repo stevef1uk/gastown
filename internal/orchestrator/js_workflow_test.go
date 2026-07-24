@@ -9,9 +9,9 @@ func TestNodeProjectSetupVerifyCommand(t *testing.T) {
 		want string
 	}{
 		{
-			name: "frontend subdirectory",
+			name: "frontend subdirectory — no cd for install (workspaces)",
 			v:    WorkflowValidation{QAVerifyCommand: "cd frontend && npm test"},
-			want: "cd frontend && npm install",
+			want: "npm install",
 		},
 		{
 			name: "root level npm",
@@ -19,20 +19,20 @@ func TestNodeProjectSetupVerifyCommand(t *testing.T) {
 			want: "npm install",
 		},
 		{
-			name: "app layout",
+			name: "app layout — no cd for install",
 			v:    WorkflowValidation{QAVerifyCommand: "cd app && npm test"},
-			want: "cd app && npm install",
+			want: "npm install",
 		},
 		{
-			name: "fallback to required files directory",
+			name: "no fallback to required files directory",
 			v: WorkflowValidation{
 				QAVerifyCommand: "npm test",
 				RequiredFiles:   []string{"frontend/components/Watchlist.tsx", "frontend/app/page.tsx"},
 			},
-			want: "cd frontend && npm install",
+			want: "npm install",
 		},
 		{
-			name: "no fallback when node files are at root",
+			name: "no cd when node files are at root",
 			v: WorkflowValidation{
 				QAVerifyCommand: "npm test",
 				RequiredFiles:   []string{"app.tsx", "backend/main.py"},
@@ -40,19 +40,19 @@ func TestNodeProjectSetupVerifyCommand(t *testing.T) {
 			want: "npm install",
 		},
 		{
-			name: "preserves cd prefix with multiple ands",
+			name: "no cd prefix preservation with multiple ands",
 			v:    WorkflowValidation{QAVerifyCommand: "cd frontend && npm install && npx tsc --noEmit && npm test"},
-			want: "cd frontend && npm install",
+			want: "npm install",
 		},
 		{
-			name: "yarn in subdirectory",
+			name: "yarn in subdirectory — no cd",
 			v:    WorkflowValidation{QAVerifyCommand: "cd app && yarn test"},
-			want: "cd app && yarn install",
+			want: "yarn install",
 		},
 		{
-			name: "pnpm in subdirectory",
+			name: "pnpm in subdirectory — no cd",
 			v:    WorkflowValidation{QAVerifyCommand: "cd frontend && pnpm test"},
-			want: "cd frontend && pnpm install",
+			want: "pnpm install",
 		},
 	}
 	for _, tc := range cases {
@@ -105,7 +105,7 @@ func TestProjectSetupStackKindPerPhase(t *testing.T) {
 	if got := ProjectSetupStackKind(nodeScoped); got != "nodejs" {
 		t.Errorf("frontend phase stack = %q, want nodejs", got)
 	}
-	wantNode := "cd frontend && npm install"
+	wantNode := "npm install"
 	if got := nodeScoped.ProjectSetupVerifyHint(); got != wantNode {
 		t.Errorf("frontend setup verify = %q, want %q", got, wantNode)
 	}

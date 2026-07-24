@@ -29,6 +29,8 @@ func (v WorkflowValidation) detectsNodeProject() bool {
 
 // NodeProjectSetupVerifyCommand returns the green check for project_setup only:
 // install Node dependencies (npm/yarn/pnpm install) so later tests can run.
+// Does NOT include a cd prefix — npm workspaces require install from the workspace
+// root, not from a member subdirectory.
 func NodeProjectSetupVerifyCommand(v WorkflowValidation) string {
 	base := strings.TrimSpace(v.QAVerifyCommand)
 	lower := strings.ToLower(base)
@@ -41,21 +43,6 @@ func NodeProjectSetupVerifyCommand(v WorkflowValidation) string {
 		}
 	}
 
-	// Preserve cd prefix from the QA command (e.g. "cd frontend && npm test").
-	if strings.Contains(lower, "cd ") {
-		parts := strings.SplitN(base, "&&", 2)
-		if len(parts) == 2 {
-			prefix := strings.TrimSpace(parts[0])
-			if strings.HasPrefix(strings.ToLower(prefix), "cd ") {
-				return prefix + " && " + pm + " install"
-			}
-		}
-	}
-	// If QA command has no cd prefix but required files live under a subdirectory,
-	// install there. This protects against agents running npm install at mayor/rig root.
-	if dir := nodeInstallDirFromRequiredFiles(v.RequiredFiles); dir != "" {
-		return "cd " + dir + " && " + pm + " install"
-	}
 	return pm + " install"
 }
 

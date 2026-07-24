@@ -112,9 +112,6 @@ func isLLMPlaceholderCommand(cmd string) bool {
 }
 
 func validateProjectSetupCommand(cmd, rig string, v orchestrator.WorkflowValidation) error {
-	if err := rigpkg.RejectMayorRigRootShellCommand(cmd, v.LayoutRoot); err != nil {
-		return err
-	}
 	lower := strings.ToLower(cmd)
 	if isLLMPlaceholderCommand(cmd) {
 		return fmt.Errorf("do not run markdown example placeholders — use real package names and paths")
@@ -132,9 +129,13 @@ func validateProjectSetupCommand(cmd, rig string, v orchestrator.WorkflowValidat
 	// Use full validation v (not v.ForActivePhase()) to detect all stacks.
 	// Check Node.js before Python so dual-stack rigs install both.
 	if orchestrator.WorkflowUsesNodeJS(v) {
-		// Node setup only runs package-manager installs in subdirectories.
-		// RejectMayorRigRootShellCommand already blocks root-level installs.
+		// npm workspaces require install from the workspace root, not a member
+		// subdirectory, so skip RejectMayorRigRootShellCommand for Node.js.
 		return nil
+	}
+
+	if err := rigpkg.RejectMayorRigRootShellCommand(cmd, v.LayoutRoot); err != nil {
+		return err
 	}
 	if orchestrator.WorkflowUsesPython(v) {
 		if err := validatePythonProjectSetupCommand(cmd, v); err != nil {
