@@ -355,7 +355,7 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summa
 		}
 	}
 	var phaseAdvance *WorkflowRework
-	if next == "advance_phase" {
+	if next == "advance_phase" || (next == "completed" && fromState == "qa_review" && outcome == "all_passed") {
 		advRig := ""
 		if inst.Variables != nil {
 			advRig = inst.Variables["rig"]
