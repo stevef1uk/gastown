@@ -295,7 +295,7 @@ func TestValidateQAArtifacts_requiresRuntimeSmokeWhenProfileHasWebAPI(t *testing
 	if err := os.WriteFile(filepath.Join(storeDir, "schema.go"), []byte(schemaGo), 0644); err != nil {
 		t.Fatal(err)
 	}
-	err := validateQAArtifacts(dir, rig, "all_passed", false, true, true, false, v)
+	err := validateQAArtifacts(dir, rig, "all_passed", false, true, true, false, false, v)
 	if err == nil || !strings.Contains(err.Error(), "this gt-agent session") {
 		t.Fatalf("expected live smoke requirement this session, got: %v", err)
 	}

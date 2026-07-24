@@ -181,6 +181,9 @@ var trackHandlers = map[string]trackFn{
 		if cmdErr == nil && isQAReadOnlyCommand(cmd) {
 			r.track.hadCmdFailure = false
 		}
+		if cmdErr == nil && isQAFileReadCommand(cmd) {
+			r.track.qaFilesRead = true
+		}
 	},
 }
 
@@ -204,7 +207,7 @@ var artifactValidators = map[string]artifactValidateFn{
 		return validateImplementationArtifacts(r.townRoot, r.rig, r.track.hadCmdFailure, r.track.beadCloseOK, r.track.verifyOK, r.v)
 	},
 	"qa": func(r *stateRunner, outcome string) error {
-		return validateQAArtifacts(r.townRoot, r.rig, outcome, r.track.hadCmdFailure, r.track.bdListClosedOK, r.track.unittestOK, r.track.qaSmokeOK, r.v)
+		return validateQAArtifacts(r.townRoot, r.rig, outcome, r.track.hadCmdFailure, r.track.bdListClosedOK, r.track.unittestOK, r.track.qaSmokeOK, r.track.qaFilesRead, r.v)
 	},
 }
 

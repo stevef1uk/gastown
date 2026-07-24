@@ -90,7 +90,7 @@ func TestValidateQAArtifacts_allPassedRejectsOpenPlannerTitles(t *testing.T) {
 		RequiredFiles:       []string{"linkshelf/internal/store/schema.go"},
 		QAVerifyCommand:     "cd linkshelf && go test ./internal/store/...",
 	}
-	err := validateQAArtifacts(town, rig, "all_passed", false, true, true, false, v)
+	err := validateQAArtifacts(town, rig, "all_passed", false, true, true, false, false, v)
 	if err == nil || !strings.Contains(err.Error(), "open implement bead") {
 		t.Fatalf("want all_passed blocked, got %v", err)
 	}

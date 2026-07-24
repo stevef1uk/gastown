@@ -99,6 +99,52 @@ func SetRigActivePhase(townRoot, rig, phaseID string) error {
 	return SaveRigWorkflowProfileEnvelope(townRoot, rig, env)
 }
 
+// SetRigRewoundFromPhase sets rewound_from_phase_id in workflow-profile.json.
+// This marks the phase the workflow was rewound FROM so advancement can jump
+// back to it directly instead of progressing sequentially through intermediates.
+func SetRigRewoundFromPhase(townRoot, rig, phaseID string) error {
+	if rig == "" || townRoot == "" {
+		return fmt.Errorf("town root and rig name required")
+	}
+	phaseID = strings.TrimSpace(phaseID)
+	if phaseID == "" {
+		return nil
+	}
+	path := filepath.Join(townRoot, rig, "mayor", "rig", rigProfileDir, rigProfileFile)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("read rig profile %s: %w", path, err)
+	}
+	var env rigProfileEnvelope
+	if err := json.Unmarshal(data, &env); err != nil {
+		return fmt.Errorf("decode rig profile: %w", err)
+	}
+	env.Validation.RewoundFromPhaseIDField = phaseID
+	return SaveRigWorkflowProfileEnvelope(townRoot, rig, env)
+}
+
+// ClearRigRewoundFromPhase clears rewound_from_phase_id so normal sequential
+// advancement resumes on future phase completions.
+func ClearRigRewoundFromPhase(townRoot, rig string) error {
+	if rig == "" || townRoot == "" {
+		return fmt.Errorf("town root and rig name required")
+	}
+	path := filepath.Join(townRoot, rig, "mayor", "rig", rigProfileDir, rigProfileFile)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil // file missing — nothing to clear
+	}
+	var env rigProfileEnvelope
+	if err := json.Unmarshal(data, &env); err != nil {
+		return nil // invalid JSON — nothing to clear
+	}
+	if env.Validation.RewoundFromPhaseIDField == "" {
+		return nil
+	}
+	env.Validation.RewoundFromPhaseIDField = ""
+	return SaveRigWorkflowProfileEnvelope(townRoot, rig, env)
+}
+
 // WriteRigWorkflowProfile writes a full profile envelope (used by spec-index).
 func WriteRigWorkflowProfile(townRoot, rig string, v WorkflowValidation, source, confidence string) error {
 	outDir := filepath.Join(townRoot, rig, "mayor", "rig", rigProfileDir)

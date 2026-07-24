@@ -1379,11 +1379,11 @@ func TestValidateQACommand_rejectsLayoutWrites(t *testing.T) {
 func TestValidateQAArtifacts_failureAllowsFailedSmoke(t *testing.T) {
 	v := orchestrator.DefaultWorkflowValidation()
 	v.BeadTitleContains = "Implement "
-	err := validateQAArtifacts(t.TempDir(), "r", "failure", true, true, false, false, v)
+	err := validateQAArtifacts(t.TempDir(), "r", "failure", true, true, false, false, false, v)
 	if err != nil {
 		t.Fatalf("failure outcome should pass with bd list only (failed smoke is the finding): %v", err)
 	}
-	err = validateQAArtifacts(t.TempDir(), "r", "all_passed", true, true, false, false, v)
+	err = validateQAArtifacts(t.TempDir(), "r", "all_passed", true, true, false, false, false, v)
 	if err == nil || !strings.Contains(err.Error(), "failed commands") {
 		t.Fatalf("all_passed should reject hadCmdFailure, got %v", err)
 	}

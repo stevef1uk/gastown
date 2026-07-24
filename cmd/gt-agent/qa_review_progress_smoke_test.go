@@ -91,7 +91,7 @@ func TestQAReviewProgress_staleProgressCannotAllPassWithoutSmoke(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := validateQAArtifacts(dir, rig, "all_passed", false, true, true, false, v); err == nil || !strings.Contains(err.Error(), "this gt-agent session") {
+	if err := validateQAArtifacts(dir, rig, "all_passed", false, true, true, false, false, v); err == nil || !strings.Contains(err.Error(), "this gt-agent session") {
 		t.Fatalf("expected smoke required this session, got %v", err)
 	}
 }

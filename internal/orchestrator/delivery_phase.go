@@ -968,10 +968,22 @@ func TryAdvanceDeliveryPhaseAfterQA(townRoot, rig string) (redirected bool, from
 		phaseIDs[i] = strings.TrimSpace(p.ID)
 	}
 	nextID := ""
-	for i, id := range phaseIDs {
-		if id == fromID && i+1 < len(phaseIDs) {
-			nextID = phaseIDs[i+1]
-			break
+	// If the workflow was rewound from a later phase, jump directly back
+	// to it instead of advancing sequentially through intermediates.
+	if rp := strings.TrimSpace(full.RewoundFromPhaseIDField); rp != "" {
+		for _, id := range phaseIDs {
+			if id == rp {
+				nextID = rp
+				break
+			}
+		}
+	}
+	if nextID == "" {
+		for i, id := range phaseIDs {
+			if id == fromID && i+1 < len(phaseIDs) {
+				nextID = phaseIDs[i+1]
+				break
+			}
 		}
 	}
 	if nextID == "" {
@@ -983,6 +995,7 @@ func TryAdvanceDeliveryPhaseAfterQA(townRoot, rig string) (redirected bool, from
 	// Phase advanced on disk — from here on, always return redirected=true.
 	// Pruning and sync are best-effort; failures are warnings, not fatal.
 	redirected = true
+	_ = ClearRigRewoundFromPhase(townRoot, rig) // best-effort; carry-on
 	full, ok, err = LoadRigWorkflowProfileFile(townRoot, rig)
 	if err != nil || !ok {
 		return true, fromID, nextID, "", err

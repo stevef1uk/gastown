@@ -19,7 +19,8 @@ type WorkflowValidation struct {
 	TestRunner           string   `yaml:"test_runner" json:"test_runner"`
 	RequiredFiles        []string         `yaml:"required_files" json:"required_files"`
 	DeliveryPhases       []DeliveryPhase  `yaml:"delivery_phases" json:"delivery_phases,omitempty"`
-	ActivePhaseIDField   string           `yaml:"active_phase_id" json:"active_phase_id,omitempty"`
+	ActivePhaseIDField      string `yaml:"active_phase_id" json:"active_phase_id,omitempty"`
+	RewoundFromPhaseIDField string `yaml:"rewound_from_phase_id,omitempty" json:"rewound_from_phase_id,omitempty"`
 	SpecSummary                string   `yaml:"spec_summary" json:"spec_summary"`
 	MinArchitectureBytes       int64    `yaml:"min_architecture_bytes" json:"min_architecture_bytes"`
 	MinPlanBytes               int64    `yaml:"min_plan_bytes" json:"min_plan_bytes"`

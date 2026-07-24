@@ -48,7 +48,7 @@ func TestValidateQAArtifacts_rejectsStubs(t *testing.T) {
 		TestRunner:      "pytest",
 	}
 	v = orchestrator.ClampProfileValidation(v)
-	err := validateQAArtifacts(dir, rig, "all_passed", false, true, true, false, v)
+	err := validateQAArtifacts(dir, rig, "all_passed", false, true, true, false, false, v)
 	if err == nil {
 		t.Fatal("expected QA to reject stub files")
 	}

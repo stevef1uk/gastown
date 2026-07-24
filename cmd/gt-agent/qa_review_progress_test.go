@@ -198,7 +198,7 @@ func TestQAReviewProgress_restartSession(t *testing.T) {
 	}
 	writeLinkshelfSmokeFingerprintFixture(t, dir, rig, "<html></html>")
 	vSmoke := linkshelfSmokeValidationProfile()
-	if err := validateQAArtifacts(dir, rig, "all_passed", false, true, true, false, vSmoke); err == nil || !strings.Contains(err.Error(), "this gt-agent session") {
+	if err := validateQAArtifacts(dir, rig, "all_passed", false, true, true, false, false, vSmoke); err == nil || !strings.Contains(err.Error(), "this gt-agent session") {
 		t.Fatalf("all_passed must require smoke this session, got: %v", err)
 	}
 

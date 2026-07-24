@@ -2322,6 +2322,18 @@ func isQAReadOnlyCommand(cmd string) bool {
 	return strings.Contains(lower, "bd list")
 }
 
+// isQAFileReadCommand matches commands that read file content (without bd list).
+func isQAFileReadCommand(cmd string) bool {
+	lower := strings.ToLower(strings.TrimSpace(cmd))
+	readPrefixes := []string{"head ", "tail ", "cat ", "wc ", "ls ", "stat ", "grep ", "find "}
+	for _, p := range readPrefixes {
+		if strings.Contains(lower, p) {
+			return true
+		}
+	}
+	return false
+}
+
 func validateQARuntimeSmokeCommand(cmd, rig, townRoot string, v orchestrator.WorkflowValidation) error {
 	if townRoot == "" || rig == "" || !orchestrator.WorkflowNeedsQARuntimeSmoke(townRoot, rig, v) {
 		return nil
@@ -2639,7 +2651,7 @@ func beadIDExample(townRoot, rig string) string {
 	return prefix + "-xxx"
 }
 
-func validateQAArtifacts(townRoot, rig, outcome string, hadCmdFailure, bdListClosedOK, unittestOK, qaSmokeOK bool, v orchestrator.WorkflowValidation) error {
+func validateQAArtifacts(townRoot, rig, outcome string, hadCmdFailure, bdListClosedOK, unittestOK, qaSmokeOK, qaFilesRead bool, v orchestrator.WorkflowValidation) error {
 	scoped := v.ForActivePhase()
 	sendToImpl := outcome == "failure"
 	sendToArchitect := outcome == "architecture_failure"
@@ -2673,6 +2685,9 @@ func validateQAArtifacts(townRoot, rig, outcome string, hadCmdFailure, bdListClo
 		hasTest := strings.TrimSpace(scoped.QAVerifyCommand) != ""
 		if hasTest && !unittestOK {
 			return fmt.Errorf("run `%s` from %s before reporting QA outcome", scoped.QAVerifyHint(), rigMayorRigPath(rig))
+		}
+		if !hasTest && !qaFilesRead && !qaSmokeOK {
+			return fmt.Errorf("read at least one file (cat/head/ls/wc/grep) to confirm content before reporting QA outcome")
 		}
 		if err := validateRequiredWorkFiles(townRoot, rig, scoped); err != nil {
 			return err

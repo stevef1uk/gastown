@@ -37,6 +37,7 @@ type cmdTracker struct {
 	bdListClosedOK    bool
 	unittestOK        bool
 	qaSmokeOK        bool
+	qaFilesRead      bool
 	activeBead        string
 	activeBeadPath    string
 	lastVerifyOutput  string

@@ -1336,9 +1336,39 @@ func commandTimeoutDur(cmd string, overrideSec int) time.Duration {
 // formatSuccessCommandOutput makes successful runs visible when tools print nothing (e.g. go mod tidy).
 func formatSuccessCommandOutput(out []byte) string {
 	if strings.TrimSpace(string(out)) != "" {
-		return string(out)
+		return stripPythonVenvNoise(string(out))
 	}
 	return "(exit 0, no output)\n"
+}
+
+// stripPythonVenvNoise removes known venv .pth file errors from compileall output that
+// are harmless but confuse LLMs into trying to "fix" the virtual environment.
+func stripPythonVenvNoise(s string) string {
+	var out []string
+	for _, line := range strings.Split(s, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			out = append(out, line)
+			continue
+		}
+		if strings.Contains(trimmed, "__editable__") && strings.Contains(trimmed, ".pth") {
+			continue
+		}
+		if strings.Contains(trimmed, "distutils-precedence.pth") {
+			continue
+		}
+		if strings.Contains(trimmed, "ModuleNotFoundError: No module named '__editable__") {
+			continue
+		}
+		if strings.Contains(trimmed, "AttributeError: module '_distutils_hack' has no attribute 'add_shim'") {
+			continue
+		}
+		if trimmed == "Remainder of file ignored" {
+			continue
+		}
+		out = append(out, line)
+	}
+	return strings.Join(out, "\n")
 }
 
 // cmdFailureTracker detects repeated failures of the same command (infinite loops).

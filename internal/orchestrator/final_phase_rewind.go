@@ -53,6 +53,13 @@ func MaybeRewindToProblemPhaseForFinalPhase(townRoot, rig string, v WorkflowVali
 		return "", nil
 	}
 
+	// Save the phase we're rewinding FROM so advancement can jump back
+	// instead of progressing sequentially through intermediate phases.
+	originalPhase := v.ActivePhaseID()
+	if originalPhase != "" && originalPhase != targetPhase {
+		_ = SetRigRewoundFromPhase(townRoot, rig, originalPhase)
+	}
+
 	if err := SetRigActivePhase(townRoot, rig, targetPhase); err != nil {
 		return "", fmt.Errorf("final-phase validation found issues in %s but could not rewind active phase: %w", targetPhase, err)
 	}
