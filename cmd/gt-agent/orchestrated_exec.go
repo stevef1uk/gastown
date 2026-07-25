@@ -431,6 +431,13 @@ func rewriteUnittestToWorkdir(cmd, rig string, v orchestrator.WorkflowValidation
 		workPath = orchestrator.GoModuleWorkPathRelative(mayorRig, layout)
 	}
 	if !commandHasMayorRigCD(cmd, rig) {
+		// Strip wrong <rig>/ prefix from cd targets (e.g. "cd finally/frontend" → "cd frontend")
+		// before prepending mayor/rig. The LLM often generates <rig>-prefixed paths.
+		stripped := stripVerifyRigPrefix(cmd, rig)
+		if stripped != cmd {
+			cmd = stripped
+			changed = true
+		}
 		if !commandHasLayoutCD(cmd, layout) {
 			cmd = "cd " + workPath + " && " + stripLeadingCDDot(strings.TrimSpace(cmd))
 			changed = true
@@ -850,7 +857,31 @@ func rewriteQAMayorRigPrefix(cmd, rig string) (string, bool) {
 		return cmd, false
 	}
 	if strings.HasPrefix(lower, "cd ") {
-		return cmd, false
+		rest := strings.TrimSpace(trimmed[3:])
+		if strings.HasPrefix(rest, "/") || strings.HasPrefix(rest, "~") {
+			return cmd, false
+		}
+		restLower := strings.ToLower(rest)
+		mayorRig := strings.ToLower(rig + "/mayor/rig")
+		if strings.HasPrefix(restLower, mayorRig) {
+			return cmd, false
+		}
+		// Rewrite cd <rig>/<subdir> → cd <subdir> then prepend mayor/rig.
+		rigPrefix := strings.ToLower(rig + "/")
+		if strings.HasPrefix(restLower, rigPrefix) {
+			subdir := rest[len(rigPrefix):]
+			andIdx := strings.Index(subdir, " && ")
+			if andIdx >= 0 {
+				dir := subdir[:andIdx]
+				suffix := subdir[andIdx:]
+				mayorPath := rigMayorRigPath(rig)
+				return "cd " + mayorPath + " && cd " + dir + suffix, true
+			}
+			mayorPath := rigMayorRigPath(rig)
+			return "cd " + mayorPath + " && cd " + subdir, true
+		}
+		mayorPath := rigMayorRigPath(rig)
+		return "cd " + mayorPath + " && " + trimmed, true
 	}
 	needsPrefix := false
 	for _, p := range []string{"cat ", "head ", "tail ", "test ", "find ", "wc ", "ls ", "stat ", "grep ", "bd ", "bd\t"} {

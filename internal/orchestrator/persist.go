@@ -114,11 +114,23 @@ func (m *Manager) persistLocked() error {
 	if err != nil {
 		return err
 	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0644); err != nil {
+	dir := filepath.Dir(path)
+	f, err := os.CreateTemp(dir, instancesFileName+".*.tmp")
+	if err != nil {
+		return fmt.Errorf("create temp: %w", err)
+	}
+	tmpPath := f.Name()
+	if _, err := f.Write(data); err != nil {
+		f.Close()
+		os.Remove(tmpPath)
+		return fmt.Errorf("write temp: %w", err)
+	}
+	f.Close()
+	if err := os.Rename(tmpPath, path); err != nil {
+		os.Remove(tmpPath)
 		return err
 	}
-	return os.Rename(tmp, path)
+	return nil
 }
 
 func (m *Manager) allocateWorkflowID() string {

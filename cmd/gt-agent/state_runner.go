@@ -87,6 +87,13 @@ func newStateRunner(task *orchestrator.Task, townRoot, rig string) *stateRunner 
 	if townRoot != "" && rig != "" {
 		vars["qa_runtime_smoke_block"] = orchestrator.RigFlowQARuntimeSmokeBlock(townRoot, rig, v)
 	}
+	if rig != "" {
+		for _, key := range []string{"unittest_command_hint", "phase_qa_verify_command"} {
+			if cmd, ok := vars[key]; ok {
+				vars[key] = stripVerifyRigPrefix(cmd, rig)
+			}
+		}
+	}
 	r := &stateRunner{
 		task:       task,
 		townRoot:   townRoot,
@@ -826,13 +833,13 @@ func prepareProjectSetupVerifyCommand(verifyCmd, townRoot, rig, kind string) str
 		prefix = "{{rig}}"
 	}
 	trimmed := strings.TrimSpace(verifyCmd)
-	// If verifyCmd already starts with "cd <rig>/..." (absolute from town root), don't prepend
-	// But if it starts with "cd <relative>" (relative to rig root), we DO need the rig prefix
-	hasAbsoluteRigPath := strings.HasPrefix(trimmed, "cd "+rig+"/") ||
+	// Only treat as absolute rig path if it includes "mayor/rig" — bare "cd <rig>/<dir>"
+	// is the LLM's wrong path (e.g. "cd finally/frontend") and needs mayor/rig prepended.
+	hasMayorRigPath := strings.HasPrefix(trimmed, "cd "+rig+"/mayor/rig") ||
 		strings.HasPrefix(trimmed, "cd "+rig+" ") ||
-		strings.Contains(trimmed, "&& cd "+rig+"/") ||
+		strings.Contains(trimmed, "&& cd "+rig+"/mayor/rig") ||
 		strings.Contains(trimmed, "&& cd "+rig+" ")
-	if !hasAbsoluteRigPath && !strings.Contains(verifyCmd, prefix) && !strings.Contains(verifyCmd, rig+"/mayor/rig") {
+	if !hasMayorRigPath && !strings.Contains(verifyCmd, prefix) && !strings.Contains(verifyCmd, rig+"/mayor/rig") {
 		verifyCmd = "cd " + prefix + " && " + verifyCmd
 	}
 	if fixed, ok := rewriteOrchestratedRigPlaceholders(verifyCmd, townRoot, rig); ok {

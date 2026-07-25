@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -517,4 +518,102 @@ func goPackageNameFromPath(path string) string {
 		return parts[len(parts)-1]
 	}
 	return "main"
+}
+
+// rejectQAMissingFilesSummary blocks failure JSON when the QA agent claims required
+// files are missing but they actually exist on disk. The LLM often hallucinates that
+// SPEC.md deliverables are missing without running ls/cat to verify.
+func (r *stateRunner) rejectQAMissingFilesSummary(outcome, summary string) (string, bool) {
+	if r == nil || r.task == nil || r.task.State != "qa_review" {
+		return "", false
+	}
+	if !isOrchestratedFailureOutcome(outcome) {
+		return "", false
+	}
+	if !summaryClaimsMissingFiles(summary) {
+		return "", false
+	}
+	scoped := r.v.ForActivePhase()
+	if len(scoped.RequiredFiles) == 0 {
+		return "", false
+	}
+	rigDir := rigMayorRigDir(r.townRoot, r.rig)
+	for _, rel := range scoped.RequiredFiles {
+		path := orchestrator.ResolveRequiredFileOnDisk(rigDir, rel, scoped.LayoutRoot)
+		if _, err := os.Stat(path); err != nil {
+			return "", false // file genuinely missing — let the failure through
+		}
+	}
+	requiredList := strings.Join(scoped.RequiredFiles, ", ")
+	var b strings.Builder
+	b.WriteString("**Rejected:** you claimed required files are missing, but they exist on disk.\n\n")
+	b.WriteString("Required files for `" + scoped.ActivePhaseID() + "`:\n")
+	b.WriteString(requiredList + "\n\n")
+	b.WriteString("Run `ls -la " + requiredList + "` or `cat " + scoped.RequiredFiles[0] + "` to verify before reporting failure.\n")
+	b.WriteString("If the files exist, run the phase verify command and report the actual test outcome.")
+	return b.String(), true
+}
+
+// rejectQAVerifyPassedButOutputNoise blocks failure JSON when the LLM claims failure
+// based on non-fatal output noise (npm audit, funding notices, deprecation warnings)
+// even though the verify command exited 0. The prompt already instructs the LLM not to
+// judge by output text alone, but it often ignores this and reports audit vulnerabilities.
+func (r *stateRunner) rejectQAVerifyPassedButOutputNoise(outcome, summary string) (string, bool) {
+	if r == nil || r.task == nil || r.task.State != "qa_review" || r.track == nil {
+		return "", false
+	}
+	if !isOrchestratedFailureOutcome(outcome) {
+		return "", false
+	}
+	// Accept either auto-verify OK or no failed commands this session
+	// (the LLM's own verify command may have succeeded even if auto-verify used the old path).
+	if !r.track.verifyOK && r.track.hadCmdFailure {
+		return "", false
+	}
+	if !summaryCitesOutputNoise(summary) {
+		return "", false
+	}
+	var b strings.Builder
+	b.WriteString("**Rejected:** the verify command exited 0 — do not report failure based on output warnings like npm audit, funding notices, or deprecation messages.\n\n")
+	b.WriteString("The command's exit code determines pass/fail. If the command compiled or ran tests without errors, report `task_passed` or `all_passed`.\n")
+	b.WriteString("Re-run the verify command from step 5 in the prompt and check only the exit code, not the output text.\n")
+	return b.String(), true
+}
+
+func summaryCitesOutputNoise(summary string) bool {
+	lower := strings.ToLower(strings.TrimSpace(summary))
+	if lower == "" {
+		return false
+	}
+	for _, needle := range []string{
+		"vulnerability", "vulnerabilities", "npm audit", "high severity",
+		"funding", "deprecat", "deprecated",
+		"audit found", "security issue",
+		"errors and", "compilation issue", "typescript.lock",
+		"exit code 1", "exit code 2", "exit code 127",
+		"command failed", "not recognized",
+		"tsc compilation failed",
+	} {
+		if strings.Contains(lower, needle) {
+			return true
+		}
+	}
+	return false
+}
+
+func summaryClaimsMissingFiles(summary string) bool {
+	lower := strings.ToLower(strings.TrimSpace(summary))
+	if lower == "" {
+		return false
+	}
+	for _, needle := range []string{
+		"files missing", "file missing", "required files", "missing required",
+		"not found on disk", "files not found",
+		"cannot cd", "can't cd", "cd to", "working directory",
+	} {
+		if strings.Contains(lower, needle) {
+			return true
+		}
+	}
+	return false
 }

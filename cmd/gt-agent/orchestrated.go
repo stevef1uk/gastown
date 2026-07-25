@@ -441,6 +441,18 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 				messages = append(messages, llm.Message{Role: "user", Content: msg})
 				continue
 			}
+			if msg, reject := runner.rejectQAMissingFilesSummary(o, s); reject {
+				orchestratedPrintf("[gt-agent] rejecting QA failure — required files exist on disk\n")
+				recordAttemptFeedback(msg + "\n")
+				messages = append(messages, llm.Message{Role: "user", Content: msg})
+				continue
+			}
+			if msg, reject := runner.rejectQAVerifyPassedButOutputNoise(o, s); reject {
+				orchestratedPrintf("[gt-agent] rejecting QA failure — verify passed (exit 0), output noise only\n")
+				recordAttemptFeedback(msg + "\n")
+				messages = append(messages, llm.Message{Role: "user", Content: msg})
+				continue
+			}
 			if vErr := runner.validateArtifacts(o); vErr != nil {
 				orchestratedPrintf("[gt-agent] artifact validation failed: %v\n", vErr)
 				msg := runner.artifactFailureFeedback(vErr)
@@ -1264,7 +1276,31 @@ func cdPrefixMayorRig(cmd, rig string) (string, bool) {
 	if lower == "" {
 		return cmd, false
 	}
-	if strings.HasPrefix(lower, "cd ") || strings.HasPrefix(lower, "export ") || strings.HasPrefix(lower, "source ") {
+	if strings.HasPrefix(lower, "cd ") {
+		// Skip absolute cds and cds that already point into mayor/rig.
+		rest := strings.TrimSpace(cmd[3:])
+		if strings.HasPrefix(rest, "/") || strings.HasPrefix(rest, "~") {
+			return cmd, false
+		}
+		restLower := strings.ToLower(rest)
+		mayorRig := strings.ToLower(rig + "/mayor/rig")
+		if strings.HasPrefix(restLower, mayorRig) {
+			return cmd, false
+		}
+		// Rewrite cd <rig>/<subdir> → cd <subdir> then prepend mayor/rig.
+		// The LLM generates paths like "cd finally/frontend" which is wrong —
+		// the correct path is "cd frontend" from mayor/rig.
+		rigPrefix := strings.ToLower(rig + "/")
+		if strings.HasPrefix(restLower, rigPrefix) {
+			rest = strings.TrimSpace(rest[len(rigPrefix):])
+		}
+		andIdx := strings.Index(rest, " && ")
+		if andIdx < 0 {
+			return "cd " + rig + "/mayor/rig && cd " + rest, true
+		}
+		return "cd " + rig + "/mayor/rig && cd " + rest[:andIdx] + rest[andIdx:], true
+	}
+	if strings.HasPrefix(lower, "export ") || strings.HasPrefix(lower, "source ") {
 		return cmd, false
 	}
 	if strings.HasPrefix(lower, ". ") {
@@ -3093,7 +3129,39 @@ func orchestratorPromptVars(task *orchestrator.Task, townRoot string) map[string
 	if townRoot != "" && task.Rig != "" {
 		vars["qa_runtime_smoke_block"] = orchestrator.RigFlowQARuntimeSmokeBlock(townRoot, task.Rig, v)
 	}
+	if task.Rig != "" {
+		for _, key := range []string{"unittest_command_hint", "phase_qa_verify_command", "qa_verify_command"} {
+			if cmd, ok := vars[key]; ok {
+				vars[key] = stripVerifyRigPrefix(cmd, task.Rig)
+			}
+		}
+	}
 	return vars
+}
+
+// stripVerifyRigPrefix removes leading cd <rig>/ or cd <rig> && from verify
+// commands shown in prompts. The working directory is mayor/rig, not the rig
+// root, so cd <rig>/... paths from the profile are wrong for CMD: lines.
+func stripVerifyRigPrefix(cmd, rig string) string {
+	rig = strings.TrimSpace(rig)
+	if rig == "" {
+		return cmd
+	}
+	// cd <rig>/<subdir> && → cd <subdir> &&
+	pat := "cd " + rig + "/"
+	if idx := strings.Index(cmd, pat); idx >= 0 {
+		rest := cmd[idx+len(pat):]
+		if sIdx := strings.Index(rest, " && "); sIdx >= 0 {
+			return strings.TrimSpace(cmd[:idx] + "cd " + rest[:sIdx] + rest[sIdx:])
+		}
+		return strings.TrimSpace(cmd[:idx] + "cd " + rest)
+	}
+	// cd <rig> && → <rest>
+	pat2 := "cd " + rig + " && "
+	if idx := strings.Index(cmd, pat2); idx >= 0 {
+		return strings.TrimSpace(cmd[:idx] + cmd[idx+len(pat2):])
+	}
+	return cmd
 }
 
 func buildOrchestratedUserPrompt(task *orchestrator.Task) string {

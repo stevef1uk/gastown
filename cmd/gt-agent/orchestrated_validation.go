@@ -318,7 +318,21 @@ func commandMatchesQAVerify(cmd, verify string) bool {
 	if strings.Contains(cNorm, vNorm) {
 		return true
 	}
-	return strings.Contains(c, v)
+	if strings.Contains(c, v) {
+		return true
+	}
+	// The LLM may split &&-chained verify into separate CMD lines or add pipes/redirects.
+	// Check each token in verify independently (ignoring cd/&&/pipe/redirect noise).
+	for _, part := range strings.Split(vNorm, " && ") {
+		part = strings.TrimSpace(part)
+		if part == "" || strings.HasPrefix(part, "cd ") || strings.HasPrefix(part, "|") {
+			continue
+		}
+		if strings.Contains(cNorm, part) {
+			return true
+		}
+	}
+	return false
 }
 
 // rejectInventedBdVerifyCommand blocks the common polecat mistake `bd verify <id>` (no such subcommand).

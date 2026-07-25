@@ -85,3 +85,4 @@ CMD: cd {{rig}}/mayor/rig && ...
   - Verify must start the app/dev-server first, or use docker-compose that starts it.
   - Do not write e2e tests that assert UI elements that do not exist in the implemented `index.html` / `app.js`.
 - On Verify failure: READ the failing file and dependencies. Diagnose from error output — one sentence explanation, then fix with EDIT/WRITE.
+- **npm 10+ override rule:** If you write `package.json`, do NOT add `overrides` entries for packages already listed in `dependencies` or `devDependencies` — npm 10 rejects overrides that conflict with direct dependency version ranges. Only override transitive (nested) dependencies.

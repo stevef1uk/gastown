@@ -171,6 +171,8 @@ sync-town-config:
 		if [ ! -f "$$root/config.json" ]; then continue; fi; \
 		echo "=== Syncing town config → $$root ==="; \
 		"$$GT_BIN" config sync --town-root "$$root" || exit 1; \
+		echo "=== Syncing orchestrator templates → $$root ==="; \
+		"$$GT_BIN" orchestrator sync --town-root "$$root" --update-changed || exit 1; \
 	done
 
 # check-version-tag: Verify that if HEAD is tagged vX.Y.Z, the Version constant
