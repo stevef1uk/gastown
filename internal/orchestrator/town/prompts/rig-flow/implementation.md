@@ -23,6 +23,8 @@ $GT_ROOT/{{rig}}/mayor/rig/{{layout_root}}/  ← layout root (ALL files go here)
 
 **Scope: evaluate only the active phase.** The Queue table shows only the current phase's beads. Ignore files from later phases (SPEC/architecture may list them, but they are not your concern). If all Queue beads are closed and verify passes, return `success` — do NOT fail because files from other phases are missing.
 
+**Integration rule**: After creating new source files (components, routes, modules), update existing entry points to wire them in. For frontend apps: import new components in `page.tsx` / `layout.tsx` / `index.tsx` / equivalent. For backends: register new routes in `main.py` / `routes.py` / `app.py` / equivalent. This exception to phase scope is required — the SPEC describes a fully integrated application, and orphaned files that pass compilation but are never called produce a broken app.
+
 ## Output format (follow exactly)
 
 **New file:**
