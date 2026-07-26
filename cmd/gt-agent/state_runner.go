@@ -826,12 +826,8 @@ func prepareProjectSetupVerifyCommand(verifyCmd, townRoot, rig, kind string) str
 	if strings.TrimSpace(verifyCmd) == "" {
 		return verifyCmd
 	}
-	// node_setup: Node.js projects have package.json at rig root (townRoot/rig), not under mayor/rig
-	// python_setup/go_setup: run from mayor/rig where go.mod/pyproject.toml typically live
+	// All project setup runs from mayor/rig where source files (package.json, go.mod, pyproject.toml) live.
 	prefix := "{{rig}}/mayor/rig"
-	if kind == "node_setup" {
-		prefix = "{{rig}}"
-	}
 	trimmed := strings.TrimSpace(verifyCmd)
 	// Only treat as absolute rig path if it includes "mayor/rig" — bare "cd <rig>/<dir>"
 	// is the LLM's wrong path (e.g. "cd finally/frontend") and needs mayor/rig prepended.
