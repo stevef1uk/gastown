@@ -132,6 +132,7 @@ CRITICAL delivery_phases rules (the LLM must obey these):
 - Dockerfile, docker-compose.yml, docker-compose.test.yml, .dockerignore go in the FINAL phase only (typically "e2e-and-deployment" or similar).
 - Frontend-only phases MUST use "cd <layout_root>/frontend && npm install && npx tsc --noEmit" (typecheck only). Do NOT put Playwright/E2E tests in frontend phases.
 - Playwright/E2E tests that need a running server belong in the FINAL e2e-and-deployment phase.
+- For E2E/deployment phases that include docker-compose.test.yml or Playwright test files, use "cd <layout_root> && docker compose -f test/docker-compose.test.yml up --build --abort-on-container-exit" as qa_verify_command. Do NOT output "echo 'no verify command inferred'".
 - Keep source files and their corresponding test files (*_test.go, test_*.py) in the SAME phase so QA can verify each phase independently.
 - If the spec is small (≤12 total required_files), you MAY omit delivery_phases entirely (single-phase workflow).
 
@@ -236,8 +237,9 @@ func ValidateAndFixDeliveryPhases(phases []orchestrator.DeliveryPhase, layoutRoo
 		}
 		p.DependsOn = validDeps
 
-		// Ensure qa_verify_command exists
-		if strings.TrimSpace(p.QAVerifyCommand) == "" {
+		// Ensure qa_verify_command exists and has a real command
+		cmd := strings.TrimSpace(p.QAVerifyCommand)
+		if cmd == "" || strings.Contains(cmd, "no verify command inferred") {
 			p.QAVerifyCommand = defaultQAVerifyForPhase(p, layoutRoot)
 		}
 	}
@@ -269,7 +271,27 @@ func normalizePhaseID(s string) string {
 }
 
 func defaultQAVerifyForPhase(p *orchestrator.DeliveryPhase, layoutRoot string) string {
-	// Try to infer from required_files
+	lr := layoutRoot
+	if lr == "" {
+		lr = "."
+	}
+
+	// Check for E2E/Docker phases first (more specific)
+	hasDockerComposeTest := false
+	hasPlaywright := false
+	for _, f := range p.RequiredFiles {
+		if strings.Contains(f, "docker-compose.test") {
+			hasDockerComposeTest = true
+		}
+		if strings.Contains(f, "playwright") || strings.HasSuffix(f, ".spec.ts") {
+			hasPlaywright = true
+		}
+	}
+
+	if hasDockerComposeTest || hasPlaywright {
+		return fmt.Sprintf("cd %s && docker compose -f test/docker-compose.test.yml up --build --abort-on-container-exit", lr)
+	}
+
 	hasGo := false
 	hasPy := false
 	hasTS := false
@@ -283,11 +305,6 @@ func defaultQAVerifyForPhase(p *orchestrator.DeliveryPhase, layoutRoot string) s
 		if strings.HasSuffix(f, ".ts") || strings.HasSuffix(f, ".tsx") || strings.Contains(f, "frontend/") {
 			hasTS = true
 		}
-	}
-
-	lr := layoutRoot
-	if lr == "" {
-		lr = "."
 	}
 
 	if hasGo {
