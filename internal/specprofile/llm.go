@@ -297,6 +297,8 @@ func defaultQAVerifyForPhase(p *orchestrator.DeliveryPhase, layoutRoot string) s
 	hasGo := false
 	hasPy := false
 	hasTS := false
+	hasJS := false
+	hasTSConfig := false
 	for _, f := range p.RequiredFiles {
 		if strings.HasSuffix(f, "_test.go") || strings.HasSuffix(f, ".go") {
 			hasGo = true
@@ -306,6 +308,12 @@ func defaultQAVerifyForPhase(p *orchestrator.DeliveryPhase, layoutRoot string) s
 		}
 		if strings.HasSuffix(f, ".ts") || strings.HasSuffix(f, ".tsx") || strings.Contains(f, "frontend/") {
 			hasTS = true
+		}
+		if strings.HasSuffix(f, ".js") || strings.HasSuffix(f, ".jsx") || strings.HasSuffix(f, ".mjs") || strings.HasSuffix(f, ".cjs") {
+			hasJS = true
+		}
+		if strings.HasSuffix(f, "tsconfig.json") {
+			hasTSConfig = true
 		}
 	}
 
@@ -317,6 +325,12 @@ func defaultQAVerifyForPhase(p *orchestrator.DeliveryPhase, layoutRoot string) s
 	}
 	if hasTS {
 		return fmt.Sprintf("cd %s/frontend && npm install && npx tsc --noEmit", lr)
+	}
+	if hasJS && hasTSConfig {
+		return fmt.Sprintf("cd %s && npm install --ignore-scripts && npx tsc --noEmit", lr)
+	}
+	if hasJS {
+		return fmt.Sprintf("cd %s && npm install --ignore-scripts && npm test", lr)
 	}
 	// Fallback: use a harmless echo rather than another "no verify command inferred"
 	// placeholder, which would trigger the replacement check in ValidateAndFixDeliveryPhases

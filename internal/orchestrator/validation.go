@@ -873,6 +873,8 @@ func defaultQAVerifyForPhase(p *DeliveryPhase, layoutRoot string) string {
 	hasGo := false
 	hasPy := false
 	hasTS := false
+	hasJS := false
+	hasTSConfig := false
 	for _, f := range p.RequiredFiles {
 		if strings.HasSuffix(f, "_test.go") || strings.HasSuffix(f, ".go") {
 			hasGo = true
@@ -882,6 +884,12 @@ func defaultQAVerifyForPhase(p *DeliveryPhase, layoutRoot string) string {
 		}
 		if strings.HasSuffix(f, ".ts") || strings.HasSuffix(f, ".tsx") || strings.Contains(f, "frontend/") {
 			hasTS = true
+		}
+		if strings.HasSuffix(f, ".js") || strings.HasSuffix(f, ".jsx") || strings.HasSuffix(f, ".mjs") || strings.HasSuffix(f, ".cjs") {
+			hasJS = true
+		}
+		if strings.HasSuffix(f, "tsconfig.json") {
+			hasTSConfig = true
 		}
 	}
 
@@ -898,6 +906,12 @@ func defaultQAVerifyForPhase(p *DeliveryPhase, layoutRoot string) string {
 	}
 	if hasTS {
 		return fmt.Sprintf("cd %s/frontend && npm install && npx tsc --noEmit", lr)
+	}
+	if hasJS && hasTSConfig {
+		return fmt.Sprintf("cd %s && npm install --ignore-scripts && npx tsc --noEmit", lr)
+	}
+	if hasJS {
+		return fmt.Sprintf("cd %s && npm install --ignore-scripts && npm test", lr)
 	}
 	return fmt.Sprintf("cd %s && echo 'verify ok (no automated tests for this phase)'", lr)
 }
