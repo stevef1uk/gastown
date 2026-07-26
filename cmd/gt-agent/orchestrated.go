@@ -1093,9 +1093,10 @@ func rewriteOrchestratedRigPlaceholders(cmd, townRoot, rig string) (string, bool
 			changed = true
 		}
 	}
-	// Restore {{rig}}/mayor/rig placeholder (protected from rewriteHallucinatedAbsoluteTownRoot).
+	// Restore {{rig}}/mayor/rig placeholder to resolved rig path (the template replacements above
+	// can't match because the placeholder was substituted before they ran).
 	if strings.Contains(out, rigPlaceholder) {
-		out = strings.ReplaceAll(out, rigPlaceholder, "{{rig}}/mayor/rig")
+		out = strings.ReplaceAll(out, rigPlaceholder, work)
 		changed = true
 	}
 	// Restore .beads paths
