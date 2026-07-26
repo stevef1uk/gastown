@@ -327,10 +327,10 @@ func defaultQAVerifyForPhase(p *orchestrator.DeliveryPhase, layoutRoot string) s
 		return fmt.Sprintf("cd %s/frontend && npm install && npx tsc --noEmit", lr)
 	}
 	if hasJS && hasTSConfig {
-		return fmt.Sprintf("cd %s && npm install --ignore-scripts && npx tsc --noEmit", lr)
+		return fmt.Sprintf("cd %s && npm install && npx tsc --noEmit", lr)
 	}
 	if hasJS {
-		return fmt.Sprintf("cd %s && npm install --ignore-scripts && npm test", lr)
+		return fmt.Sprintf("cd %s && npm install && npm test", lr)
 	}
 	// Fallback: use a harmless echo rather than another "no verify command inferred"
 	// placeholder, which would trigger the replacement check in ValidateAndFixDeliveryPhases

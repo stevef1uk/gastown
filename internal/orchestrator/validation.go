@@ -205,6 +205,14 @@ func stripBogusLeadCD(cmd string, validTopDirs map[string]bool) string {
 	if after == "" {
 		return cmd
 	}
+
+	if slashIdx := strings.IndexByte(dir, '/'); slashIdx >= 0 {
+		subDir := dir[slashIdx+1:]
+		if subDir != "" {
+			after = "cd " + subDir + " && " + after
+		}
+	}
+
 	return after
 }
 
@@ -908,10 +916,10 @@ func defaultQAVerifyForPhase(p *DeliveryPhase, layoutRoot string) string {
 		return fmt.Sprintf("cd %s/frontend && npm install && npx tsc --noEmit", lr)
 	}
 	if hasJS && hasTSConfig {
-		return fmt.Sprintf("cd %s && npm install --ignore-scripts && npx tsc --noEmit", lr)
+		return fmt.Sprintf("cd %s && npm install && npx tsc --noEmit", lr)
 	}
 	if hasJS {
-		return fmt.Sprintf("cd %s && npm install --ignore-scripts && npm test", lr)
+		return fmt.Sprintf("cd %s && npm install && npm test", lr)
 	}
 	return fmt.Sprintf("cd %s && echo 'verify ok (no automated tests for this phase)'", lr)
 }
