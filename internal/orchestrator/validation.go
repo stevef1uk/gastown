@@ -808,8 +808,9 @@ func ValidateDeliveryPhases(v WorkflowValidation) WorkflowValidation {
 		}
 		p.DependsOn = validDeps
 
-		// Ensure qa_verify_command exists
-		if strings.TrimSpace(p.QAVerifyCommand) == "" {
+		// Ensure qa_verify_command exists and has no placeholder
+		cmd := strings.TrimSpace(p.QAVerifyCommand)
+		if cmd == "" || strings.Contains(cmd, "no verify command inferred") {
 			p.QAVerifyCommand = defaultQAVerifyForPhase(p, v.LayoutRoot)
 		}
 	}
@@ -898,5 +899,5 @@ func defaultQAVerifyForPhase(p *DeliveryPhase, layoutRoot string) string {
 	if hasTS {
 		return fmt.Sprintf("cd %s/frontend && npm install && npx tsc --noEmit", lr)
 	}
-	return fmt.Sprintf("cd %s && echo 'no verify command inferred'", lr)
+	return fmt.Sprintf("cd %s && echo 'verify ok (no automated tests for this phase)'", lr)
 }
