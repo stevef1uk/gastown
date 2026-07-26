@@ -156,10 +156,10 @@ func ClampProfileValidation(v WorkflowValidation) WorkflowValidation {
 }
 
 // StripInvalidCDPrefixes removes leading "cd <dir> && " from verify commands when layout_root
-// is empty (".") and <dir> is not a real subdirectory of the project. This catches LLM
+// is empty or "." and <dir> is not a real subdirectory of the project. This catches LLM
 // output that uses the rig name (e.g. "cd finally") instead of layout_root.
 func StripInvalidCDPrefixes(v WorkflowValidation) WorkflowValidation {
-	if v.LayoutRoot != "" {
+	if v.LayoutRoot != "" && v.LayoutRoot != "." {
 		return v
 	}
 	topDirs := make(map[string]bool)
@@ -169,9 +169,9 @@ func StripInvalidCDPrefixes(v WorkflowValidation) WorkflowValidation {
 		}
 	}
 
-	v.QAVerifyCommand = stripBogusLeadCD(v.QAVerifyCommand, topDirs)
+	v.QAVerifyCommand = stripNestedBogusCD(stripBogusLeadCD(v.QAVerifyCommand, topDirs), topDirs)
 	for i := range v.DeliveryPhases {
-		v.DeliveryPhases[i].QAVerifyCommand = stripBogusLeadCD(v.DeliveryPhases[i].QAVerifyCommand, topDirs)
+		v.DeliveryPhases[i].QAVerifyCommand = stripNestedBogusCD(stripBogusLeadCD(v.DeliveryPhases[i].QAVerifyCommand, topDirs), topDirs)
 	}
 	return v
 }
@@ -214,6 +214,53 @@ func stripBogusLeadCD(cmd string, validTopDirs map[string]bool) string {
 	}
 
 	return after
+}
+
+// stripNestedBogusCD removes any remaining "cd <bogus>/" references buried inside
+// a verify command (e.g. "cd frontend && cd finally/frontend && npm install").
+// It uses the same validTopDirs check: if a cd target's first component is not
+// a known project directory, the cd is replaced with its subpath or removed.
+// stripNestedBogusCD removes "cd <bogus_dir>" segments from a &&-chained command
+// where <bogus_dir>'s first component is not a known project directory. It targets
+// patterns like "cd frontend && cd finally/frontend && npm install" and rewrites
+// them to "cd frontend && npm install".
+func stripNestedBogusCD(cmd string, validTopDirs map[string]bool) string {
+	for {
+		idx := strings.Index(cmd, "&& cd ")
+		if idx < 0 {
+			break
+		}
+		segment := cmd[idx+5:]
+		spaceIdx := strings.IndexByte(segment[3:], ' ')
+		if spaceIdx < 0 {
+			break
+		}
+		segment = segment[3:]
+		spaceIdx = strings.IndexByte(segment, ' ')
+		dir := segment[:spaceIdx]
+		firstComp := dir
+		if slashIdx := strings.IndexByte(dir, '/'); slashIdx >= 0 {
+			firstComp = dir[:slashIdx]
+		}
+		if validTopDirs[firstComp] || firstComp == "." || firstComp == ".." {
+			break
+		}
+		afterCD := segment[spaceIdx+1:]
+		afterCD = strings.TrimPrefix(strings.TrimSpace(afterCD), "&& ")
+		afterCD = strings.TrimSpace(afterCD)
+		if afterCD == "" {
+			return strings.TrimSpace(cmd[:idx])
+		}
+		if slashIdx := strings.IndexByte(dir, '/'); slashIdx >= 0 {
+			subDir := dir[slashIdx+1:]
+			if subDir != "" {
+				cmd = strings.TrimSpace(cmd[:idx]) + " && cd " + subDir + " && " + afterCD
+				continue
+			}
+		}
+		cmd = strings.TrimSpace(cmd[:idx]) + " && " + afterCD
+	}
+	return cmd
 }
 
 // validatePhaseVerifyCommands ensures each delivery phase's QA verify command can run
