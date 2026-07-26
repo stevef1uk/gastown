@@ -663,7 +663,7 @@ func (m *Manager) prepareImplementationPhase(rig string, inst *WorkflowInstance,
 func validateTemplateSchema(tpl *WorkflowTemplate, filename string) string {
 	var missing []string
 	for name, st := range tpl.States {
-		if st.Role == "" {
+		if st.Role == "" && st.PromptFile != "" {
 			missing = append(missing, name)
 		}
 	}

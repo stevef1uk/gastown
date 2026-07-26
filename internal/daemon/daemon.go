@@ -429,6 +429,9 @@ func (d *Daemon) Run() (err error) {
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, daemonSignals()...)
 
+	// Start zombie reaper to prevent accumulation of defunct child processes
+	startZombieReaper(d.logger)
+
 	// Fixed recovery-focused heartbeat (no activity-based backoff)
 	// Normal wake is handled by feed subscription (bd activity --follow)
 	timer := time.NewTimer(d.recoveryHeartbeatInterval())
