@@ -124,6 +124,17 @@ Rules:
 
 CRITICAL: The agent's working directory when running QA commands is $GT_ROOT/<rig>/mayor/rig/. All qa_verify_command values (root and per-phase) must be relative to that directory. For example, if layout_root is "finally", the command should be "cd finally/frontend && npm test" NOT "cd frontend && npm test".
 
+CRITICAL delivery_phases rules (the LLM must obey these):
+- Every phase MUST have a qa_verify_command (non-empty string). Phases without verification will fail.
+- depends_on MUST reference only phase IDs that exist in the same delivery_phases array. Use the exact "id" string from another phase object.
+- Phase IDs must be unique, lowercase, kebab-case (e.g. "backend-core-db", "frontend-ui-1").
+- Order phases by dependency: earlier phases listed first, later phases depend on earlier ones.
+- Dockerfile, docker-compose.yml, docker-compose.test.yml, .dockerignore go in the FINAL phase only (typically "e2e-and-deployment" or similar).
+- Frontend-only phases MUST use "cd <layout_root>/frontend && npm install && npx tsc --noEmit" (typecheck only). Do NOT put Playwright/E2E tests in frontend phases.
+- Playwright/E2E tests that need a running server belong in the FINAL e2e-and-deployment phase.
+- Keep source files and their corresponding test files (*_test.go, test_*.py) in the SAME phase so QA can verify each phase independently.
+- If the spec is small (≤12 total required_files), you MAY omit delivery_phases entirely (single-phase workflow).
+
 Output JSON only.`
 }
 
@@ -165,10 +176,129 @@ func parseSpecIndexPayload(content string) (orchestrator.WorkflowValidation, str
 	if v.LayoutRoot == "." {
 		v.LayoutRoot = ""
 	}
+
+	// Validate and fix delivery_phases for internal consistency
+	if len(v.DeliveryPhases) > 0 {
+		v.DeliveryPhases = ValidateAndFixDeliveryPhases(v.DeliveryPhases, v.LayoutRoot)
+	}
+
 	v = orchestrator.ClampProfileValidation(orchestrator.NormalizeLayoutProfile(v))
 	conf := strings.TrimSpace(payload.Confidence)
 	if conf == "" {
 		conf = "medium"
 	}
 	return v, conf, nil
+}
+
+// ValidateAndFixDeliveryPhases sanitizes LLM output for internal consistency.
+// Ensures: unique kebab-case IDs, valid depends_on refs, every phase has qa_verify_command.
+func ValidateAndFixDeliveryPhases(phases []orchestrator.DeliveryPhase, layoutRoot string) []orchestrator.DeliveryPhase {
+	if len(phases) == 0 {
+		return phases
+	}
+
+	// Build ID set and map
+	idSet := make(map[string]bool, len(phases))
+	idMap := make(map[string]*orchestrator.DeliveryPhase, len(phases))
+	for i := range phases {
+		id := strings.TrimSpace(phases[i].ID)
+		if id == "" {
+			// Generate from title
+			id = strings.ToLower(strings.ReplaceAll(strings.TrimSpace(phases[i].Title), " ", "-"))
+			id = strings.Trim(id, "-")
+		}
+		// Normalize to kebab-case
+		id = normalizePhaseID(id)
+		// Ensure uniqueness
+		base := id
+		suffix := 2
+		for idSet[id] {
+			id = fmt.Sprintf("%s-%d", base, suffix)
+			suffix++
+		}
+		idSet[id] = true
+		phases[i].ID = id
+		idMap[id] = &phases[i]
+	}
+
+	// Validate depends_on
+	for i := range phases {
+		p := &phases[i]
+		var validDeps []string
+		for _, dep := range p.DependsOn {
+			dep = strings.TrimSpace(dep)
+			if dep == "" {
+				continue
+			}
+			if idSet[dep] {
+				validDeps = append(validDeps, dep)
+			}
+		}
+		p.DependsOn = validDeps
+
+		// Ensure qa_verify_command exists
+		if strings.TrimSpace(p.QAVerifyCommand) == "" {
+			p.QAVerifyCommand = defaultQAVerifyForPhase(p, layoutRoot)
+		}
+	}
+
+	return phases
+}
+
+func normalizePhaseID(s string) string {
+	s = strings.ToLower(s)
+	// Replace spaces and underscores with hyphens
+	s = strings.ReplaceAll(s, " ", "-")
+	s = strings.ReplaceAll(s, "_", "-")
+	// Remove non-alphanumeric/hyphen
+	var b strings.Builder
+	for _, r := range s {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' {
+			b.WriteRune(r)
+		}
+	}
+	s = strings.Trim(b.String(), "-")
+	// Collapse multiple hyphens
+	for strings.Contains(s, "--") {
+		s = strings.ReplaceAll(s, "--", "-")
+	}
+	if s == "" {
+		s = "phase"
+	}
+	return s
+}
+
+func defaultQAVerifyForPhase(p *orchestrator.DeliveryPhase, layoutRoot string) string {
+	// Try to infer from required_files
+	hasGo := false
+	hasPy := false
+	hasTS := false
+	for _, f := range p.RequiredFiles {
+		if strings.HasSuffix(f, "_test.go") || strings.HasSuffix(f, ".go") {
+			hasGo = true
+		}
+		if strings.HasSuffix(f, ".py") || strings.HasPrefix(f, "tests/") {
+			hasPy = true
+		}
+		if strings.HasSuffix(f, ".ts") || strings.HasSuffix(f, ".tsx") || strings.Contains(f, "frontend/") {
+			hasTS = true
+		}
+	}
+
+	lr := layoutRoot
+	if lr == "" {
+		lr = "."
+	}
+
+	if hasGo {
+		return fmt.Sprintf("cd %s && go test ./...", lr)
+	}
+	if hasPy {
+		return fmt.Sprintf("cd %s && python -m pytest -v", lr)
+	}
+	if hasTS {
+		return fmt.Sprintf("cd %s/frontend && npm install && npx tsc --noEmit", lr)
+	}
+	// Fallback
+	return fmt.Sprintf("cd %s && echo 'no verify command inferred'", lr)
 }

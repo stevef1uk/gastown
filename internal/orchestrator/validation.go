@@ -150,6 +150,7 @@ func ClampProfileValidation(v WorkflowValidation) WorkflowValidation {
 	}
 	v = InjectSQLiteSchemaBead(v)
 	v = SanitizeRigFlowProfile(v)
+	v = ValidateDeliveryPhases(v)
 	return v
 }
 
@@ -699,4 +700,149 @@ func NormalizePipCommand(cmd string) string {
 	}
 	re := regexp.MustCompile(`(?i)(^|[;&|]\s*|\s+)pip\b`)
 	return re.ReplaceAllString(cmd, `${1}python3 -m pip`)
+}
+
+// ValidateDeliveryPhases enforces internal consistency on delivery_phases from spec-index or hand-edited profiles.
+// Rules:
+//   - Phase IDs must be unique, lowercase, kebab-case
+//   - depends_on must only reference phase IDs that exist in the same array
+//   - Every phase MUST have a non-empty qa_verify_command
+//   - Dockerfile/docker-compose files go in the final phase only
+func ValidateDeliveryPhases(v WorkflowValidation) WorkflowValidation {
+	if len(v.DeliveryPhases) == 0 {
+		return v
+	}
+
+	// Build ID set and map
+	idSet := make(map[string]bool, len(v.DeliveryPhases))
+	idMap := make(map[string]*DeliveryPhase, len(v.DeliveryPhases))
+	for i := range v.DeliveryPhases {
+		id := strings.TrimSpace(v.DeliveryPhases[i].ID)
+		if id == "" {
+			// Generate from title
+			id = strings.ToLower(strings.ReplaceAll(strings.TrimSpace(v.DeliveryPhases[i].Title), " ", "-"))
+			id = strings.Trim(id, "-")
+		}
+		// Normalize to kebab-case
+		id = normalizePhaseID(id)
+		// Ensure uniqueness
+		base := id
+		suffix := 2
+		for idSet[id] {
+			id = fmt.Sprintf("%s-%d", base, suffix)
+			suffix++
+		}
+		idSet[id] = true
+		v.DeliveryPhases[i].ID = id
+		idMap[id] = &v.DeliveryPhases[i]
+	}
+
+	// Validate depends_on and qa_verify_command
+	for i := range v.DeliveryPhases {
+		p := &v.DeliveryPhases[i]
+
+		// Validate depends_on - only keep references to existing phase IDs
+		var validDeps []string
+		for _, dep := range p.DependsOn {
+			dep = strings.TrimSpace(dep)
+			if dep == "" {
+				continue
+			}
+			if idSet[dep] {
+				validDeps = append(validDeps, dep)
+			}
+		}
+		p.DependsOn = validDeps
+
+		// Ensure qa_verify_command exists
+		if strings.TrimSpace(p.QAVerifyCommand) == "" {
+			p.QAVerifyCommand = defaultQAVerifyForPhase(p, v.LayoutRoot)
+		}
+	}
+
+	// Ensure Docker/compose files only in final phase (if multiple phases)
+	if len(v.DeliveryPhases) > 1 {
+		lastPhase := &v.DeliveryPhases[len(v.DeliveryPhases)-1]
+		for i := 0; i < len(v.DeliveryPhases)-1; i++ {
+			p := &v.DeliveryPhases[i]
+			var filtered []string
+			for _, f := range p.RequiredFiles {
+				lower := strings.ToLower(f)
+				if strings.Contains(lower, "dockerfile") ||
+					strings.Contains(lower, "docker-compose") ||
+					strings.Contains(lower, ".dockerignore") {
+					// Move to last phase
+					lastPhase.RequiredFiles = append(lastPhase.RequiredFiles, f)
+					continue
+				}
+				filtered = append(filtered, f)
+			}
+			p.RequiredFiles = filtered
+		}
+		// Deduplicate last phase
+		seen := make(map[string]bool, len(lastPhase.RequiredFiles))
+		deduped := make([]string, 0, len(lastPhase.RequiredFiles))
+		for _, f := range lastPhase.RequiredFiles {
+			if !seen[f] {
+				seen[f] = true
+				deduped = append(deduped, f)
+			}
+		}
+		lastPhase.RequiredFiles = deduped
+	}
+
+	return v
+}
+
+func normalizePhaseID(s string) string {
+	s = strings.ToLower(s)
+	s = strings.ReplaceAll(s, " ", "-")
+	s = strings.ReplaceAll(s, "_", "-")
+	var b strings.Builder
+	for _, r := range s {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' {
+			b.WriteRune(r)
+		}
+	}
+	s = strings.Trim(b.String(), "-")
+	for strings.Contains(s, "--") {
+		s = strings.ReplaceAll(s, "--", "-")
+	}
+	if s == "" {
+		s = "phase"
+	}
+	return s
+}
+
+func defaultQAVerifyForPhase(p *DeliveryPhase, layoutRoot string) string {
+	hasGo := false
+	hasPy := false
+	hasTS := false
+	for _, f := range p.RequiredFiles {
+		if strings.HasSuffix(f, "_test.go") || strings.HasSuffix(f, ".go") {
+			hasGo = true
+		}
+		if strings.HasSuffix(f, ".py") || strings.HasPrefix(f, "tests/") {
+			hasPy = true
+		}
+		if strings.HasSuffix(f, ".ts") || strings.HasSuffix(f, ".tsx") || strings.Contains(f, "frontend/") {
+			hasTS = true
+		}
+	}
+
+	lr := layoutRoot
+	if lr == "" {
+		lr = "."
+	}
+
+	if hasGo {
+		return fmt.Sprintf("cd %s && go test ./...", lr)
+	}
+	if hasPy {
+		return fmt.Sprintf("cd %s && python -m pytest -v", lr)
+	}
+	if hasTS {
+		return fmt.Sprintf("cd %s/frontend && npm install && npx tsc --noEmit", lr)
+	}
+	return fmt.Sprintf("cd %s && echo 'no verify command inferred'", lr)
 }
