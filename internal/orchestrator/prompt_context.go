@@ -300,8 +300,8 @@ func RunPreRunHook(step, townRoot, rig string, v WorkflowValidation) (string, er
 		if err := ensureDoltAutoCommit(townRoot, rig); err != nil {
 			return "", err
 		}
-	case "prune_stale_layout_go":
-		return PruneStaleLayoutGoFilesLog(townRoot, rig, v)
+	case "prune_stale_layout_files":
+		return PruneStaleLayoutFilesLog(townRoot, rig, v)
 	case "prune_rig_root_junk":
 		mayorRig := filepath.Join(townRoot, rig, "mayor", "rig")
 		return rigpkg.RemoveMayorRigAgentJunkLog(mayorRig)

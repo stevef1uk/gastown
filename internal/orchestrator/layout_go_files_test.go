@@ -80,7 +80,7 @@ func TestGoCompileVerifyCommandForBead_foreignTestWithoutOwnTest(t *testing.T) {
 	}
 }
 
-func TestPruneStaleLayoutGoFiles(t *testing.T) {
+func TestPruneStaleLayoutFiles(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	rig := "rig"
@@ -103,7 +103,7 @@ func TestPruneStaleLayoutGoFiles(t *testing.T) {
 	setListImplementBeadsByStatusHook(t, dir, rig, func(_, _ string, _ WorkflowValidation, _ string) ([]PlanBead, error) {
 		return nil, nil
 	})
-	removed, err := PruneStaleLayoutGoFiles(dir, rig, v)
+	removed, err := PruneStaleLayoutFiles(dir, rig, v)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -115,7 +115,7 @@ func TestPruneStaleLayoutGoFiles(t *testing.T) {
 	}
 }
 
-func TestPruneStaleLayoutGoFiles_keepsCorrelatedTest(t *testing.T) {
+func TestPruneStaleLayoutFiles_keepsCorrelatedTest(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	rig := "rig"
@@ -133,14 +133,14 @@ func TestPruneStaleLayoutGoFiles_keepsCorrelatedTest(t *testing.T) {
 		}
 	}
 	v := WorkflowValidation{
-		LayoutRoot:    "linkshelf",
+		LayoutRoot:      "linkshelf",
 		QAVerifyCommand: "cd linkshelf && go test ./...",
-		RequiredFiles: []string{"linkshelf/internal/store/store.go"},
+		RequiredFiles:   []string{"linkshelf/internal/store/store.go"},
 	}
 	setListImplementBeadsByStatusHook(t, dir, rig, func(_, _ string, _ WorkflowValidation, _ string) ([]PlanBead, error) {
 		return nil, nil
 	})
-	removed, err := PruneStaleLayoutGoFiles(dir, rig, v)
+	removed, err := PruneStaleLayoutFiles(dir, rig, v)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -152,7 +152,7 @@ func TestPruneStaleLayoutGoFiles_keepsCorrelatedTest(t *testing.T) {
 	}
 }
 
-func TestPruneStaleLayoutGoFiles_removesFlatDuplicateWhenNestedRequired(t *testing.T) {
+func TestPruneStaleLayoutFiles_removesFlatDuplicateWhenNestedRequired(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	rig := "rig"
@@ -162,9 +162,9 @@ func TestPruneStaleLayoutGoFiles_removesFlatDuplicateWhenNestedRequired(t *testi
 		t.Fatal(err)
 	}
 	for path, body := range map[string]string{
-		"handlers.go":                 "package api\n",
-		"internal/api/handlers.go":    "package api\n",
-		"internal/api/handlers_test.go": "package api\n",
+		"handlers.go":                    "package api\n",
+		"internal/api/handlers.go":       "package api\n",
+		"internal/api/handlers_test.go":  "package api\n",
 	} {
 		full := filepath.Join(layout, path)
 		if err := os.MkdirAll(filepath.Dir(full), 0755); err != nil {
@@ -181,7 +181,7 @@ func TestPruneStaleLayoutGoFiles_removesFlatDuplicateWhenNestedRequired(t *testi
 			"linkshelf/internal/api/handlers_test.go",
 		},
 	}
-	removed, err := PruneStaleLayoutGoFiles(dir, rig, v)
+	removed, err := PruneStaleLayoutFiles(dir, rig, v)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -193,7 +193,7 @@ func TestPruneStaleLayoutGoFiles_removesFlatDuplicateWhenNestedRequired(t *testi
 	}
 }
 
-func TestPruneStaleLayoutGoFiles_keepsFlatMainWhenBeadsUseCmdPath(t *testing.T) {
+func TestPruneStaleLayoutFiles_keepsFlatMainWhenBeadsUseCmdPath(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	rig := "rig"
@@ -219,7 +219,7 @@ func TestPruneStaleLayoutGoFiles_keepsFlatMainWhenBeadsUseCmdPath(t *testing.T) 
 	setListImplementBeadsByStatusHook(t, dir, rig, func(_, _ string, _ WorkflowValidation, _ string) ([]PlanBead, error) {
 		return nil, nil
 	})
-	removed, err := PruneStaleLayoutGoFiles(dir, rig, v)
+	removed, err := PruneStaleLayoutFiles(dir, rig, v)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -228,7 +228,7 @@ func TestPruneStaleLayoutGoFiles_keepsFlatMainWhenBeadsUseCmdPath(t *testing.T) 
 	}
 }
 
-func TestPruneStaleLayoutGoFiles_skipsWhenImplementBeadsActive(t *testing.T) {
+func TestPruneStaleLayoutFiles_skipsWhenImplementBeadsActive(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	rig := "rig"
@@ -251,7 +251,7 @@ func TestPruneStaleLayoutGoFiles_skipsWhenImplementBeadsActive(t *testing.T) {
 		}
 		return nil, nil
 	})
-	removed, err := PruneStaleLayoutGoFiles(dir, rig, v)
+	removed, err := PruneStaleLayoutFiles(dir, rig, v)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -260,15 +260,88 @@ func TestPruneStaleLayoutGoFiles_skipsWhenImplementBeadsActive(t *testing.T) {
 	}
 }
 
-func TestLayoutGoRelPathsProtectedFromPrune_includesCorrelatedTest(t *testing.T) {
+func TestLayoutRelPathsProtectedFromPrune_includesCorrelatedTest(t *testing.T) {
 	t.Parallel()
 	v := WorkflowValidation{
-		LayoutRoot:    "linkshelf",
+		LayoutRoot:      "linkshelf",
 		QAVerifyCommand: "cd linkshelf && go test ./...",
-		RequiredFiles: []string{"linkshelf/internal/store/schema.go"},
+		RequiredFiles:   []string{"linkshelf/internal/store/schema.go"},
 	}
-	got := layoutGoRelPathsProtectedFromPrune(v)
+	got := layoutRelPathsProtectedFromPrune(v)
 	if !got["internal/store/schema.go"] || !got["internal/store/schema_test.go"] {
 		t.Fatalf("protected = %v", got)
+	}
+}
+
+func TestPruneStaleLayoutFiles_removesStalePyFile(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	rig := "rig"
+	layout := filepath.Join(dir, rig, "mayor", "rig", "myapp", "backend")
+	if err := os.MkdirAll(layout, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(layout, "main.py"), []byte(""), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(layout, "stale_old.py"), []byte(""), 0644); err != nil {
+		t.Fatal(err)
+	}
+	v := WorkflowValidation{
+		LayoutRoot: "myapp",
+		RequiredFiles: []string{
+			"myapp/backend/main.py",
+		},
+	}
+	setListImplementBeadsByStatusHook(t, dir, rig, func(_, _ string, _ WorkflowValidation, _ string) ([]PlanBead, error) {
+		return nil, nil
+	})
+	removed, err := PruneStaleLayoutFiles(dir, rig, v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(removed) != 1 || removed[0] != "myapp/backend/stale_old.py" {
+		t.Fatalf("removed = %v", removed)
+	}
+	if _, err := os.Stat(filepath.Join(layout, "stale_old.py")); !os.IsNotExist(err) {
+		t.Fatal("stale_old.py should be gone")
+	}
+	if _, err := os.Stat(filepath.Join(layout, "main.py")); err != nil {
+		t.Fatal("main.py should remain")
+	}
+}
+
+func TestPruneStaleLayoutFiles_keepsNonManagedFiles(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	rig := "rig"
+	layout := filepath.Join(dir, rig, "mayor", "rig", "myapp")
+	if err := os.MkdirAll(layout, 0755); err != nil {
+		t.Fatal(err)
+	}
+	// .md files are not in managedSourceExtensions
+	if err := os.WriteFile(filepath.Join(layout, "README.md"), []byte(""), 0644); err != nil {
+		t.Fatal(err)
+	}
+	// .txt files are not managed
+	if err := os.WriteFile(filepath.Join(layout, "notes.txt"), []byte(""), 0644); err != nil {
+		t.Fatal(err)
+	}
+	// .gitkeep is not managed
+	if err := os.WriteFile(filepath.Join(layout, ".gitkeep"), []byte(""), 0644); err != nil {
+		t.Fatal(err)
+	}
+	v := WorkflowValidation{
+		LayoutRoot: "myapp",
+		RequiredFiles: []string{
+			"myapp/main.py",
+		},
+	}
+	removed, err := PruneStaleLayoutFiles(dir, rig, v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(removed) != 0 {
+		t.Fatalf("expected no removals for non-managed files, removed = %v", removed)
 	}
 }

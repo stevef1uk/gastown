@@ -211,10 +211,10 @@ states:
       failure_prompt_context: [implementation_queue, implement_bead_context, phase_test_guards]
       empty_response_suffix: "Reply with EDIT:/WRITE:/READ: or CMD: lines. Implement code and unit tests per plan.md; WRITE for new *_test.go or tests/test_*.py. Use Verify from Next bead."
       prompt_context: [implementation_queue, implement_bead_context, phase_test_guards]
-      pre_run: [prune_rig_root_junk, ensure_dolt_auto_commit, ensure_dolt_schema_health, sync_planning_artifacts, ensure_http_implementation_config, ensure_handler_phase_prerequisites, ensure_implement_smoke_ready, ensure_go_mod_from_spec, enforce_implement_bead_queue, prune_stale_layout_go, repair_requirements, refresh_codeindex, reconcile_implement_beads, ensure_test_stack_ready]
+      pre_run: [prune_rig_root_junk, ensure_dolt_auto_commit, ensure_dolt_schema_health, sync_planning_artifacts, ensure_http_implementation_config, ensure_handler_phase_prerequisites, ensure_implement_smoke_ready, ensure_go_mod_from_spec, enforce_implement_bead_queue, prune_stale_layout_files, repair_requirements, refresh_codeindex, reconcile_implement_beads, ensure_test_stack_ready]
       # Do not run repair_planning_beads / refresh_plan_md_if_stale per turn — they create beads and
       # rewrite plan.md mid-implementation (see pre_run sync + reconcile). Planning-only repair stays in planning state hooks.
-      per_turn: [prune_stale_layout_go, repair_requirements]
+      per_turn: [prune_stale_layout_files, repair_requirements]
       cmd_guard: implementation
       cmd_rewrites: [rig_placeholders, unwrap_bash_lc, backend_path_after_cd, bd_list_implement_scope, unittest_workdir, bd_list_limit, bd_close_auto_commit, bd_strip_beads_dir]
       env:
