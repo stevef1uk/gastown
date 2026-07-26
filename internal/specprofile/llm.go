@@ -108,11 +108,11 @@ The JSON must match this shape (use sensible defaults for small tutorials; for l
 }
 
 Rules:
-- layout_root: top-level project directory name if the spec says code lives under a named folder relative to repo root; use "." if the primary code is at repo root. All QA verify commands (both root-level and per-phase) must cd to this same directory — never invent a different directory name.
+- layout_root: top-level project directory name if the spec says code lives under a named folder relative to repo root; use "." if the primary code is at repo root. All QA verify commands (both root-level and per-phase) must cd to this same directory — never invent a different directory name. When layout_root is ".", verify commands MUST NOT cd to the rig name or any top-level project name from the spec — only cd to actual subdirectories like "frontend/" or "backend/".
 - bead_title_contains: short prefix for implementation task beads (e.g. "Implement <layout_root>/"); must be stable for grep on bd list.
 - test_runner: one of "unittest", "pytest", "custom".
 - unittest_module: dotted module for stdlib unittest ONLY if test_runner is unittest (e.g. backend.test_app); else "".
-- qa_verify_command: default rig-wide verify when no per-phase command applies — must run the **full unit test suite** (e.g. cd <layout> && go test ./..., or pytest -v tests/), not compile-only. Must be consistent with layout_root — never cd to a directory that doesn't match layout_root.
+- qa_verify_command: default rig-wide verify when no per-phase command applies — must run the **full unit test suite** (e.g. go test ./..., or pytest -v tests/), not compile-only. Must be consistent with layout_root — never cd to a directory that doesn't match layout_root. When layout_root is "." do not add any cd prefix; when layout_root is "myapp", use "cd myapp && go test ./...".
 - required_files: ALL file paths under mayor/rig (under layout_root) that appear in the SPEC directory tree, architecture.md backtick paths, or are otherwise required by the project. Include scripts, config, deployment files, docs, and startup files — not just source code and tests. Include **unit test files** alongside implementation: Go *_test.go in the same package as the code under test; Python tests/test_<module>.py (or equivalent) per package/API layer. Order in phases: module code before its tests before cmd/server/main.go. For large specs (15+ files), still list the full union here.
 - delivery_phases: For large or multi-stack specs, split into 4–10 phases with at most 10 required_files each (backend layers, frontend, e2e). **Keep each source file's corresponding test file (test_*.py, *_test.go) in the same phase** so QA can verify each phase independently. Each phase needs id (kebab-case), title, required_files subset, and qa_verify_command that validates only that slice. Order phases by dependency (application source before packaging). Put Dockerfile, docker-compose.yml, docker-compose.test.yml, and .dockerignore in the **final** phase only — not setup-infrastructure or the first phase. **Frontend-only phases must typecheck, not run E2E tests**: use "cd frontend && npm install && npx tsc --noEmit" (or yarn/pnpm). Playwright/E2E tests that need a running server belong in the final e2e-and-deployment phase. Omit delivery_phases for tiny tutorials (≤12 files total).
 - spec_summary: 400–2500 characters summarizing goals, stack, directory layout, functional requirements to cover in unit tests, and how to run the test suite—so downstream agents need not re-read the full spec.
@@ -122,7 +122,9 @@ Rules:
 - dev_server_port: The port the dev server listens on. Set 0 if the project is NOT a web server (CLI tool, library, background worker, etc.). If the project IS a web server (handles HTTP requests, serves a web UI/API), set the port number explicitly if the spec mentions one (e.g. 8080, 3000, 5000, 8000), otherwise default to 8080 for Go servers and 8000 for Python servers.
 - confidence: "high", "medium", or "low".
 
-CRITICAL: The agent's working directory when running QA commands is $GT_ROOT/<rig>/mayor/rig/. All qa_verify_command values (root and per-phase) must be relative to that directory. For example, if layout_root is "finally", the command should be "cd finally/frontend && npm test" NOT "cd frontend && npm test".
+CRITICAL: The agent's working directory when running QA commands is $GT_ROOT/<rig>/mayor/rig/. All qa_verify_command values (root and per-phase) must be relative to that directory. Examples:
+- layout_root "." → commands run from mayor/rig/: "cd frontend && npm test" (NOT "cd finally/frontend")
+- layout_root "myapp" → commands run from mayor/rig/: "cd myapp/frontend && npm test" (correct)
 
 CRITICAL delivery_phases rules (the LLM must obey these):
 - Every phase MUST have a qa_verify_command (non-empty string). Phases without verification will fail.
@@ -130,9 +132,9 @@ CRITICAL delivery_phases rules (the LLM must obey these):
 - Phase IDs must be unique, lowercase, kebab-case (e.g. "backend-core-db", "frontend-ui-1").
 - Order phases by dependency: earlier phases listed first, later phases depend on earlier ones.
 - Dockerfile, docker-compose.yml, docker-compose.test.yml, .dockerignore go in the FINAL phase only (typically "e2e-and-deployment" or similar).
-- Frontend-only phases MUST use "cd <layout_root>/frontend && npm install && npx tsc --noEmit" (typecheck only). Do NOT put Playwright/E2E tests in frontend phases.
+- Frontend-only phases MUST use "cd frontend && npm install && npx tsc --noEmit" (typecheck only). When layout_root is not ".", use "cd <layout_root>/frontend && npm install && npx tsc --noEmit". Do NOT put Playwright/E2E tests in frontend phases.
 - Playwright/E2E tests that need a running server belong in the FINAL e2e-and-deployment phase.
-- For E2E/deployment phases that include docker-compose.test.yml or Playwright test files, use "cd <layout_root> && docker compose -f test/docker-compose.test.yml up --build --abort-on-container-exit" as qa_verify_command. Do NOT output "echo 'no verify command inferred'".
+- For E2E/deployment phases that include docker-compose.test.yml or Playwright test files, use "docker compose -f test/docker-compose.test.yml up --build --abort-on-container-exit" as qa_verify_command (no cd prefix when layout_root is "."; when layout_root is not ".", prefix with "cd <layout_root> && "). Do NOT output "echo 'no verify command inferred'".
 - Keep source files and their corresponding test files (*_test.go, test_*.py) in the SAME phase so QA can verify each phase independently.
 - If the spec is small (≤12 total required_files), you MAY omit delivery_phases entirely (single-phase workflow).
 

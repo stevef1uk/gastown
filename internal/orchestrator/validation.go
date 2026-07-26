@@ -143,6 +143,7 @@ func ClampProfileValidation(v WorkflowValidation) WorkflowValidation {
 		v.MinPlanBytes = minPlan
 	}
 	v = FinalizeDeliveryPhases(v)
+	v = StripInvalidCDPrefixes(v)
 	v = validatePhaseVerifyCommands(v)
 	v.RequiredFiles = deduplicateRequiredFiles(v.RequiredFiles)
 	for i := range v.DeliveryPhases {
@@ -152,6 +153,59 @@ func ClampProfileValidation(v WorkflowValidation) WorkflowValidation {
 	v = SanitizeRigFlowProfile(v)
 	v = ValidateDeliveryPhases(v)
 	return v
+}
+
+// StripInvalidCDPrefixes removes leading "cd <dir> && " from verify commands when layout_root
+// is empty (".") and <dir> is not a real subdirectory of the project. This catches LLM
+// output that uses the rig name (e.g. "cd finally") instead of layout_root.
+func StripInvalidCDPrefixes(v WorkflowValidation) WorkflowValidation {
+	if v.LayoutRoot != "" {
+		return v
+	}
+	topDirs := make(map[string]bool)
+	for _, f := range v.RequiredFiles {
+		if idx := strings.IndexByte(f, '/'); idx > 0 {
+			topDirs[f[:idx]] = true
+		}
+	}
+
+	v.QAVerifyCommand = stripBogusLeadCD(v.QAVerifyCommand, topDirs)
+	for i := range v.DeliveryPhases {
+		v.DeliveryPhases[i].QAVerifyCommand = stripBogusLeadCD(v.DeliveryPhases[i].QAVerifyCommand, topDirs)
+	}
+	return v
+}
+
+// stripBogusLeadCD checks whether cmd starts with "cd <dir> && " where <dir>
+// is not a valid top-level project directory; if so, strips the cd prefix.
+func stripBogusLeadCD(cmd string, validTopDirs map[string]bool) string {
+	cmd = strings.TrimSpace(cmd)
+	if !strings.HasPrefix(cmd, "cd ") {
+		return cmd
+	}
+	rest := cmd[3:]
+	spaceIdx := strings.IndexByte(rest, ' ')
+	if spaceIdx < 0 {
+		return cmd
+	}
+	dir := rest[:spaceIdx]
+
+	firstComp := dir
+	if slashIdx := strings.IndexByte(dir, '/'); slashIdx >= 0 {
+		firstComp = dir[:slashIdx]
+	}
+
+	if validTopDirs[firstComp] || firstComp == "." || firstComp == ".." {
+		return cmd
+	}
+
+	after := strings.TrimSpace(rest[spaceIdx:])
+	after = strings.TrimPrefix(after, "&& ")
+	after = strings.TrimSpace(after)
+	if after == "" {
+		return cmd
+	}
+	return after
 }
 
 // validatePhaseVerifyCommands ensures each delivery phase's QA verify command can run
