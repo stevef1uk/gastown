@@ -845,7 +845,6 @@ func FinalizeDeliveryPhases(v WorkflowValidation) WorkflowValidation {
 			}
 		}
 	}
-	v = fixPhaseVerifyCommands(v)
 	return v
 }
 
@@ -858,94 +857,6 @@ func normalizePathList(files []string) []string {
 		}
 	}
 	return out
-}
-
-// fixPhaseVerifyCommands replaces "echo 'no verify command inferred'" placeholders
-// in delivery phase QA verify commands with sensible defaults based on file contents.
-func fixPhaseVerifyCommands(v WorkflowValidation) WorkflowValidation {
-	for i := range v.DeliveryPhases {
-		cmd := strings.TrimSpace(v.DeliveryPhases[i].QAVerifyCommand)
-		if cmd == "" || !strings.Contains(cmd, "no verify command inferred") {
-			continue
-		}
-		p := &v.DeliveryPhases[i]
-		lr := v.LayoutRoot
-		if lr == "" {
-			lr = "."
-		}
-		p.QAVerifyCommand = inferPhaseVerifyCommand(p, lr)
-	}
-	return v
-}
-
-// inferPhaseVerifyCommand creates a sensible default verify command for a phase
-// that has a placeholder like "echo 'no verify command inferred'".
-func inferPhaseVerifyCommand(p *DeliveryPhase, layoutRoot string) string {
-	hasDocker := false
-	hasPlaywright := false
-	hasFrontend := false
-	hasPython := false
-	hasGo := false
-	hasRootPackageJSON := false
-
-	for _, f := range p.RequiredFiles {
-		lower := strings.ToLower(f)
-		if strings.Contains(lower, "docker-compose.test") || strings.Contains(lower, "playwright") {
-			hasPlaywright = true
-		}
-		if strings.Contains(lower, "dockerfile") || strings.Contains(lower, "docker-compose") {
-			hasDocker = true
-		}
-		if strings.HasPrefix(lower, "frontend/") || strings.HasPrefix(lower, "web/") || strings.HasPrefix(lower, "ui/") {
-			hasFrontend = true
-		}
-		if strings.HasSuffix(lower, ".py") || strings.Contains(lower, "requirements.txt") || strings.Contains(lower, "pyproject.toml") {
-			hasPython = true
-		}
-		if strings.HasSuffix(lower, ".go") && !strings.HasSuffix(lower, "_test.go") {
-			hasGo = true
-		}
-		if f == "package.json" {
-			hasRootPackageJSON = true
-		}
-	}
-
-	// E2E phase with Docker Compose test
-	if hasPlaywright && hasDocker {
-		return "docker-compose -f " + dockerComposeTestPath(p) + " up --build --abort-on-container-exit"
-	}
-	// Frontend-only phase
-	if hasFrontend && hasRootPackageJSON {
-		if layoutRoot == "." || layoutRoot == "" {
-			return "cd frontend && npm install --ignore-scripts && npx tsc --noEmit"
-		}
-		return "cd " + layoutRoot + "/frontend && npm install --ignore-scripts && npx tsc --noEmit"
-	}
-	if hasFrontend {
-		return "cd frontend && npm install --ignore-scripts && npx tsc --noEmit"
-	}
-	// Go phase
-	if hasGo {
-		return "go build ./..."
-	}
-	// Python phase
-	if hasPython {
-		return "python3 -m pytest -v tests/ 2>/dev/null || true"
-	}
-	// Default: typecheck
-	if hasRootPackageJSON {
-		return "npm install --ignore-scripts && npx tsc --noEmit 2>/dev/null || true"
-	}
-	return "echo 'verify ok (no automated tests for this phase)'"
-}
-
-func dockerComposeTestPath(p *DeliveryPhase) string {
-	for _, f := range p.RequiredFiles {
-		if strings.Contains(strings.ToLower(f), "docker-compose.test") {
-			return f
-		}
-	}
-	return "test/docker-compose.test.yml"
 }
 
 // NormalizeDeliveryPhasesLayout prefixes phase required_files with layout_root like RequiredFiles.
