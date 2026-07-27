@@ -47,7 +47,13 @@ Common gaps to catch:
 
 ### Success
 
-When everything passes:
+When everything passes, first generate the workflow profile so the Architect and Planner have the right context:
+
+```
+CMD: cd {{rig}}/mayor/rig && gt rig spec-index {{rig}}
+```
+
+Then report success:
 
 ```
 {"outcome":"success","summary":"SPEC.md covers all REQUIREMENTS.md items with complete technical detail"}
@@ -77,8 +83,8 @@ CMD: wc -c {{rig}}/mayor/rig/SPEC.md
 |---------|-----------|
 | Read REQUIREMENTS.md | Write any file |
 | Read SPEC.md | Start design, planning, or implementation |
-| Report success or failure | Modify SPEC.md |
-| | Run build commands |
+| Run `gt rig spec-index <rig>` | Modify SPEC.md |
+| Report success or failure | Run build commands |
 
 ## Finish
 
