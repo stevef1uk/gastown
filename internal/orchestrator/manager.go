@@ -2,6 +2,8 @@ package orchestrator
 
 import (
 	"context"
+	"log"
+	"os/exec"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -333,6 +335,33 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summa
 	next, err := inst.Transition(tpl, outcome)
 	if err != nil {
 		return "", err
+	}
+	// Ensure workflow-profile.json exists before entering planning (spec_review -> planning).
+	// The spec_review agent runs gt rig spec-index which may take 30+ seconds.
+	if fromState == "spec_review" && outcome == "success" && next == "planning" && rig != "" {
+		// Trigger spec-index asynchronously so workflow can proceed while profile is built.
+		// Profile path: <townRoot>/<rig>/mayor/rig/.gastown/workflow-profile.json
+		go func(townRoot, rigName string) {
+			cmd := exec.Command("gt", "rig", "spec-index", rigName)
+			cmd.Dir = townRoot
+			if err := cmd.Run(); err != nil {
+				log.Printf("[req-flow] spec-index after spec_review failed: %v", err)
+			} else {
+				log.Printf("[req-flow] workflow-profile.json generated for %s", rigName)
+			}
+		}(m.townRoot, rig)
+		// Wait for profile file to exist (up to 120s).
+		profilePath := filepath.Join(m.townRoot, rig, "mayor", "rig", ".gastown", "workflow-profile.json")
+		deadline := time.Now().Add(120 * time.Second)
+		for time.Now().Before(deadline) {
+			if _, err := os.Stat(profilePath); err == nil {
+				break
+			}
+			time.Sleep(2 * time.Second)
+		}
+		if _, err := os.Stat(profilePath); err != nil {
+			return "", fmt.Errorf("workflow-profile.json not created after spec_review (timed out): %w", err)
+		}
 	}
 	if fromState == "qa_review" && IsArchitectureReworkOutcome(outcome) && next == "design" && rig != "" {
 		if reason := rejectSpuriousArchitectureRework(m.townRoot, rig, summary); reason != "" {
