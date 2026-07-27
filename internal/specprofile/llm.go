@@ -109,34 +109,46 @@ The JSON must match this shape (use sensible defaults for small tutorials; for l
 
 Rules:
 - layout_root: top-level project directory name if the spec says code lives under a named folder relative to repo root; use "." if the primary code is at repo root. All QA verify commands (both root-level and per-phase) must cd to this same directory — never invent a different directory name. When layout_root is ".", verify commands MUST NOT cd to the rig name or any top-level project name from the spec — only cd to actual subdirectories like "frontend/" or "backend/".
-- bead_title_contains: short prefix for implementation task beads (e.g. "Implement <layout_root>/"); if layout_root is "." use "Implement " (no ./ prefix); must be stable for grep on bd list.
+
+- bead_title_contains: short prefix for implementation task beads (e.g. "Implement <layout_root>/"); if layout_root is "." use "Implement " (no ./ prefix); must be stable for grep on bd list. Examples:
+  * layout_root "helloapi" → "Implement helloapi/"
+  * layout_root "." → "Implement "
+  * Never include quotes, never end with slash
+
 - test_runner: one of "unittest", "pytest", "custom".
 - unittest_module: dotted module for stdlib unittest ONLY if test_runner is unittest (e.g. backend.test_app); else "".
 - qa_verify_command: default rig-wide verify when no per-phase command applies — must run the **full unit test suite** (e.g. go test ./..., or pytest -v tests/), not compile-only. Must be consistent with layout_root — never cd to a directory that doesn't match layout_root. When layout_root is "." do not add any cd prefix; when layout_root is "myapp", use "cd myapp && go test ./...".
-- required_files: ALL file paths under mayor/rig (under layout_root) that appear in the SPEC directory tree, architecture.md backtick paths, or are otherwise required by the project. Include scripts, config, deployment files, docs, and startup files — not just source code and tests. Include **unit test files** alongside implementation: Go *_test.go in the same package as the code under test; Python tests/test_<module>.py (or equivalent) per package/API layer. Order in phases: module code before its tests before cmd/server/main.go. For large specs (15+ files), still list the full union here.
-- delivery_phases: For large or multi-stack specs, split into 4–10 phases with at most 10 required_files each (backend layers, frontend, e2e). **Keep each source file's corresponding test file (test_*.py, *_test.go) in the same phase** so QA can verify each phase independently. Each phase needs id (kebab-case), title, required_files subset, and qa_verify_command that validates only that slice. Order phases by dependency (application source before packaging). Put Dockerfile, docker-compose.yml, docker-compose.test.yml, and .dockerignore in the **final** phase only — not setup-infrastructure or the first phase. **Frontend-only phases must typecheck, not run E2E tests**: use "cd frontend && npm install && npx tsc --noEmit" (or yarn/pnpm). Playwright/E2E tests that need a running server belong in the final e2e-and-deployment phase. Omit delivery_phases for tiny tutorials (≤12 total required_files) — single-phase workflow ONLY.
-- spec_summary: 400–2500 characters summarizing goals, stack, directory layout, functional requirements to cover in unit tests, and how to run the test suite—so downstream agents need not re-read the full spec.
-- min_architecture_bytes: target 2500–5000 for most rigs; use 6000–8000 only when required_files has 15+ paths or the spec is very large. For ≤10 required_files use 2000–3500. Use 200–8192 only; NEVER copy SPEC byte length.
-- min_plan_bytes: ignored at runtime — plan.md must be ≥ half of architecture.md bytes (set min_architecture_bytes only).
-- python_venv_dir: Relative path for the Python virtual environment directory under mayor/rig. Use ".venv" for most projects. Set to "off" to skip venv creation.
-- dev_server_port: The port the dev server listens on. Set 0 if the project is NOT a web server (CLI tool, library, background worker, etc.). If the project IS a web server (handles HTTP requests, serves a web UI/API), set the port number explicitly if the spec mentions one (e.g. 8080, 3000, 5000, 8000), otherwise default to 8080 for Go servers and 8000 for Python servers.
-- confidence: "high", "medium", or "low".
 
-CRITICAL: The agent's working directory when running QA commands is $GT_ROOT/<rig>/mayor/rig/. All qa_verify_command values (root and per-phase) must be relative to that directory. Examples:
-- layout_root "." → commands run from mayor/rig/: "cd frontend && npm test" (NOT "cd finally/frontend")
-- layout_root "myapp" → commands run from mayor/rig/: "cd myapp/frontend && npm test" (correct)
+- required_files: ALL file paths under mayor/rig (under layout_root) that appear in the SPEC directory tree, architecture.md backtick paths, or are otherwise required by the project. **EXCLUDE standard library imports** for any language (Go: encoding/json, net/http, os/signal, testing, os, io, log, context, time, strings, strconv, fmt, errors, sync, net, net/http/httptest; Python: os, sys, json, json.encoder, json.decoder, http, signal, unittest, pytest, typing, dataclasses, datetime, collections, itertools, functools, pathlib; Node: fs, path, http, crypto, util, events, stream, url, querystring, assert, fs/promises) — these are NOT files to create. EXCLUDE function calls, method calls, or code snippets (e.g. encoding/json.NewEncoder, json.NewDecoder, http.ListenAndServe, json.Marshal, json.dumps, json.loads, http.listen, express(), app.get) — these are code, NOT files. A robust heuristic: EXCLUDE any line that has a pattern like "func name(", "type name", or looks like a Go type declaration, Go function call with parenthesis, Python function call. Also exclude any items that:
+  * Start and end with backticks like "like this"
+  * Contain patterns like encoding/json.NewEncoder(...) (parenthesis inside)
+  * Contain patterns like encoding/json.NewEncoder\. (escaped dot)
+  * Are Go type placeholders like encoding/json.Decoder, decoder
+  * Contain backtick-wrapped patterns with parentheses or dots (function calls)
+
+  NOT excluded: actual file paths like "helloapi/handler.go", "helloapi/main.go", "helloapi/.gitignore"
+  Include unit test files alongside implementation: Go *_test.go files in the same package as the code under test; Python tests/test_<module>.py per package/API layer.
+  Order: module code before its tests before cmd/server/main.go.
+
+- delivery_phases: For large or multi-stack specs, split into 4-10 phases with at most 10 required_files each (backend layers, frontend, e2e). Keep each source file's corresponding test file (*_test.go, test_*.py) in the same phase so QA can verify each phase independently. Each phase needs id (kebab-case), title, required_files subset, and qa_verify_command that validates only that slice. Order phases by dependency (application source before packaging). Put Dockerfile, docker-compose.yml, docker-compose.test.yml, and .dockerignore in the **final** phase only — not setup-infrastructure or the first phase. Frontend-only phases must typecheck, not run E2E tests: use "cd frontend && npm install && npx tsc --noEmit" (or yarn/pnpm). Playwright/E2E tests that need a running server belong in the final e2e-and-deployment phase.
+
+- spec_summary: 400–2500 characters summarizing goals, stack, directory layout, functional requirements to cover in unit tests, and how to run the test suite.
+- min_architecture_bytes: target 2500–5000 for most rigs; use 6000–8000 only when required_files has 15+ paths. For ≤10 required_files use 2000–3500. Use 200–8192 only; NEVER copy SPEC byte length.
+- min_plan_bytes: ignored at runtime.
+- python_venv_dir: Relative path for the Python virtual environment directory under mayor/rig. Use ".venv\" for most projects. Set to \"off\" to skip venv creation.
+- dev_server_port: The port the dev server listens on. Set 0 if the project is NOT a web server. If the project IS a web server, set the port number explicitly if the spec mentions one, otherwise default to 8080 for Go servers and 8000 for Python servers.
+- confidence: \"high\", \"medium\", or \"low\".
+
+CRITICAL: The agent's working directory when running QA commands is $GT_ROOT/<rig>/mayor/rig/. All qa_verify_command values (root and per-phase) must be relative to that directory.
 
 CRITICAL delivery_phases rules (the LLM must obey these):
-- Every phase MUST have a qa_verify_command (non-empty string). Phases without verification will fail.
-- depends_on MUST reference only phase IDs that exist in the same delivery_phases array. Use the exact "id" string from another phase object.
-- Phase IDs must be unique, lowercase, kebab-case (e.g. "backend-core-db", "frontend-ui-1").
-- Order phases by dependency: earlier phases listed first, later phases depend on earlier ones.
-- Dockerfile, docker-compose.yml, docker-compose.test.yml, .dockerignore go in the FINAL phase only (typically "e2e-and-deployment" or similar).
-- Frontend-only phases MUST use "cd frontend && npm install && npx tsc --noEmit" (typecheck only). When layout_root is not ".", use "cd <layout_root>/frontend && npm install && npx tsc --noEmit". Do NOT put Playwright/E2E tests in frontend phases.
-- Playwright/E2E tests that need a running server belong in the FINAL e2e-and-deployment phase.
-- For E2E/deployment phases that include docker-compose.test.yml or Playwright test files, use "docker compose -f test/docker-compose.test.yml up --build --abort-on-container-exit" as qa_verify_command (no cd prefix when layout_root is "."; when layout_root is not ".", prefix with "cd <layout_root> && "). Do NOT output "echo 'no verify command inferred'".
-- Keep source files and their corresponding test files (*_test.go, test_*.py) in the SAME phase so QA can verify each phase independently.
-- If the spec is small (≤12 total required_files), you MUST omit delivery_phases entirely (single-phase workflow).
+- Every phase MUST have a qa_verify_command (non-empty string).
+- depends_on MUST reference only phase IDs that exist in the same delivery_phases array.
+- Phase IDs must be unique, lowercase, kebab-case (e.g. \"backend-core-db\", \"frontend-ui-1\").
+- Order phases by dependency.
+- Dockerfile, docker-compose.yml, docker-compose.test.yml, .dockerignore go in the FINAL phase only.
+- Keep source files and their corresponding test files in the SAME phase.
+- If the spec is small (≤12 total required_files), omit delivery_phases entirely (single-phase workflow).
 
 Output JSON only.`
 }
