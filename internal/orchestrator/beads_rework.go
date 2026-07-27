@@ -56,7 +56,7 @@ func QAReopenedBeadIDs(townRoot, rig string) []string {
 		return nil
 	}
 	for _, inst := range snap.Instances {
-		if inst.TemplateID != "rig-flow" {
+		if inst.TemplateID != "rig-flow" && inst.TemplateID != "req-flow" {
 			continue
 		}
 		if inst.Variables == nil || inst.Variables["rig"] != rig {

@@ -65,7 +65,7 @@ func validatePlanningGateArtifacts(townRoot, rig, rigDir, fromState string, v Wo
 			return formatDocAlignmentError("SPEC/architecture misaligned", issues)
 		}
 	}
-	if err := ValidatePlanningDocAlignment(rigDir, v, fromState); err != nil {
+	if err := ValidatePlanningDocAlignment(townRoot, rigDir, v, fromState); err != nil {
 		return err
 	}
 	if err := ValidatePlanMDBeadPathAlignment(townRoot, rig, v); err != nil {

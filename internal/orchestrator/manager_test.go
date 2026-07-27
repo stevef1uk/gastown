@@ -284,7 +284,7 @@ func TestValidateTemplateSchema(t *testing.T) {
 	warn := validateTemplateSchema(&WorkflowTemplate{
 		ID: "bad",
 		States: map[string]State{
-			"intake": {Instructions: "no role field"},
+			"intake": {PromptFile: "intake.md", Instructions: "no role field"},
 		},
 	}, "idea.yaml")
 	if warn == "" || !strings.Contains(warn, "missing role") || !strings.Contains(warn, "agent_role") {

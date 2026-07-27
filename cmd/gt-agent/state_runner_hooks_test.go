@@ -184,8 +184,8 @@ func TestStateRunner_rigFlowAutoVerifyHooksMatchCommands(t *testing.T) {
 		t.Fatalf("expected node_setup verify, got %q", got)
 	}
 	prefixed := prepareProjectSetupVerifyCommand(r.verifyCommand("node_setup"), r.townRoot, r.rig, "node_setup")
-	if !strings.Contains(prefixed, "myrig") || strings.Contains(prefixed, "myrig/mayor/rig") {
-		t.Fatalf("node_setup verify must include rig root prefix (not mayor/rig), got %q", prefixed)
+	if !strings.Contains(prefixed, "myrig") || !strings.Contains(prefixed, "myrig/mayor/rig") {
+		t.Fatalf("node_setup verify must include rig/mayor/rig prefix, got %q", prefixed)
 	}
 }
 

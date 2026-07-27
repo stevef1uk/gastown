@@ -901,6 +901,17 @@ func ValidateDeliveryPhases(v WorkflowValidation) WorkflowValidation {
 		lastPhase.RequiredFiles = deduped
 	}
 
+	// Upgrade echo fallback to smoke test for Go+web final phase.
+	if len(v.DeliveryPhases) > 1 {
+		last := &v.DeliveryPhases[len(v.DeliveryPhases)-1]
+		cmd := strings.TrimSpace(last.QAVerifyCommand)
+		if strings.Contains(cmd, "echo 'verify ok") || strings.Contains(cmd, "echo \"verify ok") {
+			if smokeserver := finalPhaseSmokeVerifyCommand(v); smokeserver != "" {
+				last.QAVerifyCommand = smokeserver
+			}
+		}
+	}
+
 	return v
 }
 
@@ -922,6 +933,34 @@ func normalizePhaseID(s string) string {
 		s = "phase"
 	}
 	return s
+}
+
+// finalPhaseSmokeVerifyCommand returns a compile+smoke verify command for the final
+// delivery phase of a Go+web workflow that has cmd/server/main.go and web assets.
+// Returns "" when the workflow doesn't qualify (no server, no web, or not Go).
+func finalPhaseSmokeVerifyCommand(v WorkflowValidation) string {
+	if !WorkflowUsesGo(v) {
+		return ""
+	}
+	hasWeb := false
+	hasServer := false
+	for _, f := range v.RequiredFiles {
+		f = filepath.ToSlash(strings.TrimSpace(f))
+		if strings.Contains(f, "/web/") && (strings.HasSuffix(f, ".html") || strings.HasSuffix(f, ".js") || strings.HasSuffix(f, ".css")) {
+			hasWeb = true
+		}
+		if strings.HasSuffix(f, "/cmd/server/main.go") {
+			hasServer = true
+		}
+	}
+	if !hasWeb || !hasServer {
+		return ""
+	}
+	lr := strings.Trim(strings.TrimSpace(v.LayoutRoot), "/")
+	if lr == "" || lr == "." {
+		lr = "."
+	}
+	return fmt.Sprintf("cd %s && go build ./... && go test ./...", lr)
 }
 
 func defaultQAVerifyForPhase(p *DeliveryPhase, layoutRoot string) string {

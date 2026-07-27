@@ -10,7 +10,7 @@ import (
 // IsPipelineRole reports roles that participate in orchestrator rig-flow FSM tasks.
 func IsPipelineRole(role string) bool {
 	switch role {
-	case "mayor", "architect", "planner", "setup", "polecat", "qa":
+	case "mayor", "architect", "analyst", "planner", "setup", "polecat", "qa":
 		return true
 	default:
 		return false
@@ -70,6 +70,7 @@ func LoadPromptFile(townRoot, promptFile string, vars map[string]string) (string
 // rigScopedPipelineRoles require agent_id "{rig}/{role}" when the workflow sets rig.
 var rigScopedPipelineRoles = map[string]bool{
 	"architect": true,
+	"analyst":   true,
 	"planner":   false, // town hq-planner is not rig-prefixed
 	"setup":     false, // town hq-setup is not rig-prefixed
 	"polecat":   true,

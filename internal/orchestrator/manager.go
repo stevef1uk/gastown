@@ -651,7 +651,7 @@ func (m *Manager) prepareImplementationPhase(rig string, inst *WorkflowInstance,
 		return fmt.Errorf("sync planning before implementation: %w", err)
 	}
 	rigDir := filepath.Join(m.townRoot, rig, "mayor", "rig")
-	if err := ValidatePlanningDocAlignment(rigDir, v); err != nil {
+	if err := ValidatePlanningDocAlignment(m.townRoot, rigDir, v); err != nil {
 		return fmt.Errorf("implementation entry blocked: %w", err)
 	}
 	if _, err := EnforceSingleImplementInProgress(m.townRoot, rig, v); err != nil {

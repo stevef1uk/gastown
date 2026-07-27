@@ -1,11 +1,7 @@
-id: rig-flow
-description: Standard rig workflow (Mayor -> Architect -> Planner -> Polecat -> QA) aligned with Beads/Dolt
+id: req-flow
+description: Requirements-driven workflow (Analyst -> QA spec review -> Architect -> Planner -> Polecat -> QA)
 initial_state: kickoff
-# AGENTS: Change agent behavior in this file (hooks, prompts, failure_hint) — NOT with if task.State in gt-agent.
-# See internal/orchestrator/prompt_context.go and town/README.md § "FSM behavior belongs in YAML".
-# Artifact guards for gt-agent. Per-rig values come from mayor/rig/.gastown/workflow-profile.json
-# (gt rig spec-index). These YAML defaults are placeholders only.
-# State behavior (guards, env, auto-verify) is configured under each state's hooks: block.
+# Same guards as rig-flow — profile overrides per-rig via workflow-profile.json
 validation:
   bead_title_contains: "Implement "
   min_architecture_bytes: 200
@@ -13,24 +9,78 @@ validation:
 states:
   kickoff:
     role: mayor
-    prompt_file: prompts/rig-flow/kickoff.md
+    prompt_file: prompts/req-flow/kickoff.md
     instructions: |
-      1. Ensure rig '{{rig}}' is registered and `{{rig}}/mayor/rig/SPEC.md` exists.
-      2. Report outcome success when ready for design.
+      1. Ensure rig '{{rig}}' is registered and `{{rig}}/mayor/rig/REQUIREMENTS.md` exists.
+      2. Report outcome success when ready for analysis.
     hooks:
       retry_hint: |
-        One CMD: per line. Confirm the rig is registered and SPEC.md exists before reporting success.
+        One CMD: per line. Confirm the rig is registered and REQUIREMENTS.md exists before reporting success.
+    transitions:
+      success:
+        to: analysis
+      failure:
+        to: kickoff
+  analysis:
+    role: analyst
+    prompt_file: prompts/req-flow/analysis.md
+    instructions: |
+      1. Read `{{rig}}/mayor/rig/REQUIREMENTS.md` completely.
+      2. Write `{{rig}}/mayor/rig/SPEC.md` — a complete, buildable technical specification that:
+         - Preserves EVERY requirement from REQUIREMENTS.md (nothing dropped).
+         - Fills in technical details the business requirements omit: data models, API contracts,
+           error handling, testing strategy, directory layout, seed data, non-functional requirements.
+         - Is structured so the Architect, Planner, and Polecat can build from it without ambiguity.
+      3. Verify SPEC.md exists and meets minimum size before reporting success.
+    hooks:
+      max_cmd_turns: 15
+      cmd_guard: analysis
+      cmd_rewrites: [rig_placeholders, unwrap_bash_lc]
+      track: analysis
+      artifacts: analysis
+      retry_hint: |
+        One CMD: per line. Read REQUIREMENTS.md with `head -n 80 {{rig}}/mayor/rig/REQUIREMENTS.md`, then write SPEC.md via heredoc. Verify with `wc -c {{rig}}/mayor/rig/SPEC.md`.
+      failure_hint: |
+        Write SPEC.md with a heredoc CMD in this session. Read REQUIREMENTS.md fully first.
+        SPEC.md must contain: Overview, Technical Stack, Data Model, API/HTTP Routes, Frontend,
+        File Layout, Phases with Success Criteria, Testing Strategy, Seed Data, and Non-Functional Requirements.
+        After a successful heredoc write and `wc -c` meeting the minimum, report success.
+    transitions:
+      success:
+        to: spec_review
+      failure:
+        to: analysis
+  spec_review:
+    role: qa
+    prompt_file: prompts/req-flow/spec_review.md
+    instructions: |
+      1. Read both `{{rig}}/mayor/rig/REQUIREMENTS.md` and `{{rig}}/mayor/rig/SPEC.md`.
+      2. Verify EVERY requirement from REQUIREMENTS.md is covered in SPEC.md — no omissions.
+      3. Verify SPEC.md is complete enough for an Architect to design from: data models, API contracts,
+         file layout, phases, testing strategy, seed data, and non-functional requirements.
+      4. Report success only when nothing is missing. Report failure with a specific list of gaps.
+    hooks:
+      max_cmd_turns: 8
+      cmd_guard: spec_review
+      cmd_rewrites: [rig_placeholders, unwrap_bash_lc]
+      track: spec_review
+      artifacts: spec_review
+      retry_hint: |
+        One CMD: per line. diff the requirements checklist against SPEC sections. Report gaps in summary.
+      failure_hint: |
+        Read both files: `head -n 80 {{rig}}/mayor/rig/REQUIREMENTS.md` and `head -n 80 {{rig}}/mayor/rig/SPEC.md`.
+        List every missing requirement in your failure summary. The Analyst will fix SPEC.md.
     transitions:
       success:
         to: design
       failure:
-        to: kickoff
+        to: analysis
   design:
     role: architect
     prompt_file: prompts/rig-flow/design.md
     instructions: |
       1. Read `{{rig}}/mayor/rig/SPEC.md`.
-      2. Write `{{rig}}/mayor/rig/architecture.md` (≥{{min_architecture_bytes}} bytes).
+      2. Write `{{rig}}/mayor/rig/architecture.md` (>= {{min_architecture_bytes}} bytes).
       3. CRITICAL: You MUST prefix ALL file paths (in lists, prose, tables, and code blocks) with the root directory name from the SPEC (e.g. `layout_root/cmd/server/main.go`, not `cmd/server/main.go`, and `layout_root/web/` not `web/`).
     hooks:
       prompt_context: [design_draft_context]
@@ -41,7 +91,7 @@ states:
       track: design
       artifacts: design
       retry_hint: |
-        One CMD: per line. Read SPEC with head; write architecture.md via a single-quoted heredoc (≥200 bytes).
+        One CMD: per line. Read SPEC with head; write architecture.md via a single-quoted heredoc (>=200 bytes).
         Prose may mention python3 or backend/ paths — that is fine inside the document.
         After a successful heredoc write and `wc -c` meeting the minimum, gt-agent auto-completes design when validation passes (JSON success optional).
       failure_hint: |
@@ -56,7 +106,7 @@ states:
     prompt_file: prompts/rig-flow/planning.md
     instructions: |
       1. Read SPEC and architecture under `{{rig}}/mayor/rig/`.
-      2. Create implementation beads and `plan.md` (≥{{min_plan_bytes}} bytes) with a ## Bead map: real IDs from bd list, full paths, scope + acceptance per file.
+      2. Create implementation beads and `plan.md` (>= {{min_plan_bytes}} bytes) with a ## Bead map: real IDs from bd list, full paths, scope + acceptance per file.
     hooks:
       prompt_context: [planning_bead_bootstrap]
       pre_run: [sync_planning_artifacts]
@@ -75,7 +125,7 @@ states:
         One CMD: per line. After `cd {{rig}}/mayor/rig`, write plan.md with a relative path (not {{rig}}/mayor/rig/plan.md).
         Heredoc must end with a line containing only EOF. Verify with `wc -c {{rig}}/mayor/rig/plan.md` (full path from town root).
       failure_hint: |
-        Do not send success JSON until CMD: lines ran in this session. If sync_planning_artifacts already created beads, bd list only — gt-agent rejects bd create when required_files are covered. Do **not** heredoc plan.md when required_files use {{layout_root}}/internal/ or {{layout_root}}/cmd/ — sync builds plan.md with full paths. Run `cd {{rig}}/mayor/rig && wc -c plan.md` (≥ {{min_plan_bytes}} bytes; use full path `wc -c {{rig}}/mayor/rig/plan.md` from town root if no cd). Work from {{rig}}/mayor/rig — the environment already has BEADS_DIR set to the rig's beads database.
+        Do not send success JSON until CMD: lines ran in this session. If sync_planning_artifacts already created beads, bd list only — gt-agent rejects bd create when required_files are covered. Do **not** heredoc plan.md when required_files use {{layout_root}}/internal/ or {{layout_root}}/cmd/ — sync builds plan.md with full paths. Run `cd {{rig}}/mayor/rig && wc -c plan.md` (>= {{min_plan_bytes}} bytes; use full path `wc -c {{rig}}/mayor/rig/plan.md` from town root if no cd). Work from {{rig}}/mayor/rig — the environment already has BEADS_DIR set to the rig's beads database.
     transitions:
       success:
         to: plan_review
@@ -83,8 +133,6 @@ states:
         to: planning
       timeout:
         to: planning
-      architecture_failure:
-        to: design
   plan_review:
     role: qa
     prompt_file: prompts/rig-flow/plan_review.md
@@ -111,8 +159,6 @@ states:
         to: project_setup
       failure:
         to: planning
-      architecture_failure:
-        to: design
   project_setup:
     role: setup
     prompt_file: prompts/rig-flow/project_setup.md
@@ -156,13 +202,11 @@ states:
         to: implementation
       failure:
         to: project_setup
-      architecture_failure:
-        to: design
   implementation:
     role: polecat
     prompt_file: prompts/rig-flow/implementation.md
     instructions: |
-      Implement the **Next bead** only: in_progress → code + unit tests tied to SPEC/plan acceptance → verify (go test / pytest per Next bead) → bd close. JSON success when all implement beads are closed.
+      Implement the **Next bead** only: in_progress -> code + unit tests tied to SPEC/plan acceptance -> verify (go test / pytest per Next bead) -> bd close. JSON success when all implement beads are closed.
     hooks:
       state_timeout_seconds: 7200
       on_timeout: [recover_implementation_stall]
@@ -205,7 +249,7 @@ states:
 
         **SQL beads (.sql):** Validate with the sqlite3 verify command shown in the Next bead line. Do NOT run pytest on .sql files.
 
-        **One bead at a time:** Update ONE bead to in_progress → WRITE/EDIT that file → `bd close`. Do not batch multiple beads.
+        **One bead at a time:** Update ONE bead to in_progress -> WRITE/EDIT that file -> `bd close`. Do not batch multiple beads.
 
         **Result (SEPARATE message, NO CMD/WRITE/EDIT lines):**
         {"outcome":"success","summary":"Implemented handlers.go and tests; go test passes"}
@@ -218,8 +262,6 @@ states:
       empty_response_suffix: "Reply with EDIT:/WRITE:/READ: or CMD: lines. Implement code and unit tests per plan.md; WRITE for new *_test.go or tests/test_*.py. Use Verify from Next bead."
       prompt_context: [implementation_queue, implement_bead_context, phase_test_guards]
       pre_run: [prune_rig_root_junk, ensure_dolt_auto_commit, ensure_dolt_schema_health, sync_planning_artifacts, ensure_http_implementation_config, ensure_handler_phase_prerequisites, ensure_implement_smoke_ready, ensure_go_mod_from_spec, enforce_implement_bead_queue, prune_stale_layout_files, repair_requirements, refresh_codeindex, reconcile_implement_beads, ensure_test_stack_ready]
-      # Do not run repair_planning_beads / refresh_plan_md_if_stale per turn — they create beads and
-      # rewrite plan.md mid-implementation (see pre_run sync + reconcile). Planning-only repair stays in planning state hooks.
       per_turn: [prune_stale_layout_files, repair_requirements]
       cmd_guard: implementation
       cmd_rewrites: [rig_placeholders, unwrap_bash_lc, backend_path_after_cd, bd_list_implement_scope, unittest_workdir, bd_list_limit, bd_close_auto_commit, bd_strip_beads_dir]
@@ -248,7 +290,7 @@ states:
       artifacts: implementation
       retry_hint_key: implementation
       failure_hint: |
-        One bead at a time: bd update → **EDIT:** / **WRITE:** (include *_test.go or tests/test_*.py mapped to SPEC/plan) → verify from Next bead (go test / pytest) → bd close. Use CMD only for bd/verify. go run/curl only on cmd/server/main.go bead.
+        One bead at a time: bd update -> **EDIT:** / **WRITE:** (include *_test.go or tests/test_*.py mapped to SPEC/plan) -> verify from Next bead (go test / pytest) -> bd close. Use CMD only for bd/verify. go run/curl only on cmd/server/main.go bead.
         After QA failure rework: READ the QA-cited file on disk first. If the file already exists and verify passes, bd close it — do NOT rewrite files that QA falsely claimed as missing/broken. Only make changes when QA's claim is confirmed.
     transitions:
       success:

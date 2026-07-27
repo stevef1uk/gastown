@@ -98,6 +98,11 @@ func ensureOrchestratedRigAgentsRunning(townRoot, rigName string, r *rig.Rig) {
 	upEnsureFreshPipelineSession(ctx, sp, townRoot, archID, wantArch)
 	_ = upStartArchitect(rigName, r)
 
+	analystID := session.AnalystSessionName(prefix, rigName)
+	wantAnalyst := orchestrator.OrchestratedForRole(true, "analyst")
+	upEnsureFreshPipelineSession(ctx, sp, townRoot, analystID, wantAnalyst)
+	_ = upStartAnalyst(rigName, r)
+
 	qaID := session.QASessionName(prefix, rigName)
 	wantQA := orchestrator.OrchestratedForRole(true, constants.RoleQA)
 	upEnsureFreshPipelineSession(ctx, sp, townRoot, qaID, wantQA)

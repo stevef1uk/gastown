@@ -17,9 +17,11 @@ type WorkflowInfo struct {
 	ActiveRole   string `json:"active_role,omitempty"`
 }
 
-// rigFlowStateRole maps rig-flow FSM states to the agent role that owns the step.
+// rigFlowStateRole maps rig-flow/req-flow FSM states to the agent role that owns the step.
 var rigFlowStateRole = map[string]string{
 	"kickoff":        "mayor",
+	"analysis":       "analyst",
+	"spec_review":    "qa",
 	"design":         "architect",
 	"planning":       "planner",
 	"project_setup":  "setup",
@@ -45,7 +47,7 @@ func (s *Server) loadWorkflows() []WorkflowInfo {
 			CurrentState: inst.CurrentState,
 			Status:       inst.Status,
 		}
-		if inst.TemplateID == "rig-flow" {
+		if inst.TemplateID == "rig-flow" || inst.TemplateID == "req-flow" {
 			w.ActiveRole = rigFlowStateRole[inst.CurrentState]
 		}
 		out = append(out, w)

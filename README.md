@@ -98,14 +98,19 @@ Git-backed issue tracking system that stores work state as structured data.
 
 Workflow templates that coordinate multi-step work. Formulas (TOML definitions) are instantiated as molecules with tracked steps. Two modes: root-only wisps (steps materialized at runtime, lightweight) and poured wisps (steps materialized as sub-wisps with checkpoint recovery). See [Molecules](docs/concepts/molecules.md).
 
-### Orchestrator & Freeride (rig-flow) 🎯
+### Orchestrator & Freeride 🎯
 
-**New:** A deterministic **workflow FSM** coordinates rig delivery — Mayor kickoff → Architect → Planner → Polecat → QA — instead of every agent discovering work independently via mail, hooks, and sling.
+**New:** A deterministic **workflow FSM** coordinates rig delivery — instead of every agent discovering work independently via mail, hooks, and sling. Two pipeline templates are bundled:
+
+| Template | Entry point | Flow |
+|----------|-------------|------|
+| **`rig-flow`** | Existing `SPEC.md` | Mayor kickoff → Architect → Planner → Polecat → QA |
+| **`req-flow`** | Business `REQUIREMENTS.md` | Analyst → QA spec review → Architect → Planner → Polecat → QA |
 
 | Model | How work moves |
 | ----- | -------------- |
 | **Legacy (autonomous)** | Mayor slings beads; polecats/crew self-dispatch via `gt prime`, mail, and patrol |
-| **Orchestrator (`rig-flow`)** | `gt orchestrator run` owns state; pipeline `gt-agent --orchestrated` roles poll `fetch_task` / `complete_task` over NATS |
+| **Orchestrator (`rig-flow` / `req-flow`)** | `gt orchestrator run` owns state; pipeline `gt-agent --orchestrated` roles poll `fetch_task` / `complete_task` over NATS |
 
 **Freeride stack** (typical dev setup):
 
@@ -205,6 +210,42 @@ Full rig reset (instances, beads, mail, worktree):
 cd /path/to/gastown
 START_RIG_FLOW=1 ./scripts/reset-rig-orchestrator.sh --force
 ```
+
+#### Try `req-flow` (Requirements-driven pipeline)
+
+Same prerequisites as `rig-flow`, but the rig must have a `REQUIREMENTS.md` file instead of `SPEC.md`. The Analyst role converts REQUIREMENTS.md → SPEC.md, then QA (spec review) validates completeness before the pipeline continues through the standard rig-flow states.
+
+```bash
+# 1. Build and install (same as rig-flow)
+cd /path/to/gastown
+SKIP_UPDATE_CHECK=1 make install
+
+# 2. Create REQUIREMENTS.md instead of SPEC.md
+echo "# Business requirements for MyProject" > ~/gt/myrig/mayor/rig/REQUIREMENTS.md
+# (fill in your actual requirements)
+
+# 3. Start the pipeline with req-flow template
+cd ~/gt
+gt mayor workflow start req-flow --rig myrig
+gt mayor workflow status
+```
+
+**Pipeline stages:**
+
+| State | Role | What happens |
+|-------|------|-------------|
+| `kickoff` | Mayor | Verify rig is registered and REQUIREMENTS.md exists |
+| `analysis` | Analyst | Read REQUIREMENTS.md → write SPEC.md (complete technical spec) |
+| `spec_review` | QA | Verify SPEC covers 100% of REQUIREMENTS; sends back to Analyst if gaps found |
+| `design` | Architect | Write architecture.md from SPEC |
+| `planning` | Planner | Create implementation beads + plan.md |
+| `plan_review` | QA | Verify beads match architecture + required_files |
+| `project_setup` | Setup | Initialize toolchain (go mod, python venv, npm install) |
+| `implementation` | Polecat | Implement beads one at a time with unit tests |
+| `qa_review` | QA | Review implementation, run runtime smoke, pass/fail |
+| `advance_phase` | (internal) | Advance to next delivery phase or mark completed |
+
+The same rewind, reset, and workflow management commands from `rig-flow` apply (`gt mayor workflow reset`, `gt mayor workflow status`, `gt orchestrator sync`).
 
 ### List and delete workflow instances
 
@@ -800,21 +841,23 @@ terminal while debugging.
 ### What you see
 
 - **Agent list** — Town agents (Mayor, Deacon, Planner) and per-rig roles (Witness, Refinery, Architect, QA, pipeline Polecat, crew)
-- **Orchestrator** — `gt orchestrator run` status and activity (when using [rig-flow](#orchestrator--freeride-rig-flow-))
-- **Workflow badges** — active `rig-flow` step highlighted on the matching agent; rig header shows `wf-1 → qa_review` style hints
+- **Orchestrator** — `gt orchestrator run` status and activity (when using [rig-flow](#orchestrator--freeride-rig-flow-) or [`req-flow`](#try-req-flow-requirements-driven-pipeline))
+- **Workflow badges** — active pipeline step highlighted on the matching agent; rig header shows `wf-1 → qa_review` style hints
 - **Activity logs** — tails each role’s `typescript` file where orchestrated agents actually log; falls back to `logs/sessions/*.log`
 - **Live stream** — SSE updates as new log lines appear
 - **Nudges** — send messages to an agent’s queue (orchestrator itself is view-only)
 
-### Orchestrator / rig-flow debugging
+### Orchestrator / pipeline debugging
 
-When running [`rig-flow`](#try-rig-flow-on-a-rig-eg-testgt2), prefer the console over
+When running a pipeline workflow (`rig-flow` or `req-flow`), prefer the console over
 guessing which `typescript` to tail:
 
 | FSM state | Select in console |
 | --------- | ----------------- |
+| analysis / spec_review | Rig → **Analyst** / **QA** (req-flow only) |
 | design | Rig → **Architect** |
-| planning | Town → **Planner** |
+| planning / plan_review | Town → **Planner** / Rig → **QA** |
+| project_setup | Rig → **Setup** |
 | implementation | Rig → **Polecat (pipeline)** — not `polecats/*` workers |
 | qa_review | Rig → **QA** |
 

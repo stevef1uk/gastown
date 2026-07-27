@@ -150,7 +150,7 @@ func looksLikeBeadIssueID(id string) bool {
 func summaryMentionsAgentIdentityBead(summary, matchedID string) bool {
 	lower := strings.ToLower(summary)
 	matchedID = strings.ToLower(matchedID)
-	for _, role := range []string{"architect", "qa", "witness", "refinery", "polecat"} {
+	for _, role := range []string{"architect", "analyst", "qa", "witness", "refinery", "polecat"} {
 		if strings.Contains(lower, matchedID+"-"+role) {
 			return true
 		}
@@ -160,7 +160,7 @@ func summaryMentionsAgentIdentityBead(summary, matchedID string) bool {
 
 // isAgentIdentityBeadID reports rig patrol/role beads (e.g. xx-<rig>-architect), not implementation tasks.
 func isAgentIdentityBeadID(id string) bool {
-	for _, suf := range []string{"-architect", "-qa", "-witness", "-refinery", "-polecat"} {
+	for _, suf := range []string{"-architect", "-analyst", "-qa", "-witness", "-refinery", "-polecat"} {
 		if strings.HasSuffix(id, suf) {
 			return true
 		}

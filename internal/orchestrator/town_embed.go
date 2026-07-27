@@ -10,6 +10,9 @@ import (
 //go:embed town/templates/rig-flow.yaml
 var rigFlowTemplateYAML []byte
 
+//go:embed town/templates/req-flow.yaml
+var reqFlowTemplateYAML []byte
+
 // LoadRigFlowTemplate parses the bundled rig-flow workflow template from gastown source.
 func LoadRigFlowTemplate() (*WorkflowTemplate, error) {
 	var tpl WorkflowTemplate
@@ -18,6 +21,18 @@ func LoadRigFlowTemplate() (*WorkflowTemplate, error) {
 	}
 	if tpl.ID == "" {
 		return nil, fmt.Errorf("rig-flow.yaml: missing id")
+	}
+	return &tpl, nil
+}
+
+// LoadReqFlowTemplate parses the bundled req-flow workflow template from gastown source.
+func LoadReqFlowTemplate() (*WorkflowTemplate, error) {
+	var tpl WorkflowTemplate
+	if err := yaml.Unmarshal(reqFlowTemplateYAML, &tpl); err != nil {
+		return nil, fmt.Errorf("parse req-flow.yaml: %w", err)
+	}
+	if tpl.ID == "" {
+		return nil, fmt.Errorf("req-flow.yaml: missing id")
 	}
 	return &tpl, nil
 }

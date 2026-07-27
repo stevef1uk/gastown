@@ -3,7 +3,7 @@
 Technical reference for the Gas Town workflow FSM and MCP service introduced on the
 `mcp-orchestrator` branch. For operators, see [Orchestrator (concept)](../concepts/orchestrator.md).
 
-**Status:** Phases 1–3 implemented on `mcp-orchestrator`. Rig-flow FSM, NATS MCP,
+**Status:** Phases 1–3 implemented on `mcp-orchestrator`. Rig-flow and req-flow FSMs, NATS MCP,
 persistence, auto-start, per-state prompts, orchestrated agent loop, topology guards,
 and unit tests are in place. Remaining gaps: QA outcome aliases, duplicate hq agents
 with multiple rigs, full template schema unification for all bundled YAML examples.
@@ -165,12 +165,17 @@ Required per state: `role`, and either `prompt_file` or `instructions`. Transiti
 ```
 {townRoot}/orchestrator/
   templates/rig-flow.yaml
+  templates/req-flow.yaml
   prompts/rig-flow/
     kickoff.md      # system prompt for this state only
     design.md
     planning.md
     implementation.md
     qa_review.md
+  prompts/req-flow/
+    kickoff.md      # req-flow specific prompts
+    analysis.md
+    spec_review.md
 ```
 
 - Lift rules from `internal/templates/roles/*.md.tmpl` into state files; keep each file
@@ -471,6 +476,8 @@ Tests:
 | `testgt2` | architect | `architect` | No |
 | `testgt2` | qa | `testgt2/qa` | Yes |
 | `testgt2` | qa | `qa` | No |
+| `testgt2` | analyst | `testgt2/analyst` | Yes |
+| `testgt2` | analyst | `analyst` | No |
 | (any) | mayor | `mayor` | Yes |
 | (any) | planner | `planner` | Yes |
 | `testgt2` | polecat | `testgt2/polecat` | Yes |
@@ -491,7 +498,7 @@ func OrchestratedForRole(orchestratorRunning bool, role string) bool {
 
 | Category | Roles | `--orchestrated` when orch running |
 |----------|-------|-------------------------------------|
-| Pipeline | mayor, architect, planner, polecat, qa | Yes |
+| Pipeline | mayor, analyst, architect, planner, setup, polecat, qa | Yes |
 | Patrol | witness, refinery, mechanic, deacon | No (legacy patrol) |
 
 Rig pipeline polecat uses `OrchestratedForRole` like architect/qa. Legacy town `hq-polecat` uses `OrchestratedForTownPolecat` only when no rigs are registered.
@@ -595,7 +602,9 @@ Independent of orchestrator MCP:
 | `internal/session/lifecycle.go` | `--orchestrated` on command line |
 | `internal/templates/roles/*.md.tmpl` | Legacy role prompts |
 | `internal/orchestrator/town/templates/rig-flow.yaml` | Canonical rig-flow (embedded) |
-| `internal/orchestrator/town/prompts/rig-flow/*.md` | Per-state system prompts |
+| `internal/orchestrator/town/templates/req-flow.yaml` | Requirements-driven pipeline req-flow (embedded) |
+| `internal/orchestrator/town/prompts/rig-flow/*.md` | Per-state system prompts for rig-flow |
+| `internal/orchestrator/town/prompts/req-flow/*.md` | Per-state system prompts for req-flow |
 | `cmd/gt-agent/orchestrated.go` | Orchestrated loop + guards |
 | `internal/orchestrator/provision.go` | `//go:embed town/` |
 
@@ -658,14 +667,22 @@ polecat identity repair, planning/implementation CMD guards, rig-flow prompt pac
 cd ~/gt
 gt up
 gt orchestrator status
+
+# Rig-flow (SPEC.md → code)
 gt mayor workflow start rig-flow --rig testgt2
 tail -f logs/orchestrator.log
 # Expect: kickoff → design → planning → implementation → qa_review → completed
+
+# Req-flow (REQUIREMENTS.md → SPEC.md → code)
+gt mayor workflow start req-flow --rig testgt2
+tail -f logs/orchestrator.log
+# Expect: kickoff → analysis → spec_review → design → planning → ... → completed
 ```
 
 Verify:
 
 - `testgt2/architect` only active in `design`
+- `testgt2/analyst` only active in `analysis` (req-flow)
 - `~/gt/polecat` only in `implementation` (`testgt2/polecat`)
 - `testgt2/qa` only in `qa_review` (not `~/gt/qa`)
 

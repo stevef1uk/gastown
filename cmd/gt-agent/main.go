@@ -63,6 +63,7 @@ var permanentAgents = map[string]bool{
 	"setup":       true,
 	"mechanic":    true,
 	"architect":   true,
+	"analyst":     true,
 	"qa":          true,
 	"deacon/boot": true, // boot is a deacon variant
 }
@@ -383,7 +384,7 @@ func run() error {
 	if sessionName == "" {
 		if rig != "" && polecat != "" {
 			sessionName = fmt.Sprintf("gt-%s-%s", rig, polecat)
-		} else if roleCanonical == "mayor" || roleCanonical == "deacon" || roleCanonical == "witness" || roleCanonical == "refinery" || roleCanonical == "planner" || roleCanonical == "setup" || roleCanonical == "mechanic" || roleCanonical == "architect" || roleCanonical == "qa" {
+		} else if roleCanonical == "mayor" || roleCanonical == "deacon" || roleCanonical == "witness" || roleCanonical == "refinery" || roleCanonical == "planner" || roleCanonical == "setup" || roleCanonical == "mechanic" || roleCanonical == "architect" || roleCanonical == "analyst" || roleCanonical == "qa" {
 			// For rig-level roles, use the prefix if known
 			prefix := rig
 			if prefix == "" {
@@ -1874,6 +1875,7 @@ var knownHandoffRoles = map[string]bool{
 	"mayor":     true,
 	"planner":   true,
 	"architect": true,
+	"analyst":   true,
 	"qa":        true,
 	"witness":   true,
 	"refinery":  true,
@@ -2411,7 +2413,7 @@ func hasContentFreeMailSend(cmd string) (string, bool) {
 			// Role/agent names — never carry content on their own.
 			"witness": true, "mayor": true, "refinery": true,
 			"polecat": true, "polecats": true, "deacon": true,
-			"architect": true, "qa": true, "planner": true, "setup": true, "mechanic": true,
+			"architect": true, "analyst": true, "qa": true, "planner": true, "setup": true, "mechanic": true,
 		}
 		bodyTokens := tokenizeAlnum(bodyTrim)
 		extra := 0

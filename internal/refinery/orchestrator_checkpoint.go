@@ -79,7 +79,7 @@ func CommitMayorRigOrchestratorCheckpoint(townRoot, rigName, workflowID, templat
 	if os.Getenv("GT_SKIP_WORKFLOW_GIT_COMMIT") != "" {
 		return maybePushMayorRigOnCompleted(townRoot, rigName, templateID, fromState, toState)
 	}
-	if templateID != "rig-flow" || rigName == "" {
+	if templateID != "rig-flow" && templateID != "req-flow" || rigName == "" {
 		return nil
 	}
 	if fromState == toState {
@@ -181,7 +181,7 @@ func SyncMayorRigUpstream(townRoot, rigName string) error {
 }
 
 func maybePushMayorRigOnCompleted(townRoot, rigName, templateID, fromState, toState string) error {
-	if toState != "completed" || templateID != "rig-flow" || rigName == "" {
+	if toState != "completed" || (templateID != "rig-flow" && templateID != "req-flow") || rigName == "" {
 		return nil
 	}
 	if os.Getenv("GT_WORKFLOW_SKIP_PUSH") != "" {
@@ -219,7 +219,7 @@ func maybePushMayorRigOnCompleted(townRoot, rigName, templateID, fromState, toSt
 }
 
 func buildOrchestratorTransitionMessage(workflowID, fromState, toState, outcome string) string {
-	if isQAApprovedTransition("rig-flow", fromState, toState) {
+	if isQAApprovedTransition("rig-flow", fromState, toState) || isQAApprovedTransition("req-flow", fromState, toState) {
 		return buildQAApprovedMessage(workflowID)
 	}
 	return buildOrchestratorCheckpointMessage(workflowID, fromState, toState, outcome)
@@ -247,5 +247,5 @@ func buildQAApprovedMessage(workflowID string) string {
 }
 
 func isQAApprovedTransition(templateID, fromState, toState string) bool {
-	return templateID == "rig-flow" && fromState == "qa_review" && toState == "completed"
+	return (templateID == "rig-flow" || templateID == "req-flow") && fromState == "qa_review" && toState == "completed"
 }

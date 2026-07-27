@@ -6,7 +6,7 @@ func legacyPolecatsPausedFromStatuses(statuses []WorkflowStatus, rigName string)
 		if s.Status == "completed" || s.Status == "failed" || s.Status == "paused" {
 			continue
 		}
-		if s.TemplateID != "rig-flow" {
+		if s.TemplateID != "rig-flow" && s.TemplateID != "req-flow" {
 			continue
 		}
 		if rigName != "" && s.Variables["rig"] != rigName {

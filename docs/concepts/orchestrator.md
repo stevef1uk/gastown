@@ -68,10 +68,17 @@ and implementation beads.
 
 See [Molecules](molecules.md) for formula/wisp workflows used elsewhere.
 
-## Quickstart: `rig-flow` on `testgt2`
+## Quickstart: `rig-flow` / `req-flow` on `testgt2`
 
-End-to-end example of a working orchestrator pipeline (Mayor → Architect → Planner → Polecat → QA).
+End-to-end example of a working orchestrator pipeline (Mayor → Analyst → Architect → Planner → Polecat → QA).
 Assumes town root `~/gt`, rig `testgt2`, and `session_transport: "nats"` in `settings/config.json`.
+
+Two pipeline templates are bundled:
+
+| Template | Entry point | Flow |
+|----------|-------------|------|
+| **`rig-flow`** | Existing `SPEC.md` | Mayor kickoff → Architect → Planner → Polecat → QA |
+| **`req-flow`** | Business `REQUIREMENTS.md` | Analyst → QA spec review → Architect → Planner → Polecat → QA |
 
 ### 1. Install and bring the town up
 
@@ -289,9 +296,13 @@ Runtime files live under `{townRoot}/orchestrator/`:
 
 ```
 orchestrator/
-  templates/rig-flow.yaml
+  templates/rig-flow.yaml      # SPEC-driven pipeline
+  templates/req-flow.yaml      # Requirements-driven pipeline
   prompts/rig-flow/kickoff.md
   prompts/rig-flow/design.md
+  prompts/req-flow/kickoff.md
+  prompts/req-flow/analysis.md
+  prompts/req-flow/spec_review.md
   ...
   instances.json          # persisted workflow state (Phase 2)
 ```
@@ -306,22 +317,40 @@ orchestrator/
 | `GT_ORCH_POLL_INTERVAL` | `15s` | Idle poll interval for `--orchestrated` agents |
 | `GT_SESSION_TRANSPORT` | from settings | Town session transport (use `nats` with orchestrator) |
 
-## Which sessions to watch (rig-flow on `testgt2`)
+## Which sessions to watch (pipeline on `testgt2`)
 
 Pipeline agents use **orchestrated** `gt-agent` with rig-scoped `agent_id` where required.
 Tail the **rig-scoped** session, not the town `hq-*` duplicate when a single rig is registered.
+
+### rig-flow
 
 | FSM state | Role | Session / log to tail | `fetch_task` agent_id |
 |-----------|------|------------------------|------------------------|
 | kickoff | mayor | `~/gt/mayor/typescript` | `mayor` |
 | design | architect | `~/gt/testgt2/architect/typescript` | `testgt2/architect` |
 | planning | planner | `~/gt/planner/typescript` | `planner` (town-level) |
+| plan_review | qa | `~/gt/testgt2/qa/typescript` | `testgt2/qa` |
+| project_setup | setup | `~/gt/testgt2/setup/typescript` | `testgt2/setup` |
+| implementation | polecat | `~/gt/testgt2/polecat/typescript` | `testgt2/polecat` |
+| qa_review | qa | `~/gt/testgt2/qa/typescript` | `testgt2/qa` |
+
+### req-flow (additional states)
+
+| FSM state | Role | Session / log to tail | `fetch_task` agent_id |
+|-----------|------|------------------------|------------------------|
+| kickoff | mayor | `~/gt/mayor/typescript` | `mayor` |
+| analysis | analyst | `~/gt/testgt2/analyst/typescript` | `testgt2/analyst` |
+| spec_review | qa | `~/gt/testgt2/qa/typescript` | `testgt2/qa` |
+| design | architect | `~/gt/testgt2/architect/typescript` | `testgt2/architect` |
+| planning | planner | `~/gt/planner/typescript` | `planner` (town-level) |
+| plan_review | qa | `~/gt/testgt2/qa/typescript` | `testgt2/qa` |
+| project_setup | setup | `~/gt/testgt2/setup/typescript` | `testgt2/setup` |
 | implementation | polecat | `~/gt/testgt2/polecat/typescript` | `testgt2/polecat` |
 | qa_review | qa | `~/gt/testgt2/qa/typescript` | `testgt2/qa` |
 
 **Do not confuse with:**
 
-| Path | Why it is wrong for rig-flow |
+| Path | Why it is wrong for pipeline workflows |
 |------|------------------------------|
 | `~/gt/qa/typescript` | Town `hq-qa`: `agent_id="qa"` — does **not** match when workflow has `rig: testgt2` |
 | `~/gt/testgt2/polecats/*/typescript` | Legacy per-bead polecats (witness/sling); **not** the orchestrator implementation step |

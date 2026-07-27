@@ -37,7 +37,7 @@ func RunWorkflowStuckMonitorTick(townRoot string, polecatRunning PolecatSessionC
 		if inst == nil || !isWorkflowRunningStatus(inst.Status) {
 			continue
 		}
-		if inst.TemplateID != "rig-flow" {
+		if inst.TemplateID != "rig-flow" && inst.TemplateID != "req-flow" {
 			continue
 		}
 		rig := ""

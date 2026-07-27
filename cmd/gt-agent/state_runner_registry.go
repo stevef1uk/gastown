@@ -17,6 +17,12 @@ type artifactValidateFn func(r *stateRunner, outcome string) error
 type artifactAutoCompleteFn func(r *stateRunner) error
 
 var cmdGuardHandlers = map[string]cmdGuardFn{
+	"analysis": func(r *stateRunner, cmd string) error {
+		return validateAnalysisCommand(cmd, r.rig)
+	},
+	"spec_review": func(r *stateRunner, cmd string) error {
+		return validateSpecReviewCommand(cmd, r.rig)
+	},
 	"design": func(r *stateRunner, cmd string) error {
 		return validateDesignCommand(cmd, r.rig)
 	},
@@ -56,6 +62,8 @@ var cmdGuardHandlers = map[string]cmdGuardFn{
 }
 
 var cmdGuardRejectScope = map[string]string{
+	"analysis":        "analyst scope",
+	"spec_review":     "spec review scope",
 	"design":         "architect scope",
 	"planning":       "planner scope",
 	"project_setup":  "project setup scope",
@@ -65,6 +73,16 @@ var cmdGuardRejectScope = map[string]string{
 }
 
 var trackHandlers = map[string]trackFn{
+	"analysis": func(r *stateRunner, cmd string, cmdErr error) {
+		if cmdErr != nil {
+			r.track.hadCmdFailure = true
+		}
+	},
+	"spec_review": func(r *stateRunner, cmd string, cmdErr error) {
+		if cmdErr != nil {
+			r.track.hadCmdFailure = true
+		}
+	},
 	"design": func(r *stateRunner, cmd string, cmdErr error) {
 		if cmdErr == nil && isArchitectureMDWriteCommand(cmd) {
 			r.track.designArchWritten = true
@@ -188,6 +206,12 @@ var trackHandlers = map[string]trackFn{
 }
 
 var artifactValidators = map[string]artifactValidateFn{
+	"analysis": func(r *stateRunner, _ string) error {
+		return validateAnalysisArtifacts(r.townRoot, r.rig)
+	},
+	"spec_review": func(r *stateRunner, _ string) error {
+		return nil // spec_review is outcome-driven, no artifact checks
+	},
 	"design": func(r *stateRunner, _ string) error {
 		return validateDesignArtifacts(r.townRoot, r.rig, r.track.designArchWritten, r.v)
 	},

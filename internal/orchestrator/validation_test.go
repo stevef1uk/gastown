@@ -324,3 +324,87 @@ states:
 		t.Fatalf("got %+v", tpl.Validation)
 	}
 }
+
+func TestValidateDeliveryPhases_upgradesEchoToSmoke(t *testing.T) {
+	t.Parallel()
+	v := WorkflowValidation{
+		LayoutRoot: "linkshelf",
+		RequiredFiles: []string{
+			"linkshelf/go.mod",
+			"linkshelf/internal/store/schema.go",
+			"linkshelf/internal/store/store.go",
+			"linkshelf/internal/api/handlers.go",
+			"linkshelf/cmd/server/main.go",
+			"linkshelf/web/index.html",
+			"linkshelf/web/app.js",
+		},
+		QAVerifyCommand: "cd linkshelf && go test ./...",
+		DeliveryPhases: []DeliveryPhase{
+			{ID: "store", RequiredFiles: []string{"linkshelf/internal/store/schema.go"}, QAVerifyCommand: "cd linkshelf && go test ./internal/store/..."},
+			{ID: "web-shell", RequiredFiles: []string{"linkshelf/web/index.html"}, QAVerifyCommand: "cd linkshelf && echo 'verify ok (no automated tests for this phase)'"},
+		},
+		ActivePhaseIDField: "store",
+	}
+	v = ValidateDeliveryPhases(v)
+	final := v.DeliveryPhases[len(v.DeliveryPhases)-1]
+	if strings.Contains(final.QAVerifyCommand, "echo") {
+		t.Fatalf("final phase should not have echo verify, got %q", final.QAVerifyCommand)
+	}
+	if !strings.Contains(final.QAVerifyCommand, "go build") || !strings.Contains(final.QAVerifyCommand, "go test") {
+		t.Fatalf("final phase should have compile+test smoke, got %q", final.QAVerifyCommand)
+	}
+}
+
+func TestValidateDeliveryPhases_noUpgradeWhenNoServer(t *testing.T) {
+	t.Parallel()
+	v := WorkflowValidation{
+		LayoutRoot: "pkg",
+		RequiredFiles: []string{
+			"pkg/go.mod",
+			"pkg/main.go",
+		},
+		QAVerifyCommand: "cd pkg && go test ./...",
+		DeliveryPhases: []DeliveryPhase{
+			{ID: "core", RequiredFiles: []string{"pkg/main.go"}, QAVerifyCommand: "cd pkg && go test ./..."},
+			{ID: "docs", RequiredFiles: []string{"pkg/README.md"}, QAVerifyCommand: "cd pkg && echo 'verify ok (no automated tests for this phase)'"},
+		},
+		ActivePhaseIDField: "core",
+	}
+	v = ValidateDeliveryPhases(v)
+	final := v.DeliveryPhases[len(v.DeliveryPhases)-1]
+	if !strings.Contains(final.QAVerifyCommand, "echo") {
+		t.Fatalf("non-web final phase should keep echo, got %q", final.QAVerifyCommand)
+	}
+}
+
+func TestFinalPhaseSmokeVerifyCommand(t *testing.T) {
+	t.Parallel()
+	// Go+web+server: should return smoke command
+	v := WorkflowValidation{
+		LayoutRoot:    "linkshelf",
+		QAVerifyCommand: "cd linkshelf && go test ./...",
+		RequiredFiles: []string{
+			"linkshelf/go.mod",
+			"linkshelf/cmd/server/main.go",
+			"linkshelf/web/index.html",
+		},
+	}
+	if got := finalPhaseSmokeVerifyCommand(v); got == "" {
+		t.Fatal("expected smoke command for Go+web+server")
+	} else if !strings.Contains(got, "go build") {
+		t.Fatalf("expected go build in smoke command, got %q", got)
+	}
+
+	// Go library (no web): should return ""
+	v2 := WorkflowValidation{
+		LayoutRoot:      "pkg",
+		QAVerifyCommand: "cd pkg && go test ./...",
+		RequiredFiles: []string{
+			"pkg/go.mod",
+			"pkg/main.go",
+		},
+	}
+	if got := finalPhaseSmokeVerifyCommand(v2); got != "" {
+		t.Fatalf("expected empty for Go library, got %q", got)
+	}
+}

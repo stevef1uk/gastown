@@ -336,6 +336,9 @@ const (
 	// RoleArchitect is the architect agent role (per-rig).
 	RoleArchitect = "architect"
 
+	// RoleAnalyst is the analyst agent role (per-rig, req-flow only).
+	RoleAnalyst = "analyst"
+
 	// RoleQA is the qa agent role (per-rig).
 	RoleQA = "qa"
 

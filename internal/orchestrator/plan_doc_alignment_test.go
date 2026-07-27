@@ -96,7 +96,7 @@ httptest is mandatory for every bead.
 		LayoutRoot:    "linkshelf",
 		RequiredFiles: []string{"linkshelf/cmd/server/main.go", "linkshelf/internal/store/store.go"},
 	}
-	err := ValidatePlanningDocAlignment(dir, v)
+	err := ValidatePlanningDocAlignment("", dir, v)
 	if err == nil {
 		t.Fatal("expected alignment error")
 	}
@@ -134,7 +134,7 @@ main calls InitSchema; registers GET /api/links; handlers use store.List and sto
 		LayoutRoot:    "linkshelf",
 		RequiredFiles: []string{"linkshelf/cmd/server/main.go"},
 	}
-	if err := ValidatePlanningDocAlignment(dir, v); err != nil {
+	if err := ValidatePlanningDocAlignment("", dir, v); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -279,7 +279,7 @@ module linkshelf
 		LayoutRoot:    "linkshelf",
 		RequiredFiles: []string{"linkshelf/internal/store/schema.go", "linkshelf/internal/store/store.go"},
 	}
-	err := ValidatePlanningDocAlignment(dir, v)
+	err := ValidatePlanningDocAlignment("", dir, v)
 	if err == nil {
 		t.Fatal("expected plan layout path error")
 	}
@@ -314,7 +314,7 @@ Registers GET /api/links on DefaultServeMux.
 		LayoutRoot:    "linkshelf",
 		RequiredFiles: []string{"linkshelf/internal/store/schema.go", "linkshelf/cmd/server/main.go"},
 	}
-	err := ValidatePlanningDocAlignment(dir, v)
+	err := ValidatePlanningDocAlignment("", dir, v)
 	if err == nil {
 		t.Fatal("expected reject flattened plan bead map paths")
 	}
@@ -350,7 +350,7 @@ Entrypoint imports store; registers GET /api/links and POST /api/links; exports 
 		LayoutRoot:    "linkshelf",
 		RequiredFiles: []string{"linkshelf/cmd/server/main.go"},
 	}
-	if err := ValidatePlanningDocAlignment(dir, v); err != nil {
+	if err := ValidatePlanningDocAlignment("", dir, v); err != nil {
 		t.Fatal(err)
 	}
 }

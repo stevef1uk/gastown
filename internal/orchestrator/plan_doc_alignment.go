@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/steveyegge/gastown/internal/llm"
+	"github.com/steveyegge/gastown/internal/townlog"
 )
 
 var (
@@ -111,7 +112,7 @@ func PlanningDocsMisaligned(rigDir string, v WorkflowValidation) bool {
 		planMissing = true
 	}
 	if !planMissing {
-		return ValidatePlanningDocAlignment(rigDir, v) != nil
+		return ValidatePlanningDocAlignment("", rigDir, v) != nil
 	}
 	return ValidateArchitectureDocAlignment(rigDir, v) != nil
 }
@@ -119,7 +120,7 @@ func PlanningDocsMisaligned(rigDir string, v WorkflowValidation) bool {
 // ValidatePlanningDocAlignment ensures SPEC.md, architecture.md, and plan.md agree on HTTP routes,
 // store API names, and module identity before project_setup / implementation.
 // fromState controls the triad LLM judge: only runs for "planning" or "plan_review".
-func ValidatePlanningDocAlignment(rigDir string, v WorkflowValidation, fromState ...string) error {
+func ValidatePlanningDocAlignment(townRoot, rigDir string, v WorkflowValidation, fromState ...string) error {
 	specDoc := readRigDoc(rigDir, "SPEC.md")
 	planDoc := readRigDoc(rigDir, "plan.md")
 	if strings.TrimSpace(specDoc) == "" {
@@ -168,11 +169,13 @@ func ValidatePlanningDocAlignment(rigDir string, v WorkflowValidation, fromState
 		if err != nil {
 			log.Printf("[triad] LLM judge unavailable, skipping semantic validation: %v", err)
 		} else if !pass {
-			// Log triad findings for observability but don't block the transition —
-			// semantic misalignments (e.g., different file sets in architecture vs plan)
-			// cannot be fixed by the planner (which only manages beads for required_files)
-			// and are better surfaced to plan_review or QA for triage.
-			log.Printf("[triad] advisory: SPEC/Architecture/Plan triad misaligned: %s", reason)
+			log.Printf("[triad] SPEC/Architecture/Plan triad misaligned: %s", reason)
+			message := fmt.Sprintf("triad validation: SPEC/Architecture/Plan triad misaligned: %s", reason)
+			issues = append(issues, message)
+			if townRoot != "" {
+				tl := townlog.NewLogger(townRoot)
+				_ = tl.Log(townlog.EventType("advisory"), "orchestrator", message)
+			}
 		}
 	}
 

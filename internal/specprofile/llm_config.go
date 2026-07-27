@@ -18,7 +18,7 @@ func ResolveLLMForSpecIndex(townRoot string) (endpoint, model string) {
 		return endpoint, model
 	}
 
-	for _, role := range []string{"architect", "planner", "mayor"} {
+	for _, role := range []string{"architect", "analyst", "planner", "mayor"} {
 		rc := config.ResolveRoleAgentConfig(role, townRoot, "")
 		if rc == nil || rc.Env == nil {
 			continue

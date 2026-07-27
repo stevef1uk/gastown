@@ -19,11 +19,30 @@ func TestOrchestratedForRole(t *testing.T) {
 	if !OrchestratedForRole(true, "mayor") {
 		t.Fatal("mayor should be orchestrated")
 	}
+	if !OrchestratedForRole(true, "analyst") {
+		t.Fatal("analyst should be orchestrated when orchestrator is running")
+	}
+	if OrchestratedForRole(false, "analyst") {
+		t.Fatal("analyst should not be orchestrated when orchestrator is down")
+	}
 	if !OrchestratedForTownPolecat(true) {
 		t.Fatal("hq polecat should be orchestrated")
 	}
 	if OrchestratedForTownPolecat(false) {
 		t.Fatal("hq polecat should not be orchestrated when service down")
+	}
+}
+
+func TestIsPipelineRole(t *testing.T) {
+	for _, role := range []string{"mayor", "architect", "analyst", "planner", "setup", "polecat", "qa"} {
+		if !IsPipelineRole(role) {
+			t.Errorf("IsPipelineRole(%q) = false, want true", role)
+		}
+	}
+	for _, role := range []string{"witness", "refinery", "mechanic", "deacon", "dog"} {
+		if IsPipelineRole(role) {
+			t.Errorf("IsPipelineRole(%q) = true, want false", role)
+		}
 	}
 }
 
@@ -55,6 +74,13 @@ func TestAgentMatchesTask_edgeCases(t *testing.T) {
 	}
 	if !AgentMatchesTask("setup", "setup", vars) {
 		t.Fatal("town setup agent should claim project_setup")
+	}
+	// Analyst is rig-scoped like architect/qa.
+	if !AgentMatchesTask("mockrig/analyst", "analyst", vars) {
+		t.Fatal("rig-qualified analyst should match")
+	}
+	if AgentMatchesTask("analyst", "analyst", vars) {
+		t.Fatal("bare analyst should not match when workflow has rig")
 	}
 }
 

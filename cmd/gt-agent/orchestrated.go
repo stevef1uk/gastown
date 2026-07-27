@@ -1407,6 +1407,70 @@ func validateDesignShellSideEffects(lower string) error {
 	return nil
 }
 
+// validateAnalysisCommand blocks analyst scope creep before shell execution.
+// The analyst may only read REQUIREMENTS.md, write SPEC.md, and check file sizes.
+func validateAnalysisCommand(cmd, rig string) error {
+	lower := strings.ToLower(cmd)
+
+	// Heredoc writing SPEC.md is the primary deliverable.
+	if strings.Contains(lower, "cat >") && strings.Contains(lower, "spec.md") {
+		return nil
+	}
+	// Reading REQUIREMENTS.md is required.
+	if strings.Contains(lower, "cat ") && strings.Contains(lower, "requirements.md") {
+		return nil
+	}
+	// head/tail of REQUIREMENTS.md for reading.
+	if (strings.Contains(lower, "head ") || strings.Contains(lower, "tail ")) && strings.Contains(lower, "requirements.md") {
+		return nil
+	}
+	// wc -c on SPEC.md for size verification.
+	if strings.Contains(lower, "wc") && strings.Contains(lower, "spec.md") {
+		return nil
+	}
+	// wc -c on REQUIREMENTS.md for understanding scope.
+	if strings.Contains(lower, "wc") && strings.Contains(lower, "requirements.md") {
+		return nil
+	}
+	// test -f on SPEC.md or REQUIREMENTS.md for existence checks.
+	if strings.Contains(lower, "test -f") && (strings.Contains(lower, "spec.md") || strings.Contains(lower, "requirements.md")) {
+		return nil
+	}
+
+	return fmt.Errorf("analyst may only read REQUIREMENTS.md, write SPEC.md, and verify file sizes")
+}
+
+// validateSpecReviewCommand blocks scope creep before shell execution.
+// QA spec review may only read REQUIREMENTS.md and SPEC.md.
+func validateSpecReviewCommand(cmd, rig string) error {
+	lower := strings.ToLower(cmd)
+
+	// Reading REQUIREMENTS.md.
+	if strings.Contains(lower, "cat ") && strings.Contains(lower, "requirements.md") {
+		return nil
+	}
+	if (strings.Contains(lower, "head ") || strings.Contains(lower, "tail ")) && strings.Contains(lower, "requirements.md") {
+		return nil
+	}
+	// Reading SPEC.md.
+	if strings.Contains(lower, "cat ") && strings.Contains(lower, "spec.md") {
+		return nil
+	}
+	if (strings.Contains(lower, "head ") || strings.Contains(lower, "tail ")) && strings.Contains(lower, "spec.md") {
+		return nil
+	}
+	// wc -c on either file.
+	if strings.Contains(lower, "wc") && (strings.Contains(lower, "spec.md") || strings.Contains(lower, "requirements.md")) {
+		return nil
+	}
+	// diff between the two files.
+	if strings.Contains(lower, "diff ") && strings.Contains(lower, "requirements.md") && strings.Contains(lower, "spec.md") {
+		return nil
+	}
+
+	return fmt.Errorf("spec review may only read REQUIREMENTS.md and SPEC.md")
+}
+
 // validateDesignCommand blocks architect scope creep before shell execution.
 func validateDesignCommand(cmd, rig string) error {
 	lower := strings.ToLower(cmd)
@@ -3052,6 +3116,20 @@ func rigMayorRigPath(rig string) string {
 		return "<rig>/mayor/rig"
 	}
 	return rig + "/mayor/rig"
+}
+
+// validateAnalysisArtifacts checks that SPEC.md was written and meets minimum size.
+func validateAnalysisArtifacts(townRoot, rig string) error {
+	rigDir := rigMayorRigDir(townRoot, rig)
+	specPath := filepath.Join(rigDir, "SPEC.md")
+	info, err := os.Stat(specPath)
+	if err != nil {
+		return fmt.Errorf("SPEC.md missing at %s — analyst must write SPEC.md from REQUIREMENTS.md", specPath)
+	}
+	if info.Size() < 200 {
+		return fmt.Errorf("SPEC.md too small (%d bytes); need ≥200 bytes. Expand with data models, API routes, file layout, phases, and testing strategy", info.Size())
+	}
+	return nil
 }
 
 func validateDesignArtifacts(townRoot, rig string, writtenThisRun bool, v orchestrator.WorkflowValidation) error {

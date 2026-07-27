@@ -89,7 +89,7 @@ func workflowIsInQAReview(townRoot, rig string) bool {
 		return false
 	}
 	for _, inst := range snap.Instances {
-		if inst.TemplateID != "rig-flow" {
+		if inst.TemplateID != "rig-flow" && inst.TemplateID != "req-flow" {
 			continue
 		}
 		if inst.Variables == nil || inst.Variables["rig"] != rig {

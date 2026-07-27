@@ -413,6 +413,10 @@ func (s *Server) discoverAgents() []Agent {
 		architectID := session.ArchitectSessionName(prefix, rigName)
 		agents = append(agents, s.inspectAgent(architectID, rigName, "architect"))
 		
+		// Analyst (req-flow)
+		analystID := session.AnalystSessionName(prefix, rigName)
+		agents = append(agents, s.inspectAgent(analystID, rigName, "analyst"))
+		
 		// QA
 		qaID := session.QASessionName(prefix, rigName)
 		agents = append(agents, s.inspectAgent(qaID, rigName, "qa"))
@@ -542,6 +546,8 @@ func friendlyRigAgentName(rig, role, sessionName string) string {
 	switch role {
 	case "architect":
 		return "Architect"
+	case "analyst":
+		return "Analyst"
 	case "qa":
 		return "QA"
 	case "witness":
@@ -723,7 +729,7 @@ func agentLogPaths(townRoot, sessionName, rig, role, workerName string) []string
 	// Prefer logs/sessions/*.log (NATS wrapper / orchestrated gt-agent) over
 	// typescript — script(1) transcripts often contain terminal escape noise.
 	switch role {
-	case "architect", "qa", "witness", "refinery":
+	case "architect", "analyst", "qa", "witness", "refinery":
 		paths = append(paths, filepath.Join(townRoot, rig, role, "typescript"))
 	case "polecat":
 		if workerName != "" && workerName != sessionName && !strings.HasSuffix(sessionName, "-polecat") {

@@ -448,7 +448,7 @@ func WritePlanningPlanMD(townRoot, rig string, v WorkflowValidation) (bool, erro
 	// but we must skip the strict cross-doc alignment validation.
 	specDoc := readRigDoc(rigDir, "SPEC.md")
 	if strings.TrimSpace(specDoc) != "" {
-		if err := ValidatePlanningDocAlignment(rigDir, v); err != nil {
+		if err := ValidatePlanningDocAlignment(townRoot, rigDir, v); err != nil {
 			return false, fmt.Errorf("plan.md regeneration failed alignment check: %w", err)
 		}
 	}
