@@ -25,7 +25,8 @@ Your SPEC.md must have ALL of these sections with substantive content:
 | **Data Model** | Every entity with fields, types, and relationships. Include DDL or schema definition |
 | **API / HTTP Routes** | Every endpoint: method, path, request/response shape, status codes |
 | **Frontend** | Pages, components, routing, state management, key interactions |
-| **File Layout** | Exact directory tree with every file that needs to be created |
+| **Project Layout** | **Required**: `layout_root: <directory-name>` — the top-level project folder under the rig (e.g., `helloapi`). Use `.` only if SPEC explicitly says code lives at repo root with no subdirectory. |
+| **File Layout** | Exact directory tree with every file that needs to be created, all paths relative to `layout_root` |
 | **Phases** | Ordered build phases with success criteria per phase (testable) |
 | **Testing Strategy** | Unit test locations, framework, coverage target, E2E approach |
 | **Seed Data** | What the app ships with on first launch |
@@ -77,8 +78,11 @@ CMD: cat > {{rig}}/mayor/rig/SPEC.md <<'EOF'
 ## Frontend
 (Pages, components, interactions, state)
 
+## Project Layout
+**layout_root: <directory-name>** — the top-level project folder under the rig (e.g., `helloapi`, `myapp`, `backend`). Use `.` only if SPEC explicitly says code lives at repo root with no subdirectory.
+
 ## File Layout
-(Complete directory tree — every file to create)
+(Complete directory tree — every file to create, all paths relative to `layout_root`)
 
 ## Phases
 (Ordered phases with testable success criteria)

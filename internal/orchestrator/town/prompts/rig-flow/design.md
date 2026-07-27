@@ -51,7 +51,7 @@ Polecat implements code later from SPEC. Your architecture doc should **describe
 4. Architecture must reference the real SPEC goals and planned layout under `{{layout_root}}/` (or paths SPEC defines) without creating those files.
 5. **HTTP route table and store API names in architecture.md must match SPEC.md verbatim** (e.g. `/static/{file}` not `/web/*`; `List`/`Create`/`Delete`/`InitSchema` not `GetLinks`/`Store` struct/`InitDB`). gt-agent rejects design success on drift.
 5b. **`required_files` must NOT contain wildcards** (e.g. `test_*.py`, `*_test.go`). Each path must be a concrete, literal file path (e.g. `tests/test_portfolio.py`, `internal/store/store_test.go`). gt-agent rejects design success on wildcards.
-6. **Implement file paths** in lists, tables, and bead-style bullets must use the `{{layout_root}}/` prefix when required_files use it (e.g. `{{layout_root}}/internal/store/schema.go`). Prose may reference packages as `store.List` or `schema.InitSchema` without the prefix.
+6. **Implement file paths** in lists, tables, and bead-style bullets must use the `{{layout_root}}/` prefix **only when `{{layout_root}}` is not `"."` or empty** and required_files use it (e.g. `{{layout_root}}/internal/store/schema.go`). When `{{layout_root}}` is `"."` or empty, use **bare paths without any prefix** — e.g. `main.go`, `handler.go`, `go.mod` — matching required_files exactly. **Do not emit `./` prefix or any relative path indicator.** Prose may reference packages as `store.List` or `schema.InitSchema` without the prefix.
 7. **Every section listed in the write pattern below must contain substantive content.** Empty headings (e.g. `## Docker & Deployment` followed by a blank line) cause the polecat to guess and produce broken artifacts. If a section truly does not apply, omit the heading; do not leave it empty.
 
 ## Required write pattern
@@ -66,7 +66,7 @@ CMD: cat > {{rig}}/mayor/rig/architecture.md <<'EOF'
 (Brief design aligned with SPEC — purpose, major components, constraints)
 
 ## Planned file layout
-- (list key paths from SPEC / {{required_files}} using the **`{{layout_root}}/`** prefix on every implement path — e.g. `{{layout_root}}/internal/store/schema.go`; describe only; do not create)
+- (list key paths from SPEC / {{required_files}} using the **`{{layout_root}}/`** prefix on every implement path **only when `{{layout_root}}` is not `"."` or empty** — e.g. `{{layout_root}}/internal/store/schema.go` or bare `main.go` when layout_root is `"."`; **never use `./` prefix**; describe only; do not create)
 - **When SPEC requires SQL persistence:** name one file that owns DDL/migrations (e.g. `schema.go`, `migrate.go`, or `schema.sql` under the store package) and state that app startup and tests call it — do not scatter duplicate `CREATE TABLE` only in entrypoints or each `*_test.go`. Match table/column names to SPEC (not a fixed example schema).
 
 ## Go package / bead ownership (required when multiple `.go` files share one package)
