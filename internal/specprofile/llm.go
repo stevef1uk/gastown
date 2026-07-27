@@ -109,7 +109,7 @@ The JSON must match this shape (use sensible defaults for small tutorials; for l
 
 Rules:
 - layout_root: top-level project directory name if the spec says code lives under a named folder relative to repo root; use "." if the primary code is at repo root. All QA verify commands (both root-level and per-phase) must cd to this same directory — never invent a different directory name. When layout_root is ".", verify commands MUST NOT cd to the rig name or any top-level project name from the spec — only cd to actual subdirectories like "frontend/" or "backend/".
-- bead_title_contains: short prefix for implementation task beads (e.g. "Implement <layout_root>/"); must be stable for grep on bd list.
+- bead_title_contains: short prefix for implementation task beads (e.g. "Implement <layout_root>/"); if layout_root is "." use "Implement " (no ./ prefix); must be stable for grep on bd list.
 - test_runner: one of "unittest", "pytest", "custom".
 - unittest_module: dotted module for stdlib unittest ONLY if test_runner is unittest (e.g. backend.test_app); else "".
 - qa_verify_command: default rig-wide verify when no per-phase command applies — must run the **full unit test suite** (e.g. go test ./..., or pytest -v tests/), not compile-only. Must be consistent with layout_root — never cd to a directory that doesn't match layout_root. When layout_root is "." do not add any cd prefix; when layout_root is "myapp", use "cd myapp && go test ./...".
