@@ -169,12 +169,15 @@ func ValidatePlanningDocAlignment(townRoot, rigDir string, v WorkflowValidation,
 		if err != nil {
 			log.Printf("[triad] LLM judge unavailable, skipping semantic validation: %v", err)
 		} else if !pass {
-			log.Printf("[triad] SPEC/Architecture/Plan triad misaligned: %s", reason)
-			message := fmt.Sprintf("triad validation: SPEC/Architecture/Plan triad misaligned: %s", reason)
-			issues = append(issues, message)
+			// Advisory only — the LLM judge can hallucinate or flag semantic nits
+			// that the planner/architect cannot act on. Log to orchestrator.log
+			// for developers and town.log for gt log visibility, but do NOT block
+			// the transition (structural checks in architectureDocAlignmentIssuesForDoc
+			// handle real blocking issues like missing layout root prefixes).
+			log.Printf("[triad] advisory: SPEC/Architecture/Plan triad misaligned: %s", reason)
 			if townRoot != "" {
 				tl := townlog.NewLogger(townRoot)
-				_ = tl.Log(townlog.EventType("advisory"), "orchestrator", message)
+				_ = tl.Log(townlog.EventType("advisory"), "orchestrator", reason)
 			}
 		}
 	}
