@@ -336,9 +336,9 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summa
 	if err != nil {
 		return "", err
 	}
-	// Ensure workflow-profile.json exists before entering planning (spec_review -> planning).
+	// Ensure workflow-profile.json exists before entering design (spec_review -> design).
 	// The spec_review agent runs gt rig spec-index which may take 30+ seconds.
-	if fromState == "spec_review" && outcome == "success" && next == "planning" && rig != "" {
+	if fromState == "spec_review" && outcome == "success" && next == "design" && rig != "" {
 		// Trigger spec-index asynchronously so workflow can proceed while profile is built.
 		// Profile path: <townRoot>/<rig>/mayor/rig/.gastown/workflow-profile.json
 		go func(townRoot, rigName string) {
