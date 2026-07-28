@@ -212,10 +212,13 @@ func profilePathsUseLayoutPrefix(paths []string, layout string) bool {
 func applySpecPathsToValidation(v WorkflowValidation, specPaths []string) WorkflowValidation {
 	v.RequiredFiles = append([]string(nil), specPaths...)
 	if root := inferLayoutRootFromPaths(specPaths); root != "" {
-		v.LayoutRoot = root
 		if root != "." {
+			v.LayoutRoot = root
 			v.BeadTitleContains = "Implement " + root + "/"
 		}
+		// When spec-inferred root is "." (e.g. spec paths mix file paths with
+		// Go import paths like net/http, encoding/json), keep the existing
+		// LayoutRoot from the profile rather than resetting it to ".".
 	}
 	v = inferTestRunnerFromPaths(v, specPaths)
 	if v.QAVerifyCommand == "" || strings.Contains(v.QAVerifyCommand, "cd .") {
