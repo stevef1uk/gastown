@@ -1479,28 +1479,13 @@ func EnsurePlanningImplementBeads(townRoot, rig string, v WorkflowValidation) ([
 	return created, nil
 }
 
-// requiredFilesWithCorrelatedTests returns RequiredFiles augmented with the
-// correlated test path (test_*.[py|go]) for each source file, when that test
-// path is not already in the list. This ensures the planner creates a bead for
-// every test file the phase verify expects to exist.
-func requiredFilesWithCorrelatedTests(files []string, v WorkflowValidation) []string {
-	seen := make(map[string]bool, len(files))
-	for _, f := range files {
-		seen[filepath.ToSlash(strings.TrimSpace(f))] = true
-	}
-	out := make([]string, 0, len(files)+len(files)/2)
-	for _, f := range files {
-		f = filepath.ToSlash(strings.TrimSpace(f))
-		out = append(out, f)
-		if IsTestImplementPath(f) {
-			continue
-		}
-		testPath := CorrelatedTestPathForSource(f, v)
-		if testPath == "" || seen[testPath] {
-			continue
-		}
-		out = append(out, testPath)
-		seen[testPath] = true
+// requiredFilesWithCorrelatedTests returns RequiredFiles as-is. Test paths that
+// are not in the original spec must not be added — doing so creates implement
+// beads for files the developer never asked for.
+func requiredFilesWithCorrelatedTests(files []string, _ WorkflowValidation) []string {
+	out := make([]string, len(files))
+	for i, f := range files {
+		out[i] = filepath.ToSlash(strings.TrimSpace(f))
 	}
 	return out
 }

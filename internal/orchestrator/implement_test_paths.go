@@ -37,13 +37,16 @@ func CorrelatedTestPathForSource(beadPath string, v WorkflowValidation) string {
 	if strings.HasSuffix(rel, ".go") && !strings.HasSuffix(rel, "_test.go") {
 		dir := filepath.ToSlash(filepath.Dir(rel))
 		base := strings.TrimSuffix(filepath.Base(rel), ".go")
+		testPath := ""
 		if dir == "." {
-			return layout + "/" + base + "_test.go"
+			testPath = base + "_test.go"
+		} else {
+			testPath = dir + "/" + base + "_test.go"
 		}
 		if layout != "" {
-			return layout + "/" + dir + "/" + base + "_test.go"
+			testPath = layout + "/" + testPath
 		}
-		return dir + "/" + base + "_test.go"
+		return testPath
 	}
 	if strings.HasSuffix(rel, ".py") && !strings.HasPrefix(filepath.Base(rel), "test_") {
 		base := strings.TrimSuffix(filepath.Base(rel), ".py")
@@ -77,7 +80,15 @@ func CorrelatedTestPathForSource(beadPath string, v WorkflowValidation) string {
 			}
 			formatted = append(formatted, c)
 		}
-		return formatted[0]
+		for _, c := range formatted {
+			for _, req := range v.RequiredFiles {
+				req = filepath.ToSlash(strings.TrimSpace(req))
+				if req == c {
+					return c
+				}
+			}
+		}
+		return ""
 	}
 	return ""
 }
