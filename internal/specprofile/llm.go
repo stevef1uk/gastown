@@ -149,6 +149,11 @@ CRITICAL delivery_phases rules (the LLM must obey these):
 - Dockerfile, docker-compose.yml, docker-compose.test.yml, .dockerignore go in the FINAL phase only.
 - Keep source files and their corresponding test files in the SAME phase.
 - If the spec is small (≤12 total required_files), omit delivery_phases entirely (single-phase workflow).
+- **Add a final smoke test phase** when the SPEC describes manual integration verification (e.g., "run server with 'go run main.go &' then 'curl http://localhost:8080/hello'" or "start server then curl endpoint"). This phase should:
+  - Have id like "smoke-test" or "integration-test"
+  - Depend on the server-wiring/backend phase
+  - Have required_files including the main entry point (e.g., "helloapi/main.go")
+  - Have qa_verify_command that: starts the server in background, sleeps briefly, curls the endpoint, kills the server. Example: "cd helloapi && go run main.go & sleep 2 && curl -sf http://localhost:8080/hello && kill %1"
 
 Output JSON only.`
 }
