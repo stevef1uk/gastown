@@ -56,11 +56,20 @@ func WorkflowNeedsQARuntimeSmoke(townRoot, rig string, v WorkflowValidation) boo
 	if WorkflowUsesPython(v) {
 		return pythonWorkflowNeedsQARuntimeSmoke(townRoot, rig, v)
 	}
-	if !workflowHasGoWebAndServer(v) {
-		return false
+	// Check for Go web+server projects (frontend + backend)
+	if workflowHasGoWebAndServer(v) {
+		spec, _ := LoadAPISmokeSpecFromRig(townRoot, rig, v)
+		return specHasRuntimeSmokeProbes(spec)
 	}
-	spec, _ := LoadAPISmokeSpecFromRig(townRoot, rig, v)
-	return specHasRuntimeSmokeProbes(spec)
+	// Check for simple Go API servers with documented HTTP endpoints
+	// Only if there are delivery phases (phased workflow) and we're in the final phase
+	if WorkflowUsesGo(v) && v.HasPhasedDelivery() && v.IsFinalDeliveryPhase() {
+		spec, _ := LoadAPISmokeSpecFromRig(townRoot, rig, v)
+		if len(spec.Probes) > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 func pythonWorkflowNeedsQARuntimeSmoke(townRoot, rig string, v WorkflowValidation) bool {
