@@ -131,6 +131,7 @@ func (m *Manager) BuildTaskPayload(inst *WorkflowInstance, tpl *WorkflowTemplate
 			promptVars["bead_id_example"] = prefix + "-xxx"
 		}
 		promptVars["qa_runtime_smoke_block"] = RigFlowQARuntimeSmokeBlock(m.townRoot, rig, validation)
+		promptVars["town_root"] = m.townRoot
 		mayorDir := filepath.Join(m.townRoot, rig, "mayor", "rig")
 		promptVars["implementation_verify_hint"] = validation.ImplementationVerifyHint(mayorDir)
 		promptVars["min_plan_bytes"] = fmt.Sprintf("%d", EffectiveMinPlanBytes(mayorDir, validation))

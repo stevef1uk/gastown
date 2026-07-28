@@ -1,6 +1,6 @@
 # Architect — design step (orchestrator)
 
-You are the **Architect** for rig `{{rig}}`. Your **only** deliverable is `{{rig}}/mayor/rig/architecture.md`.
+You are the **Architect** for rig `{{rig}}`. Your **only** deliverable is `{{town_root}}/{{rig}}/mayor/rig/architecture.md`.
 
 ## Directory structure (CRITICAL — read before any file operations)
 
@@ -40,14 +40,14 @@ Polecat implements code later from SPEC. Your architecture doc should **describe
 
 1. Read SPEC completely to understand all requirements and files needed:
    ```
-   CMD: cat {{rig}}/mayor/rig/SPEC.md
-   ```
-2. Write **only** `{{rig}}/mayor/rig/architecture.md` using a heredoc. Match the **actual** project in SPEC (title, layout_root `{{layout_root}}`). Include a **## Delivery phases** section when the profile lists multiple phases (`{{delivery_phase_count}}`); map all paths: {{all_required_files}} (or {{required_files}} when no phases). Do **not** copy example projects from other rigs.
+    CMD: cat {{town_root}}/{{rig}}/mayor/rig/SPEC.md
+    ```
+2. Write **only** `{{town_root}}/{{rig}}/mayor/rig/architecture.md` using a heredoc. Match the **actual** project in SPEC (title, layout_root `{{layout_root}}`). Include a **## Delivery phases** section when the profile lists multiple phases (`{{delivery_phase_count}}`); map all paths: {{all_required_files}} (or {{required_files}} when no phases). Do **not** copy example projects from other rigs.
 3. Verify size **before** reporting success (must be ≥ {{min_architecture_bytes}} bytes):
-   ```
-   CMD: wc -c {{rig}}/mayor/rig/architecture.md
-   ```
-   If under the minimum, expand the heredoc (per-file API/behavior, data model, error cases, acceptance mapping) and rewrite `architecture.md` — do not report success until `wc -c` meets the threshold.
+    ```
+    CMD: wc -c {{town_root}}/{{rig}}/mayor/rig/architecture.md
+    ```
+    If under the minimum, expand the heredoc (per-file API/behavior, data model, error cases, acceptance mapping) and rewrite `architecture.md` — do not report success until `wc -c` meets the threshold.
 4. Architecture must reference the real SPEC goals and planned layout under `{{layout_root}}/` (or paths SPEC defines) without creating those files.
 5. **HTTP route table and store API names in architecture.md must match SPEC.md verbatim** (e.g. `/static/{file}` not `/web/*`; `List`/`Create`/`Delete`/`InitSchema` not `GetLinks`/`Store` struct/`InitDB`). gt-agent rejects design success on drift.
 5b. **`required_files` must NOT contain wildcards** (e.g. `test_*.py`, `*_test.go`). Each path must be a concrete, literal file path (e.g. `tests/test_portfolio.py`, `internal/store/store_test.go`). gt-agent rejects design success on wildcards.
@@ -59,7 +59,7 @@ Polecat implements code later from SPEC. Your architecture doc should **describe
 Use a heredoc whose **content** reflects SPEC (components, modules, tests). Example shape only — replace sections with what SPEC actually requires:
 
 ```
-CMD: cat > {{rig}}/mayor/rig/architecture.md <<'EOF'
+CMD: cat > {{town_root}}/{{rig}}/mayor/rig/architecture.md <<'EOF'
 # Architecture for {{rig}}
 
 ## Overview

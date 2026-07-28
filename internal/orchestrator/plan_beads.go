@@ -251,6 +251,9 @@ func NormalizeBeadPathForLayout(beadPath, layoutRoot string) string {
 		beadPath == "main_test.go":
 		return layoutRoot + "/" + beadPath
 	}
+	if !strings.Contains(beadPath, "/") {
+		return layoutRoot + "/" + beadPath
+	}
 	return beadPath
 }
 
