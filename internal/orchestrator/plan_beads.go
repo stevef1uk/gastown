@@ -203,7 +203,7 @@ func ExtractPathFromBeadTitle(title, titlePrefix string) string {
 // NormalizeBeadPathForLayout prefixes layout_root when a bead title or go tool output
 // omitted it (e.g. internal/store/store.go → linkshelf/internal/store/store.go).
 func NormalizeBeadPathForLayout(beadPath, layoutRoot string) string {
-	beadPath = filepath.ToSlash(strings.TrimSpace(beadPath))
+	beadPath = strings.TrimLeft(filepath.ToSlash(strings.TrimSpace(beadPath)), "/")
 	layoutRoot = strings.Trim(strings.TrimSpace(layoutRoot), "/")
 	if beadPath == "" {
 		return beadPath
