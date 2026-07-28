@@ -481,17 +481,42 @@ func isLikelyRepoFilePath(p, layoutRoot string) bool {
 		}
 		return strings.HasPrefix(p, layoutRoot+"/") || strings.Contains(p, "/")
 	}
-	// For flat layouts, reject non-file paths (Go import paths like net/http,
-	// MIME types like application/json, URLs like http://...) by requiring the
-	// last path element to have a file extension. Known no-extension files
-	// (Dockerfile, docker-compose*, .env, .example) are still accepted.
+	// For flat layouts (no layout root), be strict: require a known file extension
+	// or a known no-extension filename. This rejects Go import paths (net/http),
+	// MIME types (application/json), URLs (http://...), Go types (http.DefaultServeMux),
+	// and Python imports (fastapi.testclient) which all have dots but aren't files.
 	base := p
 	if idx := strings.LastIndex(p, "/"); idx >= 0 {
 		base = p[idx+1:]
 	}
-	if strings.Contains(base, ".") {
-		return true
+	ext := filepath.Ext(base)
+	if ext != "" {
+		// Known file extensions (lowercase for comparison)
+		knownExts := map[string]bool{
+			".go": true, ".py": true, ".js": true, ".ts": true, ".jsx": true, ".tsx": true,
+			".md": true, ".txt": true, ".mod": true, ".sum": true, ".json": true,
+			".yaml": true, ".yml": true, ".toml": true, ".ini": true, ".cfg": true,
+			".conf": true, ".config": true, ".env": true, ".example": true,
+			".gitignore": true, ".gitattributes": true, ".dockerignore": true,
+			".html": true, ".css": true, ".scss": true, ".sass": true, ".less": true,
+			".sql": true, ".sh": true, ".bash": true, ".zsh": true, ".fish": true,
+			".ps1": true, ".bat": true, ".cmd": true, ".dockerfile": true,
+			".containerfile": true, ".tf": true, ".tfvars": true, ".hcl": true,
+			".rs": true, ".java": true, ".kt": true, ".scala": true, ".cs": true,
+			".php": true, ".rb": true, ".pl": true, ".lua": true, ".r": true,
+			".swift": true, ".m": true, ".mm": true, ".cpp": true, ".cc": true,
+			".cxx": true, ".c": true, ".h": true, ".hpp": true, ".proto": true,
+			".gradle": true, ".maven": true, ".sbt": true, ".cmake": true,
+			".make": true, ".mk": true, ".xml": true, ".svg": true, ".png": true,
+			".jpg": true, ".jpeg": true, ".gif": true, ".ico": true, ".webp": true,
+		}
+		if knownExts[strings.ToLower(ext)] {
+			return true
+		}
+		// Reject anything with an unknown extension (likely import path, type, URL, etc.)
+		return false
 	}
+	// No extension: only accept known special filenames
 	return p == "Dockerfile" || strings.Contains(lower, "docker-compose") ||
 		strings.HasSuffix(lower, ".env") || strings.HasSuffix(lower, ".example")
 }
