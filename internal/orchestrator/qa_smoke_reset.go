@@ -18,6 +18,7 @@ var (
 	sqlOpenPathRE       = regexp.MustCompile(`(?i)sql\.Open\([^,]+,\s*["']([^"']+)["']`)
 	relativePersistRE   = regexp.MustCompile(`(?:^|[\s"'(])(\.?/?[a-zA-Z0-9][a-zA-Z0-9_.-]*\.(?:db|sqlite3?|wal))\b`)
 	goRunServerRE       = regexp.MustCompile(`(?i)\bgo\s+run\s+(?:\./)?cmd/server(?:/main\.go)?\b`)
+	goRunMainRE         = regexp.MustCompile(`(?i)\bgo\s+run\s+(?:\./)?(?:main\.go|.)\b`)
 )
 
 func enrichAPISmokeSpec(spec *APISmokeSpec, mergedDocs string, v WorkflowValidation) {
@@ -136,8 +137,18 @@ func deriveRuntimeSmokeServerStart(v WorkflowValidation, mergedDocs string) stri
 			if m := goRunServerRE.FindString(src); m != "" {
 				return strings.TrimSpace(m)
 			}
+			// Also check for go run main.go or go run .
+			if m := goRunMainRE.FindString(src); m != "" {
+				return strings.TrimSpace(m)
+			}
 		}
-		return "go run ./cmd/server"
+		// Try to find main.go in layout root: cmd/server/main.go, main.go, layout/main.go
+		layout := strings.Trim(strings.TrimSpace(v.LayoutRoot), "/")
+		if layout != "" && layout != "." {
+			// Use relative path from layout root (working dir will be layout root)
+			return "go run ./cmd/server/main.go"
+		}
+		return "go run main.go"
 	}
 	if WorkflowUsesPython(v) {
 		if cmd := extractPythonServerStartFromQA(v); cmd != "" {
