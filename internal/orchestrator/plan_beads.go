@@ -476,6 +476,9 @@ func isLikelyRepoFilePath(p, layoutRoot string) bool {
 		}
 	}
 	if layoutRoot != "" {
+		if layoutRoot == "." {
+			return true
+		}
 		return strings.HasPrefix(p, layoutRoot+"/") || strings.Contains(p, "/")
 	}
 	if strings.Contains(p, "/") {
