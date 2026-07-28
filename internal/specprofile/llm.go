@@ -154,7 +154,7 @@ CRITICAL delivery_phases rules (the LLM must obey these):
   - Depend on the server-wiring/backend phase
   - Have required_files including the main entry point (e.g., "helloapi/main.go", "backend/main.py", "server.js")
   - Have qa_verify_command that: starts the server in background, sleeps briefly, curls the endpoint, kills the server. Language-specific examples:
-    - Go: "cd helloapi && go run main.go & sleep 2 && curl -sf http://localhost:8080/hello && kill %1"
+    - Go: "cd helloapi && go run . & sleep 2 && curl -sf http://localhost:8080/hello | grep 'Hello, World!' && kill %1" (uses 'go run .' to build all files in the package directory)
     - Python: "cd backend && python -m uvicorn main:app --port 8000 & sleep 2 && curl -sf http://localhost:8000/hello && kill %1"
     - Node: "cd server && node index.js & sleep 2 && curl -sf http://localhost:3000/hello && kill %1"
 
