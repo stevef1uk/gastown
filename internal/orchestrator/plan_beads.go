@@ -484,6 +484,11 @@ func isLikelyRepoFilePath(p, layoutRoot string) bool {
 	if strings.Contains(p, "/") {
 		return true
 	}
+	// Bare filenames (main.go, README.md, go.mod, go.sum, handler.py, etc.)
+	// are valid file paths at repo root — accept them when layoutRoot is empty.
+	if strings.Contains(p, ".") {
+		return true
+	}
 	return p == "Dockerfile" || strings.Contains(lower, "docker-compose") ||
 		strings.HasSuffix(lower, ".env") || strings.HasSuffix(lower, ".example")
 }
