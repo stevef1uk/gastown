@@ -88,6 +88,11 @@ func CorrelatedTestPathForSource(beadPath string, v WorkflowValidation) string {
 				}
 			}
 		}
+		// Return first conventional candidate when no required_file match,
+		// consistent with the unconditional return for Go files above.
+		if len(formatted) > 0 {
+			return formatted[0]
+		}
 		return ""
 	}
 	return ""

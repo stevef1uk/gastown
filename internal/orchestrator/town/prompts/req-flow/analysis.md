@@ -33,6 +33,10 @@ Your SPEC.md must have ALL of these sections with substantive content:
 | **Non-Functional Requirements** | Performance, accessibility, browser support, error handling |
 | **Not in Scope** | Explicitly list what is NOT being built (from REQUIREMENTS or your judgment) |
 
+## Backtick usage (CRITICAL — affects planning)
+
+Only wrap **actual file paths** in backticks (e.g. `` `main.go` ``, `` `internal/store/store.go` ``). Do NOT wrap Go import paths (like `net/http`), URLs (like `http://localhost:8080/hello`), MIME types (like `application/json`), or package members (like `http.Server`) in backticks — use plain text instead. Non-file backtick content gets incorrectly extracted as required file paths by the planner, causing infinite planning loops.
+
 ## CRITICAL: Completeness over brevity
 
 - If REQUIREMENTS.md says "the app should feel polished" — translate that into SPEC sections on error handling, loading states, empty states, edge cases.

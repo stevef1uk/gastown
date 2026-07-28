@@ -419,8 +419,8 @@ func ValidatePlanBeads(beads []PlanBead, archPath string, v WorkflowValidation, 
 }
 
 var (
-	archPathBoldRe = regexp.MustCompile("(?:\\*\\*)`([^`]+)`(?:\\*\\*)")
-	archPathRe     = regexp.MustCompile("`([^`]+(?:\\.[a-zA-Z0-9]+)?)`")
+	archPathBoldRe = regexp.MustCompile("(?:\\*\\*)`([^`\\n]+)`(?:\\*\\*)")
+	archPathRe     = regexp.MustCompile("`([^`\\n]+(?:\\.[a-zA-Z0-9]+)?)`")
 )
 
 // beadIDsForPath returns bead IDs covering a required/architecture path (exact or basename match).
@@ -459,7 +459,7 @@ func extractArchPaths(archText, layoutRoot string) []string {
 }
 
 func isLikelyRepoFilePath(p, layoutRoot string) bool {
-	if strings.Contains(p, " ") || p == "/" || p == "." || p == "./" {
+	if strings.ContainsAny(p, " \t\n\r") || p == "/" || p == "." || p == "./" {
 		return false
 	}
 	if strings.HasPrefix(p, "/") {
@@ -481,12 +481,15 @@ func isLikelyRepoFilePath(p, layoutRoot string) bool {
 		}
 		return strings.HasPrefix(p, layoutRoot+"/") || strings.Contains(p, "/")
 	}
-	if strings.Contains(p, "/") {
-		return true
+	// For flat layouts, reject non-file paths (Go import paths like net/http,
+	// MIME types like application/json, URLs like http://...) by requiring the
+	// last path element to have a file extension. Known no-extension files
+	// (Dockerfile, docker-compose*, .env, .example) are still accepted.
+	base := p
+	if idx := strings.LastIndex(p, "/"); idx >= 0 {
+		base = p[idx+1:]
 	}
-	// Bare filenames (main.go, README.md, go.mod, go.sum, handler.py, etc.)
-	// are valid file paths at repo root — accept them when layoutRoot is empty.
-	if strings.Contains(p, ".") {
+	if strings.Contains(base, ".") {
 		return true
 	}
 	return p == "Dockerfile" || strings.Contains(lower, "docker-compose") ||
