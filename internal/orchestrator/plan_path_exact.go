@@ -45,7 +45,18 @@ func RequiresExactImplementPaths(v WorkflowValidation) bool {
 // pathMatchesRequiredForProfile matches path against required_files using exact paths when
 // RequiresExactImplementPaths; otherwise basename matching is allowed (flat rigs).
 func pathMatchesRequiredForProfile(path string, required []string, v WorkflowValidation) bool {
-	return pathMatchesRequiredMode(path, required, RequiresExactImplementPaths(v))
+	exactOnly := RequiresExactImplementPaths(v)
+	if pathMatchesRequiredMode(path, required, exactOnly) {
+		return true
+	}
+	layout := strings.Trim(filepath.ToSlash(strings.TrimSpace(v.LayoutRoot)), "/")
+	if layout != "" && strings.HasPrefix(path, layout+"/") {
+		stripped := strings.TrimPrefix(path, layout+"/")
+		if pathMatchesRequiredMode(stripped, required, exactOnly) {
+			return true
+		}
+	}
+	return false
 }
 
 func pathMatchesRequiredMode(path string, required []string, exactOnly bool) bool {
