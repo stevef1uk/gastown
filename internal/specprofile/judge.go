@@ -21,24 +21,34 @@ For each phase you receive, evaluate the current qa_verify_command. If it is a p
 
 Return a JSON object mapping phase IDs to updated qa_verify_command strings. **Only include phases where the current command is wrong.** If a phase already has a valid, non-placeholder command that properly tests its required files, leave it out of your response entirely. Do NOT replace valid commands with equivalent alternatives (e.g. don't replace "uv run pytest" with "python -m pytest" — both are fine). Phases not in the response keep their current command.
 
-Rules for writing verify commands:
-- Shell scripts (.sh): "test -f scripts/start_mac.sh && test -f scripts/stop_mac.sh" — verify each script exists
-- Docker/compose files: "test -f Dockerfile && test -f docker-compose.yml && echo 'docker ok'" — verify files exist
-- Playwright E2E: "cd test && npm install && npx playwright test --list" — list tests without running them
-- Python/pytest: "cd backend && python -m pytest -v tests/" — run actual tests
-- Go: "cd . && go test ./..." — run actual tests
-- TypeScript/React (frontend): "cd frontend && npm install && npx tsc --noEmit" — typecheck
-- Frontend tests: "cd frontend && npm test -- --watchAll=false" — run frontend unit tests
-- Database files: "test -f db/finally.db && echo 'db ok'" — verify DB file exists
-- Backend source (no tests yet): "cd backend && python -c 'import sys; sys.path.insert(0, \"src\"); from main import app; print(\"ok\")'" — verify module can import
-- Mixed content (e.g., scripts + code): combine with && from most specific to least
+For **early/mid phases** (backend, frontend, database), verify file presence or run compile/unit tests:
+- Shell scripts (.sh): "test -f scripts/start_mac.sh && test -f scripts/stop_mac.sh"
+- Docker/compose files: "test -f Dockerfile && test -f docker-compose.yml && echo 'docker ok'"
+- Playwright config: "cd test && npm install && npx playwright test --list"
+- Python/pytest: "cd backend && python -m pytest -v tests/"
+- Go: "cd . && go test ./..."
+- TypeScript/React: "cd frontend && npm install && npx tsc --noEmit"
+- Frontend tests: "cd frontend && npm test -- --watchAll=false"
+- Database files: "test -f db/finally.db && echo 'db ok'"
+- Backend source (no tests yet): "cd backend && python -c 'import sys; sys.path.insert(0, \"src\"); from main import app; print(\"ok\")'"
+
+For **final/integration phases** (e.g. smoke-test, deployment-and-e2e), generate a **start → verify → stop** smoke test. Infer the project's run pattern from the phase's required_files and spec_focus:
+- If the phase has docker-compose.yml + Dockerfile, build and start containers, then run health checks and Playwright tests:
+  "docker compose build && docker compose up -d && sleep 3 && curl --retry 5 --retry-delay 2 http://localhost:8000/health && npx playwright test && docker compose down"
+- If the phase has scripts/start_mac.sh and scripts/stop_mac.sh, use those to start/stop the app and add a health check and Playwright test in between:
+  "cd test && npm install && ../scripts/start_mac.sh && sleep 2 && curl --retry 5 --retry-delay 2 http://localhost:8000/health && npx playwright test && ../scripts/stop_mac.sh"
+- If the phase has a Go server (cmd/server/main.go) and Playwright tests, start the server in background, run tests, then kill it:
+  "go run ./cmd/server/ & sleep 2 && cd test && npm install && npx playwright test && kill %1"
+- Apply the same pattern for any stack — infer start, health check, functional test, and teardown from the files present
+
+Always include a health check (curl, etc.) and the functional tests (Playwright, etc.) before tearing down. If the phase has no obvious run mechanism (no Docker, no scripts, no server), fall back to file-presence checks from the early/mid phase rules.
 
 CRITICAL: All paths are relative to the rig root (mayor/rig/). Do NOT prefix with the rig name. Use actual file paths from required_files.
 
 Example correct output:
 {
   "infrastructure": "test -f scripts/start_mac.sh && test -f scripts/stop_mac.sh && test -f scripts/start_windows.ps1 && echo 'scripts ok'",
-  "smoke-test": "test -f Dockerfile && test -f docker-compose.yml && echo 'docker ok'"
+  "smoke-test": "docker compose build && docker compose up -d && sleep 3 && curl --retry 5 --retry-delay 2 http://localhost:8000/health && npx playwright test && docker compose down"
 }
 
 Output JSON only — no prose, no markdown fences.`
