@@ -470,7 +470,24 @@ func (r *stateRunner) autoInstallDepsAndRetry(verifyCmd, workDir, sessionName st
 		out, err := r.runShellCommand(verifyCmd, workDir, sessionName, cmdEnv)
 		return out, err
 	}
-	venvPip := filepath.Join(rigDir, r.v.PythonVenvRelDir(), "bin", "pip")
+	venvDir := filepath.Join(rigDir, r.v.PythonVenvRelDir())
+	venvPip := filepath.Join(venvDir, "bin", "pip")
+
+	// Check if pip itself is broken (e.g. ModuleNotFoundError in pip internals).
+	// If so, rebuild the venv before attempting to install requirements.
+	pipCheckOut, _ := r.runShellCommand(venvPip+" --version", rigDir, sessionName, cmdEnv)
+	if orchestrator.PipOutputIndicatesBrokenVenv(string(pipCheckOut)) {
+		orchestratedPrintf("[gt-agent] pip is broken in %s — rebuilding venv\n", venvDir)
+		rebuildLog, rebuilt := orchestrator.RecoverPythonVenvAndRetry(r.townRoot, r.rig, r.v, fmt.Errorf("pip broken"))
+		if rebuilt {
+			orchestratedPrintf("[gt-agent] venv rebuilt successfully: %s\n", rebuildLog)
+			combined.WriteString("Python venv rebuilt (pip was broken)\n")
+			venvPip = filepath.Join(venvDir, "bin", "pip")
+		} else {
+			orchestratedFprintfStderr("[gt-agent] venv rebuild failed: %s\n", rebuildLog)
+		}
+	}
+
 	pipCmd := venvPip + " install -r " + reqPath
 	orchestratedPrintf("[gt-agent] auto-installing deps: %s\n", pipCmd)
 	installOut, installErr := r.runShellCommand(pipCmd, rigDir, sessionName, cmdEnv)

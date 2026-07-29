@@ -274,6 +274,14 @@ var pythonVenvCorruptionPatterns = []string{
 	"cannot import name",
 }
 
+// PipOutputIndicatesBrokenVenv reports whether pip's output shows that the pip
+// installation itself is broken (e.g. ModuleNotFoundError in pip internals),
+// as opposed to a missing dependency.
+func PipOutputIndicatesBrokenVenv(output string) bool {
+	lower := strings.ToLower(output)
+	return strings.Contains(lower, "modulenotfounderror") && strings.Contains(lower, "pip._internal")
+}
+
 // pythonVerifyNeedsVenvRebuild reports whether a phase verify failure looks like
 // a corrupted/missing venv rather than a code bug.
 func pythonVerifyNeedsVenvRebuild(err error) bool {
