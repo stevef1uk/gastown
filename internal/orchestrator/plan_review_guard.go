@@ -207,6 +207,16 @@ var htmlGetElementByIDRE = regexp.MustCompile(`getElementById\s*\(\s*["']([^"']+
 // allowing the workflow to return to implementation. Returns a rejection reason when
 // the QA's claim is contradicted by files that already exist and are correct.
 func rejectSpuriousQAFailure(townRoot, rig, summary, rawFeedback string) string {
+	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
+	lower := strings.ToLower(strings.TrimSpace(summary))
+
+	// If the summary explicitly reports a missing file, treat it as legitimate regardless
+	// of shell-error noise in rawFeedback (e.g. from a failed smoke-test subprocess).
+	if strings.Contains(lower, "does not exist") || strings.Contains(lower, "missing") ||
+		strings.Contains(lower, "no such file") || strings.Contains(lower, "missing file") {
+		return ""
+	}
+
 	combined := CombineQAReworkText(summary, rawFeedback)
 	// Shell errors (wrong cwd, command not found) mean QA never tested the code.
 	// Check if the code is actually correct on disk — if both are true, the failure is spurious.
@@ -217,12 +227,6 @@ func rejectSpuriousQAFailure(townRoot, rig, summary, rawFeedback string) string 
 		return ""
 	}
 	// Not a shell error — QA may have found a legitimate issue. Fall through to heuristic matching.
-	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
-	lower := strings.ToLower(strings.TrimSpace(summary))
-	if strings.Contains(lower, "does not exist") || strings.Contains(lower, "missing") ||
-		strings.Contains(lower, "not found") || strings.Contains(lower, "no such file") {
-		return ""
-	}
 	if strings.Contains(lower, "collected 0 items") || strings.Contains(lower, "no tests ran") ||
 		strings.Contains(lower, "no tests found") {
 		if !hasAnyTestFiles(rigDir) {
