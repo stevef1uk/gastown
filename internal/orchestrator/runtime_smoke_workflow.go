@@ -309,20 +309,77 @@ func RecoverPythonVenvAndRetry(townRoot, rig string, v WorkflowValidation, origi
 	if err := os.RemoveAll(venvPath); err != nil && !os.IsNotExist(err) {
 		return fmt.Sprintf("venv rebuild: cannot remove %s: %v", venvPath, err), false
 	}
-	create := exec.Command("/bin/bash", "-c", "python3 -m venv "+shellescape(venvPath))
+	// Use the host python3 (not the venv's broken python) to recreate the venv.
+	cleanEnv := cleanVenvEnv(os.Environ(), venvPath)
+	hostPython := findHostPython3(cleanEnv)
+	create := exec.Command("/bin/bash", "-c", hostPython+" -m venv "+shellescape(venvPath))
 	create.Dir = rigDir
-	create.Env = os.Environ()
+	create.Env = cleanEnv
 	if out, err := create.CombinedOutput(); err != nil {
-		return fmt.Sprintf("venv rebuild: python3 -m venv failed: %v\n%s", err, string(out)), false
+		return fmt.Sprintf("venv rebuild: %s -m venv failed: %v\n%s", hostPython, err, string(out)), false
 	}
 	installCmd := PipInstallRequirementsCmd(venvPath+"/bin/pip", reqPath)
 	install := exec.Command("/bin/bash", "-c", installCmd)
 	install.Dir = rigDir
-	install.Env = os.Environ()
+	install.Env = cleanVenvEnv(os.Environ(), venvPath)
 	if out, err := install.CombinedOutput(); err != nil {
 		return fmt.Sprintf("venv rebuild: pip install failed: %v\n%s", err, string(out)), false
 	}
 	return fmt.Sprintf("rebuilt venv (ModuleNotFoundError — pip conflict detected and resolved)"), true
+}
+
+// findHostPython3 finds a python3 from the given env's PATH.
+// Returns "python3" as fallback.
+func findHostPython3(env []string) string {
+	path := ""
+	for _, e := range env {
+		if strings.HasPrefix(e, "PATH=") {
+			path = e[len("PATH="):]
+			break
+		}
+	}
+	for _, dir := range filepath.SplitList(path) {
+		if dir == "" {
+			continue
+		}
+		py := filepath.Join(dir, "python3")
+		st, err := os.Stat(py)
+		if err == nil && !st.IsDir() && st.Mode()&0111 != 0 {
+			return py
+		}
+	}
+	return "python3"
+}
+
+// cleanVenvEnv returns a copy of env with VIRTUAL_ENV, GT_PYTHON3 removed and .venv/bin
+// directories stripped from PATH, so subprocesses use the host python3.
+func cleanVenvEnv(env []string, venvPath string) []string {
+	venvBin := filepath.Join(venvPath, "bin") + string(os.PathListSeparator)
+	out := make([]string, 0, len(env))
+	for _, e := range env {
+		if strings.HasPrefix(e, "VIRTUAL_ENV=") || strings.HasPrefix(e, "GT_PYTHON3=") {
+			continue
+		}
+		if strings.HasPrefix(e, "PATH=") {
+			cleaned := stripPathEntry(e[len("PATH="):], venvBin)
+			out = append(out, "PATH="+cleaned)
+			continue
+		}
+		out = append(out, e)
+	}
+	return out
+}
+
+func stripPathEntry(path, entry string) string {
+	dirs := filepath.SplitList(path)
+	cleaned := make([]string, 0, len(dirs))
+	for _, d := range dirs {
+		if d == "" || strings.HasPrefix(d, entry) {
+			continue
+		}
+		cleaned = append(cleaned, d)
+	}
+	return strings.Join(cleaned, string(os.PathListSeparator))
 }
 
 // shellescape wraps a path in single quotes for safe shell use.
