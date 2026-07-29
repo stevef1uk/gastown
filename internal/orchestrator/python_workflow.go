@@ -67,14 +67,15 @@ func (v WorkflowValidation) detectsPythonProject() bool {
 
 // PipInstallRequirementsCmd returns a pip install command for the given requirements file path.
 // For requirements.txt it uses `pip install -r <path>`. For pyproject.toml it changes to the
-// parent directory and runs `pip install -e .` since `pip install -r` does not support TOML.
+// parent directory and runs `pip install -e ".[dev]"` since `pip install -r` does not support
+// TOML and dev dependencies (pytest, etc.) are typically listed under [project.optional-dependencies].
 func PipInstallRequirementsCmd(venvPip, reqPath string) string {
 	if strings.HasSuffix(strings.TrimSpace(reqPath), ".toml") {
 		reqDir := filepath.Dir(reqPath)
 		if reqDir == "." {
-			return venvPip + " install -e ."
+			return venvPip + ` install -e ".[dev]"`
 		}
-		return "cd " + reqDir + " && " + venvPip + " install -e ."
+		return "cd " + reqDir + " && " + venvPip + ` install -e ".[dev]"`
 	}
 	return venvPip + " install -r " + reqPath
 }

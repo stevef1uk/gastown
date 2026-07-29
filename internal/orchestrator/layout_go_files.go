@@ -195,10 +195,9 @@ func PruneStaleLayoutFiles(townRoot, rig string, v WorkflowValidation) ([]string
 	if RequiresExactImplementPaths(v) {
 		basenameGo = nil
 	}
-	venvDir := v.PythonVenvRelDir()
 	var removed []string
 	err := filepath.Walk(root, func(path string, info os.FileInfo, walkErr error) error {
-		if walkErr != nil || info.IsDir() || !hasManagedExtension(path) {
+		if walkErr != nil {
 			return walkErr
 		}
 		rel, err := filepath.Rel(root, path)
@@ -206,8 +205,12 @@ func PruneStaleLayoutFiles(townRoot, rig string, v WorkflowValidation) ([]string
 			return err
 		}
 		rel = filepath.ToSlash(rel)
-		// Never prune files inside the Python virtual environment.
-		if venvDir != "" && (strings.HasPrefix(rel, venvDir+"/") || rel == venvDir) {
+		// Skip dependency directories that are not source files managed by the pipeline.
+		base := filepath.Base(path)
+		if info.IsDir() && (base == "node_modules" || base == v.PythonVenvRelDir()) {
+			return filepath.SkipDir
+		}
+		if info.IsDir() || !hasManagedExtension(path) {
 			return nil
 		}
 		if required[rel] {
