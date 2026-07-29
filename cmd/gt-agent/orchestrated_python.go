@@ -16,6 +16,15 @@ func isPipInstallRequirementsCommand(cmd string) bool {
 		(strings.Contains(lower, "-r ") || strings.Contains(lower, "install -r"))
 }
 
+func isVenvCreateCommand(cmd string) bool {
+	lower := strings.ToLower(cmd)
+	// Matches python3 -m venv, uv venv, virtualenv, python3 -m virtualenv, etc.
+	return (strings.Contains(lower, "python3 -m venv") ||
+		strings.Contains(lower, "uv venv") ||
+		strings.Contains(lower, "virtualenv ")) &&
+		!strings.Contains(lower, "#") // allow commented-out examples
+}
+
 func isPipInstallForActiveBead(cmd, townRoot, rig, activeBead string, v orchestrator.WorkflowValidation) bool {
 	beadPath := orchestrator.ImplementBeadPathForID(townRoot, rig, activeBead, v)
 	if beadPath == "" {
@@ -184,6 +193,9 @@ func validatePythonImplementationCommand(cmd, townRoot, rig, activeBead string, 
 	}
 	if isPipInstallRequirementsCommand(cmd) && verifyOK {
 		return fmt.Errorf("install dependencies in project_setup — venv and pip install already ran there")
+	}
+	if isVenvCreateCommand(cmd) {
+		return fmt.Errorf("do not create Python virtual environments in implementation — project_setup already created one at %s", v.PythonVenvRelDir())
 	}
 	if activeBead != "" && isPythonVerifyCommand(cmd) {
 		beadPath := orchestrator.ImplementBeadPathForID(townRoot, rig, activeBead, v)

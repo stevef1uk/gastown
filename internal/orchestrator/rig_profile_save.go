@@ -57,8 +57,15 @@ func NormalizeRigWorkflowProfile(townRoot, rig string) (WorkflowValidation, erro
 	if err := json.Unmarshal(data, &env); err != nil {
 		return WorkflowValidation{}, fmt.Errorf("decode rig profile: %w", err)
 	}
-	if env.Validation.ActivePhaseID() == "" && len(env.Validation.DeliveryPhases) > 0 {
-		env.Validation.ActivePhaseIDField = strings.TrimSpace(env.Validation.DeliveryPhases[0].ID)
+	if len(env.Validation.DeliveryPhases) > 0 {
+		if env.Validation.ActivePhaseID() == "" {
+			env.Validation.ActivePhaseIDField = strings.TrimSpace(env.Validation.DeliveryPhases[0].ID)
+		} else if len(env.Validation.CompletedPhaseIDsField) == 0 &&
+			env.Validation.ActivePhaseID() != strings.TrimSpace(env.Validation.DeliveryPhases[0].ID) {
+			// No phases completed but active phase is not the first —
+			// inconsistent state from a previous run. Reset to phase 1.
+			env.Validation.ActivePhaseIDField = strings.TrimSpace(env.Validation.DeliveryPhases[0].ID)
+		}
 	}
 	if err := SaveRigWorkflowProfileEnvelope(townRoot, rig, env); err != nil {
 		return WorkflowValidation{}, err
