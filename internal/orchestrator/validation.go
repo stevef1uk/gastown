@@ -146,6 +146,10 @@ func ClampProfileValidation(v WorkflowValidation) WorkflowValidation {
 	v = FinalizeDeliveryPhases(v)
 	v = StripInvalidCDPrefixes(v)
 	v = validatePhaseVerifyCommands(v)
+	v.RequiredFiles = StripNonFileRequiredEntries(v.RequiredFiles)
+	for i := range v.DeliveryPhases {
+		v.DeliveryPhases[i].RequiredFiles = StripNonFileRequiredEntries(v.DeliveryPhases[i].RequiredFiles)
+	}
 	v.RequiredFiles = deduplicateRequiredFiles(v.RequiredFiles)
 	for i := range v.DeliveryPhases {
 		v.DeliveryPhases[i].RequiredFiles = deduplicateRequiredFiles(v.DeliveryPhases[i].RequiredFiles)
@@ -262,6 +266,41 @@ func stripNestedBogusCD(cmd string, validTopDirs map[string]bool) string {
 		cmd = strings.TrimSpace(cmd[:idx]) + " && " + afterCD
 	}
 	return cmd
+}
+
+// phaseVerifyDirMismatch returns true when a phase's verify command references
+// subdirectories that don't exist among its required files, indicating the
+// command was generated for a different directory layout than what the phase
+// actually produces.
+func phaseVerifyDirMismatch(p *DeliveryPhase) bool {
+	cmd := strings.TrimSpace(p.QAVerifyCommand)
+	if cmd == "" {
+		return false
+	}
+	re := regexp.MustCompile(`\bcd\s+(?:\./)?(\S+)`)
+	matches := re.FindAllStringSubmatch(cmd, -1)
+	dirs := make([]string, 0, len(matches))
+	for _, m := range matches {
+		dir := m[1]
+		if dir == "." {
+			continue
+		}
+		dirs = append(dirs, dir)
+	}
+	if len(dirs) == 0 {
+		return false
+	}
+nextDir:
+	for _, d := range dirs {
+		prefix := d + "/"
+		for _, f := range p.RequiredFiles {
+			if strings.HasPrefix(f, prefix) {
+				continue nextDir
+			}
+		}
+		return true
+	}
+	return false
 }
 
 // validatePhaseVerifyCommands ensures each delivery phase's QA verify command can run
@@ -382,6 +421,21 @@ func findProjectRootForNPM(files []string) string {
 		}
 	}
 	return ""
+}
+
+// StripNonFileRequiredEntries removes entries from required_files that are
+// clearly not file paths — e.g. code fragments like "database.init_db()",
+// "cash_balance=10000.0", or bare numbers like "10000.0" that the LLM
+// sometimes injects instead of actual file paths.
+func StripNonFileRequiredEntries(files []string) []string {
+	out := make([]string, 0, len(files))
+	for _, f := range files {
+		if strings.Contains(f, "(") || strings.Contains(f, "=") {
+			continue
+		}
+		out = append(out, f)
+	}
+	return out
 }
 
 // deduplicateRequiredFiles removes obviously incorrect nested paths when the
@@ -916,6 +970,20 @@ func ValidateDeliveryPhases(v WorkflowValidation) WorkflowValidation {
 		}
 	}
 
+	// Regenerate verify commands for phases where the command references
+	// a subdirectory not present in the phase's required files (e.g.
+	// "cd test && cd ./frontend" when no files live under test/frontend/).
+	for i := range v.DeliveryPhases {
+		p := &v.DeliveryPhases[i]
+		cmd := strings.TrimSpace(p.QAVerifyCommand)
+		if cmd == "" {
+			continue
+		}
+		if phaseVerifyDirMismatch(p) {
+			p.QAVerifyCommand = defaultQAVerifyForPhase(p, v.LayoutRoot)
+		}
+	}
+
 	return v
 }
 
@@ -973,6 +1041,10 @@ func defaultQAVerifyForPhase(p *DeliveryPhase, layoutRoot string) string {
 	hasTS := false
 	hasJS := false
 	hasTSConfig := false
+	hasScripts := false
+	hasDocker := false
+	hasPlaywright := false
+	hasSpecFiles := false
 	for _, f := range p.RequiredFiles {
 		if strings.HasSuffix(f, "_test.go") || strings.HasSuffix(f, ".go") {
 			hasGo = true
@@ -989,6 +1061,18 @@ func defaultQAVerifyForPhase(p *DeliveryPhase, layoutRoot string) string {
 		if strings.HasSuffix(f, "tsconfig.json") {
 			hasTSConfig = true
 		}
+		if strings.HasSuffix(f, ".sh") || strings.HasSuffix(f, ".ps1") || strings.HasSuffix(f, ".bat") {
+			hasScripts = true
+		}
+		if strings.Contains(f, "docker-compose") || strings.Contains(f, "Dockerfile") || strings.HasSuffix(f, ".dockerfile") {
+			hasDocker = true
+		}
+		if strings.Contains(f, "playwright") {
+			hasPlaywright = true
+		}
+		if strings.HasSuffix(f, ".spec.ts") || strings.HasSuffix(f, ".spec.tsx") || strings.HasSuffix(f, ".e2e.ts") {
+			hasSpecFiles = true
+		}
 	}
 
 	lr := layoutRoot
@@ -996,6 +1080,45 @@ func defaultQAVerifyForPhase(p *DeliveryPhase, layoutRoot string) string {
 		lr = "."
 	}
 
+	if hasDocker {
+		dockerFile := ""
+		for _, f := range p.RequiredFiles {
+			if strings.Contains(f, "docker-compose") {
+				dockerFile = f
+				break
+			}
+		}
+		if dockerFile != "" {
+			return fmt.Sprintf("cd %s && test -f %s && echo 'compose file ok'", lr, dockerFile)
+		}
+	}
+	if hasPlaywright || hasSpecFiles {
+		dir := filepath.Dir(p.RequiredFiles[0])
+		for _, f := range p.RequiredFiles {
+			if strings.Contains(f, "playwright.config") {
+				dir = filepath.Dir(f)
+				break
+			}
+		}
+		if dir == "." {
+			return fmt.Sprintf("cd %s && npx playwright test --list", lr)
+		}
+		return fmt.Sprintf("cd %s/%s && npm install && npx playwright test --list", lr, dir)
+	}
+	if hasScripts {
+		var sb strings.Builder
+		for _, f := range p.RequiredFiles {
+			if strings.HasSuffix(f, ".sh") {
+				if sb.Len() > 0 {
+					sb.WriteString(" && ")
+				}
+				sb.WriteString(fmt.Sprintf("test -f %s", f))
+			}
+		}
+		if sb.Len() > 0 {
+			return fmt.Sprintf("cd %s && %s", lr, sb.String())
+		}
+	}
 	if hasGo {
 		return fmt.Sprintf("cd %s && go test ./...", lr)
 	}

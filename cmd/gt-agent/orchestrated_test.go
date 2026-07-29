@@ -883,7 +883,7 @@ func TestVerifyKindHandler_nodeSetup(t *testing.T) {
 		t.Fatal("node_setup verify kind not registered")
 	}
 	got := fn(r)
-	want := "npm install"
+	want := "cd frontend && npm install"
 	if got != want {
 		t.Fatalf("node_setup verify = %q, want %q", got, want)
 	}
@@ -1386,6 +1386,94 @@ func TestValidateQAArtifacts_failureAllowsFailedSmoke(t *testing.T) {
 	err = validateQAArtifacts(t.TempDir(), "r", "all_passed", true, true, false, false, false, v)
 	if err == nil || !strings.Contains(err.Error(), "failed commands") {
 		t.Fatalf("all_passed should reject hadCmdFailure, got %v", err)
+	}
+}
+
+// TestValidateProjectSetupCommand_nodeJSBypassesPlaceholderCheck verifies
+// that Node.js project_setup commands are NOT rejected for containing
+// markdown placeholder-like patterns like ** or <>, since config files
+// (next.config.js, tsconfig.json etc.) legitimately contain those.
+func TestValidateProjectSetupCommand_nodeJSBypassesPlaceholderCheck(t *testing.T) {
+	nodeJS := orchestrator.WorkflowValidation{
+		QAVerifyCommand: "cd frontend && npm test",
+		RequiredFiles:   []string{"frontend/next.config.js"},
+	}
+
+	cases := []struct {
+		name string
+		cmd  string
+	}{
+		{
+			name: "heredoc with JSDoc ** pattern",
+			cmd:  `cat > frontend/next.config.js << 'EOF'
+/** @type {import('next').NextConfig} */
+const nextConfig = { output: 'export' };
+module.exports = nextConfig;
+EOF`,
+		},
+		{
+			name: "heredoc with JSX <> pattern",
+			cmd:  `cat > frontend/src/app/page.tsx << 'EOF'
+const Page = () => <div>Hello</div>;
+export default Page;
+EOF`,
+		},
+		{
+			name: "npm install with ** in path",
+			cmd:  "cd frontend && npm install some-package@**",
+		},
+		{
+			name: "echo with ** in comment",
+			cmd:  `echo "/* ** this is a comment ** */" > frontend/test.txt`,
+		},
+		{
+			name: "npm install with <> in URL",
+			cmd:  "cd frontend && npm install https://npm.pkg.github.com/<org>/<package>",
+		},
+		{
+			name: "plain cd and ls (no placeholders)",
+			cmd:  "cd frontend && ls -la",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateProjectSetupCommand(tc.cmd, "finally", nodeJS)
+			if err != nil {
+				t.Errorf("Node.js command should be allowed, got: %v", err)
+			}
+		})
+	}
+}
+
+// TestValidateProjectSetupCommand_nonNodeRejectsPlaceholders verifies
+// that non-Node.js commands with placeholder patterns are still rejected.
+func TestValidateProjectSetupCommand_nonNodeRejectsPlaceholders(t *testing.T) {
+	nonNode := orchestrator.WorkflowValidation{
+		QAVerifyCommand: "pytest",
+		RequiredFiles:   []string{"backend/main.py"},
+		TestRunner:      "pytest",
+	}
+
+	cases := []struct {
+		name string
+		cmd  string
+	}{
+		{
+			name: "python with ** pattern",
+			cmd:  `echo "** bold **" > backend/README.md`,
+		},
+		{
+			name: "go with ** pattern",
+			cmd:  `echo "/* ** comment ** */" > main.go`,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateProjectSetupCommand(tc.cmd, "finally", nonNode)
+			if err == nil {
+				t.Error("non-Node command with ** should be rejected, got nil")
+			}
+		})
 	}
 }
 

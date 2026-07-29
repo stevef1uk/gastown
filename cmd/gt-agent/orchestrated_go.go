@@ -113,6 +113,10 @@ func isLLMPlaceholderCommand(cmd string) bool {
 
 func validateProjectSetupCommand(cmd, rig string, v orchestrator.WorkflowValidation) error {
 	lower := strings.ToLower(cmd)
+	// Node.js early return BEFORE placeholder check — config files can contain **, <>, etc.
+	if orchestrator.WorkflowUsesNodeJS(v) {
+		return nil
+	}
 	if isLLMPlaceholderCommand(cmd) {
 		return fmt.Errorf("do not run markdown example placeholders — use real package names and paths")
 	}
@@ -128,11 +132,7 @@ func validateProjectSetupCommand(cmd, rig string, v orchestrator.WorkflowValidat
 	// project_setup applies to ALL stacks in the profile, not just the active phase.
 	// Use full validation v (not v.ForActivePhase()) to detect all stacks.
 	// Check Node.js before Python so dual-stack rigs install both.
-	if orchestrator.WorkflowUsesNodeJS(v) {
-		// npm workspaces require install from the workspace root, not a member
-		// subdirectory, so skip RejectMayorRigRootShellCommand for Node.js.
-		return nil
-	}
+	// (Node.js early return is at the top of this function.)
 
 	if err := rigpkg.RejectMayorRigRootShellCommand(cmd, v.LayoutRoot); err != nil {
 		return err

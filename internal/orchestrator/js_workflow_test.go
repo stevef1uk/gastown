@@ -9,9 +9,9 @@ func TestNodeProjectSetupVerifyCommand(t *testing.T) {
 		want string
 	}{
 		{
-			name: "frontend subdirectory — no cd for install (workspaces)",
+			name: "frontend subdirectory — preserves cd prefix",
 			v:    WorkflowValidation{QAVerifyCommand: "cd frontend && npm test"},
-			want: "npm install",
+			want: "cd frontend && npm install",
 		},
 		{
 			name: "root level npm",
@@ -19,9 +19,9 @@ func TestNodeProjectSetupVerifyCommand(t *testing.T) {
 			want: "npm install",
 		},
 		{
-			name: "app layout — no cd for install",
+			name: "app layout — preserves cd prefix",
 			v:    WorkflowValidation{QAVerifyCommand: "cd app && npm test"},
-			want: "npm install",
+			want: "cd app && npm install",
 		},
 		{
 			name: "no fallback to required files directory",
@@ -40,19 +40,19 @@ func TestNodeProjectSetupVerifyCommand(t *testing.T) {
 			want: "npm install",
 		},
 		{
-			name: "no cd prefix preservation with multiple ands",
+			name: "cd prefix preservation with multiple ands",
 			v:    WorkflowValidation{QAVerifyCommand: "cd frontend && npm install && npx tsc --noEmit && npm test"},
-			want: "npm install",
+			want: "cd frontend && npm install",
 		},
 		{
-			name: "yarn in subdirectory — no cd",
+			name: "yarn in subdirectory — preserves cd",
 			v:    WorkflowValidation{QAVerifyCommand: "cd app && yarn test"},
-			want: "yarn install",
+			want: "cd app && yarn install",
 		},
 		{
-			name: "pnpm in subdirectory — no cd",
+			name: "pnpm in subdirectory — preserves cd",
 			v:    WorkflowValidation{QAVerifyCommand: "cd frontend && pnpm test"},
-			want: "pnpm install",
+			want: "cd frontend && pnpm install",
 		},
 	}
 	for _, tc := range cases {
@@ -105,7 +105,7 @@ func TestProjectSetupStackKindPerPhase(t *testing.T) {
 	if got := ProjectSetupStackKind(nodeScoped); got != "nodejs" {
 		t.Errorf("frontend phase stack = %q, want nodejs", got)
 	}
-	wantNode := "npm install"
+	wantNode := "cd frontend && npm install"
 	if got := nodeScoped.ProjectSetupVerifyHint(); got != wantNode {
 		t.Errorf("frontend setup verify = %q, want %q", got, wantNode)
 	}

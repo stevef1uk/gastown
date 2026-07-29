@@ -2,8 +2,11 @@ package orchestrator
 
 import (
 	"path/filepath"
+	"regexp"
 	"strings"
 )
+
+var nodeSetupCdRe = regexp.MustCompile(`^cd\s+\S+\s*&&\s*`)
 
 // WorkflowUsesNodeJS reports whether the workflow runs npm/yarn tests (frontend/Node).
 func WorkflowUsesNodeJS(v WorkflowValidation) bool {
@@ -29,8 +32,8 @@ func (v WorkflowValidation) detectsNodeProject() bool {
 
 // NodeProjectSetupVerifyCommand returns the green check for project_setup only:
 // install Node dependencies (npm/yarn/pnpm install) so later tests can run.
-// Does NOT include a cd prefix — npm workspaces require install from the workspace
-// root, not from a member subdirectory.
+// Preserves any cd <subdir> && prefix from QAVerifyCommand so npm install
+// runs in the correct subdirectory (e.g. "cd frontend && npm install").
 func NodeProjectSetupVerifyCommand(v WorkflowValidation) string {
 	base := strings.TrimSpace(v.QAVerifyCommand)
 	lower := strings.ToLower(base)
@@ -43,7 +46,9 @@ func NodeProjectSetupVerifyCommand(v WorkflowValidation) string {
 		}
 	}
 
-	return pm + " install"
+	cdPrefix := nodeSetupCdRe.FindString(base)
+
+	return cdPrefix + pm + " install"
 }
 
 // nodeInstallDirFromRequiredFiles returns the common Node directory prefix
