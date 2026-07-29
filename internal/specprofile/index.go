@@ -34,6 +34,10 @@ func IndexRig(ctx context.Context, townRoot, rig string) (*ProfileFile, error) {
 		return nil, err
 	}
 
+	// One-time JUDGE pass: review phase verify commands via LLM.
+	// Non-fatal — if the LLM fails, the deterministic commands still apply.
+	v = JudgePhaseVerifyCommands(ctx, endpoint, model, v)
+
 	f := ProfileFile{
 		Version:     1,
 		GeneratedAt: time.Now().UTC().Format(time.RFC3339),

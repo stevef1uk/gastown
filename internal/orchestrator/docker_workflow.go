@@ -2,6 +2,7 @@ package orchestrator
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -555,13 +556,62 @@ func AlignProfileLayoutWithArchitecture(v WorkflowValidation, archPath string) W
 	for i := range v.DeliveryPhases {
 		v.DeliveryPhases[i].RequiredFiles = stripLayoutPrefixFromPaths(v.DeliveryPhases[i].RequiredFiles, layout)
 		if q := strings.TrimSpace(v.DeliveryPhases[i].QAVerifyCommand); q != "" {
-			v.DeliveryPhases[i].QAVerifyCommand = dockerVerifyWithLayout(q, ".")
+			stripped := stripLayoutFromVerifyCmd(q, layout)
+			if stripped != q {
+				log.Printf("[align-layout] phase %q verify cmd stripped: %q → %q", v.DeliveryPhases[i].ID, q, stripped)
+			}
+			v.DeliveryPhases[i].QAVerifyCommand = dockerVerifyWithLayout(stripped, ".")
 		}
 	}
 	if q := strings.TrimSpace(v.QAVerifyCommand); q != "" {
-		v.QAVerifyCommand = dockerVerifyWithLayout(q, ".")
+		stripped := stripLayoutFromVerifyCmd(q, layout)
+		if stripped != q {
+			log.Printf("[align-layout] top-level QA verify cmd stripped: %q → %q", q, stripped)
+		}
+		v.QAVerifyCommand = dockerVerifyWithLayout(stripped, ".")
 	}
 	return v
+}
+
+// stripLayoutFromVerifyCmd removes the rig name prefix from paths in a verify
+// command. The LLM sometimes emits paths like "finally/backend/main.py" or
+// "cd finally/backend" where the rig name (e.g. "finally") is not part of the
+// actual project directory structure.
+//
+// Handles:
+//   - cd <layout>/<subdir> → cd <subdir>
+//   - cd <layout> → stripped entirely (bare cd to rig root is pointless)
+//   - test -f <layout>/<path> → test -f <path>
+//   - bare <layout>/<path> → <path>
+func stripLayoutFromVerifyCmd(cmd, layout string) string {
+	if layout == "" || layout == "." {
+		return cmd
+	}
+	layoutSlash := layout + "/"
+
+	// 1. Strip leading "cd <layout>/<subdir>" → "cd <subdir>"
+	re := regexp.MustCompile(`\bcd\s+` + regexp.QuoteMeta(layout) + `/`)
+	cmd = re.ReplaceAllString(cmd, "cd ")
+
+	// 2. Strip bare "cd <layout>" (no subdirectory, just the rig name)
+	re2 := regexp.MustCompile(`\bcd\s+` + regexp.QuoteMeta(layout) + `(\s|$)`)
+	cmd = re2.ReplaceAllString(cmd, "")
+
+	// 3. Strip "test -f <layout>/<path>" → "test -f <path>"
+	re3 := regexp.MustCompile(`(\btest\s+-f\s+)` + regexp.QuoteMeta(layout) + `/`)
+	cmd = re3.ReplaceAllString(cmd, `${1}`)
+
+	// 4. Strip bare "<layout>/" when it's prefixed to a path argument
+	cmd = strings.ReplaceAll(cmd, layoutSlash, "")
+
+	// Clean up: remove empty "&&" segments, double spaces, leading/trailing junk
+	cmd = strings.TrimSpace(cmd)
+	cmd = strings.TrimPrefix(cmd, "&& ")
+	cmd = strings.TrimSpace(cmd)
+	cmd = strings.TrimSuffix(cmd, "&&")
+	cmd = strings.TrimSpace(cmd)
+
+	return cmd
 }
 
 func DoubledLayoutPath(path, layoutRoot string) bool {

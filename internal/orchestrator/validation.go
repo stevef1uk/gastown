@@ -2,6 +2,7 @@ package orchestrator
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -174,11 +175,43 @@ func StripInvalidCDPrefixes(v WorkflowValidation) WorkflowValidation {
 		}
 	}
 
+	oldQA := v.QAVerifyCommand
 	v.QAVerifyCommand = stripNestedBogusCD(stripBogusLeadCD(v.QAVerifyCommand, topDirs), topDirs)
+	if v.QAVerifyCommand != oldQA {
+		log.Printf("[strip-cd] top-level QA: %q → %q (topDirs=%v)", oldQA, v.QAVerifyCommand, topDirs)
+	}
 	for i := range v.DeliveryPhases {
-		v.DeliveryPhases[i].QAVerifyCommand = stripNestedBogusCD(stripBogusLeadCD(v.DeliveryPhases[i].QAVerifyCommand, topDirs), topDirs)
+		p := &v.DeliveryPhases[i]
+		old := p.QAVerifyCommand
+		p.QAVerifyCommand = stripNestedBogusCD(stripBogusLeadCD(p.QAVerifyCommand, topDirs), topDirs)
+		if p.QAVerifyCommand != old {
+			log.Printf("[strip-cd] phase %q: %q → %q", p.ID, old, p.QAVerifyCommand)
+		}
 	}
 	return v
+}
+
+// stripLeadCD strips a leading "cd <dir> && " from cmd (with or without
+// the trailing &&). Returns the remainder after the cd.
+func stripLeadCD(cmd string) string {
+	cmd = strings.TrimSpace(cmd)
+	if !strings.HasPrefix(cmd, "cd ") {
+		return cmd
+	}
+	rest := cmd[3:]
+	spaceIdx := strings.IndexByte(rest, ' ')
+	if spaceIdx < 0 {
+		return cmd
+	}
+	// Skip the dir (first token of rest)
+	after := rest[spaceIdx+1:]
+	after = strings.TrimSpace(after)
+	after = strings.TrimPrefix(after, "&&")
+	after = strings.TrimSpace(after)
+	if after == "" {
+		return cmd
+	}
+	return after
 }
 
 // stripBogusLeadCD checks whether cmd starts with "cd <dir> && " where <dir>
@@ -188,7 +221,7 @@ func stripBogusLeadCD(cmd string, validTopDirs map[string]bool) string {
 	if !strings.HasPrefix(cmd, "cd ") {
 		return cmd
 	}
-	rest := cmd[3:]
+	rest := strings.TrimSpace(cmd[3:])
 	spaceIdx := strings.IndexByte(rest, ' ')
 	if spaceIdx < 0 {
 		return cmd
@@ -215,6 +248,28 @@ func stripBogusLeadCD(cmd string, validTopDirs map[string]bool) string {
 		subDir := dir[slashIdx+1:]
 		if subDir != "" {
 			after = "cd " + subDir + " && " + after
+		}
+	}
+
+	// If after still starts with a bogus prefix (e.g. "finally/backend && pytest")
+	// that is NOT a valid top-level dir, strip it too. This catches cases where
+	// the LLM used the rig name as a path prefix in the verify command.
+	afterTrim := strings.TrimSpace(after)
+	if spaceIdx := strings.IndexByte(afterTrim, ' '); spaceIdx >= 0 {
+		firstToken := afterTrim[:spaceIdx]
+		if !validTopDirs[firstToken] && firstToken != "." && firstToken != ".." {
+			if slashIdx := strings.IndexByte(firstToken, '/'); slashIdx >= 0 {
+				subDir := firstToken[slashIdx+1:]
+				if subDir != "" {
+					remainder := strings.TrimSpace(afterTrim[spaceIdx+1:])
+					remainder = strings.TrimPrefix(remainder, "&& ")
+					if validTopDirs[subDir] || validTopDirs[strings.Split(subDir, "/")[0]] {
+						after = "cd " + subDir + " && " + remainder
+					} else {
+						after = remainder
+					}
+				}
+			}
 		}
 	}
 
@@ -266,6 +321,138 @@ func stripNestedBogusCD(cmd string, validTopDirs map[string]bool) string {
 		cmd = strings.TrimSpace(cmd[:idx]) + " && " + afterCD
 	}
 	return cmd
+}
+
+// IsPlaceholderOrMismatchedCommand returns true when the verify command for a
+// phase should be regenerated because it's either an echo-based placeholder or
+// doesn't test the actual file types present in the phase (e.g. Docker files
+// but no docker-compose/docker command; shell scripts but no test -f/sh check).
+func IsPlaceholderOrMismatchedCommand(cmd string, p *DeliveryPhase) bool {
+	lower := strings.ToLower(cmd)
+
+	// Extract the actual action: strip leading "cd <dir> && " since that's
+	// directory setup, not the actual test. Then check if what remains is
+	// just echo (placeholder) or has real test commands.
+	action := stripLeadCD(lower)
+	action = strings.TrimSpace(action)
+
+	// If the action starts with echo, it's a placeholder (no real tests).
+	if strings.HasPrefix(action, "echo") {
+		return true
+	}
+	// If the entire command is echo (after stripping cd), it's a placeholder.
+	if action == "" || strings.TrimSpace(lower) == strings.TrimSpace(cmd) {
+		// Fall through to content-based checks below.
+	}
+
+	// Check if cd dirs don't match phase files.
+	if phaseVerifyDirMismatch(p) {
+		return true
+	}
+
+	// Check phase content vs command keywords. If the phase has distinct file
+	// types and the command doesn't reference them, it's likely wrong.
+	hasDocker := false
+	hasPlaywright := false
+	hasScripts := false
+	hasGo := false
+	hasPython := false
+	hasNode := false
+	for _, f := range p.RequiredFiles {
+		lf := strings.ToLower(f)
+		if strings.Contains(lf, "dockerfile") || strings.Contains(lf, "docker-compose") || strings.HasSuffix(lf, ".dockerfile") {
+			hasDocker = true
+		}
+		if strings.Contains(lf, "playwright") {
+			hasPlaywright = true
+		}
+		if strings.HasSuffix(lf, ".sh") || strings.HasSuffix(lf, ".ps1") || strings.HasSuffix(lf, ".bat") {
+			hasScripts = true
+		}
+		if strings.HasSuffix(lf, ".go") {
+			hasGo = true
+		}
+		if strings.HasSuffix(lf, ".py") {
+			hasPython = true
+		}
+		if strings.HasSuffix(lf, ".ts") || strings.HasSuffix(lf, ".tsx") || strings.HasSuffix(lf, ".js") || strings.HasSuffix(lf, ".jsx") || strings.HasSuffix(lf, ".mjs") {
+			hasNode = true
+		}
+	}
+
+	// For phases with scripts, Docker, or testable files, verify the command's
+	// referenced file paths actually exist in the phase's required files.
+	if !commandPathsMatchPhaseFiles(cmd, p.RequiredFiles) {
+		return true
+	}
+
+	if hasDocker && !strings.Contains(lower, "docker") && !strings.Contains(lower, "test -f") {
+		return true
+	}
+	if hasPlaywright && !strings.Contains(lower, "playwright") {
+		return true
+	}
+	if hasScripts && !strings.Contains(lower, "test -f") && !strings.Contains(lower, "sh") && !strings.Contains(lower, "chmod") {
+		return true
+	}
+	if hasGo && !strings.Contains(lower, "go ") {
+		return true
+	}
+	if hasPython && !strings.Contains(lower, "python") && !strings.Contains(lower, "pytest") {
+		return true
+	}
+	if hasNode && !strings.Contains(lower, "npm") && !strings.Contains(lower, "npx") && !strings.Contains(lower, "tsc") && !strings.Contains(lower, "node ") {
+		return true
+	}
+
+	return false
+}
+
+// commandPathsMatchPhaseFiles checks whether path-like references in the verify
+// command (test -f <path>, cd <dir>) match at least one required file in the
+// phase. Returns false when the command references paths/dirs that don't exist
+// in the phase (e.g. "test -f finally/scripts/start_mac.sh" when the file is at
+// "scripts/start_mac.sh"). Returns true if command has no paths to check.
+func commandPathsMatchPhaseFiles(cmd string, files []string) bool {
+	lower := strings.ToLower(cmd)
+	re := regexp.MustCompile(`(?:^|\b)(?:cd\s+|test -f\s+)(\S+)`)
+	matches := re.FindAllStringSubmatch(lower, -1)
+	if len(matches) == 0 {
+		return true
+	}
+	// Build top-level dirs from required files.
+	topDirs := make(map[string]bool)
+	fileSet := make(map[string]bool, len(files))
+	for _, f := range files {
+		lf := strings.ToLower(f)
+		fileSet[lf] = true
+		if idx := strings.IndexByte(lf, '/'); idx > 0 {
+			topDirs[lf[:idx]] = true
+		}
+	}
+	// Check each path reference against files and top-level dirs.
+	for _, m := range matches {
+		path := m[1]
+		if path == "." || path == ".." || strings.HasPrefix(path, "/") {
+			continue
+		}
+		// Extract first path component.
+		firstComp := path
+		if idx := strings.IndexByte(path, '/'); idx >= 0 {
+			firstComp = path[:idx]
+		}
+		// If first component is a known top-level dir, the path is valid.
+		if topDirs[firstComp] {
+			continue
+		}
+		// Check exact file match.
+		if fileSet[path] || fileSet[firstComp+"/"] {
+			continue
+		}
+		// Path's first component doesn't match any file/dir — bogus.
+		return false
+	}
+	return true
 }
 
 // phaseVerifyDirMismatch returns true when a phase's verify command references
@@ -959,28 +1146,29 @@ func ValidateDeliveryPhases(v WorkflowValidation) WorkflowValidation {
 		lastPhase.RequiredFiles = deduped
 	}
 
-	// Upgrade echo fallback to smoke test for Go+web final phase.
-	if len(v.DeliveryPhases) > 1 {
-		last := &v.DeliveryPhases[len(v.DeliveryPhases)-1]
-		cmd := strings.TrimSpace(last.QAVerifyCommand)
-		if strings.Contains(cmd, "echo 'verify ok") || strings.Contains(cmd, "echo \"verify ok") {
-			if smokeserver := finalPhaseSmokeVerifyCommand(v); smokeserver != "" {
-				last.QAVerifyCommand = smokeserver
-			}
-		}
-	}
-
-	// Regenerate verify commands for phases where the command references
-	// a subdirectory not present in the phase's required files (e.g.
-	// "cd test && cd ./frontend" when no files live under test/frontend/).
+	// Regenerate verify commands that are placeholders or don't match
+	// the phase's actual content (e.g. Docker/scripts/Playwright phases
+	// should test those files, not run unrelated stack commands).
 	for i := range v.DeliveryPhases {
 		p := &v.DeliveryPhases[i]
 		cmd := strings.TrimSpace(p.QAVerifyCommand)
 		if cmd == "" {
 			continue
 		}
-		if phaseVerifyDirMismatch(p) {
+		if IsPlaceholderOrMismatchedCommand(cmd, p) {
 			p.QAVerifyCommand = defaultQAVerifyForPhase(p, v.LayoutRoot)
+		}
+	}
+
+	// Upgrade echo-based fallback to smoke test for Go+web final phase
+	// (only when the default replacement is still a placeholder).
+	if len(v.DeliveryPhases) > 1 {
+		last := &v.DeliveryPhases[len(v.DeliveryPhases)-1]
+		cmd := strings.TrimSpace(last.QAVerifyCommand)
+		if strings.Contains(cmd, "echo") {
+			if smokeserver := finalPhaseSmokeVerifyCommand(v); smokeserver != "" {
+				last.QAVerifyCommand = smokeserver
+			}
 		}
 	}
 
