@@ -315,11 +315,12 @@ func RecoverPythonVenvAndRetry(townRoot, rig string, v WorkflowValidation, origi
 	if out, err := create.CombinedOutput(); err != nil {
 		return fmt.Sprintf("venv rebuild: python3 -m venv failed: %v\n%s", err, string(out)), false
 	}
-	install := exec.Command("/bin/bash", "-c", venvPath+"/bin/pip install -r "+shellescape(reqPath))
+	installCmd := PipInstallRequirementsCmd(venvPath+"/bin/pip", reqPath)
+	install := exec.Command("/bin/bash", "-c", installCmd)
 	install.Dir = rigDir
 	install.Env = os.Environ()
 	if out, err := install.CombinedOutput(); err != nil {
-		return fmt.Sprintf("venv rebuild: pip install -r failed: %v\n%s", err, string(out)), false
+		return fmt.Sprintf("venv rebuild: pip install failed: %v\n%s", err, string(out)), false
 	}
 	return fmt.Sprintf("rebuilt venv (ModuleNotFoundError — pip conflict detected and resolved)"), true
 }

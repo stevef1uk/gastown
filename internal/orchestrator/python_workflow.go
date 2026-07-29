@@ -65,6 +65,20 @@ func (v WorkflowValidation) detectsPythonProject() bool {
 	return false
 }
 
+// PipInstallRequirementsCmd returns a pip install command for the given requirements file path.
+// For requirements.txt it uses `pip install -r <path>`. For pyproject.toml it changes to the
+// parent directory and runs `pip install -e .` since `pip install -r` does not support TOML.
+func PipInstallRequirementsCmd(venvPip, reqPath string) string {
+	if strings.HasSuffix(strings.TrimSpace(reqPath), ".toml") {
+		reqDir := filepath.Dir(reqPath)
+		if reqDir == "." {
+			return venvPip + " install -e ."
+		}
+		return "cd " + reqDir + " && " + venvPip + " install -e ."
+	}
+	return venvPip + " install -r " + reqPath
+}
+
 // IsPythonImportCheckCommand reports python -c 'import pytest' setup verify (must not be pytest-normalized).
 func IsPythonImportCheckCommand(cmd string) bool {
 	lower := strings.ToLower(cmd)
