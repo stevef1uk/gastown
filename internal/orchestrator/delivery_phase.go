@@ -2,6 +2,7 @@ package orchestrator
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 )
@@ -58,6 +59,22 @@ func (v WorkflowValidation) IsPhaseCompleted(id string) bool {
 		}
 	}
 	return false
+}
+
+// ResolveActivePhaseFromDisk returns the first phase whose required files are not all
+// present on disk. When no files exist (fresh start) this returns phase 0.
+func ResolveActivePhaseFromDisk(rigDir string, v WorkflowValidation) string {
+	if len(v.DeliveryPhases) == 0 {
+		return ""
+	}
+	for _, p := range v.DeliveryPhases {
+		for _, f := range normalizePathList(p.RequiredFiles) {
+			if _, err := os.Stat(filepath.Join(rigDir, f)); os.IsNotExist(err) {
+				return strings.TrimSpace(p.ID)
+			}
+		}
+	}
+	return strings.TrimSpace(v.DeliveryPhases[len(v.DeliveryPhases)-1].ID)
 }
 
 // ActiveRequiredFiles returns paths in scope for the current delivery phase.

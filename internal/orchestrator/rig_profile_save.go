@@ -60,11 +60,14 @@ func NormalizeRigWorkflowProfile(townRoot, rig string) (WorkflowValidation, erro
 	if len(env.Validation.DeliveryPhases) > 0 {
 		if env.Validation.ActivePhaseID() == "" {
 			env.Validation.ActivePhaseIDField = strings.TrimSpace(env.Validation.DeliveryPhases[0].ID)
-		} else if len(env.Validation.CompletedPhaseIDsField) == 0 &&
-			env.Validation.ActivePhaseID() != strings.TrimSpace(env.Validation.DeliveryPhases[0].ID) {
-			// No phases completed but active phase is not the first —
-			// inconsistent state from a previous run. Reset to phase 1.
-			env.Validation.ActivePhaseIDField = strings.TrimSpace(env.Validation.DeliveryPhases[0].ID)
+		} else if len(env.Validation.CompletedPhaseIDsField) == 0 {
+			// No completed_phase_ids tracking available (e.g. profile from
+			// before the tracking feature). Resolve active phase from disk
+			// files: the first phase with missing files needs work.
+			rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
+			if diskPhase := ResolveActivePhaseFromDisk(rigDir, env.Validation); diskPhase != "" {
+				env.Validation.ActivePhaseIDField = diskPhase
+			}
 		}
 	}
 	if err := SaveRigWorkflowProfileEnvelope(townRoot, rig, env); err != nil {
@@ -191,6 +194,13 @@ func WriteRigWorkflowProfile(townRoot, rig string, v WorkflowValidation, source,
 		Source:      source,
 		Confidence:  confidence,
 		Validation:  ClampProfileValidationForRig(townRoot, rig, NormalizeLayoutProfile(v)),
+	}
+	// Resolve active phase from disk: first phase with missing files wins.
+	// This overrides whatever the LLM or ClampProfileValidation set, ensuring
+	// the active phase always points to the phase that actually needs work.
+	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
+	if diskPhase := ResolveActivePhaseFromDisk(rigDir, env.Validation); diskPhase != "" {
+		env.Validation.ActivePhaseIDField = diskPhase
 	}
 	raw, err := marshalRigProfileJSON(env)
 	if err != nil {
