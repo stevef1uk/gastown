@@ -195,6 +195,7 @@ func PruneStaleLayoutFiles(townRoot, rig string, v WorkflowValidation) ([]string
 	if RequiresExactImplementPaths(v) {
 		basenameGo = nil
 	}
+	venvDir := v.PythonVenvRelDir()
 	var removed []string
 	err := filepath.Walk(root, func(path string, info os.FileInfo, walkErr error) error {
 		if walkErr != nil || info.IsDir() || !hasManagedExtension(path) {
@@ -205,6 +206,10 @@ func PruneStaleLayoutFiles(townRoot, rig string, v WorkflowValidation) ([]string
 			return err
 		}
 		rel = filepath.ToSlash(rel)
+		// Never prune files inside the Python virtual environment.
+		if venvDir != "" && (strings.HasPrefix(rel, venvDir+"/") || rel == venvDir) {
+			return nil
+		}
 		if required[rel] {
 			return nil
 		}
