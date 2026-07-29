@@ -165,6 +165,18 @@ func (r *stateRunner) runPostNativeWriteVerify(relPath string, sessionName strin
 		out, err := r.runShellCommand(verifyCmd, workDir, sessionName, cmdEnv)
 		outStr := string(out)
 		if err != nil {
+			// If verify fails due to missing Python deps, attempt auto-install and retry once.
+			if pythonVerifyOutputSuggestsMissingDeps(outStr) {
+				orchestratedPrintf("[gt-agent] post-write verify missing deps — auto-installing\n")
+				retryOut, retryErr := r.autoInstallDepsAndRetry(verifyCmd, workDir, sessionName, cmdEnv, combined)
+				if retryErr == nil {
+					out = retryOut
+					err = nil
+					outStr = string(out)
+				}
+			}
+		}
+		if err != nil {
 			r.track.hadCmdFailure = true
 			r.track.verifyOK = false
 			combined.WriteString(fmt.Sprintf("Post-write verify: %s\nError: %v\nOutput: %s\n\n", verifyCmd, err, outStr))

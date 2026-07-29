@@ -790,11 +790,12 @@ func (r *stateRunner) afterCommand(cmd string, cmdErr error, workDir, sessionNam
 		if isGoModTidyCommand(cmd) && orchestrator.WorkflowUsesGo(r.v) {
 			r.repairGoModRequiresAfterTidy(combined)
 		}
-		r.runAutoVerify(cmd, workDir, sessionName, cmdEnv, combined)
-		return
 	}
-	if strings.EqualFold(strings.TrimSpace(r.hooks.Track), "qa") && qaCommandFailureNeedsCleanup(cmd) {
-		shutdownStartedDevServers(r.servers)
+	r.runAutoVerify(cmd, workDir, sessionName, cmdEnv, combined)
+	if cmdErr != nil {
+		if strings.EqualFold(strings.TrimSpace(r.hooks.Track), "qa") && qaCommandFailureNeedsCleanup(cmd) {
+			shutdownStartedDevServers(r.servers)
+		}
 	}
 }
 
