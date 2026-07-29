@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Gas Town req-flow + Freeride — updated</title>
+<style>
+  :root{
+    --bg: #060d1a;
+    --panel: #0c1930;
+    --panel-2: #0f2138;
+    --border: #1c3a5e;
+    --cyan: #35c4d8;
+    --cyan-glow: rgba(53,196,216,0.45);
+    --amber: #f2a93c;
+    --amber-glow: rgba(242,169,60,0.5);
+    --purple: #a98bf0;
+    --green: #4ade9a;
+    --text: #e7eef7;
+    --text-dim: #93a5c0;
+    --text-faint: #5c6f8c;
+    --mono: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; padding:32px 24px;
+    background: radial-gradient(circle at 20% 0%, #0a1830 0%, var(--bg) 55%);
+    color: var(--text);
+    font-family: 'Segoe UI', Helvetica, Arial, sans-serif;
+  }
+  .wrap{max-width:1180px; margin:0 auto;}
+  h1{
+    text-align:center;
+    font-size:26px;
+    font-weight:700;
+    letter-spacing:0.3px;
+    margin: 0 0 28px;
+    background: linear-gradient(90deg, #fff 0%, var(--cyan) 60%, var(--amber) 100%);
+    -webkit-background-clip:text;
+    background-clip:text;
+    color: transparent;
+  }
+  .row{display:flex; gap:14px; margin-bottom:18px; flex-wrap:wrap;}
+
+  .chip{
+    flex:1; min-width:130px;
+    background: var(--panel);
+    border:1px solid var(--border);
+    border-radius:10px;
+    padding:12px 10px;
+    text-align:center;
+    font-weight:600;
+    font-size:13px;
+    color:var(--text);
+    box-shadow: 0 0 0 rgba(0,0,0,0);
+    transition: box-shadow .2s;
+  }
+  .chip.gemini{border-color:#e0b23a; box-shadow: 0 0 14px rgba(224,178,58,0.25) inset;}
+  .chip.opt{border-style:dashed; color:var(--green); border-color:var(--green);}
+  .chip small{display:block; color:var(--text-dim); font-weight:400; font-size:10px; margin-top:2px;}
+  .arrows-updown{
+    display:flex; justify-content:space-around; margin: -6px 0 12px; color:var(--text-faint); font-size:14px;
+  }
+
+  .proxy{
+    background: linear-gradient(90deg, #0d2038, #10263f);
+    border:1px solid var(--cyan);
+    box-shadow: 0 0 22px var(--cyan-glow);
+    border-radius:12px;
+    padding:14px 20px;
+    text-align:center;
+    margin-bottom:26px;
+  }
+  .proxy .title{font-weight:700; font-size:16px; color:#fff;}
+  .proxy .sub{font-size:12px; color:var(--text-dim); margin-top:4px; font-family:var(--mono);}
+
+  .down-arrow{
+    text-align:center; color:var(--cyan); font-size:20px; margin: -14px 0 12px;
+  }
+
+  .main-grid{
+    display:grid;
+    grid-template-columns: 190px 1fr 210px;
+    gap:16px;
+    align-items:start;
+  }
+
+  .panel{
+    background: var(--panel);
+    border:1px solid var(--border);
+    border-radius:12px;
+    padding:16px;
+  }
+  .panel h2{
+    font-size:14px; margin:0 0 10px; color:var(--cyan);
+    display:flex; align-items:center; gap:6px;
+  }
+  .filelist{list-style:none; margin:0; padding:0; font-family:var(--mono); font-size:11.5px; color:var(--text-dim);}
+  .filelist li{padding:3px 0; display:flex; align-items:center; gap:6px;}
+  .filelist li.new{color:var(--amber); font-weight:600;}
+  .filelist li .dot{width:5px;height:5px;border-radius:50%;background:var(--text-faint); flex-shrink:0;}
+  .filelist li.new .dot{background:var(--amber); box-shadow:0 0 6px var(--amber-glow);}
+
+  .orchestrator{
+    border:1px solid var(--cyan);
+    box-shadow: 0 0 26px rgba(53,196,216,0.12) inset;
+  }
+  .orchestrator h2{color:#fff; font-size:16px;}
+  .stage-flow{
+    display:grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap:10px;
+  }
+  .stage{
+    background: var(--panel-2);
+    border:1px solid var(--border);
+    border-radius:10px;
+    padding:10px 8px;
+    text-align:center;
+    position:relative;
+  }
+  .stage .num{
+    width:22px; height:22px; border-radius:50%;
+    background:var(--border); color:#cfe0f2;
+    display:flex; align-items:center; justify-content:center;
+    font-size:11px; font-weight:700; margin:0 auto 6px;
+  }
+  .stage .name{font-weight:700; font-size:12.5px; color:#fff;}
+  .stage .desc{font-size:10.5px; color:var(--text-dim); margin-top:3px;}
+  .stage.new{
+    border-color: var(--amber);
+    box-shadow: 0 0 18px var(--amber-glow);
+  }
+  .stage.new .num{background:var(--amber); color:#1a1204;}
+  .row2{margin-top:26px; position:relative;}
+  .row2::before{
+    content:"";
+    position:absolute; left:0; right:0; top:-16px;
+    text-align:center;
+  }
+  .legend{
+    display:flex; gap:18px; justify-content:center; margin-top:18px; font-size:11px; color:var(--text-dim);
+  }
+  .legend span{display:flex; align-items:center; gap:6px;}
+  .legend .sw{width:10px;height:10px;border-radius:3px;}
+
+  .codeindex{border-color:var(--purple);}
+  .codeindex h2{color:var(--purple);}
+  .ci-item{font-size:11px; color:var(--text-dim); margin-bottom:9px; display:flex; gap:6px;}
+  .ci-item .b{color:var(--purple); font-family:var(--mono);}
+
+  .bottom-strip{
+    margin-top:22px;
+    display:grid; grid-template-columns: repeat(4,1fr); gap:12px;
+  }
+  .infra{
+    background:var(--panel-2); border:1px solid var(--border); border-radius:10px;
+    padding:10px; text-align:center; font-size:12px; font-weight:600; color:var(--text);
+  }
+  .infra small{display:block; color:var(--text-faint); font-weight:400; font-family:var(--mono); font-size:10px; margin-top:3px;}
+
+  .caption{
+    text-align:center; color:var(--text-faint); font-size:11.5px; margin-top:20px; font-family:var(--mono);
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>From REQUIREMENTS.md to shipped code — Gas Town req-flow + Freeride</h1>
+
+  <div class="row">
+    <div class="chip gemini">Gemini API</div>
+    <div class="chip">Groq API</div>
+    <div class="chip">Cerebras</div>
+    <div class="chip">OpenRouter</div>
+    <div class="chip">NVIDIA NIM</div>
+    <div class="chip">Ollama Cloud</div>
+    <div class="chip opt">optional<br>local GPU</div>
+  </div>
+
+  <div class="proxy">
+    <div class="title">Freeride proxy :11434</div>
+    <div class="sub">ollama-compatible · models.yaml routing · failover · role-aware</div>
+  </div>
+  <div class="down-arrow">&#8595;</div>
+
+  <div class="main-grid">
+    <div class="panel">
+      <h2>&#9670; Git repository</h2>
+      <ul class="filelist">
+        <li class="new"><span class="dot"></span>REQUIREMENTS.md</li>
+        <li class="new"><span class="dot"></span>SPEC.md</li>
+        <li><span class="dot"></span>architecture.md</li>
+        <li><span class="dot"></span>plan.md</li>
+        <li><span class="dot"></span>source code/</li>
+        <li><span class="dot"></span>.beads/issues/</li>
+        <li><span class="dot"></span>workflow-profile.json</li>
+        <li><span class="dot"></span>codeindex.json</li>
+      </ul>
+    </div>
+
+    <div class="panel orchestrator">
+      <h2>Gas Town orchestrator (req-flow FSM)</h2>
+      <div class="stage-flow">
+        <div class="stage new">
+          <div class="num">0</div>
+          <div class="name">Requirements</div>
+          <div class="desc">reqs.md &rarr; SPEC.md</div>
+        </div>
+        <div class="stage">
+          <div class="num">1</div>
+          <div class="name">Mayor/kickoff</div>
+          <div class="desc">rig registered</div>
+        </div>
+        <div class="stage">
+          <div class="num">2</div>
+          <div class="name">Architect</div>
+          <div class="desc">design / layout</div>
+        </div>
+        <div class="stage">
+          <div class="num">3</div>
+          <div class="name">Planner</div>
+          <div class="desc">beads / plan.md</div>
+        </div>
+      </div>
+      <div class="stage-flow row2">
+        <div class="stage">
+          <div class="num">4</div>
+          <div class="name">Plan review</div>
+          <div class="desc">beads vs arch</div>
+        </div>
+        <div class="stage">
+          <div class="num">5</div>
+          <div class="name">Setup</div>
+          <div class="desc">go mod / venv</div>
+        </div>
+        <div class="stage">
+          <div class="num">6</div>
+          <div class="name">Polecat</div>
+          <div class="desc">implementation</div>
+        </div>
+        <div class="stage">
+          <div class="num">7</div>
+          <div class="name">QA review</div>
+          <div class="desc">runtime smoke</div>
+        </div>
+      </div>
+      <div class="legend">
+        <span><span class="sw" style="background:var(--amber); box-shadow:0 0 6px var(--amber-glow);"></span>new stage</span>
+        <span><span class="sw" style="background:var(--border);"></span>existing rig-flow stage</span>
+      </div>
+    </div>
+
+    <div class="panel codeindex">
+      <h2>&#60;/&#62; CodeIndex</h2>
+      <div class="ci-item"><span class="b">&gt;_</span> pip install codeindex</div>
+      <div class="ci-item"><span class="b">&#8635;</span> refresh pre_run: analyze layout_root</div>
+      <div class="ci-item"><span class="b">&#9678;</span> per-implement bead: blast-radius context</div>
+      <div class="ci-item"><span class="b">&#9993;</span> injected into gt-agent prompt</div>
+    </div>
+  </div>
+
+  <div class="bottom-strip">
+    <div class="infra">NATS<small>:4222</small></div>
+    <div class="infra">gt-agent<small>--orchestrated</small></div>
+    <div class="infra">CodeIndex CLI</div>
+    <div class="infra">Dolt<small>:3307 · town ~/gt</small></div>
+  </div>
+
+  <div class="caption">on success: checkpoint commit &rarr; git push &nbsp;·&nbsp; on failure: loops back to an earlier stage</div>
+</div>
+</body>
+</html>
