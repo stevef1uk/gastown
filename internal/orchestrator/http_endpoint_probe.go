@@ -267,7 +267,7 @@ func APISmokeHasHTTPAPI(spec APISmokeSpec) bool {
 		if p.Source != "api" {
 			continue
 		}
-		if strings.EqualFold(p.Method, "POST") {
+		if strings.EqualFold(p.Method, "POST") && smokeProbeAPIPath(p.Path) {
 			return true
 		}
 		if strings.EqualFold(p.Method, "GET") && smokeProbeAPIPath(p.Path) {
