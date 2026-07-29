@@ -1581,15 +1581,12 @@ func debugLog(msg string) {
 // killProcessTree kills a process and all its children by reading /proc.
 func killProcessTree(pid int) {
 	debugLog(fmt.Sprintf("KILL TREE pid=%d", pid))
-	orchestratedPrintf("[gt-agent] killing process tree: pid=%d\n", pid)
 	children := childPids(pid)
 	for _, cpid := range children {
 		debugLog(fmt.Sprintf("KILL CHILD pid=%d", cpid))
-		orchestratedPrintf("[gt-agent] killing child: pid=%d\n", cpid)
 		syscall.Kill(cpid, syscall.SIGKILL)
 	}
 	debugLog(fmt.Sprintf("KILL PARENT pid=%d", pid))
-	orchestratedPrintf("[gt-agent] killing parent: pid=%d\n", pid)
 	syscall.Kill(pid, syscall.SIGKILL)
 }
 
