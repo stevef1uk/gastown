@@ -112,10 +112,11 @@ func killGoRunServerProcesses() {
 	if err != nil {
 		return
 	}
-	// Narrow pattern: polecat/QA smoke uses `go run` on cmd/server mains.
+	// Narrow patterns: polecat/QA smoke uses `go run` on cmd/server mains or `go run .` on flat layouts.
 	patterns := []string{
 		`go run.*cmd/server`,
 		`go run.*\/server/main`,
+		`go run \.`,
 		`go-build.*server\.test`,
 		`server\.test.*test\.`,
 	}

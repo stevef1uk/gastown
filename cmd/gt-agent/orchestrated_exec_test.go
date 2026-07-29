@@ -315,13 +315,42 @@ func TestIsQARuntimeSmokeCommandOK_profileProbeWithoutAgentCurl(t *testing.T) {
 
 func TestWrapStrictBashSmoke(t *testing.T) {
 	t.Parallel()
-	in := "go run ./cmd/server & curl -sf http://127.0.0.1:8080/"
-	got := wrapStrictBashSmoke(in)
-	if !strings.HasPrefix(got, "set -euo pipefail;") {
-		t.Fatalf("got %q", got)
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{
+			name: "cmd_server",
+			in:   "go run ./cmd/server & curl -sf http://127.0.0.1:8080/",
+			want: "set -euo pipefail; go run ./cmd/server & curl -sf http://127.0.0.1:8080/",
+		},
+		{
+			name: "flat_layout_dot",
+			in:   "go run . & curl -sf http://127.0.0.1:8080/hello",
+			want: "set -euo pipefail; go run . & curl -sf http://127.0.0.1:8080/hello",
+		},
+		{
+			name: "flat_layout_dot_slash",
+			in:   "go run ./ & curl -sf http://127.0.0.1:8080/hello",
+			want: "set -euo pipefail; go run ./ & curl -sf http://127.0.0.1:8080/hello",
+		},
 	}
-	if wrapStrictBashSmoke(got) != got {
-		t.Fatal("should not double-prefix")
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := wrapStrictBashSmoke(tc.in)
+			if !strings.HasPrefix(got, "set -euo pipefail;") {
+				t.Fatalf("%s: got %q", tc.name, got)
+			}
+			if got != tc.want {
+				t.Fatalf("%s: got %q want %q", tc.name, got, tc.want)
+			}
+			if wrapStrictBashSmoke(got) != got {
+				t.Fatal("should not double-prefix")
+			}
+		})
 	}
 }
 

@@ -300,9 +300,22 @@ func isToolchainExecutionCommand(cmd string) bool {
 }
 
 // isGoDevServerSmokeCommand reports go run ./cmd/server (with or without curl).
+// Also detects go run . or go run ./ for flat-layout projects (e.g., helloapi).
 func isGoDevServerSmokeCommand(cmd string) bool {
 	lower := strings.ToLower(cmd)
-	return strings.Contains(lower, "go run") && strings.Contains(lower, "cmd/server")
+	if strings.Contains(lower, "go run") && strings.Contains(lower, "cmd/server") {
+		return true
+	}
+	parts := strings.Fields(lower)
+	for i, p := range parts {
+		if p == "go" && i+1 < len(parts) && parts[i+1] == "run" && i+2 < len(parts) {
+			runArg := parts[i+2]
+			if runArg == "." || runArg == "./" {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // isDevServerSmokeCommand reports Go or Python local server CMDs that gt-agent can rewrite to doc-derived curls.

@@ -2843,7 +2843,11 @@ func isQARuntimeSmokeCommandOK(cmd, townRoot, rig string, v orchestrator.Workflo
 		return strings.Contains(lower, "curl ") &&
 			(strings.Contains(lower, "localhost") || strings.Contains(lower, "127.0.0.1"))
 	}
-	if !strings.Contains(lower, "go run") || !strings.Contains(lower, "cmd/server") {
+	hasGoRun := strings.Contains(lower, "go run")
+	hasServerPath := strings.Contains(lower, "cmd/server") ||
+		strings.Contains(lower, " .") ||
+		strings.Contains(lower, " ./")
+	if !hasGoRun || !hasServerPath {
 		return false
 	}
 	if !strings.Contains(lower, "curl ") && !strings.Contains(lower, ".gt-smoke.pid") {
