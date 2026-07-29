@@ -44,6 +44,22 @@ func (v WorkflowValidation) ActivePhase() (DeliveryPhase, bool) {
 	return p, true
 }
 
+// CompletedPhaseIDs returns the completed phase id list.
+func (v WorkflowValidation) CompletedPhaseIDs() []string {
+	return v.CompletedPhaseIDsField
+}
+
+// IsPhaseCompleted reports whether the given phase id was previously completed.
+func (v WorkflowValidation) IsPhaseCompleted(id string) bool {
+	id = strings.TrimSpace(id)
+	for _, c := range v.CompletedPhaseIDsField {
+		if c == id {
+			return true
+		}
+	}
+	return false
+}
+
 // ActiveRequiredFiles returns paths in scope for the current delivery phase.
 // When no phases are defined, returns RequiredFiles.
 func (v WorkflowValidation) ActiveRequiredFiles() []string {
@@ -995,7 +1011,8 @@ func TryAdvanceDeliveryPhaseAfterQA(townRoot, rig string) (redirected bool, from
 	// Phase advanced on disk — from here on, always return redirected=true.
 	// Pruning and sync are best-effort; failures are warnings, not fatal.
 	redirected = true
-	_ = ClearRigRewoundFromPhase(townRoot, rig) // best-effort; carry-on
+	_ = AddRigCompletedPhase(townRoot, rig, fromID) // best-effort; carry-on
+	_ = ClearRigRewoundFromPhase(townRoot, rig)     // best-effort; carry-on
 	full, ok, err = LoadRigWorkflowProfileFile(townRoot, rig)
 	if err != nil || !ok {
 		return true, fromID, nextID, "", err
@@ -1047,28 +1064,35 @@ func TryFastForwardDeliveryPhase(townRoot, rig string, v WorkflowValidation) (st
 	}
 	// Scan forward from active phase
 	for i := activeIdx; i < len(phaseIDs); i++ {
-		// Check if this phase has open beads
 		phaseFiles := v.DeliveryPhases[i].RequiredFiles
 		if len(phaseFiles) == 0 {
-			continue // skip empty phases
+			continue
 		}
+		// Only skip phases that have been explicitly marked as completed.
+		// Without this check, a newly-advanced phase with no beads yet would
+		// be incorrectly fast-forwarded through.
+		if !v.IsPhaseCompleted(phaseIDs[i]) {
+			if i != activeIdx {
+				return phaseIDs[i], SetRigActivePhase(townRoot, rig, phaseIDs[i])
+			}
+			return activeID, nil
+		}
+		// Phase was completed — verify no open beads remain (race guard).
 		phaseValidation := v.ForActivePhase()
-		// Create a validation scoped to this phase
 		phaseValidation.DeliveryPhases = []DeliveryPhase{v.DeliveryPhases[i]}
 		open, err := ListImplementBeadsOpenOrInProgress(townRoot, rig, phaseValidation)
 		if err != nil {
 			return "", err
 		}
 		if len(open) > 0 {
-			// This phase has open beads - stop here
+			// Phase was completed but has open beads (e.g. re-opened by rewind).
+			// Fall out of fast-forward — this is where work is needed.
 			if i != activeIdx {
 				return phaseIDs[i], SetRigActivePhase(townRoot, rig, phaseIDs[i])
 			}
 			return activeID, nil
 		}
-		// All beads in this phase are closed - continue to next phase
 	}
-	// All remaining phases have no open beads - advance to last phase
 	lastID := phaseIDs[len(phaseIDs)-1]
 	if lastID != activeID {
 		return lastID, SetRigActivePhase(townRoot, rig, lastID)

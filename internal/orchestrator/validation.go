@@ -19,8 +19,9 @@ type WorkflowValidation struct {
 	TestRunner           string   `yaml:"test_runner" json:"test_runner"`
 	RequiredFiles        []string         `yaml:"required_files" json:"required_files"`
 	DeliveryPhases       []DeliveryPhase  `yaml:"delivery_phases" json:"delivery_phases,omitempty"`
-	ActivePhaseIDField      string `yaml:"active_phase_id" json:"active_phase_id,omitempty"`
-	RewoundFromPhaseIDField string `yaml:"rewound_from_phase_id,omitempty" json:"rewound_from_phase_id,omitempty"`
+	ActivePhaseIDField        string   `yaml:"active_phase_id" json:"active_phase_id,omitempty"`
+	RewoundFromPhaseIDField   string   `yaml:"rewound_from_phase_id,omitempty" json:"rewound_from_phase_id,omitempty"`
+	CompletedPhaseIDsField    []string `yaml:"completed_phase_ids,omitempty" json:"completed_phase_ids,omitempty"`
 	SpecSummary                string   `yaml:"spec_summary" json:"spec_summary"`
 	MinArchitectureBytes       int64    `yaml:"min_architecture_bytes" json:"min_architecture_bytes"`
 	MinPlanBytes               int64    `yaml:"min_plan_bytes" json:"min_plan_bytes"`
@@ -553,6 +554,9 @@ func mergeValidationFields(base, overlay WorkflowValidation) WorkflowValidation 
 	}
 	if overlay.ActivePhaseIDField != "" {
 		base.ActivePhaseIDField = overlay.ActivePhaseIDField
+	}
+	if len(overlay.CompletedPhaseIDsField) > 0 {
+		base.CompletedPhaseIDsField = append([]string(nil), overlay.CompletedPhaseIDsField...)
 	}
 	if overlay.MinArchitectureBytes > 0 {
 		base.MinArchitectureBytes = overlay.MinArchitectureBytes

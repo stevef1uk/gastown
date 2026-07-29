@@ -123,6 +123,33 @@ func SetRigRewoundFromPhase(townRoot, rig, phaseID string) error {
 	return SaveRigWorkflowProfileEnvelope(townRoot, rig, env)
 }
 
+// AddRigCompletedPhase appends a phase id to the completed_phase_ids list in workflow-profile.json.
+func AddRigCompletedPhase(townRoot, rig, phaseID string) error {
+	if rig == "" || townRoot == "" {
+		return fmt.Errorf("town root and rig name required")
+	}
+	phaseID = strings.TrimSpace(phaseID)
+	if phaseID == "" {
+		return nil
+	}
+	path := filepath.Join(townRoot, rig, "mayor", "rig", rigProfileDir, rigProfileFile)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("read rig profile %s: %w", path, err)
+	}
+	var env rigProfileEnvelope
+	if err := json.Unmarshal(data, &env); err != nil {
+		return fmt.Errorf("decode rig profile: %w", err)
+	}
+	for _, c := range env.Validation.CompletedPhaseIDsField {
+		if c == phaseID {
+			return nil // already recorded
+		}
+	}
+	env.Validation.CompletedPhaseIDsField = append(env.Validation.CompletedPhaseIDsField, phaseID)
+	return SaveRigWorkflowProfileEnvelope(townRoot, rig, env)
+}
+
 // ClearRigRewoundFromPhase clears rewound_from_phase_id so normal sequential
 // advancement resumes on future phase completions.
 func ClearRigRewoundFromPhase(townRoot, rig string) error {
