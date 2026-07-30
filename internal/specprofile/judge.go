@@ -45,11 +45,14 @@ For **final/integration phases** (e.g. smoke-test, deployment-and-e2e), generate
   "timeout 3 curl -sN http://localhost:8000/api/stream | head -1 | python3 -c 'import sys; l=sys.stdin.read(); assert len(l) > 0; print(\"sse ok\")'"
 
 **Tech-specific smoke patterns:**
-- Docker: "docker compose build && docker compose up -d && sleep 3 && curl -s http://localhost:8000/ | grep -qi 'expected-text' && curl -s http://localhost:8000/api/health | python3 -c '...' && npx playwright test && docker compose down"
-- Script-based: "cd test && npm install && ../scripts/start_mac.sh && sleep 2 && curl -s http://localhost:8000/ | grep -qi 'expected-text' && curl -s http://localhost:8000/api/health | python3 -c '...' && npx playwright test && ../scripts/stop_mac.sh"
-- Go server: "go run ./cmd/server/ & sleep 2 && curl -s http://localhost:8000/ | grep -qi 'expected-text' && npx playwright test && kill %1"
-- Always include at least 2-3 content-validating curl checks (root page, health, data endpoint) in addition to any Playwright tests
-- If the phase has spec files but they seem thin (fewer than 5 assertions across all specs), compensate by adding more inline curl validation in the command
+- Docker (with timeout for first-run image pulls): "timeout 300 docker compose build && timeout 300 docker compose up -d && sleep 5 && curl -s http://localhost:8000/ | grep -qi 'expected-text' && curl -s http://localhost:8000/api/health | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get(\"status\") == \"ok\"' && curl -s http://localhost:8000/api/portfolio | python3 -c 'import json,sys; d=json.load(sys.stdin); assert len(d.get(\"positions\",[]))>0' && docker compose down"
+- Docker (single-container, non-daemon — shows build errors inline): "timeout 300 docker compose up --build --abort-on-container-exit & sleep 5 && curl --retry 3 --retry-delay 2 -s http://localhost:8000/ | grep -qi 'expected-text' && curl -s http://localhost:8000/api/health | python3 -c '...' && kill %1 2>/dev/null; docker compose down"
+- Script-based: "cd test && npm install && ../scripts/start_mac.sh & sleep 3 && curl --retry 3 --retry-delay 2 -s http://localhost:8000/ | grep -qi 'expected-text' && ../scripts/stop_mac.sh"
+- Go server: "go run ./cmd/server/ & sleep 3 && curl --retry 3 --retry-delay 2 -s http://localhost:8000/ | grep -qi 'expected-text' && kill %1"
+- **First-run setups**: if the project needs `npm install`, `pip install`, or `docker pull`, wrap the setup step with `timeout 300` to allow first-run downloads. Example: "timeout 300 docker compose build && docker compose up -d && ..."
+- **Dependency consistency**: for npm projects, run `npm install` (not `npm ci`) before any test/build to ensure lockfile matches package.json when dependencies have been added. Example: "cd frontend && npm install && npm run build"
+- Always include at least 2-3 content-validating curl checks (root page, health, data endpoint) in addition to any Playwright tests. **Parse the JSON response, don't just check for HTTP 200.**
+- Content validation pattern (parses API JSON, verifies structure): "curl -s http://localhost:8000/api/watchlist | python3 -c 'import json,sys; d=json.load(sys.stdin); items=d.get(\"items\",[]); assert len(items)>0; print(f\"{len(items)} items ok\")'"
 
 Always include a health check AND content validation (grep HTML for expected strings, parse API JSON) AND functional tests (Playwright) before tearing down. If the phase has no obvious run mechanism, fall back to file-presence checks from the early/mid phase rules.
 
