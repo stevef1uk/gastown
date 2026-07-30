@@ -14,13 +14,104 @@ import (
 	"github.com/steveyegge/gastown/internal/orchestrator"
 )
 
+// extractPhaseSpecs makes a single fast LLM call to extract relevant SPEC.md/REQUIREMENTS.md
+// sections for each phase based on its spec_focus. Returns a map of phase_id→excerpt.
+// On failure, returns nil (JUDGE will proceed without spec context).
+func extractPhaseSpecs(ctx context.Context, endpoint, model string, phases []judgePhasePayload, specText, reqText string) map[string]string {
+	if (specText == "" && reqText == "") || len(phases) == 0 {
+		return nil
+	}
+	totalSpec := len(specText) + len(reqText)
+	log.Printf("[judge] extracting spec sections for %d phases from %d total chars", len(phases), totalSpec)
+
+	var b strings.Builder
+	b.WriteString("For each phase below, extract the relevant sections from the project's SPEC.md and REQUIREMENTS.md that describe the behavior this phase should test.\n\n")
+	b.WriteString("Phases:\n")
+	for _, p := range phases {
+		b.WriteString(fmt.Sprintf("- %s (spec_focus: %s)\n", p.ID, p.SpecFocus))
+	}
+	if reqText != "" {
+		r := reqText
+		if len(r) > 8000 {
+			r = r[:8000] + "\n... (truncated)"
+		}
+		b.WriteString("\n### REQUIREMENTS.md\n")
+		b.WriteString(r)
+	}
+	if specText != "" {
+		s := specText
+		if len(s) > 12000 {
+			s = s[:12000] + "\n... (truncated)"
+		}
+		b.WriteString("\n### SPEC.md\n")
+		b.WriteString(s)
+	}
+	b.WriteString("\n\nReturn a JSON object mapping each phase ID to a short excerpt (max 400 chars) from the spec/req that describes what that phase should verify. If no relevant section is found for a phase, omit it. Output JSON only.\n")
+
+	body := map[string]interface{}{
+		"model": model,
+		"messages": []map[string]string{
+			{"role": "system", "content": "You extract relevant sections from project specifications for specific delivery phases."},
+			{"role": "user", "content": b.String()},
+		},
+		"stream": false,
+	}
+	jsonBody, err := json.Marshal(body)
+	if err != nil {
+		log.Printf("[judge] extract: marshal: %v", err)
+		return nil
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(jsonBody))
+	if err != nil {
+		log.Printf("[judge] extract: create req: %v", err)
+		return nil
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-GasTown-Role", "judge-extract-specs")
+
+	client := &http.Client{Timeout: 120 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Printf("[judge] extract: LLM failed: %v", err)
+		return nil
+	}
+	defer resp.Body.Close()
+	raw, err := io.ReadAll(resp.Body)
+	if err != nil || resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		log.Printf("[judge] extract: HTTP %d: %v", resp.StatusCode, err)
+		return nil
+	}
+
+	var wrap struct {
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
+	}
+	if err := json.Unmarshal(raw, &wrap); err != nil || len(wrap.Choices) == 0 {
+		log.Printf("[judge] extract: decode: %v", err)
+		return nil
+	}
+
+	content := strings.TrimSpace(wrap.Choices[0].Message.Content)
+	var result map[string]string
+	if err := ExtractJSONObject(content, &result); err != nil {
+		log.Printf("[judge] extract: parse JSON: %v", err)
+		return nil
+	}
+	log.Printf("[judge] extract: got sections for %d phases", len(result))
+	return result
+}
+
 // judgeSystemPrompt returns the system prompt for the QA verify command judge.
 func judgeSystemPrompt() string {
 	return `You are a QA verify command reviewer. Your job is to ensure each delivery phase in a build profile has a proper qa_verify_command that actually tests the files in that phase.
 
 For each phase you receive, evaluate the current qa_verify_command. If it is a placeholder (echo, trivial command) or doesn't properly test the phase's required files, replace it with a real command.
 
-The user prompt includes the project's full SPEC.md and REQUIREMENTS.md. **GENERATE VERIFY COMMANDS THAT TEST THE ACTUAL BEHAVIOR DESCRIBED IN THE SPEC** — not just file presence. For example, if the spec says "users can place limit orders", the verify command should start the server and test that the order endpoint actually processes limit orders. Match each phase's spec_focus to the relevant sections of the spec to determine what behavior to test.
+Each phase above includes a relevant excerpt from the project's SPEC.md/REQUIREMENTS.md. **GENERATE VERIFY COMMANDS THAT TEST THE ACTUAL BEHAVIOR DESCRIBED IN THE EXCERPT** — not just file presence. For example, if the spec excerpt says "users can place limit orders", the verify command should start the server and test that the order endpoint actually processes limit orders.
 
 Return a FLAT JSON object. Each key is a phase ID (string), each value is a qa_verify_command (string). **Only include phases where the current command is wrong.** Do NOT repeat the phase metadata (title, required_files, etc.). If a phase already has a valid, non-placeholder command that properly tests its required files, leave it out of your response entirely. Do NOT replace valid commands with equivalent alternatives (e.g. don't replace "uv run pytest" with "python -m pytest" — both are fine). Phases not in the response keep their current command.
 
@@ -125,35 +216,28 @@ func JudgePhaseVerifyCommands(ctx context.Context, endpoint, model, validatorEnd
 		log.Printf("[judge] phase %q current command: %s", p.ID, p.QAVerifyCommand)
 	}
 
+	// Pre-extraction: use a single fast LLM call to extract relevant spec/req sections
+	// for each phase, rather than dumping the full documents into every JUDGE call.
+	phaseSpecMap := extractPhaseSpecs(ctx, endpoint, model, phases, specText, reqText)
+
 	payloadJSON, err := json.MarshalIndent(phases, "", "  ")
 	if err != nil {
 		log.Printf("[judge] marshal phases: %v", err)
 		return v
 	}
 
-	// Build user prompt: phase payloads plus full spec/req context.
+	// Build user prompt: phase payloads plus extracted spec excerpts.
 	var userPromptBuilder strings.Builder
 	userPromptBuilder.WriteString("Review these delivery phases and return updated qa_verify_command values:\n\n")
 	userPromptBuilder.WriteString(string(payloadJSON))
-	if specText != "" || reqText != "" {
-		userPromptBuilder.WriteString("\n\n---\nProject REQUIREMENTS.md and SPEC.md (use these to determine what each phase should verify):\n")
-		if reqText != "" {
-			reqTrunc := reqText
-			if len(reqTrunc) > 4000 {
-				reqTrunc = reqTrunc[:4000] + "\n... (truncated)"
+	if len(phaseSpecMap) > 0 {
+		userPromptBuilder.WriteString("\n\n---\nRelevant SPEC.md / REQUIREMENTS.md excerpts per phase:\n")
+		for _, p := range phases {
+			if excerpt, ok := phaseSpecMap[p.ID]; ok && excerpt != "" {
+				userPromptBuilder.WriteString(fmt.Sprintf("\n### %s (%s)\n%s\n", p.ID, p.SpecFocus, excerpt))
 			}
-			userPromptBuilder.WriteString("\n### REQUIREMENTS.md\n")
-			userPromptBuilder.WriteString(reqTrunc)
 		}
-		if specText != "" {
-			specTrunc := specText
-			if len(specTrunc) > 6000 {
-				specTrunc = specTrunc[:6000] + "\n... (truncated)"
-			}
-			userPromptBuilder.WriteString("\n### SPEC.md\n")
-			userPromptBuilder.WriteString(specTrunc)
-		}
-		userPromptBuilder.WriteString("\n---\n")
+		userPromptBuilder.WriteString("---\n")
 	}
 	userPrompt := userPromptBuilder.String()
 
