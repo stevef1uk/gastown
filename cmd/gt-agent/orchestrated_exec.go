@@ -1367,6 +1367,10 @@ func orchestratedCommandTimeout(cmd string) time.Duration {
 	if strings.Contains(lower, "npm run") || strings.Contains(lower, "npx") {
 		return 30 * time.Second
 	}
+	// Docker compose builds and image pulls need generous timeout, especially first run.
+	if strings.Contains(lower, "docker compose") || strings.Contains(lower, "docker-compose") {
+		return 5 * time.Minute
+	}
 	// spec-index calls an LLM to generate the workflow profile — needs generous timeout.
 	if strings.Contains(lower, "gt rig spec-index") {
 		return 3 * time.Minute
