@@ -149,7 +149,7 @@ func TestJudgePhaseVerifyCommandsWithFreerideProxy(t *testing.T) {
 				},
 			}
 
-			v = JudgePhaseVerifyCommands(ctx, "http://localhost:11434/v1/chat/completions", "deepseek/deepseek-v4-flash", "http://localhost:11434/v1/chat/completions", "deepseek/deepseek-v4-flash", v)
+			v = JudgePhaseVerifyCommands(ctx, "http://localhost:11434/v1/chat/completions", "deepseek/deepseek-v4-flash", "http://localhost:11434/v1/chat/completions", "deepseek/deepseek-v4-flash", v, "", "")
 
 			find := func(id string) *orchestrator.DeliveryPhase {
 				for i := range v.DeliveryPhases {

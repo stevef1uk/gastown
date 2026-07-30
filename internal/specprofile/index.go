@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"time"
 
@@ -59,11 +60,22 @@ func IndexRig(ctx context.Context, townRoot, rig string) (*ProfileFile, error) {
 	}
 	_ = json.Unmarshal(raw, &f)
 
-	// Step 3: Two-stage JUDGE pipeline on the clamped profile. Generator suggests
-	// improvements, validator reviews each suggestion before applying. Non-fatal.
-	f.Validation = JudgePhaseVerifyCommands(ctx, endpoint, model, validatorEndpoint, validatorModel, f.Validation)
+	// Step 3: Read REQUIREMENTS.md for holistic behavioral verification.
+	// SPEC.md was already read at the top as `data` — reuse it.
+	reqPath := RequirementsPath(townRoot, rig)
+	reqRaw, _ := os.ReadFile(reqPath)
+	reqText := string(reqRaw)
+	specText := string(data)
+	if specText != "" || reqText != "" {
+		log.Printf("[index] judge: loaded %d chars spec + %d chars req", len(specText), len(reqText))
+	}
 
-	// Step 4: Write again. ClampProfileValidation is idempotent at this point
+	// Step 4: Two-stage JUDGE pipeline on the clamped profile. Generator suggests
+	// improvements, validator reviews each suggestion before applying. Spec/req text
+	// is injected so verify commands test actual project behavior, not just file presence.
+	f.Validation = JudgePhaseVerifyCommands(ctx, endpoint, model, validatorEndpoint, validatorModel, f.Validation, specText, reqText)
+
+	// Step 5: Write again. ClampProfileValidation is idempotent at this point
 	// (phase structure already stable) so the judge's command updates survive.
 	if err := orchestrator.WriteRigWorkflowProfile(townRoot, rig, f.Validation, f.Source, f.Confidence); err != nil {
 		return nil, err

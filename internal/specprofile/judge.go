@@ -20,29 +20,38 @@ func judgeSystemPrompt() string {
 
 For each phase you receive, evaluate the current qa_verify_command. If it is a placeholder (echo, trivial command) or doesn't properly test the phase's required files, replace it with a real command.
 
+The user prompt includes the project's full SPEC.md and REQUIREMENTS.md. **GENERATE VERIFY COMMANDS THAT TEST THE ACTUAL BEHAVIOR DESCRIBED IN THE SPEC** — not just file presence. For example, if the spec says "users can place limit orders", the verify command should start the server and test that the order endpoint actually processes limit orders. Match each phase's spec_focus to the relevant sections of the spec to determine what behavior to test.
+
 Return a FLAT JSON object. Each key is a phase ID (string), each value is a qa_verify_command (string). **Only include phases where the current command is wrong.** Do NOT repeat the phase metadata (title, required_files, etc.). If a phase already has a valid, non-placeholder command that properly tests its required files, leave it out of your response entirely. Do NOT replace valid commands with equivalent alternatives (e.g. don't replace "uv run pytest" with "python -m pytest" — both are fine). Phases not in the response keep their current command.
 
-For **early/mid phases** (backend, frontend, database), verify file presence or run compile/unit tests:
-- Shell scripts (.sh): "test -f scripts/start_mac.sh && test -f scripts/stop_mac.sh"
-- Docker/compose files: "test -f Dockerfile && test -f docker-compose.yml && echo 'docker ok'"
-- Playwright config: "cd test && npm install && npx playwright test --list"
-- Python/pytest: "cd backend && python -m pytest -v tests/"
-- Go: "cd . && go test ./..."
-- TypeScript/React: "cd frontend && npm install && npx tsc --noEmit"
-- Frontend tests: "cd frontend && npm test -- --watchAll=false"
-- Database files: "test -f db/finally.db && echo 'db ok'"
-- Backend source (no tests yet): "cd backend && python -c 'import sys; sys.path.insert(0, \"src\"); from main import app; print(\"ok\")'"
+For **early/mid phases** (backend, frontend, database), prefer behavioral checks over file-presence when spec sections describe specific functionality:
+- If the spec mentions API endpoints, start the server and curl those endpoints with real payloads
+- If the spec mentions database tables/schemas, verify the schema exists with a query
+- If no spec sections are available, fall back to file presence or compile checks:
+  - Shell scripts (.sh): "test -f scripts/start_mac.sh && test -f scripts/stop_mac.sh"
+  - Docker/compose files: "test -f Dockerfile && test -f docker-compose.yml && echo 'docker ok'"
+  - Playwright config: "cd test && npm install && npx playwright test --list"
+  - Python/pytest: "cd backend && python -m pytest -v tests/"
+  - Go: "cd . && go test ./..."
+  - TypeScript/React: "cd frontend && npm install && npx tsc --noEmit"
+  - Frontend tests: "cd frontend && npm test -- --watchAll=false"
+  - Database files: "test -f db/finally.db && echo 'db ok'"
+  - Backend source (no tests yet): "cd backend && python -c 'import sys; sys.path.insert(0, \"src\"); from main import app; print(\"ok\")'"
 
-For **final/integration phases** (e.g. smoke-test, deployment-and-e2e), generate a **start → verify → stop** smoke test. Infer the project's run pattern from the phase's required_files and spec_focus:
+For **final/integration phases** (e.g. smoke-test, deployment-and-e2e), generate a **start -> verify -> stop** smoke test. Infer the project's run pattern from required_files, spec_focus, and spec_sections.
 
-**The verify command must validate application BEHAVIOR — not just health.** Include content checks against multiple endpoints:
+**The verify command must validate application BEHAVIOR against the spec — not just health.** Use spec_sections to determine:
+1. What API endpoints exist and what payloads they accept
+2. What UI features the frontend should display
+3. What database tables and relationships exist
+4. Expected error conditions and edge cases
 
-- After starting, check that the root page contains expected UI components or text:
-  "curl -s http://localhost:8000/ | grep -qi 'watchlist\|chart\|tradebar\|portfolio' && echo 'UI content found'" 
-- Check data/API endpoints return meaningful content (not just 200):
-  "curl -s http://localhost:8000/api/health | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get(\"status\") == \"ok\"; print(\"health ok\")'"
-- If SSE or streaming endpoints exist, check they connect:
-  "timeout 3 curl -sN http://localhost:8000/api/stream | head -1 | python3 -c 'import sys; l=sys.stdin.read(); assert len(l) > 0; print(\"sse ok\")'"
+Include content checks against multiple endpoints with real request payloads derived from spec sections:
+
+- **API functional test**: start the server, POST to endpoints with spec-described payloads, assert response fields match spec
+- **UI content**: check the root page HTML for spec-described UI elements: "curl -s http://localhost:8000/ | grep -qi 'expected-ui-text' && echo 'UI content found'" 
+- **Data endpoints**: check they return meaningful content matching spec data models: "curl -s http://localhost:8000/api/endpoint | python3 -c 'import json,sys; d=json.load(sys.stdin); assert \"expectedField\" in d'"
+- **Database schema**: verify tables/columns described in spec exist: "cd backend && python3 -c 'import sqlite3; conn=sqlite3.connect(\"finally.db\"); assert \"expected_table\" in [r[0] for r in conn.execute(\"SELECT name FROM sqlite_master WHERE type='table'\")]'"
 
 **Tech-specific smoke patterns:**
 - Docker (with timeout for first-run image pulls): "timeout 300 docker compose build && timeout 300 docker compose up -d && sleep 5 && curl -s http://localhost:8000/ | grep -qi 'expected-text' && curl -s http://localhost:8000/api/health | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get(\"status\") == \"ok\"' && curl -s http://localhost:8000/api/portfolio | python3 -c 'import json,sys; d=json.load(sys.stdin); assert len(d.get(\"positions\",[]))>0' && docker compose down"
@@ -81,9 +90,13 @@ type judgePhasePayload struct {
 // placeholder/mismatched phases, then the validator LLM (validatorEndpoint/validatorModel)
 // reviews each suggestion and only approved changes are applied.
 //
+// specText and reqText contain the project's SPEC.md and REQUIREMENTS.md content.
+// They are matched to each phase via spec_focus and injected into the prompt so the
+// LLM can generate behavioral verify commands that validate actual project requirements.
+//
 // If validatorEndpoint is empty or equals the generator, the generator model is reused
 // for both stages (but still makes two separate calls).
-func JudgePhaseVerifyCommands(ctx context.Context, endpoint, model, validatorEndpoint, validatorModel string, v orchestrator.WorkflowValidation) orchestrator.WorkflowValidation {
+func JudgePhaseVerifyCommands(ctx context.Context, endpoint, model, validatorEndpoint, validatorModel string, v orchestrator.WorkflowValidation, specText, reqText string) orchestrator.WorkflowValidation {
 	if !v.HasPhasedDelivery() {
 		log.Printf("[judge] skipping — no delivery phases")
 		return v
@@ -99,7 +112,7 @@ func JudgePhaseVerifyCommands(ctx context.Context, endpoint, model, validatorEnd
 
 	log.Printf("[judge] reviewing %d phase verify commands via %s %s", len(v.DeliveryPhases), endpoint, model)
 
-	// Build phase payloads
+	// Build phase payloads.
 	var phases []judgePhasePayload
 	for _, p := range v.DeliveryPhases {
 		phases = append(phases, judgePhasePayload{
@@ -118,7 +131,31 @@ func JudgePhaseVerifyCommands(ctx context.Context, endpoint, model, validatorEnd
 		return v
 	}
 
-	userPrompt := "Review these delivery phases and return updated qa_verify_command values:\n\n" + string(payloadJSON)
+	// Build user prompt: phase payloads plus full spec/req context.
+	var userPromptBuilder strings.Builder
+	userPromptBuilder.WriteString("Review these delivery phases and return updated qa_verify_command values:\n\n")
+	userPromptBuilder.WriteString(string(payloadJSON))
+	if specText != "" || reqText != "" {
+		userPromptBuilder.WriteString("\n\n---\nProject REQUIREMENTS.md and SPEC.md (use these to determine what each phase should verify):\n")
+		if reqText != "" {
+			reqTrunc := reqText
+			if len(reqTrunc) > 4000 {
+				reqTrunc = reqTrunc[:4000] + "\n... (truncated)"
+			}
+			userPromptBuilder.WriteString("\n### REQUIREMENTS.md\n")
+			userPromptBuilder.WriteString(reqTrunc)
+		}
+		if specText != "" {
+			specTrunc := specText
+			if len(specTrunc) > 6000 {
+				specTrunc = specTrunc[:6000] + "\n... (truncated)"
+			}
+			userPromptBuilder.WriteString("\n### SPEC.md\n")
+			userPromptBuilder.WriteString(specTrunc)
+		}
+		userPromptBuilder.WriteString("\n---\n")
+	}
+	userPrompt := userPromptBuilder.String()
 
 	body := map[string]interface{}{
 		"model": model,

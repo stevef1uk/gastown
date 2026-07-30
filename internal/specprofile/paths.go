@@ -19,3 +19,13 @@ func ProfilePath(townRoot, rig string) string {
 func SpecPath(townRoot, rig string) string {
 	return filepath.Join(townRoot, rig, "mayor", "rig", "SPEC.md")
 }
+
+// RequirementsPath returns the canonical REQUIREMENTS.md path for a rig worktree.
+func RequirementsPath(townRoot, rig string) string {
+	return filepath.Join(townRoot, rig, "mayor", "rig", "REQUIREMENTS.md")
+}
+
+// rigRoot returns the rig's mayor/rig directory.
+func rigRoot(townRoot, rig string) string {
+	return filepath.Join(townRoot, rig, "mayor", "rig")
+}
