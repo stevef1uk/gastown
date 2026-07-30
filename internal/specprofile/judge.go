@@ -124,7 +124,7 @@ func judgeSystemPrompt() string {
 
 For each phase you receive, evaluate the current qa_verify_command. If it is a placeholder (echo, trivial command) or doesn't properly test the phase's required files, replace it with a real command.
 
-Each phase above includes a relevant excerpt from the project's SPEC.md/REQUIREMENTS.md. **GENERATE VERIFY COMMANDS THAT TEST THE ACTUAL BEHAVIOR DESCRIBED IN THE EXCERPT** — not just file presence. For example, if the spec excerpt says "users can place limit orders", the verify command should start the server and test that the order endpoint actually processes limit orders.
+Each phase's "spec_excerpt" field contains a relevant excerpt from the project's SPEC.md/REQUIREMENTS.md. **GENERATE VERIFY COMMANDS THAT TEST THE ACTUAL BEHAVIOR DESCRIBED IN THE spec_excerpt — not just file presence.** For example, if the spec_excerpt says "users can place limit orders", the verify command should start the server and test that the order endpoint actually processes limit orders. If spec_excerpt is empty for a phase, fall back to the generic file-presence or compile-check patterns below.
 
 Return a FLAT JSON object. Each key is a phase ID (string), each value is a qa_verify_command (string). **Only include phases where the current command is wrong.** Do NOT repeat the phase metadata (title, required_files, etc.). If a phase already has a valid, non-placeholder command that properly tests its required files, leave it out of your response entirely. Do NOT replace valid commands with equivalent alternatives (e.g. don't replace "uv run pytest" with "python -m pytest" — both are fine). Phases not in the response keep their current command.
 
@@ -187,6 +187,7 @@ type judgePhasePayload struct {
 	RequiredFiles   []string `json:"required_files"`
 	SpecFocus       string   `json:"spec_focus"`
 	CurrentCommand  string   `json:"current_qa_verify_command"`
+	SpecExcerpt     string   `json:"spec_excerpt,omitempty"`
 }
 
 // JudgePhaseVerifyCommands reviews all delivery phase verify commands in a two-stage
@@ -216,8 +217,8 @@ func JudgePhaseVerifyCommands(ctx context.Context, endpoint, model, validatorEnd
 
 	log.Printf("[judge] reviewing %d phase verify commands via %s %s", len(v.DeliveryPhases), endpoint, model)
 
-	// Build phase payloads.
-	var phases []judgePhasePayload
+	// Build phase payloads (without spec excerpts yet — those come from extraction below).
+	phases := make([]judgePhasePayload, 0, len(v.DeliveryPhases))
 	for _, p := range v.DeliveryPhases {
 		phases = append(phases, judgePhasePayload{
 			ID:             p.ID,
@@ -229,9 +230,17 @@ func JudgePhaseVerifyCommands(ctx context.Context, endpoint, model, validatorEnd
 		log.Printf("[judge] phase %q current command: %s", p.ID, p.QAVerifyCommand)
 	}
 
-	// Pre-extraction: use a single fast LLM call to extract relevant spec/req sections
-	// for each phase, rather than dumping the full documents into every JUDGE call.
+	// Pre-extraction: use two fast LLM calls (one per document) to extract relevant
+	// spec/req sections for each phase, rather than dumping the full documents into
+	// every JUDGE call.
 	phaseSpecMap := extractPhaseSpecs(ctx, endpoint, model, phases, specText, reqText)
+
+	// Embed excerpts inline in the phase payload JSON so the LLM sees the connection.
+	for i, p := range phases {
+		if phaseSpecMap != nil {
+			phases[i].SpecExcerpt = phaseSpecMap[p.ID]
+		}
+	}
 
 	payloadJSON, err := json.MarshalIndent(phases, "", "  ")
 	if err != nil {
@@ -239,20 +248,7 @@ func JudgePhaseVerifyCommands(ctx context.Context, endpoint, model, validatorEnd
 		return v
 	}
 
-	// Build user prompt: phase payloads plus extracted spec excerpts.
-	var userPromptBuilder strings.Builder
-	userPromptBuilder.WriteString("Review these delivery phases and return updated qa_verify_command values:\n\n")
-	userPromptBuilder.WriteString(string(payloadJSON))
-	if len(phaseSpecMap) > 0 {
-		userPromptBuilder.WriteString("\n\n---\nRelevant SPEC.md / REQUIREMENTS.md excerpts per phase:\n")
-		for _, p := range phases {
-			if excerpt, ok := phaseSpecMap[p.ID]; ok && excerpt != "" {
-				userPromptBuilder.WriteString(fmt.Sprintf("\n### %s (%s)\n%s\n", p.ID, p.SpecFocus, excerpt))
-			}
-		}
-		userPromptBuilder.WriteString("---\n")
-	}
-	userPrompt := userPromptBuilder.String()
+	userPrompt := "Review these delivery phases and return updated qa_verify_command values. Each phase includes a \"spec_excerpt\" field with relevant project specification text — use it to generate behavioral tests:\n\n" + string(payloadJSON)
 
 	body := map[string]interface{}{
 		"model": model,
