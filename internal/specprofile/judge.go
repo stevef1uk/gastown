@@ -49,8 +49,8 @@ For **final/integration phases** (e.g. smoke-test, deployment-and-e2e), generate
 - Docker (single-container, non-daemon — shows build errors inline): "timeout 300 docker compose up --build --abort-on-container-exit & sleep 5 && curl --retry 3 --retry-delay 2 -s http://localhost:8000/ | grep -qi 'expected-text' && curl -s http://localhost:8000/api/health | python3 -c '...' && kill %1 2>/dev/null; docker compose down"
 - Script-based: "cd test && npm install && ../scripts/start_mac.sh & sleep 3 && curl --retry 3 --retry-delay 2 -s http://localhost:8000/ | grep -qi 'expected-text' && ../scripts/stop_mac.sh"
 - Go server: "go run ./cmd/server/ & sleep 3 && curl --retry 3 --retry-delay 2 -s http://localhost:8000/ | grep -qi 'expected-text' && kill %1"
-- **First-run setups**: if the project needs `npm install`, `pip install`, or `docker pull`, wrap the setup step with `timeout 300` to allow first-run downloads. Example: "timeout 300 docker compose build && docker compose up -d && ..."
-- **Dependency consistency**: for npm projects, run `npm install` (not `npm ci`) before any test/build to ensure lockfile matches package.json when dependencies have been added. Example: "cd frontend && npm install && npm run build"
+- **First-run setups**: if the project needs npm install, pip install, or docker pull, wrap the setup step with "timeout 300" to allow first-run downloads. Example: "timeout 300 docker compose build && docker compose up -d && ..."
+- **Dependency consistency**: for npm projects, run "npm install" (not "npm ci") before any test/build to ensure lockfile matches package.json when dependencies have been added. Example: "cd frontend && npm install && npm run build"
 - Always include at least 2-3 content-validating curl checks (root page, health, data endpoint) in addition to any Playwright tests. **Parse the JSON response, don't just check for HTTP 200.**
 - Content validation pattern (parses API JSON, verifies structure): "curl -s http://localhost:8000/api/watchlist | python3 -c 'import json,sys; d=json.load(sys.stdin); items=d.get(\"items\",[]); assert len(items)>0; print(f\"{len(items)} items ok\")'"
 
