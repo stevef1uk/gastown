@@ -29,15 +29,16 @@ func IndexRig(ctx context.Context, townRoot, rig string) (*ProfileFile, error) {
 	}
 
 	endpoint, model := ResolveLLMForSpecIndex(townRoot)
+	validatorEndpoint, validatorModel := ResolveValidatorLLMForSpecIndex(townRoot)
 	v, confidence, err := indexSpecContent(ctx, endpoint, model, string(data))
 	if err != nil {
 		return nil, err
 	}
 
-	// One-time JUDGE pass: review phase verify commands via LLM.
-	// Non-fatal — if the LLM fails, the deterministic commands still apply.
-	v = JudgePhaseVerifyCommands(ctx, endpoint, model, v)
-
+	// Step 1: Write the profile through ClampProfileValidation first, so the
+	// phase structure is stabilized (Docker files moved to final phase, splitting
+	// and collapsing completed). The judge runs AFTER clamping so its enhanced
+	// commands aren't overwritten by structural transformations.
 	f := ProfileFile{
 		Version:     1,
 		GeneratedAt: time.Now().UTC().Format(time.RFC3339),
@@ -49,9 +50,27 @@ func IndexRig(ctx context.Context, townRoot, rig string) (*ProfileFile, error) {
 		return nil, err
 	}
 
+	// Step 2: Re-read the reified, clamped profile so the judge operates on the
+	// final stable phase structure — not the raw LLM extraction.
 	path := ProfilePath(townRoot, rig)
-	// Re-read so returned ProfileFile matches sanitized on-disk validation.
 	raw, err := os.ReadFile(path)
+	if err != nil {
+		return &f, nil
+	}
+	_ = json.Unmarshal(raw, &f)
+
+	// Step 3: Two-stage JUDGE pipeline on the clamped profile. Generator suggests
+	// improvements, validator reviews each suggestion before applying. Non-fatal.
+	f.Validation = JudgePhaseVerifyCommands(ctx, endpoint, model, validatorEndpoint, validatorModel, f.Validation)
+
+	// Step 4: Write again. ClampProfileValidation is idempotent at this point
+	// (phase structure already stable) so the judge's command updates survive.
+	if err := orchestrator.WriteRigWorkflowProfile(townRoot, rig, f.Validation, f.Source, f.Confidence); err != nil {
+		return nil, err
+	}
+
+	// Re-read final on-disk version for the returned ProfileFile.
+	raw, err = os.ReadFile(path)
 	if err != nil {
 		return &f, nil
 	}

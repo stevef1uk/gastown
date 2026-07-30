@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -19,7 +20,7 @@ func judgeSystemPrompt() string {
 
 For each phase you receive, evaluate the current qa_verify_command. If it is a placeholder (echo, trivial command) or doesn't properly test the phase's required files, replace it with a real command.
 
-Return a JSON object mapping phase IDs to updated qa_verify_command strings. **Only include phases where the current command is wrong.** If a phase already has a valid, non-placeholder command that properly tests its required files, leave it out of your response entirely. Do NOT replace valid commands with equivalent alternatives (e.g. don't replace "uv run pytest" with "python -m pytest" — both are fine). Phases not in the response keep their current command.
+Return a FLAT JSON object. Each key is a phase ID (string), each value is a qa_verify_command (string). **Only include phases where the current command is wrong.** Do NOT repeat the phase metadata (title, required_files, etc.). If a phase already has a valid, non-placeholder command that properly tests its required files, leave it out of your response entirely. Do NOT replace valid commands with equivalent alternatives (e.g. don't replace "uv run pytest" with "python -m pytest" — both are fine). Phases not in the response keep their current command.
 
 For **early/mid phases** (backend, frontend, database), verify file presence or run compile/unit tests:
 - Shell scripts (.sh): "test -f scripts/start_mac.sh && test -f scripts/stop_mac.sh"
@@ -33,15 +34,24 @@ For **early/mid phases** (backend, frontend, database), verify file presence or 
 - Backend source (no tests yet): "cd backend && python -c 'import sys; sys.path.insert(0, \"src\"); from main import app; print(\"ok\")'"
 
 For **final/integration phases** (e.g. smoke-test, deployment-and-e2e), generate a **start → verify → stop** smoke test. Infer the project's run pattern from the phase's required_files and spec_focus:
-- If the phase has docker-compose.yml + Dockerfile, build and start containers, then run health checks and Playwright tests:
-  "docker compose build && docker compose up -d && sleep 3 && curl --retry 5 --retry-delay 2 http://localhost:8000/health && npx playwright test && docker compose down"
-- If the phase has scripts/start_mac.sh and scripts/stop_mac.sh, use those to start/stop the app and add a health check and Playwright test in between:
-  "cd test && npm install && ../scripts/start_mac.sh && sleep 2 && curl --retry 5 --retry-delay 2 http://localhost:8000/health && npx playwright test && ../scripts/stop_mac.sh"
-- If the phase has a Go server (cmd/server/main.go) and Playwright tests, start the server in background, run tests, then kill it:
-  "go run ./cmd/server/ & sleep 2 && cd test && npm install && npx playwright test && kill %1"
-- Apply the same pattern for any stack — infer start, health check, functional test, and teardown from the files present
 
-Always include a health check (curl, etc.) and the functional tests (Playwright, etc.) before tearing down. If the phase has no obvious run mechanism (no Docker, no scripts, no server), fall back to file-presence checks from the early/mid phase rules.
+**The verify command must validate application BEHAVIOR — not just health.** Include content checks against multiple endpoints:
+
+- After starting, check that the root page contains expected UI components or text:
+  "curl -s http://localhost:8000/ | grep -qi 'watchlist\|chart\|tradebar\|portfolio' && echo 'UI content found'" 
+- Check data/API endpoints return meaningful content (not just 200):
+  "curl -s http://localhost:8000/api/health | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get(\"status\") == \"ok\"; print(\"health ok\")'"
+- If SSE or streaming endpoints exist, check they connect:
+  "timeout 3 curl -sN http://localhost:8000/api/stream | head -1 | python3 -c 'import sys; l=sys.stdin.read(); assert len(l) > 0; print(\"sse ok\")'"
+
+**Tech-specific smoke patterns:**
+- Docker: "docker compose build && docker compose up -d && sleep 3 && curl -s http://localhost:8000/ | grep -qi 'expected-text' && curl -s http://localhost:8000/api/health | python3 -c '...' && npx playwright test && docker compose down"
+- Script-based: "cd test && npm install && ../scripts/start_mac.sh && sleep 2 && curl -s http://localhost:8000/ | grep -qi 'expected-text' && curl -s http://localhost:8000/api/health | python3 -c '...' && npx playwright test && ../scripts/stop_mac.sh"
+- Go server: "go run ./cmd/server/ & sleep 2 && curl -s http://localhost:8000/ | grep -qi 'expected-text' && npx playwright test && kill %1"
+- Always include at least 2-3 content-validating curl checks (root page, health, data endpoint) in addition to any Playwright tests
+- If the phase has spec files but they seem thin (fewer than 5 assertions across all specs), compensate by adding more inline curl validation in the command
+
+Always include a health check AND content validation (grep HTML for expected strings, parse API JSON) AND functional tests (Playwright) before tearing down. If the phase has no obvious run mechanism, fall back to file-presence checks from the early/mid phase rules.
 
 CRITICAL: All paths are relative to the rig root (mayor/rig/). Do NOT prefix with the rig name. Use actual file paths from required_files.
 
@@ -63,10 +73,14 @@ type judgePhasePayload struct {
 	CurrentCommand  string   `json:"current_qa_verify_command"`
 }
 
-// JudgePhaseVerifyCommands reviews all delivery phase verify commands via LLM
-// and replaces placeholders or mismatched commands. Returns the profile with
-// updates applied, or the original if the LLM call fails.
-func JudgePhaseVerifyCommands(ctx context.Context, endpoint, model string, v orchestrator.WorkflowValidation) orchestrator.WorkflowValidation {
+// JudgePhaseVerifyCommands reviews all delivery phase verify commands in a two-stage
+// LLM pipeline: the generator LLM (endpoint/model) suggests improved commands for
+// placeholder/mismatched phases, then the validator LLM (validatorEndpoint/validatorModel)
+// reviews each suggestion and only approved changes are applied.
+//
+// If validatorEndpoint is empty or equals the generator, the generator model is reused
+// for both stages (but still makes two separate calls).
+func JudgePhaseVerifyCommands(ctx context.Context, endpoint, model, validatorEndpoint, validatorModel string, v orchestrator.WorkflowValidation) orchestrator.WorkflowValidation {
 	if !v.HasPhasedDelivery() {
 		log.Printf("[judge] skipping — no delivery phases")
 		return v
@@ -162,9 +176,8 @@ func JudgePhaseVerifyCommands(ctx context.Context, endpoint, model string, v orc
 	content := strings.TrimSpace(wrap.Choices[0].Message.Content)
 	log.Printf("[judge] LLM response (%d chars): %.200s", len(content), content)
 
-	var updates map[string]string
-	if err := ExtractJSONObject(content, &updates); err != nil {
-		log.Printf("[judge] parse JSON from response: %v", err)
+	updates := parseJudgeResponse(content)
+	if updates == nil {
 		return v
 	}
 
@@ -173,10 +186,13 @@ func JudgePhaseVerifyCommands(ctx context.Context, endpoint, model string, v orc
 		log.Printf("[judge]   %q → %q", id, cmd)
 	}
 
-	// Apply updates — only for phases where the current command is actually
-	// a placeholder or doesn't match the phase's file types. Good commands
-	// (e.g. "cd backend && uv run pytest") are preserved even if the LLM
-	// returned a different valid alternative.
+	// Stage 2: validate proposed changes with a second LLM call.
+	if len(updates) > 0 {
+		updates = validatePhaseUpdates(ctx, validatorEndpoint, validatorModel, phases, updates)
+	}
+
+	// Apply validated updates — the validator already approved these, so
+	// no heuristic guard is needed.
 	applied := 0
 	for i := range v.DeliveryPhases {
 		p := &v.DeliveryPhases[i]
@@ -189,11 +205,6 @@ func JudgePhaseVerifyCommands(ctx context.Context, endpoint, model string, v orc
 			log.Printf("[judge]   %q: skipping (unchanged)", p.ID)
 			continue
 		}
-		// Only apply if current command is a placeholder/mismatch.
-		if !orchestrator.IsPlaceholderOrMismatchedCommand(p.QAVerifyCommand, p) {
-			log.Printf("[judge]   %q: skipping (current command is valid): %q", p.ID, p.QAVerifyCommand)
-			continue
-		}
 		log.Printf("[judge]   %q: %q → %q", p.ID, p.QAVerifyCommand, newCmd)
 		p.QAVerifyCommand = newCmd
 		applied++
@@ -201,4 +212,190 @@ func JudgePhaseVerifyCommands(ctx context.Context, endpoint, model string, v orc
 
 	log.Printf("[judge] applied %d updates", applied)
 	return v
+}
+
+// judgeValidatorSystemPrompt returns the system prompt for the second-stage validator LLM.
+func judgeValidatorSystemPrompt() string {
+	return `You are a QA verify command validator. Your job is to review proposed changes to delivery phase verify commands and decide whether to approve or reject each one.
+
+For each proposed change, evaluate:
+1. Is the proposed command a genuine improvement over the current command?
+2. Does it properly test the phase's required files?
+3. Does it match the phase's spec_focus?
+4. Is it realistic — will it actually work given the files in the phase?
+
+Return a JSON object mapping phase IDs to "approve" or "reject". Only include phases you want to approve or reject. Phases not included in your response will be treated as rejected.
+
+Output JSON only — no prose, no markdown fences.`
+}
+
+// validatePhaseUpdates sends proposed verify command changes to a validator LLM
+// and returns only the approved updates. If the validator call fails, the original
+// updates are returned as-is (fail-open).
+func validatePhaseUpdates(ctx context.Context, endpoint, model string, phases []judgePhasePayload, updates map[string]string) map[string]string {
+	endpoint = strings.TrimSpace(endpoint)
+	model = strings.TrimSpace(model)
+	if endpoint == "" || model == "" {
+		log.Printf("[judge] validator: skipping — no endpoint/model")
+		return updates
+	}
+
+	// Build validation prompt listing each proposed change.
+	var buf strings.Builder
+	buf.WriteString("Review these proposed verify command changes and decide whether to approve or reject each one:\n\n")
+	for _, p := range phases {
+		newCmd, ok := updates[p.ID]
+		if !ok {
+			continue
+		}
+		buf.WriteString(fmt.Sprintf("Phase: %s (%s)\n", p.ID, p.Title))
+		buf.WriteString(fmt.Sprintf("Required files: [%s]\n", strings.Join(p.RequiredFiles, ", ")))
+		buf.WriteString(fmt.Sprintf("Spec focus: %s\n", p.SpecFocus))
+		buf.WriteString(fmt.Sprintf("Current command: %s\n", p.CurrentCommand))
+		buf.WriteString(fmt.Sprintf("Proposed command: %s\n\n", newCmd))
+	}
+	userPrompt := buf.String()
+
+	body := map[string]interface{}{
+		"model": model,
+		"messages": []map[string]string{
+			{"role": "system", "content": judgeValidatorSystemPrompt()},
+			{"role": "user", "content": userPrompt},
+		},
+		"stream": false,
+	}
+	jsonBody, err := json.Marshal(body)
+	if err != nil {
+		log.Printf("[judge] validator: marshal request: %v", err)
+		return updates
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(jsonBody))
+	if err != nil {
+		log.Printf("[judge] validator: create request: %v", err)
+		return updates
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-GasTown-Role", "judge-validate-commands")
+
+	log.Printf("[judge] validator: sending %d proposed changes to %s %s", len(updates), endpoint, model)
+	client := &http.Client{Timeout: 120 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Printf("[judge] validator: LLM request failed: %v", err)
+		return updates
+	}
+	defer resp.Body.Close()
+	raw, err := io.ReadAll(resp.Body)
+	if err != nil {
+		log.Printf("[judge] validator: read response: %v", err)
+		return updates
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		log.Printf("[judge] validator: LLM HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(raw)))
+		return updates
+	}
+
+	var wrap struct {
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
+	}
+	if err := json.Unmarshal(raw, &wrap); err != nil {
+		log.Printf("[judge] validator: decode response: %v", err)
+		return updates
+	}
+	if len(wrap.Choices) == 0 {
+		log.Printf("[judge] validator: no choices in LLM response")
+		return updates
+	}
+
+	content := strings.TrimSpace(wrap.Choices[0].Message.Content)
+	log.Printf("[judge] validator: response (%d chars): %.200s", len(content), content)
+
+	var verdicts map[string]string
+	if err := ExtractJSONObject(content, &verdicts); err != nil {
+		// Fallback: try parsing as nested objects, extract "approve"/"reject" from each.
+		var nested map[string]interface{}
+		if err2 := ExtractJSONObject(content, &nested); err2 != nil {
+			log.Printf("[judge] validator: parse JSON: %v — using all updates", err)
+			return updates
+		}
+		verdicts = make(map[string]string)
+		for id, val := range nested {
+			switch v := val.(type) {
+			case string:
+				verdicts[id] = v
+			case map[string]interface{}:
+				if vv, ok := v["verdict"]; ok {
+					if s, ok := vv.(string); ok {
+						verdicts[id] = s
+					}
+				}
+			}
+		}
+		if len(verdicts) == 0 {
+			log.Printf("[judge] validator: no verdicts found in nested response — using all updates")
+			return updates
+		}
+		log.Printf("[judge] validator: extracted %d verdicts from nested response", len(verdicts))
+	}
+
+	// Filter updates: only keep those approved.
+	approved := make(map[string]string)
+	for id, cmd := range updates {
+		v, ok := verdicts[id]
+		if !ok || strings.ToLower(strings.TrimSpace(v)) != "approve" {
+			log.Printf("[judge] validator:   %q: REJECTED (verdict: %q)", id, v)
+			continue
+		}
+		log.Printf("[judge] validator:   %q: APPROVED", id)
+		approved[id] = cmd
+	}
+	log.Printf("[judge] validator: %d / %d approved", len(approved), len(updates))
+	return approved
+}
+
+// parseJudgeResponse parses the generator LLM response into a flat phase_id→command map.
+// It first tries the standard flat format, then falls back to extracting qa_verify_command
+// from nested object responses (a common LLM mistake).
+func parseJudgeResponse(content string) map[string]string {
+	var flat map[string]string
+	if err := ExtractJSONObject(content, &flat); err == nil {
+		return flat
+	}
+
+	// Fallback: parse as nested objects and extract qa_verify_command from each.
+	var nested map[string]interface{}
+	if err := ExtractJSONObject(content, &nested); err != nil {
+		log.Printf("[judge] parse JSON from response: %v", err)
+		return nil
+	}
+	out := make(map[string]string)
+	for id, val := range nested {
+		obj, ok := val.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		cmd, ok := obj["qa_verify_command"]
+		if !ok {
+			cmd, ok = obj["cmd"]
+		}
+		if !ok {
+			continue
+		}
+		cmdStr, ok := cmd.(string)
+		if !ok || strings.TrimSpace(cmdStr) == "" {
+			continue
+		}
+		out[id] = strings.TrimSpace(cmdStr)
+	}
+	if len(out) > 0 {
+		log.Printf("[judge] extracted %d commands from nested response", len(out))
+		return out
+	}
+	log.Printf("[judge] no valid commands found in response")
+	return nil
 }

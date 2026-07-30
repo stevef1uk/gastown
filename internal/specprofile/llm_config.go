@@ -50,6 +50,19 @@ func ResolveLLMForSpecIndex(townRoot string) (endpoint, model string) {
 	return endpoint, model
 }
 
+// ResolveValidatorLLMForSpecIndex returns a separate LLM endpoint/model for the
+// validator stage of the two-stage JUDGE pipeline. Uses GT_SPEC_INDEX_VALIDATOR_*
+// env vars when set; falls back to the primary spec-index model.
+func ResolveValidatorLLMForSpecIndex(townRoot string) (endpoint, model string) {
+	endpoint = strings.TrimSpace(os.Getenv("GT_SPEC_INDEX_VALIDATOR_ENDPOINT"))
+	model = strings.TrimSpace(os.Getenv("GT_SPEC_INDEX_VALIDATOR_MODEL"))
+	if endpoint != "" && model != "" {
+		return endpoint, model
+	}
+	// Fall back to primary model.
+	return ResolveLLMForSpecIndex(townRoot)
+}
+
 // HTTPTimeoutForSpecIndex returns per-request HTTP timeout (default 5m for large SPEC JSON).
 func HTTPTimeoutForSpecIndex() time.Duration {
 	raw := strings.TrimSpace(os.Getenv("GT_SPEC_INDEX_HTTP_TIMEOUT"))
