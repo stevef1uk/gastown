@@ -14,72 +14,60 @@ import (
 	"github.com/steveyegge/gastown/internal/orchestrator"
 )
 
-// extractPhaseSpecs makes a single fast LLM call to extract relevant SPEC.md/REQUIREMENTS.md
-// sections for each phase based on its spec_focus. Returns a map of phase_id→excerpt.
-// On failure, returns nil (JUDGE will proceed without spec context).
-func extractPhaseSpecs(ctx context.Context, endpoint, model string, phases []judgePhasePayload, specText, reqText string) map[string]string {
-	if (specText == "" && reqText == "") || len(phases) == 0 {
+// extractPhaseSpecsFromOne makes one fast LLM call to extract relevant sections from a single
+// document (either REQUIREMENTS.md or SPEC.md) for each phase based on spec_focus.
+// Returns a map of phase_id→excerpt. On failure returns nil.
+func extractPhaseSpecsFromOne(ctx context.Context, endpoint, model string, phases []judgePhasePayload, label, text string, maxChars int) map[string]string {
+	if text == "" || len(phases) == 0 {
 		return nil
 	}
-	totalSpec := len(specText) + len(reqText)
-	log.Printf("[judge] extracting spec sections for %d phases from %d total chars", len(phases), totalSpec)
+	log.Printf("[judge] extract: %s — %d phases from %d chars", label, len(phases), len(text))
 
 	var b strings.Builder
-	b.WriteString("For each phase below, extract the relevant sections from the project's SPEC.md and REQUIREMENTS.md that describe the behavior this phase should test.\n\n")
+	b.WriteString(fmt.Sprintf("Extract relevant sections from the project's %s for each delivery phase below.\n\n", label))
 	b.WriteString("Phases:\n")
 	for _, p := range phases {
 		b.WriteString(fmt.Sprintf("- %s (spec_focus: %s)\n", p.ID, p.SpecFocus))
 	}
-	if reqText != "" {
-		r := reqText
-		if len(r) > 8000 {
-			r = r[:8000] + "\n... (truncated)"
-		}
-		b.WriteString("\n### REQUIREMENTS.md\n")
-		b.WriteString(r)
+	s := text
+	if len(s) > maxChars {
+		s = s[:maxChars] + "\n... (truncated)"
 	}
-	if specText != "" {
-		s := specText
-		if len(s) > 12000 {
-			s = s[:12000] + "\n... (truncated)"
-		}
-		b.WriteString("\n### SPEC.md\n")
-		b.WriteString(s)
-	}
-	b.WriteString("\n\nReturn a JSON object mapping each phase ID to a short excerpt (max 400 chars) from the spec/req that describes what that phase should verify. If no relevant section is found for a phase, omit it. Output JSON only.\n")
+	b.WriteString(fmt.Sprintf("\n### %s\n%s\n", label, s))
+	b.WriteString("\nReturn a JSON object mapping each phase ID to a short excerpt (max 400 chars) from the document that describes what that phase should verify. If no relevant section is found for a phase, omit it. Output JSON only.\n")
 
 	body := map[string]interface{}{
 		"model": model,
 		"messages": []map[string]string{
-			{"role": "system", "content": "You extract relevant sections from project specifications for specific delivery phases."},
+			{"role": "system", "content": fmt.Sprintf("You extract relevant sections from %s for specific delivery phases.", label)},
 			{"role": "user", "content": b.String()},
 		},
 		"stream": false,
 	}
 	jsonBody, err := json.Marshal(body)
 	if err != nil {
-		log.Printf("[judge] extract: marshal: %v", err)
+		log.Printf("[judge] extract %s: marshal: %v", label, err)
 		return nil
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(jsonBody))
 	if err != nil {
-		log.Printf("[judge] extract: create req: %v", err)
+		log.Printf("[judge] extract %s: create req: %v", label, err)
 		return nil
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-GasTown-Role", "judge-extract-specs")
+	req.Header.Set("X-GasTown-Role", "judge-extract-"+label)
 
 	client := &http.Client{Timeout: 120 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
-		log.Printf("[judge] extract: LLM failed: %v", err)
+		log.Printf("[judge] extract %s: LLM failed: %v", label, err)
 		return nil
 	}
 	defer resp.Body.Close()
 	raw, err := io.ReadAll(resp.Body)
 	if err != nil || resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		log.Printf("[judge] extract: HTTP %d: %v", resp.StatusCode, err)
+		log.Printf("[judge] extract %s: HTTP %d: %v", label, resp.StatusCode, err)
 		return nil
 	}
 
@@ -91,18 +79,43 @@ func extractPhaseSpecs(ctx context.Context, endpoint, model string, phases []jud
 		} `json:"choices"`
 	}
 	if err := json.Unmarshal(raw, &wrap); err != nil || len(wrap.Choices) == 0 {
-		log.Printf("[judge] extract: decode: %v", err)
+		log.Printf("[judge] extract %s: decode: %v", label, err)
 		return nil
 	}
 
 	content := strings.TrimSpace(wrap.Choices[0].Message.Content)
 	var result map[string]string
 	if err := ExtractJSONObject(content, &result); err != nil {
-		log.Printf("[judge] extract: parse JSON: %v", err)
+		log.Printf("[judge] extract %s: parse JSON: %v", label, err)
 		return nil
 	}
-	log.Printf("[judge] extract: got sections for %d phases", len(result))
+	log.Printf("[judge] extract %s: got sections for %d phases", label, len(result))
 	return result
+}
+
+// extractPhaseSpecs makes two separate LLM calls — one for REQUIREMENTS.md and one for SPEC.md —
+// then merges the results. SPEC.md excerpts take precedence on conflict.
+func extractPhaseSpecs(ctx context.Context, endpoint, model string, phases []judgePhasePayload, specText, reqText string) map[string]string {
+	if len(phases) == 0 {
+		return nil
+	}
+	merged := make(map[string]string)
+	if reqText != "" {
+		if r := extractPhaseSpecsFromOne(ctx, endpoint, model, phases, "REQUIREMENTS.md", reqText, 8000); r != nil {
+			for k, v := range r {
+				merged[k] = v
+			}
+		}
+	}
+	if specText != "" {
+		if s := extractPhaseSpecsFromOne(ctx, endpoint, model, phases, "SPEC.md", specText, 12000); s != nil {
+			for k, v := range s {
+				merged[k] = v // SPEC.md overrides REQUIREMENTS.md on conflict
+			}
+		}
+	}
+	log.Printf("[judge] extract: merged %d phase excerpts from 2 calls", len(merged))
+	return merged
 }
 
 // judgeSystemPrompt returns the system prompt for the QA verify command judge.
