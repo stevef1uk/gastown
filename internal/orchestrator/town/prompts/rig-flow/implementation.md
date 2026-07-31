@@ -55,13 +55,44 @@ CMD: cd {{rig}}/mayor/rig && ...
 {"outcome":"success","summary":"..."}
 ```
 
+## TDD Iron Law (MANDATORY — read before the per-bead sequence)
+
+```
+NO PRODUCTION CODE WITHOUT A FAILING TEST FIRST.
+```
+
+Follow the **red-green-refactor** cycle for every bead that has a test path in `plan.md` (or a testable unit):
+
+1. **RED** — WRITE the test file FIRST (from **plan.md** acceptance bullets).
+2. **Verify RED** — `CMD:` run the test. It MUST fail for the right reason (feature missing, not a typo). If it passes immediately, you are testing existing behavior — rewrite the test.
+3. **GREEN** — WRITE the minimal implementation to make the test pass.
+4. **Verify GREEN** — `CMD:` run the test. It MUST pass. If it fails, fix the code, not the test.
+5. **REFACTOR** — clean up while the test stays green. Do not add behavior beyond the test.
+
+**If you wrote implementation code before a failing test:** DELETE the implementation. Write the test first, watch it fail, then re-implement. Do not keep the code as "reference" — delete means delete.
+
+**Commit tests separately from implementation** so tests cannot be silently weakened later:
+- `git add <test files> && git commit -m "test: add failing tests for <bead path>"` (after RED, before implementation)
+- `git add <impl files> && git commit -m "feat: implement <bead path>"` (after GREEN)
+
+**Rationalization prevention** — if you catch yourself thinking any of these, STOP and redo the step with TDD:
+
+| Excuse | Reality |
+|--------|---------|
+| "Too simple to test" | Simple code breaks. A test takes 30 seconds. |
+| "I'll test after" | Tests written after pass immediately — they prove nothing. You never watched them fail, so you never proved they can catch the bug. |
+| "Already spent time, deleting is wasteful" | Sunk cost. Rewriting with TDD gives high confidence; keeping untested code gives bugs. |
+| "Tests are in plan.md, I'll write code and tests together" | No. Write the test, watch it fail, then implement. Violating the letter of the rule is violating the spirit. |
+
+**Exceptions** (no test required): throwaway config, dependency manifests (`package.json`, `go.mod`), and pure artifact files (`Dockerfile`, `docker-compose.yml`, `index.html` static markup, `.sql` DDL). When `plan.md` lists a test path for a bead, the exception does not apply.
+
 ## Per bead — strict sequential (one bead per turn group)
 
 **Touch exactly one bead per "turn group"** (a message + verify/retry loop). A turn group ends when you send the next CMD/WRITE/EDIT or JSON. Do NOT skip ahead in the Queue.
 
 1. `CMD: bd update QUEUE_HEAD_ID --status=in_progress`
 2. **WRITE:** / **EDIT:** the file (use paths from **Next bead** / **Implement context**)
-3. Add/update unit tests from **plan.md** acceptance before `bd close`
+3. **TDD cycle for this bead** — see the Iron Law above: WRITE test → verify RED → implement → verify GREEN → commit test and code in separate commits. Only skip the failing-test step when the bead is an exception listed above.
 4. `CMD: cd {{rig}}/mayor/rig && ...` — run **Verify** (command in **Next bead** line) **exactly as given, including the full relative path. Do NOT shorten it to a basename.**
 5. **If verify fails**: READ the failing file, check its path. Fix in the next turn group. Do NOT reopen the bead.
 6. `CMD: bd close BEAD_ID`
