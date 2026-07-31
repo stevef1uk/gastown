@@ -75,9 +75,12 @@ func IndexRig(ctx context.Context, townRoot, rig string) (*ProfileFile, error) {
 	// is injected so verify commands test actual project behavior, not just file presence.
 	f.Validation = JudgePhaseVerifyCommands(ctx, endpoint, model, validatorEndpoint, validatorModel, f.Validation, specText, reqText)
 
-	// Step 5: Write again. ClampProfileValidation is idempotent at this point
-	// (phase structure already stable) so the judge's command updates survive.
-	if err := orchestrator.WriteRigWorkflowProfile(townRoot, rig, f.Validation, f.Source, f.Confidence); err != nil {
+	// Step 5: Write again WITHOUT re-clamping. ClampProfileValidation is idempotent
+	// at this point (phase structure already stable) and re-running it would reset
+	// the judge's enhanced verify commands (IsPlaceholderOrMismatchedCommand flags
+	// docker-compose/multi-cd commands as mismatched). The judge already operates
+	// on the clamped profile, so its command updates must survive verbatim.
+	if err := orchestrator.WriteRigWorkflowProfileClamped(townRoot, rig, f.Validation, f.Source, f.Confidence, false); err != nil {
 		return nil, err
 	}
 

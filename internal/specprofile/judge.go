@@ -14,109 +14,7 @@ import (
 	"github.com/steveyegge/gastown/internal/orchestrator"
 )
 
-// extractPhaseSpecsFromOne makes one fast LLM call to extract relevant sections from a single
-// document (either REQUIREMENTS.md or SPEC.md) for each phase based on spec_focus.
-// Returns a map of phase_id→excerpt. On failure returns nil.
-func extractPhaseSpecsFromOne(ctx context.Context, endpoint, model string, phases []judgePhasePayload, label, text string, maxChars int) map[string]string {
-	if text == "" || len(phases) == 0 {
-		return nil
-	}
-	log.Printf("[judge] extract: %s — %d phases from %d chars", label, len(phases), len(text))
 
-	var b strings.Builder
-	b.WriteString(fmt.Sprintf("Extract relevant sections from the project's %s for each delivery phase below.\n\n", label))
-	b.WriteString("Phases:\n")
-	for _, p := range phases {
-		b.WriteString(fmt.Sprintf("- %s (spec_focus: %s)\n", p.ID, p.SpecFocus))
-	}
-	s := text
-	if len(s) > maxChars {
-		s = s[:maxChars] + "\n... (truncated)"
-	}
-	b.WriteString(fmt.Sprintf("\n### %s\n%s\n", label, s))
-	b.WriteString("\nReturn a JSON object mapping each phase ID to a short excerpt (max 400 chars) from the document that describes what that phase should verify. If no relevant section is found for a phase, omit it. Output JSON only.\n")
-
-	body := map[string]interface{}{
-		"model": model,
-		"messages": []map[string]string{
-			{"role": "system", "content": fmt.Sprintf("You extract relevant sections from %s for specific delivery phases.", label)},
-			{"role": "user", "content": b.String()},
-		},
-		"stream": false,
-	}
-	jsonBody, err := json.Marshal(body)
-	if err != nil {
-		log.Printf("[judge] extract %s: marshal: %v", label, err)
-		return nil
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(jsonBody))
-	if err != nil {
-		log.Printf("[judge] extract %s: create req: %v", label, err)
-		return nil
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-GasTown-Role", "judge-extract-"+label)
-
-	client := &http.Client{Timeout: 120 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		log.Printf("[judge] extract %s: LLM failed: %v", label, err)
-		return nil
-	}
-	defer resp.Body.Close()
-	raw, err := io.ReadAll(resp.Body)
-	if err != nil || resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		log.Printf("[judge] extract %s: HTTP %d: %v", label, resp.StatusCode, err)
-		return nil
-	}
-
-	var wrap struct {
-		Choices []struct {
-			Message struct {
-				Content string `json:"content"`
-			} `json:"message"`
-		} `json:"choices"`
-	}
-	if err := json.Unmarshal(raw, &wrap); err != nil || len(wrap.Choices) == 0 {
-		log.Printf("[judge] extract %s: decode: %v", label, err)
-		return nil
-	}
-
-	content := strings.TrimSpace(wrap.Choices[0].Message.Content)
-	var result map[string]string
-	if err := ExtractJSONObject(content, &result); err != nil {
-		log.Printf("[judge] extract %s: parse JSON: %v", label, err)
-		return nil
-	}
-	log.Printf("[judge] extract %s: got sections for %d phases", label, len(result))
-	return result
-}
-
-// extractPhaseSpecs makes two separate LLM calls — one for REQUIREMENTS.md and one for SPEC.md —
-// then merges the results. SPEC.md excerpts take precedence on conflict.
-func extractPhaseSpecs(ctx context.Context, endpoint, model string, phases []judgePhasePayload, specText, reqText string) map[string]string {
-	if len(phases) == 0 {
-		return nil
-	}
-	merged := make(map[string]string)
-	if reqText != "" {
-		if r := extractPhaseSpecsFromOne(ctx, endpoint, model, phases, "REQUIREMENTS.md", reqText, 8000); r != nil {
-			for k, v := range r {
-				merged[k] = v
-			}
-		}
-	}
-	if specText != "" {
-		if s := extractPhaseSpecsFromOne(ctx, endpoint, model, phases, "SPEC.md", specText, 12000); s != nil {
-			for k, v := range s {
-				merged[k] = v // SPEC.md overrides REQUIREMENTS.md on conflict
-			}
-		}
-	}
-	log.Printf("[judge] extract: merged %d phase excerpts from 2 calls", len(merged))
-	return merged
-}
 
 // judgeSystemPrompt returns the system prompt for the QA verify command judge.
 func judgeSystemPrompt() string {
@@ -142,40 +40,21 @@ For **early/mid phases** (backend, frontend, database), prefer behavioral checks
   - Database files: "test -f db/finally.db && echo 'db ok'"
   - Backend source (no tests yet): "cd backend && python -c 'import sys; sys.path.insert(0, \"src\"); from main import app; print(\"ok\")'"
 
-For **final/integration phases** (e.g. smoke-test, deployment-and-e2e), generate a **start -> verify -> stop** smoke test. Infer the project's run pattern from required_files, spec_focus, and spec_sections.
+For **final/integration phases** (e.g. smoke-test, deployment-and-e2e, doc-seed), generate a comprehensive **start -> functional API & UI verify -> stop** smoke test. Infer the project's run pattern from required_files, spec_focus, and spec_excerpt.
 
-**The verify command must validate application BEHAVIOR against the spec — not just health.** Use spec_sections to determine:
-1. What API endpoints exist and what payloads they accept
-2. What UI features the frontend should display
-3. What database tables and relationships exist
-4. Expected error conditions and edge cases
+**The verify command MUST validate application BEHAVIOR against specific endpoints and features described in spec_excerpt — not just basic health or status 200.** Use spec_excerpt to determine:
+1. Specific API endpoints (e.g. /api/v1/auth/login, /api/workspaces, /api/pages) and payloads to test via curl/python.
+2. Specific UI title or text elements expected on the main page.
+3. Database seeding or data queries to assert.
 
-Include content checks against multiple endpoints with real request payloads derived from spec sections:
-
-- **API functional test**: start the server, POST to endpoints with spec-described payloads, assert response fields match spec
-- **UI content**: check the root page HTML for spec-described UI elements: "curl -s http://localhost:8000/ | grep -qi 'expected-ui-text' && echo 'UI content found'" 
-- **Data endpoints**: check they return meaningful content matching spec data models: "curl -s http://localhost:8000/api/endpoint | python3 -c 'import json,sys; d=json.load(sys.stdin); assert \"expectedField\" in d'"
-- **Database schema**: verify tables/columns described in spec exist: "cd backend && python3 -c 'import sqlite3; conn=sqlite3.connect(\"finally.db\"); assert \"expected_table\" in [r[0] for r in conn.execute(\"SELECT name FROM sqlite_master WHERE type='table'\")]'"
-
-**Tech-specific smoke patterns:**
-- Docker (with timeout for first-run image pulls): "timeout 300 docker compose build && timeout 300 docker compose up -d && sleep 5 && curl -s http://localhost:8000/ | grep -qi 'expected-text' && curl -s http://localhost:8000/api/health | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get(\"status\") == \"ok\"' && curl -s http://localhost:8000/api/portfolio | python3 -c 'import json,sys; d=json.load(sys.stdin); assert len(d.get(\"positions\",[]))>0' && docker compose down"
-- Docker (single-container, non-daemon — shows build errors inline): "timeout 300 docker compose up --build --abort-on-container-exit & sleep 5 && curl --retry 3 --retry-delay 2 -s http://localhost:8000/ | grep -qi 'expected-text' && curl -s http://localhost:8000/api/health | python3 -c '...' && kill %1 2>/dev/null; docker compose down"
-- Script-based: "cd test && npm install && ../scripts/start_mac.sh & sleep 3 && curl --retry 3 --retry-delay 2 -s http://localhost:8000/ | grep -qi 'expected-text' && ../scripts/stop_mac.sh"
-- Go server: "go run ./cmd/server/ & sleep 3 && curl --retry 3 --retry-delay 2 -s http://localhost:8000/ | grep -qi 'expected-text' && kill %1"
-- **First-run setups**: if the project needs npm install, pip install, or docker pull, wrap the setup step with "timeout 300" to allow first-run downloads. Example: "timeout 300 docker compose build && docker compose up -d && ..."
-- **Dependency consistency**: for npm projects, run "npm install" (not "npm ci") before any test/build to ensure lockfile matches package.json when dependencies have been added. Example: "cd frontend && npm install && npm run build"
-- Always include at least 2-3 content-validating curl checks (root page, health, data endpoint) in addition to any Playwright tests. **Parse the JSON response, don't just check for HTTP 200.**
-- Content validation pattern (parses API JSON, verifies structure): "curl -s http://localhost:8000/api/watchlist | python3 -c 'import json,sys; d=json.load(sys.stdin); items=d.get(\"items\",[]); assert len(items)>0; print(f\"{len(items)} items ok\")'"
-
-Always include a health check AND content validation (grep HTML for expected strings, parse API JSON) AND functional tests (Playwright) before tearing down. If the phase has no obvious run mechanism, fall back to file-presence checks from the early/mid phase rules.
+**Required final smoke test structure:**
+1. Start container/server (e.g. "docker compose up -d" or "go run . &").
+2. Wait/retry for readiness.
+3. Perform **at least 2-3 specific functional endpoint tests with payload/JSON assertions** (e.g. test health endpoint, POST to auth/create resource endpoint, GET list endpoint).
+4. Assert root UI HTML content contains expected spec strings.
+5. Gracefully tear down / kill server process.
 
 CRITICAL: All paths are relative to the rig root (mayor/rig/). Do NOT prefix with the rig name. Use actual file paths from required_files.
-
-Example correct output:
-{
-  "infrastructure": "test -f scripts/start_mac.sh && test -f scripts/stop_mac.sh && test -f scripts/start_windows.ps1 && echo 'scripts ok'",
-  "smoke-test": "docker compose build && docker compose up -d && sleep 3 && curl --retry 5 --retry-delay 2 http://localhost:8000/health && npx playwright test && docker compose down"
-}
 
 Output JSON only — no prose, no markdown fences.`
 }
@@ -230,10 +109,10 @@ func JudgePhaseVerifyCommands(ctx context.Context, endpoint, model, validatorEnd
 		log.Printf("[judge] phase %q current command: %s", p.ID, p.QAVerifyCommand)
 	}
 
-	// Pre-extraction: use two fast LLM calls (one per document) to extract relevant
+	// Pre-extraction: use local RAG (keyword-scored chunk matching) to extract relevant
 	// spec/req sections for each phase, rather than dumping the full documents into
-	// every JUDGE call.
-	phaseSpecMap := extractPhaseSpecs(ctx, endpoint, model, phases, specText, reqText)
+	// every JUDGE call or relying on LLM extraction.
+	phaseSpecMap := ExtractSpecExcerpts(phases, specText, reqText)
 
 	// Embed excerpts inline in the phase payload JSON so the LLM sees the connection.
 	for i, p := range phases {
@@ -356,6 +235,7 @@ For each proposed change, evaluate:
 2. Does it properly test the phase's required files?
 3. Does it match the phase's spec_focus?
 4. Is it realistic — will it actually work given the files in the phase?
+5. For final integration / smoke test phases (e.g. deployment-smoke, smoke-test, doc-seed), reject weak file-presence checks (like "test -f file") and insist on functional endpoint/UI checks or container/server start-verify-stop sequences when proposed.
 
 Return a JSON object mapping phase IDs to "approve" or "reject". Only include phases you want to approve or reject. Phases not included in your response will be treated as rejected.
 

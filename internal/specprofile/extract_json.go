@@ -6,41 +6,90 @@ import (
 	"strings"
 )
 
-// ExtractJSONObject finds and unmarshals the first top-level JSON object in s (strips markdown fences).
+// ExtractJSONObject finds and unmarshals the first top-level JSON object in s.
+// It uses a small FSM that scans for balanced { } braces while respecting string
+// literals and escape sequences, so reasoning tags, markdown fences, prose, and
+// multiple/adjacent JSON objects don't confuse extraction.
 func ExtractJSONObject(s string, out any) error {
-	s = strings.TrimSpace(s)
-	if strings.HasPrefix(s, "```") {
-		s = stripMarkdownFence(s)
+	candidates := findJSONObjects(s)
+	if len(candidates) == 0 {
+		return fmt.Errorf("no JSON object found in response (response: %.300s)", strings.TrimSpace(s))
 	}
-	// Strip any remaining prose before the first { or after the last }
-	start := strings.Index(s, "{")
-	end := strings.LastIndex(s, "}")
-	if start < 0 || end <= start {
-		// Try to unmarshal the whole string as-is (may be raw JSON without braces for array)
-		if err := json.Unmarshal([]byte(s), out); err != nil {
-			return fmt.Errorf("no JSON object found in response: %w (response: %.300s)", err, s)
+	// Prefer the LAST complete object (model output usually ends with the real JSON),
+	// then fall back to earlier ones.
+	for i := len(candidates) - 1; i >= 0; i-- {
+		if err := json.Unmarshal([]byte(candidates[i]), out); err == nil {
+			return nil
 		}
-		return nil
 	}
-	return json.Unmarshal([]byte(s[start:end+1]), out)
+	return fmt.Errorf("no parseable JSON object in response (response: %.300s)", strings.TrimSpace(s))
 }
 
-func stripMarkdownFence(s string) string {
-	lines := strings.Split(s, "\n")
-	var buf []string
-	inFence := false
-	for _, line := range lines {
-		t := strings.TrimSpace(line)
-		if strings.HasPrefix(t, "```") {
-			inFence = !inFence
+// findJSONObjects scans s and returns every balanced top-level { } object,
+// ignoring braces inside string literals and escape sequences.
+func findJSONObjects(s string) []string {
+	var objs []string
+	var buf []rune
+	var start, depth int
+	inString := false
+	escaped := false
+	haveStart := false
+
+	flush := func(end int) {
+		if !haveStart {
+			return
+		}
+		obj := strings.TrimSpace(string(buf))
+		if obj != "" {
+			objs = append(objs, obj)
+		}
+		_ = end
+	}
+
+	for _, r := range s {
+		if inString {
+			buf = append(buf, r)
+			if escaped {
+				escaped = false
+			} else if r == '\\' {
+				escaped = true
+			} else if r == '"' {
+				inString = false
+			}
 			continue
 		}
-		if inFence || (!strings.HasPrefix(t, "```") && len(buf) > 0) {
-			buf = append(buf, line)
+		switch r {
+		case '"':
+			inString = true
+			if haveStart {
+				buf = append(buf, r)
+			}
+		case '{':
+			if depth == 0 {
+				haveStart = true
+				buf = buf[:0]
+				start = 0
+			}
+			depth++
+			if haveStart {
+				buf = append(buf, r)
+			}
+		case '}':
+			if depth > 0 {
+				depth--
+				if haveStart {
+					buf = append(buf, r)
+				}
+				if depth == 0 {
+					flush(start)
+					haveStart = false
+				}
+			}
+		default:
+			if haveStart {
+				buf = append(buf, r)
+			}
 		}
 	}
-	if len(buf) == 0 {
-		return strings.TrimSpace(s)
-	}
-	return strings.TrimSpace(strings.Join(buf, "\n"))
+	return objs
 }

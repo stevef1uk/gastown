@@ -182,18 +182,30 @@ func ClearRigRewoundFromPhase(townRoot, rig string) error {
 	return SaveRigWorkflowProfileEnvelope(townRoot, rig, env)
 }
 
-// WriteRigWorkflowProfile writes a full profile envelope (used by spec-index).
+// WriteRigWorkflowProfile writes a full profile envelope (used by spec-index),
+// clamping the validation first.
 func WriteRigWorkflowProfile(townRoot, rig string, v WorkflowValidation, source, confidence string) error {
+	return WriteRigWorkflowProfileClamped(townRoot, rig, v, source, confidence, true)
+}
+
+// WriteRigWorkflowProfileClamped writes a full profile envelope. When clamp is
+// true, the validation is passed through ClampProfileValidationForRig first;
+// when false, the validation is written as-is (used to preserve JUDGE-enhanced
+// verify commands that clamping would otherwise reset).
+func WriteRigWorkflowProfileClamped(townRoot, rig string, v WorkflowValidation, source, confidence string, clamp bool) error {
 	outDir := filepath.Join(townRoot, rig, "mayor", "rig", rigProfileDir)
 	if err := os.MkdirAll(outDir, 0755); err != nil {
 		return err
+	}
+	if clamp {
+		v = ClampProfileValidationForRig(townRoot, rig, NormalizeLayoutProfile(v))
 	}
 	env := rigProfileEnvelope{
 		Version:     1,
 		GeneratedAt: time.Now().UTC().Format(time.RFC3339),
 		Source:      source,
 		Confidence:  confidence,
-		Validation:  ClampProfileValidationForRig(townRoot, rig, NormalizeLayoutProfile(v)),
+		Validation:  v,
 	}
 	// Resolve active phase from disk: first phase with missing files wins.
 	// This overrides whatever the LLM or ClampProfileValidation set, ensuring
