@@ -37,7 +37,8 @@ func LLMExtractProfile(ctx context.Context, endpoint, model, specContent string)
 			{"role": "system", "content": system},
 			{"role": "user", "content": user},
 		},
-		"stream": false,
+		"max_tokens": 8192,
+		"stream":     false,
 	}
 	jsonBody, err := json.Marshal(body)
 	if err != nil {
@@ -70,6 +71,7 @@ func LLMExtractProfile(ctx context.Context, endpoint, model, specContent string)
 			Message struct {
 				Content string `json:"content"`
 			} `json:"message"`
+			FinishReason string `json:"finish_reason"`
 		} `json:"choices"`
 	}
 	if err := json.Unmarshal(raw, &wrap); err != nil {
@@ -77,6 +79,11 @@ func LLMExtractProfile(ctx context.Context, endpoint, model, specContent string)
 	}
 	if len(wrap.Choices) == 0 {
 		return orchestrator.WorkflowValidation{}, "", fmt.Errorf("no choices in llm response")
+	}
+
+	// Reject truncated responses — an incomplete JSON profile is worse than no profile.
+	if wrap.Choices[0].FinishReason == "length" {
+		return orchestrator.WorkflowValidation{}, "", fmt.Errorf("llm response truncated (finish_reason=length): %s", strings.TrimSpace(string(raw)))
 	}
 
 	content := strings.TrimSpace(wrap.Choices[0].Message.Content)

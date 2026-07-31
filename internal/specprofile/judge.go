@@ -135,7 +135,8 @@ func JudgePhaseVerifyCommands(ctx context.Context, endpoint, model, validatorEnd
 			{"role": "system", "content": judgeSystemPrompt()},
 			{"role": "user", "content": userPrompt},
 		},
-		"stream": false,
+		"max_tokens": 4096,
+		"stream":     false,
 	}
 	jsonBody, err := json.Marshal(body)
 	if err != nil {
@@ -174,6 +175,7 @@ func JudgePhaseVerifyCommands(ctx context.Context, endpoint, model, validatorEnd
 			Message struct {
 				Content string `json:"content"`
 			} `json:"message"`
+			FinishReason string `json:"finish_reason"`
 		} `json:"choices"`
 	}
 	if err := json.Unmarshal(raw, &wrap); err != nil {
@@ -182,6 +184,10 @@ func JudgePhaseVerifyCommands(ctx context.Context, endpoint, model, validatorEnd
 	}
 	if len(wrap.Choices) == 0 {
 		log.Printf("[judge] no choices in LLM response")
+		return v
+	}
+	if wrap.Choices[0].FinishReason == "length" {
+		log.Printf("[judge] LLM response truncated (finish_reason=length), skipping update")
 		return v
 	}
 
@@ -275,7 +281,8 @@ func validatePhaseUpdates(ctx context.Context, endpoint, model string, phases []
 			{"role": "system", "content": judgeValidatorSystemPrompt()},
 			{"role": "user", "content": userPrompt},
 		},
-		"stream": false,
+		"max_tokens": 4096,
+		"stream":     false,
 	}
 	jsonBody, err := json.Marshal(body)
 	if err != nil {
@@ -314,6 +321,7 @@ func validatePhaseUpdates(ctx context.Context, endpoint, model string, phases []
 			Message struct {
 				Content string `json:"content"`
 			} `json:"message"`
+			FinishReason string `json:"finish_reason"`
 		} `json:"choices"`
 	}
 	if err := json.Unmarshal(raw, &wrap); err != nil {
@@ -322,6 +330,10 @@ func validatePhaseUpdates(ctx context.Context, endpoint, model string, phases []
 	}
 	if len(wrap.Choices) == 0 {
 		log.Printf("[judge] validator: no choices in LLM response")
+		return updates
+	}
+	if wrap.Choices[0].FinishReason == "length" {
+		log.Printf("[judge] validator: LLM response truncated (finish_reason=length), keeping original updates")
 		return updates
 	}
 

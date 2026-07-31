@@ -1,6 +1,9 @@
 package specprofile
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestExtractJSONObjectThinkTags(t *testing.T) {
 	raw := `<think>
@@ -69,5 +72,24 @@ func TestExtractJSONObjectBracesInStrings(t *testing.T) {
 	}
 	if out["cmd"] != "test -f {x} && echo '}'" {
 		t.Errorf("cmd wrong: %q", out["cmd"])
+	}
+}
+
+func TestExtractJSONObjectMarkdownFences(t *testing.T) {
+	input := "Sure! Here's the JSON:\n```json\n{\"key\": \"value\", \"num\": 42}\n```\nThat's it."
+	var out map[string]interface{}
+	if err := ExtractJSONObject(input, &out); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if out["key"] != "value" {
+		t.Errorf("expected value, got %v", out["key"])
+	}
+}
+
+func TestStripMarkdownFences(t *testing.T) {
+	input := "```json\n{\"a\": 1}\n```"
+	stripped := stripMarkdownFences(input)
+	if strings.TrimSpace(stripped) != `{"a": 1}` {
+		t.Errorf("expected {\"a\": 1}, got %q", stripped)
 	}
 }

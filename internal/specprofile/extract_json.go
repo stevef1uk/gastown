@@ -11,6 +11,9 @@ import (
 // literals and escape sequences, so reasoning tags, markdown fences, prose, and
 // multiple/adjacent JSON objects don't confuse extraction.
 func ExtractJSONObject(s string, out any) error {
+	// Strip markdown code fences (```json ... ``` or ``` ... ```)
+	s = stripMarkdownFences(s)
+
 	candidates := findJSONObjects(s)
 	if len(candidates) == 0 {
 		return fmt.Errorf("no JSON object found in response (response: %.300s)", strings.TrimSpace(s))
@@ -23,6 +26,25 @@ func ExtractJSONObject(s string, out any) error {
 		}
 	}
 	return fmt.Errorf("no parseable JSON object in response (response: %.300s)", strings.TrimSpace(s))
+}
+
+// stripMarkdownFences removes ```json ... ``` or ``` ... ``` wrappers from LLM output.
+func stripMarkdownFences(s string) string {
+	trimmed := strings.TrimSpace(s)
+	if !strings.HasPrefix(trimmed, "```") {
+		return s
+	}
+	// Find the closing ```
+	lines := strings.SplitN(trimmed, "\n", 2)
+	if len(lines) < 2 {
+		return s
+	}
+	rest := lines[1]
+	idx := strings.LastIndex(rest, "```")
+	if idx < 0 {
+		return rest
+	}
+	return rest[:idx]
 }
 
 // findJSONObjects scans s and returns every balanced top-level { } object,
