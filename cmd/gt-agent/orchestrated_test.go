@@ -168,6 +168,9 @@ func TestValidateOrchestratedArtifacts_design(t *testing.T) {
 	if err := os.WriteFile(path, make([]byte, 200), 0644); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(rig, ".self_review_done"), []byte("ok"), 0644); err != nil {
+		t.Fatal(err)
+	}
 	if err := runner.validateArtifacts("success"); err != nil {
 		t.Fatalf("aligned arch with SPEC should pass design validation: %v", err)
 	}
@@ -230,6 +233,9 @@ Package-level List, Create, Delete, InitSchema on var DB — no Store struct.
 	}
 
 	writeArch(misalignedArch)
+	if err := os.WriteFile(filepath.Join(rigDir, ".self_review_done"), []byte("ok"), 0644); err != nil {
+		t.Fatal(err)
+	}
 	err := validateDesignArtifacts(dir, rig, true, v)
 	if err == nil {
 		t.Fatal("expected design validation error for misaligned architecture")
@@ -244,6 +250,9 @@ Package-level List, Create, Delete, InitSchema on var DB — no Store struct.
 	}
 
 	writeArch(alignedArch)
+	if err := os.WriteFile(filepath.Join(rigDir, ".self_review_done"), []byte("ok"), 0644); err != nil {
+		t.Fatal(err)
+	}
 	if err := validateDesignArtifacts(dir, rig, true, v); err != nil {
 		t.Fatalf("aligned architecture should pass design validation: %v", err)
 	}
@@ -932,6 +941,9 @@ func TestValidateDesignArtifacts_allowsStaleBackendPy(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(rigDir, "architecture.md"), make([]byte, 250), 0644); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(rigDir, ".self_review_done"), []byte("ok"), 0644); err != nil {
+		t.Fatal(err)
+	}
 	writeMinimalDesignSPEC(t, rigDir)
 	task := &orchestrator.Task{Hooks: orchestrator.StateHooks{Artifacts: "design"}}
 	runner := newStateRunner(task, dir, "myrig")
@@ -1264,6 +1276,9 @@ func TestOrchestratedArtifactAutoOutcome_design(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(rigDir, "architecture.md"), make([]byte, 250), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(rigDir, ".self_review_done"), []byte("ok"), 0644); err != nil {
 		t.Fatal(err)
 	}
 	writeMinimalDesignSPEC(t, rigDir)

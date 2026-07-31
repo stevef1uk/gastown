@@ -1503,7 +1503,7 @@ func validateDesignCommand(cmd, rig string) error {
 		firstLine = lower[:idx]
 	}
 	if strings.Contains(firstLine, ">") {
-		if strings.Contains(firstLine, "architecture.md") {
+		if strings.Contains(firstLine, "architecture.md") || strings.Contains(firstLine, ".self_review_done") {
 			return nil
 		}
 		if strings.Contains(firstLine, rigSlash) || strings.Contains(firstLine, "mayor/rig/") {
@@ -3150,6 +3150,14 @@ func validateDesignArtifacts(townRoot, rig string, writtenThisRun bool, v orches
 		short := v.MinArchitectureBytes - info.Size()
 		return fmt.Errorf("architecture.md too small (%d bytes); need ≥%d (%d more). Run `CMD: wc -c %s/mayor/rig/architecture.md`, then rewrite the heredoc with fuller per-file sections (API tables, data model, acceptance) before JSON success", info.Size(), v.MinArchitectureBytes, short, rig)
 	}
+	// Require self-review marker written by the architect (step 4 in design.md)
+	markerPath := filepath.Join(rigDir, ".self_review_done")
+	if _, err := os.Stat(markerPath); err != nil {
+		return fmt.Errorf("self-review not completed: write marker with `CMD: echo ok > {{town_root}}/{{rig}}/mayor/rig/.self_review_done` after verifying the 7 checks in step 3")
+	}
+	// Delete marker so next design run requires a fresh review
+	_ = os.Remove(markerPath)
+
 	// Stale implementation files at mayor/rig root must not block design completion.
 	for _, name := range v.ForbiddenRigRootBasenames() {
 		if _, err := os.Stat(filepath.Join(rigDir, name)); err == nil {
