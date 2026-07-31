@@ -46,7 +46,9 @@ func IsFrontendImplementPath(path string) bool {
 	lower := strings.ToLower(filepath.ToSlash(strings.TrimSpace(path)))
 	return strings.HasSuffix(lower, ".html") ||
 		strings.HasSuffix(lower, ".css") ||
-		strings.HasSuffix(lower, ".js")
+		strings.HasSuffix(lower, ".js") ||
+		strings.HasSuffix(lower, ".tsx") ||
+		strings.HasSuffix(lower, ".ts")
 }
 
 // IsE2ETestPath reports whether the implement bead path is an end-to-end test file

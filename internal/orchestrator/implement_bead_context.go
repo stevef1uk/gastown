@@ -391,6 +391,14 @@ func formatUnitTestGuidanceForBead(townRoot, rig, beadPath string, v WorkflowVal
 			"Add or update `" + testPath + "` with pytest cases mapped to SPEC/plan acceptance for `" + beadPath + "`.\n" +
 			"Verify runs pytest on that file when it exists on disk.")
 	}
+	if IsTestImplementPath(beadPath) && (strings.HasSuffix(beadPath, ".test.ts") || strings.HasSuffix(beadPath, ".test.tsx") ||
+		strings.HasSuffix(beadPath, ".spec.ts") || strings.HasSuffix(beadPath, ".spec.tsx")) {
+		return strings.TrimSpace("### Unit tests (this bead)\n" +
+			"Write Vitest tests using `@testing-library/react` for component tests.\n" +
+			"Test rendering, user interactions, state changes, and error states per SPEC.md.\n" +
+			"No trivial placeholder tests — each test must exercise real behavior from the spec.\n" +
+			"Run **Verify** (`npx vitest run`) before bd close.")
+	}
 	return ""
 }
 

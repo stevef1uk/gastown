@@ -20,7 +20,15 @@ func IsTestImplementPath(beadPath string) bool {
 	if strings.HasPrefix(base, "test_") && strings.HasSuffix(lower, ".py") {
 		return true
 	}
-	return strings.Contains(lower, "/tests/") && strings.HasSuffix(lower, ".py")
+	if strings.Contains(lower, "/tests/") && strings.HasSuffix(lower, ".py") {
+		return true
+	}
+	// TypeScript/JavaScript test files
+	if strings.HasSuffix(lower, ".test.ts") || strings.HasSuffix(lower, ".test.tsx") ||
+		strings.HasSuffix(lower, ".spec.ts") || strings.HasSuffix(lower, ".spec.tsx") {
+		return true
+	}
+	return false
 }
 
 // CorrelatedTestPathForSource returns the conventional unit-test path for a source bead, or "".
