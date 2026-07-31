@@ -226,6 +226,24 @@ bd update {{issue}} --design "<structured findings>"
 Do this BEFORE closing molecule steps, not after. If your session dies between
 persisting and closing, the findings survive. If you close first, they're lost.
 
+**Persist BEFORE these critical moments (mandatory triggers):**
+1. **After writing tests but before implementing** — persist the test strategy
+   (what behaviors the tests assert, which acceptance bullets they cover).
+2. **After implementing but before running verify** — persist what you built and
+   why (files touched, exported symbols, integration wiring).
+3. **Before `gt done` / submitting** — persist the final state (what works, what
+   is deferred, any known limitations).
+
+Example of a complete session trail:
+```bash
+bd update {{issue}} --notes "TDD: wrote tests for X, Y, Z. Implementing A, B next."
+bd update {{issue}} --notes "Implemented A, B in store package. Wiring: main.go sets store.DB."
+bd update {{issue}} --notes "FINAL: all tests pass, verify green. Deferred: no auth per SPEC."
+```
+
+This bead trail is your ledger — after a context loss or handoff, a fresh
+session resumes from the notes instead of re-discovering the work.
+
 **For report-only tasks** (audits, reviews, research): your findings ARE the
 deliverable. There are no code changes to commit. You MUST persist all findings
 to the bead via --notes or --design. Without this, your entire work product is
