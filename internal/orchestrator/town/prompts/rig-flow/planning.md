@@ -45,7 +45,7 @@ If the prompt includes **"Prior step failed"** from `plan_review`, QA rejected y
 1. Read the QA **summary** and **command output** — fix exactly what QA named (duplicates, missing paths, weak plan).
 2. `bd list --status=open` with `BEADS_DIR` set — use only real IDs from that output (e.g. `{{bead_id_example}}`).
 3. `bd delete <id> --force` for duplicate/wrong beads, then `bd create` for any missing required paths.
-4. Rewrite `plan.md` (≥ {{min_plan_bytes}} bytes — {{plan_min_size_hint}}) with a **## Bead map** section: one `### <id>: <full-path>` block per required file (paths must match `required_files`, including `{{layout_root}}/` when the profile uses it), each with scope, architecture reference, and acceptance bullets.
+4. Rewrite `plan.md` (≥ {{min_plan_bytes}} bytes — {{plan_min_size_hint}}) with a **## Bead map** section: one `### <id>: <full-path>` block per required file (paths must match `required_files`, including `{{layout_root}}/` when the profile uses it), each with scope, architecture reference, **Interfaces / Depends on / Consumed by** (see Bead map shape below), and acceptance bullets.
 
 Do **not** invent bead IDs or add implementation code under `{{layout_root}}/`.
 
@@ -123,6 +123,9 @@ You are **not** verifying the app. Do not run the server or test suite to “che
     ### {{bead_id_example}}: finally/Dockerfile
     - Scope: …
     - Architecture: …
+    - Interfaces: … (for code beads: exact exported function signatures, types, route paths this file provides — from architecture, verbatim)
+    - Depends on: … (earlier bead paths/IDs whose exported symbols this file uses; `<none>` for the first bead)
+    - Consumed by: … (later bead paths/IDs that import this file's exports; `<none>` if nothing imports it)
     - Acceptance: … (for `*_test.go` / `tests/test_portfolio.py`, list SPEC functional requirements each test case proves)
     - Verify: <exact shell command the polecat must run before `bd close`> (e.g. `cd finally && docker build -f Dockerfile .`, `cd finally && go test ./internal/store/...`, `npx playwright test test/e2e/trading_flow.spec.ts`)
 
@@ -134,6 +137,18 @@ You are **not** verifying the app. Do not run the server or test suite to “che
     …
     EOF
    ```
+
+   **Interfaces / Depends on / Consumed by** give the polecat the dependency wiring it needs without reading the whole plan: every symbol must come from **architecture.md** (never invented), and beads that depend on each other must be ordered earlier-first in the map.
+
+   ## YAGNI Rule (strict)
+
+   Do **NOT** add acceptance criteria for:
+   - Features not in SPEC.md
+   - Error handling beyond what SPEC describes
+   - Configuration options not mentioned in SPEC
+   - "Nice to have" improvements, generic infrastructure (circuit breakers, retry queues, feature flags), or defensive code SPEC never asks for
+
+   Each bead implements exactly what SPEC requires — nothing more. If you believe SPEC is missing something, note it under a **## Future considerations** section at the end of `plan.md` — do **NOT** add it to a bead.
    Do **not** wrap this in `bash -lc "..."` with embedded newlines. After `cd {{rig}}/mayor/rig`, use relative `plan.md` only (not `{{rig}}/mayor/rig/plan.md`).
 
 5. Verify from town root: `CMD: wc -c {{rig}}/mayor/rig/plan.md`
