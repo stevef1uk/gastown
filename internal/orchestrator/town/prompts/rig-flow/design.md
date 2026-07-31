@@ -123,6 +123,20 @@ If `required_files` contains e2e tests (`*.spec.ts`, `*.spec.js`, `test/e2e/...`
 EOF
 ```
 
+## Self-review (MANDATORY before success)
+
+Before the `wc -c` check and reporting success, review `architecture.md` with fresh eyes:
+
+1. **Placeholder scan**: any `TBD`, `TODO`, `TBD in phase N`, or vague requirement? Fix it now — a placeholder in architecture becomes a guess by the polecat later.
+2. **SPEC alignment**: every HTTP route from the SPEC table appears (verbatim, no shortened aliases); every store function/type name matches SPEC exactly (`List`, `Create`, `Delete`, `InitSchema` — not `GetLinks`, `NewStore`).
+3. **Internal consistency**: do sections contradict each other? Does the file ownership table match the planned layout? Do `Depends on` / `Consumed by` relationships in the plan flow earlier-first?
+4. **Path consistency**: every implement path uses the `{{layout_root}}/` prefix exactly when required_files uses it (bare paths when layout_root is `.`); no `./` prefix, no `RIG/` segment, no rig-name prefix.
+5. **Empty section check**: no heading followed by a blank line — either fill the section or omit the heading.
+6. **Bead coverage**: every file in `required_files` (this phase) is represented in the planned file layout and ownership table.
+7. **YAGNI**: no sections describing features, config knobs, or error handling that SPEC never asks for.
+
+If any check fails, revise `architecture.md` and re-run `wc -c` before reporting success.
+
 ## Finish
 
 After a successful heredoc write and `wc -c` ≥ {{min_architecture_bytes}}, gt-agent **auto-completes** design when validation passes — you do not need a JSON turn.
