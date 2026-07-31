@@ -79,6 +79,23 @@ Rig-flow prompts (`prompts/rig-flow/*.md`) are spec-driven. Common placeholders:
 
 Do not hard-code example project names or paths in prompts — use these variables.
 
+## Rig-flow prompt conventions (superpowers)
+
+Rig-flow prompts enforce process guarantees inspired by
+[obra/superpowers](https://github.com/obra/superpowers). Keep these conventions
+intact when editing the prompts — they are behavioral contracts, not suggestions:
+
+| Convention | Where | Contract |
+|------------|-------|----------|
+| **TDD Iron Law** | `prompts/rig-flow/implementation.md` | No production code without a failing test first. Per-bead red-green-refactor: write test → verify RED → minimal implementation → verify GREEN → refactor. Tests committed in a **separate commit** before implementation. |
+| **YAGNI** | `prompts/rig-flow/planning.md`, `prompts/rig-flow/qa_review.md` | Beads implement exactly what SPEC requires. QA rejects correct-but-overbuilt code. |
+| **Bead map contracts** | `prompts/rig-flow/planning.md` | Each `### <id>: <path>` bead block lists `Interfaces` (exact exported symbols from architecture), `Depends on`, and `Consumed by` so the polecat gets dependency wiring without reading the whole plan. |
+| **Design self-review gate** | `prompts/rig-flow/design.md` | Architect must pass a placeholder/SPEC-alignment/consistency/path-coverage scan before reporting success. |
+| **Two-stage QA review** | `prompts/rig-flow/qa_review.md` | QA reviews in two explicit passes: Stage 1 spec compliance (right thing, wired, tests cover plan.md acceptance), Stage 2 code quality (minimal, no dead code/stubs). |
+| **Bead-note ledger** | `internal/formula/formulas/mol-polecat-work.formula.toml` | Polecat persists to `bd update --notes` at mandatory triggers (after writing tests, before verify, before `gt done`) so work survives context loss. |
+
+When changing a prompt, update this table if the contract it documents changes.
+
 ## FSM behavior belongs in YAML (not gt-agent Go)
 
 When changing how a workflow step behaves (prompt size, bead queue text, empty-reply nudges, failure hints):
