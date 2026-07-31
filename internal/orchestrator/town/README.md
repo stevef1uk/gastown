@@ -94,6 +94,12 @@ intact when editing the prompts — they are behavioral contracts, not suggestio
 | **Two-stage QA review** | `prompts/rig-flow/qa_review.md` | QA reviews in two explicit passes: Stage 1 spec compliance (right thing, wired, tests cover plan.md acceptance), Stage 2 code quality (minimal, no dead code/stubs). |
 | **Bead-note ledger** | `internal/formula/formulas/mol-polecat-work.formula.toml` | Polecat persists to `bd update --notes` at mandatory triggers (after writing tests, before verify, before `gt done`) so work survives context loss. |
 
+**Both workflows share these contracts.** `req-flow.yaml` reuses `prompts/rig-flow/*.md` for its
+`design`, `planning`, `plan_review`, `project_setup`, `implementation`, and `qa_review` states —
+only `kickoff`, `analysis`, and `spec_review` are req-flow-specific. Editing the shared prompt
+files above changes behavior for **both** rig-flow and req-flow. The `mol-polecat-work` formula is
+workflow-agnostic (any polecat work lifecycle).
+
 When changing a prompt, update this table if the contract it documents changes.
 
 ## FSM behavior belongs in YAML (not gt-agent Go)
