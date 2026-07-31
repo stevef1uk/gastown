@@ -435,3 +435,42 @@ func TestFormatGoModuleImportContext(t *testing.T) {
 		t.Errorf("missing expected module name in output: %q", got)
 	}
 }
+
+func TestFormatUnitTestGuidanceForBead_typescriptTest(t *testing.T) {
+	t.Parallel()
+	v := WorkflowValidation{LayoutRoot: "personal-space"}
+	got := formatUnitTestGuidanceForBead("", "", "personal-space/tests/unit/frontend/Editor.test.tsx", v)
+	if got == "" {
+		t.Fatal("expected non-empty guidance for .test.tsx file")
+	}
+	if !strings.Contains(got, "Vitest") {
+		t.Errorf("expected Vitest guidance, got %q", got)
+	}
+	if !strings.Contains(got, "@testing-library/react") {
+		t.Errorf("expected @testing-library/react mention, got %q", got)
+	}
+	if !strings.Contains(got, "placeholder") {
+		t.Errorf("expected placeholder warning, got %q", got)
+	}
+}
+
+func TestFormatUnitTestGuidanceForBead_typescriptSpec(t *testing.T) {
+	t.Parallel()
+	v := WorkflowValidation{LayoutRoot: "personal-space"}
+	got := formatUnitTestGuidanceForBead("", "", "personal-space/tests/e2e/editor.spec.ts", v)
+	if got == "" {
+		t.Fatal("expected non-empty guidance for .spec.ts file")
+	}
+	if !strings.Contains(got, "Vitest") {
+		t.Errorf("expected Vitest guidance, got %q", got)
+	}
+}
+
+func TestFormatUnitTestGuidanceForBead_nonTestTypeScript(t *testing.T) {
+	t.Parallel()
+	v := WorkflowValidation{LayoutRoot: "personal-space"}
+	got := formatUnitTestGuidanceForBead("", "", "personal-space/src/frontend/components/Editor/Editor.tsx", v)
+	if got != "" {
+		t.Errorf("expected empty guidance for non-test .tsx file, got %q", got)
+	}
+}

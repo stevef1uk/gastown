@@ -12,6 +12,15 @@ func TestIsTestImplementPath(t *testing.T) {
 		{"linkshelf/internal/store/store.go", false},
 		{"backend/tests/test_app.py", true},
 		{"backend/app.py", false},
+		// TypeScript/JavaScript test files
+		{"personal-space/tests/unit/frontend/Editor.test.tsx", true},
+		{"personal-space/tests/unit/frontend/Sidebar.test.tsx", true},
+		{"personal-space/tests/unit/backend/blocks.test.ts", true},
+		{"personal-space/tests/e2e/editor.spec.ts", true},
+		{"personal-space/tests/e2e/pages.spec.tsx", true},
+		// Non-test TypeScript files
+		{"personal-space/src/frontend/components/Editor/Editor.tsx", false},
+		{"personal-space/src/server/routes/pages.ts", false},
 	}
 	for _, tc := range cases {
 		if got := IsTestImplementPath(tc.path); got != tc.want {

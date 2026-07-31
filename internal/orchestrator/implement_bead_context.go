@@ -349,6 +349,15 @@ func excerptLinesForPath(doc, beadPath, layoutRoot string, maxBytes int) string 
 }
 
 func formatUnitTestGuidanceForBead(townRoot, rig, beadPath string, v WorkflowValidation) string {
+	// TypeScript/JavaScript test files — specific guidance before generic fallback
+	if IsTestImplementPath(beadPath) && (strings.HasSuffix(beadPath, ".test.ts") || strings.HasSuffix(beadPath, ".test.tsx") ||
+		strings.HasSuffix(beadPath, ".spec.ts") || strings.HasSuffix(beadPath, ".spec.tsx")) {
+		return strings.TrimSpace("### Unit tests (this bead)\n" +
+			"Write Vitest tests using `@testing-library/react` for component tests.\n" +
+			"Test rendering, user interactions, state changes, and error states per SPEC.md.\n" +
+			"No trivial placeholder tests — each test must exercise real behavior from the spec.\n" +
+			"Run **Verify** (`npx vitest run`) before bd close.")
+	}
 	if IsTestImplementPath(beadPath) {
 		return strings.TrimSpace("### Unit tests (this bead)\n" +
 			"Implement or extend tests that prove **SPEC.md / plan.md acceptance** for this path — not smoke curls.\n" +
@@ -390,14 +399,6 @@ func formatUnitTestGuidanceForBead(townRoot, rig, beadPath string, v WorkflowVal
 		return strings.TrimSpace("### Unit tests (required with this code)\n" +
 			"Add or update `" + testPath + "` with pytest cases mapped to SPEC/plan acceptance for `" + beadPath + "`.\n" +
 			"Verify runs pytest on that file when it exists on disk.")
-	}
-	if IsTestImplementPath(beadPath) && (strings.HasSuffix(beadPath, ".test.ts") || strings.HasSuffix(beadPath, ".test.tsx") ||
-		strings.HasSuffix(beadPath, ".spec.ts") || strings.HasSuffix(beadPath, ".spec.tsx")) {
-		return strings.TrimSpace("### Unit tests (this bead)\n" +
-			"Write Vitest tests using `@testing-library/react` for component tests.\n" +
-			"Test rendering, user interactions, state changes, and error states per SPEC.md.\n" +
-			"No trivial placeholder tests — each test must exercise real behavior from the spec.\n" +
-			"Run **Verify** (`npx vitest run`) before bd close.")
 	}
 	return ""
 }
