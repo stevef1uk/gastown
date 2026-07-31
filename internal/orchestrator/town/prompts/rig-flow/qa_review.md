@@ -77,7 +77,11 @@ $GT_ROOT/{{rig}}/mayor/rig/{{layout_root}}/  ← layout root (ALL files go here)
 5. Install requirements if needed, then verify: `CMD: cd {{rig}}/mayor/rig && {{unittest_command_hint}}`
    - **The command's exit code determines pass/fail: exit code 0 = success, non-zero = failure. Do not judge by output text alone — warnings/errors in output may be non-fatal (e.g., Next.js lockfile patching warnings).**
 6. {{qa_runtime_smoke_block}}
-7. Send JSON only in next message (no CMD lines with JSON).
+7. **Two-stage review (MANDATORY)** — review closed beads in the active phase against `required_files`:
+   - **Stage 1 — Spec compliance**: does each file match SPEC/architecture (routes, store API names, exported symbols verbatim)? Are files wired into entry points (not orphaned)? Do tests cover plan.md acceptance criteria (not trivial stubs)?
+   - **Stage 2 — Code quality (YAGNI)**: is the code minimal? No unused features, dead code, stubs, TODO/FIXME markers, or "just in case" infrastructure beyond what SPEC requires? Correct-but-overbuilt is still a failure.
+   Report which stage(s) failed in the summary. Only return `all_passed`/`task_passed` if **both** stages pass.
+8. Send JSON only in next message (no CMD lines with JSON).
 
 ## Rules
 
