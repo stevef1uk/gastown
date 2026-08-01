@@ -48,6 +48,31 @@ states:
         Write architecture.md with a heredoc CMD in this session (stale files from prior runs do not count). Read SPEC with head -n 60. HTTP paths and store symbols must match SPEC verbatim (gt-agent rejects /web/* vs /static/, ListLinks vs List, etc.). Prefix **implement file paths** in lists/tables with layout_root (e.g. linkshelf/internal/store/store.go); prose may say store.List or schema.InitSchema without the prefix. If validation fails on file paths, rewrite architecture.md via heredoc. After wc -c passes, the step may auto-complete — or send JSON success only (no CMD lines).
     transitions:
       success:
+        to: design_review
+      failure:
+        to: design
+  design_review:
+    role: qa
+    prompt_file: prompts/rig-flow/design_review.md
+    instructions: |
+      1. Review `SPEC.md` and `architecture.md` for the active phase `{{active_phase_id}}`.
+      2. Verify architecture.md is complete, SPEC-aligned, and ready for planning.
+      3. Confirm all active-phase required files appear in architecture.md as planned implement paths.
+      4. Confirm HTTP routes, store/API names, module path, and entrypoint wiring match SPEC exactly.
+      5. Report success only when the design doc is clean and consistent; failure if it is missing or inconsistent.
+    hooks:
+      max_cmd_turns: 10
+      cmd_guard: design_review
+      cmd_rewrites: [rig_placeholders, spec_md_case, unwrap_bash_lc]
+      track: qa
+      artifacts: design_review
+      retry_hint: |
+        One CMD: per line. Read SPEC.md and architecture.md from {{rig}}/mayor/rig, then run `wc -c architecture.md`.
+        Only success/failure outcomes are allowed.
+      failure_hint: |
+        Do not edit any files. If architecture.md has placeholders, missing required files, or disagrees with SPEC, report failure with the exact gaps.
+    transitions:
+      success:
         to: planning
       failure:
         to: design

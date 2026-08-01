@@ -26,6 +26,9 @@ var cmdGuardHandlers = map[string]cmdGuardFn{
 	"design": func(r *stateRunner, cmd string) error {
 		return validateDesignCommand(cmd, r.rig)
 	},
+	"design_review": func(r *stateRunner, cmd string) error {
+		return validateQACommand(cmd, r.rig, r.townRoot, r.v)
+	},
 	"planning": func(r *stateRunner, cmd string) error {
 		return validatePlanningCommandWithProfile(cmd, r.townRoot, r.rig, r.v)
 	},
@@ -62,13 +65,14 @@ var cmdGuardHandlers = map[string]cmdGuardFn{
 }
 
 var cmdGuardRejectScope = map[string]string{
-	"analysis":        "analyst scope",
-	"spec_review":     "spec review scope",
+	"analysis":       "analyst scope",
+	"spec_review":    "spec review scope",
 	"design":         "architect scope",
 	"planning":       "planner scope",
 	"project_setup":  "project setup scope",
 	"implementation": "polecat scope",
 	"plan_review":    "plan review scope",
+	"design_review":  "QA scope",
 	"qa":             "QA scope",
 }
 
@@ -178,6 +182,14 @@ var trackHandlers = map[string]trackFn{
 			r.track.didDelete = true
 		}
 	},
+	"design_review": func(r *stateRunner, cmd string, cmdErr error) {
+		if cmdErr != nil {
+			r.track.hadCmdFailure = true
+		}
+		if cmdErr == nil && isQAReadOnlyCommand(cmd) {
+			r.track.hadCmdFailure = false
+		}
+	},
 	"qa": func(r *stateRunner, cmd string, cmdErr error) {
 		if cmdErr != nil {
 			r.track.hadCmdFailure = true
@@ -211,6 +223,9 @@ var artifactValidators = map[string]artifactValidateFn{
 	},
 	"spec_review": func(r *stateRunner, _ string) error {
 		return nil // spec_review is outcome-driven, no artifact checks
+	},
+	"design_review": func(r *stateRunner, _ string) error {
+		return nil // design_review is outcome-driven (read-only validation of architecture.md)
 	},
 	"design": func(r *stateRunner, _ string) error {
 		return validateDesignArtifacts(r.townRoot, r.rig, r.track.designArchWritten, r.v)
@@ -322,7 +337,7 @@ var verifyKindHandlers = map[string]verifyKindFn{
 		}
 		return ""
 	},
-	"go_implementation": verifyImplementationBead,
+	"go_implementation":     verifyImplementationBead,
 	"python_implementation": verifyImplementationBead,
 	"python_setup": func(r *stateRunner) string {
 		if orchestrator.WorkflowUsesPython(r.v) {
@@ -384,18 +399,20 @@ func (r *stateRunner) activeImplementBeadPath() string {
 type autoVerifyWhenFn func(r *stateRunner, cmd string) bool
 
 var autoVerifyWhenHandlers = map[string]autoVerifyWhenFn{
-	"go_mod_tidy":           func(r *stateRunner, cmd string) bool { return isGoModTidyCommand(cmd) },
-	"go_mod_init":           func(r *stateRunner, cmd string) bool { return isGoModInitCommand(cmd) },
-	"pip_install":           func(r *stateRunner, cmd string) bool { return isPipInstallRequirementsCommand(cmd) },
-	"python_venv":           func(r *stateRunner, cmd string) bool { return strings.Contains(strings.ToLower(cmd), "python3 -m venv") },
-	"npm_install":           func(r *stateRunner, cmd string) bool { return isNodeInstallCommand(cmd, "npm") },
-	"yarn_install":          func(r *stateRunner, cmd string) bool { return isNodeInstallCommand(cmd, "yarn") },
-	"pnpm_install":          func(r *stateRunner, cmd string) bool { return isNodeInstallCommand(cmd, "pnpm") },
-	"qa_test_ok":            func(r *stateRunner, cmd string) bool { return isQATestCommandOK(cmd, r.v) },
-	"go_write_layout":       func(r *stateRunner, cmd string) bool { return orchestratedWritesGoUnderLayout(cmd, r.v) },
-	"python_import_check":   func(r *stateRunner, cmd string) bool { return orchestrator.IsPythonImportCheckCommand(cmd) },
-	"python_compileall":     func(r *stateRunner, cmd string) bool { return strings.Contains(strings.ToLower(cmd), "compileall") },
-	"python_test":           func(r *stateRunner, cmd string) bool { return isPythonTestCommand(cmd) },
+	"go_mod_tidy": func(r *stateRunner, cmd string) bool { return isGoModTidyCommand(cmd) },
+	"go_mod_init": func(r *stateRunner, cmd string) bool { return isGoModInitCommand(cmd) },
+	"pip_install": func(r *stateRunner, cmd string) bool { return isPipInstallRequirementsCommand(cmd) },
+	"python_venv": func(r *stateRunner, cmd string) bool {
+		return strings.Contains(strings.ToLower(cmd), "python3 -m venv")
+	},
+	"npm_install":         func(r *stateRunner, cmd string) bool { return isNodeInstallCommand(cmd, "npm") },
+	"yarn_install":        func(r *stateRunner, cmd string) bool { return isNodeInstallCommand(cmd, "yarn") },
+	"pnpm_install":        func(r *stateRunner, cmd string) bool { return isNodeInstallCommand(cmd, "pnpm") },
+	"qa_test_ok":          func(r *stateRunner, cmd string) bool { return isQATestCommandOK(cmd, r.v) },
+	"go_write_layout":     func(r *stateRunner, cmd string) bool { return orchestratedWritesGoUnderLayout(cmd, r.v) },
+	"python_import_check": func(r *stateRunner, cmd string) bool { return orchestrator.IsPythonImportCheckCommand(cmd) },
+	"python_compileall":   func(r *stateRunner, cmd string) bool { return strings.Contains(strings.ToLower(cmd), "compileall") },
+	"python_test":         func(r *stateRunner, cmd string) bool { return isPythonTestCommand(cmd) },
 }
 
 func isNodeInstallCommand(cmd, manager string) bool {
