@@ -366,6 +366,11 @@ func TestTryAdvanceDeliveryPhaseAfterQA_succeedsWithBdErrors(t *testing.T) {
 		t.Fatalf("active phase = %q, want backend", v.ActivePhaseID())
 	}
 
+	// Mark current phase as completed before advancing (required by TryAdvanceDeliveryPhaseAfterQA)
+	if err := AddRigCompletedPhase(townRoot, rig, "backend"); err != nil {
+		t.Fatalf("mark phase completed: %v", err)
+	}
+
 	// TryAdvanceDeliveryPhaseAfterQA should succeed even though bd operations will fail
 	redirected, fromID, toID, logLine, err := TryAdvanceDeliveryPhaseAfterQA(townRoot, rig)
 

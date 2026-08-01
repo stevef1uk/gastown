@@ -281,7 +281,7 @@ func runMayorWorkflowStart(cmd *cobra.Command, args []string) error {
 	}
 
 	if rig := vars["rig"]; rig != "" {
-		maybeSpecIndexFromSPEC(townRoot, rig)
+		maybeSpecIndexFromSPEC(townRoot, rig, true)
 		if running, _, _ := orchestrator.IsRunning(townRoot); running {
 			mgr := orchestrator.NewManager(townRoot)
 			if mgr.HasActiveWorkflow(templateID, rig) {

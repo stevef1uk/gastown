@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 )
 
@@ -993,6 +994,11 @@ func TryAdvanceDeliveryPhaseAfterQA(townRoot, rig string) (redirected bool, from
 		if p, ok := full.ActivePhase(); ok {
 			fromID = strings.TrimSpace(p.ID)
 		}
+	}
+	// Validate that the current phase is marked as completed before advancing.
+	// If not completed, do not advance — this prevents skipping phases with broken builds.
+	if !slices.Contains(full.CompletedPhaseIDs(), fromID) {
+		return false, fromID, "", fmt.Sprintf("cannot advance: current phase %q is not marked as completed (required before advancing)", fromID), nil
 	}
 	// Capture the phase list from the first load so spec-index re-runs
 	// mid-session don't change which phase we advance from/to.

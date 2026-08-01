@@ -22,7 +22,9 @@ type ProfileFile struct {
 
 // IndexRig reads SPEC.md and writes workflow-profile.json using the LLM.
 // On success it returns the profile that was written (for operator messaging).
-func IndexRig(ctx context.Context, townRoot, rig string) (*ProfileFile, error) {
+// If force is true, it bypasses any "profile unchanged" optimizations and
+// re-runs the full LLM extraction + JUDGE pipeline.
+func IndexRig(ctx context.Context, townRoot, rig string, force bool) (*ProfileFile, error) {
 	specPath := SpecPath(townRoot, rig)
 	data, err := os.ReadFile(specPath)
 	if err != nil {
@@ -73,6 +75,7 @@ func IndexRig(ctx context.Context, townRoot, rig string) (*ProfileFile, error) {
 	// Step 4: Two-stage JUDGE pipeline on the clamped profile. Generator suggests
 	// improvements, validator reviews each suggestion before applying. Spec/req text
 	// is injected so verify commands test actual project behavior, not just file presence.
+	// The force flag ensures JUDGE runs even if profile appears unchanged.
 	f.Validation = JudgePhaseVerifyCommands(ctx, endpoint, model, validatorEndpoint, validatorModel, f.Validation, specText, reqText)
 
 	// Step 5: Write again WITHOUT re-clamping. ClampProfileValidation is idempotent

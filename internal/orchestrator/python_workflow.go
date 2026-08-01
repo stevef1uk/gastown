@@ -143,6 +143,9 @@ func ImplementationVerifyCommandForBead(v WorkflowValidation, mayorRigDir, beadP
 	if WorkflowUsesDocker(v) {
 		return DockerImplementationVerifyCommandForBead(v, mayorRigDir, beadPath)
 	}
+	if WorkflowUsesNodeJS(v) {
+		return NodeImplementationVerifyCommandForBead(v, mayorRigDir, beadPath)
+	}
 	return strings.TrimSpace(v.UnittestCommandHint())
 }
 

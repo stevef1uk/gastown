@@ -732,8 +732,8 @@ func runRigAdd(cmd *cobra.Command, args []string) error {
 
 	// Generate workflow-profile.json from SPEC.md BEFORE auto-starting the workflow,
 	// so the orchestrator has the full profile (layout_root, required_files, etc.)
-	// when planning begins.
-	maybeSpecIndexFromSPEC(townRoot, name)
+	// when planning begins. Force re-index to ensure JUDGE runs even if profile exists.
+	maybeSpecIndexFromSPEC(townRoot, name, true)
 	maybeAutoSyncPlanningAfterRigSetup(townRoot, name)
 
 	// Sync hooks for the new rig's targets
@@ -787,7 +787,9 @@ func runRigAdd(cmd *cobra.Command, args []string) error {
 
 // maybeSpecIndexFromSPEC runs LLM extraction when mayor/rig/SPEC.md exists.
 // Skipped when GT_SKIP_SPEC_INDEX is set. Errors are non-fatal (warning only).
-func maybeSpecIndexFromSPEC(townRoot, rigName string) {
+// If force is true, it bypasses any "profile unchanged" checks and re-runs
+// the full LLM extraction + JUDGE pipeline.
+func maybeSpecIndexFromSPEC(townRoot, rigName string, force bool) {
 	if os.Getenv("GT_SKIP_SPEC_INDEX") != "" {
 		return
 	}
@@ -797,7 +799,7 @@ func maybeSpecIndexFromSPEC(townRoot, rigName string) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
-	prof, err := specprofile.IndexRig(ctx, townRoot, rigName)
+	prof, err := specprofile.IndexRig(ctx, townRoot, rigName, force)
 	if err != nil {
 		fmt.Printf("  %s Workflow profile from SPEC.md (LLM): %v\n", style.Warning.Render("!"), err)
 		return
@@ -969,7 +971,7 @@ func runRigSpecIndex(_ *cobra.Command, args []string) error {
 	endpoint, model := specprofile.ResolveLLMForSpecIndex(townRoot)
 	fmt.Printf("Indexing SPEC.md for rig %s (LLM %s via %s)...\n",
 		style.Bold.Render(rigName), style.Dim.Render(model), style.Dim.Render(endpoint))
-	prof, err := specprofile.IndexRig(ctx, townRoot, rigName)
+	prof, err := specprofile.IndexRig(ctx, townRoot, rigName, rigSpecIndexForce)
 	if err != nil {
 		return err
 	}
@@ -1732,7 +1734,7 @@ func runRigAdopt(_ *cobra.Command, args []string) error {
 	// Auto-assign a namepool theme that doesn't collide with other rigs (gas-21k).
 	autoAssignNamepoolTheme(townRoot, name, mgr)
 
-	maybeSpecIndexFromSPEC(townRoot, name)
+	maybeSpecIndexFromSPEC(townRoot, name, true)
 	maybeAutoSyncPlanningAfterRigSetup(townRoot, name)
 
 	// Print results

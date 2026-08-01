@@ -8,26 +8,54 @@ import (
 
 var nodeSetupCdRe = regexp.MustCompile(`^cd\s+\S+\s*&&\s*`)
 
-// WorkflowUsesNodeJS reports whether the workflow runs npm/yarn tests (frontend/Node).
+// WorkflowUsesNodeJS reports whether the workflow uses Node.js/TypeScript/JavaScript tooling.
 func WorkflowUsesNodeJS(v WorkflowValidation) bool {
-	return v.detectsNodeProject()
-}
-
-func (v WorkflowValidation) detectsNodeProject() bool {
-	q := strings.ToLower(strings.TrimSpace(v.QAVerifyCommand))
-	if strings.Contains(q, "npm ") || strings.Contains(q, "npm/") || strings.Contains(q, "yarn ") || strings.Contains(q, "pnpm ") {
+	// Check test_runner
+	if strings.EqualFold(strings.TrimSpace(v.TestRunner), "playwright") ||
+		strings.EqualFold(strings.TrimSpace(v.TestRunner), "jest") ||
+		strings.EqualFold(strings.TrimSpace(v.TestRunner), "vitest") ||
+		strings.EqualFold(strings.TrimSpace(v.TestRunner), "mocha") {
 		return true
 	}
+	// Check QA verify command for Node.js tooling
+	q := strings.ToLower(strings.TrimSpace(v.QAVerifyCommand))
+	if strings.Contains(q, "npx playwright") || strings.Contains(q, "npx vitest") ||
+		strings.Contains(q, "npx jest") || strings.Contains(q, "npm test") ||
+		strings.Contains(q, "npm run test") || strings.Contains(q, "yarn test") ||
+		strings.Contains(q, "pnpm test") {
+		return true
+	}
+	// Check for Node.js config files AND general TypeScript/JavaScript files in required_files
 	for _, f := range v.RequiredFiles {
-		lower := strings.ToLower(strings.TrimSpace(f))
-		if strings.HasSuffix(lower, ".tsx") || strings.HasSuffix(lower, ".ts") || strings.HasSuffix(lower, ".js") || strings.HasSuffix(lower, ".jsx") {
+		f = strings.ToLower(strings.TrimSpace(f))
+		if strings.HasSuffix(f, "package.json") ||
+			strings.HasSuffix(f, "tsconfig.json") ||
+			strings.HasSuffix(f, "playwright.config.ts") ||
+			strings.HasSuffix(f, "playwright.config.js") ||
+			strings.HasSuffix(f, "vitest.config.ts") ||
+			strings.HasSuffix(f, "jest.config.ts") ||
+			strings.HasSuffix(f, "jest.config.js") ||
+			strings.HasSuffix(f, ".spec.ts") ||
+			strings.HasSuffix(f, ".spec.tsx") ||
+			strings.HasSuffix(f, ".test.ts") ||
+			strings.HasSuffix(f, ".test.tsx") ||
+			strings.HasSuffix(f, ".e2e.ts") ||
+			strings.HasSuffix(f, ".e2e.spec.ts") ||
+			strings.HasSuffix(f, ".tsx") ||
+			strings.HasSuffix(f, ".ts") ||
+			strings.HasSuffix(f, ".jsx") ||
+			strings.HasSuffix(f, ".js") {
 			return true
 		}
-		if strings.HasSuffix(lower, "/package.json") || lower == "package.json" {
+		if strings.HasSuffix(f, "/package.json") || f == "package.json" {
 			return true
 		}
 	}
 	return false
+}
+
+func (v WorkflowValidation) detectsNodeProject() bool {
+	return WorkflowUsesNodeJS(v)
 }
 
 // NodeProjectSetupVerifyCommand returns the green check for project_setup only:
@@ -92,4 +120,48 @@ func looksLikeNodeFile(path string) bool {
 	return strings.HasSuffix(lower, ".tsx") || strings.HasSuffix(lower, ".ts") ||
 		strings.HasSuffix(lower, ".jsx") || strings.HasSuffix(lower, ".js") ||
 		strings.HasSuffix(lower, "/package.json") || path == "package.json"
+}
+
+// NodeImplementationVerifyCommandForBead returns verify scoped to the active implement path for Node.js/TypeScript projects.
+func NodeImplementationVerifyCommandForBead(v WorkflowValidation, mayorRigDir, beadPath string) string {
+	beadPath = filepath.ToSlash(strings.TrimSpace(beadPath))
+	if beadPath == "" {
+		return ""
+	}
+
+	// Playwright/E2E test files
+	if strings.HasSuffix(beadPath, ".spec.ts") || strings.HasSuffix(beadPath, ".spec.tsx") ||
+		strings.HasSuffix(beadPath, ".test.ts") || strings.HasSuffix(beadPath, ".test.tsx") ||
+		strings.HasSuffix(beadPath, ".e2e.ts") || strings.HasSuffix(beadPath, ".e2e.spec.ts") {
+		return "npx playwright test " + beadPath
+	}
+
+	// Vitest/Jest unit test files
+	if strings.HasSuffix(beadPath, ".test.ts") || strings.HasSuffix(beadPath, ".test.tsx") ||
+		strings.HasSuffix(beadPath, ".spec.ts") || strings.HasSuffix(beadPath, ".spec.tsx") {
+		if strings.Contains(beadPath, "e2e") || strings.Contains(beadPath, "playwright") {
+			return "npx playwright test " + beadPath
+		}
+		return "npx vitest run " + beadPath
+	}
+
+	// package.json / tsconfig.json / playwright.config.* — verify with project-wide test command
+	if strings.HasSuffix(beadPath, "package.json") ||
+		strings.HasSuffix(beadPath, "tsconfig.json") ||
+		strings.HasSuffix(beadPath, "playwright.config.ts") ||
+		strings.HasSuffix(beadPath, "playwright.config.js") ||
+		strings.HasSuffix(beadPath, "vitest.config.ts") ||
+		strings.HasSuffix(beadPath, "jest.config.ts") ||
+		strings.HasSuffix(beadPath, "jest.config.js") {
+		return "npm test"
+	}
+
+	// TypeScript/JavaScript source files — check if they compile
+	if strings.HasSuffix(beadPath, ".ts") || strings.HasSuffix(beadPath, ".tsx") ||
+		strings.HasSuffix(beadPath, ".js") || strings.HasSuffix(beadPath, ".jsx") {
+		return "npx tsc --noEmit"
+	}
+
+	// Default to project test command
+	return "npm test"
 }
