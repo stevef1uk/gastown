@@ -20,11 +20,12 @@ const (
 )
 
 type nativeEditOp struct {
-	kind    string // read, edit, write
-	path    string
-	search  string
-	replace string
-	content string
+	kind       string // read, edit, write
+	path       string
+	search     string
+	replace    string
+	content    string
+	replaceAll bool   // replace all occurrences when true
 }
 
 // parseOrchestratedNativeEdits extracts READ:/EDIT:/WRITE: blocks from an LLM response.
@@ -63,16 +64,16 @@ func parseOrchestratedNativeEdits(response string) []nativeEditOp {
 				i = skipNativeEditBlock(lines, i)
 				continue
 			}
-			search, replace, next, ok := parseNativeEditSearchReplace(lines, i)
-			if ok && path != "" {
-				if search == "" && isUnifiedDiffEditBody(replace) {
-					ops = append(ops, nativeEditOp{kind: "edit", path: path, search: "", replace: replace})
-				} else if search == "" {
-					ops = append(ops, nativeEditOp{kind: "write", path: path, content: replace})
-				} else {
-					ops = append(ops, nativeEditOp{kind: "edit", path: path, search: search, replace: replace})
-				}
+search, replace, next, ok, replaceAll := parseNativeEditSearchReplace(lines, i)
+		if ok && path != "" {
+			if search == "" && isUnifiedDiffEditBody(replace) {
+				ops = append(ops, nativeEditOp{kind: "edit", path: path, search: "", replace: replace, replaceAll: replaceAll})
+			} else if search == "" {
+				ops = append(ops, nativeEditOp{kind: "write", path: path, content: replace})
+			} else {
+				ops = append(ops, nativeEditOp{kind: "edit", path: path, search: search, replace: replace, replaceAll: replaceAll})
 			}
+		}
 			i = next
 		case strings.HasPrefix(upper, "WRITE:"):
 			path := orchestrator.SanitizeNativeEditRelPath(trimmedClean[len("WRITE:"):])
@@ -92,7 +93,7 @@ func parseOrchestratedNativeEdits(response string) []nativeEditOp {
 	return ops
 }
 
-func parseNativeEditSearchReplace(lines []string, start int) (search, replace string, next int, ok bool) {
+func parseNativeEditSearchReplace(lines []string, start int) (search, replace string, next int, ok bool, replaceAll bool) {
 	mode := ""
 	var searchLines, replaceLines []string
 	for i := start; i < len(lines); i++ {
@@ -102,17 +103,19 @@ func parseNativeEditSearchReplace(lines []string, start int) (search, replace st
 			mode = "search"
 		case t == nativeEditReplaceMarker:
 			if mode != "search" {
-				return "", "", i + 1, false
+				return "", "", i + 1, false, false
 			}
 			mode = "replace"
+		case strings.HasPrefix(t, "REPLACE_ALL"):
+			replaceAll = true
 		case isNativeEditEndMarker(t):
 			if mode == "replace" {
 				search = strings.TrimRight(strings.Join(searchLines, "\n"), "\n")
 				replace = strings.TrimRight(strings.Join(replaceLines, "\n"), "\n")
-				return search, replace, i + 1, search != ""
+				return search, replace, i + 1, search != "", replaceAll
 			}
 			replace = strings.TrimRight(strings.Join(replaceLines, "\n"), "\n")
-			return "", replace, i + 1, replace != ""
+			return "", replace, i + 1, replace != "", false
 		default:
 			if isMarkdownFenceOnlyLine(t) {
 				continue
@@ -127,7 +130,7 @@ func parseNativeEditSearchReplace(lines []string, start int) (search, replace st
 			}
 		}
 	}
-	return "", "", len(lines), false
+	return "", "", start, false, false
 }
 
 func isUnifiedDiffEditBody(body string) bool {
@@ -583,7 +586,7 @@ func (r *stateRunner) executeNativeEditOp(op nativeEditOp, workDir string) (stri
 		if strings.TrimSpace(op.search) == strings.TrimSpace(replace) {
 			return "", fmt.Errorf("SEARCH and REPLACE are identical — this edit would change nothing. If the file already matches what you want, use CMD: bd close instead of another identical EDIT.")
 		}
-		return applyNativeSearchReplaceValidated(rel, abs, op.search, replace)
+		return applyNativeSearchReplaceValidated(rel, abs, op.search, replace, op.replaceAll)
 	case "write":
 		if err := rigpkg.RejectDisallowedMayorRigWrite(rel, r.v.LayoutRoot, r.v.RequiredFiles); err != nil {
 			return "", err
@@ -657,8 +660,8 @@ func resolveNativeEditAbsPath(workDir, path, layoutRoot string) (rel, abs string
 	return rel, absClean, nil
 }
 
-func applyNativeSearchReplace(abs, search, replace string) (string, error) {
-	return applyNativeSearchReplaceValidated(filepath.Base(abs), abs, search, replace)
+func applyNativeSearchReplace(abs, search, replace string, replaceAll bool) (string, error) {
+	return applyNativeSearchReplaceValidated(filepath.Base(abs), abs, search, replace, replaceAll)
 }
 
 func normalizeNativeGoFileContent(relPath, content string) (string, error) {
@@ -699,15 +702,23 @@ func validateAndNormalizeNativeGoContent(relPath, content string) (string, error
 	return content, nil
 }
 
-func applyNativeSearchReplaceValidated(relPath, abs, search, replace string) (string, error) {
+func applyNativeSearchReplaceValidated(relPath, abs, search, replace string, replaceAll bool) (string, error) {
 	data, err := os.ReadFile(abs)
 	if err != nil {
 		return "", err
 	}
 	content := string(data)
-	updated, msg, err := computeNativeSearchReplace(content, search, replace)
-	if err != nil {
-		return "", err
+	var updated string
+	var msg string
+	if replaceAll {
+		updated = strings.ReplaceAll(content, search, replace)
+		msg = fmt.Sprintf("applied %d search/replace (replace all)", strings.Count(content, search))
+	} else {
+		var err error
+		updated, msg, err = computeNativeSearchReplace(content, search, replace)
+		if err != nil {
+			return "", err
+		}
 	}
 	updated, err = validateAndNormalizeNativeGoContent(relPath, updated)
 	if err != nil {

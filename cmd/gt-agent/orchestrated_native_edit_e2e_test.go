@@ -491,7 +491,7 @@ func TestNativeEditE2E_applyOnDisk_isolated(t *testing.T) {
 	}
 	search := "\t// empty"
 	replace := "\treq, _ := http.NewRequest(\"POST\", \"/api/links\", nil)"
-	msg, err := applyNativeSearchReplace(path, search, replace)
+	msg, err := applyNativeSearchReplace(path, search, replace, false)
 	if err != nil {
 		t.Fatal(err)
 	}

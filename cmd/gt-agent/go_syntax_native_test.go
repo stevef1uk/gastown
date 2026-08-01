@@ -117,7 +117,7 @@ func TestApplyNativeSearchReplace_rejectsInvalidGoResult(t *testing.T) {
 	if err := os.WriteFile(path, []byte("package store\n\nconst x = 1\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
-	_, err := applyNativeSearchReplace(path, "const x = 1", "const x = 1\n}n err\n")
+	_, err := applyNativeSearchReplace(path, "const x = 1", "const x = 1\n}n err\n", false)
 	if err == nil {
 		t.Fatal("expected rejection when replace breaks Go syntax")
 	}

@@ -171,7 +171,7 @@ func TestApplyNativeSearchReplace_unique(t *testing.T) {
 	if err := os.WriteFile(path, []byte("package p\n\nconst beta = 1\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
-	msg, err := applyNativeSearchReplace(path, "const beta = 1", "const gamma = 2")
+	msg, err := applyNativeSearchReplace(path, "const beta = 1", "const gamma = 2", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -188,7 +188,39 @@ func TestApplyNativeSearchReplace_notFound(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "f.go")
 	_ = os.WriteFile(path, []byte("x\n"), 0644)
-	_, err := applyNativeSearchReplace(path, "missing", "y")
+	_, err := applyNativeSearchReplace(path, "missing", "y", false)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+}
+
+func TestApplyNativeSearchReplace_replaceAll(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "f.go")
+	// File with 3 identical lines
+	content := "package p\n\nconst beta = 1\nconst beta = 1\nconst beta = 1\n"
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+	msg, err := applyNativeSearchReplace(path, "const beta = 1", "const gamma = 2", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(msg, "3 search/replace") {
+		t.Fatalf("msg=%q, want '3 search/replace'", msg)
+	}
+	data, _ := os.ReadFile(path)
+	expected := "package p\n\nconst gamma = 2\nconst gamma = 2\nconst gamma = 2\n"
+	if string(data) != expected {
+		t.Fatalf("got %q, want %q", data, expected)
+	}
+}
+
+func TestApplyNativeSearchReplace_replaceAll_notFound(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "f.go")
+	_ = os.WriteFile(path, []byte("x\n"), 0644)
+	_, err := applyNativeSearchReplace(path, "missing", "y", true)
 	if err == nil {
 		t.Fatal("expected error")
 	}
