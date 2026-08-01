@@ -238,8 +238,62 @@ func formatDependencyPackagesContext(townRoot, rig, activePath string, v Workflo
 	if IsCmdMainImplementPath(activePath) {
 		b.WriteString("\n**cmd/main bead:** implement `registerAPI` / `serveStaticFiles` in package `main` per **Main wiring** and `main_test.go`; do not re-implement handler bodies from scratch.\n")
 	}
+	
+	// Inject dependency function signatures for precise calls
+	if sigs := formatDependencyFunctionSignatures(townRoot, rig, deps, v); sigs != "" {
+		b.WriteString("\n")
+		b.WriteString(sigs)
+		b.WriteString("\n")
+	}
+	
 	b.WriteString("\nCall **only** functions/types and signatures from the snippets above, **Architecture contract**, and **SPEC.md**.\n")
 	return strings.TrimSpace(b.String())
+}
+
+// formatDependencyFunctionSignatures extracts and formats function signatures from dependency files
+// so the polecat knows exact function signatures (params, return types) for correct calls.
+func formatDependencyFunctionSignatures(townRoot, rig string, deps []string, v WorkflowValidation) string {
+	var b strings.Builder
+	for _, rel := range deps {
+		rel = filepath.ToSlash(strings.TrimSpace(rel))
+		abs := filepath.Join(townRoot, rig, "mayor", "rig", rel)
+		data, err := os.ReadFile(abs)
+		if err != nil {
+			continue
+		}
+		content := string(data)
+		
+		// Extract function signatures (func Name(params) (returnTypes) {)
+		sigRE := regexp.MustCompile(`(?m)^func\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(([^)]*)\)\s*(?:\(([^)]*)\)|(\s+[A-Za-z_][A-Za-z0-9_]*\s*(?:,\s*[A-Za-z_][A-Za-z0-9_]*)*))?\s*\{`)
+		matches := sigRE.FindAllStringSubmatch(content, -1)
+		if len(matches) == 0 {
+			continue
+		}
+		
+		var sigs []string
+		for _, m := range matches {
+			if len(m) >= 2 {
+				name := m[1]
+				params := strings.TrimSpace(m[2])
+				ret := ""
+				if len(m) >= 4 && strings.TrimSpace(m[3]) != "" {
+					ret = " (" + strings.TrimSpace(m[3]) + ")"
+				} else if len(m) >= 5 && strings.TrimSpace(m[4]) != "" {
+					ret = " " + strings.TrimSpace(m[4])
+				}
+				sigs = append(sigs, name+"("+params+")"+ret)
+			}
+		}
+		
+		if len(sigs) > 0 {
+			b.WriteString("### Function signatures from `" + rel + "` (call exactly these)\n")
+			for _, sig := range sigs {
+				b.WriteString("- " + sig + "\n")
+			}
+			b.WriteString("\n")
+		}
+	}
+	return b.String()
 }
 
 func architectureExcerptForBead(townRoot, rig, beadPath string, v WorkflowValidation) string {

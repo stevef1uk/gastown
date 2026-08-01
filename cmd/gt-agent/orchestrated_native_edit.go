@@ -726,6 +726,11 @@ func computeNativeSearchReplace(content, search, replace string) (updated, msg s
 		norm := strings.ReplaceAll(content, "\r\n", "\n")
 		normSearch := strings.ReplaceAll(search, "\r\n", "\n")
 		if strings.Count(norm, normSearch) == 0 {
+			// Fuzzy match: find similar blocks
+			suggestion := findSimilarBlocks(content, search)
+			if suggestion != "" {
+				return "", "", fmt.Errorf("SEARCH block not found in file (must match exactly, including whitespace).\n\nSimilar blocks found:\n%s\n\nUse the exact block from above (or run READ first to see current file content).", suggestion)
+			}
 			return "", "", fmt.Errorf("SEARCH block not found in file (must match exactly, including whitespace)")
 		}
 		if strings.Count(norm, normSearch) > 1 {
@@ -739,6 +744,54 @@ func computeNativeSearchReplace(content, search, replace string) (updated, msg s
 	}
 	updated = strings.Replace(content, search, replace, 1)
 	return updated, "applied 1 search/replace", nil
+}
+
+// findSimilarBlocks finds blocks in content that are similar to the search text.
+// Returns a formatted string with similar blocks, or empty string if none found.
+func findSimilarBlocks(content, search string) string {
+	lines := strings.Split(content, "\n")
+	searchLines := strings.Split(search, "\n")
+	if len(searchLines) < 2 {
+		return ""
+	}
+	
+	// Use first non-empty line of search as anchor
+	var anchor string
+	for _, l := range searchLines {
+		l = strings.TrimSpace(l)
+		if l != "" && !strings.HasPrefix(l, "<<<<<<<") && !strings.HasPrefix(l, "=======") && !strings.HasPrefix(l, ">>>>>>>") {
+			anchor = l
+			break
+		}
+	}
+	if anchor == "" {
+		return ""
+	}
+	
+	// Find lines containing the anchor
+	var matches []int
+	anchorLower := strings.ToLower(anchor)
+	for i, line := range lines {
+		if strings.Contains(strings.ToLower(line), anchorLower) {
+			matches = append(matches, i)
+		}
+	}
+	
+	if len(matches) == 0 {
+		return ""
+	}
+	
+	var b strings.Builder
+	b.WriteString("```\n")
+	for _, idx := range matches {
+		// Show context around match (2 lines before, 5 lines after)
+		start := max(0, idx-2)
+		end := min(len(lines), idx+5)
+		b.WriteString(strings.Join(lines[start:end], "\n"))
+		b.WriteString("\n---\n")
+	}
+	b.WriteString("```")
+	return b.String()
 }
 
 func orchestratedEmptyTurnHint(hooks orchestrator.StateHooks) string {
