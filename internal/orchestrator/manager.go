@@ -390,6 +390,13 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summa
 			advRig = inst.Variables["rig"]
 		}
 		if advRig != "" {
+			full, ok, _ := LoadRigWorkflowProfileFile(m.townRoot, advRig)
+			if ok && full.HasPhasedDelivery() {
+				currentPhase := full.ActivePhaseID()
+				if currentPhase != "" {
+					_ = AddRigCompletedPhase(m.townRoot, advRig, currentPhase)
+				}
+			}
 			redirected, fromPhase, toPhase, logLine, advErr := TryAdvanceDeliveryPhaseAfterQA(m.townRoot, advRig)
 			if advErr != nil {
 				fmt.Printf("[Manager] Warning: delivery phase advance: %v\n", advErr)

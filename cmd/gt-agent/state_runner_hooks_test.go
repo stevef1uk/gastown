@@ -106,9 +106,6 @@ func TestStateRunner_rigFlowHooksTrackAndArtifacts(t *testing.T) {
 		t.Fatal(err)
 	}
 	writeMinimalDesignSPEC(t, rigDir)
-	if err := os.WriteFile(filepath.Join(rigDir, ".self_review_done"), []byte("ok"), 0644); err != nil {
-		t.Fatal(err)
-	}
 	if err := r.validateArtifacts("success"); err != nil {
 		t.Fatalf("expected success after track+file: %v", err)
 	}

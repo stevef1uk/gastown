@@ -43,30 +43,17 @@ Polecat implements code later from SPEC. Your architecture doc should **describe
     CMD: cat {{town_root}}/{{rig}}/mayor/rig/SPEC.md
     ```
 2. Write **only** `{{town_root}}/{{rig}}/mayor/rig/architecture.md` using a heredoc. Match the **actual** project in SPEC (title, layout_root `{{layout_root}}`). Include a **## Delivery phases** section when the profile lists multiple phases (`{{delivery_phase_count}}`); map all paths: {{all_required_files}} (or {{required_files}} when no phases). Do **not** copy example projects from other rigs.
-3. **Self-review (MANDATORY)** — before running `wc -c`, read the file you just wrote and verify all 7 checks:
-   - **Placeholder scan**: any `TBD`, `TODO`, `TBD in phase N`, or vague requirement? Fix now — a placeholder in architecture becomes a guess by the polecat later.
-   - **SPEC alignment**: every HTTP route from the SPEC table appears (verbatim, no shortened aliases); every store function/type name matches SPEC exactly (`List`, `Create`, `Delete`, `InitSchema` — not `GetLinks`, `NewStore`).
-   - **Internal consistency**: do sections contradict each other? Does the file ownership table match the planned layout?
-   - **Path consistency**: every implement path uses the `{{layout_root}}/` prefix exactly when required_files uses it (bare paths when layout_root is `.`); no `./` prefix, no `RIG/` segment, no rig-name prefix.
-   - **Empty section check**: no heading followed by a blank line — either fill the section or omit the heading.
-   - **Bead coverage**: every file in `required_files` (this phase) is represented in the planned file layout and ownership table.
-   - **YAGNI**: no sections describing features, config knobs, or error handling that SPEC never asks for.
-   If any check fails, revise the heredoc and re-run the write before step 4.
-4. **Mark self-review complete** — write a marker file so gt-agent can verify the review happened:
-    ```
-    CMD: echo "ok" > {{town_root}}/{{rig}}/mayor/rig/.self_review_done
-    ```
-5. Verify size **before** reporting success (must be ≥ {{min_architecture_bytes}} bytes):
-    ```
-    CMD: wc -c {{town_root}}/{{rig}}/mayor/rig/architecture.md
-    ```
-    If under the minimum, expand the heredoc (per-file API/behavior, data model, error cases, acceptance mapping) and rewrite `architecture.md` — do not report success until `wc -c` meets the threshold.
-6. Architecture must reference the real SPEC goals and planned layout under `{{layout_root}}/` (or paths SPEC defines) without creating those files.
-7. **HTTP route table and store API names in architecture.md must match SPEC.md verbatim** (e.g. `/static/{file}` not `/web/*`; `List`/`Create`/`Delete`/`InitSchema` not `GetLinks`/`Store` struct/`InitDB`). gt-agent rejects design success on drift.
-7b. **`required_files` must NOT contain wildcards** (e.g. `test_*.py`, `*_test.go`). Each path must be a concrete, literal file path (e.g. `tests/test_portfolio.py`, `internal/store/store_test.go`). gt-agent rejects design success on wildcards.
-8. **Implement file paths** in lists, tables, and bead-style bullets must use the `{{layout_root}}/` prefix **only when `{{layout_root}}` is not `"."` or empty** and required_files use it (e.g. `{{layout_root}}/internal/store/schema.go`). When `{{layout_root}}` is `"."` or empty, use **bare paths without any prefix** — e.g. `main.go`, `handler.go`, `go.mod` — matching required_files exactly. **Do not emit `./` prefix or any relative path indicator.** Prose may reference packages as `store.List` or `schema.InitSchema` without the prefix.
-8b. **Only wrap actual file paths in backticks.** Do NOT wrap Go import paths (like `net/http`), URLs (like `http://localhost:8080/hello`), MIME types (like `application/json`), or package members (like `http.Server`) in backticks anywhere in architecture.md — use plain text instead. Non-file backtick content gets incorrectly extracted as required file paths by the planner.
-9. **Every section listed in the write pattern below must contain substantive content.** Empty headings (e.g. `## Docker & Deployment` followed by a blank line) cause the polecat to guess and produce broken artifacts. If a section truly does not apply, omit the heading; do not leave it empty.
+3. Verify size **before** reporting success (must be ≥ {{min_architecture_bytes}} bytes):
+   ```
+   CMD: wc -c {{town_root}}/{{rig}}/mayor/rig/architecture.md
+   ```
+   If under the minimum, expand the heredoc (per-file API/behavior, data model, error cases, acceptance mapping) and rewrite `architecture.md` — do not report success until `wc -c` meets the threshold.
+4. Architecture must reference the real SPEC goals and planned layout under `{{layout_root}}/` (or paths SPEC defines) without creating those files.
+5. **HTTP route table and store API names in architecture.md must match SPEC.md verbatim** (e.g. `/static/{file}` not `/web/*`; `List`/`Create`/`Delete`/`InitSchema` not `GetLinks`/`Store` struct/`InitDB`). gt-agent rejects design success on drift.
+5b. **`required_files` must NOT contain wildcards** (e.g. `test_*.py`, `*_test.go`). Each path must be a concrete, literal file path (e.g. `tests/test_portfolio.py`, `internal/store/store_test.go`). gt-agent rejects design success on wildcards.
+6. **Implement file paths** in lists, tables, and bead-style bullets must use the `{{layout_root}}/` prefix **only when `{{layout_root}}` is not `"."` or empty** and required_files use it (e.g. `{{layout_root}}/internal/store/schema.go`). When `{{layout_root}}` is `"."` or empty, use **bare paths without any prefix** — e.g. `main.go`, `handler.go`, `go.mod` — matching required_files exactly. **Do not emit `./` prefix or any relative path indicator.** Prose may reference packages as `store.List` or `schema.InitSchema` without the prefix.
+6b. **Only wrap actual file paths in backticks.** Do NOT wrap Go import paths (like `net/http`), URLs (like `http://localhost:8080/hello`), MIME types (like `application/json`), or package members (like `http.Server`) in backticks anywhere in architecture.md — use plain text instead. Non-file backtick content gets incorrectly extracted as required file paths by the planner.
+7. **Every section listed in the write pattern below must contain substantive content.** Empty headings (e.g. `## Docker & Deployment` followed by a blank line) cause the polecat to guess and produce broken artifacts. If a section truly does not apply, omit the heading; do not leave it empty.
 
 ## Required write pattern
 
