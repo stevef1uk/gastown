@@ -151,6 +151,40 @@ func layoutRelPathsProtectedFromPrune(v WorkflowValidation) map[string]bool {
 			}
 		}
 	}
+	// Protect common test config files that may be auto-generated or not explicitly listed
+	commonTestConfigs := []string{
+		"test/playwright.config.ts",
+		"test/playwright.config.js",
+		"tests/playwright.config.ts",
+		"tests/playwright.config.js",
+		"test/cypress.config.ts",
+		"test/cypress.config.js",
+		"tests/cypress.config.ts",
+		"tests/cypress.config.js",
+		"test/jest.config.ts",
+		"test/jest.config.js",
+		"tests/jest.config.ts",
+		"tests/jest.config.js",
+		"test/vitest.config.ts",
+		"test/vitest.config.js",
+		"tests/vitest.config.ts",
+		"tests/vitest.config.js",
+		"test/karma.conf.js",
+		"test/mocha.opts",
+		"tests/karma.conf.js",
+		"tests/mocha.opts",
+		"cypress.config.ts",
+		"cypress.config.js",
+		"playwright.config.ts",
+		"playwright.config.js",
+		"jest.config.ts",
+		"jest.config.js",
+		"vitest.config.ts",
+		"vitest.config.js",
+	}
+	for _, cfg := range commonTestConfigs {
+		protected[cfg] = true
+	}
 	return protected
 }
 

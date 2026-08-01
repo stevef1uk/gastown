@@ -559,9 +559,19 @@ func canReuseInstallDoltServer(townRoot string, port int) bool {
 	// must remain a preflight failure; otherwise install can mutate the target
 	// and then fail during bd init.
 	databases, err := doltserver.ListDatabases(townRoot)
-	if err != nil || len(databases) == 0 {
+	if err != nil {
 		return false
 	}
+
+	// If the port was explicitly set (not default 3307), the user intends to use
+	// this specific server. Allow reuse even for fresh installs (no databases yet).
+	// This supports test scenarios where an isolated Dolt container is pre-started.
+	explicitPort := port != doltserver.DefaultPort
+	if len(databases) == 0 {
+		return explicitPort
+	}
+
+	// For existing towns with databases, verify the server belongs to this town.
 	legitimate, err := doltserver.VerifyServerDataDir(townRoot)
 	return err == nil && legitimate
 }

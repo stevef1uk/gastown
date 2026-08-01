@@ -15,6 +15,14 @@ import (
 )
 
 func runMailCheck(cmd *cobra.Command, args []string) error {
+	// Recursion guard for --inject mode: prevent infinite gt mail check --inject chains.
+	if mailCheckInject && os.Getenv("GT_MAIL_CHECK_INJECT_RECURSION") == "1" {
+		return fmt.Errorf("gt mail check --inject recursion detected; aborting to prevent fork bomb")
+	}
+	if mailCheckInject {
+		os.Setenv("GT_MAIL_CHECK_INJECT_RECURSION", "1")
+	}
+
 	// Determine which inbox (priority: --identity flag, auto-detect)
 	address := ""
 	if mailCheckIdentity != "" {

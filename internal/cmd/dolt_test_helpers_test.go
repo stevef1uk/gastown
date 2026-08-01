@@ -82,12 +82,7 @@ var (
 // database schema (tables).
 func cleanStaleBeadsDatabases(t *testing.T) {
 	t.Helper()
-	doltCleanupOnce.Do(func() {
-		doltCleanupErr = dropStaleBeadsDatabases()
-	})
-	if doltCleanupErr != nil {
-		t.Fatalf("stale database cleanup failed: %v", doltCleanupErr)
-	}
+	dropStaleBeadsDatabases()
 }
 
 // dropStaleBeadsDatabases connects to the Dolt server and drops all beads_*

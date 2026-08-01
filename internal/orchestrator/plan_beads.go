@@ -270,6 +270,7 @@ func knownLayoutPrefix(path string) bool {
 		strings.HasPrefix(path, "backend/"),
 		strings.HasPrefix(path, "frontend/"),
 		strings.HasPrefix(path, "tests/"),
+		strings.HasPrefix(path, "test/"),
 		strings.HasPrefix(path, "migrations/"),
 		strings.HasPrefix(path, "scripts/"),
 		strings.HasPrefix(path, "docker/"):

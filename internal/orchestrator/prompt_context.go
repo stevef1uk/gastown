@@ -25,6 +25,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -286,6 +287,8 @@ func RunPreRunHook(step, townRoot, rig string, v WorkflowValidation) (string, er
 		}
 	case "ensure_test_stack_ready":
 		return EnsureTestStackReadyLog(townRoot, rig, v)
+	case "ensure_playwright_config_ready":
+		return EnsurePlaywrightConfigReady(townRoot, rig, v)
 	case "ensure_go_mod_from_spec":
 		logLine, err := EnsureGoModFromSpec(townRoot, rig, v)
 		if err != nil {
@@ -462,6 +465,170 @@ func EnsureTestStackReadyLog(townRoot, rig string, v WorkflowValidation) (string
 		return "test stack auto-fix: " + strings.Join(actions, "; "), nil
 	}
 	return "", nil
+}
+
+// EnsurePlaywrightConfigReady creates playwright.config.ts if e2e tests exist but config is missing.
+// Scans the union of required files across all delivery phases so the config is created even when
+// the e2e specs belong to a future phase (the common case while earlier phases are still active).
+//
+// The config is written to the layout root (e.g. <layout>/playwright.config.ts), because the rig's
+// qa_verify_command typically runs `npm run e2e` from the layout root — Playwright resolves the
+// config from the CWD upward, never into a child test/ directory. testDir points at the e2e dir.
+func EnsurePlaywrightConfigReady(townRoot, rig string, v WorkflowValidation) (string, error) {
+	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
+	layout := strings.Trim(filepath.ToSlash(strings.TrimSpace(v.LayoutRoot)), "/")
+	if layout == "" {
+		return "", nil
+	}
+	layoutDir := filepath.Join(rigDir, layout)
+
+	// Detect the e2e spec dir relative to the layout root (e.g. "tests" for
+	// "<layout>/tests/e2e/foo.spec.ts", "test" for "<layout>/test/e2e/...").
+	testDirRel := ""
+	for _, f := range v.UnionRequiredFiles() {
+		lower := strings.ToLower(filepath.ToSlash(strings.TrimSpace(f)))
+		if !isPlaywrightSpecPath(lower) {
+			continue
+		}
+		rel := lower
+		if strings.HasPrefix(lower, layout+"/") {
+			rel = strings.TrimPrefix(lower, layout+"/")
+		}
+		if idx := strings.Index(rel, "/e2e/"); idx >= 0 {
+			testDirRel = rel[:idx]
+		} else {
+			testDirRel = "test"
+		}
+		break
+	}
+	if testDirRel == "" {
+		return "", nil
+	}
+
+	testDir := layoutDir
+	if testDirRel != "." {
+		testDir = filepath.Join(layoutDir, testDirRel)
+	}
+
+	// Skip if a config already exists (in the layout root or the test dir, so we
+	// don't create a duplicate next to an existing config).
+	pwConfigPath := filepath.Join(layoutDir, "playwright.config.ts")
+	for _, p := range []string{
+		pwConfigPath,
+		filepath.Join(layoutDir, "playwright.config.js"),
+		filepath.Join(testDir, "playwright.config.ts"),
+		filepath.Join(testDir, "playwright.config.js"),
+	} {
+		if _, err := os.Stat(p); err == nil {
+			return "", nil // Already exists
+		}
+	}
+
+	// Determine baseURL from workflow profile or default to 8000
+	port := v.DevServerPort
+	if port <= 0 {
+		port = 8000
+	}
+
+	e2eRel := testDirRel + "/e2e"
+	if testDirRel == "." {
+		e2eRel = "e2e"
+	}
+
+	// Choose the dev-server command generically for Go, Python, and Node rigs.
+	serverCmd := DevServerCommand(layoutDir, v)
+	// Resolve '@playwright/test' from wherever it is installed: prefer the layout
+	// root (matches "run from layout root" QA), else the test dir, so the config
+	// loads even when node_modules lives in a subdir (e.g. finally's test/).
+	pwImport := playwrightImport(layoutDir, testDir, testDirRel)
+
+	pwConfig := fmt.Sprintf(`import { defineConfig, devices } from %s;
+
+export default defineConfig({
+  testDir: './%s',
+  fullyParallel: true,
+  forbidOnly: !!process.env.CI,
+  retries: process.env.CI ? 2 : 0,
+  workers: process.env.CI ? 1 : undefined,
+  reporter: 'html',
+  use: {
+    baseURL: 'http://localhost:%d',
+    trace: 'on-first-retry',
+  },
+  projects: [
+    {
+      name: 'chromium',
+      use: { ...devices['Desktop Chrome'] },
+    },
+  ],
+%s});
+`, pwImport, e2eRel, port, webServerBlock(serverCmd, port))
+
+	if err := os.WriteFile(pwConfigPath, []byte(pwConfig), 0644); err != nil {
+		return "", err
+	}
+
+	// Install test dependencies if package.json exists
+	packageJSONPath := filepath.Join(testDir, "package.json")
+	if _, err := os.Stat(packageJSONPath); err == nil {
+		cmd := exec.Command("npm", "install")
+		cmd.Dir = testDir
+		cmd.Env = append(os.Environ(), "CI=true")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			return "", fmt.Errorf("npm install in test dir failed: %v: %s", err, string(out))
+		}
+	}
+
+	return fmt.Sprintf("auto-created %s with baseURL http://localhost:%d", pwConfigPath, port), nil
+}
+
+// playwrightImport returns the module specifier for '@playwright/test' that
+// resolves from the layout root. If the package is not installed there but is
+// present in the test dir, a relative import is used so config loading works
+// even when node_modules lives in a subdir.
+func playwrightImport(layoutDir, testDir, testDirRel string) string {
+	if hasPlaywrightPackage(layoutDir) {
+		return "'@playwright/test'"
+	}
+	if hasPlaywrightPackage(testDir) && testDirRel != "." {
+		return "'./" + strings.TrimPrefix(filepath.ToSlash(testDirRel), "./") + "/node_modules/@playwright/test'"
+	}
+	return "'@playwright/test'"
+}
+
+// hasPlaywrightPackage reports whether <dir>/node_modules/@playwright/test exists.
+func hasPlaywrightPackage(dir string) bool {
+	if _, err := os.Stat(filepath.Join(dir, "node_modules", "@playwright", "test")); err == nil {
+		return true
+	}
+	return false
+}
+
+// webServerBlock renders the webServer section of a generated playwright.config.ts.
+// When no dev-server command can be derived the block is omitted and playwright
+// relies on a server the agent started externally.
+func webServerBlock(serverCmd string, port int) string {
+	if serverCmd == "" {
+		return ""
+	}
+	return fmt.Sprintf(`  webServer: {
+    command: '%s',
+    url: 'http://localhost:%d',
+    reuseExistingServer: !process.env.CI,
+    timeout: 120000,
+  },
+`, serverCmd, port)
+}
+
+// isPlaywrightSpecPath reports whether a layout-relative path is a Playwright
+// e2e spec file (foo.spec.ts/js/tsx under a test/e2e, tests/e2e, or e2e dir).
+func isPlaywrightSpecPath(path string) bool {
+	if !(strings.HasSuffix(path, ".spec.ts") || strings.HasSuffix(path, ".spec.js") ||
+		strings.HasSuffix(path, ".spec.tsx")) {
+		return false
+	}
+	return strings.HasPrefix(path, "test/e2e/") || strings.HasPrefix(path, "tests/e2e/") ||
+		strings.HasPrefix(path, "e2e/") || strings.Contains(path, "/e2e/")
 }
 
 func joinStrings(ss []string, sep string) string {

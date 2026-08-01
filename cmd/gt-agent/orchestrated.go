@@ -1803,12 +1803,10 @@ func validateImplementationBeadFileWrite(cmd, townRoot, rig, activeBead string, 
 		if scope != nil {
 			sc = *scope
 		}
-		if lastVerifyOutput != "" {
-			if reopened, rerr := orchestrator.ReopenClosedBeadForRework(townRoot, rig, written, v); rerr != nil {
-				return rerr
-			} else if reopened != "" {
-				return nil
-			}
+		if reopened, rerr := orchestrator.ReopenClosedBeadForRework(townRoot, rig, written, v); rerr != nil {
+			return rerr
+		} else if reopened != "" {
+			return nil
 		}
 		if reopened, rerr := orchestrator.EnsureOpenImplementBeadForRework(townRoot, rig, written, v); rerr != nil {
 			return rerr

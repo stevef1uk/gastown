@@ -208,6 +208,14 @@ func runHookClear(cmd *cobra.Command, args []string) error {
 }
 
 func runHook(_ *cobra.Command, args []string) error {
+	// Recursion guard: prevent infinite gt hook chains (fork bomb protection).
+	// If already running gt hook, exit silently (don't stack).
+	if os.Getenv("GT_HOOK_RECURSION") == "1" {
+		return fmt.Errorf("gt hook recursion detected; aborting to prevent fork bomb")
+	}
+	os.Setenv("GT_HOOK_RECURSION", "1")
+	defer os.Unsetenv("GT_HOOK_RECURSION")
+
 	beadID := args[0]
 
 	// Reject non-bead-shaped first args before passing to bd show, which would

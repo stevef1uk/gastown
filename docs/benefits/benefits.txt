@@ -1,0 +1,67 @@
+Top 10 Benefits of freeride Proxy + Gas Town Workflows
+=========================================================
+
+1. Intelligent Multi-Provider Model Routing
+   Automatic fallback chain across Cerebras, Groq, NVIDIA NIM, OpenRouter,
+   Gemini, and local llama-server — with role-aware selection (architect →
+   massive models, polecat → coding-optimized, QA → reasoning models).
+   No manual model switching.
+
+2. Zero-Cost by Default, Paid Only When Needed
+   Leverages free/preview tiers first (cerebras/gpt-oss-120b,
+   qwen/qwen3-coder:free, Gemini free tier) with curatedPaid fallbacks
+   only when --allow-paid is set. Typical runs cost $0.
+
+3. Multi-Agent Orchestration with Hard Quality Gates
+   Gas Town runs 7 specialized agents (architect, planner, polecat, QA,
+   refinery, witness, deacon) through FSM states with enforced gates:
+   - Design: 7-check self-review + size threshold
+   - Implementation: TDD Iron Law (test-first per bead)
+   - QA: Two-stage review (spec compliance → code quality/YAGNI)
+   - Auto-complete only when artifacts validate
+
+4. Self-Healing Execution Loops
+   Automatic rework on validation failure, session persistence across
+   restarts, model cooldowns/exclusion lists, and local GPU fallback
+   when cloud providers fail — the workflow keeps moving without
+   human intervention.
+
+5. Developer-First UX
+   - Single `gt up` boots entire town (proxy + orchestrator + agents)
+   - Natural language inter-agent comms: `gt nudge architect "redo design"`,
+     `gt mail send qa -s "review needed"`
+   - Beads issue tracker with git sync (`bd ready`, `bd close`, `bd sync`)
+   - SPEC → architecture → plan → implementation traceability
+
+6. Concurrent Projects with Pause/Resume
+   Run multiple rigs (projects) simultaneously — each with isolated
+   workflow state, agents, and model routing. Pause any workflow
+   (`gt mayor workflow pause`) and resume later without losing context.
+   Perfect for parallel feature development or interrupt-driven work.
+
+7. req-flow + rig-flow Dual Workflow Engine
+   - **req-flow**: Requirements → analysis → spec_review → kickoff →
+     design → planning → implementation → QA (for new projects)
+   - **rig-flow**: SPEC-driven architecture → planning → implementation →
+     QA (for rig-scoped work)
+   Both share prompts, reuse agents, and can nest/sequence phases.
+
+8. Fully Configurable Workflows & Agents
+   Define custom FSM states in YAML (`templates/*.yaml`), add new agent
+   roles, inject pre/post-run hooks, override validation per rig.
+   Workflows are data — not hardcoded. Extend with your own phases
+   (e.g., security_review, performance_benchmark, docs_generation).
+
+9. Prompts as Config Files (Versioned, Auditable)
+   All prompts live in `internal/orchestrator/town/prompts/*.md` — plain
+   Markdown, git-tracked, reviewable in PRs. No prompt engineering buried
+   in code. Changes = commits. Rollback = `git revert`.
+
+10. Model Selection Policy as Code
+    `models.yaml` declaratively controls:
+    - Role-based prepends (architect → massive models, polecat → coders)
+    - Tiered fallback priorities (free → paid → local → IDE)
+    - Massive-only role enforcement, size heuristics, exclusion lists
+    - Cost-aware routing (--allow-paid gate)
+    - Provider-specific configs (Cerebras, Groq, NVIDIA, Gemini, local)
+    Update one file, restart proxy — entire fleet re-routes instantly.
