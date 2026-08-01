@@ -7,6 +7,46 @@ import (
 	"strings"
 )
 
+// FailingVerifyTestPath returns the required test file that verifyOutput cites as failing
+// (e.g. vitest "FAIL personal-space/tests/unit/backend/theme.test.ts", go "--- FAIL: TestX
+// (path/foo_test.go:12)", pytest "FAILED tests/test_x.py::..."). It matches FAIL lines
+// against the profile's required test files only — no language-specific parsing, no import
+// resolution — so it is generic across rigs and test runners. Returns "" when none found.
+func FailingVerifyTestPath(output string, v WorkflowValidation) string {
+	if strings.TrimSpace(output) == "" {
+		return ""
+	}
+	for _, line := range strings.Split(output, "\n") {
+		if !strings.Contains(strings.ToUpper(line), "FAIL") {
+			continue
+		}
+		lower := strings.ToLower(line)
+		for _, req := range v.RequiredFiles {
+			norm := NormalizeBeadPathForLayout(filepath.ToSlash(strings.TrimSpace(req)), v.LayoutRoot)
+			if norm == "" || !IsTestImplementPath(norm) {
+				continue
+			}
+			if strings.Contains(lower, strings.ToLower(norm)) {
+				return norm
+			}
+		}
+	}
+	return ""
+}
+
+// ImplementWriteScopeVerifyHint returns guidance pointing the agent at the failing test file
+// so it can discover which module needs wiring (e.g. the app/server entry that must mount the
+// active router). Generic: it names the test from verifyOutput, never hardcodes a path.
+func ImplementWriteScopeVerifyHint(verifyOutput string, v WorkflowValidation) string {
+	test := FailingVerifyTestPath(verifyOutput, v)
+	if test == "" {
+		return ""
+	}
+	return fmt.Sprintf(
+		"the last Verify failed in %q — read that test to see which module it imports and needs wired (e.g. the server/app entry that must mount the active router). Then edit THAT file; if its implement bead is closed in an earlier phase, writing to it auto-rewinds the phase so the bead reopens",
+		test)
+}
+
 // ValidateImplementWritePath checks whether relPath may be written during implementation.
 // fullReplace true simulates heredoc/WRITE (rejects incremental-edit files); false allows partial edits (EDIT/sed).
 // verifyOutput is recent go test/build stderr (optional); enables closed-dep fixes for nil-slice List failures.
@@ -212,6 +252,9 @@ func validateImplementWriteScope(townRoot, rig, activeBead, written string, v Wo
 				return nil
 			}
 		}
+	}
+	if hint := ImplementWriteScopeVerifyHint(verifyOutput, v); hint != "" {
+		return fmt.Errorf("%w — %s", NewImplementWriteScopeError(townRoot, rig, allowedID, allowedPath, written, v), hint)
 	}
 	return NewImplementWriteScopeError(townRoot, rig, allowedID, allowedPath, written, v)
 }
