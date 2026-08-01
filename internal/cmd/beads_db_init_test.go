@@ -2,8 +2,6 @@
 
 // Package cmd contains integration tests for beads db initialization after clone.
 //
-// Run with: go test -tags=integration ./internal/cmd -run TestBeadsDbInitAfterClone -v
-//
 // Bug: GitHub Issue #72
 // When a repo with tracked .beads/ is added as a rig, the database doesn't exist
 // (DB files are gitignored) and bd operations fail because no one runs `bd init`.
@@ -22,7 +20,6 @@ import (
 
 	"github.com/steveyegge/gastown/internal/beads"
 	"github.com/steveyegge/gastown/internal/config"
-	"github.com/steveyegge/gastown/internal/testutil"
 )
 
 // testCounter generates unique prefixes for each subtest to isolate
@@ -39,9 +36,10 @@ func extractJSON(output []byte) []byte {
 	return output[idx:]
 }
 
-// setupTestTown creates a minimal town structure for testing gt rig add --adopt.
+// setupTestTownForBeadsInit creates a minimal town structure for testing gt rig add --adopt.
 // Uses the shared Dolt server (managed by requireDoltServer) with unique prefixes.
-func setupTestTown(t *testing.T) (townRoot, rigPath, gtBinary string) {
+// Named distinctly from rig_integration_test.go's setupTestTown, which returns only townRoot.
+func setupTestTownForBeadsInit(t *testing.T) (townRoot, rigPath, gtBinary string) {
 	t.Helper()
 
 	if _, err := exec.LookPath("bd"); err != nil {
@@ -65,7 +63,7 @@ func setupTestTown(t *testing.T) (townRoot, rigPath, gtBinary string) {
 	configureTestGitIdentity(t, tmpDir)
 
 	townRoot = filepath.Join(tmpDir, "test-town")
-	rigPath = filepath.Join(townRoot, "testrig", "mayor", "rig")
+	rigPath = filepath.Join(townRoot, "seedrig", "mayor", "rig")
 
 	// --- mayor/ ---
 	mayorDir := filepath.Join(townRoot, "mayor")
@@ -81,7 +79,7 @@ func setupTestTown(t *testing.T) (townRoot, rigPath, gtBinary string) {
 	rigsConfig := &config.RigsConfig{
 		Version: config.CurrentRigsVersion,
 		Rigs: map[string]config.RigEntry{
-			"testrig": {
+			"seedrig": {
 				GitURL: "file:///dev/null",
 				BeadsConfig: &config.BeadsConfig{
 					Prefix: rigPrefix,
@@ -105,28 +103,13 @@ func setupTestTown(t *testing.T) (townRoot, rigPath, gtBinary string) {
 	}
 	routes := []beads.Route{
 		{Prefix: hqPrefix + "-", Path: "."},
-		{Prefix: rigPrefix + "-", Path: "testrig/mayor/rig"},
+		{Prefix: rigPrefix + "-", Path: "seedrig/mayor/rig"},
 		{Prefix: "hq-cv-", Path: "."},
 	}
 	if err := beads.WriteRoutes(townBeadsDir, routes); err != nil {
 		t.Fatalf("write routes: %v", err)
 	}
 	initBeadsDBForServer(t, townRoot, hqPrefix)
-
-	// --- testrig directory ---
-	if err := os.MkdirAll(rigPath, 0755); err != nil {
-		t.Fatalf("mkdir rigPath: %v", err)
-	}
-	initBeadsDBForServer(t, rigPath, rigPrefix)
-
-	// Redirect: testrig/.beads/ -> mayor/rig/.beads
-	rigBeadsRedirect := filepath.Join(townRoot, "testrig", ".beads")
-	if err := os.MkdirAll(rigBeadsRedirect, 0755); err != nil {
-		t.Fatalf("mkdir rig .beads redirect: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(rigBeadsRedirect, "redirect"), []byte("mayor/rig/.beads"), 0644); err != nil {
-		t.Fatalf("write rig redirect: %v", err)
-	}
 
 	// Drop test databases on cleanup
 	t.Cleanup(func() {
@@ -142,7 +125,7 @@ func setupTestTown(t *testing.T) (townRoot, rigPath, gtBinary string) {
 		defer db.Close()
 		for _, prefix := range []string{hqPrefix, rigPrefix} {
 			dbName := "beads_" + prefix
-			_ = db.Exec("DROP DATABASE IF EXISTS `" + dbName + "`")
+			_, _ = db.Exec("DROP DATABASE IF EXISTS `" + dbName + "`")
 		}
 	})
 
@@ -152,7 +135,7 @@ func setupTestTown(t *testing.T) (townRoot, rigPath, gtBinary string) {
 // TestBeadsDbInitAfterClone tests that when a tracked beads repo is added as a rig,
 // the beads database is properly initialized even though database files don't exist.
 func TestBeadsDbInitAfterClone(t *testing.T) {
-	townRoot, rigPath, gtBinary := setupTestTown(t)
+	townRoot, _, gtBinary := setupTestTownForBeadsInit(t)
 
 	t.Run("TrackedRepoWithExistingPrefix", func(t *testing.T) {
 		cleanStaleBeadsDatabases(t)
@@ -361,53 +344,86 @@ func TestBeadsDbInitAfterClone(t *testing.T) {
 	})
 }
 
-// initBeadsDBForServer initializes a beads DB that can operate against the
-// shared Dolt test server. Uses local init (bd init --prefix --server-port)
-// which reliably creates the schema and records the ephemeral port in
-// metadata.json so subsequent bd commands reach the test server.
-func initBeadsDBForServer(t *testing.T, dir, prefix string) {
+// createTrackedBeadsRepoWithIssues initializes a git repo at dir with a tracked
+// .beads/ directory carrying the given prefix in metadata.json and count issues
+// in issues.jsonl. Simulates a cloned beads project whose database prefix is
+// discoverable via metadata.json dolt_database (dolt/ is gitignored, metadata.json
+// is tracked, so it survives clone).
+func createTrackedBeadsRepoWithIssues(t *testing.T, dir, prefix string, count int) {
 	t.Helper()
-
-	args := []string{"init", "--prefix", prefix}
-	// Forward GT_DOLT_PORT so bd connects to the ephemeral test server
-	// instead of defaulting to port 3307.
-	// bd v1.0.0+ defaults to embedded mode; --server is required to use an
-	// external server (v0.57.0 defaulted to server mode and ignored --server).
-	if p := os.Getenv("GT_DOLT_PORT"); p != "" {
-		args = append(args, "--server", "--server-port", p)
+	initTrackedBeadsRepo(t, dir)
+	beadsDir := filepath.Join(dir, ".beads")
+	if err := os.MkdirAll(beadsDir, 0755); err != nil {
+		t.Fatalf("mkdir .beads: %v", err)
 	}
-	cmd := exec.Command("bd", args...)
-	cmd.Dir = dir
-	out, err := cmd.CombinedOutput()
-	t.Logf("bd init --prefix %s in %s: exit=%v\n%s", prefix, dir, err, out)
-	if err != nil {
-		t.Fatalf("bd init failed in %s: %v\n%s", dir, err, out)
+	writeJSONFile(t, filepath.Join(beadsDir, "metadata.json"), map[string]interface{}{
+		"backend":       "dolt",
+		"dolt_mode":     "server",
+		"dolt_database": "beads_" + prefix,
+	})
+	if err := os.WriteFile(filepath.Join(beadsDir, "config.yaml"), []byte("prefix: "+prefix+"\nissue-prefix: "+prefix+"\n"), 0644); err != nil {
+		t.Fatalf("write config.yaml: %v", err)
 	}
-
-	// Create empty issues.jsonl to prevent bd auto-export from corrupting
-	// routes.jsonl (same as initBeadsDBWithPrefix does).
-	issuesPath := filepath.Join(dir, ".beads", "issues.jsonl")
-	if err := os.WriteFile(issuesPath, []byte(""), 0644); err != nil {
-		t.Fatalf("create issues.jsonl in %s: %v", dir, err)
+	var sb strings.Builder
+	for i := 1; i <= count; i++ {
+		fmt.Fprintf(&sb, "{\"id\":\"%s-%d\",\"title\":\"issue %d\",\"status\":\"open\"}\n", prefix, i, i)
 	}
+	if err := os.WriteFile(filepath.Join(beadsDir, "issues.jsonl"), []byte(sb.String()), 0644); err != nil {
+		t.Fatalf("write issues.jsonl: %v", err)
+	}
+	commitTrackedBeadsRepo(t, dir)
+}
 
-	if err := beads.EnsureCustomTypes(filepath.Join(dir, ".beads")); err != nil {
-		t.Fatalf("ensure custom types in %s: %v", dir, err)
+// createTrackedBeadsRepoWithNoIssues initializes a git repo at dir with a tracked
+// .beads/ directory but no issues and no detectable dolt_database prefix, so the
+// adopt flow must use --prefix or derive a prefix from the rig name.
+func createTrackedBeadsRepoWithNoIssues(t *testing.T, dir, prefix string) {
+	t.Helper()
+	initTrackedBeadsRepo(t, dir)
+	beadsDir := filepath.Join(dir, ".beads")
+	if err := os.MkdirAll(beadsDir, 0755); err != nil {
+		t.Fatalf("mkdir .beads: %v", err)
+	}
+	writeJSONFile(t, filepath.Join(beadsDir, "metadata.json"), map[string]interface{}{
+		"backend":   "dolt",
+		"dolt_mode": "server",
+	})
+	if err := os.WriteFile(filepath.Join(beadsDir, "config.yaml"), []byte(""), 0644); err != nil {
+		t.Fatalf("write config.yaml: %v", err)
+	}
+	commitTrackedBeadsRepo(t, dir)
+}
+
+// initTrackedBeadsRepo runs `git init` and configures a test identity in dir.
+func initTrackedBeadsRepo(t *testing.T, dir string) {
+	t.Helper()
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatalf("mkdir repo %s: %v", dir, err)
+	}
+	for _, args := range [][]string{
+		{"git", "init", "--initial-branch=main"},
+		{"git", "config", "user.email", "test@test.com"},
+		{"git", "config", "user.name", "Test User"},
+	} {
+		cmd := exec.Command(args[0], args[1:]...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
 	}
 }
 
-// writeJSONFile marshals v as indented JSON and writes it to path,
-// creating parent directories as needed.
-func writeJSONFile(t *testing.T, path string, v interface{}) {
+// commitTrackedBeadsRepo stages and commits everything in dir.
+func commitTrackedBeadsRepo(t *testing.T, dir string) {
 	t.Helper()
-	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
-		t.Fatalf("mkdir for %s: %v", path, err)
-	}
-	data, err := json.MarshalIndent(v, "", "  ")
-	if err != nil {
-		t.Fatalf("marshal JSON for %s: %v", path, err)
-	}
-	if err := os.WriteFile(path, data, 0644); err != nil {
-		t.Fatalf("write %s: %v", path, err)
+	for _, args := range [][]string{
+		{"git", "add", "."},
+		{"git", "commit", "-m", "Initial commit"},
+	} {
+		cmd := exec.Command(args[0], args[1:]...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
 	}
 }
