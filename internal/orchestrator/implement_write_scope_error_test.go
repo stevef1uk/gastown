@@ -130,3 +130,53 @@ func TestImplementWriteScopeVerifyHint_emptyWhenNoFail(t *testing.T) {
 		t.Fatalf("got %q, want empty", hint)
 	}
 }
+
+func TestRouterWiringHintFromVerifyOutput_router404(t *testing.T) {
+	t.Parallel()
+	v := DefaultWorkflowValidation()
+	v.LayoutRoot = "personal-space"
+	v.RequiredFiles = []string{
+		"personal-space/src/server/routes/theme.ts",
+		"personal-space/tests/unit/backend/theme.test.ts",
+	}
+	output := " FAIL  personal-space/tests/unit/backend/theme.test.ts > Theme API\nAssertionError: expected 404 to be 200"
+	hint := RouterWiringHintFromVerifyOutput(output, "personal-space/src/server/routes/theme.ts", v)
+	if hint == "" {
+		t.Fatal("expected hint")
+	}
+	for _, want := range []string{"theme.ts", "theme.test.ts", "auto-rewinds"} {
+		if !strings.Contains(hint, want) {
+			t.Fatalf("missing %q in hint %q", want, hint)
+		}
+	}
+}
+
+func TestRouterWiringHintFromVerifyOutput_nonRouter(t *testing.T) {
+	t.Parallel()
+	v := DefaultWorkflowValidation()
+	v.LayoutRoot = "personal-space"
+	v.RequiredFiles = []string{"personal-space/src/server/app.ts", "personal-space/tests/unit/backend/theme.test.ts"}
+	output := " FAIL  personal-space/tests/unit/backend/theme.test.ts > Theme API\nAssertionError: expected 404 to be 200"
+	hint := RouterWiringHintFromVerifyOutput(output, "personal-space/src/server/app.ts", v)
+	if hint != "" {
+		t.Fatalf("got %q, want empty for non-router", hint)
+	}
+}
+
+func TestRouterWiringHintFromVerifyOutput_no404(t *testing.T) {
+	t.Parallel()
+	v := DefaultWorkflowValidation()
+	v.LayoutRoot = "personal-space"
+	v.RequiredFiles = []string{
+		"personal-space/src/server/routes/theme.ts",
+		"personal-space/tests/unit/backend/theme.test.ts",
+	}
+	hint := RouterWiringHintFromVerifyOutput("ok (2 tests)", "personal-space/src/server/routes/theme.ts", v)
+	if hint != "" {
+		t.Fatalf("got %q, want empty when no 404", hint)
+	}
+	hint = RouterWiringHintFromVerifyOutput("PASS all tests", "personal-space/src/server/routes/theme.ts", v)
+	if hint != "" {
+		t.Fatalf("got %q, want empty when no 404", hint)
+	}
+}

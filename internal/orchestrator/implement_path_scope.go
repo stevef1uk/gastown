@@ -34,9 +34,45 @@ func FailingVerifyTestPath(output string, v WorkflowValidation) string {
 	return ""
 }
 
-// ImplementWriteScopeVerifyHint returns guidance pointing the agent at the failing test file
-// so it can discover which module needs wiring (e.g. the app/server entry that must mount the
-// active router). Generic: it names the test from verifyOutput, never hardcodes a path.
+// RouterWiringHintFromVerifyOutput inspects verifyOutput for a 404 on a route
+// that the active bead implements (router/handler file). If found and the
+// failing test cites an app/server entry, returns guidance to edit that entry
+// (which auto-rewinds if its bead is closed). Fully generic: matches required
+// test files and 404 patterns; no rig-specific paths or import resolution.
+func RouterWiringHintFromVerifyOutput(output string, activeBeadPath string, v WorkflowValidation) string {
+	if strings.TrimSpace(output) == "" {
+		return ""
+	}
+	lower := strings.ToLower(output)
+	if !strings.Contains(lower, "404") && !strings.Contains(lower, "not found") {
+		return ""
+	}
+	// Active bead must look like a router/handler (routes/... or handlers/...)
+	activeLower := strings.ToLower(activeBeadPath)
+	isRouter := strings.Contains(activeLower, "/routes/") ||
+		strings.Contains(activeLower, "/handlers/") ||
+		strings.HasSuffix(activeLower, "_router.go") ||
+		strings.HasSuffix(activeLower, "_router.ts") ||
+		strings.HasSuffix(activeLower, "_router.js") ||
+		strings.HasSuffix(activeLower, "/router.go") ||
+		strings.HasSuffix(activeLower, "/router.ts") ||
+		strings.HasSuffix(activeLower, "/router.js")
+	if !isRouter {
+		return ""
+	}
+	// Find the failing test file from required_files (matches FAIL lines)
+	testPath := FailingVerifyTestPath(output, v)
+	if testPath == "" {
+		return ""
+	}
+	return fmt.Sprintf(
+		"the last Verify 404s on a route from your active bead (%s). Read the failing test %q — it imports the app/server entry that must mount your router. Edit THAT file; if its implement bead is closed in an earlier phase, writing to it auto-rewinds the phase so the bead reopens.",
+		activeBeadPath, testPath)
+}
+
+// ImplementWriteScopeVerifyHint returns guidance pointing the agent at the failing
+// test file when a write is rejected because the path has no implement bead.
+// Generic: names the test from verifyOutput, never hardcodes a path.
 func ImplementWriteScopeVerifyHint(verifyOutput string, v WorkflowValidation) string {
 	test := FailingVerifyTestPath(verifyOutput, v)
 	if test == "" {

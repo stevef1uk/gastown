@@ -214,6 +214,11 @@ func (r *stateRunner) implementationPrematureSuccessNudge(openImpl int) string {
 		b.WriteString(h)
 		b.WriteString("\n")
 	}
+	if h := orchestrator.RouterWiringHintFromVerifyOutput(r.track.lastVerifyOutput, r.track.activeBeadPath, r.v); h != "" {
+		b.WriteString("\n")
+		b.WriteString(h)
+		b.WriteString("\n")
+	}
 	return b.String()
 }
 
