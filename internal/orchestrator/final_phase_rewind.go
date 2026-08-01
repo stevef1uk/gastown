@@ -6,6 +6,61 @@ import (
 	"strings"
 )
 
+// RewindToPhaseForClosedFile returns the rig to the delivery phase that owns the given closed
+// implement file so its bead can be reopened and the file repaired. Beads can only be opened in
+// the current phase: an earlier-phase bead cannot be reopened while a later phase is active, so
+// the workflow must return to the owning phase instead of dead-ending on the closed-bead write
+// guard. rewound_from_phase_id is set so phase advancement jumps back to the original phase once
+// the repair phase completes. Returns "" when the file is not owned by an earlier (completed)
+// phase or has an open bead.
+func RewindToPhaseForClosedFile(townRoot, rig, filePath string, v WorkflowValidation) (string, error) {
+	if townRoot == "" || rig == "" {
+		return "", nil
+	}
+	if !v.HasPhasedDelivery() {
+		return "", nil
+	}
+	filePath = NormalizePlannerBeadPath(filePath, v.LayoutRoot, rig)
+	if filePath == "" {
+		return "", nil
+	}
+	idx := v.FindDeliveryPhaseForFile(filePath)
+	activeIdx := v.ActivePhaseIndex()
+	if idx < 0 || activeIdx < 0 || idx >= activeIdx {
+		return "", nil // not owned by an earlier phase
+	}
+	closedOnly, err := ImplementPathHasOnlyClosedBeads(townRoot, rig, filePath, v)
+	if err != nil || !closedOnly {
+		return "", err
+	}
+	targetPhase := strings.TrimSpace(v.DeliveryPhases[idx].ID)
+	originalPhase := v.ActivePhaseID()
+	if targetPhase == "" || originalPhase == "" || originalPhase == targetPhase {
+		return "", nil
+	}
+	_ = SetRigRewoundFromPhase(townRoot, rig, originalPhase)
+
+	if err := SetRigActivePhase(townRoot, rig, targetPhase); err != nil {
+		return "", fmt.Errorf("closed file %s needs repair but could not rewind active phase to %s: %w", filePath, targetPhase, err)
+	}
+
+	reloaded, _, err := LoadRigWorkflowProfileFile(townRoot, rig)
+	if err != nil {
+		return "", fmt.Errorf("rewound active phase to %s for %s but failed to reload profile: %w", targetPhase, filePath, err)
+	}
+	reopened, err := EnsurePlanningImplementBeads(townRoot, rig, reloaded.ForActivePhase())
+	if err != nil {
+		return "", fmt.Errorf("rewound active phase to %s for %s but failed to reopen implement beads: %w", targetPhase, filePath, err)
+	}
+	_ = commitDoltWorkingSet(townRoot, rig) // best-effort commit of bead state changes
+
+	logLine := fmt.Sprintf("rewound active phase %s → %s to repair closed implement file %s", originalPhase, targetPhase, filePath)
+	if len(reopened) > 0 {
+		logLine += " (reopened beads: " + strings.Join(reopened, ", ") + ")"
+	}
+	return logLine, nil
+}
+
 // MaybeRewindToProblemPhaseForFinalPhase runs full-project artifact validation when the active
 // delivery phase is the final one. If any required file from an earlier phase is missing or
 // stubbed, it rewinds active_phase_id to the earliest phase containing issues, reopens or creates

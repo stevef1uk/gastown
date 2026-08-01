@@ -34,6 +34,17 @@ func DetectTestComposeIssues(mayorRigDir string) TestComposeReport {
 	// Playwright-specific checks.
 	if strings.Contains(pkg, "@playwright/test") || strings.Contains(compose, "playwright") {
 		if strings.Contains(compose, "mcr.microsoft.com/playwright") {
+			// The official Playwright image runs as root by default, so every file it writes
+			// into a bind mount (playwright-report/, test-results/, node_modules) is owned by
+			// root and cannot be removed from the host. Run it as the host user instead.
+			if !strings.Contains(compose, "user:") {
+				report.Issues = append(report.Issues,
+					"test compose uses the official Playwright image but does not set `user:`. "+
+						"The image runs as root, so playwright-report/ and test-results/ written into "+
+						"bind mounts are root-owned and cannot be cleaned by the host. Set "+
+						"`user: \"${DOCKER_UID:-1000}:${DOCKER_GID:-1000}\"` on the playwright service "+
+						"(run with DOCKER_UID=$(id -u) DOCKER_GID=$(id -g)).")
+			}
 			// Using the official Playwright image with a global `npx playwright` is a common
 			// source of version skew: the image may not have the same version as the
 			// @playwright/test dependency in package.json.

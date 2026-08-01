@@ -1803,6 +1803,19 @@ func validateImplementationBeadFileWrite(cmd, townRoot, rig, activeBead string, 
 		if scope != nil {
 			sc = *scope
 		}
+		// Beads can only be opened in the current phase: an earlier-phase file whose beads are
+		// all closed cannot have its bead reopened while a later phase is active. Return the rig
+		// to the owning phase so the bead reopens and the agent can repair the file; phase
+		// advancement jumps back to the original phase afterwards.
+		if rewindLog, rerr := orchestrator.RewindToPhaseForClosedFile(townRoot, rig, written, v); rerr != nil {
+			return rerr
+		} else if rewindLog != "" {
+			orchestratedPrintf("[gt-agent] %s\n", rewindLog)
+			if allowedPath != "" {
+				return fmt.Errorf("%s. Edit %s now (its bead is open), run the phase Verify, then `bd close <id>`; the workflow advances back automatically (or edit only %s for %s)", rewindLog, written, allowedPath, allowedID)
+			}
+			return fmt.Errorf("%s. Edit %s now (its bead is open), run the phase Verify, then `bd close <id>`; the workflow advances back automatically (active bead %s)", rewindLog, written, allowedID)
+		}
 		if reopened, rerr := orchestrator.ReopenClosedBeadForRework(townRoot, rig, written, v); rerr != nil {
 			return rerr
 		} else if reopened != "" {

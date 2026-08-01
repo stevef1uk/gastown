@@ -3,6 +3,7 @@ package orchestrator
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -103,7 +104,7 @@ func TestPruneStaleLayoutFiles(t *testing.T) {
 	setListImplementBeadsByStatusHook(t, dir, rig, func(_, _ string, _ WorkflowValidation, _ string) ([]PlanBead, error) {
 		return nil, nil
 	})
-	removed, err := PruneStaleLayoutFiles(dir, rig, v)
+	removed, _, err := PruneStaleLayoutFiles(dir, rig, v)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -140,7 +141,7 @@ func TestPruneStaleLayoutFiles_keepsCorrelatedTest(t *testing.T) {
 	setListImplementBeadsByStatusHook(t, dir, rig, func(_, _ string, _ WorkflowValidation, _ string) ([]PlanBead, error) {
 		return nil, nil
 	})
-	removed, err := PruneStaleLayoutFiles(dir, rig, v)
+	removed, _, err := PruneStaleLayoutFiles(dir, rig, v)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -181,7 +182,7 @@ func TestPruneStaleLayoutFiles_removesFlatDuplicateWhenNestedRequired(t *testing
 			"linkshelf/internal/api/handlers_test.go",
 		},
 	}
-	removed, err := PruneStaleLayoutFiles(dir, rig, v)
+	removed, _, err := PruneStaleLayoutFiles(dir, rig, v)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -219,7 +220,7 @@ func TestPruneStaleLayoutFiles_keepsFlatMainWhenBeadsUseCmdPath(t *testing.T) {
 	setListImplementBeadsByStatusHook(t, dir, rig, func(_, _ string, _ WorkflowValidation, _ string) ([]PlanBead, error) {
 		return nil, nil
 	})
-	removed, err := PruneStaleLayoutFiles(dir, rig, v)
+	removed, _, err := PruneStaleLayoutFiles(dir, rig, v)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -251,7 +252,7 @@ func TestPruneStaleLayoutFiles_skipsWhenImplementBeadsActive(t *testing.T) {
 		}
 		return nil, nil
 	})
-	removed, err := PruneStaleLayoutFiles(dir, rig, v)
+	removed, _, err := PruneStaleLayoutFiles(dir, rig, v)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -296,7 +297,7 @@ func TestPruneStaleLayoutFiles_removesStalePyFile(t *testing.T) {
 	setListImplementBeadsByStatusHook(t, dir, rig, func(_, _ string, _ WorkflowValidation, _ string) ([]PlanBead, error) {
 		return nil, nil
 	})
-	removed, err := PruneStaleLayoutFiles(dir, rig, v)
+	removed, _, err := PruneStaleLayoutFiles(dir, rig, v)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -337,11 +338,99 @@ func TestPruneStaleLayoutFiles_keepsNonManagedFiles(t *testing.T) {
 			"myapp/main.py",
 		},
 	}
-	removed, err := PruneStaleLayoutFiles(dir, rig, v)
+	removed, _, err := PruneStaleLayoutFiles(dir, rig, v)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(removed) != 0 {
 		t.Fatalf("expected no removals for non-managed files, removed = %v", removed)
+	}
+}
+
+// TestPruneStaleLayoutFiles_permissionDeniedWarnsAndContinues verifies that a file that cannot be
+// removed (e.g. root-owned artifact written by a docker test container) is reported as a warning
+// instead of aborting the walk and failing the workflow.
+func TestPruneStaleLayoutFiles_permissionDeniedWarnsAndContinues(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("running as root; permission-denied cannot be simulated")
+	}
+	dir := t.TempDir()
+	rig := "rig"
+	layout := filepath.Join(dir, rig, "mayor", "rig", "linkshelf", "internal", "store")
+	if err := os.MkdirAll(layout, 0755); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"store.go", "sqlite.go"} {
+		if err := os.WriteFile(filepath.Join(layout, name), []byte("package store\n"), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Read-only parent directory makes removing sqlite.go fail with EACCES.
+	if err := os.Chmod(layout, 0555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(layout, 0755) })
+
+	v := WorkflowValidation{
+		LayoutRoot: "linkshelf",
+		RequiredFiles: []string{
+			"linkshelf/internal/store/store.go",
+		},
+	}
+	setListImplementBeadsByStatusHook(t, dir, rig, func(_, _ string, _ WorkflowValidation, _ string) ([]PlanBead, error) {
+		return nil, nil
+	})
+	removed, warnings, err := PruneStaleLayoutFiles(dir, rig, v)
+	if err != nil {
+		t.Fatalf("permission-denied must not abort prune: %v", err)
+	}
+	if len(removed) != 0 {
+		t.Fatalf("expected nothing removed, got: %v", removed)
+	}
+	if len(warnings) != 1 || !strings.Contains(warnings[0], "sqlite.go") {
+		t.Fatalf("expected permission warning for sqlite.go, got: %v", warnings)
+	}
+	if _, err := os.Stat(filepath.Join(layout, "sqlite.go")); err != nil {
+		t.Fatalf("sqlite.go should still exist: %v", err)
+	}
+}
+
+// TestPruneStaleLayoutFilesLog_reportsWarnings verifies the log surfaces non-fatal prune warnings.
+func TestPruneStaleLayoutFilesLog_reportsWarnings(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("running as root; permission-denied cannot be simulated")
+	}
+	dir := t.TempDir()
+	rig := "rig"
+	layout := filepath.Join(dir, rig, "mayor", "rig", "linkshelf", "internal", "store")
+	if err := os.MkdirAll(layout, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(layout, "store.go"), []byte("package store\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(layout, "sqlite.go"), []byte("package store\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(layout, 0555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(layout, 0755) })
+
+	v := WorkflowValidation{
+		LayoutRoot: "linkshelf",
+		RequiredFiles: []string{
+			"linkshelf/internal/store/store.go",
+		},
+	}
+	setListImplementBeadsByStatusHook(t, dir, rig, func(_, _ string, _ WorkflowValidation, _ string) ([]PlanBead, error) {
+		return nil, nil
+	})
+	logLine, err := PruneStaleLayoutFilesLog(dir, rig, v)
+	if err != nil {
+		t.Fatalf("log must not fail on permission-denied: %v", err)
+	}
+	if !strings.Contains(logLine, "warning: could not remove") || !strings.Contains(logLine, "sqlite.go") {
+		t.Fatalf("expected warning in log, got: %q", logLine)
 	}
 }

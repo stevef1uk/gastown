@@ -215,22 +215,25 @@ func layoutGoBasenamesProtectedFromPrune(v WorkflowValidation) map[string]bool {
 // PruneStaleLayoutFiles removes managed source files under layout_root that are not listed
 // in required_files (full union when delivery phases are configured). Files from previous
 // iterations that are no longer needed are removed even while implement beads are open.
-func PruneStaleLayoutFiles(townRoot, rig string, v WorkflowValidation) ([]string, error) {
+// PruneStaleLayoutFiles removes managed source files under layout_root that are not listed
+// in v.RequiredFiles. Files that cannot be removed (e.g. root-owned artifacts written by a
+// docker test container) are collected as warnings and skipped instead of aborting the whole
+// walk, so the workflow continues and the next prune can finish them once ownership is fixed.
+func PruneStaleLayoutFiles(townRoot, rig string, v WorkflowValidation) (removed []string, warnings []string, err error) {
 	layout := strings.Trim(filepath.ToSlash(strings.TrimSpace(v.LayoutRoot)), "/")
 	if layout == "" || len(v.RequiredFiles) == 0 {
-		return nil, nil
+		return nil, nil, nil
 	}
 	required := layoutRelPathsProtectedFromPrune(v)
 	if len(required) == 0 {
-		return nil, nil
+		return nil, nil, nil
 	}
 	root := filepath.Join(townRoot, rig, "mayor", "rig", layout)
 	basenameGo := layoutGoBasenamesProtectedFromPrune(v)
 	if RequiresExactImplementPaths(v) {
 		basenameGo = nil
 	}
-	var removed []string
-	err := filepath.Walk(root, func(path string, info os.FileInfo, walkErr error) error {
+	err = filepath.Walk(root, func(path string, info os.FileInfo, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}
@@ -254,22 +257,27 @@ func PruneStaleLayoutFiles(townRoot, rig string, v WorkflowValidation) ([]string
 		if strings.HasSuffix(rel, ".go") && basenameGo[filepath.Base(rel)] {
 			return nil
 		}
-		if err := os.Remove(path); err != nil {
-			return err
+		if rmErr := os.Remove(path); rmErr != nil {
+			warnings = append(warnings, filepath.ToSlash(filepath.Join(layout, rel))+": "+rmErr.Error())
+			return nil
 		}
 		removed = append(removed, filepath.ToSlash(filepath.Join(layout, rel)))
 		return nil
 	})
-	return removed, err
+	return removed, warnings, err
 }
 
 func PruneStaleLayoutFilesLog(townRoot, rig string, v WorkflowValidation) (string, error) {
-	removed, err := PruneStaleLayoutFiles(townRoot, rig, v)
+	removed, warnings, err := PruneStaleLayoutFiles(townRoot, rig, v)
 	if err != nil {
 		return "", err
 	}
-	if len(removed) == 0 {
-		return "", nil
+	var parts []string
+	if len(removed) > 0 {
+		parts = append(parts, "removed stale files: "+joinStrings(removed, ", "))
 	}
-	return fmt.Sprintf("removed stale files: %s", joinStrings(removed, ", ")), nil
+	if len(warnings) > 0 {
+		parts = append(parts, "warning: could not remove stale files (likely root-owned by a docker test container): "+joinStrings(warnings, "; "))
+	}
+	return strings.Join(parts, "; "), nil
 }
