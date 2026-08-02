@@ -394,6 +394,13 @@ if ! (cd "$GT_ROOT" && gt rig add "$RIG" "$RIG_URL"); then
   exit 1
 fi
 
+echo "=== gt rig spec-index $RIG --force ==="
+if ! (cd "$GT_ROOT" && gt rig spec-index "$RIG" --force); then
+  echo "FATAL: gt rig spec-index failed for $RIG" >&2
+  exit 1
+fi
+
+
 clean_rig_pipeline_artifacts "$RIG"
 finalize_rig_planning_state "$RIG"
 drain_hq_mail
