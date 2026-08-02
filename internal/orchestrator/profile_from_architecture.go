@@ -93,36 +93,24 @@ func extractSpecLayoutPaths(mayorRigDir string) ([]string, bool) {
 	}
 	text := string(data)
 
-	var paths []string
-	archPaths := extractArchPaths(text, "")
-	archDebug("extractArchPaths from SPEC: %v", archPaths)
 	treePaths := parseSpecLayoutTree(text)
 	archDebug("parseSpecLayoutTree from SPEC: %v", treePaths)
-	// The layout tree is authoritative for paths it lists; prose backtick refs may
-	// use bare paths (handler/hello.go) that must not contradict the tree's nested
-	// ones (helloapi/handler/hello.go). Drop any prose path whose basename the tree
-	// already places at a different location.
-	treeByBase := map[string]string{}
-	for _, p := range treePaths {
-		treeByBase[filepath.Base(p)] = p
+
+	// The layout tree is the authoritative source of required files.
+	// Prose backtick refs are documentation only — they often mention files
+	// negatively ("no package.json") or with bare paths that contradict the tree.
+	// If the tree exists, it defines the complete required set.
+	var paths []string
+	if len(treePaths) > 0 {
+		paths = treePaths
+	} else {
+		// Fallback: no parseable tree — use prose backtick refs as last resort.
+		archPaths := extractArchPaths(text, "")
+		archDebug("extractArchPaths from SPEC (fallback): %v", archPaths)
+		paths = archPaths
 	}
-	seen := map[string]bool{}
-	for _, p := range treePaths {
-		seen[p] = true
-		paths = append(paths, p)
-	}
-	for _, p := range archPaths {
-		p = filepath.ToSlash(strings.TrimSpace(p))
-		if p == "" || seen[p] {
-			continue
-		}
-		if tp, ok := treeByBase[filepath.Base(p)]; ok && tp != p {
-			continue // tree wins on basename collision
-		}
-		seen[p] = true
-		paths = append(paths, p)
-	}
-	archDebug("extractSpecLayoutPaths combined: %v", paths)
+	paths = dedupeStrings(paths)
+	archDebug("extractSpecLayoutPaths result: %v", paths)
 
 	if len(paths) == 0 {
 		archDebug("no paths found in SPEC.md")
