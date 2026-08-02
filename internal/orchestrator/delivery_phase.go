@@ -721,7 +721,47 @@ func pairPhaseTests(v WorkflowValidation) WorkflowValidation {
 	if len(testToSourcePhase) == 0 {
 		return v
 	}
-	// Remove tests from phases where their source isn't present
+	// Remove tests from phases where their source isn't present, placing each
+	// moved test in the phase that contains its source file. A test is never
+	// moved away from a phase whose verify command actually runs it (e.g.
+	// "pytest test_main.py" in the implementation phase) — the run and the
+	// test must stay together or the phase can never be verified.
+	runsTestInPhase := func(idx int, test string) bool {
+		cmd := strings.ToLower(strings.TrimSpace(v.DeliveryPhases[idx].QAVerifyCommand))
+		return cmd != "" && strings.Contains(cmd, strings.ToLower(filepath.Base(test)))
+	}
+	placedTests := make(map[string]bool)
+	for test, srcPhase := range testToSourcePhase {
+		if srcPhase >= len(v.DeliveryPhases) {
+			continue
+		}
+		// Find the phase(s) that currently list the test and actually run it.
+		runsIt := -1
+		for i := range v.DeliveryPhases {
+			if runsTestInPhase(i, test) {
+				for _, f := range v.DeliveryPhases[i].RequiredFiles {
+					if pathMatchesRequired(test, []string{f}) {
+						runsIt = i
+						break
+					}
+				}
+			}
+		}
+		if runsIt >= 0 {
+			continue // stays in the phase that runs it
+		}
+		placedTests[test] = true
+		already := false
+		for _, f := range v.DeliveryPhases[srcPhase].RequiredFiles {
+			if pathMatchesRequired(test, []string{f}) {
+				already = true
+				break
+			}
+		}
+		if !already {
+			v.DeliveryPhases[srcPhase].RequiredFiles = append(v.DeliveryPhases[srcPhase].RequiredFiles, test)
+		}
+	}
 	for i := range v.DeliveryPhases {
 		var kept []string
 		for _, f := range v.DeliveryPhases[i].RequiredFiles {
@@ -731,8 +771,11 @@ func pairPhaseTests(v WorkflowValidation) WorkflowValidation {
 			}
 			sourcePhase, moved := testToSourcePhase[f]
 			if moved && sourcePhase != i {
-				// Test's source is in another phase — drop from here
-				continue
+				// Test's source is in another phase — drop from here only when
+				// it's not also run by this phase's verify command.
+				if !runsTestInPhase(i, f) {
+					continue
+				}
 			}
 			kept = append(kept, f)
 		}

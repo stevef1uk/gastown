@@ -11,7 +11,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -1458,7 +1457,6 @@ func clearCmdFailure(cmd string) {
 }
 
 func runOrchestratedCommand(cmd, workDir, sessionName string, env []string, cmdTimeoutSec int) ([]byte, error) {
-	os.WriteFile("/tmp/r1.txt", []byte(fmt.Sprintf("HIT cmd=%s timeoutSec=%d\n", cmd[:min(len(cmd), 100)], cmdTimeoutSec)), 0644)
 	cmdStart := time.Now()
 	logCmd := truncateCmdForLog(cmd, 120)
 	orchestratedPrintf("[gt-agent] exec start: %s\n", logCmd)
@@ -1490,20 +1488,11 @@ func runOrchestratedCommand(cmd, workDir, sessionName string, env []string, cmdT
 		}
 		orchestratedPrintf("[gt-agent] exec pid: %d\n", c.Process.Pid)
 		debugLog(fmt.Sprintf("EXEC START pid=%d dur=%s cmd=%s", c.Process.Pid, dur, logCmd))
-		var timedOut atomic.Bool
-		if dur > 0 {
-			go func() {
-				time.Sleep(dur)
-				debugLog(fmt.Sprintf("TIMEOUT FIRED pid=%d cmd=%s", c.Process.Pid, logCmd))
-				timedOut.Store(true)
-				killProcessTree(c.Process.Pid)
-			}()
-		}
-		waitErr := c.Wait()
+		timedOut, waitErr := waitWithTimeout(c, dur, logCmd)
 		out := append(stdout.Bytes(), stderr.Bytes()...)
-		debugLog(fmt.Sprintf("EXEC DONE pid=%d duration=%s timedOut=%v err=%v", c.Process.Pid, time.Since(cmdStart).Round(time.Millisecond), timedOut.Load(), waitErr))
+		debugLog(fmt.Sprintf("EXEC DONE pid=%d duration=%s timedOut=%v err=%v", c.Process.Pid, time.Since(cmdStart).Round(time.Millisecond), timedOut, waitErr))
 		orchestratedPrintf("[gt-agent] exec done: %s pid=%d duration=%s err=%v\n", logCmd, c.Process.Pid, time.Since(cmdStart).Round(time.Millisecond), waitErr)
-		if timedOut.Load() {
+		if timedOut {
 			fails := trackCmdFailure(cmd)
 			orchestratedPrintf("[gt-agent] exec loop: cmd=%s consecutive_failures=%d threshold=%d\n", logCmd, fails, cmdLoopThreshold)
 			if fails >= cmdLoopThreshold {
@@ -1547,20 +1536,11 @@ return out, fmt.Errorf("LOOP DETECTED: command '%s' has timed out %d times in a 
 	}
 	orchestratedPrintf("[gt-agent] exec pid (script): %d\n", c.Process.Pid)
 	debugLog(fmt.Sprintf("EXEC START (script) pid=%d dur=%s cmd=%s", c.Process.Pid, dur, logCmd))
-	var timedOut atomic.Bool
-	if dur > 0 {
-		go func() {
-			time.Sleep(dur)
-			debugLog(fmt.Sprintf("TIMEOUT FIRED (script) pid=%d cmd=%s", c.Process.Pid, logCmd))
-			timedOut.Store(true)
-			killProcessTree(c.Process.Pid)
-		}()
-	}
-	waitErr := c.Wait()
+	timedOut, waitErr := waitWithTimeout(c, dur, logCmd)
 	out := append(stdout.Bytes(), stderr.Bytes()...)
-	debugLog(fmt.Sprintf("EXEC DONE (script) pid=%d duration=%s timedOut=%v err=%v", c.Process.Pid, time.Since(cmdStart).Round(time.Millisecond), timedOut.Load(), waitErr))
+	debugLog(fmt.Sprintf("EXEC DONE (script) pid=%d duration=%s timedOut=%v err=%v", c.Process.Pid, time.Since(cmdStart).Round(time.Millisecond), timedOut, waitErr))
 	orchestratedPrintf("[gt-agent] exec done (script): %s pid=%d duration=%s err=%v\n", logCmd, c.Process.Pid, time.Since(cmdStart).Round(time.Millisecond), waitErr)
-	if timedOut.Load() {
+	if timedOut {
 		fails := trackCmdFailure(cmd)
 		orchestratedPrintf("[gt-agent] exec loop: cmd=%s consecutive_failures=%d threshold=%d\n", logCmd, fails, cmdLoopThreshold)
 		if fails >= cmdLoopThreshold {
@@ -1570,6 +1550,48 @@ return out, fmt.Errorf("LOOP DETECTED: command '%s' has timed out %d times in a 
 	}
 	clearCmdFailure(cmd)
 	return out, waitErr
+}
+
+// waitWithTimeout waits for the command to finish, killing the entire process
+// group if it exceeds dur. Returns (timedOut, waitErr). The command runs with
+// Setpgid, so c.Process.Pid is the process-group leader; kill(-pid) terminates
+// the shell and all descendants. Killing only the parent would leave orphaned
+// children (e.g. "go run main.go &" smoke servers) holding the output pipe
+// open, so c.Wait() blocks forever and the QA/polecat run hangs.
+func waitWithTimeout(c *exec.Cmd, dur time.Duration, logCmd string) (bool, error) {
+	waitCh := make(chan error, 1)
+	go func() { waitCh <- c.Wait() }()
+	if dur <= 0 {
+		return false, <-waitCh
+	}
+	select {
+	case waitErr := <-waitCh:
+		return false, waitErr
+	case <-time.After(dur):
+		debugLog(fmt.Sprintf("TIMEOUT FIRED pid=%d cmd=%s", c.Process.Pid, logCmd))
+		killCommandProcessGroup(c.Process.Pid)
+		// Wait for the group to die. If Wait still hasn't returned after a
+		// grace period, escalate to a full /proc tree kill.
+		select {
+		case waitErr := <-waitCh:
+			return true, waitErr
+		case <-time.After(5 * time.Second):
+			debugLog(fmt.Sprintf("GROUP KILL STUCK pid=%d cmd=%s — escalating to /proc tree kill", c.Process.Pid, logCmd))
+			killProcessTree(c.Process.Pid)
+			return true, <-waitCh
+		}
+	}
+}
+
+// killCommandProcessGroup sends SIGKILL to the process group led by pid. With
+// Setpgid the child is the group leader, so kill(-pid) reaches the shell and all
+// descendants. Falls back to a /proc walk on failure.
+func killCommandProcessGroup(pid int) {
+	debugLog(fmt.Sprintf("KILL GROUP pid=%d", pid))
+	if err := syscall.Kill(-pid, syscall.SIGKILL); err != nil {
+		debugLog(fmt.Sprintf("KILL GROUP pid=%d failed: %v", pid, err))
+		killProcessTree(pid)
+	}
 }
 
 // debugLog writes directly to a file, bypassing script/pipe buffering.

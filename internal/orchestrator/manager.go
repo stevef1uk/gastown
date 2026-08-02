@@ -328,9 +328,14 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summa
 			}
 		}
 	}
-	// Reconcile profile with architecture.md backtick paths on design success.
+	// Re-derive the workflow profile from SPEC.md + architecture.md on design success.
+	// spec-index runs at rig creation before architecture.md exists, so its LLM-guessed
+	// required_files can hallucinate files (e.g. config.py) or emit wildcards
+	// (@app.get/post/...). Syncing here makes planning create beads only for real paths.
 	if fromState == "design" && outcome == "success" && rig != "" {
-		ReconcileProfileWithArchitecture(m.townRoot, rig)
+		if _, err := SyncRigWorkflowProfileFromArchitecture(m.townRoot, rig); err != nil {
+			return "", fmt.Errorf("sync profile after design success: %w", err)
+		}
 	}
 	next, err := inst.Transition(tpl, outcome)
 	if err != nil {

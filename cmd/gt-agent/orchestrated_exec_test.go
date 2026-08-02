@@ -1,10 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -993,5 +995,60 @@ func TestRewriteUnittestToWorkdir_pythonVenvLayoutCD(t *testing.T) {
 	// Venv activation must be ". .venv/bin/activate" (source syntax)
 	if !strings.Contains(fixed, ". .venv/bin/activate") {
 		t.Fatalf("venv activation must use '. .venv/bin/activate' syntax: %q", fixed)
+	}
+}
+
+// TestWaitWithTimeout_killsBackgroundedChild verifies the timeout kills the whole
+// process group, including a child backgrounded with & that holds the output pipe.
+// Before the group-kill fix, the orphaned child kept the pipe open and c.Wait()
+// never returned, hanging the QA/polecat run.
+func TestWaitWithTimeout_killsBackgroundedChild(t *testing.T) {
+	c := exec.Command("/bin/sh", "-c",
+		"sleep 60 & sleep 60")
+	c.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	var stdout, stderr bytes.Buffer
+	c.Stdout = &stdout
+	c.Stderr = &stderr
+	if err := c.Start(); err != nil {
+		t.Fatal(err)
+	}
+	start := time.Now()
+	timedOut, waitErr := waitWithTimeout(c, 300*time.Millisecond, "sleep 60 & sleep 60")
+	if !timedOut {
+		t.Fatalf("expected timeout, got timedOut=false err=%v", waitErr)
+	}
+	if waitErr == nil {
+		t.Fatal("expected non-nil wait error after kill")
+	}
+	if time.Since(start) > 5*time.Second {
+		t.Fatalf("waitWithTimeout took %v — process group kill failed to unblock Wait()", time.Since(start))
+	}
+}
+
+// TestWaitWithTimeout_fastCommandReturns verifies a fast command returns quickly
+// with timedOut=false and the background goroutine is cleaned up.
+func TestWaitWithTimeout_fastCommandReturns(t *testing.T) {
+	c := exec.Command("/bin/sh", "-c", "true")
+	if err := c.Start(); err != nil {
+		t.Fatal(err)
+	}
+	timedOut, waitErr := waitWithTimeout(c, 5*time.Second, "true")
+	if timedOut {
+		t.Fatal("fast command must not time out")
+	}
+	if waitErr != nil {
+		t.Fatalf("unexpected wait error: %v", waitErr)
+	}
+}
+
+// TestWaitWithTimeout_zeroDur returns immediately when no timeout is configured.
+func TestWaitWithTimeout_zeroDur(t *testing.T) {
+	c := exec.Command("/bin/sh", "-c", "true")
+	if err := c.Start(); err != nil {
+		t.Fatal(err)
+	}
+	timedOut, waitErr := waitWithTimeout(c, 0, "true")
+	if timedOut || waitErr != nil {
+		t.Fatalf("zero dur: timedOut=%v err=%v", timedOut, waitErr)
 	}
 }

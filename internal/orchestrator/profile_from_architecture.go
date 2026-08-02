@@ -446,6 +446,317 @@ func ReconcileProfileWithArchitecture(townRoot, rig string) error {
 	return SaveRigWorkflowProfileEnvelope(townRoot, rig, env)
 }
 
+// SyncRigWorkflowProfileFromArchitecture re-derives the workflow profile from SPEC.md
+// and architecture.md after design succeeds, replacing the LLM-guessed required_files
+// (which can hallucinate files like config.py or emit wildcards like @app.get/post/...)
+// with the authoritative file set. Runs on design success so planning creates beads
+// only for real implement paths. Returns true when the profile was rewritten.
+func SyncRigWorkflowProfileFromArchitecture(townRoot, rig string) (bool, error) {
+	if rig == "" || townRoot == "" {
+		return false, nil
+	}
+	path := filepath.Join(townRoot, rig, "mayor", "rig", rigProfileDir, rigProfileFile)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return false, nil // no profile yet
+	}
+	var env rigProfileEnvelope
+	if err := json.Unmarshal(data, &env); err != nil {
+		return false, nil
+	}
+	mayorRig := filepath.Join(townRoot, rig, "mayor", "rig")
+	archData, _ := os.ReadFile(filepath.Join(mayorRig, "architecture.md"))
+	if len(archData) == 0 {
+		return false, nil // design not complete — nothing authoritative to sync from
+	}
+	archPaths := extractArchPaths(string(archData), env.Validation.LayoutRootDir())
+	var filePaths []string
+	for _, p := range archPaths {
+		p = filepath.ToSlash(strings.TrimSpace(p))
+		for strings.HasPrefix(p, "./") {
+			p = p[2:]
+		}
+		if isImplementableFilePath(p) {
+			filePaths = append(filePaths, p)
+		}
+	}
+	// SPEC paths are authoritative when it lists a layout tree; otherwise fall back
+	// to architecture.md paths. Prefer the shared layout root so both sources align.
+	var authoritative []string
+	if specPaths, ok := extractSpecLayoutPaths(mayorRig); ok {
+		authoritative = specPaths
+	} else {
+		authoritative = filePaths
+	}
+	authoritative = dedupeStrings(authoritative)
+	if len(authoritative) == 0 {
+		return false, nil
+	}
+	// Reject hallucinated entries (wildcards, route stubs, non-file tokens).
+	authoritative = filterValidImplementPaths(authoritative)
+	if len(authoritative) == 0 {
+		return false, nil
+	}
+	env.Validation.RequiredFiles = append([]string(nil), authoritative...)
+	if root := inferLayoutRootFromPaths(authoritative); root != "" && root != "." {
+		env.Validation.LayoutRoot = root
+		env.Validation.BeadTitleContains = "Implement " + root + "/"
+	}
+	env.Validation = inferTestRunnerFromPaths(env.Validation, authoritative)
+	// Rebuild delivery phases so the active phase required_files (used by
+	// ForActivePhase at planning time) match the authoritative set instead of the
+	// hallucinated list the LLM emitted.
+	env.Validation = rebuildDeliveryPhasesFromAuthoritative(env.Validation, authoritative)
+	// SPEC/architecture are authoritative for the runtime smoke too. When they
+	// document an HTTP server + probes, ensure the profile has a smoke phase whose
+	// qa_verify_command starts the server and curls the documented routes — the
+	// first spec-index run (before architecture.md exists) can emit a pytest-only
+	// profile that QA later rejects ("requires a successful runtime smoke CMD").
+	env.Validation = ensureRuntimeSmokePhaseFromSpec(townRoot, rig, env.Validation)
+	archDebug("SyncRigWorkflowProfileFromArchitecture: required=%v layout=%q", env.Validation.RequiredFiles, env.Validation.LayoutRoot)
+	if err := SaveRigWorkflowProfileEnvelope(townRoot, rig, env); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// hasRuntimeSmokeCommand reports whether a QA verify command already starts a
+// server and curls it (uvicorn/gunicorn/flask/go run + curl + loopback host).
+func hasRuntimeSmokeCommand(cmd string) bool {
+	lower := strings.ToLower(strings.TrimSpace(cmd))
+	if lower == "" {
+		return false
+	}
+	hasServer := strings.Contains(lower, "uvicorn") || strings.Contains(lower, "gunicorn") ||
+		strings.Contains(lower, "flask run") || strings.Contains(lower, "go run") ||
+		strings.Contains(lower, "hypercorn")
+	if !hasServer {
+		return false
+	}
+	hasCurl := strings.Contains(lower, "curl ") || strings.Contains(lower, "curl\t") || strings.Contains(lower, ".gt-smoke.pid")
+	hasLocal := strings.Contains(lower, "localhost") || strings.Contains(lower, "127.0.0.1")
+	return hasCurl && hasLocal
+}
+
+// deriveSmokeQACommand builds a readable qa_verify_command from the SPEC/architecture
+// smoke spec: start the documented server, curl each documented route, kill by port.
+// Matches the shape spec-index emits for smoke-test phases.
+func deriveSmokeQACommand(v WorkflowValidation, spec APISmokeSpec) string {
+	serverStart := strings.TrimSpace(spec.ServerStart)
+	if serverStart == "" {
+		return ""
+	}
+	port := spec.Port
+	if port == 0 {
+		port = 8080
+	}
+	base := fmt.Sprintf("http://127.0.0.1:%d", port)
+	var curls []string
+	for _, probe := range spec.orderedSmokeProbes() {
+		path := normalizeSmokePath(probe.Path)
+		if path == "" {
+			continue
+		}
+		method := strings.ToUpper(strings.TrimSpace(probe.Method))
+		if method == "POST" {
+			body := strings.ReplaceAll(strings.TrimSpace(probe.Body), "'", `'\''`)
+			curls = append(curls, fmt.Sprintf(`curl -sf -X POST -d '%s' %s%s`, body, base, path))
+		} else {
+			curls = append(curls, fmt.Sprintf("curl -sf %s%s", base, path))
+		}
+	}
+	if len(curls) == 0 {
+		return ""
+	}
+	layout := strings.Trim(strings.TrimSpace(v.LayoutRoot), "/")
+	serverCmd := serverStart
+	if layout != "" && layout != "." && !strings.Contains(serverCmd, "cd ") {
+		serverCmd = "cd " + layout + " && " + serverCmd
+	}
+	return serverCmd + " & sleep 2 && " + strings.Join(curls, " && ") +
+		fmt.Sprintf(" && kill $(lsof -ti:%d)", port)
+}
+
+// ensureRuntimeSmokePhaseFromSpec appends a smoke-test delivery phase when SPEC/
+// architecture document an HTTP server with probes but no existing phase command
+// performs a runtime smoke. Runs only inside the design-success sync so the QA
+// step is given a command that can satisfy the runtime-smoke validator.
+func ensureRuntimeSmokePhaseFromSpec(townRoot, rig string, v WorkflowValidation) WorkflowValidation {
+	if townRoot == "" || rig == "" {
+		return v
+	}
+	if !WorkflowNeedsQARuntimeSmoke(townRoot, rig, v) {
+		return v
+	}
+	for i := range v.DeliveryPhases {
+		if hasRuntimeSmokeCommand(v.DeliveryPhases[i].QAVerifyCommand) {
+			return v
+		}
+	}
+	if hasRuntimeSmokeCommand(v.QAVerifyCommand) {
+		return v
+	}
+	spec, err := LoadAPISmokeSpecFromRig(townRoot, rig, v)
+	if err != nil {
+		return v
+	}
+	cmd := deriveSmokeQACommand(v, spec)
+	if cmd == "" {
+		return v
+	}
+	var files []string
+	for _, f := range v.RequiredFiles {
+		f = filepath.ToSlash(strings.TrimSpace(f))
+		base := strings.ToLower(filepath.Base(f))
+		if base == "main.py" || base == "app.py" || base == "server.py" ||
+			strings.HasSuffix(base, "_main.go") || base == "main.go" {
+			files = append(files, f)
+			break
+		}
+	}
+	phase := DeliveryPhase{
+		ID:              "smoke-test",
+		Title:           "Smoke Test with Running Server",
+		RequiredFiles:   files,
+		QAVerifyCommand: cmd,
+		SpecFocus:       "Verify HTTP server runs and responds correctly",
+	}
+	if len(v.DeliveryPhases) > 0 {
+		prev := v.DeliveryPhases[len(v.DeliveryPhases)-1].ID
+		if prev != "" {
+			phase.DependsOn = []string{prev}
+		}
+	}
+	v.DeliveryPhases = append(v.DeliveryPhases, phase)
+	if v.ActivePhaseIDField == "" && len(v.DeliveryPhases) > 0 {
+		v.ActivePhaseIDField = v.DeliveryPhases[0].ID
+	}
+	return v
+}
+
+// filterValidImplementPaths drops entries that are not concrete file paths:
+// wildcards (*), FastAPI/route stubs (@app.get/post/...), URLs, or junk tokens.
+func filterValidImplementPaths(paths []string) []string {
+	var out []string
+	for _, p := range paths {
+		p = filepath.ToSlash(strings.TrimSpace(p))
+		if p == "" || !isImplementableFilePath(p) {
+			continue
+		}
+		if strings.ContainsAny(p, "*?") || strings.Contains(p, "...") ||
+			strings.Contains(p, "://") || strings.ContainsAny(p, "{}") {
+			continue
+		}
+		if strings.HasPrefix(p, "@") || strings.HasPrefix(p, "/api/") {
+			continue
+		}
+		if !IsValidImplementBeadPath(p) {
+			continue
+		}
+		out = append(out, p)
+	}
+	return dedupeStrings(out)
+}
+
+// rebuildDeliveryPhasesFromAuthoritative reconstructs delivery_phases so each phase's
+// required_files is a filtered slice of the authoritative set, preserving the phase
+// order and QA verify commands already on disk. Phases whose files all belong to a
+// shared layout root keep their structure; hallucinated entries are dropped.
+func rebuildDeliveryPhasesFromAuthoritative(v WorkflowValidation, authoritative []string) WorkflowValidation {
+	if len(v.DeliveryPhases) == 0 {
+		return v
+	}
+	// Map authoritative entries to the phase whose existing files share the longest
+	// directory prefix (mirrors ReconcileProfileWithArchitecture's placement).
+	for i := range v.DeliveryPhases {
+		var keep []string
+		for _, p := range v.DeliveryPhases[i].RequiredFiles {
+			p = filepath.ToSlash(strings.TrimSpace(p))
+			if containsString(authoritative, p) {
+				keep = append(keep, p)
+			}
+		}
+		v.DeliveryPhases[i].RequiredFiles = keep
+	}
+	// Any authoritative file not yet placed goes to the phase with the longest
+	// shared prefix; default to the final phase for packaging/config files.
+	for _, p := range authoritative {
+		placed := false
+		for i := range v.DeliveryPhases {
+			if containsString(v.DeliveryPhases[i].RequiredFiles, p) {
+				placed = true
+				break
+			}
+		}
+		if placed {
+			continue
+		}
+		bestIdx, bestLen := -1, 0
+		for i, phase := range v.DeliveryPhases {
+			for _, f := range phase.RequiredFiles {
+				if prefix := longestCommonPathPrefix(p, f); prefix != "" && len(prefix) > bestLen {
+					bestLen = len(prefix)
+					bestIdx = i
+				}
+			}
+		}
+		if bestIdx < 0 {
+			bestIdx = len(v.DeliveryPhases) - 1
+		}
+		v.DeliveryPhases[bestIdx].RequiredFiles = append(v.DeliveryPhases[bestIdx].RequiredFiles, p)
+	}
+	return v
+}
+
+// ValidateRigWorkflowProfileForQA reports profile defects that would break planning
+// or implementation: hallucinated required_files entries (wildcards, route stubs like
+// @app.get/post/..., URLs), verify commands referencing files missing from
+// required_files, and layout_root mismatches. Returns "" when the profile is sound.
+// Used by the design_review QA step so spec-index guesswork is caught before planning.
+func ValidateRigWorkflowProfileForQA(townRoot, rig string, v WorkflowValidation) string {
+	var problems []string
+	check := func(files []string, scope string) {
+		for _, f := range files {
+			f = filepath.ToSlash(strings.TrimSpace(f))
+			if f == "" {
+				continue
+			}
+			if strings.ContainsAny(f, "*?") || strings.Contains(f, "...") ||
+				strings.Contains(f, "://") || strings.ContainsAny(f, "{}") {
+				problems = append(problems, fmt.Sprintf("%s contains wildcard/non-file %q", scope, f))
+				continue
+			}
+			if strings.HasPrefix(f, "@") || strings.HasPrefix(f, "/api/") {
+				problems = append(problems, fmt.Sprintf("%s contains route stub %q (not a file path)", scope, f))
+				continue
+			}
+			if !IsValidImplementBeadPath(f) {
+				problems = append(problems, fmt.Sprintf("%s contains invalid path %q", scope, f))
+			}
+		}
+	}
+	check(v.RequiredFiles, "required_files")
+	for i := range v.DeliveryPhases {
+		check(v.DeliveryPhases[i].RequiredFiles, fmt.Sprintf("phase %q required_files", v.DeliveryPhases[i].ID))
+	}
+	// Verify commands must reference files that exist in the union of required_files.
+	union := v.UnionRequiredFiles()
+	if len(union) > 0 {
+		for _, cmd := range []string{v.QAVerifyCommand} {
+			if cmd == "" {
+				continue
+			}
+			if !commandPathsMatchPhaseFiles(cmd, union) {
+				problems = append(problems, fmt.Sprintf("verify command references a path not in required_files: %s", cmd))
+			}
+		}
+	}
+	if len(problems) == 0 {
+		return ""
+	}
+	return "workflow profile defects:\n- " + strings.Join(problems, "\n- ")
+}
+
 // longestCommonPathPrefix returns the longest directory prefix shared by a and b,
 // or "" if there is none. The prefix always ends at a path separator.
 func longestCommonPathPrefix(a, b string) string {

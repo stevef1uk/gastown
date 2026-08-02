@@ -398,7 +398,10 @@ func IsPlaceholderOrMismatchedCommand(cmd string, p *DeliveryPhase) bool {
 	if hasGo && !strings.Contains(lower, "go ") {
 		return true
 	}
-	if hasPython && !strings.Contains(lower, "python") && !strings.Contains(lower, "pytest") {
+	// A runtime smoke command (uvicorn/gunicorn/flask + curl + loopback) is a
+	// legitimate Python phase verify even without "python"/"pytest" in it.
+	if hasPython && !strings.Contains(lower, "python") && !strings.Contains(lower, "pytest") &&
+		!hasRuntimeSmokeCommand(cmd) {
 		return true
 	}
 	if hasNode && !strings.Contains(lower, "npm") && !strings.Contains(lower, "npx") && !strings.Contains(lower, "tsc") && !strings.Contains(lower, "node ") {
@@ -541,35 +544,44 @@ func validatePhaseVerifyCommands(v WorkflowValidation) WorkflowValidation {
 				}
 			}
 		}
-		// pytest requires pyproject.toml
+		// pytest may need a config file, but only when the project has no other
+		// Python manifest (requirements.txt) and no pyproject.toml. Injecting
+		// pyproject.toml into a requirements.txt-based project creates a phantom
+		// bead and contradicts SPEC layouts that say "no extra files or
+		// abstractions". pytest runs fine from requirements.txt alone.
 		if strings.Contains(cmd, "pytest") {
 			hasPyproject := false
+			hasRequirements := false
 			for _, f := range v.DeliveryPhases[i].RequiredFiles {
 				if strings.HasSuffix(f, "pyproject.toml") {
 					hasPyproject = true
 					break
 				}
+				if strings.HasSuffix(f, "requirements.txt") {
+					hasRequirements = true
+				}
 			}
-			if !hasPyproject {
-				found := false
-				for j := 0; j < i; j++ {
-					for _, f := range v.DeliveryPhases[j].RequiredFiles {
-						if strings.HasSuffix(f, "pyproject.toml") {
-							found = true
-							break
-						}
-					}
-					if found {
+			if hasPyproject || hasRequirements {
+				continue
+			}
+			found := false
+			for j := 0; j < i; j++ {
+				for _, f := range v.DeliveryPhases[j].RequiredFiles {
+					if strings.HasSuffix(f, "pyproject.toml") {
+						found = true
 						break
 					}
 				}
-				if !found && len(v.DeliveryPhases[i].RequiredFiles) > 0 {
-					base := filepath.Dir(v.DeliveryPhases[i].RequiredFiles[0])
-					if base == "." {
-						v.DeliveryPhases[i].RequiredFiles = append(v.DeliveryPhases[i].RequiredFiles, "pyproject.toml")
-					} else {
-						v.DeliveryPhases[i].RequiredFiles = append(v.DeliveryPhases[i].RequiredFiles, base+"/pyproject.toml")
-					}
+				if found {
+					break
+				}
+			}
+			if !found && len(v.DeliveryPhases[i].RequiredFiles) > 0 {
+				base := filepath.Dir(v.DeliveryPhases[i].RequiredFiles[0])
+				if base == "." {
+					v.DeliveryPhases[i].RequiredFiles = append(v.DeliveryPhases[i].RequiredFiles, "pyproject.toml")
+				} else {
+					v.DeliveryPhases[i].RequiredFiles = append(v.DeliveryPhases[i].RequiredFiles, base+"/pyproject.toml")
 				}
 			}
 		}

@@ -225,7 +225,15 @@ var artifactValidators = map[string]artifactValidateFn{
 		return nil // spec_review is outcome-driven, no artifact checks
 	},
 	"design_review": func(r *stateRunner, _ string) error {
-		return nil // design_review is outcome-driven (read-only validation of architecture.md)
+		// design_review is outcome-driven, but must also confirm the workflow profile
+		// (spec-index guesswork) is sound before planning creates beads from it.
+		if r.townRoot == "" || r.rig == "" {
+			return nil
+		}
+		if defect := orchestrator.ValidateRigWorkflowProfileForQA(r.townRoot, r.rig, r.v); defect != "" {
+			return fmt.Errorf("workflow profile has defects that will break planning — report failure to send the Architect back:\n%s", defect)
+		}
+		return nil
 	},
 	"design": func(r *stateRunner, _ string) error {
 		return validateDesignArtifacts(r.townRoot, r.rig, r.track.designArchWritten, r.v)
