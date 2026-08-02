@@ -27,7 +27,7 @@ func GoTestVerifyCommandForPackage(v WorkflowValidation, mayorRigDir, beadPath s
 	if pkg == "" {
 		return GoCompileOnlyVerifyCommand(v, mayorRigDir)
 	}
-	return fmt.Sprintf("%sgo mod tidy && go test -timeout 30s -count=1 ./%s/...", GoShellCDClause(mayorRigDir, v.LayoutRoot), pkg)
+	return fmt.Sprintf("%sgo mod tidy && go test -timeout 30s -count=1 %s", GoShellCDClause(mayorRigDir, v.LayoutRoot), goPackagePattern(pkg))
 }
 
 // GoCompileVerifyCommandForBead is verify scoped to the active implement file's package.
@@ -99,7 +99,16 @@ func goBuildVerifyForPackage(v WorkflowValidation, mayorRigDir, beadPath string)
 	if pkg == "" {
 		return GoCompileOnlyVerifyCommand(v, mayorRigDir)
 	}
-	return fmt.Sprintf("%sgo mod tidy && go build ./%s/...", GoShellCDClause(mayorRigDir, v.LayoutRoot), pkg)
+	return fmt.Sprintf("%sgo mod tidy && go build %s", GoShellCDClause(mayorRigDir, v.LayoutRoot), goPackagePattern(pkg))
+}
+
+// goPackagePattern renders the package selector for a module-relative package dir.
+// "." means the module root, so `./...` (not `././...`).
+func goPackagePattern(pkg string) string {
+	if pkg == "" || pkg == "." {
+		return "./..."
+	}
+	return "./" + pkg + "/..."
 }
 
 // managedSourceExtensions lists file extensions that the system owns and prunes.

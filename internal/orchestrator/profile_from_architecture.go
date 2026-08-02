@@ -98,9 +98,30 @@ func extractSpecLayoutPaths(mayorRigDir string) ([]string, bool) {
 	archDebug("extractArchPaths from SPEC: %v", archPaths)
 	treePaths := parseSpecLayoutTree(text)
 	archDebug("parseSpecLayoutTree from SPEC: %v", treePaths)
-	paths = append(paths, archPaths...)
-	paths = append(paths, treePaths...)
-	paths = dedupeStrings(paths)
+	// The layout tree is authoritative for paths it lists; prose backtick refs may
+	// use bare paths (handler/hello.go) that must not contradict the tree's nested
+	// ones (helloapi/handler/hello.go). Drop any prose path whose basename the tree
+	// already places at a different location.
+	treeByBase := map[string]string{}
+	for _, p := range treePaths {
+		treeByBase[filepath.Base(p)] = p
+	}
+	seen := map[string]bool{}
+	for _, p := range treePaths {
+		seen[p] = true
+		paths = append(paths, p)
+	}
+	for _, p := range archPaths {
+		p = filepath.ToSlash(strings.TrimSpace(p))
+		if p == "" || seen[p] {
+			continue
+		}
+		if tp, ok := treeByBase[filepath.Base(p)]; ok && tp != p {
+			continue // tree wins on basename collision
+		}
+		seen[p] = true
+		paths = append(paths, p)
+	}
 	archDebug("extractSpecLayoutPaths combined: %v", paths)
 
 	if len(paths) == 0 {
@@ -128,28 +149,86 @@ func extractSpecLayoutPaths(mayorRigDir string) ([]string, bool) {
 }
 
 // parseSpecLayoutTree extracts paths from markdown tree blocks under "## Layout" in SPEC.md.
+// Directory nesting is tracked from tree connectors/indentation, so a file under
+// `handler/` yields `helloapi/handler/hello.go` (not a flat `helloapi/hello.go`).
 func parseSpecLayoutTree(specText string) []string {
 	section := specLayoutSection(specText)
-	dir := ""
+	dirs := []string{}
 	var out []string
 	for _, line := range strings.Split(section, "\n") {
-		line = strings.TrimSpace(line)
-		line = strings.Trim(line, "`")
-		if line == "```" || strings.HasPrefix(line, "```") {
+		depth, entry := treeLineDepthEntry(line)
+		entry = strings.Trim(entry, "`")
+		if entry == "" || entry == "```" || strings.HasPrefix(entry, "```") {
 			continue
 		}
-		if m := specLayoutDirRe.FindStringSubmatch(line); len(m) == 2 {
-			dir = m[1]
+		if strings.HasSuffix(entry, "/") {
+			name := strings.TrimRight(entry, "/")
+			if !validTreeDirName(name) {
+				continue
+			}
+			if depth < len(dirs) {
+				dirs = dirs[:depth]
+			}
+			dirs = append(dirs, name)
 			continue
 		}
-		if dir == "" {
+		// Indented flat list format (e.g. "pingapp/  requirements.txt" without
+		// connectors): treeLineDepthEntry returns depth 0, but we have dirs →
+		// treat as flat child at depth 1.
+		if depth < 1 && len(dirs) > 0 {
+			depth = 1
+		}
+		if depth < 1 || len(dirs) < depth {
 			continue
 		}
-		if m := specTreeFileInLine.FindStringSubmatch(line); len(m) == 2 {
-			out = append(out, dir+"/"+m[1])
+		if m := specTreeFileInLine.FindStringSubmatch(entry); len(m) == 2 {
+			out = append(out, strings.Join(dirs[:depth], "/")+"/"+m[1])
 		}
 	}
 	return out
+}
+
+// treeLineDepthEntry reports the nesting depth and entry text of a markdown tree
+// line. Each `│` bar or 4-space indentation unit deepens the level; a trailing
+// `├── ` / `└── ` connector marks the entry itself. Returns depth 0 and the
+// trimmed entry for bare lines (e.g. the root directory or prose).
+func treeLineDepthEntry(line string) (int, string) {
+	s := line
+	depth := 0
+	for strings.HasPrefix(s, "    ") {
+		depth++
+		s = s[4:]
+	}
+	for {
+		switch {
+		case strings.HasPrefix(s, "│"):
+			depth++
+			s = strings.TrimLeft(strings.TrimPrefix(s, "│"), " ")
+		case strings.HasPrefix(s, "├── "):
+			depth++
+			return depth, strings.TrimSpace(strings.TrimPrefix(s, "├── "))
+		case strings.HasPrefix(s, "└── "):
+			depth++
+			return depth, strings.TrimSpace(strings.TrimPrefix(s, "└── "))
+		case strings.HasPrefix(s, "├──"):
+			depth++
+			return depth, strings.TrimSpace(strings.TrimPrefix(s, "├──"))
+		case strings.HasPrefix(s, "└──"):
+			depth++
+			return depth, strings.TrimSpace(strings.TrimPrefix(s, "└──"))
+		default:
+			return depth, strings.TrimSpace(s)
+		}
+	}
+}
+
+// validTreeDirName reports whether a directory entry in a SPEC layout tree is a
+// usable layout component (rejects paths, whitespace, and `.`/`..`).
+func validTreeDirName(name string) bool {
+	if name == "" || name == "." || name == ".." {
+		return false
+	}
+	return !strings.ContainsAny(name, " \t/\\")
 }
 
 func specLayoutSection(specText string) string {
@@ -188,12 +267,51 @@ func shouldReplaceProfileRequiredFilesWithSpec(v WorkflowValidation, specPaths [
 		if prefixed < len(specPaths) {
 			return false
 		}
+		// Even if all specPaths have the layout prefix, they may be flatter than the
+		// profile's nested paths (e.g. linkshelf/handlers.go vs linkshelf/internal/api/handlers.go).
+		// If any profile path has a directory prefix that the corresponding spec path lacks,
+		// keep the more specific profile paths.
+		if profileIsMoreSpecific(v.RequiredFiles, specPaths, layout) {
+			return false
+		}
 	}
 	specV := WorkflowValidation{
 		RequiredFiles: append([]string(nil), specPaths...),
 		LayoutRoot:    inferLayoutRootFromPaths(specPaths),
 	}
 	return RequiresExactImplementPaths(specV)
+}
+
+// profileIsMoreSpecific returns true if the profile has paths with deeper nesting
+// than the corresponding SPEC paths for the same basenames, indicating the
+// profile's paths are more specific and should not be flattened.
+func profileIsMoreSpecific(profilePaths, specPaths []string, layout string) bool {
+	// Build basename -> path depth map for profile and spec
+	profileDepth := map[string]int{}
+	for _, p := range profilePaths {
+		p = filepath.ToSlash(strings.TrimSpace(p))
+		if strings.HasPrefix(p, layout+"/") {
+			rel := strings.TrimPrefix(p, layout+"/")
+			depth := strings.Count(rel, "/")
+			profileDepth[filepath.Base(p)] = depth
+		}
+	}
+	specDepth := map[string]int{}
+	for _, p := range specPaths {
+		p = filepath.ToSlash(strings.TrimSpace(p))
+		if strings.HasPrefix(p, layout+"/") {
+			rel := strings.TrimPrefix(p, layout+"/")
+			depth := strings.Count(rel, "/")
+			specDepth[filepath.Base(p)] = depth
+		}
+	}
+	// If any basename has deeper profile path, profile is more specific
+	for base, pDepth := range profileDepth {
+		if sDepth, ok := specDepth[base]; ok && pDepth > sDepth {
+			return true
+		}
+	}
+	return false
 }
 
 func profilePathsUseLayoutPrefix(paths []string, layout string) bool {
@@ -480,12 +598,16 @@ func SyncRigWorkflowProfileFromArchitecture(townRoot, rig string) (bool, error) 
 			filePaths = append(filePaths, p)
 		}
 	}
-	// SPEC paths are authoritative when it lists a layout tree; otherwise fall back
-	// to architecture.md paths. Prefer the shared layout root so both sources align.
+	// Merge SPEC and architecture paths: the union wins, and when the same basename
+	// resolves to different paths (e.g. SPEC's prose says handler/hello.go while the
+	// architect designed helloapi/handler/hello.go), architecture.md is authoritative
+	// because it reflects the concrete design decisions planning must implement.
 	var authoritative []string
 	if specPaths, ok := extractSpecLayoutPaths(mayorRig); ok {
-		authoritative = specPaths
+		archDebug("sync: SPEC layout paths=%v arch paths=%v", specPaths, filePaths)
+		authoritative = mergeArchWinsOnConflict(specPaths, filePaths)
 	} else {
+		archDebug("sync: no SPEC paths, falling back to architecture paths=%v", filePaths)
 		authoritative = filePaths
 	}
 	authoritative = dedupeStrings(authoritative)
@@ -739,6 +861,22 @@ func ValidateRigWorkflowProfileForQA(townRoot, rig string, v WorkflowValidation)
 	for i := range v.DeliveryPhases {
 		check(v.DeliveryPhases[i].RequiredFiles, fmt.Sprintf("phase %q required_files", v.DeliveryPhases[i].ID))
 	}
+	// Layout drift: the same basename must not resolve to two different paths (e.g.
+	// helloapi/hello.go in one phase vs helloapi/handler/hello.go in another), or
+	// go test will fail with "found packages main and hello". Detect it before
+	// planning so QA can send the Architect back before any bead is created.
+	byBase := map[string]string{}
+	for _, f := range v.UnionRequiredFiles() {
+		f = filepath.ToSlash(strings.TrimSpace(f))
+		if f == "" {
+			continue
+		}
+		if prev, ok := byBase[filepath.Base(f)]; ok && prev != f {
+			problems = append(problems, fmt.Sprintf("layout drift: %q and %q share basename %q — required files disagree on directory layout", prev, f, filepath.Base(f)))
+			continue
+		}
+		byBase[filepath.Base(f)] = f
+	}
 	// Verify commands must reference files that exist in the union of required_files.
 	union := v.UnionRequiredFiles()
 	if len(union) > 0 {
@@ -809,3 +947,46 @@ func isImplementableFilePath(p string) bool {
 	}
 	return strings.Contains(base, ".")
 }
+
+// ProbeParseSpecLayoutTree exposes parseSpecLayoutTree for diagnostic probes.
+func ProbeParseSpecLayoutTree(specText string) []string { return parseSpecLayoutTree(specText) }
+
+// mergeArchWinsOnConflict unions two path sets, and when the same basename resolves
+// to different paths the architecture.md variant wins (it reflects the concrete
+// design decisions planning must implement).
+func mergeArchWinsOnConflict(specPaths, archPaths []string) []string {
+	archByBase := map[string]string{}
+	for _, p := range archPaths {
+		p = filepath.ToSlash(strings.TrimSpace(p))
+		if p != "" {
+			if _, ok := archByBase[filepath.Base(p)]; !ok {
+				archByBase[filepath.Base(p)] = p
+			}
+		}
+	}
+	seen := map[string]bool{}
+	var out []string
+	add := func(p string) {
+		if seen[p] {
+			return
+		}
+		seen[p] = true
+		out = append(out, p)
+	}
+	for _, p := range specPaths {
+		p = filepath.ToSlash(strings.TrimSpace(p))
+		if p == "" {
+			continue
+		}
+		if arch, ok := archByBase[filepath.Base(p)]; ok && arch != p {
+			add(arch) // architecture wins on conflict
+			continue
+		}
+		add(p)
+	}
+	for _, p := range archPaths {
+		add(filepath.ToSlash(strings.TrimSpace(p)))
+	}
+	return out
+}
+func ProbeExtractSpecLayoutPaths(dir string) ([]string, bool) { return extractSpecLayoutPaths(dir) }

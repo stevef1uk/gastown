@@ -241,3 +241,177 @@ func TestReconcileProfileWithArchitecture_noNewPaths(t *testing.T) {
 		t.Fatalf("expected no change, got %v", saved.RequiredFiles)
 	}
 }
+
+func TestParseSpecLayoutTree_nestedHandler(t *testing.T) {
+	// req_flow_rig style tree with nested handler/ directory
+	spec := "## Layout\n\n```\nhelloapi/\n├── go.mod\n├── main.go\n├── handler/\n│   └── hello.go\n└── handler/\n    └── hello_test.go\n```\n"
+	got := parseSpecLayoutTree(spec)
+	if len(got) != 4 {
+		t.Fatalf("paths = %v", got)
+	}
+	want := []string{
+		"helloapi/go.mod",
+		"helloapi/main.go",
+		"helloapi/handler/hello.go",
+		"helloapi/handler/hello_test.go",
+	}
+	for _, w := range want {
+		found := false
+		for _, g := range got {
+			if g == w {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("missing %q in %v", w, got)
+		}
+	}
+}
+
+func TestParseSpecLayoutTree_flatIndented(t *testing.T) {
+	// ping_rig style flat indented tree (no connectors)
+	spec := "## Layout\n\n```\npingapp/\n  requirements.txt\n  main.py\n  test_main.py\n```\n"
+	got := parseSpecLayoutTree(spec)
+	if len(got) != 3 {
+		t.Fatalf("paths = %v", got)
+	}
+	want := map[string]bool{
+		"pingapp/requirements.txt": true,
+		"pingapp/main.py":          true,
+		"pingapp/test_main.py":     true,
+	}
+	for _, g := range got {
+		if !want[g] {
+			t.Fatalf("unexpected %q in %v", g, got)
+		}
+	}
+}
+
+func TestExtractSpecLayoutPaths_treeWinsOverProse(t *testing.T) {
+	// SPEC has tree with nested paths AND prose with bare paths for same files.
+	// The tree should win; bare paths should not appear in the authoritative set.
+	spec := "# Hello World API\n\n## Layout\n\n```\nhelloapi/\n├── go.mod\n├── main.go\n├── handler/\n│   └── hello.go\n└── handler/\n    └── hello_test.go\n```\n\n## File Layout\n- `go.mod` – module definition\n- `main.go` – entry point\n- `handler/hello.go` – handler implementation\n- `handler/hello_test.go` – handler tests\n"
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "SPEC.md"), []byte(spec), 0644); err != nil {
+		t.Fatal(err)
+	}
+	paths, ok := extractSpecLayoutPaths(dir)
+	if !ok {
+		t.Fatal("expected paths from SPEC")
+	}
+	// Should only have the 4 prefixed tree paths; bare prose paths dropped.
+	want := map[string]bool{
+		"helloapi/go.mod":              true,
+		"helloapi/main.go":             true,
+		"helloapi/handler/hello.go":    true,
+		"helloapi/handler/hello_test.go": true,
+	}
+	if len(paths) != 4 {
+		t.Fatalf("expected 4 paths, got %d: %v", len(paths), paths)
+	}
+	for _, p := range paths {
+		if !want[p] {
+			t.Fatalf("unexpected path %q in %v", p, paths)
+		}
+	}
+	// Specifically: bare handler/hello.go must NOT appear.
+	for _, p := range paths {
+		if p == "handler/hello.go" || p == "handler/hello_test.go" {
+			t.Fatalf("bare prose path %q leaked into authoritative set", p)
+		}
+	}
+}
+
+func TestMergeArchWinsOnConflict(t *testing.T) {
+	specPaths := []string{
+		"helloapi/go.mod",
+		"helloapi/main.go",
+		"helloapi/hello.go",        // WRONG flat (hallucinated by old parser)
+		"helloapi/hello_test.go",   // WRONG flat
+	}
+	archPaths := []string{
+		"helloapi/go.mod",
+		"helloapi/main.go",
+		"helloapi/handler/hello.go",     // CORRECT nested
+		"helloapi/handler/hello_test.go", // CORRECT nested
+	}
+	got := mergeArchWinsOnConflict(specPaths, archPaths)
+	// arch wins on hello.go / hello_test.go basename conflict
+	want := map[string]bool{
+		"helloapi/go.mod":                 true,
+		"helloapi/main.go":                true,
+		"helloapi/handler/hello.go":       true,
+		"helloapi/handler/hello_test.go":  true,
+	}
+	if len(got) != 4 {
+		t.Fatalf("expected 4 merged paths, got %d: %v", len(got), got)
+	}
+	for _, g := range got {
+		if !want[g] {
+			t.Fatalf("unexpected merged path %q in %v", g, got)
+		}
+	}
+	// Ensure flat hallucinated paths are gone
+	for _, g := range got {
+		if g == "helloapi/hello.go" || g == "helloapi/hello_test.go" {
+			t.Fatalf("hallucinated flat path %q survived merge", g)
+		}
+	}
+}
+
+func TestValidateRigWorkflowProfileForQA_layoutDrift(t *testing.T) {
+	townRoot := t.TempDir()
+	rig := "drift_rig"
+
+	// Profile has same basename at two different paths (layout drift)
+	bad := WorkflowValidation{
+		LayoutRoot:      "helloapi",
+		BeadTitleContains: "Implement helloapi/",
+		RequiredFiles:   []string{"helloapi/go.mod", "helloapi/main.go", "helloapi/hello.go", "helloapi/handler/hello.go", "helloapi/handler/hello_test.go"},
+		QAVerifyCommand: "cd helloapi && go test ./...",
+		DeliveryPhases: []DeliveryPhase{
+			{
+				ID:              "implementation",
+				RequiredFiles:   []string{"helloapi/go.mod", "helloapi/main.go", "helloapi/hello.go", "helloapi/hello_test.go"},
+				QAVerifyCommand: "cd helloapi && go build ./...",
+			},
+			{
+				ID:              "verification",
+				RequiredFiles:   []string{"helloapi/main.go", "helloapi/go.mod", "helloapi/handler/hello.go", "helloapi/handler/hello_test.go"},
+				QAVerifyCommand: "cd helloapi && go test ./...",
+			},
+		},
+	}
+	defect := ValidateRigWorkflowProfileForQA(townRoot, rig, bad)
+	if defect == "" {
+		t.Fatal("expected layout drift defect for hello.go at helloapi/hello.go and helloapi/handler/hello.go")
+	}
+	if !strings.Contains(defect, "layout drift") {
+		t.Fatalf("expected 'layout drift' in defect, got: %s", defect)
+	}
+	if !strings.Contains(defect, "hello.go") {
+		t.Fatalf("expected 'hello.go' in defect, got: %s", defect)
+	}
+
+	// Clean profile (no drift) should pass
+	good := WorkflowValidation{
+		LayoutRoot:        "helloapi",
+		BeadTitleContains: "Implement helloapi/",
+		RequiredFiles:     []string{"helloapi/go.mod", "helloapi/main.go", "helloapi/handler/hello.go", "helloapi/handler/hello_test.go"},
+		QAVerifyCommand:   "cd helloapi && go test ./...",
+		DeliveryPhases: []DeliveryPhase{
+			{
+				ID:            "implementation",
+				RequiredFiles: []string{"helloapi/go.mod", "helloapi/main.go", "helloapi/handler/hello.go"},
+			},
+			{
+				ID:            "verification",
+				RequiredFiles: []string{"helloapi/main.go", "helloapi/go.mod", "helloapi/handler/hello.go", "helloapi/handler/hello_test.go"},
+			},
+		},
+	}
+	if defect := ValidateRigWorkflowProfileForQA(townRoot, rig, good); defect != "" {
+		t.Fatalf("clean profile should pass QA, got: %s", defect)
+	}
+}

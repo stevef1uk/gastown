@@ -394,10 +394,18 @@ if ! (cd "$GT_ROOT" && gt rig add "$RIG" "$RIG_URL"); then
   exit 1
 fi
 
-echo "=== gt rig spec-index $RIG --force ==="
-if ! (cd "$GT_ROOT" && gt rig spec-index "$RIG" --force); then
-  echo "FATAL: gt rig spec-index failed for $RIG" >&2
-  exit 1
+# spec-index extracts workflow-profile.json from SPEC.md. It requires SPEC.md to
+# exist — req-flow rigs only have REQUIREMENTS.md (the analyst writes SPEC.md later
+# in the pipeline, at which point spec-index runs automatically). gt rig add above
+# already ran spec-index when SPEC.md was present, so skip here otherwise.
+if [[ -f "$GT_ROOT/$RIG/mayor/rig/SPEC.md" ]]; then
+  echo "=== gt rig spec-index $RIG --force ==="
+  if ! (cd "$GT_ROOT" && gt rig spec-index "$RIG" --force); then
+    echo "FATAL: gt rig spec-index failed for $RIG" >&2
+    exit 1
+  fi
+else
+  echo "=== gt rig spec-index $RIG (skipped: no SPEC.md — req-flow writes it later) ==="
 fi
 
 
