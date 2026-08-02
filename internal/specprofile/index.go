@@ -20,11 +20,21 @@ type ProfileFile struct {
 	Validation  orchestrator.WorkflowValidation `json:"validation"`
 }
 
-// IndexRig reads SPEC.md and writes workflow-profile.json using the LLM.
-// On success it returns the profile that was written (for operator messaging).
-// If force is true, it bypasses any "profile unchanged" optimizations and
-// re-runs the full LLM extraction + JUDGE pipeline.
+// IndexRig reads SPEC.md and writes workflow-profile.json.
+// First tries deterministic SPEC parser (no LLM hallucinations).
+// Falls back to LLM extraction only when SPEC lacks a parseable layout tree.
 func IndexRig(ctx context.Context, townRoot, rig string, force bool) (*ProfileFile, error) {
+	// Try deterministic indexer first (uses SPEC layout tree, no LLM)
+	if f, err := DeterministicIndexRig(ctx, townRoot, rig); err == nil {
+		return f, nil
+	}
+
+	// Fall back to LLM extraction
+	return indexRigLLM(ctx, townRoot, rig, force)
+}
+
+// indexRigLLM is the original LLM-based extraction + JUDGE pipeline.
+func indexRigLLM(ctx context.Context, townRoot, rig string, force bool) (*ProfileFile, error) {
 	specPath := SpecPath(townRoot, rig)
 	data, err := os.ReadFile(specPath)
 	if err != nil {
