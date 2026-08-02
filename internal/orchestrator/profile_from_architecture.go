@@ -859,7 +859,12 @@ func ValidateRigWorkflowProfileForQA(townRoot, rig string, v WorkflowValidation)
 	}
 	check(v.RequiredFiles, "required_files")
 	for i := range v.DeliveryPhases {
-		check(v.DeliveryPhases[i].RequiredFiles, fmt.Sprintf("phase %q required_files", v.DeliveryPhases[i].ID))
+		phase := &v.DeliveryPhases[i]
+		if phase.RequiredFiles == nil || len(phase.RequiredFiles) == 0 {
+			problems = append(problems, fmt.Sprintf("phase %q has no required_files — QA cannot verify this phase", phase.ID))
+			continue
+		}
+		check(phase.RequiredFiles, fmt.Sprintf("phase %q required_files", phase.ID))
 	}
 	// Layout drift: the same basename must not resolve to two different paths (e.g.
 	// helloapi/hello.go in one phase vs helloapi/handler/hello.go in another), or

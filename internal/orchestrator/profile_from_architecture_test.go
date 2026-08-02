@@ -415,3 +415,42 @@ func TestValidateRigWorkflowProfileForQA_layoutDrift(t *testing.T) {
 		t.Fatalf("clean profile should pass QA, got: %s", defect)
 	}
 }
+
+func TestValidateRigWorkflowProfileForQA_emptyPhaseFiles(t *testing.T) {
+	townRoot := t.TempDir()
+	rig := "empty_rig"
+
+	bad := WorkflowValidation{
+		LayoutRoot:        "linkshelf",
+		BeadTitleContains: "Implement linkshelf/",
+		RequiredFiles:     []string{"linkshelf/go.mod", "linkshelf/main.go"},
+		QAVerifyCommand:   "cd linkshelf && go test ./...",
+		DeliveryPhases: []DeliveryPhase{
+			{
+				ID:              "go-module",
+				RequiredFiles:   nil,
+				QAVerifyCommand: "cd linkshelf && echo ok",
+			},
+			{
+				ID:              "store-layer",
+				RequiredFiles:   []string{},
+				QAVerifyCommand: "cd linkshelf && echo ok",
+			},
+			{
+				ID:              "api-handlers",
+				RequiredFiles:   []string{"linkshelf/internal/api/handler.go"},
+				QAVerifyCommand: "cd linkshelf && go test ./...",
+			},
+		},
+	}
+	defect := ValidateRigWorkflowProfileForQA(townRoot, rig, bad)
+	if defect == "" {
+		t.Fatal("expected defect for phases with nil/empty required_files")
+	}
+	if !strings.Contains(defect, "go-module") || !strings.Contains(defect, "store-layer") {
+		t.Fatalf("expected phase names in defect, got: %s", defect)
+	}
+	if !strings.Contains(defect, "no required_files") {
+		t.Fatalf("expected 'no required_files' in defect, got: %s", defect)
+	}
+}
