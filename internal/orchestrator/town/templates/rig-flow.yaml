@@ -31,21 +31,19 @@ states:
     instructions: |
       1. Read `{{town_root}}/{{rig}}/mayor/rig/SPEC.md`.
       2. Write `{{town_root}}/{{rig}}/mayor/rig/architecture.md` (≥{{min_architecture_bytes}} bytes).
-      3. CRITICAL: You MUST prefix ALL file paths (in lists, prose, tables, and code blocks) with the root directory name from the SPEC (e.g. `layout_root/cmd/server/main.go`, not `cmd/server/main.go`, and `layout_root/web/` not `web/`).
+      3. CRITICAL: You MUST prefix ALL file paths with `layout_root/` (e.g. `layout_root/cmd/server/main.go`).
     hooks:
       prompt_context: [design_draft_context]
       pre_run: [reset_layout_pre_implementation, prune_rig_root_junk]
-      max_cmd_turns: 12
+      max_cmd_turns: 5
       cmd_guard: design
       cmd_rewrites: [rig_placeholders, spec_md_case, unwrap_bash_lc]
       track: design
       artifacts: design
       retry_hint: |
-        One CMD: per line. Read SPEC with head; write architecture.md via a single-quoted heredoc (≥200 bytes).
-        Prose may mention python3 or backend/ paths — that is fine inside the document.
-        After a successful heredoc write and `wc -c` meeting the minimum, gt-agent auto-completes design when validation passes (JSON success optional).
+        One CMD: per line. Read SPEC with head; write architecture.md via single-quoted heredoc. After wc -c meets minimum, auto-completes.
       failure_hint: |
-        Write architecture.md with a heredoc CMD in this session (stale files from prior runs do not count). Read SPEC with head -n 60. HTTP paths and store symbols must match SPEC verbatim (gt-agent rejects /web/* vs /static/, ListLinks vs List, etc.). Prefix **implement file paths** in lists/tables with layout_root (e.g. linkshelf/internal/store/store.go); prose may say store.List or schema.InitSchema without the prefix. If validation fails on file paths, rewrite architecture.md via heredoc. After wc -c passes, the step may auto-complete — or send JSON success only (no CMD lines).
+        Write architecture.md with heredoc CMD in this session (stale files don't count). Read SPEC with head -n 60. HTTP paths/symbols must match SPEC verbatim. Prefix implement paths with layout_root.
     transitions:
       success:
         to: design_review
