@@ -102,16 +102,17 @@ Follow the **red-green-refactor** cycle for every bead that has a test path in `
 **CRITICAL: Do NOT re-verify or re-close already-closed beads. Do NOT add dependencies or edit files after all beads are closed. Once Queue shows all ✓, send JSON success immediately.**
 
 ## Rules
-
+ 
 - Do NOT mix JSON outcome with EDIT/WRITE/CMD in the same message
 - Only bead IDs from **Queue** table or `bd list`
 - Only files under `{{layout_root}}/`
 - After EDIT/WRITE, gt-agent runs post-write verify automatically
-- After QA failure: READ the failing file on disk first. Only edit if QA's claim is confirmed. If file exists and verify passes, just `bd close`.
+- After QA failure: READ the failing file and dependencies. Diagnose from error output — one sentence explanation, then fix with EDIT/WRITE.
 - Web frontend (app.js, index.html): plain JavaScript (no ES module imports). Match DOM IDs exactly between files. No server-side function calls. {{static_url_contract_short}}
 - SQL beads (.sql): validate with the sqlite3 verify command in the Next bead line — do NOT run pytest on .sql files
 - `cmd/…/main.go` bead: wire only exported names from **Dependency exports**. Do NOT write inline handler bodies that return hardcoded JSON. For example, prefer `h.ListLinks(w, r)` over `w.Write([]byte("[]"))`. The handler logic belongs in `internal/api/`, not inlined in main.go.
 - **DB dependency wiring**: if a package declares `var DB *sql.DB` (or similar package-level dependency), assign to it in main.go after `sql.Open` — e.g. `store.DB = db`. A nil package-level DB panics at runtime even though the code compiles clean.
+- **Type ownership in shared packages**: If `architecture.md` ownership table says file A owns type `T`, file B in the same package MUST NOT redefine `T`. Import/use the type from file A. Violating this causes `redeclared in this block` build errors.
 - **Docker / docker-compose beads:** the `app`/`web` service must **actually build and run the application** (not `sleep infinity` or a placeholder image). If the compose only validates config (`docker-compose -f ... config`), the app service can be minimal, but e2e compose must start a real server on the port the tests target.
 - **E2E / Playwright / Cypress beads:**
   - Use **only** selectors and URLs documented in architecture.md / SPEC.md. Do not invent DOM IDs like `#chat-panel` unless they are listed in the Implement context.
