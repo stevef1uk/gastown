@@ -223,11 +223,18 @@ Return JSON: { "phase-id": ["file1", "file2"], ... }`, spec, phaseList, fileList
 	if itFiles, ok := phaseFiles["integration-test"]; ok {
 		log.Printf("[deterministic-index] integration-test phase files before fix: %v", itFiles)
 		if len(itFiles) == 0 {
-			// Find the server main.go
+			// Find the main entry point based on test runner
+			testRunner := inferTestRunner(files)
+			entryPatterns := getEntryPointPatterns(testRunner)
 			for _, f := range files {
-				if strings.HasSuffix(f, "/cmd/server/main.go") || strings.HasSuffix(f, "/server/main.go") || strings.HasSuffix(f, "/main.go") {
-					phaseFiles["integration-test"] = []string{f}
-					log.Printf("[deterministic-index] assigned %s to integration-test phase", f)
+				for _, pattern := range entryPatterns {
+					if strings.HasSuffix(f, pattern) {
+						phaseFiles["integration-test"] = []string{f}
+						log.Printf("[deterministic-index] assigned %s to integration-test phase (testRunner=%s)", f, testRunner)
+						break
+					}
+				}
+				if len(phaseFiles["integration-test"]) > 0 {
 					break
 				}
 			}
@@ -390,4 +397,19 @@ func slugify(s string) string {
 	s = strings.ReplaceAll(s, "/", "-")
 	s = strings.ReplaceAll(s, ".", "-")
 	return s
+}
+
+// getEntryPointPatterns returns file suffix patterns that indicate the main
+// server entry point for a given test runner.
+func getEntryPointPatterns(testRunner string) []string {
+	switch testRunner {
+	case "go":
+		return []string{"/cmd/server/main.go", "/server/main.go", "/main.go"}
+	case "pytest":
+		return []string{"/main.py", "/app.py", "/server.py", "/run.py"}
+	case "npm":
+		return []string{"/server.js", "/index.js", "/main.js", "/app.js", "/server.ts", "/index.ts"}
+	default:
+		return []string{"/main.go", "/main.py", "/server.js", "/index.js"}
+	}
 }
