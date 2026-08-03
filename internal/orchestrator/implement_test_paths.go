@@ -178,6 +178,13 @@ func AllowedCorrelatedPackageImplementWrite(activePath, writtenPath string, v Wo
 	if activePath == "" || writtenPath == "" || activePath == writtenPath {
 		return false
 	}
+
+	// Allow writing to files in the SAME DELIVERY PHASE (even different packages)
+	// This fixes schema/store mismatches where polecat needs to fix dependent files
+	if sameDeliveryPhase(activePath, writtenPath, v) {
+		return true
+	}
+
 	if !sameGoImplementPackage(activePath, writtenPath, v.LayoutRoot) {
 		return false
 	}
@@ -191,6 +198,34 @@ func AllowedCorrelatedPackageImplementWrite(activePath, writtenPath string, v Wo
 	if !IsTestImplementPath(activePath) && IsTestImplementPath(writtenPath) {
 		if test := CorrelatedTestPathForSource(activePath, v); test != "" &&
 			PathMatchesImplementWrite(writtenPath, test, v.RequiredFiles, v) {
+			return true
+		}
+	}
+	return false
+}
+
+func sameDeliveryPhase(a, b string, v WorkflowValidation) bool {
+	if len(v.DeliveryPhases) == 0 {
+		return false
+	}
+	for _, phase := range v.DeliveryPhases {
+		aInPhase := phaseHasFile(phase, a)
+		bInPhase := phaseHasFile(phase, b)
+		if aInPhase && bInPhase {
+			return true
+		}
+	}
+	return false
+}
+
+func phaseHasFile(phase DeliveryPhase, file string) bool {
+	file = filepath.ToSlash(strings.TrimSpace(file))
+	for _, f := range phase.RequiredFiles {
+		f = filepath.ToSlash(strings.TrimSpace(f))
+		if f == "" {
+			continue
+		}
+		if pathMatchesRequired(file, []string{f}) {
 			return true
 		}
 	}
