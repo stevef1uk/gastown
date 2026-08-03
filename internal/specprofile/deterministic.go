@@ -82,6 +82,31 @@ func DeterministicIndexRig(ctx context.Context, townRoot, rig string) (*ProfileF
 		return nil, err
 	}
 
+	// JUDGE pipeline: enhance verify commands using clamped profile + SPEC/REQUIREMENTS
+	reqPath := RequirementsPath(townRoot, rig)
+	reqRaw, _ := os.ReadFile(reqPath)
+	reqText := string(reqRaw)
+	specText := spec
+	if specText != "" || reqText != "" {
+		log.Printf("[deterministic-index] judge: loaded %d chars spec + %d chars req", len(specText), len(reqText))
+	}
+
+	endpoint, model := ResolveLLMForSpecIndex(townRoot)
+	validatorEndpoint, validatorModel := ResolveValidatorLLMForSpecIndex(townRoot)
+	f.Validation = JudgePhaseVerifyCommands(ctx, endpoint, model, validatorEndpoint, validatorModel, f.Validation, specText, reqText)
+
+	// Write again WITHOUT re-clamping to preserve JUDGE enhancements
+	if err := orchestrator.WriteRigWorkflowProfileClamped(townRoot, rig, f.Validation, f.Source, f.Confidence, false); err != nil {
+		return nil, err
+	}
+
+	// Re-read final on-disk version
+	path := ProfilePath(townRoot, rig)
+	raw, err := os.ReadFile(path)
+	if err == nil {
+		_ = json.Unmarshal(raw, &f)
+	}
+
 	log.Printf("[deterministic-index] wrote profile for %s: %d files, %d phases", rig, len(paths), len(phases))
 	return &f, nil
 }
@@ -144,6 +169,15 @@ Return JSON: { "phase-id": ["file1", "file2"], ... }`, spec, phaseList, fileList
 	if err != nil {
 		log.Printf("[deterministic-index] LLM phase assignment call failed: %v", err)
 		return phases, false
+	}
+
+	// Strip markdown code fences if LLM wraps JSON in ```
+	content = strings.TrimSpace(content)
+	if strings.HasPrefix(content, "```") {
+		lines := strings.Split(content, "\n")
+		if len(lines) > 2 {
+			content = strings.Join(lines[1:len(lines)-1], "\n")
+		}
 	}
 
 	var phaseFiles map[string][]string
