@@ -2,6 +2,7 @@ package specprofile
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -12,9 +13,11 @@ import (
 	"github.com/steveyegge/gastown/internal/orchestrator"
 )
 
-// DeterministicIndexRig creates a workflow profile from SPEC.md WITHOUT LLM.
-// Uses SPEC layout tree + phases section for a hallucination-free profile.
-// Falls back to LLM only when SPEC lacks a parseable layout tree.
+// DeterministicIndexRig creates a workflow profile from SPEC.md WITHOUT LLM hallucinations.
+// Uses SPEC layout tree + phases section for required_files. Calls LLM to assign files to
+// SPEC-named phases, then validates deterministically: union of all phase files MUST exactly
+// equal the parser's file set (no missing, no extras/hallucinations). Falls back to
+// directory-based grouping if LLM fails validation.
 func DeterministicIndexRig(ctx context.Context, townRoot, rig string) (*ProfileFile, error) {
 	specPath := SpecPath(townRoot, rig)
 	data, err := os.ReadFile(specPath)
@@ -30,11 +33,21 @@ func DeterministicIndexRig(ctx context.Context, townRoot, rig string) (*ProfileF
 		return nil, fmt.Errorf("no parseable layout tree in SPEC — falling back to LLM")
 	}
 
-	// Parse phases from SPEC
+	// Parse phases from SPEC (names only, no file assignments)
 	phases := parseSpecPhases(spec)
 	if len(phases) == 0 {
-		// Default phases from tree structure
+		// Fallback: default phases from tree structure
 		phases = defaultPhasesFromPaths(paths)
+	} else if hasEmptyPhaseFiles(phases) {
+		// SPEC has phase names but no file lists — use LLM to assign files to phases
+		assigned, ok := assignFilesToPhasesViaLLM(ctx, townRoot, rig, spec, phases, paths)
+		if ok {
+			phases = assigned
+		} else {
+			// LLM validation failed — fall back to deterministic grouping
+			log.Printf("[deterministic-index] LLM phase assignment failed validation; falling back to directory-based grouping for %s", rig)
+			phases = defaultPhasesFromPaths(paths)
+		}
 	}
 
 	// Parse verify commands from SPEC
@@ -68,6 +81,112 @@ func DeterministicIndexRig(ctx context.Context, townRoot, rig string) (*ProfileF
 
 	log.Printf("[deterministic-index] wrote profile for %s: %d files, %d phases", rig, len(paths), len(phases))
 	return &f, nil
+}
+
+func hasEmptyPhaseFiles(phases []orchestrator.DeliveryPhase) bool {
+	for _, p := range phases {
+		if len(p.RequiredFiles) == 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// assignFilesToPhasesViaLLM asks the LLM to map parser-extracted files to SPEC-named phases.
+// Input: whole SPEC + phase names + exact file list. Output: phaseID -> files.
+// Validation (deterministic): union of all phase files MUST exactly equal the input file set.
+// Returns the assigned phases and true if validation passes; false if LLM hallucinated/omitted files.
+func assignFilesToPhasesViaLLM(ctx context.Context, townRoot, rig, spec string, phases []orchestrator.DeliveryPhase, files []string) ([]orchestrator.DeliveryPhase, bool) {
+	if len(phases) == 0 || len(files) == 0 {
+		return phases, false
+	}
+
+	endpoint, model := ResolveLLMForSpecIndex(townRoot)
+
+	// Build phase ID list for the LLM
+	phaseIDs := make([]string, len(phases))
+	for i, p := range phases {
+		phaseIDs[i] = p.ID
+	}
+
+	system := `You assign files to delivery phases. Input: a SPEC, a list of phase IDs, and an EXACT list of ALL file paths that MUST be covered.
+Output a single JSON object mapping phase_id -> list of file paths from the input file list ONLY.
+Rules:
+- Every file from the input file list MUST appear exactly once across all phases.
+- Do NOT add files not in the input list. Do NOT omit files.
+- Only output the JSON mapping. No prose.`
+
+	// Prepare file list for prompt
+	fileList := strings.Join(files, "\n")
+	phaseList := strings.Join(phaseIDs, ", ")
+
+	user := fmt.Sprintf(`SPEC:
+%s
+
+PHASES: %s
+FILES (must all be assigned exactly once):
+%s
+
+Return JSON: { "phase-id": ["file1", "file2"], ... }`, spec, phaseList, fileList)
+
+	content, err := chatCompletionJSON(ctx, endpoint, model, system, user)
+	if err != nil {
+		log.Printf("[deterministic-index] LLM phase assignment call failed: %v", err)
+		return phases, false
+	}
+
+	var phaseFiles map[string][]string
+	if err := json.Unmarshal([]byte(content), &phaseFiles); err != nil {
+		log.Printf("[deterministic-index] LLM phase assignment JSON parse failed: %v (raw: %.200s)", err, content)
+		return phases, false
+	}
+
+	// Deterministic validation: every input file appears exactly once
+	fileSet := make(map[string]bool, len(files))
+	for _, f := range files {
+		fileSet[f] = true
+	}
+	seen := make(map[string]int)
+	for phaseID, fs := range phaseFiles {
+		for _, f := range fs {
+			if !fileSet[f] {
+				log.Printf("[deterministic-index] LLM assigned file not in parser set: %s (phase %s)", f, phaseID)
+				return phases, false
+			}
+			seen[f]++
+		}
+	}
+	// Check all files covered exactly once
+	for f, count := range seen {
+		if count != 1 {
+			log.Printf("[deterministic-index] LLM file coverage error: %s seen %d times", f, count)
+			return phases, false
+		}
+	}
+	for f := range fileSet {
+		if seen[f] == 0 {
+			log.Printf("[deterministic-index] LLM omitted file from phases: %s", f)
+			return phases, false
+		}
+	}
+
+	// Build phases with assigned files (preserving SPEC phase order)
+	assigned := make([]orchestrator.DeliveryPhase, len(phases))
+	for i, p := range phases {
+		fs := phaseFiles[p.ID]
+		if fs == nil {
+			fs = []string{}
+		}
+		assigned[i] = orchestrator.DeliveryPhase{
+			ID:              p.ID,
+			Title:           p.Title,
+			RequiredFiles:   fs,
+			QAVerifyCommand: "",
+			SpecFocus:       p.SpecFocus,
+		}
+	}
+
+	return assigned, true
 }
 
 func parseSpecPhases(spec string) []orchestrator.DeliveryPhase {

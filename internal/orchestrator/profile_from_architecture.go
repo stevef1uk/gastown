@@ -143,10 +143,20 @@ func parseSpecLayoutTree(specText string) []string {
 	section := specLayoutSection(specText)
 	dirs := []string{}
 	var out []string
+	inCodeFence := false
 	for _, line := range strings.Split(section, "\n") {
+		trimmed := strings.TrimSpace(line)
+		// Toggle code fence state
+		if strings.HasPrefix(trimmed, "```") {
+			inCodeFence = !inCodeFence
+			continue
+		}
+		if !inCodeFence {
+			continue
+		}
 		depth, entry := treeLineDepthEntry(line)
 		entry = strings.Trim(entry, "`")
-		if entry == "" || entry == "```" || strings.HasPrefix(entry, "```") {
+		if entry == "" {
 			continue
 		}
 		if strings.HasSuffix(entry, "/") {
@@ -177,37 +187,38 @@ func parseSpecLayoutTree(specText string) []string {
 }
 
 // treeLineDepthEntry reports the nesting depth and entry text of a markdown tree
-// line. Each `│` bar or 4-space indentation unit deepens the level; a trailing
-// `├── ` / `└── ` connector marks the entry itself. Returns depth 0 and the
-// trimmed entry for bare lines (e.g. the root directory or prose).
+// line.  The depth is determined by the column position of the first `├` or `└`
+// connector character (each tree level is 4 chars wide).  Returns depth 0 and
+// the trimmed entry for bare lines (e.g. the root directory or continuation bars).
 func treeLineDepthEntry(line string) (int, string) {
-	s := line
-	depth := 0
-	for strings.HasPrefix(s, "    ") {
-		depth++
-		s = s[4:]
-	}
-	for {
-		switch {
-		case strings.HasPrefix(s, "│"):
-			depth++
-			s = strings.TrimLeft(strings.TrimPrefix(s, "│"), " ")
-		case strings.HasPrefix(s, "├── "):
-			depth++
-			return depth, strings.TrimSpace(strings.TrimPrefix(s, "├── "))
-		case strings.HasPrefix(s, "└── "):
-			depth++
-			return depth, strings.TrimSpace(strings.TrimPrefix(s, "└── "))
-		case strings.HasPrefix(s, "├──"):
-			depth++
-			return depth, strings.TrimSpace(strings.TrimPrefix(s, "├──"))
-		case strings.HasPrefix(s, "└──"):
-			depth++
-			return depth, strings.TrimSpace(strings.TrimPrefix(s, "└──"))
-		default:
-			return depth, strings.TrimSpace(s)
+	// Find the column position of the tree connector (├ or └) using rune counting.
+	connIdx := -1
+	runes := []rune(line)
+	for i, r := range runes {
+		if r == '├' || r == '└' {
+			connIdx = i
+			break
 		}
 	}
+
+	if connIdx < 0 {
+		// No connector — root directory, continuation bar, or prose line.
+		return 0, strings.TrimSpace(line)
+	}
+
+	// Column-based depth: each tree level is 4 chars wide.
+	depth := connIdx/4 + 1
+
+	// Extract entry name after the connector (skip "── " or "──").
+	rest := string(runes[connIdx:])
+	if strings.HasPrefix(rest, "├── ") || strings.HasPrefix(rest, "└── ") {
+		rest = strings.TrimPrefix(rest, "├── ")
+		rest = strings.TrimPrefix(rest, "└── ")
+	} else if strings.HasPrefix(rest, "├──") || strings.HasPrefix(rest, "└──") {
+		rest = strings.TrimPrefix(rest, "├──")
+		rest = strings.TrimPrefix(rest, "└──")
+	}
+	return depth, strings.TrimSpace(rest)
 }
 
 // validTreeDirName reports whether a directory entry in a SPEC layout tree is a
@@ -221,15 +232,38 @@ func validTreeDirName(name string) bool {
 
 func specLayoutSection(specText string) string {
 	lower := strings.ToLower(specText)
-	i := strings.Index(lower, "## layout")
-	if i < 0 {
-		return specText
+
+	// Find both "## file layout" and "## layout" sections
+	fileLayoutIdx := strings.Index(lower, "## file layout")
+	layoutIdx := strings.Index(lower, "## layout")
+
+	// Extract both candidate sections and prefer the one with a code fence
+	var fileLayoutSection, layoutSection string
+	if fileLayoutIdx >= 0 {
+		fileLayoutSection = specText[fileLayoutIdx:]
+		if j := strings.Index(fileLayoutSection[1:], "\n## "); j >= 0 {
+			fileLayoutSection = fileLayoutSection[:1+j]
+		}
 	}
-	section := specText[i:]
-	if j := strings.Index(section[1:], "\n## "); j >= 0 {
-		return section[:1+j]
+	if layoutIdx >= 0 {
+		layoutSection = specText[layoutIdx:]
+		if j := strings.Index(layoutSection[1:], "\n## "); j >= 0 {
+			layoutSection = layoutSection[:1+j]
+		}
 	}
-	return section
+
+	// Prefer section containing a code fence (```) — that's where the tree lives
+	switch {
+	case fileLayoutSection != "" && strings.Contains(fileLayoutSection, "```"):
+		return fileLayoutSection
+	case layoutSection != "" && strings.Contains(layoutSection, "```"):
+		return layoutSection
+	case fileLayoutSection != "":
+		return fileLayoutSection
+	case layoutSection != "":
+		return layoutSection
+	}
+	return specText
 }
 
 // shouldReplaceProfileRequiredFilesWithSpec returns false when the saved profile already

@@ -94,6 +94,71 @@ func LLMExtractProfile(ctx context.Context, endpoint, model, specContent string)
 	return v, conf, nil
 }
 
+// chatCompletionJSON performs a single OpenAI-compatible chat call that must
+// return a JSON object. It is the shared low-level plumbing used by the
+// deterministic-index phase assignment step. Returns the raw content string.
+func chatCompletionJSON(ctx context.Context, endpoint, model, system, user string) (string, error) {
+	endpoint = strings.TrimSpace(endpoint)
+	model = strings.TrimSpace(model)
+	if endpoint == "" {
+		endpoint = config.DefaultFreerideProxyEndpoint
+	}
+	if model == "" {
+		model = "ollama/llama3.3"
+	}
+	body := map[string]interface{}{
+		"model": model,
+		"messages": []map[string]string{
+			{"role": "system", "content": system},
+			{"role": "user", "content": user},
+		},
+		"max_tokens": 8192,
+		"stream":     false,
+	}
+	jsonBody, err := json.Marshal(body)
+	if err != nil {
+		return "", err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(jsonBody))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-GasTown-Role", "spec-index")
+
+	client := &http.Client{Timeout: HTTPTimeoutForSpecIndex()}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("llm request: %w", err)
+	}
+	defer resp.Body.Close()
+	raw, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", fmt.Errorf("llm http %d: %s", resp.StatusCode, strings.TrimSpace(string(raw)))
+	}
+	var wrap struct {
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+			FinishReason string `json:"finish_reason"`
+		} `json:"choices"`
+	}
+	if err := json.Unmarshal(raw, &wrap); err != nil {
+		return "", fmt.Errorf("decode completions: %w", err)
+	}
+	if len(wrap.Choices) == 0 {
+		return "", fmt.Errorf("no choices in llm response")
+	}
+	if wrap.Choices[0].FinishReason == "length" {
+		return "", fmt.Errorf("llm response truncated (finish_reason=length)")
+	}
+	return strings.TrimSpace(wrap.Choices[0].Message.Content), nil
+}
+
 func specIndexSystemPrompt() string {
 	return `You are a build-system assistant. Given a project SPECIFICATION (markdown), emit a single JSON object only—no prose, no markdown fences.
 

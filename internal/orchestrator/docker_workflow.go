@@ -531,6 +531,13 @@ func AlignProfileLayoutWithArchitecture(v WorkflowValidation, archPath string) W
 	if len(archPaths) < 3 {
 		return v
 	}
+	// If architecture uses "layout_root/" as a placeholder (not the actual directory name),
+	// don't strip the prefix — the SPEC tree is authoritative.
+	for _, p := range archPaths {
+		if strings.HasPrefix(p, "layout_root/") {
+			return v
+		}
+	}
 	prefixed := 0
 	for _, p := range archPaths {
 		if strings.HasPrefix(p, layout+"/") {
