@@ -55,10 +55,30 @@ CMD: cat > {{town_root}}/{{rig}}/mayor/rig/architecture.md <<'EOF'
 - (list key paths from SPEC using `{{layout_root}}/` prefix when layout_root ≠ "." — e.g. `{{layout_root}}/internal/store/schema.go` or bare `main.go` when layout_root is `"."`; never use `./` prefix)
 
 ## Go package / bead ownership
-(When multiple `.go` files share a package, document symbol ownership per file with a table: `| File | Owns (exported) | Must not define |` using backtick Go fragments for exported symbols)
+(When multiple `.go` files share a package, document symbol ownership per file with a table:
+`| File | Owns (exported) | Must not define |`
+**Required: full function signatures for exported symbols** — e.g.:
+```
+| `layout_root/internal/store/store.go` | `Store` (struct), `NewStore(db *sql.DB) *Store`, `List() ([]*Link, error)`, `Create(link *Link) (int64, error)`, `Delete(id int64) error` | Redefinition of `Link` or any handler logic |
+| `layout_root/internal/api/handler.go` | `RegisterRoutes(mux *http.ServeMux, s *store.Store)` | Direct SQL statements or store internals |
+| `layout_root/cmd/server/main.go` | `main` — **must call `store.InitSchema(db)` then `api.RegisterRoutes(mux, st)`** | Route registration or store implementation details |
+```
+Only wrap actual Go symbols in backticks. Prose may reference packages as `store.List` without backticks.
+
+**For other languages, provide equivalent full signatures** (e.g., Python: `def create_link(store, title: str, url: str, description: str) -> Link`, `async def list_links(store) -> list[Link]`, etc.)
 
 ## HTTP + entrypoint integration
-(Copy SPEC HTTP API table. State how server entrypoint wires dependencies — match what earlier beads export)
+(Copy SPEC HTTP API table. State how server entrypoint wires dependencies — **match what earlier beads export**. 
+
+**Required wiring pattern (adapt to language):**
+1. Entrypoint parses CLI flags, opens database/connection
+2. **Calls schema initialization (e.g., `store.InitSchema(db)` in Go, `init_schema()` in Python, migration runner in Node)**
+3. Creates store/repository instance
+3. Passes store to route registration (e.g., `api.RegisterRoutes(mux, st)` in Go, `app.include_router(routes, prefix="/api")` in FastAPI, `app.use(routes)` in Express)
+4. Registers static file serving (if web frontend)
+4. Starts server on configured port
+
+State how pieces connect; full-suite command e.g. `go test ./...` / `pytest -v` / `npm test`)
 
 ## Unit tests
 (Map SPEC functional requirements to test files per package)
