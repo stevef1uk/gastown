@@ -188,6 +188,10 @@ Return JSON: { "phase-id": ["file1", "file2"], ... }`, spec, phaseList, fileList
 		log.Printf("[deterministic-index] LLM phase assignment JSON parse failed: %v (raw: %.200s)", err, content)
 		return phases, false
 	}
+	log.Printf("[deterministic-index] LLM returned phaseFiles keys: %v", func() []string { k := make([]string, 0, len(phaseFiles)); for kk := range phaseFiles { k = append(k, kk) }; return k }())
+	for pid, fs := range phaseFiles {
+		log.Printf("[deterministic-index]   %s: %v", pid, fs)
+	}
 
 	// Deterministic validation: every input file appears exactly once
 	fileSet := make(map[string]bool, len(files))
@@ -219,26 +223,51 @@ Return JSON: { "phase-id": ["file1", "file2"], ... }`, spec, phaseList, fileList
 	}
 
 	// Post-fix: ensure integration-test phase has the server entry point
-	// (integration tests need the server binary to run)
+	// (integration tests need the server binary to run). Also ensure test files
+	// stay in their respective phases (not in integration-test).
 	if itFiles, ok := phaseFiles["integration-test"]; ok {
 		log.Printf("[deterministic-index] integration-test phase files before fix: %v", itFiles)
-		if len(itFiles) == 0 {
-			// Find the main entry point based on test runner
-			testRunner := inferTestRunner(files)
-			entryPatterns := getEntryPointPatterns(testRunner)
-			for _, f := range files {
-				for _, pattern := range entryPatterns {
-					if strings.HasSuffix(f, pattern) {
-						phaseFiles["integration-test"] = []string{f}
-						log.Printf("[deterministic-index] assigned %s to integration-test phase (testRunner=%s)", f, testRunner)
-						break
-					}
-				}
-				if len(phaseFiles["integration-test"]) > 0 {
+
+		// Find the main entry point based on test runner
+		testRunner := inferTestRunner(files)
+		entryPatterns := getEntryPointPatterns(testRunner)
+		layoutRoot := inferLayoutRoot(files)
+		var entryFile string
+		for _, f := range files {
+			for _, pattern := range entryPatterns {
+				// Match with or without layout_root prefix
+				if strings.HasSuffix(f, pattern) || strings.HasSuffix(f, layoutRoot+"/"+pattern) {
+					entryFile = f
 					break
 				}
 			}
+			if entryFile != "" {
+				break
+			}
 		}
+
+		// Build final file list: existing non-test files + entry point
+		nonTestFiles := make([]string, 0)
+		for _, f := range itFiles {
+			if !strings.HasSuffix(f, "_test.go") && !strings.HasSuffix(f, "_test.py") {
+				nonTestFiles = append(nonTestFiles, f)
+			}
+		}
+		if entryFile != "" {
+			// Check if entry already in nonTestFiles
+			found := false
+			for _, f := range nonTestFiles {
+				if f == entryFile {
+					found = true
+					break
+				}
+			}
+			if !found {
+				nonTestFiles = append(nonTestFiles, entryFile)
+			}
+		}
+		phaseFiles["integration-test"] = nonTestFiles
+		log.Printf("[deterministic-index] assigned %s to integration-test phase (testRunner=%s)", entryFile, testRunner)
 		log.Printf("[deterministic-index] integration-test phase files after fix: %v", phaseFiles["integration-test"])
 	} else {
 		log.Printf("[deterministic-index] integration-test phase NOT FOUND in phaseFiles map; keys: %v", func() []string { k := make([]string, 0, len(phaseFiles)); for kk := range phaseFiles { k = append(k, kk) }; return k }())
