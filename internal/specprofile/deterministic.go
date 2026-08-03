@@ -29,12 +29,15 @@ func DeterministicIndexRig(ctx context.Context, townRoot, rig string) (*ProfileF
 	// Parse SPEC layout tree for required_files
 	mayorRig := filepath.Join(townRoot, rig, "mayor", "rig")
 	paths, hasTree := orchestrator.ProbeExtractSpecLayoutPaths(mayorRig)
+	log.Printf("[deterministic-index] rig=%s hasTree=%v paths=%d: %v", rig, hasTree, len(paths), paths)
 	if !hasTree || len(paths) == 0 {
+		log.Printf("[deterministic-index] no parseable layout tree in SPEC for %s — falling back to LLM", rig)
 		return nil, fmt.Errorf("no parseable layout tree in SPEC — falling back to LLM")
 	}
 
 	// Parse phases from SPEC (names only, no file assignments)
 	phases := parseSpecPhases(spec)
+	log.Printf("[deterministic-index] rig=%s phases from SPEC=%d: %v", rig, len(phases), phaseNames(phases))
 	if len(phases) == 0 {
 		// Fallback: default phases from tree structure
 		phases = defaultPhasesFromPaths(paths)
@@ -81,6 +84,14 @@ func DeterministicIndexRig(ctx context.Context, townRoot, rig string) (*ProfileF
 
 	log.Printf("[deterministic-index] wrote profile for %s: %d files, %d phases", rig, len(paths), len(phases))
 	return &f, nil
+}
+
+func phaseNames(phases []orchestrator.DeliveryPhase) []string {
+	names := make([]string, len(phases))
+	for i, p := range phases {
+		names[i] = p.ID
+	}
+	return names
 }
 
 func hasEmptyPhaseFiles(phases []orchestrator.DeliveryPhase) bool {

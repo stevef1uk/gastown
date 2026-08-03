@@ -3,6 +3,7 @@ package orchestrator
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -102,9 +103,11 @@ func extractSpecLayoutPaths(mayorRigDir string) ([]string, bool) {
 	// If the tree exists, it defines the complete required set.
 	var paths []string
 	if len(treePaths) > 0 {
+		log.Printf("[extractSpecLayoutPaths] using SPEC layout tree: %d files", len(treePaths))
 		paths = treePaths
 	} else {
 		// Fallback: no parseable tree — use prose backtick refs as last resort.
+		log.Printf("[extractSpecLayoutPaths] no layout tree found; falling back to prose backtick extraction")
 		archPaths := extractArchPaths(text, "")
 		archDebug("extractArchPaths from SPEC (fallback): %v", archPaths)
 		paths = archPaths
