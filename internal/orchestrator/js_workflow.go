@@ -9,49 +9,45 @@ import (
 var nodeSetupCdRe = regexp.MustCompile(`^cd\s+\S+\s*&&\s*`)
 
 // WorkflowUsesNodeJS reports whether the workflow uses Node.js/TypeScript/JavaScript tooling.
+// Returns true for actual Node.js projects (package.json, tsconfig.json, or explicit
+// npm/pnpm/yarn commands). Also returns true for frontend TypeScript/React projects
+// with .ts/.tsx files in a frontend/app directory. Pure Playwright E2E projects
+// with only test/e2e spec files do NOT count as Node.js projects.
 func WorkflowUsesNodeJS(v WorkflowValidation) bool {
-	// Check test_runner
-	if strings.EqualFold(strings.TrimSpace(v.TestRunner), "playwright") ||
-		strings.EqualFold(strings.TrimSpace(v.TestRunner), "jest") ||
-		strings.EqualFold(strings.TrimSpace(v.TestRunner), "vitest") ||
-		strings.EqualFold(strings.TrimSpace(v.TestRunner), "mocha") {
-		return true
-	}
-	// Check QA verify command for Node.js tooling
-	q := strings.ToLower(strings.TrimSpace(v.QAVerifyCommand))
-	if strings.Contains(q, "npx playwright") || strings.Contains(q, "npx vitest") ||
-		strings.Contains(q, "npx jest") || strings.Contains(q, "npm test") ||
-		strings.Contains(q, "npm run test") || strings.Contains(q, "yarn test") ||
-		strings.Contains(q, "pnpm test") {
-		return true
-	}
-	// Check for Node.js config files AND general TypeScript/JavaScript files in required_files
+	// Check for explicit Node.js project infrastructure
+	hasPackageJSON := false
+	hasTSConfig := false
+	hasNodeCommand := false
+	hasFrontendTypeScript := false
+
+	// Check required files for project infrastructure
 	for _, f := range v.RequiredFiles {
 		f = strings.ToLower(strings.TrimSpace(f))
-		if strings.HasSuffix(f, "package.json") ||
-			strings.HasSuffix(f, "tsconfig.json") ||
-			strings.HasSuffix(f, "playwright.config.ts") ||
-			strings.HasSuffix(f, "playwright.config.js") ||
-			strings.HasSuffix(f, "vitest.config.ts") ||
-			strings.HasSuffix(f, "jest.config.ts") ||
-			strings.HasSuffix(f, "jest.config.js") ||
-			strings.HasSuffix(f, ".spec.ts") ||
-			strings.HasSuffix(f, ".spec.tsx") ||
-			strings.HasSuffix(f, ".test.ts") ||
-			strings.HasSuffix(f, ".test.tsx") ||
-			strings.HasSuffix(f, ".e2e.ts") ||
-			strings.HasSuffix(f, ".e2e.spec.ts") ||
-			strings.HasSuffix(f, ".tsx") ||
-			strings.HasSuffix(f, ".ts") ||
-			strings.HasSuffix(f, ".jsx") ||
-			strings.HasSuffix(f, ".js") {
-			return true
+		if strings.HasSuffix(f, "package.json") || f == "package.json" {
+			hasPackageJSON = true
 		}
-		if strings.HasSuffix(f, "/package.json") || f == "package.json" {
-			return true
+		if strings.HasSuffix(f, "tsconfig.json") {
+			hasTSConfig = true
+		}
+		// Frontend TypeScript/React files in app/frontend directory indicate a Node.js project
+		if (strings.HasSuffix(f, ".ts") || strings.HasSuffix(f, ".tsx")) &&
+			(strings.HasPrefix(f, "frontend/") || strings.HasPrefix(f, "app/") || strings.HasPrefix(f, "src/")) {
+			hasFrontendTypeScript = true
 		}
 	}
-	return false
+
+	// Check verify commands for explicit npm/pnpm/yarn commands (not just npx playwright)
+	q := strings.ToLower(strings.TrimSpace(v.QAVerifyCommand))
+	if strings.Contains(q, "npm install") || strings.Contains(q, "npm test") ||
+		strings.Contains(q, "npm run test") || strings.Contains(q, "yarn install") ||
+		strings.Contains(q, "yarn test") || strings.Contains(q, "pnpm install") ||
+		strings.Contains(q, "pnpm test") {
+		hasNodeCommand = true
+	}
+
+	// A Node.js workflow requires explicit project infrastructure
+	// Playwright config/spec files alone do NOT make it a Node.js project
+	return hasPackageJSON || hasTSConfig || hasNodeCommand || hasFrontendTypeScript
 }
 
 func (v WorkflowValidation) detectsNodeProject() bool {
