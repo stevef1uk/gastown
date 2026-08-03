@@ -68,7 +68,9 @@ func DeterministicIndexRig(ctx context.Context, townRoot, rig string) (*ProfileF
 
 	// Clamp/validate
 	v = orchestrator.ClampProfileValidation(v)
+	log.Printf("[deterministic-index] after ClampProfileValidation: integration-test required_files=%v", v.DeliveryPhases[len(v.DeliveryPhases)-1].RequiredFiles)
 	v = orchestrator.SanitizeRigFlowProfile(v)
+	log.Printf("[deterministic-index] after SanitizeRigFlowProfile: integration-test required_files=%v", v.DeliveryPhases[len(v.DeliveryPhases)-1].RequiredFiles)
 
 	f := ProfileFile{
 		Version:     1,
@@ -133,6 +135,7 @@ func hasEmptyPhaseFiles(phases []orchestrator.DeliveryPhase) bool {
 // Validation (deterministic): union of all phase files MUST exactly equal the input file set.
 // Returns the assigned phases and true if validation passes; false if LLM hallucinated/omitted files.
 func assignFilesToPhasesViaLLM(ctx context.Context, townRoot, rig, spec string, phases []orchestrator.DeliveryPhase, files []string) ([]orchestrator.DeliveryPhase, bool) {
+	log.Printf("[deterministic-index] assignFilesToPhasesViaLLM called for %s: %d phases, %d files", rig, len(phases), len(files))
 	if len(phases) == 0 || len(files) == 0 {
 		return phases, false
 	}
@@ -213,6 +216,25 @@ Return JSON: { "phase-id": ["file1", "file2"], ... }`, spec, phaseList, fileList
 			log.Printf("[deterministic-index] LLM omitted file from phases: %s", f)
 			return phases, false
 		}
+	}
+
+	// Post-fix: ensure integration-test phase has the server entry point
+	// (integration tests need the server binary to run)
+	if itFiles, ok := phaseFiles["integration-test"]; ok {
+		log.Printf("[deterministic-index] integration-test phase files before fix: %v", itFiles)
+		if len(itFiles) == 0 {
+			// Find the server main.go
+			for _, f := range files {
+				if strings.HasSuffix(f, "/cmd/server/main.go") || strings.HasSuffix(f, "/server/main.go") || strings.HasSuffix(f, "/main.go") {
+					phaseFiles["integration-test"] = []string{f}
+					log.Printf("[deterministic-index] assigned %s to integration-test phase", f)
+					break
+				}
+			}
+		}
+		log.Printf("[deterministic-index] integration-test phase files after fix: %v", phaseFiles["integration-test"])
+	} else {
+		log.Printf("[deterministic-index] integration-test phase NOT FOUND in phaseFiles map; keys: %v", func() []string { k := make([]string, 0, len(phaseFiles)); for kk := range phaseFiles { k = append(k, kk) }; return k }())
 	}
 
 	// Build phases with assigned files (preserving SPEC phase order)
