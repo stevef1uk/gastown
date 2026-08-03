@@ -12,6 +12,7 @@ func linkshelfLikeValidation() WorkflowValidation {
 	v := DefaultWorkflowValidation()
 	v.LayoutRoot = "linkshelf"
 	v.QAVerifyCommand = "cd linkshelf && go test ./..."
+	v.DevServerPort = 8080
 	v.RequiredFiles = []string{
 		"linkshelf/cmd/server/main.go",
 		"linkshelf/web/index.html",

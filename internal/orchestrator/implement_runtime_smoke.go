@@ -48,6 +48,10 @@ func smokeProbeAPIPath(path string) bool {
 
 // WorkflowNeedsQARuntimeSmoke reports whether QA must run a live server smoke CMD this session.
 func WorkflowNeedsQARuntimeSmoke(townRoot, rig string, v WorkflowValidation) bool {
+	// If dev_server_port is explicitly 0, runtime smoke is disabled.
+	if v.DevServerPort == 0 {
+		return false
+	}
 	// Only run QA runtime smoke in the final delivery phase when every
 	// component (store, handlers, server, web assets) is assembled.
 	if v.HasPhasedDelivery() && !v.IsFinalDeliveryPhase() {

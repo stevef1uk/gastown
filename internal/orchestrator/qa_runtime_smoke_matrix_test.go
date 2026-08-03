@@ -183,9 +183,10 @@ func TestWorkflowNeedsQARuntimeSmoke_matrix(t *testing.T) {
 		{
 			name: "go_web_static_only",
 			v: WorkflowValidation{
-				LayoutRoot:      "app",
-				QAVerifyCommand: "cd app && go test ./...",
-				RequiredFiles:   []string{"app/web/index.html", "app/cmd/server/main.go"},
+				LayoutRoot:       "app",
+				QAVerifyCommand:  "cd app && go test ./...",
+				RequiredFiles:    []string{"app/web/index.html", "app/cmd/server/main.go"},
+				DevServerPort:    8080,
 			},
 			arch:     archStatic,
 			writeWeb: true,
@@ -195,13 +196,14 @@ func TestWorkflowNeedsQARuntimeSmoke_matrix(t *testing.T) {
 		{
 			name: "go_web_with_api",
 			v: WorkflowValidation{
-				LayoutRoot:      "linkshelf",
-				QAVerifyCommand: "cd linkshelf && go test ./...",
+				LayoutRoot:       "linkshelf",
+				QAVerifyCommand:  "cd linkshelf && go test ./...",
 				RequiredFiles: []string{
 					"linkshelf/web/index.html",
 					"linkshelf/cmd/server/main.go",
 					"linkshelf/internal/api/handlers.go",
 				},
+				DevServerPort: 8080,
 			},
 			arch:     archAPI,
 			writeWeb: true,
@@ -233,9 +235,10 @@ func TestWorkflowNeedsQARuntimeSmoke_matrix(t *testing.T) {
 		{
 			name: "python_with_api_and_app",
 			v: WorkflowValidation{
-				LayoutRoot:      "backend",
+				LayoutRoot:        "backend",
 				QAVerifyCommand:   "python3 -m pytest -q",
 				RequiredFiles:     []string{"backend/app.py", "backend/api/routes.py"},
+				DevServerPort:     8080,
 			},
 			arch:   archAPI,
 			wantQA: true,

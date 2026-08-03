@@ -66,6 +66,7 @@ curl http://localhost:8080/ping
 			RequiredFiles:      []string{"pingapp/requirements.txt", "pingapp/main.py", "pingapp/test_main.py"},
 			QAVerifyCommand:    "cd pingapp && pytest",
 			ActivePhaseIDField: "backend-core",
+			DevServerPort:       8080,
 			DeliveryPhases: []DeliveryPhase{
 				{
 					ID:              "backend-core",
