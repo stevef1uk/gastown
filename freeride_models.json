@@ -52,7 +52,7 @@
     "mayor": "gt-agent-local",
     "planner": "gt-agent-local",
     "setup": "gt-agent-local",
-    "polecat": "gt-agent-polecat",
+    "polecat": "gt-agent-deepseek",
     "qa": "gt-agent-gemini",
     "refinery": "gt-agent-local",
     "witness": "gt-agent-local"
