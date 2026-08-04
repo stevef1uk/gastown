@@ -97,6 +97,38 @@ func TestDeterministicIndexRig_proseBacktickRefsIgnored(t *testing.T) {
 	}
 }
 
+func TestDeterministicIndexRig_flatLayoutSinglePhase(t *testing.T) {
+	dir := t.TempDir()
+	rigDir := filepath.Join(dir, "ping_rig", "mayor", "rig")
+	if err := os.MkdirAll(rigDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	spec := "# PingApp\n\n## Goal\n\nTiny Python app with one HTTP endpoint.\n\n## Layout\n\n```\npingapp/\n├── requirements.txt\n├── main.py\n└── test_main.py\n```\n\nRun `cd pingapp && pytest` to verify.\n"
+	if err := os.WriteFile(filepath.Join(rigDir, "SPEC.md"), []byte(spec), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	f, err := DeterministicIndexRig(context.Background(), dir, "ping_rig")
+	if err != nil {
+		t.Fatalf("DeterministicIndexRig failed: %v", err)
+	}
+	// A flat layout must never split into one phase per file — QA loops forever.
+	if len(f.Validation.DeliveryPhases) != 1 {
+		t.Fatalf("flat layout must produce exactly 1 phase, got %d: %+v", len(f.Validation.DeliveryPhases), f.Validation.DeliveryPhases)
+	}
+	if len(f.Validation.DeliveryPhases[0].RequiredFiles) != 3 {
+		t.Fatalf("single phase must hold all 3 files, got %+v", f.Validation.DeliveryPhases[0].RequiredFiles)
+	}
+	// The single phase's verify command must be Python, never Go.
+	cmd := strings.ToLower(f.Validation.DeliveryPhases[0].QAVerifyCommand)
+	if strings.Contains(cmd, "go vet") || strings.Contains(cmd, "go test") || strings.Contains(cmd, "go run") {
+		t.Fatalf("python rig phase got a Go verify command: %q", f.Validation.DeliveryPhases[0].QAVerifyCommand)
+	}
+	if !strings.Contains(cmd, "pytest") {
+		t.Fatalf("expected pytest verify for python rig, got %q", f.Validation.DeliveryPhases[0].QAVerifyCommand)
+	}
+}
+
 func TestDeterministicIndexRig_verifyCommandInference(t *testing.T) {
 	dir := t.TempDir()
 	rigDir := filepath.Join(dir, "testrig", "mayor", "rig")

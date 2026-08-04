@@ -654,6 +654,9 @@ func SyncRigWorkflowProfileFromArchitecture(townRoot, rig string) (bool, error) 
 	// ForActivePhase at planning time) match the authoritative set instead of the
 	// hallucinated list the LLM emitted.
 	env.Validation = rebuildDeliveryPhasesFromAuthoritative(env.Validation, authoritative)
+	// Rebuilt/re-distributed phases may have empty or wrong-stack verify commands;
+	// fill them with stack-appropriate defaults (never go vet in a Python phase).
+	env.Validation = SanitizePhaseVerifyCommandsForStack(env.Validation)
 	// SPEC/architecture are authoritative for the runtime smoke too. When they
 	// document an HTTP server + probes, ensure the profile has a smoke phase whose
 	// qa_verify_command starts the server and curls the documented routes — the
@@ -813,6 +816,14 @@ func rebuildDeliveryPhasesFromAuthoritative(v WorkflowValidation, authoritative 
 	if len(v.DeliveryPhases) == 0 {
 		return v
 	}
+	// A degenerate phase structure (one phase per file, or any empty phase) is a
+	// spec-index artifact that QA can never pass — e.g. a flat pingapp split into
+	// requirementstxt/mainpy/test-mainpy. Rebuild from the authoritative file set
+	// instead of re-distributing into the broken skeleton.
+	if degenerateDeliveryPhaseStructure(v, authoritative) {
+		v.DeliveryPhases = PhasesFromFilePaths(authoritative)
+		return v
+	}
 	// Map authoritative entries to the phase whose existing files share the longest
 	// directory prefix (mirrors ReconcileProfileWithArchitecture's placement).
 	for i := range v.DeliveryPhases {
@@ -853,6 +864,21 @@ func rebuildDeliveryPhasesFromAuthoritative(v WorkflowValidation, authoritative 
 		v.DeliveryPhases[bestIdx].RequiredFiles = append(v.DeliveryPhases[bestIdx].RequiredFiles, p)
 	}
 	return v
+}
+
+// degenerateDeliveryPhaseStructure reports whether the profile's phase skeleton
+// is a spec-index artifact rather than a deliberate split: any phase with no
+// required files, or as many phases as files (one file per phase).
+func degenerateDeliveryPhaseStructure(v WorkflowValidation, authoritative []string) bool {
+	for i := range v.DeliveryPhases {
+		if len(v.DeliveryPhases[i].RequiredFiles) == 0 {
+			return true
+		}
+	}
+	if len(authoritative) > 0 && len(v.DeliveryPhases) >= len(authoritative) {
+		return true
+	}
+	return false
 }
 
 // ValidateRigWorkflowProfileForQA reports profile defects that would break planning

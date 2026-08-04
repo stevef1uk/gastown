@@ -18,6 +18,61 @@ type DeliveryPhase struct {
 	SpecFocus       string   `yaml:"spec_focus,omitempty" json:"spec_focus,omitempty"`
 }
 
+// PhasesFromFilePaths groups required file paths into delivery phases by the
+// subdirectory under layout_root. Files directly under layout_root (e.g.
+// pingapp/main.py) belong to the root "core" phase. A flat layout — every file
+// at layout_root with no real subdirectories — collapses into ONE phase;
+// grouping by the filename segment would otherwise create a nonsensical
+// one-phase-per-file profile that QA can never pass. Subdirectory keys are
+// returned in sorted order for deterministic output.
+func PhasesFromFilePaths(paths []string) []DeliveryPhase {
+	dirs := map[string][]string{}
+	for _, p := range paths {
+		p = filepath.ToSlash(strings.TrimSpace(p))
+		parts := strings.Split(p, "/")
+		if len(parts) >= 3 {
+			dirs[parts[1]] = append(dirs[parts[1]], p)
+		} else {
+			dirs["root"] = append(dirs["root"], p)
+		}
+	}
+	keys := make([]string, 0, len(dirs))
+	for k := range dirs {
+		keys = append(keys, k)
+	}
+	slices.Sort(keys)
+
+	// Flat layout: single phase covering the whole project.
+	if len(keys) == 1 && keys[0] == "root" {
+		return []DeliveryPhase{{
+			ID:              "core",
+			Title:           "Core Implementation",
+			RequiredFiles:   dirs["root"],
+			QAVerifyCommand: "",
+		}}
+	}
+
+	var phases []DeliveryPhase
+	for _, k := range keys {
+		if k == "root" {
+			phases = append(phases, DeliveryPhase{
+				ID:              "setup",
+				Title:           "Setup and Root Files",
+				RequiredFiles:   dirs[k],
+				QAVerifyCommand: "",
+			})
+			continue
+		}
+		phases = append(phases, DeliveryPhase{
+			ID:              k,
+			Title:           strings.Title(k) + " Layer",
+			RequiredFiles:   dirs[k],
+			QAVerifyCommand: "",
+		})
+	}
+	return phases
+}
+
 // HasPhasedDelivery reports whether the profile defines delivery phases.
 func (v WorkflowValidation) HasPhasedDelivery() bool {
 	return len(v.DeliveryPhases) > 0

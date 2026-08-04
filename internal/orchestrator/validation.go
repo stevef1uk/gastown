@@ -13,21 +13,21 @@ import (
 // WorkflowValidation configures artifact checks for a workflow template (rig-flow, etc.).
 // Operators edit these fields in orchestrator/templates/*.yaml when changing SPEC scope.
 type WorkflowValidation struct {
-	LayoutRoot           string   `yaml:"layout_root" json:"layout_root"`
-	BeadTitleContains    string   `yaml:"bead_title_contains" json:"bead_title_contains"`
-	UnittestModule       string   `yaml:"unittest_module" json:"unittest_module"`
-	QAVerifyCommand      string   `yaml:"qa_verify_command" json:"qa_verify_command"`
-	TestRunner           string   `yaml:"test_runner" json:"test_runner"`
-	RequiredFiles        []string         `yaml:"required_files" json:"required_files"`
-	DeliveryPhases       []DeliveryPhase  `yaml:"delivery_phases" json:"delivery_phases,omitempty"`
-	ActivePhaseIDField        string   `yaml:"active_phase_id" json:"active_phase_id,omitempty"`
-	RewoundFromPhaseIDField   string   `yaml:"rewound_from_phase_id,omitempty" json:"rewound_from_phase_id,omitempty"`
-	CompletedPhaseIDsField    []string `yaml:"completed_phase_ids,omitempty" json:"completed_phase_ids,omitempty"`
-	SpecSummary                string   `yaml:"spec_summary" json:"spec_summary"`
-	MinArchitectureBytes       int64    `yaml:"min_architecture_bytes" json:"min_architecture_bytes"`
-	MinPlanBytes               int64    `yaml:"min_plan_bytes" json:"min_plan_bytes"`
-	MinImplementationFileBytes int64    `yaml:"min_implementation_file_bytes" json:"min_implementation_file_bytes"`
-	MinSubstantiveLines        int      `yaml:"min_substantive_lines" json:"min_substantive_lines"`
+	LayoutRoot                 string          `yaml:"layout_root" json:"layout_root"`
+	BeadTitleContains          string          `yaml:"bead_title_contains" json:"bead_title_contains"`
+	UnittestModule             string          `yaml:"unittest_module" json:"unittest_module"`
+	QAVerifyCommand            string          `yaml:"qa_verify_command" json:"qa_verify_command"`
+	TestRunner                 string          `yaml:"test_runner" json:"test_runner"`
+	RequiredFiles              []string        `yaml:"required_files" json:"required_files"`
+	DeliveryPhases             []DeliveryPhase `yaml:"delivery_phases" json:"delivery_phases,omitempty"`
+	ActivePhaseIDField         string          `yaml:"active_phase_id" json:"active_phase_id,omitempty"`
+	RewoundFromPhaseIDField    string          `yaml:"rewound_from_phase_id,omitempty" json:"rewound_from_phase_id,omitempty"`
+	CompletedPhaseIDsField     []string        `yaml:"completed_phase_ids,omitempty" json:"completed_phase_ids,omitempty"`
+	SpecSummary                string          `yaml:"spec_summary" json:"spec_summary"`
+	MinArchitectureBytes       int64           `yaml:"min_architecture_bytes" json:"min_architecture_bytes"`
+	MinPlanBytes               int64           `yaml:"min_plan_bytes" json:"min_plan_bytes"`
+	MinImplementationFileBytes int64           `yaml:"min_implementation_file_bytes" json:"min_implementation_file_bytes"`
+	MinSubstantiveLines        int             `yaml:"min_substantive_lines" json:"min_substantive_lines"`
 	// PythonVenvDir is the venv directory under mayor/rig (default ".venv"). Set "off" to disable.
 	PythonVenvDir string `yaml:"python_venv_dir" json:"python_venv_dir"`
 	// DevServerPort is the port the dev server listens on when the project is a web server.
@@ -47,7 +47,7 @@ const (
 	// SmallRigMaxArchitectureBytes caps min_architecture_bytes when the profile lists few files
 	// (e.g. Link Shelf). Spec-index often requests 8k+; a complete doc for 7 paths is ~3–4k.
 	SmallRigMaxArchitectureBytes int64 = 3200
-	smallRigRequiredFileCap        = 10
+	smallRigRequiredFileCap            = 10
 )
 
 // DefaultWorkflowValidation returns minimal rig-flow defaults when YAML/profile omit validation.
@@ -164,7 +164,8 @@ func ClampProfileValidation(v WorkflowValidation) WorkflowValidation {
 
 // stripRuntimeSmokeFromPhaseCommands removes go run/curl smoke commands from
 // phase qa_verify_command when dev_server_port is 0 (smoke disabled). The JUDGE
-// LLM sometimes generates go run + curl smoke tests even when port=0.
+// LLM sometimes generates go run + curl smoke tests even when port=0. The
+// replacement is stack-appropriate (never go vet in a Python phase).
 func stripRuntimeSmokeFromPhaseCommands(v WorkflowValidation) WorkflowValidation {
 	if v.DevServerPort > 0 {
 		return v
@@ -176,16 +177,96 @@ func stripRuntimeSmokeFromPhaseCommands(v WorkflowValidation) WorkflowValidation
 		}
 		lower := strings.ToLower(cmd)
 		if strings.Contains(lower, "go run") || strings.Contains(lower, "curl ") {
-			// Replace with a safe verify: go vet if Go, else echo
-			layout := strings.Trim(strings.TrimSpace(v.LayoutRoot), "/")
-			if layout == "" {
-				layout = "."
-			}
-			v.DeliveryPhases[i].QAVerifyCommand = "cd " + layout + " && go vet ./..."
-			log.Printf("[clamp] phase %q: stripped runtime-smoke cmd (dev_server_port=0), replaced with go vet", v.DeliveryPhases[i].ID)
+			p := &v.DeliveryPhases[i]
+			v.DeliveryPhases[i].QAVerifyCommand = defaultQAVerifyForPhase(p, v.LayoutRoot)
+			log.Printf("[clamp] phase %q: stripped runtime-smoke cmd (dev_server_port=0), replaced with stack verify %q", v.DeliveryPhases[i].ID, v.DeliveryPhases[i].QAVerifyCommand)
 		}
 	}
 	return v
+}
+
+// SanitizePhaseVerifyCommandsForStack repairs phase verify commands that don't
+// match the stack of the phase's required files, across Go, Python, and Node.
+// This is the deterministic guard against JUDGE LLM hallucinations (e.g. "go vet
+// ./..." in a Python phase, "npm test" in a Go phase) that run after the judge
+// step, which skips ClampProfileValidation.
+func SanitizePhaseVerifyCommandsForStack(v WorkflowValidation) WorkflowValidation {
+	if len(v.DeliveryPhases) == 0 {
+		return v
+	}
+	for i := range v.DeliveryPhases {
+		p := &v.DeliveryPhases[i]
+		cmd := strings.TrimSpace(p.QAVerifyCommand)
+		lower := strings.ToLower(cmd)
+		hasGo, hasPy, hasNode := phaseFileStacks(p.RequiredFiles)
+		stackCount := boolCount(hasGo) + boolCount(hasPy) + boolCount(hasNode)
+		bad := false
+		if cmd == "" {
+			bad = true
+		}
+		if v.DevServerPort == 0 && (strings.Contains(lower, "go run") || strings.Contains(lower, "curl ")) {
+			bad = true
+		}
+		// Cross-stack mismatch: the phase's files pin one stack, but the command
+		// invokes tools of a different stack and none of its own (e.g. pure
+		// "go vet" in a Python phase, "npm test" in a Go phase, "pytest" in a
+		// Node phase). Commands that mix their own stack with others are kept.
+		if stackCount == 1 {
+			hasOwn := (hasGo && hasGoTool(lower)) || (hasPy && hasPythonTool(lower)) || (hasNode && hasNodeTool(lower))
+			hasForeign := (!hasGo && hasGoTool(lower)) || (!hasPy && hasPythonTool(lower)) || (!hasNode && hasNodeTool(lower))
+			if !hasOwn && hasForeign {
+				bad = true
+			}
+		}
+		// Config-only phases (requirements.txt, Dockerfile, etc.) must not run
+		// any stack tool — "go vet" on a requirements-only phase fails at runtime.
+		if stackCount == 0 && hasAnyStackTool(lower) {
+			bad = true
+		}
+		if bad {
+			p.QAVerifyCommand = defaultQAVerifyForPhase(p, v.LayoutRoot)
+		}
+	}
+	return v
+}
+
+func boolCount(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
+}
+
+var (
+	goToolRE   = regexp.MustCompile(`(^|[\s;&|])go\s+(test|vet|build|run|mod)\b`)
+	pyToolRE   = regexp.MustCompile(`\b(python3?|pytest|pip|uvicorn|gunicorn|flask)\b`)
+	nodeToolRE = regexp.MustCompile(`\b(npm|npx|yarn|pnpm|node|tsc)\b`)
+	allStackRE = regexp.MustCompile(`(^|[\s;&|])go\s+(test|vet|build|run|mod)\b|\b(python3?|pytest|pip|uvicorn|gunicorn|flask)\b|\b(npm|npx|yarn|pnpm|node|tsc)\b`)
+)
+
+func hasGoTool(cmd string) bool       { return goToolRE.MatchString(cmd) }
+func hasPythonTool(cmd string) bool   { return pyToolRE.MatchString(cmd) }
+func hasNodeTool(cmd string) bool     { return nodeToolRE.MatchString(cmd) }
+func hasAnyStackTool(cmd string) bool { return allStackRE.MatchString(cmd) }
+
+// phaseFileStacks reports which of Go/Python/Node the phase's required files imply.
+func phaseFileStacks(files []string) (hasGo, hasPy, hasNode bool) {
+	for _, f := range files {
+		f = strings.ToLower(filepath.ToSlash(strings.TrimSpace(f)))
+		if strings.HasSuffix(f, ".go") || strings.HasSuffix(f, "go.mod") {
+			hasGo = true
+		}
+		if strings.HasSuffix(f, ".py") || strings.HasPrefix(f, "tests/") {
+			hasPy = true
+		}
+		if strings.HasSuffix(f, ".ts") || strings.HasSuffix(f, ".tsx") ||
+			strings.HasSuffix(f, ".js") || strings.HasSuffix(f, ".jsx") ||
+			strings.HasSuffix(f, ".mjs") || strings.HasSuffix(f, ".cjs") ||
+			strings.HasSuffix(f, "tsconfig.json") || strings.HasSuffix(f, "package.json") {
+			hasNode = true
+		}
+	}
+	return hasGo, hasPy, hasNode
 }
 
 // StripInvalidCDPrefixes removes leading "cd <dir> && " from verify commands when layout_root
@@ -575,14 +656,18 @@ func validatePhaseVerifyCommands(v WorkflowValidation) WorkflowValidation {
 		// Python manifest (requirements.txt) and no pyproject.toml. Injecting
 		// pyproject.toml into a requirements.txt-based project creates a phantom
 		// bead and contradicts SPEC layouts that say "no extra files or
-		// abstractions". pytest runs fine from requirements.txt alone.
+		// abstractions". pytest runs fine from requirements.txt alone. The check
+		// must span the whole profile (UnionRequiredFiles), not just this phase
+		// and its predecessors — a smoke-test phase listing only main.py must not
+		// trigger injection when an earlier phase owns requirements.txt.
 		if strings.Contains(cmd, "pytest") {
+			union := v.UnionRequiredFiles()
 			hasPyproject := false
 			hasRequirements := false
-			for _, f := range v.DeliveryPhases[i].RequiredFiles {
+			for _, f := range union {
+				f = filepath.ToSlash(strings.TrimSpace(f))
 				if strings.HasSuffix(f, "pyproject.toml") {
 					hasPyproject = true
-					break
 				}
 				if strings.HasSuffix(f, "requirements.txt") {
 					hasRequirements = true
@@ -591,19 +676,7 @@ func validatePhaseVerifyCommands(v WorkflowValidation) WorkflowValidation {
 			if hasPyproject || hasRequirements {
 				continue
 			}
-			found := false
-			for j := 0; j < i; j++ {
-				for _, f := range v.DeliveryPhases[j].RequiredFiles {
-					if strings.HasSuffix(f, "pyproject.toml") {
-						found = true
-						break
-					}
-				}
-				if found {
-					break
-				}
-			}
-			if !found && len(v.DeliveryPhases[i].RequiredFiles) > 0 {
+			if len(v.DeliveryPhases[i].RequiredFiles) > 0 {
 				base := filepath.Dir(v.DeliveryPhases[i].RequiredFiles[0])
 				if base == "." {
 					v.DeliveryPhases[i].RequiredFiles = append(v.DeliveryPhases[i].RequiredFiles, "pyproject.toml")
@@ -925,36 +998,36 @@ func (v WorkflowValidation) PromptVars() map[string]string {
 		}
 	}
 	return map[string]string{
-		"layout_root":             v.LayoutRoot,
-		"bead_title_contains":     v.BeadTitleContains,
-		"unittest_module":         v.UnittestModule,
-		"qa_verify_command":       phaseQA,
-		"phase_qa_verify_command": phaseQA,
-		"test_runner":             v.TestRunner,
-		"required_files":          strings.Join(activeFiles, ", "),
-		"all_required_files":      strings.Join(allFiles, ", "),
-		"active_phase_id":         activeID,
-		"active_phase_title":      activeTitle,
-		"delivery_phase_count":    fmt.Sprintf("%d", len(v.DeliveryPhases)),
-		"phase_scope_note":              v.PhaseScopeNote(),
+		"layout_root":                     v.LayoutRoot,
+		"bead_title_contains":             v.BeadTitleContains,
+		"unittest_module":                 v.UnittestModule,
+		"qa_verify_command":               phaseQA,
+		"phase_qa_verify_command":         phaseQA,
+		"test_runner":                     v.TestRunner,
+		"required_files":                  strings.Join(activeFiles, ", "),
+		"all_required_files":              strings.Join(allFiles, ", "),
+		"active_phase_id":                 activeID,
+		"active_phase_title":              activeTitle,
+		"delivery_phase_count":            fmt.Sprintf("%d", len(v.DeliveryPhases)),
+		"phase_scope_note":                v.PhaseScopeNote(),
 		"integration_contract_scope_note": v.IntegrationContractScopeNote(),
-		"requirements_file":       req,
-		"spec_summary":            v.SpecSummary,
-		"unittest_command_hint":     scoped.QAVerifyHint(),
-		"implementation_verify_hint": "(resolved per rig at fetch_task — use go build until server main exists)",
-		"project_setup_verify_hint":   scoped.ProjectSetupVerifyHint(),
-		"project_setup_failure_hint":  ProjectSetupFailureHint(scoped),
-		"project_setup_stack_kind":    ProjectSetupStackKind(scoped),
-		"python_venv_dir":             v.PythonVenvRelDir(),
-		"min_architecture_bytes":        fmt.Sprintf("%d", v.MinArchitectureBytes),
-		"min_plan_bytes":                fmt.Sprintf("%d", v.MinPlanBytes),
-		"min_implementation_file_bytes": fmt.Sprintf("%d", StubCheckOptionsFromValidation(v).MinFileBytes),
-		"min_substantive_lines":         fmt.Sprintf("%d", StubCheckOptionsFromValidation(v).MinSubstantiveLines),
-		"bead_id_example":                  beadIDExample(v),
-		"static_url_contract_guidance":     RigFlowStaticURLContractGuidance,
-		"static_url_contract_short":        RigFlowStaticURLContractShort,
-		"target_os":                        runtime.GOOS,
-		"target_arch":                      runtime.GOARCH,
+		"requirements_file":               req,
+		"spec_summary":                    v.SpecSummary,
+		"unittest_command_hint":           scoped.QAVerifyHint(),
+		"implementation_verify_hint":      "(resolved per rig at fetch_task — use go build until server main exists)",
+		"project_setup_verify_hint":       scoped.ProjectSetupVerifyHint(),
+		"project_setup_failure_hint":      ProjectSetupFailureHint(scoped),
+		"project_setup_stack_kind":        ProjectSetupStackKind(scoped),
+		"python_venv_dir":                 v.PythonVenvRelDir(),
+		"min_architecture_bytes":          fmt.Sprintf("%d", v.MinArchitectureBytes),
+		"min_plan_bytes":                  fmt.Sprintf("%d", v.MinPlanBytes),
+		"min_implementation_file_bytes":   fmt.Sprintf("%d", StubCheckOptionsFromValidation(v).MinFileBytes),
+		"min_substantive_lines":           fmt.Sprintf("%d", StubCheckOptionsFromValidation(v).MinSubstantiveLines),
+		"bead_id_example":                 beadIDExample(v),
+		"static_url_contract_guidance":    RigFlowStaticURLContractGuidance,
+		"static_url_contract_short":       RigFlowStaticURLContractShort,
+		"target_os":                       runtime.GOOS,
+		"target_arch":                     runtime.GOARCH,
 	}
 }
 

@@ -7,11 +7,76 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/steveyegge/gastown/internal/orchestrator"
 )
+
+var (
+	specServerPortFlagRE  = regexp.MustCompile(`(?i)(?:--port|--port=|-p\s+)\s*:?(\d{2,5})`)
+	specLocalhostPortRE   = regexp.MustCompile(`(?i)(?:localhost|127\.0\.0\.1):(\d{2,5})`)
+	specUvicornRE         = regexp.MustCompile(`(?i)\buvicorn\s+\S+:\S+`)
+	specFlaskRunRE        = regexp.MustCompile(`(?i)\bflask\s+run\b`)
+	specGunicornRE        = regexp.MustCompile(`(?i)\bgunicorn\b`)
+	specHypercornRE       = regexp.MustCompile(`(?i)\bhypercorn\b`)
+	specGoRunRE           = regexp.MustCompile(`(?i)\bgo\s+run\b`)
+	specNodeListenRE      = regexp.MustCompile(`(?i)\bnode\s+\S+.*listen`)
+	specHTTProbeRE        = regexp.MustCompile(`(?i)\b(curl|wget|http://|https://)`)
+	specHTTPTableRE       = regexp.MustCompile(`(?im)^\|\s*(GET|POST|PUT|DELETE|PATCH)\s*\|`)
+)
+
+func inferDevServerPort(spec string, paths []string) int {
+	lower := strings.ToLower(spec)
+
+	hasServerCmd := specUvicornRE.MatchString(spec) ||
+		specFlaskRunRE.MatchString(spec) ||
+		specGunicornRE.MatchString(spec) ||
+		specHypercornRE.MatchString(spec) ||
+		specGoRunRE.MatchString(spec) ||
+		(strings.Contains(lower, "node ") && specNodeListenRE.MatchString(spec))
+
+	hasCurl := strings.Contains(lower, "curl") && (strings.Contains(lower, "http://") || strings.Contains(lower, "https://") || strings.Contains(lower, "localhost:"))
+	hasHTTPTable := specHTTPTableRE.MatchString(spec)
+
+	if !hasServerCmd && !hasCurl && !hasHTTPTable {
+		return 0
+	}
+
+	if m := specServerPortFlagRE.FindStringSubmatch(spec); len(m) >= 2 {
+		if port, err := strconv.Atoi(m[1]); err == nil && port > 0 && port < 65536 {
+			return port
+		}
+	}
+	if m := specLocalhostPortRE.FindStringSubmatch(spec); len(m) >= 2 {
+		if port, err := strconv.Atoi(m[1]); err == nil && port > 0 && port < 65536 {
+			return port
+		}
+	}
+
+	// Infer default port from the server command type in the SPEC
+	if specUvicornRE.MatchString(spec) || specFlaskRunRE.MatchString(spec) || specGunicornRE.MatchString(spec) || specHypercornRE.MatchString(spec) {
+		return 8000
+	}
+	if specGoRunRE.MatchString(spec) {
+		return 8080
+	}
+	if strings.Contains(lower, "node ") && specNodeListenRE.MatchString(spec) {
+		return 3000
+	}
+	// Fallback to test runner heuristic
+	switch inferTestRunner(paths) {
+	case "pytest":
+		return 8000
+	case "npm":
+		return 3000
+	case "go":
+		return 8080
+	}
+	return 8080
+}
 
 // DeterministicIndexRig creates a workflow profile from SPEC.md WITHOUT LLM hallucinations.
 // Uses SPEC layout tree + phases section for required_files. Calls LLM to assign files to
@@ -64,6 +129,7 @@ func DeterministicIndexRig(ctx context.Context, townRoot, rig string) (*ProfileF
 		TestRunner:         inferTestRunner(paths),
 		DeliveryPhases:     phases,
 		ActivePhaseIDField: phases[0].ID,
+		DevServerPort:      inferDevServerPort(spec, paths),
 	}
 
 	// Clamp/validate
@@ -96,6 +162,10 @@ func DeterministicIndexRig(ctx context.Context, townRoot, rig string) (*ProfileF
 	endpoint, model := ResolveLLMForSpecIndex(townRoot)
 	validatorEndpoint, validatorModel := ResolveValidatorLLMForSpecIndex(townRoot)
 	f.Validation = JudgePhaseVerifyCommands(ctx, endpoint, model, validatorEndpoint, validatorModel, f.Validation, specText, reqText)
+
+	// Deterministic guard against judge hallucinations: never leave go test/vet/run
+	// in a Python phase, or curl smoke when dev_server_port=0.
+	f.Validation = orchestrator.SanitizePhaseVerifyCommandsForStack(f.Validation)
 
 	// Write again WITHOUT re-clamping to preserve JUDGE enhancements
 	if err := orchestrator.WriteRigWorkflowProfileClamped(townRoot, rig, f.Validation, f.Source, f.Confidence, false); err != nil {
@@ -345,36 +415,8 @@ func parsePhaseList(section string) []orchestrator.DeliveryPhase {
 }
 
 func defaultPhasesFromPaths(paths []string) []orchestrator.DeliveryPhase {
-	// Group by top-level directory
-	dirs := map[string][]string{}
-	for _, p := range paths {
-		parts := strings.Split(p, "/")
-		if len(parts) > 1 {
-			dirs[parts[1]] = append(dirs[parts[1]], p)
-		} else {
-			dirs["root"] = append(dirs["root"], p)
-		}
-	}
-
-	var phases []orchestrator.DeliveryPhase
-	for dir, files := range dirs {
-		if dir == "root" {
-			phases = append(phases, orchestrator.DeliveryPhase{
-				ID:              "setup",
-				Title:           "Setup and Root Files",
-				RequiredFiles:   files,
-				QAVerifyCommand: "",
-			})
-		} else {
-			phases = append(phases, orchestrator.DeliveryPhase{
-				ID:              dir,
-				Title:           strings.Title(dir) + " Layer",
-				RequiredFiles:   files,
-				QAVerifyCommand: "",
-			})
-		}
-	}
-	return phases
+	// Flat layouts collapse to a single phase; subdirectory layouts group by dir.
+	return orchestrator.PhasesFromFilePaths(paths)
 }
 
 func inferVerifyCommand(spec string, paths []string) string {
