@@ -725,17 +725,34 @@ func findProjectRootForNPM(files []string) string {
 // StripNonFileRequiredEntries removes entries from required_files that are
 // clearly not file paths — e.g. code fragments like "database.init_db()",
 // "cash_balance=10000.0", or bare numbers like "10000.0" that the LLM
-// sometimes injects instead of actual file paths.
+// sometimes injects instead of actual file paths. Also filters Go stdlib
+// symbols (httptest.NewServer, http.ResponseWriter), version numbers (1.21),
+// and method references (json.Marshal).
 func StripNonFileRequiredEntries(files []string) []string {
 	out := make([]string, 0, len(files))
 	for _, f := range files {
 		if strings.Contains(f, "(") || strings.Contains(f, "=") {
 			continue
 		}
+		// Filter Go stdlib symbols: pkg.Type or pkg.Method (capital after dot)
+		if goStdlibSymbolRE.MatchString(f) {
+			continue
+		}
+		// Filter bare version numbers like "1.21", "1.22"
+		if versionNumberRE.MatchString(f) {
+			continue
+		}
 		out = append(out, f)
 	}
 	return out
 }
+
+var (
+	// Matches Go standard library symbols: pkg.Type, pkg.Method (capital letter after dot)
+	goStdlibSymbolRE = regexp.MustCompile(`^[a-z][a-z0-9]*\.[A-Z][a-zA-Z0-9]*$`)
+	// Matches version numbers like 1.21, 1.22, 3.10
+	versionNumberRE = regexp.MustCompile(`^\d+\.\d+$`)
+)
 
 // deduplicateRequiredFiles removes obviously incorrect nested paths when the
 // correct parent path is already present. E.g., if both "X/package.json" and

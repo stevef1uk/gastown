@@ -142,11 +142,13 @@ func extractSpecLayoutPaths(mayorRigDir string) ([]string, bool) {
 // parseSpecLayoutTree extracts paths from markdown tree blocks under "## Layout" in SPEC.md.
 // Directory nesting is tracked from tree connectors/indentation, so a file under
 // `handler/` yields `helloapi/handler/hello.go` (not a flat `helloapi/hello.go`).
+// Works with or without code fences (```) for backward compatibility.
 func parseSpecLayoutTree(specText string) []string {
 	section := specLayoutSection(specText)
 	dirs := []string{}
 	var out []string
 	inCodeFence := false
+	hasCodeFence := strings.Contains(section, "```")
 	for _, line := range strings.Split(section, "\n") {
 		trimmed := strings.TrimSpace(line)
 		// Toggle code fence state
@@ -154,7 +156,9 @@ func parseSpecLayoutTree(specText string) []string {
 			inCodeFence = !inCodeFence
 			continue
 		}
-		if !inCodeFence {
+		// If section has code fences, only parse inside them.
+		// If no code fences, parse the whole section.
+		if hasCodeFence && !inCodeFence {
 			continue
 		}
 		depth, entry := treeLineDepthEntry(line)

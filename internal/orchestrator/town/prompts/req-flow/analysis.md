@@ -33,9 +33,34 @@ Your SPEC.md must have ALL of these sections with substantive content:
 | **Non-Functional Requirements** | Performance, accessibility, browser support, error handling |
 | **Not in Scope** | Explicitly list what is NOT being built (from REQUIREMENTS or your judgment) |
 
+## File Layout tree format (CRITICAL — affects planning)
+
+The **File Layout** section MUST use a markdown tree with `├──` / `└──` connectors **inside a code fence**. This is the ONLY format the parser understands for extracting required files. Example:
+
+```
+## File Layout
+
+```
+helloworld/
+├── main.go
+├── handlers.go
+├── handlers_test.go
+└── go.mod
+```
+```
+
+**⚠️ MANDATORY: The tree MUST be wrapped in a code fence (``` ```). Without the code fence, the parser ignores the tree and falls back to broken prose extraction.**
+
+Rules:
+- Wrap the entire tree in a code fence (```)
+- Use `├──` for non-last items, `└──` for last item in a directory
+- Paths are relative to `layout_root` (no `helloworld/` prefix on files)
+- Only list files that need to be CREATED (not directories)
+- Do NOT wrap file paths in backticks inside the tree — the tree itself IS the file list
+
 ## Backtick usage (CRITICAL — affects planning)
 
-Only wrap **actual file paths** in backticks (e.g. `` `main.go` ``, `` `internal/store/store.go` ``). Do NOT wrap Go import paths (like `net/http`), URLs (like `http://localhost:8080/hello`), MIME types (like `application/json`), or package members (like `http.Server`) in backticks — use plain text instead. Non-file backtick content gets incorrectly extracted as required file paths by the planner, causing infinite planning loops.
+Only wrap **actual file paths** in backticks OUTSIDE the File Layout tree (e.g. in prose: "The `main.go` file contains..."). Do NOT wrap Go import paths (like `net/http`), URLs (like `http://localhost:8080/hello`), MIME types (like `application/json`), or package members (like `http.Server`) in backticks — use plain text instead. Non-file backtick content gets incorrectly extracted as required file paths by the planner, causing infinite planning loops.
 
 ## CRITICAL: Completeness over brevity
 
@@ -59,9 +84,9 @@ CMD: cat {{rig}}/mayor/rig/REQUIREMENTS.md
 CMD: wc -c {{rig}}/mayor/rig/REQUIREMENTS.md
 ```
 
-## Writing SPEC.md
+## Writing SPEC.md — EXACT FORMAT REQUIRED
 
-Use a heredoc. The content must reflect REQUIREMENTS.md faithfully while adding technical depth:
+Use a heredoc. The File Layout section **MUST** have the code fence (``` ```) or the parser will fail. Copy this EXACT format:
 
 ```
 CMD: cat > {{rig}}/mayor/rig/SPEC.md <<'EOF'
@@ -86,7 +111,14 @@ CMD: cat > {{rig}}/mayor/rig/SPEC.md <<'EOF'
 **layout_root: <directory-name>** — the top-level project folder under the rig (e.g., `helloapi`, `myapp`, `backend`). Use `.` only if SPEC explicitly says code lives at repo root with no subdirectory.
 
 ## File Layout
-(Complete directory tree — every file to create, all paths relative to `layout_root`)
+
+```
+<layout_root>/
+├── main.go
+├── handlers.go
+├── handlers_test.go
+└── go.mod
+```
 
 ## Phases
 (Ordered phases with testable success criteria)
@@ -104,6 +136,10 @@ CMD: cat > {{rig}}/mayor/rig/SPEC.md <<'EOF'
 (Explicit exclusions)
 EOF
 ```
+
+**⚠️ CRITICAL: The three backticks (```) before and after the tree are MANDATORY. They are NOT optional. Without them, the parser ignores the tree and you get flat/wrong file paths.**
+
+The blank line after `## File Layout` and the opening ``` are required. The closing ``` after the tree is required.
 
 ## Verify before success
 
