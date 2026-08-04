@@ -1133,6 +1133,38 @@ func EnsureFreerideModelsFile(townRoot string) error {
 	return nil
 }
 
+// SyncRoleAgentsFromFreerideModels updates the town settings config.json
+// role_agents section from freeride_models.json defaults. This ensures that
+// changes to freeride_models.json (e.g. polecat → gt-agent-deepseek) propagate
+// to existing installations on gt install.
+func SyncRoleAgentsFromFreerideModels(townRoot string) (bool, error) {
+	path := TownSettingsPath(townRoot)
+	ts, err := LoadOrCreateTownSettings(path)
+	if err != nil {
+		return false, fmt.Errorf("loading town settings: %w", err)
+	}
+	freerideDefaults := DefaultFreerideRoleAgents()
+	if freerideDefaults == nil {
+		return false, nil
+	}
+	changed := false
+	for role, agentName := range freerideDefaults {
+		if ts.RoleAgents == nil {
+			ts.RoleAgents = make(map[string]string)
+		}
+		if current, ok := ts.RoleAgents[role]; !ok || current != agentName {
+			ts.RoleAgents[role] = agentName
+			changed = true
+		}
+	}
+	if changed {
+		if err := SaveTownSettings(path, ts); err != nil {
+			return false, fmt.Errorf("saving town settings: %w", err)
+		}
+	}
+	return changed, nil
+}
+
 // SaveTownSettings saves town settings to a file.
 func SaveTownSettings(path string, settings *TownSettings) error {
 	if settings.Type != "town-settings" && settings.Type != "" {

@@ -456,6 +456,13 @@ func runInstall(cmd *cobra.Command, args []string) error {
 		fmt.Printf("   ✓ Created settings/config.json\n")
 	}
 
+	// Sync role_agents from freeride_models.json to pick up model routing changes.
+	if synced, err := config.SyncRoleAgentsFromFreerideModels(absPath); err != nil {
+		fmt.Printf("   %s Could not sync role_agents: %v\n", style.Dim.Render("⚠"), err)
+	} else if synced {
+		fmt.Printf("   ✓ Updated role_agents from freeride_models.json\n")
+	}
+
 	// Provision town-level slash commands (.claude/commands/)
 	// All agents inherit these via Claude's directory traversal - no per-workspace copies needed.
 	if err := templates.ProvisionCommands(absPath); err != nil {
