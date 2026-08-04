@@ -158,6 +158,33 @@ func ClampProfileValidation(v WorkflowValidation) WorkflowValidation {
 	v = InjectSQLiteSchemaBead(v)
 	v = SanitizeRigFlowProfile(v)
 	v = ValidateDeliveryPhases(v)
+	v = stripRuntimeSmokeFromPhaseCommands(v)
+	return v
+}
+
+// stripRuntimeSmokeFromPhaseCommands removes go run/curl smoke commands from
+// phase qa_verify_command when dev_server_port is 0 (smoke disabled). The JUDGE
+// LLM sometimes generates go run + curl smoke tests even when port=0.
+func stripRuntimeSmokeFromPhaseCommands(v WorkflowValidation) WorkflowValidation {
+	if v.DevServerPort > 0 {
+		return v
+	}
+	for i := range v.DeliveryPhases {
+		cmd := strings.TrimSpace(v.DeliveryPhases[i].QAVerifyCommand)
+		if cmd == "" {
+			continue
+		}
+		lower := strings.ToLower(cmd)
+		if strings.Contains(lower, "go run") || strings.Contains(lower, "curl ") {
+			// Replace with a safe verify: go vet if Go, else echo
+			layout := strings.Trim(strings.TrimSpace(v.LayoutRoot), "/")
+			if layout == "" {
+				layout = "."
+			}
+			v.DeliveryPhases[i].QAVerifyCommand = "cd " + layout + " && go vet ./..."
+			log.Printf("[clamp] phase %q: stripped runtime-smoke cmd (dev_server_port=0), replaced with go vet", v.DeliveryPhases[i].ID)
+		}
+	}
 	return v
 }
 
