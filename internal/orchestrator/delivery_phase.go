@@ -119,18 +119,31 @@ func (v WorkflowValidation) IsPhaseCompleted(id string) bool {
 
 // ResolveActivePhaseFromDisk returns the first phase whose required files are not all
 // present on disk. When no files exist (fresh start) this returns phase 0.
+// Phases with no required_files are skipped (they don't represent implementation work).
 func ResolveActivePhaseFromDisk(rigDir string, v WorkflowValidation) string {
 	if len(v.DeliveryPhases) == 0 {
 		return ""
 	}
 	for _, p := range v.DeliveryPhases {
-		for _, f := range normalizePathList(p.RequiredFiles) {
+		files := normalizePathList(p.RequiredFiles)
+		// Skip phases with no required files - they don't represent implementation work
+		if len(files) == 0 {
+			continue
+		}
+		for _, f := range files {
 			if _, err := os.Stat(filepath.Join(rigDir, f)); os.IsNotExist(err) {
 				return strings.TrimSpace(p.ID)
 			}
 		}
 	}
-	return strings.TrimSpace(v.DeliveryPhases[len(v.DeliveryPhases)-1].ID)
+	// All phases with required files have all files present - return first phase with files
+	for _, p := range v.DeliveryPhases {
+		if len(normalizePathList(p.RequiredFiles)) > 0 {
+			return strings.TrimSpace(p.ID)
+		}
+	}
+	// No phases have required files - return first phase
+	return strings.TrimSpace(v.DeliveryPhases[0].ID)
 }
 
 // ActiveRequiredFiles returns paths in scope for the current delivery phase.

@@ -374,9 +374,60 @@ func parseSpecPhases(spec string) []orchestrator.DeliveryPhase {
 		if j := strings.Index(section[1:], "\n## "); j >= 0 {
 			section = section[:1+j]
 		}
+		// Try table format first (| Phase | Description | Success Criteria |)
+		phases := parsePhaseTable(section)
+		if len(phases) > 0 {
+			return phases
+		}
+		// Fallback to list format
 		return parsePhaseList(section)
 	}
 	return nil
+}
+
+func parsePhaseTable(section string) []orchestrator.DeliveryPhase {
+	lines := strings.Split(section, "\n")
+	var phases []orchestrator.DeliveryPhase
+	inTable := false
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "|") && strings.Contains(trimmed, "Phase") && strings.Contains(trimmed, "Description") {
+			inTable = true
+			continue
+		}
+		if !inTable {
+			continue
+		}
+		if strings.HasPrefix(trimmed, "|") && strings.Contains(trimmed, "---") {
+			continue // separator row
+		}
+		if strings.HasPrefix(trimmed, "|") {
+			// Parse table row: | 1 | Scaffold project... | ...
+			parts := strings.Split(trimmed, "|")
+			if len(parts) >= 3 {
+				phaseNum := strings.TrimSpace(parts[1])
+				desc := strings.TrimSpace(parts[2])
+				if phaseNum != "" && desc != "" {
+					// Create phase ID from description
+					id := slugify(desc)
+					if id == "" {
+						id = "phase-" + phaseNum
+					}
+					phases = append(phases, orchestrator.DeliveryPhase{
+						ID:              id,
+						Title:           desc,
+						RequiredFiles:   []string{},
+						QAVerifyCommand: "",
+						SpecFocus:       desc,
+					})
+				}
+			}
+		} else if trimmed != "" && !strings.HasPrefix(trimmed, "#") {
+			// End of table
+			break
+		}
+	}
+	return phases
 }
 
 func parsePhaseList(section string) []orchestrator.DeliveryPhase {
