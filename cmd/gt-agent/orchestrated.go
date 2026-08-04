@@ -117,7 +117,16 @@ func runOrchestrated(ctx context.Context, client *llm.Client, townRoot, role, ri
 		nextState, err := orchestrator.CompleteTask(townRoot, task.WorkflowID, outcome, agentID, summary, attemptLog)
 		if err != nil {
 			orchestratedFprintfStderr( "[gt-agent] complete_task failed: %v\n", err)
-			updateOrchestratedRetry(&state, task, "failure", err.Error(), attemptLog)
+			// Spurious QA rejection: QA said fail but code is fine on disk.
+			// Do NOT store a failure retry (that would send us back to implementation).
+			// Clear any retry and let the agent loop re-enter QA.
+			errMsg := err.Error()
+			if strings.Contains(errMsg, "qa failure rejected") || strings.Contains(errMsg, "spurious") {
+				orchestratedPrintf("[gt-agent] spurious QA failure detected — retrying QA, not implementation\n")
+				state.OrchestratedRetry = nil
+			} else {
+				updateOrchestratedRetry(&state, task, "failure", errMsg, attemptLog)
+			}
 		} else {
 			orchestratedPrintf("[gt-agent] next state: %s\n", nextState)
 			updateOrchestratedRetryAfterComplete(&state, task, outcome, summary, attemptLog, nextState)
