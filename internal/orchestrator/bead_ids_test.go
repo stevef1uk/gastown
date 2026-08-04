@@ -62,6 +62,25 @@ func TestValidateSummaryBeadIDs_ignoresAgentIdentity(t *testing.T) {
 	}
 }
 
+func TestValidateSummaryBeadIDs_ignoresEnglishHyphenatedWords(t *testing.T) {
+	known := map[string]bool{"t3-t9l": true}
+	summary := "re-run the verification; the bead t3-t9l is closed and co-op fails"
+	if err := ValidateSummaryBeadIDs(summary, known, "t3"); err != nil {
+		t.Fatalf("English hyphenated words must not be bead IDs: %v", err)
+	}
+}
+
+func TestValidateSummaryBeadIDs_matchesDigitPrefixBead(t *testing.T) {
+	known := map[string]bool{"t3-t9l": true}
+	if err := ValidateSummaryBeadIDs("bead t3-t9l is closed", known, "t3"); err != nil {
+		t.Fatalf("digit-bearing prefix bead must validate: %v", err)
+	}
+	err := ValidateSummaryBeadIDs("bead t3-fake9 is not real", known, "t3")
+	if err == nil || !strings.Contains(err.Error(), "t3-fake9") {
+		t.Fatalf("expected unknown digit-prefix bead error, got %v", err)
+	}
+}
+
 func TestNormalizePytestCommand(t *testing.T) {
 	in := "cd myapp/pkg && pytest -q"
 	want := "cd myapp/pkg && python3 -m pytest -q"

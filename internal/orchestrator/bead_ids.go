@@ -11,8 +11,32 @@ import (
 	"github.com/steveyegge/gastown/internal/config"
 )
 
-// Bead IDs use a short rig prefix (e.g. fi-vjd). Do not match long hyphenated words like docker-compose.
-var summaryBeadIDRE = regexp.MustCompile(`\b([a-z]{2,4}-[a-z0-9]{2,8})\b`)
+// Bead IDs use a short rig prefix (e.g. t3-t9l, fi-vjd). Do not match long hyphenated words like docker-compose.
+var summaryBeadIDRE = regexp.MustCompile(`(?i)\b([a-z0-9]{2,4}-[a-z0-9]{2,8})\b`)
+
+// buildSummaryBeadIDRE returns a regex anchored on this rig's real prefix
+// (from bd config issue_prefix). Anchoring on the prefix means English
+// hyphenated words ("re-run", "co-op") never match, and digit-bearing
+// prefixes ("t3-*") are matched correctly. Falls back to a loose scan when
+// no prefix is available.
+func buildSummaryBeadIDRE(rigPrefix string) *regexp.Regexp {
+	p := strings.ToLower(strings.TrimSpace(rigPrefix))
+	if p == "" {
+		return regexp.MustCompile(`(?i)\b([a-z0-9]{2,4}-[a-z0-9]{2,8})\b`)
+	}
+	return regexp.MustCompile(`(?i)\b(` + regexp.QuoteMeta(p) + `-[a-z0-9]{2,8})\b`)
+}
+
+// looksLikeForeignBeadIssueID reports a short-code token from another rig
+// (e.g. te-5d0) while rejecting English hyphenated words (re-run, co-op).
+// Bead short-codes are base-36 and virtually always contain a digit, so a
+// foreign token must contain a digit to be treated as a bead reference.
+func looksLikeForeignBeadIssueID(id string) bool {
+	if !looksLikeBeadIssueID(id) {
+		return false
+	}
+	return strings.ContainsAny(id, "0123456789")
+}
 
 // RigIssuePrefix reads issue_prefix from the rig beads database (e.g. "de", "te").
 func RigIssuePrefix(townRoot, rig string) (string, error) {
@@ -69,7 +93,7 @@ func ExtractKnownRigBeadIDsFromSummary(summary, rigPrefix string, known map[stri
 	rigPrefix = strings.ToLower(strings.TrimSpace(rigPrefix))
 	var out []string
 	seen := map[string]bool{}
-	for _, m := range summaryBeadIDRE.FindAllStringSubmatch(summary, -1) {
+	for _, m := range buildSummaryBeadIDRE(rigPrefix).FindAllStringSubmatch(summary, -1) {
 		id := strings.ToLower(m[1])
 		if seen[id] || isIgnoredSummaryToken(id) || summaryMentionsAgentIdentityBead(summary, id) {
 			continue
@@ -87,6 +111,9 @@ func ExtractKnownRigBeadIDsFromSummary(summary, rigPrefix string, known map[stri
 }
 
 // ValidateSummaryBeadIDs rejects hallucinated bead IDs in QA/planner summaries.
+// The primary scan is anchored on this rig's real prefix (so "re-run" is never
+// a bead); a secondary scan only flags foreign-prefix tokens that contain a
+// digit (real bead short-codes are base-36), avoiding English hyphenated words.
 func ValidateSummaryBeadIDs(summary string, known map[string]bool, rigPrefix string) error {
 	summary = strings.TrimSpace(summary)
 	if summary == "" {
@@ -95,30 +122,51 @@ func ValidateSummaryBeadIDs(summary string, known map[string]bool, rigPrefix str
 	rigPrefix = strings.TrimSpace(strings.ToLower(rigPrefix))
 	var unknown []string
 	seen := map[string]bool{}
-	for _, m := range summaryBeadIDRE.FindAllStringSubmatch(summary, -1) {
-		id := strings.ToLower(m[1])
+
+	record := func(id, note string) {
 		if seen[id] {
-			continue
+			return
 		}
 		seen[id] = true
-		if isIgnoredSummaryToken(id) {
-			continue
+		if note != "" {
+			unknown = append(unknown, id+" "+note)
+		} else {
+			unknown = append(unknown, id)
 		}
-		if summaryMentionsAgentIdentityBead(summary, id) {
+	}
+
+	// Primary pass: this rig's own beads, anchored on the real prefix.
+	for _, m := range buildSummaryBeadIDRE(rigPrefix).FindAllStringSubmatch(summary, -1) {
+		id := strings.ToLower(m[1])
+		if isIgnoredSummaryToken(id) || summaryMentionsAgentIdentityBead(summary, id) {
 			continue
 		}
 		if known != nil && known[id] {
 			continue
 		}
-		if rigPrefix != "" && !strings.HasPrefix(id, rigPrefix+"-") {
-			if !looksLikeBeadIssueID(id) {
+		record(id, "")
+	}
+
+	// Secondary pass: foreign-prefix tokens that look like bead short-codes.
+	if rigPrefix != "" {
+		for _, m := range summaryBeadIDRE.FindAllStringSubmatch(summary, -1) {
+			id := strings.ToLower(m[1])
+			if seen[id] || isIgnoredSummaryToken(id) || summaryMentionsAgentIdentityBead(summary, id) {
 				continue
 			}
-			unknown = append(unknown, id+" (wrong prefix; rig uses "+rigPrefix+"-*)")
-			continue
+			if known != nil && known[id] {
+				continue
+			}
+			if strings.HasPrefix(id, rigPrefix+"-") {
+				continue
+			}
+			if !looksLikeForeignBeadIssueID(id) {
+				continue
+			}
+			record(id, "(wrong prefix; rig uses "+rigPrefix+"-*)")
 		}
-		unknown = append(unknown, id)
 	}
+
 	if len(unknown) == 0 {
 		return nil
 	}

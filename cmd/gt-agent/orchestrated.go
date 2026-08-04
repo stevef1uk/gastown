@@ -234,6 +234,9 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 	}
 
 	var lastAttemptFeedback strings.Builder
+	// Preserve the most recent failure JSON that was ignored because it shared a
+	// turn with CMD lines, so a genuine QA verdict isn't lost when turns exhaust.
+	var pendingFailureSummary string
 	recordAttemptFeedback := func(s string) {
 		if s == "" {
 			return
@@ -307,9 +310,10 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 			feedback := feedbackBuilder.String()
 			if o, s, ok := parseOrchestratedResult(response, task.AllowedOutcomes); ok {
 				o = normalizeOrchestratedOutcome(o, task.AllowedOutcomes)
-				if o == "failure" || o == "fail" {
+				if (o == "failure" || o == "fail") && turn < maxTurns {
 					orchestratedPrintf("[gt-agent] ignoring failure JSON in same turn as CMD lines; review output then send JSON only\n")
 					recordAttemptFeedback("Failure JSON ignored because CMD lines ran this turn. Review command output, then reply with JSON only.\n")
+					pendingFailureSummary = s
 				} else if task.State == "implementation" && isOrchestratedSuccessOutcome(o) {
 					orchestratedPrintf("[gt-agent] ignoring success JSON in same turn as CMD/native tools; run Verify and bd close first, then JSON only\n")
 					recordAttemptFeedback("Success JSON ignored because commands ran this turn. Finish Verify + bd close for the active bead, then reply with JSON only.\n")
@@ -512,7 +516,11 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 		}
 	}
 	if task != nil && task.State == "qa_review" {
-		summary = "QA exhausted turns without a clean outcome; check phase verify and artifact validation results above"
+		if pendingFailureSummary != "" {
+			summary = pendingFailureSummary
+		} else {
+			summary = "QA exhausted turns without a clean outcome; check phase verify and artifact validation results above"
+		}
 	}
 	return "fail", summary, lastAttemptFeedback.String(), fmt.Errorf("no structured outcome after %d turns", maxTurns)
 }
@@ -793,19 +801,23 @@ func updateOrchestratedRetry(state *AgentState, task *orchestrator.Task, outcome
 // outcomeJSONTailRE strips outcome JSON glued onto the end of a CMD line.
 var outcomeJSONTailRE = regexp.MustCompile(`(?i)(?:\s*\{[\s]*"outcome"[\s\S]*$)|\s*\{\s*\}\s*$`)
 
-// outcomeJSONLeadingColonRE strips partial JSON the model glues after verify (e.g. :"success","summary":...).
-var outcomeJSONLeadingColonRE = regexp.MustCompile(`(?i)^\s*:\s*"success"\s*,\s*"summary"\s*:[\s\S]*$`)
+// outcomeJSONLeadingColonRE strips partial JSON the model glues after a verify command
+// (e.g. :"all_passed","summary":...), whether at line start or mid-line after a command.
+var outcomeJSONLeadingColonRE = regexp.MustCompile(`(?i):\s*"(?:success|all_passed|passed|fail(?:ure)?)"\s*,\s*"summary"\s*:\s*"[^"]*"\s*\}?[\s\S]*$`)
 
 // stripGluedOutcomeJSONFromLine removes outcome JSON glued onto a shell line.
 func stripGluedOutcomeJSONFromLine(line string) string {
 	var out []string
 	for _, l := range strings.Split(line, "\n") {
 		l = outcomeJSONTailRE.ReplaceAllString(l, "")
-		if outcomeJSONLeadingColonRE.MatchString(strings.TrimSpace(l)) {
-			continue
+		trimmed := strings.TrimSpace(l)
+		if outcomeJSONLeadingColonRE.MatchString(trimmed) {
+			if strings.HasPrefix(trimmed, ":") {
+				continue
+			}
+			l = outcomeJSONLeadingColonRE.ReplaceAllString(l, "")
+			l = strings.TrimRight(l, " \t")
 		}
-		l = outcomeJSONLeadingColonRE.ReplaceAllString(l, "")
-		l = strings.TrimRight(l, " \t")
 		if strings.TrimSpace(l) != "" {
 			out = append(out, l)
 		}

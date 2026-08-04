@@ -94,6 +94,30 @@ func TestStripGluedOutcomeJSONFromLine_leadingColon(t *testing.T) {
 	}
 }
 
+func TestStripGluedOutcomeJSONFromLine_midLineAllPassed(t *testing.T) {
+	t.Parallel()
+	in := `echo 'verify ok (no automated tests for this phase)' :"all_passed","summary":"Bead t3-t9l is closed and integration verified"}`
+	got := stripGluedOutcomeJSONFromLine(in)
+	if strings.Contains(got, "all_passed") || strings.Contains(got, "summary") {
+		t.Fatalf("glued outcome json should be stripped: %q", got)
+	}
+	if !strings.Contains(got, "echo 'verify ok") {
+		t.Fatalf("verify cmd should remain: %q", got)
+	}
+}
+
+func TestStripGluedOutcomeJSONFromLine_midLineFailure(t *testing.T) {
+	t.Parallel()
+	in := `bd verify web-shell :"failure","summary":"index.html references /web/style.css but server serves at /"}`
+	got := stripGluedOutcomeJSONFromLine(in)
+	if strings.Contains(got, "failure") || strings.Contains(got, "summary") {
+		t.Fatalf("glued failure json should be stripped: %q", got)
+	}
+	if !strings.Contains(got, "bd verify web-shell") {
+		t.Fatalf("verify cmd should remain: %q", got)
+	}
+}
+
 func TestParseOrchestratedCommands_goTestGluedProseAndJSON(t *testing.T) {
 	t.Parallel()
 	in := "CMD: cd testgt3/mayor/rig/linkshelf && go test -count=1 ./internal/store/...We need to run command.CMD: export BEADS_DIR=$GT_ROOT/testgt3/.beads && cd testgt3/mayor/rig && bd close te-thd{\"outcome\":\"success\"}"
