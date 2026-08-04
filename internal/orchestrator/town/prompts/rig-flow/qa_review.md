@@ -30,7 +30,10 @@ For each closed bead's source files:
 
 Report which stage(s) failed in the summary so the polecat knows whether to fix correctness or trim scope.
 
-**CRITICAL: You MUST execute commands (CMD: lines) before sending any JSON outcome.** Your first turn MUST contain CMD: lines (e.g., `bd list`, `cat SPEC.md`, `{{unittest_command_hint}}`). Sending JSON without running commands first will be rejected. Do NOT guess or assume — run the command and report what it actually says.
+**CRITICAL: You MUST run the verify command before sending any JSON outcome.** The verify command is: `CMD: cd {{rig}}/mayor/rig && {{unittest_command_hint}}`. You MUST show its output (exit code and text) before returning JSON. Sending JSON without running the verify command will be rejected. Do NOT guess or assume — run the command and report what it actually says.
+
+**Turn 1:** Run `bd list --status=closed --limit=0` AND `cd {{rig}}/mayor/rig && {{unittest_command_hint}}` (both CMD lines in one message).
+**Turn 2:** JSON outcome only (no CMD lines). If you skip the verify command, you will be rejected and waste turns.
 
 **Path warning:** Required files exist under `{{layout_root}}/`. If a `cd` command fails, the path is wrong — try the relative subdirectory without the rig name prefix (e.g., use `cd frontend` not `cd finally/frontend`). Do NOT report failure for a `cd` error when required files are present on disk.
 
@@ -68,20 +71,18 @@ $GT_ROOT/{{rig}}/mayor/rig/{{layout_root}}/  ← layout root (ALL files go here)
 | Run verification once: `cd {{rig}}/mayor/rig && {{unittest_command_hint}}` | Paths under `/workspace/`, `src/` |
 | `ls`, `head`, `cat`, `wc` on rig files | Inventing compliance markers |
 
-## Steps
+## Steps (MANDATORY — do not skip any step)
 
-1. List closed beads: `CMD: cd {{rig}}/mayor/rig && bd list --status=closed --limit=0`
-2. List open beads: `CMD: cd {{rig}}/mayor/rig && bd list --status=open --limit=0`
-3. Read SPEC.md for context (but only verify `required_files` for the active phase): `CMD: cat SPEC.md`
-4. **Docker/Compose pre-check:** If the phase's `qa_verify_command` uses `docker-compose` (or `docker compose`), first run `docker-compose -f <file> config` to validate the file parses. If this fails, return `failure` with the exact error — do not run the full test.
-5. Install requirements if needed, then verify: `CMD: cd {{rig}}/mayor/rig && {{unittest_command_hint}}`
-   - **The command's exit code determines pass/fail: exit code 0 = success, non-zero = failure. Do not judge by output text alone — warnings/errors in output may be non-fatal (e.g., Next.js lockfile patching warnings).**
-6. {{qa_runtime_smoke_block}}
-7. **Two-stage review (MANDATORY)** — review closed beads in the active phase against `required_files`:
+1. **Turn 1 CMD lines (run ALL of these):**
+   - `CMD: cd {{rig}}/mayor/rig && bd list --status=closed --limit=0`
+   - `CMD: cd {{rig}}/mayor/rig && {{unittest_command_hint}}`
+2. **Turn 2:** Read SPEC.md if needed: `CMD: cat SPEC.md`
+3. {{qa_runtime_smoke_block}}
+4. **Turn 3+: Two-stage review (MANDATORY)** — review closed beads in the active phase against `required_files`:
    - **Stage 1 — Spec compliance**: does each file match SPEC/architecture (routes, store API names, exported symbols verbatim)? Are files wired into entry points (not orphaned)? Do tests cover plan.md acceptance criteria (not trivial stubs)?
    - **Stage 2 — Code quality (YAGNI)**: is the code minimal? No unused features, dead code, stubs, TODO/FIXME markers, or "just in case" infrastructure beyond what SPEC requires? Correct-but-overbuilt is still a failure.
    Report which stage(s) failed in the summary. Only return `all_passed`/`task_passed` if **both** stages pass.
-8. Send JSON only in next message (no CMD lines with JSON).
+5. **Final turn:** JSON only (no CMD lines). You MUST have run `{{unittest_command_hint}}` before this turn or you will be rejected.
 
 ## Rules
 
