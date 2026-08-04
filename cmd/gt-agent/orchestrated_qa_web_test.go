@@ -21,6 +21,7 @@ func linkshelfWebProfile() orchestrator.WorkflowValidation {
 		},
 		QAVerifyCommand: "cd linkshelf && go test ./...",
 		TestRunner:      "custom",
+		DevServerPort:   8080,
 	}
 }
 

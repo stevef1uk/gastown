@@ -133,6 +133,7 @@ func pythonAPISmokeTestRig(t *testing.T) (townRoot, rig string, v orchestrator.W
 		QAVerifyCommand: "python3 -m pytest -q",
 		RequiredFiles:   []string{"backend/app.py"},
 		PythonVenvDir:   ".venv",
+		DevServerPort:   8080,
 	}
 	return townRoot, rig, v
 }
@@ -521,6 +522,7 @@ cd pingapp && uvicorn main:app --port 8080
 		QAVerifyCommand: "cd pingapp && pytest test_main.py",
 		TestRunner:      "pytest",
 		RequiredFiles:   []string{"pingapp/main.py", "pingapp/test_main.py"},
+		DevServerPort:   8080,
 	}
 	if err := validateQACommand("curl -I http://localhost:8000/ping", rig, town, v); err == nil {
 		t.Fatal("expected wrong-port bare curl rejected")

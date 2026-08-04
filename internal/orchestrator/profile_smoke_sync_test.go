@@ -168,6 +168,7 @@ uvicorn main:app --port 8080
 			RequiredFiles:      []string{"pingapp/requirements.txt", "pingapp/main.py", "pingapp/test_main.py"},
 			QAVerifyCommand:    "cd pingapp && pytest",
 			ActivePhaseIDField: "smoke-test",
+			DevServerPort:      8080,
 			DeliveryPhases: []DeliveryPhase{
 				{
 					ID:              "backend-core",

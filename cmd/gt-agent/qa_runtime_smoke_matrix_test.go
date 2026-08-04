@@ -69,6 +69,7 @@ func TestRequiresQARuntimeSmoke_matrix(t *testing.T) {
 			v: orchestrator.WorkflowValidation{
 				QAVerifyCommand: "python3 -m pytest -q",
 				RequiredFiles:   []string{"backend/app.py"},
+				DevServerPort:   8080,
 			},
 			arch: archAPI,
 			want: true,

@@ -67,7 +67,7 @@ Do **not** invent HTTP smoke unless SPEC.md documents a server and HTTP table.`,
 func rigFlowQAGoLibraryVerifyBlock(v WorkflowValidation) string {
 	return fmt.Sprintf(`## Runtime verification (no web server in profile)
 
-This phase has **no** `+"`cmd/server/main.go`"+` + `+"`web/`"+` pair. **Do NOT output `+"`go run`"+` or `+"`curl`"+` commands — the agent WILL reject them and you will waste turns in a loop.**
+This phase has **no** `+"`cmd/server/main.go`"+` + `+"`web/`"+` pair, so **skip** runtime smoke. **Do NOT output `+"`go run`"+` or `+"`curl`"+` commands — the agent WILL reject them and you will waste turns in a loop.**
 
 Only run: %s
 

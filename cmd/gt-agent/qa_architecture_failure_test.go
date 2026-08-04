@@ -18,6 +18,7 @@ func webServerQAValidation() orchestrator.WorkflowValidation {
 			"linkshelf/cmd/server/main.go",
 			"linkshelf/internal/api/handlers.go",
 		},
+		DevServerPort: 8080,
 	}
 }
 
