@@ -389,9 +389,12 @@ func parsePhaseTable(section string) []orchestrator.DeliveryPhase {
 	lines := strings.Split(section, "\n")
 	var phases []orchestrator.DeliveryPhase
 	inTable := false
+	foundHeader := false
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "|") && strings.Contains(trimmed, "Phase") && strings.Contains(trimmed, "Description") {
+		// Look for the phase table header specifically: | Phase | Description | Success Criteria |
+		if strings.HasPrefix(trimmed, "|") && strings.Contains(trimmed, "Phase") && strings.Contains(trimmed, "Description") && strings.Contains(trimmed, "Success") {
+			foundHeader = true
 			inTable = true
 			continue
 		}
@@ -422,8 +425,8 @@ func parsePhaseTable(section string) []orchestrator.DeliveryPhase {
 					})
 				}
 			}
-		} else if trimmed != "" && !strings.HasPrefix(trimmed, "#") {
-			// End of table
+		} else if trimmed != "" && !strings.HasPrefix(trimmed, "#") && foundHeader {
+			// End of table after we found the header
 			break
 		}
 	}
@@ -433,33 +436,89 @@ func parsePhaseTable(section string) []orchestrator.DeliveryPhase {
 func parsePhaseList(section string) []orchestrator.DeliveryPhase {
 	lines := strings.Split(section, "\n")
 	var phases []orchestrator.DeliveryPhase
-	var current *orchestrator.DeliveryPhase
 	phaseNum := 0
 
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
-		if trimmed == "" || strings.HasPrefix(trimmed, "```") {
+		if trimmed == "" || strings.HasPrefix(trimmed, "```") || strings.HasPrefix(trimmed, "#") {
 			continue
 		}
-		// Numbered list: "1. **phase-name** — description" or "- **phase-name**"
-		if strings.Contains(trimmed, "**") && (strings.HasPrefix(trimmed, "-") || (len(trimmed) > 1 && trimmed[0] >= '1' && trimmed[0] <= '9')) {
-			// Extract phase name from **...**
-			start := strings.Index(trimmed, "**")
-			end := strings.Index(trimmed[start+2:], "**")
-			if start >= 0 && end >= 0 {
-				name := trimmed[start+2 : start+2+end]
-				phaseNum++
-				current = &orchestrator.DeliveryPhase{
-					ID:              slugify(name),
-					Title:           name,
-					RequiredFiles:   []string{},
-					QAVerifyCommand: "",
-					SpecFocus:       "",
+
+		var name string
+		matched := false
+
+		// Format 1: Numbered with bold: "1. **Phase Name**"
+		if len(trimmed) > 2 && trimmed[0] >= '1' && trimmed[0] <= '9' && trimmed[1] == '.' {
+			rest := trimmed[strings.Index(trimmed, ".")+1:]
+			if start := strings.Index(rest, "**"); start >= 0 && start < 5 {
+				if end := strings.Index(rest[start+2:], "**"); end >= 0 {
+					name = rest[start+2 : start+2+end]
+					matched = true
 				}
-				phases = append(phases, *current)
 			}
-		} else if current != nil && (strings.HasPrefix(trimmed, "-") || strings.HasPrefix(trimmed, "*")) {
-			// File entry under phase - skip for now (we use tree paths)
+			// Format 1b: Numbered without bold: "1. Phase Name"
+			if !matched && strings.Contains(rest, " ") {
+				name = strings.TrimSpace(rest)
+				matched = true
+			}
+		}
+
+		// Format 2: Bulleted with bold: "- **Phase Name**"
+		if !matched && strings.HasPrefix(trimmed, "- **") {
+			rest := trimmed[3:] // "- **" = 3 chars
+			if end := strings.Index(rest[2:], "**"); end >= 0 {
+				name = rest[:end]
+				matched = true
+			}
+		}
+
+		// Format 3: Bulleted without bold: "- Phase Name"
+		if !matched && strings.HasPrefix(trimmed, "- ") {
+			rest := trimmed[2:]
+			if rest != "" {
+				name = strings.TrimSpace(rest)
+				matched = true
+			}
+		}
+
+		// Format 4: Dash-separated: "go-module - Initialize go.mod" or "go-module: Initialize go.mod"
+		if !matched && (strings.Contains(trimmed, " - ") || strings.Contains(trimmed, ": ")) {
+			parts := strings.SplitN(trimmed, " - ", 2)
+			if len(parts) != 2 {
+				parts = strings.SplitN(trimmed, ": ", 2)
+			}
+			if len(parts) == 2 {
+				idPart := strings.TrimSpace(parts[0])
+				descPart := strings.TrimSpace(parts[1])
+				if idPart != "" && descPart != "" {
+					if !strings.Contains(idPart, " ") && (strings.EqualFold(idPart, strings.ToLower(idPart)) || strings.Contains(idPart, "-")) {
+						phaseNum++
+						phases = append(phases, orchestrator.DeliveryPhase{
+							ID:              slugify(idPart),
+							Title:           descPart,
+							RequiredFiles:   []string{},
+							QAVerifyCommand: "",
+							SpecFocus:       descPart,
+						})
+						continue
+					}
+				}
+			}
+		}
+
+		if matched && name != "" {
+			phaseNum++
+			id := slugify(name)
+			if id == "" {
+				id = "phase-" + fmt.Sprintf("%d", phaseNum)
+			}
+			phases = append(phases, orchestrator.DeliveryPhase{
+				ID:              id,
+				Title:           name,
+				RequiredFiles:   []string{},
+				QAVerifyCommand: "",
+				SpecFocus:       name,
+			})
 		}
 	}
 	return phases
