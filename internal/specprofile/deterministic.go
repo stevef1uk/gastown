@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/steveyegge/gastown/internal/orchestrator"
 )
@@ -439,149 +440,249 @@ Return JSON: { "phase-id": ["file1", "file2"], ... }`, systemSummary, specReleva
 	return assigned, true
 }
 
-// deterministicAssignFilesToPhases assigns files to phases based on keyword matching
-// between phase titles/spec_focus and file paths. Returns nil if unable to assign all files.
+// deterministicAssignFilesToPhases assigns files to phases by matching SPEC phase
+// names/titles/descriptions against file paths using structural token scoring. Returns
+// nil if it cannot assign a valid (exact-coverage) result, so the caller falls back to
+// the LLM. Matching is purely structural — no synonym tables:
+//
+//	go-module   → linkshelf/go.mod            ("go" matches the go.mod basename stem,
+//	                                            description "Initialize go.mod" adds mod)
+//	server-main → linkshelf/cmd/server/main.go (server/main match dirs + basename)
+//	api-handlers → *_handler.go               (plural ↔ singular stripping)
+//	web-static  → web/*.css, web/*.js          (description "CSS/JS assets" → extensions)
+//	web-shell   → web/*.html                   (description "HTML shell" → extension)
+//	store-layer → internal/store/*             (dir + basename tokens)
+//
+// Phases that end up with no files (e.g. an integration-test phase whose runtime smoke
+// has no dedicated files in the layout) are dropped so the profile never carries an
+// empty delivery phase that downstream validation treats as degenerate.
 func deterministicAssignFilesToPhases(phases []orchestrator.DeliveryPhase, files []string) []orchestrator.DeliveryPhase {
-	// Build keyword map for each phase from title and spec_focus
-	type phaseKeywords struct {
-		phase  *orchestrator.DeliveryPhase
-		keys   []string
+	if len(phases) == 0 || len(files) == 0 {
+		return nil
 	}
-	var pk []phaseKeywords
+	// Phase token sets, deduplicated across ID + title + spec_focus.
+	phaseToks := make([][]string, len(phases))
 	for i := range phases {
-		p := &phases[i]
-		keys := []string{}
-		// Extract keywords from title
-		for _, w := range strings.Fields(strings.ToLower(p.Title)) {
-			if len(w) > 3 {
-				keys = append(keys, strings.Trim(w, "`\"',.:;()[]{}"))
-			}
-		}
-		// Extract keywords from spec_focus
-		for _, w := range strings.Fields(strings.ToLower(p.SpecFocus)) {
-			if len(w) > 3 {
-				keys = append(keys, strings.Trim(w, "`\"',.:;()[]{}"))
-			}
-		}
-		// Deduplicate
-		seen := map[string]bool{}
-		var uniq []string
-		for _, k := range keys {
-			if !seen[k] {
-				seen[k] = true
-				uniq = append(uniq, k)
-			}
-		}
-		pk = append(pk, phaseKeywords{phase: p, keys: uniq})
+		phaseToks[i] = phaseTokensFor(phases[i])
 	}
 
-	// Match files to phases
-	fileToPhase := map[string]*orchestrator.DeliveryPhase{}
-	unmatched := []string{}
-
-	for _, f := range files {
-		fLower := strings.ToLower(f)
-		var bestMatch *orchestrator.DeliveryPhase
-		bestScore := 0
-
-		for i := range pk {
-			score := 0
-			for _, key := range pk[i].keys {
-				if strings.Contains(fLower, key) {
-					score += len(key) // longer keywords score higher
-				}
-			}
-			if score > bestScore {
-				bestScore = score
-				bestMatch = pk[i].phase
+	type fileAssign struct {
+		file string
+		idx  int
+	}
+	assignedIdx := make([]int, len(files))
+	var unmatched []string
+	for fi, f := range files {
+		ftoks := fileWeightedTokens(f)
+		bestIdx, bestScore := -1, 0
+		for i, ptoks := range phaseToks {
+			if s := phaseFileScore(ptoks, ftoks); s > bestScore {
+				bestScore = s
+				bestIdx = i
 			}
 		}
-
-		if bestMatch != nil && bestScore > 0 {
-			fileToPhase[f] = bestMatch
+		if bestIdx >= 0 && bestScore > 0 {
+			assignedIdx[fi] = bestIdx
 		} else {
+			assignedIdx[fi] = -1
 			unmatched = append(unmatched, f)
 		}
 	}
-
-	// If too many unmatched, fail
 	if len(unmatched) > len(files)/2 {
 		log.Printf("[deterministic-index] deterministic assignment failed: %d unmatched files: %v", len(unmatched), unmatched)
 		return nil
 	}
-
-	// Assign unmatched to closest phase by filename similarity
+	// Unmatched files go to the closest phase by filename-similarity, else the first phase.
 	for _, f := range unmatched {
-		fBase := strings.ToLower(filepath.Base(f))
-		var bestMatch *orchestrator.DeliveryPhase
-		bestScore := 0
-		for i := range pk {
-			score := 0
-			for _, key := range pk[i].keys {
-				if strings.Contains(fBase, key) {
-					score += len(key)
-				}
-			}
-			if score > bestScore {
-				bestScore = score
-				bestMatch = pk[i].phase
+		bestIdx, bestScore := 0, 0
+		base := strings.ToLower(filepath.Base(f))
+		baseToks := fileWeightedTokens(base)
+		for i, ptoks := range phaseToks {
+			if s := phaseFileScore(ptoks, baseToks); s > bestScore {
+				bestScore = s
+				bestIdx = i
 			}
 		}
-		if bestMatch != nil {
-			fileToPhase[f] = bestMatch
-		} else if len(phases) > 0 {
-			// Last resort: first phase
-			fileToPhase[f] = &phases[0]
+		for fi := range files {
+			if files[fi] == f {
+				assignedIdx[fi] = bestIdx
+			}
 		}
 	}
 
-	// Build phase file assignments
-	phaseFiles := map[string][]string{}
-	for _, p := range phases {
-		phaseFiles[p.ID] = []string{}
-	}
-	for f, p := range fileToPhase {
-		phaseFiles[p.ID] = append(phaseFiles[p.ID], f)
+	phaseFiles := make([][]string, len(phases))
+	for fi, f := range files {
+		phaseFiles[assignedIdx[fi]] = append(phaseFiles[assignedIdx[fi]], f)
 	}
 
-	// Build assigned phases
-	assigned := make([]orchestrator.DeliveryPhase, len(phases))
-	for i, p := range phases {
-		fs := phaseFiles[p.ID]
-		if fs == nil {
-			fs = []string{}
-		}
-		assigned[i] = orchestrator.DeliveryPhase{
-			ID:              p.ID,
-			Title:           p.Title,
-			RequiredFiles:   fs,
-			QAVerifyCommand: "",
-			SpecFocus:       p.SpecFocus,
-		}
-	}
-
-	// Verify all files assigned exactly once
-	allAssigned := map[string]int{}
+	// Verify exact coverage (every file exactly once) before returning.
+	seen := map[string]int{}
 	for _, fs := range phaseFiles {
 		for _, f := range fs {
-			allAssigned[f]++
+			seen[f]++
 		}
 	}
-	for f, count := range allAssigned {
+	for f, count := range seen {
 		if count != 1 {
 			log.Printf("[deterministic-index] deterministic assignment duplicate/omitted: %s count=%d", f, count)
 			return nil
 		}
 	}
 	for _, f := range files {
-		if allAssigned[f] == 0 {
+		if seen[f] == 0 {
 			log.Printf("[deterministic-index] deterministic assignment omitted: %s", f)
 			return nil
 		}
 	}
 
-	log.Printf("[deterministic-index] deterministic assignment succeeded: %d phases, %d files", len(phases), len(files))
+	// Build assigned phases in SPEC order, dropping phases with no files.
+	var assigned []orchestrator.DeliveryPhase
+	for i, p := range phases {
+		fs := normalizeFileList(phaseFiles[i])
+		if len(fs) == 0 {
+			log.Printf("[deterministic-index] dropping SPEC phase %q: no files assigned", p.ID)
+			continue
+		}
+		assigned = append(assigned, orchestrator.DeliveryPhase{
+			ID:              p.ID,
+			Title:           p.Title,
+			RequiredFiles:   fs,
+			QAVerifyCommand: "",
+			SpecFocus:       p.SpecFocus,
+		})
+	}
+	if len(assigned) == 0 {
+		return nil
+	}
+	log.Printf("[deterministic-index] deterministic assignment succeeded: %d phases, %d files", len(assigned), len(files))
 	return assigned
+}
+
+func normalizeFileList(files []string) []string {
+	var out []string
+	for _, f := range files {
+		f = filepath.ToSlash(strings.TrimSpace(f))
+		if f != "" {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
+// tokenMatchesPhaseToken reports a structural match between a phase-side token and a
+// file-side token: exact equality or singular/plural. No synonym tables — phase
+// descriptions name the files (e.g. "Initialize go.mod", "CSS/JS assets", "HTML shell"),
+// so the tokens that matter come from the SPEC text itself, not hardcoded word lists.
+func tokenMatchesPhaseToken(phaseTok, fileTok string) bool {
+	if phaseTok == fileTok {
+		return true
+	}
+	if fileTok != "" && strings.TrimSuffix(phaseTok, "s") == fileTok {
+		return true
+	}
+	if phaseTok != "" && phaseTok == strings.TrimSuffix(fileTok, "s") {
+		return true
+	}
+	return false
+}
+
+// weightedToken carries a match weight: directory segments and the basename stem are
+// strong signals (3/2), the extension is weak (1) so generic tokens like "go" don't win.
+type weightedToken struct {
+	tok string
+	w   int
+}
+
+// phaseTokensFor tokenizes a phase's ID + title + spec_focus into a deduped token list.
+func phaseTokensFor(p orchestrator.DeliveryPhase) []string {
+	var src []string
+	for _, s := range []string{p.ID, p.Title, p.SpecFocus} {
+		s = strings.TrimSpace(s)
+		if s != "" {
+			src = append(src, s)
+		}
+	}
+	seen := map[string]bool{}
+	var out []string
+	for _, s := range src {
+		for _, tok := range tokenizeTerms(s) {
+			if !seen[tok] {
+				seen[tok] = true
+				out = append(out, tok)
+			}
+		}
+	}
+	return out
+}
+
+// fileWeightedTokens splits a layout-relative path (or bare filename) into matchable
+// tokens: directory segments (weight 2), basename stem sub-tokens (weight 3), extension
+// (weight 1). Underscores/dashes split the stem so store_test.go yields store + test.
+func fileWeightedTokens(path string) []weightedToken {
+	path = filepath.ToSlash(strings.TrimSpace(path))
+	parts := strings.Split(path, "/")
+	var out []weightedToken
+	for _, d := range parts[:len(parts)-1] {
+		if d != "" {
+			out = append(out, weightedToken{tok: strings.ToLower(d), w: 2})
+		}
+	}
+	base := parts[len(parts)-1]
+	ext := ""
+	stem := base
+	if i := strings.LastIndex(base, "."); i > 0 {
+		stem = base[:i]
+		ext = strings.ToLower(base[i+1:])
+	}
+	for _, tok := range tokenizeTerms(stem) {
+		out = append(out, weightedToken{tok: tok, w: 3})
+	}
+	if ext != "" {
+		out = append(out, weightedToken{tok: ext, w: 1})
+	}
+	return out
+}
+
+// tokenizeTerms splits a string into lowercase alphanumeric tokens of length >= 2.
+// No stopword filtering: a token only contributes score when it structurally matches a
+// file path segment/stem/extension, so meaningless function words are inert.
+func tokenizeTerms(s string) []string {
+	fields := strings.FieldsFunc(strings.ToLower(s), func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+	})
+	var out []string
+	for _, f := range fields {
+		f = strings.Trim(f, "._-")
+		if len(f) >= 2 {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
+// phaseFileScore scores a phase's tokens against a file's weighted tokens. Each phase
+// token consumes its best matching file token (highest weight, first match), so
+// distinct phase tokens don't all score against the same file fragment.
+func phaseFileScore(phaseToks []string, fileToks []weightedToken) int {
+	used := make([]bool, len(fileToks))
+	score := 0
+	for _, pt := range phaseToks {
+		best, bestIdx := 0, -1
+		for i, ft := range fileToks {
+			if used[i] {
+				continue
+			}
+			if tokenMatchesPhaseToken(pt, ft.tok) && ft.w > best {
+				best = ft.w
+				bestIdx = i
+			}
+		}
+		if bestIdx >= 0 {
+			used[bestIdx] = true
+			score += best
+		}
+	}
+	return score
 }
 
 // extractSpecOverview returns the SPEC title line plus the ## Overview section
@@ -801,7 +902,11 @@ func parsePhaseList(section string) []orchestrator.DeliveryPhase {
 
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
-		if trimmed == "" || strings.HasPrefix(trimmed, "```") {
+		// Skip empty lines, code fences, and blockquote notes ("..."). Blockquote
+		// notes (e.g. "> Why this order: ...") after a phase list are SPEC authoring
+		// rationale, not phase content — capturing them pollutes the last phase's
+		// SpecFocus tokens and misroutes file assignments.
+		if trimmed == "" || strings.HasPrefix(trimmed, "```") || strings.HasPrefix(trimmed, ">") {
 			continue
 		}
 		indent := leadingIndent(line)
@@ -840,9 +945,10 @@ func parsePhaseLine(trimmed string) *orchestrator.DeliveryPhase {
 
 	var name string
 	var id string
+	var desc string
 	matched := false
 
-	// Format 1: Numbered with bold: "1. **Phase Name**"
+	// Format 1: Numbered with bold: "1. **Phase Name** - description"
 	if len(trimmed) > 2 && trimmed[0] >= '1' && trimmed[0] <= '9' && trimmed[1] == '.' {
 		rest := trimmed[strings.Index(trimmed, ".")+1:]
 		rest = strings.TrimSpace(rest)
@@ -850,6 +956,11 @@ func parsePhaseLine(trimmed string) *orchestrator.DeliveryPhase {
 			if end := strings.Index(rest[start+2:], "**"); end >= 0 {
 				name = rest[start+2 : start+2+end]
 				matched = true
+				// Keep the same-line description (e.g. "go-module" - Initialize go.mod):
+				// it names the files the phase covers and feeds file-mapping tokens.
+				if after := strings.TrimSpace(rest[start+2+end+2:]); after != "" {
+					desc = strings.TrimLeft(after, " \t-—:")
+				}
 			}
 		}
 		// Format 1b: Numbered without bold: "1. Phase Name"
@@ -859,12 +970,15 @@ func parsePhaseLine(trimmed string) *orchestrator.DeliveryPhase {
 		}
 	}
 
-	// Format 2: Bulleted with bold: "- **Phase Name**"
+	// Format 2: Bulleted with bold: "- **Phase Name** - description"
 	if !matched && strings.HasPrefix(trimmed, "- **") {
 		rest := trimmed[4:] // "- **" = 4 chars
 		if end := strings.Index(rest, "**"); end >= 0 {
 			name = rest[:end]
 			matched = true
+			if after := strings.TrimSpace(rest[end+2:]); after != "" {
+				desc = strings.TrimLeft(after, " \t-—:")
+			}
 		}
 	}
 
@@ -953,12 +1067,16 @@ func parsePhaseLine(trimmed string) *orchestrator.DeliveryPhase {
 		if id == "" {
 			id = "phase-" // will be suffixed with number by caller
 		}
+		focus := name
+		if desc != "" {
+			focus = name + "\n\n" + desc
+		}
 		return &orchestrator.DeliveryPhase{
 			ID:              id,
 			Title:           name,
 			RequiredFiles:   []string{},
 			QAVerifyCommand: "",
-			SpecFocus:       name, // Will be updated with description later
+			SpecFocus:       focus,
 		}
 	}
 	return nil

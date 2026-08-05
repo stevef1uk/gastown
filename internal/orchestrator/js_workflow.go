@@ -8,6 +8,60 @@ import (
 
 var nodeSetupCdRe = regexp.MustCompile(`^cd\s+\S+\s*&&\s*`)
 
+// nodeInstallVerbRe matches dependency-install verbs for any supported Node package
+// manager (npm/pnpm/yarn). Used to inject supply-chain hardening flags.
+var nodeInstallVerbRe = regexp.MustCompile(`(?i)\b(npm|pnpm|yarn)\s+(install|ci)\b`)
+
+// HardenNodeInstallCommand rewrites a Node dependency-install command so lifecycle
+// hooks (preinstall/postinstall) cannot execute. Supply-chain worms (Shai-Hulud /
+// ChainDrop, the keyv/cacheable family) abuse the "preinstall": "node setup.mjs" hook
+// to run credential-stealing payloads during `npm install`, so disabling lifecycle
+// scripts is the primary defense against this class of attack. The command is left
+// unchanged when it contains no install verb or already passes --ignore-scripts.
+func HardenNodeInstallCommand(cmd string) string {
+	if !nodeInstallVerbRe.MatchString(cmd) {
+		return cmd
+	}
+	if strings.Contains(cmd, "--ignore-scripts") {
+		return cmd
+	}
+	return nodeInstallVerbRe.ReplaceAllStringFunc(cmd, func(m string) string {
+		return m + " --ignore-scripts"
+	})
+}
+
+// nodeInstallCommand returns the dependency-install command for a Node phase, preferring
+// a frozen-lockfile install (npm ci / pnpm --frozen-lockfile / yarn --frozen-lockfile)
+// when the phase ships a lockfile (reproducible, pinned to known-good versions instead
+// of "latest") and always disabling lifecycle scripts via --ignore-scripts.
+func nodeInstallCommand(pm string, files []string) string {
+	hasLock := func(suffix string) bool {
+		for _, f := range files {
+			if strings.HasSuffix(strings.ToLower(filepath.ToSlash(strings.TrimSpace(f))), suffix) {
+				return true
+			}
+		}
+		return false
+	}
+	switch pm {
+	case "pnpm":
+		if hasLock("pnpm-lock.yaml") {
+			return "pnpm install --frozen-lockfile --ignore-scripts"
+		}
+		return "pnpm install --ignore-scripts"
+	case "yarn":
+		if hasLock("yarn.lock") {
+			return "yarn install --frozen-lockfile --ignore-scripts"
+		}
+		return "yarn install --ignore-scripts"
+	default:
+		if hasLock("package-lock.json") || hasLock("npm-shrinkwrap.json") {
+			return "npm ci --ignore-scripts"
+		}
+		return "npm install --ignore-scripts"
+	}
+}
+
 // WorkflowUsesNodeJS reports whether the workflow uses Node.js/TypeScript/JavaScript tooling.
 // Returns true for actual Node.js projects (package.json, tsconfig.json, or explicit
 // npm/pnpm/yarn commands). Also returns true for frontend TypeScript/React projects
@@ -72,7 +126,7 @@ func NodeProjectSetupVerifyCommand(v WorkflowValidation) string {
 
 	cdPrefix := nodeSetupCdRe.FindString(base)
 
-	return cdPrefix + pm + " install"
+	return cdPrefix + nodeInstallCommand(pm, v.RequiredFiles)
 }
 
 // nodeInstallDirFromRequiredFiles returns the common Node directory prefix

@@ -32,10 +32,10 @@ For **early/mid phases** (backend, frontend, database), prefer behavioral checks
 - If no spec sections are available, fall back to file presence or compile checks:
   - Shell scripts (.sh): "test -f scripts/start_mac.sh && test -f scripts/stop_mac.sh"
   - Docker/compose files: "test -f Dockerfile && test -f docker-compose.yml && echo 'docker ok'"
-  - Playwright config: "cd test && npm install && npx playwright test --list"
+  - Playwright config: "cd test && npm install --ignore-scripts && npx playwright test --list"
   - Python/pytest: "cd backend && python -m pytest -v tests/"
   - Go: "cd . && go test ./..."
-  - TypeScript/React: "cd frontend && npm install && npx tsc --noEmit"
+  - TypeScript/React: "cd frontend && npm install --ignore-scripts && npx tsc --noEmit"
   - Frontend tests: "cd frontend && npm test -- --watchAll=false"
   - Database files: "test -f db/finally.db && echo 'db ok'"
   - Backend source (no tests yet): "cd backend && python -c 'import sys; sys.path.insert(0, \"src\"); from main import app; print(\"ok\")'"

@@ -1924,6 +1924,42 @@ func shellContainsGitWrite(lower string) bool {
 	return false
 }
 
+// stripQuotedPayload removes single- and double-quoted string literals from a command.
+// Planner plan.md writes (echo -e "..." >> plan.md, printf '%s\n' '...' >> plan.md) carry
+// body prose that may legitimately mention verify/runtime commands (pytest, curl, python3).
+// Scanning only the shell portion prevents those inert payload mentions from false-positiving
+// while still rejecting commands that actually run pytest/curl (unquoted).
+func stripQuotedPayload(cmd string) string {
+	var b strings.Builder
+	inSingle, inDouble := false, false
+	for i := 0; i < len(cmd); i++ {
+		c := cmd[i]
+		if inDouble && c == '\\' && i+1 < len(cmd) {
+			i++
+			continue
+		}
+		switch c {
+		case '\'':
+			if inDouble {
+				b.WriteByte(c)
+			} else {
+				inSingle = !inSingle
+			}
+		case '"':
+			if inSingle {
+				b.WriteByte(c)
+			} else {
+				inDouble = !inDouble
+			}
+		default:
+			if !inSingle && !inDouble {
+				b.WriteByte(c)
+			}
+		}
+	}
+	return b.String()
+}
+
 // planHeredocBody returns the plan.md heredoc body (after <<), for content-only checks.
 func planHeredocBody(cmd string) string {
 	lower := strings.ToLower(cmd)
@@ -1968,6 +2004,12 @@ func validatePlanningCommand(cmd, rig string) error {
 
 	if isPlanMDHeredoc(cmd) {
 		return validatePlanningPlanHeredoc(cmd)
+	}
+	// Non-heredoc plan.md writes (echo/printf redirects, tee) carry body prose that may
+	// mention pytest/curl/python3 as verify commands. Scan the shell portion only so those
+	// inert payload mentions don't false-positive; actual bare runs stay blocked.
+	if isPlanMDWriteCommand(cmd) {
+		lower = strings.ToLower(stripQuotedPayload(cmd))
 	}
 	if err := validatePlanningRuntimeCommands(lower); err != nil {
 		return err

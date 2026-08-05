@@ -623,6 +623,37 @@ EOF`
 	}
 }
 
+func TestValidatePlanningCommand_planMDWriteBodyMentionsVerify(t *testing.T) {
+	// Planner writes plan.md via echo/printf redirects; body prose may legitimately
+	// mention verify commands (pytest, curl). Those must NOT be rejected as runtime runs.
+	allowed := []string{
+		`cd mockrig/mayor/rig && echo -e "# Plan\n- Bead 1: Implement pingapp/main.py\n- Verify: run pytest test_main.py\n" >> plan.md`,
+		`cd mockrig/mayor/rig && printf '%s\n' '# Plan' 'Verify via pytest' 'smoke: curl http://127.0.0.1:8000/' >> plan.md`,
+		`cd mockrig/mayor/rig && echo "run python3 pingapp/main.py then curl the health endpoint" >> plan.md`,
+	}
+	for _, cmd := range allowed {
+		if err := validatePlanningCommand(cmd, "mockrig"); err != nil {
+			t.Fatalf("plan.md write body mentioning verify should be allowed: %q: %v", cmd, err)
+		}
+	}
+	// Actual runs of pytest/curl/python3 must still be rejected.
+	rejected := []string{
+		"pytest pingapp/test_main.py",
+		"curl -sf http://127.0.0.1:8000/api/ping",
+		"python3 pingapp/main.py",
+		"cd mockrig/mayor/rig && pip install pytest",
+	}
+	for _, cmd := range rejected {
+		if err := validatePlanningCommand(cmd, "mockrig"); err == nil {
+			t.Fatalf("expected reject for %q", cmd)
+		}
+	}
+	// Quoted pytest payload writing to a NON-plan.md file must still be rejected.
+	if err := validatePlanningCommand(`echo "pytest verifies tests" > notes.txt`, "mockrig"); err == nil {
+		t.Fatal("writing non-plan.md file with redirect must be rejected")
+	}
+}
+
 func TestValidatePlanningArtifacts(t *testing.T) {
 	dir := t.TempDir()
 	rigDir := filepath.Join(dir, "mockrig", "mayor", "rig")

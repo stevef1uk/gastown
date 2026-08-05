@@ -1358,6 +1358,7 @@ func defaultQAVerifyForPhase(p *DeliveryPhase, layoutRoot string) string {
 	hasTS := false
 	hasJS := false
 	hasTSConfig := false
+	hasNodeProject := false
 	hasScripts := false
 	hasDocker := false
 	hasPlaywright := false
@@ -1377,6 +1378,15 @@ func defaultQAVerifyForPhase(p *DeliveryPhase, layoutRoot string) string {
 		}
 		if strings.HasSuffix(f, "tsconfig.json") {
 			hasTSConfig = true
+		}
+		// A phase only gets npm/tsc QA when it is an actual Node project — it ships
+		// package.json / lockfile / node_modules. Plain static assets (app.js, style.css
+		// served by a Go/Python backend) are NOT a Node project; running npm install
+		// there fails at runtime.
+		base := strings.ToLower(filepath.Base(filepath.ToSlash(strings.TrimSpace(f))))
+		if base == "package.json" || base == "package-lock.json" || base == "yarn.lock" ||
+			base == "pnpm-lock.yaml" || strings.Contains(f, "node_modules") {
+			hasNodeProject = true
 		}
 		if strings.HasSuffix(f, ".sh") || strings.HasSuffix(f, ".ps1") || strings.HasSuffix(f, ".bat") {
 			hasScripts = true
@@ -1420,7 +1430,8 @@ func defaultQAVerifyForPhase(p *DeliveryPhase, layoutRoot string) string {
 		if dir == "." {
 			return fmt.Sprintf("cd %s && npx playwright test --list", lr)
 		}
-		return fmt.Sprintf("cd %s/%s && npm install && npx playwright test --list", lr, dir)
+		install := nodeInstallCommand("npm", p.RequiredFiles)
+		return fmt.Sprintf("cd %s/%s && %s && npx playwright test --list", lr, dir, install)
 	}
 	if hasScripts {
 		var sb strings.Builder
@@ -1442,14 +1453,17 @@ func defaultQAVerifyForPhase(p *DeliveryPhase, layoutRoot string) string {
 	if hasPy {
 		return fmt.Sprintf("cd %s && python -m pytest -v", lr)
 	}
-	if hasTS {
-		return fmt.Sprintf("cd %s/frontend && npm install && npx tsc --noEmit", lr)
+	if hasTS && hasNodeProject {
+		install := nodeInstallCommand("npm", p.RequiredFiles)
+		return fmt.Sprintf("cd %s/frontend && %s && npx tsc --noEmit", lr, install)
 	}
 	if hasJS && hasTSConfig {
-		return fmt.Sprintf("cd %s && npm install && npx tsc --noEmit", lr)
+		install := nodeInstallCommand("npm", p.RequiredFiles)
+		return fmt.Sprintf("cd %s && %s && npx tsc --noEmit", lr, install)
 	}
-	if hasJS {
-		return fmt.Sprintf("cd %s && npm install && npm test", lr)
+	if hasJS && hasNodeProject {
+		install := nodeInstallCommand("npm", p.RequiredFiles)
+		return fmt.Sprintf("cd %s && %s && npm test", lr, install)
 	}
 	return fmt.Sprintf("cd %s && echo 'verify ok (no automated tests for this phase)'", lr)
 }

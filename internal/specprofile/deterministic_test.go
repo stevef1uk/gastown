@@ -486,3 +486,174 @@ The Widget API provides CRUD operations over widgets stored in a SQLite database
 	}
 }
 
+
+// linkshelfSpec mirrors the real testgt3 SPEC: numbered bold markers with same-line
+// descriptions naming the files each phase covers, plus a backtick-fenced code block
+// under "## File Layout". Backticks cannot live inside a raw string literal, so the
+// fixture is assembled from a fence constant — proving the parser handles BOTH fenced
+// and unfenced SPECs (as `parseSpecLayoutTree` already toggles fence state).
+const specFence = "```"
+
+const linkshelfSpec = `# LinkShelf
+
+## Delivery Phases
+
+1. **go-module** - Initialize go.mod
+2. **store-layer** - Schema + CRUD
+3. **api-handlers** - HTTP handlers
+4. **server-main** - Server entrypoint
+5. **web-static** - CSS/JS assets
+6. **web-shell** - HTML shell
+7. **integration-test** - Full smoke test + Playwright E2E
+
+## Layout
+
+**layout_root: linkshelf**
+
+## File Layout
+
+` + specFence + `
+linkshelf/
+├── go.mod
+├── cmd/
+│   └── server/
+│       └── main.go
+├── internal/
+│   ├── store/
+│   │   ├── schema.go
+│   │   ├── store.go
+│   │   └── store_test.go
+│   └── api/
+│       ├── handler.go
+│       └── handler_test.go
+└── web/
+    ├── index.html
+    ├── app.js
+    └── style.css
+` + specFence
+
+var linkshelfFiles = []string{
+	"linkshelf/go.mod",
+	"linkshelf/cmd/server/main.go",
+	"linkshelf/internal/store/schema.go",
+	"linkshelf/internal/store/store.go",
+	"linkshelf/internal/store/store_test.go",
+	"linkshelf/internal/api/handler.go",
+	"linkshelf/internal/api/handler_test.go",
+	"linkshelf/web/index.html",
+	"linkshelf/web/app.js",
+	"linkshelf/web/style.css",
+}
+
+func TestParsePhaseLine_capturesTrailingDescription(t *testing.T) {
+	p := parsePhaseLine("1. **go-module** - Initialize go.mod")
+	if p == nil || p.ID != "go-module" {
+		t.Fatalf("expected go-module phase, got %+v", p)
+	}
+	if !strings.Contains(p.SpecFocus, "go.mod") {
+		t.Fatalf("SpecFocus must capture trailing description naming go.mod, got %q", p.SpecFocus)
+	}
+	p = parsePhaseLine("- **web-static** - CSS/JS assets")
+	if p == nil || !strings.Contains(p.SpecFocus, "CSS/JS assets") {
+		t.Fatalf("bulleted bold description not captured: %+v", p)
+	}
+}
+
+// A SPEC that fences a code block (e.g. a SQL DDL or setup command) inside the
+// Delivery Phases section must still parse every phase: fence markers are skipped,
+// fence content becomes description text of the open phase, and no phase is lost.
+func TestParsePhaseList_fencesInsidePhasesDoNotBreakPhases(t *testing.T) {
+	spec := `# T
+## Delivery Phases
+
+1. **go-module** - Initialize go.mod
+` + specFence + "bash\n" + "go mod init linkshelf\n" + specFence + `
+2. **store-layer** - Schema + CRUD
+
+` + specFence + `sql
+CREATE TABLE links (id INTEGER PRIMARY KEY);
+` + specFence + `
+3. **api-handlers** - HTTP handlers
+4. **server-main** - Server entrypoint
+`
+	phases := parseSpecPhases(spec)
+	if len(phases) != 4 {
+		t.Fatalf("fenced SPEC parsed %d phases, want 4: %v", len(phases), phaseIDs(phases))
+	}
+	// Fence content should be captured as description of the phase that opened it,
+	// not spawn new phases or lose the following marker.
+	desc1 := phases[0].SpecFocus
+	if !strings.Contains(desc1, "go mod init") {
+		t.Errorf("phase 1 focus should include fenced setup content, got %q", desc1)
+	}
+	for i, id := range []string{"go-module", "store-layer", "api-handlers", "server-main"} {
+		if phases[i].ID != id {
+			t.Fatalf("phase %d = %q, want %q", i, phases[i].ID, id)
+		}
+	}
+}
+
+func TestDeterministicAssignFilesToPhases_specPhasesSurvive(t *testing.T) {	// Structural token matching (no synonym tables) must map every file to its SPEC
+	// phase, keep SPEC order, and drop phases with no files (integration-test).
+	phases := parseSpecPhases(linkshelfSpec)
+	if len(phases) != 7 {
+		t.Fatalf("parsed %d phases, want 7", len(phases))
+	}
+	assigned := deterministicAssignFilesToPhases(phases, linkshelfFiles)
+	if assigned == nil {
+		t.Fatal("deterministic assignment failed")
+	}
+	byID := map[string][]string{}
+	for _, p := range assigned {
+		byID[p.ID] = p.RequiredFiles
+	}
+	want := map[string][]string{
+		"go-module":     {"linkshelf/go.mod"},
+		"store-layer":   {"linkshelf/internal/store/schema.go", "linkshelf/internal/store/store.go", "linkshelf/internal/store/store_test.go"},
+		"api-handlers":  {"linkshelf/internal/api/handler.go", "linkshelf/internal/api/handler_test.go"},
+		"server-main":   {"linkshelf/cmd/server/main.go"},
+		"web-static":    {"linkshelf/web/app.js", "linkshelf/web/style.css"},
+		"web-shell":     {"linkshelf/web/index.html"},
+	}
+	if len(assigned) != len(want) {
+		t.Fatalf("assigned %d phases, want %d (%v)", len(assigned), len(want), phaseIDs(assigned))
+	}
+	for id, files := range want {
+		got := byID[id]
+		if len(got) != len(files) {
+			t.Errorf("phase %q files = %v, want %v", id, got, files)
+			continue
+		}
+		for i := range files {
+			if got[i] != files[i] {
+				t.Errorf("phase %q files = %v, want %v", id, got, files)
+				break
+			}
+		}
+	}
+	// Every file assigned exactly once, and order preserves the SPEC phase list.
+	seen := map[string]int{}
+	for _, p := range assigned {
+		for _, f := range p.RequiredFiles {
+			seen[f]++
+		}
+	}
+	for _, f := range linkshelfFiles {
+		if seen[f] != 1 {
+			t.Errorf("file %q assigned %d times, want 1", f, seen[f])
+		}
+	}
+	for i, id := range []string{"go-module", "store-layer", "api-handlers", "server-main", "web-static", "web-shell"} {
+		if assigned[i].ID != id {
+			t.Fatalf("phase order %v, want SPEC order", phaseIDs(assigned))
+		}
+	}
+}
+
+func phaseIDs(phases []orchestrator.DeliveryPhase) []string {
+	ids := make([]string, len(phases))
+	for i, p := range phases {
+		ids[i] = p.ID
+	}
+	return ids
+}

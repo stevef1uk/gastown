@@ -485,6 +485,8 @@ func sanitizeFrontendQACommand(cmd, frontendDir string) string {
 	cmd = testRE.ReplaceAllString(cmd, "npx tsc --noEmit")
 	// Deduplicate consecutive typecheck runs if the command already had tsc.
 	cmd = strings.ReplaceAll(cmd, "npx tsc --noEmit && npx tsc --noEmit", "npx tsc --noEmit")
+	// Harden any dependency install against lifecycle-script supply-chain worms.
+	cmd = HardenNodeInstallCommand(cmd)
 	// Ensure the command cds to the frontend directory.
 	if !strings.Contains(strings.ToLower(cmd), "cd "+frontendDir) {
 		cmd = "cd " + frontendDir + " && " + cmd

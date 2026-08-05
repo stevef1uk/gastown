@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 )
@@ -948,6 +949,8 @@ func FinalizeDeliveryPhases(v WorkflowValidation) WorkflowValidation {
 	}
 	v = moveDockerPathsToFinalDeliveryPhase(v)
 	v = reorderDeliveryPhasesWebAfterBackend(v)
+	v = reorderSetupPhaseFirst(v)
+	v = reorderDeliveryPhasesMainLast(v)
 	seen := make(map[string]bool)
 	var union []string
 	add := func(paths []string) {
@@ -1002,6 +1005,187 @@ func normalizePathList(files []string) []string {
 		}
 	}
 	return out
+}
+
+// rootConfigFileRE reports manifest/config files that live directly under layout_root
+// and must exist before any source phase can build or install (go.mod before go test,
+// requirements.txt before pip install, package.json before npm install, ...).
+var rootConfigFileRE = regexp.MustCompile(`(?i)^(?:go\.mod|go\.sum|requirements\.txt|pyproject\.toml|setup\.py|setup\.cfg|Pipfile(?:\.lock)?|package\.json|package-lock\.json|yarn\.lock|pnpm-lock\.yaml|Cargo\.toml|Cargo\.lock|pom\.xml|build\.gradle|Gemfile(?:\.lock)?|composer\.json|Makefile|tsconfig\.json|jest\.config\.(?:js|ts)|\.gitignore|\.env(?:\.example)?|\.dockerignore|README\.md|Dockerfile|docker-compose\.ya?ml)$`)
+
+// isRootConfigFile reports whether a layout-relative path is a root-level manifest/config
+// file directly under layout_root (exactly two path segments), e.g. linkshelf/go.mod.
+func isRootConfigFile(path string) bool {
+	p := filepath.ToSlash(strings.TrimSpace(path))
+	if p == "" {
+		return false
+	}
+	parts := strings.Split(p, "/")
+	if len(parts) != 2 {
+		return false
+	}
+	return rootConfigFileRE.MatchString(parts[1])
+}
+
+// reorderSetupPhaseFirst moves the root-files/config phase (go.mod, requirements.txt,
+// package.json, ... directly under layout_root) to the front of DeliveryPhases. Such a
+// phase must run before any source phase: Go code can't compile without go.mod, a Python
+// rig can't install deps without requirements.txt. Directory-grouped fallback phases
+// (PhasesFromFilePaths) sort alphabetically, so "setup" can land mid-list; SPEC-derived
+// phases that name their module phase anything ("go-module") are also hoisted so
+// active_phase_id starts with the manifest. A fresh profile (no completed phases) always
+// starts at the front phase.
+func reorderSetupPhaseFirst(v WorkflowValidation) WorkflowValidation {
+	phases := v.DeliveryPhases
+	if len(phases) < 2 {
+		return v
+	}
+	setupIdx := -1
+	for i := range phases {
+		if len(phases[i].RequiredFiles) == 0 {
+			continue
+		}
+		allRoot := true
+		for _, f := range phases[i].RequiredFiles {
+			if !isRootConfigFile(f) {
+				allRoot = false
+				break
+			}
+		}
+		if allRoot {
+			setupIdx = i
+			break
+		}
+	}
+	if setupIdx <= 0 {
+		return v
+	}
+	setup := phases[setupIdx]
+	rest := make([]DeliveryPhase, 0, len(phases)-1)
+	rest = append(rest, phases[:setupIdx]...)
+	rest = append(rest, phases[setupIdx+1:]...)
+	v.DeliveryPhases = append([]DeliveryPhase{setup}, rest...)
+	if len(v.CompletedPhaseIDsField) == 0 {
+		v.ActivePhaseIDField = strings.TrimSpace(setup.ID)
+	}
+	return v
+}
+
+// mainEntrypointFileRE matches program entrypoint files: a Go main.go (typically under
+// cmd/ or at the root) or a Python entrypoint (main.py, app.py, __main__.py, manage.py,
+// server.py). The phase that owns the entrypoint wires the store, API, and web layers
+// together, so it must be built after they exist — it should land last in the delivery
+// phase order.
+var mainEntrypointFileRE = regexp.MustCompile(`(?i)(?:^|/)(?:cmd/[^/]+/main\.go|main\.go|main\.py|app\.py|__main__\.py|manage\.py|server\.py|run\.py)$`)
+
+// isMainEntrypointFile reports whether a layout-relative path is a program entrypoint
+// (Go main.go or Python main/app/manage/server entry). Structural and format-agnostic,
+// so it applies to SPEC-ordered phases, directory-grouped fallback phases, and
+// heading-style SPECs (FinAlly) alike.
+func isMainEntrypointFile(path string) bool {
+	return mainEntrypointFileRE.MatchString(filepath.ToSlash(strings.TrimSpace(path)))
+}
+
+// deliveryPhaseHasMainEntrypoint reports whether any required file is a program
+// entrypoint (Go main.go / Python main.py, app.py, ...).
+func deliveryPhaseHasMainEntrypoint(p DeliveryPhase) bool {
+	for _, f := range p.RequiredFiles {
+		if isMainEntrypointFile(f) {
+			return true
+		}
+	}
+	return false
+}
+
+// reorderDeliveryPhasesMainLast moves the phase containing the program entrypoint
+// (Go main.go / Python main.py, app.py, ...) to the END of DeliveryPhases so the
+// runnable server/main is built after the store, API, and web layers it wires together.
+// SPEC-derived orders that already place main last (testgt3's "server-main" phase) are
+// left untouched; directory-grouped fallback phases (PhasesFromFilePaths) sort keys
+// alphabetically, so "cmd" or "main" would otherwise land mid-list and get built before
+// the files it imports. A fresh profile's active_phase_id points at the front phase, so
+// a completed main phase is never rewound.
+func reorderDeliveryPhasesMainLast(v WorkflowValidation) WorkflowValidation {
+	phases := v.DeliveryPhases
+	if len(phases) < 2 {
+		return v
+	}
+	mainIdx := -1
+	for i := range phases {
+		if deliveryPhaseHasMainEntrypoint(phases[i]) {
+			mainIdx = i
+			break
+		}
+	}
+	if mainIdx < 0 {
+		return v
+	}
+	// Keep trailing verification-only phases (integration-test / e2e) after main so
+	// Playwright/E2E still runs against a built server.
+	insertAt := len(phases) - 1
+	for insertAt > mainIdx && deliveryPhaseIsVerificationOnly(phases[insertAt]) {
+		insertAt--
+	}
+	if mainIdx == insertAt {
+		return v
+	}
+	main := phases[mainIdx]
+	rest := make([]DeliveryPhase, 0, len(phases)-1)
+	rest = append(rest, phases[:mainIdx]...)
+	rest = append(rest, phases[mainIdx+1:]...)
+	out := make([]DeliveryPhase, 0, len(phases))
+	out = append(out, rest[:insertAt]...)
+	out = append(out, main)
+	out = append(out, rest[insertAt:]...)
+	v.DeliveryPhases = out
+	return v
+}
+
+// deliveryPhaseIsVerificationOnly reports whether a phase is a trailing test/E2E phase
+// (all files under test/, e2e/, integration-test/, or named *_test.go / *.test.* /
+// *.spec.*) that should stay after the main entrypoint phase.
+func deliveryPhaseIsVerificationOnly(p DeliveryPhase) bool {
+	if len(p.RequiredFiles) == 0 {
+		return false
+	}
+	for _, f := range p.RequiredFiles {
+		f = filepath.ToSlash(strings.TrimSpace(f))
+		if f == "" {
+			continue
+		}
+		if isVerificationOnlyFilePath(f) {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+// isVerificationOnlyFilePath reports whether a file is test/E2E scaffolding that must
+// run after the built server (Playwright specs, *_test.go, *.test.ts, ...).
+func isVerificationOnlyFilePath(path string) bool {
+	p := filepath.ToSlash(strings.TrimSpace(path))
+	if p == "" {
+		return false
+	}
+	lower := strings.ToLower(p)
+	for _, seg := range []string{"/test/", "/tests/", "/e2e/", "/integration-test/", "/integration_tests/", "/playwright/"} {
+		if strings.Contains(lower, seg) {
+			return true
+		}
+	}
+	base := lower
+	if i := strings.LastIndex(lower, "/"); i >= 0 {
+		base = lower[i+1:]
+	}
+	for _, suf := range []string{"_test.go", "_test.py", ".test.js", ".test.ts", ".test.jsx", ".test.tsx", ".spec.js", ".spec.ts", ".spec.jsx", ".spec.tsx", ".e2e.ts", ".e2e.js"} {
+		if strings.HasSuffix(base, suf) {
+			return true
+		}
+	}
+	if strings.Contains(lower, "playwright") {
+		return true
+	}
+	return false
 }
 
 // NormalizeDeliveryPhasesLayout prefixes phase required_files with layout_root like RequiredFiles.

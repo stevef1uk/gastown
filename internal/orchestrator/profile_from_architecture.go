@@ -498,7 +498,7 @@ func FormatProjectSetupStackBlock(v WorkflowValidation) string {
 	case "nodejs":
 		b.WriteString("This is a **Node.js** rig. Forbidden in project_setup: `go mod`, `python3 -m venv`, `pip install`, writing app source files.\n\n")
 		b.WriteString("**Required verify (run exactly):** `" + verify + "`\n\n")
-		b.WriteString("**Layout root:** `" + layout + "/` — only `npm install`/`yarn install`/`pnpm install` under the Node directory.\n")
+		b.WriteString("**Layout root:** `" + layout + "/` — only `npm install --ignore-scripts`/`yarn install --ignore-scripts`/`pnpm install --ignore-scripts` under the Node directory. Always disable lifecycle scripts to block supply-chain worms (Shai-Hulud).\n")
 	case "docker":
 		b.WriteString("This is a **Docker/custom** rig. Follow the Docker section of the prompt only.\n\n")
 		b.WriteString("**Required verify:** `" + verify + "`\n")

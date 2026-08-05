@@ -439,3 +439,89 @@ func TestValidatePlanBeads_activePhaseOnly(t *testing.T) {
 		t.Fatal("expected error when extra bead for future phase path")
 	}
 }
+
+func TestFinalizeDeliveryPhases_setupPhaseFirst(t *testing.T) {
+	// Directory-grouped fallback (PhasesFromFilePaths) sorts keys alphabetically, so
+	// the root/setup phase (go.mod) can land mid-list. It must run before any source
+	// phase and become the active phase.
+	v := WorkflowValidation{
+		LayoutRoot: "linkshelf",
+		DeliveryPhases: []DeliveryPhase{
+			{ID: "cmd", Title: "Cmd Layer", RequiredFiles: []string{"linkshelf/cmd/server/main.go"}},
+			{ID: "internal", Title: "Internal Layer", RequiredFiles: []string{"linkshelf/internal/store/store.go"}},
+			{ID: "setup", Title: "Setup and Root Files", RequiredFiles: []string{"linkshelf/go.mod"}},
+			{ID: "web", Title: "Web Layer", RequiredFiles: []string{"linkshelf/web/index.html"}},
+		},
+		ActivePhaseIDField: "cmd",
+	}
+	got := FinalizeDeliveryPhases(v)
+	if len(got.DeliveryPhases) != 4 || got.DeliveryPhases[0].ID != "setup" {
+		t.Fatalf("setup phase must be first, got %v", phaseIDs(got.DeliveryPhases))
+	}
+	if got.ActivePhaseID() != "setup" {
+		t.Fatalf("active_phase_id = %q, want setup", got.ActivePhaseID())
+	}
+	// go.mod must appear in the first (active) phase's required files.
+	if active, ok := got.ActivePhase(); !ok || !containsString(active.RequiredFiles, "linkshelf/go.mod") {
+		t.Fatalf("active phase must include go.mod, got %v", active.RequiredFiles)
+	}
+}
+
+func TestFinalizeDeliveryPhases_setupPhaseFirst_specOrder(t *testing.T) {
+	// SPEC-derived phases name the module phase "go-module"; it already leads but must
+	// stay first and stay the active phase.
+	v := WorkflowValidation{
+		LayoutRoot: "linkshelf",
+		DeliveryPhases: []DeliveryPhase{
+			{ID: "go-module", Title: "go-module", RequiredFiles: []string{"linkshelf/go.mod"}},
+			{ID: "store-layer", Title: "store-layer", RequiredFiles: []string{"linkshelf/internal/store/store.go"}},
+			{ID: "api-handlers", Title: "api-handlers", RequiredFiles: []string{"linkshelf/internal/api/handler.go"}},
+			{ID: "server-main", Title: "server-main", RequiredFiles: []string{"linkshelf/cmd/server/main.go"}},
+		},
+		ActivePhaseIDField: "go-module",
+	}
+	got := FinalizeDeliveryPhases(v)
+	if got.DeliveryPhases[0].ID != "go-module" {
+		t.Fatalf("go-module phase must stay first, got %v", phaseIDs(got.DeliveryPhases))
+	}
+	if got.ActivePhaseID() != "go-module" {
+		t.Fatalf("active_phase_id = %q, want go-module", got.ActivePhaseID())
+	}
+}
+
+func TestFinalizeDeliveryPhases_setupPhaseFirst_mixedRootNotMoved(t *testing.T) {
+	// A phase mixing a root config file with source (go.mod + main.go) is NOT a pure
+	// setup phase and must not be hoisted.
+	v := WorkflowValidation{
+		LayoutRoot: "app",
+		DeliveryPhases: []DeliveryPhase{
+			{ID: "core", Title: "Core", RequiredFiles: []string{"app/main.go", "app/go.mod"}},
+			{ID: "web", Title: "Web", RequiredFiles: []string{"app/web/index.html"}},
+		},
+		ActivePhaseIDField: "core",
+	}
+	got := FinalizeDeliveryPhases(v)
+	if len(got.DeliveryPhases) != 2 || got.DeliveryPhases[0].ID != "core" {
+		t.Fatalf("mixed-root phase must not be hoisted, got %v", phaseIDs(got.DeliveryPhases))
+	}
+}
+
+func TestFinalizeDeliveryPhases_setupPhaseFirst_completedPreserved(t *testing.T) {
+	// Once phases are completed, active_phase_id must not be rewound to the setup phase.
+	v := WorkflowValidation{
+		LayoutRoot:        "linkshelf",
+		CompletedPhaseIDsField: []string{"setup"},
+		DeliveryPhases: []DeliveryPhase{
+			{ID: "cmd", Title: "Cmd Layer", RequiredFiles: []string{"linkshelf/cmd/server/main.go"}},
+			{ID: "setup", Title: "Setup and Root Files", RequiredFiles: []string{"linkshelf/go.mod"}},
+		},
+		ActivePhaseIDField: "cmd",
+	}
+	got := FinalizeDeliveryPhases(v)
+	if got.DeliveryPhases[0].ID != "setup" {
+		t.Fatalf("setup phase must still be hoisted, got %v", phaseIDs(got.DeliveryPhases))
+	}
+	if got.ActivePhaseID() != "cmd" {
+		t.Fatalf("active_phase_id = %q, want cmd preserved after completion", got.ActivePhaseID())
+	}
+}

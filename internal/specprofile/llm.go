@@ -202,7 +202,7 @@ Rules:
   Include unit test files alongside implementation: Go *_test.go files in the same package as the code under test; Python tests/test_<module>.py per package/API layer.
   Order: module code before its tests before cmd/server/main.go.
 
-- delivery_phases: For large or multi-stack specs, split into 4-10 phases with at most 10 required_files each (backend layers, frontend, e2e). Keep each source file's corresponding test file (*_test.go, test_*.py) in the same phase so QA can verify each phase independently. Each phase needs id (kebab-case), title, required_files subset, and qa_verify_command that validates only that slice. Order phases by dependency (application source before packaging). Put Dockerfile, docker-compose.yml, docker-compose.test.yml, and .dockerignore in the **final** phase only — not setup-infrastructure or the first phase. Frontend-only phases must typecheck, not run E2E tests: use "cd frontend && npm install && npx tsc --noEmit" (or yarn/pnpm). Playwright/E2E tests that need a running server belong in the final e2e-and-deployment phase.
+- delivery_phases: For large or multi-stack specs, split into 4-10 phases with at most 10 required_files each (backend layers, frontend, e2e). Keep each source file's corresponding test file (*_test.go, test_*.py) in the same phase so QA can verify each phase independently. Each phase needs id (kebab-case), title, required_files subset, and qa_verify_command that validates only that slice. Order phases by dependency (application source before packaging). Put Dockerfile, docker-compose.yml, docker-compose.test.yml, and .dockerignore in the **final** phase only — not setup-infrastructure or the first phase. Frontend-only phases must typecheck, not run E2E tests: use "cd frontend && npm install --ignore-scripts && npx tsc --noEmit" (or yarn/pnpm, and prefer "npm ci --ignore-scripts" when a lockfile is present). Always add --ignore-scripts to every npm/pnpm/yarn install command — lifecycle hooks are a known supply-chain attack vector (Shai-Hulud), so the orchestrator and exec layer will reject/harden unhardened installs. Playwright/E2E tests that need a running server belong in the final e2e-and-deployment phase.
 
 - spec_summary: 400–2500 characters summarizing goals, stack, directory layout, functional requirements to cover in unit tests, and how to run the test suite.
 - min_architecture_bytes: target 2500–5000 for most rigs; use 6000–8000 only when required_files has 15+ paths. For ≤10 required_files use 2000–3500. Use 200–8192 only; NEVER copy SPEC byte length.
@@ -416,13 +416,13 @@ func defaultQAVerifyForPhase(p *orchestrator.DeliveryPhase, layoutRoot string) s
 		return fmt.Sprintf("cd %s && python -m pytest -v", lr)
 	}
 	if hasTS {
-		return fmt.Sprintf("cd %s/frontend && npm install && npx tsc --noEmit", lr)
+		return orchestrator.HardenNodeInstallCommand(fmt.Sprintf("cd %s/frontend && npm install && npx tsc --noEmit", lr))
 	}
 	if hasJS && hasTSConfig {
-		return fmt.Sprintf("cd %s && npm install && npx tsc --noEmit", lr)
+		return orchestrator.HardenNodeInstallCommand(fmt.Sprintf("cd %s && npm install && npx tsc --noEmit", lr))
 	}
 	if hasJS {
-		return fmt.Sprintf("cd %s && npm install && npm test", lr)
+		return orchestrator.HardenNodeInstallCommand(fmt.Sprintf("cd %s && npm install && npm test", lr))
 	}
 	// Fallback: use a harmless echo rather than another "no verify command inferred"
 	// placeholder, which would trigger the replacement check in ValidateAndFixDeliveryPhases
