@@ -1,150 +1,435 @@
 package specprofile
 
 import (
-	"context"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/steveyegge/gastown/internal/orchestrator"
 )
 
-func TestDeterministicIndexRig_basicLayoutTree(t *testing.T) {
-	dir := t.TempDir()
-	rigDir := filepath.Join(dir, "testrig", "mayor", "rig")
-	if err := os.MkdirAll(rigDir, 0755); err != nil {
-		t.Fatal(err)
-	}
-	spec := "# Hello World API\n\n## Layout\n\n```\nhelloapi/\n├── go.mod\n├── main.go\n├── handler/\n│   └── hello.go\n└── handler/\n    └── hello_test.go\n```\n\n## Phases\n\n1. **setup** — Initialize go.mod\n2. **handler** — Implement handler\n3. **integration** — Tests\n"
-	if err := os.WriteFile(filepath.Join(rigDir, "SPEC.md"), []byte(spec), 0644); err != nil {
-		t.Fatal(err)
-	}
+const specNumberedBold = `# Test Spec
 
-	f, err := DeterministicIndexRig(context.Background(), dir, "testrig")
-	if err != nil {
-		t.Fatalf("DeterministicIndexRig failed: %v", err)
+## Phases
+1. **Scaffold Phase**  
+   - Create project directory helloapi.  
+   - Initialise a Go module (go mod init helloapi).  
+   - Verify that go.mod exists.  
+
+2. **Implementation Phase**  
+   - Implement handler.go with the helloHandler function adhering to the API contract.  
+   - Implement main.go to start an HTTP server on port 8080 and register the /hello route.  
+
+3. **Testing Phase**  
+   - Write handler_test.go containing a unit test that issues a GET /hello request to the handler and asserts the JSON payload and status code.  
+   - Run go test ./... and achieve **100%** coverage for the handler code.  
+
+4. **Verification Phase**  
+   - Manually start the server (go run .) and confirm that curl http://localhost:8080/hello returns the expected JSON.  
+
+Each phase succeeds when its success criteria (file existence, go test passing, manual verification) are met.`
+
+const specPhaseFormat = `# Test Spec
+
+## Phases
+Phase 1 — Project Foundation
+Goal
+Create a runnable application skeleton that starts successfully.
+Deliverables
+Repository structure
+Next.js project
+
+Phase 2 — Core Market Infrastructure
+Goal
+Create the market data engine that everything else depends on.`
+
+const specMarkdownHeaders = `# Test Spec
+
+## Phases
+# Phase 1 — Project Foundation
+
+# Phase 2 — Core Market Infrastructure
+
+## Goal
+
+Create a runnable application skeleton that starts successfully.
+
+---
+
+Implement the live market data platform.`
+
+const specDashSeparated = `# Test Spec
+
+## Delivery Phases
+go-module - Initialize go.mod
+store-layer - Schema + CRUD
+api-handlers - HTTP handlers
+server-main - Server entrypoint
+web-static - CSS/JS assets`
+
+const specBulletedBold = `# Test Spec
+
+## Phases
+- **Scaffold Phase**
+  - Create project directory helloapi
+  - Initialize Go module
+
+- **Implementation Phase**
+  - Implement handler.go
+  - Implement main.go
+
+- **Testing Phase**
+  - Write handler_test.go
+  - Run go test`
+
+const specNumberedWithoutBold = `# Test Spec
+
+## Phases
+1. Scaffold Phase
+2. Implementation Phase
+3. Testing Phase
+4. Verification Phase`
+
+const specIgnoresSubItems = `# Test Spec
+
+## Phases
+1. **Initialize Module**  
+   - Create go.mod (go mod init helloapi).  
+   - Success: go mod tidy runs without errors.
+
+2. **Implement Server** (main.go)  
+   - Set up http.Server listening on :8080.  
+   - Register /hello route to helloHandler.  
+   - Success: go run . starts without panic; curl http://localhost:8080/hello returns expected JSON.
+
+3. **Implement Handler** (handler.go)  
+   - Marshal HelloResponse{Message:"Hello, World!"} to JSON.  
+   - Write appropriate headers and status codes.  
+   - Success: Unit test (Phase 4) passes.
+
+4. **Write Unit Test** (handler_test.go)  
+   - Use httptest.NewRecorder and http.NewRequest("GET","/hello",nil).  
+   - Verify status code 200, Content-Type header, and JSON body matches expected struct.  
+   - Success: go test ./... passes.
+
+5. **Error Handling Review**  
+   - Simulate JSON marshal error (e.g., by temporarily modifying struct) and ensure 500 response.  
+   - Success: Test covering error path passes.
+
+6. **Documentation & Clean-up**  
+   - Add README excerpt with build/run instructions.  
+   - Success: go vet ./... reports no issues.`
+
+func TestParseSpecPhases_NumberedBold(t *testing.T) {
+	phases := parseSpecPhases(specNumberedBold)
+	if len(phases) != 4 {
+		t.Fatalf("expected 4 phases, got %d: %+v", len(phases), phases)
 	}
-	if f.Source != "deterministic" {
-		t.Fatalf("expected source 'deterministic', got %q", f.Source)
-	}
-	wantFiles := map[string]bool{
-		"helloapi/go.mod":              true,
-		"helloapi/main.go":             true,
-		"helloapi/handler/hello.go":    true,
-		"helloapi/handler/hello_test.go": true,
-	}
-	if len(f.Validation.RequiredFiles) != 4 {
-		t.Fatalf("expected 4 files, got %d: %v", len(f.Validation.RequiredFiles), f.Validation.RequiredFiles)
-	}
-	for _, p := range f.Validation.RequiredFiles {
-		if !wantFiles[p] {
-			t.Fatalf("unexpected file %q in %v", p, f.Validation.RequiredFiles)
+	expected := []string{"scaffold-phase", "implementation-phase", "testing-phase", "verification-phase"}
+	for i, p := range phases {
+		if p.ID != expected[i] {
+			t.Fatalf("phase %d: expected ID %q, got %q", i, expected[i], p.ID)
 		}
 	}
-	if len(f.Validation.DeliveryPhases) == 0 {
-		t.Fatal("expected delivery phases")
+}
+
+func TestParseSpecPhases_PhaseFormat(t *testing.T) {
+	phases := parseSpecPhases(specPhaseFormat)
+	if len(phases) != 2 {
+		t.Fatalf("expected 2 phases, got %d: %+v", len(phases), phases)
+	}
+	if phases[0].ID != "project-foundation" {
+		t.Fatalf("phase 0: expected ID project-foundation, got %q", phases[0].ID)
+	}
+	if phases[1].ID != "core-market-infrastructure" {
+		t.Fatalf("phase 1: expected ID core-market-infrastructure, got %q", phases[1].ID)
 	}
 }
 
-func TestDeterministicIndexRig_fallbackWhenNoTree(t *testing.T) {
-	dir := t.TempDir()
-	rigDir := filepath.Join(dir, "testrig", "mayor", "rig")
-	if err := os.MkdirAll(rigDir, 0755); err != nil {
-		t.Fatal(err)
+func TestParseSpecPhases_MarkdownHeaders(t *testing.T) {
+	phases := parseSpecPhases(specMarkdownHeaders)
+	if len(phases) != 2 {
+		t.Fatalf("expected 2 phases, got %d: %+v", len(phases), phases)
 	}
-	// SPEC with no layout tree
-	spec := "# Hello World API\n\n## Overview\nA simple API.\n\n## Phases\n\n1. **setup** — Initialize\n"
-	if err := os.WriteFile(filepath.Join(rigDir, "SPEC.md"), []byte(spec), 0644); err != nil {
-		t.Fatal(err)
+	if phases[0].ID != "project-foundation" {
+		t.Fatalf("phase 0: expected ID project-foundation, got %q", phases[0].ID)
 	}
-
-	_, err := DeterministicIndexRig(context.Background(), dir, "testrig")
-	if err == nil {
-		t.Fatal("expected error when no layout tree")
-	}
-	if !strings.Contains(err.Error(), "no parseable layout tree") {
-		t.Fatalf("expected 'no parseable layout tree' error, got: %v", err)
+	if phases[1].ID != "core-market-infrastructure" {
+		t.Fatalf("phase 1: expected ID core-market-infrastructure, got %q", phases[1].ID)
 	}
 }
 
-func TestDeterministicIndexRig_proseBacktickRefsIgnored(t *testing.T) {
-	dir := t.TempDir()
-	rigDir := filepath.Join(dir, "testrig", "mayor", "rig")
-	if err := os.MkdirAll(rigDir, 0755); err != nil {
-		t.Fatal(err)
+func TestParseSpecPhases_DashSeparated(t *testing.T) {
+	phases := parseSpecPhases(specDashSeparated)
+	if len(phases) != 5 {
+		t.Fatalf("expected 5 phases, got %d: %+v", len(phases), phases)
 	}
-	spec := "# Hello World API\n\n## Layout\n\n```\nhelloapi/\n├── go.mod\n├── main.go\n└── handler/\n    └── hello.go\n```\n\n## File Layout\n- `go.mod` – module\n- `main.go` – entry\n- `handler/hello.go` – handler\n- `package.json` – NOT used\n- `tsconfig.json` – NOT used\n"
-	if err := os.WriteFile(filepath.Join(rigDir, "SPEC.md"), []byte(spec), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	f, err := DeterministicIndexRig(context.Background(), dir, "testrig")
-	if err != nil {
-		t.Fatalf("DeterministicIndexRig failed: %v", err)
-	}
-	// Only tree files should be present; prose backtick refs (including negative mentions) ignored
-	wantFiles := map[string]bool{
-		"helloapi/go.mod":         true,
-		"helloapi/main.go":        true,
-		"helloapi/handler/hello.go": true,
-	}
-	if len(f.Validation.RequiredFiles) != 3 {
-		t.Fatalf("expected 3 files (tree only), got %d: %v", len(f.Validation.RequiredFiles), f.Validation.RequiredFiles)
-	}
-	for _, p := range f.Validation.RequiredFiles {
-		if !wantFiles[p] {
-			t.Fatalf("unexpected file %q (prose ref leaked?) in %v", p, f.Validation.RequiredFiles)
+	expected := []string{"go-module", "store-layer", "api-handlers", "server-main", "web-static"}
+	for i, p := range phases {
+		if p.ID != expected[i] {
+			t.Fatalf("phase %d: expected ID %q, got %q", i, expected[i], p.ID)
 		}
 	}
 }
 
-func TestDeterministicIndexRig_flatLayoutSinglePhase(t *testing.T) {
-	dir := t.TempDir()
-	rigDir := filepath.Join(dir, "ping_rig", "mayor", "rig")
-	if err := os.MkdirAll(rigDir, 0755); err != nil {
-		t.Fatal(err)
+func TestParseSpecPhases_BulletedBold(t *testing.T) {
+	phases := parseSpecPhases(specBulletedBold)
+	if len(phases) != 3 {
+		t.Fatalf("expected 3 phases, got %d: %+v", len(phases), phases)
 	}
-	spec := "# PingApp\n\n## Goal\n\nTiny Python app with one HTTP endpoint.\n\n## Layout\n\n```\npingapp/\n├── requirements.txt\n├── main.py\n└── test_main.py\n```\n\nRun `cd pingapp && pytest` to verify.\n"
-	if err := os.WriteFile(filepath.Join(rigDir, "SPEC.md"), []byte(spec), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	f, err := DeterministicIndexRig(context.Background(), dir, "ping_rig")
-	if err != nil {
-		t.Fatalf("DeterministicIndexRig failed: %v", err)
-	}
-	// A flat layout must never split into one phase per file — QA loops forever.
-	if len(f.Validation.DeliveryPhases) != 1 {
-		t.Fatalf("flat layout must produce exactly 1 phase, got %d: %+v", len(f.Validation.DeliveryPhases), f.Validation.DeliveryPhases)
-	}
-	if len(f.Validation.DeliveryPhases[0].RequiredFiles) != 3 {
-		t.Fatalf("single phase must hold all 3 files, got %+v", f.Validation.DeliveryPhases[0].RequiredFiles)
-	}
-	// The single phase's verify command must be Python, never Go.
-	cmd := strings.ToLower(f.Validation.DeliveryPhases[0].QAVerifyCommand)
-	if strings.Contains(cmd, "go vet") || strings.Contains(cmd, "go test") || strings.Contains(cmd, "go run") {
-		t.Fatalf("python rig phase got a Go verify command: %q", f.Validation.DeliveryPhases[0].QAVerifyCommand)
-	}
-	if !strings.Contains(cmd, "pytest") {
-		t.Fatalf("expected pytest verify for python rig, got %q", f.Validation.DeliveryPhases[0].QAVerifyCommand)
+	expected := []string{"scaffold-phase", "implementation-phase", "testing-phase"}
+	for i, p := range phases {
+		if p.ID != expected[i] {
+			t.Fatalf("phase %d: expected ID %q, got %q", i, expected[i], p.ID)
+		}
 	}
 }
 
-func TestDeterministicIndexRig_verifyCommandInference(t *testing.T) {
-	dir := t.TempDir()
-	rigDir := filepath.Join(dir, "testrig", "mayor", "rig")
-	if err := os.MkdirAll(rigDir, 0755); err != nil {
-		t.Fatal(err)
+func TestParseSpecPhases_NumberedWithoutBold(t *testing.T) {
+	phases := parseSpecPhases(specNumberedWithoutBold)
+	if len(phases) != 4 {
+		t.Fatalf("expected 4 phases, got %d: %+v", len(phases), phases)
 	}
-	spec := "# Hello World API\n\n## Layout\n\n```\nhelloapi/\n├── go.mod\n├── main.go\n└── handler.go\n```\n\n## Testing\nRun `cd helloapi && go test ./...` to verify.\n"
-	if err := os.WriteFile(filepath.Join(rigDir, "SPEC.md"), []byte(spec), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	f, err := DeterministicIndexRig(context.Background(), dir, "testrig")
-	if err != nil {
-		t.Fatalf("DeterministicIndexRig failed: %v", err)
-	}
-	if !strings.Contains(f.Validation.QAVerifyCommand, "go test") {
-		t.Fatalf("expected go test verify command, got: %q", f.Validation.QAVerifyCommand)
+	expected := []string{"scaffold-phase", "implementation-phase", "testing-phase", "verification-phase"}
+	for i, p := range phases {
+		if p.ID != expected[i] {
+			t.Fatalf("phase %d: expected ID %q, got %q", i, expected[i], p.ID)
+		}
 	}
 }
+
+func TestParseSpecPhases_IgnoresSubItems(t *testing.T) {
+	phases := parseSpecPhases(specIgnoresSubItems)
+	if len(phases) != 6 {
+		t.Fatalf("expected 6 phases (sub-items ignored), got %d: %+v", len(phases), phases)
+	}
+	expected := []string{"initialize-module", "implement-server", "implement-handler", "write-unit-test", "error-handling-review", "documentation-&-clean-up"}
+	for i, p := range phases {
+		if p.ID != expected[i] {
+			t.Fatalf("phase %d: expected ID %q, got %q", i, expected[i], p.ID)
+		}
+	}
+}
+
+// TestExtractPhaseSpecExcerpts_AllParseFormats exercises extractPhaseSpecExcerpts
+// against every SPEC format the phase parser supports. For each format it must:
+//   - parse at least one phase,
+//   - produce a non-empty excerpt for every phase (keyed by phase ID),
+//   - keep every excerpt within the excerptMaxChars bound.
+func TestExtractPhaseSpecExcerpts_AllParseFormats(t *testing.T) {
+	formats := []struct {
+		name string
+		spec string
+	}{
+		{"NumberedBold", specNumberedBold},
+		{"PhaseFormat", specPhaseFormat},
+		{"MarkdownHeaders", specMarkdownHeaders},
+		{"DashSeparated", specDashSeparated},
+		{"BulletedBold", specBulletedBold},
+		{"NumberedWithoutBold", specNumberedWithoutBold},
+		{"IgnoresSubItems", specIgnoresSubItems},
+	}
+
+	for _, f := range formats {
+		t.Run(f.name, func(t *testing.T) {
+			phases := parseSpecPhases(f.spec)
+			if len(phases) == 0 {
+				t.Fatalf("no phases parsed from spec")
+			}
+
+			excerpts := extractPhaseSpecExcerpts(phases, f.spec)
+			if len(excerpts) == 0 {
+				t.Fatalf("no excerpts extracted for %d phases", len(phases))
+			}
+
+			for _, p := range phases {
+				excerpt, ok := excerpts[p.ID]
+				if !ok {
+					t.Errorf("phase %q has no excerpt (got keys %v)", p.ID, keys(excerpts))
+					continue
+				}
+				if excerpt == "" {
+					t.Errorf("phase %q has empty excerpt", p.ID)
+					continue
+				}
+				if len(excerpt) > excerptMaxChars+64 {
+					t.Errorf("phase %q excerpt too long: %d chars (max %d)", p.ID, len(excerpt), excerptMaxChars)
+				}
+			}
+		})
+	}
+}
+
+// TestExtractPhaseSpecExcerpts_DifferentiatesSections verifies the RAG extractor
+// actually picks distinct, relevant sections rather than always returning the
+// same content for every phase. Each phase's SpecFocus is seeded with words that
+// only appear in its own SPEC section.
+func TestExtractPhaseSpecExcerpts_DifferentiatesSections(t *testing.T) {
+	spec := `## Overview
+helloapi is a minimal Go HTTP server exposing a single /hello endpoint.
+
+## Phases
+1. **Scaffold Phase**
+   - Create the helloapi directory.
+   - Initialize a Go module.
+2. **Implementation Phase**
+   - Implement handler.go with the helloHandler function.
+   - Implement main.go starting an HTTP server on port 8080.
+3. **Testing Phase**
+   - Write handler_test.go with a unit test for the handler.
+   - Run go test ./...
+
+## File Layout
+helloapi/go.mod
+helloapi/main.go
+helloapi/handler.go
+helloapi/handler_test.go
+
+## Testing Strategy
+Unit tests use httptest.NewRecorder and assert status 200 and the JSON payload.
+
+## Verification
+Start the server with go run . and curl http://localhost:8080/hello.
+`
+
+	// Manually build phases whose SpecFocus points at specific sections, so the
+	// RAG score must pick the right chunk rather than the catch-all Phases chunk.
+	phases := []orchestrator.DeliveryPhase{
+		{ID: "scaffold", Title: "Scaffold", SpecFocus: "go mod init module helloapi directory"},
+		{ID: "implementation", Title: "Implementation", SpecFocus: "handler helloHandler main go server port"},
+		{ID: "testing", Title: "Testing", SpecFocus: "unit test httptest recorder status json payload"},
+		{ID: "verification", Title: "Verification", SpecFocus: "curl localhost verification manual"},
+	}
+
+	excerpts := extractPhaseSpecExcerpts(phases, spec)
+	if len(excerpts) == 0 {
+		t.Fatalf("no excerpts extracted")
+	}
+
+	// All four phases should resolve to a non-empty excerpt.
+	for _, p := range phases {
+		if ex, ok := excerpts[p.ID]; !ok || ex == "" {
+			t.Errorf("phase %q missing non-empty excerpt", p.ID)
+		}
+	}
+}
+
+func keys(m map[string]string) []string {
+	k := make([]string, 0, len(m))
+	for kk := range m {
+		k = append(k, kk)
+	}
+	return k
+}
+
+func TestExtractSpecOverview(t *testing.T) {
+	spec := `# SPEC: Hello World API
+
+## Overview
+A minimal Go HTTP service that listens on port 8080 and exposes a single endpoint ` + "`GET /hello`" + `.
+
+## Technical Stack
+- Language: Go
+`
+
+	ov := extractSpecOverview(spec)
+	if ov == "" {
+		t.Fatal("extractSpecOverview returned empty string")
+	}
+	if !strings.Contains(ov, "SPEC: Hello World API") {
+		t.Errorf("overview missing SPEC title: %q", ov)
+	}
+	if !strings.Contains(ov, "port 8080") {
+		t.Errorf("overview missing overview content: %q", ov)
+	}
+	if strings.Contains(ov, "Technical Stack") {
+		t.Errorf("overview should stop before Technical Stack: %q", ov)
+	}
+}
+
+func TestExtractSpecOverview_RealSpec(t *testing.T) {
+	spec := `# SPEC: Hello World API
+
+## Overview
+A minimal Go HTTP service that listens on port 8080 and exposes a single endpoint ` + "`GET /hello`" + `. The endpoint returns a JSON payload ` + "`{\"message\":\"Hello, World!\"}`" + `. The server must be built using only the Go standard library (no third-party frameworks). A unit test covering the handler is required.
+
+## Technical Stack
+- **Language**: Go (>= 1.22)
+- **Standard Library**: ` + "`net/http`" + `, ` + "`encoding/json`" + `, ` + "`log`" + `
+
+## Data Model
+No persistent data model is required.`
+
+	ov := extractSpecOverview(spec)
+	if ov == "" {
+		t.Fatal("extractSpecOverview returned empty string")
+	}
+	if !strings.Contains(ov, "Hello World API") {
+		t.Errorf("overview missing SPEC title: %q", ov)
+	}
+	if !strings.Contains(ov, "single endpoint") {
+		t.Errorf("overview missing overview paragraph: %q", ov)
+	}
+	if strings.Contains(ov, "Technical Stack") || strings.Contains(ov, "Data Model") {
+		t.Errorf("overview should only contain title + Overview section: %q", ov)
+	}
+}
+
+func TestExtractSpecOverview_VisionSection(t *testing.T) {
+	spec := `# FinAlly — AI Trading Workstation
+
+## Project Specification
+
+## 1. Vision
+
+FinAlly (Finance Ally) is a visually stunning AI-powered trading workstation that streams live market data, lets users trade a simulated portfolio, and integrates an LLM chat assistant that can analyze positions and execute trades on the user's behalf.
+
+## 2. User Experience
+
+### First Launch
+The user runs a setup wizard.`
+
+	ov := extractSpecOverview(spec)
+	if ov == "" {
+		t.Fatal("extractSpecOverview returned empty string")
+	}
+	if !strings.Contains(ov, "FinAlly") {
+		t.Errorf("overview missing SPEC title: %q", ov)
+	}
+	if !strings.Contains(ov, "AI-powered trading workstation") {
+		t.Errorf("overview missing Vision paragraph: %q", ov)
+	}
+	if strings.Contains(ov, "User Experience") {
+		t.Errorf("overview should stop before next section: %q", ov)
+	}
+	if strings.Contains(ov, "First Launch") {
+		t.Errorf("overview should not include nested sub-section: %q", ov)
+	}
+}
+
+func TestExtractSpecOverview_SystemSummarySection(t *testing.T) {
+	spec := `# Widget API
+
+## System Overview
+
+The Widget API provides CRUD operations over widgets stored in a SQLite database, with JSON over HTTP.
+
+## Endpoints
+
+- POST /widgets
+- GET /widgets`
+
+	ov := extractSpecOverview(spec)
+	if ov == "" {
+		t.Fatal("extractSpecOverview returned empty string")
+	}
+	if !strings.Contains(ov, "Widget API") {
+		t.Errorf("overview missing SPEC title: %q", ov)
+	}
+	if !strings.Contains(ov, "CRUD operations") {
+		t.Errorf("overview missing System Overview paragraph: %q", ov)
+	}
+	if strings.Contains(ov, "Endpoints") {
+		t.Errorf("overview should stop before next section: %q", ov)
+	}
+}
+

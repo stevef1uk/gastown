@@ -4,6 +4,8 @@ import (
 	"math"
 	"regexp"
 	"strings"
+
+	"github.com/steveyegge/gastown/internal/orchestrator"
 )
 
 type Chunk struct {
@@ -170,6 +172,88 @@ func ExtractSpecExcerpts(phases []judgePhasePayload, specText, reqText string) m
 	specChunks := ChunkDocument(specText, "SPEC.md")
 	reqChunks := ChunkDocument(reqText, "REQUIREMENTS.md")
 	allChunks := append(specChunks, reqChunks...)
+
+	result := make(map[string]string, len(phases))
+
+	for _, phase := range phases {
+		focus := phase.SpecFocus
+		if focus == "" {
+			focus = phase.Title
+		}
+		focusWords := extractWords(focus)
+
+		var scored []scoredChunk
+		for _, c := range allChunks {
+			s := scoreChunk(c, focusWords)
+			if s > 0 {
+				scored = append(scored, scoredChunk{chunk: c, score: s})
+			}
+		}
+		if len(scored) == 0 {
+			continue
+		}
+
+		used := make(map[int]bool)
+		var excerpts []string
+
+		usedTotal := 0
+		for {
+			remaining := excerptMaxChars - usedTotal
+			if remaining <= 20 {
+				break
+			}
+			maxPerChunk := int(math.Min(float64(remaining), float64(excerptMaxChars)))
+			excerpt := pickChunk(scored, used, maxPerChunk)
+			if excerpt == "" {
+				break
+			}
+			excerpts = append(excerpts, excerpt)
+			usedTotal += len(excerpt) + 1
+		}
+
+		if len(excerpts) > 0 {
+			result[phase.ID] = strings.Join(excerpts, "\n\n---\n\n")
+		}
+	}
+
+	return result
+}
+
+// ragPhasePayload is the minimal phase shape needed by the RAG excerpt
+// extractor for the phase-assignment use case (avoids coupling to judge.go).
+type ragPhasePayload struct {
+	ID        string
+	Title     string
+	SpecFocus string
+}
+
+// extractPhaseSpecExcerpts returns, per phase ID, the most relevant SPEC.md
+// sections (keyword-scored RAG chunks). Used to build a compact LLM prompt for
+// file-to-phase assignment without sending the whole SPEC.
+func extractPhaseSpecExcerpts(phases []orchestrator.DeliveryPhase, specText string) map[string]string {
+	if len(phases) == 0 {
+		return nil
+	}
+	payloads := make([]ragPhasePayload, len(phases))
+	for i, p := range phases {
+		payloads[i] = ragPhasePayload{
+			ID:        p.ID,
+			Title:     p.Title,
+			SpecFocus: p.SpecFocus,
+		}
+	}
+	return extractSpecExcerptsForAssignment(payloads, specText)
+}
+
+// extractSpecExcerptsForAssignment is a local copy of the RAG extraction logic
+// adapted for the phase assignment use case (only needs ID, Title, SpecFocus).
+func extractSpecExcerptsForAssignment(phases []ragPhasePayload, specText string) map[string]string {
+	if len(phases) == 0 {
+		return nil
+	}
+
+	specChunks := ChunkDocument(specText, "SPEC.md")
+	allChunks := specChunks // No REQUIREMENTS.md for phase assignment
 
 	result := make(map[string]string, len(phases))
 
