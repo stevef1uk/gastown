@@ -1682,9 +1682,9 @@ func startPolecatsWithWork(townRoot, rigName string) ([]string, map[string]error
 
 // doltReadyTimeout is how long gt up waits for the Dolt SQL server to accept
 // connections before proceeding with witness/refinery startup. 10 seconds is
-// generous: doltserver.Start() already retries for 5s, so this covers the case
+// generous: doltserver.Start() already retries for 15s per database, so this covers the case
 // where the daemon (not gt up) started Dolt and it's still initializing.
-const doltReadyTimeout = 10 * time.Second
+const doltReadyTimeout = 45 * time.Second
 
 // waitForDoltReady waits for the Dolt SQL server to be reachable before
 // starting agents that depend on beads database access. If the server is not
