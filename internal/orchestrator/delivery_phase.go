@@ -1075,7 +1075,8 @@ func reorderSetupPhaseFirst(v WorkflowValidation) WorkflowValidation {
 // server.py). The phase that owns the entrypoint wires the store, API, and web layers
 // together, so it must be built after they exist — it should land last in the delivery
 // phase order.
-var mainEntrypointFileRE = regexp.MustCompile(`(?i)(?:^|/)(?:cmd/[^/]+/main\.go|main\.go|main\.py|app\.py|__main__\.py|manage\.py|server\.py|run\.py)$`)
+// It does NOT match app/main.go (that's a package file, not an entrypoint).
+var mainEntrypointFileRE = regexp.MustCompile(`(?i)^(?:cmd/[^/]+/)?main\.go$|^(?:main\.py|app\.py|__main__\.py|manage\.py|server\.py|run\.py)$`)
 
 // isMainEntrypointFile reports whether a layout-relative path is a program entrypoint
 // (Go main.go or Python main/app/manage/server entry). Structural and format-agnostic,

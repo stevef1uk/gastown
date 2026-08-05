@@ -427,22 +427,21 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summa
 				// Fast-forward: if we advanced a phase, check if further phases
 				// have no open beads and jump directly to the furthest ready phase.
 				if phaseAdvance != nil {
-					v := m.workflowValidationFor(inst, tpl)
-					ffPhase, ffErr := TryFastForwardDeliveryPhase(m.townRoot, advRig, v)
-					if ffErr != nil {
-						fmt.Printf("[Manager] Warning: fast-forward delivery phase: %v\n", ffErr)
-					} else if ffPhase != "" && ffPhase != toPhase {
-						full2, ok2, _ := LoadRigWorkflowProfileFile(m.townRoot, advRig)
-						if ok2 && full2.HasPhasedDelivery() {
+					full, ok, _ := LoadRigWorkflowProfileFile(m.townRoot, advRig)
+					if ok && full.HasPhasedDelivery() {
+						ffPhase, ffErr := TryFastForwardDeliveryPhase(m.townRoot, advRig, full)
+						if ffErr != nil {
+							fmt.Printf("[Manager] Warning: fast-forward delivery phase: %v\n", ffErr)
+						} else if ffPhase != "" && ffPhase != toPhase {
 							inst.CurrentState = "planning"
 							inst.Status = "running"
 							inst.touchStateEnteredAt()
-							full2.ActivePhaseIDField = ffPhase
+							full.ActivePhaseIDField = ffPhase
 							phaseAdvance = &WorkflowRework{
 								FromState: fromState,
 								Outcome:   outcome,
 								Summary:   truncateWorkflowText(summary, maxWorkflowReworkSummary),
-								Feedback:  truncateWorkflowText(preparePhaseAdvanceToPlanningFeedback(fromPhase, ffPhase, full2.ForActivePhase()), maxWorkflowReworkFeedback),
+								Feedback:  truncateWorkflowText(preparePhaseAdvanceToPlanningFeedback(fromPhase, ffPhase, full.ForActivePhase()), maxWorkflowReworkFeedback),
 							}
 						}
 					}
