@@ -662,6 +662,21 @@ func collapseSplitDeliveryPhases(v WorkflowValidation) WorkflowValidation {
 			collapsed = append(collapsed, parts[0])
 			continue
 		}
+		// Only merge if the titles suggest these were intentionally split phases
+		// (contain "(part N)" suffix). This prevents accidental merging of
+		// distinct phases that happen to share a base ID prefix.
+		hasPartSuffix := false
+		for _, p := range parts {
+			if strings.Contains(p.Title, " (part ") {
+				hasPartSuffix = true
+				break
+			}
+		}
+		if !hasPartSuffix {
+			// Distinct phases that happen to share a base ID — keep separate
+			collapsed = append(collapsed, parts...)
+			continue
+		}
 		baseTitle := strings.TrimSpace(parts[0].Title)
 		for {
 			idx := strings.LastIndex(baseTitle, " (part ")

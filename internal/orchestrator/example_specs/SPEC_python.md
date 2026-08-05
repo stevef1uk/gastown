@@ -55,3 +55,11 @@ httpx==0.24.1
 2. `cd pingapp && uvicorn main:app --port 8080 & curl http://localhost:8080/ping` — returns `{"message": "pong"}`.
 
 **CRITICAL NOTE FOR AGENTS**: DO NOT run `uvicorn` or any other HTTP server in the foreground during implementation or testing. Because it is a blocking server, it will block forever and cause you to hang indefinitely. Always run it in the background with `&` and test using `curl`, or rely entirely on `pytest`.
+
+## Delivery Phases
+1. **python-setup** — Initialize requirements.txt / venv
+2. **core** — main.py (FastAPI app + endpoint)
+3. **test** — test_main.py (unit tests)
+4. **integration-test** — Full smoke test (run server + curl)
+
+> **Why this order:** `python-setup` first establishes dependencies. `core` implements the FastAPI app and endpoint. `test` adds unit tests. `integration-test` runs the server and verifies the endpoint with curl.

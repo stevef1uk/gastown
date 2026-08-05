@@ -55,3 +55,11 @@ Register on `http.DefaultServeMux` from `main`.
 2. `cd pingapp && go run main.go & sleep 1 && curl http://localhost:8080/ping` — returns `{"message": "pong"}`.
 
 **CRITICAL NOTE FOR AGENTS**: DO NOT run `go run main.go` or `./pingapp` in the foreground during implementation or testing. Because it is an HTTP server, it will block forever and cause you to hang indefinitely. Always run it in the background with `&` and test using `curl`, or rely on `go test`.
+
+## Delivery Phases
+1. **go-module** — Initialize go.mod
+2. **core** — main.go (handler + server)
+3. **test** — main_test.go (unit tests)
+4. **integration-test** — Full smoke test (run server + curl)
+
+> **Why this order:** `go-module` first establishes the module. `core` implements the handler and server. `test` adds unit tests. `integration-test` runs the server and verifies the endpoint with curl.
