@@ -1642,13 +1642,13 @@ func Start(townRoot string) error {
 	//
 	// The number of attempts scales with the database count: each database
 	// adds ~1s of startup overhead (LevelDB compaction, stats loading, etc.).
-	// We allow 5s per database so that workspaces with many rigs don't time
-	// out before Dolt finishes initializing.
+	// We allow 15s per database so that workspaces with many rigs or slower
+	// storage don't time out before Dolt finishes initializing.
 	dbCount := len(databases)
 	if dbCount < 1 {
 		dbCount = 1
 	}
-	maxAttempts := dbCount * 10 // 10 × 500ms = 5s per database
+	maxAttempts := dbCount * 30 // 30 × 500ms = 15s per database
 	var lastErr error
 	tcpReachable := false
 	for attempt := 0; attempt < maxAttempts; attempt++ {
@@ -1692,7 +1692,7 @@ func Start(townRoot string) error {
 			len(missing), len(databases), missing)
 	}
 
-	totalTimeout := time.Duration(dbCount) * 5 * time.Second
+	totalTimeout := time.Duration(dbCount) * 15 * time.Second
 	if !tcpReachable {
 		return fmt.Errorf("Dolt server process started (PID %d) but not accepting connections after %v (%d databases × 5s): %w\nCheck logs with: gt dolt logs", cmd.Process.Pid, totalTimeout, dbCount, lastErr)
 	}

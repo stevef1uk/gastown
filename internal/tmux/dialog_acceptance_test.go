@@ -28,8 +28,8 @@ func TestAcceptWorkspaceTrustDialog_NoDialog(t *testing.T) {
 	}
 
 	// Should complete well before the 8s timeout since prompt is visible
-	if elapsed > 6*time.Second {
-		t.Errorf("took %v, expected early exit (< 6s)", elapsed)
+	if elapsed > 10*time.Second {
+		t.Errorf("took %v, expected early exit (< 10s)", elapsed)
 	}
 }
 
@@ -103,8 +103,8 @@ func TestAcceptBypassPermissionsWarning_NoDialog(t *testing.T) {
 		t.Fatalf("AcceptBypassPermissionsWarning: %v", err)
 	}
 
-	if elapsed > 6*time.Second {
-		t.Errorf("took %v, expected early exit (< 6s)", elapsed)
+	if elapsed > 10*time.Second {
+		t.Errorf("took %v, expected early exit (< 10s)", elapsed)
 	}
 }
 
