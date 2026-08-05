@@ -765,10 +765,19 @@ func leadingIndent(line string) int {
 	return count
 }
 
-// parsePhaseList extracts top-level phase items from the Phases section.
-// Only lines with indentation == 0 are considered (sub-items are ignored).
-// Leading numbers, bullets, and special chars are stripped from phase names.
-// Also captures the phase description from indented sub-items for spec_focus.
+// parsePhaseList extracts phase items from the Phases section.
+//
+// Two kinds of phase markers are supported:
+//   - markdown headings: "### Phase 1: Project Initialization", "# Phase 1 — X"
+//   - inline markers:    "1. **Scaffold Phase**", "- **Testing Phase**",
+//                        "Phase 2 — Handler Implementation", "go-module - Setup"
+//
+// Once a phase is started by a HEADING, all following non-heading lines
+// (bullets, prose) belong to that phase until the next heading — this handles
+// SPECs that write sub-bullets at column zero under "### Phase N:" headings
+// without indenting them. Inline-marker formats instead treat only indented
+// lines as sub-items. Leading numbers/bullets/punctuation are stripped from
+// phase names. Captured description lines feed spec_focus.
 func parsePhaseList(section string) []orchestrator.DeliveryPhase {
 	lines := strings.Split(section, "\n")
 	var phases []orchestrator.DeliveryPhase
@@ -776,49 +785,49 @@ func parsePhaseList(section string) []orchestrator.DeliveryPhase {
 
 	var currentPhase *orchestrator.DeliveryPhase
 	var currentPhaseLines []string
+	currentFromHeading := false
 
-	for _, line := range lines {
-		// Check indentation - only process top-level lines (indent == 0)
-		indent := leadingIndent(line)
-		
-		if indent == 0 {
-			// This is a top-level line - check if it's a phase marker
-			trimmed := strings.TrimSpace(line)
-			if trimmed == "" || strings.HasPrefix(trimmed, "```") {
-				continue
-			}
-
-			// If we have a current phase, save it
-			if currentPhase != nil {
-				// Build spec_focus from accumulated description lines
-				if len(currentPhaseLines) > 0 {
-					currentPhase.SpecFocus = currentPhase.Title + "\n\n" + strings.Join(currentPhaseLines, "\n")
-				}
-				phases = append(phases, *currentPhase)
-			}
-
-			// Try to parse this line as a new phase
-			currentPhase = parsePhaseLine(trimmed)
-			currentPhaseLines = nil
-			if currentPhase != nil {
-				phaseNum++
-			}
-		} else if currentPhase != nil && indent > 0 {
-			// This is an indented sub-item - add to current phase's description
-			trimmed := strings.TrimSpace(line)
-			if trimmed != "" && !strings.HasPrefix(trimmed, "```") {
-				currentPhaseLines = append(currentPhaseLines, trimmed)
-			}
+	flush := func() {
+		if currentPhase == nil {
+			return
 		}
-	}
-
-	// Don't forget the last phase
-	if currentPhase != nil {
 		if len(currentPhaseLines) > 0 {
 			currentPhase.SpecFocus = currentPhase.Title + "\n\n" + strings.Join(currentPhaseLines, "\n")
 		}
 		phases = append(phases, *currentPhase)
+		currentPhase = nil
+		currentPhaseLines = nil
 	}
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "```") {
+			continue
+		}
+		indent := leadingIndent(line)
+		isHeading := strings.HasPrefix(trimmed, "#")
+
+		parsed := parsePhaseLine(trimmed)
+
+		// Start a new phase when this line is a phase marker AND it is either a
+		// heading, or a column-zero inline marker while the current phase was not
+		// heading-started (column-zero bullets still belong to the open heading
+		// phase, and indented bullets belong to an open inline-marker phase).
+		if parsed != nil && (isHeading || (!currentFromHeading && indent == 0)) {
+			flush()
+			currentPhase = parsed
+			currentFromHeading = isHeading
+			phaseNum++
+			continue
+		}
+
+		// Otherwise this is description content of the current phase.
+		if currentPhase != nil {
+			_ = indent
+			currentPhaseLines = append(currentPhaseLines, trimmed)
+		}
+	}
+	flush()
 
 	return phases
 }

@@ -119,6 +119,34 @@ const specIgnoresSubItems = `# Test Spec
    - Add README excerpt with build/run instructions.  
    - Success: go vet ./... reports no issues.`
 
+// specHeadingBullets mirrors the SPEC the Analyst actually produces for the
+// helloapi rig: "### Phase N: Title" headings with sub-bullets at column zero
+// (NOT indented). Regression test for the real-world format that previously
+// exploded 3 phases into 11.
+const specHeadingBullets = `# SPEC: Hello World API
+
+## Overview
+A minimal Go HTTP service that listens on port 8080 and exposes a single endpoint GET /hello.
+
+## Phases
+
+### Phase 1: Project Initialization
+- Initialize Go module helloapi.
+- Create basic main.go that starts a server on port 8080.
+- Success Criteria: Server starts and listens on port 8080.
+
+### Phase 2: Handler Implementation
+- Implement the /hello handler in handlers.go.
+- Set Content-Type: application/json header.
+- Success Criteria: curl http://localhost:8080/hello returns the expected JSON payload.
+
+### Phase 3: Testing
+- Implement unit tests for the /hello handler in handlers_test.go using net/http/httptest.
+- Success Criteria: go test ./... passes.
+
+## Testing Strategy
+`
+
 func TestParseSpecPhases_NumberedBold(t *testing.T) {
 	phases := parseSpecPhases(specNumberedBold)
 	if len(phases) != 4 {
@@ -210,6 +238,30 @@ func TestParseSpecPhases_IgnoresSubItems(t *testing.T) {
 	}
 }
 
+// TestParseSpecPhases_HeadingBullets is the regression test for the real
+// Analyst-generated SPEC format: "### Phase N: Title" headings with column-zero
+// sub-bullets. Before the fix this produced 11 phases (one per bullet); it must
+// yield exactly the 3 headings.
+func TestParseSpecPhases_HeadingBullets(t *testing.T) {
+	phases := parseSpecPhases(specHeadingBullets)
+	if len(phases) != 3 {
+		t.Fatalf("expected 3 phases, got %d: %+v", len(phases), phases)
+	}
+	expected := []string{"project-initialization", "handler-implementation", "testing"}
+	for i, p := range phases {
+		if p.ID != expected[i] {
+			t.Fatalf("phase %d: expected ID %q, got %q", i, expected[i], p.ID)
+		}
+		if len(p.RequiredFiles) != 0 {
+			t.Fatalf("phase %d %q: expected empty required_files (assignment happens later), got %v", i, p.ID, p.RequiredFiles)
+		}
+		// Description bullets must be captured into spec_focus for the LLM.
+		if !strings.Contains(p.SpecFocus, "Success Criteria") {
+			t.Errorf("phase %d %q: spec_focus missing description bullets: %q", i, p.ID, p.SpecFocus)
+		}
+	}
+}
+
 // TestExtractPhaseSpecExcerpts_AllParseFormats exercises extractPhaseSpecExcerpts
 // against every SPEC format the phase parser supports. For each format it must:
 //   - parse at least one phase,
@@ -227,6 +279,7 @@ func TestExtractPhaseSpecExcerpts_AllParseFormats(t *testing.T) {
 		{"BulletedBold", specBulletedBold},
 		{"NumberedWithoutBold", specNumberedWithoutBold},
 		{"IgnoresSubItems", specIgnoresSubItems},
+		{"HeadingBullets", specHeadingBullets},
 	}
 
 	for _, f := range formats {
