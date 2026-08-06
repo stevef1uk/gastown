@@ -115,6 +115,11 @@ func extractSpecLayoutPaths(mayorRigDir string) ([]string, bool) {
 	paths = dedupeStrings(paths)
 	archDebug("extractSpecLayoutPaths result: %v", paths)
 
+	// Always include architecture.md as a required design document
+	// so it's protected from pruning and appears in required_files
+	paths = append(paths, "architecture.md")
+	paths = dedupeStrings(paths)
+
 	if len(paths) == 0 {
 		archDebug("no paths found in SPEC.md")
 		return nil, false
@@ -194,7 +199,7 @@ func parseSpecLayoutTree(specText string) []string {
 			}
 			// Infer additional directories from file paths containing "/" (e.g. "web/index.html" -> "web/")
 			inferredDirs := ""
-			if idx := strings.Index(entry, "/"); idx >= 0 {
+			if idx := strings.LastIndex(entry, "/"); idx >= 0 {
 				pathDirs := strings.Split(strings.TrimSuffix(entry[:idx], "/"), "/")
 				for _, d := range pathDirs {
 					if d != "" && validTreeDirName(d) {
@@ -304,6 +309,12 @@ func shouldReplaceProfileRequiredFilesWithSpec(v WorkflowValidation, specPaths [
 		return true
 	}
 	layout := strings.Trim(filepath.ToSlash(strings.TrimSpace(v.LayoutRoot)), "/")
+	// If profile has flat layout (LayoutRoot "." or empty) but SPEC has a valid layout root,
+	// always replace to get the correct nested paths from SPEC.
+	specLayout := strings.Trim(filepath.ToSlash(strings.TrimSpace(inferLayoutRootFromPaths(specPaths))), "/")
+	if (layout == "" || layout == ".") && specLayout != "" && specLayout != "." {
+		return true
+	}
 	if layout != "" && layout != "." && profilePathsUseLayoutPrefix(v.RequiredFiles, layout) {
 		prefixed := 0
 		for _, p := range specPaths {
@@ -379,7 +390,16 @@ func profilePathsUseLayoutPrefix(paths []string, layout string) bool {
 
 func applySpecPathsToValidation(v WorkflowValidation, specPaths []string) WorkflowValidation {
 	v.RequiredFiles = append([]string(nil), specPaths...)
-	if root := inferLayoutRootFromPaths(specPaths); root != "" {
+	// Filter out design documents (architecture.md, design.md, plan.md) for layout inference
+	// as they don't have the layout prefix and would confuse the root inference.
+	filteredPaths := make([]string, 0, len(specPaths))
+	for _, p := range specPaths {
+		base := filepath.Base(p)
+		if base != "architecture.md" && base != "design.md" && base != "plan.md" {
+			filteredPaths = append(filteredPaths, p)
+		}
+	}
+	if root := inferLayoutRootFromPaths(filteredPaths); root != "" {
 		if root != "." {
 			v.LayoutRoot = root
 			v.BeadTitleContains = "Implement " + root + "/"

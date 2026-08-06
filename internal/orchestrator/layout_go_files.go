@@ -191,8 +191,17 @@ func layoutRelPathsProtectedFromPrune(v WorkflowValidation) map[string]bool {
 		"vitest.config.ts",
 		"vitest.config.js",
 	}
+	// Protect design documents that must never be pruned
+	protectedDesignDocs := []string{
+		"architecture.md",
+		"design.md",
+		"plan.md",
+	}
 	for _, cfg := range commonTestConfigs {
 		protected[cfg] = true
+	}
+	for _, doc := range protectedDesignDocs {
+		protected[doc] = true
 	}
 	return protected
 }
