@@ -25,10 +25,8 @@ func connectOptions(name string, exitOnClose bool) []nats.Option {
 		nats.PingInterval(30 * time.Second),
 		nats.MaxPingsOutstanding(3),
 		nats.DisconnectErrHandler(func(nc *nats.Conn, err error) {
-			if err != nil {
+			if err != nil && os.Getenv("GT_NATS_DEBUG") != "" {
 				log.Printf("[nats:%s] disconnected: %v", name, err)
-			} else {
-				log.Printf("[nats:%s] disconnected", name)
 			}
 		}),
 		nats.ReconnectHandler(func(nc *nats.Conn) {
