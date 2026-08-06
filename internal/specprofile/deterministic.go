@@ -42,32 +42,32 @@ func inferDevServerPort(spec string, paths []string) int {
 	hasCurl := strings.Contains(lower, "curl") && (strings.Contains(lower, "http://") || strings.Contains(lower, "https://") || strings.Contains(lower, "localhost:"))
 	hasHTTPTable := specHTTPTableRE.MatchString(spec)
 
-	if !hasServerCmd && !hasCurl && !hasHTTPTable {
-		return 0
-	}
+	// If there's an explicit server command, curl, or HTTP table, try to extract port from SPEC
+	if hasServerCmd || hasCurl || hasHTTPTable {
+		if m := specServerPortFlagRE.FindStringSubmatch(spec); len(m) >= 2 {
+			if port, err := strconv.Atoi(m[1]); err == nil && port > 0 && port < 65536 {
+				return port
+			}
+		}
+		if m := specLocalhostPortRE.FindStringSubmatch(spec); len(m) >= 2 {
+			if port, err := strconv.Atoi(m[1]); err == nil && port > 0 && port < 65536 {
+				return port
+			}
+		}
 
-	if m := specServerPortFlagRE.FindStringSubmatch(spec); len(m) >= 2 {
-		if port, err := strconv.Atoi(m[1]); err == nil && port > 0 && port < 65536 {
-			return port
+		// Infer default port from the server command type in the SPEC
+		if specUvicornRE.MatchString(spec) || specFlaskRunRE.MatchString(spec) || specGunicornRE.MatchString(spec) || specHypercornRE.MatchString(spec) {
+			return 8000
+		}
+		if specGoRunRE.MatchString(spec) {
+			return 8080
+		}
+		if strings.Contains(lower, "node ") && specNodeListenRE.MatchString(spec) {
+			return 3000
 		}
 	}
-	if m := specLocalhostPortRE.FindStringSubmatch(spec); len(m) >= 2 {
-		if port, err := strconv.Atoi(m[1]); err == nil && port > 0 && port < 65536 {
-			return port
-		}
-	}
 
-	// Infer default port from the server command type in the SPEC
-	if specUvicornRE.MatchString(spec) || specFlaskRunRE.MatchString(spec) || specGunicornRE.MatchString(spec) || specHypercornRE.MatchString(spec) {
-		return 8000
-	}
-	if specGoRunRE.MatchString(spec) {
-		return 8080
-	}
-	if strings.Contains(lower, "node ") && specNodeListenRE.MatchString(spec) {
-		return 3000
-	}
-	// Fallback to test runner heuristic
+	// Fallback to test runner heuristic (works even without explicit server/curl in SPEC)
 	switch inferTestRunner(paths) {
 	case "pytest":
 		return 8000
@@ -460,19 +460,53 @@ func deterministicAssignFilesToPhases(phases []orchestrator.DeliveryPhase, files
 	if len(phases) == 0 || len(files) == 0 {
 		return nil
 	}
+	// E2E scaffolding (docker-compose, Dockerfile, Playwright config/specs) belongs
+	// in the integration-test phase when one exists — NOT scattered to go-module,
+	// core, or web by weak token matches. This only activates when the SPEC names an
+	// integration/e2e phase, so rigs without Playwright/docker tests are unaffected.
+	integrationIdx := integrationPhaseIdx(phases)
+	assignedIdx := make([]int, len(files))
+	for i := range assignedIdx {
+		assignedIdx[i] = -1
+	}
+	if integrationIdx >= 0 {
+		hasPlaywrightOrDocker := false
+		for _, f := range files {
+			if e2eScaffoldFile(f) {
+				hasPlaywrightOrDocker = true
+				break
+			}
+		}
+		if hasPlaywrightOrDocker {
+			for fi, f := range files {
+				if e2eScaffoldFile(f) {
+					assignedIdx[fi] = integrationIdx
+				}
+			}
+		}
+		// A package.json in a Playwright integration phase is the Playwright npm
+		// project (webServer + @playwright/test deps). Route it with the phase
+		// only when the phase actually owns playwright config/spec files.
+		if packageBelongsInPlaywrightIntegration(integrationIdx, files, assignedIdx) {
+			for fi, f := range files {
+				lower := strings.ToLower(filepath.ToSlash(strings.TrimSpace(f)))
+				if assignedIdx[fi] < 0 && (lower == "package.json" || lower == "package-lock.json" || lower == "npm-shrinkwrap.json" || strings.HasSuffix(lower, "/package.json") || strings.HasSuffix(lower, "/package-lock.json")) {
+					assignedIdx[fi] = integrationIdx
+				}
+			}
+		}
+	}
 	// Phase token sets, deduplicated across ID + title + spec_focus.
 	phaseToks := make([][]string, len(phases))
 	for i := range phases {
 		phaseToks[i] = phaseTokensFor(phases[i])
 	}
 
-	type fileAssign struct {
-		file string
-		idx  int
-	}
-	assignedIdx := make([]int, len(files))
 	var unmatched []string
 	for fi, f := range files {
+		if assignedIdx[fi] >= 0 {
+			continue // already routed to integration phase
+		}
 		ftoks := fileWeightedTokens(f)
 		bestIdx, bestScore := -1, 0
 		for i, ptoks := range phaseToks {
@@ -484,7 +518,6 @@ func deterministicAssignFilesToPhases(phases []orchestrator.DeliveryPhase, files
 		if bestIdx >= 0 && bestScore > 0 {
 			assignedIdx[fi] = bestIdx
 		} else {
-			assignedIdx[fi] = -1
 			unmatched = append(unmatched, f)
 		}
 	}
@@ -558,6 +591,78 @@ func deterministicAssignFilesToPhases(phases []orchestrator.DeliveryPhase, files
 	return assigned
 }
 
+// integrationPhaseIdx returns the index of the SPEC-named integration/E2E phase, or -1.
+// This is the phase that owns docker/Playwright scaffolding when present. Phases are
+// matched by ID/title only, never by contents, so a rig without an integration-test
+// phase is left entirely to token matching (Playwright files then follow their own
+// spec_focus tokens as before).
+func integrationPhaseIdx(phases []orchestrator.DeliveryPhase) int {
+	for i := range phases {
+		lower := strings.ToLower(phases[i].ID + " " + phases[i].Title)
+		if strings.Contains(lower, "integration") || strings.Contains(lower, "e2e") ||
+			strings.Contains(lower, "playwright") {
+			return i
+		}
+	}
+	return -1
+}
+
+// e2eScaffoldFile reports whether a layout-relative path is E2E/deployment
+// scaffolding that belongs in the integration-test phase when one exists:
+// docker-compose files, Dockerfiles, Playwright configs/specs, and e2e dirs.
+func e2eScaffoldFile(path string) bool {
+	p := filepath.ToSlash(strings.ToLower(strings.TrimSpace(path)))
+	if p == "" {
+		return false
+	}
+	base := p
+	if i := strings.LastIndex(p, "/"); i >= 0 {
+		base = p[i+1:]
+	}
+	if strings.Contains(p, "docker-compose") {
+		return true
+	}
+	if strings.HasPrefix(base, "dockerfile") || strings.HasSuffix(p, ".dockerfile") {
+		return true
+	}
+	if strings.Contains(p, "playwright") {
+		return true
+	}
+	for _, seg := range []string{"/e2e/", "/tests/e2e/", "/integration-test/"} {
+		if strings.Contains(p, seg) {
+			return true
+		}
+	}
+	if strings.HasSuffix(p, ".spec.ts") || strings.HasSuffix(p, ".spec.tsx") ||
+		strings.HasSuffix(p, ".e2e.ts") || strings.HasSuffix(p, ".e2e.js") {
+		return true
+	}
+	return false
+}
+
+// packageBelongsInPlaywrightIntegration reports whether a Node package manifest
+// (package.json / package-lock.json / npm-shrinkwrap.json) belongs in the
+// integration-test phase. It only routes when the phase is a genuine Playwright
+// project (owns a playwright config or spec) — pure Node/web rigs keep their
+// package.json in the app phase.
+func packageBelongsInPlaywrightIntegration(integrationIdx int, files []string, assignedIdx []int) bool {
+	if integrationIdx < 0 {
+		return false
+	}
+	ownsPlaywright := false
+	for fi, f := range files {
+		if assignedIdx[fi] != integrationIdx {
+			continue
+		}
+		lower := strings.ToLower(filepath.ToSlash(strings.TrimSpace(f)))
+		if strings.Contains(lower, "playwright") {
+			ownsPlaywright = true
+			break
+		}
+	}
+	return ownsPlaywright
+}
+
 func normalizeFileList(files []string) []string {
 	var out []string
 	for _, f := range files {
@@ -605,6 +710,12 @@ func phaseTokensFor(p orchestrator.DeliveryPhase) []string {
 	seen := map[string]bool{}
 	var out []string
 	for _, s := range src {
+		// Add the whole string as a token (for exact matching like "go-module" -> "go.mod")
+		if s != "" && !seen[s] {
+			seen[s] = true
+			out = append(out, s)
+		}
+		// Also add tokenized terms
 		for _, tok := range tokenizeTerms(s) {
 			if !seen[tok] {
 				seen[tok] = true
