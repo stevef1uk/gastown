@@ -61,6 +61,19 @@ func TestFinalizeDeliveryPhases_activePhaseMapsToSplit(t *testing.T) {
 	}
 }
 
+func TestFinalizeDeliveryPhases_staleActivePhaseFallsBackToFirst(t *testing.T) {
+	v := WorkflowValidation{
+		ActivePhaseIDField: "python-setup",
+		DeliveryPhases: []DeliveryPhase{
+			{ID: "core", RequiredFiles: []string{"main.py", "test_main.py"}},
+		},
+	}
+	got := FinalizeDeliveryPhases(v)
+	if got.ActivePhaseIDField != "core" {
+		t.Fatalf("active_phase_id = %q, want core (fallback to first phase)", got.ActivePhaseIDField)
+	}
+}
+
 func TestForActivePhase_scopesFilesAndQA(t *testing.T) {
 	v := WorkflowValidation{
 		RequiredFiles:      []string{"a.go", "b.go", "c.go"},
@@ -139,6 +152,12 @@ func TestPairPhaseInfraFiles_addsNodeFilesToFrontendPhase(t *testing.T) {
 	v := WorkflowValidation{
 		QAVerifyCommand: "cd app && npm test",
 		ActivePhaseIDField: "frontend-ui",
+		RequiredFiles: []string{
+			"app/frontend/package.json",
+			"app/frontend/tsconfig.json",
+			"app/frontend/components/Chart.tsx",
+			"app/frontend/__tests__/Chart.test.tsx",
+		},
 		DeliveryPhases: []DeliveryPhase{
 			{
 				ID:    "backend-api",
@@ -324,6 +343,8 @@ func TestFinalizeDeliveryPhases_noRootPackageJsonForTestDir(t *testing.T) {
 	v := WorkflowValidation{
 		RequiredFiles: []string{
 			"frontend/app/page.tsx",
+			"frontend/package.json",
+			"frontend/tsconfig.json",
 			"test/playwright.config.ts",
 			"test/e2e/trading_flow.spec.ts",
 		},

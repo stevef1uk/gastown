@@ -927,6 +927,13 @@ func pairPhaseInfraFiles(v WorkflowValidation) WorkflowValidation {
 				filepath.ToSlash(filepath.Join(dir, "..", "tsconfig.json")),
 			}
 			for _, c := range candidates {
+				// Only pair infra files the SPEC already declared in RequiredFiles.
+				// Injecting files the SPEC tree never listed (e.g. a parent
+				// tsconfig.json) reads as a profile hallucination to the architect
+				// and loops the design phase.
+				if !unionSet[c] {
+					continue
+				}
 				if phaseSet[c] {
 					continue
 				}
@@ -1005,6 +1012,10 @@ func FinalizeDeliveryPhases(v WorkflowValidation) WorkflowValidation {
 					v.ActivePhaseIDField = strings.TrimSpace(p.ID)
 					break
 				}
+			}
+			// Fallback: if no prefix match, reset to first phase
+			if v.ActivePhaseIDField == prefix && len(v.DeliveryPhases) > 0 {
+				v.ActivePhaseIDField = strings.TrimSpace(v.DeliveryPhases[0].ID)
 			}
 		}
 	}
