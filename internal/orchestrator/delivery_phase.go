@@ -937,6 +937,18 @@ func pairPhaseInfraFiles(v WorkflowValidation) WorkflowValidation {
 				if phaseSet[c] {
 					continue
 				}
+				// Only add parent package.json/tsconfig.json if the source file is in
+				// a subdirectory that looks like a Node.js project (frontend/, app/, src/).
+				// This prevents adding root package.json to static asset phases (e.g.
+				// Go/Python backend serving web/ assets) that happen to have JS files.
+				fDir := filepath.ToSlash(filepath.Dir(f))
+				isNodeProjectDir := strings.HasPrefix(fDir, "frontend/") ||
+					strings.HasPrefix(fDir, "app/") ||
+					strings.HasPrefix(fDir, "src/") ||
+					strings.HasPrefix(fDir, "web/") // legacy, but check anyway
+				if !isNodeProjectDir {
+					continue
+				}
 				pending = append(pending, c)
 				phaseSet[c] = true
 			}
