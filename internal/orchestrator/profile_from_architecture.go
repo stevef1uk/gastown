@@ -115,11 +115,6 @@ func extractSpecLayoutPaths(mayorRigDir string) ([]string, bool) {
 	paths = dedupeStrings(paths)
 	archDebug("extractSpecLayoutPaths result: %v", paths)
 
-	// Always include architecture.md as a required design document
-	// so it's protected from pruning and appears in required_files
-	paths = append(paths, "architecture.md")
-	paths = dedupeStrings(paths)
-
 	if len(paths) == 0 {
 		archDebug("no paths found in SPEC.md")
 		return nil, false
