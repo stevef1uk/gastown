@@ -1,0 +1,14 @@
+# Web server for Playwright E2E testing
+# Template variables: {{BASE_IMAGE}}, {{INSTALL_COMMANDS}}, {{BUILD_COMMANDS}}, {{EXPOSE_PORT}}, {{CMD}}
+
+FROM {{BASE_IMAGE}}
+
+{{INSTALL_COMMANDS}}
+
+WORKDIR /app
+
+{{BUILD_COMMANDS}}
+
+EXPOSE {{EXPOSE_PORT}}
+
+CMD {{CMD}}

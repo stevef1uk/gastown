@@ -1,0 +1,16 @@
+# Docker compose for Playwright E2E testing
+# Used in integration-test phase
+# Template variables: {{PLAYWRIGHT_IMAGE}}, {{PLAYWRIGHT_WORKDIR}}, {{PLAYWRIGHT_COMMAND}}, {{PLAYWRIGHT_BASE_URL}}, {{WEB_PORT}}
+# The web app runs on HOST (not in Docker). Playwright container uses host networking to reach it.
+# Runs npm install then playwright test.
+
+services:
+  playwright:
+    image: {{PLAYWRIGHT_IMAGE}}
+    working_dir: {{PLAYWRIGHT_WORKDIR}}
+    volumes:
+      - .:/app
+    network_mode: host
+    environment:
+      - BASE_URL={{PLAYWRIGHT_BASE_URL}}
+    command: sh -c "npm install && {{PLAYWRIGHT_COMMAND}}"

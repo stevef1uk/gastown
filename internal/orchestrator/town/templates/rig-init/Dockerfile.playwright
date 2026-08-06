@@ -1,0 +1,12 @@
+# Shared Playwright test-runner image for Gas Town docker-compose integration tests.
+# Built once per machine (asynchronously at workflow start when missing) and reused
+# across rigs. Uses base image's pre-installed Playwright + browsers.
+# Template variables: none (single global image)
+
+FROM mcr.microsoft.com/playwright:v1.62.1-jammy
+
+WORKDIR /app
+
+# Use npx playwright test (finds @playwright/test from local node_modules after npm install)
+# The project should have package.json with @playwright/test as devDependency
+CMD ["npx", "playwright", "test", "--project=chromium"]

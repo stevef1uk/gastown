@@ -1,0 +1,11 @@
+{
+  "name": "playwright-tests",
+  "version": "1.0.0",
+  "description": "Playwright E2E tests",
+  "scripts": {
+    "test": "npx playwright test --project=chromium"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.44.0"
+  }
+}
