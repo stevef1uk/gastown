@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"syscall"
 	"time"
 )
 
@@ -94,7 +93,7 @@ func launchDetachedPlaywrightBuild() error {
 	cmd.Stdout = logF
 	cmd.Stderr = logF
 	// Detach: own session/process group so a parent exit doesn't kill it.
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	detachCmd(cmd)
 	if err := cmd.Start(); err != nil {
 		logF.Close()
 		return fmt.Errorf("start detached docker build: %w", err)
