@@ -187,7 +187,28 @@ func parseSpecLayoutTree(specText string) []string {
 			continue
 		}
 		if m := specTreeFileInLine.FindStringSubmatch(entry); len(m) == 2 {
-			out = append(out, strings.Join(dirs[:depth], "/")+"/"+m[1])
+			fileName := m[1]
+			// Truncate dirs to current depth for ALL file entries
+			if depth < len(dirs) {
+				dirs = dirs[:depth]
+			}
+			// Infer additional directories from file paths containing "/" (e.g. "web/index.html" -> "web/")
+			inferredDirs := ""
+			if idx := strings.Index(entry, "/"); idx >= 0 {
+				pathDirs := strings.Split(strings.TrimSuffix(entry[:idx], "/"), "/")
+				for _, d := range pathDirs {
+					if d != "" && validTreeDirName(d) {
+						dirs = append(dirs, d)
+					}
+				}
+				inferredDirs = strings.Join(pathDirs, "/")
+			}
+			// Build path: explicit dirs up to depth + inferred dirs from file path + filename
+			basePath := strings.Join(dirs[:depth], "/")
+			if inferredDirs != "" {
+				basePath += "/" + inferredDirs
+			}
+			out = append(out, basePath+"/"+fileName)
 		}
 	}
 	return out
@@ -648,6 +669,11 @@ func SyncRigWorkflowProfileFromArchitecture(townRoot, rig string) (bool, error) 
 	if len(authoritative) == 0 {
 		return false, nil
 	}
+	// Judge/architect hallucination: paths prefixed with the literal placeholder
+	// "layout_root/" (the JSON key echoed as a directory name). No real project
+	// dir is ever called "layout_root" — remap them onto the profile's real layout
+	// root (e.g. pingapp) so agents keep writing where the scaffold put files.
+	authoritative = remapLayoutRootPlaceholderPaths(authoritative, env.Validation.LayoutRoot)
 	env.Validation.RequiredFiles = append([]string(nil), authoritative...)
 	if root := inferLayoutRootFromPaths(authoritative); root != "" && root != "." {
 		env.Validation.LayoutRoot = root
@@ -672,6 +698,36 @@ func SyncRigWorkflowProfileFromArchitecture(townRoot, rig string) (bool, error) 
 		return false, err
 	}
 	return true, nil
+}
+
+// remapLayoutRootPlaceholderPaths rewrites the literal "layout_root/" placeholder
+// prefix (a judge/architect echo of the JSON key) onto the profile's real layout
+// root, keeping the project rooted in the same directory the scaffold wrote to.
+// If no real layout root is set, paths collapse to project root.
+func remapLayoutRootPlaceholderPaths(paths []string, layoutRoot string) []string {
+	changed := false
+	target := strings.Trim(filepath.ToSlash(strings.TrimSpace(layoutRoot)), "/")
+	if target == "." {
+		target = ""
+	}
+	out := make([]string, 0, len(paths))
+	for _, p := range paths {
+		p = filepath.ToSlash(strings.TrimSpace(p))
+		if strings.HasPrefix(p, "layout_root/") {
+			p = strings.TrimPrefix(p, "layout_root/")
+			changed = true
+		}
+		if target != "" {
+			p = target + "/" + p
+		}
+		if p != "" {
+			out = append(out, p)
+		}
+	}
+	if !changed {
+		return paths
+	}
+	return out
 }
 
 // hasRuntimeSmokeCommand reports whether a QA verify command already starts a
@@ -830,6 +886,15 @@ func rebuildDeliveryPhasesFromAuthoritative(v WorkflowValidation, authoritative 
 	}
 	// Map authoritative entries to the phase whose existing files share the longest
 	// directory prefix (mirrors ReconcileProfileWithArchitecture's placement).
+	// Capture each phase's original basenames first — after the keep-loop a phase
+	// whose files were renamed goes empty, so basename provenance is lost.
+	origBase := make([]map[string]bool, len(v.DeliveryPhases))
+	for i := range v.DeliveryPhases {
+		origBase[i] = map[string]bool{}
+		for _, f := range v.DeliveryPhases[i].RequiredFiles {
+			origBase[i][filepath.Base(f)] = true
+		}
+	}
 	for i := range v.DeliveryPhases {
 		var keep []string
 		for _, p := range v.DeliveryPhases[i].RequiredFiles {
@@ -840,8 +905,11 @@ func rebuildDeliveryPhasesFromAuthoritative(v WorkflowValidation, authoritative 
 		}
 		v.DeliveryPhases[i].RequiredFiles = keep
 	}
-	// Any authoritative file not yet placed goes to the phase with the longest
-	// shared prefix; default to the final phase for packaging/config files.
+	// Distribute authoritative files not placed by exact match. Prefer basename
+	// provenance: a file whose basename a phase originally declared (e.g. core
+	// had main.go) returns to that phase even after the restructure moved it to
+	// cmd/server/main.go. This keeps the SPEC's semantic split (go-module/core/
+	// web/integration-test) instead of dumping everything into phase 0.
 	for _, p := range authoritative {
 		placed := false
 		for i := range v.DeliveryPhases {
@@ -853,13 +921,50 @@ func rebuildDeliveryPhasesFromAuthoritative(v WorkflowValidation, authoritative 
 		if placed {
 			continue
 		}
-		bestIdx, bestLen := -1, 0
-		for i, phase := range v.DeliveryPhases {
-			for _, f := range phase.RequiredFiles {
-				if prefix := longestCommonPathPrefix(p, f); prefix != "" && len(prefix) > bestLen {
-					bestLen = len(prefix)
-					bestIdx = i
+		base := filepath.Base(p)
+		bestIdx := -1
+		// First pass: a phase that originally declared this basename.
+		for i := range v.DeliveryPhases {
+			if origBase[i][base] {
+				bestIdx = i
+				break
+			}
+		}
+		// Second pass: a phase currently holding a same-basename file.
+		if bestIdx < 0 {
+			for i := range v.DeliveryPhases {
+				for _, f := range v.DeliveryPhases[i].RequiredFiles {
+					if filepath.Base(f) == base {
+						bestIdx = i
+						break
+					}
 				}
+				if bestIdx >= 0 {
+					break
+				}
+			}
+		}
+		if bestIdx >= 0 {
+			v.DeliveryPhases[bestIdx].RequiredFiles = append(v.DeliveryPhases[bestIdx].RequiredFiles, p)
+			continue
+		}
+		// Same-directory fallback: place the file with the phase that already
+		// holds the most files in the same directory (root-level config/Docker
+		// files cluster with the integration-test phase, cmd/server files with
+		// the core phase). Longest-prefix alone can't distinguish them because
+		// every file shares the layout_root prefix, so ties collapse to phase 0.
+		bestIdx, bestScore := -1, -1
+		dir := filepath.Dir(p)
+		for i, phase := range v.DeliveryPhases {
+			score := 0
+			for _, f := range phase.RequiredFiles {
+				if filepath.Dir(f) == dir {
+					score++
+				}
+			}
+			if score > bestScore {
+				bestScore = score
+				bestIdx = i
 			}
 		}
 		if bestIdx < 0 {
@@ -867,7 +972,35 @@ func rebuildDeliveryPhasesFromAuthoritative(v WorkflowValidation, authoritative 
 		}
 		v.DeliveryPhases[bestIdx].RequiredFiles = append(v.DeliveryPhases[bestIdx].RequiredFiles, p)
 	}
+	// If any phase was emptied by a layout restructure (flat main.go →
+	// cmd/server/main.go, index.html → web/index.html) with no basename/prefix
+	// match to re-attach its files, rebuild the whole skeleton from the
+	// authoritative paths. Redistributing from a hollow skeleton by longest-prefix
+	// alone dumps every remaining file into phase 0 (they all share the
+	// layout_root prefix and ties resolve to the first phase).
+	for i := range v.DeliveryPhases {
+		if len(v.DeliveryPhases[i].RequiredFiles) == 0 {
+			archDebug("rebuild: phase %q emptied by layout restructure; rebuilding phases from authoritative", v.DeliveryPhases[i].ID)
+			v.DeliveryPhases = PhasesFromFilePaths(authoritative)
+			// Active phase must resolve after a full rebuild, or planning hangs.
+			if v.ActivePhaseID() == "" || !phaseIDExists(v, v.ActivePhaseID()) {
+				v.ActivePhaseIDField = v.DeliveryPhases[0].ID
+			}
+			return v
+		}
+	}
 	return v
+}
+
+// phaseIDExists reports whether the profile defines a delivery phase with the
+// given ID. Used to keep active_phase_id resolvable after a full rebuild.
+func phaseIDExists(v WorkflowValidation, id string) bool {
+	for _, p := range v.DeliveryPhases {
+		if strings.TrimSpace(p.ID) == strings.TrimSpace(id) {
+			return true
+		}
+	}
+	return false
 }
 
 // degenerateDeliveryPhaseStructure reports whether the profile's phase skeleton
