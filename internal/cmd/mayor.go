@@ -298,6 +298,22 @@ func runMayorWorkflowStart(cmd *cobra.Command, args []string) error {
 	EnsureOrchestratedTownPipeline(townRoot)
 	if rig := strings.TrimSpace(vars["rig"]); rig != "" {
 		EnsureOrchestratedRigAgents(townRoot, rig)
+		// Re-scaffold docker-compose/Playwright infra using the FINAL profile.
+		// spec-index above may have re-indexed and changed layout_root (judge
+		// nondeterminism), so write into whatever layout_root the agents will use.
+		if n, err := orchestrator.ScaffoldRigIntegrationTemplates(townRoot, rig); err != nil {
+			fmt.Printf("  %s Could not scaffold integration-test templates: %v\n", style.Warning.Render("!"), err)
+		} else if n > 0 {
+			fmt.Printf("  Scaffolded %d integration-test template file(s) (Playwright Docker)\n", n)
+		}
+		// Kick off the shared Playwright Docker image build in the background
+		// (only when the rig's profile ships docker-compose + Playwright). Async:
+		// workflow start is never blocked on a multi-minute docker build.
+		if err := orchestrator.EnsurePlaywrightDockerImageAsync(townRoot, rig); err != nil {
+			fmt.Printf("  %s Playwright Docker image check: %v\n", style.Warning.Render("!"), err)
+		} else if log := orchestrator.DockerImageStatusLog(townRoot, rig); log != "" {
+			fmt.Printf("  %s\n", log)
+		}
 	}
 
 	fmt.Printf("%s Workflow started: %s\n", style.SuccessPrefix, workflowID)

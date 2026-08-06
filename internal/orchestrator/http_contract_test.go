@@ -111,6 +111,74 @@ func TestX(t *testing.T) {
 	}
 }
 
+func TestValidateImplementWrittenContent_singlePackageServerAllowsStdlibOnlyMain(t *testing.T) {
+	t.Parallel()
+	// pwtest-style: the architecture defines the handler inside cmd/server/main.go,
+	// so the workflow has no local handler package to import. Stdlib-only main.go
+	// that registers routes must be accepted (not "only imports standard library").
+	v := WorkflowValidation{
+		LayoutRoot: "pingapp",
+		RequiredFiles: []string{
+			"pingapp/cmd/server/main.go",
+			"pingapp/cmd/server/main_test.go",
+		},
+		QAVerifyCommand: "cd pingapp && go test ./...",
+		TestRunner:      "go",
+	}
+	body := `package main
+
+import (
+	"encoding/json"
+	"log"
+	"net/http"
+)
+
+func pingHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(map[string]string{"message": "pong"})
+}
+
+func main() {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/ping", pingHandler)
+	if err := http.ListenAndServe(":8080", mux); err != nil {
+		log.Fatal(err)
+	}
+}
+`
+	err := ValidateImplementWrittenContent("", "", t.TempDir(), "pingapp/cmd/server/main.go", body, v)
+	if err != nil {
+		t.Fatalf("single-package stdlib-only main must be accepted, got: %v", err)
+	}
+}
+
+func TestValidateImplementWrittenContent_handlerPackageRequiresImport(t *testing.T) {
+	t.Parallel()
+	// When the workflow has a handler package, a stdlib-only main.go that starts
+	// a server must still be rejected.
+	v := linkshelfHTTPProfile()
+	body := `package main
+
+import (
+	"log"
+	"net/http"
+)
+
+func main() {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {})
+	if err := http.ListenAndServe(":8080", mux); err != nil {
+		log.Fatal(err)
+	}
+}
+`
+	err := ValidateImplementWrittenContent("", "", t.TempDir(), "linkshelf/cmd/server/main.go", body, v)
+	if err == nil || !strings.Contains(err.Error(), "only imports standard library") {
+		t.Fatalf("expected stdlib-only main rejection when handler package exists, got %v", err)
+	}
+}
+
 func TestFormatHTTPRoutingGuidanceForBead_includesWebLayout(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()

@@ -736,6 +736,14 @@ func runRigAdd(cmd *cobra.Command, args []string) error {
 	maybeSpecIndexFromSPEC(townRoot, name, true)
 	maybeAutoSyncPlanningAfterRigSetup(townRoot, name)
 
+	// Scaffold docker-compose/Playwright infra from embedded rig-init templates
+	// when the profile has an integration-test phase that ships both.
+	if n, err := orchestrator.ScaffoldRigIntegrationTemplates(townRoot, name); err != nil {
+		fmt.Printf("  %s Could not scaffold integration-test templates: %v\n", style.Warning.Render("!"), err)
+	} else if n > 0 {
+		fmt.Printf("  Scaffolded %d integration-test template file(s) (Playwright Docker)\n", n)
+	}
+
 	// Sync hooks for the new rig's targets
 	if err := syncRigHooks(townRoot, name); err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: failed to sync hooks for new rig: %v\n", err)

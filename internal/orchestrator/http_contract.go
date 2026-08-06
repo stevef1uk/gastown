@@ -104,7 +104,7 @@ func ValidateImplementWrittenContent(townRoot, rig, mayorRigDir, relPath, conten
 		return err
 	}
 	if IsCmdMainImplementPath(relPath) {
-		if err := validateServerEntrypointWiring(relPath, content); err != nil {
+		if err := validateServerEntrypointWiring(relPath, content, v); err != nil {
 			return err
 		}
 	}
@@ -136,7 +136,7 @@ func IsMainDockerfile(relPath, layoutRoot string) bool {
 	return dir == "." || dir == "" || dir == layoutRoot
 }
 
-func validateServerEntrypointWiring(relPath, content string) error {
+func validateServerEntrypointWiring(relPath, content string, v WorkflowValidation) error {
 	hasServer := strings.Contains(content, "ListenAndServe")
 	if !hasServer {
 		return nil
@@ -144,10 +144,33 @@ func validateServerEntrypointWiring(relPath, content string) error {
 	if !strings.Contains(content, "HandleFunc") && !strings.Contains(content, "Handle(") {
 		return fmt.Errorf("%s starts a server but registers no routes — add http.HandleFunc calls per SPEC HTTP table", relPath)
 	}
-	if !hasNonStdlibImport(content) {
+	// Only require a local handler/store import when the workflow actually
+	// defines one. For single-package servers (e.g. architecture says the
+	// handler lives in main.go), a stdlib-only main is the correct design.
+	if !hasNonStdlibImport(content) && workflowHasLocalGoHandlerPackage(v) {
 		return fmt.Errorf("%s only imports standard library — import local handler/store packages to register API routes", relPath)
 	}
 	return nil
+}
+
+// workflowHasLocalGoHandlerPackage reports whether the workflow profile
+// declares a Go package other than the cmd/server main entrypoint (a package
+// that main.go is expected to import to wire routes).
+func workflowHasLocalGoHandlerPackage(v WorkflowValidation) bool {
+	for _, rel := range v.UnionRequiredFiles() {
+		rel = filepath.ToSlash(strings.TrimSpace(rel))
+		if !strings.HasSuffix(rel, ".go") {
+			continue
+		}
+		if strings.HasSuffix(rel, "_test.go") {
+			continue
+		}
+		if IsCmdMainImplementPath(rel) {
+			continue
+		}
+		return true
+	}
+	return false
 }
 
 var stdlibPrefixes = []string{

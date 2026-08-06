@@ -38,6 +38,11 @@ func MaybeAutoStartWorkflow(townRoot, rig string) (string, error) {
 	vars := map[string]string{}
 	if rig != "" {
 		vars["rig"] = rig
+		// Ensure the shared Playwright Docker image exists (async build) before the
+		// integration-test phase needs it. Never blocks workflow start.
+		if err := EnsurePlaywrightDockerImageAsync(townRoot, rig); err != nil {
+			return "", err
+		}
 	}
 	return StartWorkflow(townRoot, cfg.DefaultWorkflow, vars)
 }

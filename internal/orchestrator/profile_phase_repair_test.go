@@ -215,3 +215,91 @@ func TestRebuildDeliveryPhasesFromAuthoritative_repairsDegeneratePhases(t *testi
 		}
 	}
 }
+
+// TestRebuildDeliveryPhasesFromAuthoritative_handlesLayoutRestructure confirms that
+// when the architect restructures a flat layout into subdirectories (main.go →
+// cmd/server/main.go), the hollowed-out phase skeleton is rebuilt from the
+// authoritative paths instead of dumping every file into the first phase.
+func TestRebuildDeliveryPhasesFromAuthoritative_handlesLayoutRestructure(t *testing.T) {
+	v := WorkflowValidation{
+		LayoutRoot: "pingapp",
+		DeliveryPhases: []DeliveryPhase{
+			{ID: "go-module", RequiredFiles: []string{"pingapp/go.mod"}},
+			{ID: "core", RequiredFiles: []string{"pingapp/main.go"}},
+			{ID: "web", RequiredFiles: []string{"pingapp/index.html", "pingapp/app.js"}},
+			{ID: "integration-test", RequiredFiles: []string{"pingapp/playwright.config.ts", "pingapp/ping.spec.ts", "pingapp/package.json", "pingapp/docker-compose.yml"}},
+		},
+	}
+	// Architect restructures: flat files move into subdirectories.
+	authoritative := []string{
+		"pingapp/package.json",
+		"pingapp/go.mod",
+		"pingapp/cmd/server/main.go",
+		"pingapp/web/index.html",
+		"pingapp/web/app.js",
+		"pingapp/e2e/ping.spec.ts",
+		"pingapp/cmd/server/main_test.go",
+		"pingapp/playwright.config.ts",
+		"pingapp/Dockerfile.web",
+		"pingapp/docker-compose.yml",
+	}
+	got := rebuildDeliveryPhasesFromAuthoritative(v, authoritative)
+	if len(got.DeliveryPhases) < 2 {
+		t.Fatalf("restructured layout must yield multiple phases, got %d: %+v", len(got.DeliveryPhases), got.DeliveryPhases)
+	}
+	// No single phase may swallow the whole project.
+	for _, p := range got.DeliveryPhases {
+		if len(p.RequiredFiles) == 0 {
+			t.Fatalf("phase %q is empty after rebuild: %+v", p.ID, got.DeliveryPhases)
+		}
+	}
+	// Every authoritative file must be placed exactly once.
+	var placed []string
+	for _, p := range got.DeliveryPhases {
+		placed = append(placed, p.RequiredFiles...)
+	}
+	if len(placed) != len(authoritative) {
+		t.Fatalf("rebuild lost files: got %d placed, want %d (%v)", len(placed), len(authoritative), placed)
+	}
+	for _, a := range authoritative {
+		if !containsString(placed, a) {
+			t.Fatalf("authoritative file %q missing after rebuild", a)
+		}
+	}
+	// Semantic phase split must survive the restructure: go.mod stays a go-module
+	// file, main.go stays a core file, web files stay in web, docker/playwright
+	// files stay in integration-test.
+	for _, p := range got.DeliveryPhases {
+		switch p.ID {
+		case "go-module", "core", "web", "integration-test":
+		default:
+			t.Fatalf("rebuild produced unexpected phase %q (want SPEC semantic split)", p.ID)
+		}
+		for _, f := range p.RequiredFiles {
+			switch p.ID {
+			case "go-module":
+				if f != "pingapp/go.mod" {
+					t.Fatalf("go-module must hold only go.mod, got %q", f)
+				}
+			case "core":
+				if !strings.Contains(f, "/cmd/") && f != "pingapp/go.mod" {
+					t.Fatalf("core must hold cmd/ files, got %q", f)
+				}
+			case "web":
+				if !strings.Contains(f, "/web/") {
+					t.Fatalf("web phase must hold web/ files, got %q", f)
+				}
+			case "integration-test":
+				if strings.Contains(f, "/web/") || strings.Contains(f, "/cmd/") {
+					t.Fatalf("integration-test must not hold app files, got %q", f)
+				}
+			}
+		}
+	}
+	// Active phase must resolve after the rebuild, or planning hangs.
+	v.ActivePhaseIDField = "go-module"
+	got = rebuildDeliveryPhasesFromAuthoritative(v, authoritative)
+	if got.ActivePhaseID() == "" || !phaseIDExists(got, got.ActivePhaseID()) {
+		t.Fatalf("active_phase_id %q does not resolve after rebuild: %+v", got.ActivePhaseID(), got.DeliveryPhases)
+	}
+}

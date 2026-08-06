@@ -90,7 +90,7 @@ if [[ ! -f "$GT_ROOT/settings/config.json" ]]; then
     echo "FATAL: gt not on PATH — run 'make install' in gastown first" >&2
     exit 1
   fi
-  gt install "$GT_ROOT" --git
+  gt install "$GT_ROOT" --git --dolt-port ${DOLT_PORT:-3307}
 fi
 if [[ ! -f "$GT_ROOT/settings/config.json" ]]; then
   echo "FATAL: not a Gas Town root (no settings/config.json): $GT_ROOT" >&2

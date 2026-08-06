@@ -226,6 +226,14 @@ func SanitizePhaseVerifyCommandsForStack(v WorkflowValidation) WorkflowValidatio
 		if bad {
 			p.QAVerifyCommand = defaultQAVerifyForPhase(p, v.LayoutRoot)
 		}
+		// Deterministic guard for integration-test / e2e phases: when the phase
+		// ships a docker-compose file AND playwright scaffolding, the verify must
+		// run the compose Playwright service. The JUDGE LLM repeatedly rewrites
+		// these to "npx playwright test --list" (wrong path / no browser install);
+		// clamp it back to the Docker command after the judge runs.
+		if phaseShipsDockerPlaywright(p) {
+			p.QAVerifyCommand = composePlaywrightVerifyCommand(p, v.LayoutRoot)
+		}
 	}
 	return v
 }
@@ -267,6 +275,48 @@ func phaseFileStacks(files []string) (hasGo, hasPy, hasNode bool) {
 		}
 	}
 	return hasGo, hasPy, hasNode
+}
+
+// phaseShipsDockerPlaywright reports whether a delivery phase ships both a
+// docker-compose file and Playwright scaffolding (config, spec, or package.json),
+// i.e. the phase is meant to run E2E tests in the Playwright Docker container.
+func phaseShipsDockerPlaywright(p *DeliveryPhase) bool {
+	if p == nil {
+		return false
+	}
+	lowerID := strings.ToLower(p.ID)
+	lowerTitle := strings.ToLower(p.Title)
+	isIntegration := strings.Contains(lowerID, "integration") ||
+		strings.Contains(lowerTitle, "integration") ||
+		strings.Contains(lowerID, "e2e") ||
+		strings.Contains(lowerTitle, "e2e") ||
+		strings.Contains(lowerID, "playwright") ||
+		strings.Contains(lowerTitle, "playwright")
+	if !isIntegration {
+		return false
+	}
+	hasCompose := false
+	hasPlaywright := false
+	for _, f := range p.RequiredFiles {
+		lower := strings.ToLower(filepath.ToSlash(strings.TrimSpace(f)))
+		if strings.Contains(lower, "docker-compose") || strings.HasSuffix(lower, "docker-compose.yaml") || strings.HasSuffix(lower, "docker-compose.yml") {
+			hasCompose = true
+		}
+		if strings.Contains(lower, "playwright") {
+			hasPlaywright = true
+		}
+	}
+	return hasCompose && hasPlaywright
+}
+
+// composePlaywrightVerifyCommand returns the Docker-compose Playwright verify
+// command for a phase, scoped to layout_root.
+func composePlaywrightVerifyCommand(p *DeliveryPhase, layoutRoot string) string {
+	lr := layoutRoot
+	if lr == "" {
+		lr = "."
+	}
+	return fmt.Sprintf("cd %s && docker compose up --exit-code-from playwright", lr)
 }
 
 // StripInvalidCDPrefixes removes leading "cd <dir> && " from verify commands when layout_root
@@ -1427,10 +1477,23 @@ func defaultQAVerifyForPhase(p *DeliveryPhase, layoutRoot string) string {
 				break
 			}
 		}
+		// Integration-test phases with Playwright should use Docker/Playwright container
+		// instead of npm install. The Docker container has Playwright pre-installed.
+		isIntegrationTest := strings.Contains(strings.ToLower(p.ID), "integration") ||
+			strings.Contains(strings.ToLower(p.Title), "integration")
+		if isIntegrationTest {
+			// Integration-test phases with Playwright should use Docker/Playwright container
+			// via docker compose. The Docker container has Playwright pre-installed.
+			return fmt.Sprintf("cd %s && docker compose up --exit-code-from playwright", lr)
+		}
 		if dir == "." {
 			return fmt.Sprintf("cd %s && npx playwright test --list", lr)
 		}
 		install := nodeInstallCommand("npm", p.RequiredFiles)
+		// If playwright config is at layout root, don't add subdirectory
+		if dir == lr {
+			return fmt.Sprintf("cd %s && %s && npx playwright test --list", lr, install)
+		}
 		return fmt.Sprintf("cd %s/%s && %s && npx playwright test --list", lr, dir, install)
 	}
 	if hasScripts {
