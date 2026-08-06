@@ -140,6 +140,47 @@ To quickly test the orchestrator end-to-end on a generated `ping_rig`, you can u
 
 This will automatically create a local rig with the appropriate specification and launch the `rig-flow` pipeline. You can monitor the progress using the Agent Console (http://127.0.0.1:8091).
 
+### Playwright E2E Testing (Host Networking Architecture)
+
+Gas Town supports end-to-end browser testing via **Playwright in Docker** with a **host networking** architecture:
+
+**Key principle:** The web application runs on the **host** (not in Docker). Only the Playwright test runner runs in a Docker container with `network_mode: host` to reach the host's `localhost:<port>`.
+
+**How it works:**
+
+1. **Scaffold** — When a rig's workflow profile has an `integration-test` phase with both `docker-compose` and Playwright files, `gt rig add` / `gt rig spec-index` scaffolds:
+   - `docker-compose.yml` — single `playwright` service
+   - `package.json` — with `@playwright/test` devDependency
+   - `playwright.config.ts` — configured with `baseURL: http://localhost:<DevServerPort>`
+   - `e2e/*.spec.ts` — test specs (agent-written during implementation)
+
+2. **Build** — The rig's web server is built natively on the host (e.g., `go build -o server ./cmd/server`)
+
+3. **Run** — Start the web server on host at the port from `DevServerPort` (default 8080):
+   ```bash
+   ./server  # or go run ./cmd/server
+   ```
+
+4. **Test** — Run Playwright tests via docker-compose:
+   ```bash
+   docker compose up --exit-code-from playwright
+   ```
+   The container:
+   - Uses `playwright-go-test:latest` image (based on `mcr.microsoft.com/playwright:v1.62.1-jammy`)
+   - Runs `npm install && npx playwright test --project=chromium`
+   - Reaches the web server at `http://localhost:<port>` via host networking
+   - Exits with the test result code
+
+**Why host networking?**
+- No need to containerize the web app (simpler builds, faster iteration)
+- Playwright runs in isolated container with browsers pre-installed
+- Port is dynamic from workflow profile's `DevServerPort` (not hardcoded)
+- Works identically across Go, Python, Node stacks
+
+**Template files:** `internal/orchestrator/town/templates/rig-init/` — these are scaffolded automatically by `ScaffoldRigIntegrationTemplates()` when the profile detects an integration-test phase with both docker-compose and Playwright files.
+
+**Test script:** `scripts/test-playwright-new-rig.sh` — creates a test rig, runs the full pipeline, verifies Playwright tests pass.
+
 #### Try `rig-flow` on a custom rig
 
 Prerequisites: town with at least one rig, Dolt/beads healthy, NATS transport, and an LLM endpoint (Ollama or Freeride proxy on port 11434).
