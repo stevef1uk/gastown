@@ -147,6 +147,7 @@ func ClampProfileValidation(v WorkflowValidation) WorkflowValidation {
 	v = FinalizeDeliveryPhases(v)
 	v = StripInvalidCDPrefixes(v)
 	v = validatePhaseVerifyCommands(v)
+	v = validatePhaseVerifyCommandsAgainstFiles(v)
 	v.RequiredFiles = StripNonFileRequiredEntries(v.RequiredFiles)
 	for i := range v.DeliveryPhases {
 		v.DeliveryPhases[i].RequiredFiles = StripNonFileRequiredEntries(v.DeliveryPhases[i].RequiredFiles)
@@ -770,6 +771,118 @@ func findProjectRootForNPM(files []string) string {
 		}
 	}
 	return ""
+}
+
+// validatePhaseVerifyCommandsAgainstFiles checks if a phase's verify command
+// references files that aren't available in the current or previous phases.
+// If so, rewrites the command to a safe stack-appropriate default.
+func validatePhaseVerifyCommandsAgainstFiles(v WorkflowValidation) WorkflowValidation {
+	if !v.HasPhasedDelivery() || len(v.DeliveryPhases) == 0 {
+		return v
+	}
+	// Track files available up to each phase
+	availableFiles := map[string]bool{}
+	for i := range v.DeliveryPhases {
+		p := &v.DeliveryPhases[i]
+		cmd := strings.TrimSpace(p.QAVerifyCommand)
+		if cmd == "" {
+			// Add this phase's files to available and continue
+			for _, f := range p.RequiredFiles {
+				availableFiles[filepath.ToSlash(strings.TrimSpace(f))] = true
+			}
+			continue
+		}
+		// Check if command references files not yet available
+		if referencesMissingFiles(cmd, availableFiles) {
+			// Rewrite to stack-appropriate safe default
+			p.QAVerifyCommand = defaultQAVerifyForPhase(p, v.LayoutRoot)
+			log.Printf("[clamp] phase %q: verify command references future-phase files, replaced with %q", p.ID, p.QAVerifyCommand)
+		}
+		// Add this phase's files to available for next phases
+		for _, f := range p.RequiredFiles {
+			availableFiles[filepath.ToSlash(strings.TrimSpace(f))] = true
+		}
+	}
+	return v
+}
+
+// referencesMissingFiles checks if a verify command references files
+// (via go run, curl, or path patterns) that aren't in availableFiles.
+func referencesMissingFiles(cmd string, availableFiles map[string]bool) bool {
+	lower := strings.ToLower(cmd)
+
+	// Check for go run <path>
+	if strings.Contains(lower, "go run") {
+		// Extract path after "go run"
+		idx := strings.Index(lower, "go run")
+		if idx >= 0 {
+			after := cmd[idx+len("go run"):]
+			fields := strings.Fields(after)
+			for _, f := range fields {
+				f = strings.TrimSpace(f)
+				if f == "" || strings.HasPrefix(f, "-") {
+					continue
+				}
+				if strings.HasSuffix(f, ".go") {
+					if !availableFiles[filepath.ToSlash(f)] {
+						return true
+					}
+				}
+			}
+		}
+	}
+
+	// Check for python uvicorn/flask/... commands that start a server
+	// These START the server in the same command, so they don't need pre-existing files
+	// Only flag if it references a .py file that doesn't exist
+	if strings.Contains(lower, "uvicorn") || strings.Contains(lower, "flask run") ||
+		strings.Contains(lower, "gunicorn") || strings.Contains(lower, "hypercorn") {
+		// These start the server - extract any .py file argument
+		fields := strings.Fields(cmd)
+		for _, f := range fields {
+			f = strings.TrimSpace(f)
+			if strings.HasSuffix(f, ".py") && !strings.HasPrefix(f, "-") {
+				if !availableFiles[filepath.ToSlash(f)] {
+					return true
+				}
+			}
+		}
+	}
+
+	// Check for curl to paths that imply server endpoints
+	// (heuristic: if cmd has curl but no server-start, it expects server to exist)
+	if strings.Contains(lower, "curl ") {
+		// Check if the command STARTS a server in the same command
+		hasServerStart := strings.Contains(lower, "go run") ||
+			strings.Contains(lower, "uvicorn") ||
+			strings.Contains(lower, "flask run") ||
+			strings.Contains(lower, "gunicorn") ||
+			strings.Contains(lower, "hypercorn") ||
+			strings.Contains(lower, "docker compose") ||
+			strings.Contains(lower, "docker-compose")
+
+		if !hasServerStart {
+			// curl without server startup implies server binary already exists
+			// Look for go build patterns that would create server
+			hasBuild := strings.Contains(lower, "go build") && (strings.Contains(lower, "main.go") || strings.Contains(lower, "cmd/server"))
+			if !hasBuild {
+				// Check if server binary would be built from available files
+				hasServerSource := false
+				for f := range availableFiles {
+					if strings.HasSuffix(f, "cmd/server/main.go") || strings.HasSuffix(f, "main.go") ||
+						strings.HasSuffix(f, "main.py") || strings.HasSuffix(f, "app.py") ||
+						strings.HasSuffix(f, "server.py") {
+						hasServerSource = true
+						break
+					}
+				}
+				if !hasServerSource {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
 
 // StripNonFileRequiredEntries removes entries from required_files that are
