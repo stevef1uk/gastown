@@ -24,7 +24,7 @@ For each phase you receive, evaluate the current qa_verify_command. If it is a p
 
 Each phase's "spec_excerpt" field contains a relevant excerpt from the project's SPEC.md/REQUIREMENTS.md. **GENERATE VERIFY COMMANDS THAT TEST THE ACTUAL BEHAVIOR DESCRIBED IN THE spec_excerpt — not just file presence.** For example, if the spec_excerpt says "users can place limit orders", the verify command should start the server and test that the order endpoint actually processes limit orders. If spec_excerpt is empty for a phase, fall back to the generic file-presence or compile-check patterns below.
 
-Return a FLAT JSON object. Each key is a phase ID (string), each value is a qa_verify_command (string). **Only include phases where the current command is wrong.** Do NOT repeat the phase metadata (title, required_files, etc.). If a phase already has a valid, non-placeholder command that properly tests its required files, leave it out of your response entirely. Do NOT replace valid commands with equivalent alternatives (e.g. don't replace "uv run pytest" with "python -m pytest" — both are fine). Phases not in the response keep their current command.
+Return a FLAT JSON object. Each key is a phase ID (string), each value is a qa_verify_command (string). **Only include phases where the current command is wrong.** Do NOT include phases where the current command is wrong. Do NOT repeat the phase metadata (title, required_files, etc.). If a phase already has a valid, non-placeholder command that properly tests its required files, leave it out of your response entirely. Do NOT replace valid commands with equivalent alternatives (e.g. don't replace "uv run pytest" with "python -m pytest" — both are fine). Phases not in the response keep their current command.
 
 For **early/mid phases** (backend, frontend, database), prefer behavioral checks over file-presence when spec sections describe specific functionality:
 - If the spec mentions API endpoints, start the server and curl those endpoints with real payloads
@@ -32,6 +32,7 @@ For **early/mid phases** (backend, frontend, database), prefer behavioral checks
 - If no spec sections are available, fall back to file presence or compile checks:
   - Shell scripts (.sh): "test -f scripts/start_mac.sh && test -f scripts/stop_mac.sh"
   - Docker/compose files: "test -f Dockerfile && test -f docker-compose.yml && echo 'docker ok'"
+  - **Playwright E2E (integration-test phase with playwright.config.ts + e2e specs + docker-compose.yml): "cd <layout_root> && docker compose up --exit-code-from playwright"**
   - Playwright config: "cd test && npm install --ignore-scripts && npx playwright test --list"
   - Python/pytest: "cd backend && python -m pytest -v tests/"
   - Go: "cd . && go test ./..."
@@ -54,7 +55,7 @@ For **final/integration phases** (e.g. smoke-test, deployment-and-e2e, doc-seed)
 4. Assert root UI HTML content contains expected spec strings.
 5. Gracefully tear down / kill server process.
 
-CRITICAL: All paths are relative to the rig root (mayor/rig/). Do NOT prefix with the rig name. Use actual file paths from required_files.
+**CRITICAL: All paths are relative to the rig root (mayor/rig/). Do NOT prefix with the rig name. Use actual file paths from required_files.**
 
 Output JSON only — no prose, no markdown fences.`
 }
