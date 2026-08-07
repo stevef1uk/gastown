@@ -4,10 +4,11 @@ import (
 	"context"
 	"os"
 	"os/exec"
-	"time"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
+	"time"
 )
 
 // qaReviewPhasedTemplate is a minimal rig-flow slice for phase-advance tests (qa_review → completed | planning).
@@ -102,6 +103,13 @@ func setupPhasedRigTown(t *testing.T) (townRoot, rig, rigDir, beadsDir string) {
 			t.Fatal(err)
 		}
 	}
+	// Initialize git repo so bd hooks work
+	initGit := exec.Command("git", "init")
+	initGit.Dir = rigDir
+	initGit.Env = append(os.Environ(), "GIT_AUTHOR_NAME=test", "GIT_AUTHOR_EMAIL=test@test")
+	if out, err := initGit.CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v\n%s", err, out)
+	}
 	init := exec.Command("bd", "init")
 	init.Env = append(os.Environ(), "BEADS_DIR="+beadsDir)
 	init.Dir = rigDir
@@ -109,6 +117,11 @@ func setupPhasedRigTown(t *testing.T) (townRoot, rig, rigDir, beadsDir string) {
 		t.Fatalf("bd init: %v\n%s", err, out)
 	}
 	if err := os.WriteFile(filepath.Join(rigDir, "architecture.md"), []byte(strings.Repeat("# arch\n", 80)), 0644); err != nil {
+		t.Fatal(err)
+	}
+	// Write minimal SPEC.md so orchestrator can find it
+	spec := "# Test Project\n\n## Layout\n```\nlinkshelf/\n  go.mod\n  internal/store/store.go\n  internal/store/store_test.go\n  web/index.html\n  cmd/server/main.go\n```\n\n## Delivery Phases\n1. backend - Backend Implementation\n2. frontend - Frontend Implementation\n"
+	if err := os.WriteFile(filepath.Join(rigDir, "SPEC.md"), []byte(spec), 0644); err != nil {
 		t.Fatal(err)
 	}
 	return townRoot, rig, rigDir, beadsDir
@@ -186,7 +199,7 @@ func assertOpenBeadPaths(t *testing.T, townRoot, rig string, v WorkflowValidatio
 func TestDeliveryPhaseWorkflow_integration(t *testing.T) {
 	townRoot, rig, rigDir, beadsDir := setupPhasedRigTown(t)
 	// bd init installs git hooks; close may block if git remote is unavailable.
-	if _, err := os.Stat(filepath.Join(townRoot, rig, ".git")); os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(rigDir, ".git")); os.IsNotExist(err) {
 		t.Skip("skipping integration test: bd hooks require git repo")
 	}
 	writeTestPhasedProfile(t, townRoot, rig, "backend")
@@ -254,6 +267,14 @@ func TestDeliveryPhaseWorkflow_integration(t *testing.T) {
 		"linkshelf/web/index.html",
 		"linkshelf/cmd/server/main.go",
 	})
+
+	// Verify profile state after advance
+	if !slices.Equal(frontend.CompletedPhaseIDs(), []string{"backend"}) {
+		t.Fatalf("completed_phase_ids = %v want [backend]", frontend.CompletedPhaseIDs())
+	}
+	if frontend.RewoundFromPhaseIDField != "" {
+		t.Fatalf("rewound_from_phase_id = %q want empty", frontend.RewoundFromPhaseIDField)
+	}
 
 	// Planner finishes; skip to QA on last phase.
 	inst.CurrentState = "qa_review"
