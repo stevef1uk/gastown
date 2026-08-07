@@ -237,6 +237,8 @@ func layoutGoBasenamesProtectedFromPrune(v WorkflowValidation) map[string]bool {
 // in v.RequiredFiles. Files that cannot be removed (e.g. root-owned artifacts written by a
 // docker test container) are collected as warnings and skipped instead of aborting the whole
 // walk, so the workflow continues and the next prune can finish them once ownership is fixed.
+// Files that exist at the wrong path (flat vs nested) but match a required file by basename
+// are moved to their correct location instead of being deleted.
 func PruneStaleLayoutFiles(townRoot, rig string, v WorkflowValidation) (removed []string, warnings []string, err error) {
 	layout := strings.Trim(filepath.ToSlash(strings.TrimSpace(v.LayoutRoot)), "/")
 	if layout == "" || len(v.RequiredFiles) == 0 {
@@ -245,6 +247,12 @@ func PruneStaleLayoutFiles(townRoot, rig string, v WorkflowValidation) (removed 
 	required := layoutRelPathsProtectedFromPrune(v)
 	if len(required) == 0 {
 		return nil, nil, nil
+	}
+	// Build reverse index: basename -> list of required paths with that basename
+	basenameToRequiredPaths := make(map[string][]string)
+	for reqPath := range required {
+		base := filepath.Base(reqPath)
+		basenameToRequiredPaths[base] = append(basenameToRequiredPaths[base], reqPath)
 	}
 	root := filepath.Join(townRoot, rig, "mayor", "rig", layout)
 	basenameGo := layoutGoBasenamesProtectedFromPrune(v)
@@ -275,6 +283,34 @@ func PruneStaleLayoutFiles(townRoot, rig string, v WorkflowValidation) (removed 
 		if strings.HasSuffix(rel, ".go") && basenameGo[filepath.Base(rel)] {
 			return nil
 		}
+		// Check if this file exists in required_files at a different path (same basename)
+		relBase := filepath.Base(rel)
+		if correctPaths, ok := basenameToRequiredPaths[relBase]; ok {
+			// File has same basename as a required file but is at wrong path. Move it to a
+			// correct location that does not yet exist; if every correct location already has
+			// a file, this wrong-path file is a stale duplicate and is removed below.
+			moveRel := ""
+			for _, cp := range correctPaths {
+				if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(cp))); os.IsNotExist(err) {
+					moveRel = cp
+					break
+				}
+			}
+			if moveRel != "" {
+				movePath := filepath.Join(root, filepath.FromSlash(moveRel))
+				if err := os.MkdirAll(filepath.Dir(movePath), 0o755); err != nil {
+					warnings = append(warnings, filepath.ToSlash(filepath.Join(layout, moveRel))+": mkdir: "+err.Error())
+					return nil
+				}
+				if err := os.Rename(path, movePath); err != nil {
+					warnings = append(warnings, filepath.ToSlash(filepath.Join(layout, rel))+" -> "+filepath.ToSlash(filepath.Join(layout, moveRel))+": move: "+err.Error())
+					return nil
+				}
+				warnings = append(warnings, filepath.ToSlash(filepath.Join(layout, rel))+" -> "+filepath.ToSlash(filepath.Join(layout, moveRel))+": moved to correct location")
+				return nil
+			}
+		}
+		// No matching required file by basename - this file is truly stale
 		if rmErr := os.Remove(path); rmErr != nil {
 			warnings = append(warnings, filepath.ToSlash(filepath.Join(layout, rel))+": "+rmErr.Error())
 			return nil

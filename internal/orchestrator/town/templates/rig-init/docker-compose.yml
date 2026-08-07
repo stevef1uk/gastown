@@ -2,6 +2,10 @@
 # Used in integration-test phase
 # Template variables: {{PLAYWRIGHT_IMAGE}}, {{PLAYWRIGHT_WORKDIR}}, {{PLAYWRIGHT_COMMAND}}, {{PLAYWRIGHT_BASE_URL}}, {{WEB_PORT}}
 # The web app runs on HOST (not in Docker). Playwright container uses host networking to reach it.
+# The host source tree is mounted READ-ONLY at /src so the container can never modify or delete
+# rig files (git metadata, SPEC, plan, architecture, source). Source is copied into a writable
+# /app volume where npm install and Playwright write node_modules/, test-results/, and
+# playwright-report/ without touching the host tree.
 # Runs npm install then playwright test.
 
 services:
@@ -9,8 +13,12 @@ services:
     image: {{PLAYWRIGHT_IMAGE}}
     working_dir: {{PLAYWRIGHT_WORKDIR}}
     volumes:
-      - .:/app
+      - .:/src:ro
+      - playwright-app:/app
     network_mode: host
     environment:
       - BASE_URL={{PLAYWRIGHT_BASE_URL}}
-    command: sh -c "npm install && {{PLAYWRIGHT_COMMAND}}"
+    command: sh -c "cp -r /src/. /app/ && npm install --no-package-lock && {{PLAYWRIGHT_COMMAND}}"
+
+volumes:
+  playwright-app:

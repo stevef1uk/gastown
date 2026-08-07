@@ -1494,8 +1494,10 @@ func runOrchestratedCommand(cmd, workDir, sessionName string, env []string, cmdT
 		}
 		orchestratedPrintf("[gt-agent] exec pid: %d\n", c.Process.Pid)
 		debugLog(fmt.Sprintf("EXEC START pid=%d dur=%s cmd=%s", c.Process.Pid, dur, logCmd))
+		auditExecStart(cmd, workDir, sessionName, c.Process.Pid, cmdTimeoutSec)
 		timedOut, waitErr := waitWithTimeout(c, dur, logCmd)
 		out := append(stdout.Bytes(), stderr.Bytes()...)
+		auditExecDone(cmd, workDir, sessionName, c.Process.Pid, timedOut, waitErr, time.Since(cmdStart), out)
 		debugLog(fmt.Sprintf("EXEC DONE pid=%d duration=%s timedOut=%v err=%v", c.Process.Pid, time.Since(cmdStart).Round(time.Millisecond), timedOut, waitErr))
 		orchestratedPrintf("[gt-agent] exec done: %s pid=%d duration=%s err=%v\n", logCmd, c.Process.Pid, time.Since(cmdStart).Round(time.Millisecond), waitErr)
 		if timedOut {
@@ -1542,8 +1544,10 @@ return out, fmt.Errorf("LOOP DETECTED: command '%s' has timed out %d times in a 
 	}
 	orchestratedPrintf("[gt-agent] exec pid (script): %d\n", c.Process.Pid)
 	debugLog(fmt.Sprintf("EXEC START (script) pid=%d dur=%s cmd=%s", c.Process.Pid, dur, logCmd))
+	auditExecStart(cmd, workDir, sessionName, c.Process.Pid, cmdTimeoutSec)
 	timedOut, waitErr := waitWithTimeout(c, dur, logCmd)
 	out := append(stdout.Bytes(), stderr.Bytes()...)
+	auditExecDone(cmd, workDir, sessionName, c.Process.Pid, timedOut, waitErr, time.Since(cmdStart), out)
 	debugLog(fmt.Sprintf("EXEC DONE (script) pid=%d duration=%s timedOut=%v err=%v", c.Process.Pid, time.Since(cmdStart).Round(time.Millisecond), timedOut, waitErr))
 	orchestratedPrintf("[gt-agent] exec done (script): %s pid=%d duration=%s err=%v\n", logCmd, c.Process.Pid, time.Since(cmdStart).Round(time.Millisecond), waitErr)
 	if timedOut {

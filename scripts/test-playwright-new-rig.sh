@@ -22,15 +22,16 @@ esac
 
 cleanup() {
     echo "=== Cleanup ==="
-    cd "${HOME}/gt" 2>/dev/null || true
-    # Remove the rig first (synchronous --force), then delete the workspace dir.
-    if gt rig list --json 2>/dev/null | grep -q '"name": "pwtest"'; then
-        gt rig remove pwtest --force 2>/dev/null || true
-    fi
-    if [ -d "${HOME}/gt/pwtest" ]; then
-        echo "Removing rig directory: ${HOME}/gt/pwtest"
-        rm -rf "${HOME}/gt/pwtest"
-    fi
+    # DISABLED: this cleanup wiped the pwtest rig on timeout. The rig and its
+    # workspace must be preserved for post-mortem; remove manually if needed.
+    # cd "${HOME}/gt" 2>/dev/null || true
+    # if gt rig list --json 2>/dev/null | grep -q '"name": "pwtest"'; then
+    #     gt rig remove pwtest --force 2>/dev/null || true
+    # fi
+    # if [ -d "${HOME}/gt/pwtest" ]; then
+    #     echo "Removing rig directory: ${HOME}/gt/pwtest"
+    #     rm -rf "${HOME}/gt/pwtest"
+    # fi
     rm -rf "${REPO_DIR}"
 }
 

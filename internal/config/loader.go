@@ -119,7 +119,13 @@ func LoadRigsConfig(path string) (*RigsConfig, error) {
 // Writes to a temp file in the same directory then renames into place; the
 // rename is atomic on POSIX, so concurrent readers never observe a zero-byte
 // or partially-written rigs.json.
+//
+// The write is recorded to a town-level audit log so unexpected registry
+// changes (rig unregistration wiping rigs.json) can be attributed to the
+// exact caller afterward. The audit log lives at town root, never inside a rig,
+// so a rig wipe cannot destroy the evidence.
 func SaveRigsConfig(path string, config *RigsConfig) error {
+	auditRigsConfigWrite(path, config)
 	if err := validateRigsConfig(config); err != nil {
 		return err
 	}
@@ -3014,3 +3020,89 @@ func (c *EscalationConfig) GetMaxReescalations() int {
 	}
 	return *c.MaxReescalations
 }
+
+// rigsAuditPath returns the JSONL audit path for rigs.json writes. It lives
+// OUTSIDE the town (under ~/.config/gt-watchdog) so a rig wipe or a full
+// `rm -rf $TOWN` cannot destroy the audit trail. Falls back to a tmpfile when
+// no home directory is resolvable.
+func rigsAuditPath(rigsPath string) string {
+	return filepath.Join(WatchdogDir(), "rigs-audit.jsonl")
+}
+
+// auditRigsConfigWrite appends a caller record to the rigs registry audit log.
+// It is fire-and-forget: failures to audit must never block or fail the write.
+func auditRigsConfigWrite(rigsPath string, cfg *RigsConfig) {
+	// Skip test environments so concurrency/integration tests don't flood the
+	// real audit log: Go test binaries (name ends .test) and gt binaries built
+	// into os.TempDir() (e.g. /tmp/gt-integration-test) that write tmp towns.
+	if strings.HasSuffix(os.Args[0], ".test") || isTempPath(rigsPath) {
+		return
+	}
+	// Audit only when enabled; skip when the log has grown past the size cap
+	// (the purge timer rotates it; don't let an unmanaged process grow it).
+	if !WatchdogEnabled() {
+		return
+	}
+	path := rigsAuditPath(rigsPath)
+	if st, err := os.Stat(path); err == nil && st.Size() > MaxAuditFileBytes() {
+		return
+	}
+	names := make([]string, 0, len(cfg.Rigs))
+	for n := range cfg.Rigs {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	rec := map[string]interface{}{
+		"ts":           time.Now().Format(time.RFC3339Nano),
+		"rigs_path":    rigsPath,
+		"rigs":         names,
+		"rig_count":    len(names),
+		"caller":       callerInfo(3),
+		"pid":          os.Getpid(),
+		"ppid":         os.Getppid(),
+		"exe":          os.Args[0],
+	}
+	if data, err := json.Marshal(rec); err == nil {
+		_ = os.MkdirAll(filepath.Dir(path), 0755)
+		if f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); err == nil {
+			_, _ = f.Write(append(data, '\n'))
+			_ = f.Close()
+		}
+	}
+}
+
+// callerInfo returns the file:line of the caller n frames up the stack,
+// formatted as "file.go:42: functionName". Skips the runtime and audit helpers.
+func callerInfo(skip int) string {
+	_, file, line, ok := runtime.Caller(skip)
+	if !ok {
+		return "unknown"
+	}
+	fn := runtime.FuncForPC(uintptr(0))
+	pc := make([]uintptr, 1)
+	runtime.Callers(skip+1, pc)
+	if f := runtime.FuncForPC(pc[0]); f != nil {
+		fn = f
+	}
+	short := file
+	if idx := strings.LastIndex(file, "/gastown/"); idx >= 0 {
+		short = file[idx+len("/gastown/"):]
+	}
+	name := "?"
+	if fn != nil {
+		name = fn.Name()
+	}
+	return fmt.Sprintf("%s:%d %s", short, line, name)
+}
+
+// isTempPath reports whether path is under the process temp directory. Test
+// harnesses build gt into os.TempDir() and operate on tmp towns, so writes
+// there are never part of the production audit trail.
+func isTempPath(path string) bool {
+	tmp := os.TempDir()
+	if tmp == "" {
+		return false
+	}
+	return strings.HasPrefix(filepath.Clean(path), filepath.Clean(tmp)+string(filepath.Separator))
+}
+

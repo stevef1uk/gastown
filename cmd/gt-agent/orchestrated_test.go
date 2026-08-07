@@ -1517,3 +1517,64 @@ func envLookup(env []string, key string) string {
 	}
 	return ""
 }
+
+func TestCommandRemovesRigRoot(t *testing.T) {
+	reject := []string{
+		"rm -rf pwtest",
+		"rm -rf pwtest/",
+		"rm -r pwtest",
+		"rm -rf ./pwtest",
+		"rm -rf ~/gt/pwtest",
+		"rm -rf /home/stevef/gt/pwtest",
+		"cd /home/stevef/gt && rm -rf pwtest",
+		"rm -rf $GT_ROOT/pwtest",
+		"rm -rf ${GT_ROOT}/pwtest/",
+		"rm -rf /tmp/x && rm -rf pwtest && echo done",
+	}
+	for _, cmd := range reject {
+		if !commandRemovesRigRoot(cmd, "pwtest") {
+			t.Errorf("expected reject %q", cmd)
+		}
+	}
+	allow := []string{
+		"rm -rf pwtest/mayor/rig/codeindex.json",
+		"rm -rf cmd",
+		"cd pingapp && rm -rf cmd && mkdir -p cmd",
+		"rm -rf pwtest/mayor/rig/node_modules",
+		"rm -rf otherrig",
+		"cat pwtest/SPEC.md",
+		"go build ./...",
+	}
+	for _, cmd := range allow {
+		if commandRemovesRigRoot(cmd, "pwtest") {
+			t.Errorf("expected allow %q", cmd)
+		}
+	}
+}
+
+func TestCommandRemovesRigFromRegistry(t *testing.T) {
+	reject := []string{
+		"gt rig remove pwtest",
+		"gt rig delete pwtest",
+		"gt rig rm pwtest",
+		"gt rig remove pwtest --force",
+		"cd /home/stevef/gt && gt rig remove pwtest",
+	}
+	for _, cmd := range reject {
+		if !commandRemovesRigFromRegistry(cmd, "pwtest") {
+			t.Errorf("expected reject %q", cmd)
+		}
+	}
+	allow := []string{
+		"gt rig list",
+		"gt rig remove otherrig",
+		"gt rig set-phase pwtest core",
+		"gt rig sync-planning pwtest --force",
+		"gt rig add pwtest https://example.com/repo.git --prefix pw",
+	}
+	for _, cmd := range allow {
+		if commandRemovesRigFromRegistry(cmd, "pwtest") {
+			t.Errorf("expected allow %q", cmd)
+		}
+	}
+}

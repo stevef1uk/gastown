@@ -2097,6 +2097,12 @@ func validateImplementationCommand(cmd, rig string) error {
 		if strings.Contains(lower, mayor) && !strings.Contains(lower, ".beads") {
 			return fmt.Errorf("do not rm -rf under %s during implementation — use EDIT:/WRITE: on the active bead file", rigMayorRigPath(rig))
 		}
+		if commandRemovesRigRoot(cmd, rig) {
+			return fmt.Errorf("do not delete the rig root directory %s — this would destroy the rig; use EDIT:/WRITE: on the active bead file instead", rigRootDisplay(rig))
+		}
+	}
+	if commandRemovesRigFromRegistry(cmd, rig) {
+		return fmt.Errorf("do not run `gt rig remove`/`gt rig delete` for %s during implementation — it unregisters the rig and wipes rigs.json; rigs may only be removed manually from the shell", rigRootDisplay(rig))
 	}
 	if strings.Contains(lower, "bd init") {
 		return fmt.Errorf("do not run bd init during implementation — beads already exist; use bd list --status=closed")
@@ -3194,6 +3200,108 @@ func rigMayorRigPath(rig string) string {
 		return "<rig>/mayor/rig"
 	}
 	return rig + "/mayor/rig"
+}
+
+// rigRootDisplay returns a human-friendly display name for the rig root dir.
+func rigRootDisplay(rig string) string {
+	rig = strings.TrimSpace(rig)
+	if rig == "" {
+		return "<rig>"
+	}
+	return rig
+}
+
+// commandRemovesRigRoot reports whether the command deletes the rig root
+// directory itself (not files inside it). It matches the bare rig name as a
+// path token, plus ./rig, absolute, and ~-prefixed forms. This closes the gap
+// where "rm -rf pwtest" from the town root bypassed every existing guard
+// (none of which contained ".beads", "mayor", "cmd", or ".go").
+func commandRemovesRigRoot(cmd, rig string) bool {
+	lower := strings.ToLower(strings.TrimSpace(cmd))
+	rig = strings.ToLower(strings.TrimSpace(rig))
+	if rig == "" || rig == "<rig>" {
+		return false
+	}
+	if !strings.Contains(lower, "rm ") && !strings.Contains(lower, "rm\t") {
+		return false
+	}
+	// Extract every target token that follows an rm invocation and check its
+	// basename. Targets are split on shell separators and other rm operands;
+	// quoted paths have quotes stripped. Comparing basenames makes the check
+	// robust to ./rig, ~/gt/rig, /abs/path/rig, and $GT_ROOT/rig spellings.
+	for _, target := range extractRmTargets(lower) {
+		base := strings.TrimSuffix(target, "/")
+		if i := strings.LastIndex(base, "/"); i >= 0 {
+			base = base[i+1:]
+		}
+		if base == rig {
+			return true
+		}
+	}
+	return false
+}
+
+// extractRmTargets returns the path operands of rm invocations in a command,
+// handling multiple targets, chained commands, and quoted paths.
+func extractRmTargets(lower string) []string {
+	var targets []string
+	// Split into command segments first (chain boundaries).
+	segments := regexp.MustCompile(`\s*(?:;|&&|\|\||\n)\s*`).Split(lower, -1)
+	rmSeg := regexp.MustCompile(`\brm\s+`)
+	for _, seg := range segments {
+		loc := rmSeg.FindStringIndex(seg)
+		if loc == nil {
+			continue
+		}
+		rest := strings.TrimSpace(seg[loc[1]:])
+		// Strip rm flags up to the first bare operand.
+		parts := strings.Fields(rest)
+		i := 0
+		for i < len(parts) && strings.HasPrefix(parts[i], "-") {
+			if parts[i] == "--" {
+				i++
+				break
+			}
+			i++
+		}
+		for ; i < len(parts); i++ {
+			tok := strings.Trim(parts[i], "'\"`")
+			if tok == "" || strings.HasPrefix(tok, "-") {
+				continue
+			}
+			if strings.HasSuffix(tok, ")") {
+				tok = strings.TrimSuffix(tok, ")")
+			}
+			if strings.HasSuffix(tok, "&&") || strings.HasSuffix(tok, ";") {
+				tok = strings.TrimSuffix(tok, "&&")
+				tok = strings.TrimSuffix(tok, ";")
+			}
+			targets = append(targets, strings.TrimSpace(tok))
+		}
+	}
+	return targets
+}
+
+// commandRemovesRigFromRegistry reports whether the command unregisters the rig
+// via `gt rig remove`/`gt rig delete`. Unregistration wipes the registry entry
+// (both mayor/rigs.json and the town-root copy) even though it leaves files on
+// disk, so agents must never run it.
+func commandRemovesRigFromRegistry(cmd, rig string) bool {
+	lower := strings.ToLower(strings.TrimSpace(cmd))
+	rig = strings.ToLower(strings.TrimSpace(rig))
+	if rig == "" || rig == "<rig>" {
+		return false
+	}
+	hasVerb := strings.Contains(lower, "gt rig remove") ||
+		strings.Contains(lower, "gt rig delete") ||
+		strings.Contains(lower, "gt rig rm ") ||
+		strings.Contains(lower, "rigs remove")
+	if !hasVerb {
+		return false
+	}
+	// Ensure the rig name appears as a token after the verb.
+	re := regexp.MustCompile(`rig\s+(remove|delete|rm)\s+` + regexp.QuoteMeta(rig) + `(\s|$|;|&&|\|\|)`)
+	return re.MatchString(lower)
 }
 
 // validateAnalysisArtifacts checks that SPEC.md was written and meets minimum size.

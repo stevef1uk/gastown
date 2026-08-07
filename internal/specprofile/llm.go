@@ -220,7 +220,8 @@ CRITICAL delivery_phases rules (the LLM must obey these):
 - Order phases by dependency.
 - Dockerfile, docker-compose.yml, docker-compose.test.yml, .dockerignore go in the FINAL phase only.
 - Keep source files and their corresponding test files in the SAME phase.
-- If the spec is small (≤12 total required_files), omit delivery_phases entirely (single-phase workflow) **UNLESS the SPEC describes manual integration verification** (e.g., "run server then curl endpoint", "start server and test with curl", "verify with curl"). In that case, add only a final smoke test phase as described above.
+- If the SPEC declares its own delivery phases (e.g. a "## Delivery Phases" section), mirror them exactly — id, title, order, and per-phase file groupings — even for small specs. NEVER collapse an explicitly declared phase list to a single phase; a small project with declared phases keeps all of them.
+- Only omit delivery_phases entirely (single-phase workflow) when the SPEC is small (≤12 total required_files) AND declares NO phases of its own. In that case, **UNLESS the SPEC describes manual integration verification** (e.g., "run server then curl endpoint", "start server and test with curl", "verify with curl"), in which case add only a final smoke test phase as described below.
 - **Add a final smoke test phase** when the SPEC describes manual integration verification (e.g., "run server then curl endpoint" or "start server with go run/python/uvicorn then curl"). This phase should:
   - Have id like "smoke-test" or "integration-test"
   - Depend on the server-wiring/backend phase

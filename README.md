@@ -961,6 +961,53 @@ gt escalate ack <bead-id>           # Acknowledge an escalation
 
 Escalations route through Deacon -> Mayor -> Overseer based on severity. See [Escalation design](docs/design/escalation.md).
 
+## Rig Audit / Watchdog
+
+Rig automation records an audit trail of rig-affecting operations and enforces a
+disk cap on the resulting logs. Everything lives under `~/.config/gt-watchdog/`.
+
+### Artifacts
+
+| File | Contents |
+|------|----------|
+| `exec-audit.jsonl` | Every command run by `gt-agent` in orchestrated mode: session, cwd, pid, exit, timeout, output head. Keyed to a single rig+agent for post-mortem forensics. |
+| `rigs-audit.jsonl` | Every `rigs.json` write (rig add/remove/spec-index/etc.): caller, pid, ppid, rig count, rigs. Catches who/what removed a rig. |
+| `rig-canary.log` | Health check from the canary service (see below). |
+| `rig_purge.sh` | Rotates logs over 10 MB (`gz` archive + truncate) and deletes archives older than `KEEP_DAYS` (default 7). |
+| `.enabled` | Empty flag file. When absent, all audit writers and the canary exit early (no logging, no disk growth). |
+
+### Control script
+
+```bash
+~/.config/gt-watchdog/rig-watchdog-ctl.sh status   # show systemd units + flag
+~/.config/gt-watchdog/rig-watchdog-ctl.sh enable   # create .enabled, start canary + purge timer
+~/.config/gt-watchdog/rig-watchdog-ctl.sh disable  # remove .enabled, stop canary + purge timer
+~/.config/gt-watchdog/rig-watchdog-ctl.sh purge [days]  # rotate/truncate logs now (default 7)
+```
+
+Requires `XDG_RUNTIME_DIR` (set automatically in login shells) for `systemctl --user`.
+
+### Systemd units (user scope)
+
+- `gt-rig-canary.service` — probes audit writes; exits immediately when `.enabled` is missing.
+- `gt-watchdog-purge.timer` / `gt-watchdog-purge.service` — daily rotation + retention.
+
+### Integration points
+
+- Gating is centralized in `internal/config/watchdog.go` (`WatchdogDir`,
+  `WatchdogEnabled`, `MaxAuditFileBytes` = 10 MB).
+- `cmd/gt-agent/orchestrated_audit.go` writes `exec-audit.jsonl` (gated on the flag
+  and the size cap).
+- `internal/config/loader.go` audits `rigs.json` writes through `rigs-audit.jsonl`.
+- `rig_canary.py` runs as the canary service; exits early unless `.enabled` is present.
+
+### Notes
+
+- The old `gt-rig-backup` hardlink mirror (`rig_backup.sh`, `rig-backups/`) was
+  removed: it was a single unversioned snapshot that a wipe-then-recreate cycle
+  clobbered before the next timer run, so it couldn't recover rigs. Use
+  `exec-audit.jsonl` + the rig's git history instead.
+
 ## Merge Queue (Refinery)
 
 The Refinery processes completed polecat work through a bisecting merge queue:
