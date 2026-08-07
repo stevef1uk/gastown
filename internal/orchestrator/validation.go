@@ -317,7 +317,8 @@ func composePlaywrightVerifyCommand(p *DeliveryPhase, layoutRoot string) string 
 	if lr == "" {
 		lr = "."
 	}
-	return fmt.Sprintf("cd %s && docker compose up --exit-code-from playwright", lr)
+	// Use docker-compose (v1) for compatibility; docker compose (v2) may not be installed as plugin.
+	return fmt.Sprintf("cd %s && docker-compose up --exit-code-from playwright", lr)
 }
 
 // StripInvalidCDPrefixes removes leading "cd <dir> && " from verify commands when layout_root
@@ -1596,8 +1597,8 @@ func defaultQAVerifyForPhase(p *DeliveryPhase, layoutRoot string) string {
 			strings.Contains(strings.ToLower(p.Title), "integration")
 		if isIntegrationTest {
 			// Integration-test phases with Playwright should use Docker/Playwright container
-			// via docker compose. The Docker container has Playwright pre-installed.
-			return fmt.Sprintf("cd %s && docker compose up --exit-code-from playwright", lr)
+// via docker compose. The Docker container has Playwright pre-installed.
+		return fmt.Sprintf("cd %s && docker-compose up --exit-code-from playwright", lr)
 		}
 		if dir == "." {
 			return fmt.Sprintf("cd %s && npx playwright test --list", lr)

@@ -542,6 +542,16 @@ func EnsurePlaywrightConfigReady(townRoot, rig string, v WorkflowValidation) (st
 	// loads even when node_modules lives in a subdir (e.g. finally's test/).
 	pwImport := playwrightImport(layoutDir, testDir, testDirRel)
 
+	// Check if this rig has a Docker/Playwright integration-test phase.
+	// If so, omit the webServer block — the server runs on the host, not in the container.
+	hasDockerPlaywright := false
+	for _, p := range v.DeliveryPhases {
+		if phaseShipsDockerPlaywright(&p) {
+			hasDockerPlaywright = true
+			break
+		}
+	}
+
 	pwConfig := fmt.Sprintf(`import { defineConfig, devices } from %s;
 
 export default defineConfig({
@@ -562,7 +572,12 @@ export default defineConfig({
     },
   ],
 %s});
-`, pwImport, e2eRel, port, webServerBlock(serverCmd, port))
+`, pwImport, e2eRel, port, func() string {
+		if hasDockerPlaywright {
+			return ""
+		}
+		return webServerBlock(serverCmd, port)
+	}())
 
 	if err := os.WriteFile(pwConfigPath, []byte(pwConfig), 0644); err != nil {
 		return "", err

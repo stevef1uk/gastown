@@ -32,7 +32,7 @@ For **early/mid phases** (backend, frontend, database), prefer behavioral checks
 - If no spec sections are available, fall back to file presence or compile checks:
   - Shell scripts (.sh): "test -f scripts/start_mac.sh && test -f scripts/stop_mac.sh"
   - Docker/compose files: "test -f Dockerfile && test -f docker-compose.yml && echo 'docker ok'"
-  - **Playwright E2E (integration-test phase with playwright.config.ts + e2e specs + docker-compose.yml): "cd <layout_root> && docker compose up --exit-code-from playwright"**
+  - **Playwright E2E (integration-test phase with playwright.config.ts + e2e specs + docker-compose.yml): "cd <layout_root> && docker-compose up --exit-code-from playwright"**
   - Playwright config: "cd test && npm install --ignore-scripts && npx playwright test --list"
   - Python/pytest: "cd backend && python -m pytest -v tests/"
   - Go: "cd . && go test ./..."
