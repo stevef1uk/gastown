@@ -2926,11 +2926,13 @@ func isQARuntimeSmokeCommandOK(cmd, townRoot, rig string, v orchestrator.Workflo
 		return strings.Contains(lower, "curl ") &&
 			(strings.Contains(lower, "localhost") || strings.Contains(lower, "127.0.0.1"))
 	}
+	// Accept both `go run` and `go build` + run binary patterns
 	hasGoRun := strings.Contains(lower, "go run")
+	hasGoBuildRun := strings.Contains(lower, "go build") && (strings.Contains(lower, "./server") || strings.Contains(lower, "./cmd/server"))
 	hasServerPath := strings.Contains(lower, "cmd/server") ||
 		strings.Contains(lower, " .") ||
 		strings.Contains(lower, " ./")
-	if !hasGoRun || !hasServerPath {
+	if !(hasGoRun || hasGoBuildRun) || !hasServerPath {
 		return false
 	}
 	if !strings.Contains(lower, "curl ") && !strings.Contains(lower, ".gt-smoke.pid") {
@@ -2941,11 +2943,21 @@ func isQARuntimeSmokeCommandOK(cmd, townRoot, rig string, v orchestrator.Workflo
 	}
 	spec, _ := orchestrator.LoadAPISmokeSpecFromRig(townRoot, rig, v)
 	if orchestrator.APISmokeHasHTTPAPI(spec) {
-		if !strings.Contains(lower, " /api/") && !strings.Contains(lower, "/api/") {
-			return false
+		// Only require /api/ POST if SPEC documents POST endpoints
+		hasPost := false
+		for _, p := range spec.Probes {
+			if strings.EqualFold(p.Method, "POST") && p.Source == "api" {
+				hasPost = true
+				break
+			}
 		}
-		if !strings.Contains(lower, "post") && !strings.Contains(lower, " -d ") && !strings.Contains(lower, " --data") {
-			return false
+		if hasPost {
+			if !strings.Contains(lower, " /api/") && !strings.Contains(lower, "/api/") {
+				return false
+			}
+			if !strings.Contains(lower, "post") && !strings.Contains(lower, " -d ") && !strings.Contains(lower, " --data") {
+				return false
+			}
 		}
 	} else {
 		// SPEC has no API table — do not count smoke that probes invented /api/ routes.

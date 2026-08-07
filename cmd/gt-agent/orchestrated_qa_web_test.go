@@ -38,6 +38,7 @@ func writeLinkshelfArchitecture(t *testing.T, rigDir string, withStaticPrefix bo
 | GET | / | web/index.html |
 | GET | /static/{file} | serves web/{file} |
 | GET | /api/links | JSON array |
+| POST | /api/links | create |
 `
 	} else {
 		arch = `# Link Shelf HTTP
@@ -45,6 +46,7 @@ func writeLinkshelfArchitecture(t *testing.T, rigDir string, withStaticPrefix bo
 | Method | Path | Notes |
 | GET | / | web/index.html |
 | GET | /api/bookmarks | JSON array |
+| POST | /api/bookmarks | create |
 `
 	}
 	if err := os.WriteFile(filepath.Join(rigDir, "architecture.md"), []byte(arch), 0644); err != nil {
