@@ -797,6 +797,7 @@ func runRigAdd(cmd *cobra.Command, args []string) error {
 // Skipped when GT_SKIP_SPEC_INDEX is set. Errors are non-fatal (warning only).
 // If force is true, it bypasses any "profile unchanged" checks and re-runs
 // the full LLM extraction + JUDGE pipeline.
+// If force is false, only runs if no valid profile exists.
 func maybeSpecIndexFromSPEC(townRoot, rigName string, force bool) {
 	if os.Getenv("GT_SKIP_SPEC_INDEX") != "" {
 		return
@@ -804,6 +805,15 @@ func maybeSpecIndexFromSPEC(townRoot, rigName string, force bool) {
 	specPath := specprofile.SpecPath(townRoot, rigName)
 	if _, err := os.Stat(specPath); err != nil {
 		return
+	}
+	// If profile already exists and is valid, don't re-run unless forced.
+	// This preserves judge-validated verify commands and phase progress.
+	if !force {
+		prof, ok, err := orchestrator.LoadRigWorkflowProfileFile(townRoot, rigName)
+		if err == nil && ok && len(prof.RequiredFiles) > 0 && len(prof.DeliveryPhases) > 0 && prof.ActivePhaseID() != "" {
+			// Profile exists and is valid - skip re-index to preserve verified commands and phase progress
+			return
+		}
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
