@@ -3,6 +3,7 @@ package orchestrator
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -307,4 +308,119 @@ func TestMaybeRewindToProblemPhaseForFinalPhase_noIssueDoesNothing(t *testing.T)
 		t.Fatalf("expected no rewind log, got: %q", logLine)
 	}
 	assertActivePhase(t, townRoot, rig, "frontend")
+}
+
+// TestCompleteRewindAdvanceCycle verifies the complete workflow-profile.json
+// state through a full rewind/advance cycle:
+// 1. Backend phase: advance to frontend (verify completed_phase_ids, rewound_from, active)
+// 2. Delete backend file -> triggers rewind (verify active=backend, rewound_from=frontend, completed preserved)
+// 3. Fix file, advance again (verify completed_phase_ids preserved, rewound_from cleared, active=frontend)
+func TestCompleteRewindAdvanceCycle(t *testing.T) {
+	t.Parallel()
+	townRoot, rig, rigDir, beadsDir := setupPhasedRigTown(t)
+	writeTestPhasedProfile(t, townRoot, rig, "backend")
+
+	// Step 1: Setup backend phase - create and close beads
+	v, ok, err := LoadRigWorkflowProfileFile(townRoot, rig)
+	if err != nil || !ok {
+		t.Fatal(err)
+	}
+	if _, err := SyncPlanningArtifacts(townRoot, rig, v.ForActivePhase(), true); err != nil {
+		t.Fatal(err)
+	}
+	for _, rel := range v.ForActivePhase().RequiredFiles {
+		writeBackendFileContent(t, rigDir, rel)
+	}
+	closeAllOpenImplementBeads(t, townRoot, rig, beadsDir, rigDir, v.ForActivePhase())
+
+	// Step 2: Advance to frontend phase (simulates QA all_passed)
+	// In real workflow: TryAdvanceDeliveryPhaseAfterQA calls SetRigActivePhase + AddRigCompletedPhase
+	if err := SetRigActivePhase(townRoot, rig, "frontend"); err != nil {
+		t.Fatal(err)
+	}
+	if err := AddRigCompletedPhase(townRoot, rig, "backend"); err != nil {
+		t.Fatal(err)
+	}
+	if err := ClearRigRewoundFromPhase(townRoot, rig); err != nil {
+		t.Fatal(err)
+	}
+
+	// Verify profile after advance: completed_phase_ids = ["backend"], active=frontend, rewound_from=""
+	v, ok, err = LoadRigWorkflowProfileFile(townRoot, rig)
+	if err != nil || !ok {
+		t.Fatal(err)
+	}
+	if !slices.Equal(v.CompletedPhaseIDs(), []string{"backend"}) {
+		t.Fatalf("after advance: completed_phase_ids = %v want [backend]", v.CompletedPhaseIDs())
+	}
+	if v.RewoundFromPhaseIDField != "" {
+		t.Fatalf("after advance: rewound_from_phase_id = %q want empty", v.RewoundFromPhaseIDField)
+	}
+	if v.ActivePhaseID() != "frontend" {
+		t.Fatalf("after advance: active_phase_id = %q want frontend", v.ActivePhaseID())
+	}
+
+	// Create frontend files
+	for _, rel := range v.ForActivePhase().RequiredFiles {
+		writeFrontendFileContent(t, rigDir, rel)
+	}
+
+	// Step 3: Delete a backend file -> triggers rewind
+	missing := filepath.Join(rigDir, "linkshelf", "internal", "store", "store.go")
+	if err := os.Remove(missing); err != nil {
+		t.Fatal(err)
+	}
+
+	logLine, rewindErr := RewindToPhaseForClosedFile(townRoot, rig, "linkshelf/internal/store/store.go", v)
+	if rewindErr != nil {
+		t.Fatalf("unexpected rewind error: %v", rewindErr)
+	}
+	if !strings.Contains(logLine, "rewound active phase frontend → backend") {
+		t.Fatalf("expected rewind log frontend → backend, got: %q", logLine)
+	}
+
+	// Verify profile after rewind: active=backend, rewound_from=frontend, completed_phase_ids preserved
+	v, ok, err = LoadRigWorkflowProfileFile(townRoot, rig)
+	if err != nil || !ok {
+		t.Fatal(err)
+	}
+	if v.ActivePhaseID() != "backend" {
+		t.Fatalf("after rewind: active_phase_id = %q want backend", v.ActivePhaseID())
+	}
+	if v.RewoundFromPhaseIDField != "frontend" {
+		t.Fatalf("after rewind: rewound_from_phase_id = %q want frontend", v.RewoundFromPhaseIDField)
+	}
+	if !slices.Equal(v.CompletedPhaseIDs(), []string{"backend"}) {
+		t.Fatalf("after rewind: completed_phase_ids = %v want [backend]", v.CompletedPhaseIDs())
+	}
+
+	// Step 4: Fix the file (recreate it)
+	writeBackendFileContent(t, rigDir, "linkshelf/internal/store/store.go")
+
+	// Step 5: Advance again (simulate QA all_passed after fix)
+	// In real workflow: TryAdvanceDeliveryPhaseAfterQA calls both SetRigActivePhase and AddRigCompletedPhase
+	if err := SetRigActivePhase(townRoot, rig, "frontend"); err != nil {
+		t.Fatal(err)
+	}
+	if err := AddRigCompletedPhase(townRoot, rig, "backend"); err != nil {
+		t.Fatal(err)
+	}
+	if err := ClearRigRewoundFromPhase(townRoot, rig); err != nil {
+		t.Fatal(err)
+	}
+
+	// Verify profile after re-advance: completed_phase_ids preserved, rewound_from cleared, active=frontend
+	v, ok, err = LoadRigWorkflowProfileFile(townRoot, rig)
+	if err != nil || !ok {
+		t.Fatal(err)
+	}
+	if !slices.Equal(v.CompletedPhaseIDs(), []string{"backend"}) {
+		t.Fatalf("after re-advance: completed_phase_ids = %v want [backend]", v.CompletedPhaseIDs())
+	}
+	if v.RewoundFromPhaseIDField != "" {
+		t.Fatalf("after re-advance: rewound_from_phase_id = %q want empty", v.RewoundFromPhaseIDField)
+	}
+	if v.ActivePhaseID() != "frontend" {
+		t.Fatalf("after re-advance: active_phase_id = %q want frontend", v.ActivePhaseID())
+	}
 }
