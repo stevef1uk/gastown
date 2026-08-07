@@ -2542,8 +2542,11 @@ func validateQARuntimeSmokeCommand(cmd, rig, townRoot string, v orchestrator.Wor
 		}
 	}
 	if orchestrator.WorkflowUsesGo(v) {
-		if !strings.Contains(lower, "go run") {
-			return fmt.Errorf("Go runtime smoke must include go run ./cmd/server in the same CMD as curl — bare curl with no server running always fails")
+		// Accept both `go run` and `go build` + running the binary patterns
+		hasGoRun := strings.Contains(lower, "go run")
+		hasGoBuildRun := strings.Contains(lower, "go build") && (strings.Contains(lower, "./server") || strings.Contains(lower, "./cmd/server") || strings.Contains(lower, "go run"))
+		if !hasGoRun && !hasGoBuildRun {
+			return fmt.Errorf("Go runtime smoke must include go run or go build + run binary in the same CMD as curl — bare curl with no server running always fails")
 		}
 	}
 	if spec.Port <= 0 {
