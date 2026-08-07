@@ -24,12 +24,15 @@ func GoToolchainMismatch(err error, output string) bool {
 
 // goToolArgsFromVerify extracts `go test` or `go build` arguments from a profile qa_verify_command.
 // Falls back to `go test ./...` when neither is found.
+// Stops parsing at shell operators (&&, ||, ;, |, &, (, )) to avoid including
+// shell command chains in the go tool arguments.
 func goToolArgsFromVerify(v WorkflowValidation) []string {
 	cmd := strings.TrimSpace(v.QAVerifyCommand)
 	lower := strings.ToLower(cmd)
 	for _, tool := range []string{"go test", "go build"} {
 		if idx := strings.Index(lower, tool); idx >= 0 {
-			rest := strings.Fields(cmd[idx+len(tool):])
+			afterTool := cmd[idx+len(tool):]
+			rest := extractGoToolArgs(afterTool)
 			if len(rest) > 0 {
 				toolName := strings.TrimSpace(strings.Fields(tool)[1])
 				return append([]string{toolName}, rest...)
@@ -37,6 +40,32 @@ func goToolArgsFromVerify(v WorkflowValidation) []string {
 		}
 	}
 	return []string{"test", "./..."}
+}
+
+// extractGoToolArgs extracts go test/go build arguments from a string,
+// stopping at shell operators (&&, ||, ;, |, &, (, )).
+func extractGoToolArgs(s string) []string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return nil
+	}
+	var args []string
+	fields := strings.Fields(s)
+	for _, f := range fields {
+		if isShellOperator(f) {
+			break
+		}
+		args = append(args, f)
+	}
+	return args
+}
+
+func isShellOperator(s string) bool {
+	switch s {
+	case "&&", "||", ";", "|", "&", "(", ")":
+		return true
+	}
+	return false
 }
 
 // phaseIsGoModOnly is an alias for PhaseIsGoModOnly (package-local call sites).
