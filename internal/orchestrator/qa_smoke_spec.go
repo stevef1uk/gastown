@@ -75,7 +75,12 @@ func parseAPISmokeSpecText(text string, v WorkflowValidation) APISmokeSpec {
 	}
 	for _, m := range apiBacktickPathRE.FindAllStringSubmatch(text, -1) {
 		if len(m) >= 3 {
-			record(m[1], "/"+strings.Trim(m[2], "/"), text)
+			method := strings.ToUpper(strings.TrimSpace(m[1]))
+			// Only use backticks for GET probes (supplementary docs).
+			// POST/PUT/DELETE/PATCH in backticks are often curl examples showing error cases.
+			if method == "GET" {
+				record(method, "/"+strings.Trim(m[2], "/"), text)
+			}
 		}
 	}
 	syncAPISmokeSpecDerivedFields(&spec)
