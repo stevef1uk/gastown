@@ -52,6 +52,11 @@ func WorkflowNeedsQARuntimeSmoke(townRoot, rig string, v WorkflowValidation) boo
 	if v.DevServerPort == 0 {
 		return false
 	}
+	// If the active phase's QA verify command explicitly includes runtime smoke
+	// (curl or go run), honor it regardless of phase position.
+	if activePhaseRequiresRuntimeSmoke(v) {
+		return true
+	}
 	// Only run QA runtime smoke in the final delivery phase when every
 	// component (store, handlers, server, web assets) is assembled.
 	if v.HasPhasedDelivery() && !v.IsFinalDeliveryPhase() {
@@ -74,6 +79,13 @@ func WorkflowNeedsQARuntimeSmoke(townRoot, rig string, v WorkflowValidation) boo
 		}
 	}
 	return false
+}
+
+// activePhaseRequiresRuntimeSmoke checks if the active phase's QA verify command
+// explicitly contains runtime smoke commands (curl, go run).
+func activePhaseRequiresRuntimeSmoke(v WorkflowValidation) bool {
+	qa := strings.ToLower(strings.TrimSpace(v.ActivePhaseQAVerifyCommand()))
+	return strings.Contains(qa, "curl ") || strings.Contains(qa, "go run")
 }
 
 func pythonWorkflowNeedsQARuntimeSmoke(townRoot, rig string, v WorkflowValidation) bool {

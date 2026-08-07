@@ -301,6 +301,61 @@ func TestWorkflowNeedsQARuntimeSmoke_matrix(t *testing.T) {
 			wantQA:  false,
 			wantAPI: true,
 		},
+		{
+			name: "go_phased_core_phase_verify_has_curl",
+			v: WorkflowValidation{
+				LayoutRoot:         "pingapp",
+				ActivePhaseIDField: "core",
+				QAVerifyCommand:    "cd pingapp && go test ./...",
+				DevServerPort:      8080,
+				RequiredFiles: []string{
+					"pingapp/go.mod",
+					"pingapp/cmd/server/main.go",
+					"pingapp/cmd/server/main_test.go",
+					"pingapp/web/index.html",
+					"pingapp/web/app.js",
+					"pingapp/playwright.config.ts",
+					"pingapp/e2e/ping.spec.ts",
+					"pingapp/package.json",
+					"pingapp/Dockerfile",
+					"pingapp/docker-compose.yml",
+				},
+				DeliveryPhases: []DeliveryPhase{
+					{
+						ID: "go-module",
+						RequiredFiles: []string{"pingapp/go.mod"},
+						QAVerifyCommand: "cd pingapp && echo 'verify ok'",
+					},
+					{
+						ID: "core",
+						RequiredFiles: []string{
+							"pingapp/cmd/server/main.go",
+							"pingapp/cmd/server/main_test.go",
+						},
+						QAVerifyCommand: "cd pingapp && go build -o server ./cmd/server && (./server & SERVER_PID=$!; sleep 1; curl -s -f http://localhost:8080/ping && kill $SERVER_PID)",
+					},
+					{
+						ID: "web",
+						RequiredFiles: []string{"pingapp/web/index.html", "pingapp/web/app.js"},
+						QAVerifyCommand: "cd pingapp && echo 'verify ok'",
+					},
+					{
+						ID: "integration-test",
+						RequiredFiles: []string{
+							"pingapp/playwright.config.ts",
+							"pingapp/e2e/ping.spec.ts",
+							"pingapp/package.json",
+							"pingapp/Dockerfile",
+							"pingapp/docker-compose.yml",
+						},
+						QAVerifyCommand: "cd pingapp && docker compose up --exit-code-from playwright",
+					},
+				},
+			},
+			arch:    archAPI,
+			wantQA:  true, // active phase verify has curl -> should need runtime smoke
+			wantAPI: true,
+		},
 	}
 
 	for _, tc := range cases {
