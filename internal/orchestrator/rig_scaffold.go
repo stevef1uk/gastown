@@ -8,7 +8,7 @@ import (
 )
 
 // rigInitTemplateDir is the embedded templates directory scanned for
-// integration-test scaffolding (docker-compose, Dockerfile.web, Playwright).
+// integration-test scaffolding (docker-compose, Dockerfile, Dockerfile.web, Playwright).
 const rigInitTemplateDir = "town/templates/rig-init"
 
 // ScaffoldRigIntegrationTemplates writes docker-compose + Playwright scaffolding
@@ -88,7 +88,7 @@ func ScaffoldRigIntegrationTemplates(townRoot, rig string) (int, error) {
 // it during the integration-test phase.
 func mapRigInitTemplate(name string) (string, bool) {
 	switch name {
-	case "docker-compose.yml", "package.json", "playwright.config.ts":
+	case "docker-compose.yml", "package.json", "playwright.config.ts", "Dockerfile":
 		return name, true
 	default:
 		return "", false
