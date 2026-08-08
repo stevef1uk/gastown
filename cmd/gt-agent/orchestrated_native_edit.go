@@ -37,8 +37,8 @@ const (
 func parseOrchestratedNativeEdits(response string) []nativeEditOp {
 	filtered := preprocessOrchestratedResponse(response)
 	filtered = stripOutcomeLinesForCmdParse(filtered)
+	var lines []string = strings.Split(filtered, "\n")
 	var ops []nativeEditOp
-	lines := strings.Split(filtered, "\n")
 	var i int
 	for i < len(lines) {
 		line := lines[i]
@@ -690,6 +690,9 @@ func validateAndNormalizeNativeGoContent(relPath, content string) (string, error
 		}
 		if strings.Contains(content, "}; if err") || strings.Contains(content, "}||") || strings.Contains(content, "Descriptionn") {
 			return "", fmt.Errorf("EDIT/WRITE body contains merged patch fragments — use one full WRITE with a complete file per architecture/SPEC")
+		}
+		if strings.HasSuffix(filepath.ToSlash(relPath), "_test.go") && strings.Contains(content, "os.Chdir") {
+			return "", fmt.Errorf("test files must not use os.Chdir — use module-root cwd instead")
 		}
 		if err := orchestrator.GoSourceBytesValid([]byte(content)); err != nil {
 			return "", fmt.Errorf("Go syntax invalid — fix WRITE/EDIT body before saving (%v). Use one full WRITE with a complete file per SPEC/architecture", err)

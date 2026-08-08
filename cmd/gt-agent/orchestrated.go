@@ -909,6 +909,18 @@ func stripOutcomeLinesForCmdParse(response string) string {
 // outcome JSON object: the next non-blank, non-CMD lines must include an
 // `"outcome"` field (or the closing `}`) before any new CMD: line.
 func looksLikeOutcomeJSONStart(lines []string, line, t string) bool {
+	trimmedLine := strings.TrimSpace(line)
+	// Don't treat Go function declarations or control flow of the conversation, I need to provide better detection
+	if strings.HasPrefix(trimmedLine, "func ") ||
+		strings.HasPrefix(trimmedLine, "func(") ||
+		strings.HasPrefix(trimmedLine, "if ") ||
+		strings.HasPrefix(trimmedLine, "for ") ||
+		strings.HasPrefix(trimmedLine, "switch ") ||
+		strings.HasPrefix(trimmedLine, "type ") ||
+		strings.HasPrefix(trimmedLine, "var ") ||
+		strings.HasPrefix(trimmedLine, "const ") {
+		return false
+	}
 	found := false
 	for i, l := range lines {
 		if l == line {
