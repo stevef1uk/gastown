@@ -222,19 +222,21 @@ func rigFlowE2ESmokeBlock(v WorkflowValidation, mayorRigDir string) string {
 		return ""
 	}
 	hasCompose := false
+	composeFile := ""
 	for _, f := range scoped.RequiredFiles {
 		base := strings.ToLower(filepath.Base(f))
 		if strings.HasPrefix(base, "docker-compose") {
 			hasCompose = true
+			composeFile = f
 			break
 		}
 	}
 	var b strings.Builder
 	b.WriteString("## E2E / browser smoke test (exercises real UI and API)\n\n")
 	b.WriteString("The active phase includes E2E test files in `required_files`. Before returning `all_passed`, **run the E2E tests** so they exercise the real UI and API in a browser — curl alone is not enough.\n\n")
-	if hasCompose {
+	if hasCompose && composeFile != "" {
 		b.WriteString("| Check | How |\n|-------|-----|\n")
-		b.WriteString("| E2E tests pass | `cd {{rig}}/mayor/rig && docker compose -f test/docker-compose.test.yml up --exit-code-from playwright` |\n")
+		b.WriteString(fmt.Sprintf("| E2E tests pass | `cd {{rig}}/mayor/rig && docker compose -f %s up --exit-code-from playwright` |\n", composeFile))
 		b.WriteString("| Page loads | Tests use `page.goto` / `page.locator` against the running app |\n")
 		b.WriteString("| API exercised | Tests call the real backend through the browser (fetch/XHR), not mocks |\n\n")
 	} else {

@@ -38,8 +38,9 @@ If **Prior step failed** from `qa_review` with `architecture_failure`, QA verifi
 4. Architecture must reference SPEC goals and planned layout under `{{layout_root}}/`.
 5. **HTTP routes and store API names must match SPEC verbatim**. gt-agent rejects on drift.
 5b. **`required_files` must be concrete literal paths** — no wildcards (`test_*.py`, `*_test.go`). gt-agent rejects on wildcards.
-6. **Implement file paths in lists/tables must use `{{layout_root}}/` prefix** (only when `{{layout_root}}` ≠ `"."` or empty). When layout_root is `"."`, use bare paths (`main.go`, `handler.go`). No `./` prefix. Prose may reference packages as `store.List`.
+6. **ALL file paths anywhere in architecture.md must use `{{layout_root}}/` prefix** (only when `{{layout_root}}` ≠ `"."` or empty). This includes prose, tables, code blocks, bullet lists — EVERYWHERE. When layout_root is `"."`, use bare paths (`main.go`, `handler.go`). No `./` prefix. Prose may reference packages as `store.List`.
 6b. **Only wrap actual file paths in backticks.** Do NOT wrap Go imports, URLs, MIME types, or package members. Non-file backticks get extracted as fake required paths.
+6c. **VALIDATOR REJECTS PATHS WITHOUT LAYOUT ROOT PREFIX.** If `{{layout_root}}` is `pingapp`, you MUST write `pingapp/cmd/server/main.go` everywhere — never `cmd/server/main.go` or `./cmd/server/main.go`.
 7. **Every section must contain substantive content.** Empty headings cause broken artifacts. Omit sections that don't apply.
 
 ## Write pattern — use this heredoc exactly:

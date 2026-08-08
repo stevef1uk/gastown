@@ -100,6 +100,17 @@ func NormalizeDockerCommand(cmd string) string {
 	return AdaptDockerComposeCommand(out)
 }
 
+// findDockerComposeFile searches required_files for a docker-compose file and returns its path.
+func findDockerComposeFile(v WorkflowValidation) string {
+	for _, f := range v.UnionRequiredFiles() {
+		f = filepath.ToSlash(strings.TrimSpace(f))
+		if strings.HasPrefix(strings.ToLower(filepath.Base(f)), "docker-compose") {
+			return f
+		}
+	}
+	return ""
+}
+
 // DockerImplementationVerifyCommandForBead returns verify scoped to layout_root and bead path.
 func DockerImplementationVerifyCommandForBead(v WorkflowValidation, mayorRigDir, beadPath string) string {
 	layout := strings.Trim(strings.TrimSpace(v.LayoutRoot), "/")
@@ -131,7 +142,12 @@ func DockerImplementationVerifyCommandForBead(v WorkflowValidation, mayorRigDir,
 		if q := strings.TrimSpace(v.QAVerifyCommand); q != "" {
 			return dockerVerifyWithLayout(q, layout)
 		}
-		return dockerVerifyWithLayout(DockerComposeCLI()+" -f test/docker-compose.test.yml up --exit-code-from playwright", layout)
+		// Find docker-compose file in required_files for this phase
+		composeFile := findDockerComposeFile(v)
+		if composeFile == "" {
+			composeFile = "test/docker-compose.test.yml"
+		}
+		return dockerVerifyWithLayout(DockerComposeCLI()+" -f "+composeFile+" up --exit-code-from playwright", layout)
 	case strings.HasSuffix(beadPath, ".env.example"), strings.HasSuffix(beadPath, ".env"):
 		return "test -f " + beadPath
 	default:
