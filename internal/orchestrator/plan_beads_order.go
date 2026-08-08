@@ -763,6 +763,16 @@ func PruneOpenImplementBeadsForClosedPaths(townRoot, rig string, v WorkflowValid
 	if len(closedPaths) == 0 {
 		return nil, nil
 	}
+	// During planning, keep open beads for active-phase required files even if a
+	// closed bead exists for the same path. Closing them would trigger bead
+	// recreation loops (planner creates bead → sync prunes it → planner recreates).
+	activeRequired := map[string]bool{}
+	for _, f := range v.RequiredFiles {
+		f = NormalizePlannerBeadPath(filepath.ToSlash(strings.TrimSpace(f)), v.LayoutRoot, rig)
+		if f != "" {
+			activeRequired[f] = true
+		}
+	}
 	beadsDir := config.ResolveBeadsDirForRig(townRoot, rig)
 	workDir := filepath.Join(townRoot, rig, "mayor", "rig")
 	var deleted []string
@@ -777,6 +787,10 @@ func PruneOpenImplementBeadsForClosedPaths(townRoot, rig string, v WorkflowValid
 			}
 			p := NormalizePlannerBeadPath(ExtractPathFromBeadTitle(b.Title, v.BeadTitleContains), v.LayoutRoot, rig)
 			if p == "" || !closedPaths[p] {
+				continue
+			}
+			// Skip beads for active-phase required files — the planner needs them open.
+			if activeRequired[p] {
 				continue
 			}
 			if ok, err := deleteImplementBead(beadsDir, workDir, b.ID); err != nil {
