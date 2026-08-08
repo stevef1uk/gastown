@@ -864,6 +864,22 @@ func stripOutcomeLinesForCmdParse(response string) string {
 			}
 			continue
 		}
+		// Model glues the opening JSON brace onto the end of a CMD line
+		// (e.g. `go mod download{`), then puts the outcome JSON body on the
+		// following lines. Strip the glued `{` from the command and treat the
+		// rest of the object (including the orphaned closing `}`) as outcome
+		// JSON so only the clean command survives.
+		if !inOutcomeJSON && strings.HasSuffix(t, "{") && looksLikeOutcomeJSONStart(lines, line, t) {
+			line = strings.TrimSuffix(line, "{")
+			t = strings.TrimSpace(line)
+			if t == "" {
+				continue
+			}
+			kept = append(kept, line)
+			inOutcomeJSON = true
+			braceDepth = 1
+			continue
+		}
 		if inOutcomeJSON {
 			braceDepth += strings.Count(t, "{") - strings.Count(t, "}")
 			if braceDepth <= 0 {
@@ -887,6 +903,32 @@ func stripOutcomeLinesForCmdParse(response string) string {
 		kept = append(kept, line)
 	}
 	return strings.Join(kept, "\n")
+}
+
+// looksLikeOutcomeJSONStart reports whether the line ending in `{` opens an
+// outcome JSON object: the next non-blank, non-CMD lines must include an
+// `"outcome"` field (or the closing `}`) before any new CMD: line.
+func looksLikeOutcomeJSONStart(lines []string, line, t string) bool {
+	found := false
+	for i, l := range lines {
+		if l == line {
+			for _, n := range lines[i+1:] {
+				nt := strings.TrimSpace(n)
+				if nt == "" {
+					continue
+				}
+				if strings.Contains(nt, "CMD:") {
+					return found
+				}
+				lower := strings.ToLower(nt)
+				if strings.Contains(lower, `"outcome"`) || strings.HasPrefix(lower, `"summary"`) || nt == "}" {
+					found = true
+				}
+			}
+			return found
+		}
+	}
+	return false
 }
 
 // isOrchestratedOutcomeLine reports JSON field lines that must not be executed as shell.

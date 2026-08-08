@@ -197,6 +197,12 @@ func validateImplementWriteScope(townRoot, rig, activeBead, written string, v Wo
 		if ImplementationModuleCompileOK(rigDir, v.ForActivePhase()) != nil {
 			return nil
 		}
+		// Allow edits when runtime smoke fails but go test passes (e.g. port mismatch, missing route).
+		if smokeErr := ImplementationPhaseVerifyOK(townRoot, rig, v); smokeErr != nil {
+			if ImplementationVerifyNeedsRuntimeRework(smokeErr) {
+				return nil
+			}
+		}
 		allowStubFix := false
 		for _, stub := range UnionStubArtifactsOnDisk(rigDir, v) {
 			if PathMatchesImplementWrite(written, stub, v.RequiredFiles, v) {
@@ -286,6 +292,13 @@ func validateImplementWriteScope(townRoot, rig, activeBead, written string, v Wo
 		for _, want := range v.RequiredFiles {
 			if PathMatchesImplementWrite(written, want, v.RequiredFiles, v) {
 				return nil
+			}
+		}
+		if v.HasPhasedDelivery() {
+			for _, want := range v.UnionRequiredFiles() {
+				if PathMatchesImplementWrite(written, want, v.UnionRequiredFiles(), v) {
+					return nil
+				}
 			}
 		}
 	}

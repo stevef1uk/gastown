@@ -18,7 +18,8 @@ func IsQAAgentShellError(text string) bool {
 		}
 	}
 	if strings.Contains(lower, "exit status 2") &&
-		(strings.Contains(lower, "cd") || strings.Contains(lower, "can't")) {
+		(strings.Contains(lower, "can't cd") || strings.Contains(lower, "cannot cd") ||
+			strings.Contains(lower, "cd: ") || strings.Contains(lower, "cd no such")) {
 		return true
 	}
 	return false
