@@ -96,14 +96,16 @@ func mapRigInitTemplate(name string) (string, bool) {
 }
 
 // scaffoldTemplateValues derives template substitution values from the workflow
-// profile. The web app runs on HOST; Playwright container uses host networking.
+// profile. The web app runs on HOST; the Playwright container reaches it via
+// host.docker.internal (mapped to the host through compose extra_hosts
+// host-gateway), which works on Linux and macOS Docker Desktop alike.
 func scaffoldTemplateValues(v WorkflowValidation, port int) map[string]string {
 	layoutRoot := strings.Trim(filepath.ToSlash(strings.TrimSpace(v.LayoutRoot)), "/")
 	if layoutRoot == "" || layoutRoot == "." {
 		layoutRoot = "app"
 	}
 
-	webBase := fmt.Sprintf("http://localhost:%d", port)
+	webBase := fmt.Sprintf("http://host.docker.internal:%d", port)
 	playwrightCmd := "npx playwright test --project=chromium"
 
 	return map[string]string{

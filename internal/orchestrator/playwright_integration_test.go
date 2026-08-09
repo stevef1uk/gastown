@@ -29,6 +29,12 @@ func TestPlaywrightIntegration_HostNetworking(t *testing.T) {
 
 	ctx := context.Background()
 
+	// Ensure port 8080 is free from any leftover processes. KillTCPListenersOnPort
+	// targets only the PID listening on 8080 (via lsof), so it never kills by
+	// process name and can't clobber unrelated processes like the test runner.
+	_, _ = KillTCPListenersOnPort(8080)
+	time.Sleep(500 * time.Millisecond)
+
 	// Create temp directory for test rig
 	tmpDir, err := os.MkdirTemp("", "playwright-integration-*")
 	if err != nil {
@@ -148,16 +154,18 @@ func main() {
 	}
 	specContent := `import { test, expect } from '@playwright/test';
 
+const baseURL = process.env.BASE_URL || 'http://localhost:8080';
+
 test.describe('Ping App', () => {
   test('GET /ping returns pong', async ({ request }) => {
-    const response = await request.get('http://localhost:8080/ping');
+    const response = await request.get(baseURL + '/ping');
     expect(response.ok()).toBeTruthy();
     const body = await response.json();
     expect(body.message).toBe('pong');
   });
 
   test('Home page loads', async ({ page }) => {
-    await page.goto('http://localhost:8080/');
+    await page.goto(baseURL + '/');
     await expect(page.locator('h1')).toHaveText('Hello');
   });
 });
@@ -208,7 +216,8 @@ test.describe('Ping App', () => {
 	}
 	t.Log("Server ready on localhost:8080")
 
-	// Run Playwright container with host networking using docker compose
+	// Run Playwright container via docker compose; it reaches the host Go server
+	// through host.docker.internal (host-gateway), portable across Linux/macOS.
 	t.Log("Running Playwright tests...")
 	dockerCmd := exec.CommandContext(ctx,
 		"docker-compose", "up", "--exit-code-from", "playwright",

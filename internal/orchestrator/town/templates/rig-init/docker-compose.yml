@@ -1,7 +1,9 @@
 # Docker compose for Playwright E2E testing
 # Used in integration-test phase
 # Template variables: {{PLAYWRIGHT_IMAGE}}, {{PLAYWRIGHT_WORKDIR}}, {{PLAYWRIGHT_COMMAND}}, {{PLAYWRIGHT_BASE_URL}}, {{WEB_PORT}}
-# The web app runs on HOST (not in Docker). Playwright container uses host networking to reach it.
+# The web app runs on HOST (not in Docker). The Playwright container reaches it via
+# host.docker.internal (extra_hosts host-gateway), which works on both Linux and macOS
+# Docker Desktop — host networking does NOT expose the macOS host's loopback to containers.
 # The host source tree is mounted READ-ONLY at /src so the container can never modify or delete
 # rig files (git metadata, SPEC, plan, architecture, source). Source is copied into a writable
 # /app volume where npm install and Playwright write node_modules/, test-results/, and
@@ -12,10 +14,11 @@ services:
   playwright:
     image: {{PLAYWRIGHT_IMAGE}}
     working_dir: {{PLAYWRIGHT_WORKDIR}}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - .:/src:ro
       - playwright-app:/app
-    network_mode: host
     environment:
       - BASE_URL={{PLAYWRIGHT_BASE_URL}}
     command: sh -c "cp -r /src/. /app/ && npm install --no-package-lock && {{PLAYWRIGHT_COMMAND}}"
