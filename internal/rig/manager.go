@@ -636,8 +636,11 @@ func (m *Manager) AddRig(opts AddRigOptions) (*Rig, error) {
 			// Always pass --server-port so bd connects to gt's central Dolt
 			// server. Without this, bd auto-starts its own server on a random
 			// port, causing "database not found" errors. (GH #2405)
+			// NOTE: no --force. bd's init-safety contract treats --force as a
+			// reinit that refuses to destroy existing issue data non-interactively;
+			// without it, bd mints a fresh DB or adopts an existing one idempotently.
 			doltCfg := doltserver.DefaultConfig(m.townRoot)
-			initArgs = append(initArgs, "--server-port", strconv.Itoa(doltCfg.Port), "--force")
+			initArgs = append(initArgs, "--server-port", strconv.Itoa(doltCfg.Port))
 			cmd := exec.Command("bd", initArgs...)
 			cmd.Dir = mayorRigPath
 			cmd.Env = append(os.Environ(), "BEADS_DIR="+sourceBeadsDir)

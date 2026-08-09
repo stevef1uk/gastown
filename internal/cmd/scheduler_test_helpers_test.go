@@ -18,6 +18,24 @@ import (
 	"github.com/steveyegge/gastown/internal/testutil"
 )
 
+// initTestRigGitRepo makes a rig directory its own git repository before
+// `bd init` runs inside it. Production rigs are separate git repos (cloned
+// from the rig GitURL), which stops bd's ancestor-walk from climbing up past
+// the rig root and finding the town's .beads/. Without this, `bd init` in a
+// nested rig dir resolves to the already-initialized town .beads/ and aborts
+// with "Found existing Dolt database" (cross-test Dolt leak, GH #2841).
+func initTestRigGitRepo(t *testing.T, rigPath string) {
+	t.Helper()
+	if err := os.MkdirAll(rigPath, 0755); err != nil {
+		t.Fatalf("mkdir rigPath: %v", err)
+	}
+	cmd := exec.Command("git", "init", "-q", ".")
+	cmd.Dir = rigPath
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git init %s: %v\n%s", rigPath, err, out)
+	}
+}
+
 // --- Environment helpers ---
 
 // cleanSchedulerTestEnv returns os.Environ() with GT_*/BD_* variables removed

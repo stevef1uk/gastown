@@ -21,10 +21,10 @@ func TestBuildBdInitArgs_AlwaysIncludesServerPort(t *testing.T) {
 	t.Setenv("GT_DOLT_PORT", "")
 	t.Setenv("BEADS_DOLT_PORT", "")
 
-	args := buildBdInitArgs(townDir)
-
+	// Test with force=true (full init)
+	args := buildBdInitArgs(townDir, true)
 	if len(args) != 7 {
-		t.Fatalf("expected 7 args, got %d: %v", len(args), args)
+		t.Fatalf("expected 7 args with force, got %d: %v", len(args), args)
 	}
 	if args[4] != "--server-port" {
 		t.Fatalf("expected args[4] = --server-port, got %q", args[4])
@@ -35,6 +35,23 @@ func TestBuildBdInitArgs_AlwaysIncludesServerPort(t *testing.T) {
 	if args[6] != "--force" {
 		t.Fatalf("expected args[6] = --force, got %q", args[6])
 	}
+
+	// Test with force=false (adopt existing)
+	args = buildBdInitArgs(townDir, false)
+	if len(args) != 6 {
+		t.Fatalf("expected 6 args without force, got %d: %v", len(args), args)
+	}
+	if args[4] != "--server-port" {
+		t.Fatalf("expected args[4] = --server-port, got %q", args[4])
+	}
+	if args[5] != "3307" {
+		t.Fatalf("expected default port 3307, got %q", args[5])
+	}
+	for _, a := range args {
+		if a == "--force" {
+			t.Fatalf("buildBdInitArgs with force=false must not include --force, got %v", args)
+		}
+	}
 }
 
 func TestBuildBdInitArgs_RespectsGTDoltPortEnv(t *testing.T) {
@@ -42,7 +59,7 @@ func TestBuildBdInitArgs_RespectsGTDoltPortEnv(t *testing.T) {
 
 	t.Setenv("GT_DOLT_PORT", "4400")
 
-	args := buildBdInitArgs(townDir)
+	args := buildBdInitArgs(townDir, false)
 
 	if args[5] != "4400" {
 		t.Fatalf("expected port 4400 from GT_DOLT_PORT, got %q", args[5])
@@ -62,7 +79,7 @@ func TestBuildBdInitArgs_ConfigYAMLTakesPrecedence(t *testing.T) {
 
 	t.Setenv("GT_DOLT_PORT", "4400")
 
-	args := buildBdInitArgs(townDir)
+	args := buildBdInitArgs(townDir, false)
 
 	if args[5] != "5500" {
 		t.Fatalf("expected port 5500 from config.yaml (precedence over env), got %q", args[5])
@@ -72,7 +89,7 @@ func TestBuildBdInitArgs_ConfigYAMLTakesPrecedence(t *testing.T) {
 func TestBuildBdInitArgs_PortMatchesDefaultConfig(t *testing.T) {
 	townDir := t.TempDir()
 
-	args := buildBdInitArgs(townDir)
+	args := buildBdInitArgs(townDir, false)
 	cfg := doltserver.DefaultConfig(townDir)
 
 	if args[5] != strconv.Itoa(cfg.Port) {

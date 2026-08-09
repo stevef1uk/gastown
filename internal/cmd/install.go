@@ -685,10 +685,27 @@ func writeJSON(path string, data interface{}) error {
 
 // buildBdInitArgs returns the arguments for `bd init` including the correct
 // --server-port derived from the town's Dolt configuration.
-func buildBdInitArgs(townPath string) []string {
+//
+// NOTE: the force parameter controls whether --force is included.
+// --force (reinit-local) performs a full init that persists issue_prefix
+// into the database. bd's init-safety contract refuses to destroy existing
+// issue data in non-interactive mode ("Refusing to destroy N issues");
+// initTownBeads falls back to a non-force adopt in that case.
+func buildBdInitArgs(townPath string, force bool) []string {
 	cfg := doltserver.DefaultConfig(townPath)
-	return []string{"init", "--prefix", "hq", "--server",
-		"--server-port", strconv.Itoa(cfg.Port), "--force"}
+	args := []string{"init", "--prefix", "hq", "--server",
+		"--server-port", strconv.Itoa(cfg.Port)}
+	if force {
+		args = append(args, "--force")
+	}
+	return args
+}
+
+// isBdDestroyRefusal reports whether a bd init error output indicates
+// a refusal to destroy existing issue data (init-safety contract).
+func isBdDestroyRefusal(output string) bool {
+	return strings.Contains(output, "Refusing to destroy") ||
+		strings.Contains(output, "refused: existing local data")
 }
 
 // initTownBeads initializes town-level beads database using bd init.
@@ -725,18 +742,38 @@ func initTownBeads(townPath string) error {
 	// DefaultConfig resolves the port from config.yaml > GT_DOLT_PORT env > default (3307).
 	// Forward GT_DOLT_PORT so bd connects to the correct server when a
 	// non-default port is configured (e.g., ephemeral test servers in CI).
-	bdInitArgs := buildBdInitArgs(townPath)
+	bdInitArgs := buildBdInitArgs(townPath, true)
 	cmd := exec.Command("bd", bdInitArgs...)
 	cmd.Dir = townPath
 	cmd.Env = withBeadsDirEnv(filepath.Join(townPath, ".beads"))
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		// Check if beads is already initialized
-		if strings.Contains(string(output), "already initialized") {
-			// Already initialized - still need to ensure fingerprint exists
-		} else {
-			return fmt.Errorf("bd init failed: %s", strings.TrimSpace(string(output)))
+		// --force (reinit-local) refuses to destroy existing issue data in
+		// non-interactive mode ("Refusing to destroy N issues"). Fall back to
+		// a plain `bd init` which adopts the existing database without
+		// destroying it. This keeps install working when the hq database
+		// already exists on the server (e.g., a shared container reused across
+		// towns) while still fully initializing (setting issue_prefix) fresh
+		// empty databases.
+		if isBdDestroyRefusal(string(output)) {
+			adoptCmd := exec.Command("bd", buildBdInitArgs(townPath, false)...)
+			adoptCmd.Dir = townPath
+			adoptCmd.Env = cmd.Env
+			if adoptOut, adoptErr := adoptCmd.CombinedOutput(); adoptErr == nil {
+				output = adoptOut
+				err = nil
+			} else {
+				output = adoptOut
+			}
+		}
+		if err != nil {
+			// Check if beads is already initialized
+			if strings.Contains(string(output), "already initialized") {
+				// Already initialized - still need to ensure fingerprint exists
+			} else {
+				return fmt.Errorf("bd init failed: %s", strings.TrimSpace(string(output)))
+			}
 		}
 	}
 

@@ -885,6 +885,49 @@ func isDoltServerOnPort(port int) bool {
 	return true
 }
 
+// processIsDolt reports whether the given PID is a locally-managed dolt binary
+// (by basename of its executable). Used to distinguish real dolt sql-servers
+// from external port forwards such as docker-proxy, which forwards the port of
+// a dolt server running inside a container.
+func processIsDolt(pid int) bool {
+	args := getProcessArgs(pid)
+	if len(args) == 0 {
+		return false
+	}
+	name := filepath.Base(args[0])
+	return name == "dolt" || name == "dolt.exe"
+}
+
+// doltDatabaseExistsError reports whether a CREATE DATABASE error indicates the
+// database already exists (MySQL/Dolt error 1007), which is an idempotent no-op
+// rather than a failure.
+func doltDatabaseExistsError(errMsg string) bool {
+	lower := strings.ToLower(errMsg)
+	return strings.Contains(lower, "error 1007") || strings.Contains(lower, "database exists")
+}
+
+// isExternalDoltServer reports whether the town's configured Dolt port is served
+// by an external process rather than a locally-managed dolt sql-server.
+//
+// This covers Docker containers (the host port is held by docker-proxy, not dolt)
+// and host-networking containers/remotes where no local dolt process is visible
+// at all. Pre-started container servers are a supported scenario (see
+// canReuseInstallDoltServer), so InitRig and Start must treat them as legitimate
+// instead of misclassifying them as orphaned/imposter servers and killing the
+// port forward, which then fails with "port is already in use".
+//
+// A local dolt process on the port — even one that doesn't match this town's data
+// directory — is NOT external; it's an imposter and remains subject to normal
+// imposter cleanup.
+func isExternalDoltServer(townRoot string) bool {
+	config := DefaultConfig(townRoot)
+	pid := findDoltServerOnPort(config.Port)
+	if pid > 0 && processIsDolt(pid) {
+		return false // locally-managed dolt process (possibly an imposter)
+	}
+	return isDoltServerOnPort(config.Port)
+}
+
 // getServerDataDir returns the data directory for the Dolt server associated with townRoot.
 // Reads from the persisted state file instead of parsing ps command output
 // (ZFC fix: gt-utuk — eliminates fragile ps string matching).
@@ -1465,6 +1508,15 @@ func Start(townRoot string) error {
 	}
 
 	if running {
+		// External/container server (e.g., a pre-started shared test container).
+		// It's already serving the configured port and isn't ours to manage, so
+		// there is nothing to start. Short-circuiting also avoids the orphan and
+		// imposter checks below, which would kill the port forward and then fail
+		// to bind the port ("port is already in use").
+		if isExternalDoltServer(townRoot) {
+			return nil
+		}
+
 		// If data directory doesn't exist, this is an orphaned server (e.g., user
 		// deleted ~/gt and re-ran gt install). Kill it so we can start fresh.
 		if _, statErr := os.Stat(config.DataDir); os.IsNotExist(statErr) {
@@ -2307,10 +2359,15 @@ func InitRig(townRoot, rigName string) (serverWasRunning bool, created bool, err
 	running, runningPID, _ := IsRunning(townRoot)
 
 	if running {
-		// If the data directory doesn't exist, the server is orphaned (e.g., user
-		// deleted ~/gt and re-ran gt install while an old server was still running).
-		// Stop the orphaned server and fall through to the offline init path.
-		if _, err := os.Stat(config.DataDir); os.IsNotExist(err) {
+		// External/container server (e.g., a pre-started shared test container):
+		// it's the intended target, so never stop it. Fall through to the
+		// CREATE DATABASE path below.
+		if isExternalDoltServer(townRoot) {
+			// keep running = true
+		} else if _, err := os.Stat(config.DataDir); os.IsNotExist(err) {
+			// If the data directory doesn't exist, the server is orphaned (e.g., user
+			// deleted ~/gt and re-ran gt install while an old server was still running).
+			// Stop the orphaned server and fall through to the offline init path.
 			fmt.Fprintf(os.Stderr, "Warning: Dolt server (PID %d) is running but data directory %s does not exist — stopping orphaned server\n", runningPID, config.DataDir)
 			if stopErr := Stop(townRoot); stopErr != nil {
 				// Force-kill if graceful stop fails (no PID file for orphaned server)
@@ -2324,11 +2381,25 @@ func InitRig(townRoot, rigName string) (serverWasRunning bool, created bool, err
 		}
 	}
 
+	created = true
 	if running {
 		// Server is running: use CREATE DATABASE which both creates the
 		// directory and registers the database with the live server.
+		// Ensure the data directory exists first — serverExecSQL runs dolt with
+		// its working directory set to DataDir, which must exist even for
+		// external/container servers that manage their own storage.
+		if err := os.MkdirAll(config.DataDir, 0755); err != nil {
+			return true, false, fmt.Errorf("creating data directory: %w", err)
+		}
 		if err := serverExecSQL(townRoot, fmt.Sprintf("CREATE DATABASE `%s`", rigName)); err != nil {
-			return true, false, fmt.Errorf("creating database on running server: %w", err)
+			// The database may already exist on the server — e.g., a shared
+			// container server reused across towns, or a re-install. CREATE
+			// DATABASE then fails with Error 1007, which is an idempotent
+			// no-op matching the on-disk already-initialized check above.
+			if !doltDatabaseExistsError(err.Error()) {
+				return true, false, fmt.Errorf("creating database on running server: %w", err)
+			}
+			created = false
 		}
 		// Wait for the new database to appear in the server's in-memory catalog.
 		// CREATE DATABASE returns before the catalog is fully updated, so
@@ -2363,7 +2434,7 @@ func InitRig(townRoot, rigName string) (serverWasRunning bool, created bool, err
 		fmt.Fprintf(os.Stderr, "Warning: database initialized but metadata.json update failed: %v\n", err)
 	}
 
-	return running, true, nil
+	return running, created, nil
 }
 
 // Migration represents a database migration from old to new location.

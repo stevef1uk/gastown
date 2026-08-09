@@ -153,9 +153,9 @@ func setupSchedulerIntegrationTown(t *testing.T) (hqPath, rigPath, gtBinary stri
 	initBeadsDBForServer(t, hqPath, hqPrefix)
 
 	// --- testrig directory (loadRig checks os.Stat on townRoot/<rigName>) ---
-	if err := os.MkdirAll(rigPath, 0755); err != nil {
-		t.Fatalf("mkdir rigPath: %v", err)
-	}
+	// The rig must be its own git repo so bd init's ancestor-walk stops at the
+	// rig root instead of climbing to the town's .beads/ (GH #2841).
+	initTestRigGitRepo(t, rigPath)
 	initBeadsDBForServer(t, rigPath, rigPrefix)
 
 	// Drop test databases on cleanup to prevent orphaned databases on the Dolt server.
@@ -601,9 +601,9 @@ func setupMultiRigSchedulerTown(t *testing.T) (hqPath, rig1Path, rig2Path, gtBin
 	initBeadsDBForServer(t, hqPath, hqPrefix)
 
 	// --- rig1 ---
-	if err := os.MkdirAll(rig1Path, 0755); err != nil {
-		t.Fatalf("mkdir rig1Path: %v", err)
-	}
+	// Each rig must be its own git repo so bd init's ancestor-walk stops at the
+	// rig root instead of climbing to the town's .beads/ (GH #2841).
+	initTestRigGitRepo(t, rig1Path)
 	initBeadsDBForServer(t, rig1Path, rig1Prefix)
 	// Write routes to rig1's .beads/ so bd can resolve cross-rig IDs (needed for
 	// cross-rig dep creation via external refs).
@@ -619,9 +619,9 @@ func setupMultiRigSchedulerTown(t *testing.T) (hqPath, rig1Path, rig2Path, gtBin
 	}
 
 	// --- rig2 ---
-	if err := os.MkdirAll(rig2Path, 0755); err != nil {
-		t.Fatalf("mkdir rig2Path: %v", err)
-	}
+	// Each rig must be its own git repo so bd init's ancestor-walk stops at the
+	// rig root instead of climbing to the town's .beads/ (GH #2841).
+	initTestRigGitRepo(t, rig2Path)
 	initBeadsDBForServer(t, rig2Path, rig2Prefix)
 	if err := beads.WriteRoutes(filepath.Join(rig2Path, ".beads"), routes); err != nil {
 		t.Fatalf("write rig2 routes: %v", err)
