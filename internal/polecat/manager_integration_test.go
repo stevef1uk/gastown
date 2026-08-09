@@ -13,6 +13,7 @@ import (
 	"github.com/steveyegge/gastown/internal/beads"
 	"github.com/steveyegge/gastown/internal/git"
 	"github.com/steveyegge/gastown/internal/rig"
+	"github.com/steveyegge/gastown/internal/session"
 	"github.com/steveyegge/gastown/internal/testutil"
 	"github.com/steveyegge/gastown/internal/tmux"
 )
@@ -198,7 +199,8 @@ func TestManagerDoesNotTreatLiveSessionAsIdle(t *testing.T) {
 
 	r := &rig.Rig{Name: rigName, Path: rigPath}
 	tm := tmux.NewTmux()
-	mgr := NewManager(r, git.NewGit(rigPath), tm)
+	provider := session.NewTmuxProvider(tm, townRoot)
+	mgr := NewManager(r, git.NewGit(rigPath), provider)
 
 	agentID := mgr.agentBeadID("toast")
 	assignee := mgr.assigneeID("toast")
@@ -208,7 +210,7 @@ func TestManagerDoesNotTreatLiveSessionAsIdle(t *testing.T) {
 		t.Fatalf("create idle agent bead: %v", err)
 	}
 
-	sessionName := NewSessionManager(session.NewTmuxProvider(tm), r).SessionName("toast")
+	sessionName := NewSessionManager(provider, r).SessionName("toast")
 	startLiveSession(t, sessionName)
 
 	p, err := mgr.Get("toast")
