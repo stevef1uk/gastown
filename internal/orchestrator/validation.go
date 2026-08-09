@@ -160,6 +160,12 @@ func ClampProfileValidation(v WorkflowValidation) WorkflowValidation {
 	v = SanitizeRigFlowProfile(v)
 	v = ValidateDeliveryPhases(v)
 	v = stripRuntimeSmokeFromPhaseCommands(v)
+	// Deterministic post-judge guard must also run on every load path (task
+	// validation, rig sync-planning, rig setup) — not just spec-index. Without
+	// this, the JUDGE's rewrite of integration-test to "go test ./..." survives
+	// any later profile write, and QA never runs the Playwright compose service.
+	// Runs LAST so no subsequent transformation can clobber the restored command.
+	v = SanitizePhaseVerifyCommandsForStack(v)
 	return v
 }
 
@@ -311,14 +317,32 @@ func phaseShipsDockerPlaywright(p *DeliveryPhase) bool {
 }
 
 // composePlaywrightVerifyCommand returns the Docker-compose Playwright verify
-// command for a phase, scoped to layout_root.
+// command for a phase, scoped to layout_root. It locates the docker-compose file
+// in the phase's required files (so test/docker-compose.yml rigs work, not just
+// layout-root compose files) and adapts the CLI spelling to the host
+// (docker-compose standalone vs docker compose plugin).
 func composePlaywrightVerifyCommand(p *DeliveryPhase, layoutRoot string) string {
 	lr := layoutRoot
 	if lr == "" {
 		lr = "."
 	}
-	// Use docker-compose (v1) for compatibility; docker compose (v2) may not be installed as plugin.
-	return fmt.Sprintf("cd %s && docker-compose up --exit-code-from playwright", lr)
+	composeFile := ""
+	for _, f := range p.RequiredFiles {
+		f = filepath.ToSlash(strings.TrimSpace(f))
+		if strings.HasPrefix(strings.ToLower(filepath.Base(f)), "docker-compose") {
+			composeFile = f
+			break
+		}
+	}
+	cli := DockerComposeCLI()
+	if composeFile != "" {
+		rel := composeFile
+		if lr != "." && strings.HasPrefix(composeFile, lr+"/") {
+			rel = strings.TrimPrefix(composeFile, lr+"/")
+		}
+		return fmt.Sprintf("cd %s && %s -f %s up --exit-code-from playwright", lr, cli, rel)
+	}
+	return fmt.Sprintf("cd %s && %s up --exit-code-from playwright", lr, cli)
 }
 
 // StripInvalidCDPrefixes removes leading "cd <dir> && " from verify commands when layout_root

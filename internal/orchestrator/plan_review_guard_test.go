@@ -139,4 +139,20 @@ func TestRejectSpuriousQAFailure_verifyPassesBeforeShellError(t *testing.T) {
 			t.Fatalf("expected no rejection for legitimate QA finding: %s", reason)
 		}
 	})
+
+	t.Run("verify passes — SPEC layout complaint with shell noise is NOT rejected", func(t *testing.T) {
+		summary := "Stage 1 failure: Code does not match SPEC.md. SPEC requires main.go to contain the PingHandler in a single file; the implementation moved it to an external package and violates the literal layout prescribed in SPEC.md."
+		reason := rejectSpuriousQAFailure(townRoot, rig, summary, "some command not found noise from smoke-test subprocess")
+		if reason != "" {
+			t.Fatalf("expected no rejection for legitimate SPEC layout complaint: %s", reason)
+		}
+	})
+
+	t.Run("verify passes — 'spec only allows' complaint is NOT rejected", func(t *testing.T) {
+		summary := "QA failure: spec only allows go.mod, main.go, and main_test.go but extra cmd/ and internal/ packages exist."
+		reason := rejectSpuriousQAFailure(townRoot, rig, summary, "")
+		if reason != "" {
+			t.Fatalf("expected no rejection for 'spec only allows' complaint: %s", reason)
+		}
+	})
 }

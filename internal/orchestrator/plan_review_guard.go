@@ -217,6 +217,17 @@ func rejectSpuriousQAFailure(townRoot, rig, summary, rawFeedback string) string 
 		return ""
 	}
 
+	// A substantive SPEC-compliance / layout complaint in the summary is legitimate
+	// and must never be overridden by shell-error noise in rawFeedback. A failed
+	// smoke-test subprocess can leak "command not found" into feedback even when the
+	// QA's real finding is that the implementation violates the SPEC layout tree
+	// (e.g. extra cmd/ or internal/ packages where SPEC requires a single main.go).
+	// Such violations are invisible to `go test ./...` passing, so phaseVerifyPasses
+	// must not veto them.
+	if summaryComplainsAboutSpecLayout(lower) {
+		return ""
+	}
+
 	combined := CombineQAReworkText(summary, rawFeedback)
 	// Shell errors (wrong cwd, command not found) mean QA never tested the code.
 	// Check if the code is actually correct on disk — if both are true, the failure is spurious.
@@ -259,6 +270,42 @@ func isFailureKeyWord(summary string) bool {
 		"broken", "incomplete", "truncated", "missing file", "doesn't exist",
 		"exit status", "can't cd", "cannot cd", "command not found"} {
 		if strings.Contains(lower, w) {
+			return true
+		}
+	}
+	return false
+}
+
+// summaryComplainsAboutSpecLayout reports whether a QA failure summary faults the
+// implementation for deviating from the SPEC layout / required file set — e.g.
+// extra packages, files not in SPEC, or code that belongs in a different file.
+// Such complaints are substantive; a passing `go test ./...` does not contradict
+// them, so the spurious-QA guard must not veto them.
+func summaryComplainsAboutSpecLayout(lower string) bool {
+	if lower == "" {
+		return false
+	}
+	for _, needle := range []string{
+		"does not match spec",
+		"does not follow spec",
+		"violates the literal layout",
+		"violates the spec",
+		"layout prescribed",
+		"layout tree",
+		"not in the spec",
+		"not listed in spec",
+		"spec only allows",
+		"spec requires",
+		"spec allows",
+		"single file",
+		"unnecessary abstraction",
+		"yagni",
+		"extra package",
+		"extra file",
+		"should not exist",
+		"not part of the spec",
+	} {
+		if strings.Contains(lower, needle) {
 			return true
 		}
 	}

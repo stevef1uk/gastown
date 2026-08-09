@@ -303,3 +303,95 @@ func TestRebuildDeliveryPhasesFromAuthoritative_handlesLayoutRestructure(t *test
 		t.Fatalf("active_phase_id %q does not resolve after rebuild: %+v", got.ActivePhaseID(), got.DeliveryPhases)
 	}
 }
+
+// TestSanitizePhaseVerifyCommandsForStack_playwrightComposeClamp is the QA guarantee
+// regression: an integration-test phase that ships docker-compose + Playwright must
+// always verify with `docker-compose up --exit-code-from playwright`, even when the
+// JUDGE rewrote the command to a plain Go test suite.
+func TestSanitizePhaseVerifyCommandsForStack_playwrightComposeClamp(t *testing.T) {
+	v := WorkflowValidation{
+		LayoutRoot: "pingapp",
+		DeliveryPhases: []DeliveryPhase{
+			{
+				ID: "integration-test",
+				RequiredFiles: []string{
+					"pingapp/playwright.config.ts",
+					"pingapp/e2e/ping.spec.ts",
+					"pingapp/package.json",
+					"pingapp/Dockerfile",
+					"pingapp/docker-compose.yml",
+				},
+				QAVerifyCommand: "cd pingapp && go build ./... && go test ./...",
+			},
+		},
+	}
+	got := SanitizePhaseVerifyCommandsForStack(v)
+	cmd := strings.ToLower(got.DeliveryPhases[0].QAVerifyCommand)
+	if !strings.Contains(cmd, "up --exit-code-from playwright") {
+		t.Fatalf("integration-test phase must verify via playwright compose, got %q", got.DeliveryPhases[0].QAVerifyCommand)
+	}
+	if !strings.Contains(cmd, "docker-compose") && !strings.Contains(cmd, "docker compose") {
+		t.Fatalf("integration-test phase must use the compose CLI, got %q", got.DeliveryPhases[0].QAVerifyCommand)
+	}
+	if strings.Contains(cmd, "go test") || strings.Contains(cmd, "go build") {
+		t.Fatalf("integration-test phase must not run Go tests, got %q", got.DeliveryPhases[0].QAVerifyCommand)
+	}
+}
+
+// TestSanitizePhaseVerifyCommandsForStack_playwrightComposeSubdirClamp confirms the
+// clamp locates a compose file in a subdirectory (test/docker-compose.yml) and passes
+// it with -f, so rigs that do not keep compose at the layout root still run Playwright.
+func TestSanitizePhaseVerifyCommandsForStack_playwrightComposeSubdirClamp(t *testing.T) {
+	v := WorkflowValidation{
+		LayoutRoot: "pingapp",
+		DeliveryPhases: []DeliveryPhase{
+			{
+				ID: "e2e",
+				RequiredFiles: []string{
+					"pingapp/playwright.config.ts",
+					"pingapp/test/docker-compose.yml",
+					"pingapp/package.json",
+				},
+				QAVerifyCommand: "cd pingapp && npx playwright test --list",
+			},
+		},
+	}
+	got := SanitizePhaseVerifyCommandsForStack(v)
+	cmd := got.DeliveryPhases[0].QAVerifyCommand
+	if !strings.Contains(cmd, "-f test/docker-compose.yml up --exit-code-from playwright") {
+		t.Fatalf("subdir compose file must be passed with -f, got %q", cmd)
+	}
+}
+
+// TestClampProfileValidation_playwrightComposeSurvivesLoad is the load-path
+// guarantee: the playwright clamp must also fire through ClampProfileValidation,
+// which runs on every profile load (task validation, rig sync-planning, rig setup)
+// — not just the spec-index post-judge step.
+func TestClampProfileValidation_playwrightComposeSurvivesLoad(t *testing.T) {
+	v := WorkflowValidation{
+		LayoutRoot: "pingapp",
+		DeliveryPhases: []DeliveryPhase{
+			{
+				ID: "integration-test",
+				RequiredFiles: []string{
+					"pingapp/playwright.config.ts",
+					"pingapp/e2e/ping.spec.ts",
+					"pingapp/package.json",
+					"pingapp/Dockerfile",
+					"pingapp/docker-compose.yml",
+				},
+				QAVerifyCommand: "cd pingapp && go build ./... && go test ./...",
+			},
+		},
+	}
+	got := ClampProfileValidation(v)
+	for _, p := range got.DeliveryPhases {
+		if p.ID != "integration-test" {
+			continue
+		}
+		cmd := strings.ToLower(p.QAVerifyCommand)
+		if !strings.Contains(cmd, "up --exit-code-from playwright") {
+			t.Fatalf("ClampProfileValidation must restore the playwright compose command on load, got %q", p.QAVerifyCommand)
+		}
+	}
+}
