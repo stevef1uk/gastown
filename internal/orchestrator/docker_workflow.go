@@ -147,7 +147,8 @@ func DockerImplementationVerifyCommandForBead(v WorkflowValidation, mayorRigDir,
 		if composeFile == "" {
 			composeFile = "test/docker-compose.test.yml"
 		}
-		return dockerVerifyWithLayout(DockerComposeCLI()+" -f "+composeFile+" up --exit-code-from playwright", layout)
+		cli := DockerComposeCLI()
+		return dockerVerifyWithLayout(cli+" -f "+composeFile+" down && "+cli+" -f "+composeFile+" up --exit-code-from playwright", layout)
 	case strings.HasSuffix(beadPath, ".env.example"), strings.HasSuffix(beadPath, ".env"):
 		return "test -f " + beadPath
 	default:

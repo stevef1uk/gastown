@@ -321,6 +321,11 @@ func phaseShipsDockerPlaywright(p *DeliveryPhase) bool {
 // in the phase's required files (so test/docker-compose.yml rigs work, not just
 // layout-root compose files) and adapts the CLI spelling to the host
 // (docker-compose standalone vs docker compose plugin).
+//
+// The command tears down any existing project containers first (docker-compose
+// down) before bringing the stack up. Without this, a stale web container from
+// a previous run can keep host ports bound and cause the next QA run to fail
+// with "address already in use".
 func composePlaywrightVerifyCommand(p *DeliveryPhase, layoutRoot string) string {
 	lr := layoutRoot
 	if lr == "" {
@@ -340,9 +345,9 @@ func composePlaywrightVerifyCommand(p *DeliveryPhase, layoutRoot string) string 
 		if lr != "." && strings.HasPrefix(composeFile, lr+"/") {
 			rel = strings.TrimPrefix(composeFile, lr+"/")
 		}
-		return fmt.Sprintf("cd %s && %s -f %s up --exit-code-from playwright", lr, cli, rel)
+		return fmt.Sprintf("cd %s && %s -f %s down && %s -f %s up --exit-code-from playwright", lr, cli, rel, cli, rel)
 	}
-	return fmt.Sprintf("cd %s && %s up --exit-code-from playwright", lr, cli)
+	return fmt.Sprintf("cd %s && %s down && %s up --exit-code-from playwright", lr, cli, cli)
 }
 
 // StripInvalidCDPrefixes removes leading "cd <dir> && " from verify commands when layout_root
@@ -1620,9 +1625,9 @@ func defaultQAVerifyForPhase(p *DeliveryPhase, layoutRoot string) string {
 		isIntegrationTest := strings.Contains(strings.ToLower(p.ID), "integration") ||
 			strings.Contains(strings.ToLower(p.Title), "integration")
 		if isIntegrationTest {
-			// Integration-test phases with Playwright should use Docker/Playwright container
-// via docker compose. The Docker container has Playwright pre-installed.
-		return fmt.Sprintf("cd %s && docker-compose up --exit-code-from playwright", lr)
+		// Integration-test phases with Playwright should use Docker/Playwright container
+		// via docker compose. Tear down first so stale containers cannot lock host ports.
+		return fmt.Sprintf("cd %s && docker-compose down && docker-compose up --exit-code-from playwright", lr)
 		}
 		if dir == "." {
 			return fmt.Sprintf("cd %s && npx playwright test --list", lr)

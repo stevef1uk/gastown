@@ -406,7 +406,7 @@ func TestFinalizeDeliveryPhases_dockerVerifyFollowsDockerFiles(t *testing.T) {
 				"test/docker-compose.test.yml",
 				"Dockerfile",
 				"docker-compose.yml",
-			}, QAVerifyCommand: "cd test && docker-compose -f docker-compose.test.yml up --exit-code-from playwright"},
+			}, QAVerifyCommand: "cd test && docker-compose -f docker-compose.test.yml down && docker-compose -f docker-compose.test.yml up --exit-code-from playwright"},
 		},
 	}
 	got := FinalizeDeliveryPhases(v)
@@ -436,7 +436,7 @@ func TestFinalizeDeliveryPhases_dockerVerifyFollowsDockerFiles(t *testing.T) {
 	if qaVerifyCommandReferencesDocker(phase1.QAVerifyCommand) {
 		t.Fatalf("phase 1 QA command still references docker: %q", phase1.QAVerifyCommand)
 	}
-	if phase2.QAVerifyCommand != "cd test && docker-compose -f docker-compose.test.yml up --exit-code-from playwright" {
+	if phase2.QAVerifyCommand != "cd test && docker-compose -f docker-compose.test.yml down && docker-compose -f docker-compose.test.yml up --exit-code-from playwright" {
 		t.Fatalf("phase 2 QA command = %q, want docker compose command", phase2.QAVerifyCommand)
 	}
 }

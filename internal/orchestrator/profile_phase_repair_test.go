@@ -358,8 +358,8 @@ func TestSanitizePhaseVerifyCommandsForStack_playwrightComposeSubdirClamp(t *tes
 	}
 	got := SanitizePhaseVerifyCommandsForStack(v)
 	cmd := got.DeliveryPhases[0].QAVerifyCommand
-	if !strings.Contains(cmd, "-f test/docker-compose.yml up --exit-code-from playwright") {
-		t.Fatalf("subdir compose file must be passed with -f, got %q", cmd)
+	if !strings.Contains(cmd, "-f test/docker-compose.yml down") || !strings.Contains(cmd, "-f test/docker-compose.yml up --exit-code-from playwright") {
+		t.Fatalf("subdir compose file must be torn down then brought up via -f, got %q", cmd)
 	}
 }
 
