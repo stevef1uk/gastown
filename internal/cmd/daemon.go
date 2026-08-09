@@ -311,7 +311,7 @@ func getBinaryModTime() (time.Time, error) {
 
 const (
 	daemonReadyPollInterval = 100 * time.Millisecond
-	daemonReadyTimeout      = 3 * time.Second
+	daemonReadyTimeout      = 15 * time.Second
 )
 
 // waitForDaemonRunning polls until a daemon holds the town flock or timeout.
