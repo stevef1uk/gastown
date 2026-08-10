@@ -54,6 +54,8 @@ CMD: cat > {{town_root}}/{{rig}}/mayor/rig/architecture.md <<'EOF'
 
 ## Planned file layout
 - (list key paths from SPEC using `{{layout_root}}/` prefix when layout_root ≠ "." — e.g. `{{layout_root}}/internal/store/schema.go` or bare `main.go` when layout_root is `"."`; never use `./` prefix)
+- **Enumerate ALL implementation files, not directory placeholders.** If SPEC abbreviates a directory (e.g., `frontend/` or `backend/` with `...`), you MUST expand it to actual files: `frontend/package.json`, `frontend/app/page.tsx`, `frontend/components/Watchlist.tsx`, `backend/app/main.py`, `backend/app/api/health.py`, etc. **Every file that will be created must appear here.** Directories alone (`frontend/`, `backend/`) are rejected by the validator and will cause design failure.
+- **Frontend/UI requirement:** If SPEC specifies a frontend (Next.js, React, Vue, etc.), you MUST fully enumerate it: `package.json`, `tsconfig.json`, `next.config.js`/`vite.config.js`, `tailwind.config.*`, `app/layout.tsx`, `app/page.tsx`, `app/globals.css`, `components/*.tsx`, `lib/*.ts`, `public/*`, etc. A single `package.json` is NOT sufficient. The architecture must list every file the implementer will write.
 
 ## Go package / bead ownership
 (When multiple `.go` files share a package, document symbol ownership per file with a table:

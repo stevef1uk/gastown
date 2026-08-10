@@ -136,14 +136,19 @@ any substring are filtered out for these roles — UNLESS they are the
 
 #### rolePrepend
 
-Models tried first for a role (before other candidates):
+Models prepended for a role when `--allow-paid` is set. Where they sit depends
+on `rolePrependBeforeOriginal`:
 
 ```yaml
+# Roles whose rolePrepend models are tried BEFORE their originalModel.
+# Roles not listed keep their originalModel first; prepends are fallback only.
+rolePrependBeforeOriginal: [architect, planner, qa]
 rolePrepend:
   polecat:
-    - "cerebras/gpt-oss-120b"      # Free, fast — tried first
-    - "deepseek/deepseek-v4-flash"  # Paid fallback — tried second
+    - "cerebras/gpt-oss-120b"      # Fallback only (polecat not in rolePrependBeforeOriginal)
+    - "deepseek/deepseek-v4-flash" # polecat's originalModel — tried first
   architect:
+    - "openai/gpt-5.6-luna"        # Tried BEFORE architect's originalModel
     - "cerebras/gpt-oss-120b"
 ```
 
@@ -164,13 +169,17 @@ curatedPaid:
 1. **Tier 0.05:** Cerebras budget models (free, massive, complex)
    - `cerebras/gpt-oss-120b`, `cerebras/qwen-3-235b`
    - NOTE: CerebrasPerformance (paid) is **skipped** for polecat
-2. **Tier 0:** Original model (deepseek-v4-flash) — always kept
-3. **Tier 0.5:** rolePrepend — gpt-oss-120b, deepseek-v4-flash
-4. **Tier 0.6:** Reliable free models (massive only for polecat)
-5. **Tier 0.65:** Local GPU fallback
-6. **Tier 1.5–3:** Free OpenRouter models
-7. **Tier 5:** curatedPaid (deepseek, gemini, gpt-4o-mini, claude)
-8. **Final filter:** massiveOnlyRoles — keep only massive/local/original
+2. **Tier 0.4:** rolePrepend — only for roles in `rolePrependBeforeOriginal`
+   (architect/planner/qa). Polecat is NOT in the list, so its prepends are not
+   prepended here — its `originalModel` stays first.
+3. **Tier 0:** Original model (deepseek-v4-flash for polecat) — always kept
+4. **Tier 0.5:** rolePrepend as fallback for roles NOT in `rolePrependBeforeOriginal`
+   (e.g. polecat: gpt-oss-120b, deepseek-v4-flash)
+5. **Tier 0.6:** Reliable free models (massive only for polecat)
+6. **Tier 0.65:** Local GPU fallback
+7. **Tier 1.5–3:** Free OpenRouter models
+8. **Tier 5:** curatedPaid (deepseek, gemini, gpt-4o-mini, claude)
+9. **Final filter:** massiveOnlyRoles — keep only massive/local/original
 
 #### Without -allow-paid
 

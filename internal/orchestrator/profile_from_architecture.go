@@ -163,6 +163,7 @@ func parseSpecLayoutTree(specText string) []string {
 		}
 		depth, entry := treeLineDepthEntry(line)
 		entry = strings.Trim(entry, "`")
+		entry = stripTreeComment(entry)
 		if entry == "" {
 			continue
 		}
@@ -186,32 +187,75 @@ func parseSpecLayoutTree(specText string) []string {
 		if depth < 1 || len(dirs) < depth {
 			continue
 		}
+		fileName := ""
 		if m := specTreeFileInLine.FindStringSubmatch(entry); len(m) == 2 {
-			fileName := m[1]
-			// Truncate dirs to current depth for ALL file entries
-			if depth < len(dirs) {
-				dirs = dirs[:depth]
-			}
-			// Infer additional directories from file paths containing "/" (e.g. "web/index.html" -> "web/")
-			inferredDirs := ""
-			if idx := strings.LastIndex(entry, "/"); idx >= 0 {
-				pathDirs := strings.Split(strings.TrimSuffix(entry[:idx], "/"), "/")
-				for _, d := range pathDirs {
-					if d != "" && validTreeDirName(d) {
-						dirs = append(dirs, d)
-					}
-				}
-				inferredDirs = strings.Join(pathDirs, "/")
-			}
-			// Build path: explicit dirs up to depth + inferred dirs from file path + filename
-			basePath := strings.Join(dirs[:depth], "/")
-			if inferredDirs != "" {
-				basePath += "/" + inferredDirs
-			}
-			out = append(out, basePath+"/"+fileName)
+			fileName = m[1]
+		} else if name := treeEntryFileName(entry); name != "" {
+			fileName = name
 		}
+		if fileName == "" {
+			continue
+		}
+		// Truncate dirs to current depth for ALL file entries
+		if depth < len(dirs) {
+			dirs = dirs[:depth]
+		}
+		// Infer additional directories from file paths containing "/" (e.g. "web/index.html" -> "web/")
+		inferredDirs := ""
+		if idx := strings.LastIndex(entry, "/"); idx >= 0 {
+			pathDirs := strings.Split(strings.TrimSuffix(entry[:idx], "/"), "/")
+			for _, d := range pathDirs {
+				if d != "" && validTreeDirName(d) {
+					dirs = append(dirs, d)
+				}
+			}
+			inferredDirs = strings.Join(pathDirs, "/")
+		}
+		// Build path: explicit dirs up to depth + inferred dirs from file path + filename
+		basePath := strings.Join(dirs[:depth], "/")
+		if inferredDirs != "" {
+			basePath += "/" + inferredDirs
+		}
+		out = append(out, basePath+"/"+fileName)
 	}
 	return out
+}
+
+// treeEntryFileName extracts a filename from a markdown tree entry line (comments
+// already stripped; directory lines ending in "/" are handled by the caller). The
+// last whitespace-delimited token is used, so "pingapp/  requirements.txt" yields
+// "requirements.txt". Only tokens that look like file names are accepted: anything
+// with an extension, or a known extensionless manifest/dotfile (Dockerfile,
+// Makefile, .env, .gitignore, ...). Placeholder/prose tokens like "..." are rejected.
+func treeEntryFileName(entry string) string {
+	entry = stripTreeComment(entry)
+	if entry == "" || strings.HasSuffix(entry, "/") {
+		return ""
+	}
+	tokens := strings.Fields(entry)
+	if len(tokens) == 0 {
+		return ""
+	}
+	last := tokens[len(tokens)-1]
+	if !looksLikeFileName(last) {
+		return ""
+	}
+	return last
+}
+
+// extensionlessManifestRE names files that have no extension but are still files
+// (Dockerfiles, Makefiles, dotfiles) — needed because specTreeFileInLine only
+// matches extension-bearing names.
+var extensionlessManifestRE = regexp.MustCompile(`(?i)^(?:dockerfile|containerfile|makefile|\.env(?:\.example)?|\.gitignore|\.gitkeep|\.dockerignore|\.gitattributes|\.editorconfig)$`)
+
+func looksLikeFileName(name string) bool {
+	if name == "" || name == "..." || strings.ContainsAny(name, "()[]{}<>") {
+		return false
+	}
+	if strings.Contains(name, ".") {
+		return len(name) > 1
+	}
+	return extensionlessManifestRE.MatchString(name)
 }
 
 // treeLineDepthEntry reports the nesting depth and entry text of a markdown tree
@@ -259,39 +303,126 @@ func validTreeDirName(name string) bool {
 }
 
 func specLayoutSection(specText string) string {
-	lower := strings.ToLower(specText)
+	// Prefer a code-fenced file tree wherever it lives in the SPEC. Content-based
+	// detection finds trees under headings like "## 4. Directory Structure" that
+	// named-section scans miss, and never mistakes a "### Layout" prose subsection
+	// for the layout tree.
+	if sec := treeFenceBlock(specText); sec != "" {
+		return sec
+	}
+	return headingLayoutSection(specText)
+}
 
-	// Find both "## file layout" and "## layout" sections
-	fileLayoutIdx := strings.Index(lower, "## file layout")
-	layoutIdx := strings.Index(lower, "## layout")
-
-	// Extract both candidate sections and prefer the one with a code fence
-	var fileLayoutSection, layoutSection string
-	if fileLayoutIdx >= 0 {
-		fileLayoutSection = specText[fileLayoutIdx:]
-		if j := strings.Index(fileLayoutSection[1:], "\n## "); j >= 0 {
-			fileLayoutSection = fileLayoutSection[:1+j]
+// treeFenceBlock returns the first code-fenced block in the SPEC that looks like a
+// file tree (contains a directory line ending in "/"), including the ``` fences.
+func treeFenceBlock(specText string) string {
+	lines := strings.Split(specText, "\n")
+	var block []string
+	inFence := false
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "```") {
+			if inFence {
+				inFence = false
+				block = append(block, line)
+				if treeBlockLooksLikeLayout(block) {
+					return strings.Join(block, "\n")
+				}
+				block = nil
+			} else {
+				inFence = true
+				block = []string{line}
+			}
+			continue
+		}
+		if inFence {
+			block = append(block, line)
 		}
 	}
-	if layoutIdx >= 0 {
-		layoutSection = specText[layoutIdx:]
-		if j := strings.Index(layoutSection[1:], "\n## "); j >= 0 {
-			layoutSection = layoutSection[:1+j]
+	return ""
+}
+
+// treeBlockLooksLikeLayout reports whether a code-fenced block contains a directory
+// entry (a line whose content ends in "/" once comments are stripped) — the
+// signature of a markdown file tree. ASCII diagrams, JSON samples, and command
+// blocks do not contain trailing-slash directory lines.
+func treeBlockLooksLikeLayout(block []string) bool {
+	for _, line := range block {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "```") {
+			continue
+		}
+		if strings.HasSuffix(stripTreeComment(trimmed), "/") {
+			return true
 		}
 	}
+	return false
+}
 
-	// Prefer section containing a code fence (```) — that's where the tree lives
-	switch {
-	case fileLayoutSection != "" && strings.Contains(fileLayoutSection, "```"):
-		return fileLayoutSection
-	case layoutSection != "" && strings.Contains(layoutSection, "```"):
-		return layoutSection
-	case fileLayoutSection != "":
-		return fileLayoutSection
-	case layoutSection != "":
-		return layoutSection
+// headingLayoutSection returns the section under a named level-2 layout heading
+// ("## Layout", "## File Layout", "## Directory Structure", ...), preferring the
+// candidate that contains a code fence. Only exact level-2 headings are matched so
+// a "### Layout" level-3 subsection is never mistaken for the layout tree.
+func headingLayoutSection(specText string) string {
+	lines := strings.Split(specText, "\n")
+	var candidates []string
+	for i, line := range lines {
+		if !isLayoutHeading(line) {
+			continue
+		}
+		sec := lines[i:]
+		for j := i + 1; j < len(lines); j++ {
+			if isLevel2Heading(lines[j]) {
+				sec = lines[i:j]
+				break
+			}
+		}
+		candidates = append(candidates, strings.Join(sec, "\n"))
 	}
-	return specText
+	if len(candidates) == 0 {
+		return specText
+	}
+	for _, c := range candidates {
+		if strings.Contains(c, "```") {
+			return c
+		}
+	}
+	return candidates[0]
+}
+
+// isLayoutHeading reports whether a line is a level-2 heading that names the
+// project's file layout section ("## Layout", "## File Layout", "## 4. Directory
+// Structure", ...). Level-3 headings like "### Layout" are excluded.
+func isLayoutHeading(line string) bool {
+	trimmed := strings.TrimSpace(line)
+	if !isLevel2Heading(trimmed) {
+		return false
+	}
+	text := strings.TrimSpace(strings.TrimPrefix(trimmed, "## "))
+	text = regexp.MustCompile(`^\d+[\.\)\-]?\s*`).ReplaceAllString(text, "")
+	lower := strings.ToLower(text)
+	for _, kw := range []string{"layout", "directory structure", "project structure", "folder structure", "file tree", "directory tree", "directory layout"} {
+		if strings.Contains(lower, kw) {
+			return true
+		}
+	}
+	return false
+}
+
+// isLevel2Heading reports whether a line is exactly a "## Heading" (not "###").
+func isLevel2Heading(line string) bool {
+	trimmed := strings.TrimSpace(line)
+	return strings.HasPrefix(trimmed, "## ") && !strings.HasPrefix(trimmed, "### ")
+}
+
+// stripTreeComment removes a trailing "# comment" annotation from a markdown tree
+// entry ("frontend/  # Next.js project" -> "frontend/"). Only a comment preceded by
+// whitespace is stripped so a filename that itself contains '#' is preserved.
+func stripTreeComment(s string) string {
+	if idx := strings.Index(s, " #"); idx >= 0 {
+		s = s[:idx]
+	}
+	return strings.TrimSpace(s)
 }
 
 // shouldReplaceProfileRequiredFilesWithSpec returns false when the saved profile already
