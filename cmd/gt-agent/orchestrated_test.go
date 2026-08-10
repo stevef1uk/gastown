@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/steveyegge/gastown/internal/orchestrator"
 )
@@ -230,7 +231,7 @@ Package-level List, Create, Delete, InitSchema on var DB — no Store struct.
 	}
 
 	writeArch(misalignedArch)
-	err := validateDesignArtifacts(dir, rig, true, v)
+	err := validateDesignArtifacts(dir, rig, true, time.Now(), v)
 	if err == nil {
 		t.Fatal("expected design validation error for misaligned architecture")
 	}
@@ -244,8 +245,51 @@ Package-level List, Create, Delete, InitSchema on var DB — no Store struct.
 	}
 
 	writeArch(alignedArch)
-	if err := validateDesignArtifacts(dir, rig, true, v); err != nil {
+	if err := validateDesignArtifacts(dir, rig, true, time.Now(), v); err != nil {
 		t.Fatalf("aligned architecture should pass design validation: %v", err)
+	}
+}
+
+func TestValidateDesignArtifacts_StaleForbiddenFileDoesNotBlock(t *testing.T) {
+	dir := t.TempDir()
+	rig := "testrig"
+	rigDir := filepath.Join(dir, rig, "mayor", "rig")
+	if err := os.MkdirAll(rigDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(rigDir, "SPEC.md"), []byte("spec\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	v := orchestrator.WorkflowValidation{
+		LayoutRoot:           "backend",
+		MinArchitectureBytes: 10,
+		RequiredFiles:        []string{"backend/.env.example", "backend/app.py"},
+	}.WithDefaults()
+
+	// Stale forbidden file created before the attempt start must NOT block.
+	stalePath := filepath.Join(rigDir, ".env.example")
+	if err := os.WriteFile(stalePath, []byte("stale"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	past := time.Now().Add(-time.Hour)
+	if err := os.Chtimes(stalePath, past, past); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(rigDir, "architecture.md"), []byte(strings.Repeat("a", 20)), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateDesignArtifacts(dir, rig, true, time.Now(), v); err != nil {
+		t.Fatalf("stale forbidden file should not block: %v", err)
+	}
+
+	// A forbidden file written AFTER the attempt start must block.
+	started := time.Now()
+	if err := os.WriteFile(filepath.Join(rigDir, "app.py"), []byte("print(1)"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	err := validateDesignArtifacts(dir, rig, true, started, v)
+	if err == nil || !strings.Contains(err.Error(), "must not exist in mayor/rig/") {
+		t.Fatalf("forbidden file written this run should block, got: %v", err)
 	}
 }
 

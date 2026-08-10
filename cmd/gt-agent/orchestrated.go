@@ -3408,7 +3408,7 @@ func validateAnalysisArtifacts(townRoot, rig string) error {
 	return nil
 }
 
-func validateDesignArtifacts(townRoot, rig string, writtenThisRun bool, v orchestrator.WorkflowValidation) error {
+func validateDesignArtifacts(townRoot, rig string, writtenThisRun bool, startedAt time.Time, v orchestrator.WorkflowValidation) error {
 	if !writtenThisRun {
 		return fmt.Errorf("architecture.md must be written in this design step (heredoc CMD); stale files from prior runs are ignored")
 	}
@@ -3425,7 +3425,7 @@ func validateDesignArtifacts(townRoot, rig string, writtenThisRun bool, v orches
 
 	// Stale implementation files at mayor/rig root must not block design completion.
 	for _, name := range v.ForbiddenRigRootBasenames() {
-		if _, err := os.Stat(filepath.Join(rigDir, name)); err == nil {
+		if fileWrittenThisRun(rigDir, name, startedAt) {
 			return fmt.Errorf("implementation file %q must not exist in mayor/rig/ (only architecture.md)", name)
 		}
 	}
@@ -3433,6 +3433,19 @@ func validateDesignArtifacts(townRoot, rig string, writtenThisRun bool, v orches
 		return err
 	}
 	return nil
+}
+
+// fileWrittenThisRun reports whether the file at rigDir/name was modified at or
+// after the given start time (i.e. created/touched by THIS attempt, not a stale
+// file left over from a prior run). A small tolerance absorbs filesystem mtime
+// clock skew relative to time.Now().
+func fileWrittenThisRun(rigDir, name string, startedAt time.Time) bool {
+	info, err := os.Stat(filepath.Join(rigDir, name))
+	if err != nil {
+		return false
+	}
+	const mtimeSkewTolerance = 2 * time.Second
+	return !info.ModTime().Add(mtimeSkewTolerance).Before(startedAt)
 }
 
 func buildOrchestratedSystemPrompt(task *orchestrator.Task, townRoot string) string {

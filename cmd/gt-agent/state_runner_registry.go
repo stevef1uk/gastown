@@ -236,7 +236,7 @@ var artifactValidators = map[string]artifactValidateFn{
 		return nil
 	},
 	"design": func(r *stateRunner, _ string) error {
-		return validateDesignArtifacts(r.townRoot, r.rig, r.track.designArchWritten, r.v)
+		return validateDesignArtifacts(r.townRoot, r.rig, r.track.designArchWritten, r.track.startedAt, r.v)
 	},
 	"planning": func(r *stateRunner, _ string) error {
 		return validatePlanningArtifacts(r.townRoot, r.rig, r.track.hadCmdFailure, r.track.beadCreateOK, r.track.beadDeleteOK, r.v)
@@ -260,7 +260,7 @@ var artifactValidators = map[string]artifactValidateFn{
 
 var artifactAutoCompleters = map[string]artifactAutoCompleteFn{
 	"design": func(r *stateRunner) error {
-		return validateDesignArtifacts(r.townRoot, r.rig, r.track.designArchWritten, r.v)
+		return validateDesignArtifacts(r.townRoot, r.rig, r.track.designArchWritten, r.track.startedAt, r.v)
 	},
 	"planning": func(r *stateRunner) error {
 		return r.validateArtifacts("success")

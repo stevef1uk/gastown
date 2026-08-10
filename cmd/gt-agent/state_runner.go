@@ -25,6 +25,7 @@ func taskHooks(task *orchestrator.Task) orchestrator.StateHooks {
 
 // cmdTracker accumulates per-attempt command outcomes for artifact validation.
 type cmdTracker struct {
+	startedAt         time.Time
 	designArchWritten bool
 	hadCmdFailure     bool
 	hadExpectedFailure bool
@@ -101,7 +102,7 @@ func newStateRunner(task *orchestrator.Task, townRoot, rig string) *stateRunner 
 		hooks:      taskHooks(task),
 		v:          v,
 		promptVars: vars,
-		track:      &cmdTracker{},
+		track:      &cmdTracker{startedAt: time.Now()},
 		servers:    newDevServerTracker(),
 	}
 	if task.State == "implementation" {
