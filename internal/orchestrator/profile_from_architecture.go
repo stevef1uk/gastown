@@ -825,6 +825,7 @@ func SyncRigWorkflowProfileFromArchitecture(townRoot, rig string) (bool, error) 
 		env.Validation.LayoutRoot = root
 		env.Validation.BeadTitleContains = "Implement " + root + "/"
 	}
+	env.Validation.TestRunner = "" // force re-inference on sync
 	env.Validation = inferTestRunnerFromPaths(env.Validation, authoritative)
 	// Rebuild delivery phases so the active phase required_files (used by
 	// ForActivePhase at planning time) match the authoritative set instead of the
@@ -1004,6 +1005,12 @@ func filterValidImplementPaths(paths []string) []string {
 			continue
 		}
 		if strings.HasPrefix(p, "@") || strings.HasPrefix(p, "/api/") {
+			continue
+		}
+		// Reject runtime database files (SQLite, etc.) — created at runtime, not committed
+		lower := strings.ToLower(p)
+		if strings.HasSuffix(lower, ".db") || strings.HasSuffix(lower, ".sqlite") ||
+			strings.HasSuffix(lower, ".sqlite3") {
 			continue
 		}
 		if !IsValidImplementBeadPath(p) {
