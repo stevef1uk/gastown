@@ -1398,23 +1398,37 @@ func cdPrefixMayorRig(cmd, rig string) (string, bool) {
 // rewritePlanMDPathAfterCD fixes a common planner mistake: after `cd rig/mayor/rig`,
 // the model still writes to `rig/mayor/rig/plan.md` (missing from that cwd).
 func rewritePlanMDPathAfterCD(cmd, rig string) (string, bool) {
+	return rewriteRigDocPathAfterCD(cmd, rig, "plan.md")
+}
+
+// rewriteArchitectureMDPathAfterCD fixes the same mistake for architecture.md in
+// the design step: after `cd rig/mayor/rig`, writing `rig/mayor/rig/architecture.md`
+// fails (path is relative to the new cwd), so the heredoc errors out and the
+// "written this run" guard blocks a legitimate update.
+func rewriteArchitectureMDPathAfterCD(cmd, rig string) (string, bool) {
+	return rewriteRigDocPathAfterCD(cmd, rig, "architecture.md")
+}
+
+// rewriteRigDocPathAfterCD rewrites `cd rig/mayor/rig && ... > rig/mayor/rig/<doc>`
+// to use the bare `<doc>` after the cd, mirroring the correct cwd-relative path.
+func rewriteRigDocPathAfterCD(cmd, rig, doc string) (string, bool) {
 	rigName := strings.TrimSpace(rig)
 	if rigName == "" {
 		return cmd, false
 	}
 	mayorRig := rigName + "/mayor/rig"
 	lower := strings.ToLower(cmd)
-	if !strings.Contains(lower, "plan.md") || !strings.Contains(lower, "cd ") {
+	if !strings.Contains(lower, doc) || !strings.Contains(lower, "cd ") {
 		return cmd, false
 	}
 	if !strings.Contains(lower, strings.ToLower(mayorRig)) {
 		return cmd, false
 	}
-	wrong := mayorRig + "/plan.md"
+	wrong := mayorRig + "/" + doc
 	if !strings.Contains(cmd, wrong) {
 		return cmd, false
 	}
-	return strings.ReplaceAll(cmd, wrong, "plan.md"), true
+	return strings.ReplaceAll(cmd, wrong, doc), true
 }
 
 // rewritePlanMDWCFromTownRoot rewrites bare `wc -c plan.md` to `wc -c <rig>/mayor/rig/plan.md`

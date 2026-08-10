@@ -37,7 +37,7 @@ states:
       pre_run: [reset_layout_pre_implementation, prune_rig_root_junk]
       max_cmd_turns: 5
       cmd_guard: design
-      cmd_rewrites: [rig_placeholders, spec_md_case, unwrap_bash_lc]
+      cmd_rewrites: [rig_placeholders, spec_md_case, arch_md_after_cd, unwrap_bash_lc]
       track: design
       artifacts: design
       retry_hint: |
