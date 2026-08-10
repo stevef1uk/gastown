@@ -66,7 +66,7 @@ func autoCorrectSpecIndexLayout(v WorkflowValidation, rig, mayorRigDir string) W
 	if layout == "layout_root" {
 		target := ""
 		if mayorRigDir != "" {
-			if specPaths, ok := extractSpecLayoutPaths(mayorRigDir); ok {
+			if specPaths, ok, _ := extractSpecLayoutPaths(mayorRigDir); ok {
 				target = inferLayoutRootFromPaths(specPaths)
 			}
 		}

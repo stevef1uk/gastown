@@ -85,7 +85,7 @@ func TestExtractSpecLayoutPaths_linkshelfNestedStillFlattens(t *testing.T) {
 	if _, err := os.Stat(dir); err != nil {
 		t.Skip("testgt3 not available")
 	}
-	paths, ok := extractSpecLayoutPaths(dir)
+	paths, ok, _ := extractSpecLayoutPaths(dir)
 	if !ok {
 		t.Fatal("expected spec paths")
 	}

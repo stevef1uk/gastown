@@ -94,7 +94,7 @@ func DeterministicIndexRig(ctx context.Context, townRoot, rig string) (*ProfileF
 
 	// Parse SPEC layout tree for required_files
 	mayorRig := filepath.Join(townRoot, rig, "mayor", "rig")
-	paths, hasTree := orchestrator.ProbeExtractSpecLayoutPaths(mayorRig)
+	paths, hasTree, _ := orchestrator.ProbeExtractSpecLayoutPaths(mayorRig)
 	log.Printf("[deterministic-index] rig=%s hasTree=%v paths=%d: %v", rig, hasTree, len(paths), paths)
 	if !hasTree || len(paths) == 0 {
 		log.Printf("[deterministic-index] no parseable layout tree in SPEC for %s — falling back to LLM", rig)

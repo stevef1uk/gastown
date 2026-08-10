@@ -37,7 +37,7 @@ func archDebug(format string, args ...interface{}) {
 func EnrichWorkflowValidationFromArchitecture(v WorkflowValidation, mayorRigDir string) WorkflowValidation {
 	archPath := filepath.Join(mayorRigDir, "architecture.md")
 	archDebug("EnrichWorkflowValidationFromArchitecture: mayorRigDir=%s, current RequiredFiles=%v", mayorRigDir, v.RequiredFiles)
-	if specPaths, ok := extractSpecLayoutPaths(mayorRigDir); ok {
+	if specPaths, ok, _ := extractSpecLayoutPaths(mayorRigDir); ok {
 		archDebug("SPEC paths found: %v", specPaths)
 		// Profile from spec-index already lists canonical nested paths; SPEC layout tree
 		// parsing only captures leaf filenames (linkshelf/handlers.go not internal/api/handlers.go).
@@ -85,17 +85,19 @@ func EnrichWorkflowValidationFromArchitecture(v WorkflowValidation, mayorRigDir 
 }
 
 // extractSpecLayoutPaths reads SPEC.md and returns repo-relative paths (e.g. pingapp/main.py).
-func extractSpecLayoutPaths(mayorRigDir string) ([]string, bool) {
+func extractSpecLayoutPaths(mayorRigDir string) ([]string, bool, map[string]bool) {
 	specPath := filepath.Join(mayorRigDir, "SPEC.md")
 	data, err := os.ReadFile(specPath)
 	if err != nil || len(data) == 0 {
 		archDebug("no SPEC.md at %s: %v", specPath, err)
-		return nil, false
+		return nil, false, nil
 	}
 	text := string(data)
 
 	treePaths := parseSpecLayoutTree(text)
+	specDirPrefixes := extractSpecDirPrefixes(text)
 	archDebug("parseSpecLayoutTree from SPEC: %v", treePaths)
+	archDebug("extractSpecDirPrefixes: %v", specDirPrefixes)
 
 	// The layout tree is the authoritative source of required files.
 	// Prose backtick refs are documentation only — they often mention files
@@ -117,7 +119,7 @@ func extractSpecLayoutPaths(mayorRigDir string) ([]string, bool) {
 
 	if len(paths) == 0 {
 		archDebug("no paths found in SPEC.md")
-		return nil, false
+		return nil, false, nil
 	}
 	// Prefer paths with a shared layout prefix (pingapp/...) over flat ./main.py-only lists.
 	if root := inferLayoutRootFromPaths(paths); root != "" && root != "." {
@@ -129,14 +131,14 @@ func extractSpecLayoutPaths(mayorRigDir string) ([]string, bool) {
 			}
 		}
 		if len(prefixed) > 0 {
-			return prefixed, true
+			return prefixed, true, specDirPrefixes
 		}
 	}
 	// SPEC lists files at repo root (layout_root ".") — still authoritative.
 	if len(paths) >= 1 {
-		return paths, true
+		return paths, true, specDirPrefixes
 	}
-	return nil, false
+	return nil, false, nil
 }
 
 // parseSpecLayoutTree extracts paths from markdown tree blocks under "## Layout" in SPEC.md.
@@ -219,6 +221,48 @@ func parseSpecLayoutTree(specText string) []string {
 		out = append(out, basePath+"/"+fileName)
 	}
 	return out
+}
+
+// extractSpecDirPrefixes returns all directory prefixes defined in the SPEC layout
+// tree (e.g., "finally/backend/", "finally/backend/db/"). These represent the
+// canonical directory structure that architecture.md should follow.
+func extractSpecDirPrefixes(specText string) map[string]bool {
+	section := specLayoutSection(specText)
+	dirs := []string{}
+	prefixes := map[string]bool{}
+	inCodeFence := false
+	hasCodeFence := strings.Contains(section, "```")
+	for _, line := range strings.Split(section, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "```") {
+			inCodeFence = !inCodeFence
+			continue
+		}
+		if hasCodeFence && !inCodeFence {
+			continue
+		}
+		depth, entry := treeLineDepthEntry(line)
+		entry = strings.Trim(entry, "`")
+		entry = stripTreeComment(entry)
+		if entry == "" {
+			continue
+		}
+		if strings.HasSuffix(entry, "/") {
+			name := strings.TrimRight(entry, "/")
+			if !validTreeDirName(name) {
+				continue
+			}
+			if depth < len(dirs) {
+				dirs = dirs[:depth]
+			}
+			dirs = append(dirs, name)
+			// Record this directory prefix
+			prefix := strings.Join(dirs, "/") + "/"
+			prefixes[prefix] = true
+			continue
+		}
+	}
+	return prefixes
 }
 
 // treeEntryFileName extracts a filename from a markdown tree entry line (comments
@@ -799,9 +843,9 @@ func SyncRigWorkflowProfileFromArchitecture(townRoot, rig string) (bool, error) 
 	// architect designed helloapi/handler/hello.go), architecture.md is authoritative
 	// because it reflects the concrete design decisions planning must implement.
 	var authoritative []string
-	if specPaths, ok := extractSpecLayoutPaths(mayorRig); ok {
+	if specPaths, ok, specDirPrefixes := extractSpecLayoutPaths(mayorRig); ok {
 		archDebug("sync: SPEC layout paths=%v arch paths=%v", specPaths, filePaths)
-		authoritative = mergeArchWinsOnConflict(specPaths, filePaths)
+		authoritative = mergeArchWinsOnConflict(specPaths, filePaths, specDirPrefixes)
 	} else {
 		archDebug("sync: no SPEC paths, falling back to architecture paths=%v", filePaths)
 		authoritative = filePaths
@@ -862,6 +906,11 @@ func remapLayoutRootPlaceholderPaths(paths []string, layoutRoot string) []string
 		p = filepath.ToSlash(strings.TrimSpace(p))
 		if strings.HasPrefix(p, "layout_root/") {
 			p = strings.TrimPrefix(p, "layout_root/")
+			changed = true
+		}
+		// Collapse duplicated layout root prefix (e.g., "finally/finally/backend/..." -> "finally/backend/...").
+		if target != "" && strings.HasPrefix(p, target+"/"+target+"/") {
+			p = strings.TrimPrefix(p, target+"/")
 			changed = true
 		}
 		if target != "" {
@@ -1300,7 +1349,7 @@ func ProbeParseSpecLayoutTree(specText string) []string { return parseSpecLayout
 // mergeArchWinsOnConflict unions two path sets, and when the same basename resolves
 // to different paths the architecture.md variant wins (it reflects the concrete
 // design decisions planning must implement).
-func mergeArchWinsOnConflict(specPaths, archPaths []string) []string {
+func mergeArchWinsOnConflict(specPaths, archPaths []string, specDirPrefixes map[string]bool) []string {
 	archByBase := map[string]string{}
 	for _, p := range archPaths {
 		p = filepath.ToSlash(strings.TrimSpace(p))
@@ -1311,6 +1360,31 @@ func mergeArchWinsOnConflict(specPaths, archPaths []string) []string {
 		}
 	}
 	seen := map[string]bool{}
+	// Track basenames that come from SPEC (or SPEC-overridden-by-arch).
+	// This allows architecture to provide multiple files with the same basename
+	// (e.g., __init__.py in different packages) as long as SPEC doesn't
+	// define that basename. SPEC is the canonical layout; architecture can
+	// freely add files not in SPEC.
+	specBase := map[string]bool{}
+	// Compute SPEC file prefixes (directories that actually contain files in SPEC).
+	// Only these prefixes block architecture files — intermediate dirs like "backend/"
+	// that only contain subdirectories in SPEC should NOT block "backend/app/..." files.
+	// Also exclude the layout root itself (e.g., "finally/") since it's just the common prefix.
+	specFileDirs := map[string]bool{}
+	layoutRoot := ""
+	if len(specPaths) > 0 {
+		layoutRoot = inferLayoutRootFromPaths(specPaths)
+	}
+	for _, p := range specPaths {
+		p = filepath.ToSlash(strings.TrimSpace(p))
+		if p == "" {
+			continue
+		}
+		dir := filepath.Dir(p)
+		if dir != "." && dir != layoutRoot {
+			specFileDirs[dir+"/"] = true
+		}
+	}
 	var out []string
 	add := func(p string) {
 		if seen[p] {
@@ -1324,15 +1398,43 @@ func mergeArchWinsOnConflict(specPaths, archPaths []string) []string {
 		if p == "" {
 			continue
 		}
+		specBase[filepath.Base(p)] = true
 		if arch, ok := archByBase[filepath.Base(p)]; ok && arch != p {
 			add(arch) // architecture wins on conflict
 			continue
 		}
 		add(p)
 	}
+	// Add arch paths that either:
+	// - have a basename not in SPEC (new files), OR
+	// - are the architecture override for a SPEC basename (already added above)
 	for _, p := range archPaths {
-		add(filepath.ToSlash(strings.TrimSpace(p)))
+		p = filepath.ToSlash(strings.TrimSpace(p))
+		if p == "" || seen[p] {
+			continue
+		}
+		// Allow if basename not in SPEC
+		if !specBase[filepath.Base(p)] {
+			// But reject if it falls under a SPEC file directory (where SPEC actually has files).
+			// This prevents duplicates like backend/db/schema.py when SPEC has backend/db/.
+			if specDirPrefixes != nil {
+				underSpecFileDir := false
+				for prefix := range specFileDirs {
+					if strings.HasPrefix(p, prefix) {
+						underSpecFileDir = true
+						break
+					}
+				}
+				if underSpecFileDir {
+					continue // skip architecture duplicate under SPEC file directory
+				}
+			}
+			add(p)
+		}
 	}
 	return out
 }
-func ProbeExtractSpecLayoutPaths(dir string) ([]string, bool) { return extractSpecLayoutPaths(dir) }
+func ProbeExtractSpecLayoutPaths(dir string) ([]string, bool, map[string]bool) {
+	paths, ok, prefixes := extractSpecLayoutPaths(dir)
+	return paths, ok, prefixes
+}
