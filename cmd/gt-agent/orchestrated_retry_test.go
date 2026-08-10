@@ -84,6 +84,29 @@ func TestFormatWorkflowReworkBlock_qaToPlanner(t *testing.T) {
 	}
 }
 
+func TestFormatWorkflowReworkBlock_designReviewToDesign(t *testing.T) {
+	task := &orchestrator.Task{
+		WorkflowID: "wf-1",
+		State:      "design",
+		PendingRework: &orchestrator.WorkflowRework{
+			FromState: "design_review",
+			Outcome:   "failure",
+			Summary:   "basename collision backend/app/__init__.py vs backend/app/api/__init__.py; db path drift",
+			Feedback:  "Resync workflow profile; align db paths with SPEC",
+			AgentID:   "fin/qa",
+		},
+	}
+	block := formatWorkflowReworkBlock(task, "", "fin")
+	if block == "" {
+		t.Fatal("expected rework block")
+	}
+	for _, want := range []string{"design_review", "preserve what QA approved", "cat fin/mayor/rig/architecture.md", "sed -i", "basename collision"} {
+		if !strings.Contains(block, want) {
+			t.Fatalf("block should mention %q, got:\n%s", want, block)
+		}
+	}
+}
+
 func TestFormatWorkflowReworkBlock_sameStateIgnored(t *testing.T) {
 	task := &orchestrator.Task{
 		WorkflowID: "wf-1",

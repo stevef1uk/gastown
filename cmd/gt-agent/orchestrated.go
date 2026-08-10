@@ -688,6 +688,14 @@ func workflowReworkHints(fromState, toState, rig, summary string, v orchestrator
 			"3. Align with SPEC.md; resolve contradictions (wrong paths in the HTTP table, missing POST routes, SPA using bare paths instead of /# anchors).\n" +
 			"4. wc -c architecture.md ≥ minimum, then JSON success — the planner will update plan.md and beads next.\n"
 	}
+	if fromState == "design_review" && toState == "design" {
+		return "\n### Design review failed — preserve what QA approved\n" +
+			"1. Read the QA **summary** and details above — it names the specific architecture.md defects (workflow profile collisions, db paths, route drift, Docker judge failures).\n" +
+			"2. **First read the existing architecture.md to see what QA already approved:** `CMD: cat " + rig + "/mayor/rig/architecture.md` — keep everything QA did not reject.\n" +
+			"3. Fix **only** the named issues with `sed -i` (or a full heredoc rewrite only if the current file is unusable). Do not rewrite from scratch when a targeted edit suffices.\n" +
+			"4. Match SPEC paths verbatim; resolve basename collisions exactly as QA describes.\n" +
+			"5. `CMD: wc -c architecture.md` ≥ minimum, then JSON success.\n"
+	}
 	if fromState != "qa_review" || toState != "implementation" {
 		return ""
 	}
@@ -1481,15 +1489,32 @@ func designCommandShellPortion(cmd string) string {
 // packages — all forbidden in the design state (architect writes architecture.md only).
 var designExecRE = regexp.MustCompile(`(?i)\b(go\s+(run|build|test|mod|install|tool)|python\d?\s|uvicorn|gunicorn|flask\s|django|fastapi|node\s|npm\s|npx\s|yarn\s|pnpm\s|cargo\s|rustc|dotnet\s|docker\s|docker-compose|make\s|cmake\s|pytest|nosetests|pip\s|pip3\s|conda\s|gem\s|bundler)\b`)
 
+// isArchitectureMDInPlaceEdit reports whether the command edits architecture.md in
+// place (sed -i, perl -i, etc.) rather than executing code. DesignExecRE must not
+// scan sed/perl script text, which legitimately references file names like
+// docker-compose.yml or commands like npm inside the document being edited.
+func isArchitectureMDInPlaceEdit(lower string) bool {
+	if !strings.Contains(lower, "architecture.md") {
+		return false
+	}
+	if strings.Contains(lower, "sed ") || strings.Contains(lower, "sed\t") ||
+		strings.Contains(lower, "perl ") || strings.Contains(lower, "perl\t") ||
+		strings.Contains(lower, "awk ") || strings.Contains(lower, "tr ") {
+		return true
+	}
+	return false
+}
+
 func validateDesignShellSideEffects(lower string) error {
 	gitCmd := strings.Contains(lower, "git") &&
 		(strings.Contains(lower, " commit") || strings.Contains(lower, " push") || strings.Contains(lower, " add"))
+	execEdit := isArchitectureMDInPlaceEdit(lower)
 	forbidden := []struct {
 		cond bool
 		msg  string
 	}{
 		{gitCmd, "must not run git add/commit/push in design step"},
-		{designExecRE.MatchString(lower), "must not run code, servers, builds, or tests in design step — write architecture.md only"},
+		{!execEdit && designExecRE.MatchString(lower), "must not run code, servers, builds, or tests in design step — write architecture.md only"},
 		{strings.Contains(lower, "pip install"), "must not install packages in design step"},
 		{strings.Contains(lower, "gt bd"), "must not create beads in design step (planner)"},
 		{strings.Contains(lower, "bd add"), "must not create beads in design step (planner)"},

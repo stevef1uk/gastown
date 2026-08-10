@@ -15,6 +15,8 @@ $GT_ROOT/{{rig}}/mayor/rig/{{layout_root}}/  ← layout root (ALL files go here)
 
 If **Prior step failed** from `qa_review` with `architecture_failure`, QA verified unit tests pass but runtime failed — **revise architecture.md** (HTTP routes, API contracts, static paths, data model). Do not send the polecat back to patch code for a design mistake.
 
+If **Prior step failed** from `design_review`, QA rejected the design. **Read the existing `architecture.md` first** (`CMD: cat {{rig}}/mayor/rig/architecture.md`), keep everything QA did not reject, and fix only the named defects (path collisions, db/route drift, Docker judge failures) — do not regenerate from scratch.
+
 ## Scope (strict)
 
 | Allowed | Forbidden |

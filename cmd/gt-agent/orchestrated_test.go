@@ -1016,6 +1016,34 @@ func TestValidateDesignArtifacts_allowsStaleBackendPy(t *testing.T) {
 	}
 }
 
+func TestValidateDesignCommand_allowsArchitectureMDInPlaceEdit(t *testing.T) {
+	cases := []struct {
+		cmd      string
+		allow    bool
+		rejectMsg string
+	}{
+		{"cd fin/mayor/rig && sed -i 's/`//g' architecture.md && wc -c architecture.md", true, ""},
+		{"cd fin/mayor/rig && sed -i 's/finally\\/backend\\/app\\/db/finally\\/backend\\/db/g' architecture.md", true, ""},
+		{"cd fin/mayor/rig && sed -i 's/use docker-compose.yml after cd finally/use layout-root-relative commands/' architecture.md", true, ""},
+		{"cat fin/mayor/rig/architecture.md", true, ""},
+		{"cd fin/mayor/rig && python3 run.py", false, "must not run code"},
+		{"cd fin/mayor/rig && npm install", false, "must not run code"},
+		{"cd fin/mayor/rig && docker-compose up", false, "must not run code"},
+	}
+	for _, c := range cases {
+		err := validateDesignCommand(c.cmd, "fin")
+		if c.allow && err != nil {
+			t.Errorf("expected %q allowed, got: %v", c.cmd, err)
+		}
+		if !c.allow && err == nil {
+			t.Errorf("expected %q rejected, got nil", c.cmd)
+		}
+		if !c.allow && err != nil && c.rejectMsg != "" && !strings.Contains(err.Error(), c.rejectMsg) {
+			t.Errorf("expected reject message containing %q, got: %v", c.rejectMsg, err)
+		}
+	}
+}
+
 func writeImplementationBackendFiles(t *testing.T, townRoot, rig string) {
 	t.Helper()
 	backend := filepath.Join(townRoot, rig, "mayor", "rig", "backend")

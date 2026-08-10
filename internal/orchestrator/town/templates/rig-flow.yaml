@@ -41,9 +41,9 @@ states:
       track: design
       artifacts: design
       retry_hint: |
-        One CMD: per line. Read SPEC with head; write architecture.md via single-quoted heredoc. After wc -c meets minimum, auto-completes.
+        One CMD: per line. Read SPEC with head; write architecture.md via single-quoted heredoc. On design_review rework, FIRST `cat {{rig}}/mayor/rig/architecture.md` to see what QA approved, then `sed -i` targeted fixes (or a full heredoc only if needed). After wc -c meets minimum, auto-completes.
       failure_hint: |
-        Write architecture.md with heredoc CMD in this session (stale files don't count). Read SPEC with head -n 60. HTTP paths/symbols must match SPEC verbatim. Prefix implement paths with layout_root.
+        Write architecture.md with heredoc CMD in this session (stale files don't count). On design_review rework, read the existing architecture.md first and fix only the QA-named defects (path collisions, db/route drift, Docker judge) with sed -i. Read SPEC with head -n 60. HTTP paths/symbols must match SPEC verbatim. Prefix implement paths with layout_root.
     transitions:
       success:
         to: design_review
