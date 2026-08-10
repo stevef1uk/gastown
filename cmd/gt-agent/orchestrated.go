@@ -1409,6 +1409,13 @@ func rewriteArchitectureMDPathAfterCD(cmd, rig string) (string, bool) {
 	return rewriteRigDocPathAfterCD(cmd, rig, "architecture.md")
 }
 
+// rewriteSPECMDPathAfterCD fixes the same mistake for SPEC reads: after
+// `cd rig/mayor/rig`, `cat rig/mayor/rig/SPEC.md` resolves the doubled path and
+// fails with "No such file or directory", so the agent never sees the SPEC.
+func rewriteSPECMDPathAfterCD(cmd, rig string) (string, bool) {
+	return rewriteRigDocPathAfterCD(cmd, rig, "SPEC.md")
+}
+
 // rewriteRigDocPathAfterCD rewrites `cd rig/mayor/rig && ... > rig/mayor/rig/<doc>`
 // to use the bare `<doc>` after the cd, mirroring the correct cwd-relative path.
 func rewriteRigDocPathAfterCD(cmd, rig, doc string) (string, bool) {
@@ -1418,7 +1425,7 @@ func rewriteRigDocPathAfterCD(cmd, rig, doc string) (string, bool) {
 	}
 	mayorRig := rigName + "/mayor/rig"
 	lower := strings.ToLower(cmd)
-	if !strings.Contains(lower, doc) || !strings.Contains(lower, "cd ") {
+	if !strings.Contains(lower, strings.ToLower(doc)) || !strings.Contains(lower, "cd ") {
 		return cmd, false
 	}
 	if !strings.Contains(lower, strings.ToLower(mayorRig)) {

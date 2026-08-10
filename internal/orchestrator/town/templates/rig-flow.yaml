@@ -37,7 +37,7 @@ states:
       pre_run: [reset_layout_pre_implementation, prune_rig_root_junk]
       max_cmd_turns: 5
       cmd_guard: design
-      cmd_rewrites: [rig_placeholders, spec_md_case, arch_md_after_cd, unwrap_bash_lc]
+      cmd_rewrites: [rig_placeholders, spec_md_case, spec_md_after_cd, arch_md_after_cd, unwrap_bash_lc]
       track: design
       artifacts: design
       retry_hint: |
@@ -61,7 +61,7 @@ states:
     hooks:
       max_cmd_turns: 10
       cmd_guard: design_review
-      cmd_rewrites: [rig_placeholders, spec_md_case, unwrap_bash_lc]
+      cmd_rewrites: [rig_placeholders, spec_md_case, spec_md_after_cd, unwrap_bash_lc]
       track: qa
       artifacts: design_review
       retry_hint: |
@@ -88,7 +88,7 @@ states:
       max_cmd_turns: 20
       empty_response_suffix: "Reply with CMD: lines. Run: CMD: cd {{rig}}/mayor/rig && bd list --status=open && wc -c plan.md. If beads exist and plan.md >= {{min_plan_bytes}} bytes, send {\"outcome\":\"success\",\"summary\":\"beads and plan.md ready\"}. Otherwise bd create missing beads."
       cmd_guard: planning
-      cmd_rewrites: [rig_placeholders, spec_md_case, plan_md_after_cd, plan_md_wc_dir, bd_list_limit, unwrap_bash_lc]
+      cmd_rewrites: [rig_placeholders, spec_md_case, spec_md_after_cd, plan_md_after_cd, plan_md_wc_dir, bd_list_limit, unwrap_bash_lc]
       env:
         beads_dir: true
       track: planning
@@ -119,7 +119,7 @@ states:
       pre_run: [sync_planning_artifacts, enforce_implement_bead_queue]
       max_cmd_turns: 8
       cmd_guard: plan_review
-      cmd_rewrites: [rig_placeholders, spec_md_case, bd_list_limit, unwrap_bash_lc]
+      cmd_rewrites: [rig_placeholders, spec_md_case, spec_md_after_cd, bd_list_limit, unwrap_bash_lc]
       env:
         beads_dir: true
       track: plan_review
