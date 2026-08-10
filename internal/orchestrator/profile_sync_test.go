@@ -110,6 +110,168 @@ No extra files or abstractions.
 	}
 }
 
+// TestExtractArchPaths_plainBulletsWithoutBackticks confirms profile sync survives an
+// architecture.md whose Planned file layout uses plain "- finally/... — desc" bullets
+// instead of backtick-wrapped paths (the format architects actually emit). Regression
+// for fin: the sync silently shrank the profile to only the SPEC-tree files because
+// extractArchPaths only matched backticks.
+func TestExtractArchPaths_plainBulletsWithoutBackticks(t *testing.T) {
+	arch := `# Architecture for fin
+
+## Planned file layout
+
+- finally/.env — environment values.
+- finally/.gitignore — ignores secrets.
+- finally/backend/app/main.py — app factory and Uvicorn entrypoint.
+- finally/backend/app/db/schema.py — SQLite DDL and seeds.
+- finally/backend/tests/test_api.py — route status codes.
+- finally/frontend/app/page.tsx — dashboard composition.
+- finally/test/e2e.spec.ts — Playwright scenarios.
+- finally/Dockerfile — Node build and Python runtime stages.
+
+## HTTP + entrypoint integration
+The backend listens on port 8000 via uvicorn. No other files exist.
+`
+	got := extractArchPaths(arch, "finally")
+	want := map[string]bool{
+		"finally/.env":                    true,
+		"finally/.gitignore":              true,
+		"finally/backend/app/main.py":     true,
+		"finally/backend/app/db/schema.py": true,
+		"finally/backend/tests/test_api.py": true,
+		"finally/frontend/app/page.tsx":   true,
+		"finally/test/e2e.spec.ts":        true,
+		"finally/Dockerfile":              true,
+	}
+	for _, p := range got {
+		if want[p] {
+			delete(want, p)
+		}
+	}
+	if len(want) != 0 {
+		t.Fatalf("missing plain-bullet paths %v; extracted %v", want, got)
+	}
+	if !containsString(got, "finally/Dockerfile") {
+		t.Fatalf("Dockerfile (no extension) must be extracted: %v", got)
+	}
+}
+
+// TestSyncRigWorkflowProfileFromArchitecture_plainBullets confirms the full sync uses
+// architecture.md's plain-bullet file list (not the SPEC directory tree) once the
+// design is approved — the exact fin regression where the profile was truncated to
+// only the SPEC-tree leaf files.
+func TestSyncRigWorkflowProfileFromArchitecture_plainBullets(t *testing.T) {
+	townRoot := t.TempDir()
+	rig := "fin_rig"
+	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
+	profileDir := filepath.Join(rigDir, ".gastown")
+	if err := os.MkdirAll(profileDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	// SPEC directory tree lists only directories and a handful of top-level leaf files.
+	spec := `# FinAlly
+
+## 4. Directory Structure
+
+` + "```" + `
+finally/
+├── frontend/                 # Next.js TypeScript project
+├── backend/                  # FastAPI uv project
+│   └── db/                   # Schema, seed, migrations
+├── scripts/
+│   ├── start_mac.sh
+│   └── stop_mac.sh
+├── db/
+│   └── .gitkeep
+├── Dockerfile
+├── docker-compose.yml
+├── .env
+└── .gitignore
+` + "```" + `
+`
+	// Approved architecture lists every implementation file as plain bullets.
+	arch := `# Architecture for fin
+
+## Planned file layout
+
+- finally/.env — environment values.
+- finally/.gitignore — ignores secrets.
+- finally/backend/app/__init__.py — backend package marker.
+- finally/backend/app/main.py — app factory and Uvicorn entrypoint.
+- finally/backend/app/db/schema.py — SQLite DDL and seeds.
+- finally/backend/app/db/init_db.py — idempotent initialization.
+- finally/backend/app/store/store.py — repository and orders.
+- finally/backend/app/market/service.py — provider selection and polling.
+- finally/backend/app/api/routes.py — exact SPEC REST handlers.
+- finally/backend/tests/test_api.py — route status codes.
+- finally/frontend/package.json — Next.js dependencies.
+- finally/frontend/app/page.tsx — dashboard composition.
+- finally/test/e2e.spec.ts — Playwright scenarios.
+- finally/Dockerfile — Node build and Python runtime stages.
+- finally/docker-compose.yml — production wrapper.
+
+## HTTP + entrypoint integration
+Uvicorn on port 8000. No other files exist.
+`
+	if err := os.WriteFile(filepath.Join(rigDir, "SPEC.md"), []byte(spec), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(rigDir, "architecture.md"), []byte(arch), 0644); err != nil {
+		t.Fatal(err)
+	}
+	profile := rigProfileEnvelope{
+		Version: 1,
+		Validation: WorkflowValidation{
+			LayoutRoot:      "finally",
+			BeadTitleContains: "Implement finally/",
+			RequiredFiles:   []string{"finally/.env", "finally/.gitignore", "finally/db/.gitkeep", "finally/Dockerfile", "finally/docker-compose.yml"},
+			QAVerifyCommand: "cd finally && pytest",
+		},
+	}
+	data, _ := marshalRigProfileJSON(profile)
+	if err := os.WriteFile(filepath.Join(profileDir, "workflow-profile.json"), data, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	rewritten, err := SyncRigWorkflowProfileFromArchitecture(townRoot, rig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !rewritten {
+		t.Fatal("expected profile rewrite")
+	}
+	saved, _, err := LoadRigWorkflowProfileFile(townRoot, rig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"finally/.env",
+		"finally/.gitignore",
+		"finally/backend/app/main.py",
+		"finally/backend/app/db/schema.py",
+		"finally/backend/app/api/routes.py",
+		"finally/backend/tests/test_api.py",
+		"finally/frontend/app/page.tsx",
+		"finally/test/e2e.spec.ts",
+		"finally/Dockerfile",
+	} {
+		found := false
+		for _, f := range saved.RequiredFiles {
+			if f == want {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("missing %q in required_files after sync: %v", want, saved.RequiredFiles)
+		}
+	}
+	// The profile must not shrink back to the SPEC-tree-only leaf files.
+	if len(saved.RequiredFiles) < 10 {
+		t.Fatalf("profile truncated to %d files; expected the full architecture list:\n%v", len(saved.RequiredFiles), saved.RequiredFiles)
+	}
+}
+
 // TestValidateRigWorkflowProfileForQA_catchesHallucinations confirms the QA validator
 // flags wildcards, route stubs, and verify-command file references missing from
 // required_files — the exact defects that deadlocked ping_rig.

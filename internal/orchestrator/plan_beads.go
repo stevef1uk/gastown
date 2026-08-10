@@ -422,7 +422,35 @@ func ValidatePlanBeads(beads []PlanBead, archPath string, v WorkflowValidation, 
 var (
 	archPathBoldRe = regexp.MustCompile("(?:\\*\\*)`([^`\\n]+)`(?:\\*\\*)")
 	archPathRe     = regexp.MustCompile("`([^`\\n]+(?:\\.[a-zA-Z0-9]+)?)`")
+	// archPathBulletRe matches a markdown bullet/line whose leading token is a
+	// repo file path (architects frequently list the planned layout as plain
+	// "- finally/backend/app/main.py — description" bullets without backticks).
+	archPathBulletRe = regexp.MustCompile(`(?m)^\s*[-*+]\s+([^\s]+)(?:\s*[—-]|$)`)
 )
+
+// extractArchPaths returns repo-relative file paths referenced in architecture.md.
+// It matches backtick-wrapped paths (canonical form) and, as a fallback, leading
+// path tokens in bullet-list lines so plain "- finally/... — desc" layouts survive
+// profile sync. layoutRoot restricts matches to paths under that prefix when set.
+func extractArchPaths(archText, layoutRoot string) []string {
+	seen := map[string]bool{}
+	var out []string
+	add := func(matches [][]string) {
+		for _, m := range matches {
+			p := filepath.ToSlash(strings.TrimSpace(m[1]))
+			p = strings.Trim(p, "`*")
+			if p == "" || seen[p] || !isLikelyRepoFilePath(p, layoutRoot) {
+				continue
+			}
+			seen[p] = true
+			out = append(out, p)
+		}
+	}
+	add(archPathBoldRe.FindAllStringSubmatch(archText, -1))
+	add(archPathRe.FindAllStringSubmatch(archText, -1))
+	add(archPathBulletRe.FindAllStringSubmatch(archText, -1))
+	return out
+}
 
 // beadIDsForPath returns bead IDs covering a required/architecture path (exact or basename match).
 func beadIDsForPath(pathToIDs map[string][]string, want string) []string {
@@ -441,22 +469,6 @@ func beadIDsForPath(pathToIDs map[string][]string, want string) []string {
 		}
 	}
 	return ids
-}
-
-func extractArchPaths(archText, layoutRoot string) []string {
-	seen := map[string]bool{}
-	var out []string
-	for _, re := range []*regexp.Regexp{archPathBoldRe, archPathRe} {
-		for _, m := range re.FindAllStringSubmatch(archText, -1) {
-			p := filepath.ToSlash(strings.TrimSpace(m[1]))
-			if p == "" || seen[p] || !isLikelyRepoFilePath(p, layoutRoot) {
-				continue
-			}
-			seen[p] = true
-			out = append(out, p)
-		}
-	}
-	return out
 }
 
 func isLikelyRepoFilePath(p, layoutRoot string) bool {
