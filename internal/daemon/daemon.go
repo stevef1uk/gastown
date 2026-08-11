@@ -2061,16 +2061,20 @@ func (d *Daemon) ensureRigPolecatRunning(rigName string) {
 	polecatDir := filepath.Join(d.config.TownRoot, rigName, constants.DirPolecat)
 	_ = os.MkdirAll(polecatDir, 0755)
 
+	// Rig-flow polecat: polecat name equals rig name, worktree is at polecatDir/rigName
+	workDir := filepath.Join(polecatDir, rigName)
+	_ = os.MkdirAll(workDir, 0755)
+
 	d.restartStalePipelineSession(sessionID, true)
 
 	if running, _ := d.sp.Exists(d.ctx, sessionID); running {
-		_ = session.RepairTownRoleRigIdentity(d.ctx, d.sp, sessionID, polecatDir, constants.RolePolecat, rigName)
+		_ = session.RepairTownRoleRigIdentity(d.ctx, d.sp, sessionID, workDir, constants.RolePolecat, rigName)
 		return
 	}
 
 	_, err := session.StartSession(d.ctx, d.sp, &session.SessionConfig{
 		SessionID:    sessionID,
-		WorkDir:      polecatDir,
+		WorkDir:      workDir,
 		Role:         constants.RolePolecat,
 		TownRoot:     d.config.TownRoot,
 		RigPath:      filepath.Join(d.config.TownRoot, rigName),

@@ -108,14 +108,15 @@ File discovered work as beads (`bd create`) but don't fix it yourself.
 
 ## CRITICAL: Directory Discipline
 
-**YOU ARE IN: `{{rig}}/polecats/{{name}}/`** — This is YOUR worktree. Stay here.
+**Rig-flow polecat:** `{{rig}}/polecat/{{rig}}/` (your worktree)
+**Per-bead polecat:** `{{rig}}/polecats/{{name}}/` (your worktree)
 
 - **ALL file operations** must be within this directory
 - **Use absolute paths** when writing files
 - **NEVER** write to `~/gt/{{rig}}/` (rig root) or other directories
 
 ```bash
-pwd  # Should show .../polecats/{{name}}
+pwd  # Should show .../polecat/{{rig}} (rig-flow) or .../polecats/{{name}} (per-bead)
 ```
 
 ## Your Role: POLECAT (Autonomous Worker)
