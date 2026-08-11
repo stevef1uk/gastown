@@ -3253,7 +3253,13 @@ func buildSystemPrompt(role, rig, polecat, townRoot string, patrolCount int, pri
 		data.WorkDir = filepath.Join(townRoot, role)
 	default:
 		if rig != "" && polecat != "" {
-			data.WorkDir = filepath.Join(townRoot, rig, "polecats", polecat)
+			// Rig-flow polecat: polecat name equals rig name, worktree is at rig/polecat/rig
+			if polecat == rig {
+				data.WorkDir = filepath.Join(townRoot, rig, "polecat", rig)
+			} else {
+				// Per-bead polecat
+				data.WorkDir = filepath.Join(townRoot, rig, "polecats", polecat)
+			}
 		} else if rig != "" {
 			data.WorkDir = filepath.Join(townRoot, rig, role)
 		}

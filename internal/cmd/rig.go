@@ -933,7 +933,7 @@ func runRigSyncArch(_ *cobra.Command, args []string) error {
 	if rewritten {
 		fmt.Printf("%s Synced workflow-profile from architecture.md for rig %s\n", style.Success.Render("✓"), rigName)
 	} else {
-		fmt.Printf("%s No changes (architecture.md missing or no authoritative paths found)\n", style.Warning.Render("!"), rigName)
+		fmt.Printf("%s No changes (architecture.md missing or no authoritative paths found)\n", style.Warning.Render("!"))
 	}
 	return nil
 }
