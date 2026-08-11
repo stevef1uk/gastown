@@ -871,6 +871,12 @@ func SyncRigWorkflowProfileFromArchitecture(townRoot, rig string) (bool, error) 
 	}
 	env.Validation.TestRunner = "" // force re-inference on sync
 	env.Validation = inferTestRunnerFromPaths(env.Validation, authoritative)
+
+	archPhases := parseArchPhases(string(archData), env.Validation.LayoutRootDir())
+	if len(archPhases) > 0 {
+		env.Validation.DeliveryPhases = archPhases
+	}
+
 	// Rebuild delivery phases so the active phase required_files (used by
 	// ForActivePhase at planning time) match the authoritative set instead of the
 	// hallucinated list the LLM emitted.
@@ -1150,46 +1156,59 @@ func rebuildDeliveryPhasesFromAuthoritative(v WorkflowValidation, authoritative 
 			v.DeliveryPhases[bestIdx].RequiredFiles = append(v.DeliveryPhases[bestIdx].RequiredFiles, p)
 			continue
 		}
-		// Same-directory fallback: place the file with the phase that already
+		// Third pass: token matching against phase ID, Title, and SpecFocus.
+		if bestIdx < 0 {
+			bestScore := 0
+			for i, phase := range v.DeliveryPhases {
+				score := scorePhaseForFilePath(phase, p)
+				if score > bestScore {
+					bestScore = score
+					bestIdx = i
+				}
+			}
+		}
+		// Fourth pass: Same-directory fallback: place the file with the phase that already
 		// holds the most files in the same directory (root-level config/Docker
 		// files cluster with the integration-test phase, cmd/server files with
 		// the core phase). Longest-prefix alone can't distinguish them because
 		// every file shares the layout_root prefix, so ties collapse to phase 0.
-		bestIdx, bestScore := -1, -1
-		dir := filepath.Dir(p)
-		for i, phase := range v.DeliveryPhases {
-			score := 0
-			for _, f := range phase.RequiredFiles {
-				if filepath.Dir(f) == dir {
-					score++
+		if bestIdx < 0 {
+			bestScore := -1
+			dir := filepath.Dir(p)
+			for i, phase := range v.DeliveryPhases {
+				score := 0
+				for _, f := range phase.RequiredFiles {
+					if filepath.Dir(f) == dir {
+						score++
+					}
 				}
-			}
-			if score > bestScore {
-				bestScore = score
-				bestIdx = i
+				if score > bestScore {
+					bestScore = score
+					bestIdx = i
+				}
 			}
 		}
 		if bestIdx < 0 {
-			bestIdx = len(v.DeliveryPhases) - 1
+			bestIdx = 0
 		}
 		v.DeliveryPhases[bestIdx].RequiredFiles = append(v.DeliveryPhases[bestIdx].RequiredFiles, p)
 	}
-	// If any phase was emptied by a layout restructure (flat main.go →
-	// cmd/server/main.go, index.html → web/index.html) with no basename/prefix
-	// match to re-attach its files, rebuild the whole skeleton from the
-	// authoritative paths. Redistributing from a hollow skeleton by longest-prefix
-	// alone dumps every remaining file into phase 0 (they all share the
-	// layout_root prefix and ties resolve to the first phase).
-	for i := range v.DeliveryPhases {
-		if len(v.DeliveryPhases[i].RequiredFiles) == 0 {
-			archDebug("rebuild: phase %q emptied by layout restructure; rebuilding phases from authoritative", v.DeliveryPhases[i].ID)
-			v.DeliveryPhases = PhasesFromFilePaths(authoritative)
-			// Active phase must resolve after a full rebuild, or planning hangs.
-			if v.ActivePhaseID() == "" || !phaseIDExists(v, v.ActivePhaseID()) {
-				v.ActivePhaseIDField = v.DeliveryPhases[0].ID
-			}
-			return v
+
+	// Prune any phase that remains empty after distributing all authoritative files,
+	// unless all phases are empty (in which case rebuild via PhasesFromFilePaths).
+	var keptPhases []DeliveryPhase
+	for _, phase := range v.DeliveryPhases {
+		if len(phase.RequiredFiles) > 0 {
+			keptPhases = append(keptPhases, phase)
 		}
+	}
+	if len(keptPhases) == 0 {
+		v.DeliveryPhases = PhasesFromFilePaths(authoritative)
+	} else {
+		v.DeliveryPhases = keptPhases
+	}
+	if v.ActivePhaseID() == "" || !phaseIDExists(v, v.ActivePhaseID()) {
+		v.ActivePhaseIDField = v.DeliveryPhases[0].ID
 	}
 	return v
 }
@@ -1206,18 +1225,198 @@ func phaseIDExists(v WorkflowValidation, id string) bool {
 }
 
 // degenerateDeliveryPhaseStructure reports whether the profile's phase skeleton
-// is a spec-index artifact rather than a deliberate split: any phase with no
-// required files, or as many phases as files (one file per phase).
+// is a spec-index artifact rather than a deliberate split: as many phases as files
+// (one file per phase) or all phases empty.
 func degenerateDeliveryPhaseStructure(v WorkflowValidation, authoritative []string) bool {
-	for i := range v.DeliveryPhases {
-		if len(v.DeliveryPhases[i].RequiredFiles) == 0 {
-			return true
-		}
+	if len(v.DeliveryPhases) == 0 {
+		return true
 	}
 	if len(authoritative) > 0 && len(v.DeliveryPhases) >= len(authoritative) {
 		return true
 	}
-	return false
+	allEmpty := true
+	for i := range v.DeliveryPhases {
+		if len(v.DeliveryPhases[i].RequiredFiles) > 0 {
+			allEmpty = false
+			break
+		}
+	}
+	return allEmpty
+}
+
+// parseArchPhases parses delivery phases and their required file paths from the
+// "## Delivery phases" section of architecture.md.
+func parseArchPhases(archText, layoutRoot string) []DeliveryPhase {
+	if archText == "" {
+		return nil
+	}
+	lower := strings.ToLower(archText)
+	markerIdx := -1
+	for _, marker := range []string{"## delivery phases", "## phases"} {
+		if idx := strings.Index(lower, marker); idx >= 0 {
+			markerIdx = idx
+			break
+		}
+	}
+	if markerIdx < 0 {
+		return nil
+	}
+	section := archText[markerIdx:]
+	if j := strings.Index(section[1:], "\n## "); j >= 0 {
+		section = section[:1+j]
+	}
+
+	lines := strings.Split(section, "\n")
+	var phases []DeliveryPhase
+	var currentPhase *DeliveryPhase
+	targetRoot := strings.Trim(filepath.ToSlash(strings.TrimSpace(layoutRoot)), "/")
+	if targetRoot == "." {
+		targetRoot = ""
+	}
+
+	flush := func() {
+		if currentPhase != nil {
+			currentPhase.RequiredFiles = dedupeStrings(currentPhase.RequiredFiles)
+			if currentPhase.Title != "" || len(currentPhase.RequiredFiles) > 0 {
+				phases = append(phases, *currentPhase)
+			}
+			currentPhase = nil
+		}
+	}
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "```") {
+			continue
+		}
+
+		if p := parseArchPhaseHeader(trimmed); p != nil {
+			flush()
+			currentPhase = p
+		}
+
+		if currentPhase != nil {
+			matches := extractArchPaths(line, layoutRoot)
+			for _, m := range matches {
+				p := filepath.ToSlash(strings.TrimSpace(m))
+				for strings.HasPrefix(p, "./") {
+					p = p[2:]
+				}
+				if targetRoot != "" && !strings.HasPrefix(p, targetRoot+"/") && !strings.Contains(p, "/") {
+					p = targetRoot + "/" + p
+				}
+				if isImplementableFilePath(p) && IsValidImplementBeadPath(p) {
+					currentPhase.RequiredFiles = append(currentPhase.RequiredFiles, p)
+				}
+			}
+		}
+	}
+	flush()
+	return phases
+}
+
+func parseArchPhaseHeader(line string) *DeliveryPhase {
+	trimmed := strings.TrimSpace(line)
+	if trimmed == "" || strings.HasPrefix(trimmed, "```") {
+		return nil
+	}
+	s := strings.TrimLeft(trimmed, "# \t")
+	s = strings.TrimLeft(s, "-* \t")
+
+	var title string
+	if m := regexp.MustCompile(`^\d+[\.\)]\s*(.+)`).FindStringSubmatch(s); len(m) == 2 {
+		rest := m[1]
+		rest = strings.TrimPrefix(rest, "**")
+		if idx := strings.Index(rest, "**"); idx > 0 {
+			rest = rest[:idx]
+		}
+		if idx := strings.IndexAny(rest, ":—"); idx > 0 {
+			title = strings.TrimSpace(rest[:idx])
+		} else {
+			title = strings.TrimSpace(rest)
+		}
+	} else if strings.HasPrefix(s, "Phase ") {
+		rest := strings.TrimPrefix(s, "Phase ")
+		if idx := strings.Index(rest, " "); idx > 0 {
+			rest = rest[idx+1:]
+		}
+		rest = strings.TrimLeft(rest, " \t—-:")
+		if idx := strings.IndexAny(rest, ":—"); idx > 0 {
+			title = strings.TrimSpace(rest[:idx])
+		} else {
+			title = strings.TrimSpace(rest)
+		}
+	}
+
+	if title != "" {
+		id := slugify(title)
+		if id != "" {
+			return &DeliveryPhase{
+				ID:            id,
+				Title:         title,
+				RequiredFiles: []string{},
+			}
+		}
+	}
+	return nil
+}
+
+func scorePhaseForFilePath(phase DeliveryPhase, p string) int {
+	pLower := strings.ToLower(p)
+	pBase := strings.ToLower(filepath.Base(p))
+	text := strings.ToLower(phase.ID + " " + phase.Title + " " + phase.SpecFocus)
+	score := 0
+
+	if strings.Contains(pLower, "/tests/") || strings.Contains(pLower, "/test/") || strings.HasPrefix(pBase, "test_") || strings.HasSuffix(pBase, "_test.go") || strings.HasSuffix(pBase, ".spec.ts") {
+		if strings.Contains(text, "test") || strings.Contains(text, "verification") || strings.Contains(text, "qa") || strings.Contains(text, "release") {
+			score += 10
+		}
+	}
+	if strings.Contains(pLower, "/frontend/") || strings.Contains(pLower, "/web/") || strings.HasSuffix(pBase, ".tsx") || strings.HasSuffix(pBase, ".css") || strings.HasSuffix(pBase, ".html") {
+		if strings.Contains(text, "frontend") || strings.Contains(text, "ui") || strings.Contains(text, "web") || strings.Contains(text, "watchlist") || strings.Contains(text, "visualisation") || strings.Contains(text, "visualization") {
+			score += 10
+		}
+	}
+	if strings.Contains(pLower, "/market/") || strings.Contains(pLower, "/store/") || strings.Contains(pLower, "/db/") {
+		if strings.Contains(text, "market") || strings.Contains(text, "persistence") || strings.Contains(text, "database") || strings.Contains(text, "engine") || strings.Contains(text, "store") {
+			score += 10
+		}
+	}
+	if strings.Contains(pLower, "/llm/") || strings.Contains(pLower, "/ai/") || strings.Contains(pLower, "chat") {
+		if strings.Contains(text, "ai") || strings.Contains(text, "copilot") || strings.Contains(text, "assistant") || strings.Contains(text, "llm") || strings.Contains(text, "chat") {
+			score += 10
+		}
+	}
+	if strings.Contains(pLower, "/api/") || strings.Contains(pLower, "main.py") || strings.Contains(pLower, "main.go") {
+		if strings.Contains(text, "api") || strings.Contains(text, "route") || strings.Contains(text, "copilot") || strings.Contains(text, "server") || strings.Contains(text, "core") {
+			score += 5
+		}
+	}
+	if strings.Contains(pLower, "/scripts/") || strings.Contains(pBase, "dockerfile") || strings.Contains(pBase, "docker-compose") {
+		if strings.Contains(text, "release") || strings.Contains(text, "packaging") || strings.Contains(text, "foundation") || strings.Contains(text, "setup") || strings.Contains(text, "docker") {
+			score += 5
+		}
+	}
+
+	tokens := strings.FieldsFunc(pLower, func(r rune) bool {
+		return r == '/' || r == '.' || r == '_' || r == '-'
+	})
+	for _, tok := range tokens {
+		if len(tok) > 2 && strings.Contains(text, tok) {
+			score += 2
+		}
+	}
+	return score
+}
+
+func slugify(s string) string {
+	s = strings.ToLower(s)
+	s = strings.ReplaceAll(s, " ", "-")
+	s = strings.ReplaceAll(s, "(", "")
+	s = strings.ReplaceAll(s, ")", "")
+	s = strings.ReplaceAll(s, "/", "-")
+	s = strings.ReplaceAll(s, ".", "-")
+	return s
 }
 
 // ValidateRigWorkflowProfileForQA reports profile defects that would break planning

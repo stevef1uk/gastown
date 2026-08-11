@@ -568,13 +568,13 @@ func deterministicAssignFilesToPhases(phases []orchestrator.DeliveryPhase, files
 		}
 	}
 
-	// Build assigned phases in SPEC order, dropping phases with no files.
+	// Build assigned phases in SPEC order, keeping all explicitly defined SPEC phases
+	// (even if currently empty at initial spec-index time before architecture.md fills them).
 	var assigned []orchestrator.DeliveryPhase
 	for i, p := range phases {
 		fs := normalizeFileList(phaseFiles[i])
-		if len(fs) == 0 {
-			log.Printf("[deterministic-index] dropping SPEC phase %q: no files assigned", p.ID)
-			continue
+		if fs == nil {
+			fs = []string{}
 		}
 		assigned = append(assigned, orchestrator.DeliveryPhase{
 			ID:              p.ID,

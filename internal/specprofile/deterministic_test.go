@@ -608,12 +608,13 @@ func TestDeterministicAssignFilesToPhases_specPhasesSurvive(t *testing.T) {	// S
 		byID[p.ID] = p.RequiredFiles
 	}
 	want := map[string][]string{
-		"go-module":     {"linkshelf/go.mod"},
-		"store-layer":   {"linkshelf/internal/store/schema.go", "linkshelf/internal/store/store.go", "linkshelf/internal/store/store_test.go"},
-		"api-handlers":  {"linkshelf/internal/api/handler.go", "linkshelf/internal/api/handler_test.go"},
-		"server-main":   {"linkshelf/cmd/server/main.go"},
-		"web-static":    {"linkshelf/web/app.js", "linkshelf/web/style.css"},
-		"web-shell":     {"linkshelf/web/index.html"},
+		"go-module":        {"linkshelf/go.mod"},
+		"store-layer":      {"linkshelf/internal/store/schema.go", "linkshelf/internal/store/store.go", "linkshelf/internal/store/store_test.go"},
+		"api-handlers":     {"linkshelf/internal/api/handler.go", "linkshelf/internal/api/handler_test.go"},
+		"server-main":      {"linkshelf/cmd/server/main.go"},
+		"web-static":       {"linkshelf/web/app.js", "linkshelf/web/style.css"},
+		"web-shell":        {"linkshelf/web/index.html"},
+		"integration-test": nil,
 	}
 	if len(assigned) != len(want) {
 		t.Fatalf("assigned %d phases, want %d (%v)", len(assigned), len(want), phaseIDs(assigned))
@@ -643,7 +644,7 @@ func TestDeterministicAssignFilesToPhases_specPhasesSurvive(t *testing.T) {	// S
 			t.Errorf("file %q assigned %d times, want 1", f, seen[f])
 		}
 	}
-	for i, id := range []string{"go-module", "store-layer", "api-handlers", "server-main", "web-static", "web-shell"} {
+	for i, id := range []string{"go-module", "store-layer", "api-handlers", "server-main", "web-static", "web-shell", "integration-test"} {
 		if assigned[i].ID != id {
 			t.Fatalf("phase order %v, want SPEC order", phaseIDs(assigned))
 		}
