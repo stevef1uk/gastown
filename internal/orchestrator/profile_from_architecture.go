@@ -1266,11 +1266,15 @@ func ValidateRigWorkflowProfileForQA(townRoot, rig string, v WorkflowValidation)
 		if f == "" {
 			continue
 		}
-		if prev, ok := byBase[filepath.Base(f)]; ok && prev != f {
-			problems = append(problems, fmt.Sprintf("layout drift: %q and %q share basename %q — required files disagree on directory layout", prev, f, filepath.Base(f)))
+		base := filepath.Base(f)
+		if prev, ok := byBase[base]; ok && prev != f {
+			// Only flag if they're in the SAME directory (actual collision)
+			if filepath.Dir(prev) == filepath.Dir(f) {
+				problems = append(problems, fmt.Sprintf("layout drift: %q and %q share basename %q in same directory — required files disagree on layout", prev, f, base))
+			}
 			continue
 		}
-		byBase[filepath.Base(f)] = f
+		byBase[base] = f
 	}
 	// Verify commands must reference files that exist in the union of required_files.
 	union := v.UnionRequiredFiles()
