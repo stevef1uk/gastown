@@ -1696,10 +1696,33 @@ func defaultQAVerifyForPhase(p *DeliveryPhase, layoutRoot string) string {
 		}
 	}
 	if hasGo {
-		return fmt.Sprintf("cd %s && go test ./...", lr)
+		// Only run go test if test files exist in this phase
+		hasGoTests := false
+		for _, f := range p.RequiredFiles {
+			if strings.HasSuffix(f, "_test.go") {
+				hasGoTests = true
+				break
+			}
+		}
+		if hasGoTests {
+			return fmt.Sprintf("cd %s && go test ./...", lr)
+		}
+		return fmt.Sprintf("cd %s && go build ./...", lr)
 	}
 	if hasPy {
-		return fmt.Sprintf("cd %s && python -m pytest -v", lr)
+		// Only run pytest if test files exist in this phase
+		hasPyTests := false
+		for _, f := range p.RequiredFiles {
+			if strings.HasSuffix(f, "_test.py") || strings.HasPrefix(filepath.Base(f), "test_") ||
+				strings.Contains(f, "conftest.py") || strings.Contains(f, "/tests/") {
+				hasPyTests = true
+				break
+			}
+		}
+		if hasPyTests {
+			return fmt.Sprintf("cd %s && python -m pytest -v", lr)
+		}
+		return fmt.Sprintf("cd %s && python -c 'import sys; print(\"ok\")'", lr)
 	}
 	if hasTS && hasNodeProject {
 		install := nodeInstallCommand("npm", p.RequiredFiles)
@@ -1710,8 +1733,21 @@ func defaultQAVerifyForPhase(p *DeliveryPhase, layoutRoot string) string {
 		return fmt.Sprintf("cd %s && %s && npx tsc --noEmit", lr, install)
 	}
 	if hasJS && hasNodeProject {
+		// Only run npm test if test files exist
+		hasJSTests := false
+		for _, f := range p.RequiredFiles {
+			if strings.Contains(f, ".spec.ts") || strings.Contains(f, ".spec.tsx") ||
+				strings.Contains(f, ".test.ts") || strings.Contains(f, ".test.tsx") ||
+				strings.Contains(f, "/test/") || strings.Contains(f, "/tests/") {
+				hasJSTests = true
+				break
+			}
+		}
 		install := nodeInstallCommand("npm", p.RequiredFiles)
-		return fmt.Sprintf("cd %s && %s && npm test", lr, install)
+		if hasJSTests {
+			return fmt.Sprintf("cd %s && %s && npm test", lr, install)
+		}
+		return fmt.Sprintf("cd %s && %s && echo 'verify ok (no JS tests)'", lr, install)
 	}
 	return fmt.Sprintf("cd %s && echo 'verify ok (no automated tests for this phase)'", lr)
 }

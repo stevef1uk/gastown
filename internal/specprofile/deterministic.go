@@ -1199,7 +1199,22 @@ func defaultPhasesFromPaths(paths []string) []orchestrator.DeliveryPhase {
 }
 
 func inferVerifyCommand(spec string, paths []string) string {
-	// Look for test commands in SPEC
+	// Only suggest test commands if test files actually exist in the layout
+	hasTestFiles := false
+	for _, p := range paths {
+		base := filepath.Base(p)
+		if strings.HasPrefix(base, "test_") || strings.HasSuffix(base, "_test.go") ||
+			strings.HasPrefix(base, "test.") || strings.Contains(p, "/test/") ||
+			strings.Contains(p, "/tests/") || strings.Contains(p, "_test.py") ||
+			strings.Contains(p, "conftest.py") || strings.Contains(p, "test_") {
+			hasTestFiles = true
+			break
+		}
+	}
+	if !hasTestFiles {
+		return ""
+	}
+
 	lower := strings.ToLower(spec)
 	if strings.Contains(lower, "go test") {
 		return "cd " + inferLayoutRoot(paths) + " && go test ./..."

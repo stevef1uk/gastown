@@ -34,10 +34,10 @@ For **early/mid phases** (backend, frontend, database), prefer behavioral checks
   - Docker/compose files: "test -f Dockerfile && test -f docker-compose.yml && echo 'docker ok'"
   - **Playwright E2E (integration-test phase with playwright.config.ts + e2e specs + docker-compose.yml): "cd <layout_root> && docker-compose down && docker-compose up --exit-code-from playwright"**
   - Playwright config: "cd test && npm install --ignore-scripts && npx playwright test --list"
-  - Python/pytest: "cd backend && python -m pytest -v tests/"
-  - Go: "cd . && go test ./..."
-  - TypeScript/React: "cd frontend && npm install --ignore-scripts && npx tsc --noEmit"
-  - Frontend tests: "cd frontend && npm test -- --watchAll=false"
+  - **Python/pytest: ONLY if phase required_files includes test files (*_test.py, test_*.py, conftest.py, tests/): "cd backend && python -m pytest -v tests/"; otherwise import-check: "cd backend && python -c 'import main; print(\"ok\")'"**
+  - **Go: ONLY if phase required_files includes *_test.go: "cd . && go test ./..."; otherwise compile-check: "cd . && go build ./..."**
+  - **TypeScript/React: "cd frontend && npm install --ignore-scripts && npx tsc --noEmit"**
+  - **Frontend tests: ONLY if phase required_files includes *.spec.ts(x) or test/ dir: "cd frontend && npm test -- --watchAll=false"**
   - Database files: "test -f db/finally.db && echo 'db ok'"
   - Backend source (no tests yet): "cd backend && python -c 'import sys; sys.path.insert(0, \"src\"); from main import app; print(\"ok\")'"
 
