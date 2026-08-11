@@ -291,22 +291,16 @@ func phaseShipsDockerPlaywright(p *DeliveryPhase) bool {
 	if p == nil {
 		return false
 	}
-	lowerID := strings.ToLower(p.ID)
-	lowerTitle := strings.ToLower(p.Title)
-	isIntegration := strings.Contains(lowerID, "integration") ||
-		strings.Contains(lowerTitle, "integration") ||
-		strings.Contains(lowerID, "e2e") ||
-		strings.Contains(lowerTitle, "e2e") ||
-		strings.Contains(lowerID, "playwright") ||
-		strings.Contains(lowerTitle, "playwright")
-	if !isIntegration {
-		return false
-	}
+	// Content-driven, not name-driven: a phase that ships BOTH a docker-compose
+	// file AND Playwright scaffolding (config/spec/package.json) is an E2E phase,
+	// whatever its id/title says (e.g. FinAlly's "Testing & Release" phase). The
+	// old isIntegration name gate silently skipped those phases, leaving the weak
+	// `test -f docker-compose.yml && echo` command in place and Playwright never ran.
 	hasCompose := false
 	hasPlaywright := false
 	for _, f := range p.RequiredFiles {
 		lower := strings.ToLower(filepath.ToSlash(strings.TrimSpace(f)))
-		if strings.Contains(lower, "docker-compose") || strings.HasSuffix(lower, "docker-compose.yaml") || strings.HasSuffix(lower, "docker-compose.yml") {
+		if strings.Contains(lower, "docker-compose") {
 			hasCompose = true
 		}
 		if strings.Contains(lower, "playwright") {
@@ -331,14 +325,7 @@ func composePlaywrightVerifyCommand(p *DeliveryPhase, layoutRoot string) string 
 	if lr == "" {
 		lr = "."
 	}
-	composeFile := ""
-	for _, f := range p.RequiredFiles {
-		f = filepath.ToSlash(strings.TrimSpace(f))
-		if strings.HasPrefix(strings.ToLower(filepath.Base(f)), "docker-compose") {
-			composeFile = f
-			break
-		}
-	}
+	composeFile := dockerComposeFileForPhase(p.RequiredFiles)
 	cli := DockerComposeCLI()
 	if composeFile != "" {
 		rel := composeFile
@@ -348,6 +335,61 @@ func composePlaywrightVerifyCommand(p *DeliveryPhase, layoutRoot string) string 
 		return fmt.Sprintf("cd %s && %s -f %s down && %s -f %s up --exit-code-from playwright", lr, cli, rel, cli, rel)
 	}
 	return fmt.Sprintf("cd %s && %s down && %s up --exit-code-from playwright", lr, cli, cli)
+}
+
+// dockerComposeFileForPhase picks the docker-compose file a phase's Playwright
+// E2E run should target. When a phase ships both a production compose file (e.g.
+// docker-compose.yml) and a test harness (e.g. test/docker-compose.test.yml), the
+// test harness is the one that defines the "playwright" service — the production
+// compose has no such service and `--exit-code-from playwright` fails with
+// "no such service: playwright". Files whose path contains a test/e2e/spec
+// segment or basename are preferred; otherwise the first docker-compose file wins.
+func dockerComposeFileForPhase(files []string) string {
+	fallback := ""
+	best := ""
+	bestScore := -1
+	for _, f := range files {
+		f = filepath.ToSlash(strings.TrimSpace(f))
+		lower := strings.ToLower(f)
+		if !strings.Contains(lower, "docker-compose") {
+			continue
+		}
+		if fallback == "" {
+			fallback = f
+		}
+		score := dockerComposeHarnessScore(lower)
+		if score > bestScore {
+			bestScore = score
+			best = f
+		}
+	}
+	if bestScore > 0 {
+		return best
+	}
+	return fallback
+}
+
+// dockerComposeHarnessScore ranks a docker-compose file by how likely it is a
+// test/E2E harness: higher scores mean more test-oriented.
+func dockerComposeHarnessScore(lower string) int {
+	score := 0
+	if strings.Contains(lower, "/test/") || strings.Contains(lower, "/tests/") {
+		score += 3
+	}
+	if strings.Contains(lower, "/e2e/") || strings.Contains(lower, "/spec/") {
+		score += 2
+	}
+	base := lower
+	if i := strings.LastIndex(base, "/"); i >= 0 {
+		base = base[i+1:]
+	}
+	if strings.Contains(base, "test") {
+		score += 2
+	}
+	if strings.Contains(base, "e2e") || strings.Contains(base, "spec") {
+		score += 1
+	}
+	return score
 }
 
 // StripInvalidCDPrefixes removes leading "cd <dir> && " from verify commands when layout_root

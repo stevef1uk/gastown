@@ -184,8 +184,12 @@ func TestRigFlowQARuntimeSmokeBlock_includesE2ESmokeWithDockerCompose(t *testing
 	if !strings.Contains(block, "E2E / browser smoke test") {
 		t.Fatalf("expected E2E smoke block, got:\n%s", block)
 	}
-	if !strings.Contains(block, "docker compose") {
-		t.Fatalf("expected docker compose command for compose-based E2E, got:\n%s", block)
+	cli := DockerComposeCLI()
+	if !strings.Contains(block, cli) {
+		t.Fatalf("expected %s command for compose-based E2E, got:\n%s", cli, block)
+	}
+	if !strings.Contains(block, "test/docker-compose.test.yml") {
+		t.Fatalf("expected test harness compose file, got:\n%s", block)
 	}
 }
 
