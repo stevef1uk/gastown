@@ -1094,13 +1094,29 @@ func rebuildDeliveryPhasesFromAuthoritative(v WorkflowValidation, authoritative 
 	}
 	// Map authoritative entries to the phase whose existing files share the longest
 	// directory prefix (mirrors ReconcileProfileWithArchitecture's placement).
-	// Capture each phase's original basenames first — after the keep-loop a phase
-	// whose files were renamed goes empty, so basename provenance is lost.
+	// Capture each phase's original basenames AND directories first — after the
+	// keep-loop a phase whose files were renamed goes empty, so provenance is lost.
 	origBase := make([]map[string]bool, len(v.DeliveryPhases))
+	origDirs := make([]map[string]int, len(v.DeliveryPhases))
+	origDirPrefixes := make([][]string, len(v.DeliveryPhases))
 	for i := range v.DeliveryPhases {
 		origBase[i] = map[string]bool{}
+		origDirs[i] = map[string]int{}
+		prefixSet := map[string]bool{}
 		for _, f := range v.DeliveryPhases[i].RequiredFiles {
+			f = filepath.ToSlash(strings.TrimSpace(f))
 			origBase[i][filepath.Base(f)] = true
+			dir := filepath.Dir(f)
+			origDirs[i][dir]++
+			// Also track all prefix directories (e.g., "pingapp" for "pingapp/cmd/server/main.go")
+			parts := strings.Split(dir, "/")
+			for j := 1; j <= len(parts); j++ {
+				prefix := strings.Join(parts[:j], "/")
+				prefixSet[prefix] = true
+			}
+		}
+		for p := range prefixSet {
+			origDirPrefixes[i] = append(origDirPrefixes[i], p)
 		}
 	}
 	for i := range v.DeliveryPhases {
@@ -1157,6 +1173,7 @@ func rebuildDeliveryPhasesFromAuthoritative(v WorkflowValidation, authoritative 
 			continue
 		}
 		// Third pass: token matching against phase ID, Title, and SpecFocus.
+		// This is the primary semantic matcher for layout restructures.
 		if bestIdx < 0 {
 			bestScore := 0
 			for i, phase := range v.DeliveryPhases {
@@ -1167,19 +1184,21 @@ func rebuildDeliveryPhasesFromAuthoritative(v WorkflowValidation, authoritative 
 				}
 			}
 		}
-		// Fourth pass: Same-directory fallback: place the file with the phase that already
-		// holds the most files in the same directory (root-level config/Docker
-		// files cluster with the integration-test phase, cmd/server files with
-		// the core phase). Longest-prefix alone can't distinguish them because
-		// every file shares the layout_root prefix, so ties collapse to phase 0.
+		// Fourth pass: Same-directory-prefix fallback using original phase directories
+		// (captured before keep-loop). This handles layout restructure where files
+		// move but phases keep their semantic directory ownership.
+		// Match if the file's directory has one of the phase's original directory prefixes.
 		if bestIdx < 0 {
 			bestScore := -1
-			dir := filepath.Dir(p)
-			for i, phase := range v.DeliveryPhases {
+			fileDir := filepath.Dir(p)
+			for i := range v.DeliveryPhases {
 				score := 0
-				for _, f := range phase.RequiredFiles {
-					if filepath.Dir(f) == dir {
-						score++
+				for _, prefix := range origDirPrefixes[i] {
+					if strings.HasPrefix(fileDir, prefix+"/") || fileDir == prefix {
+						// Prefer longer (more specific) prefixes
+						if len(prefix) > score {
+							score = len(prefix)
+						}
 					}
 				}
 				if score > bestScore {
@@ -1367,9 +1386,21 @@ func scorePhaseForFilePath(phase DeliveryPhase, p string) int {
 	text := strings.ToLower(phase.ID + " " + phase.Title + " " + phase.SpecFocus)
 	score := 0
 
-	if strings.Contains(pLower, "/tests/") || strings.Contains(pLower, "/test/") || strings.HasPrefix(pBase, "test_") || strings.HasSuffix(pBase, "_test.go") || strings.HasSuffix(pBase, ".spec.ts") {
-		if strings.Contains(text, "test") || strings.Contains(text, "verification") || strings.Contains(text, "qa") || strings.Contains(text, "release") {
-			score += 10
+	// E2E/integration test files (playwright, .spec.ts, e2e/ dir) -> integration/test/release phases
+	isE2ETest := strings.Contains(pLower, "/e2e/") || strings.Contains(pLower, "playwright") || strings.HasSuffix(pBase, ".spec.ts") || strings.HasSuffix(pBase, ".spec.tsx")
+	// Unit test files (_test.go, test_*.py, conftest.py) -> stay with module phase
+	isUnitTest := strings.HasSuffix(pBase, "_test.go") || strings.HasPrefix(pBase, "test_") || strings.Contains(pLower, "conftest.py")
+
+	if isE2ETest {
+		if strings.Contains(text, "integration") || strings.Contains(text, "e2e") || strings.Contains(text, "playwright") || strings.Contains(text, "test") || strings.Contains(text, "verification") || strings.Contains(text, "qa") || strings.Contains(text, "release") {
+			score += 15
+		}
+	} else if isUnitTest {
+		// Don't auto-assign unit tests to test phases; they follow their module
+	} else if strings.Contains(pLower, "/tests/") || strings.Contains(pLower, "/test/") {
+		// Generic test directory - slight preference for test phases
+		if strings.Contains(text, "test") || strings.Contains(text, "verification") || strings.Contains(text, "qa") {
+			score += 5
 		}
 	}
 	if strings.Contains(pLower, "/frontend/") || strings.Contains(pLower, "/web/") || strings.HasSuffix(pBase, ".tsx") || strings.HasSuffix(pBase, ".css") || strings.HasSuffix(pBase, ".html") {
@@ -1392,9 +1423,19 @@ func scorePhaseForFilePath(phase DeliveryPhase, p string) int {
 			score += 5
 		}
 	}
+	// /cmd/ and /server/ directories typically belong to core/backend phases
+	if strings.Contains(pLower, "/cmd/") || strings.Contains(pLower, "/server/") {
+		if strings.Contains(text, "core") || strings.Contains(text, "backend") || strings.Contains(text, "server") || strings.Contains(text, "api") {
+			score += 10
+		}
+	}
 	if strings.Contains(pLower, "/scripts/") || strings.Contains(pBase, "dockerfile") || strings.Contains(pBase, "docker-compose") {
 		if strings.Contains(text, "release") || strings.Contains(text, "packaging") || strings.Contains(text, "foundation") || strings.Contains(text, "setup") || strings.Contains(text, "docker") {
 			score += 5
+		}
+		// Integration/test/release phases should own infrastructure files
+		if strings.Contains(text, "integration") || strings.Contains(text, "test") || strings.Contains(text, "release") || strings.Contains(text, "deploy") {
+			score += 10
 		}
 	}
 
@@ -1402,6 +1443,10 @@ func scorePhaseForFilePath(phase DeliveryPhase, p string) int {
 		return r == '/' || r == '.' || r == '_' || r == '-'
 	})
 	for _, tok := range tokens {
+		// Skip "test" token since we handle test files explicitly above
+		if tok == "test" {
+			continue
+		}
 		if len(tok) > 2 && strings.Contains(text, tok) {
 			score += 2
 		}
