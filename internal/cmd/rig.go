@@ -148,6 +148,27 @@ Examples:
 	RunE: runRigSyncPlanning,
 }
 
+var rigSyncArchCmd = &cobra.Command{
+	Use:   "sync-arch <rig>",
+	Short: "Re-derive workflow-profile.json from architecture.md (authoritative file set)",
+	Long: `Reads architecture.md from the rig's mayor worktree and updates
+mayor/rig/.gastown/workflow-profile.json with the authoritative required_files
+and delivery_phases. This is normally run automatically when the architect
+completes design successfully, but can be invoked manually if needed.
+
+The sync:
+- Merges SPEC layout paths with architecture.md paths (architecture wins)
+- Parses "## Delivery phases" from architecture.md for phase->file mapping
+- Redistributes authoritative files across explicit phases (preserving SPEC semantics)
+- Replaces hallucinated required_files with real implementable paths
+
+Use this after the architect has produced architecture.md but before planning:
+
+  gt rig sync-arch finally`,
+	Args: cobra.ExactArgs(1),
+	RunE: runRigSyncArch,
+}
+
 var rigNormalizeProfileCmd = &cobra.Command{
 	Use:   "normalize-profile <rig>",
 	Short: "Rewrite workflow-profile.json with current rig-flow normalization rules",
@@ -449,11 +470,11 @@ func init() {
 	rigCmd.AddCommand(rigAddCmd)
 	rigCmd.AddCommand(rigBootCmd)
 	rigCmd.AddCommand(rigListCmd)
-	rigCmd.AddCommand(rigSpecIndexCmd)
+rigCmd.AddCommand(rigSpecIndexCmd)
 	rigCmd.AddCommand(rigSetPhaseCmd)
 	rigCmd.AddCommand(rigNormalizeProfileCmd)
-	rigSyncPlanningCmd.Flags().BoolVar(&rigSyncPlanningForce, "force", false, "rewrite plan.md even when it already matches open beads")
 	rigCmd.AddCommand(rigSyncPlanningCmd)
+	rigCmd.AddCommand(rigSyncArchCmd)
 	rigCmd.AddCommand(rigSyncUpstreamCmd)
 	rigCmd.AddCommand(rigRebootCmd)
 	rigCmd.AddCommand(rigRemoveCmd)
@@ -895,6 +916,24 @@ func runRigSyncPlanning(_ *cobra.Command, args []string) error {
 	planPath := filepath.Join(townRoot, rigName, "mayor", "rig", "plan.md")
 	if info, err := os.Stat(planPath); err == nil {
 		fmt.Printf("\nplan.md: %d bytes\n", info.Size())
+	}
+	return nil
+}
+
+func runRigSyncArch(_ *cobra.Command, args []string) error {
+	rigName := args[0]
+	townRoot, err := workspace.FindFromCwdOrError()
+	if err != nil {
+		return fmt.Errorf("not in a Gas Town workspace: %w", err)
+	}
+	rewritten, err := orchestrator.SyncRigWorkflowProfileFromArchitecture(townRoot, rigName)
+	if err != nil {
+		return err
+	}
+	if rewritten {
+		fmt.Printf("%s Synced workflow-profile from architecture.md for rig %s\n", style.Success.Render("✓"), rigName)
+	} else {
+		fmt.Printf("%s No changes (architecture.md missing or no authoritative paths found)\n", style.Warning.Render("!"), rigName)
 	}
 	return nil
 }
