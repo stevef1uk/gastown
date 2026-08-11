@@ -17,6 +17,46 @@ func TestWorkflowValidation_RequirementsFilePath(t *testing.T) {
 	}
 }
 
+func TestSanitizePhaseVerifyCommandsForStack_rewritesFinAllyTestPhase(t *testing.T) {
+	v := WorkflowValidation{
+		LayoutRoot:         "finally",
+		RequiredFiles:      []string{"finally/docker-compose.yml", "finally/test/docker-compose.test.yml"},
+		QAVerifyCommand:    "cd finally && pytest",
+		DevServerPort:      8000,
+		ActivePhaseIDField: "test",
+		DeliveryPhases: []DeliveryPhase{
+			{
+				ID:    "test",
+				Title: "Test Layer",
+				RequiredFiles: []string{
+					"finally/test/package.json",
+					"finally/test/playwright.config.ts",
+					"finally/test/e2e.spec.ts",
+					"finally/Dockerfile",
+					"finally/docker-compose.yml",
+					"finally/test/docker-compose.test.yml",
+				},
+				QAVerifyCommand: "cd finally && test -f finally/docker-compose.yml && echo 'compose file ok'",
+			},
+		},
+	}
+	got := SanitizePhaseVerifyCommandsForStack(v)
+	var testCmd string
+	for _, p := range got.DeliveryPhases {
+		if p.ID == "test" {
+			testCmd = p.QAVerifyCommand
+		}
+	}
+	for _, want := range []string{"docker-compose -f test/docker-compose.test.yml", "--exit-code-from playwright"} {
+		if !strings.Contains(testCmd, want) {
+			t.Fatalf("test phase QAVerifyCommand %q missing %q", testCmd, want)
+		}
+	}
+	if strings.Contains(testCmd, "test -f finally/docker-compose.yml") {
+		t.Fatalf("weak test -f command survived sanitize: %q", testCmd)
+	}
+}
+
 func TestNormalizeLayoutProfile(t *testing.T) {
 	t.Parallel()
 	v := WorkflowValidation{
@@ -381,7 +421,7 @@ func TestFinalPhaseSmokeVerifyCommand(t *testing.T) {
 	t.Parallel()
 	// Go+web+server: should return smoke command
 	v := WorkflowValidation{
-		LayoutRoot:    "linkshelf",
+		LayoutRoot:      "linkshelf",
 		QAVerifyCommand: "cd linkshelf && go test ./...",
 		RequiredFiles: []string{
 			"linkshelf/go.mod",
