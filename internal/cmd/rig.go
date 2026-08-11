@@ -738,7 +738,7 @@ func runRigAdd(cmd *cobra.Command, args []string) error {
 
 	// Scaffold docker-compose/Playwright infra from embedded rig-init templates
 	// when the profile has an integration-test phase that ships both.
-	if n, err := orchestrator.ScaffoldRigIntegrationTemplates(townRoot, name); err != nil {
+	if n, err := orchestrator.ScaffoldRigIntegrationTemplates(townRoot, name, nil); err != nil {
 		fmt.Printf("  %s Could not scaffold integration-test templates: %v\n", style.Warning.Render("!"), err)
 	} else if n > 0 {
 		fmt.Printf("  Scaffolded %d integration-test template file(s) (Playwright Docker)\n", n)

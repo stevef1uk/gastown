@@ -1,0 +1,20 @@
+# Docker compose test harness for multi-service rig
+# Template variables: {{PLAYWRIGHT_IMAGE}}, {{PLAYWRIGHT_WORKDIR}}, {{PLAYWRIGHT_COMMAND}}, {{BASE_URL}}, {{SERVICES_BLOCK}}, {{E2E_DEPENDS_ON}}
+# Reproduces all SPEC services plus e2e runner.
+
+services:
+{{SERVICES_BLOCK}}
+  e2e:
+    image: {{PLAYWRIGHT_IMAGE}}
+    working_dir: /app
+    depends_on:
+      {{E2E_DEPENDS_ON}}
+    volumes:
+      - .:/src:ro
+      - e2e-results:/app/test-results
+    environment:
+      - BASE_URL={{BASE_URL}}
+    command: sh -c "cp -r /src/. /app/ && npm install --no-package-lock && {{PLAYWRIGHT_COMMAND}}"
+
+volumes:
+  e2e-results:

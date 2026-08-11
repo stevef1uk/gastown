@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -15,6 +16,7 @@ import (
 	"github.com/steveyegge/gastown/internal/doltserver"
 	"github.com/steveyegge/gastown/internal/mayor"
 	"github.com/steveyegge/gastown/internal/orchestrator"
+	"github.com/steveyegge/gastown/internal/specprofile"
 	"github.com/steveyegge/gastown/internal/session"
 	"github.com/steveyegge/gastown/internal/style"
 	"github.com/steveyegge/gastown/internal/tmux"
@@ -298,10 +300,31 @@ func runMayorWorkflowStart(cmd *cobra.Command, args []string) error {
 	EnsureOrchestratedTownPipeline(townRoot)
 	if rig := strings.TrimSpace(vars["rig"]); rig != "" {
 		EnsureOrchestratedRigAgents(townRoot, rig)
+		
+		// Use LLM to extract scaffold plan from SPEC for intelligent scaffolding
+		specPath := filepath.Join(townRoot, rig, "mayor", "rig", "SPEC.md")
+		specText, _ := os.ReadFile(specPath)
+		var scaffoldPlan *orchestrator.ScaffoldPlan
+		if len(specText) > 0 {
+			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+			defer cancel()
+			if plan, err := specprofile.ExtractScaffoldPlan(ctx, townRoot, rig, string(specText)); err == nil {
+				scaffoldPlan = &orchestrator.ScaffoldPlan{
+					Kind:       plan.Kind,
+					Stack:      plan.Stack,
+					LayoutRoot: plan.LayoutRoot,
+					Port:       plan.Port,
+					HarnessDir: plan.HarnessDir,
+					BaseURL:    plan.BaseURL,
+					Services:   toOrchServices(plan.Services),
+				}
+			}
+		}
+		
 		// Re-scaffold docker-compose/Playwright infra using the FINAL profile.
 		// spec-index above may have re-indexed and changed layout_root (judge
 		// nondeterminism), so write into whatever layout_root the agents will use.
-		if n, err := orchestrator.ScaffoldRigIntegrationTemplates(townRoot, rig); err != nil {
+		if n, err := orchestrator.ScaffoldRigIntegrationTemplates(townRoot, rig, scaffoldPlan); err != nil {
 			fmt.Printf("  %s Could not scaffold integration-test templates: %v\n", style.Warning.Render("!"), err)
 		} else if n > 0 {
 			fmt.Printf("  Scaffolded %d integration-test template file(s) (Playwright Docker)\n", n)
@@ -833,4 +856,21 @@ func runMayorAcp(cmd *cobra.Command, args []string) error {
 
 	mgr := mayor.NewManager(townRoot)
 	return mgr.StartACP(ctx, mayorAgentOverride, rigName)
+}
+
+func toOrchServices(svcs []specprofile.ScaffoldService) []orchestrator.ScaffoldService {
+	result := make([]orchestrator.ScaffoldService, len(svcs))
+	for i, s := range svcs {
+		result[i] = orchestrator.ScaffoldService{
+			Name:     s.Name,
+			BuildDir: s.BuildDir,
+			Image:    s.Image,
+			Port:     s.Port,
+			Stack:    s.Stack,
+			Public:   s.Public,
+			Health:   s.Health,
+			Env:      s.Env,
+		}
+	}
+	return result
 }

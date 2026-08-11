@@ -14,68 +14,81 @@ const rigInitTemplateDir = "town/templates/rig-init"
 // ScaffoldRigIntegrationTemplates writes docker-compose + Playwright scaffolding
 // (from the embedded rig-init templates) into a rig's layout root when its
 // workflow profile has an integration-test phase that ships both a docker-compose
-// file and Playwright files. Returns the number of files written. Existing files
-// are never overwritten (the agents may already have created them).
-func ScaffoldRigIntegrationTemplates(townRoot, rig string) (int, error) {
+// file and Playwright files. If optPlan is non-nil, it overrides the profile-based
+// detection. Returns the number of files written. Existing files are never
+// overwritten (the agents may already have created them).
+func ScaffoldRigIntegrationTemplates(townRoot, rig string, optPlan *ScaffoldPlan) (int, error) {
 	if rig == "" || townRoot == "" {
 		return 0, nil
 	}
-	v, ok, err := LoadRigWorkflowProfileFile(townRoot, rig)
-	if err != nil {
-		return 0, err
-	}
-	if !ok {
-		return 0, nil
-	}
 
-	// Only scaffold when a delivery phase ships both docker-compose AND Playwright.
-	scaffold := false
-	for _, p := range v.DeliveryPhases {
-		if phaseShipsDockerPlaywright(&p) {
-			scaffold = true
-			break
+	// Determine layout root, port, and profile
+	var layoutRoot string
+	var port int
+	var profile *WorkflowValidation
+
+	if optPlan != nil {
+		layoutRoot = optPlan.LayoutRoot
+		port = optPlan.Port
+	} else {
+		v, ok, err := LoadRigWorkflowProfileFile(townRoot, rig)
+		if err != nil {
+			return 0, err
 		}
-	}
-	if !scaffold {
-		return 0, nil
+		if !ok {
+			return 0, nil
+		}
+
+		// Only scaffold when a delivery phase ships both docker-compose AND Playwright.
+		scaffold := false
+		for _, p := range v.DeliveryPhases {
+			if phaseShipsDockerPlaywright(&p) {
+				scaffold = true
+				break
+			}
+		}
+		if !scaffold {
+			return 0, nil
+		}
+
+		layoutRoot = strings.Trim(filepath.ToSlash(strings.TrimSpace(v.LayoutRoot)), "/")
+		port = v.DevServerPort
+		profile = &v
 	}
 
-	layoutRoot := strings.Trim(filepath.ToSlash(strings.TrimSpace(v.LayoutRoot)), "/")
 	destDir := filepath.Join(townRoot, rig, "mayor", "rig")
 	if layoutRoot != "" && layoutRoot != "." {
 		destDir = filepath.Join(destDir, layoutRoot)
 	}
 
-	port := v.DevServerPort
 	if port == 0 {
 		port = 8080
 	}
-	vals := scaffoldTemplateValues(v, port)
 
-	entries, err := townAssets.ReadDir(rigInitTemplateDir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return 0, nil
-		}
-		return 0, fmt.Errorf("read embedded rig-init templates: %w", err)
+	// Select templates based on plan
+	var templates map[string]string
+	var kind string
+	if optPlan != nil {
+		templates = selectTemplatesForPlan(optPlan)
+		kind = optPlan.Kind
+	} else {
+		templates, kind = selectDefaultTemplates(profile)
 	}
 
+	// Build template values
+	vals := buildTemplateValues(optPlan, port, kind)
+
 	written := 0
-	for _, e := range entries {
-		if e.IsDir() {
-			continue
-		}
-		rel := filepath.ToSlash(e.Name())
-		rel, ok = mapRigInitTemplate(rel)
-		if !ok {
-			continue
-		}
-		data, err := townAssets.ReadFile(rigInitTemplateDir + "/" + e.Name())
+	for srcName, dstRel := range templates {
+		data, err := townAssets.ReadFile(rigInitTemplateDir + "/" + srcName)
 		if err != nil {
-			return written, fmt.Errorf("read template %s: %w", e.Name(), err)
+			if os.IsNotExist(err) {
+				continue
+			}
+			return written, fmt.Errorf("read template %s: %w", srcName, err)
 		}
 		rendered := renderTemplate(string(data), vals)
-		if err := writeIfMissing(destDir, rel, rendered); err != nil {
+		if err := writeIfMissing(destDir, dstRel, rendered); err != nil {
 			return written, err
 		}
 		written++
@@ -83,16 +96,160 @@ func ScaffoldRigIntegrationTemplates(townRoot, rig string) (int, error) {
 	return written, nil
 }
 
-// mapRigInitTemplate maps a template filename to its destination path under the
-// layout root. The e2e spec is excluded: it is app-specific and the agents write
-// it during the integration-test phase.
-func mapRigInitTemplate(name string) (string, bool) {
-	switch name {
-	case "docker-compose.yml", "package.json", "playwright.config.ts", "Dockerfile":
-		return name, true
-	default:
-		return "", false
+// buildTemplateValues builds the substitution map for templates.
+func buildTemplateValues(plan *ScaffoldPlan, port int, kind string) map[string]string {
+	vals := map[string]string{
+		"PLAYWRIGHT_IMAGE":    "playwright-go-test:latest",
+		"PLAYWRIGHT_WORKDIR":  "/app",
+		"PLAYWRIGHT_COMMAND":  "npx playwright test --project=chromium",
+		"APP_PORT":            fmt.Sprintf("%d", port),
+		"WEB_PORT":            fmt.Sprintf("%d", port),
+		"TEST_DIR":            "./e2e",
+		"NODE_IMAGE":          "node:20-slim",
+		"PY_IMAGE":            "python:3.11-slim",
+		"FRONTEND_DIR":        "frontend",
+		"BACKEND_DIR":         "backend",
+		"STATIC_OUTPUT":       ".next/static",
+		"UV_CMD":              "pip install -r requirements.txt",
+		"RUN_CMD":             `["python", "app.py"]`,
+		"HEALTHCHECK":         `"CMD", "curl", "-f", "http://localhost:${APP_PORT}/"`,
+		"ENV_BLOCK":           "PORT=${APP_PORT}",
+		"SERVICES_BLOCK":      "",
+		"E2E_DEPENDS_ON":      "",
+		"APP_BUILD":           ".",
 	}
+
+	// Determine base URL based on kind
+	baseURL := ""
+	if plan != nil && plan.BaseURL != "" {
+		baseURL = plan.BaseURL
+	}
+	if baseURL == "" {
+		switch kind {
+		case "single-container", "multi-service":
+			baseURL = fmt.Sprintf("http://app:%d", port)
+		default:
+			baseURL = fmt.Sprintf("http://host.docker.internal:%d", port)
+		}
+	}
+	vals["PLAYWRIGHT_BASE_URL"] = baseURL
+	vals["BASE_URL"] = baseURL
+
+	// Derive Dockerfile values from stack
+	if plan != nil {
+		switch plan.Stack {
+		case "python":
+			vals["RUN_CMD"] = `["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "` + fmt.Sprintf("%d", port) + `"]`
+		case "node":
+			vals["RUN_CMD"] = `["npm", "start"]`
+		case "hybrid":
+			vals["UV_CMD"] = "uv sync --frozen 2>/dev/null || pip install -r requirements.txt"
+			vals["STATIC_OUTPUT"] = "out"
+		case "go":
+			vals["RUN_CMD"] = `["./server"]`
+		}
+
+		// Build services block for multi-service
+		if plan.Kind == "multi-service" && len(plan.Services) > 0 {
+			var svcLines []string
+			var dependsLines []string
+			for _, svc := range plan.Services {
+				svcLines = append(svcLines, fmt.Sprintf("  %s:\n    build:\n      context: %s\n    ports:\n      - \"%d:%d\"",
+					svc.Name, svc.BuildDir, svc.Port, svc.Port))
+				dependsLines = append(dependsLines, svc.Name+": condition: service_healthy")
+			}
+			vals["SERVICES_BLOCK"] = strings.Join(svcLines, "\n")
+			vals["E2E_DEPENDS_ON"] = strings.Join(dependsLines, "\n      ")
+		}
+	}
+
+	return vals
+}
+
+// selectTemplatesForPlan picks the right template files based on the scaffold plan.
+func selectTemplatesForPlan(plan *ScaffoldPlan) map[string]string {
+	templates := map[string]string{}
+
+	// Dockerfile based on stack
+	switch plan.Stack {
+	case "hybrid":
+		templates["Dockerfile.hybrid"] = "Dockerfile"
+	case "python":
+		templates["Dockerfile.python"] = "Dockerfile"
+	case "node":
+		templates["Dockerfile.node"] = "Dockerfile"
+	default:
+		templates["Dockerfile"] = "Dockerfile"
+	}
+
+	// Docker-compose based on kind
+	switch plan.Kind {
+	case "host-run":
+		templates["docker-compose.host-run.yml"] = "docker-compose.yml"
+	case "single-container":
+		templates["docker-compose.single-container.yml"] = "test/docker-compose.test.yml"
+	case "multi-service":
+		templates["docker-compose.multi-service.yml"] = "test/docker-compose.test.yml"
+	}
+
+	// Playwright config + package.json
+	templates["playwright.config.ts"] = "playwright.config.ts"
+	templates["package.json"] = "package.json"
+
+	return templates
+}
+
+// selectDefaultTemplates returns the legacy template selection (no plan).
+// Detects hybrid stack and compose kind from profile when possible.
+func selectDefaultTemplates(v *WorkflowValidation) (map[string]string, string) {
+	templates := map[string]string{}
+	kind := "host-run"
+
+	if v != nil {
+		hasFrontend := false
+		hasBackend := false
+		hasDockerfile := false
+		hasTestCompose := false
+		for _, f := range v.RequiredFiles {
+			if strings.Contains(f, "frontend") || strings.Contains(f, "package.json") {
+				hasFrontend = true
+			}
+			if strings.Contains(f, "backend") || strings.Contains(f, "pyproject.toml") {
+				hasBackend = true
+			}
+			if strings.HasSuffix(f, "Dockerfile") {
+				hasDockerfile = true
+			}
+			if strings.HasSuffix(f, "docker-compose.test.yml") || strings.HasSuffix(f, "docker-compose.test.yaml") {
+				hasTestCompose = true
+			}
+		}
+
+		// Stack detection
+		if hasFrontend && hasBackend {
+			templates["Dockerfile.hybrid"] = "Dockerfile"
+		} else {
+			templates["Dockerfile"] = "Dockerfile"
+		}
+
+		// Compose kind: single-container if both Dockerfile and test-compose are required
+		if hasDockerfile && hasTestCompose {
+			kind = "single-container"
+			templates["docker-compose.single-container.yml"] = "test/docker-compose.test.yml"
+		} else {
+			// Host-run: write host-run compose to layout root
+			kind = "host-run"
+			templates["docker-compose.host-run.yml"] = "docker-compose.yml"
+		}
+	} else {
+		templates["Dockerfile"] = "Dockerfile"
+		templates["docker-compose.host-run.yml"] = "docker-compose.yml"
+	}
+
+	templates["package.json"] = "package.json"
+	templates["playwright.config.ts"] = "playwright.config.ts"
+
+	return templates, kind
 }
 
 // scaffoldTemplateValues derives template substitution values from the workflow

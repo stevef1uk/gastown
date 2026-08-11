@@ -1,0 +1,19 @@
+# Dockerfile for Node/Next.js web app
+# Template variables: {{NODE_IMAGE}}, {{NODE_INSTALL}}, {{BUILD_CMD}}, {{RUN_CMD}}, {{APP_PORT}}, {{WORKDIR}}
+# Multi-stage: builder -> runtime serving static export or SSR.
+
+FROM {{NODE_IMAGE}} AS builder
+WORKDIR /build
+COPY package*.json ./
+RUN {{NODE_INSTALL}}
+COPY . .
+RUN {{BUILD_CMD}}
+
+FROM {{NODE_IMAGE}} AS runtime
+WORKDIR {{WORKDIR}}
+COPY --from=builder /build/.next ./.next
+COPY --from=builder /build/public ./public
+COPY --from=builder /build/package*.json ./
+COPY --from=builder /build/node_modules ./node_modules
+EXPOSE {{APP_PORT}}
+CMD {{RUN_CMD}}

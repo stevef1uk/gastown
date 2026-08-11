@@ -1,0 +1,15 @@
+# Dockerfile for Python web server
+# Template variables: {{PY_IMAGE}}, {{PY_INSTALL}}, {{RUN_CMD}}, {{APP_PORT}}, {{WORKDIR}}
+# Single-stage runtime with uv or pip install.
+
+FROM {{PY_IMAGE}}
+WORKDIR {{WORKDIR}}
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+
+COPY pyproject.toml requirements.txt* ./
+RUN {{PY_INSTALL}}
+
+COPY . .
+
+EXPOSE {{APP_PORT}}
+CMD {{RUN_CMD}}

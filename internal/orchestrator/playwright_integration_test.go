@@ -127,7 +127,7 @@ func main() {
 	}
 
 	// Scaffold integration templates
-	written, err := ScaffoldRigIntegrationTemplates(tmpDir, "testrig")
+	written, err := ScaffoldRigIntegrationTemplates(tmpDir, "testrig", nil)
 	if err != nil {
 		t.Fatalf("scaffold: %v", err)
 	}
