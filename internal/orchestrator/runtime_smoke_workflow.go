@@ -172,9 +172,14 @@ func ExtractPythonServerStartFromText(text string) string {
 	if text == "" {
 		return ""
 	}
+	// First try the structured regex that matches proper server commands with module:app
 	if m := pythonServerSegmentRE.FindStringSubmatch(" " + strings.ReplaceAll(text, "&&", " && ")); len(m) >= 2 {
-		return trimSmokeServerCommand(m[1])
+		cmd := trimSmokeServerCommand(m[1])
+		if uvicornServerRE.MatchString(cmd) {
+			return cmd
+		}
 	}
+	// Fallback: scan for uvicorn/gunicorn/flask/hypercorn commands that contain module:app
 	for _, part := range strings.Split(text, "&&") {
 		part = strings.TrimSpace(part)
 		pl := strings.ToLower(part)
@@ -183,7 +188,10 @@ func ExtractPythonServerStartFromText(text string) string {
 		}
 		if strings.Contains(pl, "uvicorn") || strings.Contains(pl, "gunicorn") ||
 			strings.Contains(pl, "flask run") || strings.Contains(pl, "hypercorn") {
-			return trimSmokeServerCommand(part)
+			cmd := trimSmokeServerCommand(part)
+			if uvicornServerRE.MatchString(cmd) {
+				return cmd
+			}
 		}
 	}
 	return ""

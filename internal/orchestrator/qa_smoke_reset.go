@@ -1,6 +1,7 @@
 package orchestrator
 
 import (
+	"fmt"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -154,7 +155,13 @@ func deriveRuntimeSmokeServerStart(v WorkflowValidation, mergedDocs string) stri
 		if cmd := extractPythonServerStartFromQA(v); cmd != "" {
 			return cmd
 		}
-		return ExtractPythonServerStartFromText(mergedDocs)
+		if cmd := ExtractPythonServerStartFromText(mergedDocs); cmd != "" {
+			return cmd
+		}
+		// Fallback: derive from layout root + main.py/app.py presence (mirrors Go fallback)
+		if cmd := derivePythonServerStartFromLayout(v); cmd != "" {
+			return cmd
+		}
 	}
 	return ""
 }
@@ -181,4 +188,77 @@ func smokeResetShellParts(paths []string) []string {
 
 func bashSingleQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
+}
+
+// derivePythonServerStartFromLayout derives a uvicorn command from the layout root
+// and the presence of main.py/app.py/server.py, mirroring the Go fallback logic.
+func derivePythonServerStartFromLayout(v WorkflowValidation) string {
+	if !WorkflowUsesPython(v) {
+		return ""
+	}
+	layout := strings.Trim(strings.TrimSpace(v.LayoutRoot), "/")
+	if layout == "" || layout == "." {
+		return ""
+	}
+	// Look for common Python server entry patterns in required files
+	for _, f := range v.RequiredFiles {
+		f = filepath.ToSlash(strings.TrimSpace(f))
+		if f == "" {
+			continue
+		}
+		// Remove layout root prefix
+		rel := f
+		if strings.HasPrefix(f, layout+"/") {
+			rel = strings.TrimPrefix(f, layout+"/")
+		}
+		lower := strings.ToLower(rel)
+		if strings.HasSuffix(lower, "/main.py") ||
+			strings.HasSuffix(lower, "/app.py") ||
+			strings.HasSuffix(lower, "/server.py") {
+			// Derive module from path: e.g., backend/app/main.py → backend.app.main
+			dir := filepath.Dir(rel)
+			parts := strings.Split(dir, "/")
+			var modParts []string
+			for _, part := range parts {
+				if part != "" {
+					modParts = append(modParts, part)
+				}
+			}
+			if len(modParts) >= 1 {
+				fileName := strings.TrimSuffix(filepath.Base(f), ".py")
+				// Module is the package path (dots) + filename
+				modPath := strings.Join(modParts, ".")
+				module := modPath + "." + fileName
+				return fmt.Sprintf("uvicorn %s:app --host 0.0.0.0 --port 8000", module)
+			}
+		}
+	}
+	// Fallback for common layouts: layout/backend/app/main.py → backend.app.main
+	commonPaths := []string{
+		"backend/app/main.py",
+		"app/main.py",
+		"server/main.py",
+		"src/app/main.py",
+		"backend/main.py",
+	}
+	for _, cp := range commonPaths {
+		for _, f := range v.RequiredFiles {
+			f = filepath.ToSlash(strings.TrimSpace(f))
+			if strings.HasSuffix(f, layout+"/"+cp) || strings.HasSuffix(f, cp) {
+				dir := filepath.Dir(cp)
+				parts := strings.Split(dir, "/")
+				var modParts []string
+				for _, part := range parts {
+					if part != "" {
+						modParts = append(modParts, part)
+					}
+				}
+				fileName := strings.TrimSuffix(filepath.Base(cp), ".py")
+				modPath := strings.Join(modParts, ".")
+				module := modPath + "." + fileName
+				return fmt.Sprintf("uvicorn %s:app --host 0.0.0.0 --port 8000", module)
+			}
+		}
+	}
+	return ""
 }

@@ -264,6 +264,65 @@ func hasPythonTool(cmd string) bool   { return pyToolRE.MatchString(cmd) }
 func hasNodeTool(cmd string) bool     { return nodeToolRE.MatchString(cmd) }
 func hasAnyStackTool(cmd string) bool { return allStackRE.MatchString(cmd) }
 
+// pythonServerEntryModule derives the import module and working directory for a
+// Python server entry point (main.py, app.py, server.py, or any .../api/ file).
+// Returns (module, cwd) where cwd is the directory from which to run the import.
+// For example:
+//   layout=finally, file=finally/backend/app/main.py → ("app.main", "finally/backend")
+//   layout=., file=app.py → ("app", ".")
+func pythonServerEntryModule(files []string, layoutRoot string) (string, string) {
+	for _, f := range files {
+		f = filepath.ToSlash(strings.TrimSpace(f))
+		if f == "" {
+			continue
+		}
+		// Remove layout root prefix if present
+		rel := f
+		if layoutRoot != "" && layoutRoot != "." && strings.HasPrefix(f, layoutRoot+"/") {
+			rel = strings.TrimPrefix(f, layoutRoot+"/")
+		}
+		lower := strings.ToLower(rel)
+		// Detect server entry files: main.py, app.py, server.py, or any file under .../api/
+		if strings.HasSuffix(lower, "/main.py") ||
+			strings.HasSuffix(lower, "/app.py") ||
+			strings.HasSuffix(lower, "/server.py") ||
+			strings.Contains(lower, "/api/") {
+			// Derive the module import path from the directory containing the file
+			dir := filepath.Dir(rel)
+			// Convert path separators to dots for Python import
+			// e.g., backend/app/main.py → dir=backend/app → module=app.main
+			parts := strings.Split(dir, "/")
+			var modParts []string
+			for _, part := range parts {
+				if part != "" {
+					modParts = append(modParts, part)
+				}
+			}
+			if len(modParts) > 0 {
+				// The module is the last two parts: e.g., backend/app → app.main
+				// Actually we want the package + filename (without .py)
+				fileName := strings.TrimSuffix(filepath.Base(f), ".py")
+				if len(modParts) >= 1 {
+					// Use the last directory as the package, plus the filename
+					pkg := modParts[len(modParts)-1]
+					module := pkg + "." + fileName
+					// cwd is the parent of the package directory
+					var cwdParts []string
+					if len(modParts) > 1 {
+						cwdParts = modParts[:len(modParts)-1]
+					}
+					cwd := layoutRoot
+					if len(cwdParts) > 0 {
+						cwd = filepath.Join(layoutRoot, filepath.Join(cwdParts...))
+					}
+					return module, cwd
+				}
+			}
+		}
+	}
+	return "", ""
+}
+
 // phaseFileStacks reports which of Go/Python/Node the phase's required files imply.
 func phaseFileStacks(files []string) (hasGo, hasPy, hasNode bool) {
 	for _, f := range files {
@@ -1721,6 +1780,12 @@ func defaultQAVerifyForPhase(p *DeliveryPhase, layoutRoot string) string {
 		}
 		if hasPyTests {
 			return fmt.Sprintf("cd %s && python -m pytest -v", lr)
+		}
+		// If this phase ships a server entry (main.py/app.py/server.py or .../api/),
+		// default to an import check for the entry module so a missing create_app/factory
+		// is caught at import time rather than at the final E2E gate.
+		if mod, cwd := pythonServerEntryModule(p.RequiredFiles, lr); mod != "" {
+			return fmt.Sprintf("cd %s && python -c \"import %s\"", cwd, mod)
 		}
 		return fmt.Sprintf("cd %s && python -c 'import sys; print(\"ok\")'", lr)
 	}
