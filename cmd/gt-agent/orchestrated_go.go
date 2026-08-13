@@ -308,7 +308,7 @@ func validateGoImplementationCommand(cmd, townRoot, rig, mayorRigDir, activeBead
 	verifyHint := orchestrator.AgentShellVerifyCommand(rig, v, mayorRigDir, beadPath)
 	onGoModBead := strings.HasSuffix(filepath.ToSlash(beadPath), "go.mod")
 	onServerMainBead := orchestrator.IsServerMainImplementBead(beadPath)
-	if strings.Contains(lower, "go run") || strings.Contains(lower, "curl ") {
+	if !isWrappedHostRunE2E(cmd) && (strings.Contains(lower, "go run") || strings.Contains(lower, "curl ")) {
 		if onGoModBead || !onServerMainBead || !orchestrator.GoServerMainExists(mayorRigDir, v) {
 			return fmt.Errorf("for this bead use compile verify only — use: %s", verifyHint)
 		}
@@ -343,4 +343,16 @@ func isFrontendGoTestCommand(lower string) bool {
 		}
 	}
 	return false
+}
+
+// isWrappedHostRunE2E reports whether the command is the harness's own wrapped
+// host-run compose E2E (maybeWrapHostRunComposeE2E). Such a command legitimately
+// starts the host server (go run) and probes it (curl) before running the
+// Playwright container, so the compile-verify-only guard must not reject it as a
+// premature manual server run on a non-server bead.
+func isWrappedHostRunE2E(cmd string) bool {
+	lower := strings.ToLower(cmd)
+	return strings.Contains(lower, ".gt-e2e.pid") &&
+		strings.Contains(lower, "docker compose") &&
+		strings.Contains(lower, "--exit-code-from")
 }

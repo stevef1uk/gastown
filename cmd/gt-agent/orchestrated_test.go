@@ -1333,6 +1333,39 @@ func TestValidateGoImplementationCommand(t *testing.T) {
 	}
 }
 
+// TestValidateGoImplementationCommand_wrappedHostRunE2E is a regression test for the
+// integration-test phase: the harness wraps the compose E2E verify into a
+// server-bootstrap script (go run + curl + docker compose), and the
+// compile-verify-only guard must not reject that wrapped command as a premature
+// manual server run on a non-server bead.
+func TestValidateGoImplementationCommand_wrappedHostRunE2E(t *testing.T) {
+	dir := t.TempDir()
+	mayor := filepath.Join(dir, "mockrig", "mayor", "rig")
+	if err := os.MkdirAll(filepath.Join(mayor, "linkshelf", "cmd", "server"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	v := orchestrator.WorkflowValidation{
+		LayoutRoot: "linkshelf",
+		RequiredFiles: []string{
+			"linkshelf/go.mod",
+			"linkshelf/cmd/server/main.go",
+		},
+		QAVerifyCommand: "cd linkshelf && go test ./...",
+	}
+	town := dir
+	rig := "mockrig"
+	wrapped := `set -euo pipefail; rm -f .gt-e2e.pid .gt-e2e.log && (go run ./cmd/server >.gt-e2e.log 2>&1 & echo $! >.gt-e2e.pid) && _gtok=0; for _i in 1 2 3 4; do curl -s --connect-timeout 1 --max-time 2 http://127.0.0.1:8080/ >/dev/null && _gtok=1 && break; sleep 1; done && test "$_gtok" = 1 && docker compose -f docker-compose.yml down 2>/dev/null; docker compose -f docker-compose.yml up --exit-code-from playwright && rc=$? && (_gtsrv=$(cat .gt-e2e.pid 2>/dev/null); kill "$_gtsrv" 2>/dev/null || true; rm -f .gt-e2e.pid .gt-e2e.log) && exit $rc`
+	// The wrapped E2E is the harness's own verify for this phase; it must pass even
+	// though it contains go run + curl on a non-server (integration-test) bead.
+	if err := validateGoImplementationCommand(wrapped, town, rig, mayor, "", v, true); err != nil {
+		t.Fatalf("wrapped host-run E2E should be allowed: %v", err)
+	}
+	// A manual go run on the same non-server bead must still be rejected.
+	if err := validateGoImplementationCommand("cd linkshelf && go run ./cmd/server", town, rig, mayor, "", v, true); err == nil {
+		t.Fatal("expected reject manual go run on non-server bead")
+	}
+}
+
 func TestValidateGoImplementationCommand_flatLayoutBlocksCmdTree(t *testing.T) {
 	dir := t.TempDir()
 	mayor := filepath.Join(dir, "mockrig", "mayor", "rig")
