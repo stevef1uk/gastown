@@ -6,6 +6,6 @@
     "test": "npx playwright test --project=chromium"
   },
   "devDependencies": {
-    "@playwright/test": "^1.44.0"
+    "@playwright/test": "{{PLAYWRIGHT_VERSION}}"
   }
 }

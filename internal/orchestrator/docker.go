@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -13,6 +14,22 @@ import (
 // docker-compose integration-test phases. Built once per machine and reused
 // across rigs; created from the embedded Dockerfile.playwright template.
 const PlaywrightDockerImage = "playwright-go-test:latest"
+
+// PlaywrightRunnerBaseTag is the mcr.microsoft.com/playwright tag the shared
+// runner image is built FROM. Kept in sync with playwrightRunnerDockerfile.
+const PlaywrightRunnerBaseTag = "v1.62.1-jammy"
+
+// PlaywrightNPMVersion returns the @playwright/test version that matches the
+// runner image's preinstalled browsers, derived from PlaywrightRunnerBaseTag so
+// a generated package.json can never drift from the image (browser/CLI skew is
+// a classic "Executable doesn't exist" failure).
+func PlaywrightNPMVersion() string {
+	ver := strings.TrimPrefix(PlaywrightRunnerBaseTag, "v")
+	if i := strings.IndexByte(ver, '-'); i >= 0 {
+		ver = ver[:i]
+	}
+	return ver
+}
 
 // playwrightRunnerDockerfile is the embedded template that builds the Playwright
 // test-runner image (base + @playwright/test) whose node_modules are copied into
@@ -77,6 +94,7 @@ func launchDetachedPlaywrightBuild() error {
 	if err != nil {
 		return fmt.Errorf("read embedded Dockerfile.playwright: %w", err)
 	}
+	dfData = []byte(strings.ReplaceAll(string(dfData), "{{PLAYWRIGHT_BASE_TAG}}", PlaywrightRunnerBaseTag))
 	dfPath := filepath.Join(buildDir, "Dockerfile")
 	if err := os.WriteFile(dfPath, dfData, 0o644); err != nil {
 		return fmt.Errorf("write Dockerfile.playwright: %w", err)

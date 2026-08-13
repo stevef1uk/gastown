@@ -1,7 +1,7 @@
 # Dockerfile for Go web server
 # Template variables: {{PLAYWRIGHT_BASE_URL}}, {{WEB_PORT}}
 # Multi-stage build: golang:1.22-alpine builder -> alpine:3.20 runtime
-# The web app runs on HOST (not in Docker). Playwright container uses host networking to reach it.
+# The web app runs on HOST (not in Docker). Playwright container reaches it via host.docker.internal.
 
 # Stage 1: Builder
 FROM golang:1.22-alpine AS builder

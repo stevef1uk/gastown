@@ -22,9 +22,34 @@ DO NOT implement the code — that is the Polecat's job.
    it's smaller, your heredoc body was empty or your placeholder
    wasn't replaced — try again.
 
-## ⚠️ STEP 0 — Project-bead precondition (Fix #113)
+## ⚠️ E2E / Docker harness contract (write these facts into architecture.md verbatim)
 
-Stage 1 (design) is ONLY appropriate when an operator-driven Stage 0
+When SPEC.md describes a Docker-based Playwright E2E where the web app runs on
+the HOST, document the integration test exactly as the Gas Town harness builds it:
+
+- The Playwright runner uses the **locally-built shared image
+  `playwright-go-test:latest`** (built asynchronously at workflow start from
+  `mcr.microsoft.com/playwright:v1.62.1-jammy` when missing, then reused across
+  rigs). Do **NOT** pin a specific public `mcr.microsoft.com/playwright` image
+  tag or version in the architecture or compose — the local image is the
+  canonical runner and no registry pull is needed.
+- The container reaches the host-launched app via **`host.docker.internal`**
+  (compose `extra_hosts: ["host.docker.internal:host-gateway"]`). Do **NOT**
+  require `network_mode: host` or `127.0.0.1` — host networking does not expose
+  the macOS host's loopback to containers, so `host.docker.internal` is the
+  correct cross-platform reach path.
+- The Playwright `baseURL` is **`http://host.docker.internal:<app port>`** and
+  the E2E spec uses the configured base URL (no container-local or
+  `host.docker.internal` hardcoding in the spec).
+- The app itself must match SPEC's Web UI description exactly (headings, buttons,
+  text) because the E2E tests exercise that real page.
+
+Use these exact facts in the architecture's "Integration and testing",
+"Docker & Deployment", and "E2E / integration testing" sections so QA validates
+the harness against reality instead of inventing a public image version or
+host-networking requirement.
+
+## ⚠️ STEP 0 — Project-bead precondition (Fix #113)Stage 1 (design) is ONLY appropriate when an operator-driven Stage 0
 kickoff has happened. That kickoff creates a project bead and either
 slings you with `--on <hq-project-bead>` (the bead lands on your hook
 with a `Project:` description) OR mails you with a `Project bead: <id>`

@@ -238,6 +238,7 @@ func rigFlowE2ESmokeBlock(v WorkflowValidation, mayorRigDir string) string {
 	b.WriteString("## E2E / browser smoke test (exercises real UI and API)\n\n")
 	b.WriteString("The active phase includes E2E test files in `required_files`. Before returning `all_passed`, **run the E2E tests** so they exercise the real UI and API in a browser — curl alone is not enough.\n\n")
 	if hasCompose && composeFile != "" {
+		b.WriteString("The rig's compose uses the **locally-built shared runner image** `playwright-go-test:latest` (built asynchronously at workflow start from `mcr.microsoft.com/playwright:v1.62.1-jammy`). Do **not** require a specific public `mcr.microsoft.com/playwright:<version>` tag — the local image is canonical and needs no registry pull. For host-run rigs the container reaches the host-launched server via `host.docker.internal` (compose `extra_hosts` host-gateway); do **not** require `network_mode: host` or a `127.0.0.1` base URL — host networking does not expose the macOS host's loopback to containers.\n\n")
 		b.WriteString("| Check | How |\n|-------|-----|\n")
 		b.WriteString(fmt.Sprintf("| E2E tests pass | `cd {{rig}}/mayor/rig && %s -f %s down && %s -f %s up --exit-code-from playwright` |\n", cli, composeFile, cli, composeFile))
 		b.WriteString("| Page loads | Tests use `page.goto` / `page.locator` against the running app |\n")

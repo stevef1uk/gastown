@@ -1868,7 +1868,10 @@ func maybeWrapHostRunComposeE2E(cmd, townRoot, rig string, v orchestrator.Workfl
 	parts = append(parts, `test "$_gtok" = 1`)
 	parts = append(parts, composeCmd)
 	parts = append(parts, `rc=$?`)
-	parts = append(parts, `(_gtsrv=$(cat .gt-e2e.pid 2>/dev/null); kill ${_gtsrv} 2>/dev/null || true; rm -f .gt-e2e.pid .gt-e2e.log)`)
+	// Kill the server AND its children: `go run ./cmd/server` spawns the compiled
+	// binary as a child, so killing only $! leaves the server holding the port
+	// and leaks across QA attempts.
+	parts = append(parts, `(_gtsrv=$(cat .gt-e2e.pid 2>/dev/null); [ -n "$_gtsrv" ] && pkill -TERM -P "$_gtsrv" 2>/dev/null || true; kill "$_gtsrv" 2>/dev/null || true; rm -f .gt-e2e.pid .gt-e2e.log)`)
 	parts = append(parts, `exit $rc`)
 
 	wrapped := "set -euo pipefail; " + strings.Join(parts, " && ")

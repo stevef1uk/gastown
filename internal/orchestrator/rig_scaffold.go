@@ -99,24 +99,25 @@ func ScaffoldRigIntegrationTemplates(townRoot, rig string, optPlan *ScaffoldPlan
 // buildTemplateValues builds the substitution map for templates.
 func buildTemplateValues(plan *ScaffoldPlan, port int, kind string) map[string]string {
 	vals := map[string]string{
-		"PLAYWRIGHT_IMAGE":    "playwright-go-test:latest",
-		"PLAYWRIGHT_WORKDIR":  "/app",
-		"PLAYWRIGHT_COMMAND":  "npx playwright test --project=chromium",
-		"APP_PORT":            fmt.Sprintf("%d", port),
-		"WEB_PORT":            fmt.Sprintf("%d", port),
-		"TEST_DIR":            "./e2e",
-		"NODE_IMAGE":          "node:20-slim",
-		"PY_IMAGE":            "python:3.11-slim",
-		"FRONTEND_DIR":        "frontend",
-		"BACKEND_DIR":         "backend",
-		"STATIC_OUTPUT":       ".next/static",
-		"UV_CMD":              "pip install -r requirements.txt",
-		"RUN_CMD":             `["python", "app.py"]`,
-		"HEALTHCHECK":         `"CMD", "curl", "-f", "http://localhost:${APP_PORT}/"`,
-		"ENV_BLOCK":           "PORT=${APP_PORT}",
-		"SERVICES_BLOCK":      "",
-		"E2E_DEPENDS_ON":      "",
-		"APP_BUILD":           ".",
+		"PLAYWRIGHT_IMAGE":   "playwright-go-test:latest",
+		"PLAYWRIGHT_VERSION": PlaywrightNPMVersion(),
+		"PLAYWRIGHT_WORKDIR": "/app",
+		"PLAYWRIGHT_COMMAND": "npx playwright test --project=chromium",
+		"APP_PORT":           fmt.Sprintf("%d", port),
+		"WEB_PORT":           fmt.Sprintf("%d", port),
+		"TEST_DIR":           "./e2e",
+		"NODE_IMAGE":         "node:20-slim",
+		"PY_IMAGE":           "python:3.11-slim",
+		"FRONTEND_DIR":       "frontend",
+		"BACKEND_DIR":        "backend",
+		"STATIC_OUTPUT":      ".next/static",
+		"UV_CMD":             "pip install -r requirements.txt",
+		"RUN_CMD":            `["python", "app.py"]`,
+		"HEALTHCHECK":        `"CMD", "curl", "-f", "http://localhost:${APP_PORT}/"`,
+		"ENV_BLOCK":          "PORT=${APP_PORT}",
+		"SERVICES_BLOCK":     "",
+		"E2E_DEPENDS_ON":     "",
+		"APP_BUILD":          ".",
 	}
 
 	// Determine base URL based on kind
@@ -266,12 +267,12 @@ func scaffoldTemplateValues(v WorkflowValidation, port int) map[string]string {
 	playwrightCmd := "npx playwright test --project=chromium"
 
 	return map[string]string{
-		"PLAYWRIGHT_IMAGE":   "playwright-go-test:latest",
-		"PLAYWRIGHT_WORKDIR": "/app",
-		"PLAYWRIGHT_COMMAND": playwrightCmd,
+		"PLAYWRIGHT_IMAGE":    "playwright-go-test:latest",
+		"PLAYWRIGHT_WORKDIR":  "/app",
+		"PLAYWRIGHT_COMMAND":  playwrightCmd,
 		"PLAYWRIGHT_BASE_URL": webBase,
-		"TEST_DIR":           "./e2e",
-		"BASE_URL":           webBase,
+		"TEST_DIR":            "./e2e",
+		"BASE_URL":            webBase,
 	}
 }
 

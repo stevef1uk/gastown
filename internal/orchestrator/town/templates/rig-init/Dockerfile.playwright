@@ -3,7 +3,7 @@
 # across rigs. Uses base image's pre-installed Playwright + browsers.
 # Template variables: none (single global image)
 
-FROM mcr.microsoft.com/playwright:v1.62.1-jammy
+FROM mcr.microsoft.com/playwright:{{PLAYWRIGHT_BASE_TAG}}
 
 WORKDIR /app
 

@@ -52,7 +52,7 @@ A tiny Go HTTP server with one endpoint. Tests run via Playwright in Docker.
 ## Architecture
 - Go 1.22, single main.go
 - Static HTML/JS served from /
-- **Web server runs on HOST; Playwright E2E tests via Docker compose with host networking**
+- **Web server runs on HOST; Playwright E2E tests via Docker compose, reaching the host through host.docker.internal**
 
 ## HTTP API
 - GET /ping → 200 JSON {"message": "pong"}
@@ -65,7 +65,7 @@ A tiny Go HTTP server with one endpoint. Tests run via Playwright in Docker.
 1. **go-module** - Initialize go.mod
 2. **core** - main.go with /ping handler
 3. **web** - index.html + app.js
-4. **integration-test** - Playwright E2E via Docker compose (host networking)
+4. **integration-test** - Playwright E2E via Docker compose (Playwright container reaches host via host.docker.internal)
 
 ## Layout
 **layout_root: pingapp**
