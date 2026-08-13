@@ -238,6 +238,41 @@ func TestMultiServiceComposeRender_noPlan(t *testing.T) {
 	}
 }
 
+func TestBuildTemplateValues_multiService_filtersInvalidServices(t *testing.T) {
+	plan := &ScaffoldPlan{
+		Kind:  "multi-service",
+		Stack: "go",
+		Port:  8080,
+		Services: []ScaffoldService{
+			{Name: "web", BuildDir: ".", Port: 8080, Public: true, Health: "curl -f http://localhost:8080/api/links"},
+			{Name: "playwright", BuildDir: ".", Port: 8080}, // reserved name — must be dropped
+			{Name: "api", BuildDir: ".", Port: 0},           // placeholder port — must be dropped
+		},
+	}
+	v := &WorkflowValidation{
+		LayoutRoot:    "linkshelf",
+		RequiredFiles: []string{"linkshelf/go.mod", "linkshelf/Dockerfile.web", "linkshelf/docker-compose.yml"},
+	}
+	vals := buildTemplateValues(plan, 8080, "multi-service", v)
+	svc := vals["SERVICES_BLOCK"]
+	if strings.Count(svc, "  web:") != 1 {
+		t.Fatalf("expected exactly one web service in SERVICES_BLOCK:\n%s", svc)
+	}
+	if strings.Contains(svc, "  playwright:") {
+		t.Fatalf("reserved 'playwright' service must not be emitted as a build service:\n%s", svc)
+	}
+	if strings.Contains(svc, `"0:0"`) {
+		t.Fatalf("port-0 placeholder service must be dropped:\n%s", svc)
+	}
+	// Scalar health is not a bracketed list — fall back to the wget default.
+	if !strings.Contains(svc, `["CMD", "wget", "-qO-", "http://localhost:8080/"]`) {
+		t.Fatalf("scalar health should fall back to wget default:\n%s", svc)
+	}
+	if dep := vals["E2E_DEPENDS_ON"]; strings.Contains(dep, "playwright:") {
+		t.Fatalf("E2E_DEPENDS_ON must not reference the reserved name: %q", dep)
+	}
+}
+
 func TestMultiServiceComposeRender(t *testing.T) {
 	plan := &ScaffoldPlan{
 		Kind:  "multi-service",

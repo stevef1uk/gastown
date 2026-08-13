@@ -194,15 +194,24 @@ func buildTemplateValues(plan *ScaffoldPlan, port int, kind string, v *WorkflowV
 			var svcLines []string
 			var dependsLines []string
 			for _, svc := range services {
+				// The template always emits the "playwright" runner service itself,
+				// so a plan service named "playwright" (LLM hallucination) must not
+				// be emitted as a build service — that would duplicate the YAML key.
+				// Port 0 services are placeholders, not real build targets.
+				if svc.Name == "" || svc.Name == "playwright" || svc.Port <= 0 {
+					continue
+				}
 				buildBlock := fmt.Sprintf("  %s:\n    build:\n      context: %s", svc.Name, svc.BuildDir)
 				if dockerfile != "" {
 					buildBlock += fmt.Sprintf("\n      dockerfile: %s", dockerfile)
 				}
 				buildBlock += fmt.Sprintf("\n    ports:\n      - \"%d:%d\"", svc.Port, svc.Port)
 				// depends_on: condition: service_healthy needs a real healthcheck;
-				// default to busybox wget on the service port (alpine-compatible).
+				// default to busybox wget on the service port (alpine-compatible,
+				// busybox is present in the alpine base; curl often is not). Only
+				// trust a plan-provided healthcheck when it is a bracketed list.
 				health := strings.TrimSpace(svc.Health)
-				if health == "" {
+				if health == "" || !strings.HasPrefix(health, "[") {
 					health = fmt.Sprintf(`["CMD", "wget", "-qO-", "http://localhost:%d/"]`, svc.Port)
 				}
 				buildBlock += "\n    healthcheck:\n      test: " + health + "\n      interval: 2s\n      timeout: 2s\n      retries: 10"
