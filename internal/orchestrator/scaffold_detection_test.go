@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
 
 func TestBuildTemplateValues_multiService(t *testing.T) {
@@ -37,7 +39,7 @@ func TestBuildTemplateValues_multiService(t *testing.T) {
 	if !strings.Contains(svc, `- "8080:8080"`) {
 		t.Fatalf("SERVICES_BLOCK missing port mapping:\n%s", svc)
 	}
-	if dep := vals["E2E_DEPENDS_ON"]; !strings.Contains(dep, "web: condition: service_healthy") {
+	if dep := vals["E2E_DEPENDS_ON"]; !strings.Contains(dep, "web:\n        condition: service_healthy") {
 		t.Fatalf("E2E_DEPENDS_ON wrong: %q", dep)
 	}
 	if base := vals["BASE_URL"]; base != "http://web:8080" {
@@ -220,7 +222,7 @@ func TestMultiServiceComposeRender_noPlan(t *testing.T) {
 		"dockerfile: Dockerfile.web",
 		"healthcheck:",
 		"  playwright:",
-		"web: condition: service_healthy",
+		"condition: service_healthy",
 		"BASE_URL=http://web:8080",
 	} {
 		if !strings.Contains(out, want) {
@@ -273,6 +275,48 @@ func TestBuildTemplateValues_multiService_filtersInvalidServices(t *testing.T) {
 	}
 }
 
+// assertValidMultiServiceCompose parses the rendered compose as YAML and checks
+// the structural contract: exactly one web app service, a playwright runner that
+// depends on the app with service_healthy, and the app built via Dockerfile.web.
+func assertValidMultiServiceCompose(t *testing.T, out string) {
+	t.Helper()
+	var doc map[string]any
+	if err := yaml.Unmarshal([]byte(out), &doc); err != nil {
+		t.Fatalf("rendered multi-service compose is not valid YAML: %v\n%s", err, out)
+	}
+	services, ok := doc["services"].(map[string]any)
+	if !ok {
+		t.Fatalf("no services mapping:\n%s", out)
+	}
+	web, ok := services["web"].(map[string]any)
+	if !ok {
+		t.Fatalf("no web service (got: %v):\n%s", doc["services"], out)
+	}
+	build, _ := web["build"].(map[string]any)
+	if build["dockerfile"] != "Dockerfile.web" {
+		t.Fatalf("web build should use Dockerfile.web:\n%s", out)
+	}
+	if _, ok := services["playwright"]; !ok {
+		t.Fatalf("no playwright runner service:\n%s", out)
+	}
+	if _, dup := services["playwright"]; dup && len(services) != 2 {
+		t.Fatalf("unexpected extra services (want web + playwright only): %v", keys(services))
+	}
+	runner, _ := services["playwright"].(map[string]any)
+	depends, _ := runner["depends_on"].(map[string]any)
+	if _, ok := depends["web"]; !ok {
+		t.Fatalf("playwright must depend on web:\n%s", out)
+	}
+}
+
+func keys(m map[string]any) []string {
+	var ks []string
+	for k := range m {
+		ks = append(ks, k)
+	}
+	return ks
+}
+
 func TestMultiServiceComposeRender(t *testing.T) {
 	plan := &ScaffoldPlan{
 		Kind:  "multi-service",
@@ -298,7 +342,7 @@ func TestMultiServiceComposeRender(t *testing.T) {
 		"healthcheck:",
 		"  playwright:",
 		"image: playwright-go-test:latest",
-		"web: condition: service_healthy",
+		"condition: service_healthy",
 		"BASE_URL=http://web:8080",
 	} {
 		if !strings.Contains(out, want) {

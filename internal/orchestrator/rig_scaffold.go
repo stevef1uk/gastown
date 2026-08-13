@@ -216,7 +216,7 @@ func buildTemplateValues(plan *ScaffoldPlan, port int, kind string, v *WorkflowV
 				}
 				buildBlock += "\n    healthcheck:\n      test: " + health + "\n      interval: 2s\n      timeout: 2s\n      retries: 10"
 				svcLines = append(svcLines, buildBlock)
-				dependsLines = append(dependsLines, svc.Name+": condition: service_healthy")
+				dependsLines = append(dependsLines, svc.Name+":\n        condition: service_healthy")
 			}
 			vals["SERVICES_BLOCK"] = strings.Join(svcLines, "\n")
 			vals["E2E_DEPENDS_ON"] = strings.Join(dependsLines, "\n      ")
