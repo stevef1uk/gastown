@@ -316,6 +316,116 @@ func TestFilterValidImplementPaths(t *testing.T) {
 	}
 }
 
+// TestSyncRigWorkflowProfileFromArchitecture_keepsSpecPhases is a regression test for the
+// architect LLM writing its own backtick-laden "## Delivery phases" in architecture.md:
+// the sync must keep the SPEC's canonical phase IDs/titles (go-module/core/web/integration-test)
+// instead of replacing them with slugified, truncated copies of the architect's prose.
+func TestSyncRigWorkflowProfileFromArchitecture_keepsSpecPhases(t *testing.T) {
+	townRoot := t.TempDir()
+	rig := "pwrig"
+	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
+	profileDir := filepath.Join(rigDir, ".gastown")
+	if err := os.MkdirAll(profileDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	spec := `# PingApp
+
+API server on 8000, no extra files.
+`
+	// Architect drifts: writes its own numbered "## Delivery phases" with backtick titles.
+	arch := `# Architecture for PingApp
+
+## Planned file layout
+
+- ` + "`pingapp/go.mod`" + `
+- ` + "`pingapp/cmd/server/main.go`" + `
+- ` + "`pingapp/web/index.html`" + `
+- ` + "`pingapp/e2e/ping.spec.ts`" + `
+- ` + "`pingapp/playwright.config.ts`" + `
+
+## Delivery phases
+
+1. Create ` + "`pingapp/go.mod`" + ` and ` + "`pingapp/cmd/server/main.go`" + `; implement the exact /ping
+   contract, method handling, PORT behavior, and safe static serving.
+2. Create ` + "`pingapp/web/index.html`" + ` with the Hello button; wire the click to POST /ping.
+3. Create ` + "`pingapp/e2e/ping.spec.ts`" + `, ` + "`pingapp/playwright.config.ts`" + `, and ` + "`pingapp/package.json`" + `; run the suite.
+`
+	if err := os.WriteFile(filepath.Join(rigDir, "SPEC.md"), []byte(spec), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(rigDir, "architecture.md"), []byte(arch), 0644); err != nil {
+		t.Fatal(err)
+	}
+	// Sensible SPEC-derived phases from spec-index, with files already distributed.
+	profile := rigProfileEnvelope{
+		Version: 1,
+		Validation: WorkflowValidation{
+			LayoutRoot:       "pingapp",
+			BeadTitleContains: "Implement pingapp/",
+			RequiredFiles: []string{
+				"pingapp/go.mod",
+				"pingapp/cmd/server/main.go",
+				"pingapp/web/index.html",
+				"pingapp/e2e/ping.spec.ts",
+				"pingapp/playwright.config.ts",
+			},
+			QAVerifyCommand: "cd pingapp && go test ./...",
+			DeliveryPhases: []DeliveryPhase{
+				{ID: "go-module", Title: "Go module", RequiredFiles: []string{"pingapp/go.mod"}},
+				{ID: "core", Title: "Core server", RequiredFiles: []string{"pingapp/cmd/server/main.go"}},
+				{ID: "web", Title: "Web UI", RequiredFiles: []string{"pingapp/web/index.html"}},
+				{ID: "integration-test", Title: "Integration tests", RequiredFiles: []string{"pingapp/e2e/ping.spec.ts", "pingapp/playwright.config.ts"}},
+			},
+		},
+	}
+	data, _ := marshalRigProfileJSON(profile)
+	if err := os.WriteFile(filepath.Join(profileDir, "workflow-profile.json"), data, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	rewritten, err := SyncRigWorkflowProfileFromArchitecture(townRoot, rig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !rewritten {
+		t.Fatal("expected profile rewrite")
+	}
+	saved, _, err := LoadRigWorkflowProfileFile(townRoot, rig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var ids []string
+	for _, p := range saved.DeliveryPhases {
+		ids = append(ids, p.ID)
+	}
+	for _, want := range []string{"go-module", "core", "web", "integration-test"} {
+		found := false
+		for _, id := range ids {
+			if id == want {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("SPEC phase %q lost after sync; got phases %v", want, ids)
+		}
+	}
+	for _, bad := range []string{"create-pingapp-go-mod-and-pingapp-cmd-server-main-go-implement-the-exact-ping", "create-pingapp-e2e-ping-spec-ts"} {
+		for _, id := range ids {
+			if strings.HasPrefix(id, bad) {
+				t.Fatalf("architect-mangled phase %q replaced SPEC phases: %v", bad, ids)
+			}
+		}
+	}
+	// Active phase must resolve to a real SPEC phase, never raw backticks.
+	active := saved.ActivePhaseID()
+	if !phaseIDExists(saved, active) {
+		t.Fatalf("active_phase_id %q does not resolve to a phase", active)
+	}
+	if strings.Contains(active, "`") {
+		t.Fatalf("active_phase_id %q contains backticks", active)
+	}
+}
+
 // TestRebuildDeliveryPhasesFromAuthoritative_keepsPhaseStructure confirms phase
 // required_files are filtered to the authoritative set.
 func TestRebuildDeliveryPhasesFromAuthoritative_keepsPhaseStructure(t *testing.T) {

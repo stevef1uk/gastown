@@ -43,6 +43,13 @@ the HOST, document the integration test exactly as the Gas Town harness builds i
   `host.docker.internal` hardcoding in the spec).
 - The app itself must match SPEC's Web UI description exactly (headings, buttons,
   text) because the E2E tests exercise that real page.
+- When the web app runs on the HOST (host-run rig), there is **NO app
+  container**: the compose file has a SINGLE service — the Playwright runner.
+  Do **NOT** invent an app `Dockerfile`, an app image, or a multi-service
+  compose (app + playwright) in the architecture, and do **NOT** list them in
+  the planned file layout. The app is launched on the host by the harness
+  (`go run`, `python`, `npm`, etc.) and the runner reaches it via
+  `host.docker.internal`.
 
 Use these exact facts in the architecture's "Integration and testing",
 "Docker & Deployment", and "E2E / integration testing" sections so QA validates
@@ -124,6 +131,13 @@ CMD: cat > {{ .WorkDir }}/architecture.md <<'EOF'
 <INSERT-REAL-ARCHITECTURE-HERE — directory tree of files to be created>
 EOF
 ```
+
+> **Phase ownership**: Do **NOT** write a `## Delivery phases` section.
+> Delivery phases and their order are owned by SPEC.md; the sync derives them
+> from the SPEC, and any phase section you write here gets ignored by the sync.
+> Never invent files the SPEC does not list — every path in your planned file
+> layout becomes a required implement bead (a stray `Dockerfile` or
+> `docker-compose.yml` turns into a bead QA will reject).
 
 ### Step 3 — VERIFY the file is real (mandatory)
 

@@ -873,7 +873,14 @@ func SyncRigWorkflowProfileFromArchitecture(townRoot, rig string) (bool, error) 
 	env.Validation = inferTestRunnerFromPaths(env.Validation, authoritative)
 
 	archPhases := parseArchPhases(string(archData), env.Validation.LayoutRootDir())
-	if len(archPhases) > 0 {
+	// Never let the architect's re-derived "## Delivery phases" REPLACE the SPEC's
+	// canonical phase structure (go-module/core/web/integration-test, ...). Spec-index
+	// already derived sensible phase IDs/titles from the SPEC; the architect LLM
+	// frequently echoes them back as backtick-laden, truncated numbered items that
+	// mangle the profile (e.g. "Create `pingapp/Dockerfile` and ..."). Only fall back
+	// to architecture-derived phases when the profile has no phases at all; the
+	// rebuild below still redistributes authoritative files across the SPEC phases.
+	if len(archPhases) > 0 && len(env.Validation.DeliveryPhases) == 0 {
 		env.Validation.DeliveryPhases = archPhases
 	}
 
