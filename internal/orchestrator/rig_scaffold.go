@@ -160,54 +160,57 @@ func buildTemplateValues(plan *ScaffoldPlan, port int, kind string, v *WorkflowV
 		case "go":
 			vals["RUN_CMD"] = `["./server"]`
 		}
+	}
 
-		// Build services block for multi-service (kind is the resolved kind, not
-		// necessarily plan.Kind — the profile may override the plan).
-		if kind == "multi-service" {
-			services := plan.Services
-			if len(services) == 0 {
-				// Deterministic fallback when the LLM extracted no services: if the
-				// profile ships a Dockerfile* in the layout root, synthesize the web
-				// service so the compose is never empty and QA has something to test.
-				if multiServiceAppDockerfile(v) != "" {
-					services = []ScaffoldService{{
-						Name:     "web",
-						BuildDir: ".",
-						Port:     port,
-						Public:   true,
-					}}
-				}
+	// Build services block for multi-service. This must work even when plan is
+	// nil (no LLM scaffold plan): the profile alone can resolve to multi-service.
+	if kind == "multi-service" {
+		var services []ScaffoldService
+		if plan != nil {
+			services = plan.Services
+		}
+		if len(services) == 0 {
+			// Deterministic fallback when no services were extracted: if the
+			// profile ships a Dockerfile* in the layout root, synthesize the web
+			// service so the compose is never empty and QA has something to test.
+			if multiServiceAppDockerfile(v) != "" {
+				services = []ScaffoldService{{
+					Name:     "web",
+					BuildDir: ".",
+					Port:     port,
+					Public:   true,
+				}}
 			}
-			if len(services) > 0 {
-				// Base URL must target the public service (e.g. http://web:8080), not
-				// the hardcoded app: fallback, or the Playwright container cannot reach it.
-				baseURL := multiServiceBaseURL(services, port)
-				vals["PLAYWRIGHT_BASE_URL"] = baseURL
-				vals["BASE_URL"] = baseURL
-				// Reference the rig's non-default Dockerfile (e.g. Dockerfile.web) when
-				// required; otherwise compose defaults to Dockerfile in the build context.
-				dockerfile := multiServiceAppDockerfile(v)
-				var svcLines []string
-				var dependsLines []string
-				for _, svc := range services {
-					buildBlock := fmt.Sprintf("  %s:\n    build:\n      context: %s", svc.Name, svc.BuildDir)
-					if dockerfile != "" {
-						buildBlock += fmt.Sprintf("\n      dockerfile: %s", dockerfile)
-					}
-					buildBlock += fmt.Sprintf("\n    ports:\n      - \"%d:%d\"", svc.Port, svc.Port)
-					// depends_on: condition: service_healthy needs a real healthcheck;
-					// default to busybox wget on the service port (alpine-compatible).
-					health := strings.TrimSpace(svc.Health)
-					if health == "" {
-						health = fmt.Sprintf(`["CMD", "wget", "-qO-", "http://localhost:%d/"]`, svc.Port)
-					}
-					buildBlock += "\n    healthcheck:\n      test: " + health + "\n      interval: 2s\n      timeout: 2s\n      retries: 10"
-					svcLines = append(svcLines, buildBlock)
-					dependsLines = append(dependsLines, svc.Name+": condition: service_healthy")
+		}
+		if len(services) > 0 {
+			// Base URL must target the public service (e.g. http://web:8080), not
+			// the hardcoded app: fallback, or the Playwright container cannot reach it.
+			baseURL := multiServiceBaseURL(services, port)
+			vals["PLAYWRIGHT_BASE_URL"] = baseURL
+			vals["BASE_URL"] = baseURL
+			// Reference the rig's non-default Dockerfile (e.g. Dockerfile.web) when
+			// required; otherwise compose defaults to Dockerfile in the build context.
+			dockerfile := multiServiceAppDockerfile(v)
+			var svcLines []string
+			var dependsLines []string
+			for _, svc := range services {
+				buildBlock := fmt.Sprintf("  %s:\n    build:\n      context: %s", svc.Name, svc.BuildDir)
+				if dockerfile != "" {
+					buildBlock += fmt.Sprintf("\n      dockerfile: %s", dockerfile)
 				}
-				vals["SERVICES_BLOCK"] = strings.Join(svcLines, "\n")
-				vals["E2E_DEPENDS_ON"] = strings.Join(dependsLines, "\n      ")
+				buildBlock += fmt.Sprintf("\n    ports:\n      - \"%d:%d\"", svc.Port, svc.Port)
+				// depends_on: condition: service_healthy needs a real healthcheck;
+				// default to busybox wget on the service port (alpine-compatible).
+				health := strings.TrimSpace(svc.Health)
+				if health == "" {
+					health = fmt.Sprintf(`["CMD", "wget", "-qO-", "http://localhost:%d/"]`, svc.Port)
+				}
+				buildBlock += "\n    healthcheck:\n      test: " + health + "\n      interval: 2s\n      timeout: 2s\n      retries: 10"
+				svcLines = append(svcLines, buildBlock)
+				dependsLines = append(dependsLines, svc.Name+": condition: service_healthy")
 			}
+			vals["SERVICES_BLOCK"] = strings.Join(svcLines, "\n")
+			vals["E2E_DEPENDS_ON"] = strings.Join(dependsLines, "\n      ")
 		}
 	}
 

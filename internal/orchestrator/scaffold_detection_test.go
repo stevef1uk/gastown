@@ -176,6 +176,68 @@ func TestSelectDefaultTemplates_multiServiceProfile(t *testing.T) {
 	}
 }
 
+func TestMultiServiceComposeRender_noPlan(t *testing.T) {
+	// Regression: when the LLM scaffold plan is nil (ExtractScaffoldPlan failed),
+	// selectDefaultTemplates still resolves a multi-service profile to the
+	// multi-service template, and buildTemplateValues must synthesize the web
+	// service even though plan is nil.
+	v := &WorkflowValidation{
+		LayoutRoot:    "linkshelf",
+		DevServerPort: 8080,
+		TestRunner:    "go",
+		RequiredFiles: []string{
+			"linkshelf/go.mod",
+			"linkshelf/Dockerfile.web",
+			"linkshelf/docker-compose.yml",
+			"linkshelf/playwright.config.ts",
+		},
+	}
+	tpl, kind := selectDefaultTemplates(v)
+	if kind != "multi-service" {
+		t.Fatalf("kind = %q, want multi-service", kind)
+	}
+	if tpl["docker-compose.multi-service.yml"] != "docker-compose.yml" {
+		t.Fatalf("multi-service compose should go to layout root: %v", tpl)
+	}
+	vals := buildTemplateValues(nil, 8080, "multi-service", v)
+	if !strings.Contains(vals["SERVICES_BLOCK"], "  web:") {
+		t.Fatalf("nil plan + multi-service should synthesize a web service:\n%s", vals["SERVICES_BLOCK"])
+	}
+	if base := vals["BASE_URL"]; base != "http://web:8080" {
+		t.Fatalf("BASE_URL = %q, want http://web:8080", base)
+	}
+	if !strings.Contains(vals["SERVICES_BLOCK"], "dockerfile: Dockerfile.web") {
+		t.Fatalf("services block should reference Dockerfile.web:\n%s", vals["SERVICES_BLOCK"])
+	}
+
+	data, err := townAssets.ReadFile(rigInitTemplateDir + "/docker-compose.multi-service.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := renderTemplate(string(data), vals)
+	for _, want := range []string{
+		"  web:",
+		"dockerfile: Dockerfile.web",
+		"healthcheck:",
+		"  playwright:",
+		"web: condition: service_healthy",
+		"BASE_URL=http://web:8080",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("rendered compose missing %q:\n%s", want, out)
+		}
+	}
+	firstServices := strings.Index(out, "\nservices:\n")
+	if firstServices < 0 {
+		t.Fatalf("rendered compose has no services key:\n%s", out)
+	}
+	for _, line := range strings.Split(out[:firstServices], "\n") {
+		if strings.TrimSpace(line) != "" && !strings.HasPrefix(strings.TrimSpace(line), "#") {
+			t.Fatalf("non-comment line leaked before services key (%q):\n%s", line, out)
+		}
+	}
+}
+
 func TestMultiServiceComposeRender(t *testing.T) {
 	plan := &ScaffoldPlan{
 		Kind:  "multi-service",
