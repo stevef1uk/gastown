@@ -1,5 +1,5 @@
 # Docker compose test harness for multi-service rig
-# Template variables: {{PLAYWRIGHT_IMAGE}}, {{PLAYWRIGHT_WORKDIR}}, {{PLAYWRIGHT_COMMAND}}, {{BASE_URL}}, {{SERVICES_BLOCK}}, {{E2E_DEPENDS_ON}}
+# Template variables: {{PLAYWRIGHT_IMAGE}}, {{PLAYWRIGHT_WORKDIR}}, {{PLAYWRIGHT_COMMAND}}, {{BASE_URL}}
 # Reproduces all SPEC services plus the playwright runner. The runner service is
 # named "playwright" so the integration-test verify command
 # ("docker compose up --exit-code-from playwright") targets the right service.

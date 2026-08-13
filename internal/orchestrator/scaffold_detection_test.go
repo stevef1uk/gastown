@@ -208,6 +208,22 @@ func TestMultiServiceComposeRender(t *testing.T) {
 			t.Fatalf("rendered multi-service compose missing %q:\n%s", want, out)
 		}
 	}
+	// The SERVICES_BLOCK / E2E_DEPENDS_ON substitutions must not leak into the
+	// header comment (which would break YAML). Everything before the first
+	// `services:` key must be comment lines.
+	firstServices := strings.Index(out, "\nservices:\n")
+	if firstServices < 0 {
+		t.Fatalf("rendered multi-service compose has no services key:\n%s", out)
+	}
+	head := out[:firstServices]
+	for _, line := range strings.Split(head, "\n") {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		if !strings.HasPrefix(strings.TrimSpace(line), "#") {
+			t.Fatalf("non-comment line leaked before services key (%q):\n%s", line, out)
+		}
+	}
 }
 
 func TestScaffoldRigIntegrationTemplates_FinAlly(t *testing.T) {
