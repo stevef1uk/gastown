@@ -348,17 +348,21 @@ func resolveComposeKind(plan *ScaffoldPlan, v *WorkflowValidation) (kind, dst st
 	return "multi-service", "docker-compose.yml"
 }
 
-// selectDefaultTemplates returns the legacy template selection (no plan).
-// Detects hybrid stack and compose kind from profile when possible.
+// selectDefaultTemplates returns the template selection when no LLM scaffold
+// plan is available. It synthesizes a default plan from the profile and defers
+// to selectTemplatesForPlan, so the compose kind/destination is resolved by the
+// same profile-driven rules as the plan path (a profile that requires a root
+// docker-compose.yml + non-default Dockerfile yields the multi-service layout).
 func selectDefaultTemplates(v *WorkflowValidation) (map[string]string, string) {
-	templates := map[string]string{}
-	kind := "host-run"
-
+	plan := &ScaffoldPlan{
+		Kind:  "host-run",
+		Stack: "go",
+	}
 	if v != nil {
+		plan.LayoutRoot = v.LayoutRoot
+		plan.Port = v.DevServerPort
 		hasFrontend := false
 		hasBackend := false
-		hasDockerfile := false
-		hasTestCompose := false
 		for _, f := range v.RequiredFiles {
 			if strings.Contains(f, "frontend") || strings.Contains(f, "package.json") {
 				hasFrontend = true
@@ -366,38 +370,13 @@ func selectDefaultTemplates(v *WorkflowValidation) (map[string]string, string) {
 			if strings.Contains(f, "backend") || strings.Contains(f, "pyproject.toml") {
 				hasBackend = true
 			}
-			if strings.HasSuffix(f, "Dockerfile") {
-				hasDockerfile = true
-			}
-			if strings.HasSuffix(f, "docker-compose.test.yml") || strings.HasSuffix(f, "docker-compose.test.yaml") {
-				hasTestCompose = true
-			}
 		}
-
-		// Stack detection
 		if hasFrontend && hasBackend {
-			templates["Dockerfile.hybrid"] = "Dockerfile"
-		} else {
-			templates["Dockerfile"] = "Dockerfile"
+			plan.Stack = "hybrid"
 		}
-
-		// Compose kind: single-container if both Dockerfile and test-compose are required
-		if hasDockerfile && hasTestCompose {
-			kind = "single-container"
-			templates["docker-compose.single-container.yml"] = "test/docker-compose.test.yml"
-		} else {
-			// Host-run: write host-run compose to layout root
-			kind = "host-run"
-			templates["docker-compose.host-run.yml"] = "docker-compose.yml"
-		}
-	} else {
-		templates["Dockerfile"] = "Dockerfile"
-		templates["docker-compose.host-run.yml"] = "docker-compose.yml"
 	}
-
-	templates["package.json"] = "package.json"
-	templates["playwright.config.ts"] = "playwright.config.ts"
-
+	templates := selectTemplatesForPlan(plan, v)
+	kind, _ := resolveComposeKind(plan, v)
 	return templates, kind
 }
 

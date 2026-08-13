@@ -138,6 +138,44 @@ func TestSelectTemplatesForPlan_profileDriven(t *testing.T) {
 	}
 }
 
+func TestSelectDefaultTemplates_multiServiceProfile(t *testing.T) {
+	// No LLM plan (optPlan nil): the profile alone must still yield the
+	// multi-service layout at the layout root for a profile that requires
+	// docker-compose.yml + Dockerfile.web.
+	v := &WorkflowValidation{
+		LayoutRoot:    "linkshelf",
+		DevServerPort: 8080,
+		TestRunner:    "go",
+		RequiredFiles: []string{
+			"linkshelf/go.mod",
+			"linkshelf/Dockerfile.web",
+			"linkshelf/docker-compose.yml",
+			"linkshelf/playwright.config.ts",
+		},
+	}
+	tpl, kind := selectDefaultTemplates(v)
+	if kind != "multi-service" {
+		t.Fatalf("kind = %q, want multi-service", kind)
+	}
+	if tpl["docker-compose.multi-service.yml"] != "docker-compose.yml" {
+		t.Fatalf("multi-service compose should go to layout root: %v", tpl)
+	}
+	if _, ok := tpl["Dockerfile"]; ok {
+		t.Fatalf("must not emit a plain Dockerfile when Dockerfile.web is required: %v", tpl)
+	}
+	if tpl["docker-compose.host-run.yml"] != "" {
+		t.Fatalf("must not emit host-run compose for a multi-service profile: %v", tpl)
+	}
+
+	vals := buildTemplateValues(&ScaffoldPlan{Kind: kind, Stack: "go", Port: 8080}, 8080, kind, v)
+	if !strings.Contains(vals["SERVICES_BLOCK"], "  web:") {
+		t.Fatalf("default multi-service should synthesize a web service:\n%s", vals["SERVICES_BLOCK"])
+	}
+	if base := vals["BASE_URL"]; base != "http://web:8080" {
+		t.Fatalf("BASE_URL = %q, want http://web:8080", base)
+	}
+}
+
 func TestMultiServiceComposeRender(t *testing.T) {
 	plan := &ScaffoldPlan{
 		Kind:  "multi-service",
