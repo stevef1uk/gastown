@@ -71,6 +71,73 @@ func TestBuildTemplateValues_hostRunUnchanged(t *testing.T) {
 	}
 }
 
+func TestResolveComposeKind_profileDriven(t *testing.T) {
+	plan := &ScaffoldPlan{Kind: "multi-service", Stack: "go", Port: 8080}
+
+	multiSvc := &WorkflowValidation{
+		LayoutRoot:    "linkshelf",
+		RequiredFiles: []string{"linkshelf/go.mod", "linkshelf/Dockerfile.web", "linkshelf/docker-compose.yml"},
+	}
+	kind, dst := resolveComposeKind(plan, multiSvc)
+	if kind != "multi-service" || dst != "docker-compose.yml" {
+		t.Fatalf("root compose + Dockerfile.web: got kind=%q dst=%q, want multi-service/docker-compose.yml", kind, dst)
+	}
+
+	hostRun := &WorkflowValidation{
+		LayoutRoot:    "pingapp",
+		RequiredFiles: []string{"pingapp/go.mod", "pingapp/docker-compose.yml"},
+	}
+	kind, dst = resolveComposeKind(plan, hostRun)
+	if kind != "host-run" || dst != "docker-compose.yml" {
+		t.Fatalf("root compose alone: got kind=%q dst=%q, want host-run/docker-compose.yml", kind, dst)
+	}
+
+	single := &WorkflowValidation{
+		LayoutRoot:    "finally",
+		RequiredFiles: []string{"finally/Dockerfile", "finally/test/docker-compose.test.yml"},
+	}
+	kind, dst = resolveComposeKind(plan, single)
+	if kind != "single-container" || dst != "test/docker-compose.test.yml" {
+		t.Fatalf("test compose: got kind=%q dst=%q, want single-container/test/docker-compose.test.yml", kind, dst)
+	}
+
+	// Plan fallback when no profile is available.
+	kind, dst = resolveComposeKind(plan, nil)
+	if kind != "multi-service" || dst != "docker-compose.yml" {
+		t.Fatalf("no profile: got kind=%q dst=%q, want multi-service/docker-compose.yml", kind, dst)
+	}
+}
+
+func TestSelectTemplatesForPlan_profileDriven(t *testing.T) {
+	plan := &ScaffoldPlan{Kind: "multi-service", Stack: "go", Port: 8080}
+	multiSvc := &WorkflowValidation{
+		LayoutRoot:    "linkshelf",
+		RequiredFiles: []string{"linkshelf/go.mod", "linkshelf/Dockerfile.web", "linkshelf/docker-compose.yml"},
+	}
+	tpl := selectTemplatesForPlan(plan, multiSvc)
+	if tpl["docker-compose.multi-service.yml"] != "docker-compose.yml" {
+		t.Fatalf("multi-service compose should go to layout root: %v", tpl)
+	}
+	if _, ok := tpl["Dockerfile"]; ok {
+		t.Fatalf("must not drop a stray plain Dockerfile when Dockerfile.web is required: %v", tpl)
+	}
+	if _, ok := tpl["Dockerfile.go"]; ok {
+		t.Fatalf("stack Dockerfile templates must not be emitted when Dockerfile.web is required: %v", tpl)
+	}
+
+	hostRun := &WorkflowValidation{
+		LayoutRoot:    "pingapp",
+		RequiredFiles: []string{"pingapp/go.mod", "pingapp/docker-compose.yml"},
+	}
+	tpl = selectTemplatesForPlan(plan, hostRun)
+	if tpl["docker-compose.host-run.yml"] != "docker-compose.yml" {
+		t.Fatalf("host-run compose should go to layout root: %v", tpl)
+	}
+	if tpl["Dockerfile"] != "Dockerfile" {
+		t.Fatalf("host-run with no non-default Dockerfile should still emit the stack Dockerfile: %v", tpl)
+	}
+}
+
 func TestMultiServiceComposeRender(t *testing.T) {
 	plan := &ScaffoldPlan{
 		Kind:  "multi-service",

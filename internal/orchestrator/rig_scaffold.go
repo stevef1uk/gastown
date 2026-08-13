@@ -30,6 +30,14 @@ func ScaffoldRigIntegrationTemplates(townRoot, rig string, optPlan *ScaffoldPlan
 	if optPlan != nil {
 		layoutRoot = optPlan.LayoutRoot
 		port = optPlan.Port
+		// Load the profile here too: the plan alone is not enough to know where
+		// the compose must live or which Dockerfile the app builds (multi-service
+		// rigs require docker-compose.yml + Dockerfile.web at the layout root).
+		if v, ok, err := LoadRigWorkflowProfileFile(townRoot, rig); err != nil {
+			return 0, err
+		} else if ok {
+			profile = &v
+		}
 	} else {
 		v, ok, err := LoadRigWorkflowProfileFile(townRoot, rig)
 		if err != nil {
@@ -69,8 +77,11 @@ func ScaffoldRigIntegrationTemplates(townRoot, rig string, optPlan *ScaffoldPlan
 	var templates map[string]string
 	var kind string
 	if optPlan != nil {
-		templates = selectTemplatesForPlan(optPlan)
-		kind = optPlan.Kind
+		templates = selectTemplatesForPlan(optPlan, profile)
+		// The profile is authoritative for the compose kind (multi-service vs
+		// host-run vs single-container); the plan may disagree, so resolve kind
+		// once and use it for value derivation too.
+		kind, _ = resolveComposeKind(optPlan, profile)
 	} else {
 		templates, kind = selectDefaultTemplates(profile)
 	}
@@ -150,8 +161,9 @@ func buildTemplateValues(plan *ScaffoldPlan, port int, kind string, v *WorkflowV
 			vals["RUN_CMD"] = `["./server"]`
 		}
 
-		// Build services block for multi-service
-		if plan.Kind == "multi-service" {
+		// Build services block for multi-service (kind is the resolved kind, not
+		// necessarily plan.Kind — the profile may override the plan).
+		if kind == "multi-service" {
 			services := plan.Services
 			if len(services) == 0 {
 				// Deterministic fallback when the LLM extracted no services: if the
@@ -245,30 +257,40 @@ func multiServiceBaseURL(services []ScaffoldService, fallbackPort int) string {
 	return fmt.Sprintf("http://app:%d", fallbackPort)
 }
 
-// selectTemplatesForPlan picks the right template files based on the scaffold plan.
-func selectTemplatesForPlan(plan *ScaffoldPlan) map[string]string {
+// selectTemplatesForPlan picks the right template files based on the scaffold
+// plan. The workflow profile (v), when present, is authoritative for the compose
+// destination and whether a non-default Dockerfile is required, so the generated
+// files land exactly where the profile's required files expect them.
+func selectTemplatesForPlan(plan *ScaffoldPlan, v *WorkflowValidation) map[string]string {
 	templates := map[string]string{}
 
-	// Dockerfile based on stack
-	switch plan.Stack {
-	case "hybrid":
-		templates["Dockerfile.hybrid"] = "Dockerfile"
-	case "python":
-		templates["Dockerfile.python"] = "Dockerfile"
-	case "node":
-		templates["Dockerfile.node"] = "Dockerfile"
-	default:
-		templates["Dockerfile"] = "Dockerfile"
+	// Dockerfile based on stack — unless the profile requires a specific
+	// non-default Dockerfile (e.g. Dockerfile.web). In that case the required
+	// file is authoritative and we must not drop a stray plain Dockerfile into
+	// the layout root.
+	requiredDF := multiServiceAppDockerfile(v)
+	if requiredDF == "" || requiredDF == "Dockerfile" {
+		switch plan.Stack {
+		case "hybrid":
+			templates["Dockerfile.hybrid"] = "Dockerfile"
+		case "python":
+			templates["Dockerfile.python"] = "Dockerfile"
+		case "node":
+			templates["Dockerfile.node"] = "Dockerfile"
+		default:
+			templates["Dockerfile"] = "Dockerfile"
+		}
 	}
 
-	// Docker-compose based on kind
-	switch plan.Kind {
+	// Docker-compose based on resolved kind.
+	kind, composeDst := resolveComposeKind(plan, v)
+	switch kind {
 	case "host-run":
-		templates["docker-compose.host-run.yml"] = "docker-compose.yml"
+		templates["docker-compose.host-run.yml"] = composeDst
 	case "single-container":
-		templates["docker-compose.single-container.yml"] = "test/docker-compose.test.yml"
-	case "multi-service":
-		templates["docker-compose.multi-service.yml"] = "test/docker-compose.test.yml"
+		templates["docker-compose.single-container.yml"] = composeDst
+	default:
+		templates["docker-compose.multi-service.yml"] = composeDst
 	}
 
 	// Playwright config + package.json
@@ -276,6 +298,54 @@ func selectTemplatesForPlan(plan *ScaffoldPlan) map[string]string {
 	templates["package.json"] = "package.json"
 
 	return templates
+}
+
+// resolveComposeKind picks the compose template kind and destination for a
+// scaffold plan. The workflow profile is authoritative: its required files say
+// where the integration-test compose lives and whether the app is built
+// (multi-service, root docker-compose.yml + non-default Dockerfile) or runs on
+// the host (root docker-compose.yml alone) or in a single container
+// (test/docker-compose.test.yml). The plan is consulted only as a fallback when
+// no profile is available.
+func resolveComposeKind(plan *ScaffoldPlan, v *WorkflowValidation) (kind, dst string) {
+	if v != nil {
+		layout := strings.Trim(filepath.ToSlash(strings.TrimSpace(v.LayoutRoot)), "/")
+		rootCompose := false
+		testCompose := false
+		nonDefaultDF := false
+		for _, f := range v.RequiredFiles {
+			rel := filepath.ToSlash(strings.TrimSpace(f))
+			rel = strings.TrimPrefix(rel, layout+"/")
+			if rel == "docker-compose.yml" {
+				rootCompose = true
+			}
+			if strings.HasSuffix(rel, "docker-compose.test.yml") || strings.HasSuffix(rel, "docker-compose.test.yaml") {
+				testCompose = true
+			}
+			base := filepath.Base(rel)
+			if !strings.Contains(rel, "/") && strings.HasPrefix(base, "Dockerfile") && base != "Dockerfile" {
+				nonDefaultDF = true
+			}
+		}
+		if rootCompose && nonDefaultDF {
+			return "multi-service", "docker-compose.yml"
+		}
+		if testCompose {
+			return "single-container", "test/docker-compose.test.yml"
+		}
+		if rootCompose {
+			return "host-run", "docker-compose.yml"
+		}
+	}
+	if plan != nil {
+		switch plan.Kind {
+		case "host-run":
+			return "host-run", "docker-compose.yml"
+		case "single-container":
+			return "single-container", "test/docker-compose.test.yml"
+		}
+	}
+	return "multi-service", "docker-compose.yml"
 }
 
 // selectDefaultTemplates returns the legacy template selection (no plan).
