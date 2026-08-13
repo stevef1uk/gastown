@@ -7,6 +7,104 @@ import (
 	"testing"
 )
 
+func TestBuildTemplateValues_multiService(t *testing.T) {
+	plan := &ScaffoldPlan{
+		Kind:  "multi-service",
+		Stack: "go",
+		Port:  8080,
+		Services: []ScaffoldService{
+			{Name: "web", BuildDir: ".", Port: 8080, Public: true},
+		},
+	}
+	v := &WorkflowValidation{
+		LayoutRoot:    "linkshelf",
+		RequiredFiles: []string{"linkshelf/go.mod", "linkshelf/Dockerfile.web", "linkshelf/docker-compose.yml"},
+	}
+	vals := buildTemplateValues(plan, 8080, "multi-service", v)
+	svc := vals["SERVICES_BLOCK"]
+	if !strings.Contains(svc, "  web:") {
+		t.Fatalf("SERVICES_BLOCK missing web service:\n%s", svc)
+	}
+	if !strings.Contains(svc, "dockerfile: Dockerfile.web") {
+		t.Fatalf("SERVICES_BLOCK should reference Dockerfile.web:\n%s", svc)
+	}
+	if !strings.Contains(svc, "healthcheck:") {
+		t.Fatalf("SERVICES_BLOCK missing healthcheck:\n%s", svc)
+	}
+	if !strings.Contains(svc, `"wget", "-qO-", "http://localhost:8080/"`) {
+		t.Fatalf("SERVICES_BLOCK healthcheck should default to wget on the service port:\n%s", svc)
+	}
+	if !strings.Contains(svc, `- "8080:8080"`) {
+		t.Fatalf("SERVICES_BLOCK missing port mapping:\n%s", svc)
+	}
+	if dep := vals["E2E_DEPENDS_ON"]; !strings.Contains(dep, "web: condition: service_healthy") {
+		t.Fatalf("E2E_DEPENDS_ON wrong: %q", dep)
+	}
+	if base := vals["BASE_URL"]; base != "http://web:8080" {
+		t.Fatalf("BASE_URL = %q, want http://web:8080", base)
+	}
+}
+
+func TestBuildTemplateValues_multiService_noServicesFallback(t *testing.T) {
+	plan := &ScaffoldPlan{Kind: "multi-service", Stack: "go", Port: 8080}
+	v := &WorkflowValidation{
+		LayoutRoot:    "linkshelf",
+		RequiredFiles: []string{"linkshelf/go.mod", "linkshelf/Dockerfile.web", "linkshelf/docker-compose.yml"},
+	}
+	vals := buildTemplateValues(plan, 8080, "multi-service", v)
+	if !strings.Contains(vals["SERVICES_BLOCK"], "  web:") {
+		t.Fatalf("no-services fallback should synthesize a web service:\n%s", vals["SERVICES_BLOCK"])
+	}
+	if base := vals["BASE_URL"]; base != "http://web:8080" {
+		t.Fatalf("BASE_URL = %q, want http://web:8080", base)
+	}
+}
+
+func TestBuildTemplateValues_hostRunUnchanged(t *testing.T) {
+	plan := &ScaffoldPlan{Kind: "host-run", Stack: "go", Port: 8080}
+	vals := buildTemplateValues(plan, 8080, "host-run", nil)
+	if base := vals["BASE_URL"]; base != "http://host.docker.internal:8080" {
+		t.Fatalf("host-run BASE_URL = %q, want http://host.docker.internal:8080", base)
+	}
+	if vals["SERVICES_BLOCK"] != "" || vals["E2E_DEPENDS_ON"] != "" {
+		t.Fatalf("host-run should not emit a services block: %q / %q", vals["SERVICES_BLOCK"], vals["E2E_DEPENDS_ON"])
+	}
+}
+
+func TestMultiServiceComposeRender(t *testing.T) {
+	plan := &ScaffoldPlan{
+		Kind:  "multi-service",
+		Stack: "go",
+		Port:  8080,
+		Services: []ScaffoldService{
+			{Name: "web", BuildDir: ".", Port: 8080, Public: true},
+		},
+	}
+	v := &WorkflowValidation{
+		LayoutRoot:    "linkshelf",
+		RequiredFiles: []string{"linkshelf/go.mod", "linkshelf/Dockerfile.web", "linkshelf/docker-compose.yml"},
+	}
+	vals := buildTemplateValues(plan, 8080, "multi-service", v)
+	data, err := townAssets.ReadFile(rigInitTemplateDir + "/docker-compose.multi-service.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := renderTemplate(string(data), vals)
+	for _, want := range []string{
+		"  web:",
+		"dockerfile: Dockerfile.web",
+		"healthcheck:",
+		"  playwright:",
+		"image: playwright-go-test:latest",
+		"web: condition: service_healthy",
+		"BASE_URL=http://web:8080",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("rendered multi-service compose missing %q:\n%s", want, out)
+		}
+	}
+}
+
 func TestScaffoldRigIntegrationTemplates_FinAlly(t *testing.T) {
 	t.Parallel()
 

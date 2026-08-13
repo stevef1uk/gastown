@@ -76,7 +76,7 @@ func ScaffoldRigIntegrationTemplates(townRoot, rig string, optPlan *ScaffoldPlan
 	}
 
 	// Build template values
-	vals := buildTemplateValues(optPlan, port, kind)
+	vals := buildTemplateValues(optPlan, port, kind, profile)
 
 	written := 0
 	for srcName, dstRel := range templates {
@@ -97,7 +97,7 @@ func ScaffoldRigIntegrationTemplates(townRoot, rig string, optPlan *ScaffoldPlan
 }
 
 // buildTemplateValues builds the substitution map for templates.
-func buildTemplateValues(plan *ScaffoldPlan, port int, kind string) map[string]string {
+func buildTemplateValues(plan *ScaffoldPlan, port int, kind string, v *WorkflowValidation) map[string]string {
 	vals := map[string]string{
 		"PLAYWRIGHT_IMAGE":   "playwright-go-test:latest",
 		"PLAYWRIGHT_VERSION": PlaywrightNPMVersion(),
@@ -151,20 +151,98 @@ func buildTemplateValues(plan *ScaffoldPlan, port int, kind string) map[string]s
 		}
 
 		// Build services block for multi-service
-		if plan.Kind == "multi-service" && len(plan.Services) > 0 {
-			var svcLines []string
-			var dependsLines []string
-			for _, svc := range plan.Services {
-				svcLines = append(svcLines, fmt.Sprintf("  %s:\n    build:\n      context: %s\n    ports:\n      - \"%d:%d\"",
-					svc.Name, svc.BuildDir, svc.Port, svc.Port))
-				dependsLines = append(dependsLines, svc.Name+": condition: service_healthy")
+		if plan.Kind == "multi-service" {
+			services := plan.Services
+			if len(services) == 0 {
+				// Deterministic fallback when the LLM extracted no services: if the
+				// profile ships a Dockerfile* in the layout root, synthesize the web
+				// service so the compose is never empty and QA has something to test.
+				if multiServiceAppDockerfile(v) != "" {
+					services = []ScaffoldService{{
+						Name:     "web",
+						BuildDir: ".",
+						Port:     port,
+						Public:   true,
+					}}
+				}
 			}
-			vals["SERVICES_BLOCK"] = strings.Join(svcLines, "\n")
-			vals["E2E_DEPENDS_ON"] = strings.Join(dependsLines, "\n      ")
+			if len(services) > 0 {
+				// Base URL must target the public service (e.g. http://web:8080), not
+				// the hardcoded app: fallback, or the Playwright container cannot reach it.
+				baseURL := multiServiceBaseURL(services, port)
+				vals["PLAYWRIGHT_BASE_URL"] = baseURL
+				vals["BASE_URL"] = baseURL
+				// Reference the rig's non-default Dockerfile (e.g. Dockerfile.web) when
+				// required; otherwise compose defaults to Dockerfile in the build context.
+				dockerfile := multiServiceAppDockerfile(v)
+				var svcLines []string
+				var dependsLines []string
+				for _, svc := range services {
+					buildBlock := fmt.Sprintf("  %s:\n    build:\n      context: %s", svc.Name, svc.BuildDir)
+					if dockerfile != "" {
+						buildBlock += fmt.Sprintf("\n      dockerfile: %s", dockerfile)
+					}
+					buildBlock += fmt.Sprintf("\n    ports:\n      - \"%d:%d\"", svc.Port, svc.Port)
+					// depends_on: condition: service_healthy needs a real healthcheck;
+					// default to busybox wget on the service port (alpine-compatible).
+					health := strings.TrimSpace(svc.Health)
+					if health == "" {
+						health = fmt.Sprintf(`["CMD", "wget", "-qO-", "http://localhost:%d/"]`, svc.Port)
+					}
+					buildBlock += "\n    healthcheck:\n      test: " + health + "\n      interval: 2s\n      timeout: 2s\n      retries: 10"
+					svcLines = append(svcLines, buildBlock)
+					dependsLines = append(dependsLines, svc.Name+": condition: service_healthy")
+				}
+				vals["SERVICES_BLOCK"] = strings.Join(svcLines, "\n")
+				vals["E2E_DEPENDS_ON"] = strings.Join(dependsLines, "\n      ")
+			}
 		}
 	}
 
 	return vals
+}
+
+// multiServiceAppDockerfile returns the layout-root Dockerfile the rig requires
+// (e.g. "Dockerfile.web") when one exists, so the multi-service compose builds the
+// right image. Empty means the default "Dockerfile" is used by compose.
+func multiServiceAppDockerfile(v *WorkflowValidation) string {
+	if v == nil {
+		return ""
+	}
+	layout := strings.Trim(filepath.ToSlash(strings.TrimSpace(v.LayoutRoot)), "/")
+	prefer := ""
+	plain := ""
+	for _, f := range v.RequiredFiles {
+		f = filepath.ToSlash(strings.TrimSpace(f))
+		base := filepath.Base(f)
+		if !strings.HasPrefix(base, "Dockerfile") {
+			continue
+		}
+		rel := strings.TrimPrefix(f, layout+"/")
+		if strings.Contains(rel, "/") {
+			continue // only layout-root Dockerfiles drive the app build
+		}
+		if base == "Dockerfile" {
+			plain = base
+		} else {
+			prefer = base
+		}
+	}
+	if prefer != "" {
+		return prefer
+	}
+	return plain
+}
+
+// multiServiceBaseURL returns the base URL the Playwright runner should hit:
+// the first Public service (e.g. http://web:8080), falling back to app:<port>.
+func multiServiceBaseURL(services []ScaffoldService, fallbackPort int) string {
+	for _, svc := range services {
+		if svc.Public {
+			return fmt.Sprintf("http://%s:%d", svc.Name, svc.Port)
+		}
+	}
+	return fmt.Sprintf("http://app:%d", fallbackPort)
 }
 
 // selectTemplatesForPlan picks the right template files based on the scaffold plan.
