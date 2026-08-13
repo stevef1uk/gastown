@@ -1083,13 +1083,13 @@ func rewriteBdStripBeadsDir(cmd string) (string, bool) {
 }
 
 var (
-	goSmokeStripPkillRE   = regexp.MustCompile(`(?i)\s*&&\s*pkill\s+-f\s+[^&|;]+`)
-	goSmokeStripBuildRE   = regexp.MustCompile(`(?i)go\s+build\s+\./\.\.\.\s*&&\s*`)
-	goSmokeStripTidyRE    = regexp.MustCompile(`(?i)go\s+mod\s+tidy\s*&&\s*`)
-	goSmokeServerBgRE     = regexp.MustCompile(`(?i)(go\s+run\s+(?:\.\/)?cmd/server[^\s&;]*)\s*&`)
-	goSmokeWorkDirRE      = regexp.MustCompile(`(?i)cd\s+([^\s&;]+linkshelf[^\s&;]*)`)
-	goSmokeLocalhostRE    = regexp.MustCompile(`(?i)(?:localhost|127\.0\.0\.1):(\d{2,5})`)
-	pythonSmokeJobCtrlRE  = regexp.MustCompile(`(?i)\b(kill|wait)\b((?:\s+-[^ \t;|]+)*)\s+%[0-9]+\b`)
+	goSmokeStripPkillRE  = regexp.MustCompile(`(?i)\s*&&\s*pkill\s+-f\s+[^&|;]+`)
+	goSmokeStripBuildRE  = regexp.MustCompile(`(?i)go\s+build\s+\./\.\.\.\s*&&\s*`)
+	goSmokeStripTidyRE   = regexp.MustCompile(`(?i)go\s+mod\s+tidy\s*&&\s*`)
+	goSmokeServerBgRE    = regexp.MustCompile(`(?i)(go\s+run\s+(?:\.\/)?cmd/server[^\s&;]*)\s*&`)
+	goSmokeWorkDirRE     = regexp.MustCompile(`(?i)cd\s+([^\s&;]+linkshelf[^\s&;]*)`)
+	goSmokeLocalhostRE   = regexp.MustCompile(`(?i)(?:localhost|127\.0\.0\.1):(\d{2,5})`)
+	pythonSmokeJobCtrlRE = regexp.MustCompile(`(?i)\b(kill|wait)\b((?:\s+-[^ \t;|]+)*)\s+%[0-9]+\b`)
 )
 
 // normalizeGoCommandTypos fixes common model mistakes in go subcommands (e.g. "go build./...").
@@ -1504,7 +1504,7 @@ func runOrchestratedCommand(cmd, workDir, sessionName string, env []string, cmdT
 			fails := trackCmdFailure(cmd)
 			orchestratedPrintf("[gt-agent] exec loop: cmd=%s consecutive_failures=%d threshold=%d\n", logCmd, fails, cmdLoopThreshold)
 			if fails >= cmdLoopThreshold {
-return out, fmt.Errorf("LOOP DETECTED: command '%s' has timed out %d times in a row. Do NOT retry this exact command. The working directory or paths may be wrong — verify the CWD exists and files are at the expected paths before retrying with a different approach.", logCmd, fails)
+				return out, fmt.Errorf("LOOP DETECTED: command '%s' has timed out %d times in a row. Do NOT retry this exact command. The working directory or paths may be wrong — verify the CWD exists and files are at the expected paths before retrying with a different approach.", logCmd, fails)
 			}
 			return out, fmt.Errorf("command exceeded %s: %s", dur, logCmd)
 		}
@@ -1722,4 +1722,180 @@ func orchestratedCommandWorkDir(townRoot, rig, taskState string) string {
 		return townRoot
 	}
 	return townRoot
+}
+
+// composeE2EFileFromCmd extracts the docker-compose file path from a compose E2E command.
+// Returns (composeFileRelativeToLayout, found).
+func composeE2EFileFromCmd(cmd string) (string, bool) {
+	// Look for docker compose up --exit-code-from playwright
+	lower := strings.ToLower(cmd)
+	if !strings.Contains(lower, "--exit-code-from playwright") {
+		return "", false
+	}
+	// Extract -f <file> pattern
+	re := regexp.MustCompile(`-f\s+([^\s&;]+)`)
+	m := re.FindStringSubmatch(cmd)
+	if len(m) >= 2 {
+		return m[1], true
+	}
+	// Fallback: default compose file at layout root
+	return "docker-compose.yml", true
+}
+
+// isHostRunCompose checks if a docker-compose file is a host-run template
+// (reaches host via host.docker.internal / network_mode: host, no app service).
+func isHostRunCompose(content string) bool {
+	lower := strings.ToLower(content)
+	// Host-run template markers: reaches host via host.docker.internal or network_mode: host
+	if strings.Contains(lower, "host.docker.internal") {
+		return true
+	}
+	if strings.Contains(lower, "network_mode: host") {
+		return true
+	}
+	// Single-container/multi-service templates use internal service networking (app service, etc.)
+	// They don't have host.docker.internal or network_mode: host
+	return false
+}
+
+// maybeWrapHostRunComposeE2E wraps a host-run compose E2E command with host server start/stop.
+// Returns wrapped command if it was a host-run compose E2E, otherwise returns original.
+func maybeWrapHostRunComposeE2E(cmd, townRoot, rig string, v orchestrator.WorkflowValidation) (string, bool) {
+	lower := strings.ToLower(cmd)
+	// Only wrap compose E2E commands targeting playwright
+	if !strings.Contains(lower, "--exit-code-from playwright") {
+		return cmd, false
+	}
+	if !strings.Contains(lower, "docker compose") && !strings.Contains(lower, "docker-compose") {
+		return cmd, false
+	}
+
+	// Extract compose file from command
+	composeFileRel, ok := composeE2EFileFromCmd(cmd)
+	if !ok || composeFileRel == "" {
+		return cmd, false
+	}
+
+	// Resolve absolute path to the compose file
+	layout := strings.Trim(strings.TrimSpace(v.LayoutRoot), "/")
+	if layout == "" || layout == "." {
+		layout = "."
+	}
+	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
+	if layout != "." {
+		rigDir = filepath.Join(rigDir, layout)
+	}
+	composePath := filepath.Join(rigDir, composeFileRel)
+
+	// Read the compose file to check if it's a host-run template
+	content, err := os.ReadFile(composePath)
+	if err != nil {
+		return cmd, false // file doesn't exist or can't read, don't wrap
+	}
+
+	if !isHostRunCompose(string(content)) {
+		return cmd, false // not a host-run compose, don't wrap
+	}
+
+	// Only wrap if this rig needs QA runtime smoke (has a dev server to start)
+	if !orchestrator.WorkflowNeedsQARuntimeSmoke(townRoot, rig, v) {
+		return cmd, false
+	}
+
+	// Get the dev server start command for this rig
+	layoutDir := layout
+	if layout == "." {
+		layoutDir = ""
+	}
+	serverStart := orchestrator.DevServerCommand(layoutDir, v)
+	if serverStart == "" {
+		return cmd, false // no server start command, can't wrap
+	}
+
+	// Build the wrapped command with server start + wait + compose + cleanup
+	// Pattern similar to BuildRuntimeSmokeShell but with compose instead of curls.
+	// Derive the smoke port from the rig's SPEC/architecture/plan docs — the same
+	// ground truth the QA command validator (validateQARuntimeSmokeCommand) uses.
+	// v.DevServerPort is inferred from SPEC alone (often 8080 for Go) and can
+	// disagree with the port the app actually documents/listens on (e.g. 8000),
+	// which would make the validator reject our own wrapper (port mismatch) and
+	// the readiness curl would never succeed.
+	port := v.DevServerPort
+	if smokeSpec, err := orchestrator.LoadAPISmokeSpecFromRig(townRoot, rig, v); err == nil && smokeSpec.Port > 0 {
+		port = smokeSpec.Port
+	}
+	if port <= 0 {
+		port = 8080
+	}
+
+	// Extract the compose command part, stripping any leading `cd ... && `
+	// chain that navigates to the rig or layout root. The wrapper already cds
+	// into the compose file's directory before starting the server, so leaving
+	// the LLM's `cd <rig>/mayor/rig && cd <layout> && docker compose …`
+	// prefix in place would try to re-enter a rig dir from inside the layout
+	// root (cd fails, E2E never runs).
+	composeCmd := cmd
+	for {
+		t := strings.TrimSpace(composeCmd)
+		if !strings.HasPrefix(t, "cd ") {
+			break
+		}
+		rest := t[len("cd "):]
+		i := strings.Index(rest, " && ")
+		if i < 0 {
+			break
+		}
+		target := strings.Trim(strings.TrimSpace(rest[:i]), `"'`)
+		if !couldBeRigOrLayoutCd(target, rig, layout) {
+			break
+		}
+		composeCmd = rest[i+len(" && "):]
+	}
+
+	// Build server start + readiness wait + compose + cleanup
+	// Use .gt-e2e.pid pattern similar to BuildRuntimeSmokeShell
+	var parts []string
+	// The server and compose file live in the compose file's DIRECTORY, not the
+	// compose file itself — `cd '<compose file>'` always fails with "Not a
+	// directory". cd into the containing dir; no-op for a layout-root file.
+	if dir := strings.TrimSpace(filepath.Dir(filepath.FromSlash(composeFileRel))); dir != "" && dir != "." {
+		parts = append(parts, "cd "+bashSingleQuote(filepath.ToSlash(dir)))
+	}
+	parts = append(parts, "rm -f .gt-e2e.pid .gt-e2e.log")
+	parts = append(parts, "("+serverStart+" >.gt-e2e.log 2>&1 & echo $! >.gt-e2e.pid)")
+	// Wait for server to be ready
+	parts = append(parts, fmt.Sprintf(`_gtok=0; for _i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40; do curl -s --connect-timeout 1 --max-time 2 http://127.0.0.1:%d/ >/dev/null && _gtok=1 && break; sleep 1; done`, port))
+	parts = append(parts, `test "$_gtok" = 1`)
+	parts = append(parts, composeCmd)
+	parts = append(parts, `rc=$?`)
+	parts = append(parts, `(_gtsrv=$(cat .gt-e2e.pid 2>/dev/null); kill ${_gtsrv} 2>/dev/null || true; rm -f .gt-e2e.pid .gt-e2e.log)`)
+	parts = append(parts, `exit $rc`)
+
+	wrapped := "set -euo pipefail; " + strings.Join(parts, " && ")
+	return wrapped, true
+}
+
+// couldBeRigOrLayoutCd reports whether a `cd <target>` argument navigates to the
+// rig mayor/rig directory or the SPEC layout root — i.e. a cd that the wrapped
+// command supersedes after it cds into the compose file's own directory.
+func couldBeRigOrLayoutCd(target, rig, layout string) bool {
+	target = filepath.ToSlash(strings.TrimSpace(strings.Trim(target, `"'`)))
+	if target == "" {
+		return false
+	}
+	layout = strings.Trim(strings.TrimSpace(layout), "/")
+	if target == layout && layout != "" && layout != "." {
+		return true
+	}
+	if strings.HasSuffix(target, "/mayor/rig") {
+		return true
+	}
+	if layout != "" && layout != "." && strings.HasSuffix(target, "/"+layout) {
+		return true
+	}
+	return target == filepath.ToSlash(rig+"/mayor/rig")
+}
+
+func bashSingleQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
 }

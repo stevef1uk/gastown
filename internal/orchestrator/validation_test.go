@@ -47,10 +47,15 @@ func TestSanitizePhaseVerifyCommandsForStack_rewritesFinAllyTestPhase(t *testing
 			testCmd = p.QAVerifyCommand
 		}
 	}
-	for _, want := range []string{"docker-compose -f test/docker-compose.test.yml", "--exit-code-from playwright"} {
-		if !strings.Contains(testCmd, want) {
-			t.Fatalf("test phase QAVerifyCommand %q missing %q", testCmd, want)
-		}
+	lower := strings.ToLower(testCmd)
+	if !strings.Contains(lower, "-f test/docker-compose.test.yml") {
+		t.Fatalf("test phase QAVerifyCommand %q missing compose file -f test/docker-compose.test.yml", testCmd)
+	}
+	if !strings.Contains(lower, "--exit-code-from playwright") {
+		t.Fatalf("test phase QAVerifyCommand %q missing --exit-code-from playwright", testCmd)
+	}
+	if !strings.Contains(lower, "docker-compose") && !strings.Contains(lower, "docker compose") {
+		t.Fatalf("test phase QAVerifyCommand %q must use docker compose CLI", testCmd)
 	}
 	if strings.Contains(testCmd, "test -f finally/docker-compose.yml") {
 		t.Fatalf("weak test -f command survived sanitize: %q", testCmd)

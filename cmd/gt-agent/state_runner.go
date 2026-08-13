@@ -395,6 +395,11 @@ func (r *stateRunner) rewriteCommand(cmd string) string {
 			cmd = fixed
 		}
 	}
+	// Wrap host-run compose E2E commands with host server start/stop
+	if fixed, ok := maybeWrapHostRunComposeE2E(cmd, r.townRoot, r.rig, r.v); ok {
+		orchestratedPrintf("[gt-agent] wrapped host-run compose E2E with server bootstrap → %s\n", fixed)
+		cmd = fixed
+	}
 	for _, rw := range r.hooks.CmdRewrites {
 		switch rw {
 		case "rig_placeholders":

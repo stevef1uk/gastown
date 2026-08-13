@@ -82,6 +82,10 @@ var uvicornServerRE = regexp.MustCompile(`(?i)\buvicorn\s+\S+:\S+`)
 // Uses module:app syntax to distinguish running a server from pip install / python -c imports.
 func IsDevServerSmokeCommand(cmd string) bool {
 	lower := strings.ToLower(strings.TrimSpace(cmd))
+	// Docker compose E2E commands are not dev-server smoke commands.
+	if strings.Contains(lower, "docker compose") || strings.Contains(lower, "docker-compose") {
+		return false
+	}
 	if strings.Contains(lower, "go run") && strings.Contains(lower, "cmd/server") {
 		return true
 	}

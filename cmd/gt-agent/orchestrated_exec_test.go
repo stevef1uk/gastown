@@ -1054,3 +1054,91 @@ func TestWaitWithTimeout_zeroDur(t *testing.T) {
 		t.Fatalf("zero dur: timedOut=%v err=%v", timedOut, waitErr)
 	}
 }
+
+// TestMaybeWrapHostRunComposeE2E verifies the host-run compose E2E wrapper:
+//  1. cds into the compose file's DIRECTORY, not the compose file itself
+//     (cd 'docker-compose.yml' fails with "Not a directory").
+//  2. uses the port documented in SPEC/architecture for its readiness curl, not
+//     the profile dev_server_port (regression: profile inferred 8080 for a Go
+//     rig while SPEC/architecture documented 8000, so the QA command validator
+//     rejected the wrapper's own curl and the rig looped forever on QA).
+//  3. the wrapped command is accepted by validateQACommand (no port mismatch).
+//
+// Mirrors the pwtest rig in scripts/test-playwright-new-rig.sh.
+func TestMaybeWrapHostRunComposeE2E(t *testing.T) {
+	town := t.TempDir()
+	rig := "pwtest"
+	layout := "pingapp"
+	rigRoot := filepath.Join(town, rig, "mayor", "rig")
+	rigDir := filepath.Join(rigRoot, layout)
+	if err := os.MkdirAll(rigDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	compose := `services:
+  playwright:
+    image: mcr.microsoft.com/playwright:v1.44.0-jammy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    command: sh -c "npx playwright test --project=chromium"
+`
+	if err := os.WriteFile(filepath.Join(rigDir, "docker-compose.yml"), []byte(compose), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	spec := `# Ping App - Trivial Go Web Server
+- GET /ping → 200 JSON {"message": "pong"}
+The server listens at http://127.0.0.1:8000.
+`
+	if err := os.WriteFile(filepath.Join(rigRoot, "SPEC.md"), []byte(spec), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	arch := `# Architecture
+The web server runs on HOST; Playwright reaches it at http://127.0.0.1:8000.
+`
+	if err := os.WriteFile(filepath.Join(rigRoot, "architecture.md"), []byte(arch), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	phases := []orchestrator.DeliveryPhase{
+		{ID: "go-module", Title: "go-module", RequiredFiles: []string{layout + "/go.mod"}},
+		{
+			ID:              "integration-test",
+			Title:           "integration-test",
+			RequiredFiles:   []string{layout + "/docker-compose.yml", layout + "/cmd/server/main.go"},
+			QAVerifyCommand: "cd " + layout + " && docker compose -f docker-compose.yml down && docker compose -f docker-compose.yml up --exit-code-from playwright",
+		},
+	}
+	v := orchestrator.WorkflowValidation{
+		LayoutRoot:             layout,
+		BeadTitleContains:      "Implement " + layout + "/",
+		RequiredFiles:          []string{layout + "/go.mod", layout + "/cmd/server/main.go", layout + "/docker-compose.yml"},
+		DeliveryPhases:         phases,
+		ActivePhaseIDField:     "integration-test",
+		CompletedPhaseIDsField: []string{"go-module"},
+		DevServerPort:          8080, // profile-derived; must NOT leak into the wrapper
+		TestRunner:             "go",
+	}
+	cmd := "cd " + rig + "/mayor/rig && cd " + layout + " && docker compose -f docker-compose.yml down && docker compose -f docker-compose.yml up --exit-code-from playwright"
+
+	wrapped, ok := maybeWrapHostRunComposeE2E(cmd, town, rig, v)
+	if !ok {
+		t.Fatal("expected host-run compose E2E command to be wrapped")
+	}
+	if strings.Contains(wrapped, "cd 'docker-compose.yml'") {
+		t.Fatalf("wrapper must not cd into the compose FILE: %s", wrapped)
+	}
+	if strings.Contains(wrapped, "127.0.0.1:8080") {
+		t.Fatalf("wrapper must use the docs-derived port 8000, not profile port 8080: %s", wrapped)
+	}
+	if !strings.Contains(wrapped, "http://127.0.0.1:8000/") {
+		t.Fatalf("wrapper must use the docs-derived port 8000 in its readiness curl: %s", wrapped)
+	}
+	// The inner compose command must not retain the LLM's cd-chain (the wrapper
+	// already cds into the layout root). Re-entering a rig dir from inside the
+	// layout root would fail before docker compose ever runs.
+	if strings.Contains(wrapped, "cd "+rig+"/mayor/rig && cd "+layout+" && docker compose") {
+		t.Fatalf("wrapper must strip the leading rig/layout cd chain from the compose command: %s", wrapped)
+	}
+	if err := validateQACommand(wrapped, rig, town, v); err != nil {
+		t.Fatalf("wrapped command must be accepted by validateQACommand (no port mismatch): %v\ncmd=%s", err, wrapped)
+	}
+}
