@@ -1710,7 +1710,8 @@ func defaultQAVerifyForPhase(p *DeliveryPhase, layoutRoot string) string {
 			}
 		}
 		if dockerFile != "" {
-			return fmt.Sprintf("cd %s && test -f %s && echo 'compose file ok'", lr, dockerFile)
+			relDockerFile := strings.TrimPrefix(dockerFile, lr+"/")
+			return fmt.Sprintf("cd %s && test -f %s && echo 'compose file ok'", lr, relDockerFile)
 		}
 	}
 	if hasPlaywright || hasSpecFiles {
@@ -1743,11 +1744,12 @@ func defaultQAVerifyForPhase(p *DeliveryPhase, layoutRoot string) string {
 	if hasScripts {
 		var sb strings.Builder
 		for _, f := range p.RequiredFiles {
-			if strings.HasSuffix(f, ".sh") {
+			if strings.HasSuffix(f, ".sh") || strings.HasSuffix(f, ".ps1") {
 				if sb.Len() > 0 {
 					sb.WriteString(" && ")
 				}
-				sb.WriteString(fmt.Sprintf("test -f %s", f))
+				relF := strings.TrimPrefix(f, lr+"/")
+				sb.WriteString(fmt.Sprintf("test -f %s", relF))
 			}
 		}
 		if sb.Len() > 0 {
