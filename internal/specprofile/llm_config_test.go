@@ -12,6 +12,8 @@ import (
 func TestResolveLLMForSpecIndex_envWins(t *testing.T) {
 	t.Setenv("LLM_ENDPOINT", "http://example/v1/chat/completions")
 	t.Setenv("LLM_MODEL", "test/model")
+	// Isolate from user freeride_models.json
+	t.Setenv("FREERIDE_MODELS_CONFIG", "/dev/null")
 	e, m := ResolveLLMForSpecIndex(t.TempDir())
 	if e != "http://example/v1/chat/completions" || m != "test/model" {
 		t.Fatalf("got %q %q", e, m)
@@ -21,6 +23,8 @@ func TestResolveLLMForSpecIndex_envWins(t *testing.T) {
 func TestResolveLLMForSpecIndex_townArchitect(t *testing.T) {
 	t.Setenv("LLM_ENDPOINT", "")
 	t.Setenv("LLM_MODEL", "")
+	// Isolate from user freeride_models.json
+	t.Setenv("FREERIDE_MODELS_CONFIG", "/dev/null")
 	townRoot := t.TempDir()
 	ts := config.NewTownSettings()
 	ts.Agents = config.DefaultFreerideAgents()
@@ -54,6 +58,8 @@ func TestHTTPTimeoutForSpecIndex_override(t *testing.T) {
 func TestResolveLLMForSpecIndex_missingTownFreerideDefault(t *testing.T) {
 	t.Setenv("LLM_ENDPOINT", "")
 	t.Setenv("LLM_MODEL", "")
+	// Isolate from user freeride_models.json
+	t.Setenv("FREERIDE_MODELS_CONFIG", "/dev/null")
 	dir := filepath.Join(t.TempDir(), "gt")
 	e, m := ResolveLLMForSpecIndex(dir)
 	if e != config.DefaultFreerideProxyEndpoint || m != "ollama/llama3.3" {
