@@ -211,7 +211,24 @@ Rules:
 - dev_server_port: The port the dev server listens on. Set 0 if the project is NOT a web server. If the project IS a web server, set the port number explicitly if the spec mentions one, otherwise default to 8080 for Go servers and 8000 for Python servers.
 - confidence: \"high\", \"medium\", or \"low\".
 
-CRITICAL: The agent's working directory when running QA commands is $GT_ROOT/<rig>/mayor/rig/. All qa_verify_command values (root and per-phase) must be relative to that directory.
+CRITICAL: The agent's working directory when running QA commands is $GT_ROOT/<rig>/mayor/rig/ (the "rig root"). The layout_root is a SUBDIRECTORY of the rig root. All qa_verify_command values (root and per-phase) must be paths relative to the rig root.
+
+EXAMPLES (assuming layout_root = "myapp"):
+- From rig root, cd into project: "cd myapp && python -m pytest"
+- Frontend subdirectory: "cd myapp/frontend && npm install && npx tsc --noEmit"  (NOT "cd myapp && cd myapp/frontend")
+- Backend subdirectory: "cd myapp/backend && python -m pytest tests/"
+- If layout_root = "." (project at rig root): "python -m pytest"  (no cd prefix)
+
+NEVER use the rig name as a path prefix. NEVER do double cd into the same directory.
+
+**CRITICAL: When combining multiple verification steps in a SINGLE shell command (chained with &&), each cd is relative to the PREVIOUS directory, not the rig root.**
+
+CORRECT patterns for multi-step verification:
+- Subshells (each independent from rig root): "(cd myapp && python -m pytest) && (cd myapp/frontend && npm test)"
+- Relative chaining: "cd myapp && python -m pytest && cd frontend && npm test"  (second cd is relative to myapp/)
+- Separate commands (preferred): "cd myapp && python -m pytest ; cd myapp/frontend && npm test"
+
+WRONG: "cd myapp && python -m pytest && cd myapp/frontend && npm test"  (second cd tries myapp/myapp/frontend)
 
 CRITICAL delivery_phases rules (the LLM must obey these):
 - Every phase MUST have a qa_verify_command (non-empty string).

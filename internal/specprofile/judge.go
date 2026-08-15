@@ -55,7 +55,23 @@ For **final/integration phases** (e.g. smoke-test, deployment-and-e2e, doc-seed)
 4. Assert root UI HTML content contains expected spec strings.
 5. Gracefully tear down / kill server process.
 
-**CRITICAL: All paths are relative to the rig root (mayor/rig/). Do NOT prefix with the rig name. Use actual file paths from required_files.**
+**CRITICAL: The working directory is the rig root ($GT_ROOT/<rig>/mayor/rig/). layout_root is a SUBDIRECTORY of the rig root. All paths in qa_verify_command must be relative to the rig root.**
+
+EXAMPLES (layout_root = "myapp"):
+- "cd myapp && python -m pytest"
+- "cd myapp/frontend && npm install --ignore-scripts && npx tsc --noEmit"  (NOT "cd myapp && cd myapp/frontend")
+- If layout_root = ".": "python -m pytest" (no cd)
+
+NEVER use the rig name as a path prefix. NEVER double-cd into the same directory.
+
+**CRITICAL: When combining multiple verification steps in a SINGLE shell command (chained with &&), each cd is relative to the PREVIOUS directory, not the rig root.**
+
+CORRECT patterns for multi-step verification:
+- Subshells (each independent from rig root): "(cd myapp && python -m pytest) && (cd myapp/frontend && npm test)"
+- Relative chaining: "cd myapp && python -m pytest && cd frontend && npm test"  (second cd is relative to myapp/)
+- Separate commands (preferred): "cd myapp && python -m pytest ; cd myapp/frontend && npm test"
+
+WRONG: "cd myapp && python -m pytest && cd myapp/frontend && npm test"  (second cd tries myapp/myapp/frontend)
 
 Output JSON only — no prose, no markdown fences.`
 }
