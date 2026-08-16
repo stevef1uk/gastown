@@ -1498,8 +1498,9 @@ func NormalizeDockerQACommand(cmd string) string {
 		if flags != "" {
 			flags = " " + flags
 		}
-		// Insert no-cache build before up, and append image prune to clean dangling layers
-		return prefix + " build --no-cache && " + prefix + " up" + flags + " && docker image prune -f"
+		// Insert no-cache build before up; remove old test-app:latest first so it never
+		// becomes dangling. Append image prune to clean any remaining dangling layers.
+		return prefix + " build --no-cache && " + prefix + " up" + flags + " && docker rmi test-app:latest 2>/dev/null || true && docker image prune -f"
 	})
 }
 

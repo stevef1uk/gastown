@@ -114,22 +114,22 @@ func TestNormalizeDockerQACommand(t *testing.T) {
 		{
 			name: "chained down then up",
 			in:   "cd finally && docker-compose -f test/docker-compose.test.yml down && docker-compose -f test/docker-compose.test.yml up --exit-code-from playwright",
-			want: "cd finally && docker-compose -f test/docker-compose.test.yml down && docker-compose -f test/docker-compose.test.yml build --no-cache && docker-compose -f test/docker-compose.test.yml up --exit-code-from playwright && docker image prune -f",
+			want: "cd finally && docker-compose -f test/docker-compose.test.yml down && docker-compose -f test/docker-compose.test.yml build --no-cache && docker-compose -f test/docker-compose.test.yml up --exit-code-from playwright && docker rmi test-app:latest 2>/dev/null || true && docker image prune -f",
 		},
 		{
 			name: "docker compose v2 with build flag on up",
 			in:   "docker compose -f docker-compose.yml up --build --exit-code-from playwright",
-			want: "docker compose -f docker-compose.yml build --no-cache && docker compose -f docker-compose.yml up --exit-code-from playwright && docker image prune -f",
+			want: "docker compose -f docker-compose.yml build --no-cache && docker compose -f docker-compose.yml up --exit-code-from playwright && docker rmi test-app:latest 2>/dev/null || true && docker image prune -f",
 		},
 		{
 			name: "bare compose up",
 			in:   "docker-compose up --exit-code-from playwright",
-			want: "docker-compose build --no-cache && docker-compose up --exit-code-from playwright && docker image prune -f",
+			want: "docker-compose build --no-cache && docker-compose up --exit-code-from playwright && docker rmi test-app:latest 2>/dev/null || true && docker image prune -f",
 		},
 		{
 			name: "already hardened is idempotent",
-			in:   "docker-compose build --no-cache && docker-compose up --exit-code-from playwright && docker image prune -f",
-			want: "docker-compose build --no-cache && docker-compose up --exit-code-from playwright && docker image prune -f",
+			in:   "docker-compose build --no-cache && docker-compose up --exit-code-from playwright && docker rmi test-app:latest 2>/dev/null || true && docker image prune -f",
+			want: "docker-compose build --no-cache && docker-compose up --exit-code-from playwright && docker rmi test-app:latest 2>/dev/null || true && docker image prune -f",
 		},
 		{
 			name: "non-docker command untouched",

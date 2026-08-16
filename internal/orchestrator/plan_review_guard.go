@@ -210,6 +210,19 @@ func rejectSpuriousQAFailure(townRoot, rig, summary, rawFeedback string) string 
 	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
 	lower := strings.ToLower(strings.TrimSpace(summary))
 
+	// Load the qa_verify_command to check if it's docker-based
+	qaCmd := ""
+	if v, ok, _ := LoadRigWorkflowProfileFile(townRoot, rig); ok {
+		qaCmd = strings.ToLower(strings.TrimSpace(v.QAVerifyCommand))
+		for _, p := range v.DeliveryPhases {
+			if strings.Contains(strings.ToLower(strings.TrimSpace(p.QAVerifyCommand)), "docker") {
+				qaCmd = strings.ToLower(strings.TrimSpace(p.QAVerifyCommand))
+				break
+			}
+		}
+	}
+	isDockerQA := strings.Contains(qaCmd, "docker compose") || strings.Contains(qaCmd, "docker-compose")
+
 	// If the summary explicitly reports a missing file, treat it as legitimate regardless
 	// of shell-error noise in rawFeedback (e.g. from a failed smoke-test subprocess).
 	if strings.Contains(lower, "does not exist") || strings.Contains(lower, "missing") ||
@@ -257,6 +270,11 @@ func rejectSpuriousQAFailure(townRoot, rig, summary, rawFeedback string) string 
 		}
 	}
 	if strings.Contains(lower, "import") || strings.Contains(lower, "module") {
+		if isDockerQA {
+			// Don't reject import/module failures from Docker QA — the container
+			// filesystem may differ from host (e.g., missing modules not copied).
+			return ""
+		}
 		if hasPassingPythonTests(rigDir) {
 			return "QA claims import/module issues but tests pass on disk. Re-send JSON outcome=success."
 		}

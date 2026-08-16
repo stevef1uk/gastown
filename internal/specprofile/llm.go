@@ -15,6 +15,85 @@ import (
 
 const maxSpecChars = 60000
 
+// SpecStackKind represents the primary technology stack.
+type SpecStackKind string
+
+const (
+	StackGo      SpecStackKind = "go"
+	StackPython  SpecStackKind = "python"
+	StackNodeJS  SpecStackKind = "nodejs"
+	StackDocker  SpecStackKind = "docker"
+	StackGeneric SpecStackKind = "generic"
+)
+
+// detectStackFromSpec infers the primary stack from SPEC.md content.
+func detectStackFromSpec(spec string) SpecStackKind {
+	lower := strings.ToLower(spec)
+	hasGo := strings.Contains(lower, "go.mod") || strings.Contains(lower, "go test") ||
+		strings.Contains(lower, "go build") || strings.Contains(lower, "go run") ||
+		strings.Contains(lower, "golang") || strings.Contains(lower, "main.go") ||
+		strings.Contains(lower, "_test.go") || strings.Contains(lower, "gin") ||
+		strings.Contains(lower, "chi") || strings.Contains(lower, "echo")
+	hasPython := strings.Contains(lower, "requirements.txt") || strings.Contains(lower, "pyproject.toml") ||
+		strings.Contains(lower, "uv.lock") || strings.Contains(lower, "pytest") ||
+		strings.Contains(lower, "uvicorn") || strings.Contains(lower, "fastapi") ||
+		strings.Contains(lower, "django") || strings.Contains(lower, "flask") ||
+		strings.Contains(lower, "main.py") || strings.Contains(lower, "test_*.py")
+	hasNode := strings.Contains(lower, "package.json") || strings.Contains(lower, "pnpm-lock.yaml") ||
+		strings.Contains(lower, "yarn.lock") || strings.Contains(lower, "npm install") ||
+		strings.Contains(lower, "npm ci") || strings.Contains(lower, "node.js") ||
+		strings.Contains(lower, "typescript") || strings.Contains(lower, "react") ||
+		strings.Contains(lower, "next.js") || strings.Contains(lower, "vite")
+	hasDocker := strings.Contains(lower, "dockerfile") || strings.Contains(lower, "docker-compose") ||
+		strings.Contains(lower, "container")
+
+	if hasGo && !hasPython && !hasNode {
+		return StackGo
+	}
+	if hasPython && !hasGo && !hasNode {
+		return StackPython
+	}
+	if hasNode && !hasGo && !hasPython {
+		return StackNodeJS
+	}
+	if hasDocker {
+		return StackDocker
+	}
+	if hasGo {
+		return StackGo
+	}
+	if hasPython {
+		return StackPython
+	}
+	if hasNode {
+		return StackNodeJS
+	}
+	return StackGeneric
+}
+
+// stackDeliveryPhaseGuidance returns stack-specific delivery phase guidance for the spec-index prompt.
+func stackDeliveryPhaseGuidance(stack SpecStackKind) string {
+	switch stack {
+	case StackGo:
+		return `
+  * Go phases: "go test ./..." or "go build ./..." from layout_root. Go mod phase: "go mod tidy && go build ./...".`
+	case StackPython:
+		return `
+  * Python phases: "cd backend && python -m pytest -v tests/" (from layout_root/backend).`
+	case StackNodeJS:
+		return `
+  * Frontend-only phases (TypeScript/React): typecheck, not run E2E tests: "cd frontend && npm install --ignore-scripts && npx tsc --noEmit" (or yarn/pnpm; prefer "npm ci --ignore-scripts" when lockfile present). Always add --ignore-scripts to every npm/pnpm/yarn install command — lifecycle hooks are a known supply-chain attack vector (Shai-Hulud), so the orchestrator and exec layer will reject/harden unhardened installs.`
+	case StackDocker:
+		return `
+  * Docker phases: Use "docker build" and "docker-compose" commands as appropriate for the stack.`
+	default:
+		return `
+  * Frontend-only phases (TypeScript/React): typecheck, not run E2E tests: "cd frontend && npm install --ignore-scripts && npx tsc --noEmit" (or yarn/pnpm; prefer "npm ci --ignore-scripts" when lockfile present). Always add --ignore-scripts to every npm/pnpm/yarn install command — lifecycle hooks are a known supply-chain attack vector (Shai-Hulud), so the orchestrator and exec layer will reject/harden unhardened installs.
+  * Go phases: "go test ./..." or "go build ./..." from layout_root. Go mod phase: "go mod tidy && go build ./...".
+  * Python phases: "cd backend && python -m pytest -v tests/" (from layout_root/backend).`
+	}
+}
+
 // LLMExtractProfile calls an OpenAI-compatible chat API to turn SPEC.md into WorkflowValidation fields.
 // endpoint and model should come from ResolveLLMForSpecIndex(townRoot); empty strings use Freeride defaults.
 func LLMExtractProfile(ctx context.Context, endpoint, model, specContent string) (orchestrator.WorkflowValidation, string, error) {
@@ -27,7 +106,13 @@ func LLMExtractProfile(ctx context.Context, endpoint, model, specContent string)
 		model = "ollama/llama3.3"
 	}
 
+	stack := detectStackFromSpec(specContent)
 	system := specIndexSystemPrompt()
+	// Inject stack-specific delivery phase guidance after the base delivery_phases rule
+	system = strings.Replace(system,
+		"- delivery_phases: For large or multi-stack specs, split into 4-10 phases with at most 10 required_files each (backend layers, frontend, e2e). Keep each source file's corresponding test file (*_test.go, test_*.py) in the same phase so QA can verify each phase independently. Each phase needs id (kebab-case), title, required_files subset, and qa_verify_command that validates only that slice. Order phases by dependency (application source before packaging). Put Dockerfile, docker-compose.yml, docker-compose.test.yml, and .dockerignore in the **final** phase only — not setup-infrastructure or the first phase. Frontend-only phases must typecheck, not run E2E tests: use \"cd frontend && npm install --ignore-scripts && npx tsc --noEmit\" (or yarn/pnpm, and prefer \"npm ci --ignore-scripts\" when a lockfile is present). Always add --ignore-scripts to every npm/pnpm/yarn install command — lifecycle hooks are a known supply-chain attack vector (Shai-Hulud), so the orchestrator and exec layer will reject/harden unhardened installs. Playwright/E2E tests that need a running server belong in the final e2e-and-deployment phase. Docker compose E2E verify commands MUST rebuild the image from scratch before starting containers: \"docker-compose build --no-cache\" before \"docker-compose up --exit-code-from playwright\", and end with \"docker image prune -f\" to clean dangling layers. A plain \"compose up\" reuses whatever image is already tagged (often a stale build from an earlier phase), so QA would test old code.",
+		"- delivery_phases: For large or multi-stack specs, split into 4-10 phases with at most 10 required_files each (backend layers, frontend, e2e). Keep each source file's corresponding test file (*_test.go, test_*.py) in the same phase so QA can verify each phase independently. Each phase needs id (kebab-case), title, required_files subset, and qa_verify_command that validates only that slice. Order phases by dependency (application source before packaging). Put Dockerfile, docker-compose.yml, docker-compose.test.yml, and .dockerignore in the **final** phase only — not setup-infrastructure or the first phase."+stackDeliveryPhaseGuidance(stack)+`
+  * Playwright/E2E tests that need a running server belong in the final e2e-and-deployment phase. Docker compose E2E verify commands MUST rebuild the image from scratch before starting containers: "docker-compose build --no-cache" before "docker-compose up --exit-code-from playwright", then "docker rmi test-app:latest 2>/dev/null || true && docker image prune -f" to clean dangling layers. A plain "compose up" reuses whatever image is already tagged (often a stale build from an earlier phase), so QA would test old code.`, -1)
 
 	user := "SPECIFICATION:\n\n" + specContent
 
@@ -202,7 +287,7 @@ Rules:
   Include unit test files alongside implementation: Go *_test.go files in the same package as the code under test; Python tests/test_<module>.py per package/API layer.
   Order: module code before its tests before cmd/server/main.go.
 
-- delivery_phases: For large or multi-stack specs, split into 4-10 phases with at most 10 required_files each (backend layers, frontend, e2e). Keep each source file's corresponding test file (*_test.go, test_*.py) in the same phase so QA can verify each phase independently. Each phase needs id (kebab-case), title, required_files subset, and qa_verify_command that validates only that slice. Order phases by dependency (application source before packaging). Put Dockerfile, docker-compose.yml, docker-compose.test.yml, and .dockerignore in the **final** phase only — not setup-infrastructure or the first phase. Frontend-only phases must typecheck, not run E2E tests: use "cd frontend && npm install --ignore-scripts && npx tsc --noEmit" (or yarn/pnpm, and prefer "npm ci --ignore-scripts" when a lockfile is present). Always add --ignore-scripts to every npm/pnpm/yarn install command — lifecycle hooks are a known supply-chain attack vector (Shai-Hulud), so the orchestrator and exec layer will reject/harden unhardened installs. Playwright/E2E tests that need a running server belong in the final e2e-and-deployment phase. Docker compose E2E verify commands MUST rebuild the image from scratch before starting containers: "docker-compose build --no-cache" before "docker-compose up --exit-code-from playwright", and end with "docker image prune -f" to clean dangling layers. A plain "compose up" reuses whatever image is already tagged (often a stale build from an earlier phase), so QA would test old code.
+- delivery_phases: For large or multi-stack specs, split into 4-10 phases with at most 10 required_files each (backend layers, frontend, e2e). Keep each source file's corresponding test file (*_test.go, test_*.py) in the same phase so QA can verify each phase independently. Each phase needs id (kebab-case), title, required_files subset, and qa_verify_command that validates only that slice. Order phases by dependency (application source before packaging). Put Dockerfile, docker-compose.yml, docker-compose.test.yml, and .dockerignore in the **final** phase only — not setup-infrastructure or the first phase. Frontend-only phases must typecheck, not run E2E tests: use "cd frontend && npm install --ignore-scripts && npx tsc --noEmit" (or yarn/pnpm, and prefer "npm ci --ignore-scripts" when a lockfile is present). Always add --ignore-scripts to every npm/pnpm/yarn install command — lifecycle hooks are a known supply-chain attack vector (Shai-Hulud), so the orchestrator and exec layer will reject/harden unhardened installs. Playwright/E2E tests that need a running server belong in the final e2e-and-deployment phase. Docker compose E2E verify commands MUST rebuild the image from scratch before starting containers: "docker-compose build --no-cache" before "docker-compose up --exit-code-from playwright", then "docker rmi test-app:latest 2>/dev/null || true && docker image prune -f" to clean dangling layers. A plain "compose up" reuses whatever image is already tagged (often a stale build from an earlier phase), so QA would test old code.
 
 - spec_summary: 400–2500 characters summarizing goals, stack, directory layout, functional requirements to cover in unit tests, and how to run the test suite.
 - min_architecture_bytes: target 2500–5000 for most rigs; use 6000–8000 only when required_files has 15+ paths. For ≤10 required_files use 2000–3500. Use 200–8192 only; NEVER copy SPEC byte length.
