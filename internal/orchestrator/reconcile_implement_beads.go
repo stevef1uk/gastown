@@ -598,6 +598,16 @@ func reopenMissingImportBeads(townRoot, rig string, v WorkflowValidation) ([]str
 			if err != nil {
 				return nil
 			}
+			// Skip virtual environments, dependency directories, and build artifacts
+			if info.IsDir() {
+				name := info.Name()
+				if name == ".venv" || name == "venv" || name == "__pycache__" ||
+					name == "node_modules" || name == ".git" || name == "dist" ||
+					name == "build" || name == ".next" || name == ".cache" ||
+					strings.HasPrefix(name, ".venv") || strings.HasPrefix(name, "venv") {
+					return filepath.SkipDir
+				}
+			}
 			if !info.IsDir() && strings.HasSuffix(path, sc.ext) {
 				rel, _ := filepath.Rel(rigDir, path)
 				allFiles = append(allFiles, fileInfo{rel: filepath.ToSlash(rel), scanner: &sc})
@@ -644,6 +654,10 @@ func reopenMissingImportBeads(townRoot, rig string, v WorkflowValidation) ([]str
 				}
 				if imp != "" && !strings.HasPrefix(imp, ".") && !f.scanner.isStdlib(imp) {
 					if !availableModules[imp] {
+						// Check if it's an importable third-party package (installed in venv)
+						if isImportableThirdParty(imp, rigDir) {
+							continue // Third-party package, not a missing implementation
+						}
 						// Check parent packages
 						parts := strings.Split(imp, ".")
 						found := false
@@ -663,7 +677,7 @@ func reopenMissingImportBeads(townRoot, rig string, v WorkflowValidation) ([]str
 		}
 	}
 
-	if len(missingImports) == 0 {
+if len(missingImports) == 0 {
 		return nil, nil
 	}
 
@@ -676,7 +690,7 @@ func reopenMissingImportBeads(townRoot, rig string, v WorkflowValidation) ([]str
 			for imp := range missingImports {
 				missingList = append(missingList, imp)
 			}
-			return nil, fmt.Errorf("missing imports with no implementation bead: %s (need new bead or spec-index rework)", strings.Join(missingList, ", "))
+			return nil, fmt.Errorf("missing imports with no implementation bead: %s (need new implementation bead or add to dependencies)", strings.Join(missingList, ", "))
 		}
 		return nil, err
 	}
@@ -701,7 +715,7 @@ func reopenMissingImportBeads(townRoot, rig string, v WorkflowValidation) ([]str
 	}
 	if len(trulyMissing) > 0 {
 		// Log missing imports that have no bead - polecat needs to create these
-		return reopened, fmt.Errorf("missing imports with no bead: %s (need new implementation beads)", strings.Join(trulyMissing, ", "))
+		return reopened, fmt.Errorf("missing imports with no implementation bead: %s (need new implementation bead or add to dependencies)", strings.Join(trulyMissing, ", "))
 	}
 	return reopened, nil
 }
@@ -718,6 +732,12 @@ func isPythonStdlib(mod string) bool {
 		"csv": true, "configparser": true, "string": true, "textwrap": true,
 		"unittest": true, "pytest": true, "fastapi": true, "uvicorn": true,
 		"pydantic": true, "httpx": true, "starlette": true, "sqlalchemy": true,
+		"abc": true, "importlib": true, "types": true, "inspect": true,
+		"__future__": true,
+		"decimal": true, "fractions": true, "numbers": true,
+		"statistics": true, "copy": true, "pprint": true, "reprlib": true,
+		"enum": true, "contextvars": true,
+		"hmac": true, "secrets": true,
 	}
 	root := strings.Split(mod, ".")[0]
 	return stdlib[root]
@@ -768,4 +788,21 @@ func isNodeStdlib(mod string) bool {
 		return false
 	}
 	return stdlib[mod]
+}
+
+// isImportableThirdParty checks if a module can be imported from the Python environment.
+// If it can be imported, it's a third-party package installed in the venv/system,
+// not a missing implementation that needs a bead.
+func isImportableThirdParty(mod, rigDir string) bool {
+	// Find Python interpreter (prefer .venv in rigDir)
+	venvPython := filepath.Join(rigDir, ".venv", "bin", "python3")
+	if _, err := os.Stat(venvPython); err != nil {
+		// Try system python3
+		venvPython = "python3"
+	}
+	// Try to import the module
+	cmd := exec.Command(venvPython, "-c", "import sys; sys.dont_write_bytecode = True; import "+mod)
+	cmd.Dir = rigDir
+	err := cmd.Run()
+	return err == nil
 }
