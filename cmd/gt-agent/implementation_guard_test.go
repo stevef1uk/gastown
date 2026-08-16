@@ -16,6 +16,9 @@ func TestIsRetriableLLMError(t *testing.T) {
 	if !isRetriableLLMError(err) {
 		t.Fatal("expected 403 quota to be retriable")
 	}
+	if !isRetriableLLMError(errors.New(`LLM API error (status 402): {"error":{"message":"This request requires more credits"}}`)) {
+		t.Fatal("expected 402 credits to be retriable")
+	}
 	if isRetriableLLMError(errors.New("context canceled")) {
 		t.Fatal("generic errors should not be retriable")
 	}

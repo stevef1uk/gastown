@@ -104,3 +104,49 @@ func TestNormalizePipCommand(t *testing.T) {
 		t.Fatalf("must not rewrite package name pip: got %q", got)
 	}
 }
+
+func TestNormalizeDockerQACommand(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{
+			name: "chained down then up",
+			in:   "cd finally && docker-compose -f test/docker-compose.test.yml down && docker-compose -f test/docker-compose.test.yml up --exit-code-from playwright",
+			want: "cd finally && docker-compose -f test/docker-compose.test.yml down && docker-compose -f test/docker-compose.test.yml build --no-cache && docker-compose -f test/docker-compose.test.yml up --exit-code-from playwright && docker image prune -f",
+		},
+		{
+			name: "docker compose v2 with build flag on up",
+			in:   "docker compose -f docker-compose.yml up --build --exit-code-from playwright",
+			want: "docker compose -f docker-compose.yml build --no-cache && docker compose -f docker-compose.yml up --exit-code-from playwright && docker image prune -f",
+		},
+		{
+			name: "bare compose up",
+			in:   "docker-compose up --exit-code-from playwright",
+			want: "docker-compose build --no-cache && docker-compose up --exit-code-from playwright && docker image prune -f",
+		},
+		{
+			name: "already hardened is idempotent",
+			in:   "docker-compose build --no-cache && docker-compose up --exit-code-from playwright && docker image prune -f",
+			want: "docker-compose build --no-cache && docker-compose up --exit-code-from playwright && docker image prune -f",
+		},
+		{
+			name: "non-docker command untouched",
+			in:   "cd backend && python -m pytest -v tests/",
+			want: "cd backend && python -m pytest -v tests/",
+		},
+		{
+			name: "build only command untouched",
+			in:   "docker-compose -f docker-compose.yml build --no-cache",
+			want: "docker-compose -f docker-compose.yml build --no-cache",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := NormalizeDockerQACommand(tc.in); got != tc.want {
+				t.Fatalf("got %q want %q", got, tc.want)
+			}
+		})
+	}
+}

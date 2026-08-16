@@ -77,11 +77,11 @@ Edit `<rig>/settings/config.json`:
     "api_key_env": "GROQ_API_KEY"
   },
   "routing": {
-    "mayor":    { "default": "llama-3.3-70b-versatile" },
-    "crew":     { "default": "llama-3.3-70b-versatile" },
-    "polecat":  { "default": "llama-3.1-8b-instant", "boosted": "llama-3.3-70b-versatile" },
-    "witness":  { "default": "llama-3.3-70b-versatile", "council": ["llama-3.3-70b-versatile", "openai/gpt-oss-120b"] },
-    "refinery": { "default": "llama-3.3-70b-versatile", "fast_path": "llama-3.1-8b-instant" },
+    "mayor":    { "default": "openai/gpt-oss-120b" },
+    "crew":     { "default": "openai/gpt-oss-120b" },
+    "polecat":  { "default": "llama-3.1-8b-instant", "boosted": "openai/gpt-oss-120b" },
+    "witness":  { "default": "openai/gpt-oss-120b", "council": ["openai/gpt-oss-120b"] },
+    "refinery": { "default": "openai/gpt-oss-120b", "fast_path": "llama-3.1-8b-instant" },
     "deacon":   { "default": "llama-3.1-8b-instant" },
     "dogs":     { "default": "llama-3.1-8b-instant" }
   }

@@ -200,6 +200,19 @@ func WriteRigWorkflowProfileClamped(townRoot, rig string, v WorkflowValidation, 
 	if clamp {
 		v = ClampProfileValidationForRig(townRoot, rig, NormalizeLayoutProfile(v))
 	}
+
+	// Preserve phase progress from existing profile (active phase + completed phases)
+	// so spec-index --force doesn't reset workflow state.
+	existingV, _, err := LoadRigWorkflowProfileFile(townRoot, rig)
+	if err == nil {
+		if existingV.ActivePhaseIDField != "" {
+			v.ActivePhaseIDField = existingV.ActivePhaseIDField
+		}
+		if len(existingV.CompletedPhaseIDsField) > 0 {
+			v.CompletedPhaseIDsField = existingV.CompletedPhaseIDsField
+		}
+	}
+
 	env := rigProfileEnvelope{
 		Version:     1,
 		GeneratedAt: time.Now().UTC().Format(time.RFC3339),
@@ -207,12 +220,14 @@ func WriteRigWorkflowProfileClamped(townRoot, rig string, v WorkflowValidation, 
 		Confidence:  confidence,
 		Validation:  v,
 	}
-	// Resolve active phase from disk: first phase with missing files wins.
+	// Resolve active phase from disk only if not already set (e.g. first write).
 	// This overrides whatever the LLM or ClampProfileValidation set, ensuring
 	// the active phase always points to the phase that actually needs work.
 	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
-	if diskPhase := ResolveActivePhaseFromDisk(rigDir, env.Validation); diskPhase != "" {
-		env.Validation.ActivePhaseIDField = diskPhase
+	if v.ActivePhaseIDField == "" {
+		if diskPhase := ResolveActivePhaseFromDisk(rigDir, env.Validation); diskPhase != "" {
+			env.Validation.ActivePhaseIDField = diskPhase
+		}
 	}
 	raw, err := marshalRigProfileJSON(env)
 	if err != nil {

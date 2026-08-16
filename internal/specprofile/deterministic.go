@@ -100,6 +100,11 @@ func DeterministicIndexRig(ctx context.Context, townRoot, rig string) (*ProfileF
 		log.Printf("[deterministic-index] no parseable layout tree in SPEC for %s — falling back to LLM", rig)
 		return nil, fmt.Errorf("no parseable layout tree in SPEC — falling back to LLM")
 	}
+	// If tree is too sparse (likely incomplete), fall back to LLM for full extraction
+	if len(paths) < 20 {
+		log.Printf("[deterministic-index] layout tree has only %d files (expected 20+ for full project) — falling back to LLM", len(paths))
+		return nil, fmt.Errorf("layout tree too sparse (%d files) — falling back to LLM", len(paths))
+	}
 
 	// Parse phases from SPEC (names only, no file assignments)
 	phases := parseSpecPhases(spec)

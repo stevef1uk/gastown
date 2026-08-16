@@ -105,6 +105,17 @@ func ReopenImplementationBeadsAfterQAFailure(townRoot, rig string, v WorkflowVal
 		reopened = append(reopened, more...)
 	}
 
+	// QA failure indicates missing implementation (imports, 404/405 on routes) but
+	// cited IDs don't cover all missing files. Audit the FULL profile's required_files
+	// (not just active phase) for missing/stubbed implementation files and reopen their beads.
+	if qaFailed && (strings.Contains(summary, "import") || strings.Contains(summary, "404") || strings.Contains(summary, "405") || strings.Contains(summary, "ModuleNotFound")) {
+		more, err := reopenClosedImplementBeadsForMissingFullProfileFiles(townRoot, rig, v)
+		if err != nil {
+			return reopened, err
+		}
+		reopened = append(reopened, more...)
+	}
+
 	if runtimeRework {
 		more, err := reopenClosedImplementBeadsForPaths(townRoot, rig, v, implementPathsForRuntimeRework(v))
 		if err != nil {
@@ -454,6 +465,44 @@ func stubbedRequiredFiles(rigDir string, v WorkflowValidation) []string {
 		}
 	}
 	return stubbed
+}
+
+// reopenClosedImplementBeadsForMissingFullProfileFiles audits the FULL profile's
+// required_files (all phases) for missing or stubbed implementation files and
+// reopens their closed beads. Used when QA failure indicates missing imports or
+// routes but cited bead IDs don't cover all missing files.
+func reopenClosedImplementBeadsForMissingFullProfileFiles(townRoot, rig string, v WorkflowValidation) ([]string, error) {
+	if townRoot == "" || rig == "" {
+		return nil, nil
+	}
+	if !BeadsDatabaseReady(townRoot, rig) {
+		return nil, nil
+	}
+	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
+	// Use full validation (all phases), not just active phase
+	fullV := v
+	// Find closed beads whose files are missing/stubbed in the full profile
+	closed, err := implementBeadsIndexedByPath(townRoot, rig, fullV, "closed")
+	if err != nil || len(closed) == 0 {
+		return nil, err
+	}
+	var reopened []string
+	for _, rel := range orderedImplementBeadPaths(fullV) {
+		rel = filepath.ToSlash(strings.TrimSpace(rel))
+		if rel == "" || IsProjectSetupArtifactPath(rel, fullV) {
+			continue
+		}
+		b, ok := closed[rel]
+		if !ok {
+			continue
+		}
+		if beadImplementationNeedsRework(rigDir, rel, fullV) {
+			if err := bdUpdateImplementBeadStatus(townRoot, rig, b.ID, "open"); err == nil {
+				reopened = append(reopened, b.ID)
+			}
+		}
+	}
+	return reopened, nil
 }
 
 func listImplementBeadsByStatus(townRoot, rig string, v WorkflowValidation, status string) ([]PlanBead, error) {

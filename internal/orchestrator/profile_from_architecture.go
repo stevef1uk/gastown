@@ -873,15 +873,21 @@ func SyncRigWorkflowProfileFromArchitecture(townRoot, rig string) (bool, error) 
 	env.Validation = inferTestRunnerFromPaths(env.Validation, authoritative)
 
 	archPhases := parseArchPhases(string(archData), env.Validation.LayoutRootDir())
-	// Never let the architect's re-derived "## Delivery phases" REPLACE the SPEC's
-	// canonical phase structure (go-module/core/web/integration-test, ...). Spec-index
-	// already derived sensible phase IDs/titles from the SPEC; the architect LLM
-	// frequently echoes them back as backtick-laden, truncated numbered items that
-	// mangle the profile (e.g. "Create `pingapp/Dockerfile` and ..."). Only fall back
-	// to architecture-derived phases when the profile has no phases at all; the
-	// rebuild below still redistributes authoritative files across the SPEC phases.
-	if len(archPhases) > 0 && len(env.Validation.DeliveryPhases) == 0 {
-		env.Validation.DeliveryPhases = archPhases
+	// Prefer architect's phases when they are well-formed (clean titles/IDs, cover the authoritative set).
+	// Fall back to SPEC phases when architect phases are mangled (backtick-laden, path-embedded titles)
+	// or don't meaningfully cover the file set. This preserves the keepsSpecPhases regression test.
+	if len(archPhases) > 0 {
+		if archPhasesWellFormed(archPhases, authoritative) {
+			// Add depends_on chain for sequential architect phases
+			for i := range archPhases {
+				if i > 0 {
+					archPhases[i].DependsOn = []string{archPhases[i-1].ID}
+				}
+			}
+			env.Validation.DeliveryPhases = archPhases
+		} else if len(env.Validation.DeliveryPhases) == 0 {
+			env.Validation.DeliveryPhases = archPhases
+		}
 	}
 
 	// Rebuild delivery phases so the active phase required_files (used by
@@ -1323,6 +1329,7 @@ func parseArchPhases(archText, layoutRoot string) []DeliveryPhase {
 
 		if currentPhase != nil {
 			matches := extractArchPaths(line, layoutRoot)
+			matches = append(matches, extractPhaseLinePaths(line, layoutRoot)...)
 			for _, m := range matches {
 				p := filepath.ToSlash(strings.TrimSpace(m))
 				for strings.HasPrefix(p, "./") {
@@ -1340,6 +1347,8 @@ func parseArchPhases(archText, layoutRoot string) []DeliveryPhase {
 	flush()
 	return phases
 }
+
+var archVerbRe = regexp.MustCompile(`\b(creates|builds|implements|adds|completes|includes|delivers|wires|sets up|provides|generates|introduces|establishes|installs|configures|initializes|starts|runs|writes|produces|scaffolds|contains|verifies|tests|creates?)\b`)
 
 func parseArchPhaseHeader(line string) *DeliveryPhase {
 	trimmed := strings.TrimSpace(line)
@@ -1359,7 +1368,11 @@ func parseArchPhaseHeader(line string) *DeliveryPhase {
 		if idx := strings.IndexAny(rest, ":—"); idx > 0 {
 			title = strings.TrimSpace(rest[:idx])
 		} else {
-			title = strings.TrimSpace(rest)
+			if vIdx := archVerbRe.FindStringIndex(rest); vIdx != nil && vIdx[0] > 0 {
+				title = strings.TrimSpace(rest[:vIdx[0]])
+			} else {
+				title = strings.TrimSpace(rest)
+			}
 		}
 	} else if strings.HasPrefix(s, "Phase ") {
 		rest := strings.TrimPrefix(s, "Phase ")
@@ -1385,6 +1398,105 @@ func parseArchPhaseHeader(line string) *DeliveryPhase {
 		}
 	}
 	return nil
+}
+
+// extractPhaseLinePaths extracts plain comma-separated file paths from an architecture phase line.
+// The fin architecture format uses "1. Title creates path1, path2, and path3." without backticks.
+// Returns deduplicated paths that pass isLikelyRepoFilePath.
+func extractPhaseLinePaths(line, layoutRoot string) []string {
+	seen := map[string]bool{}
+	var out []string
+	// Split on commas, semicolons, and " and " as separators
+	re := regexp.MustCompile(`[,;]|\band\b`)
+	parts := re.Split(line, -1)
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		// Strip trailing period and common trailing words
+		part = strings.TrimRight(part, ".")
+		part = strings.TrimRight(part, " ")
+		// Skip prose fragments (no path-like structure)
+		if !strings.Contains(part, "/") && !strings.HasPrefix(part, layoutRoot) && !isLikelyRepoFilePath(part, layoutRoot) {
+			continue
+		}
+		if isLikelyRepoFilePath(part, layoutRoot) && !seen[part] {
+			seen[part] = true
+			out = append(out, part)
+		}
+	}
+	return out
+}
+
+// archPhasesWellFormed reports whether the architect's phases are clean and complete enough
+// to replace SPEC-derived phases. Rejects mangled phases with backtick-laden titles,
+// path-embedded IDs, or insufficient file coverage.
+func archPhasesWellFormed(phases []DeliveryPhase, authoritative []string) bool {
+	if len(phases) < 2 {
+		return false
+	}
+	hasFilePhase := false
+	for _, p := range phases {
+		title := strings.TrimSpace(p.Title)
+		id := strings.TrimSpace(p.ID)
+		if title == "" || id == "" {
+			return false
+		}
+		// Title must not contain backticks, path separators, commas, or file-extension tokens
+		if strings.Contains(title, "`") || strings.Contains(title, "/") || strings.Contains(title, ",") {
+			return false
+		}
+		if hasFileExtToken(title) {
+			return false
+		}
+		// ID must be a reasonable slug
+		if strings.Contains(id, "`") || strings.Contains(id, "/") || strings.Contains(id, ",") || len(id) > 48 {
+			return false
+		}
+		if len(p.RequiredFiles) > 0 {
+			hasFilePhase = true
+		}
+	}
+	if !hasFilePhase {
+		return false
+	}
+	// Union of phase files should cover a meaningful fraction of authoritative set
+	covered := 0
+	for _, auth := range authoritative {
+		for _, ph := range phases {
+			if containsString(ph.RequiredFiles, auth) {
+				covered++
+				break
+			}
+		}
+	}
+	if len(authoritative) > 0 && covered*100 < len(authoritative)*50 {
+		return false // require at least 50% coverage
+	}
+	return true
+}
+
+// hasFileExtToken reports whether s contains a token that looks like a file path with extension
+func hasFileExtToken(s string) bool {
+	// Look for patterns like word.word where the suffix is a known extension
+	tokens := strings.Fields(s)
+	exts := map[string]bool{
+		".go": true, ".py": true, ".js": true, ".ts": true, ".jsx": true, ".tsx": true,
+		".md": true, ".txt": true, ".json": true, ".yaml": true, ".yml": true,
+		".toml": true, ".ini": true, ".cfg": true, ".conf": true, ".config": true,
+		".env": true, ".example": true, ".gitignore": true, ".dockerignore": true,
+		".html": true, ".css": true, ".scss": true, ".sql": true, ".sh": true,
+		".ps1": true, ".bat": true, ".cmd": true, ".lock": true,
+	}
+	for _, t := range tokens {
+		for ext := range exts {
+			if strings.HasSuffix(strings.ToLower(t), ext) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func scorePhaseForFilePath(phase DeliveryPhase, p string) int {

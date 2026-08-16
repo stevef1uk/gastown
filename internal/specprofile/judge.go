@@ -32,7 +32,7 @@ For **early/mid phases** (backend, frontend, database), prefer behavioral checks
 - If no spec sections are available, fall back to file presence or compile checks:
   - Shell scripts (.sh): "test -f scripts/start_mac.sh && test -f scripts/stop_mac.sh"
   - Docker/compose files: "test -f Dockerfile && test -f docker-compose.yml && echo 'docker ok'"
-  - **Playwright E2E (integration-test phase with playwright.config.ts + e2e specs + docker-compose.yml): "cd <layout_root> && docker-compose down && docker-compose up --exit-code-from playwright"**
+  - **Playwright E2E (integration-test phase with playwright.config.ts + e2e specs + docker-compose.yml): "cd <layout_root> && docker-compose down && docker-compose build --no-cache && docker-compose up --exit-code-from playwright && docker image prune -f"**
   - Playwright config: "cd test && npm install --ignore-scripts && npx playwright test --list"
   - **Python/pytest: ONLY if phase required_files includes test files (*_test.py, test_*.py, conftest.py, tests/): "cd backend && python -m pytest -v tests/"; otherwise import-check: "cd backend && python -c 'import main; print(\"ok\")'"**
   - **Go: ONLY if phase required_files includes *_test.go: "cd . && go test ./..."; otherwise compile-check: "cd . && go build ./..."**
@@ -55,7 +55,23 @@ For **final/integration phases** (e.g. smoke-test, deployment-and-e2e, doc-seed)
 4. Assert root UI HTML content contains expected spec strings.
 5. Gracefully tear down / kill server process.
 
-**CRITICAL: All paths are relative to the rig root (mayor/rig/). Do NOT prefix with the rig name. Use actual file paths from required_files.**
+**CRITICAL: The working directory is the rig root ($GT_ROOT/<rig>/mayor/rig/). layout_root is a SUBDIRECTORY of the rig root. All paths in qa_verify_command must be relative to the rig root.**
+
+EXAMPLES (layout_root = "myapp"):
+- "cd myapp && python -m pytest"
+- "cd myapp/frontend && npm install --ignore-scripts && npx tsc --noEmit"  (NOT "cd myapp && cd myapp/frontend")
+- If layout_root = ".": "python -m pytest" (no cd)
+
+NEVER use the rig name as a path prefix. NEVER double-cd into the same directory.
+
+**CRITICAL: When combining multiple verification steps in a SINGLE shell command (chained with &&), each cd is relative to the PREVIOUS directory, not the rig root.**
+
+CORRECT patterns for multi-step verification:
+- Subshells (each independent from rig root): "(cd myapp && python -m pytest) && (cd myapp/frontend && npm test)"
+- Relative chaining: "cd myapp && python -m pytest && cd frontend && npm test"  (second cd is relative to myapp/)
+- Separate commands (preferred): "cd myapp && python -m pytest ; cd myapp/frontend && npm test"
+
+WRONG: "cd myapp && python -m pytest && cd myapp/frontend && npm test"  (second cd tries myapp/myapp/frontend)
 
 Output JSON only — no prose, no markdown fences.`
 }

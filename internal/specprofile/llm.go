@@ -202,7 +202,7 @@ Rules:
   Include unit test files alongside implementation: Go *_test.go files in the same package as the code under test; Python tests/test_<module>.py per package/API layer.
   Order: module code before its tests before cmd/server/main.go.
 
-- delivery_phases: For large or multi-stack specs, split into 4-10 phases with at most 10 required_files each (backend layers, frontend, e2e). Keep each source file's corresponding test file (*_test.go, test_*.py) in the same phase so QA can verify each phase independently. Each phase needs id (kebab-case), title, required_files subset, and qa_verify_command that validates only that slice. Order phases by dependency (application source before packaging). Put Dockerfile, docker-compose.yml, docker-compose.test.yml, and .dockerignore in the **final** phase only — not setup-infrastructure or the first phase. Frontend-only phases must typecheck, not run E2E tests: use "cd frontend && npm install --ignore-scripts && npx tsc --noEmit" (or yarn/pnpm, and prefer "npm ci --ignore-scripts" when a lockfile is present). Always add --ignore-scripts to every npm/pnpm/yarn install command — lifecycle hooks are a known supply-chain attack vector (Shai-Hulud), so the orchestrator and exec layer will reject/harden unhardened installs. Playwright/E2E tests that need a running server belong in the final e2e-and-deployment phase.
+- delivery_phases: For large or multi-stack specs, split into 4-10 phases with at most 10 required_files each (backend layers, frontend, e2e). Keep each source file's corresponding test file (*_test.go, test_*.py) in the same phase so QA can verify each phase independently. Each phase needs id (kebab-case), title, required_files subset, and qa_verify_command that validates only that slice. Order phases by dependency (application source before packaging). Put Dockerfile, docker-compose.yml, docker-compose.test.yml, and .dockerignore in the **final** phase only — not setup-infrastructure or the first phase. Frontend-only phases must typecheck, not run E2E tests: use "cd frontend && npm install --ignore-scripts && npx tsc --noEmit" (or yarn/pnpm, and prefer "npm ci --ignore-scripts" when a lockfile is present). Always add --ignore-scripts to every npm/pnpm/yarn install command — lifecycle hooks are a known supply-chain attack vector (Shai-Hulud), so the orchestrator and exec layer will reject/harden unhardened installs. Playwright/E2E tests that need a running server belong in the final e2e-and-deployment phase. Docker compose E2E verify commands MUST rebuild the image from scratch before starting containers: "docker-compose build --no-cache" before "docker-compose up --exit-code-from playwright", and end with "docker image prune -f" to clean dangling layers. A plain "compose up" reuses whatever image is already tagged (often a stale build from an earlier phase), so QA would test old code.
 
 - spec_summary: 400–2500 characters summarizing goals, stack, directory layout, functional requirements to cover in unit tests, and how to run the test suite.
 - min_architecture_bytes: target 2500–5000 for most rigs; use 6000–8000 only when required_files has 15+ paths. For ≤10 required_files use 2000–3500. Use 200–8192 only; NEVER copy SPEC byte length.
@@ -211,7 +211,24 @@ Rules:
 - dev_server_port: The port the dev server listens on. Set 0 if the project is NOT a web server. If the project IS a web server, set the port number explicitly if the spec mentions one, otherwise default to 8080 for Go servers and 8000 for Python servers.
 - confidence: \"high\", \"medium\", or \"low\".
 
-CRITICAL: The agent's working directory when running QA commands is $GT_ROOT/<rig>/mayor/rig/. All qa_verify_command values (root and per-phase) must be relative to that directory.
+CRITICAL: The agent's working directory when running QA commands is $GT_ROOT/<rig>/mayor/rig/ (the "rig root"). The layout_root is a SUBDIRECTORY of the rig root. All qa_verify_command values (root and per-phase) must be paths relative to the rig root.
+
+EXAMPLES (assuming layout_root = "myapp"):
+- From rig root, cd into project: "cd myapp && python -m pytest"
+- Frontend subdirectory: "cd myapp/frontend && npm install && npx tsc --noEmit"  (NOT "cd myapp && cd myapp/frontend")
+- Backend subdirectory: "cd myapp/backend && python -m pytest tests/"
+- If layout_root = "." (project at rig root): "python -m pytest"  (no cd prefix)
+
+NEVER use the rig name as a path prefix. NEVER do double cd into the same directory.
+
+**CRITICAL: When combining multiple verification steps in a SINGLE shell command (chained with &&), each cd is relative to the PREVIOUS directory, not the rig root.**
+
+CORRECT patterns for multi-step verification:
+- Subshells (each independent from rig root): "(cd myapp && python -m pytest) && (cd myapp/frontend && npm test)"
+- Relative chaining: "cd myapp && python -m pytest && cd frontend && npm test"  (second cd is relative to myapp/)
+- Separate commands (preferred): "cd myapp && python -m pytest ; cd myapp/frontend && npm test"
+
+WRONG: "cd myapp && python -m pytest && cd myapp/frontend && npm test"  (second cd tries myapp/myapp/frontend)
 
 CRITICAL delivery_phases rules (the LLM must obey these):
 - Every phase MUST have a qa_verify_command (non-empty string).

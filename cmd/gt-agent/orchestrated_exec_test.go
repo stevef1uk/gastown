@@ -708,6 +708,19 @@ func TestRewriteUnittestToWorkdir_layoutRelativeTestF(t *testing.T) {
 	}
 }
 
+func TestRewriteUnittestToWorkdir_layoutRelativeTestS(t *testing.T) {
+	v := orchestrator.WorkflowValidation{LayoutRoot: "linkshelf"}
+	cmd := "test -s linkshelf/web/index.html"
+	fixed, ok := rewriteUnittestToWorkdir(cmd, "testgt3", v)
+	if !ok {
+		t.Fatal("expected rewrite for layout-relative test -s")
+	}
+	want := "cd testgt3/mayor/rig/linkshelf && test -s web/index.html"
+	if fixed != want {
+		t.Fatalf("got %q want %q", fixed, want)
+	}
+}
+
 func TestRewriteUnittestToWorkdir_layoutRelativeMkdir(t *testing.T) {
 	v := orchestrator.WorkflowValidation{LayoutRoot: "linkshelf"}
 	cmd := "mkdir -p linkshelf/web"

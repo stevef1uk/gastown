@@ -166,6 +166,12 @@ func ClampProfileValidation(v WorkflowValidation) WorkflowValidation {
 	// any later profile write, and QA never runs the Playwright compose service.
 	// Runs LAST so no subsequent transformation can clobber the restored command.
 	v = SanitizePhaseVerifyCommandsForStack(v)
+	// Runs LAST: docker compose E2E verify commands must rebuild with --no-cache so
+	// QA never verifies a stale tagged image. No later transformation may strip it.
+	v.QAVerifyCommand = NormalizeDockerQACommand(v.QAVerifyCommand)
+	for i := range v.DeliveryPhases {
+		v.DeliveryPhases[i].QAVerifyCommand = NormalizeDockerQACommand(v.DeliveryPhases[i].QAVerifyCommand)
+	}
 	return v
 }
 
@@ -1110,6 +1116,10 @@ func capArchitectureBytesForSmallRig(v WorkflowValidation) WorkflowValidation {
 // NormalizeLayoutProfile prefixes required_files with layout_root and ensures Go
 // qa_verify_command runs from the module directory when the LLM omitted cd.
 func NormalizeLayoutProfile(v WorkflowValidation) WorkflowValidation {
+	v.QAVerifyCommand = NormalizeDockerQACommand(v.QAVerifyCommand)
+	for i := range v.DeliveryPhases {
+		v.DeliveryPhases[i].QAVerifyCommand = NormalizeDockerQACommand(v.DeliveryPhases[i].QAVerifyCommand)
+	}
 	layout := strings.Trim(strings.TrimSpace(v.LayoutRoot), "/")
 	if layout == "" || layout == "." {
 		return v
@@ -1455,6 +1465,44 @@ func NormalizePytestCommand(cmd string) string {
 	return re.ReplaceAllString(cmd, `${1}python3 -m pytest`)
 }
 
+// dockerComposeUpRe matches a docker compose invocation that runs `up`, capturing
+// the invocation prefix (binary + `-f` flags) so a preceding no-cache build step
+// can reuse it. Trailing `up` flags are captured up to the next `&`, `;`, or
+// newline so `up --exit-code-from playwright` is preserved.
+var dockerComposeUpRe = regexp.MustCompile(
+	`((?:docker-compose|docker\s+compose)(?:\s+-\w+(?:\s+[^\s&;]+)?)*)\s+up\b([^\n&;]*)`,
+)
+
+// NormalizeDockerQACommand ensures docker compose E2E verify commands rebuild the
+// app image from scratch before starting containers. A plain `compose up` silently
+// reuses whatever image is already tagged — usually a stale build from a previous
+// run — so QA tests old code and fails for reasons unrelated to the current
+// implementation. Inserting `build --no-cache` forces the command to verify the
+// code on disk, not a cached image.
+func NormalizeDockerQACommand(cmd string) string {
+	lower := strings.ToLower(cmd)
+	if !strings.Contains(lower, "docker compose") && !strings.Contains(lower, "docker-compose") {
+		return cmd
+	}
+	if strings.Contains(lower, "build --no-cache") {
+		return cmd
+	}
+	return dockerComposeUpRe.ReplaceAllStringFunc(cmd, func(match string) string {
+		sub := dockerComposeUpRe.FindStringSubmatch(match)
+		if len(sub) != 3 {
+			return match
+		}
+		prefix := sub[1]
+		flags := strings.ReplaceAll(sub[2], "--build", "")
+		flags = strings.Join(strings.Fields(flags), " ")
+		if flags != "" {
+			flags = " " + flags
+		}
+		// Insert no-cache build before up, and append image prune to clean dangling layers
+		return prefix + " build --no-cache && " + prefix + " up" + flags + " && docker image prune -f"
+	})
+}
+
 // NormalizePipCommand rewrites bare `pip` to `python3 -m pip` when pip is not on PATH but python is.
 func NormalizePipCommand(cmd string) string {
 	lower := strings.ToLower(cmd)
@@ -1536,6 +1584,9 @@ func ValidateDeliveryPhases(v WorkflowValidation) WorkflowValidation {
 		if cmd == "" || strings.Contains(cmd, "no verify command inferred") {
 			p.QAVerifyCommand = defaultQAVerifyForPhase(p, v.LayoutRoot)
 		}
+		// Docker compose E2E commands must rebuild with --no-cache so QA never
+		// verifies a stale tagged image.
+		p.QAVerifyCommand = NormalizeDockerQACommand(p.QAVerifyCommand)
 	}
 
 	// Ensure Docker/compose files only in final phase (if multiple phases)
@@ -1710,7 +1761,8 @@ func defaultQAVerifyForPhase(p *DeliveryPhase, layoutRoot string) string {
 			}
 		}
 		if dockerFile != "" {
-			return fmt.Sprintf("cd %s && test -f %s && echo 'compose file ok'", lr, dockerFile)
+			relDockerFile := strings.TrimPrefix(dockerFile, lr+"/")
+			return fmt.Sprintf("cd %s && test -f %s && echo 'compose file ok'", lr, relDockerFile)
 		}
 	}
 	if hasPlaywright || hasSpecFiles {
@@ -1743,11 +1795,12 @@ func defaultQAVerifyForPhase(p *DeliveryPhase, layoutRoot string) string {
 	if hasScripts {
 		var sb strings.Builder
 		for _, f := range p.RequiredFiles {
-			if strings.HasSuffix(f, ".sh") {
+			if strings.HasSuffix(f, ".sh") || strings.HasSuffix(f, ".ps1") {
 				if sb.Len() > 0 {
 					sb.WriteString(" && ")
 				}
-				sb.WriteString(fmt.Sprintf("test -f %s", f))
+				relF := strings.TrimPrefix(f, lr+"/")
+				sb.WriteString(fmt.Sprintf("test -f %s", relF))
 			}
 		}
 		if sb.Len() > 0 {

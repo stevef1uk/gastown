@@ -16,11 +16,16 @@ func isRetriableLLMError(err error) bool {
 		return false
 	}
 	s := strings.ToLower(err.Error())
-	return strings.Contains(s, "403") ||
+	return strings.Contains(s, "402") ||
+		strings.Contains(s, "403") ||
 		strings.Contains(s, "429") ||
 		strings.Contains(s, "limit exceeded") ||
 		strings.Contains(s, "rate limit") ||
-		strings.Contains(s, "quota")
+		strings.Contains(s, "quota") ||
+		strings.Contains(s, "credits") ||
+		strings.Contains(s, "payment required") ||
+		strings.Contains(s, "billing") ||
+		strings.Contains(s, "afford")
 }
 
 // noteImplementationFixAttempt marks that this task attempt did real fix work (not read-only inspection).

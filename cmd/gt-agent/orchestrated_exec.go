@@ -343,6 +343,15 @@ func writesRequirementsFile(cmd string) bool {
 		(strings.Contains(lower, "<<") || strings.Contains(lower, "cat >") || strings.Contains(lower, "cat>>"))
 }
 
+// layoutRelativeTools are shell file-check/path tools recognized as layout-relative when the
+// command already cds into layout_root. Test -s/-x included because python_workflow emits
+// `test -s <layout>/...` for non-Python artifacts; without the cd prefix those run from town root.
+var layoutRelativeTools = []string{"test -f", "test -d", "test -e", "test -s", "test -x", "test -n", "mkdir", "wc -c", "wc -l", "ls ", "cat ", "head ", "tail ", "rm ", "touch "}
+
+// layoutRelativePathTools are shell file-check/path tools recognized as layout-relative when the
+// command references layout_root/ paths without any cd into mayor/rig (orchestrated cwd is town root).
+var layoutRelativePathTools = []string{"test -f", "test -d", "test -e", "test -s", "test -x", "test -n", "mkdir", "wc -c", "wc -l"}
+
 // isLayoutRelativeShellCommand reports shell file checks and mkdir/cat paths that use layout_root
 // without cd into mayor/rig (orchestrated cwd is town root).
 func isLayoutRelativeShellCommand(cmd, rig, layout string) bool {
@@ -356,7 +365,7 @@ func isLayoutRelativeShellCommand(cmd, rig, layout string) bool {
 	lower := strings.ToLower(cmd)
 	layoutLower := strings.ToLower(layout)
 	if commandHasLayoutCD(cmd, layout) {
-		for _, tool := range []string{"test -f", "test -d", "test -e", "mkdir", "wc -c", "wc -l", "ls ", "cat ", "head ", "tail ", "rm ", "touch "} {
+		for _, tool := range layoutRelativeTools {
 			if strings.Contains(lower, tool) {
 				return true
 			}
@@ -365,7 +374,7 @@ func isLayoutRelativeShellCommand(cmd, rig, layout string) bool {
 	}
 	for _, prefix := range []string{layoutLower + "/", "./" + layoutLower + "/"} {
 		if strings.Contains(lower, prefix) {
-			for _, tool := range []string{"test -f", "test -d", "test -e", "mkdir", "wc -c", "wc -l"} {
+			for _, tool := range layoutRelativePathTools {
 				if strings.Contains(lower, tool) {
 					return true
 				}
@@ -580,7 +589,7 @@ func normalizeLayoutShellPaths(cmd, layout string) string {
 		return cmd
 	}
 	for _, needle := range []string{layout + "/", "./" + layout + "/"} {
-		for _, tool := range []string{"mkdir -p ", "test -f ", "test -d ", "test -e ", "wc -c ", "wc -l ", "cat ", "head ", "tail "} {
+		for _, tool := range []string{"mkdir -p ", "test -f ", "test -d ", "test -e ", "test -s ", "test -x ", "test -n ", "wc -c ", "wc -l ", "cat ", "head ", "tail "} {
 			cmd = strings.ReplaceAll(cmd, tool+needle, tool)
 		}
 	}
@@ -641,7 +650,7 @@ func normalizeRigPrefixShellPaths(cmd, rig, layout string) string {
 		return cmd
 	}
 	prefix := rig + "/mayor/rig/"
-	for _, tool := range []string{"ls -la ", "ls -l ", "ls ", "cat ", "wc -l ", "wc -c ", "head ", "tail ", "test -f ", "test -d ", "test -e "} {
+	for _, tool := range []string{"ls -la ", "ls -l ", "ls ", "cat ", "wc -l ", "wc -c ", "head ", "tail ", "test -f ", "test -d ", "test -e ", "test -s ", "test -x ", "test -n "} {
 		cmd = strings.ReplaceAll(cmd, tool+prefix, tool)
 	}
 	return cmd

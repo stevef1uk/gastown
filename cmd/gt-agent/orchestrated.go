@@ -157,6 +157,31 @@ func ensureLLMReachableForImplementation(ctx context.Context, client *llm.Client
 	return nil
 }
 
+// completeMessagesWithRetry wraps CompleteMessages with an in-turn retry for
+// transient LLM failures (quota/rate-limit/credits/5xx). A transient provider
+// error should not fail the task — retry the call a second time before giving up.
+func completeMessagesWithRetry(ctx context.Context, client *llm.Client, messages []llm.Message, turn int) (string, error) {
+	const maxAttempts = 2
+	var lastErr error
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		resp, err := client.CompleteMessages(ctx, messages)
+		if err == nil {
+			return resp, nil
+		}
+		lastErr = err
+		if !isRetriableLLMError(err) || attempt == maxAttempts {
+			break
+		}
+		orchestratedPrintf("[gt-agent] transient LLM error (turn %d, attempt %d/%d): %v — retrying\n", turn, attempt, maxAttempts, err)
+		select {
+		case <-time.After(30 * time.Second):
+		case <-ctx.Done():
+			return "", ctx.Err()
+		}
+	}
+	return "", lastErr
+}
+
 func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, rig, sessionName string, task *orchestrator.Task, priorRetry *OrchestratedRetry) (outcome, summary, attemptLog string, err error) {
 	rig = resolveOrchestratedRigName(townRoot, rig)
 	if rig == "" {
@@ -269,7 +294,7 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 			}
 		}
 
-		response, llmErr := client.CompleteMessages(ctx, messages)
+		response, llmErr := completeMessagesWithRetry(ctx, client, messages, turn)
 		if llmErr != nil {
 			return "fail", "", lastAttemptFeedback.String(), llmErr
 		}
