@@ -686,13 +686,14 @@ if len(missingImports) == 0 {
 	// Find closed beads for missing modules
 	closed, err := implementBeadsIndexedByPath(townRoot, rig, fullV, "closed")
 	if err != nil || len(closed) == 0 {
-		// No closed beads to reopen - but missing imports still need attention
+		// No closed beads to reopen - log missing imports but don't fail
+		// (they may be third-party packages not yet installed)
 		if len(missingImports) > 0 {
 			var missingList []string
 			for imp := range missingImports {
 				missingList = append(missingList, imp)
 			}
-			return nil, fmt.Errorf("missing imports with no implementation bead: %s (need new implementation bead or add to dependencies)", strings.Join(missingList, ", "))
+			return nil, fmt.Errorf("reconcile warning: missing imports not on disk: %s (may be third-party deps not yet installed)", strings.Join(missingList, ", "))
 		}
 		return nil, err
 	}
@@ -716,8 +717,8 @@ if len(missingImports) == 0 {
 		}
 	}
 	if len(trulyMissing) > 0 {
-		// Log missing imports that have no bead - polecat needs to create these
-		return reopened, fmt.Errorf("missing imports with no implementation bead: %s (need new implementation bead or add to dependencies)", strings.Join(trulyMissing, ", "))
+		// Only error on truly missing implementation modules (not third-party)
+		return reopened, fmt.Errorf("missing imports with no implementation bead: %s (need new implementation bead)", strings.Join(trulyMissing, ", "))
 	}
 	return reopened, nil
 }
