@@ -494,14 +494,11 @@ func CloseInertImplementBeads(townRoot, rig string, v WorkflowValidation) ([]str
 	return closed, nil
 }
 
-// reopenMissingImportBeads scans all implemented Python files for missing imports
+// reopenMissingImportBeads scans implemented files for missing imports
 // and reopens the beads that should provide those modules. Uses the FULL profile
 // (all phases) since the missing module may be in a different phase than the
-// file that imports it. Only runs for Python workflows.
+// file that imports it. Supports Python, Go, and Node.js.
 func reopenMissingImportBeads(townRoot, rig string, v WorkflowValidation) ([]string, error) {
-	if !WorkflowUsesPython(v) {
-		return nil, nil
-	}
 	if townRoot == "" || rig == "" {
 		return nil, nil
 	}
@@ -511,35 +508,112 @@ func reopenMissingImportBeads(townRoot, rig string, v WorkflowValidation) ([]str
 	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
 	fullV := v // use full profile (all phases)
 
-	// Find all Python files on disk
-	var pyFiles []string
-	err := filepath.Walk(rigDir, func(path string, info os.FileInfo, err error) error {
+	type scanner struct {
+		ext          string
+		importRe     *regexp.Regexp
+		isStdlib     func(string) bool
+		pathToModule func(string) string
+		moduleToPath func(string) string
+	}
+
+	scanners := []scanner{}
+	if WorkflowUsesPython(v) {
+		scanners = append(scanners, scanner{
+			ext:      ".py",
+			importRe: regexp.MustCompile(`^\s*(?:from\s+([a-zA-Z_][a-zA-Z0-9_.]*)\s+import|import\s+([a-zA-Z_][a-zA-Z0-9_.]*))`),
+			isStdlib: isPythonStdlib,
+			pathToModule: func(rel string) string {
+				if strings.HasPrefix(rel, "finally/backend/app/") && strings.HasSuffix(rel, ".py") {
+					modPath := strings.TrimPrefix(rel, "finally/backend/app/")
+					modPath = strings.TrimSuffix(modPath, ".py")
+					modPath = strings.ReplaceAll(modPath, "/", ".")
+					if modPath != "__init__" {
+						return modPath
+					}
+				}
+				return ""
+			},
+			moduleToPath: func(mod string) string {
+				return "finally/backend/app/" + strings.ReplaceAll(mod, ".", "/") + ".py"
+			},
+		})
+	}
+	if WorkflowUsesGo(v) {
+		scanners = append(scanners, scanner{
+			ext:      ".go",
+			importRe: regexp.MustCompile(`^\s*import\s+(?:"([^"]+)"|\(([^)]+)\))`),
+			isStdlib: isGoStdlib,
+			pathToModule: func(rel string) string {
+				if strings.HasPrefix(rel, "finally/backend/") && strings.HasSuffix(rel, ".go") {
+					modPath := strings.TrimPrefix(rel, "finally/backend/")
+					modPath = strings.TrimSuffix(modPath, ".go")
+					modPath = strings.ReplaceAll(modPath, "/", "/")
+					return modPath
+				}
+				return ""
+			},
+			moduleToPath: func(mod string) string {
+				// Go imports use full module path from go.mod
+				if strings.HasPrefix(mod, "finally/backend/") {
+					return mod + ".go"
+				}
+				return ""
+			},
+		})
+	}
+	if WorkflowUsesNodeJS(v) {
+		scanners = append(scanners, scanner{
+			ext:      ".ts",
+			importRe: regexp.MustCompile(`^\s*import\s+.*\s+from\s+["']([^"']+)["']`),
+			isStdlib: isNodeStdlib,
+			pathToModule: func(rel string) string {
+				if strings.HasPrefix(rel, "finally/frontend/src/") && (strings.HasSuffix(rel, ".ts") || strings.HasSuffix(rel, ".tsx")) {
+					modPath := strings.TrimPrefix(rel, "finally/frontend/src/")
+					modPath = strings.TrimSuffix(modPath, ".ts")
+					modPath = strings.TrimSuffix(modPath, ".tsx")
+					return modPath
+				}
+				return ""
+			},
+			moduleToPath: func(mod string) string {
+				return "finally/frontend/src/" + mod + ".ts"
+			},
+		})
+	}
+
+	if len(scanners) == 0 {
+		return nil, nil
+	}
+
+	// Find all source files on disk
+	type fileInfo struct {
+		rel     string
+		scanner *scanner
+	}
+	var allFiles []fileInfo
+	for _, sc := range scanners {
+		err := filepath.Walk(rigDir, func(path string, info os.FileInfo, err error) error {
+			if err != nil {
+				return nil
+			}
+			if !info.IsDir() && strings.HasSuffix(path, sc.ext) {
+				rel, _ := filepath.Rel(rigDir, path)
+				allFiles = append(allFiles, fileInfo{rel: filepath.ToSlash(rel), scanner: &sc})
+			}
+			return nil
+		})
 		if err != nil {
-			return nil // skip errors
+			return nil, err
 		}
-		if !info.IsDir() && strings.HasSuffix(path, ".py") {
-			rel, _ := filepath.Rel(rigDir, path)
-			pyFiles = append(pyFiles, filepath.ToSlash(rel))
-		}
-		return nil
-	})
-	if err != nil {
-		return nil, err
 	}
 
 	// Build set of available modules on disk
 	availableModules := make(map[string]bool)
-	for _, rel := range pyFiles {
-		// Convert file path to module path: finally/backend/app/canonical_routes.py -> app.canonical_routes
-		if strings.HasPrefix(rel, "finally/backend/app/") && strings.HasSuffix(rel, ".py") {
-			modPath := strings.TrimPrefix(rel, "finally/backend/app/")
-			modPath = strings.TrimSuffix(modPath, ".py")
-			modPath = strings.ReplaceAll(modPath, "/", ".")
-			if modPath != "__init__" {
-				availableModules[modPath] = true
-			}
-			// Also add parent package
-			parts := strings.Split(modPath, ".")
+	for _, f := range allFiles {
+		if mod := f.scanner.pathToModule(f.rel); mod != "" {
+			availableModules[mod] = true
+			// Add parent packages
+			parts := strings.Split(mod, ".")
 			for i := 1; i < len(parts); i++ {
 				pkg := strings.Join(parts[:i], ".")
 				availableModules[pkg] = true
@@ -547,29 +621,28 @@ func reopenMissingImportBeads(townRoot, rig string, v WorkflowValidation) ([]str
 		}
 	}
 
-	// Scan each Python file for imports
-	importRe := regexp.MustCompile(`^\s*(?:from\s+([a-zA-Z_][a-zA-Z0-9_.]*)\s+import|import\s+([a-zA-Z_][a-zA-Z0-9_.]*))`)
+	// Scan each file for imports
 	missingImports := make(map[string]bool)
-	for _, rel := range pyFiles {
-		full := filepath.Join(rigDir, filepath.FromSlash(rel))
+	for _, f := range allFiles {
+		full := filepath.Join(rigDir, filepath.FromSlash(f.rel))
 		data, err := os.ReadFile(full)
 		if err != nil {
 			continue
 		}
 		lines := strings.Split(string(data), "\n")
 		for _, line := range lines {
-			matches := importRe.FindStringSubmatch(line)
+			matches := f.scanner.importRe.FindStringSubmatch(line)
 			if len(matches) >= 2 {
 				var imp string
-				if matches[1] != "" {
-					imp = matches[1]
-				} else if matches[2] != "" {
-					imp = matches[2]
+				for i := 1; i < len(matches); i++ {
+					if matches[i] != "" {
+						imp = matches[i]
+						break
+					}
 				}
-				if imp != "" && !strings.HasPrefix(imp, ".") && !isStdlibModule(imp) {
-					// Check if this import is available
+				if imp != "" && !strings.HasPrefix(imp, ".") && !f.scanner.isStdlib(imp) {
 					if !availableModules[imp] {
-						// Check parent packages too
+						// Check parent packages
 						parts := strings.Split(imp, ".")
 						found := false
 						for i := len(parts); i > 0; i-- {
@@ -600,18 +673,19 @@ func reopenMissingImportBeads(townRoot, rig string, v WorkflowValidation) ([]str
 
 	var reopened []string
 	for missingImp := range missingImports {
-		// Find bead that should provide this module
-		expectedPath := "finally/backend/app/" + strings.ReplaceAll(missingImp, ".", "/") + ".py"
-		if b, ok := closed[expectedPath]; ok {
-			if err := bdUpdateImplementBeadStatus(townRoot, rig, b.ID, "open"); err == nil {
-				reopened = append(reopened, b.ID)
+		for _, sc := range scanners {
+			expectedPath := sc.moduleToPath(missingImp)
+			if b, ok := closed[expectedPath]; ok {
+				if err := bdUpdateImplementBeadStatus(townRoot, rig, b.ID, "open"); err == nil {
+					reopened = append(reopened, b.ID)
+				}
 			}
 		}
 	}
 	return reopened, nil
 }
 
-func isStdlibModule(mod string) bool {
+func isPythonStdlib(mod string) bool {
 	stdlib := map[string]bool{
 		"os": true, "sys": true, "json": true, "pathlib": true, "typing": true,
 		"datetime": true, "collections": true, "itertools": true, "functools": true,
@@ -626,4 +700,51 @@ func isStdlibModule(mod string) bool {
 	}
 	root := strings.Split(mod, ".")[0]
 	return stdlib[root]
+}
+
+func isGoStdlib(mod string) bool {
+	stdlib := map[string]bool{
+		"fmt": true, "os": true, "io": true, "strings": true, "bytes": true,
+		"bufio": true, "encoding/json": true, "encoding/xml": true,
+		"encoding/base64": true, "encoding/hex": true, "crypto/sha256": true,
+		"crypto/md5": true, "crypto/rand": true, "crypto/tls": true,
+		"net": true, "net/http": true, "net/url": true, "net/smtp": true,
+		"path": true, "path/filepath": true, "regexp": true, "strconv": true,
+		"time": true, "sync": true, "sync/atomic": true, "context": true,
+		"errors": true, "log": true, "flag": true, "math": true, "math/rand": true,
+		"sort": true, "container/list": true, "container/ring": true,
+		"reflect": true, "runtime": true, "runtime/debug": true,
+		"text/template": true, "html/template": true, "database/sql": true,
+		"archive/zip": true, "archive/tar": true, "compress/gzip": true,
+		"image": true, "image/png": true, "image/jpeg": true,
+		"text/scanner": true, "go/ast": true, "go/parser": true,
+	}
+	// Check common prefixes
+	prefixes := []string{"golang.org/", "github.com/", "gopkg.in/", "google.golang.org/"}
+	for _, p := range prefixes {
+		if strings.HasPrefix(mod, p) {
+			return false // third-party
+		}
+	}
+	root := strings.Split(mod, "/")[0]
+	return stdlib[mod] || stdlib[root]
+}
+
+func isNodeStdlib(mod string) bool {
+	stdlib := map[string]bool{
+		"fs": true, "path": true, "http": true, "https": true, "url": true,
+		"crypto": true, "util": true, "events": true, "stream": true,
+		"querystring": true, "assert": true, "os": true, "process": true,
+		"buffer": true, "child_process": true, "cluster": true,
+		"dgram": true, "dns": true, "domain": true, "module": true,
+		"net": true, "punycode": true,
+		"readline": true, "repl": true, "string_decoder": true,
+		"sys": true, "timers": true, "tls": true, "tty": true,
+		"vm": true, "zlib": true,
+	}
+	// Check for npm packages (no leading @ or /)
+	if strings.HasPrefix(mod, "@") || strings.Contains(mod, "/") {
+		return false
+	}
+	return stdlib[mod]
 }
