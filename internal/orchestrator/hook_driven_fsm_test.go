@@ -102,8 +102,8 @@ func TestRigFlowYAML_implementationHasStallRecoveryHooks(t *testing.T) {
 	if got := st.Hooks.EffectiveOnStateTimeoutHooks(); len(got) != 1 || got[0] != "recover_implementation_stall" {
 		t.Fatalf("EffectiveOnStateTimeoutHooks = %v", got)
 	}
-	if st.Hooks.EffectiveCmdTimeoutSeconds() != 30 {
-		t.Fatalf("cmd_timeout_seconds = %d, want 30", st.Hooks.CmdTimeoutSeconds)
+	if st.Hooks.EffectiveCmdTimeoutSeconds() != 300 {
+		t.Fatalf("cmd_timeout_seconds = %d, want 300", st.Hooks.CmdTimeoutSeconds)
 	}
 	trans, ok := st.Transitions["timeout"]
 	if !ok || trans.To != "implementation" {
