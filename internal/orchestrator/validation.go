@@ -1498,7 +1498,8 @@ func NormalizeDockerQACommand(cmd string) string {
 		if flags != "" {
 			flags = " " + flags
 		}
-		return prefix + " build --no-cache && " + prefix + " up" + flags
+		// Insert no-cache build before up, and append image prune to clean dangling layers
+		return prefix + " build --no-cache && " + prefix + " up" + flags + " && docker image prune -f"
 	})
 }
 
