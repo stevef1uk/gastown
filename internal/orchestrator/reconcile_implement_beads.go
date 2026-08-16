@@ -636,6 +636,8 @@ func reopenMissingImportBeads(townRoot, rig string, v WorkflowValidation) ([]str
 	}
 
 	// Scan each file for imports
+	// Track missing imports with their scanner extension to distinguish third-party from project modules
+	missingImportExt := make(map[string]string) // mod -> ext
 	missingImports := make(map[string]bool)
 	for _, f := range allFiles {
 		full := filepath.Join(rigDir, filepath.FromSlash(f.rel))
@@ -672,6 +674,7 @@ func reopenMissingImportBeads(townRoot, rig string, v WorkflowValidation) ([]str
 						}
 						if !found {
 							missingImports[imp] = true
+							missingImportExt[imp] = f.scanner.ext
 						}
 					}
 				}
@@ -686,10 +689,22 @@ if len(missingImports) == 0 {
 	// Find closed beads for missing modules
 	closed, err := implementBeadsIndexedByPath(townRoot, rig, fullV, "closed")
 	if err != nil || len(closed) == 0 {
-		// No closed beads to reopen - don't fail (they may be third-party packages not yet installed)
-		// Just warn and let the polecat continue; QA/build will catch actual missing deps
+		// No closed beads to reopen - distinguish third-party deps from project modules
+		// using the tracked scanner extension from when the import was detected
 		if len(missingImports) > 0 {
-			return nil, nil
+			allThirdParty := true
+			for imp := range missingImports {
+				ext := missingImportExt[imp]
+				if !isImportableThirdParty(imp, rigDir, ext) {
+					allThirdParty = false
+					break
+				}
+			}
+			if allThirdParty {
+				// All missing imports are third-party deps not yet installed - warn, continue
+				return nil, nil
+			}
+			// At least one is a project module needing a bead - fall through to error below
 		}
 		return nil, err
 	}
