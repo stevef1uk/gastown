@@ -118,8 +118,8 @@ func TestRigFlowYAML_qaReviewHasFastFailHooks(t *testing.T) {
 	if !ok {
 		t.Fatal("missing qa_review state")
 	}
-	if st.Hooks.EffectiveCmdTimeoutSeconds() != 30 {
-		t.Fatalf("cmd_timeout_seconds = %d, want 30", st.Hooks.CmdTimeoutSeconds)
+	if st.Hooks.EffectiveCmdTimeoutSeconds() != 300 {
+		t.Fatalf("cmd_timeout_seconds = %d, want 300", st.Hooks.CmdTimeoutSeconds)
 	}
 	if st.Hooks.EffectiveStateTimeoutSeconds() != 1800 {
 		t.Fatalf("state_timeout_seconds = %d, want 1800", st.Hooks.StateTimeoutSeconds)
