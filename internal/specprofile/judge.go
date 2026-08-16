@@ -33,6 +33,7 @@ For **early/mid phases** (backend, frontend, database), prefer behavioral checks
   - Shell scripts (.sh): "test -f scripts/start_mac.sh && test -f scripts/stop_mac.sh"
   - Docker/compose files: "test -f Dockerfile && test -f docker-compose.yml && echo 'docker ok'"
   - **Playwright E2E (integration-test phase with playwright.config.ts + e2e specs + docker-compose.yml): "cd <layout_root> && docker-compose down && docker-compose build --no-cache && docker-compose up --exit-code-from playwright && docker rmi test-app:latest 2>/dev/null || true && docker image prune -f"**
+  - **Playwright config must disable Chromium HTTPS auto-upgrade** (causes ERR_SSL_PROTOCOL_ERROR on http://app:8000): add launch args --disable-features=HttpsUpgrades,HttpsFirstModeV2,AutomaticHttpsDefault,AutomaticHttpsDefaultEnabled,HttpsOnlyMode and use baseURL: "http://app:8000" without trailing slash. Prefer IP http://172.26.0.2:8000 if network is fixed.**
   - Playwright config: "cd test && npm install --ignore-scripts && npx playwright test --list"
   - **Python/pytest: ONLY if phase required_files includes test files (*_test.py, test_*.py, conftest.py, tests/): "cd backend && python -m pytest -v tests/"; otherwise import-check: "cd backend && python -c 'import main; print(\"ok\")'"**
   - **Go: ONLY if phase required_files includes *_test.go: "cd . && go test ./..."; otherwise compile-check: "cd . && go build ./..."**
