@@ -668,19 +668,38 @@ func reopenMissingImportBeads(townRoot, rig string, v WorkflowValidation) ([]str
 	// Find closed beads for missing modules
 	closed, err := implementBeadsIndexedByPath(townRoot, rig, fullV, "closed")
 	if err != nil || len(closed) == 0 {
+		// No closed beads to reopen - but missing imports still need attention
+		if len(missingImports) > 0 {
+			var missingList []string
+			for imp := range missingImports {
+				missingList = append(missingList, imp)
+			}
+			return nil, fmt.Errorf("missing imports with no implementation bead: %s (need new bead or spec-index rework)", strings.Join(missingList, ", "))
+		}
 		return nil, err
 	}
 
 	var reopened []string
+	var trulyMissing []string
 	for missingImp := range missingImports {
+		found := false
 		for _, sc := range scanners {
 			expectedPath := sc.moduleToPath(missingImp)
 			if b, ok := closed[expectedPath]; ok {
 				if err := bdUpdateImplementBeadStatus(townRoot, rig, b.ID, "open"); err == nil {
 					reopened = append(reopened, b.ID)
 				}
+				found = true
+				break
 			}
 		}
+		if !found {
+			trulyMissing = append(trulyMissing, missingImp)
+		}
+	}
+	if len(trulyMissing) > 0 {
+		// Log missing imports that have no bead - polecat needs to create these
+		return reopened, fmt.Errorf("missing imports with no bead: %s (need new implementation beads)", strings.Join(trulyMissing, ", "))
 	}
 	return reopened, nil
 }
