@@ -144,7 +144,7 @@ func (r *stateRunner) maxTurns() int {
 	return base
 }
 
-func (r *stateRunner) runPreRun() {
+func (r *stateRunner) runPreRun() error {
 	for _, step := range r.hooks.PreRun {
 		orchestratedPrintf("[gt-agent] pre_run_step starting: %s\n", step)
 		if step == "repair_requirements" {
@@ -156,13 +156,14 @@ func (r *stateRunner) runPreRun() {
 		if err != nil {
 			orchestratedFprintfStderr("[gt-agent] pre_run %s: %v\n", step, err)
 			orchestratedPrintf("[gt-agent] pre_run_step done (err): %s\n", step)
-			continue
+			return fmt.Errorf("pre_run %s failed: %w", step, err)
 		}
 		if logLine != "" {
 			orchestratedPrintf("[gt-agent] %s: %s\n", step, logLine)
 		}
 		orchestratedPrintf("[gt-agent] pre_run_step done: %s\n", step)
 	}
+	return nil
 }
 
 func (r *stateRunner) promptContextBlocks() []string {
@@ -285,7 +286,7 @@ func (r *stateRunner) reloadValidationIfPhaseChanged() bool {
 	return true
 }
 
-func (r *stateRunner) runPerTurn() {
+func (r *stateRunner) runPerTurn() error {
 	// The active delivery phase can change on disk between turns (e.g. final-phase
 	// rewind after validation failure). Reload validation from workflow-profile.json
 	// when that happens so guards, path checks, and prompt vars use the current phase.
@@ -300,12 +301,13 @@ func (r *stateRunner) runPerTurn() {
 		logLine, err := orchestrator.RunPreRunHook(step, r.townRoot, r.rig, r.v)
 		if err != nil {
 			orchestratedFprintfStderr("[gt-agent] per_turn %s: %v\n", step, err)
-			continue
+			return fmt.Errorf("per_turn %s failed: %w", step, err)
 		}
 		if logLine != "" {
 			orchestratedPrintf("[gt-agent] %s: %s\n", step, logLine)
 		}
 	}
+	return nil
 }
 
 func validateImplementationBeadOrder(townRoot, rig, cmd string, v orchestrator.WorkflowValidation) error {

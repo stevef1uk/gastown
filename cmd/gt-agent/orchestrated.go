@@ -212,7 +212,9 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 	defer runner.shutdownStartedServers()
 	// pre_run (refresh_codeindex, bead queue, reconcile) must run before prompt_context so
 	// implement_bead_context sees a fresh codeindex.json and the correct queue head.
-	runner.runPreRun()
+	if err := runner.runPreRun(); err != nil {
+		return "", "", "", err
+	}
 	if !shouldSkipPlanningAutoComplete(task, townRoot, rig, runner.v) &&
 		!shouldSkipImplementationAutoComplete(task, townRoot, rig, runner.v) {
 		if o, s, ok := runner.tryAutoOutcome(); ok {
@@ -302,6 +304,9 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 		messages = append(messages, llm.Message{Role: "assistant", Content: response})
 
 		runner.runPerTurn()
+		if err != nil {
+			return "", "", "", err
+		}
 
 		var combined strings.Builder
 		hadNative, hadSuccessfulNative, cmdCount := runner.processOrchestratedTools(response, sessionName, &combined)
