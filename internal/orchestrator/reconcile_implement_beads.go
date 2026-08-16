@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/steveyegge/gastown/internal/config"
@@ -369,6 +370,15 @@ func ReconcileImplementBeads(townRoot, rig string, v WorkflowValidation) (string
 	for _, issue := range auditRequiredImplementFiles(rigDir, townRoot, rig, v, eval) {
 		parts = append(parts, issue)
 	}
+
+	// Scan all implemented Python files for missing imports and reopen their beads.
+	// This catches cases like main.py importing app.canonical_routes which doesn't exist yet.
+	if reopened, err := reopenMissingImportBeads(townRoot, rig, v); err != nil {
+		return joinStrings(parts, "; "), err
+	} else if len(reopened) > 0 {
+		parts = append(parts, "reopened (missing imports): "+joinStrings(reopened, ", "))
+	}
+
 	mismatches, err := AuditClosedImplementBeadMismatches(townRoot, rig, v, eval)
 	if err != nil {
 		return joinStrings(parts, "; "), err
@@ -482,4 +492,138 @@ func CloseInertImplementBeads(townRoot, rig string, v WorkflowValidation) ([]str
 		}
 	}
 	return closed, nil
+}
+
+// reopenMissingImportBeads scans all implemented Python files for missing imports
+// and reopens the beads that should provide those modules. Uses the FULL profile
+// (all phases) since the missing module may be in a different phase than the
+// file that imports it. Only runs for Python workflows.
+func reopenMissingImportBeads(townRoot, rig string, v WorkflowValidation) ([]string, error) {
+	if !WorkflowUsesPython(v) {
+		return nil, nil
+	}
+	if townRoot == "" || rig == "" {
+		return nil, nil
+	}
+	if !BeadsDatabaseReady(townRoot, rig) {
+		return nil, nil
+	}
+	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
+	fullV := v // use full profile (all phases)
+
+	// Find all Python files on disk
+	var pyFiles []string
+	err := filepath.Walk(rigDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return nil // skip errors
+		}
+		if !info.IsDir() && strings.HasSuffix(path, ".py") {
+			rel, _ := filepath.Rel(rigDir, path)
+			pyFiles = append(pyFiles, filepath.ToSlash(rel))
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	// Build set of available modules on disk
+	availableModules := make(map[string]bool)
+	for _, rel := range pyFiles {
+		// Convert file path to module path: finally/backend/app/canonical_routes.py -> app.canonical_routes
+		if strings.HasPrefix(rel, "finally/backend/app/") && strings.HasSuffix(rel, ".py") {
+			modPath := strings.TrimPrefix(rel, "finally/backend/app/")
+			modPath = strings.TrimSuffix(modPath, ".py")
+			modPath = strings.ReplaceAll(modPath, "/", ".")
+			if modPath != "__init__" {
+				availableModules[modPath] = true
+			}
+			// Also add parent package
+			parts := strings.Split(modPath, ".")
+			for i := 1; i < len(parts); i++ {
+				pkg := strings.Join(parts[:i], ".")
+				availableModules[pkg] = true
+			}
+		}
+	}
+
+	// Scan each Python file for imports
+	importRe := regexp.MustCompile(`^\s*(?:from\s+([a-zA-Z_][a-zA-Z0-9_.]*)\s+import|import\s+([a-zA-Z_][a-zA-Z0-9_.]*))`)
+	missingImports := make(map[string]bool)
+	for _, rel := range pyFiles {
+		full := filepath.Join(rigDir, filepath.FromSlash(rel))
+		data, err := os.ReadFile(full)
+		if err != nil {
+			continue
+		}
+		lines := strings.Split(string(data), "\n")
+		for _, line := range lines {
+			matches := importRe.FindStringSubmatch(line)
+			if len(matches) >= 2 {
+				var imp string
+				if matches[1] != "" {
+					imp = matches[1]
+				} else if matches[2] != "" {
+					imp = matches[2]
+				}
+				if imp != "" && !strings.HasPrefix(imp, ".") && !isStdlibModule(imp) {
+					// Check if this import is available
+					if !availableModules[imp] {
+						// Check parent packages too
+						parts := strings.Split(imp, ".")
+						found := false
+						for i := len(parts); i > 0; i-- {
+							pkg := strings.Join(parts[:i], ".")
+							if availableModules[pkg] {
+								found = true
+								break
+							}
+						}
+						if !found {
+							missingImports[imp] = true
+						}
+					}
+				}
+			}
+		}
+	}
+
+	if len(missingImports) == 0 {
+		return nil, nil
+	}
+
+	// Find closed beads for missing modules
+	closed, err := implementBeadsIndexedByPath(townRoot, rig, fullV, "closed")
+	if err != nil || len(closed) == 0 {
+		return nil, err
+	}
+
+	var reopened []string
+	for missingImp := range missingImports {
+		// Find bead that should provide this module
+		expectedPath := "finally/backend/app/" + strings.ReplaceAll(missingImp, ".", "/") + ".py"
+		if b, ok := closed[expectedPath]; ok {
+			if err := bdUpdateImplementBeadStatus(townRoot, rig, b.ID, "open"); err == nil {
+				reopened = append(reopened, b.ID)
+			}
+		}
+	}
+	return reopened, nil
+}
+
+func isStdlibModule(mod string) bool {
+	stdlib := map[string]bool{
+		"os": true, "sys": true, "json": true, "pathlib": true, "typing": true,
+		"datetime": true, "collections": true, "itertools": true, "functools": true,
+		"dataclasses": true, "uuid": true, "re": true, "math": true, "random": true,
+		"hashlib": true, "base64": true, "urllib": true, "http": true, "asyncio": true,
+		"logging": true, "time": true, "contextlib": true, "argparse": true,
+		"subprocess": true, "threading": true, "multiprocessing": true, "socket": true,
+		"ssl": true, "email": true, "html": true, "xml": true, "sqlite3": true,
+		"csv": true, "configparser": true, "string": true, "textwrap": true,
+		"unittest": true, "pytest": true, "fastapi": true, "uvicorn": true,
+		"pydantic": true, "httpx": true, "starlette": true, "sqlalchemy": true,
+	}
+	root := strings.Split(mod, ".")[0]
+	return stdlib[root]
 }
