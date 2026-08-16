@@ -509,12 +509,14 @@ func reopenMissingImportBeads(townRoot, rig string, v WorkflowValidation) ([]str
 	fullV := v // use full profile (all phases)
 
 	type scanner struct {
-		ext          string
-		importRe     *regexp.Regexp
-		isStdlib     func(string) bool
-		pathToModule func(string, string) string  // added layoutRoot parameter
-		moduleToPath func(string, string) string  // added layoutRoot parameter
-	}
+	ext          string
+	importRe     *regexp.Regexp
+	isStdlib     func(string) bool
+	pathToModule func(string, string) string  // added layoutRoot parameter
+	moduleToPath func(string, string) string  // added layoutRoot parameter
+}
+
+
 
 	scanners := []scanner{}
 	if WorkflowUsesPython(v) {
@@ -654,8 +656,8 @@ func reopenMissingImportBeads(townRoot, rig string, v WorkflowValidation) ([]str
 				}
 				if imp != "" && !strings.HasPrefix(imp, ".") && !f.scanner.isStdlib(imp) {
 					if !availableModules[imp] {
-						// Check if it's an importable third-party package (installed in venv)
-						if isImportableThirdParty(imp, rigDir) {
+						// Check if it's a third-party package available in the environment
+						if isImportableThirdParty(imp, rigDir, f.scanner.ext) {
 							continue // Third-party package, not a missing implementation
 						}
 						// Check parent packages
@@ -785,23 +787,52 @@ func isNodeStdlib(mod string) bool {
 	}
 	// Check for npm packages (no leading @ or /)
 	if strings.HasPrefix(mod, "@") || strings.Contains(mod, "/") {
-		return false
-	}
-	return stdlib[mod]
+return false
+}
+return stdlib[mod]
 }
 
-// isImportableThirdParty checks if a module can be imported from the Python environment.
-// If it can be imported, it's a third-party package installed in the venv/system,
-// not a missing implementation that needs a bead.
-func isImportableThirdParty(mod, rigDir string) bool {
-	// Find Python interpreter (prefer .venv in rigDir)
+// isImportableThirdParty checks if a module can be imported from the environment.
+func isImportableThirdParty(mod, rigDir string, ext string) bool {
+	if ext == ".py" {
+		return isImportablePythonThirdParty(mod, rigDir)
+	}
+	if ext == ".go" {
+		return isImportableGoThirdParty(mod, rigDir)
+	}
+	if ext == ".ts" || ext == ".tsx" {
+		return isImportableNodeThirdParty(mod, rigDir)
+	}
+	return false
+}
+
+// isImportablePythonThirdParty checks if a Python module can be imported.
+func isImportablePythonThirdParty(mod, rigDir string) bool {
 	venvPython := filepath.Join(rigDir, ".venv", "bin", "python3")
 	if _, err := os.Stat(venvPython); err != nil {
-		// Try system python3
 		venvPython = "python3"
 	}
-	// Try to import the module
 	cmd := exec.Command(venvPython, "-c", "import sys; sys.dont_write_bytecode = True; import "+mod)
+	cmd.Dir = rigDir
+	err := cmd.Run()
+	return err == nil
+}
+
+// isImportableGoThirdParty checks if a Go module is available (in go.mod or module cache).
+func isImportableGoThirdParty(mod, rigDir string) bool {
+	cmd := exec.Command("go", "list", "-m", mod)
+	cmd.Dir = rigDir
+	err := cmd.Run()
+	return err == nil
+}
+
+// isImportableNodeThirdParty checks if a Node.js module is available in node_modules.
+func isImportableNodeThirdParty(mod, rigDir string) bool {
+	modulePath := filepath.Join(rigDir, "node_modules", mod)
+	if _, err := os.Stat(modulePath); err == nil {
+		return true
+	}
+	cmd := exec.Command("npm", "list", mod)
 	cmd.Dir = rigDir
 	err := cmd.Run()
 	return err == nil
