@@ -512,19 +512,21 @@ func reopenMissingImportBeads(townRoot, rig string, v WorkflowValidation) ([]str
 		ext          string
 		importRe     *regexp.Regexp
 		isStdlib     func(string) bool
-		pathToModule func(string) string
-		moduleToPath func(string) string
+		pathToModule func(string, string) string  // added layoutRoot parameter
+		moduleToPath func(string, string) string  // added layoutRoot parameter
 	}
 
 	scanners := []scanner{}
 	if WorkflowUsesPython(v) {
+		// Python files are typically under layout_root/backend/
 		scanners = append(scanners, scanner{
 			ext:      ".py",
 			importRe: regexp.MustCompile(`^\s*(?:from\s+([a-zA-Z_][a-zA-Z0-9_.]*)\s+import|import\s+([a-zA-Z_][a-zA-Z0-9_.]*))`),
 			isStdlib: isPythonStdlib,
-			pathToModule: func(rel string) string {
-				if strings.HasPrefix(rel, "finally/backend/app/") && strings.HasSuffix(rel, ".py") {
-					modPath := strings.TrimPrefix(rel, "finally/backend/app/")
+			pathToModule: func(rel, layoutRoot string) string {
+				prefix := layoutRoot + "/backend/"
+				if strings.HasPrefix(rel, prefix) && strings.HasSuffix(rel, ".py") {
+					modPath := strings.TrimPrefix(rel, prefix)
 					modPath = strings.TrimSuffix(modPath, ".py")
 					modPath = strings.ReplaceAll(modPath, "/", ".")
 					if modPath != "__init__" {
@@ -533,50 +535,50 @@ func reopenMissingImportBeads(townRoot, rig string, v WorkflowValidation) ([]str
 				}
 				return ""
 			},
-			moduleToPath: func(mod string) string {
-				return "finally/backend/app/" + strings.ReplaceAll(mod, ".", "/") + ".py"
+			moduleToPath: func(mod, layoutRoot string) string {
+				return layoutRoot + "/backend/" + strings.ReplaceAll(mod, ".", "/") + ".py"
 			},
 		})
 	}
 	if WorkflowUsesGo(v) {
+		// Go files typically under layout_root/
 		scanners = append(scanners, scanner{
 			ext:      ".go",
 			importRe: regexp.MustCompile(`^\s*import\s+(?:"([^"]+)"|\(([^)]+)\))`),
 			isStdlib: isGoStdlib,
-			pathToModule: func(rel string) string {
-				if strings.HasPrefix(rel, "finally/backend/") && strings.HasSuffix(rel, ".go") {
-					modPath := strings.TrimPrefix(rel, "finally/backend/")
+			pathToModule: func(rel, layoutRoot string) string {
+				prefix := layoutRoot + "/"
+				if strings.HasPrefix(rel, prefix) && strings.HasSuffix(rel, ".go") {
+					modPath := strings.TrimPrefix(rel, prefix)
 					modPath = strings.TrimSuffix(modPath, ".go")
-					modPath = strings.ReplaceAll(modPath, "/", "/")
+					modPath = strings.ReplaceAll(modPath, "/", ".")
 					return modPath
 				}
 				return ""
 			},
-			moduleToPath: func(mod string) string {
-				// Go imports use full module path from go.mod
-				if strings.HasPrefix(mod, "finally/backend/") {
-					return mod + ".go"
-				}
-				return ""
+			moduleToPath: func(mod, layoutRoot string) string {
+				return layoutRoot + "/" + strings.ReplaceAll(mod, ".", "/") + ".go"
 			},
 		})
 	}
 	if WorkflowUsesNodeJS(v) {
+		// TypeScript/JS files typically under layout_root/frontend/src/
 		scanners = append(scanners, scanner{
 			ext:      ".ts",
 			importRe: regexp.MustCompile(`^\s*import\s+.*\s+from\s+["']([^"']+)["']`),
 			isStdlib: isNodeStdlib,
-			pathToModule: func(rel string) string {
-				if strings.HasPrefix(rel, "finally/frontend/src/") && (strings.HasSuffix(rel, ".ts") || strings.HasSuffix(rel, ".tsx")) {
-					modPath := strings.TrimPrefix(rel, "finally/frontend/src/")
+			pathToModule: func(rel, layoutRoot string) string {
+				prefix := layoutRoot + "/frontend/src/"
+				if strings.HasPrefix(rel, prefix) && (strings.HasSuffix(rel, ".ts") || strings.HasSuffix(rel, ".tsx")) {
+					modPath := strings.TrimPrefix(rel, prefix)
 					modPath = strings.TrimSuffix(modPath, ".ts")
 					modPath = strings.TrimSuffix(modPath, ".tsx")
 					return modPath
 				}
 				return ""
 			},
-			moduleToPath: func(mod string) string {
-				return "finally/frontend/src/" + mod + ".ts"
+			moduleToPath: func(mod, layoutRoot string) string {
+				return layoutRoot + "/frontend/src/" + mod + ".ts"
 			},
 		})
 	}
@@ -610,7 +612,7 @@ func reopenMissingImportBeads(townRoot, rig string, v WorkflowValidation) ([]str
 	// Build set of available modules on disk
 	availableModules := make(map[string]bool)
 	for _, f := range allFiles {
-		if mod := f.scanner.pathToModule(f.rel); mod != "" {
+		if mod := f.scanner.pathToModule(f.rel, v.LayoutRoot); mod != "" {
 			availableModules[mod] = true
 			// Add parent packages
 			parts := strings.Split(mod, ".")
@@ -684,7 +686,7 @@ func reopenMissingImportBeads(townRoot, rig string, v WorkflowValidation) ([]str
 	for missingImp := range missingImports {
 		found := false
 		for _, sc := range scanners {
-			expectedPath := sc.moduleToPath(missingImp)
+			expectedPath := sc.moduleToPath(missingImp, v.LayoutRoot)
 			if b, ok := closed[expectedPath]; ok {
 				if err := bdUpdateImplementBeadStatus(townRoot, rig, b.ID, "open"); err == nil {
 					reopened = append(reopened, b.ID)
