@@ -61,6 +61,7 @@ func TestDefaultFreerideRoleAgents_PolecatUsesDeepSeek(t *testing.T) {
 }
 
 func TestDefaultFreerideAgents_GeminiProfile(t *testing.T) {
+	t.Setenv("FREERIDE_MODELS_CONFIG", "/nonexistent")
 	agents := DefaultFreerideAgents()
 	rc := agents["gt-agent-gemini"]
 	if rc == nil {

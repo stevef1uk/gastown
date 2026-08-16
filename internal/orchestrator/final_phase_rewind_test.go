@@ -116,7 +116,9 @@ func TestMaybeRewindToProblemPhaseForFinalPhase_rewindsEarliestPhase(t *testing.
 	closeAllOpenImplementBeads(t, townRoot, rig, beadsDir, rigDir, v.ForActivePhase())
 
 	// Simulate advancement to the final phase.
-	writeTestPhasedProfile(t, townRoot, rig, "frontend")
+	if err := SetRigActivePhase(townRoot, rig, "frontend"); err != nil {
+		t.Fatal(err)
+	}
 	v, ok, err = LoadRigWorkflowProfileFile(townRoot, rig)
 	if err != nil || !ok {
 		t.Fatal(err)
@@ -182,7 +184,9 @@ func TestRewindToPhaseForClosedFile_rewindsOwningPhase(t *testing.T) {
 
 	// Advance to the frontend phase, then break the earlier-phase store.go so its
 	// closed bead must be reopened for repair.
-	writeTestPhasedProfile(t, townRoot, rig, "frontend")
+	if err := SetRigActivePhase(townRoot, rig, "frontend"); err != nil {
+		t.Fatal(err)
+	}
 	v, ok, err = LoadRigWorkflowProfileFile(townRoot, rig)
 	if err != nil || !ok {
 		t.Fatal(err)
@@ -289,7 +293,9 @@ func TestMaybeRewindToProblemPhaseForFinalPhase_noIssueDoesNothing(t *testing.T)
 	}
 	closeAllOpenImplementBeads(t, townRoot, rig, beadsDir, rigDir, v.ForActivePhase())
 
-	writeTestPhasedProfile(t, townRoot, rig, "frontend")
+	if err := SetRigActivePhase(townRoot, rig, "frontend"); err != nil {
+		t.Fatal(err)
+	}
 	v, ok, err = LoadRigWorkflowProfileFile(townRoot, rig)
 	if err != nil || !ok {
 		t.Fatal(err)

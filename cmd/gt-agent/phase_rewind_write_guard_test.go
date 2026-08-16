@@ -30,7 +30,9 @@ func TestValidateImplementationBeadFileWrite_rewindsToOwningPhase(t *testing.T) 
 	closeAllOpenBeadsForGuardTest(t, townRoot, rig, beadsDir, rigDir, v.ForActivePhase())
 
 	// Advance to the frontend phase and break the earlier-phase store.go.
-	writeGuardTestPhasedProfile(t, townRoot, rig, "frontend")
+	if err := orchestrator.SetRigActivePhase(townRoot, rig, "frontend"); err != nil {
+		t.Fatal(err)
+	}
 	v, ok, err = orchestrator.LoadRigWorkflowProfileFile(townRoot, rig)
 	if err != nil || !ok {
 		t.Fatal(err)

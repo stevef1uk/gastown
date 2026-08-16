@@ -8,6 +8,9 @@ import (
 )
 
 func TestFormatCodeindexContextForBead_warnsStaleIndexWhenFileMissing(t *testing.T) {
+	if !CodeindexEnabled() {
+		t.Skip("codeindex not on PATH")
+	}
 	dir := t.TempDir()
 	index := filepath.Join(dir, codeindexIndexName)
 	payload := `{
@@ -33,7 +36,7 @@ func TestFormatCodeindexContextForBead_warnsStaleIndexWhenFileMissing(t *testing
 
 func TestFormatCodeindexContextForBead_noStaleWarningWhenIndexEmpty(t *testing.T) {
 	if !CodeindexEnabled() {
-		t.Setenv("GT_CODEINDEX", "1")
+		t.Skip("codeindex not on PATH")
 	}
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, codeindexIndexName), []byte(`{"nodes":[]}`), 0644); err != nil {

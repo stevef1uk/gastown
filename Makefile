@@ -211,6 +211,8 @@ clean:
 test:
 	go test ./...
 
+tests: test
+
 # Run e2e tests in isolated container (the only supported way to run them)
 test-e2e-container:
 ifeq ($(OS),Windows_NT)
