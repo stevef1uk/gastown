@@ -278,6 +278,11 @@ func (r *stateRunner) reloadValidationIfPhaseChanged() bool {
 		return false
 	}
 	r.v = newV
+	// Reset stale bead tracking when the active phase changes, otherwise the polecat's
+	// in-flight implement bead (activeBead/activeBeadPath) becomes invalid against the
+	// new phase's bead lists, causing permanent WRITE rejections and infinite loops.
+	r.track.activeBead = ""
+	r.track.activeBeadPath = ""
 	r.promptVars = map[string]string{"rig": r.rig}
 	for k, val := range r.v.PromptVars() {
 		r.promptVars[k] = val
