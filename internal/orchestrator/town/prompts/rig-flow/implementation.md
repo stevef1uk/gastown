@@ -118,6 +118,9 @@ Follow the **red-green-refactor** cycle for every bead that has a test path in `
   - Use **only** selectors and URLs documented in architecture.md / SPEC.md. Do not invent DOM IDs like `#chat-panel` unless they are listed in the Implement context.
   - Verify must start the app/dev-server first, or use docker-compose that starts it.
   - Do not write e2e tests that assert UI elements that do not exist in the implemented `index.html` / `app.js`.
+  - **Playwright image (MANDATORY):** use the locally-built shared runner image `playwright-go-test:latest` — **do NOT** reference a public `mcr.microsoft.com/playwright:<version>` tag. The local image is pre-prepared and canonical; the public image must be pulled (hundreds of MB) and runs as root, producing root-owned artifacts in bind mounts.
+  - **Playwright compose service (MANDATORY):** the E2E compose must define a service **literally named `playwright`** (not `e2e`, `tests`, or `app`), because QA runs `docker-compose up --exit-code-from playwright`. A differently-named service fails with `no such service: playwright` and the phase cannot pass QA.
+  - The compose `playwright` service should set `user: "${DOCKER_UID:-1000}:${DOCKER_GID:-1000}"` and `working_dir` to the mounted test directory so `node_modules` resolves and artifacts are host-removable.
 - On Verify failure: READ the failing file and dependencies. Diagnose from error output — one sentence explanation, then fix with EDIT/WRITE.
 - **npm 10+ override rule:** If you write `package.json`, do NOT add `overrides` entries for packages already listed in `dependencies` or `devDependencies` — npm 10 rejects overrides that conflict with direct dependency version ranges. Only override transitive (nested) dependencies.
 - Do **NOT** create Python virtual environments (`.venv`, `.venv2`, `uv venv`, `python3 -m venv`, `virtualenv`). The `project_setup` phase already created one; gt-agent activates it for you automatically.

@@ -373,11 +373,14 @@ func ReconcileImplementBeads(townRoot, rig string, v WorkflowValidation) (string
 
 	// Scan all implemented Python files for missing imports and reopen their beads.
 	// This catches cases like main.py importing app.canonical_routes which doesn't exist yet.
-	if reopened, err := reopenMissingImportBeads(townRoot, rig, v); err != nil {
+	reopenedMissing, missingWarnings, err := reopenMissingImportBeads(townRoot, rig, v)
+	if err != nil {
 		return joinStrings(parts, "; "), err
-	} else if len(reopened) > 0 {
-		parts = append(parts, "reopened (missing imports): "+joinStrings(reopened, ", "))
 	}
+	if len(reopenedMissing) > 0 {
+		parts = append(parts, "reopened (missing imports): "+joinStrings(reopenedMissing, ", "))
+	}
+	parts = append(parts, missingWarnings...)
 
 	mismatches, err := AuditClosedImplementBeadMismatches(townRoot, rig, v, eval)
 	if err != nil {
@@ -498,30 +501,102 @@ func CloseInertImplementBeads(townRoot, rig string, v WorkflowValidation) ([]str
 // and reopens the beads that should provide those modules. Uses the FULL profile
 // (all phases) since the missing module may be in a different phase than the
 // file that imports it. Supports Python, Go, and Node.js.
-func reopenMissingImportBeads(townRoot, rig string, v WorkflowValidation) ([]string, error) {
+func reopenMissingImportBeads(townRoot, rig string, v WorkflowValidation) (reopened []string, warnings []string, err error) {
 	if townRoot == "" || rig == "" {
-		return nil, nil
+		return nil, nil, nil
 	}
 	if !BeadsDatabaseReady(townRoot, rig) {
-		return nil, nil
+		return nil, nil, nil
 	}
 	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
 	fullV := v // use full profile (all phases)
 
-	type scanner struct {
-	ext          string
-	importRe     *regexp.Regexp
-	isStdlib     func(string) bool
-	pathToModule func(string, string) string  // added layoutRoot parameter
-	moduleToPath func(string, string) string  // added layoutRoot parameter
+	// Declared dependencies (package.json / go.mod / pyproject.toml / requirements.txt)
+	// are third-party by contract — never treat them as missing implementation modules,
+	// even when they are not installed yet.
+	missingImportExt := scanMissingImports(rigDir, v)
+
+	if len(missingImportExt) == 0 {
+		return nil, nil, nil
+	}
+
+	// Find closed beads for missing modules
+	closed, err := implementBeadsIndexedByPath(townRoot, rig, fullV, "closed")
+	if err != nil || len(closed) == 0 {
+		// No closed beads to reopen - distinguish third-party deps from project modules
+		// using the tracked scanner extension from when the import was detected
+		allThirdParty := true
+		for imp, ext := range missingImportExt {
+			if !declaredThirdPartyProbe(loadDeclaredThirdPartyModules(rigDir), imp, rigDir, ext) {
+				allThirdParty = false
+				break
+			}
+		}
+		if allThirdParty {
+			// All missing imports are third-party deps not yet installed - warn, continue
+			return nil, nil, nil
+		}
+		// At least one is a project module needing a bead - fall through to warning below
+		return nil, nil, err
+	}
+
+	var trulyMissing []string
+	for missingImp := range missingImportExt {
+		found := false
+		for _, sc := range scannersForValidation(v) {
+			expectedPath := sc.moduleToPath(missingImp, v.LayoutRoot)
+			if b, ok := closed[expectedPath]; ok {
+				if err := bdUpdateImplementBeadStatus(townRoot, rig, b.ID, "open"); err == nil {
+					reopened = append(reopened, b.ID)
+				}
+				found = true
+				break
+			}
+		}
+		if !found {
+			trulyMissing = append(trulyMissing, missingImp)
+		}
+	}
+	if len(trulyMissing) > 0 {
+		// Surface missing project modules as a warning rather than aborting pre_run.
+		// The polecat reads this in context and can create a new implementation bead
+		// or fix the import; a hard error here loops forever because the task fails
+		// before the agent ever gets a turn.
+		warnings = append(warnings, fmt.Sprintf("missing imports with no implementation bead (create a new implementation bead or fix the import): %s", strings.Join(trulyMissing, ", ")))
+	}
+	return reopened, warnings, nil
 }
 
+// matchesScannerExt reports whether path ends with the scanner's primary extension
+// or one of its alternates (e.g. node scanner handles both .ts and .tsx).
+func matchesScannerExt(path, ext string, exts []string) bool {
+	if strings.HasSuffix(path, ext) {
+		return true
+	}
+	for _, e := range exts {
+		if e != ext && strings.HasSuffix(path, e) {
+			return true
+		}
+	}
+	return false
+}
 
+// sourceScanner describes how to extract modules from source files for one language.
+type sourceScanner struct {
+	ext          string
+	exts         []string
+	importRe     *regexp.Regexp
+	isStdlib     func(string) bool
+	pathToModule func(string, string) string // rel -> module (layoutRoot aware)
+	moduleToPath func(string, string) string // module -> expected implement path
+}
 
-	scanners := []scanner{}
+// scannersForValidation builds the source scanners active for the workflow profile.
+func scannersForValidation(v WorkflowValidation) []sourceScanner {
+	scanners := []sourceScanner{}
 	if WorkflowUsesPython(v) {
 		// Python files are typically under layout_root/backend/
-		scanners = append(scanners, scanner{
+		scanners = append(scanners, sourceScanner{
 			ext:      ".py",
 			importRe: regexp.MustCompile(`^\s*(?:from\s+([a-zA-Z_][a-zA-Z0-9_.]*)\s+import|import\s+([a-zA-Z_][a-zA-Z0-9_.]*))`),
 			isStdlib: isPythonStdlib,
@@ -543,8 +618,10 @@ func reopenMissingImportBeads(townRoot, rig string, v WorkflowValidation) ([]str
 		})
 	}
 	if WorkflowUsesGo(v) {
-		// Go files typically under layout_root/
-		scanners = append(scanners, scanner{
+		// Go files typically under layout_root/. Single-line imports use
+		// `import "m"`; block imports (import ( ... )) are handled in the scan
+		// loop line by line.
+		scanners = append(scanners, sourceScanner{
 			ext:      ".go",
 			importRe: regexp.MustCompile(`^\s*import\s+(?:"([^"]+)"|\(([^)]+)\))`),
 			isStdlib: isGoStdlib,
@@ -565,8 +642,9 @@ func reopenMissingImportBeads(townRoot, rig string, v WorkflowValidation) ([]str
 	}
 	if WorkflowUsesNodeJS(v) {
 		// TypeScript/JS files typically under layout_root/frontend/src/
-		scanners = append(scanners, scanner{
+		scanners = append(scanners, sourceScanner{
 			ext:      ".ts",
+			exts:     []string{".ts", ".tsx"},
 			importRe: regexp.MustCompile(`^\s*import\s+.*\s+from\s+["']([^"']+)["']`),
 			isStdlib: isNodeStdlib,
 			pathToModule: func(rel, layoutRoot string) string {
@@ -584,19 +662,28 @@ func reopenMissingImportBeads(townRoot, rig string, v WorkflowValidation) ([]str
 			},
 		})
 	}
+	return scanners
+}
 
+// scanMissingImports walks rigDir for source files and returns imports that are not
+// stdlib, not project modules on disk, and not declared/installed third-party deps.
+// The returned map is module -> scanner extension (to distinguish Python/Go/Node).
+func scanMissingImports(rigDir string, v WorkflowValidation) map[string]string {
+	scanners := scannersForValidation(v)
 	if len(scanners) == 0 {
-		return nil, nil
+		return nil
 	}
+	declared := loadDeclaredThirdPartyModules(rigDir)
 
 	// Find all source files on disk
 	type fileInfo struct {
 		rel     string
-		scanner *scanner
+		scanner *sourceScanner
 	}
 	var allFiles []fileInfo
-	for _, sc := range scanners {
-		err := filepath.Walk(rigDir, func(path string, info os.FileInfo, err error) error {
+	for i := range scanners {
+		sc := &scanners[i]
+		_ = filepath.Walk(rigDir, func(path string, info os.FileInfo, err error) error {
 			if err != nil {
 				return nil
 			}
@@ -610,15 +697,12 @@ func reopenMissingImportBeads(townRoot, rig string, v WorkflowValidation) ([]str
 					return filepath.SkipDir
 				}
 			}
-			if !info.IsDir() && strings.HasSuffix(path, sc.ext) {
+			if !info.IsDir() && matchesScannerExt(path, sc.ext, sc.exts) {
 				rel, _ := filepath.Rel(rigDir, path)
-				allFiles = append(allFiles, fileInfo{rel: filepath.ToSlash(rel), scanner: &sc})
+				allFiles = append(allFiles, fileInfo{rel: filepath.ToSlash(rel), scanner: sc})
 			}
 			return nil
 		})
-		if err != nil {
-			return nil, err
-		}
 	}
 
 	// Build set of available modules on disk
@@ -635,10 +719,15 @@ func reopenMissingImportBeads(townRoot, rig string, v WorkflowValidation) ([]str
 		}
 	}
 
-	// Scan each file for imports
-	// Track missing imports with their scanner extension to distinguish third-party from project modules
+	// importBlockRe matches the opening of a Go import ( ... ) block; the block's
+// individual "path" lines are extracted separately.
+var importBlockRe = regexp.MustCompile(`^\s*import\s*\(\s*$`)
+
+// goImportPathRe matches a quoted import path inside or after an import statement.
+var goImportPathRe = regexp.MustCompile(`"([^"]+)"`)
+
+// Scan each file for imports
 	missingImportExt := make(map[string]string) // mod -> ext
-	missingImports := make(map[string]bool)
 	for _, f := range allFiles {
 		full := filepath.Join(rigDir, filepath.FromSlash(f.rel))
 		data, err := os.ReadFile(full)
@@ -646,92 +735,65 @@ func reopenMissingImportBeads(townRoot, rig string, v WorkflowValidation) ([]str
 			continue
 		}
 		lines := strings.Split(string(data), "\n")
-		for _, line := range lines {
-			matches := f.scanner.importRe.FindStringSubmatch(line)
-			if len(matches) >= 2 {
-				var imp string
-				for i := 1; i < len(matches); i++ {
-					if matches[i] != "" {
-						imp = matches[i]
+		for i := 0; i < len(lines); i++ {
+			line := lines[i]
+			// Go block imports span multiple lines: collect the "path" lines until
+			// the closing paren, then classify each quoted path.
+			if f.scanner.ext == ".go" && importBlockRe.MatchString(line) {
+				for i++; i < len(lines); i++ {
+					if strings.TrimSpace(lines[i]) == ")" {
 						break
 					}
-				}
-				if imp != "" && !strings.HasPrefix(imp, ".") && !f.scanner.isStdlib(imp) {
-					if !availableModules[imp] {
-						// Check if it's a third-party package available in the environment
-						if isImportableThirdParty(imp, rigDir, f.scanner.ext) {
-							continue // Third-party package, not a missing implementation
-						}
-						// Check parent packages
-						parts := strings.Split(imp, ".")
-						found := false
-						for i := len(parts); i > 0; i-- {
-							pkg := strings.Join(parts[:i], ".")
-							if availableModules[pkg] {
-								found = true
-								break
-							}
-						}
-						if !found {
-							missingImports[imp] = true
-							missingImportExt[imp] = f.scanner.ext
-						}
+					for _, m := range goImportPathRe.FindAllStringSubmatch(lines[i], -1) {
+						scanSingleImport(f.scanner, m[1], rigDir, availableModules, declared, missingImportExt)
 					}
 				}
+				continue
 			}
-		}
-	}
-
-if len(missingImports) == 0 {
-		return nil, nil
-	}
-
-	// Find closed beads for missing modules
-	closed, err := implementBeadsIndexedByPath(townRoot, rig, fullV, "closed")
-	if err != nil || len(closed) == 0 {
-		// No closed beads to reopen - distinguish third-party deps from project modules
-		// using the tracked scanner extension from when the import was detected
-		if len(missingImports) > 0 {
-			allThirdParty := true
-			for imp := range missingImports {
-				ext := missingImportExt[imp]
-				if !isImportableThirdParty(imp, rigDir, ext) {
-					allThirdParty = false
+			matches := f.scanner.importRe.FindStringSubmatch(line)
+			if len(matches) < 2 {
+				continue
+			}
+			var imp string
+			for i := 1; i < len(matches); i++ {
+				if matches[i] != "" {
+					imp = matches[i]
 					break
 				}
 			}
-			if allThirdParty {
-				// All missing imports are third-party deps not yet installed - warn, continue
-				return nil, nil
+			if imp == "" {
+				continue
 			}
-			// At least one is a project module needing a bead - fall through to error below
+			scanSingleImport(f.scanner, imp, rigDir, availableModules, declared, missingImportExt)
 		}
-		return nil, err
 	}
+	return missingImportExt
+}
 
-	var reopened []string
-	var trulyMissing []string
-	for missingImp := range missingImports {
-		found := false
-		for _, sc := range scanners {
-			expectedPath := sc.moduleToPath(missingImp, v.LayoutRoot)
-			if b, ok := closed[expectedPath]; ok {
-				if err := bdUpdateImplementBeadStatus(townRoot, rig, b.ID, "open"); err == nil {
-					reopened = append(reopened, b.ID)
-				}
-				found = true
-				break
-			}
-		}
-		if !found {
-			trulyMissing = append(trulyMissing, missingImp)
+func scanSingleImport(sc *sourceScanner, imp, rigDir string, availableModules map[string]bool, declared *thirdPartyDeclared, missingImportExt map[string]string) {
+	if imp == "" || strings.HasPrefix(imp, ".") || sc.isStdlib(imp) {
+		return
+	}
+	if availableModules[imp] {
+		return
+	}
+	// Check if it's a declared or env-resolvable third-party dependency.
+	if declaredThirdPartyProbe(declared, imp, rigDir, sc.ext) {
+		return // Third-party package, not a missing implementation
+	}
+	// Check parent packages
+	parts := strings.Split(imp, ".")
+	found := false
+	for i := len(parts); i > 0; i-- {
+		pkg := strings.Join(parts[:i], ".")
+		if availableModules[pkg] {
+			found = true
+			break
 		}
 	}
-	if len(trulyMissing) > 0 {
-		// Only error on truly missing implementation modules (not third-party)
-		return reopened, fmt.Errorf("missing imports with no implementation bead: %s (need new implementation bead)", strings.Join(trulyMissing, ", "))
+	if !found {
+		missingImportExt[imp] = sc.ext
 	}
-	return reopened, nil
 }
 
 func isPythonStdlib(mod string) bool {
@@ -839,13 +901,37 @@ func isImportableGoThirdParty(mod, rigDir string) bool {
 }
 
 // isImportableNodeThirdParty checks if a Node.js module is available in node_modules.
+// node_modules may live under a nested layout root (e.g. frontend/node_modules) rather
+// than the rig root, so search for it under any subdirectory before falling back to npm.
 func isImportableNodeThirdParty(mod, rigDir string) bool {
-	modulePath := filepath.Join(rigDir, "node_modules", mod)
-	if _, err := os.Stat(modulePath); err == nil {
+	if nodeModulesDirFor(mod, rigDir) != "" {
 		return true
 	}
 	cmd := exec.Command("npm", "list", mod)
 	cmd.Dir = rigDir
 	err := cmd.Run()
 	return err == nil
+}
+
+// nodeModulesDirFor walks rigDir looking for a node_modules/<mod> directory, skipping
+// nested node_modules contents to avoid a full tree walk of installed packages.
+func nodeModulesDirFor(mod, rigDir string) string {
+	var found string
+	_ = filepath.WalkDir(rigDir, func(path string, entry os.DirEntry, err error) error {
+		if err != nil || found != "" {
+			return nil
+		}
+		if !entry.IsDir() {
+			return nil
+		}
+		if entry.Name() == "node_modules" {
+			if _, statErr := os.Stat(filepath.Join(path, mod)); statErr == nil {
+				found = path
+				return filepath.SkipAll
+			}
+			return filepath.SkipDir
+		}
+		return nil
+	})
+	return found
 }

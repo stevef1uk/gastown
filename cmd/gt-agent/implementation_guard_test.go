@@ -181,3 +181,52 @@ func TestNoteImplementationFixAttempt_bdUpdate(t *testing.T) {
 		t.Fatal("read-only cat should not count as fix work")
 	}
 }
+
+func TestRejectQAVerifyPassedButOutputNoise_allowsRealCmdFailure(t *testing.T) {
+	// FinAlly regression: the E2E compose command genuinely failed
+	// ("no such service: playwright") and the summary cites it. The weak
+	// auto-verify (`test -f docker-compose.yml`) exited 0, so verifyOK is true —
+	// but the session DID have a real command failure. The guard must NOT reject
+	// this as output noise.
+	task := &orchestrator.Task{
+		State: "qa_review",
+		Hooks: orchestrator.StateHooks{Track: "qa"},
+	}
+	r := newStateRunner(task, t.TempDir(), "mockrig")
+	r.track.verifyOK = true
+	r.track.hadCmdFailure = true
+	summary := "the E2E command failed before tests ran: no such service: playwright"
+	if _, reject := r.rejectQAVerifyPassedButOutputNoise("failure", summary); reject {
+		t.Fatal("real command failure must not be rejected as output noise")
+	}
+}
+
+func TestRejectQAVerifyPassedButOutputNoise_blocksAuditNoise(t *testing.T) {
+	// The intended purpose: verify exited 0, nothing failed in the session, but
+	// the LLM reports failure citing npm audit output. That is spurious.
+	task := &orchestrator.Task{
+		State: "qa_review",
+		Hooks: orchestrator.StateHooks{Track: "qa"},
+	}
+	r := newStateRunner(task, t.TempDir(), "mockrig")
+	r.track.verifyOK = true
+	r.track.hadCmdFailure = false
+	summary := "npm install reported 3 vulnerabilities and 1 high severity funding issue"
+	msg, reject := r.rejectQAVerifyPassedButOutputNoise("failure", summary)
+	if !reject || !strings.Contains(msg, "Rejected") {
+		t.Fatalf("audit noise should be rejected: reject=%v msg=%q", reject, msg)
+	}
+}
+
+func TestRejectQAVerifyPassedButOutputNoise_ignoresNonQAState(t *testing.T) {
+	task := &orchestrator.Task{
+		State: "implementation",
+		Hooks: orchestrator.StateHooks{Track: "implementation"},
+	}
+	r := newStateRunner(task, t.TempDir(), "mockrig")
+	r.track.verifyOK = true
+	r.track.hadCmdFailure = false
+	if _, reject := r.rejectQAVerifyPassedButOutputNoise("failure", "npm audit found 3 vulnerabilities"); reject {
+		t.Fatal("guard is scoped to qa_review state only")
+	}
+}

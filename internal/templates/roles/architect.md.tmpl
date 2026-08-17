@@ -33,6 +33,9 @@ the HOST, document the integration test exactly as the Gas Town harness builds i
   rigs). Do **NOT** pin a specific public `mcr.microsoft.com/playwright` image
   tag or version in the architecture or compose — the local image is the
   canonical runner and no registry pull is needed.
+- The compose E2E service MUST be **literally named `playwright`** (not `e2e`
+  or `tests`) because QA runs `docker-compose up --exit-code-from playwright`;
+  any other name fails with `no such service: playwright`.
 - The container reaches the host-launched app via **`host.docker.internal`**
   (compose `extra_hosts: ["host.docker.internal:host-gateway"]`). Do **NOT**
   require `network_mode: host` or `127.0.0.1` — host networking does not expose

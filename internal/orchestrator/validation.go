@@ -368,7 +368,12 @@ func phaseShipsDockerPlaywright(p *DeliveryPhase) bool {
 		if strings.Contains(lower, "docker-compose") {
 			hasCompose = true
 		}
-		if strings.Contains(lower, "playwright") {
+		// Playwright scaffolding is not only a file literally named playwright.config.*:
+		// e2e.spec.ts / *.spec.ts / test/e2e/ paths are E2E tests that require the
+		// playwright compose runner. Without this, phases shipping only
+		// test/e2e.spec.ts + docker-compose.test.yml escaped the clamp and kept the
+		// weak `test -f docker-compose.yml && echo` verify (FinAlly regression).
+		if strings.Contains(lower, "playwright") || IsE2ETestPath(f) {
 			hasPlaywright = true
 		}
 	}

@@ -575,9 +575,18 @@ func (r *stateRunner) rejectQAVerifyPassedButOutputNoise(outcome, summary string
 	if !isOrchestratedFailureOutcome(outcome) {
 		return "", false
 	}
-	// Accept either auto-verify OK or no failed commands this session
-	// (the LLM's own verify command may have succeeded even if auto-verify used the old path).
-	if !r.track.verifyOK && r.track.hadCmdFailure {
+	// A real command failure in this session is a legitimate failure signal —
+	// never dismiss it as output noise. This matters when the auto-verify
+	// command is weak (e.g. `test -f docker-compose.yml && echo ok`) but the LLM's
+	// E2E compose command genuinely failed (FinAlly regression: QA correctly
+	// reported `no such service: playwright`, harness rejected it, workflow
+	// completed with no image built or tested).
+	if r.track.hadCmdFailure {
+		return "", false
+	}
+	// Only when the verify command exited 0 and nothing failed in this session is
+	// a failure based on output text (npm audit, funding, deprecations) spurious.
+	if !r.track.verifyOK {
 		return "", false
 	}
 	if !summaryCitesOutputNoise(summary) {

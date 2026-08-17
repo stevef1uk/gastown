@@ -44,6 +44,25 @@ func TestPhaseShipsDockerPlaywright_contentDriven(t *testing.T) {
 			want: false,
 		},
 		{
+			// FinAlly regression: the E2E compose lives in test/ and the spec is
+			// e2e.spec.ts — no file path contains the literal "playwright", so the
+			// old name-driven check missed it, the weak `test -f` verify survived,
+			// and Playwright never ran.
+			name: "compose + e2e.spec.ts without playwright-named files still ships",
+			phase: DeliveryPhase{
+				ID:            "release",
+				Title:        "Testing & Release",
+				RequiredFiles: []string{
+					"finally/Dockerfile",
+					"finally/docker-compose.yml",
+					"finally/test/docker-compose.test.yml",
+					"finally/test/e2e.spec.ts",
+					"finally/test/package.json",
+				},
+			},
+			want: true,
+		},
+		{
 			name: "nil phase does not ship",
 			phase: DeliveryPhase{},
 		},

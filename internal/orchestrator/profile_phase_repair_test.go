@@ -395,3 +395,44 @@ func TestClampProfileValidation_playwrightComposeSurvivesLoad(t *testing.T) {
 		}
 	}
 }
+
+// TestSanitizePhaseVerifyCommandsForStack_finallyE2ESpecClamp is the FinAlly
+// regression: the release phase ships finally/test/e2e.spec.ts + finally/test/
+// docker-compose.test.yml (no file path contains the literal "playwright"), and
+// the profile's verify was the weak `test -f docker-compose.yml && echo`. The
+// clamp must rewrite it to the compose playwright command so the E2E gate
+// actually runs.
+func TestSanitizePhaseVerifyCommandsForStack_finallyE2ESpecClamp(t *testing.T) {
+	prev := dockerComposeCLIOverride
+	dockerComposeCLIOverride = "docker-compose"
+	t.Cleanup(func() { dockerComposeCLIOverride = prev })
+
+	v := WorkflowValidation{
+		LayoutRoot: "finally",
+		DeliveryPhases: []DeliveryPhase{
+			{
+				ID:    "release",
+				Title: "Testing & Release",
+				RequiredFiles: []string{
+					"finally/Dockerfile",
+					"finally/docker-compose.yml",
+					"finally/test/docker-compose.test.yml",
+					"finally/test/e2e.spec.ts",
+					"finally/test/package.json",
+				},
+				QAVerifyCommand: "cd finally && test -f docker-compose.yml && echo 'compose file ok'",
+			},
+		},
+	}
+	got := SanitizePhaseVerifyCommandsForStack(v)
+	cmd := got.DeliveryPhases[0].QAVerifyCommand
+	if !strings.Contains(cmd, "up --exit-code-from playwright") {
+		t.Fatalf("release phase shipping e2e.spec.ts + test compose must verify via playwright compose, got %q", cmd)
+	}
+	if !strings.Contains(cmd, "-f test/docker-compose.test.yml") {
+		t.Fatalf("verify must target the test harness compose file, got %q", cmd)
+	}
+	if strings.Contains(cmd, "test -f") || strings.Contains(cmd, "echo") {
+		t.Fatalf("weak file-existence verify must be rewritten, got %q", cmd)
+	}
+}
