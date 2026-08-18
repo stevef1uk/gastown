@@ -87,7 +87,7 @@ func TestSemaphoreLimitsConcurrency(t *testing.T) {
 
 func TestStartRigAgentsWithPrefetch_EmptyRigs(t *testing.T) {
 	// Test with empty inputs
-	witnessResults, refineryResults, architectResults, qaResults, polecatResults := startRigAgentsWithPrefetch(
+	witnessResults, refineryResults, architectResults, qaResults, polecatResults, testerResults := startRigAgentsWithPrefetch(
 		[]string{},
 		make(map[string]*rig.Rig),
 		make(map[string]error),
@@ -110,6 +110,9 @@ func TestStartRigAgentsWithPrefetch_EmptyRigs(t *testing.T) {
 	if len(polecatResults) != 0 {
 		t.Errorf("polecatResults should be empty, got %d entries", len(polecatResults))
 	}
+	if len(testerResults) != 0 {
+		t.Errorf("testerResults should be empty, got %d entries", len(testerResults))
+	}
 }
 
 func TestStartRigAgentsWithPrefetch_RecordsErrors(t *testing.T) {
@@ -118,7 +121,7 @@ func TestStartRigAgentsWithPrefetch_RecordsErrors(t *testing.T) {
 		"badrig": fmt.Errorf("rig not found"),
 	}
 
-	witnessResults, refineryResults, architectResults, qaResults, polecatResults := startRigAgentsWithPrefetch(
+	witnessResults, refineryResults, architectResults, qaResults, polecatResults, testerResults := startRigAgentsWithPrefetch(
 		[]string{"badrig"},
 		make(map[string]*rig.Rig),
 		rigErrors,
@@ -171,7 +174,14 @@ func TestStartRigAgentsWithPrefetch_RecordsErrors(t *testing.T) {
 		t.Error("badrig polecat result should not be ok")
 	}
 
-	// Mechanic is town-level only — no per-rig results to check.
+	if len(testerResults) != 1 {
+		t.Errorf("testerResults should have 1 entry, got %d", len(testerResults))
+	}
+	if result, ok := testerResults["badrig"]; !ok {
+		t.Error("testerResults should have badrig entry")
+	} else if result.ok {
+		t.Error("badrig tester result should not be ok")
+	}
 }
 
 func TestPrefetchRigs_Empty(t *testing.T) {

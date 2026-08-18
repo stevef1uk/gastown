@@ -563,7 +563,7 @@ func runUp(cmd *cobra.Command, args []string) error {
 	// 5 & 6. Witnesses, Refineries, Architects, QAs (using prefetched rigs)
 	// Mechanic is town-level only — the single hq-mechanic patrols logs for
 	// the whole town, including all rigs. See `mechanicPatrolScript`.
-	witnessResults, refineryResults, architectResults, qaResults, polecatResults := startRigAgentsWithPrefetch(rigs, prefetchedRigs, rigErrors, orchestrated, pipelineOnly)
+	witnessResults, refineryResults, architectResults, qaResults, polecatResults, testerResults := startRigAgentsWithPrefetch(rigs, prefetchedRigs, rigErrors, orchestrated, pipelineOnly)
 
 	if orchestrated {
 		for _, rigName := range rigs {
@@ -605,6 +605,14 @@ func runUp(cmd *cobra.Command, args []string) error {
 	for _, rigName := range rigs {
 		if result, ok := qaResults[rigName]; ok {
 			services = append(services, ServiceStatus{Name: result.name, Type: constants.RoleQA, Rig: rigName, OK: result.ok, Detail: result.detail})
+			if !result.ok {
+				allOK = false
+			}
+		}
+	}
+	for _, rigName := range rigs {
+		if result, ok := testerResults[rigName]; ok {
+			services = append(services, ServiceStatus{Name: result.name, Type: constants.RoleTester, Rig: rigName, OK: result.ok, Detail: result.detail})
 			if !result.ok {
 				allOK = false
 			}
@@ -933,13 +941,14 @@ type agentResultMsg struct {
 // Mechanic is intentionally NOT included here: it is a town-level role
 // (see `TownLevelRoles` in internal/beads/agent_ids.go). A single town
 // mechanic patrols logs for the whole town, including all rigs.
-func startRigAgentsWithPrefetch(rigNames []string, prefetchedRigs map[string]*rig.Rig, rigErrors map[string]error, orchestrated, skipPatrolAgents bool) (witnessResults, refineryResults, architectResults, qaResults, polecatResults map[string]agentStartResult) {
+func startRigAgentsWithPrefetch(rigNames []string, prefetchedRigs map[string]*rig.Rig, rigErrors map[string]error, orchestrated, skipPatrolAgents bool) (witnessResults, refineryResults, architectResults, qaResults, polecatResults, testerResults map[string]agentStartResult) {
 	n := len(rigNames)
 	witnessResults = make(map[string]agentStartResult, n)
 	refineryResults = make(map[string]agentStartResult, n)
 	architectResults = make(map[string]agentStartResult, n)
 	qaResults = make(map[string]agentStartResult, n)
 	polecatResults = make(map[string]agentStartResult, n)
+	testerResults = make(map[string]agentStartResult, n)
 
 	if n == 0 {
 		return
@@ -952,6 +961,7 @@ func startRigAgentsWithPrefetch(rigNames []string, prefetchedRigs map[string]*ri
 		refineryResults[rigName] = agentStartResult{name: "Refinery (" + rigName + ")", ok: false, detail: errDetail}
 		architectResults[rigName] = agentStartResult{name: "Architect (" + rigName + ")", ok: false, detail: errDetail}
 		qaResults[rigName] = agentStartResult{name: "QA (" + rigName + ")", ok: false, detail: errDetail}
+		testerResults[rigName] = agentStartResult{name: "Tester (" + rigName + ")", ok: false, detail: errDetail}
 		if orchestrated {
 			polecatResults[rigName] = agentStartResult{name: "Polecat (" + rigName + ")", ok: false, detail: errDetail}
 		}
@@ -969,6 +979,7 @@ func startRigAgentsWithPrefetch(rigNames []string, prefetchedRigs map[string]*ri
 	} else {
 		witnessResults = startRigAgentPhase(rigNames, prefetchedRigs, constants.RoleWitness)
 		refineryResults = startRigAgentPhase(rigNames, prefetchedRigs, constants.RoleRefinery)
+		testerResults = startRigAgentPhase(rigNames, prefetchedRigs, constants.RoleTester)
 	}
 	architectResults = startRigAgentPhase(rigNames, prefetchedRigs, constants.RoleArchitect)
 
@@ -992,7 +1003,7 @@ func startRigAgentsWithPrefetch(rigNames []string, prefetchedRigs map[string]*ri
 		}
 	}
 
-	return witnessResults, refineryResults, architectResults, qaResults, polecatResults
+	return witnessResults, refineryResults, architectResults, qaResults, polecatResults, testerResults
 }
 
 func startRigAgentPhase(rigNames []string, prefetchedRigs map[string]*rig.Rig, role string) map[string]agentStartResult {
@@ -1026,6 +1037,8 @@ func startRigAgentPhase(rigNames []string, prefetchedRigs map[string]*rig.Rig, r
 					result = upStartArchitect(task.rigName, task.rigObj)
 				case constants.RoleQA:
 					result = upStartQA(task.rigName, task.rigObj)
+				case constants.RoleTester:
+					result = upStartTester(task.rigName, task.rigObj)
 				}
 				results <- agentResultMsg{rigName: task.rigName, role: task.role, result: result}
 			}
