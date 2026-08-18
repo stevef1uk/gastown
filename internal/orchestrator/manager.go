@@ -13,6 +13,7 @@ import (
 
 	"github.com/steveyegge/gastown/internal/events"
 	"github.com/steveyegge/gastown/internal/refinery"
+	"github.com/steveyegge/gastown/internal/session"
 	"github.com/steveyegge/gastown/internal/telemetry"
 	"gopkg.in/yaml.v3"
 )
@@ -247,6 +248,62 @@ func (m *Manager) buildTaskPayloadForInstance(instID string) (map[string]interfa
 const maxWorkflowReworkSummary = 2000
 const maxWorkflowReworkFeedback = 6000
 
+// ensureTesterAgent starts the tester agent for a rig if the workflow is in test_plan or test_review state.
+// Called after state transitions to ensure the tester agent is running when needed.
+func (m *Manager) ensureTesterAgent(rig string, currentState string) error {
+	if currentState != "test_plan" && currentState != "test_review" {
+		return nil
+	}
+	if rig == "" {
+		return nil
+	}
+
+	rigPath := filepath.Join(m.townRoot, rig)
+	rigConfigPath := filepath.Join(rigPath, "config.json")
+	if _, err := os.Stat(rigConfigPath); os.IsNotExist(err) {
+		return nil // rig not found
+	}
+
+	// Check if tester session already exists
+	sessionID := session.TesterSessionName(session.PrefixFor(rig), rig)
+	sp := session.GetDefaultProvider(m.townRoot)
+	ctx := context.Background()
+	exists, _ := sp.Exists(ctx, sessionID)
+	if exists {
+		return nil // already running
+	}
+
+	// Start tester session
+	testerDir := filepath.Join(rigPath, "tester")
+	if err := os.MkdirAll(testerDir, 0755); err != nil {
+		return err
+	}
+
+	orchRunning, _, _ := IsRunning(m.townRoot)
+	wantOrch := OrchestratedForRole(orchRunning, "tester")
+
+	topic := "startup"
+	if wantOrch {
+		topic = "orchestrated"
+	}
+
+	_, err := session.StartSession(ctx, sp, &session.SessionConfig{
+		SessionID:    sessionID,
+		WorkDir:      testerDir,
+		Role:         "tester",
+		TownRoot:     m.townRoot,
+		RigPath:      rigPath,
+		RigName:      rig,
+		Orchestrated: wantOrch,
+		Beacon:       session.BeaconConfig{Recipient: "tester", Sender: "daemon", Topic: topic},
+		WaitForAgent: true,
+		WaitFatal:    true,
+		ReadyDelay:   true,
+		AutoRespawn:  true,
+	})
+	return err
+}
+
 // CompleteTask transitions a workflow to the next state.
 // When agentID is non-empty, it must match the role for the workflow's current state.
 // summary and feedback are stored on cross-state failure for the next agent (e.g. QA → polecat).
@@ -348,6 +405,12 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summa
 	next, err := inst.Transition(tpl, outcome)
 	if err != nil {
 		return "", err
+	}
+	// Ensure tester agent is running when entering test_plan or test_review states
+	if rig != "" && (next == "test_plan" || next == "test_review") {
+		if err := m.ensureTesterAgent(rig, next); err != nil {
+			log.Printf("[Manager] Warning: failed to start tester agent for %s: %v", rig, err)
+		}
 	}
 	// Ensure workflow-profile.json exists before entering design (spec_review -> design).
 	// The spec_review agent runs gt rig spec-index which may take 30+ seconds.
