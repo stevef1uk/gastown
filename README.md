@@ -104,8 +104,27 @@ Workflow templates that coordinate multi-step work. Formulas (TOML definitions) 
 
 | Template | Entry point | Flow |
 |----------|-------------|------|
-| **`rig-flow`** | Existing `SPEC.md` | Mayor kickoff → Architect → Planner → Polecat → QA |
-| **`req-flow`** | Business `REQUIREMENTS.md` | Analyst → QA spec review → Architect → Planner → Polecat → QA |
+| **`rig-flow`** | Existing `SPEC.md` | Mayor kickoff → Architect → Planner → Polecat → QA → **Tester** (test_plan → test_review) |
+| **`req-flow`** | Business `REQUIREMENTS.md` | Analyst → QA spec review → Architect → Planner → Polecat → QA → **Tester** (test_plan → test_review) |
+
+### Tester Agent — Test Sufficiency Audit (per phase)
+
+The **Tester** audits test sufficiency **per delivery phase** in two states:
+
+| State | Role | Purpose | Possible Outcomes |
+|-------|------|---------|-------------------|
+| `test_plan` | Tester | Reads SPEC/architecture/REQUIREMENTS/plan → writes `TEST_PLAN.md` mapping every **active-phase** requirement to unit/integration/UI tests with bead IDs | `success` (proceed to `project_setup`) · `failure` (SPEC/architecture too vague → back to `planning`) · `architecture_failure` (SPEC/architecture contradict → back to `design`) |
+| `test_review` | Tester | After Polecat implementation, verifies every planned test exists, has real assertions, and runs phase verify (`go test`/`pytest`) to confirm green | `success` (proceed to `qa_review`) · `failure` (test missing/weak/verify fails → back to `implementation` with bead IDs) · `plan_gap` (TEST_PLAN.md incomplete → back to `test_plan`) · `architecture_failure` (tests contradict SPEC/architecture → back to `design`) |
+
+**Who does what:**
+- **Polecat** — writes test files during `implementation` (unit/integration/UI per TEST_PLAN.md)
+- **Tester** — runs phase verify command (`{{phase_qa_verify_command}}` from workflow profile) at `test_review` to verify all tests pass
+- **QA** — final runtime smoke test at `qa_review` (end-to-end)
+
+**Key distinction at `test_review`:**
+- `failure` → Polecat reworks implementation (test missing/weak/verify fails)
+- `architecture_failure` → Architect fixes SPEC/architecture (SPEC contradicts tests)
+- `plan_gap` → Tester rewrites TEST_PLAN.md (plan itself incomplete/wrong)
 
 | Model | How work moves |
 | ----- | -------------- |
@@ -881,7 +900,7 @@ terminal while debugging.
 
 ### What you see
 
-- **Agent list** — Town agents (Mayor, Deacon, Planner) and per-rig roles (Witness, Refinery, Architect, QA, pipeline Polecat, crew)
+- **Agent list** — Town agents (Mayor, Deacon, Planner) and per-rig roles (Witness, Refinery, Architect, QA, pipeline Polecat, **Tester**, crew)
 - **Orchestrator** — `gt orchestrator run` status and activity (when using [rig-flow](#orchestrator--freeride-rig-flow-) or [`req-flow`](#try-req-flow-requirements-driven-pipeline))
 - **Workflow badges** — active pipeline step highlighted on the matching agent; rig header shows `wf-1 → qa_review` style hints
 - **Activity logs** — tails each role’s `typescript` file where orchestrated agents actually log; falls back to `logs/sessions/*.log`
