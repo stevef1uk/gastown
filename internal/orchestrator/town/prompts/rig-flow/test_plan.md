@@ -68,7 +68,26 @@ Assign **unit** to pure logic/domain rules, **integration** to API/store/HTTP wi
 
 ## HARD RULES
 
-1. **One `CMD:` per line** — read-only inspection, then write `TEST_PLAN.md` via heredoc.
+1. **One `CMD:` per line** — read-only inspection, then write `TEST_PLAN.md` via heredoc:
+   ```
+   CMD: cd {{rig}}/mayor/rig && cat > TEST_PLAN.md << 'EOF'
+   # Test Plan — <active phase name>
+
+   ## Requirements → tests
+
+   ### <req-id>
+   Requirement: one-line statement from SPEC/REQUIREMENTS.md
+   Level: unit | integration | ui
+   Test file: <path under layout_root, e.g. {{layout_root}}/internal/api/handlers_test.go>
+   Bead ID: <id from plan.md / bd list>
+   Scenarios:
+   - <behavior/edge case 1>
+   - <behavior/edge case 2>
+   Assertions:
+   - <assertion 1>
+   - <assertion 2>
+   EOF
+   ```
 
 2. Read the sources before writing anything:
    ```
@@ -94,3 +113,6 @@ Example success:
 
 Example failure:
 `{"outcome":"failure","summary":"architecture.md ownership table omits layout_root/internal/store/store.go — cannot plan its unit tests; Planner must sync plan.md and architecture.md."}`
+
+Example architecture_failure:
+`{"outcome":"architecture_failure","summary":"SPEC.md missing HTTP route table; cannot determine API requirements for testing. Architect must add route table to SPEC.md before tests can be planned."}`

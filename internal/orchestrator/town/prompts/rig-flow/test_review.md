@@ -46,7 +46,24 @@ Missing a planned test, a test that never asserts, or a verify that fails ⇒ `f
 
 ## HARD RULES
 
-1. **One `CMD:` per line** — read-only inspection and verify only.
+1. **One `CMD:` per line** — read-only inspection, verify, then write `test-report.md` via heredoc:
+   ```
+   CMD: cd {{rig}}/mayor/rig && cat > test-report.md << 'EOF'
+   # Test Review — <active phase name>
+
+   ## Summary
+   All/Partial/No tests pass; phase verify <passed/failed>
+
+   ## Per-requirement results
+   ### <req-id> — PASS/FAIL
+   - Test file: <path>
+   - Verify result: <passed/failed/output>
+   - Notes: <any issues>
+
+   ## Overall assessment
+   <overall pass/fail determination and next steps>
+   EOF
+   ```
 
 2. Inspect plan and tests:
    ```
@@ -78,3 +95,6 @@ Example failure:
 
 Example plan_gap:
 `{"outcome":"plan_gap","summary":"TEST_PLAN.md omits R-4 (seed data) and mis-levels R-2 as unit though SPEC requires httptest integration — Tester must rewrite."}`
+
+Example architecture_failure:
+`{"outcome":"architecture_failure","summary":"SPEC.md missing HTTP route table; tests cannot be verified against API contract. Architect must add route table to SPEC.md before tests can be validated."}`
