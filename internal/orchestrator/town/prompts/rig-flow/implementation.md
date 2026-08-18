@@ -55,6 +55,16 @@ CMD: cd {{rig}}/mayor/rig && ...
 {"outcome":"success","summary":"..."}
 ```
 
+## Per-bead verify command
+
+The phase verify command for this rig is:
+
+```
+{{phase_qa_verify_command}}
+```
+
+Run this **exactly as shown** (including the full relative path from the rig root) after writing code/tests. Do NOT shorten to a basename. Run it from `{{rig}}/mayor/rig/{{layout_root}}`.
+
 ## TDD Iron Law (MANDATORY — read before the per-bead sequence)
 
 ```
@@ -93,7 +103,7 @@ Follow the **red-green-refactor** cycle for every bead that has a test path in `
 1. `CMD: bd update QUEUE_HEAD_ID --status=in_progress`
 2. **WRITE:** / **EDIT:** the file (use paths from **Next bead** / **Implement context**)
 3. **TDD cycle for this bead** — see the Iron Law above: WRITE test → verify RED → implement → verify GREEN → commit test and code in separate commits. Only skip the failing-test step when the bead is an exception listed above.
-4. `CMD: cd {{rig}}/mayor/rig && ...` — run **Verify** (command in **Next bead** line) **exactly as given, including the full relative path. Do NOT shorten it to a basename.**
+4. `CMD: cd {{rig}}/mayor/rig/{{layout_root}} && {{phase_qa_verify_command}}` — run the **phase verify** exactly as shown above. **Do NOT shorten to a basename** — use the full command including the relative path from `{{layout_root}}`.
 5. **If verify fails**: READ the failing file, check its path. Fix in the next turn group. Do NOT reopen the bead.
 6. `CMD: bd close BEAD_ID`
 7. Look at the **Queue** table. If another bead is **open** (○) or **in_progress** (◐), repeat from step 1 with the next queue bead.
