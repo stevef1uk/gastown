@@ -98,7 +98,16 @@ func IsDevServerSmokeCommand(cmd string) bool {
 	return uvicornServerRE.MatchString(lower) ||
 		strings.Contains(lower, "gunicorn") ||
 		strings.Contains(lower, "flask run") ||
-		strings.Contains(lower, "hypercorn")
+		strings.Contains(lower, "hypercorn") ||
+		strings.Contains(lower, "python -m uvicorn") ||
+		strings.Contains(lower, "python3 -m uvicorn") ||
+		strings.Contains(lower, "npm start") ||
+		strings.Contains(lower, "yarn start") ||
+		strings.Contains(lower, "pnpm start") ||
+		strings.Contains(lower, "npx ") ||
+		strings.Contains(lower, "npm run dev") ||
+		strings.Contains(lower, "yarn dev") ||
+		strings.Contains(lower, "pnpm dev")
 }
 
 func parseSmokeServerSection(text string) string {
