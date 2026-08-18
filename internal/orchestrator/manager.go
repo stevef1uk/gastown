@@ -406,6 +406,7 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summa
 	if err != nil {
 		return "", err
 	}
+	log.Printf("[Manager] CompleteTask: after Transition, workflow=%s fromState=%s next=%s inst.CurrentState=%s", workflowID, fromState, next, inst.CurrentState)
 	// Ensure tester agent is running when entering test_plan or test_review states
 	if rig != "" && (next == "test_plan" || next == "test_review") {
 		if err := m.ensureTesterAgent(rig, next); err != nil {
@@ -558,7 +559,9 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summa
 	if phaseAdvance != nil {
 		inst.PendingRework = phaseAdvance
 	}
+	log.Printf("[Manager] CompleteTask: before persist, workflow=%s next=%s inst.CurrentState=%s", workflowID, next, inst.CurrentState)
 	if err := m.persistLocked(); err != nil {
+		log.Printf("[Manager] CompleteTask: persist error for %s: %v", workflowID, err)
 		return next, fmt.Errorf("persist instances: %w", err)
 	}
 	if rig == "" && inst.Variables != nil {
