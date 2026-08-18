@@ -23,10 +23,46 @@ type JudgeResult struct {
 	Missing []string `json:"missing"`
 }
 
-func ValidateDocumentWithJudge(ctx context.Context, client *llm.Client, cfg JudgeConfig) (bool, string, error) {
-	if len(strings.TrimSpace(cfg.Content)) < cfg.MinLength {
-		return false, fmt.Sprintf("document too short (%d chars, need %d)", len(cfg.Content), cfg.MinLength), nil
+// extractJSONFromResponse extracts JSON from a response that may contain markdown code fences.
+func extractJSONFromResponse(resp string) string {
+	// Remove markdown code fences
+	resp = strings.TrimSpace(resp)
+	
+	// Handle ```json ... ``` fences
+	if strings.HasPrefix(resp, "```") {
+		lines := strings.Split(resp, "\n")
+		// Find first line with ```
+		startIdx := -1
+		for i, line := range lines {
+			if strings.HasPrefix(strings.TrimSpace(line), "```") {
+				startIdx = i
+				break
+			}
+		}
+		// Find closing ```
+		endIdx := -1
+		for i := startIdx + 1; i < len(lines); i++ {
+			if strings.HasPrefix(strings.TrimSpace(lines[i]), "```") {
+				endIdx = i
+				break
+			}
+		}
+		if startIdx >= 0 && endIdx > startIdx {
+			return strings.Join(lines[startIdx+1:endIdx], "\n")
+		}
 	}
+	
+	// Fallback: find first { and last }
+	start := strings.Index(resp, "{")
+	end := strings.LastIndex(resp, "}")
+	if start >= 0 && end > start {
+		return resp[start:end+1]
+	}
+	
+	return ""
+}
+
+func ValidateDocumentWithJudge(ctx context.Context, client *llm.Client, cfg JudgeConfig) (bool, string, error) {
 
 	// Build system prompt
 	criteriaJSON, _ := json.Marshal(cfg.Criteria)
@@ -67,14 +103,12 @@ CRITERIA:
 	// Parse response
 	var result JudgeResult
 	if err := json.Unmarshal([]byte(resp), &result); err != nil {
-		// Try to extract JSON from response
-		start := strings.Index(resp, "{")
-		end := strings.LastIndex(resp, "}")
-		if start >= 0 && end > start {
-			if err := json.Unmarshal([]byte(resp[start:end+1]), &result); err != nil {
-				return false, "", fmt.Errorf("parse judge response: %w\nraw: %s", err, resp)
-			}
-		} else {
+		// Try to extract JSON from response (handle markdown code fences)
+		jsonStr := extractJSONFromResponse(resp)
+		if jsonStr == "" {
+			return false, "", fmt.Errorf("parse judge response: could not extract JSON\nraw: %s", resp)
+		}
+		if err := json.Unmarshal([]byte(jsonStr), &result); err != nil {
 			return false, "", fmt.Errorf("parse judge response: %w\nraw: %s", err, resp)
 		}
 	}
