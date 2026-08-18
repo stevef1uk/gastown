@@ -381,6 +381,15 @@ func isLayoutRelativeShellCommand(cmd, rig, layout string) bool {
 			}
 		}
 	}
+	// Venv paths (.venv/) are at mayor/rig level, not under layout_root.
+	// Commands referencing .venv/ need cd to mayor/rig to resolve correctly.
+	if strings.Contains(lower, ".venv/") {
+		for _, tool := range layoutRelativeTools {
+			if strings.Contains(lower, tool) {
+				return true
+			}
+		}
+	}
 	return false
 }
 

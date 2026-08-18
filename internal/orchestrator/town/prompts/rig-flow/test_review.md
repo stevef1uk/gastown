@@ -44,9 +44,25 @@ For each `### <req-id>` in `TEST_PLAN.md`:
 
 Missing a planned test, a test that never asserts, or a verify that fails ⇒ `failure`. A plan that hand-waves ("ensure quality") or omits whole requirements ⇒ `plan_gap`. Tests that contradict the SPEC route/store contract that no code change can reconcile ⇒ `architecture_failure`.
 
-## HARD RULES
+### ⚠️ CRITICAL: Background server + curl pattern (for server-based phases)
 
-1. **One `CMD:` per line** — read-only inspection, verify, then write `test-report.md` via heredoc:
+If `{{phase_qa_verify_command}}` starts a server (uvicorn, gunicorn, flask, node, npm, etc.), you MUST run it in **background** with `&` and **curl** in the SAME command. Do NOT run the server in foreground — it will hang forever and time out after 5 minutes.
+
+**Correct pattern (single CMD line):**
+```
+CMD: cd {{rig}}/mayor/rig/{{layout_root}} && {{phase_qa_verify_command}} & sleep 2 && curl -sf http://127.0.0.1:{{dev_server_port}}/{{smoke_probe_path}}
+```
+
+**What this does:**
+1. Starts server in **background** with `&`
+2. `sleep 2` — gives server time to start
+2. Runs `curl` to verify the endpoint works
+3. Exits cleanly so gt-agent can continue
+
+**WRONG (will timeout):**
+```
+CMD: cd {{rig}}/mayor/rig/{{layout_root}} && {{phase_qa_verify_command}}
+```
    ```
    CMD: cd {{rig}}/mayor/rig && cat > test-report.md << 'EOF'
    # Test Review — <active phase name>
@@ -81,20 +97,20 @@ Missing a planned test, a test that never asserts, or a verify that fails ⇒ `f
    CMD: cd {{rig}}/mayor/rig && bd list --status=closed
    ```
 
-5. On **failure**, name **exact** fixes: `{{layout_root}}/path/to/handlers_test.go missing TestCreate route for POST /api/links` and the bead IDs to reopen, so the Polecat can rework in one pass.
+5. On **failure**, name **exact** fixes: `{{layout_root}}/path/to/test_file missing assertions for <requirement>` and the bead IDs to reopen, so the Polecat can rework in one pass.
 
 6. On **plan_gap**, name the requirements `TEST_PLAN.md` omits or mis-levels, so the Tester can rewrite it.
 
 7. **CRITICAL:** Do not emit JSON in the same message as `CMD:` lines. Wait for command output on the next turn before choosing outcome.
 
 Example success:
-`{"outcome":"success","summary":"6/6 TEST_PLAN.md rows covered; handlers_test.go asserts POST /api/links 201; store_test.go covers List/Create; go test -count=1 ./... green"}`
+`{"outcome":"success","summary":"All TEST_PLAN.md rows covered; unit tests assert API contracts; phase verify passed."}`
 
 Example failure:
-`{"outcome":"failure","summary":"TEST_PLAN.md row R-3: tests/test_store.py has no asserts on balance after transfer — reopen bead te-a1b (tests/test_store.py); add real assertions and re-verify."}`
+`{"outcome":"failure","summary":"TEST_PLAN.md row R-3: test file missing assertions on key behavior — reopen bead <id>; add real assertions and re-verify."}`
 
 Example plan_gap:
-`{"outcome":"plan_gap","summary":"TEST_PLAN.md omits R-4 (seed data) and mis-levels R-2 as unit though SPEC requires httptest integration — Tester must rewrite."}`
+`{"outcome":"plan_gap","summary":"TEST_PLAN.md omits requirement R-4 and mis-levels R-2 — Tester must rewrite plan."}`
 
 Example architecture_failure:
 `{"outcome":"architecture_failure","summary":"SPEC.md missing HTTP route table; tests cannot be verified against API contract. Architect must add route table to SPEC.md before tests can be validated."}`

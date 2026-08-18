@@ -85,6 +85,30 @@ The phase verify command for this rig is:
 
 Run this **exactly as shown** (including the full relative path from the rig root) after writing code/tests. Do NOT shorten to a basename. Run it from `{{rig}}/mayor/rig/{{layout_root}}`.
 
+### ⚠️ CRITICAL: Background server + curl pattern (for server-based phases)
+
+If `{{phase_qa_verify_command}}` starts a server (uvicorn, gunicorn, flask, uvicorn, node, npm, etc.), you MUST run it in **background** with `&` and **curl** in the SAME command. Do NOT run the server in foreground — it will hang forever and time out after 5 minutes.
+
+**Correct pattern (single CMD line):**
+```
+CMD: cd {{rig}}/mayor/rig/{{layout_root}} && {{phase_qa_verify_command}} & sleep 2 && curl -sf http://127.0.0.1:{{dev_server_port}}/{{smoke_probe_path}}
+```
+
+**What this does:**
+1. Starts server in **background** with `&`
+2. `sleep 2` — gives server time to start
+3. Runs `curl` to verify the endpoint works
+4. Exits cleanly so gt-agent can continue
+
+**WRONG (will timeout):**
+```
+CMD: cd {{rig}}/mayor/rig/{{layout_root}} && {{phase_qa_verify_command}}
+```
+
+### ⚠️ MANDATORY: Phase verify command pattern
+
+Run this **exactly as shown** (including the full relative path from the rig root) after writing code/tests. Do NOT shorten to a basename. Run it from `{{rig}}/mayor/rig/{{layout_root}}`.
+
 ## TDD Iron Law (MANDATORY — read before the per-bead sequence)
 
 ```

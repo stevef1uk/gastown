@@ -514,11 +514,13 @@ func (r *stateRunner) persistImplementationProgress(cmd string) {
 		r.implProgress.LastVerifyFailPaths = nil
 		r.implProgress.LastVerifyFailOutput = ""
 	}
+	closedBeadID := ""
 	if isBeadCloseCommand(cmd) && cmd != "" {
 		if id := extractBeadIDFromBdClose(cmd); id != "" && !orchestrator.ImplementBeadIsStillOpen(r.townRoot, r.rig, id, r.v) {
 			if r.implProgress.mark(implClosedKey(id)) {
 				changed = true
 			}
+			closedBeadID = id
 		}
 	}
 	if !changed {
@@ -526,6 +528,13 @@ func (r *stateRunner) persistImplementationProgress(cmd string) {
 	}
 	if err := saveImplementationProgress(r.townRoot, r.rig, r.implProgress); err != nil {
 		orchestratedFprintfStderr("[gt-agent] implementation progress save: %v\n", err)
+		return
+	}
+	// After successful bd close, reload progress from disk to ensure cache consistency
+	if closedBeadID != "" {
+		if fresh := loadImplementationProgress(r.townRoot, r.rig, r.task.WorkflowID, r.task.State); fresh != nil {
+			r.implProgress = fresh
+		}
 	}
 }
 
