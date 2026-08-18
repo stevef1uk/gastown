@@ -300,8 +300,10 @@ gt mayor workflow status
 | `design` | Architect | Write architecture.md from SPEC |
 | `planning` | Planner | Create implementation beads + plan.md |
 | `plan_review` | QA | Verify beads match architecture + required_files |
+| `test_plan` | Tester | Read SPEC/architecture/plan → write TEST_PLAN.md mapping active-phase requirements to unit/integration/UI tests with bead IDs |
 | `project_setup` | Setup | Initialize toolchain (go mod, python venv, npm install) |
 | `implementation` | Polecat | Implement beads one at a time with unit tests |
+| `test_review` | Tester | After implementation, verify every planned test exists, has real assertions, and phase verify (`go test`/`pytest`) passes |
 | `qa_review` | QA | Review implementation, run runtime smoke, pass/fail |
 | `advance_phase` | (internal) | Advance to next delivery phase or mark completed |
 
