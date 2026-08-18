@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/steveyegge/gastown/internal/constants"
 	"github.com/steveyegge/gastown/internal/events"
 	"github.com/steveyegge/gastown/internal/refinery"
 	"github.com/steveyegge/gastown/internal/session"
@@ -274,13 +275,13 @@ func (m *Manager) ensureTesterAgent(rig string, currentState string) error {
 	}
 
 	// Start tester session
-	testerDir := filepath.Join(rigPath, "tester")
+	testerDir := filepath.Join(rigPath, constants.DirTester)
 	if err := os.MkdirAll(testerDir, 0755); err != nil {
 		return err
 	}
 
 	orchRunning, _, _ := IsRunning(m.townRoot)
-	wantOrch := OrchestratedForRole(orchRunning, "tester")
+	wantOrch := OrchestratedForRole(orchRunning, constants.RoleTester)
 
 	topic := "startup"
 	if wantOrch {
@@ -290,12 +291,12 @@ func (m *Manager) ensureTesterAgent(rig string, currentState string) error {
 	_, err := session.StartSession(ctx, sp, &session.SessionConfig{
 		SessionID:    sessionID,
 		WorkDir:      testerDir,
-		Role:         "tester",
+		Role:         constants.RoleTester,
 		TownRoot:     m.townRoot,
 		RigPath:      rigPath,
 		RigName:      rig,
 		Orchestrated: wantOrch,
-		Beacon:       session.BeaconConfig{Recipient: "tester", Sender: "daemon", Topic: topic},
+		Beacon:       session.BeaconConfig{Recipient: constants.RoleTester, Sender: "daemon", Topic: topic},
 		WaitForAgent: true,
 		WaitFatal:    true,
 		ReadyDelay:   true,
