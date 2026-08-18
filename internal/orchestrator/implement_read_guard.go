@@ -74,7 +74,7 @@ func normalizeImplementReadPath(raw, layoutRoot string) string {
 
 func isImplementPlanningDocPath(relPath string) bool {
 	switch strings.ToLower(filepath.Base(relPath)) {
-	case "spec.md", "architecture.md", "plan.md", "readme.md", "agents.md":
+	case "spec.md", "architecture.md", "plan.md", "readme.md", "agents.md", "test_plan.md", "test-report.md":
 		return true
 	default:
 		return false

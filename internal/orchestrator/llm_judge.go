@@ -323,3 +323,92 @@ func getOrCreateJudgeClient(client *llm.Client) *llm.Client {
 	}
 	return client
 }
+
+// TestAdequacyConfig for whole-phase test adequacy review.
+type TestAdequacyConfig struct {
+	Requirements string   // REQUIREMENTS.md content (may be empty)
+	SPEC         string   // SPEC.md content
+	Architecture string   // architecture.md content
+	TestPlan     string   // TEST_PLAN.md content
+	TestFiles    []string // list of test file paths present on disk
+	MinLength    int      // minimum TEST_PLAN.md length
+}
+
+// ValidateTestAdequacyWithJudge evaluates whether TEST_PLAN.md covers every
+// active-phase requirement at an adequate level (unit/integration/ui) and whether
+// the planned test files actually exist. It is a soft judge: connection failures
+// skip (return pass), like the other judge validators.
+func ValidateTestAdequacyWithJudge(ctx context.Context, client *llm.Client, cfg TestAdequacyConfig) (bool, string, error) {
+	if len(strings.TrimSpace(cfg.TestPlan)) < cfg.MinLength {
+		return false, fmt.Sprintf("TEST_PLAN.md too short (%d chars, need %d)", len(cfg.TestPlan), cfg.MinLength), nil
+	}
+
+	client = getOrCreateJudgeClient(client)
+
+	systemPrompt := `You are a strict test adequacy reviewer for a software delivery phase.
+The TEST_PLAN.md must map every functional requirement to a unit, integration, or UI test.
+Return ONLY a JSON object:
+{
+  "pass": true|false,
+  "reason": "specific explanation of adequacy issues",
+  "missing": ["requirement id", "issue 2"]
+}
+
+Check for:
+1. Every requirement ID in REQUIREMENTS.md/SPEC.md appears as a "### <req-id>" block in TEST_PLAN.md
+2. Each block declares Level (unit|integration|ui), Test file, Bead ID, Scenarios, and Assertions
+3. Levels are appropriate: unit for pure logic, integration for HTTP/store wiring, ui only for user-visible flows when the phase ships UI
+4. The planned Test file path for every row exists in the provided Test Files list
+5. No requirement is waved off with "ensure quality" or "covered by review" instead of a concrete test
+6. Test files named are consistent with the active phase's file layout (no tests for files outside the phase)`
+
+	fileList := "none provided"
+	if len(cfg.TestFiles) > 0 {
+		fileList = strings.Join(cfg.TestFiles, "\n")
+	}
+
+	userPrompt := fmt.Sprintf(`REQUIREMENTS:
+%s
+
+SPEC:
+%s
+
+ARCHITECTURE:
+%s
+
+TEST PLAN:
+%s
+
+TEST FILES ON DISK:
+%s`, cfg.Requirements, cfg.SPEC, cfg.Architecture, cfg.TestPlan, fileList)
+
+	resp, err := client.Complete(ctx, systemPrompt, userPrompt)
+	if err != nil {
+		if strings.Contains(err.Error(), "connection refused") || strings.Contains(err.Error(), "no such host") {
+			return true, "LLM judge unavailable (connection refused), skipping", nil
+		}
+		return false, "", fmt.Errorf("LLM call: %w", err)
+	}
+
+	var result JudgeResult
+	if err := json.Unmarshal([]byte(resp), &result); err != nil {
+		start := strings.Index(resp, "{")
+		end := strings.LastIndex(resp, "}")
+		if start >= 0 && end > start {
+			if err := json.Unmarshal([]byte(resp[start:end+1]), &result); err != nil {
+				return false, "", fmt.Errorf("parse judge response: %w\nraw: %s", err, resp)
+			}
+		} else {
+			return false, "", fmt.Errorf("parse judge response: %w\nraw: %s", err, resp)
+		}
+	}
+
+	if !result.Pass {
+		reason := result.Reason
+		if len(result.Missing) > 0 {
+			reason += " Missing: " + strings.Join(result.Missing, ", ")
+		}
+		return false, reason, nil
+	}
+	return true, result.Reason, nil
+}

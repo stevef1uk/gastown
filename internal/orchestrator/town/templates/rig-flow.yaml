@@ -131,6 +131,33 @@ states:
         Run `bd list --status=open,in_progress` from {{rig}}/mayor/rig with BEADS_DIR set. Count implement beads for **this phase only** ({{required_files}}). {{integration_contract_scope_note}} Use outcome failure for duplicate/missing beads or plan drift — not for integration contract when the active phase has no cmd/.../main.go.
     transitions:
       success:
+        to: test_plan
+      failure:
+        to: planning
+      architecture_failure:
+        to: design
+  test_plan:
+    role: tester
+    prompt_file: prompts/rig-flow/test_plan.md
+    instructions: |
+      1. Read REQUIREMENTS.md (if present), SPEC.md, architecture.md, and plan.md under `{{rig}}/mayor/rig/`.
+      2. Write `{{rig}}/mayor/rig/TEST_PLAN.md` (≥{{min_test_plan_bytes}} bytes) mapping every active-phase requirement to unit/integration/UI tests with bead IDs.
+      3. Report success only when the plan covers every requirement at the right level; failure sends the planner back.
+    hooks:
+      max_cmd_turns: 10
+      cmd_guard: test_plan
+      cmd_rewrites: [rig_placeholders, unwrap_bash_lc, test_plan_md_after_cd, bd_list_limit]
+      env:
+        beads_dir: true
+      track: test_plan
+      artifacts: test_plan
+      retry_hint: |
+        One CMD: per line. Read SPEC.md and architecture.md from {{rig}}/mayor/rig, then `wc -c TEST_PLAN.md`.
+        Only success/failure/architecture_failure outcomes are allowed.
+      failure_hint: |
+        TEST_PLAN.md must be ≥ {{min_test_plan_bytes}} bytes with a `### <req-id>` block per requirement: Level (unit/integration/ui), Test file, Bead ID, Scenarios, Assertions. Do not write tests — only plan them.
+    transitions:
+      success:
         to: project_setup
       failure:
         to: planning
@@ -275,9 +302,45 @@ states:
         After QA failure rework: READ the QA-cited file on disk first. If the file already exists and verify passes, bd close it — do NOT rewrite files that QA falsely claimed as missing/broken. Only make changes when QA's claim is confirmed.
     transitions:
       success:
+        to: test_review
+      failure:
+        to: implementation
+      timeout:
+        to: implementation
+  test_review:
+    role: tester
+    prompt_file: prompts/rig-flow/test_review.md
+    instructions: |
+      1. Read TEST_PLAN.md, SPEC.md, and architecture.md under `{{rig}}/mayor/rig/`; compare each requirement to its planned test file.
+      2. Confirm every active-phase test file exists, has real assertions (not stubs), and the phase verify ({{phase_qa_verify_command}}) is green.
+      3. Report success only when tests cover every requirement; failure names failing beads (polecat), plan_gap when the plan is incomplete (tester rewrites TEST_PLAN.md), architecture_failure when SPEC/architecture are the blocker (architect).
+    hooks:
+      max_cmd_turns: 10
+      cmd_guard: test_review
+      cmd_rewrites: [rig_placeholders, unwrap_bash_lc, test_plan_md_after_cd, bd_list_limit, bd_strip_beads_dir, unittest_workdir]
+      env:
+        pythonpath: true
+        python_venv: activate
+        beads_dir: true
+      pip_repair_before_run: true
+      python3_rewrite: true
+      track: test_review
+      artifacts: test_review
+      bead_ids_in_summary: true
+      retry_hint: |
+        One CMD: per line. Read TEST_PLAN.md and the test files it names from {{rig}}/mayor/rig; run {{phase_qa_verify_command}}.
+        Allowed outcomes: success, failure, plan_gap, architecture_failure.
+      failure_hint: |
+        Do not edit source or tests. If a test file is missing, weak, or verify fails, report failure with the bead IDs and test paths. If TEST_PLAN.md itself is incomplete, use plan_gap. If SPEC/architecture contradict the tests, use architecture_failure.
+    transitions:
+      success:
         to: qa_review
       failure:
         to: implementation
+      plan_gap:
+        to: test_plan
+      architecture_failure:
+        to: design
       timeout:
         to: implementation
   qa_review:

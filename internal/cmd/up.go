@@ -1287,6 +1287,63 @@ func upStartQA(rigName string, r *rig.Rig) agentStartResult {
 	return agentStartResult{name: name, ok: true, detail: sessionID}
 }
 
+// upStartTester starts a tester agent for the given rig and returns a result struct.
+func upStartTester(rigName string, r *rig.Rig) agentStartResult {
+	name := "Tester (" + rigName + ")"
+
+	townRoot := filepath.Dir(r.Path)
+	if skip, detail := rigOrchestratorAgentSkip(townRoot, rigName, name); skip {
+		return agentStartResult{name: name, ok: true, detail: detail}
+	}
+
+	if !r.GetBoolConfig("auto_start_on_up") && !r.GetBoolConfig("auto_start_on_boot") {
+		townRoot := filepath.Dir(r.Path)
+		if blocked, reason := IsRigParkedOrDocked(townRoot, rigName); blocked {
+			return agentStartResult{name: name, ok: true, detail: fmt.Sprintf("skipped (rig %s)", reason)}
+		}
+	}
+
+	sessionID := session.TesterSessionName(session.PrefixFor(rigName), rigName)
+	testerDir := filepath.Join(r.Path, constants.DirTester)
+	if err := os.MkdirAll(testerDir, 0755); err != nil {
+		return agentStartResult{name: name, ok: false, detail: err.Error()}
+	}
+
+	sp := session.GetDefaultProvider(townRoot)
+	ctx := context.Background()
+
+	orchRunning, _, _ := orchestrator.IsRunning(townRoot)
+	wantOrch := orchestrator.OrchestratedForRole(orchRunning, constants.RoleTester)
+	upEnsureFreshPipelineSession(ctx, sp, townRoot, sessionID, wantOrch)
+
+	if running, _ := sp.Exists(ctx, sessionID); running {
+		if orchestrator.IsRigWorkflowPaused(townRoot, rigName) {
+			stopOrchestratedRigAgentsForPausedWorkflow(townRoot, rigName)
+			return agentStartResult{name: name, ok: true, detail: "stopped (workflow paused)"}
+		}
+		return agentStartResult{name: name, ok: true, detail: sessionID}
+	}
+
+	_, err := session.StartSession(ctx, sp, &session.SessionConfig{
+		SessionID:    sessionID,
+		WorkDir:      testerDir,
+		Role:         constants.RoleTester,
+		TownRoot:     townRoot,
+		RigPath:      r.Path,
+		RigName:      rigName,
+		Orchestrated: wantOrch,
+		Beacon:       session.BeaconConfig{Recipient: "tester", Sender: "daemon", Topic: beaconTopicForOrchestrated(wantOrch)},
+		WaitForAgent: true,
+		WaitFatal:    true,
+		ReadyDelay:   true,
+		AutoRespawn:  true,
+	})
+	if err != nil {
+		return agentStartResult{name: name, ok: false, detail: err.Error()}
+	}
+	return agentStartResult{name: name, ok: true, detail: sessionID}
+}
+
 // upStartRigPolecat starts the orchestrated pipeline polecat for a rig.
 func upStartRigPolecat(rigName string, r *rig.Rig) agentStartResult {
 	name := "Polecat (" + rigName + ")"

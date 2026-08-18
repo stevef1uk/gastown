@@ -54,6 +54,7 @@
     "setup": "gt-agent-local",
     "polecat": "gt-agent-deepseek",
     "qa": "gt-agent-gemini",
+    "tester": "gt-agent-gemini",
     "refinery": "gt-agent-local",
     "witness": "gt-agent-local"
   }

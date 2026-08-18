@@ -180,6 +180,9 @@ const (
 	// DirQA is the directory containing qa state.
 	DirQA = "qa"
 
+	// DirTester is the directory containing tester state.
+	DirTester = "tester"
+
 	// DirPolecat is the directory for a rig's orchestrated pipeline polecat (rig-flow).
 	// Distinct from DirPolecats, which holds per-bead worker worktrees.
 	DirPolecat = "polecat"
@@ -342,6 +345,10 @@ const (
 	// RoleQA is the qa agent role (per-rig).
 	RoleQA = "qa"
 
+	// RoleTester is the tester agent role (per-rig). Audits test sufficiency
+	// against REQUIREMENTS.md/SPEC.md/architecture.md at test_plan and test_review.
+	RoleTester = "tester"
+
 	// RoleMechanic is the mechanic agent role (town-level).
 	RoleMechanic = "mechanic"
 )
@@ -381,6 +388,9 @@ const (
 
 	// EmojiQA is the qa emoji (magnifying glass).
 	EmojiQA = "🔍"
+
+	// EmojiTester is the tester emoji (test tube).
+	EmojiTester = "🧪"
 
 	// EmojiMechanic is the mechanic emoji (wrench).
 	EmojiMechanic = "🔧"
@@ -460,6 +470,8 @@ func RoleEmoji(role string) string {
 		return EmojiArchitect
 	case RoleQA:
 		return EmojiQA
+	case RoleTester:
+		return EmojiTester
 	case RoleMechanic:
 		return EmojiMechanic
 	default:

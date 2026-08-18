@@ -28,6 +28,18 @@ type WorkflowValidation struct {
 	MinPlanBytes               int64           `yaml:"min_plan_bytes" json:"min_plan_bytes"`
 	MinImplementationFileBytes int64           `yaml:"min_implementation_file_bytes" json:"min_implementation_file_bytes"`
 	MinSubstantiveLines        int             `yaml:"min_substantive_lines" json:"min_substantive_lines"`
+	// MinTestPlanBytes is the minimum size of TEST_PLAN.md (default 400). The tester
+	// reviews test coverage against SPEC.md/architecture.md; a plan below this floor
+	// is treated as a stub and bounces back to the tester before any tests run.
+	MinTestPlanBytes int64 `yaml:"min_test_plan_bytes" json:"min_test_plan_bytes"`
+	// UICommand is the optional command that starts the project's UI (e.g. "npm run dev").
+	// When set, the tester requires a UI test per UI-facing requirement at test_review.
+	UICommand string `yaml:"ui_command" json:"ui_command"`
+	// MaxReviewRetries caps how many consecutive test_review failures the tester may
+	// incur on the same TEST_PLAN.md row before the workflow is forced to plan_gap
+	// (back to test_plan) or architecture_failure (back to design). Guards against
+	// a polecat that can't make a flaky test green looping forever. Default 3.
+	MaxReviewRetries int `yaml:"max_review_retries" json:"max_review_retries"`
 	// PythonVenvDir is the venv directory under mayor/rig (default ".venv"). Set "off" to disable.
 	PythonVenvDir string `yaml:"python_venv_dir" json:"python_venv_dir"`
 	// DevServerPort is the port the dev server listens on when the project is a web server.
@@ -44,6 +56,12 @@ const (
 	MaxMinPlanBytes             int64 = 4096
 	DefaultMinArchitectureBytes int64 = 4000
 	MaxMinArchitectureBytes     int64 = 8192
+	// DefaultMinTestPlanBytes is the default minimum TEST_PLAN.md size (400 bytes).
+	DefaultMinTestPlanBytes int64 = 400
+	// MaxMinTestPlanBytes caps min_test_plan_bytes from spec-index LLM output.
+	MaxMinTestPlanBytes int64 = 2048
+	// DefaultMaxReviewRetries is the default tester.max_review_retries (3).
+	DefaultMaxReviewRetries = 3
 	// SmallRigMaxArchitectureBytes caps min_architecture_bytes when the profile lists few files
 	// (e.g. Link Shelf). Spec-index often requests 8k+; a complete doc for 7 paths is ~3–4k.
 	SmallRigMaxArchitectureBytes int64 = 3200
@@ -57,6 +75,8 @@ func DefaultWorkflowValidation() WorkflowValidation {
 		BeadTitleContains:    "Implement ",
 		MinArchitectureBytes: MinArtifactBytesFloor,
 		MinPlanBytes:         MinArtifactBytesFloor,
+		MinTestPlanBytes:     DefaultMinTestPlanBytes,
+		MaxReviewRetries:     DefaultMaxReviewRetries,
 	}
 }
 
@@ -143,6 +163,10 @@ func ClampProfileValidation(v WorkflowValidation) WorkflowValidation {
 	minPlan := MinPlanBytesFromArchitecture(v.MinArchitectureBytes)
 	if v.MinPlanBytes < MinArtifactBytesFloor || v.MinPlanBytes > minPlan {
 		v.MinPlanBytes = minPlan
+	}
+	v.MinTestPlanBytes = clampArtifactBytes(v.MinTestPlanBytes, DefaultMinTestPlanBytes, MinArtifactBytesFloor, MaxMinTestPlanBytes)
+	if v.MaxReviewRetries < 1 || v.MaxReviewRetries > 10 {
+		v.MaxReviewRetries = DefaultMaxReviewRetries
 	}
 	v = FinalizeDeliveryPhases(v)
 	v = StripInvalidCDPrefixes(v)
@@ -1191,6 +1215,12 @@ func (v WorkflowValidation) WithDefaults() WorkflowValidation {
 	if v.MinPlanBytes <= 0 {
 		v.MinPlanBytes = d.MinPlanBytes
 	}
+	if v.MinTestPlanBytes <= 0 {
+		v.MinTestPlanBytes = d.MinTestPlanBytes
+	}
+	if v.MaxReviewRetries <= 0 {
+		v.MaxReviewRetries = d.MaxReviewRetries
+	}
 	return v
 }
 
@@ -1249,6 +1279,15 @@ func mergeValidationFields(base, overlay WorkflowValidation) WorkflowValidation 
 	if overlay.MinSubstantiveLines > 0 {
 		base.MinSubstantiveLines = overlay.MinSubstantiveLines
 	}
+	if overlay.MinTestPlanBytes > 0 {
+		base.MinTestPlanBytes = overlay.MinTestPlanBytes
+	}
+	if overlay.UICommand != "" {
+		base.UICommand = overlay.UICommand
+	}
+	if overlay.MaxReviewRetries > 0 {
+		base.MaxReviewRetries = overlay.MaxReviewRetries
+	}
 	if overlay.PythonVenvDir != "" {
 		base.PythonVenvDir = overlay.PythonVenvDir
 	}
@@ -1269,6 +1308,7 @@ func (v WorkflowValidation) SubstituteVars(vars map[string]string) WorkflowValid
 	v.UnittestModule = SubstituteVars(v.UnittestModule, vars)
 	v.QAVerifyCommand = SubstituteVars(v.QAVerifyCommand, vars)
 	v.TestRunner = SubstituteVars(v.TestRunner, vars)
+	v.UICommand = SubstituteVars(v.UICommand, vars)
 	v.SpecSummary = SubstituteVars(v.SpecSummary, vars)
 	for i, f := range v.RequiredFiles {
 		v.RequiredFiles[i] = SubstituteVars(f, vars)
@@ -1347,6 +1387,9 @@ func (v WorkflowValidation) PromptVars() map[string]string {
 		"python_venv_dir":                 v.PythonVenvRelDir(),
 		"min_architecture_bytes":          fmt.Sprintf("%d", v.MinArchitectureBytes),
 		"min_plan_bytes":                  fmt.Sprintf("%d", v.MinPlanBytes),
+		"min_test_plan_bytes":             fmt.Sprintf("%d", v.MinTestPlanBytes),
+		"ui_command":                      v.UICommand,
+		"max_review_retries":              fmt.Sprintf("%d", v.MaxReviewRetries),
 		"min_implementation_file_bytes":   fmt.Sprintf("%d", StubCheckOptionsFromValidation(v).MinFileBytes),
 		"min_substantive_lines":           fmt.Sprintf("%d", StubCheckOptionsFromValidation(v).MinSubstantiveLines),
 		"bead_id_example":                 beadIDExample(v),

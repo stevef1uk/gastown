@@ -30,6 +30,7 @@ const (
 	AgentRefinery
 	AgentArchitect
 	AgentQA
+	AgentTester
 	AgentMechanic
 	AgentCrew
 	AgentPolecat
@@ -55,6 +56,7 @@ var AgentTypeColors = map[AgentType]string{
 	AgentRefinery:  "#[fg=blue]",
 	AgentArchitect: "#[fg=cyan,bold]",
 	AgentQA:        "#[fg=green,bold]",
+	AgentTester:    "#[fg=magenta,bold]",
 	AgentMechanic:  "#[fg=cyan]",
 	AgentCrew:      "#[fg=green]",
 	AgentPolecat:   "#[fg=white,dim]",
@@ -66,11 +68,12 @@ var AgentTypeColors = map[AgentType]string{
 var rigTypeOrder = map[AgentType]int{
 	AgentArchitect: 0,
 	AgentQA:        1,
-	AgentRefinery:  2,
-	AgentWitness:   3,
-	AgentMechanic:  4,
-	AgentCrew:      5,
-	AgentPolecat:   6,
+	AgentTester:    2,
+	AgentRefinery:  3,
+	AgentWitness:   4,
+	AgentMechanic:  5,
+	AgentCrew:      6,
+	AgentPolecat:   7,
 }
 
 // AgentTypeIcons maps agent types to display icons.
@@ -83,6 +86,7 @@ var AgentTypeIcons = map[AgentType]string{
 	AgentRefinery:  constants.EmojiRefinery,
 	AgentArchitect: constants.EmojiArchitect,
 	AgentQA:        constants.EmojiQA,
+	AgentTester:    constants.EmojiTester,
 	AgentMechanic:  constants.EmojiMechanic,
 	AgentCrew:      constants.EmojiCrew,
 	AgentPolecat:   constants.EmojiPolecat,
@@ -190,6 +194,8 @@ func categorizeSession(name string) *AgentSession {
 		sess.Type = AgentArchitect
 	case session.RoleQA:
 		sess.Type = AgentQA
+	case session.RoleTester:
+		sess.Type = AgentTester
 	case session.RoleMechanic:
 		sess.Type = AgentMechanic
 	case session.RoleCrew:
@@ -413,6 +419,8 @@ func (a *AgentSession) displayLabel() string {
 		return fmt.Sprintf("%s%s %s/architect#[default]", color, icon, a.Rig)
 	case AgentQA:
 		return fmt.Sprintf("%s%s %s/qa#[default]", color, icon, a.Rig)
+	case AgentTester:
+		return fmt.Sprintf("%s%s %s/tester#[default]", color, icon, a.Rig)
 	case AgentCrew:
 		return fmt.Sprintf("%s%s %s/crew/%s#[default]", color, icon, a.Rig, a.AgentName)
 	case AgentPolecat:
@@ -606,6 +614,8 @@ func runAgentsList(cmd *cobra.Command, args []string) error {
 			fmt.Printf("  %s architect\n", icon)
 		case AgentQA:
 			fmt.Printf("  %s qa\n", icon)
+		case AgentTester:
+			fmt.Printf("  %s tester\n", icon)
 		case AgentMechanic:
 			fmt.Printf("  %s mechanic\n", icon)
 		case AgentCrew:

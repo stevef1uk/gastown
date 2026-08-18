@@ -39,6 +39,7 @@ type cmdTracker struct {
 	unittestOK        bool
 	qaSmokeOK        bool
 	qaFilesRead      bool
+	testPlanWriteOK  bool
 	activeBead        string
 	activeBeadPath    string
 	lastVerifyOutput  string
@@ -421,6 +422,11 @@ func (r *stateRunner) rewriteCommand(cmd string) string {
 		case "plan_md_after_cd":
 			if fixed, ok := rewritePlanMDPathAfterCD(cmd, r.rig); ok {
 				orchestratedPrintf("[gt-agent] rewrote plan.md path after cd: %s\n", fixed)
+				cmd = fixed
+			}
+		case "test_plan_md_after_cd":
+			if fixed, ok := rewriteTestPlanMDPathAfterCD(cmd, r.rig); ok {
+				orchestratedPrintf("[gt-agent] rewrote TEST_PLAN.md path after cd: %s\n", fixed)
 				cmd = fixed
 			}
 		case "arch_md_after_cd":

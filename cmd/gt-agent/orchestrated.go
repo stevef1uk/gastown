@@ -1356,6 +1356,23 @@ func planMDMeetsMinSize(townRoot, rig string, v orchestrator.WorkflowValidation)
 	return info.Size() >= orchestrator.EffectiveMinPlanBytes(rigDir, v)
 }
 
+func isTestPlanMDWriteCommand(cmd string) bool {
+	lower := strings.ToLower(cmd)
+	if !strings.Contains(lower, "test_plan.md") {
+		return false
+	}
+	return strings.Contains(lower, ">") || strings.Contains(lower, "tee ") || strings.Contains(lower, "<<")
+}
+
+func isTestPlanMDSizeCheckCommand(cmd string) bool {
+	lower := strings.ToLower(cmd)
+	return strings.Contains(lower, "wc") && strings.Contains(lower, "test_plan.md")
+}
+
+func testPlanMDMeetsMinSize(townRoot, rig string, v orchestrator.WorkflowValidation) bool {
+	return orchestrator.TestPlanMeetsMinSize(rigMayorRigDir(townRoot, rig), v)
+}
+
 // symlinkRelativeTargetRE matches `ln -s` (or `ln -sf`, `ln -sfn`, etc.) followed by a relative
 // target path (starting with . or ..). Rewriting the cd prefix of such a command
 // would break the relative-path resolution.
@@ -1437,6 +1454,10 @@ func cdPrefixMayorRig(cmd, rig string) (string, bool) {
 // the model still writes to `rig/mayor/rig/plan.md` (missing from that cwd).
 func rewritePlanMDPathAfterCD(cmd, rig string) (string, bool) {
 	return rewriteRigDocPathAfterCD(cmd, rig, "plan.md")
+}
+
+func rewriteTestPlanMDPathAfterCD(cmd, rig string) (string, bool) {
+	return rewriteRigDocPathAfterCD(cmd, rig, "TEST_PLAN.md")
 }
 
 // rewriteArchitectureMDPathAfterCD fixes the same mistake for architecture.md in
@@ -2761,6 +2782,9 @@ func validateQACommand(cmd, rig, townRoot string, v orchestrator.WorkflowValidat
 	if path, mutates := orchestrator.QACommandMutatesLayoutSource(cmd, v); mutates {
 		return fmt.Errorf("QA must not modify implementation files (blocked write to %q) — send outcome failure with bead IDs so the polecat fixes handlers/web; do not sed or redirect-edit under %s", path, strings.TrimSpace(v.LayoutRoot))
 	}
+	if path, writes := orchestrator.QACommandWritesTestPlanDoc(cmd); writes {
+		return fmt.Errorf("QA must not modify tester artifacts (blocked write to %q) — TEST_PLAN.md and test-report.md are owned by the tester", path)
+	}
 	if err := validateQAReadPath(cmd, townRoot); err != nil {
 		return err
 	}
@@ -2885,6 +2909,44 @@ func validatePlanReviewGrep(cmd string) error {
 	return nil
 }
 
+// validateTesterCommand enforces the tester's audit scope. Shared by test_plan
+// and test_review: read-only over source/tests/docs; the ONLY writes allowed are
+// TEST_PLAN.md (test_plan) and test-report.md (test_review).
+func validateTesterCommand(cmd, rig, townRoot string, v orchestrator.WorkflowValidation) error {
+	lower := strings.ToLower(cmd)
+	if strings.Contains(lower, "[tool_calls]") {
+		return fmt.Errorf("do not emit [TOOL_CALLS] markers — use CMD: lines only")
+	}
+	if strings.Contains(lower, "if [") || strings.Contains(lower, "then ") || strings.Contains(lower, "fi\n") {
+		return fmt.Errorf("do not use shell if/then blocks in tester steps — use simple CMD: lines and JSON outcomes")
+	}
+	if err := validateImplementationBeadPlaceholder(cmd, "", rig); err != nil {
+		return err
+	}
+	if path, mutates := orchestrator.TesterCommandMutatesForbidden(cmd, v); mutates {
+		return fmt.Errorf("tester must not modify source, tests, or other docs (blocked write to %q) — only TEST_PLAN.md / test-report.md may be written", path)
+	}
+	forbidden := []struct {
+		cond bool
+		msg  string
+	}{
+		{strings.Contains(lower, "/workspace"), "do not use /workspace paths — work from $GT_ROOT"},
+		{strings.Contains(lower, "pip install"), "do not install packages in tester steps"},
+		{strings.Contains(lower, "bd create"), "do not create beads in tester steps"},
+		{strings.Contains(lower, "bd close"), "do not close beads in tester steps — report failure with bead IDs so the polecat fixes them"},
+		{strings.Contains(lower, "bd delete"), "do not delete beads in tester steps"},
+	}
+	for _, f := range forbidden {
+		if f.cond {
+			return fmt.Errorf("%s", f.msg)
+		}
+	}
+	if err := validateQAReadPath(cmd, townRoot); err != nil {
+		return err
+	}
+	return nil
+}
+
 // listOpenImplementationBeadsHook is set by tests to avoid calling bd list.
 var listOpenImplementationBeadsHook func(townRoot, rig string) ([]orchestrator.PlanBead, error)
 
@@ -2942,6 +3004,97 @@ func validatePlanReviewArtifacts(townRoot, rig string, hadCmdFailure, listOpenOK
 	}
 	if err := orchestrator.ValidatePlanningPhaseGate(townRoot, rig, "plan_review", v); err != nil {
 		return err
+	}
+	return nil
+}
+
+func validateTestPlanArtifacts(townRoot, rig string, hadCmdFailure, testPlanWriteOK bool, v orchestrator.WorkflowValidation) error {
+	if hadCmdFailure {
+		return fmt.Errorf("test_plan step had failed commands; fix errors before completing")
+	}
+	rigDir := rigMayorRigDir(townRoot, rig)
+	if !orchestrator.TestPlanMeetsMinSize(rigDir, v) {
+		return fmt.Errorf("TEST_PLAN.md must exist and be ≥ %d bytes (currently %d bytes at %s) — write it with a heredoc CMD in this session, then `wc -c TEST_PLAN.md`",
+			orchestrator.EffectiveMinTestPlanBytes(v), testPlanBytes(rigDir), orchestrator.TestPlanPath(rigDir))
+	}
+	data, err := os.ReadFile(orchestrator.TestPlanPath(rigDir))
+	if err != nil {
+		return fmt.Errorf("read TEST_PLAN.md: %w", err)
+	}
+	blocks := orchestrator.ParseTestPlanBlocks(string(data))
+	if len(blocks) == 0 {
+		return fmt.Errorf("TEST_PLAN.md must contain at least one `### <req-id>` block (Requirement, Level, Test file, Bead ID, Scenarios, Assertions)")
+	}
+	var missingFields []string
+	for _, b := range blocks {
+		if b.ReqID == "" || b.Level == "" || b.TestFile == "" {
+			missingFields = append(missingFields, b.ReqID)
+		}
+	}
+	if len(missingFields) > 0 {
+		return fmt.Errorf("TEST_PLAN.md blocks %v are missing required fields (Level, Test file) — every requirement row needs them", missingFields)
+	}
+	if !testPlanWriteOK {
+		// A TEST_PLAN.md may already exist from a prior run; accept it if valid.
+		return nil
+	}
+	return nil
+}
+
+func testPlanBytes(rigDir string) int64 {
+	info, err := os.Stat(orchestrator.TestPlanPath(rigDir))
+	if err != nil {
+		return 0
+	}
+	return info.Size()
+}
+
+func validateTestReviewArtifacts(townRoot, rig, outcome string, hadCmdFailure, verifyOK bool, v orchestrator.WorkflowValidation) error {
+	rigDir := rigMayorRigDir(townRoot, rig)
+	sendToPolecat := outcome == "failure"
+	sendToPlan := outcome == "plan_gap"
+	sendToArchitect := outcome == "architecture_failure"
+
+	if hadCmdFailure && !sendToPolecat && !sendToPlan && !sendToArchitect {
+		return fmt.Errorf("test_review step had failed commands; fix errors before completing")
+	}
+	if !orchestrator.TestPlanMeetsMinSize(rigDir, v) {
+		if sendToPlan {
+			return nil // plan_gap is exactly for rewriting a missing/weak plan
+		}
+		return fmt.Errorf("TEST_PLAN.md must exist and be ≥ %d bytes before test_review success", orchestrator.EffectiveMinTestPlanBytes(v))
+	}
+	data, err := os.ReadFile(orchestrator.TestPlanPath(rigDir))
+	if err != nil {
+		return fmt.Errorf("read TEST_PLAN.md: %w", err)
+	}
+	testPlan := string(data)
+
+	if sendToArchitect {
+		if !verifyOK {
+			return fmt.Errorf("architecture_failure requires green %s in this session — use outcome failure for test failures", v.QAVerifyHint())
+		}
+		if err := orchestrator.ValidateWorkNotStubbed(rigDir, v); err != nil {
+			return fmt.Errorf("stub/placeholder code cannot use architecture_failure — use outcome failure: %w", err)
+		}
+		return nil
+	}
+	if sendToPlan {
+		return nil // no hard artifact gate; the tester rewrites TEST_PLAN.md
+	}
+	if sendToPolecat {
+		return nil // failure names bead IDs; polecat reworks implementation
+	}
+
+	// success path: every planned test file exists, is not a stub, verify green.
+	if missing := orchestrator.MissingPlannedTestFiles(rigDir, v.LayoutRoot, testPlan); len(missing) > 0 {
+		return fmt.Errorf("planned test files missing on disk: %s — run `cat TEST_PLAN.md` and confirm every `Test file:` exists, then use outcome failure with bead IDs", strings.Join(missing, ", "))
+	}
+	if stubs := orchestrator.StubTestFiles(rigDir, v.LayoutRoot, v, testPlan); len(stubs) > 0 {
+		return fmt.Errorf("planned test files look like stubs (no substantive assertions): %s — use outcome failure with bead IDs so the polecat strengthens them", strings.Join(stubs, ", "))
+	}
+	if strings.TrimSpace(v.QAVerifyCommand) != "" && !verifyOK {
+		return fmt.Errorf("run `%s` green before test_review success", v.QAVerifyHint())
 	}
 	return nil
 }

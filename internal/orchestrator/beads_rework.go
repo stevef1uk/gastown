@@ -45,8 +45,9 @@ func EnsureImplementBeadsAvailable(townRoot, rig string, v WorkflowValidation) (
 }
 
 // QAReopenedBeadIDs returns the IDs of beads that were reopened due to a pending QA failure
-// rework. During QA rework the reconcile step must not auto-close these beads — the polecat
-// needs them open so the implement_bead_context injector shows the SPEC contract to fix.
+// or tester (test_review) failure rework. During rework the reconcile step must not
+// auto-close these beads — the polecat needs them open so the implement_bead_context
+// injector shows the SPEC contract to fix.
 func QAReopenedBeadIDs(townRoot, rig string) []string {
 	if townRoot == "" || rig == "" {
 		return nil
@@ -63,7 +64,7 @@ func QAReopenedBeadIDs(townRoot, rig string) []string {
 			continue
 		}
 		rw := inst.PendingRework
-		if rw == nil || rw.FromState != "qa_review" {
+		if rw == nil || (rw.FromState != "qa_review" && rw.FromState != "test_review") {
 			return nil
 		}
 		prefix, _ := RigIssuePrefix(townRoot, rig)
@@ -137,6 +138,52 @@ func ReopenImplementationBeadsAfterQAFailure(townRoot, rig string, v WorkflowVal
 		return reopened, err
 	}
 	reopened = append(reopened, more...)
+	return dedupeStrings(reopened), nil
+}
+
+// ReopenImplementationBeadsAfterTestFailure reopens closed implement beads when the
+// tester sends the polecat back so the polecat can fix failing/missing tests without
+// manual bd update. It reopens both the bead IDs the tester cited and the beads that
+// own planned test files that are missing or stub.
+func ReopenImplementationBeadsAfterTestFailure(townRoot, rig string, v WorkflowValidation, summary string) ([]string, error) {
+	if rig == "" || townRoot == "" {
+		return nil, nil
+	}
+	if !BeadsDatabaseReady(townRoot, rig) {
+		return nil, nil
+	}
+	var reopened []string
+
+	prefix, _ := RigIssuePrefix(townRoot, rig)
+	known, _, _ := ListRigBeadIDSet(townRoot, rig)
+	citedIDs := ExtractKnownRigBeadIDsFromSummary(summary, prefix, known)
+	if len(citedIDs) > 0 {
+		more, err := reopenClosedImplementBeadsForIDs(townRoot, rig, v, citedIDs)
+		if err != nil {
+			return reopened, err
+		}
+		reopened = append(reopened, more...)
+	}
+
+	// Reopen beads that own planned test files reported missing/stub, so the polecat
+	// can WRITE:/EDIT: them on the reopened bead's queue slot.
+	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
+	data, err := os.ReadFile(TestPlanPath(rigDir))
+	if err != nil {
+		return dedupeStrings(reopened), nil
+	}
+	plan := string(data)
+	var wantPaths []string
+	wantPaths = append(wantPaths, MissingPlannedTestFiles(rigDir, v.LayoutRoot, plan)...)
+	wantPaths = append(wantPaths, StubTestFiles(rigDir, v.LayoutRoot, v, plan)...)
+	wantPaths = dedupeStrings(wantPaths)
+	if len(wantPaths) > 0 {
+		more, err := reopenClosedImplementBeadsForPaths(townRoot, rig, v, wantPaths)
+		if err != nil {
+			return reopened, err
+		}
+		reopened = append(reopened, more...)
+	}
 	return dedupeStrings(reopened), nil
 }
 

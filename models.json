@@ -5,6 +5,7 @@
     "planner": "google/gemini-3.5-flash",
     "polecat": "deepseek/deepseek-v4-flash",
     "qa": "google/gemini-3.5-flash",
+    "tester": "google/gemini-3.5-flash",
     "mayor": "google/gemini-3.5-flash",
     "default": "google/gemini-3.5-flash"
   },

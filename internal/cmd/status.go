@@ -1130,6 +1130,7 @@ func outputStatusText(w io.Writer, status TownStatus) error {
 		constants.RoleRefinery:  constants.EmojiRefinery,
 		constants.RoleArchitect: constants.EmojiArchitect,
 		constants.RoleQA:        constants.EmojiQA,
+		constants.RoleTester:    constants.EmojiTester,
 		constants.RoleCrew:      constants.EmojiCrew,
 		constants.RolePolecat:   constants.EmojiPolecat,
 		constants.RoleMechanic:  constants.EmojiMechanic,

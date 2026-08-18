@@ -62,6 +62,12 @@ var cmdGuardHandlers = map[string]cmdGuardFn{
 	"qa": func(r *stateRunner, cmd string) error {
 		return validateQACommand(cmd, r.rig, r.townRoot, r.v)
 	},
+	"test_plan": func(r *stateRunner, cmd string) error {
+		return validateTesterCommand(cmd, r.rig, r.townRoot, r.v)
+	},
+	"test_review": func(r *stateRunner, cmd string) error {
+		return validateTesterCommand(cmd, r.rig, r.townRoot, r.v)
+	},
 }
 
 var cmdGuardRejectScope = map[string]string{
@@ -74,6 +80,8 @@ var cmdGuardRejectScope = map[string]string{
 	"plan_review":    "plan review scope",
 	"design_review":  "QA scope",
 	"qa":             "QA scope",
+	"test_plan":      "tester scope (test plan)",
+	"test_review":    "tester scope (test review)",
 }
 
 var trackHandlers = map[string]trackFn{
@@ -215,6 +223,30 @@ var trackHandlers = map[string]trackFn{
 			r.track.qaFilesRead = true
 		}
 	},
+	"test_plan": func(r *stateRunner, cmd string, cmdErr error) {
+		if cmdErr != nil {
+			r.track.hadCmdFailure = true
+		}
+		if cmdErr == nil && isTestPlanMDWriteCommand(cmd) && testPlanMDMeetsMinSize(r.townRoot, r.rig, r.v) {
+			r.track.hadCmdFailure = false
+			r.track.testPlanWriteOK = true
+		}
+		if cmdErr == nil && isTestPlanMDSizeCheckCommand(cmd) && testPlanMDMeetsMinSize(r.townRoot, r.rig, r.v) {
+			r.track.hadCmdFailure = false
+		}
+	},
+	"test_review": func(r *stateRunner, cmd string, cmdErr error) {
+		if cmdErr != nil {
+			r.track.hadCmdFailure = true
+		}
+		if cmdErr == nil && isQATestCommandOK(cmd, r.v) {
+			r.track.verifyOK = true
+			r.track.hadCmdFailure = false
+		}
+		if cmdErr == nil && isQAReadOnlyCommand(cmd) {
+			r.track.hadCmdFailure = false
+		}
+	},
 }
 
 var artifactValidators = map[string]artifactValidateFn{
@@ -256,6 +288,12 @@ var artifactValidators = map[string]artifactValidateFn{
 	"qa": func(r *stateRunner, outcome string) error {
 		return validateQAArtifacts(r.townRoot, r.rig, outcome, r.track.hadCmdFailure, r.track.bdListClosedOK, r.track.unittestOK, r.track.qaSmokeOK, r.track.qaFilesRead, r.v)
 	},
+	"test_plan": func(r *stateRunner, _ string) error {
+		return validateTestPlanArtifacts(r.townRoot, r.rig, r.track.hadCmdFailure, r.track.testPlanWriteOK, r.v)
+	},
+	"test_review": func(r *stateRunner, outcome string) error {
+		return validateTestReviewArtifacts(r.townRoot, r.rig, outcome, r.track.hadCmdFailure, r.track.verifyOK, r.v)
+	},
 }
 
 var artifactAutoCompleters = map[string]artifactAutoCompleteFn{
@@ -280,6 +318,12 @@ var artifactAutoCompleters = map[string]artifactAutoCompleteFn{
 	},
 	"qa_review": func(r *stateRunner) error {
 		return validateQAAutoComplete(r)
+	},
+	"test_plan": func(r *stateRunner) error {
+		return validateTestPlanArtifacts(r.townRoot, r.rig, r.track.hadCmdFailure, r.track.testPlanWriteOK, r.v)
+	},
+	"test_review": func(r *stateRunner) error {
+		return validateTestReviewArtifacts(r.townRoot, r.rig, "success", r.track.hadCmdFailure, r.track.verifyOK, r.v)
 	},
 }
 
@@ -327,6 +371,14 @@ var artifactFailureHints = map[string]func(*stateRunner) string{
 			}
 		}
 		return hint + " If unit tests pass but smoke fails and code matches architecture, use architecture_failure (resets to architect). If tests fail or code violates SPEC, use failure. Do not repeat go run+curl — reply with JSON only. No /workspace paths."
+	},
+	"test_plan": func(r *stateRunner) string {
+		return fmt.Sprintf("Write TEST_PLAN.md (≥ %d bytes) with a heredoc from %s: one `### <req-id>` block per active-phase requirement with Level (unit/integration/ui), Test file, Bead ID, Scenarios, Assertions. Read SPEC.md, architecture.md, plan.md first.",
+			orchestrator.EffectiveMinTestPlanBytes(r.v), rigMayorRigPath(r.rig))
+	},
+	"test_review": func(r *stateRunner) string {
+		return fmt.Sprintf("Read TEST_PLAN.md and the test files it names from %s; run %s. Use outcome failure (polecat) for missing/weak tests with bead IDs, plan_gap (tester) to rewrite TEST_PLAN.md, architecture_failure (architect) when SPEC/architecture contradict the tests.",
+			rigMayorRigPath(r.rig), r.v.QAVerifyHint())
 	},
 }
 

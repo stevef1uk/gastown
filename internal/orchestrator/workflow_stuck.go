@@ -105,7 +105,7 @@ func EvalWorkflowStuck(in WorkflowStuckEvalInput) WorkflowStuckEvalResult {
 
 func beadProgressState(state string) bool {
 	switch state {
-	case "planning", "plan_review", "project_setup", "implementation", "qa_review":
+	case "planning", "plan_review", "test_plan", "project_setup", "implementation", "test_review", "qa_review":
 		return true
 	default:
 		return false
@@ -114,7 +114,7 @@ func beadProgressState(state string) bool {
 
 func planningOrImplementationState(state string) bool {
 	switch state {
-	case "planning", "plan_review", "project_setup", "implementation":
+	case "planning", "plan_review", "test_plan", "project_setup", "implementation", "test_review":
 		return true
 	default:
 		return false
@@ -123,7 +123,7 @@ func planningOrImplementationState(state string) bool {
 
 func planningStateNeedsContract(state string) bool {
 	switch state {
-	case "planning", "plan_review", "project_setup", "implementation":
+	case "planning", "plan_review", "test_plan", "project_setup", "implementation", "test_review":
 		return true
 	default:
 		return false

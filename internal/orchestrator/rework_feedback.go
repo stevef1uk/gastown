@@ -19,6 +19,15 @@ func PrepareWorkflowReworkFeedback(fromState, nextState, summary, rawFeedback st
 	if fromState == "qa_review" && nextState == "design" {
 		return truncateWorkflowText(prepareQAReviewToDesignFeedback(summary, rawFeedback, v), maxWorkflowReworkFeedback)
 	}
+	if fromState == "test_review" && nextState == "implementation" {
+		return truncateWorkflowText(prepareTestReviewToImplementationFeedback(summary, rawFeedback, v), maxWorkflowReworkFeedback)
+	}
+	if fromState == "test_review" && nextState == "design" {
+		return truncateWorkflowText(prepareTestReviewToDesignFeedback(summary, rawFeedback, v), maxWorkflowReworkFeedback)
+	}
+	if fromState == "test_plan" && nextState == "planning" {
+		return truncateWorkflowText(prepareTestPlanToPlannerFeedback(summary, rawFeedback), maxWorkflowReworkFeedback)
+	}
 	cleaned := sanitizeAttemptFeedback(rawFeedback)
 	if summary != "" && cleaned != "" {
 		return truncateWorkflowText("Summary: "+summary+"\n\n"+cleaned, maxWorkflowReworkFeedback)
@@ -381,4 +390,80 @@ func countBeadListLines(lines []string) int {
 		}
 	}
 	return n
+}
+
+func prepareTestReviewToImplementationFeedback(summary, raw string, v WorkflowValidation) string {
+	var b strings.Builder
+	if summary != "" {
+		b.WriteString("Tester summary: ")
+		b.WriteString(summary)
+		b.WriteString("\n")
+	}
+	if paths := extractStubPathsFromFeedback(summary, raw); len(paths) > 0 {
+		b.WriteString("\nFiles to fix (missing or weak tests):\n")
+		for _, p := range paths {
+			b.WriteString("- ")
+			b.WriteString(p)
+			b.WriteString("\n")
+		}
+	}
+	if err := extractLastTestFailure(raw); err != "" {
+		b.WriteString("\nLast test failure:\n")
+		b.WriteString(err)
+		b.WriteString("\n")
+	}
+	layout := v.LayoutRootDir()
+	b.WriteString("\nPolecat recovery steps (test_review rework):\n")
+	b.WriteString("1. Reopened beads own the failing test files — WRITE:/EDIT: those `*_test.go` / `tests/test_*.py` paths per TEST_PLAN.md rows.\n")
+	b.WriteString("2. Do **NOT** weaken or delete tests to make them pass — fix the code (or the test's assumptions if the plan/SPEC contradicts them).\n")
+	b.WriteString("3. Run verification: `")
+	b.WriteString(strings.TrimSpace(v.UnittestCommandHint()))
+	b.WriteString("` from `")
+	b.WriteString(layout)
+	b.WriteString("` until green, then `bd close` each reopened bead.\n")
+	b.WriteString("4. JSON success when every planned test exists and verify is green.\n")
+	out := strings.TrimSpace(b.String())
+	if out != "" {
+		return out
+	}
+	return sanitizeAttemptFeedback(raw)
+}
+
+func prepareTestReviewToDesignFeedback(summary, raw string, v WorkflowValidation) string {
+	var b strings.Builder
+	b.WriteString("Tester escalated to architecture rework: planned tests contradict SPEC/architecture (routes, store API, or data model) in a way the Polecat cannot reconcile.\n\n")
+	if summary != "" {
+		b.WriteString("Tester summary: ")
+		b.WriteString(summary)
+		b.WriteString("\n")
+	}
+	if err := extractLastTestFailure(raw); err != "" {
+		b.WriteString("\nLast test output:\n")
+		b.WriteString(err)
+		b.WriteString("\n")
+	}
+	b.WriteString("\nArchitect steps:\n")
+	b.WriteString("1. Read SPEC.md, architecture.md, and TEST_PLAN.md.\n")
+	b.WriteString("2. Fix architecture.md (HTTP routes, store API names, data model, test directives) so planned tests and implementation agree.\n")
+	b.WriteString("3. `wc -c architecture.md` ≥ minimum, then JSON success — planner refreshes plan.md/beads and the tester rewrites TEST_PLAN.md.\n")
+	return strings.TrimSpace(b.String())
+}
+
+func prepareTestPlanToPlannerFeedback(summary, raw string) string {
+	var b strings.Builder
+	if summary != "" {
+		b.WriteString("Tester summary: ")
+		b.WriteString(summary)
+		b.WriteString("\n")
+	}
+	b.WriteString("\nThe TEST_PLAN.md step could not be completed because SPEC/architecture/plan are too vague to map requirements to tests.\n")
+	b.WriteString("Planner steps:\n")
+	b.WriteString("1. Expand plan.md bead map with per-file scope and acceptance bullets from SPEC/architecture.\n")
+	b.WriteString("2. Confirm every active-phase requirement has a named file ownership in architecture.md.\n")
+	b.WriteString("3. JSON success when bead set matches required_files for this phase only.\n")
+	out := strings.TrimSpace(b.String())
+	if out != "" {
+		return out
+	}
+	return sanitizeAttemptFeedback(raw)
 }

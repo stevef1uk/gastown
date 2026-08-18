@@ -20,6 +20,7 @@ const (
 	RoleRefinery  Role = "refinery"
 	RoleArchitect Role = "architect"
 	RoleQA        Role = "qa"
+	RoleTester    Role = "tester"
 	RoleMechanic  Role = "mechanic"
 	RoleCrew      Role = "crew"
 	RolePolecat   Role = "polecat"
@@ -80,6 +81,8 @@ func ParseAddress(address string) (*AgentIdentity, error) {
 			return &AgentIdentity{Role: RoleArchitect, Rig: rig, Prefix: prefix}, nil
 		case string(RoleQA):
 			return &AgentIdentity{Role: RoleQA, Rig: rig, Prefix: prefix}, nil
+		case string(RoleTester):
+			return &AgentIdentity{Role: RoleTester, Rig: rig, Prefix: prefix}, nil
 		case string(RoleCrew), "polecats":
 			return nil, fmt.Errorf("invalid address %q", address)
 		default:
@@ -197,7 +200,7 @@ parseRigRole:
 
 	// In the new format, rest might be "rigName-role"
 	// Roles: witness, refinery, architect, qa, mechanic
-	for _, role := range []Role{RoleWitness, RoleRefinery, RoleArchitect, RoleQA, RoleMechanic} {
+	for _, role := range []Role{RoleWitness, RoleRefinery, RoleArchitect, RoleQA, RoleTester, RoleMechanic} {
 		roleStr := string(role)
 		if rest == roleStr {
 			// Compatibility case: gt-witness
@@ -251,6 +254,8 @@ func (a *AgentIdentity) SessionName() string {
 		return ArchitectSessionName(a.prefix(), a.Rig)
 	case RoleQA:
 		return QASessionName(a.prefix(), a.Rig)
+	case RoleTester:
+		return TesterSessionName(a.prefix(), a.Rig)
 	case RoleMechanic:
 		if a.Rig == "" {
 			return MechanicSessionName()
@@ -307,6 +312,8 @@ func (a *AgentIdentity) BeaconAddress() string {
 		return BeaconRecipient("architect", "", a.Rig)
 	case RoleQA:
 		return BeaconRecipient("qa", "", a.Rig)
+	case RoleTester:
+		return BeaconRecipient("tester", "", a.Rig)
 	case RoleCrew:
 		return BeaconRecipient("crew", a.Name, a.Rig)
 	case RolePolecat:
@@ -346,6 +353,8 @@ func (a *AgentIdentity) Address() string {
 		return fmt.Sprintf("%s/architect", a.Rig)
 	case RoleQA:
 		return fmt.Sprintf("%s/qa", a.Rig)
+	case RoleTester:
+		return fmt.Sprintf("%s/tester", a.Rig)
 	case RoleCrew:
 		return fmt.Sprintf("%s/crew/%s", a.Rig, a.Name)
 	case RolePolecat:

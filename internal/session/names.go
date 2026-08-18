@@ -99,6 +99,15 @@ func QASessionName(rigPrefix, rigName string) string {
 	return fmt.Sprintf("%s-%s-qa", prefix, rigName)
 }
 
+// TesterSessionName returns the session name for a rig's Tester agent.
+func TesterSessionName(rigPrefix, rigName string) string {
+	prefix := rigPrefix
+	if rigName == "" || rigName == rigPrefix {
+		return fmt.Sprintf("%s-tester", prefix)
+	}
+	return fmt.Sprintf("%s-%s-tester", prefix, rigName)
+}
+
 // AnalystSessionName returns the session name for a rig's Analyst agent.
 func AnalystSessionName(rigPrefix, rigName string) string {
 	prefix := rigPrefix

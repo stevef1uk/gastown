@@ -10,7 +10,7 @@ import (
 // IsPipelineRole reports roles that participate in orchestrator rig-flow FSM tasks.
 func IsPipelineRole(role string) bool {
 	switch role {
-	case "mayor", "architect", "analyst", "planner", "setup", "polecat", "qa":
+	case "mayor", "architect", "analyst", "planner", "setup", "polecat", "qa", "tester":
 		return true
 	default:
 		return false
@@ -75,6 +75,7 @@ var rigScopedPipelineRoles = map[string]bool{
 	"setup":     false, // town hq-setup is not rig-prefixed
 	"polecat":   true,
 	"qa":        true,
+	"tester":    true,
 }
 
 // AgentMatchesTask reports whether agentID may claim a task for role in a workflow instance.
