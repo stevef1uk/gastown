@@ -976,6 +976,7 @@ func startRigAgentsWithPrefetch(rigNames []string, prefetchedRigs map[string]*ri
 			witnessResults[rigName] = agentStartResult{name: "Witness (" + rigName + ")", ok: true, detail: "skipped (--orchestrator-only)"}
 			refineryResults[rigName] = agentStartResult{name: "Refinery (" + rigName + ")", ok: true, detail: "skipped (--orchestrator-only)"}
 		}
+		testerResults = startRigAgentPhase(rigNames, prefetchedRigs, constants.RoleTester)
 	} else {
 		witnessResults = startRigAgentPhase(rigNames, prefetchedRigs, constants.RoleWitness)
 		refineryResults = startRigAgentPhase(rigNames, prefetchedRigs, constants.RoleRefinery)
