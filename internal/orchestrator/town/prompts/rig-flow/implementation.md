@@ -50,10 +50,30 @@ new code
 CMD: cd {{rig}}/mayor/rig && ...
 ```
 
-**Done (SEPARATE message, no CMD/WRITE/EDIT):**
+**Done (SEPARATE message, NO CMD/WRITE/EDIT):**
 ```
 {"outcome":"success","summary":"..."}
 ```
+
+### ⚠️ MANDATORY TURN-TAKING PROTOCOL
+
+**YOU MUST FOLLOW THIS EXACT SEQUENCE:**
+
+1. **Turn 1**: Output ONLY CMD/WRITE/EDIT blocks. NO JSON.
+2. **Turn 2+**: After seeing command output, output ONLY CMD/WRITE/EDIT blocks. NO JSON.
+3. **FINAL TURN**: When ALL work is done, output ONLY the JSON success. NO CMD/WRITE/EDIT.
+
+**VIOLATIONS THAT WILL BE REJECTED:**
+- ❌ JSON success in same message as CMD/WRITE/EDIT
+- ❌ JSON success before running verify command
+- ❌ JSON success before `bd close` completes
+- ❌ Multiple CMD blocks with JSON in same message
+
+**CORRECT FINAL TURN EXAMPLE:**
+```
+{"outcome":"success","summary":"All implementation beads closed. Phase verify passed. Beads closed: pr-ubs, pr-6ow, pr-6lh"}
+```
+(No CMD, no WRITE, no EDIT - ONLY this JSON line)
 
 ## Per-bead verify command
 
