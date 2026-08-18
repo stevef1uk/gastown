@@ -22,6 +22,36 @@ func marshalRigProfileJSON(env rigProfileEnvelope) ([]byte, error) {
 	return bytes.TrimSpace(buf.Bytes()), nil
 }
 
+// ResetRigPhaseForNewWorkflow resets delivery-phase progress in workflow-profile.json so a
+// newly started workflow begins at the first phase needing work instead of inheriting the
+// previous workflow's active/completed phase state (which previously fast-forwarded new
+// workflows straight to the final phase). No-op when the profile has no delivery phases.
+func ResetRigPhaseForNewWorkflow(townRoot, rig string) error {
+	if townRoot == "" || rig == "" {
+		return nil
+	}
+	path := filepath.Join(townRoot, rig, "mayor", "rig", rigProfileDir, rigProfileFile)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil // no profile yet — nothing to reset
+		}
+		return fmt.Errorf("read rig profile %s: %w", path, err)
+	}
+	var env rigProfileEnvelope
+	if err := json.Unmarshal(data, &env); err != nil {
+		return fmt.Errorf("decode rig profile %s: %w", path, err)
+	}
+	if len(env.Validation.DeliveryPhases) == 0 {
+		return nil
+	}
+	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
+	env.Validation.ActivePhaseIDField = ResolveActivePhaseFromDisk(rigDir, env.Validation)
+	env.Validation.CompletedPhaseIDsField = nil
+	env.Validation.RewoundFromPhaseIDField = ""
+	return SaveRigWorkflowProfileEnvelope(townRoot, rig, env)
+}
+
 // SaveRigWorkflowProfileEnvelope writes a clamped profile envelope to workflow-profile.json.
 func SaveRigWorkflowProfileEnvelope(townRoot, rig string, env rigProfileEnvelope) error {
 	if rig == "" || townRoot == "" {

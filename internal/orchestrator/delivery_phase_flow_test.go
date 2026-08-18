@@ -194,6 +194,50 @@ func assertOpenBeadPaths(t *testing.T, townRoot, rig string, v WorkflowValidatio
 	}
 }
 
+// TestStartWorkflow_resetsStaleDeliveryPhase verifies that starting a new workflow for a
+// phased rig does not inherit the previous run's completed/active phase state (which used
+// to fast-forward new workflows straight to the final phase). It must reset active_phase_id
+// to the first phase needing work and clear completed_phase_ids / rewound_from_phase_id.
+func TestStartWorkflow_resetsStaleDeliveryPhase(t *testing.T) {
+	townRoot := t.TempDir()
+	rig := "resetric"
+	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
+	if err := os.MkdirAll(filepath.Join(rigDir, ".gastown"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	// Simulate a completed previous run: active on the final phase, everything completed,
+	// and a stale rewound_from marker.
+	writeTestPhasedProfile(t, townRoot, rig, "frontend")
+	v, ok, err := LoadRigWorkflowProfileFile(townRoot, rig)
+	if err != nil || !ok {
+		t.Fatalf("load profile: ok=%v err=%v", ok, err)
+	}
+	v.CompletedPhaseIDsField = []string{"backend", "frontend"}
+	v.RewoundFromPhaseIDField = "frontend"
+	if err := WriteRigWorkflowProfile(townRoot, rig, v, "test", "high"); err != nil {
+		t.Fatal(err)
+	}
+
+	m := NewManager(townRoot)
+	m.LoadTemplate(qaReviewPhasedTemplate())
+	if _, err := m.StartWorkflow("rig-flow", map[string]string{"rig": rig}); err != nil {
+		t.Fatal(err)
+	}
+
+	// No backend files exist on disk, so the first phase needing work is "backend".
+	assertActivePhase(t, townRoot, rig, "backend")
+	v, ok, err = LoadRigWorkflowProfileFile(townRoot, rig)
+	if err != nil || !ok {
+		t.Fatalf("reload profile: ok=%v err=%v", ok, err)
+	}
+	if len(v.CompletedPhaseIDs()) != 0 {
+		t.Fatalf("completed_phase_ids = %v, want empty after new workflow start", v.CompletedPhaseIDs())
+	}
+	if v.RewoundFromPhaseIDField != "" {
+		t.Fatalf("rewound_from_phase_id = %q, want empty", v.RewoundFromPhaseIDField)
+	}
+}
+
 // TestDeliveryPhaseWorkflow_integration exercises phased delivery: profile paths → beads,
 // QA all_passed advances active_phase_id and FSM to planning, final phase completes.
 func TestDeliveryPhaseWorkflow_integration(t *testing.T) {

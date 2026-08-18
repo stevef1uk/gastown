@@ -113,6 +113,14 @@ func (m *Manager) StartWorkflow(templateID string, vars map[string]string) (stri
 	if m.hasActiveWorkflowLocked(templateID, rig) {
 		return "", ErrWorkflowAlreadyActive
 	}
+	if rig != "" {
+		// A new workflow must not inherit the previous run's delivery-phase progress;
+		// otherwise it fast-forwards straight to the final phase. Re-resolve the active
+		// phase from disk (first phase needing work) and clear completed/rewound state.
+		if err := ResetRigPhaseForNewWorkflow(m.townRoot, rig); err != nil {
+			fmt.Printf("[Manager] Warning: reset delivery phase for new workflow: %v\n", err)
+		}
+	}
 
 	id := m.allocateWorkflowID()
 	instance := &WorkflowInstance{
