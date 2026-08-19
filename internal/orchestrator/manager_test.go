@@ -376,6 +376,9 @@ func TestCompleteTask_crossStateFailureStoresPendingRework(t *testing.T) {
 	m.LoadTemplate(&WorkflowTemplate{
 		ID:           "rig-flow",
 		InitialState: "plan_review",
+		ReworkFeedback: map[string]string{
+			"plan_review->planning": "plan_review_to_planner",
+		},
 		States: map[string]State{
 			"plan_review": {
 				Role: "qa",
@@ -437,6 +440,9 @@ func TestCompleteTask_qaArchitectureFailureResetsToDesign(t *testing.T) {
 	m.LoadTemplate(&WorkflowTemplate{
 		ID:           "rig-flow",
 		InitialState: "qa_review",
+		ReworkFeedback: map[string]string{
+			"qa_review->design": "qa_review_to_design",
+		},
 		States: map[string]State{
 			"qa_review": {
 				Role: "qa",

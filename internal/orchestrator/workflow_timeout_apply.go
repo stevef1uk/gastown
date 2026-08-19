@@ -55,7 +55,7 @@ func (m *Manager) applyStateTimeout(workflowID string) (string, error) {
 	}
 	// Hard reset hooks ran; start a fresh wall-clock window (same-state transition does not touch StateEnteredAt).
 	inst.touchStateEnteredAt()
-	reworkFeedback := PrepareWorkflowReworkFeedback(fromState, next, summary, feedback, v)
+	reworkFeedback := PrepareWorkflowReworkFeedback(fromState, next, summary, feedback, v, tpl.ReworkFeedback)
 	inst.PendingRework = &WorkflowRework{
 		FromState: fromState,
 		Outcome:   "timeout",

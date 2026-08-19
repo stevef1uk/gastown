@@ -1101,13 +1101,16 @@ func rewriteBdStripBeadsDir(cmd string) (string, bool) {
 }
 
 var (
-	goSmokeStripPkillRE  = regexp.MustCompile(`(?i)\s*&&\s*pkill\s+-f\s+[^&|;]+`)
-	goSmokeStripBuildRE  = regexp.MustCompile(`(?i)go\s+build\s+\./\.\.\.\s*&&\s*`)
-	goSmokeStripTidyRE   = regexp.MustCompile(`(?i)go\s+mod\s+tidy\s*&&\s*`)
-	goSmokeServerBgRE    = regexp.MustCompile(`(?i)(go\s+run\s+(?:\.\/)?cmd/server[^\s&;]*)\s*&`)
-	goSmokeWorkDirRE     = regexp.MustCompile(`(?i)cd\s+([^\s&;]+linkshelf[^\s&;]*)`)
-	goSmokeLocalhostRE   = regexp.MustCompile(`(?i)(?:localhost|127\.0\.0\.1):(\d{2,5})`)
-	pythonSmokeJobCtrlRE = regexp.MustCompile(`(?i)\b(kill|wait)\b((?:\s+-[^ \t;|]+)*)\s+%[0-9]+\b`)
+	goSmokeStripPkillRE        = regexp.MustCompile(`(?i)\s*&&\s*pkill\s+-f\s+[^&|;]+`)
+	goSmokeStripBuildRE        = regexp.MustCompile(`(?i)go\s+build\s+\./\.\.\.\s*&&\s*`)
+	goSmokeStripTidyRE         = regexp.MustCompile(`(?i)go\s+mod\s+tidy\s*&&\s*`)
+	goSmokeServerBgRE          = regexp.MustCompile(`(?i)(go\s+run\s+(?:\.\/)?cmd/server[^\s&;]*)\s*&`)
+	goSmokeWorkDirRE           = regexp.MustCompile(`(?i)cd\s+([^\s&;]+linkshelf[^\s&;]*)`)
+	goSmokeLocalhostRE         = regexp.MustCompile(`(?i)(?:localhost|127\.0\.0\.1):(\d{2,5})`)
+	pythonSmokeJobCtrlRE       = regexp.MustCompile(`(?i)\b(kill|wait)\b((?:\s+-[^ \t;|]+)*)\s+%[0-9]+\b`)
+	pythonSmokeStripPkillRE    = regexp.MustCompile(`(?i)\s*(?:&&|;|\|\|)\s*pkill\s+-f\s+[^;&|\n]+`)
+	pythonSmokeSubshellBgRE    = regexp.MustCompile(`(?s)\(\s*[^()]*?\buvicorn\b[^()]*?\s+&\s*\)`)
+	pythonSmokeSubshellInnerRE = regexp.MustCompile(`(?s)\(\s*(.*?)\s+&\s*\)`)
 )
 
 // normalizeGoCommandTypos fixes common model mistakes in go subcommands (e.g. "go build./...").
@@ -1184,6 +1187,20 @@ func normalizeGoDevServerSmokeCommand(cmd, townRoot, rig string, v orchestrator.
 }
 
 func normalizePythonDevServerSmoke(cmd string) string {
+	// Strip self-referential `pkill -f "server ..."` cleanup before anything
+	// else: the quoted literal would make isUvicornCommand reject the command,
+	// and executing it kills the invoking shell (its own cmdline contains the
+	// pattern), stranding the backgrounded server until exec timeout.
+	cmd = pythonSmokeStripPkillRE.ReplaceAllString(cmd, "")
+	cmd = strings.TrimSpace(cmd)
+	// Unwrap `(cd dir && uvicorn ... &)` subshells: backgrounding inside a
+	// subshell breaks pid capture and leaves unbalanced parens after rewrite.
+	cmd = pythonSmokeSubshellBgRE.ReplaceAllStringFunc(cmd, func(m string) string {
+		if in := pythonSmokeSubshellInnerRE.FindStringSubmatch(m); in != nil {
+			return strings.TrimSpace(in[1]) + " &"
+		}
+		return m
+	})
 	for _, bad := range []string{"--stdout", "--no-access-log"} {
 		cmd = strings.ReplaceAll(cmd, " "+bad+" ", " ")
 		cmd = strings.ReplaceAll(cmd, " "+bad, "")

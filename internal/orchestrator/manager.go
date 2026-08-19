@@ -249,10 +249,10 @@ func (m *Manager) buildTaskPayloadForInstance(instID string) (map[string]interfa
 const maxWorkflowReworkSummary = 2000
 const maxWorkflowReworkFeedback = 6000
 
-// ensureTesterAgent starts the tester agent for a rig if the workflow is in test_plan or test_review state.
+// ensureTesterAgent starts the tester agent for a rig if the workflow is in test_plan, test_plan_rework, or test_review state.
 // Called after state transitions to ensure the tester agent is running when needed.
 func (m *Manager) ensureTesterAgent(rig string, currentState string) error {
-	if currentState != "test_plan" && currentState != "test_review" {
+	if currentState != "test_plan" && currentState != "test_plan_rework" && currentState != "test_review" {
 		return nil
 	}
 	if rig == "" {
@@ -408,8 +408,8 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summa
 		return "", err
 	}
 	log.Printf("[Manager] CompleteTask: after Transition, workflow=%s fromState=%s next=%s inst.CurrentState=%s", workflowID, fromState, next, inst.CurrentState)
-	// Ensure tester agent is running when entering test_plan or test_review states
-	if rig != "" && (next == "test_plan" || next == "test_review") {
+	// Ensure tester agent is running when entering test_plan, test_plan_rework, or test_review states
+	if rig != "" && (next == "test_plan" || next == "test_plan_rework" || next == "test_review") {
 		if err := m.ensureTesterAgent(rig, next); err != nil {
 			log.Printf("[Manager] Warning: failed to start tester agent for %s: %v", rig, err)
 		}
@@ -533,7 +533,7 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summa
 		(next != fromState && (IsFailureOutcome(outcome) || IsArchitectureReworkOutcome(outcome)))
 	if setRework && next != "" {
 		v := m.workflowValidationFor(inst, tpl)
-		reworkFeedback := PrepareWorkflowReworkFeedback(fromState, next, summary, feedback, v)
+		reworkFeedback := PrepareWorkflowReworkFeedback(fromState, next, summary, feedback, v, tpl.ReworkFeedback)
 		rig := ""
 		if inst.Variables != nil {
 			rig = inst.Variables["rig"]

@@ -12,6 +12,59 @@ type WorkflowTemplate struct {
 	InitialState string             `yaml:"initial_state"`
 	Validation   WorkflowValidation `yaml:"validation"`
 	States       map[string]State   `yaml:"states"`
+	// StuckGuard declares workflow-specific state categories used by the generic
+	// stuck monitor (workflow_stuck.go). Keeps state names in the template YAML
+	// instead of generic components.
+	StuckGuard WorkflowStuckGuard `yaml:"stuck_guard,omitempty"`
+	// ReworkFeedback maps "from->to" transitions to named feedback builders
+	// (see rework_feedback.go). Workflow-specific routing stays in YAML.
+	ReworkFeedback map[string]string `yaml:"rework_feedback,omitempty"`
+}
+
+// WorkflowStuckGuard configures which FSM states participate in each generic
+// stuck-detection check. Empty lists disable the corresponding check.
+type WorkflowStuckGuard struct {
+	// BeadProgressStates are states where no-bead-progress idle detection applies.
+	BeadProgressStates []string `yaml:"bead_progress_states,omitempty"`
+	// PlanningOrImplementationStates are states where planning-doc alignment and
+	// non-required implement bead checks apply.
+	PlanningOrImplementationStates []string `yaml:"planning_or_implementation_states,omitempty"`
+	// NeedsContractStates are states where a missing integration contract is a signal.
+	NeedsContractStates []string `yaml:"needs_contract_states,omitempty"`
+	// PolecatState is the FSM state owned by the polecat agent (session-missing check).
+	PolecatState string `yaml:"polecat_state,omitempty"`
+}
+
+// InBeadProgressStates reports whether state is monitored for bead progress.
+func (g WorkflowStuckGuard) InBeadProgressStates(state string) bool {
+	return g.contains(g.BeadProgressStates, state)
+}
+
+// InPlanningOrImplementationStates reports whether state needs planning-doc alignment.
+func (g WorkflowStuckGuard) InPlanningOrImplementationStates(state string) bool {
+	return g.contains(g.PlanningOrImplementationStates, state)
+}
+
+// InNeedsContractStates reports whether state requires the integration contract.
+func (g WorkflowStuckGuard) InNeedsContractStates(state string) bool {
+	return g.contains(g.NeedsContractStates, state)
+}
+
+// IsPolecatState reports whether state is the polecat-owned implementation state.
+func (g WorkflowStuckGuard) IsPolecatState(state string) bool {
+	return g.PolecatState != "" && g.PolecatState == state
+}
+
+func (g WorkflowStuckGuard) contains(set []string, state string) bool {
+	if len(set) == 0 {
+		return false
+	}
+	for _, s := range set {
+		if s == state {
+			return true
+		}
+	}
+	return false
 }
 
 // State represents a node in the workflow FSM.

@@ -26,6 +26,9 @@ func TestArchitectureFailureScenario_endToEnd(t *testing.T) {
 	m.LoadTemplate(&WorkflowTemplate{
 		ID:           "rig-flow",
 		InitialState: "qa_review",
+		ReworkFeedback: map[string]string{
+			"qa_review->design": "qa_review_to_design",
+		},
 		States: map[string]State{
 			"qa_review": {
 				Role: "qa",

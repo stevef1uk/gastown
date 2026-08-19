@@ -1,7 +1,26 @@
 id: req-flow
 description: Requirements-driven workflow (Analyst -> QA spec review -> Architect -> Planner -> Polecat -> QA)
 initial_state: kickoff
-# Same guards as rig-flow — profile overrides per-rig via workflow-profile.json
+# State categories used by the generic stuck monitor (workflow_stuck.go) and
+# rework feedback routing (rework_feedback.go). Keep state names here, not in Go.
+stuck_guard:
+  bead_progress_states: [planning, plan_review, test_plan, test_plan_rework, project_setup, implementation, test_review, qa_review]
+  planning_or_implementation_states: [planning, plan_review, test_plan, test_plan_rework, project_setup, implementation, test_review]
+  needs_contract_states: [planning, plan_review, test_plan, test_plan_rework, project_setup, implementation, test_review]
+  polecat_state: implementation
+rework_feedback:
+  plan_review->planning: plan_review_to_planner
+  qa_review->implementation: qa_review_to_implementation
+  qa_review->design: qa_review_to_design
+  test_review->implementation: test_review_to_implementation
+  test_review->design: test_review_to_design
+  test_plan->planning: test_plan_to_planner
+  implementation->test_plan_rework: test_plan_to_planner
+  implementation->design: architecture_failure_to_design
+  planning->design: architecture_failure_to_design
+  plan_review->design: architecture_failure_to_design
+  test_plan->design: architecture_failure_to_design
+  advance_phase->planning: phase_advance_to_planning
 validation:
   bead_title_contains: "Implement "
   min_architecture_bytes: 200
@@ -158,6 +177,8 @@ states:
         to: planning
       timeout:
         to: planning
+      architecture_failure:
+        to: design
   plan_review:
     role: qa
     prompt_file: prompts/rig-flow/plan_review.md
@@ -184,6 +205,8 @@ states:
         to: test_plan
       failure:
         to: planning
+      architecture_failure:
+        to: design
   test_plan:
     role: tester
     prompt_file: prompts/rig-flow/test_plan.md
@@ -209,6 +232,33 @@ states:
         to: project_setup
       failure:
         to: planning
+      architecture_failure:
+        to: design
+  test_plan_rework:
+    role: tester
+    prompt_file: prompts/rig-flow/test_plan.md
+    instructions: |
+      1. Read TEST_PLAN.md, REQUIREMENTS.md (if present), SPEC.md, architecture.md, and plan.md under `{{rig}}/mayor/rig/`.
+      2. Rewrite `{{rig}}/mayor/rig/TEST_PLAN.md` (≥{{min_test_plan_bytes}} bytes) to close the gaps QA found — map EVERY active-phase requirement to unit/integration/UI tests with bead IDs.
+      3. Report success only when the plan covers every requirement at the right level; failure sends you back to fix it.
+    hooks:
+      max_cmd_turns: 10
+      cmd_guard: test_plan
+      cmd_rewrites: [rig_placeholders, unwrap_bash_lc, test_plan_md_after_cd, bd_list_limit]
+      env:
+        beads_dir: true
+      track: test_plan
+      artifacts: test_plan
+      retry_hint: |
+        One CMD: per line. Read TEST_PLAN.md, SPEC.md and architecture.md from {{rig}}/mayor/rig, then `wc -c TEST_PLAN.md`.
+        Only success/failure/architecture_failure outcomes are allowed.
+      failure_hint: |
+        TEST_PLAN.md must be ≥ {{min_test_plan_bytes}} bytes with a `### <req-id>` block per requirement: Level (unit/integration/ui), Test file, Bead ID, Scenarios, Assertions. Do not write tests — only plan them.
+    transitions:
+      success:
+        to: implementation
+      failure:
+        to: test_plan_rework
       architecture_failure:
         to: design
   project_setup:
@@ -254,6 +304,8 @@ states:
         to: implementation
       failure:
         to: project_setup
+      architecture_failure:
+        to: design
   implementation:
     role: polecat
     prompt_file: prompts/rig-flow/implementation.md
@@ -263,7 +315,7 @@ states:
       state_timeout_seconds: 7200
       on_timeout: [recover_implementation_stall]
       on_state_timeout: [recover_implementation_stall]
-      cmd_timeout_seconds: 30
+      cmd_timeout_seconds: 300
       max_cmd_turns: 100
       omit_orchestrator_context: true
       system_prompt_footer: |
@@ -313,7 +365,7 @@ states:
       failure_prompt_context: [implementation_queue, implement_bead_context, phase_test_guards]
       empty_response_suffix: "Reply with EDIT:/WRITE:/READ: or CMD: lines. Implement code and unit tests per plan.md; WRITE for new *_test.go or tests/test_*.py. Use Verify from Next bead."
       prompt_context: [implementation_queue, implement_bead_context, phase_test_guards]
-      pre_run: [prune_rig_root_junk, ensure_dolt_auto_commit, ensure_dolt_schema_health, sync_planning_artifacts, ensure_http_implementation_config, ensure_handler_phase_prerequisites, ensure_implement_smoke_ready, ensure_go_mod_from_spec, enforce_implement_bead_queue, prune_stale_layout_files, repair_requirements, refresh_codeindex, reconcile_implement_beads, ensure_test_stack_ready]
+      pre_run: [prune_rig_root_junk, ensure_dolt_auto_commit, ensure_dolt_schema_health, sync_planning_artifacts, ensure_http_implementation_config, ensure_handler_phase_prerequisites, ensure_implement_smoke_ready, ensure_go_mod_from_spec, enforce_implement_bead_queue, prune_stale_layout_files, repair_requirements, refresh_codeindex, reconcile_implement_beads, ensure_test_stack_ready, ensure_playwright_config_ready]
       per_turn: [prune_stale_layout_files, repair_requirements]
       cmd_guard: implementation
       cmd_rewrites: [rig_placeholders, unwrap_bash_lc, backend_path_after_cd, bd_list_implement_scope, unittest_workdir, bd_list_limit, bd_close_auto_commit, bd_strip_beads_dir]
@@ -350,7 +402,7 @@ states:
       failure:
         to: implementation
       plan_gap:
-        to: test_plan
+        to: test_plan_rework
       architecture_failure:
         to: design
       timeout:
@@ -386,7 +438,7 @@ states:
       failure:
         to: implementation
       plan_gap:
-        to: test_plan
+        to: test_plan_rework
       architecture_failure:
         to: design
       timeout:
@@ -400,7 +452,7 @@ states:
       3. Use outcome task_passed (more work), all_passed (done), or failure (rework).
     hooks:
       state_timeout_seconds: 1800
-      cmd_timeout_seconds: 30
+      cmd_timeout_seconds: 300
       append_go_compile_context: true
       max_cmd_turns: 8
       pre_run: [ensure_dolt_auto_commit, ensure_dolt_schema_health, reconcile_implement_beads]

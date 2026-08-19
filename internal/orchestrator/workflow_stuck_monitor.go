@@ -52,6 +52,10 @@ func RunWorkflowStuckMonitorTick(townRoot string, polecatRunning PolecatSessionC
 		}
 
 		v := workflowValidationForInstance(townRoot, inst)
+		guard := WorkflowStuckGuard{}
+		if tpl, err := loadWorkflowTemplateFromTown(townRoot, inst.TemplateID); err == nil && tpl != nil {
+			guard = tpl.StuckGuard
+		}
 		fp, err := ImplementBeadProgressFingerprint(townRoot, rig, v)
 		if err != nil {
 			lines = append(lines, fmt.Sprintf("[workflow-stuck] %s: bead fingerprint: %v", rig, err))
@@ -73,16 +77,17 @@ func RunWorkflowStuckMonitorTick(townRoot string, polecatRunning PolecatSessionC
 			polecatUp = polecatRunning(rig)
 		}
 		eval := EvalWorkflowStuck(WorkflowStuckEvalInput{
-			Now:                  now,
-			Config:               cfg,
-			CurrentState:         inst.CurrentState,
-			StateEnteredAt:       inst.StateEnteredAt,
-			PendingRework:        inst.PendingRework != nil,
-			BeadFingerprint:      fp,
-			LastBeadFingerprint:  lastFP,
-			PolecatRunning:       polecatUp,
-			NonRequiredBeadCount: nonReq,
-			MissingIntegration:     missingContract,
+			Now:                   now,
+			Config:                cfg,
+			Guard:                 guard,
+			CurrentState:          inst.CurrentState,
+			StateEnteredAt:        inst.StateEnteredAt,
+			PendingRework:         inst.PendingRework != nil,
+			BeadFingerprint:       fp,
+			LastBeadFingerprint:   lastFP,
+			PolecatRunning:        polecatUp,
+			NonRequiredBeadCount:  nonReq,
+			MissingIntegration:    missingContract,
 			PlanningDocsMisaligned: docsMisaligned,
 		})
 
@@ -98,7 +103,7 @@ func RunWorkflowStuckMonitorTick(townRoot string, polecatRunning PolecatSessionC
 			continue
 		}
 
-		repairLog, err := RunWorkflowStuckRepair(townRoot, rig, v, eval.Signals, inst.CurrentState)
+		repairLog, err := RunWorkflowStuckRepair(townRoot, rig, v, guard, eval.Signals, inst.CurrentState)
 		if err != nil {
 			lines = append(lines, fmt.Sprintf("[workflow-stuck] %s: repair failed (%s): %v", rig, eval.Detail, err))
 			continue

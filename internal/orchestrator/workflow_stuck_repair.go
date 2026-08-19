@@ -14,8 +14,9 @@ type WorkflowStuckRepairLog struct {
 }
 
 // RunWorkflowStuckRepair runs idempotent corrective actions in a fixed order.
-// currentState is the rig-flow FSM state (e.g. implementation); used to avoid planning bead repair mid-implementation.
-func RunWorkflowStuckRepair(townRoot, rig string, v WorkflowValidation, signals []WorkflowStuckSignal, currentState string) (*WorkflowStuckRepairLog, error) {
+// guard declares the workflow's state categories (see types.go) so repair does
+// not hardcode rig-flow state names.
+func RunWorkflowStuckRepair(townRoot, rig string, v WorkflowValidation, guard WorkflowStuckGuard, signals []WorkflowStuckSignal, currentState string) (*WorkflowStuckRepairLog, error) {
 	if townRoot == "" || rig == "" {
 		return nil, nil
 	}
@@ -48,7 +49,7 @@ func RunWorkflowStuckRepair(townRoot, rig string, v WorkflowValidation, signals 
 			appendStep(syncLog)
 		}
 
-		implRework := currentState == "implementation" && containsSignal(signals, SignalPendingReworkLinger)
+		implRework := guard.IsPolecatState(currentState) && containsSignal(signals, SignalPendingReworkLinger)
 		if implRework {
 			if stallLog, err := RecoverImplementationStall(townRoot, rig, v); err != nil {
 				return log, fmt.Errorf("recover implementation stall: %w", err)

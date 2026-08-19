@@ -7,26 +7,16 @@ import (
 // PrepareWorkflowReworkFeedback stores concise cross-step context for the next agent.
 // Raw attempt logs often contain grep noise and generic hints; planners need summary + bd list.
 // Profile fields (required_files, qa_verify_command, layout_root) drive recovery text — never hardcode rig paths.
-func PrepareWorkflowReworkFeedback(fromState, nextState, summary, rawFeedback string, v WorkflowValidation) string {
+// routes maps "from->to" to a named feedback builder declared in the workflow template YAML
+// (WorkflowTemplate.ReworkFeedback). Unknown routes fall back to generic sanitized text.
+func PrepareWorkflowReworkFeedback(fromState, nextState, summary, rawFeedback string, v WorkflowValidation, routes map[string]string) string {
 	summary = strings.TrimSpace(summary)
 	rawFeedback = strings.TrimSpace(rawFeedback)
-	if fromState == "plan_review" && nextState == "planning" {
-		return truncateWorkflowText(preparePlanReviewToPlannerFeedback(summary, rawFeedback), maxWorkflowReworkFeedback)
-	}
-	if fromState == "qa_review" && nextState == "implementation" {
-		return truncateWorkflowText(prepareQAReviewToImplementationFeedback(summary, rawFeedback, v), maxWorkflowReworkFeedback)
-	}
-	if fromState == "qa_review" && nextState == "design" {
-		return truncateWorkflowText(prepareQAReviewToDesignFeedback(summary, rawFeedback, v), maxWorkflowReworkFeedback)
-	}
-	if fromState == "test_review" && nextState == "implementation" {
-		return truncateWorkflowText(prepareTestReviewToImplementationFeedback(summary, rawFeedback, v), maxWorkflowReworkFeedback)
-	}
-	if fromState == "test_review" && nextState == "design" {
-		return truncateWorkflowText(prepareTestReviewToDesignFeedback(summary, rawFeedback, v), maxWorkflowReworkFeedback)
-	}
-	if fromState == "test_plan" && nextState == "planning" {
-		return truncateWorkflowText(prepareTestPlanToPlannerFeedback(summary, rawFeedback), maxWorkflowReworkFeedback)
+	key := fromState + "->" + nextState
+	if name := routes[key]; name != "" {
+		if builder, ok := reworkFeedbackBuilders[name]; ok {
+			return truncateWorkflowText(builder(summary, rawFeedback, v), maxWorkflowReworkFeedback)
+		}
 	}
 	cleaned := sanitizeAttemptFeedback(rawFeedback)
 	if summary != "" && cleaned != "" {
@@ -36,6 +26,44 @@ func PrepareWorkflowReworkFeedback(fromState, nextState, summary, rawFeedback st
 		return truncateWorkflowText(summary, maxWorkflowReworkFeedback)
 	}
 	return truncateWorkflowText(cleaned, maxWorkflowReworkFeedback)
+}
+
+// reworkFeedbackBuilder renders workflow-specific rework guidance for an agent.
+type reworkFeedbackBuilder func(summary, raw string, v WorkflowValidation) string
+
+// reworkFeedbackBuilders is the registry of named feedback templates. Workflow
+// templates route "from->to" transitions to these names via rework_feedback YAML.
+var reworkFeedbackBuilders = map[string]reworkFeedbackBuilder{
+	"plan_review_to_planner":         func(summary, raw string, v WorkflowValidation) string { return preparePlanReviewToPlannerFeedback(summary, raw) },
+	"qa_review_to_implementation":    func(summary, raw string, v WorkflowValidation) string { return prepareQAReviewToImplementationFeedback(summary, raw, v) },
+	"qa_review_to_design":            func(summary, raw string, v WorkflowValidation) string { return prepareQAReviewToDesignFeedback(summary, raw, v) },
+	"test_review_to_implementation":  func(summary, raw string, v WorkflowValidation) string { return prepareTestReviewToImplementationFeedback(summary, raw, v) },
+	"test_review_to_design":          func(summary, raw string, v WorkflowValidation) string { return prepareTestReviewToDesignFeedback(summary, raw, v) },
+	"test_plan_to_planner":           func(summary, raw string, v WorkflowValidation) string { return prepareTestPlanToPlannerFeedback(summary, raw) },
+	"phase_advance_to_planning":      func(summary, raw string, v WorkflowValidation) string { return preparePhaseAdvanceToPlanningFeedback(summary, raw, v) },
+	"architecture_failure_to_design": func(summary, raw string, v WorkflowValidation) string { return prepareArchitectureFailureToDesignFeedback(summary, raw, v) },
+}
+
+// prepareArchitectureFailureToDesignFeedback renders rework guidance when an agent
+// escalates SPEC/architecture inconsistencies back to the architect.
+func prepareArchitectureFailureToDesignFeedback(summary, raw string, v WorkflowValidation) string {
+	var b strings.Builder
+	b.WriteString("An agent escalated to architecture rework because SPEC/architecture are inconsistent with the artifacts being reviewed.\n\n")
+	if summary != "" {
+		b.WriteString("Agent summary: ")
+		b.WriteString(summary)
+		b.WriteString("\n")
+	}
+	if err := extractLastTestFailure(raw); err != "" {
+		b.WriteString("\nLast test output:\n")
+		b.WriteString(err)
+		b.WriteString("\n")
+	}
+	b.WriteString("\nArchitect steps:\n")
+	b.WriteString("1. Read SPEC.md, architecture.md, and the agent summary above.\n")
+	b.WriteString("2. Fix architecture.md (HTTP routes, store API names, data model) so planned work and verification agree.\n")
+	b.WriteString("3. `wc -c architecture.md` ≥ minimum, then JSON success — downstream agents refresh plan.md/beads/TEST_PLAN.md on the next step.\n")
+	return strings.TrimSpace(b.String())
 }
 
 func prepareQAReviewToDesignFeedback(summary, raw string, v WorkflowValidation) string {

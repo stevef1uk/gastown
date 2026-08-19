@@ -23,14 +23,15 @@ const (
 
 // WorkflowStuckEvalInput is the pure snapshot for stuck detection (testable without daemon).
 type WorkflowStuckEvalInput struct {
-	Now                 time.Time
-	Config              WorkflowStuckConfig
-	CurrentState        string
-	StateEnteredAt      string
-	PendingRework       bool
-	BeadFingerprint     string
+	Now                   time.Time
+	Config                WorkflowStuckConfig
+	Guard                 WorkflowStuckGuard
+	CurrentState          string
+	StateEnteredAt        string
+	PendingRework         bool
+	BeadFingerprint       string
 	LastBeadFingerprint   string
-	PolecatRunning      bool
+	PolecatRunning        bool
 	NonRequiredBeadCount  int
 	MissingIntegration    bool
 	PlanningDocsMisaligned bool
@@ -66,29 +67,29 @@ func EvalWorkflowStuck(in WorkflowStuckEvalInput) WorkflowStuckEvalResult {
 		parts = append(parts, fmt.Sprintf("pending_rework for %s", inState.Round(time.Second)))
 	}
 
-	if beadProgressState(in.CurrentState) && hasEntered && inState > grace {
+	if in.Guard.InBeadProgressStates(in.CurrentState) && hasEntered && inState > grace {
 		if in.BeadFingerprint != "" && in.BeadFingerprint == in.LastBeadFingerprint && inState >= in.Config.IdleAfter {
 			signals = append(signals, SignalPhaseIdleNoBeadProgress)
 			parts = append(parts, fmt.Sprintf("no bead progress in %s for %s", in.CurrentState, inState.Round(time.Second)))
 		}
 	}
 
-	if in.CurrentState == "implementation" && hasEntered && inState > 5*time.Minute && !in.PolecatRunning {
+	if in.Guard.IsPolecatState(in.CurrentState) && hasEntered && inState > 5*time.Minute && !in.PolecatRunning {
 		signals = append(signals, SignalPolecatSessionMissing)
 		parts = append(parts, "implementation active but rig polecat session not running")
 	}
 
-	if in.NonRequiredBeadCount > 0 && planningOrImplementationState(in.CurrentState) {
+	if in.NonRequiredBeadCount > 0 && in.Guard.InPlanningOrImplementationStates(in.CurrentState) {
 		signals = append(signals, SignalNonRequiredImplementBeads)
 		parts = append(parts, fmt.Sprintf("%d open/in_progress implement bead(s) off required_files", in.NonRequiredBeadCount))
 	}
 
-	if in.MissingIntegration && planningStateNeedsContract(in.CurrentState) {
+	if in.MissingIntegration && in.Guard.InNeedsContractStates(in.CurrentState) {
 		signals = append(signals, SignalMissingIntegrationContract)
 		parts = append(parts, "plan.md missing Integration contract (server profile)")
 	}
 
-	if in.PlanningDocsMisaligned && planningOrImplementationState(in.CurrentState) {
+	if in.PlanningDocsMisaligned && in.Guard.InPlanningOrImplementationStates(in.CurrentState) {
 		signals = append(signals, SignalPlanningDocsMisaligned)
 		parts = append(parts, "SPEC/architecture/plan doc alignment failed")
 	}
@@ -100,33 +101,6 @@ func EvalWorkflowStuck(in WorkflowStuckEvalInput) WorkflowStuckEvalResult {
 		Stuck:   true,
 		Signals: signals,
 		Detail:  strings.Join(parts, "; "),
-	}
-}
-
-func beadProgressState(state string) bool {
-	switch state {
-	case "planning", "plan_review", "test_plan", "project_setup", "implementation", "test_review", "qa_review":
-		return true
-	default:
-		return false
-	}
-}
-
-func planningOrImplementationState(state string) bool {
-	switch state {
-	case "planning", "plan_review", "test_plan", "project_setup", "implementation", "test_review":
-		return true
-	default:
-		return false
-	}
-}
-
-func planningStateNeedsContract(state string) bool {
-	switch state {
-	case "planning", "plan_review", "test_plan", "project_setup", "implementation", "test_review":
-		return true
-	default:
-		return false
 	}
 }
 

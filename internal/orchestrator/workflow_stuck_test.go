@@ -14,14 +14,16 @@ func TestEvalWorkflowStuck_phaseIdleNoBeadProgress(t *testing.T) {
 		StateGrace:   10 * time.Minute,
 		ReworkLinger: 20 * time.Minute,
 	}
+	guard := rigFlowStuckGuard()
 	got := EvalWorkflowStuck(WorkflowStuckEvalInput{
-		Now:                time.Now().UTC(),
-		Config:             cfg,
-		CurrentState:       "implementation",
-		StateEnteredAt:     entered,
-		BeadFingerprint:    "open:te-1:Implement linkshelf/go.mod",
+		Now:                 time.Now().UTC(),
+		Config:              cfg,
+		Guard:               guard,
+		CurrentState:        "implementation",
+		StateEnteredAt:      entered,
+		BeadFingerprint:     "open:te-1:Implement linkshelf/go.mod",
 		LastBeadFingerprint: "open:te-1:Implement linkshelf/go.mod",
-		PolecatRunning:     true,
+		PolecatRunning:      true,
 	})
 	if !got.Stuck {
 		t.Fatalf("expected stuck, got %#v", got)
@@ -36,6 +38,7 @@ func TestEvalWorkflowStuck_pendingReworkLinger(t *testing.T) {
 	got := EvalWorkflowStuck(WorkflowStuckEvalInput{
 		Now:            time.Now().UTC(),
 		Config:         WorkflowStuckConfig{ReworkLinger: 20 * time.Minute, StateGrace: 5 * time.Minute},
+		Guard:          rigFlowStuckGuard(),
 		CurrentState:   "implementation",
 		StateEnteredAt: entered,
 		PendingRework:  true,
@@ -51,6 +54,7 @@ func TestEvalWorkflowStuck_polecatMissing(t *testing.T) {
 	got := EvalWorkflowStuck(WorkflowStuckEvalInput{
 		Now:            time.Now().UTC(),
 		Config:         WorkflowStuckConfig{StateGrace: 5 * time.Minute},
+		Guard:          rigFlowStuckGuard(),
 		CurrentState:   "implementation",
 		StateEnteredAt: entered,
 		PolecatRunning: false,
@@ -62,11 +66,12 @@ func TestEvalWorkflowStuck_polecatMissing(t *testing.T) {
 
 func TestEvalWorkflowStuck_planningDocsMisaligned(t *testing.T) {
 	got := EvalWorkflowStuck(WorkflowStuckEvalInput{
-		Now:                    time.Now().UTC(),
-		Config:                 WorkflowStuckConfig{StateGrace: time.Minute},
-		CurrentState:           "planning",
-		StateEnteredAt:         time.Now().UTC().Add(-2 * time.Minute).Format(time.RFC3339),
-		PlanningDocsMisaligned: true,
+		Now:                     time.Now().UTC(),
+		Config:                  WorkflowStuckConfig{StateGrace: time.Minute},
+		Guard:                   rigFlowStuckGuard(),
+		CurrentState:            "planning",
+		StateEnteredAt:          time.Now().UTC().Add(-2 * time.Minute).Format(time.RFC3339),
+		PlanningDocsMisaligned:  true,
 	})
 	if !containsStuckSignal(got.Signals, SignalPlanningDocsMisaligned) {
 		t.Fatalf("expected planning_docs_misaligned signal, got %v", got.Signals)
@@ -77,6 +82,7 @@ func TestEvalWorkflowStuck_missingIntegrationContract(t *testing.T) {
 	got := EvalWorkflowStuck(WorkflowStuckEvalInput{
 		Now:                time.Now().UTC(),
 		Config:             WorkflowStuckConfig{},
+		Guard:              rigFlowStuckGuard(),
 		CurrentState:       "planning",
 		StateEnteredAt:     time.Now().UTC().Add(-5 * time.Minute).Format(time.RFC3339),
 		MissingIntegration: true,
@@ -91,6 +97,7 @@ func TestEvalWorkflowStuck_graceSuppressesEarlyIdle(t *testing.T) {
 	got := EvalWorkflowStuck(WorkflowStuckEvalInput{
 		Now:                 time.Now().UTC(),
 		Config:              WorkflowStuckConfig{IdleAfter: 30 * time.Minute, StateGrace: 20 * time.Minute},
+		Guard:               rigFlowStuckGuard(),
 		CurrentState:        "implementation",
 		StateEnteredAt:      entered,
 		BeadFingerprint:     "a",
@@ -99,6 +106,32 @@ func TestEvalWorkflowStuck_graceSuppressesEarlyIdle(t *testing.T) {
 	})
 	if got.Stuck {
 		t.Fatalf("expected not stuck during grace, got %#v", got)
+	}
+}
+
+func TestEvalWorkflowStuck_emptyGuardDisablesSignals(t *testing.T) {
+	entered := time.Now().UTC().Add(-45 * time.Minute).Format(time.RFC3339)
+	got := EvalWorkflowStuck(WorkflowStuckEvalInput{
+		Now:                 time.Now().UTC(),
+		Config:              WorkflowStuckConfig{IdleAfter: 30 * time.Minute, StateGrace: 10 * time.Minute, ReworkLinger: 20 * time.Minute},
+		CurrentState:        "implementation",
+		StateEnteredAt:      entered,
+		BeadFingerprint:     "a",
+		LastBeadFingerprint: "a",
+		PolecatRunning:      false,
+		MissingIntegration:  true,
+	})
+	if got.Stuck {
+		t.Fatalf("expected no stuck signals with empty guard, got %#v", got)
+	}
+}
+
+func rigFlowStuckGuard() WorkflowStuckGuard {
+	return WorkflowStuckGuard{
+		BeadProgressStates:             []string{"planning", "plan_review", "test_plan", "test_plan_rework", "project_setup", "implementation", "test_review", "qa_review"},
+		PlanningOrImplementationStates: []string{"planning", "plan_review", "test_plan", "test_plan_rework", "project_setup", "implementation", "test_review"},
+		NeedsContractStates:            []string{"planning", "plan_review", "test_plan", "test_plan_rework", "project_setup", "implementation", "test_review"},
+		PolecatState:                   "implementation",
 	}
 }
 

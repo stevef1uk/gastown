@@ -207,6 +207,27 @@ func TestNormalizeGoDevServerSmokeCommand_pythonJobControlKillPercent(t *testing
 	}
 }
 
+func TestNormalizeGoDevServerSmokeCommand_pythonSubshellPkillCleanup(t *testing.T) {
+	townRoot, rig, v := pythonAPISmokeTestRig(t)
+	in := `cd pyrig/mayor/rig && . .venv/bin/activate && (cd backend && uvicorn app:app --host 127.0.0.1 --port 8080 >/dev/null 2>&1 &) && sleep 2 && curl -s --max-time 10 -o /dev/null -w "%{http_code}" http://127.0.0.1:8080/ && pkill -f "uvicorn app:app" || true`
+	got, ok := normalizeGoDevServerSmokeCommand(in, townRoot, rig, v)
+	if !ok {
+		t.Fatal("expected rewrite")
+	}
+	if strings.Contains(got, "pkill") {
+		t.Fatalf("self-referential pkill cleanup must be stripped: %q", got)
+	}
+	if strings.Contains(got, "\"uvicorn") {
+		t.Fatalf("quoted uvicorn literal from pkill must be gone: %q", got)
+	}
+	if strings.Count(got, "(") != strings.Count(got, ")") {
+		t.Fatalf("subshell unwrap left unbalanced parens: %q", got)
+	}
+	if !strings.Contains(got, "_uvpid=$!") || !strings.Contains(got, "kill $_uvpid") {
+		t.Fatalf("expected pid-based uvicorn background + cleanup: %q", got)
+	}
+}
+
 func TestSimplifyGoDevServerSmokeCommand_shortProbe(t *testing.T) {
 	townRoot, rig, v := linkshelfSmokeTestRig(t)
 	in := `cd testgt3/mayor/rig && cd linkshelf && go mod tidy && go build ./... && go run ./cmd/server & sleep 2 && curl -sf http://127.0.0.1:8080/ && curl -sf http://127.0.0.1:8080/api/links`
