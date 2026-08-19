@@ -1909,6 +1909,8 @@ func validateImplementationCommandWithState(cmd, townRoot, rig, activeBead strin
 }
 
 // validateImplementationBeadReopen blocks reopening implement beads when the queue is done and module tests pass.
+// The LLM-failure retry loop must NOT reopen beads whose on-disk work is already verified —
+// reopen is only for genuine recovery (timeout/gt restart left files missing or stub).
 func validateImplementationBeadReopen(cmd, townRoot, rig string, v orchestrator.WorkflowValidation, scope *orchestrator.ImplementWriteScope, lastVerifyOutput string) error {
 	lower := strings.ToLower(cmd)
 	if !strings.Contains(lower, "bd update") || !strings.Contains(lower, "--status=open") {
@@ -1917,6 +1919,18 @@ func validateImplementationBeadReopen(cmd, townRoot, rig string, v orchestrator.
 	id := extractBeadIDFromBdUpdate(cmd)
 	if id == "" {
 		return nil
+	}
+	// If the bead's on-disk artifact is already verified green, block the reopen.
+	// This mirrors the guard in ReopenClosedImplementBeadsForMissingOpenRequired:
+	// reopen is only for genuine recovery (timeout/restart left files missing/stub),
+	// not for normal LLM-failure retries.
+	beadPath := orchestrator.ImplementBeadPathForID(townRoot, rig, id, v)
+	if beadPath != "" {
+		rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
+		eval := orchestrator.NewImplementBeadVerifyEvaluator(rigDir, v)
+		if eval.VerifySatisfied(beadPath) {
+			return fmt.Errorf("do not reopen %s — on-disk artifact already verifies green (genuine completion); LLM-failure loop must not go through open-beads route", id)
+		}
 	}
 	if scope != nil && scope.QAReworkFromQAReview && scope.BeadCited(id) {
 		return nil

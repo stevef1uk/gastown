@@ -141,7 +141,7 @@ func FormatMissingImplementFilesBlock(townRoot, rig string, v WorkflowValidation
 	return strings.TrimSpace(b.String())
 }
 
-func auditRequiredImplementFiles(rigDir, townRoot, rig string, v WorkflowValidation, eval *implementBeadVerifyEvaluator) []string {
+func auditRequiredImplementFiles(rigDir, townRoot, rig string, v WorkflowValidation, eval *ImplementBeadVerifyEvaluator) []string {
 	v = v.ForActivePhase()
 	headPath := ""
 	if townRoot != "" && rig != "" && BeadsDatabaseReady(townRoot, rig) {
@@ -199,7 +199,7 @@ func auditRequiredImplementFiles(rigDir, townRoot, rig string, v WorkflowValidat
 }
 
 // AuditClosedImplementBeadMismatches reports closed beads whose on-disk artifact still needs work.
-func AuditClosedImplementBeadMismatches(townRoot, rig string, v WorkflowValidation, eval *implementBeadVerifyEvaluator) ([]string, error) {
+func AuditClosedImplementBeadMismatches(townRoot, rig string, v WorkflowValidation, eval *ImplementBeadVerifyEvaluator) ([]string, error) {
 	v = v.ForActivePhase()
 	closed, err := implementBeadsIndexedByPath(townRoot, rig, v, "closed")
 	if err != nil {
@@ -237,7 +237,7 @@ func ReconcileImplementBeads(townRoot, rig string, v WorkflowValidation) (string
 	}
 	v = v.ForActivePhase()
 	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
-	eval := newImplementBeadVerifyEvaluator(rigDir, v)
+	eval := NewImplementBeadVerifyEvaluator(rigDir, v)
 	var parts []string
 
 	// During qa_review, leave beads in their current state. QA verifies and

@@ -666,16 +666,29 @@ func normalizeRigPrefixShellPaths(cmd, rig, layout string) string {
 }
 
 // stripLeadingCDDot removes a leading "cd . &&" when mayor/rig workdir is prepended separately.
+var uvicornServerStartRE = regexp.MustCompile(`(?i)\buvicorn\s+\S+:\S+`)
+
 func isUvicornCommand(cmd string) bool {
-	// Only treat as uvicorn if it appears as a command (uvicorn, python3 -m uvicorn),
-	// not in echo "uvicorn[standard]", cat output, or string literals.
+	// Only treat as uvicorn if it appears as a real server command
+	// (`uvicorn module:app`, `python -m uvicorn module:app`), not as a
+	// string literal in echo/cat/pip output or a requirements line.
+	// A smoke chain may legitimately interleave `echo ""` between curls to
+	// print status codes — that must not disqualify the uvicorn start.
 	lower := strings.ToLower(cmd)
-	return strings.Contains(lower, "uvicorn") &&
-		!strings.Contains(lower, "echo") &&
-		!strings.Contains(lower, "cat ") &&
-		!strings.Contains(lower, ">>") &&
-		!strings.Contains(lower, "'uvicorn") &&
-		!strings.Contains(lower, "\"uvicorn")
+	if !strings.Contains(lower, "uvicorn") {
+		return false
+	}
+	for _, literal := range []string{
+		"'uvicorn", `"uvicorn`, // quoted literal (echo/pkill/cat)
+		"echo uvicorn", "cat uvicorn", "pip install uvicorn", "pip3 install uvicorn",
+		"uvicorn==", "uvicorn[", // requirements / extras notation
+	} {
+		if strings.Contains(lower, literal) {
+			return false
+		}
+	}
+	// A genuine server start invokes uvicorn with a module:app target.
+	return uvicornServerStartRE.MatchString(lower)
 }
 
 func stripCDLayoutPrefix(cmd, layout string) string {

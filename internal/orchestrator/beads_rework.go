@@ -486,7 +486,7 @@ func beadImplementationNeedsRework(rigDir, beadPath string, v WorkflowValidation
 
 func reopenClosedImplementBeads(townRoot, rig string, v WorkflowValidation) ([]string, error) {
 	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
-	eval := newImplementBeadVerifyEvaluator(rigDir, v)
+	eval := NewImplementBeadVerifyEvaluator(rigDir, v)
 	return reopenClosedImplementBeadsOrdered(townRoot, rig, v, eval)
 }
 

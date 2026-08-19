@@ -19,22 +19,22 @@ const beadVerifyTimeout = 10 * time.Second
 // bdCloseImplementBeadHook is set by tests to avoid calling bd close.
 var bdCloseImplementBeadHook func(townRoot, rig, beadID string) error
 
-// implementBeadVerifyEvaluator memoizes Go Verify results for one reconcile pass (deterministic, no duplicate go test runs).
-type implementBeadVerifyEvaluator struct {
+// ImplementBeadVerifyEvaluator memoizes Go/Python Verify results for one reconcile pass (deterministic, no duplicate runs).
+type ImplementBeadVerifyEvaluator struct {
 	rigDir string
 	v      WorkflowValidation
 	memo   map[string]bool
 }
 
-func newImplementBeadVerifyEvaluator(rigDir string, v WorkflowValidation) *implementBeadVerifyEvaluator {
-	return &implementBeadVerifyEvaluator{
+func NewImplementBeadVerifyEvaluator(rigDir string, v WorkflowValidation) *ImplementBeadVerifyEvaluator {
+	return &ImplementBeadVerifyEvaluator{
 		rigDir: rigDir,
 		v:      v.ForActivePhase(),
 		memo:   map[string]bool{},
 	}
 }
 
-func (e *implementBeadVerifyEvaluator) GoSatisfied(beadPath string) bool {
+func (e *ImplementBeadVerifyEvaluator) GoSatisfied(beadPath string) bool {
 	if e == nil || !WorkflowUsesGo(e.v) {
 		return false
 	}
@@ -64,7 +64,7 @@ func (e *implementBeadVerifyEvaluator) GoSatisfied(beadPath string) bool {
 	return green
 }
 
-func (e *implementBeadVerifyEvaluator) PythonSatisfied(beadPath string) bool {
+func (e *ImplementBeadVerifyEvaluator) PythonSatisfied(beadPath string) bool {
 	if e == nil || !WorkflowUsesPython(e.v) {
 		return false
 	}
@@ -113,7 +113,7 @@ func goModBeadVerifyGreen(rigDir string, v WorkflowValidation) bool {
 
 // VerifySatisfied reports whether an implement bead's on-disk artifact is ready to close:
 // Go paths use package verify; frontend paths (.html/.css/.js) use non-stub artifact checks.
-func (e *implementBeadVerifyEvaluator) VerifySatisfied(beadPath string) bool {
+func (e *ImplementBeadVerifyEvaluator) VerifySatisfied(beadPath string) bool {
 	if e == nil {
 		return false
 	}
@@ -235,7 +235,7 @@ func implementBeadPythonVerifyGreenUncached(rigDir, beadPath string, v WorkflowV
 
 // ImplementBeadGoVerifyGreen reports whether a Go implement bead's file exists and its Verify passes.
 func ImplementBeadGoVerifyGreen(rigDir, beadPath string, v WorkflowValidation) bool {
-	return newImplementBeadVerifyEvaluator(rigDir, v).GoSatisfied(beadPath)
+	return NewImplementBeadVerifyEvaluator(rigDir, v).GoSatisfied(beadPath)
 }
 
 // implementBeadsIndexedByPath maps normalized implement paths to beads (first wins per path).
@@ -270,7 +270,7 @@ func orderedImplementBeadPaths(v WorkflowValidation) []string {
 }
 
 // CloseGreenGoModBeads closes open/in_progress go.mod implement beads when SPEC validation and download verify pass.
-func CloseGreenGoModBeads(townRoot, rig string, v WorkflowValidation, eval *implementBeadVerifyEvaluator) ([]string, error) {
+func CloseGreenGoModBeads(townRoot, rig string, v WorkflowValidation, eval *ImplementBeadVerifyEvaluator) ([]string, error) {
 	if townRoot == "" || rig == "" || !WorkflowUsesGo(v) {
 		return nil, nil
 	}
@@ -280,7 +280,7 @@ func CloseGreenGoModBeads(townRoot, rig string, v WorkflowValidation, eval *impl
 	v = v.ForActivePhase()
 	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
 	if eval == nil {
-		eval = newImplementBeadVerifyEvaluator(rigDir, v)
+		eval = NewImplementBeadVerifyEvaluator(rigDir, v)
 	}
 	active, err := implementBeadsIndexedByPath(townRoot, rig, v, "open", "in_progress")
 	if err != nil {
@@ -309,7 +309,7 @@ func CloseGreenGoModBeads(townRoot, rig string, v WorkflowValidation, eval *impl
 
 // CloseImplementBeadsWithGreenGoVerify closes open implement beads whose verify/artifact
 // checks pass (Go: go test/build per bead; frontend: non-stub file on disk), in profile build order.
-func CloseImplementBeadsWithGreenGoVerify(townRoot, rig string, v WorkflowValidation, eval *implementBeadVerifyEvaluator) ([]string, error) {
+func CloseImplementBeadsWithGreenGoVerify(townRoot, rig string, v WorkflowValidation, eval *ImplementBeadVerifyEvaluator) ([]string, error) {
 	if townRoot == "" || rig == "" || !WorkflowUsesGo(v) {
 		return nil, nil
 	}
@@ -318,7 +318,7 @@ func CloseImplementBeadsWithGreenGoVerify(townRoot, rig string, v WorkflowValida
 	}
 	if eval == nil {
 		rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
-		eval = newImplementBeadVerifyEvaluator(rigDir, v)
+		eval = NewImplementBeadVerifyEvaluator(rigDir, v)
 	}
 	v = v.ForActivePhase()
 	// Only auto-close open beads — never in_progress (polecat may be mid-edit; reconcile runs every fetch_task).
@@ -350,7 +350,7 @@ func CloseImplementBeadsWithGreenGoVerify(townRoot, rig string, v WorkflowValida
 // CloseImplementBeadsWithGreenFrontendVerify closes open and in_progress implement beads whose
 // frontend artifacts pass VerifySatisfied. Used when phase verify is still red so Go/handler beads
 // stay open until compile and smoke pass, but finished web assets can leave the queue.
-func CloseImplementBeadsWithGreenFrontendVerify(townRoot, rig string, v WorkflowValidation, eval *implementBeadVerifyEvaluator) ([]string, error) {
+func CloseImplementBeadsWithGreenFrontendVerify(townRoot, rig string, v WorkflowValidation, eval *ImplementBeadVerifyEvaluator) ([]string, error) {
 	if townRoot == "" || rig == "" || !WorkflowUsesGo(v) {
 		return nil, nil
 	}
@@ -359,7 +359,7 @@ func CloseImplementBeadsWithGreenFrontendVerify(townRoot, rig string, v Workflow
 	}
 	if eval == nil {
 		rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
-		eval = newImplementBeadVerifyEvaluator(rigDir, v)
+		eval = NewImplementBeadVerifyEvaluator(rigDir, v)
 	}
 	v = v.ForActivePhase()
 	active, err := implementBeadsIndexedByPath(townRoot, rig, v, "open", "in_progress")
@@ -392,10 +392,10 @@ func CloseImplementBeadsWithGreenFrontendVerify(townRoot, rig string, v Workflow
 
 // reopenClosedImplementBeadsOrdered reopens closed implement beads that still need work, in profile order.
 // Go beads with green Verify are never reopened.
-func reopenClosedImplementBeadsOrdered(townRoot, rig string, v WorkflowValidation, eval *implementBeadVerifyEvaluator) ([]string, error) {
+func reopenClosedImplementBeadsOrdered(townRoot, rig string, v WorkflowValidation, eval *ImplementBeadVerifyEvaluator) ([]string, error) {
 	if eval == nil {
 		rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
-		eval = newImplementBeadVerifyEvaluator(rigDir, v)
+		eval = NewImplementBeadVerifyEvaluator(rigDir, v)
 	}
 	v = v.ForActivePhase()
 	closed, err := implementBeadsIndexedByPath(townRoot, rig, v, "closed")

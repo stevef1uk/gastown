@@ -876,6 +876,25 @@ func TestNormalizeRigPrefixShellPaths(t *testing.T) {
 	}
 }
 
+func TestNormalizeGoDevServerSmokeCommand_pythonEchoBetweenCurls(t *testing.T) {
+	townRoot, rig, v := pythonAPISmokeTestRig(t)
+	in := `cd ping_rig/mayor/rig && . .venv/bin/activate && python -m uvicorn pingapp.main:app --host 127.0.0.1 --port 8080 >/dev/null 2>&1 & _uvpid=$! sleep 2 && curl -s --max-time 10 -o /dev/null -w "%{http_code}" http://127.0.0.1:8080/ping && echo "" && curl -s --max-time 10 http://127.0.0.1:8080/ping && kill $_uvpid 2>/dev/null; wait 2>/dev/null`
+	got, ok := normalizeGoDevServerSmokeCommand(in, townRoot, rig, v)
+	if !ok {
+		t.Fatal("expected rewrite")
+	}
+	// echo between curls must NOT disqualify the uvicorn server start.
+	if strings.Contains(got, "_uvpid=$! sleep") {
+		t.Fatalf("missing separator after _uvpid=$! would leave uvicorn unkillable → exec timeout → signal: terminated: %q", got)
+	}
+	if !strings.Contains(got, "_uvpid=$!;") && !strings.Contains(got, "_uvpid=$! &&") {
+		t.Fatalf("expected _uvpid=$! set before sleep: %q", got)
+	}
+	if !strings.Contains(got, "kill $_uvpid") {
+		t.Fatalf("expected uvicorn cleanup using $_uvpid: %q", got)
+	}
+}
+
 func TestNormalizeGoDevServerSmokeCommand_pythonMultilineCleanup(t *testing.T) {
 	townRoot, rig, v := pythonAPISmokeTestRig(t)
 	in := `cd fin/mayor/rig && .venv/bin/python3 -m uvicorn backend.app.main:app --host 0.0.0.0 --port 8099 &
@@ -1174,5 +1193,58 @@ The web server runs on HOST; Playwright reaches it at http://127.0.0.1:8000.
 	}
 	if err := validateQACommand(wrapped, rig, town, v); err != nil {
 		t.Fatalf("wrapped command must be accepted by validateQACommand (no port mismatch): %v\ncmd=%s", err, wrapped)
+	}
+}
+
+func TestValidateImplementationBeadReopen_blocksGreenBead(t *testing.T) {
+	town := t.TempDir()
+	rig := "rig"
+	rigDir := filepath.Join(town, rig, "mayor", "rig")
+	if err := os.MkdirAll(rigDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	layout := filepath.Join(rigDir, "app")
+	if err := os.MkdirAll(layout, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(layout, "go.mod"), []byte("module app\n\ngo 1.22\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	storeDir := filepath.Join(layout, "internal", "store")
+	if err := os.MkdirAll(storeDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(storeDir, "store.go"), []byte("package store\n\nfunc List() int { return 42 }\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(storeDir, "store_test.go"), []byte("package store\n\nimport \"testing\"\n\nfunc TestList(t *testing.T) {}\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	v := orchestrator.WorkflowValidation{
+		LayoutRoot:        "app",
+		BeadTitleContains: "Implement",
+		QAVerifyCommand:   "cd app && go test ./...",
+		RequiredFiles:     []string{"app/internal/store/store.go"},
+		MinImplementationFileBytes: 1,
+		MinSubstantiveLines:        1,
+	}
+
+	prevList := orchestrator.ListImplementBeadsByStatusHook
+	orchestrator.ListImplementBeadsByStatusHook = func(townRoot, rig string, v orchestrator.WorkflowValidation, status string) ([]orchestrator.PlanBead, error) {
+		if status == "closed" {
+			return []orchestrator.PlanBead{{ID: "b1", Title: "Implement app/internal/store/store.go per architecture"}}, nil
+		}
+		return nil, nil
+	}
+	defer func() { orchestrator.ListImplementBeadsByStatusHook = prevList }()
+
+	cmd := "bd update b1 --status=open"
+	err := validateImplementationBeadReopen(cmd, town, rig, v, nil, "")
+	if err == nil {
+		t.Fatal("expected error when reopening bead whose on-disk work verifies green")
+	}
+	if !strings.Contains(err.Error(), "verifies green") {
+		t.Fatalf("expected 'verifies green' in error, got: %v", err)
 	}
 }

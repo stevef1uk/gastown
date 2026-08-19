@@ -88,7 +88,7 @@ func TestCloseImplementBeadsWithGreenGoVerify_profileOrder(t *testing.T) {
 	}
 	defer func() { ListImplementBeadsByStatusHook = prev }()
 
-	eval := newImplementBeadVerifyEvaluator(rigDir, v)
+	eval := NewImplementBeadVerifyEvaluator(rigDir, v)
 	got, err := CloseImplementBeadsWithGreenGoVerify(dir, rig, v, eval)
 	if err != nil {
 		t.Fatal(err)
@@ -138,7 +138,7 @@ func TestCloseImplementBeadsWithGreenGoVerify_autoClosesGoModBead(t *testing.T) 
 	}
 	defer func() { ListImplementBeadsByStatusHook = prev }()
 
-	eval := newImplementBeadVerifyEvaluator(rigDir, v)
+	eval := NewImplementBeadVerifyEvaluator(rigDir, v)
 	if !eval.GoSatisfied("app/go.mod") {
 		t.Fatal("GoSatisfied(app/go.mod) want true")
 	}
@@ -175,7 +175,7 @@ func TestReopenClosedImplementBeadsOrdered_skipsGreenVerify(t *testing.T) {
 	}
 	defer func() { ListImplementBeadsByStatusHook = prev }()
 
-	eval := newImplementBeadVerifyEvaluator(rigDir, v)
+	eval := NewImplementBeadVerifyEvaluator(rigDir, v)
 	reopened, err := reopenClosedImplementBeadsOrdered(dir, rig, v, eval)
 	if err != nil {
 		t.Fatal(err)
@@ -219,7 +219,7 @@ func TestReopenClosedImplementBeadsOrdered_reopensWhenGoVerifyFails(t *testing.T
 		bdUpdateImplementBeadStatusHook = prevUpdate
 	}()
 
-	eval := newImplementBeadVerifyEvaluator(rigDir, v)
+	eval := NewImplementBeadVerifyEvaluator(rigDir, v)
 	reopened, err := reopenClosedImplementBeadsOrdered(dir, rig, v, eval)
 	if err != nil {
 		t.Fatal(err)
@@ -260,7 +260,7 @@ func TestReopenClosedImplementBeadsOrdered_skipsPythonGreenVerify(t *testing.T) 
 		bdUpdateImplementBeadStatusHook = prevUpdate
 	}()
 
-	eval := newImplementBeadVerifyEvaluator(rigDir, v)
+	eval := NewImplementBeadVerifyEvaluator(rigDir, v)
 	reopened, err := reopenClosedImplementBeadsOrdered(dir, rig, v, eval)
 	if err != nil {
 		t.Fatal(err)
@@ -304,7 +304,7 @@ func TestReopenClosedImplementBeadsOrdered_reopensWhenPythonVerifyFails(t *testi
 		bdUpdateImplementBeadStatusHook = prevUpdate
 	}()
 
-	eval := newImplementBeadVerifyEvaluator(rigDir, v)
+	eval := NewImplementBeadVerifyEvaluator(rigDir, v)
 	reopened, err := reopenClosedImplementBeadsOrdered(dir, rig, v, eval)
 	if err != nil {
 		t.Fatal(err)
@@ -418,7 +418,7 @@ func TestImplementBeadVerifyEvaluator_memoizes(t *testing.T) {
 		MinImplementationFileBytes: 1,
 		MinSubstantiveLines:        1,
 	}
-	eval := newImplementBeadVerifyEvaluator(rigDir, v)
+	eval := NewImplementBeadVerifyEvaluator(rigDir, v)
 	p := "app/internal/store/store.go"
 	if !eval.GoSatisfied(p) {
 		t.Skip("go toolchain required")
@@ -470,7 +470,7 @@ func TestCloseImplementBeadsWithGreenGoVerify_autoClosesFrontendArtifact(t *test
 	}
 	defer func() { ListImplementBeadsByStatusHook = prevList }()
 
-	eval := newImplementBeadVerifyEvaluator(rigDir, v)
+	eval := NewImplementBeadVerifyEvaluator(rigDir, v)
 	if !eval.VerifySatisfied("app/web/index.html") {
 		t.Fatal("frontend artifact should be satisfied")
 	}
@@ -530,7 +530,7 @@ func TestCloseImplementBeadsWithGreenFrontendVerify_closesInProgress(t *testing.
 	}
 	defer func() { ListImplementBeadsByStatusHook = prevList }()
 
-	eval := newImplementBeadVerifyEvaluator(rigDir, v)
+	eval := NewImplementBeadVerifyEvaluator(rigDir, v)
 	if !eval.VerifySatisfied("app/web/style.css") {
 		t.Fatal("frontend artifact should be satisfied")
 	}

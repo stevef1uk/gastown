@@ -581,7 +581,7 @@ func NextOpenImplementBead(townRoot, rig string, v WorkflowValidation) (*PlanBea
 		}
 	}
 	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
-	eval := newImplementBeadVerifyEvaluator(rigDir, v)
+	eval := NewImplementBeadVerifyEvaluator(rigDir, v)
 	order := OrderRequiredFilesForImplementation(v.RequiredFiles)
 	for _, want := range order {
 		if IsProjectSetupArtifactPath(want, v) {
@@ -1367,7 +1367,7 @@ func ReopenClosedImplementBeadsForMissingOpenRequired(townRoot, rig string, v Wo
 		return nil, nil
 	}
 	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
-	eval := newImplementBeadVerifyEvaluator(rigDir, v)
+	eval := NewImplementBeadVerifyEvaluator(rigDir, v)
 	var reopened []string
 	for _, want := range v.RequiredFiles {
 		want = filepath.ToSlash(strings.TrimSpace(want))
@@ -1478,7 +1478,7 @@ func EnsurePlanningImplementBeads(townRoot, rig string, v WorkflowValidation) ([
 		}
 		if id, ok := ClosedImplementBeadForPath(townRoot, rig, want, v); ok {
 			rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
-			if newImplementBeadVerifyEvaluator(rigDir, v).VerifySatisfied(want) {
+			if NewImplementBeadVerifyEvaluator(rigDir, v).VerifySatisfied(want) {
 				continue
 			}
 			if err := bdUpdateImplementBeadStatus(townRoot, rig, id, "open"); err != nil {
