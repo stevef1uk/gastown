@@ -114,6 +114,12 @@ func PlannedTestFiles(testPlan string) []string {
 	var out []string
 	for _, b := range ParseTestPlanBlocks(testPlan) {
 		if f := strings.TrimSpace(b.TestFile); f != "" {
+			// Strip parenthetical descriptions (e.g. "(via httptest, mux wiring check)",
+			// "(verification via build)") that the LLM may append after test file paths —
+			// these are not valid file paths.
+			if idx := strings.IndexAny(f, "([{"); idx >= 0 {
+				f = strings.TrimSpace(f[:idx])
+			}
 			out = append(out, f)
 		}
 	}
