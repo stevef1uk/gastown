@@ -476,6 +476,12 @@ func TestReopenClosedImplementBeadsForMissingOpenRequired_reopensClosedOnlyPaths
 			t.Fatal(err)
 		}
 	}
+	initGit := exec.Command("git", "init")
+	initGit.Dir = filepath.Join(townRoot, rig)
+	initGit.Env = append(os.Environ(), "GIT_AUTHOR_NAME=test", "GIT_AUTHOR_EMAIL=test@test")
+	if out, err := initGit.CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v\n%s", err, out)
+	}
 	init := exec.Command("bd", "init")
 	init.Env = append(os.Environ(), "BEADS_DIR="+beadsDir)
 	init.Dir = rigDir

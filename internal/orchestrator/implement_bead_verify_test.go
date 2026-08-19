@@ -314,7 +314,7 @@ func TestReopenClosedImplementBeadsOrdered_reopensWhenPythonVerifyFails(t *testi
 	}
 }
 
-func TestReopenClosedImplementBeadsForMissingOpenRequired_reopensGreenGoVerify(t *testing.T) {
+func TestReopenClosedImplementBeadsForMissingOpenRequired_keepsGreenClosed(t *testing.T) {
 	dir := t.TempDir()
 	rig := "rig"
 	rigDir := filepath.Join(dir, rig, "mayor", "rig")
@@ -351,8 +351,11 @@ func TestReopenClosedImplementBeadsForMissingOpenRequired_reopensGreenGoVerify(t
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(reopened) == 0 {
-		t.Fatal("closed bead still in required_files must be reopened even when verify passes")
+	if len(reopened) != 0 {
+		t.Fatalf("reopened=%v want [] when on-disk work verifies green (LLM-failure retry must not reopen finished beads)", reopened)
+	}
+	if len(reopenedIDs) != 0 {
+		t.Fatalf("bdUpdateImplementBeadStatus called with %v, want no reopen for verified work", reopenedIDs)
 	}
 }
 

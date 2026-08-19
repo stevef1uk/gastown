@@ -1358,11 +1358,16 @@ func openBeadCoversRequiredPath(townRoot, rig, want string, v WorkflowValidation
 
 // ReopenClosedImplementBeadsForMissingOpenRequired reopens closed implement beads when a
 // required_files path has no open/in_progress bead (e.g. go.mod closed after project_setup).
+// Beads whose on-disk artifact is already verified stay closed — the LLM-failure retry loop
+// must not reopen finished work; this only reopens for genuine recovery (timeout/restart left
+// files missing or stub).
 func ReopenClosedImplementBeadsForMissingOpenRequired(townRoot, rig string, v WorkflowValidation) ([]string, error) {
 	v = v.ForActivePhase()
 	if len(v.RequiredFiles) == 0 {
 		return nil, nil
 	}
+	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
+	eval := newImplementBeadVerifyEvaluator(rigDir, v)
 	var reopened []string
 	for _, want := range v.RequiredFiles {
 		want = filepath.ToSlash(strings.TrimSpace(want))
@@ -1383,6 +1388,14 @@ func ReopenClosedImplementBeadsForMissingOpenRequired(townRoot, rig string, v Wo
 		}
 		id, ok := ClosedImplementBeadForPath(townRoot, rig, want, v)
 		if !ok {
+			continue
+		}
+		// Keep legitimately-closed beads closed when the artifact on disk is
+		// complete and green. Reopening here (pre_run runs every fetch_task)
+		// would undo finished work after a transient LLM failure, trapping the
+		// agent in a close/reopen loop. Genuine recovery still reopens because
+		// missing/stub files fail VerifySatisfied.
+		if eval.VerifySatisfied(want) {
 			continue
 		}
 		if err := bdUpdateImplementBeadStatus(townRoot, rig, id, "open"); err != nil {
