@@ -22,6 +22,12 @@ func isTesterAllowedDocPath(rel string) bool {
 func TesterCommandMutatesForbidden(cmd string, v WorkflowValidation) (path string, ok bool) {
 	layout := strings.Trim(strings.TrimSpace(v.LayoutRoot), "/")
 	if p := ExtractImplementWritePathFromCmd(cmd, layout); p != "" {
+		// Allow tester to write TEST_PLAN.md and test-report.md — these are
+		// tester artifacts, not implement edits, even if the cmd contains
+		// a cat > ... redirect.
+		if isTesterAllowedDocPath(p) {
+			return "", false
+		}
 		return p, true
 	}
 	for _, m := range qaShellRedirectRE.FindAllStringSubmatch(cmd, -1) {
