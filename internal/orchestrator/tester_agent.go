@@ -95,6 +95,11 @@ func ParseTestPlanBlocks(testPlan string) []TestPlanBlock {
 		case "test file":
 			cur.TestFile = val
 		case "bead id":
+			// Strip parenthetical descriptions (e.g. "(handler+tests)", "(go.mod)")
+			// that the LLM may append after bead IDs — these are not valid bead IDs.
+			if idx := strings.IndexAny(val, "([{"); idx >= 0 {
+				val = strings.TrimSpace(val[:idx])
+			}
 			cur.BeadID = val
 		}
 	}
