@@ -161,7 +161,30 @@ func ValidateGoModFile(rigDir string, v WorkflowValidation) error {
 			continue
 		}
 		mod, ver := parts[0], strings.Trim(parts[1], "`")
-		if !GoModFileHasRequire(data, mod, ver) {
+		if GoModFileHasRequire(data, mod, ver) {
+			continue
+		}
+		// Check if main.go has a blank import for this requirement.
+		// This preserves SPEC-required dependencies in go.mod when blank imports exist,
+		// breaking the go mod tidy / validation loop.
+		mainPath := filepath.Join(rigDir, layout, "cmd", "server", "main.go")
+		mainHasBlankImport := false
+		if mainData, err := os.ReadFile(mainPath); err == nil {
+			mainContent := string(mainData)
+			// Map known modules to their blank import paths
+			driverMap := map[string]string{
+				"github.com/mattn/go-sqlite3":        `_ "github.com/mattn/go-sqlite3"`,
+				"github.com/lib/pq":                  `_ "github.com/lib/pq"`,
+				"github.com/go-sql-driver/mysql":     `_ "go-sql-driver/mysql"`,
+				"github.com/jackc/pgx/v5/stdlib":     `_ "github.com/jackc/pgx/v5/stdlib"`,
+				"modernc.org/sqlite":                 `_ "modernc.org/sqlite"`,
+			}
+			blankImport, ok := driverMap[mod]
+			if ok && strings.Contains(mainContent, blankImport) {
+				mainHasBlankImport = true
+			}
+		}
+		if !mainHasBlankImport {
 			return fmt.Errorf("go.mod missing SPEC requirement %q — READ SPEC.md Module section and EDIT go.mod", mod+" "+ver)
 		}
 	}
