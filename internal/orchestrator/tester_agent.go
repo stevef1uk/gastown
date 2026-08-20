@@ -93,7 +93,32 @@ func ParseTestPlanBlocks(testPlan string) []TestPlanBlock {
 		case "level":
 			cur.Level = val
 		case "test file":
-			cur.TestFile = val
+			// Handle comma-separated test files (e.g., "file1.go, file2.go")
+			if strings.Contains(val, ",") {
+				// Split by comma and clean each path
+				parts := strings.Split(val, ",")
+				for i, part := range parts {
+					parts[i] = strings.TrimSpace(part)
+					// Strip parenthetical descriptions from each part
+					if idx := strings.IndexAny(parts[i], "([{"); idx >= 0 {
+						parts[i] = strings.TrimSpace(parts[i][:idx])
+					}
+				}
+				// For each additional file, create a new block
+				for i := 1; i < len(parts); i++ {
+					if parts[i] != "" {
+						newBlock := *cur
+						newBlock.TestFile = parts[i]
+						blocks = append(blocks, newBlock)
+					}
+				}
+				// Set the first file for the current block
+				if len(parts) > 0 {
+					cur.TestFile = parts[0]
+				}
+			} else {
+				cur.TestFile = val
+			}
 		case "bead id":
 			// Strip parenthetical descriptions (e.g. "(handler+tests)", "(go.mod)")
 			// that the LLM may append after bead IDs — these are not valid bead IDs.
