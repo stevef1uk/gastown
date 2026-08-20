@@ -143,13 +143,12 @@ func deriveRuntimeSmokeServerStart(v WorkflowValidation, mergedDocs string) stri
 				return strings.TrimSpace(m)
 			}
 		}
-		// Try to find main.go in layout root: cmd/server/main.go, main.go, layout/main.go
-		layout := strings.Trim(strings.TrimSpace(v.LayoutRoot), "/")
-		if layout != "" && layout != "." {
-			// Use relative path from layout root (working dir will be layout root)
+		// Derive the entrypoint from required_files: use cmd/server/main.go when the
+		// layout declares it, otherwise flat-layout main.go at the layout root.
+		if hasRequiredFileSuffix(v, "/cmd/server/main.go") {
 			return "go run ./cmd/server/main.go"
 		}
-		return "go run main.go"
+		return "go run ."
 	}
 	if WorkflowUsesPython(v) {
 		if cmd := extractPythonServerStartFromQA(v); cmd != "" {
@@ -164,6 +163,17 @@ func deriveRuntimeSmokeServerStart(v WorkflowValidation, mergedDocs string) stri
 		}
 	}
 	return ""
+}
+
+// hasRequiredFileSuffix reports whether any scoped/active required file ends with suffix.
+func hasRequiredFileSuffix(v WorkflowValidation, suffix string) bool {
+	for _, f := range v.UnionRequiredFiles() {
+		f = filepath.ToSlash(strings.TrimSpace(f))
+		if strings.HasSuffix(f, suffix) {
+			return true
+		}
+	}
+	return false
 }
 
 func smokeResetShellParts(paths []string) []string {

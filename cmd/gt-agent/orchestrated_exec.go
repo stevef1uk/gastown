@@ -309,7 +309,7 @@ func isGoDevServerSmokeCommand(cmd string) bool {
 	for i, p := range parts {
 		if p == "go" && i+1 < len(parts) && parts[i+1] == "run" && i+2 < len(parts) {
 			runArg := parts[i+2]
-			if runArg == "." || runArg == "./" {
+			if runArg == "." || runArg == "./" || runArg == "main.go" || runArg == "./main.go" {
 				return true
 			}
 		}
@@ -401,6 +401,10 @@ func rewriteUnittestToWorkdir(cmd, rig string, v orchestrator.WorkflowValidation
 	}
 	// Profile-relative "cd linkshelf && go run …" smoke must not get a second prefix; bare
 	// "go run ./cmd/server" from town root still needs cd into layout_root (see goLayout test).
+	// Doc-derived smoke shells embed their own `cd '<workDir>'`, so never re-prefix them.
+	if orchestrator.IsProfileDerivedSmokeCommand(cmd) {
+		return cmd, false
+	}
 	if isDevServerSmokeCommand(cmd) && (commandHasMayorRigCD(cmd, rig) || commandHasLayoutCD(cmd, layout)) {
 		return cmd, false
 	}

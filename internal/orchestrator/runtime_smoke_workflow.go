@@ -78,6 +78,24 @@ func specHasRuntimeSmokeProbes(spec APISmokeSpec) bool {
 
 var uvicornServerRE = regexp.MustCompile(`(?i)\buvicorn\s+\S+:\S+`)
 
+// isFlatGoServerCommand reports bare go run entrypoints for flat-layout Go servers
+// (go run . / go run ./ / go run main.go), where main.go sits at the layout root
+// instead of cmd/server/main.go. Mirrors gt-agent's isGoDevServerSmokeCommand.
+func isFlatGoServerCommand(cmd string) bool {
+	parts := strings.Fields(cmd)
+	for i, p := range parts {
+		if p != "go" || i+1 >= len(parts) || parts[i+1] != "run" || i+2 >= len(parts) {
+			continue
+		}
+		target := parts[i+2]
+		switch target {
+		case ".", "./", "main.go", "./main.go":
+			return true
+		}
+	}
+	return false
+}
+
 // IsDevServerSmokeCommand reports agent CMDs that start a local HTTP server (Go or Python).
 // Uses module:app syntax to distinguish running a server from pip install / python -c imports.
 func IsDevServerSmokeCommand(cmd string) bool {
@@ -87,6 +105,9 @@ func IsDevServerSmokeCommand(cmd string) bool {
 		return false
 	}
 	if strings.Contains(lower, "go run") && strings.Contains(lower, "cmd/server") {
+		return true
+	}
+	if isFlatGoServerCommand(cmd) {
 		return true
 	}
 	if strings.Contains(lower, "pytest") {

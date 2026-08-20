@@ -138,6 +138,85 @@ func pythonAPISmokeTestRig(t *testing.T) (townRoot, rig string, v orchestrator.W
 	return townRoot, rig, v
 }
 
+// flatGoAPISmokeTestRig mirrors req_flow_rig: a flat-layout Go API (main.go at layout
+// root, no cmd/server) with a documented GET route and a single final delivery phase.
+func flatGoAPISmokeTestRig(t *testing.T) (townRoot, rig string, v orchestrator.WorkflowValidation) {
+	t.Helper()
+	townRoot = t.TempDir()
+	rig = "req_flow_rig"
+	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
+	if err := os.MkdirAll(filepath.Join(rigDir, "helloapi"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	spec := "# SPEC\n| Method | Path | Notes |\n| GET | /hello | 200, JSON greeting |\n"
+	if err := os.WriteFile(filepath.Join(rigDir, "SPEC.md"), []byte(spec), 0644); err != nil {
+		t.Fatal(err)
+	}
+	v = orchestrator.WorkflowValidation{
+		LayoutRoot:      "helloapi",
+		QAVerifyCommand: "cd helloapi && go test ./...",
+		RequiredFiles:   []string{"helloapi/go.mod", "helloapi/handlers.go", "helloapi/main.go", "helloapi/handlers_test.go"},
+		TestRunner:      "go",
+		DevServerPort:   8080,
+		DeliveryPhases: []orchestrator.DeliveryPhase{{
+			ID:              "core",
+			Title:           "Core Implementation",
+			RequiredFiles:   []string{"helloapi/go.mod", "helloapi/handlers.go", "helloapi/main.go", "helloapi/handlers_test.go"},
+			QAVerifyCommand: "cd helloapi && go test ./...",
+		}},
+		ActivePhaseIDField: "core",
+	}
+	return townRoot, rig, v
+}
+
+func TestSimplifyDevServerSmoke_flatGoRunDot(t *testing.T) {
+	townRoot, rig, v := flatGoAPISmokeTestRig(t)
+	in := `cd req_flow_rig/mayor/rig/helloapi && go run .`
+	got, ok := simplifyDevServerSmoke(in, townRoot, rig, v)
+	if !ok {
+		t.Fatalf("expected doc-derived smoke rewrite for flat go run ., got no rewrite")
+	}
+	if !orchestrator.IsProfileDerivedSmokeCommand(got) {
+		t.Fatalf("expected GT_SMOKE profile script, got %q", got)
+	}
+	if !strings.Contains(got, ".gt-smoke.pid") || !strings.Contains(got, "go run .") {
+		t.Fatalf("want background go run . probe, got %q", got)
+	}
+	if strings.Contains(got, "cmd/server") {
+		t.Fatalf("flat layout must not reference cmd/server: %q", got)
+	}
+	if !strings.Contains(got, "/hello") {
+		t.Fatalf("want doc-derived GET /hello curl, got %q", got)
+	}
+}
+
+func TestIsDevServerSmokeCommand_flatGoRunDot(t *testing.T) {
+	for _, in := range []string{"go run .", "cd helloapi && go run .", "go run ./", "go run main.go", "go run ./main.go"} {
+		if !orchestrator.IsDevServerSmokeCommand(in) {
+			t.Fatalf("IsDevServerSmokeCommand(%q) should be true for flat-layout Go server", in)
+		}
+		if !isGoDevServerSmokeCommand(in) {
+			t.Fatalf("isGoDevServerSmokeCommand(%q) should be true", in)
+		}
+	}
+	for _, in := range []string{"go test ./...", "go vet ./...", "go build ./...", "cd helloapi && go mod tidy"} {
+		if orchestrator.IsDevServerSmokeCommand(in) {
+			t.Fatalf("IsDevServerSmokeCommand(%q) should be false (toolchain, not server)", in)
+		}
+	}
+}
+
+func TestDeriveRuntimeSmokeServerStart_flatGo(t *testing.T) {
+	townRoot, rig, v := flatGoAPISmokeTestRig(t)
+	spec, err := orchestrator.LoadAPISmokeSpecFromRig(townRoot, rig, v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if spec.ServerStart != "go run ." {
+		t.Fatalf("flat layout server start = %q, want %q", spec.ServerStart, "go run .")
+	}
+}
+
 func TestSimplifyDevServerSmoke_pythonUvicorn(t *testing.T) {
 	townRoot, rig, v := pythonAPISmokeTestRig(t)
 	in := `cd pyrig/mayor/rig/backend && .venv/bin/python3 -m uvicorn app:app --port 8080 & sleep 4`
@@ -317,6 +396,34 @@ func TestStateRunner_rewriteCommand_qaGoRunSleepOnly(t *testing.T) {
 	}
 	if d := orchestratedCommandTimeoutForTrack("qa", got); d != 45*time.Second {
 		t.Fatalf("qa timeout = %v, want 45s", d)
+	}
+}
+
+// TestStateRunner_rewriteCommand_qaFlatGoRunDot is the req_flow_rig QA-loop regression:
+// agent sends bare `go run .` for a flat-layout Go API (helloapi/main.go, no cmd/server).
+// It must be rewritten into the doc-derived background server + curl smoke, not left to
+// run as a blocking foreground exec that times out at 300s.
+func TestStateRunner_rewriteCommand_qaFlatGoRunDot(t *testing.T) {
+	townRoot, rig, v := flatGoAPISmokeTestRig(t)
+	task := &orchestrator.Task{
+		State:      "qa_review",
+		Hooks:      orchestrator.StateHooks{Track: "qa"},
+		Validation: v,
+	}
+	r := newStateRunner(task, townRoot, rig)
+	in := `cd req_flow_rig/mayor/rig/helloapi && go run .`
+	got := r.rewriteCommand(in)
+	if !orchestrator.IsProfileDerivedSmokeCommand(got) {
+		t.Fatalf("flat-layout go run . must be rewritten to doc-derived smoke, got %q", got)
+	}
+	if strings.Contains(got, "cmd/server") {
+		t.Fatalf("flat layout must not reference cmd/server: %q", got)
+	}
+	if !strings.Contains(got, "go run .") || !strings.Contains(got, "/hello") {
+		t.Fatalf("want background go run . + GET /hello probe, got %q", got)
+	}
+	if !isQARuntimeSmokeCommandOK(got, r.townRoot, r.rig, r.v) {
+		t.Fatalf("rewritten cmd should count as QA runtime smoke: %q", got)
 	}
 }
 
