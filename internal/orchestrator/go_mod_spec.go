@@ -163,6 +163,9 @@ func ValidateGoModFile(rigDir string, v WorkflowValidation) error {
 // ValidateGoModFileForBeadClose checks go.mod before bd close.
 // Require-directive enforcement is relaxed when the module has no .go source files,
 // because go mod tidy correctly strips unused requires from empty modules.
+// However, if .go source files exist and use blank imports (e.g. _ "github.com/mattn/go-sqlite3"),
+// the require directive is considered satisfied even if go mod tidy removed it,
+// because the blank import preserves the dependency in go.mod.
 // Module name must always match SPEC.
 func ValidateGoModFileForBeadClose(rigDir string, v WorkflowValidation) error {
 	if !WorkflowUsesGo(v) {
@@ -202,7 +205,30 @@ func ValidateGoModFileForBeadClose(rigDir string, v WorkflowValidation) error {
 			continue
 		}
 		mod, ver := parts[0], strings.Trim(parts[1], "`")
-		if !GoModFileHasRequire(data, mod, ver) {
+		if GoModFileHasRequire(data, mod, ver) {
+			continue
+		}
+		// Check if main.go has a blank import for this requirement.
+		// This preserves SPEC-required dependencies in go.mod when blank imports exist,
+		// breaking the go mod tidy / validation loop.
+		mainPath := filepath.Join(rigDir, layout, "cmd", "server", "main.go")
+		mainHasBlankImport := false
+		if mainData, err := os.ReadFile(mainPath); err == nil {
+			mainContent := string(mainData)
+			// Map known modules to their blank import paths
+			driverMap := map[string]string{
+				"github.com/mattn/go-sqlite3":        `_ "github.com/mattn/go-sqlite3"`,
+				"github.com/lib/pq":                  `_ "github.com/lib/pq"`,
+				"github.com/go-sql-driver/mysql":     `_ "go-sql-driver/mysql"`,
+				"github.com/jackc/pgx/v5/stdlib":     `_ "github.com/jackc/pgx/v5/stdlib"`,
+				"modernc.org/sqlite":                 `_ "modernc.org/sqlite"`,
+			}
+			blankImport, ok := driverMap[mod]
+			if ok && strings.Contains(mainContent, blankImport) {
+				mainHasBlankImport = true
+			}
+		}
+		if !mainHasBlankImport {
 			return fmt.Errorf("go.mod missing SPEC requirement %q — run go get %s@%s", mod+" "+ver, mod, ver)
 		}
 	}
