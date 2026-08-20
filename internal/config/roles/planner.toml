@@ -1,5 +1,5 @@
 # Planner role definition
-# Spec-to-task breakdown agent. One per town.
+# Spec-to-task breakdown agent. One per rig.
 
 role = "planner"
 scope = "rig"
@@ -7,14 +7,14 @@ nudge = "Check for SPEC breakdown requests or planning assignments, then execute
 prompt_template = "planner.md.tmpl"
 
 [session]
-pattern = "{prefix}-{name}"
-work_dir = "{town}/planner"
+pattern = "{prefix}-{rig}-{name}"
+work_dir = "{rig}/{role}"
 needs_pre_sync = false
 start_command = "gt-agent"
 
 [env]
 GT_ROLE = "planner"
-GT_SCOPE = "town"
+GT_SCOPE = "rig"
 
 [health]
 ping_timeout = "30s"

@@ -205,8 +205,9 @@ func AgentEnv(cfg AgentEnvConfig) map[string]string {
 	if cfg.TownRoot != "" {
 		env["GT_ROOT"] = cfg.TownRoot
 		// Prevent git from walking up to umbrella repo when running in rig worktrees.
-		// Town-level agents (Mayor, Deacon, Planner, Mechanic) need to access the town root's .git.
-		isTownRole := cfg.Role == constants.RoleMayor || cfg.Role == constants.RoleDeacon || cfg.Role == constants.RolePlanner || cfg.Role == constants.RoleMechanic || cfg.Role == "dog" || cfg.Role == "boot"
+		// Town-level agents (Mayor, Deacon, Mechanic) need to access the town root's .git.
+		// Planner is now rig-level.
+		isTownRole := cfg.Role == constants.RoleMayor || cfg.Role == constants.RoleDeacon || cfg.Role == constants.RoleMechanic || cfg.Role == "dog" || cfg.Role == "boot"
 		if !isTownRole {
 			env["GIT_CEILING_DIRECTORIES"] = cfg.TownRoot
 		}

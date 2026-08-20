@@ -65,12 +65,12 @@ func DogBeadIDTown(name string) string {
 var ValidAgentRoles = []string{
 	constants.RoleMayor,    // Town-level: gt-mayor
 	constants.RoleDeacon,   // Town-level: gt-deacon
-	constants.RolePlanner,  // Town-level: gt-planner
 	constants.RoleSetup,    // Town-level: gt-setup
 	"dog",                  // Town-level with name: gt-dog-<name>
 	constants.RoleWitness,  // Per-rig: gt-<rig>-witness
 	constants.RoleRefinery, // Per-rig: gt-<rig>-refinery
 	constants.RoleArchitect, // Per-rig: gt-<rig>-architect
+	constants.RolePlanner,  // Per-rig: gt-<rig>-planner
 	constants.RoleQA,       // Per-rig: gt-<rig>-qa
 	constants.RoleMechanic, // Town-level: gt-mechanic
 	constants.RoleCrew,    // Per-rig with name: gt-<rig>-crew-<name>
