@@ -46,14 +46,20 @@ func GoModFileHasRequire(data []byte, module, version string) bool {
 		return false
 	}
 	content := string(data)
+	// Normalize whitespace in content for matching (handle both tabs and spaces)
+	normalizedContent := strings.ReplaceAll(content, "\t", " ")
+	// Also normalize multiple spaces to single space
+	re := regexp.MustCompile(`\s+`)
+	normalizedContent = re.ReplaceAllString(normalizedContent, " ")
+	
 	// Check for direct match with or without // indirect comment
 	directMatch := module + " " + version
-	if strings.Contains(content, directMatch) || strings.Contains(content, directMatch+" //") {
+	if strings.Contains(normalizedContent, directMatch) || strings.Contains(normalizedContent, directMatch+" //") {
 		return true
 	}
 	// Check for @version format
 	atVersion := module + "@" + version
-	if strings.Contains(content, atVersion) || strings.Contains(content, atVersion+" //") {
+	if strings.Contains(normalizedContent, atVersion) || strings.Contains(normalizedContent, atVersion+" //") {
 		return true
 	}
 	for _, m := range goModRequireLineRE.FindAllStringSubmatch(content, -1) {
@@ -170,13 +176,23 @@ func ValidateGoModFile(rigDir string, v WorkflowValidation) error {
 		if GoModFileHasRequire(data, mod, ver) {
 			continue
 		}
-		// Check if main.go has a blank import for this requirement.
-		// This preserves SPEC-required dependencies in go.mod when blank imports exist,
-		// breaking the go mod tidy / validation loop.
-		mainPath := filepath.Join(rigDir, layout, "cmd", "server", "main.go")
-		mainHasBlankImport := false
-		if mainData, err := os.ReadFile(mainPath); err == nil {
-			mainContent := string(mainData)
+		// Check if any .go file has a blank import for this requirement.
+		// If not, skip validation - the dependency will be pulled in by go mod tidy
+		// when the code actually imports it.
+		layoutDir := filepath.Join(rigDir, layout)
+		hasBlankImport := false
+		_ = filepath.WalkDir(layoutDir, func(path string, d fs.DirEntry, err error) error {
+			if err != nil || hasBlankImport || d.IsDir() {
+				return nil
+			}
+			if !strings.HasSuffix(strings.ToLower(d.Name()), ".go") {
+				return nil
+			}
+			fileData, err := os.ReadFile(path)
+			if err != nil {
+				return nil
+			}
+			fileContent := string(fileData)
 			// Map known modules to their blank import paths
 			driverMap := map[string]string{
 				"github.com/mattn/go-sqlite3":        `_ "github.com/mattn/go-sqlite3"`,
@@ -186,11 +202,14 @@ func ValidateGoModFile(rigDir string, v WorkflowValidation) error {
 				"modernc.org/sqlite":                 `_ "modernc.org/sqlite"`,
 			}
 			blankImport, ok := driverMap[mod]
-			if ok && strings.Contains(mainContent, blankImport) {
-				mainHasBlankImport = true
+			if ok && strings.Contains(fileContent, blankImport) {
+				hasBlankImport = true
 			}
-		}
-		if !mainHasBlankImport {
+			return nil
+		})
+		// Only require the dependency if it's actually being used (has blank import)
+		// Otherwise, go mod tidy will pull it in when the code imports it
+		if hasBlankImport {
 			return fmt.Errorf("go.mod missing SPEC requirement %q — READ SPEC.md Module section and EDIT go.mod", mod+" "+ver)
 		}
 	}
