@@ -155,6 +155,12 @@ func ValidateGoModFile(rigDir string, v WorkflowValidation) error {
 			return fmt.Errorf("go.mod missing module %q line from SPEC.md", canonical)
 		}
 	}
+	// Do not enforce require directives when the module has no .go source files.
+	// go mod tidy correctly removes requires that no source file imports yet.
+	// The requires will be pulled in by go mod tidy when .go files get created.
+	if !goModModuleHasGoSource(rigDir, layout) {
+		return nil
+	}
 	for _, req := range RequiredGoModRequireDirectives(rigDir) {
 		parts := strings.Fields(strings.TrimPrefix(req, "require "))
 		if len(parts) < 2 {
@@ -192,78 +198,9 @@ func ValidateGoModFile(rigDir string, v WorkflowValidation) error {
 }
 
 // ValidateGoModFileForBeadClose checks go.mod before bd close.
-// Require-directive enforcement is relaxed when the module has no .go source files,
-// because go mod tidy correctly strips unused requires from empty modules.
-// However, if .go source files exist and use blank imports (e.g. _ "github.com/mattn/go-sqlite3"),
-// the require directive is considered satisfied even if go mod tidy removed it,
-// because the blank import preserves the dependency in go.mod.
-// Module name must always match SPEC.
+// Uses the general validation which handles blank imports and go source file checks.
 func ValidateGoModFileForBeadClose(rigDir string, v WorkflowValidation) error {
-	if !WorkflowUsesGo(v) {
-		return nil
-	}
-	layout := strings.Trim(strings.TrimSpace(v.LayoutRoot), "/")
-	if layout == "" {
-		layout = "."
-	}
-	modPath := filepath.Join(rigDir, layout, "go.mod")
-	data, err := os.ReadFile(modPath)
-	if err != nil {
-		return fmt.Errorf("go.mod missing at %s", filepath.ToSlash(filepath.Join(layout, "go.mod")))
-	}
-	specPath := filepath.Join(rigDir, "SPEC.md")
-	specData, _ := os.ReadFile(specPath)
-	specDoc := string(specData)
-	canonical := canonicalGoModule(specDoc, v)
-	if canonical != "" {
-		if m := goModModuleLineRE.FindStringSubmatch(string(data)); len(m) >= 2 {
-			if strings.TrimSpace(m[1]) != canonical {
-				return fmt.Errorf("go.mod module %q must be %q per SPEC.md", m[1], canonical)
-			}
-		} else {
-			return fmt.Errorf("go.mod missing module %q line from SPEC.md", canonical)
-		}
-	}
-	// Do not enforce require directives when the module has no .go source files.
-	// go mod tidy correctly removes requires that no source file imports yet.
-	// The requires will be pulled in by go mod tidy when .go files get created.
-	if !goModModuleHasGoSource(rigDir, layout) {
-		return nil
-	}
-	for _, req := range RequiredGoModRequireDirectives(rigDir) {
-		parts := strings.Fields(strings.TrimPrefix(req, "require "))
-		if len(parts) < 2 {
-			continue
-		}
-		mod, ver := parts[0], strings.Trim(parts[1], "`")
-		if GoModFileHasRequire(data, mod, ver) {
-			continue
-		}
-		// Check if main.go has a blank import for this requirement.
-		// This preserves SPEC-required dependencies in go.mod when blank imports exist,
-		// breaking the go mod tidy / validation loop.
-		mainPath := filepath.Join(rigDir, layout, "cmd", "server", "main.go")
-		mainHasBlankImport := false
-		if mainData, err := os.ReadFile(mainPath); err == nil {
-			mainContent := string(mainData)
-			// Map known modules to their blank import paths
-			driverMap := map[string]string{
-				"github.com/mattn/go-sqlite3":        `_ "github.com/mattn/go-sqlite3"`,
-				"github.com/lib/pq":                  `_ "github.com/lib/pq"`,
-				"github.com/go-sql-driver/mysql":     `_ "go-sql-driver/mysql"`,
-				"github.com/jackc/pgx/v5/stdlib":     `_ "github.com/jackc/pgx/v5/stdlib"`,
-				"modernc.org/sqlite":                 `_ "modernc.org/sqlite"`,
-			}
-			blankImport, ok := driverMap[mod]
-			if ok && strings.Contains(mainContent, blankImport) {
-				mainHasBlankImport = true
-			}
-		}
-		if !mainHasBlankImport {
-			return fmt.Errorf("go.mod missing SPEC requirement %q — run go get %s@%s", mod+" "+ver, mod, ver)
-		}
-	}
-	return nil
+	return ValidateGoModFile(rigDir, v)
 }
 
 // GoModBlockFromSpec returns the fenced Module block body from SPEC.md, or "".

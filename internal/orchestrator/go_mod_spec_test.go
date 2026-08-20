@@ -191,6 +191,10 @@ func TestEnsureGoModFromSpec(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(layout, "go.mod"), []byte("module linkshelf\n\ngo 1.22\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
+	// Add a .go file so the go source file check passes
+	if err := os.WriteFile(filepath.Join(layout, "main.go"), []byte("package main\n\nfunc main() {}\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
 	v := WorkflowValidation{
 		LayoutRoot:      "linkshelf",
 		ActivePhaseIDField: "go-module",
