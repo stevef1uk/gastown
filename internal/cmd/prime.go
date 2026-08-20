@@ -1304,14 +1304,18 @@ func getAgentBeadID(ctx RoleContext) string {
 			return beads.CrewBeadIDWithPrefix(prefix, ctx.Rig, ctx.Polecat)
 		}
 		return ""
-	case RolePlanner:
-		return beads.PlannerBeadIDTown()
 	case RoleSetup:
 		return beads.SetupBeadIDTown()
 	case RoleArchitect:
 		if ctx.Rig != "" {
 			prefix := beads.GetPrefixForRig(ctx.TownRoot, ctx.Rig)
 			return beads.ArchitectBeadIDWithPrefix(prefix, ctx.Rig)
+		}
+		return ""
+	case RolePlanner:
+		if ctx.Rig != "" {
+			prefix := beads.GetPrefixForRig(ctx.TownRoot, ctx.Rig)
+			return beads.PlannerBeadIDWithPrefix(prefix, ctx.Rig)
 		}
 		return ""
 	case RoleQA:

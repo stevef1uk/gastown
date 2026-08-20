@@ -52,15 +52,15 @@ func loadRigAtTownRoot(townRoot, rigName string) (*rig.Rig, error) {
 	return rigMgr.GetRig(rigName)
 }
 
-// EnsureOrchestratedTownPipeline starts hq-setup and hq-planner when the orchestrator is running.
+// EnsureOrchestratedTownPipeline starts hq-setup when the orchestrator is running.
 // project_setup work is fetched by hq-setup — it must not stay stopped while wf is running.
+// Planner is now rig-level and is started via ensureOrchestratedRigAgentsRunning.
 func EnsureOrchestratedTownPipeline(townRoot string) {
 	orchRunning, _, _ := orchestrator.IsRunning(townRoot)
 	if !orchRunning {
 		return
 	}
 	_ = upStartSetup(townRoot)
-	_ = upStartPlanner(townRoot)
 }
 
 // EnsureOrchestratedRigAgents starts witness/refinery and rig-flow pipeline agents for a rig
@@ -97,6 +97,11 @@ func ensureOrchestratedRigAgentsRunning(townRoot, rigName string, r *rig.Rig) {
 	wantArch := orchestrator.OrchestratedForRole(true, constants.RoleArchitect)
 	upEnsureFreshPipelineSession(ctx, sp, townRoot, archID, wantArch)
 	_ = upStartArchitect(rigName, r)
+
+	plannerID := session.PlannerSessionName(prefix, rigName)
+	wantPlanner := orchestrator.OrchestratedForRole(true, constants.RolePlanner)
+	upEnsureFreshPipelineSession(ctx, sp, townRoot, plannerID, wantPlanner)
+	_ = upStartPlanner(rigName, r)
 
 	analystID := session.AnalystSessionName(prefix, rigName)
 	wantAnalyst := orchestrator.OrchestratedForRole(true, "analyst")

@@ -100,10 +100,10 @@ Do not use raw tmux send-keys elsewhere.
 Role shortcuts (expand to session names):
   mayor      Maps to hq-mayor
   deacon     Maps to hq-deacon
-  planner    Maps to hq-planner
   witness    Maps to gt-<rig>-witness (uses current rig)
   refinery   Maps to gt-<rig>-refinery (uses current rig)
   architect  Maps to gt-<rig>-architect (uses current rig)
+  planner    Maps to gt-<rig>-planner (uses current rig)
   qa         Maps to gt-<rig>-qa (uses current rig)
 
 Channel syntax:
@@ -478,13 +478,11 @@ func runNudge(cmd *cobra.Command, args []string) (retErr error) {
 	switch target {
 	case constants.RoleMayor:
 		target = session.MayorSessionName()
-	case constants.RolePlanner:
-		target = session.PlannerSessionName()
 	case constants.RoleSetup:
 		target = session.SetupSessionName()
 	case constants.RoleMechanic:
 		target = session.MechanicSessionName()
-	case constants.RoleWitness, constants.RoleRefinery, constants.RoleArchitect, constants.RoleQA, constants.RolePolecat:
+	case constants.RoleWitness, constants.RoleRefinery, constants.RoleArchitect, constants.RolePlanner, constants.RoleQA, constants.RolePolecat:
 		// These need the current rig
 		roleInfo, err := GetRole()
 		if err != nil {
@@ -501,6 +499,8 @@ func runNudge(cmd *cobra.Command, args []string) (retErr error) {
 			target = session.RefinerySessionName(rigPrefix, roleInfo.Rig)
 		case constants.RoleArchitect:
 			target = session.ArchitectSessionName(rigPrefix, roleInfo.Rig)
+		case constants.RolePlanner:
+			target = session.PlannerSessionName(rigPrefix, roleInfo.Rig)
 		case constants.RoleQA:
 			target = session.QASessionName(rigPrefix, roleInfo.Rig)
 		case constants.RolePolecat:
@@ -926,8 +926,6 @@ func addressToAgentBeadID(address string) string {
 		return session.MayorSessionName()
 	case constants.RoleDeacon:
 		return session.DeaconSessionName()
-	case constants.RolePlanner:
-		return session.PlannerSessionName()
 	case constants.RoleSetup:
 		return session.SetupSessionName()
 	}

@@ -12,8 +12,8 @@ import (
 // stays ● between long LLM turns and brief gt-agent exits.
 const pipelineKeepaliveInterval = 45 * time.Second
 
-// ensureOrchestratedPipelineKeepalive starts or revives mayor/planner/setup and
-// per-rig pipeline agents (architect, qa, polecat) for rigs with a running workflow.
+// ensureOrchestratedPipelineKeepalive starts or revives mayor/setup and
+// per-rig pipeline agents (architect, planner, qa, polecat) for rigs with a running workflow.
 // Witness/refinery/deacon/mechanic are skipped when pipeline-only mode is active.
 func (d *Daemon) ensureOrchestratedPipelineKeepalive() {
 	if d.isShutdownInProgress() {
@@ -26,17 +26,12 @@ func (d *Daemon) ensureOrchestratedPipelineKeepalive() {
 
 	d.ensureMayorRunning()
 
-	if d.isPatrolActive("planner") {
-		if p := d.checkPressure("planner"); p.OK {
-			d.ensurePlannerRunning()
-		}
-	}
-
 	if p := d.checkPressure("setup"); p.OK {
 		d.ensureSetupRunning()
 	}
 
 	architectPatrol := d.isPatrolActive("architect")
+	plannerPatrol := d.isPatrolActive("planner")
 	qaPatrol := d.isPatrolActive("qa")
 
 	for _, rigName := range d.getKnownRigs() {
@@ -51,6 +46,11 @@ func (d *Daemon) ensureOrchestratedPipelineKeepalive() {
 		if architectPatrol {
 			if p := d.checkPressure("architect"); p.OK {
 				d.ensureArchitectRunning(rigName)
+			}
+		}
+		if plannerPatrol {
+			if p := d.checkPressure("planner"); p.OK {
+				d.ensurePlannerRunning(rigName)
 			}
 		}
 		if qaPatrol {

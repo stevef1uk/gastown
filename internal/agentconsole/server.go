@@ -711,10 +711,9 @@ func agentLogPaths(townRoot, sessionName, rig, role, workerName string) []string
 		filepath.Join(logDir, sessionName+".wrapper.log"),
 	)
 	if rig == "" {
-		// Town-level orchestrated agents (hq-planner, hq-setup, …).
+		// Town-level orchestrated agents (hq-setup, hq-mayor, hq-deacon, hq-mechanic).
+		// Planner is now rig-level.
 		switch role {
-		case constants.RolePlanner:
-			paths = append(paths, filepath.Join(townRoot, constants.DirPlanner, "typescript"))
 		case constants.RoleSetup:
 			paths = append(paths, filepath.Join(townRoot, constants.DirSetup, "typescript"))
 		case constants.RoleMayor:
@@ -729,7 +728,7 @@ func agentLogPaths(townRoot, sessionName, rig, role, workerName string) []string
 	// Prefer logs/sessions/*.log (NATS wrapper / orchestrated gt-agent) over
 	// typescript — script(1) transcripts often contain terminal escape noise.
 	switch role {
-	case "architect", "analyst", "qa", "witness", "refinery":
+	case "architect", "analyst", "planner", "qa", "witness", "refinery":
 		paths = append(paths, filepath.Join(townRoot, rig, role, "typescript"))
 	case "polecat":
 		if workerName != "" && workerName != sessionName && !strings.HasSuffix(sessionName, "-polecat") {

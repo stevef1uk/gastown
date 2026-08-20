@@ -56,10 +56,10 @@ func TestAgentMatchesTask(t *testing.T) {
 	if !AgentMatchesTask("mayor", "mayor", vars) {
 		t.Fatal("town mayor should match when workflow has rig")
 	}
-	if !AgentMatchesTask("planner", "planner", vars) {
-		t.Fatal("town planner should match when workflow has rig")
+	if !AgentMatchesTask("mockrig/planner", "planner", vars) {
+		t.Fatal("rig planner should match when workflow has rig")
 	}
-	if AgentMatchesTask("planner", "architect", vars) {
+	if AgentMatchesTask("mockrig/planner", "architect", vars) {
 		t.Fatal("wrong role should not match")
 	}
 }
@@ -172,7 +172,7 @@ func TestCompleteTask_validTransitionAndTerminal(t *testing.T) {
 		t.Fatalf("state: %q", m.instances[id].CurrentState)
 	}
 
-	next, err = m.CompleteTask(id, "success", "planner", "", "")
+	next, err = m.CompleteTask(id, "success", "mockrig/planner", "", "")
 	if err != nil || next != "completed" {
 		t.Fatalf("CompleteTask to terminal: next=%q err=%v", next, err)
 	}
@@ -274,7 +274,7 @@ func TestHasActiveWorkflow(t *testing.T) {
 	}
 
 	_, _ = m.CompleteTask(id, "success", "mockrig/architect", "", "")
-	_, _ = m.CompleteTask(id, "success", "planner", "", "")
+	_, _ = m.CompleteTask(id, "success", "mockrig/planner", "", "")
 	if m.HasActiveWorkflow("rig-flow", "mockrig") {
 		t.Fatal("completed workflow should not be active")
 	}
@@ -393,7 +393,7 @@ func TestCompleteTask_crossStateFailureStoresPendingRework(t *testing.T) {
 					"success": {To: "completed"},
 				},
 			},
-			"completed": {Role: "planner"},
+			"completed": {Role: "mayor"},
 		},
 	})
 	id, _ := m.StartWorkflow("rig-flow", map[string]string{"rig": "mockrigb"})
@@ -428,7 +428,7 @@ func TestCompleteTask_crossStateFailureStoresPendingRework(t *testing.T) {
 		t.Fatalf("rework from_state: %q", rework.FromState)
 	}
 
-	_, _ = m.CompleteTask(id, "success", "planner", "", "")
+	_, _ = m.CompleteTask(id, "success", "mockrigb/planner", "", "")
 	if inst.PendingRework != nil {
 		t.Fatal("success should clear pending rework")
 	}

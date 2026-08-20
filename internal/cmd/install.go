@@ -312,19 +312,7 @@ func runInstall(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Create planner directory and settings (planner runs from ~/gt/planner/)
-	plannerDir := filepath.Join(absPath, constants.DirPlanner)
-	if err := os.MkdirAll(plannerDir, 0755); err != nil {
-		fmt.Printf("   %s Could not create planner directory: %v\n", style.Dim.Render("⚠"), err)
-	} else {
-		plannerRuntimeConfig := config.ResolveRoleAgentConfig("planner", absPath, plannerDir)
-		if err := runtime.EnsureSettingsForRole(plannerDir, plannerDir, "planner", plannerRuntimeConfig); err != nil {
-			fmt.Printf("   %s Could not create planner settings: %v\n", style.Dim.Render("⚠"), err)
-		} else {
-			fmt.Printf("   ✓ Created planner/.claude/settings.json\n")
-		}
-	}
-
+	// Planner is now rig-level and no longer created at town level
 	setupDir := filepath.Join(absPath, constants.DirSetup)
 	if err := os.MkdirAll(setupDir, 0755); err != nil {
 		fmt.Printf("   %s Could not create setup directory: %v\n", style.Dim.Render("⚠"), err)
@@ -939,11 +927,6 @@ func initTownAgentBeads(townPath string) error {
 			id:       beads.DeaconBeadIDTown(),
 			roleType: "deacon",
 			title:    "Deacon (daemon beacon) - receives mechanical heartbeats, runs town plugins and monitoring.",
-		},
-		{
-			id:       beads.PlannerBeadIDTown(),
-			roleType: "planner",
-			title:    "Planner - breaks down SPECs into actionable tasks for polecats.",
 		},
 		{
 			id:       beads.SetupBeadIDTown(),

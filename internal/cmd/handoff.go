@@ -658,6 +658,13 @@ func resolveRoleToSession(role string) (string, error) {
 		}
 		return session.ArchitectSessionName(session.PrefixFor(rig), rig), nil
 
+	case constants.RolePlanner:
+		rig := os.Getenv("GT_RIG")
+		if rig == "" {
+			return "", fmt.Errorf("cannot determine rig - set GT_RIG or run from rig context")
+		}
+		return session.PlannerSessionName(session.PrefixFor(rig), rig), nil
+
 	case constants.RoleQA:
 		rig := os.Getenv("GT_RIG")
 		if rig == "" {
@@ -675,8 +682,6 @@ func resolveRoleToSession(role string) (string, error) {
 		}
 		return session.RigPolecatSessionName(session.PrefixFor(rig), rig), nil
 
-	case constants.RolePlanner:
-		return session.PlannerSessionName(), nil
 	case constants.RoleSetup:
 		return session.SetupSessionName(), nil
 

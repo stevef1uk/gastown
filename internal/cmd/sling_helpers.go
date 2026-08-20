@@ -609,8 +609,6 @@ func agentIDToBeadID(agentID, townRoot string) string {
 		return beads.MayorBeadIDTown()
 	case "deacon":
 		return beads.DeaconBeadIDTown()
-	case "planner":
-		return beads.PlannerBeadIDTown()
 	case "setup":
 		return beads.SetupBeadIDTown()
 	case "mechanic":
@@ -629,6 +627,8 @@ func agentIDToBeadID(agentID, townRoot string) string {
 	switch {
 	case len(parts) == 2 && parts[1] == "architect":
 		return beads.ArchitectBeadIDWithPrefix(prefix, rig)
+	case len(parts) == 2 && parts[1] == "planner":
+		return beads.PlannerBeadIDWithPrefix(prefix, rig)
 	case len(parts) == 2 && parts[1] == "qa":
 		return beads.QABeadIDWithPrefix(prefix, rig)
 	case len(parts) == 2 && parts[1] == "witness":

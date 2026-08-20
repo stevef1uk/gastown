@@ -235,7 +235,7 @@ func TestHookDrivenFSM_fetchTaskDeliversHooksPerState(t *testing.T) {
 		t.Fatalf("transition: next=%q err=%v", next, err)
 	}
 
-	payload, err = m.FetchTask("planner")
+	payload, err = m.FetchTask("myrig/planner")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -258,7 +258,7 @@ func TestHookDrivenFSM_completeTaskAdvancesWithHooksUnchangedInTemplate(t *testi
 	m, wfID := loadTestManager(t, hookDrivenSmokeTemplate())
 
 	_, _ = m.CompleteTask(wfID, "success", "mockrig/architect", "", "")
-	payload, err := m.FetchTask("planner")
+	payload, err := m.FetchTask("mockrig/planner")
 	if err != nil {
 		t.Fatal(err)
 	}

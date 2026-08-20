@@ -236,7 +236,7 @@ func runUp(cmd *cobra.Command, args []string) error {
 
 	// Start daemon, deacon, mayor, planner, mechanic, orchestrator, and rig prefetch in parallel
 	var startupWg sync.WaitGroup
-	startupWg.Add(9)
+	startupWg.Add(8) // dolt, daemon, deacon, mayor, setup, mechanic, orchestrator, prefetch (planner is per-rig)
 
 	// 1. Dolt server (if configured)
 	go func() {
@@ -335,12 +335,8 @@ func runUp(cmd *cobra.Command, args []string) error {
 		}
 	}()
 
-	// 4.5. Planner, Setup, and Mechanic
-	var plannerResult, setupResult, mechanicResult agentStartResult
-	go func() {
-		defer startupWg.Done()
-		plannerResult = upStartPlanner(townRoot)
-	}()
+	// 4.5. Setup and Mechanic (Planner is per-rig — see startRigAgentsWithPrefetch)
+	var setupResult, mechanicResult agentStartResult
 	go func() {
 		defer startupWg.Done()
 		setupResult = upStartSetup(townRoot)
@@ -469,10 +465,6 @@ func runUp(cmd *cobra.Command, args []string) error {
 	if !mayorResult.ok {
 		allOK = false
 	}
-	services = append(services, ServiceStatus{Name: plannerResult.name, Type: constants.RolePlanner, OK: plannerResult.ok, Detail: plannerResult.detail})
-	if !plannerResult.ok {
-		allOK = false
-	}
 	services = append(services, ServiceStatus{Name: setupResult.name, Type: constants.RoleSetup, OK: setupResult.ok, Detail: setupResult.detail})
 	if !setupResult.ok {
 		allOK = false
@@ -560,10 +552,10 @@ func runUp(cmd *cobra.Command, args []string) error {
 		services = append(services, orphanServices...)
 	}
 
-	// 5 & 6. Witnesses, Refineries, Architects, QAs (using prefetched rigs)
+	// 5 & 6. Witnesses, Refineries, Architects, Planners, QAs (using prefetched rigs)
 	// Mechanic is town-level only — the single hq-mechanic patrols logs for
 	// the whole town, including all rigs. See `mechanicPatrolScript`.
-	witnessResults, refineryResults, architectResults, qaResults, polecatResults, testerResults := startRigAgentsWithPrefetch(rigs, prefetchedRigs, rigErrors, orchestrated, pipelineOnly)
+	witnessResults, refineryResults, architectResults, plannerResults, qaResults, polecatResults, testerResults := startRigAgentsWithPrefetch(rigs, prefetchedRigs, rigErrors, orchestrated, pipelineOnly)
 
 	if orchestrated {
 		for _, rigName := range rigs {
@@ -577,7 +569,7 @@ func runUp(cmd *cobra.Command, args []string) error {
 		reconcileOrchestratedPipelineAgents(townRoot, rigs, prefetchedRigs)
 	}
 
-	// Collect results in order: all witnesses first, then all refineries, then architects, then qa
+	// Collect results in order: all witnesses first, then all refineries, then architects, then planners, then qa
 	for _, rigName := range rigs {
 		if result, ok := witnessResults[rigName]; ok {
 			services = append(services, ServiceStatus{Name: result.name, Type: constants.RoleWitness, Rig: rigName, OK: result.ok, Detail: result.detail})
@@ -597,6 +589,14 @@ func runUp(cmd *cobra.Command, args []string) error {
 	for _, rigName := range rigs {
 		if result, ok := architectResults[rigName]; ok {
 			services = append(services, ServiceStatus{Name: result.name, Type: constants.RoleArchitect, Rig: rigName, OK: result.ok, Detail: result.detail})
+			if !result.ok {
+				allOK = false
+			}
+		}
+	}
+	for _, rigName := range rigs {
+		if result, ok := plannerResults[rigName]; ok {
+			services = append(services, ServiceStatus{Name: result.name, Type: constants.RolePlanner, Rig: rigName, OK: result.ok, Detail: result.detail})
 			if !result.ok {
 				allOK = false
 			}
@@ -935,17 +935,18 @@ type agentResultMsg struct {
 	result  agentStartResult
 }
 
-// startRigAgentsWithPrefetch starts all Witnesses, Refineries, Architects, and QAs using pre-loaded rig configs.
+// startRigAgentsWithPrefetch starts all Witnesses, Refineries, Architects, Planners, and QAs using pre-loaded rig configs.
 // Uses a worker pool with fixed goroutine count to limit concurrency and reduce overhead.
 //
 // Mechanic is intentionally NOT included here: it is a town-level role
 // (see `TownLevelRoles` in internal/beads/agent_ids.go). A single town
 // mechanic patrols logs for the whole town, including all rigs.
-func startRigAgentsWithPrefetch(rigNames []string, prefetchedRigs map[string]*rig.Rig, rigErrors map[string]error, orchestrated, skipPatrolAgents bool) (witnessResults, refineryResults, architectResults, qaResults, polecatResults, testerResults map[string]agentStartResult) {
+func startRigAgentsWithPrefetch(rigNames []string, prefetchedRigs map[string]*rig.Rig, rigErrors map[string]error, orchestrated, skipPatrolAgents bool) (witnessResults, refineryResults, architectResults, plannerResults, qaResults, polecatResults, testerResults map[string]agentStartResult) {
 	n := len(rigNames)
 	witnessResults = make(map[string]agentStartResult, n)
 	refineryResults = make(map[string]agentStartResult, n)
 	architectResults = make(map[string]agentStartResult, n)
+	plannerResults = make(map[string]agentStartResult, n)
 	qaResults = make(map[string]agentStartResult, n)
 	polecatResults = make(map[string]agentStartResult, n)
 	testerResults = make(map[string]agentStartResult, n)
@@ -960,6 +961,7 @@ func startRigAgentsWithPrefetch(rigNames []string, prefetchedRigs map[string]*ri
 		witnessResults[rigName] = agentStartResult{name: "Witness (" + rigName + ")", ok: false, detail: errDetail}
 		refineryResults[rigName] = agentStartResult{name: "Refinery (" + rigName + ")", ok: false, detail: errDetail}
 		architectResults[rigName] = agentStartResult{name: "Architect (" + rigName + ")", ok: false, detail: errDetail}
+		plannerResults[rigName] = agentStartResult{name: "Planner (" + rigName + ")", ok: false, detail: errDetail}
 		qaResults[rigName] = agentStartResult{name: "QA (" + rigName + ")", ok: false, detail: errDetail}
 		testerResults[rigName] = agentStartResult{name: "Tester (" + rigName + ")", ok: false, detail: errDetail}
 		if orchestrated {
@@ -983,6 +985,7 @@ func startRigAgentsWithPrefetch(rigNames []string, prefetchedRigs map[string]*ri
 		testerResults = startRigAgentPhase(rigNames, prefetchedRigs, constants.RoleTester)
 	}
 	architectResults = startRigAgentPhase(rigNames, prefetchedRigs, constants.RoleArchitect)
+	plannerResults = startRigAgentPhase(rigNames, prefetchedRigs, constants.RolePlanner)
 
 	for rigName, r := range prefetchedRigs {
 		if archResult, ok := architectResults[rigName]; ok && !archResult.ok {
@@ -1004,7 +1007,7 @@ func startRigAgentsWithPrefetch(rigNames []string, prefetchedRigs map[string]*ri
 		}
 	}
 
-	return witnessResults, refineryResults, architectResults, qaResults, polecatResults, testerResults
+	return witnessResults, refineryResults, architectResults, plannerResults, qaResults, polecatResults, testerResults
 }
 
 func startRigAgentPhase(rigNames []string, prefetchedRigs map[string]*rig.Rig, role string) map[string]agentStartResult {
@@ -1036,6 +1039,8 @@ func startRigAgentPhase(rigNames []string, prefetchedRigs map[string]*rig.Rig, r
 					result = upStartRefinery(task.rigName, task.rigObj)
 				case constants.RoleArchitect:
 					result = upStartArchitect(task.rigName, task.rigObj)
+				case constants.RolePlanner:
+					result = upStartPlanner(task.rigName, task.rigObj)
 				case constants.RoleQA:
 					result = upStartQA(task.rigName, task.rigObj)
 				case constants.RoleTester:
@@ -1434,11 +1439,25 @@ func stopLegacyTownPolecat(townRoot string) {
 	}
 }
 
-// upStartPlanner starts a planner and returns a result struct.
-func upStartPlanner(townRoot string) agentStartResult {
-	name := "Planner"
-	sessionID := session.PlannerSessionName()
-	plannerDir := filepath.Join(townRoot, constants.DirPlanner)
+// upStartPlanner starts a planner for the given rig and returns a result struct.
+// Respects parked/docked status - skips starting if rig is not operational.
+func upStartPlanner(rigName string, r *rig.Rig) agentStartResult {
+	name := "Planner (" + rigName + ")"
+
+	townRoot := filepath.Dir(r.Path)
+	if skip, detail := rigOrchestratorAgentSkip(townRoot, rigName, name); skip {
+		return agentStartResult{name: name, ok: true, detail: detail}
+	}
+
+	if !r.GetBoolConfig("auto_start_on_up") && !r.GetBoolConfig("auto_start_on_boot") {
+		townRoot := filepath.Dir(r.Path)
+		if blocked, reason := IsRigParkedOrDocked(townRoot, rigName); blocked {
+			return agentStartResult{name: name, ok: true, detail: fmt.Sprintf("skipped (rig %s)", reason)}
+		}
+	}
+
+	sessionID := session.PlannerSessionName(session.PrefixFor(rigName), rigName)
+	plannerDir := filepath.Join(r.Path, constants.DirPlanner)
 	if err := os.MkdirAll(plannerDir, 0755); err != nil {
 		return agentStartResult{name: name, ok: false, detail: err.Error()}
 	}
@@ -1451,6 +1470,10 @@ func upStartPlanner(townRoot string) agentStartResult {
 	upEnsureFreshPipelineSession(ctx, sp, townRoot, sessionID, wantOrch)
 
 	if running, _ := sp.Exists(ctx, sessionID); running {
+		if orchestrator.IsRigWorkflowPaused(townRoot, rigName) {
+			stopOrchestratedRigAgentsForPausedWorkflow(townRoot, rigName)
+			return agentStartResult{name: name, ok: true, detail: "stopped (workflow paused)"}
+		}
 		return agentStartResult{name: name, ok: true, detail: sessionID}
 	}
 
@@ -1459,6 +1482,8 @@ func upStartPlanner(townRoot string) agentStartResult {
 		WorkDir:      plannerDir,
 		Role:         constants.RolePlanner,
 		TownRoot:     townRoot,
+		RigPath:      r.Path,
+		RigName:      rigName,
 		Orchestrated: wantOrch,
 		Beacon:       session.BeaconConfig{Recipient: "planner", Sender: "daemon", Topic: beaconTopicForOrchestrated(wantOrch)},
 		WaitForAgent: true,

@@ -228,8 +228,6 @@ func TestAgentIDToBeadID_TownLevelAgents(t *testing.T) {
 		{"mayor/", beads.MayorBeadIDTown()},
 		{"deacon", beads.DeaconBeadIDTown()},
 		{"deacon/", beads.DeaconBeadIDTown()},
-		{"planner", beads.PlannerBeadIDTown()},
-		{"planner/", beads.PlannerBeadIDTown()},
 		{"mechanic", beads.MechanicBeadIDTown()},
 		{"mechanic/", beads.MechanicBeadIDTown()},
 	}

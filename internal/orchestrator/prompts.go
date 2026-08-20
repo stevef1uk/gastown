@@ -71,7 +71,7 @@ func LoadPromptFile(townRoot, promptFile string, vars map[string]string) (string
 var rigScopedPipelineRoles = map[string]bool{
 	"architect": true,
 	"analyst":   true,
-	"planner":   false, // town hq-planner is not rig-prefixed
+	"planner":   true,  // planner is now rig-level
 	"setup":     false, // town hq-setup is not rig-prefixed
 	"polecat":   true,
 	"qa":        true,

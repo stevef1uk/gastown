@@ -946,17 +946,7 @@ func (d *Daemon) heartbeat(state *State) {
 		d.killMechanicSessions()
 	}
 
-	// 5.7. Ensure Planner is running (restart if dead)
-	if d.isPatrolActive("planner") {
-		if p := d.checkPressure("planner"); !p.OK {
-			d.logger.Printf("Deferring planner spawn: %s", p.Reason)
-		} else {
-			d.ensurePlannerRunning()
-		}
-	} else {
-		d.logger.Printf("Planner patrol disabled in config, skipping")
-		d.killPlannerSessions()
-	}
+	// Planner is now rig-level and is started via ensureOrchestratedRigAgentsRunning
 
 	// 6. Ensure Mayor is running (restart if dead)
 	d.ensureMayorRunning()
@@ -1972,6 +1962,52 @@ func (d *Daemon) ensureArchitectRunning(rigName string) {
 	d.logger.Printf("Architect session for %s started successfully", rigName)
 }
 
+// ensurePlannerRunning ensures the planner for a specific rig is running.
+func (d *Daemon) ensurePlannerRunning(rigName string) {
+	if operational, reason := d.isRigOperational(rigName); !operational {
+		d.logger.Printf("Skipping planner auto-start for %s: %s", rigName, reason)
+		name := session.PlannerSessionName(session.PrefixFor(rigName), rigName)
+		if exists, _ := d.sp.Exists(d.ctx, name); exists {
+			d.logger.Printf("Killing leftover planner %s (rig %s)", name, reason)
+			_ = d.sp.Stop(d.ctx, name, true)
+		}
+		return
+	}
+
+	sessionID := session.PlannerSessionName(session.PrefixFor(rigName), rigName)
+	rigPath := filepath.Join(d.config.TownRoot, rigName)
+	plannerDir := filepath.Join(rigPath, constants.DirPlanner)
+	_ = os.MkdirAll(plannerDir, 0755)
+
+	wantOrch := d.orchestratedForRole(constants.RolePlanner)
+	d.restartStalePipelineSession(sessionID, wantOrch)
+
+	if running, _ := d.sp.Exists(d.ctx, sessionID); running {
+		return
+	}
+
+	_, err := session.StartSession(d.ctx, d.sp, &session.SessionConfig{
+		SessionID:    sessionID,
+		WorkDir:      plannerDir,
+		Role:         constants.RolePlanner,
+		TownRoot:     d.config.TownRoot,
+		RigPath:      rigPath,
+		RigName:      rigName,
+		Orchestrated: d.orchestratedForRole(constants.RolePlanner),
+		Beacon:       session.BeaconConfig{Recipient: "planner", Sender: "daemon", Topic: "patrol"},
+		WaitForAgent: false,
+		AutoRespawn:  true,
+	})
+	if err != nil {
+		d.logger.Printf("Error starting planner for %s: %v", rigName, err)
+		return
+	}
+
+	d.metrics.recordRestart(d.ctx, "planner")
+	telemetry.RecordDaemonRestart(d.ctx, "planner-"+rigName)
+	d.logger.Printf("Planner session for %s started successfully", rigName)
+}
+
 // ensureQAsRunning ensures qa agents are running for configured rigs.
 func (d *Daemon) ensureQAsRunning() {
 	rigs := d.getPatrolRigs("qa")
@@ -2155,43 +2191,6 @@ func (d *Daemon) ensureTownMechanicRunning() {
 	d.metrics.recordRestart(d.ctx, "mechanic")
 	telemetry.RecordDaemonRestart(d.ctx, "mechanic")
 	d.logger.Printf("Mechanic session started successfully")
-}
-
-// ensurePlannerRunning ensures the town-level planner is running.
-func (d *Daemon) ensurePlannerRunning() {
-	sessionID := session.PlannerSessionName()
-	plannerDir := filepath.Join(d.config.TownRoot, constants.DirPlanner)
-	_ = os.MkdirAll(plannerDir, 0755)
-
-	wantOrch := d.orchestratedForRole(constants.RolePlanner)
-	d.restartStalePipelineSession(sessionID, wantOrch)
-
-	if running, _ := d.sp.Exists(d.ctx, sessionID); running {
-		return
-	}
-
-	beaconTopic := "patrol"
-	if wantOrch {
-		beaconTopic = "orchestrated"
-	}
-	_, err := session.StartSession(d.ctx, d.sp, &session.SessionConfig{
-		SessionID:    sessionID,
-		WorkDir:      plannerDir,
-		Role:         constants.RolePlanner,
-		TownRoot:     d.config.TownRoot,
-		Orchestrated: wantOrch,
-		Beacon:       session.BeaconConfig{Recipient: "planner", Sender: "daemon", Topic: beaconTopic},
-		WaitForAgent: false,
-		AutoRespawn:  true,
-	})
-	if err != nil {
-		d.logger.Printf("Error starting planner: %v", err)
-		return
-	}
-
-	d.metrics.recordRestart(d.ctx, "planner")
-	telemetry.RecordDaemonRestart(d.ctx, "planner")
-	d.logger.Printf("Planner session started successfully")
 }
 
 // ensureSetupRunning ensures the town-level project-setup agent is running (rig-flow).
@@ -3545,17 +3544,7 @@ func (d *Daemon) dispatchQueuedWork() {
 	}
 }
 
-// killPlannerSessions kills leftover planner tmux session.
-func (d *Daemon) killPlannerSessions() {
-	name := session.PlannerSessionName()
-	exists, _ := d.sp.Exists(d.ctx, name)
-	if exists {
-		d.logger.Printf("Killing leftover %s session (patrol disabled)", name)
-		if err := d.sp.Stop(d.ctx, name, true); err != nil {
-			d.logger.Printf("Error killing %s session: %v", name, err)
-		}
-	}
-}
+
 
 // killSetupSessions kills the project-setup session when the orchestrator is stopped.
 func (d *Daemon) killSetupSessions() {

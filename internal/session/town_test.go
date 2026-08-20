@@ -7,12 +7,13 @@ import (
 func TestTownSessions(t *testing.T) {
 	sessions := TownSessions()
 
-	if len(sessions) != 6 {
-		t.Errorf("TownSessions() returned %d sessions, want 6", len(sessions))
+	if len(sessions) != 5 {
+		t.Errorf("TownSessions() returned %d sessions, want 5", len(sessions))
 	}
 
-	// Verify order is correct (Mayor, Planner, Setup, Mechanic, Boot, Deacon)
-	expectedOrder := []string{"Mayor", "Planner", "Setup", "Mechanic", "Boot", "Deacon"}
+	// Verify order is correct (Mayor, Setup, Mechanic, Boot, Deacon)
+	// Planner is now rig-level and no longer in town sessions
+	expectedOrder := []string{"Mayor", "Setup", "Mechanic", "Boot", "Deacon"}
 	for i, s := range sessions {
 		if s.Name != expectedOrder[i] {
 			t.Errorf("TownSessions()[%d].Name = %q, want %q", i, s.Name, expectedOrder[i])
@@ -78,7 +79,7 @@ func TestTownSession_CanBeCreated(t *testing.T) {
 
 func TestTownSession_ShutdownOrder(t *testing.T) {
 	// Verify shutdown order. Boot (Deacon's watchdog) must stop before Deacon.
-	expectedOrder := []string{"Mayor", "Planner", "Setup", "Mechanic", "Boot", "Deacon"}
+	expectedOrder := []string{"Mayor", "Setup", "Mechanic", "Boot", "Deacon"}
 	sessions := TownSessions()
 
 	if len(sessions) != len(expectedOrder) {

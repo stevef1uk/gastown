@@ -23,11 +23,22 @@ func TestDeaconSessionName(t *testing.T) {
 }
 
 func TestPlannerSessionName(t *testing.T) {
-	// Planner session name is now fixed (one per machine), uses HQ prefix
-	want := "hq-planner"
-	got := PlannerSessionName()
-	if got != want {
-		t.Errorf("PlannerSessionName() = %q, want %q", got, want)
+	tests := []struct {
+		rigPrefix string
+		rigName   string
+		want      string
+	}{
+		{"gt", "gastown", "gt-gastown-planner"},
+		{"bd", "beads", "bd-beads-planner"},
+		{"hop", "greenplace", "hop-greenplace-planner"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.rigPrefix+"/"+tt.rigName, func(t *testing.T) {
+			got := PlannerSessionName(tt.rigPrefix, tt.rigName)
+			if got != tt.want {
+				t.Errorf("PlannerSessionName(%q, %q) = %q, want %q", tt.rigPrefix, tt.rigName, got, tt.want)
+			}
+		})
 	}
 }
 

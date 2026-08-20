@@ -32,10 +32,14 @@ func DeaconBeadIDTown() string {
 	return TownBeadsPrefix + "-deacon"
 }
 
-// PlannerBeadIDTown returns the Planner agent bead ID for town-level beads.
-// This uses the "hq-" prefix for town-level storage.
-func PlannerBeadIDTown() string {
-	return TownBeadsPrefix + "-planner"
+// PlannerBeadIDWithPrefix returns the Planner agent bead ID for a rig using the specified prefix.
+func PlannerBeadIDWithPrefix(prefix, rig string) string {
+	return AgentBeadIDWithPrefix(prefix, rig, constants.RolePlanner, "")
+}
+
+// PlannerBeadIDRig returns the Planner agent bead ID for a rig using "gt" prefix.
+func PlannerBeadIDRig(rig string) string {
+	return PlannerBeadIDWithPrefix("gt", rig)
 }
 
 // SetupBeadIDTown returns the project-setup agent bead ID for town-level beads.
@@ -74,13 +78,13 @@ var ValidAgentRoles = []string{
 }
 
 // TownLevelRoles are agent roles that don't have a rig.
-var TownLevelRoles = []string{constants.RoleMayor, constants.RoleDeacon, constants.RolePlanner, constants.RoleSetup, constants.RoleMechanic}
+var TownLevelRoles = []string{constants.RoleMayor, constants.RoleDeacon, constants.RoleSetup, constants.RoleMechanic}
 
 // TownLevelNamedRoles are town-level agent roles that include a name.
 var TownLevelNamedRoles = []string{"dog"}
 
 // RigLevelRoles are agent roles that have a rig but no name.
-var RigLevelRoles = []string{constants.RoleWitness, constants.RoleRefinery, constants.RoleArchitect, constants.RoleQA}
+var RigLevelRoles = []string{constants.RoleWitness, constants.RoleRefinery, constants.RoleArchitect, constants.RoleQA, constants.RolePlanner}
 
 // NamedRoles are agent roles that include a worker name (rig-level).
 var NamedRoles = []string{constants.RoleCrew, constants.RolePolecat}

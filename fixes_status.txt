@@ -682,7 +682,7 @@ Fix the end-to-end Gas Town flow where a spec can be handed to agents who autono
   ```
   Root cause in `agentIDToBeadID(agentID, townRoot)`: it had hand-rolled cases only for `mayor` and `deacon`. Anything else fell through to the path-split, which for the bare string `planner` produced `len(parts) < 2` and returned "". `resolveSelfTarget()` returns `planner/` for the town-level planner singleton, so the lookup always failed. Same bug affected mechanic.
 - **Symptom**: fix #70's auto-unhook fired correctly (log line `Handoff-style role finished — auto-unhooking...`) but the actual `gt unhook` exec'd by gt-agent immediately died with the above error. The hook didn't clear, and the cycle's "Extraordinary action detected" set up the next loop to repeat.
-- **Fix**: Extended `agentIDToBeadID`'s town-level switch to also cover `planner` → `beads.PlannerBeadIDTown()` and `mechanic` → `beads.MechanicBeadIDTown()` (matching the four town-level singletons already known to `internal/cmd/status.go` and `internal/doctor/agent_beads_check.go`). Comment added so the next person adding a town-level agent remembers to update this table.
+- **Fix**: Extended `agentIDToBeadID`'s town-level switch to also cover `planner` → `beads.PlannerBeadIDRig(rig)` and `mechanic` → `beads.MechanicBeadIDTown()` (matching the four town-level singletons already known to `internal/cmd/status.go` and `internal/doctor/agent_beads_check.go`). Comment added so the next person adding a town-level agent remembers to update this table.
 - **Tests**: `TestAgentIDToBeadID_TownLevelAgents` pins all four singletons (`mayor`, `deacon`, `planner`, `mechanic`) both with and without the trailing slash that `resolveSelfTarget` returns.
 - **Status**: Fixed and deployed.
 

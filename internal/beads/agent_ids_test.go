@@ -44,12 +44,12 @@ func TestDogBeadIDTown(t *testing.T) {
 	}
 }
 
-// TestPlannerBeadIDTown tests the town-level Planner bead ID.
-func TestPlannerBeadIDTown(t *testing.T) {
-	got := PlannerBeadIDTown()
-	want := "hq-planner"
+// TestPlannerBeadIDRig tests the rig-level Planner bead ID.
+func TestPlannerBeadIDRig(t *testing.T) {
+	got := PlannerBeadIDRig("gastown")
+	want := "gt-gastown-planner"
 	if got != want {
-		t.Errorf("PlannerBeadIDTown() = %q, want %q", got, want)
+		t.Errorf("PlannerBeadIDRig(\"gastown\") = %q, want %q", got, want)
 	}
 }
 

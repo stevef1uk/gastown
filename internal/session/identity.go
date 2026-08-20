@@ -48,9 +48,6 @@ func ParseAddress(address string) (*AgentIdentity, error) {
 	if address == string(RoleDeacon) || address == string(RoleDeacon)+"/" {
 		return &AgentIdentity{Role: RoleDeacon}, nil
 	}
-	if address == string(RolePlanner) || address == string(RolePlanner)+"/" {
-		return &AgentIdentity{Role: RolePlanner}, nil
-	}
 	if address == string(RoleSetup) || address == string(RoleSetup)+"/" {
 		return &AgentIdentity{Role: RoleSetup}, nil
 	}
@@ -81,6 +78,8 @@ func ParseAddress(address string) (*AgentIdentity, error) {
 			return &AgentIdentity{Role: RoleArchitect, Rig: rig, Prefix: prefix}, nil
 		case string(RoleQA):
 			return &AgentIdentity{Role: RoleQA, Rig: rig, Prefix: prefix}, nil
+		case string(RolePlanner):
+			return &AgentIdentity{Role: RolePlanner, Rig: rig, Prefix: prefix}, nil
 		case string(RoleTester):
 			return &AgentIdentity{Role: RoleTester, Rig: rig, Prefix: prefix}, nil
 		case string(RoleCrew), "polecats":
@@ -148,8 +147,6 @@ func ParseSessionNameWithRegistry(session string, registry *PrefixRegistry) (*Ag
 			return &AgentIdentity{Role: RoleMayor}, nil
 		case string(RoleDeacon):
 			return &AgentIdentity{Role: RoleDeacon}, nil
-		case string(RolePlanner):
-			return &AgentIdentity{Role: RolePlanner}, nil
 		case string(RoleSetup):
 			return &AgentIdentity{Role: RoleSetup}, nil
 		case string(RoleMechanic):
@@ -200,7 +197,7 @@ parseRigRole:
 
 	// In the new format, rest might be "rigName-role"
 	// Roles: witness, refinery, architect, qa, mechanic
-	for _, role := range []Role{RoleWitness, RoleRefinery, RoleArchitect, RoleQA, RoleTester, RoleMechanic} {
+	for _, role := range []Role{RoleWitness, RoleRefinery, RoleArchitect, RoleQA, RoleTester, RoleMechanic, RolePlanner} {
 		roleStr := string(role)
 		if rest == roleStr {
 			// Compatibility case: gt-witness
@@ -241,7 +238,7 @@ func (a *AgentIdentity) SessionName() string {
 		}
 		return DeaconSessionName()
 	case RolePlanner:
-		return PlannerSessionName()
+		return PlannerSessionName(a.prefix(), a.Rig)
 	case RoleSetup:
 		return SetupSessionName()
 	case RoleOverseer:
@@ -299,7 +296,7 @@ func (a *AgentIdentity) BeaconAddress() string {
 	case RoleDeacon:
 		return "deacon"
 	case RolePlanner:
-		return "planner"
+		return BeaconRecipient("planner", "", a.Rig)
 	case RoleSetup:
 		return "setup"
 	case RoleOverseer:
@@ -340,7 +337,7 @@ func (a *AgentIdentity) Address() string {
 	case RoleDeacon:
 		return "deacon"
 	case RolePlanner:
-		return "planner"
+		return fmt.Sprintf("%s/planner", a.Rig)
 	case RoleSetup:
 		return "setup"
 	case RoleOverseer:

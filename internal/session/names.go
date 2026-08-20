@@ -23,10 +23,13 @@ func DeaconSessionName() string {
 	return HQPrefix + "deacon"
 }
 
-// PlannerSessionName returns the session name for the Planner agent.
-// One planner per machine - multi-town requires containers/VMs for isolation.
-func PlannerSessionName() string {
-	return HQPrefix + "planner"
+// PlannerSessionName returns the session name for a rig's Planner agent.
+func PlannerSessionName(rigPrefix, rigName string) string {
+	prefix := rigPrefix
+	if rigName == "" || rigName == rigPrefix {
+		return fmt.Sprintf("%s-planner", prefix)
+	}
+	return fmt.Sprintf("%s-%s-planner", prefix, rigName)
 }
 
 // SetupSessionName returns the session name for the project-setup agent (rig-flow).

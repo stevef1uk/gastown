@@ -15,7 +15,7 @@ func SessionShouldAutoRespawn(townRoot, sessionID string) bool {
 	}
 	orchRunning, _, _ := IsRunning(townRoot)
 	switch sessionID {
-	case session.MayorSessionName(), session.PlannerSessionName(), session.SetupSessionName():
+	case session.MayorSessionName(), session.SetupSessionName():
 		return orchRunning
 	}
 	rig := rigNameFromPipelineSessionID(sessionID)
@@ -29,7 +29,7 @@ func SessionShouldAutoRespawn(townRoot, sessionID string) bool {
 }
 
 func isOrchestratedRigPipelineSession(sessionID string) bool {
-	for _, suffix := range []string{"-polecat", "-architect", "-qa"} {
+	for _, suffix := range []string{"-polecat", "-architect", "-planner", "-qa"} {
 		if strings.HasSuffix(sessionID, suffix) {
 			return true
 		}
@@ -43,7 +43,7 @@ func rigNameFromPipelineSessionID(sessionID string) string {
 		return ""
 	}
 	rest := strings.TrimPrefix(sessionID, "te-")
-	for _, suffix := range []string{"-polecat", "-architect", "-qa", "-witness", "-refinery"} {
+	for _, suffix := range []string{"-polecat", "-architect", "-planner", "-qa", "-witness", "-refinery"} {
 		if strings.HasSuffix(rest, suffix) {
 			return strings.TrimSuffix(rest, suffix)
 		}

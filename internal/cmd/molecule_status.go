@@ -102,11 +102,14 @@ func buildAgentBeadID(identity string, role Role, townRoot string) string {
 		return beads.DogBeadIDTown("boot")
 	case RoleMechanic:
 		return beads.MechanicBeadIDTown()
-	case RolePlanner:
-		return beads.PlannerBeadIDTown()
 	case RoleArchitect:
 		if len(parts) >= 1 {
 			return beads.ArchitectBeadIDWithPrefix(getPrefix(parts[0]), parts[0])
+		}
+		return ""
+	case RolePlanner:
+		if len(parts) >= 1 {
+			return beads.PlannerBeadIDWithPrefix(getPrefix(parts[0]), parts[0])
 		}
 		return ""
 	case RoleQA:

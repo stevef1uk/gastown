@@ -45,10 +45,7 @@ func reconcileOrchestratedPipelineAgents(townRoot string, rigNames []string, pre
 		}
 	}
 
-	wantPlanner := orchestrator.OrchestratedForRole(true, constants.RolePlanner)
-	if upEnsureFreshPipelineSession(ctx, sp, townRoot, session.PlannerSessionName(), wantPlanner) {
-		_ = upStartPlanner(townRoot)
-	}
+
 
 	wantSetup := orchestrator.OrchestratedForRole(true, constants.RoleSetup)
 	if upEnsureFreshPipelineSession(ctx, sp, townRoot, session.SetupSessionName(), wantSetup) {
