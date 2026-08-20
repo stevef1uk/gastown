@@ -81,8 +81,8 @@ func TestLoadBuiltinRoleDefinition(t *testing.T) {
 		{
 			name:          "planner",
 			role:          "planner",
-			wantScope:     "town",
-			wantPattern:   "hq-planner",
+			wantScope:     "rig",
+			wantPattern:   "{prefix}-{name}",
 			wantPreSync:   false,
 		},
 	}
@@ -186,7 +186,11 @@ func TestTownRoles(t *testing.T) {
 		if err != nil {
 			t.Fatalf("loadBuiltinRoleDefinition(%s) error: %v", r, err)
 		}
-		if def.Scope != "town" {
+		if r == "planner" {
+			if def.Scope != "rig" {
+				t.Errorf("role %s has scope %q, expected 'rig'", r, def.Scope)
+			}
+		} else if def.Scope != "town" {
 			t.Errorf("role %s has scope %q, expected 'town'", r, def.Scope)
 		}
 	}

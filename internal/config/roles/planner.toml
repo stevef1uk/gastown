@@ -2,12 +2,12 @@
 # Spec-to-task breakdown agent. One per town.
 
 role = "planner"
-scope = "town"
+scope = "rig"
 nudge = "Check for SPEC breakdown requests or planning assignments, then execute."
 prompt_template = "planner.md.tmpl"
 
 [session]
-pattern = "hq-planner"
+pattern = "{prefix}-{name}"
 work_dir = "{town}/planner"
 needs_pre_sync = false
 start_command = "gt-agent"
