@@ -38,6 +38,7 @@ func RequiredGoModRequireDirectives(rigDir string) []string {
 }
 
 // GoModFileHasRequire reports whether go.mod lists module at version (single-line or block require).
+// Handles // indirect comments that go mod tidy adds.
 func GoModFileHasRequire(data []byte, module, version string) bool {
 	module = strings.TrimSpace(module)
 	version = strings.TrimSpace(strings.Trim(version, "`"))
@@ -45,7 +46,14 @@ func GoModFileHasRequire(data []byte, module, version string) bool {
 		return false
 	}
 	content := string(data)
-	if strings.Contains(content, module+" "+version) || strings.Contains(content, module+"@"+version) {
+	// Check for direct match with or without // indirect comment
+	directMatch := module + " " + version
+	if strings.Contains(content, directMatch) || strings.Contains(content, directMatch+" //") {
+		return true
+	}
+	// Check for @version format
+	atVersion := module + "@" + version
+	if strings.Contains(content, atVersion) || strings.Contains(content, atVersion+" //") {
 		return true
 	}
 	for _, m := range goModRequireLineRE.FindAllStringSubmatch(content, -1) {
