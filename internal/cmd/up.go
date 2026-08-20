@@ -1313,7 +1313,7 @@ func upStartTester(rigName string, r *rig.Rig) agentStartResult {
 	if !r.GetBoolConfig("auto_start_on_up") && !r.GetBoolConfig("auto_start_on_boot") {
 		townRoot := filepath.Dir(r.Path)
 		if blocked, reason := IsRigParkedOrDocked(townRoot, rigName); blocked {
-			return agentStartResult{name: name, ok: true, detail: fmt.Sprintf("skipped (rig %s)", reason)}
+			return agentStartResult{name: name, ok: false, detail: fmt.Sprintf("skipped (rig %s)", reason)}
 		}
 	}
 

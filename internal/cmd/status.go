@@ -151,6 +151,7 @@ type RigStatus struct {
 	HasRefinery  bool            `json:"has_refinery"`
 	HasPlanner   bool            `json:"has_planner"`
 	HasQA        bool            `json:"has_qa"`
+	HasTester    bool            `json:"has_tester"`
 	Hooks        []AgentHookInfo `json:"hooks,omitempty"`
 	Agents       []AgentRuntime  `json:"agents,omitempty"` // Runtime state of all agents in rig
 	MQ           *MQSummary      `json:"mq,omitempty"`     // Merge queue summary
@@ -176,13 +177,14 @@ type AgentHookInfo struct {
 
 // StatusSum provides summary counts.
 type StatusSum struct {
-	RigCount      int `json:"rig_count"`
-	PolecatCount  int `json:"polecat_count"`
-	CrewCount     int `json:"crew_count"`
-	WitnessCount  int `json:"witness_count"`
-	RefineryCount int `json:"refinery_count"`
-	PlannerCount  int `json:"planner_count"`
-	ActiveHooks   int `json:"active_hooks"`
+	RigCount        int `json:"rig_count"`
+	PolecatCount    int `json:"polecat_count"`
+	CrewCount       int `json:"crew_count"`
+	WitnessCount    int `json:"witness_count"`
+	RefineryCount   int `json:"refinery_count"`
+	PlannerCount    int `json:"planner_count"`
+	TesterCount     int `json:"tester_count"`
+	ActiveHooks     int `json:"active_hooks"`
 }
 
 // resolveAgentDisplay inspects the actual running process in the tmux session
@@ -1013,6 +1015,9 @@ func gatherStatus() (TownStatus, error) {
 		if rs.HasPlanner {
 			status.Summary.PlannerCount++
 		}
+		if rs.HasTester {
+			status.Summary.TesterCount++
+		}
 	}
 	status.Summary.RigCount = len(rigs)
 
@@ -1169,7 +1174,7 @@ func outputStatusText(w io.Writer, status TownStatus) error {
 		fmt.Fprintf(w, "─── %s ───────────────────────────────────────────\n\n", style.Bold.Render(r.Name+"/"))
 
 		// Group agents by role
-		var witnesses, refineries, architects, qas, mechanics, crews, polecats []AgentRuntime
+		var witnesses, refineries, architects, qas, mechanics, crews, polecats, testers []AgentRuntime
 		for _, agent := range r.Agents {
 			switch agent.Role {
 			case constants.RoleWitness:
@@ -1186,6 +1191,8 @@ func outputStatusText(w io.Writer, status TownStatus) error {
 				crews = append(crews, agent)
 			case constants.RolePolecat:
 				polecats = append(polecats, agent)
+			case constants.RoleTester:
+				testers = append(testers, agent)
 			}
 		}
 
@@ -1311,8 +1318,24 @@ func outputStatusText(w io.Writer, status TownStatus) error {
 			}
 		}
 
+		// Testers
+		if len(testers) > 0 {
+			if statusVerbose {
+				fmt.Fprintf(w, "%s %s (%d)\n", roleIcons[constants.RoleTester], style.Bold.Render("Testers"), len(testers))
+				for _, agent := range testers {
+					renderAgentDetails(w, agent, "   ", r.Hooks, status.Location)
+				}
+				fmt.Fprintln(w)
+			} else {
+				fmt.Fprintf(w, "%s %s (%d)\n", roleIcons[constants.RoleTester], style.Bold.Render("Testers"), len(testers))
+				for _, agent := range testers {
+					renderAgentCompact(w, agent, "   ", r.Hooks, status.Location)
+				}
+			}
+		}
+
 		// No agents
-		if len(witnesses) == 0 && len(refineries) == 0 && len(architects) == 0 && len(qas) == 0 && len(crews) == 0 && len(polecats) == 0 {
+		if len(witnesses) == 0 && len(refineries) == 0 && len(architects) == 0 && len(qas) == 0 && len(crews) == 0 && len(polecats) == 0 && len(testers) == 0 {
 			fmt.Fprintf(w, "   %s\n", style.Dim.Render("(no agents)"))
 		}
 		fmt.Fprintln(w)

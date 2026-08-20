@@ -50,7 +50,7 @@ Common gaps to catch:
 When everything passes, first generate the workflow profile so the Architect and Planner have the right context:
 
 ```
-CMD: cd {{rig}}/mayor/rig && gt rig spec-index {{rig}}
+CMD: cd {{rig}}/mayor/rig && gt rig spec-index --force {{rig}}
 ```
 
 Then report success:

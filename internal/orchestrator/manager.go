@@ -249,12 +249,9 @@ func (m *Manager) buildTaskPayloadForInstance(instID string) (map[string]interfa
 const maxWorkflowReworkSummary = 2000
 const maxWorkflowReworkFeedback = 6000
 
-// ensureTesterAgent starts the tester agent for a rig if the workflow is in test_plan, test_plan_rework, or test_review state.
+// ensureTesterAgent starts the tester agent for a rig if the tester is not already running.
 // Called after state transitions to ensure the tester agent is running when needed.
 func (m *Manager) ensureTesterAgent(rig string, currentState string) error {
-	if currentState != "test_plan" && currentState != "test_plan_rework" && currentState != "test_review" {
-		return nil
-	}
 	if rig == "" {
 		return nil
 	}
@@ -273,6 +270,8 @@ func (m *Manager) ensureTesterAgent(rig string, currentState string) error {
 	if exists {
 		return nil // already running
 	}
+
+	// Start tester session - always start if rig config exists and tester not already running
 
 	// Start tester session
 	testerDir := filepath.Join(rigPath, constants.DirTester)
@@ -419,13 +418,18 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summa
 	if fromState == "spec_review" && outcome == "success" && next == "design" && rig != "" {
 		// Trigger spec-index asynchronously so workflow can proceed while profile is built.
 		// Profile path: <townRoot>/<rig>/mayor/rig/.gastown/workflow-profile.json
+		// NOTE: --force is required here — a stale profile may already exist (created at
+		// rig-add time, by a prior run, or by the spec_review agent itself), and the
+		// non-force path fails with "profile already exists (use --force to overwrite)".
+		// CombinedOutput is captured so a real failure is diagnosable from the log.
 		go func(townRoot, rigName string) {
-			cmd := exec.Command("gt", "rig", "spec-index", rigName)
+			cmd := exec.Command("gt", "rig", "spec-index", "--force", rigName)
 			cmd.Dir = townRoot
-			if err := cmd.Run(); err != nil {
-				log.Printf("[req-flow] spec-index after spec_review failed: %v", err)
+			out, err := cmd.CombinedOutput()
+			if err != nil {
+				log.Printf("[req-flow] spec-index after spec_review failed: %v; output: %s", err, strings.TrimSpace(string(out)))
 			} else {
-				log.Printf("[req-flow] workflow-profile.json generated for %s", rigName)
+				log.Printf("[req-flow] workflow-profile.json generated for %s; output: %s", rigName, strings.TrimSpace(string(out)))
 			}
 		}(m.townRoot, rig)
 		// Wait for profile file to exist (up to 120s).

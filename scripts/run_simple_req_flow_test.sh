@@ -68,6 +68,25 @@ fi
 gt mayor workflow start req-flow --rig "$RIG_NAME"
 echo "  Workflow started!"
 
+# Wait for workflow-profile.json to be created by spec-index after spec_review
+echo "=== Waiting for workflow-profile.json ==="
+deadline=$((SECONDS + 120))
+while (( SECONDS < deadline )); do
+  if [[ -f "$GT_ROOT/$RIG_NAME/mayor/rig/.gastown/workflow-profile.json" ]]; then
+    echo "  workflow-profile.json created!"
+    break
+  fi
+  if ! (cd "$GT_ROOT" && gt orchestrator status 2>&1) | grep -Fq 'MCP ping OK'; then
+    echo "  Orchestrator not ready, waiting..."
+    gt up --orchestrator-only 2>/dev/null || true
+    sleep 5
+  fi
+  sleep 2
+done
+if [[ ! -f "$GT_ROOT/$RIG_NAME/mayor/rig/.gastown/workflow-profile.json" ]]; then
+  echo "WARN: workflow-profile.json not created within 120s — run 'gt rig spec-index $RIG_NAME --force' manually"
+fi
+
 echo "=== 4. Monitoring ==="
 echo ""
 echo "Watch the pipeline with:"
