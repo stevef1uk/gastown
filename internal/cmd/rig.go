@@ -754,7 +754,7 @@ func runRigAdd(cmd *cobra.Command, args []string) error {
 	// Generate workflow-profile.json from SPEC.md BEFORE auto-starting the workflow,
 	// so the orchestrator has the full profile (layout_root, required_files, etc.)
 	// when planning begins. Force re-index to ensure JUDGE runs even if profile exists.
-	maybeSpecIndexFromSPEC(townRoot, name, true)
+	// maybeSpecIndexFromSPEC(townRoot, name, true)
 	maybeAutoSyncPlanningAfterRigSetup(townRoot, name)
 
 	// Scaffold docker-compose/Playwright infra from embedded rig-init templates
