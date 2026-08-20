@@ -178,9 +178,15 @@ func AgentEnv(cfg AgentEnvConfig) map[string]string {
 		}
 
 	case constants.RolePlanner:
-		env["GT_ROLE"] = constants.RolePlanner
-		env["BD_ACTOR"] = constants.RolePlanner
-		env["GIT_AUTHOR_NAME"] = constants.RolePlanner
+		if cfg.RigPath != "" {
+			env["GT_ROLE"] = filepath.Base(cfg.RigPath) + "/" + constants.RolePlanner
+			env["BD_ACTOR"] = filepath.Base(cfg.RigPath) + "/" + constants.RolePlanner
+			env["GIT_AUTHOR_NAME"] = filepath.Base(cfg.RigPath) + "/" + constants.RolePlanner
+		} else {
+			env["GT_ROLE"] = constants.RolePlanner
+			env["BD_ACTOR"] = constants.RolePlanner
+			env["GIT_AUTHOR_NAME"] = constants.RolePlanner
+		}
 
 	case constants.RoleMechanic:
 		env["GT_ROLE"] = constants.RoleMechanic

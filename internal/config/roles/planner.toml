@@ -8,12 +8,12 @@ prompt_template = "planner.md.tmpl"
 
 [session]
 pattern = "{prefix}-{rig}-{name}"
-work_dir = "{rig}/{role}"
+work_dir = "{town}/{rig}/planner"
 needs_pre_sync = false
 start_command = "gt-agent"
 
 [env]
-GT_ROLE = "planner"
+GT_ROLE = "{rig}/planner"
 GT_SCOPE = "rig"
 
 [health]
