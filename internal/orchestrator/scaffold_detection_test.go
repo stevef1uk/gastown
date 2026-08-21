@@ -135,8 +135,8 @@ func TestSelectTemplatesForPlan_profileDriven(t *testing.T) {
 	if tpl["docker-compose.host-run.yml"] != "docker-compose.yml" {
 		t.Fatalf("host-run compose should go to layout root: %v", tpl)
 	}
-	if tpl["Dockerfile"] != "Dockerfile" {
-		t.Fatalf("host-run with no non-default Dockerfile should still emit the stack Dockerfile: %v", tpl)
+	if tpl["Dockerfile.playwright-stage"] != "Dockerfile" {
+		t.Fatalf("host-run with no non-default Dockerfile should emit the playwright-stage Dockerfile: %v", tpl)
 	}
 }
 
