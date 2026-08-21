@@ -6,22 +6,17 @@
 # Docker Desktop — host networking does NOT expose the macOS host's loopback to containers.
 # The host source tree is mounted READ-ONLY at /src so the container can never modify or delete
 # rig files (git metadata, SPEC, plan, architecture, source). Source is copied into a writable
-# /app volume where npm install and Playwright write node_modules/, test-results/, and
-# playwright-report/ without touching the host tree.
-# Runs npm install then playwright test.
+# /app volume where Playwright writes test-results/, and playwright-report/ without touching the host tree.
+# Uses multi-stage Dockerfile to pre-install npm dependencies.
 
 services:
   playwright:
-    image: {{PLAYWRIGHT_IMAGE}}
+    build:
+      context: .
+      target: playwright
     working_dir: {{PLAYWRIGHT_WORKDIR}}
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    volumes:
-      - .:/src:ro
-      - playwright-app:/app
     environment:
       - BASE_URL={{PLAYWRIGHT_BASE_URL}}
-    command: sh -c "cp -r /src/. /app/ && npm install --no-package-lock && {{PLAYWRIGHT_COMMAND}}"
-
-volumes:
-  playwright-app:
+    command: sh -c "{{PLAYWRIGHT_COMMAND}}"

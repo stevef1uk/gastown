@@ -7,16 +7,15 @@
 services:
 {{SERVICES_BLOCK}}
   playwright:
-    image: {{PLAYWRIGHT_IMAGE}}
+    build:
+      context: .
+      target: playwright
     working_dir: /app
     depends_on:
       {{E2E_DEPENDS_ON}}
-    volumes:
-      - .:/src:ro
-      - e2e-results:/app/test-results
     environment:
       - BASE_URL={{BASE_URL}}
-    command: sh -c "cp -r /src/. /app/ && npm install --no-package-lock && {{PLAYWRIGHT_COMMAND}}"
+    command: sh -c "{{PLAYWRIGHT_COMMAND}}"
 
 volumes:
   e2e-results:
