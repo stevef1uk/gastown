@@ -211,6 +211,16 @@ clean:
 test:
 	go test ./...
 
+# test-coverage: Run tests with coverage and report against 80% target
+test-coverage:
+	@go test -coverprofile=coverage.out ./... 2>&1
+	@TOTAL=$$(go tool cover -func=coverage.out | tail -1 | awk '{print $$3}' | tr -d '%'); \
+	echo "Total coverage: $$TOTAL% (target: 80%)"; \
+	if [ $$(echo "$$TOTAL < 80" | bc -l) -eq 1 ]; then \
+		echo "WARNING: Coverage $$TOTAL% is below 80% target"; \
+	fi; \
+	rm -f coverage.out
+
 tests: test
 
 # Run e2e tests in isolated container (the only supported way to run them)
