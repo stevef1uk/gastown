@@ -1,0 +1,16 @@
+# Multi-stage Dockerfile for Playwright E2E testing in docker-compose.
+# The "playwright" target installs npm deps + browsers so compose can
+# build the test-runner image from the rig's layout root.
+# Template variables: {{PLAYWRIGHT_BASE_TAG}}
+
+FROM mcr.microsoft.com/playwright:{{PLAYWRIGHT_BASE_TAG}} AS playwright
+
+WORKDIR /app
+
+# Copy package manifest and install dependencies (cached layer)
+COPY package.json package-lock.json* ./
+RUN npm install
+
+# Copy Playwright config and test directory
+COPY playwright.config.ts ./
+COPY ./e2e/ ./e2e/

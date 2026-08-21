@@ -110,25 +110,26 @@ func ScaffoldRigIntegrationTemplates(townRoot, rig string, optPlan *ScaffoldPlan
 // buildTemplateValues builds the substitution map for templates.
 func buildTemplateValues(plan *ScaffoldPlan, port int, kind string, v *WorkflowValidation) map[string]string {
 	vals := map[string]string{
-		"PLAYWRIGHT_IMAGE":   "playwright-go-test:latest",
-		"PLAYWRIGHT_VERSION": PlaywrightNPMVersion(),
-		"PLAYWRIGHT_WORKDIR": "/app",
-		"PLAYWRIGHT_COMMAND": "npx playwright test --project=chromium",
-		"APP_PORT":           fmt.Sprintf("%d", port),
-		"WEB_PORT":           fmt.Sprintf("%d", port),
-		"TEST_DIR":           "./e2e",
-		"NODE_IMAGE":         "node:20-slim",
-		"PY_IMAGE":           "python:3.11-slim",
-		"FRONTEND_DIR":       "frontend",
-		"BACKEND_DIR":        "backend",
-		"STATIC_OUTPUT":      ".next/static",
-		"UV_CMD":             "pip install -r requirements.txt",
-		"RUN_CMD":            `["python", "app.py"]`,
-		"HEALTHCHECK":        `"CMD", "curl", "-f", "http://localhost:${APP_PORT}/"`,
-		"ENV_BLOCK":          "PORT=${APP_PORT}",
-		"SERVICES_BLOCK":     "",
-		"E2E_DEPENDS_ON":     "",
-		"APP_BUILD":          ".",
+		"PLAYWRIGHT_IMAGE":    "playwright-go-test:latest",
+		"PLAYWRIGHT_VERSION":  PlaywrightNPMVersion(),
+		"PLAYWRIGHT_BASE_TAG": PlaywrightRunnerBaseTag,
+		"PLAYWRIGHT_WORKDIR":  "/app",
+		"PLAYWRIGHT_COMMAND":  "npx playwright test --project=chromium",
+		"APP_PORT":            fmt.Sprintf("%d", port),
+		"WEB_PORT":            fmt.Sprintf("%d", port),
+		"TEST_DIR":            "./e2e",
+		"NODE_IMAGE":          "node:20-slim",
+		"PY_IMAGE":            "python:3.11-slim",
+		"FRONTEND_DIR":        "frontend",
+		"BACKEND_DIR":         "backend",
+		"STATIC_OUTPUT":       ".next/static",
+		"UV_CMD":              "pip install -r requirements.txt",
+		"RUN_CMD":             `["python", "app.py"]`,
+		"HEALTHCHECK":         `"CMD", "curl", "-f", "http://localhost:${APP_PORT}/"`,
+		"ENV_BLOCK":           "PORT=${APP_PORT}",
+		"SERVICES_BLOCK":      "",
+		"E2E_DEPENDS_ON":      "",
+		"APP_BUILD":           ".",
 	}
 
 	// Determine base URL based on kind
@@ -276,33 +277,49 @@ func multiServiceBaseURL(services []ScaffoldService, fallbackPort int) string {
 func selectTemplatesForPlan(plan *ScaffoldPlan, v *WorkflowValidation) map[string]string {
 	templates := map[string]string{}
 
-	// Dockerfile based on stack — unless the profile requires a specific
-	// non-default Dockerfile (e.g. Dockerfile.web). In that case the required
-	// file is authoritative and we must not drop a stray plain Dockerfile into
-	// the layout root.
-	requiredDF := multiServiceAppDockerfile(v)
-	if requiredDF == "" || requiredDF == "Dockerfile" {
-		switch plan.Stack {
-		case "hybrid":
-			templates["Dockerfile.hybrid"] = "Dockerfile"
-		case "python":
-			templates["Dockerfile.python"] = "Dockerfile"
-		case "node":
-			templates["Dockerfile.node"] = "Dockerfile"
-		default:
-			templates["Dockerfile"] = "Dockerfile"
-		}
-	}
-
-	// Docker-compose based on resolved kind.
+	// Docker-compose based on resolved kind. For host-run and multi-service,
+	// the compose uses "build: target: playwright" which requires a Dockerfile
+	// with a "playwright" stage. For single-container, the app Dockerfile is
+	// the build target and no separate playwright stage is needed.
 	kind, composeDst := resolveComposeKind(plan, v)
 	switch kind {
 	case "host-run":
 		templates["docker-compose.host-run.yml"] = composeDst
+		templates["Dockerfile.playwright-stage"] = "Dockerfile"
 	case "single-container":
 		templates["docker-compose.single-container.yml"] = composeDst
+		// Single-container app Dockerfile is selected below (stack-based).
 	default:
 		templates["docker-compose.multi-service.yml"] = composeDst
+		templates["Dockerfile.playwright-stage"] = "Dockerfile.playwright"
+	}
+
+	// Dockerfile based on stack — only for single-container (where the app
+	// Dockerfile IS the compose build target) or when no kind-specific
+	// Dockerfile was already chosen above.
+	requiredDF := multiServiceAppDockerfile(v)
+	needStackDockerfile := true
+	for _, dst := range templates {
+		if dst == "Dockerfile" {
+			needStackDockerfile = false
+			break
+		}
+	}
+	if needStackDockerfile {
+		if requiredDF == "" || requiredDF == "Dockerfile" {
+			if kind == "single-container" {
+				switch plan.Stack {
+				case "hybrid":
+					templates["Dockerfile.hybrid"] = "Dockerfile"
+				case "python":
+					templates["Dockerfile.python"] = "Dockerfile"
+				case "node":
+					templates["Dockerfile.node"] = "Dockerfile"
+				default:
+					templates["Dockerfile"] = "Dockerfile"
+				}
+			}
+		}
 	}
 
 	// Playwright config + package.json
