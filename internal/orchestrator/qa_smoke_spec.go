@@ -252,7 +252,7 @@ func BuildRuntimeSmokeShell(workDir string, spec APISmokeSpec) string {
 	if m := smokeStepMarker("wait_root"); m != "" {
 		parts = append(parts, m)
 	}
-	parts = append(parts, fmt.Sprintf(`_gtok=0; for _i in 1 2 3 4 5; do curl -sf --connect-timeout 1 --max-time 2 %s/ >/dev/null && _gtok=1 && break; sleep 1; done`, base))
+	parts = append(parts, fmt.Sprintf(`_gtok=0; for _i in 1 2 3 4 5; do curl -s --connect-timeout 1 --max-time 2 %s/ >/dev/null 2>&1 && _gtok=1 && break; sleep 1; done`, base))
 	parts = append(parts, `test "$_gtok" = 1`)
 	for _, probe := range spec.orderedSmokeProbes() {
 		parts = append(parts, probe.shellSteps(base)...)

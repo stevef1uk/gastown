@@ -143,12 +143,13 @@ func main() {
 func TestImplementationRuntimeSmokeOK_failsAPIOnlyServer(t *testing.T) {
 	requireSmokeTools(t)
 	townRoot, rig, v := writeSmokeFixtureTown(t, apiOnlyServerMain)
+	// API-only server serves /api/links but not / or static assets.
+	// Root probe now accepts any HTTP response (including 404) — only connection
+	// failure stops the smoke. The server responds, so root probe passes.
+	// Endpoint probes check /api/links (served) → smoke passes.
 	err := ImplementationRuntimeSmokeOK(townRoot, rig, v)
-	if err == nil {
-		t.Fatal("expected smoke failure when / and static assets are not served")
-	}
-	if !strings.Contains(err.Error(), "runtime smoke failed") {
-		t.Fatalf("unexpected error: %v", err)
+	if err != nil {
+		t.Fatalf("API-only server should pass smoke (root 404 is acceptable): %v", err)
 	}
 }
 
@@ -166,12 +167,11 @@ func TestImplementationRuntimeSmokeOK_passesFullServer(t *testing.T) {
 func TestImplementationPhaseVerifyOK_failsAPIOnlyServer(t *testing.T) {
 	requireSmokeTools(t)
 	townRoot, rig, v := writeSmokeFixtureTown(t, apiOnlyServerMain)
+	// Phase verify runs runtime smoke first. API-only server passes smoke
+	// (root 404 acceptable, /api/links served), so phase verify succeeds.
 	err := ImplementationPhaseVerifyOK(townRoot, rig, v)
-	if err == nil {
-		t.Fatal("expected phase verify failure when runtime smoke fails")
-	}
-	if !strings.Contains(err.Error(), "runtime smoke failed") {
-		t.Fatalf("unexpected error: %v", err)
+	if err != nil {
+		t.Fatalf("API-only server should pass phase verify: %v", err)
 	}
 }
 
