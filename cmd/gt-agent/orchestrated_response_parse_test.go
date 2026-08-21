@@ -763,3 +763,43 @@ cd finally/mayor/rig && bd list --status=open --limit=0 --filter="title:^Impleme
 		t.Fatalf("want 3 cmds parsed, got %d: %v", len(cmds), cmds)
 	}
 }
+
+func TestStripFunctionalCommandsTags(t *testing.T) {
+	t.Parallel()
+
+	// Standalone opening/closing tags on their own lines should be stripped
+	in := `<functional_commands>
+CMD: go test ./...
+</functional_commands>`
+	got := stripFunctionalCommandsTags(in)
+	if strings.Contains(got, "<functional_commands>") || strings.Contains(got, "</functional_commands>") {
+		t.Fatalf("should strip tags, got:\n%s", got)
+	}
+	if !strings.Contains(got, "CMD: go test ./...") {
+		t.Fatalf("want CMD preserved, got:\n%s", got)
+	}
+
+	// Inline tags wrapped around a command should be stripped, command preserved
+	in = `<functional_commands>CMD: curl -s http://localhost:8080/ </functional_commands>`
+	got = stripFunctionalCommandsTags(in)
+	if strings.Contains(got, "<functional_commands>") || strings.Contains(got, "</functional_commands>") {
+		t.Fatalf("should strip inline tags, got:\n%s", got)
+	}
+	if !strings.Contains(got, "CMD: curl -s http://localhost:8080/") {
+		t.Fatalf("want CMD preserved, got:\n%s", got)
+	}
+
+	// No tags — passthrough unchanged
+	in = "CMD: go test ./...\n{\"outcome\":\"success\"}"
+	got = stripFunctionalCommandsTags(in)
+	if got != in {
+		t.Fatalf("no-tags input should be unchanged, got:\n%s", got)
+	}
+
+	// Self-closing tag
+	in = `<functional_commands />`
+	got = stripFunctionalCommandsTags(in)
+	if strings.TrimSpace(got) != "" {
+		t.Fatalf("self-closing tag should be stripped entirely, got:\n%s", got)
+	}
+}

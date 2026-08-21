@@ -29,6 +29,7 @@ func preprocessOrchestratedResponse(response string) string {
 	response = unwrapFunctionToolCalls(response)
 	response = normalizeGluedWriteBody(response)
 	response = unwrapAngleBracketCMD(response)
+	response = stripFunctionalCommandsTags(response)
 	response = normalizeGluedCMDMarkers(response)
 	response = gluedNativeToolRE.ReplaceAllString(response, "$1\n$2")
 	response = gluedCmdToToolRE.ReplaceAllString(response, "$1\n$2")
@@ -251,6 +252,46 @@ func unwrapAngleBracketCMD(response string) string {
 	}
 	return strings.Join(out, "\n")
 }
+
+// stripFunctionalCommandsTags removes <functional_commands> and </functional_commands>
+// XML tags that some LLMs emit around command blocks. These tags are not valid
+// CMD: markup and cause bash syntax errors when they leak into shell commands.
+func stripFunctionalCommandsTags(response string) string {
+	if !strings.Contains(response, "<functional_commands") {
+		return response
+	}
+	var out []string
+	for _, line := range strings.Split(response, "\n") {
+		trimmed := strings.TrimSpace(line)
+		upper := strings.ToUpper(trimmed)
+		// Strip any line that is just a functional_commands tag (open, close, or self-closing)
+		if upper == "<FUNCTIONAL_COMMANDS>" || upper == "</FUNCTIONAL_COMMANDS>" ||
+			upper == "<FUNCTIONAL_COMMANDS />" || strings.HasPrefix(upper, "<FUNCTIONAL_COMMANDS") && strings.HasSuffix(upper, "/>") {
+			continue
+		}
+		// Handle inline tags: strip the tags, keep the content
+		if strings.Contains(line, "<functional_commands") {
+			cleaned := line
+			// Remove all variations of the tags
+			for _, tag := range []string{
+				"<functional_commands>", "</functional_commands>",
+				"<functional_commands />", "<functional_commands/>",
+				"<FUNCTIONAL_COMMANDS>", "</FUNCTIONAL_COMMANDS>",
+				"<FUNCTIONAL_COMMANDS />", "<FUNCTIONAL_COMMANDS/>",
+			} {
+				cleaned = strings.ReplaceAll(cleaned, tag, "")
+			}
+			cleaned = strings.TrimSpace(cleaned)
+			if cleaned != "" {
+				out = append(out, cleaned)
+			}
+			continue
+		}
+		out = append(out, line)
+	}
+	return strings.Join(out, "\n")
+}
+
 // JSON arrays that some LLMs (e.g. Gemini) emit natively. Converts to inline CMD:/READ:/EDIT:/WRITE: markers.
 func unwrapJSONCommandArray(response string) string {
 	if !strings.Contains(response, `"commands"`) {
