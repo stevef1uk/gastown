@@ -1,6 +1,7 @@
 # Docker compose test harness for single-container rig
 # Template variables: {{PLAYWRIGHT_IMAGE}}, {{PLAYWRIGHT_WORKDIR}}, {{PLAYWRIGHT_COMMAND}}, {{BASE_URL}}, {{APP_PORT}}, {{APP_BUILD}}, {{HEALTHCHECK}}, {{ENV_BLOCK}}
 # App runs in its own container; Playwright reaches it over the internal compose network.
+# Multi-stage Dockerfile is used to pre-install npm dependencies.
 
 services:
   app:
@@ -17,17 +18,16 @@ services:
       retries: 20
 
   playwright:
-    image: {{PLAYWRIGHT_IMAGE}}
+    build:
+      context: {{APP_BUILD}}
+      target: playwright
     working_dir: {{PLAYWRIGHT_WORKDIR}}
     depends_on:
       app:
         condition: service_healthy
-    volumes:
-      - .:/src:ro
-      - playwright-app:/app
     environment:
       - BASE_URL={{BASE_URL}}
-    command: sh -c "cp -r /src/. /app/ && npm install --no-package-lock && {{PLAYWRIGHT_COMMAND}}"
+    command: sh -c "{{PLAYWRIGHT_COMMAND}}"
 
 volumes:
   playwright-app:

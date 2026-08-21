@@ -161,12 +161,6 @@ func ValidateGoModFile(rigDir string, v WorkflowValidation) error {
 			return fmt.Errorf("go.mod missing module %q line from SPEC.md", canonical)
 		}
 	}
-	// Do not enforce require directives when the module has no .go source files.
-	// go mod tidy correctly removes requires that no source file imports yet.
-	// The requires will be pulled in by go mod tidy when .go files get created.
-	if !goModModuleHasGoSource(rigDir, layout) {
-		return nil
-	}
 	for _, req := range RequiredGoModRequireDirectives(rigDir) {
 		parts := strings.Fields(strings.TrimPrefix(req, "require "))
 		if len(parts) < 2 {
@@ -179,21 +173,30 @@ func ValidateGoModFile(rigDir string, v WorkflowValidation) error {
 		// Check if any .go file has a blank import for this requirement.
 		// If not, skip validation - the dependency will be pulled in by go mod tidy
 		// when the code actually imports it.
-		layoutDir := filepath.Join(rigDir, layout)
+layoutDir := filepath.Join(rigDir, layout)
+	goFiles := make([]string, 0)
+	_ = filepath.WalkDir(layoutDir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if d.IsDir() {
+			return nil
+		}
+		if strings.HasSuffix(strings.ToLower(d.Name()), ".go") {
+			goFiles = append(goFiles, path)
+		}
+		return nil
+	})
+	// If .go files exist, check for blank imports
+	// If no .go files exist, enforce SPEC.md requires (rig has no Go source yet)
+	if len(goFiles) > 0 {
 		hasBlankImport := false
-		_ = filepath.WalkDir(layoutDir, func(path string, d fs.DirEntry, err error) error {
-			if err != nil || hasBlankImport || d.IsDir() {
-				return nil
-			}
-			if !strings.HasSuffix(strings.ToLower(d.Name()), ".go") {
-				return nil
-			}
-			fileData, err := os.ReadFile(path)
+		for _, gf := range goFiles {
+			fileData, err := os.ReadFile(gf)
 			if err != nil {
-				return nil
+				continue
 			}
 			fileContent := string(fileData)
-			// Map known modules to their blank import paths
 			driverMap := map[string]string{
 				"github.com/mattn/go-sqlite3":        `_ "github.com/mattn/go-sqlite3"`,
 				"github.com/lib/pq":                  `_ "github.com/lib/pq"`,
@@ -204,14 +207,18 @@ func ValidateGoModFile(rigDir string, v WorkflowValidation) error {
 			blankImport, ok := driverMap[mod]
 			if ok && strings.Contains(fileContent, blankImport) {
 				hasBlankImport = true
+				break
 			}
-			return nil
-		})
+		}
 		// Only require the dependency if it's actually being used (has blank import)
 		// Otherwise, go mod tidy will pull it in when the code imports it
-		if hasBlankImport {
-			return fmt.Errorf("go.mod missing SPEC requirement %q — READ SPEC.md Module section and EDIT go.mod", mod+" "+ver)
+		if !hasBlankImport {
+			return nil
 		}
+	} else {
+		// No .go files exist - enforce SPEC.md requires
+		return fmt.Errorf("go.mod missing SPEC requirement %q — READ SPEC.md Module section and EDIT go.mod", mod+" "+ver)
+	}
 	}
 	return nil
 }
@@ -246,7 +253,8 @@ func EnsureGoModFromSpec(townRoot, rig string, v WorkflowValidation) (string, er
 	}
 	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
 	var parts []string
-	if ValidateGoModFile(rigDir, scoped) != nil {
+	needsPatch := ValidateGoModFile(rigDir, scoped) != nil
+	if needsPatch {
 		block := GoModBlockFromSpec(rigDir)
 		if block == "" {
 			return "", nil
@@ -264,12 +272,18 @@ func EnsureGoModFromSpec(townRoot, rig string, v WorkflowValidation) (string, er
 		}
 		parts = append(parts, "patched "+filepath.ToSlash(filepath.Join(layout, "go.mod"))+" from SPEC.md Module block")
 	}
-	if ValidateGoModFile(rigDir, scoped) == nil {
-		if closed, err := CloseGreenGoModBeads(townRoot, rig, scoped, nil); err != nil {
-			return joinStrings(parts, "; "), err
-		} else if len(closed) > 0 {
-			parts = append(parts, "auto-closed go.mod bead(s): "+joinStrings(closed, ", "))
-		}
+	if closed, closeErr := CloseGreenGoModBeads(townRoot, rig, scoped, nil); closeErr == nil && len(closed) > 0 {
+		parts = append(parts, "auto-closed go.mod bead(s): "+joinStrings(closed, ", "))
+	}
+	// Always ensure go.mod is valid after potential patch, or if it wasn't patched
+	// (blank imports may satisfy requires, but we still verify)
+	if ValidateGoModFile(rigDir, scoped) != nil {
+		// If validation still fails after patch attempt, return error
+		return joinStrings(parts, "; "), fmt.Errorf("go.mod validation failed")
+	}
+	// If parts is still empty (no patch needed, no beads closed), add a baseline message
+	if len(parts) == 0 {
+		parts = append(parts, "go.mod validated per SPEC.md")
 	}
 	return joinStrings(parts, "; "), nil
 }

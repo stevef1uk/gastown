@@ -11,6 +11,24 @@ Beads route by prefix: bd show gt-xyz → gastown, bd show hq-abc → town.
 Routes in {{ .TownRoot }}/.beads/routes.jsonl. File issues where code lives.
 ```
 
+### 2. Docker-Compose Template Approach (Mayor)
+Add inline reminder - critical for E2E testing:
+```
+ALWAYS use multi-stage Dockerfile build: target: playwright in docker-compose templates.
+Never use image: {{PLAYWRIGHT_IMAGE}} external image approach - it breaks tests.
+The multi-stage approach pre-installs npm deps during build, supports Go/Python/Node generically,
+and avoids runtime npm install failures (empty package.json, version mismatches).
+Refer to: internal/orchestrator/town/templates/rig-init/docker-compose.*.yml
+```
+
+### 3. Go Version Consistency (Mayor)
+Add inline reminder:
+```
+Verify go.mod go version matches SPEC.md specification. If go.mod has go 1.25 but SPEC.md says 1.22,
+fix go.mod - do NOT change the Dockerfile base image version. The Dockerfile is templated and must
+remain generic for all rig types.
+```
+
 ### 2. Directory Discipline Consequence (Polecat)
 Add warning inline:
 ```
@@ -51,4 +69,4 @@ Before push: git remote -v to verify URL. Never assume org.
 
 ## Implementation
 
-These 7 additions total ~300 words. Add as inline reminders in respective role templates, not new sections.
+These 9 additions total ~400 words. Add as inline reminders in respective role templates, not new sections.

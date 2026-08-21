@@ -341,7 +341,9 @@ func TestMultiServiceComposeRender(t *testing.T) {
 		"dockerfile: Dockerfile.web",
 		"healthcheck:",
 		"  playwright:",
-		"image: playwright-go-test:latest",
+		"build:",
+		"  context: .",
+		"  target: playwright",
 		"condition: service_healthy",
 		"BASE_URL=http://web:8080",
 	} {
