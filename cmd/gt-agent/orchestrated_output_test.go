@@ -12,9 +12,14 @@ func TestOrchestratedRoleLogPath(t *testing.T) {
 	if got != want {
 		t.Fatalf("got %q want %q", got, want)
 	}
+	// planner is rig-level — empty rig returns "" (no town-level fallback)
 	got = orchestratedRoleLogPath("/gt", "planner", "", "")
-	want = filepath.Join("/gt", "planner", "typescript")
+	if got != "" {
+		t.Fatalf("planner with empty rig: got %q want empty", got)
+	}
+	got = orchestratedRoleLogPath("/gt", "planner", "myrig", "")
+	want = filepath.Join("/gt", "myrig", "planner", "typescript")
 	if got != want {
-		t.Fatalf("got %q want %q", got, want)
+		t.Fatalf("planner with rig: got %q want %q", got, want)
 	}
 }

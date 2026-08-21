@@ -267,7 +267,7 @@ func findGT() string {
 // rig singletons under townRoot/<rig>/<role>/, named polecats under polecats/<name>/.
 func statePath(townRoot, role, rig, polecat string) string {
 	switch role {
-	case "deacon", "mayor", "planner", "setup", "mechanic":
+	case "deacon", "mayor", "setup", "mechanic":
 		return filepath.Join(townRoot, role, stateFileName)
 	}
 	if rig != "" && polecat != "" {

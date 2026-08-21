@@ -6,10 +6,17 @@ import (
 )
 
 func TestStatePath_townAgents(t *testing.T) {
+	// planner is rig-level — empty rig falls through to default path
 	got := statePath("/gt", "planner", "", "")
-	want := filepath.Join("/gt", "planner", stateFileName)
+	want := filepath.Join("/gt", stateFileName)
 	if got != want {
 		t.Fatalf("planner: got %q want %q", got, want)
+	}
+	// planner with rig goes to rig-level path
+	got = statePath("/gt", "planner", "myrig", "")
+	want = filepath.Join("/gt", "myrig", "planner", stateFileName)
+	if got != want {
+		t.Fatalf("planner with rig: got %q want %q", got, want)
 	}
 }
 
