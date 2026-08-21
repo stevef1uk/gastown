@@ -17,13 +17,17 @@ services:
       retries: 20
 
   playwright:
-    build:
-      context: {{APP_BUILD}}
-      target: playwright
+    image: {{PLAYWRIGHT_IMAGE}}
     working_dir: {{PLAYWRIGHT_WORKDIR}}
     depends_on:
       app:
         condition: service_healthy
+    volumes:
+      - .:/src:ro
+      - playwright-app:/app
     environment:
       - BASE_URL={{BASE_URL}}
-    command: sh -c "{{PLAYWRIGHT_COMMAND}}"
+    command: sh -c "cp -r /src/. /app/ && npm install --no-package-lock && {{PLAYWRIGHT_COMMAND}}"
+
+volumes:
+  playwright-app:
