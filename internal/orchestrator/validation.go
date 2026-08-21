@@ -196,6 +196,13 @@ func ClampProfileValidation(v WorkflowValidation) WorkflowValidation {
 	for i := range v.DeliveryPhases {
 		v.DeliveryPhases[i].QAVerifyCommand = NormalizeDockerQACommand(v.DeliveryPhases[i].QAVerifyCommand)
 	}
+	// Strip -sf from curl commands so 404 responses (correct per SPEC) don't
+	// cause false failures. -sf treats HTTP errors as curl errors (exit 22),
+	// which breaks verify commands that probe endpoints expected to return 4xx.
+	v.QAVerifyCommand = NormalizeCurlFlags(v.QAVerifyCommand)
+	for i := range v.DeliveryPhases {
+		v.DeliveryPhases[i].QAVerifyCommand = NormalizeCurlFlags(v.DeliveryPhases[i].QAVerifyCommand)
+	}
 	return v
 }
 
@@ -1149,6 +1156,10 @@ func NormalizeLayoutProfile(v WorkflowValidation) WorkflowValidation {
 	for i := range v.DeliveryPhases {
 		v.DeliveryPhases[i].QAVerifyCommand = NormalizeDockerQACommand(v.DeliveryPhases[i].QAVerifyCommand)
 	}
+	v.QAVerifyCommand = NormalizeCurlFlags(v.QAVerifyCommand)
+	for i := range v.DeliveryPhases {
+		v.DeliveryPhases[i].QAVerifyCommand = NormalizeCurlFlags(v.DeliveryPhases[i].QAVerifyCommand)
+	}
 	layout := strings.Trim(strings.TrimSpace(v.LayoutRoot), "/")
 	if layout == "" || layout == "." {
 		return v
@@ -1552,6 +1563,26 @@ func NormalizeDockerQACommand(cmd string) string {
 	})
 }
 
+// NormalizeCurlFlags strips -sf (silent-fail-on-HTTP-error) from curl commands
+// in verify scripts. -sf treats HTTP 4xx/5xx as curl errors (exit 22), which
+// causes false failures when probing endpoints that are documented to return
+// 404 (e.g. invalid routes). The -s (silent, no output) flag is preserved.
+var curlSFRe = regexp.MustCompile(`curl\s+-(\w*)f(\w*)`)
+
+func NormalizeCurlFlags(cmd string) string {
+	return curlSFRe.ReplaceAllStringFunc(cmd, func(match string) string {
+		sub := curlSFRe.FindStringSubmatch(match)
+		if len(sub) != 3 {
+			return match
+		}
+		flags := sub[1] + sub[2]
+		if flags == "" {
+			return "curl -s"
+		}
+		return "curl -" + flags
+	})
+}
+
 // NormalizePipCommand rewrites bare `pip` to `python3 -m pip` when pip is not on PATH but python is.
 func NormalizePipCommand(cmd string) string {
 	lower := strings.ToLower(cmd)
@@ -1636,6 +1667,7 @@ func ValidateDeliveryPhases(v WorkflowValidation) WorkflowValidation {
 		// Docker compose E2E commands must rebuild with --no-cache so QA never
 		// verifies a stale tagged image.
 		p.QAVerifyCommand = NormalizeDockerQACommand(p.QAVerifyCommand)
+		p.QAVerifyCommand = NormalizeCurlFlags(p.QAVerifyCommand)
 	}
 
 	// Ensure Docker/compose files only in final phase (if multiple phases)

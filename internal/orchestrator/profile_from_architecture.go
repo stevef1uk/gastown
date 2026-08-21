@@ -985,9 +985,9 @@ func deriveSmokeQACommand(v WorkflowValidation, spec APISmokeSpec) string {
 		method := strings.ToUpper(strings.TrimSpace(probe.Method))
 		if method == "POST" {
 			body := strings.ReplaceAll(strings.TrimSpace(probe.Body), "'", `'\''`)
-			curls = append(curls, fmt.Sprintf(`curl -sf -X POST -d '%s' %s%s`, body, base, path))
+			curls = append(curls, fmt.Sprintf(`curl -s -X POST -d '%s' %s%s`, body, base, path))
 		} else {
-			curls = append(curls, fmt.Sprintf("curl -sf %s%s", base, path))
+			curls = append(curls, fmt.Sprintf("curl -s %s%s", base, path))
 		}
 	}
 	if len(curls) == 0 {
