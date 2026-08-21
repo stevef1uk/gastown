@@ -31,8 +31,14 @@ $GT_ROOT/{{rig}}/mayor/rig/{{layout_root}}/  ← layout root (ALL code files go 
 
 1. `REQUIREMENTS.md` — present only in requirements-driven flows; the business source of truth.
 2. `SPEC.md` — the buildable spec: HTTP routes table, store API, data model, phases, testing strategy.
+   **IMPORTANT: Extract every `### <req-id>` block and every HTTP route table entry.**
 3. `architecture.md` — the design: ownership table (file → scope + acceptance) and test directives.
+   **IMPORTANT: Extract every requirement ID and test directive from the ownership table.**
 4. `plan.md` — the bead map: which bead ID implements each file.
+
+**CRITICAL: For every requirement ID (`### <id>`) that appears in SPEC.md OR architecture.md (or that is implied by the delivery phases), there MUST be a corresponding `### <id>` block in TEST_PLAN.md.**
+**The Teller must map every such requirement to a unit, integration, or UI test — no requirements may be omitted.**
+**If a requirement appears in SPEC.md but has no `### <id>` block in TEST_PLAN.md, the outcome MUST be `plan_gap`.**
 
 For every requirement ID (`### <id>` headings) that touches this phase, there must be a `### <id>` block in `TEST_PLAN.md`.
 
