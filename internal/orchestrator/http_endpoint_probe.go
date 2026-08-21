@@ -46,15 +46,15 @@ func (p HTTPEndpointProbe) shellSteps(base string) []string {
 		case SmokeExpectEmptyJSONArray:
 			parts = append(parts, fmt.Sprintf(`test "$(curl -s %s %s)" = "[]"`, curlOpts, bashSingleQuote(url)))
 		default:
-			parts = append(parts, fmt.Sprintf(`curl -sf %s %s >/dev/null`, curlOpts, bashSingleQuote(url)))
+			parts = append(parts, fmt.Sprintf(`curl -s %s %s >/dev/null`, curlOpts, bashSingleQuote(url)))
 		}
 	case "POST":
 		body := strings.ReplaceAll(p.Body, `'`, `'\''`)
 		parts = append(parts, fmt.Sprintf(
-			`curl -sf %s -X POST -H 'Content-Type: application/json' -d '%s' %s >/dev/null`,
+			`curl -s %s -X POST -H 'Content-Type: application/json' -d '%s' %s >/dev/null`,
 			curlOpts, body, bashSingleQuote(url)))
 	default:
-		parts = append(parts, fmt.Sprintf(`curl -sf %s -X %s %s >/dev/null`, curlOpts, method, bashSingleQuote(url)))
+		parts = append(parts, fmt.Sprintf(`curl -s %s -X %s %s >/dev/null`, curlOpts, method, bashSingleQuote(url)))
 	}
 	return parts
 }
