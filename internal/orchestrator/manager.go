@@ -402,6 +402,13 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summa
 			return "", fmt.Errorf("sync profile after design success: %w", err)
 		}
 	}
+	// Mark TEST_PLAN.md as reviewed when the tester agent succeeds from test_plan state.
+	// This prevents redundant re-validation on subsequent workflow entries.
+	if fromState == "test_plan" && outcome == "success" && rig != "" {
+		if err := SetTestPlanReviewed(m.townRoot, rig, true); err != nil {
+			log.Printf("[Manager] Warning: failed to set test_plan_reviewed for %s: %v", rig, err)
+		}
+	}
 	next, err := inst.Transition(tpl, outcome)
 	if err != nil {
 		return "", err
@@ -409,6 +416,21 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summa
 	log.Printf("[Manager] CompleteTask: after Transition, workflow=%s fromState=%s next=%s inst.CurrentState=%s", workflowID, fromState, next, inst.CurrentState)
 	// Ensure tester agent is running when entering test_plan, test_plan_rework, or test_review states
 	if rig != "" && (next == "test_plan" || next == "test_plan_rework" || next == "test_review") {
+		// Skip re-validating TEST_PLAN.md if already reviewed — auto-complete the state.
+		if next == "test_plan" && IsTestPlanReviewed(m.townRoot, rig) {
+			log.Printf("[Manager] TestPlanReviewed=true for %s, skipping test_plan validation", rig)
+			autoNext, aerr := inst.Transition(tpl, "success")
+			if aerr == nil && autoNext != "" {
+				inst.CurrentState = autoNext
+				inst.touchStateEnteredAt()
+				if perr := m.persistLocked(); perr != nil {
+					log.Printf("[Manager] Warning: persist after test_plan auto-complete: %v", perr)
+				}
+				log.Printf("[Manager] test_plan auto-completed for %s, next=%s", rig, autoNext)
+				return autoNext, nil
+			}
+			log.Printf("[Manager] Warning: test_plan auto-complete failed for %s: %v, falling through to tester", rig, aerr)
+		}
 		if err := m.ensureTesterAgent(rig, next); err != nil {
 			log.Printf("[Manager] Warning: failed to start tester agent for %s: %v", rig, err)
 		}
@@ -611,6 +633,12 @@ func (m *Manager) ResetWorkflow(workflowID, toState string) (string, error) {
 	rig := ""
 	if inst.Variables != nil {
 		rig = inst.Variables["rig"]
+	}
+	// Clear test_plan_reviewed on reset so TEST_PLAN.md is re-validated.
+	if rig != "" {
+		if err := SetTestPlanReviewed(m.townRoot, rig, false); err != nil {
+			log.Printf("[Manager] Warning: failed to clear test_plan_reviewed for %s on reset: %v", rig, err)
+		}
 	}
 	role := ""
 	if state, _ := inst.GetCurrentTask(tpl); state.Role != "" {

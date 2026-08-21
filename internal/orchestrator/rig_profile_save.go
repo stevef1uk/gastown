@@ -49,6 +49,7 @@ func ResetRigPhaseForNewWorkflow(townRoot, rig string) error {
 	env.Validation.ActivePhaseIDField = ResolveActivePhaseFromDisk(rigDir, env.Validation)
 	env.Validation.CompletedPhaseIDsField = nil
 	env.Validation.RewoundFromPhaseIDField = ""
+	env.TestPlanReviewed = false
 	return SaveRigWorkflowProfileEnvelope(townRoot, rig, env)
 }
 
@@ -212,6 +213,50 @@ func ClearRigRewoundFromPhase(townRoot, rig string) error {
 	return SaveRigWorkflowProfileEnvelope(townRoot, rig, env)
 }
 
+// SetTestPlanReviewed marks TEST_PLAN.md as reviewed in workflow-profile.json.
+// Once set, the tester agent skips re-validating TEST_PLAN.md on subsequent
+// workflow entries to test_plan state.
+func SetTestPlanReviewed(townRoot, rig string, reviewed bool) error {
+	if townRoot == "" || rig == "" {
+		return nil
+	}
+	path := filepath.Join(townRoot, rig, "mayor", "rig", rigProfileDir, rigProfileFile)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("read rig profile %s: %w", path, err)
+	}
+	var env rigProfileEnvelope
+	if err := json.Unmarshal(data, &env); err != nil {
+		return fmt.Errorf("decode rig profile %s: %w", path, err)
+	}
+	if env.TestPlanReviewed == reviewed {
+		return nil // no change needed
+	}
+	env.TestPlanReviewed = reviewed
+	return SaveRigWorkflowProfileEnvelope(townRoot, rig, env)
+}
+
+// IsTestPlanReviewed returns true if TEST_PLAN.md has already been reviewed
+// for this rig and the result is persisted in workflow-profile.json.
+func IsTestPlanReviewed(townRoot, rig string) bool {
+	if townRoot == "" || rig == "" {
+		return false
+	}
+	path := filepath.Join(townRoot, rig, "mayor", "rig", rigProfileDir, rigProfileFile)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+	var env rigProfileEnvelope
+	if err := json.Unmarshal(data, &env); err != nil {
+		return false
+	}
+	return env.TestPlanReviewed
+}
+
 // WriteRigWorkflowProfile writes a full profile envelope (used by spec-index),
 // clamping the validation first.
 func WriteRigWorkflowProfile(townRoot, rig string, v WorkflowValidation, source, confidence string) error {
@@ -231,8 +276,9 @@ func WriteRigWorkflowProfileClamped(townRoot, rig string, v WorkflowValidation, 
 		v = ClampProfileValidationForRig(townRoot, rig, NormalizeLayoutProfile(v))
 	}
 
-	// Preserve phase progress from existing profile (active phase + completed phases)
+	// Preserve phase progress and test_plan_reviewed flag from existing profile
 	// so spec-index --force doesn't reset workflow state.
+	var existingTestPlanReviewed bool
 	existingV, _, err := LoadRigWorkflowProfileFile(townRoot, rig)
 	if err == nil {
 		if existingV.ActivePhaseIDField != "" {
@@ -242,13 +288,22 @@ func WriteRigWorkflowProfileClamped(townRoot, rig string, v WorkflowValidation, 
 			v.CompletedPhaseIDsField = existingV.CompletedPhaseIDsField
 		}
 	}
+	// Read the raw envelope to preserve test_plan_reviewed (not in WorkflowValidation).
+	existingPath := filepath.Join(outDir, rigProfileFile)
+	if existingData, rerr := os.ReadFile(existingPath); rerr == nil {
+		var existingEnv rigProfileEnvelope
+		if json.Unmarshal(existingData, &existingEnv) == nil {
+			existingTestPlanReviewed = existingEnv.TestPlanReviewed
+		}
+	}
 
 	env := rigProfileEnvelope{
-		Version:     1,
-		GeneratedAt: time.Now().UTC().Format(time.RFC3339),
-		Source:      source,
-		Confidence:  confidence,
-		Validation:  v,
+		Version:          1,
+		GeneratedAt:      time.Now().UTC().Format(time.RFC3339),
+		Source:           source,
+		Confidence:       confidence,
+		Validation:       v,
+		TestPlanReviewed: existingTestPlanReviewed,
 	}
 	// Resolve active phase from disk only if not already set (e.g. first write).
 	// This overrides whatever the LLM or ClampProfileValidation set, ensuring
