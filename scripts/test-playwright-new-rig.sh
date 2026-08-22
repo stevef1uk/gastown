@@ -35,6 +35,13 @@ cleanup() {
     rm -rf "${REPO_DIR}"
 }
 
+# Clean up persisted workflow instances from previous runs so the test starts fresh.
+instances_json="${HOME}/gt/orchestrator/instances.json"
+if [ -f "$instances_json" ]; then
+    rm -f "$instances_json"
+    echo "Removed stale ${instances_json}"
+fi
+
 trap cleanup EXIT
 
 echo "=== 1. Create clean test repo ==="

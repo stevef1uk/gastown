@@ -3266,6 +3266,12 @@ func validateQAArtifacts(townRoot, rig, outcome string, hadCmdFailure, bdListClo
 		if outcome == "task_passed" && openImpl == 0 {
 			return fmt.Errorf("use all_passed when no open implement beads remain for active phase")
 		}
+		// Security validation: scan for embedded secrets/credentials that must not
+		// be committed. Gate QA success until findings are resolved or allow-listed.
+		findings := orchestrator.ScanRigSecretsForWorkflow(townRoot, rig, v)
+		if len(findings) > 0 {
+			return fmt.Errorf("%s", orchestrator.FormatSecretFindings(findings))
+		}
 	}
 	return nil
 }

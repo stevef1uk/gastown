@@ -44,6 +44,7 @@ If **Prior step failed** from `design_review`, QA rejected the design. **Read th
 6b. **Only wrap actual file paths in backticks.** Do NOT wrap Go imports, URLs, MIME types, or package members. Non-file backticks get extracted as fake required paths.
 6c. **VALIDATOR REJECTS PATHS WITHOUT LAYOUT ROOT PREFIX.** If `{{layout_root}}` is `pingapp`, you MUST write `pingapp/cmd/server/main.go` everywhere — never `cmd/server/main.go` or `./cmd/server/main.go`.
 7. **Every section must contain substantive content.** Empty headings cause broken artifacts. Omit sections that don't apply.
+8. **Requirement IDs per delivery phase.** Include one or more `### <req-id>` headings under a `## Requirements` section in `architecture.md`, one per active delivery phase (e.g. `### go-module` for the go-module phase). These IDs must match the phase names referenced in `TEST_PLAN.md` — the Tester's anti-hallucination check validates that every `### <req-id>` in `TEST_PLAN.md` has a corresponding `### <req-id>` in `architecture.md` or `SPEC.md`. Read `{{town_root}}/orchestrator/STANDARDS.md` for the Go flavour of this requirement and examples.
 
 ## Write pattern — use this heredoc exactly:
 

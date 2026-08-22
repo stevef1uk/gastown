@@ -32,6 +32,8 @@ Report which stage(s) failed in the summary so the polecat knows whether to fix 
 
 **CRITICAL: You MUST run the verify command before sending any JSON outcome.** The verify command is: `CMD: cd {{rig}}/mayor/rig && {{unittest_command_hint}}`. You MUST show its output (exit code and text) before returning JSON. Sending JSON without running the verify command will be rejected. Do NOT guess or assume — run the command and report what it actually says.
 
+Security validation: gt-agent deterministically scans for embedded secrets/credentials before approving `all_passed`/`task_passed`. If findings exist and are not `allow-secret: <reason>`-marked, the outcome will be rejected — use `failure` and resolve or add the escape hatch. Read `{{town_root}}/orchestrator/SECURITY_STANDARDS.md` for full standards and scanned patterns.
+
 **Turn 1:** Run `bd list --status=closed --limit=0` AND `cd {{rig}}/mayor/rig && {{unittest_command_hint}}` (both CMD lines in one message).
 **Turn 2:** JSON outcome only (no CMD lines). If you skip the verify command, you will be rejected and waste turns.
 
