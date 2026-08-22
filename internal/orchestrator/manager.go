@@ -431,6 +431,22 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summa
 			}
 			log.Printf("[Manager] Warning: test_plan auto-complete failed for %s: %v, falling through to tester", rig, aerr)
 		}
+		// Skip test_plan_rework if TEST_PLAN.md is frozen (already validated once).
+		// The plan cannot be rewritten — route back to implementation instead.
+		if next == "test_plan_rework" && IsTestPlanFrozen(m.townRoot, rig) {
+			log.Printf("[Manager] TestPlanFrozen=true for %s, skipping test_plan_rework — routing to implementation", rig)
+			autoNext, aerr := inst.Transition(tpl, "failure")
+			if aerr == nil && autoNext != "" {
+				inst.CurrentState = autoNext
+				inst.touchStateEnteredAt()
+				if perr := m.persistLocked(); perr != nil {
+					log.Printf("[Manager] Warning: persist after test_plan_rework skip: %v", perr)
+				}
+				log.Printf("[Manager] test_plan_rework skipped for %s, routed to %s", rig, autoNext)
+				return autoNext, nil
+			}
+			log.Printf("[Manager] Warning: test_plan_rework skip failed for %s: %v, falling through to tester", rig, aerr)
+		}
 		if err := m.ensureTesterAgent(rig, next); err != nil {
 			log.Printf("[Manager] Warning: failed to start tester agent for %s: %v", rig, err)
 		}

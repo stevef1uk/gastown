@@ -58,10 +58,11 @@ func TestPlanRequirementIDs(testPlan string) []string {
 
 // TestPlanBlock is one requirement row parsed from TEST_PLAN.md.
 type TestPlanBlock struct {
-	ReqID   string
-	Level   string
+	ReqID    string
+	Level    string
 	TestFile string
-	BeadID  string
+	BeadID   string
+	Phase    string
 }
 
 // ParseTestPlanBlocks parses `### <req-id>` blocks from TEST_PLAN.md.
@@ -92,6 +93,8 @@ func ParseTestPlanBlocks(testPlan string) []TestPlanBlock {
 		switch key {
 		case "level":
 			cur.Level = val
+		case "phase":
+			cur.Phase = val
 		case "test file":
 			// Handle comma-separated test files (e.g., "file1.go, file2.go")
 			if strings.Contains(val, ",") {
@@ -151,12 +154,49 @@ func PlannedTestFiles(testPlan string) []string {
 	return dedupeStrings(out)
 }
 
+// PlannedTestFilesForPhases returns test file paths for blocks whose Phase matches
+// one of the given phase IDs, plus all blocks with no Phase field (backward compatible).
+func PlannedTestFilesForPhases(testPlan string, phaseIDs []string) []string {
+	if len(phaseIDs) == 0 {
+		return PlannedTestFiles(testPlan)
+	}
+	phaseSet := make(map[string]bool, len(phaseIDs))
+	for _, p := range phaseIDs {
+		phaseSet[strings.ToLower(strings.TrimSpace(p))] = true
+	}
+	var out []string
+	for _, b := range ParseTestPlanBlocks(testPlan) {
+		// Include blocks with no Phase (backward compatible) or matching phase
+		if b.Phase == "" || phaseSet[strings.ToLower(strings.TrimSpace(b.Phase))] {
+			if f := strings.TrimSpace(b.TestFile); f != "" {
+				if idx := strings.IndexAny(f, "([{"); idx >= 0 {
+					f = strings.TrimSpace(f[:idx])
+				}
+				out = append(out, f)
+			}
+		}
+	}
+	return dedupeStrings(out)
+}
+
 // MissingPlannedTestFiles reports which planned test files do not exist on disk.
 // Test files are resolved relative to the rig directory (paths may or may not
 // carry the layout_root prefix; both are tried).
 func MissingPlannedTestFiles(rigDir, layoutRoot string, testPlan string) []string {
 	var missing []string
 	for _, f := range PlannedTestFiles(testPlan) {
+		if !plannedTestFileExists(rigDir, layoutRoot, f) {
+			missing = append(missing, f)
+		}
+	}
+	return missing
+}
+
+// MissingPlannedTestFilesForPhases reports which planned test files do not exist on disk,
+// filtered by the given phase IDs. Blocks with no Phase field are always included.
+func MissingPlannedTestFilesForPhases(rigDir, layoutRoot string, testPlan string, phaseIDs []string) []string {
+	var missing []string
+	for _, f := range PlannedTestFilesForPhases(testPlan, phaseIDs) {
 		if !plannedTestFileExists(rigDir, layoutRoot, f) {
 			missing = append(missing, f)
 		}
@@ -199,6 +239,29 @@ func StubTestFiles(rigDir, layoutRoot string, v WorkflowValidation, testPlan str
 	}
 	var stubs []string
 	for _, f := range PlannedTestFiles(testPlan) {
+		data, err := os.ReadFile(testFilePath(rigDir, layoutRoot, f))
+		if err != nil {
+			continue // missing files are reported separately
+		}
+		if err := CheckContentNotStub(data, f, opts); err != nil {
+			stubs = append(stubs, f)
+		}
+	}
+	return stubs
+}
+
+// StubTestFilesForPhases reports planned test files that exist but look like stubs,
+// filtered by the given phase IDs. Blocks with no Phase field are always included.
+func StubTestFilesForPhases(rigDir, layoutRoot string, v WorkflowValidation, testPlan string, phaseIDs []string) []string {
+	opts := StubCheckOptionsFromValidation(v)
+	if opts.MinFileBytes > 160 {
+		opts.MinFileBytes = 160
+	}
+	if opts.MinSubstantiveLines < 1 {
+		opts.MinSubstantiveLines = 1
+	}
+	var stubs []string
+	for _, f := range PlannedTestFilesForPhases(testPlan, phaseIDs) {
 		data, err := os.ReadFile(testFilePath(rigDir, layoutRoot, f))
 		if err != nil {
 			continue // missing files are reported separately

@@ -59,3 +59,17 @@ func QACommandWritesTestPlanDoc(cmd string) (path string, ok bool) {
 	}
 	return "", false
 }
+
+// IsTesterWritingTestPlan reports whether a tester shell command writes to TEST_PLAN.md.
+func IsTesterWritingTestPlan(cmd string) bool {
+	for _, m := range qaShellRedirectRE.FindAllStringSubmatch(cmd, -1) {
+		if len(m) < 2 {
+			continue
+		}
+		target := filepath.ToSlash(strings.Trim(m[1], `"'`))
+		if strings.ToLower(filepath.Base(target)) == "test_plan.md" {
+			return true
+		}
+	}
+	return false
+}

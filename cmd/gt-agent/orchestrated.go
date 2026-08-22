@@ -2940,6 +2940,10 @@ func validateTesterCommand(cmd, rig, townRoot string, v orchestrator.WorkflowVal
 	if path, mutates := orchestrator.TesterCommandMutatesForbidden(cmd, v); mutates {
 		return fmt.Errorf("tester must not modify source, tests, or other docs (blocked write to %q) — only TEST_PLAN.md / test-report.md may be written", path)
 	}
+	// Block TEST_PLAN.md writes when the plan is frozen (already validated once).
+	if orchestrator.IsTestPlanFrozen(townRoot, rig) && orchestrator.IsTesterWritingTestPlan(cmd) {
+		return fmt.Errorf("TEST_PLAN.md is frozen after initial validation — cannot rewrite; use outcome plan_gap to request a new plan from the planner if needed")
+	}
 	forbidden := []struct {
 		cond bool
 		msg  string
@@ -3101,16 +3105,29 @@ func validateTestReviewArtifacts(townRoot, rig, outcome string, hadCmdFailure, v
 	}
 
 	// success path: every planned test file exists, is not a stub, verify green.
-	if missing := orchestrator.MissingPlannedTestFiles(rigDir, v.LayoutRoot, testPlan); len(missing) > 0 {
+	// Only check test files for the active phase and completed phases (allow regression checks).
+	if missing := orchestrator.MissingPlannedTestFilesForPhases(rigDir, v.LayoutRoot, testPlan, phaseIDsForTestValidation(v)); len(missing) > 0 {
 		return fmt.Errorf("planned test files missing on disk: %s — run `cat TEST_PLAN.md` and confirm every `Test file:` exists, then use outcome failure with bead IDs", strings.Join(missing, ", "))
 	}
-	if stubs := orchestrator.StubTestFiles(rigDir, v.LayoutRoot, v, testPlan); len(stubs) > 0 {
+	if stubs := orchestrator.StubTestFilesForPhases(rigDir, v.LayoutRoot, v, testPlan, phaseIDsForTestValidation(v)); len(stubs) > 0 {
 		return fmt.Errorf("planned test files look like stubs (no substantive assertions): %s — use outcome failure with bead IDs so the polecat strengthens them", strings.Join(stubs, ", "))
 	}
 	if strings.TrimSpace(v.QAVerifyCommand) != "" && !verifyOK {
 		return fmt.Errorf("run `%s` green before test_review success", v.QAVerifyHint())
 	}
 	return nil
+}
+
+// phaseIDsForTestValidation returns phase IDs to validate: the active phase
+// plus all completed phases (for regression checks). Future phases are skipped
+// because their test files may not exist yet.
+func phaseIDsForTestValidation(v orchestrator.WorkflowValidation) []string {
+	var ids []string
+	if id := v.ActivePhaseID(); id != "" {
+		ids = append(ids, id)
+	}
+	ids = append(ids, v.CompletedPhaseIDs()...)
+	return ids
 }
 
 func countOpenMatchingBeads(townRoot, rig string, v orchestrator.WorkflowValidation) (int, error) {

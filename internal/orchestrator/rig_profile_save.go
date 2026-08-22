@@ -50,6 +50,7 @@ func ResetRigPhaseForNewWorkflow(townRoot, rig string) error {
 	env.Validation.CompletedPhaseIDsField = nil
 	env.Validation.RewoundFromPhaseIDField = ""
 	env.TestPlanReviewed = false
+	env.TestPlanFrozen = false
 	return SaveRigWorkflowProfileEnvelope(townRoot, rig, env)
 }
 
@@ -236,7 +237,53 @@ func SetTestPlanReviewed(townRoot, rig string, reviewed bool) error {
 		return nil // no change needed
 	}
 	env.TestPlanReviewed = reviewed
+	// Freeze TEST_PLAN.md when it's first validated to prevent rewrites.
+	if reviewed {
+		env.TestPlanFrozen = true
+	}
 	return SaveRigWorkflowProfileEnvelope(townRoot, rig, env)
+}
+
+// SetTestPlanFrozen marks TEST_PLAN.md as frozen in workflow-profile.json.
+// Once frozen, the tester cannot rewrite TEST_PLAN.md (plan_gap rework is blocked).
+func SetTestPlanFrozen(townRoot, rig string, frozen bool) error {
+	if townRoot == "" || rig == "" {
+		return nil
+	}
+	path := filepath.Join(townRoot, rig, "mayor", "rig", rigProfileDir, rigProfileFile)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("read rig profile %s: %w", path, err)
+	}
+	var env rigProfileEnvelope
+	if err := json.Unmarshal(data, &env); err != nil {
+		return fmt.Errorf("decode rig profile %s: %w", path, err)
+	}
+	if env.TestPlanFrozen == frozen {
+		return nil // no change needed
+	}
+	env.TestPlanFrozen = frozen
+	return SaveRigWorkflowProfileEnvelope(townRoot, rig, env)
+}
+
+// IsTestPlanFrozen returns true if TEST_PLAN.md is frozen and cannot be rewritten.
+func IsTestPlanFrozen(townRoot, rig string) bool {
+	if townRoot == "" || rig == "" {
+		return false
+	}
+	path := filepath.Join(townRoot, rig, "mayor", "rig", rigProfileDir, rigProfileFile)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+	var env rigProfileEnvelope
+	if err := json.Unmarshal(data, &env); err != nil {
+		return false
+	}
+	return env.TestPlanFrozen
 }
 
 // IsTestPlanReviewed returns true if TEST_PLAN.md has already been reviewed
@@ -288,12 +335,14 @@ func WriteRigWorkflowProfileClamped(townRoot, rig string, v WorkflowValidation, 
 			v.CompletedPhaseIDsField = existingV.CompletedPhaseIDsField
 		}
 	}
-	// Read the raw envelope to preserve test_plan_reviewed (not in WorkflowValidation).
+	// Read the raw envelope to preserve test_plan_reviewed and test_plan_frozen (not in WorkflowValidation).
 	existingPath := filepath.Join(outDir, rigProfileFile)
+	var existingTestPlanFrozen bool
 	if existingData, rerr := os.ReadFile(existingPath); rerr == nil {
 		var existingEnv rigProfileEnvelope
 		if json.Unmarshal(existingData, &existingEnv) == nil {
 			existingTestPlanReviewed = existingEnv.TestPlanReviewed
+			existingTestPlanFrozen = existingEnv.TestPlanFrozen
 		}
 	}
 
@@ -304,6 +353,7 @@ func WriteRigWorkflowProfileClamped(townRoot, rig string, v WorkflowValidation, 
 		Confidence:       confidence,
 		Validation:       v,
 		TestPlanReviewed: existingTestPlanReviewed,
+		TestPlanFrozen:   existingTestPlanFrozen,
 	}
 	// Resolve active phase from disk only if not already set (e.g. first write).
 	// This overrides whatever the LLM or ClampProfileValidation set, ensuring

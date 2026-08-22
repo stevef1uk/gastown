@@ -18,6 +18,7 @@ type rigProfileEnvelope struct {
 	Confidence  string              `json:"confidence"`
 	Validation  WorkflowValidation  `json:"validation"`
 	TestPlanReviewed bool            `json:"test_plan_reviewed"`
+	TestPlanFrozen  bool            `json:"test_plan_frozen,omitempty"`
 }
 
 // LoadRigWorkflowProfileFile reads {rig}/mayor/rig/.gastown/workflow-profile.json if present.
