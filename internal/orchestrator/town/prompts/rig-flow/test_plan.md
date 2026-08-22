@@ -42,6 +42,8 @@ $GT_ROOT/{{rig}}/mayor/rig/{{layout_root}}/  ← layout root (ALL code files go 
 
 For every requirement ID (`### <id>` headings) that touches this phase, there must be a `### <id>` block in `TEST_PLAN.md`.
 
+**DO NOT INVENT REQUIREMENTS.** Only create `### <id>` blocks for requirements that EXPLICITLY appear in SPEC.md or architecture.md. If SPEC.md only defines a `/ping` endpoint, do NOT create requirements for `/health`, middleware, or other features not mentioned in SPEC.md. The test plan must be a faithful reflection of what SPEC.md defines — not what you think the project should have.
+
 ## TEST_PLAN.md format (strict — gt-agent checks size and structure)
 
 ```
