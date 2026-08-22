@@ -3052,6 +3052,13 @@ func validateTestPlanArtifacts(townRoot, rig string, hadCmdFailure, testPlanWrit
 	if len(missingFields) > 0 {
 		return fmt.Errorf("TEST_PLAN.md blocks %v are missing required fields (Level, Test file) — every requirement row needs them", missingFields)
 	}
+	// Check for hallucinated requirements: TEST_PLAN.md should not have requirement IDs
+	// that don't appear in SPEC.md or architecture.md.
+	specDoc, _ := os.ReadFile(filepath.Join(rigDir, "SPEC.md"))
+	archDoc, _ := os.ReadFile(filepath.Join(rigDir, "architecture.md"))
+	if hallucinated := orchestrator.HallucinatedTestPlanRequirements(string(data), string(specDoc), string(archDoc)); len(hallucinated) > 0 {
+		return fmt.Errorf("TEST_PLAN.md has requirement IDs not found in SPEC.md or architecture.md: %v — do NOT invent requirements; only plan tests for requirements that EXPLICITLY appear in SPEC.md", hallucinated)
+	}
 	if !testPlanWriteOK {
 		// A TEST_PLAN.md may already exist from a prior run; accept it if valid.
 		return nil

@@ -292,3 +292,53 @@ func MaxReviewRetries(v WorkflowValidation) int {
 	}
 	return v.MaxReviewRetries
 }
+
+// HallucinatedTestPlanRequirements returns requirement IDs in TEST_PLAN.md that
+// do not appear in SPEC.md or architecture.md. This catches LLM hallucinations
+// where the tester invents requirements not defined in the source documents.
+func HallucinatedTestPlanRequirements(testPlan, specDoc, archDoc string) []string {
+	// Collect requirement IDs from SPEC.md and architecture.md
+	validIDs := make(map[string]bool)
+	doc := specDoc + "\n" + archDoc
+
+	// 1. Collect explicit ### <id> headings
+	for _, m := range testPlanBlockRE.FindAllStringSubmatch(doc, -1) {
+		id := strings.TrimSpace(m[1])
+		if id != "" {
+			validIDs[strings.ToUpper(id)] = true
+		}
+	}
+
+	// 2. Also extract route-based requirement IDs from HTTP API tables.
+	//    e.g. "| GET | /api/links |" implies requirements for that route.
+	//    These become route-style IDs like "GET /api/links" that the tester
+	//    can reference instead of hallucinated REQ-N IDs.
+	routeRE := regexp.MustCompile(`(?i)\|\s*(GET|POST|PUT|DELETE|PATCH)\s*\|\s*` + "`?([^`|]+)`?" + `\s*\|`)
+	for _, m := range routeRE.FindAllStringSubmatch(doc, -1) {
+		if len(m) >= 3 {
+			method := strings.ToUpper(strings.TrimSpace(m[1]))
+			path := strings.TrimSpace(m[2])
+			routeID := method + " " + path
+			validIDs[strings.ToUpper(routeID)] = true
+		}
+	}
+
+	// If no valid IDs found in source documents, skip the check
+	// (SPEC may use a different format that we don't parse).
+	if len(validIDs) == 0 {
+		return nil
+	}
+
+	// Check TEST_PLAN.md blocks
+	var hallucinated []string
+	for _, b := range ParseTestPlanBlocks(testPlan) {
+		id := strings.TrimSpace(b.ReqID)
+		if id == "" {
+			continue
+		}
+		if !validIDs[strings.ToUpper(id)] {
+			hallucinated = append(hallucinated, id)
+		}
+	}
+	return hallucinated
+}

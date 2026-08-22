@@ -182,3 +182,106 @@ Test file: pingapp/generic_test.go
 		t.Fatalf("expected 2 missing with nil phases (go.mod + ping.spec.ts), got %d: %v", len(missing), missing)
 	}
 }
+
+func TestHallucinatedTestPlanRequirements(t *testing.T) {
+	specDoc := `# SPEC
+
+### REQ-1
+Requirement: GET /ping returns 200
+
+## HTTP API
+- GET /ping → 200 JSON {"message": "pong"}
+`
+	archDoc := `# Architecture
+
+### REQ-1
+Ownership: handlers.go
+`
+
+	t.Run("no hallucination", func(t *testing.T) {
+		plan := `### REQ-1
+Requirement: GET /ping returns 200
+Level: unit
+Test file: handlers_test.go
+`
+		hallucinated := HallucinatedTestPlanRequirements(plan, specDoc, archDoc)
+		if len(hallucinated) != 0 {
+			t.Errorf("expected no hallucinations, got %v", hallucinated)
+		}
+	})
+
+	t.Run("hallucinated requirement", func(t *testing.T) {
+		plan := `### REQ-1
+Requirement: GET /ping returns 200
+Level: unit
+Test file: handlers_test.go
+
+### REQ-2
+Requirement: Health endpoint
+Level: unit
+Test file: health_test.go
+
+### REQ-3
+Requirement: Logger middleware
+Level: unit
+Test file: logger_test.go
+`
+		hallucinated := HallucinatedTestPlanRequirements(plan, specDoc, archDoc)
+		if len(hallucinated) != 2 {
+			t.Fatalf("expected 2 hallucinations, got %d: %v", len(hallucinated), hallucinated)
+		}
+		if hallucinated[0] != "REQ-2" {
+			t.Errorf("hallucination[0] = %q, want REQ-2", hallucinated[0])
+		}
+		if hallucinated[1] != "REQ-3" {
+			t.Errorf("hallucination[1] = %q, want REQ-3", hallucinated[1])
+		}
+	})
+
+	t.Run("empty plan", func(t *testing.T) {
+		hallucinated := HallucinatedTestPlanRequirements("", specDoc, archDoc)
+		if len(hallucinated) != 0 {
+			t.Errorf("expected no hallucinations for empty plan, got %v", hallucinated)
+		}
+	})
+
+	t.Run("route-based SPEC without requirement IDs", func(t *testing.T) {
+		// SPEC like testgt3/pingapp that uses ## HTTP API with route tables
+		// but no ### <id> headings
+		routeSpec := `# Link Shelf – MVP spec
+
+## HTTP API
+
+| Method | Path | Success | Error |
+|--------|------|---------|-------|
+| GET | /api/links | 200, JSON array | — |
+| POST | /api/links | 201, JSON link | 400 |
+| DELETE | /api/links/{id} | 204 | 404 |
+`
+		plan := `### REQ-1
+Requirement: GET /api/links returns 200
+Level: unit
+Test file: handlers_test.go
+`
+		hallucinated := HallucinatedTestPlanRequirements(plan, routeSpec, "")
+		if len(hallucinated) != 1 {
+			t.Fatalf("expected 1 hallucination (REQ-1 not in route table), got %d: %v", len(hallucinated), hallucinated)
+		}
+
+		// Plan using route-style IDs should pass
+		routePlan := `### GET /api/links
+Requirement: GET /api/links returns 200
+Level: unit
+Test file: handlers_test.go
+
+### POST /api/links
+Requirement: POST /api/links creates link
+Level: unit
+Test file: handlers_test.go
+`
+		hallucinated = HallucinatedTestPlanRequirements(routePlan, routeSpec, "")
+		if len(hallucinated) != 0 {
+			t.Errorf("route-based plan should have 0 hallucinations, got %d: %v", len(hallucinated), hallucinated)
+		}
+	})
+}
