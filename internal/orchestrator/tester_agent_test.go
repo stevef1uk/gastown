@@ -284,4 +284,50 @@ Test file: handlers_test.go
 			t.Errorf("route-based plan should have 0 hallucinations, got %d: %v", len(hallucinated), hallucinated)
 		}
 	})
+
+	t.Run("bullet-point route SPEC without requirement IDs", func(t *testing.T) {
+		// SPEC like pwtest that uses bullet-point format for routes
+		bulletSpec := `# Ping App - Trivial Go Web Server
+
+## HTTP API
+- GET /ping → 200 JSON {"message": "pong"}
+`
+		// Plan with hallucinated requirements should be detected
+		plan := `### GET /ping
+Requirement: GET /ping returns 200
+Level: integration
+Test file: handlers_test.go
+
+### REQ-2
+Requirement: Health endpoint
+Level: unit
+Test file: health_test.go
+
+### REQ-3
+Requirement: Logger middleware
+Level: unit
+Test file: logger_test.go
+`
+		hallucinated := HallucinatedTestPlanRequirements(plan, bulletSpec, "")
+		if len(hallucinated) != 2 {
+			t.Fatalf("expected 2 hallucinations (REQ-2, REQ-3), got %d: %v", len(hallucinated), hallucinated)
+		}
+		if hallucinated[0] != "REQ-2" {
+			t.Errorf("hallucination[0] = %q, want REQ-2", hallucinated[0])
+		}
+		if hallucinated[1] != "REQ-3" {
+			t.Errorf("hallucination[1] = %q, want REQ-3", hallucinated[1])
+		}
+
+		// Plan using route-style IDs should pass
+		routePlan := `### GET /ping
+Requirement: GET /ping returns 200
+Level: integration
+Test file: handlers_test.go
+`
+		hallucinated = HallucinatedTestPlanRequirements(routePlan, bulletSpec, "")
+		if len(hallucinated) != 0 {
+			t.Errorf("route-based plan should have 0 hallucinations, got %d: %v", len(hallucinated), hallucinated)
+		}
+	})
 }

@@ -323,6 +323,18 @@ func HallucinatedTestPlanRequirements(testPlan, specDoc, archDoc string) []strin
 		}
 	}
 
+	// 3. Also extract route-based requirement IDs from bullet-point format.
+	//    e.g. "- GET /ping → 200 JSON" or "- POST /api/users → 201"
+	bulletRouteRE := regexp.MustCompile(`(?im)^[-*]\s*(GET|POST|PUT|DELETE|PATCH)\s+(/[^\s→,;]+)`)
+	for _, m := range bulletRouteRE.FindAllStringSubmatch(doc, -1) {
+		if len(m) >= 3 {
+			method := strings.ToUpper(strings.TrimSpace(m[1]))
+			path := strings.TrimSpace(m[2])
+			routeID := method + " " + path
+			validIDs[strings.ToUpper(routeID)] = true
+		}
+	}
+
 	// If no valid IDs found in source documents, skip the check
 	// (SPEC may use a different format that we don't parse).
 	if len(validIDs) == 0 {
