@@ -9,6 +9,10 @@
 # is used to pre-install npm dependencies. Source is copied into a writable
 # /app volume where Playwright writes test-results/, and playwright-report/ without touching the host tree.
 # Multi-stage Dockerfile handles npm install during build.
+#
+# IMPORTANT: The Go/Python/Node server runs on the HOST, not in Docker.
+# QA must start the server before running docker-compose up (e.g. go run ./cmd/server &).
+# The server must listen on 0.0.0.0 (not 127.0.0.1) so host.docker.internal can reach it.
 
 services:
   playwright:
@@ -20,7 +24,10 @@ services:
       - "host.docker.internal:host-gateway"
     environment:
       - BASE_URL={{PLAYWRIGHT_BASE_URL}}
-    command: sh -c "{{PLAYWRIGHT_COMMAND}}"
+    volumes:
+      - ./:/src:ro
+      - playwright-app:/app
+    command: sh -c "cp -r /src/* /app/ 2>/dev/null || true && cp -r /src/.* /app/ 2>/dev/null || true && {{PLAYWRIGHT_COMMAND}}"
 
 volumes:
   playwright-app:

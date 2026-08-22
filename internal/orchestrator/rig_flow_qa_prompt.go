@@ -215,6 +215,19 @@ If smoke fails, next message **JSON only** with HTTP status and bead IDs — do 
 
 func rigFlowE2ESmokeBlock(v WorkflowValidation, mayorRigDir string) string {
 	scoped := v.ForActivePhase()
+	// Extract townRoot and rig from mayorRigDir (format: <townRoot>/<rig>/mayor/rig)
+	townRoot := ""
+	rig := ""
+	if parts := strings.Split(mayorRigDir, "/"); len(parts) >= 3 {
+		// Find "mayor/rig" suffix to extract townRoot and rig
+		for i := len(parts) - 1; i >= 2; i-- {
+			if parts[i] == "rig" && parts[i-1] == "mayor" {
+				rig = parts[i-2]
+				townRoot = strings.Join(parts[:i-2], "/")
+				break
+			}
+		}
+	}
 	var e2eFiles []string
 	for _, f := range scoped.RequiredFiles {
 		if IsE2ETestPath(f) {
@@ -237,13 +250,36 @@ func rigFlowE2ESmokeBlock(v WorkflowValidation, mayorRigDir string) string {
 	if hasCompose {
 		composeFile = dockerComposeFileForPhase(scoped.RequiredFiles)
 	}
+	// Detect compose kind to determine if server runs on host or in Docker.
+	composeKind := "host-run"
+	if v, ok, _ := LoadRigWorkflowProfileFile(townRoot, rig); ok {
+		kind, _ := resolveComposeKind(nil, &v)
+		composeKind = kind
+	}
+	isHostRun := composeKind == "host-run"
 	var b strings.Builder
 	b.WriteString("## E2E / browser smoke test (exercises real UI and API)\n\n")
 	b.WriteString("The active phase includes E2E test files in `required_files`. Before returning `all_passed`, **run the E2E tests** so they exercise the real UI and API in a browser — curl alone is not enough.\n\n")
 	if hasCompose && composeFile != "" {
-		b.WriteString("The rig's compose uses the **locally-built shared runner image** `playwright-go-test:latest` (built asynchronously at workflow start from `mcr.microsoft.com/playwright:v1.62.1-jammy`). Do **not** require a specific public `mcr.microsoft.com/playwright:<version>` tag — the local image is canonical and needs no registry pull. For host-run rigs the container reaches the host-launched server via `host.docker.internal` (compose `extra_hosts` host-gateway); do **not** require `network_mode: host` or a `127.0.0.1` base URL — host networking does not expose the macOS host's loopback to containers.\n\n")
-		b.WriteString("| Check | How |\n|-------|-----|\n")
-		b.WriteString(fmt.Sprintf("| E2E tests pass | `cd {{rig}}/mayor/rig && %s -f %s down && %s -f %s up --exit-code-from playwright` |\n", cli, composeFile, cli, composeFile))
+		b.WriteString("The rig's compose uses the **locally-built shared runner image** `playwright-go-test:latest` (built asynchronously at workflow start from `mcr.microsoft.com/playwright:v1.62.1-jammy`). Do **not** require a specific public `mcr.microsoft.com/playwright:<version>` tag — the local image is canonical and needs no registry pull.\n\n")
+		if isHostRun {
+			// Host-run: server runs on HOST, Playwright in Docker
+			serverCmd := devServerCommandForQA(scoped)
+			b.WriteString(fmt.Sprintf("**host-run rig**: The server runs on the HOST, not in Docker. Before running Playwright, start the server in the background and free the port first.\n\n"))
+			b.WriteString("```bash\n")
+			b.WriteString(fmt.Sprintf("CMD: cd {{rig}}/mayor/rig && kill $(lsof -ti:%d) 2>/dev/null; sleep 1\n", scoped.DevServerPort))
+			if serverCmd != "" {
+				b.WriteString(fmt.Sprintf("CMD: cd {{rig}}/mayor/rig && %s &\n", serverCmd))
+				b.WriteString("CMD: sleep 3\n")
+			}
+			b.WriteString(fmt.Sprintf("CMD: cd {{rig}}/mayor/rig && %s -f %s down && %s -f %s build --no-cache && %s -f %s up --exit-code-from playwright && kill $(lsof -ti:%d) 2>/dev/null\n", cli, composeFile, cli, composeFile, cli, composeFile, scoped.DevServerPort))
+			b.WriteString("```\n\n")
+		} else {
+			// Single-container or multi-service: server runs in Docker
+			b.WriteString(fmt.Sprintf("**%s rig**: All services run in Docker. The compose file handles service startup and healthchecks.\n\n", composeKind))
+			b.WriteString("| Check | How |\n|-------|-----|\n")
+			b.WriteString(fmt.Sprintf("| E2E tests pass | `cd {{rig}}/mayor/rig && %s -f %s down && %s -f %s build --no-cache && %s -f %s up --exit-code-from playwright` |\n", cli, composeFile, cli, composeFile, cli, composeFile))
+		}
 		b.WriteString("| Page loads | Tests use `page.goto` / `page.locator` against the running app |\n")
 		b.WriteString("| API exercised | Tests call the real backend through the browser (fetch/XHR), not mocks |\n")
 		b.WriteString("| Real content asserted | Tests must assert concrete UI content (page heading, watchlist tickers, dollar amounts, labels) via `getByText`/`getByRole`/`toHaveText`/`toContainText`. Status-code + `toBeVisible()`-on-body checks are NOT enough — they pass when the app serves a placeholder page |\n\n")
@@ -257,4 +293,44 @@ func rigFlowE2ESmokeBlock(v WorkflowValidation, mayorRigDir string) string {
 	b.WriteString("If E2E tests fail, return `failure` with the test output — do not advance the phase.\n")
 	b.WriteString("If E2E tests pass but do not assert real UI content (only HTTP status/visibility), that is a **weak gate** — flag it and require content assertions before returning `all_passed`.\n")
 	return b.String()
+}
+
+// devServerCommandForQA returns the command to start the dev server for host-run rigs.
+// Returns "" if no server command can be derived (static-only projects).
+func devServerCommandForQA(v WorkflowValidation) string {
+	if v.DevServerPort <= 0 {
+		return ""
+	}
+	layout := strings.Trim(filepath.ToSlash(strings.TrimSpace(v.LayoutRoot)), "/")
+	files := v.UnionRequiredFiles()
+	switch {
+	case WorkflowUsesGo(v):
+		if target := goServerRunTarget(files, layout); target != "" {
+			return "go run " + target
+		}
+	case WorkflowUsesPython(v):
+		if mod := pythonUvicornModule(files, layout); mod != "" {
+			return pythonFromLayout(layout, v) + " -m uvicorn " + mod +
+				":app --host 0.0.0.0 --port " + fmt.Sprintf("%d", v.DevServerPort)
+		}
+		// Python without uvicorn — try flask
+		if pythonHasFlask(files, layout) {
+			return pythonFromLayout(layout, v) + " -m flask run --host 0.0.0.0 --port " + fmt.Sprintf("%d", v.DevServerPort)
+		}
+	case WorkflowUsesNodeJS(v):
+		return "npm run dev"
+	}
+	return ""
+}
+
+// pythonHasFlask reports whether the rig uses Flask.
+func pythonHasFlask(files []string, layout string) bool {
+	for _, f := range files {
+		rel := layoutRel(f, layout)
+		lower := strings.ToLower(rel)
+		if strings.Contains(lower, "flask") || strings.Contains(lower, "app.py") {
+			return true
+		}
+	}
+	return false
 }

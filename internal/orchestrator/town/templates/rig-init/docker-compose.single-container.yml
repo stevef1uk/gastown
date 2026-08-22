@@ -2,6 +2,7 @@
 # Template variables: {{PLAYWRIGHT_IMAGE}}, {{PLAYWRIGHT_WORKDIR}}, {{PLAYWRIGHT_COMMAND}}, {{BASE_URL}}, {{APP_PORT}}, {{APP_BUILD}}, {{HEALTHCHECK}}, {{ENV_BLOCK}}
 # App runs in its own container; Playwright reaches it over the internal compose network.
 # Multi-stage Dockerfile is used to pre-install npm dependencies.
+# Source files are mounted via volumes so test changes don't require image rebuilds.
 
 services:
   app:
@@ -27,7 +28,10 @@ services:
         condition: service_healthy
     environment:
       - BASE_URL={{BASE_URL}}
-    command: sh -c "{{PLAYWRIGHT_COMMAND}}"
+    volumes:
+      - ./:/src:ro
+      - playwright-app:/app
+    command: sh -c "cp -r /src/* /app/ 2>/dev/null || true && cp -r /src/.* /app/ 2>/dev/null || true && {{PLAYWRIGHT_COMMAND}}"
 
 volumes:
   playwright-app:

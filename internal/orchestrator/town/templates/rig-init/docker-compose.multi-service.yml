@@ -3,6 +3,7 @@
 # Reproduces all SPEC services plus the playwright runner. The runner service is
 # named "playwright" so the integration-test verify command
 # ("docker compose up --exit-code-from playwright") targets the right service.
+# Source files are mounted via volumes so test changes don't require image rebuilds.
 
 services:
 {{SERVICES_BLOCK}}
@@ -15,7 +16,10 @@ services:
       {{E2E_DEPENDS_ON}}
     environment:
       - BASE_URL={{BASE_URL}}
-    command: sh -c "{{PLAYWRIGHT_COMMAND}}"
+    volumes:
+      - ./:/src:ro
+      - e2e-results:/app
+    command: sh -c "cp -r /src/* /app/ 2>/dev/null || true && cp -r /src/.* /app/ 2>/dev/null || true && {{PLAYWRIGHT_COMMAND}}"
 
 volumes:
   e2e-results:
