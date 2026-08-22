@@ -3066,6 +3066,10 @@ func validateTestPlanArtifacts(townRoot, rig string, hadCmdFailure, testPlanWrit
 	if hallucinated := orchestrator.HallucinatedTestPlanRequirements(string(data), string(specDoc), string(archDoc)); len(hallucinated) > 0 {
 		return fmt.Errorf("TEST_PLAN.md has requirement IDs not found in SPEC.md or architecture.md: %v — do NOT invent requirements; only plan tests for requirements that EXPLICITLY appear in SPEC.md", hallucinated)
 	}
+	// Check for hallucinated bead IDs: bead IDs in TEST_PLAN.md must exist in bd list.
+	if beadErr := validateTestPlanBeadIDs(townRoot, rig, blocks); beadErr != nil {
+		return beadErr
+	}
 	if !testPlanWriteOK {
 		// A TEST_PLAN.md may already exist from a prior run; accept it if valid.
 		return nil
@@ -3079,6 +3083,37 @@ func testPlanBytes(rigDir string) int64 {
 		return 0
 	}
 	return info.Size()
+}
+
+// validateTestPlanBeadIDs checks that bead IDs in TEST_PLAN.md blocks exist in bd list.
+func validateTestPlanBeadIDs(townRoot, rig string, blocks []orchestrator.TestPlanBlock) error {
+	known, prefix, err := orchestrator.ListRigBeadIDSet(townRoot, rig)
+	if err != nil {
+		// If bd list fails, skip bead ID validation (beads may not be initialized yet).
+		return nil
+	}
+	if prefix == "" {
+		return nil
+	}
+	var invalid []string
+	for _, b := range blocks {
+		beadID := strings.TrimSpace(b.BeadID)
+		if beadID == "" {
+			continue
+		}
+		// Skip placeholder bead IDs that don't match the rig's prefix pattern.
+		if !strings.HasPrefix(strings.ToLower(beadID), strings.ToLower(prefix)+"-") {
+			invalid = append(invalid, fmt.Sprintf("%s (wrong prefix; rig uses %s-*)", beadID, prefix))
+			continue
+		}
+		if known != nil && !known[strings.ToLower(beadID)] {
+			invalid = append(invalid, fmt.Sprintf("%s (not in bd list)", beadID))
+		}
+	}
+	if len(invalid) > 0 {
+		return fmt.Errorf("TEST_PLAN.md has invalid bead IDs: %s — run `bd list --status=open,in_progress` and copy bead IDs exactly", strings.Join(invalid, ", "))
+	}
+	return nil
 }
 
 func validateTestReviewArtifacts(townRoot, rig, outcome string, hadCmdFailure, verifyOK bool, v orchestrator.WorkflowValidation) error {

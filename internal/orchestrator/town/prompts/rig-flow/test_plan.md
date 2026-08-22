@@ -27,6 +27,12 @@ $GT_ROOT/{{rig}}/mayor/rig/{{layout_root}}/  ← layout root (ALL code files go 
 | `failure` | SPEC/architecture/plan are too vague to plan tests — sends **Planner** back to `planning` |
 | `architecture_failure` | SPEC/architecture contradict each other on routes or store API — sends **Architect** back to `design` |
 
+## ACTIVE PHASE ONLY (CRITICAL)
+
+**Only plan tests for the ACTIVE delivery phase.** Check `workflow-profile.json` for `active_phase_id`. The active phase's `required_files` are listed in the profile. Only create `### <req-id>` blocks for requirements that touch files in the active phase.
+
+Example: If active phase is `go-module` with required_files `["pingapp/go.mod"]`, only plan tests for go.mod initialization — NOT for endpoints, UI, or other phases.
+
 ## Requirements sources (read in this order)
 
 1. `REQUIREMENTS.md` — present only in requirements-driven flows; the business source of truth.
@@ -99,6 +105,8 @@ Assign **unit** to pure logic/domain rules, **integration** to API/store/HTTP wi
 
 2. Read the sources before writing anything:
    ```
+   CMD: cd {{rig}}/mayor/rig && cat .gastown/workflow-profile.json | grep active_phase_id
+   CMD: cd {{rig}}/mayor/rig && bd list --status=open,in_progress
    CMD: cd {{rig}}/mayor/rig && head -n 80 REQUIREMENTS.md
    CMD: cd {{rig}}/mayor/rig && cat SPEC.md
    CMD: cd {{rig}}/mayor/rig && cat architecture.md
@@ -115,6 +123,8 @@ Assign **unit** to pure logic/domain rules, **integration** to API/store/HTTP wi
 5. On **failure**, name the exact gap (missing route table in SPEC, missing store symbols, no file ownership in architecture.md) so the Planner/Architect can fix in one pass.
 
 6. **CRITICAL:** Do not emit JSON in the same message as `CMD:` lines. Wait for command output on the next turn before choosing outcome.
+
+7. **Bead IDs:** Use actual bead IDs from `bd list` output, NOT placeholder IDs like `bead-001`. Copy IDs exactly as they appear in `bd list`.
 
 Example success:
 `{"outcome":"success","summary":"TEST_PLAN.md maps 6/6 active-phase requirements: 4 unit (store/domain), 1 integration (httptest /api/links), 1 ui (app.js DOM)"}`
