@@ -1477,6 +1477,8 @@ func rewriteSPECMDPathAfterCD(cmd, rig string) (string, bool) {
 
 // rewriteRigDocPathAfterCD rewrites `cd rig/mayor/rig && ... > rig/mayor/rig/<doc>`
 // to use the bare `<doc>` after the cd, mirroring the correct cwd-relative path.
+// Only checks the shell preamble (before heredoc <<) for `cd` to avoid false matches
+// on `cd` inside heredoc bodies (e.g. `cd pingapp && go test` in architecture.md).
 func rewriteRigDocPathAfterCD(cmd, rig, doc string) (string, bool) {
 	rigName := strings.TrimSpace(rig)
 	if rigName == "" {
@@ -1485,6 +1487,11 @@ func rewriteRigDocPathAfterCD(cmd, rig, doc string) (string, bool) {
 	mayorRig := rigName + "/mayor/rig"
 	lower := strings.ToLower(cmd)
 	if !strings.Contains(lower, strings.ToLower(doc)) || !strings.Contains(lower, "cd ") {
+		return cmd, false
+	}
+	shellPortion := designCommandShellPortion(cmd)
+	shellLower := strings.ToLower(shellPortion)
+	if !strings.Contains(shellLower, "cd ") {
 		return cmd, false
 	}
 	if !strings.Contains(lower, strings.ToLower(mayorRig)) {

@@ -398,9 +398,13 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summa
 	// required_files can hallucinate files (e.g. config.py) or emit wildcards
 	// (@app.get/post/...). Syncing here makes planning create beads only for real paths.
 	if fromState == "design" && outcome == "success" && rig != "" {
-		if _, err := SyncRigWorkflowProfileFromArchitecture(m.townRoot, rig); err != nil {
-			return "", fmt.Errorf("sync profile after design success: %w", err)
+		log.Printf("[Manager] CompleteTask: syncing profile after design success for %s", rig)
+		synced, syncErr := SyncRigWorkflowProfileFromArchitecture(m.townRoot, rig)
+		if syncErr != nil {
+			log.Printf("[Manager] CompleteTask: sync profile failed for %s: %v", rig, syncErr)
+			return "", fmt.Errorf("sync profile after design success: %w", syncErr)
 		}
+		log.Printf("[Manager] CompleteTask: sync profile for %s synced=%v", rig, synced)
 	}
 	// Mark TEST_PLAN.md as reviewed when the tester agent succeeds from test_plan state.
 	// This prevents redundant re-validation on subsequent workflow entries.
@@ -411,9 +415,10 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summa
 	}
 	next, err := inst.Transition(tpl, outcome)
 	if err != nil {
+		log.Printf("[Manager] CompleteTask: transition failed from=%s outcome=%s err=%v", fromState, outcome, err)
 		return "", err
 	}
-	log.Printf("[Manager] CompleteTask: after Transition, workflow=%s fromState=%s next=%s inst.CurrentState=%s", workflowID, fromState, next, inst.CurrentState)
+	log.Printf("[Manager] CompleteTask: after Transition, workflow=%s fromState=%s outcome=%s next=%s inst.CurrentState=%s", workflowID, fromState, outcome, next, inst.CurrentState)
 	// Ensure tester agent is running when entering test_plan, test_plan_rework, or test_review states
 	if rig != "" && (next == "test_plan" || next == "test_plan_rework" || next == "test_review") {
 		// Skip re-validating TEST_PLAN.md if already reviewed — auto-complete the state.
