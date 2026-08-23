@@ -284,6 +284,22 @@ func runMayorWorkflowStart(cmd *cobra.Command, args []string) error {
 
 	if rig := vars["rig"]; rig != "" {
 		maybeSpecIndexFromSPEC(townRoot, rig, false)
+
+		// Gate: a phased rig-flow started without a generated workflow-profile
+		// runs phase-less — no delivery phases, no artifact guards, no
+		// per-phase QA verify, and the design req-ID guard silently no-ops.
+		// Refuse loudly here instead of failing mysteriously mid-design.
+		specPath := filepath.Join(townRoot, rig, "mayor", "rig", "SPEC.md")
+		if _, err := os.Stat(specPath); err == nil {
+			if _, ok, _ := orchestrator.LoadRigWorkflowProfileFile(townRoot, rig); !ok {
+				return fmt.Errorf(
+					"refusing to start %q for rig %q: no workflow profile at %s (spec-index failed?) — run: gt rig spec-index %s",
+					templateID, rig,
+					filepath.Join(rig, "mayor", "rig", ".gastown", "workflow-profile.json"),
+					rig)
+			}
+		}
+
 		if running, _, _ := orchestrator.IsRunning(townRoot); running {
 			mgr := orchestrator.NewManager(townRoot)
 			if mgr.HasActiveWorkflow(templateID, rig) {

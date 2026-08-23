@@ -100,15 +100,20 @@ func DeterministicIndexRig(ctx context.Context, townRoot, rig string) (*ProfileF
 		log.Printf("[deterministic-index] no parseable layout tree in SPEC for %s — falling back to LLM", rig)
 		return nil, fmt.Errorf("no parseable layout tree in SPEC — falling back to LLM")
 	}
-	// If tree is too sparse (likely incomplete), fall back to LLM for full extraction
-	if len(paths) < 20 {
-		log.Printf("[deterministic-index] layout tree has only %d files (expected 20+ for full project) — falling back to LLM", len(paths))
-		return nil, fmt.Errorf("layout tree too sparse (%d files) — falling back to LLM", len(paths))
-	}
-
-	// Parse phases from SPEC (names only, no file assignments)
+	// Parse phases from SPEC (names only, no file assignments). Parsed before
+	// the sparsity check: an explicit Delivery Phases section means the author
+	// enumerated the project on purpose, so a short tree is intentional
+	// (micro-service / test-harness rigs), not a truncated extraction.
 	phases := parseSpecPhases(spec)
 	log.Printf("[deterministic-index] rig=%s phases from SPEC=%d: %v", rig, len(phases), phaseNames(phases))
+
+	// If tree is too sparse with NO declared phases it is likely incomplete —
+	// fall back to LLM for full extraction.
+	if len(paths) < 20 && len(phases) == 0 {
+		log.Printf("[deterministic-index] layout tree has only %d files and SPEC declares no delivery phases (expected 20+ for full project) — falling back to LLM", len(paths))
+		return nil, fmt.Errorf("layout tree too sparse (%d files) and no SPEC phases — falling back to LLM", len(paths))
+	}
+
 	if len(phases) == 0 {
 		// Fallback: default phases from tree structure
 		phases = defaultPhasesFromPaths(paths)
