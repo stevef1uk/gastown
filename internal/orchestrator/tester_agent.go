@@ -354,18 +354,32 @@ func HallucinatedTestPlanRequirements(testPlan, specDoc, archDoc string) []strin
 	}
 	return hallucinated
 }
-// HasRequirementHeadings reports whether doc contains at least one
-// `### <id>` requirement heading (three hashes, space, non-empty id).
-// The design-step guard uses this to enforce that architecture.md defines
-// requirement IDs before the Tester plans tests against them.
-func HasRequirementHeadings(doc string) bool {
+
+// HasRequirementHeadingsForIDs reports whether doc contains a `### <id>`
+// heading for EVERY given requirement ID (case-insensitive). Matching against
+// the actual delivery-phase IDs prevents false positives where an unrelated
+// heading (e.g. "### HTTP API Table") satisfies the check while the Tester
+// still has no valid IDs to anchor TEST_PLAN.md blocks to.
+func HasRequirementHeadingsForIDs(doc string, ids []string) bool {
+	if len(ids) == 0 {
+		return true
+	}
+	wanted := make(map[string]struct{}, len(ids))
+	for _, id := range ids {
+		wanted[strings.ToLower(strings.TrimSpace(id))] = struct{}{}
+	}
 	for _, line := range strings.Split(doc, "\n") {
 		t := strings.TrimSpace(line)
-		if strings.HasPrefix(t, "### ") {
-			if id := strings.TrimSpace(strings.TrimPrefix(t, "### ")); id != "" {
+		if !strings.HasPrefix(t, "### ") {
+			continue
+		}
+		id := strings.ToLower(strings.TrimSpace(strings.TrimPrefix(t, "### ")))
+		if _, ok := wanted[id]; ok {
+			delete(wanted, id)
+			if len(wanted) == 0 {
 				return true
 			}
 		}
 	}
-	return false
+	return len(wanted) == 0
 }

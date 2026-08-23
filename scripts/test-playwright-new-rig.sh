@@ -190,9 +190,27 @@ else
 fi
 echo "Using compose CLI: ${DC}"
 
-# Create docker-compose.yml for Playwright E2E (not in SPEC layout)
+# Preflight: refuse to run when disk is nearly full — a full E2E cycle pulls a
+# ~1.5GB Playwright image and writes node_modules; running at 100% corrupts
+# builds mid-flight (GH: disk-full left a 186GB stale compose volume behind).
+avail_kb=$(df -k --output=avail / | tail -1 | tr -d ' ')
+if [ "${avail_kb:-0}" -lt 10485760 ]; then
+    echo "ERROR: less than 10GB free on / ($(( avail_kb / 1024 / 1024 ))GB). Free space first:"
+    echo "  docker system prune -af --volumes   # removes stopped + unused volumes"
+    echo "  docker builder prune -af"
+    exit 1
+fi
+
+# Teardown guard: always remove the compose project (containers + anonymous
+# volumes) so repeated runs can never accumulate GBs in named volumes.
+cleanup_compose() {
+    ${DC} -f docker-compose.yml down -v --remove-orphans >/dev/null 2>&1 || true
+}
+trap cleanup_compose EXIT
+
+# Create docker-compose.yml for Playwright E2E (not in SPEC layout).
+# Bind mounts only — no named volumes, nothing persists between runs.
 cat > docker-compose.yml <<'COMPOSEEOF'
-version: '3.8'
 services:
   playwright:
     image: mcr.microsoft.com/playwright:v1.45.0-jammy
@@ -208,5 +226,12 @@ services:
 COMPOSEEOF
 
 ${DC} -f docker-compose.yml up --exit-code-from playwright 2>&1 | tail -20
+RC=${PIPESTATUS[0]}
+cleanup_compose
+
+if [ "$RC" -ne 0 ]; then
+    echo "=== FAILURE: Playwright integration test exited $RC ==="
+    exit "$RC"
+fi
 
 echo "=== SUCCESS: Playwright integration test passed! ==="

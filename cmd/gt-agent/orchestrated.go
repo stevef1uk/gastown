@@ -3722,22 +3722,24 @@ func validateDesignArtifacts(townRoot, rig string, writtenThisRun bool, startedA
 
 	// Deterministic requirement-ID guard: the Tester's anti-hallucination check
 	// validates TEST_PLAN.md `### <req-id>` blocks against `### <id>` headings in
-	// SPEC/architecture. An architecture.md with zero such headings leaves route
-	// bullets as the only valid IDs and forces the Tester into a planning loop.
-	// Enforce the heading whenever the profile defines delivery phases.
+	// SPEC/architecture. An architecture.md whose headings don't cover the
+	// delivery-phase IDs leaves the Tester nothing valid to anchor to and forces
+	// a planning loop. Require a heading for EVERY phase ID — an unrelated
+	// heading like "### HTTP API Table" must not satisfy this.
 	if len(v.DeliveryPhases) > 0 {
 		data, err := os.ReadFile(archPath)
 		if err != nil {
 			return fmt.Errorf("read architecture.md: %w", err)
 		}
-		if !orchestrator.HasRequirementHeadings(string(data)) {
-			ids := make([]string, 0, len(v.DeliveryPhases))
-			for _, p := range v.DeliveryPhases {
-				ids = append(ids, p.ID)
-			}
+		ids := make([]string, 0, len(v.DeliveryPhases))
+		for _, p := range v.DeliveryPhases {
+			ids = append(ids, p.ID)
+		}
+		if !orchestrator.HasRequirementHeadingsForIDs(string(data), ids) {
 			return fmt.Errorf(
-				"architecture.md has no `### <req-id>` requirement headings — the Tester cannot plan tests without them. "+
-					"Add a '## Requirements' section with one `### <id>` heading per delivery phase (e.g. %s), "+
+				"architecture.md is missing `### <req-id>` requirement headings for the delivery phases — "+
+					"the Tester cannot plan tests without them and will reject invented IDs. "+
+					"Add a '## Requirements' section with one `### <id>` heading per delivery phase (%s), "+
 					"each followed by its requirement text, then rewrite architecture.md via heredoc. See {{town_root}}/orchestrator/STANDARDS.md",
 				strings.Join(ids, ", "))
 		}
