@@ -17,10 +17,25 @@ func TestPlaywrightIntegration_HostNetworking(t *testing.T) {
 		t.Skip("skipping integration test in short mode")
 	}
 
+	// Heavy E2E: builds images and runs a Docker Compose stack that can write
+	// many GB into named volumes. Opt-in ONLY — routine `go test ./...` must
+	// never trigger Docker workloads (a leaked/uninterrupted run filled the
+	// root disk via COMPOSE_PROJECT_NAME=playwright-test volumes).
+	if os.Getenv("GT_RUN_PLAYWRIGHT_E2E") == "" {
+		t.Skip("set GT_RUN_PLAYWRIGHT_E2E=1 to run the full Playwright/Docker integration")
+	}
+
 	// Check Docker is available
 	if _, err := exec.LookPath("docker"); err != nil {
 		t.Skip("docker not available")
 	}
+
+	// Guaranteed teardown of the compose project (containers + volumes) even
+	// when assertions fail — the stack must never outlive the test process.
+	t.Cleanup(func() {
+		_ = exec.Command("docker", "compose", "--project-name", "playwright-test",
+			"down", "-v", "--remove-orphans").Run()
+	})
 
 	// Check playwright-go-test image exists
 	if err := checkPlaywrightImage(); err != nil {
