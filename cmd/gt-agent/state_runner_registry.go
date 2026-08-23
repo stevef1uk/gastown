@@ -98,6 +98,15 @@ var trackHandlers = map[string]trackFn{
 	"design": func(r *stateRunner, cmd string, cmdErr error) {
 		if cmdErr == nil && isArchitectureMDWriteCommand(cmd) {
 			r.track.designArchWritten = true
+			return
+		}
+		// Rework edits legitimately use in-place tools (`sed -i`, python one-
+		// liners, tee) that match neither the heredoc nor redirect patterns,
+		// yet design's own failure_hint prescribes exactly that on rework.
+		// Trust the filesystem clock: a successful CMD that touched
+		// architecture.md during THIS attempt counts as the required write.
+		if cmdErr == nil && fileWrittenThisRun(rigMayorRigDir(r.townRoot, r.rig), "architecture.md", r.track.startedAt) {
+			r.track.designArchWritten = true
 		}
 	},
 	"planning": func(r *stateRunner, cmd string, cmdErr error) {
