@@ -55,7 +55,7 @@ states:
     hooks:
       prompt_context: [design_draft_context]
       pre_run: [reset_layout_pre_implementation, prune_rig_root_junk]
-      max_cmd_turns: 5
+      max_cmd_turns: 8
       cmd_guard: design
       cmd_rewrites: [rig_placeholders, spec_md_case, spec_md_after_cd, arch_md_after_cd, unwrap_bash_lc]
       track: design
@@ -63,7 +63,7 @@ states:
       retry_hint: |
         One CMD: per line. Read SPEC with head; write architecture.md via single-quoted heredoc. On design_review rework, FIRST `cat {{rig}}/mayor/rig/architecture.md` to see what QA approved, then `sed -i` targeted fixes (or a full heredoc only if needed). After wc -c meets minimum, auto-completes.
       failure_hint: |
-        Write architecture.md with heredoc CMD in this session (stale files don't count). On design_review rework, read the existing architecture.md first and fix only the QA-named defects (path collisions, db/route drift, Docker judge) with sed -i. Read SPEC with head -n 60. HTTP paths/symbols must match SPEC verbatim. Prefix implement paths with layout_root.
+        FIRST run `CMD: cat {{rig}}/mayor/rig/.gastown/workflow-profile.json` and use the EXACT `delivery_phases[].id` values as your `### <req-id>` headings — phase IDs change between index runs and stale IDs are rejected. Write architecture.md with heredoc CMD in this session (stale files don't count). On design_review rework, read the existing architecture.md first and fix only the QA-named defects (path collisions, db/route drift, Docker judge) with sed -i. Read SPEC with head -n 60. HTTP paths/symbols must match SPEC verbatim. Prefix implement paths with layout_root.
     transitions:
       success:
         to: design_review
@@ -162,9 +162,9 @@ states:
     instructions: |
       1. Read REQUIREMENTS.md (if present), SPEC.md, architecture.md, and plan.md under `{{rig}}/mayor/rig/`.
       2. Write `{{rig}}/mayor/rig/TEST_PLAN.md` (≥{{min_test_plan_bytes}} bytes) mapping every active-phase requirement to unit/integration/UI tests with bead IDs.
-      3. Report success only when the plan covers every requirement at the right level; failure sends the planner back.
+      3. Report success only when the plan covers every requirement at the right level;       failure sends the planner back.
     hooks:
-      max_cmd_turns: 10
+      max_cmd_turns: 14
       cmd_guard: test_plan
       cmd_rewrites: [rig_placeholders, unwrap_bash_lc, test_plan_md_after_cd, bd_list_limit]
       env:
