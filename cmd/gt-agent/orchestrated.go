@@ -332,6 +332,15 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 			feedbackBuilder.WriteString("\n\nCommands executed. If the step is complete, reply with JSON only (no CMD lines): {\"outcome\":\"...\",\"summary\":\"...\"}")
 			if runner.hooks.Artifacts == "design" && runner.track.designArchWritten {
 				feedbackBuilder.WriteString("\n\nDesign: when architecture.md meets the byte minimum and validates, this step auto-completes — no JSON turn required.")
+
+				// Auto-complete NOW instead of merely hinting: slow/chatty
+				// models burn max_cmd_turns on extra verification turns and
+				// never emit terminal JSON, looping design forever even though
+				// the artifact on disk is valid. Latency must not matter.
+				if vErr := runner.validateArtifacts("success"); vErr == nil {
+					orchestratedPrintf("[gt-agent] auto-completing design: artifacts satisfied\n")
+					return "success", "architecture.md written and validated", lastAttemptFeedback.String(), nil
+				}
 			}
 			if turn == maxTurns {
 				feedbackBuilder.WriteString(" Use an allowed outcome.")
