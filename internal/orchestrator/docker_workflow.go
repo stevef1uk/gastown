@@ -399,6 +399,7 @@ func SanitizeRigFlowProfile(v WorkflowValidation, rig ...string) WorkflowValidat
 			v.DeliveryPhases[i].QAVerifyCommand = dockerVerifyWithLayout(q, layout)
 		}
 	}
+	healPhaseVerifyTestFiles(&v)
 	if WorkflowUsesDocker(v) {
 		if q := strings.TrimSpace(v.QAVerifyCommand); q != "" {
 			v.QAVerifyCommand = dockerVerifyWithLayout(q, layout)
@@ -424,6 +425,105 @@ func SanitizeRigFlowProfile(v WorkflowValidation, rig ...string) WorkflowValidat
 // sanitizeFrontendOnlyPhaseQA replaces npm test with typecheck-only in frontend-only
 // delivery phases that have no unit-test files. Playwright/E2E tests belong in a
 // dedicated e2e/deployment phase with a running server, not in the frontend build phase.
+// healPhaseVerifyTestFiles fixes profile defects where a phase's
+// qa_verify_command runs a test runner but the phase's required_files lack the
+// test files that command actually executes — which plan_review/QA correctly
+// reject as "verify requires file not in phase". Files are only pulled in when
+// the command's scope actually covers them:
+//   - "go test" with explicit package patterns covers only _test.go files under
+//     those packages; bare "go test" covers all Go test files in the profile.
+//   - bare "pytest"/"python -m pytest" covers all Python test files; explicit
+//     .py arguments cover only those files.
+//   - "playwright" pulls spec files plus the Playwright config.
+func healPhaseVerifyTestFiles(v *WorkflowValidation) {
+	union := v.UnionRequiredFiles()
+	normalize := func(f string) string {
+		return strings.ToLower(filepath.ToSlash(strings.TrimSpace(f)))
+	}
+	goTestCovered := func(q, f string) bool {
+		dir := strings.TrimSuffix(normalize(f), strings.ToLower(filepath.Base(f)))
+		dir = strings.Trim(dir, "/")
+		// Package patterns = non-flag tokens AFTER "go test", stopping at
+		// shell operators ("cd x && go test ./pkg" must not treat cd/x as pkgs).
+		fields := strings.Fields(q)
+		var pkgs []string
+		for i := 0; i+1 < len(fields); i++ {
+			if fields[i] != "go" || fields[i+1] != "test" {
+				continue
+			}
+			for _, tok := range fields[i+2:] {
+				if tok == "&&" || tok == "||" || tok == ";" || tok == "|" {
+					break
+				}
+				if strings.HasPrefix(tok, "-") {
+					continue
+				}
+				pkgs = append(pkgs, strings.Trim(tok, "\"'"))
+			}
+			break
+		}
+		if len(pkgs) == 0 {
+			return true // bare `go test` walks the whole module
+		}
+		for _, p := range pkgs {
+			p = strings.Trim(strings.TrimPrefix(p, "./"), "/")
+			if p == "" || p == "." {
+				return true
+			}
+			if strings.HasPrefix(dir, p) {
+				return true
+			}
+		}
+		return false
+	}
+	pytestCovered := func(q, f string) bool {
+		base := strings.ToLower(filepath.Base(f))
+		for _, tok := range strings.Fields(q) {
+			if strings.HasSuffix(tok, ".py") && strings.EqualFold(filepath.Base(strings.Trim(tok, "\"'")), base) {
+				return true // explicitly named
+			}
+		}
+		// Bare pytest collects test_*.py / *_test.py from the rootdir.
+		return !strings.Contains(q, ".py") ||
+			strings.HasPrefix(base, "test_") || strings.HasSuffix(base, "_test.py")
+	}
+
+	for i := range v.DeliveryPhases {
+		raw := strings.TrimSpace(v.DeliveryPhases[i].QAVerifyCommand)
+		q := strings.ToLower(raw)
+		if q == "" {
+			continue
+		}
+		has := map[string]bool{}
+		for _, f := range v.DeliveryPhases[i].RequiredFiles {
+			has[normalize(filepath.Base(f))] = true
+		}
+		addIf := func(token string, matchBase func(string) bool, covered func(string, string) bool) {
+			if !strings.Contains(q, token) {
+				return
+			}
+			for _, f := range union {
+				b := normalize(filepath.Base(f))
+				if has[b] || !matchBase(b) || !covered(q, f) {
+					continue
+				}
+				v.DeliveryPhases[i].RequiredFiles = append(v.DeliveryPhases[i].RequiredFiles, filepath.ToSlash(strings.TrimSpace(f)))
+				has[b] = true
+				log.Printf("[profile-heal] phase %q: qa_verify_command %q executes %s — added to required_files", v.DeliveryPhases[i].ID, raw, f)
+			}
+		}
+		addIf("go test",
+			func(b string) bool { return strings.HasSuffix(b, "_test.go") },
+			goTestCovered)
+		addIf("pytest",
+			func(b string) bool { return strings.HasSuffix(b, ".py") && (strings.HasPrefix(b, "test_") || strings.HasSuffix(b, "_test.py")) },
+			pytestCovered)
+		addIf("playwright",
+			func(b string) bool { return strings.Contains(b, ".spec.") || b == "playwright.config.ts" || b == "playwright.config.js" },
+			func(q, f string) bool { return true })
+	}
+}
+
 func sanitizeFrontendOnlyPhaseQA(v *WorkflowValidation) {
 	for i := range v.DeliveryPhases {
 		p := &v.DeliveryPhases[i]
