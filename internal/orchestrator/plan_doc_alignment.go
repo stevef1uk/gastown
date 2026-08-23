@@ -193,7 +193,10 @@ func checkArchitectureDockerSection(archDoc string, v WorkflowValidation) []stri
 	}
 	loc := dockerDeploymentHeadingRE.FindStringIndex(archDoc)
 	if loc == nil {
-		return []string{"architecture.md must have a ## Docker & Deployment section with base images, build steps, exposed port, and CMD (Docker files are in profile)"}
+		if hasAppDockerfile(v) {
+			return []string{"architecture.md must have a ## Docker & Deployment section with base images, build steps, exposed port, and CMD (Docker files are in profile)"}
+		}
+		return []string{"architecture.md must have a ## Docker & Deployment section documenting the test-harness compose workflow (test image, host reachability, exit-code propagation)"}
 	}
 	section := extractMarkdownSection(archDoc, loc[0])
 	if len(strings.TrimSpace(section)) < 200 {
@@ -211,16 +214,30 @@ func checkArchitectureDockerSection(archDoc string, v WorkflowValidation) []stri
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
+	// Criteria depend on whether an application Dockerfile is actually required.
+	// When docker appears only as a test harness (e.g. Playwright compose against
+	// a host-run server), demanding multi-stage builds/CMD for a nonexistent
+	// application image sends the Architect into an unwinnable rework loop.
+	criteria := []string{
+		"Documents the base images used in the Dockerfile (e.g., node:20-slim, python:3.12-slim)",
+		"Describes the multi-stage build steps clearly",
+		"Specifies the exposed port (e.g., 8000)",
+		"Documents the CMD/entrypoint used to run the server",
+	}
+	if !hasAppDockerfile(v) {
+		criteria = []string{
+			"States that Docker is used only as a test harness and the application itself is not containerized",
+			"Documents the test container's base image (e.g., mcr.microsoft.com/playwright)",
+			"Documents how the test container reaches the server running on the host (e.g., host.docker.internal or network_mode)",
+			"Documents how the test result propagates (e.g., --exit-code-from or exit status forwarding)",
+		}
+	}
+
 	pass, reason, err := ValidateDocumentWithJudge(ctx, client, JudgeConfig{
 		DocumentName: "architecture.md (## Docker & Deployment section)",
 		Content:      archDoc,
-		Criteria: []string{
-			"Documents the base images used in the Dockerfile (e.g., node:20-slim, python:3.12-slim)",
-			"Describes the multi-stage build steps clearly",
-			"Specifies the exposed port (e.g., 8000)",
-			"Documents the CMD/entrypoint used to run the server",
-		},
-		MinLength: 200,
+		Criteria:     criteria,
+		MinLength:    200,
 	})
 	if err != nil {
 		log.Printf("[judge] LLM unavailable for Docker section validation: %v", err)
@@ -230,6 +247,18 @@ func checkArchitectureDockerSection(archDoc string, v WorkflowValidation) []stri
 		return []string{fmt.Sprintf("## Docker & Deployment section failed judge: %s", reason)}
 	}
 	return nil
+}
+
+// hasAppDockerfile reports whether the profile requires an application Dockerfile
+// (as opposed to docker appearing only in test/compose-harness QA commands).
+func hasAppDockerfile(v WorkflowValidation) bool {
+	for _, f := range v.UnionRequiredFiles() {
+		f = strings.ToLower(filepath.ToSlash(strings.TrimSpace(f)))
+		if strings.HasSuffix(f, "dockerfile") {
+			return true
+		}
+	}
+	return false
 }
 
 // hasTestRequiredFiles reports whether the profile explicitly lists test files

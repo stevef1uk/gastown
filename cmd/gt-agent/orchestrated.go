@@ -3138,12 +3138,14 @@ func validateTestReviewArtifacts(townRoot, rig, outcome string, hadCmdFailure, v
 	testPlan := string(data)
 
 	if sendToArchitect {
+		orchestratedFprintfStderr("[gt-agent] architecture_failure: architect revising architecture.md — SPEC/architecture inconsistency detected\n")
 		if !verifyOK {
 			return fmt.Errorf("architecture_failure requires green %s in this session — use outcome failure for test failures", v.QAVerifyHint())
 		}
 		if err := orchestrator.ValidateWorkNotStubbed(rigDir, v); err != nil {
 			return fmt.Errorf("stub/placeholder code cannot use architecture_failure — use outcome failure: %w", err)
 		}
+		orchestratedFprintfStderr("[gt-agent] architecture_failure: returning to architect with rework feedback\n")
 		return nil
 	}
 	if sendToPlan {
@@ -3211,6 +3213,7 @@ func validateQAArtifacts(townRoot, rig, outcome string, hadCmdFailure, bdListClo
 		return fmt.Errorf("run `bd list --status=closed` from %s before reporting QA outcome", rigMayorRigPath(rig))
 	}
 	if sendToArchitect {
+orchestratedFprintfStderr("[gt-agent] QA architecture_failure: sending architect to revise architecture.md\n")
 		if !unittestOK {
 			return fmt.Errorf("architecture_failure requires green %s in this session — use outcome failure for test failures", scoped.QAVerifyHint())
 		}
@@ -3715,6 +3718,29 @@ func validateDesignArtifacts(townRoot, rig string, writtenThisRun bool, startedA
 	if info.Size() < v.MinArchitectureBytes {
 		short := v.MinArchitectureBytes - info.Size()
 		return fmt.Errorf("architecture.md too small (%d bytes); need ≥%d (%d more). Run `CMD: wc -c %s/mayor/rig/architecture.md`, then rewrite the heredoc with fuller per-file sections (API tables, data model, acceptance) before JSON success", info.Size(), v.MinArchitectureBytes, short, rig)
+	}
+
+	// Deterministic requirement-ID guard: the Tester's anti-hallucination check
+	// validates TEST_PLAN.md `### <req-id>` blocks against `### <id>` headings in
+	// SPEC/architecture. An architecture.md with zero such headings leaves route
+	// bullets as the only valid IDs and forces the Tester into a planning loop.
+	// Enforce the heading whenever the profile defines delivery phases.
+	if len(v.DeliveryPhases) > 0 {
+		data, err := os.ReadFile(archPath)
+		if err != nil {
+			return fmt.Errorf("read architecture.md: %w", err)
+		}
+		if !orchestrator.HasRequirementHeadings(string(data)) {
+			ids := make([]string, 0, len(v.DeliveryPhases))
+			for _, p := range v.DeliveryPhases {
+				ids = append(ids, p.ID)
+			}
+			return fmt.Errorf(
+				"architecture.md has no `### <req-id>` requirement headings — the Tester cannot plan tests without them. "+
+					"Add a '## Requirements' section with one `### <id>` heading per delivery phase (e.g. %s), "+
+					"each followed by its requirement text, then rewrite architecture.md via heredoc. See {{town_root}}/orchestrator/STANDARDS.md",
+				strings.Join(ids, ", "))
+		}
 	}
 
 	// Stale implementation files at mayor/rig root must not block design completion.

@@ -354,3 +354,18 @@ func HallucinatedTestPlanRequirements(testPlan, specDoc, archDoc string) []strin
 	}
 	return hallucinated
 }
+// HasRequirementHeadings reports whether doc contains at least one
+// `### <id>` requirement heading (three hashes, space, non-empty id).
+// The design-step guard uses this to enforce that architecture.md defines
+// requirement IDs before the Tester plans tests against them.
+func HasRequirementHeadings(doc string) bool {
+	for _, line := range strings.Split(doc, "\n") {
+		t := strings.TrimSpace(line)
+		if strings.HasPrefix(t, "### ") {
+			if id := strings.TrimSpace(strings.TrimPrefix(t, "### ")); id != "" {
+				return true
+			}
+		}
+	}
+	return false
+}
