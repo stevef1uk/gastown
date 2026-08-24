@@ -687,16 +687,28 @@ func (r *stateRunner) addBeadTurn(beadID string) bool {
 	r.implProgress.BeadTurns[r.track.activeBead]++
 	turns := r.implProgress.BeadTurns[r.track.activeBead]
 	if turns > r.implProgress.BeadTurnsLimit {
-		// Exceeded limit - delete the bead file so it gets regenerated
+		// Exceeded limit. Deleting the bead's file forces regeneration — but
+		// when a SUBSTANTIVE artifact is already on disk (≥ min implementation
+		// size, i.e. real delivered code rather than an empty stub), deleting
+		// it destroys verified progress and reopens beads over working files.
 		beadID := r.track.activeBead
 		beadPath := r.activeImplementBeadPath()
 		if beadPath != "" {
 			rigDir := filepath.Join(r.townRoot, r.rig, "mayor", "rig")
 			path := filepath.Join(rigDir, filepath.FromSlash(beadPath))
+			const minSubstantiveBytes = 400
+			if info, err := os.Stat(path); err == nil && info.Size() >= minSubstantiveBytes {
+				// Cap the counter so this fires once per stretch instead of
+				// deleting on every subsequent turn.
+				r.implProgress.BeadTurns[beadID] = r.implProgress.BeadTurnsLimit
+				orchestratedPrintf("[gt-agent] bead %s exceeded %d turns but %s holds substantive content (%d bytes) — keeping artifact, capping counter\n",
+					beadID, r.implProgress.BeadTurnsLimit, path, info.Size())
+				return false
+			}
 			if err := os.Remove(path); err != nil {
-				orchestratedFprintfStderr("[gt-agent] failed to delete bead file %s after %d turns: %v\n", path, r.implProgress.BeadTurnsLimit, err)
+				orchestratedFprintfStderr("[gt-agent] failed to delete stub bead file %s after %d turns: %v\n", path, r.implProgress.BeadTurnsLimit, err)
 			} else {
-				orchestratedPrintf("[gt-agent] deleted bead file %s after %d turns (limit %d) — will be regenerated\n", path, turns, r.implProgress.BeadTurnsLimit)
+				orchestratedPrintf("[gt-agent] deleted stub bead file %s after %d turns (limit %d) — will be regenerated\n", path, turns, r.implProgress.BeadTurnsLimit)
 			}
 		}
 		// Reset turn count for this bead since file was deleted

@@ -3,6 +3,7 @@ package orchestrator
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 )
@@ -255,6 +256,17 @@ func PruneStaleLayoutFiles(townRoot, rig string, v WorkflowValidation) (removed 
 		basenameToRequiredPaths[base] = append(basenameToRequiredPaths[base], reqPath)
 	}
 	root := filepath.Join(townRoot, rig, "mayor", "rig", layout)
+	mayorRig := filepath.Join(townRoot, rig, "mayor", "rig")
+
+	// gitTracked reports whether the rig's git repo tracks this layout-relative
+	// path. Tracked means a prior phase DELIVERED it (checkpoint/auto-commits) —
+	// an architecture rework that shrinks the expected layout must never
+	// destroy already-delivered source, so tracked files are protected.
+	gitTracked := func(rel string) bool {
+		cmd := exec.Command("git", "-C", mayorRig, "ls-files", "--error-unmatch",
+			filepath.ToSlash(filepath.Join(layout, rel)))
+		return cmd.Run() == nil
+	}
 	basenameGo := layoutGoBasenamesProtectedFromPrune(v)
 	if RequiresExactImplementPaths(v) {
 		basenameGo = nil
@@ -310,7 +322,11 @@ func PruneStaleLayoutFiles(townRoot, rig string, v WorkflowValidation) (removed 
 				return nil
 			}
 		}
-		// No matching required file by basename - this file is truly stale
+		// No matching required file by basename - stale UNLESS git tracks it
+		if gitTracked(rel) {
+			warnings = append(warnings, filepath.ToSlash(filepath.Join(layout, rel))+": protected (git-tracked, delivered by an earlier phase)")
+			return nil
+		}
 		if rmErr := os.Remove(path); rmErr != nil {
 			warnings = append(warnings, filepath.ToSlash(filepath.Join(layout, rel))+": "+rmErr.Error())
 			return nil
