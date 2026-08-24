@@ -952,6 +952,13 @@ func hasRuntimeSmokeCommand(cmd string) bool {
 	if lower == "" {
 		return false
 	}
+	// A docker-compose invocation that boots the app and propagates the test
+	// container's exit code IS a runtime smoke — recognize it so
+	// ensureRuntimeSmokePhaseFromSpec stops appending a duplicate smoke-test
+	// phase alongside an existing integration-test phase.
+	if strings.Contains(lower, "docker-compose") || strings.Contains(lower, "docker compose") {
+		return true
+	}
 	hasServer := strings.Contains(lower, "uvicorn") || strings.Contains(lower, "gunicorn") ||
 		strings.Contains(lower, "flask run") || strings.Contains(lower, "go run") ||
 		strings.Contains(lower, "hypercorn")

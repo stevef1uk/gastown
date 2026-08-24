@@ -2948,7 +2948,7 @@ func validatePlanReviewGrep(cmd string) error {
 // validateTesterCommand enforces the tester's audit scope. Shared by test_plan
 // and test_review: read-only over source/tests/docs; the ONLY writes allowed are
 // TEST_PLAN.md (test_plan) and test-report.md (test_review).
-func validateTesterCommand(cmd, rig, townRoot string, v orchestrator.WorkflowValidation) error {
+func validateTesterCommand(cmd, rig, townRoot, state string, v orchestrator.WorkflowValidation) error {
 	lower := strings.ToLower(cmd)
 	if strings.Contains(lower, "[tool_calls]") {
 		return fmt.Errorf("do not emit [TOOL_CALLS] markers — use CMD: lines only")
@@ -2963,7 +2963,9 @@ func validateTesterCommand(cmd, rig, townRoot string, v orchestrator.WorkflowVal
 		return fmt.Errorf("tester must not modify source, tests, or other docs (blocked write to %q) — only TEST_PLAN.md / test-report.md may be written", path)
 	}
 	// Block TEST_PLAN.md writes when the plan is frozen (already validated once).
-	if orchestrator.IsTestPlanFrozen(townRoot, rig) && orchestrator.IsTesterWritingTestPlan(cmd) {
+	// test_plan_rework is exempt: rewriting the plan is that state's entire
+	// purpose — freezing it there deadlocks the tester (guard vs state goal).
+	if orchestrator.IsTestPlanFrozen(townRoot, rig) && orchestrator.IsTesterWritingTestPlan(cmd) && state != "test_plan_rework" {
 		return fmt.Errorf("TEST_PLAN.md is frozen after initial validation — cannot rewrite; use outcome plan_gap to request a new plan from the planner if needed")
 	}
 	forbidden := []struct {

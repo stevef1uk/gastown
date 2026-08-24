@@ -63,10 +63,10 @@ var cmdGuardHandlers = map[string]cmdGuardFn{
 		return validateQACommand(cmd, r.rig, r.townRoot, r.v)
 	},
 	"test_plan": func(r *stateRunner, cmd string) error {
-		return validateTesterCommand(cmd, r.rig, r.townRoot, r.v)
+		return validateTesterCommand(cmd, r.rig, r.townRoot, r.task.State, r.v)
 	},
 	"test_review": func(r *stateRunner, cmd string) error {
-		return validateTesterCommand(cmd, r.rig, r.townRoot, r.v)
+		return validateTesterCommand(cmd, r.rig, r.townRoot, r.task.State, r.v)
 	},
 }
 

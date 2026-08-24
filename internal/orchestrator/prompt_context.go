@@ -24,6 +24,7 @@ package orchestrator
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -501,6 +502,20 @@ func EnsurePlaywrightConfigReady(townRoot, rig string, v WorkflowValidation) (st
 		}
 		break
 	}
+
+	// Docker/Playwright harness detection must happen before the existence
+	// check: a model-authored config for a host-run rig carries a webServer
+	// block that launches the app server INSIDE the Playwright container
+	// (where e.g. Go isn't installed) — that config has to be repaired, not
+	// respected.
+	hasDockerPlaywright := false
+	for _, p := range v.DeliveryPhases {
+		if phaseShipsDockerPlaywright(&p) {
+			hasDockerPlaywright = true
+			break
+		}
+	}
+
 	if testDirRel == "" {
 		return "", nil
 	}
@@ -510,17 +525,32 @@ func EnsurePlaywrightConfigReady(townRoot, rig string, v WorkflowValidation) (st
 		testDir = filepath.Join(layoutDir, testDirRel)
 	}
 
-	// Skip if a config already exists (in the layout root or the test dir, so we
-	// don't create a duplicate next to an existing config).
 	pwConfigPath := filepath.Join(layoutDir, "playwright.config.ts")
+	existingPath := ""
+	existingContent := ""
 	for _, p := range []string{
 		pwConfigPath,
 		filepath.Join(layoutDir, "playwright.config.js"),
 		filepath.Join(testDir, "playwright.config.ts"),
 		filepath.Join(testDir, "playwright.config.js"),
 	} {
-		if _, err := os.Stat(p); err == nil {
-			return "", nil // Already exists
+		if b, err := os.ReadFile(p); err == nil {
+			existingPath = p
+			existingContent = string(b)
+			break
+		}
+	}
+
+	if existingContent != "" {
+		if hasDockerPlaywright && strings.Contains(existingContent, "webServer") {
+			log.Printf("[playwright-config] repairing %s: dropping webServer block — host-run rig uses the Docker harness", existingPath)
+			// Overwrite the offending config in place (it may live in the
+			// test dir rather than the layout root).
+			pwConfigPath = existingPath
+		} else if !hasDockerPlaywright && strings.Contains(existingContent, "host.docker.internal") {
+			return "", nil // reverse drift after a stack change; leave as-is
+		} else {
+			return "", nil // healthy existing config
 		}
 	}
 
@@ -541,16 +571,6 @@ func EnsurePlaywrightConfigReady(townRoot, rig string, v WorkflowValidation) (st
 	// root (matches "run from layout root" QA), else the test dir, so the config
 	// loads even when node_modules lives in a subdir (e.g. finally's test/).
 	pwImport := playwrightImport(layoutDir, testDir, testDirRel)
-
-	// Check if this rig has a Docker/Playwright integration-test phase.
-	// If so, omit the webServer block — the server runs on the host, not in the container.
-	hasDockerPlaywright := false
-	for _, p := range v.DeliveryPhases {
-		if phaseShipsDockerPlaywright(&p) {
-			hasDockerPlaywright = true
-			break
-		}
-	}
 
 	pwConfig := fmt.Sprintf(`import { defineConfig, devices } from %s;
 
@@ -594,7 +614,48 @@ export default defineConfig({
 		}
 	}
 
+	if hasDockerPlaywright {
+		ensureHarnessComposeFile(layoutDir)
+	}
+
 	return fmt.Sprintf("auto-created %s with baseURL http://localhost:%d", pwConfigPath, port), nil
+}
+
+// ensureHarnessComposeFile writes (or repairs) a test-harness-only
+// docker-compose.yml at the layout root for Docker/Playwright rigs whose SPEC
+// mandates the application runs on the HOST. The Playwright container uses
+// network_mode:host so the generated config's http://localhost baseURL reaches
+// the host server directly. An existing compose that BUILDS an application
+// image contradicts such specs and is replaced; a compose already referencing
+// the shared runner image is left untouched.
+func ensureHarnessComposeFile(layoutDir string) {
+	path := filepath.Join(layoutDir, "docker-compose.yml")
+	existingBytes, err := os.ReadFile(path)
+	if err == nil && strings.Contains(string(existingBytes), "playwright-go-test") {
+		return // already canonical
+	}
+	compose := `# Test-harness ONLY — the application server runs on the HOST per SPEC.
+# network_mode:host lets this container reach it at http://localhost:<port>.
+services:
+  playwright:
+    image: playwright-go-test:latest
+    user: "${DOCKER_UID:-1000}:${DOCKER_GID:-1000}"
+    working_dir: /src
+    network_mode: host
+    volumes:
+      - .:/src
+    command: >
+      /bin/sh -c "npm install --ignore-scripts && npx playwright test"
+`
+	if err := os.WriteFile(path, []byte(compose), 0644); err != nil {
+		log.Printf("[harness-compose] write %s failed: %v", path, err)
+		return
+	}
+	if len(existingBytes) > 0 {
+		log.Printf("[harness-compose] replaced non-canonical %s (host-run rig must not build an app image)", path)
+	} else {
+		log.Printf("[harness-compose] created %s", path)
+	}
 }
 
 // playwrightImport returns the module specifier for '@playwright/test' that

@@ -400,6 +400,15 @@ func SanitizeRigFlowProfile(v WorkflowValidation, rig ...string) WorkflowValidat
 		}
 	}
 	healPhaseVerifyTestFiles(&v)
+	healPhaseComposeFile(&v)
+	// Docker builds inside a 300s CMD window cannot survive --no-cache on a
+	// cold base image; layer reuse makes the same verify finish in minutes.
+	for i := range v.DeliveryPhases {
+		if q := v.DeliveryPhases[i].QAVerifyCommand; strings.Contains(q, "--no-cache") {
+			v.DeliveryPhases[i].QAVerifyCommand = strings.ReplaceAll(q, "--no-cache", "")
+			log.Printf("[profile-heal] phase %q: dropped --no-cache from docker verify (CMD timeout safety)", v.DeliveryPhases[i].ID)
+		}
+	}
 	if WorkflowUsesDocker(v) {
 		if q := strings.TrimSpace(v.QAVerifyCommand); q != "" {
 			v.QAVerifyCommand = dockerVerifyWithLayout(q, layout)
@@ -521,6 +530,36 @@ func healPhaseVerifyTestFiles(v *WorkflowValidation) {
 		addIf("playwright",
 			func(b string) bool { return strings.Contains(b, ".spec.") || b == "playwright.config.ts" || b == "playwright.config.js" },
 			func(q, f string) bool { return true })
+	}
+}
+
+// healPhaseComposeFile fixes profile defects where a phase's qa_verify_command
+// invokes docker-compose but the phase's required_files lack the compose file
+// itself — nothing would ever create it, so verify fails with "no configuration
+// file provided" forever. The compose file lives at the layout root (the same
+// directory the verify command cd's into).
+func healPhaseComposeFile(v *WorkflowValidation) {
+	layout := strings.Trim(filepath.ToSlash(strings.TrimSpace(v.LayoutRoot)), "/")
+	composePath := "docker-compose.yml"
+	if layout != "" && layout != "." {
+		composePath = layout + "/docker-compose.yml"
+	}
+	for i := range v.DeliveryPhases {
+		q := strings.ToLower(strings.TrimSpace(v.DeliveryPhases[i].QAVerifyCommand))
+		if !strings.Contains(q, "docker-compose") && !strings.Contains(q, "docker compose") {
+			continue
+		}
+		found := false
+		for _, f := range v.DeliveryPhases[i].RequiredFiles {
+			if strings.EqualFold(filepath.ToSlash(strings.TrimSpace(f)), composePath) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			v.DeliveryPhases[i].RequiredFiles = append(v.DeliveryPhases[i].RequiredFiles, composePath)
+			log.Printf("[profile-heal] phase %q: qa_verify_command runs docker-compose — added %s to required_files", v.DeliveryPhases[i].ID, composePath)
+		}
 	}
 }
 
