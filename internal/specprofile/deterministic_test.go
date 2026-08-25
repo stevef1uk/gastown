@@ -658,3 +658,79 @@ func phaseIDs(phases []orchestrator.DeliveryPhase) []string {
 	}
 	return ids
 }
+
+func TestDedupePhasesByVerify(t *testing.T) {
+	tests := []struct {
+		name      string
+		in        []orchestrator.DeliveryPhase
+		wantIDs   []string
+		wantFiles map[string][]string // per surviving phase id
+	}{
+		{
+			name: "identical playwright verify folds later phase into earlier",
+			in: []orchestrator.DeliveryPhase{
+				{ID: "frontend", RequiredFiles: []string{"app/index.html", "app/tests/e2e/links.spec.js"},
+					QAVerifyCommand: "cd app && npm install --ignore-scripts && npx playwright test --list"},
+				{ID: "smoke-test", RequiredFiles: []string{"app/go.mod", "app/cmd/server/main.go", "app/tests/e2e/links.spec.js"},
+					QAVerifyCommand: "CD   app && npm install --ignore-scripts && npx PLAYWRIGHT test --list"},
+			},
+			wantIDs:   []string{"frontend"},
+			wantFiles: map[string][]string{"frontend": {"app/index.html", "app/tests/e2e/links.spec.js", "app/go.mod", "app/cmd/server/main.go"}},
+		},
+		{
+			name: "distinct verifies are all kept in order",
+			in: []orchestrator.DeliveryPhase{
+				{ID: "a", RequiredFiles: []string{"x.go"}, QAVerifyCommand: "go build ./..."},
+				{ID: "b", RequiredFiles: []string{"y.go"}, QAVerifyCommand: "go test ./..."},
+			},
+			wantIDs: []string{"a", "b"},
+		},
+		{
+			name: "empty verify collapses duplicates too",
+			in: []orchestrator.DeliveryPhase{
+				{ID: "one", RequiredFiles: []string{"a.txt"}, QAVerifyCommand: ""},
+				{ID: "two", RequiredFiles: []string{"b.txt"}, QAVerifyCommand: "   "},
+				{ID: "three", RequiredFiles: []string{"c.txt"}, QAVerifyCommand: "make check"},
+			},
+			wantIDs:   []string{"one", "three"},
+			wantFiles: map[string][]string{"one": {"a.txt", "b.txt"}},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := dedupePhasesByVerify(tc.in)
+			var ids []string
+			for _, p := range got {
+				ids = append(ids, p.ID)
+			}
+			if len(ids) != len(tc.wantIDs) {
+				t.Fatalf("ids = %v, want %v", ids, tc.wantIDs)
+			}
+			for i := range tc.wantIDs {
+				if ids[i] != tc.wantIDs[i] {
+					t.Fatalf("ids[%d] = %q, want %q (all=%v)", i, ids[i], tc.wantIDs[i], ids)
+				}
+			}
+			for id, wantFiles := range tc.wantFiles {
+				var found *orchestrator.DeliveryPhase
+				for i := range got {
+					if got[i].ID == id {
+						found = &got[i]
+					}
+				}
+				if found == nil {
+					t.Fatalf("survivor %q missing", id)
+				}
+				if len(found.RequiredFiles) != len(wantFiles) {
+					t.Fatalf("%s required_files = %v, want %v", id, found.RequiredFiles, wantFiles)
+				}
+				for i := range wantFiles {
+					if found.RequiredFiles[i] != wantFiles[i] {
+						t.Fatalf("%s required_files[%d] = %q, want %q", id, i, found.RequiredFiles[i], wantFiles[i])
+					}
+				}
+			}
+		})
+	}
+}

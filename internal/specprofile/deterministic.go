@@ -17,16 +17,16 @@ import (
 )
 
 var (
-	specServerPortFlagRE  = regexp.MustCompile(`(?i)(?:--port|--port=|-p\s+)\s*:?(\d{2,5})`)
-	specLocalhostPortRE   = regexp.MustCompile(`(?i)(?:localhost|127\.0\.0\.1):(\d{2,5})`)
-	specUvicornRE         = regexp.MustCompile(`(?i)\buvicorn\s+\S+:\S+`)
-	specFlaskRunRE        = regexp.MustCompile(`(?i)\bflask\s+run\b`)
-	specGunicornRE        = regexp.MustCompile(`(?i)\bgunicorn\b`)
-	specHypercornRE       = regexp.MustCompile(`(?i)\bhypercorn\b`)
-	specGoRunRE           = regexp.MustCompile(`(?i)\bgo\s+run\b`)
-	specNodeListenRE      = regexp.MustCompile(`(?i)\bnode\s+\S+.*listen`)
-	specHTTProbeRE        = regexp.MustCompile(`(?i)\b(curl|wget|http://|https://)`)
-	specHTTPTableRE       = regexp.MustCompile(`(?im)^\|\s*(GET|POST|PUT|DELETE|PATCH)\s*\|`)
+	specServerPortFlagRE = regexp.MustCompile(`(?i)(?:--port|--port=|-p\s+)\s*:?(\d{2,5})`)
+	specLocalhostPortRE  = regexp.MustCompile(`(?i)(?:localhost|127\.0\.0\.1):(\d{2,5})`)
+	specUvicornRE        = regexp.MustCompile(`(?i)\buvicorn\s+\S+:\S+`)
+	specFlaskRunRE       = regexp.MustCompile(`(?i)\bflask\s+run\b`)
+	specGunicornRE       = regexp.MustCompile(`(?i)\bgunicorn\b`)
+	specHypercornRE      = regexp.MustCompile(`(?i)\bhypercorn\b`)
+	specGoRunRE          = regexp.MustCompile(`(?i)\bgo\s+run\b`)
+	specNodeListenRE     = regexp.MustCompile(`(?i)\bnode\s+\S+.*listen`)
+	specHTTProbeRE       = regexp.MustCompile(`(?i)\b(curl|wget|http://|https://)`)
+	specHTTPTableRE      = regexp.MustCompile(`(?im)^\|\s*(GET|POST|PUT|DELETE|PATCH)\s*\|`)
 )
 
 func inferDevServerPort(spec string, paths []string) int {
@@ -84,6 +84,37 @@ func inferDevServerPort(spec string, paths []string) int {
 // SPEC-named phases, then validates deterministically: union of all phase files MUST exactly
 // equal the parser's file set (no missing, no extras/hallucinations). Falls back to
 // directory-based grouping if LLM fails validation.
+// dedupePhasesByVerify folds later phases whose normalized qa_verify_command
+// equals an earlier phase's into that earlier phase (merging unique
+// required_files) and drops them. Identical delivery phases waste a full
+// plan→implement→QA cycle re-running the same verification.
+func dedupePhasesByVerify(phases []orchestrator.DeliveryPhase) []orchestrator.DeliveryPhase {
+	seen := map[string]int{} // normalized verify -> index in out
+	out := make([]orchestrator.DeliveryPhase, 0, len(phases))
+	for _, ph := range phases {
+		norm := strings.ToLower(strings.Join(strings.Fields(ph.QAVerifyCommand), " "))
+		if idx, ok := seen[norm]; ok {
+			have := map[string]bool{}
+			for _, f := range out[idx].RequiredFiles {
+				have[strings.ToLower(filepath.ToSlash(strings.TrimSpace(f)))] = true
+			}
+			for _, f := range ph.RequiredFiles {
+				nf := filepath.ToSlash(strings.TrimSpace(f))
+				if nf == "" || have[strings.ToLower(nf)] {
+					continue
+				}
+				out[idx].RequiredFiles = append(out[idx].RequiredFiles, nf)
+				log.Printf("[deterministic-index] dedupe: phase %q duplicated verify of %q — merged required file %s",
+					ph.ID, out[idx].ID, nf)
+			}
+			continue
+		}
+		seen[norm] = len(out)
+		out = append(out, ph)
+	}
+	return out
+}
+
 func DeterministicIndexRig(ctx context.Context, townRoot, rig string) (*ProfileFile, error) {
 	specPath := SpecPath(townRoot, rig)
 	data, err := os.ReadFile(specPath)
@@ -128,6 +159,13 @@ func DeterministicIndexRig(ctx context.Context, townRoot, rig string) (*ProfileF
 			phases = defaultPhasesFromPaths(paths)
 		}
 	}
+
+	// Dedupe: LLM-authored phase sets sometimes emit the same E2E stage twice
+	// under different names (e.g. "frontend" + "smoke-test" both running
+	// playwright). A later phase whose normalized verify equals an earlier
+	// phase's is folded INTO that earlier phase (unique required_files are
+	// merged, nothing is lost) and removed.
+	phases = dedupePhasesByVerify(phases)
 
 	// Parse verify commands from SPEC
 	verifyCmd := inferVerifyCommand(spec, paths)
@@ -324,7 +362,13 @@ Return JSON: { "phase-id": ["file1", "file2"], ... }`, systemSummary, specReleva
 		log.Printf("[deterministic-index] LLM phase assignment JSON parse failed: %v (raw: %.200s)", err, content)
 		return phases, false
 	}
-	log.Printf("[deterministic-index] LLM returned phaseFiles keys: %v", func() []string { k := make([]string, 0, len(phaseFiles)); for kk := range phaseFiles { k = append(k, kk) }; return k }())
+	log.Printf("[deterministic-index] LLM returned phaseFiles keys: %v", func() []string {
+		k := make([]string, 0, len(phaseFiles))
+		for kk := range phaseFiles {
+			k = append(k, kk)
+		}
+		return k
+	}())
 	for pid, fs := range phaseFiles {
 		log.Printf("[deterministic-index]   %s: %v", pid, fs)
 	}
@@ -406,7 +450,13 @@ Return JSON: { "phase-id": ["file1", "file2"], ... }`, systemSummary, specReleva
 		log.Printf("[deterministic-index] assigned %s to integration-test phase (testRunner=%s)", entryFile, testRunner)
 		log.Printf("[deterministic-index] integration-test phase files after fix: %v", phaseFiles["integration-test"])
 	} else {
-		log.Printf("[deterministic-index] integration-test phase NOT FOUND in phaseFiles map; keys: %v", func() []string { k := make([]string, 0, len(phaseFiles)); for kk := range phaseFiles { k = append(k, kk) }; return k }())
+		log.Printf("[deterministic-index] integration-test phase NOT FOUND in phaseFiles map; keys: %v", func() []string {
+			k := make([]string, 0, len(phaseFiles))
+			for kk := range phaseFiles {
+				k = append(k, kk)
+			}
+			return k
+		}())
 	}
 
 	// Build phases with assigned files (preserving SPEC phase order)
@@ -810,10 +860,11 @@ func phaseFileScore(phaseToks []string, fileToks []weightedToken) int {
 // (a compact system summary for the LLM). Falls back to the first 10 lines if
 // no explicit Overview heading is present.
 // Summary-section keyword matcher. Recognizes headings like:
-//   ## Overview            ## System Overview
-//   ## Summary             ## System Summary
-//   ## Vision              ## 1. Vision
-//   ## Introduction        ## Project Specification (wrapper, usually empty)
+//
+//	## Overview            ## System Overview
+//	## Summary             ## System Summary
+//	## Vision              ## 1. Vision
+//	## Introduction        ## Project Specification (wrapper, usually empty)
 func specOverviewHeadingRE() *regexp.Regexp {
 	return regexp.MustCompile(`(?i)\b(?:overview|summary|vision|introduction|background|purpose|goal|about|description|specification)\b`)
 }
@@ -992,7 +1043,7 @@ func leadingIndent(line string) int {
 // Two kinds of phase markers are supported:
 //   - markdown headings: "### Phase 1: Project Initialization", "# Phase 1 — X"
 //   - inline markers:    "1. **Scaffold Phase**", "- **Testing Phase**",
-//                        "Phase 2 — Handler Implementation", "go-module - Setup"
+//     "Phase 2 — Handler Implementation", "go-module - Setup"
 //
 // Once a phase is started by a HEADING, all following non-heading lines
 // (bullets, prose) belong to that phase until the next heading — this handles
@@ -1276,8 +1327,10 @@ func slugify(s string) string {
 
 // isValidPhaseID reports whether a string looks like a valid phase identifier.
 // Phase IDs in Format 6 are short, kebab-case identifiers like:
-//   go-module, store-layer, api-handlers, web-static, web-shell,
-//   integration-test, server-main, frontend, backend, etc.
+//
+//	go-module, store-layer, api-handlers, web-static, web-shell,
+//	integration-test, server-main, frontend, backend, etc.
+//
 // They are NOT sentences, don't end with punctuation, and are short (1-3 words max).
 func isValidPhaseID(idPart string) bool {
 	// Must be short (max 3 words)
@@ -1285,34 +1338,34 @@ func isValidPhaseID(idPart string) bool {
 	if len(words) == 0 || len(words) > 3 {
 		return false
 	}
-	
+
 	// Must not end with punctuation
 	if strings.HasSuffix(idPart, ".") || strings.HasSuffix(idPart, ":") || strings.HasSuffix(idPart, ";") {
 		return false
 	}
-	
+
 	// Must not contain action-verb-only words at the start
 	// (e.g., "Create", "Implement", "Success:", "Use", "Verify")
 	firstWord := strings.ToLower(words[0])
 	actionPrefixes := map[string]bool{
-		"create":     true, "implement": true, "write":    true,
-		"set":        true, "register":  true, "success":  true,
-		"use":        true, "verify":    true, "add":      true,
-		"simulate":   true, "marshal":   true, "ensure":   true,
-		"run":        true, "build":     true, "test":     true,
-		"deploy":     true, "configure": true, "initialize": true,
-		"setup":      true, "start":     true, "stop":     true,
-		"check":      true, "validate":  true, "generate": true,
-		"produce":    true, "execute":   true, "handle":   true,
-		"process":    true, "manage":    true, "update":   true,
-		"delete":     true, "remove":    true, "install":  true,
-		"define":     true, "specify":   true, "document": true,
-		"review":     true, "audit":     true, "monitor":  true,
+		"create": true, "implement": true, "write": true,
+		"set": true, "register": true, "success": true,
+		"use": true, "verify": true, "add": true,
+		"simulate": true, "marshal": true, "ensure": true,
+		"run": true, "build": true, "test": true,
+		"deploy": true, "configure": true, "initialize": true,
+		"setup": true, "start": true, "stop": true,
+		"check": true, "validate": true, "generate": true,
+		"produce": true, "execute": true, "handle": true,
+		"process": true, "manage": true, "update": true,
+		"delete": true, "remove": true, "install": true,
+		"define": true, "specify": true, "document": true,
+		"review": true, "audit": true, "monitor": true,
 	}
 	if actionPrefixes[firstWord] {
 		return false
 	}
-	
+
 	// Must be mostly lowercase with optional dashes (kebab-case pattern)
 	// Allow: go-module, store-layer, api-handlers, web-static, server-main, integration-test
 	// Reject: "Create go.mod", "Success go mod tidy", "Use httptest", etc.
@@ -1326,7 +1379,7 @@ func isValidPhaseID(idPart string) bool {
 	if hasUpper {
 		return false
 	}
-	
+
 	// Must contain at least one dash or be a known single-word phase
 	// (go, server, web, integration, frontend, backend, api, store, module, shell, static)
 	if !strings.Contains(idPart, "-") {
@@ -1341,12 +1394,12 @@ func isValidPhaseID(idPart string) bool {
 			return false
 		}
 	}
-	
+
 	// Max length check
 	if len(idPart) > 50 {
 		return false
 	}
-	
+
 	return true
 }
 
