@@ -401,6 +401,17 @@ func SanitizeRigFlowProfile(v WorkflowValidation, rig ...string) WorkflowValidat
 	}
 	healPhaseVerifyTestFiles(&v)
 	healPhaseComposeFile(&v)
+	// LLM judges occasionally emit malformed shell like "go test ./... && && (…)".
+	// Collapse doubled operators and trim trailing separators on every phase
+	// verify so a syntactically-broken command can never gate a phase.
+	for i := range v.DeliveryPhases {
+		if q := v.DeliveryPhases[i].QAVerifyCommand; q != "" {
+			if fixed := sanitizeShellOperators(q); fixed != q {
+				v.DeliveryPhases[i].QAVerifyCommand = fixed
+				log.Printf("[profile-heal] phase %q: repaired malformed shell operators in verify", v.DeliveryPhases[i].ID)
+			}
+		}
+	}
 	// Docker builds inside a 300s CMD window cannot survive --no-cache on a
 	// cold base image; layer reuse makes the same verify finish in minutes.
 	for i := range v.DeliveryPhases {
@@ -525,10 +536,14 @@ func healPhaseVerifyTestFiles(v *WorkflowValidation) {
 			func(b string) bool { return strings.HasSuffix(b, "_test.go") },
 			goTestCovered)
 		addIf("pytest",
-			func(b string) bool { return strings.HasSuffix(b, ".py") && (strings.HasPrefix(b, "test_") || strings.HasSuffix(b, "_test.py")) },
+			func(b string) bool {
+				return strings.HasSuffix(b, ".py") && (strings.HasPrefix(b, "test_") || strings.HasSuffix(b, "_test.py"))
+			},
 			pytestCovered)
 		addIf("playwright",
-			func(b string) bool { return strings.Contains(b, ".spec.") || b == "playwright.config.ts" || b == "playwright.config.js" },
+			func(b string) bool {
+				return strings.Contains(b, ".spec.") || b == "playwright.config.ts" || b == "playwright.config.js"
+			},
 			func(q, f string) bool { return true })
 	}
 }
@@ -561,6 +576,25 @@ func healPhaseComposeFile(v *WorkflowValidation) {
 			log.Printf("[profile-heal] phase %q: qa_verify_command runs docker-compose — added %s to required_files", v.DeliveryPhases[i].ID, composePath)
 		}
 	}
+}
+
+// sanitizeShellOperators repairs LLM-authored shell: doubled operators
+// ("&& &&"), leading operators, and trailing separators.
+func sanitizeShellOperators(cmd string) string {
+	out := cmd
+	for {
+		next := out
+		next = strings.ReplaceAll(next, "&& &&", "&&")
+		next = strings.ReplaceAll(next, "|| ||", "||")
+		next = strings.ReplaceAll(next, "; ;", ";")
+		if next == out {
+			break
+		}
+		out = next
+	}
+	out = strings.TrimSpace(out)
+	out = strings.TrimLeft(out, "&|; ")
+	return strings.TrimSpace(out)
 }
 
 func sanitizeFrontendOnlyPhaseQA(v *WorkflowValidation) {
