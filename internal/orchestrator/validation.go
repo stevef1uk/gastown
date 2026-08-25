@@ -1129,7 +1129,9 @@ func ClampProfileValidationForRig(townRoot, rig string, v WorkflowValidation) Wo
 		return v
 	}
 	archPath := filepath.Join(townRoot, rig, "mayor", "rig", "architecture.md")
-	return AlignProfileLayoutWithArchitecture(v, archPath)
+	v = AlignProfileLayoutWithArchitecture(v, archPath)
+	mergeTestPlanRequiredFiles(townRoot, rig, &v)
+	return v
 }
 
 // capArchitectureBytesForSmallRig lowers min_architecture_bytes when required_files is a short list.

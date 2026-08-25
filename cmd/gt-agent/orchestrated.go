@@ -3054,6 +3054,21 @@ func validateTestPlanArtifacts(townRoot, rig string, hadCmdFailure, testPlanWrit
 	if hadCmdFailure {
 		return fmt.Errorf("test_plan step had failed commands; fix errors before completing")
 	}
+	// Phase-ID contract guard: TEST_PLAN sections must reference the CURRENT
+	// delivery phase ids. Plans authored against an older profile revision
+	// (spec-index --force regenerates ids) otherwise deadlock the pipeline —
+	// Polecat can't bead files under unknown phase names.
+	if bad := orchestrator.MismatchedTestPlanPhaseIDs(townRoot, rig, v); len(bad) > 0 {
+		ids := make([]string, 0, len(v.DeliveryPhases))
+		for _, p := range v.DeliveryPhases {
+			ids = append(ids, p.ID)
+		}
+		return fmt.Errorf(
+			"TEST_PLAN.md uses section headings %v that match no current delivery phase — "+
+				"rewrite the plan using EXACTLY these ### section ids: %v. "+
+				"(The profile was likely regenerated after the plan was written.)",
+			bad, ids)
+	}
 	rigDir := rigMayorRigDir(townRoot, rig)
 	if !orchestrator.TestPlanMeetsMinSize(rigDir, v) {
 		return fmt.Errorf("TEST_PLAN.md must exist and be ≥ %d bytes (currently %d bytes at %s) — write it with a heredoc CMD in this session, then `wc -c TEST_PLAN.md`",

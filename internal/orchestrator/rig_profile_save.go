@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -343,6 +344,64 @@ func WriteRigWorkflowProfileClamped(townRoot, rig string, v WorkflowValidation, 
 		if json.Unmarshal(existingData, &existingEnv) == nil {
 			existingTestPlanReviewed = existingEnv.TestPlanReviewed
 			existingTestPlanFrozen = existingEnv.TestPlanFrozen
+		}
+	}
+	// Guard: when regenerated phase IDs invalidate an existing TEST_PLAN.md,
+	// AUTOMATICALLY realign its section headings to the new phases (bodies
+	// preserved; target inferred from where each section's test files live).
+	// Only sections that cannot be confidently mapped leave the plan stale —
+	// those unfreeze so the Tester rewrites them against the listed IDs.
+	if existingTestPlanReviewed || existingTestPlanFrozen {
+		planDir := filepath.Join(townRoot, rig, "mayor", "rig")
+		planPath := filepath.Join(planDir, "TEST_PLAN.md")
+		if data, err := os.ReadFile(planPath); err == nil &&
+			len(strings.TrimSpace(string(data))) > 0 {
+			stale := func() bool {
+				valid := map[string]bool{}
+				for _, p := range v.DeliveryPhases {
+					valid[strings.ToLower(p.ID)] = true
+				}
+				for _, line := range strings.Split(string(data), "\n") {
+					line = strings.TrimSpace(line)
+					if !strings.HasPrefix(line, "### ") {
+						continue
+					}
+					id := strings.ToLower(strings.TrimSpace(strings.TrimPrefix(line, "### ")))
+					if id != "" && !valid[id] {
+						return true
+					}
+				}
+				return false
+			}
+			if stale() {
+				res := alignTestPlanSectionIDs(townRoot, rig, v)
+				freshData, _ := os.ReadFile(planPath)
+				stillStale := func() bool {
+					valid := map[string]bool{}
+					for _, p := range v.DeliveryPhases {
+						valid[strings.ToLower(p.ID)] = true
+					}
+					for _, line := range strings.Split(string(freshData), "\n") {
+						line = strings.TrimSpace(line)
+						if !strings.HasPrefix(line, "### ") {
+							continue
+						}
+						id := strings.ToLower(strings.TrimSpace(strings.TrimPrefix(line, "### ")))
+						if id != "" && !valid[id] {
+							return true
+						}
+					}
+					return false
+				}
+				if stillStale() {
+					log.Printf("[spec-index] %s: TEST_PLAN partially aligned (%d relabeled); remaining sections unfrozen for Tester rewrite", rig, res.renamed)
+					existingTestPlanReviewed = false
+					existingTestPlanFrozen = false
+				} else {
+					log.Printf("[spec-index] TEST_PLAN.md auto-aligned to regenerated phases for %s", rig)
+					existingTestPlanFrozen = false // fresh alignment ⇒ cheap re-review
+				}
+			}
 		}
 	}
 
