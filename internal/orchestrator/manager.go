@@ -593,6 +593,18 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summa
 				reworkFeedback = strings.TrimSpace(reworkFeedback + "\n\nAuto-reopened closed implement beads: " + strings.Join(reopened, ", "))
 			}
 		}
+		// Also reopen implement beads on ANY backward bounce that lands on
+		// design or planning — otherwise previously-closed beads stay closed
+		// and the pipeline deadlocks when planning tries to validate them.
+		if rig != "" && phaseAdvance == nil && next == "planning" &&
+			(fromState == "qa_review" || fromState == "test_review" || fromState == "plan_review") {
+			v := m.workflowValidationFor(inst, tpl)
+			if reopened, rerr := ReopenImplementationBeadsAfterQAFailure(m.townRoot, rig, v, summary); rerr != nil {
+				fmt.Printf("[Manager] Warning: reopen implement beads after %s failure: %v\n", fromState, rerr)
+			} else if len(reopened) > 0 {
+				fmt.Printf("[Manager] Reopened %d closed implement bead(s) after backward bounce to planning\n", len(reopened))
+			}
+		}
 		inst.PendingRework = &WorkflowRework{
 			FromState: fromState,
 			Outcome:   outcome,
