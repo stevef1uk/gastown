@@ -621,9 +621,12 @@ func shouldSkipPlanningAutoComplete(task *orchestrator.Task, townRoot, rig strin
 	if task == nil || task.State != "planning" {
 		return false
 	}
-	if task.PendingRework != nil && task.PendingRework.FromState == "plan_review" {
-		return true
-	}
+	// After a plan_review bounce we still require the MECHANICAL plan_review
+	// gate to pass before trusting auto-complete. But once that gate passes,
+	// the artifacts satisfy review's objective requirements — blocking
+	// auto-complete any longer only invites endless 20-turn timeouts on weak
+	// models that never synthesize terminal JSON (fin: 14 attempts, all
+	// "artifacts validated" work left unclaimed).
 	if townRoot != "" && rig != "" {
 		if err := orchestrator.ValidatePlanningPhaseGate(townRoot, rig, "plan_review", v); err != nil {
 			return true
