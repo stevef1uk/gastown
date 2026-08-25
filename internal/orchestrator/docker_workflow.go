@@ -412,6 +412,23 @@ func SanitizeRigFlowProfile(v WorkflowValidation, rig ...string) WorkflowValidat
 			}
 		}
 	}
+	// Normalize LLM-authored filename casing (e.g. "linkshelf/dockerfile" ->
+	// "linkshelf/Dockerfile"): a wrong-case required_file makes Polecat write a
+	// file the build can't find, deadlocking the bead on verify-before-close.
+	canon := func(files []string) []string {
+		out := make([]string, 0, len(files))
+		for _, f := range files {
+			nf := normalizeKnownFilenameCasing(filepath.ToSlash(strings.TrimSpace(f)))
+			if nf != "" {
+				out = append(out, nf)
+			}
+		}
+		return out
+	}
+	v.RequiredFiles = canon(v.RequiredFiles)
+	for i := range v.DeliveryPhases {
+		v.DeliveryPhases[i].RequiredFiles = canon(v.DeliveryPhases[i].RequiredFiles)
+	}
 	// Docker builds inside a 300s CMD window cannot survive --no-cache on a
 	// cold base image; layer reuse makes the same verify finish in minutes.
 	for i := range v.DeliveryPhases {
@@ -595,6 +612,31 @@ func sanitizeShellOperators(cmd string) string {
 	out = strings.TrimSpace(out)
 	out = strings.TrimLeft(out, "&|; ")
 	return strings.TrimSpace(out)
+}
+
+// canonicalFileBasenames maps case-insensitive basenames to their canonical
+// on-disk spelling. Build tooling (Docker's build: ., make, Go) expects the
+// exact casing; an LLM-authored profile that says "dockerfile" makes Polecat
+// write a file the build then cannot find.
+var canonicalFileBasenames = map[string]string{
+	"dockerfile":         "Dockerfile",
+	"makefile":           "Makefile",
+	"docker-compose.yml": "docker-compose.yml",
+	".gitignore":         ".gitignore",
+}
+
+// normalizeKnownFilenameCasing fixes casing for basenames in
+// canonicalFileBasenames and returns the cleaned, slash-normalized path.
+func normalizeKnownFilenameCasing(f string) string {
+	if f == "" {
+		return ""
+	}
+	f = filepath.ToSlash(f)
+	base := strings.ToLower(filepath.Base(f))
+	if canon, ok := canonicalFileBasenames[base]; ok {
+		return filepath.Join(filepath.Dir(f), canon)
+	}
+	return f
 }
 
 func sanitizeFrontendOnlyPhaseQA(v *WorkflowValidation) {
