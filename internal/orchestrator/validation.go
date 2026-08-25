@@ -1130,6 +1130,7 @@ func ClampProfileValidationForRig(townRoot, rig string, v WorkflowValidation) Wo
 	}
 	archPath := filepath.Join(townRoot, rig, "mayor", "rig", "architecture.md")
 	v = AlignProfileLayoutWithArchitecture(v, archPath)
+	alignArchitectureWithTestPlan(townRoot, rig)
 	mergeTestPlanRequiredFiles(townRoot, rig, &v)
 	return v
 }

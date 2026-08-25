@@ -286,3 +286,74 @@ func alignTestPlanSectionIDs(townRoot, rig string, v WorkflowValidation) alignRe
 	}
 	return res
 }
+
+// alignArchitectureWithTestPlan appends TEST_PLAN.md "Test file:" paths that
+// are missing from architecture.md's file layout section. Without this, the
+// triad check (SPEC ↔ Architecture ↔ Plan) flags every test file the Tester
+// plans because the Architect — who writes architecture.md BEFORE the Tester
+// writes TEST_PLAN.md — cannot know about test files that don't exist yet.
+//
+// This runs automatically whenever the profile is clamped for a specific rig,
+// keeping all three documents in sync without manual intervention.
+func alignArchitectureWithTestPlan(townRoot, rig string) {
+	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
+	archPath := filepath.Join(rigDir, "architecture.md")
+	archData, err := os.ReadFile(archPath)
+	if err != nil || len(archData) == 0 {
+		return
+	}
+	planPath := filepath.Join(rigDir, "TEST_PLAN.md")
+	planData, err := os.ReadFile(planPath)
+	if err != nil || len(planData) == 0 {
+		return
+	}
+
+	existing := string(archData)
+	var missing []string
+	for _, raw := range strings.Split(string(planData), "\n") {
+		line := strings.TrimSpace(raw)
+		lower := strings.ToLower(line)
+		if !strings.HasPrefix(lower, "test file:") && !strings.HasPrefix(lower, "- test file:") {
+			continue
+		}
+		f := filepath.ToSlash(strings.TrimSpace(strings.Trim(line[len(line)-len(lower)+len("test file:"):], "`*")))
+		if f == "" {
+			continue
+		}
+		// Check if this path appears in architecture.md
+		if strings.Contains(existing, "`"+f+"`") {
+			continue
+		}
+		missing = append(missing, f)
+	}
+	if len(missing) == 0 {
+		return
+	}
+
+	// Append under the last file-list entry in architecture.md
+	var out []string
+	inserted := false
+	for _, line := range strings.Split(existing, "\n") {
+		out = append(out, line)
+		if inserted {
+			continue
+		}
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "- `linkshelf/") && strings.HasSuffix(trimmed, "`") {
+			// This is the last file in the layout list; insert missing entries after it
+			for _, m := range missing {
+				out = append(out, "- `"+m+"`")
+			}
+			inserted = true
+		}
+	}
+	if !inserted {
+		return // couldn't find file-list section to append to
+	}
+
+	if err := os.WriteFile(archPath, []byte(strings.Join(out, "\n")), 0o644); err != nil {
+		log.Printf("[test-plan-align] failed to update %s: %v", archPath, err)
+		return
+	}
+	log.Printf("[test-plan-align] added %d TEST_PLAN test file(s) to architecture.md: %v", len(missing), missing)
+}

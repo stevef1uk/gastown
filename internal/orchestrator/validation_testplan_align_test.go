@@ -94,3 +94,44 @@ func mustRead(t *testing.T, p string) []byte {
 	}
 	return b
 }
+
+func TestAlignArchitectureWithTestPlan_appendsMissingTestFiles(t *testing.T) {
+	town := t.TempDir()
+	rigDir := filepath.Join(town, "fin", "mayor", "rig")
+	if err := os.MkdirAll(rigDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Architecture lists production files only — no test files
+	arch := "# Architecture\n\n## File layout\n\n- `linkshelf/go.mod`\n- `linkshelf/internal/store/schema.go`\n- `linkshelf/internal/store/store.go`\n- `linkshelf/internal/api/handlers.go`\n- `linkshelf/cmd/server/main.go`\n"
+	os.WriteFile(filepath.Join(rigDir, "architecture.md"), []byte(arch), 0o644)
+
+	// TEST_PLAN references two test files: one missing, one already listed
+	plan := "### backend-core\nTest file: linkshelf/internal/api/handlers_test.go\n\n### store-tests\nTest file: linkshelf/internal/store/store_test.go\n"
+	os.WriteFile(filepath.Join(rigDir, "TEST_PLAN.md"), []byte(plan), 0o644)
+
+	alignArchitectureWithTestPlan(town, "fin")
+
+	result, _ := os.ReadFile(filepath.Join(rigDir, "architecture.md"))
+	s := string(result)
+
+	if !strings.Contains(s, "`linkshelf/internal/api/handlers_test.go`") {
+		t.Fatal("handlers_test.go was not appended to architecture.md")
+	}
+	if !strings.Contains(s, "`linkshelf/internal/store/store_test.go`") {
+		t.Fatal("store_test.go was not appended to architecture.md")
+	}
+	// Original files must be preserved
+	for _, want := range []string{"`linkshelf/go.mod`", "`linkshelf/internal/store/schema.go`", "`linkshelf/cmd/server/main.go`"} {
+		if !strings.Contains(s, want) {
+			t.Fatalf("original entry %s lost during alignment", want)
+		}
+	}
+	// Idempotent: second call adds nothing
+	alignArchitectureWithTestPlan(town, "fin")
+	result2, _ := os.ReadFile(filepath.Join(rigDir, "architecture.md"))
+	count := strings.Count(string(result2), "`linkshelf/internal/api/handlers_test.go`")
+	if count != 1 {
+		t.Fatalf("non-idempotent: handlers_test.go appears %d times", count)
+	}
+}
