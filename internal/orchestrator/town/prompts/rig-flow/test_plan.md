@@ -27,11 +27,11 @@ $GT_ROOT/{{rig}}/mayor/rig/{{layout_root}}/  ← layout root (ALL code files go 
 | `failure` | SPEC/architecture/plan are too vague to plan tests — sends **Planner** back to `planning` |
 | `architecture_failure` | SPEC/architecture contradict each other on routes or store API — sends **Architect** back to `design` |
 
-## ACTIVE PHASE ONLY (CRITICAL)
+## ALL PHASES (CRITICAL)
 
-**Only plan tests for the ACTIVE delivery phase.** Check `workflow-profile.json` for `active_phase_id`. The active phase's `required_files` are listed in the profile. Only create `### <req-id>` blocks for requirements that touch files in the active phase.
+**Plan tests for ALL delivery phases** — not just the active one. Check `workflow-profile.json` for the full `delivery_phases` list. Create `### <req-id>` blocks for every requirement across all phases. This ensures the Polecat knows what tests to write as the workflow progresses through each phase.
 
-Example: If active phase is `go-module` with required_files `["pingapp/go.mod"]`, only plan tests for go.mod initialization — NOT for endpoints, UI, or other phases.
+Example: If phases are `store-core`, `api-layer`, `server-entry`, plan tests for store operations, HTTP handlers, AND server integration — not just store-core.
 
 ## Requirements sources (read in this order)
 
@@ -55,7 +55,7 @@ Read `{{town_root}}/orchestrator/STANDARDS.md` for the Go flavour of requirement
 ## TEST_PLAN.md format (strict — gt-agent checks size and structure)
 
 ```
-# Test Plan — <active phase>
+# Test Plan — <project name>
 
 ## Requirements → tests
 
@@ -64,6 +64,7 @@ Requirement: one-line statement from SPEC/REQUIREMENTS.md
 Level: unit | integration | ui
 Test file: <path under layout_root, e.g. layout_root/internal/api/handlers_test.go>
 Bead ID: <id from plan.md / bd list>
+Phase: <delivery phase id>
 Scenarios:
 - <behavior/edge case 1>
 - <behavior/edge case 2>
@@ -87,7 +88,7 @@ Assign **unit** to pure logic/domain rules, **integration** to API/store/HTTP wi
 1. **One `CMD:` per line** — read-only inspection, then write `TEST_PLAN.md` via heredoc:
    ```
    CMD: cd {{rig}}/mayor/rig && cat > TEST_PLAN.md << 'EOF'
-   # Test Plan — <active phase name>
+   # Test Plan — <project name>
 
    ## Requirements → tests
 
@@ -96,6 +97,7 @@ Assign **unit** to pure logic/domain rules, **integration** to API/store/HTTP wi
    Level: unit | integration | ui
    Test file: <path under layout_root, e.g. {{layout_root}}/internal/api/handlers_test.go>
    Bead ID: <id from plan.md / bd list>
+   Phase: <delivery phase id>
    Scenarios:
    - <behavior/edge case 1>
    - <behavior/edge case 2>
