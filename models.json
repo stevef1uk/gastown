@@ -3,7 +3,7 @@
     "judge": "google/gemini-3.5-flash",
     "architect": "deepseek/deepseek-v4-flash",
     "planner": "google/gemini-3.5-flash",
-    "polecat": "deepseek/deepseek-v4-flash",
+        "polecat": "openai/gpt-5.6-luna",
     "qa": "google/gemini-3.5-flash",
     "tester": "google/gemini-3.5-flash",
     "mayor": "google/gemini-3.5-flash",

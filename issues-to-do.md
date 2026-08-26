@@ -223,7 +223,27 @@ Mayor can query `bd show --type=status --parent=<spec-id>` to see progress.
 
 ---
 
-## ✅ Final Implementation: QA Coverage/Security Enforcement
+---
+
+### 11. **Language-Agnostic Test Runner Support**
+
+**Problem**: Currently only Go and Python test runners are first-class citizens. Node.js/TypeScript (Jest, Vitest, Playwright, Mocha), Java (Maven/Gradle/JUnit), Rust (cargo test), C# (.NET test), Ruby (RSpec), PHP (PHPUnit), Swift (XCTest), Dart (flutter test), and other languages are not natively supported — they fall back to `custom` requiring manual `qa_verify_command` configuration.
+
+**Evidence**:
+- `inferTestRunnerFromPaths` only detects Go (`go`) and Python (`pytest`)
+- `TestRunner` enum only validates `pytest`, `go`, `custom`
+- `inferTestRunnerFromPaths` only checks for Go directories and Python files
+- No auto-detection for `package.json` scripts, `Cargo.toml`, `pom.xml`, `build.gradle`, `Cargo.toml`, `pom.xml`, `composer.json`, `pyproject.toml`, `mix.exs`, `build.gradle`, `pubspec.yaml`, etc.
+
+**Impact**: Teams using Node.js/TypeScript (Jest, Vitest, Playwright, Mocha), Java (Maven/Gradle/JUnit), Rust (cargo test), C# (.NET test), Ruby (RSpec), PHP (PHPUnit), Swift (XCTest), Dart (flutter test), etc. must manually configure `qa_verify_command` every time.
+
+**Recommendation**: Implement extensible language/framework detection with pluggable registry:
+- Language detection from marker files (`package.json`, `Cargo.toml`, `pom.xml`, `build.gradle`, `Cargo.toml`, `pom.xml`, `composer.json`, `pyproject.toml`, `mix.exs`, `build.gradle`, `pubspec.yaml`, etc.)
+- Framework registry mapping config files to test commands (Jest, Vitest, Playwright, Mocha, Jest, cargo test, mvn test, gradle test, dotnet test, rspec, phpunit, phpunit, xctest, flutter test, etc.)
+- Extensible registry for custom test runners
+- Auto-detection from lockfiles (package-lock.json, Cargo.lock, go.sum, poetry.lock, yarn.lock, pnpm-lock.yaml, bun.lockb)
+
+**Priority**: High — affects all non-Go/Python teams using gastown.
 
 **Added mandatory code coverage and security threshold enforcement to QA approval process:**
 

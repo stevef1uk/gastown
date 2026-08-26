@@ -24,12 +24,12 @@
         "LLM_TIMEOUT": "1200s"
       }
     },
-    "gt-agent-polecat": {
-      "model": "cerebras/gpt-oss-120b",
-      "extra_env": {
-        "LLM_TIMEOUT": "1200s"
-      }
-    },
+        "gt-agent-polecat": {
+            "model": "openai/gpt-5.6-luna",
+            "extra_env": {
+                "LLM_TIMEOUT": "1200s"
+            }
+        },
     "gt-agent-powerful": {
       "model": "ollama/llama3.3"
     },

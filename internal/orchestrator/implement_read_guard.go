@@ -148,8 +148,45 @@ func ImplementMissingFileReadNudge(townRoot, rig, activeBead, activeBeadPath, re
 		}
 	}
 
+	// The path often belongs to a future delivery phase (e.g. cmd/server/main.go in
+	// server-and-main while backend-core is active) — say so instead of a generic nudge,
+	// so the polecat stops probing files its current phase does not own.
+	if later := laterDeliveryPhaseIDsForPath(v, relPath); len(later) > 0 {
+		b.WriteString("This file is planned for the **later delivery phase** `")
+		b.WriteString(strings.Join(later, "`, `"))
+		b.WriteString("`) — it is created when that phase starts. Work your active-phase beads now.\n")
+		return strings.TrimSpace(b.String())
+	}
+
 	b.WriteString("Use **WRITE:** / **EDIT:** for implement files under required_files, or read dependency packages shown in Implement context.\n")
 	return strings.TrimSpace(b.String())
+}
+
+// laterDeliveryPhaseIDsForPath returns non-active phase IDs whose required_files
+// contain relPath (" (planned)" suffixes tolerated).
+func laterDeliveryPhaseIDsForPath(v WorkflowValidation, relPath string) []string {
+	active := v.ActivePhaseID()
+	relPath = filepath.ToSlash(strings.TrimSpace(relPath))
+	if relPath == "" || len(v.DeliveryPhases) == 0 {
+		return nil
+	}
+	var ids []string
+	for _, p := range v.DeliveryPhases {
+		if p.ID == "" || p.ID == active {
+			continue
+		}
+		for _, f := range p.RequiredFiles {
+			f = filepath.ToSlash(strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(f), " (planned)")))
+			if f == "" {
+				continue
+			}
+			if pathMatchesRequired(relPath, []string{f}) || pathMatchesRequired(f, []string{relPath}) {
+				ids = append(ids, p.ID)
+				break
+			}
+		}
+	}
+	return ids
 }
 
 // mayorRigAbsPath returns the absolute path under mayor/rig for a relative path.
