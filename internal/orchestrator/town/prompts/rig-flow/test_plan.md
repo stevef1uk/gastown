@@ -31,6 +31,8 @@ $GT_ROOT/{{rig}}/mayor/rig/{{layout_root}}/  ← layout root (ALL code files go 
 
 **Plan tests for ALL delivery phases** — not just the active one. Check `workflow-profile.json` for the full `delivery_phases` list. Create `### <req-id>` blocks for every requirement across all phases. This ensures the Polecat knows what tests to write as the workflow progresses through each phase.
 
+**Validation scope:** On first entry to `test_plan`, generate the full plan covering all phases. On subsequent entries (e.g. after rework), only validate that the ACTIVE phase's tests and code match the plan — do not rewrite future phase sections.
+
 Example: If phases are `store-core`, `api-layer`, `server-entry`, plan tests for store operations, HTTP handlers, AND server integration — not just store-core.
 
 ## Requirements sources (read in this order)
