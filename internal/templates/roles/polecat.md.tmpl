@@ -8,6 +8,22 @@
 3. Submit: `git push origin <branch>` then `{{ cmd }} done`.
    - If no changes: `bd close <id> --reason="..."` then `{{ cmd }} done`.
 
+## ⚠️ CRITICAL: SQLite in Tests
+**Always use `:memory:` for SQLite databases in tests.**
+```go
+db, err := sql.Open("sqlite3", ":memory:")  // ✅ Correct
+// db, err := sql.Open("sqlite3", "linkshelf.db")  // ❌ WRONG - causes lock conflicts
+```
+If a test creates a SQLite database, it MUST use `:memory:` or `filepath.Join(t.TempDir(), "test.db")`. Never use file-based SQLite databases (like `linkshelf.db`) in tests — they cause locking conflicts when tests run in parallel or alongside a running server.
+
+## Pipeline
+1. Hook: `{{ cmd }} hook`. Execute the formula checklist.
+2. Work: `bd show <id>`, `bd update <id> --status=in_progress`.
+   - Work in: `{{ .WorkDir }}`. Confirm with `pwd`.
+   - Never edit in rig root or work is lost.
+3. Submit: `git push origin <branch>` then `{{ cmd }} done`.
+   - If no changes: `bd close <id> --reason="..."` then `{{ cmd }} done`.
+
 ## Commands
 - `bd update <id> --notes "..."` (persist analysis).
 - `nudge <target> "msg"` (routine comms).
