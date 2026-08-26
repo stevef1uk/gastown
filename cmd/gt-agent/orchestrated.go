@@ -992,7 +992,10 @@ func looksLikeOutcomeJSONStart(lines []string, line, t string) bool {
 					return found
 				}
 				lower := strings.ToLower(nt)
-				if strings.Contains(lower, `"outcome"`) || strings.HasPrefix(lower, `"summary"`) || nt == "}" {
+				// Require an actual JSON field — a lone `}` is ubiquitous in Go
+				// source (WRITE bodies flow through this scrubber too), so it
+				// must not count as evidence of glued outcome JSON.
+				if strings.Contains(lower, `"outcome"`) || strings.HasPrefix(lower, `"summary"`) {
 					found = true
 				}
 			}

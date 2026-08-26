@@ -806,3 +806,38 @@ func B() { fmt.Println("b") }
 		t.Fatalf("A signature not updated:\n%s", string(got))
 	}
 }
+
+// TestWriteBodyPreservesGoClosureBraces reproduces a live failure: the outcome-JSON
+// scrubber treated `t.Cleanup(func() {` as glued outcome JSON (a bare `}` appears
+// later in every Go file) and swallowed the closure, making the WRITE body
+// syntactically invalid and rejecting the polecat's real test code.
+func TestWriteBodyPreservesGoClosureBraces(t *testing.T) {
+	response := "WRITE: linkshelf/internal/api/handlers_test.go\n" +
+		"package api\n\n" +
+		"import \"testing\"\n\n" +
+		"func setup(t *testing.T) {\n" +
+		"\tt.Helper()\n" +
+		"\tt.Cleanup(func() {\n" +
+		"\t\tcleanup()\n" +
+		"\t})\n" +
+		"}\n\n" +
+		"func TestReal(t *testing.T) {\n" +
+		"\tif true {\n" +
+		"\t\tt.Fatal(\"nope\")\n" +
+		"\t}\n" +
+		"}\n" +
+		"---END WRITE---\n"
+	ops := parseOrchestratedNativeEdits(response)
+	if len(ops) != 1 || ops[0].kind != "write" {
+		t.Fatalf("ops=%+v", ops)
+	}
+	body := ops[0].content
+	for _, want := range []string{"t.Cleanup(func() {", "\t\tcleanup()", "\t})", "func TestReal(t *testing.T) {"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("WRITE body lost %q; body:\n%s", want, body)
+		}
+	}
+	if err := orchestrator.GoSourceBytesValid([]byte(body)); err != nil {
+		t.Fatalf("extracted WRITE body should be valid Go: %v\n%s", err, body)
+	}
+}
