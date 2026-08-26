@@ -2,6 +2,7 @@ package orchestrator
 
 import (
 	"bufio"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -291,6 +292,40 @@ func MaxReviewRetries(v WorkflowValidation) int {
 		return DefaultMaxReviewRetries
 	}
 	return v.MaxReviewRetries
+}
+
+// TestPlanBeadMappingMismatches reports TEST_PLAN.md rows whose Bead ID exists
+// but whose bead title does not reference the row's Test file path. A row like
+// "Test file: internal/api/handlers_test.go / Bead ID: te-7o7" where te-7o7 is
+// titled "Implement internal/api/handlers.go" sends rework to the wrong bead —
+// the cited-ID reopen path then reopens a bead that never owned the stub.
+func TestPlanBeadMappingMismatches(townRoot, rig string, v WorkflowValidation, blocks []TestPlanBlock) ([]string, error) {
+	titles, err := RigBeadTitlesByID(townRoot, rig)
+	if err != nil {
+		return nil, err
+	}
+	return testPlanBeadMappingMismatches(v, blocks, titles), nil
+}
+
+func testPlanBeadMappingMismatches(v WorkflowValidation, blocks []TestPlanBlock, titles map[string]string) []string {
+	var bad []string
+	for _, b := range blocks {
+		beadID := strings.ToLower(strings.TrimSpace(b.BeadID))
+		testFile := filepath.ToSlash(strings.TrimSpace(b.TestFile))
+		if beadID == "" || testFile == "" {
+			continue
+		}
+		title := strings.TrimSpace(titles[beadID])
+		if title == "" {
+			continue // unknown IDs are reported by bead-ID existence checks
+		}
+		got := NormalizeBeadPathForLayout(ExtractPathFromBeadTitle(title, v.BeadTitleContains), v.LayoutRoot)
+		if got == "" || PathMatchesImplementFile(testFile, got) {
+			continue
+		}
+		bad = append(bad, fmt.Sprintf("row %s cites %s but that bead owns %q (plan says %q)", b.ReqID, b.BeadID, got, testFile))
+	}
+	return bad
 }
 
 // HallucinatedTestPlanRequirements returns requirement IDs in TEST_PLAN.md that

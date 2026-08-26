@@ -542,6 +542,124 @@ func TestCompleteTask_implementationFailureSkipsPreparePhase(t *testing.T) {
 	}
 }
 
+// newTestReviewLoopManager builds a minimal rig-flow template covering the
+// test_review ↔ implementation rework loop plus both escalation targets.
+func newTestReviewLoopManager(t *testing.T, dir string) *Manager {
+	m := NewManager(dir)
+	m.LoadTemplate(&WorkflowTemplate{
+		ID:           "rig-flow",
+		InitialState: "implementation",
+		ReworkFeedback: map[string]string{
+			"test_review->implementation": "test_review_to_implementation",
+		},
+		States: map[string]State{
+			"implementation": {
+				Role: "polecat",
+				Transitions: map[string]Transition{
+					"success": {To: "test_review"},
+					"failure": {To: "implementation"},
+				},
+			},
+			"test_review": {
+				Role: "tester",
+				Transitions: map[string]Transition{
+					"failure":              {To: "implementation"},
+					"plan_gap":             {To: "test_plan_rework"},
+					"architecture_failure": {To: "design"},
+				},
+			},
+			"qa_review":        {Role: "qa", Transitions: map[string]Transition{"all_passed": {To: "completed"}}},
+			"test_plan_rework": {Role: "tester"},
+			"design":           {Role: "architect"},
+			"completed":        {Role: "mayor"},
+		},
+	})
+	return m
+}
+
+func TestCompleteTask_testReviewFailureSetsReworkForPolecat(t *testing.T) {
+	dir := t.TempDir()
+	m := newTestReviewLoopManager(t, dir)
+	id, _ := m.StartWorkflow("rig-flow", map[string]string{"rig": "mockrig"})
+	m.instances[id].CurrentState = "test_review"
+
+	next, err := m.CompleteTask(id, "failure", "mockrig/tester", "handlers_test.go (bead te-7o7) is a stub", "")
+	if err != nil || next != "implementation" {
+		t.Fatalf("next=%q err=%v", next, err)
+	}
+	inst := m.instances[id]
+	if inst.PendingRework == nil || inst.PendingRework.FromState != "test_review" {
+		t.Fatalf("PendingRework: %+v", inst.PendingRework)
+	}
+	if !strings.Contains(inst.PendingRework.Feedback, "Tester summary:") ||
+		!strings.Contains(inst.PendingRework.Feedback, "te-7o7") {
+		t.Fatalf("rework feedback must carry tester findings to the polecat: %q", inst.PendingRework.Feedback)
+	}
+	if inst.TestReviewFailures != 1 {
+		t.Fatalf("TestReviewFailures=%d want 1", inst.TestReviewFailures)
+	}
+}
+
+func TestCompleteTask_testReviewLoopEscalatesInsteadOfSpinning(t *testing.T) {
+	dir := t.TempDir()
+	m := newTestReviewLoopManager(t, dir)
+	id, _ := m.StartWorkflow("rig-flow", map[string]string{"rig": "mockrig"})
+	inst := m.instances[id]
+	inst.CurrentState = "test_review"
+	inst.TestReviewFailures = MaxReviewRetries(WorkflowValidation{}) - 1
+
+	next, err := m.CompleteTask(id, "failure", "mockrig/tester", "handlers_test.go still a stub (te-7o7)", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next != "test_plan_rework" {
+		t.Fatalf("escalated next=%q want test_plan_rework (plan mapping is the usual root cause)", next)
+	}
+	if inst.CurrentState != "test_plan_rework" {
+		t.Fatalf("CurrentState=%q", inst.CurrentState)
+	}
+	if inst.TestReviewFailures != 0 {
+		t.Fatalf("counter should reset after escalation, got %d", inst.TestReviewFailures)
+	}
+	if !strings.Contains(inst.PendingRework.Feedback, "auto-escalating") ||
+		!strings.Contains(inst.PendingRework.Feedback, "te-7o7") {
+		t.Fatalf("escalation feedback must explain itself and carry findings: %q", inst.PendingRework.Feedback)
+	}
+}
+
+func TestCompleteTask_testReviewLoopEscalatesToDesignOnSpecContradiction(t *testing.T) {
+	dir := t.TempDir()
+	m := newTestReviewLoopManager(t, dir)
+	id, _ := m.StartWorkflow("rig-flow", map[string]string{"rig": "mockrig"})
+	inst := m.instances[id]
+	inst.CurrentState = "test_review"
+	inst.TestReviewFailures = MaxReviewRetries(WorkflowValidation{}) - 1
+
+	next, err := m.CompleteTask(id, "failure", "mockrig/tester", "SPEC route table contradicts planned POST /api/links handler", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next != "design" {
+		t.Fatalf("escalated next=%q want design for SPEC/architecture contradictions", next)
+	}
+}
+
+func TestCompleteTask_implementationSuccessResetsTestReviewCounter(t *testing.T) {
+	dir := t.TempDir()
+	m := newTestReviewLoopManager(t, dir)
+	id, _ := m.StartWorkflow("rig-flow", map[string]string{"rig": "mockrig"})
+	inst := m.instances[id]
+	inst.CurrentState = "implementation"
+	inst.TestReviewFailures = 2
+
+	if _, err := m.CompleteTask(id, "success", "mockrig/polecat", "tests written", ""); err != nil {
+		t.Fatal(err)
+	}
+	if inst.TestReviewFailures != 0 {
+		t.Fatalf("polecat progress must reset tester loop counter, got %d", inst.TestReviewFailures)
+	}
+}
+
 func TestCompleteTask_sameStateFailureKeepsPendingRework(t *testing.T) {
 	dir := t.TempDir()
 	m := NewManager(dir)

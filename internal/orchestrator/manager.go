@@ -585,10 +585,51 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summa
 		if inst.Variables != nil {
 			rig = inst.Variables["rig"]
 		}
+		// Loop safety: after tester.max_review_retries consecutive test_review rejections,
+		// escalate to test_plan_rework (TEST_PLAN/bead mapping wrong) or design (SPEC/
+		// architecture contradiction) instead of spinning test_review ↔ implementation
+		// forever (docs/design/tester-agent.md §8 "Loop safety").
+		if fromState == "test_review" && next == "implementation" && IsFailureOutcome(outcome) {
+			inst.TestReviewFailures++
+			if inst.TestReviewFailures >= MaxReviewRetries(v) && phaseAdvance == nil {
+				escalateTo := "test_plan_rework"
+				escalateWhy := "TEST_PLAN.md"
+				lowerSummary := strings.ToLower(summary)
+				if strings.Contains(lowerSummary, "spec") || strings.Contains(lowerSummary, "architecture") {
+					escalateTo = "design"
+					escalateWhy = "architecture.md/SPEC.md"
+				}
+				fmt.Printf("[Manager] test_review rejected implementation %d times — escalating to %s\n", inst.TestReviewFailures, escalateTo)
+				findings := strings.TrimSpace(summary + "\n" + feedback)
+				if findings == "" {
+					findings = "(no details reported)"
+				}
+				reworkFeedback = fmt.Sprintf("Tester rejected implementation %d times for the same work — auto-escalating instead of looping.\n\nLast tester findings:\n%s\n\nFix %s so planned tests, beads, and implementation agree; the polecat will redo affected files afterwards.",
+					inst.TestReviewFailures, findings, escalateWhy)
+				next = escalateTo
+				inst.CurrentState = next
+				inst.touchStateEnteredAt()
+				inst.TestReviewFailures = 0
+			}
+		} else if fromState == "test_review" || fromState == "implementation" {
+			inst.TestReviewFailures = 0
+		}
 		if fromState == "qa_review" && next == "implementation" && rig != "" && phaseAdvance == nil {
 			reopenText := CombineQAReworkText(summary, feedback)
 			if reopened, rerr := ReopenImplementationBeadsAfterQAFailure(m.townRoot, rig, v, reopenText); rerr != nil {
 				fmt.Printf("[Manager] Warning: reopen implement beads after QA failure: %v\n", rerr)
+			} else if len(reopened) > 0 {
+				reworkFeedback = strings.TrimSpace(reworkFeedback + "\n\nAuto-reopened closed implement beads: " + strings.Join(reopened, ", "))
+			}
+		}
+		// Tester (test_review) rejection must also reopen closed implement beads owning
+		// stub/missing test files. Without this, te-* beads stay closed, the polecat
+		// re-enters implementation with an empty queue, verify trivially passes, and the
+		// workflow loops test_review ↔ implementation forever (see docs/design/tester-agent.md §8).
+		if fromState == "test_review" && next == "implementation" && rig != "" && phaseAdvance == nil {
+			reopenText := CombineQAReworkText(summary, feedback)
+			if reopened, rerr := ReopenImplementationBeadsAfterTestFailure(m.townRoot, rig, v, reopenText); rerr != nil {
+				fmt.Printf("[Manager] Warning: reopen implement beads after tester failure: %v\n", rerr)
 			} else if len(reopened) > 0 {
 				reworkFeedback = strings.TrimSpace(reworkFeedback + "\n\nAuto-reopened closed implement beads: " + strings.Join(reopened, ", "))
 			}
@@ -615,6 +656,7 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summa
 	} else if !IsTimeoutOutcome(outcome) && !IsFailureOutcome(outcome) && !IsArchitectureReworkOutcome(outcome) {
 		// Success clears QA/plan-review rework for the next agent.
 		inst.PendingRework = nil
+		inst.TestReviewFailures = 0
 	}
 	if phaseAdvance != nil {
 		inst.PendingRework = phaseAdvance

@@ -635,13 +635,16 @@ func shouldSkipPlanningAutoComplete(task *orchestrator.Task, townRoot, rig strin
 	return false
 }
 
-// shouldSkipImplementationAutoComplete blocks auto-complete after QA rework or while go.mod
-// still fails SPEC validation (go mod tidy alone is not enough).
+// shouldSkipImplementationAutoComplete blocks auto-complete after QA/tester rework or while
+// go.mod still fails SPEC validation (go mod tidy alone is not enough).
 func shouldSkipImplementationAutoComplete(task *orchestrator.Task, townRoot, rig string, v orchestrator.WorkflowValidation) bool {
 	if task == nil || task.State != "implementation" {
 		return false
 	}
-	if task.PendingRework != nil && task.PendingRework.FromState == "qa_review" {
+	// QA and tester rework both require real fix work — auto-complete would skip the
+	// LLM entirely and bounce straight back to review (test_review ↔ implementation loop).
+	if task.PendingRework != nil &&
+		(task.PendingRework.FromState == "qa_review" || task.PendingRework.FromState == "test_review") {
 		return true
 	}
 	if townRoot == "" || rig == "" || !orchestrator.WorkflowUsesGo(v) {
@@ -3102,7 +3105,7 @@ func validateTestPlanArtifacts(townRoot, rig string, hadCmdFailure, testPlanWrit
 		return fmt.Errorf("TEST_PLAN.md has requirement IDs not found in SPEC.md or architecture.md: %v — do NOT invent requirements; only plan tests for requirements that EXPLICITLY appear in SPEC.md", hallucinated)
 	}
 	// Check for hallucinated bead IDs: bead IDs in TEST_PLAN.md must exist in bd list.
-	if beadErr := validateTestPlanBeadIDs(townRoot, rig, blocks); beadErr != nil {
+	if beadErr := validateTestPlanBeadIDs(townRoot, rig, v, blocks); beadErr != nil {
 		return beadErr
 	}
 	if !testPlanWriteOK {
@@ -3120,8 +3123,11 @@ func testPlanBytes(rigDir string) int64 {
 	return info.Size()
 }
 
-// validateTestPlanBeadIDs checks that bead IDs in TEST_PLAN.md blocks exist in bd list.
-func validateTestPlanBeadIDs(townRoot, rig string, blocks []orchestrator.TestPlanBlock) error {
+// validateTestPlanBeadIDs checks that bead IDs in TEST_PLAN.md blocks exist in bd
+// list AND that each cited bead's title actually owns the row's Test file path —
+// a row citing the right-prefix but wrong bead (e.g. te-7o7 = handlers.go for a
+// handlers_test.go row) sends every rework bounce to a bead that never owned it.
+func validateTestPlanBeadIDs(townRoot, rig string, v orchestrator.WorkflowValidation, blocks []orchestrator.TestPlanBlock) error {
 	known, prefix, err := orchestrator.ListRigBeadIDSet(townRoot, rig)
 	if err != nil {
 		// If bd list fails, skip bead ID validation (beads may not be initialized yet).
@@ -3147,6 +3153,14 @@ func validateTestPlanBeadIDs(townRoot, rig string, blocks []orchestrator.TestPla
 	}
 	if len(invalid) > 0 {
 		return fmt.Errorf("TEST_PLAN.md has invalid bead IDs: %s — run `bd list --status=open,in_progress` and copy bead IDs exactly", strings.Join(invalid, ", "))
+	}
+	mismatches, mErr := orchestrator.TestPlanBeadMappingMismatches(townRoot, rig, v, blocks)
+	if mErr == nil && len(mismatches) > 0 {
+		return fmt.Errorf(
+			"TEST_PLAN.md bead mappings do not match what each bead owns: %s — "+
+				"fix each row's `Bead ID:` to the bead whose title names that Test file "+
+				"(`bd list --flat --limit=0`), or use outcome plan_gap to rewrite TEST_PLAN.md",
+			strings.Join(mismatches, "; "))
 	}
 	return nil
 }

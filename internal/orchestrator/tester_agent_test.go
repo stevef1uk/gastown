@@ -3,6 +3,7 @@ package orchestrator
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -330,4 +331,32 @@ Test file: handlers_test.go
 			t.Errorf("route-based plan should have 0 hallucinations, got %d: %v", len(hallucinated), hallucinated)
 		}
 	})
+}
+
+func TestTestPlanBeadMappingMismatches(t *testing.T) {
+	t.Parallel()
+	v := WorkflowValidation{
+		LayoutRoot:        "linkshelf",
+		BeadTitleContains: "Implement ",
+	}
+	blocks := []TestPlanBlock{
+		{ReqID: "req-ok", TestFile: "linkshelf/internal/api/handlers_test.go", BeadID: "te-h5h"},
+		{ReqID: "req-swap", TestFile: "linkshelf/internal/api/handlers_test.go", BeadID: "te-7o7"},
+		{ReqID: "req-layout", TestFile: "internal/store/store_test.go", BeadID: "te-aoz"},
+		{ReqID: "req-unknown", TestFile: "linkshelf/tests/e2e.spec.js", BeadID: "te-zzz"},
+		{ReqID: "req-nobead", TestFile: "linkshelf/go.mod"},
+	}
+	titles := map[string]string{
+		"te-h5h": "Implement linkshelf/internal/api/handlers_test.go per architecture",
+		"te-7o7": "Implement linkshelf/internal/api/handlers.go per architecture",
+		"te-aoz": "Implement linkshelf/internal/store/store_test.go per architecture",
+	}
+	got := testPlanBeadMappingMismatches(v, blocks, titles)
+	if len(got) != 1 {
+		t.Fatalf("got %d mismatches, want 1 (the swapped bead): %v", len(got), got)
+	}
+	if !strings.Contains(got[0], "req-swap") || !strings.Contains(got[0], "te-7o7") ||
+		!strings.Contains(got[0], "handlers.go") {
+		t.Fatalf("mismatch should name row, cited bead, and the file that bead actually owns: %q", got[0])
+	}
 }

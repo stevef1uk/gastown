@@ -360,6 +360,19 @@ func CheckPathNotStub(path, displayRel string, opts StubCheckOptions) error {
 	return CheckContentNotStub(data, displayRel, opts)
 }
 
+// SeededTestPlaceholderReason is the skip reason embedded in scaffolded test
+// files (implement_read_guard.go). Its presence means the file was never
+// implemented — every "is this bead's work done" check must treat it as a stub,
+// otherwise trivially-passing skipped tests let placeholder work masquerade as
+// green verify and block real fixes (test_review ↔ implementation loop).
+const SeededTestPlaceholderReason = "implement tests per plan.md acceptance"
+
+// IsSeededTestPlaceholder reports whether content is a scaffolded placeholder
+// test file (Go *_test.go or pytest) rather than implemented tests.
+func IsSeededTestPlaceholder(data []byte) bool {
+	return strings.Contains(string(data), SeededTestPlaceholderReason)
+}
+
 // CheckContentNotStub applies stub heuristics to file bytes.
 func CheckContentNotStub(data []byte, displayRel string, opts StubCheckOptions) error {
 	// Placeholder files like .gitkeep, .gitignore are intentionally minimal.
@@ -376,6 +389,11 @@ func CheckContentNotStub(data []byte, displayRel string, opts StubCheckOptions) 
 	}
 	if len(data) == 0 {
 		return fmt.Errorf("%s is empty (stub/placeholder)", displayRel)
+	}
+	// Scaffolded placeholder tests pass `go test`/`pytest` trivially (t.Skip),
+	// so byte/line checks alone never flag them. Detect the scaffold signature.
+	if IsSeededTestPlaceholder(data) {
+		return fmt.Errorf("%s is the seeded test placeholder — implement the planned tests per TEST_PLAN.md", displayRel)
 	}
 	if opts.MinSubstantiveLines <= 0 {
 		// Dependency manifests (requirements.txt, go.mod, lockfiles): non-empty is enough.

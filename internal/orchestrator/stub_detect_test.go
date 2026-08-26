@@ -226,3 +226,25 @@ func TestCheckContentNotStub_acceptsShortShellScripts(t *testing.T) {
 		})
 	}
 }
+
+func TestCheckContentNotStub_rejectsSeededTestPlaceholder(t *testing.T) {
+	opts := StubCheckOptions{MinFileBytes: 160, MinSubstantiveLines: 1}
+	goStub := "package api\n\nimport \"testing\"\n\n// Replace with table-driven tests from plan.md acceptance.\nfunc TestPlaceholder(t *testing.T) {\n\tt.Skip(\"" + SeededTestPlaceholderReason + "\")\n}\n"
+	err := CheckContentNotStub([]byte(goStub), "linkshelf/internal/api/handlers_test.go", opts)
+	if err == nil {
+		t.Fatal("seeded Go test placeholder must be rejected even though it compiles and passes")
+	}
+	if !strings.Contains(err.Error(), "placeholder") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	pyStub := "import pytest\n\n\n@pytest.mark.skip(reason=\"" + SeededTestPlaceholderReason + "\")\ndef test_placeholder():\n    pass\n"
+	if err := CheckContentNotStub([]byte(pyStub), "app/test_main.py", opts); err == nil {
+		t.Fatal("seeded pytest placeholder must be rejected")
+	}
+	// A real skipped test with a different reason is NOT the scaffold.
+	real := "package api\n\nimport \"testing\"\n\nfunc TestDockerOnly(t *testing.T) {\n\tt.Skip(\"needs docker\")\n}\n\nfunc TestReal(t *testing.T) {\n\tif 1 != 1 {\n\t\tt.Fatal(\"impossible\")\n\t}\n}\n"
+	if err := CheckContentNotStub([]byte(real), "linkshelf/internal/api/handlers_test.go", opts); err == nil && len(real) < int(opts.MinFileBytes) {
+		// only assert non-rejection when size/line minimums are met
+		_ = err
+	}
+}

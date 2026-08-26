@@ -83,6 +83,37 @@ func ListRigBeadIDSet(townRoot, rig string) (map[string]bool, string, error) {
 	return ids, prefix, nil
 }
 
+// RigBeadTitlesByID lists all rig issues (open + closed + in_progress) as ID → title.
+// Used to verify TEST_PLAN.md bead mappings against what each bead actually owns.
+func RigBeadTitlesByID(townRoot, rig string) (map[string]string, error) {
+	beadsDir := config.ResolveBeadsDirForRig(townRoot, rig)
+	titles := make(map[string]string)
+	for _, status := range []string{"open", "closed", "in_progress"} {
+		args := beads.InjectFlatForListJSON([]string{"list", "--status=" + status, "--json", "--limit=0"})
+		cmd := exec.Command("bd", args...)
+		cmd.Env = append([]string{"BEADS_DIR=" + beadsDir}, cmd.Environ()...)
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			return nil, fmt.Errorf("bd list %s: %w: %s", status, err, strings.TrimSpace(string(out)))
+		}
+		out = beads.StripStdoutWarnings(out)
+		var rows []struct {
+			ID    string `json:"id"`
+			Title string `json:"title"`
+		}
+		if err := json.Unmarshal(out, &rows); err != nil {
+			return nil, fmt.Errorf("parse bd list %s: %w", status, err)
+		}
+		for _, r := range rows {
+			id := strings.TrimSpace(strings.ToLower(beads.ExtractIssueID(r.ID)))
+			if id != "" && r.Title != "" {
+				titles[id] = r.Title
+			}
+		}
+	}
+	return titles, nil
+}
+
 // ExtractKnownRigBeadIDsFromSummary returns rig-prefixed bead IDs mentioned in text that exist in known.
 // rigPrefix comes from bd config (issue_prefix) for this rig — not a hard-coded prefix.
 func ExtractKnownRigBeadIDsFromSummary(summary, rigPrefix string, known map[string]bool) []string {

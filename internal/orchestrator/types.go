@@ -103,6 +103,10 @@ type WorkflowInstance struct {
 	Variables     map[string]string `json:"variables"`
 	Status        string            `json:"status"` // "running", "paused", "completed", "failed"
 	PendingRework *WorkflowRework   `json:"pending_rework,omitempty"`
+	// TestReviewFailures counts consecutive test_review failure → implementation bounces.
+	// Reset on any success or escalation; at tester.max_review_retries the orchestrator
+	// escalates to test_plan_rework/design instead of looping (docs/design/tester-agent.md §8).
+	TestReviewFailures int `json:"test_review_failures,omitempty"`
 }
 
 // IsFailureOutcome reports whether complete_task outcome means rework/failure.

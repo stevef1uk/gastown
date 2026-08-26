@@ -206,10 +206,10 @@ func testBeadSkeletonContent(beadPath string, v WorkflowValidation) string {
 		if pkg == "." || pkg == "/" {
 			pkg = "main"
 		}
-		return "package " + pkg + "\n\nimport \"testing\"\n\n// Replace with table-driven tests from plan.md acceptance.\nfunc TestPlaceholder(t *testing.T) {\n\tt.Skip(\"implement tests per plan.md acceptance\")\n}\n"
+		return "package " + pkg + "\n\nimport \"testing\"\n\n// Replace with table-driven tests from plan.md acceptance.\nfunc TestPlaceholder(t *testing.T) {\n\tt.Skip(\"" + SeededTestPlaceholderReason + "\")\n}\n"
 	}
 	if WorkflowUsesPython(v) && IsTestImplementPath(beadPath) {
-		return "import pytest\n\n\n@pytest.mark.skip(reason=\"implement tests per plan.md acceptance\")\ndef test_placeholder():\n    pass\n"
+		return "import pytest\n\n\n@pytest.mark.skip(reason=\"" + SeededTestPlaceholderReason + "\")\ndef test_placeholder():\n    pass\n"
 	}
 	return ""
 }
