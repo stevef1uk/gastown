@@ -28,6 +28,18 @@ $GT_ROOT/{{rig}}/mayor/rig/{{layout_root}}/  ← layout root (ALL files go here)
 3. **DO NOT `bd create`** — the pre_run hook already created the correct beads. Creating more causes "unknown bead IDs" in plan.md validation.
 4. If validation fails with "unknown bead IDs", run `gt rig sync-planning {{rig}} --force` (NOT `bd create`).
 
+## Missing files from COMPLETED phases
+
+If the validation output shows **"validateRequiredFilesHaveBeads: FAIL - X missing files"** and the missing files belong to **completed phases** (listed in the validation output as `completed=[...]`), you **cannot** create beads for them — those phases are already marked complete. This means the workflow advanced without the files actually being created.
+
+In this case, **send JSON with `architecture_failure`** to route to the Architect, who will create the missing beads:
+
+```json
+{"outcome":"architecture_failure","summary":"Completed phase X missing files: <list missing files>. Architect must create beads for these completed-phase files before planning can succeed."}
+```
+
+Do NOT attempt to `bd create` for completed-phase files — gt-agent will reject them.
+
 When `required_files` use nested paths under `{{layout_root}}/` (e.g. `{{layout_root}}/internal/api/handlers.go`), **never** `cat > plan.md` with flattened paths like `{{layout_root}}/handlers.go` — gt-agent rejects that heredoc; sync owns `plan.md`.
 
 When the workflow profile lists paths under `{{layout_root}}/`, every implement path in **architecture.md**, **plan.md** bead titles, and `### <id>:` headers must use that prefix (e.g. `{{layout_root}}/internal/store/schema.go`, not bare `internal/store/schema.go`). gt-agent rejects design/planning success on drift.
