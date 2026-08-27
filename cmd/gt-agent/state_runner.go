@@ -81,7 +81,7 @@ func (r *stateRunner) qaReworkWriteScope() *orchestrator.ImplementWriteScope {
 }
 
 func newStateRunner(task *orchestrator.Task, townRoot, rig string) *stateRunner {
-	v := taskValidation(townRoot, task)
+	v := taskValidation(townRoot, task).ForActivePhase()
 	vars := map[string]string{"rig": rig}
 	for k, val := range v.PromptVars() {
 		vars[k] = val
@@ -274,7 +274,7 @@ func (r *stateRunner) reloadValidationIfPhaseChanged() bool {
 	if r == nil || r.townRoot == "" || r.rig == "" || r.task == nil {
 		return false
 	}
-	newV := taskValidation(r.townRoot, r.task)
+	newV := taskValidation(r.townRoot, r.task).ForActivePhase()
 	if newV.ActivePhaseID() == r.v.ActivePhaseID() {
 		return false
 	}

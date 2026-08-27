@@ -702,7 +702,7 @@ func formatWorkflowReworkBlock(task *orchestrator.Task, townRoot, rig string) st
 	} else {
 		b.WriteString("\nAddress the issues above. Use bead IDs and paths from command output — do not invent IDs.\n")
 	}
-	v := taskValidation(townRoot, task)
+	v := taskValidation(townRoot, task).ForActivePhase()
 	b.WriteString(workflowReworkHints(r.FromState, task.State, rig, r.Summary, v))
 	if task.State == "implementation" && (r.Outcome == "failure" || r.Outcome == "timeout") {
 		b.WriteString("\nUse **sed -i** or **patch** on internal packages; **cmd/…/main.go may use heredoc** when wiring is broken. Use store/handler APIs from **Dependency packages** — do not invent symbols.\n")
@@ -4033,7 +4033,7 @@ func buildOrchestratedSystemPrompt(task *orchestrator.Task, townRoot string) str
 
 func orchestratorPromptVars(task *orchestrator.Task, townRoot string) map[string]string {
 	vars := map[string]string{"rig": task.Rig}
-	v := taskValidation(townRoot, task)
+	v := taskValidation(townRoot, task).ForActivePhase()
 	for k, val := range v.PromptVars() {
 		vars[k] = val
 	}

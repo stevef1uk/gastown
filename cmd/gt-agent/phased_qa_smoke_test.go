@@ -72,7 +72,7 @@ func TestTaskValidation_phasedBackendCoreSkipsQASmoke(t *testing.T) {
 			},
 		},
 	}
-	v := taskValidation(dir, task)
+	v := taskValidation(dir, task).ForActivePhase()
 	if orchestrator.WorkflowNeedsQARuntimeSmoke(dir, rig, v) {
 		t.Fatal("backend-core QA must not require runtime smoke")
 	}
@@ -83,7 +83,7 @@ func TestValidateQACommand_phasedBackendCoreRejectsBareCurl(t *testing.T) {
 	dir := t.TempDir()
 	rig := "testgt3"
 	writePhasedLinkshelfProfile(t, dir, rig)
-	v := taskValidation(dir, &orchestrator.Task{Rig: rig})
+	v := taskValidation(dir, &orchestrator.Task{Rig: rig}).ForActivePhase()
 
 	err := validateQACommand("curl -s http://127.0.0.1:8080/api/links", rig, dir, v)
 	if err == nil {

@@ -86,7 +86,10 @@ func taskValidation(townRoot string, task *orchestrator.Task) orchestrator.Workf
 		mayorRig := filepath.Join(townRoot, task.Rig, "mayor", "rig")
 		v = orchestrator.EnrichWorkflowValidationFromArchitecture(v, mayorRig)
 	}
-	return v.ForActivePhase()
+	// Return full validation WITHOUT ForActivePhase() so that:
+	// - Planner can validate completed+active phase required_files
+	// - Other callers that need active phase only can call ForActivePhase() themselves
+	return v
 }
 
 func isProjectSetupVerifyCommandOK(cmd string, v orchestrator.WorkflowValidation) bool {
