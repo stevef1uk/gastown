@@ -354,9 +354,8 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 			if o, s, ok := parseOrchestratedResult(response, task.AllowedOutcomes); ok {
 				o = normalizeOrchestratedOutcome(o, task.AllowedOutcomes)
 				if (o == "failure" || o == "fail") && turn < maxTurns {
-					orchestratedPrintf("[gt-agent] ignoring failure JSON in same turn as CMD lines; review output then send JSON only\n")
-					recordAttemptFeedback("Failure JSON ignored because CMD lines ran this turn. Review command output, then reply with JSON only.\n")
-					pendingFailureSummary = s
+					orchestratedPrintf("[gt-agent] failure JSON received (with CMD lines) — accepting failure\n")
+					return o, s, lastAttemptFeedback.String(), nil
 				} else if task.State == "implementation" && isOrchestratedSuccessOutcome(o) {
 					orchestratedPrintf("[gt-agent] ignoring success JSON in same turn as CMD/native tools; run Verify and bd close first, then JSON only\n")
 					recordAttemptFeedback("Success JSON ignored because commands ran this turn. Finish Verify + bd close for the active bead, then reply with JSON only.\n")
