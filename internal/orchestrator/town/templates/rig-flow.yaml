@@ -389,7 +389,7 @@ states:
       failure:
         to: implementation
       plan_gap:
-        to: planning
+        to: test_plan_rework
       architecture_failure:
         to: design
       timeout:

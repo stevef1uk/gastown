@@ -3107,6 +3107,31 @@ func validateTestPlanArtifacts(townRoot, rig string, hadCmdFailure, testPlanWrit
 	if hallucinated := orchestrator.HallucinatedTestPlanRequirements(string(data), string(specDoc), string(archDoc)); len(hallucinated) > 0 {
 		return fmt.Errorf("TEST_PLAN.md has requirement IDs not found in SPEC.md or architecture.md: %v — do NOT invent requirements; only plan tests for requirements that EXPLICITLY appear in SPEC.md", hallucinated)
 	}
+	// Phase-coverage guard: every delivery phase must have at least one requirement
+	// block in TEST_PLAN.md. This prevents the tester from rewriting the entire file
+	// during rework and dropping phases that were already planned.
+	if v.HasPhasedDelivery() {
+		phaseCovered := make(map[string]bool)
+		for _, b := range blocks {
+			if b.Phase != "" {
+				phaseCovered[b.Phase] = true
+			}
+		}
+		var missing []string
+		for _, p := range v.DeliveryPhases {
+			if !phaseCovered[p.ID] {
+				missing = append(missing, p.ID)
+			}
+		}
+		if len(missing) > 0 {
+			return fmt.Errorf(
+				"TEST_PLAN.md is missing requirement blocks for phases %v — "+
+					"every delivery phase must have at least one ### <req-id> block. "+
+					"READ the existing TEST_PLAN.md first and use EDIT to modify only the changed sections; "+
+					"do NOT use heredoc to rewrite the entire file (that drops other phase sections).",
+				missing)
+		}
+	}
 	// NOTE: Bead ID validation is skipped during test_plan because the plan is
 	// written BEFORE implementation — test-file beads don't exist yet. Bead IDs
 	// are validated later during test_review (after Polecat implements).

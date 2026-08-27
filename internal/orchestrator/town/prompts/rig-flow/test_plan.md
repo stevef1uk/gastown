@@ -33,6 +33,8 @@ $GT_ROOT/{{rig}}/mayor/rig/{{layout_root}}/  ← layout root (ALL code files go 
 
 **Validation scope:** On first entry to `test_plan`, generate the full plan covering all phases. On subsequent entries (e.g. after rework), only validate that the ACTIVE phase's tests and code match the plan — do not rewrite future phase sections.
 
+**REWORK RULE (CRITICAL):** When rewriting TEST_PLAN.md during rework, you MUST READ the existing file first and use EDIT commands to modify only the changed sections. **NEVER use `cat > TEST_PLAN.md << 'EOF'`** to rewrite the entire file — that drops other phase sections and breaks the workflow. The validator will reject the plan if any delivery phase is missing its requirement blocks.
+
 Example: If phases are `store-core`, `api-layer`, `server-entry`, plan tests for store operations, HTTP handlers, AND server integration — not just store-core.
 
 ## Requirements sources (read in this order)
