@@ -38,10 +38,16 @@ func ValidatePlanningPhaseGate(townRoot, rig, fromState string, v WorkflowValida
 			return fmt.Errorf("design success blocked: %w", err)
 		}
 		return nil
-	case "planning", "plan_review", "project_setup":
+	case "planning", "plan_review":
 		if err := validatePlanningGateArtifacts(townRoot, rig, rigDir, fromState, v); err != nil {
 			return fmt.Errorf("%s success blocked: %w", fromState, err)
 		}
+		return nil
+	case "project_setup":
+		// project_setup only verifies the toolchain (go mod tidy, go test, etc.).
+		// Plan.md alignment was already validated during planning/plan_review —
+		// re-validating here causes false-positive path-normalization loops that
+		// block the entire workflow for no benefit.
 		return nil
 	default:
 		return nil
