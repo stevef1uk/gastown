@@ -291,8 +291,12 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 		// Track per-bead turns; if a bead exceeds 20 turns, delete its file for regeneration
 		if runner.track.activeBead != "" {
 			if runner.addBeadTurn(runner.track.activeBead) {
-				// File deleted — it will be regenerated on next turn
-				orchestratedPrintf("[gt-agent] bead %s exceeded 20 turns; file deleted for regeneration\n", runner.track.activeBead)
+				// After 2x the turn limit with substantive content, force failure
+				// to prevent infinite loops (LLM keeps repeating "blocked").
+				orchestratedPrintf("[gt-agent] bead %s exceeded turn limit; forcing failure\n", runner.track.activeBead)
+				outcome = "failure"
+				summary = fmt.Sprintf("bead %s exceeded turn limit — bead cannot complete within scope", runner.track.activeBead)
+				return outcome, summary, lastAttemptFeedback.String(), nil
 			}
 		}
 
@@ -4089,6 +4093,16 @@ func normalizeOrchestratedOutcome(outcome string, allowed []string) string {
 		}
 	}
 	if outcome == "failure" {
+		if _, ok := allowedSet["fail"]; ok {
+			return "fail"
+		}
+	}
+	// "blocked" means the bead cannot complete within scope — treat as failure
+	// so the workflow routes back to planning/architect instead of looping forever.
+	if outcome == "blocked" {
+		if _, ok := allowedSet["failure"]; ok {
+			return "failure"
+		}
 		if _, ok := allowedSet["fail"]; ok {
 			return "fail"
 		}

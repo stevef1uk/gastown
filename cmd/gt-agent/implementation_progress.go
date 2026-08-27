@@ -698,6 +698,13 @@ func (r *stateRunner) addBeadTurn(beadID string) bool {
 			path := filepath.Join(rigDir, filepath.FromSlash(beadPath))
 			const minSubstantiveBytes = 400
 			if info, err := os.Stat(path); err == nil && info.Size() >= minSubstantiveBytes {
+				// After 2x the turn limit, force failure regardless of content —
+				// prevents infinite loops when the LLM keeps repeating "blocked".
+				if turns >= r.implProgress.BeadTurnsLimit*2 {
+					orchestratedPrintf("[gt-agent] bead %s exceeded %d turns (2x limit) with substantive content — forcing failure\n",
+						beadID, turns)
+					return true // limit exceeded — force failure
+				}
 				// Cap the counter so this fires once per stretch instead of
 				// deleting on every subsequent turn.
 				r.implProgress.BeadTurns[beadID] = r.implProgress.BeadTurnsLimit
@@ -708,7 +715,7 @@ func (r *stateRunner) addBeadTurn(beadID string) bool {
 			if err := os.Remove(path); err != nil {
 				orchestratedFprintfStderr("[gt-agent] failed to delete stub bead file %s after %d turns: %v\n", path, r.implProgress.BeadTurnsLimit, err)
 			} else {
-				orchestratedPrintf("[gt-agent] deleted stub bead file %s after %d turns (limit %d) — will be regenerated\n", path, turns, r.implProgress.BeadTurnsLimit)
+				orchestratedPrintf("[gt-agent] deleted stub bead file %s after %d turns (limit %d) — will be regenerated\n", beadID, turns, r.implProgress.BeadTurnsLimit)
 			}
 		}
 		// Reset turn count for this bead since file was deleted
