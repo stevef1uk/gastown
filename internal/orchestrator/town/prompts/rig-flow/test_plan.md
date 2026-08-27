@@ -130,7 +130,7 @@ Assign **unit** to pure logic/domain rules, **integration** to API/store/HTTP wi
 
 6. **CRITICAL:** Do not emit JSON in the same message as `CMD:` lines. Wait for command output on the next turn before choosing outcome.
 
-7. **Bead IDs:** Use actual bead IDs from `bd list` output, NOT placeholder IDs like `bead-001`. Copy IDs exactly as they appear in `bd list`.
+7. **Bead IDs:** Use actual bead IDs from `bd list` output, NOT placeholder IDs like `bead-001`. Copy IDs exactly as they appear in `bd list`. If no bead owns a test file (e.g. `handlers_test.go` has no implementation bead yet), use `plan_gap` as the Bead ID — this tells the Planner to create the missing bead.
 
 Example success:
 `{"outcome":"success","summary":"TEST_PLAN.md maps 6/6 active-phase requirements: 4 unit (store/domain), 1 integration (httptest /api/links), 1 ui (app.js DOM)"}`
