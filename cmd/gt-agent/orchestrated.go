@@ -3107,10 +3107,9 @@ func validateTestPlanArtifacts(townRoot, rig string, hadCmdFailure, testPlanWrit
 	if hallucinated := orchestrator.HallucinatedTestPlanRequirements(string(data), string(specDoc), string(archDoc)); len(hallucinated) > 0 {
 		return fmt.Errorf("TEST_PLAN.md has requirement IDs not found in SPEC.md or architecture.md: %v — do NOT invent requirements; only plan tests for requirements that EXPLICITLY appear in SPEC.md", hallucinated)
 	}
-	// Check for hallucinated bead IDs: bead IDs in TEST_PLAN.md must exist in bd list.
-	if beadErr := validateTestPlanBeadIDs(townRoot, rig, v, blocks); beadErr != nil {
-		return beadErr
-	}
+	// NOTE: Bead ID validation is skipped during test_plan because the plan is
+	// written BEFORE implementation — test-file beads don't exist yet. Bead IDs
+	// are validated later during test_review (after Polecat implements).
 	if !testPlanWriteOK {
 		// A TEST_PLAN.md may already exist from a prior run; accept it if valid.
 		return nil
