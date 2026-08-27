@@ -2415,14 +2415,26 @@ func validatePlanningArtifacts(townRoot, rig string, hadCmdFailure, beadCreateOK
 	return nil
 }
 
-// validateClosedBeadFilesExist checks that closed implementation beads actually
-// have their files on disk. A bead can be closed but the file may have been
-// deleted or never written (e.g. bead closed without creating the file).
+// validateClosedBeadFilesExist checks that closed implementation beads for
+// completed+active phase required_files actually have their files on disk.
+// A bead can be closed but the file may have been deleted or never written.
+// Only checks files that are in the completed+active phase scope.
 func validateClosedBeadFilesExist(townRoot, rig string, v orchestrator.WorkflowValidation) error {
 	rigDir := rigMayorRigDir(townRoot, rig)
+	// Use the same scope as required_files validation: completed + active phases only
+	requiredFiles := v.RequiredFilesForCompletedAndActive()
+	if len(requiredFiles) == 0 {
+		return nil
+	}
 	closedBeads, err := orchestrator.ListImplementBeadsByStatusForPlanning(townRoot, rig, v, "closed")
 	if err != nil {
 		return nil // non-fatal: can't check
+	}
+	// Build a set of normalized required file paths for quick lookup
+	requiredSet := make(map[string]bool)
+	for _, rf := range requiredFiles {
+		norm := filepath.ToSlash(filepath.Clean(rf))
+		requiredSet[norm] = true
 	}
 	var missing []string
 	for _, b := range closedBeads {
@@ -2431,6 +2443,10 @@ func validateClosedBeadFilesExist(townRoot, rig string, v orchestrator.WorkflowV
 			continue
 		}
 		normalized := orchestrator.NormalizePlannerBeadPath(path, v.LayoutRoot, rig)
+		// Only validate if this file is in the completed+active phase required_files
+		if !requiredSet[normalized] {
+			continue
+		}
 		fullPath := filepath.Join(rigDir, filepath.FromSlash(normalized))
 		if _, err := os.Stat(fullPath); os.IsNotExist(err) {
 			missing = append(missing, fmt.Sprintf("%s (bead %s closed but file missing)", normalized, b.ID))
