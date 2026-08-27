@@ -3145,6 +3145,10 @@ func validateTestPlanBeadIDs(townRoot, rig string, v orchestrator.WorkflowValida
 		if beadID == "" {
 			continue
 		}
+		// plan_gap is a valid placeholder meaning "no bead owns this test file yet".
+		if strings.ToLower(beadID) == "plan_gap" {
+			continue
+		}
 		// Skip placeholder bead IDs that don't match the rig's prefix pattern.
 		if !strings.HasPrefix(strings.ToLower(beadID), strings.ToLower(prefix)+"-") {
 			invalid = append(invalid, fmt.Sprintf("%s (wrong prefix; rig uses %s-*)", beadID, prefix))
