@@ -2383,6 +2383,14 @@ func validatePlanningArtifacts(townRoot, rig string, hadCmdFailure, beadCreateOK
 			return err
 		}
 	}
+	// Check that all required_files have open/in_progress implement beads.
+	// If any required file has no bead, planning cannot succeed — the planner
+	// must create beads first (or the architect must create them via architecture_failure).
+	if rig != "" {
+		if err := validateRequiredFilesHaveBeads(townRoot, rig, v); err != nil {
+			return err
+		}
+	}
 	// Check that closed implementation beads actually have their files on disk.
 	// A bead can be closed (file written, verified, bd close ran) but the file
 	// may have been deleted or never written. This blocks planning success so
@@ -2430,6 +2438,75 @@ func validateClosedBeadFilesExist(townRoot, rig string, v orchestrator.WorkflowV
 	}
 	if len(missing) > 0 {
 		return fmt.Errorf("closed implementation beads have missing files on disk — send outcome architecture_failure so the architect creates beads for: %s", strings.Join(missing, "; "))
+	}
+	return nil
+}
+
+// validateRequiredFilesHaveBeads checks that every required_files entry has
+// an open or in-progress implement bead. If any required file has no bead,
+// planning cannot succeed — the planner must create beads first.
+func validateRequiredFilesHaveBeads(townRoot, rig string, v orchestrator.WorkflowValidation) error {
+	rigDir := rigMayorRigDir(townRoot, rig)
+	openBeads, err := orchestrator.ListImplementBeadsByStatusForPlanning(townRoot, rig, v, "open")
+	if err != nil {
+		return fmt.Errorf("failed to list open beads: %w", err)
+	}
+	// Also include in_progress beads (same list, bd list --status=open,in_progress)
+	openProgressBeads, err := orchestrator.ListImplementBeadsByStatusForPlanning(townRoot, rig, v, "in_progress")
+	if err != nil {
+		return fmt.Errorf("failed to list in_progress beads: %w", err)
+	}
+	allOpen := append(openBeads, openProgressBeads...)
+
+	// Build a set of bead IDs that exist
+	existingIDs := map[string]bool{}
+	for _, b := range allOpen {
+		existingIDs[b.ID] = true
+	}
+
+	// required_files is a field on WorkflowValidation
+	requiredFiles := v.RequiredFiles
+	if len(requiredFiles) == 0 {
+		return nil // nothing to validate
+	}
+
+	var missing []string
+	for _, rf := range requiredFiles {
+		// Check if any bead title/path matches this required file
+		// required_files paths are relative to rigDir (e.g. "linkshelf/internal/store/schema.go")
+		found := false
+		for _, b := range allOpen {
+			// Extract the path from the bead title
+			titlePath := orchestrator.ExtractPathFromBeadTitle(b.Title, v.BeadTitleContains)
+			// Normalize both paths for comparison
+			normTitle := orchestrator.NormalizePlannerBeadPath(titlePath, v.LayoutRoot, rig)
+			normReq := filepath.ToSlash(filepath.Clean(rf))
+			if normTitle == normReq {
+				found = true
+				break
+			}
+		}
+		if !found {
+			// Check if the bead ID appears in plan.md
+			planPath := filepath.Join(rigDir, "plan.md")
+			planData, err := os.ReadFile(planPath)
+			if err != nil {
+				return fmt.Errorf("cannot read plan.md: %w", err)
+			}
+			matched := regexp.MustCompile(`(?m)^###\s+([a-zA-Z0-9][a-zA-Z0-9_-]*):\s+`).FindStringSubmatch(string(planData))
+			if len(matched) > 0 {
+				beadID := matched[1]
+				if existingIDs[beadID] {
+					found = true
+				}
+			}
+		}
+		if !found {
+			missing = append(missing, rf)
+		}
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf("planning cannot succeed: required_files missing beads - send architecture_failure to architect. Missing: %s", strings.Join(missing, "; "))
 	}
 	return nil
 }
