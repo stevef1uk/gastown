@@ -586,3 +586,9 @@ func listImplementBeadsByStatus(townRoot, rig string, v WorkflowValidation, stat
 	}
 	return result, nil
 }
+
+// ListImplementBeadsByStatusForPlanning is a public wrapper for listImplementBeadsByStatus,
+// used by gt-agent to validate closed beads have files on disk.
+func ListImplementBeadsByStatusForPlanning(townRoot, rig string, v WorkflowValidation, status string) ([]PlanBead, error) {
+	return listImplementBeadsByStatus(townRoot, rig, v, status)
+}

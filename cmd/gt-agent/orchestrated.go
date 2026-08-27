@@ -2383,6 +2383,15 @@ func validatePlanningArtifacts(townRoot, rig string, hadCmdFailure, beadCreateOK
 			return err
 		}
 	}
+	// Check that closed implementation beads actually have their files on disk.
+	// A bead can be closed (file written, verified, bd close ran) but the file
+	// may have been deleted or never written. This blocks planning success so
+	// the planner sends architecture_failure to the architect.
+	if rig != "" {
+		if err := validateClosedBeadFilesExist(townRoot, rig, v); err != nil {
+			return err
+		}
+	}
 	if err := orchestrator.ValidatePlanningPhaseGate(townRoot, rig, "planning", v); err != nil {
 		if beadDeleteOK {
 			return fmt.Errorf("bead set still invalid after bd delete: %w", err)
@@ -2394,6 +2403,33 @@ func validatePlanningArtifacts(townRoot, rig string, hadCmdFailure, beadCreateOK
 	}
 	if hadCmdFailure {
 		return fmt.Errorf("planning step had failed commands; fix errors before completing")
+	}
+	return nil
+}
+
+// validateClosedBeadFilesExist checks that closed implementation beads actually
+// have their files on disk. A bead can be closed but the file may have been
+// deleted or never written (e.g. bead closed without creating the file).
+func validateClosedBeadFilesExist(townRoot, rig string, v orchestrator.WorkflowValidation) error {
+	rigDir := rigMayorRigDir(townRoot, rig)
+	closedBeads, err := orchestrator.ListImplementBeadsByStatusForPlanning(townRoot, rig, v, "closed")
+	if err != nil {
+		return nil // non-fatal: can't check
+	}
+	var missing []string
+	for _, b := range closedBeads {
+		path := orchestrator.ExtractPathFromBeadTitle(b.Title, v.BeadTitleContains)
+		if path == "" {
+			continue
+		}
+		normalized := orchestrator.NormalizePlannerBeadPath(path, v.LayoutRoot, rig)
+		fullPath := filepath.Join(rigDir, filepath.FromSlash(normalized))
+		if _, err := os.Stat(fullPath); os.IsNotExist(err) {
+			missing = append(missing, fmt.Sprintf("%s (bead %s closed but file missing)", normalized, b.ID))
+		}
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf("closed implementation beads have missing files on disk — send outcome architecture_failure so the architect creates beads for: %s", strings.Join(missing, "; "))
 	}
 	return nil
 }
