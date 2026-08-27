@@ -2447,6 +2447,10 @@ func validateClosedBeadFilesExist(townRoot, rig string, v orchestrator.WorkflowV
 // planning cannot succeed — the planner must create beads first.
 func validateRequiredFilesHaveBeads(townRoot, rig string, v orchestrator.WorkflowValidation) error {
 	rigDir := rigMayorRigDir(townRoot, rig)
+	// Validate against completed phases + active phase - catch missing files from
+	// earlier phases that were marked complete but never actually created,
+	// without blocking on future phases.
+	requiredFiles := v.RequiredFilesForCompletedAndActive()
 	openBeads, err := orchestrator.ListImplementBeadsByStatusForPlanning(townRoot, rig, v, "open")
 	if err != nil {
 		return fmt.Errorf("failed to list open beads: %w", err)
@@ -2465,7 +2469,7 @@ func validateRequiredFilesHaveBeads(townRoot, rig string, v orchestrator.Workflo
 	}
 
 	// required_files is a field on WorkflowValidation
-	requiredFiles := v.RequiredFiles
+	requiredFiles = v.RequiredFilesForCompletedAndActive()
 	if len(requiredFiles) == 0 {
 		return nil // nothing to validate
 	}

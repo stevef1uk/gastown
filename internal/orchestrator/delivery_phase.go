@@ -248,6 +248,39 @@ func (v WorkflowValidation) UnionRequiredFiles() []string {
 	return union
 }
 
+// RequiredFilesForCompletedAndActive returns paths for completed phases + the active phase.
+// Used by planning validation to catch missing files from completed phases that never
+// actually got created, without blocking on future phases.
+func (v WorkflowValidation) RequiredFilesForCompletedAndActive() []string {
+	if !v.HasPhasedDelivery() {
+		return normalizePathList(v.RequiredFiles)
+	}
+	completed := make(map[string]bool)
+	for _, id := range v.CompletedPhaseIDs() {
+		completed[id] = true
+	}
+	seen := make(map[string]bool)
+	var out []string
+	add := func(paths []string) {
+		for _, f := range normalizePathList(paths) {
+			if f == "" || seen[f] {
+				continue
+			}
+			seen[f] = true
+			out = append(out, f)
+		}
+	}
+	for _, p := range v.DeliveryPhases {
+		if completed[p.ID] {
+			add(p.RequiredFiles)
+		}
+	}
+	if active, ok := v.ActivePhase(); ok {
+		add(active.RequiredFiles)
+	}
+	return out
+}
+
 // RequiredFilesForSmokeScope returns paths that gate runtime smoke and web-asset checks for the
 // current workflow step. Phased rigs use the active delivery phase only — not later phases.
 func (v WorkflowValidation) RequiredFilesForSmokeScope() []string {
