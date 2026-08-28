@@ -704,7 +704,13 @@ func TestValidatePlanningArtifacts(t *testing.T) {
 	if err := os.MkdirAll(rigDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	v := orchestrator.DefaultWorkflowValidation()
+	// Use a validation with required files so the test actually validates bead creation
+	v := orchestrator.WorkflowValidation{
+		BeadTitleContains: "Implement ",
+		RequiredFiles:     []string{"mock/main.go", "mock/other.go"},
+		MinArchitectureBytes: 500,
+		MinPlanBytes:         250,
+	}
 	if err := validatePlanningArtifacts(dir, "mockrig", false, false, false, v); err == nil {
 		t.Fatal("expected error without plan and beads")
 	}
@@ -723,10 +729,23 @@ func TestValidatePlanningArtifacts(t *testing.T) {
 	if err := validatePlanningArtifacts(dir, "mockrig", true, true, false, v); err == nil {
 		t.Fatal("expected error when commands failed")
 	}
-	listOpenImplementationBeadsHook = func(_, _ string) ([]orchestrator.PlanBead, error) {
-		return []orchestrator.PlanBead{{ID: "mo-1", Title: "Implement mock/main.go per architecture"}}, nil
+listOpenImplementationBeadsHook = func(_, _ string) ([]orchestrator.PlanBead, error) {
+		return []orchestrator.PlanBead{}, nil
 	}
-	defer func() { listOpenImplementationBeadsHook = nil }()
+	orchestrator.SetListImplementBeadsByStatusHook(func(_, _, status string) ([]orchestrator.PlanBead, error) {
+		// Return beads for open status only; in_progress returns empty to avoid duplicates
+		if status != "open" {
+			return []orchestrator.PlanBead{}, nil
+		}
+		return []orchestrator.PlanBead{
+			{ID: "mo-1", Title: "Implement mock/main.go per architecture"},
+			{ID: "mo-2", Title: "Implement mock/other.go per architecture"},
+		}, nil
+	})
+	defer func() {
+		listOpenImplementationBeadsHook = nil
+		orchestrator.SetListImplementBeadsByStatusHook(nil)
+	}()
 	if err := validatePlanningArtifacts(dir, "mockrig", false, true, false, v); err != nil {
 		t.Fatalf("plan + implement beads should pass: %v", err)
 	}

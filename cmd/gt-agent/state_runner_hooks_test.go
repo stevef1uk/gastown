@@ -177,7 +177,6 @@ func TestStateRunner_rigFlowAutoVerifyHooksMatchCommands(t *testing.T) {
 			RequiredFiles:   []string{"frontend/package.json", "frontend/app/page.tsx"},
 			QAVerifyCommand: "cd frontend && npm install && npx tsc --noEmit && npm test",
 		}},
-		ActivePhaseIDField: "frontend-ui",
 	})
 	r = newStateRunner(nodeSetup, t.TempDir(), "myrig")
 	if got := r.verifyCommand("node_setup"); got == "" || !strings.Contains(got, "npm install") {
@@ -211,5 +210,93 @@ func TestStateRunner_customYAMLHooksDriveBehavior(t *testing.T) {
 	}
 	if !r.autoVerifyMatches("go mod tidy", "go_mod_tidy") {
 		t.Fatal("custom auto_verify when should match")
+	}
+}
+
+// TestStateRunner_designArchWrittenPersistence verifies that designArchWritten flag
+// is persisted in task.Variables and restored on state re-entry.
+func TestStateRunner_designArchWrittenPersistence(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	rigDir := filepath.Join(dir, "myrig", "mayor", "rig")
+	if err := os.MkdirAll(rigDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	minBytes := int(orchestrator.MinArtifactBytesFloor)
+	minBytes64 := orchestrator.MinArtifactBytesFloor
+
+	// Create minimal SPEC.md for validation
+	specPath := filepath.Join(rigDir, "SPEC.md")
+	if err := os.WriteFile(specPath, []byte("# Test SPEC\n\n## Layout\n```\nmyapp/\n  main.go\n```\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	archPath := filepath.Join(rigDir, "architecture.md")
+
+	// Create initial task with Variables map to hold persisted state
+	task := &orchestrator.Task{
+		State:      "design",
+		TemplateID: "rig-flow",
+		Validation: orchestrator.WorkflowValidation{MinArchitectureBytes: minBytes64},
+		Hooks:      loadRigFlowStateHooks(t, "design"),
+		Variables:  make(map[string]string),
+	}
+
+	// First runner - simulate writing architecture.md via heredoc
+	r1 := newStateRunner(&orchestrator.Task{
+		State:      "design",
+		TemplateID: "rig-flow",
+		Validation: orchestrator.WorkflowValidation{MinArchitectureBytes: minBytes64},
+		Hooks:      loadRigFlowStateHooks(t, "design"),
+		Variables:  task.Variables, // Shared Variables map
+	}, dir, "myrig")
+
+	// Simulate heredoc write to architecture.md (sets designArchWritten via track hook)
+	// This triggers the design hook that sets designArchWritten=true
+	cmd := `cat > myrig/mayor/rig/architecture.md <<'EOF'
+` + strings.Repeat("x", minBytes) + `
+EOF`
+	r1.track.designArchWritten = false // ensure clean state
+	r1.processOrchestratedTools("CMD: "+cmd+"\n{\"outcome\":\"success\",\"summary\":\"arch written\"}", "test", &strings.Builder{})
+
+	// Verify designArchWritten was set and persisted to task.Variables
+	if !r1.track.designArchWritten {
+		t.Fatal("designArchWritten should be true after heredoc write")
+	}
+	if task.Variables["designArchWritten"] != "true" {
+		t.Fatal("designArchWritten should be persisted in task.Variables")
+	}
+
+	// Create a NEW runner with the SAME task.Variables (simulating state re-entry)
+	r2 := newStateRunner(&orchestrator.Task{
+		State:      "design",
+		TemplateID: "rig-flow",
+		Validation: orchestrator.WorkflowValidation{MinArchitectureBytes: minBytes64},
+		Hooks:      loadRigFlowStateHooks(t, "design"),
+		Variables:  task.Variables, // Same Variables map - should restore designArchWritten
+	}, dir, "myrig")
+
+	// Verify designArchWritten was restored from task.Variables
+	if !r2.track.designArchWritten {
+		t.Fatal("designArchWritten should be restored from task.Variables on re-entry")
+	}
+
+	r1.track.designArchWritten = false // ensure clean state
+	r1.processOrchestratedTools("CMD: "+cmd+"\n{\"outcome\":\"success\",\"summary\":\"arch written\"}", "test", &strings.Builder{})
+
+	// Manually write the architecture.md file to the expected location for validation
+	if err := os.WriteFile(archPath, make([]byte, minBytes64), 0644); err != nil {
+		t.Fatal(err)
+	}
+	// Debug: verify file exists at expected paths
+	expectedPath := filepath.Join(dir, "myrig", "mayor", "rig", "architecture.md")
+	if _, err := os.Stat(archPath); err != nil {
+		t.Fatalf("architecture.md not found at archPath %s: %v", archPath, err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "myrig", "mayor", "rig", "architecture.md")); err != nil {
+		t.Fatalf("architecture.md not found at expected path %s: %v", expectedPath, err)
+	}
+	err := validateDesignArtifacts(dir, "myrig", r2.track.designArchWritten, r2.track.startedAt, orchestrator.DefaultWorkflowValidation())
+	if err != nil {
+		t.Fatalf("validateDesignArtifacts should pass with persisted designArchWritten: %v", err)
 	}
 }

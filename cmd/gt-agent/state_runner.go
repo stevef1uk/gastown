@@ -96,6 +96,13 @@ func newStateRunner(task *orchestrator.Task, townRoot, rig string) *stateRunner 
 			}
 		}
 	}
+	// Restore designArchWritten from task variables if present (persists across state re-entries)
+	designArchWritten := false
+	if task.Variables != nil {
+		if val, ok := task.Variables["designArchWritten"]; ok && val == "true" {
+			designArchWritten = true
+		}
+	}
 	r := &stateRunner{
 		task:       task,
 		townRoot:   townRoot,
@@ -103,7 +110,7 @@ func newStateRunner(task *orchestrator.Task, townRoot, rig string) *stateRunner 
 		hooks:      taskHooks(task),
 		v:          v,
 		promptVars: vars,
-		track:      &cmdTracker{startedAt: time.Now()},
+		track:      &cmdTracker{startedAt: time.Now(), designArchWritten: designArchWritten},
 		servers:    newDevServerTracker(),
 	}
 	if task.State == "implementation" {

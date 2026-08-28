@@ -3143,6 +3143,9 @@ func validateTesterCommand(cmd, rig, townRoot, state string, v orchestrator.Work
 // listOpenImplementationBeadsHook is set by tests to avoid calling bd list.
 var listOpenImplementationBeadsHook func(townRoot, rig string) ([]orchestrator.PlanBead, error)
 
+// listImplementBeadsByStatusHook is set by tests to avoid calling bd list.
+var listImplementBeadsByStatusHook func(townRoot, rig string, status string) ([]orchestrator.PlanBead, error)
+
 func listOpenImplementationBeads(townRoot, rig string) ([]orchestrator.PlanBead, error) {
 	if listOpenImplementationBeadsHook != nil {
 		return listOpenImplementationBeadsHook(townRoot, rig)

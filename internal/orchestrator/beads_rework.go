@@ -552,7 +552,20 @@ func reopenClosedImplementBeadsForMissingFullProfileFiles(townRoot, rig string, 
 	return reopened, nil
 }
 
+// listImplementBeadsByStatusHook is set by tests to avoid calling bd list.
+// listImplementBeadsByStatusHook is set by tests to avoid calling bd list.
+var listImplementBeadsByStatusHook func(townRoot, rig string, status string) ([]PlanBead, error)
+
+// SetListImplementBeadsByStatusHook sets the test hook for listImplementBeadsByStatus.
+// Only for use in tests.
+func SetListImplementBeadsByStatusHook(hook func(townRoot, rig string, status string) ([]PlanBead, error)) {
+	listImplementBeadsByStatusHook = hook
+}
+
 func listImplementBeadsByStatus(townRoot, rig string, v WorkflowValidation, status string) ([]PlanBead, error) {
+	if listImplementBeadsByStatusHook != nil {
+		return listImplementBeadsByStatusHook(townRoot, rig, status)
+	}
 	beadsDir := config.ResolveBeadsDirForRig(townRoot, rig)
 	args := beads.InjectFlatForListJSON([]string{"list", "--status=" + status, "--json", "--limit=0"})
 	cmd := exec.Command("bd", args...)

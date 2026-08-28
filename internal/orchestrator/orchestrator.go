@@ -281,6 +281,7 @@ type Task struct {
 	Validation      WorkflowValidation `json:"validation"`
 	Hooks           StateHooks         `json:"hooks"`
 	PendingRework   *WorkflowRework    `json:"pending_rework,omitempty"`
+	Variables       map[string]string  `json:"variables,omitempty"` // Persisted cross-attempt state (e.g., designArchWritten)
 }
 
 // FetchTask fetches the next task for an agent.

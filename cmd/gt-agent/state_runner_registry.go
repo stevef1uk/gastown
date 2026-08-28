@@ -98,6 +98,10 @@ var trackHandlers = map[string]trackFn{
 	"design": func(r *stateRunner, cmd string, cmdErr error) {
 		if cmdErr == nil && isArchitectureMDWriteCommand(cmd) {
 			r.track.designArchWritten = true
+			if r.task.Variables == nil {
+				r.task.Variables = make(map[string]string)
+			}
+			r.task.Variables["designArchWritten"] = "true"
 			return
 		}
 		// Rework edits legitimately use in-place tools (`sed -i`, python one-
@@ -107,6 +111,10 @@ var trackHandlers = map[string]trackFn{
 		// architecture.md during THIS attempt counts as the required write.
 		if cmdErr == nil && fileWrittenThisRun(rigMayorRigDir(r.townRoot, r.rig), "architecture.md", r.track.startedAt) {
 			r.track.designArchWritten = true
+			if r.task.Variables == nil {
+				r.task.Variables = make(map[string]string)
+			}
+			r.task.Variables["designArchWritten"] = "true"
 		}
 	},
 	"planning": func(r *stateRunner, cmd string, cmdErr error) {
