@@ -2536,8 +2536,8 @@ func validatePlanMDBeadIDs(townRoot, rig, planPath string, v orchestrator.Workfl
 	if err != nil {
 		return err
 	}
-	// Use the same validation scope as sync_planning_artifacts: active phase only
-	v = v.ForActivePhase()
+	// Do NOT scope to active phase: plan.md contains beads from ALL phases.
+	// Using ForActivePhase() incorrectly filters out beads from completed/future phases.
 	open, err := listOpenImplementationBeads(townRoot, rig)
 	if err != nil {
 		return err

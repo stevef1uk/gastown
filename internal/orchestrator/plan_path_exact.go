@@ -7,15 +7,37 @@ import (
 )
 
 // RequiresExactImplementPaths reports whether implement beads and plan.md must use full
-// repo-relative paths from required_files (no basename-only matching). Enabled when the
-// active phase lists nested module paths (internal/, cmd/, etc.) under layout_root, or
+// repo-relative paths from required_files (no basename-only matching). Enabled when any
+// delivery phase lists nested module paths (internal/, cmd/, etc.) under layout_root, or
 // when multiple required files share the same basename (e.g. frontend/package.json and
 // test/package.json) so basename matching would be ambiguous.
 func RequiresExactImplementPaths(v WorkflowValidation) bool {
-	v = v.ForActivePhase()
+	// Check ALL phases' required files (not just active phase) because plan.md
+	// and bead validation may involve beads from multiple phases.
 	layout := strings.Trim(filepath.ToSlash(strings.TrimSpace(v.LayoutRoot)), "/")
 	nested := []string{"/internal/", "/cmd/", "/pkg/", "/api/", "/web/"}
 	baseCount := map[string]int{}
+	for _, p := range v.DeliveryPhases {
+		for _, f := range p.RequiredFiles {
+			f = filepath.ToSlash(strings.TrimSpace(f))
+			if f == "" {
+				continue
+			}
+			for _, pre := range nested {
+				if strings.Contains(f, pre) {
+					return true
+				}
+			}
+			if layout != "" && layout != "." && strings.HasPrefix(f, layout+"/") {
+				rest := strings.TrimPrefix(f, layout+"/")
+				if strings.Count(rest, "/") >= 2 {
+					return true
+				}
+			}
+			baseCount[filepath.Base(f)]++
+		}
+	}
+	// Also check the flat RequiredFiles (union/fallback)
 	for _, f := range v.RequiredFiles {
 		f = filepath.ToSlash(strings.TrimSpace(f))
 		if f == "" {
