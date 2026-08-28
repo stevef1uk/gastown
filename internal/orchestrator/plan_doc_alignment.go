@@ -742,7 +742,9 @@ func checkPlanBeadMapExactPaths(planDoc string, v WorkflowValidation, rig string
 	if !RequiresExactImplementPaths(v) || strings.TrimSpace(planDoc) == "" {
 		return nil
 	}
-	v = v.ForActivePhase()
+	// Use ALL phases' required files (not just active phase) because plan.md
+	// contains beads from all phases. The active-phase scoping was incorrectly
+	// filtering out completed-phase required files like handlers_test.go.
 	normalize := func(p string) string {
 		if rig != "" {
 			return NormalizePlannerBeadPath(p, v.LayoutRoot, rig)
@@ -750,6 +752,15 @@ func checkPlanBeadMapExactPaths(planDoc string, v WorkflowValidation, rig string
 		return filepath.ToSlash(strings.TrimSpace(p))
 	}
 	expected := make(map[string]bool)
+	// Collect from ALL delivery phases
+	for _, p := range v.DeliveryPhases {
+		for _, f := range p.RequiredFiles {
+			if p := normalize(f); p != "" {
+				expected[p] = true
+			}
+		}
+	}
+	// Also include flat RequiredFiles (union/fallback)
 	for _, f := range v.RequiredFiles {
 		if p := normalize(f); p != "" {
 			expected[p] = true
