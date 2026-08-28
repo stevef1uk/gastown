@@ -419,6 +419,30 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summa
 		return "", err
 	}
 	log.Printf("[Manager] CompleteTask: after Transition, workflow=%s fromState=%s outcome=%s next=%s inst.CurrentState=%s", workflowID, fromState, outcome, next, inst.CurrentState)
+	// Broken-earlier-phase safety: when the polecat's implementation fails but the real blocker
+	// is that a completed earlier phase was marked done without its required files ever being
+	// written (e.g. a backend-store's store/schema files are missing on disk while a later phase
+	// depends on them), bouncing failure straight to planning just reloops polecat -> planning ->
+	// ... -> polecat forever: the planner is active-phase-scoped and won't create those files,
+	// and qa_review (which would rewind them) is unreachable because implementation never
+	// succeeds. So before letting implementation failure fall through to planning, check for a
+	// completed-phase file gap and, if found, rewind the active phase to the earliest problematic
+	// completed phase and route the polecat back to implementation to actually write the files.
+	if fromState == "implementation" && next == "planning" && rig != "" {
+		if v := m.workflowValidationFor(inst, tpl); v.HasPhasedDelivery() {
+			if rewindLog, rerr := MaybeRewindToProblemPhaseForImplementation(m.townRoot, rig, v); rerr != nil && rewindLog != "" {
+				log.Printf("[Manager] implementation failure rewound %s active phase (was %s; bouncing to implementation instead of planning): %s", rig, v.ActivePhaseID(), rewindLog)
+				next = "implementation"
+				inst.CurrentState = next
+				inst.touchStateEnteredAt()
+				if strings.TrimSpace(summary) == "" {
+					summary = rewindLog
+				} else {
+					summary = rewindLog + "\n" + summary
+				}
+			}
+		}
+	}
 	// Ensure tester agent is running when entering test_plan, test_plan_rework, or test_review states
 	if rig != "" && (next == "test_plan" || next == "test_plan_rework" || next == "test_review") {
 		// Skip re-validating TEST_PLAN.md if already reviewed — auto-complete the state.

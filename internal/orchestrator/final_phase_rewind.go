@@ -128,6 +128,18 @@ func rewindProblemPhases(townRoot, rig string, v WorkflowValidation, mode rewind
 	// Save the phase we're rewinding FROM so advancement can jump back
 	// instead of progressing sequentially through intermediate phases.
 	originalPhase := v.ActivePhaseID()
+	logLine, err := performRewindToPhase(townRoot, rig, targetPhase, originalPhase, problemFiles)
+	if err != nil {
+		return "", err
+	}
+	return logLine, fmt.Errorf("%s. Implement and close these beads before the workflow can advance", logLine)
+}
+
+// performRewindToPhase rewinds active_phase_id to targetPhase, reopens/creates its implement
+// beads, and records a rewound-from marker so phase advancement jumps back to originalPhase once
+// the repair phase completes. Shared by the QA, final-phase, and implementation-failure rewinds.
+// Returns a human-readable log line describing what was rewound and which beads were opened.
+func performRewindToPhase(townRoot, rig, targetPhase, originalPhase string, problemFiles []string) (string, error) {
 	if originalPhase != "" && originalPhase != targetPhase {
 		_ = SetRigRewoundFromPhase(townRoot, rig, originalPhase)
 	}
@@ -153,6 +165,65 @@ func rewindProblemPhases(townRoot, rig string, v WorkflowValidation, mode rewind
 
 	_ = commitDoltWorkingSet(townRoot, rig) // best-effort commit of bead state changes
 
+	return logLine, nil
+}
+
+// MaybeRewindToProblemPhaseForImplementation is the implementation-failure safety net that runs
+// when the polecat cannot complete the active phase. It uses the tested
+// RequiredFilesForCompletedAndActive() to build the candidate file set (all completed phases plus
+// the active phase). When an earlier completed phase's required file is missing or stubbed on
+// disk while a later phase depends on it — so the active phase's build literally cannot progress
+// (e.g. an api handlers.go imports a store package whose schema.go/store.go were never written) —
+// it rewinds active_phase_id to the earliest problematic completed phase and returns an
+// explanatory error so the caller can route the polecat back to implementation to actually write
+// the missing files. Returns "" and nil when there is no completed-phase gap.
+func MaybeRewindToProblemPhaseForImplementation(townRoot, rig string, v WorkflowValidation) (string, error) {
+	if townRoot == "" || rig == "" {
+		return "", nil
+	}
+	if !v.HasPhasedDelivery() {
+		return "", nil
+	}
+	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
+	activeIdx := v.ActivePhaseIndex()
+	if activeIdx < 0 {
+		return "", nil
+	}
+
+	// Candidates across completed + active phases (precisely the tested list).
+	candidates := normalizePathList(v.RequiredFilesForCompletedAndActive())
+
+	// Only rewind to a phase strictly earlier than the active phase: a missing file owned by the
+	// active phase itself is the polecat's normal job, not a completed-phase rewind.
+	firstProblem := -1
+	var problemFiles []string
+	for _, rel := range candidates {
+		if rel == "" {
+			continue
+		}
+		idx := v.FindDeliveryPhaseForFile(rel)
+		if idx < 0 || idx >= activeIdx {
+			continue
+		}
+		path := ResolveRequiredFileOnDisk(rigDir, rel, v.LayoutRoot)
+		opts := StubCheckOptionsFromValidation(v)
+		if cerr := CheckPathNotStub(path, rel, optsForPath(rel, opts)); cerr != nil {
+			if firstProblem < 0 {
+				firstProblem = idx
+			}
+			problemFiles = append(problemFiles, rel)
+		}
+	}
+	if firstProblem < 0 {
+		return "", nil
+	}
+
+	targetPhase := strings.TrimSpace(v.DeliveryPhases[firstProblem].ID)
+	originalPhase := v.ActivePhaseID()
+	logLine, err := performRewindToPhase(townRoot, rig, targetPhase, originalPhase, problemFiles)
+	if err != nil {
+		return "", err
+	}
 	return logLine, fmt.Errorf("%s. Implement and close these beads before the workflow can advance", logLine)
 }
 
