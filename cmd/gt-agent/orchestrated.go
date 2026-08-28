@@ -2551,15 +2551,12 @@ func validatePlanMDBeadIDs(townRoot, rig, planPath string, v orchestrator.Workfl
 		return err
 	}
 	orchestratedPrintf("[gt-agent] validatePlanMDBeadIDs: %d open beads from listOpenImplementationBeads", len(open))
-	for _, b := range open {
-		match := orchestrator.MatchesImplementBeadTitle(b.Title, v)
-		orchestratedPrintf("[gt-agent]   bead %s title=%q MatchesImplementBeadTitle=%v", b.ID, b.Title, match)
-	}
 	openIDs := map[string]bool{}
 	for _, b := range open {
-		if orchestrator.MatchesImplementBeadTitle(b.Title, v) {
-			openIDs[b.ID] = true
-		}
+		// For plan.md validation, accept ALL open/in_progress implement beads
+		// (plan.md may reference beads from any phase, not just active phase)
+		openIDs[b.ID] = true
+		orchestratedPrintf("[gt-agent]   bead %s title=%q accepted for plan.md validation", b.ID, b.Title)
 	}
 	planIDs := planBeadIDLineRE.FindAllStringSubmatch(string(data), -1)
 	orchestratedPrintf("[gt-agent] validatePlanMDBeadIDs: %d bead IDs found in plan.md", len(planIDs))
