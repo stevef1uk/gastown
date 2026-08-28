@@ -83,6 +83,17 @@ func mergeTestPlanRequiredFiles(townRoot, rig string, v *WorkflowValidation) {
 		if have[key] {
 			return // already required by this phase
 		}
+		// Check if this file already belongs to a DIFFERENT phase
+		for j, otherPhase := range v.DeliveryPhases {
+			if j == i {
+				continue
+			}
+			for _, otherFile := range otherPhase.RequiredFiles {
+				if strings.EqualFold(strings.TrimSpace(otherFile), key) {
+					return // file already belongs to another phase; don't reassign
+				}
+			}
+		}
 		v.DeliveryPhases[i].RequiredFiles = append(v.DeliveryPhases[i].RequiredFiles, f)
 		log.Printf("[test-plan-heal] phase %q: TEST_PLAN requires %s — added to required_files",
 			v.DeliveryPhases[i].ID, f)
