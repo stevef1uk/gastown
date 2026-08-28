@@ -30,15 +30,9 @@ $GT_ROOT/{{rig}}/mayor/rig/{{layout_root}}/  ← layout root (ALL files go here)
 
 ## Missing files from COMPLETED phases
 
-If the validation output shows **"validateRequiredFilesHaveBeads: FAIL - X missing files"** and the missing files belong to **completed phases** (listed in the validation output as `completed=[...]`), you **cannot** create beads for them — those phases are already marked complete. This means the workflow advanced without the files actually being created.
+Planner validation only gates the **active phase's** required files. If a completed phase's files were never actually written (the workflow advanced without them), those gaps are **not** a planning blocker and are **not** fixed by the planner. They are repaired by the **QA rewind**: at `qa_review`, QA detects the missing/stubbed completed-phase file, rewinds `active_phase_id` to that phase, and routes to the polecat to write it.
 
-In this case, **send JSON with `architecture_failure`** to route to the Architect, who will create the missing beads:
-
-```json
-{"outcome":"architecture_failure","summary":"Completed phase X missing files: <list missing files>. Architect must create beads for these completed-phase files before planning can succeed."}
-```
-
-Do NOT attempt to `bd create` for completed-phase files — gt-agent will reject them.
+Do **NOT** `bd create` for completed-phase files, and do **NOT** send `architecture_failure` for completed-phase missing files — gt-agent will reject them and the work is handled downstream by QA. For the active phase only, if a required file has no open/in-progress bead, use `architecture_failure` so the Architect creates the active-phase bead.
 
 When `required_files` use nested paths under `{{layout_root}}/` (e.g. `{{layout_root}}/internal/api/handlers.go`), **never** `cat > plan.md` with flattened paths like `{{layout_root}}/handlers.go` — gt-agent rejects that heredoc; sync owns `plan.md`.
 

@@ -2416,13 +2416,13 @@ func validatePlanningArtifacts(townRoot, rig string, hadCmdFailure, beadCreateOK
 }
 
 // validateClosedBeadFilesExist checks that closed implementation beads for
-// completed+active phase required_files actually have their files on disk.
+// the active-phase required_files actually have their files on disk.
 // A bead can be closed but the file may have been deleted or never written.
-// Only checks files that are in the completed+active phase scope.
+// Scoped to the active phase only: completed-phase gaps are the QA rewind's job
+// (see MaybeRewindToProblemPhaseForQA), not a planning blocker.
 func validateClosedBeadFilesExist(townRoot, rig string, v orchestrator.WorkflowValidation) error {
 	rigDir := rigMayorRigDir(townRoot, rig)
-	// Use the same scope as required_files validation: completed + active phases only
-	requiredFiles := v.RequiredFilesForCompletedAndActive()
+	requiredFiles := v.ActiveRequiredFiles()
 	if len(requiredFiles) == 0 {
 		return nil
 	}
@@ -2443,7 +2443,7 @@ func validateClosedBeadFilesExist(townRoot, rig string, v orchestrator.WorkflowV
 			continue
 		}
 		normalized := orchestrator.NormalizePlannerBeadPath(path, v.LayoutRoot, rig)
-		// Only validate if this file is in the completed+active phase required_files
+		// Only validate if this file is in the active-phase required_files
 		if !requiredSet[normalized] {
 			continue
 		}
@@ -2458,15 +2458,14 @@ func validateClosedBeadFilesExist(townRoot, rig string, v orchestrator.WorkflowV
 	return nil
 }
 
-// validateRequiredFilesHaveBeads checks that every required_files entry has
-// an open or in-progress implement bead. If any required file has no bead,
-// planning cannot succeed — the planner must create beads first.
+// validateRequiredFilesHaveBeads checks that every active-phase required_files entry has
+// an open or in-progress implement bead. If any active required file has no bead,
+// planning cannot succeed — the planner must create beads first. Completed-phase files are
+// deliberately NOT required here: progressive phase delivery only gates the active phase, and
+// completed-phase gaps are repaired by the QA rewind (MaybeRewindToProblemPhaseForQA).
 func validateRequiredFilesHaveBeads(townRoot, rig string, v orchestrator.WorkflowValidation) error {
 	rigDir := rigMayorRigDir(townRoot, rig)
-	// Validate against completed phases + active phase - catch missing files from
-	// earlier phases that were marked complete but never actually created,
-	// without blocking on future phases.
-	requiredFiles := v.RequiredFilesForCompletedAndActive()
+	requiredFiles := v.ActiveRequiredFiles()
 	openBeads, err := orchestrator.ListImplementBeadsByStatusForPlanning(townRoot, rig, v, "open")
 	if err != nil {
 		return fmt.Errorf("failed to list open beads: %w", err)
@@ -2484,8 +2483,6 @@ func validateRequiredFilesHaveBeads(townRoot, rig string, v orchestrator.Workflo
 		existingIDs[b.ID] = true
 	}
 
-	// required_files is a field on WorkflowValidation
-	requiredFiles = v.RequiredFilesForCompletedAndActive()
 	if len(requiredFiles) == 0 {
 		return nil // nothing to validate
 	}
@@ -3488,6 +3485,16 @@ orchestratedFprintfStderr("[gt-agent] QA architecture_failure: sending architect
 		}
 		if outcome == "task_passed" && openImpl == 0 {
 			return fmt.Errorf("use all_passed when no open implement beads remain for active phase")
+		}
+		// Before QA declares all_passed (which advances the workflow to the next phase), ensure
+		// no earlier completed phase silently lost its files. A phase can be marked complete but
+		// its required files may be missing/stubbed on disk (e.g. never actually written). When
+		// that happens, rewind active_phase_id to the earliest problematic completed phase so the
+		// polecat repairs the files before the workflow advances. QA must route failure to the
+		// polecat in that case (failure routes qa_review -> implementation).
+		if rewindLog, rerr := orchestrator.MaybeRewindToProblemPhaseForQA(townRoot, rig, v); rerr != nil {
+			orchestratedPrintf("[gt-agent] QA rewind: %s\n", rewindLog)
+			return fmt.Errorf("%s. Send outcome failure so the polecat implements the missing/stubbed files in the rewound phase, then close the beads and re-run QA.", rewindLog)
 		}
 		// Security validation: scan for embedded secrets/credentials that must not
 		// be committed. Gate QA success until findings are resolved or allow-listed.

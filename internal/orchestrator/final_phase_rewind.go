@@ -61,24 +61,41 @@ func RewindToPhaseForClosedFile(townRoot, rig, filePath string, v WorkflowValida
 	return logLine, nil
 }
 
-// MaybeRewindToProblemPhaseForFinalPhase runs full-project artifact validation when the active
-// delivery phase is the final one. If any required file from an earlier phase is missing or
-// stubbed, it rewinds active_phase_id to the earliest phase containing issues, reopens or creates
-// implement beads for those files, and returns an explanatory error so the polecat can fix them.
-// Returns an empty string and nil error when no rewind is needed.
-func MaybeRewindToProblemPhaseForFinalPhase(townRoot, rig string, v WorkflowValidation) (string, error) {
+// rewindProblemPhaseMode selects which delivery phases a rewind scan considers.
+type rewindProblemPhaseMode int
+
+const (
+	// rewindPastAndPresentOnly scans only completed phases (index < active). This is what QA
+	// uses when deciding whether it is safe for the active phase to progress: a phase that was
+	// marked complete without its files ever being written must be rewound and repaired first.
+	rewindPastAndPresentOnly rewindProblemPhaseMode = iota
+	// rewindAllPhases scans every delivery phase. This is meaningful only in the final phase,
+	// where all earlier phases are already past and none legitimately lack files yet.
+	rewindAllPhases
+)
+
+// rewindProblemPhases is the shared implementation behind the final-phase and QA rewinds. It
+// scans the selected delivery phases (earliest first) and, when the first problematic phase has
+// a required file that is missing or stubbed on disk, rewinds active_phase_id to that phase,
+// reopening/creating its implement beads, and returns an explanatory error so the owner (polecat)
+// can repair the files. Returns "" and nil when no rewind is needed.
+func rewindProblemPhases(townRoot, rig string, v WorkflowValidation, mode rewindProblemPhaseMode) (string, error) {
 	if townRoot == "" || rig == "" {
 		return "", nil
 	}
-	if !v.HasPhasedDelivery() || !v.IsFinalDeliveryPhase() {
+	if !v.HasPhasedDelivery() {
 		return "", nil
 	}
 	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
+	activeIdx := v.ActivePhaseIndex()
 
-	// Find the earliest phase whose required files are not all present and non-stubbed.
+	// Find the earliest phase in scope whose required files are not all present and non-stubbed.
 	var targetPhase string
 	var problemFiles []string
-	for _, p := range v.DeliveryPhases {
+	for i, p := range v.DeliveryPhases {
+		if mode == rewindPastAndPresentOnly && (activeIdx < 0 || i >= activeIdx) {
+			continue // skip the active phase and any future phases in QA mode
+		}
 		phaseFiles := normalizePathList(p.RequiredFiles)
 		if len(phaseFiles) == 0 {
 			continue
@@ -116,7 +133,7 @@ func MaybeRewindToProblemPhaseForFinalPhase(townRoot, rig string, v WorkflowVali
 	}
 
 	if err := SetRigActivePhase(townRoot, rig, targetPhase); err != nil {
-		return "", fmt.Errorf("final-phase validation found issues in %s but could not rewind active phase: %w", targetPhase, err)
+		return "", fmt.Errorf("validation found issues in %s but could not rewind active phase: %w", targetPhase, err)
 	}
 
 	reloaded, _, err := LoadRigWorkflowProfileFile(townRoot, rig)
@@ -129,12 +146,42 @@ func MaybeRewindToProblemPhaseForFinalPhase(townRoot, rig string, v WorkflowVali
 		return "", fmt.Errorf("rewound active phase to %s but failed to ensure implement beads: %w", targetPhase, err)
 	}
 
-	logLine := fmt.Sprintf("final-phase validation failed; rewound active phase to %s for missing/stubbed files: %s", targetPhase, strings.Join(problemFiles, ", "))
+	logLine := fmt.Sprintf("rewound active phase to %s for missing/stubbed files: %s", targetPhase, strings.Join(problemFiles, ", "))
 	if len(reopenedOrCreated) > 0 {
 		logLine += fmt.Sprintf("; reopened/created beads: %s", strings.Join(reopenedOrCreated, ", "))
 	}
 
 	_ = commitDoltWorkingSet(townRoot, rig) // best-effort commit of bead state changes
 
-	return logLine, fmt.Errorf("%s. Implement and close these beads before the final phase can complete", logLine)
+	return logLine, fmt.Errorf("%s. Implement and close these beads before the workflow can advance", logLine)
+}
+
+// MaybeRewindToProblemPhaseForFinalPhase runs full-project artifact validation when the active
+// delivery phase is the final one. If any required file from an earlier phase is missing or
+// stubbed, it rewinds active_phase_id to the earliest phase containing issues, reopens or creates
+// implement beads for those files, and returns an explanatory error so the polecat can fix them.
+// Returns an empty string and nil error when no rewind is needed.
+func MaybeRewindToProblemPhaseForFinalPhase(townRoot, rig string, v WorkflowValidation) (string, error) {
+	if townRoot == "" || rig == "" {
+		return "", nil
+	}
+	if !v.HasPhasedDelivery() || !v.IsFinalDeliveryPhase() {
+		return "", nil
+	}
+	return rewindProblemPhases(townRoot, rig, v, rewindAllPhases)
+}
+
+// MaybeRewindToProblemPhaseForQA runs phased-artifact validation on the completed phases only
+// (those earlier than the active phase). If any completed phase has a required file that is
+// missing or stubbed on disk, it rewinds active_phase_id to the earliest problematic completed
+// phase, reopening/creating its implement beads, and returns an explanatory error so the polecat
+// can write the files before the workflow advances. Returns "" and nil when no rewind is needed.
+func MaybeRewindToProblemPhaseForQA(townRoot, rig string, v WorkflowValidation) (string, error) {
+	if townRoot == "" || rig == "" {
+		return "", nil
+	}
+	if !v.HasPhasedDelivery() {
+		return "", nil
+	}
+	return rewindProblemPhases(townRoot, rig, v, rewindPastAndPresentOnly)
 }
