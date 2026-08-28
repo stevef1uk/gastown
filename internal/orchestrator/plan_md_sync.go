@@ -43,7 +43,8 @@ func SyncPlanningArtifacts(townRoot, rig string, v WorkflowValidation, forcePlan
 	if townRoot == "" || rig == "" {
 		return "", fmt.Errorf("town root and rig name required")
 	}
-	v = v.ForActivePhase()
+	// Do NOT scope to active phase: plan.md and bead sync must include ALL phases.
+	// v = v.ForActivePhase()  <-- REMOVED: this was incorrectly filtering to active phase only.
 	var parts []string
 	if repairLog, err := RepairPlanningBeadSet(townRoot, rig, v); err != nil {
 		return "", err

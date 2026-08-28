@@ -766,12 +766,14 @@ func checkPlanBeadMapExactPaths(planDoc string, v WorkflowValidation, rig string
 			expected[p] = true
 		}
 	}
+	log.Printf("[checkPlanBeadMapExactPaths] expected paths: %v", expected)
 	var issues []string
 	for _, line := range strings.Split(planDoc, "\n") {
 		if !strings.HasPrefix(strings.TrimSpace(line), "### ") {
 			continue
 		}
 		p := normalize(extractPlanBeadMapPath(line))
+		log.Printf("[checkPlanBeadMapExactPaths] checking line: %q -> normalized: %q, expected=%v", line, p, expected[p])
 		if p == "" || expected[p] {
 			continue
 		}
