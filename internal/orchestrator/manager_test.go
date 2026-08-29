@@ -134,7 +134,7 @@ func TestSkipsCompletedInstances(t *testing.T) {
 		},
 	})
 	id, _ := m.StartWorkflow("x", nil)
-	m.CompleteTask(id, "success", "mayor", "", "")
+	m.CompleteTask(id, "success", "mayor", "", "", nil)
 	_, err := m.FetchTask("mayor")
 	if err == nil {
 		t.Fatal("expected no task for completed workflow")
@@ -164,7 +164,7 @@ func TestSkipsFailedInstances(t *testing.T) {
 func TestCompleteTask_validTransitionAndTerminal(t *testing.T) {
 	m, id := loadTestManager(t, designFlowTemplate())
 
-	next, err := m.CompleteTask(id, "success", "mockrig/architect", "", "")
+	next, err := m.CompleteTask(id, "success", "mockrig/architect", "", "", nil)
 	if err != nil || next != "planning" {
 		t.Fatalf("CompleteTask success: next=%q err=%v", next, err)
 	}
@@ -172,7 +172,7 @@ func TestCompleteTask_validTransitionAndTerminal(t *testing.T) {
 		t.Fatalf("state: %q", m.instances[id].CurrentState)
 	}
 
-	next, err = m.CompleteTask(id, "success", "mockrig/planner", "", "")
+	next, err = m.CompleteTask(id, "success", "mockrig/planner", "", "", nil)
 	if err != nil || next != "completed" {
 		t.Fatalf("CompleteTask to terminal: next=%q err=%v", next, err)
 	}
@@ -188,7 +188,7 @@ func TestCompleteTask_validTransitionAndTerminal(t *testing.T) {
 func TestCompleteTask_failAlias(t *testing.T) {
 	m, id := loadTestManager(t, designFlowTemplate())
 
-	next, err := m.CompleteTask(id, "fail", "mockrig/architect", "", "")
+	next, err := m.CompleteTask(id, "fail", "mockrig/architect", "", "", nil)
 	if err != nil || next != "design" {
 		t.Fatalf("fail alias: next=%q err=%v", next, err)
 	}
@@ -197,7 +197,7 @@ func TestCompleteTask_failAlias(t *testing.T) {
 func TestCompleteTask_rejectsWrongAgent(t *testing.T) {
 	m, id := loadTestManager(t, designFlowTemplate())
 
-	_, err := m.CompleteTask(id, "success", "mayor", "", "")
+	_, err := m.CompleteTask(id, "success", "mayor", "", "", nil)
 	if err == nil || !strings.Contains(err.Error(), "cannot complete") {
 		t.Fatalf("mayor must not complete design (architect role): %v", err)
 	}
@@ -206,7 +206,7 @@ func TestCompleteTask_rejectsWrongAgent(t *testing.T) {
 func TestCompleteTask_invalidOutcome(t *testing.T) {
 	m, id := loadTestManager(t, designFlowTemplate())
 
-	_, err := m.CompleteTask(id, "bogus", "mockrig/architect", "", "")
+	_, err := m.CompleteTask(id, "bogus", "mockrig/architect", "", "", nil)
 	if err == nil {
 		t.Fatal("expected error for invalid outcome")
 	}
@@ -239,7 +239,7 @@ func TestGetWorkflowStatus(t *testing.T) {
 
 func TestResetWorkflow_rewindsToDesign(t *testing.T) {
 	m, id := loadTestManager(t, designFlowTemplate())
-	_, _ = m.CompleteTask(id, "success", "mockrig/architect", "", "")
+	_, _ = m.CompleteTask(id, "success", "mockrig/architect", "", "", nil)
 	if m.instances[id].CurrentState != "planning" {
 		t.Fatalf("want planning, got %s", m.instances[id].CurrentState)
 	}
@@ -273,8 +273,8 @@ func TestHasActiveWorkflow(t *testing.T) {
 		t.Fatal("should not match other template")
 	}
 
-	_, _ = m.CompleteTask(id, "success", "mockrig/architect", "", "")
-	_, _ = m.CompleteTask(id, "success", "mockrig/planner", "", "")
+	_, _ = m.CompleteTask(id, "success", "mockrig/architect", "", "", nil)
+	_, _ = m.CompleteTask(id, "success", "mockrig/planner", "", "", nil)
 	if m.HasActiveWorkflow("rig-flow", "mockrig") {
 		t.Fatal("completed workflow should not be active")
 	}
@@ -359,7 +359,7 @@ func TestFetchTask_prefersActiveOverCompleted(t *testing.T) {
 	}
 	m.LoadTemplate(tpl)
 	doneID, _ := m.StartWorkflow("x", nil)
-	m.CompleteTask(doneID, "success", "mayor", "", "")
+	m.CompleteTask(doneID, "success", "mayor", "", "", nil)
 	activeID, _ := m.StartWorkflow("x", nil)
 	task, err := m.FetchTask("mayor")
 	if err != nil {
@@ -399,7 +399,7 @@ func TestCompleteTask_crossStateFailureStoresPendingRework(t *testing.T) {
 	id, _ := m.StartWorkflow("rig-flow", map[string]string{"rig": "mockrigb"})
 	m.instances[id].CurrentState = "plan_review"
 
-	next, err := m.CompleteTask(id, "failure", "mockrigb/qa", "duplicate main.js beads", "bd list showed 3 open beads")
+	next, err := m.CompleteTask(id, "failure", "mockrigb/qa", "duplicate main.js beads", "bd list showed 3 open beads", nil)
 	if err != nil || next != "planning" {
 		t.Fatalf("CompleteTask: next=%q err=%v", next, err)
 	}
@@ -428,7 +428,7 @@ func TestCompleteTask_crossStateFailureStoresPendingRework(t *testing.T) {
 		t.Fatalf("rework from_state: %q", rework.FromState)
 	}
 
-	_, _ = m.CompleteTask(id, "success", "mockrigb/planner", "", "")
+	_, _ = m.CompleteTask(id, "success", "mockrigb/planner", "", "", nil)
 	if inst.PendingRework != nil {
 		t.Fatal("success should clear pending rework")
 	}
@@ -464,7 +464,7 @@ func TestCompleteTask_qaArchitectureFailureResetsToDesign(t *testing.T) {
 	id, _ := m.StartWorkflow("rig-flow", map[string]string{"rig": "mockrig"})
 	m.instances[id].CurrentState = "qa_review"
 
-	next, err := m.CompleteTask(id, "architecture_failure", "mockrig/qa", "unit tests ok; smoke POST 405", "curl smoke failed")
+	next, err := m.CompleteTask(id, "architecture_failure", "mockrig/qa", "unit tests ok; smoke POST 405", "curl smoke failed", nil)
 	if err != nil || next != "design" {
 		t.Fatalf("CompleteTask: next=%q err=%v", next, err)
 	}
@@ -533,7 +533,7 @@ func TestCompleteTask_implementationFailureSkipsPreparePhase(t *testing.T) {
 	}
 	m.instances[id].CurrentState = "implementation"
 
-	next, err := m.CompleteTask(id, "failure", rig+"/polecat", "tests red", "go test failed")
+	next, err := m.CompleteTask(id, "failure", rig+"/polecat", "tests red", "go test failed", nil)
 	if err != nil {
 		t.Fatalf("implementation→implementation failure should not re-sync planning: %v", err)
 	}
@@ -583,7 +583,7 @@ func TestCompleteTask_testReviewFailureSetsReworkForPolecat(t *testing.T) {
 	id, _ := m.StartWorkflow("rig-flow", map[string]string{"rig": "mockrig"})
 	m.instances[id].CurrentState = "test_review"
 
-	next, err := m.CompleteTask(id, "failure", "mockrig/tester", "handlers_test.go (bead te-7o7) is a stub", "")
+	next, err := m.CompleteTask(id, "failure", "mockrig/tester", "handlers_test.go (bead te-7o7) is a stub", "", nil)
 	if err != nil || next != "implementation" {
 		t.Fatalf("next=%q err=%v", next, err)
 	}
@@ -608,7 +608,7 @@ func TestCompleteTask_testReviewLoopEscalatesInsteadOfSpinning(t *testing.T) {
 	inst.CurrentState = "test_review"
 	inst.TestReviewFailures = MaxReviewRetries(WorkflowValidation{}) - 1
 
-	next, err := m.CompleteTask(id, "failure", "mockrig/tester", "handlers_test.go still a stub (te-7o7)", "")
+	next, err := m.CompleteTask(id, "failure", "mockrig/tester", "handlers_test.go still a stub (te-7o7)", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -635,7 +635,7 @@ func TestCompleteTask_testReviewLoopEscalatesToDesignOnSpecContradiction(t *test
 	inst.CurrentState = "test_review"
 	inst.TestReviewFailures = MaxReviewRetries(WorkflowValidation{}) - 1
 
-	next, err := m.CompleteTask(id, "failure", "mockrig/tester", "SPEC route table contradicts planned POST /api/links handler", "")
+	next, err := m.CompleteTask(id, "failure", "mockrig/tester", "SPEC route table contradicts planned POST /api/links handler", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -652,7 +652,7 @@ func TestCompleteTask_implementationSuccessResetsTestReviewCounter(t *testing.T)
 	inst.CurrentState = "implementation"
 	inst.TestReviewFailures = 2
 
-	if _, err := m.CompleteTask(id, "success", "mockrig/polecat", "tests written", ""); err != nil {
+	if _, err := m.CompleteTask(id, "success", "mockrig/polecat", "tests written", "", nil); err != nil {
 		t.Fatal(err)
 	}
 	if inst.TestReviewFailures != 0 {
@@ -679,12 +679,12 @@ func TestCompleteTask_sameStateFailureKeepsPendingRework(t *testing.T) {
 	})
 	id, _ := m.StartWorkflow("rig-flow", map[string]string{"rig": "mockrig"})
 	m.instances[id].CurrentState = "qa_review"
-	_, _ = m.CompleteTask(id, "failure", "mockrig/qa", "unittest failed", "ImportError fizzbuzz")
+	_, _ = m.CompleteTask(id, "failure", "mockrig/qa", "unittest failed", "ImportError fizzbuzz", nil)
 	if m.instances[id].PendingRework == nil {
 		t.Fatal("expected pending rework after qa failure")
 	}
 	m.instances[id].CurrentState = "implementation"
-	_, _ = m.CompleteTask(id, "failure", "mockrig/polecat", "", "no outcome after 5 turns")
+	_, _ = m.CompleteTask(id, "failure", "mockrig/polecat", "", "no outcome after 5 turns", nil)
 	if m.instances[id].PendingRework == nil || m.instances[id].PendingRework.Summary != "unittest failed" {
 		t.Fatalf("same-state polecat fail should keep QA rework: %+v", m.instances[id].PendingRework)
 	}

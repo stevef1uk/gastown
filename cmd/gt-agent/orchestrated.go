@@ -91,7 +91,7 @@ func runOrchestrated(ctx context.Context, client *llm.Client, townRoot, role, ri
 		if taskRig == "" {
 			orchestratedFprintfStderr("[gt-agent] workflow %s has no rig name (set instance variable rig= or register rigs.json)\n", task.WorkflowID)
 			_, _ = orchestrator.CompleteTask(townRoot, task.WorkflowID, "failure", orchestrator.OrchestratorAgentID(role, rig),
-				"orchestrator rig variable missing", "")
+				"orchestrator rig variable missing", "", nil)
 			continue
 		}
 		outcome, summary, attemptLog, runErr := executeOrchestratedTask(ctx, client, townRoot, taskRig, sessionName, task, state.OrchestratedRetry)
@@ -114,7 +114,7 @@ func runOrchestrated(ctx context.Context, client *llm.Client, townRoot, role, ri
 
 		orchestratedPrintf("[gt-agent] complete_task outcome=%q summary=%q\n", outcome, summary)
 		agentID := orchestrator.OrchestratorAgentID(role, rig)
-		nextState, err := orchestrator.CompleteTask(townRoot, task.WorkflowID, outcome, agentID, summary, attemptLog)
+		nextState, err := orchestrator.CompleteTask(townRoot, task.WorkflowID, outcome, agentID, summary, attemptLog, task.Variables)
 		if err != nil {
 			orchestratedFprintfStderr( "[gt-agent] complete_task failed: %v\n", err)
 			// Spurious QA rejection: QA said fail but code is fine on disk.

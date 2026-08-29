@@ -271,23 +271,24 @@ func (s *Server) handleCallTool(req MCPRequest) MCPResponse {
 		}
 		return MCPResponse{JSONRPC: "2.0", ID: req.ID, Result: task}
 	case "complete_task":
-		var args struct {
-			WorkflowID string `json:"workflow_id"`
-			Outcome    string `json:"outcome"`
-			AgentID    string `json:"agent_id"`
-			Summary    string `json:"summary"`
-			Feedback   string `json:"feedback"`
-		}
-		json.Unmarshal(params.Arguments, &args)
-		if args.AgentID != "" {
-			fmt.Printf("[MCP] complete_task for agent: %s\n", args.AgentID)
-		}
-		nextState, err := s.orchestrator.CompleteTask(args.WorkflowID, args.Outcome, args.AgentID, args.Summary, args.Feedback)
-		if err != nil {
-			return MCPResponse{JSONRPC: "2.0", ID: req.ID, Error: &MCPError{Code: -32000, Message: err.Error()}}
-		}
-		fmt.Printf("[MCP] complete_task %s -> next state: %s\n", args.WorkflowID, nextState)
-		return MCPResponse{JSONRPC: "2.0", ID: req.ID, Result: map[string]string{"next_state": nextState}}
+	var args struct {
+		WorkflowID string            `json:"workflow_id"`
+		Outcome    string            `json:"outcome"`
+		AgentID    string            `json:"agent_id"`
+		Summary    string            `json:"summary"`
+		Feedback   string            `json:"feedback"`
+		Variables  map[string]string `json:"variables"`
+	}
+	json.Unmarshal(params.Arguments, &args)
+	if args.AgentID != "" {
+		fmt.Printf("[MCP] complete_task for agent: %s\n", args.AgentID)
+	}
+	nextState, err := s.orchestrator.CompleteTask(args.WorkflowID, args.Outcome, args.AgentID, args.Summary, args.Feedback, args.Variables)
+	if err != nil {
+		return MCPResponse{JSONRPC: "2.0", ID: req.ID, Error: &MCPError{Code: -32000, Message: err.Error()}}
+	}
+	fmt.Printf("[MCP] complete_task %s -> next state: %s\n", args.WorkflowID, nextState)
+	return MCPResponse{JSONRPC: "2.0", ID: req.ID, Result: map[string]string{"next_state": nextState}}
 	case "start_workflow":
 		var args struct {
 			TemplateID string            `json:"template_id"`

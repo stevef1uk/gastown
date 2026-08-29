@@ -230,7 +230,7 @@ func TestHookDrivenFSM_fetchTaskDeliversHooksPerState(t *testing.T) {
 		t.Fatalf("retry_hint: %q", task.Hooks.RetryHint)
 	}
 
-	next, err := m.CompleteTask(wfID, "success", "myrig/architect", "arch ok", "")
+	next, err := m.CompleteTask(wfID, "success", "myrig/architect", "arch ok", "", nil)
 	if err != nil || next != "planning" {
 		t.Fatalf("transition: next=%q err=%v", next, err)
 	}
@@ -257,7 +257,7 @@ func TestHookDrivenFSM_fetchTaskDeliversHooksPerState(t *testing.T) {
 func TestHookDrivenFSM_completeTaskAdvancesWithHooksUnchangedInTemplate(t *testing.T) {
 	m, wfID := loadTestManager(t, hookDrivenSmokeTemplate())
 
-	_, _ = m.CompleteTask(wfID, "success", "mockrig/architect", "", "")
+	_, _ = m.CompleteTask(wfID, "success", "mockrig/architect", "", "", nil)
 	payload, err := m.FetchTask("mockrig/planner")
 	if err != nil {
 		t.Fatal(err)

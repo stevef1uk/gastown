@@ -307,7 +307,7 @@ func (m *Manager) ensureTesterAgent(rig string, currentState string) error {
 // CompleteTask transitions a workflow to the next state.
 // When agentID is non-empty, it must match the role for the workflow's current state.
 // summary and feedback are stored on cross-state failure for the next agent (e.g. QA → polecat).
-func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summary, feedback string) (string, error) {
+func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summary, feedback string, variables map[string]string) (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -419,6 +419,15 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summa
 		return "", err
 	}
 	log.Printf("[Manager] CompleteTask: after Transition, workflow=%s fromState=%s outcome=%s next=%s inst.CurrentState=%s", workflowID, fromState, outcome, next, inst.CurrentState)
+	// Persist task variables from the completing agent (e.g., designArchWritten)
+	if variables != nil && len(variables) > 0 {
+		if inst.Variables == nil {
+			inst.Variables = make(map[string]string)
+		}
+		for k, v := range variables {
+			inst.Variables[k] = v
+		}
+	}
 	// Broken-earlier-phase safety: when the polecat's implementation fails but the real blocker
 	// is that a completed earlier phase was marked done without its required files ever being
 	// written (e.g. a backend-store's store/schema files are missing on disk while a later phase

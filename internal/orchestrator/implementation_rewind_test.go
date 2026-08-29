@@ -349,7 +349,7 @@ func TestCompleteTask_implementationFailureRewindsAndRoutesToPolecat(t *testing.
 
 	m, id := newImplementationRewindManager(t, townRoot, rig)
 	next, err := m.CompleteTask(id, "failure", rig+"/polecat",
-		"implementation failed: store package missing (store.go)", "cannot build handlers without store")
+		"implementation failed: store package missing (store.go)", "cannot build handlers without store", nil)
 	if err != nil {
 		t.Fatalf("CompleteTask: %v", err)
 	}
@@ -380,7 +380,7 @@ func TestCompleteTask_implementationFailureNoGapRoutesToPlanning(t *testing.T) {
 
 	m, id := newImplementationRewindManager(t, townRoot, rig)
 	next, err := m.CompleteTask(id, "failure", rig+"/polecat",
-		"implementation failed: tests red", "unit tests failing")
+		"implementation failed: tests red", "unit tests failing", nil)
 	if err != nil {
 		t.Fatalf("CompleteTask: %v", err)
 	}

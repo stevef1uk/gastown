@@ -57,7 +57,7 @@ func TestArchitectureFailureScenario_endToEnd(t *testing.T) {
 	summary := "go test ./... ok; smoke: POST /api/bookmarks 405 — architecture HTTP table documents /api/items"
 	feedback := "Command: go test ./...\nok\tlinkshelf/internal/store\n\nCommand: curl POST http://127.0.0.1:8080/api/bookmarks\ncurl: (22) The requested URL returned error: 405"
 
-	next, err := m.CompleteTask(id, "architecture_failure", "linkshelf/qa", summary, feedback)
+	next, err := m.CompleteTask(id, "architecture_failure", "linkshelf/qa", summary, feedback, nil)
 	if err != nil {
 		t.Fatalf("CompleteTask: %v", err)
 	}
@@ -91,7 +91,7 @@ func TestArchitectureFailureScenario_endToEnd(t *testing.T) {
 	}
 
 	// Architect completes design → planning with rework cleared on success path later
-	next, err = m.CompleteTask(id, "success", "linkshelf/architect", "architecture.md revised HTTP table", "")
+	next, err = m.CompleteTask(id, "success", "linkshelf/architect", "architecture.md revised HTTP table", "", nil)
 	if err != nil || next != "planning" {
 		t.Fatalf("architect success: next=%q err=%v", next, err)
 	}

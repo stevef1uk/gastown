@@ -368,7 +368,7 @@ func ResetWorkflow(townRoot, workflowID, toState string) (string, error) {
 }
 
 // CompleteTask reports task completion to the orchestrator.
-func CompleteTask(townRoot string, workflowID string, outcome string, agentID, summary, feedback string) (string, error) {
+func CompleteTask(townRoot string, workflowID string, outcome string, agentID, summary, feedback string, variables map[string]string) (string, error) {
 	args := map[string]interface{}{
 		"workflow_id": workflowID,
 		"outcome":     outcome,
@@ -381,6 +381,9 @@ func CompleteTask(townRoot string, workflowID string, outcome string, agentID, s
 	}
 	if feedback != "" {
 		args["feedback"] = feedback
+	}
+	if variables != nil {
+		args["variables"] = variables
 	}
 	params := map[string]interface{}{
 		"name":      "complete_task",

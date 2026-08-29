@@ -170,7 +170,7 @@ func TestManager_CompleteTask_timeout_sameStateSetsPendingRework(t *testing.T) {
 	inst := m.instances[wfID]
 	inst.StateEnteredAt = time.Now().UTC().Add(-2 * time.Hour).Format(time.RFC3339)
 	before := inst.StateEnteredAt
-	next, err := m.CompleteTask(wfID, "timeout", "", "planning timed out", "reset artifacts")
+	next, err := m.CompleteTask(wfID, "timeout", "", "planning timed out", "reset artifacts", nil)
 	if err != nil || next != "planning" {
 		t.Fatalf("CompleteTask: next=%q err=%v", next, err)
 	}
@@ -187,7 +187,7 @@ func TestManager_CompleteTask_timeout_sameStateSetsPendingRework(t *testing.T) {
 
 func TestManager_CompleteTask_failure_sameStateClearsNoRework(t *testing.T) {
 	m, wfID := loadTestManager(t, planningTimeoutTestTemplate())
-	next, err := m.CompleteTask(wfID, "failure", "mockrig/planner", "bad plan", "validation failed")
+	next, err := m.CompleteTask(wfID, "failure", "mockrig/planner", "bad plan", "validation failed", nil)
 	if err != nil || next != "planning" {
 		t.Fatalf("CompleteTask: next=%q err=%v", next, err)
 	}

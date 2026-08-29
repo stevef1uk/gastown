@@ -96,7 +96,7 @@ GET /api/links only.
 	}
 	m.instances[id].CurrentState = "plan_review"
 
-	next, err := m.CompleteTask(id, "success", "mockrig/qa", "looks good", "")
+	next, err := m.CompleteTask(id, "success", "mockrig/qa", "looks good", "", nil)
 	if err == nil {
 		t.Fatalf("expected gate error, got next=%q", next)
 	}

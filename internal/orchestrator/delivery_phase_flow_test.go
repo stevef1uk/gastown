@@ -287,7 +287,7 @@ func TestDeliveryPhaseWorkflow_integration(t *testing.T) {
 	closeAllOpenImplementBeads(t, townRoot, rig, beadsDir, rigDir, backend)
 
 	m, wfID := loadPhasedManager(t, townRoot, rig)
-	next, err := m.CompleteTask(wfID, "all_passed", rig+"/qa", "backend phase green", "")
+	next, err := m.CompleteTask(wfID, "all_passed", rig+"/qa", "backend phase green", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -322,7 +322,7 @@ func TestDeliveryPhaseWorkflow_integration(t *testing.T) {
 
 	// Planner finishes; skip to QA on last phase.
 	inst.CurrentState = "qa_review"
-	next, err = m.CompleteTask(wfID, "all_passed", rig+"/qa", "frontend phase green", "")
+	next, err = m.CompleteTask(wfID, "all_passed", rig+"/qa", "frontend phase green", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -393,7 +393,7 @@ func TestManager_CompleteTask_qaAllPassed_noPhasesGoesCompleted(t *testing.T) {
 	}
 
 	m, wfID := loadPhasedManager(t, townRoot, rig)
-	next, err := m.CompleteTask(wfID, "all_passed", rig+"/qa", "done", "")
+	next, err := m.CompleteTask(wfID, "all_passed", rig+"/qa", "done", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}

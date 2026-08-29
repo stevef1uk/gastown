@@ -513,7 +513,7 @@ func runMayorWorkflowComplete(cmd *cobra.Command, args []string) error {
 	workflowID := args[0]
 	outcome := args[1]
 	// Empty agentID skips role check (manual operator override).
-	next, err := orchestrator.CompleteTask(townRoot, workflowID, outcome, "", "", "")
+	next, err := orchestrator.CompleteTask(townRoot, workflowID, outcome, "", "", "", nil)
 	if err != nil {
 		return err
 	}
