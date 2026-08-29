@@ -2930,7 +2930,14 @@ func validateQACommand(cmd, rig, townRoot string, v orchestrator.WorkflowValidat
 	if err := validateQARuntimeSmokeCommand(cmd, rig, townRoot, v); err != nil {
 		return err
 	}
-	if strings.Contains(lower, "if [") || strings.Contains(lower, "then ") || strings.Contains(lower, "fi\n") {
+	// Only check the shell preamble (before heredoc <<) for shell patterns —
+	// heredoc bodies contain prose that may incidentally include words like "then".
+	shellPortion := cmd
+	if idx := strings.Index(cmd, "<<"); idx >= 0 {
+		shellPortion = cmd[:idx]
+	}
+	lowerShell := strings.ToLower(shellPortion)
+	if strings.Contains(lowerShell, "if [") || strings.Contains(lowerShell, "then ") || strings.Contains(lowerShell, "fi\n") {
 		return fmt.Errorf("do not use shell if/then blocks in QA — use simple CMD: lines and JSON outcomes")
 	}
 	if err := validateImplementationBeadPlaceholder(cmd, "", rig); err != nil {
@@ -3109,7 +3116,13 @@ func validatePlanReviewGrep(cmd string) error {
 // and test_review: read-only over source/tests/docs; the ONLY writes allowed are
 // TEST_PLAN.md (test_plan) and test-report.md (test_review).
 func validateTesterCommand(cmd, rig, townRoot, state string, v orchestrator.WorkflowValidation) error {
-	lower := strings.ToLower(cmd)
+	// Only check the shell preamble (before heredoc <<) for shell patterns —
+	// heredoc bodies contain prose that may incidentally include words like "then".
+	shellPortion := cmd
+	if idx := strings.Index(cmd, "<<"); idx >= 0 {
+		shellPortion = cmd[:idx]
+	}
+	lower := strings.ToLower(shellPortion)
 	if strings.Contains(lower, "[tool_calls]") {
 		return fmt.Errorf("do not emit [TOOL_CALLS] markers — use CMD: lines only")
 	}
