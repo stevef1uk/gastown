@@ -864,7 +864,6 @@ func SyncRigWorkflowProfileFromArchitecture(townRoot, rig string) (bool, error) 
 	// dir is ever called "layout_root" — remap them onto the profile's real layout
 	// root (e.g. pingapp) so agents keep writing where the scaffold put files.
 	authoritative = remapLayoutRootPlaceholderPaths(authoritative, env.Validation.LayoutRoot)
-	env.Validation.RequiredFiles = append([]string(nil), authoritative...)
 	if root := inferLayoutRootFromPaths(authoritative); root != "" && root != "." {
 		env.Validation.LayoutRoot = root
 		env.Validation.BeadTitleContains = "Implement " + root + "/"
@@ -893,7 +892,29 @@ func SyncRigWorkflowProfileFromArchitecture(townRoot, rig string) (bool, error) 
 	// Update each existing phase's required_files from the "## Requirements" section
 	// of architecture.md (which has ### <phase-id> headings with clean file lists).
 	// This avoids greedy extraction from the whole document and preserves profile phase IDs.
-	env.Validation = updatePhaseRequiredFilesFromRequirementsSection(env.Validation, string(archData))
+	_, updatedFromReqs := updatePhaseRequiredFilesFromRequirementsSection(env.Validation, string(archData))
+	// Top-level RequiredFiles = union of all phase required_files (deduped)
+	seen := make(map[string]bool)
+	var union []string
+	for i := range env.Validation.DeliveryPhases {
+		for _, f := range env.Validation.DeliveryPhases[i].RequiredFiles {
+			f = filepath.ToSlash(strings.TrimSpace(f))
+			if f != "" && !seen[f] {
+				seen[f] = true
+				union = append(union, f)
+			}
+		}
+	}
+	// If we didn't successfully update from Requirements section, use authoritative paths
+	// for top-level and redistribute to phases via rebuildDeliveryPhasesFromAuthoritative.
+	if !updatedFromReqs {
+		union = authoritative
+		env.Validation.RequiredFiles = union
+		env.Validation = rebuildDeliveryPhasesFromAuthoritative(env.Validation, authoritative)
+	} else {
+		env.Validation.RequiredFiles = union
+	}
+	env.Validation = updateTopLevelFromCanonicalSection(env.Validation, string(archData))
 	// Rebuilt/re-distributed phases may have empty or wrong-stack verify commands;
 	// fill them with stack-appropriate defaults (never go vet in a Python phase).
 	env.Validation = SanitizePhaseVerifyCommandsForStack(env.Validation)
@@ -1360,15 +1381,33 @@ func parseArchPhasesFromSection(archText, layoutRoot, marker string) []DeliveryP
 	return phases
 }
 
-func updatePhaseRequiredFilesFromRequirementsSection(v WorkflowValidation, archData string) WorkflowValidation {
+func updatePhaseRequiredFilesFromRequirementsSection(v WorkflowValidation, archData string) (WorkflowValidation, bool) {
 	if len(v.DeliveryPhases) == 0 || archData == "" {
-		return v
+		return v, false
 	}
 	// Extract the "## Requirements" section
 	lower := strings.ToLower(archData)
 	reqIdx := strings.Index(lower, "## requirements")
 	if reqIdx < 0 {
-		return v
+		// No "## Requirements" section — fall back to extracting from whole document
+		// using parseArchPhases (which tries multiple sections)
+		archPhases := parseArchPhases(archData, v.LayoutRootDir())
+		if len(archPhases) > 0 {
+			// Use the parsed phases' required_files to update existing phases
+			phaseFiles := make(map[string][]string)
+			for _, p := range archPhases {
+				if len(p.RequiredFiles) > 0 {
+					phaseFiles[p.ID] = p.RequiredFiles
+				}
+			}
+			for i := range v.DeliveryPhases {
+				if files, ok := phaseFiles[v.DeliveryPhases[i].ID]; ok && len(files) > 0 {
+					v.DeliveryPhases[i].RequiredFiles = dedupeStrings(files)
+				}
+			}
+			return v, true
+		}
+		return v, false
 	}
 	section := archData[reqIdx:]
 	if j := strings.Index(section[1:], "\n## "); j >= 0 {
@@ -1407,6 +1446,12 @@ func updatePhaseRequiredFilesFromRequirementsSection(v WorkflowValidation, archD
 				for strings.HasPrefix(p, "./") {
 					p = p[2:]
 				}
+				// Clean backtick artifacts like `linkshelf/...`
+				p = strings.Trim(p, "`")
+				// Remove any embedded backticks like linkshelf/`linkshelf/...
+				if strings.Contains(p, "`") {
+					p = strings.ReplaceAll(p, "`", "")
+				}
 				if isImplementableFilePath(p) && IsValidImplementBeadPath(p) {
 					phaseFiles[currentPhase] = append(phaseFiles[currentPhase], p)
 				}
@@ -1419,6 +1464,82 @@ func updatePhaseRequiredFilesFromRequirementsSection(v WorkflowValidation, archD
 		if files, ok := phaseFiles[v.DeliveryPhases[i].ID]; ok && len(files) > 0 {
 			v.DeliveryPhases[i].RequiredFiles = dedupeStrings(files)
 		}
+	}
+	return v, true
+}
+
+func updateTopLevelFromCanonicalSection(v WorkflowValidation, archData string) WorkflowValidation {
+	if archData == "" {
+		return v
+	}
+	lower := strings.ToLower(archData)
+	var canonicalSection string
+	canonicalIdx := strings.Index(lower, "### canonical")
+	if canonicalIdx < 0 {
+		// Try "## requirements" then find "canonical" within it
+		reqIdx := strings.Index(lower, "## requirements")
+		if reqIdx >= 0 {
+			section := archData[reqIdx:]
+			if j := strings.Index(section[1:], "\n## "); j >= 0 {
+				section = section[:1+j]
+			}
+			canonicalIdx = strings.Index(strings.ToLower(section), "### canonical")
+			if canonicalIdx >= 0 {
+				canonicalSection = section[canonicalIdx:]
+				if j := strings.Index(canonicalSection[1:], "\n### "); j >= 0 {
+					canonicalSection = canonicalSection[:1+j]
+				}
+			}
+		}
+	} else {
+		canonicalSection = archData[canonicalIdx:]
+		if j := strings.Index(canonicalSection[1:], "\n### "); j >= 0 {
+			canonicalSection = canonicalSection[:1+j]
+		}
+	}
+
+	if canonicalSection == "" {
+		return v
+	}
+
+	// Parse the canonical section for required_files and qa_verify_command
+	lines := strings.Split(canonicalSection, "\n")
+	var topRequired []string
+	var topQA string
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		// Look for backtick paths
+		matches := extractArchPaths(line, v.LayoutRootDir())
+		for _, m := range matches {
+			p := filepath.ToSlash(strings.TrimSpace(m))
+			for strings.HasPrefix(p, "./") {
+				p = p[2:]
+			}
+			p = strings.Trim(p, "`")
+			p = strings.ReplaceAll(p, "`", "")
+			if isImplementableFilePath(p) && IsValidImplementBeadPath(p) {
+				topRequired = append(topRequired, p)
+			}
+		}
+		// Look for qa_verify_command patterns
+		if strings.Contains(strings.ToLower(trimmed), "qa_verify_command") {
+			// Extract command from backticks or after colon
+			if idx := strings.Index(trimmed, "`"); idx >= 0 {
+				end := strings.Index(trimmed[idx+1:], "`")
+				if end >= 0 {
+					topQA = strings.TrimSpace(trimmed[idx+1 : idx+1+end])
+				}
+			} else if idx := strings.Index(trimmed, ":"); idx >= 0 {
+				topQA = strings.TrimSpace(trimmed[idx+1:])
+			}
+		}
+	}
+
+	if len(topRequired) > 0 {
+		v.RequiredFiles = dedupeStrings(topRequired)
+	}
+	if topQA != "" {
+		v.QAVerifyCommand = topQA
 	}
 	return v
 }
