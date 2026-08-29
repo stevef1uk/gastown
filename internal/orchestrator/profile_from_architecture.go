@@ -1428,8 +1428,16 @@ func updatePhaseRequiredFilesFromRequirementsSection(v WorkflowValidation, archD
 				currentPhase = ""
 				continue
 			}
-			// Only consider it a phase ID if it's kebab-case and matches a known phase
-			if strings.Contains(phaseID, "-") && !strings.Contains(phaseID, " ") && !strings.Contains(phaseID, ".") {
+			// Match phase ID if it matches a known delivery phase OR is kebab-case
+			phaseIDLower := strings.ToLower(phaseID)
+			isKnownPhase := false
+			for _, dp := range v.DeliveryPhases {
+				if strings.ToLower(dp.ID) == phaseIDLower {
+					isKnownPhase = true
+					break
+				}
+			}
+			if isKnownPhase || (strings.Contains(phaseID, "-") && !strings.Contains(phaseID, " ") && !strings.Contains(phaseID, ".")) {
 				currentPhase = phaseID
 				phaseFiles[currentPhase] = []string{}
 			} else {
@@ -1469,23 +1477,24 @@ func updatePhaseRequiredFilesFromRequirementsSection(v WorkflowValidation, archD
 }
 
 func extractInlinePaths(line, layoutRoot string) []string {
-	// Extract inline file paths from prose like "Deliver linkshelf/go.mod, linkshelf/internal/store/schema.go"
-	// Pattern: linkshelf/... with file extension
+	// Extract inline file paths from prose like "Create pingapp/main.py" or "Deliver linkshelf/go.mod"
+	// Uses the layoutRoot to build a dynamic regex instead of hardcoding one layout.
 	var out []string
 	seen := map[string]bool{}
-	// Regex to match linkshelf/... paths with extensions
-	re := regexp.MustCompile(`linkshelf/[a-zA-Z0-9_/.-]+\.[a-zA-Z0-9]+`)
+	if layoutRoot == "" {
+		return nil
+	}
+	// Match layoutRoot/some.path.ext (letters, digits, underscores, hyphens, slashes, dots)
+	re := regexp.MustCompile(regexp.QuoteMeta(layoutRoot) + `/[a-zA-Z0-9_/.-]+\.[a-zA-Z0-9]+`)
 	matches := re.FindAllString(line, -1)
 	for _, m := range matches {
 		m = strings.TrimSpace(m)
-		// Clean any embedded backticks
 		m = strings.Trim(m, "`")
 		m = strings.ReplaceAll(m, "`", "")
 		if m == "" || seen[m] {
 			continue
 		}
 		seen[m] = true
-		// Validate it's a reasonable file path
 		if isImplementableFilePath(m) && IsValidImplementBeadPath(m) {
 			out = append(out, m)
 		}
@@ -1683,11 +1692,12 @@ func isKebabPhaseID(s string) bool {
 	if regexp.MustCompile(`[A-Z]`).MatchString(s) {
 		return false
 	}
-	if !strings.Contains(s, "-") {
+	// Reject if it contains a pipe (table cell) or is purely numeric
+	if strings.Contains(s, "|") || regexp.MustCompile(`^\d+$`).MatchString(s) {
 		return false
 	}
 	// Common prose words that aren't phase IDs
-	proseWords := []string{"the", "and", "or", "but", "for", "with", "from", "into", "onto", "upon", "within", "without", "about", "after", "before", "during", "since", "until", "while", "where", "which", "whose", "that", "this", "these", "those", "then", "than", "when", "what", "who", "whom", "why", "how", "all", "any", "each", "every", "some", "such", "only", "own", "same", "other", "another", "more", "most", "less", "few", "many", "much", "very", "too", "so", "as", "if", "because", "since", "unless", "until", "while", "whereas", "whereby", "wherein", "whereupon", "wherever", "whether", "which", "whichever", "whoever", "whomever", "whose", "why", "however", "moreover", "nevertheless", "therefore", "thus", "hence", "accordingly", "consequently", "furthermore", "meanwhile", "otherwise", "besides", "instead", "likewise", "similarly", "indeed", "certainly", "probably", "possibly", "apparently", "evidently", "obviously", "presumably", "seemingly", "supposedly", "theoretically", "practically", "virtually", "essentially", "basically", "actually", "really", "truly", "surely", "clearly", "plainly", "obviously", "manifestly", "patently", "transparently", "unmistakably", "indisputably", "undeniably", "incontrovertibly", "irrefutably"}
+	proseWords := []string{"the", "and", "or", "but", "for", "with", "from", "into", "onto", "upon", "within", "without", "about", "after", "before", "during", "since", "until", "while", "where", "which", "whose", "that", "this", "these", "those", "then", "than", "when", "what", "who", "whom", "why", "how", "all", "any", "each", "every", "some", "such", "only", "own", "same", "other", "another", "more", "most", "less", "few", "many", "much", "very", "too", "so", "as", "if", "because", "since", "unless", "until", "while", "whereas", "whereby", "wherein", "whereupon", "wherever", "whether", "which", "whichever", "whoever", "whomever", "whose", "why", "however", "moreover", "nevertheless", "therefore", "thus", "hence", "accordingly", "consequently", "furthermore", "meanwhile", "otherwise", "besides", "instead", "likewise", "similarly", "indeed", "certainly", "probably", "possibly", "apparently", "evidently", "obviously", "presumably", "seemingly", "supposedly", "theoretically", "practically", "virtually", "essentially", "basically", "actually", "really", "truly", "surely", "clearly", "plainly", "obviously", "manifestly", "patently", "transparently", "unmistakably", "indisputably", "undeniably", "incontrovertibly", "irrefutably", "canonical"}
 	for _, w := range proseWords {
 		if s == w {
 			return false
@@ -1710,13 +1720,35 @@ func extractPhaseLinePaths(line, layoutRoot string) []string {
 		if part == "" {
 			continue
 		}
-		// Strip trailing period and common trailing words
-		part = strings.TrimRight(part, ".")
+		// Strip trailing sentence-ending punctuation (but NOT periods in file extensions)
 		part = strings.TrimRight(part, " ")
+		// If part contains whitespace (prose), try to extract layoutRoot/... path from it
+		if strings.ContainsAny(part, " \t") && layoutRoot != "" {
+			if idx := strings.Index(part, layoutRoot+"/"); idx >= 0 {
+				candidate := part[idx:]
+				// Trim at next whitespace or comma to isolate the path.
+				// Do NOT trim at periods — they're part of file extensions.
+				for i, ch := range candidate {
+					if ch == ' ' || ch == '\t' || ch == ',' || ch == ';' {
+						candidate = candidate[:i]
+						break
+					}
+				}
+				// Trim trailing sentence-ending periods only (not file extension periods)
+				candidate = strings.TrimRight(candidate, ".")
+				if candidate != "" && !seen[candidate] && isLikelyRepoFilePath(candidate, layoutRoot) {
+					seen[candidate] = true
+					out = append(out, candidate)
+				}
+				continue
+			}
+		}
 		// Skip prose fragments (no path-like structure)
 		if !strings.Contains(part, "/") && !strings.HasPrefix(part, layoutRoot) && !isLikelyRepoFilePath(part, layoutRoot) {
 			continue
 		}
+		// Trim trailing sentence-ending periods from comma-split parts
+		part = strings.TrimRight(part, ".")
 		if isLikelyRepoFilePath(part, layoutRoot) && !seen[part] {
 			seen[part] = true
 			out = append(out, part)
