@@ -31,6 +31,8 @@ $GT_ROOT/{{rig}}/mayor/rig/{{layout_root}}/  ← layout root (ALL code files go 
 
 **Plan tests for ALL delivery phases** — not just the active one. Check `workflow-profile.json` for the full `delivery_phases` list. Create `### <req-id>` blocks for every requirement across all phases. This ensures the Polecat knows what tests to write as the workflow progresses through each phase.
 
+**USE DELIVERY PHASE IDs AS SECTION HEADINGS (CRITICAL):** Your `### <req-id>` section headings MUST be the EXACT `delivery_phases[].id` values from `workflow-profile.json`. For example, if the profile lists phases `[python-setup, smoke-test]`, your TEST_PLAN.md must have `### python-setup` and `### smoke-test` sections. Do NOT invent requirement IDs like `route-ping` or `unit-ping` — use ONLY the phase IDs from the profile. The validator will reject any `### <req-id>` that does not match a delivery phase ID.
+
 **Validation scope:** On first entry to `test_plan`, generate the full plan covering all phases. On subsequent entries (e.g. after rework), only validate that the ACTIVE phase's tests and code match the plan — do not rewrite future phase sections.
 
 **REWORK RULE (CRITICAL):** When rewriting TEST_PLAN.md during rework, you MUST READ the existing file first and use EDIT commands to modify only the changed sections. **NEVER use `cat > TEST_PLAN.md << 'EOF'`** to rewrite the entire file — that drops other phase sections and breaks the workflow. The validator will reject the plan if any delivery phase is missing its requirement blocks.
