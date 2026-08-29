@@ -168,10 +168,6 @@ func ClampProfileValidation(v WorkflowValidation) WorkflowValidation {
 	if v.MaxReviewRetries < 1 || v.MaxReviewRetries > 10 {
 		v.MaxReviewRetries = DefaultMaxReviewRetries
 	}
-	v = FinalizeDeliveryPhases(v)
-	v = StripInvalidCDPrefixes(v)
-	v = validatePhaseVerifyCommands(v)
-	v = validatePhaseVerifyCommandsAgainstFiles(v)
 	v.RequiredFiles = StripNonFileRequiredEntries(v.RequiredFiles)
 	for i := range v.DeliveryPhases {
 		v.DeliveryPhases[i].RequiredFiles = StripNonFileRequiredEntries(v.DeliveryPhases[i].RequiredFiles)
@@ -180,6 +176,10 @@ func ClampProfileValidation(v WorkflowValidation) WorkflowValidation {
 	for i := range v.DeliveryPhases {
 		v.DeliveryPhases[i].RequiredFiles = deduplicateRequiredFiles(v.DeliveryPhases[i].RequiredFiles)
 	}
+	v = FinalizeDeliveryPhases(v)
+	v = StripInvalidCDPrefixes(v)
+	v = validatePhaseVerifyCommands(v)
+	v = validatePhaseVerifyCommandsAgainstFiles(v)
 	v = InjectSQLiteSchemaBead(v)
 	v = SanitizeRigFlowProfile(v)
 	v = ValidateDeliveryPhases(v)

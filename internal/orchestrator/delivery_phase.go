@@ -646,7 +646,7 @@ func goPackageVerifyCommand(layout, pkg string) string {
 
 // maxFilesPerPhase caps how many files a single delivery phase can hold.
 // With ~100 max LLM calls and ~10 calls needed per file, no phase should exceed 10 files.
-const maxFilesPerPhase = 10
+const maxFilesPerPhase = 20
 
 // collapseSplitDeliveryPhases merges phases that were previously split (e.g.
 // e2e-and-deployment-1, e2e-and-deployment-2 back into e2e-and-deployment).
