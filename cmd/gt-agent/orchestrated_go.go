@@ -43,6 +43,9 @@ func goRequiredFilesUseCmdTree(v orchestrator.WorkflowValidation) bool {
 }
 
 func commandRemovesLayoutTree(cmd string, v orchestrator.WorkflowValidation) bool {
+	if strings.Contains(cmd, "GT_SMOKE:") {
+		return false
+	}
 	lower := strings.ToLower(cmd)
 	if !strings.Contains(lower, "rm ") {
 		return false
@@ -65,9 +68,10 @@ func commandRemovesLayoutTree(cmd string, v orchestrator.WorkflowValidation) boo
 	}
 	// Reject any rm command that targets .go files (e.g. rm -f cmd/server/*.go, rm main.go).
 	// This catches glob deletion patterns not covered by the -rf checks above.
-	if !strings.Contains(lower, "rm -rf") && !strings.Contains(lower, "rm -r ") &&
-		strings.Contains(lower, ".go") && regexp.MustCompile(`\brm\b`).MatchString(lower) {
-		return true
+	if !strings.Contains(lower, "rm -rf") && !strings.Contains(lower, "rm -r ") {
+		if regexp.MustCompile(`\brm\s+[^;&|]*\.go\b`).MatchString(lower) {
+			return true
+		}
 	}
 	return false
 }

@@ -3407,13 +3407,54 @@ func validateTestReviewArtifacts(townRoot, rig, outcome string, hadCmdFailure, v
 		return nil // failure names bead IDs; polecat reworks implementation
 	}
 
-	// success path: every planned test file exists, is not a stub, verify green.
-	// Only check test files for the active phase and completed phases (allow regression checks).
-	if missing := orchestrator.MissingPlannedTestFilesForPhases(rigDir, v.LayoutRoot, testPlan, phaseIDsForTestValidation(v)); len(missing) > 0 {
-		return fmt.Errorf("planned test files missing on disk: %s — run `cat TEST_PLAN.md` and confirm every `Test file:` exists, then use outcome failure with bead IDs", strings.Join(missing, ", "))
+	missing := orchestrator.MissingPlannedTestFilesForPhases(rigDir, v.LayoutRoot, testPlan, phaseIDsForTestValidation(v))
+	if len(missing) > 0 {
+		var filtered []string
+		futureFiles := make(map[string]bool)
+		if v.HasPhasedDelivery() {
+			activeAndPast := make(map[string]bool)
+			for _, f := range v.RequiredFilesForCompletedAndActive() {
+				activeAndPast[f] = true
+			}
+			for _, f := range v.UnionRequiredFiles() {
+				if !activeAndPast[f] {
+					futureFiles[f] = true
+				}
+			}
+		}
+		for _, f := range missing {
+			if !futureFiles[f] {
+				filtered = append(filtered, f)
+			}
+		}
+		if len(filtered) > 0 {
+			return fmt.Errorf("planned test files missing on disk: %s — run `cat TEST_PLAN.md` and confirm every `Test file:` exists, then use outcome failure with bead IDs", strings.Join(filtered, ", "))
+		}
 	}
-	if stubs := orchestrator.StubTestFilesForPhases(rigDir, v.LayoutRoot, v, testPlan, phaseIDsForTestValidation(v)); len(stubs) > 0 {
-		return fmt.Errorf("planned test files look like stubs (no substantive assertions): %s — use outcome failure with bead IDs so the polecat strengthens them", strings.Join(stubs, ", "))
+
+	stubs := orchestrator.StubTestFilesForPhases(rigDir, v.LayoutRoot, v, testPlan, phaseIDsForTestValidation(v))
+	if len(stubs) > 0 {
+		var filteredStubs []string
+		futureFiles := make(map[string]bool)
+		if v.HasPhasedDelivery() {
+			activeAndPast := make(map[string]bool)
+			for _, f := range v.RequiredFilesForCompletedAndActive() {
+				activeAndPast[f] = true
+			}
+			for _, f := range v.UnionRequiredFiles() {
+				if !activeAndPast[f] {
+					futureFiles[f] = true
+				}
+			}
+		}
+		for _, f := range stubs {
+			if !futureFiles[f] {
+				filteredStubs = append(filteredStubs, f)
+			}
+		}
+		if len(filteredStubs) > 0 {
+			return fmt.Errorf("planned test files look like stubs (no substantive assertions): %s — use outcome failure with bead IDs so the polecat strengthens them", strings.Join(filteredStubs, ", "))
+		}
 	}
 	if strings.TrimSpace(v.QAVerifyCommand) != "" && !verifyOK {
 		return fmt.Errorf("run `%s` green before test_review success", v.QAVerifyHint())

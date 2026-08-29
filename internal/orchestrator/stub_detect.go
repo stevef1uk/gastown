@@ -384,7 +384,8 @@ func CheckContentNotStub(data []byte, displayRel string, opts StubCheckOptions) 
 	}
 	// Dependency manifests like go.sum can legitimately be empty
 	// when no external dependencies are used (e.g., modernc.org/sqlite)
-	if IsDependencyManifest(displayRel) {
+	base := filepath.Base(filepath.ToSlash(strings.TrimSpace(displayRel)))
+	if (base == "go.sum" || base == "go.work.sum") && len(data) == 0 {
 		return nil
 	}
 	if len(data) == 0 {
