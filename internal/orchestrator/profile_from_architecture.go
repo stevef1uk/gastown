@@ -884,6 +884,12 @@ func SyncRigWorkflowProfileFromArchitecture(townRoot, rig string) (bool, error) 
 				}
 			}
 			env.Validation.DeliveryPhases = archPhases
+			// SYSTEMATIC FIX: When architect phases are well-formed, also replace each
+			// phase's RequiredFiles with the ## Requirements section from architecture.md.
+			// This eliminates spec-index hallucinations (e.g. handlers_test.go) that
+			// may have been in the profile from before architecture.md existed, making
+			// architecture.md the authoritative source over spec-index-derived profiles.
+			env.Validation, _ = updatePhaseRequiredFilesFromRequirementsSection(env.Validation, string(archData))
 		} else if len(env.Validation.DeliveryPhases) == 0 {
 			env.Validation.DeliveryPhases = archPhases
 		}
@@ -892,6 +898,9 @@ func SyncRigWorkflowProfileFromArchitecture(townRoot, rig string) (bool, error) 
 	// Update each existing phase's required_files from the "## Requirements" section
 	// of architecture.md (which has ### <phase-id> headings with clean file lists).
 	// This avoids greedy extraction from the whole document and preserves profile phase IDs.
+	// Note: When archPhasesWellFormed was true, RequiredFiles were already systematically
+	// replaced above via updatePhaseRequiredFilesFromRequirementsSection, making architecture.md
+	// the authoritative source over spec-index hallucinations.
 	_, updatedFromReqs := updatePhaseRequiredFilesFromRequirementsSection(env.Validation, string(archData))
 	// Top-level RequiredFiles = union of all phase required_files (deduped)
 	seen := make(map[string]bool)
