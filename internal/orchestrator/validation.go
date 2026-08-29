@@ -1873,14 +1873,14 @@ func defaultQAVerifyForPhase(p *DeliveryPhase, layoutRoot string) string {
 		return fmt.Sprintf("cd %s && docker-compose down && docker-compose up --exit-code-from playwright", lr)
 		}
 		if dir == "." {
-			return fmt.Sprintf("cd %s && npx playwright test --list", lr)
+			return fmt.Sprintf("cd %s && npx playwright test", lr)
 		}
 		install := nodeInstallCommand("npm", p.RequiredFiles)
 		// If playwright config is at layout root, don't add subdirectory
 		if dir == lr {
-			return fmt.Sprintf("cd %s && %s && npx playwright test --list", lr, install)
+			return fmt.Sprintf("cd %s && %s && npx playwright test", lr, install)
 		}
-		return fmt.Sprintf("cd %s/%s && %s && npx playwright test --list", lr, dir, install)
+		return fmt.Sprintf("cd %s/%s && %s && npx playwright test", lr, dir, install)
 	}
 	if hasScripts {
 		var sb strings.Builder

@@ -670,9 +670,9 @@ func TestDedupePhasesByVerify(t *testing.T) {
 			name: "identical playwright verify folds later phase into earlier",
 			in: []orchestrator.DeliveryPhase{
 				{ID: "frontend", RequiredFiles: []string{"app/index.html", "app/tests/e2e/links.spec.js"},
-					QAVerifyCommand: "cd app && npm install --ignore-scripts && npx playwright test --list"},
+					QAVerifyCommand: "cd app && npm install --ignore-scripts && npx playwright test"},
 				{ID: "smoke-test", RequiredFiles: []string{"app/go.mod", "app/cmd/server/main.go", "app/tests/e2e/links.spec.js"},
-					QAVerifyCommand: "CD   app && npm install --ignore-scripts && npx PLAYWRIGHT test --list"},
+					QAVerifyCommand: "CD   app && npm install --ignore-scripts && npx PLAYWRIGHT test"},
 			},
 			wantIDs:   []string{"frontend"},
 			wantFiles: map[string][]string{"frontend": {"app/index.html", "app/tests/e2e/links.spec.js", "app/go.mod", "app/cmd/server/main.go"}},

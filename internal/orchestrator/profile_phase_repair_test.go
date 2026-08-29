@@ -352,7 +352,7 @@ func TestSanitizePhaseVerifyCommandsForStack_playwrightComposeSubdirClamp(t *tes
 					"pingapp/test/docker-compose.yml",
 					"pingapp/package.json",
 				},
-				QAVerifyCommand: "cd pingapp && npx playwright test --list",
+				QAVerifyCommand: "cd pingapp && npx playwright test",
 			},
 		},
 	}
