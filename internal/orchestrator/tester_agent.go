@@ -331,7 +331,9 @@ func testPlanBeadMappingMismatches(v WorkflowValidation, blocks []TestPlanBlock,
 // HallucinatedTestPlanRequirements returns requirement IDs in TEST_PLAN.md that
 // do not appear in SPEC.md or architecture.md. This catches LLM hallucinations
 // where the tester invents requirements not defined in the source documents.
-func HallucinatedTestPlanRequirements(testPlan, specDoc, archDoc string) []string {
+// deliveryPhaseIDs are the workflow-profile delivery phase IDs, which are always
+// valid requirement IDs in TEST_PLAN.md (even if they don't appear in SPEC/arch).
+func HallucinatedTestPlanRequirements(testPlan, specDoc, archDoc string, deliveryPhaseIDs ...string) []string {
 	// Collect requirement IDs from SPEC.md and architecture.md
 	validIDs := make(map[string]bool)
 	doc := specDoc + "\n" + archDoc
@@ -368,6 +370,12 @@ func HallucinatedTestPlanRequirements(testPlan, specDoc, archDoc string) []strin
 			routeID := method + " " + path
 			validIDs[strings.ToUpper(routeID)] = true
 		}
+	}
+
+	// 4. Delivery phase IDs are always valid — they come from the workflow
+	//    profile and the tester MUST create blocks for every phase.
+	for _, pid := range deliveryPhaseIDs {
+		validIDs[strings.ToUpper(strings.TrimSpace(pid))] = true
 	}
 
 	// If no valid IDs found in source documents, skip the check

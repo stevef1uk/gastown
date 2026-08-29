@@ -3269,9 +3269,14 @@ func validateTestPlanArtifacts(townRoot, rig string, hadCmdFailure, testPlanWrit
 	}
 	// Check for hallucinated requirements: TEST_PLAN.md should not have requirement IDs
 	// that don't appear in SPEC.md or architecture.md.
+	// Delivery phase IDs from the workflow profile are always valid.
 	specDoc, _ := os.ReadFile(filepath.Join(rigDir, "SPEC.md"))
 	archDoc, _ := os.ReadFile(filepath.Join(rigDir, "architecture.md"))
-	if hallucinated := orchestrator.HallucinatedTestPlanRequirements(string(data), string(specDoc), string(archDoc)); len(hallucinated) > 0 {
+	var phaseIDs []string
+	for _, p := range v.DeliveryPhases {
+		phaseIDs = append(phaseIDs, p.ID)
+	}
+	if hallucinated := orchestrator.HallucinatedTestPlanRequirements(string(data), string(specDoc), string(archDoc), phaseIDs...); len(hallucinated) > 0 {
 		return fmt.Errorf("TEST_PLAN.md has requirement IDs not found in SPEC.md or architecture.md: %v — do NOT invent requirements; only plan tests for requirements that EXPLICITLY appear in SPEC.md", hallucinated)
 	}
 	// Phase-coverage guard: every delivery phase must have at least one requirement
