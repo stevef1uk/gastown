@@ -1468,20 +1468,51 @@ func updatePhaseRequiredFilesFromRequirementsSection(v WorkflowValidation, archD
 	return v, true
 }
 
+func extractInlinePaths(line, layoutRoot string) []string {
+	// Extract inline file paths from prose like "Deliver linkshelf/go.mod, linkshelf/internal/store/schema.go"
+	// Pattern: linkshelf/... with file extension
+	var out []string
+	seen := map[string]bool{}
+	// Regex to match linkshelf/... paths with extensions
+	re := regexp.MustCompile(`linkshelf/[a-zA-Z0-9_/.-]+\.[a-zA-Z0-9]+`)
+	matches := re.FindAllString(line, -1)
+	for _, m := range matches {
+		m = strings.TrimSpace(m)
+		// Clean any embedded backticks
+		m = strings.Trim(m, "`")
+		m = strings.ReplaceAll(m, "`", "")
+		if m == "" || seen[m] {
+			continue
+		}
+		seen[m] = true
+		// Validate it's a reasonable file path
+		if isImplementableFilePath(m) && IsValidImplementBeadPath(m) {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
 func updateTopLevelFromCanonicalSection(v WorkflowValidation, archData string) WorkflowValidation {
 	if archData == "" {
 		return v
 	}
 	lower := strings.ToLower(archData)
 	var canonicalSection string
-	// Look for "The following ... phase IDs are canonical" paragraph
-	canonicalRe := regexp.MustCompile(`(?i)the following[^.]*phase ids are canonical`)
+	// Look for "The following four phase IDs are canonical" (specific to this format)
+	canonicalRe := regexp.MustCompile(`(?i)the following four phase ids are canonical`)
 	canonicalIdx := -1
 	if loc := canonicalRe.FindStringIndex(lower); loc != nil {
 		canonicalIdx = loc[0]
 		canonicalSection = archData[canonicalIdx:]
 		if j := strings.Index(canonicalSection[1:], "\n## "); j >= 0 {
 			canonicalSection = canonicalSection[:1+j]
+		}
+		// Stop at "The canonical top-level required files are exactly" to avoid
+		// parsing the negative-list and top-level paragraphs which contain
+		// backtick paths that would pollute command extraction.
+		if stopIdx := strings.Index(strings.ToLower(canonicalSection), "the canonical top-level required files are exactly"); stopIdx >= 0 {
+			canonicalSection = canonicalSection[:stopIdx]
 		}
 	} else {
 		// Fallback: try "### canonical"
@@ -1499,24 +1530,33 @@ func updateTopLevelFromCanonicalSection(v WorkflowValidation, archData string) W
 	}
 
 	// Parse the canonical section ONLY for qa_verify_commands (not required_files,
-	// which are already clean from phase union). The canonical section lists
-	// negative examples like "must not list SPEC.md" which would pollute required_files.
+	// which are already clean from phase union).
 	lines := strings.Split(canonicalSection, "\n")
 	var topQA string
 	phaseQA := make(map[string]string)
 	currentPhase := ""
 	for i, line := range lines {
 		trimmed := strings.TrimSpace(line)
-		// Track phase in the canonical section (look for **backend-store**, **frontend-ui** etc.)
-		if strings.HasPrefix(trimmed, "**") && strings.HasSuffix(trimmed, "**") && strings.Contains(trimmed, "-") {
+		// Track phase in the canonical section (look for ### backend-store, **backend-store**, etc.)
+		if strings.HasPrefix(trimmed, "### ") {
+			phaseID := strings.TrimSpace(strings.TrimPrefix(trimmed, "### "))
+			if strings.Contains(phaseID, "-") && !strings.Contains(phaseID, " ") && !strings.Contains(phaseID, "<") {
+				currentPhase = phaseID
+			}
+		} else if strings.HasPrefix(trimmed, "**") && strings.HasSuffix(trimmed, "**") && strings.Contains(trimmed, "-") {
 			phaseID := strings.Trim(trimmed, "*")
 			phaseID = strings.TrimSpace(phaseID)
 			if strings.Contains(phaseID, "-") && !strings.Contains(phaseID, " ") {
 				currentPhase = phaseID
 			}
 		}
-		// Look for qa_verify_command patterns OR "Verify with" patterns
-		if strings.Contains(strings.ToLower(trimmed), "qa_verify_command") || strings.Contains(strings.ToLower(trimmed), "verify with") {
+		// Look for command patterns: "Verify with", "verification is", "command is", "command:", "qa_verify_command"
+		isCommandLine := strings.Contains(strings.ToLower(trimmed), "verify with") ||
+			strings.Contains(strings.ToLower(trimmed), "verification is") ||
+			strings.Contains(strings.ToLower(trimmed), "command is") ||
+			strings.Contains(strings.ToLower(trimmed), "command:") ||
+			strings.Contains(strings.ToLower(trimmed), "qa_verify_command")
+		if isCommandLine {
 			// Extract command from backticks on this line OR the next line(s)
 			var cmd string
 			if idx := strings.Index(trimmed, "`"); idx >= 0 {
@@ -1525,7 +1565,7 @@ func updateTopLevelFromCanonicalSection(v WorkflowValidation, archData string) W
 					cmd = strings.TrimSpace(trimmed[idx+1 : idx+1+end])
 				}
 			}
-			// If no backtick on this line, check next few lines (for "Verify with" split across lines)
+			// If no backtick on this line, check next few lines
 			if cmd == "" {
 				for j := i + 1; j < len(lines) && j <= i+3; j++ {
 					nextLine := strings.TrimSpace(lines[j])
@@ -1543,10 +1583,15 @@ func updateTopLevelFromCanonicalSection(v WorkflowValidation, archData string) W
 				}
 			}
 			if cmd != "" {
-				if currentPhase != "" {
-					phaseQA[currentPhase] = cmd
+				// Skip if cmd looks like a file path (contains / but no shell command verbs)
+				if strings.Contains(cmd, "/") && !strings.ContainsAny(cmd, " &|;<>") && !regexp.MustCompile(`\b(cd|go|npm|npx|python|pytest|make|build|test|run)\b`).MatchString(cmd) {
+					// This looks like a file path, not a command - skip it
 				} else {
-					topQA = cmd
+					if currentPhase != "" {
+						phaseQA[currentPhase] = cmd
+					} else {
+						topQA = cmd
+					}
 				}
 			}
 		}
