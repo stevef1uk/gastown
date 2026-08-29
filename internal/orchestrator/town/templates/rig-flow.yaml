@@ -366,7 +366,7 @@ states:
       2. Confirm every active-phase test file exists, has real assertions (not stubs), and the phase verify ({{phase_qa_verify_command}}) is green.
       3. Report success only when tests cover every requirement; failure names failing beads (polecat), plan_gap when the plan is incomplete (tester rewrites TEST_PLAN.md), architecture_failure when SPEC/architecture are the blocker (architect).
     hooks:
-      max_cmd_turns: 10
+      max_cmd_turns: 20
       cmd_guard: test_review
       cmd_rewrites: [rig_placeholders, unwrap_bash_lc, test_plan_md_after_cd, bd_list_limit, bd_strip_beads_dir, unittest_workdir]
       env:
