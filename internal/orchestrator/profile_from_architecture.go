@@ -890,10 +890,10 @@ func SyncRigWorkflowProfileFromArchitecture(townRoot, rig string) (bool, error) 
 		}
 	}
 
-	// Rebuild delivery phases so the active phase required_files (used by
-	// ForActivePhase at planning time) match the authoritative set instead of the
-	// hallucinated list the LLM emitted.
-	env.Validation = rebuildDeliveryPhasesFromAuthoritative(env.Validation, authoritative)
+	// Update each existing phase's required_files from the "## Requirements" section
+	// of architecture.md (which has ### <phase-id> headings with clean file lists).
+	// This avoids greedy extraction from the whole document and preserves profile phase IDs.
+	env.Validation = updatePhaseRequiredFilesFromRequirementsSection(env.Validation, string(archData))
 	// Rebuilt/re-distributed phases may have empty or wrong-stack verify commands;
 	// fill them with stack-appropriate defaults (never go vet in a Python phase).
 	env.Validation = SanitizePhaseVerifyCommandsForStack(env.Validation)
@@ -1289,14 +1289,19 @@ func parseArchPhases(archText, layoutRoot string) []DeliveryPhase {
 	if archText == "" {
 		return nil
 	}
-	lower := strings.ToLower(archText)
-	markerIdx := -1
-	for _, marker := range []string{"## delivery phases", "## phases"} {
-		if idx := strings.Index(lower, marker); idx >= 0 {
-			markerIdx = idx
-			break
+	// Try sections in order: "## Delivery phases" (table), "## Requirements" (proper headings)
+	for _, marker := range []string{"## delivery phases", "## requirements", "## phases"} {
+		phases := parseArchPhasesFromSection(archText, layoutRoot, marker)
+		if len(phases) > 0 {
+			return phases
 		}
 	}
+	return nil
+}
+
+func parseArchPhasesFromSection(archText, layoutRoot, marker string) []DeliveryPhase {
+	lower := strings.ToLower(archText)
+	markerIdx := strings.Index(lower, marker)
 	if markerIdx < 0 {
 		return nil
 	}
@@ -1355,6 +1360,69 @@ func parseArchPhases(archText, layoutRoot string) []DeliveryPhase {
 	return phases
 }
 
+func updatePhaseRequiredFilesFromRequirementsSection(v WorkflowValidation, archData string) WorkflowValidation {
+	if len(v.DeliveryPhases) == 0 || archData == "" {
+		return v
+	}
+	// Extract the "## Requirements" section
+	lower := strings.ToLower(archData)
+	reqIdx := strings.Index(lower, "## requirements")
+	if reqIdx < 0 {
+		return v
+	}
+	section := archData[reqIdx:]
+	if j := strings.Index(section[1:], "\n## "); j >= 0 {
+		section = section[:1+j]
+	}
+
+	// Parse ### <phase-id> headings and their file lists.
+	// Stop before "### Canonical" subsection which has malformed backtick lists.
+	phaseFiles := make(map[string][]string)
+	lines := strings.Split(section, "\n")
+	currentPhase := ""
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "### ") {
+			phaseID := strings.TrimSpace(strings.TrimPrefix(trimmed, "### "))
+			// Skip the "Canonical" subsection
+			if strings.HasPrefix(strings.ToLower(phaseID), "canonical") {
+				currentPhase = ""
+				continue
+			}
+			// Only consider it a phase ID if it's kebab-case and matches a known phase
+			if strings.Contains(phaseID, "-") && !strings.Contains(phaseID, " ") && !strings.Contains(phaseID, ".") {
+				currentPhase = phaseID
+				phaseFiles[currentPhase] = []string{}
+			} else {
+				currentPhase = ""
+			}
+			continue
+		}
+		if currentPhase != "" {
+			// Extract backtick paths from this line
+			matches := extractArchPaths(line, v.LayoutRootDir())
+			matches = append(matches, extractPhaseLinePaths(line, v.LayoutRootDir())...)
+			for _, m := range matches {
+				p := filepath.ToSlash(strings.TrimSpace(m))
+				for strings.HasPrefix(p, "./") {
+					p = p[2:]
+				}
+				if isImplementableFilePath(p) && IsValidImplementBeadPath(p) {
+					phaseFiles[currentPhase] = append(phaseFiles[currentPhase], p)
+				}
+			}
+		}
+	}
+
+	// Update each phase's required_files if we found files for it
+	for i := range v.DeliveryPhases {
+		if files, ok := phaseFiles[v.DeliveryPhases[i].ID]; ok && len(files) > 0 {
+			v.DeliveryPhases[i].RequiredFiles = dedupeStrings(files)
+		}
+	}
+	return v
+}
+
 var archVerbRe = regexp.MustCompile(`\b(creates|builds|implements|adds|completes|includes|delivers|wires|sets up|provides|generates|introduces|establishes|installs|configures|initializes|starts|runs|writes|produces|scaffolds|contains|verifies|tests|creates?)\b`)
 
 func parseArchPhaseHeader(line string) *DeliveryPhase {
@@ -1392,6 +1460,9 @@ func parseArchPhaseHeader(line string) *DeliveryPhase {
 		} else {
 			title = strings.TrimSpace(rest)
 		}
+	} else if isKebabPhaseID(s) {
+		// Markdown heading like "### backend-store" -> "backend-store"
+		title = s
 	}
 
 	if title != "" {
@@ -1405,6 +1476,38 @@ func parseArchPhaseHeader(line string) *DeliveryPhase {
 		}
 	}
 	return nil
+}
+
+func isKebabPhaseID(s string) bool {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return false
+	}
+	// Reject markdown table separators like |---|---|
+	if strings.HasPrefix(s, "|") || strings.HasSuffix(s, "|") {
+		return false
+	}
+	// Reject lines that are just dashes/pipes (table separators)
+	if regexp.MustCompile(`^[\-|:\s]+$`).MatchString(s) {
+		return false
+	}
+	if strings.Contains(s, " ") || strings.Contains(s, ".") {
+		return false
+	}
+	if regexp.MustCompile(`[A-Z]`).MatchString(s) {
+		return false
+	}
+	if !strings.Contains(s, "-") {
+		return false
+	}
+	// Common prose words that aren't phase IDs
+	proseWords := []string{"the", "and", "or", "but", "for", "with", "from", "into", "onto", "upon", "within", "without", "about", "after", "before", "during", "since", "until", "while", "where", "which", "whose", "that", "this", "these", "those", "then", "than", "when", "what", "who", "whom", "why", "how", "all", "any", "each", "every", "some", "such", "only", "own", "same", "other", "another", "more", "most", "less", "few", "many", "much", "very", "too", "so", "as", "if", "because", "since", "unless", "until", "while", "whereas", "whereby", "wherein", "whereupon", "wherever", "whether", "which", "whichever", "whoever", "whomever", "whose", "why", "however", "moreover", "nevertheless", "therefore", "thus", "hence", "accordingly", "consequently", "furthermore", "meanwhile", "otherwise", "besides", "instead", "likewise", "similarly", "indeed", "certainly", "probably", "possibly", "apparently", "evidently", "obviously", "presumably", "seemingly", "supposedly", "theoretically", "practically", "virtually", "essentially", "basically", "actually", "really", "truly", "surely", "clearly", "plainly", "obviously", "manifestly", "patently", "transparently", "unmistakably", "indisputably", "undeniably", "incontrovertibly", "irrefutably"}
+	for _, w := range proseWords {
+		if s == w {
+			return false
+		}
+	}
+	return true
 }
 
 // extractPhaseLinePaths extracts plain comma-separated file paths from an architecture phase line.

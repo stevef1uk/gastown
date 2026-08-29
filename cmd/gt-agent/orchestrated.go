@@ -215,7 +215,10 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 	if err := runner.runPreRun(); err != nil {
 		return "", "", "", err
 	}
-	if !shouldSkipPlanningAutoComplete(task, townRoot, rig, runner.v) &&
+	// Never auto-complete when there's pending rework — the agent must do the work.
+	if task.PendingRework != nil {
+		orchestratedPrintf("[gt-agent] rework pending from %s — skipping auto-complete for %s\n", task.PendingRework.FromState, task.State)
+	} else if !shouldSkipPlanningAutoComplete(task, townRoot, rig, runner.v) &&
 		!shouldSkipImplementationAutoComplete(task, townRoot, rig, runner.v) {
 		if o, s, ok := runner.tryAutoOutcome(); ok {
 			orchestratedPrintf("[gt-agent] skipping LLM: %s artifacts already valid after pre_run\n", task.State)
