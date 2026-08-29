@@ -2540,12 +2540,18 @@ func validatePlanMDBeadIDs(townRoot, rig, planPath string, v orchestrator.Workfl
 	// Using ForActivePhase() incorrectly filters out beads from completed/future phases.
 	// Load the full profile validation (not scoped to active phase) for correct matching.
 	vFull, ok, err := orchestrator.LoadRigWorkflowProfileFile(townRoot, rig)
-	if err != nil || !ok {
+	if err != nil {
 		return err
 	}
-	vFull = orchestrator.EnrichWorkflowValidationFromArchitecture(vFull, filepath.Join(townRoot, rig, "mayor", "rig"))
-	vFull = vFull.WithDefaults()
-	v = vFull
+	if ok {
+		vFull = orchestrator.EnrichWorkflowValidationFromArchitecture(vFull, filepath.Join(townRoot, rig, "mayor", "rig"))
+		vFull = vFull.WithDefaults()
+		v = vFull
+	} else {
+		// No profile file on disk — use the caller-provided v so downstream
+		// bead/required-files checks still enforce planning constraints.
+		v = v.WithDefaults()
+	}
 	open, err := listOpenImplementationBeads(townRoot, rig)
 	if err != nil {
 		return err
