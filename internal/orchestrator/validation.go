@@ -1377,6 +1377,11 @@ func (v WorkflowValidation) PromptVars() map[string]string {
 			activeID = strings.TrimSpace(p.ID)
 		}
 	}
+	// Active + completed phase IDs for test validation (future phases excluded)
+	phaseIDs := []string{activeID}
+	phaseIDs = append(phaseIDs, v.CompletedPhaseIDs()...)
+	phaseIDsStr := strings.Join(phaseIDs, ", ")
+
 	return map[string]string{
 		"layout_root":                     v.LayoutRoot,
 		"bead_title_contains":             v.BeadTitleContains,
@@ -1389,6 +1394,7 @@ func (v WorkflowValidation) PromptVars() map[string]string {
 		"active_phase_id":                 activeID,
 		"active_phase_title":              activeTitle,
 		"delivery_phase_count":            fmt.Sprintf("%d", len(v.DeliveryPhases)),
+		"test_validation_phase_ids":       phaseIDsStr,
 		"phase_scope_note":                v.PhaseScopeNote(),
 		"integration_contract_scope_note": v.IntegrationContractScopeNote(),
 		"requirements_file":               req,

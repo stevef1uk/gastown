@@ -30,9 +30,10 @@ $GT_ROOT/{{rig}}/mayor/rig/{{layout_root}}/  ← layout root (ALL code files go 
 ## What gt-agent checks mechanically (you must confirm the same)
 
 1. `TEST_PLAN.md` exists and is ≥ {{min_test_plan_bytes}} bytes.
-2. For each requirement row, the planned test file exists on disk (relative to `{{layout_root}}`).
-3. Each test file has substantive content — no `TODO`, `FIXME`, empty bodies, or placeholder returns (gt-agent's stub check).
-4. Phase verify `{{phase_qa_verify_command}}` exits green.
+2. **Only validate requirement rows where `Phase` matches the active phase or any completed phase** — future-phase requirements are expected to be missing until that delivery phase begins. Filter by phase IDs: `{{test_validation_phase_ids}}`.
+3. For each valid requirement row, the planned test file exists on disk (relative to `{{layout_root}}`).
+4. Each test file has substantive content — no `TODO`, `FIXME`, empty bodies, or placeholder returns (gt-agent's stub check).
+5. Phase verify `{{phase_qa_verify_command}}` exits green.
 
 ## Adequacy checklist (your judgment — this is why you exist)
 
