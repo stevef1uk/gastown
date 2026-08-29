@@ -1726,16 +1726,16 @@ func extractPhaseLinePaths(line, layoutRoot string) []string {
 		if strings.ContainsAny(part, " \t") && layoutRoot != "" {
 			if idx := strings.Index(part, layoutRoot+"/"); idx >= 0 {
 				candidate := part[idx:]
-				// Trim at next whitespace or comma to isolate the path.
+				// Trim at next whitespace, comma, or backtick to isolate the path.
 				// Do NOT trim at periods — they're part of file extensions.
 				for i, ch := range candidate {
-					if ch == ' ' || ch == '\t' || ch == ',' || ch == ';' {
+					if ch == ' ' || ch == '\t' || ch == ',' || ch == ';' || ch == '`' {
 						candidate = candidate[:i]
 						break
 					}
 				}
-				// Trim trailing sentence-ending periods only (not file extension periods)
-				candidate = strings.TrimRight(candidate, ".")
+				// Trim trailing sentence-ending periods and backticks
+				candidate = strings.TrimRight(candidate, ".`")
 				if candidate != "" && !seen[candidate] && isLikelyRepoFilePath(candidate, layoutRoot) {
 					seen[candidate] = true
 					out = append(out, candidate)
@@ -1743,12 +1743,14 @@ func extractPhaseLinePaths(line, layoutRoot string) []string {
 				continue
 			}
 		}
+		// Trim leading/trailing backticks from comma-split parts (backtick-wrapped paths)
+		part = strings.Trim(part, "`")
 		// Skip prose fragments (no path-like structure)
 		if !strings.Contains(part, "/") && !strings.HasPrefix(part, layoutRoot) && !isLikelyRepoFilePath(part, layoutRoot) {
 			continue
 		}
-		// Trim trailing sentence-ending periods from comma-split parts
-		part = strings.TrimRight(part, ".")
+		// Trim trailing sentence-ending periods and backticks from comma-split parts
+		part = strings.TrimRight(part, ".`")
 		if isLikelyRepoFilePath(part, layoutRoot) && !seen[part] {
 			seen[part] = true
 			out = append(out, part)

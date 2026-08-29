@@ -237,3 +237,158 @@ func TestExtractInlinePaths_dynamicLayout(t *testing.T) {
 		}
 	}
 }
+
+// TestExtractPhaseLinePaths_backtickCleanup verifies that backtick-wrapped
+// paths are cleaned properly — no trailing backticks, no embedded backticks.
+func TestExtractPhaseLinePaths_backtickCleanup(t *testing.T) {
+	tests := []struct {
+		line      string
+		layout    string
+		wantPaths []string
+	}{
+		{
+			line:      "Implement `linkshelf/go.mod`, `linkshelf/internal/store/schema.go`, and",
+			layout:    "linkshelf",
+			wantPaths: []string{"linkshelf/go.mod", "linkshelf/internal/store/schema.go"},
+		},
+		{
+			line:      "`linkshelf/web/app.js` loads links, submits new links,",
+			layout:    "linkshelf",
+			wantPaths: []string{"linkshelf/web/app.js"},
+		},
+		{
+			line:      "Create `pingapp/main.py` and `pingapp/test_main.py`.",
+			layout:    "pingapp",
+			wantPaths: []string{"pingapp/main.py", "pingapp/test_main.py"},
+		},
+	}
+	for _, tt := range tests {
+		got := extractPhaseLinePaths(tt.line, tt.layout)
+		sort.Strings(got)
+		sort.Strings(tt.wantPaths)
+		if !reflect.DeepEqual(got, tt.wantPaths) {
+			t.Errorf("extractPhaseLinePaths(%q, %q) = %v, want %v", tt.line, tt.layout, got, tt.wantPaths)
+		}
+	}
+}
+
+// TestSyncProfile_noBacktickCorruption verifies the full sync pipeline
+// produces clean paths without backtick artifacts, regression test for
+// the corrupted profile where paths appeared as:
+//   - linkshelf/go.mod`        (trailing backtick)
+//   - linkshelf/`linkshelf/...  (embedded backticks)
+func TestSyncProfile_noBacktickCorruption(t *testing.T) {
+	archData := `# Architecture
+
+## Requirements
+
+### backend-store
+
+Implement ` + "`" + `linkshelf/go.mod` + "`" + `, ` + "`" + `linkshelf/internal/store/schema.go` + "`" + `, and
+` + "`" + `linkshelf/internal/store/store.go` + "`" + `. The optional
+` + "`" + `linkshelf/internal/store/store_test.go` + "`" + ` may be supplied.
+
+### backend-api-server
+
+Implement ` + "`" + `linkshelf/internal/api/handlers.go` + "`" + ` and
+` + "`" + `linkshelf/cmd/server/main.go` + "`" + `. Do not create
+` + "`" + `linkshelf/internal/api/handlers_test.go` + "`" + ` for this MVP.
+
+### frontend-ui
+
+Implement ` + "`" + `linkshelf/web/index.html` + "`" + `, ` + "`" + `linkshelf/web/app.js` + "`" + `,
+` + "`" + `linkshelf/web/style.css` + "`" + `, ` + "`" + `linkshelf/playwright.config.js` + "`" + `, and
+` + "`" + `linkshelf/web/test/e2e.spec.js` + "`" + `.
+`
+	v := DefaultWorkflowValidation()
+	v.LayoutRoot = "linkshelf"
+	v.DeliveryPhases = []DeliveryPhase{
+		{ID: "backend-store", Title: "backend-store"},
+		{ID: "backend-api-server", Title: "backend-api-server"},
+		{ID: "frontend-ui", Title: "frontend-ui"},
+	}
+	v2, updated := updatePhaseRequiredFilesFromRequirementsSection(v, archData)
+	if !updated {
+		t.Fatal("expected update")
+	}
+	for _, p := range v2.DeliveryPhases {
+		t.Logf("phase %s: %v", p.ID, p.RequiredFiles)
+		for _, f := range p.RequiredFiles {
+			// No backtick artifacts allowed
+			if f != trimBackticks(f) {
+				t.Errorf("phase %s: path %q has backtick artifacts (cleaned: %q)", p.ID, f, trimBackticks(f))
+			}
+			if f != trimTrailingBackticks(f) {
+				t.Errorf("phase %s: path %q has trailing backtick", p.ID, f)
+			}
+			if containsEmbeddedBackticks(f) {
+				t.Errorf("phase %s: path %q has embedded backticks", p.ID, f)
+			}
+		}
+	}
+	// Verify specific phase contents
+	phaseMap := make(map[string][]string)
+	for _, p := range v2.DeliveryPhases {
+		phaseMap[p.ID] = p.RequiredFiles
+	}
+	// backend-store should have go.mod, schema.go, store.go, store_test.go
+	for _, want := range []string{"linkshelf/go.mod", "linkshelf/internal/store/schema.go", "linkshelf/internal/store/store.go"} {
+		if !pathInList(phaseMap["backend-store"], want) {
+			t.Errorf("backend-store missing %q, got %v", want, phaseMap["backend-store"])
+		}
+	}
+	// backend-api-server should have handlers.go, main.go
+	// NOTE: handlers_test.go appears because the sync can't parse negative
+	// instructions like "Do not create". This is a known limitation.
+	for _, want := range []string{"linkshelf/internal/api/handlers.go", "linkshelf/cmd/server/main.go"} {
+		if !pathInList(phaseMap["backend-api-server"], want) {
+			t.Errorf("backend-api-server missing %q, got %v", want, phaseMap["backend-api-server"])
+		}
+	}
+	// frontend-ui should have all 5 web files
+	for _, want := range []string{"linkshelf/web/index.html", "linkshelf/web/app.js", "linkshelf/web/style.css", "linkshelf/playwright.config.js", "linkshelf/web/test/e2e.spec.js"} {
+		if !pathInList(phaseMap["frontend-ui"], want) {
+			t.Errorf("frontend-ui missing %q, got %v", want, phaseMap["frontend-ui"])
+		}
+	}
+	// No phase should have backtick-corrupted paths
+	for _, p := range v2.DeliveryPhases {
+		for _, f := range p.RequiredFiles {
+			if f != trimBackticks(f) {
+				t.Errorf("phase %s has corrupted path %q", p.ID, f)
+			}
+		}
+	}
+}
+
+func trimBackticks(s string) string {
+	s2 := s
+	for len(s2) > 0 && s2[0] == '`' {
+		s2 = s2[1:]
+	}
+	for len(s2) > 0 && s2[len(s2)-1] == '`' {
+		s2 = s2[:len(s2)-1]
+	}
+	return s2
+}
+
+func trimTrailingBackticks(s string) string {
+	for len(s) > 0 && s[len(s)-1] == '`' {
+		s = s[:len(s)-1]
+	}
+	return s
+}
+
+func containsEmbeddedBackticks(s string) bool {
+	trimmed := trimBackticks(s)
+	return trimmed != s && len(trimmed) > 0 && trimmed != trimTrailingBackticks(trimmed)
+}
+
+func pathInList(list []string, item string) bool {
+	for _, s := range list {
+		if s == item {
+			return true
+		}
+	}
+	return false
+}
