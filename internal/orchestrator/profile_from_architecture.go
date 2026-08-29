@@ -1474,27 +1474,23 @@ func updateTopLevelFromCanonicalSection(v WorkflowValidation, archData string) W
 	}
 	lower := strings.ToLower(archData)
 	var canonicalSection string
-	canonicalIdx := strings.Index(lower, "### canonical")
-	if canonicalIdx < 0 {
-		// Try "## requirements" then find "canonical" within it
-		reqIdx := strings.Index(lower, "## requirements")
-		if reqIdx >= 0 {
-			section := archData[reqIdx:]
-			if j := strings.Index(section[1:], "\n## "); j >= 0 {
-				section = section[:1+j]
-			}
-			canonicalIdx = strings.Index(strings.ToLower(section), "### canonical")
-			if canonicalIdx >= 0 {
-				canonicalSection = section[canonicalIdx:]
-				if j := strings.Index(canonicalSection[1:], "\n### "); j >= 0 {
-					canonicalSection = canonicalSection[:1+j]
-				}
-			}
+	// Look for "The following ... phase IDs are canonical" paragraph
+	canonicalRe := regexp.MustCompile(`(?i)the following[^.]*phase ids are canonical`)
+	canonicalIdx := -1
+	if loc := canonicalRe.FindStringIndex(lower); loc != nil {
+		canonicalIdx = loc[0]
+		canonicalSection = archData[canonicalIdx:]
+		if j := strings.Index(canonicalSection[1:], "\n## "); j >= 0 {
+			canonicalSection = canonicalSection[:1+j]
 		}
 	} else {
-		canonicalSection = archData[canonicalIdx:]
-		if j := strings.Index(canonicalSection[1:], "\n### "); j >= 0 {
-			canonicalSection = canonicalSection[:1+j]
+		// Fallback: try "### canonical"
+		canonicalIdx = strings.Index(lower, "### canonical")
+		if canonicalIdx >= 0 {
+			canonicalSection = archData[canonicalIdx:]
+			if j := strings.Index(canonicalSection[1:], "\n### "); j >= 0 {
+				canonicalSection = canonicalSection[:1+j]
+			}
 		}
 	}
 
@@ -1502,44 +1498,68 @@ func updateTopLevelFromCanonicalSection(v WorkflowValidation, archData string) W
 		return v
 	}
 
-	// Parse the canonical section for required_files and qa_verify_command
+	// Parse the canonical section ONLY for qa_verify_commands (not required_files,
+	// which are already clean from phase union). The canonical section lists
+	// negative examples like "must not list SPEC.md" which would pollute required_files.
 	lines := strings.Split(canonicalSection, "\n")
-	var topRequired []string
 	var topQA string
-	for _, line := range lines {
+	phaseQA := make(map[string]string)
+	currentPhase := ""
+	for i, line := range lines {
 		trimmed := strings.TrimSpace(line)
-		// Look for backtick paths
-		matches := extractArchPaths(line, v.LayoutRootDir())
-		for _, m := range matches {
-			p := filepath.ToSlash(strings.TrimSpace(m))
-			for strings.HasPrefix(p, "./") {
-				p = p[2:]
-			}
-			p = strings.Trim(p, "`")
-			p = strings.ReplaceAll(p, "`", "")
-			if isImplementableFilePath(p) && IsValidImplementBeadPath(p) {
-				topRequired = append(topRequired, p)
+		// Track phase in the canonical section (look for **backend-store**, **frontend-ui** etc.)
+		if strings.HasPrefix(trimmed, "**") && strings.HasSuffix(trimmed, "**") && strings.Contains(trimmed, "-") {
+			phaseID := strings.Trim(trimmed, "*")
+			phaseID = strings.TrimSpace(phaseID)
+			if strings.Contains(phaseID, "-") && !strings.Contains(phaseID, " ") {
+				currentPhase = phaseID
 			}
 		}
-		// Look for qa_verify_command patterns
-		if strings.Contains(strings.ToLower(trimmed), "qa_verify_command") {
-			// Extract command from backticks or after colon
+		// Look for qa_verify_command patterns OR "Verify with" patterns
+		if strings.Contains(strings.ToLower(trimmed), "qa_verify_command") || strings.Contains(strings.ToLower(trimmed), "verify with") {
+			// Extract command from backticks on this line OR the next line(s)
+			var cmd string
 			if idx := strings.Index(trimmed, "`"); idx >= 0 {
 				end := strings.Index(trimmed[idx+1:], "`")
 				if end >= 0 {
-					topQA = strings.TrimSpace(trimmed[idx+1 : idx+1+end])
+					cmd = strings.TrimSpace(trimmed[idx+1 : idx+1+end])
 				}
-			} else if idx := strings.Index(trimmed, ":"); idx >= 0 {
-				topQA = strings.TrimSpace(trimmed[idx+1:])
+			}
+			// If no backtick on this line, check next few lines (for "Verify with" split across lines)
+			if cmd == "" {
+				for j := i + 1; j < len(lines) && j <= i+3; j++ {
+					nextLine := strings.TrimSpace(lines[j])
+					if idx := strings.Index(nextLine, "`"); idx >= 0 {
+						end := strings.Index(nextLine[idx+1:], "`")
+						if end >= 0 {
+							cmd = strings.TrimSpace(nextLine[idx+1 : idx+1+end])
+							break
+						}
+					}
+					// Stop if we hit another phase or section
+					if strings.HasPrefix(nextLine, "**") && strings.HasSuffix(nextLine, "**") {
+						break
+					}
+				}
+			}
+			if cmd != "" {
+				if currentPhase != "" {
+					phaseQA[currentPhase] = cmd
+				} else {
+					topQA = cmd
+				}
 			}
 		}
 	}
 
-	if len(topRequired) > 0 {
-		v.RequiredFiles = dedupeStrings(topRequired)
-	}
 	if topQA != "" {
 		v.QAVerifyCommand = topQA
+	}
+	// Update phase qa_verify_commands from canonical section
+	for i := range v.DeliveryPhases {
+		if cmd, ok := phaseQA[v.DeliveryPhases[i].ID]; ok {
+			v.DeliveryPhases[i].QAVerifyCommand = cmd
+		}
 	}
 	return v
 }
