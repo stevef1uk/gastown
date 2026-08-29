@@ -541,3 +541,38 @@ func TestCheckPlanBeadMapExactPaths_normalizesPaths(t *testing.T) {
 		t.Fatal("expected issue for path not in required_files")
 	}
 }
+
+func TestCheckArchitectureDockerSection_nonContainerizedAppPasses(t *testing.T) {
+	// A non-containerized app that explicitly states Docker is not used must pass
+	// the Docker judge even when docker appears only as a stale compose file in the
+	// profile — otherwise the Architect loops forever fabricating base images it
+	// will never use.
+	arch := "# Architecture\n" +
+		"## Overview\n" +
+		"The application is not containerized and does not use Docker.\n" +
+		"## Docker & Deployment\n" +
+		"Docker is not used. The application runs directly on the host; no image is built.\n"
+	v := WorkflowValidation{
+		QAVerifyCommand: "go test ./...",
+		RequiredFiles:   []string{"linkshelf/docker-compose.yml"},
+	}
+	if issues := checkArchitectureDockerSection(arch, v); len(issues) > 0 {
+		t.Fatalf("non-containerized app should pass Docker judge, got: %v", issues)
+	}
+}
+
+func TestCheckArchitectureDockerSection_withAppDockerfileStillRequired(t *testing.T) {
+	// When an application Dockerfile IS required, explicit "not containerized" must
+	// not bypass the judge — the profile demands a container.
+	arch := "# Architecture\n" +
+		"## Docker & Deployment\n" +
+		"The application is not containerized.\n"
+	v := WorkflowValidation{
+		QAVerifyCommand: "docker compose up",
+		RequiredFiles:   []string{"linkshelf/Dockerfile"},
+	}
+	issues := checkArchitectureDockerSection(arch, v)
+	if len(issues) == 0 {
+		t.Fatal("expected Docker section to still be required when Dockerfile is in profile")
+	}
+}

@@ -185,10 +185,22 @@ func ValidatePlanningDocAlignment(townRoot, rigDir string, v WorkflowValidation,
 	return formatDocAlignmentError("SPEC/architecture/plan misaligned", issues)
 }
 
+// dockerNotUsedRE matches an explicit statement that Docker is not used by / not
+// required for the application (a non-containerized app). When such a statement is
+// present and no application Dockerfile is required, the Docker judge must not demand
+// container/test-harness specifics that are unwinnable and would loop the Architect.
+var dockerNotUsedRE = regexp.MustCompile(`(?i)(not\s+(containerized|run in docker|dockerized))|(does not (use|require)\s+docker)|(no docker)|(without docker)`)
+
 // checkArchitectureDockerSection requires a substantive ## Docker & Deployment section
 // when the workflow uses Docker (Dockerfile in required_files or docker in QA command).
 func checkArchitectureDockerSection(archDoc string, v WorkflowValidation) []string {
 	if !WorkflowUsesDocker(v) {
+		return nil
+	}
+	// A non-containerized application that explicitly states Docker is not used must
+	// not be forced to fabricate base images / compose-network details it will never
+	// have. This is only safe when no application Dockerfile is actually required.
+	if !hasAppDockerfile(v) && dockerNotUsedRE.MatchString(archDoc) {
 		return nil
 	}
 	loc := dockerDeploymentHeadingRE.FindStringIndex(archDoc)

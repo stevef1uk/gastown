@@ -1702,3 +1702,89 @@ func TestCommandRemovesRigFromRegistry(t *testing.T) {
 		}
 	}
 }
+
+func TestDesignTrackHandler_setsDesignArchWrittenOnHeredoc(t *testing.T) {
+	heredoc := "cat > myrig/mayor/rig/architecture.md <<'EOF'\n# Architecture\nContent here.\nEOF"
+	task := &orchestrator.Task{Hooks: orchestrator.StateHooks{Artifacts: "design", Track: "design"}}
+	runner := newStateRunner(task, t.TempDir(), "myrig")
+	if runner.track.designArchWritten {
+		t.Fatal("should start false")
+	}
+	trackHandlers["design"](runner, heredoc, nil)
+	if !runner.track.designArchWritten {
+		t.Fatal("designArchWritten should be true after heredoc command")
+	}
+}
+
+func TestDesignTrackHandler_setsDesignArchWrittenFromWriteTimestamp(t *testing.T) {
+	dir := t.TempDir()
+	rigDir := filepath.Join(dir, "myrig", "mayor", "rig")
+	if err := os.MkdirAll(rigDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	writeMinimalDesignSPEC(t, rigDir)
+	archPath := filepath.Join(rigDir, "architecture.md")
+	archContent := []byte("# Architecture\n## Overview\nTest content for linkshelf.\n")
+	if err := os.WriteFile(archPath, archContent, 0644); err != nil {
+		t.Fatal(err)
+	}
+	task := &orchestrator.Task{Hooks: orchestrator.StateHooks{Artifacts: "design", Track: "design"}}
+	runner := newStateRunner(task, dir, "myrig")
+	cmd := "cat " + archPath
+	trackHandlers["design"](runner, cmd, nil)
+	if !runner.track.designArchWritten {
+		t.Fatal("designArchWritten should be true from fileWriteThisRun fallback")
+	}
+}
+
+func TestDesignAutoComplete_firesAfterHeredocWrite(t *testing.T) {
+	dir := t.TempDir()
+	rigDir := filepath.Join(dir, "myrig", "mayor", "rig")
+	if err := os.MkdirAll(rigDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	writeMinimalDesignSPEC(t, rigDir)
+	archPath := filepath.Join(rigDir, "architecture.md")
+	bigContent := []byte("# Architecture for myrig\n## Overview\n" + strings.Repeat("x", 4000) + "\n## Requirements\n### backend-store\nReq.\n")
+	if err := os.WriteFile(archPath, bigContent, 0644); err != nil {
+		t.Fatal(err)
+	}
+	task := &orchestrator.Task{
+		AllowedOutcomes: []string{"success", "failure"},
+		Hooks:           orchestrator.StateHooks{Artifacts: "design", Track: "design"},
+	}
+	runner := newStateRunner(task, dir, "myrig")
+	heredoc := "cat > myrig/mayor/rig/architecture.md <<'EOF'\n" + string(bigContent) + "\nEOF"
+	trackHandlers["design"](runner, heredoc, nil)
+	if !runner.track.designArchWritten {
+		t.Fatal("designArchWritten should be true after heredoc")
+	}
+	o, _, ok := runner.tryAutoOutcome()
+	if !ok || o != "success" {
+		t.Fatalf("auto-complete should fire after heredoc + valid arch, got ok=%v outcome=%q", ok, o)
+	}
+}
+
+func TestDesignAutoComplete_archWrittenButValidationFails(t *testing.T) {
+	dir := t.TempDir()
+	rigDir := filepath.Join(dir, "myrig", "mayor", "rig")
+	if err := os.MkdirAll(rigDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	writeMinimalDesignSPEC(t, rigDir)
+	archPath := filepath.Join(rigDir, "architecture.md")
+	if err := os.WriteFile(archPath, []byte("tiny"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	task := &orchestrator.Task{
+		AllowedOutcomes: []string{"success", "failure"},
+		Hooks:           orchestrator.StateHooks{Artifacts: "design", Track: "design"},
+	}
+	runner := newStateRunner(task, dir, "myrig")
+	runner.track.designArchWritten = true
+	err := runner.validateArtifacts("success")
+	if err == nil {
+		t.Fatal("should fail validation for too-small architecture.md")
+	}
+	t.Logf("expected validation error: %v", err)
+}
