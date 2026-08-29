@@ -324,7 +324,6 @@ func PruneStaleLayoutFiles(townRoot, rig string, v WorkflowValidation) (removed 
 		}
 		// No matching required file by basename - stale UNLESS git tracks it
 		if gitTracked(rel) {
-			warnings = append(warnings, filepath.ToSlash(filepath.Join(layout, rel))+": protected (git-tracked, delivered by an earlier phase)")
 			return nil
 		}
 		if rmErr := os.Remove(path); rmErr != nil {
