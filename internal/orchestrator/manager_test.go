@@ -689,3 +689,42 @@ func TestCompleteTask_sameStateFailureKeepsPendingRework(t *testing.T) {
 		t.Fatalf("same-state polecat fail should keep QA rework: %+v", m.instances[id].PendingRework)
 	}
 }
+
+// TestBuildTaskPayload_roundTripsVariables verifies the payload sent to the agent
+// carries inst.Variables (e.g. designArchWritten) so newStateRunner can restore
+// cross-attempt state on state re-entry. Regression for the Architect infinite loop
+// where design repeatedly rejected the pre-existing architecture.md as "stale".
+func TestBuildTaskPayload_roundTripsVariables(t *testing.T) {
+	dir := t.TempDir()
+	m := NewManager(dir)
+	m.LoadTemplate(&WorkflowTemplate{
+		ID:           "rig-flow",
+		InitialState: "design",
+		States: map[string]State{
+			"design": {
+				Role:         "architect",
+				Instructions: "design step",
+				Transitions:  map[string]Transition{"success": {To: "design_review"}},
+			},
+		},
+	})
+	id, _ := m.StartWorkflow("rig-flow", map[string]string{"rig": "mockrig"})
+	m.instances[id].Variables["designArchWritten"] = "true"
+
+	inst := m.instances[id]
+	tpl := m.templates["rig-flow"]
+	state, _ := inst.GetCurrentTask(tpl)
+	payload, err := m.BuildTaskPayload(inst, tpl, state)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Simulate the gt-agent fetch path: JSON marshal/unmarshal into Task.
+	task := payloadToTask(t, payload)
+	if task.Variables == nil {
+		t.Fatal("task.Variables must be populated from inst.Variables (regression: designArchWritten not restored)")
+	}
+	if task.Variables["designArchWritten"] != "true" {
+		t.Fatalf("task.Variables[designArchWritten] = %q, want \"true\"", task.Variables["designArchWritten"])
+	}
+}

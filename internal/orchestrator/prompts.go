@@ -159,6 +159,7 @@ func (m *Manager) BuildTaskPayload(inst *WorkflowInstance, tpl *WorkflowTemplate
 		"allowed_outcomes": state.AllowedOutcomes(),
 		"validation":       validation,
 		"hooks":            state.Hooks,
+		"variables":        vars,
 	}
 	if inst.PendingRework != nil {
 		payload["pending_rework"] = inst.PendingRework
