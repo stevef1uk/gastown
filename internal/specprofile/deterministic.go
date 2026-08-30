@@ -1347,7 +1347,7 @@ func inferTestRunner(paths []string) string {
 		if ext == ".go" {
 			return "go"
 		}
-		if ext == ".js" || ext == ".ts" {
+		if ext == ".js" || ext == ".ts" || ext == ".tsx" || ext == ".jsx" || ext == ".mjs" || ext == ".cjs" {
 			return "npm"
 		}
 	}
