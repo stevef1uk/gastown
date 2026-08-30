@@ -1102,20 +1102,37 @@ func referencesMissingFiles(cmd string, availableFiles map[string]bool) bool {
 func StripNonFileRequiredEntries(files []string) []string {
 	out := make([]string, 0, len(files))
 	for _, f := range files {
-		if strings.Contains(f, "(") || strings.Contains(f, "=") {
+		// Split semicolon-joined entries (e.g. "file1.py; file2.ts" from weak LLM).
+		if strings.Contains(f, ";") {
+			for _, part := range strings.Split(f, ";") {
+				part = strings.TrimSpace(part)
+				if part != "" && !isNonFileEntry(part) {
+					out = append(out, part)
+				}
+			}
 			continue
 		}
-		// Filter Go stdlib symbols: pkg.Type or pkg.Method (capital after dot)
-		if goStdlibSymbolRE.MatchString(f) {
-			continue
+		if !isNonFileEntry(f) {
+			out = append(out, f)
 		}
-		// Filter bare version numbers like "1.21", "1.22"
-		if versionNumberRE.MatchString(f) {
-			continue
-		}
-		out = append(out, f)
 	}
 	return out
+}
+
+// isNonFileEntry returns true if the string is clearly not a file path.
+func isNonFileEntry(f string) bool {
+	if strings.Contains(f, "(") || strings.Contains(f, "=") {
+		return true
+	}
+	// Filter Go stdlib symbols: pkg.Type or pkg.Method (capital after dot)
+	if goStdlibSymbolRE.MatchString(f) {
+		return true
+	}
+	// Filter bare version numbers like "1.21", "1.22"
+	if versionNumberRE.MatchString(f) {
+		return true
+	}
+	return false
 }
 
 var (

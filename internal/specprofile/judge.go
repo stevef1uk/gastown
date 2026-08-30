@@ -267,14 +267,15 @@ Output JSON only — no prose, no markdown fences.`
 }
 
 // validatePhaseUpdates sends proposed verify command changes to a validator LLM
-// and returns only the approved updates. If the validator call fails, the original
-// updates are returned as-is (fail-open).
+// and returns only the approved updates. If the validator call fails or returns
+// an unparseable response, no updates are applied (fail-closed) to prevent weak
+// or hallucinated generator output from corrupting the profile.
 func validatePhaseUpdates(ctx context.Context, endpoint, model string, phases []judgePhasePayload, updates map[string]string) map[string]string {
 	endpoint = strings.TrimSpace(endpoint)
 	model = strings.TrimSpace(model)
 	if endpoint == "" || model == "" {
-		log.Printf("[judge] validator: skipping — no endpoint/model")
-		return updates
+		log.Printf("[judge] validator: skipping — no endpoint/model — rejecting all %d updates", len(updates))
+		return nil
 	}
 
 	// Build validation prompt listing each proposed change.
@@ -304,14 +305,14 @@ func validatePhaseUpdates(ctx context.Context, endpoint, model string, phases []
 	}
 	jsonBody, err := json.Marshal(body)
 	if err != nil {
-		log.Printf("[judge] validator: marshal request: %v", err)
-		return updates
+		log.Printf("[judge] validator: marshal request: %v — rejecting all updates", err)
+		return nil
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(jsonBody))
 	if err != nil {
-		log.Printf("[judge] validator: create request: %v", err)
-		return updates
+		log.Printf("[judge] validator: create request: %v — rejecting all updates", err)
+		return nil
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-GasTown-Role", "judge-validate-commands")
@@ -320,18 +321,18 @@ func validatePhaseUpdates(ctx context.Context, endpoint, model string, phases []
 	client := &http.Client{Timeout: 120 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
-		log.Printf("[judge] validator: LLM request failed: %v", err)
-		return updates
+		log.Printf("[judge] validator: LLM request failed: %v — rejecting all updates", err)
+		return nil
 	}
 	defer resp.Body.Close()
 	raw, err := io.ReadAll(resp.Body)
 	if err != nil {
-		log.Printf("[judge] validator: read response: %v", err)
-		return updates
+		log.Printf("[judge] validator: read response: %v — rejecting all updates", err)
+		return nil
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		log.Printf("[judge] validator: LLM HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(raw)))
-		return updates
+		log.Printf("[judge] validator: LLM HTTP %d: %s — rejecting all updates", resp.StatusCode, strings.TrimSpace(string(raw)))
+		return nil
 	}
 
 	var wrap struct {
@@ -343,16 +344,16 @@ func validatePhaseUpdates(ctx context.Context, endpoint, model string, phases []
 		} `json:"choices"`
 	}
 	if err := json.Unmarshal(raw, &wrap); err != nil {
-		log.Printf("[judge] validator: decode response: %v", err)
-		return updates
+		log.Printf("[judge] validator: decode response: %v — rejecting all updates", err)
+		return nil
 	}
 	if len(wrap.Choices) == 0 {
-		log.Printf("[judge] validator: no choices in LLM response")
-		return updates
+		log.Printf("[judge] validator: no choices in LLM response — rejecting all updates")
+		return nil
 	}
 	if wrap.Choices[0].FinishReason == "length" {
-		log.Printf("[judge] validator: LLM response truncated (finish_reason=length), keeping original updates")
-		return updates
+		log.Printf("[judge] validator: LLM response truncated (finish_reason=length) — rejecting all updates")
+		return nil
 	}
 
 	content := strings.TrimSpace(wrap.Choices[0].Message.Content)
@@ -363,8 +364,8 @@ func validatePhaseUpdates(ctx context.Context, endpoint, model string, phases []
 		// Fallback: try parsing as nested objects, extract "approve"/"reject" from each.
 		var nested map[string]interface{}
 		if err2 := ExtractJSONObject(content, &nested); err2 != nil {
-			log.Printf("[judge] validator: parse JSON: %v — using all updates", err)
-			return updates
+			log.Printf("[judge] validator: parse JSON: %v — rejecting all updates", err)
+			return nil
 		}
 		verdicts = make(map[string]string)
 		for id, val := range nested {
@@ -380,8 +381,8 @@ func validatePhaseUpdates(ctx context.Context, endpoint, model string, phases []
 			}
 		}
 		if len(verdicts) == 0 {
-			log.Printf("[judge] validator: no verdicts found in nested response — using all updates")
-			return updates
+			log.Printf("[judge] validator: no verdicts found in nested response — rejecting all updates")
+			return nil
 		}
 		log.Printf("[judge] validator: extracted %d verdicts from nested response", len(verdicts))
 	}

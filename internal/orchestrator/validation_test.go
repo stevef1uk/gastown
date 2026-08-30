@@ -519,3 +519,60 @@ func TestCommandPathsMatchPhaseFiles(t *testing.T) {
 		})
 	}
 }
+
+func TestStripNonFileRequiredEntries(t *testing.T) {
+	tests := []struct {
+		name  string
+		files []string
+		want  []string
+	}{
+		{
+			name:  "clean files pass through",
+			files: []string{"finally/backend/app/main.py", "finally/test/e2e.spec.ts"},
+			want:  []string{"finally/backend/app/main.py", "finally/test/e2e.spec.ts"},
+		},
+		{
+			name:  "semicolon-joined entry split into separate files",
+			files: []string{"finally/backend/tests/test_database.py; finally/test/e2e.spec.ts"},
+			want:  []string{"finally/backend/tests/test_database.py", "finally/test/e2e.spec.ts"},
+		},
+		{
+			name:  "semicolon with extra spaces",
+			files: []string{"file1.py ;  file2.ts ; file3.go"},
+			want:  []string{"file1.py", "file2.ts", "file3.go"},
+		},
+		{
+			name:  "mixed valid and non-file entries",
+			files: []string{"pkg/main.py", "database.init_db()", "1.21", "pkg/util.go"},
+			want:  []string{"pkg/main.py", "pkg/util.go"},
+		},
+		{
+			name:  "semicolon entry with code fragment filtered",
+			files: []string{"file.py; database.init_db()"},
+			want:  []string{"file.py"},
+		},
+		{
+			name:  "empty input",
+			files: []string{},
+			want:  []string{},
+		},
+		{
+			name:  "single semicolon entry split",
+			files: []string{"a.py; b.ts"},
+			want:  []string{"a.py", "b.ts"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := StripNonFileRequiredEntries(tt.files)
+			if len(got) != len(tt.want) {
+				t.Fatalf("got %d entries %v, want %d %v", len(got), got, len(tt.want), tt.want)
+			}
+			for i := range got {
+				if got[i] != tt.want[i] {
+					t.Errorf("got[%d] = %q, want %q", i, got[i], tt.want[i])
+				}
+			}
+		})
+	}
+}
