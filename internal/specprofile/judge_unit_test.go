@@ -10,7 +10,7 @@ import (
 
 func TestValidatePhaseUpdates_FailClosed_NoEndpoint(t *testing.T) {
 	updates := map[string]string{"phase-a": "echo ok"}
-	got := validatePhaseUpdates(context.Background(), "", "some-model", nil, updates)
+	got, _ := validatePhaseUpdates(context.Background(), "", "some-model", nil, updates, nil)
 	if got != nil {
 		t.Fatalf("expected nil (fail-closed), got %v", got)
 	}
@@ -18,7 +18,7 @@ func TestValidatePhaseUpdates_FailClosed_NoEndpoint(t *testing.T) {
 
 func TestValidatePhaseUpdates_FailClosed_NoModel(t *testing.T) {
 	updates := map[string]string{"phase-a": "echo ok"}
-	got := validatePhaseUpdates(context.Background(), "http://localhost/v1", "", nil, updates)
+	got, _ := validatePhaseUpdates(context.Background(), "http://localhost/v1", "", nil, updates, nil)
 	if got != nil {
 		t.Fatalf("expected nil (fail-closed), got %v", got)
 	}
@@ -32,7 +32,7 @@ func TestValidatePhaseUpdates_FailClosed_ServerError(t *testing.T) {
 	defer srv.Close()
 
 	updates := map[string]string{"phase-a": "echo ok"}
-	got := validatePhaseUpdates(context.Background(), srv.URL, "test-model", nil, updates)
+	got, _ := validatePhaseUpdates(context.Background(), srv.URL, "test-model", nil, updates, nil)
 	if got != nil {
 		t.Fatalf("expected nil on server error (fail-closed), got %v", got)
 	}
@@ -46,7 +46,7 @@ func TestValidatePhaseUpdates_FailClosed_InvalidJSON(t *testing.T) {
 	defer srv.Close()
 
 	updates := map[string]string{"phase-a": "echo ok"}
-	got := validatePhaseUpdates(context.Background(), srv.URL, "test-model", nil, updates)
+	got, _ := validatePhaseUpdates(context.Background(), srv.URL, "test-model", nil, updates, nil)
 	if got != nil {
 		t.Fatalf("expected nil on invalid JSON (fail-closed), got %v", got)
 	}
@@ -62,7 +62,7 @@ func TestValidatePhaseUpdates_FailClosed_EmptyChoices(t *testing.T) {
 	defer srv.Close()
 
 	updates := map[string]string{"phase-a": "echo ok"}
-	got := validatePhaseUpdates(context.Background(), srv.URL, "test-model", nil, updates)
+	got, _ := validatePhaseUpdates(context.Background(), srv.URL, "test-model", nil, updates, nil)
 	if got != nil {
 		t.Fatalf("expected nil on empty choices (fail-closed), got %v", got)
 	}
@@ -83,7 +83,7 @@ func TestValidatePhaseUpdates_FailClosed_TruncatedResponse(t *testing.T) {
 	defer srv.Close()
 
 	updates := map[string]string{"phase-a": "echo ok"}
-	got := validatePhaseUpdates(context.Background(), srv.URL, "test-model", nil, updates)
+	got, _ := validatePhaseUpdates(context.Background(), srv.URL, "test-model", nil, updates, nil)
 	if got != nil {
 		t.Fatalf("expected nil on truncated response (fail-closed), got %v", got)
 	}
@@ -96,7 +96,7 @@ func TestValidatePhaseUpdates_ApprovedOnly(t *testing.T) {
 			"choices": []map[string]interface{}{
 				{
 					"message": map[string]string{
-						"content": `{"phase-a": "approve", "phase-b": "reject"}`,
+						"content": `{"verify_commands": {"phase-a": "approve", "phase-b": "reject"}}`,
 					},
 					"finish_reason": "stop",
 				},
@@ -109,7 +109,7 @@ func TestValidatePhaseUpdates_ApprovedOnly(t *testing.T) {
 		"phase-a": "echo approved",
 		"phase-b": "echo rejected",
 	}
-	got := validatePhaseUpdates(context.Background(), srv.URL, "test-model", nil, updates)
+	got, _ := validatePhaseUpdates(context.Background(), srv.URL, "test-model", nil, updates, nil)
 	if got == nil {
 		t.Fatal("expected non-nil result")
 	}
@@ -131,7 +131,7 @@ func TestValidatePhaseUpdates_AllRejected(t *testing.T) {
 			"choices": []map[string]interface{}{
 				{
 					"message": map[string]string{
-						"content": `{"phase-a": "reject", "phase-b": "reject"}`,
+						"content": `{"verify_commands": {"phase-a": "reject", "phase-b": "reject"}}`,
 					},
 					"finish_reason": "stop",
 				},
@@ -144,7 +144,7 @@ func TestValidatePhaseUpdates_AllRejected(t *testing.T) {
 		"phase-a": "echo a",
 		"phase-b": "echo b",
 	}
-	got := validatePhaseUpdates(context.Background(), srv.URL, "test-model", nil, updates)
+	got, _ := validatePhaseUpdates(context.Background(), srv.URL, "test-model", nil, updates, nil)
 	if got == nil {
 		t.Fatal("expected non-nil result (empty map)")
 	}
@@ -160,7 +160,7 @@ func TestValidatePhaseUpdates_MissingVerdictRejected(t *testing.T) {
 			"choices": []map[string]interface{}{
 				{
 					"message": map[string]string{
-						"content": `{"phase-a": "approve"}`,
+						"content": `{"verify_commands": {"phase-a": "approve"}}`,
 					},
 					"finish_reason": "stop",
 				},
@@ -173,7 +173,7 @@ func TestValidatePhaseUpdates_MissingVerdictRejected(t *testing.T) {
 		"phase-a": "echo a",
 		"phase-b": "echo b",
 	}
-	got := validatePhaseUpdates(context.Background(), srv.URL, "test-model", nil, updates)
+	got, _ := validatePhaseUpdates(context.Background(), srv.URL, "test-model", nil, updates, nil)
 	if got == nil {
 		t.Fatal("expected non-nil result")
 	}
