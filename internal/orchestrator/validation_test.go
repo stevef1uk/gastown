@@ -453,3 +453,69 @@ func TestFinalPhaseSmokeVerifyCommand(t *testing.T) {
 		t.Fatalf("expected empty for Go library, got %q", got)
 	}
 }
+
+func TestCommandPathsMatchPhaseFiles(t *testing.T) {
+	tests := []struct {
+		name    string
+		cmd     string
+		files   []string
+		want    bool
+	}{
+		{
+			name:  "bare test -f matches exact file",
+			cmd:   "test -f finally/docker-compose.yml",
+			files: []string{"finally/docker-compose.yml", "finally/Dockerfile"},
+			want:  true,
+		},
+		{
+			name:  "cd then test -f resolves relative path",
+			cmd:   "cd finally && test -f docker-compose.yml",
+			files: []string{"finally/docker-compose.yml", "finally/Dockerfile"},
+			want:  true,
+		},
+		{
+			name:  "cd into nested dir then test -f",
+			cmd:   "cd finally/backend && test -f app/main.py",
+			files: []string{"finally/backend/app/main.py", "finally/Dockerfile"},
+			want:  true,
+		},
+		{
+			name:  "cd then test -f with no match fails",
+			cmd:   "cd finally && test -f nonexistent.txt",
+			files: []string{"finally/docker-compose.yml"},
+			want:  false,
+		},
+		{
+			name:  "no paths returns true",
+			cmd:   "echo hello",
+			files: []string{"finally/docker-compose.yml"},
+			want:  true,
+		},
+		{
+			name:  "test -f with absolute path is skipped",
+			cmd:   "test -f /usr/local/bin/go",
+			files: []string{"finally/docker-compose.yml"},
+			want:  true,
+		},
+		{
+			name:  "multiple cd then test -f",
+			cmd:   "cd gt && cd fin/mayor/rig && test -f architecture.md",
+			files: []string{"gt/fin/mayor/rig/architecture.md"},
+			want:  true,
+		},
+		{
+			name:  "cd . is neutral",
+			cmd:   "cd . && test -f finally/docker-compose.yml",
+			files: []string{"finally/docker-compose.yml"},
+			want:  true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := commandPathsMatchPhaseFiles(tt.cmd, tt.files)
+			if got != tt.want {
+				t.Errorf("commandPathsMatchPhaseFiles(%q, %v) = %v, want %v", tt.cmd, tt.files, got, tt.want)
+			}
+		})
+	}
+}

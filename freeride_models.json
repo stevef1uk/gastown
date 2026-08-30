@@ -1,13 +1,13 @@
 {
   "agents": {
     "gt-agent-local": {
-      "model": "google/gemini-3.5-flash"
+      "model": "deepseek/deepseek-v4-flash"
     },
     "gt-agent-nvidia": {
       "model": "nvidia/llama-3.3-nemotron-super-49b-v1"
     },
     "gt-agent-gemini": {
-      "model": "google/gemini-3.5-flash",
+      "model": "openai/gpt-5.6-luna",
       "extra_env": {
         "LLM_TIMEOUT": "1200s"
       }
@@ -24,12 +24,12 @@
         "LLM_TIMEOUT": "1200s"
       }
     },
-        "gt-agent-polecat": {
-            "model": "openai/gpt-5.6-luna",
-            "extra_env": {
-                "LLM_TIMEOUT": "1200s"
-            }
-        },
+    "gt-agent-polecat": {
+      "model": "openai/gpt-5.6-luna",
+      "extra_env": {
+        "LLM_TIMEOUT": "1200s"
+      }
+    },
     "gt-agent-powerful": {
       "model": "ollama/llama3.3"
     },
@@ -50,8 +50,8 @@
     "deacon": "gt-agent-local",
     "mechanic": "gt-agent-local",
     "mayor": "gt-agent-local",
-    "planner": "gt-agent-local",
-    "setup": "gt-agent-local",
+    "planner": "gt-agent-architect",
+    "setup": "gt-agent-architect",
     "polecat": "gt-agent-deepseek",
     "qa": "gt-agent-gemini",
     "tester": "gt-agent-gemini",

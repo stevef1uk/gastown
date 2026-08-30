@@ -1,17 +1,17 @@
 {
   "models": {
-    "judge": "google/gemini-3.5-flash",
-    "architect": "deepseek/deepseek-v4-flash",
-    "planner": "google/gemini-3.5-flash",
-        "polecat": "openai/gpt-5.6-luna",
-    "qa": "google/gemini-3.5-flash",
-    "tester": "google/gemini-3.5-flash",
-    "mayor": "google/gemini-3.5-flash",
-    "default": "google/gemini-3.5-flash"
+    "judge": "deepseek/deepseek-v4-flash",
+    "architect": "cerebras/gpt-oss-120b",
+    "planner": "cerebras/gpt-oss-120b",
+    "polecat": "openai/gpt-5.6-luna",
+    "qa": "openai/gpt-5.6-luna",
+    "tester": "openai/gpt-5.6-luna",
+    "mayor": "deepseek/deepseek-v4-flash",
+    "default": "deepseek/deepseek-v4-flash"
   },
   "agentModels": {
-    "gt-agent-local": "google/gemini-3.5-flash",
-    "gt-agent-gemini": "google/gemini-3.5-flash",
+    "gt-agent-local": "deepseek/deepseek-v4-flash",
+    "gt-agent-gemini": "openai/gpt-5.6-luna",
     "gt-agent-deepseek": "deepseek/deepseek-v4-flash"
   }
 }

@@ -748,6 +748,10 @@ func IsPlaceholderOrMismatchedCommand(cmd string, p *DeliveryPhase) bool {
 // phase. Returns false when the command references paths/dirs that don't exist
 // in the phase (e.g. "test -f finally/scripts/start_mac.sh" when the file is at
 // "scripts/start_mac.sh"). Returns true if command has no paths to check.
+//
+// The function tracks cd operations so that subsequent relative paths are
+// resolved against the changed working directory (e.g. "cd finally && test -f
+// docker-compose.yml" resolves to "finally/docker-compose.yml").
 func commandPathsMatchPhaseFiles(cmd string, files []string) bool {
 	lower := strings.ToLower(cmd)
 	re := regexp.MustCompile(`(?:^|\b)(?:cd\s+|test -f\s+)(\S+)`)
@@ -755,7 +759,7 @@ func commandPathsMatchPhaseFiles(cmd string, files []string) bool {
 	if len(matches) == 0 {
 		return true
 	}
-	// Build top-level dirs from required files.
+	// Build top-level dirs and full file set from required files.
 	topDirs := make(map[string]bool)
 	fileSet := make(map[string]bool, len(files))
 	for _, f := range files {
@@ -765,23 +769,54 @@ func commandPathsMatchPhaseFiles(cmd string, files []string) bool {
 			topDirs[lf[:idx]] = true
 		}
 	}
-	// Check each path reference against files and top-level dirs.
+	// Track cd-relative working directory. Multiple cd commands chain
+	// (e.g. "cd gt && cd fin/mayor/rig" resolves relative paths from
+	// the final directory).
+	cwd := ""
 	for _, m := range matches {
+		fullMatch := m[0]
 		path := m[1]
 		if path == "." || path == ".." || strings.HasPrefix(path, "/") {
 			continue
 		}
-		// Extract first path component.
-		firstComp := path
-		if idx := strings.IndexByte(path, '/'); idx >= 0 {
-			firstComp = path[:idx]
-		}
-		// If first component is a known top-level dir, the path is valid.
-		if topDirs[firstComp] {
+		// Detect whether this is a cd or test -f by checking the prefix.
+		isCD := strings.HasPrefix(fullMatch, "cd ") || strings.HasSuffix(fullMatch, "cd ")
+		if isCD {
+			// Resolve cd path against current cwd.
+			if cwd == "" {
+				cwd = path
+			} else {
+				cwd = cwd + "/" + path
+			}
 			continue
 		}
-		// Check exact file match.
-		if fileSet[path] || fileSet[firstComp+"/"] {
+		// For test -f paths, resolve against cwd if set.
+		resolved := path
+		if cwd != "" {
+			resolved = cwd + "/" + path
+		}
+		// Extract first path component of the resolved path.
+		firstComp := resolved
+		if idx := strings.IndexByte(resolved, '/'); idx >= 0 {
+			firstComp = resolved[:idx]
+		}
+		// If first component is a known top-level dir, check the full
+		// resolved path against required files.
+		if topDirs[firstComp] {
+			if fileSet[resolved] {
+				continue
+			}
+			// The first component is a valid dir — the path may be a
+			// subdirectory (e.g. "cd finally && go test ./...") which is
+			// fine, but a specific file reference (test -f) that doesn't
+			// match is a real problem.
+			if strings.Contains(fullMatch, "test -f") {
+				return false
+			}
+			continue
+		}
+		// Check exact file match (resolved or bare).
+		if fileSet[resolved] || fileSet[path] {
 			continue
 		}
 		// Path's first component doesn't match any file/dir — bogus.
