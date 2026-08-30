@@ -460,7 +460,10 @@ func moveDockerPathsToFinalDeliveryPhase(v WorkflowValidation) WorkflowValidatio
 	active := v.ActivePhaseID()
 	var phases []DeliveryPhase
 	for _, p := range v.DeliveryPhases {
-		if len(p.RequiredFiles) == 0 {
+		if len(p.RequiredFiles) == 0 && strings.TrimSpace(p.SpecFocus) == "" {
+			// Only drop auto-generated empty phases. SPEC-declared phases
+			// (with SpecFocus from the SPEC's Goal/Deliverables) are kept
+			// even when empty — the architect will populate them later.
 			if active != "" && strings.TrimSpace(p.ID) == active {
 				v.ActivePhaseIDField = ""
 			}
