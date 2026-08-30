@@ -93,6 +93,13 @@ func dedupePhasesByVerify(phases []orchestrator.DeliveryPhase) []orchestrator.De
 	out := make([]orchestrator.DeliveryPhase, 0, len(phases))
 	for _, ph := range phases {
 		norm := strings.ToLower(strings.Join(strings.Fields(ph.QAVerifyCommand), " "))
+		// Empty verify commands should NOT trigger deduplication — SPEC-declared
+		// phases all start with empty QAVerifyCommand and must be preserved as
+		// separate phases until the JUDGE generates real verify commands.
+		if norm == "" {
+			out = append(out, ph)
+			continue
+		}
 		if idx, ok := seen[norm]; ok {
 			have := map[string]bool{}
 			for _, f := range out[idx].RequiredFiles {

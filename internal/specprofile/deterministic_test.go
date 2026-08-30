@@ -686,14 +686,14 @@ func TestDedupePhasesByVerify(t *testing.T) {
 			wantIDs: []string{"a", "b"},
 		},
 		{
-			name: "empty verify collapses duplicates too",
+			name: "empty verify does NOT collapse — SPEC-declared phases preserved",
 			in: []orchestrator.DeliveryPhase{
 				{ID: "one", RequiredFiles: []string{"a.txt"}, QAVerifyCommand: ""},
 				{ID: "two", RequiredFiles: []string{"b.txt"}, QAVerifyCommand: "   "},
 				{ID: "three", RequiredFiles: []string{"c.txt"}, QAVerifyCommand: "make check"},
 			},
-			wantIDs:   []string{"one", "three"},
-			wantFiles: map[string][]string{"one": {"a.txt", "b.txt"}},
+			wantIDs:   []string{"one", "two", "three"},
+			wantFiles: map[string][]string{},
 		},
 	}
 
