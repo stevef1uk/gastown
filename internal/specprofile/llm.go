@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"path/filepath"
 	"strings"
 
 	"github.com/steveyegge/gastown/internal/config"
@@ -480,12 +481,21 @@ func defaultQAVerifyForPhase(p *orchestrator.DeliveryPhase, layoutRoot string) s
 		if strings.Contains(f, "docker-compose.test") {
 			hasDockerComposeTest = true
 		}
-		if strings.Contains(f, "playwright") || strings.HasSuffix(f, ".spec.ts") {
+		if strings.Contains(f, "playwright") || strings.HasSuffix(f, ".spec.ts") || strings.HasSuffix(f, ".spec.tsx") {
 			hasPlaywright = true
 		}
 	}
 
 	if hasDockerComposeTest || hasPlaywright {
+		if hasPlaywright && !hasDockerComposeTest {
+			// Playwright without Docker: determine test directory from required files
+			testDir := extractPlaywrightTestDir(p.RequiredFiles, lr)
+			if testDir != "" {
+				return orchestrator.HardenNodeInstallCommand(fmt.Sprintf("cd %s && npm install --ignore-scripts && npx playwright test", testDir))
+			}
+			// Fallback: use layout root
+			return orchestrator.HardenNodeInstallCommand(fmt.Sprintf("cd %s && npm install --ignore-scripts && npx playwright test", lr))
+		}
 		return fmt.Sprintf("cd %s && docker compose -f test/docker-compose.test.yml up --build --abort-on-container-exit", lr)
 	}
 
@@ -531,4 +541,69 @@ func defaultQAVerifyForPhase(p *orchestrator.DeliveryPhase, layoutRoot string) s
 	// placeholder, which would trigger the replacement check in ValidateAndFixDeliveryPhases
 	// and cause a recursive loop back to this function.
 	return fmt.Sprintf("cd %s && echo 'verify ok (no automated tests for this phase)'", lr)
+}
+
+// extractPlaywrightTestDir finds the common parent directory of Playwright test files
+// relative to the layout root. Returns the path to cd into (including layoutRoot prefix).
+func extractPlaywrightTestDir(requiredFiles []string, layoutRoot string) string {
+	// Collect test file paths (spec files and playwright config)
+	var testPaths []string
+	for _, f := range requiredFiles {
+		base := filepath.Base(f)
+		if strings.HasSuffix(base, ".spec.ts") || strings.HasSuffix(base, ".spec.tsx") ||
+			base == "playwright.config.ts" || base == "playwright.config.js" {
+			testPaths = append(testPaths, f)
+		}
+	}
+	if len(testPaths) == 0 {
+		return ""
+	}
+
+	// Get the directory of each test file
+	var testDirs []string
+	lr := strings.Trim(layoutRoot, "/")
+	for _, p := range testPaths {
+		var rel string
+		if lr != "" && strings.HasPrefix(p, lr+"/") {
+			rel = strings.TrimPrefix(p, lr+"/")
+		} else {
+			rel = p
+		}
+		dir := filepath.Dir(rel)
+		if dir != "." {
+			testDirs = append(testDirs, dir)
+		}
+	}
+	if len(testDirs) == 0 {
+		// All test files at layout root
+		return lr
+	}
+
+	// Find common parent directory among all test dirs
+	common := testDirs[0]
+	for i := 1; i < len(testDirs); i++ {
+		common = commonPrefix(common, testDirs[i])
+		if common == "" {
+			break
+		}
+	}
+	if common == "" || common == "." {
+		return lr
+	}
+	return filepath.Join(lr, common)
+}
+
+// commonPrefix returns the longest common path prefix of two paths
+func commonPrefix(a, b string) string {
+	aParts := strings.Split(a, "/")
+	bParts := strings.Split(b, "/")
+	var common []string
+	for i := 0; i < len(aParts) && i < len(bParts); i++ {
+		if aParts[i] == bParts[i] {
+			common = append(common, aParts[i])
+		} else {
+			break
+		}
+	}
+	return strings.Join(common, "/")
 }
