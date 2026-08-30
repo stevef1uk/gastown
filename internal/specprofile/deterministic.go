@@ -1307,6 +1307,38 @@ func inferLayoutRoot(paths []string) string {
 }
 
 func inferTestRunner(paths []string) string {
+	// Priority 1: Check test file extensions (these determine the actual test runner)
+	hasPyTest := false
+	hasGoTest := false
+	hasTSSpec := false
+	hasJSTest := false
+	for _, p := range paths {
+		base := filepath.Base(p)
+		ext := strings.ToLower(filepath.Ext(p))
+		if ext == ".py" && (strings.HasPrefix(base, "test_") || strings.HasSuffix(base, "_test.py")) {
+			hasPyTest = true
+		}
+		if ext == ".go" && strings.HasSuffix(base, "_test.go") {
+			hasGoTest = true
+		}
+		if (ext == ".ts" || ext == ".tsx") && strings.HasSuffix(base, ".spec.ts") {
+			hasTSSpec = true
+		}
+		if (ext == ".js" || ext == ".jsx" || ext == ".mjs" || ext == ".cjs") && (strings.HasSuffix(base, ".test.js") || strings.HasSuffix(base, ".spec.js")) {
+			hasJSTest = true
+		}
+	}
+	if hasPyTest {
+		return "pytest"
+	}
+	if hasGoTest {
+		return "go"
+	}
+	if hasTSSpec || hasJSTest {
+		return "npm"
+	}
+
+	// Priority 2: Fall back to any source file extension (for non-test files)
 	for _, p := range paths {
 		ext := strings.ToLower(filepath.Ext(p))
 		if ext == ".py" {
