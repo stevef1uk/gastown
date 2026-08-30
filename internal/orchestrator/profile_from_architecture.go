@@ -84,7 +84,10 @@ func EnrichWorkflowValidationFromArchitecture(v WorkflowValidation, mayorRigDir 
 	return SanitizeRigFlowProfile(v)
 }
 
-// extractSpecLayoutPaths reads SPEC.md and returns repo-relative paths (e.g. pingapp/main.py).
+// extractSpecLayoutPaths reads SPEC.md and architecture.md (when present) and returns
+// repo-relative paths (e.g. pingapp/main.py). Architecture.md is the authoritative
+// source for implementation files once it exists, since the architect expands all
+// SPEC abbreviations into concrete file paths.
 func extractSpecLayoutPaths(mayorRigDir string) ([]string, bool, map[string]bool) {
 	specPath := filepath.Join(mayorRigDir, "SPEC.md")
 	data, err := os.ReadFile(specPath)
@@ -92,17 +95,23 @@ func extractSpecLayoutPaths(mayorRigDir string) ([]string, bool, map[string]bool
 		archDebug("no SPEC.md at %s: %v", specPath, err)
 		return nil, false, nil
 	}
-	text := string(data)
+	specText := string(data)
 
-	treePaths := parseSpecLayoutTree(text)
-	specDirPrefixes := extractSpecDirPrefixes(text)
+	archPath := filepath.Join(mayorRigDir, "architecture.md")
+	archData, archErr := os.ReadFile(archPath)
+	var archText string
+	if archErr == nil && len(archData) > 0 {
+		archText = string(archData)
+	}
+
+	treePaths := parseSpecLayoutTree(specText)
+	specDirPrefixes := extractSpecDirPrefixes(specText)
 	archDebug("parseSpecLayoutTree from SPEC: %v", treePaths)
 	archDebug("extractSpecDirPrefixes: %v", specDirPrefixes)
 
-	// The layout tree is the authoritative source of required files.
-	// Prose backtick refs are documentation only — they often mention files
-	// negatively ("no package.json") or with bare paths that contradict the tree.
-	// If the tree exists, it defines the complete required set.
+	// The layout tree is the primary source. Architecture.md supplements it
+	// with implementation files the architect expanded (e.g., test files,
+	// config files, all frontend/backend components).
 	var paths []string
 	if len(treePaths) > 0 {
 		log.Printf("[extractSpecLayoutPaths] using SPEC layout tree: %d files", len(treePaths))
@@ -110,15 +119,37 @@ func extractSpecLayoutPaths(mayorRigDir string) ([]string, bool, map[string]bool
 	} else {
 		// Fallback: no parseable tree — use prose backtick refs as last resort.
 		log.Printf("[extractSpecLayoutPaths] no layout tree found; falling back to prose backtick extraction")
-		archPaths := extractArchPaths(text, "")
+		archPaths := extractArchPaths(specText, "")
 		archDebug("extractArchPaths from SPEC (fallback): %v", archPaths)
 		paths = archPaths
 	}
+
+	// If architecture.md exists, extract its file paths and union them.
+	// Architecture.md is the authoritative source for implementation files
+	// once it exists — the architect expands SPEC abbreviations into
+	// concrete files (test files, config files, all components).
+	if archText != "" {
+		archPaths := extractArchPaths(archText, "")
+		log.Printf("[extractSpecLayoutPaths] using architecture.md: %d files", len(archPaths))
+		// Union: add arch paths not already in SPEC tree
+		seen := make(map[string]bool)
+		for _, p := range paths {
+			seen[p] = true
+		}
+		for _, p := range archPaths {
+			if !seen[p] {
+				paths = append(paths, p)
+				seen[p] = true
+			}
+		}
+		archDebug("extractArchPaths from architecture.md: %v", archPaths)
+	}
+
 	paths = dedupeStrings(paths)
 	archDebug("extractSpecLayoutPaths result: %v", paths)
 
 	if len(paths) == 0 {
-		archDebug("no paths found in SPEC.md")
+		archDebug("no paths found in SPEC.md or architecture.md")
 		return nil, false, nil
 	}
 	// Prefer paths with a shared layout prefix (pingapp/...) over flat ./main.py-only lists.
