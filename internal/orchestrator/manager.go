@@ -471,19 +471,28 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summa
 		}
 		// Skip test_plan_rework if TEST_PLAN.md is frozen (already validated once).
 		// The plan cannot be rewritten — route back to implementation instead.
+		// Exception: when plan_gap comes from test_review (grounded in executed test results),
+		// clear the frozen flag so the rework actually runs.
 		if next == "test_plan_rework" && IsTestPlanFrozen(m.townRoot, rig) {
-			log.Printf("[Manager] TestPlanFrozen=true for %s, skipping test_plan_rework — routing to implementation", rig)
-			autoNext, aerr := inst.Transition(tpl, "failure")
-			if aerr == nil && autoNext != "" {
-				inst.CurrentState = autoNext
-				inst.touchStateEnteredAt()
-				if perr := m.persistLocked(); perr != nil {
-					log.Printf("[Manager] Warning: persist after test_plan_rework skip: %v", perr)
+			if fromState == "test_review" && outcome == "plan_gap" {
+				log.Printf("[Manager] TestPlanFrozen=true but plan_gap from test_review for %s — clearing freeze for grounded rework", rig)
+				if err := SetTestPlanFrozen(m.townRoot, rig, false); err != nil {
+					log.Printf("[Manager] Warning: failed to clear TestPlanFrozen: %v", err)
 				}
-				log.Printf("[Manager] test_plan_rework skipped for %s, routed to %s", rig, autoNext)
-				return autoNext, nil
+			} else {
+				log.Printf("[Manager] TestPlanFrozen=true for %s, skipping test_plan_rework — routing to implementation", rig)
+				autoNext, aerr := inst.Transition(tpl, "failure")
+				if aerr == nil && autoNext != "" {
+					inst.CurrentState = autoNext
+					inst.touchStateEnteredAt()
+					if perr := m.persistLocked(); perr != nil {
+						log.Printf("[Manager] Warning: persist after test_plan_rework skip: %v", perr)
+					}
+					log.Printf("[Manager] test_plan_rework skipped for %s, routed to %s", rig, autoNext)
+					return autoNext, nil
+				}
+				log.Printf("[Manager] Warning: test_plan_rework skip failed for %s: %v, falling through to tester", rig, aerr)
 			}
-			log.Printf("[Manager] Warning: test_plan_rework skip failed for %s: %v, falling through to tester", rig, aerr)
 		}
 		if err := m.ensureTesterAgent(rig, next); err != nil {
 			log.Printf("[Manager] Warning: failed to start tester agent for %s: %v", rig, err)
