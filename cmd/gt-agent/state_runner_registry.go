@@ -324,8 +324,11 @@ var artifactAutoCompleters = map[string]artifactAutoCompleteFn{
 		return validatePlanReviewArtifacts(r.townRoot, r.rig, r.track.hadCmdFailure, r.track.listOpenOK, r.track.didDelete, r.v)
 	},
 	"implementation": func(r *stateRunner) error {
-		if false {
-			return fmt.Errorf("QA rework pending — fix runtime/smoke issues in Prior step failed (handlers, web/, routes); go test ./... alone is not enough")
+		// Block auto-complete when test_review or qa_review just failed — the Polecat
+		// must actually fix the failing test or runtime issue before proceeding.
+		if r.task != nil && r.task.PendingRework != nil &&
+			(r.task.PendingRework.FromState == "test_review" || r.task.PendingRework.FromState == "qa_review") {
+			return fmt.Errorf("rework pending from %s — must fix issues before auto-completing", r.task.PendingRework.FromState)
 		}
 		// Do not auto-complete without green verify when profile defines QA (pytest/go test).
 		if strings.TrimSpace(r.v.QAVerifyCommand) != "" && !r.track.verifyOK {
