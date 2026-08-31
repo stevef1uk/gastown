@@ -69,15 +69,85 @@ func (v WorkflowValidation) detectsPythonProject() bool {
 // For requirements.txt it uses `pip install -r <path>`. For pyproject.toml it changes to the
 // parent directory and runs `pip install -e ".[dev]"` since `pip install -r` does not support
 // TOML and dev dependencies (pytest, etc.) are typically listed under [project.optional-dependencies].
+// When the project is uv-managed (a uv.lock exists next to the dependency file), it prefers
+// `uv sync` because uv resolves the locked dependency graph and provisions the project venv.
 func PipInstallRequirementsCmd(venvPip, reqPath string) string {
-	if strings.HasSuffix(strings.TrimSpace(reqPath), ".toml") {
-		reqDir := filepath.Dir(reqPath)
+	reqPath = filepath.ToSlash(strings.TrimSpace(reqPath))
+	reqDir := filepath.Dir(reqPath)
+	if reqDir == "." || reqDir == "" {
+		reqDir = "."
+	}
+	if isUvProject(reqPath) {
+		if reqDir == "." {
+			return "uv sync"
+		}
+		return "cd " + reqDir + " && uv sync"
+	}
+	if strings.HasSuffix(reqPath, ".toml") {
 		if reqDir == "." {
 			return venvPip + ` install -e ".[dev]"`
 		}
 		return "cd " + reqDir + " && " + venvPip + ` install -e ".[dev]"`
 	}
 	return venvPip + " install -r " + reqPath
+}
+
+// isUvProject reports whether the dependency file lives in a uv-managed directory
+// (a uv.lock exists next to pyproject.toml / requirements.txt). The path may be
+// relative to mayor/rig; when it does not resolve on disk, uv is not assumed.
+func isUvProject(reqPath string) bool {
+	reqPath = filepath.ToSlash(strings.TrimSpace(reqPath))
+	if reqPath == "" {
+		return false
+	}
+	for _, reqDir := range candidateReqDirs(reqPath) {
+		if _, err := os.Stat(filepath.Join(reqDir, "uv.lock")); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
+// isUvManaged reports whether the workflow declares a uv lockfile in its required
+// files. This is a disk-independent signal available from the profile alone.
+func isUvManaged(v WorkflowValidation) bool {
+	for _, f := range v.RequiredFiles {
+		if strings.HasSuffix(strings.ToLower(filepath.ToSlash(strings.TrimSpace(f))), "uv.lock") {
+			return true
+		}
+	}
+	return false
+}
+
+// candidateReqDirs returns the directory of reqPath resolved against the process
+// working directory, plus any mayor/rig ancestor directory reachable from CWD so
+// that relative requirements paths resolve regardless of the caller's cwd.
+func candidateReqDirs(reqPath string) []string {
+	reqDir := filepath.Dir(filepath.ToSlash(reqPath))
+	if filepath.IsAbs(reqPath) {
+		return []string{reqDir}
+	}
+	var dirs []string
+	abs := make([]string, 0, 2)
+	if reqDir != "." && reqDir != "" {
+		abs = append(abs, filepath.Join(".", reqDir))
+	}
+	// Walk up from CWD looking for a mayor/rig anchor to join the relative path against.
+	for dir, err := os.Getwd(); err == nil; {
+		if filepath.Base(dir) == "rig" && filepath.Base(filepath.Dir(dir)) == "mayor" {
+			abs = append(abs, filepath.Join(dir, reqDir))
+			break
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+		dir = parent
+	}
+	for _, a := range abs {
+		dirs = append(dirs, filepath.ToSlash(a))
+	}
+	return dirs
 }
 
 // IsPythonImportCheckCommand reports python -c 'import pytest' setup verify (must not be pytest-normalized).

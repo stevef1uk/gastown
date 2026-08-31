@@ -524,7 +524,7 @@ func (r *stateRunner) autoInstallDepsAndRetry(verifyCmd, workDir, sessionName st
 		}
 	}
 
-	pipCmd := orchestrator.PipInstallRequirementsCmd(venvPip, reqRel)
+	pipCmd := orchestrator.PipInstallRequirementsCmd(venvPip, reqPath)
 	orchestratedPrintf("[gt-agent] auto-installing deps: %s\n", pipCmd)
 	installOut, installErr := r.runShellCommand(pipCmd, rigDir, sessionName, cmdEnv)
 	if installErr != nil {

@@ -706,8 +706,20 @@ func ProjectSetupFailureHint(v WorkflowValidation) string {
 		if req == "" {
 			req = "requirements.txt"
 		}
+		install := "pip install -r " + req
+		uv := isUvProject(req) || isUvManaged(v)
+		if uv {
+			if dir := filepath.Dir(filepath.ToSlash(req)); dir != "." && dir != "" {
+				install = "cd " + dir + " && uv sync"
+			} else {
+				install = "uv sync"
+			}
+		} else if strings.HasSuffix(strings.ToLower(filepath.ToSlash(req)), ".toml") {
+			venvPip := v.PythonVenvRelDir() + "/bin/pip"
+			install = PipInstallRequirementsCmd(venvPip, req)
+		}
 		return "Python rig only — no go mod. Create " + v.PythonVenvRelDir() +
-			", pip install -r " + req + " once. Green verify: " +
+			", run `" + install + "` once. Green verify: " +
 			PythonProjectSetupVerifyCommand(v) + " (import pytest, not unittest). JSON success only after verify."
 	case "nodejs":
 		return "Node.js rig only — no go mod or python venv. Run " + NodeProjectSetupVerifyCommand(v) +
