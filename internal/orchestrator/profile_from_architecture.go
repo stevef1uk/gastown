@@ -973,6 +973,9 @@ func SyncRigWorkflowProfileFromArchitecture(townRoot, rig string) (bool, error) 
 	// first spec-index run (before architecture.md exists) can emit a pytest-only
 	// profile that QA later rejects ("requires a successful runtime smoke CMD").
 	env.Validation = ensureRuntimeSmokePhaseFromSpec(townRoot, rig, env.Validation)
+	// Apply full sanitization: doubled layout paths, --no-cache stripping,
+	// .gastown/ filtering, path prefix normalization, etc.
+	env.Validation = SanitizeRigFlowProfile(env.Validation)
 	archDebug("SyncRigWorkflowProfileFromArchitecture: required=%v layout=%q", env.Validation.RequiredFiles, env.Validation.LayoutRoot)
 	if err := SaveRigWorkflowProfileEnvelope(townRoot, rig, env); err != nil {
 		return false, err

@@ -1443,6 +1443,13 @@ func (v WorkflowValidation) PromptVars() map[string]string {
 	phaseIDs = append(phaseIDs, v.CompletedPhaseIDs()...)
 	phaseIDsStr := strings.Join(phaseIDs, ", ")
 
+	// ALL delivery phase IDs for prompts that need the full list (avoids agent reading workflow-profile.json which can truncate).
+	allPhaseIDs := make([]string, 0, len(v.DeliveryPhases))
+	for _, p := range v.DeliveryPhases {
+		allPhaseIDs = append(allPhaseIDs, strings.TrimSpace(p.ID))
+	}
+	allPhaseIDsStr := strings.Join(allPhaseIDs, ", ")
+
 	return map[string]string{
 		"layout_root":                     v.LayoutRoot,
 		"bead_title_contains":             v.BeadTitleContains,
@@ -1455,6 +1462,7 @@ func (v WorkflowValidation) PromptVars() map[string]string {
 		"active_phase_id":                 activeID,
 		"active_phase_title":              activeTitle,
 		"delivery_phase_count":            fmt.Sprintf("%d", len(v.DeliveryPhases)),
+		"all_delivery_phase_ids":          allPhaseIDsStr,
 		"test_validation_phase_ids":       phaseIDsStr,
 		"phase_scope_note":                v.PhaseScopeNote(),
 		"integration_contract_scope_note": v.IntegrationContractScopeNote(),

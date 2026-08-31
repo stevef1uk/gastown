@@ -29,9 +29,9 @@ $GT_ROOT/{{rig}}/mayor/rig/{{layout_root}}/  ← layout root (ALL code files go 
 
 ## ALL PHASES (CRITICAL)
 
-**Plan tests for ALL delivery phases** — not just the active one. Check `workflow-profile.json` for the full `delivery_phases` list. Create `### <req-id>` blocks for every requirement across all phases. This ensures the Polecat knows what tests to write as the workflow progresses through each phase.
+**Plan tests for ALL delivery phases** — not just the active one. The full list of delivery phase IDs is: `{{all_delivery_phase_ids}}` ({{delivery_phase_count}} phases total). Create `### <req-id>` blocks for every requirement across all phases. This ensures the Polecat knows what tests to write as the workflow progresses through each phase.
 
-**USE DELIVERY PHASE IDs AS SECTION HEADINGS (CRITICAL):** Your `### <req-id>` section headings MUST be the EXACT `delivery_phases[].id` values from `workflow-profile.json`. For example, if the profile lists phases `[python-setup, smoke-test]`, your TEST_PLAN.md must have `### python-setup` and `### smoke-test` sections. Do NOT invent requirement IDs like `route-ping` or `unit-ping` — use ONLY the phase IDs from the profile. The validator will reject any `### <req-id>` that does not match a delivery phase ID.
+**USE DELIVERY PHASE IDs AS SECTION HEADINGS (CRITICAL):** Your `### <req-id>` section headings MUST be the EXACT phase IDs listed above. For example, if the list is `python-setup, smoke-test`, your TEST_PLAN.md must have `### python-setup` and `### smoke-test` sections. Do NOT invent requirement IDs like `route-ping` or `unit-ping` — use ONLY the phase IDs from the list. The validator will reject any `### <req-id>` that does not match a delivery phase ID.
 
 **Validation scope:** On first entry to `test_plan`, generate the full plan covering all phases. On subsequent entries (e.g. after rework), only validate that the ACTIVE phase's tests and code match the plan — do not rewrite future phase sections.
 
@@ -115,7 +115,6 @@ Assign **unit** to pure logic/domain rules, **integration** to API/store/HTTP wi
 
 2. Read the sources before writing anything:
    ```
-   CMD: cd {{rig}}/mayor/rig && cat .gastown/workflow-profile.json | grep active_phase_id
    CMD: cd {{rig}}/mayor/rig && bd list --status=open,in_progress
    CMD: cd {{rig}}/mayor/rig && head -n 80 REQUIREMENTS.md
    CMD: cd {{rig}}/mayor/rig && cat SPEC.md
