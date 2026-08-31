@@ -362,8 +362,9 @@ func filterRigFlowRequiredFiles(files []string, layoutRoot string) []string {
 		if DoubledLayoutPath(f, layoutRoot) {
 			f = fixDoubledLayoutPath(f, layoutRoot)
 		}
-		// Normalize path prefix: if layout_root is set and path doesn't start with it, add it.
-		// This fixes architecture.md paths that omit the layout_root prefix (e.g. lib/sse.ts -> finally/lib/sse.ts).
+		// Normalize path prefix: if layout_root is a real directory (not "." or empty)
+		// and path doesn't start with it, add it. This fixes architecture.md paths
+		// that omit the layout_root prefix (e.g. lib/sse.ts -> finally/lib/sse.ts).
 		if layoutRoot != "" && layoutRoot != "." && !strings.HasPrefix(f, layoutRoot+"/") && !strings.HasPrefix(f, "/") {
 			f = layoutRoot + "/" + f
 		}
