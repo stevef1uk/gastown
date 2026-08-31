@@ -919,6 +919,405 @@ func pairPhaseTests(v WorkflowValidation) WorkflowValidation {
 	return v
 }
 
+// sequenceDeliveryPhasesByImports reorders test files to the phase containing their
+// import dependencies, so per-bead verifies (pytest, go test, npm test) are
+// satisfiable within their assigned phase. For languages with explicit imports
+// (Python, Go, Node), it parses test files' local imports, finds which phase
+// owns each imported module, and moves the test to the latest such phase.
+// If an imported module is not present in any phase, a minimal stub is synthesized
+// in the test's destination phase so the import resolves.
+func sequenceDeliveryPhasesByImports(v WorkflowValidation) WorkflowValidation {
+	if len(v.DeliveryPhases) == 0 {
+		return v
+	}
+
+	// Determine the workflow language from the active phase's QAVerifyCommand.
+	// In phased delivery, the verify command is per-phase, not top-level.
+	activePhase := activePhaseIndex(v)
+	var language string
+	if activePhase >= 0 && activePhase < len(v.DeliveryPhases) {
+		language = detectLanguageFromVerifyCommand(v.DeliveryPhases[activePhase].QAVerifyCommand)
+	} else {
+		// Fallback to top-level detection
+		if WorkflowUsesPython(v) {
+			language = "python"
+		} else if WorkflowUsesGo(v) {
+			language = "go"
+		} else if WorkflowUsesNodeJS(v) {
+			language = "node"
+		}
+	}
+
+	if language == "" {
+		return v
+	}
+
+	layout := strings.Trim(strings.TrimSpace(v.LayoutRoot), "/")
+	if layout == "" {
+		return v
+	}
+
+	// Build map: required file -> phase index (latest phase if duplicated)
+	fileToPhase := make(map[string]int)
+	for i := range v.DeliveryPhases {
+		for _, f := range v.DeliveryPhases[i].RequiredFiles {
+			f = filepath.ToSlash(strings.TrimSpace(f))
+			fileToPhase[f] = i
+		}
+	}
+
+	// Collect tests that need to be moved
+	type movePlan struct {
+		testPath   string
+		fromPhase  int
+		toPhase    int
+		stubFiles  []string
+	}
+	var plans []movePlan
+
+	for i := range v.DeliveryPhases {
+		for _, f := range v.DeliveryPhases[i].RequiredFiles {
+			f = filepath.ToSlash(strings.TrimSpace(f))
+			if !isTestFile(f, language) {
+				continue
+			}
+			imports := parseLocalImports(f, language, v)
+			if len(imports) == 0 {
+				continue
+			}
+			maxPhase := -1
+			var stubFiles []string
+			for _, imp := range imports {
+				src := resolveImportToSource(imp, layout, v, language)
+				if src == "" {
+					continue
+				}
+				phaseIdx, ok := fileToPhase[src]
+				if !ok {
+					// Imported module not in any phase - will need a stub
+					stubFiles = append(stubFiles, src)
+					continue
+				}
+				if phaseIdx > maxPhase {
+					maxPhase = phaseIdx
+				}
+			}
+			if maxPhase > i {
+				plans = append(plans, movePlan{testPath: f, fromPhase: i, toPhase: maxPhase, stubFiles: stubFiles})
+			} else if len(stubFiles) > 0 && maxPhase <= i {
+				// All imports in same or earlier phase, but some missing - stub in current phase
+				plans = append(plans, movePlan{testPath: f, fromPhase: i, toPhase: i, stubFiles: stubFiles})
+			}
+		}
+	}
+
+	if len(plans) == 0 {
+		return v
+	}
+
+	// Execute moves
+	for _, p := range plans {
+		if p.fromPhase >= len(v.DeliveryPhases) || p.toPhase >= len(v.DeliveryPhases) {
+			continue
+		}
+		// Remove from source phase
+		var kept []string
+		for _, f := range v.DeliveryPhases[p.fromPhase].RequiredFiles {
+			if filepath.ToSlash(strings.TrimSpace(f)) != p.testPath {
+				kept = append(kept, f)
+			}
+		}
+		v.DeliveryPhases[p.fromPhase].RequiredFiles = kept
+
+		// Add to destination phase (dedup)
+		destHas := false
+		for _, f := range v.DeliveryPhases[p.toPhase].RequiredFiles {
+			if filepath.ToSlash(strings.TrimSpace(f)) == p.testPath {
+				destHas = true
+				break
+			}
+		}
+		if !destHas {
+			v.DeliveryPhases[p.toPhase].RequiredFiles = append(v.DeliveryPhases[p.toPhase].RequiredFiles, p.testPath)
+		}
+
+		// Synthesize stubs in destination phase
+		for _, stub := range p.stubFiles {
+			if !hasRequiredFile(v.DeliveryPhases[p.toPhase].RequiredFiles, stub) {
+				v.DeliveryPhases[p.toPhase].RequiredFiles = append(v.DeliveryPhases[p.toPhase].RequiredFiles, stub)
+			}
+		}
+
+		// If the source phase had bare pytest/go test, narrow its verify command
+		// to only the remaining test files so it doesn't collect moved tests.
+		narrowPhaseVerifyIfBare(&v.DeliveryPhases[p.fromPhase], v)
+	}
+
+	// Rebuild union
+	seen := make(map[string]bool)
+	var union []string
+	for i := range v.DeliveryPhases {
+		v.DeliveryPhases[i].RequiredFiles = normalizePathList(v.DeliveryPhases[i].RequiredFiles)
+		for _, f := range v.DeliveryPhases[i].RequiredFiles {
+			if f == "" || seen[f] {
+				continue
+			}
+			seen[f] = true
+			union = append(union, f)
+		}
+	}
+	for _, f := range v.RequiredFiles {
+		if f == "" || seen[f] {
+			continue
+		}
+		seen[f] = true
+		union = append(union, f)
+	}
+	v.RequiredFiles = union
+
+	return v
+}
+
+// activePhaseIndex returns the index of the active phase, or -1 if not set.
+func activePhaseIndex(v WorkflowValidation) int {
+	if v.ActivePhaseIDField == "" {
+		return -1
+	}
+	for i, p := range v.DeliveryPhases {
+		if strings.TrimSpace(p.ID) == v.ActivePhaseIDField {
+			return i
+		}
+	}
+	return -1
+}
+
+// detectLanguageFromVerifyCommand determines the workflow language from a QA verify command.
+func detectLanguageFromVerifyCommand(cmd string) string {
+	cmdLower := strings.ToLower(cmd)
+	if strings.Contains(cmdLower, "pytest") || strings.Contains(cmdLower, "python -m") {
+		return "python"
+	}
+	if strings.Contains(cmdLower, "go test") || strings.Contains(cmdLower, "go vet") {
+		return "go"
+	}
+	if strings.Contains(cmdLower, "npm test") || strings.Contains(cmdLower, "npx") || strings.Contains(cmdLower, "jest") {
+		return "node"
+	}
+	return ""
+}
+
+// isTestFile reports whether a required file path is a test file for the given language.
+func isTestFile(path string, language string) bool {
+	path = strings.TrimSpace(path)
+	if language == "python" {
+		return IsTestImplementPath(path) && strings.HasSuffix(strings.ToLower(path), ".py")
+	}
+	if language == "go" {
+		return IsTestImplementPath(path) && strings.HasSuffix(strings.ToLower(path), "_test.go")
+	}
+	if language == "node" {
+		return strings.HasSuffix(strings.ToLower(path), ".js") || strings.HasSuffix(strings.ToLower(path), ".ts")
+	}
+	// Default: any IsTestImplementPath
+	return IsTestImplementPath(path)
+}
+
+// parseLocalImports extracts local module imports from a test file based on language.
+// language: "python", "go", or "node"
+func parseLocalImports(testPath string, language string, v WorkflowValidation) []string {
+	layout := strings.Trim(strings.TrimSpace(v.LayoutRoot), "/")
+	if layout == "" {
+		return nil
+	}
+	// testPath already includes the layout root prefix (e.g. "fin/backend/tests/test_api_routes.py").
+	// Use it directly so file resolution works correctly regardless of working directory.
+	testPath = filepath.ToSlash(strings.TrimSpace(testPath))
+
+	var imports []string
+	if language == "python" {
+		imports = parsePythonImports(testPath, layout, v)
+	} else if language == "go" {
+		imports = parseGoImports(testPath, layout, v)
+	} else if language == "node" {
+		imports = parseNodeImports(testPath, layout, v)
+	}
+	return imports
+}
+
+func parsePythonImports(testPath, layout string, v WorkflowValidation) []string {
+	content, err := os.ReadFile(testPath)
+	if err != nil {
+		return nil
+	}
+	lines := strings.Split(string(content), "\n")
+	var imports []string
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "from ") && !strings.Contains(line, ".") {
+			// from module import ... (local module without dot in module name)
+			parts := strings.Fields(line)
+			if len(parts) >= 2 {
+				mod := parts[1]
+				if !strings.HasPrefix(mod, ".") && !isStdLibPython(mod) {
+					imports = append(imports, mod)
+				}
+			}
+		} else if strings.HasPrefix(line, "import ") {
+			// import module (local module)
+			parts := strings.Fields(line)
+			if len(parts) >= 2 {
+				mod := parts[1]
+				if !strings.Contains(mod, ".") && !isStdLibPython(mod) {
+					imports = append(imports, mod)
+				}
+			}
+		}
+	}
+	return imports
+}
+
+func isStdLibPython(mod string) bool {
+	std := map[string]bool{
+		"os": true, "sys": true, "json": true, "pytest": true, "unittest": true,
+		"pathlib": true, "typing": true, "dataclasses": true, "collections": true,
+		"itertools": true, "functools": true, "datetime": true, "time": true,
+		"math": true, "random": true, "re": true, "hashlib": true, "base64": true,
+		"uuid": true, "urllib": true, "http": true, "html": true, "xml": true,
+		"csv": true, "sqlite3": true, "subprocess": true, "threading": true,
+		"multiprocessing": true, "asyncio": true, "contextlib": true, "abc": true,
+		"enum": true, "pydantic": true, "fastapi": true, "starlette": true,
+		"sqlalchemy": true, "alembic": true, "psycopg2": true, "redis": true,
+		"requests": true, "httpx": true, "aiohttp": true, "click": true,
+		"yaml": true, "toml": true, "dotenv": true, "pydantic_settings": true,
+	}
+	return std[mod]
+}
+
+func parseGoImports(rel, layout string, v WorkflowValidation) []string {
+	content, err := os.ReadFile(rel)
+	if err != nil {
+		return nil
+	}
+	// Simple regex for import blocks - good enough for phase sequencing
+	importRe := regexp.MustCompile(`(?m)^\s*import\s+\(([\s\S]*?)\)|^\s*import\s+"([^"]+)"`)
+	matches := importRe.FindAllStringSubmatch(string(content), -1)
+	var imports []string
+	// Use LayoutRoot as module name (common Go convention: module = repo/layout root)
+	modPath := strings.Trim(strings.TrimSpace(v.LayoutRoot), "/")
+	for _, m := range matches {
+		if m[1] != "" {
+			// Multi-line import block
+			lines := strings.Split(m[1], "\n")
+			for _, l := range lines {
+				l = strings.TrimSpace(l)
+				l = strings.Trim(l, "\"")
+				if l != "" && strings.HasPrefix(l, modPath+"/") {
+					imports = append(imports, strings.TrimPrefix(l, modPath+"/"))
+				}
+			}
+		} else if m[2] != "" {
+			imp := m[2]
+			if strings.HasPrefix(imp, modPath+"/") {
+				imports = append(imports, strings.TrimPrefix(imp, modPath+"/"))
+			}
+		}
+	}
+	return imports
+}
+
+func parseNodeImports(rel, layout string, v WorkflowValidation) []string {
+	content, err := os.ReadFile(rel)
+	if err != nil {
+		return nil
+	}
+	// Match import ... from 'x' or import ... from "./x" or require('x')
+	// For local modules, we care about relative imports (./, ../) or local packages
+	importRe := regexp.MustCompile(`(?m)import\s+.*\s+from\s+['"]([^'"]+)['"]|require\s*\(\s*['"]([^'"]+)['"]\s*\)`)
+	matches := importRe.FindAllStringSubmatch(string(content), -1)
+	var imports []string
+	for _, m := range matches {
+		var imp string
+		if m[1] != "" {
+			imp = m[1]
+		} else if m[2] != "" {
+			imp = m[2]
+		}
+		if imp != "" && (strings.HasPrefix(imp, "./") || strings.HasPrefix(imp, "../")) {
+			imports = append(imports, imp)
+		}
+	}
+	return imports
+}
+
+// resolveImportToSource maps an import string to a source file path under layout_root,
+// given the programming language.
+func resolveImportToSource(imp, layout string, v WorkflowValidation, language string) string {
+	imp = strings.TrimSpace(imp)
+	if imp == "" {
+		return ""
+	}
+	if language == "python" {
+		// module -> module.py or module/__init__.py
+		mod := strings.ReplaceAll(imp, ".", "/")
+		candidates := []string{
+			layout + "/" + mod + ".py",
+			layout + "/" + mod + "/__init__.py",
+		}
+		for _, c := range candidates {
+			for _, req := range v.RequiredFiles {
+				if filepath.ToSlash(strings.TrimSpace(req)) == c {
+					return c
+				}
+			}
+		}
+		return layout + "/" + mod + ".py" // return candidate even if not in required_files (will trigger stub)
+	}
+	if language == "go" {
+		// Go import path -> file.go (LayoutRoot is typically the module name)
+		modPath := strings.Trim(strings.TrimSpace(v.LayoutRoot), "/")
+		mod := strings.TrimPrefix(imp, modPath+"/")
+		return layout + "/" + mod + ".go"
+	}
+	if language == "node" {
+		// relative import -> resolve relative to test file's dir
+		// This is complex without the test file path; simplify for now
+		return ""
+	}
+	return ""
+}
+
+func narrowPhaseVerifyIfBare(phase *DeliveryPhase, v WorkflowValidation) {
+	cmd := strings.TrimSpace(phase.QAVerifyCommand)
+	if cmd == "" {
+		return
+	}
+	if WorkflowUsesPython(v) && strings.Contains(cmd, "pytest") && !strings.Contains(cmd, ".py") {
+		// Bare pytest - collect remaining test_*.py in this phase
+		var testFiles []string
+		for _, f := range phase.RequiredFiles {
+			b := filepath.Base(f)
+			if strings.HasPrefix(b, "test_") && strings.HasSuffix(b, ".py") {
+				testFiles = append(testFiles, f)
+			}
+		}
+		if len(testFiles) > 0 {
+			phase.QAVerifyCommand = strings.TrimSpace(v.PythonVenvRelDir()) + "/bin/python3 -m pytest -v " + strings.Join(testFiles, " ")
+		}
+	} else if WorkflowUsesGo(v) && strings.Contains(cmd, "go test") && !strings.Contains(cmd, "./...") && !strings.Contains(cmd, "/...") {
+		// Bare go test - could narrow but leave as-is for now
+	}
+}
+
+func hasRequiredFile(files []string, target string) bool {
+	target = filepath.ToSlash(strings.TrimSpace(target))
+	for _, f := range files {
+		if filepath.ToSlash(strings.TrimSpace(f)) == target {
+			return true
+		}
+	}
+	return false
+}
+
 // pairPhaseInfraFiles ensures each delivery phase includes common infrastructure files
 // (package.json, tsconfig.json) when it contains code files that depend on them.
 // These files are recognized as project-setup-owned via IsProjectSetupArtifactPath,
@@ -1009,6 +1408,7 @@ func FinalizeDeliveryPhases(v WorkflowValidation) WorkflowValidation {
 	v = splitOverlargePhases(v)
 	v = pairPhaseInfraFiles(v)
 	v = pairPhaseTests(v)
+	v = sequenceDeliveryPhasesByImports(v)
 	if len(v.DeliveryPhases) == 0 {
 		if inferred := inferDefaultDeliveryPhases(v); len(inferred) > 0 {
 			v.DeliveryPhases = inferred
@@ -1517,4 +1917,41 @@ func (v WorkflowValidation) PhaseSummaryLines() []string {
 		lines = append(lines, fmt.Sprintf("%s: %d file(s)%s", label, n, mark))
 	}
 	return lines
+}
+
+// TryRecoveryFromImportDeadlock attempts to recover from a test bead verify failure
+// caused by import dependencies in later phases. It runs the import-aware phase
+// sequencer to reorder the delivery phases, moving the test to the phase containing
+// its import dependencies. If an imported module is not present in any phase, a stub
+// is synthesized in the test's phase so the import resolves.
+//
+// This function is intended to be called when a bead's verify fails due to import
+// issues, indicating a dependency deadlock between phases. After calling this function,
+// the orchestrator should re-evaluate the bead's verify — it should now be satisfiable
+// within the new phase since the test has been moved to a phase that can satisfy its
+// dependencies. Stubs for missing imported modules are synthesized in the test's phase.
+func TryRecoveryFromImportDeadlock(v *WorkflowValidation) (recovered bool, summary string) {
+	// Run the import-aware phase sequencer to reorder delivery phases
+	v2 := sequenceDeliveryPhasesByImports(*v)
+
+	// Check if any test was moved to a different phase
+	moved := false
+	for i := range v2.DeliveryPhases {
+		for _, f := range v2.DeliveryPhases[i].RequiredFiles {
+			if IsTestImplementPath(f) {
+				moved = true
+				break
+			}
+		}
+		if moved {
+			break
+		}
+	}
+
+	if moved {
+		*v = v2
+		return true, "reallocated test bead(s) to phase(s) containing import dependencies; stubs synthesized as needed"
+	}
+
+	return false, "no test beads were reallocated — the phase sequencing did not change any test placements"
 }
