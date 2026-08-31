@@ -1147,17 +1147,26 @@ var (
 // "X/src/package.json" are in the list, the src/ one is wrong (the LLM placed
 // the file at the wrong depth).
 func deduplicateRequiredFiles(files []string) []string {
-	// Build a set of all files for O(1) lookup
-	fileSet := make(map[string]bool, len(files))
+	// First pass: exact-match deduplication
+	seen := make(map[string]bool, len(files))
+	unique := make([]string, 0, len(files))
 	for _, f := range files {
+		if seen[f] {
+			continue
+		}
+		seen[f] = true
+		unique = append(unique, f)
+	}
+	// Second pass: remove nested duplicates (e.g. X/Y/file when X/file exists)
+	fileSet := make(map[string]bool, len(unique))
+	for _, f := range unique {
 		fileSet[f] = true
 	}
-	out := make([]string, 0, len(files))
-	for _, f := range files {
+	out := make([]string, 0, len(unique))
+	for _, f := range unique {
 		dir := filepath.Dir(f)
 		base := filepath.Base(f)
 		parts := strings.Split(dir, "/")
-		// Walk up one level: if X/Y/file exists and X/file also exists, skip this one
 		skip := false
 		if len(parts) >= 2 {
 			parentDir := strings.Join(parts[:len(parts)-1], "/")

@@ -343,3 +343,168 @@ func TestDoubledLayoutPath(t *testing.T) {
 		t.Fatal("valid path should not match")
 	}
 }
+
+func TestIsRigFlowNonImplementPath(t *testing.T) {
+	tests := []struct {
+		path string
+		want bool
+	}{
+		// Gastown metadata
+		{".gastown/workflow-profile.json", true},
+		{".gastown", true},
+		// Planning directories
+		{"planning/plan.md", true},
+		{"finally/planning/PLAN.md", true},
+		{"finally/planning/notes.md", true},
+		// Rig-level documentation files
+		{"plan.md", true},
+		{"finally/plan.md", true},
+		{"architecture.md", true},
+		{"finally/architecture.md", true},
+		{"TEST_PLAN.md", true},
+		{"finally/TEST_PLAN.md", true},
+		{"test-report.md", true},
+		{"finally/test-report.md", true},
+		{"workflow-profile.json", true},
+		// Application files — should NOT be filtered
+		{"finally/Dockerfile", false},
+		{"finally/backend/app/main.py", false},
+		{"finally/frontend/package.json", false},
+		{"finally/test/mvp.spec.ts", false},
+		{"Dockerfile", false},
+		{"backend/app/main.py", false},
+	}
+	for _, tc := range tests {
+		got := isRigFlowNonImplementPath(tc.path)
+		if got != tc.want {
+			t.Errorf("isRigFlowNonImplementPath(%q) = %v, want %v", tc.path, got, tc.want)
+		}
+	}
+}
+
+func TestFilterRigFlowRequiredFiles_NormalizesPrefix(t *testing.T) {
+	files := []string{
+		"lib/sse.ts",
+		"mvp.spec.ts",
+		"finally/Dockerfile",
+		"finally/backend/app/main.py",
+	}
+	got := filterRigFlowRequiredFiles(files, "finally")
+	want := []string{
+		"finally/lib/sse.ts",
+		"finally/mvp.spec.ts",
+		"finally/Dockerfile",
+		"finally/backend/app/main.py",
+	}
+	if len(got) != len(want) {
+		t.Fatalf("got %d files, want %d: %v", len(got), len(want), got)
+	}
+	for i := range got {
+		if got[i] != want[i] {
+			t.Errorf("got[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+}
+
+func TestFilterRigFlowRequiredFiles_FiltersNonImplementPaths(t *testing.T) {
+	files := []string{
+		".gastown/workflow-profile.json",
+		"finally/planning/PLAN.md",
+		"finally/plan.md",
+		"finally/architecture.md",
+		"finally/Dockerfile",
+		"finally/backend/app/main.py",
+	}
+	got := filterRigFlowRequiredFiles(files, "finally")
+	for _, f := range got {
+		if isRigFlowNonImplementPath(f) {
+			t.Errorf("filterRigFlowRequiredFiles included non-implement path: %q", f)
+		}
+	}
+	if len(got) != 2 {
+		t.Fatalf("expected 2 files (Dockerfile + main.py), got %d: %v", len(got), got)
+	}
+}
+
+func TestFilterRigFlowRequiredFiles_FixesDoubledLayout(t *testing.T) {
+	files := []string{
+		"finally/finally/Dockerfile",
+		"finally/finally/backend/app/main.py",
+	}
+	got := filterRigFlowRequiredFiles(files, "finally")
+	want := []string{
+		"finally/Dockerfile",
+		"finally/backend/app/main.py",
+	}
+	if len(got) != len(want) {
+		t.Fatalf("got %d files, want %d: %v", len(got), len(want), got)
+	}
+	for i := range got {
+		if got[i] != want[i] {
+			t.Errorf("got[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+}
+
+func TestDeduplicateRequiredFiles_ExactMatches(t *testing.T) {
+	files := []string{
+		"finally/.env",
+		"finally/Dockerfile",
+		"finally/.env",
+		"finally/backend/app/main.py",
+		"finally/.env",
+	}
+	got := deduplicateRequiredFiles(files)
+	want := []string{
+		"finally/.env",
+		"finally/Dockerfile",
+		"finally/backend/app/main.py",
+	}
+	if len(got) != len(want) {
+		t.Fatalf("got %d files, want %d: %v", len(got), len(want), got)
+	}
+	for i := range got {
+		if got[i] != want[i] {
+			t.Errorf("got[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+}
+
+func TestDeduplicateRequiredFiles_NestedDuplicates(t *testing.T) {
+	files := []string{
+		"finally/package.json",
+		"finally/src/package.json",
+		"finally/backend/app/main.py",
+	}
+	got := deduplicateRequiredFiles(files)
+	want := []string{
+		"finally/package.json",
+		"finally/backend/app/main.py",
+	}
+	if len(got) != len(want) {
+		t.Fatalf("got %d files, want %d: %v", len(got), len(want), got)
+	}
+	for i := range got {
+		if got[i] != want[i] {
+			t.Errorf("got[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+}
+
+func TestSanitizeRigFlowProfile_DeduplicatesRequiredFiles(t *testing.T) {
+	v := WorkflowValidation{
+		LayoutRoot:     "finally",
+		RequiredFiles:  []string{"finally/.env", "finally/Dockerfile", "finally/.env"},
+		DeliveryPhases: []DeliveryPhase{},
+	}
+	got := SanitizeRigFlowProfile(v)
+	envCount := 0
+	for _, f := range got.RequiredFiles {
+		if f == "finally/.env" {
+			envCount++
+		}
+	}
+	if envCount != 1 {
+		t.Fatalf("expected 1 finally/.env in RequiredFiles, got %d: %v", envCount, got.RequiredFiles)
+	}
+}

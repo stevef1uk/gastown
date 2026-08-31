@@ -319,9 +319,27 @@ func ValidateDockerfileAgainstArchitecture(dockerfileContent, archDoc, relPath s
 
 // DoubledLayoutPath reports paths like finally/finally/Dockerfile when layout_root is finally.
 // isRigFlowNonImplementPath reports paths spec-index sometimes emits that rig-flow does not implement via polecat beads.
+// These are gastown-generated docs, planning files, and rig metadata — not application code.
 func isRigFlowNonImplementPath(path string) bool {
 	lower := strings.ToLower(filepath.ToSlash(strings.TrimSpace(path)))
-	return strings.HasSuffix(lower, "/planning/plan.md") || lower == "planning/plan.md"
+	base := filepath.Base(lower)
+	// Gastown metadata directory
+	if strings.HasPrefix(lower, ".gastown/") || lower == ".gastown" {
+		return true
+	}
+	// Planning directories (planning/plan.md, planning/PLAN.md, etc.)
+	if strings.Contains(lower, "/planning/") || lower == "planning/plan.md" {
+		return true
+	}
+	// Rig-level documentation files (at any depth — these are gastown-generated, not app code)
+	rigDocs := map[string]bool{
+		"plan.md":          true,
+		"architecture.md":  true,
+		"test_plan.md":     true,
+		"test-report.md":   true,
+		"workflow-profile.json": true,
+	}
+	return rigDocs[base]
 }
 
 func fixDoubledLayoutPath(path, layoutRoot string) string {
@@ -334,6 +352,7 @@ func fixDoubledLayoutPath(path, layoutRoot string) string {
 }
 
 func filterRigFlowRequiredFiles(files []string, layoutRoot string) []string {
+	layoutRoot = strings.Trim(filepath.ToSlash(strings.TrimSpace(layoutRoot)), "/")
 	var out []string
 	for _, f := range files {
 		f = filepath.ToSlash(strings.TrimSpace(f))
@@ -342,6 +361,11 @@ func filterRigFlowRequiredFiles(files []string, layoutRoot string) []string {
 		}
 		if DoubledLayoutPath(f, layoutRoot) {
 			f = fixDoubledLayoutPath(f, layoutRoot)
+		}
+		// Normalize path prefix: if layout_root is set and path doesn't start with it, add it.
+		// This fixes architecture.md paths that omit the layout_root prefix (e.g. lib/sse.ts -> finally/lib/sse.ts).
+		if layoutRoot != "" && layoutRoot != "." && !strings.HasPrefix(f, layoutRoot+"/") && !strings.HasPrefix(f, "/") {
+			f = layoutRoot + "/" + f
 		}
 		out = append(out, f)
 	}
@@ -412,6 +436,16 @@ func SanitizeRigFlowProfile(v WorkflowValidation, rig ...string) WorkflowValidat
 			}
 		}
 	}
+	// Fix doubled layout paths in qa_verify_command (e.g. "cd finally/finally/test" -> "cd finally/test").
+	for i := range v.DeliveryPhases {
+		if q := v.DeliveryPhases[i].QAVerifyCommand; q != "" && layout != "" && layout != "." {
+			doubled := layout + "/" + layout + "/"
+			if strings.Contains(q, doubled) {
+				v.DeliveryPhases[i].QAVerifyCommand = strings.ReplaceAll(q, doubled, layout+"/")
+				log.Printf("[profile-heal] phase %q: fixed doubled layout path in verify", v.DeliveryPhases[i].ID)
+			}
+		}
+	}
 	// Normalize LLM-authored filename casing (e.g. "linkshelf/dockerfile" ->
 	// "linkshelf/Dockerfile"): a wrong-case required_file makes Polecat write a
 	// file the build can't find, deadlocking the bead on verify-before-close.
@@ -456,6 +490,12 @@ func SanitizeRigFlowProfile(v WorkflowValidation, rig ...string) WorkflowValidat
 		}
 	}
 	sanitizeFrontendOnlyPhaseQA(&v)
+	// Final deduplication pass: healPhaseVerifyTestFiles and other steps may
+	// re-introduce duplicates after ClampProfileValidation's earlier dedup.
+	v.RequiredFiles = deduplicateRequiredFiles(v.RequiredFiles)
+	for i := range v.DeliveryPhases {
+		v.DeliveryPhases[i].RequiredFiles = deduplicateRequiredFiles(v.DeliveryPhases[i].RequiredFiles)
+	}
 	return v
 }
 
