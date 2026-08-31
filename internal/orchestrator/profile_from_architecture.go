@@ -153,7 +153,16 @@ func extractSpecLayoutPaths(mayorRigDir string) ([]string, bool, map[string]bool
 		return nil, false, nil
 	}
 	// Prefer paths with a shared layout prefix (pingapp/...) over flat ./main.py-only lists.
-	if root := inferLayoutRootFromPaths(paths); root != "" && root != "." {
+	// Filter out ./ prefixed paths (from architecture.md) before inferring the root,
+	// since SPEC layout tree paths are the authoritative source for layout structure.
+	var cleanPaths []string
+	for _, p := range paths {
+		p = filepath.ToSlash(strings.TrimSpace(p))
+		if !strings.HasPrefix(p, "./") {
+			cleanPaths = append(cleanPaths, p)
+		}
+	}
+	if root := inferLayoutRootFromPaths(cleanPaths); root != "" && root != "." {
 		var prefixed []string
 		for _, p := range paths {
 			p = filepath.ToSlash(strings.TrimSpace(p))

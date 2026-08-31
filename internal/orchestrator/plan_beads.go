@@ -425,7 +425,8 @@ var (
 	// archPathBulletRe matches a markdown bullet/line whose leading token is a
 	// repo file path (architects frequently list the planned layout as plain
 	// "- finally/backend/app/main.py — description" bullets without backticks).
-	archPathBulletRe = regexp.MustCompile(`(?m)^\s*[-*+]\s+([^\s]+)(?:\s*[—-]|$)`)
+	// Uses [ \t]* (not \s*) to avoid matching across line boundaries.
+	archPathBulletRe = regexp.MustCompile(`(?m)^\s*[-*+]\s+([^\s]+)(?:[ \t]*[—-]|$)`)
 )
 
 // extractArchPaths returns repo-relative file paths referenced in architecture.md.
