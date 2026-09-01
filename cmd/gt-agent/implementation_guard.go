@@ -163,6 +163,17 @@ func (r *stateRunner) rejectImplementationOpenBeadsSuccess(outcome, summary stri
 	return b.String(), true
 }
 
+// openBeadCircuitBreakerTripped reports whether the LLM has sent the same success JSON
+// with open beads too many times in a row. After OpenBeadCircuitBreakerThreshold
+// rejections the LLM is stuck in a hallucination loop and must be routed back to planning.
+func (r *stateRunner) openBeadCircuitBreakerTripped() bool {
+	return r != nil && r.track.openBeadRejects >= OpenBeadCircuitBreakerThreshold
+}
+
+// OpenBeadCircuitBreakerThreshold is the number of consecutive open-bead success rejections
+// before the circuit breaker trips and forces the task back to planning.
+const OpenBeadCircuitBreakerThreshold = 5
+
 // rejectImplementationPrematureSuccess blocks success JSON while verify/compile still fails
 // (e.g. unused import in handlers_test.go while the active bead is handlers.go).
 func (r *stateRunner) rejectImplementationPrematureSuccess(outcome string) (string, bool) {

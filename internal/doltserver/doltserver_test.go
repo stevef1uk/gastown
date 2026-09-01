@@ -1634,10 +1634,11 @@ func TestEnsureMetadata_RepairsMissingDoltFields(t *testing.T) {
 	}
 }
 
-// TestEnsureMetadata_RepairsStalePort tests that EnsureMetadata overwrites
-// a stale dolt_server_port (e.g., 13729 from a previous bd init) with the
-// correct port from DefaultConfig. This is the root cause of "connection
-// refused" errors reported by community users after gt dolt fix-metadata.
+// TestEnsureMetadata_RepairsStalePort tests that EnsureMetadata removes the
+// deprecated dolt_server_port from metadata.json. bd now uses the
+// .beads/dolt-server.port file as the primary source; keeping the stale port
+// in metadata.json causes cross-project data leakage when multiple rigs share
+// a dolt server on different ports.
 func TestEnsureMetadata_RepairsStalePort(t *testing.T) {
 	townRoot := t.TempDir()
 
@@ -1674,10 +1675,9 @@ func TestEnsureMetadata_RepairsStalePort(t *testing.T) {
 		t.Fatalf("parsing metadata: %v", err)
 	}
 
-	// Port should now be the default (3307), not the stale 13729
-	wantPort := float64(DefaultPort)
-	if meta["dolt_server_port"] != wantPort {
-		t.Errorf("dolt_server_port = %v, want %v", meta["dolt_server_port"], wantPort)
+	// Deprecated dolt_server_port should be removed — bd uses port file instead
+	if _, exists := meta["dolt_server_port"]; exists {
+		t.Errorf("dolt_server_port should be removed (deprecated), got %v", meta["dolt_server_port"])
 	}
 	if meta["dolt_server_host"] != "127.0.0.1" {
 		t.Errorf("dolt_server_host = %v, want 127.0.0.1", meta["dolt_server_host"])

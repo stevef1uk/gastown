@@ -46,7 +46,9 @@ type cmdTracker struct {
 	lastExitCode      *int
 	bdInfraFailed     bool
 	noDiskRejects     int
-	openBeadRejects   int
+	openBeadRejects    int
+	consecutiveNonTerminalJSONRejects int
+	NonTerminalJSONRejectThreshold    int
 }
 
 type stateRunner struct {
@@ -65,6 +67,8 @@ type stateRunner struct {
 	turnResponse           string // current LLM turn (for fenced-code vs native-tool guards)
 	turnHadSuccessfulNative bool // true after a successful WRITE/EDIT this turn
 	consecutiveCmdTimeouts  int  // consecutive command timeout counter for auto-warrant
+	consecutiveNonTerminalJSONRejects int
+	NonTerminalJSONRejectThreshold    int
 }
 
 func (r *stateRunner) qaReworkWriteScope() *orchestrator.ImplementWriteScope {

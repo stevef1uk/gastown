@@ -138,6 +138,12 @@ func DeterministicIndexRig(ctx context.Context, townRoot, rig string) (*ProfileF
 		log.Printf("[deterministic-index] no parseable layout tree in SPEC for %s — falling back to LLM", rig)
 		return nil, fmt.Errorf("no parseable layout tree in SPEC — falling back to LLM")
 	}
+
+	// SPEC layout tree parsing often flattens nested paths (e.g. producing
+	// linkshelf/schema.go instead of linkshelf/internal/store/schema.go).
+	// Read architecture.md to get canonical deep paths and upgrade any flat
+	// extracted paths that have a deeper counterpart.
+	paths = upgradeFlattenedPathsWithArchitecture(mayorRig, paths)
 	// Parse phases from SPEC (names only, no file assignments). Parsed before
 	// the sparsity check: an explicit Delivery Phases section means the author
 	// enumerated the project on purpose, so a short tree is intentional
@@ -1455,4 +1461,97 @@ func getEntryPointPatterns(testRunner string) []string {
 	default:
 		return []string{"/main.go", "/main.py", "/server.js", "/index.js"}
 	}
+}
+
+// upgradeFlattenedPathsWithArchitecture reads architecture.md to get canonical
+// deep paths and upgrades any flattened extracted paths that have a deeper
+// counterpart. The SPEC layout tree parser often produces shallow paths like
+// linkshelf/schema.go when the real path is linkshelf/internal/store/schema.go.
+// architecture.md is the authoritative source for implementation file paths.
+func upgradeFlattenedPathsWithArchitecture(mayorRigDir string, extractedPaths []string) []string {
+	archPath := filepath.Join(mayorRigDir, "architecture.md")
+	archData, err := os.ReadFile(archPath)
+	if err != nil || len(archData) == 0 {
+		return extractedPaths
+	}
+
+	// Extract canonical paths from architecture.md (backtick-quoted file paths)
+	archText := string(archData)
+	archPaths := extractBacktickPaths(archText)
+	if len(archPaths) == 0 {
+		return extractedPaths
+	}
+
+	// Build basename -> deepest path map from architecture.md
+	archByBasename := map[string]string{}
+	for _, p := range archPaths {
+		p = filepath.ToSlash(strings.TrimSpace(p))
+		base := filepath.Base(p)
+		if existing, ok := archByBasename[base]; !ok || len(p) > len(existing) {
+			archByBasename[base] = p
+		}
+	}
+
+	// For each extracted path, check if architecture.md has a deeper path
+	// with the same basename. If so, use the deeper path.
+	upgraded := make([]string, 0, len(extractedPaths))
+	seen := map[string]bool{}
+	for _, p := range extractedPaths {
+		p = filepath.ToSlash(strings.TrimSpace(p))
+		base := filepath.Base(p)
+
+		if deeper, ok := archByBasename[base]; ok && deeper != p && len(deeper) > len(p) {
+			// Check that the deeper path shares the same layout root
+			extractedRoot := inferLayoutRoot([]string{p})
+			deeperRoot := inferLayoutRoot([]string{deeper})
+			if extractedRoot == deeperRoot && !seen[deeper] {
+				log.Printf("[deterministic-index] upgrading flattened path %s → %s (from architecture.md)", p, deeper)
+				upgraded = append(upgraded, deeper)
+				seen[deeper] = true
+				continue
+			}
+		}
+		if !seen[p] {
+			upgraded = append(upgraded, p)
+			seen[p] = true
+		}
+	}
+
+	// Add any architecture.md paths that weren't in extractedPaths
+	// (architecture.md may list test files, config files, etc. that the SPEC tree omits)
+	for _, p := range archPaths {
+		p = filepath.ToSlash(strings.TrimSpace(p))
+		if !seen[p] {
+			upgraded = append(upgraded, p)
+			seen[p] = true
+		}
+	}
+
+	if len(upgraded) != len(extractedPaths) {
+		log.Printf("[deterministic-index] path upgrade: %d → %d files (from architecture.md)", len(extractedPaths), len(upgraded))
+	}
+	return upgraded
+}
+
+// extractBacktickPaths extracts file paths from backtick-quoted text in markdown.
+// Matches patterns like `linkshelf/internal/store/schema.go` in architecture.md.
+func extractBacktickPaths(text string) []string {
+	re := regexp.MustCompile("`([^`]+)`")
+	matches := re.FindAllStringSubmatch(text, -1)
+	seen := map[string]bool{}
+	var out []string
+	for _, m := range matches {
+		p := strings.TrimSpace(m[1])
+		if p == "" || seen[p] {
+			continue
+		}
+		// Only include paths that look like file paths (contain / or end with known extension)
+		if strings.Contains(p, "/") || strings.HasSuffix(p, ".go") || strings.HasSuffix(p, ".ts") ||
+			strings.HasSuffix(p, ".js") || strings.HasSuffix(p, ".html") || strings.HasSuffix(p, ".css") ||
+			strings.HasSuffix(p, ".py") || strings.HasSuffix(p, ".mod") || strings.HasSuffix(p, ".json") {
+			seen[p] = true
+			out = append(out, p)
+		}
+	}
+	return out
 }

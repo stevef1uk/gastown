@@ -3173,6 +3173,12 @@ func EnsureMetadata(townRoot, rigName string, doltDatabase ...string) error {
 		if explicitDB || !DatabaseExists(townRoot, dbStr) {
 			fmt.Fprintf(os.Stderr, "Warning: metadata.json dolt_database was %q, correcting to %q (identity mismatch repair)\n", dbStr, effectiveDB)
 			existing["dolt_database"] = effectiveDB
+			// Clear project_id so bd init adopts the correct one from the
+			// new database. Without this, the stale project_id from the old
+			// database causes PROJECT IDENTITY MISMATCH on next bd connect.
+			if existing["project_id"] != nil {
+				delete(existing, "project_id")
+			}
 			changed = true
 		}
 	}
@@ -3182,13 +3188,16 @@ func EnsureMetadata(townRoot, rigName string, doltDatabase ...string) error {
 	// connect to the Dolt server. Stale values (e.g., port 13729 from a
 	// previous bd init) cause "connection refused" errors.
 	wantHost := config.EffectiveHost()
-	wantPort := float64(config.Port) // JSON numbers are float64
 	if existing["dolt_server_host"] != wantHost {
 		existing["dolt_server_host"] = wantHost
 		changed = true
 	}
-	if existing["dolt_server_port"] != wantPort {
-		existing["dolt_server_port"] = wantPort
+	// Remove deprecated dolt_server_port from metadata.json — bd now uses
+	// the .beads/dolt-server.port file as the primary source. Keeping the
+	// stale port in metadata.json causes cross-project data leakage when
+	// multiple rigs share a dolt server on different ports.
+	if _, exists := existing["dolt_server_port"]; exists {
+		delete(existing, "dolt_server_port")
 		changed = true
 	}
 

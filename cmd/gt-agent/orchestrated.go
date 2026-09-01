@@ -13,30 +13,30 @@ import (
 	"strings"
 	"time"
 
-	"github.com/steveyegge/gastown/internal/llm"
+	"github.com/steveyegge/gastown/internal/agentenv"
 	"github.com/steveyegge/gastown/internal/beads"
 	"github.com/steveyegge/gastown/internal/config"
+	"github.com/steveyegge/gastown/internal/llm"
 	"github.com/steveyegge/gastown/internal/nudge"
-	"github.com/steveyegge/gastown/internal/agentenv"
 	"github.com/steveyegge/gastown/internal/orchestrator"
 	rigpkg "github.com/steveyegge/gastown/internal/rig"
 )
 
 const (
-	defaultOrchPollInterval           = 15 * time.Second
-	implementationLLMHealthMinTurns   = 10 // rig-flow implementation uses 20; ping before long loops
-	implementationLLMHealthTimeout    = 8 * time.Second
-	maxOrchestratedCmdTurns           = 5
-	maxOrchestratedQACmdTurns    = 8
-	maxOrchestratedRetryFeedback = 6000 // chars persisted for next fetch_task attempt
+	defaultOrchPollInterval         = 15 * time.Second
+	implementationLLMHealthMinTurns = 10 // rig-flow implementation uses 20; ping before long loops
+	implementationLLMHealthTimeout  = 8 * time.Second
+	maxOrchestratedCmdTurns         = 5
+	maxOrchestratedQACmdTurns       = 8
+	maxOrchestratedRetryFeedback    = 6000 // chars persisted for next fetch_task attempt
 )
 
 var jsonBlockRE = regexp.MustCompile("(?s)```(?:json)?\\s*([\\s\\S]*?)```")
 
 type orchestratedTaskResult struct {
-	Outcome      string   `json:"outcome"`
-	Summary      string   `json:"summary"`
-	CommandsRun  []string `json:"commands_run"`
+	Outcome     string   `json:"outcome"`
+	Summary     string   `json:"summary"`
+	CommandsRun []string `json:"commands_run"`
 }
 
 func orchestratorPollInterval() time.Duration {
@@ -71,7 +71,7 @@ func runOrchestrated(ctx context.Context, client *llm.Client, townRoot, role, ri
 
 		task, err := orchestrator.FetchTask(townRoot, agentID)
 		if err != nil {
-			orchestratedFprintfStderr( "[gt-agent] fetch_task error: %v\n", err)
+			orchestratedFprintfStderr("[gt-agent] fetch_task error: %v\n", err)
 			time.Sleep(pollEvery)
 			continue
 		}
@@ -103,7 +103,7 @@ func runOrchestrated(ctx context.Context, client *llm.Client, townRoot, role, ri
 			continue
 		}
 		if runErr != nil {
-			orchestratedFprintfStderr( "[gt-agent] task execution: %v\n", runErr)
+			orchestratedFprintfStderr("[gt-agent] task execution: %v\n", runErr)
 			if outcome == "" {
 				outcome = "fail"
 			}
@@ -116,7 +116,7 @@ func runOrchestrated(ctx context.Context, client *llm.Client, townRoot, role, ri
 		agentID := orchestrator.OrchestratorAgentID(role, rig)
 		nextState, err := orchestrator.CompleteTask(townRoot, task.WorkflowID, outcome, agentID, summary, attemptLog, task.Variables)
 		if err != nil {
-			orchestratedFprintfStderr( "[gt-agent] complete_task failed: %v\n", err)
+			orchestratedFprintfStderr("[gt-agent] complete_task failed: %v\n", err)
 			// Spurious QA rejection: QA said fail but code is fine on disk.
 			// Do NOT store a failure retry (that would send us back to implementation).
 			// Clear any retry and let the agent loop re-enter QA.
@@ -369,30 +369,30 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 				} else if msg, reject := runner.rejectImplementationNoOpFailure(o); reject {
 					orchestratedPrintf("[gt-agent] rejecting implementation failure JSON without fix work this attempt\n")
 					recordAttemptFeedback(msg + "\n")
-			} else if o != "" {
-				if vErr := validateOutcomeForTask(task, townRoot, rig, o, s); vErr != nil {
-					orchestratedPrintf("[gt-agent] summary validation failed: %v\n", vErr)
-					feedbackBuilder.Reset()
-					feedbackBuilder.WriteString(combined.String())
-					recordAttemptFeedback("Summary validation failed: " + vErr.Error() + "\n")
-					feedbackBuilder.WriteString("\n\nSummary validation failed: " + vErr.Error() + "\nSend JSON success only after fixing the summary.")
-					feedback = feedbackBuilder.String()
-				} else if vErr := runner.validateArtifacts(o); vErr != nil {
-					orchestratedPrintf("[gt-agent] artifact validation failed: %v\n", vErr)
-					feedbackBuilder.Reset()
-					feedbackBuilder.WriteString(combined.String())
-					recordAttemptFeedback("Validation failed: " + vErr.Error() + "\n")
-					feedbackBuilder.WriteString("\n\nValidation failed: " + vErr.Error() + "\n")
-					if runner.hooks.Artifacts == "design" {
-						feedbackBuilder.WriteString("Rewrite architecture.md with a heredoc CMD: cat > ... <<'EOF' ... EOF — do NOT send JSON success until the validation passes.")
+				} else if o != "" {
+					if vErr := validateOutcomeForTask(task, townRoot, rig, o, s); vErr != nil {
+						orchestratedPrintf("[gt-agent] summary validation failed: %v\n", vErr)
+						feedbackBuilder.Reset()
+						feedbackBuilder.WriteString(combined.String())
+						recordAttemptFeedback("Summary validation failed: " + vErr.Error() + "\n")
+						feedbackBuilder.WriteString("\n\nSummary validation failed: " + vErr.Error() + "\nSend JSON success only after fixing the summary.")
+						feedback = feedbackBuilder.String()
+					} else if vErr := runner.validateArtifacts(o); vErr != nil {
+						orchestratedPrintf("[gt-agent] artifact validation failed: %v\n", vErr)
+						feedbackBuilder.Reset()
+						feedbackBuilder.WriteString(combined.String())
+						recordAttemptFeedback("Validation failed: " + vErr.Error() + "\n")
+						feedbackBuilder.WriteString("\n\nValidation failed: " + vErr.Error() + "\n")
+						if runner.hooks.Artifacts == "design" {
+							feedbackBuilder.WriteString("Rewrite architecture.md with a heredoc CMD: cat > ... <<'EOF' ... EOF — do NOT send JSON success until the validation passes.")
+						} else {
+							feedbackBuilder.WriteString("Fix the issues above with EDIT:/WRITE:/CMD: lines — do NOT send JSON success until the validation passes.")
+						}
+						feedback = feedbackBuilder.String()
 					} else {
-						feedbackBuilder.WriteString("Fix the issues above with EDIT:/WRITE:/CMD: lines — do NOT send JSON success until the validation passes.")
+						return o, s, lastAttemptFeedback.String(), nil
 					}
-					feedback = feedbackBuilder.String()
-				} else {
-					return o, s, lastAttemptFeedback.String(), nil
 				}
-			}
 			}
 			if o, s, ok := runner.tryAutoOutcome(); ok {
 				return o, s, lastAttemptFeedback.String(), nil
@@ -505,6 +505,16 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 			}
 			if msg, reject := runner.rejectImplementationOpenBeadsSuccess(o, s); reject {
 				orchestratedPrintf("[gt-agent] rejecting implementation success JSON while open beads remain\n")
+				if runner.openBeadCircuitBreakerTripped() {
+					orchestratedPrintf("[gt-agent] open-bead circuit breaker tripped after %d rejections — forcing implementation fail back to planning\n", OpenBeadCircuitBreakerThreshold)
+					summary := "Open implement beads remain after repeated success JSON; LLM stuck in open-bead hallucination loop. Routing back to planning so the bead set can be repaired and re-planned."
+					if reopened, err := orchestrator.ReopenAllPhaseImplementBeads(townRoot, rig, runner.v); err != nil {
+						orchestratedFprintfStderr("[gt-agent] failed to reopen phase beads on circuit breaker: %v\n", err)
+					} else if len(reopened) > 0 {
+						orchestratedPrintf("[gt-agent] reopened %d phase beads before routing to planning\n", len(reopened))
+					}
+					return "fail", summary, lastAttemptFeedback.String() + msg + "\n", fmt.Errorf("open-bead circuit breaker tripped")
+				}
 				recordAttemptFeedback(msg + "\n")
 				messages = append(messages, llm.Message{Role: "user", Content: msg})
 				continue
@@ -536,6 +546,15 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 			recordAttemptFeedback(msg + "\n")
 			messages = append(messages, llm.Message{Role: "user", Content: msg})
 			continue
+		}
+
+		// Non-terminal JSON outcome loop guard: the LLM may emit {"outcome":"continue","next_action":"..."}
+		// as a no-op — it does not run any CMD or native tool commands. After consecutive such turns the model
+		// cannot break out of the loop; force a failure so the workflow routes back to planning/design.
+		runner.consecutiveNonTerminalJSONRejects++
+		if runner.consecutiveNonTerminalJSONRejects >= 4 {
+			summary := "LLM emitted repeated non-terminal outcome JSON — forcing implementation fail back to planning after consecutive no-op turns."
+			return "fail", summary, lastAttemptFeedback.String() + "\n", fmt.Errorf("non-terminal JSON outcome loop exceeded threshold")
 		}
 
 		hint := orchestratedEmptyTurnHint(runner.hooks)
@@ -1068,7 +1087,7 @@ func parseOrchestratedCommands(response string) []string {
 // expandGluedOrchestratedCommands splits shell lines that embed CMD: markers mid-command.
 func expandGluedOrchestratedCommands(cmds []string) []string {
 	var out []string
-		for _, c := range cmds {
+	for _, c := range cmds {
 		c = strings.TrimSpace(c)
 		if c == "" || isStandaloneHeredocDelimiter(c) || isOrchestratedShellNoiseLine(c) {
 			continue
@@ -3506,7 +3525,7 @@ func validateQAArtifacts(townRoot, rig, outcome string, hadCmdFailure, bdListClo
 		return fmt.Errorf("run `bd list --status=closed` from %s before reporting QA outcome", rigMayorRigPath(rig))
 	}
 	if sendToArchitect {
-orchestratedFprintfStderr("[gt-agent] QA architecture_failure: sending architect to revise architecture.md\n")
+		orchestratedFprintfStderr("[gt-agent] QA architecture_failure: sending architect to revise architecture.md\n")
 		if !unittestOK {
 			return fmt.Errorf("architecture_failure requires green %s in this session — use outcome failure for test failures", scoped.QAVerifyHint())
 		}

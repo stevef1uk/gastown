@@ -41,8 +41,8 @@ func TestValidateImplementationArtifacts_requiresVerifyNotDiskReady(t *testing.T
 
 func TestImplementationTrack_clearsVerifyOnFailedCommand(t *testing.T) {
 	task := &orchestrator.Task{
-		State: "implementation",
-		Hooks: orchestrator.StateHooks{Track: "implementation"},
+		State:      "implementation",
+		Hooks:      orchestrator.StateHooks{Track: "implementation"},
 		Validation: orchestrator.DefaultWorkflowValidation(),
 	}
 	r := newStateRunner(task, t.TempDir(), "mockrig")
@@ -108,8 +108,8 @@ func TestImplementationTrack_preservesVerifyOnFailedGoTestWhenCanonicalIsGoBuild
 
 func TestImplementationTrack_bdCloseSetsBeadCloseOKRegardlessOfVerify(t *testing.T) {
 	task := &orchestrator.Task{
-		State: "implementation",
-		Hooks: orchestrator.StateHooks{Track: "implementation", CmdGuard: "implementation"},
+		State:      "implementation",
+		Hooks:      orchestrator.StateHooks{Track: "implementation", CmdGuard: "implementation"},
 		Validation: orchestrator.DefaultWorkflowValidation(),
 	}
 	r := newStateRunner(task, t.TempDir(), "mockrig")
@@ -132,6 +132,79 @@ func TestUnwrapMarkdownInlineToolLines(t *testing.T) {
 	cmds := parseOrchestratedCommands(got)
 	if len(cmds) != 1 || strings.Contains(cmds[0], "`") {
 		t.Fatalf("cmds=%v", cmds)
+	}
+}
+
+func TestOpenBeadCircuitBreaker_tripsAfterThreshold(t *testing.T) {
+	v := orchestrator.WorkflowValidation{
+		LayoutRoot:        "linkshelf",
+		BeadTitleContains: "Implement ",
+		RequiredFiles:     []string{"linkshelf/internal/foo/foo.go"},
+	}
+	countOpenMatchingBeadsHook = func(_, _ string, _ orchestrator.WorkflowValidation) (int, error) {
+		return 1, nil
+	}
+	t.Cleanup(func() { countOpenMatchingBeadsHook = nil })
+	task := &orchestrator.Task{
+		State:      "implementation",
+		Hooks:      orchestrator.StateHooks{Track: "implementation", CmdGuard: "implementation"},
+		Validation: v,
+	}
+	r := newStateRunner(task, t.TempDir(), "mockrig")
+
+	for i := 0; i < OpenBeadCircuitBreakerThreshold; i++ {
+		if r.openBeadCircuitBreakerTripped() {
+			t.Fatalf("breaker tripped early at iteration %d", i)
+		}
+		msg, reject := r.rejectImplementationOpenBeadsSuccess("success", "All implementation beads closed.")
+		if !reject {
+			t.Fatalf("expected rejection at iteration %d", i)
+		}
+		if !strings.Contains(msg, "success JSON while implement beads are still **open**") {
+			t.Fatalf("unexpected rejection message at iteration %d: %s", i, msg)
+		}
+	}
+	if !r.openBeadCircuitBreakerTripped() {
+		t.Fatal("expected open-bead circuit breaker to trip after threshold")
+	}
+}
+
+func TestOpenBeadCircuitBreaker_resetsPerNewRunner(t *testing.T) {
+	countOpenMatchingBeadsHook = func(_, _ string, _ orchestrator.WorkflowValidation) (int, error) {
+		return 1, nil
+	}
+	t.Cleanup(func() { countOpenMatchingBeadsHook = nil })
+	task := &orchestrator.Task{
+		State:      "implementation",
+		Hooks:      orchestrator.StateHooks{Track: "implementation", CmdGuard: "implementation"},
+		Validation: orchestrator.WorkflowValidation{LayoutRoot: "linkshelf", RequiredFiles: []string{"linkshelf/internal/foo/foo.go"}},
+	}
+	r := newStateRunner(task, t.TempDir(), "mockrig")
+	for i := 0; i < 2; i++ {
+		r.rejectImplementationOpenBeadsSuccess("success", "All implementation beads closed.")
+	}
+	if r.openBeadCircuitBreakerTripped() {
+		t.Fatal("breaker must not trip after only 2 rejections")
+	}
+}
+
+func TestOpenBeadCircuitBreaker_noTripWhenNoOpenBeads(t *testing.T) {
+	task := &orchestrator.Task{
+		State:      "implementation",
+		Hooks:      orchestrator.StateHooks{Track: "implementation", CmdGuard: "implementation"},
+		Validation: orchestrator.WorkflowValidation{LayoutRoot: "linkshelf", RequiredFiles: []string{"linkshelf/internal/foo/foo.go"}},
+	}
+	r := newStateRunner(task, t.TempDir(), "mockrig")
+	countOpenMatchingBeadsHook = func(_, _ string, _ orchestrator.WorkflowValidation) (int, error) {
+		return 0, nil
+	}
+	t.Cleanup(func() { countOpenMatchingBeadsHook = nil })
+	msg, reject := r.rejectImplementationOpenBeadsSuccess("success", "All implementation beads closed.")
+	if reject {
+		t.Fatalf("did not expect rejection when no open beads: %s", msg)
+	}
+	if r.openBeadCircuitBreakerTripped() {
+		t.Fatal("breaker must not trip when there are no open beads")
 	}
 }
 
