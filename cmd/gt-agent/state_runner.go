@@ -49,6 +49,7 @@ type cmdTracker struct {
 	openBeadRejects    int
 	consecutiveNonTerminalJSONRejects int
 	NonTerminalJSONRejectThreshold    int
+	noOpFailureRejects      int
 }
 
 type stateRunner struct {
