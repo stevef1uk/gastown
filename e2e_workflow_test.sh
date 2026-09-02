@@ -10,6 +10,12 @@ GT_DIR="${GT_ROOT:-$HOME/gt}"
 RIG="ping_rig"
 FREERIDE_ROOT="${FREERIDE_ROOT:-}"
 
+# Guard: never allow a town inside the freeride repo (GT_ROOT polluted to FREERIDE_ROOT)
+if [[ -n "$FREERIDE_ROOT" && ( "$GT_DIR" == "$FREERIDE_ROOT" || "$GT_DIR" == "$FREERIDE_ROOT/" || "$GT_DIR" == "$FREERIDE_ROOT"/* ) ]]; then
+    echo "ERROR: GT_DIR ($GT_DIR) is inside FREERIDE_ROOT ($FREERIDE_ROOT) — refusing to create town inside freeride. Unset GT_ROOT or export GT_ROOT=\$HOME/gt" >&2
+    exit 1
+fi
+
 # Portable check: is port $1 listening with "dolt" in the process name?
 is_dolt_listening() {
     local port="${1:-3307}"
