@@ -75,6 +75,45 @@ func mergeTestPlanRequiredFiles(townRoot, rig string, v *WorkflowValidation) {
 	}
 
 	addToPhase := func(i int, f string) {
+		// Validate that test file is plausible for the project's stack.
+		// For Python projects, Go test files (internal/*.go) are hallucinated.
+		// For Go projects, Python test files are hallucinated. Reject them.
+		ext := strings.ToLower(filepath.Ext(f))
+		if ext == ".go" && WorkflowUsesPython(*v) && !WorkflowUsesGo(*v) {
+			log.Printf("[test-plan-heal] phase %q: TEST_PLAN requires %s — skipped (Go file in Python project)", v.DeliveryPhases[i].ID, f)
+			return
+		}
+		if ext == ".py" && WorkflowUsesGo(*v) && !WorkflowUsesPython(*v) {
+			log.Printf("[test-plan-heal] phase %q: TEST_PLAN requires %s — skipped (Python file in Go project)", v.DeliveryPhases[i].ID, f)
+			return
+		}
+		// Validate that test file directory matches phase's required files directories
+		// e.g. defender/internal/api/handlers_test.go should not join defender/backend phase
+		// and defender/test/e2e/frontend.spec.js should not join defender/tests/e2e phase (singular vs plural)
+		dir := strings.ToLower(filepath.Dir(filepath.ToSlash(f)))
+		if dir != "." && dir != "" {
+			phaseHasDir := false
+			for _, g := range normalizePathList(v.DeliveryPhases[i].RequiredFiles) {
+				if strings.ToLower(filepath.Dir(filepath.ToSlash(strings.TrimSpace(g)))) == dir {
+					phaseHasDir = true
+					break
+				}
+			}
+			if !phaseHasDir {
+				// For test files, directory must match an existing required file's directory in that phase
+				// This prevents hallucinated paths like defender/internal/api (Go) from joining Python backend,
+				// and defender/test/e2e (singular) from joining defender/tests/e2e (plural)
+				if IsTestImplementPath(f) {
+					log.Printf("[test-plan-heal] phase %q: TEST_PLAN requires %s — skipped (test directory %q not in phase)", v.DeliveryPhases[i].ID, f, dir)
+					return
+				}
+				// For non-test files, also check if dir is plausible
+				if strings.Contains(dir, "/internal/") || strings.Contains(dir, "/api/") {
+					log.Printf("[test-plan-heal] phase %q: TEST_PLAN requires %s — skipped (directory mismatch)", v.DeliveryPhases[i].ID, f)
+					return
+				}
+			}
+		}
 		have := map[string]bool{}
 		for _, g := range normalizePathList(v.DeliveryPhases[i].RequiredFiles) {
 			have[strings.ToLower(g)] = true
