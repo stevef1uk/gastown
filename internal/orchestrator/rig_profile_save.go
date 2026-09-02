@@ -335,6 +335,23 @@ func WriteRigWorkflowProfileClamped(townRoot, rig string, v WorkflowValidation, 
 		if len(existingV.CompletedPhaseIDsField) > 0 {
 			v.CompletedPhaseIDsField = existingV.CompletedPhaseIDsField
 		}
+		// If preserved active is already marked completed (e.g. backend
+		// completed but profile rewound to backend), advance to next
+		// uncompleted phase so planner/architect don't bounce.
+		if len(v.CompletedPhaseIDsField) > 0 && v.ActivePhaseIDField != "" {
+			completedSet := make(map[string]bool, len(v.CompletedPhaseIDsField))
+			for _, c := range v.CompletedPhaseIDsField {
+				completedSet[strings.TrimSpace(c)] = true
+			}
+			if completedSet[strings.TrimSpace(v.ActivePhaseIDField)] {
+				for _, p := range v.DeliveryPhases {
+					if !completedSet[strings.TrimSpace(p.ID)] {
+						v.ActivePhaseIDField = strings.TrimSpace(p.ID)
+						break
+					}
+				}
+			}
+		}
 	}
 	// Read the raw envelope to preserve test_plan_reviewed and test_plan_frozen (not in WorkflowValidation).
 	existingPath := filepath.Join(outDir, rigProfileFile)

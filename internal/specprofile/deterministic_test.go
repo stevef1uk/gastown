@@ -709,7 +709,7 @@ func TestParseSpecPhases_WorkflowAndAlias(t *testing.T) {
 }
 
 func TestExtractBacktickPaths_skipsCommands(t *testing.T) {
-	arch := "Required files are `defender/backend/main.py` and `defender/backend/requirements.txt`. The verification command is `cd defender/backend && python3 -m pip install -r requirements.txt -q && python3 -m pytest -q`. Another command `uvicorn main:app --host 0.0.0.0 --port 8000 --reload` and HTTP path `GET /` and `/static/{path}` should not be files. Valid file `defender/frontend/game/main.js` stays. Directory placeholder `defender/backend` and `defender/frontend/` should be kept for Architect expansion."
+	arch := "Required files are `defender/backend/main.py` and `defender/backend/requirements.txt`. The verification command is `cd defender/backend && python3 -m pip install -r requirements.txt -q && python3 -m pytest -q`. Another command `uvicorn main:app --host 0.0.0.0 --port 8000 --reload` and HTTP path `GET /` and `/static/{path}` should not be files. Valid file `defender/frontend/game/main.js` stays. Prose reference `game/main.js` without layout_root should be skipped (static route). Directory placeholder `defender/backend` and `defender/frontend/` should be kept for Architect expansion."
 	paths := extractBacktickPaths(arch)
 	seen := map[string]bool{}
 	for _, p := range paths {
@@ -721,7 +721,7 @@ func TestExtractBacktickPaths_skipsCommands(t *testing.T) {
 			t.Fatalf("expected %q in %v", f, paths)
 		}
 	}
-	bad := []string{"cd defender/backend && python3 -m pip install -r requirements.txt -q && python3 -m pytest -q", "uvicorn main:app --host 0.0.0.0 --port 8000 --reload", "GET /", "/static/{path}"}
+	bad := []string{"cd defender/backend && python3 -m pip install -r requirements.txt -q && python3 -m pytest -q", "uvicorn main:app --host 0.0.0.0 --port 8000 --reload", "GET /", "/static/{path}", "game/main.js"}
 	for _, f := range bad {
 		if seen[f] {
 			t.Fatalf("command/path %q should have been skipped, got %v", f, paths)

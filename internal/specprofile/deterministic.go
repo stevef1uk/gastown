@@ -1662,6 +1662,13 @@ func extractBacktickPaths(text string) []string {
 		// later fills with files. Keep them so RequiredFiles tracks the
 		// directory as a non-empty-directory requirement (handled by
 		// ValidateRequiredFilesNotStubbed). They contain "/" but no ".".
+		// Spurious prose references like `game/main.js` (without layout_root
+		// prefix) are stripped by the Architect (`sed 's/`//g'`) loops —
+		// keep only file paths that either contain the layout_root or are
+		// bare directories. Bare `game/` file refs without layout_root are prose.
+		if strings.HasPrefix(p, "game/") {
+			continue
+		}
 		// Only include paths that look like file paths (contain / or end with known extension)
 		if strings.Contains(p, "/") || strings.HasSuffix(p, ".go") || strings.HasSuffix(p, ".ts") ||
 			strings.HasSuffix(p, ".js") || strings.HasSuffix(p, ".html") || strings.HasSuffix(p, ".css") ||
