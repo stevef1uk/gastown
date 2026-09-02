@@ -32,3 +32,12 @@ func TestCheckPythonSourceValid_acceptsImportPytest(t *testing.T) {
 		t.Fatalf("import pytest is valid test code: %v", err)
 	}
 }
+
+func TestCheckPythonSourceValid_skipsNonPythonFiles(t *testing.T) {
+	// playwright.config.js contains "python3 -m uvicorn" as a shell command string —
+	// this must not be rejected since it is a JavaScript file, not Python.
+	src := []byte("module.exports = defineConfig({\n  webServer: {\n    command: \"python3 -m uvicorn main:app --host 127.0.0.1 --port 8000\",\n  }\n});\n")
+	if err := CheckPythonSourceValid(src, "defender/playwright.config.js"); err != nil {
+		t.Fatalf("JS file with python3 -m in string should not be rejected: %v", err)
+	}
+}

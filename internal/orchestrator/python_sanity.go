@@ -13,6 +13,10 @@ var invalidPythonLineRE = regexp.MustCompile(`(?i)^\s*import\s+python3?\b`)
 
 // CheckPythonSourceValid rejects common LLM mistakes (shell commands pasted as Python).
 func CheckPythonSourceValid(data []byte, displayRel string) error {
+	ext := strings.ToLower(filepath.Ext(displayRel))
+	if ext != ".py" {
+		return nil
+	}
 	lines := strings.Split(string(data), "\n")
 	for i, line := range lines {
 		trimmed := strings.TrimSpace(line)
