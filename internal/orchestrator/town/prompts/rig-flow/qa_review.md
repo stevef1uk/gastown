@@ -23,7 +23,7 @@ For each closed bead in this phase's `required_files`:
 
 For each closed bead's source files:
 - **YAGNI**: is the code minimal? Reject files with unused features, defensive code SPEC never asks for, dead branches, or "just in case" infrastructure. Correct-but-overbuilt is still a `failure`.
-- No orphaned helpers, unused imports, or dead code (`go vet` catches some; read for the rest).
+- No orphaned helpers, unused imports, or dead code (the verify command catches issues; read for the rest).
 - Error handling is consistent with the project's patterns (no swallowed errors, no hardcoded values where SPEC/config should be used).
 - No `TODO`/`FIXME`/`HACK` markers, debug prints, or commented-out code.
 - No placeholder/stub bodies (≥{{min_implementation_file_bytes}} bytes unless exempt).
@@ -96,7 +96,7 @@ $GT_ROOT/{{rig}}/mayor/rig/{{layout_root}}/  ← layout root (ALL files go here)
 - Do NOT emit JSON in same message as CMD lines. Wait for command output, then JSON only.
 - **Fast-fail:** If verification fails, do NOT repeat same CMD. Next message: JSON only with errors and bead IDs.
 - gt-agent persists completed checks in progress file and removes it on finish.
-- Run `go vet ./{{layout_root}}/...` in phase verify to catch miswired dependencies before runtime smoke.
-- **Verify DB wiring in main.go**: if a package (e.g. `store`, `db`, `schema`) declares `var DB *sql.DB` (or `*sqlx.DB`, `*gorm.DB`), confirm `main.go` assigns to it after `sql.Open` — e.g. `store.DB = db`. A nil `*sql.DB` compiles but panics on first query with `invalid memory address or nil pointer dereference`.
-- **Reject inline stub handlers in main.go**: scan `cmd/server/main.go` for `HandleFunc` or `Handle` calls whose handler body returns hardcoded JSON/strings (e.g. `w.Write([]byte("[]"))` or `fmt.Fprint(w, "...")`) instead of delegating to an imported handler package (e.g. `api.ListLinks`, `h.CreateLink`). The handler implementation belongs in `internal/api/`, not inlined in main.go.
+- Verify dependencies before runtime using the phase's verify command.
+- **Verify dependency wiring in entry point**: confirm all declared resources are properly initialized and assigned before runtime, following the project's conventions.
+- **Reject inline stub handlers in entry point**: scan the main entry point for stub handlers that return hardcoded values instead of delegating to imported handler modules. Handler implementation belongs in dedicated handler packages, not inlined in the entry point.
 - Read architecture.md and SPEC.md to verify static URL contracts match.

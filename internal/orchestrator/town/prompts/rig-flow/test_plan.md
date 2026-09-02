@@ -56,7 +56,7 @@ For every requirement ID (`### <id>` headings) that touches this phase, there mu
 
 **DO NOT INVENT REQUIREMENTS.** Only create `### <id>` blocks for requirements that EXPLICITLY appear in SPEC.md or architecture.md. If SPEC.md only defines a `/ping` endpoint, do NOT create requirements for `/health`, middleware, or other features not mentioned in SPEC.md. The test plan must be a faithful reflection of what SPEC.md defines — not what you think the project should have.
 
-Read `{{town_root}}/orchestrator/STANDARDS.md` for the Go flavour of requirement ID conventions and architecture.md examples.
+Read `{{town_root}}/orchestrator/STANDARDS.md` for requirement ID conventions and architecture.md examples.
 
 ## TEST_PLAN.md format (strict — gt-agent checks size and structure)
 
@@ -83,9 +83,9 @@ Rules per Level:
 
 | Level | Test file shape | Where it lives |
 |-------|-----------------|----------------|
-| unit | `*_test.go` or `tests/test_*.py` next to the code it tests | same package/dir as the code |
-| integration | tests that cross packages/servers (httptest, pytest client, compose E2E) | a test package/dir listed in `required_files` |
-| ui | tests against the running UI (`{{ui_command}}`) via a browser or DOM harness | a `test/e2e`/playwright dir listed in `required_files` |
+| unit | test file listed in `required_files` from workflow-profile.json, next to the code it tests | same package/dir as the code |
+| integration | tests that cross packages/servers (listed in `required_files`) | a test package/dir listed in `required_files` |
+| ui | tests against the running UI (`{{ui_command}}`) via a browser or DOM harness | a test directory listed in `required_files` |
 
 Assign **unit** to pure logic/domain rules, **integration** to API/store/HTTP wiring, **ui** only to user-visible flows when the phase ships UI files. Do not inflate levels — a unit test is not a UI test.
 
@@ -104,7 +104,7 @@ Before writing TEST_PLAN.md, run `cat {{rig}}/mayor/rig/.gastown/workflow-profil
    ### <req-id>
    Requirement: one-line statement from SPEC/REQUIREMENTS.md
    Level: unit | integration | ui
-   Test file: <path under layout_root, e.g. {{layout_root}}/internal/api/handlers_test.go>
+   Test file: <path under layout_root, e.g. {{layout_root}}/tests/test_api.py>
    Bead ID: <id from plan.md / bd list>
    Phase: <delivery phase id>
    Scenarios:
@@ -139,10 +139,10 @@ Before writing TEST_PLAN.md, run `cat {{rig}}/mayor/rig/.gastown/workflow-profil
 7. **Bead IDs:** Use actual bead IDs from `bd list` output, NOT placeholder IDs like `bead-001`. Copy IDs exactly as they appear in `bd list`. If no bead owns a test file (e.g. `handlers_test.go` has no implementation bead yet), use `plan_gap` as the Bead ID — this tells the Planner to create the missing bead.
 
 Example success:
-`{"outcome":"success","summary":"TEST_PLAN.md maps 6/6 active-phase requirements: 4 unit (store/domain), 1 integration (httptest /api/links), 1 ui (app.js DOM)"}`
+`{"outcome":"success","summary":"TEST_PLAN.md maps 6/6 active-phase requirements: 4 unit (store/domain), 1 integration (API wiring), 1 ui (DOM checkout)"}`
 
 Example failure:
-`{"outcome":"failure","summary":"architecture.md ownership table omits layout_root/internal/store/store.go — cannot plan its unit tests; Planner must sync plan.md and architecture.md."}`
+`{"outcome":"failure","summary":"architecture.md ownership table omits key file — cannot plan its unit tests; Planner must sync plan.md and architecture.md."}`
 
 Example architecture_failure:
 `{"outcome":"architecture_failure","summary":"SPEC.md missing HTTP route table; cannot determine API requirements for testing. Architect must add route table to SPEC.md before tests can be planned."}`

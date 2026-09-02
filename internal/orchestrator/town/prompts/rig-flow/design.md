@@ -57,41 +57,33 @@ CMD: cat > {{town_root}}/{{rig}}/mayor/rig/architecture.md <<'EOF'
 (Brief design aligned with SPEC — purpose, major components, constraints)
 
 ## Planned file layout
-- (list key paths from SPEC using `{{layout_root}}/` prefix when layout_root ≠ "." — e.g. `{{layout_root}}/internal/store/schema.go` or bare `main.go` when layout_root is `"."`; never use `./` prefix)
-- **Enumerate ALL implementation files, not directory placeholders.** If SPEC abbreviates a directory (e.g., `frontend/` or `backend/` with `...`), you MUST expand it to actual files: `frontend/package.json`, `frontend/app/page.tsx`, `frontend/components/Watchlist.tsx`, `backend/app/main.py`, `backend/app/api/health.py`, etc. **Every file that will be created must appear here.** Directories alone (`frontend/`, `backend/`) are rejected by the validator and will cause design failure.
-- **Frontend/UI requirement:** If SPEC specifies a frontend (Next.js, React, Vue, etc.), you MUST fully enumerate it: `package.json`, `tsconfig.json`, `next.config.js`/`vite.config.js`, `tailwind.config.*`, `app/layout.tsx`, `app/page.tsx`, `app/globals.css`, `components/*.tsx`, `lib/*.ts`, `public/*`, etc. A single `package.json` is NOT sufficient. The architecture must list every file the implementer will write.
+- (list key paths from SPEC using `{{layout_root}}/` prefix when layout_root ≠ "." — e.g. `{{layout_root}}/module/component` or bare entrypoint file when layout_root is `"."`; never use `./` prefix)
+- **Enumerate ALL files from SPEC's `required_files`, not directory placeholders.** If SPEC abbreviates a directory (e.g., `{{layout_root}}/frontend/` or `{{layout_root}}/backend/` with `...`), you MUST expand it to actual files from SPEC's `required_files` (`{{all_required_files}}` or `{{required_files}}`). **Every file that will be created must appear here.** Directories alone are rejected by the validator and will cause design failure.
+- **Frontend/UI requirement (if applicable):** If SPEC specifies a frontend/UI, you MUST fully enumerate every file the implementer will write (manifest, configs, layouts, pages, components, styles, assets, etc.) as listed in SPEC's `required_files`. A single manifest/config file is NOT sufficient.
 
-## Go package / bead ownership
-(When multiple `.go` files share a package, document symbol ownership per file with a table:
-`| File | Owns (exported) | Must not define |`
-**Required: full function signatures for exported symbols** — e.g.:
-```
-| `layout_root/internal/store/store.go` | `Store` (struct), `NewStore(db *sql.DB) *Store`, `List() ([]*Link, error)`, `Create(link *Link) (int64, error)`, `Delete(id int64) error` | Redefinition of `Link` or any handler logic |
-| `layout_root/internal/api/handler.go` | `RegisterRoutes(mux *http.ServeMux, s *store.Store)` | Direct SQL statements or store internals |
-| `layout_root/cmd/server/main.go` | `main` — **must call `store.InitSchema(db)` then `api.RegisterRoutes(mux, st)`** | Route registration or store implementation details |
-```
-Only wrap actual Go symbols in backticks. Prose may reference packages as `store.List` without backticks.
-
-**For other languages, provide equivalent full signatures** (e.g., Python: `def create_link(store, title: str, url: str, description: str) -> Link`, `async def list_links(store) -> list[Link]`, etc.)
+## Module / bead ownership
+(When multiple files share a module/package, document symbol ownership per file with a table:
+| File | Owns (exported) | Must not define |**
+Required: provide full signatures for exported symbols in the project's language ({{language}}). Do not hardcode Go/Python/Node-specific signatures as required — use the project's language idioms.
 
 ## HTTP + entrypoint integration
 (Copy SPEC HTTP API table. State how server entrypoint wires dependencies — **match what earlier beads export**. 
 
 **Required wiring pattern (adapt to language):**
 1. Entrypoint parses CLI flags, opens database/connection
-2. **Calls schema initialization (e.g., `store.InitSchema(db)` in Go, `init_schema()` in Python, migration runner in Node)**
+2. Calls schema initialization (using the project's language initialization convention)
 3. Creates store/repository instance
-3. Passes store to route registration (e.g., `api.RegisterRoutes(mux, st)` in Go, `app.include_router(routes, prefix="/api")` in FastAPI, `app.use(routes)` in Express)
+3. Passes store to route registration (using the project's route registration API)
 4. Registers static file serving (if web frontend)
 4. Starts server on configured port
 
-State how pieces connect; full-suite command e.g. `go test ./...` / `pytest -v` / `npm test`)
+State how pieces connect; full-suite command from workflow-profile.json or project convention.
 
 ## Unit tests
 (Map SPEC functional requirements to test files per package)
 
 ## Integration and testing
-(how pieces connect; full-suite command e.g. `go test ./...` / `pytest -v`)
+(how pieces connect; full-suite command from workflow-profile.json or project convention)
 
 ## Docker & Deployment
 (required only when profile lists Dockerfile/docker-compose — include base images, build steps, final image contents, port, startup, static asset serving)

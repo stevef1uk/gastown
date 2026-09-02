@@ -61,11 +61,11 @@ Before finalizing beads and `plan.md`, reconcile **exported names** and **wire o
 
 | Check | Action |
 |-------|--------|
-| Multiple `.go` files in one package | Plan **earlier** files first (schema/DDL/types); later files own behavior/API — list exported symbols per file in architecture |
-| Server entrypoint bead (e.g. `cmd/.../main.go`) | Plan it **after** dependency packages it imports; acceptance must name **actual** exported handler/store symbols from architecture — not invented helpers |
+| Multiple files in one package/module | Plan earlier files first (schema/DDL/types); later files own behavior/API — list exported symbols per file in architecture |
+| Server entrypoint bead (e.g. `cmd/.../main`) | Plan it **after** dependency packages it imports; acceptance must name **actual** exported handler/store symbols from architecture — not invented helpers |
 | SPEC shows receiver methods in ` ```go ` fences | Plan must list **every exported type and method name** from SPEC/architecture — polecat allowlist parses those fences |
 
-Add **## Integration contract** to `plan.md` **only when the active phase includes a server entrypoint** (`cmd/.../main.go` in this phase's `required_files` — see note below): how the entrypoint obtains dependencies, how it registers routes (exact SPEC HTTP table), and which symbols each file **exports** (from architecture **per-file ownership**).
+Add **## Integration contract** to `plan.md` **only when the active phase includes a server entrypoint** (`cmd/.../main` in this phase's `required_files` — see note above): how the entrypoint obtains dependencies, how it registers routes (exact SPEC HTTP table), and which symbols each file **exports** (from architecture **per-file ownership**).
 
 ## Rig context (from SPEC profile)
 
@@ -82,7 +82,7 @@ Add **## Integration contract** to `plan.md` **only when the active phase includ
 | Read SPEC + architecture (`head`, `cat`, `wc`, `ls`) | Writing implementation files (`{{layout_root}}/`, `*.py`, etc.) |
 | `bd create` from rig beads repo | `gt bd add` (not the bd CLI — will be rejected) |
 | Write `plan.md` via heredoc | `git commit`, `git push`, polecat work |
-| `test -f plan.md`, `wc -c plan.md` | **`go test`, `go build`, `go run`, `curl`, `pytest`** — SPEC “definition of done” is for the **polecat**, not you |
+| `test -f plan.md`, `wc -c plan.md` | **Running test suites** — SPEC “definition of done” is for the **polecat**, not you |
 | | `python3`, `pip install`, `mkdir` |
 
 You are **not** verifying the app. Do not run the server or test suite to “check” the plan — gt-agent rejects those CMDs in planning.
@@ -132,10 +132,10 @@ You are **not** verifying the app. Do not run the server or test suite to “che
     - Interfaces: … (for code beads: exact exported function signatures, types, route paths this file provides — from architecture, verbatim)
     - Depends on: … (earlier bead paths/IDs whose exported symbols this file uses; `<none>` for the first bead)
     - Consumed by: … (later bead paths/IDs that import this file's exports; `<none>` if nothing imports it)
-    - Acceptance: … (for `*_test.go` / `tests/test_portfolio.py`, list SPEC functional requirements each test case proves)
-    - Verify: <exact shell command the polecat must run before `bd close`> (e.g. `cd finally && docker build -f Dockerfile .`, `cd finally && go test ./internal/store/...`, `npx playwright test test/e2e/trading_flow.spec.ts`)
+- Acceptance: … (for unit test paths from architecture.md, list SPEC functional requirements each test case proves)
+- Verify: <exact command the polecat must run — e.g. project's test runner from workflow-profile.json>
 
-    Include implement beads for unit test paths from architecture.md (`*_test.go`, `tests/test_portfolio.py`) — not only production source.
+    Include implement beads for unit test paths from architecture.md — not only production source.
 
     ### {{bead_id_example}}: finally/docker-compose.yml
     - Scope: …
@@ -159,7 +159,7 @@ You are **not** verifying the app. Do not run the server or test suite to “che
 
 5. Verify from town root: `CMD: wc -c {{rig}}/mayor/rig/plan.md`
 
-6. Do not send `success` until plan.md exists (≥ {{min_plan_bytes}} bytes), no commands failed, and open/in_progress beads cover required_files — after rework you may only `bd delete` duplicates (no new `bd create` required if the bead set is already valid). **Before plan review:** HTTP paths, store function names, and module in `plan.md` must match **SPEC.md** verbatim (e.g. `/api/links` not `/links`; `List` not `ListLinks`). Include **## Integration contract** only when the active phase includes `cmd/.../main.go` (see integration contract note above). QA and gt-agent reject drift.
+6. Do not send `success` until plan.md exists (≥ {{min_plan_bytes}} bytes), no commands failed, and open/in_progress beads cover required_files — after rework you may only `bd delete` duplicates (no new `bd create` required if the bead set is already valid). **Before plan review:** HTTP paths, store function names, and module in `plan.md` must match **SPEC.md** verbatim (e.g. `/api/links` not `/links`; `List` not `ListLinks`). Include **## Integration contract** only when the active phase includes `cmd/.../main` (see integration contract note above). QA and gt-agent reject drift.
 
 7. On a **later turn** with no CMD lines, send JSON only:
    `{"outcome":"success","summary":"plan and beads created; ready for plan review"}`
@@ -169,6 +169,6 @@ You are **not** verifying the app. Do not run the server or test suite to “che
 
 Only reference bead IDs shown in `bd create` / `bd list` output. Paths are case-sensitive: `SPEC.md`, not `spec.md`. Forbidden in `plan.md`: `te-xxx`, `fi-xxx`, `(copy id here)`, or any ID not printed by `bd list` this session.
 
-Read `{{town_root}}/orchestrator/STANDARDS.md` for rig standards (requirement IDs, path discipline, TDD, and Go flavour guidance).
+Read `{{town_root}}/orchestrator/STANDARDS.md` for rig standards (requirement IDs, path discipline, TDD).
 
 **Never prepend the rig name (`{{rig}}`) to file paths.** Paths like `finally/backend/main.py` or `testgt2/backend/main.py` are WRONG — the system cannot match them against `required_files`. Use bare paths exactly as listed in `required_files`: `backend/main.py`, `Dockerfile`, `cmd/server/main.go`. The rig name is not a directory component of any file path.

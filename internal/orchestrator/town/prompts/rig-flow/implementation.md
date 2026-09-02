@@ -87,7 +87,7 @@ Run this **exactly as shown** (including the full relative path from the rig roo
 
 ### ⚠️ CRITICAL: Background server + curl pattern (for server-based phases)
 
-If `{{phase_qa_verify_command}}` starts a server (uvicorn, gunicorn, flask, uvicorn, node, npm, etc.), you MUST run it in **background** with `&` and **curl** in the SAME command. Do NOT run the server in foreground — it will hang forever and time out after 5 minutes.
+If `{{phase_qa_verify_command}}` starts a server (any runtime), you MUST run it in **background** with `&` and **curl** in the SAME command. Do NOT run the server in foreground — it will hang forever and time out.
 
 **Correct pattern (single CMD line):**
 ```
@@ -163,18 +163,16 @@ Follow the **red-green-refactor** cycle for every bead that has a test path in `
 - After EDIT/WRITE, gt-agent runs post-write verify automatically
 - After QA failure: READ the failing file and dependencies. Diagnose from error output — one sentence explanation, then fix with EDIT/WRITE.
 - Web frontend (app.js, index.html): plain JavaScript (no ES module imports). Match DOM IDs exactly between files. No server-side function calls. {{static_url_contract_short}}
-- SQL beads (.sql): validate with the sqlite3 verify command in the Next bead line — do NOT run pytest on .sql files
-- `cmd/…/main.go` bead: wire only exported names from **Dependency exports**. Do NOT write inline handler bodies that return hardcoded JSON. For example, prefer `h.ListLinks(w, r)` over `w.Write([]byte("[]"))`. The handler logic belongs in `internal/api/`, not inlined in main.go.
-- **DB dependency wiring**: if a package declares `var DB *sql.DB` (or similar package-level dependency), assign to it in main.go after `sql.Open` — e.g. `store.DB = db`. A nil package-level DB panics at runtime even though the code compiles clean.
-- **Type ownership in shared packages**: If `architecture.md` ownership table says file A owns type `T`, file B in the same package MUST NOT redefine `T`. Import/use the type from file A. Violating this causes `redeclared in this block` build errors.
+- SQL beads (.sql): validate with the verify command in the Next bead line — do NOT run pytest on .sql files
+- `cmd/.../main` bead: wire only exported names from **Dependency exports**. Do NOT write inline handler bodies that return hardcoded values. Prefer delegating to handler packages. The handler logic belongs in dedicated handler modules, not inlined in the entry point.
+- **DB dependency wiring**: if a package declares a package-level dependency, assign to it after initialization — follow the project's initialization pattern. A nil dependency panics at runtime even though the code compiles clean.
+- **Type ownership in shared packages**: If `architecture.md` ownership table says file A owns type `T`, file B in the same package MUST NOT redefine `T`. Import/use the type from file A. Violating this causes build errors.
 - **Docker / docker-compose beads:** the `app`/`web` service must **actually build and run the application** (not `sleep infinity` or a placeholder image). If the compose only validates config (`docker-compose -f ... config`), the app service can be minimal, but e2e compose must start a real server on the port the tests target.
 - **E2E / Playwright / Cypress beads:**
   - Use **only** selectors and URLs documented in architecture.md / SPEC.md. Do not invent DOM IDs like `#chat-panel` unless they are listed in the Implement context.
   - Verify must start the app/dev-server first, or use docker-compose that starts it.
   - Do not write e2e tests that assert UI elements that do not exist in the implemented `index.html` / `app.js`.
-  - **Playwright image (MANDATORY):** use the locally-built shared runner image `playwright-go-test:latest` — **do NOT** reference a public `mcr.microsoft.com/playwright:<version>` tag. The local image is pre-prepared and canonical; the public image must be pulled (hundreds of MB) and runs as root, producing root-owned artifacts in bind mounts.
-  - **Playwright compose service (MANDATORY):** the E2E compose must define a service **literally named `playwright`** (not `e2e`, `tests`, or `app`), because QA runs `docker-compose up --exit-code-from playwright`. A differently-named service fails with `no such service: playwright` and the phase cannot pass QA.
-  - The compose `playwright` service should set `user: "${DOCKER_UID:-1000}:${DOCKER_GID:-1000}"` and `working_dir` to the mounted test directory so `node_modules` resolves and artifacts are host-removable.
+  - Verify the e2e test runner is available and configured per the project's test setup.
 - On Verify failure: READ the failing file and dependencies. Diagnose from error output — one sentence explanation, then fix with EDIT/WRITE.
-- **npm 10+ override rule:** If you write `package.json`, do NOT add `overrides` entries for packages already listed in `dependencies` or `devDependencies` — npm 10 rejects overrides that conflict with direct dependency version ranges. Only override transitive (nested) dependencies.
-- Do **NOT** create Python virtual environments (`.venv`, `.venv2`, `uv venv`, `python3 -m venv`, `virtualenv`). The `project_setup` phase already created one; gt-agent activates it for you automatically.
+- If you write `package.json`, only add `overrides` for transitive dependencies not already listed. Check the npm version documentation for conflict rules.
+- Do **NOT** create language-specific runtime environments (virtual environments, venv, uv, etc.) unless the project's setup phase requires them. Follow the project's established conventions.

@@ -40,14 +40,14 @@ $GT_ROOT/{{rig}}/mayor/rig/{{layout_root}}/  ← layout root (ALL code files go 
 For each `### <req-id>` in `TEST_PLAN.md`:
 
 - **unit**: does the test exercise the code path behind the requirement (real input → real assert)? A test that only checks "file exists" or calls nothing is not coverage.
-- **integration**: does it drive the real HTTP/store wiring (httptest, pytest client, compose) rather than a mock that bypasses the API?
-- **ui**: only required when the phase ships UI files and `ui_command` is set; does it start the UI ({{ui_command}}) and assert on visible behavior, not just a page load?
+- **integration**: does it drive the real API/store wiring (listed in `required_files`) rather than a mock that bypasses the API?
+- **ui**: only required when the phase ships UI files and `ui_command` is set; does it start the UI (via `ui_command`) and assert on visible behavior, not just a page load?
 
 Missing a planned test, a test that never asserts, or a verify that fails ⇒ `failure`. A plan that hand-waves ("ensure quality") or omits whole requirements ⇒ `plan_gap`. Tests that contradict the SPEC route/store contract that no code change can reconcile ⇒ `architecture_failure`.
 
 ### ⚠️ CRITICAL: Background server + curl pattern (for server-based phases)
 
-If `{{phase_qa_verify_command}}` starts a server (uvicorn, gunicorn, flask, node, npm, etc.), you MUST run it in **background** with `&` and **curl** in the SAME command. Do NOT run the server in foreground — it will hang forever and time out after 5 minutes.
+If `{{phase_qa_verify_command}}` starts a server (any runtime), you MUST run it in **background** with `&` and **curl** in the SAME command. Do NOT run the server in foreground — it will hang forever and time out.
 
 **Correct pattern (single CMD line):**
 ```
