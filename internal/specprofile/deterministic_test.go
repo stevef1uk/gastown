@@ -659,6 +659,82 @@ func phaseIDs(phases []orchestrator.DeliveryPhase) []string {
 	return ids
 }
 
+const specWorkflowContract = "# Project Specification: Defender Clone (Web-Based) — Hands-Free Rig Edition\n\n## Workflow & Delivery Contract (read by `gt rig spec-index`)\n\n```\nlayout_root: defender\nspec_summary: Defender clone — FastAPI serves HTML5 Canvas vanilla-JS game; scrolling world, 10 humanoids/wave, lander abduction, scoring + session high-score API.\nrequired_files (full rig, for reference):\n  - defender/README.md\n  - defender/backend/main.py\n  - defender/backend/requirements.txt\n  - defender/backend/tests/test_api.py\n  - defender/backend/tests/test_score.py\n  - defender/package.json\n  - defender/playwright.config.js\n  - defender/tests/e2e/game.spec.js\n  - defender/frontend/index.html\n  - defender/frontend/style.css\n  - defender/frontend/game/main.js\n  - defender/frontend/game/input.js\n  - defender/frontend/game/player.js\n  - defender/frontend/game/enemies.js\n  - defender/frontend/game/humanoids.js\n  - defender/frontend/game/bullets.js\n  - defender/frontend/game/world.js\n  - defender/frontend/game/hud.js\n  - defender/frontend/game/renderer.js\ndelivery_phases:\n  - id: backend\n    title: backend\n    required_files:\n      - defender/backend/main.py\n      - defender/backend/requirements.txt\n      - defender/backend/tests/test_api.py\n      - defender/backend/tests/test_score.py\n    qa_verify_command: \"cd defender/backend && python3 -m pip install -r requirements.txt -q && python3 -m pytest -q\"\n    depends_on: []\n  - id: frontend\n    title: frontend\n    required_files:\n      - defender/package.json\n      - defender/playwright.config.js\n      - defender/tests/e2e/game.spec.js\n      - defender/frontend/index.html\n      - defender/frontend/style.css\n      - defender/frontend/game/main.js\n      - defender/frontend/game/input.js\n      - defender/frontend/game/player.js\n      - defender/frontend/game/enemies.js\n      - defender/frontend/game/humanoids.js\n      - defender/frontend/game/bullets.js\n      - defender/frontend/game/world.js\n      - defender/frontend/game/hud.js\n      - defender/frontend/game/renderer.js\n    qa_verify_command: \"cd defender && npm install --ignore-scripts -q && npx playwright install chromium --with-deps -q 2>&1 | tail -n 5; npx playwright test --reporter=list\"\n    depends_on: [backend]\n  # Optional smoke combines both — QA runs only the active phase's command, so backend stays fast\nactive_phase_id: backend\n```\n\n## Overview\nSome content here.\n"
+
+func TestParseSpecPhases_WorkflowContract(t *testing.T) {
+	phases := parseSpecPhases(specWorkflowContract)
+	if len(phases) != 2 {
+		t.Fatalf("expected 2 phases from Workflow & Delivery Contract, got %d: %v", len(phases), phaseIDs(phases))
+	}
+	if phases[0].ID != "backend" || phases[1].ID != "frontend" {
+		t.Fatalf("ids = %v, want [backend frontend]", phaseIDs(phases))
+	}
+	if len(phases[0].RequiredFiles) != 4 {
+		t.Fatalf("backend files = %v, want 4", phases[0].RequiredFiles)
+	}
+	wantBackend := []string{"defender/backend/main.py", "defender/backend/requirements.txt", "defender/backend/tests/test_api.py", "defender/backend/tests/test_score.py"}
+	for i, f := range wantBackend {
+		if phases[0].RequiredFiles[i] != f {
+			t.Fatalf("backend file %d = %q, want %q", i, phases[0].RequiredFiles[i], f)
+		}
+	}
+	if !strings.Contains(phases[0].QAVerifyCommand, "pytest") {
+		t.Fatalf("backend verify should contain pytest, got %q", phases[0].QAVerifyCommand)
+	}
+	if len(phases[1].RequiredFiles) != 14 {
+		t.Fatalf("frontend files = %d, want 14: %v", len(phases[1].RequiredFiles), phases[1].RequiredFiles)
+	}
+	if !strings.Contains(phases[1].QAVerifyCommand, "playwright") {
+		t.Fatalf("frontend verify should contain playwright, got %q", phases[1].QAVerifyCommand)
+	}
+	if len(phases[1].DependsOn) != 1 || phases[1].DependsOn[0] != "backend" {
+		t.Fatalf("frontend depends_on = %v, want [backend]", phases[1].DependsOn)
+	}
+}
+
+func TestParseContractFencePhases_ignoresNonDeliveryBlock(t *testing.T) {
+	spec := "# T\n\n## Workflow & Delivery Contract\n\n```bash\necho hello\n```\n\n```\ndelivery_phases:\n  - id: a\n    required_files: [x.go]\n```\n"
+	phases := parseSpecPhases(spec)
+	if len(phases) != 1 || phases[0].ID != "a" {
+		t.Fatalf("expected 1 phase 'a', got %v", phaseIDs(phases))
+	}
+}
+
+func TestParseSpecPhases_WorkflowAndAlias(t *testing.T) {
+	spec := strings.ReplaceAll(specWorkflowContract, "Workflow & Delivery Contract", "Workflow and Delivery Contract")
+	phases := parseSpecPhases(spec)
+	if len(phases) != 2 {
+		t.Fatalf("alias 'and' should also parse: got %d phases %v", len(phases), phaseIDs(phases))
+	}
+}
+
+func TestExtractBacktickPaths_skipsCommands(t *testing.T) {
+	arch := "Required files are `defender/backend/main.py` and `defender/backend/requirements.txt`. The verification command is `cd defender/backend && python3 -m pip install -r requirements.txt -q && python3 -m pytest -q`. Another command `uvicorn main:app --host 0.0.0.0 --port 8000 --reload` and HTTP path `GET /` and `/static/{path}` should not be files. Valid file `defender/frontend/game/main.js` stays. Directory placeholder `defender/backend` and `defender/frontend/` should be kept for Architect expansion."
+	paths := extractBacktickPaths(arch)
+	seen := map[string]bool{}
+	for _, p := range paths {
+		seen[p] = true
+	}
+	mustHave := []string{"defender/backend/main.py", "defender/backend/requirements.txt", "defender/frontend/game/main.js", "defender/backend", "defender/frontend/"}
+	for _, f := range mustHave {
+		if !seen[f] {
+			t.Fatalf("expected %q in %v", f, paths)
+		}
+	}
+	bad := []string{"cd defender/backend && python3 -m pip install -r requirements.txt -q && python3 -m pytest -q", "uvicorn main:app --host 0.0.0.0 --port 8000 --reload", "GET /", "/static/{path}"}
+	for _, f := range bad {
+		if seen[f] {
+			t.Fatalf("command/path %q should have been skipped, got %v", f, paths)
+		}
+	}
+	// Ensure no entry contains a space (file paths never have spaces)
+	for _, p := range paths {
+		if strings.Contains(p, " ") {
+			t.Fatalf("file path should not contain space: %q", p)
+		}
+	}
+}
+
 func TestDedupePhasesByVerify(t *testing.T) {
 	tests := []struct {
 		name      string

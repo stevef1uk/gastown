@@ -14,6 +14,7 @@ import (
 	"unicode"
 
 	"github.com/steveyegge/gastown/internal/orchestrator"
+	"gopkg.in/yaml.v3"
 )
 
 var (
@@ -968,8 +969,33 @@ func extractSpecOverview(spec string) string {
 }
 
 func parseSpecPhases(spec string) []orchestrator.DeliveryPhase {
-	// Extract "## Phases" or "## Delivery Phases" section
 	lower := strings.ToLower(spec)
+	// Prefer the hands-free contract block (Workflow & Delivery Contract) when present:
+	// it already contains the canonical delivery_phases with required_files + verify
+	// commands, so we should not fall back to directory-grouped phases or LLM.
+	for _, marker := range []string{"## workflow & delivery contract", "## workflow and delivery contract"} {
+		i := strings.Index(lower, marker)
+		if i < 0 {
+			continue
+		}
+		section := spec[i:]
+		if j := strings.Index(section[1:], "\n## "); j >= 0 {
+			section = section[:1+j]
+		}
+		if phases := parseContractFencePhases(section); len(phases) > 0 {
+			return phases
+		}
+		// Contract header found but no parseable YAML fence — fall through to
+		// table/list parsing on the same section in case the author used that format.
+		phases := parsePhaseTable(section)
+		if len(phases) > 0 {
+			return phases
+		}
+		if list := parsePhaseList(section); len(list) > 0 {
+			return list
+		}
+	}
+	// Extract "## Phases" or "## Delivery Phases" section
 	for _, marker := range []string{"## phases", "## delivery phases"} {
 		i := strings.Index(lower, marker)
 		if i < 0 {
@@ -988,6 +1014,83 @@ func parseSpecPhases(spec string) []orchestrator.DeliveryPhase {
 		return parsePhaseList(section)
 	}
 	return nil
+}
+
+func parseContractFencePhases(section string) []orchestrator.DeliveryPhase {
+	blocks := extractFencedBlocks(section)
+	for _, block := range blocks {
+		if !strings.Contains(block, "delivery_phases:") {
+			continue
+		}
+		idx := strings.Index(block, "delivery_phases:")
+		yamlText := block[idx:]
+		// The Workflow & Delivery Contract fence is hand-written; it may use
+		// informal YAML such as `required_files (full rig, for reference):`
+		// above delivery_phases — by slicing from delivery_phases: we avoid it.
+		var wrapper struct {
+			DeliveryPhases []orchestrator.DeliveryPhase `yaml:"delivery_phases"`
+		}
+		if err := yaml.Unmarshal([]byte(yamlText), &wrapper); err != nil {
+			log.Printf("[deterministic-index] contract YAML unmarshal failed: %v (yaml=%q)", err, yamlText[:min(500, len(yamlText))])
+			continue
+		}
+		if len(wrapper.DeliveryPhases) == 0 {
+			continue
+		}
+		// Filter out any empty entries (YAML may produce zero-value if malformed)
+		var out []orchestrator.DeliveryPhase
+		for _, p := range wrapper.DeliveryPhases {
+			if strings.TrimSpace(p.ID) == "" {
+				continue
+			}
+			// Normalize required_files: trim whitespace, drop empty entries
+			var files []string
+			for _, f := range p.RequiredFiles {
+				f = strings.TrimSpace(f)
+				if f != "" {
+					files = append(files, f)
+				}
+			}
+			p.RequiredFiles = files
+			out = append(out, p)
+		}
+		if len(out) > 0 {
+			return out
+		}
+	}
+	return nil
+}
+
+func extractFencedBlocks(s string) []string {
+	var blocks []string
+	remaining := s
+	for {
+		start := strings.Index(remaining, "```")
+		if start < 0 {
+			break
+		}
+		after := remaining[start+3:]
+		// Skip language tag on the opening fence line (e.g. ```yaml)
+		if nl := strings.Index(after, "\n"); nl >= 0 {
+			after = after[nl+1:]
+		} else {
+			break
+		}
+		end := strings.Index(after, "```")
+		if end < 0 {
+			break
+		}
+		blocks = append(blocks, after[:end])
+		remaining = after[end+3:]
+	}
+	return blocks
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 func parsePhaseTable(section string) []orchestrator.DeliveryPhase {
@@ -1545,6 +1648,20 @@ func extractBacktickPaths(text string) []string {
 		if p == "" || seen[p] {
 			continue
 		}
+		// Commands in backticks (e.g. `cd defender/backend && python3 -m pytest -q`)
+		// contain spaces and shell metacharacters; they are not file paths.
+		if strings.Contains(p, " ") || strings.Contains(p, "&&") || strings.Contains(p, "||") {
+			continue
+		}
+		// Heuristic for bare HTTP paths like `GET /` or `/static/{path}` — not files.
+		if p == "/" || strings.HasPrefix(p, "/") && !strings.Contains(p, ".") {
+			continue
+		}
+		// Bare directory backticks like `defender/backend` or `frontend/` are valid:
+		// the Architect often declares a directory placeholder that the Polecat
+		// later fills with files. Keep them so RequiredFiles tracks the
+		// directory as a non-empty-directory requirement (handled by
+		// ValidateRequiredFilesNotStubbed). They contain "/" but no ".".
 		// Only include paths that look like file paths (contain / or end with known extension)
 		if strings.Contains(p, "/") || strings.HasSuffix(p, ".go") || strings.HasSuffix(p, ".ts") ||
 			strings.HasSuffix(p, ".js") || strings.HasSuffix(p, ".html") || strings.HasSuffix(p, ".css") ||
