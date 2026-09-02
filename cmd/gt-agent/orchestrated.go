@@ -332,6 +332,8 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 			continue
 		}
 		if cmdCount > 0 || hadNative {
+			// successful tool use breaks the non-terminal JSON streak
+			runner.consecutiveNonTerminalJSONRejects = 0
 			qaCmdsRan = true
 			var feedbackBuilder strings.Builder
 			feedbackBuilder.WriteString(combined.String())
@@ -402,6 +404,7 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 		}
 
 		if hadNative {
+			runner.consecutiveNonTerminalJSONRejects = 0
 			var feedbackBuilder strings.Builder
 			feedbackBuilder.WriteString(combined.String())
 			recordAttemptFeedback(feedbackBuilder.String())
@@ -549,10 +552,16 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 		}
 
 		// Non-terminal JSON outcome loop guard: the LLM may emit {"outcome":"continue","next_action":"..."}
-		// as a no-op — it does not run any CMD or native tool commands. After consecutive such turns the model
-		// cannot break out of the loop; force a failure so the workflow routes back to planning/design.
+		// as a no-op — it does not run any CMD or native tool commands. Free models (minimax:free etc.)
+		// are verbose and need several reasoning turns before the first WRITE, so:
+		// - implementation gets a higher threshold (8) than other tracks (4)
+		// - first misses just nudge to use tools, only after threshold do we force fail → planning
 		runner.consecutiveNonTerminalJSONRejects++
-		if runner.consecutiveNonTerminalJSONRejects >= 4 {
+		threshold := 4
+		if runner.task != nil && runner.task.State == "implementation" {
+			threshold = 8
+		}
+		if runner.consecutiveNonTerminalJSONRejects >= threshold {
 			summary := "LLM emitted repeated non-terminal outcome JSON — forcing implementation fail back to planning after consecutive no-op turns."
 			return "fail", summary, lastAttemptFeedback.String() + "\n", fmt.Errorf("non-terminal JSON outcome loop exceeded threshold")
 		}
@@ -560,6 +569,12 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 		hint := orchestratedEmptyTurnHint(runner.hooks)
 		if responseHasUnterminatedHeredoc(response) {
 			hint = "Heredoc was truncated — shorten plan.md and end with a line containing only EOF, then wc -c."
+		}
+		// For implementation, give a concrete tool example so free models break out of the reasoning loop
+		if runner.task != nil && runner.task.State == "implementation" && runner.consecutiveNonTerminalJSONRejects >= 1 {
+			hint = "You have not executed any CMD: or WRITE: tool this turn — reasoning alone does NOT change files. " +
+				"You MUST now use a tool. Example for this rig: `WRITE: pingapp/test_main.py` or `CMD: cat > pingapp/test_main.py <<'EOF' ... EOF` " +
+				"then `CMD: cd pingapp && python3 -m pytest -q`. " + hint
 		}
 		recordAttemptFeedback(hint + "\n")
 		messages = append(messages, llm.Message{Role: "user", Content: hint})
