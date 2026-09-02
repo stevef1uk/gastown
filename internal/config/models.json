@@ -1,9 +1,1 @@
-{
-  "agentModels": {
-    "gt-agent-local": "deepseek/deepseek-v4-flash",
-    "gt-agent-gemini": "openai/gpt-5.6-luna",
-    "gt-agent-deepseek": "deepseek/deepseek-v4-flash"
-  },
-  "judgeModel": "deepseek/deepseek-v4-flash",
-  "defaultTimeoutSeconds": 120
-}
+../../models.json

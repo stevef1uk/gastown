@@ -32,34 +32,43 @@ func GetModelsConfig() *ModelsConfig {
 		}
 	}
 	
-	// Try default locations
-	for _, p := range []string{
+	// Try default locations — all file-based, no hard-coded model map.
+	// Order matters: project-local overrides win over town/global.
+	// Keep this list in sync with gastown/internal/config/models.json
+	// (the version-controlled defaults) and gastown/models.json
+	// (per-repo overrides).
+	candidates := []string{
 		"gastown/models.json",
-		filepath.Join(os.Getenv("HOME"), "gt", "gastown", "models.json"),
-	} {
+		"models.json",
+		"gastown/internal/config/models.json",
+		"internal/config/models.json",
+	}
+	if home, _ := os.UserHomeDir(); home != "" {
+		candidates = append(candidates,
+			filepath.Join(home, "gt", "gastown", "models.json"),
+			filepath.Join(home, "gt", "settings", "config.json"),
+		)
+	}
+	for _, p := range candidates {
 		if cfg := loadModelsConfig(p); cfg != nil {
-			modelsConfig = cfg
-			modelsConfigPath = p
-			return modelsConfig
+			// Only accept files that actually define models; empty files fall through
+			// to the next candidate instead of masking a richer default.
+			if len(cfg.Models) > 0 || len(cfg.AgentModels) > 0 {
+				modelsConfig = cfg
+				modelsConfigPath = p
+				return modelsConfig
+			}
 		}
 	}
 	
-	// Return defaults if no config found
+	// No config file found — return empty config so caller can handle
+	// missing model explicitly instead of silently using hard-coded fallbacks.
+	// Models must be configured via gastown config file (gastown/models.json
+	// or $HOME/gt/gastown/models.json, or GASTOWN_MODELS_CONFIG env var);
+	// see internal/config/models.json for the version-controlled defaults.
 	modelsConfig = &ModelsConfig{
-		Models: map[string]string{
-			"judge":      "deepseek/deepseek-v4-flash",
-			"architect":  "deepseek/deepseek-v4-flash",
-			"planner":    "google/gemini-3.5-flash",
-			"polecat":    "deepseek/deepseek-v4-flash",
-			"qa":         "google/gemini-3.5-flash",
-			"mayor":      "google/gemini-3.5-flash",
-			"default":    "google/gemini-3.5-flash",
-		},
-		AgentModels: map[string]string{
-			"gt-agent-local":    "google/gemini-3.5-flash",
-			"gt-agent-gemini":   "google/gemini-3.5-flash",
-			"gt-agent-deepseek": "deepseek/deepseek-v4-flash",
-		},
+		Models:      map[string]string{},
+		AgentModels: map[string]string{},
 	}
 	return modelsConfig
 }

@@ -1,17 +1,20 @@
 {
-  "models": {
-    "judge": "deepseek/deepseek-v4-flash",
-    "architect": "cerebras/gpt-oss-120b",
-    "planner": "cerebras/gpt-oss-120b",
-    "polecat": "openai/gpt-5.6-luna",
-    "qa": "openai/gpt-5.6-luna",
-    "tester": "openai/gpt-5.6-luna",
-    "mayor": "deepseek/deepseek-v4-flash",
-    "default": "deepseek/deepseek-v4-flash"
-  },
   "agentModels": {
     "gt-agent-local": "deepseek/deepseek-v4-flash",
-    "gt-agent-gemini": "openai/gpt-5.6-luna",
+    "gt-agent-gemini": "google/gemini-3.5-flash",
     "gt-agent-deepseek": "deepseek/deepseek-v4-flash"
+  },
+  "judgeModel": "deepseek/deepseek-v4-flash",
+  "defaultModel": "google/gemini-3.5-flash",
+  "defaultTimeoutSeconds": 120,
+  "models": {
+    "judge": "deepseek/deepseek-v4-flash",
+    "architect": "google/gemini-3.5-flash",
+    "planner": "google/gemini-3.5-flash",
+    "polecat": "google/gemini-3.5-flash",
+    "qa": "google/gemini-3.5-flash",
+    "tester": "google/gemini-3.5-flash",
+    "mayor": "google/gemini-3.5-flash",
+    "default": "google/gemini-3.5-flash"
   }
 }
