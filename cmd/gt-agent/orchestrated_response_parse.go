@@ -986,7 +986,15 @@ func isOrchestratedShellNoiseLine(s string) bool {
 		return true
 	}
 	upper := strings.ToUpper(t)
-	return strings.HasPrefix(upper, "<<<<<<<") || strings.HasPrefix(upper, ">>>>>>>") || t == "======="
+	if strings.HasPrefix(upper, "<<<<<<<") || strings.HasPrefix(upper, ">>>>>>>") || t == "=======" {
+		return true
+	}
+	// Polecat free models often emit "---END CMD---" / "---END WRITE---" / "---END EDIT---"
+	// after CMD blocks (native-tool style). These are noise if executed as shell.
+	if strings.HasPrefix(upper, "---END") {
+		return true
+	}
+	return false
 }
 
 // isOrchestratedNativeToolLine reports READ:/EDIT:/WRITE: markers that must never run as shell.
