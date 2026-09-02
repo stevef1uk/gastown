@@ -803,3 +803,69 @@ CMD: go test ./...
 		t.Fatalf("self-closing tag should be stripped entirely, got:\n%s", got)
 	}
 }
+
+func TestIsOrchestratedShellNoiseLine_endCmd(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		line string
+		want bool
+	}{
+		{"---END CMD---", true},
+		{"---END WRITE---", true},
+		{"---END EDIT---", true},
+		{"---end cmd---", true},
+		{" ---END CMD--- ", true},
+		{"---END", true},
+		{"CMD: chmod +x pingapp/test_integration.sh", false},
+		{"chmod +x pingapp/test_integration.sh", false},
+	}
+	for _, tc := range cases {
+		if got := isOrchestratedShellNoiseLine(tc.line); got != tc.want {
+			t.Fatalf("isOrchestratedShellNoiseLine(%q)=%v want %v", tc.line, got, tc.want)
+		}
+	}
+}
+
+func TestScrubNativeEditLinesFromShellCommand_endCmd(t *testing.T) {
+	t.Parallel()
+	in := "chmod +x pingapp/test_integration.sh\n---END CMD---"
+	fixed, changed := scrubNativeEditLinesFromShellCommand(in)
+	if !changed {
+		t.Fatal("expected change")
+	}
+	if strings.Contains(fixed, "END CMD") {
+		t.Fatalf("END CMD not scrubbed: %q", fixed)
+	}
+	if strings.TrimSpace(fixed) != "chmod +x pingapp/test_integration.sh" {
+		t.Fatalf("got %q", fixed)
+	}
+	// CMD glue variant with newline as model emits: "CMD: cd x && cmd\n---END CMD---"
+	in2 := "cd ping_rig/mayor/rig && chmod +x pingapp/test_integration.sh\n---END CMD---"
+	fixed2, _ := sanitizeOrchestratedShellCommand(in2)
+	if strings.Contains(fixed2, "END") {
+		t.Fatalf("sanitize should remove END CMD: %q", fixed2)
+	}
+	if !strings.Contains(fixed2, "chmod +x pingapp/test_integration.sh") {
+		t.Fatalf("cmd body lost: %q", fixed2)
+	}
+}
+
+func TestParseOrchestratedCommands_withEndCmdNoise(t *testing.T) {
+	t.Parallel()
+	in := "CMD: cd ping_rig/mayor/rig && chmod +x pingapp/test_integration.sh\n---END CMD---\nCMD: cd ping_rig/mayor/rig/pingapp && test -s test_integration.sh && echo VERIFY_OK\n---END CMD---"
+	cmds := parseOrchestratedCommands(in)
+	if len(cmds) != 2 {
+		t.Fatalf("want 2 cmds, got %d: %v", len(cmds), cmds)
+	}
+	for _, c := range cmds {
+		if strings.Contains(c, "END") {
+			t.Fatalf("cmd contains END noise: %q", c)
+		}
+	}
+	if !strings.Contains(cmds[0], "chmod +x pingapp/test_integration.sh") {
+		t.Fatalf("cmd[0] wrong: %q", cmds[0])
+	}
+	if !strings.Contains(cmds[1], "test -s test_integration.sh") {
+		t.Fatalf("cmd[1] wrong: %q", cmds[1])
+	}
+}
