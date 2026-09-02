@@ -92,7 +92,7 @@ Assign **unit** to pure logic/domain rules, **integration** to API/store/HTTP wi
 ## HARD RULES
 
 **CRITICAL — Test file paths MUST come from workflow-profile.json:**
-Before writing TEST_PLAN.md, run `cat {{rig}}/mayor/rig/.gastown/workflow-profile.json` and use ONLY the `required_files` and `delivery_phases[].required_files` listed there as `Test file:` values. Do NOT invent new test file paths. For Python projects (defender), test files are `{{layout_root}}/backend/tests/test_*.py` and `{{layout_root}}/tests/e2e/*.js` — never `{{layout_root}}/internal/api/handlers_test.go` (Go) for Python projects.
+Before writing TEST_PLAN.md, run `cat {{rig}}/mayor/rig/.gastown/workflow-profile.json` and use ONLY the `required_files` and `delivery_phases[].required_files` listed there as `Test file:` values. Do NOT invent new test file paths — if a test file is not listed in the profile, it does not exist for this rig.
 
 1. **One `CMD:` per line** — read-only inspection, then write `TEST_PLAN.md` via heredoc:
    ```
@@ -104,7 +104,7 @@ Before writing TEST_PLAN.md, run `cat {{rig}}/mayor/rig/.gastown/workflow-profil
    ### <req-id>
    Requirement: one-line statement from SPEC/REQUIREMENTS.md
    Level: unit | integration | ui
-   Test file: <path under layout_root, e.g. {{layout_root}}/backend/tests/test_api.py>
+   Test file: <path under layout_root, e.g. {{layout_root}}/internal/api/handlers_test.go>
    Bead ID: <id from plan.md / bd list>
    Phase: <delivery phase id>
    Scenarios:
