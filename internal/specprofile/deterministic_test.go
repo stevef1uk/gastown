@@ -810,3 +810,39 @@ func TestDedupePhasesByVerify(t *testing.T) {
 		})
 	}
 }
+
+func TestDeterministicAssignFilesToPhases_TrivialSpec(t *testing.T) {
+	phases := []orchestrator.DeliveryPhase{
+		{ID: "python-setup", Title: "python-setup", SpecFocus: "python-setup\n\nInitialize requirements.txt / venv"},
+		{ID: "core", Title: "core", SpecFocus: "core\n\nmain.py (FastAPI app + endpoint)"},
+		{ID: "test", Title: "test", SpecFocus: "test\n\ntest_main.py (unit tests)"},
+		{ID: "integration-test", Title: "integration-test", SpecFocus: "integration-test\n\nFull smoke test (run server + curl)"},
+	}
+	files := []string{"pingapp/requirements.txt", "pingapp/main.py", "pingapp/test_main.py"}
+	res := deterministicAssignFilesToPhases(phases, files)
+	if res == nil {
+		t.Fatalf("deterministic assignment failed for a trivial SPEC")
+	}
+	byID := map[string][]string{}
+	for _, p := range res {
+		byID[p.ID] = p.RequiredFiles
+	}
+	want := map[string][]string{
+		"python-setup":     {"pingapp/requirements.txt"},
+		"core":             {"pingapp/main.py"},
+		"test":             {"pingapp/test_main.py"},
+		"integration-test": nil,
+	}
+	for id, wantFiles := range want {
+		got := byID[id]
+		if len(got) != len(wantFiles) {
+			t.Errorf("phase %s files = %v, want %v", id, got, wantFiles)
+			continue
+		}
+		for i := range wantFiles {
+			if got[i] != wantFiles[i] {
+				t.Errorf("phase %s files[%d] = %q, want %q", id, i, got[i], wantFiles[i])
+			}
+		}
+	}
+}

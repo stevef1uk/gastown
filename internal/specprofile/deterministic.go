@@ -274,8 +274,11 @@ func assignFilesToPhasesViaLLM(ctx context.Context, townRoot, rig, spec string, 
 	}
 
 	// FIRST: Try deterministic assignment based on phase titles/keywords matching file paths.
-	// This avoids LLM hallucination when SPEC has clear phase-to-file mapping.
-	if assigned := deterministicAssignFilesToPhases(phases, files); assigned != nil {
+	// This avoids LLM hallucination when SPEC has clear phase-to-file mapping. Filter
+	// placeholder/foreign paths (plan_gap, TBD, route stubs) out of the file list first:
+	// they are not real implement files, and if they reach the exact-coverage check they
+	// force a fallback to the LLM, which frequently mis-assigns real files for trivial SPECs.
+	if assigned := deterministicAssignFilesToPhases(phases, orchestrator.FilterNonImplementPaths(files)); assigned != nil {
 		log.Printf("[deterministic-index] deterministic assignment succeeded for %s", rig)
 		return assigned, true
 	}

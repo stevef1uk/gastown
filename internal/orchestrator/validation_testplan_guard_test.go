@@ -23,3 +23,24 @@ func TestIsPlanGapPlaceholderPath(t *testing.T) {
 		}
 	}
 }
+func TestFilterNonImplementPaths(t *testing.T) {
+	in := []string{
+		"pingapp/requirements.txt",
+		"pingapp/plan_gap",
+		"plan_gap",
+		"plan.md",
+		"architecture.md",
+		"pingapp/main.py",
+		"",
+	}
+	got := FilterNonImplementPaths(in)
+	want := []string{"pingapp/requirements.txt", "pingapp/main.py"}
+	if len(got) != len(want) {
+		t.Fatalf("FilterNonImplementPaths = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("FilterNonImplementPaths[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+}
