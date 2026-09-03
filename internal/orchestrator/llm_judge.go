@@ -48,7 +48,8 @@ func extractJSONFromResponse(resp string) string {
 			}
 		}
 		if startIdx >= 0 && endIdx > startIdx {
-			return strings.Join(lines[startIdx+1:endIdx], "\n")
+			extracted := strings.Join(lines[startIdx+1:endIdx], "\n")
+			return strings.TrimSpace(extracted)
 		}
 	}
 	
@@ -56,7 +57,11 @@ func extractJSONFromResponse(resp string) string {
 	start := strings.Index(resp, "{")
 	end := strings.LastIndex(resp, "}")
 	if start >= 0 && end > start {
-		return resp[start:end+1]
+		extracted := resp[start:end+1]
+		// Strip trailing backticks and whitespace that may remain from code fences
+		extracted = strings.TrimSpace(extracted)
+		extracted = strings.TrimRight(extracted, "` \t\n\r")
+		return extracted
 	}
 	
 	return ""

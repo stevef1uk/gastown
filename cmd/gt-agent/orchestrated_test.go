@@ -992,7 +992,14 @@ func TestOrchestratedArtifactAutoOutcome_planningRequiresBeads(t *testing.T) {
 	if err := orchestrator.WriteAlignedPlanningDocsForTest(rigDir); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(rigDir, "plan.md"), append(make([]byte, 250), '\n'), 0644); err != nil {
+	// Write plan.md with bead ID matching the hook (mo-1)
+	plan := "# Test plan\n## Bead map\n### mo-1: main.go\n- Scope: test\n- Priority: high\n- Estimate: 2 days\n- Dependencies: none\n- Tags: core, mock\n- Description: This test implements the main.go file with basic functionality\n- Acceptance criteria: main function runs without errors\n- Test plan includes validation of the implementation\n- Additional notes: none\n"
+	if err := os.WriteFile(filepath.Join(rigDir, "plan.md"), []byte(plan), 0644); err != nil {
+		t.Fatal(err)
+	}
+	// Write TEST_PLAN.md for planning gate validation
+	testPlan := "# Test Plan\n\n### mo-1\n- Test file: main_test.go\n- Phase: core\n- Scenarios:\n  - Test main function\n- Assertions:\n  - Status 200\n"
+	if err := os.WriteFile(filepath.Join(rigDir, "TEST_PLAN.md"), []byte(testPlan), 0644); err != nil {
 		t.Fatal(err)
 	}
 	task := &orchestrator.Task{
@@ -1006,9 +1013,18 @@ func TestOrchestratedArtifactAutoOutcome_planningRequiresBeads(t *testing.T) {
 	listOpenImplementationBeadsHook = func(_, _ string) ([]orchestrator.PlanBead, error) {
 		return []orchestrator.PlanBead{{ID: "mo-1", Title: "Implement mock/main.go per architecture"}}, nil
 	}
-	defer func() { listOpenImplementationBeadsHook = nil }()
+	orchestrator.SetListImplementBeadsByStatusHook(func(_, _, _ string) ([]orchestrator.PlanBead, error) {
+		return []orchestrator.PlanBead{{ID: "mo-1", Title: "Implement mock/main.go per architecture"}}, nil
+	})
+	defer func() {
+		listOpenImplementationBeadsHook = nil
+		orchestrator.SetListImplementBeadsByStatusHook(nil)
+	}()
 	runner.track.beadCreateOK = true
 	if _, _, ok := runner.tryAutoOutcome(); !ok {
+		// Debug: print the error from validateArtifacts
+		err := runner.validateArtifacts("success")
+		t.Logf("validateArtifacts error: %v", err)
 		t.Fatal("should auto-complete with plan + bead create ok")
 	}
 }

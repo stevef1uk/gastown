@@ -122,7 +122,13 @@ func TestStateRunner_rigFlowHooksTrackAndArtifacts(t *testing.T) {
 	listOpenImplementationBeadsHook = func(_, _ string) ([]orchestrator.PlanBead, error) {
 		return []orchestrator.PlanBead{{ID: "my-1", Title: "Implement myapp/main.go per architecture"}}, nil
 	}
-	defer func() { listOpenImplementationBeadsHook = nil }()
+	orchestrator.SetListImplementBeadsByStatusHook(func(_, _, _ string) ([]orchestrator.PlanBead, error) {
+		return []orchestrator.PlanBead{{ID: "my-1", Title: "Implement myapp/main.go per architecture"}}, nil
+	})
+	defer func() {
+		listOpenImplementationBeadsHook = nil
+		orchestrator.SetListImplementBeadsByStatusHook(nil)
+	}()
 	r.track.beadCreateOK = true
 	if err := r.validateArtifacts("success"); err != nil {
 		t.Fatalf("planning with plan+beadCreate: %v", err)
