@@ -45,6 +45,26 @@ func TestPlanMeetsMinSize(rigDir string, v WorkflowValidation) bool {
 	return info.Size() >= EffectiveMinTestPlanBytes(v)
 }
 
+// PhaseShipsAutomatedTests reports whether a delivery phase runs automated tests.
+// A setup-only phase (manifest/config files such as requirements.txt, go.mod,
+// package.json; verify command that explicitly says there are no automated tests)
+// has no test file and therefore must NOT get a `### <phase-id>` block in
+// TEST_PLAN.md. This is the code-side twin of the test_plan.md hard rule
+// ("omit the section for setup-only phases").
+func PhaseShipsAutomatedTests(p DeliveryPhase) bool {
+	cmd := strings.ToLower(strings.TrimSpace(p.QAVerifyCommand))
+	if cmd == "" {
+		return true // unknown verify — be conservative and keep the phase testable
+	}
+	if strings.Contains(cmd, "no automated tests") {
+		return false
+	}
+	if strings.Contains(cmd, "echo") && !hasAnyStackTool(cmd) {
+		return false // "verify ok (no automated tests for this phase)" style stub
+	}
+	return true
+}
+
 // TestPlanRequirementIDs returns the `### <req-id>` headings in TEST_PLAN.md.
 func TestPlanRequirementIDs(testPlan string) []string {
 	var out []string

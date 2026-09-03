@@ -3313,9 +3313,14 @@ func validateTestPlanArtifacts(townRoot, rig string, hadCmdFailure, testPlanWrit
 	if hallucinated := orchestrator.HallucinatedTestPlanRequirements(string(data), string(specDoc), string(archDoc), phaseIDs...); len(hallucinated) > 0 {
 		return fmt.Errorf("TEST_PLAN.md has requirement IDs not found in SPEC.md or architecture.md: %v — do NOT invent requirements; only plan tests for requirements that EXPLICITLY appear in SPEC.md", hallucinated)
 	}
-	// Phase-coverage guard: every delivery phase must have at least one requirement
-	// block in TEST_PLAN.md. This prevents the tester from rewriting the entire file
-	// during rework and dropping phases that were already planned.
+	// Phase-coverage guard: every TEST-CARRYING delivery phase must have at least
+	// one requirement block in TEST_PLAN.md. This prevents the tester from
+	// rewriting the entire file during rework and dropping phases that were
+	// already planned. Setup-only phases (manifest/config-only, no automated
+	// tests per their qa_verify_command) are EXEMPT — they have no test file and
+	// must not be forced to invent a bogus requirement row, which is what causes
+	// the Tester to mis-map a manifest like requirements.txt as a "Test file" and
+	// spin on plan_gap.
 	if v.HasPhasedDelivery() {
 		phaseCovered := make(map[string]bool)
 		for _, b := range blocks {
@@ -3325,14 +3330,14 @@ func validateTestPlanArtifacts(townRoot, rig string, hadCmdFailure, testPlanWrit
 		}
 		var missing []string
 		for _, p := range v.DeliveryPhases {
-			if !phaseCovered[p.ID] {
+			if orchestrator.PhaseShipsAutomatedTests(p) && !phaseCovered[p.ID] {
 				missing = append(missing, p.ID)
 			}
 		}
 		if len(missing) > 0 {
 			return fmt.Errorf(
 				"TEST_PLAN.md is missing requirement blocks for phases %v — "+
-					"every delivery phase must have at least one ### <req-id> block. "+
+					"every test-carrying delivery phase must have at least one ### <req-id> block. "+
 					"READ the existing TEST_PLAN.md first and use EDIT to modify only the changed sections; "+
 					"do NOT use heredoc to rewrite the entire file (that drops other phase sections).",
 				missing)
@@ -3501,10 +3506,23 @@ func validateTestReviewArtifacts(townRoot, rig, outcome string, hadCmdFailure, v
 // because their test files may not exist yet.
 func phaseIDsForTestValidation(v orchestrator.WorkflowValidation) []string {
 	var ids []string
-	if id := v.ActivePhaseID(); id != "" {
-		ids = append(ids, id)
+	addIfTestCarrying := func(id string) {
+		for _, p := range v.DeliveryPhases {
+			if strings.TrimSpace(p.ID) != strings.TrimSpace(id) {
+				continue
+			}
+			if orchestrator.PhaseShipsAutomatedTests(p) {
+				ids = append(ids, id)
+			}
+			return
+		}
 	}
-	ids = append(ids, v.CompletedPhaseIDs()...)
+	if id := v.ActivePhaseID(); id != "" {
+		addIfTestCarrying(id)
+	}
+	for _, id := range v.CompletedPhaseIDs() {
+		addIfTestCarrying(id)
+	}
 	return ids
 }
 

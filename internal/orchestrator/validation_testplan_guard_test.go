@@ -124,3 +124,22 @@ func TestPairPhaseTests_PreservesTestPhaseOwnership(t *testing.T) {
 		t.Errorf("test phase should own test_main.py, got %v", testFiles)
 	}
 }
+
+func TestPromptVars_ExcludesSetupOnlyFromTestValidation(t *testing.T) {
+	v := WorkflowValidation{
+		LayoutRoot:    "pingapp",
+		RequiredFiles: []string{"pingapp/requirements.txt", "pingapp/test_main.py"},
+		DeliveryPhases: []DeliveryPhase{
+			{ID: "python-setup", Title: "python-setup", RequiredFiles: []string{"pingapp/requirements.txt"}, QAVerifyCommand: "cd pingapp && echo 'verify ok (no automated tests for this phase)'"},
+			{ID: "test", Title: "test", RequiredFiles: []string{"pingapp/test_main.py"}, QAVerifyCommand: "cd pingapp && python -m pytest -v"},
+		},
+		ActivePhaseIDField:   "python-setup",
+		CompletedPhaseIDsField: nil,
+	}
+	vars := v.PromptVars()
+	got := vars["test_validation_phase_ids"]
+	// Setup-only active phase must be excluded; no test phase remains, so empty.
+	if strings.Contains(got, "python-setup") {
+		t.Errorf("test_validation_phase_ids should exclude setup-only active phase, got %q", got)
+	}
+}

@@ -360,3 +360,22 @@ func TestTestPlanBeadMappingMismatches(t *testing.T) {
 		t.Fatalf("mismatch should name row, cited bead, and the file that bead actually owns: %q", got[0])
 	}
 }
+
+func TestPhaseShipsAutomatedTests(t *testing.T) {
+	cases := []struct {
+		name string
+		p    DeliveryPhase
+		want bool
+	}{
+		{"setup-no-auto-tests", DeliveryPhase{ID: "python-setup", QAVerifyCommand: "cd pingapp && echo 'verify ok (no automated tests for this phase)'"}, false},
+		{"setup-echo-only", DeliveryPhase{ID: "python-setup", QAVerifyCommand: "cd pingapp && echo setup ok"}, false},
+		{"pytest-phase", DeliveryPhase{ID: "test", QAVerifyCommand: "cd pingapp && python -m pytest -v"}, true},
+		{"go-test-phase", DeliveryPhase{ID: "test", QAVerifyCommand: "cd pingapp && go test ./..."}, true},
+		{"empty-verify", DeliveryPhase{ID: "core", QAVerifyCommand: ""}, true},
+	}
+	for _, c := range cases {
+		if got := PhaseShipsAutomatedTests(c.p); got != c.want {
+			t.Errorf("%s: PhaseShipsAutomatedTests = %v, want %v", c.name, got, c.want)
+		}
+	}
+}

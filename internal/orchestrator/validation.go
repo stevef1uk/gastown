@@ -1438,10 +1438,35 @@ func (v WorkflowValidation) PromptVars() map[string]string {
 			activeID = strings.TrimSpace(p.ID)
 		}
 	}
-	// Active + completed phase IDs for test validation (future phases excluded)
+	// Active + completed phase IDs for test validation (future phases excluded,
+	// and setup-only phases that ship no automated tests excluded so TEST_PLAN.md
+	// is not scrutinized for a requirements row they must never have).
 	phaseIDs := []string{activeID}
-	phaseIDs = append(phaseIDs, v.CompletedPhaseIDs()...)
-	phaseIDsStr := strings.Join(phaseIDs, ", ")
+	seenPhase := map[string]bool{}
+	if activeID != "" {
+		seenPhase[activeID] = true
+	}
+	for _, c := range v.CompletedPhaseIDs() {
+		if !seenPhase[c] {
+			phaseIDs = append(phaseIDs, c)
+			seenPhase[c] = true
+		}
+	}
+	filteredPhaseIDs := make([]string, 0, len(phaseIDs))
+	for _, id := range phaseIDs {
+		skip := false
+		for _, p := range v.DeliveryPhases {
+			if strings.TrimSpace(p.ID) == strings.TrimSpace(id) && !PhaseShipsAutomatedTests(p) {
+				skip = true
+				break
+			}
+		}
+		if skip {
+			continue
+		}
+		filteredPhaseIDs = append(filteredPhaseIDs, id)
+	}
+	phaseIDsStr := strings.Join(filteredPhaseIDs, ", ")
 
 	// ALL delivery phase IDs for prompts that need the full list (avoids agent reading workflow-profile.json which can truncate).
 	allPhaseIDs := make([]string, 0, len(v.DeliveryPhases))
