@@ -97,6 +97,13 @@ is_town_infra_dir() {
             return 0 ;;
         .git|.dolt-data|.beads|.runtime|.gt-nats-pids|.github|.vscode)
             return 0 ;;
+        # Gas Town engine source roots that live INSIDE the town root as git
+        # submodules (e.g. gastown/ under ~/dev/freeride/). They are NOT rigs:
+        # they have no rigs.json and no gt-agent-state.json, but a `scripts/`
+        # or `internal/` dir can make them match later heuristics. Never treat
+        # them as disposable unregistered rigs.
+        gastown|refinery|witness|freeride)
+            return 0 ;;
     esac
     return 1
 }
@@ -1225,6 +1232,14 @@ DELETED_RIGS=0
 for rig in ${RIG_NAMES[@]+"${RIG_NAMES[@]}"}; do
     rig_dir="$TOWN_ROOT/$rig"
     if [[ -d "$rig_dir" ]]; then
+        # Per-directory guard that runs even under --force: this is an
+        # irreversible `rm -rf` of a whole tree and sometimes points at a
+        # submodule/not-a-rig. The global summary confirm already handles the
+        # "delete all?" case; these per-dir prompts catch mis-identification.
+        if ! confirm "⚠️  Delete rig directory '${rig}/' (rm -rf $TOWN_ROOT/${rig})?"; then
+            log_warn "Skipping rig directory: ${rig}/"
+            continue
+        fi
         rm -rf "$rig_dir"
         log_ok "Deleted rig directory: ${rig}/"
         ((DELETED_RIGS++)) || true
@@ -1237,6 +1252,15 @@ fi
 if [[ ${#UNREGISTERED_RIGS[@]} -gt 0 ]]; then
     log_info "Deleting unregistered rig directories..."
     for rig in ${UNREGISTERED_RIGS[@]+"${UNREGISTERED_RIGS[@]}"}; do
+        # Unregistered dirs are matched heuristically (may be a git submodule,
+        # a stray project, or a real rig). ALWAYS confirm the directory
+        # itself before `rm -rf` — this catches cases like gastown/ that look
+        # rig-like but are actually source trees. Prompted even under --force,
+        # because this deletes an entire directory tree with no recovery.
+        if ! confirm "⚠️  Delete UNREGISTERED directory '${rig}/' (rm -rf $TOWN_ROOT/${rig})?"; then
+            log_warn "Skipping unregistered directory: ${rig}/"
+            continue
+        fi
         rm -rf "$TOWN_ROOT/$rig"
         log_ok "Deleted unregistered rig: ${rig}/"
     done
