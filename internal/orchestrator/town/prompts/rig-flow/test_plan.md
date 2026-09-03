@@ -94,6 +94,8 @@ Assign **unit** to pure logic/domain rules, **integration** to API/store/HTTP wi
 **CRITICAL — Test file paths MUST come from workflow-profile.json:**
 Before writing TEST_PLAN.md, run `cat {{rig}}/mayor/rig/.gastown/workflow-profile.json` and use ONLY the `required_files` and `delivery_phases[].required_files` listed there as `Test file:` values. Do NOT invent new test file paths — if a test file is not listed in the profile, it does not exist for this rig.
 
+**If a delivery phase's `qa_verify_command` explicitly indicates no automated tests (e.g., contains "no automated tests" or "verify ok" without test runner), omit the `### <phase-id>` section for that phase from TEST_PLAN.md — the phase is setup-only, not test-only.**
+
 1. **One `CMD:` per line** — read-only inspection, then write `TEST_PLAN.md` via heredoc:
    ```
    CMD: cd {{rig}}/mayor/rig && cat > TEST_PLAN.md << 'EOF'
