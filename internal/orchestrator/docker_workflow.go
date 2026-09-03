@@ -602,6 +602,14 @@ func healPhaseVerifyTestFiles(v *WorkflowValidation) {
 				if has[b] || !matchBase(b) || !covered(q, f) {
 					continue
 				}
+				// Never duplicate a test file that is ALREADY explicitly owned by a
+				// different phase. A phase can legitimately run pytest (its verify
+				// runs the shared suite) while the test file itself belongs to a
+				// dedicated test phase — forking the file here would corrupt SPEC
+				// phase ownership and make the Architect/planner reject the profile.
+				if testFileOwnedByAnotherPhase(v, i, f) {
+					continue
+				}
 				v.DeliveryPhases[i].RequiredFiles = append(v.DeliveryPhases[i].RequiredFiles, filepath.ToSlash(strings.TrimSpace(f)))
 				has[b] = true
 				log.Printf("[profile-heal] phase %q: qa_verify_command %q executes %s — added to required_files", v.DeliveryPhases[i].ID, raw, f)
@@ -628,6 +636,25 @@ func healPhaseVerifyTestFiles(v *WorkflowValidation) {
 // itself — nothing would ever create it, so verify fails with "no configuration
 // file provided" forever. The compose file lives at the layout root (the same
 // directory the verify command cd's into).
+// testFileOwnedByAnotherPhase reports whether file f is already listed in the
+// required_files of a delivery phase other than idx. healPhaseVerifyTestFiles uses
+// this so it never duplicates an explicitly-owned test file into a phase whose
+// verify merely invokes the shared test runner.
+func testFileOwnedByAnotherPhase(v *WorkflowValidation, idx int, f string) bool {
+	target := strings.ToLower(filepath.ToSlash(strings.TrimSpace(f)))
+	for j := range v.DeliveryPhases {
+		if j == idx {
+			continue
+		}
+		for _, g := range v.DeliveryPhases[j].RequiredFiles {
+			if strings.ToLower(filepath.ToSlash(strings.TrimSpace(g))) == target {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func healPhaseComposeFile(v *WorkflowValidation) {
 	layout := strings.Trim(filepath.ToSlash(strings.TrimSpace(v.LayoutRoot)), "/")
 	composePath := "docker-compose.yml"
