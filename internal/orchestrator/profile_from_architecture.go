@@ -1999,6 +1999,10 @@ func ValidateRigWorkflowProfileForQA(townRoot, rig string, v WorkflowValidation)
 				problems = append(problems, fmt.Sprintf("%s contains route stub %q (not a file path)", scope, f))
 				continue
 			}
+			if f == "plan_gap" || strings.HasSuffix(f, "/plan_gap") || strings.HasSuffix(f, "plan_gap") || strings.EqualFold(f, "plan_gap") {
+				problems = append(problems, fmt.Sprintf("%s contains placeholder %q — must be a real test file path", scope, f))
+				continue
+			}
 			if !IsValidImplementBeadPath(f) {
 				problems = append(problems, fmt.Sprintf("%s contains invalid path %q", scope, f))
 			}

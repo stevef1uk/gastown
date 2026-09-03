@@ -356,7 +356,7 @@ func filterRigFlowRequiredFiles(files []string, layoutRoot string) []string {
 	var out []string
 	for _, f := range files {
 		f = filepath.ToSlash(strings.TrimSpace(f))
-		if f == "" || isRigFlowNonImplementPath(f) {
+		if f == "" || isPlanGapPlaceholderPath(f) || isRigFlowNonImplementPath(f) {
 			continue
 		}
 		if DoubledLayoutPath(f, layoutRoot) {

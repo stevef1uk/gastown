@@ -94,6 +94,8 @@ Assign **unit** to pure logic/domain rules, **integration** to API/store/HTTP wi
 **CRITICAL — Test file paths MUST come from workflow-profile.json:**
 Before writing TEST_PLAN.md, run `cat {{rig}}/mayor/rig/.gastown/workflow-profile.json` and use ONLY the `required_files` and `delivery_phases[].required_files` listed there as `Test file:` values. Do NOT invent new test file paths — if a test file is not listed in the profile, it does not exist for this rig.
 
+**NEVER use `plan_gap` as a Test file path.** `plan_gap` is not a real file — it is a signal word that creates phantom beads for nonexistent files. If the delivery phase's `required_files` contains the test file, use that exact path. If the phase has no test file in `required_files`, leave `Test file:` empty.
+
 **If a delivery phase's `qa_verify_command` explicitly indicates no automated tests (e.g., contains "no automated tests" or "verify ok" without test runner), omit the `### <phase-id>` section for that phase from TEST_PLAN.md — the phase is setup-only, not test-only.**
 
 1. **One `CMD:` per line** — read-only inspection, then write `TEST_PLAN.md` via heredoc:
@@ -138,7 +140,7 @@ Before writing TEST_PLAN.md, run `cat {{rig}}/mayor/rig/.gastown/workflow-profil
 
 6. **CRITICAL:** Do not emit JSON in the same message as `CMD:` lines. Wait for command output on the next turn before choosing outcome.
 
-7. **Bead IDs:** Use actual bead IDs from `bd list` output, NOT placeholder IDs like `bead-001`. Copy IDs exactly as they appear in `bd list`. If no bead owns a test file (e.g. `handlers_test.go` has no implementation bead yet), use `plan_gap` as the Bead ID — this tells the Planner to create the missing bead.
+7. **Bead IDs:** Use actual bead IDs from `bd list` output, NOT placeholder IDs like `bead-001` or `plan_gap`. Copy IDs exactly as they appear in `bd list`. If no bead owns a test file yet, leave the `Bead ID:` field empty — the Planner will create the missing bead during planning.
 
 Example success:
 `{"outcome":"success","summary":"TEST_PLAN.md maps 6/6 active-phase requirements: 4 unit (store/domain), 1 integration (API wiring), 1 ui (DOM checkout)"}`

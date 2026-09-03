@@ -57,6 +57,15 @@ func mergeTestPlanRequiredFiles(townRoot, rig string, v *WorkflowValidation) {
 		if f == "" || seenRow[key] {
 			continue
 		}
+		// Reject placeholder/signal paths that are NOT real files. The Tester can
+		// author "plan_gap", "TBD", "N/A", etc. as a stand-in for a test that has
+		// no owning bead yet; merging those into the profile creates phantom
+		// implement beads and plan.md rows, deadlocking the workflow in a
+		// Tester/planner loop. Only concrete file paths may be merged.
+		if isPlanGapPlaceholderPath(f) {
+			log.Printf("[test-plan-heal] skip placeholder test file %q (not a real path)", f)
+			continue
+		}
 		seenRow[key] = true
 		rows = append(rows, row{id: id, file: f})
 	}
@@ -174,6 +183,39 @@ func mergeTestPlanRequiredFiles(townRoot, rig string, v *WorkflowValidation) {
 		}
 		_ = matched // unmatchable rows belong to another plan revision; ignore
 	}
+}
+
+// isPlanGapPlaceholderPath reports whether f is a placeholder/signal path that
+// the Tester may use to defer a real test file (e.g. "plan_gap", "TBD", "N/A",
+// "none", "TODO"). These are NOT real files and must never be merged into the
+// profile's required_files or given an implement bead.
+func isPlanGapPlaceholderPath(f string) bool {
+	original := strings.ToLower(strings.TrimSpace(f))
+	f = filepath.ToSlash(original)
+	if f == "" {
+		return true
+	}
+	// Handle common slash-bearing placeholder tokens like "n/a" at the whole-string level.
+	for _, sig := range []string{"n/a", "n-a", "n a", "t.b.d.", "to be added", "to be decided"} {
+		if original == sig {
+			return true
+		}
+	}
+	base := strings.ToLower(filepath.Base(f))
+	for _, sig := range []string{
+		"plan_gap", "plan-gap", "plan gap",
+		"tbd", "todo", "none", "n/a", "na", "pending", "placeholder", "tobeadded",
+	} {
+		if base == sig {
+			return true
+		}
+	}
+	// A path that carries no file extension and no directory separator is a bare
+	// signal token (e.g. "plan_gap") rather than a real file.
+	if !strings.Contains(f, "/") && !strings.Contains(f, "\\") && filepath.Ext(f) == "" {
+		return true
+	}
+	return false
 }
 
 // TestPlanSectionIDs returns the deduplicated ### section ids declared in the
