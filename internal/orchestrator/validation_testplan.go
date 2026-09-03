@@ -212,8 +212,28 @@ func isPlanGapPlaceholderPath(f string) bool {
 	}
 	// A path that carries no file extension and no directory separator is a bare
 	// signal token (e.g. "plan_gap") rather than a real file.
+	// Exclude known valid filenames without extensions.
+knownValidNoExt := map[string]bool{
+		"dockerfile":  true,
+		"makefile":    true,
+		"readme":      true,
+		"license":     true,
+		"changelog":   true,
+		"contributing": true,
+		"authors":     true,
+		"credits":     true,
+		"todo":        true, // TODO can be a valid file
+		"news":        true,
+		"changes":     true,
+		"copying":     true,
+		"install":     true,
+		"configure":   true,
+	}
 	if !strings.Contains(f, "/") && !strings.Contains(f, "\\") && filepath.Ext(f) == "" {
-		return true
+		base := strings.ToLower(filepath.Base(f))
+		if !knownValidNoExt[base] {
+			return true
+		}
 	}
 	return false
 }

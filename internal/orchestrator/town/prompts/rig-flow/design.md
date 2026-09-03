@@ -86,10 +86,10 @@ State how pieces connect; full-suite command from workflow-profile.json or proje
 (how pieces connect; full-suite command from workflow-profile.json or project convention)
 
 ## Docker & Deployment
-(required only when profile lists Dockerfile/docker-compose — include base images, build steps, final image contents, port, startup, static asset serving)
+(Include only when the workflow profile lists Dockerfile or docker-compose in required_files or QA verify command. Omit otherwise.)
 
 ## E2E / integration testing
-(required only when profile lists e2e/playwright/docker-compose — exact app start command, e2e test command, selectors, test data)
+(Include only when the workflow profile lists e2e/playwright phases. Omit otherwise.)
 
 ## Acceptance mapping
 (how architecture satisfies SPEC goals)
