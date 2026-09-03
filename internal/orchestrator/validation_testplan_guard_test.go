@@ -81,3 +81,46 @@ func TestHealPhaseVerifyTestFiles_DoesNotDuplicateOwnedTest(t *testing.T) {
 		}
 	}
 }
+
+func TestPairPhaseTests_PreservesTestPhaseOwnership(t *testing.T) {
+	v := WorkflowValidation{
+		LayoutRoot:    "pingapp",
+		RequiredFiles: []string{"pingapp/requirements.txt", "pingapp/main.py", "pingapp/test_main.py"},
+		DeliveryPhases: []DeliveryPhase{
+			{ID: "python-setup", Title: "python-setup", RequiredFiles: []string{"pingapp/requirements.txt"}},
+			{ID: "core", Title: "core", RequiredFiles: []string{"pingapp/main.py"}, QAVerifyCommand: "cd pingapp && python -c 'import sys; print(\"ok\")'"},
+			// SPEC/architecture deliberately assign the unit test to the test phase
+			// while its source (main.py) lives in core — pairPhaseTests must not
+			// steal the test into core or empty the test phase.
+			{ID: "test", Title: "test", RequiredFiles: []string{"pingapp/test_main.py"}, QAVerifyCommand: "cd pingapp && python -m pytest -v"},
+			{ID: "integration-test", Title: "integration-test", RequiredFiles: []string{}},
+		},
+	}
+	out := ClampProfileValidation(v)
+	coreHasTest := false
+	testHasTest := false
+	var testFiles []string
+	for _, p := range out.DeliveryPhases {
+		switch p.ID {
+		case "core":
+			for _, f := range p.RequiredFiles {
+				if strings.HasSuffix(f, "test_main.py") {
+					coreHasTest = true
+				}
+			}
+		case "test":
+			testFiles = p.RequiredFiles
+			for _, f := range p.RequiredFiles {
+				if strings.HasSuffix(f, "test_main.py") {
+					testHasTest = true
+				}
+			}
+		}
+	}
+	if coreHasTest {
+		t.Errorf("core should NOT own test_main.py after clamp, got it in core.required_files")
+	}
+	if !testHasTest {
+		t.Errorf("test phase should own test_main.py, got %v", testFiles)
+	}
+}

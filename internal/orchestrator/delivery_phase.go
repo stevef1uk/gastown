@@ -870,6 +870,12 @@ func pairPhaseTests(v WorkflowValidation) WorkflowValidation {
 		if runsIt >= 0 {
 			continue // stays in the phase that runs it
 		}
+		// If the test already lives in a test-purposed phase, leave it there —
+		// moving it to the source phase would empty the test phase and violate
+		// SPEC's explicit phase ownership.
+		if testInTestPurposedPhase(v, test) {
+			continue
+		}
 		placedTests[test] = true
 		already := false
 		for _, f := range v.DeliveryPhases[srcPhase].RequiredFiles {
@@ -893,7 +899,13 @@ func pairPhaseTests(v WorkflowValidation) WorkflowValidation {
 			if moved && sourcePhase != i {
 				// Test's source is in another phase — drop from here only when
 				// it's not also run by this phase's verify command.
-				if !runsTestInPhase(i, f) {
+				// A phase is test-purposed (ID like test/tests/unit-test or a
+				// verify that runs the suite generically) — keep the test there
+				// even when its source lives elsewhere. SPEC/architecture may
+				// deliberately assign test_main.py to the test phase while main.py
+				// lives in core; pairPhaseTests must not steal the test into the
+				// source phase and leave the test phase empty.
+				if !runsTestInPhase(i, f) && !isTestPurposedPhase(v.DeliveryPhases[i]) {
 					continue
 				}
 			}
@@ -901,9 +913,11 @@ func pairPhaseTests(v WorkflowValidation) WorkflowValidation {
 		}
 		v.DeliveryPhases[i].RequiredFiles = kept
 	}
-	// Also strip moved test files from the union RequiredFiles so QA scope doesn't include them
-	movedTests := make(map[string]bool, len(testToSourcePhase))
-	for test := range testToSourcePhase {
+	// Also strip moved test files from the union RequiredFiles so QA scope doesn't include them.
+	// Only tests that were actually relocated (placed into a source phase) are stripped;
+	// a test that stayed in its test-purposed phase must remain in the top-level union.
+	movedTests := make(map[string]bool, len(placedTests))
+	for test := range placedTests {
 		movedTests[test] = true
 	}
 	var keptUnion []string
@@ -1468,6 +1482,35 @@ func FinalizeDeliveryPhases(v WorkflowValidation) WorkflowValidation {
 		}
 	}
 	return v
+}
+
+// isTestPurposedPhase reports whether a delivery phase is a dedicated testing
+// phase (ID contains "test"/"e2e" or its verify runs the generic suite), so
+// pairPhaseTests keeps explicitly-owned test files where SPEC placed them.
+func isTestPurposedPhase(p DeliveryPhase) bool {
+	id := strings.ToLower(strings.TrimSpace(p.ID))
+	if strings.Contains(id, "test") || strings.Contains(id, "e2e") {
+		return true
+	}
+	cmd := strings.ToLower(strings.TrimSpace(p.QAVerifyCommand))
+	return cmd != "" && (strings.Contains(cmd, "pytest") || strings.Contains(cmd, "go test") ||
+		strings.Contains(cmd, " npm ") || strings.Contains(cmd, "npx "))
+}
+
+// testInTestPurposedPhase reports whether the given test file is already listed
+// in a test-purposed phase's required_files.
+func testInTestPurposedPhase(v WorkflowValidation, test string) bool {
+	for _, p := range v.DeliveryPhases {
+		if !isTestPurposedPhase(p) {
+			continue
+		}
+		for _, f := range p.RequiredFiles {
+			if pathMatchesRequired(test, []string{f}) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func normalizePathList(files []string) []string {
