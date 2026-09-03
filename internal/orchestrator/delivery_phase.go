@@ -1423,6 +1423,8 @@ func FinalizeDeliveryPhases(v WorkflowValidation) WorkflowValidation {
 	v = pairPhaseInfraFiles(v)
 	v = pairPhaseTests(v)
 	v = sequenceDeliveryPhasesByImports(v)
+	// Remove redundant phases (e.g. test phase that duplicates core's verify)
+	v = consolidateRedundantPhases(v)
 	if len(v.DeliveryPhases) == 0 {
 		if inferred := inferDefaultDeliveryPhases(v); len(inferred) > 0 {
 			v.DeliveryPhases = inferred
@@ -1511,6 +1513,100 @@ func testInTestPurposedPhase(v WorkflowValidation, test string) bool {
 		}
 	}
 	return false
+}
+
+// fileSet returns a set of normalized file paths for comparison.
+func fileSet(files []string) map[string]bool {
+	s := make(map[string]bool, len(files))
+	for _, f := range files {
+		f = filepath.ToSlash(strings.TrimSpace(f))
+		if f != "" {
+			s[f] = true
+		}
+	}
+	return s
+}
+
+// consolidateRedundantPhases removes phases that are redundant with their
+// dependency. A phase is redundant if:
+// 1. It depends_on exactly one phase (its predecessor)
+// 2. Its RequiredFiles is a subset of the predecessor's RequiredFiles
+// 3. Its QAVerifyCommand is the same as (or a subset of) the predecessor's
+// This handles cases like core+test where test duplicates core's verify.
+func consolidateRedundantPhases(v WorkflowValidation) WorkflowValidation {
+	if len(v.DeliveryPhases) < 2 {
+		return v
+	}
+
+	// Build a map of phase ID -> index for quick lookup
+	idToIdx := make(map[string]int)
+	for i := range v.DeliveryPhases {
+		idToIdx[strings.TrimSpace(v.DeliveryPhases[i].ID)] = i
+	}
+
+	// Track which phases to keep
+	keep := make([]bool, len(v.DeliveryPhases))
+	for i := range keep {
+		keep[i] = true
+	}
+
+	// Map removed phase ID -> the phase ID it depended on (for DependsOn rewiring)
+	removedPhaseReplacement := make(map[string]string)
+
+	for i := range v.DeliveryPhases {
+		p := &v.DeliveryPhases[i]
+		if len(p.DependsOn) != 1 {
+			continue
+		}
+		depIdx, ok := idToIdx[strings.TrimSpace(p.DependsOn[0])]
+		if !ok || depIdx >= i {
+			continue
+		}
+		dep := v.DeliveryPhases[depIdx]
+
+		// Check if p's required files are a subset of dep's
+		pFiles := fileSet(p.RequiredFiles)
+		depFiles := fileSet(dep.RequiredFiles)
+		subset := true
+		for f := range pFiles {
+			if !depFiles[f] {
+				subset = false
+				break
+			}
+		}
+		if !subset {
+			continue
+		}
+
+		// Check if QA verify commands are the same (or p's is empty and dep has one)
+		pCmd := strings.TrimSpace(p.QAVerifyCommand)
+		depCmd := strings.TrimSpace(dep.QAVerifyCommand)
+		cmdSame := (pCmd == depCmd) || (pCmd == "" && depCmd != "")
+
+		if cmdSame {
+			// Phase i is redundant - mark for removal
+			keep[i] = false
+			// Remember what this phase depended on, so we can rewire later phases
+			removedPhaseReplacement[strings.TrimSpace(p.ID)] = strings.TrimSpace(dep.ID)
+		}
+	}
+
+	// Rebuild phases, keeping only non-redundant ones
+	var newPhases []DeliveryPhase
+	for i, k := range keep {
+		if k {
+			p := v.DeliveryPhases[i]
+			// Rewire DependsOn if it points to a removed phase
+			if len(p.DependsOn) == 1 {
+				if replacement, ok := removedPhaseReplacement[strings.TrimSpace(p.DependsOn[0])]; ok {
+					p.DependsOn = []string{replacement}
+				}
+			}
+			newPhases = append(newPhases, p)
+		}
+	}
+	v.DeliveryPhases = newPhases
+	return v
 }
 
 func normalizePathList(files []string) []string {
