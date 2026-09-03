@@ -339,3 +339,58 @@ root/
 	}
 }
 
+
+func TestUpdatePhaseRequiredFilesFromRequirements_inlineProsePaths(t *testing.T) {
+	arch := `
+## Requirements
+
+### python-setup
+
+The dependency manifest must contain fastapi and uvicorn. No route or test
+implementation belongs in this requirement. requirements.txt resides in pingapp/.
+
+### core
+
+pingapp/main.py must expose app created by app = FastAPI() and register GET /ping.
+
+### test
+
+pingapp/test_main.py must import TestClient and assert status 200 and the exact
+JSON mapping. It must not launch Uvicorn.
+
+### integration-test
+
+The runtime check must use the module-level app through the documented Uvicorn
+command on port 8080. This phase creates no file.
+`
+	v := WorkflowValidation{
+		LayoutRoot: "pingapp",
+		DeliveryPhases: []DeliveryPhase{
+			{ID: "python-setup", Title: "python-setup", RequiredFiles: []string{"pingapp/requirements.txt"}},
+			// stale spec-index assignment that the sync must overwrite
+			{ID: "core", Title: "core", RequiredFiles: []string{"pingapp/main.py", "pingapp/test_main.py"}},
+			{ID: "test", Title: "test", RequiredFiles: nil},
+			{ID: "integration-test", Title: "integration-test", RequiredFiles: []string{}},
+		},
+	}
+	out, ok := updatePhaseRequiredFilesFromRequirementsSection(v, arch)
+	if !ok {
+		t.Fatalf("expected ok=true")
+	}
+	got := map[string][]string{}
+	for _, p := range out.DeliveryPhases {
+		got[p.ID] = p.RequiredFiles
+	}
+	if len(got["core"]) != 1 || got["core"][0] != "pingapp/main.py" {
+		t.Errorf("core files = %v, want [pingapp/main.py]", got["core"])
+	}
+	if len(got["test"]) != 1 || got["test"][0] != "pingapp/test_main.py" {
+		t.Errorf("test files = %v, want [pingapp/test_main.py]", got["test"])
+	}
+	if len(got["python-setup"]) != 1 || got["python-setup"][0] != "pingapp/requirements.txt" {
+		t.Errorf("python-setup files = %v, want [pingapp/requirements.txt]", got["python-setup"])
+	}
+	if len(got["integration-test"]) != 0 {
+		t.Errorf("integration-test files = %v, want none", got["integration-test"])
+	}
+}

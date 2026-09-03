@@ -1427,6 +1427,7 @@ func parseArchPhasesFromSection(archText, layoutRoot, marker string) []DeliveryP
 		if currentPhase != nil {
 			matches := extractArchPaths(line, layoutRoot)
 			matches = append(matches, extractPhaseLinePaths(line, layoutRoot)...)
+			matches = append(matches, extractInlinePaths(line, layoutRoot)...)
 			for _, m := range matches {
 				p := filepath.ToSlash(strings.TrimSpace(m))
 				for strings.HasPrefix(p, "./") {
@@ -1513,6 +1514,12 @@ func updatePhaseRequiredFilesFromRequirementsSection(v WorkflowValidation, archD
 			// Extract backtick paths from this line
 			matches := extractArchPaths(line, v.LayoutRootDir())
 			matches = append(matches, extractPhaseLinePaths(line, v.LayoutRootDir())...)
+			// Architect prose often names the file inline (e.g. "pingapp/main.py
+			// must expose app = FastAPI()") with no backticks or bullets. Without
+			// extractInlinePaths those per-phase files never land in the phase's
+			// required_files, so the sync keeps stale spec-index assignments
+			// (core absorbing test_main.py, test left empty).
+			matches = append(matches, extractInlinePaths(line, v.LayoutRootDir())...)
 			for _, m := range matches {
 				p := filepath.ToSlash(strings.TrimSpace(m))
 				for strings.HasPrefix(p, "./") {
