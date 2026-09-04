@@ -834,9 +834,14 @@ Use crew for your own workspace. Polecats are for batch work dispatch.
 			fmt.Printf("  %s Could not scaffold polecat settings: %v\n", "!", err)
 		}
 	}
-	if err := commands.ProvisionFor(polecatsPath, defaultAgentName); err != nil {
-		// Non-fatal: commands are convenience, not critical
-		fmt.Printf("  %s Could not scaffold polecat commands: %v\n", "!", err)
+	// Only provision slash commands for agents with a config dir (e.g. .claude/,
+	// .opencode/). Headless gt-agent / Freeride profiles (gt-agent-local, etc.) have
+	// no interactive command directory, so skip silently — matching runtime.go.
+	if commands.IsKnownAgent(defaultAgentName) {
+		if err := commands.ProvisionFor(polecatsPath, defaultAgentName); err != nil {
+			// Non-fatal: commands are convenience, not critical
+			fmt.Printf("  %s Could not scaffold polecat commands: %v\n", "!", err)
+		}
 	}
 
 	// Register route in town-level routes.jsonl BEFORE creating agent beads.

@@ -553,6 +553,57 @@ func TestRigAddRespectsDefaultAgent(t *testing.T) {
 	}
 }
 
+// TestRigAddDefaultAgentFreerideSkipsCommandScaffold verifies that gt rig add
+// does not error when the town's default_agent is a headless Freeride gt-agent
+// profile (e.g. gt-agent-local), which has no interactive config dir. The
+// prepatch behavior printed "Could not scaffold polecat commands: unknown agent
+// or no config dir: gt-agent-local" on every clean install.
+func TestRigAddDefaultAgentFreerideSkipsCommandScaffold(t *testing.T) {
+	requireDoltServer(t)
+	_ = mockBdCommand(t)
+	townRoot := setupTestTown(t)
+	bridgeDoltPidToTown(t, townRoot)
+	gitURL := createTestGitRepo(t, "freerideagent")
+
+	// Write a town settings file with default_agent=gt-agent-local (Freeride).
+	settingsDir := filepath.Join(townRoot, "settings")
+	if err := os.MkdirAll(settingsDir, 0755); err != nil {
+		t.Fatalf("mkdir settings: %v", err)
+	}
+	townSettings := config.NewTownSettings()
+	townSettings.DefaultAgent = "gt-agent-local"
+	if err := config.SaveTownSettings(config.TownSettingsPath(townRoot), townSettings); err != nil {
+		t.Fatalf("save town settings: %v", err)
+	}
+
+	rigsPath := filepath.Join(townRoot, "mayor", "rigs.json")
+	rigsConfig, err := config.LoadRigsConfig(rigsPath)
+	if err != nil {
+		t.Fatalf("load rigs.json: %v", err)
+	}
+
+	g := git.NewGit(townRoot)
+	mgr := rig.NewManager(townRoot, rigsConfig, g)
+
+	// AddRig must succeed without the "Could not scaffold polecat commands: unknown
+	// agent or no config dir: gt-agent-local" warning being the cause of failure.
+	if _, err := mgr.AddRig(rig.AddRigOptions{
+		Name:        "freeriderig",
+		GitURL:      gitURL,
+		BeadsPrefix: "fr",
+	}); err != nil {
+		t.Fatalf("AddRig with default_agent=gt-agent-local: %v", err)
+	}
+
+	rigPath := filepath.Join(townRoot, "freeriderig")
+
+	// A headless gt-agent profile must not create a .claude/ commands dir.
+	claudeCommands := filepath.Join(rigPath, "polecats", ".claude", "commands")
+	if _, err := os.Stat(claudeCommands); err == nil {
+		t.Errorf("polecats/.claude/commands should NOT be scaffolded for headless gt-agent-local")
+	}
+}
+
 // TestRigAddInitializesBeads verifies that beads is initialized with
 // the correct prefix.
 func TestRigAddInitializesBeads(t *testing.T) {
