@@ -701,11 +701,8 @@ func clearImplementationProgressIfLeaving(townRoot, rig, fromState, nextState st
 	if fromState != "implementation" || nextState == "implementation" {
 		return
 	}
-	// When leaving implementation state, keep the implementation-progress.json file
-	// so that the Completed map survives state transitions and can be auto-closed
-	// on the next run via autoCloseOnDisk. This aids recovery from phase rewinds
-	// or timeout resets that cleared the Completed map but left source files on disk.
-	orchestratedPrintf("[gt-agent] preserved implementation-progress for rig %s (left implementation → %s)\n", rig, nextState)
+	clearImplementationProgress(townRoot, rig)
+	orchestratedPrintf("[gt-agent] cleared implementation-progress for rig %s (left implementation → %s)\n", rig, nextState)
 }
 
 // addBeadTurn increments the turn counter for a bead and returns true if the limit is exceeded.
