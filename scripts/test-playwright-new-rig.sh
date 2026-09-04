@@ -209,16 +209,20 @@ cleanup_compose() {
 trap cleanup_compose EXIT
 
 # Create docker-compose.yml for Playwright E2E (not in SPEC layout).
+# Uses the shared safe runner image `playwright-go-test:latest` (built once per
+# machine from the embedded Dockerfile.playwright template) — NOT a raw
+# mcr.microsoft.com/playwright tag, which gastown's compose validation flags.
 # Bind mounts only — no named volumes, nothing persists between runs.
 cat > docker-compose.yml <<'COMPOSEEOF'
 services:
   playwright:
-    image: mcr.microsoft.com/playwright:v1.45.0-jammy
+    image: playwright-go-test:latest
+    user: "${DOCKER_UID:-1000}:${DOCKER_GID:-1000}"
     working_dir: /work
     volumes:
       - ./pingapp:/work
     environment:
-      - PLAYWRIGHT_BASE_URL=http://host.docker.internal:8080
+      - BASE_URL=http://host.docker.internal:8080
     command: sh -c "npm install --ignore-scripts && npx playwright test"
     network_mode: "host"
     extra_hosts:
