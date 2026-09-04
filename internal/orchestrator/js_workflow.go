@@ -46,19 +46,19 @@ func nodeInstallCommand(pm string, files []string) string {
 	switch pm {
 	case "pnpm":
 		if hasLock("pnpm-lock.yaml") {
-			return "pnpm install --frozen-lockfile --ignore-scripts"
+			return "pnpm install --frozen-lockfile --ignore-scripts --prefer-offline --no-audit --no-fund"
 		}
-		return "pnpm install --ignore-scripts"
+		return "pnpm install --ignore-scripts --prefer-offline --no-audit --no-fund"
 	case "yarn":
 		if hasLock("yarn.lock") {
-			return "yarn install --frozen-lockfile --ignore-scripts"
+			return "yarn install --frozen-lockfile --ignore-scripts --prefer-offline --no-audit --no-fund"
 		}
-		return "yarn install --ignore-scripts"
+		return "yarn install --ignore-scripts --prefer-offline --no-audit --no-fund"
 	default:
 		if hasLock("package-lock.json") || hasLock("npm-shrinkwrap.json") {
-			return "npm ci --ignore-scripts"
+			return "npm ci --ignore-scripts --prefer-offline --no-audit --no-fund"
 		}
-		return "npm install --ignore-scripts"
+		return "npm install --ignore-scripts --prefer-offline --no-audit --no-fund"
 	}
 }
 
