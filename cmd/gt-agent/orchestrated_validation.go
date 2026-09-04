@@ -112,7 +112,11 @@ func isProjectSetupVerifyCommandOK(cmd string, v orchestrator.WorkflowValidation
 }
 
 func isQATestCommandOK(cmd string, v orchestrator.WorkflowValidation) bool {
-	verify := strings.TrimSpace(v.QAVerifyCommand)
+	// For phased delivery, judge against the ACTIVE phase's QA verify command
+	// (e.g. frontend docker-compose/Playwright) so running only the global
+	// backend pytest cannot satisfy a later phase's test_review. Falls back to
+	// the profile default for unphased workflows.
+	verify := strings.TrimSpace(v.ActivePhaseQAVerifyCommand())
 	if verify != "" {
 		if commandMatchesQAVerify(cmd, verify) {
 			return true

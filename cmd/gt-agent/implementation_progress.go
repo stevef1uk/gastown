@@ -120,6 +120,27 @@ func (p *ImplementationProgress) done(key string) bool {
 	return p != nil && p.Completed != nil && p.Completed[key]
 }
 
+// autoCloseOnDisk checks if a required implement file exists on disk and,
+// if so, marks the bead as verified (adding the key to the Completed map).
+// This is intended to recover from phase rewinds or timeout resets that cleared
+// the Completed map but left the actual source files on disk. After calling this,
+// saveImplementationProgress should be called to persist the update.
+func (p *ImplementationProgress) autoCloseOnDisk(rigDir, relPath string) bool {
+	if p == nil {
+		return false
+	}
+	absPath := filepath.Join(rigDir, filepath.FromSlash(relPath))
+	if _, err := os.Stat(absPath); err != nil {
+		return false
+	}
+	key := implVerifyKey(relPath)
+	if p.done(key) {
+		return true // already verified
+	}
+	p.Completed[key] = true
+	return true
+}
+
 func implVerifyKey(beadID string) string {
 	return implMilestoneVerifyPrefix + strings.TrimSpace(beadID)
 }
@@ -135,6 +156,17 @@ func (r *stateRunner) initImplementationProgress() string {
 	existing := loadImplementationProgress(r.townRoot, r.rig, r.task.WorkflowID, r.task.State)
 	if existing != nil {
 		r.implProgress = existing
+		// Recover from phase rewinds or timeout resets: if any of the active phase's
+		// required files already exist on disk, mark them verified so the bead can
+		// close without redundant writes. This avoids redundant polecat write attempts
+		// after a rewind cleared the Completed map but left the source files on disk.
+		beadPath := r.activeImplementBeadPath()
+		if beadPath != "" {
+			r.implProgress.autoCloseOnDisk(rigMayorRigDir(r.townRoot, r.rig), beadPath)
+		}
+		for _, rel := range r.v.ForActivePhase().RequiredFiles {
+			r.implProgress.autoCloseOnDisk(rigMayorRigDir(r.townRoot, r.rig), rel)
+		}
 	} else {
 		r.implProgress = newImplementationProgress(r.task.WorkflowID, r.task.State, r.rig)
 	}
@@ -669,8 +701,11 @@ func clearImplementationProgressIfLeaving(townRoot, rig, fromState, nextState st
 	if fromState != "implementation" || nextState == "implementation" {
 		return
 	}
-	clearImplementationProgress(townRoot, rig)
-	orchestratedPrintf("[gt-agent] cleared implementation-progress for rig %s (left implementation → %s)\n", rig, nextState)
+	// When leaving implementation state, keep the implementation-progress.json file
+	// so that the Completed map survives state transitions and can be auto-closed
+	// on the next run via autoCloseOnDisk. This aids recovery from phase rewinds
+	// or timeout resets that cleared the Completed map but left source files on disk.
+	orchestratedPrintf("[gt-agent] preserved implementation-progress for rig %s (left implementation → %s)\n", rig, nextState)
 }
 
 // addBeadTurn increments the turn counter for a bead and returns true if the limit is exceeded.

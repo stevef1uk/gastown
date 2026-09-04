@@ -3495,8 +3495,8 @@ func validateTestReviewArtifacts(townRoot, rig, outcome string, hadCmdFailure, v
 			return fmt.Errorf("planned test files look like stubs (no substantive assertions): %s — use outcome failure with bead IDs so the polecat strengthens them", strings.Join(filteredStubs, ", "))
 		}
 	}
-	if strings.TrimSpace(v.QAVerifyCommand) != "" && !verifyOK {
-		return fmt.Errorf("run `%s` green before test_review success", v.QAVerifyHint())
+	if strings.TrimSpace(v.ActivePhaseQAVerifyCommand()) != "" && !verifyOK {
+		return fmt.Errorf("run `%s` green before test_review success", v.ActivePhaseQAVerifyCommand())
 	}
 	return nil
 }

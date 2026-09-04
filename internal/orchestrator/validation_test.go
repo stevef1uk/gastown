@@ -250,8 +250,8 @@ func TestPromptVars_projectSetupVerifyHintIsPhaseScoped(t *testing.T) {
 		},
 	}
 	vars := v.PromptVars()
-	if got := vars["project_setup_verify_hint"]; got != "cd frontend && npm install --ignore-scripts" {
-		t.Fatalf("frontend phase setup verify = %q, want cd frontend && npm install --ignore-scripts", got)
+	if got := vars["project_setup_verify_hint"]; got != "cd frontend && npm install --ignore-scripts --prefer-offline --no-audit --no-fund" {
+		t.Fatalf("frontend phase setup verify = %q, want cd frontend && npm install --ignore-scripts --prefer-offline --no-audit --no-fund", got)
 	}
 	if got := vars["project_setup_stack_kind"]; got != "nodejs" {
 		t.Fatalf("frontend phase stack kind = %q, want nodejs", got)

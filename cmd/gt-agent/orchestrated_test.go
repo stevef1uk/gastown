@@ -977,7 +977,7 @@ func TestVerifyKindHandler_nodeSetup(t *testing.T) {
 		t.Fatal("node_setup verify kind not registered")
 	}
 	got := fn(r)
-	want := "cd frontend && npm install --ignore-scripts"
+	want := "cd frontend && npm install --ignore-scripts --prefer-offline --no-audit --no-fund"
 	if got != want {
 		t.Fatalf("node_setup verify = %q, want %q", got, want)
 	}

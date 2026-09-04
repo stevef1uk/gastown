@@ -138,6 +138,17 @@ func FormatMissingImplementFilesBlock(townRoot, rig string, v WorkflowValidation
 		b.WriteString(issue)
 		b.WriteString("\n")
 	}
+	// Add open bead information so the polecat can close beads after writing.
+	if townRoot != "" && rig != "" && BeadsDatabaseReady(townRoot, rig) {
+		if next, err := NextOpenImplementBead(townRoot, rig, v); err == nil && next != nil {
+			beadPath := NormalizeBeadPathForLayout(
+				ExtractPathFromBeadTitle(next.Title, v.BeadTitleContains), v.LayoutRoot)
+			if beadPath != "" {
+				b.WriteString("\nOpen beads requiring close:\n")
+				b.WriteString(fmt.Sprintf("- `bd close %s` (%s)\n", next.ID, beadPath))
+			}
+		}
+	}
 	return strings.TrimSpace(b.String())
 }
 

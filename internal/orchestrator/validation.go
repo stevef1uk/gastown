@@ -1193,6 +1193,7 @@ func ClampProfileValidationForRig(townRoot, rig string, v WorkflowValidation) Wo
 	v = AlignProfileLayoutWithArchitecture(v, archPath)
 	alignArchitectureWithTestPlan(townRoot, rig)
 	mergeTestPlanRequiredFiles(townRoot, rig, &v)
+	v = ensureIntegrationTestPhase(townRoot, rig, v)
 	return v
 }
 

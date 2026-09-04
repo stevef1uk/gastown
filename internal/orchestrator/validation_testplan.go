@@ -469,3 +469,67 @@ func alignArchitectureWithTestPlan(townRoot, rig string) {
 	}
 	log.Printf("[test-plan-align] added %d TEST_PLAN test file(s) to architecture.md: %v", len(missing), missing)
 }
+
+// ensureIntegrationTestPhase checks if TEST_PLAN.md defines an `### integration-test`
+// section and, if so, ensures the workflow profile has a delivery phase with ID
+// "integration-test". If the profile is missing it, the function creates one and
+// adds the test files from the TEST_PLAN.md section into it. This guarantees that
+// a fresh rig initialization from SPEC.md + TEST_PLAN.md produces a profile with
+// all three expected phases (backend → frontend → integration-test), so the
+// workflow FSM can advance past the frontend phase and the test_review gate
+// (which now checks active-phase verify commands) can properly validate the E2E tests.
+func ensureIntegrationTestPhase(townRoot, rig string, v WorkflowValidation) WorkflowValidation {
+	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
+	planPath := filepath.Join(rigDir, "TEST_PLAN.md")
+	planData, err := os.ReadFile(planPath)
+	if err != nil || len(planData) == 0 {
+		return v
+	}
+
+	// Check if profile already has an integration-test phase
+	hasIntegrationPhase := false
+	for _, p := range v.DeliveryPhases {
+		if strings.EqualFold(p.ID, "integration-test") {
+			hasIntegrationPhase = true
+			break
+		}
+	}
+	if hasIntegrationPhase {
+		return v
+	}
+
+	// Parse TEST_PLAN.md for the ### integration-test section
+	intTestFiles := []string{}
+	currentSection := ""
+	for _, raw := range strings.Split(string(planData), "\n") {
+		line := strings.TrimSpace(raw)
+		if strings.HasPrefix(line, "### ") {
+			currentSection = strings.TrimSpace(strings.TrimPrefix(line, "### "))
+			continue
+		}
+		if currentSection == "integration-test" {
+			lower := strings.ToLower(line)
+			if strings.HasPrefix(lower, "test file:") {
+				f := filepath.ToSlash(strings.TrimSpace(strings.Trim(line[len("test file:"):], "`*")))
+				if f != "" {
+					intTestFiles = append(intTestFiles, f)
+				}
+			}
+		}
+	}
+
+	if len(intTestFiles) == 0 {
+		return v // no integration-test section or no test files in it
+	}
+
+	// Create the new phase
+	newPhase := DeliveryPhase{
+		ID:              "integration-test",
+		Title:           "Integration E2E Test",
+		RequiredFiles:   intTestFiles,
+		QAVerifyCommand: "",
+	}
+	v.DeliveryPhases = append(v.DeliveryPhases, newPhase)
+	log.Printf("[profile-heal] added integration-test phase from TEST_PLAN.md with %d test file(s)", len(intTestFiles))
+	return v
+}
