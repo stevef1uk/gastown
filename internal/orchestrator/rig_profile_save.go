@@ -184,6 +184,18 @@ func AddRigCompletedPhase(townRoot, rig, phaseID string) error {
 	if err := json.Unmarshal(data, &env); err != nil {
 		return fmt.Errorf("decode rig profile: %w", err)
 	}
+	// Validate phaseID exists in DeliveryPhases — reject invalid IDs like
+	// "required-files" that could corrupt completed_phase_ids.
+	found := false
+	for _, p := range env.Validation.DeliveryPhases {
+		if strings.TrimSpace(p.ID) == phaseID {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return fmt.Errorf("unknown phase id %q (not in delivery_phases)", phaseID)
+	}
 	for _, c := range env.Validation.CompletedPhaseIDsField {
 		if c == phaseID {
 			return nil // already recorded

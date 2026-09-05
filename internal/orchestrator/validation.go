@@ -308,9 +308,10 @@ func boolCount(b bool) int {
 	return 0
 }
 
-// isNoOpVerifyCommand returns true when a verify command is a trivial echo
-// that tests nothing (e.g. "echo 'verify ok'"). Commands that include real
-// checks alongside an echo (e.g. "test -f X && echo ok") are NOT no-ops.
+// isNoOpVerifyCommand returns true when a verify command is a trivial no-op
+// that tests nothing (e.g. "echo 'verify ok'" or "python -c 'import sys; print(\"ok\")'").
+// Commands that include real checks alongside an echo (e.g. "test -f X && echo ok")
+// are NOT no-ops.
 func isNoOpVerifyCommand(cmd string) bool {
 	cmd = strings.TrimSpace(strings.ToLower(cmd))
 	if cmd == "" {
@@ -324,6 +325,23 @@ func isNoOpVerifyCommand(cmd string) bool {
 	if strings.HasPrefix(cmd, "echo ") && !strings.Contains(cmd, "&&") &&
 		!strings.Contains(cmd, "||") && !strings.Contains(cmd, ";") {
 		return true
+	}
+	// Python no-op: "python -c 'import sys; print(\"ok\")'" or variations.
+	// This is the fallback from defaultQAVerifyForPhase when a Python phase
+	// has no test files and no server entry — it verifies nothing.
+	// Detect: python -c with only standard-lib imports (sys, os) or just print/pass.
+	if strings.Contains(cmd, "python") && strings.Contains(cmd, "-c") {
+		onlyStdlib := !strings.Contains(cmd, "import app") &&
+			!strings.Contains(cmd, "import main") &&
+			!strings.Contains(cmd, "import api") &&
+			!strings.Contains(cmd, "import src") &&
+			!strings.Contains(cmd, "import db") &&
+			!strings.Contains(cmd, "import routes") &&
+			!strings.Contains(cmd, "import schema") &&
+			!strings.Contains(cmd, "import models")
+		if onlyStdlib && (strings.Contains(cmd, "print") || strings.Contains(cmd, "pass")) {
+			return true
+		}
 	}
 	return false
 }

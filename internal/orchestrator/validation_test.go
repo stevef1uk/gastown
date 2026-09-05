@@ -680,3 +680,88 @@ func TestSanitizePhaseVerifyCommandsForStack_pureEchoReplaced(t *testing.T) {
 		t.Fatalf("no-op echo survived sanitize: %q", cmd)
 	}
 }
+
+func TestIsNoOpVerifyCommand_pythonNoOp(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		cmd  string
+		want bool
+	}{
+		{"python print ok", "cd finally && python -c 'import sys; print(\"ok\")'", true},
+		{"python print ok double", "cd finally && python -c \"import sys; print('ok')\"", true},
+		{"python pass only", "cd finally && python -c 'pass'", true},
+		{"python real import", "cd finally && python -c \"import api.watchlist\"", false},
+		{"python import main", "cd finally && python -c \"import main\"", false},
+		{"python import schema", "cd finally && python -c \"from app.db import schema\"", false},
+		{"python pytest", "cd finally && python -m pytest -v", false},
+		{"python import app", "cd finally/backend && python -c \"import app\"", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := isNoOpVerifyCommand(tt.cmd)
+			if got != tt.want {
+				t.Errorf("isNoOpVerifyCommand(%q) = %v, want %v", tt.cmd, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestMoveDockerPathsToFinalDeliveryPhase_preservesDependsOn(t *testing.T) {
+	v := WorkflowValidation{
+		LayoutRoot: "finally",
+		RequiredFiles: []string{
+			"finally/backend/app/main.py",
+			"finally/Dockerfile",
+			"finally/docker-compose.yml",
+		},
+		DeliveryPhases: []DeliveryPhase{
+			{
+				ID:           "backend",
+				Title:        "Backend",
+				RequiredFiles: []string{
+					"finally/backend/app/main.py",
+					"finally/Dockerfile",
+					"finally/docker-compose.yml",
+				},
+			},
+			{
+				ID:           "testing-release-1",
+				Title:        "Testing (part 1)",
+				RequiredFiles: []string{},
+			},
+			{
+				ID:           "testing-release-2",
+				Title:        "Testing (part 2)",
+				RequiredFiles: []string{},
+				DependsOn:    []string{"testing-release-1"},
+			},
+		},
+	}
+	got := moveDockerPathsToFinalDeliveryPhase(v)
+	ids := make([]string, len(got.DeliveryPhases))
+	for i, p := range got.DeliveryPhases {
+		ids[i] = p.ID
+	}
+	// testing-release-2 has DependsOn — must be preserved
+	found := false
+	for _, id := range ids {
+		if id == "testing-release-2" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("testing-release-2 with DependsOn was dropped; phases: %v", ids)
+	}
+	// Docker files should end up in the last phase
+	last := got.DeliveryPhases[len(got.DeliveryPhases)-1]
+	hasDocker := false
+	for _, f := range last.RequiredFiles {
+		if strings.Contains(f, "docker-compose.yml") || strings.Contains(f, "Dockerfile") {
+			hasDocker = true
+		}
+	}
+	if !hasDocker {
+		t.Fatalf("docker files not in last phase %q: %v", last.ID, last.RequiredFiles)
+	}
+}
