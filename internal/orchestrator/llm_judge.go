@@ -24,10 +24,30 @@ type JudgeResult struct {
 }
 
 // extractJSONFromResponse extracts JSON from a response that may contain markdown code fences.
+func stripThinkTags(s string) string {
+	// Some models (deepseek, qwen) emit <think>...</think> blocks before JSON.
+	// Strip the outermost pair and everything between them.
+	for {
+		start := strings.Index(s, "<think>")
+		if start < 0 {
+			return s
+		}
+		end := strings.Index(s[start:], "</think>")
+		if end < 0 {
+			// Unclosed think tag — strip from </think> to end
+			return strings.TrimSpace(s[:start])
+		}
+		s = strings.TrimSpace(s[:start] + s[start+end+len("</think>"):])
+	}
+}
+
 func extractJSONFromResponse(resp string) string {
 	// Remove markdown code fences
 	resp = strings.TrimSpace(resp)
-	
+
+	// Strip <think>...</think> reasoning blocks that some models emit before JSON
+	resp = stripThinkTags(resp)
+
 	// Handle ```json ... ``` fences
 	if strings.HasPrefix(resp, "```") {
 		lines := strings.Split(resp, "\n")
