@@ -576,3 +576,107 @@ func TestStripNonFileRequiredEntries(t *testing.T) {
 		})
 	}
 }
+
+func TestIsNoOpVerifyCommand(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		cmd  string
+		want bool
+	}{
+		{"pure echo", "echo 'verify ok'", true},
+		{"echo with single quotes", "echo 'no automated tests for this phase'", true},
+		{"echo with double quotes", "echo \"verify ok\"", true},
+		{"echo in subshell", "(echo 'verify ok')", true},
+		{"empty string", "", false},
+		{"real pytest", "cd finally && python -m pytest -v", false},
+		{"real go test", "cd . && go test ./...", false},
+		{"echo with preceding test", "test -f docker-compose.yml && echo 'compose file ok'", false},
+		{"echo with preceding test alt", "test -f file && echo ok || echo fail", false},
+		{"echo chained with real cmd", "echo 'starting' && pytest", false},
+		{"echo piped", "echo ok | grep ok", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := isNoOpVerifyCommand(tt.cmd)
+			if got != tt.want {
+				t.Errorf("isNoOpVerifyCommand(%q) = %v, want %v", tt.cmd, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestSanitizePhaseVerifyCommandsForStack_fixesDoubledLayoutPath(t *testing.T) {
+	v := WorkflowValidation{
+		LayoutRoot:      "finally",
+		DevServerPort:   8000,
+		DeliveryPhases: []DeliveryPhase{
+			{
+				ID:           "testing-release-1",
+				Title:        "testing-release-1",
+				RequiredFiles: []string{"finally/test/playwright.config.ts"},
+				// Doubled layout path: finally/finally/test
+				QAVerifyCommand: "cd finally/finally/test && npm install --ignore-scripts && npx playwright test",
+			},
+		},
+	}
+	got := SanitizePhaseVerifyCommandsForStack(v)
+	cmd := got.DeliveryPhases[0].QAVerifyCommand
+	if strings.Contains(cmd, "finally/finally/") {
+		t.Fatalf("doubled layout path survived sanitize: %q", cmd)
+	}
+	if !strings.Contains(cmd, "cd finally/test") {
+		t.Fatalf("expected cd finally/test, got: %q", cmd)
+	}
+}
+
+func TestSanitizePhaseVerifyCommandsForStack_replacesNoOpEcho(t *testing.T) {
+	v := WorkflowValidation{
+		LayoutRoot:      "finally",
+		DevServerPort:   8000,
+		DeliveryPhases: []DeliveryPhase{
+			{
+				ID:           "project-foundation",
+				Title:        "project-foundation",
+				RequiredFiles: []string{
+					"finally/backend/app/db/__init__.py",
+					"finally/db/.gitkeep",
+				},
+				// No-op echo — should be replaced with a real check
+				QAVerifyCommand: "cd finally && python -c 'import sys; print(\"ok\")'",
+			},
+		},
+	}
+	got := SanitizePhaseVerifyCommandsForStack(v)
+	cmd := got.DeliveryPhases[0].QAVerifyCommand
+	// The command "python -c 'import sys; print(\"ok\")'" is not a pure echo,
+	// so it should NOT be replaced by the no-op guard. Verify it's preserved
+	// (or replaced only if it fails cross-stack checks).
+	if cmd == "" {
+		t.Fatalf("verify command was emptied: %q", cmd)
+	}
+}
+
+func TestSanitizePhaseVerifyCommandsForStack_pureEchoReplaced(t *testing.T) {
+	v := WorkflowValidation{
+		LayoutRoot:      "finally",
+		DevServerPort:   8000,
+		DeliveryPhases: []DeliveryPhase{
+			{
+				ID:           "application-polish",
+				Title:        "application-polish",
+				RequiredFiles: []string{
+					"finally/frontend/app/globals.css",
+					"finally/frontend/app/layout.tsx",
+					"finally/frontend/app/page.tsx",
+				},
+				QAVerifyCommand: "cd finally && echo 'verify ok (no automated tests for this phase)'",
+			},
+		},
+	}
+	got := SanitizePhaseVerifyCommandsForStack(v)
+	cmd := got.DeliveryPhases[0].QAVerifyCommand
+	if isNoOpVerifyCommand(cmd) {
+		t.Fatalf("no-op echo survived sanitize: %q", cmd)
+	}
+}

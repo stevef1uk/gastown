@@ -270,6 +270,25 @@ func SanitizePhaseVerifyCommandsForStack(v WorkflowValidation) WorkflowValidatio
 		if bad {
 			p.QAVerifyCommand = defaultQAVerifyForPhase(p, v.LayoutRoot)
 		}
+		// Doubled layout path guard: JUDGE LLMs sometimes emit doubled paths
+		// like "cd finally/finally/test" when layout_root="finally". Collapse
+		// them so the command finds the correct directory.
+		if lr := strings.TrimSpace(v.LayoutRoot); lr != "" && lr != "." {
+			doubled := lr + "/" + lr + "/"
+			if strings.Contains(p.QAVerifyCommand, doubled) {
+				fixed := strings.ReplaceAll(p.QAVerifyCommand, doubled, lr+"/")
+				log.Printf("[clamp] phase %q: fixed doubled layout path in verify %q → %q", p.ID, p.QAVerifyCommand, fixed)
+				p.QAVerifyCommand = fixed
+			}
+		}
+		// No-op echo guard: JUDGE LLMs sometimes generate trivial echo
+		// commands (e.g. "echo 'verify ok'") instead of real verification.
+		// Replace with a stack-appropriate check.
+		if isNoOpVerifyCommand(p.QAVerifyCommand) {
+			old := p.QAVerifyCommand
+			p.QAVerifyCommand = defaultQAVerifyForPhase(p, v.LayoutRoot)
+			log.Printf("[clamp] phase %q: replaced no-op verify %q → %q", p.ID, old, p.QAVerifyCommand)
+		}
 		// Deterministic guard for integration-test / e2e phases: when the phase
 		// ships a docker-compose file AND playwright scaffolding, the verify must
 		// run the compose Playwright service. The JUDGE LLM repeatedly rewrites
@@ -287,6 +306,26 @@ func boolCount(b bool) int {
 		return 1
 	}
 	return 0
+}
+
+// isNoOpVerifyCommand returns true when a verify command is a trivial echo
+// that tests nothing (e.g. "echo 'verify ok'"). Commands that include real
+// checks alongside an echo (e.g. "test -f X && echo ok") are NOT no-ops.
+func isNoOpVerifyCommand(cmd string) bool {
+	cmd = strings.TrimSpace(strings.ToLower(cmd))
+	if cmd == "" {
+		return false
+	}
+	// Strip surrounding subshells: "(echo foo)" → "echo foo"
+	cmd = strings.TrimLeft(cmd, "(")
+	cmd = strings.TrimRight(cmd, ")")
+	cmd = strings.TrimSpace(cmd)
+	// Pure echo with no other command
+	if strings.HasPrefix(cmd, "echo ") && !strings.Contains(cmd, "&&") &&
+		!strings.Contains(cmd, "||") && !strings.Contains(cmd, ";") {
+		return true
+	}
+	return false
 }
 
 var (
