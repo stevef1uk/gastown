@@ -6,16 +6,11 @@ package main
 
 import (
 	"bytes"
-	"crypto/tls"
-	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
-	"path/filepath"
-	"syscall"
-	"time"
 )
 
 type execRequest struct {
@@ -29,69 +24,26 @@ type execResponse struct {
 }
 
 func main() {
-	// Required environment variables:
-	//   GT_PROXY_URL  — proxy base URL (e.g. https://172.17.0.1:9876)
-	//   GT_PROXY_CERT — path to PEM client cert (issued by proxy CA)
-	//   GT_PROXY_KEY  — path to PEM client private key
-	//   GT_PROXY_CA   — path to PEM proxy CA cert (used to verify server cert)
-	// Optional:
-	//   GT_REAL_BIN   — fallback binary path (default /usr/local/bin/gt.real)
-	proxyURL := os.Getenv("GT_PROXY_URL")
-	certFile := os.Getenv("GT_PROXY_CERT")
-	keyFile := os.Getenv("GT_PROXY_KEY")
-	// GT_PROXY_CA is the CA cert for the proxy's server TLS cert.
-	// This is the same CA cert as GIT_SSL_CAINFO (which git uses to trust the proxy),
-	// but passed separately so the Go HTTP client can also trust the proxy server cert.
-	caFile := os.Getenv("GT_PROXY_CA")
-
-	if proxyURL == "" || certFile == "" || keyFile == "" || caFile == "" {
-		// One or more proxy env vars unset — not in sandboxed mode, exec the real binary silently.
-		execReal()
+	cfg := loadClientConfig()
+	if !cfg.isEnabled() {
+		execReal(cfg.RealBin)
 		return
 	}
 
-	// Build mTLS client.
-	clientCert, err := tls.LoadX509KeyPair(certFile, keyFile)
+	httpClient, err := cfg.httpClient()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "gt-proxy-client: load client cert: %v\n", err)
+		fmt.Fprintf(os.Stderr, "gt-proxy-client: load client cert/CA: %v\n", err)
 		os.Exit(1)
 	}
 
-	caPEM, err := os.ReadFile(caFile) //nolint:gosec // caFile is from trusted env var GT_PROXY_CA
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "gt-proxy-client: read CA: %v\n", err)
-		os.Exit(1)
-	}
-	pool := x509.NewCertPool()
-	if !pool.AppendCertsFromPEM(caPEM) {
-		fmt.Fprintf(os.Stderr, "gt-proxy-client: invalid CA PEM\n")
-		os.Exit(1)
-	}
-
-	tlsCfg := &tls.Config{
-		Certificates: []tls.Certificate{clientCert},
-		MinVersion:   tls.VersionTLS12,
-		RootCAs:      pool,
-	}
-
-	httpClient := &http.Client{
-		Timeout:   5 * time.Minute,
-		Transport: &http.Transport{TLSClientConfig: tlsCfg},
-	}
-
-	// Determine argv: prepend the binary name so the server knows which tool we are.
-	argv := os.Args // os.Args[0] is the binary path; the server needs the tool name as argv[0].
-	// Replace argv[0] with the tool name (gt or bd) based on the binary name.
-	toolName := toolNameFromArg0(os.Args[0])
-	argv = append([]string{toolName}, os.Args[1:]...)
-
+	argv := append([]string{toolNameFromArg0(os.Args[0])}, os.Args[1:]...)
 	body, err := json.Marshal(execRequest{Argv: argv})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "gt-proxy-client: encode request: %v\n", err)
 		os.Exit(1)
 	}
 
-	resp, err := httpClient.Post(proxyURL+"/v1/exec", "application/json", bytes.NewReader(body)) //nolint:gosec // proxyURL is from trusted env var GT_PROXY_URL
+	resp, err := httpClient.Post(cfg.ProxyURL+"/v1/exec", "application/json", bytes.NewReader(body)) //nolint:gosec // proxy URL comes from trusted env var
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "gt-proxy-client: proxy request failed: %v\n", err)
 		os.Exit(1)
@@ -117,21 +69,4 @@ func main() {
 		_, _ = fmt.Fprint(os.Stderr, result.Stderr)
 	}
 	os.Exit(result.ExitCode)
-}
-
-// toolNameFromArg0 extracts "gt" or "bd" from the argv[0] binary path.
-func toolNameFromArg0(arg0 string) string {
-	return filepath.Base(arg0)
-}
-
-// execReal replaces the current process with the real binary.
-func execReal() {
-	realBin := os.Getenv("GT_REAL_BIN")
-	if realBin == "" {
-		realBin = "/usr/local/bin/gt.real"
-	}
-	if err := syscall.Exec(realBin, os.Args, os.Environ()); err != nil { //nolint:gosec // realBin is from GT_REAL_BIN or hardcoded default
-		fmt.Fprintf(os.Stderr, "gt-proxy-client: exec %s: %v\n", realBin, err)
-		os.Exit(1)
-	}
 }
