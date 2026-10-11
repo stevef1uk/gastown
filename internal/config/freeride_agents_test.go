@@ -17,6 +17,9 @@ func TestDefaultInstalledTownSettings_FreerideDefaults(t *testing.T) {
 	if ts.SessionTransport != "nats" {
 		t.Errorf("SessionTransport = %q, want nats", ts.SessionTransport)
 	}
+	if ts.LLMEndpoint != DefaultFreerideProxyEndpoint {
+		t.Errorf("LLMEndpoint = %q, want %q", ts.LLMEndpoint, DefaultFreerideProxyEndpoint)
+	}
 	if ts.RoleAgents["polecat"] != "gt-agent-deepseek" {
 		t.Errorf("role_agents[polecat] = %q, want gt-agent-deepseek", ts.RoleAgents["polecat"])
 	}
@@ -62,7 +65,7 @@ func TestDefaultFreerideRoleAgents_PolecatUsesDeepSeek(t *testing.T) {
 
 func TestDefaultFreerideAgents_GeminiProfile(t *testing.T) {
 	t.Setenv("FREERIDE_MODELS_CONFIG", "/nonexistent")
-	agents := DefaultFreerideAgents()
+	agents := DefaultFreerideAgents(DefaultFreerideProxyEndpoint)
 	rc := agents["gt-agent-gemini"]
 	if rc == nil {
 		t.Fatal("gt-agent-gemini profile missing")

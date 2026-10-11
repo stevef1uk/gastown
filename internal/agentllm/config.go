@@ -7,6 +7,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"github.com/steveyegge/gastown/internal/config"
 )
 
 const (
@@ -17,7 +19,11 @@ const (
 )
 
 // ResolveEndpoint returns LLM_ENDPOINT or the local proxy default.
-func ResolveEndpoint() string {
+// If townSettings is provided and has LLMEndpoint set, it takes precedence over the env var.
+func ResolveEndpoint(townSettings *config.TownSettings) string {
+	if townSettings != nil && strings.TrimSpace(townSettings.LLMEndpoint) != "" {
+		return townSettings.LLMEndpoint
+	}
 	if e := strings.TrimSpace(os.Getenv("LLM_ENDPOINT")); e != "" {
 		return e
 	}

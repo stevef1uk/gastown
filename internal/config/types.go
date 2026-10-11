@@ -43,6 +43,11 @@ type TownSettings struct {
 	Type    string `json:"type"`    // "town-settings"
 	Version int    `json:"version"` // schema version
 
+	// LLMEndpoint is the base URL for the LLM API (OpenAI-compatible).
+	// Typically points to a local freeride proxy (e.g., "http://localhost:11434/v1/chat/completions").
+	// Can be overridden by LLM_ENDPOINT environment variable.
+	LLMEndpoint string `json:"llm_endpoint,omitempty"`
+
 	// CLITheme controls CLI output color scheme.
 	// Values: "dark", "light", "auto" (default).
 	// "auto" lets the terminal emulator's background color guide the choice.
@@ -162,12 +167,18 @@ func NewTownSettings() *TownSettings {
 
 // DefaultInstalledTownSettings returns town settings written by gt install and used
 // when settings/config.json is missing (Freeride-backed gt-agent profiles).
+// Reads LLM_ENDPOINT from environment if set, otherwise uses default.
 func DefaultInstalledTownSettings() *TownSettings {
+	endpoint := DefaultFreerideProxyEndpoint
+	if e := strings.TrimSpace(os.Getenv("LLM_ENDPOINT")); e != "" {
+		endpoint = e
+	}
 	return &TownSettings{
 		Type:             "town-settings",
 		Version:          CurrentTownSettingsVersion,
 		DefaultAgent:     "gt-agent-local",
-		Agents:           DefaultFreerideAgents(),
+		LLMEndpoint:      endpoint,
+		Agents:           DefaultFreerideAgents(endpoint),
 		RoleAgents:       DefaultFreerideRoleAgents(),
 		SessionTransport: "nats",
 	}

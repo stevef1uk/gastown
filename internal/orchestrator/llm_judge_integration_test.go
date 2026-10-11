@@ -12,7 +12,7 @@ import (
 )
 
 // TestJudgeWithFreerideProxy runs the Judge validation tests against the freeride proxy.
-// Requires: freeride proxy running on localhost:11434 (start with: go run ./cmd/freeride proxy --port 11434)
+// Requires: freeride proxy running on localhost:11434 (start with: go run ./cmd/freeride -port 11434)
 // Skips if proxy not available.
 func TestJudgeWithFreerideProxy(t *testing.T) {
 	if os.Getenv("GASTOWN_TEST_FREERIDE") != "1" {

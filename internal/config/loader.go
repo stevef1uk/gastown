@@ -1090,6 +1090,21 @@ func LoadOrCreateTownSettings(path string) (*TownSettings, error) {
 	if err := json.Unmarshal(data, &settings); err != nil {
 		return nil, err
 	}
+
+	// Apply town-level LLMEndpoint to agents that don't have LLM_ENDPOINT set
+	if settings.LLMEndpoint != "" {
+		for _, rc := range settings.Agents {
+			if rc != nil && rc.Env != nil {
+				if _, hasEndpoint := rc.Env["LLM_ENDPOINT"]; !hasEndpoint {
+					if rc.Env == nil {
+						rc.Env = make(map[string]string)
+					}
+					rc.Env["LLM_ENDPOINT"] = settings.LLMEndpoint
+				}
+			}
+		}
+	}
+
 	return &settings, nil
 }
 

@@ -60,6 +60,5 @@ Register on `http.DefaultServeMux` from `main`.
 1. **go-module** — Initialize go.mod
 2. **core** — main.go (handler + server)
 3. **test** — main_test.go (unit tests)
-4. **integration-test** — Full smoke test (run server + curl)
 
-> **Why this order:** `go-module` first establishes the module. `core` implements the handler and server. `test` adds unit tests. `integration-test` runs the server and verifies the endpoint with curl.
+> **Why this order:** `go-module` first establishes the module. `core` implements the handler and server. `test` adds unit tests.

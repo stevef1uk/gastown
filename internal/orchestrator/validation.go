@@ -1951,7 +1951,7 @@ func defaultQAVerifyForPhase(p *DeliveryPhase, layoutRoot string) string {
 	hasPlaywright := false
 	hasSpecFiles := false
 	for _, f := range p.RequiredFiles {
-		if strings.HasSuffix(f, "_test.go") || strings.HasSuffix(f, ".go") {
+		if strings.HasSuffix(f, "_test.go") || strings.HasSuffix(f, ".go") || strings.HasSuffix(f, "go.mod") {
 			hasGo = true
 		}
 		if strings.HasSuffix(f, ".py") || strings.HasPrefix(f, "tests/") {
@@ -2052,16 +2052,23 @@ func defaultQAVerifyForPhase(p *DeliveryPhase, layoutRoot string) string {
 	if hasGo {
 		// Only run go test if test files exist in this phase
 		hasGoTests := false
+		hasGoSource := false
 		for _, f := range p.RequiredFiles {
 			if strings.HasSuffix(f, "_test.go") {
 				hasGoTests = true
-				break
+			}
+			if strings.HasSuffix(f, ".go") && !strings.HasSuffix(f, "_test.go") {
+				hasGoSource = true
 			}
 		}
 		if hasGoTests {
 			return fmt.Sprintf("cd %s && go test ./...", lr)
 		}
-		return fmt.Sprintf("cd %s && go build ./...", lr)
+		if hasGoSource {
+			return fmt.Sprintf("cd %s && go build ./...", lr)
+		}
+		// Phase has go.mod but no .go source files — verify module integrity
+		return fmt.Sprintf("cd %s && go mod tidy", lr)
 	}
 	if hasPy {
 		// Only run pytest if test files exist in this phase

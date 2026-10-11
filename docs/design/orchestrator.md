@@ -446,7 +446,7 @@ Instead of failing. Allows CI/dev without live LLM.
 Run with freeride proxy:
 ```bash
 # Start proxy
-go run ./cmd/freeride proxy --port 11434 &
+go run ./cmd/freeride -port 11434 &
 
 # Run integration tests
 GASTOWN_TEST_FREERIDE=1 go test -tags=integration -run TestJudgeWithFreerideProxy ./internal/orchestrator/

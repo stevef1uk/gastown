@@ -38,7 +38,7 @@ func ResolveLLMForSpecIndex(townRoot string) (endpoint, model string) {
 		endpoint = config.DefaultFreerideProxyEndpoint
 	}
 	if model == "" {
-		if agents := config.DefaultFreerideAgents(); agents != nil {
+		if agents := config.DefaultFreerideAgents(endpoint); agents != nil {
 			if rc := agents["gt-agent-powerful"]; rc != nil && rc.Env != nil {
 				model = strings.TrimSpace(rc.Env["LLM_MODEL"])
 			}

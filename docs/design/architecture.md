@@ -526,7 +526,7 @@ instead of using the hook/mail patrol loop for that work.
 | **beads (`bd`)** 0.55+ | Issue CLI | Planner, polecat, and QA run `bd create` / `bd list` / `bd close`. Installed with Gas Town (`make install` or `brew install gastown`). |
 | **Git** 2.25+ | Rigs, worktrees, checkpoints | Orchestrator commits on FSM transitions and pushes on `completed`. Worktree support required for polecats. |
 | **Go** 1.25+ | Build `gt` / `gt-agent` | `make install` → `~/.local/bin` (or `brew install gastown` on macOS). |
-| **LLM endpoint** | Agent inference | OpenAI-compatible API; typical setup uses [Freeride](https://github.com/stevef1uk/freeride) proxy on **:11434**. **Stop local Ollama first** — it binds the same port. Configure `LLM_ENDPOINT` / `LLM_MODEL` in `settings/config.json`. |
+| **LLM endpoint** | Agent inference | OpenAI-compatible API; typical setup uses [Freeride](https://github.com/stevef1uk/freeride) proxy on **:11434**. **Stop local Ollama first** — it binds the same port. Configure `llm_endpoint` / `LLM_MODEL` in `settings/config.json` (or `LLM_ENDPOINT` / `LLM_MODEL` env vars). |
 | **Gas Town town** (`~/gt`) | Orchestrator + rig state | `gt install ~/gt --git`, then `"session_transport": "nats"` in `settings/config.json`. Templates sync to `{townRoot}/orchestrator/` via `gt orchestrator sync`. |
 
 **Rig toolchain** (per project language — scaffolded during `project_setup`, not host prerequisites):

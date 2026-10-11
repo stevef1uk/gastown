@@ -107,6 +107,12 @@ type WorkflowInstance struct {
 	// Reset on any success or escalation; at tester.max_review_retries the orchestrator
 	// escalates to test_plan_rework/design instead of looping (docs/design/tester-agent.md §8).
 	TestReviewFailures int `json:"test_review_failures,omitempty"`
+	// TestPlanFailures counts consecutive test_plan failure → planning bounces.
+	// The planner and QA re-approve the same plan each cycle, so without a cap the
+	// workflow spins test_plan ↔ planning forever (e.g. the tester never writes
+	// TEST_PLAN.md). At tester.max_review_retries the orchestrator escalates to
+	// design instead of looping; reset on any success or escalation.
+	TestPlanFailures int `json:"test_plan_failures,omitempty"`
 }
 
 // IsFailureOutcome reports whether complete_task outcome means rework/failure.

@@ -653,8 +653,32 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summa
 				inst.touchStateEnteredAt()
 				inst.TestReviewFailures = 0
 			}
-		} else if fromState == "test_review" || fromState == "implementation" {
+		} else if !IsTimeoutOutcome(outcome) && !IsFailureOutcome(outcome) && !IsArchitectureReworkOutcome(outcome) && (fromState == "test_review" || fromState == "implementation") {
 			inst.TestReviewFailures = 0
+		}
+		// Loop safety for the tester ↔ planner cycle: if the tester keeps failing
+		// test_plan and the workflow bounces back to planning, the planner and QA
+		// re-approve the same plan and it spins test_plan ↔ planning forever (e.g.
+		// the tester never manages to write TEST_PLAN.md). After tester.max_review_retries
+		// consecutive failures, escalate to design so the architect re-examines
+		// SPEC/architecture instead of looping.
+		if fromState == "test_plan" && next == "planning" && IsFailureOutcome(outcome) {
+			inst.TestPlanFailures++
+			if inst.TestPlanFailures >= MaxReviewRetries(v) {
+				fmt.Printf("[Manager] test_plan failed %d times — escalating to design instead of looping\n", inst.TestPlanFailures)
+				findings := strings.TrimSpace(summary + "\n" + feedback)
+				if findings == "" {
+					findings = "(no details reported)"
+				}
+				reworkFeedback = fmt.Sprintf("Tester could not produce a valid TEST_PLAN.md %d times — auto-escalating to design instead of looping.\n\nLast tester findings:\n%s\n\nEnsure SPEC.md and architecture.md define every delivery phase's testable surface (route table, test files from required_files) so test_plan can succeed.",
+					inst.TestPlanFailures, findings)
+				next = "design"
+				inst.CurrentState = next
+				inst.touchStateEnteredAt()
+				inst.TestPlanFailures = 0
+			}
+		} else if fromState == "test_plan" {
+			inst.TestPlanFailures = 0
 		}
 		if fromState == "qa_review" && next == "implementation" && rig != "" && phaseAdvance == nil {
 			reopenText := CombineQAReworkText(summary, feedback)
@@ -699,6 +723,7 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summa
 		// Success clears QA/plan-review rework for the next agent.
 		inst.PendingRework = nil
 		inst.TestReviewFailures = 0
+		inst.TestPlanFailures = 0
 	}
 	if phaseAdvance != nil {
 		inst.PendingRework = phaseAdvance

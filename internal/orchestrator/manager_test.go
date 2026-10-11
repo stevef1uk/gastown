@@ -644,6 +644,52 @@ func TestCompleteTask_testReviewLoopEscalatesToDesignOnSpecContradiction(t *test
 	}
 }
 
+func TestCompleteTask_testPlanLoopEscalatesToDesign(t *testing.T) {
+	dir := t.TempDir()
+	m := NewManager(dir)
+	m.LoadTemplate(&WorkflowTemplate{
+		ID:           "rig-flow",
+		InitialState: "test_plan",
+		ReworkFeedback: map[string]string{
+			"test_plan->planning": "test_plan_to_planner",
+		},
+		States: map[string]State{
+			"test_plan": {
+				Role: "tester",
+				Transitions: map[string]Transition{
+					"failure": {To: "planning"},
+				},
+			},
+			"planning": {
+				Role: "planner",
+				Transitions: map[string]Transition{
+					"success": {To: "plan_review"},
+				},
+			},
+			"plan_review": {Role: "qa", Transitions: map[string]Transition{"success": {To: "test_plan"}}},
+			"design":       {Role: "architect"},
+		},
+	})
+	id, _ := m.StartWorkflow("rig-flow", map[string]string{"rig": "mockrig"})
+	inst := m.instances[id]
+	inst.CurrentState = "test_plan"
+	inst.TestPlanFailures = MaxReviewRetries(WorkflowValidation{}) - 1
+
+	next, err := m.CompleteTask(id, "failure", "mockrig/tester", "cannot write TEST_PLAN.md: truncated heredoc", "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next != "design" {
+		t.Fatalf("escalated next=%q want design", next)
+	}
+	if inst.CurrentState != "design" {
+		t.Fatalf("CurrentState=%q", inst.CurrentState)
+	}
+	if inst.TestPlanFailures != 0 {
+		t.Fatalf("counter should reset after escalation, got %d", inst.TestPlanFailures)
+	}
+}
+
 func TestCompleteTask_implementationSuccessResetsTestReviewCounter(t *testing.T) {
 	dir := t.TempDir()
 	m := newTestReviewLoopManager(t, dir)

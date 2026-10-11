@@ -11,6 +11,7 @@ import (
 
 	"github.com/steveyegge/gastown/cmd/debug-mechanic/llm"
 	"github.com/steveyegge/gastown/internal/agentllm"
+	"github.com/steveyegge/gastown/internal/config"
 	"github.com/steveyegge/gastown/internal/dotenv"
 	"github.com/steveyegge/gastown/internal/templates"
 	"github.com/steveyegge/gastown/internal/workspace"
@@ -51,6 +52,9 @@ func main() {
 	}
 	fmt.Printf("Work dir: %s\n", workDir)
 
+	// Load town settings for LLM endpoint configuration
+	townSettings, _ := config.LoadOrCreateTownSettings(config.TownSettingsPath(townRoot))
+
 	data := templates.RoleData{
 		Role:          "mechanic",
 		RigName:       rigName,
@@ -83,7 +87,7 @@ You are patrol cycle #1 for this agent session.`
 	fmt.Println(userPrompt)
 	fmt.Println()
 
-	endpoint := agentllm.ResolveEndpoint()
+	endpoint := agentllm.ResolveEndpoint(townSettings)
 	model := agentllm.ResolveModel()
 	if agentllm.RequiresAuthToken(endpoint) {
 		fmt.Println("ERROR: remote LLM_ENDPOINT requires OPENAI_API_KEY or ANTHROPIC_API_KEY")

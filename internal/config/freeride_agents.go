@@ -20,9 +20,12 @@ type FreerideModelsConfig struct {
 	RoleAgents map[string]string              `json:"role_agents"`
 }
 
-func freerideGTAgent(model string, extra map[string]string) *RuntimeConfig {
+func freerideGTAgent(model string, extra map[string]string, endpoint string) *RuntimeConfig {
+	if endpoint == "" {
+		endpoint = DefaultFreerideProxyEndpoint
+	}
 	env := map[string]string{
-		"LLM_ENDPOINT": DefaultFreerideProxyEndpoint,
+		"LLM_ENDPOINT": endpoint,
 		"LLM_MODEL":    model,
 	}
 	for k, v := range extra {
@@ -69,21 +72,10 @@ func loadSingleFreerideConfig(path string) *FreerideModelsConfig {
 }
 
 // buildAgentsFromConfig converts a FreerideModelsConfig into the RuntimeConfig map.
-func buildAgentsFromConfig(cfg *FreerideModelsConfig) map[string]*RuntimeConfig {
+func buildAgentsFromConfig(cfg *FreerideModelsConfig, endpoint string) map[string]*RuntimeConfig {
 	agents := make(map[string]*RuntimeConfig, len(cfg.Agents))
 	for name, am := range cfg.Agents {
-		env := map[string]string{
-			"LLM_ENDPOINT": DefaultFreerideProxyEndpoint,
-			"LLM_MODEL":    am.Model,
-		}
-		for k, v := range am.ExtraEnv {
-			env[k] = v
-		}
-		agents[name] = &RuntimeConfig{
-			Command: "gt-agent",
-			Args:    []string{},
-			Env:     env,
-		}
+		agents[name] = freerideGTAgent(am.Model, am.ExtraEnv, endpoint)
 	}
 	return agents
 }
@@ -121,12 +113,13 @@ func DefaultFreerideModelsConfig() *FreerideModelsConfig {
 // DefaultFreerideAgents returns named gt-agent profiles routed through Freeride.
 // Loads model configuration from gastown/freeride_models.json (or FREERIDE_MODELS_CONFIG env var),
 // falling back to compiled-in defaults if the file is not available.
-func DefaultFreerideAgents() map[string]*RuntimeConfig {
+// Uses the provided endpoint (e.g., from TownSettings.LLMEndpoint) or falls back to default.
+func DefaultFreerideAgents(endpoint string) map[string]*RuntimeConfig {
 	if cfg := loadFreerideModelsConfig(); cfg != nil && len(cfg.Agents) > 0 {
-		return buildAgentsFromConfig(cfg)
+		return buildAgentsFromConfig(cfg, endpoint)
 	}
 
-	return buildAgentsFromConfig(DefaultFreerideModelsConfig())
+	return buildAgentsFromConfig(DefaultFreerideModelsConfig(), endpoint)
 }
 
 // DefaultFreerideRoleAgents maps Gas Town roles to Freeride-backed gt-agent profiles.

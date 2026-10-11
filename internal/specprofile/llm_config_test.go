@@ -27,7 +27,8 @@ func TestResolveLLMForSpecIndex_townArchitect(t *testing.T) {
 	t.Setenv("FREERIDE_MODELS_CONFIG", "/dev/null")
 	townRoot := t.TempDir()
 	ts := config.NewTownSettings()
-	ts.Agents = config.DefaultFreerideAgents()
+	ts.LLMEndpoint = config.DefaultFreerideProxyEndpoint
+	ts.Agents = config.DefaultFreerideAgents(config.DefaultFreerideProxyEndpoint)
 	ts.RoleAgents = map[string]string{"architect": "gt-agent-powerful"}
 	if err := config.SaveTownSettings(config.TownSettingsPath(townRoot), ts); err != nil {
 		t.Fatal(err)

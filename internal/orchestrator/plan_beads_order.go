@@ -580,7 +580,8 @@ func NextOpenImplementBead(townRoot, rig string, v WorkflowValidation) (*PlanBea
 			}
 		}
 	}
-	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
+	// Use refinery worktree for verify evaluation since polecat implements there
+	rigDir := filepath.Join(townRoot, rig, "refinery", "rig")
 	eval := NewImplementBeadVerifyEvaluator(rigDir, v)
 	order := OrderRequiredFilesForImplementation(v.RequiredFiles)
 	for _, want := range order {
@@ -1651,8 +1652,9 @@ func FormatImplementationQueueBlock(townRoot, rig string, v WorkflowValidation) 
 			break
 		}
 	}
-	mayorDir := filepath.Join(townRoot, rig, "mayor", "rig")
-	verify := AgentShellVerifyCommand(rig, v, mayorDir, beadPath)
+	// Use refinery worktree for verify command since polecat implements there
+	refineryDir := filepath.Join(townRoot, rig, "refinery", "rig")
+	verify := AgentShellVerifyCommand(rig, v, refineryDir, beadPath)
 	if step > 0 {
 		b.WriteString(fmt.Sprintf("**Next bead (%d/%d):** %s → `%s` — work only this ID until `bd close`. Verify: `%s`.",
 			step, total, next.ID, next.Title, verify))
