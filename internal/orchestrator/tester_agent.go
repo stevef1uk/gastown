@@ -484,17 +484,15 @@ func validateTestPlan(townRoot, rig string) error {
 		return fmt.Errorf("TEST_PLAN.md has invalid section IDs (not in SPEC/architecture/delivery phases): %v", hallucinated)
 	}
 
-	// Check 2: Test file paths must exist in workflow-profile.json required_files
+	// Check 2: Test file paths must exist in workflow-profile.json required_files for the correct phase
 	blocks := ParseTestPlanBlocks(testPlan)
-	validTestFiles := make(map[string]bool)
-	// Collect all required_files from workflow-profile.json (global + per-phase)
-	for _, f := range v.RequiredFiles {
-		validTestFiles[strings.ToLower(filepath.ToSlash(strings.TrimSpace(f)))] = true
-	}
+	validTestFilesByPhase := make(map[string]map[string]bool)
 	for _, phase := range v.DeliveryPhases {
+		phaseFiles := make(map[string]bool)
 		for _, f := range phase.RequiredFiles {
-			validTestFiles[strings.ToLower(filepath.ToSlash(strings.TrimSpace(f)))] = true
+			phaseFiles[strings.ToLower(filepath.ToSlash(strings.TrimSpace(f)))] = true
 		}
+		validTestFilesByPhase[strings.ToLower(phase.ID)] = phaseFiles
 	}
 
 	for _, b := range blocks {
@@ -508,8 +506,27 @@ func validateTestPlan(townRoot, rig string) error {
 		}
 		testFile = filepath.ToSlash(testFile)
 		key := strings.ToLower(testFile)
-		if !validTestFiles[key] {
-			return fmt.Errorf("TEST_PLAN.md test file %q not in workflow-profile.json required_files", testFile)
+		phaseID := strings.ToLower(strings.TrimSpace(b.Phase))
+		if phaseID == "" {
+			// Backward compatible: check all phases
+			found := false
+			for _, phaseFiles := range validTestFilesByPhase {
+				if phaseFiles[key] {
+					found = true
+					break
+				}
+			}
+			if !found {
+				return fmt.Errorf("TEST_PLAN.md test file %q not in any workflow-profile.json phase required_files", testFile)
+			}
+		} else {
+			phaseFiles, ok := validTestFilesByPhase[phaseID]
+			if !ok {
+				return fmt.Errorf("TEST_PLAN.md references unknown phase %q", b.Phase)
+			}
+			if !phaseFiles[key] {
+				return fmt.Errorf("TEST_PLAN.md test file %q not in workflow-profile.json required_files for phase %q", testFile, b.Phase)
+			}
 		}
 	}
 
