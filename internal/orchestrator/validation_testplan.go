@@ -62,7 +62,7 @@ func mergeTestPlanRequiredFiles(townRoot, rig string, v *WorkflowValidation) {
 		// no owning bead yet; merging those into the profile creates phantom
 		// implement beads and plan.md rows, deadlocking the workflow in a
 		// Tester/planner loop. Only concrete file paths may be merged.
-		if isPlanGapPlaceholderPath(f) {
+		if IsPlanGapPlaceholderPath(f) {
 			log.Printf("[test-plan-heal] skip placeholder test file %q (not a real path)", f)
 			continue
 		}
@@ -185,11 +185,11 @@ func mergeTestPlanRequiredFiles(townRoot, rig string, v *WorkflowValidation) {
 	}
 }
 
-// isPlanGapPlaceholderPath reports whether f is a placeholder/signal path that
+// IsPlanGapPlaceholderPath reports whether f is a placeholder/signal path that
 // the Tester may use to defer a real test file (e.g. "plan_gap", "TBD", "N/A",
 // "none", "TODO"). These are NOT real files and must never be merged into the
 // profile's required_files or given an implement bead.
-func isPlanGapPlaceholderPath(f string) bool {
+func IsPlanGapPlaceholderPath(f string) bool {
 	original := strings.ToLower(strings.TrimSpace(f))
 	f = filepath.ToSlash(original)
 	if f == "" {

@@ -499,7 +499,7 @@ func validateTestPlan(townRoot, rig string) error {
 
 	for _, b := range blocks {
 		testFile := strings.TrimSpace(b.TestFile)
-		if testFile == "" || isPlanGapPlaceholderPath(testFile) {
+		if testFile == "" || IsPlanGapPlaceholderPath(testFile) {
 			continue
 		}
 		// Strip parenthetical descriptions

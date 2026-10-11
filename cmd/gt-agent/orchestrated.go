@@ -3343,6 +3343,34 @@ func validateTestPlanArtifacts(townRoot, rig string, hadCmdFailure, testPlanWrit
 				missing)
 		}
 	}
+	// Check test file paths against workflow-profile.json required_files
+	// (This mirrors the manager's validateTestPlan check so agent catches it locally)
+	vRaw, _, err := orchestrator.LoadRawRigWorkflowProfile(townRoot, rig)
+	if err == nil {
+		validTestFiles := make(map[string]bool)
+		for _, f := range vRaw.RequiredFiles {
+			validTestFiles[strings.ToLower(filepath.ToSlash(strings.TrimSpace(f)))] = true
+		}
+		for _, phase := range vRaw.DeliveryPhases {
+			for _, f := range phase.RequiredFiles {
+				validTestFiles[strings.ToLower(filepath.ToSlash(strings.TrimSpace(f)))] = true
+			}
+		}
+		for _, b := range blocks {
+			testFile := strings.TrimSpace(b.TestFile)
+			if testFile == "" || orchestrator.IsPlanGapPlaceholderPath(testFile) {
+				continue
+			}
+			if idx := strings.IndexAny(testFile, "([{"); idx >= 0 {
+				testFile = strings.TrimSpace(testFile[:idx])
+			}
+			testFile = filepath.ToSlash(testFile)
+			key := strings.ToLower(testFile)
+			if !validTestFiles[key] {
+				return fmt.Errorf("TEST_PLAN.md test file %q not in workflow-profile.json required_files", testFile)
+			}
+		}
+	}
 	// NOTE: Bead ID validation is skipped during test_plan because the plan is
 	// written BEFORE implementation — test-file beads don't exist yet. Bead IDs
 	// are validated later during test_review (after Polecat implements).

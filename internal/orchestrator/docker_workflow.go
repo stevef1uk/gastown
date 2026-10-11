@@ -344,14 +344,14 @@ func isRigFlowNonImplementPath(path string) bool {
 
 // FilterNonImplementPaths returns the sub-slice of paths that are real implement
 // files — dropping the gastown metadata/docs (isRigFlowNonImplementPath) and any
-// placeholder/signal paths like "plan_gap", "TBD", "N/A" (isPlanGapPlaceholderPath).
+// placeholder/signal paths like "plan_gap", "TBD", "N/A" (IsPlanGapPlaceholderPath).
 // Used by spec indexing before LLM/deterministic phase assignment so foreign tokens
 // can never force a fragile LLM fallback or create a phantom bead.
 func FilterNonImplementPaths(paths []string) []string {
 	var out []string
 	for _, p := range paths {
 		p = filepath.ToSlash(strings.TrimSpace(p))
-		if p == "" || isPlanGapPlaceholderPath(p) || isRigFlowNonImplementPath(p) {
+		if p == "" || IsPlanGapPlaceholderPath(p) || isRigFlowNonImplementPath(p) {
 			continue
 		}
 		out = append(out, p)
@@ -373,7 +373,7 @@ func filterRigFlowRequiredFiles(files []string, layoutRoot string) []string {
 	var out []string
 	for _, f := range files {
 		f = filepath.ToSlash(strings.TrimSpace(f))
-		if f == "" || isPlanGapPlaceholderPath(f) || isRigFlowNonImplementPath(f) {
+		if f == "" || IsPlanGapPlaceholderPath(f) || isRigFlowNonImplementPath(f) {
 			continue
 		}
 		if DoubledLayoutPath(f, layoutRoot) {

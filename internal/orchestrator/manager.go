@@ -460,19 +460,26 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summa
 	// Ensure tester agent is running when entering test_plan, test_plan_rework, or test_review states
 	if rig != "" && (next == "test_plan" || next == "test_plan_rework" || next == "test_review") {
 		// Skip re-validating TEST_PLAN.md if already reviewed — auto-complete the state.
+		// But first validate the existing TEST_PLAN.md to ensure it still matches the profile.
 		if next == "test_plan" && IsTestPlanReviewed(m.townRoot, rig) {
-			log.Printf("[Manager] TestPlanReviewed=true for %s, skipping test_plan validation", rig)
-			autoNext, aerr := inst.Transition(tpl, "success")
-			if aerr == nil && autoNext != "" {
-				inst.CurrentState = autoNext
-				inst.touchStateEnteredAt()
-				if perr := m.persistLocked(); perr != nil {
-					log.Printf("[Manager] Warning: persist after test_plan auto-complete: %v", perr)
+			if err := validateTestPlan(m.townRoot, rig); err != nil {
+				log.Printf("[Manager] TestPlanReviewed=true but validation failed for %s: %v — forcing tester rework", rig, err)
+				// Clear reviewed flag so tester runs and fixes the plan
+				_ = SetTestPlanReviewed(m.townRoot, rig, false)
+			} else {
+				log.Printf("[Manager] TestPlanReviewed=true for %s, validation passed, auto-completing test_plan", rig)
+				autoNext, aerr := inst.Transition(tpl, "success")
+				if aerr == nil && autoNext != "" {
+					inst.CurrentState = autoNext
+					inst.touchStateEnteredAt()
+					if perr := m.persistLocked(); perr != nil {
+						log.Printf("[Manager] Warning: persist after test_plan auto-complete: %v", perr)
+					}
+					log.Printf("[Manager] test_plan auto-completed for %s, next=%s", rig, autoNext)
+					return autoNext, nil
 				}
-				log.Printf("[Manager] test_plan auto-completed for %s, next=%s", rig, autoNext)
-				return autoNext, nil
+				log.Printf("[Manager] Warning: test_plan auto-complete failed for %s: %v, falling through to tester", rig, aerr)
 			}
-			log.Printf("[Manager] Warning: test_plan auto-complete failed for %s: %v, falling through to tester", rig, aerr)
 		}
 		// Skip test_plan_rework if TEST_PLAN.md is frozen (already validated once).
 		// The plan cannot be rewritten — route back to implementation instead.

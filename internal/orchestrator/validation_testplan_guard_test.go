@@ -11,7 +11,7 @@ func TestIsPlanGapPlaceholderPath(t *testing.T) {
 		"Plan_Gap", "PLAN_GAP", "pingapp/plan_gap",
 	}
 	for _, p := range placeholders {
-		if !isPlanGapPlaceholderPath(p) {
+		if !IsPlanGapPlaceholderPath(p) {
 			t.Errorf("expected %q to be treated as a placeholder", p)
 		}
 	}
@@ -22,7 +22,7 @@ real := []string{
 		"Dockerfile", "Makefile", "dockerfile", "makefile",
 	}
 	for _, f := range real {
-		if isPlanGapPlaceholderPath(f) {
+		if IsPlanGapPlaceholderPath(f) {
 			t.Errorf("expected %q to be treated as a real file path", f)
 		}
 	}
