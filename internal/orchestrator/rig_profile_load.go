@@ -43,6 +43,31 @@ func LoadRigWorkflowProfileFile(townRoot, rig string) (WorkflowValidation, bool,
 	return ClampProfileValidationForRig(townRoot, rig, v), true, nil
 }
 
+// LoadRawRigWorkflowProfile reads the workflow-profile.json without applying
+// clamping or merging test plan files. Use this for validation that needs the
+// original required_files before test plan merging.
+func LoadRawRigWorkflowProfile(townRoot, rig string) (WorkflowValidation, bool, error) {
+	if rig == "" || townRoot == "" {
+		return WorkflowValidation{}, false, nil
+	}
+	path := filepath.Join(townRoot, rig, "mayor", "rig", rigProfileDir, rigProfileFile)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return WorkflowValidation{}, false, nil
+		}
+		return WorkflowValidation{}, false, fmt.Errorf("read rig profile %s: %w", path, err)
+	}
+	var env rigProfileEnvelope
+	if err := json.Unmarshal(data, &env); err != nil {
+		return WorkflowValidation{}, false, fmt.Errorf("decode rig profile %s: %w", path, err)
+	}
+	v := NormalizeLayoutProfile(env.Validation)
+	v = autoCorrectSpecIndexLayout(v, rig, filepath.Join(townRoot, rig, "mayor", "rig"))
+	// Skip ClampProfileValidationForRig to avoid merging test plan files
+	return v, true, nil
+}
+
 // layoutCmdTarget renders the "cd <target>" argument for a layout root; "." stays "."
 // and an empty root maps to "." so verify commands never `cd ""`.
 func layoutCmdTarget(target string) string {

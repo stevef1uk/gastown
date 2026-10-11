@@ -407,8 +407,13 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summa
 		log.Printf("[Manager] CompleteTask: sync profile for %s synced=%v", rig, synced)
 	}
 	// Mark TEST_PLAN.md as reviewed when the tester agent succeeds from test_plan state.
-	// This prevents redundant re-validation on subsequent workflow entries.
+// This prevents redundant re-validation on subsequent workflow entries.
+// Validate TEST_PLAN.md first to ensure it aligns with workflow-profile.json.
 	if fromState == "test_plan" && outcome == "success" && rig != "" {
+		if err := validateTestPlan(m.townRoot, rig); err != nil {
+			log.Printf("[Manager] test_plan validation failed for %s: %v", rig, err)
+			return "", fmt.Errorf("test plan validation failed: %w", err)
+		}
 		if err := SetTestPlanReviewed(m.townRoot, rig, true); err != nil {
 			log.Printf("[Manager] Warning: failed to set test_plan_reviewed for %s: %v", rig, err)
 		}

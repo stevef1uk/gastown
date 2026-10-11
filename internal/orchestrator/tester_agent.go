@@ -3,6 +3,7 @@ package orchestrator
 import (
 	"bufio"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -445,4 +446,81 @@ func HasRequirementHeadingsForIDs(doc string, ids []string) bool {
 		}
 	}
 	return len(wanted) == 0
+}
+
+// validateTestPlan validates that TEST_PLAN.md aligns with workflow-profile.json
+// and SPEC.md/architecture.md. Called from manager.go when tester reports success
+// from test_plan state. Returns error if validation fails.
+func validateTestPlan(townRoot, rig string) error {
+	// Load workflow-profile.json WITHOUT clamping (to get original required_files before test plan merge)
+	v, _, err := LoadRawRigWorkflowProfile(townRoot, rig)
+	if err != nil {
+		return fmt.Errorf("load workflow profile: %w", err)
+	}
+
+	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
+	testPlanPath := TestPlanPath(rigDir)
+
+	testPlanBytes, err := os.ReadFile(testPlanPath)
+	if err != nil {
+		return fmt.Errorf("TEST_PLAN.md not found at %s: %w", testPlanPath, err)
+	}
+	testPlan := string(testPlanBytes)
+
+	// Check 1: Hallucinated requirement IDs (section headings must match delivery phase IDs)
+	deliveryPhaseIDs := make([]string, len(v.DeliveryPhases))
+	for i, p := range v.DeliveryPhases {
+		deliveryPhaseIDs[i] = p.ID
+	}
+
+	// Read SPEC.md and architecture.md for hallucination check
+	specPath := filepath.Join(rigDir, "SPEC.md")
+	archPath := filepath.Join(rigDir, "architecture.md")
+	specDoc, _ := os.ReadFile(specPath)
+	archDoc, _ := os.ReadFile(archPath)
+
+	hallucinated := HallucinatedTestPlanRequirements(testPlan, string(specDoc), string(archDoc), deliveryPhaseIDs...)
+	if len(hallucinated) > 0 {
+		return fmt.Errorf("TEST_PLAN.md has invalid section IDs (not in SPEC/architecture/delivery phases): %v", hallucinated)
+	}
+
+	// Check 2: Test file paths must exist in workflow-profile.json required_files
+	blocks := ParseTestPlanBlocks(testPlan)
+	validTestFiles := make(map[string]bool)
+	// Collect all required_files from workflow-profile.json (global + per-phase)
+	for _, f := range v.RequiredFiles {
+		validTestFiles[strings.ToLower(filepath.ToSlash(strings.TrimSpace(f)))] = true
+	}
+	for _, phase := range v.DeliveryPhases {
+		for _, f := range phase.RequiredFiles {
+			validTestFiles[strings.ToLower(filepath.ToSlash(strings.TrimSpace(f)))] = true
+		}
+	}
+
+	for _, b := range blocks {
+		testFile := strings.TrimSpace(b.TestFile)
+		if testFile == "" || isPlanGapPlaceholderPath(testFile) {
+			continue
+		}
+		// Strip parenthetical descriptions
+		if idx := strings.IndexAny(testFile, "([{"); idx >= 0 {
+			testFile = strings.TrimSpace(testFile[:idx])
+		}
+		testFile = filepath.ToSlash(testFile)
+		key := strings.ToLower(testFile)
+		if !validTestFiles[key] {
+			return fmt.Errorf("TEST_PLAN.md test file %q not in workflow-profile.json required_files", testFile)
+		}
+	}
+
+	// Check 3: Bead IDs must match actual beads (if beads database exists)
+	mismatches, err := TestPlanBeadMappingMismatches(townRoot, rig, v, blocks)
+	if err != nil {
+		// Beads database not found - skip bead mapping check but log warning
+		log.Printf("[validateTestPlan] skipping bead mapping check (no beads database): %v", err)
+	} else if len(mismatches) > 0 {
+		return fmt.Errorf("TEST_PLAN.md bead mapping errors: %v", mismatches)
+	}
+
+	return nil
 }
