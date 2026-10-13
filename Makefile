@@ -209,7 +209,7 @@ clean:
 	rm -f $(BUILD_DIR)/$(BINARY)
 
 test:
-	go test ./...
+	go test ./... -tags='!integration'
 
 # test-coverage: Run tests with coverage and report against 80% target
 test-coverage:
