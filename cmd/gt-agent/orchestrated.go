@@ -3392,12 +3392,13 @@ func validateTestPlanArtifacts(townRoot, rig string, hadCmdFailure, testPlanWrit
 			}
 		}
 	}
-	// NOTE: Bead ID validation is skipped during test_plan because the plan is
-	// written BEFORE implementation — test-file beads don't exist yet. Bead IDs
-	// are validated later during test_review (after Polecat implements).
-	if !testPlanWriteOK {
-		// A TEST_PLAN.md may already exist from a prior run; accept it if valid.
-		return nil
+	// Bead-ID mapping: verify each cited bead that already exists actually owns the
+	// row's Test file path. This mirrors the manager's validateTestPlan (run when the
+	// tester reports success from test_plan). Without it the agent auto-completes a
+	// plan the orchestrator rejects, looping test_plan forever. Unknown bead IDs are
+	// ignored — implement beads may not exist yet when the plan is first written.
+	if mismatches, mErr := orchestrator.TestPlanBeadMappingMismatches(townRoot, rig, v, blocks); mErr == nil && len(mismatches) > 0 {
+		return fmt.Errorf("TEST_PLAN.md bead mapping errors: %v", mismatches)
 	}
 	return nil
 }
