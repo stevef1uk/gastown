@@ -27,7 +27,7 @@ func TestDefaultInstalledTownSettings_FreerideDefaults(t *testing.T) {
 	if gemini == nil {
 		t.Fatal("missing gt-agent-gemini agent")
 	}
-	if gemini.Env["LLM_MODEL"] != "google/gemini-3.5-flash" {
+	if gemini.Env["LLM_MODEL"] != "openrouter/free" {
 		t.Errorf("gt-agent-gemini LLM_MODEL = %q", gemini.Env["LLM_MODEL"])
 	}
 	if gemini.Env["LLM_ENDPOINT"] != DefaultFreerideProxyEndpoint {
@@ -37,14 +37,14 @@ func TestDefaultInstalledTownSettings_FreerideDefaults(t *testing.T) {
 	if nvidia == nil {
 		t.Fatal("missing gt-agent-nvidia agent")
 	}
-	if nvidia.Env["LLM_MODEL"] != "nvidia/llama-3.3-nemotron-super-49b-v1" {
+	if nvidia.Env["LLM_MODEL"] != "openrouter/free" {
 		t.Errorf("gt-agent-nvidia LLM_MODEL = %q", nvidia.Env["LLM_MODEL"])
 	}
 	deepseek := ts.Agents["gt-agent-deepseek"]
 	if deepseek == nil {
 		t.Fatal("missing gt-agent-deepseek agent")
 	}
-	if deepseek.Env["LLM_MODEL"] != "deepseek/deepseek-v4-flash" {
+	if deepseek.Env["LLM_MODEL"] != "openrouter/free" {
 		t.Errorf("gt-agent-deepseek LLM_MODEL = %q", deepseek.Env["LLM_MODEL"])
 	}
 	if deepseek.Env["LLM_TIMEOUT"] != "1200s" {
@@ -70,8 +70,8 @@ func TestDefaultFreerideAgents_GeminiProfile(t *testing.T) {
 	if rc == nil {
 		t.Fatal("gt-agent-gemini profile missing")
 	}
-	if rc.Env["LLM_MODEL"] != "google/gemini-3.5-flash" {
-		t.Fatalf("LLM_MODEL = %q, want google/gemini-3.5-flash", rc.Env["LLM_MODEL"])
+	if rc.Env["LLM_MODEL"] != "openrouter/free" {
+		t.Fatalf("LLM_MODEL = %q, want openrouter/free", rc.Env["LLM_MODEL"])
 	}
 	if rc.Env["LLM_ENDPOINT"] != DefaultFreerideProxyEndpoint {
 		t.Fatalf("LLM_ENDPOINT = %q, want %q", rc.Env["LLM_ENDPOINT"], DefaultFreerideProxyEndpoint)

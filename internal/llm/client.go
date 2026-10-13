@@ -215,7 +215,8 @@ func (c *Client) doRequestWithRetries(ctx context.Context, jsonData []byte) (str
 		fmt.Printf("[llm] response received: status=%d duration=%s bytes=%d model=%s\n", resp.StatusCode, time.Since(start).Round(time.Millisecond), len(body), c.LastModel)
 
 		if len(result.Choices) == 0 {
-			return "", fmt.Errorf("no choices in response")
+			lastErr = fmt.Errorf("empty completion (no choices in response): requested=%s actual=%s", c.model, c.LastModel)
+			continue
 		}
 		return result.Choices[0].Message.Content, nil
 	}

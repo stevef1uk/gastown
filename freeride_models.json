@@ -1,31 +1,31 @@
 {
   "agents": {
     "gt-agent-local": {
-      "model": "deepseek/deepseek-v4-flash"
+      "model": "openrouter/free"
     },
     "gt-agent-nvidia": {
-      "model": "nvidia/llama-3.3-nemotron-super-49b-v1"
+      "model": "openrouter/free"
     },
     "gt-agent-gemini": {
-      "model": "openai/gpt-5.6-luna",
+      "model": "openrouter/free",
       "extra_env": {
         "LLM_TIMEOUT": "1200s"
       }
     },
     "gt-agent-deepseek": {
-      "model": "deepseek/deepseek-v4-flash",
+      "model": "openrouter/free",
       "extra_env": {
         "LLM_TIMEOUT": "1200s"
       }
     },
     "gt-agent-architect": {
-      "model": "cerebras/gpt-oss-120b",
+      "model": "openrouter/free",
       "extra_env": {
         "LLM_TIMEOUT": "1200s"
       }
     },
     "gt-agent-polecat": {
-      "model": "openai/gpt-5.6-luna",
+      "model": "openrouter/free",
       "extra_env": {
         "LLM_TIMEOUT": "1200s"
       }

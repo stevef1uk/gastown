@@ -86,13 +86,13 @@ func buildAgentsFromConfig(cfg *FreerideModelsConfig, endpoint string) map[strin
 func DefaultFreerideModelsConfig() *FreerideModelsConfig {
 	return &FreerideModelsConfig{
 		Agents: map[string]*FreerideAgentModel{
-			"gt-agent-local":       {Model: "google/gemini-3.5-flash"},
-			"gt-agent-nvidia":      {Model: "nvidia/llama-3.3-nemotron-super-49b-v1"},
-			"gt-agent-gemini":      {Model: "google/gemini-3.5-flash", ExtraEnv: map[string]string{"LLM_TIMEOUT": "1200s"}},
-			"gt-agent-deepseek":    {Model: "deepseek/deepseek-v4-flash", ExtraEnv: map[string]string{"LLM_TIMEOUT": "1200s"}},
-			"gt-agent-powerful":    {Model: "ollama/llama3.3"},
-			"gt-agent-fast":        {Model: "ollama/ministral-3:8b"},
-			"gt-agent-mayor-fast":  {Model: "ollama/ministral-3:8b", ExtraEnv: map[string]string{"LLM_TURN_TIMEOUT": "30s", "GT_AGENT_CMD_TIMEOUT": "75s"}},
+			"gt-agent-local":      {Model: "openrouter/free"},
+			"gt-agent-nvidia":     {Model: "openrouter/free"},
+			"gt-agent-gemini":     {Model: "openrouter/free", ExtraEnv: map[string]string{"LLM_TIMEOUT": "1200s"}},
+			"gt-agent-deepseek":   {Model: "openrouter/free", ExtraEnv: map[string]string{"LLM_TIMEOUT": "1200s"}},
+			"gt-agent-powerful":   {Model: "ollama/llama3.3"},
+			"gt-agent-fast":       {Model: "ollama/ministral-3:8b"},
+			"gt-agent-mayor-fast": {Model: "ollama/ministral-3:8b", ExtraEnv: map[string]string{"LLM_TURN_TIMEOUT": "30s", "GT_AGENT_CMD_TIMEOUT": "75s"}},
 		},
 		RoleAgents: map[string]string{
 			"architect": "gt-agent-deepseek",

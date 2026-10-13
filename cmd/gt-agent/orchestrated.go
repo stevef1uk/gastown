@@ -107,6 +107,9 @@ func runOrchestrated(ctx context.Context, client *llm.Client, townRoot, role, ri
 			if outcome == "" {
 				outcome = "fail"
 			}
+			if strings.TrimSpace(summary) == "" {
+				summary = fmt.Sprintf("task execution error: %v", runErr)
+			}
 		}
 		if outcome == "" {
 			outcome = "fail"

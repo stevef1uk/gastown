@@ -25,7 +25,17 @@ func isRetriableLLMError(err error) bool {
 		strings.Contains(s, "credits") ||
 		strings.Contains(s, "payment required") ||
 		strings.Contains(s, "billing") ||
-		strings.Contains(s, "afford")
+		strings.Contains(s, "afford") ||
+		strings.Contains(s, "no choices") ||
+		strings.Contains(s, "empty completion") ||
+		strings.Contains(s, "provider_unavailable") ||
+		strings.Contains(s, "no models available") ||
+		strings.Contains(s, "service unavailable") ||
+		strings.Contains(s, "bad gateway") ||
+		strings.Contains(s, "status 500") ||
+		strings.Contains(s, "status 502") ||
+		strings.Contains(s, "status 503") ||
+		strings.Contains(s, "status 504")
 }
 
 // noteImplementationFixAttempt marks that this task attempt did real fix work (not read-only inspection).

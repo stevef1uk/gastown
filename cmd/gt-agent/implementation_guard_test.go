@@ -19,6 +19,15 @@ func TestIsRetriableLLMError(t *testing.T) {
 	if !isRetriableLLMError(errors.New(`LLM API error (status 402): {"error":{"message":"This request requires more credits"}}`)) {
 		t.Fatal("expected 402 credits to be retriable")
 	}
+	if !isRetriableLLMError(errors.New(`empty completion (no choices in response): requested=openrouter/free actual=openrouter/free`)) {
+		t.Fatal("expected empty completion to be retriable")
+	}
+	if !isRetriableLLMError(errors.New(`LLM API error (status 502): provider_unavailable`)) {
+		t.Fatal("expected 502 provider unavailability to be retriable")
+	}
+	if !isRetriableLLMError(errors.New("no models available")) {
+		t.Fatal("expected no-models-available to be retriable")
+	}
 	if isRetriableLLMError(errors.New("context canceled")) {
 		t.Fatal("generic errors should not be retriable")
 	}
