@@ -576,3 +576,44 @@ func TestCheckArchitectureDockerSection_withAppDockerfileStillRequired(t *testin
 		t.Fatal("expected Docker section to still be required when Dockerfile is in profile")
 	}
 }
+
+func TestValidateArchitectureDocAlignment_rejectsLayoutRootPlaceholderPaths(t *testing.T) {
+	dir := t.TempDir()
+	spec := `# Ping
+| GET | /ping | 200, JSON {"message":"pong"} |
+
+module pingapp
+`
+	arch := `# Architecture
+- layout_root/pingapp/go.mod
+- layout_root/frontend/index.html
+`
+	for name, body := range map[string]string{"SPEC.md": spec, "architecture.md": arch} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := ValidateArchitectureDocAlignment(dir, WorkflowValidation{LayoutRoot: "pingapp"}); err == nil {
+		t.Fatal("literal layout_root/ placeholder paths must fail the design gate")
+	}
+}
+
+func TestValidateArchitectureDocAlignment_rejectsRoutesAbsentFromSPEC(t *testing.T) {
+	dir := t.TempDir()
+	spec := `# Ping
+| GET | /ping | 200, JSON {"message":"pong"} |
+
+module pingapp
+`
+	arch := `# Architecture
+- core phase registers a ` + "`POST /api/v1/portfolio/`" + ` endpoint and writes to the portfolio store.
+`
+	for name, body := range map[string]string{"SPEC.md": spec, "architecture.md": arch} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := ValidateArchitectureDocAlignment(dir, WorkflowValidation{LayoutRoot: "pingapp"}); err == nil {
+		t.Fatal("HTTP path absent from SPEC must fail the design gate")
+	}
+}

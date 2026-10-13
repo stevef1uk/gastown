@@ -1,6 +1,8 @@
 package specprofile
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -844,5 +846,43 @@ func TestDeterministicAssignFilesToPhases_TrivialSpec(t *testing.T) {
 				t.Errorf("phase %s files[%d] = %q, want %q", id, i, got[i], wantFiles[i])
 			}
 		}
+	}
+}
+
+func TestUpgradeFlattenedPathsWithArchitecture_dropsPlaceholderPaths(t *testing.T) {
+	dir := t.TempDir()
+	arch := `# Architecture
+- ` + "`layout_root/pingapp/go.mod`" + `
+- ` + "`layout_root/pingapp/layout_root/pingapp/go.mod`" + `
+- ` + "`layout_root/frontend/index.html`" + `
+`
+	if err := os.WriteFile(filepath.Join(dir, "architecture.md"), []byte(arch), 0644); err != nil {
+		t.Fatal(err)
+	}
+	specPaths := []string{"pingapp/go.mod", "pingapp/main.go", "pingapp/main_test.go"}
+	got := upgradeFlattenedPathsWithArchitecture(dir, specPaths)
+	want := []string{"pingapp/go.mod", "pingapp/main.go", "pingapp/main_test.go"}
+	if len(got) != len(want) {
+		t.Fatalf("got %v, want %v (architecture placeholder paths must not leak into SPEC tree)", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("paths[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+}
+
+func TestUpgradeFlattenedPathsWithArchitecture_keepsDeferredRealPaths(t *testing.T) {
+	dir := t.TempDir()
+	arch := `# Architecture
+Required files are ` + "`defender/backend/main.py`" + ` and ` + "`defender/frontend/game/main.js`" + `.
+`
+	if err := os.WriteFile(filepath.Join(dir, "architecture.md"), []byte(arch), 0644); err != nil {
+		t.Fatal(err)
+	}
+	specPaths := []string{"defender/backend/main.py"}
+	got := upgradeFlattenedPathsWithArchitecture(dir, specPaths)
+	if len(got) != 2 {
+		t.Fatalf("got %v, want real architecture paths kept under SPEC dirs", got)
 	}
 }

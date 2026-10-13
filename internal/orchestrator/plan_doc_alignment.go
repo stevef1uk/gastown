@@ -84,6 +84,8 @@ func architectureDocAlignmentIssuesForDoc(archDoc, specDoc string, v WorkflowVal
 	issues = append(issues, checkHTTPDocAlignment("architecture.md", archDoc, specDoc, v)...)
 	issues = append(issues, checkStoreAPIAlignment("architecture.md", archDoc, specDoc)...)
 	issues = append(issues, checkGoModuleAlignment("architecture.md", archDoc, specDoc, v)...)
+	issues = append(issues, checkArchitectureLayoutRootPlaceholder(archDoc, v)...)
+	issues = append(issues, checkDocumentedRoutesSubsetOfSPEC("architecture.md", archDoc, specDoc, v)...)
 	issues = append(issues, checkDocLayoutPathPrefix("architecture.md", archDoc, v)...)
 	if includeContentChecks {
 		issues = append(issues, checkArchitectureDockerSection(archDoc, v)...)
@@ -388,6 +390,56 @@ func checkDocLayoutPathPrefix(docName, doc string, v WorkflowValidation) []strin
 		issues = append(issues, fmt.Sprintf("%s references %q; use %q to match workflow required_files under layout_root", docName, p, want))
 	}
 	return dedupeStrings(issues)
+}
+
+// checkArchitectureLayoutRootPlaceholder rejects architecture docs that echo the
+// literal layout_root/ JSON-key placeholder instead of the real layout root
+// (e.g. layout_root/pingapp/go.mod). Such paths are never real project paths and
+// would be prepended with the real root downstream, producing double-nested files.
+func checkArchitectureLayoutRootPlaceholder(archDoc string, v WorkflowValidation) []string {
+	const literalPrefix = "layout_root/"
+	if strings.Contains(archDoc, literalPrefix) {
+		layout := strings.Trim(filepath.ToSlash(strings.TrimSpace(v.LayoutRoot)), "/")
+		want := ""
+		if layout != "" && layout != "." {
+			want = fmt.Sprintf(" — use %s/ paths, the real layout root", layout)
+		}
+		return []string{fmt.Sprintf("architecture.md uses literal %q placeholder paths that do not exist on disk%s", literalPrefix, want)}
+	}
+	return nil
+}
+
+// checkDocumentedRoutesSubsetOfSPEC flags HTTP routes documented anywhere in a
+// doc that do not appear in SPEC.md. Architects must match SPEC's route table
+// verbatim; documenting endpoints SPEC never defines is architecture drift.
+func checkDocumentedRoutesSubsetOfSPEC(docName, doc, specDoc string, v WorkflowValidation) []string {
+	if strings.TrimSpace(doc) == "" || strings.TrimSpace(specDoc) == "" {
+		return nil
+	}
+	specPaths := map[string]bool{}
+	for p := range apiPathSet(parseAPISmokeSpecText(specDoc, v)) {
+		specPaths[strings.TrimRight(normalizeSmokePath(p), "/")] = true
+	}
+	for _, row := range parseSpecHTTPRouteTable(specDoc) {
+		specPaths[strings.TrimRight(normalizeSmokePath(row.Path), "/")] = true
+	}
+	if len(specPaths) == 0 {
+		return nil
+	}
+	var issues []string
+	seen := map[string]bool{}
+	for _, m := range apiBacktickPathRE.FindAllStringSubmatch(doc, -1) {
+		if len(m) < 3 {
+			continue
+		}
+		path := strings.TrimRight(normalizeSmokePath("/"+strings.Trim(strings.TrimSpace(m[2]), "/")), "/")
+		if path == "" || path == "/" || specPaths[path] || seen[path] {
+			continue
+		}
+		seen[path] = true
+		issues = append(issues, fmt.Sprintf("%s documents HTTP path %s not present in SPEC (canonical: %s)", docName, path, joinSortedPathKeys(specPaths)))
+	}
+	return issues
 }
 
 func profileRequiredFilesUseLayoutPrefix(v WorkflowValidation, layout string) bool {

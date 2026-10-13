@@ -1587,6 +1587,13 @@ func upgradeFlattenedPathsWithArchitecture(mayorRigDir string, extractedPaths []
 	if len(archPaths) == 0 {
 		return extractedPaths
 	}
+	// SPEC's layout tree is authoritative. Drop architecture paths that echo the
+	// literal layout_root/ JSON-key placeholder (never real project paths) and
+	// paths that live entirely outside the directories the SPEC tree declares.
+	archPaths = filterArchPathsForUpgrade(extractedPaths, archPaths)
+	if len(archPaths) == 0 {
+		return extractedPaths
+	}
 
 	// Build basename -> deepest path map from architecture.md
 	archByBasename := map[string]string{}
@@ -1637,6 +1644,52 @@ func upgradeFlattenedPathsWithArchitecture(mayorRigDir string, extractedPaths []
 		log.Printf("[deterministic-index] path upgrade: %d → %d files (from architecture.md)", len(extractedPaths), len(upgraded))
 	}
 	return upgraded
+}
+
+// filterArchPathsForUpgrade drops architecture.md paths that are not usable as
+// SPEC implement paths: literal layout_root/ placeholders (unsubstituted JSON key
+// echoes) and paths that don't live under any directory the SPEC layout tree
+// declares. SPEC's own layout tree is authoritative; architecture.md only provides
+// deeper counterparts when the SPEC flattened a path.
+func filterArchPathsForUpgrade(extractedPaths, archPaths []string) []string {
+	specDirs := map[string]bool{}
+	for _, p := range extractedPaths {
+		p = filepath.ToSlash(strings.TrimSpace(p))
+		for d := filepath.Dir(p); d != "" && d != "." && d != string(filepath.Separator); d = filepath.Dir(d) {
+			specDirs[d] = true
+		}
+	}
+	var out []string
+	for _, p := range archPaths {
+		p = filepath.ToSlash(strings.TrimSpace(p))
+		if p == "" || hasLiteralLayoutRootSegment(p) || !archPathUnderSpecDir(p, specDirs) {
+			log.Printf("[deterministic-index] dropping architecture.md path %q (not under SPEC layout tree)", p)
+			continue
+		}
+		out = append(out, p)
+	}
+	return out
+}
+
+func hasLiteralLayoutRootSegment(p string) bool {
+	for _, seg := range strings.Split(filepath.ToSlash(p), "/") {
+		if seg == "layout_root" {
+			return true
+		}
+	}
+	return false
+}
+
+func archPathUnderSpecDir(p string, specDirs map[string]bool) bool {
+	if specDirs[p] {
+		return true
+	}
+	for d := range specDirs {
+		if d != "" && strings.HasPrefix(p, d+"/") {
+			return true
+		}
+	}
+	return false
 }
 
 // extractBacktickPaths extracts file paths from backtick-quoted text in markdown.
