@@ -40,6 +40,18 @@ func isDockerAvailable() bool {
 	return dockerAvail
 }
 
+// DoltTestsRequested reports whether container-backed Dolt tests should run.
+// They skip by default so plain `make test` never requires Docker; opt in with
+// GT_DOLT_TESTS=1 (or true), e.g. via `make test-integration`.
+func DoltTestsRequested() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("GT_DOLT_TESTS"))) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
+}
+
 // isTransientDoltContainerErr returns true for Docker/Dolt startup flakes that
 // often clear on retry (Ryuk reaper still removing, Dolt SQL ping not ready).
 func isTransientDoltContainerErr(err error) bool {
@@ -111,6 +123,9 @@ func startSharedDoltContainer() {
 // The container is terminated automatically when the test finishes.
 func StartIsolatedDoltContainer(t *testing.T) string {
 	t.Helper()
+	if !DoltTestsRequested() {
+		t.Skip("GT_DOLT_TESTS not set; Dolt container tests are integration-only (run make test-integration)")
+	}
 	if !isDockerAvailable() {
 		t.Skip("Docker not available, skipping test")
 	}
@@ -157,6 +172,9 @@ func ensureSharedDoltContainer() error {
 // TestMain functions. Call TerminateDoltContainer() after m.Run() to clean up.
 // Sets both GT_DOLT_PORT and BEADS_DOLT_PORT process-wide.
 func EnsureDoltContainerForTestMain() error {
+	if !DoltTestsRequested() {
+		return fmt.Errorf("GT_DOLT_TESTS not set; Dolt container tests will skip")
+	}
 	if !isDockerAvailable() {
 		return fmt.Errorf("Docker not available")
 	}
@@ -167,6 +185,9 @@ func EnsureDoltContainerForTestMain() error {
 // test if Docker is not available.
 func RequireDoltContainer(t *testing.T) {
 	t.Helper()
+	if !DoltTestsRequested() {
+		t.Skip("GT_DOLT_TESTS not set; Dolt container tests are integration-only (run make test-integration)")
+	}
 	if !isDockerAvailable() {
 		t.Skip("Docker not available, skipping test")
 	}

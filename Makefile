@@ -1,4 +1,4 @@
-.PHONY: build desktop-build desktop-run install safe-install sync-town-config check-forward-only check-version-tag clean test test-e2e-container check-up-to-date
+.PHONY: build desktop-build desktop-run install safe-install sync-town-config check-forward-only check-version-tag clean test test-integration test-e2e-container check-up-to-date
 
 BINARY := gt
 BINARY_DESKTOP := gt-desktop
@@ -210,6 +210,12 @@ clean:
 
 test:
 	go test ./... -tags='!integration'
+
+# test-integration: Docker/Dolt/LLM-backed tests. Requires Docker running and
+# external LLM endpoints reachable. Plain `make test` NEVER needs Docker.
+test-integration:
+	@echo "Running integration tests (requires Docker + external LLM endpoints)"
+	GT_DOLT_TESTS=1 go test ./... -tags='integration'
 
 # test-coverage: Run tests with coverage and report against 80% target
 test-coverage:
