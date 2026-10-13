@@ -1232,11 +1232,12 @@ DELETED_RIGS=0
 for rig in ${RIG_NAMES[@]+"${RIG_NAMES[@]}"}; do
     rig_dir="$TOWN_ROOT/$rig"
     if [[ -d "$rig_dir" ]]; then
-        # Per-directory guard that runs even under --force: this is an
-        # irreversible `rm -rf` of a whole tree and sometimes points at a
-        # submodule/not-a-rig. The global summary confirm already handles the
-        # "delete all?" case; these per-dir prompts catch mis-identification.
-        if ! confirm "⚠️  Delete rig directory '${rig}/' (rm -rf $TOWN_ROOT/${rig})?"; then
+        # Per-directory guard: an irreversible `rm -rf` that can point at a
+        # submodule/not-a-rig, so keep prompting under --force when a human is
+        # present (TTY). Under --force with no TTY (e.g. a pipeline), there is
+        # nobody to answer — the global summary confirm already handled "delete
+        # all?", so proceed like the rest of the force path.
+        if [[ "$FORCE" != true || -t 0 ]] && ! confirm "⚠️  Delete rig directory '${rig}/' (rm -rf $TOWN_ROOT/${rig})?"; then
             log_warn "Skipping rig directory: ${rig}/"
             continue
         fi
@@ -1254,10 +1255,12 @@ if [[ ${#UNREGISTERED_RIGS[@]} -gt 0 ]]; then
     for rig in ${UNREGISTERED_RIGS[@]+"${UNREGISTERED_RIGS[@]}"}; do
         # Unregistered dirs are matched heuristically (may be a git submodule,
         # a stray project, or a real rig). ALWAYS confirm the directory
-        # itself before `rm -rf` — this catches cases like gastown/ that look
-        # rig-like but are actually source trees. Prompted even under --force,
-        # because this deletes an entire directory tree with no recovery.
-        if ! confirm "⚠️  Delete UNREGISTERED directory '${rig}/' (rm -rf $TOWN_ROOT/${rig})?"; then
+        # itself before `rm -rf` when a human is present — this catches cases
+        # like gastown/ that look rig-like but are actually source trees and
+        # deletes an entire directory tree with no recovery. Under --force with
+        # no TTY (pipeline) there is nobody to answer, so proceed like the rest
+        # of the force path.
+        if [[ "$FORCE" != true || -t 0 ]] && ! confirm "⚠️  Delete UNREGISTERED directory '${rig}/' (rm -rf $TOWN_ROOT/${rig})?"; then
             log_warn "Skipping unregistered directory: ${rig}/"
             continue
         fi
