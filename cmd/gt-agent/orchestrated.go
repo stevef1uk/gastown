@@ -3463,7 +3463,7 @@ func validateTestReviewArtifacts(townRoot, rig, outcome string, hadCmdFailure, v
 	sendToPlan := outcome == "plan_gap"
 	sendToArchitect := outcome == "architecture_failure"
 
-	if hadCmdFailure && !sendToPolecat && !sendToPlan && !sendToArchitect {
+	if hadCmdFailure && !sendToPolecat && !sendToPlan && !sendToArchitect && !(v.HasPhasedDelivery() && verifyOK) {
 		return fmt.Errorf("test_review step had failed commands; fix errors before completing")
 	}
 	if !orchestrator.TestPlanMeetsMinSize(rigDir, v) {
@@ -3601,7 +3601,7 @@ func validateQAArtifacts(townRoot, rig, outcome string, hadCmdFailure, bdListClo
 	sendToArchitect := outcome == "architecture_failure"
 	// Only treat exit code 1 (grep no matches) as expected behavior in verification.
 	// Grep's "no matches" failure should not be treated as a command failure.
-	if hadCmdFailure && !sendToImpl && !sendToArchitect {
+	if hadCmdFailure && !sendToImpl && !sendToArchitect && !(v.HasPhasedDelivery() && (unittestOK || qaSmokeOK)) {
 		return fmt.Errorf("QA step had failed commands; fix errors before completing")
 	}
 	if !bdListClosedOK {

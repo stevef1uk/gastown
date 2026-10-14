@@ -1,20 +1,20 @@
 {
   "agentModels": {
     "gt-agent-local": "deepseek/deepseek-v4-flash",
-    "gt-agent-gemini": "google/gemini-3.5-flash",
+    "gt-agent-gemini": "google/gemini-3.6-flash",
     "gt-agent-deepseek": "deepseek/deepseek-v4-flash"
   },
   "judgeModel": "deepseek/deepseek-v4-flash",
-  "defaultModel": "google/gemini-3.5-flash",
+  "defaultModel": "google/gemini-3.6-flash",
   "defaultTimeoutSeconds": 120,
   "models": {
     "judge": "deepseek/deepseek-v4-flash",
-    "architect": "google/gemini-3.5-flash",
-    "planner": "google/gemini-3.5-flash",
-    "polecat": "google/gemini-3.5-flash",
-    "qa": "google/gemini-3.5-flash",
-    "tester": "google/gemini-3.5-flash",
-    "mayor": "google/gemini-3.5-flash",
-    "default": "google/gemini-3.5-flash"
+    "architect": "google/gemini-3.6-flash",
+    "planner": "google/gemini-3.6-flash",
+    "polecat": "google/gemini-3.6-flash",
+    "qa": "google/gemini-3.6-flash",
+    "tester": "google/gemini-3.6-flash",
+    "mayor": "google/gemini-3.6-flash",
+    "default": "google/gemini-3.6-flash"
   }
 }

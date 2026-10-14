@@ -27,7 +27,7 @@ func TestDefaultInstalledTownSettings_FreerideDefaults(t *testing.T) {
 	if gemini == nil {
 		t.Fatal("missing gt-agent-gemini agent")
 	}
-	if gemini.Env["LLM_MODEL"] != "openrouter/free" {
+	if gemini.Env["LLM_MODEL"] != "google/gemini-3.6-flash" {
 		t.Errorf("gt-agent-gemini LLM_MODEL = %q", gemini.Env["LLM_MODEL"])
 	}
 	if gemini.Env["LLM_ENDPOINT"] != DefaultFreerideProxyEndpoint {
@@ -70,7 +70,7 @@ func TestDefaultFreerideAgents_GeminiProfile(t *testing.T) {
 	if rc == nil {
 		t.Fatal("gt-agent-gemini profile missing")
 	}
-	if rc.Env["LLM_MODEL"] != "openrouter/free" {
+	if rc.Env["LLM_MODEL"] != "google/gemini-3.6-flash" {
 		t.Fatalf("LLM_MODEL = %q, want openrouter/free", rc.Env["LLM_MODEL"])
 	}
 	if rc.Env["LLM_ENDPOINT"] != DefaultFreerideProxyEndpoint {

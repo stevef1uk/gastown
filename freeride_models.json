@@ -7,7 +7,7 @@
       "model": "openrouter/free"
     },
     "gt-agent-gemini": {
-      "model": "openrouter/free",
+      "model": "google/gemini-3.6-flash",
       "extra_env": {
         "LLM_TIMEOUT": "1200s"
       }

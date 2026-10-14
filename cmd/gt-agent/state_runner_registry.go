@@ -192,7 +192,7 @@ var trackHandlers = map[string]trackFn{
 		}
 	},
 	"plan_review": func(r *stateRunner, cmd string, cmdErr error) {
-		if cmdErr != nil {
+		if cmdErr != nil && !isQAReadOnlyCommand(cmd) {
 			r.track.hadCmdFailure = true
 		}
 		if cmdErr == nil && isBdListOpenCommand(cmd) {
@@ -208,7 +208,7 @@ var trackHandlers = map[string]trackFn{
 		}
 	},
 	"design_review": func(r *stateRunner, cmd string, cmdErr error) {
-		if cmdErr != nil {
+		if cmdErr != nil && !isQAReadOnlyCommand(cmd) {
 			r.track.hadCmdFailure = true
 		}
 		if cmdErr == nil && isQAReadOnlyCommand(cmd) {
@@ -216,7 +216,7 @@ var trackHandlers = map[string]trackFn{
 		}
 	},
 	"qa": func(r *stateRunner, cmd string, cmdErr error) {
-		if cmdErr != nil {
+		if cmdErr != nil && !isQAReadOnlyCommand(cmd) {
 			r.track.hadCmdFailure = true
 		}
 		if cmdErr == nil && isBdListClosedCommand(cmd) {
@@ -241,7 +241,7 @@ var trackHandlers = map[string]trackFn{
 		}
 	},
 	"test_plan": func(r *stateRunner, cmd string, cmdErr error) {
-		if cmdErr != nil {
+		if cmdErr != nil && !isQAReadOnlyCommand(cmd) {
 			r.track.hadCmdFailure = true
 		}
 		if cmdErr == nil && isTestPlanMDWriteCommand(cmd) && testPlanMDMeetsMinSize(r.townRoot, r.rig, r.v) {
@@ -253,7 +253,7 @@ var trackHandlers = map[string]trackFn{
 		}
 	},
 	"test_review": func(r *stateRunner, cmd string, cmdErr error) {
-		if cmdErr != nil {
+		if cmdErr != nil && !isQAReadOnlyCommand(cmd) {
 			r.track.hadCmdFailure = true
 		}
 		if cmdErr == nil && isQATestCommandOK(cmd, r.v) {
