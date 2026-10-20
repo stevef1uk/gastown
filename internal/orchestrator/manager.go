@@ -418,6 +418,29 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summa
 			log.Printf("[Manager] Warning: failed to set test_plan_reviewed for %s: %v", rig, err)
 		}
 	}
+	// QA rejected TEST_PLAN.md in the test_plan_review gate: the tester must
+	// rewrite it. Clear both flags so re-entry into test_plan re-runs the
+	// tester instead of auto-completing, and plan rework stays possible.
+	if fromState == "test_plan_review" && IsFailureOutcome(outcome) && rig != "" {
+		if err := SetTestPlanReviewed(m.townRoot, rig, false); err != nil {
+			log.Printf("[Manager] Warning: failed to clear test_plan_reviewed for %s: %v", rig, err)
+		}
+		if err := SetTestPlanFrozen(m.townRoot, rig, false); err != nil {
+			log.Printf("[Manager] Warning: failed to clear test_plan_frozen for %s: %v", rig, err)
+		}
+	}
+	// Any review/implementation state escalating to architecture rework makes
+	// TEST_PLAN.md stale: it was written against the architecture being replaced.
+	// Clear both flags so the tester regenerates the plan from the new
+	// architecture and QA re-reviews it (restart skip stays off until then).
+	if IsArchitectureReworkOutcome(outcome) && rig != "" {
+		if err := SetTestPlanReviewed(m.townRoot, rig, false); err != nil {
+			log.Printf("[Manager] Warning: failed to clear test_plan_reviewed for %s on architecture rework: %v", rig, err)
+		}
+		if err := SetTestPlanFrozen(m.townRoot, rig, false); err != nil {
+			log.Printf("[Manager] Warning: failed to clear test_plan_frozen for %s on architecture rework: %v", rig, err)
+		}
+	}
 	next, err := inst.Transition(tpl, outcome)
 	if err != nil {
 		log.Printf("[Manager] CompleteTask: transition failed from=%s outcome=%s err=%v", fromState, outcome, err)

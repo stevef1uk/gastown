@@ -3411,6 +3411,50 @@ func testPlanBytes(rigDir string) int64 {
 	return info.Size()
 }
 
+// validateTestPlanReviewArtifacts backs the QA test_plan_review state: when QA
+// reports success, TEST_PLAN.md must still exist, be current-phase-aligned, and
+// cite real bead IDs. This is the mechanical floor — semantic review is the QA
+// agent's job. Unlike validateTestPlanArtifacts there is no write-this-run
+// requirement (QA reviews the tester's artifact, it does not write it).
+func validateTestPlanReviewArtifacts(townRoot, rig string, v orchestrator.WorkflowValidation) error {
+	if bad := orchestrator.MismatchedTestPlanPhaseIDs(townRoot, rig, v); len(bad) > 0 {
+		ids := make([]string, 0, len(v.DeliveryPhases))
+		for _, p := range v.DeliveryPhases {
+			ids = append(ids, p.ID)
+		}
+		return fmt.Errorf(
+			"TEST_PLAN.md uses section headings %v that match no current delivery phase — "+
+				"report failure so the tester rewrites the plan using EXACTLY these ### section ids: %v.",
+			bad, ids)
+	}
+	rigDir := rigMayorRigDir(townRoot, rig)
+	if !orchestrator.TestPlanMeetsMinSize(rigDir, v) {
+		return fmt.Errorf("TEST_PLAN.md must exist and be ≥ %d bytes (currently %d bytes at %s) — report failure so the tester writes it",
+			orchestrator.EffectiveMinTestPlanBytes(v), testPlanBytes(rigDir), orchestrator.TestPlanPath(rigDir))
+	}
+	data, err := os.ReadFile(orchestrator.TestPlanPath(rigDir))
+	if err != nil {
+		return fmt.Errorf("read TEST_PLAN.md: %w", err)
+	}
+	blocks := orchestrator.ParseTestPlanBlocks(string(data))
+	if len(blocks) == 0 {
+		return fmt.Errorf("TEST_PLAN.md must contain at least one `### <req-id>` block (Requirement, Level, Test file, Bead ID, Scenarios, Assertions) — report failure so the tester rewrites it")
+	}
+	var missingFields []string
+	for _, b := range blocks {
+		if b.ReqID == "" || b.Level == "" || b.TestFile == "" {
+			missingFields = append(missingFields, b.ReqID)
+		}
+	}
+	if len(missingFields) > 0 {
+		return fmt.Errorf("TEST_PLAN.md blocks %v are missing required fields (Level, Test file) — report failure so the tester fixes every requirement row", missingFields)
+	}
+	if err := validateTestPlanBeadIDs(townRoot, rig, v, blocks); err != nil {
+		return fmt.Errorf("%w — report failure so the tester corrects the bead IDs", err)
+	}
+	return nil
+}
+
 // validateTestPlanBeadIDs checks that bead IDs in TEST_PLAN.md blocks exist in bd
 // list AND that each cited bead's title actually owns the row's Test file path —
 // a row citing the right-prefix but wrong bead (e.g. te-7o7 = handlers.go for a

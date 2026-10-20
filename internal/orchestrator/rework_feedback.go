@@ -40,6 +40,7 @@ var reworkFeedbackBuilders = map[string]reworkFeedbackBuilder{
 	"test_review_to_implementation":  func(summary, raw string, v WorkflowValidation) string { return prepareTestReviewToImplementationFeedback(summary, raw, v) },
 	"test_review_to_design":          func(summary, raw string, v WorkflowValidation) string { return prepareTestReviewToDesignFeedback(summary, raw, v) },
 	"test_plan_to_planner":           func(summary, raw string, v WorkflowValidation) string { return prepareTestPlanToPlannerFeedback(summary, raw) },
+	"test_plan_review_to_tester":     func(summary, raw string, v WorkflowValidation) string { return prepareTestPlanReviewToTesterFeedback(summary, raw, v) },
 	"phase_advance_to_planning":      func(summary, raw string, v WorkflowValidation) string { return preparePhaseAdvanceToPlanningFeedback(summary, raw, v) },
 	"architecture_failure_to_design": func(summary, raw string, v WorkflowValidation) string { return prepareArchitectureFailureToDesignFeedback(summary, raw, v) },
 }
@@ -489,6 +490,27 @@ func prepareTestPlanToPlannerFeedback(summary, raw string) string {
 	b.WriteString("1. Expand plan.md bead map with per-file scope and acceptance bullets from SPEC/architecture.\n")
 	b.WriteString("2. Confirm every active-phase requirement has a named file ownership in architecture.md.\n")
 	b.WriteString("3. JSON success when bead set matches required_files for this phase only.\n")
+	out := strings.TrimSpace(b.String())
+	if out != "" {
+		return out
+	}
+	return sanitizeAttemptFeedback(raw)
+}
+
+// prepareTestPlanReviewToTesterFeedback renders rework guidance when QA rejects
+// TEST_PLAN.md in the test_plan_review gate, routing back to the tester.
+func prepareTestPlanReviewToTesterFeedback(summary, raw string, v WorkflowValidation) string {
+	var b strings.Builder
+	if summary != "" {
+		b.WriteString("QA review summary: ")
+		b.WriteString(summary)
+		b.WriteString("\n")
+	}
+	b.WriteString("\nQA rejected TEST_PLAN.md in the test_plan_review step.\n")
+	b.WriteString("Tester steps:\n")
+	b.WriteString("1. READ the existing TEST_PLAN.md first, then fix exactly the gaps QA named (coverage, Level, Test file paths, Bead IDs, Assertions).\n")
+	b.WriteString("2. Keep one `### <req-id>` block per active-phase requirement; test files must stay within required_files.\n")
+	b.WriteString("3. JSON success when every requirement is mapped at the right level; QA re-reviews before project setup.\n")
 	out := strings.TrimSpace(b.String())
 	if out != "" {
 		return out

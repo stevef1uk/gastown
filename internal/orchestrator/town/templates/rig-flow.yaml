@@ -4,9 +4,9 @@ initial_state: kickoff
 # State categories used by the generic stuck monitor (workflow_stuck.go) and
 # rework feedback routing (rework_feedback.go). Keep state names here, not in Go.
 stuck_guard:
-  bead_progress_states: [planning, plan_review, test_plan, test_plan_rework, project_setup, implementation, test_review, qa_review]
-  planning_or_implementation_states: [planning, plan_review, test_plan, test_plan_rework, project_setup, implementation, test_review]
-  needs_contract_states: [planning, plan_review, test_plan, test_plan_rework, project_setup, implementation, test_review]
+  bead_progress_states: [planning, plan_review, test_plan, test_plan_review, test_plan_rework, project_setup, implementation, test_review, qa_review]
+  planning_or_implementation_states: [planning, plan_review, test_plan, test_plan_review, test_plan_rework, project_setup, implementation, test_review]
+  needs_contract_states: [planning, plan_review, test_plan, test_plan_review, test_plan_rework, project_setup, implementation, test_review]
   polecat_state: implementation
 rework_feedback:
   plan_review->planning: plan_review_to_planner
@@ -15,11 +15,13 @@ rework_feedback:
   test_review->implementation: test_review_to_implementation
   test_review->design: test_review_to_design
   test_plan->planning: test_plan_to_planner
+  test_plan_review->test_plan: test_plan_review_to_tester
   implementation->test_plan_rework: test_plan_to_planner
   implementation->design: architecture_failure_to_design
   planning->design: architecture_failure_to_design
   plan_review->design: architecture_failure_to_design
   test_plan->design: architecture_failure_to_design
+  test_plan_review->design: architecture_failure_to_design
   advance_phase->planning: phase_advance_to_planning
 # AGENTS: Change agent behavior in this file (hooks, prompts, failure_hint) — NOT with if task.State in gt-agent.
 # See internal/orchestrator/prompt_context.go and town/README.md § "FSM behavior belongs in YAML".
@@ -185,9 +187,37 @@ states:
         TEST_PLAN.md must be ≥ {{min_test_plan_bytes}} bytes with a `### <req-id>` block per requirement: Level (unit/integration/ui), Test file, Bead ID, Scenarios, Assertions. Do not write tests — only plan them.
     transitions:
       success:
-        to: project_setup
+        to: test_plan_review
       failure:
         to: planning
+      architecture_failure:
+        to: design
+  test_plan_review:
+    role: qa
+    prompt_file: prompts/rig-flow/test_plan_review.md
+    instructions: |
+      1. Review `{{rig}}/mayor/rig/TEST_PLAN.md` against SPEC.md, architecture.md, and plan.md for the active phase `{{active_phase_id}}`.
+      2. Verify every active-phase requirement maps to a unit/integration test with a real bead ID and a concrete test file path from required_files ({{required_files}}).
+      3. Confirm test levels match the plan (unit for helpers, integration for routes/server behavior) and every Bead ID exists in `bd list`.
+      4. Report success only when the test plan is complete and SPEC-aligned; failure sends the tester back to rewrite TEST_PLAN.md.
+    hooks:
+      max_cmd_turns: 8
+      cmd_guard: design_review
+      cmd_rewrites: [rig_placeholders, spec_md_case, spec_md_after_cd, test_plan_md_after_cd, bd_list_limit, unwrap_bash_lc]
+      env:
+        beads_dir: true
+      track: qa
+      artifacts: test_plan_review
+      retry_hint: |
+        One CMD: per line. Read SPEC.md, architecture.md, plan.md and TEST_PLAN.md from {{rig}}/mayor/rig, then `wc -c TEST_PLAN.md` and `bd list --status=open`.
+        Only success/failure/architecture_failure outcomes are allowed.
+      failure_hint: |
+        Do not edit any files. If TEST_PLAN.md is missing, below {{min_test_plan_bytes}} bytes, uses wrong phase ids, omits requirements, maps requirements to files outside required_files ({{required_files}}), or cites bead IDs that do not exist, report failure with the exact gaps so the tester rewrites it.
+    transitions:
+      success:
+        to: project_setup
+      failure:
+        to: test_plan
       architecture_failure:
         to: design
   test_plan_rework:

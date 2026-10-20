@@ -308,6 +308,9 @@ var artifactValidators = map[string]artifactValidateFn{
 	"test_plan": func(r *stateRunner, _ string) error {
 		return validateTestPlanArtifacts(r.townRoot, r.rig, r.track.hadCmdFailure, r.track.testPlanWriteOK, r.v)
 	},
+	"test_plan_review": func(r *stateRunner, _ string) error {
+		return validateTestPlanReviewArtifacts(r.townRoot, r.rig, r.v)
+	},
 	"test_review": func(r *stateRunner, outcome string) error {
 		return validateTestReviewArtifacts(r.townRoot, r.rig, outcome, r.track.hadCmdFailure, r.track.verifyOK, r.v)
 	},
@@ -395,6 +398,10 @@ var artifactFailureHints = map[string]func(*stateRunner) string{
 	"test_plan": func(r *stateRunner) string {
 		return fmt.Sprintf("Write TEST_PLAN.md (≥ %d bytes) with a heredoc from %s: one `### <req-id>` block per active-phase requirement with Level (unit/integration/ui), Test file, Bead ID, Scenarios, Assertions. Read SPEC.md, architecture.md, plan.md first.",
 			orchestrator.EffectiveMinTestPlanBytes(r.v), rigMayorRigPath(r.rig))
+	},
+	"test_plan_review": func(r *stateRunner) string {
+		return fmt.Sprintf("Read TEST_PLAN.md, SPEC.md, architecture.md and plan.md from %s; run `wc -c TEST_PLAN.md` and `bd list --status=open`. Use outcome failure (tester rewrites the plan) or architecture_failure (architect) with the exact gaps.",
+			rigMayorRigPath(r.rig))
 	},
 	"test_review": func(r *stateRunner) string {
 		return fmt.Sprintf("Read TEST_PLAN.md and the test files it names from %s; run %s. Use outcome failure (polecat) for missing/weak tests with bead IDs, plan_gap (tester) to rewrite TEST_PLAN.md, architecture_failure (architect) when SPEC/architecture contradict the tests.",
