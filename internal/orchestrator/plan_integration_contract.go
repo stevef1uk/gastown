@@ -8,7 +8,10 @@ import (
 	"strings"
 )
 
-var archOwnershipPathRE = regexp.MustCompile("`(linkshelf/[^`]+)`")
+// archOwnershipPathREPrefix is the prefix used in architecture.md ownership table paths.
+// It's set to the layout root (e.g., "pingapp/", "linkshelf/") so the regex can match
+// paths under the layout root without hardcoding a specific project name.
+var archOwnershipPathREPrefix = ""
 
 // IntegrationContractScopeNote tells plan_review/planning when ## Integration contract is required
 // for the active delivery phase (not the full profile union).
@@ -97,7 +100,7 @@ func renderPlanIntegrationContract(rigDir string, v WorkflowValidation) string {
 		}
 	}
 
-	if rows := extractArchitectureOwnershipRows(archDoc); len(rows) > 0 {
+	if rows := extractArchitectureOwnershipRows(archDoc, v.LayoutRootDir()); len(rows) > 0 {
 		b.WriteString("\n**Per-file exports (from architecture.md):**\n\n")
 		for _, row := range rows {
 			b.WriteString("- ")
@@ -136,13 +139,17 @@ func extractNumberedLines(doc string, max int) []string {
 	return out
 }
 
-func extractArchitectureOwnershipRows(archDoc string) []string {
+func extractArchitectureOwnershipRows(archDoc string, layoutRoot string) []string {
 	if archDoc == "" {
 		return nil
 	}
 	var out []string
 	lines := strings.Split(archDoc, "\n")
 	inTable := false
+	prefix := layoutRoot
+	if prefix != "" && !strings.HasSuffix(prefix, "/") {
+		prefix += "/"
+	}
 	for _, line := range lines {
 		lower := strings.ToLower(strings.TrimSpace(line))
 		if strings.Contains(lower, "per-file ownership") || strings.Contains(lower, "file | owns") {
@@ -155,10 +162,11 @@ func extractArchitectureOwnershipRows(archDoc string) []string {
 		if !inTable {
 			continue
 		}
-		if !strings.Contains(line, "linkshelf/") && !strings.Contains(line, "`") {
+		// Only process lines that contain backticks and the layout root prefix
+		if !strings.Contains(line, "`") {
 			continue
 		}
-		if m := archOwnershipPathRE.FindStringSubmatch(line); len(m) >= 2 {
+		if m := regexp.MustCompile(fmt.Sprintf("`(%s[^`]+)`", regexp.QuoteMeta(prefix))).FindStringSubmatch(line); len(m) >= 2 {
 			out = append(out, strings.TrimSpace(m[1]))
 		}
 	}

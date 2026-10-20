@@ -48,6 +48,8 @@ func PromptContextBlock(key, townRoot, rig string, v WorkflowValidation) string 
 		return FormatDesignDraftContextBlock(townRoot, rig)
 	case "phase_test_guards":
 		return FormatPhaseTestGuards(townRoot, rig, v)
+	case "test_plan_rework":
+		return FormatTestPlanReworkBlock(townRoot, rig, v)
 	default:
 		return ""
 	}
@@ -705,6 +707,54 @@ func isPlaywrightSpecPath(path string) bool {
 	}
 	return strings.HasPrefix(path, "test/e2e/") || strings.HasPrefix(path, "tests/e2e/") ||
 		strings.HasPrefix(path, "e2e/") || strings.Contains(path, "/e2e/")
+}
+
+// FormatTestPlanReworkBlock injects rework guidance when the tester re-enters test_plan
+// after a test_plan_review failure. It tells the tester to READ the existing TEST_PLAN.md
+// and apply targeted EDIT fixes for the specific issues QA identified.
+func FormatTestPlanReworkBlock(townRoot, rig string, v WorkflowValidation) string {
+	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
+	testPlanPath := filepath.Join(rigDir, "TEST_PLAN.md")
+	content := ""
+	if data, err := os.ReadFile(testPlanPath); err == nil {
+		content = string(data)
+	}
+	scoped := v.ForActivePhase()
+	phase := scoped.ActivePhaseID()
+	var b strings.Builder
+	b.WriteString("## TEST_PLAN REWORK MODE\n\n")
+	b.WriteString("You are re-entering **test_plan** after a **test_plan_review failure**.\n")
+	b.WriteString("The existing `TEST_PLAN.md` is at `{{rig}}/mayor/rig/TEST_PLAN.md`.\n\n")
+	b.WriteString("**CRITICAL: Do NOT regenerate the entire file with `cat > TEST_PLAN.md << 'EOF'`.**\n")
+	b.WriteString("Instead:\n")
+	b.WriteString("1. `cat {{rig}}/mayor/rig/TEST_PLAN.md` to read the current plan\n")
+	b.WriteString("2. Use `EDIT: {{rig}}/mayor/rig/TEST_PLAN.md` with targeted fixes for the **specific issues QA cited**\n")
+	b.WriteString("3. Only modify the sections QA flagged — do not rewrite other phases\n")
+	b.WriteString("4. Verify with `wc -c TEST_PLAN.md` then JSON success\n\n")
+	if content != "" {
+		b.WriteString("## Current TEST_PLAN.md (for reference)\n\n")
+		b.WriteString("```markdown\n")
+		b.WriteString(content)
+		b.WriteString("\n```\n\n")
+	}
+	// Determine test file pattern based on language/test runner
+	var testFilePattern string
+	if v.TestRunner == "go" || strings.Contains(strings.ToLower(v.QAVerifyCommand), "go test") {
+		testFilePattern = "*_test.go"
+	} else if v.TestRunner == "pytest" || strings.Contains(strings.ToLower(v.QAVerifyCommand), "pytest") {
+		testFilePattern = "test_*.py or *_test.py"
+	} else if strings.Contains(strings.ToLower(v.QAVerifyCommand), "npm test") || strings.Contains(strings.ToLower(v.QAVerifyCommand), "playwright") {
+		testFilePattern = "*.spec.ts or *.test.ts"
+	} else {
+		testFilePattern = "*_test.*"
+	}
+	b.WriteString("**Common fixes needed for this phase** (`" + phase + "`):\n")
+	b.WriteString("- Setup-only phases (no automated tests per qa_verify_command): OMIT entirely — no test file, no test entry\n")
+	b.WriteString("- Test file must follow pattern: `" + testFilePattern + "` and MUST match a path in workflow-profile.json required_files\n")
+	b.WriteString("- Every section MUST have a valid `Bead ID:` from `bd list --status=open`\n")
+	b.WriteString("- Test file paths MUST match `required_files` in workflow-profile.json\n")
+	b.WriteString("- Setup-only phases (verify = `echo 'verify ok...'`) must be OMITTED entirely\n")
+	return b.String()
 }
 
 func joinStrings(ss []string, sep string) string {

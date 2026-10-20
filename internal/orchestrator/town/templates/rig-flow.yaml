@@ -180,6 +180,7 @@ states:
         beads_dir: true
       track: test_plan
       artifacts: test_plan
+      failure_prompt_context: [test_plan_rework]
       retry_hint: |
         One CMD: per line. Read SPEC.md and architecture.md from {{rig}}/mayor/rig, then `wc -c TEST_PLAN.md`.
         Only success/failure/architecture_failure outcomes are allowed.

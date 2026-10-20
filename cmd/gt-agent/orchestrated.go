@@ -250,6 +250,13 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 	if len(runner.hooks.PromptContext) > 0 {
 		orchestratedPrintf("[gt-agent] injecting prompt_context for %s/%s: %v\n", task.WorkflowID, task.State, runner.hooks.PromptContext)
 	}
+	// Inject failure/rework prompt context when there's pending rework
+	if task.PendingRework != nil {
+		for _, block := range runner.failurePromptContextBlocks() {
+			contextBlocks = append(contextBlocks, block)
+		}
+		orchestratedPrintf("[gt-agent] injecting failure/rework prompt_context for %s/%s: %v\n", task.WorkflowID, task.State, runner.hooks.FailurePromptContext)
+	}
 	runner.logCodeindexInjectionForActiveBead()
 	if task.State != "qa_review" {
 		if block := runner.formatCachedContentBlock(); block != "" {
