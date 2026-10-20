@@ -178,6 +178,8 @@ func GoModBeadVerifyCommand(v WorkflowValidation, mayorRigDir string) string {
 }
 
 // GoModScaffoldVerifyCommand checks the module graph without mutating go.mod (no tidy on empty modules).
+// Matches the phase qa_verify_command for go.mod-only phases (go mod tidy) so plan.md's Verify
+// line matches the phase qa_verify_command, avoiding QA tracker mismatch.
 func GoModScaffoldVerifyCommand(v WorkflowValidation, mayorRigDir string) string {
-	return GoShellCDClause(mayorRigDir, v.LayoutRoot) + "go mod download"
+	return GoShellCDClause(mayorRigDir, v.LayoutRoot) + "go mod tidy"
 }

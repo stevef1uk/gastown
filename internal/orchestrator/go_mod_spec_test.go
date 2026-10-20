@@ -138,6 +138,10 @@ func TestEnsureGoModFromSpec_closesOpenBeadWhenValid(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(layout, "go.mod"), []byte("module linkshelf\n\ngo 1.22\n\nrequire github.com/mattn/go-sqlite3 v1.14.22\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
+	// Add a .go file with blank import so the dependency is kept by go mod tidy
+	if err := os.WriteFile(filepath.Join(layout, "main.go"), []byte("package main\n\nimport _ \"github.com/mattn/go-sqlite3\"\n\nfunc main() {}\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
 	v := WorkflowValidation{
 		LayoutRoot:         "linkshelf",
 		ActivePhaseIDField: "go-module",

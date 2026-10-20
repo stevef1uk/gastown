@@ -256,6 +256,15 @@ func goVerifyCommandMatches(cmd, verify string, v orchestrator.WorkflowValidatio
 		return false
 	}
 	for _, step := range steps {
+		// Treat go mod tidy and go mod download as equivalent module-integrity steps.
+		// This handles the case where the phase qa_verify_command uses "go mod tidy"
+		// but the plan.md bead Verify uses "go mod download" (or vice versa).
+		if isGoModIntegrityStep(step) {
+			if !hasGoModIntegrityStep(lower) {
+				return false
+			}
+			continue
+		}
 		if strings.HasPrefix(step, "go build ") {
 			target := strings.TrimSpace(strings.TrimPrefix(step, "go build"))
 			if target != "" && !strings.Contains(lower, target) {
@@ -271,6 +280,16 @@ func goVerifyCommandMatches(cmd, verify string, v orchestrator.WorkflowValidatio
 		}
 	}
 	return true
+}
+
+func isGoModIntegrityStep(step string) bool {
+	step = strings.ToLower(strings.TrimSpace(step))
+	return step == "go mod tidy" || step == "go mod download"
+}
+
+func hasGoModIntegrityStep(cmd string) bool {
+	cmd = strings.ToLower(cmd)
+	return strings.Contains(cmd, "go mod tidy") || strings.Contains(cmd, "go mod download")
 }
 
 func goToolchainStepsFromVerify(verify string) []string {

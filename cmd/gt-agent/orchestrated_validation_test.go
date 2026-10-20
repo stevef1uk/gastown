@@ -72,6 +72,40 @@ func TestIsQATestCommandOK_dockerComposeMayorRigPath(t *testing.T) {
 	}
 }
 
+func TestIsQATestCommandOK_goModTidyDownloadEquivalence(t *testing.T) {
+	// Test the exact logged scenario: QA runs "go mod download" from mayor/rig workdir
+	// but phase verify is "go mod tidy" (go-module phase)
+	v := orchestrator.WorkflowValidation{
+		LayoutRoot:      "pingapp",
+		TestRunner:      "go",
+		QAVerifyCommand: "cd pingapp && go mod tidy",
+		RequiredFiles:   []string{"pingapp/go.mod"},
+		DeliveryPhases: []orchestrator.DeliveryPhase{
+			{ID: "go-module", RequiredFiles: []string{"pingapp/go.mod"}, QAVerifyCommand: "cd pingapp && go mod tidy"},
+		},
+		ActivePhaseIDField: "go-module",
+	}
+	v = v.ForActivePhase()
+
+	// Exact logged cmd: rewritten to mayor/rig workdir with nested layout
+	cmd := "cd ping_rig/mayor/rig/pingapp && go mod download"
+	if !isQATestCommandOK(cmd, v) {
+		t.Fatalf("expected go mod download from mayor/rig to match go mod tidy verify (equivalence)")
+	}
+
+	// Reverse: cmd is go mod tidy, verify is go mod download
+	cmd2 := "cd ping_rig/mayor/rig/pingapp && go mod tidy"
+	if !isQATestCommandOK(cmd2, v) {
+		t.Fatal("go mod tidy cmd should match go mod download verify")
+	}
+
+	// Non-equivalent: go build should not match
+	cmd3 := "cd ping_rig/mayor/rig/pingapp && go build ./..."
+	if isQATestCommandOK(cmd3, v) {
+		t.Fatal("go build should not match go mod tidy")
+	}
+}
+
 func TestDockerVerifyCommandMatches_mayorRigCd(t *testing.T) {
 	verify := "cd . && docker-compose -f docker-compose.yml config"
 	cmd := "cd finally/mayor/rig && docker-compose -f docker-compose.yml config"
@@ -114,5 +148,30 @@ func TestRigFlowCmdBeforeOutcomeNudge(t *testing.T) {
 		if strings.TrimSpace(h.CmdBeforeOutcomeNudge) != "" {
 			t.Errorf("state %q must not declare cmd_before_outcome_nudge, got %q", state, h.CmdBeforeOutcomeNudge)
 		}
+	}
+}
+
+func TestGoVerifyCommandMatches_goModTidyDownloadEquivalence(t *testing.T) {
+	v := orchestrator.WorkflowValidation{
+		LayoutRoot: "pingapp",
+	}
+	// cmd runs in mayor/rig workdir with nested layout
+	cmd := "cd ping_rig/mayor/rig/pingapp && go mod download"
+	// phase verify uses go mod tidy
+	verify := "cd pingapp && go mod tidy"
+	if !goVerifyCommandMatches(cmd, verify, v) {
+		t.Fatalf("expected go mod download cmd to match go mod tidy verify (equivalence)")
+	}
+	// Reverse direction
+	cmd2 := "cd ping_rig/mayor/rig/pingapp && go mod tidy"
+	verify2 := "cd pingapp && go mod download"
+	if !goVerifyCommandMatches(cmd2, verify2, v) {
+		t.Fatalf("expected go mod tidy cmd to match go mod download verify (equivalence)")
+	}
+	// Non-equivalent: go build should not match go mod tidy
+	verify3 := "cd pingapp && go mod tidy"
+	cmd3 := "cd ping_rig/mayor/rig/pingapp && go build ./..."
+	if goVerifyCommandMatches(cmd3, verify3, v) {
+		t.Fatal("go build should not match go mod tidy")
 	}
 }

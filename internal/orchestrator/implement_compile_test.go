@@ -119,6 +119,10 @@ func TestImplementationModuleCompileOK_goModulePhaseOnly(t *testing.T) {
 	if err := os.MkdirAll(layout, 0755); err != nil {
 		t.Fatal(err)
 	}
+	// Add a simple Go file that uses the dependency so go mod tidy doesn't remove it
+	if err := os.WriteFile(filepath.Join(layout, "main.go"), []byte("package main\nimport _ \"github.com/mattn/go-sqlite3\"\nfunc main() {}\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(filepath.Join(layout, "go.mod"), []byte("module linkshelf\n\ngo 1.22\n\nrequire github.com/mattn/go-sqlite3 v1.14.22\n"), 0644); err != nil {
 		t.Fatal(err)
 	}

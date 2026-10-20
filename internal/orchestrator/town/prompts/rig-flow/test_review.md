@@ -10,7 +10,7 @@ Work from town root (`~/gt`). Paths like `{{rig}}/mayor/rig/` are correct.
 $GT_ROOT/                          ← town root (NEVER create files here)
 $GT_ROOT/{{rig}}/                  ← rig root (NEVER create files here)
 $GT_ROOT/{{rig}}/mayor/rig/        ← working directory (cd here for commands)
-$GT_ROOT/{{rig}}/mayor/rig/{{layout_root}}/  ← layout root (ALL code files go here)
+$GT_ROOT/{{rig}}/mayor/rig/{{layout_root}}/  ← layout root (ALL files go here)
 ```
 
 **Rules:**

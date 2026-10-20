@@ -180,7 +180,8 @@ func PlannedTestFiles(testPlan string) []string {
 // one of the given phase IDs, plus all blocks with no Phase field (backward compatible).
 func PlannedTestFilesForPhases(testPlan string, phaseIDs []string) []string {
 	if len(phaseIDs) == 0 {
-		return PlannedTestFiles(testPlan)
+		// No active/completed phases with automated tests — nothing to validate
+		return nil
 	}
 	phaseSet := make(map[string]bool, len(phaseIDs))
 	for _, p := range phaseIDs {

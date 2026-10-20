@@ -104,10 +104,10 @@ Test file: pingapp/generic_test.go
 		t.Fatalf("expected 3 files for core+web phases, got %d: %v", len(files), files)
 	}
 
-	// Empty phase list (backward compatible)
+	// Empty phase list (no phases to validate - e.g., setup-only active phase with no completed phases)
 	files = PlannedTestFilesForPhases(plan, nil)
-	if len(files) != 4 {
-		t.Fatalf("expected 4 files with nil phases, got %d: %v", len(files), files)
+	if len(files) != 0 {
+		t.Fatalf("expected 0 files with nil phases (no phases to validate), got %d: %v", len(files), files)
 	}
 }
 
@@ -177,10 +177,10 @@ Test file: pingapp/generic_test.go
 		t.Errorf("missing file = %q, want pingapp/go.mod", missing[0])
 	}
 
-	// No phase filter - should check all files
+	// No phase filter - no phases to validate (setup-only active phase)
 	missing = MissingPlannedTestFilesForPhases(rigDir, "", plan, nil)
-	if len(missing) != 2 {
-		t.Fatalf("expected 2 missing with nil phases (go.mod + ping.spec.ts), got %d: %v", len(missing), missing)
+	if len(missing) != 0 {
+		t.Fatalf("expected 0 missing with nil phases (no phases to validate), got %d: %v", len(missing), missing)
 	}
 }
 
