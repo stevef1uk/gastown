@@ -84,6 +84,13 @@ states:
       cmd_rewrites: [rig_placeholders, spec_md_case, spec_md_after_cd, unwrap_bash_lc]
       track: qa
       artifacts: design_review
+      cmd_before_outcome_nudge: |
+        You reported an outcome without reading any files, so it is not grounded in evidence. You MUST inspect the artifacts first — one CMD: per line:
+        CMD: wc -c architecture.md
+        CMD: cat SPEC.md
+        CMD: cat architecture.md
+        CMD: cat .gastown/workflow-profile.json
+        Then report an outcome based on the actual file contents and byte count. Do NOT invent placeholders, missing sections, or frontend/backend files that the artifacts do not contain.
       retry_hint: |
         One CMD: per line. Read SPEC.md and architecture.md from {{rig}}/mayor/rig, then run `wc -c architecture.md`.
         Only success/failure outcomes are allowed.
@@ -419,6 +426,10 @@ states:
       track: qa
       artifacts: qa
       bead_ids_in_summary: true
+      cmd_before_outcome_nudge: |
+        You reported an outcome without running any commands. You MUST run the verify command first and report its actual output:
+        CMD: cd {{rig}}/mayor/rig && {{qa_verify_command}}
+        Do NOT guess or assume — run the command and report what it says.
       retry_hint: |
         One CMD: per line. Review closed beads against SPEC and architecture; use allowed QA outcomes only.
       failure_hint: |

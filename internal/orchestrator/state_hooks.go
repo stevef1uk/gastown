@@ -26,6 +26,12 @@ type StateHooks struct {
 	// Example keys: planning_bead_bootstrap, implementation_queue.
 	PromptContext []string `yaml:"prompt_context,omitempty" json:"prompt_context,omitempty"`
 	CmdGuard string   `yaml:"cmd_guard,omitempty" json:"cmd_guard,omitempty"`
+	// CmdBeforeOutcomeNudge, when set, makes gt-agent reject a structured outcome
+	// (success/failure JSON) that arrives before ANY command ran this session, and
+	// re-prompt with this text ({{var}} substituted). Review states that must
+	// inspect artifacts before judging set it so a small/free model cannot emit a
+	// groundless first-turn verdict that loops the workflow.
+	CmdBeforeOutcomeNudge string `yaml:"cmd_before_outcome_nudge,omitempty" json:"cmd_before_outcome_nudge,omitempty"`
 
 	CmdRewrites []string `yaml:"cmd_rewrites,omitempty" json:"cmd_rewrites,omitempty"`
 
@@ -136,6 +142,9 @@ func (h StateHooks) ApplyOverrides(override StateHooks) StateHooks {
 	}
 	if override.CmdGuard != "" {
 		h.CmdGuard = override.CmdGuard
+	}
+	if override.CmdBeforeOutcomeNudge != "" {
+		h.CmdBeforeOutcomeNudge = override.CmdBeforeOutcomeNudge
 	}
 	if len(override.CmdRewrites) > 0 {
 		h.CmdRewrites = override.CmdRewrites

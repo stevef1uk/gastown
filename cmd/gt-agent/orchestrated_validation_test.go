@@ -79,3 +79,40 @@ func TestDockerVerifyCommandMatches_mayorRigCd(t *testing.T) {
 		t.Fatal("expected mayor/rig verify to match layout hint")
 	}
 }
+
+func TestRigFlowCmdBeforeOutcomeNudge(t *testing.T) {
+	// Review states must inspect artifacts before rendering a verdict. The nudge
+	// is configured in templates/rig-flow.yaml (FSM behavior belongs in YAML, not
+	// state-name branches in gt-agent).
+	for _, state := range []string{"design_review", "qa_review"} {
+		h, err := orchestrator.RigFlowStateHooks(state)
+		if err != nil {
+			t.Fatalf("RigFlowStateHooks(%q): %v", state, err)
+		}
+		if strings.TrimSpace(h.CmdBeforeOutcomeNudge) == "" {
+			t.Errorf("state %q must declare cmd_before_outcome_nudge so a no-command outcome is rejected", state)
+		}
+	}
+
+	h, err := orchestrator.RigFlowStateHooks("design_review")
+	if err != nil {
+		t.Fatalf("RigFlowStateHooks(design_review): %v", err)
+	}
+	for _, want := range []string{"architecture.md", "SPEC.md"} {
+		if !strings.Contains(h.CmdBeforeOutcomeNudge, want) {
+			t.Errorf("design_review nudge must name %q, got:\n%s", want, h.CmdBeforeOutcomeNudge)
+		}
+	}
+
+	// States that act (write/verify) before reporting must NOT reject a
+	// first-turn outcome — otherwise a valid JSON-only completion stalls.
+	for _, state := range []string{"implementation", "planning", "plan_review", "test_plan", "test_review", "design", "kickoff"} {
+		h, err := orchestrator.RigFlowStateHooks(state)
+		if err != nil {
+			t.Fatalf("RigFlowStateHooks(%q): %v", state, err)
+		}
+		if strings.TrimSpace(h.CmdBeforeOutcomeNudge) != "" {
+			t.Errorf("state %q must not declare cmd_before_outcome_nudge, got %q", state, h.CmdBeforeOutcomeNudge)
+		}
+	}
+}

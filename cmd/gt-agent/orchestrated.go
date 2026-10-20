@@ -443,14 +443,14 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 
 		if o, s, ok := parseOrchestratedResult(response, task.AllowedOutcomes); ok {
 			o = normalizeOrchestratedOutcome(o, task.AllowedOutcomes)
-			if task.State == "qa_review" && !qaCmdsRan {
-				orchestratedPrintf("[gt-agent] rejecting QA outcome on turn %d — no commands executed yet; run verify first\n", turn)
-				msg := "You reported a result without running any commands. You MUST execute the verify command first:\n" +
-					"CMD: cd {{rig}}/mayor/rig && {{qa_verify_command}}\n\n" +
-					"Then report the actual output as your summary. Do NOT guess or assume — run the command and report what it says."
-				recordAttemptFeedback(msg + "\n")
-				messages = append(messages, llm.Message{Role: "user", Content: msg})
-				continue
+			if !qaCmdsRan {
+				if nudge := strings.TrimSpace(runner.hooks.CmdBeforeOutcomeNudge); nudge != "" {
+					msg := orchestrator.SubstituteVars(nudge, orchestratorPromptVars(task, townRoot))
+					orchestratedPrintf("[gt-agent] rejecting %s outcome on turn %d — no commands executed yet\n", task.State, turn)
+					recordAttemptFeedback(msg + "\n")
+					messages = append(messages, llm.Message{Role: "user", Content: msg})
+					continue
+				}
 			}
 			if isOrchestratedFailureOutcome(o) && runner.hooks.Artifacts == "planning" {
 				if vErr := runner.validateArtifacts("success"); vErr == nil {

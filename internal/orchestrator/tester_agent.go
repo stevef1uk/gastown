@@ -250,7 +250,8 @@ func plannedTestFileExists(rigDir, layoutRoot, f string) bool {
 
 // StubTestFiles reports planned test files that exist but look like stubs
 // (no substantive assertions/body). Uses CheckContentNotStub with the profile's
-// minimums, relaxed so a focused unit test is not rejected for brevity.
+// minimums, relaxed so a focused unit test is not rejected for brevity and so
+// dependency manifests (go.mod, requirements.txt, …) only need to be non-empty.
 func StubTestFiles(rigDir, layoutRoot string, v WorkflowValidation, testPlan string) []string {
 	opts := StubCheckOptionsFromValidation(v)
 	if opts.MinFileBytes > 160 {
@@ -265,7 +266,7 @@ func StubTestFiles(rigDir, layoutRoot string, v WorkflowValidation, testPlan str
 		if err != nil {
 			continue // missing files are reported separately
 		}
-		if err := CheckContentNotStub(data, f, opts); err != nil {
+		if err := CheckContentNotStub(data, f, optsForPath(f, opts)); err != nil {
 			stubs = append(stubs, f)
 		}
 	}
@@ -288,7 +289,7 @@ func StubTestFilesForPhases(rigDir, layoutRoot string, v WorkflowValidation, tes
 		if err != nil {
 			continue // missing files are reported separately
 		}
-		if err := CheckContentNotStub(data, f, opts); err != nil {
+		if err := CheckContentNotStub(data, f, optsForPath(f, opts)); err != nil {
 			stubs = append(stubs, f)
 		}
 	}
@@ -328,9 +329,41 @@ func TestPlanBeadMappingMismatches(townRoot, rig string, v WorkflowValidation, b
 	return testPlanBeadMappingMismatches(v, blocks, titles), nil
 }
 
+// testPlanPhaseScope returns the lower-cased delivery phase IDs whose
+// TEST_PLAN.md rows are in scope for bead-mapping validation: the active phase
+// plus any completed phases. Future phases are excluded because their beads may
+// not exist yet and their files are not implemented, so a "Bead ID owns a
+// different file" mismatch there is a false positive. Rows with no Phase field
+// are always in scope. Returns nil for rigs without phased delivery, meaning
+// "validate every row".
+func testPlanPhaseScope(v WorkflowValidation) map[string]bool {
+	if !v.HasPhasedDelivery() {
+		return nil
+	}
+	scope := make(map[string]bool)
+	if active, ok := v.ActivePhase(); ok {
+		if id := strings.ToLower(strings.TrimSpace(active.ID)); id != "" {
+			scope[id] = true
+		}
+	}
+	for _, id := range v.CompletedPhaseIDs() {
+		if id = strings.ToLower(strings.TrimSpace(id)); id != "" {
+			scope[id] = true
+		}
+	}
+	return scope
+}
+
 func testPlanBeadMappingMismatches(v WorkflowValidation, blocks []TestPlanBlock, titles map[string]string) []string {
+	scope := testPlanPhaseScope(v)
 	var bad []string
 	for _, b := range blocks {
+		if scope != nil {
+			phase := strings.ToLower(strings.TrimSpace(b.Phase))
+			if phase != "" && !scope[phase] {
+				continue // future-phase row: its bead may not exist yet — see testPlanPhaseScope
+			}
+		}
 		beadID := strings.ToLower(strings.TrimSpace(b.BeadID))
 		testFile := filepath.ToSlash(strings.TrimSpace(b.TestFile))
 		if beadID == "" || testFile == "" {

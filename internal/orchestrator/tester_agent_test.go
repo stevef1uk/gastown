@@ -361,6 +361,83 @@ func TestTestPlanBeadMappingMismatches(t *testing.T) {
 	}
 }
 
+func TestStubTestFilesForPhasesManifestNotStub(t *testing.T) {
+	t.Parallel()
+	rigDir := t.TempDir()
+	appDir := filepath.Join(rigDir, "pingapp")
+	if err := os.MkdirAll(appDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	// go.mod has only two substantive lines ("module pingapp", "go 1.22"), which
+	// trips the default min-substantive-lines=3 heuristic when treated as a test
+	// file — but a dependency manifest only needs to be non-empty.
+	if err := os.WriteFile(filepath.Join(appDir, "go.mod"), []byte("module pingapp\n\ngo 1.22\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	// A one-line file is a genuine stub and must still be flagged.
+	if err := os.WriteFile(filepath.Join(appDir, "main_test.go"), []byte("package main\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	plan := `### go-module
+Requirement: Go module initialized
+Level: unit
+Phase: go-module
+Test file: pingapp/go.mod
+
+### core
+Requirement: HTTP server
+Level: unit
+Phase: core
+Test file: pingapp/main_test.go
+`
+
+	got := StubTestFilesForPhases(rigDir, "", WorkflowValidation{}, plan, []string{"go-module"})
+	if len(got) != 0 {
+		t.Fatalf("dependency manifest go.mod must not be flagged as a stub, got %v", got)
+	}
+
+	got = StubTestFilesForPhases(rigDir, "", WorkflowValidation{}, plan, []string{"core"})
+	if len(got) != 1 || got[0] != "pingapp/main_test.go" {
+		t.Fatalf("one-line test file should still be flagged as a stub, got %v", got)
+	}
+}
+
+func TestTestPlanBeadMappingMismatchesSkipsFuturePhases(t *testing.T) {
+	t.Parallel()
+	v := WorkflowValidation{
+		LayoutRoot:         "linkshelf",
+		BeadTitleContains:  "Implement ",
+		ActivePhaseIDField: "go-module",
+		DeliveryPhases: []DeliveryPhase{
+			{ID: "go-module", RequiredFiles: []string{"linkshelf/go.mod"}},
+			{ID: "core", RequiredFiles: []string{"linkshelf/internal/api/handlers.go"}},
+			{ID: "test", RequiredFiles: []string{"linkshelf/internal/api/handlers_test.go"}},
+		},
+	}
+	blocks := []TestPlanBlock{
+		// Active phase: the cited bead owns go.mod and the row names go.mod — ok.
+		{ReqID: "go-module", Phase: "go-module", TestFile: "linkshelf/go.mod", BeadID: "te-gm"},
+		// Future phases cite the go-module bead but name later files. Their own
+		// beads do not exist yet, so these rows must be skipped, not flagged.
+		{ReqID: "core", Phase: "core", TestFile: "linkshelf/internal/api/handlers.go", BeadID: "te-gm"},
+		{ReqID: "test", Phase: "test", TestFile: "linkshelf/internal/api/handlers_test.go", BeadID: "te-gm"},
+	}
+	titles := map[string]string{"te-gm": "Implement linkshelf/go.mod per architecture"}
+
+	if got := testPlanBeadMappingMismatches(v, blocks, titles); len(got) != 0 {
+		t.Fatalf("future-phase rows must be skipped, got %v", got)
+	}
+
+	// Sanity check: without phase scoping (unphased rig) the future rows do mismatch.
+	unphased := v
+	unphased.DeliveryPhases = nil
+	unphased.ActivePhaseIDField = ""
+	if got := testPlanBeadMappingMismatches(unphased, blocks, titles); len(got) != 2 {
+		t.Fatalf("unphased rig should flag the 2 future rows, got %v", got)
+	}
+}
+
 func TestPhaseShipsAutomatedTests(t *testing.T) {
 	cases := []struct {
 		name string
