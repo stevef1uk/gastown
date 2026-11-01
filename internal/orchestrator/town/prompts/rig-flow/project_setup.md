@@ -24,13 +24,13 @@ $GT_ROOT/{{rig}}/mayor/rig/{{layout_root}}/  ← layout root (ALL files go here)
 
 1. Prepare the repo so the Polecat implements **one file per bead** without toolchain churn.
 2. Run `{{project_setup_verify_hint}}` green before implementation starts (module/venv only — **not** full app build or curl).
-3. **Beads:** `sync_planning_artifacts` already created one open bead per `required_files` path. Use `bd list` only — **do not `bd create`** unless a required path has no open bead (then run `gt rig sync-planning {{rig}} --force` via mayor, not ad-hoc titles).
+3. **Beads:** `sync_planning_artifacts` maintains the queue. A file's bead may already be closed or in progress; an open-only listing is not a completeness check. Do not block environment setup on absent application source, test files, or open implementation beads: the Polecat handles implementation after setup succeeds.
 
 ### Shared scope
 
 | Allowed | Forbidden |
 |---------|-----------|
-| `bd list`, `bd create`, `bd delete`, `bd update` | `bd close`, `git push` |
+| `bd list` for context | `bd create`, `bd delete`, `bd update`, `bd close`, `git push` |
 | `mkdir` only for `{{layout_root}}/` (not deep package trees) | Full feature logic, `touch`, `echo`/`cat` into source files |
 | Run `{{project_setup_verify_hint}}` | `go build`, `go run`, `go test`, `curl` (Go setup) |
 | | Markdown placeholders like `<module>` or `<deps>` |
@@ -45,12 +45,12 @@ $GT_ROOT/{{rig}}/mayor/rig/{{layout_root}}/  ← layout root (ALL files go here)
    CMD: cat {{rig}}/mayor/rig/architecture.md
    ```
 
-2. List open implement beads:
+2. If bead context is needed, include all statuses:
    ```
-   CMD: cd {{rig}}/mayor/rig && bd list --status=open --flat --limit=0 | grep -Fi '{{bead_title_contains}}' || true
+   CMD: cd {{rig}}/mayor/rig && bd list --status=open,in_progress,closed --flat --limit=0 | grep -Fi '{{bead_title_contains}}' || true
    ```
 
-3. If beads look wrong (flat paths like `linkshelf/handlers.go`, duplicates, or missing `required_files`), **do not** hand-fix with `bd create`. Report failure or ask for `gt rig sync-planning {{rig}} --force` — pre_run/post_success hooks repair the set.
+3. Leave queue repair to the pre_run/post_success hooks. Once dependency installation and `{{project_setup_verify_hint}}` pass, report success so implementation can proceed. Report setup failure only for an actual environment/dependency/setup-verify error, not for missing implementation work. Repair dependency manifests you own against SPEC/architecture before installing; do not escalate their contents as an architecture defect.
 
 ---
 
@@ -78,7 +78,7 @@ Disable codeindex only: `GT_CODEINDEX=0` in polecat agent env. Operator docs: fr
 | `bd list` (pre_run auto-dedupes duplicate implement beads) | `bd create` new implement beads — planner already created them |
 | Run `{{project_setup_verify_hint}}` after module commands | `go build`, `go run`, `go test`, `curl` |
 
-**project_setup leaves `{{layout_root}}/` with only `go.mod` + `go.sum`.** If `go.mod` already exists, skip `go mod init` and run `go get` + `go mod tidy` only.
+On initial setup, scaffold `go.mod` + `go.sum`. On re-entry, preserve existing source/tests and the declared module path and Go version. If `go.mod` already exists, skip `go mod init`.
 
 ### Go commands (example — one CMD per line, no markdown fences)
 
@@ -107,7 +107,7 @@ gt-agent creates `{{python_venv_dir}}/` when you run venv/pip commands in this s
 |---------|-----------|
 | `python3 -m venv {{python_venv_dir}}` under mayor/rig | `go mod` |
 | `python3 -m pip install -r {{requirements_file}}` (venv active) | Shell lines inside `requirements.txt` |
-| `requirements.txt` = package names only | `bd close` (gt-agent auto-closes manifest beads after green setup verify) |
+| Dependency declarations matching SPEC/architecture, including exact version pins | Removing pins, replacing the manifest with only pytest, or upgrading declared versions |
 | Minimal `__init__.py` / package dirs if beads need them | Pasting pytest commands into `.py` source |
 
 ### Python commands (example)
@@ -120,9 +120,9 @@ CMD: cd {{rig}}/mayor/rig && {{project_setup_verify_hint}}
 
 `{{project_setup_verify_hint}}` checks the venv can `import pytest` — **not** a full `pytest` run (no tests exist until implementation).
 
-If `{{requirements_file}}` is missing but beads need packages, create it with **package lines only** (e.g. `pytest`, `flask==3.0.0`), then pip install once. Do not use `source`/`activate` — gt-agent uses the venv python for pip.
+Read `{{requirements_file}}` before changing it. If missing or inconsistent with SPEC/architecture, restore the specified dependency declarations, preserving exact versions, constraints, and required packages, then install from that file. Do not replace it with a generic unpinned package list or use `pip freeze` to redefine the contract. Do not use `source`/`activate` — gt-agent uses the venv python for pip.
 
-After green `{{project_setup_verify_hint}}`, gt-agent closes the `{{requirements_file}}` implement bead automatically — polecat never implements it.
+Do not close manifest beads yourself or require them to be closed before setup succeeds. Active-phase manifest beads remain with the Polecat for verification and closure.
 
 Success JSON: `{"outcome":"success","summary":"Python venv ready; deps installed; beads split; verify passed"}`
 

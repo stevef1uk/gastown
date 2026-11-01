@@ -37,6 +37,7 @@ Read `.gastown/workflow-profile.json` before drafting. The delivery phase IDs ar
 - If every delivery phase explicitly has no automated tests, write a substantive verification summary meeting the size floor, explaining the profile checks and why there are no test rows. Do not invent rows just to populate the matrix.
 - A phase that delivers only manifests or production code may have a row with an empty `Test file:`. Describe its real profile verification in Scenarios/Assertions; do not invent a test file to fill the field. A phase that lists test files must map its tests to those exact paths in that phase's `required_files`.
 - Do not assign a future phase's test file to an earlier phase. Describe deferred coverage in prose and put the file mapping in its owning phase's row.
+- A runtime smoke check may be an executable command rather than a new test file when SPEC/profile declares no additional artifact. Keep any required `Test file:` mapping to the exact listed path for suite verification; separately describe the documented server command, readiness, HTTP status/payload assertions, and server cleanup in Scenarios/Assertions. Do not claim an in-process unit test proves real-process behavior or invent a smoke-test file outside `required_files`.
 - `plan.md` and open implementation beads are active-phase artifacts. Future-phase bead IDs may be empty until those phases start. Existing completed-phase bead IDs may be closed. Never request extra-phase beads merely to fill the matrix.
 
 ## Repair before escalation
@@ -74,7 +75,7 @@ Read `{{town_root}}/orchestrator/STANDARDS.md` for requirement ID conventions an
 ### <req-id>
 Requirement: one-line statement from SPEC/REQUIREMENTS.md
 Level: unit | integration | ui
-Test file: <path under layout_root, e.g. layout_root/internal/api/handlers_test.go>
+Test file: <exact path from the owning phase's required_files, relative to the rig worktree>
 Bead ID: <id from plan.md / bd list>
 Phase: <delivery phase id>
 Scenarios:
@@ -100,6 +101,8 @@ Assign **unit** to pure logic/domain rules, **integration** to API/store/HTTP wi
 **CRITICAL — Test file paths MUST come from workflow-profile.json:**
 Before writing TEST_PLAN.md, run `CMD: cd {{rig}}/mayor/rig && cat .gastown/workflow-profile.json`. Use only test paths listed in that row's phase `required_files`, or top-level `required_files` for unphased projects. Do not invent companion test paths or use a manifest/production file as a test file. These are planned paths: their absence on disk before implementation is expected.
 
+**Path base:** `Test file:` and profile `required_files` paths are relative to `{{rig}}/mayor/rig/`, not to `{{layout_root}}/`. Copy the exact profile path, preserving any existing layout-root prefix. Do not prepend `{{layout_root}}` again or strip its prefix from the plan. Inspect a mapped file from the rig worktree with `CMD: cd {{rig}}/mayor/rig && cat <exact-profile-path>`; do not first change into the layout root and then reuse the full profile path. This applies to every language, nested layout, and root layout (`layout_root: "."`).
+
 **NEVER use `plan_gap` as a Test file path.** `plan_gap` is not a real file — it is a signal word that creates phantom beads for nonexistent files. If the delivery phase's `required_files` contains the test file, use that exact path. If the phase has no test file in `required_files`, leave `Test file:` empty.
 
 **If a delivery phase's `qa_verify_command` explicitly indicates no automated tests or is only an echo/status message, omit its section.** A real build, lint, or module verification command is not an echo-only phase; record its checks without inventing automated test files.
@@ -114,7 +117,7 @@ Before writing TEST_PLAN.md, run `CMD: cd {{rig}}/mayor/rig && cat .gastown/work
    ### <req-id>
    Requirement: one-line statement from SPEC/REQUIREMENTS.md
    Level: unit | integration | ui
-   Test file: <path under layout_root, e.g. {{layout_root}}/tests/test_api.py>
+   Test file: <exact path from the owning phase's required_files, relative to the rig worktree>
    Bead ID: <id from plan.md / bd list>
    Phase: <delivery phase id>
    Scenarios:

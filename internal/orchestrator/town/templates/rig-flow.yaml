@@ -253,7 +253,7 @@ states:
     prompt_file: prompts/rig-flow/project_setup.md
     instructions: |
       Use only the **{{project_setup_stack_kind}}** stack for this rig (see injected block below).
-      Run `{{project_setup_verify_hint}}` green. Beads and plan.md are synced from required_files on pre_run — do not `bd create` unless sync left gaps. Then JSON success.
+      Preserve or restore SPEC/architecture dependency declarations, including version pins, and run `{{project_setup_verify_hint}}` green. Queue sync is handled by hooks; missing application files or entries in an open-only bead listing are not setup failures. Then JSON success so the Polecat can implement remaining work.
     hooks:
       prompt_context: [project_setup_stack]
       pre_run: [sync_planning_artifacts, enforce_implement_bead_queue, prune_rig_root_junk, ensure_test_stack_ready]

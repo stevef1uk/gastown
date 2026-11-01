@@ -153,9 +153,11 @@ Follow the **red-green-refactor** cycle for every bead that has a test path in `
 5. **If verify fails**: READ the failing file, check its path. Fix in the next turn group. Do NOT reopen the bead.
 6. `CMD: bd close BEAD_ID`
 7. Look at the **Queue** table. If another bead is **open** (○) or **in_progress** (◐), repeat from step 1 with the next queue bead.
-8. When all implement beads in **Queue** are **closed** (✓), send JSON success in the **next** message.
+8. When all implement beads in **Queue** are **closed** (✓) and required phase/runtime verification is green, send JSON success in the **next** message.
 
-**CRITICAL: Do NOT re-verify or re-close already-closed beads. Do NOT add dependencies or edit files after all beads are closed. Once Queue shows all ✓, send JSON success immediately.**
+**CRITICAL: Do NOT re-close already-closed beads or make unrelated edits after the queue is closed. Complete any outstanding phase/runtime verification before JSON success.**
+
+For a final phase whose SPEC/TEST_PLAN requires a live-server smoke check, run the documented server-and-HTTP verification in addition to the profile's unit-test command. Use the existing background-server/curl support, confirm the specified status/payload, and clean up the server. A no-new-file verification phase does not require an invented smoke-test file: preserve the declared file set and use command output as evidence. On rework, diagnose the actual smoke result before changing source or tests.
 
 ## Rules
  

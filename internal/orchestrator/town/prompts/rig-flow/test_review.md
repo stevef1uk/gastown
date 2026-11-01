@@ -31,9 +31,11 @@ $GT_ROOT/{{rig}}/mayor/rig/{{layout_root}}/  ← layout root (ALL files go here)
 
 1. `TEST_PLAN.md` exists and is ≥ {{min_test_plan_bytes}} bytes.
 2. Read `.gastown/workflow-profile.json`. **For phased workflows, only validate test-plan rows for the eligible active/completed phase IDs: `{{test_validation_phase_ids}}`.** An empty list means no test-plan rows are in scope; it does not mean all phases. Future-phase tests and bead IDs are deferred. For unphased workflows, review all declared mappings.
-3. For each in-scope requirement row with a test mapping, the planned test file exists on disk (relative to `{{layout_root}}`).
+3. For each in-scope requirement row with a test mapping, the planned test file exists on disk relative to `{{rig}}/mayor/rig/`, using the exact path listed in the owning phase's profile `required_files`.
 4. Each test file has substantive content — no `TODO`, `FIXME`, empty bodies, or placeholder returns (gt-agent's stub check).
 5. Phase verify `{{phase_qa_verify_command}}` exits green.
+
+**Path base:** `Test file:` and profile `required_files` paths are relative to the rig worktree, not to `{{layout_root}}/`. Preserve any existing layout-root prefix; do not prepend `{{layout_root}}` again or request that the Tester strip its prefix. Inspect a mapped file with `CMD: cd {{rig}}/mayor/rig && cat <exact-profile-path>`. Do not first change into the layout root and then reuse the full profile path. A matching profile path is not a `plan_gap` merely because it already begins with the layout root. These path rules apply to every language, nested layout, and root layout (`layout_root: "."`).
 
 An empty `Test file:` is valid for a phase whose profile lists no test file: review its declared build/module/other verification instead of demanding an invented unit test. Future-phase rows are deferred, including their file existence and bead assignment. Read the profile and cited files before failing. For repeated feedback, confirm the defect is still present and cite the current evidence. Report a test-plan defect as `plan_gap`, an implementation defect as `failure`, and an upstream contract contradiction as `architecture_failure`; do not route the same defect to an owner who cannot fix it.
 
@@ -46,6 +48,8 @@ For each in-scope `### <req-id>` in `TEST_PLAN.md` with a test mapping:
 - **unit**: does the test exercise the code path behind the requirement (real input → real assert)? A test that only checks "file exists" or calls nothing is not coverage.
 - **integration**: does it drive the real API/store wiring (listed in `required_files`) rather than a mock that bypasses the API?
 - **ui**: only required when the phase ships UI files and `ui_command` is set; does it start the UI (via `ui_command`) and assert on visible behavior, not just a page load?
+
+For a live-server smoke requirement, verify the runtime command separately from the mapped unit-test file. When SPEC/profile declares no additional smoke-test artifact, do not demand a new file or bead. Run the documented server command from its documented working directory using the existing background-server/curl smoke support; confirm readiness, required HTTP status/payload, and cleanup from actual output. Record the command and result in `test-report.md`. An in-process test passing does not prove the smoke check passed, but absence of a separate smoke-test file is not itself a failure. Report failure for an observed smoke error; use plan_gap only if the plan actually omits or contradicts the required runtime checks.
 
 Missing a planned test, a test that never asserts, or a verify that fails ⇒ `failure`. A plan that hand-waves ("ensure quality") or omits whole requirements ⇒ `plan_gap`. Tests that contradict the SPEC route/store contract that no code change can reconcile ⇒ `architecture_failure`.
 
