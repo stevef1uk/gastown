@@ -50,6 +50,19 @@ func TestRigFlowQARuntimeSmokeBlock_pythonSkipsGoRun(t *testing.T) {
 	}
 }
 
+func TestPythonSmokePromptUsesDocumentedServer(t *testing.T) {
+	v := WorkflowValidation{LayoutRoot: "service/api", TestRunner: "pytest", PythonVenvDir: "environments/test"}
+	spec := APISmokeSpec{ServerStart: "uvicorn server:app --host 127.0.0.1 --port 8123"}
+	block := rigFlowQAPythonWebAPISmokeBlock(v, spec)
+	want := "CMD: cd {{rig}}/mayor/rig/service/api && " + spec.ServerStart
+	if !strings.Contains(block, want) {
+		t.Fatalf("prompt must preserve the documented server command: %s", block)
+	}
+	if strings.Contains(block, "service/api.app:app") || strings.Contains(block, "&& .venv/bin/python3") {
+		t.Fatalf("prompt invented a module or layout-local interpreter: %s", block)
+	}
+}
+
 func TestRigFlowQARuntimeSmokeBlock_goNoAPI(t *testing.T) {
 	dir := t.TempDir()
 	rig := "rig"

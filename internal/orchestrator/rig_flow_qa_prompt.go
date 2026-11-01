@@ -122,19 +122,18 @@ func rigFlowQAPythonWebAPISmokeBlock(v WorkflowValidation, spec APISmokeSpec) st
 	if len(paths) > 0 {
 		routeNote = strings.Join(paths, ", ")
 	}
+	serverStart := strings.TrimSpace(spec.ServerStart)
+	if serverStart == "" {
+		return rigFlowQAPythonVerifyBlock(v) + "\nRuntime smoke is required: read the server start command from SPEC/architecture before running it; do not invent a module path.\n"
+	}
 	return fmt.Sprintf(`## Web/API runtime smoke (Python — %s)
 
 Run **pytest** from layout, then one server CMD. gt-agent rewrites uvicorn/gunicorn/flask into background server + **curl for each documented route** (same HTTP table as implementation).
 
-Document the server under **## Runtime smoke server** in SPEC/architecture, or put uvicorn/gunicorn in qa_verify_command, e.g.:
+The server command below is derived from SPEC/architecture and the profile. Preserve its module name rather than deriving one from the layout directory. The configured virtualenv is relative to mayor/rig, not the application directory; gt-agent resolves it when constructing the smoke script. Do not add a layout-local .venv path or run a separate bare curl.
 
 `+"```"+`
-## Runtime smoke server
-.venv/bin/python3 -m uvicorn %s.app:app --host 127.0.0.1 --port 8080
-`+"```"+`
-
-`+"```"+`
-CMD: cd {{rig}}/mayor/rig/%s && .venv/bin/python3 -m uvicorn %s.app:app --host 127.0.0.1 --port 8080
+CMD: cd {{rig}}/mayor/rig/%s && %s
 `+"```"+`
 
 | Check | How |
@@ -143,7 +142,7 @@ CMD: cd {{rig}}/mayor/rig/%s && .venv/bin/python3 -m uvicorn %s.app:app --host 1
 | HTTP probes | gt-agent curls **only** paths from SPEC (GET/POST table) |
 | Fresh state | **## Runtime smoke reset** or persistence paths in architecture |
 
-%s`, routeNote, layout, layout, layout, v.QAVerifyHint(), RigFlowStaticURLContractGuidance)
+%s`, routeNote, layout, serverStart, v.QAVerifyHint(), RigFlowStaticURLContractGuidance)
 }
 
 func rigFlowQAGoWebStaticSmokeBlock(v WorkflowValidation) string {

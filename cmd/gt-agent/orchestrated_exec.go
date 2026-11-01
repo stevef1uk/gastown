@@ -1158,6 +1158,9 @@ func normalizeGoDevServerSmokeCommand(cmd, townRoot, rig string, v orchestrator.
 	}
 	lower := strings.ToLower(cmd)
 	if orchestrator.WorkflowUsesPython(v) && strings.Contains(lower, "uvicorn") {
+		if !strings.Contains(lower, "curl") {
+			return simplifyDevServerSmoke(cmd, townRoot, rig, v)
+		}
 		return normalizePythonDevServerSmoke(cmd), true
 	}
 	if !orchestrator.WorkflowUsesGo(v) {
@@ -1328,6 +1331,20 @@ func simplifyDevServerSmoke(cmd, townRoot, rig string, v orchestrator.WorkflowVa
 		} else {
 			spec.ServerStart = "go run ./cmd/server"
 		}
+	}
+	if orchestrator.WorkflowUsesPython(v) && v.UsesPythonVenv() {
+		venv := v.PythonVenvRelDir()
+		venvBin, err := filepath.Abs(filepath.Join(townRoot, rig, "mayor", "rig", venv, "bin"))
+		if err != nil {
+			return cmd, false
+		}
+		for _, prefix := range []string{venv + "/bin/", "./" + venv + "/bin/"} {
+			if strings.HasPrefix(spec.ServerStart, prefix) {
+				spec.ServerStart = shellQuote(venvBin) + "/" + strings.TrimPrefix(spec.ServerStart, prefix)
+				break
+			}
+		}
+		spec.ServerStart = "PATH=" + shellQuote(venvBin) + ":\"$PATH\" " + spec.ServerStart
 	}
 	built := orchestrator.BuildRuntimeSmokeShell(workDir, spec)
 	if built == "" {
