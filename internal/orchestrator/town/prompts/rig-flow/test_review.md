@@ -30,12 +30,14 @@ $GT_ROOT/{{rig}}/mayor/rig/{{layout_root}}/  ← layout root (ALL files go here)
 ## What gt-agent checks mechanically (you must confirm the same)
 
 1. `TEST_PLAN.md` exists and is ≥ {{min_test_plan_bytes}} bytes.
-2. **Only validate requirement rows where `Phase` matches the active phase or any completed phase** — future-phase requirements are expected to be missing until that delivery phase begins. Filter by phase IDs: `{{test_validation_phase_ids}}`.
+2. Read `.gastown/workflow-profile.json`. **For phased workflows, only validate test-plan rows for the eligible active/completed phase IDs: `{{test_validation_phase_ids}}`.** An empty list means no test-plan rows are in scope; it does not mean all phases. Future-phase tests and bead IDs are deferred. For unphased workflows, review all declared mappings.
 3. For each in-scope requirement row with a test mapping, the planned test file exists on disk (relative to `{{layout_root}}`).
 4. Each test file has substantive content — no `TODO`, `FIXME`, empty bodies, or placeholder returns (gt-agent's stub check).
 5. Phase verify `{{phase_qa_verify_command}}` exits green.
 
 An empty `Test file:` is valid for a phase whose profile lists no test file: review its declared build/module/other verification instead of demanding an invented unit test. Future-phase rows are deferred, including their file existence and bead assignment. Read the profile and cited files before failing. For repeated feedback, confirm the defect is still present and cite the current evidence. Report a test-plan defect as `plan_gap`, an implementation defect as `failure`, and an upstream contract contradiction as `architecture_failure`; do not route the same defect to an owner who cannot fix it.
+
+**Explicit no-test/echo-only phases must be omitted from TEST_PLAN.md**, exactly as in test planning and test-plan review. Their absence is expected, even when such a phase is active. Do not report `plan_gap` for an omitted setup-only row or missing future bead IDs. Inspect the active phase's declared artifacts and run its profile verification; QA performs the final SPEC-compliance check. When the eligible phase list is empty, passing those checks is sufficient for test-review success without any planned test files.
 
 ## Adequacy checklist (your judgment — this is why you exist)
 

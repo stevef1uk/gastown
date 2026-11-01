@@ -434,6 +434,63 @@ func TestCompleteTask_crossStateFailureStoresPendingRework(t *testing.T) {
 	}
 }
 
+func TestCompleteTask_planGapPreservesReworkThroughRetryAndReload(t *testing.T) {
+	dir := t.TempDir()
+	tpl := &WorkflowTemplate{
+		ID: "plan-rework-test", InitialState: "test_review",
+		States: map[string]State{
+			"test_review": {Role: "tester", Transitions: map[string]Transition{
+				"plan_gap": {To: "test_plan_rework"},
+			}},
+			"test_plan_rework": {Role: "tester", Instructions: "Inspect the reported gaps and repair TEST_PLAN.md.", Transitions: map[string]Transition{
+				"failure": {To: "test_plan_rework"},
+				"success": {To: "implementation"},
+			}},
+			"implementation": {Role: "polecat"},
+		},
+	}
+	m := NewManager(dir)
+	m.LoadTemplate(tpl)
+	id, err := m.StartWorkflow(tpl.ID, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const summary = "checks row omits required response assertions"
+	next, err := m.CompleteTask(id, "plan_gap", "tester", summary, "Inspected TEST_PLAN.md checks section", nil)
+	if err != nil || next != "test_plan_rework" {
+		t.Fatalf("plan_gap: next=%q err=%v", next, err)
+	}
+	m = NewManager(dir)
+	m.LoadTemplate(tpl)
+	inst := m.instances[id]
+	if inst == nil || inst.PendingRework == nil {
+		t.Fatal("plan_gap feedback was not persisted")
+	}
+	if got := inst.PendingRework; got.FromState != "test_review" || got.Outcome != "plan_gap" || got.Summary != summary || !strings.Contains(got.Feedback, summary) {
+		t.Fatalf("persisted rework: %+v", got)
+	}
+	state, _ := inst.GetCurrentTask(tpl)
+	payload, err := m.BuildTaskPayload(inst, tpl, state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rework, ok := payload["pending_rework"].(*WorkflowRework); !ok || rework == nil || rework.Summary != summary {
+		t.Fatalf("tester task lost plan_gap findings: %#v", payload["pending_rework"])
+	}
+	if _, err := m.CompleteTask(id, "failure", "tester", "repair not finished", "", nil); err != nil {
+		t.Fatal(err)
+	}
+	if inst.PendingRework == nil || inst.PendingRework.Summary != summary {
+		t.Fatalf("same-state retry lost original findings: %+v", inst.PendingRework)
+	}
+	if _, err := m.CompleteTask(id, "success", "tester", "repaired assertions", "", nil); err != nil {
+		t.Fatal(err)
+	}
+	if inst.PendingRework != nil {
+		t.Fatal("successful repair should clear pending rework")
+	}
+}
+
 func TestCompleteTask_qaArchitectureFailureResetsToDesign(t *testing.T) {
 	dir := t.TempDir()
 	m := NewManager(dir)
@@ -667,7 +724,7 @@ func TestCompleteTask_testPlanLoopEscalatesToDesign(t *testing.T) {
 				},
 			},
 			"plan_review": {Role: "qa", Transitions: map[string]Transition{"success": {To: "test_plan"}}},
-			"design":       {Role: "architect"},
+			"design":      {Role: "architect"},
 		},
 	})
 	id, _ := m.StartWorkflow("rig-flow", map[string]string{"rig": "mockrig"})

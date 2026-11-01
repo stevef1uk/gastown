@@ -401,9 +401,9 @@ states:
     role: tester
     prompt_file: prompts/rig-flow/test_review.md
     instructions: |
-      1. Read TEST_PLAN.md, SPEC.md, and architecture.md under `{{rig}}/mayor/rig/`; compare each requirement to its planned test file.
-      2. Confirm every active-phase test file exists, has real assertions (not stubs), and the phase verify ({{phase_qa_verify_command}}) is green.
-      3. Report success only when tests cover every requirement; failure names failing beads (polecat), plan_gap when the plan is incomplete (tester rewrites TEST_PLAN.md), architecture_failure when SPEC/architecture are the blocker (architect).
+      1. Read TEST_PLAN.md, SPEC.md, architecture.md, and .gastown/workflow-profile.json under `{{rig}}/mayor/rig/`.
+      2. For phased workflows, review test mappings only for eligible active/completed phases ({{test_validation_phase_ids}}); an empty list means no test rows are in scope. For unphased workflows, review all mappings. Explicit no-test/echo-only phases are intentionally omitted from TEST_PLAN.md. Future tests and bead IDs are deferred.
+      3. Confirm in-scope test files have real assertions and run the active phase verify ({{phase_qa_verify_command}}). With no in-scope test mappings, inspect the active artifacts and verify without inventing test rows. Report plan_gap only for a real in-scope plan defect, never an omitted no-test phase.
     hooks:
       max_cmd_turns: 20
       cmd_guard: test_review
@@ -418,10 +418,10 @@ states:
       artifacts: test_review
       bead_ids_in_summary: true
       retry_hint: |
-        One CMD: per line. Read TEST_PLAN.md and the test files it names from {{rig}}/mayor/rig; run {{phase_qa_verify_command}}.
+        One CMD: per line. Read the profile and TEST_PLAN.md from {{rig}}/mayor/rig; inspect only eligible phase mappings ({{test_validation_phase_ids}}), then run {{phase_qa_verify_command}}. An empty eligible list means no test rows; omitted no-test/echo-only phases are valid.
         Allowed outcomes: success, failure, plan_gap, architecture_failure.
       failure_hint: |
-        Do not edit source or tests. If a test file is missing, weak, or verify fails, report failure with the bead IDs and test paths. If TEST_PLAN.md itself is incomplete, use plan_gap. If SPEC/architecture contradict the tests, use architecture_failure.
+        Do not edit source or tests. For missing/weak in-scope tests or failed verify, report failure with bead IDs and paths. Use plan_gap only for an actual in-scope TEST_PLAN.md defect; explicit no-test/echo-only phases must be omitted and future tests/bead IDs are deferred. If SPEC/architecture contradict in-scope tests, use architecture_failure.
     transitions:
       success:
         to: qa_review

@@ -128,6 +128,57 @@ Assertions: results match SPEC
 			})
 		})
 	}
+	t.Run("valid plan still requires review of pending findings", func(t *testing.T) {
+		if err := os.WriteFile(filepath.Join(rigDir, "TEST_PLAN.md"), []byte(plan), 0644); err != nil {
+			t.Fatal(err)
+		}
+		task := &orchestrator.Task{
+			State: "test_plan_rework", Validation: v,
+			AllowedOutcomes: []string{"success", "failure"},
+			Hooks:           orchestrator.StateHooks{Artifacts: "test_plan"},
+		}
+		runner := newStateRunner(task, root, "sample")
+		if _, _, ok := runner.tryAutoOutcome(); !ok {
+			t.Fatal("valid plan without pending findings should auto-complete")
+		}
+		task.PendingRework = &orchestrator.WorkflowRework{
+			FromState: "test_review", Outcome: "plan_gap", Summary: "checks assertions are too vague",
+		}
+		if _, _, ok := runner.tryAutoOutcome(); ok {
+			t.Fatal("mechanically valid plan must not bypass pending semantic rework")
+		}
+		if err := runner.validateArtifacts("success"); err != nil {
+			t.Fatalf("pending findings must not prevent an explicit validated outcome: %v", err)
+		}
+	})
+}
+
+func TestTestReviewSetupOnlyPhaseOmitsTestRows(t *testing.T) {
+	root := t.TempDir()
+	rigDir := filepath.Join(root, "sample", "mayor", "rig")
+	if err := os.MkdirAll(rigDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	plan := "# Test Plan\n### checks\nRequirement: endpoint response\nLevel: unit\nTest file: app/test_main.py\nPhase: checks\nScenarios: call endpoint\nAssertions: exact response\n"
+	if err := os.WriteFile(filepath.Join(rigDir, "TEST_PLAN.md"), []byte(plan), 0644); err != nil {
+		t.Fatal(err)
+	}
+	v := orchestrator.WorkflowValidation{
+		LayoutRoot: "app", MinTestPlanBytes: 1, ActivePhaseIDField: "bootstrap",
+		DeliveryPhases: []orchestrator.DeliveryPhase{
+			{ID: "bootstrap", RequiredFiles: []string{"app/requirements.txt"}, QAVerifyCommand: "cd app && echo 'no automated tests'"},
+			{ID: "checks", RequiredFiles: []string{"app/test_main.py"}, QAVerifyCommand: "cd app && python -m pytest"},
+		},
+	}
+	if ids := phaseIDsForTestValidation(v); len(ids) != 0 {
+		t.Fatalf("setup-only phase should have no test mappings in scope: %v", ids)
+	}
+	if err := validateTestReviewArtifacts(root, "sample", "success", false, true, v); err != nil {
+		t.Fatalf("setup-only phase must not demand its own row or future test files: %v", err)
+	}
+	if err := validateTestReviewArtifacts(root, "sample", "success", false, false, v); err == nil {
+		t.Fatal("setup-only phase still requires its declared verification")
+	}
 }
 
 func TestTestPlanFieldsForUnphasedBuildOnlyProject(t *testing.T) {

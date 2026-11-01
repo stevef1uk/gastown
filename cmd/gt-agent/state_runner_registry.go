@@ -343,6 +343,9 @@ var artifactAutoCompleters = map[string]artifactAutoCompleteFn{
 		return validateQAAutoComplete(r)
 	},
 	"test_plan": func(r *stateRunner) error {
+		if r.task.PendingRework != nil {
+			return fmt.Errorf("test-plan rework requires an explicit outcome after reviewing the reported gaps")
+		}
 		return validateTestPlanArtifacts(r.townRoot, r.rig, r.track.hadCmdFailure, r.track.testPlanWriteOK, r.v)
 	},
 	"test_review": func(r *stateRunner) error {
