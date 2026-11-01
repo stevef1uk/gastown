@@ -170,12 +170,12 @@ states:
     prompt_file: prompts/rig-flow/test_plan.md
     instructions: |
       1. Read REQUIREMENTS.md (if present), SPEC.md, architecture.md, and plan.md under `{{rig}}/mayor/rig/`.
-      2. Write `{{rig}}/mayor/rig/TEST_PLAN.md` (≥{{min_test_plan_bytes}} bytes) mapping every active-phase requirement to unit/integration/UI tests with bead IDs.
-      3. Report success only when the plan covers every requirement at the right level;       failure sends the planner back.
+      2. Write `{{rig}}/mayor/rig/TEST_PLAN.md` (≥{{min_test_plan_bytes}} bytes) covering applicable requirements across delivery phases, using the profile's exact phase IDs and per-phase test paths. Future bead IDs may be empty; phases without test files may leave Test file empty; omit explicit no-test/echo-only phases.
+      3. Repair your own draft after validation errors. Report failure only for an inspected active-phase planning defect you cannot fix in TEST_PLAN.md; cite the exact upstream correction.
     hooks:
       max_cmd_turns: 14
       cmd_guard: test_plan
-      cmd_rewrites: [rig_placeholders, unwrap_bash_lc, test_plan_md_after_cd, bd_list_limit]
+      cmd_rewrites: [rig_placeholders, unwrap_bash_lc, test_plan_md_after_cd, spec_md_after_cd, arch_md_after_cd, bd_list_limit]
       env:
         beads_dir: true
       track: test_plan
@@ -185,7 +185,7 @@ states:
         One CMD: per line. Read SPEC.md and architecture.md from {{rig}}/mayor/rig, then `wc -c TEST_PLAN.md`.
         Only success/failure/architecture_failure outcomes are allowed.
       failure_hint: |
-        TEST_PLAN.md must be ≥ {{min_test_plan_bytes}} bytes with a `### <req-id>` block per requirement: Level (unit/integration/ui), Test file, Bead ID, Scenarios, Assertions. Do not write tests — only plan them.
+        Repair TEST_PLAN.md yourself; read the existing file and preserve valid phase sections using allowed CMD shell edits. Use exact profile phase IDs and test paths from each owning phase. Level, Scenarios, Assertions are required; Test file may be empty for phases listing no test file; future Bead IDs may be empty. Omit explicit no-test/echo-only phases. Do not invent files or send your own draft errors to planning.
     transitions:
       success:
         to: test_plan_review
@@ -198,8 +198,8 @@ states:
     prompt_file: prompts/rig-flow/test_plan_review.md
     instructions: |
       1. Review `{{rig}}/mayor/rig/TEST_PLAN.md` against SPEC.md, architecture.md, and plan.md for the active phase `{{active_phase_id}}`.
-      2. Verify every active-phase requirement maps to a unit/integration test with a real bead ID and a concrete test file path from required_files ({{required_files}}).
-      3. Confirm test levels match the plan (unit for helpers, integration for routes/server behavior) and every Bead ID exists in `bd list`.
+      2. Verify applicable active-phase requirements have concrete verification. Use each owning phase's required_files for non-empty Test file values; phases listing no test file may leave the field empty. Omit explicit no-test/echo-only phases.
+      3. Confirm test levels match behavior and supplied Bead IDs exist in `bd list` (including closed IDs for completed phases). Future-phase IDs may be empty; do not demand future files or beads now.
       4. Report success only when the test plan is complete and SPEC-aligned; failure sends the tester back to rewrite TEST_PLAN.md.
     hooks:
       max_cmd_turns: 8
@@ -210,10 +210,10 @@ states:
       track: qa
       artifacts: test_plan_review
       retry_hint: |
-        One CMD: per line. Read SPEC.md, architecture.md, plan.md and TEST_PLAN.md from {{rig}}/mayor/rig, then `wc -c TEST_PLAN.md` and `bd list --status=open`.
+        One CMD: per line. Read SPEC.md, architecture.md, plan.md, TEST_PLAN.md and .gastown/workflow-profile.json from {{rig}}/mayor/rig, then `wc -c TEST_PLAN.md` and `bd list --status=open,in_progress,closed`.
         Only success/failure/architecture_failure outcomes are allowed.
       failure_hint: |
-        Do not edit any files. If TEST_PLAN.md is missing, below {{min_test_plan_bytes}} bytes, uses wrong phase ids, omits requirements, maps requirements to files outside required_files ({{required_files}}), or cites bead IDs that do not exist, report failure with the exact gaps so the tester rewrites it.
+        Do not edit files. For a TEST_PLAN.md defect, report failure with the inspected phase/section, violated SPEC/profile rule and smallest Tester correction. Non-empty test paths must belong to their declared phase, not necessarily the active phase. Empty Test file is valid for phases listing no tests; empty future Bead IDs and closed completed-phase IDs are valid. Do not reject expected future work.
     transitions:
       success:
         to: project_setup
@@ -226,7 +226,7 @@ states:
     prompt_file: prompts/rig-flow/test_plan.md
     instructions: |
       1. Read TEST_PLAN.md, REQUIREMENTS.md (if present), SPEC.md, architecture.md, and plan.md under `{{rig}}/mayor/rig/`.
-      2. Rewrite `{{rig}}/mayor/rig/TEST_PLAN.md` (≥{{min_test_plan_bytes}} bytes) to close the gaps QA found — map EVERY active-phase requirement to unit/integration/UI tests with bead IDs.
+      2. Repair `{{rig}}/mayor/rig/TEST_PLAN.md` (≥{{min_test_plan_bytes}} bytes) to close the confirmed gaps, preserving other valid phase sections. Use exact per-phase test paths; empty Test file is valid for phases listing no tests and future Bead IDs may be empty.
       3. Report success only when the plan covers every requirement at the right level; failure sends you back to fix it.
     hooks:
       max_cmd_turns: 10
@@ -240,7 +240,7 @@ states:
         One CMD: per line. Read TEST_PLAN.md, SPEC.md and architecture.md from {{rig}}/mayor/rig, then `wc -c TEST_PLAN.md`.
         Only success/failure/architecture_failure outcomes are allowed.
       failure_hint: |
-        TEST_PLAN.md must be ≥ {{min_test_plan_bytes}} bytes with a `### <req-id>` block per requirement: Level (unit/integration/ui), Test file, Bead ID, Scenarios, Assertions. Do not write tests — only plan them.
+        Read TEST_PLAN.md and repair only confirmed gaps using CMD shell edits, preserving valid phase sections. Use exact profile IDs and per-phase test paths; phases listing no tests may leave Test file empty and future Bead IDs may be empty. Omit explicit no-test/echo-only phases. Do not write implementation tests.
     transitions:
       success:
         to: implementation

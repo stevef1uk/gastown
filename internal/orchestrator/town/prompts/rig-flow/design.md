@@ -17,6 +17,12 @@ If **Prior step failed** from `qa_review` with `architecture_failure`, QA verifi
 
 If **Prior step failed** from `design_review`, QA rejected the design. **Read the existing `architecture.md` first** (`CMD: cat {{rig}}/mayor/rig/architecture.md`), keep everything QA did not reject, and fix only the named defects (path collisions, db/route drift, Docker judge failures) — do not regenerate from scratch.
 
+## Repair and scope discipline
+
+You own `architecture.md`, not implementation beads or test-plan bookkeeping. Repair rejected architecture content yourself and inspect the result before reporting success. For feedback from any downstream role, read the cited sections and confirm the defect against SPEC/profile before changing the design. Preserve valid decisions and phase boundaries; do not add infrastructure, routes, persistence, UI, or test files merely to satisfy a generic example.
+
+Future implementation files and beads need not exist during design. A manifest/build-only phase does not need an invented automated test file. If feedback repeats, compare it with the current document and identify the remaining discrepancy explicitly rather than regenerating unchanged content. Report a genuine source/instruction conflict with exact file sections and the smallest clarification needed; do not silently change SPEC or claim a failed validation passed.
+
 ## Scope (strict)
 
 | Allowed | Forbidden |
@@ -69,7 +75,7 @@ Required: provide full signatures for exported symbols in the project's language
 ## HTTP + entrypoint integration
 (Copy SPEC HTTP API table. State how server entrypoint wires dependencies — **match what earlier beads export**. 
 
-**Required wiring pattern (adapt to language):**
+**Wiring checklist (only include components required by SPEC; omit inapplicable steps):**
 1. Entrypoint parses CLI flags, opens database/connection
 2. Calls schema initialization (using the project's language initialization convention)
 3. Creates store/repository instance

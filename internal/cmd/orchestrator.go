@@ -129,12 +129,13 @@ var orchestratorStatusCmd = &cobra.Command{
 }
 
 func runOrchestratorSync(cmd *cobra.Command, args []string) error {
-	townRoot, err := workspace.FindFromCwdOrError()
-	if err != nil {
-		return err
-	}
-	if orchestratorSyncTownRoot != "" {
-		townRoot = orchestratorSyncTownRoot
+	townRoot := orchestratorSyncTownRoot
+	if townRoot == "" {
+		var err error
+		townRoot, err = workspace.FindFromCwdOrError()
+		if err != nil {
+			return err
+		}
 	}
 	res, err := orchestrator.SyncTownAssets(townRoot, orchestratorSyncUpdate)
 	if err != nil {

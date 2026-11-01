@@ -456,3 +456,24 @@ func TestPhaseShipsAutomatedTests(t *testing.T) {
 		}
 	}
 }
+
+func TestPhaseRequiresTestFile(t *testing.T) {
+	cases := []struct {
+		name string
+		p    DeliveryPhase
+		want bool
+	}{
+		{"gomod-manifest", DeliveryPhase{ID: "go-module", RequiredFiles: []string{"pingapp/go.mod"}}, false},
+		{"requirements-manifest", DeliveryPhase{ID: "python-setup", RequiredFiles: []string{"pingapp/requirements.txt"}}, false},
+		{"production-source-only", DeliveryPhase{ID: "core", RequiredFiles: []string{"pingapp/main.go"}}, false},
+		{"go-test-file", DeliveryPhase{ID: "test", RequiredFiles: []string{"pingapp/main_test.go"}}, true},
+		{"python-test-file", DeliveryPhase{ID: "test", RequiredFiles: []string{"pingapp/tests/test_api.py"}}, true},
+		{"mixed-manifest-and-test", DeliveryPhase{ID: "test", RequiredFiles: []string{"pingapp/go.mod", "pingapp/main_test.go"}}, true},
+		{"empty-required", DeliveryPhase{ID: "test", RequiredFiles: nil}, false},
+	}
+	for _, c := range cases {
+		if got := PhaseRequiresTestFile(c.p); got != c.want {
+			t.Errorf("%s: PhaseRequiresTestFile = %v, want %v", c.name, got, c.want)
+		}
+	}
+}

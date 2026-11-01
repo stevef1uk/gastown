@@ -66,6 +66,20 @@ func PhaseShipsAutomatedTests(p DeliveryPhase) bool {
 	return true
 }
 
+// PhaseRequiresTestFile reports whether a delivery phase lists a test file in
+// its required_files. Phases that ship only manifests or production files
+// (go.mod, requirements.txt, main.go) have no test file of their own — their
+// TEST_PLAN.md rows may leave `Test file:` empty (test_plan.md hard rule),
+// because the tests that exercise them live in the test-carrying phase's file.
+func PhaseRequiresTestFile(p DeliveryPhase) bool {
+	for _, f := range p.RequiredFiles {
+		if IsTestImplementPath(f) {
+			return true
+		}
+	}
+	return false
+}
+
 // TestPlanRequirementIDs returns the `### <req-id>` headings in TEST_PLAN.md.
 func TestPlanRequirementIDs(testPlan string) []string {
 	var out []string
@@ -482,6 +496,54 @@ func HasRequirementHeadingsForIDs(doc string, ids []string) bool {
 	return len(wanted) == 0
 }
 
+// ValidateTestPlanFileMappings is shared by agent and manager validation so a
+// draft accepted locally cannot bounce at completion for different path rules.
+// Empty paths are deliberate for phases that deliver no test files; field
+// completeness is checked separately by the agent.
+func ValidateTestPlanFileMappings(v WorkflowValidation, blocks []TestPlanBlock) error {
+	phaseFiles := make(map[string]map[string]bool)
+	allFiles := make(map[string]bool)
+	for _, f := range v.RequiredFiles {
+		allFiles[filepath.ToSlash(strings.TrimSpace(f))] = true
+	}
+	for _, phase := range v.DeliveryPhases {
+		files := make(map[string]bool)
+		for _, f := range phase.RequiredFiles {
+			key := filepath.ToSlash(strings.TrimSpace(f))
+			files[key] = true
+			allFiles[key] = true
+		}
+		phaseFiles[strings.ToLower(strings.TrimSpace(phase.ID))] = files
+	}
+	for _, b := range blocks {
+		allowed := allFiles
+		if phaseID := strings.ToLower(strings.TrimSpace(b.Phase)); phaseID != "" && len(phaseFiles) > 0 {
+			var ok bool
+			allowed, ok = phaseFiles[phaseID]
+			if !ok {
+				return fmt.Errorf("TEST_PLAN.md references unknown phase %q", b.Phase)
+			}
+		}
+		testFile := strings.TrimSpace(b.TestFile)
+		if testFile == "" {
+			continue
+		}
+		if idx := strings.IndexAny(testFile, "([{"); idx >= 0 {
+			testFile = strings.TrimSpace(testFile[:idx])
+		}
+		testFile = filepath.ToSlash(testFile)
+		if !allowed[testFile] || IsPlanGapPlaceholderPath(testFile) {
+			return fmt.Errorf("TEST_PLAN.md test file %q not in workflow-profile.json required_files for phase %q", testFile, b.Phase)
+		}
+		// A Go backend can coexist with frontend tests; don't force every test
+		// in a mixed-stack project to have a Go suffix.
+		if strings.HasSuffix(testFile, ".go") && !strings.HasSuffix(testFile, "_test.go") {
+			return fmt.Errorf("TEST_PLAN.md test file %q must be a *_test.go file, not production source", testFile)
+		}
+	}
+	return nil
+}
+
 // validateTestPlan validates that TEST_PLAN.md aligns with workflow-profile.json
 // and SPEC.md/architecture.md. Called from manager.go when tester reports success
 // from test_plan state. Returns error if validation fails.
@@ -518,50 +580,10 @@ func validateTestPlan(townRoot, rig string) error {
 		return fmt.Errorf("TEST_PLAN.md has invalid section IDs (not in SPEC/architecture/delivery phases): %v", hallucinated)
 	}
 
-	// Check 2: Test file paths must exist in workflow-profile.json required_files for the correct phase
+	// Check 2: agent and manager must enforce identical per-phase path rules.
 	blocks := ParseTestPlanBlocks(testPlan)
-	validTestFilesByPhase := make(map[string]map[string]bool)
-	for _, phase := range v.DeliveryPhases {
-		phaseFiles := make(map[string]bool)
-		for _, f := range phase.RequiredFiles {
-			phaseFiles[strings.ToLower(filepath.ToSlash(strings.TrimSpace(f)))] = true
-		}
-		validTestFilesByPhase[strings.ToLower(phase.ID)] = phaseFiles
-	}
-
-	for _, b := range blocks {
-		testFile := strings.TrimSpace(b.TestFile)
-		if testFile == "" || IsPlanGapPlaceholderPath(testFile) {
-			continue
-		}
-		// Strip parenthetical descriptions
-		if idx := strings.IndexAny(testFile, "([{"); idx >= 0 {
-			testFile = strings.TrimSpace(testFile[:idx])
-		}
-		testFile = filepath.ToSlash(testFile)
-		key := strings.ToLower(testFile)
-		phaseID := strings.ToLower(strings.TrimSpace(b.Phase))
-		if phaseID == "" {
-			// Backward compatible: check all phases
-			found := false
-			for _, phaseFiles := range validTestFilesByPhase {
-				if phaseFiles[key] {
-					found = true
-					break
-				}
-			}
-			if !found {
-				return fmt.Errorf("TEST_PLAN.md test file %q not in any workflow-profile.json phase required_files", testFile)
-			}
-		} else {
-			phaseFiles, ok := validTestFilesByPhase[phaseID]
-			if !ok {
-				return fmt.Errorf("TEST_PLAN.md references unknown phase %q", b.Phase)
-			}
-			if !phaseFiles[key] {
-				return fmt.Errorf("TEST_PLAN.md test file %q not in workflow-profile.json required_files for phase %q", testFile, b.Phase)
-			}
-		}
+	if err := ValidateTestPlanFileMappings(v, blocks); err != nil {
+		return err
 	}
 
 	// Check 3: Bead IDs must match actual beads (if beads database exists)

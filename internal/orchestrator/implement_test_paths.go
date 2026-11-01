@@ -17,7 +17,7 @@ func IsTestImplementPath(beadPath string) bool {
 	if strings.HasSuffix(lower, "_test.go") {
 		return true
 	}
-	if strings.HasPrefix(base, "test_") && strings.HasSuffix(lower, ".py") {
+	if (strings.HasPrefix(base, "test_") || strings.HasSuffix(lower, "_test.py")) && strings.HasSuffix(lower, ".py") {
 		return true
 	}
 	if strings.Contains(lower, "/tests/") && strings.HasSuffix(lower, ".py") {
@@ -25,7 +25,9 @@ func IsTestImplementPath(beadPath string) bool {
 	}
 	// TypeScript/JavaScript test files
 	if strings.HasSuffix(lower, ".test.ts") || strings.HasSuffix(lower, ".test.tsx") ||
-		strings.HasSuffix(lower, ".spec.ts") || strings.HasSuffix(lower, ".spec.tsx") {
+		strings.HasSuffix(lower, ".spec.ts") || strings.HasSuffix(lower, ".spec.tsx") ||
+		strings.HasSuffix(lower, ".test.js") || strings.HasSuffix(lower, ".test.jsx") ||
+		strings.HasSuffix(lower, ".spec.js") || strings.HasSuffix(lower, ".spec.jsx") {
 		return true
 	}
 	return false

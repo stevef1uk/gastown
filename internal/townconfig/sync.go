@@ -8,6 +8,7 @@ import (
 
 	"github.com/steveyegge/gastown/internal/formula"
 	"github.com/steveyegge/gastown/internal/orchestrator"
+	"github.com/steveyegge/gastown/internal/workspace"
 )
 
 // SyncResult summarizes files refreshed during Sync.
@@ -31,9 +32,15 @@ func Sync(townRoot string) (*SyncResult, error) {
 	if townRoot == "" {
 		return nil, fmt.Errorf("town root is required")
 	}
-	cfgPath := filepath.Join(townRoot, "config.json")
+	cfgPath := filepath.Join(townRoot, workspace.PrimaryMarker)
 	if _, err := os.Stat(cfgPath); err != nil {
-		return nil, fmt.Errorf("not a Gas Town HQ (missing %s): %w", cfgPath, err)
+		if !os.IsNotExist(err) {
+			return nil, fmt.Errorf("checking Gas Town HQ marker %s: %w", cfgPath, err)
+		}
+		legacyPath := filepath.Join(townRoot, "config.json")
+		if _, err := os.Stat(legacyPath); err != nil {
+			return nil, fmt.Errorf("not a Gas Town HQ (expected %s or %s): %w", cfgPath, legacyPath, err)
+		}
 	}
 
 	ores, err := orchestrator.SyncTownAssets(townRoot, true)

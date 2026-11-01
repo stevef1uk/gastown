@@ -23,6 +23,8 @@ $GT_ROOT/{{rig}}/mayor/rig/{{layout_root}}/  ← layout root (ALL files go here)
 
 **Scope: evaluate only the active phase.** The Queue table shows only the current phase's beads. Ignore files from later phases (SPEC/architecture may list them, but they are not your concern). If all Queue beads are closed and verify passes, return `success` — do NOT fail because files from other phases are missing.
 
+**Repair before escalation:** Read the failing file and verification output, repair implementation/test defects you own, and rerun the relevant check before reporting success. On review rework, confirm the cited defect still exists and preserve valid code. Use `plan_gap` only for a demonstrated TEST_PLAN.md defect and `architecture_failure` only for a demonstrated upstream contract contradiction; cite the phase, source sections, why code changes cannot resolve it, and the smallest upstream correction. Repeated failure requires a new diagnosis from current evidence, not an unchanged retry or invented requirements.
+
 **Integration rule**: After creating new source files (components, routes, modules), update existing entry points to wire them in. For frontend apps: import new components in `page.tsx` / `layout.tsx` / `index.tsx` / equivalent. For backends: register new routes in `main.py` / `routes.py` / `app.py` / equivalent. This exception to phase scope is required — the SPEC describes a fully integrated application, and orphaned files that pass compilation but are never called produce a broken app.
 
 ## Output format (follow exactly)

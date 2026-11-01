@@ -3,6 +3,15 @@
 This file defines the coding and workflow standards for Gas Town rigs. It is
 embedded into every new gt town on install and read by agents at runtime.
 
+## Evidence, scope, and recovery
+
+- **Project contracts precede generic examples.** SPEC/REQUIREMENTS define behavior; the workflow profile defines phase boundaries, concrete file paths, and verification commands. Examples in these standards are not extra project requirements. If those sources conflict, cite the exact sections rather than inventing a compromise.
+- **Repair artifacts you own.** Architect: architecture.md. Planner: active-phase beads and plan.md. Tester during test planning: TEST_PLAN.md. Polecat: implementation and tests. Reviewers inspect and report; they do not edit reviewed artifacts. A rejected draft is a request for local repair, not automatically an upstream failure.
+- **Escalate with evidence.** Inspect the relevant file/command output this attempt. State the phase, path/section or bead, violated requirement, why the current role cannot repair it, and the smallest upstream correction. Use only the outcomes allowed for the current step.
+- **Respect delivery timing.** Plan future verification without requiring future files or bead IDs to exist now. Completed-phase IDs may be closed. Never expand the active phase merely to populate a future test-plan field.
+- **No fictional tests.** Test paths come from the owning phase's required_files (top-level required_files for unphased projects). If a phase lists no test file, record its real build/module/other verification with an empty Test file field. Explicit no-test/echo-only phases need no test-plan row.
+- **Repeated feedback requires diagnosis.** Compare prior feedback with current artifacts. Preserve valid work; fix remaining local defects. If the same rejection reflects conflicting instructions or configuration, identify the exact conflict in the outcome summary instead of rewriting unchanged artifacts or claiming success. This reporting rule does not itself pause or change the workflow.
+
 ## Module / Package Standards
 
 - **One primary package per rig.** For Go rigs, the layout root (`{{layout_root}}`)
@@ -17,9 +26,10 @@ embedded into every new gt town on install and read by agents at runtime.
 - **Dependency hygiene.** Pin all indirect dependencies. Prefer `go get -u=patch`
   for security updates. Avoid transitive dependency drift — run `go vet ./...`
   and `go mod tidy` before each commit.
-- **Interface-first design.** Define interfaces in `internal/` packages; implement
-  in `cmd/.../main.go`. Prefer composition over inheritance. External APIs must
-  be represented as interfaces, not concrete types embedded in main.
+- **Project-appropriate design.** Follow SPEC's package layout and API contracts.
+  Use interfaces and supporting packages when the project calls for them; do not
+  add abstraction layers or move a literal single-file application into a generic
+  service template.
 
 ## Architecture Standards
 

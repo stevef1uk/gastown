@@ -7,8 +7,21 @@ import (
 )
 
 func TestSync_freshTown(t *testing.T) {
+	for _, marker := range []string{"config.json", "mayor/town.json"} {
+		t.Run(marker, func(t *testing.T) {
+			testSyncFreshTown(t, marker)
+		})
+	}
+}
+
+func testSyncFreshTown(t *testing.T, marker string) {
+	t.Helper()
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(`{}`), 0644); err != nil {
+	markerPath := filepath.Join(dir, filepath.FromSlash(marker))
+	if err := os.MkdirAll(filepath.Dir(markerPath), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(markerPath, []byte(`{}`), 0644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -27,6 +40,6 @@ func TestSync_freshTown(t *testing.T) {
 func TestSync_requiresTownRoot(t *testing.T) {
 	_, err := Sync(t.TempDir())
 	if err == nil {
-		t.Fatal("expected error for missing config.json")
+		t.Fatal("expected error for missing town markers")
 	}
 }

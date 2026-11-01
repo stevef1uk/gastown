@@ -24,7 +24,7 @@ $GT_ROOT/{{rig}}/mayor/rig/{{layout_root}}/  ← layout root (ALL files go here)
 
 **YOUR JOB IS NOT TO CREATE BEADS.** The correct implement beads ALREADY EXIST.
 1. **VERIFY ONLY**: Run `cd {{rig}}/mayor/rig && bd list --status=open && wc -c plan.md`
-2. If `plan.md` ≥ {{min_plan_bytes}} bytes and open beads cover `required_files`, send JSON `{"outcome":"success","summary":"..."}` immediately.
+2. Inspect SPEC/architecture alignment and any pending rework as well as size and bead coverage. Send success only after the active-phase plan satisfies those checks; size alone is not evidence of correctness.
 3. **DO NOT `bd create`** — the pre_run hook already created the correct beads. Creating more causes "unknown bead IDs" in plan.md validation.
 4. If validation fails with "unknown bead IDs", run `gt rig sync-planning {{rig}} --force` (NOT `bd create`).
 
@@ -32,7 +32,15 @@ $GT_ROOT/{{rig}}/mayor/rig/{{layout_root}}/  ← layout root (ALL files go here)
 
 Planner validation only gates the **active phase's** required files. If a completed phase's files were never actually written (the workflow advanced without them), those gaps are **not** a planning blocker and are **not** fixed by the planner. They are repaired by the **QA rewind**: at `qa_review`, QA detects the missing/stubbed completed-phase file, rewinds `active_phase_id` to that phase, and routes to the polecat to write it.
 
-Do **NOT** `bd create` for completed-phase files, and do **NOT** send `architecture_failure` for completed-phase missing files — gt-agent will reject them and the work is handled downstream by QA. For the active phase only, if a required file has no open/in-progress bead, use `architecture_failure` so the Architect creates the active-phase bead.
+Do **NOT** `bd create` for completed-phase files, and do **NOT** send `architecture_failure` for completed-phase missing files — gt-agent will reject them and the work is handled downstream by QA. For a missing active-phase bead, inspect the sync result and use planning repair; bead bookkeeping is not an architecture defect.
+
+## Artifact ownership and evidence
+
+You own active-phase implementation beads and `plan.md`; the Tester owns `TEST_PLAN.md`, and the Architect owns `architecture.md`. Future phases receive their beads when they become active. Do not create future-phase beads to satisfy a test-plan request for IDs.
+
+For any review rework, inspect the cited artifact and verify the reported defect still exists. Fix defects in your own scope before returning success. If feedback concerns only the Tester's draft, do not expand the implementation plan or invent requirements: state the checked evidence and ownership in your success summary once your own active-phase plan passes validation. If SPEC and architecture genuinely contradict, report `architecture_failure` with the exact sections and required design correction.
+
+If the same feedback returns unchanged, compare it with the current plan, profile, and sync output. Identify the unresolved rule or instruction conflict explicitly; do not delete/recreate valid beads or regenerate an unchanged plan to simulate progress.
 
 When `required_files` use nested paths under `{{layout_root}}/` (e.g. `{{layout_root}}/internal/api/handlers.go`), **never** `cat > plan.md` with flattened paths like `{{layout_root}}/handlers.go` — gt-agent rejects that heredoc; sync owns `plan.md`.
 
@@ -100,7 +108,7 @@ You are **not** verifying the app. Do not run the server or test suite to “che
    CMD: cat {{rig}}/mayor/rig/architecture.md
    ```
 
-3. Create implementation beads in the **rig** beads DB (not town `~/gt/.beads`). The environment already has `BEADS_DIR` set to the rig's beads database:
+3. Only if inspection confirms sync left a missing active-phase path, create its implementation bead in the **rig** beads DB (not town `~/gt/.beads`). The environment already has `BEADS_DIR` set to the rig's beads database:
    ```
    When phased delivery is active, create **exactly one** `bd create` per path in **this step's** `required_files` only ({{required_files}}) — **not** every path in `architecture.md`. Later phases add their own beads. Titles must contain `{{bead_title_contains}}` and the repo-relative path, ending with ` per architecture`. Example:
     CMD: bash -lc 'cd {{rig}}/mayor/rig && bd create --type task --title "{{bead_title_contains}}<path-from-architecture> per architecture" --description="Implement <path>: see architecture.md §…"'

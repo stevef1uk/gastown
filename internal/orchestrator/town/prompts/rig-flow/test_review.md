@@ -22,7 +22,7 @@ $GT_ROOT/{{rig}}/mayor/rig/{{layout_root}}/  ← layout root (ALL files go here)
 
 | outcome | When |
 |---------|------|
-| `success` | Every `TEST_PLAN.md` requirement row: test file exists, has real assertions, phase verify ({{phase_qa_verify_command}}) is green |
+| `success` | Every in-scope test mapping exists with real assertions; non-test phases satisfy their profile checks; phase verify ({{phase_qa_verify_command}}) is green |
 | `failure` | A planned test is missing/weak or verify fails — sends **Polecat** back to `implementation` (name bead IDs + test paths) |
 | `plan_gap` | `TEST_PLAN.md` itself is incomplete or wrong — sends **Tester** back to `test_plan` to rewrite the plan |
 | `architecture_failure` | Tests contradict SPEC/architecture (route/API drift the Polecat cannot fix) — sends **Architect** back to `design` |
@@ -31,13 +31,15 @@ $GT_ROOT/{{rig}}/mayor/rig/{{layout_root}}/  ← layout root (ALL files go here)
 
 1. `TEST_PLAN.md` exists and is ≥ {{min_test_plan_bytes}} bytes.
 2. **Only validate requirement rows where `Phase` matches the active phase or any completed phase** — future-phase requirements are expected to be missing until that delivery phase begins. Filter by phase IDs: `{{test_validation_phase_ids}}`.
-3. For each valid requirement row, the planned test file exists on disk (relative to `{{layout_root}}`).
+3. For each in-scope requirement row with a test mapping, the planned test file exists on disk (relative to `{{layout_root}}`).
 4. Each test file has substantive content — no `TODO`, `FIXME`, empty bodies, or placeholder returns (gt-agent's stub check).
 5. Phase verify `{{phase_qa_verify_command}}` exits green.
 
+An empty `Test file:` is valid for a phase whose profile lists no test file: review its declared build/module/other verification instead of demanding an invented unit test. Future-phase rows are deferred, including their file existence and bead assignment. Read the profile and cited files before failing. For repeated feedback, confirm the defect is still present and cite the current evidence. Report a test-plan defect as `plan_gap`, an implementation defect as `failure`, and an upstream contract contradiction as `architecture_failure`; do not route the same defect to an owner who cannot fix it.
+
 ## Adequacy checklist (your judgment — this is why you exist)
 
-For each `### <req-id>` in `TEST_PLAN.md`:
+For each in-scope `### <req-id>` in `TEST_PLAN.md` with a test mapping:
 
 - **unit**: does the test exercise the code path behind the requirement (real input → real assert)? A test that only checks "file exists" or calls nothing is not coverage.
 - **integration**: does it drive the real API/store wiring (listed in `required_files`) rather than a mock that bypasses the API?
@@ -90,7 +92,7 @@ CMD: cd {{rig}}/mayor/rig/{{layout_root}} && {{phase_qa_verify_command}}
 
 3. Run the phase verify (green required for success):
    ```
-   CMD: cd {{rig}}/mayor/rig/{{layout_root}} && {{phase_qa_verify_command}}
+   CMD: cd {{rig}}/mayor/rig && {{phase_qa_verify_command}}
    ```
 
 4. `bd` is available with rig `BEADS_DIR` — list closed beads only if you need to map a test file to its bead:

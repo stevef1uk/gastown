@@ -274,9 +274,6 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 	}
 
 	var lastAttemptFeedback strings.Builder
-	// Preserve the most recent failure JSON that was ignored because it shared a
-	// turn with CMD lines, so a genuine QA verdict isn't lost when turns exhaust.
-	var pendingFailureSummary string
 	recordAttemptFeedback := func(s string) {
 		if s == "" {
 			return
@@ -366,83 +363,15 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 			}
 			runner.appendImplementationCodeindexReminder(&feedbackBuilder)
 			feedback := feedbackBuilder.String()
-			if o, s, ok := parseOrchestratedResult(response, task.AllowedOutcomes); ok {
-				o = normalizeOrchestratedOutcome(o, task.AllowedOutcomes)
-				if (o == "failure" || o == "fail") && turn < maxTurns && turn <= 3 {
-					orchestratedPrintf("[gt-agent] ignoring premature failure JSON (turn %d/%d); try to fix the issue first\n", turn, maxTurns)
-					recordAttemptFeedback("Failure JSON ignored on early turn. Review command output, try to fix the issue, then send failure if truly blocked.\n")
-					pendingFailureSummary = s
-				} else if (o == "failure" || o == "fail") && turn < maxTurns {
-					orchestratedPrintf("[gt-agent] failure JSON received (with CMD lines) — accepting failure\n")
-					return o, s, lastAttemptFeedback.String(), nil
-				} else if task.State == "implementation" && isOrchestratedSuccessOutcome(o) {
-					orchestratedPrintf("[gt-agent] ignoring success JSON in same turn as CMD/native tools; run Verify and bd close first, then JSON only\n")
-					recordAttemptFeedback("Success JSON ignored because commands ran this turn. Finish Verify + bd close for the active bead, then reply with JSON only.\n")
-				} else if msg, reject := runner.rejectImplementationNoOpFailure(o); reject {
-					orchestratedPrintf("[gt-agent] rejecting implementation failure JSON without fix work this attempt\n")
-					recordAttemptFeedback(msg + "\n")
-				} else if o != "" {
-					if vErr := validateOutcomeForTask(task, townRoot, rig, o, s); vErr != nil {
-						orchestratedPrintf("[gt-agent] summary validation failed: %v\n", vErr)
-						feedbackBuilder.Reset()
-						feedbackBuilder.WriteString(combined.String())
-						recordAttemptFeedback("Summary validation failed: " + vErr.Error() + "\n")
-						feedbackBuilder.WriteString("\n\nSummary validation failed: " + vErr.Error() + "\nSend JSON success only after fixing the summary.")
-						feedback = feedbackBuilder.String()
-					} else if vErr := runner.validateArtifacts(o); vErr != nil {
-						orchestratedPrintf("[gt-agent] artifact validation failed: %v\n", vErr)
-						feedbackBuilder.Reset()
-						feedbackBuilder.WriteString(combined.String())
-						recordAttemptFeedback("Validation failed: " + vErr.Error() + "\n")
-						feedbackBuilder.WriteString("\n\nValidation failed: " + vErr.Error() + "\n")
-						if runner.hooks.Artifacts == "design" {
-							feedbackBuilder.WriteString("Rewrite architecture.md with a heredoc CMD: cat > ... <<'EOF' ... EOF — do NOT send JSON success until the validation passes.")
-						} else {
-							feedbackBuilder.WriteString("Fix the issues above with EDIT:/WRITE:/CMD: lines — do NOT send JSON success until the validation passes.")
-						}
-						feedback = feedbackBuilder.String()
-					} else {
-						return o, s, lastAttemptFeedback.String(), nil
-					}
-				}
+			if o, _, ok := parseOrchestratedResult(response, task.AllowedOutcomes); ok {
+				orchestratedPrintf("[gt-agent] ignoring %s JSON in same turn as CMD/native tools; inspect results before choosing an outcome\n", o)
+				msg := "Outcome ignored because tools ran this turn. Inspect the results above, then reply with JSON only on the next turn."
+				recordAttemptFeedback(msg + "\n")
+				messages = append(messages, llm.Message{Role: "user", Content: feedback + "\n\n" + msg})
+				continue
 			}
 			if o, s, ok := runner.tryAutoOutcome(); ok {
 				return o, s, lastAttemptFeedback.String(), nil
-			}
-			messages = append(messages, llm.Message{Role: "user", Content: feedback})
-			continue
-		}
-
-		if hadNative {
-			runner.consecutiveNonTerminalJSONRejects = 0
-			var feedbackBuilder strings.Builder
-			feedbackBuilder.WriteString(combined.String())
-			recordAttemptFeedback(feedbackBuilder.String())
-			feedbackBuilder.WriteString("\n\nNative edits processed. If the step is complete, reply with JSON only: {\"outcome\":\"...\",\"summary\":\"...\"}")
-			if turn == maxTurns {
-				feedbackBuilder.WriteString(" Use an allowed outcome.")
-			}
-			runner.appendImplementationCodeindexReminder(&feedbackBuilder)
-			feedback := feedbackBuilder.String()
-			if o, s, ok := parseOrchestratedResult(response, task.AllowedOutcomes); ok {
-				o = normalizeOrchestratedOutcome(o, task.AllowedOutcomes)
-				if task.State == "implementation" && isOrchestratedSuccessOutcome(o) {
-					orchestratedPrintf("[gt-agent] ignoring success JSON in same turn as native tools\n")
-					recordAttemptFeedback("Success JSON ignored — run Verify from Next bead and `bd close` before JSON success.\n")
-				} else if o != "" {
-					if msg, reject := runner.rejectImplementationNoOpFailure(o); reject {
-						orchestratedPrintf("[gt-agent] rejecting implementation failure JSON without fix work this attempt\n")
-						recordAttemptFeedback(msg + "\n")
-					} else if vErr := runner.validateArtifacts(o); vErr != nil {
-						feedbackBuilder.Reset()
-						feedbackBuilder.WriteString(combined.String())
-						recordAttemptFeedback("Validation failed: " + vErr.Error() + "\n")
-						feedbackBuilder.WriteString("\n\nValidation failed: " + vErr.Error() + "\nFix the issues above with EDIT:/WRITE:/CMD: lines — do NOT send JSON success until the validation passes.")
-						feedback = feedbackBuilder.String()
-					} else {
-						return o, s, lastAttemptFeedback.String(), nil
-					}
-				}
 			}
 			messages = append(messages, llm.Message{Role: "user", Content: feedback})
 			continue
@@ -615,11 +544,7 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 		}
 	}
 	if task != nil && task.State == "qa_review" {
-		if pendingFailureSummary != "" {
-			summary = pendingFailureSummary
-		} else {
-			summary = "QA exhausted turns without a clean outcome; check phase verify and artifact validation results above"
-		}
+		summary = "QA exhausted turns without a clean outcome; check phase verify and artifact validation results above"
 	}
 	return "fail", summary, lastAttemptFeedback.String(), fmt.Errorf("no structured outcome after %d turns", maxTurns)
 }
@@ -762,6 +687,24 @@ func formatWorkflowReworkBlock(task *orchestrator.Task, townRoot, rig string) st
 }
 
 func workflowReworkHints(fromState, toState, rig, summary string, v orchestrator.WorkflowValidation) string {
+	if fromState == "test_plan_review" && toState == "test_plan" {
+		worktree := "<rig>/mayor/rig"
+		if rig != "" {
+			worktree = rig + "/mayor/rig"
+		}
+		return fmt.Sprintf(`
+### test_plan_review failed — fix TEST_PLAN.md before re-submitting
+1. **READ the existing TEST_PLAN.md first**:
+   CMD: cat %s/TEST_PLAN.md
+2. Follow the test-plan prompt and YAML rework instructions to repair confirmed gaps:
+   - Check supplied Bead IDs with bd list --status=open,in_progress,closed; future-phase IDs may be empty
+   - Test file paths must match the owning phase's workflow-profile.json required_files
+   - OMIT setup-only phases (verify = "echo 'verify ok...'") entirely
+   - Phases listing no test file may leave Test file empty
+3. Verify: CMD: cd %s && wc -c TEST_PLAN.md (≥ %d bytes)
+4. JSON success only when all confirmed QA issues are fixed; preserve other valid sections
+`, worktree, worktree, orchestrator.EffectiveMinTestPlanBytes(v))
+	}
 	if fromState == "plan_review" && toState == "planning" {
 		worktree := "<rig>/mayor/rig"
 		if rig != "" {
@@ -1551,6 +1494,35 @@ func rewriteArchitectureMDPathAfterCD(cmd, rig string) (string, bool) {
 // fails with "No such file or directory", so the agent never sees the SPEC.
 func rewriteSPECMDPathAfterCD(cmd, rig string) (string, bool) {
 	return rewriteRigDocPathAfterCD(cmd, rig, "SPEC.md")
+}
+
+// rewriteUpDotDocPathAfterCD rewrites `cd rig/mayor/rig && cat ../../SPEC.md` to
+// `cd rig/mayor/rig && cat SPEC.md` — LLM often uses `../../` from town root
+// but the actual cwd after cd is rig/mayor/rig.
+func rewriteUpDotDocPathAfterCD(cmd, rig, doc string) (string, bool) {
+	rigName := strings.TrimSpace(rig)
+	if rigName == "" {
+		return cmd, false
+	}
+	mayorRig := rigName + "/mayor/rig"
+	lower := strings.ToLower(cmd)
+	docLower := strings.ToLower(doc)
+	if !strings.Contains(lower, docLower) || !strings.Contains(lower, "cd ") {
+		return cmd, false
+	}
+	shellPortion := designCommandShellPortion(cmd)
+	shellLower := strings.ToLower(shellPortion)
+	if !strings.Contains(shellLower, "cd ") {
+		return cmd, false
+	}
+	if !strings.Contains(lower, strings.ToLower(mayorRig)) {
+		return cmd, false
+	}
+	wrong := "../" + doc
+	if !strings.Contains(lower, wrong) {
+		return cmd, false
+	}
+	return strings.ReplaceAll(cmd, wrong, doc), true
 }
 
 // rewriteRigDocPathAfterCD rewrites `cd rig/mayor/rig && ... > rig/mayor/rig/<doc>`
@@ -3299,17 +3271,12 @@ func validateTestPlanArtifacts(townRoot, rig string, hadCmdFailure, testPlanWrit
 		return fmt.Errorf("read TEST_PLAN.md: %w", err)
 	}
 	blocks := orchestrator.ParseTestPlanBlocks(string(data))
-	if len(blocks) == 0 {
+	if len(blocks) == 0 && testPlanRequiresBlocks(v) {
 		return fmt.Errorf("TEST_PLAN.md must contain at least one `### <req-id>` block (Requirement, Level, Test file, Bead ID, Scenarios, Assertions)")
 	}
-	var missingFields []string
-	for _, b := range blocks {
-		if b.ReqID == "" || b.Level == "" || b.TestFile == "" {
-			missingFields = append(missingFields, b.ReqID)
-		}
-	}
-	if len(missingFields) > 0 {
-		return fmt.Errorf("TEST_PLAN.md blocks %v are missing required fields (Level, Test file) — every requirement row needs them", missingFields)
+	if missing := missingTestPlanRequiredFields(v, blocks); len(missing) > 0 {
+		return fmt.Errorf("TEST_PLAN.md blocks %v are missing required fields (Level, Test file) — every requirement row needs Level; rows for phases with no test file in required_files may leave `Test file:` empty",
+			missing)
 	}
 	// Check for hallucinated requirements: TEST_PLAN.md should not have requirement IDs
 	// that don't appear in SPEC.md or architecture.md.
@@ -3348,66 +3315,30 @@ func validateTestPlanArtifacts(townRoot, rig string, hadCmdFailure, testPlanWrit
 			return fmt.Errorf(
 				"TEST_PLAN.md is missing requirement blocks for phases %v — "+
 					"every test-carrying delivery phase must have at least one ### <req-id> block. "+
-					"READ the existing TEST_PLAN.md first and use EDIT to modify only the changed sections; "+
-					"do NOT use heredoc to rewrite the entire file (that drops other phase sections).",
+					"READ the existing TEST_PLAN.md first and repair it using allowed CMD shell edits, preserving other valid phase sections.",
 				missing)
 		}
 	}
-	// Check test file paths against workflow-profile.json required_files
-	// (This mirrors the manager's validateTestPlan check so agent catches it locally)
-	vRaw, _, err := orchestrator.LoadRawRigWorkflowProfile(townRoot, rig)
-	if err == nil {
-		validTestFilesByPhase := make(map[string]map[string]bool)
-		for _, phase := range vRaw.DeliveryPhases {
-			phaseFiles := make(map[string]bool)
-			for _, f := range phase.RequiredFiles {
-				phaseFiles[strings.ToLower(filepath.ToSlash(strings.TrimSpace(f)))] = true
-			}
-			validTestFilesByPhase[strings.ToLower(phase.ID)] = phaseFiles
-		}
-		for _, b := range blocks {
-			testFile := strings.TrimSpace(b.TestFile)
-			if testFile == "" || orchestrator.IsPlanGapPlaceholderPath(testFile) {
-				continue
-			}
-			if idx := strings.IndexAny(testFile, "([{"); idx >= 0 {
-				testFile = strings.TrimSpace(testFile[:idx])
-			}
-			testFile = filepath.ToSlash(testFile)
-			key := strings.ToLower(testFile)
-			phaseID := strings.ToLower(strings.TrimSpace(b.Phase))
-			if phaseID == "" {
-				// Backward compatible: check all phases
-				found := false
-				for _, phaseFiles := range validTestFilesByPhase {
-					if phaseFiles[key] {
-						found = true
-						break
-					}
-				}
-				if !found {
-					return fmt.Errorf("TEST_PLAN.md test file %q not in any workflow-profile.json phase required_files", testFile)
-				}
-			} else {
-				phaseFiles, ok := validTestFilesByPhase[phaseID]
-				if !ok {
-					return fmt.Errorf("TEST_PLAN.md references unknown phase %q", b.Phase)
-				}
-				if !phaseFiles[key] {
-					return fmt.Errorf("TEST_PLAN.md test file %q not in workflow-profile.json required_files for phase %q", testFile, b.Phase)
-				}
+	// Keep local path validation identical to the manager's completion gate.
+	// Prefer the raw profile so inferred paths cannot legitimize invented tests.
+	fileValidation := v
+	if raw, ok, loadErr := orchestrator.LoadRawRigWorkflowProfile(townRoot, rig); loadErr == nil && ok {
+		fileValidation = raw
+	}
+	if err := orchestrator.ValidateTestPlanFileMappings(fileValidation, blocks); err != nil {
+		return err
+	}
+	for _, b := range blocks {
+		// Setup-only phase guard: phases with no automated tests must be OMITTED entirely
+		for _, p := range v.DeliveryPhases {
+			if strings.EqualFold(p.ID, b.Phase) && !orchestrator.PhaseShipsAutomatedTests(p) {
+				return fmt.Errorf("TEST_PLAN.md section for setup-only phase %q must be OMITTED (no automated tests per its qa_verify_command)", b.Phase)
 			}
 		}
 	}
-	// Bead-ID mapping: verify each cited bead that already exists actually owns the
-	// row's Test file path. This mirrors the manager's validateTestPlan (run when the
-	// tester reports success from test_plan). Without it the agent auto-completes a
-	// plan the orchestrator rejects, looping test_plan forever. Unknown bead IDs are
-	// ignored — implement beads may not exist yet when the plan is first written.
-	if mismatches, mErr := orchestrator.TestPlanBeadMappingMismatches(townRoot, rig, v, blocks); mErr == nil && len(mismatches) > 0 {
-		return fmt.Errorf("TEST_PLAN.md bead mapping errors: %v", mismatches)
-	}
-	return nil
+	// Supplied IDs must be real, but future IDs may be empty and completed
+	// phase IDs may be closed. Reuse the review check rather than open-only lists.
+	return validateTestPlanBeadIDs(townRoot, rig, v, blocks)
 }
 
 func testPlanBytes(rigDir string) int64 {
@@ -3416,6 +3347,60 @@ func testPlanBytes(rigDir string) int64 {
 		return 0
 	}
 	return info.Size()
+}
+
+// Explicit no-test phases need a verification summary, not fabricated rows.
+func testPlanRequiresBlocks(v orchestrator.WorkflowValidation) bool {
+	if len(v.DeliveryPhases) == 0 {
+		return true
+	}
+	for _, phase := range v.DeliveryPhases {
+		if orchestrator.PhaseShipsAutomatedTests(phase) {
+			return true
+		}
+	}
+	return false
+}
+
+// missingTestPlanRequiredFields returns the requirement rows missing fields the
+// test_plan.md hard rules demand of every row: Level always; Test file only
+// when the row's delivery phase lists a test file in required_files. Phases
+// that ship only manifests/production files (go.mod, requirements.txt) have no
+// test file of their own — their rows may leave `Test file:` empty, and forcing
+// a value there deadlocks the tester (any filled path either fails the
+// *_test.go suffix check or the phase required_files match).
+func missingTestPlanRequiredFields(v orchestrator.WorkflowValidation, blocks []orchestrator.TestPlanBlock) []string {
+	phaseByID := make(map[string]orchestrator.DeliveryPhase)
+	for _, p := range v.DeliveryPhases {
+		phaseByID[strings.ToLower(strings.TrimSpace(p.ID))] = p
+	}
+	resolvePhase := func(b orchestrator.TestPlanBlock) (orchestrator.DeliveryPhase, bool) {
+		key := strings.ToLower(strings.TrimSpace(b.Phase))
+		if key == "" {
+			key = strings.ToLower(strings.TrimSpace(b.ReqID))
+		}
+		p, ok := phaseByID[key]
+		return p, ok
+	}
+	var missing []string
+	for _, b := range blocks {
+		if b.ReqID == "" || b.Level == "" {
+			missing = append(missing, b.ReqID)
+			continue
+		}
+		if strings.TrimSpace(b.TestFile) != "" {
+			continue
+		}
+		if p, ok := resolvePhase(b); ok && !orchestrator.PhaseRequiresTestFile(p) {
+			continue // test-less phase: empty Test file is valid per the hard rules
+		}
+		if len(v.DeliveryPhases) == 0 && len(v.RequiredFiles) > 0 &&
+			!orchestrator.PhaseRequiresTestFile(orchestrator.DeliveryPhase{RequiredFiles: v.RequiredFiles}) {
+			continue // unphased manifest/build-only projects use the same rule
+		}
+		missing = append(missing, b.ReqID)
+	}
+	return missing
 }
 
 // validateTestPlanReviewArtifacts backs the QA test_plan_review state: when QA
@@ -3444,17 +3429,19 @@ func validateTestPlanReviewArtifacts(townRoot, rig string, v orchestrator.Workfl
 		return fmt.Errorf("read TEST_PLAN.md: %w", err)
 	}
 	blocks := orchestrator.ParseTestPlanBlocks(string(data))
-	if len(blocks) == 0 {
+	if len(blocks) == 0 && testPlanRequiresBlocks(v) {
 		return fmt.Errorf("TEST_PLAN.md must contain at least one `### <req-id>` block (Requirement, Level, Test file, Bead ID, Scenarios, Assertions) — report failure so the tester rewrites it")
 	}
-	var missingFields []string
-	for _, b := range blocks {
-		if b.ReqID == "" || b.Level == "" || b.TestFile == "" {
-			missingFields = append(missingFields, b.ReqID)
-		}
+	if missing := missingTestPlanRequiredFields(v, blocks); len(missing) > 0 {
+		return fmt.Errorf("TEST_PLAN.md blocks %v are missing required fields (Level, Test file) — report failure so the tester fixes every requirement row (rows for phases with no test file in required_files may leave `Test file:` empty)",
+			missing)
 	}
-	if len(missingFields) > 0 {
-		return fmt.Errorf("TEST_PLAN.md blocks %v are missing required fields (Level, Test file) — report failure so the tester fixes every requirement row", missingFields)
+	fileValidation := v
+	if raw, ok, loadErr := orchestrator.LoadRawRigWorkflowProfile(townRoot, rig); loadErr == nil && ok {
+		fileValidation = raw
+	}
+	if err := orchestrator.ValidateTestPlanFileMappings(fileValidation, blocks); err != nil {
+		return err
 	}
 	if err := validateTestPlanBeadIDs(townRoot, rig, v, blocks); err != nil {
 		return fmt.Errorf("%w — report failure so the tester corrects the bead IDs", err)
@@ -3502,7 +3489,7 @@ func validateTestPlanBeadIDs(townRoot, rig string, v orchestrator.WorkflowValida
 		return fmt.Errorf(
 			"TEST_PLAN.md bead mappings do not match what each bead owns: %s — "+
 				"fix each row's `Bead ID:` to the bead whose title names that Test file "+
-				"(`bd list --flat --limit=0`), or use outcome plan_gap to rewrite TEST_PLAN.md",
+				"(`bd list --flat --limit=0`) and repair TEST_PLAN.md before reporting success",
 			strings.Join(mismatches, "; "))
 	}
 	return nil

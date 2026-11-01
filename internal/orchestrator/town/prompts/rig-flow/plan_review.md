@@ -45,6 +45,10 @@ $GT_ROOT/{{rig}}/mayor/rig/{{layout_root}}/  ← layout root (ALL files go here)
 
 ## Alignment checklist (required — do not pass on drift)
 
+Ground your decision in files inspected this attempt. Missing future-phase beads, implementation files before implementation, and optional documents are not active-phase planning defects. Do not introduce requirements from a generic project template. Approval here means `plan.md` and active-phase beads are ready for test planning; it does not approve TEST_PLAN.md or completed implementation.
+
+On repeated rework, verify the prior defect still exists. A failure must cite the phase, inspected path/section or bead, violated SPEC/profile rule, and smallest correction. Route plan/bead defects to the Planner; use `architecture_failure` only for a SPEC/architecture contradiction the Planner cannot repair. Do not repeat stale feedback after the artifact has been corrected.
+
 gt-agent also runs **mechanical** checks on success; you must catch the same issues in your review summary.
 
 1. **HTTP routes (authoritative: SPEC.md table)**

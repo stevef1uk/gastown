@@ -91,6 +91,8 @@ intact when editing the prompts — they are behavioral contracts, not suggestio
 | **YAGNI** | `prompts/rig-flow/planning.md`, `prompts/rig-flow/qa_review.md` | Beads implement exactly what SPEC requires. QA rejects correct-but-overbuilt code. |
 | **Bead map contracts** | `prompts/rig-flow/planning.md` | Each `### <id>: <path>` bead block lists `Interfaces` (exact exported symbols from architecture), `Depends on`, and `Consumed by` so the polecat gets dependency wiring without reading the whole plan. |
 | **Two-stage QA review** | `prompts/rig-flow/qa_review.md` | QA reviews in two explicit passes: Stage 1 spec compliance (right thing, wired, tests cover plan.md acceptance), Stage 2 code quality (minimal, no dead code/stubs). |
+| **Evidence-based rework** | `STANDARDS.md`, design/planning/tester/implementation and review prompts | Owners repair their own rejected artifacts. Escalations cite inspected upstream defects and minimal corrections. Repeated feedback requires comparison with current artifacts. |
+| **Phase-aware test planning** | `prompts/rig-flow/test_plan.md`, `test_plan_review.md`, `test_review.md` | Plan future verification without requiring future beads/files. Test paths belong to their declared phase; phases without test files may leave the field empty. Explicit no-test/echo-only phases are omitted. |
 | **Bead-note ledger** | `internal/formula/formulas/mol-polecat-work.formula.toml` | Polecat persists to `bd update --notes` at mandatory triggers (after writing tests, before verify, before `gt done`) so work survives context loss. |
 
 **Both workflows share these contracts.** `req-flow.yaml` reuses `prompts/rig-flow/*.md` for its
