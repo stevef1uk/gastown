@@ -24,6 +24,8 @@ services:
       - "host.docker.internal:host-gateway"
     environment:
       - BASE_URL={{PLAYWRIGHT_BASE_URL}}
+      - CI=1
+      - PLAYWRIGHT_HTML_OPEN=never
     volumes:
       - ./:/src:ro
       - playwright-app:/app

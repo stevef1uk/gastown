@@ -28,6 +28,8 @@ services:
         condition: service_healthy
     environment:
       - BASE_URL={{BASE_URL}}
+      - CI=1
+      - PLAYWRIGHT_HTML_OPEN=never
     volumes:
       - ./:/src:ro
       - playwright-app:/app

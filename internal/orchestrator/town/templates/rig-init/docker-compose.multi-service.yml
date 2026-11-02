@@ -16,6 +16,8 @@ services:
       {{E2E_DEPENDS_ON}}
     environment:
       - BASE_URL={{BASE_URL}}
+      - CI=1
+      - PLAYWRIGHT_HTML_OPEN=never
     volumes:
       - ./:/src:ro
       - e2e-results:/app

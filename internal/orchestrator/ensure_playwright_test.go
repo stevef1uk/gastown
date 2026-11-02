@@ -259,3 +259,41 @@ func TestEnsurePlaywrightConfigReady_skipsWhenConfigExistsInTestDir(t *testing.T
 		t.Error("duplicate config should not be created at layout root")
 	}
 }
+
+func TestEnsurePlaywrightConfigReady_topLevelE2EDirAndDockerHarness(t *testing.T) {
+	dir := t.TempDir()
+	rigDir := filepath.Join(dir, "pwtest", "mayor", "rig")
+	writeSpec(t, filepath.Join(rigDir, "pingapp", "e2e", "ping.spec.ts"))
+
+	v := WorkflowValidation{
+		LayoutRoot:    "pingapp",
+		DevServerPort: 8080,
+		DeliveryPhases: []DeliveryPhase{
+			{
+				ID:              "integration-test",
+				RequiredFiles:   []string{"pingapp/playwright.config.ts", "pingapp/e2e/ping.spec.ts", "pingapp/docker-compose.yml"},
+				QAVerifyCommand: "cd pingapp && docker compose -f docker-compose.yml up --exit-code-from playwright",
+			},
+		},
+		ActivePhaseIDField: "integration-test",
+	}
+
+	if _, err := EnsurePlaywrightConfigReady(dir, "pwtest", v); err != nil {
+		t.Fatalf("EnsurePlaywrightConfigReady failed: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(rigDir, "pingapp", "playwright.config.ts"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(data)
+	if !strings.Contains(content, "testDir: './e2e'") {
+		t.Errorf("expected testDir: './e2e' for pingapp/e2e/ping.spec.ts, got:\n%s", content)
+	}
+	if !strings.Contains(content, "open: 'never'") {
+		t.Errorf("expected non-blocking HTML reporter open: 'never', got:\n%s", content)
+	}
+	if !strings.Contains(content, "process.env.BASE_URL") {
+		t.Errorf("expected process.env.BASE_URL for Docker Playwright harness, got:\n%s", content)
+	}
+}

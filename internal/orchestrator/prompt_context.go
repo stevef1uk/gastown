@@ -501,7 +501,9 @@ func EnsurePlaywrightConfigReady(townRoot, rig string, v WorkflowValidation) (st
 		if strings.HasPrefix(lower, layout+"/") {
 			rel = strings.TrimPrefix(lower, layout+"/")
 		}
-		if idx := strings.Index(rel, "/e2e/"); idx >= 0 {
+		if strings.HasPrefix(rel, "e2e/") {
+			testDirRel = "."
+		} else if idx := strings.Index(rel, "/e2e/"); idx >= 0 {
 			testDirRel = rel[:idx]
 		} else {
 			testDirRel = "test"
@@ -547,9 +549,18 @@ func EnsurePlaywrightConfigReady(townRoot, rig string, v WorkflowValidation) (st
 		}
 	}
 
+	e2eRel := testDirRel + "/e2e"
+	if testDirRel == "." {
+		e2eRel = "e2e"
+	}
+
 	if existingContent != "" {
-		if hasDockerPlaywright && strings.Contains(existingContent, "webServer") {
-			log.Printf("[playwright-config] repairing %s: dropping webServer block — host-run rig uses the Docker harness", existingPath)
+		needsDockerRepair := hasDockerPlaywright && (strings.Contains(existingContent, "webServer") ||
+			(e2eRel == "e2e" && strings.Contains(existingContent, "testDir: './test/e2e'")) ||
+			(strings.Contains(existingContent, "baseURL: 'http://localhost:") && !strings.Contains(existingContent, "BASE_URL") && !strings.Contains(existingContent, "host.docker.internal")) ||
+			strings.Contains(existingContent, "reporter: 'html'"))
+		if needsDockerRepair {
+			log.Printf("[playwright-config] repairing %s for Docker Playwright harness (testDir=./%s, non-blocking reporter, BASE_URL)", existingPath, e2eRel)
 			// Overwrite the offending config in place (it may live in the
 			// test dir rather than the layout root).
 			pwConfigPath = existingPath
@@ -566,17 +577,17 @@ func EnsurePlaywrightConfigReady(townRoot, rig string, v WorkflowValidation) (st
 		port = 8000
 	}
 
-	e2eRel := testDirRel + "/e2e"
-	if testDirRel == "." {
-		e2eRel = "e2e"
-	}
-
 	// Choose the dev-server command generically for Go, Python, and Node rigs.
 	serverCmd := DevServerCommand(layoutDir, v)
 	// Resolve '@playwright/test' from wherever it is installed: prefer the layout
 	// root (matches "run from layout root" QA), else the test dir, so the config
 	// loads even when node_modules lives in a subdir (e.g. finally's test/).
 	pwImport := playwrightImport(layoutDir, testDir, testDirRel)
+
+	baseURLExpr := fmt.Sprintf("'http://localhost:%d'", port)
+	if hasDockerPlaywright {
+		baseURLExpr = fmt.Sprintf("process.env.BASE_URL || 'http://host.docker.internal:%d'", port)
+	}
 
 	pwConfig := fmt.Sprintf(`import { defineConfig, devices } from %s;
 
@@ -586,9 +597,9 @@ export default defineConfig({
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
   workers: process.env.CI ? 1 : undefined,
-  reporter: 'html',
+  reporter: [['html', { open: 'never' }], ['list']],
   use: {
-    baseURL: 'http://localhost:%d',
+    baseURL: %s,
     trace: 'on-first-retry',
   },
   projects: [
@@ -598,7 +609,7 @@ export default defineConfig({
     },
   ],
 %s});
-`, pwImport, e2eRel, port, func() string {
+`, pwImport, e2eRel, baseURLExpr, func() string {
 		if hasDockerPlaywright {
 			return ""
 		}
@@ -648,6 +659,9 @@ services:
     user: "${DOCKER_UID:-1000}:${DOCKER_GID:-1000}"
     working_dir: /src
     network_mode: host
+    environment:
+      - CI=1
+      - PLAYWRIGHT_HTML_OPEN=never
     volumes:
       - .:/src
     command: >
