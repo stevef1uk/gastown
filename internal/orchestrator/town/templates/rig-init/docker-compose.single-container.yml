@@ -21,6 +21,7 @@ services:
   playwright:
     build:
       context: {{APP_BUILD}}
+      dockerfile: Dockerfile.playwright
       target: playwright
     working_dir: {{PLAYWRIGHT_WORKDIR}}
     depends_on:
@@ -31,5 +32,5 @@ services:
       - CI=1
       - PLAYWRIGHT_HTML_OPEN=never
     volumes:
-      - ./:/src:ro
+      - {{APP_BUILD}}/:/src:ro
     command: sh -c "tar -C /src --exclude=./node_modules --exclude=./.git --exclude=./playwright-report --exclude=./test-results -cf - . | tar -C /app -xf - && {{PLAYWRIGHT_COMMAND}}"

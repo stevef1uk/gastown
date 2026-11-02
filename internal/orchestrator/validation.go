@@ -1704,6 +1704,7 @@ func NormalizeDockerQACommand(cmd string) string {
 	if !strings.Contains(lower, "docker compose") && !strings.Contains(lower, "docker-compose") {
 		return cmd
 	}
+	cmd = strings.ReplaceAll(cmd, "&& docker rmi test-app:latest 2>/dev/null || true", "&& (docker rmi test-app:latest 2>/dev/null || true)")
 	if strings.Contains(lower, "build --no-cache") {
 		return cmd
 	}
@@ -1720,7 +1721,7 @@ func NormalizeDockerQACommand(cmd string) string {
 		}
 		// Insert no-cache build before up; remove old test-app:latest first so it never
 		// becomes dangling. Append image prune to clean any remaining dangling layers.
-		return prefix + " build --no-cache && " + prefix + " up" + flags + " && docker rmi test-app:latest 2>/dev/null || true && docker image prune -f"
+		return prefix + " build --no-cache && " + prefix + " up" + flags + " && (docker rmi test-app:latest 2>/dev/null || true) && docker image prune -f"
 	})
 }
 

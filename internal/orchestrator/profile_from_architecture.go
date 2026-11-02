@@ -116,6 +116,31 @@ func extractSpecLayoutPaths(mayorRigDir string) ([]string, bool, map[string]bool
 	if len(treePaths) > 0 {
 		log.Printf("[extractSpecLayoutPaths] using SPEC layout tree: %d files", len(treePaths))
 		paths = treePaths
+		root := inferLayoutRootFromPaths(treePaths)
+		var deliverables []string
+		for _, line := range strings.Split(specText, "\n") {
+			lower := strings.ToLower(line)
+			if strings.Contains(lower, "must ") || strings.Contains(lower, "required deliverable") || strings.Contains(lower, "defines ") || strings.Contains(lower, "entry point") {
+				deliverables = append(deliverables, extractArchPaths(line, "")...)
+			}
+		}
+		for _, p := range deliverables {
+			p = strings.TrimPrefix(p, "./")
+			if !strings.Contains(p, "/") {
+				continue
+			}
+			if root != "" && root != "." && !strings.HasPrefix(p, root+"/") {
+				p = root + "/" + p
+			}
+			if isImplementableFilePath(p) && IsValidImplementBeadPath(p) {
+				for prefix := range specDirPrefixes {
+					if strings.HasPrefix(p, prefix) {
+						paths = append(paths, p)
+						break
+					}
+				}
+			}
+		}
 	} else {
 		// Fallback: no parseable tree — use prose backtick refs as last resort.
 		log.Printf("[extractSpecLayoutPaths] no layout tree found; falling back to prose backtick extraction")
@@ -129,7 +154,7 @@ func extractSpecLayoutPaths(mayorRigDir string) ([]string, bool, map[string]bool
 	// once it exists — the architect expands SPEC abbreviations into
 	// concrete files (test files, config files, all components).
 	if archText != "" {
-		archPaths := extractArchPaths(archText, "")
+		archPaths := declaredArchitecturePaths(archText, "")
 		log.Printf("[extractSpecLayoutPaths] using architecture.md: %d files", len(archPaths))
 		// Union: add arch paths not already in SPEC tree
 		seen := make(map[string]bool)
@@ -179,6 +204,15 @@ func extractSpecLayoutPaths(mayorRigDir string) ([]string, bool, map[string]bool
 		return paths, true, specDirPrefixes
 	}
 	return nil, false, nil
+}
+
+func declaredArchitecturePaths(text, layout string) []string {
+	for _, heading := range []string{"## planned file layout", "## file layout"} {
+		if start := strings.Index(strings.ToLower(text), heading); start >= 0 {
+			return extractArchPaths(extractMarkdownSection(text, start), layout)
+		}
+	}
+	return extractArchPaths(text, layout)
 }
 
 // parseSpecLayoutTree extracts paths from markdown tree blocks under "## Layout" in SPEC.md.
@@ -793,7 +827,7 @@ func ReconcileProfileWithArchitecture(townRoot, rig string) error {
 	if err != nil || len(archData) == 0 {
 		return nil
 	}
-	archPaths := extractArchPaths(string(archData), env.Validation.LayoutRootDir())
+	archPaths := declaredArchitecturePaths(string(archData), env.Validation.LayoutRootDir())
 	if len(archPaths) == 0 {
 		return nil
 	}
@@ -879,7 +913,7 @@ func SyncRigWorkflowProfileFromArchitecture(townRoot, rig string) (bool, error) 
 	if len(archData) == 0 {
 		return false, nil // design not complete — nothing authoritative to sync from
 	}
-	archPaths := extractArchPaths(string(archData), env.Validation.LayoutRootDir())
+	archPaths := declaredArchitecturePaths(string(archData), env.Validation.LayoutRootDir())
 	var filePaths []string
 	for _, p := range archPaths {
 		p = filepath.ToSlash(strings.TrimSpace(p))
@@ -975,6 +1009,9 @@ func SyncRigWorkflowProfileFromArchitecture(townRoot, rig string) (bool, error) 
 	} else {
 		env.Validation.RequiredFiles = union
 	}
+	complete := dedupeStrings(authoritative)
+	env.Validation = rebuildDeliveryPhasesFromAuthoritative(env.Validation, complete)
+	env.Validation.RequiredFiles = complete
 	env.Validation = updateTopLevelFromCanonicalSection(env.Validation, string(archData))
 	// Rebuilt/re-distributed phases may have empty or wrong-stack verify commands;
 	// fill them with stack-appropriate defaults (never go vet in a Python phase).

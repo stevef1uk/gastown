@@ -206,6 +206,7 @@ func stripBrokenCdPrefix(cmd string) string {
 
 func dockerVerifyWithLayout(cmd, layout string) string {
 	cmd = stripBrokenCdPrefix(NormalizeDockerCommand(strings.TrimSpace(cmd)))
+	cmd = strings.ReplaceAll(cmd, "&& docker rmi test-app:latest 2>/dev/null || true", "&& (docker rmi test-app:latest 2>/dev/null || true)")
 	layout = effectiveLayoutRoot(layout)
 	if cmd == "" {
 		if layout == "." {

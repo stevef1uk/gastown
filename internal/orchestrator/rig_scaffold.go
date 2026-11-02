@@ -110,6 +110,9 @@ func ScaffoldRigIntegrationTemplates(townRoot, rig string, optPlan *ScaffoldPlan
 
 // buildTemplateValues builds the substitution map for templates.
 func buildTemplateValues(plan *ScaffoldPlan, port int, kind string, v *WorkflowValidation) map[string]string {
+	if plan == nil {
+		plan = defaultScaffoldPlan(v)
+	}
 	vals := map[string]string{
 		"PLAYWRIGHT_IMAGE":    "playwright-go-test:latest",
 		"PLAYWRIGHT_VERSION":  PlaywrightNPMVersion(),
@@ -126,11 +129,26 @@ func buildTemplateValues(plan *ScaffoldPlan, port int, kind string, v *WorkflowV
 		"STATIC_OUTPUT":       ".next/static",
 		"UV_CMD":              "pip install -r requirements.txt",
 		"RUN_CMD":             `["python", "app.py"]`,
-		"HEALTHCHECK":         `"CMD", "curl", "-f", "http://localhost:${APP_PORT}/"`,
-		"ENV_BLOCK":           "PORT=${APP_PORT}",
+		"HEALTHCHECK":         fmt.Sprintf(`"CMD", "curl", "-f", "http://localhost:%d/"`, port),
+		"ENV_BLOCK":           fmt.Sprintf("PORT=%d", port),
 		"SERVICES_BLOCK":      "",
 		"E2E_DEPENDS_ON":      "",
 		"APP_BUILD":           ".",
+	}
+	_, composeDst := resolveComposeKind(plan, v)
+	if rel, err := filepath.Rel(filepath.Dir(composeDst), "."); err == nil {
+		vals["APP_BUILD"] = filepath.ToSlash(rel)
+	}
+	if v != nil {
+		for _, f := range v.UnionRequiredFiles() {
+			if base := filepath.Base(f); base == "playwright.config.ts" || base == "playwright.config.js" {
+				rel, err := filepath.Rel(v.LayoutRootDir(), f)
+				if err == nil {
+					vals["PLAYWRIGHT_COMMAND"] += " --config=" + filepath.ToSlash(rel)
+				}
+				break
+			}
+		}
 	}
 
 	// Determine base URL based on kind
@@ -289,6 +307,7 @@ func selectTemplatesForPlan(plan *ScaffoldPlan, v *WorkflowValidation) map[strin
 		templates["Dockerfile.playwright-stage"] = "Dockerfile"
 	case "single-container":
 		templates["docker-compose.single-container.yml"] = composeDst
+		templates["Dockerfile.playwright-stage"] = "Dockerfile.playwright"
 		// Single-container app Dockerfile is selected below (stack-based).
 	default:
 		templates["docker-compose.multi-service.yml"] = composeDst
@@ -343,7 +362,7 @@ func resolveComposeKind(plan *ScaffoldPlan, v *WorkflowValidation) (kind, dst st
 		rootCompose := false
 		testCompose := false
 		nonDefaultDF := false
-		for _, f := range v.RequiredFiles {
+		for _, f := range v.UnionRequiredFiles() {
 			rel := filepath.ToSlash(strings.TrimSpace(f))
 			rel = strings.TrimPrefix(rel, layout+"/")
 			if rel == "docker-compose.yml" {
@@ -361,7 +380,12 @@ func resolveComposeKind(plan *ScaffoldPlan, v *WorkflowValidation) (kind, dst st
 			return "multi-service", "docker-compose.yml"
 		}
 		if testCompose {
-			return "single-container", "test/docker-compose.test.yml"
+			for _, f := range v.UnionRequiredFiles() {
+				rel := strings.TrimPrefix(filepath.ToSlash(f), layout+"/")
+				if strings.HasSuffix(rel, "docker-compose.test.yml") || strings.HasSuffix(rel, "docker-compose.test.yaml") {
+					return "single-container", rel
+				}
+			}
 		}
 		if rootCompose {
 			return "host-run", "docker-compose.yml"
@@ -384,6 +408,13 @@ func resolveComposeKind(plan *ScaffoldPlan, v *WorkflowValidation) (kind, dst st
 // same profile-driven rules as the plan path (a profile that requires a root
 // docker-compose.yml + non-default Dockerfile yields the multi-service layout).
 func selectDefaultTemplates(v *WorkflowValidation) (map[string]string, string) {
+	plan := defaultScaffoldPlan(v)
+	templates := selectTemplatesForPlan(plan, v)
+	kind, _ := resolveComposeKind(plan, v)
+	return templates, kind
+}
+
+func defaultScaffoldPlan(v *WorkflowValidation) *ScaffoldPlan {
 	plan := &ScaffoldPlan{
 		Kind:  "host-run",
 		Stack: "go",
@@ -393,7 +424,7 @@ func selectDefaultTemplates(v *WorkflowValidation) (map[string]string, string) {
 		plan.Port = v.DevServerPort
 		hasFrontend := false
 		hasBackend := false
-		for _, f := range v.RequiredFiles {
+		for _, f := range v.UnionRequiredFiles() {
 			if strings.Contains(f, "frontend") || strings.Contains(f, "package.json") {
 				hasFrontend = true
 			}
@@ -405,9 +436,7 @@ func selectDefaultTemplates(v *WorkflowValidation) (map[string]string, string) {
 			plan.Stack = "hybrid"
 		}
 	}
-	templates := selectTemplatesForPlan(plan, v)
-	kind, _ := resolveComposeKind(plan, v)
-	return templates, kind
+	return plan
 }
 
 // scaffoldTemplateValues derives template substitution values from the workflow

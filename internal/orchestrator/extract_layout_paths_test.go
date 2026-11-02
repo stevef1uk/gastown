@@ -6,6 +6,39 @@ import (
 	"testing"
 )
 
+func TestExtractSpecLayoutPaths_IncludesProseDeliverables(t *testing.T) {
+	dir := t.TempDir()
+	spec := "# Workstation\n\n## Layout\n\nworkstation/\n├── backend/\n│   └── market.py\n└── frontend/\n    └── package.json\n\n## Application contract\n\n" +
+		"`backend/app/main.py` must define the application factory.\n" +
+		"`backend/app/api/__init__.py` must register the routes.\n" +
+		"`workstation/backend/app/api/schemas.py` defines the contracts.\n" +
+		"The runtime database is `db/workstation.db`.\n" +
+		"The healthcheck must pass; use npm ci only if `package-lock.json` is committed.\n" +
+		"### Dashboard (`dashboard.spec.ts`)\n" +
+		"Do not interpret `python -m pytest` or `/api/health` as files.\n"
+	if err := os.WriteFile(filepath.Join(dir, "SPEC.md"), []byte(spec), 0644); err != nil {
+		t.Fatal(err)
+	}
+	paths, ok, _ := extractSpecLayoutPaths(dir)
+	if !ok {
+		t.Fatal("expected layout paths")
+	}
+	for _, want := range []string{
+		"workstation/backend/market.py",
+		"workstation/frontend/package.json",
+		"workstation/backend/app/main.py",
+		"workstation/backend/app/api/__init__.py",
+		"workstation/backend/app/api/schemas.py",
+	} {
+		if !containsString(paths, want) {
+			t.Errorf("missing %s in %v", want, paths)
+		}
+	}
+	if len(paths) != 5 {
+		t.Fatalf("unexpected extracted paths: %v", paths)
+	}
+}
+
 func TestExtractSpecLayoutPaths_SPECOnly(t *testing.T) {
 	dir := t.TempDir()
 	mayorRigDir := filepath.Join(dir, "rig", "mayor", "rig")
@@ -57,13 +90,13 @@ func TestExtractSpecLayoutPaths_BothSPECAndArchitecture(t *testing.T) {
 	}
 
 	expectedFiles := map[string]bool{
-		"myapp/go.mod":                  true,
-		"myapp/main.go":                 true,
-		"myapp/internal/store/store.go": true,
-		"myapp/internal/store/schema.sql": true,
-		"myapp/internal/api/handler.go": true,
-		"myapp/cmd/server/main.go":      true,
-		"myapp/backend/tests/test_api.py": true,
+		"myapp/go.mod":                       true,
+		"myapp/main.go":                      true,
+		"myapp/internal/store/store.go":      true,
+		"myapp/internal/store/schema.sql":    true,
+		"myapp/internal/api/handler.go":      true,
+		"myapp/cmd/server/main.go":           true,
+		"myapp/backend/tests/test_api.py":    true,
 		"myapp/backend/tests/test_market.py": true,
 	}
 
