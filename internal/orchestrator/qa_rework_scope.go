@@ -43,6 +43,9 @@ func (s ImplementWriteScope) BeadCited(id string) bool {
 }
 
 func IsFrontendImplementPath(path string) bool {
+	if IsE2ETestPath(path) {
+		return false
+	}
 	lower := strings.ToLower(filepath.ToSlash(strings.TrimSpace(path)))
 	return strings.HasSuffix(lower, ".html") ||
 		strings.HasSuffix(lower, ".css") ||
