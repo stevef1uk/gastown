@@ -554,6 +554,9 @@ func EnsurePlaywrightConfigReady(townRoot, rig string, v WorkflowValidation) (st
 		e2eRel = "e2e"
 	}
 
+	packageJSONPath := filepath.Join(testDir, "package.json")
+	ensurePlaywrightPackageJSON(packageJSONPath)
+
 	if existingContent != "" {
 		needsDockerRepair := hasDockerPlaywright && (strings.Contains(existingContent, "webServer") ||
 			(e2eRel == "e2e" && strings.Contains(existingContent, "testDir: './test/e2e'")) ||
@@ -620,22 +623,48 @@ export default defineConfig({
 		return "", err
 	}
 
-	// Install test dependencies if package.json exists
-	packageJSONPath := filepath.Join(testDir, "package.json")
-	if _, err := os.Stat(packageJSONPath); err == nil {
-		cmd := exec.Command("npm", "install")
-		cmd.Dir = testDir
-		cmd.Env = append(os.Environ(), "CI=true")
-		if out, err := cmd.CombinedOutput(); err != nil {
-			return "", fmt.Errorf("npm install in test dir failed: %v: %s", err, string(out))
-		}
-	}
-
 	if hasDockerPlaywright {
 		ensureHarnessComposeFile(layoutDir)
 	}
 
+	// Install test dependencies if package.json exists
+	if _, err := os.Stat(packageJSONPath); err == nil {
+		cmd := exec.Command("npm", "install")
+		cmd.Dir = testDir
+		cmd.Env = append(os.Environ(), "CI=true")
+		if out, err := cmd.CombinedOutput(); err != nil && !hasDockerPlaywright {
+			return "", fmt.Errorf("npm install in test dir failed: %v: %s", err, string(out))
+		}
+	}
+
 	return fmt.Sprintf("auto-created %s with baseURL http://localhost:%d", pwConfigPath, port), nil
+}
+
+// ensurePlaywrightPackageJSON repairs an existing empty or corrupt package.json
+// in the Playwright test directory so npm/docker builds never fail with EJSONPARSE.
+func ensurePlaywrightPackageJSON(packageJSONPath string) {
+	b, err := os.ReadFile(packageJSONPath)
+	if err != nil {
+		return // only repair existing empty/corrupt package.json
+	}
+	if len(strings.TrimSpace(string(b))) > 0 && json.Valid(b) {
+		return
+	}
+	content := fmt.Sprintf(`{
+  "name": "playwright-tests",
+  "version": "1.0.0",
+  "description": "Playwright E2E tests",
+  "scripts": {
+    "test": "npx playwright test --project=chromium"
+  },
+  "devDependencies": {
+    "@playwright/test": "%s"
+  }
+}
+`, PlaywrightNPMVersion())
+	if err := os.WriteFile(packageJSONPath, []byte(content), 0644); err == nil {
+		log.Printf("[playwright-config] repaired empty/corrupt %s", packageJSONPath)
+	}
 }
 
 // ensureHarnessComposeFile writes (or repairs) a test-harness-only

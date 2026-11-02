@@ -141,6 +141,34 @@ func TestIsOrchestratedOutcomeLine_goBraces(t *testing.T) {
 	}
 }
 
+func TestParseOrchestratedNativeEdits_PreservesJSONWriteBody(t *testing.T) {
+	t.Parallel()
+	in := "WRITE: pingapp/package.json\n{\n  \"name\": \"pingapp-e2e\",\n  \"devDependencies\": {\n    \"@playwright/test\": \"^1.50.0\"\n  }\n}\n---END WRITE---\nCMD: bd close pw-xbv\n"
+	ops := parseOrchestratedNativeEdits(in)
+	if len(ops) != 1 {
+		t.Fatalf("expected 1 op, got %d", len(ops))
+	}
+	if ops[0].kind != "write" || ops[0].path != "pingapp/package.json" {
+		t.Fatalf("unexpected op: %+v", ops[0])
+	}
+	if !strings.Contains(ops[0].content, `"@playwright/test"`) {
+		t.Fatalf("expected package.json body to be preserved, got %q", ops[0].content)
+	}
+	normalized, err := validateAndNormalizeNativeGoContent("pingapp/package.json", ops[0].content)
+	if err != nil {
+		t.Fatalf("expected valid JSON content, got err: %v", err)
+	}
+	if !strings.Contains(normalized, `"@playwright/test"`) {
+		t.Fatalf("normalized content missing @playwright/test: %q", normalized)
+	}
+	if _, err := validateAndNormalizeNativeGoContent("pingapp/package.json", ""); err == nil {
+		t.Fatal("expected empty JSON body to be rejected")
+	}
+	if _, err := validateAndNormalizeNativeGoContent("pingapp/package.json", "{broken"); err == nil {
+		t.Fatal("expected invalid JSON body to be rejected")
+	}
+}
+
 // writeMinimalDesignSPEC creates SPEC.md with no HTTP/store contract (passes design alignment checks).
 func writeMinimalDesignSPEC(t *testing.T, rigDir string) {
 	t.Helper()

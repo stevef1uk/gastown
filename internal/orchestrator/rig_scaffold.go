@@ -1,6 +1,7 @@
 package orchestrator
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -462,11 +463,14 @@ func renderTemplate(t string, vals map[string]string) string {
 	return t
 }
 
-// writeIfMissing writes content to destDir/rel only if the file does not exist.
+// writeIfMissing writes content to destDir/rel only if the file does not exist,
+// is empty, or (for .json manifests) contains invalid JSON.
 func writeIfMissing(destDir, rel, content string) error {
 	path := filepath.Join(destDir, filepath.FromSlash(rel))
-	if _, err := os.Stat(path); err == nil {
-		return nil // never clobber agent-created files
+	if data, err := os.ReadFile(path); err == nil && len(strings.TrimSpace(string(data))) > 0 {
+		if !strings.HasSuffix(strings.ToLower(rel), ".json") || json.Valid(data) {
+			return nil // never clobber valid non-empty agent-created files
+		}
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return fmt.Errorf("mkdir %s: %w", filepath.Dir(path), err)

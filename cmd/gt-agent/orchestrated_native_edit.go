@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -811,6 +812,19 @@ func validateAndNormalizeNativeGoContent(relPath, content string) (string, error
 			content += "\n"
 		}
 		return content, nil
+	}
+	if strings.HasSuffix(strings.ToLower(filepath.ToSlash(relPath)), ".json") {
+		trimmed := strings.TrimSpace(content)
+		if trimmed == "" {
+			return "", fmt.Errorf("WRITE/EDIT body for %s is empty — send a complete valid JSON object", relPath)
+		}
+		if !json.Valid([]byte(trimmed)) {
+			return "", fmt.Errorf("JSON syntax invalid in %s — fix WRITE/EDIT body before saving", relPath)
+		}
+		if !strings.HasSuffix(trimmed, "\n") {
+			trimmed += "\n"
+		}
+		return trimmed, nil
 	}
 	return content, nil
 }

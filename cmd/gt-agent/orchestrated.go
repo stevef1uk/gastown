@@ -945,20 +945,50 @@ func stripGluedOutcomeJSONFromLine(line string) string {
 var markdownFencedCMDRE = regexp.MustCompile("(?im)^```\\s*cmd:?\\s*$")
 
 // stripOutcomeLines removes JSON/outcome lines so they are not fed into shell scripts.
-// Heredoc bodies are copied verbatim so Go lines containing only "}" are preserved.
+// Heredoc bodies and WRITE/EDIT blocks are copied verbatim so Go braces and JSON files
+// (such as package.json or tsconfig.json) are preserved.
 func stripOutcomeLinesForCmdParse(response string) string {
 	lines := strings.Split(response, "\n")
 	var kept []string
 	inOutcomeJSON := false
 	braceDepth := 0
 	heredocTerm := ""
-	for _, line := range lines {
+	inNativeBlock := false
+	for lineIdx, line := range lines {
 		t := strings.TrimSpace(line)
 		if heredocTerm != "" {
 			kept = append(kept, line)
 			if t == heredocTerm {
 				heredocTerm = ""
 			}
+			continue
+		}
+		if inNativeBlock {
+			trimmedClean := strings.Trim(t, "`")
+			if trimmedClean == nativeEditWriteEnd || strings.EqualFold(trimmedClean, "---END WRITE---") ||
+				isNativeEditEndMarker(t) || strings.HasPrefix(t, ">>>>>>>") {
+				inNativeBlock = false
+				kept = append(kept, line)
+				continue
+			}
+			if isOrchestratedNativeToolLine(line) || strings.HasPrefix(strings.ToUpper(trimmedClean), "CMD:") {
+				inNativeBlock = false
+			} else {
+				// Inside a WRITE/EDIT body, only strip single-line outcome JSON if the model
+				// omitted ---END WRITE--- and emitted {"outcome":...} directly.
+				if strings.HasPrefix(t, "{") && strings.Contains(strings.ToLower(t), `"outcome"`) {
+					inNativeBlock = false
+				} else {
+					kept = append(kept, line)
+					continue
+				}
+			}
+		}
+		trimmedClean := strings.Trim(t, "`")
+		upperClean := strings.ToUpper(trimmedClean)
+		if strings.HasPrefix(upperClean, "WRITE:") || strings.HasPrefix(upperClean, "EDIT:") {
+			inNativeBlock = true
+			kept = append(kept, line)
 			continue
 		}
 		if term := detectHeredocTerm(line); term != "" {
@@ -972,7 +1002,9 @@ func stripOutcomeLinesForCmdParse(response string) string {
 			}
 			continue
 		}
-		if !inOutcomeJSON && (t == "{" || t == "{}" || t == "{ }" || (strings.HasPrefix(t, "{") && strings.Contains(strings.ToLower(t), "outcome"))) {
+		if !inOutcomeJSON && (t == "{}" || t == "{ }" ||
+			(strings.HasPrefix(t, "{") && strings.Contains(strings.ToLower(t), "outcome")) ||
+			(t == "{" && looksLikeOutcomeJSONStartAt(lines, lineIdx))) {
 			inOutcomeJSON = true
 			braceDepth = strings.Count(t, "{") - strings.Count(t, "}")
 			if braceDepth <= 0 {
@@ -985,7 +1017,7 @@ func stripOutcomeLinesForCmdParse(response string) string {
 		// following lines. Strip the glued `{` from the command and treat the
 		// rest of the object (including the orphaned closing `}`) as outcome
 		// JSON so only the clean command survives.
-		if !inOutcomeJSON && strings.HasSuffix(t, "{") && looksLikeOutcomeJSONStart(lines, line, t) {
+		if !inOutcomeJSON && strings.HasSuffix(t, "{") && looksLikeOutcomeJSONStartAt(lines, lineIdx) {
 			line = strings.TrimSuffix(line, "{")
 			t = strings.TrimSpace(line)
 			if t == "" {
@@ -1022,11 +1054,24 @@ func stripOutcomeLinesForCmdParse(response string) string {
 }
 
 // looksLikeOutcomeJSONStart reports whether the line ending in `{` opens an
-// outcome JSON object: the next non-blank, non-CMD lines must include an
-// `"outcome"` field (or the closing `}`) before any new CMD: line.
+// outcome JSON object: the next non-blank, non-CMD lines within the brace block
+// must include an `"outcome"` or `"summary"` field before closing `}` or a new tool line.
 func looksLikeOutcomeJSONStart(lines []string, line, t string) bool {
-	trimmedLine := strings.TrimSpace(line)
-	// Don't treat Go function declarations or control flow of the conversation, I need to provide better detection
+	for i, l := range lines {
+		if l == line {
+			if looksLikeOutcomeJSONStartAt(lines, i) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func looksLikeOutcomeJSONStartAt(lines []string, startIdx int) bool {
+	if startIdx < 0 || startIdx >= len(lines) {
+		return false
+	}
+	trimmedLine := strings.TrimSpace(lines[startIdx])
 	if strings.HasPrefix(trimmedLine, "func ") ||
 		strings.HasPrefix(trimmedLine, "func(") ||
 		strings.HasPrefix(trimmedLine, "if ") ||
@@ -1037,29 +1082,29 @@ func looksLikeOutcomeJSONStart(lines []string, line, t string) bool {
 		strings.HasPrefix(trimmedLine, "const ") {
 		return false
 	}
+	depth := strings.Count(trimmedLine, "{") - strings.Count(trimmedLine, "}")
+	if depth <= 0 {
+		depth = 1
+	}
 	found := false
-	for i, l := range lines {
-		if l == line {
-			for _, n := range lines[i+1:] {
-				nt := strings.TrimSpace(n)
-				if nt == "" {
-					continue
-				}
-				if strings.Contains(nt, "CMD:") {
-					return found
-				}
-				lower := strings.ToLower(nt)
-				// Require an actual JSON field — a lone `}` is ubiquitous in Go
-				// source (WRITE bodies flow through this scrubber too), so it
-				// must not count as evidence of glued outcome JSON.
-				if strings.Contains(lower, `"outcome"`) || strings.HasPrefix(lower, `"summary"`) {
-					found = true
-				}
-			}
+	for _, n := range lines[startIdx+1:] {
+		nt := strings.TrimSpace(n)
+		if nt == "" {
+			continue
+		}
+		if strings.Contains(nt, "CMD:") || isOrchestratedNativeToolLine(n) {
+			return found
+		}
+		lower := strings.ToLower(nt)
+		if strings.Contains(lower, `"outcome"`) || strings.HasPrefix(lower, `"summary"`) {
+			found = true
+		}
+		depth += strings.Count(nt, "{") - strings.Count(nt, "}")
+		if depth <= 0 {
 			return found
 		}
 	}
-	return false
+	return found
 }
 
 // isOrchestratedOutcomeLine reports JSON field lines that must not be executed as shell.

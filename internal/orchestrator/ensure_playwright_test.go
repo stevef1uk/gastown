@@ -296,4 +296,18 @@ func TestEnsurePlaywrightConfigReady_topLevelE2EDirAndDockerHarness(t *testing.T
 	if !strings.Contains(content, "process.env.BASE_URL") {
 		t.Errorf("expected process.env.BASE_URL for Docker Playwright harness, got:\n%s", content)
 	}
+
+	// Simulate an empty package.json on disk and ensure it gets repaired.
+	pkgPath := filepath.Join(rigDir, "pingapp", "package.json")
+	if err := os.WriteFile(pkgPath, []byte(""), 0644); err != nil {
+		t.Fatal(err)
+	}
+	ensurePlaywrightPackageJSON(pkgPath)
+	pkgData, err := os.ReadFile(pkgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(pkgData), `"@playwright/test"`) {
+		t.Errorf("expected repaired package.json to contain @playwright/test, got:\n%s", string(pkgData))
+	}
 }
