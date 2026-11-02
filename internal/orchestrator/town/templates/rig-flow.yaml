@@ -173,6 +173,7 @@ states:
       2. Write `{{rig}}/mayor/rig/TEST_PLAN.md` (≥{{min_test_plan_bytes}} bytes) mapping every active-phase requirement to unit/integration/UI tests with bead IDs.
       3. Report success only when the plan covers every requirement at the right level;       failure sends the planner back.
     hooks:
+      native_edit_tools: true
       max_cmd_turns: 14
       cmd_guard: test_plan
       cmd_rewrites: [rig_placeholders, unwrap_bash_lc, test_plan_md_after_cd, bd_list_limit]
@@ -197,9 +198,9 @@ states:
     role: qa
     prompt_file: prompts/rig-flow/test_plan_review.md
     instructions: |
-      1. Review `{{rig}}/mayor/rig/TEST_PLAN.md` against SPEC.md, architecture.md, and plan.md for the active phase `{{active_phase_id}}`.
-      2. Verify every active-phase requirement maps to a unit/integration test with a real bead ID and a concrete test file path from required_files ({{required_files}}).
-      3. Confirm test levels match the plan (unit for helpers, integration for routes/server behavior) and every Bead ID exists in `bd list`.
+      1. Review `{{rig}}/mayor/rig/TEST_PLAN.md` against SPEC.md, architecture.md, and plan.md. Note that TEST_PLAN.md covers ALL delivery phases ({{all_delivery_phase_ids}}), not just active phase `{{active_phase_id}}` — never reject sections for earlier or future phases in `{{all_delivery_phase_ids}}`.
+      2. Verify the active phase `{{active_phase_id}}` maps to a unit/integration/ui test with a real bead ID and a concrete file path from required_files ({{required_files}}).
+      3. Confirm test levels match the plan and active-phase Bead IDs exist in `bd list --status=open,in_progress` (completed/future phases may have blank or closed Bead IDs).
       4. Report success only when the test plan is complete and SPEC-aligned; failure sends the tester back to rewrite TEST_PLAN.md.
     hooks:
       max_cmd_turns: 8
@@ -210,10 +211,10 @@ states:
       track: qa
       artifacts: test_plan_review
       retry_hint: |
-        One CMD: per line. Read SPEC.md, architecture.md, plan.md and TEST_PLAN.md from {{rig}}/mayor/rig, then `wc -c TEST_PLAN.md` and `bd list --status=open`.
+        One CMD: per line. Read SPEC.md, architecture.md, plan.md and TEST_PLAN.md from {{rig}}/mayor/rig, then `wc -c TEST_PLAN.md` and `bd list --status=open,in_progress`.
         Only success/failure/architecture_failure outcomes are allowed.
       failure_hint: |
-        Do not edit any files. If TEST_PLAN.md is missing, below {{min_test_plan_bytes}} bytes, uses wrong phase ids, omits requirements, maps requirements to files outside required_files ({{required_files}}), or cites bead IDs that do not exist, report failure with the exact gaps so the tester rewrites it.
+        Do not edit any files. TEST_PLAN.md must retain sections for all delivery phases ({{all_delivery_phase_ids}}); only active phase {{active_phase_id}} requires open/in_progress Bead IDs. If TEST_PLAN.md is missing, below {{min_test_plan_bytes}} bytes, uses phase ids outside ({{all_delivery_phase_ids}}), omits requirements, or cites nonexistent active-phase bead IDs, report failure with the exact gaps.
     transitions:
       success:
         to: project_setup
@@ -229,6 +230,7 @@ states:
       2. Rewrite `{{rig}}/mayor/rig/TEST_PLAN.md` (≥{{min_test_plan_bytes}} bytes) to close the gaps QA found — map EVERY active-phase requirement to unit/integration/UI tests with bead IDs.
       3. Report success only when the plan covers every requirement at the right level; failure sends you back to fix it.
     hooks:
+      native_edit_tools: true
       max_cmd_turns: 10
       cmd_guard: test_plan
       cmd_rewrites: [rig_placeholders, unwrap_bash_lc, test_plan_md_after_cd, bd_list_limit]

@@ -1832,3 +1832,58 @@ func TestDesignAutoComplete_archWrittenButValidationFails(t *testing.T) {
 	}
 	t.Logf("expected validation error: %v", err)
 }
+
+func TestExecuteTestPlanNativeEditOp_unifiedDiffFence(t *testing.T) {
+	dir := t.TempDir()
+	rigDir := filepath.Join(dir, "pwtest", "mayor", "rig")
+	if err := os.MkdirAll(rigDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	tpPath := filepath.Join(rigDir, "TEST_PLAN.md")
+	initial := strings.Join([]string{
+		"# Test Plan",
+		"",
+		"### integration-test",
+		"Bead ID: pw-cuh; pw-2os; pw-xbv; pw-vji",
+		"Phase: integration-test",
+		"Level: e2e",
+		"Test file: pingapp/e2e/ping.spec.ts",
+		"Scenarios: Start server and load page",
+		"Assertions: Old assertion text " + strings.Repeat("x", 350),
+		"",
+	}, "\n")
+	if err := os.WriteFile(tpPath, []byte(initial), 0644); err != nil {
+		t.Fatal(err)
+	}
+	resp := strings.Join([]string{
+		"EDIT: pwtest/mayor/rig/TEST_PLAN.md",
+		"```diff",
+		" ### integration-test",
+		"-Bead ID: pw-cuh; pw-2os; pw-xbv; pw-vji",
+		"+Bead ID: pw-cuh",
+		"```",
+	}, "\n")
+	ops := parseOrchestratedNativeEdits(resp)
+	if len(ops) != 1 || ops[0].kind != "edit" {
+		t.Fatalf("expected 1 edit op, got %+v", ops)
+	}
+	task := &orchestrator.Task{
+		Hooks: orchestrator.StateHooks{Track: "test_plan", NativeEditTools: true},
+	}
+	runner := newStateRunner(task, dir, "pwtest")
+	out, err := runner.executeTestPlanNativeEditOp(ops[0], rigDir)
+	if err != nil {
+		t.Fatalf("executeTestPlanNativeEditOp error: %v (out=%s)", err, out)
+	}
+	if !runner.track.testPlanWriteOK {
+		t.Fatal("expected testPlanWriteOK = true after native edit of TEST_PLAN.md")
+	}
+	updated, err := os.ReadFile(tpPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(updated), "Bead ID: pw-cuh\n") || strings.Contains(string(updated), "pw-2os") {
+		t.Fatalf("updated TEST_PLAN.md did not apply diff: %s", string(updated))
+	}
+}
+

@@ -475,3 +475,44 @@ func TestPhaseShipsAutomatedTests(t *testing.T) {
 		}
 	}
 }
+
+func TestSplitTestPlanBeadIDsAndMultiBeadMapping(t *testing.T) {
+	ids := SplitTestPlanBeadIDs("pw-cuh; pw-2os; pw-xbv; pw-vji")
+	if len(ids) != 4 || ids[0] != "pw-cuh" || ids[3] != "pw-vji" {
+		t.Fatalf("SplitTestPlanBeadIDs = %v", ids)
+	}
+	v := DefaultWorkflowValidation()
+	v.LayoutRoot = "pingapp"
+	v.BeadTitleContains = "Implement pingapp/"
+	v.ActivePhaseIDField = "integration-test"
+	v.DeliveryPhases = []DeliveryPhase{
+		{
+			ID: "integration-test",
+			RequiredFiles: []string{
+				"pingapp/e2e/ping.spec.ts",
+				"pingapp/playwright.config.ts",
+				"pingapp/package.json",
+				"pingapp/docker-compose.yml",
+			},
+		},
+	}
+	blocks := []TestPlanBlock{
+		{
+			ReqID:     "integration-test",
+			BeadID:    "pw-cuh; pw-2os; pw-xbv; pw-vji",
+			Phase:     "integration-test",
+			Level:     "e2e",
+			TestFile:  "pingapp/e2e/ping.spec.ts",
+		},
+	}
+	titles := map[string]string{
+		"pw-cuh": "Implement pingapp/e2e/ping.spec.ts per architecture",
+		"pw-2os": "Implement pingapp/playwright.config.ts per architecture",
+		"pw-xbv": "Implement pingapp/package.json per architecture",
+		"pw-vji": "Implement pingapp/docker-compose.yml per architecture",
+	}
+	if got := testPlanBeadMappingMismatches(v, blocks, titles); len(got) != 0 {
+		t.Fatalf("expected 0 mismatches for semicolon-separated bead IDs, got %v", got)
+	}
+}
+

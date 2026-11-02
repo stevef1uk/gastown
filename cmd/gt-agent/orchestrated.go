@@ -3556,21 +3556,15 @@ func validateTestPlanBeadIDs(townRoot, rig string, v orchestrator.WorkflowValida
 	}
 	var invalid []string
 	for _, b := range blocks {
-		beadID := strings.TrimSpace(b.BeadID)
-		if beadID == "" {
-			continue
-		}
-		// plan_gap is a valid placeholder meaning "no bead owns this test file yet".
-		if strings.ToLower(beadID) == "plan_gap" {
-			continue
-		}
-		// Skip placeholder bead IDs that don't match the rig's prefix pattern.
-		if !strings.HasPrefix(strings.ToLower(beadID), strings.ToLower(prefix)+"-") {
-			invalid = append(invalid, fmt.Sprintf("%s (wrong prefix; rig uses %s-*)", beadID, prefix))
-			continue
-		}
-		if known != nil && !known[strings.ToLower(beadID)] {
-			invalid = append(invalid, fmt.Sprintf("%s (not in bd list)", beadID))
+		for _, beadID := range orchestrator.SplitTestPlanBeadIDs(b.BeadID) {
+			// Skip placeholder bead IDs that don't match the rig's prefix pattern.
+			if !strings.HasPrefix(strings.ToLower(beadID), strings.ToLower(prefix)+"-") {
+				invalid = append(invalid, fmt.Sprintf("%s (wrong prefix; rig uses %s-*)", beadID, prefix))
+				continue
+			}
+			if known != nil && !known[strings.ToLower(beadID)] {
+				invalid = append(invalid, fmt.Sprintf("%s (not in bd list)", beadID))
+			}
 		}
 	}
 	if len(invalid) > 0 {

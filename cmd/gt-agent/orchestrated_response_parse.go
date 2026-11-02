@@ -467,10 +467,12 @@ func stripMarkdownFenceOnlyLines(response string) string {
 	var out []string
 	for _, line := range strings.Split(response, "\n") {
 		t := strings.TrimSpace(line)
-		if t == "```" || strings.HasPrefix(t, "```") && len(strings.TrimSpace(strings.TrimPrefix(t, "```"))) <= 8 {
+		if t == "```" || strings.HasPrefix(t, "```") && len(strings.TrimSpace(strings.TrimPrefix(t, "```"))) <= 12 {
 			lang := strings.TrimSpace(strings.TrimPrefix(t, "```"))
 			switch strings.ToLower(lang) {
-			case "", "go", "golang", "python", "py", "bash", "sh", "shell", "text", "json":
+			case "", "go", "golang", "python", "py", "bash", "sh", "shell", "text", "json",
+				"diff", "patch", "md", "markdown", "ts", "typescript", "js", "javascript",
+				"html", "css", "yaml", "yml", "sql":
 				continue
 			}
 		}

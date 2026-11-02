@@ -119,7 +119,19 @@ func parseNativeEditSearchReplace(lines []string, start int) (search, replace st
 			return "", replace, i + 1, replace != "", false
 		default:
 			if isMarkdownFenceOnlyLine(t) {
+				if mode == "" && len(replaceLines) > 0 && t == "```" {
+					cand := strings.TrimRight(strings.Join(replaceLines, "\n"), "\n")
+					if isUnifiedDiffEditBody(cand) {
+						return "", cand, i + 1, true, false
+					}
+				}
 				continue
+			}
+			if mode == "" && len(replaceLines) > 0 && isNativeOrchestratedToolLine(lines[i]) {
+				cand := strings.TrimRight(strings.Join(replaceLines, "\n"), "\n")
+				if isUnifiedDiffEditBody(cand) {
+					return "", cand, i, true, false
+				}
 			}
 			switch mode {
 			case "search":
@@ -131,11 +143,33 @@ func parseNativeEditSearchReplace(lines []string, start int) (search, replace st
 			}
 		}
 	}
+	if mode == "" && len(replaceLines) > 0 {
+		cand := strings.TrimRight(strings.Join(replaceLines, "\n"), "\n")
+		if isUnifiedDiffEditBody(cand) {
+			return "", cand, len(lines), true, false
+		}
+	}
 	return "", "", start, false, false
 }
 
 func isUnifiedDiffEditBody(body string) bool {
-	return strings.HasPrefix(strings.TrimSpace(body), "@@")
+	trimmed := strings.TrimSpace(body)
+	if strings.HasPrefix(trimmed, "@@") {
+		return true
+	}
+	hasMinus := false
+	hasPlus := false
+	for _, line := range strings.Split(trimmed, "\n") {
+		if strings.HasPrefix(line, "--- ") || strings.HasPrefix(line, "+++ ") {
+			continue
+		}
+		if strings.HasPrefix(line, "-") {
+			hasMinus = true
+		} else if strings.HasPrefix(line, "+") {
+			hasPlus = true
+		}
+	}
+	return hasMinus && hasPlus
 }
 
 // skipNativeEditBlock advances past a malformed EDIT block (e.g. prose path, missing SEARCH).
@@ -460,7 +494,9 @@ func isMarkdownFenceOnlyLine(t string) bool {
 	if strings.HasPrefix(t, "```") {
 		lang := strings.TrimSpace(strings.TrimPrefix(t, "```"))
 		switch strings.ToLower(lang) {
-		case "", "go", "golang", "python", "py", "bash", "sh", "shell", "text", "json":
+		case "", "go", "golang", "python", "py", "bash", "sh", "shell", "text", "json",
+			"diff", "patch", "md", "markdown", "ts", "typescript", "js", "javascript",
+			"html", "css", "yaml", "yml", "sql":
 			return true
 		}
 	}
@@ -595,15 +631,15 @@ func (r *stateRunner) executeNativeEdits(ops []nativeEditOp, editDir, sessionNam
 		}
 		orchestratedPrintf("[gt-agent] %s ok\n", label)
 		combined.WriteString(fmt.Sprintf("%s\n%s\n\n", label, feedback))
-		if op.kind == "edit" || op.kind == "write" {
-		r.scrubGoFileAfterNativeWrite(op.path, combined)
-		r.tidyGoFileAfterNativeWrite(op.path, combined)
-		r.runPostNativeWriteVerify(op.path, sessionName, cmdEnv, combined)
-		r.runPostNativeWriteFrontendVerify(op.path, combined)
-		r.runPostNativeWriteDockerVerify(op.path, combined)
-		r.runPostNativeWriteMainImportCheck(op.path, combined)
-		r.runPostWriteHTTPContract(op.path, combined)
-		r.runAutoVerifyForNativeLayoutWrite(sessionName, cmdEnv, combined)
+		if (op.kind == "edit" || op.kind == "write") && !strings.EqualFold(strings.TrimSpace(r.hooks.Track), "test_plan") {
+			r.scrubGoFileAfterNativeWrite(op.path, combined)
+			r.tidyGoFileAfterNativeWrite(op.path, combined)
+			r.runPostNativeWriteVerify(op.path, sessionName, cmdEnv, combined)
+			r.runPostNativeWriteFrontendVerify(op.path, combined)
+			r.runPostNativeWriteDockerVerify(op.path, combined)
+			r.runPostNativeWriteMainImportCheck(op.path, combined)
+			r.runPostWriteHTTPContract(op.path, combined)
+			r.runAutoVerifyForNativeLayoutWrite(sessionName, cmdEnv, combined)
 		}
 	}
 	return any, success
@@ -647,6 +683,9 @@ func removeCaseInsensitiveDuplicate(abs string) {
 func (r *stateRunner) executeNativeEditOp(op nativeEditOp, workDir string) (string, error) {
 	if strings.EqualFold(strings.TrimSpace(r.hooks.Track), "qa") && (op.kind == "edit" || op.kind == "write") {
 		return "", fmt.Errorf("QA must not use EDIT/WRITE on implementation files — send outcome failure so the polecat can fix them")
+	}
+	if strings.EqualFold(strings.TrimSpace(r.hooks.Track), "test_plan") {
+		return r.executeTestPlanNativeEditOp(op, workDir)
 	}
 	rel, abs, err := resolveNativeEditAbsPath(workDir, op.path, r.v.LayoutRoot)
 	if err != nil {
@@ -984,10 +1023,81 @@ func (r *stateRunner) runAutoVerifyForNativeLayoutWrite(sessionName string, cmdE
 	combined.WriteString(fmt.Sprintf("Auto-verify (after native edit): %s\n%s", verifyCmd, formatSuccessCommandOutput(verifyOut)))
 }
 
+func (r *stateRunner) executeTestPlanNativeEditOp(op nativeEditOp, workDir string) (string, error) {
+	cleaned := orchestrator.SanitizeNativeEditRelPath(op.path)
+	if r.rig != "" {
+		prefix := strings.Trim(r.rig, "/") + "/mayor/rig/"
+		if strings.HasPrefix(cleaned, prefix) {
+			cleaned = strings.TrimPrefix(cleaned, prefix)
+		}
+	}
+	cleaned = strings.TrimPrefix(filepath.ToSlash(strings.TrimSpace(cleaned)), "./")
+	if cleaned == "" || strings.Contains(cleaned, "..") {
+		return "", fmt.Errorf("invalid path %q", op.path)
+	}
+	abs := filepath.Join(workDir, filepath.FromSlash(cleaned))
+	switch op.kind {
+	case "read":
+		data, err := os.ReadFile(abs)
+		if err != nil {
+			return "", err
+		}
+		if len(data) > nativeReadMaxBytes {
+			data = data[:nativeReadMaxBytes]
+			return string(data) + "\n...(truncated)", nil
+		}
+		return string(data), nil
+	case "edit":
+		if !strings.EqualFold(cleaned, "TEST_PLAN.md") {
+			return "", fmt.Errorf("test_plan step may only EDIT TEST_PLAN.md (got %q)", cleaned)
+		}
+		replace := sanitizeNativeFileContent(op.replace)
+		var msg string
+		var err error
+		if isUnifiedDiffEditBody(replace) {
+			msg, err = applyUnifiedDiffPatch(abs, replace)
+		} else {
+			if strings.TrimSpace(op.search) == strings.TrimSpace(replace) {
+				return "", fmt.Errorf("SEARCH and REPLACE are identical — this edit would change nothing")
+			}
+			msg, err = applyNativeSearchReplaceValidated("TEST_PLAN.md", abs, op.search, replace, op.replaceAll)
+		}
+		if err != nil {
+			return "", err
+		}
+		if testPlanMDMeetsMinSize(r.townRoot, r.rig, r.v) {
+			r.track.hadCmdFailure = false
+			r.track.testPlanWriteOK = true
+		}
+		return msg, nil
+	case "write":
+		if !strings.EqualFold(cleaned, "TEST_PLAN.md") {
+			return "", fmt.Errorf("test_plan step may only WRITE TEST_PLAN.md (got %q)", cleaned)
+		}
+		content := sanitizeNativeFileContent(op.content)
+		if strings.TrimSpace(content) == "" {
+			return "", fmt.Errorf("WRITE body for TEST_PLAN.md is empty")
+		}
+		if !strings.HasSuffix(content, "\n") {
+			content += "\n"
+		}
+		if err := os.WriteFile(abs, []byte(content), 0644); err != nil {
+			return "", err
+		}
+		if testPlanMDMeetsMinSize(r.townRoot, r.rig, r.v) {
+			r.track.hadCmdFailure = false
+			r.track.testPlanWriteOK = true
+		}
+		return fmt.Sprintf("wrote %d bytes", len(content)), nil
+	default:
+		return "", fmt.Errorf("unknown native edit kind %q", op.kind)
+	}
+}
+
 func applyUnifiedDiffPatch(filePath, diffBody string) (string, error) {
 	scrubbed := strings.ReplaceAll(diffBody, "*** End of File ***", "")
-	scrubbed = strings.TrimSpace(scrubbed)
-	if scrubbed == "" {
+	scrubbed = strings.Trim(scrubbed, "\r\n")
+	if strings.TrimSpace(scrubbed) == "" {
 		return "", fmt.Errorf("empty diff body")
 	}
 	orig, err := os.ReadFile(filePath)
@@ -996,12 +1106,16 @@ func applyUnifiedDiffPatch(filePath, diffBody string) (string, error) {
 	}
 	patched := string(orig)
 	var hunks []string
-	for _, part := range strings.Split(scrubbed, "@@") {
-		part = strings.TrimSpace(part)
-		if part == "" {
-			continue
+	if strings.Contains(scrubbed, "@@") {
+		for _, part := range strings.Split(scrubbed, "@@") {
+			part = strings.Trim(part, "\r\n")
+			if strings.TrimSpace(part) == "" {
+				continue
+			}
+			hunks = append(hunks, part)
 		}
-		hunks = append(hunks, part)
+	} else {
+		hunks = []string{scrubbed}
 	}
 	for _, hunk := range hunks {
 		search, replace := extractSearchReplaceFromDiffHunk(hunk)

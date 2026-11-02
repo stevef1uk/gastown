@@ -215,6 +215,7 @@ states:
       2. Write `{{rig}}/mayor/rig/TEST_PLAN.md` (≥{{min_test_plan_bytes}} bytes) mapping every active-phase requirement to unit/integration/UI tests with bead IDs.
       3. Report success only when the plan covers every requirement at the right level; failure sends the planner back.
     hooks:
+      native_edit_tools: true
       max_cmd_turns: 10
       cmd_guard: test_plan
       cmd_rewrites: [rig_placeholders, unwrap_bash_lc, test_plan_md_after_cd, bd_list_limit]
@@ -242,6 +243,7 @@ states:
       2. Rewrite `{{rig}}/mayor/rig/TEST_PLAN.md` (≥{{min_test_plan_bytes}} bytes) to close the gaps QA found — map EVERY active-phase requirement to unit/integration/UI tests with bead IDs.
       3. Report success only when the plan covers every requirement at the right level; failure sends you back to fix it.
     hooks:
+      native_edit_tools: true
       max_cmd_turns: 10
       cmd_guard: test_plan
       cmd_rewrites: [rig_placeholders, unwrap_bash_lc, test_plan_md_after_cd, bd_list_limit]

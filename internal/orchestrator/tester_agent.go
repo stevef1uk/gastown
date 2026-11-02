@@ -360,6 +360,40 @@ func testPlanPhaseScope(v WorkflowValidation) map[string]bool {
 	return scope
 }
 
+func isPlaceholderBeadID(s string) bool {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "", "none", "n/a", "na", "tbd", "todo", "pending", "-", "plan_gap", "plan-gap":
+		return true
+	default:
+		return false
+	}
+}
+
+// SplitTestPlanBeadIDs splits a TEST_PLAN.md "Bead ID:" field (which may contain
+// one ID or a semicolon/comma/space-separated list like "pw-cuh; pw-2os; pw-xbv")
+// into individual normalized bead ID tokens, excluding placeholders.
+func SplitTestPlanBeadIDs(raw string) []string {
+	cleaned := strings.TrimSpace(strings.Trim(raw, "`*"))
+	if idx := strings.IndexAny(cleaned, "([{"); idx >= 0 {
+		cleaned = strings.TrimSpace(cleaned[:idx])
+	}
+	if isPlaceholderBeadID(cleaned) {
+		return nil
+	}
+	parts := strings.FieldsFunc(cleaned, func(r rune) bool {
+		return r == ';' || r == ',' || r == ' ' || r == '\t'
+	})
+	var out []string
+	for _, p := range parts {
+		tok := strings.TrimSpace(strings.Trim(p, "`*"))
+		if isPlaceholderBeadID(tok) {
+			continue
+		}
+		out = append(out, tok)
+	}
+	return dedupeStrings(out)
+}
+
 func testPlanBeadMappingMismatches(v WorkflowValidation, blocks []TestPlanBlock, titles map[string]string) []string {
 	scope := testPlanPhaseScope(v)
 	var bad []string
@@ -370,20 +404,34 @@ func testPlanBeadMappingMismatches(v WorkflowValidation, blocks []TestPlanBlock,
 				continue // future-phase row: its bead may not exist yet — see testPlanPhaseScope
 			}
 		}
-		beadID := strings.ToLower(strings.TrimSpace(b.BeadID))
+		ids := SplitTestPlanBeadIDs(b.BeadID)
 		testFile := filepath.ToSlash(cleanPlannedTestFilePath(b.TestFile))
-		if beadID == "" || testFile == "" {
+		if len(ids) == 0 || testFile == "" {
 			continue
 		}
-		title := strings.TrimSpace(titles[beadID])
-		if title == "" {
-			continue // unknown IDs are reported by bead-ID existence checks
+		matched := false
+		var firstMismatchGot string
+		var firstMismatchID string
+		for _, id := range ids {
+			beadID := strings.ToLower(strings.TrimSpace(id))
+			title := strings.TrimSpace(titles[beadID])
+			if title == "" {
+				continue // unknown IDs are reported by bead-ID existence checks
+			}
+			got := NormalizeBeadPathForLayout(ExtractPathFromBeadTitle(title, v.BeadTitleContains), v.LayoutRoot)
+			if got == "" || PathMatchesImplementFile(testFile, got) {
+				matched = true
+				break
+			}
+			if firstMismatchGot == "" {
+				firstMismatchGot = got
+				firstMismatchID = id
+			}
 		}
-		got := NormalizeBeadPathForLayout(ExtractPathFromBeadTitle(title, v.BeadTitleContains), v.LayoutRoot)
-		if got == "" || PathMatchesImplementFile(testFile, got) {
+		if matched || firstMismatchGot == "" {
 			continue
 		}
-		bad = append(bad, fmt.Sprintf("row %s cites %s but that bead owns %q (plan says %q)", b.ReqID, b.BeadID, got, testFile))
+		bad = append(bad, fmt.Sprintf("row %s cites %s but that bead owns %q (plan says %q)", b.ReqID, firstMismatchID, firstMismatchGot, testFile))
 	}
 	return bad
 }
