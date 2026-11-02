@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/steveyegge/gastown/internal/atomicfile"
 )
 
 // marshalRigProfileJSON writes workflow-profile.json without \\u0026 escapes for & and &&.
@@ -66,11 +68,7 @@ func SaveRigWorkflowProfileEnvelope(townRoot, rig string, env rigProfileEnvelope
 	if err != nil {
 		return err
 	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, raw, 0644); err != nil {
-		return err
-	}
-	return os.Rename(tmp, path)
+	return atomicfile.WriteFile(path, raw, 0644)
 }
 
 // NormalizeRigWorkflowProfile rewrites workflow-profile.json with ClampProfileValidation
@@ -457,11 +455,7 @@ func WriteRigWorkflowProfileClamped(townRoot, rig string, v WorkflowValidation, 
 		return err
 	}
 	path := filepath.Join(outDir, rigProfileFile)
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, raw, 0644); err != nil {
-		return err
-	}
-	if err := os.Rename(tmp, path); err != nil {
+	if err := atomicfile.WriteFile(path, raw, 0644); err != nil {
 		return err
 	}
 	_, _ = EnsureHTTPImplementationRigConfig(townRoot, rig, env.Validation)

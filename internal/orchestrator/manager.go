@@ -593,20 +593,36 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summa
 	}
 	var phaseAdvance *WorkflowRework
 	if next == "advance_phase" || (next == "completed" && fromState == "qa_review" && outcome == "all_passed") {
+		// Transition has already changed the live instance. A profile I/O failure
+		// must leave QA retryable, rather than treating it as the final phase.
+		phaseAdvanceError := func(err error) (string, error) {
+			inst.CurrentState = fromState
+			inst.Status = "running"
+			inst.touchStateEnteredAt()
+			return "", fmt.Errorf("delivery phase advance: %w", err)
+		}
 		advRig := ""
 		if inst.Variables != nil {
 			advRig = inst.Variables["rig"]
 		}
 		if advRig != "" {
-			full, ok, _ := LoadRigWorkflowProfileFile(m.townRoot, advRig)
+			full, ok, profileErr := LoadRigWorkflowProfileFile(m.townRoot, advRig)
+			if profileErr != nil {
+				return phaseAdvanceError(profileErr)
+			}
 			if ok && full.HasPhasedDelivery() {
 				currentPhase := full.ActivePhaseID()
 				if currentPhase != "" {
-					_ = AddRigCompletedPhase(m.townRoot, advRig, currentPhase)
+					if err := AddRigCompletedPhase(m.townRoot, advRig, currentPhase); err != nil {
+						return phaseAdvanceError(err)
+					}
 				}
 			}
 			redirected, fromPhase, toPhase, logLine, advErr := TryAdvanceDeliveryPhaseAfterQA(m.townRoot, advRig)
 			if advErr != nil {
+				if !redirected {
+					return phaseAdvanceError(advErr)
+				}
 				fmt.Printf("[Manager] Warning: delivery phase advance: %v\n", advErr)
 			}
 			if redirected {

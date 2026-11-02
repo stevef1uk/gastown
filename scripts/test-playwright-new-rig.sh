@@ -11,6 +11,11 @@ GASTOWN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 GT_ROOT="${GT_ROOT:-$HOME/gt}"
 REPO_DIR="/tmp/playwright-new-rig-test"
 
+# Resolve the active proxy before modifying the rig or starting agents. Overrides:
+# LLM_ENDPOINT=https://host/v1/chat/completions, or FREERIDE_PORT=9999.
+LLM_ENDPOINT="$(python3 "${GASTOWN_DIR}/scripts/sync_freeride_endpoint.py" --town-root "${GT_ROOT}")"
+export LLM_ENDPOINT
+
 # Ensure git repo exists for gc
 mkdir -p "${REPO_DIR}"
 git -C "${REPO_DIR}" init -b main 2>/dev/null || true
@@ -41,7 +46,7 @@ cleanup() {
 }
 
 # Clean up persisted workflow instances from previous runs so the test starts fresh.
-instances_json="${HOME}/gt/orchestrator/instances.json"
+instances_json="${GT_ROOT}/orchestrator/instances.json"
 if [ -f "$instances_json" ]; then
     rm -f "$instances_json"
     echo "Removed stale ${instances_json}"
@@ -109,8 +114,12 @@ echo "  Spec repo: ${REPO_DIR}"
 echo "  Rig URL:   ${RIG_URL}"
 
 echo "=== 2. Bring up town services (Dolt + orchestrator) ==="
-cd "${HOME}/gt"
+cd "${GT_ROOT}"
 gt up --orchestrator-only
+# gt up leaves existing sessions running with their old environment. Both town
+# workflow agents must reload the endpoint; rig agents are recreated below.
+gt mayor restart
+gt setup restart
 
 echo "=== 3. Add rig to Gas Town ==="
 # Pre-flight: remove a stale pwtest rig AND any leftover pwtest workflows.
@@ -125,8 +134,8 @@ for wf in $(gt mayor workflow list 2>/dev/null | grep -o "wf-[0-9]*" | sort -u);
         gt mayor workflow delete "$wf" >/dev/null 2>&1 || true
     fi
 done
-if [ -d "${HOME}/gt/pwtest" ]; then
-    rm -rf "${HOME}/gt/pwtest"
+if [ -d "${GT_ROOT}/pwtest" ]; then
+    rm -rf "${GT_ROOT}/pwtest"
 fi
 gt rig add pwtest file:///tmp/playwright-new-rig-test
 
@@ -166,7 +175,7 @@ if [ ${ELAPSED} -ge ${MAX_WAIT} ]; then
 fi
 
 echo "=== 5. Verify Playwright tests ran and passed ==="
-cd "${HOME}/gt/pwtest/mayor/rig/pingapp"
+cd "${GT_ROOT}/pwtest/mayor/rig/pingapp"
 
 # Ensure the shared Playwright image is present (async build may still be running)
 echo "Waiting for Playwright Docker image..."
