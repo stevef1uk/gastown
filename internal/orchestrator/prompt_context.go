@@ -556,6 +556,9 @@ func EnsurePlaywrightConfigReady(townRoot, rig string, v WorkflowValidation) (st
 
 	packageJSONPath := filepath.Join(testDir, "package.json")
 	ensurePlaywrightPackageJSON(packageJSONPath)
+	if hasDockerPlaywright {
+		ensurePlaywrightComposeFastCopy(layoutDir)
+	}
 
 	if existingContent != "" {
 		needsDockerRepair := hasDockerPlaywright && (strings.Contains(existingContent, "webServer") ||
@@ -664,6 +667,34 @@ func ensurePlaywrightPackageJSON(packageJSONPath string) {
 `, PlaywrightNPMVersion())
 	if err := os.WriteFile(packageJSONPath, []byte(content), 0644); err == nil {
 		log.Printf("[playwright-config] repaired empty/corrupt %s", packageJSONPath)
+	}
+}
+
+// ensurePlaywrightComposeFastCopy repairs an existing docker-compose.yml that uses
+// the slow/broken `cp -r /src/* /app/ ... && cp -r /src/.* /app/` pattern (where
+// `/src/.*` in POSIX sh expands `/src/.` and `/src/..`, copying node_modules twice
+// and copying `/` into the playwright-app volume).
+func ensurePlaywrightComposeFastCopy(layoutDir string) {
+	path := filepath.Join(layoutDir, "docker-compose.yml")
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return
+	}
+	s := string(b)
+	orig := s
+	oldCopy := "cp -r /src/* /app/ 2>/dev/null || true && cp -r /src/.* /app/ 2>/dev/null || true"
+	newCopy := "tar -C /src --exclude=./node_modules --exclude=./.git --exclude=./playwright-report --exclude=./test-results -cf - . | tar -C /app -xf -"
+	s = strings.ReplaceAll(s, oldCopy, newCopy)
+	s = strings.ReplaceAll(s, "      - playwright-app:/app\n", "")
+	s = strings.ReplaceAll(s, "      - e2e-results:/app\n", "")
+	s = strings.ReplaceAll(s, "\nvolumes:\n  playwright-app:\n", "\n")
+	s = strings.ReplaceAll(s, "\nvolumes:\n  playwright-app:", "")
+	s = strings.ReplaceAll(s, "\nvolumes:\n  e2e-results:\n", "\n")
+	s = strings.ReplaceAll(s, "\nvolumes:\n  e2e-results:", "")
+	if s != orig {
+		if err := os.WriteFile(path, []byte(s), 0644); err == nil {
+			log.Printf("[playwright-config] repaired %s to use fast tar copy without node_modules/dotglob hang", path)
+		}
 	}
 }
 

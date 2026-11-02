@@ -20,8 +20,4 @@ services:
       - PLAYWRIGHT_HTML_OPEN=never
     volumes:
       - ./:/src:ro
-      - e2e-results:/app
-    command: sh -c "cp -r /src/* /app/ 2>/dev/null || true && cp -r /src/.* /app/ 2>/dev/null || true && {{PLAYWRIGHT_COMMAND}}"
-
-volumes:
-  e2e-results:
+    command: sh -c "tar -C /src --exclude=./node_modules --exclude=./.git --exclude=./playwright-report --exclude=./test-results -cf - . | tar -C /app -xf - && {{PLAYWRIGHT_COMMAND}}"

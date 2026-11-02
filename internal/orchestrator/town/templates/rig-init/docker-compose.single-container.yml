@@ -32,8 +32,4 @@ services:
       - PLAYWRIGHT_HTML_OPEN=never
     volumes:
       - ./:/src:ro
-      - playwright-app:/app
-    command: sh -c "cp -r /src/* /app/ 2>/dev/null || true && cp -r /src/.* /app/ 2>/dev/null || true && {{PLAYWRIGHT_COMMAND}}"
-
-volumes:
-  playwright-app:
+    command: sh -c "tar -C /src --exclude=./node_modules --exclude=./.git --exclude=./playwright-report --exclude=./test-results -cf - . | tar -C /app -xf - && {{PLAYWRIGHT_COMMAND}}"
