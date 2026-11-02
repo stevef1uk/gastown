@@ -24,6 +24,27 @@ func TestSync_freshTown(t *testing.T) {
 	}
 }
 
+func TestSync_freshTownMayorTownJSON(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "mayor"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "mayor", "town.json"), []byte(`{"name":"gt"}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := Sync(dir)
+	if err != nil {
+		t.Fatalf("Sync with mayor/town.json: %v", err)
+	}
+	if res.Orchestrator.Added == 0 {
+		t.Fatalf("expected orchestrator files added, got %+v", res.Orchestrator)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "orchestrator", "standards", "go.md")); err != nil {
+		t.Fatalf("standards/go.md not provisioned: %v", err)
+	}
+}
+
 func TestSync_requiresTownRoot(t *testing.T) {
 	_, err := Sync(t.TempDir())
 	if err == nil {

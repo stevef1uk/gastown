@@ -29,6 +29,8 @@ var orchestratorRunCmd = &cobra.Command{
 		mgr := orchestrator.NewManager(townRoot)
 		orchestrator.StartHeartbeatLoop(townRoot)
 		orchestrator.LogRestoreNotice(townRoot)
+		// Ensure any newly added embedded town assets (e.g. standards/*.md) exist on disk.
+		_, _ = orchestrator.ProvisionTownAssets(townRoot)
 		// Load templates from townRoot/orchestrator/templates
 		tmplDir := filepath.Join(townRoot, "orchestrator", "templates")
 		if err := mgr.LoadTemplatesFromDir(tmplDir); err != nil {
@@ -129,12 +131,13 @@ var orchestratorStatusCmd = &cobra.Command{
 }
 
 func runOrchestratorSync(cmd *cobra.Command, args []string) error {
-	townRoot, err := workspace.FindFromCwdOrError()
-	if err != nil {
-		return err
-	}
-	if orchestratorSyncTownRoot != "" {
-		townRoot = orchestratorSyncTownRoot
+	townRoot := orchestratorSyncTownRoot
+	if townRoot == "" {
+		var err error
+		townRoot, err = workspace.FindFromCwdOrError()
+		if err != nil {
+			return err
+		}
 	}
 	res, err := orchestrator.SyncTownAssets(townRoot, orchestratorSyncUpdate)
 	if err != nil {

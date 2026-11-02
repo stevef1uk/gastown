@@ -168,11 +168,18 @@ sync-town-config:
 		exit 1; \
 	fi; \
 	for root in $$GT_ROOTS; do \
-		if [ ! -f "$$root/config.json" ]; then continue; fi; \
+		if [ ! -f "$$root/config.json" ] && [ ! -f "$$root/mayor/town.json" ] && [ ! -d "$$root/orchestrator" ]; then continue; fi; \
 		echo "=== Syncing town config → $$root ==="; \
-		"$$GT_BIN" config sync --town-root "$$root" || exit 1; \
+		"$$GT_BIN" config sync --town-root "$$root" || true; \
 		echo "=== Syncing orchestrator templates → $$root ==="; \
 		"$$GT_BIN" orchestrator sync --town-root "$$root" --update-changed || exit 1; \
+		if (cd "$$root" && "$$GT_BIN" orchestrator status 2>/dev/null | grep -q "Orchestrator is running"); then \
+			echo "Restarting orchestrator in $$root to pick up new binary and templates..."; \
+			(cd "$$root" && "$$GT_BIN" orchestrator stop >/dev/null 2>&1 || true); \
+			sleep 1; \
+			(cd "$$root" && "$$GT_BIN" orchestrator start >/dev/null 2>&1 && echo "Orchestrator restarted.") || \
+				echo "Warning: orchestrator restart failed (start manually with: cd $$root && gt orchestrator start)"; \
+		fi; \
 	done
 
 # check-version-tag: Verify that if HEAD is tagged vX.Y.Z, the Version constant

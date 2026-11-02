@@ -31,9 +31,9 @@ func Sync(townRoot string) (*SyncResult, error) {
 	if townRoot == "" {
 		return nil, fmt.Errorf("town root is required")
 	}
-	cfgPath := filepath.Join(townRoot, "config.json")
-	if _, err := os.Stat(cfgPath); err != nil {
-		return nil, fmt.Errorf("not a Gas Town HQ (missing %s): %w", cfgPath, err)
+	if !isTownRoot(townRoot) {
+		cfgPath := filepath.Join(townRoot, "config.json")
+		return nil, fmt.Errorf("not a Gas Town HQ (missing %s or mayor/town.json)", cfgPath)
 	}
 
 	ores, err := orchestrator.SyncTownAssets(townRoot, true)
@@ -54,4 +54,17 @@ func Sync(townRoot string) (*SyncResult, error) {
 			Reinstalled: reinstalled,
 		},
 	}, nil
+}
+
+func isTownRoot(townRoot string) bool {
+	for _, rel := range []string{
+		"config.json",
+		filepath.Join("mayor", "town.json"),
+		filepath.Join("settings", "config.json"),
+	} {
+		if info, err := os.Stat(filepath.Join(townRoot, rel)); err == nil && !info.IsDir() {
+			return true
+		}
+	}
+	return false
 }
