@@ -130,9 +130,14 @@ func IsArchitectureReworkOutcome(outcome string) bool {
 	return strings.EqualFold(strings.TrimSpace(outcome), "architecture_failure")
 }
 
+// IsPlanGapOutcome reports test_review sending the workflow to test_plan_rework.
+func IsPlanGapOutcome(outcome string) bool {
+	return strings.EqualFold(strings.TrimSpace(outcome), "plan_gap")
+}
+
 // IsCrossStateReworkOutcome reports outcomes that should set PendingRework on a state change.
 func IsCrossStateReworkOutcome(outcome string) bool {
-	return IsFailureOutcome(outcome) || IsArchitectureReworkOutcome(outcome) || IsTimeoutOutcome(outcome)
+	return IsFailureOutcome(outcome) || IsArchitectureReworkOutcome(outcome) || IsPlanGapOutcome(outcome) || IsTimeoutOutcome(outcome)
 }
 
 // AllowedOutcomes returns transition keys for the state (valid complete_task outcomes).

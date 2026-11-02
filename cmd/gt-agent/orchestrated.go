@@ -3452,7 +3452,11 @@ func validateTestPlanReviewArtifacts(townRoot, rig string, v orchestrator.Workfl
 	}
 	var missingFields []string
 	for _, b := range blocks {
-		if b.ReqID == "" || b.Level == "" || b.TestFile == "" {
+		if b.ReqID == "" || b.Level == "" {
+			missingFields = append(missingFields, b.ReqID)
+			continue
+		}
+		if b.TestFile == "" && !testPlanBlockAllowsEmptyTestFile(v, b) {
 			missingFields = append(missingFields, b.ReqID)
 		}
 	}
@@ -3463,6 +3467,33 @@ func validateTestPlanReviewArtifacts(townRoot, rig string, v orchestrator.Workfl
 		return fmt.Errorf("%w — report failure so the tester corrects the bead IDs", err)
 	}
 	return nil
+}
+
+func testPlanBlockAllowsEmptyTestFile(v orchestrator.WorkflowValidation, b orchestrator.TestPlanBlock) bool {
+	if !v.HasPhasedDelivery() {
+		return false
+	}
+	phaseID := strings.ToLower(strings.TrimSpace(b.Phase))
+	if phaseID == "" {
+		phaseID = strings.ToLower(strings.TrimSpace(b.ReqID))
+	}
+	for _, p := range v.DeliveryPhases {
+		if strings.ToLower(strings.TrimSpace(p.ID)) != phaseID {
+			continue
+		}
+		if !orchestrator.PhaseShipsAutomatedTests(p) {
+			return true
+		}
+		hasTestFile := false
+		for _, f := range p.RequiredFiles {
+			if orchestrator.IsTestImplementPath(f) {
+				hasTestFile = true
+				break
+			}
+		}
+		return !hasTestFile
+	}
+	return false
 }
 
 // validateTestPlanBeadIDs checks that bead IDs in TEST_PLAN.md blocks exist in bd

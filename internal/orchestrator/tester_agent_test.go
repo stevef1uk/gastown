@@ -182,6 +182,25 @@ Test file: pingapp/generic_test.go
 	if len(missing) != 0 {
 		t.Fatalf("expected 0 missing with nil phases (no phases to validate), got %d: %v", len(missing), missing)
 	}
+
+	// "Test file: none (profile provides no automated test file)" must be ignored as a placeholder, not treated as a missing file named "none"
+	planWithNone := `### go-module
+Requirement: Go module initialization
+Level: unit
+Phase: go-module
+Test file: none (profile provides no automated test file)
+Bead ID: pw-001
+
+### core
+Requirement: HTTP server
+Level: unit
+Phase: core
+Test file: none (profile provides no automated test file)
+Bead ID: pw-002
+`
+	if got := MissingPlannedTestFilesForPhases(rigDir, "pingapp", planWithNone, []string{"go-module", "core"}); len(got) != 0 {
+		t.Fatalf("expected 0 missing when Test file is 'none (...)', got %v", got)
+	}
 }
 
 func TestHallucinatedTestPlanRequirements(t *testing.T) {

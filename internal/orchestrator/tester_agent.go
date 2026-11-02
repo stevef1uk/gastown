@@ -159,17 +159,25 @@ func ParseTestPlanBlocks(testPlan string) []TestPlanBlock {
 	return blocks
 }
 
+// cleanPlannedTestFilePath normalizes a "Test file:" value from TEST_PLAN.md,
+// stripping parenthetical notes and rejecting placeholder tokens ("none", "N/A", "plan_gap", etc.).
+func cleanPlannedTestFilePath(raw string) string {
+	f := strings.TrimSpace(strings.Trim(raw, "`*"))
+	if idx := strings.IndexAny(f, "([{"); idx >= 0 {
+		f = strings.TrimSpace(f[:idx])
+	}
+	f = strings.TrimSpace(strings.Trim(f, "`*"))
+	if f == "" || IsPlanGapPlaceholderPath(f) {
+		return ""
+	}
+	return f
+}
+
 // PlannedTestFiles returns the "Test file:" paths named in TEST_PLAN.md.
 func PlannedTestFiles(testPlan string) []string {
 	var out []string
 	for _, b := range ParseTestPlanBlocks(testPlan) {
-		if f := strings.TrimSpace(b.TestFile); f != "" {
-			// Strip parenthetical descriptions (e.g. "(via httptest, mux wiring check)",
-			// "(verification via build)") that the LLM may append after test file paths —
-			// these are not valid file paths.
-			if idx := strings.IndexAny(f, "([{"); idx >= 0 {
-				f = strings.TrimSpace(f[:idx])
-			}
+		if f := cleanPlannedTestFilePath(b.TestFile); f != "" {
 			out = append(out, f)
 		}
 	}
@@ -191,10 +199,7 @@ func PlannedTestFilesForPhases(testPlan string, phaseIDs []string) []string {
 	for _, b := range ParseTestPlanBlocks(testPlan) {
 		// Include blocks with no Phase (backward compatible) or matching phase
 		if b.Phase == "" || phaseSet[strings.ToLower(strings.TrimSpace(b.Phase))] {
-			if f := strings.TrimSpace(b.TestFile); f != "" {
-				if idx := strings.IndexAny(f, "([{"); idx >= 0 {
-					f = strings.TrimSpace(f[:idx])
-				}
+			if f := cleanPlannedTestFilePath(b.TestFile); f != "" {
 				out = append(out, f)
 			}
 		}
@@ -366,7 +371,7 @@ func testPlanBeadMappingMismatches(v WorkflowValidation, blocks []TestPlanBlock,
 			}
 		}
 		beadID := strings.ToLower(strings.TrimSpace(b.BeadID))
-		testFile := filepath.ToSlash(strings.TrimSpace(b.TestFile))
+		testFile := filepath.ToSlash(cleanPlannedTestFilePath(b.TestFile))
 		if beadID == "" || testFile == "" {
 			continue
 		}

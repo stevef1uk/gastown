@@ -343,6 +343,9 @@ var artifactAutoCompleters = map[string]artifactAutoCompleteFn{
 		return validateQAAutoComplete(r)
 	},
 	"test_plan": func(r *stateRunner) error {
+		if r.task != nil && (r.task.State == "test_plan_rework" || r.task.PendingRework != nil) && !r.track.testPlanWriteOK {
+			return fmt.Errorf("test_plan rework requires updating TEST_PLAN.md in this session before auto-completing")
+		}
 		return validateTestPlanArtifacts(r.townRoot, r.rig, r.track.hadCmdFailure, r.track.testPlanWriteOK, r.v)
 	},
 	"test_review": func(r *stateRunner) error {
