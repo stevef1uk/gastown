@@ -152,11 +152,32 @@ func DockerImplementationVerifyCommandForBead(v WorkflowValidation, mayorRigDir,
 	case strings.HasSuffix(beadPath, ".env.example"), strings.HasSuffix(beadPath, ".env"):
 		return "test -f " + beadPath
 	default:
+		// If this is a non-spec support file in the E2E phase (e.g. package.json or
+		// playwright.config.ts) and the required E2E spec file does not exist on disk
+		// yet, verify file existence first so the bead can close before the spec bead runs.
+		if mayorRigDir != "" && beadPath != "" && !IsE2ETestPath(beadPath) && !anyPhaseE2ESpecExistsOnDisk(v, mayorRigDir) {
+			return "test -s " + beadPath
+		}
 		if q := strings.TrimSpace(v.ActivePhaseQAVerifyCommand()); q != "" {
 			return dockerVerifyWithLayout(q, layout)
 		}
 		return dockerVerifyWithLayout(strings.TrimSpace(v.QAVerifyCommand), layout)
 	}
+}
+
+func anyPhaseE2ESpecExistsOnDisk(v WorkflowValidation, mayorRigDir string) bool {
+	scoped := v.ForActivePhase()
+	hasSpecInPhase := false
+	for _, f := range scoped.RequiredFiles {
+		if IsE2ETestPath(f) {
+			hasSpecInPhase = true
+			p := ResolveRequiredFileOnDisk(mayorRigDir, f, v.LayoutRoot)
+			if info, err := os.Stat(p); err == nil && !info.IsDir() && info.Size() > 0 {
+				return true
+			}
+		}
+	}
+	return !hasSpecInPhase
 }
 
 func effectiveLayoutRoot(layout string) string {

@@ -204,6 +204,13 @@ func PythonProjectSetupVerifyCommand(v WorkflowValidation) string {
 
 // ImplementationVerifyCommandForBead picks per-bead verify for the active implement path.
 func ImplementationVerifyCommandForBead(v WorkflowValidation, mayorRigDir, beadPath string) string {
+	lowerPath := strings.ToLower(filepath.ToSlash(strings.TrimSpace(beadPath)))
+	if WorkflowUsesDocker(v) && (IsE2ETestPath(beadPath) ||
+		strings.Contains(lowerPath, "docker-compose") ||
+		strings.HasSuffix(lowerPath, "dockerfile") ||
+		(WorkflowUsesDocker(v.ForActivePhase()) && !strings.HasSuffix(lowerPath, ".go") && !strings.HasSuffix(lowerPath, "go.mod") && !strings.HasSuffix(lowerPath, ".py"))) {
+		return DockerImplementationVerifyCommandForBead(v, mayorRigDir, beadPath)
+	}
 	if WorkflowUsesGo(v) {
 		return GoImplementationVerifyCommandForBead(v, mayorRigDir, beadPath)
 	}

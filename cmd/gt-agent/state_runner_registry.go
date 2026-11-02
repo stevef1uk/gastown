@@ -454,7 +454,7 @@ var verifyKindHandlers = map[string]verifyKindFn{
 }
 
 func verifyImplementationBead(r *stateRunner) string {
-	if !orchestrator.WorkflowUsesGo(r.v) && !orchestrator.WorkflowUsesPython(r.v) {
+	if !orchestrator.WorkflowUsesGo(r.v) && !orchestrator.WorkflowUsesPython(r.v) && !orchestrator.WorkflowUsesDocker(r.v) {
 		return ""
 	}
 	mayor := filepath.Join(r.townRoot, r.rig, "mayor", "rig")

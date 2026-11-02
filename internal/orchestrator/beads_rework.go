@@ -184,6 +184,36 @@ func ReopenImplementationBeadsAfterTestFailure(townRoot, rig string, v WorkflowV
 		}
 		reopened = append(reopened, more...)
 	}
+	// Fallback: when test_review fails or times out at runtime (test files exist and
+	// are not stubs, and summary did not cite a known bead ID), reopen the closed
+	// implement beads owning the active phase's planned test files (or E2E/test files
+	// in RequiredFiles) so implementation never re-enters with 0 open beads.
+	if len(reopened) == 0 {
+		scoped := v.ForActivePhase()
+		var activePhaseIDs []string
+		if id := strings.TrimSpace(scoped.ActivePhaseID()); id != "" {
+			activePhaseIDs = []string{id}
+		}
+		var fallbackPaths []string
+		if len(activePhaseIDs) > 0 {
+			fallbackPaths = append(fallbackPaths, PlannedTestFilesForPhases(plan, activePhaseIDs)...)
+		} else {
+			fallbackPaths = append(fallbackPaths, PlannedTestFiles(plan)...)
+		}
+		for _, f := range scoped.RequiredFiles {
+			if IsE2ETestPath(f) || strings.Contains(strings.ToLower(f), "test") || strings.Contains(strings.ToLower(f), "spec.") {
+				fallbackPaths = append(fallbackPaths, f)
+			}
+		}
+		fallbackPaths = dedupeStrings(fallbackPaths)
+		if len(fallbackPaths) > 0 {
+			more, err := reopenClosedImplementBeadsForPaths(townRoot, rig, v, fallbackPaths)
+			if err != nil {
+				return reopened, err
+			}
+			reopened = append(reopened, more...)
+		}
+	}
 	return dedupeStrings(reopened), nil
 }
 

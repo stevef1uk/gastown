@@ -2841,10 +2841,13 @@ func validateImplementationArtifacts(townRoot, rig string, hadCmdFailure, beadCl
 	}
 	phaseVerify := strings.TrimSpace(scoped.QAVerifyCommand)
 	if phaseVerify != "" && !verifyOK {
-		if openImpl == 0 && implementationPhaseVerifyOKOnDisk(townRoot, rig, scoped) == nil {
+		if openImpl == 0 && !orchestrator.WorkflowUsesDocker(scoped) && implementationPhaseVerifyOKOnDisk(townRoot, rig, scoped) == nil {
 			// Queue empty and phase verify is green on disk — do not require a manual verify CMD
 			// in this session after gt-agent restarts (verifyOK clears on new sessions).
 		} else {
+			if openImpl == 0 && orchestrator.WorkflowUsesDocker(scoped) {
+				_, _ = orchestrator.ReopenImplementationBeadsAfterTestFailure(townRoot, rig, v, "")
+			}
 			return fmt.Errorf("profile verification must pass in this session before success (%s)", phaseVerify)
 		}
 	}

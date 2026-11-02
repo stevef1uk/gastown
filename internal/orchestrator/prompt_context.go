@@ -564,7 +564,8 @@ func EnsurePlaywrightConfigReady(townRoot, rig string, v WorkflowValidation) (st
 		needsDockerRepair := hasDockerPlaywright && (strings.Contains(existingContent, "webServer") ||
 			(e2eRel == "e2e" && strings.Contains(existingContent, "testDir: './test/e2e'")) ||
 			(strings.Contains(existingContent, "baseURL: 'http://localhost:") && !strings.Contains(existingContent, "BASE_URL") && !strings.Contains(existingContent, "host.docker.internal")) ||
-			strings.Contains(existingContent, "reporter: 'html'"))
+			strings.Contains(existingContent, "reporter: 'html'") ||
+			strings.Contains(existingContent, "retries: process.env.CI ? 2 : 0"))
 		if needsDockerRepair {
 			log.Printf("[playwright-config] repairing %s for Docker Playwright harness (testDir=./%s, non-blocking reporter, BASE_URL)", existingPath, e2eRel)
 			// Overwrite the offending config in place (it may live in the
@@ -599,9 +600,10 @@ func EnsurePlaywrightConfigReady(townRoot, rig string, v WorkflowValidation) (st
 
 export default defineConfig({
   testDir: './%s',
+  timeout: 10000,
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
-  retries: process.env.CI ? 2 : 0,
+  retries: 0,
   workers: process.env.CI ? 1 : undefined,
   reporter: [['html', { open: 'never' }], ['list']],
   use: {
