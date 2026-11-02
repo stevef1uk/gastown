@@ -50,6 +50,10 @@ func PromptContextBlock(key, townRoot, rig string, v WorkflowValidation) string 
 		return FormatPhaseTestGuards(townRoot, rig, v)
 	case "test_plan_rework":
 		return FormatTestPlanReworkBlock(townRoot, rig, v)
+	case "coding_standards":
+		return FormatCodingStandardsBlock(townRoot, rig, v)
+	case "polecat_learnings":
+		return FormatPolecatLearningsBlock(townRoot, rig, v)
 	default:
 		return ""
 	}

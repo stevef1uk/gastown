@@ -997,13 +997,14 @@ func isOrchestratedShellNoiseLine(s string) bool {
 	return false
 }
 
-// isOrchestratedNativeToolLine reports READ:/EDIT:/WRITE: markers that must never run as shell.
+// isOrchestratedNativeToolLine reports READ:/EDIT:/WRITE:/LEARN: markers that must never run as shell.
 func isOrchestratedNativeToolLine(line string) bool {
 	t := strings.TrimSpace(line)
 	upper := strings.ToUpper(t)
 	return strings.HasPrefix(upper, "READ:") ||
 		strings.HasPrefix(upper, "EDIT:") ||
-		strings.HasPrefix(upper, "WRITE:")
+		strings.HasPrefix(upper, "WRITE:") ||
+		isOrchestratedLearnLine(t)
 }
 
 // stripNativeToolBlocksForCmdParse removes native tool blocks so WRITE/EDIT bodies are not executed as shell.
@@ -1014,6 +1015,10 @@ func stripNativeToolBlocksForCmdParse(response string) string {
 	for _, line := range lines {
 		t := strings.TrimSpace(line)
 		upper := strings.ToUpper(t)
+		if isOrchestratedLearnLine(t) {
+			skip = false
+			continue
+		}
 		if isOrchestratedNativeToolLine(line) || strings.HasPrefix(upper, "<<<<<<<") {
 			skip = true
 			continue

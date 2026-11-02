@@ -538,6 +538,15 @@ func (r *stateRunner) persistImplementationProgress(cmd string) {
 		}
 	}
 	if r.track.verifyOK && r.track.activeBead != "" {
+		if r.implProgress.LastVerifyFailOutput != "" {
+			failPath := r.implProgress.LastVerifyFailPath
+			if failPath == "" {
+				failPath = r.activeImplementBeadPath()
+			}
+			if learned := orchestrator.ExtractVerifyFixLearning(r.implProgress.LastVerifyFailOutput, failPath, r.v); learned != "" {
+				_ = orchestrator.RecordPolecatLearning(r.townRoot, r.rig, "", learned, "verify_fix", failPath, r.v)
+			}
+		}
 		if r.implProgress.mark(implVerifyKey(r.track.activeBead)) {
 			changed = true
 		}
@@ -574,7 +583,20 @@ func (r *stateRunner) noteImplementationVerifyFailure(cmd, cmdOutput string) {
 	if r.implProgress == nil || r.track == nil || r.track.activeBead == "" {
 		return
 	}
-	if !orchestrator.WorkflowUsesGo(r.v) || !goToolOutputLooksFailed(cmd, cmdOutput) {
+	if !orchestrator.WorkflowUsesGo(r.v) {
+		if isImplementationVerifyCommandAttempt(cmd, r.townRoot, r.rig, r.track.activeBead, r.track.activeBeadPath, r.v) &&
+			strings.TrimSpace(cmdOutput) != "" {
+			r.implProgress.LastVerifyFailBead = r.track.activeBead
+			r.implProgress.LastVerifyFailPath = r.activeImplementBeadPath()
+			r.implProgress.LastVerifyFailOutput = strings.TrimSpace(cmdOutput)
+			if len(r.implProgress.LastVerifyFailOutput) > 12000 {
+				r.implProgress.LastVerifyFailOutput = r.implProgress.LastVerifyFailOutput[:12000] + "\n... (truncated)\n"
+			}
+			_ = saveImplementationProgress(r.townRoot, r.rig, r.implProgress)
+		}
+		return
+	}
+	if !goToolOutputLooksFailed(cmd, cmdOutput) {
 		return
 	}
 	activePath := r.activeImplementBeadPath()

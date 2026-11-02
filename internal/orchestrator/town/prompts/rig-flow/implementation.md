@@ -50,6 +50,11 @@ new code
 CMD: cd {{rig}}/mayor/rig && ...
 ```
 
+**Record a concise self-learning note (optional, <=140 chars, after fixing a non-trivial failure or QA rework):**
+```
+LEARN: Always initialize empty slice as []Item{} before json.NewEncoder so GET /api/items returns [] instead of null
+```
+
 **Done (SEPARATE message, NO CMD/WRITE/EDIT):**
 ```
 {"outcome":"success","summary":"..."}

@@ -3,23 +3,15 @@
 This file defines the coding and workflow standards for Gas Town rigs. It is
 embedded into every new gt town on install and read by agents at runtime.
 
-## Module / Package Standards
+## Technology-Specific Coding Standards
 
-- **One primary package per rig.** For Go rigs, the layout root (`{{layout_root}}`)
-  should contain a single `package main` entry point (e.g. `cmd/server/main.go`).
-  All other Go files should belong to test packages (`*_test.go`) or supporting
-  packages under `internal/`. Never mix application and test logic in the same
-  package.
-- **No runtime logic in module declarations.** `go.mod` must declare only the
-  module path and Go version directive (`go 1.22`). All configuration,
-  dependencies, and build constraints belong in `go.mod`; application code
-  must not import or depend on runtime state at module initialization.
-- **Dependency hygiene.** Pin all indirect dependencies. Prefer `go get -u=patch`
-  for security updates. Avoid transitive dependency drift — run `go vet ./...`
-  and `go mod tidy` before each commit.
-- **Interface-first design.** Define interfaces in `internal/` packages; implement
-  in `cmd/.../main.go`. Prefer composition over inheritance. External APIs must
-  be represented as interfaces, not concrete types embedded in main.
+Stack-specific coding standards live in `orchestrator/standards/` and are injected automatically into Polecat (`implementation`) based on the active delivery phase and bead technology (so Go projects only receive Go standards, Python projects only receive Python standards, etc.):
+
+- `standards/go.md` — Go package layout, error wrapping, concurrency, `httptest`
+- `standards/python.md` — Python 3.11+ typing, Pydantic/FastAPI, `pytest` isolation
+- `standards/typescript.md` — TypeScript/JS/Web DOM contracts, module boundaries, `jsdom`
+- `standards/sql.md` — Idempotent DDL, schema constraints, parameterized queries
+- `standards/docker.md` — Multi-stage/cached builds, real server runtime, Compose alignment
 
 ## Architecture Standards
 

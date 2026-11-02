@@ -36,6 +36,8 @@ var jsonBlockRE = regexp.MustCompile("(?s)```(?:json)?\\s*([\\s\\S]*?)```")
 type orchestratedTaskResult struct {
 	Outcome     string   `json:"outcome"`
 	Summary     string   `json:"summary"`
+	Learning    string   `json:"learning,omitempty"`
+	Learnings   []string `json:"learnings,omitempty"`
 	CommandsRun []string `json:"commands_run"`
 }
 
@@ -551,6 +553,7 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 				messages = append(messages, llm.Message{Role: "user", Content: msg})
 				continue
 			}
+			runner.recordTerminalTaskLearnings(response, o)
 			return o, s, lastAttemptFeedback.String(), nil
 		}
 
@@ -4367,6 +4370,49 @@ func parseOrchestratedJSON(response string) (outcome, summary string, ok bool) {
 		return "", "", false
 	}
 	return last.Outcome, last.Summary, true
+}
+
+func parseOrchestratedJSONLearnings(response string) []string {
+	candidates := extractOrchestratedJSONObjects(response)
+	if m := jsonBlockRE.FindStringSubmatch(response); len(m) > 1 {
+		candidates = append(candidates, strings.TrimSpace(m[1]))
+	}
+	candidates = append(candidates, strings.TrimSpace(response))
+	var out []string
+	for _, raw := range candidates {
+		raw = strings.TrimSpace(raw)
+		if raw == "" {
+			continue
+		}
+		var r orchestratedTaskResult
+		if err := json.Unmarshal([]byte(raw), &r); err != nil {
+			continue
+		}
+		if strings.TrimSpace(r.Learning) != "" {
+			out = append(out, strings.TrimSpace(r.Learning))
+		}
+		for _, l := range r.Learnings {
+			if strings.TrimSpace(l) != "" {
+				out = append(out, strings.TrimSpace(l))
+			}
+		}
+	}
+	return out
+}
+
+func (r *stateRunner) recordTerminalTaskLearnings(response, outcome string) {
+	if r == nil || r.townRoot == "" || r.rig == "" {
+		return
+	}
+	beadPath := r.activeImplementBeadPath()
+	for _, rule := range parseOrchestratedJSONLearnings(response) {
+		_ = orchestrator.RecordPolecatLearning(r.townRoot, r.rig, "", rule, "agent", beadPath, r.v)
+	}
+	if r.task != nil && r.task.State == "implementation" && isOrchestratedSuccessOutcome(outcome) && r.task.PendingRework != nil {
+		if learned := orchestrator.ExtractQAReworkLearning(r.task.PendingRework.FromState, r.task.PendingRework.Summary); learned != "" {
+			_ = orchestrator.RecordPolecatLearning(r.townRoot, r.rig, "", learned, "qa_rework", beadPath, r.v)
+		}
+	}
 }
 
 // extractOrchestratedJSONObjects finds inline {"outcome":...} objects; last one wins in parseOrchestratedJSON.

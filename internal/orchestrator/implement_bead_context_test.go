@@ -352,19 +352,20 @@ func TestPromptContextBlocks_implementationHooks(t *testing.T) {
 func TestRigFlowYAML_implementationHasImplementBeadContext(t *testing.T) {
 	tpl := loadRigFlowTemplate(t)
 	h := tpl.States["implementation"].Hooks
-	want := []string{"implementation_queue", "implement_bead_context", "phase_test_guards"}
-	if len(h.PromptContext) != len(want) {
-		t.Fatalf("prompt_context = %v, want %v", h.PromptContext, want)
+	wantPrompt := []string{"implementation_queue", "implement_bead_context", "phase_test_guards", "coding_standards", "polecat_learnings"}
+	if len(h.PromptContext) != len(wantPrompt) {
+		t.Fatalf("prompt_context = %v, want %v", h.PromptContext, wantPrompt)
 	}
-	for i, key := range want {
+	for i, key := range wantPrompt {
 		if h.PromptContext[i] != key {
 			t.Fatalf("prompt_context[%d] = %q, want %q", i, h.PromptContext[i], key)
 		}
 	}
-	if len(h.FailurePromptContext) != len(want) {
-		t.Fatalf("failure_prompt_context = %v, want %v", h.FailurePromptContext, want)
+	wantFail := []string{"implementation_queue", "implement_bead_context", "phase_test_guards", "polecat_learnings"}
+	if len(h.FailurePromptContext) != len(wantFail) {
+		t.Fatalf("failure_prompt_context = %v, want %v", h.FailurePromptContext, wantFail)
 	}
-	for i, key := range want {
+	for i, key := range wantFail {
 		if h.FailurePromptContext[i] != key {
 			t.Fatalf("failure_prompt_context[%d] = %q, want %q", i, h.FailurePromptContext[i], key)
 		}

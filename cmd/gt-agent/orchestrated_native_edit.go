@@ -143,7 +143,8 @@ func skipNativeEditBlock(lines []string, start int) int {
 		t := strings.TrimSpace(lines[i])
 		tu := strings.ToUpper(t)
 		if strings.HasPrefix(tu, "EDIT:") || strings.HasPrefix(tu, "WRITE:") ||
-			strings.HasPrefix(tu, "READ:") || strings.HasPrefix(tu, "CMD:") {
+			strings.HasPrefix(tu, "READ:") || strings.HasPrefix(tu, "CMD:") ||
+			isOrchestratedLearnLine(t) {
 			return i
 		}
 		if isNativeEditEndMarker(t) || t == nativeEditReplaceMarker || strings.HasPrefix(t, ">>>>>>>") {
@@ -153,12 +154,114 @@ func skipNativeEditBlock(lines []string, start int) int {
 	return len(lines)
 }
 
+func isOrchestratedLearnLine(line string) bool {
+	clean := strings.Trim(strings.TrimSpace(line), "`")
+	upper := strings.ToUpper(clean)
+	if strings.HasPrefix(upper, "LEARN:") {
+		return true
+	}
+	if strings.HasPrefix(upper, "LEARN[") {
+		if idx := strings.Index(upper, "]:"); idx > len("LEARN[") {
+			return true
+		}
+	}
+	return false
+}
+
+type parsedLearningDirective struct {
+	stack string
+	rule  string
+}
+
+func parseOrchestratedLearnings(response string) []parsedLearningDirective {
+	var out []parsedLearningDirective
+	inWrite := false
+	inEdit := false
+	for _, rawLine := range strings.Split(response, "\n") {
+		trimmed := strings.TrimSpace(rawLine)
+		clean := strings.Trim(trimmed, "`")
+		upper := strings.ToUpper(clean)
+		if inWrite {
+			if clean == nativeEditWriteEnd || strings.EqualFold(clean, "---END WRITE---") || trimmed == "```" {
+				inWrite = false
+				continue
+			}
+			if isNativeOrchestratedToolLine(rawLine) {
+				inWrite = false
+			} else {
+				continue
+			}
+		}
+		if inEdit {
+			if isNativeEditEndMarker(trimmed) || strings.HasPrefix(trimmed, ">>>>>>>") {
+				inEdit = false
+				continue
+			}
+			if isNativeOrchestratedToolLine(rawLine) {
+				inEdit = false
+			} else {
+				continue
+			}
+		}
+		if strings.HasPrefix(upper, "WRITE:") {
+			inWrite = true
+			continue
+		}
+		if strings.HasPrefix(upper, "EDIT:") {
+			inEdit = true
+			continue
+		}
+		if strings.HasPrefix(upper, "LEARN:") {
+			rule := orchestrator.SanitizeLearningRule(clean[len("LEARN:"):])
+			if rule != "" {
+				out = append(out, parsedLearningDirective{rule: rule})
+			}
+			continue
+		}
+		if strings.HasPrefix(upper, "LEARN[") {
+			if idx := strings.Index(clean, "]:"); idx > len("LEARN[") {
+				stack := strings.TrimSpace(clean[len("LEARN["):idx])
+				rule := orchestrator.SanitizeLearningRule(clean[idx+2:])
+				if rule != "" {
+					out = append(out, parsedLearningDirective{stack: stack, rule: rule})
+				}
+			}
+		}
+	}
+	return out
+}
+
+func (r *stateRunner) recordLearningsFromResponse(response string, combined *strings.Builder) bool {
+	if r == nil || r.townRoot == "" || r.rig == "" {
+		return false
+	}
+	directives := parseOrchestratedLearnings(response)
+	if len(directives) == 0 {
+		return false
+	}
+	beadPath := r.activeImplementBeadPath()
+	recorded := false
+	for _, d := range directives {
+		if err := orchestrator.RecordPolecatLearning(r.townRoot, r.rig, d.stack, d.rule, "agent", beadPath, r.v); err == nil {
+			recorded = true
+			if combined != nil {
+				combined.WriteString(fmt.Sprintf("LEARN recorded: %s\n", d.rule))
+			}
+		}
+	}
+	if recorded && combined != nil {
+		combined.WriteString("\n")
+	}
+	return recorded
+}
+
 func isNativeOrchestratedToolLine(line string) bool {
 	upper := strings.ToUpper(strings.TrimSpace(line))
 	return strings.HasPrefix(upper, "CMD:") ||
 		strings.HasPrefix(upper, "READ:") ||
 		strings.HasPrefix(upper, "EDIT:") ||
-		strings.HasPrefix(upper, "WRITE:")
+		strings.HasPrefix(upper, "WRITE:") ||
+		isOrchestratedLearnLine(line)
 }
 
 func parseNativeWriteBody(lines []string, start int) (content string, next int) {
@@ -225,6 +328,11 @@ func (r *stateRunner) processOrchestratedTools(response, sessionName string, com
 		editDir := r.mayorRigWorkDir()
 		cmdEnv := r.commandEnv(os.Environ())
 		hadNative, hadSuccessfulNative = r.executeNativeEdits(ops, editDir, sessionName, cmdEnv, combined)
+		if r.recordLearningsFromResponse(response, combined) {
+			hadNative = true
+		}
+	} else {
+		_ = r.recordLearningsFromResponse(response, combined)
 	}
 	r.turnHadSuccessfulNative = hadSuccessfulNative
 	if r.hooks.NativeEditTools && !hadSuccessfulNative && responseLooksLikeMarkdownTutorialImplementation(response) {
@@ -289,6 +397,8 @@ func (r *stateRunner) processOrchestratedTools(response, sessionName string, com
 				if strings.EqualFold(strings.TrimSpace(r.hooks.Track), "implementation") {
 					r.noteImplementationVerifyFailure(cmd, outStr)
 				}
+			} else if strings.EqualFold(strings.TrimSpace(r.hooks.Track), "implementation") {
+				r.noteImplementationVerifyFailure(cmd, string(out))
 			}
 			if strings.EqualFold(strings.TrimSpace(r.hooks.Track), "qa") {
 				appendQAFailureReportNudge(combined, cmd, cmdErr)

@@ -198,8 +198,43 @@ Implementation state sets `native_edit_tools: true` in `rig-flow.yaml`. The pole
 | `READ: <path>` | Show file (active bead + dependency packages) |
 | `EDIT: <path>` + `<<<<<<< SEARCH` / `=======` / `>>>>>>> REPLACE` | Exact search/replace (must match once) |
 | `WRITE: <path>` … `---END WRITE---` | New files only (rejected on large existing files) |
+| `LEARN: <rule>` / `LEARN[<stack>]: <rule>` | Persist a concise (≤140 chars) self-learning rule to project and town stores |
 
 `CMD:` remains for `bd`, **Verify**, and `go run`. Auto-verify runs after EDIT/WRITE. **sed/patch/heredoc** still work as fallback.
+
+### Technology-specific Town Hall coding standards (`coding_standards` hook)
+
+Stack-specific coding standards live under `{townRoot}/orchestrator/standards/` (synced from `internal/orchestrator/town/standards/`):
+
+| File | Stack | When injected |
+|------|-------|---------------|
+| `standards/go.md` | `go` | Active `.go` / `go.mod` bead or `WorkflowUsesGo` phase |
+| `standards/python.md` | `python` | Active `.py` / `requirements.txt` bead or `WorkflowUsesPython` phase |
+| `standards/typescript.md` | `typescript` | Active `.ts`/`.tsx`/`.js`/`.jsx`/`.html`/`.css` bead or Node/web phase |
+| `standards/sql.md` | `sql` | Active `.sql` bead, or store/schema bead in a phase with `.sql` files |
+| `standards/docker.md` | `docker` | Active `Dockerfile` / `docker-compose.yml` bead or `WorkflowUsesDocker` phase |
+
+- **Strict stack isolation:** `DetectActiveCodingStacks` inspects the active implement bead path first and falls back to `v.ForActivePhase()`. Go projects never receive Python standards and vice versa.
+- **Context budget:** `FormatCodingStandardsBlock` substitutes profile variables (such as `{{layout_root}}`) and enforces a hard `900 byte` cap.
+
+### Polecat self-learning (`polecat_learnings` hook)
+
+Polecat records and reuses concise lessons across beads, QA rework cycles, delivery phases, and rigs:
+
+| Tier | Path | Scope & Retention |
+|------|------|-------------------|
+| **Project-scoped** | `{rig}/mayor/rig/.gastown/polecat-learnings.json` | Persists across all beads/phases of the rig (`max 8` rules) |
+| **Town-scoped by stack** | `{townRoot}/orchestrator/learnings/<stack>.json` | Shared across rigs using the same technology stack (`max 8` rules per stack) |
+
+**How learnings are captured:**
+1. **Explicit directive:** Polecat emits `LEARN: <one-line rule>` (or `LEARN[go]: <rule>`) in an implementation turn.
+2. **Outcome JSON:** Polecat includes `"learning": "..."` (or `"learnings": [...]`) in its terminal outcome JSON.
+3. **Automatic recovery extraction:** When a bead fails verification (`LastVerifyFailOutput`) and subsequently passes verification, or when a `qa_review` / `test_review` rework (`PendingRework`) is resolved, `gt-agent` distils a 1-line rule automatically.
+
+**Context & ring-buffer bounds:**
+- Each rule is normalized to a single line of at most `140 characters`.
+- Duplicate rules increment `hits` and refresh `updated_at`; when a store exceeds `8 entries`, the oldest entry with the lowest `hits` is evicted.
+- `FormatPolecatLearningsBlock` filters entries to the active stack(s) only and caps injected prompt text at `800 bytes`.
 
 ### Incremental edits (sed / patch vs full-file heredoc)
 
@@ -251,6 +286,9 @@ Requires `session_transport: "nats"` in the same file for orchestrator MCP.
 
 ```
 town/
+  STANDARDS.md               # General architecture, TDD, and workflow standards
+  SECURITY_STANDARDS.md      # Deterministic secret-scanner rules
+  standards/*.md             # Stack-specific Town Hall coding standards (go, python, typescript, sql, docker)
   templates/rig-flow.yaml    # FSM: kickoff → design → planning → plan_review → project_setup → implementation → qa_review
   prompts/rig-flow/*.md      # Per-state system prompts (prompt_file in YAML)
 ```

@@ -31,7 +31,7 @@ If **Prior step failed** from `design_review`, QA rejected the design. **Read th
    ```
    CMD: cat {{town_root}}/{{rig}}/mayor/rig/SPEC.md
    ```
-2. Write **only** `architecture.md` using a heredoc. Match SPEC exactly (title, `layout_root`). Include **## Delivery phases** mapping all paths: {{all_required_files}} (or {{required_files}}). Do not copy other rigs.
+2. Write **only** `architecture.md` using a heredoc. Match SPEC exactly (title, `layout_root`). Include **## Delivery phases** mapping all paths: {{all_required_files}} (or {{required_files}}). Note: if `{{all_required_files}}` includes E2E harness files required by `qa_verify_command` (e.g., `{{layout_root}}/docker-compose.yml`), keep them in `## Planned file layout` and the E2E phase as test-harness files even if SPEC describes them as harness-generated. Do not copy other rigs.
 3. Verify size **before** success (must be ≥ {{min_architecture_bytes}} bytes):
    ```
    CMD: wc -c {{town_root}}/{{rig}}/mayor/rig/architecture.md
