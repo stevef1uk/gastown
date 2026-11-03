@@ -786,7 +786,7 @@ func workflowReworkHints(fromState, toState, rig, summary string, v orchestrator
 	if fromState == "qa_review" && toState == "design" {
 		return "\n### QA escalated architecture rework — do this first\n" +
 			"1. Read the QA **summary** and smoke/curl output above — unit tests passed; the **architecture** is wrong.\n" +
-			"2. Rewrite architecture.md so HTTP routes, static asset paths, API request/response shapes, and SPA navigation match what QA must verify.\n" +
+			"2. Read the full existing architecture.md and amend only the QA-named defects with sed -i or patch; preserve unrelated sections and completed-phase contracts. Do not regenerate the document or delete implementation files.\n" +
 			"3. Align with SPEC.md; resolve contradictions (wrong paths in the HTTP table, missing POST routes, SPA using bare paths instead of /# anchors).\n" +
 			"4. wc -c architecture.md ≥ minimum, then JSON success — the planner will update plan.md and beads next.\n"
 	}
@@ -794,7 +794,7 @@ func workflowReworkHints(fromState, toState, rig, summary string, v orchestrator
 		return "\n### Design review failed — preserve what QA approved\n" +
 			"1. Read the QA **summary** and details above — it names the specific architecture.md defects (workflow profile collisions, db paths, route drift, Docker judge failures).\n" +
 			"2. **First read the existing architecture.md to see what QA already approved:** `CMD: cat " + rig + "/mayor/rig/architecture.md` — keep everything QA did not reject.\n" +
-			"3. Fix **only** the named issues with `sed -i` (or a full heredoc rewrite only if the current file is unusable). Do not rewrite from scratch when a targeted edit suffices.\n" +
+			"3. Fix **only** the named issues and directly affected references with `sed -i` or `patch`. Preserve unrelated content and completed-phase contracts; do not rewrite from scratch.\n" +
 			"4. Match SPEC paths verbatim; resolve basename collisions exactly as QA describes.\n" +
 			"5. `CMD: wc -c architecture.md` ≥ minimum, then JSON success.\n"
 	}
@@ -2473,8 +2473,7 @@ func validatePlanningArtifacts(townRoot, rig string, hadCmdFailure, beadCreateOK
 		}
 	}
 	// Check that all required_files have open/in_progress implement beads.
-	// If any required file has no bead, planning cannot succeed — the planner
-	// must create beads first (or the architect must create them via architecture_failure).
+	// Missing bead coverage is repaired by planning sync, not an architecture rewrite.
 	if rig != "" {
 		if err := validateRequiredFilesHaveBeads(townRoot, rig, v); err != nil {
 			return err
@@ -2482,8 +2481,8 @@ func validatePlanningArtifacts(townRoot, rig string, hadCmdFailure, beadCreateOK
 	}
 	// Check that closed implementation beads actually have their files on disk.
 	// A bead can be closed (file written, verified, bd close ran) but the file
-	// may have been deleted or never written. This blocks planning success so
-	// the planner sends architecture_failure to the architect.
+	// may have been deleted or never written. Planning sync must reopen that
+	// work for the Polecat instead of escalating it to the Architect.
 	if rig != "" {
 		if err := validateClosedBeadFilesExist(townRoot, rig, v); err != nil {
 			return err
@@ -2519,6 +2518,15 @@ func validateClosedBeadFilesExist(townRoot, rig string, v orchestrator.WorkflowV
 	if err != nil {
 		return nil // non-fatal: can't check
 	}
+	activeBeads, err := orchestrator.ListImplementBeadsOpenOrInProgress(townRoot, rig, v)
+	if err != nil {
+		return err
+	}
+	activePaths := make(map[string]bool)
+	for _, b := range activeBeads {
+		path := orchestrator.ExtractPathFromBeadTitle(b.Title, v.BeadTitleContains)
+		activePaths[orchestrator.NormalizePlannerBeadPath(path, v.LayoutRoot, rig)] = true
+	}
 	// Build a set of normalized required file paths for quick lookup
 	requiredSet := make(map[string]bool)
 	for _, rf := range requiredFiles {
@@ -2536,13 +2544,18 @@ func validateClosedBeadFilesExist(townRoot, rig string, v orchestrator.WorkflowV
 		if !requiredSet[normalized] {
 			continue
 		}
+		// An open recovery bead may coexist with a historical closed duplicate.
+		// Its missing file is expected until implementation, not a planning failure.
+		if activePaths[normalized] {
+			continue
+		}
 		fullPath := filepath.Join(rigDir, filepath.FromSlash(normalized))
 		if _, err := os.Stat(fullPath); os.IsNotExist(err) {
 			missing = append(missing, fmt.Sprintf("%s (bead %s closed but file missing)", normalized, b.ID))
 		}
 	}
 	if len(missing) > 0 {
-		return fmt.Errorf("closed implementation beads have missing files on disk — send outcome architecture_failure so the architect creates beads for: %s", strings.Join(missing, "; "))
+		return fmt.Errorf("closed implementation beads have missing files on disk — run `gt rig sync-planning %s --force` to reopen the existing beads for implementation, then re-read bd list and plan.md; preserve architecture.md. Missing: %s", rig, strings.Join(missing, "; "))
 	}
 	return nil
 }
@@ -2612,7 +2625,7 @@ func validateRequiredFilesHaveBeads(townRoot, rig string, v orchestrator.Workflo
 		}
 	}
 	if len(missing) > 0 {
-		return fmt.Errorf("planning cannot succeed: required_files missing beads - send architecture_failure to architect. Missing: %s", strings.Join(missing, "; "))
+		return fmt.Errorf("planning cannot succeed: required_files missing beads — run `gt rig sync-planning %s --force` to repair active-phase bead coverage, then re-read bd list and plan.md; preserve architecture.md. Missing: %s", rig, strings.Join(missing, "; "))
 	}
 	return nil
 }
@@ -4238,7 +4251,7 @@ func validateAnalysisArtifacts(townRoot, rig string) error {
 
 func validateDesignArtifacts(townRoot, rig string, writtenThisRun bool, startedAt time.Time, v orchestrator.WorkflowValidation) error {
 	if !writtenThisRun {
-		return fmt.Errorf("architecture.md must be written in this design step (heredoc CMD); stale files from prior runs are ignored")
+		return fmt.Errorf("architecture.md must be amended in this design attempt; read the full existing document and fix the reported defects with sed -i or patch (heredoc only for a missing document); stale writes from prior runs do not count")
 	}
 	rigDir := rigMayorRigDir(townRoot, rig)
 	archPath := filepath.Join(rigDir, "architecture.md")
@@ -4248,7 +4261,7 @@ func validateDesignArtifacts(townRoot, rig string, writtenThisRun bool, startedA
 	}
 	if info.Size() < v.MinArchitectureBytes {
 		short := v.MinArchitectureBytes - info.Size()
-		return fmt.Errorf("architecture.md too small (%d bytes); need ≥%d (%d more). Run `CMD: wc -c %s/mayor/rig/architecture.md`, then rewrite the heredoc with fuller per-file sections (API tables, data model, acceptance) before JSON success", info.Size(), v.MinArchitectureBytes, short, rig)
+		return fmt.Errorf("architecture.md too small (%d bytes); need ≥%d (%d more). Run `CMD: wc -c %s/mayor/rig/architecture.md`, then add the missing substantive per-file detail (API tables, data model, acceptance) to the relevant sections before JSON success; preserve unrelated content", info.Size(), v.MinArchitectureBytes, short, rig)
 	}
 
 	// Deterministic requirement-ID guard: the Tester's anti-hallucination check
@@ -4271,7 +4284,7 @@ func validateDesignArtifacts(townRoot, rig string, writtenThisRun bool, startedA
 				"architecture.md is missing `### <req-id>` requirement headings for the delivery phases — "+
 					"the Tester cannot plan tests without them and will reject invented IDs. "+
 					"Add a '## Requirements' section with one `### <id>` heading per delivery phase (%s), "+
-					"each followed by its requirement text, then rewrite architecture.md via heredoc. See {{town_root}}/orchestrator/STANDARDS.md",
+					"each followed by its requirement text; amend the existing document in place. See {{town_root}}/orchestrator/STANDARDS.md",
 				strings.Join(ids, ", "))
 		}
 	}

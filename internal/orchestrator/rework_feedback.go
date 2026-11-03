@@ -62,8 +62,8 @@ func prepareArchitectureFailureToDesignFeedback(summary, raw string, v WorkflowV
 	}
 	b.WriteString("\nArchitect steps:\n")
 	b.WriteString("1. Read SPEC.md, architecture.md, and the agent summary above.\n")
-	b.WriteString("2. Fix architecture.md (HTTP routes, store API names, data model) so planned work and verification agree.\n")
-	b.WriteString("3. `wc -c architecture.md` ≥ minimum, then JSON success — downstream agents refresh plan.md/beads/TEST_PLAN.md on the next step.\n")
+	b.WriteString("2. Amend only the named defects and directly affected references in architecture.md with sed -i or patch. Preserve unrelated sections and completed-phase contracts; do not regenerate the document or delete implementation files. Missing files/beads alone need planning sync and implementation recovery, not new architecture.\n")
+	b.WriteString("3. `wc -c architecture.md` ≥ minimum, then summarize the amendment and affected downstream work — downstream agents refresh plan.md/beads/TEST_PLAN.md on the next step.\n")
 	return strings.TrimSpace(b.String())
 }
 
@@ -86,10 +86,10 @@ func prepareQAReviewToDesignFeedback(summary, raw string, v WorkflowValidation) 
 		b.WriteString("\n")
 	}
 	b.WriteString("\nArchitect steps:\n")
-	b.WriteString("1. Read SPEC.md and the QA summary above — the **design** is wrong, not the polecat code.\n")
-	b.WriteString("2. Update `architecture.md` (HTTP routes, static asset paths, API shapes, SPA navigation, data model) so a correct implementation can pass QA smoke.\n")
+	b.WriteString("1. Read the full existing architecture.md, SPEC.md, and the QA summary above — the **design** is wrong, not the polecat code.\n")
+	b.WriteString("2. Amend only the QA-named defects in architecture.md (HTTP routes, static asset paths, API shapes, SPA navigation, data model) with sed -i or patch. Preserve unrelated sections and completed-phase contracts; do not regenerate the document or delete implementation files.\n")
 	b.WriteString("3. Map acceptance to concrete URLs and handler contracts; fix contradictions between SPEC and architecture.\n")
-	b.WriteString("4. `wc -c architecture.md` ≥ minimum, then JSON success — planner will refresh plan.md and beads on the next step.\n")
+	b.WriteString("4. `wc -c architecture.md` ≥ minimum, then summarize the amendment and affected downstream work — planner will refresh plan.md and beads on the next step.\n")
 	return strings.TrimSpace(b.String())
 }
 
@@ -473,8 +473,8 @@ func prepareTestReviewToDesignFeedback(summary, raw string, v WorkflowValidation
 	}
 	b.WriteString("\nArchitect steps:\n")
 	b.WriteString("1. Read SPEC.md, architecture.md, and TEST_PLAN.md.\n")
-	b.WriteString("2. Fix architecture.md (HTTP routes, store API names, data model, test directives) so planned tests and implementation agree.\n")
-	b.WriteString("3. `wc -c architecture.md` ≥ minimum, then JSON success — planner refreshes plan.md/beads and the tester rewrites TEST_PLAN.md.\n")
+	b.WriteString("2. Amend only the named contradictions and directly affected references in architecture.md (HTTP routes, store API names, data model, test directives) with sed -i or patch. Preserve unrelated sections and completed-phase contracts; do not regenerate the document or delete implementation files.\n")
+	b.WriteString("3. `wc -c architecture.md` ≥ minimum, then summarize the amendment and affected downstream work — planner refreshes plan.md/beads and the tester updates the affected TEST_PLAN.md sections.\n")
 	return strings.TrimSpace(b.String())
 }
 

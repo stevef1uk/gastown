@@ -79,9 +79,9 @@ func FormatDesignDraftContextBlock(townRoot, rig string) string {
 		content = content[:maxDesignDraftInjectBytes] + "\n... (truncated)"
 	}
 	var b strings.Builder
-	b.WriteString("## Current architecture.md draft (from prior turns)\n\n")
-	b.WriteString("The following is the current content of `architecture.md`. **Do not send JSON success yet** — you MUST write the full revised content via a heredoc CMD (`cat > .../architecture.md <<'EOF'`) in this session. The validator rejects success without a heredoc write in the current run.\n\n")
-	b.WriteString("Use the content below as your starting point. Fix any issues, then rewrite the complete file via heredoc. Do NOT wrap CMD in angle brackets — use plain `CMD: cat > ... <<'EOF'`.\n\n")
+	b.WriteString("## Existing architecture.md — amend in place\n\n")
+	b.WriteString("This is a preview, not a replacement for the full document. FIRST read the complete architecture.md with `CMD: cat " + filepath.ToSlash(archPath) + "` before editing. Never reconstruct the document from this potentially truncated preview.\n\n")
+	b.WriteString("Preserve the existing design and all completed-phase contracts. Address only the defects named in rework/validation feedback and any directly affected references using targeted `sed -i` or `patch` edits. Do not regenerate the document or change unrelated routes, symbols, paths, phase IDs, or scope. A successful in-place amendment in this attempt counts as a write; a full-file heredoc is NOT required. Then validate with `wc -c` and summarize what changed.\n\n")
 	b.WriteString("```markdown\n")
 	b.WriteString(content)
 	b.WriteString("\n```\n")
@@ -318,25 +318,10 @@ func RunPreRunHook(step, townRoot, rig string, v WorkflowValidation) (string, er
 		mayorRig := filepath.Join(townRoot, rig, "mayor", "rig")
 		return rigpkg.RemoveMayorRigAgentJunkLog(mayorRig)
 	case "reset_layout_pre_implementation":
-		mayorRig := filepath.Join(townRoot, rig, "mayor", "rig")
-		layout := strings.Trim(filepath.ToSlash(strings.TrimSpace(v.LayoutRoot)), "/")
-		if layout == "" {
-			layout = rigpkg.InferLayoutRootFromMayorRig(mayorRig)
-		}
-		if layout == "" {
-			return "", nil
-		}
-		removed, err := rigpkg.ResetLayoutPreImplementation(mayorRig, layout)
-		if err != nil {
-			return "", err
-		}
-		if len(removed) == 0 {
-			return "", nil
-		}
-		if len(removed) > 8 {
-			return fmt.Sprintf("reset layout pre-implementation: removed %d stale files under %s/", len(removed), layout), nil
-		}
-		return fmt.Sprintf("reset layout pre-implementation: removed %s", joinStrings(removed, ", ")), nil
+		// Legacy town templates/tasks may still request this hook. Layout cleanup
+		// belongs to rig creation/adoption, never a repeatable workflow step:
+		// returning to design must not delete implementation or database files.
+		return "preserving existing implementation; layout cleanup only runs during rig creation/adoption", nil
 	case "close_project_setup_beads":
 		closed, err := CloseProjectSetupBeads(townRoot, rig, v)
 		if err != nil {

@@ -13,9 +13,16 @@ $GT_ROOT/{{rig}}/mayor/rig/{{layout_root}}/  ← layout root (ALL files go here)
 
 **Rules:** `cd {{rig}}/mayor/rig` before commands. NEVER use `$GT_ROOT/{{rig}}/backend/` etc. The `mayor/rig/` prefix is only for `cd`, not file paths.
 
-If **Prior step failed** from `qa_review` with `architecture_failure`, QA verified unit tests pass but runtime failed — **revise architecture.md** (HTTP routes, API contracts, static paths, data model). Do not send the polecat back to patch code for a design mistake.
+## Initial design versus rework
 
-If **Prior step failed** from `design_review`, QA rejected the design. **Read the existing `architecture.md` first** (`CMD: cat {{rig}}/mayor/rig/architecture.md`), keep everything QA did not reject, and fix only the named defects (path collisions, db/route drift, Docker judge failures) — do not regenerate from scratch.
+Create a new document only when `architecture.md` does not exist. If it already exists, this is an amendment to the existing design, including rework from planning, design review, test planning/review, implementation, or QA.
+
+1. FIRST read the **full existing document** (`CMD: cat {{rig}}/mayor/rig/architecture.md`), SPEC, the workflow profile, and the exact failure summary. Injected document previews may be truncated; never reconstruct the document from them.
+2. Fix **only the reported defects and directly affected references**, using targeted `sed -i` or `patch` edits. Preserve all unrelated sections, routes, exported symbols, file ownership, phase IDs, acceptance criteria, and completed-phase contracts. Do not regenerate the document from scratch.
+3. Do not delete implementation files, reset the layout, or expand phase scope. Missing files or closed/missing beads alone are implementation/planning recovery issues, not a reason to redesign the architecture.
+4. Validate the amended document and summarize the exact changes and affected downstream work. In-place edits count as a write; a full-file heredoc is not required for rework.
+
+If QA escalated a genuine runtime design defect, amend the named HTTP routes, API contracts, static paths, or data model. Preserve everything QA did not reject.
 
 ## Scope (strict)
 
@@ -31,12 +38,12 @@ If **Prior step failed** from `design_review`, QA rejected the design. **Read th
    ```
    CMD: cat {{town_root}}/{{rig}}/mayor/rig/SPEC.md
    ```
-2. Write **only** `architecture.md` using a heredoc. Match SPEC exactly (title, `layout_root`). Include **## Delivery phases** mapping all paths: {{all_required_files}} (or {{required_files}}). Note: if `{{all_required_files}}` includes E2E harness files required by `qa_verify_command` (e.g., `{{layout_root}}/docker-compose.yml`), keep them in `## Planned file layout` and the E2E phase as test-harness files even if SPEC describes them as harness-generated. Do not copy other rigs.
+2. Edit **only** `architecture.md`. For initial creation use the heredoc below; for an existing document use targeted amendments. Match SPEC exactly (title, `layout_root`). Include **## Delivery phases** mapping all paths: {{all_required_files}} (or {{required_files}}). Note: if `{{all_required_files}}` includes E2E harness files required by `qa_verify_command` (e.g., `{{layout_root}}/docker-compose.yml`), keep them in `## Planned file layout` and the E2E phase as test-harness files even if SPEC describes them as harness-generated. Do not copy other rigs.
 3. Verify size **before** success (must be ≥ {{min_architecture_bytes}} bytes):
    ```
    CMD: wc -c {{town_root}}/{{rig}}/mayor/rig/architecture.md
    ```
-   If under minimum, expand and rewrite — do not report success until met.
+   If under minimum, add the missing substantive detail to the relevant sections — do not report success until met.
 4. Architecture must reference SPEC goals and planned layout under `{{layout_root}}/`.
 5. **HTTP routes and store API names must match SPEC verbatim**. gt-agent rejects on drift.
 5b. **`required_files` must be concrete literal paths** — no wildcards (`test_*.py`, `*_test.go`). gt-agent rejects on wildcards.
@@ -47,7 +54,7 @@ If **Prior step failed** from `design_review`, QA rejected the design. **Read th
 8. **Requirement IDs per delivery phase (CRITICAL).** Include a `### <phase-id>` heading under a `## Requirements` section in `architecture.md` for EVERY delivery phase in `workflow-profile.json`. First run `CMD: cat {{rig}}/mayor/rig/.gastown/workflow-profile.json` and use the EXACT `delivery_phases[].id` values. For example, if the profile lists phases `[python-setup, smoke-test]`, you MUST have both `### python-setup` and `### smoke-test` headings. The Tester's validation rejects TEST_PLAN.md if any `### <req-id>` does not match a delivery phase ID. Read `{{town_root}}/orchestrator/STANDARDS.md` for examples.
 9. **Do NOT expand phase scope beyond SPEC definitions.** Each delivery phase in the SPEC has explicit Goal, Deliverables, and Exit Criteria. Your `required_files` for each phase must match the SPEC's intent — do NOT add application code (routes, components, services) to infrastructure-only phases (e.g., `project-foundation`). Application code belongs in the phases the SPEC assigns it to (e.g., `core-market-infrastructure`, `database-&-portfolio-engine`). Adding files to the wrong phase breaks phase verification — the phase's `qa_verify_command` cannot pass if it checks for files that don't exist yet.
 
-## Write pattern — use this heredoc exactly:
+## Initial creation pattern — only when architecture.md is absent
 
 ```
 CMD: cat > {{town_root}}/{{rig}}/mayor/rig/architecture.md <<'EOF'
@@ -98,7 +105,7 @@ EOF
 
 ## Finish
 
-After successful heredoc write and `wc -c` ≥ {{min_architecture_bytes}}, gt-agent **auto-completes** design when validation passes.
+After a successful initial write or targeted amendment and `wc -c` ≥ {{min_architecture_bytes}}, gt-agent **auto-completes** design when validation passes. Include the amendment summary with your edit commands so downstream agents know what changed.
 
 Optional separate message: `{"outcome":"success","summary":"architecture.md written"}`
 

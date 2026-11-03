@@ -91,6 +91,7 @@ intact when editing the prompts — they are behavioral contracts, not suggestio
 | **YAGNI** | `prompts/rig-flow/planning.md`, `prompts/rig-flow/qa_review.md` | Beads implement exactly what SPEC requires. QA rejects correct-but-overbuilt code. |
 | **Bead map contracts** | `prompts/rig-flow/planning.md` | Each `### <id>: <path>` bead block lists `Interfaces` (exact exported symbols from architecture), `Depends on`, and `Consumed by` so the polecat gets dependency wiring without reading the whole plan. |
 | **Two-stage QA review** | `prompts/rig-flow/qa_review.md` | QA reviews in two explicit passes: Stage 1 spec compliance (right thing, wired, tests cover plan.md acceptance), Stage 2 code quality (minimal, no dead code/stubs). |
+| **Incremental architecture rework** | `prompts/rig-flow/design.md` | Existing architecture is read in full and amended only for named defects and directly affected references. Preserve unrelated and completed-phase contracts, implementation, tests, and databases. Full-document heredocs are for initial creation only. Missing files/beads are planning-sync/implementation recovery, not a redesign. |
 | **Bead-note ledger** | `internal/formula/formulas/mol-polecat-work.formula.toml` | Polecat persists to `bd update --notes` at mandatory triggers (after writing tests, before verify, before `gt done`) so work survives context loss. |
 
 **Both workflows share these contracts.** `req-flow.yaml` reuses `prompts/rig-flow/*.md` for its
@@ -112,6 +113,8 @@ When changing how a workflow step behaves (prompt size, bead queue text, empty-r
 Do **not** add `if task.State == "implementation"` (or any state name) in `cmd/gt-agent`. That bypasses town sync and duplicates config.
 
 Reusable hook implementations live in `internal/orchestrator/prompt_context.go` — add a **named** hook only when YAML cannot express it. See the maintainer block at the top of that file.
+
+Design entry must never reset the implementation layout. Fresh-clone cleanup is performed by rig creation/adoption, not by repeatable workflow states. The legacy `reset_layout_pre_implementation` workflow hook is a preserving no-op so older town templates or cached tasks cannot delete implementation files on rework.
 
 ## State timeout (wall-clock + turn budget)
 

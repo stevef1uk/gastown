@@ -368,7 +368,7 @@ func validateQAAutoComplete(r *stateRunner) error {
 
 var artifactFailureHints = map[string]func(*stateRunner) string{
 	"design": func(r *stateRunner) string {
-		return "Write architecture.md with a heredoc CMD in this session (stale files from prior runs do not count). Read SPEC with head -n 60."
+		return "Read the full existing architecture.md and SPEC. Amend the reported defects with sed -i or patch in this attempt; preserve unrelated content. Use a heredoc only if architecture.md is absent."
 	},
 	"planning": func(r *stateRunner) string {
 		work := rigMayorRigPath(r.rig)

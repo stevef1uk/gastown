@@ -101,9 +101,10 @@ func newStateRunner(task *orchestrator.Task, townRoot, rig string) *stateRunner 
 			}
 		}
 	}
-	// Restore designArchWritten from task variables if present (persists across state re-entries)
+	// Reuse a completed write on a plain retry, but never let a prior design
+	// satisfy a new rework request before the requested amendment is made.
 	designArchWritten := false
-	if task.Variables != nil {
+	if task.Variables != nil && task.PendingRework == nil {
 		if val, ok := task.Variables["designArchWritten"]; ok && val == "true" {
 			designArchWritten = true
 		}

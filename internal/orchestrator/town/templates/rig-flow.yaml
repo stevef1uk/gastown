@@ -52,20 +52,20 @@ states:
     prompt_file: prompts/rig-flow/design.md
     instructions: |
       1. Read `{{town_root}}/{{rig}}/mayor/rig/SPEC.md`.
-      2. Write `{{town_root}}/{{rig}}/mayor/rig/architecture.md` (≥{{min_architecture_bytes}} bytes).
+      2. Create `{{town_root}}/{{rig}}/mayor/rig/architecture.md` only if absent; otherwise read the full document and amend only the reported defects (≥{{min_architecture_bytes}} bytes). Preserve unrelated design and completed-phase contracts.
       3. CRITICAL: You MUST prefix ALL file paths with `{{layout_root}}/` when layout_root ≠ "." (e.g. `{{layout_root}}/cmd/server/main.go`; bare `cmd/server/main.go` when layout_root is ".").
     hooks:
       prompt_context: [design_draft_context]
-      pre_run: [reset_layout_pre_implementation, prune_rig_root_junk]
+      pre_run: [prune_rig_root_junk]
       max_cmd_turns: 8
       cmd_guard: design
       cmd_rewrites: [rig_placeholders, spec_md_case, spec_md_after_cd, arch_md_after_cd, unwrap_bash_lc]
       track: design
       artifacts: design
       retry_hint: |
-        One CMD: per line. Read SPEC with head; write architecture.md via single-quoted heredoc. On design_review rework, FIRST `cat {{rig}}/mayor/rig/architecture.md` to see what QA approved, then `sed -i` targeted fixes (or a full heredoc only if needed). After wc -c meets minimum, auto-completes.
+        One CMD: per line. FIRST read SPEC and the full existing architecture.md. On any rework, use sed -i or patch for the named defects and directly affected references; preserve unrelated content and completed phases. Use a single-quoted heredoc only for a missing document. After wc -c meets minimum and validation passes, summarize the amendment.
       failure_hint: |
-        FIRST run `CMD: cat {{rig}}/mayor/rig/.gastown/workflow-profile.json` and use the EXACT `delivery_phases[].id` values as your `### <req-id>` headings — phase IDs change between index runs and stale IDs are rejected. Write architecture.md with heredoc CMD in this session (stale files don't count). On design_review rework, read the existing architecture.md first and fix only the QA-named defects (path collisions, db/route drift, Docker judge) with sed -i. Read SPEC with head -n 60. HTTP paths/symbols must match SPEC verbatim. Prefix implement paths with {{layout_root}}.
+        FIRST run `CMD: cat {{rig}}/mayor/rig/.gastown/workflow-profile.json` and use the EXACT `delivery_phases[].id` values as your `### <req-id>` headings. Read the full existing architecture.md before editing. Make a targeted amendment in this attempt with sed -i or patch; do not regenerate the document or alter unrelated contracts. Create a full document via heredoc only if absent. HTTP paths/symbols must match SPEC verbatim. Prefix implement paths with {{layout_root}}.
     transitions:
       success:
         to: design_review
