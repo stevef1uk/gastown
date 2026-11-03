@@ -96,7 +96,12 @@ var trackHandlers = map[string]trackFn{
 		}
 	},
 	"design": func(r *stateRunner, cmd string, cmdErr error) {
+		if cmdErr != nil && isArchitectureMDWriteCommand(cmd) {
+			r.track.hadCmdFailure = true
+			return
+		}
 		if cmdErr == nil && isArchitectureMDWriteCommand(cmd) {
+			r.track.hadCmdFailure = false
 			r.track.designArchWritten = true
 			if r.task.Variables == nil {
 				r.task.Variables = make(map[string]string)
@@ -285,6 +290,9 @@ var artifactValidators = map[string]artifactValidateFn{
 		return nil
 	},
 	"design": func(r *stateRunner, _ string) error {
+		if r.track.hadCmdFailure {
+			return fmt.Errorf("architecture edit failed; successfully correct the failed edit and re-read the affected section before reporting success")
+		}
 		return validateDesignArtifacts(r.townRoot, r.rig, r.track.designArchWritten, r.track.startedAt, r.v)
 	},
 	"planning": func(r *stateRunner, _ string) error {

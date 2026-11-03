@@ -113,6 +113,12 @@ type WorkflowInstance struct {
 	// TEST_PLAN.md). At tester.max_review_retries the orchestrator escalates to
 	// design instead of looping; reset on any success or escalation.
 	TestPlanFailures int `json:"test_plan_failures,omitempty"`
+	ReviewProgress map[string]ReviewProgress `json:"review_progress,omitempty"`
+}
+
+type ReviewProgress struct {
+	Fingerprint string `json:"fingerprint"`
+	Failures int `json:"failures"`
 }
 
 // IsFailureOutcome reports whether complete_task outcome means rework/failure.

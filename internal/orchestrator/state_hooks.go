@@ -6,6 +6,9 @@ import "strings"
 // Wire new behavior via templates/rig-flow.yaml — see prompt_context.go and town/README.md (§ FSM vs Go).
 type StateHooks struct {
 	MaxCmdTurns int `yaml:"max_cmd_turns,omitempty" json:"max_cmd_turns,omitempty"`
+	// Pause repeated failed reviews when these effective artifacts do not change.
+	NoProgressLimit int `yaml:"no_progress_limit,omitempty" json:"no_progress_limit,omitempty"`
+	ProgressFiles []string `yaml:"progress_files,omitempty" json:"progress_files,omitempty"`
 
 	PreRun   []string `yaml:"pre_run,omitempty" json:"pre_run,omitempty"`
 	// OnTimeout runs when max_cmd_turns is exhausted in gt-agent (e.g. recover_implementation_stall).
@@ -116,6 +119,12 @@ type AutoVerifyHook struct {
 // Fields with zero-value in override are left unchanged (preserving the receiver's value).
 // This lets lazy-loaded YAML hooks override baked task hooks without wiping unset fields.
 func (h StateHooks) ApplyOverrides(override StateHooks) StateHooks {
+	if override.NoProgressLimit > 0 {
+		h.NoProgressLimit = override.NoProgressLimit
+	}
+	if len(override.ProgressFiles) > 0 {
+		h.ProgressFiles = override.ProgressFiles
+	}
 	if override.MaxCmdTurns > 0 {
 		h.MaxCmdTurns = override.MaxCmdTurns
 	}

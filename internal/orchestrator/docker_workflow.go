@@ -416,6 +416,9 @@ func filterRigFlowRequiredFiles(files []string, layoutRoot string) []string {
 // rig is the rig directory name (optional) — used to auto-correct spec-index confusion
 // when layout_root equals rig name on flat mayor/rig worktrees.
 func SanitizeRigFlowProfile(v WorkflowValidation, rig ...string) WorkflowValidation {
+	if v.ExplicitDeliveryContract {
+		return v
+	}
 	layout := strings.Trim(filepath.ToSlash(strings.TrimSpace(v.LayoutRoot)), "/")
 	if layout == "" {
 		v.LayoutRoot = "."

@@ -54,6 +54,35 @@ If QA escalated a genuine runtime design defect, amend the named HTTP routes, AP
 8. **Requirement IDs per delivery phase (CRITICAL).** Read the workflow profile, but treat SPEC as authoritative for delivery scope. Preserve every explicitly declared SPEC phase, including numbered headings outside a delivery-phase table. Include each phase in `## Delivery phases` and a matching `### <phase-id>` under one `## Requirements` section. Reuse existing IDs when they match SPEC; if the generated profile omitted or merged SPEC phases, correct the architecture's delivery table and requirements so profile sync can restore them. Do not amend SPEC scope to fit an incomplete profile. Read `{{town_root}}/orchestrator/STANDARDS.md` for examples.
 9. **Phase deliverables and exit criteria must match SPEC.** Use the actual phase definition, not assumptions based on its name. If SPEC requires a runnable application skeleton in an early phase, assign its manifests, build configuration, entrypoints, and deployment files there. If it specifies infrastructure only, keep application behavior in its designated later phases. For buildable frontend projects, enumerate the package manifest, build configuration, source, and styles in the planned layout and assign a production-build verification command in each phase delivering frontend source. Mixed-stack phases must verify every delivered stack; backend imports or frontend typechecking alone do not prove a frontend build. Keep amendments consistent with the canonical layout/table rather than leaving contradictory earlier declarations.
 
+## Machine-readable delivery contract
+
+For initial design or profile/phase/verification rework, put one fenced YAML block
+under the single `## Delivery phases` section, using the existing profile schema:
+
+```yaml
+delivery_phases:
+  - id: <SPEC phase ID>
+    title: <SPEC phase title>
+    spec_focus: <SPEC phase title; retain this on split parts>
+    required_files:
+      - <concrete repository-relative file>
+    qa_verify_command: '<executable shell command from the repository root>'
+    depends_on: []
+```
+
+Expand this to all declared phases. Assign every planned file to a phase; use
+`depends_on` for real prerequisites. Each command must check the delivered work,
+including the production build for frontend source. Prose saying “must build”
+does not set `qa_verify_command`. Sync preserves this block's ownership and
+commands rather than inferring them from prose. Keep one canonical requirements
+section with matching phase headings. Amend existing sections; do not append
+duplicate sections or a second supposedly authoritative table.
+
+After each edit, inspect the actual changed section and correct any failed edit
+before success. Unix `patch` requires a standard unified diff, not `*** Begin
+Patch` tool syntax. In `sed` replacement text, escape literal `&` as `\&`;
+otherwise it inserts the matched text and corrupts commands containing `&&`.
+
 ## Initial creation pattern — only when architecture.md is absent
 
 ```

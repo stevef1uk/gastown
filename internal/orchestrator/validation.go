@@ -20,6 +20,9 @@ type WorkflowValidation struct {
 	TestRunner                 string          `yaml:"test_runner" json:"test_runner"`
 	RequiredFiles              []string        `yaml:"required_files" json:"required_files"`
 	DeliveryPhases             []DeliveryPhase `yaml:"delivery_phases" json:"delivery_phases,omitempty"`
+	// ExplicitDeliveryContract is set by architecture sync for a validated,
+	// structured contract. Inference must not rewrite its phases or commands.
+	ExplicitDeliveryContract bool `yaml:"explicit_delivery_contract,omitempty" json:"explicit_delivery_contract,omitempty"`
 	ActivePhaseIDField         string          `yaml:"active_phase_id" json:"active_phase_id,omitempty"`
 	RewoundFromPhaseIDField    string          `yaml:"rewound_from_phase_id,omitempty" json:"rewound_from_phase_id,omitempty"`
 	CompletedPhaseIDsField     []string        `yaml:"completed_phase_ids,omitempty" json:"completed_phase_ids,omitempty"`
@@ -169,6 +172,9 @@ func ClampProfileValidation(v WorkflowValidation) WorkflowValidation {
 		v.MaxReviewRetries = DefaultMaxReviewRetries
 	}
 	v.RequiredFiles = StripNonFileRequiredEntries(v.RequiredFiles)
+	if v.ExplicitDeliveryContract {
+		return v
+	}
 	for i := range v.DeliveryPhases {
 		v.DeliveryPhases[i].RequiredFiles = StripNonFileRequiredEntries(v.DeliveryPhases[i].RequiredFiles)
 	}
@@ -1243,7 +1249,7 @@ func deduplicateRequiredFiles(files []string) []string {
 // aligns layout_root with paths documented in the architecture (flat mayor/rig worktrees).
 func ClampProfileValidationForRig(townRoot, rig string, v WorkflowValidation) WorkflowValidation {
 	v = ClampProfileValidation(v)
-	if townRoot == "" || rig == "" {
+	if v.ExplicitDeliveryContract || townRoot == "" || rig == "" {
 		return v
 	}
 	archPath := filepath.Join(townRoot, rig, "mayor", "rig", "architecture.md")
@@ -1393,6 +1399,9 @@ func mergeValidationFields(base, overlay WorkflowValidation) WorkflowValidation 
 	}
 	if len(overlay.DeliveryPhases) > 0 {
 		base.DeliveryPhases = append([]DeliveryPhase(nil), overlay.DeliveryPhases...)
+		base.ExplicitDeliveryContract = overlay.ExplicitDeliveryContract
+	} else if overlay.ExplicitDeliveryContract {
+		base.ExplicitDeliveryContract = true
 	}
 	if overlay.ActivePhaseIDField != "" {
 		base.ActivePhaseIDField = overlay.ActivePhaseIDField

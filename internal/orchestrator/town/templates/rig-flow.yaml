@@ -62,10 +62,12 @@ states:
       cmd_rewrites: [rig_placeholders, spec_md_case, spec_md_after_cd, arch_md_after_cd, unwrap_bash_lc]
       track: design
       artifacts: design
+      no_progress_limit: 3
+      progress_files: [.gastown/workflow-profile.json]
       retry_hint: |
         One CMD: per line. FIRST read SPEC and the full existing architecture.md. On any rework, use sed -i or patch for the named defects and directly affected references; preserve unrelated content and completed phases. Use a single-quoted heredoc only for a missing document. After wc -c meets minimum and validation passes, summarize the amendment.
       failure_hint: |
-        FIRST run `CMD: cat {{rig}}/mayor/rig/.gastown/workflow-profile.json` and use the EXACT `delivery_phases[].id` values as your `### <req-id>` headings. Read the full existing architecture.md before editing. Make a targeted amendment in this attempt with sed -i or patch; do not regenerate the document or alter unrelated contracts. Create a full document via heredoc only if absent. HTTP paths/symbols must match SPEC verbatim. Prefix implement paths with {{layout_root}}.
+        Read SPEC, the profile and the full existing architecture.md before editing. SPEC scope wins over an incomplete profile. Correct the single canonical delivery_phases YAML block (required_files, qa_verify_command, depends_on) and matching requirement headings; do not append duplicate canonical sections. Use standard unified diffs for Unix patch and escape literal ampersands in sed replacements. Re-read the edited section and repair failed edits before success. Preserve unrelated contracts and implementation. HTTP paths/symbols must match SPEC verbatim. Prefix implement paths with {{layout_root}}.
     transitions:
       success:
         to: design_review
@@ -86,6 +88,8 @@ states:
       cmd_rewrites: [rig_placeholders, spec_md_case, spec_md_after_cd, unwrap_bash_lc]
       track: qa
       artifacts: design_review
+      no_progress_limit: 3
+      progress_files: [.gastown/workflow-profile.json]
       cmd_before_outcome_nudge: |
         You reported an outcome without reading any files, so it is not grounded in evidence. You MUST inspect the artifacts first — one CMD: per line:
         CMD: wc -c architecture.md

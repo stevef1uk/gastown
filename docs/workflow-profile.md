@@ -42,6 +42,29 @@ alone do not justify merging explicit SPEC phases. SPEC scope takes precedence o
 an earlier generated profile; architecture rework must correct its canonical layout,
 delivery table, and requirements consistently.
 
+### Explicit delivery contracts
+
+An architecture can place one fenced YAML `delivery_phases:` block under its
+single `## Delivery phases` section, using the existing phase fields (`id`,
+`title`, `spec_focus`, `required_files`, `qa_verify_command`, `depends_on`). Sync
+validates this contract before saving it and sets `explicit_delivery_contract`.
+Such profiles retain declared ownership, dependencies and commands on load/save;
+heuristic splitting, Docker relocation and command replacement apply only to
+inferred profiles. Every declared file must have a phase owner. Changed phase
+files/commands invalidate that phase's old completion, and design rework clears
+test-plan approval/freeze. Split phases retain their original SPEC title in
+`spec_focus`.
+
+Duplicate canonical layout, delivery or requirements sections are rejected;
+amend the existing section instead of appending another authoritative copy.
+Design and design-review retries pause after three failures against an unchanged
+effective profile (`no_progress_limit` / `progress_files` hooks). Correct the
+contract and resume, or explicitly reset the workflow to clear its retry budget.
+
+Document judges resolve `GT_JUDGE_ENDPOINT` / `GT_JUDGE_MODEL`, then general LLM
+environment settings and configured judge/town QA models. Invalid API responses
+are validation errors, rather than an implicit successful Docker review.
+
 ## Phase Population
 
 `rebuildDeliveryPhasesFromAuthoritative`:

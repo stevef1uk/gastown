@@ -1420,6 +1420,9 @@ func pairPhaseInfraFiles(v WorkflowValidation) WorkflowValidation {
 
 // FinalizeDeliveryPhases unions phase file lists into RequiredFiles, sets default active phase, normalizes paths.
 func FinalizeDeliveryPhases(v WorkflowValidation) WorkflowValidation {
+	if v.ExplicitDeliveryContract {
+		return v
+	}
 	v = collapseSplitDeliveryPhases(v)
 	v = pairPhaseInfraFiles(v)
 	v = splitOverlargePhases(v)

@@ -12,7 +12,7 @@ import (
 
 var (
 	specLayoutDirRe   = regexp.MustCompile(`(?m)^([a-zA-Z][a-zA-Z0-9_-]*)/\s*$`)
-	specTreeFileInLine = regexp.MustCompile(`([a-zA-Z0-9_.-]+\.(?:py|go|txt|md|yaml|yml|json|toml|mod|js|ts|jsx|tsx|css|html|sum))`)
+	specTreeFileInLine = regexp.MustCompile(`([a-zA-Z0-9_.-]+\.(?:py|go|txt|md|yaml|yml|json|toml|mod|jsx|tsx|js|ts|css|html|sum))\b`)
 	profileArchDebug bool
 )
 
@@ -935,6 +935,13 @@ func SyncRigWorkflowProfileFromArchitecture(townRoot, rig string) (bool, error) 
 	if len(archData) == 0 {
 		return false, nil // design not complete — nothing authoritative to sync from
 	}
+	if err := ValidateArchitectureStructure(string(archData)); err != nil {
+		return false, err
+	}
+	contract, hasContract, err := architectureDeliveryContract(string(archData))
+	if err != nil {
+		return false, err
+	}
 	archPaths := declaredArchitecturePaths(string(archData), env.Validation.LayoutRootDir())
 	var filePaths []string
 	for _, p := range archPaths {
@@ -959,6 +966,12 @@ func SyncRigWorkflowProfileFromArchitecture(townRoot, rig string) (bool, error) 
 		authoritative = filePaths
 	}
 	authoritative = dedupeStrings(authoritative)
+	if hasContract {
+		for _, p := range contract {
+			authoritative = append(authoritative, p.RequiredFiles...)
+		}
+		authoritative = dedupeStrings(authoritative)
+	}
 	if len(authoritative) == 0 {
 		return false, nil
 	}
@@ -982,6 +995,24 @@ func SyncRigWorkflowProfileFromArchitecture(townRoot, rig string) (bool, error) 
 	archPhases := parseArchPhases(string(archData), env.Validation.LayoutRootDir())
 	specData, _ := os.ReadFile(filepath.Join(mayorRig, "SPEC.md"))
 	declared := DeclaredSpecPhaseHeadings(string(specData))
+	if hasContract {
+		previous := env.Validation
+		env.Validation.ExplicitDeliveryContract = true
+		env.Validation.DeliveryPhases = contract
+		env.Validation.RequiredFiles = authoritative
+		env.Validation.QAVerifyCommand = contract[len(contract)-1].QAVerifyCommand
+		if !phaseIDExists(env.Validation, env.Validation.ActivePhaseIDField) {
+			env.Validation.ActivePhaseIDField = contract[0].ID
+		}
+		reconcileDeliveryContractProgress(&env.Validation, previous)
+		if defect := ValidateRigWorkflowProfileForQA(townRoot, rig, env.Validation); defect != "" {
+			return false, fmt.Errorf("architecture delivery contract: %s", defect)
+		}
+		env.TestPlanReviewed = false
+		env.TestPlanFrozen = false
+		return true, SaveRigWorkflowProfileEnvelope(townRoot, rig, env)
+	}
+	env.Validation.ExplicitDeliveryContract = false
 	// Prefer architect's phases when they are well-formed (clean titles/IDs, cover the authoritative set).
 	// Fall back to SPEC phases when architect phases are mangled (backtick-laden, path-embedded titles)
 	// or don't meaningfully cover the file set. This preserves the keepsSpecPhases regression test.
@@ -2078,6 +2109,19 @@ func ValidateRigWorkflowProfileForQA(townRoot, rig string, v WorkflowValidation)
 		}
 	}
 	problems = append(problems, nodeBuildGateProblems(v)...)
+	if v.ExplicitDeliveryContract {
+		owned := map[string]bool{}
+		for _, p := range v.DeliveryPhases {
+			for _, f := range p.RequiredFiles {
+				owned[f] = true
+			}
+		}
+		for _, f := range v.RequiredFiles {
+			if !owned[f] {
+				problems = append(problems, fmt.Sprintf("declared deliverable %q has no delivery-phase owner", f))
+			}
+		}
+	}
 	check := func(files []string, scope string) {
 		for _, f := range files {
 			f = filepath.ToSlash(strings.TrimSpace(f))

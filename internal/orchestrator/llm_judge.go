@@ -106,12 +106,7 @@ CRITERIA:
 
 	// Use default client if none provided
 	if client == nil {
-		client = llm.NewClient(
-			"http://localhost:11434/v1/chat/completions",
-			GetModel("judge"),
-			"",
-			60*time.Second,
-		)
+		client = newJudgeClient(60 * time.Second)
 	}
 
 	resp, err := client.Complete(ctx, systemPrompt, userPrompt)
@@ -373,12 +368,7 @@ Plan Integration Contract Section:
 
 func getOrCreateJudgeClient(client *llm.Client) *llm.Client {
 	if client == nil {
-		return llm.NewClient(
-			"http://localhost:11434/v1/chat/completions",
-			GetModel("judge"),
-			"",
-			60*time.Second,
-		)
+		return newJudgeClient(60 * time.Second)
 	}
 	return client
 }

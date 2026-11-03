@@ -356,6 +356,7 @@ Entrypoint imports store; registers GET /api/links and POST /api/links; exports 
 }
 
 func TestCheckArchitectureDockerSection_requiresSubstantiveSection(t *testing.T) {
+	usePassingDocumentJudge(t)
 	dir := t.TempDir()
 	spec := "# Spec\nDocker project.\n"
 	arch := "# Architecture\nMinimal.\n"

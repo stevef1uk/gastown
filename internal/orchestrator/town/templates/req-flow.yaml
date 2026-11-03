@@ -109,10 +109,12 @@ states:
       cmd_rewrites: [rig_placeholders, spec_md_case, unwrap_bash_lc]
       track: design
       artifacts: design
+      no_progress_limit: 3
+      progress_files: [.gastown/workflow-profile.json]
       retry_hint: |
         One CMD: per line. FIRST read SPEC and the full existing architecture.md. On any rework, use sed -i or patch for the named defects and directly affected references; preserve unrelated content and completed phases. Use a single-quoted heredoc only for a missing document. After wc -c meets minimum and validation passes, summarize the amendment.
       failure_hint: |
-        FIRST read the full existing architecture.md and workflow-profile.json. Make a targeted amendment in this attempt with sed -i or patch; do not regenerate the document or alter unrelated contracts. Create a full document via heredoc only if absent. Use the exact delivery_phases[].id values for requirement headings. HTTP paths and store symbols must match SPEC verbatim. Prefix implement paths with {{layout_root}}. Validate with wc -c, then summarize the amendment.
+        Read SPEC, the profile and the full existing architecture.md before editing. SPEC scope wins over an incomplete profile. Correct the single canonical delivery_phases YAML block and matching requirement headings; do not append duplicate sections. Use standard unified diffs for Unix patch and escape literal ampersands in sed replacements. Re-read the edited section and repair failed edits before success. Preserve unrelated contracts and implementation. HTTP paths/symbols must match SPEC verbatim. Prefix implement paths with {{layout_root}}.
     transitions:
       success:
         to: design_review
@@ -133,6 +135,8 @@ states:
       cmd_rewrites: [rig_placeholders, spec_md_case, unwrap_bash_lc]
       track: qa
       artifacts: design_review
+      no_progress_limit: 3
+      progress_files: [.gastown/workflow-profile.json]
       retry_hint: |
         One CMD: per line. Read SPEC.md and architecture.md from {{rig}}/mayor/rig, then run `wc -c architecture.md`.
         Only success/failure outcomes are allowed.

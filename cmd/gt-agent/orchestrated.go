@@ -1442,7 +1442,8 @@ func isArchitectureMDWriteCommand(cmd string) bool {
 		return false
 	}
 	return strings.Contains(lower, ">") || strings.Contains(lower, "tee ") ||
-		strings.Contains(lower, "cp ") || strings.Contains(lower, "mv ")
+		strings.Contains(lower, "cp ") || strings.Contains(lower, "mv ") ||
+		strings.Contains(lower, "sed -i") || strings.Contains(lower, "patch ")
 }
 
 func isPlanMDHeredoc(cmd string) bool {
@@ -4255,6 +4256,12 @@ func validateDesignArtifacts(townRoot, rig string, writtenThisRun bool, startedA
 	}
 	rigDir := rigMayorRigDir(townRoot, rig)
 	archPath := filepath.Join(rigDir, "architecture.md")
+	data, readErr := os.ReadFile(archPath)
+	if readErr == nil {
+		if err := orchestrator.ValidateArchitectureStructure(string(data)); err != nil {
+			return err
+		}
+	}
 	info, err := os.Stat(archPath)
 	if err != nil {
 		return fmt.Errorf("architecture.md missing at %s", archPath)
@@ -4270,14 +4277,12 @@ func validateDesignArtifacts(townRoot, rig string, writtenThisRun bool, startedA
 	// delivery-phase IDs leaves the Tester nothing valid to anchor to and forces
 	// a planning loop. Require a heading for EVERY phase ID — an unrelated
 	// heading like "### HTTP API Table" must not satisfy this.
-	if len(v.DeliveryPhases) > 0 {
+	if ids, idsErr := orchestrator.ArchitectureRequirementPhaseIDs(string(data), v); idsErr != nil {
+		return idsErr
+	} else if len(ids) > 0 {
 		data, err := os.ReadFile(archPath)
 		if err != nil {
 			return fmt.Errorf("read architecture.md: %w", err)
-		}
-		ids := make([]string, 0, len(v.DeliveryPhases))
-		for _, p := range v.DeliveryPhases {
-			ids = append(ids, p.ID)
 		}
 		if !orchestrator.HasRequirementHeadingsForIDs(string(data), ids) {
 			return fmt.Errorf(
@@ -4298,7 +4303,7 @@ func validateDesignArtifacts(townRoot, rig string, writtenThisRun bool, startedA
 	if err := orchestrator.ValidatePlanningPhaseGate(townRoot, rig, "design", v); err != nil {
 		return err
 	}
-	return nil
+	return orchestrator.ValidateArchitectureDeliveryContract(townRoot, rig, v)
 }
 
 // fileWrittenThisRun reports whether the file at rigDir/name was modified at or

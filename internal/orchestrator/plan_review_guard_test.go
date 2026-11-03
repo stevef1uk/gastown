@@ -105,8 +105,20 @@ func TestRejectSpuriousQAFailure_verifyPassesBeforeShellError(t *testing.T) {
 		if reason == "" {
 			t.Fatal("expected spurious rejection when shell error + verify passes")
 		}
-		if !strings.Contains(reason, "phase verify passes") {
+		if !strings.Contains(reason, "phase verify passes") || strings.Contains(reason, "outcome=success") {
 			t.Fatalf("want phase-verify reason, got: %s", reason)
+		}
+	})
+
+	t.Run("substantive quality findings survive shell noise", func(t *testing.T) {
+		for _, summary := range []string{
+			"Verification passes, but startup scripts duplicate stop/remove logic and omit the required URL output.",
+			"Frontend renders placeholder content instead of the required dashboard.",
+			"Imports pass but portfolio state is in memory instead of persisted.",
+		} {
+			if reason := rejectSpuriousQAFailure(townRoot, rig, summary, "command not found: smoke-probe"); reason != "" {
+				t.Fatalf("substantive rejection overridden: %s", reason)
+			}
 		}
 	})
 

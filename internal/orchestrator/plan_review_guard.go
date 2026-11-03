@@ -210,19 +210,6 @@ func rejectSpuriousQAFailure(townRoot, rig, summary, rawFeedback string) string 
 	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
 	lower := strings.ToLower(strings.TrimSpace(summary))
 
-	// Load the qa_verify_command to check if it's docker-based
-	qaCmd := ""
-	if v, ok, _ := LoadRigWorkflowProfileFile(townRoot, rig); ok {
-		qaCmd = strings.ToLower(strings.TrimSpace(v.QAVerifyCommand))
-		for _, p := range v.DeliveryPhases {
-			if strings.Contains(strings.ToLower(strings.TrimSpace(p.QAVerifyCommand)), "docker") {
-				qaCmd = strings.ToLower(strings.TrimSpace(p.QAVerifyCommand))
-				break
-			}
-		}
-	}
-	isDockerQA := strings.Contains(qaCmd, "docker compose") || strings.Contains(qaCmd, "docker-compose")
-
 	// If the summary explicitly reports a missing file, treat it as legitimate regardless
 	// of shell-error noise in rawFeedback (e.g. from a failed smoke-test subprocess).
 	if strings.Contains(lower, "does not exist") || strings.Contains(lower, "missing") ||
@@ -241,12 +228,11 @@ func rejectSpuriousQAFailure(townRoot, rig, summary, rawFeedback string) string 
 		return ""
 	}
 
-	combined := CombineQAReworkText(summary, rawFeedback)
-	// Shell errors (wrong cwd, command not found) mean QA never tested the code.
-	// Check if the code is actually correct on disk — if both are true, the failure is spurious.
-	if IsQAAgentShellError(combined) {
+	// Only a pure command-execution complaint can be retried here. Shell noise
+	// in captured feedback does not disprove substantive review findings.
+	if strings.HasPrefix(lower, "command not found:") || strings.HasPrefix(lower, "no such file or directory:") {
 		if phaseVerifyPasses(townRoot, rig) {
-			return "QA reports failure but phase verify passes on disk — QA claim is spurious. Re-send JSON outcome=success with summary: 'Phase verify passes on disk; QA failure was spurious.'"
+			return "QA verification command failed although the configured phase verify passes; correct the command/environment, inspect the artifacts, and report the actual review outcome. Passing verification does not establish SPEC compliance."
 		}
 		return ""
 	}
@@ -255,28 +241,6 @@ func rejectSpuriousQAFailure(townRoot, rig, summary, rawFeedback string) string 
 		strings.Contains(lower, "no tests found") {
 		if !hasAnyTestFiles(rigDir) {
 			return "QA claims missing/empty tests but no test file exists on disk — test bead not yet implemented. Re-run QA after implementation completes."
-		}
-	}
-	if (strings.Contains(lower, "test failed") || strings.Contains(lower, "tests failed") ||
-		strings.Contains(lower, "status 0")) && strings.Contains(lower, "no output") {
-		if hasPassingPythonTests(rigDir) {
-			return "QA claims test failure but pytest passes on disk — hallucinated failure. Re-send JSON outcome=success."
-		}
-	}
-	if strings.Contains(lower, "static") || strings.Contains(lower, ".js") || strings.Contains(lower, ".css") ||
-		strings.Contains(lower, ".html") || strings.Contains(lower, "frontend") || strings.Contains(lower, "web") {
-		if hasValidFrontendArtifacts(rigDir) {
-			return "QA claims frontend issues but web artifacts exist and are valid on disk. Re-send JSON outcome=success."
-		}
-	}
-	if strings.Contains(lower, "import") || strings.Contains(lower, "module") {
-		if isDockerQA {
-			// Don't reject import/module failures from Docker QA — the container
-			// filesystem may differ from host (e.g., missing modules not copied).
-			return ""
-		}
-		if hasPassingPythonTests(rigDir) {
-			return "QA claims import/module issues but tests pass on disk. Re-send JSON outcome=success."
 		}
 	}
 	return ""

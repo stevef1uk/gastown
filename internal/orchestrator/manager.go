@@ -433,12 +433,17 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summa
 	// TEST_PLAN.md stale: it was written against the architecture being replaced.
 	// Clear both flags so the tester regenerates the plan from the new
 	// architecture and QA re-reviews it (restart skip stays off until then).
-	if IsArchitectureReworkOutcome(outcome) && rig != "" {
+	if (IsArchitectureReworkOutcome(outcome) || (fromState == "design_review" && IsFailureOutcome(outcome))) && rig != "" {
 		if err := SetTestPlanReviewed(m.townRoot, rig, false); err != nil {
 			log.Printf("[Manager] Warning: failed to clear test_plan_reviewed for %s on architecture rework: %v", rig, err)
 		}
 		if err := SetTestPlanFrozen(m.townRoot, rig, false); err != nil {
 			log.Printf("[Manager] Warning: failed to clear test_plan_frozen for %s on architecture rework: %v", rig, err)
+		}
+	}
+	if fromState == "qa_review" && IsFailureOutcome(outcome) && rig != "" {
+		if reason := rejectSpuriousQAFailure(m.townRoot, rig, summary, feedback); reason != "" {
+			return "", fmt.Errorf("qa verification needs retry: %s", reason)
 		}
 	}
 	next, err := inst.Transition(tpl, outcome)
@@ -580,11 +585,6 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summa
 		next = "design"
 		inst.CurrentState = next
 		inst.touchStateEnteredAt()
-	}
-	if fromState == "qa_review" && IsFailureOutcome(outcome) && next == "implementation" && rig != "" {
-		if reason := rejectSpuriousQAFailure(m.townRoot, rig, summary, feedback); reason != "" {
-			return "", fmt.Errorf("qa failure rejected: %s", reason)
-		}
 	}
 	if next == "implementation" && rig != "" && fromState != "implementation" {
 		if err := m.prepareImplementationPhase(rig, inst, tpl); err != nil {
@@ -785,6 +785,7 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summa
 	if phaseAdvance != nil {
 		inst.PendingRework = phaseAdvance
 	}
+	inst.recordReviewProgress(m.townRoot, rig, fromState, outcome, state.Hooks)
 	log.Printf("[Manager] CompleteTask: before persist, workflow=%s next=%s inst.CurrentState=%s", workflowID, next, inst.CurrentState)
 	if err := m.persistLocked(); err != nil {
 		log.Printf("[Manager] CompleteTask: persist error for %s: %v", workflowID, err)
@@ -825,6 +826,7 @@ func (m *Manager) ResetWorkflow(workflowID, toState string) (string, error) {
 	fromState := inst.CurrentState
 	inst.CurrentState = toState
 	inst.Status = "running"
+	inst.ReviewProgress = nil
 	inst.touchStateEnteredAt()
 	if err := m.persistLocked(); err != nil {
 		return "", fmt.Errorf("persist instances: %w", err)

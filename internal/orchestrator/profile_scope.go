@@ -57,6 +57,12 @@ func missingDeclaredPhases(declared, actual []DeliveryPhase) []string {
 	for _, p := range actual {
 		have[phaseScopeKey(p.ID)] = true
 		have[phaseScopeKey(p.Title)] = true
+		// Splitting a delivery phase retains its SPEC provenance. Compare only
+		// the focus title, not every capability mentioned in its prose body.
+		focus, _, _ := strings.Cut(strings.TrimSpace(p.SpecFocus), "\n")
+		if focus != "" && (strings.HasPrefix(p.ID, phaseScopeKey(focus)+"-") || phaseScopeKey(p.Title) == phaseScopeKey(focus)) {
+			have[phaseScopeKey(focus)] = true
+		}
 	}
 	var missing []string
 	for _, p := range declared {

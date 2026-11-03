@@ -11,7 +11,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/steveyegge/gastown/internal/llm"
 	"github.com/steveyegge/gastown/internal/townlog"
 )
 
@@ -153,12 +152,7 @@ func ValidatePlanningDocAlignment(townRoot, rigDir string, v WorkflowValidation,
 	if runTriad && len(strings.TrimSpace(specDoc)) >= triadMinLength &&
 		len(strings.TrimSpace(archDoc)) >= triadMinLength &&
 		len(strings.TrimSpace(planDoc)) >= triadMinLength {
-		client := llm.NewClient(
-			"http://localhost:11434/v1/chat/completions",
-			GetModel("judge"),
-			"",
-			120*time.Second,
-		)
+		client := newJudgeClient(120 * time.Second)
 		ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 		defer cancel()
 
@@ -218,12 +212,7 @@ func checkArchitectureDockerSection(archDoc string, v WorkflowValidation) []stri
 	}
 
 	// Use LLM judge for deeper validation
-	client := llm.NewClient(
-		"http://localhost:11434/v1/chat/completions",
-		GetModel("judge"),
-		"",
-		60*time.Second,
-	)
+	client := newJudgeClient(60 * time.Second)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
@@ -255,7 +244,7 @@ func checkArchitectureDockerSection(archDoc string, v WorkflowValidation) []stri
 	})
 	if err != nil {
 		log.Printf("[judge] LLM unavailable for Docker section validation: %v", err)
-		return nil
+		return []string{fmt.Sprintf("Docker section judge could not validate the document; check GT_JUDGE_ENDPOINT/GT_JUDGE_MODEL or town QA model settings: %v", err)}
 	}
 	if !pass {
 		return []string{fmt.Sprintf("## Docker & Deployment section failed judge: %s", reason)}
