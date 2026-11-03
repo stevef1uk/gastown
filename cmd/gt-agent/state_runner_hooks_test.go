@@ -28,6 +28,53 @@ func rigFlowTask(t *testing.T, state string, v orchestrator.WorkflowValidation) 
 	}
 }
 
+// Missing application files are expected during setup, but must remain visible
+// to implementation and review. Exercise both workflows with no source on disk.
+func TestStateRunner_missingFilesContextIsOptIn(t *testing.T) {
+	for _, load := range []func() (*orchestrator.WorkflowTemplate, error){
+		orchestrator.LoadRigFlowTemplate, orchestrator.LoadReqFlowTemplate,
+	} {
+		tpl, err := load()
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, source := range []string{"app/internal/store/schema.go", "app/service.py", "app/src/index.ts"} {
+			t.Run(tpl.ID+"/"+source, func(t *testing.T) {
+				v := orchestrator.WorkflowValidation{LayoutRoot: "app", RequiredFiles: []string{source}}
+				town := t.TempDir()
+				for _, state := range []string{"project_setup", "implementation", "qa_review"} {
+					task := &orchestrator.Task{State: state, TemplateID: tpl.ID, Validation: v, Hooks: tpl.States[state].Hooks}
+					r := newStateRunner(task, town, "example")
+					context := strings.Join(r.promptContextBlocks(), "\n")
+					got := strings.Contains(context, "missing "+source)
+					if want := state != "project_setup"; got != want {
+						t.Errorf("%s missing-file context = %v, want %v", state, got, want)
+					}
+				}
+			})
+		}
+	}
+}
+
+func TestProjectSetupSucceedsBeforeGoSourcesExist(t *testing.T) {
+	town := t.TempDir()
+	rigDir := filepath.Join(town, "example", "mayor", "rig", "app")
+	if err := os.MkdirAll(rigDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(rigDir, "go.mod"), []byte("module example\n\ngo 1.22\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	v := orchestrator.WorkflowValidation{
+		LayoutRoot:      "app",
+		RequiredFiles:   []string{"app/go.mod", "app/internal/store/schema.go", "app/internal/store/schema_test.go"},
+		QAVerifyCommand: "cd app && go test ./...",
+	}
+	if err := validateProjectSetupArtifacts(town, "example", false, true, v); err != nil {
+		t.Fatalf("green module setup must hand off before source implementation: %v", err)
+	}
+}
+
 // TestStateRunner_rigFlowHooksRejectForbiddenCommands proves cmd_guard from YAML blocks commands.
 func TestStateRunner_rigFlowHooksRejectForbiddenCommands(t *testing.T) {
 	t.Parallel()

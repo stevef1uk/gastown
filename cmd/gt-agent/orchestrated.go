@@ -232,12 +232,6 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 	} else {
 		orchestratedPrintf("[gt-agent] plan review rework pending — running planner LLM (no auto-complete)\n")
 	}
-	if task.State == "implementation" || task.State == "qa_review" || task.State == "project_setup" {
-		if block := orchestrator.FormatMissingImplementFilesBlock(townRoot, rig, runner.v); block != "" {
-			contextBlocks = append(contextBlocks, block)
-			orchestratedPrintf("[gt-agent] injecting missing implement files context for %s/%s\n", task.WorkflowID, task.State)
-		}
-	}
 	if block := runner.initQAReviewProgress(); block != "" {
 		contextBlocks = append(contextBlocks, block)
 		orchestratedPrintf("[gt-agent] loaded qa-review-progress for %s/%s\n", task.WorkflowID, task.State)

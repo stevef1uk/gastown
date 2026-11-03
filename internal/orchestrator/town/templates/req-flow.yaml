@@ -366,7 +366,7 @@ states:
       user_prompt_wrapper: none
       failure_prompt_context: [implementation_queue, implement_bead_context, phase_test_guards, polecat_learnings]
       empty_response_suffix: "Reply with EDIT:/WRITE:/READ: or CMD: lines. Implement code and unit tests per plan.md; WRITE for new *_test.go or tests/test_*.py. Use Verify from Next bead."
-      prompt_context: [implementation_queue, implement_bead_context, phase_test_guards, coding_standards, polecat_learnings]
+      prompt_context: [missing_implement_files, implementation_queue, implement_bead_context, phase_test_guards, coding_standards, polecat_learnings]
       pre_run: [prune_rig_root_junk, ensure_dolt_auto_commit, ensure_dolt_schema_health, sync_planning_artifacts, ensure_http_implementation_config, ensure_handler_phase_prerequisites, ensure_implement_smoke_ready, ensure_go_mod_from_spec, enforce_implement_bead_queue, prune_stale_layout_files, repair_requirements, refresh_codeindex, reconcile_implement_beads, ensure_test_stack_ready, ensure_playwright_config_ready]
       per_turn: [prune_stale_layout_files, repair_requirements]
       cmd_guard: implementation
@@ -453,6 +453,7 @@ states:
       2. Runtime smoke only when SPEC/architecture define HTTP routes or static web+server (see qa_runtime_smoke_block). Skip go run/curl for library-only or API-less profiles. Python rigs use pytest from layout_root/backend — not Go cmd/server paths.
       3. Use outcome task_passed (more work), all_passed (done), or failure (rework).
     hooks:
+      prompt_context: [missing_implement_files]
       state_timeout_seconds: 1800
       cmd_timeout_seconds: 300
       append_go_compile_context: true

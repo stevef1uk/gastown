@@ -26,6 +26,8 @@ $GT_ROOT/{{rig}}/mayor/rig/{{layout_root}}/  ← layout root (ALL files go here)
 2. Run `{{project_setup_verify_hint}}` green before implementation starts (module/venv only — **not** full app build or curl).
 3. **Beads:** `sync_planning_artifacts` already created one open bead per `required_files` path. Use `bd list` only — **do not `bd create`** unless a required path has no open bead (then run `gt rig sync-planning {{rig}} --force` via mayor, not ad-hoc titles).
 
+Missing application source and test files are expected before implementation and do not block setup success. Leave their beads for the Polecat. After the setup verify passes and the scaffold is ready, report success even if an earlier attempt reported failure because implementation files were missing.
+
 ### Shared scope
 
 | Allowed | Forbidden |

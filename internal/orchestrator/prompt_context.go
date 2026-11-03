@@ -44,6 +44,8 @@ func PromptContextBlock(key, townRoot, rig string, v WorkflowValidation) string 
 		return FormatImplementBeadContextBlock(townRoot, rig, v)
 	case "project_setup_stack":
 		return FormatProjectSetupStackBlock(v)
+	case "missing_implement_files":
+		return FormatMissingImplementFilesBlock(townRoot, rig, v)
 	case "design_draft_context":
 		return FormatDesignDraftContextBlock(townRoot, rig)
 	case "phase_test_guards":
