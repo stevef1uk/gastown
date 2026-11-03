@@ -106,6 +106,11 @@ func architectureDeliveryContract(doc string) ([]DeliveryPhase, bool, error) {
 	}
 	section := extractMarkdownSection(doc, start)
 	parts := strings.Split(section, "```")
+	for i := 0; i < len(parts); i += 2 {
+		if strings.Contains(parts[i], "delivery_phases:") {
+			return nil, true, fmt.Errorf("architecture delivery contract: wrap delivery_phases in one fenced ```yaml block under ## Delivery phases; unfenced declarations cannot be synchronized")
+		}
+	}
 	for i := 1; i < len(parts); i += 2 {
 		_, body, ok := strings.Cut(parts[i], "\n")
 		if !ok || !strings.Contains(body, "delivery_phases:") {

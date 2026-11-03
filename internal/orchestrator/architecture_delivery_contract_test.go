@@ -74,6 +74,63 @@ func TestArchitectureStructureRejectsAmbiguousAmendments(t *testing.T) {
 	}
 }
 
+func TestUnfencedDeliveryContractBlocksDesignAndSync(t *testing.T) {
+	town, rig := t.TempDir(), "sample"
+	dir := filepath.Join(town, rig, "mayor", "rig")
+	if err := os.MkdirAll(filepath.Join(dir, rigProfileDir), 0755); err != nil {
+		t.Fatal(err)
+	}
+	doc := "# Architecture\n## Delivery phases\ndelivery_phases:\n  - id: core\n    required_files: [demo/main.go]\n    qa_verify_command: cd demo && go build ./...\n## Requirements\n### core\nBuild the application.\n"
+	if err := os.WriteFile(filepath.Join(dir, "architecture.md"), []byte(doc), 0644); err != nil {
+		t.Fatal(err)
+	}
+	v := WorkflowValidation{LayoutRoot: "demo", RequiredFiles: []string{"demo/main.go"}}
+	raw, err := marshalRigProfileJSON(rigProfileEnvelope{Version: 1, Validation: v})
+	if err != nil {
+		t.Fatal(err)
+	}
+	profile := filepath.Join(dir, rigProfileDir, rigProfileFile)
+	if err := os.WriteFile(profile, raw, 0644); err != nil {
+		t.Fatal(err)
+	}
+	checks := map[string]func() error{
+		"structure": func() error { return ValidateArchitectureStructure(doc) },
+		"delivery":  func() error { return ValidateArchitectureDeliveryContract(town, rig, v) },
+		"requirements": func() error {
+			_, err := ArchitectureRequirementPhaseIDs(doc, v)
+			return err
+		},
+		"sync": func() error {
+			changed, err := SyncRigWorkflowProfileFromArchitecture(town, rig)
+			if changed {
+				t.Fatal("invalid delivery contract changed the profile")
+			}
+			return err
+		},
+	}
+	for name, check := range checks {
+		t.Run(name, func(t *testing.T) {
+			if err := check(); err == nil || !strings.Contains(err.Error(), "fenced") || !strings.Contains(err.Error(), "delivery_phases") {
+				t.Fatalf("expected actionable delivery contract formatting error, got %v", err)
+			}
+		})
+	}
+	got, err := os.ReadFile(profile)
+	if err != nil || string(got) != string(raw) {
+		t.Fatalf("rejected contract must preserve the existing profile: %v", err)
+	}
+}
+
+func TestProseDeliveryPhasesRemainSupported(t *testing.T) {
+	doc := "# Architecture\n## Delivery phases\n1. Core — build the application.\n## Requirements\n### core\nBuild the application.\n"
+	if err := ValidateArchitectureStructure(doc); err != nil {
+		t.Fatal(err)
+	}
+	if _, explicit, err := architectureDeliveryContract(doc); explicit || err != nil {
+		t.Fatalf("prose phases should retain inferred delivery behavior: explicit=%v err=%v", explicit, err)
+	}
+}
+
 func TestMissingDeclaredPhasesAcceptsSplitProvenance(t *testing.T) {
 	declared := []DeliveryPhase{{ID: "streaming", Title: "Streaming"}}
 	actual := []DeliveryPhase{{ID: "streaming-1", SpecFocus: "Streaming\nDetails"}, {ID: "streaming-2", SpecFocus: "Streaming"}}
