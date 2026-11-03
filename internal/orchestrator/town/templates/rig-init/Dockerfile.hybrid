@@ -1,25 +1,20 @@
-# Multi-stage Dockerfile: Node builder -> Python runtime
-# Template variables: {{NODE_IMAGE}}, {{PY_IMAGE}}, {{FRONTEND_DIR}}, {{BACKEND_DIR}}, {{STATIC_OUTPUT}}, {{APP_PORT}}, {{UV_CMD}}, {{RUN_CMD}}
-# FinAlly-style: Next.js static export built into Python FastAPI image.
-
-# Stage 1: Frontend build (Next.js static export)
-FROM {{NODE_IMAGE}} AS build-frontend
-WORKDIR /build
+# Static Node frontend served by the Python backend on one port.
+FROM {{NODE_IMAGE}} AS {{FRONTEND_STAGE}}
+WORKDIR {{FRONTEND_BUILD_DIR}}
 COPY {{FRONTEND_DIR}}/package*.json ./
-RUN npm ci --ignore-scripts || npm install --ignore-scripts
+RUN {{NODE_INSTALL}}
 COPY {{FRONTEND_DIR}}/ ./
 RUN npm run build
 
-# Stage 2: Python backend serving frontend static export
-FROM {{PY_IMAGE}}
-WORKDIR /app
-ENV VIRTUAL_ENV=/app/.venv
-RUN python -m venv $VIRTUAL_ENV
-ENV PATH="$VIRTUAL_ENV/bin:$PATH"
-COPY {{BACKEND_DIR}}/pyproject.toml {{BACKEND_DIR}}/uv.lock* ./
-RUN {{UV_CMD}}
-COPY {{BACKEND_DIR}}/ ./backend/
-COPY --from=build-frontend /build/{{STATIC_OUTPUT}} ./static/
+FROM {{PY_IMAGE}} AS runtime
+RUN {{PY_SYSTEM_DEPS}}
+WORKDIR {{WORKDIR}}
+ENV PATH="{{PY_VENV_BIN}}:$PATH" \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+COPY {{BACKEND_DIR}}/ ./
+RUN {{PY_INSTALL}}
+COPY --from={{FRONTEND_STAGE}} {{FRONTEND_COPY_SOURCE}} {{STATIC_DESTINATION}}
 RUN mkdir -p /app/db
 EXPOSE {{APP_PORT}}
 CMD {{RUN_CMD}}

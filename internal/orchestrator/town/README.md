@@ -31,6 +31,23 @@ gt rig spec-index <rig> --force
 `rig-flow.yaml` in this directory carries **placeholder** `validation:` defaults only.
 At runtime, **profile overrides template overrides Go defaults**.
 
+### Docker scaffold contracts
+
+Scaffolding selects the application stack from required application files and
+explicit SPEC declarations; Playwright/test-only Node files do not imply a Node
+application. An explicit Next.js frontend plus FastAPI backend selects the hybrid
+template even when an incomplete profile or LLM plan lists only Python files.
+The SPEC's concrete Docker image tags, static-export COPY source/destination,
+startup CMD and readiness URL override scaffold defaults. These substitutions
+do not rewrite the workflow profile or existing non-empty agent-owned files.
+
+Hybrid defaults build the frontend in /frontend, copy its out directory to
+/app/frontend/out, install the backend project in /app/backend and run its ASGI
+entrypoint. uv projects use their lockfile when declared and the same project
+venv for installation and startup. The app image and Playwright runner use
+separate Dockerfiles. A root compose file that declares an application Dockerfile
+builds the app container rather than replacing it with a browser-runner image.
+
 ## HTTP implementation profiles (GT-VERIFY-011)
 
 Stack-specific handler **write guards** and **verify hints** (ServeMux traversal, test cwd, etc.) live in JSON — not in compiled gt-agent:

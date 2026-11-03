@@ -74,21 +74,23 @@ func ScaffoldRigIntegrationTemplates(townRoot, rig string, optPlan *ScaffoldPlan
 		port = 8080
 	}
 
-	// Select templates based on plan
-	var templates map[string]string
-	var kind string
-	if optPlan != nil {
-		templates = selectTemplatesForPlan(optPlan, profile)
-		// The profile is authoritative for the compose kind (multi-service vs
-		// host-run vs single-container); the plan may disagree, so resolve kind
-		// once and use it for value derivation too.
-		kind, _ = resolveComposeKind(optPlan, profile)
-	} else {
-		templates, kind = selectDefaultTemplates(profile)
+	// A sparse profile or an inaccurate LLM plan must not erase an explicit
+	// application contract in SPEC (e.g. a Next.js + FastAPI static export).
+	spec, _ := os.ReadFile(filepath.Join(townRoot, rig, "mayor", "rig", "SPEC.md"))
+	plan := scaffoldPlanForSpec(optPlan, profile, string(spec))
+	if profile != nil {
+		layoutRoot = profile.LayoutRootDir()
+		if profile.DevServerPort > 0 {
+			port = profile.DevServerPort
+		}
+		destDir = filepath.Join(townRoot, rig, "mayor", "rig", layoutRoot)
 	}
+	templates := selectTemplatesForPlan(plan, profile)
+	kind, _ := resolveComposeKind(plan, profile)
 
 	// Build template values
-	vals := buildTemplateValues(optPlan, port, kind, profile)
+	vals := buildTemplateValues(plan, port, kind, profile)
+	applyScaffoldSpecValues(vals, string(spec), port)
 
 	written := 0
 	for srcName, dstRel := range templates {
@@ -114,30 +116,36 @@ func buildTemplateValues(plan *ScaffoldPlan, port int, kind string, v *WorkflowV
 		plan = defaultScaffoldPlan(v)
 	}
 	vals := map[string]string{
-		"PLAYWRIGHT_IMAGE":    "playwright-go-test:latest",
-		"PLAYWRIGHT_VERSION":  PlaywrightNPMVersion(),
-		"PLAYWRIGHT_BASE_TAG": PlaywrightRunnerBaseTag,
-		"PLAYWRIGHT_WORKDIR":  "/app",
-		"PLAYWRIGHT_COMMAND":  "npx playwright test --project=chromium",
-		"APP_PORT":            fmt.Sprintf("%d", port),
-		"WEB_PORT":            fmt.Sprintf("%d", port),
-		"TEST_DIR":            "./e2e",
-		"NODE_IMAGE":          "node:20-slim",
-		"NODE_INSTALL":        "npm ci --ignore-scripts || npm install --ignore-scripts",
-		"BUILD_CMD":           "npm run build --if-present",
-		"PY_IMAGE":            "python:3.11-slim",
-		"FRONTEND_DIR":        "frontend",
-		"BACKEND_DIR":         "backend",
-		"STATIC_OUTPUT":       ".next/static",
-		"UV_CMD":              "pip install -r requirements.txt",
-		"RUN_CMD":             `["python", "app.py"]`,
-		"WORKDIR":             "/app",
-		"PY_INSTALL":          "python -m pip install --no-cache-dir -r requirements.txt",
-		"HEALTHCHECK":         fmt.Sprintf(`"CMD", "curl", "-f", "http://localhost:%d/"`, port),
-		"ENV_BLOCK":           fmt.Sprintf("PORT=%d", port),
-		"SERVICES_BLOCK":      "",
-		"E2E_DEPENDS_ON":      "",
-		"APP_BUILD":           ".",
+		"PLAYWRIGHT_IMAGE":     "playwright-go-test:latest",
+		"PLAYWRIGHT_VERSION":   PlaywrightNPMVersion(),
+		"PLAYWRIGHT_BASE_TAG":  PlaywrightRunnerBaseTag,
+		"PLAYWRIGHT_WORKDIR":   "/app",
+		"PLAYWRIGHT_COMMAND":   "npx playwright test --project=chromium",
+		"APP_PORT":             fmt.Sprintf("%d", port),
+		"WEB_PORT":             fmt.Sprintf("%d", port),
+		"TEST_DIR":             "./e2e",
+		"NODE_IMAGE":           "node:20-slim",
+		"NODE_SYSTEM_DEPS":     "apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*",
+		"NODE_INSTALL":         "if [ -f package-lock.json ]; then npm ci; else npm install; fi",
+		"BUILD_CMD":            "npm run build --if-present",
+		"PY_IMAGE":             "python:3.12-slim",
+		"PY_SYSTEM_DEPS":       "apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*",
+		"PY_VENV_BIN":          "/app/.venv/bin",
+		"FRONTEND_DIR":         "frontend",
+		"BACKEND_DIR":          "backend",
+		"FRONTEND_STAGE":       "frontend",
+		"FRONTEND_BUILD_DIR":   "/frontend",
+		"FRONTEND_COPY_SOURCE": "/frontend/out",
+		"STATIC_DESTINATION":   "/app/frontend/out",
+		"RUN_CMD":              `["python", "app.py"]`,
+		"WORKDIR":              "/app",
+		"PY_INSTALL":           "python -m pip install --no-cache-dir -r requirements.txt",
+		"HEALTHCHECK":          fmt.Sprintf(`"CMD", "curl", "-f", "http://localhost:%d/"`, port),
+		"ENV_BLOCK":            fmt.Sprintf("PORT=%d", port),
+		"SERVICES_BLOCK":       "",
+		"E2E_DEPENDS_ON":       "",
+		"APP_BUILD":            ".",
+		"GO_BUILD_TARGET":      "./cmd/server",
 	}
 	_, composeDst := resolveComposeKind(plan, v)
 	if rel, err := filepath.Rel(filepath.Dir(composeDst), "."); err == nil {
@@ -174,30 +182,18 @@ func buildTemplateValues(plan *ScaffoldPlan, port int, kind string, v *WorkflowV
 	// Derive Dockerfile values from stack
 	if plan != nil {
 		switch plan.Stack {
-		case "python":
-			vals["RUN_CMD"] = `["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "` + fmt.Sprintf("%d", port) + `"]`
-			if v != nil {
-				for _, f := range v.UnionRequiredFiles() {
-					rel := strings.TrimPrefix(filepath.ToSlash(f), v.LayoutRootDir()+"/")
-					switch filepath.Base(rel) {
-					case "requirements.txt":
-						vals["PY_INSTALL"] = "python -m pip install --no-cache-dir -r " + bashSingleQuote(rel)
-					case "pyproject.toml":
-						vals["PY_INSTALL"] = "python -m pip install --no-cache-dir " + bashSingleQuote("./"+filepath.ToSlash(filepath.Dir(rel)))
-					}
-					if strings.HasSuffix(rel, "app/main.py") {
-						appDir := filepath.ToSlash(filepath.Dir(filepath.Dir(rel)))
-						vals["RUN_CMD"] = `["uvicorn", "app.main:app", "--app-dir", "` + appDir + `", "--host", "0.0.0.0", "--port", "` + fmt.Sprintf("%d", port) + `"]`
-					}
-				}
-			}
+		case "python", "hybrid":
+			configurePythonScaffoldValues(vals, plan.Stack, v, port)
 		case "node":
 			vals["RUN_CMD"] = `["npm", "start"]`
-		case "hybrid":
-			vals["UV_CMD"] = "uv sync --frozen 2>/dev/null || pip install -r requirements.txt"
-			vals["STATIC_OUTPUT"] = "out"
 		case "go":
 			vals["RUN_CMD"] = `["./server"]`
+			vals["HEALTHCHECK"] = fmt.Sprintf(`"CMD", "wget", "-qO-", "http://localhost:%d/"`, port)
+			if v != nil {
+				if target := goServerRunTarget(v.UnionRequiredFiles(), v.LayoutRootDir()); target != "" {
+					vals["GO_BUILD_TARGET"] = target
+				}
+			}
 		}
 	}
 
@@ -379,6 +375,7 @@ func resolveComposeKind(plan *ScaffoldPlan, v *WorkflowValidation) (kind, dst st
 	if v != nil {
 		layout := strings.Trim(filepath.ToSlash(strings.TrimSpace(v.LayoutRoot)), "/")
 		rootCompose := false
+		appDockerfile := false
 		testCompose := false
 		nonDefaultDF := false
 		for _, f := range v.UnionRequiredFiles() {
@@ -386,6 +383,9 @@ func resolveComposeKind(plan *ScaffoldPlan, v *WorkflowValidation) (kind, dst st
 			rel = strings.TrimPrefix(rel, layout+"/")
 			if rel == "docker-compose.yml" {
 				rootCompose = true
+			}
+			if rel == "Dockerfile" {
+				appDockerfile = true
 			}
 			if strings.HasSuffix(rel, "docker-compose.test.yml") || strings.HasSuffix(rel, "docker-compose.test.yaml") {
 				testCompose = true
@@ -407,6 +407,9 @@ func resolveComposeKind(plan *ScaffoldPlan, v *WorkflowValidation) (kind, dst st
 			}
 		}
 		if rootCompose {
+			if appDockerfile || (plan != nil && plan.Kind == "single-container") {
+				return "single-container", "docker-compose.yml"
+			}
 			return "host-run", "docker-compose.yml"
 		}
 	}

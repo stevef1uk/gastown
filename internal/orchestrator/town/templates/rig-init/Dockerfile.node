@@ -10,10 +10,8 @@ COPY . .
 RUN {{BUILD_CMD}}
 
 FROM {{NODE_IMAGE}} AS runtime
+RUN {{NODE_SYSTEM_DEPS}}
 WORKDIR {{WORKDIR}}
-COPY --from=builder /build/.next ./.next
-COPY --from=builder /build/public ./public
-COPY --from=builder /build/package*.json ./
-COPY --from=builder /build/node_modules ./node_modules
+COPY --from=builder /build/ ./
 EXPOSE {{APP_PORT}}
 CMD {{RUN_CMD}}

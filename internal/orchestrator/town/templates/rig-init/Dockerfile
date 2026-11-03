@@ -6,15 +6,16 @@
 # Stage 1: Builder
 FROM golang:1.22-alpine AS builder
 WORKDIR /app
-COPY go.mod go.sum ./
+COPY . .
 RUN go mod download
-COPY cmd/server/main.go ./cmd/server/
-RUN CGO_ENABLED=0 go build -o /server ./cmd/server
+RUN CGO_ENABLED=0 go build -o /server {{GO_BUILD_TARGET}}
+RUN mkdir -p web
 
 # Stage 2: Runtime
 FROM alpine:3.20
+RUN apk add --no-cache ca-certificates curl
 WORKDIR /app
 COPY --from=builder /server /usr/local/bin/server
-COPY web ./web
-EXPOSE 8080
-CMD ["server", "-addr", ":8080"]
+COPY --from=builder /app/web ./web
+EXPOSE {{APP_PORT}}
+CMD ["server", "-addr", ":{{APP_PORT}}"]
