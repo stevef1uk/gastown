@@ -3,6 +3,7 @@ package specprofile
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -27,6 +28,10 @@ func IndexRig(ctx context.Context, townRoot, rig string, force bool) (*ProfileFi
 	// Try deterministic indexer first (uses SPEC layout tree, no LLM)
 	if f, err := DeterministicIndexRig(ctx, townRoot, rig); err == nil {
 		return f, nil
+	} else if errors.Is(err, errDeclaredPhaseAssignment) {
+		// Retrying extraction must not silently substitute a smaller workflow
+		// after a declared delivery contract failed assignment validation.
+		return nil, err
 	}
 
 	// Fall back to LLM extraction

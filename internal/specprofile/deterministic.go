@@ -3,6 +3,7 @@ package specprofile
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -18,6 +19,7 @@ import (
 )
 
 var (
+	errDeclaredPhaseAssignment = errors.New("cannot assign concrete deliverables to all declared SPEC phases")
 	specServerPortFlagRE = regexp.MustCompile(`(?i)(?:--port|--port=|-p\s+)\s*:?(\d{2,5})`)
 	specLocalhostPortRE  = regexp.MustCompile(`(?i)(?:localhost|127\.0\.0\.1):(\d{2,5})`)
 	specUvicornRE        = regexp.MustCompile(`(?i)\buvicorn\s+\S+:\S+`)
@@ -83,8 +85,8 @@ func inferDevServerPort(spec string, paths []string) int {
 // DeterministicIndexRig creates a workflow profile from SPEC.md WITHOUT LLM hallucinations.
 // Uses SPEC layout tree + phases section for required_files. Calls LLM to assign files to
 // SPEC-named phases, then validates deterministically: union of all phase files MUST exactly
-// equal the parser's file set (no missing, no extras/hallucinations). Falls back to
-// directory-based grouping if LLM fails validation.
+// equal the parser's file set (no missing, no extras/hallucinations). Failed
+// assignment of declared phases is an error, not permission to reduce scope.
 // dedupePhasesByVerify folds later phases whose normalized qa_verify_command
 // equals an earlier phase's into that earlier phase (merging unique
 // required_files) and drops them. Identical delivery phases waste a full
@@ -150,6 +152,7 @@ func DeterministicIndexRig(ctx context.Context, townRoot, rig string) (*ProfileF
 	// enumerated the project on purpose, so a short tree is intentional
 	// (micro-service / test-harness rigs), not a truncated extraction.
 	phases := parseSpecPhases(spec)
+	hasDeclaredPhases := len(phases) > 0
 	log.Printf("[deterministic-index] rig=%s phases from SPEC=%d: %v", rig, len(phases), phaseNames(phases))
 
 	// If tree is too sparse with NO declared phases it is likely incomplete —
@@ -168,9 +171,7 @@ func DeterministicIndexRig(ctx context.Context, townRoot, rig string) (*ProfileF
 		if ok {
 			phases = assigned
 		} else {
-			// LLM validation failed — fall back to deterministic grouping
-			log.Printf("[deterministic-index] LLM phase assignment failed validation; falling back to directory-based grouping for %s", rig)
-			phases = defaultPhasesFromPaths(paths)
+			return nil, fmt.Errorf("%w; expand the layout or correct phase assignments", errDeclaredPhaseAssignment)
 		}
 	}
 
@@ -179,7 +180,9 @@ func DeterministicIndexRig(ctx context.Context, townRoot, rig string) (*ProfileF
 	// playwright). A later phase whose normalized verify equals an earlier
 	// phase's is folded INTO that earlier phase (unique required_files are
 	// merged, nothing is lost) and removed.
-	phases = dedupePhasesByVerify(phases)
+	if !hasDeclaredPhases {
+		phases = dedupePhasesByVerify(phases)
+	}
 
 	// Parse verify commands from SPEC
 	verifyCmd := inferVerifyCommand(spec, paths)
@@ -1016,7 +1019,7 @@ func parseSpecPhases(spec string) []orchestrator.DeliveryPhase {
 		// Fallback to list format
 		return parsePhaseList(section)
 	}
-	return nil
+	return orchestrator.DeclaredSpecPhaseHeadings(spec)
 }
 
 func parseContractFencePhases(section string) []orchestrator.DeliveryPhase {

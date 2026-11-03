@@ -207,10 +207,32 @@ func extractSpecLayoutPaths(mayorRigDir string) ([]string, bool, map[string]bool
 }
 
 func declaredArchitecturePaths(text, layout string) []string {
-	for _, heading := range []string{"## planned file layout", "## file layout"} {
-		if start := strings.Index(strings.ToLower(text), heading); start >= 0 {
-			return extractArchPaths(extractMarkdownSection(text, start), layout)
+	var paths []string
+	found := false
+	offset := 0
+	for _, line := range strings.SplitAfter(text, "\n") {
+		heading := strings.ToLower(strings.TrimSpace(line))
+		if strings.HasPrefix(heading, "## ") && strings.Contains(heading, "layout") {
+			found = true
+			section := extractMarkdownSection(text, offset)
+			if heading != "## planned file layout" && heading != "## file layout" {
+				// Amendments may contain runtime paths and examples in prose. Only
+				// their concrete list entries extend the declared layout.
+				var declarations []string
+				for _, entry := range strings.Split(section, "\n") {
+					trimmed := strings.TrimSpace(entry)
+					if strings.HasPrefix(trimmed, "`") || strings.HasPrefix(trimmed, "- ") || strings.HasPrefix(trimmed, "* ") {
+						declarations = append(declarations, entry)
+					}
+				}
+				section = strings.Join(declarations, "\n")
+			}
+			paths = append(paths, extractArchPaths(section, layout)...)
 		}
+		offset += len(line)
+	}
+	if found {
+		return dedupeStrings(paths)
 	}
 	return extractArchPaths(text, layout)
 }
@@ -958,11 +980,13 @@ func SyncRigWorkflowProfileFromArchitecture(townRoot, rig string) (bool, error) 
 	env.Validation = inferTestRunnerFromPaths(env.Validation, authoritative)
 
 	archPhases := parseArchPhases(string(archData), env.Validation.LayoutRootDir())
+	specData, _ := os.ReadFile(filepath.Join(mayorRig, "SPEC.md"))
+	declared := DeclaredSpecPhaseHeadings(string(specData))
 	// Prefer architect's phases when they are well-formed (clean titles/IDs, cover the authoritative set).
 	// Fall back to SPEC phases when architect phases are mangled (backtick-laden, path-embedded titles)
 	// or don't meaningfully cover the file set. This preserves the keepsSpecPhases regression test.
 	if len(archPhases) > 0 {
-		if archPhasesWellFormed(archPhases, authoritative) {
+		if archPhasesWellFormed(archPhases, authoritative) && len(missingDeclaredPhases(declared, archPhases)) == 0 {
 			// Add depends_on chain for sequential architect phases
 			for i := range archPhases {
 				if i > 0 {
@@ -978,6 +1002,17 @@ func SyncRigWorkflowProfileFromArchitecture(townRoot, rig string) (bool, error) 
 			env.Validation, _ = updatePhaseRequiredFilesFromRequirementsSection(env.Validation, string(archData))
 		} else if len(env.Validation.DeliveryPhases) == 0 {
 			env.Validation.DeliveryPhases = archPhases
+		}
+	}
+	// Carry SPEC provenance through sanitization: two capability phases can
+	// legitimately touch the same files and run the same build command.
+	for i := range env.Validation.DeliveryPhases {
+		p := &env.Validation.DeliveryPhases[i]
+		for _, d := range declared {
+			if phaseScopeKey(p.ID) == d.ID || phaseScopeKey(p.Title) == d.ID {
+				p.SpecFocus = d.SpecFocus
+				break
+			}
 		}
 	}
 
@@ -2028,6 +2063,21 @@ func slugify(s string) string {
 // Used by the design_review QA step so spec-index guesswork is caught before planning.
 func ValidateRigWorkflowProfileForQA(townRoot, rig string, v WorkflowValidation) string {
 	var problems []string
+	mayorRig := filepath.Join(townRoot, rig, "mayor", "rig")
+	spec, _ := os.ReadFile(filepath.Join(mayorRig, "SPEC.md"))
+	for _, title := range missingDeclaredPhases(DeclaredSpecPhaseHeadings(string(spec)), v.DeliveryPhases) {
+		problems = append(problems, fmt.Sprintf("SPEC delivery phase %q is missing; preserve its scope and assign concrete deliverables", title))
+	}
+	if paths, ok, prefixes := extractSpecLayoutPaths(mayorRig); ok {
+		arch, _ := os.ReadFile(filepath.Join(mayorRig, "architecture.md"))
+		paths = mergeArchWinsOnConflict(paths, declaredArchitecturePaths(string(arch), v.LayoutRootDir()), prefixes)
+		for _, p := range paths {
+			if !containsString(v.UnionRequiredFiles(), p) {
+				problems = append(problems, fmt.Sprintf("declared deliverable %q is missing from required_files", p))
+			}
+		}
+	}
+	problems = append(problems, nodeBuildGateProblems(v)...)
 	check := func(files []string, scope string) {
 		for _, f := range files {
 			f = filepath.ToSlash(strings.TrimSpace(f))

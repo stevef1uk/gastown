@@ -1558,6 +1558,11 @@ func consolidateRedundantPhases(v WorkflowValidation) WorkflowValidation {
 
 	for i := range v.DeliveryPhases {
 		p := &v.DeliveryPhases[i]
+		// A SPEC-focused phase is a capability/acceptance boundary, not a
+		// duplicate merely because it reuses another phase's files and command.
+		if strings.TrimSpace(p.SpecFocus) != "" {
+			continue
+		}
 		if len(p.DependsOn) != 1 {
 			continue
 		}

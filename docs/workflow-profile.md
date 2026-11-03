@@ -31,6 +31,16 @@ authoritative = merge(SPEC_tree_paths, architecture_paths)
 - Empty `required_files` in any delivery phase
 - Hallucinated entries (wildcards, route stubs, URLs)
 - Verify commands referencing files not in `required_files`
+- Explicit numbered SPEC phases omitted by indexing or architecture sync
+- Declared implementation files missing from the profile, including supplemental layout sections
+- Buildable Node projects without a manifest or phases delivering their source without a production-build gate
+
+Standalone `# Phase N — Title` headings are declarations even without a wrapping
+delivery-phase section. Failed file assignment must report an error rather than
+replace these phases with directory-based grouping. Identical verification commands
+alone do not justify merging explicit SPEC phases. SPEC scope takes precedence over
+an earlier generated profile; architecture rework must correct its canonical layout,
+delivery table, and requirements consistently.
 
 ## Phase Population
 
