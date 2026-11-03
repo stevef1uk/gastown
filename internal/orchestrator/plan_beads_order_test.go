@@ -265,15 +265,14 @@ func TestValidatePlanningBeadCreate_blocksWhenRequiredFilesCovered(t *testing.T)
 		{ID: "te-1", Title: "Link Shelf /linkshelf/go.mod per architecture"},
 		{ID: "te-2", Title: "Link Shelf /linkshelf/cmd/server/main.go per architecture"},
 	}
-	prev := ListImplementBeadsByStatusHook
-	ListImplementBeadsByStatusHook = func(_, _ string, _ WorkflowValidation, status string) ([]PlanBead, error) {
+	townRoot := t.TempDir()
+	setListImplementBeadsByStatusHook(t, townRoot, "rig", func(_, _ string, _ WorkflowValidation, status string) ([]PlanBead, error) {
 		if status == "open" {
 			return open, nil
 		}
 		return nil, nil
-	}
-	t.Cleanup(func() { ListImplementBeadsByStatusHook = prev })
-	err := ValidatePlanningBeadCreate("/tmp", "rig", "Implement linkshelf/main.go per architecture", v)
+	})
+	err := ValidatePlanningBeadCreate(townRoot, "rig", "Implement linkshelf/main.go per architecture", v)
 	if err == nil || !strings.Contains(err.Error(), "already cover") {
 		t.Fatalf("expected block when covered, got %v", err)
 	}

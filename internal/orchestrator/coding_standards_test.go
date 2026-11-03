@@ -107,6 +107,38 @@ func TestFormatCodingStandardsBlock_ActiveBeadNarrowsMultiStack(t *testing.T) {
 	}
 }
 
+func TestFormatCodingStandardsBlock_ParallelRigIsolation(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct {
+		name, path, want, forbidden string
+	}{
+		{"go", "app/server.go", "Town Hall Coding Standards (Go)", "Town Hall Coding Standards (Python)"},
+		{"python", "app/server.py", "Town Hall Coding Standards (Python)", "Town Hall Coding Standards (Go)"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			town := t.TempDir()
+			rig := "mixed"
+			v := WorkflowValidation{
+				LayoutRoot:        "app",
+				BeadTitleContains: "Implement ",
+				TestRunner:        "pytest",
+				RequiredFiles:     []string{"app/server.go", "app/server.py"},
+			}
+			setListImplementBeadsByStatusHook(t, town, rig, func(_, _ string, _ WorkflowValidation, status string) ([]PlanBead, error) {
+				if status == "open" {
+					return []PlanBead{{ID: "test-1", Title: "Implement " + tt.path + " per architecture"}}, nil
+				}
+				return nil, nil
+			})
+			got := FormatCodingStandardsBlock(town, rig, v)
+			if !strings.Contains(got, tt.want) || strings.Contains(got, tt.forbidden) {
+				t.Fatalf("standards for %s leaked across rig contexts:\n%s", tt.path, got)
+			}
+		})
+	}
+}
+
 func TestSyncTownAssets_installsTechnologyStandards(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()

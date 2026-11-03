@@ -56,11 +56,12 @@ func TestPromptContextBlock_implementBeadContext_includesAcceptanceChecklist(t *
 		TestRunner:        "go",
 		RequiredFiles:     []string{"linkshelf/internal/store/store.go"},
 	}
-	prev := nextOpenImplementBeadHook
-	nextOpenImplementBeadHook = func(_, _ string, _ WorkflowValidation) (*PlanBead, error) {
-		return &PlanBead{ID: "te-1", Title: "Implement linkshelf/internal/store/store.go per architecture"}, nil
-	}
-	t.Cleanup(func() { nextOpenImplementBeadHook = prev })
+	setListImplementBeadsByStatusHook(t, dir, rig, func(_, _ string, _ WorkflowValidation, status string) ([]PlanBead, error) {
+		if status == "open" {
+			return []PlanBead{{ID: "te-1", Title: "Implement linkshelf/internal/store/store.go per architecture"}}, nil
+		}
+		return nil, nil
+	})
 
 	got := PromptContextBlock("implement_bead_context", dir, rig, v)
 	if !strings.Contains(got, "### Acceptance checklist") || !strings.Contains(got, "AddLink persists rows") {
