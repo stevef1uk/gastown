@@ -426,6 +426,10 @@ func EarlierRequiredFilesForBead(activePath string, required []string) []string 
 func implementationPathScore(p string) int {
 	lower := strings.ToLower(p)
 	switch {
+	case IsE2ETestPath(lower):
+		// E2E Verify builds and runs the real app: source, Dockerfiles and
+		// compose definitions must be implemented before the browser harness.
+		return 110
 	case strings.HasSuffix(lower, "go.mod"):
 		return 0
 	case strings.HasSuffix(lower, "requirements.txt") || strings.HasSuffix(lower, "pyproject.toml"):

@@ -123,12 +123,16 @@ func buildTemplateValues(plan *ScaffoldPlan, port int, kind string, v *WorkflowV
 		"WEB_PORT":            fmt.Sprintf("%d", port),
 		"TEST_DIR":            "./e2e",
 		"NODE_IMAGE":          "node:20-slim",
+		"NODE_INSTALL":        "npm ci --ignore-scripts || npm install --ignore-scripts",
+		"BUILD_CMD":           "npm run build --if-present",
 		"PY_IMAGE":            "python:3.11-slim",
 		"FRONTEND_DIR":        "frontend",
 		"BACKEND_DIR":         "backend",
 		"STATIC_OUTPUT":       ".next/static",
 		"UV_CMD":              "pip install -r requirements.txt",
 		"RUN_CMD":             `["python", "app.py"]`,
+		"WORKDIR":             "/app",
+		"PY_INSTALL":          "python -m pip install --no-cache-dir -r requirements.txt",
 		"HEALTHCHECK":         fmt.Sprintf(`"CMD", "curl", "-f", "http://localhost:%d/"`, port),
 		"ENV_BLOCK":           fmt.Sprintf("PORT=%d", port),
 		"SERVICES_BLOCK":      "",
@@ -172,6 +176,21 @@ func buildTemplateValues(plan *ScaffoldPlan, port int, kind string, v *WorkflowV
 		switch plan.Stack {
 		case "python":
 			vals["RUN_CMD"] = `["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "` + fmt.Sprintf("%d", port) + `"]`
+			if v != nil {
+				for _, f := range v.UnionRequiredFiles() {
+					rel := strings.TrimPrefix(filepath.ToSlash(f), v.LayoutRootDir()+"/")
+					switch filepath.Base(rel) {
+					case "requirements.txt":
+						vals["PY_INSTALL"] = "python -m pip install --no-cache-dir -r " + bashSingleQuote(rel)
+					case "pyproject.toml":
+						vals["PY_INSTALL"] = "python -m pip install --no-cache-dir " + bashSingleQuote("./"+filepath.ToSlash(filepath.Dir(rel)))
+					}
+					if strings.HasSuffix(rel, "app/main.py") {
+						appDir := filepath.ToSlash(filepath.Dir(filepath.Dir(rel)))
+						vals["RUN_CMD"] = `["uvicorn", "app.main:app", "--app-dir", "` + appDir + `", "--host", "0.0.0.0", "--port", "` + fmt.Sprintf("%d", port) + `"]`
+					}
+				}
+			}
 		case "node":
 			vals["RUN_CMD"] = `["npm", "start"]`
 		case "hybrid":
@@ -422,18 +441,40 @@ func defaultScaffoldPlan(v *WorkflowValidation) *ScaffoldPlan {
 	if v != nil {
 		plan.LayoutRoot = v.LayoutRoot
 		plan.Port = v.DevServerPort
-		hasFrontend := false
-		hasBackend := false
+		hasPython, hasNode, hasGo := false, false, false
 		for _, f := range v.UnionRequiredFiles() {
-			if strings.Contains(f, "frontend") || strings.Contains(f, "package.json") {
-				hasFrontend = true
+			path := strings.ToLower(filepath.ToSlash(f))
+			// Browser-test tooling is independent of the application's language.
+			// A Python/Go service with Playwright is not a Node/hybrid app.
+			if IsE2ETestPath(path) || strings.HasPrefix(path, "test/") || strings.HasPrefix(path, "tests/") || strings.Contains(path, "/test/") || strings.Contains(path, "/tests/") {
+				continue
 			}
-			if strings.Contains(f, "backend") || strings.Contains(f, "pyproject.toml") {
-				hasBackend = true
+			switch {
+			case strings.HasSuffix(path, ".py"), filepath.Base(path) == "pyproject.toml", filepath.Base(path) == "requirements.txt":
+				hasPython = true
+			case strings.HasSuffix(path, ".go"), filepath.Base(path) == "go.mod":
+				hasGo = true
+			case filepath.Base(path) == "package.json", strings.HasSuffix(path, ".tsx"), strings.HasSuffix(path, ".jsx"), strings.HasSuffix(path, ".ts"), strings.HasSuffix(path, ".js"):
+				hasNode = true
 			}
 		}
-		if hasFrontend && hasBackend {
+		if !hasPython && !hasGo && !hasNode {
+			switch strings.ToLower(strings.TrimSpace(v.TestRunner)) {
+			case "python", "python3", "pytest", "unittest", "fastapi", "flask", "django":
+				hasPython = true
+			case "node", "nodejs", "npm", "javascript", "typescript", "jest", "vitest":
+				hasNode = true
+			}
+		}
+		switch {
+		case hasPython && hasNode:
 			plan.Stack = "hybrid"
+		case hasPython:
+			plan.Stack = "python"
+		case hasGo:
+			plan.Stack = "go"
+		case hasNode:
+			plan.Stack = "node"
 		}
 	}
 	return plan
