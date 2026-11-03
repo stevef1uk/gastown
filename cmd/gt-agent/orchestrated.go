@@ -1217,13 +1217,10 @@ func normalizeMarkdownFencedCMD(response string) string {
 	response = unwrapMarkdownFencedToolBlocks(response)
 	response = strings.ReplaceAll(response, "```[TOOL_CALLS]", "\n")
 	response = strings.ReplaceAll(response, "[TOOL_CALLS]", "")
-	response = strings.ReplaceAll(response, "```json", "")
-	response = strings.ReplaceAll(response, "```JSON", "")
-	response = strings.ReplaceAll(response, "```", "")
 	return response
 }
 
-var markdownFencedCmdInlineRE = regexp.MustCompile("```\\s*cmd:?\\s+(.+)")
+var markdownFencedCmdInlineRE = regexp.MustCompile("(?im)^```\\s*cmd:?\\s+(.+)")
 
 // orchestratedTaskRig returns the workflow rig (from fetch_task) when the agent has no GT_RIG.
 func orchestratedTaskRig(task *orchestrator.Task, agentRig string) string {
