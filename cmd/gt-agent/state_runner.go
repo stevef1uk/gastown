@@ -61,6 +61,7 @@ type stateRunner struct {
 	promptVars  map[string]string
 	track       *cmdTracker
 	servers     *devServerTracker
+	rewrittenQAVerifyCommands map[string]string
 	qaProgress     *QAReviewProgress         // qa_review only; persisted across gt-agent restarts
 	implProgress   *ImplementationProgress   // implementation: per-bead verify/close across restarts
 	attemptFixWork       bool // implementation: true after successful EDIT/WRITE, verify, or bd update/close this attempt
@@ -367,6 +368,7 @@ func (r *stateRunner) validateCommand(cmd string) error {
 }
 
 func (r *stateRunner) rewriteCommand(cmd string) string {
+	original := cmd
 	if stripped := stripOrchestratedShellBackticks(cmd); stripped != cmd {
 		orchestratedPrintf("[gt-agent] stripped markdown backticks from command → %s\n", stripped)
 		cmd = stripped
@@ -495,7 +497,21 @@ func (r *stateRunner) rewriteCommand(cmd string) string {
 			}
 		}
 	}
+	if cmd != original && isQATestCommandOK(original, r.v) {
+		if r.rewrittenQAVerifyCommands == nil {
+			r.rewrittenQAVerifyCommands = make(map[string]string)
+		}
+		r.rewrittenQAVerifyCommands[cmd] = r.v.ActivePhaseQAVerifyCommand()
+	}
 	return cmd
+}
+
+func (r *stateRunner) isQATestCommandOK(cmd string) bool {
+	if isQATestCommandOK(cmd, r.v) {
+		return true
+	}
+	verify, ok := r.rewrittenQAVerifyCommands[cmd]
+	return ok && verify == r.v.ActivePhaseQAVerifyCommand()
 }
 
 func (r *stateRunner) autoInstallDepsAndRetry(verifyCmd, workDir, sessionName string, cmdEnv []string, combined *strings.Builder) ([]byte, error) {

@@ -230,7 +230,7 @@ var trackHandlers = map[string]trackFn{
 		if cmdErr == nil && isBdListOpenCommand(cmd) {
 			r.track.listOpenOK = true
 		}
-		if cmdErr == nil && isQATestCommandOK(cmd, r.v) {
+		if cmdErr == nil && r.isQATestCommandOK(cmd) {
 			r.track.unittestOK = true
 			r.track.hadCmdFailure = false
 		}
@@ -261,7 +261,7 @@ var trackHandlers = map[string]trackFn{
 		if cmdErr != nil && !isQAReadOnlyCommand(cmd) {
 			r.track.hadCmdFailure = true
 		}
-		if cmdErr == nil && isQATestCommandOK(cmd, r.v) {
+		if cmdErr == nil && r.isQATestCommandOK(cmd) {
 			r.track.verifyOK = true
 			r.track.hadCmdFailure = false
 		}
