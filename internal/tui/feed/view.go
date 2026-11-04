@@ -342,6 +342,8 @@ func (m *Model) renderWorkflowLine(wf RigWorkflow) string {
 	phase := wf.DeliveryPhase
 	if phase == "" {
 		phase = "—"
+	} else if wf.DeliveryPhaseIndex > 0 && wf.DeliveryPhaseTotal > 0 {
+		phase = fmt.Sprintf("%s (%d/%d)", phase, wf.DeliveryPhaseIndex, wf.DeliveryPhaseTotal)
 	}
 	state := wf.CurrentState
 	if state == "" {

@@ -9,11 +9,13 @@ import (
 
 // RigWorkflow is one workflow instance shown under a rig in the agent tree.
 type RigWorkflow struct {
-	ID            string
-	TemplateID    string
-	DeliveryPhase string
-	CurrentState  string
-	Status        string
+	ID                 string
+	TemplateID         string
+	DeliveryPhase      string
+	DeliveryPhaseIndex int
+	DeliveryPhaseTotal int
+	CurrentState       string
+	Status             string
 }
 
 // LoadWorkflowsByRig returns workflow instances grouped by rig name.
@@ -24,7 +26,12 @@ func LoadWorkflowsByRig(townRoot string) (map[string][]RigWorkflow, error) {
 		return nil, err
 	}
 	byRig := make(map[string][]RigWorkflow)
-	phasesByRig := make(map[string]string)
+	type phaseProgress struct {
+		id    string
+		index int
+		total int
+	}
+	phasesByRig := make(map[string]phaseProgress)
 	for _, s := range statuses {
 		rig := strings.TrimSpace(s.Variables["rig"])
 		if rig == "" {
@@ -34,17 +41,26 @@ func LoadWorkflowsByRig(townRoot string) (map[string][]RigWorkflow, error) {
 		if !loaded {
 			if profile, ok, err := orchestrator.LoadRawRigWorkflowProfile(townRoot, rig); err == nil && ok {
 				if active, ok := profile.ActivePhase(); ok {
-					phase = strings.TrimSpace(active.ID)
+					phase.id = strings.TrimSpace(active.ID)
+					phase.total = len(profile.DeliveryPhases)
+					for i, p := range profile.DeliveryPhases {
+						if strings.TrimSpace(p.ID) == phase.id {
+							phase.index = i + 1
+							break
+						}
+					}
 				}
 			}
 			phasesByRig[rig] = phase
 		}
 		byRig[rig] = append(byRig[rig], RigWorkflow{
-			ID:            s.ID,
-			TemplateID:    s.TemplateID,
-			DeliveryPhase: phase,
-			CurrentState:  s.CurrentState,
-			Status:        s.Status,
+			ID:                 s.ID,
+			TemplateID:         s.TemplateID,
+			DeliveryPhase:      phase.id,
+			DeliveryPhaseIndex: phase.index,
+			DeliveryPhaseTotal: phase.total,
+			CurrentState:       s.CurrentState,
+			Status:             s.Status,
 		})
 	}
 	for rig := range byRig {

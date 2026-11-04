@@ -54,8 +54,11 @@ func TestLoadWorkflowsByRig_fromInstancesFile(t *testing.T) {
 	if w.ID != "wf-2" || w.DeliveryPhase != "backend-core" || w.CurrentState != "implementation" || w.Status != "running" {
 		t.Fatalf("got %+v", w)
 	}
+	if w.DeliveryPhaseIndex != 2 || w.DeliveryPhaseTotal != 2 {
+		t.Fatalf("expected phase 2 of 2: %+v", w)
+	}
 	m := &Model{}
-	if line := m.renderWorkflowLine(w); !strings.Contains(line, "rig-flow  backend-core  implementation") {
+	if line := m.renderWorkflowLine(w); !strings.Contains(line, "rig-flow  backend-core (2/2)  implementation") {
 		t.Fatalf("phase should appear between workflow name and state: %q", line)
 	}
 	if len(got["other"]) != 1 || got["other"][0].DeliveryPhase != "" {
