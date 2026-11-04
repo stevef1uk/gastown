@@ -133,6 +133,8 @@ Reviews can set `require_explicit_outcome: true` to require an agent verdict ins
 
 Planning sync regenerates missing or misaligned plans and preserves valid nested-path plans, including Planner-authored acceptance and verification corrections. Planner may amend plan.md for nested layouts; exact bead paths are validated on completion. Rework requires a plan amendment during the attempt before explicit or automatic success; read-only inspection is insufficient. Non-Go artifacts in phased Go projects use the active phase's verification command rather than Go compilation.
 
+When implementation fails in a phased Go project, recovery also checks existing dependencies with a bounded Go build using `-mod=readonly` and discarding binary output. Compiler paths owned by an earlier phase rewind to that phase and reopen its beads; repair stays with Polecat, preserves compiler feedback, and records the original phase to resume afterward. Active-phase errors, unowned files, toolchain failures, and missing external modules do not trigger this dependency rewind.
+
 Tester verification credit requires the complete configured command (allowing mayor/rig directory prefixes and harness-managed rewrites). Backgrounded suites, health probes, discovery-only flags, alternate configurations, and exit-masking wrappers cannot substitute for that command. Only recognized Node development-server commands are eligible for smoke rewriting; `npx playwright test` stays a foreground test runner.
 
 Reusable hook implementations live in `internal/orchestrator/prompt_context.go` — add a **named** hook only when YAML cannot express it. See the maintainer block at the top of that file.

@@ -176,7 +176,8 @@ func performRewindToPhase(townRoot, rig, targetPhase, originalPhase string, prob
 // (e.g. an api handlers.go imports a store package whose schema.go/store.go were never written) —
 // it rewinds active_phase_id to the earliest problematic completed phase and returns an
 // explanatory error so the caller can route the polecat back to implementation to actually write
-// the missing files. Returns "" and nil when there is no completed-phase gap.
+// the missing files. If files exist, a read-only Go build checks for compiler diagnostics owned by
+// an earlier phase. Returns "" and nil when no completed-phase dependency repair is identified.
 func MaybeRewindToProblemPhaseForImplementation(townRoot, rig string, v WorkflowValidation) (string, error) {
 	if townRoot == "" || rig == "" {
 		return "", nil
@@ -215,7 +216,7 @@ func MaybeRewindToProblemPhaseForImplementation(townRoot, rig string, v Workflow
 		}
 	}
 	if firstProblem < 0 {
-		return "", nil
+		return rewindCompletedPhaseCompileFailure(townRoot, rig, v)
 	}
 
 	targetPhase := strings.TrimSpace(v.DeliveryPhases[firstProblem].ID)

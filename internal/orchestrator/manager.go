@@ -470,6 +470,7 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summa
 	// succeeds. So before letting implementation failure fall through to planning, check for a
 	// completed-phase file gap and, if found, rewind the active phase to the earliest problematic
 	// completed phase and route the polecat back to implementation to actually write the files.
+	implementationRewound := false
 	if fromState == "implementation" && next == "planning" && rig != "" {
 		if v := m.workflowValidationFor(inst, tpl); v.HasPhasedDelivery() {
 			if rewindLog, rerr := MaybeRewindToProblemPhaseForImplementation(m.townRoot, rig, v); rerr != nil && rewindLog != "" {
@@ -477,6 +478,8 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summa
 				next = "implementation"
 				inst.CurrentState = next
 				inst.touchStateEnteredAt()
+				implementationRewound = true
+				feedback = strings.TrimSpace(rerr.Error() + "\n\n" + feedback)
 				if strings.TrimSpace(summary) == "" {
 					summary = rewindLog
 				} else {
@@ -675,7 +678,7 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summa
 		}
 	}
 	// Timeout keeps PendingRework even on same-state transitions (planning → planning).
-	setRework := IsTimeoutOutcome(outcome) ||
+	setRework := IsTimeoutOutcome(outcome) || implementationRewound ||
 		(next != fromState && (IsFailureOutcome(outcome) || IsArchitectureReworkOutcome(outcome)))
 	if setRework && next != "" {
 		v := m.workflowValidationFor(inst, tpl)
