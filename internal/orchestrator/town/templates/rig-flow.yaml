@@ -378,9 +378,9 @@ states:
       empty_bd_list_ok: true
       auto_verify:
         - when: go_mod_tidy
-          verify: go_setup
+          verify: go_implementation
         - when: go_mod_init
-          verify: go_setup
+          verify: go_implementation
         - when: go_write_layout
           verify: go_implementation
         - when: python_test

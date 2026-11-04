@@ -163,7 +163,13 @@ func testReviewVerifyCommandMatches(cmd string, v orchestrator.WorkflowValidatio
 }
 
 func isImplementationVerifyCommandOK(cmd, townRoot, rig, activeBead string, v orchestrator.WorkflowValidation) bool {
-	if isQATestCommandOK(cmd, v) {
+	// Go implementation verification must contain every toolchain step. The
+	// permissive QA matcher accepts any part of a chain, including tidy alone.
+	if orchestrator.WorkflowUsesGo(v) {
+		if goVerifyCommandMatches(cmd, v.ActivePhaseQAVerifyCommand(), v) {
+			return true
+		}
+	} else if isQATestCommandOK(cmd, v) {
 		return true
 	}
 	if orchestrator.WorkflowUsesPython(v) && rig != "" {
@@ -192,7 +198,7 @@ func isImplementationVerifyCommandOK(cmd, townRoot, rig, activeBead string, v or
 	activeBead, _ = orchestrator.ResolveImplementBeadForVerify(townRoot, rig, activeBead, v)
 	beadPath := orchestrator.ImplementBeadPathForID(townRoot, rig, activeBead, v)
 	impl := orchestrator.ImplementationVerifyCommandForBead(v, mayorDir, beadPath)
-	if commandMatchesQAVerify(cmd, impl) {
+	if !orchestrator.WorkflowUsesGo(v) && commandMatchesQAVerify(cmd, impl) {
 		return true
 	}
 	if orchestrator.WorkflowUsesGo(v) {
@@ -206,7 +212,7 @@ func isImplementationVerifyCommandOK(cmd, townRoot, rig, activeBead string, v or
 		}
 	}
 	// Full-suite QA verify (e.g. final pytest -v) — only after per-bead checks miss.
-	return isQATestCommandOK(cmd, v)
+	return !orchestrator.WorkflowUsesGo(v) && isQATestCommandOK(cmd, v)
 }
 
 // isImplementationVerifyCommandAttempt reports whether cmd is a verify attempt for the active bead

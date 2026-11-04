@@ -25,52 +25,52 @@ func taskHooks(task *orchestrator.Task) orchestrator.StateHooks {
 
 // cmdTracker accumulates per-attempt command outcomes for artifact validation.
 type cmdTracker struct {
-	startedAt         time.Time
-	designArchWritten bool
-	hadCmdFailure     bool
-	hadExpectedFailure bool
-	verifyOK          bool
-	beadCreateOK      bool
-	beadDeleteOK      bool
-	beadCloseOK       bool
-	listOpenOK        bool
-	didDelete         bool
-	bdListClosedOK    bool
-	unittestOK        bool
-	qaSmokeOK        bool
-	qaFilesRead      bool
-	testPlanWriteOK  bool
-	activeBead        string
-	activeBeadPath    string
-	lastVerifyOutput  string
-	lastExitCode      *int
-	bdInfraFailed     bool
-	noDiskRejects     int
-	openBeadRejects    int
+	startedAt                         time.Time
+	designArchWritten                 bool
+	hadCmdFailure                     bool
+	hadExpectedFailure                bool
+	verifyOK                          bool
+	beadCreateOK                      bool
+	beadDeleteOK                      bool
+	beadCloseOK                       bool
+	listOpenOK                        bool
+	didDelete                         bool
+	bdListClosedOK                    bool
+	unittestOK                        bool
+	qaSmokeOK                         bool
+	qaFilesRead                       bool
+	testPlanWriteOK                   bool
+	activeBead                        string
+	activeBeadPath                    string
+	lastVerifyOutput                  string
+	lastExitCode                      *int
+	bdInfraFailed                     bool
+	noDiskRejects                     int
+	openBeadRejects                   int
 	consecutiveNonTerminalJSONRejects int
 	NonTerminalJSONRejectThreshold    int
-	noOpFailureRejects      int
+	noOpFailureRejects                int
 }
 
 type stateRunner struct {
-	completionRejections completionRejectionProgress
-	initialPlanContent []byte
-	task        *orchestrator.Task
-	townRoot    string
-	rig         string
-	hooks       orchestrator.StateHooks
-	v           orchestrator.WorkflowValidation
-	promptVars  map[string]string
-	track       *cmdTracker
-	servers     *devServerTracker
-	rewrittenQAVerifyCommands map[string]string
-	qaProgress     *QAReviewProgress         // qa_review only; persisted across gt-agent restarts
-	implProgress   *ImplementationProgress   // implementation: per-bead verify/close across restarts
-	attemptFixWork       bool // implementation: true after successful EDIT/WRITE, verify, or bd update/close this attempt
-	attemptEditSearchMiss bool // implementation: EDIT failed SEARCH-not-found this attempt (auto-READ may have run)
-	turnResponse           string // current LLM turn (for fenced-code vs native-tool guards)
-	turnHadSuccessfulNative bool // true after a successful WRITE/EDIT this turn
-	consecutiveCmdTimeouts  int  // consecutive command timeout counter for auto-warrant
+	completionRejections              completionRejectionProgress
+	initialPlanContent                []byte
+	task                              *orchestrator.Task
+	townRoot                          string
+	rig                               string
+	hooks                             orchestrator.StateHooks
+	v                                 orchestrator.WorkflowValidation
+	promptVars                        map[string]string
+	track                             *cmdTracker
+	servers                           *devServerTracker
+	rewrittenQAVerifyCommands         map[string]string
+	qaProgress                        *QAReviewProgress       // qa_review only; persisted across gt-agent restarts
+	implProgress                      *ImplementationProgress // implementation: per-bead verify/close across restarts
+	attemptFixWork                    bool                    // implementation: true after successful EDIT/WRITE, verify, or bd update/close this attempt
+	attemptEditSearchMiss             bool                    // implementation: EDIT failed SEARCH-not-found this attempt (auto-READ may have run)
+	turnResponse                      string                  // current LLM turn (for fenced-code vs native-tool guards)
+	turnHadSuccessfulNative           bool                    // true after a successful WRITE/EDIT this turn
+	consecutiveCmdTimeouts            int                     // consecutive command timeout counter for auto-warrant
 	consecutiveNonTerminalJSONRejects int
 	NonTerminalJSONRejectThreshold    int
 }
@@ -937,6 +937,20 @@ func prepareProjectSetupVerifyCommand(verifyCmd, townRoot, rig, kind string) str
 	return verifyCmd
 }
 
+// recordAutoVerifySuccess keeps setup-only hooks from certifying an implementation
+// bead. In particular, a successful dependency tidy must not erase a test failure.
+func (r *stateRunner) recordAutoVerifySuccess(cmd, output string, clearCmdFailure bool) {
+	if strings.EqualFold(strings.TrimSpace(r.hooks.Track), "implementation") &&
+		!isImplementationVerifyCommandOK(cmd, r.townRoot, r.rig, r.track.activeBead, r.v) {
+		return
+	}
+	r.track.verifyOK = true
+	if clearCmdFailure {
+		r.track.hadCmdFailure = false
+	}
+	r.track.lastVerifyOutput = output
+}
+
 func (r *stateRunner) runAutoVerify(cmd, workDir, sessionName string, cmdEnv []string, combined *strings.Builder) {
 	for _, hook := range r.hooks.AutoVerify {
 		if !r.autoVerifyMatches(cmd, hook.When) {
@@ -958,31 +972,18 @@ func (r *stateRunner) runAutoVerify(cmd, workDir, sessionName string, cmdEnv []s
 			// Python pytest "no tests ran" (exit 4/5) is not a code failure —
 			// the test file simply doesn't exist yet (test bead not implemented).
 			if orchestrator.WorkflowUsesPython(r.v) && orchestrator.PythonVerifyNoTestsOK(string(verifyOut)) {
-				r.track.verifyOK = true
-				r.track.lastVerifyOutput = string(verifyOut)
+				r.recordAutoVerifySuccess(verifyCmd, string(verifyOut), false)
 			} else if orchestrator.WorkflowUsesPython(r.v) && orchestrator.PythonTestsAllPassed(string(verifyOut)) {
-				r.track.verifyOK = true
-				if r.hooks.AutoVerifyOKClearsCmdFailure {
-					r.track.hadCmdFailure = false
-				}
-				r.track.lastVerifyOutput = string(verifyOut)
+				r.recordAutoVerifySuccess(verifyCmd, string(verifyOut), r.hooks.AutoVerifyOKClearsCmdFailure)
 				orchestratedPrintf("[gt-agent] auto-verify ok (all tests passed despite exit code): %s\n", verifyCmd)
 			} else if orchestrator.WorkflowUsesPython(r.v) && pythonVerifyOutputSuggestsMissingDeps(string(verifyOut)) {
 				// Auto-install from requirements.txt and retry once.
 				verifyOut, verifyErr = r.autoInstallDepsAndRetry(verifyCmd, workDir, sessionName, cmdEnv, combined)
 				if verifyErr == nil {
-					r.track.verifyOK = true
-					if r.hooks.AutoVerifyOKClearsCmdFailure {
-						r.track.hadCmdFailure = false
-					}
-					r.track.lastVerifyOutput = string(verifyOut)
+					r.recordAutoVerifySuccess(verifyCmd, string(verifyOut), r.hooks.AutoVerifyOKClearsCmdFailure)
 					orchestratedPrintf("[gt-agent] auto-verify ok (after pip install): %s\n", verifyCmd)
 				} else if orchestrator.PythonTestsAllPassed(string(verifyOut)) {
-					r.track.verifyOK = true
-					if r.hooks.AutoVerifyOKClearsCmdFailure {
-						r.track.hadCmdFailure = false
-					}
-					r.track.lastVerifyOutput = string(verifyOut)
+					r.recordAutoVerifySuccess(verifyCmd, string(verifyOut), r.hooks.AutoVerifyOKClearsCmdFailure)
 					orchestratedPrintf("[gt-agent] auto-verify ok (after pip install, all tests passed): %s\n", verifyCmd)
 				} else {
 					r.track.hadCmdFailure = true
@@ -996,18 +997,13 @@ func (r *stateRunner) runAutoVerify(cmd, workDir, sessionName string, cmdEnv []s
 				orchestrator.GoToolOutputMatchedNoPackages(string(verifyOut)) {
 				// Go module scaffold (go mod download) fails on empty go.mod —
 				// no packages exist yet (polecat writes them in implementation).
-				r.track.verifyOK = true
-				r.track.lastVerifyOutput = string(verifyOut)
+				r.recordAutoVerifySuccess(verifyCmd, string(verifyOut), false)
 			} else if orchestrator.WorkflowUsesGo(r.v) && orchestrator.GoToolOutputMissingDeps(string(verifyOut)) &&
 				hook.Verify != "go_setup" && !goAutoVerifyNoPackagesIsError(hook.Verify, r.task.State, verifyCmd) {
 				// Go verify failed due to missing modules — run go mod tidy and retry once.
 				verifyOut, verifyErr = r.goModTidyAndRetry(verifyCmd, workDir, sessionName, cmdEnv, combined)
 				if verifyErr == nil {
-					r.track.verifyOK = true
-					if r.hooks.AutoVerifyOKClearsCmdFailure {
-						r.track.hadCmdFailure = false
-					}
-					r.track.lastVerifyOutput = string(verifyOut)
+					r.recordAutoVerifySuccess(verifyCmd, string(verifyOut), r.hooks.AutoVerifyOKClearsCmdFailure)
 					orchestratedPrintf("[gt-agent] auto-verify ok (after go mod tidy): %s\n", verifyCmd)
 				} else {
 					r.track.hadCmdFailure = true
@@ -1042,10 +1038,7 @@ func (r *stateRunner) runAutoVerify(cmd, workDir, sessionName string, cmdEnv []s
 			orchestratedFprintfStderr("[gt-agent] auto-verify failed: %v\n%s\n", errNoPkg, string(verifyOut))
 			combined.WriteString(fmt.Sprintf("Auto-verify: %s\nError: %v\nOutput: %s\n\n", verifyCmd, errNoPkg, string(verifyOut)))
 		} else {
-			r.track.verifyOK = true
-			if r.hooks.AutoVerifyOKClearsCmdFailure {
-				r.track.hadCmdFailure = false
-			}
+			r.recordAutoVerifySuccess(verifyCmd, string(verifyOut), r.hooks.AutoVerifyOKClearsCmdFailure)
 			if hook.When == "go_mod_tidy" && orchestrator.WorkflowUsesGo(r.v) {
 				r.repairGoModRequiresAfterTidy(combined)
 			}
