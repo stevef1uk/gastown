@@ -153,6 +153,14 @@ func requireSmokeTools(t *testing.T) {
 
 func writeSmokeFixtureTown(t *testing.T, serverMain string) (townRoot, rig string, v WorkflowValidation) {
 	t.Helper()
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	port := listener.Addr().(*net.TCPAddr).Port
+	_ = listener.Close()
+	// Packages run concurrently under `make test`; never share their dev port.
+	serverMain = strings.ReplaceAll(serverMain, ":8080", fmt.Sprintf("127.0.0.1:%d", port))
 	townRoot = t.TempDir()
 	rig = "testrig"
 	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
@@ -166,13 +174,10 @@ func writeSmokeFixtureTown(t *testing.T, serverMain string) (townRoot, rig strin
 			t.Fatal(err)
 		}
 	}
-	arch := `| Method | Path | Notes |
+	arch := fmt.Sprintf("Server URL: http://127.0.0.1:%d\n", port) + `| Method | Path | Notes |
 | GET | / | index.html |
 | GET | /api/links | returns JSON array |
 `
-	if err := os.WriteFile(filepath.Join(rigDir, "architecture.md"), []byte(arch), 0644); err != nil {
-		t.Fatal(err)
-	}
 	goMod := "module linkshelf\n\ngo 1.22\n"
 	if err := os.WriteFile(filepath.Join(mod, "go.mod"), []byte(goMod), 0644); err != nil {
 		t.Fatal(err)
@@ -180,6 +185,28 @@ func writeSmokeFixtureTown(t *testing.T, serverMain string) (townRoot, rig strin
 	if err := os.WriteFile(filepath.Join(mod, "cmd", "server", "main.go"), []byte(serverMain), 0644); err != nil {
 		t.Fatal(err)
 	}
+	// Keep compiler/linker scheduling outside the smoke readiness deadline.
+	// The smoke still launches and probes the real fixture server.
+	serverBin := filepath.Join(townRoot, "smoke-server")
+	build := exec.Command("go", "build", "-o", serverBin, "./cmd/server")
+	build.Dir = mod
+	if out, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("build smoke fixture: %v\n%s", err, out)
+	}
+	arch += "\n## Runtime smoke server\n" + bashSingleQuote(serverBin) + "\n"
+	if err := os.WriteFile(filepath.Join(rigDir, "architecture.md"), []byte(arch), 0644); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		// Successful smoke removes this file; clean up failed probes as well.
+		if data, err := os.ReadFile(filepath.Join(mod, ".gt-smoke.pid")); err == nil {
+			if pid, err := strconv.Atoi(strings.TrimSpace(string(data))); err == nil {
+				if process, err := os.FindProcess(pid); err == nil {
+					_ = process.Kill()
+				}
+			}
+		}
+	})
 	html := `<!DOCTYPE html><html><head><link rel="stylesheet" href="/static/style.css"></head><body><script src="/static/app.js"></script></body></html>`
 	for name, body := range map[string]string{
 		"index.html": html,
@@ -199,6 +226,7 @@ func TestPlaceholder(t *testing.T) {}
 		t.Fatal(err)
 	}
 	v = linkshelfLikeValidation()
+	v.DevServerPort = port
 	return townRoot, rig, v
 }
 
