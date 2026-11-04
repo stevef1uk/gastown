@@ -117,7 +117,7 @@ func runOrchestrated(ctx context.Context, client *llm.Client, townRoot, role, ri
 			outcome = "fail"
 		}
 
-		orchestratedPrintf("[gt-agent] complete_task outcome=%q summary=%q\n", outcome, summary)
+		orchestratedPrintf("[gt-agent] submitting outcome: wf=%s state=%s outcome=%q summary=%q\n", task.WorkflowID, task.State, outcome, summary)
 		agentID := orchestrator.OrchestratorAgentID(role, rig)
 		nextState, err := orchestrator.CompleteTask(townRoot, task.WorkflowID, outcome, agentID, summary, attemptLog, task.Variables)
 		if err != nil {
@@ -133,7 +133,7 @@ func runOrchestrated(ctx context.Context, client *llm.Client, townRoot, role, ri
 				updateOrchestratedRetry(&state, task, "failure", errMsg, attemptLog)
 			}
 		} else {
-			orchestratedPrintf("[gt-agent] next state: %s\n", nextState)
+			orchestratedPrintf("[gt-agent] transition accepted: wf=%s %s -> %s\n", task.WorkflowID, task.State, nextState)
 			updateOrchestratedRetryAfterComplete(&state, task, outcome, summary, attemptLog, nextState)
 			clearQAReviewProgressIfLeaving(townRoot, taskRig, task.State, nextState)
 			clearImplementationProgressIfLeaving(townRoot, taskRig, task.State, nextState)

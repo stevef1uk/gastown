@@ -10,8 +10,6 @@ import (
 	"sort"
 	"strings"
 	"time"
-
-	"github.com/steveyegge/gastown/internal/townlog"
 )
 
 var (
@@ -140,9 +138,10 @@ func ValidatePlanningDocAlignment(townRoot, rigDir string, v WorkflowValidation,
 	issues = append(issues, checkPlanBeadMapExactPaths(planDoc, v, rigName)...)
 	issues = append(issues, checkDocLayoutPathPrefix("plan.md", planDoc, v)...)
 
-	// Semantic triad validation using LLM judge
-	// Only run after planning or plan_review (not project_setup/implementation where
-	// the documents are already finalized and re-validation wastes LLM calls).
+	if err := formatDocAlignmentError("SPEC/architecture/plan misaligned", issues); err != nil {
+		return err
+	}
+
 	triadState := ""
 	if len(fromState) > 0 {
 		triadState = fromState[0]
@@ -152,33 +151,15 @@ func ValidatePlanningDocAlignment(townRoot, rigDir string, v WorkflowValidation,
 	if runTriad && len(strings.TrimSpace(specDoc)) >= triadMinLength &&
 		len(strings.TrimSpace(archDoc)) >= triadMinLength &&
 		len(strings.TrimSpace(planDoc)) >= triadMinLength {
-		client := newJudgeClient(120 * time.Second)
-		ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
-		defer cancel()
-
-		pass, reason, err := ValidateTriadWithJudge(ctx, client, TriadValidationConfig{
+		schedulePlanningTriadAdvisory(townRoot, rigDir, triadState, TriadValidationConfig{
 			SPEC:         specDoc,
 			Architecture: archDoc,
 			Plan:         planDoc,
 			MinLength:    200,
 		})
-		if err != nil {
-			log.Printf("[triad] LLM judge unavailable, skipping semantic validation: %v", err)
-		} else if !pass {
-			// Advisory only — the LLM judge can hallucinate or flag semantic nits
-			// that the planner/architect cannot act on. Log to orchestrator.log
-			// for developers and town.log for gt log visibility, but do NOT block
-			// the transition (structural checks in architectureDocAlignmentIssuesForDoc
-			// handle real blocking issues like missing layout root prefixes).
-			log.Printf("[triad] advisory: SPEC/Architecture/Plan triad misaligned: %s", reason)
-			if townRoot != "" {
-				tl := townlog.NewLogger(townRoot)
-				_ = tl.Log(townlog.EventType("advisory"), "orchestrator", reason)
-			}
-		}
 	}
 
-	return formatDocAlignmentError("SPEC/architecture/plan misaligned", issues)
+	return nil
 }
 
 // dockerNotUsedRE matches an explicit statement that Docker is not used by / not

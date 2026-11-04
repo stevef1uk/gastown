@@ -72,18 +72,18 @@ func extractJSONFromResponse(resp string) string {
 			return strings.TrimSpace(extracted)
 		}
 	}
-	
+
 	// Fallback: find first { and last }
 	start := strings.Index(resp, "{")
 	end := strings.LastIndex(resp, "}")
 	if start >= 0 && end > start {
-		extracted := resp[start:end+1]
+		extracted := resp[start : end+1]
 		// Strip trailing backticks and whitespace that may remain from code fences
 		extracted = strings.TrimSpace(extracted)
 		extracted = strings.TrimRight(extracted, "` \t\n\r")
 		return extracted
 	}
-	
+
 	return ""
 }
 
@@ -112,7 +112,7 @@ CRITERIA:
 	resp, err := client.Complete(ctx, systemPrompt, userPrompt)
 	if err != nil {
 		// If LLM is unavailable, treat as skipped (not an error)
-		if strings.Contains(err.Error(), "connection refused") || 
+		if strings.Contains(err.Error(), "connection refused") ||
 			strings.Contains(err.Error(), "connection refused") ||
 			strings.Contains(err.Error(), "no such host") {
 			return true, "LLM judge unavailable (connection refused), skipping", nil
@@ -187,8 +187,6 @@ ARCHITECTURE:
 
 PLAN:
 %s`, cfg.SPEC, cfg.Architecture, cfg.Plan)
-
-	client = getOrCreateJudgeClient(nil)
 
 	resp, err := client.Complete(ctx, systemPrompt, userPrompt)
 	if err != nil {
