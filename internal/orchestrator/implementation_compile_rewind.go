@@ -60,7 +60,7 @@ func rewindCompletedPhaseVerificationFailure(townRoot, rig string, v WorkflowVal
 		kind = "compiler errors"
 	}
 	if idx < 0 {
-		return "", nil
+		return recoverSamePhaseTestFailure(townRoot, rig, v, failureOutput)
 	}
 	phase := v.DeliveryPhases[idx]
 	if _, err := performRewindToPhase(townRoot, rig, phase.ID, v.ActivePhaseID(), paths); err != nil {

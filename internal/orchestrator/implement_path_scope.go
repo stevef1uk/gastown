@@ -152,12 +152,8 @@ func ValidateImplementReadPath(townRoot, rig, activeBead, relPath string, v Work
 	if allowedPath != "" && PathMatchesImplementWrite(relPath, allowedPath, v.RequiredFiles, v) {
 		return nil
 	}
-	if allowedPath != "" && WorkflowUsesGo(v) && !IsTestImplementPath(allowedPath) {
-		if testPath := CorrelatedTestPathForSource(allowedPath, v); testPath != "" {
-			if PathMatchesImplementWrite(relPath, testPath, v.RequiredFiles, v) {
-				return nil
-			}
-		}
+	if allowedPath != "" && SourcePathForOwnedTest(relPath, v) == allowedPath {
+		return nil
 	}
 	if allowedPath != "" && AllowedCorrelatedPackageImplementWrite(allowedPath, relPath, v) {
 		return nil
@@ -271,13 +267,8 @@ func validateImplementWriteScope(townRoot, rig, activeBead, written string, v Wo
 		}
 		return nil
 	}
-	// Same-bead unit tests (e.g. schema.go → schema_test.go) are not separate implement beads.
-	if WorkflowUsesGo(v) && !IsTestImplementPath(allowedPath) {
-		if testPath := CorrelatedTestPathForSource(allowedPath, v); testPath != "" {
-			if PathMatchesImplementWrite(written, testPath, v.RequiredFiles, v) {
-				return nil
-			}
-		}
+	if SourcePathForOwnedTest(written, v) == allowedPath {
+		return nil
 	}
 	if AllowedCorrelatedPackageImplementWrite(allowedPath, written, v) {
 		if err := ValidateHTTPHandlerBeadPrerequisites(filepath.Join(townRoot, rig, "mayor", "rig"), written, v); err != nil {

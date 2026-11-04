@@ -247,13 +247,17 @@ func PythonImplementationVerifyCommandForBead(v WorkflowValidation, mayorRigDir,
 	}
 
 	if strings.HasSuffix(beadPath, ".py") {
-		if testPath := CorrelatedTestPathForSource(beadPath, v); testPath != "" {
-			if info, err := os.Stat(filepath.Join(mayorRigDir, testPath)); err == nil && info.Size() > 0 {
-				return py + " -m pytest -v " + testPath
+		var tests []string
+		for _, testPath := range correlatedTestCandidates(beadPath, v) {
+			if info, err := os.Stat(filepath.Join(mayorRigDir, testPath)); err == nil && info.Size() > 0 && SourcePathForOwnedTest(testPath, v) == beadPath {
+				tests = appendUniquePath(tests, testPath)
 			}
-			if TestPathListedInRequired(beadPath, v) {
-				return py + " -m pytest -v " + testPath
-			}
+		}
+		if TestPathListedInRequired(beadPath, v) {
+			tests = appendUniquePath(tests, CorrelatedTestPathForSource(beadPath, v))
+		}
+		if len(tests) > 0 {
+			return py + " -m pytest -v " + strings.Join(tests, " ")
 		}
 		return py + " -m compileall -q " + beadPath
 	}

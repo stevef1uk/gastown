@@ -560,10 +560,15 @@ func NextOpenImplementBead(townRoot, rig string, v WorkflowValidation) (*PlanBea
 	if len(v.RequiredFiles) == 0 {
 		return nil, nil
 	}
-	active, err := ListImplementBeadsOpenOrInProgress(townRoot, rig, v)
+	inProgress, err := listImplementBeadsForGuard(townRoot, rig, v, "in_progress")
 	if err != nil {
 		return nil, err
 	}
+	open, err := ListOpenImplementBeads(townRoot, rig, v)
+	if err != nil {
+		return nil, err
+	}
+	active := append(append([]PlanBead(nil), inProgress...), open...)
 	idByPath := map[string]string{}
 	titleByID := map[string]string{}
 	for _, b := range active {
@@ -588,6 +593,25 @@ func NextOpenImplementBead(townRoot, rig string, v WorkflowValidation) (*PlanBea
 	rigDir := filepath.Join(townRoot, rig, "refinery", "rig")
 	eval := NewImplementBeadVerifyEvaluator(rigDir, v)
 	order := OrderRequiredFilesForImplementation(v.RequiredFiles)
+	known := map[string]bool{}
+	for _, bead := range inProgress {
+		known[bead.ID] = true
+	}
+	repairIDs := map[string]bool{}
+	for _, id := range pendingImplementationRepairIDs(townRoot, rig, known) {
+		repairIDs[id] = true
+	}
+	for _, want := range order {
+		if IsProjectSetupArtifactPath(want, v) {
+			continue
+		}
+		for _, bead := range inProgress {
+			path := ExtractPathFromBeadTitle(bead.Title, v.BeadTitleContains)
+			if repairIDs[bead.ID] && pathMatchesRequiredForProfile(path, []string{want}, v) {
+				return &PlanBead{ID: bead.ID, Title: bead.Title}, nil
+			}
+		}
+	}
 	for _, want := range order {
 		if IsProjectSetupArtifactPath(want, v) {
 			continue

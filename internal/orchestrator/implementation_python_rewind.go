@@ -19,9 +19,15 @@ func completedPhasePythonFailure(rigDir string, v WorkflowValidation, output str
 	if !v.HasPhasedDelivery() || v.ActivePhaseIndex() <= 0 {
 		return -1, nil, ""
 	}
+	path := pythonVerificationDiagnosticPath(rigDir, v, output)
+	idx, paths := earlierPhaseDiagnosticPaths(v, []string{path})
+	return idx, paths, output
+}
+
+func pythonVerificationDiagnosticPath(rigDir string, v WorkflowValidation, output string) string {
 	exceptions := pythonReworkExceptionRE.FindAllStringSubmatchIndex(output, -1)
 	if len(exceptions) == 0 {
-		return -1, nil, ""
+		return ""
 	}
 	last := exceptions[len(exceptions)-1]
 	exception := output[last[0]:last[1]]
@@ -29,7 +35,7 @@ func completedPhasePythonFailure(rigDir string, v WorkflowValidation, output str
 	switch kind {
 	case "ImportError", "ModuleNotFoundError", "SyntaxError", "IndentationError", "TabError", "NameError", "AttributeError", "TypeError":
 	default:
-		return -1, nil, ""
+		return ""
 	}
 	var path string
 	if kind == "ImportError" || kind == "ModuleNotFoundError" || kind == "AttributeError" {
@@ -39,7 +45,7 @@ func completedPhasePythonFailure(rigDir string, v WorkflowValidation, output str
 		}
 		if len(module) > 0 {
 			if isPythonStdlib(module[1]) || loadDeclaredThirdPartyModules(rigDir).matches(module[1], ".py") {
-				return -1, nil, ""
+				return ""
 			}
 			if provider := pythonReworkProviderRE.FindStringSubmatch(exception); len(provider) > 0 {
 				path = ownedPythonDiagnosticPath(rigDir, provider[1], v)
@@ -47,10 +53,10 @@ func completedPhasePythonFailure(rigDir string, v WorkflowValidation, output str
 				path = pythonModuleOwnedPath(module[1], v)
 			}
 			if path == "" {
-				return -1, nil, ""
+				return ""
 			}
 		} else if kind != "AttributeError" {
-			return -1, nil, ""
+			return ""
 		}
 	}
 	if path == "" {
@@ -59,12 +65,11 @@ func completedPhasePythonFailure(rigDir string, v WorkflowValidation, output str
 			frames = pythonReworkPytestFrameRE.FindAllStringSubmatch(output[:last[0]], -1)
 		}
 		if len(frames) == 0 {
-			return -1, nil, ""
+			return ""
 		}
 		path = ownedPythonDiagnosticPath(rigDir, frames[len(frames)-1][1], v)
 	}
-	idx, paths := earlierPhaseDiagnosticPaths(v, []string{path})
-	return idx, paths, output
+	return path
 }
 
 func ownedPythonDiagnosticPath(rigDir, path string, v WorkflowValidation) string {
@@ -80,6 +85,11 @@ func ownedPythonDiagnosticPath(rigDir, path string, v WorkflowValidation) string
 		file = filepath.ToSlash(filepath.Clean(file))
 		if strings.HasSuffix(file, ".py") && (path == file || filepath.ToSlash(filepath.Join(v.LayoutRootDir(), path)) == file) && !pythonEnvironmentPath(file, v) {
 			return file
+		}
+	}
+	for _, candidate := range []string{path, filepath.ToSlash(filepath.Join(v.LayoutRootDir(), path))} {
+		if !pythonEnvironmentPath(candidate, v) && SourcePathForOwnedTest(candidate, v) != "" {
+			return candidate
 		}
 	}
 	return ""

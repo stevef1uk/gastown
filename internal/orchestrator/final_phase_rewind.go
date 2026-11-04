@@ -183,7 +183,7 @@ func MaybeRewindToProblemPhaseForImplementation(townRoot, rig string, v Workflow
 		return "", nil
 	}
 	if !v.HasPhasedDelivery() {
-		return "", nil
+		return recoverSamePhaseTestFailure(townRoot, rig, v, strings.Join(failureOutput, "\n"))
 	}
 	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
 	activeIdx := v.ActivePhaseIndex()

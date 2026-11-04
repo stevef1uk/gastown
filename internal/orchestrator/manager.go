@@ -472,19 +472,18 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summa
 	// completed phase and route the polecat back to implementation to actually write the files.
 	implementationRewound := false
 	if fromState == "implementation" && next == "planning" && rig != "" {
-		if v := m.workflowValidationFor(inst, tpl); v.HasPhasedDelivery() {
-			if rewindLog, rerr := MaybeRewindToProblemPhaseForImplementation(m.townRoot, rig, v, feedback); rerr != nil && rewindLog != "" {
-				log.Printf("[Manager] implementation failure rewound %s active phase (was %s; bouncing to implementation instead of planning): %s", rig, v.ActivePhaseID(), rewindLog)
-				next = "implementation"
-				inst.CurrentState = next
-				inst.touchStateEnteredAt()
-				implementationRewound = true
-				feedback = strings.TrimSpace(rerr.Error() + "\n\n" + feedback)
-				if strings.TrimSpace(summary) == "" {
-					summary = rewindLog
-				} else {
-					summary = rewindLog + "\n" + summary
-				}
+		v := m.workflowValidationFor(inst, tpl)
+		if repairLog, rerr := MaybeRewindToProblemPhaseForImplementation(m.townRoot, rig, v, feedback); rerr != nil && repairLog != "" {
+			log.Printf("[Manager] implementation failure recovery for %s (phase %s; returning to implementation): %s", rig, v.ActivePhaseID(), repairLog)
+			next = "implementation"
+			inst.CurrentState = next
+			inst.touchStateEnteredAt()
+			implementationRewound = true
+			feedback = strings.TrimSpace(rerr.Error() + "\n\n" + feedback)
+			if strings.TrimSpace(summary) == "" {
+				summary = repairLog
+			} else {
+				summary = repairLog + "\n" + summary
 			}
 		}
 	}

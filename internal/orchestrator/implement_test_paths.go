@@ -17,7 +17,7 @@ func IsTestImplementPath(beadPath string) bool {
 	if strings.HasSuffix(lower, "_test.go") {
 		return true
 	}
-	if strings.HasPrefix(base, "test_") && strings.HasSuffix(lower, ".py") {
+	if (strings.HasPrefix(base, "test_") || strings.HasSuffix(base, "_test.py")) && strings.HasSuffix(lower, ".py") {
 		return true
 	}
 	if strings.Contains(lower, "/tests/") && strings.HasSuffix(lower, ".py") {
@@ -29,6 +29,46 @@ func IsTestImplementPath(beadPath string) bool {
 		return true
 	}
 	return false
+}
+
+func SourcePathForOwnedTest(testPath string, v WorkflowValidation) string {
+	testPath = filepath.ToSlash(filepath.Clean(testPath))
+	if !IsTestImplementPath(testPath) {
+		return ""
+	}
+	if idx := v.FindDeliveryPhaseForFile(testPath); v.HasPhasedDelivery() && idx >= 0 && idx != v.ActivePhaseIndex() {
+		return ""
+	}
+	v = v.ForActivePhase()
+	var owner string
+	for _, source := range v.RequiredFiles {
+		source = filepath.ToSlash(filepath.Clean(source))
+		if IsTestImplementPath(source) {
+			continue
+		}
+		for _, candidate := range correlatedTestCandidates(source, v) {
+			if candidate != "" && candidate == testPath {
+				if owner != "" && owner != source {
+					return ""
+				}
+				owner = source
+			}
+		}
+	}
+	return owner
+}
+
+func correlatedTestCandidates(source string, v WorkflowValidation) []string {
+	paths := []string{CorrelatedTestPathForSource(source, v)}
+	if strings.HasSuffix(source, ".py") && !IsTestImplementPath(source) {
+		base := strings.TrimSuffix(filepath.Base(source), ".py")
+		for _, name := range []string{"test_" + base + ".py", base + "_test.py"} {
+			for _, dir := range []string{filepath.Dir(source), filepath.Join(filepath.Dir(source), "tests"), filepath.Join(v.LayoutRootDir(), "tests")} {
+				paths = appendUniquePath(paths, filepath.ToSlash(filepath.Join(dir, name)))
+			}
+		}
+	}
+	return paths
 }
 
 // CorrelatedTestPathForSource returns the conventional unit-test path for a source bead, or "".
