@@ -158,6 +158,12 @@ func ImplementationRuntimeSmokeOK(townRoot, rig string, v WorkflowValidation) er
 	if strings.TrimSpace(script) == "" {
 		return fmt.Errorf("empty runtime smoke script for %s", moduleDir)
 	}
+	// Check generated shell before killing listeners or blaming application code.
+	// A malformed runner/profile command cannot be repaired by reopening source beads.
+	check := exec.Command("/bin/bash", "-n", "-c", script)
+	if out, err := check.CombinedOutput(); err != nil {
+		return &RuntimeSmokeScriptError{Detail: strings.TrimSpace(string(out))}
+	}
 	_ = StopDevServersForRig(v, rigDir)
 	if p := spec.Port; p > 0 {
 		_, _ = KillTCPListenersOnPort(p)

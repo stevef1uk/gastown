@@ -10,15 +10,15 @@ import (
 )
 
 var (
-	smokeServerHeadingRE  = regexp.MustCompile(`(?im)^##\s+.*\bruntime\s+smoke\s+server\b`)
-	pythonServerSegmentRE = regexp.MustCompile(
-		`(?i)(?:^|&&\s*)(` +
-			`(?:\./)?\.venv/bin/python3\s+-m\s+(?:uvicorn|hypercorn)\s+[^\s&;|]+(?:\s+[^\s&;|]+)*|` +
-			`python3?\s+-m\s+(?:uvicorn|hypercorn)\s+[^\s&;|]+(?:\s+[^\s&;|]+)*|` +
-			`uvicorn\s+[^\s&;|]+(?:\s+[^\s&;|]+)*|` +
-			`gunicorn\s+[^\s&;|]+(?:\s+[^\s&;|]+)*|` +
-			`flask\s+run(?:\s+[^\s&;|]+)*` +
-			`)`,
+	smokeServerHeadingRE = regexp.MustCompile(`(?im)^##\s+.*\bruntime\s+smoke\s+server\b`)
+	// Locate the executable only. Shell operators in its arguments/redirects
+	// must be scanned together: a regexp excluding '&' splits `2>&1` into `2>`.
+	pythonServerStartRE = regexp.MustCompile(
+		`(?i)(?:^|[\s(&;|` + "`" + `])(` +
+			`(?:[^\s()&;|"'` + "`" + `]*/)?python3?\s+-m\s+(?:uvicorn|hypercorn)|` +
+			`(?:[^\s()&;|"'` + "`" + `]*/)?(?:uvicorn|hypercorn|gunicorn)|` +
+			`(?:[^\s()&;|"'` + "`" + `]*/)?flask\s+run` +
+			`)\s+`,
 	)
 )
 
@@ -161,12 +161,30 @@ func trimSmokeServerCommand(cmd string) string {
 	if cmd == "" {
 		return ""
 	}
-	if i := strings.Index(cmd, "&"); i > 0 {
-		cmd = strings.TrimSpace(cmd[:i])
-	}
-	for _, sep := range []string{"&&", "||", "; curl", " curl ", "`", "\n", `"`} {
-		if i := strings.Index(strings.ToLower(cmd), sep); i > 0 {
+	cmd = strings.Trim(cmd, "`")
+	var quote byte
+	for i := 0; i < len(cmd); i++ {
+		c := cmd[i]
+		if c == '\\' && quote != '\'' {
+			i++ // Escaped operators/quotes belong to the command word.
+			continue
+		}
+		if quote != 0 {
+			if c == quote {
+				quote = 0
+			}
+			continue
+		}
+		if c == '\'' || c == '"' {
+			quote = c
+			continue
+		}
+		if c == '&' && ((i > 0 && (cmd[i-1] == '>' || cmd[i-1] == '<')) || (i+1 < len(cmd) && cmd[i+1] == '>')) {
+			continue // Descriptor duplication (2>&1, <&0) or Bash &> redirect.
+		}
+		if strings.ContainsRune("&|;\n`", rune(c)) || strings.HasPrefix(cmd[i:], " curl ") {
 			cmd = strings.TrimSpace(cmd[:i])
+			break
 		}
 	}
 	cmd = stripTrailingParenthesizedComment(cmd)
@@ -206,26 +224,10 @@ func ExtractPythonServerStartFromText(text string) string {
 	if text == "" {
 		return ""
 	}
-	// First try the structured regex that matches proper server commands with module:app
-	if m := pythonServerSegmentRE.FindStringSubmatch(" " + strings.ReplaceAll(text, "&&", " && ")); len(m) >= 2 {
-		cmd := trimSmokeServerCommand(m[1])
+	for _, m := range pythonServerStartRE.FindAllStringSubmatchIndex(text, -1) {
+		cmd := trimSmokeServerCommand(text[m[2]:])
 		if uvicornServerRE.MatchString(cmd) {
 			return cmd
-		}
-	}
-	// Fallback: scan for uvicorn/gunicorn/flask/hypercorn commands that contain module:app
-	for _, part := range strings.Split(text, "&&") {
-		part = strings.TrimSpace(part)
-		pl := strings.ToLower(part)
-		if strings.Contains(pl, "pytest") && !strings.Contains(pl, "uvicorn") {
-			continue
-		}
-		if strings.Contains(pl, "uvicorn") || strings.Contains(pl, "gunicorn") ||
-			strings.Contains(pl, "flask run") || strings.Contains(pl, "hypercorn") {
-			cmd := trimSmokeServerCommand(part)
-			if uvicornServerRE.MatchString(cmd) {
-				return cmd
-			}
 		}
 	}
 	return ""

@@ -3,10 +3,57 @@ package orchestrator
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func TestSmokeServerExtractionPreservesRedirects(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct{ input, want string }{
+		{
+			`cd service && (uvicorn main:app --port 8080 >/tmp/server.log 2>&1 & pid=$!; sleep 1; curl --fail http://localhost:8080/probe; status=$?; kill "$pid"; wait "$pid"; exit "$status")`,
+			`uvicorn main:app --port 8080 >/tmp/server.log 2>&1`,
+		},
+		{
+			`cd service && (../environments/check/bin/python3 -m uvicorn main:app --port 8080 2>&1 & pid=$!; curl localhost:8080/probe)`,
+			`../environments/check/bin/python3 -m uvicorn main:app --port 8080 2>&1`,
+		},
+		{
+			`uvicorn main:app --log-config "logging & tracing.yaml" >"/tmp/server & error.log" 2>&1 && curl localhost:8080/probe`,
+			`uvicorn main:app --log-config "logging & tracing.yaml" >"/tmp/server & error.log" 2>&1`,
+		},
+		{
+			`uvicorn main:app &>/tmp/server.log & curl localhost:8080/probe`,
+			`uvicorn main:app &>/tmp/server.log`,
+		},
+	} {
+		t.Run(tc.input, func(t *testing.T) {
+			got := ExtractPythonServerStartFromText(tc.input)
+			if got != tc.want {
+				t.Fatalf("server start = %q, want %q", got, tc.want)
+			}
+			assertSmokeShellSyntax(t, got)
+		})
+	}
+	// The same trimmer handles documented Go/Node server starts as well.
+	for _, start := range []string{`go run ./cmd/server 2>&1`, `npm run dev -- --host "127.0.0.1" 2>&1`} {
+		docs := "## Runtime smoke server\n" + start + " &\n"
+		if got := parseSmokeServerSection(docs); got != start {
+			t.Fatalf("documented server start = %q, want %q", got, start)
+		}
+		assertSmokeShellSyntax(t, parseSmokeServerSection(docs))
+	}
+}
+
+func assertSmokeShellSyntax(t *testing.T, start string) {
+	t.Helper()
+	script := BuildRuntimeSmokeShell(t.TempDir(), APISmokeSpec{ServerStart: start, Port: 8080, GETPaths: []string{"/probe"}})
+	if out, err := exec.Command("/bin/bash", "-n", "-c", script).CombinedOutput(); err != nil {
+		t.Fatalf("generated invalid shell: %v\n%s\n%s", err, out, script)
+	}
+}
 
 func TestImplementationPythonModuleUsesRigVenv(t *testing.T) {
 	for _, status := range []int{0, 23} {

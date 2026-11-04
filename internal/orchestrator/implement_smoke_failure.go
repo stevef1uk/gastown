@@ -1,12 +1,28 @@
 package orchestrator
 
 import (
+	"errors"
 	"fmt"
 	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
 )
+
+// RuntimeSmokeScriptError identifies invalid harness-generated shell, before
+// any application process or probe ran. It is not evidence of an app defect.
+type RuntimeSmokeScriptError struct {
+	Detail string
+}
+
+func (e *RuntimeSmokeScriptError) Error() string {
+	return "invalid runtime smoke script (runner/profile error; application code was not executed):\n" + e.Detail
+}
+
+func IsRuntimeSmokeScriptError(err error) bool {
+	var scriptErr *RuntimeSmokeScriptError
+	return errors.As(err, &scriptErr)
+}
 
 const smokeStepMarkerPrefix = "GT_SMOKE:"
 
@@ -50,6 +66,9 @@ func ParseSmokeFailureFromOutput(output string) SmokeFailureDetail {
 // ImplementationVerifyNeedsRuntimeRework reports verify errors from HTTP smoke (not compile-only).
 func ImplementationVerifyNeedsRuntimeRework(err error) bool {
 	if err == nil {
+		return false
+	}
+	if IsRuntimeSmokeScriptError(err) {
 		return false
 	}
 	return strings.Contains(strings.ToLower(err.Error()), "runtime smoke")
@@ -231,6 +250,10 @@ func HandleImplementationPhaseVerifyFailure(townRoot, rig string, v WorkflowVali
 func FormatImplementationVerifyFailureBlock(townRoot, rig string, v WorkflowValidation, verifyErr error, reopened []string) string {
 	if verifyErr == nil {
 		return ""
+	}
+	if IsRuntimeSmokeScriptError(verifyErr) {
+		return "### Runtime smoke runner/profile error\n\n" + verifyErr.Error() +
+			"\n\nRepair the server-start command in the workflow profile/docs or the smoke generator, then retry. Do not reopen or rewrite application beads for a shell syntax error."
 	}
 	if ImplementationVerifyNeedsRuntimeRework(verifyErr) {
 		return FormatImplementationSmokeFailureBlock(townRoot, rig, v, verifyErr, reopened)

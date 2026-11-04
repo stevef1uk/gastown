@@ -370,6 +370,9 @@ func (r *stateRunner) implementationNoOpenBeadsButWorkRemainsNudge() (string, bo
 	}
 	if orchestrator.WorkflowNeedsRuntimeSmoke(r.townRoot, r.rig, r.v) {
 		if err := implementationPhaseVerifyOKOnDisk(r.townRoot, r.rig, r.v); err != nil {
+			if orchestrator.IsRuntimeSmokeScriptError(err) {
+				return orchestrator.FormatImplementationVerifyFailureBlock(r.townRoot, r.rig, r.v, err, nil), true
+			}
 			var b strings.Builder
 			b.WriteString("**Rejected:** all implement beads are closed but **phase verify** (compile + runtime smoke) still fails — implementation is not done.\n\n")
 			if orchestrator.ImplementationVerifyNeedsRuntimeRework(err) {
