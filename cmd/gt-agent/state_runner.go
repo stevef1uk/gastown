@@ -498,7 +498,11 @@ func (r *stateRunner) rewriteCommand(cmd string) string {
 			}
 		}
 	}
-	if cmd != original && isQATestCommandOK(original, r.v) {
+	verifyMatches := isQATestCommandOK(original, r.v)
+	if r.hooks.Track == "test_review" {
+		verifyMatches = testReviewVerifyCommandMatches(original, r.v)
+	}
+	if cmd != original && verifyMatches {
 		if r.rewrittenQAVerifyCommands == nil {
 			r.rewrittenQAVerifyCommands = make(map[string]string)
 		}
@@ -509,6 +513,14 @@ func (r *stateRunner) rewriteCommand(cmd string) string {
 
 func (r *stateRunner) isQATestCommandOK(cmd string) bool {
 	if isQATestCommandOK(cmd, r.v) {
+		return true
+	}
+	verify, ok := r.rewrittenQAVerifyCommands[cmd]
+	return ok && verify == r.v.ActivePhaseQAVerifyCommand()
+}
+
+func (r *stateRunner) isTestReviewVerifyCommandOK(cmd string) bool {
+	if testReviewVerifyCommandMatches(cmd, r.v) {
 		return true
 	}
 	verify, ok := r.rewrittenQAVerifyCommands[cmd]

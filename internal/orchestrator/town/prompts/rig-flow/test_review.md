@@ -45,25 +45,28 @@ For each `### <req-id>` in `TEST_PLAN.md`:
 
 Missing a planned test, a test that never asserts, or a verify that fails ⇒ `failure`. A plan that hand-waves ("ensure quality") or omits whole requirements ⇒ `plan_gap`. Tests that contradict the SPEC route/store contract that no code change can reconcile ⇒ `architecture_failure`.
 
-### ⚠️ CRITICAL: Background server + curl pattern (for server-based phases)
+## Verification execution (CRITICAL)
 
-If `{{phase_qa_verify_command}}` starts a server (any runtime), you MUST run it in **background** with `&` and **curl** in the SAME command. Do NOT run the server in foreground — it will hang forever and time out.
+Run the complete configured phase verification command as its own CMD. Test runners such as Playwright, pytest, and `go test` must run in the **foreground**, even when they start a server internally. Playwright's `webServer` configuration manages its server; Playwright itself is not a development server.
 
-**Correct pattern (single CMD line):**
-```
-CMD: cd {{rig}}/mayor/rig && {{phase_qa_verify_command}} & sleep 2 && curl -sf http://127.0.0.1:{{dev_server_port}}/{{smoke_probe_path}}
-```
+Never append `&`, a health probe, `|| true`, `; true`, a pipe, discovery-only flags such as `--list`, or an alternate config to make the command appear green. A successful HTTP health check does not prove tests passed. Only the complete configured verification exiting successfully counts; failed tests or zero discovered tests mean `failure`.
 
-**What this does:**
-1. Starts server in **background** with `&`
-2. `sleep 2` — gives server time to start
-2. Runs `curl` to verify the endpoint works
-3. Exits cleanly so gt-agent can continue
+For server-only smoke verification, use the documented startup/probe/cleanup command and let gt-agent manage recognized server lifecycles. A separate server or health probe never substitutes for a required test suite.
 
-**WRONG (will timeout):**
-```
-CMD: cd {{rig}}/mayor/rig && {{phase_qa_verify_command}}
-```
+## Review sequence
+
+1. Inspect the plan and its test files:
+   ```
+   CMD: cd {{rig}}/mayor/rig && cat TEST_PLAN.md
+   CMD: cd {{rig}}/mayor/rig && wc -c TEST_PLAN.md
+   ```
+
+2. Run the phase verify and wait for its output before judging it:
+   ```
+   CMD: cd {{rig}}/mayor/rig && {{phase_qa_verify_command}}
+   ```
+
+3. Write the report from the observed results. Real assertions establish coverage, not a passing execution. If the runner reports failures, record FAIL and quote the failing tests; never label them PASS because the test file contains the expected assertions.
    ```
    CMD: cd {{rig}}/mayor/rig && cat > test-report.md << 'EOF'
    # Test Review — <active phase name>
@@ -80,17 +83,6 @@ CMD: cd {{rig}}/mayor/rig && {{phase_qa_verify_command}}
    ## Overall assessment
    <overall pass/fail determination and next steps>
    EOF
-   ```
-
-2. Inspect plan and tests:
-   ```
-   CMD: cd {{rig}}/mayor/rig && cat TEST_PLAN.md
-   CMD: cd {{rig}}/mayor/rig && wc -c TEST_PLAN.md
-   ```
-
-3. Run the phase verify (green required for success):
-   ```
-   CMD: cd {{rig}}/mayor/rig && {{phase_qa_verify_command}}
    ```
 
 4. `bd` is available with rig `BEADS_DIR` — list closed beads only if you need to map a test file to its bead:

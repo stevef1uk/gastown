@@ -258,11 +258,12 @@ var trackHandlers = map[string]trackFn{
 		}
 	},
 	"test_review": func(r *stateRunner, cmd string, cmdErr error) {
-		if cmdErr != nil && !isQAReadOnlyCommand(cmd) {
+		_, writesReport := orchestrator.QACommandWritesTestPlanDoc(cmd)
+		if cmdErr != nil && (!isQAReadOnlyCommand(cmd) || writesReport || orchestrator.IsImplementHeredocWrite(cmd) || r.isQATestCommandOK(cmd)) {
 			r.track.hadCmdFailure = true
 			r.track.verifyOK = false
 		}
-		if r.isQATestCommandOK(cmd) {
+		if r.isTestReviewVerifyCommandOK(cmd) {
 			r.track.verifyOK = cmdErr == nil
 			r.track.hadCmdFailure = cmdErr != nil
 		}

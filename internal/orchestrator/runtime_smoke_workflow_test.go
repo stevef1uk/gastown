@@ -199,6 +199,9 @@ func TestIsDevServerSmokeCommand(t *testing.T) {
 		"cd rig && .venv/bin/python3 -m hypercorn app:app",
 		"gunicorn myapp:app",
 		"flask run",
+		"npx vite --host 127.0.0.1",
+		"npx next dev",
+		"npx http-server web",
 	}
 	for _, c := range cases {
 		if !IsDevServerSmokeCommand(c) {
@@ -212,6 +215,10 @@ func TestIsDevServerSmokeCommand(t *testing.T) {
 		"pip install uvicorn fastapi pytest",
 		".venv/bin/pip3 install --quiet fastapi uvicorn pytest httpx",
 		`python3 -c "import fastapi,uvicorn,httpx,pytest;print(fastapi.__version__)"`,
+		"cd linkshelf && npx playwright test",
+		"npx playwright test --list",
+		"npx jest",
+		"npx tsc --noEmit",
 	}
 	for _, c := range noCases {
 		if IsDevServerSmokeCommand(c) {

@@ -77,6 +77,7 @@ func specHasRuntimeSmokeProbes(spec APISmokeSpec) bool {
 }
 
 var uvicornServerRE = regexp.MustCompile(`(?i)\buvicorn\s+\S+:\S+`)
+var nodeDevServerRE = regexp.MustCompile(`(?i)\bnpx\s+(?:vite(?:\s|$)|next\s+(?:dev|start)(?:\s|$)|(?:http-server|serve)(?:\s|$))`)
 
 // isFlatGoServerCommand reports bare go run entrypoints for flat-layout Go servers
 // (go run . / go run ./ / go run main.go), where main.go sits at the layout root
@@ -125,7 +126,7 @@ func IsDevServerSmokeCommand(cmd string) bool {
 		strings.Contains(lower, "npm start") ||
 		strings.Contains(lower, "yarn start") ||
 		strings.Contains(lower, "pnpm start") ||
-		strings.Contains(lower, "npx ") ||
+		nodeDevServerRE.MatchString(lower) ||
 		strings.Contains(lower, "npm run dev") ||
 		strings.Contains(lower, "yarn dev") ||
 		strings.Contains(lower, "pnpm dev")

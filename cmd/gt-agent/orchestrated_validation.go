@@ -135,6 +135,33 @@ func isQATestCommandOK(cmd string, v orchestrator.WorkflowValidation) bool {
 	return isUnittestCommand(cmd, v.UnittestModule)
 }
 
+// testReviewVerifyCommandMatches only credits the configured verification, not
+// arbitrary shell commands containing its text. In particular, backgrounding a
+// test suite and probing health reports the probe's status, not the test result.
+// Permit the usual mayor/rig cd prefixes (including a merged layout cd), but
+// require the complete remaining command, arguments and chained steps to match.
+func testReviewVerifyCommandMatches(cmd string, v orchestrator.WorkflowValidation) bool {
+	verify := strings.TrimSpace(v.ActivePhaseQAVerifyCommand())
+	if verify == "" {
+		return isUnittestCommand(cmd, v.UnittestModule)
+	}
+	stripCD := func(s string) string {
+		for {
+			parts := strings.SplitN(strings.TrimSpace(s), "&&", 2)
+			if len(parts) != 2 {
+				break
+			}
+			fields := strings.Fields(parts[0])
+			if len(fields) != 2 || fields[0] != "cd" || strings.ContainsAny(fields[1], "&|;()<>`$\\\n") {
+				break
+			}
+			s = parts[1]
+		}
+		return strings.Join(strings.Fields(s), " ")
+	}
+	return stripCD(cmd) == stripCD(verify)
+}
+
 func isImplementationVerifyCommandOK(cmd, townRoot, rig, activeBead string, v orchestrator.WorkflowValidation) bool {
 	if isQATestCommandOK(cmd, v) {
 		return true
