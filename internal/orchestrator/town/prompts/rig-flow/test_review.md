@@ -22,7 +22,7 @@ $GT_ROOT/{{rig}}/mayor/rig/{{layout_root}}/  ← layout root (ALL files go here)
 
 | outcome | When |
 |---------|------|
-| `success` | Every `TEST_PLAN.md` requirement row: test file exists, has real assertions, phase verify ({{phase_qa_verify_command}}) is green |
+| `success` | Every in-scope `TEST_PLAN.md` requirement row: test file exists, has real assertions, phase verify ({{phase_qa_verify_command}}) is green |
 | `failure` | A planned test is missing/weak or verify fails — sends **Polecat** back to `implementation` (name bead IDs + test paths) |
 | `plan_gap` | `TEST_PLAN.md` itself is incomplete or wrong — sends **Tester** back to `test_plan` to rewrite the plan |
 | `architecture_failure` | Tests contradict SPEC/architecture (route/API drift the Polecat cannot fix) — sends **Architect** back to `design` |
@@ -38,6 +38,10 @@ $GT_ROOT/{{rig}}/mayor/rig/{{layout_root}}/  ← layout root (ALL files go here)
 ## Adequacy checklist (your judgment — this is why you exist)
 
 For each `### <req-id>` in `TEST_PLAN.md`:
+
+First restrict the review and report to phases `{{test_validation_phase_ids}}`. A rewind does not make future phases due: do not fail their missing tests or demand their verification commands. Mark out-of-scope rows deferred if you mention them.
+
+Read SPEC.md and architecture.md before judging adequacy. SPEC is the acceptance boundary: do not invent endpoints, configuration options, UI states, or additional coverage obligations. If TEST_PLAN.md adds unsupported behavior, maps a requirement to an unrelated test/source package, or lacks resolvable bead ownership, return `plan_gap` naming the exact correction. Do not instruct Polecat to implement a bad plan. If the SPEC and architecture themselves genuinely conflict, use `architecture_failure`.
 
 - **unit**: does the test exercise the code path behind the requirement (real input → real assert)? A test that only checks "file exists" or calls nothing is not coverage.
 - **integration**: does it drive the real API/store wiring (listed in `required_files`) rather than a mock that bypasses the API?
@@ -85,12 +89,12 @@ For server-only smoke verification, use the documented startup/probe/cleanup com
    EOF
    ```
 
-4. `bd` is available with rig `BEADS_DIR` — list closed beads only if you need to map a test file to its bead:
+4. `bd` is available with rig `BEADS_DIR` — resolve the repair bead rather than copying a blank Bead ID. A Go `*_test.go` or Python `test_*.py` / `*_test.py` companion may be owned by its source implementation bead. List closed beads when needed:
    ```
    CMD: cd {{rig}}/mayor/rig && bd list --status=closed
    ```
 
-5. On **failure**, name **exact** fixes: `{{layout_root}}/path/to/test_file missing assertions for <requirement>` and the bead IDs to reopen, so the Polecat can rework in one pass.
+5. On **failure**, name **exact** fixes: `{{layout_root}}/path/to/test_file missing assertions for <requirement>` and the verified owning bead IDs to reopen, so the Polecat can rework in one pass. Do not reject tests merely because they use a recorder rather than a live HTTP server; judge whether they exercise the required behavior and real wiring.
 
 6. On **plan_gap**, name the requirements `TEST_PLAN.md` omits or mis-levels, so the Tester can rewrite it.
 

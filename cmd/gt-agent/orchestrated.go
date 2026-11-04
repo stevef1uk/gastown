@@ -364,7 +364,12 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 			feedback := feedbackBuilder.String()
 			if o, s, ok := parseOrchestratedResult(response, task.AllowedOutcomes); ok {
 				o = normalizeOrchestratedOutcome(o, task.AllowedOutcomes)
-				if (o == "failure" || o == "fail") && turn < maxTurns && turn <= 3 && !runner.hooks.RequireExplicitOutcome {
+				if msg, reject := runner.rejectImplementationNoOpFailure(o); reject {
+					orchestratedPrintf("[gt-agent] rejecting implementation failure JSON without fix work this attempt\n")
+					feedbackBuilder.WriteString("\n\n" + msg)
+					feedback = feedbackBuilder.String()
+					recordAttemptFeedback(msg + "\n")
+				} else if (o == "failure" || o == "fail") && turn < maxTurns && turn <= 3 && !runner.hooks.RequireExplicitOutcome {
 					orchestratedPrintf("[gt-agent] ignoring premature failure JSON (turn %d/%d); try to fix the issue first\n", turn, maxTurns)
 					recordAttemptFeedback("Failure JSON ignored on early turn. Review command output, try to fix the issue, then send failure if truly blocked.\n")
 					pendingFailureSummary = s
@@ -374,9 +379,6 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 				} else if task.State == "implementation" && isOrchestratedSuccessOutcome(o) {
 					orchestratedPrintf("[gt-agent] ignoring success JSON in same turn as CMD/native tools; run Verify and bd close first, then JSON only\n")
 					recordAttemptFeedback("Success JSON ignored because commands ran this turn. Finish Verify + bd close for the active bead, then reply with JSON only.\n")
-				} else if msg, reject := runner.rejectImplementationNoOpFailure(o); reject {
-					orchestratedPrintf("[gt-agent] rejecting implementation failure JSON without fix work this attempt\n")
-					recordAttemptFeedback(msg + "\n")
 				} else if o != "" {
 					if vErr := validateOutcomeForTask(task, townRoot, rig, o, s); vErr != nil {
 						orchestratedPrintf("[gt-agent] summary validation failed: %v\n", vErr)

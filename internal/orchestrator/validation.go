@@ -1406,6 +1406,9 @@ func mergeValidationFields(base, overlay WorkflowValidation) WorkflowValidation 
 	if overlay.ActivePhaseIDField != "" {
 		base.ActivePhaseIDField = overlay.ActivePhaseIDField
 	}
+	if overlay.RewoundFromPhaseIDField != "" {
+		base.RewoundFromPhaseIDField = overlay.RewoundFromPhaseIDField
+	}
 	if len(overlay.CompletedPhaseIDsField) > 0 {
 		base.CompletedPhaseIDsField = append([]string(nil), overlay.CompletedPhaseIDsField...)
 	}

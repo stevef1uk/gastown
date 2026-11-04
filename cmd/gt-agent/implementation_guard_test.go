@@ -133,6 +133,32 @@ func TestRejectImplementationNoOpFailure_allowsAfterFixWork(t *testing.T) {
 	}
 }
 
+func TestTesterReworkCannotFailWithoutRepairEvenWithEmptyQueue(t *testing.T) {
+	countOpenMatchingBeadsHook = func(_, _ string, _ orchestrator.WorkflowValidation) (int, error) { return 0, nil }
+	implementationPhaseVerifyOKHook = func(_, _ string, _ orchestrator.WorkflowValidation) error { return nil }
+	t.Cleanup(func() { countOpenMatchingBeadsHook = nil; implementationPhaseVerifyOKHook = nil })
+	for _, runner := range []string{"go", "pytest"} {
+		t.Run(runner, func(t *testing.T) {
+			r := newStateRunner(&orchestrator.Task{
+				State:         "implementation",
+				Hooks:         orchestrator.StateHooks{Track: "implementation", Artifacts: "implementation"},
+				Validation:    orchestrator.WorkflowValidation{TestRunner: runner},
+				PendingRework: &orchestrator.WorkflowRework{FromState: "test_review", Summary: "Planned coverage is inadequate"},
+			}, t.TempDir(), "sample")
+			if !r.hasQAPendingRework() || r.pendingQAReworkShouldNotBlockPolecat() {
+				t.Fatal("green phase verification cannot dismiss Tester coverage rework")
+			}
+			if msg, reject := r.rejectImplementationNoOpFailure("failure"); !reject || msg == "" {
+				t.Fatalf("read-only inspection escaped to planning: reject=%v msg=%q", reject, msg)
+			}
+			r.attemptFixWork = true
+			if _, reject := r.rejectImplementationNoOpFailure("failure"); reject {
+				t.Fatal("a real repair attempt may report its blocker")
+			}
+		})
+	}
+}
+
 func TestRejectImplementationNoOpFailure_blocksAfterEditSearchMiss(t *testing.T) {
 	countOpenMatchingBeadsHook = func(_, _ string, _ orchestrator.WorkflowValidation) (int, error) { return 3, nil }
 	defer func() { countOpenMatchingBeadsHook = nil }()

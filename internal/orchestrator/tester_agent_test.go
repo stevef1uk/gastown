@@ -394,6 +394,8 @@ func TestValidateTestPlanPathsCompanions(t *testing.T) {
 	}{
 		{"app/internal/store/store_test.go", "core", true},
 		{"app/backend/test_service.py", "core", true},
+		{"app/backend/service_test.py", "core", true},
+		{"app/tests/test_service.py", "core", true},
 		{"app/tests/browser.spec.js", "ui", true},
 		{"app/internal/store/store.go", "core", false},
 		{"app/package.json", "ui", false},
@@ -413,6 +415,12 @@ func TestValidateTestPlanPathsCompanions(t *testing.T) {
 	v.RequiredFiles = []string{"app/internal/store/store.go", "app/internal/store/store_test.go"}
 	if got := testPlanBeadMappingMismatches(v, blocks, map[string]string{"bead-1": "Implement app/internal/store/store.go per architecture"}); len(got) != 0 {
 		t.Fatalf("implicit companion should use its source bead: %v", got)
+	}
+	for _, test := range []string{"app/backend/test_service.py", "app/backend/service_test.py", "app/tests/test_service.py"} {
+		blocks := []TestPlanBlock{{ReqID: "core", TestFile: test, BeadID: "bead-1", Phase: "core"}}
+		if got := testPlanBeadMappingMismatches(v, blocks, map[string]string{"bead-1": "Implement app/backend/service.py per architecture"}); len(got) != 0 {
+			t.Fatalf("Python companion %s should use its unique source bead: %v", test, got)
+		}
 	}
 }
 
@@ -534,11 +542,11 @@ func TestSplitTestPlanBeadIDsAndMultiBeadMapping(t *testing.T) {
 	}
 	blocks := []TestPlanBlock{
 		{
-			ReqID:     "integration-test",
-			BeadID:    "pw-cuh; pw-2os; pw-xbv; pw-vji",
-			Phase:     "integration-test",
-			Level:     "e2e",
-			TestFile:  "pingapp/e2e/ping.spec.ts",
+			ReqID:    "integration-test",
+			BeadID:   "pw-cuh; pw-2os; pw-xbv; pw-vji",
+			Phase:    "integration-test",
+			Level:    "e2e",
+			TestFile: "pingapp/e2e/ping.spec.ts",
 		},
 	}
 	titles := map[string]string{

@@ -141,6 +141,8 @@ Test-only Go compilation failures and Python test import/collection errors can a
 
 Tester verification credit requires the complete configured command (allowing mayor/rig directory prefixes and harness-managed rewrites). Backgrounded suites, health probes, discovery-only flags, alternate configurations, and exit-masking wrappers cannot substitute for that command. Only recognized Node development-server commands are eligible for smoke rewriting; `npx playwright test` stays a foreground test runner.
 
+Tester rejection resolves scoped planned tests to their explicit test bead or unique Go/Python source companion owner before handing back to Polecat. Repairs select one owning delivery phase at a time, preserve any original resume phase, reopen the selected beads, and carry their IDs in rework feedback so reconciliation cannot auto-close them. Invalid or unresolved ownership routes through the configured `plan_gap` transition and unfreezes the test plan. Tester review is limited to active/completed phases and SPEC-backed requirements; passing verification alone cannot dismiss pending coverage rework without a repair attempt.
+
 Reusable hook implementations live in `internal/orchestrator/prompt_context.go` — add a **named** hook only when YAML cannot express it. See the maintainer block at the top of that file.
 
 Design entry must never reset the implementation layout. Fresh-clone cleanup is performed by rig creation/adoption, not by repeatable workflow states. The legacy `reset_layout_pre_implementation` workflow hook is a preserving no-op so older town templates or cached tasks cannot delete implementation files on rework.

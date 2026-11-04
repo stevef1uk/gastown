@@ -2,10 +2,11 @@ package orchestrator
 
 import (
 	"context"
-	"log"
-	"os/exec"
+	"errors"
 	"fmt"
+	"log"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -407,8 +408,8 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summa
 		log.Printf("[Manager] CompleteTask: sync profile for %s synced=%v", rig, synced)
 	}
 	// Mark TEST_PLAN.md as reviewed when the tester agent succeeds from test_plan state.
-// This prevents redundant re-validation on subsequent workflow entries.
-// Validate TEST_PLAN.md first to ensure it aligns with workflow-profile.json.
+	// This prevents redundant re-validation on subsequent workflow entries.
+	// Validate TEST_PLAN.md first to ensure it aligns with workflow-profile.json.
 	if (fromState == "test_plan" || fromState == "test_plan_review") && outcome == "success" && rig != "" {
 		if err := validateTestPlan(m.townRoot, rig); err != nil {
 			log.Printf("[Manager] %s validation failed for %s: %v", fromState, rig, err)
@@ -444,6 +445,31 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summa
 	if fromState == "qa_review" && IsFailureOutcome(outcome) && rig != "" {
 		if reason := rejectSpuriousQAFailure(m.townRoot, rig, summary, feedback); reason != "" {
 			return "", fmt.Errorf("qa verification needs retry: %s", reason)
+		}
+	}
+	testerRepairPrepared := false
+	if fromState == "test_review" && IsFailureOutcome(outcome) && rig != "" && state.Transitions[outcome].To == "implementation" {
+		v := m.workflowValidationFor(inst, tpl)
+		reopened, repairErr := ReopenImplementationBeadsAfterTestFailure(m.townRoot, rig, v, CombineQAReworkText(summary, feedback))
+		var gap *testReviewPlanGap
+		if errors.As(repairErr, &gap) {
+			if _, ok := state.Transitions["plan_gap"]; !ok {
+				return "", repairErr
+			}
+			outcome = "plan_gap"
+			summary = strings.TrimSpace(summary + "\n\nRepair ownership gap: " + gap.Error())
+			feedback = strings.TrimSpace(feedback + "\n\nCorrect TEST_PLAN.md requirement scope, test paths, and implementation bead ownership before retrying Polecat. " + gap.Error())
+			if err := SetTestPlanReviewed(m.townRoot, rig, false); err != nil {
+				return "", err
+			}
+			if err := SetTestPlanFrozen(m.townRoot, rig, false); err != nil {
+				return "", err
+			}
+		} else if repairErr != nil {
+			return "", fmt.Errorf("prepare Tester repair: %w", repairErr)
+		} else if len(reopened) > 0 {
+			summary = strings.TrimSpace("Repair implementation beads: " + strings.Join(reopened, ", ") + "\n\n" + summary)
+			testerRepairPrepared = true
 		}
 	}
 	next, err := inst.Transition(tpl, outcome)
@@ -588,7 +614,7 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summa
 		inst.CurrentState = next
 		inst.touchStateEnteredAt()
 	}
-	if next == "implementation" && rig != "" && fromState != "implementation" {
+	if next == "implementation" && rig != "" && fromState != "implementation" && !testerRepairPrepared {
 		if err := m.prepareImplementationPhase(rig, inst, tpl); err != nil {
 			return "", err
 		}
@@ -677,8 +703,7 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summa
 		}
 	}
 	// Timeout keeps PendingRework even on same-state transitions (planning → planning).
-	setRework := IsTimeoutOutcome(outcome) || implementationRewound ||
-		(next != fromState && (IsFailureOutcome(outcome) || IsArchitectureReworkOutcome(outcome)))
+	setRework := implementationRewound || (next != fromState && IsCrossStateReworkOutcome(outcome)) || IsTimeoutOutcome(outcome)
 	if setRework && next != "" {
 		v := m.workflowValidationFor(inst, tpl)
 		reworkFeedback := PrepareWorkflowReworkFeedback(fromState, next, summary, feedback, v, tpl.ReworkFeedback)
@@ -743,18 +768,6 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summa
 			reopenText := CombineQAReworkText(summary, feedback)
 			if reopened, rerr := ReopenImplementationBeadsAfterQAFailure(m.townRoot, rig, v, reopenText); rerr != nil {
 				fmt.Printf("[Manager] Warning: reopen implement beads after QA failure: %v\n", rerr)
-			} else if len(reopened) > 0 {
-				reworkFeedback = strings.TrimSpace(reworkFeedback + "\n\nAuto-reopened closed implement beads: " + strings.Join(reopened, ", "))
-			}
-		}
-		// Tester (test_review) rejection must also reopen closed implement beads owning
-		// stub/missing test files. Without this, te-* beads stay closed, the polecat
-		// re-enters implementation with an empty queue, verify trivially passes, and the
-		// workflow loops test_review ↔ implementation forever (see docs/design/tester-agent.md §8).
-		if fromState == "test_review" && next == "implementation" && rig != "" && phaseAdvance == nil {
-			reopenText := CombineQAReworkText(summary, feedback)
-			if reopened, rerr := ReopenImplementationBeadsAfterTestFailure(m.townRoot, rig, v, reopenText); rerr != nil {
-				fmt.Printf("[Manager] Warning: reopen implement beads after tester failure: %v\n", rerr)
 			} else if len(reopened) > 0 {
 				reworkFeedback = strings.TrimSpace(reworkFeedback + "\n\nAuto-reopened closed implement beads: " + strings.Join(reopened, ", "))
 			}

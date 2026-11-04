@@ -152,69 +152,12 @@ func ReopenImplementationBeadsAfterTestFailure(townRoot, rig string, v WorkflowV
 	if !BeadsDatabaseReady(townRoot, rig) {
 		return nil, nil
 	}
-	var reopened []string
-
-	prefix, _ := RigIssuePrefix(townRoot, rig)
-	known, _, _ := ListRigBeadIDSet(townRoot, rig)
-	citedIDs := ExtractKnownRigBeadIDsFromSummary(summary, prefix, known)
-	if len(citedIDs) > 0 {
-		more, err := reopenClosedImplementBeadsForIDs(townRoot, rig, v, citedIDs)
-		if err != nil {
-			return reopened, err
-		}
-		reopened = append(reopened, more...)
-	}
-
-	// Reopen beads that own planned test files reported missing/stub, so the polecat
-	// can WRITE:/EDIT: them on the reopened bead's queue slot.
 	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
 	data, err := os.ReadFile(TestPlanPath(rigDir))
 	if err != nil {
-		return dedupeStrings(reopened), nil
+		return nil, &testReviewPlanGap{reason: fmt.Sprintf("cannot resolve Tester repair ownership: read TEST_PLAN.md: %v", err)}
 	}
-	plan := string(data)
-	var wantPaths []string
-	wantPaths = append(wantPaths, MissingPlannedTestFiles(rigDir, v.LayoutRoot, plan)...)
-	wantPaths = append(wantPaths, StubTestFiles(rigDir, v.LayoutRoot, v, plan)...)
-	wantPaths = dedupeStrings(wantPaths)
-	if len(wantPaths) > 0 {
-		more, err := reopenClosedImplementBeadsForPaths(townRoot, rig, v, wantPaths)
-		if err != nil {
-			return reopened, err
-		}
-		reopened = append(reopened, more...)
-	}
-	// Fallback: when test_review fails or times out at runtime (test files exist and
-	// are not stubs, and summary did not cite a known bead ID), reopen the closed
-	// implement beads owning the active phase's planned test files (or E2E/test files
-	// in RequiredFiles) so implementation never re-enters with 0 open beads.
-	if len(reopened) == 0 {
-		scoped := v.ForActivePhase()
-		var activePhaseIDs []string
-		if id := strings.TrimSpace(scoped.ActivePhaseID()); id != "" {
-			activePhaseIDs = []string{id}
-		}
-		var fallbackPaths []string
-		if len(activePhaseIDs) > 0 {
-			fallbackPaths = append(fallbackPaths, PlannedTestFilesForPhases(plan, activePhaseIDs)...)
-		} else {
-			fallbackPaths = append(fallbackPaths, PlannedTestFiles(plan)...)
-		}
-		for _, f := range scoped.RequiredFiles {
-			if IsE2ETestPath(f) || strings.Contains(strings.ToLower(f), "test") || strings.Contains(strings.ToLower(f), "spec.") {
-				fallbackPaths = append(fallbackPaths, f)
-			}
-		}
-		fallbackPaths = dedupeStrings(fallbackPaths)
-		if len(fallbackPaths) > 0 {
-			more, err := reopenClosedImplementBeadsForPaths(townRoot, rig, v, fallbackPaths)
-			if err != nil {
-				return reopened, err
-			}
-			reopened = append(reopened, more...)
-		}
-	}
-	return dedupeStrings(reopened), nil
+	return reopenTestReviewRepair(townRoot, rig, v, string(data), summary)
 }
 
 // qaRuntimeFailureSummary reports QA feedback about HTTP/smoke/runtime (not unit-test-only).

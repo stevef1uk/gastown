@@ -404,6 +404,9 @@ func (r *stateRunner) pendingQAReworkShouldNotBlockPolecat() bool {
 	if !r.hasQAPendingRework() || r.task == nil || r.task.PendingRework == nil {
 		return false
 	}
+	if r.task.PendingRework.FromState == "test_review" {
+		return false
+	}
 	return r.pendingQAReworkCompletionError() == nil
 }
 

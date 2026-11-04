@@ -154,7 +154,7 @@ func TestReopenImplementationBeadsAfterTestFailure_reopensCitedAndStubTestBeads(
 	v := WorkflowValidation{
 		LayoutRoot:        "linkshelf",
 		BeadTitleContains: "Implement ",
-		RequiredFiles:     []string{"linkshelf/internal/api/handlers.go"},
+		RequiredFiles:     []string{"linkshelf/internal/api/handlers.go", testFile, e2eFile},
 	}
 
 	summary := "handlers_test.go is a stub — reopen bead " + handlersID + "; " + e2eFile + " missing entirely (" + e2eID + ")"
@@ -171,7 +171,7 @@ func TestReopenImplementationBeadsAfterTestFailure_reopensCitedAndStubTestBeads(
 	var openList struct {
 		IDs []string
 	}
-	out := runBD("list", "--status=open", "--json", "--limit=0")
+	out := runBD("list", "--status=open,in_progress", "--json", "--limit=0")
 	var beads []struct {
 		ID string `json:"id"`
 	}

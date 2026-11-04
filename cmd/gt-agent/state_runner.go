@@ -262,7 +262,8 @@ func (r *stateRunner) implementationArtifactFailureExtra(err error) string {
 }
 
 func (r *stateRunner) hasQAPendingRework() bool {
-	return r.task != nil && r.task.PendingRework != nil && r.task.PendingRework.FromState == "qa_review"
+	return r.task != nil && r.task.PendingRework != nil &&
+		(r.task.PendingRework.FromState == "qa_review" || r.task.PendingRework.FromState == "test_review")
 }
 
 func (r *stateRunner) emptyResponseNudge() string {

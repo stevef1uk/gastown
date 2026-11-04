@@ -409,6 +409,16 @@ func testPlanBeadMappingMismatches(v WorkflowValidation, blocks []TestPlanBlock,
 		if len(ids) == 0 || testFile == "" {
 			continue
 		}
+		ownedScope := v
+		ownedScope.RequiredFiles = v.UnionRequiredFiles()
+		ownedScope.DeliveryPhases = nil
+		for _, phase := range v.DeliveryPhases {
+			if strings.EqualFold(strings.TrimSpace(b.Phase), strings.TrimSpace(phase.ID)) {
+				ownedScope.RequiredFiles = phase.RequiredFiles
+				break
+			}
+		}
+		sourceOwner := SourcePathForOwnedTest(testFile, ownedScope)
 		testHasBead := false
 		for _, title := range titles {
 			path := NormalizeBeadPathForLayout(ExtractPathFromBeadTitle(title, v.BeadTitleContains), v.LayoutRoot)
@@ -428,7 +438,7 @@ func testPlanBeadMappingMismatches(v WorkflowValidation, blocks []TestPlanBlock,
 			}
 			got := NormalizeBeadPathForLayout(ExtractPathFromBeadTitle(title, v.BeadTitleContains), v.LayoutRoot)
 			if got == "" || PathMatchesImplementFile(testFile, got) ||
-				(!testHasBead && PathMatchesImplementFile(testFile, CorrelatedTestPathForSource(got, v))) {
+				(!testHasBead && got == sourceOwner) {
 				matched = true
 				break
 			}
@@ -623,12 +633,15 @@ func ValidateTestPlanPaths(v WorkflowValidation, blocks []TestPlanBlock) error {
 		}
 		matched := false
 		for _, file := range files {
-			if testFile == filepath.ToSlash(strings.TrimSpace(file)) ||
-				testFile == CorrelatedTestPathForSource(file, v) {
+			if testFile == filepath.ToSlash(strings.TrimSpace(file)) {
 				matched = true
 				break
 			}
 		}
+		ownedScope := v
+		ownedScope.RequiredFiles = files
+		ownedScope.DeliveryPhases = nil
+		matched = matched || SourcePathForOwnedTest(testFile, ownedScope) != ""
 		if !matched {
 			return fmt.Errorf("TEST_PLAN.md test file %q must be a required test or a conventional companion of a required source file for phase %q; use architecture_failure if the delivery contract has no suitable test path", testFile, b.Phase)
 		}
