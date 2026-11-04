@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -265,7 +266,10 @@ func (s *GtEventsSource) tail(ctx context.Context) {
 	_, _ = s.file.Seek(0, 2)
 
 	// Now tail for new events
-	scanner := bufio.NewScanner(s.file)
+	// Scanner stops permanently at EOF. Reader lets us retry when the log
+	// grows, retaining partial lines until the writer appends a newline.
+	reader := bufio.NewReader(s.file)
+	var pending strings.Builder
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
 
@@ -274,14 +278,22 @@ func (s *GtEventsSource) tail(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			for scanner.Scan() {
-				line := scanner.Text()
-				if event := parseGtEventLine(line); event != nil {
+			for {
+				line, err := reader.ReadString('\n')
+				pending.WriteString(line)
+				if err != nil {
+					if err != io.EOF {
+						return
+					}
+					break
+				}
+				if event := parseGtEventLine(pending.String()); event != nil {
 					select {
 					case s.events <- *event:
 					default:
 					}
 				}
+				pending.Reset()
 			}
 		}
 	}
