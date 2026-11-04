@@ -49,6 +49,9 @@ type StateHooks struct {
 	AutoVerify []AutoVerifyHook `yaml:"auto_verify,omitempty" json:"auto_verify,omitempty"`
 
 	Artifacts string `yaml:"artifacts,omitempty" json:"artifacts,omitempty"`
+	// RequireExplicitOutcome disables artifact auto-completion and early failure
+	// retries for reviews whose verdict must come from the reviewing agent.
+	RequireExplicitOutcome bool `yaml:"require_explicit_outcome,omitempty" json:"require_explicit_outcome,omitempty"`
 	// PostArtifactSuccess runs named hooks after artifact validation passes (e.g. close_project_setup_beads).
 	PostArtifactSuccess []string `yaml:"post_artifact_success,omitempty" json:"post_artifact_success,omitempty"`
 	// AutoVerifyOKClearsCmdFailure clears hadCmdFailure after a successful auto_verify (project_setup recovery).
@@ -176,6 +179,9 @@ func (h StateHooks) ApplyOverrides(override StateHooks) StateHooks {
 	}
 	if override.Artifacts != "" {
 		h.Artifacts = override.Artifacts
+	}
+	if override.RequireExplicitOutcome {
+		h.RequireExplicitOutcome = true
 	}
 	if len(override.PostArtifactSuccess) > 0 {
 		h.PostArtifactSuccess = override.PostArtifactSuccess

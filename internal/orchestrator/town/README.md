@@ -129,6 +129,8 @@ When changing how a workflow step behaves (prompt size, bead queue text, empty-r
 
 Do **not** add `if task.State == "implementation"` (or any state name) in `cmd/gt-agent`. That bypasses town sync and duplicates config.
 
+Reviews can set `require_explicit_outcome: true` to require an agent verdict instead of artifact auto-completion. This also accepts early failure verdicts without asking the reviewer to repair implementation. Both workflows enable this for Tester test review; successful file inspection cannot clear a failed verification, and failed verification invalidates any earlier green result.
+
 Reusable hook implementations live in `internal/orchestrator/prompt_context.go` — add a **named** hook only when YAML cannot express it. See the maintainer block at the top of that file.
 
 Design entry must never reset the implementation layout. Fresh-clone cleanup is performed by rig creation/adoption, not by repeatable workflow states. The legacy `reset_layout_pre_implementation` workflow hook is a preserving no-op so older town templates or cached tasks cannot delete implementation files on rework.

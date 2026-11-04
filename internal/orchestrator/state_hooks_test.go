@@ -17,6 +17,13 @@ func TestStateHooks_EffectiveMaxCmdTurns(t *testing.T) {
 	}
 }
 
+func TestStateHooks_RequireExplicitOutcomeOverride(t *testing.T) {
+	h := StateHooks{}.ApplyOverrides(StateHooks{RequireExplicitOutcome: true})
+	if !h.RequireExplicitOutcome || !h.ApplyOverrides(StateHooks{}).RequireExplicitOutcome {
+		t.Fatal("explicit review verdict requirement must survive hook overrides")
+	}
+}
+
 func TestRetryHintKey_project_setup(t *testing.T) {
 	t.Parallel()
 	v := WorkflowValidation{QAVerifyCommand: "cd linkshelf && go test ./..."}

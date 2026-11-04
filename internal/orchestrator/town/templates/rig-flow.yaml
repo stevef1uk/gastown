@@ -423,6 +423,7 @@ states:
       python3_rewrite: true
       track: test_review
       artifacts: test_review
+      require_explicit_outcome: true
       bead_ids_in_summary: true
       retry_hint: |
         One CMD: per line. Read TEST_PLAN.md and the test files it names from {{rig}}/mayor/rig; run {{phase_qa_verify_command}}.

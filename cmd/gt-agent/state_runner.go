@@ -1109,6 +1109,9 @@ func (r *stateRunner) runPostArtifactSuccess() error {
 }
 
 func (r *stateRunner) tryAutoOutcome() (outcome, summary string, ok bool) {
+	if r.hooks.RequireExplicitOutcome {
+		return "", "", false
+	}
 	fn, ok := artifactAutoCompleters[r.hooks.Artifacts]
 	if !ok {
 		return "", "", false

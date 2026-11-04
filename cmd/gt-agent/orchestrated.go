@@ -364,7 +364,7 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 			feedback := feedbackBuilder.String()
 			if o, s, ok := parseOrchestratedResult(response, task.AllowedOutcomes); ok {
 				o = normalizeOrchestratedOutcome(o, task.AllowedOutcomes)
-				if (o == "failure" || o == "fail") && turn < maxTurns && turn <= 3 {
+				if (o == "failure" || o == "fail") && turn < maxTurns && turn <= 3 && !runner.hooks.RequireExplicitOutcome {
 					orchestratedPrintf("[gt-agent] ignoring premature failure JSON (turn %d/%d); try to fix the issue first\n", turn, maxTurns)
 					recordAttemptFeedback("Failure JSON ignored on early turn. Review command output, try to fix the issue, then send failure if truly blocked.\n")
 					pendingFailureSummary = s
@@ -3567,7 +3567,7 @@ func validateTestReviewArtifacts(townRoot, rig, outcome string, hadCmdFailure, v
 	sendToPlan := outcome == "plan_gap"
 	sendToArchitect := outcome == "architecture_failure"
 
-	if hadCmdFailure && !sendToPolecat && !sendToPlan && !sendToArchitect && !(v.HasPhasedDelivery() && verifyOK) {
+	if hadCmdFailure && !sendToPolecat && !sendToPlan && !sendToArchitect {
 		return fmt.Errorf("test_review step had failed commands; fix errors before completing")
 	}
 	if !orchestrator.TestPlanMeetsMinSize(rigDir, v) {

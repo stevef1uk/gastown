@@ -260,13 +260,11 @@ var trackHandlers = map[string]trackFn{
 	"test_review": func(r *stateRunner, cmd string, cmdErr error) {
 		if cmdErr != nil && !isQAReadOnlyCommand(cmd) {
 			r.track.hadCmdFailure = true
+			r.track.verifyOK = false
 		}
-		if cmdErr == nil && r.isQATestCommandOK(cmd) {
-			r.track.verifyOK = true
-			r.track.hadCmdFailure = false
-		}
-		if cmdErr == nil && isQAReadOnlyCommand(cmd) {
-			r.track.hadCmdFailure = false
+		if r.isQATestCommandOK(cmd) {
+			r.track.verifyOK = cmdErr == nil
+			r.track.hadCmdFailure = cmdErr != nil
 		}
 	},
 }
