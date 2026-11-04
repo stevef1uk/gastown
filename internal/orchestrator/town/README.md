@@ -129,7 +129,9 @@ When changing how a workflow step behaves (prompt size, bead queue text, empty-r
 
 Do **not** add `if task.State == "implementation"` (or any state name) in `cmd/gt-agent`. That bypasses town sync and duplicates config.
 
-Reviews can set `require_explicit_outcome: true` to require an agent verdict instead of artifact auto-completion. This also accepts early failure verdicts without asking the reviewer to repair implementation. Both workflows enable this for Tester test review; successful file inspection cannot clear a failed verification, and failed verification invalidates any earlier green result.
+Reviews can set `require_explicit_outcome: true` to require an agent verdict instead of artifact auto-completion. This also accepts early failure verdicts without asking the reviewer to repair implementation. Both workflows enable this for QA plan review and Tester test review. Plan review cannot convert a reviewer failure into success based on mechanical artifact checks. Successful file inspection cannot clear a failed verification, and failed verification invalidates any earlier green result.
+
+Planning sync regenerates missing or misaligned plans and preserves valid nested-path plans, including Planner-authored acceptance and verification corrections. Non-Go artifacts in phased Go projects use the active phase's verification command rather than Go compilation.
 
 Tester verification credit requires the complete configured command (allowing mayor/rig directory prefixes and harness-managed rewrites). Backgrounded suites, health probes, discovery-only flags, alternate configurations, and exit-masking wrappers cannot substitute for that command. Only recognized Node development-server commands are eligible for smoke rewriting; `npx playwright test` stays a foreground test runner.
 

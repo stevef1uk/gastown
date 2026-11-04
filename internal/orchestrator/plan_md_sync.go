@@ -52,7 +52,7 @@ func SyncPlanningArtifacts(townRoot, rig string, v WorkflowValidation, forcePlan
 		parts = append(parts, repairLog)
 	}
 	beadsReady := BeadsDatabaseReady(townRoot, rig)
-	if beadsReady && (forcePlan || RequiresExactImplementPaths(v) || PlanningPlanMDNeedsRefresh(townRoot, rig, v)) {
+	if beadsReady && (forcePlan || PlanningPlanMDNeedsRefresh(townRoot, rig, v)) {
 		// Try in-place ID refresh first — preserves LLM's plan.md structure/content
 		// when bead IDs changed (e.g. LLM deleted and recreated beads).
 		if !forcePlan && !RequiresExactImplementPaths(v) {
@@ -432,6 +432,9 @@ func WritePlanningPlanMD(townRoot, rig string, v WorkflowValidation) (bool, erro
 		}
 		b.WriteString("## Phase context\n\n")
 		b.WriteString(fmt.Sprintf("Active delivery phase `%s` only. Later phases start automatically after QA `all_passed` (or use `gt rig set-phase` to switch manually).\n\n", id))
+		if verify := v.ActivePhaseQAVerifyCommand(); verify != "" {
+			b.WriteString(fmt.Sprintf("- Phase verification: `%s`\n", verify))
+		}
 	}
 	body := b.String()
 	body = padPlanningPlanMD(body, minBytes)

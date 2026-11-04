@@ -197,6 +197,7 @@ states:
         beads_dir: true
       track: plan_review
       artifacts: plan_review
+      require_explicit_outcome: true
       bead_ids_in_summary: true
       retry_hint: |
         One CMD: per line. Run bd list --status=open,in_progress from {{rig}}/mayor/rig; compare titles to active-phase required_files ({{required_files}}).

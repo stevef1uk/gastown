@@ -65,9 +65,11 @@ gt-agent also runs **mechanical** checks on success; you must catch the same iss
    - Titles contain `{{bead_title_contains}}` and the full repo-relative path.
    - `plan.md` **## Bead map**: one `### <real-id>: <path>` per active bead; IDs from **this session's** `bd list` only.
 
-5. **Tests scope**
-   - If `required_files` has **no** test files listed, plan must **not** mandate httptest, eslint, or "every bead must have unit tests".
-   - When tests are in profile, plan acceptance bullets may name them; otherwise defer to SPEC optional tests.
+5. **Tests scope and verification**
+    - If `required_files` has **no** test files listed, plan must **not** mandate httptest, eslint, or "every bead must have unit tests".
+    - When tests are in profile, plan acceptance bullets may name them; otherwise defer to SPEC optional tests.
+    - The active phase requires `{{phase_qa_verify_command}}`. Inspect the plan's verification commands without executing them. A backend build cannot verify browser tests, static assets, or client behavior. Reject a plan that replaces the phase's required checks with an unrelated build or omits the phase verification.
+    - Acceptance must describe the active phase's concrete behavior and assertions from SPEC/architecture. File existence and generic "per architecture" bullets alone do not establish behavioral coverage; return failure with the missing scenarios.
 
 6. **Integration contract (active phase only)**
    - Follow **Integration contract (this phase)** above — not `all_required_files` or later delivery phases.
@@ -93,7 +95,7 @@ gt-agent also runs **mechanical** checks on success; you must catch the same iss
 
 4. On **failure**, name **concrete fixes** (wrong route, wrong symbol, missing bead path, duplicate bead ID, expand plan section) so the Planner can rework in one pass.
 
-5. On **success**, summary must state that SPEC HTTP table, store API names, and beads were verified; mention integration contract **only** when required this phase.
+5. On **success**, summary must state that the active phase's contracts, verification command, acceptance coverage, and beads were verified; mention HTTP/store/integration contracts only when applicable this phase. Mechanical artifact checks do not replace your review verdict.
 
 6. **CRITICAL:** Do not emit JSON in the same message as `CMD:` lines. Wait for command output on the next turn before choosing outcome.
 

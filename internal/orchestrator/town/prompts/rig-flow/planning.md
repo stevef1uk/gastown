@@ -23,8 +23,8 @@ $GT_ROOT/{{rig}}/mayor/rig/{{layout_root}}/  ← layout root (ALL files go here)
 - It wrote **`plan.md`** with real bead IDs from `bd list`
 
 **YOUR JOB IS NOT TO CREATE BEADS.** The correct implement beads ALREADY EXIST.
-1. **VERIFY ONLY**: Run `cd {{rig}}/mayor/rig && bd list --status=open && wc -c plan.md`
-2. If `plan.md` ≥ {{min_plan_bytes}} bytes and open beads cover `required_files`, send JSON `{"outcome":"success","summary":"..."}` immediately.
+1. Run `cd {{rig}}/mayor/rig && bd list --status=open && wc -c plan.md`, then read SPEC.md, architecture.md, and plan.md.
+2. Confirm the active phase's verification is `{{phase_qa_verify_command}}` and expand generic acceptance bullets into concrete behavior/assertions from SPEC and architecture. Address all QA rework before success; byte count and bead coverage alone do not establish a complete plan.
 3. **DO NOT `bd create`** — the pre_run hook already created the correct beads. Creating more causes "unknown bead IDs" in plan.md validation.
 4. If validation fails with "unknown bead IDs", run `gt rig sync-planning {{rig}} --force` (NOT `bd create`).
 
@@ -34,7 +34,7 @@ Planner validation only gates the **active phase's** required files. If a comple
 
 Do **NOT** `bd create` for completed-phase files, and do **NOT** send `architecture_failure` for missing implementation files or missing/closed beads. For an active-phase required file with no open/in-progress bead, run `gt rig sync-planning {{rig}} --force`: planning sync reopens its existing closed bead when the file is missing/stubbed, or creates a bead if none exists. Re-read `bd list --status=open,in_progress` and validate plan.md; the Polecat implements the missing file. Preserve architecture.md. Use `architecture_failure` only for a concrete SPEC/architecture contradiction that cannot be resolved by bead repair or implementation.
 
-When `required_files` use nested paths under `{{layout_root}}/` (e.g. `{{layout_root}}/internal/api/handlers.go`), **never** `cat > plan.md` with flattened paths like `{{layout_root}}/handlers.go` — gt-agent rejects that heredoc; sync owns `plan.md`.
+When `required_files` use nested paths under `{{layout_root}}/` (e.g. `{{layout_root}}/internal/api/handlers.go`), preserve those exact paths when editing plan.md; flattened paths like `{{layout_root}}/handlers.go` are rejected. Sync preserves a valid plan so your acceptance and verification corrections survive review.
 
 When the workflow profile lists paths under `{{layout_root}}/`, every implement path in **architecture.md**, **plan.md** bead titles, and `### <id>:` headers must use that prefix (e.g. `{{layout_root}}/internal/store/schema.go`, not bare `internal/store/schema.go`). gt-agent rejects design/planning success on drift.
 

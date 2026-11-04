@@ -212,6 +212,12 @@ func ImplementationVerifyCommandForBead(v WorkflowValidation, mayorRigDir, beadP
 		return DockerImplementationVerifyCommandForBead(v, mayorRigDir, beadPath)
 	}
 	if WorkflowUsesGo(v) {
+		if v.HasPhasedDelivery() && !strings.HasSuffix(lowerPath, ".go") &&
+			filepath.Base(lowerPath) != "go.mod" && filepath.Base(lowerPath) != "go.sum" {
+			if verify := v.ActivePhaseQAVerifyCommand(); verify != "" {
+				return verify
+			}
+		}
 		return GoImplementationVerifyCommandForBead(v, mayorRigDir, beadPath)
 	}
 	if WorkflowUsesPython(v) {
