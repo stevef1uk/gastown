@@ -315,6 +315,8 @@ func RunPreRunHook(step, townRoot, rig string, v WorkflowValidation) (string, er
 	case "prune_rig_root_junk":
 		mayorRig := filepath.Join(townRoot, rig, "mayor", "rig")
 		return rigpkg.RemoveMayorRigAgentJunkLog(mayorRig)
+	case "repair_project_git_ignores":
+		return "", rigpkg.RepairMayorRigProjectIgnores(filepath.Join(townRoot, rig, "mayor", "rig"))
 	case "reset_layout_pre_implementation":
 		// Legacy town templates/tasks may still request this hook. Layout cleanup
 		// belongs to rig creation/adoption, never a repeatable workflow step:

@@ -369,9 +369,10 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 					feedbackBuilder.WriteString("\n\n" + msg)
 					feedback = feedbackBuilder.String()
 					recordAttemptFeedback(msg + "\n")
-				} else if (o == "failure" || o == "fail") && turn < maxTurns && turn <= 3 && !runner.hooks.RequireExplicitOutcome {
+				} else if (o == "failure" || o == "fail") && turn < maxTurns && (turn <= 3 || runner.hooks.Artifacts == "implementation") && !runner.hooks.RequireExplicitOutcome {
 					orchestratedPrintf("[gt-agent] ignoring premature failure JSON (turn %d/%d); try to fix the issue first\n", turn, maxTurns)
 					recordAttemptFeedback("Failure JSON ignored on early turn. Review command output, try to fix the issue, then send failure if truly blocked.\n")
+					feedback += "\n\nFailure JSON was emitted before command results were available and was not accepted. Read the actual output above, repair any remaining blocker, and send a JSON-only verdict on a later turn."
 					pendingFailureSummary = s
 				} else if (o == "failure" || o == "fail") && turn < maxTurns {
 					orchestratedPrintf("[gt-agent] failure JSON received (with CMD lines) — accepting failure\n")

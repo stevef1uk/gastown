@@ -122,10 +122,7 @@ func gasTownMayorRigIgnorePatterns() []string {
 		"env/",
 		".venv/",
 		"venv/",
-		"tests/",
 		"polecat/",
-		"package.json",
-		"package-lock.json",
 		"test-execution-command",
 		"tests_skipped.txt",
 		"spec_file_path.txt",
@@ -152,10 +149,7 @@ func mayorRigUntrackPaths() []string {
 		"env",
 		".venv",
 		"venv",
-		"tests",
 		"polecat",
-		"package.json",
-		"package-lock.json",
 		"test-execution-command",
 		"tests_skipped.txt",
 		"spec_file_path.txt",
@@ -169,6 +163,9 @@ func mayorRigUntrackPaths() []string {
 // EnsureMayorRigGitHygiene configures mayor/rig so orchestrator checkpoint commits
 // stay limited to project source. Called from gt rig add and gt rig add --adopt.
 func EnsureMayorRigGitHygiene(worktreePath string) error {
+	if err := RepairMayorRigProjectIgnores(worktreePath); err != nil {
+		return err
+	}
 	if err := EnsureGitignorePatterns(worktreePath); err != nil {
 		return err
 	}
@@ -182,6 +179,42 @@ func EnsureMayorRigGitHygiene(worktreePath string) error {
 		return err
 	}
 	untrackPathsIfTracked(worktreePath, mayorRigUntrackPaths())
+	return nil
+}
+
+func RepairMayorRigProjectIgnores(worktreePath string) error {
+	for _, path := range []string{filepath.Join(worktreePath, ".gitignore"), gitLocalExcludePathForWorktree(worktreePath)} {
+		data, err := os.ReadFile(path)
+		if os.IsNotExist(err) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		var kept []string
+		generated := false
+		changed := false
+		for _, line := range strings.Split(string(data), "\n") {
+			trimmed := strings.TrimSpace(line)
+			if strings.HasPrefix(trimmed, "#") || trimmed == "" {
+				generated = trimmed == "# Gas Town mayor/rig (rig-flow checkpoints)" || trimmed == "# Gas Town mayor/rig (local exclude)"
+			}
+			if generated && (trimmed == "tests/" || trimmed == "package.json" || trimmed == "package-lock.json") {
+				changed = true
+				continue
+			}
+			kept = append(kept, line)
+		}
+		if changed {
+			info, err := os.Stat(path)
+			if err != nil {
+				return err
+			}
+			if err := os.WriteFile(path, []byte(strings.Join(kept, "\n")), info.Mode().Perm()); err != nil {
+				return err
+			}
+		}
+	}
 	return nil
 }
 

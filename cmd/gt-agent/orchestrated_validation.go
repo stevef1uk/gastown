@@ -163,6 +163,18 @@ func testReviewVerifyCommandMatches(cmd string, v orchestrator.WorkflowValidatio
 }
 
 func isImplementationVerifyCommandOK(cmd, townRoot, rig, activeBead string, v orchestrator.WorkflowValidation) bool {
+	if strings.TrimSpace(v.ActivePhaseQAVerifyCommand()) != "" && testReviewVerifyCommandMatches(cmd, v) {
+		return true
+	}
+	if phase, ok := v.ActivePhase(); ok && len(phase.RequiredFiles) > 0 && !orchestrator.WorkflowUsesDocker(v) {
+		backend := false
+		for _, file := range phase.RequiredFiles {
+			backend = backend || strings.HasSuffix(file, ".go") || strings.HasSuffix(file, ".py")
+		}
+		if !backend {
+			return false
+		}
+	}
 	// Go implementation verification must contain every toolchain step. The
 	// permissive QA matcher accepts any part of a chain, including tidy alone.
 	if orchestrator.WorkflowUsesGo(v) {

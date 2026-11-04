@@ -607,6 +607,79 @@ func TestEnsureMayorRigGitHygiene_AppendsPatternsAndUntracksBeads(t *testing.T) 
 	}
 }
 
+func TestMayorRigHygienePreservesTestsAndNodeManifests(t *testing.T) {
+	dir := t.TempDir()
+	if out, err := runGit(dir, "init", "-q"); err != nil {
+		t.Fatalf("git init: %v: %s", err, out)
+	}
+	files := []string{"tests/test_service.py", "app/tests/e2e.spec.js", "package.json", "package-lock.json", "app/package.json", "app/package-lock.json"}
+	for _, file := range files {
+		path := filepath.Join(dir, file)
+		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("project source\n"), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if out, err := runGit(dir, "add", "--", "."); err != nil {
+		t.Fatalf("stage source: %v: %s", err, out)
+	}
+	for path, header := range map[string]string{
+		filepath.Join(dir, ".gitignore"):    "# Gas Town mayor/rig (rig-flow checkpoints)",
+		gitLocalExcludePathForWorktree(dir): "# Gas Town mayor/rig (local exclude)",
+	} {
+		legacy := "# User rules\ncustom-tests/\n\n" + header + "\ntests/\npackage.json\npackage-lock.json\nnode_modules/\n\n# Other user rules\nprivate.json\n"
+		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(legacy), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for attempt := 0; attempt < 2; attempt++ {
+		if err := EnsureMayorRigGitHygiene(dir); err != nil {
+			t.Fatal(err)
+		}
+		for _, file := range files {
+			if out, err := runGit(dir, "ls-files", "--error-unmatch", "--", file); err != nil {
+				t.Fatalf("hygiene untracked project file %s: %v: %s", file, err, out)
+			}
+			if out, err := runGit(dir, "check-ignore", "--no-index", "--", file); err == nil {
+				t.Fatalf("hygiene ignores project file %s: %s", file, out)
+			}
+		}
+	}
+	for _, file := range []string{"custom-tests/secret.py", "private.json", "app/node_modules/dependency/index.js"} {
+		if _, err := runGit(dir, "check-ignore", "--no-index", "--", file); err != nil {
+			t.Fatalf("lost user/runtime ignore %s: %v", file, err)
+		}
+	}
+}
+
+func TestRepairMayorRigProjectIgnoresPreservesUserAuthoredRules(t *testing.T) {
+	dir := t.TempDir()
+	if out, err := runGit(dir, "init", "-q"); err != nil {
+		t.Fatalf("git init: %v: %s", err, out)
+	}
+	user := "# User ignores\ntests/\npackage.json\npackage-lock.json\n"
+	for _, path := range []string{filepath.Join(dir, ".gitignore"), gitLocalExcludePathForWorktree(dir)} {
+		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(user), 0644); err != nil {
+			t.Fatal(err)
+		}
+		if err := RepairMayorRigProjectIgnores(dir); err != nil {
+			t.Fatal(err)
+		}
+		got, err := os.ReadFile(path)
+		if err != nil || string(got) != user {
+			t.Fatalf("user-authored ignores changed: %q %v", got, err)
+		}
+	}
+}
+
 // TestGasTownLocalExcludePatterns_IncludesBeads verifies that the local exclude
 // patterns include .beads/ (defense-in-depth for gas-7vg) while the gitignore
 // patterns do NOT include .beads/ (regression guard).
