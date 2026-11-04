@@ -125,7 +125,7 @@ func ValidatePlanningBeadCreate(townRoot, rig, title string, v WorkflowValidatio
 			return err
 		}
 		if covered {
-			return fmt.Errorf("open implement beads already cover required_files — do not bd create; run bd list --status=open, expand plan.md if needed, then JSON success (or: gt rig sync-planning %s --force)", rig)
+			return fmt.Errorf("open/in_progress implement beads already cover required_files — do not bd create; run bd list --status=open,in_progress, amend plan.md as requested, then JSON success (or repair beads with gt rig sync-planning %s without --force)", rig)
 		}
 	}
 	return ValidateImplementBeadCreateTitle(title, v)

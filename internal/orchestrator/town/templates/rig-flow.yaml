@@ -131,7 +131,7 @@ states:
         One CMD: per line. After `cd {{rig}}/mayor/rig`, write plan.md with a relative path (not {{rig}}/mayor/rig/plan.md).
         Heredoc must end with a line containing only EOF. Verify with `wc -c {{rig}}/mayor/rig/plan.md` (full path from town root).
       failure_hint: |
-        Do not send success JSON until CMD: lines ran in this session. If sync_planning_artifacts already created beads, bd list only — gt-agent rejects bd create when required_files are covered. Do **not** heredoc plan.md when required_files use {{layout_root}}/internal/ or {{layout_root}}/cmd/ — sync builds plan.md with full paths. Run `cd {{rig}}/mayor/rig && wc -c plan.md` (≥ {{min_plan_bytes}} bytes; use full path `wc -c {{rig}}/mayor/rig/plan.md` from town root if no cd). Work from {{rig}}/mayor/rig — the environment already has BEADS_DIR set to the rig's beads database.
+        Read the review feedback and amend plan.md before success on rework. Preserve real bead IDs and exact required_files paths, including nested directories. If sync_planning_artifacts already created beads, bd list only — do not create duplicates. A byte-count check cannot replace the requested amendment. Run `cd {{rig}}/mayor/rig && wc -c plan.md` (≥ {{min_plan_bytes}} bytes). Work from {{rig}}/mayor/rig — BEADS_DIR is already set.
     transitions:
       success:
         to: plan_review

@@ -348,7 +348,7 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summa
 			v := m.workflowValidationFor(inst, tpl)
 			switch fromState {
 			case "planning", "plan_review", "project_setup":
-				if _, err := SyncPlanningArtifacts(m.townRoot, rig, v, true); err != nil {
+				if _, err := SyncPlanningArtifacts(m.townRoot, rig, v, false); err != nil {
 					if planningSyncNeedsArchitect(err, m.townRoot, rig, v) {
 						next, _ := inst.Transition(tpl, "architecture_failure")
 						if next == "" {
@@ -995,7 +995,7 @@ func (m *Manager) prepareImplementationPhase(rig string, inst *WorkflowInstance,
 		return nil
 	}
 	v := m.workflowValidationFor(inst, tpl)
-	if _, err := SyncPlanningArtifacts(m.townRoot, rig, v, true); err != nil {
+	if _, err := SyncPlanningArtifacts(m.townRoot, rig, v, false); err != nil {
 		return fmt.Errorf("sync planning before implementation: %w", err)
 	}
 	rigDir := filepath.Join(m.townRoot, rig, "mayor", "rig")

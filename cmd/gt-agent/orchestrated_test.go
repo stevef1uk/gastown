@@ -667,8 +667,14 @@ func TestValidatePlanningCommand_forbidsImplementation(t *testing.T) {
 		LayoutRoot:    "linkshelf",
 		RequiredFiles: []string{"linkshelf/internal/api/handlers.go", "linkshelf/cmd/server/main.go"},
 	}
-	if err := validatePlanningCommandWithProfile(plan, "", "testgt3", nestedV); err == nil {
-		t.Fatal("plan heredoc must be rejected when required_files use nested layout paths")
+	if err := validatePlanningCommandWithProfile(plan, "", "mockrig", nestedV); err != nil {
+		t.Fatalf("Planner must be able to amend plan.md for nested layouts: %v", err)
+	}
+	if err := validatePlanningCommandWithProfile("gt rig sync-planning mockrig --force", "", "mockrig", nestedV); err == nil {
+		t.Fatal("Planner must not force regeneration over authored acceptance criteria")
+	}
+	if err := validatePlanningCommandWithProfile("gt rig sync-planning mockrig", "", "mockrig", nestedV); err != nil {
+		t.Fatalf("non-destructive bead repair should remain available: %v", err)
 	}
 	planBackend := "bash -lc 'cat > mockrig/mayor/rig/plan.md <<'EOF'\nBead 1: Implement backend/fizzbuzz.py\nEOF'"
 	if err := validatePlanningCommand(planBackend, "mockrig"); err != nil {
@@ -1886,4 +1892,3 @@ func TestExecuteTestPlanNativeEditOp_unifiedDiffFence(t *testing.T) {
 		t.Fatalf("updated TEST_PLAN.md did not apply diff: %s", string(updated))
 	}
 }
-

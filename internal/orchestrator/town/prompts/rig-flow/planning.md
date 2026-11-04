@@ -26,13 +26,13 @@ $GT_ROOT/{{rig}}/mayor/rig/{{layout_root}}/  ← layout root (ALL files go here)
 1. Run `cd {{rig}}/mayor/rig && bd list --status=open && wc -c plan.md`, then read SPEC.md, architecture.md, and plan.md.
 2. Confirm the active phase's verification is `{{phase_qa_verify_command}}` and expand generic acceptance bullets into concrete behavior/assertions from SPEC and architecture. Address all QA rework before success; byte count and bead coverage alone do not establish a complete plan.
 3. **DO NOT `bd create`** — the pre_run hook already created the correct beads. Creating more causes "unknown bead IDs" in plan.md validation.
-4. If validation fails with "unknown bead IDs", run `gt rig sync-planning {{rig}} --force` (NOT `bd create`).
+4. If validation fails with "unknown bead IDs", run `gt rig sync-planning {{rig}}` (NOT `bd create`). Never use `--force` after authoring the plan: it replaces your acceptance criteria with a scaffold. Re-read plan.md after any sync.
 
 ## Missing files from COMPLETED phases
 
 Planner validation only gates the **active phase's** required files. If a completed phase's files were never actually written (the workflow advanced without them), those gaps are **not** a planning blocker and are **not** fixed by the planner. They are repaired by the **QA rewind**: at `qa_review`, QA detects the missing/stubbed completed-phase file, rewinds `active_phase_id` to that phase, and routes to the polecat to write it.
 
-Do **NOT** `bd create` for completed-phase files, and do **NOT** send `architecture_failure` for missing implementation files or missing/closed beads. For an active-phase required file with no open/in-progress bead, run `gt rig sync-planning {{rig}} --force`: planning sync reopens its existing closed bead when the file is missing/stubbed, or creates a bead if none exists. Re-read `bd list --status=open,in_progress` and validate plan.md; the Polecat implements the missing file. Preserve architecture.md. Use `architecture_failure` only for a concrete SPEC/architecture contradiction that cannot be resolved by bead repair or implementation.
+Do **NOT** `bd create` for completed-phase files, and do **NOT** send `architecture_failure` for missing implementation files or missing/closed beads. For an active-phase required file with no open/in-progress bead, run `gt rig sync-planning {{rig}}`: planning sync reopens its existing closed bead when the file is missing/stubbed, or creates a bead if none exists. Re-read `bd list --status=open,in_progress` and validate plan.md; the Polecat implements the missing file. An in_progress bead is not missing merely because `bd list --status=open` omits it. Preserve architecture.md. Use `architecture_failure` only for a concrete SPEC/architecture contradiction that cannot be resolved by bead repair or implementation.
 
 When `required_files` use nested paths under `{{layout_root}}/` (e.g. `{{layout_root}}/internal/api/handlers.go`), preserve those exact paths when editing plan.md; flattened paths like `{{layout_root}}/handlers.go` are rejected. Sync preserves a valid plan so your acceptance and verification corrections survive review.
 

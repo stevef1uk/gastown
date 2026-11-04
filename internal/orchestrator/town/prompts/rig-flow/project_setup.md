@@ -24,7 +24,7 @@ $GT_ROOT/{{rig}}/mayor/rig/{{layout_root}}/  ← layout root (ALL files go here)
 
 1. Prepare the repo so the Polecat implements **one file per bead** without toolchain churn.
 2. Run `{{project_setup_verify_hint}}` green before implementation starts (module/venv only — **not** full app build or curl).
-3. **Beads:** `sync_planning_artifacts` already created one open bead per `required_files` path. Use `bd list` only — **do not `bd create`** unless a required path has no open bead (then run `gt rig sync-planning {{rig}} --force` via mayor, not ad-hoc titles).
+3. **Beads:** `sync_planning_artifacts` already created one open bead per `required_files` path. Use `bd list --status=open,in_progress` — **do not `bd create`** unless a required path has no open/in-progress bead (then run `gt rig sync-planning {{rig}}` via mayor, not ad-hoc titles).
 
 Missing application source and test files are expected before implementation and do not block setup success. Leave their beads for the Polecat. After the setup verify passes and the scaffold is ready, report success even if an earlier attempt reported failure because implementation files were missing.
 
@@ -52,7 +52,7 @@ Missing application source and test files are expected before implementation and
    CMD: cd {{rig}}/mayor/rig && bd list --status=open --flat --limit=0 | grep -Fi '{{bead_title_contains}}' || true
    ```
 
-3. If beads look wrong (flat paths like `linkshelf/handlers.go`, duplicates, or missing `required_files`), **do not** hand-fix with `bd create`. Report failure or ask for `gt rig sync-planning {{rig}} --force` — pre_run/post_success hooks repair the set.
+3. If beads look wrong (flat paths, duplicates, or missing `required_files`), **do not** hand-fix with `bd create`. Report failure or ask for `gt rig sync-planning {{rig}}` — pre_run/post_success hooks repair the set while preserving valid acceptance criteria.
 
 ---
 

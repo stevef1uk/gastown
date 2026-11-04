@@ -119,4 +119,45 @@ func TestPlanningSyncPreservesReviewedAcceptance(t *testing.T) {
 	if string(data) != plan {
 		t.Fatalf("planning sync erased reviewed acceptance:\n%s", data)
 	}
+	profile, err := json.Marshal(map[string]any{"version": 1, "validation": v})
+	if err != nil {
+		t.Fatal(err)
+	}
+	profileDir := filepath.Join(rigDir, ".gastown")
+	if err := os.MkdirAll(profileDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(profileDir, "workflow-profile.json"), profile, 0644); err != nil {
+		t.Fatal(err)
+	}
+	m := NewManager(town)
+	tpl := &WorkflowTemplate{
+		ID: "preserve-plan", InitialState: "planning",
+		States: map[string]State{
+			"planning":       {Role: "planner", Transitions: map[string]Transition{"success": {To: "plan_review"}}},
+			"plan_review":    {Role: "qa", Transitions: map[string]Transition{"success": {To: "project_setup"}}},
+			"project_setup":  {Role: "polecat", Transitions: map[string]Transition{"success": {To: "implementation"}}},
+			"implementation": {Role: "polecat"},
+		},
+	}
+	m.LoadTemplate(tpl)
+	m.instances["wf-preserve"] = &WorkflowInstance{
+		ID: "wf-preserve", TemplateID: tpl.ID, CurrentState: "planning", Status: "running",
+		Variables: map[string]string{"rig": rig},
+	}
+	for _, step := range []struct{ role, next string }{
+		{"planner", "plan_review"}, {"qa", "project_setup"}, {"polecat", "implementation"},
+	} {
+		next, err := m.CompleteTask("wf-preserve", "success", rig+"/"+step.role, "reviewed plan", "", nil)
+		if err != nil || next != step.next {
+			t.Fatalf("%s handoff: next=%q err=%v", step.role, next, err)
+		}
+		data, err := os.ReadFile(planPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(data) != plan {
+			t.Fatalf("%s handoff erased reviewed acceptance:\n%s", step.role, data)
+		}
+	}
 }

@@ -54,6 +54,7 @@ type cmdTracker struct {
 
 type stateRunner struct {
 	completionRejections completionRejectionProgress
+	initialPlanContent []byte
 	task        *orchestrator.Task
 	townRoot    string
 	rig         string
@@ -120,6 +121,9 @@ func newStateRunner(task *orchestrator.Task, townRoot, rig string) *stateRunner 
 		promptVars: vars,
 		track:      &cmdTracker{startedAt: time.Now(), designArchWritten: designArchWritten},
 		servers:    newDevServerTracker(),
+	}
+	if task.PendingRework != nil {
+		r.initialPlanContent, _ = os.ReadFile(filepath.Join(rigMayorRigDir(townRoot, rig), "plan.md"))
 	}
 	if task.State == "implementation" {
 		r.backfillCodeCache()

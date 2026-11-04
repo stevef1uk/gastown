@@ -2344,8 +2344,9 @@ func validatePlanningCommand(cmd, rig string) error {
 }
 
 func validatePlanningCommandWithProfile(cmd, townRoot, rig string, v orchestrator.WorkflowValidation) error {
-	if orchestrator.RequiresExactImplementPaths(v) && isPlanMDWriteCommand(cmd) {
-		return fmt.Errorf("do not write plan.md (heredoc or redirect) — sync_planning_artifacts already builds plan.md from required_files and open bead IDs; run bd list and wc -c plan.md only, then JSON success")
+	shell := strings.ToLower(designCommandShellPortion(cmd))
+	if strings.Contains(shell, "gt rig sync-planning") && strings.Contains(shell, "--force") {
+		return fmt.Errorf("forced planning sync replaces authored acceptance criteria with a scaffold; run gt rig sync-planning without --force to repair beads, then amend plan.md and re-read it before success")
 	}
 	if err := validatePlanningCommand(cmd, rig); err != nil {
 		return err

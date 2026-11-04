@@ -131,7 +131,7 @@ Do **not** add `if task.State == "implementation"` (or any state name) in `cmd/g
 
 Reviews can set `require_explicit_outcome: true` to require an agent verdict instead of artifact auto-completion. This also accepts early failure verdicts without asking the reviewer to repair implementation. Both workflows enable this for QA plan review and Tester test review. Plan review cannot convert a reviewer failure into success based on mechanical artifact checks. Successful file inspection cannot clear a failed verification, and failed verification invalidates any earlier green result.
 
-Planning sync regenerates missing or misaligned plans and preserves valid nested-path plans, including Planner-authored acceptance and verification corrections. Non-Go artifacts in phased Go projects use the active phase's verification command rather than Go compilation.
+Planning sync regenerates missing or misaligned plans and preserves valid nested-path plans, including Planner-authored acceptance and verification corrections. Planner may amend plan.md for nested layouts; exact bead paths are validated on completion. Rework requires a plan amendment during the attempt before explicit or automatic success; read-only inspection is insufficient. Non-Go artifacts in phased Go projects use the active phase's verification command rather than Go compilation.
 
 Tester verification credit requires the complete configured command (allowing mayor/rig directory prefixes and harness-managed rewrites). Backgrounded suites, health probes, discovery-only flags, alternate configurations, and exit-masking wrappers cannot substitute for that command. Only recognized Node development-server commands are eligible for smoke rewriting; `npx playwright test` stays a foreground test runner.
 

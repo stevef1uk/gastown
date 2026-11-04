@@ -295,6 +295,9 @@ var artifactValidators = map[string]artifactValidateFn{
 		return validateDesignArtifacts(r.townRoot, r.rig, r.track.designArchWritten, r.track.startedAt, r.v)
 	},
 	"planning": func(r *stateRunner, _ string) error {
+		if err := r.validatePlanningRework(); err != nil {
+			return err
+		}
 		return validatePlanningArtifacts(r.townRoot, r.rig, r.track.hadCmdFailure, r.track.beadCreateOK, r.track.beadDeleteOK, r.v)
 	},
 	"plan_review": func(r *stateRunner, _ string) error {
