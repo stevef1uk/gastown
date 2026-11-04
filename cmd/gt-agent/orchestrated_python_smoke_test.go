@@ -116,3 +116,58 @@ func TestPythonSmokeServerProcess(t *testing.T) {
 	_ = http.ListenAndServe("127.0.0.1:"+os.Getenv("GT_TEST_SMOKE_PORT"), handler)
 	os.Exit(4)
 }
+
+// Execute the shell: appended cleanup used to mask probe and cd failures.
+func TestSelfManagedPythonSmokePreservesStatusAndLogs(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		status int
+		badCD  bool
+	}{
+		{name: "success"},
+		{name: "failed probe", status: 7},
+		{name: "failed cd", status: 2, badCD: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			for name, body := range map[string]string{
+				"uvicorn": "#!/bin/sh\nprintf 'startup diagnostic\\n' >&2\nexec sleep 30\n",
+				"curl":    fmt.Sprintf("#!/bin/sh\nexit %d\n", tc.status),
+			} {
+				if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0755); err != nil {
+					t.Fatal(err)
+				}
+			}
+			workdir := dir
+			if tc.badCD {
+				workdir = filepath.Join(dir, "missing")
+			}
+			log := filepath.Join(dir, "server.log")
+			input := fmt.Sprintf(`cd %s && (uvicorn main:app --port 8080 >%s 2>&1 & pid=$!; sleep 0.05; curl --fail http://localhost:8080/probe; status=$?; kill "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true; exit "$status")`, shellQuote(workdir), shellQuote(log))
+			v := orchestrator.WorkflowValidation{TestRunner: "pytest", RequiredFiles: []string{"service/main.py"}}
+			script, _ := normalizeGoDevServerSmokeCommand(input, dir, "sample", v)
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			defer cancel()
+			cmd := exec.CommandContext(ctx, "/bin/sh", "-c", script)
+			cmd.Env = append(os.Environ(), "PATH="+dir+":"+os.Getenv("PATH"))
+			out, err := cmd.CombinedOutput()
+			status := 0
+			if err != nil {
+				if exit, ok := err.(*exec.ExitError); ok {
+					status = exit.ExitCode()
+				} else {
+					t.Fatal(err)
+				}
+			}
+			if ctx.Err() != nil || status != tc.status {
+				t.Fatalf("status=%d want=%d, timeout=%v\n%s\n%s", status, tc.status, ctx.Err(), out, script)
+			}
+			if !tc.badCD {
+				data, err := os.ReadFile(log)
+				if err != nil || !strings.Contains(string(data), "startup diagnostic") {
+					t.Fatalf("server log lost: %q, %v", data, err)
+				}
+			}
+		})
+	}
+}

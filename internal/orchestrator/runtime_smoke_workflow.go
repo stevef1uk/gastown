@@ -10,7 +10,7 @@ import (
 )
 
 var (
-	smokeServerHeadingRE = regexp.MustCompile(`(?im)^##\s+.*\bruntime\s+smoke\s+server\b`)
+	smokeServerHeadingRE  = regexp.MustCompile(`(?im)^##\s+.*\bruntime\s+smoke\s+server\b`)
 	pythonServerSegmentRE = regexp.MustCompile(
 		`(?i)(?:^|&&\s*)(` +
 			`(?:\./)?\.venv/bin/python3\s+-m\s+(?:uvicorn|hypercorn)\s+[^\s&;|]+(?:\s+[^\s&;|]+)*|` +
@@ -242,7 +242,7 @@ func ImplementationPythonModuleOK(rigDir string, v WorkflowValidation) error {
 	}
 	cmd := exec.Command("/bin/bash", "-c", verify)
 	cmd.Dir = rigDir
-	cmd.Env = os.Environ()
+	cmd.Env = pythonVerificationEnv(rigDir, v)
 	out, runErr := cmd.CombinedOutput()
 	if runErr != nil {
 		text := strings.TrimSpace(string(out))
@@ -252,9 +252,26 @@ func ImplementationPythonModuleOK(rigDir string, v WorkflowValidation) error {
 		if text == "" {
 			text = runErr.Error()
 		}
-		return fmt.Errorf("python module verify failed: %w\n%s", runErr, text)
+		return fmt.Errorf("python module verify failed (cwd=%s, command=%s): %w\n%s", rigDir, verify, runErr, text)
 	}
 	return nil
+}
+
+// Completion gates must resolve tools in the same rig venv as agent commands,
+// including profiles whose verification uses a bare uvicorn executable.
+func pythonVerificationEnv(rigDir string, v WorkflowValidation) []string {
+	env := os.Environ()
+	if !v.UsesPythonVenv() {
+		return env
+	}
+	venvBin := filepath.Join(rigDir, v.PythonVenvRelDir(), "bin")
+	for i, entry := range env {
+		if strings.HasPrefix(entry, "PATH=") {
+			env[i] = "PATH=" + venvBin + string(os.PathListSeparator) + entry[5:]
+			return env
+		}
+	}
+	return append(env, "PATH="+venvBin)
 }
 
 // PythonVerifyNoTestsOK reports whether a failed pytest run is acceptable because

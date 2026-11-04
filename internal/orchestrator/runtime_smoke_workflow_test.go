@@ -1,11 +1,49 @@
 package orchestrator
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func TestImplementationPythonModuleUsesRigVenv(t *testing.T) {
+	for _, status := range []int{0, 23} {
+		t.Run(fmt.Sprint(status), func(t *testing.T) {
+			rigDir := t.TempDir()
+			venv := "environments/checks"
+			bin := filepath.Join(rigDir, venv, "bin")
+			for _, dir := range []string{bin, filepath.Join(rigDir, "service", "api")} {
+				if err := os.MkdirAll(dir, 0755); err != nil {
+					t.Fatal(err)
+				}
+			}
+			shim := fmt.Sprintf("#!/bin/sh\nprintf 'configured verifier invoked\\n' >&2\nexit %d\n", status)
+			if err := os.WriteFile(filepath.Join(bin, "uvicorn"), []byte(shim), 0755); err != nil {
+				t.Fatal(err)
+			}
+			v := WorkflowValidation{
+				LayoutRoot: "service/api", RequiredFiles: []string{"service/api/main.py"}, PythonVenvDir: venv,
+				QAVerifyCommand: "cd service/api && uvicorn main:app --port 8080",
+			}
+			err := ImplementationPythonModuleOK(rigDir, v)
+			if status == 0 && err != nil {
+				t.Fatal(err)
+			}
+			if status != 0 {
+				if err == nil {
+					t.Fatal("failed configured verifier was accepted")
+				}
+				for _, want := range []string{"exit status 23", "configured verifier invoked", "cwd=" + rigDir, v.QAVerifyCommand} {
+					if !strings.Contains(err.Error(), want) {
+						t.Fatalf("missing diagnostic %q: %v", want, err)
+					}
+				}
+			}
+		})
+	}
+}
 
 func TestWorkflowNeedsRuntimeSmoke_pythonWithAPI(t *testing.T) {
 	t.Parallel()

@@ -33,6 +33,70 @@ func TestIsRetriableLLMError(t *testing.T) {
 	}
 }
 
+func TestQAReworkCompletionReportsFailingGate(t *testing.T) {
+	r := &stateRunner{
+		townRoot: t.TempDir(), rig: "sample",
+		task: &orchestrator.Task{PendingRework: &orchestrator.WorkflowRework{FromState: "qa_review", Summary: "Improve test coverage"}},
+		v:    orchestrator.WorkflowValidation{RequiredFiles: []string{"service/test_main.py"}, TestRunner: "pytest"},
+	}
+	implementationPhaseVerifyOKHook = func(_, _ string, _ orchestrator.WorkflowValidation) error {
+		return errors.New("python module verify failed: executable missing in configured environment")
+	}
+	countOpenMatchingBeadsHook = func(_, _ string, _ orchestrator.WorkflowValidation) (int, error) { return 0, nil }
+	t.Cleanup(func() { implementationPhaseVerifyOKHook = nil; countOpenMatchingBeadsHook = nil })
+	err := r.pendingQAReworkCompletionError()
+	if err == nil || !strings.Contains(err.Error(), "executable missing") || !strings.Contains(err.Error(), "phase verification") {
+		t.Fatalf("lost actual phase failure: %v", err)
+	}
+	implementationPhaseVerifyOKHook = func(_, _ string, _ orchestrator.WorkflowValidation) error { return nil }
+	if err := r.pendingQAReworkCompletionError(); err == nil || !strings.Contains(err.Error(), "required artifacts") {
+		t.Fatalf("green phase must still check required artifacts: %v", err)
+	}
+}
+
+func TestCompletionRejectionBudgetTracksArtifactsNotSmokeCommands(t *testing.T) {
+	for _, file := range []string{"test_main.py", "main_test.go"} {
+		t.Run(file, func(t *testing.T) { testCompletionRejectionBudget(t, file) })
+	}
+}
+
+func testCompletionRejectionBudget(t *testing.T, file string) {
+	r := &stateRunner{
+		townRoot: t.TempDir(), rig: "sample",
+		hooks: orchestrator.StateHooks{NoProgressLimit: 3},
+		v:     orchestrator.WorkflowValidation{LayoutRoot: "service", RequiredFiles: []string{"service/" + file}},
+		track: &cmdTracker{},
+	}
+	path := filepath.Join(rigMayorRigDir(r.townRoot, r.rig), "service", file)
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		t.Fatal(err)
+	}
+	write := func(body string) {
+		t.Helper()
+		if err := os.WriteFile(path, []byte(body), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("assert True\n")
+	if r.completionRejectionLimitReached() {
+		t.Fatal("must allow an initial repair attempt")
+	}
+	// Successful manual smoke and a same-content rewrite are not progress.
+	r.track.verifyOK = true
+	write("assert True\n")
+	if r.completionRejectionLimitReached() || !r.completionRejectionLimitReached() {
+		t.Fatal("unchanged completion rejections must exhaust the budget")
+	}
+	write("assert response.status_code == 200\n")
+	if r.completionRejectionLimitReached() {
+		t.Fatal("real test changes must grant a fresh repair budget")
+	}
+	r.v.ActivePhaseIDField = "next-phase"
+	if r.completionRejectionLimitReached() || r.completionRejections.count != 1 {
+		t.Fatal("effective profile changes must grant a fresh repair budget")
+	}
+}
+
 func TestRejectImplementationNoOpFailure_blocksWithoutFixWork(t *testing.T) {
 	countOpenMatchingBeadsHook = func(_, _ string, _ orchestrator.WorkflowValidation) (int, error) { return 2, nil }
 	defer func() { countOpenMatchingBeadsHook = nil }()

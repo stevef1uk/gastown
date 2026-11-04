@@ -53,6 +53,7 @@ type cmdTracker struct {
 }
 
 type stateRunner struct {
+	completionRejections completionRejectionProgress
 	task        *orchestrator.Task
 	townRoot    string
 	rig         string

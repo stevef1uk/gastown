@@ -34,9 +34,9 @@ func hookDrivenSmokeTemplate() *WorkflowTemplate {
 				Role:         "planner",
 				Instructions: "write plan",
 				Hooks: StateHooks{
-					CmdGuard: "planning",
-					Env:      StateEnvHooks{BeadsDir: true},
-					Track:    "planning",
+					CmdGuard:  "planning",
+					Env:       StateEnvHooks{BeadsDir: true},
+					Track:     "planning",
 					Artifacts: "planning",
 					RetryHint: "planning retry",
 				},
@@ -55,13 +55,13 @@ func hookDrivenSmokeTemplate() *WorkflowTemplate {
 func TestRigFlowYAML_allPipelineStatesHaveHooks(t *testing.T) {
 	tpl := loadRigFlowTemplate(t)
 	want := map[string]string{
-		"kickoff":         "",
-		"design":          "design",
-		"planning":        "planning",
-		"plan_review":     "plan_review",
-		"project_setup":   "project_setup",
-		"implementation":  "implementation",
-		"qa_review":       "qa",
+		"kickoff":        "",
+		"design":         "design",
+		"planning":       "planning",
+		"plan_review":    "plan_review",
+		"project_setup":  "project_setup",
+		"implementation": "implementation",
+		"qa_review":      "qa",
 	}
 	for state, guard := range want {
 		st, ok := tpl.States[state]
@@ -86,6 +86,9 @@ func TestRigFlowYAML_implementationHasStallRecoveryHooks(t *testing.T) {
 	st, ok := tpl.States["implementation"]
 	if !ok {
 		t.Fatal("missing implementation state")
+	}
+	if st.Hooks.NoProgressLimit != 5 {
+		t.Fatalf("completion no_progress_limit = %d, want 5", st.Hooks.NoProgressLimit)
 	}
 	if st.Hooks.StateTimeoutSeconds != 7200 {
 		t.Fatalf("state_timeout_seconds = %d, want 7200", st.Hooks.StateTimeoutSeconds)

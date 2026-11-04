@@ -306,6 +306,7 @@ states:
     instructions: |
       Implement the **Next bead** only: in_progress → code + unit tests tied to SPEC/plan acceptance → verify (go test / pytest per Next bead) → bd close. JSON success when all implement beads are closed.
     hooks:
+      no_progress_limit: 5
       state_timeout_seconds: 7200
       on_timeout: [recover_implementation_stall]
       on_state_timeout: [recover_implementation_stall]

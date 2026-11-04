@@ -196,7 +196,7 @@ func (r *stateRunner) rejectImplementationPrematureSuccess(outcome string) (stri
 	openImpl := openImplementBeadCount(r)
 	if openImpl == 0 {
 		if msg, blocked := r.implementationNoOpenBeadsButWorkRemainsNudge(); blocked {
-			return "**Rejected:** success JSON while phase verify still blocked.\n\n" + msg, true
+			return msg, true
 		}
 		return "", false
 	}
@@ -362,13 +362,14 @@ func (r *stateRunner) implementationNoOpenBeadsButWorkRemainsNudge() (string, bo
 		return "", false
 	}
 	if r.hasQAPendingRework() {
-		if r.pendingQAReworkShouldNotBlockPolecat() {
+		if err := r.pendingQAReworkCompletionError(); err == nil {
 			return "", false
+		} else {
+			return "**Rejected:** QA rework completion check failed:\n\n" + err.Error(), true
 		}
-		return r.implementationNoOpFailureNudge(0), true
 	}
 	if orchestrator.WorkflowNeedsRuntimeSmoke(r.townRoot, r.rig, r.v) {
-		if err := orchestrator.ImplementationPhaseVerifyOK(r.townRoot, r.rig, r.v); err != nil {
+		if err := implementationPhaseVerifyOKOnDisk(r.townRoot, r.rig, r.v); err != nil {
 			var b strings.Builder
 			b.WriteString("**Rejected:** all implement beads are closed but **phase verify** (compile + runtime smoke) still fails — implementation is not done.\n\n")
 			if orchestrator.ImplementationVerifyNeedsRuntimeRework(err) {
@@ -400,20 +401,28 @@ func (r *stateRunner) pendingQAReworkShouldNotBlockPolecat() bool {
 	if !r.hasQAPendingRework() || r.task == nil || r.task.PendingRework == nil {
 		return false
 	}
+	return r.pendingQAReworkCompletionError() == nil
+}
+
+// Keep the actual failing gate in feedback: a successful manual HTTP probe is
+// not a substitute for phase verification or the required artifact checks.
+func (r *stateRunner) pendingQAReworkCompletionError() error {
+	if err := implementationPhaseVerifyOKOnDisk(r.townRoot, r.rig, r.v); err != nil {
+		return fmt.Errorf("phase verification: %w", err)
+	}
 	pr := r.task.PendingRework
 	text := orchestrator.CombineQAReworkText(pr.Summary, pr.Feedback)
-	if orchestrator.IsQAAgentShellError(text) &&
-		orchestrator.ImplementationPhaseVerifyOK(r.townRoot, r.rig, r.v) == nil {
-		return true
+	if orchestrator.IsQAAgentShellError(text) {
+		return nil
 	}
 	if openImplementBeadCount(r) != 0 {
-		return false
-	}
-	if orchestrator.ImplementationPhaseVerifyOK(r.townRoot, r.rig, r.v) != nil {
-		return false
+		return fmt.Errorf("open implement beads remain")
 	}
 	rigDir := rigMayorRigDir(r.townRoot, r.rig)
-	return orchestrator.ImplementationDiskWorkReady(rigDir, r.v.ForActivePhase()) == nil
+	if err := orchestrator.ImplementationDiskWorkReady(rigDir, r.v.ForActivePhase()); err != nil {
+		return fmt.Errorf("required artifacts: %w", err)
+	}
+	return nil
 }
 
 func (r *stateRunner) formatActiveBeadCompileFailureForNudge() string {

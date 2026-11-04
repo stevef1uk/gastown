@@ -507,8 +507,13 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 				continue
 			}
 			if msg, reject := runner.rejectImplementationPrematureSuccess(o); reject {
-				orchestratedPrintf("[gt-agent] rejecting implementation success JSON while phase verify still blocked\n")
+				orchestratedPrintf("[gt-agent] rejecting implementation completion: %s\n", msg)
 				recordAttemptFeedback(msg + "\n")
+				if runner.completionRejectionLimitReached() {
+					summary := fmt.Sprintf("Completion verification rejected %d times without artifact changes; last failing gate: %s", runner.completionRejections.count, msg)
+					orchestratedPrintf("[gt-agent] completion no-progress limit reached\n")
+					return "fail", summary, lastAttemptFeedback.String(), fmt.Errorf("completion verification made no progress")
+				}
 				messages = append(messages, llm.Message{Role: "user", Content: msg})
 				continue
 			}

@@ -140,6 +140,7 @@ Some FSM states can declare a **wall-clock limit** and **cleanup hooks** when th
 | Mechanism | Config | When it fires | Default on `planning` |
 |-----------|--------|---------------|------------------------|
 | **Turn budget** | `max_cmd_turns` | Planner exhausts CMD turns in one session without valid JSON | `8` |
+| **Completion no-progress budget** | `no_progress_limit` | Rejected completion claims in one agent attempt without changes to required files, effective profile, or workflow docs | `5` for implementation |
 | **Wall-clock timeout** | `state_timeout_seconds` | `state_entered_at` in `instances.json` is older than the limit when `fetch_task` runs | `1800` (30 min) |
 | **Cleanup** | `on_timeout` | Before `complete_task` with outcome `timeout` | `[reset_planning_phase]` |
 | **FSM edge** | `transitions.timeout.to` | After cleanup; same as failure for planning (`planning` again) | `planning` |

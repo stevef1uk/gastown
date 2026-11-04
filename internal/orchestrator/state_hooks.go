@@ -6,7 +6,8 @@ import "strings"
 // Wire new behavior via templates/rig-flow.yaml — see prompt_context.go and town/README.md (§ FSM vs Go).
 type StateHooks struct {
 	MaxCmdTurns int `yaml:"max_cmd_turns,omitempty" json:"max_cmd_turns,omitempty"`
-	// Pause repeated failed reviews when these effective artifacts do not change.
+	// Bound repeated rejected completion claims within an agent attempt; also
+	// pause repeated failed reviews across attempts when ProgressFiles are set.
 	NoProgressLimit int `yaml:"no_progress_limit,omitempty" json:"no_progress_limit,omitempty"`
 	ProgressFiles []string `yaml:"progress_files,omitempty" json:"progress_files,omitempty"`
 

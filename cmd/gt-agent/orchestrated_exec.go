@@ -1158,6 +1158,12 @@ func normalizeGoDevServerSmokeCommand(cmd, townRoot, rig string, v orchestrator.
 	}
 	lower := strings.ToLower(cmd)
 	if orchestrator.WorkflowUsesPython(v) && strings.Contains(lower, "uvicorn") {
+		// Do not splice a second lifecycle into a self-managed smoke check.
+		// Appending cleanup can escape its subshell and turn a failed probe (or
+		// even a failed cd) into exit 0. Preserve its redirects and exit status.
+		if pythonSmokeManagesProcess(cmd) {
+			return cmd, false
+		}
 		if !strings.Contains(lower, "curl") {
 			return simplifyDevServerSmoke(cmd, townRoot, rig, v)
 		}
@@ -1204,6 +1210,21 @@ func normalizeGoDevServerSmokeCommand(cmd, townRoot, rig string, v orchestrator.
 		changed = true
 	}
 	return strings.TrimSpace(out), changed
+}
+
+func pythonSmokeManagesProcess(cmd string) bool {
+	if !strings.Contains(cmd, "curl") {
+		return false
+	}
+	for _, match := range regexp.MustCompile(`\b([A-Za-z_][A-Za-z0-9_]*)=\$!\s*(?:;|&&)`).FindAllStringSubmatch(cmd, -1) {
+		pid := regexp.QuoteMeta(match[1])
+		// Match cleanup of the captured PID, not an unrelated kill or prose.
+		cleanup := regexp.MustCompile(`\bkill\s+(?:--\s+)?"?\$(?:` + pid + `\b|\{` + pid + `\})"?(?:\s|;|$)`)
+		if cleanup.MatchString(cmd) {
+			return true
+		}
+	}
+	return false
 }
 
 func normalizePythonDevServerSmoke(cmd string) string {
