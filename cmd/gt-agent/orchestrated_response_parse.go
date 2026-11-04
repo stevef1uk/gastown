@@ -22,6 +22,7 @@ var (
 
 // preprocessOrchestratedResponse normalizes glued CMD/READ/EDIT markers before parsing.
 func preprocessOrchestratedResponse(response string) string {
+	response, restoreHeredocs := protectResponseHeredocBodies(response)
 	response = stripChannelMarkers(response)
 	response = unwrapJSONOrchestratedCommands(response)
 	response = unwrapJSONCommandArray(response)
@@ -46,7 +47,36 @@ func preprocessOrchestratedResponse(response string) string {
 	response = unwrapJSONToolCallsFSM(response)
 	response = unwrapMarkdownFenceToolCalls(response)
 	response = normalizeNativeEditEndLines(response)
-	return response
+	return restoreHeredocs(response)
+}
+
+func protectResponseHeredocBodies(response string) (string, func(string) string) {
+	lines := strings.Split(response, "\n")
+	var replacements []string
+	for i := 0; i < len(lines); i++ {
+		term := detectHeredocTerm(lines[i])
+		if term == "" {
+			continue
+		}
+		start := i + 1
+		end := start
+		for end < len(lines) && strings.TrimSpace(lines[end]) != term {
+			end++
+		}
+		if end == len(lines) {
+			break
+		}
+		for j := start; j < end; j++ {
+			key := "GT_HEREDOC_PAYLOAD_" + strconv.Itoa(j) + "_END"
+			for strings.Contains(response, key) {
+				key += "_"
+			}
+			replacements = append(replacements, key, lines[j])
+			lines[j] = key
+		}
+		i = end
+	}
+	return strings.Join(lines, "\n"), strings.NewReplacer(replacements...).Replace
 }
 
 // stripChannelMarkers removes LLM channel/role markers like <|message|>, <|start|>,

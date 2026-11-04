@@ -1,9 +1,34 @@
 package main
 
 import (
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func TestArchitectureHeredocPreservesDeliveryContract(t *testing.T) {
+	doc := "# Architecture\n\n## Delivery phases\n\n```yaml\ndelivery_phases:\n  - id: core\n    required_files:\n      - app/main.go\n    qa_verify_command: go test ./...\n```\n\n## Requirements\n\n### core\nCMD: is documentation, not a tool call\n"
+	response := "```bash\nCMD: cat > architecture.md <<'DOC'\n" + doc + "DOC\n```\n"
+	cmds := parseOrchestratedCommands(preprocessOrchestratedResponse(response))
+	if len(cmds) != 1 {
+		t.Fatalf("expected one heredoc command, got %q", cmds)
+	}
+	dir := t.TempDir()
+	cmd := exec.Command("bash", "-e", "-c", prepareOrchestratedScript(cmds[0]))
+	cmd.Dir = dir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("write architecture: %v: %s", err, out)
+	}
+	got, err := os.ReadFile(filepath.Join(dir, "architecture.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != doc {
+		t.Fatalf("architecture payload was changed:\n%s", got)
+	}
+}
 
 func TestParseOrchestratedCommands_skipsStandaloneEndEditLine(t *testing.T) {
 	t.Parallel()

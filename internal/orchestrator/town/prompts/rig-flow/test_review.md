@@ -31,7 +31,7 @@ $GT_ROOT/{{rig}}/mayor/rig/{{layout_root}}/  ← layout root (ALL files go here)
 
 1. `TEST_PLAN.md` exists and is ≥ {{min_test_plan_bytes}} bytes.
 2. **Only validate requirement rows where `Phase` matches the active phase or any completed phase** — future-phase requirements are expected to be missing until that delivery phase begins. Filter by phase IDs: `{{test_validation_phase_ids}}`.
-3. For each valid requirement row, the planned test file exists on disk (relative to `{{layout_root}}`).
+3. For each valid requirement row, the planned test file exists on disk. Paths are relative to `{{rig}}/mayor/rig` and may already include `{{layout_root}}/`; do not prepend that prefix twice.
 4. Each test file has substantive content — no `TODO`, `FIXME`, empty bodies, or placeholder returns (gt-agent's stub check).
 5. Phase verify `{{phase_qa_verify_command}}` exits green.
 
@@ -51,7 +51,7 @@ If `{{phase_qa_verify_command}}` starts a server (any runtime), you MUST run it 
 
 **Correct pattern (single CMD line):**
 ```
-CMD: cd {{rig}}/mayor/rig/{{layout_root}} && {{phase_qa_verify_command}} & sleep 2 && curl -sf http://127.0.0.1:{{dev_server_port}}/{{smoke_probe_path}}
+CMD: cd {{rig}}/mayor/rig && {{phase_qa_verify_command}} & sleep 2 && curl -sf http://127.0.0.1:{{dev_server_port}}/{{smoke_probe_path}}
 ```
 
 **What this does:**
@@ -62,7 +62,7 @@ CMD: cd {{rig}}/mayor/rig/{{layout_root}} && {{phase_qa_verify_command}} & sleep
 
 **WRONG (will timeout):**
 ```
-CMD: cd {{rig}}/mayor/rig/{{layout_root}} && {{phase_qa_verify_command}}
+CMD: cd {{rig}}/mayor/rig && {{phase_qa_verify_command}}
 ```
    ```
    CMD: cd {{rig}}/mayor/rig && cat > test-report.md << 'EOF'
@@ -90,7 +90,7 @@ CMD: cd {{rig}}/mayor/rig/{{layout_root}} && {{phase_qa_verify_command}}
 
 3. Run the phase verify (green required for success):
    ```
-   CMD: cd {{rig}}/mayor/rig/{{layout_root}} && {{phase_qa_verify_command}}
+   CMD: cd {{rig}}/mayor/rig && {{phase_qa_verify_command}}
    ```
 
 4. `bd` is available with rig `BEADS_DIR` — list closed beads only if you need to map a test file to its bead:

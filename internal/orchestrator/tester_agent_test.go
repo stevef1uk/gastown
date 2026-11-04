@@ -380,6 +380,42 @@ func TestTestPlanBeadMappingMismatches(t *testing.T) {
 	}
 }
 
+func TestValidateTestPlanPathsCompanions(t *testing.T) {
+	v := WorkflowValidation{
+		LayoutRoot: "app",
+		DeliveryPhases: []DeliveryPhase{
+			{ID: "core", RequiredFiles: []string{"app/internal/store/store.go", "app/backend/service.py"}},
+			{ID: "ui", RequiredFiles: []string{"app/tests/browser.spec.js", "app/package.json"}},
+		},
+	}
+	for _, tc := range []struct {
+		file, phase string
+		valid       bool
+	}{
+		{"app/internal/store/store_test.go", "core", true},
+		{"app/backend/test_service.py", "core", true},
+		{"app/tests/browser.spec.js", "ui", true},
+		{"app/internal/store/store.go", "core", false},
+		{"app/package.json", "ui", false},
+		{"app/tests/browser.spec.js", "core", false},
+		{"app/internal/other/store_test.go", "core", false},
+		{"app/internal/store/store_test.go", "unknown", false},
+		{"", "core", false},
+	} {
+		t.Run(tc.file+"/"+tc.phase, func(t *testing.T) {
+			err := ValidateTestPlanPaths(v, []TestPlanBlock{{ReqID: "req", TestFile: tc.file, Phase: tc.phase}})
+			if (err == nil) != tc.valid {
+				t.Fatalf("valid=%v, error=%v", tc.valid, err)
+			}
+		})
+	}
+	blocks := []TestPlanBlock{{ReqID: "core", TestFile: "app/internal/store/store_test.go", BeadID: "bead-1", Phase: "core"}}
+	v.RequiredFiles = []string{"app/internal/store/store.go", "app/internal/store/store_test.go"}
+	if got := testPlanBeadMappingMismatches(v, blocks, map[string]string{"bead-1": "Implement app/internal/store/store.go per architecture"}); len(got) != 0 {
+		t.Fatalf("implicit companion should use its source bead: %v", got)
+	}
+}
+
 func TestStubTestFilesForPhasesManifestNotStub(t *testing.T) {
 	t.Parallel()
 	rigDir := t.TempDir()
@@ -515,4 +551,3 @@ func TestSplitTestPlanBeadIDsAndMultiBeadMapping(t *testing.T) {
 		t.Fatalf("expected 0 mismatches for semicolon-separated bead IDs, got %v", got)
 	}
 }
-

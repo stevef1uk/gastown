@@ -409,6 +409,14 @@ func testPlanBeadMappingMismatches(v WorkflowValidation, blocks []TestPlanBlock,
 		if len(ids) == 0 || testFile == "" {
 			continue
 		}
+		testHasBead := false
+		for _, title := range titles {
+			path := NormalizeBeadPathForLayout(ExtractPathFromBeadTitle(title, v.BeadTitleContains), v.LayoutRoot)
+			if PathMatchesImplementFile(testFile, path) {
+				testHasBead = true
+				break
+			}
+		}
 		matched := false
 		var firstMismatchGot string
 		var firstMismatchID string
@@ -419,7 +427,8 @@ func testPlanBeadMappingMismatches(v WorkflowValidation, blocks []TestPlanBlock,
 				continue // unknown IDs are reported by bead-ID existence checks
 			}
 			got := NormalizeBeadPathForLayout(ExtractPathFromBeadTitle(title, v.BeadTitleContains), v.LayoutRoot)
-			if got == "" || PathMatchesImplementFile(testFile, got) {
+			if got == "" || PathMatchesImplementFile(testFile, got) ||
+				(!testHasBead && PathMatchesImplementFile(testFile, CorrelatedTestPathForSource(got, v))) {
 				matched = true
 				break
 			}
@@ -571,50 +580,9 @@ func validateTestPlan(townRoot, rig string) error {
 		return fmt.Errorf("TEST_PLAN.md has invalid section IDs (not in SPEC/architecture/delivery phases): %v", hallucinated)
 	}
 
-	// Check 2: Test file paths must exist in workflow-profile.json required_files for the correct phase
 	blocks := ParseTestPlanBlocks(testPlan)
-	validTestFilesByPhase := make(map[string]map[string]bool)
-	for _, phase := range v.DeliveryPhases {
-		phaseFiles := make(map[string]bool)
-		for _, f := range phase.RequiredFiles {
-			phaseFiles[strings.ToLower(filepath.ToSlash(strings.TrimSpace(f)))] = true
-		}
-		validTestFilesByPhase[strings.ToLower(phase.ID)] = phaseFiles
-	}
-
-	for _, b := range blocks {
-		testFile := strings.TrimSpace(b.TestFile)
-		if testFile == "" || IsPlanGapPlaceholderPath(testFile) {
-			continue
-		}
-		// Strip parenthetical descriptions
-		if idx := strings.IndexAny(testFile, "([{"); idx >= 0 {
-			testFile = strings.TrimSpace(testFile[:idx])
-		}
-		testFile = filepath.ToSlash(testFile)
-		key := strings.ToLower(testFile)
-		phaseID := strings.ToLower(strings.TrimSpace(b.Phase))
-		if phaseID == "" {
-			// Backward compatible: check all phases
-			found := false
-			for _, phaseFiles := range validTestFilesByPhase {
-				if phaseFiles[key] {
-					found = true
-					break
-				}
-			}
-			if !found {
-				return fmt.Errorf("TEST_PLAN.md test file %q not in any workflow-profile.json phase required_files", testFile)
-			}
-		} else {
-			phaseFiles, ok := validTestFilesByPhase[phaseID]
-			if !ok {
-				return fmt.Errorf("TEST_PLAN.md references unknown phase %q", b.Phase)
-			}
-			if !phaseFiles[key] {
-				return fmt.Errorf("TEST_PLAN.md test file %q not in workflow-profile.json required_files for phase %q", testFile, b.Phase)
-			}
-		}
+	if err := ValidateTestPlanPaths(v, blocks); err != nil {
+		return err
 	}
 
 	// Check 3: Bead IDs must match actual beads (if beads database exists)
@@ -626,5 +594,44 @@ func validateTestPlan(townRoot, rig string) error {
 		return fmt.Errorf("TEST_PLAN.md bead mapping errors: %v", mismatches)
 	}
 
+	return nil
+}
+
+func ValidateTestPlanPaths(v WorkflowValidation, blocks []TestPlanBlock) error {
+	for _, b := range blocks {
+		testFile := cleanPlannedTestFilePath(b.TestFile)
+		if testFile == "" || (!IsTestImplementPath(testFile) &&
+			!strings.HasSuffix(testFile, ".test.js") && !strings.HasSuffix(testFile, ".spec.js") &&
+			!strings.HasSuffix(testFile, ".cy.js") && !strings.HasSuffix(testFile, ".cy.ts")) {
+			return fmt.Errorf("TEST_PLAN.md row %s must name a real test file, not an implementation file or placeholder", b.ReqID)
+		}
+		files := v.RequiredFiles
+		if strings.TrimSpace(b.Phase) != "" && v.HasPhasedDelivery() {
+			found := false
+			for _, phase := range v.DeliveryPhases {
+				if strings.EqualFold(strings.TrimSpace(b.Phase), strings.TrimSpace(phase.ID)) {
+					files = phase.RequiredFiles
+					found = true
+					break
+				}
+			}
+			if !found {
+				return fmt.Errorf("TEST_PLAN.md references unknown phase %q", b.Phase)
+			}
+		} else if v.HasPhasedDelivery() {
+			files = v.UnionRequiredFiles()
+		}
+		matched := false
+		for _, file := range files {
+			if testFile == filepath.ToSlash(strings.TrimSpace(file)) ||
+				testFile == CorrelatedTestPathForSource(file, v) {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			return fmt.Errorf("TEST_PLAN.md test file %q must be a required test or a conventional companion of a required source file for phase %q; use architecture_failure if the delivery contract has no suitable test path", testFile, b.Phase)
+		}
+	}
 	return nil
 }

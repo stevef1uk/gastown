@@ -1142,13 +1142,18 @@ func responseHasUnterminatedHeredoc(response string) bool {
 
 // parseOrchestratedCommands extracts CMD blocks without treating JSON or outcome lines as shell.
 func parseOrchestratedCommands(response string) []string {
+	response, restoreHeredocs := protectResponseHeredocBodies(response)
 	filtered := preprocessOrchestratedResponse(response)
 	filtered = stripNativeToolBlocksForCmdParse(filtered)
 	filtered = stripOutcomeLinesForCmdParse(filtered)
 	filtered = stripModelToolArtifacts(filtered)
 	filtered = normalizeMarkdownFencedCMD(filtered)
 	cmds, _, _ := parseLLMResponse(filtered)
-	return expandGluedOrchestratedCommands(cmds)
+	cmds = expandGluedOrchestratedCommands(cmds)
+	for i := range cmds {
+		cmds[i] = restoreHeredocs(cmds[i])
+	}
+	return cmds
 }
 
 // expandGluedOrchestratedCommands splits shell lines that embed CMD: markers mid-command.
@@ -3413,46 +3418,8 @@ func validateTestPlanArtifacts(townRoot, rig string, hadCmdFailure, testPlanWrit
 	// (This mirrors the manager's validateTestPlan check so agent catches it locally)
 	vRaw, _, err := orchestrator.LoadRawRigWorkflowProfile(townRoot, rig)
 	if err == nil {
-		validTestFilesByPhase := make(map[string]map[string]bool)
-		for _, phase := range vRaw.DeliveryPhases {
-			phaseFiles := make(map[string]bool)
-			for _, f := range phase.RequiredFiles {
-				phaseFiles[strings.ToLower(filepath.ToSlash(strings.TrimSpace(f)))] = true
-			}
-			validTestFilesByPhase[strings.ToLower(phase.ID)] = phaseFiles
-		}
-		for _, b := range blocks {
-			testFile := strings.TrimSpace(b.TestFile)
-			if testFile == "" || orchestrator.IsPlanGapPlaceholderPath(testFile) {
-				continue
-			}
-			if idx := strings.IndexAny(testFile, "([{"); idx >= 0 {
-				testFile = strings.TrimSpace(testFile[:idx])
-			}
-			testFile = filepath.ToSlash(testFile)
-			key := strings.ToLower(testFile)
-			phaseID := strings.ToLower(strings.TrimSpace(b.Phase))
-			if phaseID == "" {
-				// Backward compatible: check all phases
-				found := false
-				for _, phaseFiles := range validTestFilesByPhase {
-					if phaseFiles[key] {
-						found = true
-						break
-					}
-				}
-				if !found {
-					return fmt.Errorf("TEST_PLAN.md test file %q not in any workflow-profile.json phase required_files", testFile)
-				}
-			} else {
-				phaseFiles, ok := validTestFilesByPhase[phaseID]
-				if !ok {
-					return fmt.Errorf("TEST_PLAN.md references unknown phase %q", b.Phase)
-				}
-				if !phaseFiles[key] {
-					return fmt.Errorf("TEST_PLAN.md test file %q not in workflow-profile.json required_files for phase %q", testFile, b.Phase)
-				}
-			}
+		if err := orchestrator.ValidateTestPlanPaths(vRaw, blocks); err != nil {
+			return err
 		}
 	}
 	// Bead-ID mapping: verify each cited bead that already exists actually owns the

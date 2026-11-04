@@ -83,18 +83,18 @@ Rules per Level:
 
 | Level | Test file shape | Where it lives |
 |-------|-----------------|----------------|
-| unit | test file listed in `required_files` from workflow-profile.json, next to the code it tests | same package/dir as the code |
-| integration | tests that cross packages/servers (listed in `required_files`) | a test package/dir listed in `required_files` |
+| unit | required test file or conventional companion of a required source file | same package/dir as the code |
+| integration | tests that cross packages/servers, using a required test or conventional companion | the owning source package or declared test directory |
 | ui | tests against the running UI (`{{ui_command}}`) via a browser or DOM harness | a test directory listed in `required_files` |
 
 Assign **unit** to pure logic/domain rules, **integration** to API/store/HTTP wiring, **ui** only to user-visible flows when the phase ships UI files. Do not inflate levels — a unit test is not a UI test.
 
 ## HARD RULES
 
-**CRITICAL — Test file paths MUST come from workflow-profile.json:**
-Before writing TEST_PLAN.md, run `cat {{rig}}/mayor/rig/.gastown/workflow-profile.json` and use ONLY the `required_files` and `delivery_phases[].required_files` listed there as `Test file:` values. Do NOT invent new test file paths — if a test file is not listed in the profile, it does not exist for this rig.
+**CRITICAL — Test file paths must follow the delivery contract:**
+Before writing TEST_PLAN.md, read `{{rig}}/mayor/rig/.gastown/workflow-profile.json`. Use a test file declared in the owning phase's `required_files`, or a conventional companion test for one of that phase's required source files (for example, `handlers_test.go` beside `handlers.go`, or `test_store.py` beside `store.py`). Companion tests need not already exist or be explicitly listed. Use the owning source bead ID for its companion test. Never substitute production code, manifests, or configuration for a test file. Paths are relative to the rig's `mayor/rig` directory and include `{{layout_root}}/` when applicable.
 
-**NEVER use `plan_gap` as a Test file path.** `plan_gap` is not a real file — it is a signal word that creates phantom beads for nonexistent files. If the delivery phase's `required_files` contains the test file, use that exact path. If the phase has no test file in `required_files`, leave `Test file:` empty.
+**NEVER use `plan_gap` or an empty Test file field.** If a test-carrying phase has neither a declared test file nor a suitable conventional companion, report `architecture_failure` naming the missing test ownership so the Architect can amend the delivery contract. Do not invent unrelated paths or replace tests with implementation files to satisfy validation.
 
 **If a delivery phase's `qa_verify_command` explicitly indicates no automated tests (e.g., contains "no automated tests" or "verify ok" without test runner), omit the `### <phase-id>` section for that phase from TEST_PLAN.md — the phase is setup-only, not test-only.**
 
