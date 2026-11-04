@@ -339,6 +339,10 @@ func (m *Model) renderWorkflowLine(wf RigWorkflow) string {
 	if tpl == "" {
 		tpl = "workflow"
 	}
+	phase := wf.DeliveryPhase
+	if phase == "" {
+		phase = "—"
+	}
 	state := wf.CurrentState
 	if state == "" {
 		state = "—"
@@ -351,10 +355,11 @@ func (m *Model) renderWorkflowLine(wf RigWorkflow) string {
 	if id == "" {
 		id = "?"
 	}
-	return fmt.Sprintf("  %s %s  %s  %s  %s",
+	return fmt.Sprintf("  %s %s  %s  %s  %s  %s",
 		WorkflowStyle.Render("⚙"),
 		WorkflowStyle.Render(id),
 		WorkflowStyle.Render(tpl),
+		WorkflowStateStyle.Render(phase),
 		WorkflowStateStyle.Render(state),
 		workflowStatusStyle(status).Render(status),
 	)
