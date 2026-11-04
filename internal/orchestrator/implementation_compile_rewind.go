@@ -27,9 +27,15 @@ func completedPhaseGoCompileFailure(rigDir string, v WorkflowValidation) (int, [
 	if err == nil || ctx.Err() != nil || GoToolchainMismatch(err, string(output)) || GoToolOutputMissingDeps(string(output)) {
 		return -1, nil, ""
 	}
+	idx, paths := earlierPhaseDiagnosticPaths(v, GoFilePathsFromCompileOutput(string(output), v.LayoutRoot))
+	return idx, paths, string(output)
+}
+
+func earlierPhaseDiagnosticPaths(v WorkflowValidation, diagnosticPaths []string) (int, []string) {
+	active := v.ActivePhaseIndex()
 	first := -1
 	var paths []string
-	for _, path := range GoFilePathsFromCompileOutput(string(output), v.LayoutRoot) {
+	for _, path := range diagnosticPaths {
 		idx := v.FindDeliveryPhaseForFile(path)
 		if idx < 0 || idx >= active {
 			continue
@@ -42,12 +48,17 @@ func completedPhaseGoCompileFailure(rigDir string, v WorkflowValidation) (int, [
 			paths = appendUniquePath(paths, path)
 		}
 	}
-	return first, paths, string(output)
+	return first, paths
 }
 
-func rewindCompletedPhaseCompileFailure(townRoot, rig string, v WorkflowValidation) (string, error) {
+func rewindCompletedPhaseVerificationFailure(townRoot, rig string, v WorkflowValidation, failureOutput string) (string, error) {
 	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
-	idx, paths, output := completedPhaseGoCompileFailure(rigDir, v)
+	idx, paths, output := completedPhasePythonFailure(rigDir, v, failureOutput)
+	kind := "Python verification errors"
+	if idx < 0 {
+		idx, paths, output = completedPhaseGoCompileFailure(rigDir, v)
+		kind = "compiler errors"
+	}
 	if idx < 0 {
 		return "", nil
 	}
@@ -64,9 +75,9 @@ func rewindCompletedPhaseCompileFailure(townRoot, rig string, v WorkflowValidati
 		return "", err
 	}
 	_ = commitDoltWorkingSet(townRoot, rig)
-	logLine := fmt.Sprintf("rewound active phase %s → %s for compiler errors in %s", v.ActivePhaseID(), phase.ID, strings.Join(paths, ", "))
+	logLine := fmt.Sprintf("rewound active phase %s → %s for %s in %s", v.ActivePhaseID(), phase.ID, kind, strings.Join(paths, ", "))
 	if len(reopened) > 0 {
 		logLine += "; reopened phase beads: " + strings.Join(reopened, ", ")
 	}
-	return logLine, fmt.Errorf("%s\n\nCompiler output:\n%s\nRepair this phase's files against SPEC/architecture, preserving their contracts, before returning to %s", logLine, truncateWorkflowText(output, 4000), v.ActivePhaseID())
+	return logLine, fmt.Errorf("%s\n\nVerification output:\n%s\nRepair this phase's files against SPEC/architecture, preserving their contracts, before returning to %s", logLine, truncateWorkflowText(output, 4000), v.ActivePhaseID())
 }

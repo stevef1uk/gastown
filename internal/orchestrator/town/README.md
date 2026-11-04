@@ -135,6 +135,8 @@ Planning sync regenerates missing or misaligned plans and preserves valid nested
 
 When implementation fails in a phased Go project, recovery also checks existing dependencies with a bounded Go build using `-mod=readonly` and discarding binary output. Compiler paths owned by an earlier phase rewind to that phase and reopen its beads; repair stays with Polecat, preserves compiler feedback, and records the original phase to resume afterward. Active-phase errors, unowned files, toolchain failures, and missing external modules do not trigger this dependency rewind.
 
+Python dependency recovery uses the captured failed-verification traceback rather than importing application modules or replaying startup commands. Syntax/name/type errors use the terminal first-party frame; missing imported symbols or module attributes use the implicated provider's owned path. The same owning-phase rewind applies even when the active phase is a browser harness or Python uses no virtualenv. Third-party providers, declared external dependencies, virtualenv files, ambiguous module names, and active/future-phase files do not trigger an earlier-phase source rewind.
+
 Tester verification credit requires the complete configured command (allowing mayor/rig directory prefixes and harness-managed rewrites). Backgrounded suites, health probes, discovery-only flags, alternate configurations, and exit-masking wrappers cannot substitute for that command. Only recognized Node development-server commands are eligible for smoke rewriting; `npx playwright test` stays a foreground test runner.
 
 Reusable hook implementations live in `internal/orchestrator/prompt_context.go` — add a **named** hook only when YAML cannot express it. See the maintainer block at the top of that file.

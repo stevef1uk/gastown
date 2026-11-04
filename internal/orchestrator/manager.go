@@ -473,7 +473,7 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summa
 	implementationRewound := false
 	if fromState == "implementation" && next == "planning" && rig != "" {
 		if v := m.workflowValidationFor(inst, tpl); v.HasPhasedDelivery() {
-			if rewindLog, rerr := MaybeRewindToProblemPhaseForImplementation(m.townRoot, rig, v); rerr != nil && rewindLog != "" {
+			if rewindLog, rerr := MaybeRewindToProblemPhaseForImplementation(m.townRoot, rig, v, feedback); rerr != nil && rewindLog != "" {
 				log.Printf("[Manager] implementation failure rewound %s active phase (was %s; bouncing to implementation instead of planning): %s", rig, v.ActivePhaseID(), rewindLog)
 				next = "implementation"
 				inst.CurrentState = next
