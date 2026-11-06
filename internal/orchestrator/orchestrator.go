@@ -433,15 +433,15 @@ func deleteWorkflowOffline(townRoot, workflowID string) error {
 }
 
 // PauseWorkflow pauses an instance via the running orchestrator (or offline manager).
-func PauseWorkflow(townRoot, workflowID string) (rig string, err error) {
+func PauseWorkflow(townRoot, workflowID string, reasons ...string) (rig string, err error) {
 	if running, _, _ := IsRunning(townRoot); running {
-		return pauseWorkflowViaMCP(townRoot, workflowID)
+		return pauseWorkflowViaMCP(townRoot, workflowID, reasons...)
 	}
 	mgr := NewManager(townRoot)
 	if err := mgr.LoadTownTemplates(); err != nil {
 		return "", err
 	}
-	return mgr.PauseWorkflow(workflowID)
+	return mgr.PauseWorkflow(workflowID, reasons...)
 }
 
 // ResumeWorkflow resumes a paused instance.
@@ -468,11 +468,16 @@ func PauseWorkflowsForRig(townRoot, rig string) ([]string, error) {
 	return mgr.PauseRunningWorkflowsForRig(rig)
 }
 
-func pauseWorkflowViaMCP(townRoot, workflowID string) (string, error) {
+func pauseWorkflowViaMCP(townRoot, workflowID string, reasons ...string) (string, error) {
+	reason := ""
+	if len(reasons) > 0 {
+		reason = reasons[0]
+	}
 	result, err := Call(townRoot, "call_tool", map[string]interface{}{
 		"name": "pause_workflow",
 		"arguments": map[string]interface{}{
 			"workflow_id": workflowID,
+			"reason":      reason,
 		},
 	})
 	if err != nil {

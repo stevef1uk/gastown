@@ -65,3 +65,13 @@ func TestLoadWorkflowsByRig_fromInstancesFile(t *testing.T) {
 		t.Fatalf("workflow without a profile: %+v", got["other"])
 	}
 }
+
+func TestRenderWorkflowPauseReason(t *testing.T) {
+	m := &Model{}
+	got := m.renderWorkflowLine(RigWorkflow{ID: "wf-1", TemplateID: "rig-flow", Status: "paused", CurrentState: "implementation", DeliveryPhase: "core", DeliveryPhaseIndex: 2, DeliveryPhaseTotal: 4, PauseReason: "execution budget exhausted: workflow cost allowance $5.00"})
+	for _, want := range []string{"paused", "2/4", "Paused because:", "cost allowance $5.00"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("missing %q in %s", want, got)
+		}
+	}
+}

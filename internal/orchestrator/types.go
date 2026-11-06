@@ -92,17 +92,18 @@ type WorkflowRework struct {
 
 // WorkflowInstance is an active execution of a WorkflowTemplate.
 type WorkflowInstance struct {
-	ID            string            `json:"id"`
-	TemplateID    string            `json:"template_id"`
-	CurrentState  string            `json:"current_state"`
+	PauseReason  string `json:"pause_reason,omitempty"`
+	ID           string `json:"id"`
+	TemplateID   string `json:"template_id"`
+	CurrentState string `json:"current_state"`
 	// StateEnteredAt is when the current FSM state was entered (RFC3339 UTC).
 	// Used for state_timeout_seconds. Refreshed only on cross-state transitions and
 	// after orchestrator wall-clock timeout (applyStateTimeout); same-state timeout/failure
 	// rework loops do not reset it so max_cmd_turns sessions cannot defer hard reset.
-	StateEnteredAt string `json:"state_entered_at,omitempty"`
-	Variables     map[string]string `json:"variables"`
-	Status        string            `json:"status"` // "running", "paused", "completed", "failed"
-	PendingRework *WorkflowRework   `json:"pending_rework,omitempty"`
+	StateEnteredAt string            `json:"state_entered_at,omitempty"`
+	Variables      map[string]string `json:"variables"`
+	Status         string            `json:"status"` // "running", "paused", "completed", "failed"
+	PendingRework  *WorkflowRework   `json:"pending_rework,omitempty"`
 	// TestReviewFailures counts consecutive test_review failure → implementation bounces.
 	// Reset on any success or escalation; at tester.max_review_retries the orchestrator
 	// escalates to test_plan_rework/design instead of looping (docs/design/tester-agent.md §8).
@@ -112,13 +113,13 @@ type WorkflowInstance struct {
 	// workflow spins test_plan ↔ planning forever (e.g. the tester never writes
 	// TEST_PLAN.md). At tester.max_review_retries the orchestrator escalates to
 	// design instead of looping; reset on any success or escalation.
-	TestPlanFailures int `json:"test_plan_failures,omitempty"`
-	ReviewProgress map[string]ReviewProgress `json:"review_progress,omitempty"`
+	TestPlanFailures int                       `json:"test_plan_failures,omitempty"`
+	ReviewProgress   map[string]ReviewProgress `json:"review_progress,omitempty"`
 }
 
 type ReviewProgress struct {
 	Fingerprint string `json:"fingerprint"`
-	Failures int `json:"failures"`
+	Failures    int    `json:"failures"`
 }
 
 // IsFailureOutcome reports whether complete_task outcome means rework/failure.

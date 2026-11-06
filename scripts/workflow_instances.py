@@ -63,6 +63,7 @@ def enrich(inst: dict[str, Any], town_root: Path) -> dict[str, Any]:
         "rig": rig,
         "current_state": state,
         "status": inst.get("status", ""),
+        "pause_reason": inst.get("pause_reason", ""),
         "role": role,
     }
 
@@ -195,6 +196,9 @@ def cmd_list(args: argparse.Namespace) -> int:
     ]
     print()
     print(format_table(table_rows, ["ID", "TEMPLATE", "RIG", "STATE", "STATUS", "ROLE"]))
+    for row in rows:
+        if row["status"] == "paused" and row["pause_reason"]:
+            print(f"\n{row['id']} paused because: {row['pause_reason']}")
     warn = duplicate_active_warning(rows)
     if warn:
         print(f"\n! {warn}", file=sys.stderr)

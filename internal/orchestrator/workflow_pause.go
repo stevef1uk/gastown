@@ -2,6 +2,7 @@ package orchestrator
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/steveyegge/gastown/internal/events"
 )
@@ -26,7 +27,7 @@ func isWorkflowRunningStatus(status string) bool {
 }
 
 // PauseWorkflow marks an instance paused so fetch_task stops dispatching work.
-func (m *Manager) PauseWorkflow(workflowID string) (string, error) {
+func (m *Manager) PauseWorkflow(workflowID string, reasons ...string) (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -37,7 +38,13 @@ func (m *Manager) PauseWorkflow(workflowID string) (string, error) {
 	if isWorkflowTerminalStatus(inst.Status) {
 		return "", fmt.Errorf("workflow %q is %s (cannot pause)", workflowID, inst.Status)
 	}
+	if len(reasons) > 0 && strings.TrimSpace(reasons[0]) != "" {
+		inst.PauseReason = strings.TrimSpace(reasons[0])
+	}
 	if inst.Status == "paused" {
+		if err := m.persistLocked(); err != nil {
+			return "", err
+		}
 		rig := rigFromInst(inst)
 		return rig, nil
 	}
@@ -63,6 +70,7 @@ func (m *Manager) ResumeWorkflow(workflowID string) error {
 		return fmt.Errorf("%w (status=%q)", ErrWorkflowNotPaused, inst.Status)
 	}
 	inst.Status = "running"
+	inst.PauseReason = ""
 	if err := m.persistLocked(); err != nil {
 		return fmt.Errorf("persist instances: %w", err)
 	}
@@ -72,7 +80,7 @@ func (m *Manager) ResumeWorkflow(workflowID string) error {
 }
 
 // PauseRunningWorkflowsForRig pauses all non-terminal, non-paused instances for rig.
-func (m *Manager) PauseRunningWorkflowsForRig(rig string) ([]string, error) {
+func (m *Manager) PauseRunningWorkflowsForRig(rig string, reasons ...string) ([]string, error) {
 	if rig == "" {
 		return nil, fmt.Errorf("rig name required")
 	}
@@ -88,6 +96,9 @@ func (m *Manager) PauseRunningWorkflowsForRig(rig string) ([]string, error) {
 			continue
 		}
 		inst.Status = "paused"
+		if len(reasons) > 0 && strings.TrimSpace(reasons[0]) != "" {
+			inst.PauseReason = strings.TrimSpace(reasons[0])
+		}
 		ids = append(ids, id)
 		m.logWorkflowFeed(events.TypeWorkflowTransition, id, inst.TemplateID, inst.CurrentState, inst.CurrentState, "paused", "", rig)
 	}

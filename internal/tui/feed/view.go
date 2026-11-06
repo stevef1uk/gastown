@@ -357,7 +357,7 @@ func (m *Model) renderWorkflowLine(wf RigWorkflow) string {
 	if id == "" {
 		id = "?"
 	}
-	return fmt.Sprintf("  %s %s  %s  %s  %s  %s",
+	line := fmt.Sprintf("  %s %s  %s  %s  %s  %s",
 		WorkflowStyle.Render("⚙"),
 		WorkflowStyle.Render(id),
 		WorkflowStyle.Render(tpl),
@@ -365,6 +365,10 @@ func (m *Model) renderWorkflowLine(wf RigWorkflow) string {
 		WorkflowStateStyle.Render(state),
 		workflowStatusStyle(status).Render(status),
 	)
+	if wf.Status == "paused" && wf.PauseReason != "" {
+		line += "\n    " + WorkflowStatusPausedStyle.Render("Paused because: "+strings.Join(strings.Fields(wf.PauseReason), " "))
+	}
+	return line
 }
 
 func workflowStatusStyle(status string) lipgloss.Style {

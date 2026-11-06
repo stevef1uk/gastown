@@ -9,6 +9,7 @@ import (
 
 // WorkflowInfo is a snapshot of one workflow instance for the console UI.
 type WorkflowInfo struct {
+	PauseReason  string `json:"pause_reason,omitempty"`
 	ID           string `json:"id"`
 	TemplateID   string `json:"template_id"`
 	Rig          string `json:"rig"`
@@ -46,6 +47,7 @@ func (s *Server) loadWorkflows() []WorkflowInfo {
 			Rig:          inst.Variables["rig"],
 			CurrentState: inst.CurrentState,
 			Status:       inst.Status,
+			PauseReason:  inst.PauseReason,
 		}
 		if inst.TemplateID == "rig-flow" || inst.TemplateID == "req-flow" {
 			w.ActiveRole = rigFlowStateRole[inst.CurrentState]
@@ -92,6 +94,11 @@ func orchestratorActivity(workflows []WorkflowInfo) string {
 	}
 	switch len(running) {
 	case 0:
+		for _, w := range workflows {
+			if w.Status == "paused" {
+				return fmt.Sprintf("%s paused: %s", w.ID, w.PauseReason)
+			}
+		}
 		return "Idle"
 	case 1:
 		w := running[0]

@@ -16,8 +16,8 @@ import (
 	"github.com/steveyegge/gastown/internal/doltserver"
 	"github.com/steveyegge/gastown/internal/mayor"
 	"github.com/steveyegge/gastown/internal/orchestrator"
-	"github.com/steveyegge/gastown/internal/specprofile"
 	"github.com/steveyegge/gastown/internal/session"
+	"github.com/steveyegge/gastown/internal/specprofile"
 	"github.com/steveyegge/gastown/internal/style"
 	"github.com/steveyegge/gastown/internal/tmux"
 	"github.com/steveyegge/gastown/internal/workspace"
@@ -316,7 +316,7 @@ func runMayorWorkflowStart(cmd *cobra.Command, args []string) error {
 	EnsureOrchestratedTownPipeline(townRoot)
 	if rig := strings.TrimSpace(vars["rig"]); rig != "" {
 		EnsureOrchestratedRigAgents(townRoot, rig)
-		
+
 		// Use LLM to extract scaffold plan from SPEC for intelligent scaffolding
 		specPath := filepath.Join(townRoot, rig, "mayor", "rig", "SPEC.md")
 		specText, _ := os.ReadFile(specPath)
@@ -336,7 +336,7 @@ func runMayorWorkflowStart(cmd *cobra.Command, args []string) error {
 				}
 			}
 		}
-		
+
 		// Re-scaffold docker-compose/Playwright infra using the FINAL profile.
 		// spec-index above may have re-indexed and changed layout_root (judge
 		// nondeterminism), so write into whatever layout_root the agents will use.
@@ -394,6 +394,9 @@ func runMayorWorkflowStatus(cmd *cobra.Command, args []string) error {
 		}
 		fmt.Printf("%s  template=%s state=%s status=%s role=%s%s%s\n",
 			s.ID, s.TemplateID, s.CurrentState, s.Status, s.Role, rigStr, phaseStr)
+		if s.Status == "paused" && s.PauseReason != "" {
+			fmt.Printf("  Paused because: %s\n", s.PauseReason)
+		}
 	}
 	if warn := orchestrator.DuplicateActiveWarning(statuses); warn != "" {
 		fmt.Printf("\n%s %s\n", style.Warning.Render("!"), warn)

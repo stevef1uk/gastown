@@ -417,6 +417,15 @@
                     list.appendChild(hint);
                 }
 
+                workflows.filter(w => w.rig === rig && w.status === 'paused').forEach(w => {
+                    const notice = document.createElement('div');
+                    notice.className = 'rig-workflow-hint';
+                    notice.style.color = '#e3b341';
+                    notice.setAttribute('role', 'status');
+                    notice.textContent = `${w.id} PAUSED at ${w.current_state}: ${w.pause_reason || 'No reason recorded. Check agent logs.'}`;
+                    list.appendChild(notice);
+                });
+
                 groups[rig].forEach(agent => {
                     const item = document.createElement('div');
                     item.className = 'agent-item' + (agent.status === 'stopped' ? ' stopped' : '');

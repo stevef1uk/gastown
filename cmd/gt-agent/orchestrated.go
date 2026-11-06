@@ -98,10 +98,10 @@ func runOrchestrated(ctx context.Context, client *llm.Client, townRoot, role, ri
 		}
 		outcome, summary, attemptLog, runErr := executeOrchestratedTask(ctx, client, townRoot, taskRig, sessionName, task, state.OrchestratedRetry)
 		if runErr != nil && isPermanentLLMError(runErr) {
-			if _, pauseErr := orchestrator.PauseWorkflow(townRoot, task.WorkflowID); pauseErr != nil {
+			if _, pauseErr := orchestrator.PauseWorkflow(townRoot, task.WorkflowID, runErr.Error()); pauseErr != nil {
 				return fmt.Errorf("LLM resource failure (%v); pause failed: %w", runErr, pauseErr)
 			}
-			return fmt.Errorf("workflow paused; resolve credentials or resource budget before resuming: %w", runErr)
+			return fmt.Errorf("workflow %s PAUSED in %s: %w. Check gt mayor workflow status %s; resolve the reported cause before resuming", task.WorkflowID, task.State, runErr, task.WorkflowID)
 		}
 		if runErr != nil && isRetriableLLMError(runErr) {
 			orchestratedPrintf("[gt-agent] LLM unavailable (%v) — not completing task; backing off before retry\n", runErr)

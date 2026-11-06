@@ -841,6 +841,7 @@ func (m *Manager) ResetWorkflow(workflowID, toState string) (string, error) {
 	fromState := inst.CurrentState
 	inst.CurrentState = toState
 	inst.Status = "running"
+	inst.PauseReason = ""
 	inst.ReviewProgress = nil
 	inst.touchStateEnteredAt()
 	if err := m.persistLocked(); err != nil {
@@ -913,6 +914,7 @@ func (m *Manager) logWorkflowFeed(eventType, workflowID, templateID, fromState, 
 
 // WorkflowStatus is a snapshot of one workflow instance for operators and MCP.
 type WorkflowStatus struct {
+	PauseReason  string            `json:"pause_reason,omitempty"`
 	ID           string            `json:"id"`
 	TemplateID   string            `json:"template_id"`
 	CurrentState string            `json:"current_state"`
@@ -946,6 +948,7 @@ func (m *Manager) GetWorkflowStatus(workflowID string) ([]WorkflowStatus, error)
 			TemplateID:   inst.TemplateID,
 			CurrentState: inst.CurrentState,
 			Status:       inst.Status,
+			PauseReason:  inst.PauseReason,
 			Role:         role,
 			Variables:    vars,
 		})

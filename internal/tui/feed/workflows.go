@@ -9,6 +9,7 @@ import (
 
 // RigWorkflow is one workflow instance shown under a rig in the agent tree.
 type RigWorkflow struct {
+	PauseReason        string
 	ID                 string
 	TemplateID         string
 	DeliveryPhase      string
@@ -61,6 +62,7 @@ func LoadWorkflowsByRig(townRoot string) (map[string][]RigWorkflow, error) {
 			DeliveryPhaseTotal: phase.total,
 			CurrentState:       s.CurrentState,
 			Status:             s.Status,
+			PauseReason:        s.PauseReason,
 		})
 	}
 	for rig := range byRig {
@@ -104,6 +106,7 @@ func loadWorkflowStatuses(townRoot string) ([]orchestrator.WorkflowStatus, error
 			TemplateID:   inst.TemplateID,
 			CurrentState: inst.CurrentState,
 			Status:       inst.Status,
+			PauseReason:  inst.PauseReason,
 			Variables:    vars,
 		})
 	}

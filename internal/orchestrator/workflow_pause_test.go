@@ -1,6 +1,9 @@
 package orchestrator
 
-import "testing"
+import (
+	"encoding/json"
+	"testing"
+)
 
 func TestPauseWorkflow_allowsNewStartOnSameRig(t *testing.T) {
 	m, id := loadTestManager(t, designFlowTemplate())
@@ -54,5 +57,39 @@ func TestLegacyPolecatsPausedFromStatuses_skipsPaused(t *testing.T) {
 	}}
 	if legacyPolecatsPausedFromStatuses(paused, "mockrig") {
 		t.Fatal("paused rig-flow should not pause legacy polecats")
+	}
+}
+
+func TestPauseReasonSurvivesReloadAndClearsOnResume(t *testing.T) {
+	m, id := loadTestManager(t, designFlowTemplate())
+	reason := "LLM API error (status 402): execution budget exhausted: workflow cost allowance $5.00"
+	if _, err := m.PauseWorkflow(id, reason); err != nil {
+		t.Fatal(err)
+	}
+	reloaded := NewManager(m.townRoot)
+	statuses, err := reloaded.GetWorkflowStatus(id)
+	if err != nil || len(statuses) != 1 || statuses[0].PauseReason != reason {
+		t.Fatalf("persisted status: %+v %v", statuses, err)
+	}
+	if err := reloaded.ResumeWorkflow(id); err != nil {
+		t.Fatal(err)
+	}
+	statuses, err = reloaded.GetWorkflowStatus(id)
+	if err != nil || statuses[0].PauseReason != "" {
+		t.Fatalf("stale pause reason: %+v %v", statuses, err)
+	}
+}
+
+func TestPauseReasonThroughMCP(t *testing.T) {
+	m, id := loadTestManager(t, designFlowTemplate())
+	server := NewServer(m)
+	params, _ := json.Marshal(map[string]interface{}{"name": "pause_workflow", "arguments": map[string]string{"workflow_id": id, "reason": "Budget: workflow cost allowance $5.00 exhausted"}})
+	response := server.handleRequest(MCPRequest{JSONRPC: "2.0", ID: 1, Method: "call_tool", Params: params})
+	if response.Error != nil {
+		t.Fatal(response.Error)
+	}
+	statuses, err := m.GetWorkflowStatus(id)
+	if err != nil || statuses[0].PauseReason != "Budget: workflow cost allowance $5.00 exhausted" {
+		t.Fatalf("status: %+v, %v", statuses, err)
 	}
 }

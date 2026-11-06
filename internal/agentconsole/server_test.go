@@ -96,3 +96,22 @@ func TestEnrichAgentsWithWorkflows(t *testing.T) {
 		t.Fatalf("architect should not be active: %+v", agents[1])
 	}
 }
+
+func TestLoadWorkflowsExposesPauseReason(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "orchestrator"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	data := `{"instances":[{"id":"wf-1","template_id":"rig-flow","current_state":"implementation","status":"paused","pause_reason":"Budget exhausted: $5.00 allowance","variables":{"rig":"pwtest"}}]}`
+	if err := os.WriteFile(filepath.Join(root, "orchestrator", "instances.json"), []byte(data), 0644); err != nil {
+		t.Fatal(err)
+	}
+	s := &Server{townRoot: root}
+	workflows := s.loadWorkflows()
+	if len(workflows) != 1 || workflows[0].PauseReason != "Budget exhausted: $5.00 allowance" {
+		t.Fatalf("workflows: %+v", workflows)
+	}
+	if got := orchestratorActivity(workflows); !strings.Contains(got, "paused: Budget exhausted") {
+		t.Fatalf("activity: %s", got)
+	}
+}
