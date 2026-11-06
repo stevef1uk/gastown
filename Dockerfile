@@ -2,7 +2,7 @@
 # docker build -t gastown:latest -f Dockerfile .
 FROM docker/sandbox-templates:claude-code
 
-ARG GO_VERSION=1.25.8
+ARG GO_VERSION=1.26.5
 
 USER root
 
@@ -27,7 +27,8 @@ RUN ARCH=$(dpkg --print-architecture) && \
 ENV PATH="/app/gastown:/usr/local/go/bin:/home/agent/go/bin:${PATH}"
 
 # Install beads (bd) and dolt
-RUN curl -fsSL https://raw.githubusercontent.com/steveyegge/beads/main/scripts/install.sh | bash
+ARG BD_VERSION=v1.3.4
+RUN GOBIN=/usr/local/bin go install -tags=gms_pure_go github.com/steveyegge/beads/cmd/bd@${BD_VERSION}
 RUN curl -fsSL https://github.com/dolthub/dolt/releases/latest/download/install.sh | bash
 
 # Set up directories

@@ -38,24 +38,24 @@ func (c *BeadsBinaryCheck) Run(ctx *CheckContext) *CheckResult {
 
 	case deps.BeadsNotFound:
 		return &CheckResult{
-			Name:   c.Name(),
-			Status: StatusError,
+			Name:    c.Name(),
+			Status:  StatusError,
 			Message: "beads (bd) not found in PATH",
 			Details: []string{
 				"The bd CLI is required for beads operations",
 			},
-			FixHint: fmt.Sprintf("Install: go install %s", deps.BeadsInstallPath),
+			FixHint: fmt.Sprintf("Install: go install -tags=gms_pure_go %s", deps.BeadsInstallPath),
 		}
 
-	case deps.BeadsTooOld:
+	case deps.BeadsTooOld, deps.BeadsIncompatible:
 		return &CheckResult{
-			Name:   c.Name(),
-			Status: StatusError,
-			Message: fmt.Sprintf("bd %s is too old (minimum: %s)", version, deps.MinBeadsVersion),
+			Name:    c.Name(),
+			Status:  StatusError,
+			Message: fmt.Sprintf("bd %s does not match the embedded SDK (required: %s)", version, deps.MinBeadsVersion),
 			Details: []string{
-				fmt.Sprintf("Installed version %s does not meet the minimum requirement of %s", version, deps.MinBeadsVersion),
+				fmt.Sprintf("Installed version %s does not match the required SDK version %s", version, deps.MinBeadsVersion),
 			},
-			FixHint: fmt.Sprintf("Upgrade: go install %s", deps.BeadsInstallPath),
+			FixHint: fmt.Sprintf("Upgrade: go install -tags=gms_pure_go %s", deps.BeadsInstallPath),
 		}
 
 	case deps.BeadsUnknown:
@@ -63,7 +63,7 @@ func (c *BeadsBinaryCheck) Run(ctx *CheckContext) *CheckResult {
 			Name:    c.Name(),
 			Status:  StatusWarning,
 			Message: "bd found but version could not be determined",
-			FixHint: fmt.Sprintf("Try reinstalling: go install %s", deps.BeadsInstallPath),
+			FixHint: fmt.Sprintf("Try reinstalling: go install -tags=gms_pure_go %s", deps.BeadsInstallPath),
 		}
 	}
 

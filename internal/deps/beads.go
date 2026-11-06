@@ -14,21 +14,25 @@ import (
 	"github.com/steveyegge/gastown/internal/util"
 )
 
-// MinBeadsVersion is the minimum compatible beads version for this Gas Town release.
-// Update this when Gas Town requires new beads features.
-const MinBeadsVersion = "0.57.0"
+// BeadsVersion pins the CLI and SDK to one tested schema contract. Update
+// go.mod and this value together; a minimum alone admits incompatible schemas.
+const BeadsVersion = "1.3.4"
+
+// MinBeadsVersion is retained for existing version diagnostics.
+const MinBeadsVersion = BeadsVersion
 
 // BeadsInstallPath is the go install path for beads.
-const BeadsInstallPath = "github.com/steveyegge/beads/cmd/bd@latest"
+const BeadsInstallPath = "github.com/steveyegge/beads/cmd/bd@v" + BeadsVersion
 
 // BeadsStatus represents the state of the beads installation.
 type BeadsStatus int
 
 const (
-	BeadsOK       BeadsStatus = iota // bd found, version compatible
-	BeadsNotFound                    // bd not in PATH
-	BeadsTooOld                      // bd found but version too old
-	BeadsUnknown                     // bd found but couldn't parse version
+	BeadsOK           BeadsStatus = iota // bd found, version compatible
+	BeadsNotFound                        // bd not in PATH
+	BeadsTooOld                          // bd found but version too old
+	BeadsUnknown                         // bd found but couldn't parse version
+	BeadsIncompatible                    // bd newer than the tested SDK schema
 )
 
 // CheckBeads checks if bd is installed and compatible.
@@ -63,6 +67,9 @@ func CheckBeads() (BeadsStatus, string) {
 		return BeadsTooOld, version
 	}
 
+	if CompareVersions(version, BeadsVersion) != 0 {
+		return BeadsIncompatible, version
+	}
 	return BeadsOK, version
 }
 
@@ -78,29 +85,31 @@ func EnsureBeads(autoInstall bool) error {
 
 	case BeadsNotFound:
 		if !autoInstall {
-			return fmt.Errorf("beads (bd) not found in PATH\n\nInstall with: go install %s", BeadsInstallPath)
+			return fmt.Errorf("beads (bd) not found in PATH\n\nInstall with: go install -tags=gms_pure_go %s", BeadsInstallPath)
 		}
 		return installBeads()
 
-	case BeadsTooOld:
-		return fmt.Errorf("beads version %s is too old (minimum: %s)\n\nUpgrade with: go install %s",
+	case BeadsTooOld, BeadsIncompatible:
+		if autoInstall {
+			return installBeads()
+		}
+		return fmt.Errorf("beads version %s does not match this Gastown SDK (required: %s)\n\nUpgrade with: go install -tags=gms_pure_go %s",
 			version, MinBeadsVersion, BeadsInstallPath)
 
 	case BeadsUnknown:
-		// Found bd but couldn't determine version - proceed with warning
-		return nil
+		return fmt.Errorf("cannot determine selected bd version; install the matching CLI: go install -tags=gms_pure_go %s", BeadsInstallPath)
 	}
 
 	return nil
 }
 
-// installBeads runs go install to install the latest beads.
+// installBeads installs the CLI matching the embedded SDK.
 // GOBIN is set to ~/.local/bin so the binary lands in the canonical
 // location rather than the default $GOPATH/bin (~/go/bin/).
 func installBeads() error {
-	fmt.Printf("   beads (bd) not found. Installing...\n")
+	fmt.Printf("   Installing matching beads (bd) %s...\n", BeadsVersion)
 
-	cmd := exec.Command("go", "install", BeadsInstallPath)
+	cmd := exec.Command("go", "install", "-tags=gms_pure_go", BeadsInstallPath)
 	util.SetDetachedProcessGroup(cmd)
 	cmd.Env = appendGOBIN(cmd.Environ())
 	output, err := cmd.CombinedOutput()
@@ -113,8 +122,8 @@ func installBeads() error {
 	if status == BeadsNotFound {
 		return fmt.Errorf("beads installed but not in PATH - ensure $GOPATH/bin is in your PATH")
 	}
-	if status == BeadsTooOld {
-		return fmt.Errorf("installed beads %s but minimum required is %s", version, MinBeadsVersion)
+	if status != BeadsOK {
+		return fmt.Errorf("selected bd version %q still does not match %s after installation; check PATH for shadowing binaries (installed to ~/.local/bin)", version, BeadsVersion)
 	}
 
 	fmt.Printf("   ✓ Installed beads %s\n", version)

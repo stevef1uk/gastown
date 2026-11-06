@@ -262,3 +262,9 @@ else
 		sleep 2; \
 	done
 endif
+
+# Fresh SDK/CLI schema compatibility on an isolated temporary native Dolt server.
+# Requires matching bd on PATH; optionally set GT_BEADS_TEST_BD to its path.
+.PHONY: test-beads-schema
+test-beads-schema:
+	GT_BEADS_SCHEMA_TEST=1 go test ./internal/beads -run '^TestFreshBeadsSDKCLICompatibility$$' -count=1 -v

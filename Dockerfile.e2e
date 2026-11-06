@@ -12,7 +12,7 @@
 FROM golang:1.26-alpine
 
 ARG DOLT_VERSION=1.82.4
-ARG BD_VERSION=v0.57.0
+ARG BD_VERSION=v1.3.4
 
 # Install dependencies including CGO build requirements for beads daemon
 # procps and lsof are required by gt dolt start for process verification
@@ -29,7 +29,7 @@ RUN apk add --no-cache \
 
 # Install beads daemon (bd)
 RUN for i in 1 2 3; do \
-      go install github.com/steveyegge/beads/cmd/bd@${BD_VERSION} && break; \
+      go install -tags=gms_pure_go github.com/steveyegge/beads/cmd/bd@${BD_VERSION} && break; \
       if [ "$i" -eq 3 ]; then exit 1; fi; \
       sleep 2; \
     done

@@ -391,7 +391,7 @@ Federated work coordination network linking Gas Towns through DoltHub. Rigs post
 
 ### Prerequisites
 
-- **Go 1.25+** - [go.dev/dl](https://go.dev/dl/)
+- **Go 1.26.5+** - [go.dev/dl](https://go.dev/dl/)
 - **Git 2.25+** - for worktree support
 - **Dolt 1.82.4+** - `brew install dolt` on macOS, or see [github.com/dolthub/dolt](https://github.com/dolthub/dolt)
 - **beads (bd) 0.55.4+** - installed by `brew install gastown`, or see [github.com/steveyegge/beads](https://github.com/steveyegge/beads)
@@ -1270,3 +1270,22 @@ gt mayor attach
 ## License
 
 MIT License - see LICENSE file for details
+
+### Beads SDK and CLI compatibility
+
+Gastown pins its embedded Beads SDK and the `bd` CLI to **1.3.4**. `gt install`
+and `gt rig add` install the matching CLI into `~/.local/bin` when it is missing
+or mismatched, then verify the executable selected by PATH. Keep that directory
+before other `bd` installations. Dependency installation uses the pinned release,
+not `@latest`; update the SDK, CLI pin, and compatibility tests together.
+
+This applies to newly created towns and rigs, including after deleting a town.
+A missing `leases` table signals an incomplete or incompatible Beads schema;
+changing agent prompts or setting `beads.role` cannot repair it. Existing databases
+with blocked migrations need a separate backed-up migration; recreating the town
+with matching versions avoids mixing old SDK initialization with newer CLI queries.
+
+Run `make test-beads-schema` to exercise fresh schema initialization on a temporary
+native Dolt server. It checks SDK creation, CLI initialization, SDK issue creation,
+CLI listing, and the leases table, without accessing an existing town. Both `dolt`
+and matching `bd` must be installed; `GT_BEADS_TEST_BD` can select an explicit CLI.
