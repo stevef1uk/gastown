@@ -3,6 +3,7 @@ package orchestrator
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
 
@@ -114,6 +115,11 @@ func NormalizeGoLayoutPackagePaths(cmd, workPath, layoutRoot string) string {
 	if layoutRoot == "" {
 		return cmd
 	}
+	// Execution has already moved to the module root. Leaving an explicit
+	// go -C <layout> here would enter that directory a second time.
+	dir := regexp.QuoteMeta(layoutRoot)
+	goCD := regexp.MustCompile(`\bgo[ \t]+-C[ \t]+(?:"(?:\./)?` + dir + `"|'(?:\./)?` + dir + `'|(?:\./)?` + dir + `)([ \t]+)`)
+	cmd = goCD.ReplaceAllString(cmd, "go${1}")
 	prefix := "./" + layoutRoot + "/"
 	wp := strings.Trim(filepath.ToSlash(strings.TrimSpace(workPath)), "/")
 	if strings.HasSuffix(wp, layoutRoot) {

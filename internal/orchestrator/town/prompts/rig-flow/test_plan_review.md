@@ -49,3 +49,12 @@ You are **QA** for rig `{{rig}}`. Your working directory is `{{rig}}/mayor/rig/`
 - `architecture_failure` — SPEC/architecture are the blocker; the architect revises them.
 
 **Critical:** send JSON only in a separate message after running the commands. Do not send JSON in the same turn as CMD lines.
+
+
+**JSON contracts:** Unless SPEC explicitly requires byte-for-byte wire formatting,
+compare decoded JSON values, keys, and types. Whitespace and object key order in
+an example payload are not requirements. Do not require compact/spaced JSON or a
+trailing newline merely because an example uses it. A whitespace-only mismatch
+is a test-contract error to fix within the owning test scope, not an invented
+implementation requirement or architecture change. Preserve meaningful assertions
+for status, content type, required values, and any explicitly specified formatting.

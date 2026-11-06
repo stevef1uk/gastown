@@ -1329,10 +1329,10 @@ func TestValidateImplementationBeadReopen_blocksGreenBead(t *testing.T) {
 	}
 
 	v := orchestrator.WorkflowValidation{
-		LayoutRoot:        "app",
-		BeadTitleContains: "Implement",
-		QAVerifyCommand:   "cd app && go test ./...",
-		RequiredFiles:     []string{"app/internal/store/store.go"},
+		LayoutRoot:                 "app",
+		BeadTitleContains:          "Implement",
+		QAVerifyCommand:            "cd app && go test ./...",
+		RequiredFiles:              []string{"app/internal/store/store.go"},
 		MinImplementationFileBytes: 1,
 		MinSubstantiveLines:        1,
 	}
@@ -1353,5 +1353,28 @@ func TestValidateImplementationBeadReopen_blocksGreenBead(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "verifies green") {
 		t.Fatalf("expected 'verifies green' in error, got: %v", err)
+	}
+}
+
+func TestGrepNoMatchNeverMasksVerificationFailures(t *testing.T) {
+	err := exec.Command("sh", "-c", "exit 1").Run()
+	for _, cmd := range []string{
+		"false && grep needle file.txt",
+		"cd pwtest/mayor/rig && set -eu; go test ./...; curl -fsS localhost:8080/ping | grep -q pong",
+		"go test ./... && grep result file.txt",
+		"grep -q expected file.txt",
+		"grep -Fnq expected file.txt",
+		"grep --quiet expected file.txt",
+	} {
+		if isGrepExitCode1(cmd, err) {
+			t.Errorf("verification error suppressed: %s", cmd)
+		}
+	}
+	if !isGrepExitCode1("cd rig/mayor/rig && grep -n missing SPEC.md", err) {
+		t.Fatal("standalone read search should allow no matches")
+	}
+	r := &stateRunner{hooks: orchestrator.StateHooks{}}
+	if _, err := r.runShellCommand("false && grep never-reached missing.txt", t.TempDir(), "", os.Environ()); err == nil {
+		t.Fatal("shell verification chain failure became successful")
 	}
 }

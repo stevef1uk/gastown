@@ -182,3 +182,12 @@ Follow the **red-green-refactor** cycle for every bead that has a test path in `
 - On Verify failure: READ the failing file and dependencies. Diagnose from error output — one sentence explanation, then fix with EDIT/WRITE.
 - If you write `package.json`, only add `overrides` for transitive dependencies not already listed. Check the npm version documentation for conflict rules.
 - Do **NOT** create language-specific runtime environments (virtual environments, venv, uv, etc.) unless the project's setup phase requires them. Follow the project's established conventions.
+
+
+**JSON contracts:** Unless SPEC explicitly requires byte-for-byte wire formatting,
+compare decoded JSON values, keys, and types. Whitespace and object key order in
+an example payload are not requirements. Do not require compact/spaced JSON or a
+trailing newline merely because an example uses it. A whitespace-only mismatch
+is a test-contract error to fix within the owning test scope, not an invented
+implementation requirement or architecture change. Preserve meaningful assertions
+for status, content type, required values, and any explicitly specified formatting.

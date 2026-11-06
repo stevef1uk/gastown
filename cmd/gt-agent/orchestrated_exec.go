@@ -1031,9 +1031,31 @@ func isGrepExitCode1(cmd string, cmdErr error) bool {
 	if cmdErr == nil {
 		return false
 	}
-	lower := strings.ToLower(cmd)
-	if !strings.Contains(lower, "grep") {
+	// Only a standalone, non-quiet read/search may treat exit 1 as no matches.
+	// A grep anywhere in a test/build/smoke chain says nothing about which step
+	// failed, and grep -q itself is an assertion whose failure must stay visible.
+	search := strings.TrimSpace(cmd)
+	for strings.HasPrefix(search, "cd ") {
+		rest := orchestrator.StripFirstShellCDPrefix(search)
+		if rest == "" || rest == search {
+			return false
+		}
+		search = rest
+	}
+	if strings.ContainsAny(search, ";&|<>`$\n\r") {
 		return false
+	}
+	fields := strings.Fields(search)
+	if len(fields) < 2 || fields[0] != "grep" {
+		return false
+	}
+	for _, field := range fields[1:] {
+		if field == "--" {
+			break
+		}
+		if field == "--quiet" || field == "--silent" || (strings.HasPrefix(field, "-") && !strings.HasPrefix(field, "--") && strings.Contains(field, "q")) {
+			return false
+		}
 	}
 	var exitErr *exec.ExitError
 	if !errors.As(cmdErr, &exitErr) || exitErr.ExitCode() != 1 {

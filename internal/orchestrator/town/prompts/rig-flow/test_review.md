@@ -111,3 +111,12 @@ Example plan_gap:
 
 Example architecture_failure:
 `{"outcome":"architecture_failure","summary":"SPEC.md missing HTTP route table; tests cannot be verified against API contract. Architect must add route table to SPEC.md before tests can be validated."}`
+
+
+**JSON contracts:** Unless SPEC explicitly requires byte-for-byte wire formatting,
+compare decoded JSON values, keys, and types. Whitespace and object key order in
+an example payload are not requirements. Do not require compact/spaced JSON or a
+trailing newline merely because an example uses it. A whitespace-only mismatch
+is a test-contract error to fix within the owning test scope, not an invented
+implementation requirement or architecture change. Preserve meaningful assertions
+for status, content type, required values, and any explicitly specified formatting.

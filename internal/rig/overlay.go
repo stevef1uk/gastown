@@ -117,6 +117,7 @@ func gasTownMayorRigIgnorePatterns() []string {
 		"**/codeindex.json",
 		"*.db",
 		"server",
+		"!**/server/",
 		"block:",
 		"node_modules/",
 		"env/",
@@ -188,10 +189,18 @@ func RepairMayorRigProjectIgnores(worktreePath string) error {
 		var kept []string
 		generated := false
 		changed := false
-		for _, line := range strings.Split(string(data), "\n") {
+		lines := strings.Split(string(data), "\n")
+		for i, line := range lines {
 			trimmed := strings.TrimSpace(line)
 			if strings.HasPrefix(trimmed, "#") || trimmed == "" {
 				generated = trimmed == "# Gas Town mayor/rig (rig-flow checkpoints)" || trimmed == "# Gas Town mayor/rig (local exclude)"
+			}
+			// A basename ignore matches directories too. Keep Go server
+			// binaries ignored without hiding cmd/server source trees.
+			if generated && trimmed == "server" && (i+1 >= len(lines) || strings.TrimSpace(lines[i+1]) != "!**/server/") {
+				kept = append(kept, line, "!**/server/")
+				changed = true
+				continue
 			}
 			if generated && (trimmed == "tests/" || trimmed == "package.json" || trimmed == "package-lock.json") {
 				changed = true

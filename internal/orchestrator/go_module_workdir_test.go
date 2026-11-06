@@ -56,3 +56,17 @@ func TestRewriteVerifyCDForWorkPath(t *testing.T) {
 		t.Fatalf("got %q want %q", got, want)
 	}
 }
+
+func TestNormalizeGoLayoutPackagePathsRemovesDuplicateGoCD(t *testing.T) {
+	for _, flag := range []string{"pingapp", "./pingapp", "\"pingapp\"", "'pingapp'"} {
+		input := "cd pwtest/mayor/rig/pingapp && go -C " + flag + " test ./... && go -C " + flag + " build ./cmd/server"
+		want := "cd pwtest/mayor/rig/pingapp && go test ./... && go build ./cmd/server"
+		if got := NormalizeGoLayoutPackagePaths(input, "pwtest/mayor/rig/pingapp", "pingapp"); got != want {
+			t.Fatalf("got %q want %q", got, want)
+		}
+	}
+	input := "go -C other test ./..."
+	if got := NormalizeGoLayoutPackagePaths(input, "pwtest/mayor/rig/pingapp", "pingapp"); got != input {
+		t.Fatal("changed a different module's -C flag")
+	}
+}

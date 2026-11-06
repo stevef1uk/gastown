@@ -842,3 +842,39 @@ func splitLines(content string) []string {
 	}
 	return lines
 }
+
+func TestMayorRigIgnoresServerBinaryButTracksServerSource(t *testing.T) {
+	dir := t.TempDir()
+	if out, err := runGit(dir, "init", "-q"); err != nil {
+		t.Fatalf("%v: %s", err, out)
+	}
+	for path, header := range map[string]string{
+		filepath.Join(dir, ".gitignore"):    "# Gas Town mayor/rig (rig-flow checkpoints)",
+		gitLocalExcludePathForWorktree(dir): "# Gas Town mayor/rig (local exclude)",
+	} {
+		os.MkdirAll(filepath.Dir(path), 0755)
+		if err := os.WriteFile(path, []byte(header+"\nserver\n"), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, path := range []string{"pingapp/cmd/server/main.go", "pingapp/cmd/server/main_test.go", "pingapp/server"} {
+		full := filepath.Join(dir, path)
+		os.MkdirAll(filepath.Dir(full), 0755)
+		if err := os.WriteFile(full, []byte("fixture"), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for attempt := 0; attempt < 2; attempt++ {
+		if err := RepairMayorRigProjectIgnores(dir); err != nil {
+			t.Fatal(err)
+		}
+		for _, path := range []string{"pingapp/cmd/server/main.go", "pingapp/cmd/server/main_test.go"} {
+			if out, err := runGit(dir, "check-ignore", "--no-index", "--", path); err == nil {
+				t.Fatalf("source ignored: %s: %s", path, out)
+			}
+		}
+		if _, err := runGit(dir, "check-ignore", "--no-index", "--", "pingapp/server"); err != nil {
+			t.Fatal("server binary should remain ignored")
+		}
+	}
+}
