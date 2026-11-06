@@ -188,7 +188,8 @@ func AgentShellVerifyCommand(rig string, v WorkflowValidation, mayorRigDir, bead
 	}
 	mayorRigRel := filepath.ToSlash(filepath.Join(rig, "mayor", "rig"))
 	workPath := GoModuleWorkPathForMayorRigDir(mayorRigDir, mayorRigRel, v.LayoutRoot)
-	return RewriteVerifyCDForWorkPath(verify, v.LayoutRoot, workPath)
+	verify = RewriteVerifyCDForWorkPath(verify, v.LayoutRoot, workPath)
+	return NormalizeGoLayoutPackagePaths(verify, workPath, v.LayoutRoot)
 }
 
 // CanonicalImplementationVerifyIsGoBuildOnly reports whether package verify for beadPath is go build only

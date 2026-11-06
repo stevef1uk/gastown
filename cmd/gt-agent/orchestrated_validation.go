@@ -296,6 +296,10 @@ func goVerifyCommandMatches(cmd, verify string, v orchestrator.WorkflowValidatio
 	if !strings.Contains(lower, layout) {
 		return false
 	}
+	// Execution removes duplicated layout prefixes after moving to the module
+	// root. Compare against the same canonical package paths, otherwise a green
+	// command can never satisfy the close guard's unrewritten contract.
+	verify = orchestrator.NormalizeGoLayoutPackagePaths(verify, layout, layout)
 	steps := goToolchainStepsFromVerify(verify)
 	if len(steps) == 0 {
 		return false
