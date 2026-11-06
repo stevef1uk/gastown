@@ -559,3 +559,47 @@ git branches under `origin/polecat/*` — distinct from `main`.
 - [Gas Town Architecture](../design/architecture.md)
 - [Molecules](molecules.md)
 - [Overview](../overview.md)
+
+## Monitoring spend and execution limits
+
+Run `gt feed` to see budget details beneath each workflow. The feed refreshes every
+10 seconds and displays workflow and rig dollar allowances, cost accounting mode,
+unknown-cost calls, proxy attempts, request reservations, and reserved tokens. At 80% it marks a
+limit as near exhaustion; at 100% it marks the limit reached. A new request can be
+rejected earlier when its reservation would exceed the remaining allowance.
+
+Dollar figures are **accounted amounts**: settled provider costs or configured
+estimates plus outstanding reservations. They are not your provider account balance.
+Unknown cost coverage and unavailable budget APIs are displayed explicitly. This
+works with any provider whose usage is accounted by Freeride; no OpenRouter account
+API is needed. Restart Freeride after upgrading to expose rig totals and allowances.
+
+For the configured local inference proxy, the feed reads `/api/budgets` on the same
+host/port. For a remote proxy or a different status service, explicitly set:
+
+```bash
+GT_BUDGET_STATUS_URL=https://your-proxy.example/api/budgets gt feed
+```
+
+The endpoint must implement Freeride's GET budget status format. The feed never
+infers a budget API on a remote inference provider, sends no provider API keys,
+and limits the whole HTTP refresh to two seconds. Monitoring makes no inference
+requests and does not modify ledgers.
+
+Gastown execution limits are configured in the **agent process environment**:
+`GT_WORKFLOW_MAX_LLM_REQUESTS` (default 1000) and `GT_WORKFLOW_MAX_LLM_TOKENS`
+(default 20000000). Reserved tokens are conservative admission reservations, not
+provider-billed tokens. New admissions persist their enforcing limits in the ledger;
+older rows display the feed's local/default limits and are marked `(local limits)`.
+Recorded limits describe the last admitted request; restart agents to apply changed
+environment settings.
+
+Freeride dollar limits belong in the **proxy process environment**:
+`FREERIDE_WORKFLOW_MAX_COST_USD` (default 5) and `FREERIDE_RIG_MAX_COST_USD`
+(default 20). The feed reads these limits from the proxy. They persist across
+workflow phases; rig totals include other workflows for that rig. The pause reason
+remains visible beneath a paused workflow, including budget-related pauses.
+
+`FREERIDE_WORKFLOW_MAX_UPSTREAM_ATTEMPTS` (default 1000) limits proxy attempts,
+including retries/fallbacks. This counter is separate from Gastown request reservations
+and appears as `Proxy attempts` when supported by the proxy status API.

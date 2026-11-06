@@ -16,6 +16,8 @@ import (
 type ExecutionBudget struct {
 	Requests       int   `json:"requests"`
 	ReservedTokens int64 `json:"reserved_tokens"`
+	RequestLimit   int64 `json:"request_limit,omitempty"`
+	TokenLimit     int64 `json:"token_limit,omitempty"`
 }
 
 func executionLimit(name string, fallback int64) (int64, error) {
@@ -74,6 +76,7 @@ func ReserveWorkflowLLMRequest(townRoot, rig, workflowID string, tokens int64) e
 	if int64(used.Requests) >= requests || tokens > tokenLimit-used.ReservedTokens {
 		return fmt.Errorf("execution budget exhausted for %s/%s (%d requests, %d reserved tokens); review ledger and limits before resuming", rig, workflowID, used.Requests, used.ReservedTokens)
 	}
+	used.RequestLimit, used.TokenLimit = requests, tokenLimit
 	used.Requests++
 	used.ReservedTokens += tokens
 	ledger[key] = used
@@ -101,4 +104,41 @@ func ReserveWorkflowLLMRequest(townRoot, rig, workflowID string, tokens int64) e
 		return fmt.Errorf("execution budget: %w", err)
 	}
 	return nil
+}
+
+// ReadWorkflowExecutionBudget reads an atomic ledger snapshot without changing it.
+// New admissions persist enforcing-process limits; legacy rows use local settings.
+func ReadWorkflowExecutionBudget(townRoot, rig, workflowID string) (ExecutionBudget, bool, error) {
+	data, err := os.ReadFile(filepath.Join(townRoot, "orchestrator", "execution-budgets.json"))
+	ledger := map[string]ExecutionBudget{}
+	if err != nil && !os.IsNotExist(err) {
+		return ExecutionBudget{}, false, err
+	}
+	if err == nil {
+		if err = json.Unmarshal(data, &ledger); err != nil {
+			return ExecutionBudget{}, false, err
+		}
+		if ledger == nil {
+			return ExecutionBudget{}, false, fmt.Errorf("null execution budget ledger")
+		}
+	}
+	key, _ := json.Marshal([]string{rig, workflowID})
+	used := ledger[string(key)]
+	if used.Requests < 0 || used.ReservedTokens < 0 || used.RequestLimit < 0 || used.TokenLimit < 0 {
+		return used, false, fmt.Errorf("invalid negative execution budget")
+	}
+	persisted := used.RequestLimit > 0 && used.TokenLimit > 0
+	if used.RequestLimit == 0 {
+		used.RequestLimit, err = executionLimit("GT_WORKFLOW_MAX_LLM_REQUESTS", 1000)
+		if err != nil {
+			return used, false, err
+		}
+	}
+	if used.TokenLimit == 0 {
+		used.TokenLimit, err = executionLimit("GT_WORKFLOW_MAX_LLM_TOKENS", 20000000)
+		if err != nil {
+			return used, false, err
+		}
+	}
+	return used, persisted, nil
 }

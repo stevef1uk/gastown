@@ -9,6 +9,7 @@ import (
 
 // RigWorkflow is one workflow instance shown under a rig in the agent tree.
 type RigWorkflow struct {
+	Budget             *WorkflowBudget
 	PauseReason        string
 	ID                 string
 	TemplateID         string

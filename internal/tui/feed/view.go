@@ -365,6 +365,9 @@ func (m *Model) renderWorkflowLine(wf RigWorkflow) string {
 		WorkflowStateStyle.Render(state),
 		workflowStatusStyle(status).Render(status),
 	)
+	if wf.Budget != nil {
+		line += renderWorkflowBudget(wf.Budget)
+	}
 	if wf.Status == "paused" && wf.PauseReason != "" {
 		line += "\n    " + WorkflowStatusPausedStyle.Render("Paused because: "+strings.Join(strings.Fields(wf.PauseReason), " "))
 	}

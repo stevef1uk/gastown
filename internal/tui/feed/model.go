@@ -271,6 +271,9 @@ func (m *Model) fetchWorkflows() tea.Cmd {
 	}
 	return func() tea.Msg {
 		byRig, err := LoadWorkflowsByRig(townRoot)
+		if err == nil {
+			loadWorkflowBudgets(townRoot, byRig)
+		}
 		return workflowUpdateMsg{byRig: byRig, err: err, fetched: true}
 	}
 }
