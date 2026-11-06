@@ -167,6 +167,12 @@ func runDown(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	if err := stopDuplicateTownServices(townRoot, "daemon", downDryRun); err != nil {
+		printDownStatus("Daemon processes", false, err.Error())
+		allOK = false
+		return fmt.Errorf("cannot safely shut down agents while daemon cleanup failed: %w", err)
+	}
+
 	rigs := discoverRigs(townRoot)
 	ctx := context.Background()
 
@@ -304,7 +310,7 @@ func runDown(cmd *cobra.Command, args []string) error {
 			printDownStatus(ts.Name, true, "not running")
 		}
 	}
-	
+
 	// Phase 3.5: Stop Orchestrator
 	if downDryRun {
 		if running, _, _ := orchestrator.IsRunning(townRoot); running {
@@ -318,7 +324,12 @@ func runDown(cmd *cobra.Command, args []string) error {
 			printDownStatus("Orchestrator", true, "stopped")
 		}
 	}
-	
+
+	if err := stopDuplicateTownServices(townRoot, "orchestrator", downDryRun); err != nil {
+		printDownStatus("Orchestrator processes", false, err.Error())
+		allOK = false
+	}
+
 	// Phase 3.9: Kill leftover NATS/gt-agent trees (macOS cannot use /proc/cwd in older stops).
 	if !downDryRun {
 		natsKilled, natsWarn := session.KillNatsPIDs(townRoot)
@@ -883,8 +894,6 @@ func printDownStatus(name string, ok bool, detail string) {
 	}
 }
 
-
-
 // acquireShutdownLock prevents concurrent shutdowns.
 // Returns the lock (caller must defer Unlock()) or error if lock held.
 func acquireShutdownLock(townRoot string) (*flock.Flock, error) {
@@ -932,6 +941,15 @@ func verifyShutdown(t *tmux.Tmux, townRoot string) []string {
 			if isProcessRunning(pid) {
 				respawned = append(respawned, fmt.Sprintf("gt daemon (PID %d)", pid))
 			}
+		}
+	}
+
+	for _, role := range []string{"daemon", "orchestrator"} {
+		pids, err := findTownServiceProcesses(townRoot, role)
+		if err != nil {
+			respawned = append(respawned, fmt.Sprintf("cannot verify %s processes: %v", role, err))
+		} else if len(pids) > 0 {
+			respawned = append(respawned, fmt.Sprintf("gt %s processes (PIDs: %v)", role, pids))
 		}
 	}
 
