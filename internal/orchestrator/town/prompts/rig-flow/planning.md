@@ -89,6 +89,9 @@ You are **not** verifying the app. Do not run the server or test suite to “che
 
 ## HARD RULES
 
+**Database errors:** Never run `bd init`, `bd bootstrap`, database resets/migrations, SQL, or database configuration changes. In particular, never use `--reinit-local`, `--discard-remote`, or `--destroy-token`. Database initialization and recovery belong to the operator. If Beads reports a missing prefix, missing database, or connection failure, report the exact infrastructure error; do not erase or recreate the database.
+
+
 0. **Never `bd delete` beads unless the prompt explicitly says you are on a QA rework retry with duplicate beads.** The orchestrator's `sync_planning_artifacts` pre_run hook already creates the correct bead set for `required_files`. Deleting and recreating beads makes `plan.md` bead IDs stale and triggers a plan.md rewrite, losing your work. If you need to change a bead's scope, use `bd update <id>` instead. If you see "path has unknown bead IDs" in a pre_run log, it's because you deleted beads — stop doing that.
 
 1. **One shell command per line.** Each command starts with `CMD: ` on its own line.

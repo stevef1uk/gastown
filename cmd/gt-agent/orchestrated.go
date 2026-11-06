@@ -2285,6 +2285,10 @@ func validatePlanningPlanHeredoc(cmd string) error {
 }
 
 // validatePlanningCommand blocks planner scope creep (polecat implements code).
+// Database lifecycle and configuration belong to the operator, not the planner.
+// Check the entire shell chain before the permissive read/bead-command shortcuts.
+var planningDatabaseAdminRE = regexp.MustCompile(`(?i)(?:^|[/\s;|&(])(?:bd|dolt)\s+(?:init|bootstrap|migrate|sql|config\s+(?:set|unset)|dolt\s+(?:set|start|stop|killall|clean-databases|pull|push))\b`)
+
 func validatePlanningCommand(cmd, rig string) error {
 	lower := strings.ToLower(cmd)
 	rigPrefix := strings.TrimSpace(rig)
@@ -2301,6 +2305,10 @@ func validatePlanningCommand(cmd, rig string) error {
 	// inert payload mentions don't false-positive; actual bare runs stay blocked.
 	if isPlanMDWriteCommand(cmd) {
 		lower = strings.ToLower(stripQuotedPayload(cmd))
+	}
+	if planningDatabaseAdminRE.MatchString(lower) || strings.Contains(lower, "--reinit-local") ||
+		strings.Contains(lower, "--discard-remote") || strings.Contains(lower, "--destroy-token") {
+		return fmt.Errorf("planner must not initialize, reset, migrate, reconfigure, or run SQL against the beads database; report the infrastructure error instead of repairing the database")
 	}
 	if err := validatePlanningRuntimeCommands(lower); err != nil {
 		return err
