@@ -217,3 +217,40 @@ func TestGoToolArgsFromVerify_shellOperators(t *testing.T) {
 		}
 	}
 }
+
+func TestGoToolArgsFromVerifyAttachedShellOperators(t *testing.T) {
+	for _, tc := range []struct{ command, want string }{
+		{"test -f pingapp/cmd/server/main.go && (cd pingapp && go test ./...)", "test ./..."},
+		{"(go test -count=1 ./...); echo done", "test -count=1 ./..."},
+		{"go test ./...&&echo done", "test ./..."},
+		{"go test -run 'Test(Foo|Bar)' ./...)", "test -run Test(Foo|Bar) ./..."},
+	} {
+		v := DefaultWorkflowValidation()
+		v.QAVerifyCommand = tc.command
+		if got := strings.Join(goToolArgsFromVerify(v), " "); got != tc.want {
+			t.Errorf("%q: got %q want %q", tc.command, got, tc.want)
+		}
+	}
+}
+
+func TestImplementationModuleCompileOKParenthesizedPhaseCommand(t *testing.T) {
+	requireGoToolchain(t)
+	root := t.TempDir()
+	dir := filepath.Join(root, "pingapp", "cmd", "server")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	for path, body := range map[string]string{
+		"pingapp/go.mod":                  "module pingapp\n\ngo 1.22\n",
+		"pingapp/cmd/server/main.go":      "package main\nfunc main() {}\n",
+		"pingapp/cmd/server/main_test.go": "package main\nimport \"testing\"\nfunc TestMainPackage(t *testing.T) { main() }\n",
+	} {
+		if err := os.WriteFile(filepath.Join(root, path), []byte(body), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	v := WorkflowValidation{LayoutRoot: "pingapp", TestRunner: "go", RequiredFiles: []string{"pingapp/cmd/server/main.go", "pingapp/cmd/server/main_test.go"}, QAVerifyCommand: "test -f pingapp/cmd/server/main.go && test -f pingapp/cmd/server/main_test.go && (cd pingapp && go test ./...)"}
+	if err := ImplementationModuleCompileOK(root, v); err != nil {
+		t.Fatalf("valid phase check rejected: %v", err)
+	}
+}

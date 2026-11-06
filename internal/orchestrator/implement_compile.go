@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode"
 )
 
 const goTestTimeout = 5 * time.Minute
@@ -45,27 +46,60 @@ func goToolArgsFromVerify(v WorkflowValidation) []string {
 // extractGoToolArgs extracts go test/go build arguments from a string,
 // stopping at shell operators (&&, ||, ;, |, &, (, )).
 func extractGoToolArgs(s string) []string {
-	s = strings.TrimSpace(s)
-	if s == "" {
+	var args []string
+	var word strings.Builder
+	var quote rune
+	escaped := false
+	started := false
+	flush := func() {
+		if started {
+			args = append(args, word.String())
+			word.Reset()
+			started = false
+		}
+	}
+	for _, c := range s {
+		if escaped {
+			word.WriteRune(c)
+			started = true
+			escaped = false
+			continue
+		}
+		if c == '\\' && quote != '\'' {
+			escaped = true
+			started = true
+			continue
+		}
+		if quote != 0 {
+			if c == quote {
+				quote = 0
+			} else {
+				word.WriteRune(c)
+			}
+			started = true
+			continue
+		}
+		if c == '\'' || c == '"' {
+			quote = c
+			started = true
+			continue
+		}
+		if strings.ContainsRune("&|;()<>", c) {
+			flush()
+			return args
+		}
+		if unicode.IsSpace(c) {
+			flush()
+			continue
+		}
+		word.WriteRune(c)
+		started = true
+	}
+	if quote != 0 || escaped {
 		return nil
 	}
-	var args []string
-	fields := strings.Fields(s)
-	for _, f := range fields {
-		if isShellOperator(f) {
-			break
-		}
-		args = append(args, f)
-	}
+	flush()
 	return args
-}
-
-func isShellOperator(s string) bool {
-	switch s {
-	case "&&", "||", ";", "|", "&", "(", ")":
-		return true
-	}
-	return false
 }
 
 // phaseIsGoModOnly is an alias for PhaseIsGoModOnly (package-local call sites).
