@@ -114,6 +114,14 @@ func (m *Manager) BuildTaskPayload(inst *WorkflowInstance, tpl *WorkflowTemplate
 	validation := DefaultWorkflowValidation()
 	validation = mergeValidationFields(validation, tpl.Validation.SubstituteVars(vars))
 	if rig := vars["rig"]; rig != "" {
+		// A resumed design review may inherit a profile from before the
+		// architecture contract was written. Refresh before QA reads either
+		// the prompt validation or the on-disk profile.
+		if state.Hooks.Artifacts == "design_review" {
+			if _, err := SyncRigWorkflowProfileFromArchitecture(m.townRoot, rig); err != nil {
+				return nil, fmt.Errorf("sync profile before design review: %w", err)
+			}
+		}
 		if prof, ok, err := LoadRigWorkflowProfileFile(m.townRoot, rig); err != nil {
 			return nil, err
 		} else if ok {
