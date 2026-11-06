@@ -45,12 +45,10 @@ cleanup() {
     rm -rf "${REPO_DIR}"
 }
 
-# Clean up persisted workflow instances from previous runs so the test starts fresh.
-instances_json="${GT_ROOT}/orchestrator/instances.json"
-if [ -f "$instances_json" ]; then
-    rm -f "$instances_json"
-    echo "Removed stale ${instances_json}"
-fi
+# Keep the workflow registry and its next_seq intact. The CLI cleanup below
+# removes only this test rig's workflows through the running orchestrator.
+# Deleting instances.json here can reuse workflow IDs (and their budget keys),
+# and cannot clear an orchestrator's already-loaded in-memory workflows.
 
 trap cleanup EXIT
 

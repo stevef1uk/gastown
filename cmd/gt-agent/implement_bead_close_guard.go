@@ -16,18 +16,18 @@ func validateImplementationBeadClose(cmd, townRoot, rig string, v orchestrator.W
 	if !isBeadCloseCommand(cmd) {
 		return nil
 	}
-	if !verifyOK {
+	id := strings.Trim(extractBeadIDFromBdClose(cmd), `"'`)
+	rigDir := rigMayorRigDir(townRoot, rig)
+	beadPath := orchestrator.ImplementBeadPathForID(townRoot, rig, id, v)
+	if !implementationBeadHasVerification(rigDir, beadPath, v, verifyOK) {
 		if qc := strings.TrimSpace(v.ActivePhaseQAVerifyCommand()); qc != "" {
 			return fmt.Errorf("run green verify before bd close — make `cd %s/mayor/rig && %s` green, then: %s", rig, qc, cmd)
 		}
 		return fmt.Errorf("run green verify before bd close: %s", cmd)
 	}
-	id := strings.Trim(extractBeadIDFromBdClose(cmd), `"'`)
 	if id == "" {
 		return nil
 	}
-	rigDir := rigMayorRigDir(townRoot, rig)
-	beadPath := orchestrator.ImplementBeadPathForID(townRoot, rig, id, v)
 	if beadPath != "" && strings.HasSuffix(filepath.ToSlash(beadPath), "/go.mod") {
 		if logLine, repairErr := orchestrator.RepairGoModRequiresFromSpec(rigDir, v); repairErr != nil {
 			return fmt.Errorf("cannot bd close %s: %w", id, repairErr)
@@ -70,4 +70,14 @@ func validateImplementationBeadClose(cmd, townRoot, rig string, v orchestrator.W
 		return fmt.Errorf("cannot bd close %s: artifact still missing or stub on disk", id)
 	}
 	return nil
+}
+
+// Frontend source beads already have a per-file artifact verifier. Requiring the
+// entire phase build here can deadlock on a later package.json bead. The full
+// phase command is still mandatory before implementation can complete.
+func implementationBeadHasVerification(rigDir, beadPath string, v orchestrator.WorkflowValidation, verifyOK bool) bool {
+	if verifyOK {
+		return true
+	}
+	return orchestrator.IsFrontendImplementPath(beadPath) && orchestrator.ValidateBeadArtifactOnDisk(rigDir, beadPath, v) == nil
 }

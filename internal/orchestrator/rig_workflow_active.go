@@ -64,3 +64,22 @@ func SkipRigAgentStartReason(townRoot, rigName string) string {
 		return "no running workflow for this rig"
 	}
 }
+
+// RigWorkflowPauseReason supplies the same persisted cause to polling agents and
+// operator status; old log history cannot be backfilled with missing reasons.
+func RigWorkflowPauseReason(townRoot, rig string) string {
+	statuses, err := GetWorkflowStatuses(townRoot, "")
+	if err != nil {
+		return "Cannot read the saved pause reason; check workflow status and agent logs."
+	}
+	return workflowPauseReasonForRig(statuses, rig)
+}
+
+func workflowPauseReasonForRig(statuses []WorkflowStatus, rig string) string {
+	for _, status := range statuses {
+		if status.Variables["rig"] == rig && status.Status == "paused" && strings.TrimSpace(status.PauseReason) != "" {
+			return status.PauseReason
+		}
+	}
+	return "No pause reason was recorded; check workflow status and agent logs."
+}

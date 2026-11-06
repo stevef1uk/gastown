@@ -79,7 +79,7 @@ func runOrchestrated(ctx context.Context, client *llm.Client, townRoot, role, ri
 		}
 		if task == nil {
 			if rig != "" && orchestrator.IsRigWorkflowPaused(townRoot, rig) {
-				orchestratedPrintf("[gt-agent] workflow paused for rig %s — exiting\n", rig)
+				orchestratedPrintf("[gt-agent] workflow paused for rig %s: %s — exiting\n", rig, orchestrator.RigWorkflowPauseReason(townRoot, rig))
 				break
 			}
 			time.Sleep(pollEvery)

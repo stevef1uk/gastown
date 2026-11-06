@@ -396,6 +396,24 @@ func isLayoutRelativeShellCommand(cmd, rig, layout string) bool {
 // rewriteUnittestToWorkdir prepends cd into mayor/rig (and layout_root for Go modules) when omitted.
 func rewriteUnittestToWorkdir(cmd, rig string, v orchestrator.WorkflowValidation) (string, bool) {
 	layout := strings.Trim(strings.TrimSpace(v.LayoutRoot), "/")
+	// An explicit npm --prefix is relative to mayor/rig. The workflow may also
+	// contain Go phases, but that must not move this command into the Go module.
+	if layout != "" && layout != "." && !strings.Contains(cmd, "<<") && (strings.HasPrefix(strings.TrimSpace(cmd), "cd ") || strings.HasPrefix(strings.TrimSpace(cmd), "npm ")) {
+		prefixRE := regexp.MustCompile(`(?:^|&&|;)\s*npm\s+--prefix(?:=|\s+)["']?` + regexp.QuoteMeta(layout) + `["']?(?:\s|$)`)
+		if prefixRE.MatchString(cmd) {
+			root := rigMayorRigPath(rig)
+			rest := strings.TrimSpace(cmd)
+			if strings.HasPrefix(rest, "cd ") {
+				if !commandHasMayorRigCD(rest, rig) && !commandHasLayoutCD(rest, layout) {
+					return cmd, false
+				}
+				rest = stripFirstCDPrefix(rest)
+			}
+			rest = stripCDLayoutPrefix(rest, layout)
+			fixed := "cd " + root + " && " + strings.TrimSpace(rest)
+			return fixed, fixed != cmd
+		}
+	}
 	if !isToolchainExecutionCommand(cmd) && !isLayoutRelativeShellCommand(cmd, rig, layout) {
 		return cmd, false
 	}

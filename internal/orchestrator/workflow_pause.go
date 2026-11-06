@@ -49,6 +49,9 @@ func (m *Manager) PauseWorkflow(workflowID string, reasons ...string) (string, e
 		return rig, nil
 	}
 	inst.Status = "paused"
+	if inst.PauseReason == "" {
+		inst.PauseReason = "Paused by operator."
+	}
 	if err := m.persistLocked(); err != nil {
 		return "", fmt.Errorf("persist instances: %w", err)
 	}
@@ -98,6 +101,9 @@ func (m *Manager) PauseRunningWorkflowsForRig(rig string, reasons ...string) ([]
 		inst.Status = "paused"
 		if len(reasons) > 0 && strings.TrimSpace(reasons[0]) != "" {
 			inst.PauseReason = strings.TrimSpace(reasons[0])
+		}
+		if inst.PauseReason == "" {
+			inst.PauseReason = "Paused by operator."
 		}
 		ids = append(ids, id)
 		m.logWorkflowFeed(events.TypeWorkflowTransition, id, inst.TemplateID, inst.CurrentState, inst.CurrentState, "paused", "", rig)

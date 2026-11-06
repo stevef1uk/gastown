@@ -93,3 +93,16 @@ func TestPauseReasonThroughMCP(t *testing.T) {
 		t.Fatalf("status: %+v, %v", statuses, err)
 	}
 }
+
+func TestPollingAgentPauseReasonMatchesRig(t *testing.T) {
+	statuses := []WorkflowStatus{
+		{Status: "paused", Variables: map[string]string{"rig": "other"}, PauseReason: "Other rig error"},
+		{Status: "paused", Variables: map[string]string{"rig": "demo"}, PauseReason: "Budget cost allowance exhausted"},
+	}
+	if got := workflowPauseReasonForRig(statuses, "demo"); got != "Budget cost allowance exhausted" {
+		t.Fatalf("reason: %s", got)
+	}
+	if got := workflowPauseReasonForRig(statuses, "missing"); got == "" || got == "Other rig error" {
+		t.Fatalf("fallback: %s", got)
+	}
+}
