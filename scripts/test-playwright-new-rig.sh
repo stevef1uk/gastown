@@ -120,18 +120,28 @@ gt mayor restart
 gt setup restart
 
 echo "=== 3. Add rig to Gas Town ==="
-# Pre-flight: remove a stale pwtest rig AND any leftover pwtest workflows.
-if gt rig list --json 2>/dev/null | grep -q '"name": "pwtest"'; then
+# Select by structured rig identity, including paused runs. Capture the producer
+# fully: grep -q pipelines under pipefail can skip cleanup on a broken pipe.
+old_workflows="$(gt mayor workflow list --json | python3 -c '
+import json,sys
+for workflow in json.load(sys.stdin)["workflows"]:
+    if (workflow.get("variables") or {}).get("rig") == "pwtest":
+        print(workflow["id"])
+')"
+for wf in ${old_workflows}; do
+    echo "Deleting leftover pwtest workflow ${wf}..."
+    old_status="$(gt mayor workflow status "${wf}" --json | python3 -c 'import json,sys; print(json.load(sys.stdin)["workflows"][0]["status"])')"
+    if [ "${old_status}" != "completed" ] && [ "${old_status}" != "failed" ]; then
+        gt mayor workflow pause "${wf}" --shutdown=false
+    fi
+    gt mayor workflow delete "${wf}"
+done
+# Stop/remove the old rig only after its workflows have stopped dispatching.
+rig_snapshot="$(gt rig list --json)"
+if python3 -c 'import json,sys; rigs=json.load(sys.stdin); sys.exit(0 if any(r.get("name")=="pwtest" for r in (rigs or [])) else 1)' <<< "${rig_snapshot}"; then
     echo "Removing stale pwtest rig..."
     gt rig remove pwtest --force
 fi
-for wf in $(gt mayor workflow list 2>/dev/null | grep -o "wf-[0-9]*" | sort -u); do
-    if gt mayor workflow status "$wf" 2>/dev/null | grep -q "rig=pwtest"; then
-        echo "Deleting leftover pwtest workflow $wf..."
-        gt mayor workflow pause "$wf" --shutdown >/dev/null 2>&1 || true
-        gt mayor workflow delete "$wf" >/dev/null 2>&1 || true
-    fi
-done
 if [ -d "${GT_ROOT}/pwtest" ]; then
     rm -rf "${GT_ROOT}/pwtest"
 fi
@@ -149,12 +159,34 @@ if grep -q "already active" /tmp/pwtest-start.log; then
     echo "Workflow already active (auto-started by rig add) — continuing"
 fi
 
+# Follow exactly the newly running instance, never the first historical row.
+WORKFLOW_ID="$(gt mayor workflow list --json | python3 -c '
+import json,sys
+workflows=[w for w in json.load(sys.stdin)["workflows"]
+           if (w.get("variables") or {}).get("rig")=="pwtest"]
+running=[w for w in workflows if w.get("status") in ("running", "")]
+candidates=running or workflows
+if len(candidates)!=1:
+    raise SystemExit("Expected exactly one new pwtest workflow, found %d candidates" % len(candidates))
+print(candidates[0]["id"])
+')"
+echo "Following workflow ${WORKFLOW_ID}"
+
 echo "=== 4. Wait for workflow completion ==="
 MAX_WAIT=1800
 ELAPSED=0
 while [ ${ELAPSED} -lt ${MAX_WAIT} ]; do
-    STATUS=$(gt mayor workflow status 2>&1 | grep " rig=pwtest\b" | grep -o 'state=[a-z]*' | cut -d= -f2 | head -1 || echo "unknown")
-    echo "Workflow status: ${STATUS} (elapsed: ${ELAPSED}s)"
+    SNAPSHOT="$(gt mayor workflow status "${WORKFLOW_ID}" --json)"
+    STATUS="$(python3 -c '
+import json,sys
+workflow=json.load(sys.stdin)["workflows"][0]
+print(workflow["status"] if workflow["status"] in ("paused","failed") else workflow["current_state"])
+' <<< "${SNAPSHOT}")"
+    echo "Workflow ${WORKFLOW_ID} status: ${STATUS} (elapsed: ${ELAPSED}s)"
+    if [ "${STATUS}" = "paused" ]; then
+        python3 -c 'import json,sys; w=json.load(sys.stdin)["workflows"][0]; print("Paused because: " + (w.get("pause_reason") or "No reason recorded"))' <<< "${SNAPSHOT}"
+        exit 1
+    fi
     if [ "${STATUS}" = "completed" ]; then
         echo "Workflow completed successfully!"
         break

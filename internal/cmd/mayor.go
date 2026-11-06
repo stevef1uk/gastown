@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -144,6 +145,8 @@ func init() {
 	mayorWorkflowCmd.AddCommand(mayorWorkflowResetCmd)
 	mayorWorkflowCmd.AddCommand(mayorWorkflowDeleteCmd)
 	mayorWorkflowCmd.AddCommand(mayorWorkflowPauseCmd)
+	mayorWorkflowStatusCmd.Flags().BoolVar(&mayorWorkflowJSON, "json", false, "Output structured workflow status")
+	mayorWorkflowListCmd.Flags().BoolVar(&mayorWorkflowJSON, "json", false, "Output structured workflow status")
 	mayorWorkflowCmd.AddCommand(mayorWorkflowResumeCmd)
 
 	rootCmd.AddCommand(mayorCmd)
@@ -168,6 +171,8 @@ var mayorWorkflowCompleteCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(2),
 	RunE:  runMayorWorkflowComplete,
 }
+
+var mayorWorkflowJSON bool
 
 var mayorWorkflowStatusCmd = &cobra.Command{
 	Use:   "status [workflow-id]",
@@ -371,6 +376,12 @@ func runMayorWorkflowStatus(cmd *cobra.Command, args []string) error {
 	statuses, err := orchestrator.GetWorkflowStatuses(townRoot, workflowID)
 	if err != nil {
 		return err
+	}
+	if mayorWorkflowJSON {
+		if statuses == nil {
+			statuses = []orchestrator.WorkflowStatus{}
+		}
+		return json.NewEncoder(cmd.OutOrStdout()).Encode(map[string]interface{}{"workflows": statuses})
 	}
 	if len(statuses) == 0 {
 		fmt.Println("No workflow instances.")
