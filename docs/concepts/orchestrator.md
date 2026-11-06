@@ -603,3 +603,20 @@ remains visible beneath a paused workflow, including budget-related pauses.
 `FREERIDE_WORKFLOW_MAX_UPSTREAM_ATTEMPTS` (default 1000) limits proxy attempts,
 including retries/fallbacks. This counter is separate from Gastown request reservations
 and appears as `Proxy attempts` when supported by the proxy status API.
+
+### Restarting without creating a shadow Beads database
+
+Managed-town `gt` commands configure the canonical Dolt connection and disable
+Beads auto-start, including read-only commands such as `gt feed`. `gt up` applies
+the same policy before any Beads operation. It starts and verifies the canonical Dolt server and updates
+connection metadata before resetting notification state or starting the daemon,
+orchestrator, and agents. If database readiness or ownership verification fails,
+startup stops before those dependent services start. Both Beads port environment
+spellings are set to the managed port, preventing a stale higher-priority port from
+redirecting children after a restart.
+
+A missing-prefix error does not necessarily mean records were deleted: an agent
+may have reached an automatically created shadow server. Check server ownership and
+the canonical database before reinitializing anything. The schema regression test
+(`make test-beads-schema`) includes a server down/up cycle and verifies that the
+prefix and issue survive, and that Beads cannot auto-start while managed Dolt is down.

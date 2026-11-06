@@ -36,7 +36,7 @@ func TestWorkflowBudgetsRefreshAndRender(t *testing.T) {
 		t.Fatalf("wrong snapshot: %+v", b)
 	}
 	rendered := (&Model{}).renderWorkflowLine(workflows["rig name"][0])
-	for _, want := range []string{"$4.5000 / $5.00", "$6.0000 / $20.00", "cost unknown", "unknown-cost calls 2", "Proxy attempts: 8 / 10", "1 / 10", "85 / 100", "[near limit]"} {
+	for _, want := range []string{"$4.5000 / $5.00", "$6.0000 / $20.00", "cost unknown", "Unknown-cost calls: 2", "Proxy attempts: 8 / 10", "1 / 10", "85 / 100", "[near limit]"} {
 		if !strings.Contains(rendered, want) {
 			t.Errorf("missing %q in %s", want, rendered)
 		}

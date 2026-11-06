@@ -420,6 +420,10 @@ func AgentEnv(cfg AgentEnvConfig) map[string]string {
 		}
 	}
 
+	if port := env["BEADS_DOLT_PORT"]; port != "" {
+		env["BEADS_DOLT_SERVER_PORT"] = port
+	}
+
 	// Suppress bd's Dolt auto-start for all Gas Town agents (GH#2930).
 	// Gas Town manages its own Dolt server (gt dolt start/stop). When the
 	// server is momentarily unreachable (restart, journal hiccup), bd's

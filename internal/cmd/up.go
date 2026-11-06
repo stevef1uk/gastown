@@ -143,10 +143,10 @@ aren't already running.`,
 }
 
 var (
-	upQuiet             bool
-	upRestore           bool
-	upJSON              bool
-	upOrchestratorOnly  bool
+	upQuiet            bool
+	upRestore          bool
+	upJSON             bool
+	upOrchestratorOnly bool
 )
 
 func init() {
@@ -180,6 +180,8 @@ func runUp(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	configureManagedDoltEnvironment(townRoot)
+
 	allOK := true
 	var services []ServiceStatus
 
@@ -190,14 +192,6 @@ func runUp(cmd *cobra.Command, args []string) error {
 		_ = orchestrator.SetPipelineOnlyMarker(townRoot, true)
 	}
 	pipelineOnlyMode := orchestrator.PipelineOnlyEnabled(townRoot, upOrchestratorOnly)
-
-	// Safety: bring current agent out of DND on startup so orchestration nudges
-	// are not silently muted after a previous incident/debug session.
-	if changed, err := disableCurrentAgentDND(townRoot); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: could not reset DND state: %v\n", err)
-	} else if changed && !upQuiet {
-		fmt.Printf("%s DND was enabled; reset to normal for current agent\n", style.SuccessPrefix)
-	}
 
 	// Start infrastructure services first (sequentially where dependencies exist)
 	var daemonErr error
@@ -234,55 +228,28 @@ func runUp(cmd *cobra.Command, args []string) error {
 		fmt.Fprintf(os.Stderr, "Warning: NATS not available, agents may use tmux fallback\n")
 	}
 
-	// Start daemon, deacon, mayor, planner, mechanic, orchestrator, and rig prefetch in parallel
+	// Dolt is a hard prerequisite. No bd calls, daemon, orchestrator, or agent
+	// may race it and let Beads auto-start a shadow server over an empty store.
+	if detail, err := ensureUpDolt(townRoot); err != nil {
+		return fmt.Errorf("Dolt startup failed; dependent services were not started: %w", err)
+	} else {
+		doltOK, doltDetail = true, detail
+	}
+	if _, errs := doltserver.EnsureAllMetadata(townRoot); len(errs) > 0 {
+		return fmt.Errorf("Dolt metadata setup failed; dependent services were not started: %w", errors.Join(errs...))
+	}
+
+	// Safety: bring current agent out of DND on startup so orchestration nudges
+	// are not silently muted after a previous incident/debug session.
+	if changed, err := disableCurrentAgentDND(townRoot); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: could not reset DND state: %v\n", err)
+	} else if changed && !upQuiet {
+		fmt.Printf("%s DND was enabled; reset to normal for current agent\n", style.SuccessPrefix)
+	}
+
+	// Database-dependent services can start in parallel only after the gate.
 	var startupWg sync.WaitGroup
-	startupWg.Add(8) // dolt, daemon, deacon, mayor, setup, mechanic, orchestrator, prefetch (planner is per-rig)
-
-	// 1. Dolt server (if configured)
-	go func() {
-		defer startupWg.Done()
-		cfg := doltserver.DefaultConfig(townRoot)
-
-		// If data dir is missing (fresh install or after cleanup), create it and
-		// initialize the town database so Dolt can start successfully.
-		if _, err := os.Stat(cfg.DataDir); os.IsNotExist(err) {
-			if err := os.MkdirAll(cfg.DataDir, 0755); err != nil {
-				doltDetail = fmt.Sprintf("creating data dir: %v", err)
-				return
-			}
-		}
-		// Ensure town database exists — without at least one DB Dolt exits immediately.
-		townDB := filepath.Join(cfg.DataDir, "hq")
-		if _, err := os.Stat(filepath.Join(townDB, ".dolt")); os.IsNotExist(err) {
-			if err := os.MkdirAll(townDB, 0755); err != nil {
-				doltDetail = fmt.Sprintf("creating town db dir: %v", err)
-				return
-			}
-			cmd := exec.Command("dolt", "init")
-			cmd.Dir = townDB
-			if output, err := cmd.CombinedOutput(); err != nil {
-				doltDetail = fmt.Sprintf("initializing town db: %v\n%s", err, output)
-				return
-			}
-		}
-
-		running, _, _ := doltserver.IsRunning(townRoot)
-		if running {
-			doltOK = true
-			doltDetail = "already running"
-			return
-		}
-		if err := doltserver.Start(townRoot); err != nil {
-			doltDetail = err.Error()
-			return
-		}
-		// Wait for Dolt to actually accept connections before declaring it ready.
-		// Agents (deacon, mayor, witness, refinery) run bd commands on startup
-		// via gt prime → patrol_helpers. Without this gate, they race the server.
-		waitForDoltReady(townRoot)
-		doltOK = true
-		doltDetail = fmt.Sprintf("started (port %d)", cfg.Port)
-	}()
+	startupWg.Add(7) // daemon, deacon, mayor, setup, mechanic, orchestrator, prefetch
 
 	// 2. Daemon (Go process)
 	go func() {
@@ -1890,4 +1857,56 @@ func upStartTownRole(townRoot string, role string, sessionID string, orchestrate
 	}
 
 	return agentStartResult{name: name, ok: true, detail: sessionID}
+}
+
+// configureManagedDoltEnvironment pins every SDK/CLI child to the managed server.
+// The newer SERVER_PORT spelling takes precedence over the legacy alias in bd.
+func configureManagedDoltEnvironment(townRoot string) {
+	cfg := doltserver.DefaultConfig(townRoot)
+	port := strconv.Itoa(cfg.Port)
+	for _, key := range []string{"GT_DOLT_PORT", "BEADS_DOLT_PORT", "BEADS_DOLT_SERVER_PORT"} {
+		os.Setenv(key, port)
+	}
+	os.Setenv("BEADS_DOLT_SERVER_HOST", cfg.Host)
+	os.Setenv("BEADS_DOLT_AUTO_START", "0")
+}
+
+func ensureUpDolt(townRoot string) (string, error) {
+	cfg := doltserver.DefaultConfig(townRoot)
+	if !cfg.IsRemote() {
+		if err := os.MkdirAll(cfg.DataDir, 0755); err != nil {
+			return "", fmt.Errorf("creating data dir: %w", err)
+		}
+		townDB := filepath.Join(cfg.DataDir, "hq")
+		if _, err := os.Stat(filepath.Join(townDB, ".dolt")); os.IsNotExist(err) {
+			if err := os.MkdirAll(townDB, 0755); err != nil {
+				return "", err
+			}
+			cmd := exec.Command("dolt", "init")
+			cmd.Dir = townDB
+			if out, err := cmd.CombinedOutput(); err != nil {
+				return "", fmt.Errorf("initializing town database: %w: %s", err, out)
+			}
+		}
+	}
+	running, _, err := doltserver.IsRunning(townRoot)
+	if err != nil {
+		return "", err
+	}
+	detail := "already running"
+	if !running {
+		if err := doltserver.Start(townRoot); err != nil {
+			return "", err
+		}
+		detail = fmt.Sprintf("started (port %d)", cfg.Port)
+	}
+	if err := doltserver.WaitForReady(townRoot, doltReadyTimeout); err != nil {
+		return "", err
+	}
+	if !cfg.IsRemote() {
+		if ok, err := doltserver.VerifyServerDataDir(townRoot); err != nil || !ok {
+			return "", fmt.Errorf("cannot verify managed Dolt data directory: %v", err)
+		}
+	}
+	return detail, nil
 }

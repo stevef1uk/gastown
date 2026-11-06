@@ -174,7 +174,11 @@ func renderWorkflowBudget(b *WorkflowBudget) string {
 		if c.UpstreamLimit != nil {
 			fmt.Fprintf(&out, "\n    Proxy attempts: %d / %d%s", c.UpstreamAttempts, *c.UpstreamLimit, budgetWarning(float64(c.UpstreamAttempts), float64(*c.UpstreamLimit)))
 		}
-		fmt.Fprintf(&out, "\n    Accounting: %s; unknown-cost calls %d", strings.Join(strings.Fields(c.Accounting), " "), c.Unknown)
+		accounting := strings.Join(strings.Fields(c.Accounting), " ")
+		if strings.HasPrefix(accounting, "legacy accounted cost") {
+			accounting = "legacy totals (coverage unavailable)"
+		}
+		fmt.Fprintf(&out, "\n    Accounting: %s\n    Unknown-cost calls: %d", accounting, c.Unknown)
 	}
 	if b.ExecutionError != "" {
 		fmt.Fprintf(&out, "\n    Execution unavailable: %s", b.ExecutionError)

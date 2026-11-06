@@ -453,3 +453,34 @@ func TestWaitForDoltReady_WrapperTimesOutAndContinues(t *testing.T) {
 		t.Error("expected non-empty error message from WaitForReady timeout")
 	}
 }
+
+func TestConfigureManagedDoltEnvironmentPreventsShadowServer(t *testing.T) {
+	town := t.TempDir()
+	for _, key := range []string{"GT_DOLT_PORT", "BEADS_DOLT_PORT", "BEADS_DOLT_SERVER_PORT", "BEADS_DOLT_SERVER_HOST", "BEADS_DOLT_AUTO_START"} {
+		t.Setenv(key, "stale")
+	}
+	t.Setenv("GT_DOLT_PORT", "45432")
+	configureManagedDoltEnvironment(town)
+	for _, key := range []string{"GT_DOLT_PORT", "BEADS_DOLT_PORT", "BEADS_DOLT_SERVER_PORT"} {
+		if got := os.Getenv(key); got != "45432" {
+			t.Errorf("%s=%q", key, got)
+		}
+	}
+	if os.Getenv("BEADS_DOLT_AUTO_START") != "0" {
+		t.Fatal("Beads auto-start still enabled")
+	}
+}
+
+func TestEnsureUpDoltFailsOnDatabaseInitialization(t *testing.T) {
+	town := t.TempDir()
+	t.Setenv("GT_DOLT_HOST", "127.0.0.1")
+	// An unusable data path must fail the prerequisite, before callers can start
+	// dependent agents. No Dolt process is launched for this case.
+	path := filepath.Join(town, ".dolt-data")
+	if err := os.WriteFile(path, []byte("blocked"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ensureUpDolt(town); err == nil {
+		t.Fatal("database initialization failure was ignored")
+	}
+}

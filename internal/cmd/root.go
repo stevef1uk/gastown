@@ -126,6 +126,9 @@ func persistentPreRun(cmd *cobra.Command, args []string) error {
 	// (e.g., "gt agents menu" via a cross-socket tmux binding) still connect to
 	// the correct town socket rather than silently using the wrong server.
 	if townRoot := detectTownRootFromCwd(); townRoot != "" {
+		// Every managed-town command, including feed/down, must avoid Beads
+		// auto-starting a shadow server while canonical Dolt is stopped.
+		configureManagedDoltEnvironment(townRoot)
 		if err := session.InitRegistry(townRoot); err != nil {
 			fmt.Fprintf(os.Stderr, "WARNING: failed to initialize town registry: %v\n", err)
 		}
