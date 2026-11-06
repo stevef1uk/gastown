@@ -47,10 +47,10 @@ import (
 
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/gofrs/flock"
+	"github.com/steveyegge/gastown/internal/atomicfile"
 	"github.com/steveyegge/gastown/internal/beads"
 	"github.com/steveyegge/gastown/internal/config"
 	"github.com/steveyegge/gastown/internal/style"
-	"github.com/steveyegge/gastown/internal/atomicfile"
 	"gopkg.in/yaml.v3"
 )
 
@@ -3201,6 +3201,20 @@ func EnsureMetadata(townRoot, rigName string, doltDatabase ...string) error {
 		changed = true
 	}
 
+	// Beads resolves this sidecar before its YAML/legacy metadata port. Repair
+	// it even on the metadata fast path, or a bd-managed ephemeral server can
+	// shadow the authoritative town server after installation.
+	portPath := filepath.Join(beadsDir, "dolt-server.port")
+	wantPort := strconv.Itoa(config.Port) + "\n"
+	if data, err := os.ReadFile(portPath); err != nil || strings.TrimSpace(string(data)) != strings.TrimSpace(wantPort) {
+		if err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("reading beads server port: %w", err)
+		}
+		if err := atomicfile.WriteFile(portPath, []byte(wantPort), 0600); err != nil {
+			return fmt.Errorf("writing beads server port: %w", err)
+		}
+	}
+
 	// Fast path: avoid rewriting metadata.json when already correct.
 	if !changed {
 		return nil
@@ -3986,7 +4000,8 @@ func serverExecSQL(townRoot, query string) error {
 //
 // Dolt requires --host, --port, --user, --no-tls as global flags (before the
 // subcommand), not as subcommand flags. The order is:
-//   dolt --host=H --port=P --user=U --no-tls sql -q "..."
+//
+//	dolt --host=H --port=P --user=U --no-tls sql -q "..."
 func buildServerSQLCmd(ctx context.Context, config *Config, args ...string) *exec.Cmd {
 	// Global connection flags must come before the "sql" subcommand.
 	// Always pass --password to prevent dolt from prompting on stdin

@@ -412,3 +412,29 @@ func installTestEnv(t *testing.T, homeDir string, includeDolt bool) []string {
 		"GT_DOLT_PORT=",
 	)
 }
+
+func TestWithBeadsDirEnvPinsTownServer(t *testing.T) {
+	town := t.TempDir()
+	dir := filepath.Join(town, ".dolt-data")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte("listener:\n  host: 127.0.0.1\n  port: 5500\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("BEADS_DOLT_SERVER_PORT", "60128")
+	t.Setenv("BEADS_DOLT_SERVER_HOST", "wrong-host")
+	t.Setenv("BEADS_DOLT_AUTO_START", "1")
+	values := map[string]string{}
+	for _, entry := range withBeadsDirEnv(filepath.Join(town, ".beads")) {
+		p := strings.SplitN(entry, "=", 2)
+		if len(p) == 2 {
+			values[p[0]] = p[1]
+		}
+	}
+	for key, want := range map[string]string{"BEADS_DOLT_SERVER_PORT": "5500", "BEADS_DOLT_SERVER_HOST": "127.0.0.1", "BEADS_DOLT_AUTO_START": "0"} {
+		if values[key] != want {
+			t.Fatalf("%s=%q want %q", key, values[key], want)
+		}
+	}
+}

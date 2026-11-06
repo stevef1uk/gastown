@@ -22,8 +22,8 @@ import (
 	"github.com/steveyegge/gastown/internal/deps"
 	"github.com/steveyegge/gastown/internal/doltserver"
 	"github.com/steveyegge/gastown/internal/formula"
-	"github.com/steveyegge/gastown/internal/orchestrator"
 	"github.com/steveyegge/gastown/internal/hooks"
+	"github.com/steveyegge/gastown/internal/orchestrator"
 	"github.com/steveyegge/gastown/internal/runtime"
 	"github.com/steveyegge/gastown/internal/shell"
 	"github.com/steveyegge/gastown/internal/state"
@@ -730,7 +730,8 @@ func initTownBeads(townPath string) error {
 	// DefaultConfig resolves the port from config.yaml > GT_DOLT_PORT env > default (3307).
 	// Forward GT_DOLT_PORT so bd connects to the correct server when a
 	// non-default port is configured (e.g., ephemeral test servers in CI).
-	bdInitArgs := buildBdInitArgs(townPath, true)
+	// Installation may be retried against an existing HQ; adopt rather than reset.
+	bdInitArgs := buildBdInitArgs(townPath, false)
 	cmd := exec.Command("bd", bdInitArgs...)
 	cmd.Dir = townPath
 	cmd.Env = withBeadsDirEnv(filepath.Join(townPath, ".beads"))
@@ -863,11 +864,13 @@ func withBeadsDirEnv(beadsDir string) []string {
 	env := os.Environ()
 	filtered := make([]string, 0, len(env)+2)
 	for _, e := range env {
-		if !strings.HasPrefix(e, "BEADS_DIR=") && !strings.HasPrefix(e, "BEADS_DB=") && !strings.HasPrefix(e, "BEADS_DOLT_SERVER_DATABASE=") {
+		if !strings.HasPrefix(e, "BEADS_DIR=") && !strings.HasPrefix(e, "BEADS_DB=") && !strings.HasPrefix(e, "BEADS_DOLT_SERVER_DATABASE=") && !strings.HasPrefix(e, "BEADS_DOLT_SERVER_PORT=") && !strings.HasPrefix(e, "BEADS_DOLT_SERVER_HOST=") && !strings.HasPrefix(e, "BEADS_DOLT_AUTO_START=") {
 			filtered = append(filtered, e)
 		}
 	}
 	filtered = append(filtered, "BEADS_DIR="+beadsDir)
+	cfg := doltserver.DefaultConfig(filepath.Dir(beadsDir))
+	filtered = append(filtered, "BEADS_DOLT_SERVER_PORT="+strconv.Itoa(cfg.Port), "BEADS_DOLT_SERVER_HOST="+cfg.EffectiveHost(), "BEADS_DOLT_AUTO_START=0")
 	if dbEnv := beads.DatabaseEnv(beadsDir); dbEnv != "" {
 		filtered = append(filtered, dbEnv)
 	}

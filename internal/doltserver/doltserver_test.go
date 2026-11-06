@@ -4495,3 +4495,28 @@ func TestHealthMetrics_CommitFreshnessFields(t *testing.T) {
 		t.Errorf("LastCommitAge = %v, want >= 0", metrics.LastCommitAge)
 	}
 }
+
+func TestEnsureMetadataRepairsPortFileEvenWhenMetadataUnchanged(t *testing.T) {
+	town := t.TempDir()
+	dir := filepath.Join(town, ".dolt-data")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte("listener:\n  host: 127.0.0.1\n  port: 5500\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := EnsureMetadata(town, "hq"); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(town, ".beads", "dolt-server.port")
+	if err := os.WriteFile(path, []byte("60128"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := EnsureMetadata(town, "hq"); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil || strings.TrimSpace(string(data)) != "5500" {
+		t.Fatalf("wrong saved port: %s %v", data, err)
+	}
+}
