@@ -1402,6 +1402,50 @@ func TestValidateGoImplementationCommand(t *testing.T) {
 	}
 }
 
+// TestValidateGoImplementationCommand_allowsPhaseVerifySmokeWithEmptyQueue is a
+// regression test for the post-close loop: after the last implement bead closes,
+// there is no active/next bead, but the harness still needs to run the active
+// phase's profile-derived runtime smoke. That is the configured verify, so the
+// compile-verify-only guard must allow it instead of rejecting it with a hint
+// that points back to the same command.
+func TestValidateGoImplementationCommand_allowsPhaseVerifySmokeWithEmptyQueue(t *testing.T) {
+	dir := t.TempDir()
+	mayor := filepath.Join(dir, "mockrig", "mayor", "rig")
+	serverDir := filepath.Join(mayor, "pingapp", "cmd", "server")
+	if err := os.MkdirAll(serverDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(serverDir, "main.go"), []byte("package main\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	v := orchestrator.WorkflowValidation{
+		LayoutRoot:    "pingapp",
+		RequiredFiles: []string{"pingapp/cmd/server/main.go"},
+		QAVerifyCommand: "set -eu; test -s pingapp/cmd/server/main.go; go test ./...; " +
+			`go run ./cmd/server & SERVER_PID=$!; trap "kill $SERVER_PID 2>/dev/null || true" EXIT; ` +
+			`sleep 2; curl -fsS http://localhost:8080/ping`,
+	}
+	smoke := "set -euo pipefail; cd 'mockrig/mayor/rig/pingapp' && rm -f .gt-smoke.pid && " +
+		"(go run ./cmd/server/main.go >/dev/null 2>&1 & echo $! >.gt-smoke.pid) && " +
+		"(echo GT_SMOKE:wait_root >&2) && (echo GT_SMOKE:GET:/ping >&2) && " +
+		"curl -s --max-time 2 http://127.0.0.1:8080/ping >/dev/null && " +
+		"(_gtsrv=$(cat .gt-smoke.pid 2>/dev/null); kill ${_gtsrv} 2>/dev/null || true; rm -f .gt-smoke.pid)"
+	if err := validateGoImplementationCommand(smoke, dir, "mockrig", mayor, "", v, true); err != nil {
+		t.Fatalf("phase verify smoke should be allowed with an empty bead queue: %v", err)
+	}
+	// The un-rewritten phase verify (with the harness's mayor/rig cd prefix) is
+	// equally sanctioned.
+	phaseWithCD := "cd 'mockrig/mayor/rig' && " + v.QAVerifyCommand
+	if err := validateGoImplementationCommand(phaseWithCD, dir, "mockrig", mayor, "", v, true); err != nil {
+		t.Fatalf("configured phase verify should be allowed with an empty bead queue: %v", err)
+	}
+	// A raw server start with no phase-verify shape is still not a valid verify command.
+	raw := "cd mockrig/mayor/rig/pingapp && go run ./cmd/server"
+	if err := validateGoImplementationCommand(raw, dir, "mockrig", mayor, "", v, true); err == nil {
+		t.Fatal("expected reject raw go run that is not the configured phase verify")
+	}
+}
+
 // TestValidateGoImplementationCommand_wrappedHostRunE2E is a regression test for the
 // integration-test phase: the harness wraps the compose E2E verify into a
 // server-bootstrap script (go run + curl + docker compose), and the

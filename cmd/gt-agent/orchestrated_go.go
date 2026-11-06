@@ -313,7 +313,12 @@ func validateGoImplementationCommand(cmd, townRoot, rig, mayorRigDir, activeBead
 	onGoModBead := strings.HasSuffix(filepath.ToSlash(beadPath), "go.mod")
 	onServerMainBead := orchestrator.IsServerMainImplementBead(beadPath)
 	if !isWrappedHostRunE2E(cmd) && (strings.Contains(lower, "go run") || strings.Contains(lower, "curl ")) {
-		if onGoModBead || !onServerMainBead || !orchestrator.GoServerMainExists(mayorRigDir, v) {
+		// The configured phase verify is always allowed: after the bead queue drains,
+		// ResolveImplementBeadForVerify returns an empty bead path, so a strict
+		// on-server-main check would reject the very command the hint tells the
+		// agent to run (infinite verification loop).
+		if !isAllowedPhaseVerifyRuntimeCommand(cmd, v) &&
+			(onGoModBead || !onServerMainBead || !orchestrator.GoServerMainExists(mayorRigDir, v)) {
 			return fmt.Errorf("for this bead use compile verify only — use: %s", verifyHint)
 		}
 	}
@@ -347,6 +352,20 @@ func isFrontendGoTestCommand(lower string) bool {
 		}
 	}
 	return false
+}
+
+// isAllowedPhaseVerifyRuntimeCommand reports whether cmd is the harness-configured
+// phase verify (or the smoke script it rewrites to). These are sanctioned runtime
+// checks and must not be blocked by the per-bead compile-verify-only guard — in
+// particular when the implement queue is green and there is no active bead.
+func isAllowedPhaseVerifyRuntimeCommand(cmd string, v orchestrator.WorkflowValidation) bool {
+	if strings.TrimSpace(v.ActivePhaseQAVerifyCommand()) == "" {
+		return false
+	}
+	if orchestrator.IsProfileDerivedSmokeCommand(cmd) {
+		return true
+	}
+	return testReviewVerifyCommandMatches(cmd, v)
 }
 
 // isWrappedHostRunE2E reports whether the command is the harness's own wrapped
