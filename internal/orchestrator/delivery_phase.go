@@ -159,6 +159,18 @@ func (v WorkflowValidation) ActiveRequiredFiles() []string {
 // ActivePhaseQAVerifyCommand returns phase-specific QA command when set, else profile default.
 func (v WorkflowValidation) ActivePhaseQAVerifyCommand() string {
 	if p, ok := v.ActivePhase(); ok {
+		// Manifest-only phases have no Go packages yet. Use the same effective
+		// verification everywhere: prompts, command tracking, and completion.
+		// Keeping this override only in ForActivePhase made the tracker demand
+		// a stale go test command after instructing the agent to run download.
+		scoped := v
+		scoped.RequiredFiles = p.RequiredFiles
+		if q := strings.TrimSpace(p.QAVerifyCommand); q != "" {
+			scoped.QAVerifyCommand = q
+		}
+		if WorkflowUsesGo(scoped) && PhaseIsGoModOnly(scoped) {
+			return GoModPhaseQAVerifyCommand(scoped)
+		}
 		if q := strings.TrimSpace(p.QAVerifyCommand); q != "" {
 			return q
 		}
