@@ -53,16 +53,6 @@ func TestPlanMeetsMinSize(rigDir string, v WorkflowValidation) bool {
 // TEST_PLAN.md. This is the code-side twin of the test_plan.md hard rule
 // ("omit the section for setup-only phases").
 func PhaseShipsAutomatedTests(p DeliveryPhase) bool {
-	cmd := strings.ToLower(strings.TrimSpace(p.QAVerifyCommand))
-	if cmd == "" {
-		return true // unknown verify — be conservative and keep the phase testable
-	}
-	if strings.Contains(cmd, "no automated tests") {
-		return false
-	}
-	if strings.Contains(cmd, "echo") && !hasAnyStackTool(cmd) {
-		return false // "verify ok (no automated tests for this phase)" style stub
-	}
 	// Dependency setup has executable verification, but no source companion to
 	// own a test. Keep this narrow: source/config phases still require tests.
 	if len(p.RequiredFiles) > 0 {
@@ -78,6 +68,17 @@ func PhaseShipsAutomatedTests(p DeliveryPhase) bool {
 			return false
 		}
 	}
+	cmd := strings.ToLower(strings.TrimSpace(p.QAVerifyCommand))
+	if cmd == "" {
+		return true // unknown verify — be conservative and keep the phase testable
+	}
+	if strings.Contains(cmd, "no automated tests") {
+		return false
+	}
+	if strings.Contains(cmd, "echo") && !hasAnyStackTool(cmd) {
+		return false // "verify ok (no automated tests for this phase)" style stub
+	}
+
 	return true
 }
 
@@ -624,6 +625,15 @@ func validateTestPlan(townRoot, rig string) error {
 
 func ValidateTestPlanPaths(v WorkflowValidation, blocks []TestPlanBlock) error {
 	for _, b := range blocks {
+		phaseID := strings.TrimSpace(b.Phase)
+		if phaseID == "" {
+			phaseID = strings.TrimSpace(b.ReqID)
+		}
+		for _, phase := range v.DeliveryPhases {
+			if phase.ID == phaseID && !PhaseShipsAutomatedTests(phase) {
+				return fmt.Errorf("TEST_PLAN.md includes setup-only phase %q: omit this row; no test file is required and architecture_failure is not appropriate for a setup-only phase", phaseID)
+			}
+		}
 		testFile := cleanPlannedTestFilePath(b.TestFile)
 		if testFile == "" || (!IsTestImplementPath(testFile) &&
 			!strings.HasSuffix(testFile, ".test.js") && !strings.HasSuffix(testFile, ".spec.js") &&

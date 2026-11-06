@@ -27,34 +27,24 @@ $GT_ROOT/{{rig}}/mayor/rig/{{layout_root}}/  ← layout root (ALL code files go 
 | `failure` | SPEC/architecture/plan are too vague to plan tests — sends **Planner** back to `planning` |
 | `architecture_failure` | SPEC/architecture contradict each other on routes or store API — sends **Architect** back to `design` |
 
-## ALL PHASES (CRITICAL)
+## Delivery phase coverage (authoritative)
 
-**Plan tests for ALL delivery phases** — not just the active one. The full list of delivery phase IDs is: `{{all_delivery_phase_ids}}` ({{delivery_phase_count}} phases total). Create `### <req-id>` blocks for every requirement across all phases. This ensures the Polecat knows what tests to write as the workflow progresses through each phase.
+Create `### <phase-id>` sections for every test-carrying phase: `{{test_plan_phase_ids}}`. Omit setup-only phases: `{{setup_only_phase_ids}}`; their `qa_verify_command` verifies dependency setup without a test file. Never report `architecture_failure` merely because a setup-only phase has no test ownership.
 
-**USE DELIVERY PHASE IDs AS SECTION HEADINGS (CRITICAL):** Your `### <req-id>` section headings MUST be the EXACT phase IDs listed above. For example, if the list is `python-setup, smoke-test`, your TEST_PLAN.md must have `### python-setup` and `### smoke-test` sections. Do NOT invent requirement IDs like `route-ping` or `unit-ping` — use ONLY the phase IDs from the list. The validator will reject any `### <req-id>` that does not match a delivery phase ID.
+Use exact delivery phase IDs as section headings. Cover every specified behavior within its owning test-carrying phase; requirement IDs from SPEC belong in the section's Requirement/Scenarios, not additional headings. Do not invent requirements or test files for dependency manifests.
 
-**Validation scope:** On first entry to `test_plan`, generate the full plan covering all phases. On subsequent entries (e.g. after rework), only validate that the ACTIVE phase's tests and code match the plan — do not rewrite future phase sections.
-
-**REWORK RULE (CRITICAL):** When rewriting TEST_PLAN.md during rework, you MUST READ the existing file first and use EDIT commands to modify only the changed sections. **NEVER use `cat > TEST_PLAN.md << 'EOF'`** to rewrite the entire file — that drops other phase sections and breaks the workflow. The validator will reject the plan if any delivery phase is missing its requirement blocks.
-
-Example: If phases are `store-core`, `api-layer`, `server-entry`, plan tests for store operations, HTTP handlers, AND server integration — not just store-core.
+On first entry, plan all test-carrying phases, including future phases. During rework, read the existing plan and edit affected sections, preserving other test-carrying phases. Remove obsolete setup-only sections. Missing test-carrying sections fail validation; omitted setup-only sections are correct.
 
 ## Requirements sources (read in this order)
 
 1. `REQUIREMENTS.md` — present only in requirements-driven flows; the business source of truth.
 2. `SPEC.md` — the buildable spec: HTTP routes table, store API, data model, phases, testing strategy.
-   **IMPORTANT: Extract every `### <req-id>` block and every HTTP route table entry.**
+   **IMPORTANT: Extract every `### <phase-id>` block and every HTTP route table entry.**
 3. `architecture.md` — the design: ownership table (file → scope + acceptance) and test directives.
    **IMPORTANT: Extract every requirement ID and test directive from the ownership table.**
 4. `plan.md` — the bead map: which bead ID implements each file.
 
-**CRITICAL: For every requirement ID (`### <id>`) that appears in SPEC.md OR architecture.md (or that is implied by the delivery phases), there MUST be a corresponding `### <id>` block in TEST_PLAN.md.**
-**The Teller must map every such requirement to a unit, integration, or UI test — no requirements may be omitted.**
-**If a requirement appears in SPEC.md but has no `### <id>` block in TEST_PLAN.md, the outcome MUST be `plan_gap`.**
-
-For every requirement ID (`### <id>` headings) that touches this phase, there must be a `### <id>` block in `TEST_PLAN.md`.
-
-**DO NOT INVENT REQUIREMENTS.** Only create `### <id>` blocks for requirements that EXPLICITLY appear in SPEC.md or architecture.md. If SPEC.md only defines a `/ping` endpoint, do NOT create requirements for `/health`, middleware, or other features not mentioned in SPEC.md. The test plan must be a faithful reflection of what SPEC.md defines — not what you think the project should have.
+Map every specified behavior to a test in its owning test-carrying phase section. Do not invent routes, middleware, or features absent from SPEC/architecture. Setup-only requirements are covered by their phase verification command, not by TEST_PLAN.md rows.
 
 Read `{{town_root}}/orchestrator/STANDARDS.md` for requirement ID conventions and architecture.md examples.
 
@@ -65,7 +55,7 @@ Read `{{town_root}}/orchestrator/STANDARDS.md` for requirement ID conventions an
 
 ## Requirements → tests
 
-### <req-id>
+### <phase-id>
 Requirement: one-line statement from SPEC/REQUIREMENTS.md
 Level: unit | integration | ui
 Test file: <path under layout_root, e.g. layout_root/internal/api/handlers_test.go>
@@ -98,7 +88,7 @@ Ground every scenario and assertion in SPEC.md and the corresponding architectur
 
 **NEVER use `plan_gap` or an empty Test file field.** If a test-carrying phase has neither a declared test file nor a suitable conventional companion, report `architecture_failure` naming the missing test ownership so the Architect can amend the delivery contract. Do not invent unrelated paths or replace tests with implementation files to satisfy validation.
 
-**A phase owning only dependency manifests/lockfiles (for example `go.mod`, `go.sum`, `package.json`, or `requirements.txt`) is setup-only: omit its `### <phase-id>` section and verify it using its `qa_verify_command`. Commands such as `go mod tidy` do not require inventing a test file. This exception overrides the all-phases coverage rule.**
+**A phase owning only dependency manifests/lockfiles (for example `go.mod`, `go.sum`, `package.json`, or `requirements.txt`) is setup-only: omit its `### <phase-id>` section and verify it using its `qa_verify_command`. Commands such as `go mod tidy` do not require inventing a test file. This is part of the delivery coverage contract above.**
 
 **If a delivery phase's `qa_verify_command` explicitly indicates no automated tests (e.g., contains "no automated tests" or "verify ok" without test runner), omit the `### <phase-id>` section for that phase from TEST_PLAN.md — the phase is setup-only, not test-only.**
 
@@ -109,7 +99,7 @@ Ground every scenario and assertion in SPEC.md and the corresponding architectur
 
    ## Requirements → tests
 
-   ### <req-id>
+   ### <phase-id>
    Requirement: one-line statement from SPEC/REQUIREMENTS.md
    Level: unit | integration | ui
    Test file: <path under layout_root, e.g. {{layout_root}}/tests/test_api.py>
@@ -144,7 +134,7 @@ Ground every scenario and assertion in SPEC.md and the corresponding architectur
 
 6. **CRITICAL:** Do not emit JSON in the same message as `CMD:` lines. Wait for command output on the next turn before choosing outcome.
 
-7. **Bead IDs:** Use actual bead IDs from `bd list` output, NOT placeholder IDs like `bead-001` or `plan_gap`. Copy IDs exactly as they appear in `bd list`. If no bead owns a test file yet, leave the `Bead ID:` field empty — the Planner will create the missing bead during planning.
+7. **Bead IDs:** Use actual bead IDs from `bd list` output, NOT placeholder IDs like `bead-001` or `plan_gap`. Copy IDs exactly as they appear in `bd list`. For a conventional companion test, use its owning source bead. Only future-phase beads may be pending; active-phase missing ownership must be reported precisely.
 
 Example success:
 `{"outcome":"success","summary":"TEST_PLAN.md maps 6/6 active-phase requirements: 4 unit (store/domain), 1 integration (API wiring), 1 ui (DOM checkout)"}`

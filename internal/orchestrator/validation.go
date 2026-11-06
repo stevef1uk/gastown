@@ -1550,6 +1550,14 @@ func (v WorkflowValidation) PromptVars() map[string]string {
 		allPhaseIDs = append(allPhaseIDs, strings.TrimSpace(p.ID))
 	}
 	allPhaseIDsStr := strings.Join(allPhaseIDs, ", ")
+	var testPhaseIDs, setupPhaseIDs []string
+	for _, phase := range v.DeliveryPhases {
+		if PhaseShipsAutomatedTests(phase) {
+			testPhaseIDs = append(testPhaseIDs, phase.ID)
+		} else {
+			setupPhaseIDs = append(setupPhaseIDs, phase.ID)
+		}
+	}
 
 	return map[string]string{
 		"layout_root":                     v.LayoutRoot,
@@ -1564,6 +1572,8 @@ func (v WorkflowValidation) PromptVars() map[string]string {
 		"active_phase_title":              activeTitle,
 		"delivery_phase_count":            fmt.Sprintf("%d", len(v.DeliveryPhases)),
 		"all_delivery_phase_ids":          allPhaseIDsStr,
+		"test_plan_phase_ids":             strings.Join(testPhaseIDs, ", "),
+		"setup_only_phase_ids":            strings.Join(setupPhaseIDs, ", "),
 		"test_validation_phase_ids":       phaseIDsStr,
 		"phase_scope_note":                v.PhaseScopeNote(),
 		"integration_contract_scope_note": v.IntegrationContractScopeNote(),

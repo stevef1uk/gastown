@@ -25,11 +25,11 @@ const natsAutoRespawnDelay = 2 * time.Second
 
 // natsSessionMeta tracks a NATS session for optional auto-respawn after exit.
 type natsSessionMeta struct {
-	workDir      string
-	command      string
-	env          map[string]string
-	autoRespawn  bool
-	stopRespawn  bool // set on explicit Stop
+	workDir     string
+	command     string
+	env         map[string]string
+	autoRespawn bool
+	stopRespawn bool // set on explicit Stop
 }
 
 // NatsProvider implements session.Provider using NATS for coordination
@@ -39,9 +39,9 @@ type NatsProvider struct {
 	natsURL      string
 	nc           *nats.Conn
 	mu           sync.RWMutex
-	lastActivity map[string]time.Time           // sessionID -> last activity timestamp
-	sessionEnv   map[string]map[string]string   // sessionID -> env vars
-	sessionMeta  map[string]*natsSessionMeta    // sessionID -> respawn state
+	lastActivity map[string]time.Time         // sessionID -> last activity timestamp
+	sessionEnv   map[string]map[string]string // sessionID -> env vars
+	sessionMeta  map[string]*natsSessionMeta  // sessionID -> respawn state
 }
 
 // NewNatsProvider creates a new NatsProvider.
@@ -92,6 +92,18 @@ func (p *NatsProvider) Start(ctx context.Context, opts StartOptions) error {
 }
 
 func (p *NatsProvider) startInternal(ctx context.Context, sessionID, workDir, command string, env map[string]string, autoRespawn bool) error {
+	lock, err := lockNatsSession(ctx, p.townRoot, sessionID)
+	if err != nil {
+		return err
+	}
+	defer lock.Unlock()
+	// The caller's earlier Exists check is not atomic across processes. Recheck
+	// while holding the lifecycle lock, before replacing metadata or PID ownership.
+	if exists, err := p.Exists(ctx, sessionID); err != nil {
+		return err
+	} else if exists {
+		return ErrSessionExists
+	}
 	p.recordActivity(sessionID)
 
 	p.mu.Lock()
@@ -180,7 +192,7 @@ func copyStringMap(m map[string]string) map[string]string {
 
 func (p *NatsProvider) waitAndMaybeRespawn(sessionID, pidFile string, cmd *exec.Cmd) {
 	_ = cmd.Wait()
-	_ = os.Remove(pidFile)
+	removeNatsSessionPIDIfOwned(p.townRoot, sessionID, cmd.Process.Pid)
 
 	p.mu.RLock()
 	meta := p.sessionMeta[sessionID]
@@ -219,6 +231,11 @@ func (p *NatsProvider) waitAndMaybeRespawn(sessionID, pidFile string, cmd *exec.
 }
 
 func (p *NatsProvider) Stop(ctx context.Context, sessionID string, graceful bool) error {
+	lock, lockErr := lockNatsSession(ctx, p.townRoot, sessionID)
+	if lockErr != nil {
+		return lockErr
+	}
+	defer lock.Unlock()
 	pidStr, err := p.getPanePID(sessionID)
 	if err != nil || pidStr == "" {
 		// Session may already be gone, but still clean up resources
@@ -444,8 +461,8 @@ func (p *NatsProvider) Exists(ctx context.Context, sessionID string) (bool, erro
 		return true, nil
 	}
 
-	// Stale PID file (process exited without cleanup goroutine finishing).
-	_ = os.Remove(filepath.Join(p.townRoot, ".gt-nats-pids", sessionID))
+	// A stale read must not unlink a replacement session's PID record.
+	// Start/Stop own PID updates under the lifecycle lock.
 	return false, nil
 }
 
@@ -562,7 +579,6 @@ func (p *NatsProvider) IsAgentRunning(ctx context.Context, id string) (bool, err
 		return false, nil
 	}
 	if !processExists(pid) {
-		_ = os.Remove(filepath.Join(p.townRoot, ".gt-nats-pids", id))
 		return false, nil
 	}
 	return hasLiveGTAgentInTree(pid), nil

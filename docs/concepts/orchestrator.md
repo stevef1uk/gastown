@@ -23,6 +23,25 @@ under NATS transport, or an agent unhooks before the mayor is notified.
 The orchestrator adds a **central coordinator** that answers one question at a time:
 *which role owns the pipeline right now, and what should they do?*
 
+## Session ownership and test planning
+
+NATS session starts and stops are serialized across CLI, daemon, and orchestrator
+processes using a per-town, per-session filesystem lock. A second start for a live
+session returns `ErrSessionExists`. Exit cleanup removes a PID record only when it
+still belongs to that process, so an old session cannot erase its replacement.
+Already-running duplicate sessions require a clean shutdown/restart after upgrading.
+
+Test plans cover every test-carrying delivery phase. Phases owning only dependency
+manifests or lockfiles (such as `go.mod` or `package.json`) are setup-only: omit their
+test-plan section and use the phase verification command. Missing test ownership in
+such a phase is not an architecture failure. Tester and QA receive the same computed
+phase lists. Tests may be declared files or conventional companions of required
+source files; companions use the source bead. Assertions must still follow SPEC.
+
+Update authored templates and prompts in the source tree. Deploy them through the
+normal install/config synchronization path; do not hand-edit a rig's generated
+SPEC, architecture, plan, profile, or bead records to work around workflow errors.
+
 ## Mental model
 
 | Term | Meaning |

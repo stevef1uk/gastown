@@ -511,6 +511,8 @@ func TestPhaseShipsAutomatedTests(t *testing.T) {
 		{"setup-echo-only", DeliveryPhase{ID: "python-setup", QAVerifyCommand: "cd pingapp && echo setup ok"}, false},
 		{"pytest-phase", DeliveryPhase{ID: "test", QAVerifyCommand: "cd pingapp && python -m pytest -v"}, true},
 		{"go-test-phase", DeliveryPhase{ID: "test", QAVerifyCommand: "cd pingapp && go test ./..."}, true},
+		{"manifest-empty-verify", DeliveryPhase{RequiredFiles: []string{"pingapp/go.mod"}}, false},
+		{"manifest-stale-test-verify", DeliveryPhase{RequiredFiles: []string{"pingapp/go.mod"}, QAVerifyCommand: "go test ./..."}, false},
 		{"go-module-tidy", DeliveryPhase{RequiredFiles: []string{"pingapp/go.mod"}, QAVerifyCommand: "cd pingapp && go mod tidy"}, false},
 		{"node-install", DeliveryPhase{RequiredFiles: []string{"app/package.json", "app/package-lock.json"}, QAVerifyCommand: "npm ci"}, false},
 		{"source-build", DeliveryPhase{RequiredFiles: []string{"pingapp/go.mod", "pingapp/main.go"}, QAVerifyCommand: "go build ./..."}, true},
@@ -561,5 +563,20 @@ func TestSplitTestPlanBeadIDsAndMultiBeadMapping(t *testing.T) {
 	}
 	if got := testPlanBeadMappingMismatches(v, blocks, titles); len(got) != 0 {
 		t.Fatalf("expected 0 mismatches for semicolon-separated bead IDs, got %v", got)
+	}
+}
+
+func TestSetupOnlyTestPlanContract(t *testing.T) {
+	v := WorkflowValidation{DeliveryPhases: []DeliveryPhase{
+		{ID: "go-module", RequiredFiles: []string{"pingapp/go.mod"}},
+		{ID: "core", RequiredFiles: []string{"pingapp/main.go"}},
+	}}
+	vars := v.PromptVars()
+	if vars["test_plan_phase_ids"] != "core" || vars["setup_only_phase_ids"] != "go-module" {
+		t.Fatalf("wrong phase lists: %v", vars)
+	}
+	err := ValidateTestPlanPaths(v, []TestPlanBlock{{ReqID: "go-module", Phase: "go-module", TestFile: "pingapp/go.mod"}})
+	if err == nil || !strings.Contains(err.Error(), "omit this row") {
+		t.Fatalf("setup row needs actionable omission: %v", err)
 	}
 }
