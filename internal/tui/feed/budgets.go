@@ -96,7 +96,7 @@ func fetchWorkflowCost(ctx context.Context, client *http.Client, endpoint, rig, 
 	}
 	var cost WorkflowCost
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&cost); err != nil {
-		return nil, fmt.Errorf("invalid budget response")
+		return nil, fmt.Errorf("budget API unavailable; rebuild/restart Freeride")
 	}
 	if cost.Limit == nil || *cost.Limit <= 0 || cost.Accounted < 0 || cost.Unknown < 0 || cost.UpstreamAttempts < 0 || (cost.UpstreamLimit != nil && *cost.UpstreamLimit <= 0) || cost.Accounting == "" {
 		return nil, fmt.Errorf("incomplete budget response")

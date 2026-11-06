@@ -89,3 +89,12 @@ func TestWorkflowBudgetEndpointDoesNotProbeProviders(t *testing.T) {
 		t.Fatalf("%s %v", got, err)
 	}
 }
+
+func TestOldProxyBudgetMessageIsActionable(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.Write([]byte("Freeride Proxy is running")) }))
+	defer server.Close()
+	_, err := fetchWorkflowCost(context.Background(), server.Client(), server.URL, "rig", "wf")
+	if err == nil || !strings.Contains(err.Error(), "rebuild/restart Freeride") {
+		t.Fatalf("unhelpful legacy proxy error: %v", err)
+	}
+}
