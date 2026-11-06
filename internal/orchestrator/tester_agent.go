@@ -63,6 +63,21 @@ func PhaseShipsAutomatedTests(p DeliveryPhase) bool {
 	if strings.Contains(cmd, "echo") && !hasAnyStackTool(cmd) {
 		return false // "verify ok (no automated tests for this phase)" style stub
 	}
+	// Dependency setup has executable verification, but no source companion to
+	// own a test. Keep this narrow: source/config phases still require tests.
+	if len(p.RequiredFiles) > 0 {
+		manifestsOnly := true
+		for _, f := range p.RequiredFiles {
+			switch filepath.Base(f) {
+			case "go.mod", "go.sum", "package.json", "package-lock.json", "yarn.lock", "pnpm-lock.yaml", "requirements.txt", "pyproject.toml", "poetry.lock", "uv.lock":
+			default:
+				manifestsOnly = false
+			}
+		}
+		if manifestsOnly {
+			return false
+		}
+	}
 	return true
 }
 

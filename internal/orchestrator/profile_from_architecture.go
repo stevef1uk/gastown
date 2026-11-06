@@ -1485,6 +1485,14 @@ func parseArchPhases(archText, layoutRoot string) []DeliveryPhase {
 	if archText == "" {
 		return nil
 	}
+	// Structured contracts must never pass through the prose heuristics: YAML
+	// keys look like phase headers and shell arguments look like deliverables.
+	if phases, explicit, err := architectureDeliveryContract(archText); explicit {
+		if err != nil {
+			return nil
+		}
+		return phases
+	}
 	// Try sections in order: "## Delivery phases" (table), "## Requirements" (proper headings)
 	for _, marker := range []string{"## delivery phases", "## requirements", "## phases"} {
 		phases := parseArchPhasesFromSection(archText, layoutRoot, marker)

@@ -511,6 +511,10 @@ func TestPhaseShipsAutomatedTests(t *testing.T) {
 		{"setup-echo-only", DeliveryPhase{ID: "python-setup", QAVerifyCommand: "cd pingapp && echo setup ok"}, false},
 		{"pytest-phase", DeliveryPhase{ID: "test", QAVerifyCommand: "cd pingapp && python -m pytest -v"}, true},
 		{"go-test-phase", DeliveryPhase{ID: "test", QAVerifyCommand: "cd pingapp && go test ./..."}, true},
+		{"go-module-tidy", DeliveryPhase{RequiredFiles: []string{"pingapp/go.mod"}, QAVerifyCommand: "cd pingapp && go mod tidy"}, false},
+		{"node-install", DeliveryPhase{RequiredFiles: []string{"app/package.json", "app/package-lock.json"}, QAVerifyCommand: "npm ci"}, false},
+		{"source-build", DeliveryPhase{RequiredFiles: []string{"pingapp/go.mod", "pingapp/main.go"}, QAVerifyCommand: "go build ./..."}, true},
+		{"declared-test", DeliveryPhase{RequiredFiles: []string{"pingapp/go.mod", "pingapp/main_test.go"}, QAVerifyCommand: "go test ./..."}, true},
 		{"empty-verify", DeliveryPhase{ID: "core", QAVerifyCommand: ""}, true},
 	}
 	for _, c := range cases {

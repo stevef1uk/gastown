@@ -98,6 +98,8 @@ Ground every scenario and assertion in SPEC.md and the corresponding architectur
 
 **NEVER use `plan_gap` or an empty Test file field.** If a test-carrying phase has neither a declared test file nor a suitable conventional companion, report `architecture_failure` naming the missing test ownership so the Architect can amend the delivery contract. Do not invent unrelated paths or replace tests with implementation files to satisfy validation.
 
+**A phase owning only dependency manifests/lockfiles (for example `go.mod`, `go.sum`, `package.json`, or `requirements.txt`) is setup-only: omit its `### <phase-id>` section and verify it using its `qa_verify_command`. Commands such as `go mod tidy` do not require inventing a test file. This exception overrides the all-phases coverage rule.**
+
 **If a delivery phase's `qa_verify_command` explicitly indicates no automated tests (e.g., contains "no automated tests" or "verify ok" without test runner), omit the `### <phase-id>` section for that phase from TEST_PLAN.md — the phase is setup-only, not test-only.**
 
 1. **One `CMD:` per line** — read-only inspection, then write `TEST_PLAN.md` via heredoc:

@@ -394,3 +394,14 @@ command on port 8080. This phase creates no file.
 		t.Errorf("integration-test files = %v, want none", got["integration-test"])
 	}
 }
+
+func TestParseArchPhasesUsesStructuredContract(t *testing.T) {
+	doc := "## Delivery phases\n\n```yaml\ndelivery_phases:\n  - id: go-module\n    title: Module setup\n    required_files:\n      - pingapp/go.mod\n    qa_verify_command: go mod tidy\n  - id: core\n    title: Server\n    required_files:\n      - pingapp/main.go\n    qa_verify_command: sh -c 'go build pingapp/main.go'\n    depends_on:\n      - go-module\n```\n"
+	phases := parseArchPhases(doc, "pingapp")
+	if len(phases) != 2 {
+		t.Fatalf("expected two declared phases, got %+v", phases)
+	}
+	if phases[0].ID != "go-module" || phases[1].ID != "core" || len(phases[1].RequiredFiles) != 1 || phases[1].RequiredFiles[0] != "pingapp/main.go" || len(phases[1].DependsOn) != 1 || phases[1].QAVerifyCommand != "sh -c 'go build pingapp/main.go'" {
+		t.Fatalf("contract was changed by prose parsing: %+v", phases)
+	}
+}
