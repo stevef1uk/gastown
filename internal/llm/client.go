@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -18,11 +19,14 @@ const maxResponseBodyBytes = 10 << 20 // 10 MB
 
 // Client is a simple HTTP client for OpenAI-compatible LLM APIs.
 type Client struct {
-	endpoint  string
-	model     string
-	role      string
-	client    *http.Client
-	LastModel string // actual model used per the last response
+	endpoint      string
+	model         string
+	role          string
+	client        *http.Client
+	LastModel     string            // actual model used per the last response
+	BeforeRequest func(int64) error // admission for every HTTP attempt, including retries
+	TaskHeaders   map[string]string
+	LastUsage     Usage
 }
 
 // Endpoint returns the configured chat-completions URL.
@@ -102,7 +106,15 @@ type Message struct {
 }
 
 // CompletionResponse is an OpenAI-compatible chat completion response.
+type Usage struct {
+	PromptTokens     int64   `json:"prompt_tokens"`
+	CompletionTokens int64   `json:"completion_tokens"`
+	TotalTokens      int64   `json:"total_tokens"`
+	Cost             float64 `json:"cost,omitempty"`
+}
+
 type CompletionResponse struct {
+	Usage   Usage  `json:"usage"`
 	Model   string `json:"model"`
 	Choices []struct {
 		Message struct {
@@ -125,6 +137,7 @@ const maxRetries = 4
 
 // retryableStatusCodes are HTTP status codes that warrant a retry.
 var retryableStatusCodes = map[int]bool{
+	http.StatusTooManyRequests:     true,
 	http.StatusInternalServerError: true,
 	http.StatusBadGateway:          true,
 	http.StatusServiceUnavailable:  true,
@@ -150,10 +163,14 @@ func isRetryableErr(err error) bool {
 func (c *Client) doRequestWithRetries(ctx context.Context, jsonData []byte) (string, error) {
 	start := time.Now()
 	var lastErr error
+	var retryAfter time.Duration
 
 	for attempt := 0; attempt <= maxRetries; attempt++ {
 		if attempt > 0 {
 			backoff := time.Duration(1<<(attempt-1)) * time.Second
+			if retryAfter > backoff {
+				backoff = retryAfter
+			}
 			select {
 			case <-time.After(backoff):
 			case <-ctx.Done():
@@ -166,6 +183,16 @@ func (c *Client) doRequestWithRetries(ctx context.Context, jsonData []byte) (str
 			return "", fmt.Errorf("creating request: %w", err)
 		}
 		req.Header.Set("Content-Type", "application/json")
+		for key, value := range c.TaskHeaders {
+			req.Header.Set(key, value)
+		}
+		if c.BeforeRequest != nil {
+			// Serialized input bytes overestimate ordinary tokenization. The
+			// output allowance is also explicitly sent to the provider below.
+			if err := c.BeforeRequest(int64(len(jsonData)) + 8192); err != nil {
+				return "", err
+			}
+		}
 		if c.role != "" {
 			req.Header.Set("X-GasTown-Role", c.role)
 		}
@@ -186,6 +213,11 @@ func (c *Client) doRequestWithRetries(ctx context.Context, jsonData []byte) (str
 			body, _ := io.ReadAll(resp.Body)
 			resp.Body.Close()
 			lastErr = fmt.Errorf("LLM API error (status %d): %s", resp.StatusCode, string(body))
+			lower := strings.ToLower(string(body))
+			if strings.Contains(lower, "insufficient_quota") || strings.Contains(lower, "credits") || strings.Contains(lower, "billing") {
+				return "", lastErr
+			}
+			retryAfter = llmRetryAfter(resp.Header.Get("Retry-After"), time.Now())
 			continue
 		}
 
@@ -208,11 +240,12 @@ func (c *Client) doRequestWithRetries(ctx context.Context, jsonData []byte) (str
 			return "", fmt.Errorf("parsing response: %w", err)
 		}
 
+		c.LastUsage = result.Usage
 		c.LastModel = result.Model
 		if c.LastModel == "" {
 			c.LastModel = c.model
 		}
-		fmt.Printf("[llm] response received: status=%d duration=%s bytes=%d model=%s\n", resp.StatusCode, time.Since(start).Round(time.Millisecond), len(body), c.LastModel)
+		fmt.Printf("[llm] response received: status=%d duration=%s bytes=%d model=%s prompt_tokens=%d completion_tokens=%d cost=%g workflow=%s rig=%s\n", resp.StatusCode, time.Since(start).Round(time.Millisecond), len(body), c.LastModel, result.Usage.PromptTokens, result.Usage.CompletionTokens, result.Usage.Cost, c.TaskHeaders["X-GasTown-Workflow"], c.TaskHeaders["X-GasTown-Rig"])
 
 		if len(result.Choices) == 0 {
 			lastErr = fmt.Errorf("empty completion (no choices in response): requested=%s actual=%s", c.model, c.LastModel)
@@ -229,9 +262,10 @@ func (c *Client) CompleteMessages(ctx context.Context, messages []Message) (stri
 	fmt.Printf("[llm] request start: model=%s messages=%d endpoint=%s\n", c.model, len(messages), c.endpoint)
 
 	reqBody := map[string]interface{}{
-		"model":    c.model,
-		"messages": messages,
-		"stream":   false,
+		"model":      c.model,
+		"messages":   messages,
+		"stream":     false,
+		"max_tokens": 8192,
 	}
 
 	jsonData, err := json.Marshal(reqBody)
@@ -240,4 +274,20 @@ func (c *Client) CompleteMessages(ctx context.Context, messages []Message) (stri
 	}
 
 	return c.doRequestWithRetries(ctx, jsonData)
+}
+
+func llmRetryAfter(raw string, now time.Time) time.Duration {
+	var delay time.Duration
+	if seconds, err := strconv.Atoi(strings.TrimSpace(raw)); err == nil && seconds > 0 {
+		delay = time.Duration(seconds) * time.Second
+	} else if when, err := http.ParseTime(raw); err == nil {
+		delay = when.Sub(now)
+	}
+	if delay < 0 {
+		return 0
+	}
+	if delay > 2*time.Minute {
+		return 2 * time.Minute
+	}
+	return delay
 }

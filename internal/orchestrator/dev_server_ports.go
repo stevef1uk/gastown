@@ -3,6 +3,7 @@ package orchestrator
 import (
 	"fmt"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -26,23 +27,12 @@ func StopDevServersForRig(v WorkflowValidation, mayorRigDir string) error {
 		return nil
 	}
 	for port := range tr.ports {
-		killTCPListeners(port)
+		if _, err := KillRigTCPListeners(port, mayorRigDir); err != nil {
+			return err
+		}
 	}
-	if tr.goRunSeen {
-		killGoRunServerProcesses()
-	}
-	killPythonDevServerProcesses()
-	return nil
-}
 
-func killPythonDevServerProcesses() {
-	pkill, err := exec.LookPath("pkill")
-	if err != nil {
-		return
-	}
-	for _, pat := range []string{`uvicorn`, `gunicorn`, `hypercorn`} {
-		_, _ = exec.Command(pkill, "-f", pat).CombinedOutput()
-	}
+	return nil
 }
 
 type devServerTracker struct {
@@ -176,12 +166,54 @@ func killTCPListenersLsof(port int) ([]string, error) {
 	return lastPIDs, nil
 }
 
-func killGoRunServerProcesses() {
-	pkill, err := exec.LookPath("pkill")
+// KillRigTCPListeners signals only listeners whose cwd is inside this exact rig.
+// Unknown ownership is deliberately left alone; port number is not ownership.
+func KillRigTCPListeners(port int, rigDir string) ([]string, error) {
+	if rigDir == "" || protectedDevPorts[port] || port < 1 || port > 65535 {
+		return nil, nil
+	}
+	root, err := filepath.EvalSymlinks(rigDir)
 	if err != nil {
-		return
+		return nil, err
 	}
-	for _, pat := range []string{`go run.*cmd/server`, `go run.*\/server/main`, `go-build.*server\.test`, `server\.test.*test\.`} {
-		_, _ = exec.Command(pkill, "-f", pat).CombinedOutput()
+	root, err = filepath.Abs(root)
+	if err != nil {
+		return nil, err
 	}
+	lsof, err := exec.LookPath("lsof")
+	if err != nil {
+		return nil, err
+	}
+	var killed []string
+	output, err := exec.Command(lsof, "-nP", fmt.Sprintf("-iTCP:%d", port), "-sTCP:LISTEN", "-t").Output()
+	if err != nil {
+		return nil, nil
+	}
+	for _, pid := range strings.Fields(string(output)) {
+		if _, err := strconv.Atoi(pid); err != nil {
+			continue
+		}
+		out, err := exec.Command(lsof, "-a", "-p", pid, "-d", "cwd", "-Fn").Output()
+		if err != nil {
+			continue
+		}
+		owned := false
+		for _, line := range strings.Split(string(out), "\n") {
+			if !strings.HasPrefix(line, "n") {
+				continue
+			}
+			cwd, err := filepath.EvalSymlinks(strings.TrimPrefix(line, "n"))
+			if err != nil {
+				continue
+			}
+			rel, err := filepath.Rel(root, cwd)
+			owned = err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && !filepath.IsAbs(rel)
+		}
+		if owned {
+			if err := exec.Command("kill", "-TERM", pid).Run(); err == nil {
+				killed = append(killed, pid)
+			}
+		}
+	}
+	return killed, nil
 }

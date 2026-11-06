@@ -14,6 +14,8 @@ type workflowStuckStateSnap struct {
 }
 
 type workflowStuckRigState struct {
+	LastProgressAt      time.Time `json:"last_progress_at,omitempty"`
+	LastState           string    `json:"last_state,omitempty"`
 	LastBeadFingerprint string    `json:"last_bead_fingerprint,omitempty"`
 	LastRepairAt        time.Time `json:"last_repair_at,omitempty"`
 	LastSignals         []string  `json:"last_signals,omitempty"`

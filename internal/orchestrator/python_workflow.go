@@ -13,9 +13,6 @@ func WorkflowUsesPython(v WorkflowValidation) bool {
 
 // UsesPythonVenv reports whether gt-agent should create/use a project venv for pip/pytest.
 func (v WorkflowValidation) UsesPythonVenv() bool {
-	if WorkflowUsesGo(v) {
-		return false
-	}
 	if v.PythonVenvRelDir() == "" {
 		return false
 	}

@@ -131,7 +131,6 @@ func gasTownMayorRigIgnorePatterns() []string {
 		"run-tests.sh_backup",
 		"qa/implementation-progress.json",
 		"qa/qa-review-progress.json",
-		"testgt3/",
 	}
 }
 
@@ -141,10 +140,6 @@ func mayorRigUntrackPaths() []string {
 	return []string{
 		".beads",
 		"codeindex.json",
-		"linkshelf/codeindex.json",
-		"linkshelf/linkshelf.db",
-		"linkshelf/server",
-		"linkshelf/block:",
 		"node_modules",
 		"env",
 		".venv",
@@ -156,7 +151,6 @@ func mayorRigUntrackPaths() []string {
 		"run-tests",
 		"run-tests.sh",
 		"run-tests.sh_backup",
-		"testgt3",
 	}
 }
 

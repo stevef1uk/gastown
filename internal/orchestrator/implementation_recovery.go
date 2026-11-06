@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 
 	"github.com/steveyegge/gastown/internal/config"
@@ -76,23 +75,7 @@ func ResetInProgressImplementBeads(townRoot, rig string, v WorkflowValidation) (
 }
 
 func runStopRigDevServersScript(mayorRigDir string, v WorkflowValidation) error {
-	script := stopRigDevServersScriptPath()
-	if script == "" {
-		return StopDevServersForRig(v, mayorRigDir)
-	}
-	port := "8080"
-	for p := range buildDevServerTracker(v, mayorRigDir).ports {
-		if p > 0 && !protectedDevPorts[p] {
-			port = strconv.Itoa(p)
-			break
-		}
-	}
-	cmd := exec.Command("bash", script, port)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("%w: %s", err, strings.TrimSpace(string(out)))
-	}
-	return nil
+	return StopDevServersForRig(v, mayorRigDir)
 }
 
 func stopRigDevServersScriptPath() string {
@@ -203,8 +186,8 @@ func HardResetImplementationPhase(townRoot, rig string, v WorkflowValidation) (s
 }
 
 // ReopenAllPhaseImplementBeads reopens all implement beads in the current active phase
-// (not just the failed ones). This is called on timeout to reset the entire implementation phase.
-// Also clears implementation progress so turn counts are reset.
+// (not just failed ones). This is an explicit administrative reset only; automatic
+// session exhaustion must preserve closed beads and progress.
 func ReopenAllPhaseImplementBeads(townRoot, rig string, v WorkflowValidation) ([]string, error) {
 	v = v.ForActivePhase()
 	closed, err := listImplementBeadsByStatus(townRoot, rig, v, "closed")
@@ -219,10 +202,6 @@ func ReopenAllPhaseImplementBeads(townRoot, rig string, v WorkflowValidation) ([
 	var reopened []string
 	for _, b := range closed {
 		if b.ID == "" {
-			continue
-		}
-		// Only reopen beads in the current active phase
-		if !strings.Contains(b.Title, v.ActivePhaseID()) && !strings.Contains(b.Title, strings.TrimPrefix(v.ActivePhaseID(), "phase_")) {
 			continue
 		}
 		cmd := exec.Command("bd", "update", b.ID, "--status=open")
@@ -254,20 +233,47 @@ func resetBeadTurnCount(townRoot, rig, beadID string) error {
 		}
 		return err
 	}
-	var progress struct {
-		BeadTurns map[string]int `json:"bead_turns"`
-	}
+	var progress map[string]json.RawMessage
 	if err := json.Unmarshal(data, &progress); err != nil {
-		return nil // non-fatal
+		return fmt.Errorf("invalid implementation progress: %w", err)
 	}
-	if progress.BeadTurns != nil {
-		delete(progress.BeadTurns, beadID)
+	if progress == nil {
+		return fmt.Errorf("invalid null implementation progress")
 	}
+	turns := map[string]int{}
+	if raw, ok := progress["bead_turns"]; ok {
+		if err := json.Unmarshal(raw, &turns); err != nil {
+			return err
+		}
+	}
+	delete(turns, beadID)
+	raw, err := json.Marshal(turns)
+	if err != nil {
+		return err
+	}
+	progress["bead_turns"] = raw
 	updated, err := json.Marshal(progress)
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, updated, 0644)
+	f, err := os.CreateTemp(filepath.Dir(path), ".implementation-progress-*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(f.Name())
+	if _, err = f.Write(updated); err != nil {
+		f.Close()
+		return err
+	}
+	if err = f.Sync(); err != nil {
+		f.Close()
+		return err
+	}
+	if err = f.Close(); err != nil {
+		return err
+	}
+	return os.Rename(f.Name(), path)
+
 }
 
 // ClearImplementationProgressFile removes qa/implementation-progress.json so polecat does not skip verify.

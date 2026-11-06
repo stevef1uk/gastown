@@ -215,7 +215,7 @@ func TestTestReviewAcceptsEarlyFailureWithCommands(t *testing.T) {
 	}))
 	defer server.Close()
 	task := &orchestrator.Task{
-		State: "test_review", Rig: rig,
+		WorkflowID: "wf-test-review", State: "test_review", Rig: rig,
 		AllowedOutcomes: []string{"success", "failure", "plan_gap", "architecture_failure"},
 	}
 	client := llm.NewClient(server.URL, "test", "tester", time.Second)

@@ -141,3 +141,9 @@ Optional separate message: `{"outcome":"success","summary":"architecture.md writ
 **CRITICAL**: Do **not** emit JSON in same message as `CMD:` lines. Wait for command outputs first.
 
 Forbidden commands are rejected; `success` rejected if `architecture.md` too small.
+
+## Executable delivery contracts
+
+Keep each SPEC milestone limited to the capabilities and dependencies needed for its own exit criteria. Do not assign all eventual UI panels or later features to foundation merely because their paths occur in the SPEC. A shared file can have phase-specific modifications; describe each phase's incremental acceptance explicitly.
+
+The implementation agent checkpoints bounded execution batches within a milestone. Keep the milestone's complete acceptance gate at its end; do not demand a full application build from an incomplete arbitrary file chunk. Every runtime requirement needs behavioural evidence (returned values, state changes, persistence or rendered content), rather than route registration, compilation or file existence alone. Use browser assertions for client-rendered pages. Quote nested commands correctly, declare cwd/environment, and guarantee cleanup on failure without masking the failing exit code. Model generated lockfiles as tool outputs rather than handwritten implementation files. Permit empty marker/initializer files when their purpose requires no code.

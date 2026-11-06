@@ -313,6 +313,7 @@ states:
       on_state_timeout: [recover_implementation_stall]
       cmd_timeout_seconds: 900
       max_cmd_turns: 100
+      execution_batch_size: 8
       omit_orchestrator_context: true
       system_prompt_footer: |
         **Target platform: {{target_os}}/{{target_arch}}** — use Unix paths only. Do NOT use Windows paths (C:\) or macOS-only conventions.
@@ -345,7 +346,7 @@ states:
 
         **Do NOT wrap CMD in angle brackets** — use plain `CMD: ...` not `<CMD: ...>`.
 
-        **Frontend beads (JS/CSS/HTML):** No verify step needed. Write the file, then `bd close` immediately. Do not run compileall/pytest/go test on web assets.
+        **Frontend beads:** Use the declared frontend toolchain and Next bead Verify command before closing. Run typecheck/build/component tests for bundled JavaScript or TypeScript projects; use the configured static checks for plain assets.
 
         **SQL beads (.sql):** Validate with the sqlite3 verify command shown in the Next bead line. Do NOT run pytest on .sql files.
 
@@ -356,7 +357,7 @@ states:
 
         **When verify fails:** First READ the failing file and the dependencies it calls. Then explain the failure in ONE sentence, then apply the fix with EDIT:/WRITE:. Do not try random edits — diagnose from the error output. Record reusable lessons with `LEARN: <concise one-line rule>` (<=140 chars).
 
-        **Web frontend (app.js, index.html):** Use plain JavaScript — no ES module imports/exports (browsers cannot load them without a bundler). Use `fetch()` + DOM APIs. No server-side function calls (InitSchema, DB.Exec) in frontend code. Match DOM IDs between index.html and app.js exactly.
+        **Web frontend:** Follow the SPEC and detected package toolchain. Use React/Next/Vite and module imports when declared. For unbundled static pages use browser-compatible scripts and match DOM IDs. Keep server/database functions out of browser code.
       user_prompt_wrapper: none
       failure_prompt_context: [implementation_queue, implement_bead_context, phase_test_guards, polecat_learnings]
       empty_response_suffix: "Reply with EDIT:/WRITE:/READ: or CMD: lines. Implement code and unit tests per plan.md; WRITE for new *_test.go or tests/test_*.py. Use Verify from Next bead."

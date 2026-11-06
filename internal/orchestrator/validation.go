@@ -13,24 +13,24 @@ import (
 // WorkflowValidation configures artifact checks for a workflow template (rig-flow, etc.).
 // Operators edit these fields in orchestrator/templates/*.yaml when changing SPEC scope.
 type WorkflowValidation struct {
-	LayoutRoot                 string          `yaml:"layout_root" json:"layout_root"`
-	BeadTitleContains          string          `yaml:"bead_title_contains" json:"bead_title_contains"`
-	UnittestModule             string          `yaml:"unittest_module" json:"unittest_module"`
-	QAVerifyCommand            string          `yaml:"qa_verify_command" json:"qa_verify_command"`
-	TestRunner                 string          `yaml:"test_runner" json:"test_runner"`
-	RequiredFiles              []string        `yaml:"required_files" json:"required_files"`
-	DeliveryPhases             []DeliveryPhase `yaml:"delivery_phases" json:"delivery_phases,omitempty"`
+	LayoutRoot        string          `yaml:"layout_root" json:"layout_root"`
+	BeadTitleContains string          `yaml:"bead_title_contains" json:"bead_title_contains"`
+	UnittestModule    string          `yaml:"unittest_module" json:"unittest_module"`
+	QAVerifyCommand   string          `yaml:"qa_verify_command" json:"qa_verify_command"`
+	TestRunner        string          `yaml:"test_runner" json:"test_runner"`
+	RequiredFiles     []string        `yaml:"required_files" json:"required_files"`
+	DeliveryPhases    []DeliveryPhase `yaml:"delivery_phases" json:"delivery_phases,omitempty"`
 	// ExplicitDeliveryContract is set by architecture sync for a validated,
 	// structured contract. Inference must not rewrite its phases or commands.
-	ExplicitDeliveryContract bool `yaml:"explicit_delivery_contract,omitempty" json:"explicit_delivery_contract,omitempty"`
-	ActivePhaseIDField         string          `yaml:"active_phase_id" json:"active_phase_id,omitempty"`
-	RewoundFromPhaseIDField    string          `yaml:"rewound_from_phase_id,omitempty" json:"rewound_from_phase_id,omitempty"`
-	CompletedPhaseIDsField     []string        `yaml:"completed_phase_ids,omitempty" json:"completed_phase_ids,omitempty"`
-	SpecSummary                string          `yaml:"spec_summary" json:"spec_summary"`
-	MinArchitectureBytes       int64           `yaml:"min_architecture_bytes" json:"min_architecture_bytes"`
-	MinPlanBytes               int64           `yaml:"min_plan_bytes" json:"min_plan_bytes"`
-	MinImplementationFileBytes int64           `yaml:"min_implementation_file_bytes" json:"min_implementation_file_bytes"`
-	MinSubstantiveLines        int             `yaml:"min_substantive_lines" json:"min_substantive_lines"`
+	ExplicitDeliveryContract   bool     `yaml:"explicit_delivery_contract,omitempty" json:"explicit_delivery_contract,omitempty"`
+	ActivePhaseIDField         string   `yaml:"active_phase_id" json:"active_phase_id,omitempty"`
+	RewoundFromPhaseIDField    string   `yaml:"rewound_from_phase_id,omitempty" json:"rewound_from_phase_id,omitempty"`
+	CompletedPhaseIDsField     []string `yaml:"completed_phase_ids,omitempty" json:"completed_phase_ids,omitempty"`
+	SpecSummary                string   `yaml:"spec_summary" json:"spec_summary"`
+	MinArchitectureBytes       int64    `yaml:"min_architecture_bytes" json:"min_architecture_bytes"`
+	MinPlanBytes               int64    `yaml:"min_plan_bytes" json:"min_plan_bytes"`
+	MinImplementationFileBytes int64    `yaml:"min_implementation_file_bytes" json:"min_implementation_file_bytes"`
+	MinSubstantiveLines        int      `yaml:"min_substantive_lines" json:"min_substantive_lines"`
 	// MinTestPlanBytes is the minimum size of TEST_PLAN.md (default 400). The tester
 	// reviews test coverage against SPEC.md/architecture.md; a plan below this floor
 	// is treated as a stub and bounces back to the tester before any tests run.
@@ -368,8 +368,9 @@ func hasAnyStackTool(cmd string) bool { return allStackRE.MatchString(cmd) }
 // Python server entry point (main.py, app.py, server.py, or any .../api/ file).
 // Returns (module, cwd) where cwd is the directory from which to run the import.
 // For example:
-//   layout=finally, file=finally/backend/app/main.py → ("app.main", "finally/backend")
-//   layout=., file=app.py → ("app", ".")
+//
+//	layout=finally, file=finally/backend/app/main.py → ("app.main", "finally/backend")
+//	layout=., file=app.py → ("app", ".")
 func pythonServerEntryModule(files []string, layoutRoot string) (string, string) {
 	for _, f := range files {
 		f = filepath.ToSlash(strings.TrimSpace(f))
@@ -1615,7 +1616,7 @@ func (v WorkflowValidation) ImplementationVerifyHint(mayorRigDir string) string 
 	if WorkflowUsesGo(v) {
 		return GoCompileOnlyVerifyCommand(v, mayorRigDir)
 	}
-	if WorkflowUsesPython(v) {
+	if WorkflowUsesPython(v) && !WorkflowUsesGo(v) {
 		return PythonVerifyCommand(v)
 	}
 	if WorkflowUsesDocker(v) {
@@ -1626,6 +1627,9 @@ func (v WorkflowValidation) ImplementationVerifyHint(mayorRigDir string) string 
 
 // ProjectSetupVerifyHint returns the verify command agents should run in project_setup.
 func (v WorkflowValidation) ProjectSetupVerifyHint() string {
+	if len(WorkflowComponents(v)) > 1 {
+		return mixedComponentSetup(v)
+	}
 	if WorkflowUsesGo(v) {
 		return GoProjectSetupVerifyCommand(v, "")
 	}
@@ -2033,9 +2037,9 @@ func defaultQAVerifyForPhase(p *DeliveryPhase, layoutRoot string) string {
 		isIntegrationTest := strings.Contains(strings.ToLower(p.ID), "integration") ||
 			strings.Contains(strings.ToLower(p.Title), "integration")
 		if isIntegrationTest {
-		// Integration-test phases with Playwright should use Docker/Playwright container
-		// via docker compose. Tear down first so stale containers cannot lock host ports.
-		return fmt.Sprintf("cd %s && docker-compose down && docker-compose up --exit-code-from playwright", lr)
+			// Integration-test phases with Playwright should use Docker/Playwright container
+			// via docker compose. Tear down first so stale containers cannot lock host ports.
+			return fmt.Sprintf("cd %s && docker-compose down && docker-compose up --exit-code-from playwright", lr)
 		}
 		if dir == "." {
 			return fmt.Sprintf("cd %s && npx playwright test", lr)

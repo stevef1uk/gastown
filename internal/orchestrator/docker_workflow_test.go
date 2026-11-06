@@ -191,7 +191,8 @@ func TestAlignProfileLayoutWithArchitecture_finallyFlatArch(t *testing.T) {
 func TestSanitizeRigFlowProfile_flatRepoBeadPrefix(t *testing.T) {
 	got := SanitizeRigFlowProfile(WorkflowValidation{
 		LayoutRoot:        ".",
-		BeadTitleContains: "Implement finally/",
+		BeadTitleContains: "Implement renamed/",
+		RequiredFiles:     []string{"backend/app/main.py"},
 		TestRunner:        "custom",
 		QAVerifyCommand:   "docker compose up",
 	})

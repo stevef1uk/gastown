@@ -74,6 +74,14 @@ func pythonVerificationDiagnosticPath(rigDir string, v WorkflowValidation, outpu
 
 func ownedPythonDiagnosticPath(rigDir, path string, v WorkflowValidation) string {
 	if filepath.IsAbs(path) {
+		// macOS exposes /var through /private/var in interpreter tracebacks.
+		// Canonicalize both sides before deciding a file belongs to another rig.
+		if canonical, err := filepath.EvalSymlinks(rigDir); err == nil {
+			rigDir = canonical
+		}
+		if canonical, err := filepath.EvalSymlinks(path); err == nil {
+			path = canonical
+		}
 		rel, err := filepath.Rel(rigDir, path)
 		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 			return ""

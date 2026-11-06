@@ -71,23 +71,29 @@ func RunWorkflowStuckMonitorTick(townRoot string, polecatRunning PolecatSessionC
 		docsMisaligned := PlanningDocsMisaligned(rigDir, v)
 
 		st := stateSnap.rigState(rig)
+		if st.LastProgressAt.IsZero() || st.LastState != inst.CurrentState || (fp != "" && fp != st.LastBeadFingerprint) {
+			st.LastProgressAt = now
+			st.LastState = inst.CurrentState
+			changed = true
+		}
 		lastFP := st.LastBeadFingerprint
 		polecatUp := true
 		if polecatRunning != nil {
 			polecatUp = polecatRunning(rig)
 		}
 		eval := EvalWorkflowStuck(WorkflowStuckEvalInput{
-			Now:                   now,
-			Config:                cfg,
-			Guard:                 guard,
-			CurrentState:          inst.CurrentState,
-			StateEnteredAt:        inst.StateEnteredAt,
-			PendingRework:         inst.PendingRework != nil,
-			BeadFingerprint:       fp,
-			LastBeadFingerprint:   lastFP,
-			PolecatRunning:        polecatUp,
-			NonRequiredBeadCount:  nonReq,
-			MissingIntegration:    missingContract,
+			Now:                    now,
+			Config:                 cfg,
+			Guard:                  guard,
+			CurrentState:           inst.CurrentState,
+			StateEnteredAt:         inst.StateEnteredAt,
+			PendingRework:          inst.PendingRework != nil,
+			BeadFingerprint:        fp,
+			LastBeadFingerprint:    lastFP,
+			LastProgressAt:         st.LastProgressAt,
+			PolecatRunning:         polecatUp,
+			NonRequiredBeadCount:   nonReq,
+			MissingIntegration:     missingContract,
 			PlanningDocsMisaligned: docsMisaligned,
 		})
 

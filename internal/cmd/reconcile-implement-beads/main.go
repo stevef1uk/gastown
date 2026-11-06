@@ -13,14 +13,15 @@ import (
 
 func main() {
 	townRoot := flag.String("town", os.Getenv("GT_ROOT"), "Gas Town root (default GT_ROOT or ~/gt)")
-	rig := flag.String("rig", os.Getenv("RIG"), "Rig name (default RIG or testgt3)")
+	rig := flag.String("rig", os.Getenv("RIG"), "Rig name (required, defaults to RIG)")
 	dryRun := flag.Bool("dry-run", false, "Audit only; do not bd update")
 	flag.Parse()
 	if strings.TrimSpace(*townRoot) == "" {
 		*townRoot = strings.TrimSpace(os.Getenv("HOME")) + "/gt"
 	}
 	if strings.TrimSpace(*rig) == "" {
-		*rig = "testgt3"
+		fmt.Fprintln(os.Stderr, "--rig or RIG is required")
+		os.Exit(2)
 	}
 
 	v, ok, err := orchestrator.LoadRigWorkflowProfileFile(*townRoot, *rig)

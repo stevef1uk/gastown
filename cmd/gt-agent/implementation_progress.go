@@ -18,20 +18,21 @@ const (
 
 // ImplementationProgress records per-bead verify/close checkpoints across gt-agent restarts.
 type ImplementationProgress struct {
+	PhaseID              string          `json:"phase_id,omitempty"`
 	WorkflowID           string          `json:"workflow_id"`
 	State                string          `json:"state"`
 	Rig                  string          `json:"rig"`
 	UpdatedAt            time.Time       `json:"updated_at"`
 	ActiveBead           string          `json:"active_bead,omitempty"`
 	ActiveBeadPath       string          `json:"active_bead_path,omitempty"`
-	Completed            map[string]bool   `json:"completed"`
+	Completed            map[string]bool `json:"completed"`
 	LastVerifyFailBead   string          `json:"last_verify_fail_bead,omitempty"`
 	LastVerifyFailPath   string          `json:"last_verify_fail_path,omitempty"`
 	LastVerifyFailPaths  []string        `json:"last_verify_fail_paths,omitempty"`
 	LastVerifyFailOutput string          `json:"last_verify_fail_output,omitempty"`
 	// Per-bead turn tracking
-	BeadTurns            map[string]int    `json:"bead_turns,omitempty"`
-	BeadTurnsLimit       int               `json:"bead_turns_limit,omitempty"`
+	BeadTurns      map[string]int `json:"bead_turns,omitempty"`
+	BeadTurnsLimit int            `json:"bead_turns_limit,omitempty"`
 }
 
 func implementationProgressPath(townRoot, rig string) string {
@@ -49,7 +50,7 @@ func newImplementationProgress(workflowID, state, rig string) *ImplementationPro
 		UpdatedAt:      time.Now().UTC(),
 		Completed:      map[string]bool{},
 		BeadTurns:      map[string]int{},
-		BeadTurnsLimit: 20,
+		BeadTurnsLimit: 40,
 	}
 }
 
@@ -91,7 +92,24 @@ func saveImplementationProgress(townRoot, rig string, p *ImplementationProgress)
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0644)
+	f, err := os.CreateTemp(filepath.Dir(path), ".implementation-progress-*")
+	if err != nil {
+		return err
+	}
+	name := f.Name()
+	defer os.Remove(name)
+	if _, err := f.Write(data); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Sync(); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	return os.Rename(name, path)
 }
 
 func clearImplementationProgress(townRoot, rig string) {
@@ -120,27 +138,6 @@ func (p *ImplementationProgress) done(key string) bool {
 	return p != nil && p.Completed != nil && p.Completed[key]
 }
 
-// autoCloseOnDisk checks if a required implement file exists on disk and,
-// if so, marks the bead as verified (adding the key to the Completed map).
-// This is intended to recover from phase rewinds or timeout resets that cleared
-// the Completed map but left the actual source files on disk. After calling this,
-// saveImplementationProgress should be called to persist the update.
-func (p *ImplementationProgress) autoCloseOnDisk(rigDir, relPath string) bool {
-	if p == nil {
-		return false
-	}
-	absPath := filepath.Join(rigDir, filepath.FromSlash(relPath))
-	if _, err := os.Stat(absPath); err != nil {
-		return false
-	}
-	key := implVerifyKey(relPath)
-	if p.done(key) {
-		return true // already verified
-	}
-	p.Completed[key] = true
-	return true
-}
-
 func implVerifyKey(beadID string) string {
 	return implMilestoneVerifyPrefix + strings.TrimSpace(beadID)
 }
@@ -154,22 +151,16 @@ func (r *stateRunner) initImplementationProgress() string {
 		return ""
 	}
 	existing := loadImplementationProgress(r.townRoot, r.rig, r.task.WorkflowID, r.task.State)
+	if existing != nil && existing.PhaseID != r.v.ActivePhaseID() {
+		existing = nil
+	}
 	if existing != nil {
 		r.implProgress = existing
-		// Recover from phase rewinds or timeout resets: if any of the active phase's
-		// required files already exist on disk, mark them verified so the bead can
-		// close without redundant writes. This avoids redundant polecat write attempts
-		// after a rewind cleared the Completed map but left the source files on disk.
-		beadPath := r.activeImplementBeadPath()
-		if beadPath != "" {
-			r.implProgress.autoCloseOnDisk(rigMayorRigDir(r.townRoot, r.rig), beadPath)
-		}
-		for _, rel := range r.v.ForActivePhase().RequiredFiles {
-			r.implProgress.autoCloseOnDisk(rigMayorRigDir(r.townRoot, r.rig), rel)
-		}
+
 	} else {
 		r.implProgress = newImplementationProgress(r.task.WorkflowID, r.task.State, r.rig)
 	}
+	r.implProgress.PhaseID = r.v.ActivePhaseID()
 	r.scrubStaleImplementationProgressMilestones()
 	r.applyImplementationProgressToTrack()
 	r.clearStaleImplementationVerifyFailureOnResume()
@@ -720,63 +711,31 @@ func (r *stateRunner) formatImplementationProgressBlock() string {
 }
 
 func clearImplementationProgressIfLeaving(townRoot, rig, fromState, nextState string) {
-	if fromState != "implementation" || nextState == "implementation" {
+	if nextState != "completed" && nextState != "failed" {
 		return
 	}
 	clearImplementationProgress(townRoot, rig)
 	orchestratedPrintf("[gt-agent] cleared implementation-progress for rig %s (left implementation → %s)\n", rig, nextState)
 }
 
-// addBeadTurn increments the turn counter for a bead and returns true if the limit is exceeded.
+// addBeadTurn counts attempts durably. A session restart must not reset a stuck
+// bead's allowance, and a turn limit must never delete an artifact.
 func (r *stateRunner) addBeadTurn(beadID string) bool {
-	if r.implProgress == nil {
+	if r.implProgress == nil || beadID == "" {
 		return false
 	}
 	if r.implProgress.BeadTurns == nil {
 		r.implProgress.BeadTurns = make(map[string]int)
 	}
 	if r.implProgress.BeadTurnsLimit <= 0 {
-		r.implProgress.BeadTurnsLimit = 20
+		r.implProgress.BeadTurnsLimit = 40
 	}
-	r.implProgress.BeadTurns[r.track.activeBead]++
-	turns := r.implProgress.BeadTurns[r.track.activeBead]
-	if turns > r.implProgress.BeadTurnsLimit {
-		// Exceeded limit. Deleting the bead's file forces regeneration — but
-		// when a SUBSTANTIVE artifact is already on disk (≥ min implementation
-		// size, i.e. real delivered code rather than an empty stub), deleting
-		// it destroys verified progress and reopens beads over working files.
-		beadID := r.track.activeBead
-		beadPath := r.activeImplementBeadPath()
-		if beadPath != "" {
-			rigDir := filepath.Join(r.townRoot, r.rig, "mayor", "rig")
-			path := filepath.Join(rigDir, filepath.FromSlash(beadPath))
-			const minSubstantiveBytes = 400
-			if info, err := os.Stat(path); err == nil && info.Size() >= minSubstantiveBytes {
-				// After 2x the turn limit, force failure regardless of content —
-				// prevents infinite loops when the LLM keeps repeating "blocked".
-				if turns >= r.implProgress.BeadTurnsLimit*2 {
-					orchestratedPrintf("[gt-agent] bead %s exceeded %d turns (2x limit) with substantive content — forcing failure\n",
-						beadID, turns)
-					return true // limit exceeded — force failure
-				}
-				// Cap the counter so this fires once per stretch instead of
-				// deleting on every subsequent turn.
-				r.implProgress.BeadTurns[beadID] = r.implProgress.BeadTurnsLimit
-				orchestratedPrintf("[gt-agent] bead %s exceeded %d turns but %s holds substantive content (%d bytes) — keeping artifact, capping counter\n",
-					beadID, r.implProgress.BeadTurnsLimit, path, info.Size())
-				return false
-			}
-			if err := os.Remove(path); err != nil {
-				orchestratedFprintfStderr("[gt-agent] failed to delete stub bead file %s after %d turns: %v\n", path, r.implProgress.BeadTurnsLimit, err)
-			} else {
-				orchestratedPrintf("[gt-agent] deleted stub bead file %s after %d turns (limit %d) — will be regenerated\n", beadID, turns, r.implProgress.BeadTurnsLimit)
-			}
-		}
-		// Reset turn count for this bead since file was deleted
-		r.implProgress.BeadTurns[beadID] = 0
-		return true // limit exceeded
+	r.implProgress.BeadTurns[beadID]++
+	if err := saveImplementationProgress(r.townRoot, r.rig, r.implProgress); err != nil {
+		orchestratedFprintfStderr("[gt-agent] cannot persist bead attempts: %v\n", err)
+		return true
 	}
-	return false
+	return r.implProgress.BeadTurns[beadID] > r.implProgress.BeadTurnsLimit
 }
 
 // getBeadTurns returns the current turn count for a bead.
@@ -785,4 +744,22 @@ func (r *stateRunner) getBeadTurns(beadID string) int {
 		return 0
 	}
 	return r.implProgress.BeadTurns[beadID]
+}
+
+// closedCheckpointCount counts durable bead closures, not file presence.
+func (r *stateRunner) closedCheckpointCount() int {
+	if r.implProgress == nil {
+		return 0
+	}
+	n := 0
+	for key, done := range r.implProgress.Completed {
+		if done && strings.HasPrefix(key, implMilestoneClosedPrefix) {
+			n++
+		}
+	}
+	return n
+}
+
+func (r *stateRunner) executionBatchReady(start int) bool {
+	return r.hooks.ExecutionBatchSize > 0 && r.closedCheckpointCount()-start >= r.hooks.ExecutionBatchSize
 }

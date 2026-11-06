@@ -123,7 +123,7 @@ func rejectSpuriousArchitectureRework(townRoot, rig, summary string) string {
 	// Check for static path complaints — only reject when QA is actively
 	// faulting the static prefix, not just mentioning it in passing.
 	if isStaticPrefixComplaint(lower) {
-		findFiles := []string{"linkshelf/web/index.html", "web/index.html"}
+		findFiles := projectFrontendFiles(rigDir, false)
 		for _, rel := range findFiles {
 			abs := filepath.Join(rigDir, filepath.FromSlash(rel))
 			body, err := os.ReadFile(abs)
@@ -140,7 +140,7 @@ func rejectSpuriousArchitectureRework(townRoot, rig, summary string) string {
 	// Check for DOM id / field name complaints — only reject when QA mentions
 	// a DOM element mismatch that actually exists on disk.
 	if isDOMIdComplaint(summary) {
-		findFiles := []string{"linkshelf/web/index.html", "web/index.html", "linkshelf/web/app.js", "web/app.js"}
+		findFiles := projectFrontendFiles(rigDir, true)
 		for _, rel := range findFiles {
 			abs := filepath.Join(rigDir, filepath.FromSlash(rel))
 			body, err := os.ReadFile(abs)
@@ -349,4 +349,27 @@ func hasAnyTestFiles(rigDir string) bool {
 		return nil
 	})
 	return found
+}
+
+func projectFrontendFiles(rigDir string, includeScripts bool) []string {
+	var files []string
+	_ = filepath.WalkDir(rigDir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if d.IsDir() {
+			switch d.Name() {
+			case ".git", ".beads", "node_modules", ".venv", "venv":
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if d.Name() == "index.html" || (includeScripts && (strings.HasSuffix(d.Name(), ".js") || strings.HasSuffix(d.Name(), ".ts"))) {
+			if rel, err := filepath.Rel(rigDir, path); err == nil {
+				files = append(files, rel)
+			}
+		}
+		return nil
+	})
+	return files
 }

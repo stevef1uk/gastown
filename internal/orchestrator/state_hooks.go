@@ -5,13 +5,14 @@ import "strings"
 // StateHooks configures gt-agent behavior for one FSM state (declarative; no state-name switches in gt-agent).
 // Wire new behavior via templates/rig-flow.yaml — see prompt_context.go and town/README.md (§ FSM vs Go).
 type StateHooks struct {
-	MaxCmdTurns int `yaml:"max_cmd_turns,omitempty" json:"max_cmd_turns,omitempty"`
+	ExecutionBatchSize int `yaml:"execution_batch_size,omitempty" json:"execution_batch_size,omitempty"`
+	MaxCmdTurns        int `yaml:"max_cmd_turns,omitempty" json:"max_cmd_turns,omitempty"`
 	// Bound repeated rejected completion claims within an agent attempt; also
 	// pause repeated failed reviews across attempts when ProgressFiles are set.
-	NoProgressLimit int `yaml:"no_progress_limit,omitempty" json:"no_progress_limit,omitempty"`
-	ProgressFiles []string `yaml:"progress_files,omitempty" json:"progress_files,omitempty"`
+	NoProgressLimit int      `yaml:"no_progress_limit,omitempty" json:"no_progress_limit,omitempty"`
+	ProgressFiles   []string `yaml:"progress_files,omitempty" json:"progress_files,omitempty"`
 
-	PreRun   []string `yaml:"pre_run,omitempty" json:"pre_run,omitempty"`
+	PreRun []string `yaml:"pre_run,omitempty" json:"pre_run,omitempty"`
 	// OnTimeout runs when max_cmd_turns is exhausted in gt-agent (e.g. recover_implementation_stall).
 	OnTimeout []string `yaml:"on_timeout,omitempty" json:"on_timeout,omitempty"`
 	// OnStateTimeout runs on wall-clock state_timeout_seconds in the orchestrator manager (e.g. reset_implementation_phase).
@@ -24,12 +25,12 @@ type StateHooks struct {
 	// ConsecutiveCmdTimeoutThreshold sets how many consecutive command timeouts trigger automatic filing of a death warrant.
 	// After this many timeouts in a row, the agent files a death warrant for itself which boot will execute.
 	// 0 means disabled (default); 1 would cause a warrant to be filed after a single timeout.
-	ConsecutiveCmdTimeoutThreshold int `yaml:"consecutive_cmd_timeout_threshold,omitempty" json:"consecutive_cmd_timeout_threshold,omitempty"`
-	PerTurn  []string `yaml:"per_turn,omitempty" json:"per_turn,omitempty"`
+	ConsecutiveCmdTimeoutThreshold int      `yaml:"consecutive_cmd_timeout_threshold,omitempty" json:"consecutive_cmd_timeout_threshold,omitempty"`
+	PerTurn                        []string `yaml:"per_turn,omitempty" json:"per_turn,omitempty"`
 	// PromptContext lists prompt_context hook names (see orchestrator.PromptContextBlock).
 	// Example keys: planning_bead_bootstrap, implementation_queue.
 	PromptContext []string `yaml:"prompt_context,omitempty" json:"prompt_context,omitempty"`
-	CmdGuard string   `yaml:"cmd_guard,omitempty" json:"cmd_guard,omitempty"`
+	CmdGuard      string   `yaml:"cmd_guard,omitempty" json:"cmd_guard,omitempty"`
 	// CmdBeforeOutcomeNudge, when set, makes gt-agent reject a structured outcome
 	// (success/failure JSON) that arrives before ANY command ran this session, and
 	// re-prompt with this text ({{var}} substituted). Review states that must
@@ -65,11 +66,11 @@ type StateHooks struct {
 	EmptyBdListOK    bool `yaml:"empty_bd_list_ok,omitempty" json:"empty_bd_list_ok,omitempty"`
 
 	// Prompt framing (prefer these over if task.State in gt-agent).
-	OmitOrchestratorContext bool   `yaml:"omit_orchestrator_context,omitempty" json:"omit_orchestrator_context,omitempty"`
-	SystemPromptFooter      string `yaml:"system_prompt_footer,omitempty" json:"system_prompt_footer,omitempty"`
-	UserPromptWrapper       string `yaml:"user_prompt_wrapper,omitempty" json:"user_prompt_wrapper,omitempty"` // "none" = no "Complete this step only" prefix
+	OmitOrchestratorContext bool     `yaml:"omit_orchestrator_context,omitempty" json:"omit_orchestrator_context,omitempty"`
+	SystemPromptFooter      string   `yaml:"system_prompt_footer,omitempty" json:"system_prompt_footer,omitempty"`
+	UserPromptWrapper       string   `yaml:"user_prompt_wrapper,omitempty" json:"user_prompt_wrapper,omitempty"`       // "none" = no "Complete this step only" prefix
 	FailurePromptContext    []string `yaml:"failure_prompt_context,omitempty" json:"failure_prompt_context,omitempty"` // prompt_context keys on validation/empty-reply nudges only
-	EmptyResponseSuffix     string `yaml:"empty_response_suffix,omitempty" json:"empty_response_suffix,omitempty"`
+	EmptyResponseSuffix     string   `yaml:"empty_response_suffix,omitempty" json:"empty_response_suffix,omitempty"`
 	// AppendGoCompileContext injects head of .go files mentioned in failed go build/tidy output (stateless LLM repair).
 	AppendGoCompileContext bool `yaml:"append_go_compile_context,omitempty" json:"append_go_compile_context,omitempty"`
 	// NativeEditTools enables READ:/EDIT:/WRITE: file tools in gt-agent (preferred over sed/heredoc for implementation).
@@ -128,6 +129,9 @@ func (h StateHooks) ApplyOverrides(override StateHooks) StateHooks {
 	}
 	if len(override.ProgressFiles) > 0 {
 		h.ProgressFiles = override.ProgressFiles
+	}
+	if override.ExecutionBatchSize > 0 {
+		h.ExecutionBatchSize = override.ExecutionBatchSize
 	}
 	if override.MaxCmdTurns > 0 {
 		h.MaxCmdTurns = override.MaxCmdTurns

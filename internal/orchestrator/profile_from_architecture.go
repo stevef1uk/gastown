@@ -11,9 +11,9 @@ import (
 )
 
 var (
-	specLayoutDirRe   = regexp.MustCompile(`(?m)^([a-zA-Z][a-zA-Z0-9_-]*)/\s*$`)
+	specLayoutDirRe    = regexp.MustCompile(`(?m)^([a-zA-Z][a-zA-Z0-9_-]*)/\s*$`)
 	specTreeFileInLine = regexp.MustCompile(`([a-zA-Z0-9_.-]+\.(?:py|go|txt|md|yaml|yml|json|toml|mod|jsx|tsx|js|ts|css|html|sum))\b`)
-	profileArchDebug bool
+	profileArchDebug   bool
 )
 
 func init() {
@@ -734,6 +734,9 @@ func inferTestRunnerFromPaths(v WorkflowValidation, paths []string) WorkflowVali
 
 // ProjectSetupStackKind returns a short label for prompts (go, python, nodejs, docker, generic).
 func ProjectSetupStackKind(v WorkflowValidation) string {
+	if len(WorkflowComponents(v)) > 1 {
+		return "mixed"
+	}
 	if WorkflowUsesGo(v) {
 		return "go"
 	}
@@ -752,6 +755,8 @@ func ProjectSetupStackKind(v WorkflowValidation) string {
 // ProjectSetupFailureHint returns the failure_hint text for project_setup for this profile.
 func ProjectSetupFailureHint(v WorkflowValidation) string {
 	switch ProjectSetupStackKind(v) {
+	case "mixed":
+		return "Install and verify each declared component in its own package root: " + mixedComponentSetup(v)
 	case "go":
 		layout := v.LayoutRootDir()
 		return "Go rig: run go mod init/get/tidy under " + layout +
@@ -793,6 +798,9 @@ func ProjectSetupFailureHint(v WorkflowValidation) string {
 func FormatProjectSetupStackBlock(v WorkflowValidation) string {
 	scoped := v.ForActivePhase()
 	kind := ProjectSetupStackKind(scoped)
+	if kind == "mixed" {
+		return "## Component setup\n\nThis project has multiple package roots. Run each component setup in its own directory; preserve all declared toolchains. Do not replace one stack with another.\n\n`" + mixedComponentSetup(scoped) + "`\n"
+	}
 	verify := scoped.ProjectSetupVerifyHint()
 	req := scoped.RequirementsFilePath()
 	if req == "" {
@@ -2093,7 +2101,7 @@ func slugify(s string) string {
 // required_files, and layout_root mismatches. Returns "" when the profile is sound.
 // Used by the design_review QA step so spec-index guesswork is caught before planning.
 func ValidateRigWorkflowProfileForQA(townRoot, rig string, v WorkflowValidation) string {
-	var problems []string
+	problems := deliveryGraphProblems(v)
 	mayorRig := filepath.Join(townRoot, rig, "mayor", "rig")
 	spec, _ := os.ReadFile(filepath.Join(mayorRig, "SPEC.md"))
 	for _, title := range missingDeclaredPhases(DeclaredSpecPhaseHeadings(string(spec)), v.DeliveryPhases) {

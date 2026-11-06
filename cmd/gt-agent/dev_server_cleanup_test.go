@@ -122,7 +122,7 @@ func TestFreeDevServersBeforeCommand_skipsGoBuild(t *testing.T) {
 	}
 }
 
-func TestFreeDevServersBeforeCommand_freesPortInCommand(t *testing.T) {
+func TestFreeDevServersBeforeCommand_preservesUnknownOwner(t *testing.T) {
 	acquirePortTestSlot(t)
 	requirePortCleanupTools(t)
 	port, stop := startSubprocessPortHolder(t)
@@ -130,7 +130,9 @@ func TestFreeDevServersBeforeCommand_freesPortInCommand(t *testing.T) {
 	waitPortListening(t, port)
 	cmd := fmt.Sprintf("go run ./cmd/server & curl -sf http://127.0.0.1:%d/", port)
 	freeDevServersBeforeCommand(cmd)
-	waitPortFree(t, port)
+	if err := dialPort(port); err != nil {
+		t.Fatalf("unowned listener was killed: %v", err)
+	}
 }
 
 func TestKillTCPListeners_freesEphemeralPort(t *testing.T) {

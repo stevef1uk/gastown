@@ -1,7 +1,6 @@
 package main
 
 import (
-	"os/exec"
 	"regexp"
 	"strconv"
 	"strings"
@@ -20,6 +19,7 @@ var localhostPortRE = regexp.MustCompile(`(?i)(?:localhost|127\.0\.0\.1):(\d{2,5
 
 // devServerTracker records dev servers started during a QA or polecat work session.
 type devServerTracker struct {
+	rigDir    string
 	ports     map[int]struct{}
 	goRunSeen bool
 }
@@ -92,11 +92,11 @@ func shutdownStartedDevServers(t *devServerTracker) {
 		return
 	}
 	for port := range t.ports {
-		killTCPListeners(port)
+		if t.rigDir != "" {
+			_, _ = orchestrator.KillRigTCPListeners(port, t.rigDir)
+		}
 	}
-	if t.goRunSeen {
-		killGoRunServerProcesses()
-	}
+
 }
 
 func killTCPListeners(port int) {
@@ -107,27 +107,6 @@ func killTCPListeners(port int) {
 	orchestratedPrintf("[gt-agent] stopped listener on :%d (pids %s)\n", port, strings.Join(pids, ","))
 }
 
-func killGoRunServerProcesses() {
-	pkill, err := exec.LookPath("pkill")
-	if err != nil {
-		return
-	}
-	// Narrow patterns: polecat/QA smoke uses `go run` on cmd/server mains or `go run .` on flat layouts.
-	patterns := []string{
-		`go run.*cmd/server`,
-		`go run.*\/server/main`,
-		`go run \.`,
-		`go-build.*server\.test`,
-		`server\.test.*test\.`,
-	}
-	for _, pat := range patterns {
-		out, _ := exec.Command(pkill, "-f", pat).CombinedOutput()
-		if msg := strings.TrimSpace(string(out)); msg != "" {
-			orchestratedPrintf("[gt-agent] stopped go run server: %s\n", msg)
-		}
-	}
-}
-
 // commandStartsDevServer reports whether a shell command may bind a local HTTP port.
 func commandStartsDevServer(cmd string) bool {
 	return strings.Contains(strings.ToLower(cmd), "go run")
@@ -135,11 +114,14 @@ func commandStartsDevServer(cmd string) bool {
 
 // freeDevServersBeforeCommand stops listeners and go run server processes implied by cmd
 // before polecat/QA smoke tests (avoids "address already in use" from prior sessions).
-func freeDevServersBeforeCommand(cmd string) {
+func freeDevServersBeforeCommand(cmd string, rigDirs ...string) {
 	if !commandStartsDevServer(cmd) {
 		return
 	}
 	tr := newDevServerTracker()
+	if len(rigDirs) > 0 {
+		tr.rigDir = rigDirs[0]
+	}
 	tr.noteCommand(cmd)
 	orchestratedPrintf("[gt-agent] freeing dev server ports before go run\n")
 	shutdownStartedDevServers(tr)
@@ -148,6 +130,7 @@ func freeDevServersBeforeCommand(cmd string) {
 // buildStaleDevServerTracker collects ports/processes to scrub at polecat/QA task start.
 func buildStaleDevServerTracker(v orchestrator.WorkflowValidation, mayorRigDir string) *devServerTracker {
 	tr := newDevServerTracker()
+	tr.rigDir = mayorRigDir
 	for _, q := range []string{v.QAVerifyCommand, v.ActivePhaseQAVerifyCommand()} {
 		tr.noteCommand(q)
 	}

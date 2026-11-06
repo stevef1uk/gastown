@@ -132,36 +132,7 @@ func newStateRunner(task *orchestrator.Task, townRoot, rig string) *stateRunner 
 }
 
 func (r *stateRunner) maxTurns() int {
-	base := r.hooks.EffectiveMaxCmdTurns()
-	if base <= 0 {
-		base = 200
-	}
-	openCount := 0
-	if r.implProgress != nil && r.implProgress.BeadTurns != nil {
-		for beadID := range r.implProgress.BeadTurns {
-			if beadID != "" {
-				openCount++
-			}
-		}
-	}
-	base += openCount * 5
-	phase := r.v.ForActivePhase()
-	if len(phase.RequiredFiles) > 0 {
-		openCount := 0
-		for _, f := range phase.RequiredFiles {
-			if strings.Contains(f, "Implement ") || strings.Contains(f, "implement ") {
-				openCount++
-			}
-		}
-		if openCount > 0 {
-			dynamic := base + openCount*5
-			if dynamic > 500 {
-				dynamic = 500
-			}
-			return dynamic
-		}
-	}
-	return base
+	return r.hooks.EffectiveMaxCmdTurns()
 }
 
 func (r *stateRunner) runPreRun() error {
@@ -870,6 +841,9 @@ func (r *stateRunner) afterCommand(cmd string, cmdErr error, workDir, sessionNam
 	r.runAutoVerify(cmd, workDir, sessionName, cmdEnv, combined)
 	if cmdErr != nil {
 		if strings.EqualFold(strings.TrimSpace(r.hooks.Track), "qa") && qaCommandFailureNeedsCleanup(cmd) {
+			if r.servers != nil {
+				r.servers.rigDir = rigMayorRigDir(r.townRoot, r.rig)
+			}
 			shutdownStartedDevServers(r.servers)
 		}
 	}
@@ -892,12 +866,15 @@ func (r *stateRunner) beforeDevServerCommand(cmd string) {
 	if !trackNeedsDevServerCleanup(r.hooks.Track) {
 		return
 	}
-	freeDevServersBeforeCommand(cmd)
+	freeDevServersBeforeCommand(cmd, rigMayorRigDir(r.townRoot, r.rig))
 }
 
 func (r *stateRunner) shutdownStartedServers() {
 	if !trackNeedsDevServerCleanup(r.hooks.Track) {
 		return
+	}
+	if r.servers != nil {
+		r.servers.rigDir = rigMayorRigDir(r.townRoot, r.rig)
 	}
 	shutdownStartedDevServers(r.servers)
 }

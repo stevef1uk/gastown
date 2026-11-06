@@ -97,9 +97,19 @@ func runOrchestrated(ctx context.Context, client *llm.Client, townRoot, role, ri
 			continue
 		}
 		outcome, summary, attemptLog, runErr := executeOrchestratedTask(ctx, client, townRoot, taskRig, sessionName, task, state.OrchestratedRetry)
+		if runErr != nil && isPermanentLLMError(runErr) {
+			if _, pauseErr := orchestrator.PauseWorkflow(townRoot, task.WorkflowID); pauseErr != nil {
+				return fmt.Errorf("LLM resource failure (%v); pause failed: %w", runErr, pauseErr)
+			}
+			return fmt.Errorf("workflow paused; resolve credentials or resource budget before resuming: %w", runErr)
+		}
 		if runErr != nil && isRetriableLLMError(runErr) {
 			orchestratedPrintf("[gt-agent] LLM unavailable (%v) — not completing task; backing off before retry\n", runErr)
-			time.Sleep(90 * time.Second)
+			select {
+			case <-time.After(90 * time.Second):
+			case <-ctx.Done():
+				return ctx.Err()
+			}
 			state.LastActivity = time.Now()
 			_ = saveState(stateFile, state)
 			continue
@@ -162,29 +172,10 @@ func ensureLLMReachableForImplementation(ctx context.Context, client *llm.Client
 	return nil
 }
 
-// completeMessagesWithRetry wraps CompleteMessages with an in-turn retry for
-// transient LLM failures (quota/rate-limit/credits/5xx). A transient provider
-// error should not fail the task — retry the call a second time before giving up.
+// completeMessagesWithRetry delegates to the HTTP client, which owns the single
+// retry allowance and charges admission for each attempt.
 func completeMessagesWithRetry(ctx context.Context, client *llm.Client, messages []llm.Message, turn int) (string, error) {
-	const maxAttempts = 2
-	var lastErr error
-	for attempt := 1; attempt <= maxAttempts; attempt++ {
-		resp, err := client.CompleteMessages(ctx, messages)
-		if err == nil {
-			return resp, nil
-		}
-		lastErr = err
-		if !isRetriableLLMError(err) || attempt == maxAttempts {
-			break
-		}
-		orchestratedPrintf("[gt-agent] transient LLM error (turn %d, attempt %d/%d): %v — retrying\n", turn, attempt, maxAttempts, err)
-		select {
-		case <-time.After(30 * time.Second):
-		case <-ctx.Done():
-			return "", ctx.Err()
-		}
-	}
-	return "", lastErr
+	return client.CompleteMessages(ctx, messages)
 }
 
 func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, rig, sessionName string, task *orchestrator.Task, priorRetry *OrchestratedRetry) (outcome, summary, attemptLog string, err error) {
@@ -269,6 +260,12 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 		{Role: "user", Content: userPrompt},
 	}
 
+	previousAdmission, previousHeaders := client.BeforeRequest, client.TaskHeaders
+	defer func() { client.BeforeRequest, client.TaskHeaders = previousAdmission, previousHeaders }()
+	client.BeforeRequest = func(tokens int64) error {
+		return orchestrator.ReserveWorkflowLLMRequest(townRoot, rig, task.WorkflowID, tokens)
+	}
+	client.TaskHeaders = map[string]string{"X-GasTown-Workflow": task.WorkflowID, "X-GasTown-Rig": rig, "X-GasTown-State": task.State}
 	var lastAttemptFeedback strings.Builder
 	// Preserve the most recent failure JSON that was ignored because it shared a
 	// turn with CMD lines, so a genuine QA verdict isn't lost when turns exhaust.
@@ -286,6 +283,7 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 		}
 	}
 
+	batchStart := runner.closedCheckpointCount()
 	maxTurns := runner.maxTurns()
 	if err := ensureLLMReachableForImplementation(ctx, client, task, maxTurns); err != nil {
 		return "failure", err.Error(), "", err
@@ -295,13 +293,15 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 		if rig != "" && orchestrator.IsRigWorkflowPaused(townRoot, rig) {
 			return "failure", "workflow paused", lastAttemptFeedback.String(), orchestrator.ErrWorkflowPaused
 		}
+		if runner.executionBatchReady(batchStart) {
+			return "timeout", "Execution batch checkpointed; resume the remaining queue without reopening verified beads", lastAttemptFeedback.String(), nil
+		}
 		orchestratedPrintf("[gt-agent] LLM request (turn %d)...\n", turn)
 
-		// Track per-bead turns; if a bead exceeds 20 turns, delete its file for regeneration
+		// Count durable per-bead attempts without deleting delivered artifacts.
 		if runner.track.activeBead != "" {
 			if runner.addBeadTurn(runner.track.activeBead) {
-				// After 2x the turn limit with substantive content, force failure
-				// to prevent infinite loops (LLM keeps repeating "blocked").
+				// Return a bounded repair failure for planning to reassess the task.
 				orchestratedPrintf("[gt-agent] bead %s exceeded turn limit; forcing failure\n", runner.track.activeBead)
 				outcome = "failure"
 				summary = fmt.Sprintf("bead %s exceeded turn limit — bead cannot complete within scope", runner.track.activeBead)
@@ -525,11 +525,6 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 				if runner.openBeadCircuitBreakerTripped() {
 					orchestratedPrintf("[gt-agent] open-bead circuit breaker tripped after %d rejections — forcing implementation fail back to planning\n", OpenBeadCircuitBreakerThreshold)
 					summary := "Open implement beads remain after repeated success JSON; LLM stuck in open-bead hallucination loop. Routing back to planning so the bead set can be repaired and re-planned."
-					if reopened, err := orchestrator.ReopenAllPhaseImplementBeads(townRoot, rig, runner.v); err != nil {
-						orchestratedFprintfStderr("[gt-agent] failed to reopen phase beads on circuit breaker: %v\n", err)
-					} else if len(reopened) > 0 {
-						orchestratedPrintf("[gt-agent] reopened %d phase beads before routing to planning\n", len(reopened))
-					}
 					return "fail", summary, lastAttemptFeedback.String() + msg + "\n", fmt.Errorf("open-bead circuit breaker tripped")
 				}
 				recordAttemptFeedback(msg + "\n")
@@ -588,8 +583,7 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 		// For implementation, give a concrete tool example so free models break out of the reasoning loop
 		if runner.task != nil && runner.task.State == "implementation" && runner.consecutiveNonTerminalJSONRejects >= 1 {
 			hint = "You have not executed any CMD: or WRITE: tool this turn — reasoning alone does NOT change files. " +
-				"You MUST now use a tool. Example for this rig: `WRITE: pingapp/test_main.py` or `CMD: cat > pingapp/test_main.py <<'EOF' ... EOF` " +
-				"then `CMD: cd pingapp && python3 -m pytest -q`. " + hint
+				"Use READ:/EDIT:/WRITE: for the Next bead path and its configured Verify command. " + hint
 		}
 		recordAttemptFeedback(hint + "\n")
 		messages = append(messages, llm.Message{Role: "user", Content: hint})
@@ -609,12 +603,6 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 			summary := fmt.Sprintf("%s exhausted %d CMD turns", task.State, maxTurns)
 			if logLine != "" {
 				summary += "; " + logLine
-			}
-			// Reopen all beads in current delivery phase when timeout occurs
-			if reopened, err := orchestrator.ReopenAllPhaseImplementBeads(townRoot, rig, runner.v); err != nil {
-				orchestratedFprintfStderr("[gt-agent] failed to reopen phase beads on timeout: %v\n", err)
-			} else if len(reopened) > 0 {
-				orchestratedPrintf("[gt-agent] reopened %d beads in current delivery phase due to timeout\n", len(reopened))
 			}
 			return "timeout", summary, lastAttemptFeedback.String(), fmt.Errorf("no structured outcome after %d turns", maxTurns)
 		}

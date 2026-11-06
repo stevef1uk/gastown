@@ -187,6 +187,9 @@ func (v WorkflowValidation) FindDeliveryPhaseForFile(filePath string) int {
 // FileInCompletedPhase reports whether the file belongs to a phase that has already completed
 // (i.e., its phase index is strictly less than the active phase index).
 func (v WorkflowValidation) FileInCompletedPhase(filePath string) bool {
+	if p, ok := v.ActivePhase(); ok && pathMatchesRequired(filePath, p.RequiredFiles) {
+		return false
+	}
 	idx := v.FindDeliveryPhaseForFile(filePath)
 	if idx < 0 {
 		return false
@@ -985,10 +988,10 @@ func sequenceDeliveryPhasesByImports(v WorkflowValidation) WorkflowValidation {
 
 	// Collect tests that need to be moved
 	type movePlan struct {
-		testPath   string
-		fromPhase  int
-		toPhase    int
-		stubFiles  []string
+		testPath  string
+		fromPhase int
+		toPhase   int
+		stubFiles []string
 	}
 	var plans []movePlan
 

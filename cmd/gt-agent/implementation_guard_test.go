@@ -13,11 +13,11 @@ import (
 func TestIsRetriableLLMError(t *testing.T) {
 	t.Parallel()
 	err := errors.New(`LLM API error (status 403): {"error":{"message":"Key limit exceeded (monthly limit)"}}`)
-	if !isRetriableLLMError(err) {
-		t.Fatal("expected 403 quota to be retriable")
+	if isRetriableLLMError(err) {
+		t.Fatal("403 quota must stop dispatch")
 	}
-	if !isRetriableLLMError(errors.New(`LLM API error (status 402): {"error":{"message":"This request requires more credits"}}`)) {
-		t.Fatal("expected 402 credits to be retriable")
+	if isRetriableLLMError(errors.New(`LLM API error (status 402): {"error":{"message":"This request requires more credits"}}`)) {
+		t.Fatal("402 credits must stop dispatch")
 	}
 	if !isRetriableLLMError(errors.New(`empty completion (no choices in response): requested=openrouter/free actual=openrouter/free`)) {
 		t.Fatal("expected empty completion to be retriable")

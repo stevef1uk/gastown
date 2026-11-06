@@ -125,7 +125,15 @@ func (m *Manager) persistLocked() error {
 		os.Remove(tmpPath)
 		return fmt.Errorf("write temp: %w", err)
 	}
-	f.Close()
+	if err := f.Sync(); err != nil {
+		f.Close()
+		os.Remove(tmpPath)
+		return err
+	}
+	if err := f.Close(); err != nil {
+		os.Remove(tmpPath)
+		return err
+	}
 	if err := os.Rename(tmpPath, path); err != nil {
 		os.Remove(tmpPath)
 		return err

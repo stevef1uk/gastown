@@ -1,6 +1,7 @@
 package orchestrator
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -18,22 +19,23 @@ const (
 	SignalPolecatSessionMissing      WorkflowStuckSignal = "polecat_session_missing"
 	SignalNonRequiredImplementBeads  WorkflowStuckSignal = "non_required_implement_beads"
 	SignalMissingIntegrationContract WorkflowStuckSignal = "missing_integration_contract"
-	SignalPlanningDocsMisaligned       WorkflowStuckSignal = "planning_docs_misaligned"
+	SignalPlanningDocsMisaligned     WorkflowStuckSignal = "planning_docs_misaligned"
 )
 
 // WorkflowStuckEvalInput is the pure snapshot for stuck detection (testable without daemon).
 type WorkflowStuckEvalInput struct {
-	Now                   time.Time
-	Config                WorkflowStuckConfig
-	Guard                 WorkflowStuckGuard
-	CurrentState          string
-	StateEnteredAt        string
-	PendingRework         bool
-	BeadFingerprint       string
-	LastBeadFingerprint   string
-	PolecatRunning        bool
-	NonRequiredBeadCount  int
-	MissingIntegration    bool
+	Now                    time.Time
+	Config                 WorkflowStuckConfig
+	Guard                  WorkflowStuckGuard
+	CurrentState           string
+	StateEnteredAt         string
+	PendingRework          bool
+	BeadFingerprint        string
+	LastProgressAt         time.Time
+	LastBeadFingerprint    string
+	PolecatRunning         bool
+	NonRequiredBeadCount   int
+	MissingIntegration     bool
 	PlanningDocsMisaligned bool
 }
 
@@ -62,15 +64,19 @@ func EvalWorkflowStuck(in WorkflowStuckEvalInput) WorkflowStuckEvalResult {
 		grace = 10 * time.Minute
 	}
 
-	if in.PendingRework && hasEntered && inState >= in.Config.ReworkLinger {
+	idle := inState
+	if !in.LastProgressAt.IsZero() {
+		idle = now.Sub(in.LastProgressAt)
+	}
+	if in.PendingRework && hasEntered && idle >= in.Config.ReworkLinger {
 		signals = append(signals, SignalPendingReworkLinger)
 		parts = append(parts, fmt.Sprintf("pending_rework for %s", inState.Round(time.Second)))
 	}
 
 	if in.Guard.InBeadProgressStates(in.CurrentState) && hasEntered && inState > grace {
-		if in.BeadFingerprint != "" && in.BeadFingerprint == in.LastBeadFingerprint && inState >= in.Config.IdleAfter {
+		if in.BeadFingerprint != "" && in.BeadFingerprint == in.LastBeadFingerprint && idle >= in.Config.IdleAfter {
 			signals = append(signals, SignalPhaseIdleNoBeadProgress)
-			parts = append(parts, fmt.Sprintf("no bead progress in %s for %s", in.CurrentState, inState.Round(time.Second)))
+			parts = append(parts, fmt.Sprintf("no bead progress in %s for %s", in.CurrentState, idle.Round(time.Second)))
 		}
 	}
 
@@ -125,6 +131,13 @@ func ImplementBeadProgressFingerprint(townRoot, rig string, v WorkflowValidation
 	}
 	if len(parts) == 0 {
 		return "", nil
+	}
+	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
+	for _, file := range v.RequiredFiles {
+		data, err := os.ReadFile(filepath.Join(rigDir, file))
+		if err == nil {
+			parts = append(parts, fmt.Sprintf("source:%s:%x", file, sha256.Sum256(data)))
+		}
 	}
 	sort.Strings(parts)
 	return strings.Join(parts, "|"), nil

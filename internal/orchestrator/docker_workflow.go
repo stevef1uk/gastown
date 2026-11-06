@@ -355,10 +355,10 @@ func isRigFlowNonImplementPath(path string) bool {
 	}
 	// Rig-level documentation files (at any depth — these are gastown-generated, not app code)
 	rigDocs := map[string]bool{
-		"plan.md":          true,
-		"architecture.md":  true,
-		"test_plan.md":     true,
-		"test-report.md":   true,
+		"plan.md":               true,
+		"architecture.md":       true,
+		"test_plan.md":          true,
+		"test-report.md":        true,
 		"workflow-profile.json": true,
 	}
 	return rigDocs[base]
@@ -526,10 +526,21 @@ func SanitizeRigFlowProfile(v WorkflowValidation, rig ...string) WorkflowValidat
 		} else {
 			v.BeadTitleContains = "Implement "
 		}
-	case "Implement finally/":
-		// spec-index often confuses rig name with layout_root on flat mayor/rig worktrees
-		if layout == "." {
-			v.BeadTitleContains = "Implement "
+	default:
+		// Drop a nonexistent layout prefix only when actual required paths
+		// prove it is stale. Incomplete profiles retain their declared title.
+		if layout == "." && len(v.RequiredFiles) > 0 && strings.HasPrefix(v.BeadTitleContains, "Implement ") && strings.HasSuffix(v.BeadTitleContains, "/") {
+			prefix := strings.TrimPrefix(v.BeadTitleContains, "Implement ")
+			matches := false
+			for _, file := range v.RequiredFiles {
+				if strings.HasPrefix(file, prefix) {
+					matches = true
+					break
+				}
+			}
+			if !matches {
+				v.BeadTitleContains = "Implement "
+			}
 		}
 	}
 	sanitizeFrontendOnlyPhaseQA(&v)

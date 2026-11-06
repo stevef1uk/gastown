@@ -15,27 +15,17 @@ func isRetriableLLMError(err error) bool {
 	if err == nil {
 		return false
 	}
+	if isPermanentLLMError(err) {
+		return false
+	}
 	s := strings.ToLower(err.Error())
-	return strings.Contains(s, "402") ||
-		strings.Contains(s, "403") ||
-		strings.Contains(s, "429") ||
-		strings.Contains(s, "limit exceeded") ||
-		strings.Contains(s, "rate limit") ||
-		strings.Contains(s, "quota") ||
-		strings.Contains(s, "credits") ||
-		strings.Contains(s, "payment required") ||
-		strings.Contains(s, "billing") ||
-		strings.Contains(s, "afford") ||
-		strings.Contains(s, "no choices") ||
-		strings.Contains(s, "empty completion") ||
-		strings.Contains(s, "provider_unavailable") ||
-		strings.Contains(s, "no models available") ||
-		strings.Contains(s, "service unavailable") ||
-		strings.Contains(s, "bad gateway") ||
-		strings.Contains(s, "status 500") ||
-		strings.Contains(s, "status 502") ||
-		strings.Contains(s, "status 503") ||
-		strings.Contains(s, "status 504")
+	return strings.Contains(s, "429") || strings.Contains(s, "rate limit") ||
+		strings.Contains(s, "empty completion") || strings.Contains(s, "no choices") ||
+		strings.Contains(s, "provider_unavailable") || strings.Contains(s, "no models available") ||
+		strings.Contains(s, "service unavailable") || strings.Contains(s, "bad gateway") ||
+		strings.Contains(s, "status 500") || strings.Contains(s, "status 502") ||
+		strings.Contains(s, "status 503") || strings.Contains(s, "status 504")
+
 }
 
 // noteImplementationFixAttempt marks that this task attempt did real fix work (not read-only inspection).
@@ -667,6 +657,19 @@ func summaryClaimsMissingFiles(summary string) bool {
 		"cannot cd", "can't cd", "cd to", "working directory",
 	} {
 		if strings.Contains(lower, needle) {
+			return true
+		}
+	}
+	return false
+}
+
+func isPermanentLLMError(err error) bool {
+	if err == nil {
+		return false
+	}
+	s := strings.ToLower(err.Error())
+	for _, word := range []string{"status 401", "status 402", "status 403", "payment required", "credits", "billing", "insufficient quota", "insufficient_quota", "execution budget", "invalid api key"} {
+		if strings.Contains(s, word) {
 			return true
 		}
 	}

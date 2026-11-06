@@ -73,8 +73,8 @@ func TestClearImplementationProgressIfLeaving(t *testing.T) {
 		t.Fatal("should not clear when staying in implementation")
 	}
 	clearImplementationProgressIfLeaving(dir, rig, "implementation", "qa_review")
-	if loadImplementationProgress(dir, rig, "wf-1", "implementation") != nil {
-		t.Fatal("should clear when leaving implementation")
+	if loadImplementationProgress(dir, rig, "wf-1", "implementation") == nil {
+		t.Fatal("review must preserve counters and checkpoints")
 	}
 }
 
