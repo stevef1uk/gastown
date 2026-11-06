@@ -280,9 +280,7 @@ func TestValidatePlanningBeadCreate_blocksWhenRequiredFilesCovered(t *testing.T)
 
 func TestRunOnTimeoutHook_resetPlanningPhase_delegates(t *testing.T) {
 	t.Parallel()
-	if _, err := exec.LookPath("bd"); err != nil {
-		t.Skip("bd not in PATH")
-	}
+	requireBdIntegration(t)
 	townRoot := t.TempDir()
 	rig := "mockrig"
 	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
@@ -383,9 +381,7 @@ func TestOrderRequiredFilesForImplementation_webBeforeHandlers(t *testing.T) {
 }
 
 func TestEnforceSingleImplementInProgress_reopensOffHeadBead(t *testing.T) {
-	if _, err := exec.LookPath("bd"); err != nil {
-		t.Skip("bd not in PATH")
-	}
+	requireBdIntegration(t)
 	townRoot := t.TempDir()
 	rig := "mockrig"
 	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
@@ -463,9 +459,7 @@ func TestBeadsDatabaseReady_falseWithoutInit(t *testing.T) {
 }
 
 func TestReopenClosedImplementBeadsForMissingOpenRequired_reopensClosedOnlyPaths(t *testing.T) {
-	if _, err := exec.LookPath("bd"); err != nil {
-		t.Skip("bd not in PATH")
-	}
+	requireBdIntegration(t)
 	townRoot := t.TempDir()
 	rig := "mockrig"
 	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
@@ -558,9 +552,7 @@ func TestReopenClosedImplementBeadsForMissingOpenRequired_reopensClosedOnlyPaths
 }
 
 func TestPruneDuplicateImplementBeads_openAndInProgressSamePath(t *testing.T) {
-	if _, err := exec.LookPath("bd"); err != nil {
-		t.Skip("bd not in PATH")
-	}
+	requireBdIntegration(t)
 	townRoot := t.TempDir()
 	rig := "mockrig"
 	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
@@ -627,9 +619,7 @@ func TestPruneDuplicateImplementBeads_openAndInProgressSamePath(t *testing.T) {
 }
 
 func TestPruneDuplicateImplementBeads_duplicateBasenames(t *testing.T) {
-	if _, err := exec.LookPath("bd"); err != nil {
-		t.Skip("bd not in PATH")
-	}
+	requireBdIntegration(t)
 	townRoot := t.TempDir()
 	rig := "finally"
 	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")

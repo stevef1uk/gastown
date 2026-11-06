@@ -1,16 +1,15 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/steveyegge/gastown/internal/session"
-	"github.com/steveyegge/gastown/internal/tmux"
 )
 
 func TestBootSpawnAgentFlag(t *testing.T) {
@@ -61,9 +60,6 @@ func readTestWarrant(t *testing.T, dir string, target string) Warrant {
 // This covers the normal case during degraded triage: sessions have been killed
 // by other means, or the warrant fires in the same cycle that restarts everything.
 func TestExecuteWarrants_MarksPendingAsExecuted(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("skipping warrant execution test on Windows (no tmux)")
-	}
 	// Register prefixes so targetToSessionName can resolve "gastown" → "gt"
 	setupWarrantTestRegistry(t)
 
@@ -79,7 +75,7 @@ func TestExecuteWarrants_MarksPendingAsExecuted(t *testing.T) {
 	}
 	writeTestWarrant(t, warrantDir, pending)
 
-	sp := session.NewTmuxProvider(tmux.NewTmux(), warrantDir)
+	sp := absentWarrantSessions{}
 	executeWarrants(warrantDir, sp)
 
 	result := readTestWarrant(t, warrantDir, pending.Target)
@@ -110,7 +106,7 @@ func TestExecuteWarrants_SkipsAlreadyExecuted(t *testing.T) {
 	}
 	writeTestWarrant(t, warrantDir, done)
 
-	sp := session.NewTmuxProvider(tmux.NewTmux(), warrantDir)
+	sp := absentWarrantSessions{}
 	executeWarrants(warrantDir, sp)
 
 	result := readTestWarrant(t, warrantDir, done.Target)
@@ -126,7 +122,7 @@ func TestExecuteWarrants_SkipsAlreadyExecuted(t *testing.T) {
 // TestExecuteWarrants_MissingDir verifies that executeWarrants handles a
 // missing warrants directory gracefully (no panic, no error).
 func TestExecuteWarrants_MissingDir(t *testing.T) {
-	sp := session.NewTmuxProvider(tmux.NewTmux(), t.TempDir())
+	sp := absentWarrantSessions{}
 	missingDir := filepath.Join(t.TempDir(), "does-not-exist")
 	executeWarrants(missingDir, sp) // should not panic
 }
@@ -135,7 +131,7 @@ func TestExecuteWarrants_MissingDir(t *testing.T) {
 // empty warrants directory gracefully.
 func TestExecuteWarrants_EmptyDir(t *testing.T) {
 	warrantDir := t.TempDir()
-	sp := session.NewTmuxProvider(tmux.NewTmux(), warrantDir)
+	sp := absentWarrantSessions{}
 	executeWarrants(warrantDir, sp) // should not panic
 }
 
@@ -146,6 +142,11 @@ func TestExecuteWarrants_IgnoresNonWarrantFiles(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(warrantDir, "readme.txt"), []byte("ignore me"), 0644); err != nil {
 		t.Fatalf("writing test file: %v", err)
 	}
-	sp := session.NewTmuxProvider(tmux.NewTmux(), warrantDir)
+	sp := absentWarrantSessions{}
 	executeWarrants(warrantDir, sp) // should not panic or error
 }
+
+// Warrant tests model already-dead targets; they never need a real tmux daemon.
+type absentWarrantSessions struct{ session.Provider }
+
+func (absentWarrantSessions) Exists(context.Context, string) (bool, error) { return false, nil }

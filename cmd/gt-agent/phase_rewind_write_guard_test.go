@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/steveyegge/gastown/internal/orchestrator"
+	"github.com/steveyegge/gastown/internal/testutil"
 )
 
 // TestValidateImplementationBeadFileWrite_rewindsToOwningPhase verifies that writing to a closed
@@ -86,6 +87,9 @@ EOF`
 
 func setupPhasedRigForGuardTest(t *testing.T) (townRoot, rig, rigDir, beadsDir string) {
 	t.Helper()
+	if !testutil.DoltTestsRequested() {
+		t.Skip("live Beads/Dolt fixture: run make test-integration (GT_DOLT_TESTS=1)")
+	}
 	if _, err := exec.LookPath("bd"); err != nil {
 		t.Skip("bd not in PATH")
 	}
@@ -110,9 +114,9 @@ func setupPhasedRigForGuardTest(t *testing.T) (townRoot, rig, rigDir, beadsDir s
 func writeGuardTestPhasedProfile(t *testing.T, townRoot, rig, activePhase string) {
 	t.Helper()
 	v := orchestrator.WorkflowValidation{
-		LayoutRoot:          "linkshelf",
-		BeadTitleContains:   "Implement ",
-		MinPlanBytes:        100,
+		LayoutRoot:           "linkshelf",
+		BeadTitleContains:    "Implement ",
+		MinPlanBytes:         100,
 		MinArchitectureBytes: 200,
 		QAVerifyCommand:      "cd linkshelf && go test ./...",
 		DeliveryPhases: []orchestrator.DeliveryPhase{

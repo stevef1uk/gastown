@@ -41,7 +41,7 @@ func TestDesignReworkRequiresCurrentAmendment(t *testing.T) {
 				t.Fatal("reading the existing document must not auto-complete rework")
 			}
 			output.Reset()
-			r.processOrchestratedTools("CMD: sed -i 's/old-contract/repaired-contract/' example/mayor/rig/architecture.md", "test", &output)
+			r.processOrchestratedTools("CMD: sed -i.bak 's/old-contract/repaired-contract/' example/mayor/rig/architecture.md", "test", &output)
 			if !r.track.designArchWritten {
 				t.Fatalf("targeted edit did not count as amendment: %s", output.String())
 			}

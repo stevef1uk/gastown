@@ -42,9 +42,7 @@ func TestPlanReviewSpuriousFailureReason_integrationContract(t *testing.T) {
 }
 
 func TestPlanReviewSpuriousFailureReason_missingBead(t *testing.T) {
-	if _, err := exec.LookPath("bd"); err != nil {
-		t.Skip("bd not in PATH")
-	}
+	requireBdIntegration(t)
 	townRoot := t.TempDir()
 	rig := "mockrig"
 	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
@@ -86,8 +84,8 @@ func TestRejectSpuriousQAFailure_verifyPassesBeforeShellError(t *testing.T) {
 		t.Fatal(err)
 	}
 	env := rigProfileEnvelope{
-		Version: 1,
-		Source:  "test",
+		Version:    1,
+		Source:     "test",
 		Validation: WorkflowValidation{
 			// No Go/Python/smoke triggers — phaseVerifyPasses returns nil (passes).
 		},

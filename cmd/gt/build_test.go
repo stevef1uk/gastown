@@ -35,12 +35,17 @@ func TestCrossPlatformBuild(t *testing.T) {
 		{"freebsd", "amd64", "0"},
 	}
 
+	// Cross builds each launch their own compiler/linker pool. Bound them so
+	// a normal make test does not multiply host-wide memory and disk pressure.
+	buildSlots := make(chan struct{}, 2)
 	for _, p := range platforms {
 		p := p // capture range variable
 		t.Run(p.goos+"_"+p.goarch, func(t *testing.T) {
 			t.Parallel()
+			buildSlots <- struct{}{}
+			defer func() { <-buildSlots }()
 
-			cmd := exec.Command("go", "build", "-o", os.DevNull, ".")
+			cmd := exec.Command("go", "build", "-p", "2", "-o", os.DevNull, ".")
 			cmd.Dir = "."
 			cmd.Env = append(os.Environ(),
 				"GOOS="+p.goos,

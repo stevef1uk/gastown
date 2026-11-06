@@ -143,7 +143,7 @@ func TestSelfManagedPythonSmokePreservesStatusAndLogs(t *testing.T) {
 				workdir = filepath.Join(dir, "missing")
 			}
 			log := filepath.Join(dir, "server.log")
-			input := fmt.Sprintf(`cd %s && (uvicorn main:app --port 8080 >%s 2>&1 & pid=$!; sleep 0.05; curl --fail http://localhost:8080/probe; status=$?; kill "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true; exit "$status")`, shellQuote(workdir), shellQuote(log))
+			input := fmt.Sprintf(`cd %s && (uvicorn main:app --port 8080 >%s 2>&1 & pid=$!; for attempt in 1 2 3 4 5 6 7 8 9 10; do test -s %s && break; sleep 0.05; done; curl --fail http://localhost:8080/probe; status=$?; kill "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true; exit "$status")`, shellQuote(workdir), shellQuote(log), shellQuote(log))
 			v := orchestrator.WorkflowValidation{TestRunner: "pytest", RequiredFiles: []string{"service/main.py"}}
 			script, _ := normalizeGoDevServerSmokeCommand(input, dir, "sample", v)
 			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
@@ -159,8 +159,20 @@ func TestSelfManagedPythonSmokePreservesStatusAndLogs(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			if ctx.Err() != nil || status != tc.status {
-				t.Fatalf("status=%d want=%d, timeout=%v\n%s\n%s", status, tc.status, ctx.Err(), out, script)
+			wantStatus := tc.status
+			if tc.badCD {
+				// Preserve this shell's native cd failure status instead of
+				// assuming dash's status 2 on macOS's bash-based /bin/sh.
+				baseline := exec.CommandContext(ctx, "/bin/sh", "-c", "cd "+shellQuote(workdir))
+				baselineErr := baseline.Run()
+				exit, ok := baselineErr.(*exec.ExitError)
+				if !ok {
+					t.Fatalf("expected native cd failure, got %v", baselineErr)
+				}
+				wantStatus = exit.ExitCode()
+			}
+			if ctx.Err() != nil || status != wantStatus {
+				t.Fatalf("status=%d want=%d, timeout=%v\n%s\n%s", status, wantStatus, ctx.Err(), out, script)
 			}
 			if !tc.badCD {
 				data, err := os.ReadFile(log)

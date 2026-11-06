@@ -77,9 +77,7 @@ func TestExtractKnownRigBeadIDsFromSummary_usesRigPrefix(t *testing.T) {
 // Without this reopen the polecat re-enters implementation with an empty queue,
 // verify trivially passes, and the workflow loops test_review ↔ implementation.
 func TestReopenImplementationBeadsAfterTestFailure_reopensCitedAndStubTestBeads(t *testing.T) {
-	if _, err := exec.LookPath("bd"); err != nil {
-		t.Skip("bd not in PATH")
-	}
+	requireBdIntegration(t)
 	dir := t.TempDir()
 	rig := "rig"
 	rigDir := filepath.Join(dir, rig, "mayor", "rig")
@@ -97,7 +95,7 @@ func TestReopenImplementationBeadsAfterTestFailure_reopensCitedAndStubTestBeads(
 		cmd := exec.Command("bd", args...)
 		cmd.Env = bdEnv
 		cmd.Dir = rigDir
-		out, err := cmd.CombinedOutput()
+		out, err := cmd.Output()
 		if err != nil {
 			t.Fatalf("bd %v: %v\n%s", args, err, out)
 		}

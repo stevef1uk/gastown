@@ -146,9 +146,7 @@ func TestTesterRepairScopesAndOwnershipGaps(t *testing.T) {
 }
 
 func TestTesterRepairManagerRoutesOwnedWorkAndPlanGaps(t *testing.T) {
-	if _, err := exec.LookPath("bd"); err != nil {
-		t.Skip("bd unavailable")
-	}
+	requireBdIntegration(t)
 	for _, tc := range []struct {
 		name, source, test string
 		gap                bool

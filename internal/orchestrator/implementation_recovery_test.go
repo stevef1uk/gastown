@@ -62,11 +62,11 @@ func TestRemoveLayoutSourceCodeFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 	for path, body := range map[string]string{
-		storeGo:    "package store\n",
-		storeTest:  "package store\n",
-		py:         "x = 1\n",
-		filepath.Join(layout, "go.mod"):        "module applayout\n\ngo 1.22\n",
-		filepath.Join(layout, "go.sum"):         "applayout v0.0.0\n",
+		storeGo:                         "package store\n",
+		storeTest:                       "package store\n",
+		py:                              "x = 1\n",
+		filepath.Join(layout, "go.mod"): "module applayout\n\ngo 1.22\n",
+		filepath.Join(layout, "go.sum"): "applayout v0.0.0\n",
 		filepath.Join(layout, "requirements.txt"): "pytest\n",
 	} {
 		if err := os.WriteFile(path, []byte(body), 0644); err != nil {
@@ -165,7 +165,7 @@ func TestImplementArtifactPathsForActiveBeads(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := map[string]bool{
-		"linkshelf/web/index.html":         true,
+		"linkshelf/web/index.html":           true,
 		"linkshelf/internal/api/handlers.go": true,
 	}
 	if len(paths) != len(want) {
@@ -199,9 +199,7 @@ func TestClearImplementationProgressFile(t *testing.T) {
 }
 
 func TestHardResetImplementationPhase_removesActiveBeadFiles(t *testing.T) {
-	if _, err := exec.LookPath("bd"); err != nil {
-		t.Skip("bd not in PATH")
-	}
+	requireBdIntegration(t)
 	dir := t.TempDir()
 	rig := "rig"
 	rigDir := filepath.Join(dir, rig, "mayor", "rig")

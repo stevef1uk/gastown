@@ -1,11 +1,13 @@
 package agentenv
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 const DefaultPythonVenvDir = ".venv"
@@ -17,6 +19,14 @@ func VenvPython(workDir, venvRel string) string {
 
 // EnsureVenv creates workDir/venvRel when missing using hostPython (-m venv).
 func EnsureVenv(workDir, venvRel, hostPython string) (venvPython string, created bool, err error) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	return EnsureVenvContext(ctx, workDir, venvRel, hostPython)
+}
+
+// EnsureVenvContext bounds interpreter bootstrap, including a stalled shim or
+// ensurepip subprocess. Environment preparation must not outlive its caller.
+func EnsureVenvContext(ctx context.Context, workDir, venvRel, hostPython string) (venvPython string, created bool, err error) {
 	if venvRel == "" {
 		return "", false, fmt.Errorf("empty venv dir")
 	}
@@ -29,9 +39,13 @@ func EnsureVenv(workDir, venvRel, hostPython string) (venvPython string, created
 		host = "python3"
 	}
 	venvPath := filepath.Join(workDir, venvRel)
-	cmd := exec.Command(host, "-m", "venv", venvPath)
+	cmd := exec.CommandContext(ctx, host, "-m", "venv", venvPath)
+	cmd.WaitDelay = 2 * time.Second
 	cmd.Dir = workDir
 	if out, runErr := cmd.CombinedOutput(); runErr != nil {
+		if ctx.Err() != nil {
+			return "", false, fmt.Errorf("creating Python environment: %w", ctx.Err())
+		}
 		return "", false, fmt.Errorf("%w: %s", runErr, strings.TrimSpace(string(out)))
 	}
 	if !isExecutable(venvPython) {

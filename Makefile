@@ -215,8 +215,11 @@ check-version-tag:
 clean:
 	rm -f $(BUILD_DIR)/$(BINARY)
 
+# Bound package concurrency: tests also launch git, Python and cross-build tools.
+TEST_PACKAGE_PARALLELISM ?= 2
+
 test:
-	go test ./... -tags='!integration'
+	go test -p $(TEST_PACKAGE_PARALLELISM) ./...
 
 # test-integration: Docker/Dolt/LLM-backed tests. Requires Docker running and
 # external LLM endpoints reachable. Plain `make test` NEVER needs Docker.

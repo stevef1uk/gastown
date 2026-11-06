@@ -75,3 +75,26 @@ solve every arbitrary task. Versioned structured acceptance commands, full
 component-environment adapters and transactional multi-store/worker-lease
 migrations remain separate architectural work. Existing profile validation now
 also rejects duplicate phase IDs, unknown dependencies and dependency cycles.
+
+## Local test reliability
+
+`make test` runs the complete default suite with two package workers. Set
+`TEST_PACKAGE_PARALLELISM` to override that limit. Cross-platform build tests still
+cover all six supported OS/architecture combinations, but run at most two builds
+at once with bounded compiler parallelism. This avoids multiplying compiler and
+linker memory pressure on developer machines.
+
+Live Beads/Dolt fixtures require the existing `GT_DOLT_TESTS=1` opt-in, as set by
+`make test-integration`. Installing `bd` alone no longer changes which database
+fixtures run in the unit target. Their assertions remain available in integration
+runs. Unit tests for absent sessions use provider stubs, and worktree unit tests
+control disk admission rather than relying on the host's current free space.
+The production disk-space guard remains enabled; its rejection now also releases
+an allocated polecat name and pending reservation.
+
+The shell fixtures use portable in-place editing, compare failed `cd` against the
+actual shell's exit status, and wait for startup diagnostics instead of assuming
+50 ms is enough. Environment-creation tests select the interpreter they checked.
+Production Python venv creation has a one-minute bootstrap deadline, and callers
+can use `EnsureVenvContext` for a stricter deadline; a stalled shim cannot block
+workflow environment preparation indefinitely.

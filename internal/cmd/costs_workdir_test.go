@@ -42,6 +42,9 @@ func jsonAfterWarnings(out []byte) []byte {
 // 2. Creates session.ended events in both town and rig beads
 // 3. Verifies querySessionEvents finds events from both locations
 func TestQuerySessionEvents_FindsEventsFromAllLocations(t *testing.T) {
+	if !testutil.DoltTestsRequested() {
+		t.Skip("live Beads/Dolt fixture: run make test-integration (GT_DOLT_TESTS=1)")
+	}
 	// Do not inherit town/agent identity from the checkout used to run `go test`
 	// (avoids workspace discovery and bd/gt picking up the wrong .git / Dolt).
 	t.Setenv("GT_TOWN_ROOT", "")

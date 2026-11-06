@@ -246,9 +246,9 @@ Package-level List, Create, Delete, InitSchema on var DB — no Store struct.
 		t.Fatal(err)
 	}
 	v := orchestrator.WorkflowValidation{
-		LayoutRoot:            "linkshelf",
-		MinArchitectureBytes:  200,
-		BeadTitleContains:     "Implement ",
+		LayoutRoot:           "linkshelf",
+		MinArchitectureBytes: 200,
+		BeadTitleContains:    "Implement ",
 	}
 
 	writeArch := func(body string) {
@@ -740,8 +740,8 @@ func TestValidatePlanningArtifacts(t *testing.T) {
 	}
 	// Use a validation with required files so the test actually validates bead creation
 	v := orchestrator.WorkflowValidation{
-		BeadTitleContains: "Implement ",
-		RequiredFiles:     []string{"mock/main.go", "mock/other.go"},
+		BeadTitleContains:    "Implement ",
+		RequiredFiles:        []string{"mock/main.go", "mock/other.go"},
 		MinArchitectureBytes: 500,
 		MinPlanBytes:         250,
 	}
@@ -763,7 +763,7 @@ func TestValidatePlanningArtifacts(t *testing.T) {
 	if err := validatePlanningArtifacts(dir, "mockrig", true, true, false, v); err == nil {
 		t.Fatal("expected error when commands failed")
 	}
-listOpenImplementationBeadsHook = func(_, _ string) ([]orchestrator.PlanBead, error) {
+	listOpenImplementationBeadsHook = func(_, _ string) ([]orchestrator.PlanBead, error) {
 		return []orchestrator.PlanBead{}, nil
 	}
 	orchestrator.SetListImplementBeadsByStatusHook(func(_, _, status string) ([]orchestrator.PlanBead, error) {
@@ -1087,8 +1087,8 @@ func TestValidateDesignArtifacts_allowsStaleBackendPy(t *testing.T) {
 
 func TestValidateDesignCommand_allowsArchitectureMDInPlaceEdit(t *testing.T) {
 	cases := []struct {
-		cmd      string
-		allow    bool
+		cmd       string
+		allow     bool
 		rejectMsg string
 	}{
 		{"cd fin/mayor/rig && sed -i 's/`//g' architecture.md && wc -c architecture.md", true, ""},
@@ -1516,6 +1516,13 @@ func TestOrchestratedCommandEnv_createsPythonVenv(t *testing.T) {
 	if _, err := exec.LookPath("python3"); err != nil {
 		t.Skip("python3 not available")
 	}
+	host, err := exec.LookPath("python3")
+	if err != nil {
+		t.Skip("python3 not available")
+	}
+	// Test environment creation with the interpreter just checked, rather
+	// than an unrelated user pyenv shim outside the test fixture.
+	t.Setenv("GT_PYTHON3", host)
 	town := t.TempDir()
 	rigDir := filepath.Join(town, "mockrig", "mayor", "rig")
 	layoutDir := filepath.Join(rigDir, "tasklist")
@@ -1610,7 +1617,7 @@ func TestValidateProjectSetupCommand_nodeJSBypassesPlaceholderCheck(t *testing.T
 	}{
 		{
 			name: "heredoc with JSDoc ** pattern",
-			cmd:  `cat > frontend/next.config.js << 'EOF'
+			cmd: `cat > frontend/next.config.js << 'EOF'
 /** @type {import('next').NextConfig} */
 const nextConfig = { output: 'export' };
 module.exports = nextConfig;
@@ -1618,7 +1625,7 @@ EOF`,
 		},
 		{
 			name: "heredoc with JSX <> pattern",
-			cmd:  `cat > frontend/src/app/page.tsx << 'EOF'
+			cmd: `cat > frontend/src/app/page.tsx << 'EOF'
 const Page = () => <div>Hello</div>;
 export default Page;
 EOF`,

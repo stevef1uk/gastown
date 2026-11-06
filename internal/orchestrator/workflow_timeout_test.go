@@ -204,9 +204,7 @@ func TestRunOnTimeoutHook_unknownStep(t *testing.T) {
 }
 
 func TestResetPlanningPhase_integration(t *testing.T) {
-	if _, err := exec.LookPath("bd"); err != nil {
-		t.Skip("bd not in PATH")
-	}
+	requireBdIntegration(t)
 	townRoot := t.TempDir()
 	rig := "mockrig"
 	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")

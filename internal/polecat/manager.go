@@ -132,12 +132,13 @@ func (e *UncommittedWorkError) Unwrap() error {
 
 // Manager handles polecat lifecycle.
 type Manager struct {
-	rig      *rig.Rig
-	git      *git.Git
-	beads    *beads.Beads
-	namePool *NamePool
-	provider session.Provider
-	townRoot string // Computed once at construction; used by agentBeadID for deterministic IDs
+	diskSpaceCheck func(string) (util.DiskSpaceLevel, string, error)
+	rig            *rig.Rig
+	git            *git.Git
+	beads          *beads.Beads
+	namePool       *NamePool
+	provider       session.Provider
+	townRoot       string // Computed once at construction; used by agentBeadID for deterministic IDs
 }
 
 // NewManager creates a new polecat manager.
@@ -708,7 +709,7 @@ func (m *Manager) addWithOptionsLocked(name string, opts AddOptions, polecatDir 
 	defer func() { telemetry.RecordPolecatSpawn(context.Background(), name, retErr) }()
 
 	// Pre-check: Verify sufficient disk space before expensive worktree creation.
-	if level, msg, err := util.CheckDiskSpace(m.rig.Path); err == nil && level == util.DiskSpaceCritical {
+	if level, msg, err := m.checkDiskSpace(); err == nil && level == util.DiskSpaceCritical {
 		return nil, fmt.Errorf("%w: %s", ErrDiskSpaceLow, msg)
 	}
 
@@ -849,12 +850,22 @@ func (m *Manager) AddWithOptions(name string, opts AddOptions) (_ *Polecat, retE
 		return nil, ErrPolecatExists
 	}
 
+	// AllocateName may already have reserved this name. Every subsequent
+	// failure, including disk admission and mkdir, must release that reservation.
+	defer func() {
+		if retErr != nil {
+			m.namePool.Release(name)
+			_ = m.namePool.Save()
+			_ = os.Remove(m.pendingPath(name))
+		}
+	}()
+
 	// Pre-check: Verify sufficient disk space before creating worktree.
 	// Spawning a polecat creates a git worktree, copies overlay files, and writes
 	// beads state — all requiring disk I/O. If the disk is nearly full, fail early
 	// with a clear message rather than leaving a half-created polecat.
 	// See: disk-space-resilience — 5 polecats died silently on disk exhaustion.
-	if level, msg, err := util.CheckDiskSpace(m.rig.Path); err == nil && level == util.DiskSpaceCritical {
+	if level, msg, err := m.checkDiskSpace(); err == nil && level == util.DiskSpaceCritical {
 		return nil, fmt.Errorf("%w: %s", ErrDiskSpaceLow, msg)
 	}
 
@@ -2460,7 +2471,6 @@ func (m *Manager) DetectStalePolecats(threshold int) ([]*StalenessInfo, error) {
 	return results, nil
 }
 
-
 // countCommitsBehind counts how many commits a worktree is behind origin/<defaultBranch>.
 func countCommitsBehind(g *git.Git, defaultBranch string) int {
 	// Use rev-list to count commits: origin/main..HEAD shows commits ahead,
@@ -2509,4 +2519,11 @@ func assessStaleness(info *StalenessInfo, threshold int) (bool, string) {
 	// No session but has agent bead without special state = clean up
 	// (The session is the source of truth for liveness)
 	return true, "no active session"
+}
+
+func (m *Manager) checkDiskSpace() (util.DiskSpaceLevel, string, error) {
+	if m.diskSpaceCheck != nil {
+		return m.diskSpaceCheck(m.rig.Path)
+	}
+	return util.CheckDiskSpace(m.rig.Path)
 }

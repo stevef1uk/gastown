@@ -53,11 +53,11 @@ func qaReviewPhasedTemplate() *WorkflowTemplate {
 func writeTestPhasedProfile(t *testing.T, townRoot, rig, activePhase string) {
 	t.Helper()
 	v := WorkflowValidation{
-		LayoutRoot:            "linkshelf",
-		BeadTitleContains:       "Implement ",
-		MinPlanBytes:            100,
-		MinArchitectureBytes:    200,
-		QAVerifyCommand:         "cd linkshelf && go test ./...",
+		LayoutRoot:           "linkshelf",
+		BeadTitleContains:    "Implement ",
+		MinPlanBytes:         100,
+		MinArchitectureBytes: 200,
+		QAVerifyCommand:      "cd linkshelf && go test ./...",
 		DeliveryPhases: []DeliveryPhase{
 			{
 				ID:    "backend",
@@ -91,9 +91,7 @@ func writeTestPhasedProfile(t *testing.T, townRoot, rig, activePhase string) {
 
 func setupPhasedRigTown(t *testing.T) (townRoot, rig, rigDir, beadsDir string) {
 	t.Helper()
-	if _, err := exec.LookPath("bd"); err != nil {
-		t.Skip("bd not in PATH")
-	}
+	requireBdIntegration(t)
 	townRoot = t.TempDir()
 	rig = "phaserig"
 	rigDir = filepath.Join(townRoot, rig, "mayor", "rig")

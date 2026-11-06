@@ -1,11 +1,15 @@
 package agentenv
 
 import (
+	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestEnsureVenv_createsAndReuses(t *testing.T) {
@@ -58,6 +62,11 @@ func TestWithRigVenv_setsVirtualEnv(t *testing.T) {
 	if _, err := exec.LookPath("python3"); err != nil {
 		t.Skip("python3 not available")
 	}
+	host, err := exec.LookPath("python3")
+	if err != nil {
+		t.Skip("python3 not available")
+	}
+	t.Setenv("GT_PYTHON3", host)
 	work := t.TempDir()
 	env, vpy, _, err := WithRigVenv(os.Environ(), work, ".venv")
 	if err != nil {
@@ -74,5 +83,26 @@ func TestWithRigVenv_setsVirtualEnv(t *testing.T) {
 	}
 	if virt == "" {
 		t.Fatal("missing VIRTUAL_ENV")
+	}
+}
+
+func TestEnsureVenvContextBoundsStalledInterpreter(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell fixture")
+	}
+	dir := t.TempDir()
+	shim := filepath.Join(dir, "python3")
+	if err := os.WriteFile(shim, []byte("#!/bin/sh\nexec sleep 30\n"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	started := time.Now()
+	_, _, err := EnsureVenvContext(ctx, dir, ".venv", shim)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("lost timeout: %v", err)
+	}
+	if time.Since(started) > 2*time.Second {
+		t.Fatal("interpreter outlived bootstrap deadline")
 	}
 }

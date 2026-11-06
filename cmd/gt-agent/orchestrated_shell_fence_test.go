@@ -37,7 +37,7 @@ func TestArchitectShellRepairProducesValidDeliveryContract(t *testing.T) {
 	if err := os.WriteFile(path, []byte(doc), 0644); err != nil {
 		t.Fatal(err)
 	}
-	response := "CMD: cd " + dir + " && sed -i '/^yaml$/s/^yaml$/```yaml/; /^## Requirements$/i\\\n```' architecture.md\n\n" +
+	response := "CMD: cd " + dir + " && sed -i.bak '/^yaml$/s/^yaml$/```yaml/; /^## Requirements$/i\\\n```' architecture.md\n\n" +
 		"CMD: cd " + dir + " && test \"$(grep -c '^```yaml$' architecture.md)\" -eq 1 && test \"$(grep -c '^```$' architecture.md)\" -eq 1\n"
 	r := &stateRunner{
 		townRoot: town, rig: rig,

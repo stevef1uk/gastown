@@ -2999,10 +2999,29 @@ func TestNewIsolatedWithPort(t *testing.T) {
 }
 
 func TestInitPassesServerFlag(t *testing.T) {
+	bin := t.TempDir()
+	capture := filepath.Join(bin, "init-args.txt")
+	name, script := "bd", "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$BD_INIT_ARGS\"\nexit 1\n"
+	if runtime.GOOS == "windows" {
+		name = "bd.bat"
+		script = "@echo off\necho %* > \"%BD_INIT_ARGS%\"\nexit /b 1\n"
+	}
+	if err := os.WriteFile(filepath.Join(bin, name), []byte(script), 0755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("BD_INIT_ARGS", capture)
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	b := NewIsolatedWithPort(t.TempDir(), 19999)
-	err := b.Init("covertest")
-	if err == nil {
-		t.Fatal("expected error (no bd/dolt server), got nil")
+	if err := b.Init("covertest"); err == nil {
+		t.Fatal("expected the stub's initialization failure")
+	}
+	out, err := os.ReadFile(capture)
+	if err != nil {
+		t.Fatal(err)
+	}
+	args := strings.Fields(string(out))
+	if !strings.Contains(strings.Join(args, " "), "--server --server-port 19999") {
+		t.Fatalf("server configuration not passed to bd: %q", args)
 	}
 }
 

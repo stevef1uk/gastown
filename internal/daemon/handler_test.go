@@ -5,15 +5,12 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"runtime"
 	"testing"
 	"time"
 
 	"github.com/steveyegge/gastown/internal/config"
 	"github.com/steveyegge/gastown/internal/constants"
 	"github.com/steveyegge/gastown/internal/dog"
-	"github.com/steveyegge/gastown/internal/session"
-	"github.com/steveyegge/gastown/internal/tmux"
 )
 
 // testHandlerDaemon creates a minimal Daemon with a logger for handler tests.
@@ -92,8 +89,7 @@ func TestDetectStaleWorkingDogs_ClearsStaleWorkers(t *testing.T) {
 
 	rigsConfig := &config.RigsConfig{Version: 1, Rigs: map[string]config.RigEntry{}}
 	mgr := dog.NewManager(townRoot, rigsConfig)
-	tm := tmux.NewTmux()
-	sm := dog.NewSessionManager(session.NewTmuxProvider(tm, townRoot), townRoot, mgr)
+	sm := dog.NewSessionManager(stubAvailable{}, townRoot, mgr)
 
 	// Dog working for 3 hours with no activity — should be cleared.
 	testSetupWorkingDogState(t, townRoot, "stale", constants.MolConvoyFeed, time.Now().Add(-3*time.Hour))
@@ -118,8 +114,7 @@ func TestDetectStaleWorkingDogs_SkipsRecentWorkers(t *testing.T) {
 
 	rigsConfig := &config.RigsConfig{Version: 1, Rigs: map[string]config.RigEntry{}}
 	mgr := dog.NewManager(townRoot, rigsConfig)
-	tm := tmux.NewTmux()
-	sm := dog.NewSessionManager(session.NewTmuxProvider(tm, townRoot), townRoot, mgr)
+	sm := dog.NewSessionManager(stubAvailable{}, townRoot, mgr)
 
 	// Dog working for 30 minutes — should NOT be cleared.
 	testSetupWorkingDogState(t, townRoot, "active", constants.MolConvoyFeed, time.Now().Add(-30*time.Minute))
@@ -144,8 +139,7 @@ func TestDetectStaleWorkingDogs_SkipsIdleDogs(t *testing.T) {
 
 	rigsConfig := &config.RigsConfig{Version: 1, Rigs: map[string]config.RigEntry{}}
 	mgr := dog.NewManager(townRoot, rigsConfig)
-	tm := tmux.NewTmux()
-	sm := dog.NewSessionManager(session.NewTmuxProvider(tm, townRoot), townRoot, mgr)
+	sm := dog.NewSessionManager(stubAvailable{}, townRoot, mgr)
 
 	// Idle dog with old last_active — should NOT be touched by this function.
 	testSetupDogState(t, townRoot, "idle-old", dog.StateIdle, time.Now().Add(-5*time.Hour))
@@ -167,8 +161,7 @@ func TestDetectStaleWorkingDogs_EmptyKennel(t *testing.T) {
 
 	rigsConfig := &config.RigsConfig{Version: 1, Rigs: map[string]config.RigEntry{}}
 	mgr := dog.NewManager(townRoot, rigsConfig)
-	tm := tmux.NewTmux()
-	sm := dog.NewSessionManager(session.NewTmuxProvider(tm, townRoot), townRoot, mgr)
+	sm := dog.NewSessionManager(stubAvailable{}, townRoot, mgr)
 
 	// Should not panic or error with empty kennel.
 	d.detectStaleWorkingDogs(mgr, sm, &config.DaemonThresholds{})
@@ -186,8 +179,7 @@ func TestReapIdleDogs_SkipsWorkingDogs(t *testing.T) {
 
 	rigsConfig := &config.RigsConfig{Version: 1, Rigs: map[string]config.RigEntry{}}
 	mgr := dog.NewManager(townRoot, rigsConfig)
-	tm := tmux.NewTmux()
-	sm := dog.NewSessionManager(session.NewTmuxProvider(tm, townRoot), townRoot, mgr)
+	sm := dog.NewSessionManager(stubAvailable{}, townRoot, mgr)
 
 	// Create a working dog with old LastActive — should NOT be reaped.
 	testSetupDogState(t, townRoot, "worker", dog.StateWorking, time.Now().Add(-5*time.Hour))
@@ -205,8 +197,7 @@ func TestReapIdleDogs_SkipsRecentlyActiveDogs(t *testing.T) {
 
 	rigsConfig := &config.RigsConfig{Version: 1, Rigs: map[string]config.RigEntry{}}
 	mgr := dog.NewManager(townRoot, rigsConfig)
-	tm := tmux.NewTmux()
-	sm := dog.NewSessionManager(session.NewTmuxProvider(tm, townRoot), townRoot, mgr)
+	sm := dog.NewSessionManager(stubAvailable{}, townRoot, mgr)
 
 	// Create idle dogs that were active recently — should NOT be reaped.
 	for i := 0; i < 6; i++ {
@@ -227,16 +218,12 @@ func TestReapIdleDogs_SkipsRecentlyActiveDogs(t *testing.T) {
 }
 
 func TestReapIdleDogs_RemovesLongIdleDogsWhenPoolOversized(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("skipping on Windows: requires tmux")
-	}
 	townRoot := t.TempDir()
 	d := testHandlerDaemon(t, townRoot)
 
 	rigsConfig := &config.RigsConfig{Version: 1, Rigs: map[string]config.RigEntry{}}
 	mgr := dog.NewManager(townRoot, rigsConfig)
-	tm := tmux.NewTmux()
-	sm := dog.NewSessionManager(session.NewTmuxProvider(tm, townRoot), townRoot, mgr)
+	sm := dog.NewSessionManager(stubAvailable{}, townRoot, mgr)
 
 	// Create 6 idle dogs: 4 recent, 2 long-idle.
 	// Pool is 6 > maxDogPoolSize(4), so long-idle dogs should be removed.
@@ -274,8 +261,7 @@ func TestReapIdleDogs_DoesNotRemoveWhenPoolAtMaxSize(t *testing.T) {
 
 	rigsConfig := &config.RigsConfig{Version: 1, Rigs: map[string]config.RigEntry{}}
 	mgr := dog.NewManager(townRoot, rigsConfig)
-	tm := tmux.NewTmux()
-	sm := dog.NewSessionManager(session.NewTmuxProvider(tm, townRoot), townRoot, mgr)
+	sm := dog.NewSessionManager(stubAvailable{}, townRoot, mgr)
 
 	// Create exactly maxDogPoolSize idle dogs, all long-idle.
 	// Pool is NOT oversized, so none should be removed.
@@ -296,16 +282,12 @@ func TestReapIdleDogs_DoesNotRemoveWhenPoolAtMaxSize(t *testing.T) {
 }
 
 func TestReapIdleDogs_StopsRemovingAtMaxPoolSize(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("skipping on Windows: requires tmux")
-	}
 	townRoot := t.TempDir()
 	d := testHandlerDaemon(t, townRoot)
 
 	rigsConfig := &config.RigsConfig{Version: 1, Rigs: map[string]config.RigEntry{}}
 	mgr := dog.NewManager(townRoot, rigsConfig)
-	tm := tmux.NewTmux()
-	sm := dog.NewSessionManager(session.NewTmuxProvider(tm, townRoot), townRoot, mgr)
+	sm := dog.NewSessionManager(stubAvailable{}, townRoot, mgr)
 
 	// Create 7 idle dogs, all long-idle.
 	// Should remove 3 to get down to maxDogPoolSize(4).
@@ -326,16 +308,12 @@ func TestReapIdleDogs_StopsRemovingAtMaxPoolSize(t *testing.T) {
 }
 
 func TestReapIdleDogs_MixedStates(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("skipping on Windows: requires tmux")
-	}
 	townRoot := t.TempDir()
 	d := testHandlerDaemon(t, townRoot)
 
 	rigsConfig := &config.RigsConfig{Version: 1, Rigs: map[string]config.RigEntry{}}
 	mgr := dog.NewManager(townRoot, rigsConfig)
-	tm := tmux.NewTmux()
-	sm := dog.NewSessionManager(session.NewTmuxProvider(tm, townRoot), townRoot, mgr)
+	sm := dog.NewSessionManager(stubAvailable{}, townRoot, mgr)
 
 	// 2 working + 3 recent idle + 2 long-idle = 7 total.
 	// Pool is oversized (7 > 4). Only long-idle IDLE dogs should be removed.
@@ -378,8 +356,7 @@ func TestReapIdleDogs_EmptyKennel(t *testing.T) {
 
 	rigsConfig := &config.RigsConfig{Version: 1, Rigs: map[string]config.RigEntry{}}
 	mgr := dog.NewManager(townRoot, rigsConfig)
-	tm := tmux.NewTmux()
-	sm := dog.NewSessionManager(session.NewTmuxProvider(tm, townRoot), townRoot, mgr)
+	sm := dog.NewSessionManager(stubAvailable{}, townRoot, mgr)
 
 	// Should not panic or error with empty kennel.
 	d.reapIdleDogs(mgr, sm, &config.DaemonThresholds{})
@@ -414,8 +391,7 @@ func TestDispatchPlugins_SkipsManualGatePlugin(t *testing.T) {
 
 	rigsConfig := &config.RigsConfig{Version: 1, Rigs: map[string]config.RigEntry{}}
 	mgr := dog.NewManager(townRoot, rigsConfig)
-	tm := tmux.NewTmux()
-	sm := dog.NewSessionManager(session.NewTmuxProvider(tm, townRoot), townRoot, mgr)
+	sm := dog.NewSessionManager(stubAvailable{}, townRoot, mgr)
 
 	d.dispatchPlugins(mgr, sm, rigsConfig)
 
@@ -438,7 +414,7 @@ func TestFindDispatchableDog_PicksFirstIdleWhenNoSessionsLive(t *testing.T) {
 	testSetupDogState(t, townRoot, "bravo", dog.StateIdle, time.Now())
 
 	mgr := dog.NewManager(townRoot, nil)
-	sm := dog.NewSessionManager(session.NewTmuxProvider(tmux.NewTmux(), townRoot), townRoot, mgr)
+	sm := dog.NewSessionManager(stubAvailable{}, townRoot, mgr)
 
 	got := findDispatchableDog(mgr, sm, d.logger)
 	if got == nil {

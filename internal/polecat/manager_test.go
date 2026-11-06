@@ -19,6 +19,7 @@ import (
 	"github.com/steveyegge/gastown/internal/session"
 	"github.com/steveyegge/gastown/internal/testutil"
 	"github.com/steveyegge/gastown/internal/tmux"
+	"github.com/steveyegge/gastown/internal/util"
 )
 
 // installMockBd places a fake bd binary in PATH that handles the commands
@@ -158,7 +159,7 @@ func setupCanonicalBranchManagerTest(t *testing.T) (*Manager, string) {
 	}
 
 	r := &rig.Rig{Name: "rig", Path: root}
-	return NewManager(r, git.NewGit(root), nil), mayorRig
+	return newUnitManager(r, git.NewGit(root), nil), mayorRig
 }
 
 func createStalePolecatCommit(t *testing.T, repoPath, startPoint, branchName string) string {
@@ -229,7 +230,7 @@ func TestListEmpty(t *testing.T) {
 		Name: "test-rig",
 		Path: root,
 	}
-	m := NewManager(r, git.NewGit(root), nil)
+	m := newUnitManager(r, git.NewGit(root), nil)
 
 	polecats, err := m.List()
 	if err != nil {
@@ -246,7 +247,7 @@ func TestGetNotFound(t *testing.T) {
 		Name: "test-rig",
 		Path: root,
 	}
-	m := NewManager(r, git.NewGit(root), nil)
+	m := newUnitManager(r, git.NewGit(root), nil)
 
 	_, err := m.Get("nonexistent")
 	if err != ErrPolecatNotFound {
@@ -260,7 +261,7 @@ func TestRemoveNotFound(t *testing.T) {
 		Name: "test-rig",
 		Path: root,
 	}
-	m := NewManager(r, git.NewGit(root), nil)
+	m := newUnitManager(r, git.NewGit(root), nil)
 
 	err := m.Remove("nonexistent", false)
 	if err != ErrPolecatNotFound {
@@ -273,7 +274,7 @@ func TestPolecatDir(t *testing.T) {
 		Name: "test-rig",
 		Path: "/home/user/ai/test-rig",
 	}
-	m := NewManager(r, git.NewGit(r.Path), nil)
+	m := newUnitManager(r, git.NewGit(r.Path), nil)
 
 	dir := m.polecatDir("Toast")
 	expected := "/home/user/ai/test-rig/polecats/Toast"
@@ -287,7 +288,7 @@ func TestAssigneeID(t *testing.T) {
 		Name: "test-rig",
 		Path: "/home/user/ai/test-rig",
 	}
-	m := NewManager(r, git.NewGit(r.Path), nil)
+	m := newUnitManager(r, git.NewGit(r.Path), nil)
 
 	id := m.assigneeID("Toast")
 	expected := "test-rig/polecats/Toast"
@@ -315,8 +316,8 @@ func TestAgentBeadID_Deterministic(t *testing.T) {
 
 	// Construct two Managers from the same rig path — they must produce
 	// identical agentBeadIDs regardless of construction context.
-	m1 := NewManager(r, git.NewGit(rigPath), nil)
-	m2 := NewManager(r, git.NewGit(rigPath), nil)
+	m1 := newUnitManager(r, git.NewGit(rigPath), nil)
+	m2 := newUnitManager(r, git.NewGit(rigPath), nil)
 
 	id1a := m1.agentBeadID("Toast")
 	id1b := m1.agentBeadID("Toast")
@@ -349,7 +350,7 @@ func TestAgentBeadID_Deterministic(t *testing.T) {
 	}
 	defer func() { _ = os.Chdir(origDir) }()
 
-	m3 := NewManager(r, git.NewGit(rigPath), nil)
+	m3 := newUnitManager(r, git.NewGit(rigPath), nil)
 	id3 := m3.agentBeadID("Toast")
 	if id1a != id3 {
 		t.Errorf("agentBeadID differs after cwd change: %q (original) vs %q (after chdir)", id1a, id3)
@@ -370,7 +371,7 @@ func TestNewManager_NamepoolFromRigConfig(t *testing.T) {
 	}
 
 	r := &rig.Rig{Name: "myrig", Path: rigPath}
-	m := NewManager(r, git.NewGit(rigPath), nil)
+	m := newUnitManager(r, git.NewGit(rigPath), nil)
 	pool := m.GetNamePool()
 
 	name, err := pool.Allocate()
@@ -411,7 +412,7 @@ func TestGetReturnsWorkingWithoutBeads(t *testing.T) {
 		Name: "test-rig",
 		Path: root,
 	}
-	m := NewManager(r, git.NewGit(root), nil)
+	m := newUnitManager(r, git.NewGit(root), nil)
 
 	// Get should return polecat with StateWorking (assume active if beads unavailable)
 	polecat, err := m.Get("Test")
@@ -450,7 +451,7 @@ func TestListWithPolecats(t *testing.T) {
 		Name: "test-rig",
 		Path: root,
 	}
-	m := NewManager(r, git.NewGit(root), nil)
+	m := newUnitManager(r, git.NewGit(root), nil)
 
 	polecats, err := m.List()
 	if err != nil {
@@ -483,7 +484,7 @@ func TestSetStateWithoutBeads(t *testing.T) {
 		Name: "test-rig",
 		Path: root,
 	}
-	m := NewManager(r, git.NewGit(root), nil)
+	m := newUnitManager(r, git.NewGit(root), nil)
 
 	// SetState should succeed (no-op when no issue assigned)
 	err := m.SetState("Test", StateWorking)
@@ -509,7 +510,7 @@ func TestClearIssueWithoutAssignment(t *testing.T) {
 		Name: "test-rig",
 		Path: root,
 	}
-	m := NewManager(r, git.NewGit(root), nil)
+	m := newUnitManager(r, git.NewGit(root), nil)
 
 	// ClearIssue should succeed even when no issue assigned
 	err := m.ClearIssue("Test")
@@ -592,7 +593,7 @@ func TestAddWithOptions_HasAgentsMD(t *testing.T) {
 		Name: "rig",
 		Path: root,
 	}
-	m := NewManager(r, git.NewGit(root), nil)
+	m := newUnitManager(r, git.NewGit(root), nil)
 
 	// Create polecat via AddWithOptions
 	polecat, err := m.AddWithOptions("TestAgent", AddOptions{})
@@ -712,7 +713,7 @@ func TestReconcilePoolWith(t *testing.T) {
 				Name: "myrig",
 				Path: tmpDir,
 			}
-			m := NewManager(r, nil, nil)
+			m := newUnitManager(r, nil, nil)
 
 			// Call ReconcilePoolWith
 			m.ReconcilePoolWith(tt.namesWithDirs, tt.namesWithSessions)
@@ -775,7 +776,7 @@ func TestReconcilePoolWith_Allocation(t *testing.T) {
 		Name: "myrig",
 		Path: tmpDir,
 	}
-	m := NewManager(r, nil, nil)
+	m := newUnitManager(r, nil, nil)
 
 	// Mark first few pool names as in-use via directories
 	// (furiosa, nux, slit are first 3 in mad-max theme)
@@ -812,7 +813,7 @@ func TestReconcilePoolWith_OrphanDoesNotBlockAllocation(t *testing.T) {
 		Name: "myrig",
 		Path: tmpDir,
 	}
-	m := NewManager(r, nil, nil)
+	m := newUnitManager(r, nil, nil)
 
 	// furiosa has orphan session (no dir) - should NOT block allocation
 	m.ReconcilePoolWith([]string{}, []string{"furiosa"})
@@ -1012,7 +1013,7 @@ func TestBuildBranchName(t *testing.T) {
 			}
 
 			g := git.NewGit(tmpDir)
-			m := NewManager(r, g, nil)
+			m := newUnitManager(r, g, nil)
 
 			got := m.buildBranchName("alpha", tt.issue)
 
@@ -1124,7 +1125,7 @@ func TestAddWithOptions_NoPrimeMDCreatedLocally(t *testing.T) {
 		Name: "rig",
 		Path: root,
 	}
-	m := NewManager(r, git.NewGit(root), nil)
+	m := newUnitManager(r, git.NewGit(root), nil)
 
 	// Create polecat
 	polecat, err := m.AddWithOptions("TestNoLocal", AddOptions{})
@@ -1335,7 +1336,7 @@ func TestAddWithOptions_NoFilesAddedToRepo(t *testing.T) {
 		Name: "rig",
 		Path: root,
 	}
-	m := NewManager(r, git.NewGit(root), nil)
+	m := newUnitManager(r, git.NewGit(root), nil)
 
 	// Create polecat
 	polecat, err := m.AddWithOptions("TestClean", AddOptions{})
@@ -1474,7 +1475,7 @@ func TestAddWithOptions_SettingsInstalledInPolecatsDir(t *testing.T) {
 		Name: "rig",
 		Path: root,
 	}
-	m := NewManager(r, git.NewGit(root), nil)
+	m := newUnitManager(r, git.NewGit(root), nil)
 
 	// Create polecat
 	polecat, err := m.AddWithOptions("TestSettings", AddOptions{})
@@ -1575,7 +1576,7 @@ func TestPendingMarkerBlocksReallocation(t *testing.T) {
 		Name: "myrig",
 		Path: tmpDir,
 	}
-	m := NewManager(r, nil, nil)
+	m := newUnitManager(r, nil, nil)
 
 	// Simulate AllocateName: create polecats/ dir and write a .pending marker
 	// for "furiosa" (as if AllocateName ran but AddWithOptions hasn't yet).
@@ -1617,7 +1618,7 @@ func TestStalePendingMarkerIsCleanedUp(t *testing.T) {
 		Name: "myrig",
 		Path: tmpDir,
 	}
-	m := NewManager(r, nil, nil)
+	m := newUnitManager(r, nil, nil)
 
 	polecatsDir := filepath.Join(tmpDir, "polecats")
 	if err := os.MkdirAll(polecatsDir, 0755); err != nil {
@@ -1688,7 +1689,7 @@ func TestAddWithOptions_RollbackReleasesName(t *testing.T) {
 		Name: "rig",
 		Path: root,
 	}
-	m := NewManager(r, git.NewGit(root), nil)
+	m := newUnitManager(r, git.NewGit(root), nil)
 
 	// Allocate a name (simulates what gt sling does before AddWithOptions)
 	name, err := m.AllocateName()
@@ -1840,7 +1841,7 @@ esac
 		Name: "rig",
 		Path: root,
 	}
-	m := NewManager(r, git.NewGit(root), nil)
+	m := newUnitManager(r, git.NewGit(root), nil)
 
 	// Allocate a name
 	name, err := m.AllocateName()
@@ -1924,7 +1925,7 @@ func TestAllocateAndAdd_NoDuplicateNames(t *testing.T) {
 		Name: "rig",
 		Path: root,
 	}
-	m := NewManager(r, git.NewGit(root), nil)
+	m := newUnitManager(r, git.NewGit(root), nil)
 
 	// Launch concurrent AllocateAndAdd calls. They will fail at worktree
 	// creation (no origin/main), but the names they attempt must be unique.
@@ -1991,7 +1992,7 @@ func TestReuseIdlePolecat_KillsLiveSession(t *testing.T) {
 
 	tm := tmux.NewTmux()
 	r := &rig.Rig{Name: rigName, Path: rigPath}
-	mgr := NewManager(r, git.NewGit(rigPath), session.NewTmuxProvider(tm, townRoot))
+	mgr := newUnitManager(r, git.NewGit(rigPath), session.NewTmuxProvider(tm, townRoot))
 
 	// Create a live tmux session (simulates Claude sitting at ❯ after gt done)
 	sessMgr := NewSessionManager(session.NewTmuxProvider(tm, rigPath), r)
@@ -2022,8 +2023,8 @@ func TestReuseIdlePolecat_KillsLiveSession(t *testing.T) {
 
 	// Verify it did NOT return ErrSessionRunning (the old buggy behavior)
 	if errors.Is(reuseErr, ErrSessionRunning) {
-		t.Fatalf("ReuseIdlePolecat returned ErrSessionRunning for live session — "+
-			"this is the sling-reuse-stale-session bug: idle polecats with live "+
+		t.Fatalf("ReuseIdlePolecat returned ErrSessionRunning for live session — " +
+			"this is the sling-reuse-stale-session bug: idle polecats with live " +
 			"sessions must have their session killed, not rejected")
 	}
 
@@ -2076,7 +2077,7 @@ func TestReuseIdlePolecat_KillsStaleSession(t *testing.T) {
 
 	tm := tmux.NewTmux()
 	r := &rig.Rig{Name: rigName, Path: rigPath}
-	mgr := NewManager(r, git.NewGit(rigPath), session.NewTmuxProvider(tm, townRoot))
+	mgr := newUnitManager(r, git.NewGit(rigPath), session.NewTmuxProvider(tm, townRoot))
 
 	sessMgr := NewSessionManager(session.NewTmuxProvider(tm, rigPath), r)
 	sessionName := sessMgr.SessionName(polecatName)
@@ -2144,7 +2145,7 @@ func TestReuseIdlePolecat_NoSessionNoop(t *testing.T) {
 
 	tm := tmux.NewTmux()
 	r := &rig.Rig{Name: rigName, Path: rigPath}
-	mgr := NewManager(r, git.NewGit(rigPath), session.NewTmuxProvider(tm, townRoot))
+	mgr := newUnitManager(r, git.NewGit(rigPath), session.NewTmuxProvider(tm, townRoot))
 
 	// No tmux session, no heartbeat — the common idle case
 	_, reuseErr := mgr.ReuseIdlePolecat(polecatName, AddOptions{})
@@ -2157,5 +2158,33 @@ func TestReuseIdlePolecat_NoSessionNoop(t *testing.T) {
 	// Error should be from later steps (worktree ops), not session handling
 	if reuseErr == nil {
 		t.Fatal("expected error from worktree operations")
+	}
+}
+
+// Worktree/rollback unit tests control admission independently of host disk load.
+func newUnitManager(r *rig.Rig, g *git.Git, p session.Provider) *Manager {
+	m := NewManager(r, g, p)
+	m.diskSpaceCheck = func(string) (util.DiskSpaceLevel, string, error) { return util.DiskSpaceOK, "", nil }
+	return m
+}
+
+func TestAddWithOptions_DiskAdmissionReleasesReservation(t *testing.T) {
+	root := t.TempDir()
+	m := newUnitManager(&rig.Rig{Name: "sample", Path: root}, git.NewGit(root), nil)
+	name, err := m.AllocateName()
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.diskSpaceCheck = func(string) (util.DiskSpaceLevel, string, error) {
+		return util.DiskSpaceCritical, "test disk full", nil
+	}
+	if _, err := m.AddWithOptions(name, AddOptions{}); !errors.Is(err, ErrDiskSpaceLow) {
+		t.Fatalf("disk gate not enforced: %v", err)
+	}
+	if m.namePool.ActiveCount() != 0 {
+		t.Fatal("failed admission leaked reserved name")
+	}
+	if _, err := os.Stat(m.pendingPath(name)); !os.IsNotExist(err) {
+		t.Fatalf("failed admission left pending marker: %v", err)
 	}
 }
