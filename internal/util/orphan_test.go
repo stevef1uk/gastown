@@ -82,7 +82,15 @@ func TestGetProcessCwd(t *testing.T) {
 	if err != nil {
 		t.Fatalf("os.Getwd() error: %v", err)
 	}
-	if cwd != expected {
+	if cwd == expected {
+		return
+	}
+	// On case-insensitive filesystems (macOS default) lsof reports the
+	// on-disk casing while os.Getwd may return the casing from PWD. Fall
+	// back to comparing the underlying directory rather than the string.
+	gotInfo, gotErr := os.Stat(cwd)
+	wantInfo, wantErr := os.Stat(expected)
+	if gotErr != nil || wantErr != nil || !os.SameFile(gotInfo, wantInfo) {
 		t.Errorf("getProcessCwd(self) = %q, want %q", cwd, expected)
 	}
 }
