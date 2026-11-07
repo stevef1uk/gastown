@@ -1699,14 +1699,32 @@ func runOrchestratedCommand(cmd, workDir, sessionName string, env []string, cmdT
 // children (e.g. "go run main.go &" smoke servers) holding the output pipe
 // open, so c.Wait() blocks forever and the QA/polecat run hangs.
 func waitWithTimeout(c *exec.Cmd, dur time.Duration, logCmd string) (bool, error) {
+	// Bound pipe draining after the shell exits. A surviving go-run child can
+	// inherit stdout even after its launcher was killed by an EXIT trap.
+	c.WaitDelay = 2 * time.Second
+	finish := func(waitErr error) error {
+		if waitErr != nil {
+			// The shell is already reaped. Target only its process group;
+			// never fall back to a PID/tree kill after that PID may be reused.
+			if err := syscall.Kill(-c.Process.Pid, syscall.SIGKILL); err != nil && !errors.Is(err, syscall.ESRCH) {
+				debugLog(fmt.Sprintf("post-exit group cleanup pid=%d: %v", c.Process.Pid, err))
+			}
+			if errors.Is(waitErr, exec.ErrWaitDelay) && c.ProcessState != nil && c.ProcessState.Success() {
+				orchestratedPrintf("[gt-agent] cleaned background children holding output after successful command exit\n")
+				return nil
+			}
+		}
+		return waitErr
+	}
 	waitCh := make(chan error, 1)
 	go func() { waitCh <- c.Wait() }()
 	if dur <= 0 {
-		return false, <-waitCh
+		return false, finish(<-waitCh)
 	}
+
 	select {
 	case waitErr := <-waitCh:
-		return false, waitErr
+		return false, finish(waitErr)
 	case <-time.After(dur):
 		debugLog(fmt.Sprintf("TIMEOUT FIRED pid=%d cmd=%s", c.Process.Pid, logCmd))
 		killCommandProcessGroup(c.Process.Pid)

@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/steveyegge/gastown/internal/beads"
@@ -218,9 +219,14 @@ func parseBeadContext(beadID string) (actor, rig, role string) {
 
 // GtEventsSource reads events from ~/gt/.events.jsonl (gt activity log)
 type GtEventsSource struct {
-	file   *os.File
-	events chan Event
-	cancel context.CancelFunc
+	path      string
+	done      chan struct{}
+	closeOnce sync.Once
+	recent    []string
+	seen      map[string]int
+	file      *os.File
+	events    chan Event
+	cancel    context.CancelFunc
 }
 
 // GtEvent is the structure of events in .events.jsonl
@@ -244,6 +250,7 @@ func NewGtEventsSource(townRoot string) (*GtEventsSource, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	source := &GtEventsSource{
+		path: eventsPath, done: make(chan struct{}), seen: make(map[string]int),
 		file:   file,
 		events: make(chan Event, 200),
 		cancel: cancel,
@@ -256,28 +263,43 @@ func NewGtEventsSource(townRoot string) (*GtEventsSource, error) {
 
 // tail loads recent history then follows the file for new events.
 func (s *GtEventsSource) tail(ctx context.Context) {
+	file := s.file
+	defer close(s.done)
 	defer close(s.events)
-
-	// Load recent events (last 200 lines) for initial display
-	s.loadRecentEvents()
-
-	// Seek to true EOF so the tail scanner starts cleanly,
-	// regardless of the preload scanner's internal read-ahead buffer.
-	_, _ = s.file.Seek(0, 2)
-
-	// Now tail for new events
-	// Scanner stops permanently at EOF. Reader lets us retry when the log
-	// grows, retaining partial lines until the writer appends a newline.
-	reader := bufio.NewReader(s.file)
+	defer func() { file.Close() }()
+	s.loadRecentEvents(file, false)
+	_, _ = file.Seek(0, io.SeekEnd)
+	reader := bufio.NewReader(file)
 	var pending strings.Builder
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
-
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
+			current, statErr := os.Stat(s.path)
+			opened, openErr := file.Stat()
+			if statErr == nil && openErr == nil {
+				offset, _ := file.Seek(0, io.SeekCurrent)
+				if !os.SameFile(opened, current) {
+					replacement, err := os.Open(s.path)
+					if err != nil {
+						continue
+					}
+					file.Close()
+					file = replacement
+					pending.Reset()
+					// Reload only recent history and suppress lines already displayed.
+					s.loadRecentEvents(file, true)
+					_, _ = file.Seek(0, io.SeekEnd)
+					reader.Reset(file)
+				} else if current.Size() < offset {
+					_, _ = file.Seek(0, io.SeekStart)
+					reader.Reset(file)
+					pending.Reset()
+				}
+			}
 			for {
 				line, err := reader.ReadString('\n')
 				pending.WriteString(line)
@@ -287,24 +309,45 @@ func (s *GtEventsSource) tail(ctx context.Context) {
 					}
 					break
 				}
-				if event := parseGtEventLine(pending.String()); event != nil {
-					select {
-					case s.events <- *event:
-					default:
-					}
-				}
+				s.emitGtLine(pending.String(), false)
 				pending.Reset()
 			}
 		}
 	}
 }
 
+func (s *GtEventsSource) emitGtLine(line string, replay bool) {
+	line = strings.TrimSpace(line)
+	if replay && s.seen[line] > 0 {
+		return
+	}
+	event := parseGtEventLine(line)
+	if event == nil {
+		return
+	}
+	select {
+	case s.events <- *event:
+	default:
+		return
+	}
+	s.recent = append(s.recent, line)
+	s.seen[line]++
+	if len(s.recent) > 400 {
+		old := s.recent[0]
+		s.recent = s.recent[1:]
+		s.seen[old]--
+		if s.seen[old] == 0 {
+			delete(s.seen, old)
+		}
+	}
+}
+
 // loadRecentEvents reads the last N lines of the file and emits them as events.
 // Uses a ring buffer so memory is O(maxLines) regardless of file size.
-func (s *GtEventsSource) loadRecentEvents() {
+func (s *GtEventsSource) loadRecentEvents(file *os.File, replay bool) {
 	const maxLines = 200
 
-	if _, err := s.file.Seek(0, 0); err != nil {
+	if _, err := file.Seek(0, 0); err != nil {
 		return
 	}
 
@@ -313,7 +356,7 @@ func (s *GtEventsSource) loadRecentEvents() {
 	idx := 0
 	count := 0
 
-	scanner := bufio.NewScanner(s.file)
+	scanner := bufio.NewScanner(file)
 	scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
 	for scanner.Scan() {
 		ring[idx%maxLines] = scanner.Text()
@@ -322,7 +365,7 @@ func (s *GtEventsSource) loadRecentEvents() {
 	}
 	if scanner.Err() != nil {
 		// Scanner failed (e.g. token too long) — seek to EOF so tail starts clean
-		_, _ = s.file.Seek(0, 2)
+		_, _ = file.Seek(0, 2)
 		return
 	}
 
@@ -334,12 +377,7 @@ func (s *GtEventsSource) loadRecentEvents() {
 	start := idx - n
 	for i := start; i < idx; i++ {
 		line := ring[i%maxLines]
-		if event := parseGtEventLine(line); event != nil {
-			select {
-			case s.events <- *event:
-			default:
-			}
-		}
+		s.emitGtLine(line, replay)
 	}
 }
 
@@ -350,8 +388,9 @@ func (s *GtEventsSource) Events() <-chan Event {
 
 // Close stops the source
 func (s *GtEventsSource) Close() error {
-	s.cancel()
-	return s.file.Close()
+	s.closeOnce.Do(s.cancel)
+	<-s.done
+	return nil
 }
 
 // parseGtEventLine parses a line from .events.jsonl

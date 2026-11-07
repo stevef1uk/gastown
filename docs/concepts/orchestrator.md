@@ -620,3 +620,17 @@ may have reached an automatically created shadow server. Check server ownership 
 the canonical database before reinitializing anything. The schema regression test
 (`make test-beads-schema`) includes a server down/up cycle and verifies that the
 prefix and issue survive, and that Beads cannot auto-start while managed Dolt is down.
+
+### Feed log rotation and smoke-test cleanup
+
+The event panel follows `.events.jsonl` across file replacement and truncation,
+including town restarts. It reopens a replaced file and suppresses retained history
+already displayed. Reopening `gt feed` also reconnects an older feed binary to the
+current log; restarting the workflow is unnecessary.
+
+Verification commands run in their own process group. If the shell exits while a
+background child still holds stdout/stderr open (common with `go run`), the command
+runner bounds pipe draining to two seconds and cleans the remaining process group.
+It preserves the shell's exit result: cleanup cannot turn a failed verification into
+a success. This avoids waiting for the whole command timeout after a smoke probe
+has already completed.

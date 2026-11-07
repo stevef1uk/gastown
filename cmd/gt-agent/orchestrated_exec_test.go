@@ -1378,3 +1378,27 @@ func TestGrepNoMatchNeverMasksVerificationFailures(t *testing.T) {
 		t.Fatal("shell verification chain failure became successful")
 	}
 }
+
+func TestWaitWithTimeoutReapsOutputHoldingChildrenAfterShellExit(t *testing.T) {
+	for _, code := range []string{"0", "7"} {
+		t.Run("exit="+code, func(t *testing.T) {
+			c := exec.Command("/bin/sh", "-c", "sleep 60 & exit "+code)
+			c.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+			var out bytes.Buffer
+			c.Stdout = &out
+			c.Stderr = &out
+			if err := c.Start(); err != nil {
+				t.Fatal(err)
+			}
+			defer syscall.Kill(-c.Process.Pid, syscall.SIGKILL)
+			start := time.Now()
+			timedOut, err := waitWithTimeout(c, 6*time.Second, "output-holding child")
+			if timedOut || time.Since(start) > 5*time.Second {
+				t.Fatalf("waited for command timeout instead of exited shell: %v %v", timedOut, err)
+			}
+			if (err == nil) != (code == "0") {
+				t.Fatalf("shell exit %s was not preserved: %v", code, err)
+			}
+		})
+	}
+}
