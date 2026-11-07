@@ -233,6 +233,17 @@ func TestGoToolArgsFromVerifyAttachedShellOperators(t *testing.T) {
 	}
 }
 
+func TestGoToolArgsFromVerifyNormalizesNestedLayout(t *testing.T) {
+	v := DefaultWorkflowValidation()
+	v.LayoutRoot = "pingapp"
+	v.QAVerifyCommand = "set -e; go test ./pingapp/...; go run pingapp/cmd/server/main.go"
+	got := goToolArgsFromVerify(v)
+	want := []string{"test", "./..."}
+	if strings.Join(got, " ") != strings.Join(want, " ") {
+		t.Fatalf("got %v want %v", got, want)
+	}
+}
+
 func TestImplementationModuleCompileOKParenthesizedPhaseCommand(t *testing.T) {
 	requireGoToolchain(t)
 	root := t.TempDir()

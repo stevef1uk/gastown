@@ -28,7 +28,10 @@ func GoToolchainMismatch(err error, output string) bool {
 // Stops parsing at shell operators (&&, ||, ;, |, &, (, )) to avoid including
 // shell command chains in the go tool arguments.
 func goToolArgsFromVerify(v WorkflowValidation) []string {
-	cmd := strings.TrimSpace(v.QAVerifyCommand)
+	// Profile commands are authored relative to mayor/rig, while this helper
+	// executes from the nested module directory. Remove the layout prefix before
+	// extracting Go arguments (e.g. ./pingapp/... becomes ./...).
+	cmd := NormalizeGoLayoutPackagePaths(strings.TrimSpace(v.QAVerifyCommand), v.LayoutRoot, v.LayoutRoot)
 	lower := strings.ToLower(cmd)
 	for _, tool := range []string{"go test", "go build"} {
 		if idx := strings.Index(lower, tool); idx >= 0 {
