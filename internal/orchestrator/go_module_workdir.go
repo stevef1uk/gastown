@@ -124,9 +124,15 @@ func NormalizeGoLayoutPackagePaths(cmd, workPath, layoutRoot string) string {
 	wp := strings.Trim(filepath.ToSlash(strings.TrimSpace(workPath)), "/")
 	if strings.HasSuffix(wp, layoutRoot) {
 		cmd = strings.ReplaceAll(cmd, "./"+layoutRoot+"/...", "./...")
-		return strings.ReplaceAll(cmd, prefix, "./")
+		cmd = strings.ReplaceAll(cmd, prefix, "./")
+		return stripBareGoLayoutPathPrefix(cmd, layoutRoot)
 	}
 	return strings.ReplaceAll(cmd, prefix, "./")
+}
+
+func stripBareGoLayoutPathPrefix(cmd, layoutRoot string) string {
+	re := regexp.MustCompile(`([\s"'=;])(?:\./)?` + regexp.QuoteMeta(layoutRoot) + `/`)
+	return re.ReplaceAllString(cmd, "$1./")
 }
 
 // StripFirstShellCDPrefix removes a leading "cd <path> &&" from a shell command chain.

@@ -70,3 +70,11 @@ func TestNormalizeGoLayoutPackagePathsRemovesDuplicateGoCD(t *testing.T) {
 		t.Fatal("changed a different module's -C flag")
 	}
 }
+
+func TestNormalizeGoLayoutPackagePathsRemovesBareLayoutPaths(t *testing.T) {
+	input := "cd pwtest/mayor/rig/pingapp && go test ./pingapp/...; go run pingapp/cmd/server/main.go"
+	want := "cd pwtest/mayor/rig/pingapp && go test ./...; go run ./cmd/server/main.go"
+	if got := NormalizeGoLayoutPackagePaths(input, "pwtest/mayor/rig/pingapp", "pingapp"); got != want {
+		t.Fatalf("got %q want %q", got, want)
+	}
+}

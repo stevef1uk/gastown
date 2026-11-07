@@ -124,6 +124,9 @@ func architectureDeliveryContract(doc string) ([]DeliveryPhase, bool, error) {
 		if err := decoder.Decode(&contract); err != nil {
 			return nil, true, fmt.Errorf("architecture delivery contract: %w", err)
 		}
+		for i := range contract.DeliveryPhases {
+			contract.DeliveryPhases[i].QAVerifyCommand = NormalizeShellDollarEscapes(contract.DeliveryPhases[i].QAVerifyCommand)
+		}
 		seen := map[string]bool{}
 		for _, p := range contract.DeliveryPhases {
 			if strings.TrimSpace(p.ID) == "" || seen[p.ID] || len(p.RequiredFiles) == 0 || strings.TrimSpace(p.QAVerifyCommand) == "" || isNoOpVerifyCommand(p.QAVerifyCommand) {

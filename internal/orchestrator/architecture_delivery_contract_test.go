@@ -57,6 +57,17 @@ func TestArchitectureDeliveryContractRoundTrip(t *testing.T) {
 	}
 }
 
+func TestArchitectureDeliveryContractNormalizesShellVariables(t *testing.T) {
+	doc := "## Delivery phases\n```yaml\ndelivery_phases:\n  - id: core\n    required_files: [app/main.go]\n    qa_verify_command: 'for i in $$(seq 1 2); do test " + "$$body" + " = ok; done'\n```\n"
+	phases, ok, err := architectureDeliveryContract(doc)
+	if err != nil || !ok {
+		t.Fatalf("parse: ok=%v err=%v", ok, err)
+	}
+	if phases[0].QAVerifyCommand != "for i in $(seq 1 2); do test $body = ok; done" {
+		t.Fatalf("command = %q", phases[0].QAVerifyCommand)
+	}
+}
+
 func TestArchitectureStructureRejectsAmbiguousAmendments(t *testing.T) {
 	for _, doc := range []string{
 		"# Design\n## Delivery phases\nFirst table.\n## Delivery phases\nSecond table.\n",

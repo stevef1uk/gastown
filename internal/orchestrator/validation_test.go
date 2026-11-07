@@ -79,6 +79,21 @@ func TestNormalizeLayoutProfile(t *testing.T) {
 	}
 }
 
+func TestNormalizeLayoutProfileUnescapesExplicitShellVariables(t *testing.T) {
+	v := WorkflowValidation{
+		ExplicitDeliveryContract: true,
+		QAVerifyCommand:          `for i in $$(seq 1 2); do body=$$body; pid=$$!; done; echo $$`,
+		DeliveryPhases:           []DeliveryPhase{{QAVerifyCommand: `test "$${status}" = ok`}},
+	}
+	got := NormalizeLayoutProfile(v)
+	if got.QAVerifyCommand != `for i in $(seq 1 2); do body=$body; pid=$!; done; echo $$` {
+		t.Fatalf("qa command = %q", got.QAVerifyCommand)
+	}
+	if got.DeliveryPhases[0].QAVerifyCommand != `test "${status}" = ok` {
+		t.Fatalf("phase command = %q", got.DeliveryPhases[0].QAVerifyCommand)
+	}
+}
+
 func TestClampProfileValidation(t *testing.T) {
 	tests := []struct {
 		name string

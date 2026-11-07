@@ -1281,6 +1281,7 @@ func capArchitectureBytesForSmallRig(v WorkflowValidation) WorkflowValidation {
 // NormalizeLayoutProfile prefixes required_files with layout_root and ensures Go
 // qa_verify_command runs from the module directory when the LLM omitted cd.
 func NormalizeLayoutProfile(v WorkflowValidation) WorkflowValidation {
+	v = normalizeProfileShellCommands(v)
 	// Explicit delivery commands are repository-root contracts, not hints for
 	// legacy layout or Docker-image inference. Preserve them verbatim.
 	if v.ExplicitDeliveryContract {
