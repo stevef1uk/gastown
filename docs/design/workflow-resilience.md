@@ -33,6 +33,20 @@ missing-identity, unreadable or corrupt accounting fails closed. Limits must be
 positive integers. Billing/authentication errors and exhausted admission budgets
 pause the workflow rather than polling the paid endpoint indefinitely.
 
+Raise a single workflow's limits without changing global defaults:
+
+```bash
+gt mayor workflow budget wf-1 --tokens 40000000 --usd 10
+```
+
+Either flag can be used alone. Token overrides are stored with that workflow's
+Gas Town ledger entry. Dollar overrides are written beside Freeride's execution
+budget ledger (the `FREERIDE_EXECUTION_BUDGET_PATH` location, or the user config
+directory default); pass `--freeride-budget-path` when Freeride uses a custom
+path. Run the command on the host that owns the proxy ledger. The shared rig
+dollar limit and provider account limits remain in force. After changing a
+limit, resume the workflow explicitly.
+
 The HTTP client owns retries, avoiding a second nested retry loop. Temporary 429
 and server failures use exponential backoff and bounded Retry-After. Exhausted
 credits and insufficient-quota responses are not transient. Responses log actual
