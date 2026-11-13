@@ -33,6 +33,38 @@ func TestIsRetriableLLMError(t *testing.T) {
 	}
 }
 
+func TestValidateNodeImplementationCommand_blocksHostPlaywrightInstallForDocker(t *testing.T) {
+	t.Parallel()
+
+	v := orchestrator.WorkflowValidation{
+		LayoutRoot:      "pingapp",
+		TestRunner:      "go",
+		QAVerifyCommand: "docker compose -f pingapp/docker-compose.yml up --exit-code-from playwright",
+		RequiredFiles:   []string{"pingapp/docker-compose.yml"},
+	}
+	if err := validateNodeImplementationCommand("npm install --ignore-scripts && npx playwright install --with-deps chromium", v); err == nil ||
+		!strings.Contains(err.Error(), "do not install Playwright browsers or system dependencies on the host") {
+		t.Fatalf("Docker workflow should reject host Playwright dependency installation, got %v", err)
+	}
+	if err := validateNodeImplementationCommand("docker compose -f pingapp/docker-compose.yml up --exit-code-from playwright", v); err != nil {
+		t.Fatalf("Docker Compose verification should remain allowed: %v", err)
+	}
+}
+
+func TestValidateNodeImplementationCommand_allowsPlaywrightInstallForNonDockerNode(t *testing.T) {
+	t.Parallel()
+
+	v := orchestrator.WorkflowValidation{
+		LayoutRoot:      "web",
+		TestRunner:      "npm",
+		QAVerifyCommand: "npm test",
+		RequiredFiles:   []string{"web/package.json"},
+	}
+	if err := validateNodeImplementationCommand("npx playwright install --with-deps chromium", v); err != nil {
+		t.Fatalf("non-Docker Node workflow should preserve existing behavior: %v", err)
+	}
+}
+
 func TestQAReworkCompletionReportsFailingGate(t *testing.T) {
 	r := &stateRunner{
 		townRoot: t.TempDir(), rig: "sample",

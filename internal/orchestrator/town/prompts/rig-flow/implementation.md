@@ -88,7 +88,8 @@ The phase verify command for this rig is:
 {{phase_qa_verify_command}}
 ```
 
-Run this **exactly as shown** (including the full relative path from the rig root) after writing code/tests. Do NOT shorten to a basename. Run it from `{{rig}}/mayor/rig/{{layout_root}}`.
+Run this **exactly as shown** after writing code/tests. Do NOT shorten paths or change directories into `{{layout_root}}`; configured verify-command paths are relative to `{{rig}}/mayor/rig`.
+For Docker/Compose workflows, do not install Playwright browsers or system dependencies on the host (`npx playwright install --with-deps`); the configured Playwright image provides them. Run the configured Compose verify command instead.
 
 ### ⚠️ CRITICAL: Background server + curl pattern (for server-based phases)
 
@@ -96,7 +97,7 @@ If `{{phase_qa_verify_command}}` starts a server (any runtime), you MUST run it 
 
 **Correct pattern (single CMD line):**
 ```
-CMD: cd {{rig}}/mayor/rig/{{layout_root}} && {{phase_qa_verify_command}} & sleep 2 && curl -sf http://127.0.0.1:{{dev_server_port}}/{{smoke_probe_path}}
+CMD: cd {{rig}}/mayor/rig && {{phase_qa_verify_command}} & sleep 2 && curl -sf http://127.0.0.1:{{dev_server_port}}/{{smoke_probe_path}}
 ```
 
 **What this does:**
@@ -107,12 +108,12 @@ CMD: cd {{rig}}/mayor/rig/{{layout_root}} && {{phase_qa_verify_command}} & sleep
 
 **WRONG (will timeout):**
 ```
-CMD: cd {{rig}}/mayor/rig/{{layout_root}} && {{phase_qa_verify_command}}
+CMD: cd {{rig}}/mayor/rig && {{phase_qa_verify_command}}
 ```
 
 ### ⚠️ MANDATORY: Phase verify command pattern
 
-Run this **exactly as shown** (including the full relative path from the rig root) after writing code/tests. Do NOT shorten to a basename. Run it from `{{rig}}/mayor/rig/{{layout_root}}`.
+Run this **exactly as shown** after writing code/tests. Do NOT shorten paths or change directories into `{{layout_root}}`; configured verify-command paths are relative to `{{rig}}/mayor/rig`.
 
 ## TDD Iron Law (MANDATORY — read before the per-bead sequence)
 
@@ -152,7 +153,7 @@ Follow the **red-green-refactor** cycle for every bead that has a test path in `
 1. `CMD: bd update QUEUE_HEAD_ID --status=in_progress`
 2. **WRITE:** / **EDIT:** the file (use paths from **Next bead** / **Implement context**)
 3. **TDD cycle for this bead** — see the Iron Law above: WRITE test → verify RED → implement → verify GREEN → commit test and code in separate commits. Only skip the failing-test step when the bead is an exception listed above.
-4. `CMD: cd {{rig}}/mayor/rig/{{layout_root}} && {{phase_qa_verify_command}}` — run the **phase verify** exactly as shown above. **Do NOT shorten to a basename** — use the full command including the relative path from `{{layout_root}}`.
+4. `CMD: cd {{rig}}/mayor/rig && {{phase_qa_verify_command}}` — run the **phase verify** exactly as shown above. Keep its paths relative to `mayor/rig`; do not change into `{{layout_root}}`.
 5. **If verify fails**: READ the failing file, check its path. Fix in the next turn group. Do NOT reopen the bead.
 6. `CMD: bd close BEAD_ID`
 7. Look at the **Queue** table. If another bead is **open** (○) or **in_progress** (◐), repeat from step 1 with the next queue bead.

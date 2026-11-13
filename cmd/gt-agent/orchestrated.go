@@ -4590,10 +4590,13 @@ func normalizeOrchestratedOutcome(outcome string, allowed []string) string {
 }
 
 func validateNodeImplementationCommand(cmd string, v orchestrator.WorkflowValidation) error {
+	lower := strings.ToLower(cmd)
+	if orchestrator.WorkflowUsesDocker(v) && strings.Contains(lower, "playwright install") {
+		return fmt.Errorf("do not install Playwright browsers or system dependencies on the host for a Docker workflow — the Playwright image supplies them; run the configured Docker Compose verify command instead")
+	}
 	if orchestrator.WorkflowUsesNodeJS(v) {
 		return nil
 	}
-	lower := strings.ToLower(cmd)
 	for _, tok := range []string{"npm ", "node ", "yarn ", "pnpm ", "npx "} {
 		if strings.Contains(lower, tok) {
 			return fmt.Errorf("do not run Node.js toolchain (%s) — this rig has no frontend/Node dependency", strings.TrimSpace(tok))

@@ -134,6 +134,25 @@ func TestRigFlowPrompts_staticURLGuidanceFromArchitecture(t *testing.T) {
 	}
 }
 
+func TestImplementationPromptRunsPhaseVerifyFromMayorRig(t *testing.T) {
+	t.Parallel()
+
+	body := readEmbeddedRigFlowPrompt(t, "implementation.md")
+	if !strings.Contains(body, "CMD: cd {{rig}}/mayor/rig && {{phase_qa_verify_command}}") {
+		t.Fatal("implementation prompt must run phase verification from mayor/rig")
+	}
+	if strings.Contains(body, "cd {{rig}}/mayor/rig/{{layout_root}} && {{phase_qa_verify_command}}") {
+		t.Fatal("implementation prompt must not run mayor/rig-relative verify paths from layout_root")
+	}
+	if !strings.Contains(body, "configured verify-command paths are relative to `{{rig}}/mayor/rig`") {
+		t.Fatal("implementation prompt must explain the phase verify working directory")
+	}
+	if !strings.Contains(body, "do not install Playwright browsers or system dependencies on the host") ||
+		!strings.Contains(body, "the configured Playwright image provides them") {
+		t.Fatal("implementation prompt must keep Docker Playwright dependencies inside the configured image")
+	}
+}
+
 func TestPromptVars_includesStaticURLContractGuidance(t *testing.T) {
 	t.Parallel()
 	vars := DefaultWorkflowValidation().PromptVars()
