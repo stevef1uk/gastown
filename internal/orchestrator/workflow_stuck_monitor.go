@@ -52,6 +52,22 @@ func RunWorkflowStuckMonitorTick(townRoot string, polecatRunning PolecatSessionC
 		}
 
 		v := workflowValidationForInstance(townRoot, inst)
+		rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
+
+		// Deterministic pre-flight: a foreign listener on a required dev port
+		// makes every verify attempt fail against the wrong server. Pause
+		// before LLM work burns the execution budget on doomed retries.
+		if conflicts := FindForeignDevPortListeners(v, rigDir); len(conflicts) > 0 {
+			c := conflicts[0]
+			reason := fmt.Sprintf("port %d occupied by %s outside rig %s: free the port or remap the workflow profile before resuming", c.Port, c.Owner, rig)
+			if _, err := PauseWorkflow(townRoot, inst.ID, reason); err != nil {
+				lines = append(lines, fmt.Sprintf("[workflow-preflight] %s: pause %s failed: %v", rig, inst.ID, err))
+			} else {
+				lines = append(lines, fmt.Sprintf("[workflow-preflight] %s: paused %s: %s", rig, inst.ID, reason))
+			}
+			continue
+		}
+
 		guard := WorkflowStuckGuard{}
 		if tpl, err := loadWorkflowTemplateFromTown(townRoot, inst.TemplateID); err == nil && tpl != nil {
 			guard = tpl.StuckGuard
@@ -66,7 +82,6 @@ func RunWorkflowStuckMonitorTick(townRoot string, polecatRunning PolecatSessionC
 			lines = append(lines, fmt.Sprintf("[workflow-stuck] %s: count flat beads: %v", rig, err))
 			continue
 		}
-		rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
 		missingContract := PlanMissingIntegrationContract(rigDir, v)
 		docsMisaligned := PlanningDocsMisaligned(rigDir, v)
 
