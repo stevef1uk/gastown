@@ -263,7 +263,17 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 	previousAdmission, previousHeaders := client.BeforeRequest, client.TaskHeaders
 	defer func() { client.BeforeRequest, client.TaskHeaders = previousAdmission, previousHeaders }()
 	client.BeforeRequest = func(tokens int64) error {
-		return orchestrator.ReserveWorkflowLLMRequest(townRoot, rig, task.WorkflowID, tokens)
+		available, err := orchestrator.ReserveWorkflowLLMRequestWithAvailable(townRoot, rig, task.WorkflowID, tokens)
+		requestBytes := tokens - 8192
+		if requestBytes < 0 {
+			requestBytes = 0
+		}
+		orchestratedPrintf("[gt-agent] workflow LLM admission: rig=%s workflow=%s state=%s role=%s request_bytes=%d reservation_units=%d available_reservation_units=%d admitted=%t\n",
+			rig, task.WorkflowID, task.State, client.Role(), requestBytes, tokens, available, err == nil)
+		if err != nil {
+			orchestratedPrintf("[gt-agent] workflow LLM admission denied: %v\n", err)
+		}
+		return err
 	}
 	client.TaskHeaders = map[string]string{"X-GasTown-Workflow": task.WorkflowID, "X-GasTown-Rig": rig, "X-GasTown-State": task.State}
 	var lastAttemptFeedback strings.Builder

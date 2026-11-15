@@ -37,55 +37,69 @@ func executionLimit(name string, fallback int64) (int64, error) {
 // ReserveWorkflowLLMRequest admits one HTTP attempt across all agents and restarts.
 // Identity is JSON data rather than a filename, preventing path traversal.
 func ReserveWorkflowLLMRequest(townRoot, rig, workflowID string, tokens int64) error {
+	_, err := ReserveWorkflowLLMRequestWithAvailable(townRoot, rig, workflowID, tokens)
+	return err
+}
+
+// ReserveWorkflowLLMRequestWithAvailable admits one HTTP attempt and reports the
+// token headroom observed under the same lock as the reservation.
+func ReserveWorkflowLLMRequestWithAvailable(townRoot, rig, workflowID string, tokens int64) (int64, error) {
 	if townRoot == "" || rig == "" || workflowID == "" || tokens <= 0 {
-		return fmt.Errorf("execution budget: missing request identity or token reservation")
+		return 0, fmt.Errorf("execution budget: missing request identity or token reservation")
 	}
 	requests, err := executionLimit("GT_WORKFLOW_MAX_LLM_REQUESTS", 1000)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	tokenLimit, err := executionLimit("GT_WORKFLOW_MAX_LLM_TOKENS", 20000000)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	path := filepath.Join(townRoot, "orchestrator", "execution-budgets.json")
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
-		return fmt.Errorf("execution budget: %w", err)
+		return 0, fmt.Errorf("execution budget: %w", err)
 	}
 	lock := flock.New(path + ".lock")
 	if err := lock.Lock(); err != nil {
-		return fmt.Errorf("execution budget: %w", err)
+		return 0, fmt.Errorf("execution budget: %w", err)
 	}
 	defer lock.Unlock()
 	ledger := map[string]ExecutionBudget{}
 	data, err := os.ReadFile(path)
 	if err == nil {
 		if err := json.Unmarshal(data, &ledger); err != nil {
-			return fmt.Errorf("execution budget: corrupt ledger: %w", err)
+			return 0, fmt.Errorf("execution budget: corrupt ledger: %w", err)
 		}
 	} else if !os.IsNotExist(err) {
-		return fmt.Errorf("execution budget: %w", err)
+		return 0, fmt.Errorf("execution budget: %w", err)
 	}
 	if ledger == nil {
-		return fmt.Errorf("execution budget: null ledger")
+		return 0, fmt.Errorf("execution budget: null ledger")
 	}
 	keyBytes, _ := json.Marshal([]string{rig, workflowID})
 	key := string(keyBytes)
 	used := ledger[key]
 	if used.Requests < 0 || used.ReservedTokens < 0 || used.RequestLimit < 0 || used.TokenLimit < 0 || used.TokenLimitOverride < 0 {
-		return fmt.Errorf("execution budget: invalid negative reservation")
+		return 0, fmt.Errorf("execution budget: invalid negative reservation")
 	}
 	if used.TokenLimitOverride > 0 {
 		tokenLimit = used.TokenLimitOverride
 	}
-	if int64(used.Requests) >= requests || tokens > tokenLimit-used.ReservedTokens {
-		return fmt.Errorf("execution budget exhausted for %s/%s (%d requests, %d reserved tokens); review ledger and limits before resuming", rig, workflowID, used.Requests, used.ReservedTokens)
+	available := int64(0)
+	if used.ReservedTokens < tokenLimit {
+		available = tokenLimit - used.ReservedTokens
+	}
+	if int64(used.Requests) >= requests || tokens > available {
+		return available, fmt.Errorf("execution budget exhausted for %s/%s (%d requests, %d reserved tokens; requested %d reservation units, %d available, token limit %d); review ledger and limits before resuming", rig, workflowID, used.Requests, used.ReservedTokens, tokens, available, tokenLimit)
 	}
 	used.RequestLimit, used.TokenLimit = requests, tokenLimit
 	used.Requests++
 	used.ReservedTokens += tokens
 	ledger[key] = used
-	return writeExecutionBudgetLedger(path, ledger)
+	if err := writeExecutionBudgetLedger(path, ledger); err != nil {
+		return available, err
+	}
+	return available, nil
 }
 
 // SetWorkflowTokenLimit sets a durable token-limit override for one workflow.

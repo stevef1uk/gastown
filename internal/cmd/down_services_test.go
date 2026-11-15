@@ -11,6 +11,13 @@ import (
 func TestTownServicePIDs(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "town")
 	other := t.TempDir()
+	rig := filepath.Join(root, "rig")
+	sibling := root + "-other"
+	for _, dir := range []string{root, rig, sibling} {
+		if err := os.Mkdir(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
 	list := `101 /usr/local/bin/gt daemon run
 102 gt daemon run
 103 gt orchestrator run
@@ -22,7 +29,7 @@ func TestTownServicePIDs(t *testing.T) {
 109 gt-agent daemon run
 110 gt daemon run
 `
-	dirs := map[int]string{101: root, 102: root, 103: root, 104: root, 107: other, 108: filepath.Join(root, "rig"), 110: root + "-other"}
+	dirs := map[int]string{101: root, 102: root, 103: root, 104: root, 107: other, 108: rig, 110: sibling}
 	// Ownership checks resolve real directories. Missing mock paths would
 	// consult the host's actual PID 108/110 and make this machine-dependent.
 	for _, dir := range dirs {

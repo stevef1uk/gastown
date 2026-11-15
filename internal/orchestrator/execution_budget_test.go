@@ -4,8 +4,28 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
+
+func TestReserveWorkflowLLMRequestReportsAvailableTokens(t *testing.T) {
+	town := t.TempDir()
+	t.Setenv("GT_WORKFLOW_MAX_LLM_REQUESTS", "10")
+	t.Setenv("GT_WORKFLOW_MAX_LLM_TOKENS", "100")
+
+	if available, err := ReserveWorkflowLLMRequestWithAvailable(town, "rig", "wf", 70); err != nil || available != 100 {
+		t.Fatalf("available=%d err=%v, want available=100 and no error", available, err)
+	}
+	if available, err := ReserveWorkflowLLMRequestWithAvailable(town, "rig", "wf", 31); err == nil ||
+		available != 30 || !strings.Contains(err.Error(), "requested 31 reservation units, 30 available, token limit 100") {
+		t.Fatalf("available=%d err=%v, want a 30-unit denial diagnostic", available, err)
+	}
+
+	got, _, err := ReadWorkflowExecutionBudget(town, "rig", "wf")
+	if err != nil || got.Requests != 1 || got.ReservedTokens != 70 {
+		t.Fatalf("denied request changed ledger: %+v err=%v", got, err)
+	}
+}
 
 func TestExecutionBudgetSnapshotPersistsAdmissionLimits(t *testing.T) {
 	town := t.TempDir()

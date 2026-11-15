@@ -37,6 +37,14 @@ func (c *Client) Endpoint() string {
 	return c.endpoint
 }
 
+// Role returns the agent role used on requests from this client.
+func (c *Client) Role() string {
+	if c == nil {
+		return ""
+	}
+	return c.role
+}
+
 // HealthCheckURL derives a lightweight GET URL from an OpenAI-compatible chat endpoint.
 func HealthCheckURL(chatEndpoint string) string {
 	chatEndpoint = strings.TrimSpace(chatEndpoint)
@@ -271,6 +279,15 @@ func (c *Client) CompleteMessages(ctx context.Context, messages []Message) (stri
 	jsonData, err := json.Marshal(reqBody)
 	if err != nil {
 		return "", fmt.Errorf("marshaling request: %w", err)
+	}
+
+	if c.TaskHeaders["X-GasTown-Workflow"] != "" {
+		messageSizes := make([]string, len(messages))
+		for i, message := range messages {
+			messageSizes[i] = fmt.Sprintf("%q:%d", message.Role, len(message.Content))
+		}
+		fmt.Printf("[llm] request prepared: workflow=%s rig=%s state=%s role=%s request_bytes=%d message_count=%d message_bytes=[%s]\n",
+			c.TaskHeaders["X-GasTown-Workflow"], c.TaskHeaders["X-GasTown-Rig"], c.TaskHeaders["X-GasTown-State"], c.role, len(jsonData), len(messages), strings.Join(messageSizes, ","))
 	}
 
 	return c.doRequestWithRetries(ctx, jsonData)
