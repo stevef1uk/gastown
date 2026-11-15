@@ -396,9 +396,14 @@ func (r *stateRunner) rewriteCommand(cmd string) string {
 		}
 	}
 	// Wrap host-run compose E2E commands with host server start/stop
-	if fixed, ok := maybeWrapHostRunComposeE2E(cmd, r.townRoot, r.rig, r.v); ok {
-		orchestratedPrintf("[gt-agent] wrapped host-run compose E2E with server bootstrap → %s\n", fixed)
-		cmd = fixed
+	// Skip if this is a heredoc write (e.g. cat > <file> <<'EOF' ... EOF) — the
+	// compose/E2E text inside is documentation being written to a file, not a
+	// command to execute.
+	if !(strings.Contains(cmd, "cat >") && strings.Contains(cmd, "<<")) {
+		if fixed, ok := maybeWrapHostRunComposeE2E(cmd, r.townRoot, r.rig, r.v); ok {
+			orchestratedPrintf("[gt-agent] wrapped host-run compose E2E with server bootstrap → %s\n", fixed)
+			cmd = fixed
+		}
 	}
 	for _, rw := range r.hooks.CmdRewrites {
 		switch rw {
@@ -491,6 +496,15 @@ func (r *stateRunner) isQATestCommandOK(cmd string) bool {
 	if isQATestCommandOK(cmd, r.v) {
 		return true
 	}
+	return r.rewrittenVerifyCommandMatchesActivePhase(cmd)
+}
+
+// rewrittenVerifyCommandMatchesActivePhase credits a verify command that the
+// runner itself rewrote for workdir or server bootstrap (registered in
+// rewrittenQAVerifyCommands during rewriteCommand). The implementation track
+// needs this too: without it a green rewritten verify never sets verifyOK and
+// bd close loops forever on "run green verify before bd close".
+func (r *stateRunner) rewrittenVerifyCommandMatchesActivePhase(cmd string) bool {
 	verify, ok := r.rewrittenQAVerifyCommands[cmd]
 	return ok && verify == r.v.ActivePhaseQAVerifyCommand()
 }
@@ -919,7 +933,8 @@ func prepareProjectSetupVerifyCommand(verifyCmd, townRoot, rig, kind string) str
 // bead. In particular, a successful dependency tidy must not erase a test failure.
 func (r *stateRunner) recordAutoVerifySuccess(cmd, output string, clearCmdFailure bool) {
 	if strings.EqualFold(strings.TrimSpace(r.hooks.Track), "implementation") &&
-		!isImplementationVerifyCommandOK(cmd, r.townRoot, r.rig, r.track.activeBead, r.v) {
+		!isImplementationVerifyCommandOK(cmd, r.townRoot, r.rig, r.track.activeBead, r.v) &&
+		!r.rewrittenVerifyCommandMatchesActivePhase(cmd) {
 		return
 	}
 	r.track.verifyOK = true

@@ -178,7 +178,7 @@ var trackHandlers = map[string]trackFn{
 				r.ensureTestBeadSkeletonAfterInProgress(cmd)
 			}
 		}
-		if cmdErr == nil && isImplementationVerifyCommandOK(cmd, r.townRoot, r.rig, r.track.activeBead, r.v) {
+		if cmdErr == nil && (isImplementationVerifyCommandOK(cmd, r.townRoot, r.rig, r.track.activeBead, r.v) || r.rewrittenVerifyCommandMatchesActivePhase(cmd)) {
 			r.track.verifyOK = true
 			r.track.hadCmdFailure = false
 			r.persistImplementationProgress(cmd)
