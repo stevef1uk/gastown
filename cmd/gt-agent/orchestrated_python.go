@@ -220,7 +220,11 @@ func validatePythonImplementationCommand(cmd, townRoot, rig, activeBead string, 
 			if err := orchestrator.ValidateBeadArtifactOnDisk(mayorDir, beadPath, v); err != nil {
 				return fmt.Errorf("cannot bd close %s: %w — fix the file with EDIT:/WRITE: first", activeBead, err)
 			}
-			return fmt.Errorf("bd close %s requires a successful EDIT:/WRITE: to %s in this session", activeBead, beadPath)
+			// Frontend beads use post-write artifact validation, not a compile
+			// verify. Allow close when the artifact is valid (mirrors the Go
+			// validator); otherwise the frontend bead can never be closed and the
+			// queue deadlocks behind a phase build that needs a later bead.
+			return nil
 		}
 		if !orchestrator.ImplementationBeadRequiresVerify(beadPath) {
 			if err := orchestrator.ValidateBeadArtifactOnDisk(mayorDir, beadPath, v); err != nil {

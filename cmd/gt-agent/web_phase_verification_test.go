@@ -146,6 +146,44 @@ func TestPythonNonSourceBeadClosesWithoutPhaseVerify(t *testing.T) {
 	}
 }
 
+// TestPythonFrontendBeadClosesOnDiskValidation covers the resumed-session
+// deadlock: a frontend bead whose artifact already validates on disk never
+// triggers a fresh write (so verifyOK stays false), and the close gate must
+// still allow bd close instead of demanding an in-session EDIT forever.
+func TestPythonFrontendBeadClosesOnDiskValidation(t *testing.T) {
+	town, rig := t.TempDir(), "sample"
+	mayor := rigMayorRigDir(town, rig)
+	front := "app/frontend/next.config.js"
+	if err := os.MkdirAll(filepath.Join(mayor, "app", "frontend"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	body := "/** @type {import('next').NextConfig} */\nconst nextConfig = {\n  output: \"export\",\n  trailingSlash: true,\n};\nmodule.exports = nextConfig;\n"
+	if err := os.WriteFile(filepath.Join(mayor, filepath.FromSlash(front)), []byte(body), 0644); err != nil {
+		t.Fatal(err)
+	}
+	v := orchestrator.WorkflowValidation{
+		LayoutRoot:                 "app",
+		BeadTitleContains:          "Implement ",
+		TestRunner:                 "pytest",
+		MinImplementationFileBytes: 10,
+		MinSubstantiveLines:        2,
+		QAVerifyCommand:            "docker compose -f app/docker-compose.yml build",
+		RequiredFiles:              []string{front, "app/frontend/package.json"},
+	}
+	orchestrator.ListImplementBeadsByStatusHook = func(_, _ string, _ orchestrator.WorkflowValidation, status string) ([]orchestrator.PlanBead, error) {
+		if status == "in_progress" {
+			return []orchestrator.PlanBead{{ID: "sm-front", Title: "Implement app/frontend/next.config.js per architecture"}}, nil
+		}
+		return nil, nil
+	}
+	t.Cleanup(func() { orchestrator.ListImplementBeadsByStatusHook = nil })
+
+	close := "cd sample/mayor/rig && bd close sm-front"
+	if err := validateImplementationCommandWithState(close, town, rig, "sm-front", v, false, nil, ""); err != nil {
+		t.Fatalf("python frontend bead should close on disk validation: %v", err)
+	}
+}
+
 func TestRewriteNpmPrefixDoesNotRewriteDocumentHeredoc(t *testing.T) {
 	cmd := "cat > plan.md <<'EOF'\nVerify: npm --prefix app run build\nEOF"
 	v := orchestrator.WorkflowValidation{LayoutRoot: "app", TestRunner: "go"}
