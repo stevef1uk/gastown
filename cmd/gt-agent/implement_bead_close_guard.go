@@ -72,12 +72,17 @@ func validateImplementationBeadClose(cmd, townRoot, rig string, v orchestrator.W
 	return nil
 }
 
-// Frontend source beads already have a per-file artifact verifier. Requiring the
-// entire phase build here can deadlock on a later package.json bead. The full
-// phase command is still mandatory before implementation can complete.
+// Beads that are not compiled backend source (docs, config, manifests, scripts,
+// frontend assets, …) already have a per-file artifact verifier. Requiring the
+// entire phase build for them deadlocks the queue on a later source or
+// package.json bead. The full phase command is still mandatory before
+// implementation can complete.
 func implementationBeadHasVerification(rigDir, beadPath string, v orchestrator.WorkflowValidation, verifyOK bool) bool {
 	if verifyOK {
 		return true
 	}
-	return orchestrator.IsFrontendImplementPath(beadPath) && orchestrator.ValidateBeadArtifactOnDisk(rigDir, beadPath, v) == nil
+	if orchestrator.ImplementationBeadRequiresVerify(beadPath) {
+		return false
+	}
+	return beadPath != "" && orchestrator.ValidateBeadArtifactOnDisk(rigDir, beadPath, v) == nil
 }

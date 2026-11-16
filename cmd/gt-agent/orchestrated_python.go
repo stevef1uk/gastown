@@ -222,6 +222,12 @@ func validatePythonImplementationCommand(cmd, townRoot, rig, activeBead string, 
 			}
 			return fmt.Errorf("bd close %s requires a successful EDIT:/WRITE: to %s in this session", activeBead, beadPath)
 		}
+		if !orchestrator.ImplementationBeadRequiresVerify(beadPath) {
+			if err := orchestrator.ValidateBeadArtifactOnDisk(mayorDir, beadPath, v); err != nil {
+				return fmt.Errorf("cannot bd close %s: %w — fix the file with EDIT:/WRITE: first", activeBead, err)
+			}
+			return nil
+		}
 		return fmt.Errorf("run green verify before bd close: %s (in this session, since verify clears on restart)", hint)
 	}
 	return nil

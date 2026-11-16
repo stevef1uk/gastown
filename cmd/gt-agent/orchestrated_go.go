@@ -340,6 +340,15 @@ func validateGoImplementationCommand(cmd, townRoot, rig, mayorRigDir, activeBead
 			// artifact is valid (verifyOK may be cleared by deferred HTTP contract notes).
 			return nil
 		}
+		// Non-source artifacts (docs, config, manifests, scripts, …) have no per-bead
+		// compile verify — validate them on disk so the queue can advance without
+		// waiting on a later source or package.json bead to make the phase build green.
+		if !orchestrator.ImplementationBeadRequiresVerify(beadPath) {
+			if err := orchestrator.ValidateBeadArtifactOnDisk(mayorRigDir, beadPath, v); err != nil {
+				return fmt.Errorf("cannot bd close %s: %w — fix the file with EDIT:/WRITE: first", activeBead, err)
+			}
+			return nil
+		}
 		return fmt.Errorf("run green verify before bd close: %s (in this session, since verify clears on restart)", verifyHint)
 	}
 	return nil

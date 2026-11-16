@@ -113,6 +113,27 @@ func AllowedQAReworkWebImplementWrite(townRoot, rig, activeBead, activePath, wri
 	return false
 }
 
+// ImplementationBeadRequiresVerify reports whether closing this implement bead must
+// wait for a green per-bead or phase verify. Compiled backend source and tests
+// (.go, .py) and end-to-end test files (Playwright/Cypress) carry a real
+// compile/test verify and stay gated. Docs, config, manifests, scripts, frontend
+// assets, and other non-compiled artifacts are validated per-file on disk
+// instead: requiring the phase verify for them deadlocks the queue behind a later
+// source or package.json bead, because the phase command cannot go green until
+// every required file exists. The full phase command is still mandatory before
+// implementation can complete.
+func ImplementationBeadRequiresVerify(beadPath string) bool {
+	beadPath = filepath.ToSlash(strings.TrimSpace(beadPath))
+	if IsE2ETestPath(beadPath) {
+		return true
+	}
+	switch strings.ToLower(filepath.Ext(beadPath)) {
+	case ".go", ".py":
+		return true
+	}
+	return false
+}
+
 // IsPlaceholderFile reports whether the path is a placeholder file that is
 // intentionally small (e.g., .gitkeep files to keep directories in git).
 func IsPlaceholderFile(path string) bool {
