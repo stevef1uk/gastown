@@ -36,6 +36,26 @@ func TestUnwrapBashLcMultiline_doubleQuoted(t *testing.T) {
 	}
 }
 
+func TestRunShellCommandRepairsNestedPythonPytestInvocation(t *testing.T) {
+	workDir := t.TempDir()
+	python := filepath.Join(workDir, ".venv", "bin", "python3")
+	if err := os.MkdirAll(filepath.Dir(python), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(python, []byte("#!/bin/sh\nprintf '%s\\n' \"$@\"\n"), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	runner := &stateRunner{}
+	out, err := runner.runShellCommand("'.venv/bin/python3' -m python3 -m pytest -v tests/test_app.py", workDir, "", os.Environ())
+	if err != nil {
+		t.Fatalf("runShellCommand failed: %v\n%s", err, out)
+	}
+	if got, want := string(out), "-m\npytest\n-v\ntests/test_app.py\n"; got != want {
+		t.Fatalf("python arguments = %q, want %q", got, want)
+	}
+}
+
 func TestScrubOrphanHeredocDelimiterLines(t *testing.T) {
 	in := "export X=1\ncat > plan.md <<'EOF'\nbody\nEOF\nEOF\nwc -c plan.md"
 	got := scrubOrphanHeredocDelimiterLines(in)

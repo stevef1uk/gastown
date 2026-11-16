@@ -18,6 +18,37 @@ func TestRewritePython3InCommand(t *testing.T) {
 	}
 }
 
+func TestNormalizeNestedPythonPytestModule(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{
+			name: "quoted venv interpreter",
+			in:   "cd app && '.venv/bin/python3' -m python3 -m pytest -v tests/test_app.py",
+			want: "cd app && '.venv/bin/python3' -m pytest -v tests/test_app.py",
+		},
+		{
+			name: "bare interpreter",
+			in:   "python3 -m python3 -m pytest -q",
+			want: "python3 -m pytest -q",
+		},
+		{
+			name: "preserves heredoc content",
+			in:   "cat > README.md <<'EOF'\npython3 -m python3 -m pytest\nEOF",
+			want: "cat > README.md <<'EOF'\npython3 -m python3 -m pytest\nEOF",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := NormalizeNestedPythonPytestModule(tt.in); got != tt.want {
+				t.Fatalf("NormalizeNestedPythonPytestModule() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestRewritePython3InCommand_preservesHeredoc(t *testing.T) {
 	py := "/tmp/example-venv/bin/python3"
 	in := "cd " + testrig.Worktree(testrig.Name) + " && cat > " + testrig.RequirementsFile + " <<'EOF'\npython3 -m pytest\npytest>=7\nEOF"

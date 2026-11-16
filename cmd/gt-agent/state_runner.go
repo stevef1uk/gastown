@@ -681,6 +681,10 @@ func (r *stateRunner) effectiveCommandTimeoutSec(cmd string) int {
 }
 
 func (r *stateRunner) runShellCommand(cmd, workDir, sessionName string, env []string) ([]byte, error) {
+	if fixed := agentenv.NormalizeNestedPythonPytestModule(cmd); fixed != cmd {
+		orchestratedPrintf("[gt-agent] repaired duplicated Python pytest module invocation\n")
+		cmd = fixed
+	}
 	out, err := runOrchestratedCommand(cmd, workDir, sessionName, env, r.effectiveCommandTimeoutSec(cmd))
 	if err != nil {
 		if isCmdTimeoutError(err) {

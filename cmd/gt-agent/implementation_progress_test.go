@@ -65,16 +65,47 @@ func TestClearImplementationProgressIfLeaving(t *testing.T) {
 	dir := t.TempDir()
 	rig := "mockrig"
 	p := newImplementationProgress("wf-1", "implementation", rig)
+	p.BeadTurns["te-bead"] = 3
+	p.mark(implClosedKey("te-bead"))
 	if err := saveImplementationProgress(dir, rig, p); err != nil {
 		t.Fatal(err)
 	}
-	clearImplementationProgressIfLeaving(dir, rig, "implementation", "implementation")
-	if loadImplementationProgress(dir, rig, "wf-1", "implementation") == nil {
+	clearImplementationProgressIfLeaving(dir, rig, "wf-1", "implementation", "implementation")
+	got := loadImplementationProgress(dir, rig, "wf-1", "implementation")
+	if got == nil || got.BeadTurns["te-bead"] != 3 {
 		t.Fatal("should not clear when staying in implementation")
 	}
-	clearImplementationProgressIfLeaving(dir, rig, "implementation", "qa_review")
-	if loadImplementationProgress(dir, rig, "wf-1", "implementation") == nil {
-		t.Fatal("review must preserve counters and checkpoints")
+	if err := resetImplementationProgressBeadTurns(dir, rig, "another-workflow"); err != nil {
+		t.Fatal(err)
+	}
+	got = loadImplementationProgress(dir, rig, "wf-1", "implementation")
+	if got == nil || got.BeadTurns["te-bead"] != 3 {
+		t.Fatal("must not reset another workflow's turn budget")
+	}
+	clearImplementationProgressIfLeaving(dir, rig, "wf-1", "implementation", "planning")
+	got = loadImplementationProgress(dir, rig, "wf-1", "implementation")
+	if got == nil {
+		t.Fatal("handoff must preserve implementation checkpoints")
+	}
+	if got.BeadTurns["te-bead"] != 0 {
+		t.Fatalf("handoff did not reset the attempt budget: %+v", got.BeadTurns)
+	}
+	if !got.done(implClosedKey("te-bead")) {
+		t.Fatal("handoff must preserve bead close checkpoints")
+	}
+}
+
+func TestImplementationProgress_resetBeadTurns(t *testing.T) {
+	p := newImplementationProgress("wf-1", "implementation", "mockrig")
+	p.BeadTurns["te-bead"] = 44
+	if !p.resetBeadTurns("te-bead") {
+		t.Fatal("expected the bead turn count to reset")
+	}
+	if got := p.BeadTurns["te-bead"]; got != 0 {
+		t.Fatalf("turn count = %d, want 0", got)
+	}
+	if p.resetBeadTurns("te-bead") {
+		t.Fatal("resetting an already clear count should report no change")
 	}
 }
 

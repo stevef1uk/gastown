@@ -32,9 +32,21 @@ func WithPython3(env []string) []string {
 	return withEnvKey(env, "GT_PYTHON3", py)
 }
 
+var nestedPythonPytestModuleRE = regexp.MustCompile(`(?i)(^|[;&|]\s*|\s+)((?:'[^']*python3'|"[^"]*python3"|[^\s;&|]*python3))\s+-m\s+python3\s+-m\s+pytest\b`)
+
+// NormalizeNestedPythonPytestModule repairs a duplicated module invocation emitted
+// by agents, e.g. `.venv/bin/python3 -m python3 -m pytest` → `.venv/bin/python3 -m pytest`.
+func NormalizeNestedPythonPytestModule(cmd string) string {
+	if strings.Contains(cmd, "<<") {
+		return cmd
+	}
+	return nestedPythonPytestModuleRE.ReplaceAllString(cmd, `${1}${2} -m pytest`)
+}
+
 // RewritePython3InCommand substitutes bare python3 invocations with the resolved interpreter path.
 // Heredoc bodies (e.g. cat > requirements.txt <<'EOF') are left unchanged so file contents are not corrupted.
 func RewritePython3InCommand(cmd, python string) string {
+	cmd = NormalizeNestedPythonPytestModule(cmd)
 	if python == "" || python == "python3" {
 		return cmd
 	}

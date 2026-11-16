@@ -153,7 +153,7 @@ func runOrchestrated(ctx context.Context, client *llm.Client, townRoot, role, ri
 			orchestratedPrintf("[gt-agent] transition accepted: wf=%s %s -> %s\n", task.WorkflowID, task.State, nextState)
 			updateOrchestratedRetryAfterComplete(&state, task, outcome, summary, attemptLog, nextState)
 			clearQAReviewProgressIfLeaving(townRoot, taskRig, task.State, nextState)
-			clearImplementationProgressIfLeaving(townRoot, taskRig, task.State, nextState)
+			clearImplementationProgressIfLeaving(townRoot, taskRig, task.WorkflowID, task.State, nextState)
 		}
 
 		state.LastActivity = time.Now()
@@ -206,6 +206,11 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 		orchestratedPrintf("[gt-agent] injecting prior failure context for %s/%s\n", task.WorkflowID, task.State)
 	}
 	runner := newStateRunner(task, townRoot, rig)
+	if task.State != "implementation" {
+		if err := resetImplementationProgressBeadTurns(townRoot, rig, task.WorkflowID); err != nil {
+			orchestratedFprintfStderr("[gt-agent] recover implementation turn budget: %v\n", err)
+		}
+	}
 	// Reload hooks from the agent's embedded rig-flow.yaml — task.Hooks may have been baked
 	// from an older YAML version (cached at task creation time). Agent-side YAML wins.
 	if fresh, err := orchestrator.RigFlowStateHooks(task.State); err == nil {

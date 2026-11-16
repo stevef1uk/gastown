@@ -141,6 +141,14 @@ func (p *ImplementationProgress) done(key string) bool {
 	return p != nil && p.Completed != nil && p.Completed[key]
 }
 
+func (p *ImplementationProgress) resetBeadTurns(beadID string) bool {
+	if p == nil || p.BeadTurns == nil || beadID == "" || p.BeadTurns[beadID] == 0 {
+		return false
+	}
+	delete(p.BeadTurns, beadID)
+	return true
+}
+
 func implVerifyKey(beadID string) string {
 	return implMilestoneVerifyPrefix + strings.TrimSpace(beadID)
 }
@@ -350,6 +358,7 @@ func (r *stateRunner) clearStaleImplementationVerifyFailureOnResume() {
 	r.implProgress.LastVerifyFailOutput = ""
 	r.track.verifyOK = true
 	r.implProgress.mark(implVerifyKey(r.track.activeBead))
+	r.implProgress.resetBeadTurns(r.track.activeBead)
 	if saveErr := saveImplementationProgress(r.townRoot, r.rig, r.implProgress); saveErr != nil {
 		orchestratedFprintfStderr("[gt-agent] implementation progress save: %v\n", saveErr)
 	} else {
@@ -371,11 +380,17 @@ func (r *stateRunner) clearStaleImplementationVerifyMilestoneOnResume() {
 	}
 	if r.implementationEvidenceCurrent(r.track.activeBead) {
 		r.track.verifyOK = true
+		if r.implProgress.resetBeadTurns(r.track.activeBead) {
+			if err := saveImplementationProgress(r.townRoot, r.rig, r.implProgress); err != nil {
+				orchestratedFprintfStderr("[gt-agent] implementation progress save: %v\n", err)
+			}
+		}
 		return
 	}
 	out, failed := r.runActiveBeadVerifyCommand()
 	if !failed {
 		r.track.verifyOK = true
+		r.implProgress.resetBeadTurns(r.track.activeBead)
 		if saveErr := saveImplementationProgress(r.townRoot, r.rig, r.implProgress); saveErr != nil {
 			orchestratedFprintfStderr("[gt-agent] implementation progress save: %v\n", saveErr)
 		}
@@ -553,6 +568,9 @@ func (r *stateRunner) persistImplementationProgress(cmd string) {
 		if r.implProgress.mark(implVerifyKey(r.track.activeBead)) {
 			changed = true
 		}
+		if r.implProgress.resetBeadTurns(r.track.activeBead) {
+			changed = true
+		}
 		r.implProgress.LastVerifyFailBead = ""
 		r.implProgress.LastVerifyFailPath = ""
 		r.implProgress.LastVerifyFailPaths = nil
@@ -724,20 +742,50 @@ func (r *stateRunner) formatImplementationProgressBlock() string {
 		}
 	}
 
-	b.WriteString(fmt.Sprintf("\nProgress file: `%s/qa/implementation-progress.json` (cleared when leaving implementation).\n", r.implProgress.Rig))
+	b.WriteString(fmt.Sprintf("\nProgress file: `%s/qa/implementation-progress.json` (checkpoints persist; turn budgets reset on handoff).\n", r.implProgress.Rig))
 	return b.String()
 }
 
-func clearImplementationProgressIfLeaving(townRoot, rig, fromState, nextState string) {
+func clearImplementationProgressIfLeaving(townRoot, rig, workflowID, fromState, nextState string) {
 	if nextState != "completed" && nextState != "failed" {
+		if fromState == "implementation" && nextState != "implementation" {
+			if err := resetImplementationProgressBeadTurns(townRoot, rig, workflowID); err != nil {
+				orchestratedFprintfStderr("[gt-agent] reset implementation turn budget: %v\n", err)
+			} else {
+				orchestratedPrintf("[gt-agent] reset implementation turn budget after handoff to %s\n", nextState)
+			}
+		}
 		return
 	}
 	clearImplementationProgress(townRoot, rig)
 	orchestratedPrintf("[gt-agent] cleared implementation-progress for rig %s (left implementation → %s)\n", rig, nextState)
 }
 
-// addBeadTurn counts attempts durably. A session restart must not reset a stuck
-// bead's allowance, and a turn limit must never delete an artifact.
+func resetImplementationProgressBeadTurns(townRoot, rig, workflowID string) error {
+	path := implementationProgressPath(townRoot, rig)
+	if path == "" {
+		return nil
+	}
+	data, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	var progress ImplementationProgress
+	if err := json.Unmarshal(data, &progress); err != nil {
+		return fmt.Errorf("decode implementation progress: %w", err)
+	}
+	if progress.State != "implementation" || progress.Rig != rig || progress.WorkflowID != workflowID || len(progress.BeadTurns) == 0 {
+		return nil
+	}
+	progress.BeadTurns = map[string]int{}
+	return saveImplementationProgress(townRoot, rig, &progress)
+}
+
+// addBeadTurn counts attempts durably within an implementation episode. A
+// session restart must not reset the allowance; a workflow handoff does.
 func (r *stateRunner) addBeadTurn(beadID string) bool {
 	if r.implProgress == nil || beadID == "" {
 		return false
