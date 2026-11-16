@@ -127,9 +127,24 @@ func TestNormalizeDockerQACommand(t *testing.T) {
 			want: "docker-compose build --no-cache && docker-compose up --exit-code-from playwright && (docker rmi test-app:latest 2>/dev/null || true) && docker image prune -f",
 		},
 		{
+			name: "detached app waits until healthy before smoke",
+			in:   "docker compose -f finally/docker-compose.yml up -d && curl -fsS http://localhost:8000/api/health",
+			want: "docker compose -f finally/docker-compose.yml build --no-cache && docker compose -f finally/docker-compose.yml up -d --wait --wait-timeout 60 && (docker rmi test-app:latest 2>/dev/null || true) && docker image prune -f && curl -fsS http://localhost:8000/api/health",
+		},
+		{
+			name: "detached app preserves explicit wait",
+			in:   "docker compose -f finally/docker-compose.yml up -d --wait --wait-timeout 30",
+			want: "docker compose -f finally/docker-compose.yml build --no-cache && docker compose -f finally/docker-compose.yml up -d --wait --wait-timeout 30 && (docker rmi test-app:latest 2>/dev/null || true) && docker image prune -f",
+		},
+		{
 			name: "already hardened is idempotent",
 			in:   "docker-compose build --no-cache && docker-compose up --exit-code-from playwright && docker rmi test-app:latest 2>/dev/null || true && docker image prune -f",
 			want: "docker-compose build --no-cache && docker-compose up --exit-code-from playwright && (docker rmi test-app:latest 2>/dev/null || true) && docker image prune -f",
+		},
+		{
+			name: "already hardened detached app gains health wait",
+			in:   "docker compose build --no-cache && docker compose up -d",
+			want: "docker compose build --no-cache && docker compose up -d --wait --wait-timeout 60",
 		},
 		{
 			name: "non-docker command untouched",

@@ -1734,19 +1734,34 @@ func NormalizePytestCommand(cmd string) string {
 var dockerComposeUpRe = regexp.MustCompile(
 	`((?:docker-compose|docker\s+compose)(?:\s+-\w+(?:\s+[^\s&;]+)?)*)\s+up\b([^\n&;]*)`,
 )
+var dockerComposeWaitRe = regexp.MustCompile(`(?:^|\s)--wait(?:\s|$)`)
 
-// NormalizeDockerQACommand ensures docker compose E2E verify commands rebuild the
-// app image from scratch before starting containers. A plain `compose up` silently
-// reuses whatever image is already tagged — usually a stale build from a previous
-// run — so QA tests old code and fails for reasons unrelated to the current
-// implementation. Inserting `build --no-cache` forces the command to verify the
-// code on disk, not a cached image.
+// NormalizeDockerQACommand rebuilds app images before Compose verification and
+// waits for detached services to become healthy before subsequent smoke probes.
+// A plain `compose up` can reuse a stale image, while `up -d` returns before the
+// service is ready to accept requests.
 func NormalizeDockerQACommand(cmd string) string {
 	lower := strings.ToLower(cmd)
 	if !strings.Contains(lower, "docker compose") && !strings.Contains(lower, "docker-compose") {
 		return cmd
 	}
 	cmd = strings.ReplaceAll(cmd, "&& docker rmi test-app:latest 2>/dev/null || true", "&& (docker rmi test-app:latest 2>/dev/null || true)")
+	cmd = dockerComposeUpRe.ReplaceAllStringFunc(cmd, func(match string) string {
+		sub := dockerComposeUpRe.FindStringSubmatch(match)
+		if len(sub) != 3 {
+			return match
+		}
+		flags := strings.TrimSpace(sub[2])
+		trailing := sub[2][len(strings.TrimRight(sub[2], " \t")):]
+		if !strings.Contains(" "+flags+" ", " -d ") &&
+			!strings.Contains(" "+flags+" ", " --detach ") {
+			return match
+		}
+		if dockerComposeWaitRe.MatchString(flags) {
+			return match
+		}
+		return sub[1] + " up " + flags + " --wait --wait-timeout 60" + trailing
+	})
 	if strings.Contains(lower, "build --no-cache") {
 		return cmd
 	}
@@ -1756,14 +1771,15 @@ func NormalizeDockerQACommand(cmd string) string {
 			return match
 		}
 		prefix := sub[1]
-		flags := strings.ReplaceAll(sub[2], "--build", "")
+		flags := strings.ReplaceAll(strings.TrimSpace(sub[2]), "--build", "")
 		flags = strings.Join(strings.Fields(flags), " ")
-		if flags != "" {
-			flags = " " + flags
+		trailing := sub[2][len(strings.TrimRight(sub[2], " \t")):]
+		if flags == "" {
+			return prefix + " build --no-cache && " + prefix + " up && (docker rmi test-app:latest 2>/dev/null || true) && docker image prune -f" + trailing
 		}
 		// Insert no-cache build before up; remove old test-app:latest first so it never
 		// becomes dangling. Append image prune to clean any remaining dangling layers.
-		return prefix + " build --no-cache && " + prefix + " up" + flags + " && (docker rmi test-app:latest 2>/dev/null || true) && docker image prune -f"
+		return prefix + " build --no-cache && " + prefix + " up " + flags + " && (docker rmi test-app:latest 2>/dev/null || true) && docker image prune -f" + trailing
 	})
 }
 
