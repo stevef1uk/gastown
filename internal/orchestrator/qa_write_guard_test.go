@@ -30,3 +30,29 @@ func TestQACommandMutatesLayoutSource_allowsRead(t *testing.T) {
 		t.Fatal("expected read-only head to be allowed")
 	}
 }
+
+func TestQACommandMutatesLayoutSource_allowsReadOnlySed(t *testing.T) {
+	t.Parallel()
+	v := linkshelfProfile()
+	for _, cmd := range []string{
+		`cd testrig/mayor/rig && sed -n '1,140p' linkshelf/web/index.html`,
+		`cd testrig/mayor/rig && sed 's|old|new|' linkshelf/web/index.html`,
+	} {
+		if path, ok := QACommandMutatesLayoutSource(cmd, v); ok {
+			t.Errorf("read-only command blocked as a write to %q: %s", path, cmd)
+		}
+	}
+}
+
+func TestQACommandMutatesLayoutSource_blocksInPlaceSed(t *testing.T) {
+	t.Parallel()
+	v := linkshelfProfile()
+	for _, cmd := range []string{
+		`cd testrig/mayor/rig && sed -i 's|old|new|' linkshelf/web/index.html`,
+		`cd testrig/mayor/rig && sed -i '' 's|old|new|' linkshelf/web/index.html`,
+	} {
+		if path, ok := QACommandMutatesLayoutSource(cmd, v); !ok || path == "" {
+			t.Errorf("in-place edit was not blocked: %s", cmd)
+		}
+	}
+}

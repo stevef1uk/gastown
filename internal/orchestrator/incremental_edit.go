@@ -14,15 +14,21 @@ const IncrementalEditMinBytes int64 = 4096
 var (
 	implementCatPathRE = regexp.MustCompile(`(?i)cat\s*>\s*([^\s<;|&]+)`)
 	// sed target is usually the last path-like token on the line.
-	implementSedPathRE = regexp.MustCompile(`(?i)\bsed\b[^|;&]*\s+([^\s'";|&<>]+\.(?:go|py|js|mjs|cjs|ts|tsx|jsx|html|htm|css|scss|rs|java|rb|php|sh|sql|lua))\s*$`)
-	implementPatchPathRE = regexp.MustCompile(`(?i)\bpatch\s+(?:-(?:[^\s]+\s+))*(?:<[^\s]+\s+)?([^\s;|&]+\.(?:go|py|js|ts|html|css))`)
+	implementSedPathRE    = regexp.MustCompile(`(?i)\bsed\b[^|;&]*\s+([^\s'";|&<>]+\.(?:go|py|js|mjs|cjs|ts|tsx|jsx|html|htm|css|scss|rs|java|rb|php|sh|sql|lua))\s*$`)
+	implementSedInPlaceRE = regexp.MustCompile(`(?i)\bsed\b[^|;&]*\s-i(?:\s|['".]|$)`)
+	implementPatchPathRE  = regexp.MustCompile(`(?i)\bpatch\s+(?:-(?:[^\s]+\s+))*(?:<[^\s]+\s+)?([^\s;|&]+\.(?:go|py|js|ts|html|css))`)
 )
 
 // ExtractImplementWritePathFromCmd returns a repo-relative path under layout_root when cmd writes a source file.
 func ExtractImplementWritePathFromCmd(cmd, layoutRoot string) string {
 	layout := strings.Trim(strings.TrimSpace(layoutRoot), "/")
-	for _, re := range []*regexp.Regexp{implementCatPathRE, implementSedPathRE, implementPatchPathRE} {
+	for _, re := range []*regexp.Regexp{implementCatPathRE, implementPatchPathRE} {
 		if p := normalizeImplementWritePath(re.FindStringSubmatch(cmd), layout); p != "" {
+			return p
+		}
+	}
+	if IsInPlaceSedCommand(cmd) {
+		if p := normalizeImplementWritePath(implementSedPathRE.FindStringSubmatch(cmd), layout); p != "" {
 			return p
 		}
 	}
@@ -34,6 +40,11 @@ func ExtractImplementWritePathFromCmd(cmd, layoutRoot string) string {
 		}
 	}
 	return ""
+}
+
+// IsInPlaceSedCommand reports whether cmd invokes sed with its in-place edit option.
+func IsInPlaceSedCommand(cmd string) bool {
+	return implementSedInPlaceRE.MatchString(cmd)
 }
 
 func normalizeImplementWritePath(m []string, layout string) string {

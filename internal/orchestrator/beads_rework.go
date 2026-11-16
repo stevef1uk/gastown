@@ -266,6 +266,56 @@ func reopenClosedImplementBeadsForIDs(townRoot, rig string, v WorkflowValidation
 	return reopened, nil
 }
 
+// RewindToEarlierPhaseForQAFailure returns to the owning phase when an explicit QA repair
+// target belongs to a completed phase. The regular QA rework path then reopens only the
+// named beads in that phase; current-phase targets need no rewind.
+func RewindToEarlierPhaseForQAFailure(townRoot, rig string, v WorkflowValidation, summary string) (string, error) {
+	report, ok := ParseQAFailureReport(summary)
+	if !ok || len(report.RepairBeadIDs) == 0 || !v.HasPhasedDelivery() {
+		return "", nil
+	}
+	activeIdx := v.ActivePhaseIndex()
+	if activeIdx <= 0 {
+		return "", nil
+	}
+
+	targetIDs := make(map[string]bool, len(report.RepairBeadIDs))
+	for _, id := range report.RepairBeadIDs {
+		targetIDs[strings.ToLower(strings.TrimSpace(id))] = true
+	}
+	targetPhaseIdx := -1
+	var targetPath string
+	for _, status := range []string{"closed", "open", "in_progress"} {
+		beads, err := listImplementBeadsForGuard(townRoot, rig, v, status)
+		if err != nil {
+			return "", err
+		}
+		for _, bead := range beads {
+			if !targetIDs[strings.ToLower(strings.TrimSpace(bead.ID))] {
+				continue
+			}
+			path := NormalizePlannerBeadPath(ExtractPathFromBeadTitle(bead.Title, v.BeadTitleContains), v.LayoutRoot, rig)
+			phaseIdx := v.FindDeliveryPhaseForFile(path)
+			if phaseIdx < 0 || phaseIdx >= activeIdx {
+				continue
+			}
+			if targetPhaseIdx < 0 || phaseIdx < targetPhaseIdx {
+				targetPhaseIdx = phaseIdx
+				targetPath = path
+			}
+		}
+	}
+	if targetPhaseIdx < 0 {
+		return "", nil
+	}
+	originalPhase := v.ActivePhaseID()
+	targetPhase := strings.TrimSpace(v.DeliveryPhases[targetPhaseIdx].ID)
+	if targetPhase == "" || originalPhase == "" {
+		return "", nil
+	}
+	return performRewindToPhase(townRoot, rig, targetPhase, originalPhase, []string{targetPath})
+}
+
 func reopenClosedImplementBeadsForPaths(townRoot, rig string, v WorkflowValidation, paths []string) ([]string, error) {
 	if len(paths) == 0 {
 		return nil, nil

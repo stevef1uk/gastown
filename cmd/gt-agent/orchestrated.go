@@ -2975,7 +2975,7 @@ func isQAReadOnlyCommand(cmd string) bool {
 			return true
 		}
 	}
-	return strings.Contains(lower, "bd list")
+	return strings.Contains(lower, "bd list") || isQAReadOnlySedCommand(cmd)
 }
 
 // isQAFileReadCommand matches commands that read file content (without bd list).
@@ -2987,7 +2987,11 @@ func isQAFileReadCommand(cmd string) bool {
 			return true
 		}
 	}
-	return false
+	return isQAReadOnlySedCommand(cmd)
+}
+
+func isQAReadOnlySedCommand(cmd string) bool {
+	return strings.Contains(strings.ToLower(cmd), "sed ") && !orchestrator.IsInPlaceSedCommand(cmd)
 }
 
 func validateQARuntimeSmokeCommand(cmd, rig, townRoot string, v orchestrator.WorkflowValidation) error {
@@ -3118,7 +3122,7 @@ func validateQACommand(cmd, rig, townRoot string, v orchestrator.WorkflowValidat
 		}
 	}
 	if path, mutates := orchestrator.QACommandMutatesLayoutSource(cmd, v); mutates {
-		return fmt.Errorf("QA must not modify implementation files (blocked write to %q) — send outcome failure with bead IDs so the polecat fixes handlers/web; do not sed or redirect-edit under %s", path, strings.TrimSpace(v.LayoutRoot))
+		return fmt.Errorf("QA must not modify implementation files (blocked write to %q) — send outcome failure with bead IDs so the polecat fixes the implementation; do not use in-place edits or redirects under %s", path, strings.TrimSpace(v.LayoutRoot))
 	}
 	if path, writes := orchestrator.QACommandWritesTestPlanDoc(cmd); writes {
 		return fmt.Errorf("QA must not modify tester artifacts (blocked write to %q) — TEST_PLAN.md and test-report.md are owned by the tester", path)
@@ -3139,6 +3143,7 @@ func validateQAReadPath(cmd, townRoot string) error {
 			break
 		}
 	}
+	hasReadPrefix = hasReadPrefix || isQAReadOnlySedCommand(cmd)
 	if !hasReadPrefix {
 		return nil
 	}

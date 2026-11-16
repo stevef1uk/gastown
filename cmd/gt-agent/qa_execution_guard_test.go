@@ -35,6 +35,23 @@ func TestQAExecutionGuard_BlocksBroadCleanupBeforeExecution(t *testing.T) {
 	}
 }
 
+func TestQAExecutionGuard_RecognizesReadOnlySed(t *testing.T) {
+	town := t.TempDir()
+	cmd := `cd sample/mayor/rig && sed -n '1,20p' sample/main.py`
+	if !isQAReadOnlyCommand(cmd) || !isQAFileReadCommand(cmd) {
+		t.Fatal("read-only sed was not classified as a source read")
+	}
+	if err := validateQAReadPath(cmd, town); err != nil {
+		t.Fatalf("read-only sed in the project tree was rejected: %v", err)
+	}
+	if err := validateQAReadPath(`sed -n '1,20p' /etc/passwd`, town); err == nil {
+		t.Fatal("read-only sed outside the project tree was accepted")
+	}
+	if isQAReadOnlyCommand(`sed -i 's|old|new|' sample/main.py`) {
+		t.Fatal("in-place sed was classified as read-only")
+	}
+}
+
 func TestQAExecutionResult_PreservesTargetsWithAndWithoutCommands(t *testing.T) {
 	json := `{"outcome":"failure","summary":"b-web is complete; health endpoint is broken","repair_bead_ids":["b-main"],"evidence":"product/main.py GET /api/health returned 500"}`
 	for _, response := range []string{json, "CMD: bd list --status=closed\n" + json} {

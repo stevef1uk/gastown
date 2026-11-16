@@ -798,6 +798,26 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summa
 			inst.TestPlanFailures = 0
 		}
 		if fromState == "qa_review" && next == "implementation" && rig != "" && phaseAdvance == nil {
+			if rewindLog, rerr := RewindToEarlierPhaseForQAFailure(m.townRoot, rig, v, summary); rerr != nil {
+				inst.CurrentState = fromState
+				inst.Status = "running"
+				inst.touchStateEnteredAt()
+				return "", fmt.Errorf("rewind to QA repair phase: %w", rerr)
+			} else if rewindLog != "" {
+				fmt.Printf("[Manager] QA repair phase rewind: %s\n", rewindLog)
+				reloaded, ok, rerr := LoadRigWorkflowProfileFile(m.townRoot, rig)
+				if rerr != nil || !ok {
+					inst.CurrentState = fromState
+					inst.Status = "running"
+					inst.touchStateEnteredAt()
+					if rerr == nil {
+						rerr = fmt.Errorf("workflow profile not found")
+					}
+					return "", fmt.Errorf("reload workflow profile after QA repair rewind: %w", rerr)
+				}
+				v = reloaded
+				reworkFeedback = strings.TrimSpace(reworkFeedback + "\n\n" + rewindLog)
+			}
 			reopenText := summary // Raw command output can list every closed bead; it is not a repair instruction.
 			if reopened, rerr := ReopenImplementationBeadsAfterQAFailure(m.townRoot, rig, v, reopenText); rerr != nil {
 				fmt.Printf("[Manager] Warning: reopen implement beads after QA failure: %v\n", rerr)

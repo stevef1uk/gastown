@@ -50,6 +50,7 @@ func normalizeVerificationReviewResult(townRoot, rig string, v WorkflowValidatio
 		return invalid("a failure needs explicit repair targets and evidence; closed-bead listings are not repair targets")
 	}
 	known := map[string]bool{}
+	activePhaseIndex := v.ActivePhaseIndex()
 	for _, status := range []string{"closed", "open", "in_progress"} {
 		beads, err := listImplementBeadsForGuard(townRoot, rig, v, status)
 		if err != nil {
@@ -57,14 +58,19 @@ func normalizeVerificationReviewResult(townRoot, rig string, v WorkflowValidatio
 		}
 		for _, bead := range beads {
 			path := NormalizePlannerBeadPath(ExtractPathFromBeadTitle(bead.Title, v.BeadTitleContains), v.LayoutRoot, rig)
-			if pathMatchesRequiredForProfile(path, v.ForActivePhase().RequiredFiles, v) {
+			phaseIndex := v.FindDeliveryPhaseForFile(path)
+			inScope := pathMatchesRequiredForProfile(path, v.ForActivePhase().RequiredFiles, v)
+			if v.HasPhasedDelivery() {
+				inScope = activePhaseIndex >= 0 && phaseIndex >= 0 && phaseIndex <= activePhaseIndex
+			}
+			if inScope {
 				known[bead.ID] = true
 			}
 		}
 	}
 	for _, id := range report.RepairBeadIDs {
 		if !known[id] {
-			return invalid(fmt.Sprintf("%q is not a canonical active-phase implementation bead", id))
+			return invalid(fmt.Sprintf("%q is not a canonical current-or-completed-phase implementation bead", id))
 		}
 	}
 	return outcome, summary

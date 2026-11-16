@@ -158,6 +158,116 @@ func TestVerificationReview_OnlyExplicitDefectTargetsAreReopened(t *testing.T) {
 	}
 }
 
+func TestVerificationReview_AcceptsCompletedPhaseRepairBead(t *testing.T) {
+	town, rig := t.TempDir(), "sample"
+	v := WorkflowValidation{
+		LayoutRoot: "product", BeadTitleContains: "Implement product/", ActivePhaseIDField: "integration",
+		DeliveryPhases: []DeliveryPhase{
+			{ID: "foundation", RequiredFiles: []string{"product/main.py"}},
+			{ID: "integration", RequiredFiles: []string{"product/market/provider.py"}},
+			{ID: "future", RequiredFiles: []string{"product/frontend/page.tsx"}},
+		},
+	}
+	beads := []PlanBead{
+		{ID: "b-main", Title: "Implement product/main.py per architecture"},
+		{ID: "b-provider", Title: "Implement product/market/provider.py per architecture"},
+		{ID: "b-future", Title: "Implement product/frontend/page.tsx per architecture"},
+	}
+	setListImplementBeadsByStatusHook(t, town, rig, func(_, _ string, _ WorkflowValidation, status string) ([]PlanBead, error) {
+		if status == "closed" {
+			return beads, nil
+		}
+		return nil, nil
+	})
+	for _, beadID := range []string{"b-main", "b-provider"} {
+		report, err := json.Marshal(QAFailureReport{
+			Summary:       "Integration defect requires a focused repair.",
+			RepairBeadIDs: []string{beadID},
+			Evidence:      "The running application does not use this implementation.",
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if outcome, _ := normalizeVerificationReviewResult(town, rig, v, "failure", string(report)); outcome != "failure" {
+			t.Fatalf("current/completed phase bead %s was rejected as %q", beadID, outcome)
+		}
+	}
+	futureReport, err := json.Marshal(QAFailureReport{
+		Summary:       "Future phase work is incomplete.",
+		RepairBeadIDs: []string{"b-future"},
+		Evidence:      "The frontend has not been built.",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if outcome, _ := normalizeVerificationReviewResult(town, rig, v, "failure", string(futureReport)); outcome != "verification_error" {
+		t.Fatalf("future-phase repair target was accepted as %q", outcome)
+	}
+}
+
+func TestVerificationReview_RewindsToCompletedPhaseRepairOwner(t *testing.T) {
+	townRoot, rig, rigDir, beadsDir := setupPhasedRigTown(t)
+	writeTestPhasedProfile(t, townRoot, rig, "backend")
+	v, ok, err := LoadRigWorkflowProfileFile(townRoot, rig)
+	if err != nil || !ok {
+		t.Fatal(err)
+	}
+	if _, err := SyncPlanningArtifacts(townRoot, rig, v.ForActivePhase(), true); err != nil {
+		t.Fatal(err)
+	}
+	for _, rel := range v.ForActivePhase().RequiredFiles {
+		writeBackendFileContent(t, rigDir, rel)
+	}
+	closeAllOpenImplementBeads(t, townRoot, rig, beadsDir, rigDir, v.ForActivePhase())
+
+	if err := SetRigActivePhase(townRoot, rig, "frontend"); err != nil {
+		t.Fatal(err)
+	}
+	if err := AddRigCompletedPhase(townRoot, rig, "backend"); err != nil {
+		t.Fatal(err)
+	}
+	v, ok, err = LoadRigWorkflowProfileFile(townRoot, rig)
+	if err != nil || !ok {
+		t.Fatal(err)
+	}
+	var repairBead string
+	for _, bead := range mustListImplementBeads(t, townRoot, rig, v, "closed") {
+		path := NormalizePlannerBeadPath(ExtractPathFromBeadTitle(bead.Title, v.BeadTitleContains), v.LayoutRoot, rig)
+		if path == "linkshelf/internal/store/store.go" {
+			repairBead = bead.ID
+			break
+		}
+	}
+	if repairBead == "" {
+		t.Fatal("closed backend implementation bead not found")
+	}
+
+	manager, workflowID := loadPhasedManager(t, townRoot, rig)
+	report, err := json.Marshal(QAFailureReport{
+		Summary:       "The API integration is incomplete because the backend store path is not wired.",
+		RepairBeadIDs: []string{repairBead},
+		Evidence:      "The running application does not use the store implementation.",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	next, err := manager.CompleteTask(workflowID, "failure", "", string(report), "", nil)
+	if err != nil || next != "implementation" {
+		t.Fatalf("QA failure transition = %q, err=%v", next, err)
+	}
+	assertActivePhase(t, townRoot, rig, "backend")
+	reloaded, ok, err := LoadRigWorkflowProfileFile(townRoot, rig)
+	if err != nil || !ok {
+		t.Fatal(err)
+	}
+	if !ImplementBeadIsStillOpen(townRoot, rig, repairBead, reloaded.ForActivePhase()) {
+		t.Fatalf("QA repair bead %s was not reopened in its owning phase", repairBead)
+	}
+	if pending := manager.instances[workflowID].PendingRework; pending == nil || !strings.Contains(pending.Feedback, "rewound active phase") {
+		t.Fatalf("phase rewind was not included in repair feedback: %+v", pending)
+	}
+}
+
 func TestVerificationReviewWorkflowConfiguration(t *testing.T) {
 	for _, name := range []string{"rig-flow", "req-flow"} {
 		data, err := os.ReadFile(filepath.Join("town", "templates", name+".yaml"))
@@ -173,4 +283,13 @@ func TestVerificationReviewWorkflowConfiguration(t *testing.T) {
 			t.Fatalf("%s: incorrect review routing: %+v", name, qa)
 		}
 	}
+}
+
+func mustListImplementBeads(t *testing.T, townRoot, rig string, v WorkflowValidation, status string) []PlanBead {
+	t.Helper()
+	beads, err := listImplementBeadsForGuard(townRoot, rig, v, status)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return beads
 }

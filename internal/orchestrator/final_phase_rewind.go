@@ -137,8 +137,8 @@ func rewindProblemPhases(townRoot, rig string, v WorkflowValidation, mode rewind
 
 // performRewindToPhase rewinds active_phase_id to targetPhase, reopens/creates its implement
 // beads, and records a rewound-from marker so phase advancement jumps back to originalPhase once
-// the repair phase completes. Shared by the QA, final-phase, and implementation-failure rewinds.
-// Returns a human-readable log line describing what was rewound and which beads were opened.
+// the repair phase completes. Shared by QA, final-phase, and implementation-failure rewinds.
+// Returns a human-readable log line describing the rewind and any beads that were opened.
 func performRewindToPhase(townRoot, rig, targetPhase, originalPhase string, problemFiles []string) (string, error) {
 	if originalPhase != "" && originalPhase != targetPhase {
 		_ = SetRigRewoundFromPhase(townRoot, rig, originalPhase)
@@ -158,7 +158,7 @@ func performRewindToPhase(townRoot, rig, targetPhase, originalPhase string, prob
 		return "", fmt.Errorf("rewound active phase to %s but failed to ensure implement beads: %w", targetPhase, err)
 	}
 
-	logLine := fmt.Sprintf("rewound active phase to %s for missing/stubbed files: %s", targetPhase, strings.Join(problemFiles, ", "))
+	logLine := fmt.Sprintf("rewound active phase to %s for repair files: %s", targetPhase, strings.Join(problemFiles, ", "))
 	if len(reopenedOrCreated) > 0 {
 		logLine += fmt.Sprintf("; reopened/created beads: %s", strings.Join(reopenedOrCreated, ", "))
 	}
