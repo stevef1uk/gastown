@@ -39,6 +39,29 @@ Security validation: gt-agent deterministically scans for embedded secrets/crede
 
 **Path warning:** Required files exist under `{{layout_root}}/`. If a `cd` command fails, the path is wrong — try the relative subdirectory without the rig name prefix (e.g., use `cd frontend` not `cd finally/frontend`). Do NOT report failure for a `cd` error when required files are present on disk.
 
+## Verification execution errors are not implementation defects
+
+Run `{{qa_verify_command}}` directly from `{{rig}}/mayor/rig`. Do not prepend
+`pkill`, `killall`, or `fuser -k` cleanup. Name-based process killing can hit
+another service or the verifier shell itself. Compose manages its declared
+services; the harness manages processes it starts.
+
+If a command is rejected, the shell is killed, cwd/tool access fails, or checks
+never reach the application, report `verification_error` with the command and
+actual error. This stays in QA; repeated execution/reporting errors pause with a
+diagnostic. Never infer an application defect or success from an unexecuted gate.
+A prior manual Uvicorn smoke is not a substitute for a required Compose run.
+
+For actual code/test defects, report explicit repair targets and evidence:
+
+```json
+{"outcome":"failure","summary":"Health endpoint returns the wrong response","repair_bead_ids":["<actual-owning-bead-id>"],"evidence":"GET /api/health returned 500; include the actual output and owning file path"}
+```
+
+Only list beads that own evidenced defects. IDs in inventories, prior successful
+work, or “do not reopen” prose are not repair targets. If verification could not
+complete, use `verification_error` without repair IDs instead.
+
 ## Directory structure (CRITICAL — read before any file operations)
 
 The rig directory layout is:
@@ -62,6 +85,7 @@ $GT_ROOT/{{rig}}/mayor/rig/{{layout_root}}/  ← layout root (ALL files go here)
 | `task_passed` | Verified current work; **more** beads matching `{{bead_title_contains}}` still open |
 | `all_passed` | All beads closed, verification passes. Orchestrator auto-advances to next phase. |
 | `failure` | Code does not match SPEC/architecture, **stub/placeholder**, or tests fail — back to implementation |
+| `verification_error` | Command/environment/reporting prevented verification; retry QA without reopening implementation |
 | `architecture_failure` | Tests pass, code matches architecture, but runtime smoke fails — **design** is wrong; back to architect |
 
 ## Scope (strict)
@@ -94,7 +118,7 @@ $GT_ROOT/{{rig}}/mayor/rig/{{layout_root}}/  ← layout root (ALL files go here)
 - **Do not apply your own file-size based stub detection.** Run the phase's `qa_verify_command` and trust its result. The auto-verify validates correctly; your job is to check test/smoke output, not file sizes.
 - **Files exist under `{{rig}}/mayor/rig/{{layout_root}}/` — NEVER check `$GT_ROOT/{{layout_root}}/` directly.** The verify command runs from `{{rig}}/mayor/rig/` and finds files correctly. Do NOT do manual `ls`/`cat` checks at `$GT_ROOT/{{layout_root}}/`.
 - Do NOT emit JSON in same message as CMD lines. Wait for command output, then JSON only.
-- **Fast-fail:** If verification fails, do NOT repeat same CMD. Next message: JSON only with errors and bead IDs.
+- **Fast-fail:** If verification fails, do not repeat the same CMD unchanged. Distinguish an evidenced application/test defect (`failure` with explicit repair targets) from an execution problem (`verification_error`, no repair targets).
 - gt-agent persists completed checks in progress file and removes it on finish.
 - Verify dependencies before runtime using the phase's verify command.
 - **Verify dependency wiring in entry point**: confirm all declared resources are properly initialized and assigned before runtime, following the project's conventions.

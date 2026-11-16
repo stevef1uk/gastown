@@ -131,8 +131,8 @@ func TestRigFlowYAML_qaReviewHasFastFailHooks(t *testing.T) {
 		t.Fatal("qa_review must set append_go_compile_context: true")
 	}
 	trans, ok := st.Transitions["timeout"]
-	if !ok || trans.To != "implementation" {
-		t.Fatalf("timeout transition = %+v, want to implementation", st.Transitions["timeout"])
+	if !ok || trans.To != "qa_review" {
+		t.Fatalf("timeout transition = %+v, want to retry QA", st.Transitions["timeout"])
 	}
 }
 

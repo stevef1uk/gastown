@@ -67,6 +67,14 @@ func QAReopenedBeadIDs(townRoot, rig string) []string {
 		if rw == nil || (rw.FromState != "qa_review" && rw.FromState != "test_review") {
 			return nil
 		}
+		if rw.FromState == "qa_review" {
+			if IsVerificationErrorOutcome(rw.Outcome) {
+				return nil
+			}
+			if report, ok := ParseQAFailureReport(rw.Summary); ok {
+				return dedupeStrings(report.RepairBeadIDs)
+			}
+		}
 		prefix, _ := RigIssuePrefix(townRoot, rig)
 		known, _, _ := ListRigBeadIDSet(townRoot, rig)
 		return ExtractKnownRigBeadIDsFromSummary(rw.Summary, prefix, known)
@@ -78,6 +86,14 @@ func QAReopenedBeadIDs(townRoot, rig string) []string {
 // polecat back so work can continue without manual bd update.
 func ReopenImplementationBeadsAfterQAFailure(townRoot, rig string, v WorkflowValidation, summary string) ([]string, error) {
 	if rig == "" || townRoot == "" {
+		return nil, nil
+	}
+	if report, ok := ParseQAFailureReport(summary); ok {
+		// No broad runtime/full-profile fallback for a structured defect report.
+		// Its explicit targets are authoritative; inventory prose is diagnostic.
+		return reopenClosedImplementBeadsForIDs(townRoot, rig, v.ForActivePhase(), dedupeStrings(report.RepairBeadIDs))
+	}
+	if IsQAAgentShellError(summary) {
 		return nil, nil
 	}
 	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")

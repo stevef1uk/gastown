@@ -34,15 +34,33 @@ type reworkFeedbackBuilder func(summary, raw string, v WorkflowValidation) strin
 // reworkFeedbackBuilders is the registry of named feedback templates. Workflow
 // templates route "from->to" transitions to these names via rework_feedback YAML.
 var reworkFeedbackBuilders = map[string]reworkFeedbackBuilder{
-	"plan_review_to_planner":         func(summary, raw string, v WorkflowValidation) string { return preparePlanReviewToPlannerFeedback(summary, raw) },
-	"qa_review_to_implementation":    func(summary, raw string, v WorkflowValidation) string { return prepareQAReviewToImplementationFeedback(summary, raw, v) },
-	"qa_review_to_design":            func(summary, raw string, v WorkflowValidation) string { return prepareQAReviewToDesignFeedback(summary, raw, v) },
-	"test_review_to_implementation":  func(summary, raw string, v WorkflowValidation) string { return prepareTestReviewToImplementationFeedback(summary, raw, v) },
-	"test_review_to_design":          func(summary, raw string, v WorkflowValidation) string { return prepareTestReviewToDesignFeedback(summary, raw, v) },
-	"test_plan_to_planner":           func(summary, raw string, v WorkflowValidation) string { return prepareTestPlanToPlannerFeedback(summary, raw) },
-	"test_plan_review_to_tester":     func(summary, raw string, v WorkflowValidation) string { return prepareTestPlanReviewToTesterFeedback(summary, raw, v) },
-	"phase_advance_to_planning":      func(summary, raw string, v WorkflowValidation) string { return preparePhaseAdvanceToPlanningFeedback(summary, raw, v) },
-	"architecture_failure_to_design": func(summary, raw string, v WorkflowValidation) string { return prepareArchitectureFailureToDesignFeedback(summary, raw, v) },
+	"plan_review_to_planner": func(summary, raw string, v WorkflowValidation) string {
+		return preparePlanReviewToPlannerFeedback(summary, raw)
+	},
+	"qa_review_to_implementation": func(summary, raw string, v WorkflowValidation) string {
+		return prepareQAReviewToImplementationFeedback(summary, raw, v)
+	},
+	"qa_review_to_design": func(summary, raw string, v WorkflowValidation) string {
+		return prepareQAReviewToDesignFeedback(summary, raw, v)
+	},
+	"test_review_to_implementation": func(summary, raw string, v WorkflowValidation) string {
+		return prepareTestReviewToImplementationFeedback(summary, raw, v)
+	},
+	"test_review_to_design": func(summary, raw string, v WorkflowValidation) string {
+		return prepareTestReviewToDesignFeedback(summary, raw, v)
+	},
+	"test_plan_to_planner": func(summary, raw string, v WorkflowValidation) string {
+		return prepareTestPlanToPlannerFeedback(summary, raw)
+	},
+	"test_plan_review_to_tester": func(summary, raw string, v WorkflowValidation) string {
+		return prepareTestPlanReviewToTesterFeedback(summary, raw, v)
+	},
+	"phase_advance_to_planning": func(summary, raw string, v WorkflowValidation) string {
+		return preparePhaseAdvanceToPlanningFeedback(summary, raw, v)
+	},
+	"architecture_failure_to_design": func(summary, raw string, v WorkflowValidation) string {
+		return prepareArchitectureFailureToDesignFeedback(summary, raw, v)
+	},
 }
 
 // prepareArchitectureFailureToDesignFeedback renders rework guidance when an agent
@@ -115,6 +133,11 @@ func extractLastSmokeFailure(raw string) string {
 }
 
 func prepareQAReviewToImplementationFeedback(summary, raw string, v WorkflowValidation) string {
+	if report, ok := ParseQAFailureReport(summary); ok {
+		return "Repair only the explicitly identified implementation beads: " + strings.Join(report.RepairBeadIDs, ", ") +
+			"\n\nQA finding: " + report.Summary + "\nEvidence: " + report.Evidence +
+			"\n\nOther bead IDs in inventories or captured output are not repair targets. Preserve unaffected files and completion credit."
+	}
 	if IsQAAgentShellError(summary) {
 		var b strings.Builder
 		b.WriteString("QA command failed due to wrong working directory (not an implementation defect).\n\n")

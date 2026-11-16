@@ -5,6 +5,9 @@ import "strings"
 // StateHooks configures gt-agent behavior for one FSM state (declarative; no state-name switches in gt-agent).
 // Wire new behavior via templates/rig-flow.yaml — see prompt_context.go and town/README.md (§ FSM vs Go).
 type StateHooks struct {
+	// VerificationErrorLimit keeps execution/reporting failures in the review
+	// state and bounds retries independently of implementation defects.
+	VerificationErrorLimit int `yaml:"verification_error_limit,omitempty" json:"verification_error_limit,omitempty"`
 	// DependencyReview checks the full delivery contract before accepting a result.
 	// Defects use the state's dependency_blocked transition, configured in YAML.
 	DependencyReview   bool `yaml:"dependency_review,omitempty" json:"dependency_review,omitempty"`
@@ -127,6 +130,9 @@ type AutoVerifyHook struct {
 // Fields with zero-value in override are left unchanged (preserving the receiver's value).
 // This lets lazy-loaded YAML hooks override baked task hooks without wiping unset fields.
 func (h StateHooks) ApplyOverrides(override StateHooks) StateHooks {
+	if override.VerificationErrorLimit > 0 {
+		h.VerificationErrorLimit = override.VerificationErrorLimit
+	}
 	if override.NoProgressLimit > 0 {
 		h.NoProgressLimit = override.NoProgressLimit
 	}

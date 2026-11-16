@@ -49,27 +49,35 @@ func (m *Manager) applyStateTimeout(workflowID string) (string, error) {
 	if feedback == "" {
 		feedback = "state wall-clock timeout"
 	}
-	next, err := inst.Transition(tpl, "timeout")
+	outcome := "timeout"
+	if state.Hooks.VerificationErrorLimit > 0 {
+		outcome = "verification_error"
+	}
+	next, err := inst.Transition(tpl, outcome)
 	if err != nil {
 		return "", err
 	}
 	// Hard reset hooks ran; start a fresh wall-clock window (same-state transition does not touch StateEnteredAt).
 	inst.touchStateEnteredAt()
 	reworkFeedback := PrepareWorkflowReworkFeedback(fromState, next, summary, feedback, v, tpl.ReworkFeedback)
+	if IsVerificationErrorOutcome(outcome) {
+		reworkFeedback = verificationRetryFeedback(v, feedback)
+	}
 	inst.PendingRework = &WorkflowRework{
 		FromState: fromState,
-		Outcome:   "timeout",
+		Outcome:   outcome,
 		Summary:   truncateWorkflowText(summary, maxWorkflowReworkSummary),
 		Feedback:  reworkFeedback,
 		AgentID:   "orchestrator",
 	}
+	inst.recordVerificationError(fromState, outcome, state.Hooks.VerificationErrorLimit)
 	if err := m.persistLocked(); err != nil {
 		return next, err
 	}
-	if cerr := refinery.CommitMayorRigOrchestratorCheckpoint(m.townRoot, rig, workflowID, inst.TemplateID, fromState, next, "timeout"); cerr != nil {
+	if cerr := refinery.CommitMayorRigOrchestratorCheckpoint(m.townRoot, rig, workflowID, inst.TemplateID, fromState, next, outcome); cerr != nil {
 		fmt.Printf("[Manager] Warning: rig-flow mayor/rig git (commit/push): %v\n", cerr)
 	}
-	m.logWorkflowFeed(events.TypeWorkflowTransition, workflowID, inst.TemplateID, fromState, next, "timeout", state.Role, rig)
+	m.logWorkflowFeed(events.TypeWorkflowTransition, workflowID, inst.TemplateID, fromState, next, outcome, state.Role, rig)
 	fmt.Printf("[Manager] state timeout wf=%s %s -> %s (%s)\n", workflowID, fromState, next, strings.TrimSpace(hookLog))
 	return next, nil
 }

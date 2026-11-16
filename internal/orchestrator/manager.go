@@ -340,6 +340,12 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summa
 	if inst.Variables != nil {
 		rig = inst.Variables["rig"]
 	}
+	if state.Hooks.VerificationErrorLimit > 0 {
+		outcome, summary = normalizeVerificationReviewResult(m.townRoot, rig, m.workflowValidationFor(inst, tpl), outcome, summary)
+		if !state.AcceptsOutcome(outcome) {
+			return "", fmt.Errorf("verification review requires a configured %q transition", outcome)
+		}
+	}
 	if state.Hooks.DependencyReview && rig != "" {
 		v := m.workflowValidationFor(inst, tpl)
 		var problems []string
@@ -724,10 +730,13 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summa
 		}
 	}
 	// Timeout keeps PendingRework even on same-state transitions (planning → planning).
-	setRework := implementationRewound || (next != fromState && IsCrossStateReworkOutcome(outcome)) || IsTimeoutOutcome(outcome)
+	setRework := implementationRewound || (next != fromState && IsCrossStateReworkOutcome(outcome)) || IsTimeoutOutcome(outcome) || IsVerificationErrorOutcome(outcome)
 	if setRework && next != "" {
 		v := m.workflowValidationFor(inst, tpl)
 		reworkFeedback := PrepareWorkflowReworkFeedback(fromState, next, summary, feedback, v, tpl.ReworkFeedback)
+		if IsVerificationErrorOutcome(outcome) {
+			reworkFeedback = verificationRetryFeedback(v, feedback)
+		}
 		if outcome == "dependency_blocked" {
 			reworkFeedback = truncateWorkflowText(feedback, maxWorkflowReworkFeedback)
 		}
@@ -789,7 +798,7 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summa
 			inst.TestPlanFailures = 0
 		}
 		if fromState == "qa_review" && next == "implementation" && rig != "" && phaseAdvance == nil {
-			reopenText := CombineQAReworkText(summary, feedback)
+			reopenText := summary // Raw command output can list every closed bead; it is not a repair instruction.
 			if reopened, rerr := ReopenImplementationBeadsAfterQAFailure(m.townRoot, rig, v, reopenText); rerr != nil {
 				fmt.Printf("[Manager] Warning: reopen implement beads after QA failure: %v\n", rerr)
 			} else if len(reopened) > 0 {
@@ -825,6 +834,7 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summa
 		inst.PendingRework = phaseAdvance
 	}
 	inst.recordReviewProgress(m.townRoot, rig, fromState, outcome, state.Hooks)
+	inst.recordVerificationError(fromState, outcome, state.Hooks.VerificationErrorLimit)
 	log.Printf("[Manager] CompleteTask: before persist, workflow=%s next=%s inst.CurrentState=%s", workflowID, next, inst.CurrentState)
 	if err := m.persistLocked(); err != nil {
 		log.Printf("[Manager] CompleteTask: persist error for %s: %v", workflowID, err)

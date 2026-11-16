@@ -8,6 +8,10 @@ func IsQAAgentShellError(text string) bool {
 	if lower == "" {
 		return false
 	}
+	if strings.Contains(lower, "pkill") && (strings.Contains(lower, "operation not permitted") ||
+		strings.Contains(lower, "terminated by signal") || strings.Contains(lower, "signal: terminated")) {
+		return true
+	}
 	for _, needle := range []string{
 		"can't cd", "cannot cd", "can't cd to", "cannot cd to",
 		"cd: can't", "cd: no such file",

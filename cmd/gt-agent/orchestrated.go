@@ -35,12 +35,14 @@ const (
 var jsonBlockRE = regexp.MustCompile("(?s)```(?:json)?\\s*([\\s\\S]*?)```")
 
 type orchestratedTaskResult struct {
-	Dependency  *orchestrator.DependencyBlock `json:"dependency,omitempty"`
-	Outcome     string                        `json:"outcome"`
-	Summary     string                        `json:"summary"`
-	Learning    string                        `json:"learning,omitempty"`
-	Learnings   []string                      `json:"learnings,omitempty"`
-	CommandsRun []string                      `json:"commands_run"`
+	RepairBeadIDs []string                      `json:"repair_bead_ids,omitempty"`
+	Evidence      string                        `json:"evidence,omitempty"`
+	Dependency    *orchestrator.DependencyBlock `json:"dependency,omitempty"`
+	Outcome       string                        `json:"outcome"`
+	Summary       string                        `json:"summary"`
+	Learning      string                        `json:"learning,omitempty"`
+	Learnings     []string                      `json:"learnings,omitempty"`
+	CommandsRun   []string                      `json:"commands_run"`
 }
 
 func orchestratorPollInterval() time.Duration {
@@ -3034,6 +3036,9 @@ func validateQARuntimeSmokeCommand(cmd, rig, townRoot string, v orchestrator.Wor
 }
 
 func validateQACommand(cmd, rig, townRoot string, v orchestrator.WorkflowValidation) error {
+	if err := rejectBroadQAProcessCleanup(cmd); err != nil {
+		return err
+	}
 	lower := strings.ToLower(cmd)
 	if strings.Contains(lower, "[tool_calls]") {
 		return fmt.Errorf("do not emit [TOOL_CALLS] markers — use CMD: lines only")
@@ -3711,6 +3716,9 @@ func beadIDExample(townRoot, rig string) string {
 }
 
 func validateQAArtifacts(townRoot, rig, outcome string, hadCmdFailure, bdListClosedOK, unittestOK, qaSmokeOK, qaFilesRead bool, v orchestrator.WorkflowValidation) error {
+	if orchestrator.IsVerificationErrorOutcome(outcome) {
+		return nil // Failed execution cannot satisfy success gates; retry stays in QA.
+	}
 	scoped := v.ForActivePhase()
 	sendToImpl := outcome == "failure"
 	sendToArchitect := outcome == "architecture_failure"
@@ -4436,6 +4444,13 @@ func parseOrchestratedJSON(response string) (outcome, summary string, ok bool) {
 	}
 	if last.Outcome == "dependency_blocked" && last.Dependency != nil {
 		report, err := json.Marshal(last.Dependency)
+		if err != nil {
+			return "", "", false
+		}
+		return last.Outcome, string(report), true
+	}
+	if orchestrator.IsFailureOutcome(last.Outcome) && (len(last.RepairBeadIDs) > 0 || last.Evidence != "") {
+		report, err := json.Marshal(orchestrator.QAFailureReport{Summary: last.Summary, RepairBeadIDs: last.RepairBeadIDs, Evidence: last.Evidence})
 		if err != nil {
 			return "", "", false
 		}

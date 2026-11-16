@@ -16,11 +16,19 @@ func QAReworkWriteScopeFromTransition(townRoot, rig, fromState, toState, summary
 	if fromState != "qa_review" || toState != "implementation" || townRoot == "" || rig == "" {
 		return ImplementWriteScope{}
 	}
-	known, prefix, err := ListRigBeadIDSet(townRoot, rig)
-	if err != nil || prefix == "" {
-		return ImplementWriteScope{}
+	var ids []string
+	if report, ok := ParseQAFailureReport(summary); ok {
+		ids = report.RepairBeadIDs
+	} else {
+		if IsQAAgentShellError(summary) {
+			return ImplementWriteScope{}
+		}
+		known, prefix, err := ListRigBeadIDSet(townRoot, rig)
+		if err != nil || prefix == "" {
+			return ImplementWriteScope{}
+		}
+		ids = ExtractKnownRigBeadIDsFromSummary(summary, prefix, known)
 	}
-	ids := ExtractKnownRigBeadIDsFromSummary(summary, prefix, known)
 	if len(ids) == 0 {
 		return ImplementWriteScope{}
 	}

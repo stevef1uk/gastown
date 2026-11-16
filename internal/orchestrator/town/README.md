@@ -13,6 +13,23 @@ The running orchestrator loads templates from `{townRoot}/orchestrator/templates
 
 ## Durable implementation completion
 
+### QA execution and repair ownership
+
+QA's `verification_error` outcome retries the QA state without reopening beads.
+The YAML `verification_error_limit` bounds consecutive execution/reporting
+failures (including timeouts) across restarts; at the limit, the workflow pauses
+with the last error and command guidance. A successful review or a valid defect
+report resets that counter. Execution retries invalidate test/smoke milestones
+so QA must run the configured gate again.
+
+Application/test failures use `failure` plus explicit `repair_bead_ids` and
+`evidence`. Targets must resolve to canonical active-phase implementation beads.
+Inventories and IDs mentioned in diagnostic output do not become repair targets.
+Broad QA `pkill`/`killall`/port-kill cleanup is rejected before execution; Compose
+and the managed server wrapper own their own lifecycle.
+
+### Completion contract
+
 - Explicit close, planning recovery, and restart reconciliation share the
   `AssessImplementationArtifact` disk contract. Missing/invalid artifacts may
   reopen; filesystem/tool failures and an incomplete phase are not file defects.

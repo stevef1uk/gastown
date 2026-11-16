@@ -14,23 +14,23 @@ import (
 // QA review milestones persisted across gt-agent restarts within the same
 // workflow qa_review step. Cleared when the FSM leaves qa_review.
 const (
-	qaMilestoneClosedBeads = "closed_beads_listed"
-	qaMilestoneOpenBeads   = "open_beads_listed"
-	qaMilestoneSpecRead    = "spec_read"
-	qaMilestoneArchRead    = "arch_read"
-	qaMilestoneFileAudit   = "file_audit"
-	qaMilestoneUnittest    = "unittest"
+	qaMilestoneClosedBeads  = "closed_beads_listed"
+	qaMilestoneOpenBeads    = "open_beads_listed"
+	qaMilestoneSpecRead     = "spec_read"
+	qaMilestoneArchRead     = "arch_read"
+	qaMilestoneFileAudit    = "file_audit"
+	qaMilestoneUnittest     = "unittest"
 	qaMilestoneRuntimeSmoke = "runtime_smoke"
 )
 
 // QAReviewProgress records which verification steps already succeeded this cycle.
 type QAReviewProgress struct {
-	WorkflowID              string          `json:"workflow_id"`
-	State                   string          `json:"state"`
-	Rig                     string          `json:"rig"`
-	UpdatedAt               time.Time       `json:"updated_at"`
-	Completed               map[string]bool `json:"completed"`
-	SmokeSourceFingerprint  string          `json:"smoke_source_fingerprint,omitempty"`
+	WorkflowID             string          `json:"workflow_id"`
+	State                  string          `json:"state"`
+	Rig                    string          `json:"rig"`
+	UpdatedAt              time.Time       `json:"updated_at"`
+	Completed              map[string]bool `json:"completed"`
+	SmokeSourceFingerprint string          `json:"smoke_source_fingerprint,omitempty"`
 }
 
 func qaReviewProgressPath(townRoot, rig string) string {
@@ -142,6 +142,16 @@ func (r *stateRunner) initQAReviewProgress() string {
 		r.qaProgress = existing
 	} else {
 		r.qaProgress = newQAReviewProgress(r.task.WorkflowID, r.task.State, r.rig)
+	}
+	if r.hooks.VerificationErrorLimit > 0 && r.task.PendingRework != nil && orchestrator.IsVerificationErrorOutcome(r.task.PendingRework.Outcome) {
+		// An execution retry must run the configured verification again. Earlier
+		// manual smoke/green test checkpoints cannot approve an unexecuted gate.
+		delete(r.qaProgress.Completed, qaMilestoneUnittest)
+		delete(r.qaProgress.Completed, qaMilestoneRuntimeSmoke)
+		r.qaProgress.SmokeSourceFingerprint = ""
+		r.track.unittestOK = false
+		r.track.qaSmokeOK = false
+		_ = saveQAReviewProgress(r.townRoot, r.rig, r.qaProgress)
 	}
 	r.applyQAProgressToTrack()
 	return formatQAReviewProgressBlock(r.qaProgress, r.rig, r.v.UnittestCommandHint(), requiresQARuntimeSmoke(r.townRoot, r.rig, r.v), r.track.qaSmokeOK)

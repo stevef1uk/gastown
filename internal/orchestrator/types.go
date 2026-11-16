@@ -113,8 +113,9 @@ type WorkflowInstance struct {
 	// workflow spins test_plan ↔ planning forever (e.g. the tester never writes
 	// TEST_PLAN.md). At tester.max_review_retries the orchestrator escalates to
 	// design instead of looping; reset on any success or escalation.
-	TestPlanFailures int                       `json:"test_plan_failures,omitempty"`
-	ReviewProgress   map[string]ReviewProgress `json:"review_progress,omitempty"`
+	TestPlanFailures   int                       `json:"test_plan_failures,omitempty"`
+	ReviewProgress     map[string]ReviewProgress `json:"review_progress,omitempty"`
+	VerificationErrors map[string]int            `json:"verification_errors,omitempty"`
 }
 
 type ReviewProgress struct {
@@ -126,6 +127,10 @@ type ReviewProgress struct {
 // verdict. Existing targeted repair context must survive the next batch.
 func IsCheckpointOutcome(outcome string) bool {
 	return strings.EqualFold(strings.TrimSpace(outcome), "checkpoint")
+}
+
+func IsVerificationErrorOutcome(outcome string) bool {
+	return strings.EqualFold(strings.TrimSpace(outcome), "verification_error")
 }
 
 // IsFailureOutcome reports whether complete_task outcome means rework/failure.

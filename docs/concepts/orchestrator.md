@@ -163,13 +163,15 @@ Only titles matching `bead_title_contains` from the rig workflow profile count f
 
 ### 5. QA outcomes (what “done” means)
 
-After polecat reports `success`, the FSM moves to `qa_review`. QA runs read-only checks plus the verify command from the workflow profile (`qa_verify_command` or `python3 -m unittest <module>`).
+After Polecat reports `success` and Tester accepts `test_review`, the FSM moves to `qa_review`. QA runs read-only checks plus the active phase's verify command from the workflow profile (`qa_verify_command` or `python3 -m unittest <module>`).
 
 | Outcome | When to use |
 |---------|-------------|
 | `task_passed` | Verify command passed; **some** open implementation beads remain (more polecat work) |
-| `all_passed` | Verify command passed; **zero** open implementation beads (pipeline complete) |
-| `failure` | Tests or SPEC/architecture not met → back to implementation |
+| `all_passed` | Verify and review passed; **zero** open implementation beads → advance the delivery phase, or complete the workflow after the final phase |
+| `failure` | Evidenced application/test defect → back to implementation with explicit repair targets |
+| `architecture_failure` | Evidence shows the design contract needs correction → back to the architect |
+| `verification_error` | Command, environment, or report prevented verification → retry QA without reopening implementation beads |
 
 Example JSON (after commands have actually run):
 
@@ -178,6 +180,36 @@ Example JSON (after commands have actually run):
 ```
 
 `gt-agent` **rejects** `all_passed` if open implementation beads still exist, even when the model claims they are closed. Close remaining beads in implementation, then re-run QA with `all_passed`.
+
+An application/test failure must identify the canonical active-phase beads that
+own the actual defects, with supporting output or a concrete SPEC violation:
+
+```json
+{"outcome":"failure","summary":"Health endpoint returns the wrong status","repair_bead_ids":["te-abc"],"evidence":"backend/app/main.py: GET /api/health returned 500; expected 200"}
+```
+
+Use real IDs from the rig. Only `repair_bead_ids` authorizes targeted repair;
+IDs in a closed-bead inventory, captured command output, or “do not reopen” prose
+do not become repair targets. A missing/invalid repair report stays in QA as a
+reporting error so it cannot reopen arbitrary completed work.
+
+If verification never reached the checks, report the execution problem instead:
+
+```json
+{"outcome":"verification_error","summary":"The verifier shell terminated during process cleanup; Compose and HTTP checks did not run. Run the configured phase command directly."}
+```
+
+Run the configured command directly from `{rig}/mayor/rig`, without prepending
+broad `pkill`, `killall`, or `fuser -k` cleanup. Compose and the managed server
+wrapper handle their own process lifecycle. A prior manual server smoke does
+not substitute for the required Compose verification.
+
+Both `rig-flow` and `req-flow` configure `verification_error_limit: 3` on QA.
+Consecutive execution/reporting errors, including turn and wall-clock timeouts,
+retry `qa_review` and then pause with a diagnostic. Counts survive restarts.
+Each execution retry requires fresh test/smoke verification, while retaining
+unrelated completed review steps. A successful review or a valid defect report
+resets the execution-error count.
 
 ### 6. Verify a healthy run
 
@@ -440,7 +472,7 @@ gt orchestrator sync --update-changed
 | design | architect | `architecture.md` (scope from SPEC + profile; no implementation code) |
 | planning | planner | `plan.md` + `bd create` beads matching profile `bead_title_contains` |
 | implementation | polecat (`testgt2/polecat`) | Claim/close one implementation bead under `layout_root/` |
-| qa_review | qa (`testgt2/qa`) | Review; outcomes `task_passed`, `all_passed`, or `failure` |
+| qa_review | qa (`testgt2/qa`) | Review; pass, explicit defect repair, design repair, or QA-only `verification_error` retry |
 
 Template variables such as `{{rig}}` are substituted in prompts and instructions when the
 workflow is started with `--rig testgt2`.
@@ -449,6 +481,31 @@ workflow is started with `--rig testgt2`.
 finish a bead). **Failure** on implementation loops in `implementation` (see `rig-flow.yaml`).
 
 ## Troubleshooting
+
+### QA reports an execution error instead of an application defect
+
+Read the workflow's pause reason and pending QA diagnostics:
+
+```bash
+gt mayor workflow status wf-1
+```
+
+Correct the command or environment (for example, remove a broad process-kill
+preamble, use the rig worktree as cwd, or restore the required tool access).
+Run the profile's actual phase verification from `{rig}/mayor/rig`; a permission
+error or an aborted shell provides no evidence that application code is broken.
+
+After correcting the cause:
+
+```bash
+gt mayor workflow resume wf-1
+gt up
+```
+
+Resume preserves completed implementation and the persisted retry count. A
+successful review resets that count; another execution error can pause the
+workflow again immediately if it is already at the limit. Do not reset the
+workflow, delete delivered files, or reopen beads merely to retry QA execution.
 
 ### Rig-flow stuck (daemon self-heal)
 
@@ -548,7 +605,7 @@ git branches under `origin/polecat/*` — distinct from `main`.
 
 ## Current limitations
 
-- **QA outcome names** — FSM uses `task_passed` / `all_passed` / `failure`; agents often emit `success` / `fail` (partial alias mapping; prefer explicit QA outcomes in prompts).
+- **QA outcome names** — use `task_passed` / `all_passed`, `failure` with explicit repair targets and evidence, `architecture_failure`, or `verification_error`. Partial aliases such as `success` / `fail` do not replace the required report fields.
 - **Legacy polecats** — witness may still spawn per-bead polecats under `{rig}/polecats/`; paused from `gt up --restore` while `rig-flow` is active, but sling can still create work outside the FSM.
 - **hq duplicate sessions** — with one rig, town `hq-architect` / `hq-qa` are skipped; with zero rigs they would still start.
 - **Not Cursor IDE MCP** — orchestrator uses NATS JSON-RPC for `gt-agent`, not Claude/Cursor `mcpServers`.
@@ -603,6 +660,11 @@ remains visible beneath a paused workflow, including budget-related pauses.
 `FREERIDE_WORKFLOW_MAX_UPSTREAM_ATTEMPTS` (default 1000) limits proxy attempts,
 including retries/fallbacks. This counter is separate from Gastown request reservations
 and appears as `Proxy attempts` when supported by the proxy status API.
+To raise it, set (for example) `FREERIDE_WORKFLOW_MAX_UPSTREAM_ATTEMPTS=3000`
+in the Freeride proxy's startup environment and restart that proxy. Recorded usage
+is retained. This is a per-workflow default for the proxy, not an override limited
+to one workflow. `gt mayor workflow budget --tokens ... --usd ...` changes token
+and dollar allowances, not the proxy-attempt limit.
 
 ### Restarting without creating a shadow Beads database
 
