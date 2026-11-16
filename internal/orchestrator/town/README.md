@@ -121,6 +121,32 @@ When changing a prompt, update this table if the contract it documents changes.
 
 ## FSM behavior belongs in YAML (not gt-agent Go)
 
+### Delivery dependency review and recovery
+
+Both workflows enable `dependency_review` on plan review, project setup and
+implementation. The delivery contract may declare `file_dependencies`, a map
+from consumer required-file paths to prerequisite project paths. Plan bead-map
+`Depends on:` fields also accept exact paths or real bead IDs. Polecat's queue
+uses stable topological ordering, retaining existing build order for ties.
+Active-phase setup manifests remain selectable rather than disappearing from
+the queue when setup missed them.
+
+Before accepting these states' results, deterministic checks reject file/phase
+cycles, unknown declared prerequisites, forward phase edges and explicit
+verification inputs owned only by future phases. Plan review additionally checks
+imports, Docker inputs and other semantic prerequisites that cannot be inferred
+reliably from shell text. Full-phase verification still gates phase completion.
+
+Polecat can report `dependency_blocked` with a structured `dependency` object:
+`consumer`, `dependency`, and failed-command `evidence`. The manager verifies an
+active-phase consumer and future-phase provider before following the configured
+`dependency_blocked` transition to design. Feedback preserves the blocker and
+requests a consistent ownership/dependency/verification amendment. Existing
+implementation and phase progress are preserved; normal architecture sync
+invalidates only changed completed contracts and test-plan approval, then
+planning refreshes beads before implementation resumes. Current/earlier-phase
+missing files and third-party dependencies do not qualify for this escalation.
+
 When changing how a workflow step behaves (prompt size, bead queue text, empty-reply nudges, failure hints):
 
 1. Edit **`templates/rig-flow.yaml`** hooks for that state and/or **`prompts/rig-flow/*.md`**.

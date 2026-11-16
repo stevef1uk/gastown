@@ -340,6 +340,27 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summa
 	if inst.Variables != nil {
 		rig = inst.Variables["rig"]
 	}
+	if state.Hooks.DependencyReview && rig != "" {
+		v := m.workflowValidationFor(inst, tpl)
+		var problems []string
+		if outcome == "dependency_blocked" {
+			problem, err := dependencyReportProblem(v, summary)
+			if err != nil {
+				return "", err
+			}
+			problems = append(problems, problem)
+		} else if outcome == "success" || IsFailureOutcome(outcome) || IsTimeoutOutcome(outcome) {
+			problems = DeliveryDependencyProblems(filepath.Join(m.townRoot, rig, "mayor", "rig"), v)
+		}
+		if len(problems) > 0 {
+			if !state.AcceptsOutcome("dependency_blocked") {
+				return "", fmt.Errorf("delivery dependency validation: %s", strings.Join(problems, "; "))
+			}
+			outcome = "dependency_blocked"
+			summary = "Delivery dependency repair required: " + strings.Join(problems, "; ")
+			feedback = dependencyRepairFeedback(problems) + "\n\n" + feedback
+		}
+	}
 	if IsPlanningGateSuccessOutcome(outcome) && IsPlanningGateState(fromState) && rig != "" {
 		prof, hasProf, perr := LoadRigWorkflowProfileFile(m.townRoot, rig)
 		if perr != nil {
@@ -707,6 +728,9 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summa
 	if setRework && next != "" {
 		v := m.workflowValidationFor(inst, tpl)
 		reworkFeedback := PrepareWorkflowReworkFeedback(fromState, next, summary, feedback, v, tpl.ReworkFeedback)
+		if outcome == "dependency_blocked" {
+			reworkFeedback = truncateWorkflowText(feedback, maxWorkflowReworkFeedback)
+		}
 		rig := ""
 		if inst.Variables != nil {
 			rig = inst.Variables["rig"]

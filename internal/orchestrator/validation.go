@@ -1470,6 +1470,16 @@ func (v WorkflowValidation) SubstituteVars(vars map[string]string) WorkflowValid
 		v.DeliveryPhases[i].Title = SubstituteVars(v.DeliveryPhases[i].Title, vars)
 		v.DeliveryPhases[i].QAVerifyCommand = SubstituteVars(v.DeliveryPhases[i].QAVerifyCommand, vars)
 		v.DeliveryPhases[i].SpecFocus = SubstituteVars(v.DeliveryPhases[i].SpecFocus, vars)
+		if deps := v.DeliveryPhases[i].FileDependencies; deps != nil {
+			resolved := make(map[string][]string, len(deps))
+			for consumer, providers := range deps {
+				key := SubstituteVars(consumer, vars)
+				for _, provider := range providers {
+					resolved[key] = append(resolved[key], SubstituteVars(provider, vars))
+				}
+			}
+			v.DeliveryPhases[i].FileDependencies = resolved
+		}
 		for j, f := range v.DeliveryPhases[i].RequiredFiles {
 			v.DeliveryPhases[i].RequiredFiles[j] = SubstituteVars(f, vars)
 		}

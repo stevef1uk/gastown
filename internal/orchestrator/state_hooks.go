@@ -5,8 +5,11 @@ import "strings"
 // StateHooks configures gt-agent behavior for one FSM state (declarative; no state-name switches in gt-agent).
 // Wire new behavior via templates/rig-flow.yaml — see prompt_context.go and town/README.md (§ FSM vs Go).
 type StateHooks struct {
-	ExecutionBatchSize int `yaml:"execution_batch_size,omitempty" json:"execution_batch_size,omitempty"`
-	MaxCmdTurns        int `yaml:"max_cmd_turns,omitempty" json:"max_cmd_turns,omitempty"`
+	// DependencyReview checks the full delivery contract before accepting a result.
+	// Defects use the state's dependency_blocked transition, configured in YAML.
+	DependencyReview   bool `yaml:"dependency_review,omitempty" json:"dependency_review,omitempty"`
+	ExecutionBatchSize int  `yaml:"execution_batch_size,omitempty" json:"execution_batch_size,omitempty"`
+	MaxCmdTurns        int  `yaml:"max_cmd_turns,omitempty" json:"max_cmd_turns,omitempty"`
 	// Bound repeated rejected completion claims within an agent attempt; also
 	// pause repeated failed reviews across attempts when ProgressFiles are set.
 	NoProgressLimit int      `yaml:"no_progress_limit,omitempty" json:"no_progress_limit,omitempty"`

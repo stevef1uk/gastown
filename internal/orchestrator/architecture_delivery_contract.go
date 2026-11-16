@@ -72,6 +72,9 @@ func ValidateArchitectureDeliveryContract(townRoot, rig string, v WorkflowValida
 	}
 	v.ExplicitDeliveryContract = true
 	v.QAVerifyCommand = phases[len(phases)-1].QAVerifyCommand
+	if problems := DeliveryDependencyProblems("", v); len(problems) > 0 {
+		return fmt.Errorf("architecture delivery contract: %s", strings.Join(problems, "; "))
+	}
 	if defect := ValidateRigWorkflowProfileForQA(townRoot, rig, v); defect != "" {
 		return fmt.Errorf("architecture delivery contract: %s", defect)
 	}
@@ -149,6 +152,9 @@ func architectureDeliveryContract(doc string) ([]DeliveryPhase, bool, error) {
 				}
 			}
 		}
+		if problems := deliveryGraphProblems(WorkflowValidation{DeliveryPhases: contract.DeliveryPhases}); len(problems) > 0 {
+			return nil, true, fmt.Errorf("architecture delivery contract: %s", strings.Join(problems, "; "))
+		}
 		return contract.DeliveryPhases, true, nil
 	}
 	return nil, false, nil
@@ -163,10 +169,44 @@ func reconcileDeliveryContractProgress(v *WorkflowValidation, previous WorkflowV
 	for _, id := range previous.CompletedPhaseIDsField {
 		for _, p := range v.DeliveryPhases {
 			prior, ok := old[id]
-			if p.ID == id && ok && reflect.DeepEqual(prior.RequiredFiles, p.RequiredFiles) && prior.QAVerifyCommand == p.QAVerifyCommand && reflect.DeepEqual(prior.DependsOn, p.DependsOn) {
+			if p.ID == id && ok && reflect.DeepEqual(prior.RequiredFiles, p.RequiredFiles) && prior.QAVerifyCommand == p.QAVerifyCommand && reflect.DeepEqual(prior.DependsOn, p.DependsOn) && reflect.DeepEqual(prior.FileDependencies, p.FileDependencies) {
 				completed = append(completed, id)
 			}
 		}
+	}
+	// A changed prerequisite invalidates completion credit for its dependents,
+	// without touching their files or unrelated completed phases.
+	owners := dependencyOwners(*v)
+	for changed := true; changed; {
+		changed = false
+		var retained []string
+		for _, id := range completed {
+			valid := true
+			for _, phase := range v.DeliveryPhases {
+				if phase.ID != id {
+					continue
+				}
+				prerequisites := append([]string(nil), phase.DependsOn...)
+				for _, providers := range phase.FileDependencies {
+					for _, provider := range providers {
+						if owner, ok := owners[provider]; ok && v.DeliveryPhases[owner].ID != id {
+							prerequisites = append(prerequisites, v.DeliveryPhases[owner].ID)
+						}
+					}
+				}
+				for _, prerequisite := range prerequisites {
+					if containsString(previous.CompletedPhaseIDsField, prerequisite) && !containsString(completed, prerequisite) {
+						valid = false
+					}
+				}
+			}
+			if valid {
+				retained = append(retained, id)
+			} else {
+				changed = true
+			}
+		}
+		completed = retained
 	}
 	v.CompletedPhaseIDsField = completed
 	if len(completed) != len(previous.CompletedPhaseIDsField) {

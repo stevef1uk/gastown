@@ -34,11 +34,12 @@ const (
 var jsonBlockRE = regexp.MustCompile("(?s)```(?:json)?\\s*([\\s\\S]*?)```")
 
 type orchestratedTaskResult struct {
-	Outcome     string   `json:"outcome"`
-	Summary     string   `json:"summary"`
-	Learning    string   `json:"learning,omitempty"`
-	Learnings   []string `json:"learnings,omitempty"`
-	CommandsRun []string `json:"commands_run"`
+	Dependency  *orchestrator.DependencyBlock `json:"dependency,omitempty"`
+	Outcome     string                        `json:"outcome"`
+	Summary     string                        `json:"summary"`
+	Learning    string                        `json:"learning,omitempty"`
+	Learnings   []string                      `json:"learnings,omitempty"`
+	CommandsRun []string                      `json:"commands_run"`
 }
 
 func orchestratorPollInterval() time.Duration {
@@ -4426,6 +4427,13 @@ func parseOrchestratedJSON(response string) (outcome, summary string, ok bool) {
 	}
 	if !found {
 		return "", "", false
+	}
+	if last.Outcome == "dependency_blocked" && last.Dependency != nil {
+		report, err := json.Marshal(last.Dependency)
+		if err != nil {
+			return "", "", false
+		}
+		return last.Outcome, string(report), true
 	}
 	return last.Outcome, last.Summary, true
 }

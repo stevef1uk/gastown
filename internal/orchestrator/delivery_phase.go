@@ -17,6 +17,8 @@ type DeliveryPhase struct {
 	QAVerifyCommand string   `yaml:"qa_verify_command,omitempty" json:"qa_verify_command,omitempty"`
 	DependsOn       []string `yaml:"depends_on,omitempty" json:"depends_on,omitempty"`
 	SpecFocus       string   `yaml:"spec_focus,omitempty" json:"spec_focus,omitempty"`
+	// FileDependencies maps a consumer path to the project files it needs to build/verify.
+	FileDependencies map[string][]string `yaml:"file_dependencies,omitempty" json:"file_dependencies,omitempty"`
 }
 
 // PhasesFromFilePaths groups required file paths into delivery phases by the

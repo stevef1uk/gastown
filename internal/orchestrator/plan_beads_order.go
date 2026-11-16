@@ -593,6 +593,10 @@ func NextOpenImplementBead(townRoot, rig string, v WorkflowValidation) (*PlanBea
 	rigDir := filepath.Join(townRoot, rig, "refinery", "rig")
 	eval := NewImplementBeadVerifyEvaluator(rigDir, v)
 	order := OrderRequiredFilesForImplementation(v.RequiredFiles)
+	order, err = dependencyBuildOrder(order, deliveryFileDependencies(filepath.Join(townRoot, rig, "mayor", "rig"), v))
+	if err != nil {
+		return nil, err
+	}
 	known := map[string]bool{}
 	for _, bead := range inProgress {
 		known[bead.ID] = true
@@ -602,7 +606,7 @@ func NextOpenImplementBead(townRoot, rig string, v WorkflowValidation) (*PlanBea
 		repairIDs[id] = true
 	}
 	for _, want := range order {
-		if IsProjectSetupArtifactPath(want, v) {
+		if IsProjectSetupArtifactPath(want, v) && !activePhaseOwnsDependencyPath(v, want) {
 			continue
 		}
 		for _, bead := range inProgress {
@@ -613,7 +617,7 @@ func NextOpenImplementBead(townRoot, rig string, v WorkflowValidation) (*PlanBea
 		}
 	}
 	for _, want := range order {
-		if IsProjectSetupArtifactPath(want, v) {
+		if IsProjectSetupArtifactPath(want, v) && !activePhaseOwnsDependencyPath(v, want) {
 			continue
 		}
 		for p, id := range idByPath {
@@ -1363,7 +1367,7 @@ func PlanningBeadTitle(requiredPath string, v WorkflowValidation) string {
 	if layout != "" && strings.HasPrefix(path, layout+"/") {
 		path = strings.TrimPrefix(path, layout+"/")
 	}
-	return strings.TrimSpace(pfx + path) + " per architecture"
+	return strings.TrimSpace(pfx+path) + " per architecture"
 }
 
 // openBeadCoversRequiredPath reports whether an open or in_progress implement bead covers want.

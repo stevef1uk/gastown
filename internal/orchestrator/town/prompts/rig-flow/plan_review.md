@@ -26,6 +26,7 @@ $GT_ROOT/{{rig}}/mayor/rig/{{layout_root}}/  ← layout root (ALL files go here)
 |---------|------|
 | `success` | Beads match `required_files`; `plan.md` ≥ {{min_plan_bytes}} bytes; **SPEC / architecture / plan** agree on HTTP routes, store API names, module path, and integration wiring |
 | `failure` | Duplicates, missing paths, weak plan, or **contract drift** vs SPEC — sends **Planner** back to `planning` |
+| `architecture_failure` | A phase cannot satisfy its acceptance command without a future-phase prerequisite, or the dependency graph has a cycle — name consumer/provider paths, phases and the command; repair the delivery contract before implementation |
 
 ## Rig context (from SPEC profile)
 
@@ -46,6 +47,13 @@ $GT_ROOT/{{rig}}/mayor/rig/{{layout_root}}/  ← layout root (ALL files go here)
 ## Alignment checklist (required — do not pass on drift)
 
 gt-agent also runs **mechanical** checks on success; you must catch the same issues in your review summary.
+
+Review the **whole phase dependency graph**, even though bead coverage is scoped
+to the active phase. Check `file_dependencies`, phase `depends_on`, plan `Depends
+on:` fields, imports, manifests, Docker build inputs and verification fixtures.
+Every prerequisite must be in the same or an earlier phase. Reject cycles and
+acceptance commands that require future-phase artifacts. No build execution is
+needed for this contract review. Full-phase checks need not pass between beads.
 
 1. **HTTP routes (authoritative: SPEC.md table)**
    - Copy the SPEC `| GET |` / `| POST |` paths (e.g. `/api/links`, not `/links`).

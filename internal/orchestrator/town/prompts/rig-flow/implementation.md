@@ -23,6 +23,22 @@ $GT_ROOT/{{rig}}/mayor/rig/{{layout_root}}/  ← layout root (ALL files go here)
 
 **Scope: evaluate only the active phase.** The Queue table shows only the current phase's beads. Ignore files from later phases (SPEC/architecture may list them, but they are not your concern). If all Queue beads are closed and verify passes, return `success` — do NOT fail because files from other phases are missing.
 
+**Impossible phase dependency:** If actual verification fails because an active
+consumer requires a file assigned only to a future phase, READ the relevant
+contract and diagnostic first. Stop retrying the same build and return a
+separate message (no tools):
+```json
+{"outcome":"dependency_blocked","dependency":{"consumer":"<active-phase required path>","dependency":"<future-phase required path>","evidence":"<failed command and exact relevant diagnostic>"}}
+```
+The orchestrator checks phase ownership and routes the evidence to the architect
+for a reviewed phase-plan repair, then Planner refreshes the beads. Do not move
+files between phases yourself. Missing files owned by the current phase are
+implementation work; broken earlier-phase providers use normal failure recovery.
+Third-party packages and unavailable services are not future-phase project files.
+If a non-source bead's artifact validates, close it without waiting for a full
+phase build that needs remaining beads; the complete phase check is mandatory
+before phase completion.
+
 **Integration rule**: After creating new source files (components, routes, modules), update existing entry points to wire them in. For frontend apps: import new components in `page.tsx` / `layout.tsx` / `index.tsx` / equivalent. For backends: register new routes in `main.py` / `routes.py` / `app.py` / equivalent. This exception to phase scope is required — the SPEC describes a fully integrated application, and orphaned files that pass compilation but are never called produce a broken app.
 
 ## Output format (follow exactly)

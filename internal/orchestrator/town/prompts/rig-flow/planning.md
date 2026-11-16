@@ -147,7 +147,7 @@ You are **not** verifying the app. Do not run the server or test suite to “che
     EOF
    ```
 
-   **Interfaces / Depends on / Consumed by** give the polecat the dependency wiring it needs without reading the whole plan: every symbol must come from **architecture.md** (never invented), and beads that depend on each other must be ordered earlier-first in the map.
+   **Interfaces / Depends on / Consumed by** give the polecat the dependency wiring it needs without reading the whole plan: every symbol must come from **architecture.md** (never invented), and beads that depend on each other must be ordered earlier-first in the map. Use exact full project paths or real bead IDs in `Depends on:`; these fields drive deterministic queue ordering. Include build manifests, configuration and fixtures, not just source imports. Compare against the full delivery contract: if an active-phase build needs a future-phase file, report architecture_failure with the consumer, provider, owning phases and failing acceptance command. Do not silently omit the dependency or change phase ownership only in plan.md.
 
    ## YAGNI Rule (strict)
 

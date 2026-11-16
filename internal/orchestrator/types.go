@@ -134,7 +134,7 @@ func IsFailureOutcome(outcome string) bool {
 
 // IsArchitectureReworkOutcome reports QA sending the workflow back to the architect (design).
 func IsArchitectureReworkOutcome(outcome string) bool {
-	return strings.EqualFold(strings.TrimSpace(outcome), "architecture_failure")
+	return strings.EqualFold(strings.TrimSpace(outcome), "architecture_failure") || strings.EqualFold(strings.TrimSpace(outcome), "dependency_blocked")
 }
 
 // IsPlanGapOutcome reports test_review sending the workflow to test_plan_rework.

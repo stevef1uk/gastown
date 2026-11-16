@@ -189,6 +189,7 @@ states:
       2. Reject duplicate or path-less beads; send planner back to fix.
       3. Reject when SPEC.md, architecture.md, and plan.md disagree on HTTP routes, store API names, module path, or integration contract (gt-agent enforces on success).
     hooks:
+      dependency_review: true
       pre_run: [sync_planning_artifacts, enforce_implement_bead_queue]
       max_cmd_turns: 8
       cmd_guard: plan_review
@@ -209,6 +210,8 @@ states:
       failure:
         to: planning
       architecture_failure:
+        to: design
+      dependency_blocked:
         to: design
   test_plan:
     role: tester
@@ -273,6 +276,7 @@ states:
       Use only the **{{project_setup_stack_kind}}** stack for this rig (see injected block below).
       Run `{{project_setup_verify_hint}}` green. Beads and plan.md are synced from required_files on pre_run — do not `bd create` unless sync left gaps. Then JSON success.
     hooks:
+      dependency_review: true
       prompt_context: [project_setup_stack]
       pre_run: [sync_planning_artifacts, enforce_implement_bead_queue, prune_rig_root_junk, ensure_test_stack_ready]
       cmd_guard: project_setup
@@ -311,12 +315,15 @@ states:
         to: project_setup
       architecture_failure:
         to: design
+      dependency_blocked:
+        to: design
   implementation:
     role: polecat
     prompt_file: prompts/rig-flow/implementation.md
     instructions: |
       Implement the **Next bead** only: in_progress -> code + unit tests tied to SPEC/plan acceptance -> verify (go test / pytest per Next bead) -> bd close. JSON success when all implement beads are closed.
     hooks:
+      dependency_review: true
       no_progress_limit: 5
       state_timeout_seconds: 7200
       on_timeout: [recover_implementation_stall]
@@ -410,6 +417,8 @@ states:
       plan_gap:
         to: test_plan_rework
       architecture_failure:
+        to: design
+      dependency_blocked:
         to: design
       timeout:
         to: implementation

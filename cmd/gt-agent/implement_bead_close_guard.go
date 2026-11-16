@@ -20,6 +20,13 @@ func validateImplementationBeadClose(cmd, townRoot, rig string, v orchestrator.W
 	rigDir := rigMayorRigDir(townRoot, rig)
 	beadPath := orchestrator.ImplementBeadPathForID(townRoot, rig, id, v)
 	if !implementationBeadHasVerification(rigDir, beadPath, v, verifyOK) {
+		// Missing non-source artifacts cannot be repaired by retrying a phase
+		// build that needs that very file. Name the actual work before Verify.
+		if beadPath != "" && !orchestrator.ImplementationBeadRequiresVerify(beadPath) {
+			if err := orchestrator.ValidateBeadArtifactOnDisk(rigDir, beadPath, v); err != nil {
+				return fmt.Errorf("cannot bd close %s: %w — fix the file with EDIT:/WRITE: first, then: %s", id, err, cmd)
+			}
+		}
 		if qc := strings.TrimSpace(v.ActivePhaseQAVerifyCommand()); qc != "" {
 			return fmt.Errorf("run green verify before bd close — make `cd %s/mayor/rig && %s` green, then: %s", rig, qc, cmd)
 		}

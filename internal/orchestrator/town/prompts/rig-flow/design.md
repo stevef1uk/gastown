@@ -68,6 +68,8 @@ delivery_phases:
       - <concrete repository-relative file>
     qa_verify_command: '<executable shell command from the repository root>'
     depends_on: []
+    file_dependencies:
+      <consumer path from this phase's required_files>: [<prerequisite project file path>]
 ```
 
 Expand this to all declared phases. Assign every planned file to a phase; use
@@ -77,6 +79,16 @@ does not set `qa_verify_command`. Sync preserves this block's ownership and
 commands rather than inferring them from prose. Keep one canonical requirements
 section with matching phase headings. Amend existing sections; do not append
 duplicate sections or a second supposedly authoritative table.
+
+Declare concrete build/import/configuration prerequisites in `file_dependencies`
+(omit the field when there are none). Each prerequisite must be delivered in the
+same or an earlier phase. Put phases in executable dependency order; no cycles.
+Check every phase's acceptance command against the full phase graph: manifests,
+build configuration, Docker COPY inputs, imported providers and test fixtures
+must be available by that phase. A full-phase check gates phase completion,
+not every intermediate bead. On dependency-blocked rework, repair ownership,
+dependencies and verification together; preserve implementation and unaffected
+completed phases. Never weaken a SPEC acceptance check merely to pass the gate.
 
 After each edit, inspect the actual changed section and correct any failed edit
 before success. Unix `patch` requires a standard unified diff, not `*** Begin
