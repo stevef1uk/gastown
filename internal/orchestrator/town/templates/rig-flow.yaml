@@ -459,7 +459,7 @@ states:
     prompt_file: prompts/rig-flow/qa_review.md
     instructions: |
       1. Review closed implementation beads in `{{rig}}` against SPEC.md and architecture.md (static `src`/`href` in web/index.html must match the architecture HTTP table — {{static_url_contract_short}}).
-      2. Runtime smoke only when SPEC/architecture define HTTP routes or static web+server (see qa_runtime_smoke_block). Skip go run/curl for library-only or API-less profiles. Python rigs use pytest from layout_root/backend — not Go cmd/server paths.
+      2. Follow qa_runtime_smoke_block for runtime checks when SPEC/architecture define HTTP routes or static web+server. It selects the app runtime from rig documentation/profile; the unit-test language does not imply a Python, Go, or host-server runtime. Skip go run/curl for library-only or API-less profiles.
       3. Use task_passed (more work), all_passed (done), failure (evidenced code/test defects), or verification_error (command/environment could not complete verification).
     hooks:
       verification_error_limit: 3
@@ -487,7 +487,7 @@ states:
       retry_hint: |
         One CMD: per line. Review closed beads against SPEC and architecture; use allowed QA outcomes only.
       failure_hint: |
-        Run the configured phase verification directly from {{rig}}/mayor/rig. Do not prepend pkill, killall, or port-killing cleanup. If execution cannot reach the checks, use verification_error with the actual command/error; no repair bead IDs. For an application/test defect, use failure with summary, repair_bead_ids (only actual defect owners), and evidence. A closed-bead inventory is never a repair list.
+        Run the configured phase verification directly from {{rig}}/mayor/rig and follow qa_runtime_smoke_block for the documented app runtime. Do not infer the server lifecycle from the test language or prepend pkill, killall, or port-killing cleanup. If execution cannot reach the checks, use verification_error with the actual command/error; no repair bead IDs. For an application/test defect, use failure with summary, repair_bead_ids (only actual defect owners), and evidence. A closed-bead inventory is never a repair list.
     transitions:
       task_passed:
         to: implementation

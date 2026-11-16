@@ -27,6 +27,10 @@ func RigFlowQARuntimeSmokeBlock(townRoot, rig string, v WorkflowValidation) stri
 
 	base := ""
 	switch {
+	case WorkflowUsesDockerCompose(v):
+		base = rigFlowQADockerComposeVerifyBlock(v)
+	case RigUsesDockerComposeRuntime(townRoot, rig, v) && WorkflowNeedsQARuntimeSmoke(townRoot, rig, v):
+		base = rigFlowQADockerComposeVerifyBlock(v)
 	case WorkflowUsesPython(v):
 		if WorkflowNeedsQARuntimeSmoke(townRoot, rig, v) {
 			spec, _ := LoadAPISmokeSpecFromRig(townRoot, rig, v)
@@ -65,6 +69,14 @@ func rigFlowQAGenericVerifyBlock(v WorkflowValidation) string {
 Run profile verification only: %s
 
 Do **not** invent HTTP smoke unless SPEC.md documents a server and HTTP table.`, v.QAVerifyHint())
+}
+
+func rigFlowQADockerComposeVerifyBlock(v WorkflowValidation) string {
+	return fmt.Sprintf(`## Docker Compose application verification
+
+Run the profile verification: %s
+
+Docker Compose owns application startup and shutdown. Follow the compose commands documented in SPEC/architecture/plan and probe only documented HTTP routes on their documented host port. Do not start a second host-side server with uvicorn, gunicorn, or go run, and do not require a server and its curl probes to be in the same CMD when Compose started it in an earlier CMD.`, v.QAVerifyHint())
 }
 
 func rigFlowQAGoLibraryVerifyBlock(v WorkflowValidation) string {

@@ -123,6 +123,9 @@ func TestRigFlowPrompts_staticURLGuidanceFromArchitecture(t *testing.T) {
 	if !strings.Contains(qa, "{{qa_runtime_smoke_block}}") {
 		t.Fatalf("qa_review should inject profile-specific smoke block")
 	}
+	if !strings.Contains(qa, "runtime technology declared in SPEC/architecture") {
+		t.Fatal("qa_review must distinguish app runtime from the unit-test language")
+	}
 	resolved := SubstituteVars(qa, map[string]string{
 		"qa_runtime_smoke_block": RigFlowQARuntimeSmokeBlock(t.TempDir(), "rig", linkshelfLikeValidation()),
 	})

@@ -664,6 +664,27 @@ cd pingapp && uvicorn main:app --port 8080
 	}
 }
 
+func TestValidateQACommand_composePythonRuntimeSmokeCanProbeRunningContainer(t *testing.T) {
+	town, rig, v := pythonAPISmokeTestRig(t)
+	architecture := "Run the app with `docker compose -f docker-compose.yml up -d`.\n"
+	if err := os.WriteFile(filepath.Join(town, rig, "mayor", "rig", "architecture.md"), []byte(architecture), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	curl := "curl -fsS http://localhost:8080/api/items"
+	if err := validateQACommand(curl, rig, town, v); err != nil {
+		t.Fatalf("Compose-managed app should allow a probe after Compose startup: %v", err)
+	}
+	if err := validateQACommand("curl -fsS http://localhost:8010/api/items", rig, town, v); err == nil ||
+		!strings.Contains(err.Error(), "port 8010") {
+		t.Fatalf("wrong documented port should remain rejected, got: %v", err)
+	}
+	hostServer := "uvicorn backend.app:app --host 127.0.0.1 --port 8080 & sleep 1 && curl -fsS http://localhost:8080/api/items"
+	if err := validateQACommand(hostServer, rig, town, v); err == nil ||
+		!strings.Contains(err.Error(), "Docker Compose as the app runtime") {
+		t.Fatalf("host server should be rejected when Compose owns the app runtime, got: %v", err)
+	}
+}
+
 func TestValidateQACommand_rejectsCurlWhenNoRuntimeSmoke(t *testing.T) {
 	town := t.TempDir()
 	rig := "ping_rig"

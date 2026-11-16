@@ -15,6 +15,7 @@ var (
 	dockerComposeCLICache     string
 	dockerComposeCLICacheOnce sync.Once
 	dockerComposeCLIOverride  string // non-empty in tests only
+	composeRuntimeCommandRE   = regexp.MustCompile(`(?i)\bdocker(?:\s+|-)?compose\b.*\b(up|run|start)\b`)
 )
 
 // DockerComposeCLI returns the host's compose invocation: "docker compose" (plugin) or "docker-compose" (standalone).
@@ -81,6 +82,73 @@ func WorkflowUsesDocker(v WorkflowValidation) bool {
 		}
 	}
 	return false
+}
+
+// WorkflowUsesDockerCompose reports workflows where Compose owns application startup.
+func WorkflowUsesDockerCompose(v WorkflowValidation) bool {
+	scoped := v.ForActivePhase()
+	for _, command := range []string{scoped.QAVerifyCommand, scoped.ActivePhaseQAVerifyCommand()} {
+		if isComposeRuntimeCommand(command) && !isComposeTestCommand(command) {
+			return true
+		}
+	}
+	hasAppComposeFile := false
+	hasAppDockerfile := false
+	for _, f := range scoped.RequiredFiles {
+		path := strings.ToLower(filepath.ToSlash(strings.TrimSpace(f)))
+		base := filepath.Base(path)
+		if isComposeTestFile(path) {
+			continue
+		}
+		if strings.HasPrefix(base, "docker-compose") || base == "compose.yml" || base == "compose.yaml" {
+			hasAppComposeFile = true
+		}
+		if base == "dockerfile" {
+			hasAppDockerfile = true
+		}
+	}
+	return hasAppComposeFile && hasAppDockerfile
+}
+
+// RigUsesDockerComposeRuntime checks the profile and rig docs for the declared app runtime.
+func RigUsesDockerComposeRuntime(townRoot, rig string, v WorkflowValidation) bool {
+	if strings.TrimSpace(townRoot) != "" && strings.TrimSpace(rig) != "" {
+		rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
+		for _, name := range []string{"SPEC.md", "architecture.md", "plan.md"} {
+			data, err := os.ReadFile(filepath.Join(rigDir, name))
+			if err != nil {
+				continue
+			}
+			for _, line := range strings.Split(strings.ToLower(string(data)), "\n") {
+				if isComposeRuntimeCommand(line) && !isComposeTestCommand(line) {
+					return true
+				}
+			}
+		}
+	}
+	return WorkflowUsesDockerCompose(v)
+}
+
+func isComposeRuntimeCommand(command string) bool {
+	return composeRuntimeCommandRE.MatchString(command)
+}
+
+func isComposeTestCommand(command string) bool {
+	lower := strings.ToLower(command)
+	return strings.Contains(lower, "playwright") ||
+		strings.Contains(lower, " test/") ||
+		strings.Contains(lower, "/test/") ||
+		strings.Contains(lower, "docker-compose.test") ||
+		strings.Contains(lower, "compose.test") ||
+		strings.Contains(lower, "test/docker-compose")
+}
+
+func isComposeTestFile(path string) bool {
+	path = strings.ToLower(filepath.ToSlash(strings.TrimSpace(path)))
+	return strings.HasPrefix(path, "test/") ||
+		strings.Contains(path, "/test/") ||
+		strings.Contains(path, "docker-compose.test") ||
+		strings.Contains(path, "compose.test")
 }
 
 // NormalizeDockerCommand fixes common model typos in docker CLI invocations.

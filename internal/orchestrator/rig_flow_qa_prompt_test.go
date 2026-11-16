@@ -36,10 +36,10 @@ func TestRigFlowQARuntimeSmokeBlock_includesAPIContractGuidance(t *testing.T) {
 
 func TestRigFlowQARuntimeSmokeBlock_pythonSkipsGoRun(t *testing.T) {
 	v := WorkflowValidation{
-		LayoutRoot:        "backend",
-		QAVerifyCommand:   "python3 -m pytest -q",
-		RequiredFiles:     []string{"backend/app.py"},
-		PythonVenvDir:     ".venv",
+		LayoutRoot:      "backend",
+		QAVerifyCommand: "python3 -m pytest -q",
+		RequiredFiles:   []string{"backend/app.py"},
+		PythonVenvDir:   ".venv",
 	}
 	block := RigFlowQARuntimeSmokeBlock(t.TempDir(), "rig", v)
 	if strings.Contains(block, "go run ./cmd/server") {
@@ -47,6 +47,42 @@ func TestRigFlowQARuntimeSmokeBlock_pythonSkipsGoRun(t *testing.T) {
 	}
 	if !strings.Contains(block, "pytest") {
 		t.Fatal("want pytest guidance")
+	}
+}
+
+func TestRigFlowQARuntimeSmokeBlock_composeOwnsMixedStackServer(t *testing.T) {
+	dir := t.TempDir()
+	rig := "finally"
+	rigDir := filepath.Join(dir, rig, "mayor", "rig")
+	if err := os.MkdirAll(rigDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	spec := "# FinAlly\n\nServer URL: http://127.0.0.1:8000\n| GET | /api/health | 200 |\n"
+	if err := os.WriteFile(filepath.Join(rigDir, "SPEC.md"), []byte(spec), 0644); err != nil {
+		t.Fatal(err)
+	}
+	architecture := "Deployment uses Docker Compose: `docker compose -f finally/docker-compose.yml up -d`.\n"
+	if err := os.WriteFile(filepath.Join(rigDir, "architecture.md"), []byte(architecture), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	v := WorkflowValidation{
+		LayoutRoot:      "finally",
+		QAVerifyCommand: "python3 -m pytest -q",
+		TestRunner:      "pytest",
+		PythonVenvDir:   ".venv",
+		DevServerPort:   8000,
+		RequiredFiles: []string{
+			"finally/backend/app/main.py",
+			"finally/frontend/src/app/page.tsx",
+		},
+	}
+	block := RigFlowQARuntimeSmokeBlock(dir, rig, v)
+	if !strings.Contains(block, "Docker Compose owns application startup and shutdown") {
+		t.Fatalf("expected Compose lifecycle guidance, got:\n%s", block)
+	}
+	if strings.Contains(block, "Web/API runtime smoke (Python") || strings.Contains(block, "Python rig") {
+		t.Fatalf("mixed Compose app must not get Python-only server instructions:\n%s", block)
 	}
 }
 
@@ -75,9 +111,9 @@ func TestRigFlowQARuntimeSmokeBlock_goNoAPI(t *testing.T) {
 		t.Fatal(err)
 	}
 	v := WorkflowValidation{
-		LayoutRoot:    "app",
+		LayoutRoot:      "app",
 		QAVerifyCommand: "cd app && go test ./...",
-		RequiredFiles: []string{"app/web/index.html", "app/cmd/server/main.go"},
+		RequiredFiles:   []string{"app/web/index.html", "app/cmd/server/main.go"},
 	}
 	block := RigFlowQARuntimeSmokeBlock(dir, rig, v)
 	if strings.Contains(block, "/api/") && strings.Contains(block, "POST") {

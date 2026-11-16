@@ -1196,6 +1196,9 @@ func normalizeGoDevServerSmokeCommand(cmd, townRoot, rig string, v orchestrator.
 	if !isDevServerSmokeCommand(cmd) {
 		return cmd, false
 	}
+	if orchestrator.RigUsesDockerComposeRuntime(townRoot, rig, v) {
+		return cmd, false
+	}
 	lower := strings.ToLower(cmd)
 	if orchestrator.WorkflowUsesPython(v) && strings.Contains(lower, "uvicorn") {
 		// Do not splice a second lifecycle into a self-managed smoke check.

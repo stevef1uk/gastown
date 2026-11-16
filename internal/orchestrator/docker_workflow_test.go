@@ -22,6 +22,85 @@ func TestWorkflowUsesDocker_finallyProfile(t *testing.T) {
 	}
 }
 
+func TestWorkflowUsesDockerCompose(t *testing.T) {
+	for name, v := range map[string]WorkflowValidation{
+		"compose file": {
+			RequiredFiles: []string{"finally/docker-compose.yml", "finally/Dockerfile"},
+		},
+		"compose command": {
+			QAVerifyCommand: "docker compose -f finally/compose.yaml up -d",
+		},
+		"active phase command": {
+			DeliveryPhases: []DeliveryPhase{{
+				ID:              "web",
+				QAVerifyCommand: "docker-compose -f finally/docker-compose.yml up -d",
+			}},
+			ActivePhaseIDField: "web",
+		},
+		"future phase compose is ignored": {
+			DeliveryPhases: []DeliveryPhase{
+				{ID: "backend", RequiredFiles: []string{"finally/backend/app.py"}, QAVerifyCommand: "pytest"},
+				{ID: "web", RequiredFiles: []string{"finally/Dockerfile", "finally/docker-compose.yml"}, QAVerifyCommand: "docker compose up"},
+			},
+			ActivePhaseIDField: "backend",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			want := name != "future phase compose is ignored"
+			if got := WorkflowUsesDockerCompose(v); got != want {
+				t.Fatalf("Compose runtime = %v, want %v", got, want)
+			}
+		})
+	}
+
+	if WorkflowUsesDockerCompose(WorkflowValidation{
+		RequiredFiles: []string{"finally/Dockerfile"},
+	}) {
+		t.Fatal("Dockerfile alone should not imply Compose-managed startup")
+	}
+	for _, v := range []WorkflowValidation{
+		{
+			QAVerifyCommand: "docker compose -f test/docker-compose.test.yml up --exit-code-from playwright",
+			RequiredFiles:   []string{"test/docker-compose.test.yml"},
+		},
+		{
+			QAVerifyCommand: "docker compose -f test/compose.yml up -d",
+			RequiredFiles:   []string{"test/compose.yml"},
+		},
+	} {
+		if WorkflowUsesDockerCompose(v) {
+			t.Fatal("test Compose should not imply that Compose owns the app server")
+		}
+	}
+}
+
+func TestRigUsesDockerComposeRuntimeFromArchitecture(t *testing.T) {
+	town := t.TempDir()
+	rig := "mixed-app"
+	rigDir := filepath.Join(town, rig, "mayor", "rig")
+	if err := os.MkdirAll(rigDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	architecture := "# Deployment\n\nRun the full stack with `docker compose -f finally/docker-compose.yml up -d`.\n"
+	if err := os.WriteFile(filepath.Join(rigDir, "architecture.md"), []byte(architecture), 0644); err != nil {
+		t.Fatal(err)
+	}
+	v := WorkflowValidation{
+		QAVerifyCommand: "python3 -m pytest -q",
+		RequiredFiles:   []string{"backend/app/main.py", "frontend/src/app/page.tsx"},
+	}
+	if !RigUsesDockerComposeRuntime(town, rig, v) {
+		t.Fatal("architecture's Compose runtime should override the Python-only profile signal")
+	}
+	architecture = "# E2E\n\nRun Playwright with `docker compose -f test/docker-compose.test.yml up --exit-code-from playwright`.\n"
+	if err := os.WriteFile(filepath.Join(rigDir, "architecture.md"), []byte(architecture), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if RigUsesDockerComposeRuntime(town, rig, v) {
+		t.Fatal("Playwright test Compose should not be mistaken for the app runtime")
+	}
+}
+
 func TestAdaptDockerComposeCommand(t *testing.T) {
 	t.Parallel()
 	prev := dockerComposeCLIOverride

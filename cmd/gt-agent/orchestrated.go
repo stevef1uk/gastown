@@ -2993,7 +2993,8 @@ func validateQARuntimeSmokeCommand(cmd, rig, townRoot string, v orchestrator.Wor
 	if !strings.Contains(lower, "curl ") {
 		return nil
 	}
-	if orchestrator.IsProfileDerivedSmokeCommand(cmd) {
+	composeOwnsServer := orchestrator.RigUsesDockerComposeRuntime(townRoot, rig, v)
+	if !composeOwnsServer && orchestrator.IsProfileDerivedSmokeCommand(cmd) {
 		return nil
 	}
 	spec, _ := orchestrator.LoadAPISmokeSpecFromRig(townRoot, rig, v)
@@ -3002,7 +3003,7 @@ func validateQARuntimeSmokeCommand(cmd, rig, townRoot string, v orchestrator.Wor
 		port = 8080
 	}
 	layout := v.LayoutRootDir()
-	if orchestrator.WorkflowUsesPython(v) {
+	if !composeOwnsServer && orchestrator.WorkflowUsesPython(v) {
 		if !strings.Contains(lower, "uvicorn") && !strings.Contains(lower, "gunicorn") &&
 			!strings.Contains(lower, "flask run") && !strings.Contains(lower, "hypercorn") {
 			return fmt.Errorf("Python runtime smoke must start the server in the same CMD (e.g. cd %s/%s && uvicorn main:app --host 127.0.0.1 --port %d & sleep 1 && curl http://127.0.0.1:%d/ping) — bare curl with no server running always fails", rigMayorRigPath(rig), layout, port, port)
@@ -3011,7 +3012,7 @@ func validateQARuntimeSmokeCommand(cmd, rig, townRoot string, v orchestrator.Wor
 			return fmt.Errorf("Python runtime smoke must include curl in the same CMD as the server (e.g. cd %s/%s && uvicorn main:app --host 127.0.0.1 --port %d & sleep 1 && curl http://127.0.0.1:%d/ping) — bare server with no curl hangs forever", rigMayorRigPath(rig), layout, port, port)
 		}
 	}
-	if orchestrator.WorkflowUsesGo(v) {
+	if !composeOwnsServer && orchestrator.WorkflowUsesGo(v) {
 		// Accept both `go run` and `go build` + running the binary patterns
 		hasGoRun := strings.Contains(lower, "go run")
 		hasGoBuildRun := strings.Contains(lower, "go build") && (strings.Contains(lower, "./server") || strings.Contains(lower, "./cmd/server") || strings.Contains(lower, "go run"))
@@ -3031,6 +3032,9 @@ func validateQARuntimeSmokeCommand(cmd, rig, townRoot string, v orchestrator.Wor
 			continue
 		}
 		return fmt.Errorf("curl uses port %d but SPEC/architecture documents port %d — use http://127.0.0.1:%d", port, spec.Port, spec.Port)
+	}
+	if composeOwnsServer && orchestrator.IsDevServerSmokeCommand(cmd) {
+		return fmt.Errorf("SPEC/architecture declares Docker Compose as the app runtime — start the documented Compose services instead of launching a host-side dev server")
 	}
 	return nil
 }
