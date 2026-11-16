@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -98,6 +99,9 @@ func runOrchestrated(ctx context.Context, client *llm.Client, townRoot, role, ri
 			continue
 		}
 		outcome, summary, attemptLog, runErr := executeOrchestratedTask(ctx, client, townRoot, taskRig, sessionName, task, state.OrchestratedRetry)
+		if errors.Is(runErr, orchestrator.ErrWorkflowPaused) {
+			return runErr
+		}
 		if runErr != nil && isPermanentLLMError(runErr) {
 			if _, pauseErr := orchestrator.PauseWorkflow(townRoot, task.WorkflowID, runErr.Error()); pauseErr != nil {
 				return fmt.Errorf("LLM resource failure (%v); pause failed: %w", runErr, pauseErr)
@@ -232,6 +236,12 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 		contextBlocks = append(contextBlocks, block)
 		orchestratedPrintf("[gt-agent] loaded implementation-progress for %s/%s\n", task.WorkflowID, task.State)
 	}
+	if err := runner.completionChurnError(); err != nil {
+		if _, pauseErr := orchestrator.PauseWorkflow(townRoot, task.WorkflowID, err.Error()); pauseErr != nil {
+			return "", "", "", fmt.Errorf("%v; pause failed: %w", err, pauseErr)
+		}
+		return "", err.Error(), "", fmt.Errorf("%w: %v", orchestrator.ErrWorkflowPaused, err)
+	}
 	for _, block := range runner.promptContextBlocks() {
 		contextBlocks = append(contextBlocks, block)
 	}
@@ -305,7 +315,7 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 			return "failure", "workflow paused", lastAttemptFeedback.String(), orchestrator.ErrWorkflowPaused
 		}
 		if runner.executionBatchReady(batchStart) {
-			return "timeout", "Execution batch checkpointed; resume the remaining queue without reopening verified beads", lastAttemptFeedback.String(), nil
+			return "checkpoint", "Execution batch checkpointed; resume the remaining queue without reopening verified beads", lastAttemptFeedback.String(), nil
 		}
 		orchestratedPrintf("[gt-agent] LLM request (turn %d)...\n", turn)
 
@@ -2051,20 +2061,24 @@ func validateImplementationBeadReopen(cmd, townRoot, rig string, v orchestrator.
 	if id == "" {
 		return nil
 	}
-	// If the bead's on-disk artifact is already verified green, block the reopen.
-	// This mirrors the guard in ReopenClosedImplementBeadsForMissingOpenRequired:
-	// reopen is only for genuine recovery (timeout/restart left files missing/stub),
-	// not for normal LLM-failure retries.
+	// Explicit, file-attributed repair is different from generic recovery. A
+	// phase-wide failure alone must not permit reopening arbitrary closed work.
+	if scope != nil && scope.QAReworkFromQAReview && scope.BeadCited(id) {
+		return nil
+	}
+	if verifyOutputCitesClosedBead(lastVerifyOutput, townRoot, rig, id, v) {
+		return nil
+	}
 	beadPath := orchestrator.ImplementBeadPathForID(townRoot, rig, id, v)
 	if beadPath != "" {
 		rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
-		eval := orchestrator.NewImplementBeadVerifyEvaluator(rigDir, v)
-		if eval.VerifySatisfied(beadPath) {
+		assessment := orchestrator.AssessImplementationArtifact(rigDir, beadPath, v)
+		if assessment.Status == orchestrator.ArtifactUnavailable {
+			return assessment.Err()
+		}
+		if assessment.Status == orchestrator.ArtifactReady {
 			return fmt.Errorf("do not reopen %s — on-disk artifact already verifies green (genuine completion); LLM-failure loop must not go through open-beads route", id)
 		}
-	}
-	if scope != nil && scope.QAReworkFromQAReview && scope.BeadCited(id) {
-		return nil
 	}
 	// Allow reopen only for the next open implement bead (the one the polecat should work on).
 	next, err := orchestrator.NextOpenImplementBead(townRoot, rig, v)
@@ -2074,14 +2088,6 @@ func validateImplementationBeadReopen(cmd, townRoot, rig string, v orchestrator.
 	// Block reopening closed beads — the polecat should only work on the active/next open bead.
 	if !orchestrator.ImplementationQueueGreen(townRoot, rig, v) {
 		return fmt.Errorf("do not reopen %s — work on the current open bead `bd list --status=open`", id)
-	}
-	if orchestrator.WorkflowNeedsRuntimeSmoke(townRoot, rig, v) {
-		if err := orchestrator.ImplementationPhaseVerifyOK(townRoot, rig, v); err != nil {
-			return nil
-		}
-	}
-	if verifyOutputCitesClosedBead(lastVerifyOutput, townRoot, rig, id, v) {
-		return nil
 	}
 	return fmt.Errorf("do not reopen implement beads (%s) — go test ./... already passes; send JSON success only", id)
 }

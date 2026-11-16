@@ -19,6 +19,9 @@ func validateImplementationBeadClose(cmd, townRoot, rig string, v orchestrator.W
 	id := strings.Trim(extractBeadIDFromBdClose(cmd), `"'`)
 	rigDir := rigMayorRigDir(townRoot, rig)
 	beadPath := orchestrator.ImplementBeadPathForID(townRoot, rig, id, v)
+	if err := orchestrator.RunRequiredOwnedTests(rigDir, beadPath, v); err != nil {
+		return fmt.Errorf("cannot bd close %s: %w — implement the required tests and make them pass before close", id, err)
+	}
 	if !implementationBeadHasVerification(rigDir, beadPath, v, verifyOK) {
 		// Missing non-source artifacts cannot be repaired by retrying a phase
 		// build that needs that very file. Name the actual work before Verify.

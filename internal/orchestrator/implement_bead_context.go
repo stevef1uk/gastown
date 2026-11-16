@@ -190,9 +190,9 @@ func formatImplementBeadContextForPath(townRoot, rig, beadPath string, v Workflo
 }
 
 const (
-	maxDependencyContextFiles  = 3
-	maxDependencyContextBytes  = 2400
-	maxDependencySnippetBytes  = 800
+	maxDependencyContextFiles = 3
+	maxDependencyContextBytes = 2400
+	maxDependencySnippetBytes = 800
 )
 
 // formatDependencyPackagesContext injects read-only snippets from earlier implement files (e.g. store for cmd/main).
@@ -238,14 +238,14 @@ func formatDependencyPackagesContext(townRoot, rig, activePath string, v Workflo
 	if IsCmdMainImplementPath(activePath) {
 		b.WriteString("\n**cmd/main bead:** implement `registerAPI` / `serveStaticFiles` in package `main` per **Main wiring** and `main_test.go`; do not re-implement handler bodies from scratch.\n")
 	}
-	
+
 	// Inject dependency function signatures for precise calls
 	if sigs := formatDependencyFunctionSignatures(townRoot, rig, deps, v); sigs != "" {
 		b.WriteString("\n")
 		b.WriteString(sigs)
 		b.WriteString("\n")
 	}
-	
+
 	b.WriteString("\nCall **only** functions/types and signatures from the snippets above, **Architecture contract**, and **SPEC.md**.\n")
 	return strings.TrimSpace(b.String())
 }
@@ -262,14 +262,14 @@ func formatDependencyFunctionSignatures(townRoot, rig string, deps []string, v W
 			continue
 		}
 		content := string(data)
-		
+
 		// Extract function signatures (func Name(params) (returnTypes) {)
 		sigRE := regexp.MustCompile(`(?m)^func\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(([^)]*)\)\s*(?:\(([^)]*)\)|(\s+[A-Za-z_][A-Za-z0-9_]*\s*(?:,\s*[A-Za-z_][A-Za-z0-9_]*)*))?\s*\{`)
 		matches := sigRE.FindAllStringSubmatch(content, -1)
 		if len(matches) == 0 {
 			continue
 		}
-		
+
 		var sigs []string
 		for _, m := range matches {
 			if len(m) >= 2 {
@@ -284,7 +284,7 @@ func formatDependencyFunctionSignatures(townRoot, rig string, deps []string, v W
 				sigs = append(sigs, name+"("+params+")"+ret)
 			}
 		}
-		
+
 		if len(sigs) > 0 {
 			b.WriteString("### Function signatures from `" + rel + "` (call exactly these)\n")
 			for _, sig := range sigs {
@@ -403,6 +403,20 @@ func excerptLinesForPath(doc, beadPath, layoutRoot string, maxBytes int) string 
 }
 
 func formatUnitTestGuidanceForBead(townRoot, rig, beadPath string, v WorkflowValidation) string {
+	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
+	if tests, err := RequiredOwnedTests(rigDir, beadPath, v); err != nil {
+		return "### Required test outputs\nCannot load approved test contract: " + err.Error()
+	} else if len(tests) > 0 {
+		verify, err := RequiredOwnedTestVerifyCommand(rigDir, beadPath, v)
+		if err != nil {
+			return "### Required test outputs\n" + err.Error()
+		}
+		return "### Required test outputs (approved TEST_PLAN.md)\n" +
+			"This bead owns **both** `" + beadPath + "` and: `" + strings.Join(tests, "`, `") + "`.\n" +
+			"Read the corresponding TEST_PLAN.md requirements, scenarios, and assertions. Implement real tests with WRITE:/EDIT: on this bead; no additional ticket is needed.\n" +
+			"These are mandatory outputs even though they are not separate required_files entries. Missing/stub tests or compile-only verification cannot satisfy bd close.\n" +
+			"Verify from mayor/rig: `" + verify + "`. All required tests must pass before closing."
+	}
 	// TypeScript/JavaScript test files — specific guidance before generic fallback
 	if IsTestImplementPath(beadPath) && (strings.HasSuffix(beadPath, ".test.ts") || strings.HasSuffix(beadPath, ".test.tsx") ||
 		strings.HasSuffix(beadPath, ".spec.ts") || strings.HasSuffix(beadPath, ".spec.tsx")) {

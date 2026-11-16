@@ -7,20 +7,11 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
-
-	"github.com/steveyegge/gastown/internal/config"
 )
 
 // ValidateBeadArtifactOnDisk reports whether a layout-relative implement path exists and is not stubbed.
 func ValidateBeadArtifactOnDisk(rigDir, beadPath string, v WorkflowValidation) error {
-	beadPath = filepath.ToSlash(strings.TrimSpace(beadPath))
-	if beadPath == "" {
-		return fmt.Errorf("empty bead path")
-	}
-	if beadImplementationNeedsRework(rigDir, beadPath, v.ForActivePhase()) {
-		return fmt.Errorf("artifact %s missing, empty, or stub", beadPath)
-	}
-	return nil
+	return AssessImplementationArtifact(rigDir, beadPath, v).Err()
 }
 
 // ReconcileClosedImplementBeads reopens closed implement beads whose files are missing,
@@ -284,10 +275,9 @@ func ReconcileImplementBeads(townRoot, rig string, v WorkflowValidation) (string
 	if len(goModClosed) > 0 {
 		autoClosed = append(autoClosed, goModClosed...)
 	}
-	// Conservative auto-close: inert frontend/config beads (empty or stubbed files)
-	// This helps rigs progress past trivial frontend placeholders while leaving
-	// implementation queue semantics intact for core code.
-	inertClosed, cerr := CloseInertImplementBeads(townRoot, rig, v)
+	// Only declared placeholders may close without substantive content. Empty
+	// frontend/config files are unfinished work, not an alternate success rule.
+	inertClosed, cerr := ClosePlaceholderImplementBeads(townRoot, rig, v)
 	if cerr != nil {
 		return "", cerr
 	}
@@ -441,11 +431,9 @@ func containsString(ss []string, s string) bool {
 	return false
 }
 
-// CloseInertImplementBeads closes open/in_progress implement beads whose on-disk
-// artifact is empty or clearly a trivial stub and where the path is a frontend
-// or small config/manifest file. This is conservative: only frontend-like
-// artifacts are auto-closed here to avoid hiding missing implementation work.
-func CloseInertImplementBeads(townRoot, rig string, v WorkflowValidation) ([]string, error) {
+// ClosePlaceholderImplementBeads closes only intentionally empty placeholders,
+// using the same artifact assessment as explicit close and restart recovery.
+func ClosePlaceholderImplementBeads(townRoot, rig string, v WorkflowValidation) ([]string, error) {
 	v = v.ForActivePhase()
 	if townRoot == "" || rig == "" {
 		return nil, nil
@@ -464,46 +452,16 @@ func CloseInertImplementBeads(townRoot, rig string, v WorkflowValidation) ([]str
 		if rel == "" || IsProjectSetupArtifactPath(rel, v) {
 			continue
 		}
-		// Only consider frontend / small assets or dependency manifests for inert auto-close.
-		if !IsFrontendImplementPath(rel) && !IsDependencyManifest(rel) {
+		if !IsPlaceholderFile(rel) {
 			continue
 		}
-		full := filepath.Join(rigDir, filepath.FromSlash(rel))
-		info, err := os.Stat(full)
-		if err != nil {
+		if AssessImplementationArtifact(rigDir, rel, v).Status != ArtifactReady {
 			continue
 		}
-		// Empty file -> inert
-		if info.Size() == 0 {
-			beadsDir := config.ResolveBeadsDirForRig(townRoot, rig)
-			cmd := exec.Command("bd", "close", b.ID, "--reason=auto:inert-bead")
-			cmd.Env = append(os.Environ(), "BEADS_DIR="+beadsDir)
-			cmd.Dir = rigDir
-			out, err := cmd.CombinedOutput()
-			if err == nil {
-				closed = append(closed, b.ID)
-				continue
-			}
-			return closed, fmt.Errorf("bd close %s: %w: %s", b.ID, err, strings.TrimSpace(string(out)))
+		if err := bdCloseImplementBead(townRoot, rig, b.ID); err != nil {
+			return closed, err
 		}
-		// Non-empty but stubbed according to heuristics -> inert
-		data, err := os.ReadFile(full)
-		if err != nil {
-			continue
-		}
-		opts := StubCheckOptionsFromValidation(v)
-		if err := CheckContentNotStub(data, rel, optsForPath(rel, opts)); err != nil {
-			beadsDir := config.ResolveBeadsDirForRig(townRoot, rig)
-			cmd := exec.Command("bd", "close", b.ID, "--reason=auto:inert-bead")
-			cmd.Env = append(os.Environ(), "BEADS_DIR="+beadsDir)
-			cmd.Dir = rigDir
-			out, err := cmd.CombinedOutput()
-			if err == nil {
-				closed = append(closed, b.ID)
-				continue
-			}
-			return closed, fmt.Errorf("bd close %s: %w: %s", b.ID, err, strings.TrimSpace(string(out)))
-		}
+		closed = append(closed, b.ID)
 	}
 	return closed, nil
 }
@@ -731,13 +689,13 @@ func scanMissingImports(rigDir string, v WorkflowValidation) map[string]string {
 	}
 
 	// importBlockRe matches the opening of a Go import ( ... ) block; the block's
-// individual "path" lines are extracted separately.
-var importBlockRe = regexp.MustCompile(`^\s*import\s*\(\s*$`)
+	// individual "path" lines are extracted separately.
+	var importBlockRe = regexp.MustCompile(`^\s*import\s*\(\s*$`)
 
-// goImportPathRe matches a quoted import path inside or after an import statement.
-var goImportPathRe = regexp.MustCompile(`"([^"]+)"`)
+	// goImportPathRe matches a quoted import path inside or after an import statement.
+	var goImportPathRe = regexp.MustCompile(`"([^"]+)"`)
 
-// Scan each file for imports
+	// Scan each file for imports
 	missingImportExt := make(map[string]string) // mod -> ext
 	for _, f := range allFiles {
 		full := filepath.Join(rigDir, filepath.FromSlash(f.rel))
@@ -821,7 +779,7 @@ func isPythonStdlib(mod string) bool {
 		"pydantic": true, "httpx": true, "starlette": true, "sqlalchemy": true,
 		"abc": true, "importlib": true, "types": true, "inspect": true,
 		"__future__": true,
-		"decimal": true, "fractions": true, "numbers": true,
+		"decimal":    true, "fractions": true, "numbers": true,
 		"statistics": true, "copy": true, "pprint": true, "reprlib": true,
 		"enum": true, "contextvars": true,
 		"hmac": true, "secrets": true,
@@ -872,9 +830,9 @@ func isNodeStdlib(mod string) bool {
 	}
 	// Check for npm packages (no leading @ or /)
 	if strings.HasPrefix(mod, "@") || strings.Contains(mod, "/") {
-return false
-}
-return stdlib[mod]
+		return false
+	}
+	return stdlib[mod]
 }
 
 // isImportableThirdParty checks if a module can be imported from the environment.

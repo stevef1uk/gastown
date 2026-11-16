@@ -76,6 +76,11 @@ func (e *ImplementBeadVerifyEvaluator) PythonSatisfied(beadPath string) bool {
 		// project setup artifacts are not closed via per-bead verify here.
 		return false
 	}
+	// A hybrid Python project also owns frontend/config paths. Never evaluate
+	// those using Python's command runner (or memoize its failure for them).
+	if !strings.HasSuffix(strings.ToLower(beadPath), ".py") {
+		return false
+	}
 	if v, ok := e.memo[beadPath]; ok {
 		return v
 	}
@@ -133,13 +138,13 @@ func (e *ImplementBeadVerifyEvaluator) VerifySatisfied(beadPath string) bool {
 	if e.PythonSatisfied(beadPath) {
 		return true
 	}
-	if !IsFrontendImplementPath(beadPath) {
+	if ImplementationBeadRequiresVerify(beadPath) {
 		return false
 	}
 	if v, ok := e.memo[beadPath]; ok {
 		return v
 	}
-	green := !beadImplementationNeedsRework(e.rigDir, beadPath, e.v)
+	green := AssessImplementationArtifact(e.rigDir, beadPath, e.v).Status == ArtifactReady
 	e.memo[beadPath] = green
 	return green
 }
@@ -169,6 +174,11 @@ func RunGoCompileVerifyForBead(mayorRigDir, beadPath string, v WorkflowValidatio
 	if !WorkflowUsesGo(v) {
 		return fmt.Errorf("not a Go workflow")
 	}
+	if tests, err := RequiredOwnedTests(mayorRigDir, beadPath, v); err != nil {
+		return err
+	} else if len(tests) > 0 {
+		return RunRequiredOwnedTests(mayorRigDir, beadPath, v)
+	}
 	verify := strings.TrimSpace(GoCompileVerifyCommandForBead(v, mayorRigDir, beadPath))
 	if verify == "" {
 		return fmt.Errorf("empty verify command for %s", beadPath)
@@ -195,6 +205,11 @@ func RunGoCompileVerifyForBead(mayorRigDir, beadPath string, v WorkflowValidatio
 func RunPythonVerifyForBead(mayorRigDir, beadPath string, v WorkflowValidation) error {
 	if !WorkflowUsesPython(v) {
 		return fmt.Errorf("not a Python workflow")
+	}
+	if tests, err := RequiredOwnedTests(mayorRigDir, beadPath, v); err != nil {
+		return err
+	} else if len(tests) > 0 {
+		return RunRequiredOwnedTests(mayorRigDir, beadPath, v)
 	}
 	verify := strings.TrimSpace(ImplementationVerifyCommandForBead(v, mayorRigDir, beadPath))
 	if verify == "" {
@@ -390,8 +405,9 @@ func CloseImplementBeadsWithGreenFrontendVerify(townRoot, rig string, v Workflow
 	return closed, nil
 }
 
-// reopenClosedImplementBeadsOrdered reopens closed implement beads that still need work, in profile order.
-// Go beads with green Verify are never reopened.
+// reopenClosedImplementBeadsOrdered only reopens demonstrably missing/invalid
+// artifacts. Test/build failures need explicit, targeted rework attribution;
+// retrying a phase command here can undo legitimate per-bead completion.
 func reopenClosedImplementBeadsOrdered(townRoot, rig string, v WorkflowValidation, eval *ImplementBeadVerifyEvaluator) ([]string, error) {
 	if eval == nil {
 		rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
@@ -414,8 +430,11 @@ func reopenClosedImplementBeadsOrdered(townRoot, rig string, v WorkflowValidatio
 		if IsProjectSetupArtifactPath(rel, v) {
 			continue
 		}
-		// Keep beads closed when on-disk validation passes.
-		if eval.VerifySatisfied(rel) {
+		assessment := AssessImplementationArtifact(eval.rigDir, rel, v)
+		if assessment.Status == ArtifactUnavailable {
+			return reopened, assessment.Err()
+		}
+		if !assessment.NeedsRepair() {
 			continue
 		}
 		if err := bdUpdateImplementBeadStatus(townRoot, rig, b.ID, "open"); err != nil {

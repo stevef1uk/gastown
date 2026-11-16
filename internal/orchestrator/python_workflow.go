@@ -201,6 +201,11 @@ func PythonProjectSetupVerifyCommand(v WorkflowValidation) string {
 
 // ImplementationVerifyCommandForBead picks per-bead verify for the active implement path.
 func ImplementationVerifyCommandForBead(v WorkflowValidation, mayorRigDir, beadPath string) string {
+	if verify, err := RequiredOwnedTestVerifyCommand(mayorRigDir, beadPath, v); err != nil {
+		return ownedTestContractFailureCommand(err)
+	} else if verify != "" {
+		return verify
+	}
 	lowerPath := strings.ToLower(filepath.ToSlash(strings.TrimSpace(beadPath)))
 	if WorkflowUsesDocker(v) && (IsE2ETestPath(beadPath) ||
 		strings.Contains(lowerPath, "docker-compose") ||
@@ -232,6 +237,11 @@ func ImplementationVerifyCommandForBead(v WorkflowValidation, mayorRigDir, beadP
 // PythonImplementationVerifyCommandForBead returns verify scoped to the active implement path.
 func PythonImplementationVerifyCommandForBead(v WorkflowValidation, mayorRigDir, beadPath string) string {
 	beadPath = filepath.ToSlash(strings.TrimSpace(beadPath))
+	if verify, err := RequiredOwnedTestVerifyCommand(mayorRigDir, beadPath, v); err != nil {
+		return ownedTestContractFailureCommand(err)
+	} else if verify != "" {
+		return verify
+	}
 	venv := v.PythonVenvRelDir()
 	py := venv + "/bin/python3"
 

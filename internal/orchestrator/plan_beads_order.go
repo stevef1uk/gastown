@@ -128,7 +128,20 @@ func ValidatePlanningBeadCreate(townRoot, rig, title string, v WorkflowValidatio
 			return fmt.Errorf("open/in_progress implement beads already cover required_files — do not bd create; run bd list --status=open,in_progress, amend plan.md as requested, then JSON success (or repair beads with gt rig sync-planning %s without --force)", rig)
 		}
 	}
-	return ValidateImplementBeadCreateTitle(title, v)
+	if err := ValidateImplementBeadCreateTitle(title, v); err != nil {
+		return err
+	}
+	path := NormalizePlannerBeadPath(ExtractPathFromBeadTitle(title, v.BeadTitleContains), v.LayoutRoot, rig)
+	if townRoot != "" && rig != "" {
+		owners, err := implementBeadsIndexedByPath(townRoot, rig, v, "in_progress", "open", "blocked", "deferred", "closed")
+		if err != nil {
+			return err
+		}
+		if owner, ok := owners[path]; ok {
+			return fmt.Errorf("%s already owns %s — reuse that bead; do not create a duplicate", owner.ID, path)
+		}
+	}
+	return nil
 }
 
 // ValidateImplementBeadCreateTitle ensures bd create titles map to a profile required path.
@@ -239,6 +252,9 @@ func filterImplementBeads(beads []PlanBead, v WorkflowValidation) []PlanBead {
 	}
 	out := make([]PlanBead, 0, len(beads))
 	for _, b := range beads {
+		if isSupersededImplementBead(b) {
+			continue
+		}
 		// Listing open/in-progress implement beads is used for "what's open" /
 		// "what can be worked on" checks. It should not filter by whether the
 		// embedded path is currently part of v.RequiredFiles; that filtering is
@@ -714,6 +730,11 @@ func RepairPlanningBeadSet(townRoot, rig string, v WorkflowValidation) (string, 
 	}
 	v = v.ForActivePhase()
 	var parts []string
+	if superseded, err := CanonicalizeImplementBeads(townRoot, rig, v); err != nil {
+		return "", err
+	} else if len(superseded) > 0 {
+		parts = append(parts, "superseded duplicate owners: "+joinStrings(superseded, ", "))
+	}
 	malformed, err := PruneMalformedImplementBeads(townRoot, rig, v)
 	if err != nil {
 		return "", err
@@ -1400,7 +1421,6 @@ func ReopenClosedImplementBeadsForMissingOpenRequired(townRoot, rig string, v Wo
 		return nil, nil
 	}
 	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
-	eval := NewImplementBeadVerifyEvaluator(rigDir, v)
 	var reopened []string
 	for _, want := range v.RequiredFiles {
 		want = filepath.ToSlash(strings.TrimSpace(want))
@@ -1428,7 +1448,11 @@ func ReopenClosedImplementBeadsForMissingOpenRequired(townRoot, rig string, v Wo
 		// would undo finished work after a transient LLM failure, trapping the
 		// agent in a close/reopen loop. Genuine recovery still reopens because
 		// missing/stub files fail VerifySatisfied.
-		if eval.VerifySatisfied(want) {
+		assessment := AssessImplementationArtifact(rigDir, want, v)
+		if assessment.Status == ArtifactUnavailable {
+			return reopened, assessment.Err()
+		}
+		if !assessment.NeedsRepair() {
 			continue
 		}
 		if err := bdUpdateImplementBeadStatus(townRoot, rig, id, "open"); err != nil {
@@ -1446,7 +1470,7 @@ func ImplementBeadIsStillOpen(townRoot, rig, beadID string, v WorkflowValidation
 		return false
 	}
 	for _, status := range []string{"open", "in_progress"} {
-		beads, err := listImplementBeadsByStatus(townRoot, rig, v, status)
+		beads, err := listImplementBeadsForGuard(townRoot, rig, v, status)
 		if err != nil {
 			continue
 		}
@@ -1486,6 +1510,12 @@ func EnsurePlanningImplementBeads(townRoot, rig string, v WorkflowValidation) ([
 			}
 		}
 	}
+	// Blocked work still owns its deliverable. Ignoring it here used to create
+	// a fresh ticket whenever a prerequisite temporarily blocked verification.
+	blocked, err := implementBeadsIndexedByPath(townRoot, rig, v, "blocked", "deferred")
+	if err != nil {
+		return nil, err
+	}
 	beadsDir := config.ResolveBeadsDirForRig(townRoot, rig)
 	workDir := filepath.Join(townRoot, rig, "mayor", "rig")
 	var created []string
@@ -1509,9 +1539,16 @@ func EnsurePlanningImplementBeads(townRoot, rig string, v WorkflowValidation) ([
 		if covered {
 			continue
 		}
+		if _, ok := blocked[want]; ok {
+			continue
+		}
 		if id, ok := ClosedImplementBeadForPath(townRoot, rig, want, v); ok {
 			rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
-			if NewImplementBeadVerifyEvaluator(rigDir, v).VerifySatisfied(want) {
+			assessment := AssessImplementationArtifact(rigDir, want, v)
+			if assessment.Status == ArtifactUnavailable {
+				return created, assessment.Err()
+			}
+			if !assessment.NeedsRepair() {
 				continue
 			}
 			if err := bdUpdateImplementBeadStatus(townRoot, rig, id, "open"); err != nil {
@@ -1656,8 +1693,8 @@ func FormatImplementationQueueBlock(townRoot, rig string, v WorkflowValidation) 
 	var b strings.Builder
 	if len(all) > 1 {
 		b.WriteString("### Queue (all open/in_progress beads)\n\n")
-		b.WriteString("| Bead ID | Path |\n")
-		b.WriteString("|---------|------|\n")
+		b.WriteString("| Bead ID | Path | Required test outputs |\n")
+		b.WriteString("|---------|------|-----------------------|\n")
 		for _, bead := range all {
 			p := NormalizeBeadPathForLayout(ExtractPathFromBeadTitle(bead.Title, v.BeadTitleContains), v.LayoutRoot)
 			if p == "" {
@@ -1667,7 +1704,13 @@ func FormatImplementationQueueBlock(townRoot, rig string, v WorkflowValidation) 
 			if next != nil && bead.ID == next.ID {
 				marker = " ← next"
 			}
-			b.WriteString(fmt.Sprintf("| `%s` | `%s`%s |\n", bead.ID, p, marker))
+			testOutputs := "—"
+			if tests, err := RequiredOwnedTests(filepath.Join(townRoot, rig, "mayor", "rig"), p, v); err != nil {
+				testOutputs = "test contract unavailable"
+			} else if len(tests) > 0 {
+				testOutputs = "`" + strings.Join(tests, "`, `") + "`"
+			}
+			b.WriteString(fmt.Sprintf("| `%s` | `%s`%s | %s |\n", bead.ID, p, marker, testOutputs))
 		}
 		b.WriteString("\n")
 	}

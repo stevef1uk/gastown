@@ -222,6 +222,11 @@ func dockerVerifyWithLayout(cmd, layout string) string {
 	if layout == "." {
 		return cmd
 	}
+	// Profile commands and script paths are commonly already rig-root-relative.
+	// Adding cd layout would turn app/docker-compose.yml into app/app/....
+	if strings.Contains(cmd, layout+"/") {
+		return cmd
+	}
 	return "cd " + layout + " && " + cmd
 }
 

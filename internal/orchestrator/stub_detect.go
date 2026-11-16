@@ -101,29 +101,29 @@ var dependencyManifestNames = map[string]bool{
 // short (e.g. .env.example). They are verified by existence and a few key tokens
 // rather than by implementation-size heuristics.
 var smallConfigFileNames = map[string]bool{
-	".env.example":        true,
-	".env":                true,
-	".gitignore":          true,
-	".dockerignore":       true,
-	".gitattributes":      true,
-	".editorconfig":       true,
-	"postcss.config.js":   true,
-	"postcss.config.ts":   true,
-	"tailwind.config.js":  true,
-	"tailwind.config.ts":  true,
-	"next.config.js":      true,
-	"next.config.ts":      true,
-	"jest.config.js":      true,
-	"jest.config.ts":      true,
-	".eslintrc.js":        true,
-	".eslintrc.json":      true,
-	".eslintrc.yaml":      true,
-	".prettierrc.js":      true,
-	".prettierrc.json":    true,
-	"webpack.config.js":   true,
-	"vite.config.js":      true,
-	"rollup.config.js":    true,
-	"karma.conf.js":       true,
+	".env.example":       true,
+	".env":               true,
+	".gitignore":         true,
+	".dockerignore":      true,
+	".gitattributes":     true,
+	".editorconfig":      true,
+	"postcss.config.js":  true,
+	"postcss.config.ts":  true,
+	"tailwind.config.js": true,
+	"tailwind.config.ts": true,
+	"next.config.js":     true,
+	"next.config.ts":     true,
+	"jest.config.js":     true,
+	"jest.config.ts":     true,
+	".eslintrc.js":       true,
+	".eslintrc.json":     true,
+	".eslintrc.yaml":     true,
+	".prettierrc.js":     true,
+	".prettierrc.json":   true,
+	"webpack.config.js":  true,
+	"vite.config.js":     true,
+	"rollup.config.js":   true,
+	"karma.conf.js":      true,
 }
 
 // IsPackageInitFile reports package entrypoints that are intentionally minimal (e.g. Python __init__.py).
@@ -367,6 +367,8 @@ func CheckPathNotStub(path, displayRel string, opts StubCheckOptions) error {
 // green verify and block real fixes (test_review ↔ implementation loop).
 const SeededTestPlaceholderReason = "implement tests per plan.md acceptance"
 
+var emptyPythonTestRE = regexp.MustCompile(`(?m)^[\t ]*(?:async[\t ]+)?def[\t ]+test_\w+\([^\n]*\):[\t ]*(?:\n[\t ]+)?(?:pass|\.\.\.)[\t ]*(?:#[^\n]*)?(?:\n|$)`)
+
 // IsSeededTestPlaceholder reports whether content is a scaffolded placeholder
 // test file (Go *_test.go or pytest) rather than implemented tests.
 func IsSeededTestPlaceholder(data []byte) bool {
@@ -395,6 +397,9 @@ func CheckContentNotStub(data []byte, displayRel string, opts StubCheckOptions) 
 	// so byte/line checks alone never flag them. Detect the scaffold signature.
 	if IsSeededTestPlaceholder(data) {
 		return fmt.Errorf("%s is the seeded test placeholder — implement the planned tests per TEST_PLAN.md", displayRel)
+	}
+	if IsTestImplementPath(displayRel) && strings.HasSuffix(displayRel, ".py") && emptyPythonTestRE.Match(data) {
+		return fmt.Errorf("%s contains an empty test body — implement real assertions per TEST_PLAN.md", displayRel)
 	}
 	if opts.MinSubstantiveLines <= 0 {
 		// Dependency manifests (requirements.txt, go.mod, lockfiles): non-empty is enough.

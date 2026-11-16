@@ -27,8 +27,10 @@ func pbDebug(format string, args ...interface{}) {
 
 // PlanBead is a minimal open-task view for plan-bead validation.
 type PlanBead struct {
-	ID    string
-	Title string
+	ID          string
+	Title       string
+	CloseReason string   `json:"close_reason,omitempty"`
+	Labels      []string `json:"labels,omitempty"`
 }
 
 // NormalizePlannerBeadPath canonicalizes paths from bead titles for flat mayor/rig worktrees.
@@ -506,25 +508,25 @@ func isLikelyRepoFilePath(p, layoutRoot string) bool {
 	ext := filepath.Ext(base)
 	if ext != "" {
 		// Known file extensions (lowercase for comparison)
-knownExts := map[string]bool{
-		".go": true, ".py": true, ".js": true, ".ts": true, ".jsx": true, ".tsx": true,
-		".md": true, ".txt": true, ".mod": true, ".sum": true, ".json": true,
-		".yaml": true, ".yml": true, ".toml": true, ".ini": true, ".cfg": true,
-		".conf": true, ".config": true, ".env": true, ".example": true,
-		".gitignore": true, ".gitattributes": true, ".dockerignore": true,
-		".html": true, ".css": true, ".scss": true, ".sass": true, ".less": true,
-		".sql": true, ".sh": true, ".bash": true, ".zsh": true, ".fish": true,
-		".ps1": true, ".bat": true, ".cmd": true, ".dockerfile": true,
-		".containerfile": true, ".tf": true, ".tfvars": true, ".hcl": true,
-		".rs": true, ".java": true, ".kt": true, ".scala": true, ".cs": true,
-		".php": true, ".rb": true, ".pl": true, ".lua": true, ".r": true,
-		".swift": true, ".m": true, ".mm": true, ".cpp": true, ".cc": true,
-		".cxx": true, ".c": true, ".h": true, ".hpp": true, ".proto": true,
-		".gradle": true, ".maven": true, ".sbt": true, ".cmake": true,
-		".make": true, ".mk": true, ".xml": true, ".svg": true, ".png": true,
-		".jpg": true, ".jpeg": true, ".gif": true, ".ico": true, ".webp": true,
-		".lock": true,
-	}
+		knownExts := map[string]bool{
+			".go": true, ".py": true, ".js": true, ".ts": true, ".jsx": true, ".tsx": true,
+			".md": true, ".txt": true, ".mod": true, ".sum": true, ".json": true,
+			".yaml": true, ".yml": true, ".toml": true, ".ini": true, ".cfg": true,
+			".conf": true, ".config": true, ".env": true, ".example": true,
+			".gitignore": true, ".gitattributes": true, ".dockerignore": true,
+			".html": true, ".css": true, ".scss": true, ".sass": true, ".less": true,
+			".sql": true, ".sh": true, ".bash": true, ".zsh": true, ".fish": true,
+			".ps1": true, ".bat": true, ".cmd": true, ".dockerfile": true,
+			".containerfile": true, ".tf": true, ".tfvars": true, ".hcl": true,
+			".rs": true, ".java": true, ".kt": true, ".scala": true, ".cs": true,
+			".php": true, ".rb": true, ".pl": true, ".lua": true, ".r": true,
+			".swift": true, ".m": true, ".mm": true, ".cpp": true, ".cc": true,
+			".cxx": true, ".c": true, ".h": true, ".hpp": true, ".proto": true,
+			".gradle": true, ".maven": true, ".sbt": true, ".cmake": true,
+			".make": true, ".mk": true, ".xml": true, ".svg": true, ".png": true,
+			".jpg": true, ".jpeg": true, ".gif": true, ".ico": true, ".webp": true,
+			".lock": true,
+		}
 		if knownExts[strings.ToLower(ext)] {
 			return true
 		}

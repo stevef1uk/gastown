@@ -33,6 +33,9 @@ type ImplementationProgress struct {
 	// Per-bead turn tracking
 	BeadTurns      map[string]int `json:"bead_turns,omitempty"`
 	BeadTurnsLimit int            `json:"bead_turns_limit,omitempty"`
+	// Evidence is a content/contract fingerprint, not a claim of phase acceptance.
+	Evidence       map[string]string            `json:"evidence,omitempty"`
+	ReopenAttempts map[string]completionReopens `json:"reopen_attempts,omitempty"`
 }
 
 func implementationProgressPath(townRoot, rig string) string {
@@ -162,6 +165,9 @@ func (r *stateRunner) initImplementationProgress() string {
 	}
 	r.implProgress.PhaseID = r.v.ActivePhaseID()
 	r.scrubStaleImplementationProgressMilestones()
+	if err := r.completionChurnError(); err != nil {
+		return err.Error() // Caller pauses before any further Verify/LLM work.
+	}
 	r.applyImplementationProgressToTrack()
 	r.clearStaleImplementationVerifyFailureOnResume()
 	r.clearStaleImplementationVerifyMilestoneOnResume()
@@ -363,6 +369,10 @@ func (r *stateRunner) clearStaleImplementationVerifyMilestoneOnResume() {
 	if r.track.verifyOK {
 		return
 	}
+	if r.implementationEvidenceCurrent(r.track.activeBead) {
+		r.track.verifyOK = true
+		return
+	}
 	out, failed := r.runActiveBeadVerifyCommand()
 	if !failed {
 		r.track.verifyOK = true
@@ -462,6 +472,7 @@ func (r *stateRunner) scrubStaleImplementationProgressMilestones() {
 		}
 		if orchestrator.ImplementBeadIsStillOpen(r.townRoot, r.rig, beadID, r.v) {
 			if strings.HasPrefix(key, implMilestoneClosedPrefix) {
+				r.recordCompletionReopen(beadID)
 				delete(r.implProgress.Completed, key)
 				changed = true
 			}
@@ -471,8 +482,9 @@ func (r *stateRunner) scrubStaleImplementationProgressMilestones() {
 		if path == "" {
 			continue
 		}
-		if err := orchestrator.ValidateBeadArtifactOnDisk(rigDir, path, r.v); err != nil {
+		if orchestrator.AssessImplementationArtifact(rigDir, path, r.v).NeedsRepair() {
 			delete(r.implProgress.Completed, key)
+			delete(r.implProgress.Evidence, beadID)
 			changed = true
 			if r.implProgress.ActiveBead == beadID {
 				r.implProgress.ActiveBead = ""
@@ -557,6 +569,12 @@ func (r *stateRunner) persistImplementationProgress(cmd string) {
 	}
 	if !changed {
 		return
+	}
+	if r.track.verifyOK && r.track.activeBead != "" {
+		r.recordImplementationEvidence(r.track.activeBead)
+	}
+	if closedBeadID != "" {
+		r.recordImplementationEvidence(closedBeadID)
 	}
 	if err := saveImplementationProgress(r.townRoot, r.rig, r.implProgress); err != nil {
 		orchestratedFprintfStderr("[gt-agent] implementation progress save: %v\n", err)

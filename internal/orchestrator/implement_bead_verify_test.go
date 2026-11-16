@@ -114,10 +114,10 @@ func TestCloseImplementBeadsWithGreenGoVerify_autoClosesGoModBead(t *testing.T) 
 	}
 
 	v := WorkflowValidation{
-		LayoutRoot:        "app",
-		BeadTitleContains: "Implement",
-		QAVerifyCommand:   "cd app && go test ./...",
-		RequiredFiles:     []string{"app/go.mod"},
+		LayoutRoot:                 "app",
+		BeadTitleContains:          "Implement",
+		QAVerifyCommand:            "cd app && go test ./...",
+		RequiredFiles:              []string{"app/go.mod"},
 		MinImplementationFileBytes: 1,
 		MinSubstantiveLines:        1,
 	}
@@ -158,10 +158,10 @@ func TestReopenClosedImplementBeadsOrdered_skipsGreenVerify(t *testing.T) {
 	writeMinimalGoModule(t, rigDir)
 
 	v := WorkflowValidation{
-		LayoutRoot:        "app",
-		BeadTitleContains: "Implement",
-		QAVerifyCommand:   "cd app && go test ./...",
-		RequiredFiles:     []string{"app/internal/store/store.go"},
+		LayoutRoot:                 "app",
+		BeadTitleContains:          "Implement",
+		QAVerifyCommand:            "cd app && go test ./...",
+		RequiredFiles:              []string{"app/internal/store/store.go"},
 		MinImplementationFileBytes: 1,
 		MinSubstantiveLines:        1,
 	}
@@ -185,7 +185,7 @@ func TestReopenClosedImplementBeadsOrdered_skipsGreenVerify(t *testing.T) {
 	}
 }
 
-func TestReopenClosedImplementBeadsOrdered_reopensWhenGoVerifyFails(t *testing.T) {
+func TestReopenClosedImplementBeadsOrdered_defersCompileFailureToTargetedRework(t *testing.T) {
 	dir := t.TempDir()
 	rig := "rig"
 	rigDir := filepath.Join(dir, rig, "mayor", "rig")
@@ -195,10 +195,10 @@ func TestReopenClosedImplementBeadsOrdered_reopensWhenGoVerifyFails(t *testing.T
 	}
 
 	v := WorkflowValidation{
-		LayoutRoot:        "app",
-		BeadTitleContains: "Implement",
-		QAVerifyCommand:   "cd app && go test ./...",
-		RequiredFiles:     []string{"app/internal/store/store.go"},
+		LayoutRoot:                 "app",
+		BeadTitleContains:          "Implement",
+		QAVerifyCommand:            "cd app && go test ./...",
+		RequiredFiles:              []string{"app/internal/store/store.go"},
 		MinImplementationFileBytes: 1,
 		MinSubstantiveLines:        1,
 	}
@@ -224,8 +224,8 @@ func TestReopenClosedImplementBeadsOrdered_reopensWhenGoVerifyFails(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(reopened) != 1 || reopened[0] != "b1" {
-		t.Fatalf("reopened=%v want [b1] when go test fails", reopened)
+	if len(reopened) != 0 {
+		t.Fatalf("reopened=%v; a build failure alone must not revoke file completion", reopened)
 	}
 }
 
@@ -236,10 +236,10 @@ func TestReopenClosedImplementBeadsOrdered_skipsPythonGreenVerify(t *testing.T) 
 	writeMinimalPythonProject(t, rigDir)
 
 	v := WorkflowValidation{
-		LayoutRoot:        "app",
-		BeadTitleContains: "Implement",
-		PythonVenvDir:     ".venv",
-		RequiredFiles:     []string{"app/main.py"},
+		LayoutRoot:                 "app",
+		BeadTitleContains:          "Implement",
+		PythonVenvDir:              ".venv",
+		RequiredFiles:              []string{"app/main.py"},
 		MinImplementationFileBytes: 1,
 		MinSubstantiveLines:        1,
 	}
@@ -275,15 +275,15 @@ func TestReopenClosedImplementBeadsOrdered_reopensWhenPythonVerifyFails(t *testi
 	rig := "rig"
 	rigDir := filepath.Join(dir, rig, "mayor", "rig")
 	writeMinimalPythonProject(t, rigDir)
-	if err := os.WriteFile(filepath.Join(rigDir, "app", "main.py"), []byte("def main(\n"), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(rigDir, "app", "main.py"), []byte("import python3 -m pytest\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
 
 	v := WorkflowValidation{
-		LayoutRoot:        "app",
-		BeadTitleContains: "Implement",
-		PythonVenvDir:     ".venv",
-		RequiredFiles:     []string{"app/main.py"},
+		LayoutRoot:                 "app",
+		BeadTitleContains:          "Implement",
+		PythonVenvDir:              ".venv",
+		RequiredFiles:              []string{"app/main.py"},
 		MinImplementationFileBytes: 1,
 		MinSubstantiveLines:        1,
 	}
@@ -321,10 +321,10 @@ func TestReopenClosedImplementBeadsForMissingOpenRequired_keepsGreenClosed(t *te
 	writeMinimalGoModule(t, rigDir)
 
 	v := WorkflowValidation{
-		LayoutRoot:        "app",
-		BeadTitleContains: "Implement",
-		QAVerifyCommand:   "cd app && go test ./...",
-		RequiredFiles:     []string{"app/internal/store/store.go"},
+		LayoutRoot:                 "app",
+		BeadTitleContains:          "Implement",
+		QAVerifyCommand:            "cd app && go test ./...",
+		RequiredFiles:              []string{"app/internal/store/store.go"},
 		MinImplementationFileBytes: 1,
 		MinSubstantiveLines:        1,
 	}
@@ -359,7 +359,7 @@ func TestReopenClosedImplementBeadsForMissingOpenRequired_keepsGreenClosed(t *te
 	}
 }
 
-func TestReopenClosedImplementBeadsForMissingOpenRequired_reopensWhenGoVerifyFails(t *testing.T) {
+func TestReopenClosedImplementBeadsForMissingOpenRequired_preservesClosedSourceDuringBuildFailure(t *testing.T) {
 	dir := t.TempDir()
 	rig := "rig"
 	rigDir := filepath.Join(dir, rig, "mayor", "rig")
@@ -369,10 +369,10 @@ func TestReopenClosedImplementBeadsForMissingOpenRequired_reopensWhenGoVerifyFai
 	}
 
 	v := WorkflowValidation{
-		LayoutRoot:        "app",
-		BeadTitleContains: "Implement",
-		QAVerifyCommand:   "cd app && go test ./...",
-		RequiredFiles:     []string{"app/internal/store/store.go"},
+		LayoutRoot:                 "app",
+		BeadTitleContains:          "Implement",
+		QAVerifyCommand:            "cd app && go test ./...",
+		RequiredFiles:              []string{"app/internal/store/store.go"},
 		MinImplementationFileBytes: 1,
 		MinSubstantiveLines:        1,
 	}
@@ -399,11 +399,11 @@ func TestReopenClosedImplementBeadsForMissingOpenRequired_reopensWhenGoVerifyFai
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(reopened) != 1 || reopened[0] != "b1 (app/internal/store/store.go)" {
-		t.Fatalf("reopened=%v want [b1 (app/internal/store/store.go)]", reopened)
+	if len(reopened) != 0 {
+		t.Fatalf("reopened=%v; planning recovery must defer build failures to targeted rework", reopened)
 	}
-	if len(reopenedIDs) != 1 || reopenedIDs[0] != "b1" {
-		t.Fatalf("bdUpdate called=%v want [b1]", reopenedIDs)
+	if len(reopenedIDs) != 0 {
+		t.Fatalf("bdUpdate called=%v want none", reopenedIDs)
 	}
 }
 
@@ -412,9 +412,9 @@ func TestImplementBeadVerifyEvaluator_memoizes(t *testing.T) {
 	rigDir := dir
 	writeMinimalGoModule(t, rigDir)
 	v := WorkflowValidation{
-		LayoutRoot:        "app",
-		QAVerifyCommand:   "cd app && go test ./...",
-		RequiredFiles:     []string{"app/internal/store/store.go"},
+		LayoutRoot:                 "app",
+		QAVerifyCommand:            "cd app && go test ./...",
+		RequiredFiles:              []string{"app/internal/store/store.go"},
 		MinImplementationFileBytes: 1,
 		MinSubstantiveLines:        1,
 	}
@@ -446,10 +446,10 @@ func TestCloseImplementBeadsWithGreenGoVerify_autoClosesFrontendArtifact(t *test
 	}
 
 	v := WorkflowValidation{
-		LayoutRoot:        "app",
-		BeadTitleContains: "Implement app/",
-		QAVerifyCommand:   "cd app && go test ./...",
-		RequiredFiles:     []string{"app/web/index.html"},
+		LayoutRoot:                 "app",
+		BeadTitleContains:          "Implement app/",
+		QAVerifyCommand:            "cd app && go test ./...",
+		RequiredFiles:              []string{"app/web/index.html"},
 		MinImplementationFileBytes: 20,
 		MinSubstantiveLines:        2,
 	}
@@ -622,10 +622,10 @@ func TestReconcileImplementBeads_deterministicLogOrder(t *testing.T) {
 	writeMinimalGoModule(t, rigDir)
 
 	v := WorkflowValidation{
-		LayoutRoot:        "app",
-		BeadTitleContains: "Implement",
-		QAVerifyCommand:   "cd app && go test ./...",
-		RequiredFiles:     []string{"app/internal/store/store.go"},
+		LayoutRoot:                 "app",
+		BeadTitleContains:          "Implement",
+		QAVerifyCommand:            "cd app && go test ./...",
+		RequiredFiles:              []string{"app/internal/store/store.go"},
 		MinImplementationFileBytes: 1,
 		MinSubstantiveLines:        1,
 	}

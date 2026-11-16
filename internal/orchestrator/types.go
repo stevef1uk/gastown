@@ -122,6 +122,12 @@ type ReviewProgress struct {
 	Failures    int    `json:"failures"`
 }
 
+// IsCheckpointOutcome is a successful batch yield, not a timeout or rework
+// verdict. Existing targeted repair context must survive the next batch.
+func IsCheckpointOutcome(outcome string) bool {
+	return strings.EqualFold(strings.TrimSpace(outcome), "checkpoint")
+}
+
 // IsFailureOutcome reports whether complete_task outcome means rework/failure.
 func IsFailureOutcome(outcome string) bool {
 	switch strings.ToLower(strings.TrimSpace(outcome)) {

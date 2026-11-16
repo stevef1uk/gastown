@@ -415,46 +415,7 @@ func ReopenClosedBeadForRework(townRoot, rig, filePath string, v WorkflowValidat
 }
 
 func beadImplementationNeedsRework(rigDir, beadPath string, v WorkflowValidation) bool {
-	beadPath = filepath.ToSlash(strings.TrimSpace(beadPath))
-	if beadPath == "" {
-		return true
-	}
-	// Placeholder files (.gitkeep, .gitignore, .keep) are intentionally small — never rework.
-	if IsPlaceholderFile(beadPath) {
-		return false
-	}
-	path := filepath.Join(rigDir, filepath.FromSlash(beadPath))
-	info, err := os.Stat(path)
-	if err != nil {
-		return true
-	}
-	if info.IsDir() {
-		entries, err := os.ReadDir(path)
-		if err != nil || len(entries) == 0 {
-			return true
-		}
-		return false
-	}
-	if info.Size() == 0 {
-		return true
-	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return true
-	}
-	opts := optsForPath(beadPath, StubCheckOptionsFromValidation(v))
-	if err := CheckContentNotStub(data, beadPath, opts); err != nil {
-		return true
-	}
-	if err := CheckPythonSourceValid(data, beadPath); err != nil {
-		return true
-	}
-	if strings.HasSuffix(strings.ToLower(beadPath), ".js") {
-		if err := CheckJavaScriptFileHealthy(data); err != nil {
-			return true
-		}
-	}
-	return false
+	return AssessImplementationArtifact(rigDir, beadPath, v).NeedsRepair()
 }
 
 func reopenClosedImplementBeads(townRoot, rig string, v WorkflowValidation) ([]string, error) {
@@ -549,8 +510,10 @@ func listImplementBeadsByStatus(townRoot, rig string, v WorkflowValidation, stat
 	}
 	out = beads.StripStdoutWarnings(out)
 	var rows []struct {
-		ID    string `json:"id"`
-		Title string `json:"title"`
+		ID          string   `json:"id"`
+		Title       string   `json:"title"`
+		CloseReason string   `json:"close_reason"`
+		Labels      []string `json:"labels"`
 	}
 	if err := json.Unmarshal(out, &rows); err != nil {
 		return nil, err
@@ -562,13 +525,16 @@ func listImplementBeadsByStatus(townRoot, rig string, v WorkflowValidation, stat
 		if id == "" {
 			continue
 		}
+		if isSupersededImplementBead(PlanBead{CloseReason: r.CloseReason, Labels: r.Labels}) {
+			continue
+		}
 		// For listing open/in-progress beads we want implement-like titles, not
 		// required_files membership filtering. Required/extra classification is
 		// validated elsewhere (plan.md bead validation, plan sync alignment, etc.).
 		if !looksLikeOpenImplementBeadTitle(title, v) {
 			continue
 		}
-		result = append(result, PlanBead{ID: id, Title: title})
+		result = append(result, PlanBead{ID: id, Title: title, CloseReason: r.CloseReason, Labels: r.Labels})
 	}
 	return result, nil
 }

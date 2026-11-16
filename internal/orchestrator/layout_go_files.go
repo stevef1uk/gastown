@@ -37,6 +37,11 @@ func GoTestVerifyCommandForPackage(v WorkflowValidation, mayorRigDir, beadPath s
 // When the package contains another bead's *_test.go, verify runs only this bead's Test* functions (-run).
 func GoCompileVerifyCommandForBead(v WorkflowValidation, mayorRigDir, beadPath string) string {
 	beadPath = filepath.ToSlash(strings.TrimSpace(beadPath))
+	if verify, err := RequiredOwnedTestVerifyCommand(mayorRigDir, beadPath, v); err != nil {
+		return ownedTestContractFailureCommand(err)
+	} else if verify != "" {
+		return verify
+	}
 	if IsFrontendImplementPath(beadPath) {
 		return ""
 	}

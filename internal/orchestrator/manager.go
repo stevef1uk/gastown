@@ -815,7 +815,7 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summa
 			Feedback:  reworkFeedback,
 			AgentID:   agentID,
 		}
-	} else if !IsTimeoutOutcome(outcome) && !IsFailureOutcome(outcome) && !IsArchitectureReworkOutcome(outcome) {
+	} else if !IsCheckpointOutcome(outcome) && !IsTimeoutOutcome(outcome) && !IsFailureOutcome(outcome) && !IsArchitectureReworkOutcome(outcome) {
 		// Success clears QA/plan-review rework for the next agent.
 		inst.PendingRework = nil
 		inst.TestReviewFailures = 0

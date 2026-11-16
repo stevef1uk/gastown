@@ -420,6 +420,8 @@ states:
         to: design
       dependency_blocked:
         to: design
+      checkpoint:
+        to: implementation
       timeout:
         to: implementation
   test_review:

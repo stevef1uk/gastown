@@ -11,6 +11,30 @@ The running orchestrator loads templates from `{townRoot}/orchestrator/templates
 `gt orchestrator run` / `gt up` starts the service. Workflow state persists in
 `{townRoot}/orchestrator/instances.json` (not in git — use `gt mayor workflow reset` to rewind).
 
+## Durable implementation completion
+
+- Explicit close, planning recovery, and restart reconciliation share the
+  `AssessImplementationArtifact` disk contract. Missing/invalid artifacts may
+  reopen; filesystem/tool failures and an incomplete phase are not file defects.
+- Per-bead completion and whole-phase acceptance are separate. Source verification
+  and the full phase acceptance gate still apply; build/test failures require
+  targeted repair attribution rather than a broad planning-time reopen.
+- Planning resolves one canonical owner per required path across open,
+  in-progress, blocked, deferred, and closed tickets. Historical duplicates are
+  closed with a canonical reference and excluded from queue/completion recovery.
+- Verification checkpoints record content/contract evidence, including phase
+  prerequisites and owned tests. Unchanged evidence survives restart; changed
+  inputs require fresh verification. Repeated close/reopen cycles with identical
+  evidence pause after the state's YAML `no_progress_limit`, preserving files
+  and the diagnostic in the workflow pause reason.
+- An execution batch yields `checkpoint`, configured as a self-transition in
+  both workflows. This is not a timeout and preserves existing targeted rework.
+- Approved `TEST_PLAN.md` companions are mandatory outputs of their source bead,
+  even when absent from `required_files`. Queue/context, verification, close, and
+  recovery resolve the same ownership mapping. They must exist, contain real
+  assertions, and pass their test command before close; compilation alone is
+  insufficient. Explicit test deliverables keep their separate bead ownership.
+
 ## Per-rig workflow profile
 
 Validation and prompt variables for a rig come from:
