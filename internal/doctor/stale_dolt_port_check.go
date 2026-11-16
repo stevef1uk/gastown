@@ -7,27 +7,33 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/steveyegge/gastown/internal/doltserver"
 )
 
 // StaleDoltPortCheck detects stale Dolt port files that point to wrong ports.
 // This can cause bd commands to fail with "database not found" errors when
 // they connect to the wrong Dolt server.
 // It also checks metadata.json files for port consistency with the running server.
+// Finally, it detects legacy per-rig .beads/dolt directories that let bd
+// auto-spawn an embedded server serving empty databases when the shared server
+// is unreachable (surfacing as "issue_prefix config is missing").
 type StaleDoltPortCheck struct {
 	FixableCheck
-	stalePorts      []stalePortInfo
-	staleMetadata   []staleMetadataInfo
+	stalePorts        []stalePortInfo
+	staleMetadata     []staleMetadataInfo
+	staleEmbeddedDirs []doltserver.EmbeddedDoltDir
 }
 
 type stalePortInfo struct {
-	path       string
-	port       int
+	path        string
+	port        int
 	correctPort int
 }
 
 type staleMetadataInfo struct {
-	path       string
-	port       int
+	path        string
+	port        int
 	correctPort int
 }
 
@@ -48,7 +54,8 @@ func NewStaleDoltPortCheck() *StaleDoltPortCheck {
 func (c *StaleDoltPortCheck) Run(ctx *CheckContext) *CheckResult {
 	c.stalePorts = nil
 	c.staleMetadata = nil
-	
+	c.staleEmbeddedDirs = nil
+
 	// Get the correct port from the main Dolt config
 	correctPort := c.getCorrectPort(ctx)
 	if correctPort == 0 {
@@ -57,7 +64,7 @@ func (c *StaleDoltPortCheck) Run(ctx *CheckContext) *CheckResult {
 
 	// Find all dolt-server.port files
 	portFiles := c.findPortFiles(ctx.TownRoot)
-	
+
 	var details []string
 	for _, portFile := range portFiles {
 		data, err := os.ReadFile(portFile)
@@ -74,8 +81,8 @@ func (c *StaleDoltPortCheck) Run(ctx *CheckContext) *CheckResult {
 		// Check if port matches the correct port
 		if port != correctPort {
 			c.stalePorts = append(c.stalePorts, stalePortInfo{
-				path:       portFile,
-				port:       port,
+				path:        portFile,
+				port:        port,
 				correctPort: correctPort,
 			})
 			relPath, _ := filepath.Rel(ctx.TownRoot, portFile)
@@ -89,8 +96,8 @@ func (c *StaleDoltPortCheck) Run(ctx *CheckContext) *CheckResult {
 		port := c.getPortFromMetadata(metaFile)
 		if port > 0 && port != correctPort {
 			c.staleMetadata = append(c.staleMetadata, staleMetadataInfo{
-				path:       metaFile,
-				port:       port,
+				path:        metaFile,
+				port:        port,
 				correctPort: correctPort,
 			})
 			relPath, _ := filepath.Rel(ctx.TownRoot, metaFile)
@@ -98,14 +105,19 @@ func (c *StaleDoltPortCheck) Run(ctx *CheckContext) *CheckResult {
 		}
 	}
 
-	// Also check for stale dolt config directories with wrong ports
-	staleConfigs := c.findStaleDoltConfigs(ctx.TownRoot, correctPort)
-	for _, config := range staleConfigs {
-		relPath, _ := filepath.Rel(ctx.TownRoot, config)
-		details = append(details, fmt.Sprintf("Stale Dolt config directory: %s (contains wrong port configuration)", relPath))
+	// Also check for legacy per-rig .beads/dolt directories that let bd spawn an
+	// embedded server serving empty/stale databases when the shared server is down.
+	c.staleEmbeddedDirs = doltserver.FindLegacyEmbeddedDoltDirs(ctx.TownRoot)
+	for _, d := range c.staleEmbeddedDirs {
+		relPath, _ := filepath.Rel(ctx.TownRoot, d.Path)
+		note := ""
+		if !d.SafeToRemove {
+			note = " — contains databases not present in .dolt-data (run 'gt dolt migrate')"
+		}
+		details = append(details, fmt.Sprintf("Legacy embedded Dolt dir: %s (databases: %s)%s", relPath, strings.Join(d.Databases, ", "), note))
 	}
 
-	if len(c.stalePorts) == 0 && len(c.staleMetadata) == 0 && len(staleConfigs) == 0 {
+	if len(c.stalePorts) == 0 && len(c.staleMetadata) == 0 && len(c.staleEmbeddedDirs) == 0 {
 		return &CheckResult{
 			Name:    c.Name(),
 			Status:  StatusOK,
@@ -116,13 +128,14 @@ func (c *StaleDoltPortCheck) Run(ctx *CheckContext) *CheckResult {
 	return &CheckResult{
 		Name:    c.Name(),
 		Status:  StatusWarning,
-		Message: fmt.Sprintf("%d stale port file(s), %d stale metadata.json(s), %d stale config dir(s)", len(c.stalePorts), len(c.staleMetadata), len(staleConfigs)),
+		Message: fmt.Sprintf("%d stale port file(s), %d stale metadata.json(s), %d legacy embedded Dolt dir(s)", len(c.stalePorts), len(c.staleMetadata), len(c.staleEmbeddedDirs)),
 		Details: details,
-		FixHint: "Run 'gt doctor --fix' to fix port inconsistencies",
+		FixHint: "Run 'gt doctor --fix' to fix port inconsistencies and remove stale embedded Dolt directories",
 	}
 }
 
-// Fix removes stale Dolt port files and fixes metadata.json port mismatches.
+// Fix removes stale Dolt port files, fixes metadata.json port mismatches, and
+// removes legacy embedded .beads/dolt directories that duplicate .dolt-data.
 func (c *StaleDoltPortCheck) Fix(ctx *CheckContext) error {
 	// Remove stale port files
 	for _, info := range c.stalePorts {
@@ -130,14 +143,19 @@ func (c *StaleDoltPortCheck) Fix(ctx *CheckContext) error {
 			return fmt.Errorf("could not remove stale port file %s: %w", info.path, err)
 		}
 	}
-	
+
 	// Fix metadata.json files with wrong ports
 	for _, info := range c.staleMetadata {
 		if err := c.fixMetadataPort(info.path, info.correctPort); err != nil {
 			return fmt.Errorf("could not fix metadata.json %s: %w", info.path, err)
 		}
 	}
-	
+
+	// Remove legacy embedded Dolt directories that duplicate canonical databases.
+	if _, _, err := doltserver.RemoveLegacyEmbeddedDoltDirs(ctx.TownRoot); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -208,26 +226,6 @@ func (c *StaleDoltPortCheck) findPortFiles(townRoot string) []string {
 	}
 
 	return files
-}
-
-// findStaleDoltConfigs finds stale Dolt config directories with wrong ports.
-func (c *StaleDoltPortCheck) findStaleDoltConfigs(townRoot string, correctPort int) []string {
-	var staleConfigs []string
-
-	// Check for .beads/dolt/ directory which shouldn't exist when using shared Dolt server
-	staleDir := filepath.Join(townRoot, ".beads", "dolt")
-	if _, err := os.Stat(staleDir); err == nil {
-		// Check if it has a config.yaml with wrong port
-		configPath := filepath.Join(staleDir, "config.yaml")
-		if data, err := os.ReadFile(configPath); err == nil {
-			// Check for any port that's not the correct port
-			if strings.Contains(string(data), "port:") && !strings.Contains(string(data), fmt.Sprintf("port: %d", correctPort)) {
-				staleConfigs = append(staleConfigs, staleDir)
-			}
-		}
-	}
-
-	return staleConfigs
 }
 
 // findMetadataFiles finds all metadata.json files that might contain Dolt port config.

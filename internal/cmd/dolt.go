@@ -524,6 +524,17 @@ func runDoltRestart(cmd *cobra.Command, args []string) error {
 		fmt.Fprintf(os.Stderr, "Warning: imposter kill failed: %v\n", err)
 	}
 
+	// Step 2b: Remove legacy per-rig .beads/dolt directories that let bd spawn an
+	// embedded server serving empty databases when the shared server is down.
+	if removed, skipped, rmErr := doltserver.RemoveLegacyEmbeddedDoltDirs(townRoot); rmErr != nil {
+		fmt.Fprintf(os.Stderr, "Warning: could not remove legacy embedded Dolt dirs: %v\n", rmErr)
+	} else if removed > 0 || len(skipped) > 0 {
+		fmt.Printf("Removed %d legacy embedded Dolt dir(s)\n", removed)
+		for _, s := range skipped {
+			fmt.Fprintf(os.Stderr, "Warning: kept %s — contains databases not in .dolt-data (run 'gt dolt migrate')\n", s)
+		}
+	}
+
 	// Brief pause to let port be released
 	time.Sleep(500 * time.Millisecond)
 

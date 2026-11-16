@@ -174,3 +174,63 @@ listener:
 		t.Errorf("expected StatusOK after fix, got %v: %s", result.Status, result.Message)
 	}
 }
+
+// writeTestDoltDB creates a minimal valid Dolt database at dir/.dolt.
+func writeTestDoltDB(t *testing.T, dir string) {
+	t.Helper()
+	noms := filepath.Join(dir, ".dolt", "noms")
+	if err := os.MkdirAll(noms, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(noms, "manifest"), []byte("manifest"), 0644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestStaleDoltPortCheck_DetectsAndRemovesEmbeddedDirs verifies the check
+// surfaces legacy per-rig .beads/dolt directories and Fix removes the ones that
+// duplicate canonical databases.
+func TestStaleDoltPortCheck_DetectsAndRemovesEmbeddedDirs(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	doltDataDir := filepath.Join(tmpDir, ".dolt-data")
+	if err := os.MkdirAll(doltDataDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(doltDataDir, "config.yaml"), []byte("listener:\n  port: 3307\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	writeTestDoltDB(t, filepath.Join(doltDataDir, "testgt4"))
+
+	if err := os.MkdirAll(filepath.Join(tmpDir, "mayor"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(tmpDir, "mayor", "rigs.json"), []byte(`{"rigs":{"testgt4":{}}}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Legacy embedded dir duplicating the canonical testgt4 database.
+	embedded := filepath.Join(tmpDir, "testgt4", ".beads", "dolt")
+	writeTestDoltDB(t, filepath.Join(embedded, "testgt4"))
+
+	check := NewStaleDoltPortCheck()
+	ctx := &CheckContext{TownRoot: tmpDir}
+
+	result := check.Run(ctx)
+	if result.Status != StatusWarning {
+		t.Fatalf("expected StatusWarning for embedded dir, got %v: %s", result.Status, result.Message)
+	}
+
+	if err := check.Fix(ctx); err != nil {
+		t.Fatalf("Fix() failed: %v", err)
+	}
+
+	if _, err := os.Stat(embedded); !os.IsNotExist(err) {
+		t.Errorf("expected embedded dir %s to be removed by Fix", embedded)
+	}
+
+	result = check.Run(ctx)
+	if result.Status != StatusOK {
+		t.Errorf("expected StatusOK after fix, got %v: %s", result.Status, result.Message)
+	}
+}
