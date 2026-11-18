@@ -17,6 +17,48 @@ func TestPythonVerifyCommand_layoutScopedTests(t *testing.T) {
 	}
 }
 
+func TestPythonVerifyCommand_layoutCDQualifiesExplicitTestSelector(t *testing.T) {
+	t.Parallel()
+	v := WorkflowValidation{
+		LayoutRoot:      "taskboard",
+		TestRunner:      "pytest",
+		QAVerifyCommand: "cd taskboard && python -m pytest -q tests",
+	}
+	got := PythonVerifyCommand(v)
+	want := ". .venv/bin/activate && python -m pytest -q taskboard/tests"
+	if got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+}
+
+func TestPythonVerifyCommand_layoutCDDefaultsToTests(t *testing.T) {
+	t.Parallel()
+	v := WorkflowValidation{
+		LayoutRoot:      "taskboard",
+		TestRunner:      "pytest",
+		QAVerifyCommand: "cd taskboard && python -m pytest -q",
+	}
+	got := PythonVerifyCommand(v)
+	want := ". .venv/bin/activate && python -m pytest -q taskboard/tests"
+	if got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+}
+
+func TestPythonVerifyCommand_layoutCDDoesNotRewriteOptionValue(t *testing.T) {
+	t.Parallel()
+	v := WorkflowValidation{
+		LayoutRoot:      "taskboard",
+		TestRunner:      "pytest",
+		QAVerifyCommand: "cd taskboard && python -m pytest -k tests tests",
+	}
+	got := PythonVerifyCommand(v)
+	want := ". .venv/bin/activate && python -m pytest -k tests taskboard/tests"
+	if got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+}
+
 func TestPythonImplementationVerifyCommandForBead_store(t *testing.T) {
 	t.Parallel()
 	v := WorkflowValidation{

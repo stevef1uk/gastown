@@ -296,18 +296,25 @@ func pythonVerifyWithLayout(cmd string, v WorkflowValidation) string {
 	if isPytest {
 		// Strip cd layout from command — pytest needs to run from mayor/rig
 		// so that imports like 'defender.backend.main' resolve correctly.
-		// Preserve the original cd path as the test scope.
 		if hasCD {
 			scope := extractLayoutScope(cmd, layout)
 			cmd = stripCDLayout(cmd, layout)
 			if scope != "" {
-				cmd = strings.TrimSpace(cmd) + " " + scope
-				// Extracted scope replaces the default layout/tests fallback below.
-				return cmd
+				if rewritten, ok := qualifyPythonPytestSelectors(cmd, scope); ok {
+					return rewritten
+				}
+				if scope == layout+"/" {
+					scope = testScope
+				}
+				return strings.TrimSpace(cmd) + " " + scope
 			}
 		}
-		// Run pytest from mayor/rig (venv lives there); collect only layout/tests.
-		if !strings.Contains(lower, testScope) {
+		// Run pytest from mayor/rig (venv lives there); scope explicit selectors
+		// beneath the layout, or default to layout/tests when none were given.
+		if rewritten, ok := qualifyPythonPytestSelectors(cmd, layout+"/"); ok {
+			return rewritten
+		}
+		if !strings.Contains(strings.ToLower(cmd), strings.ToLower(testScope)) {
 			return strings.TrimSpace(cmd) + " " + testScope
 		}
 		return cmd
@@ -323,6 +330,56 @@ func pythonVerifyWithLayout(cmd string, v WorkflowValidation) string {
 		return cmd
 	}
 	return "cd " + layout + " && " + cmd
+}
+
+func qualifyPythonPytestSelectors(cmd, root string) (string, bool) {
+	parts := strings.Fields(cmd)
+	pytestIdx := -1
+	for i, part := range parts {
+		if strings.EqualFold(part, "pytest") {
+			pytestIdx = i
+			break
+		}
+	}
+	if pytestIdx < 0 {
+		return cmd, false
+	}
+
+	changed := false
+	skipNext := false
+	for i := pytestIdx + 1; i < len(parts); i++ {
+		part := strings.Trim(parts[i], "\"'")
+		if skipNext {
+			skipNext = false
+			continue
+		}
+		if pythonPytestOptionTakesValue(part) {
+			skipNext = true
+			continue
+		}
+		if strings.HasPrefix(part, "-") || strings.Contains(part, "=") ||
+			strings.HasPrefix(part, "/") || strings.HasPrefix(part, root) {
+			continue
+		}
+		parts[i] = root + part
+		changed = true
+	}
+	if !changed {
+		return cmd, false
+	}
+	return strings.Join(parts, " "), true
+}
+
+func pythonPytestOptionTakesValue(option string) bool {
+	switch option {
+	case "-k", "-m", "-c", "-o", "--confcutdir", "--ignore", "--ignore-glob",
+		"--rootdir", "--import-mode", "--deselect", "--basetemp", "--junitxml",
+		"--override-ini", "--maxfail", "--tb", "--capture", "--durations",
+		"--log-file":
+		return true
+	default:
+		return false
+	}
 }
 
 func extractLayoutScope(cmd, layout string) string {
