@@ -98,3 +98,32 @@ func TestCompletionEvidence_ReopenLoopIsDurableAndBounded(t *testing.T) {
 		t.Fatalf("actual input changes must allow a new repair attempt: %v", err)
 	}
 }
+
+func TestCompletionEvidence_LegacyReopenCountDoesNotBlockRecovery(t *testing.T) {
+	r := completionEvidenceFixture(t)
+	previous := orchestrator.ListImplementBeadsByStatusHook
+	orchestrator.ListImplementBeadsByStatusHook = func(_, _ string, _ orchestrator.WorkflowValidation, status string) ([]orchestrator.PlanBead, error) {
+		if status == "open" {
+			return []orchestrator.PlanBead{{ID: "b-page", Title: "Implement product/page.tsx per architecture"}}, nil
+		}
+		return nil, nil
+	}
+	t.Cleanup(func() { orchestrator.ListImplementBeadsByStatusHook = previous })
+
+	r.recordImplementationEvidence("b-page")
+	r.implProgress.ReopenAttempts = map[string]completionReopens{
+		"product/page.tsx": {
+			Fingerprint: r.implProgress.Evidence["b-page"],
+			Count:       r.hooks.NoProgressLimit,
+		},
+	}
+	if err := r.completionChurnError(); err != nil {
+		t.Fatalf("legacy reopen count must not block recovery: %v", err)
+	}
+
+	r.recordCompletionReopen("b-page")
+	reopens := r.implProgress.ReopenAttempts["product/page.tsx"]
+	if reopens.Version != completionReopenVersion || reopens.Count != 1 {
+		t.Fatalf("legacy count was not restarted under current version: %+v", reopens)
+	}
+}

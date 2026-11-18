@@ -216,7 +216,7 @@ func (r *stateRunner) formatActiveBeadReadyToCloseBlock() string {
 		if verifyCmd == "" {
 			return ""
 		}
-		if fixed, ok := rewriteUnittestToWorkdir(verifyCmd, r.rig, r.v); ok {
+		if fixed, ok := rewriteUnittestToWorkdirAtTownRoot(verifyCmd, r.rig, r.townRoot, r.v); ok {
 			verifyCmd = fixed
 		}
 		out, err := r.runShellCommand(verifyCmd, r.workDir(), "", r.commandEnv(os.Environ()))
@@ -345,7 +345,7 @@ func (r *stateRunner) clearStaleImplementationVerifyFailureOnResume() {
 	if verifyCmd == "" {
 		return
 	}
-	if fixed, ok := rewriteUnittestToWorkdir(verifyCmd, r.rig, r.v); ok {
+	if fixed, ok := rewriteUnittestToWorkdirAtTownRoot(verifyCmd, r.rig, r.townRoot, r.v); ok {
 		verifyCmd = fixed
 	}
 	out, err := r.runShellCommand(verifyCmd, r.workDir(), "", r.commandEnv(os.Environ()))
@@ -421,7 +421,7 @@ func (r *stateRunner) activeBeadVerifyCommand() string {
 	if verifyCmd == "" {
 		return ""
 	}
-	if fixed, ok := rewriteUnittestToWorkdir(verifyCmd, r.rig, r.v); ok {
+	if fixed, ok := rewriteUnittestToWorkdirAtTownRoot(verifyCmd, r.rig, r.townRoot, r.v); ok {
 		verifyCmd = fixed
 	}
 	return verifyCmd

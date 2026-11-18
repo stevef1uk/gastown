@@ -380,7 +380,7 @@ func (r *stateRunner) rewriteCommand(cmd string) string {
 			orchestratedPrintf("[gt-agent] rewrote QA layout verify cmd: %s\n", fixed)
 			cmd = fixed
 		}
-		if fixed, ok := rewriteUnittestToWorkdir(cmd, r.rig, r.v); ok {
+		if fixed, ok := rewriteUnittestToWorkdirAtTownRoot(cmd, r.rig, r.townRoot, r.v); ok {
 			orchestratedPrintf("[gt-agent] rewrote QA toolchain cmd for mayor/rig workdir: %s\n", fixed)
 			cmd = fixed
 		}
@@ -459,7 +459,7 @@ func (r *stateRunner) rewriteCommand(cmd string) string {
 				}
 			}
 		case "unittest_workdir":
-			if fixed, ok := rewriteUnittestToWorkdir(cmd, r.rig, r.v); ok {
+			if fixed, ok := rewriteUnittestToWorkdirAtTownRoot(cmd, r.rig, r.townRoot, r.v); ok {
 				orchestratedPrintf("[gt-agent] rewrote verify/toolchain cmd for workdir: %s\n", fixed)
 				cmd = fixed
 			}
@@ -958,7 +958,7 @@ func (r *stateRunner) runAutoVerify(cmd, workDir, sessionName string, cmdEnv []s
 			continue
 		}
 		if hook.Verify != "python_setup" && hook.Verify != "node_setup" {
-			if fixed, ok := rewriteUnittestToWorkdir(verifyCmd, r.rig, r.v); ok {
+			if fixed, ok := rewriteUnittestToWorkdirAtTownRoot(verifyCmd, r.rig, r.townRoot, r.v); ok {
 				verifyCmd = fixed
 			}
 		} else {

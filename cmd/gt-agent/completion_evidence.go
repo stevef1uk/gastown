@@ -14,7 +14,12 @@ import (
 type completionReopens struct {
 	Fingerprint string `json:"fingerprint"`
 	Count       int    `json:"count"`
+	Version     int    `json:"version,omitempty"`
 }
+
+// Bump when completion reconciliation changes so old no-progress counts cannot
+// prevent recovery from behavior fixed by a newer agent.
+const completionReopenVersion = 2
 
 // Include the phase contract and prerequisite contents, not timestamps. A
 // restart or bead status change alone must not invalidate green verification.
@@ -100,8 +105,8 @@ func (r *stateRunner) recordCompletionReopen(id string) {
 	}
 	evidence := r.implProgress.Evidence[id]
 	reopens := r.implProgress.ReopenAttempts[path]
-	if reopens.Fingerprint != evidence {
-		reopens = completionReopens{Fingerprint: evidence}
+	if reopens.Fingerprint != evidence || reopens.Version != completionReopenVersion {
+		reopens = completionReopens{Fingerprint: evidence, Version: completionReopenVersion}
 	}
 	reopens.Count++
 	r.implProgress.ReopenAttempts[path] = reopens
@@ -116,7 +121,8 @@ func (r *stateRunner) completionChurnError() error {
 		return nil
 	}
 	for path, reopens := range r.implProgress.ReopenAttempts {
-		if reopens.Fingerprint == evidence && reopens.Count >= r.hooks.NoProgressLimit {
+		if reopens.Version == completionReopenVersion &&
+			reopens.Fingerprint == evidence && reopens.Count >= r.hooks.NoProgressLimit {
 			return fmt.Errorf("completion reconciliation loop: %s was reopened %d times with unchanged artifacts and contract; inspect the reopen reason before resuming; preserve delivered files", path, reopens.Count)
 		}
 	}

@@ -931,7 +931,7 @@ func findSimilarBlocks(content, search string) string {
 	if len(searchLines) < 2 {
 		return ""
 	}
-	
+
 	// Use first non-empty line of search as anchor
 	var anchor string
 	for _, l := range searchLines {
@@ -944,7 +944,7 @@ func findSimilarBlocks(content, search string) string {
 	if anchor == "" {
 		return ""
 	}
-	
+
 	// Find lines containing the anchor
 	var matches []int
 	anchorLower := strings.ToLower(anchor)
@@ -953,11 +953,11 @@ func findSimilarBlocks(content, search string) string {
 			matches = append(matches, i)
 		}
 	}
-	
+
 	if len(matches) == 0 {
 		return ""
 	}
-	
+
 	var b strings.Builder
 	b.WriteString("```\n")
 	for _, idx := range matches {
@@ -992,7 +992,7 @@ func (r *stateRunner) runAutoVerifyForNativeLayoutWrite(sessionName string, cmdE
 	if verifyCmd == "" {
 		return
 	}
-	if fixed, ok := rewriteUnittestToWorkdir(verifyCmd, r.rig, r.v); ok {
+	if fixed, ok := rewriteUnittestToWorkdirAtTownRoot(verifyCmd, r.rig, r.townRoot, r.v); ok {
 		verifyCmd = fixed
 	}
 	workDir := r.workDir()

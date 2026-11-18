@@ -842,6 +842,45 @@ func TestRewriteUnittestToWorkdir_pythonEditableInstallKeepsProjectRoot(t *testi
 	}
 }
 
+func TestRewriteUnittestToWorkdir_pythonPytestDirectorySelector(t *testing.T) {
+	town := t.TempDir()
+	rig := "testgt4minus"
+	layoutDir := filepath.Join(town, rig, "mayor", "rig", "taskboard")
+	if err := os.MkdirAll(filepath.Join(layoutDir, "tests"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(t.TempDir())
+
+	v := orchestrator.WorkflowValidation{
+		LayoutRoot:      "taskboard",
+		TestRunner:      "pytest",
+		RequiredFiles:   []string{"taskboard/pyproject.toml", "taskboard/tests/test_api.py"},
+		QAVerifyCommand: "cd taskboard && python -m pytest -q tests",
+	}
+	cmd := "cd " + rig + "/mayor/rig && " + v.QAVerifyCommand
+	got, changed := rewriteUnittestToWorkdirAtTownRoot(cmd, rig, town, v)
+	want := "cd " + rig + "/mayor/rig && python -m pytest -q taskboard/tests"
+	if !changed || got != want {
+		t.Fatalf("got changed=%v command=%q; want command=%q", changed, got, want)
+	}
+}
+
+func TestAdjustPytestPathsAfterLayoutStrip_bareDirectoryAndOptionValue(t *testing.T) {
+	layoutDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(layoutDir, "tests"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	for cmd, want := range map[string]string{
+		"python -m pytest -q tests":        "python -m pytest -q taskboard/tests",
+		"python -m pytest -k tests tests":  "python -m pytest -k tests taskboard/tests",
+		"python -m pytest -q tests/api.py": "python -m pytest -q taskboard/tests/api.py",
+	} {
+		if got := adjustPytestPathsAfterLayoutStrip(cmd, "taskboard", layoutDir); got != want {
+			t.Errorf("%q => %q; want %q", cmd, got, want)
+		}
+	}
+}
+
 func TestRewriteUnittestToWorkdir_bareLayoutCD(t *testing.T) {
 	v := orchestrator.WorkflowValidation{
 		LayoutRoot:      "tasklist",

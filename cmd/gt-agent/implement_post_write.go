@@ -89,7 +89,7 @@ func (r *stateRunner) runPostNativeWriteVerify(relPath string, sessionName strin
 		if verifyCmd == "" {
 			return
 		}
-		if fixed, ok := rewriteUnittestToWorkdir(verifyCmd, r.rig, r.v); ok {
+		if fixed, ok := rewriteUnittestToWorkdirAtTownRoot(verifyCmd, r.rig, r.townRoot, r.v); ok {
 			verifyCmd = fixed
 		}
 		workDir := r.workDir()

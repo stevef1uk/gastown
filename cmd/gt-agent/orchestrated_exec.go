@@ -395,7 +395,15 @@ func isLayoutRelativeShellCommand(cmd, rig, layout string) bool {
 
 // rewriteUnittestToWorkdir prepends cd into mayor/rig (and layout_root for Go modules) when omitted.
 func rewriteUnittestToWorkdir(cmd, rig string, v orchestrator.WorkflowValidation) (string, bool) {
+	return rewriteUnittestToWorkdirAtTownRoot(cmd, rig, "", v)
+}
+
+func rewriteUnittestToWorkdirAtTownRoot(cmd, rig, townRoot string, v orchestrator.WorkflowValidation) (string, bool) {
 	layout := strings.Trim(strings.TrimSpace(v.LayoutRoot), "/")
+	layoutDir := filepath.Join(rigMayorRigPath(rig), layout)
+	if townRoot != "" {
+		layoutDir = filepath.Join(rigMayorRigDir(townRoot, rig), layout)
+	}
 	// An explicit npm --prefix is relative to mayor/rig. The workflow may also
 	// contain Go phases, but that must not move this command into the Go module.
 	if layout != "" && layout != "." && !strings.Contains(cmd, "<<") && (strings.HasPrefix(strings.TrimSpace(cmd), "cd ") || strings.HasPrefix(strings.TrimSpace(cmd), "npm ")) {
@@ -501,7 +509,7 @@ func rewriteUnittestToWorkdir(cmd, rig string, v orchestrator.WorkflowValidation
 			rest := stripRedundantLayoutCD(stripFirstCDPrefix(cmd), workPath, layout)
 			if !orchestrator.WorkflowUsesGo(v) {
 				rest = stripCDLayoutPrefix(rest, layout)
-				rest = adjustPytestPathsAfterLayoutStrip(rest, layout)
+				rest = adjustPytestPathsAfterLayoutStrip(rest, layout, layoutDir)
 			}
 			cmd = "cd " + workPath + " && " + rest
 			changed = true
@@ -513,7 +521,7 @@ func rewriteUnittestToWorkdir(cmd, rig string, v orchestrator.WorkflowValidation
 		if !strings.Contains(strings.ToLower(cmd), "-r ") {
 			rest := stripRedundantLayoutCD(stripFirstCDPrefix(cmd), mayorRig, layout)
 			rest = stripCDLayoutPrefix(rest, layout)
-			rest = adjustPytestPathsAfterLayoutStrip(rest, layout)
+			rest = adjustPytestPathsAfterLayoutStrip(rest, layout, layoutDir)
 			cmd = "cd " + mayorRig + " && " + rest
 			changed = true
 		}
@@ -1836,7 +1844,7 @@ func childPids(pid int) []int {
 // commands when a cd into the layout subdirectory was stripped and the working
 // directory is now mayor/rig instead of mayor/rig/<layout>.
 // E.g. "pytest -v backend/tests/test_main.py" → "pytest -v layout/backend/tests/test_main.py"
-func adjustPytestPathsAfterLayoutStrip(cmd, layout string) string {
+func adjustPytestPathsAfterLayoutStrip(cmd, layout, layoutDir string) string {
 	lower := strings.ToLower(cmd)
 	if !strings.Contains(lower, "pytest") || layout == "" || layout == "." {
 		return cmd
@@ -1855,8 +1863,17 @@ func adjustPytestPathsAfterLayoutStrip(cmd, layout string) string {
 	}
 	layoutPrefix := layout + "/"
 	changed := false
+	skipNext := false
 	for i := pytestIdx + 1; i < len(parts); i++ {
 		tok := parts[i]
+		if skipNext {
+			skipNext = false
+			continue
+		}
+		if pytestOptionTakesValue(tok) {
+			skipNext = true
+			continue
+		}
 		// Skip flags, flag values, and already-prefixed paths
 		if strings.HasPrefix(tok, "-") || strings.Contains(tok, "=") {
 			continue
@@ -1864,8 +1881,9 @@ func adjustPytestPathsAfterLayoutStrip(cmd, layout string) string {
 		if strings.HasPrefix(tok, layoutPrefix) || strings.HasPrefix(tok, "/") {
 			continue
 		}
-		// Looks like a relative path — prepend layout root
-		if hasRelPathSuffix(tok) {
+		// Pytest accepts bare directory selectors such as "tests", which do
+		// not look like paths by suffix alone.
+		if hasRelPathSuffix(tok) || existingRelativePath(layoutDir, tok) {
 			parts[i] = layoutPrefix + tok
 			changed = true
 		}
@@ -1874,6 +1892,31 @@ func adjustPytestPathsAfterLayoutStrip(cmd, layout string) string {
 		return cmd
 	}
 	return strings.Join(parts, " ")
+}
+
+func pytestOptionTakesValue(option string) bool {
+	switch option {
+	case "-k", "-m", "-c", "-o", "--confcutdir", "--ignore", "--ignore-glob",
+		"--rootdir", "--import-mode", "--deselect", "--basetemp", "--junitxml",
+		"--override-ini", "--maxfail", "--tb", "--capture", "--durations",
+		"--log-file":
+		return true
+	default:
+		return false
+	}
+}
+
+func existingRelativePath(root, path string) bool {
+	path = strings.Trim(path, "\"'")
+	if root == "" || path == "" || filepath.IsAbs(path) {
+		return false
+	}
+	candidate := filepath.Clean(filepath.FromSlash(path))
+	if candidate == ".." || strings.HasPrefix(candidate, ".."+string(filepath.Separator)) {
+		return false
+	}
+	_, err := os.Stat(filepath.Join(root, candidate))
+	return err == nil
 }
 
 // hasRelPathSuffix reports whether a token looks like a relative file path
