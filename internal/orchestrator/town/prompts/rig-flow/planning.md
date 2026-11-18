@@ -111,7 +111,7 @@ You are **not** verifying the app. Do not run the server or test suite to “che
    ```
    **No duplicate paths** and **no extra-phase paths** (gt-agent rejects `bd create` outside `required_files`). Paths must match `required_files` exactly. On retry after QA `failure`, delete duplicate beads (`bd delete <id> --force`) before creating missing ones. Do **not** use `gt bd add`.
 
-4. Write **only** `plan.md` with a heredoc when the profile has **no** nested `internal/` / `cmd/` paths under `{{layout_root}}/`. For Link Shelf–style layouts, **do not rewrite plan.md** — use the sync-generated file. **Minimum size is {{min_plan_bytes}} bytes** — a 3-line checklist will always fail `wc -c`. Use structured sections (not one-line todos). Copy **exact paths** from `required_files` (e.g. `Dockerfile`, `frontend/package.json` when layout_root is `.`). Real bead IDs only — from `bd list` output, never `fi-001` / `te-xxx` placeholders.
+4. Write **only** `plan.md` with a heredoc when the current plan needs creation or correction. If a planning sync generated it, inspect it and make only the corrections required by the current review; do not assume it matches the active SPEC. **Minimum size is {{min_plan_bytes}} bytes** — a 3-line checklist will always fail `wc -c`. Use structured sections (not one-line todos). Copy **exact paths** from `required_files`. Real bead IDs only — from `bd list` output in this session, never placeholders or IDs from prior runs.
 
    **Title format:** `{{bead_title_contains}}<path> per architecture` must include the **space** in `{{bead_title_contains}}` (e.g. `Implement Dockerfile per architecture`, not `ImplementDockerfile`).
 
@@ -162,7 +162,7 @@ You are **not** verifying the app. Do not run the server or test suite to “che
 
 5. Verify from town root: `CMD: wc -c {{rig}}/mayor/rig/plan.md`
 
-6. Do not send `success` until plan.md exists (≥ {{min_plan_bytes}} bytes), no commands failed, and open/in_progress beads cover required_files — after rework you may only `bd delete` duplicates (no new `bd create` required if the bead set is already valid). **Before plan review:** HTTP paths, store function names, and module in `plan.md` must match **SPEC.md** verbatim (e.g. `/api/links` not `/links`; `List` not `ListLinks`). Include **## Integration contract** only when the active phase includes `cmd/.../main` (see integration contract note above). QA and gt-agent reject drift.
+6. Do not send `success` until plan.md exists (≥ {{min_plan_bytes}} bytes), no commands failed, and open/in_progress beads cover required_files — after rework you may only `bd delete` duplicates (no new `bd create` required if the bead set is already valid). **Before plan review:** HTTP paths, store function names, modules, acceptance criteria, and dependency edges in `plan.md` must match **SPEC.md**, `architecture.md`, and the active phase. Include **## Integration contract** only when the active phase includes `cmd/.../main` (see integration contract note above). QA and gt-agent reject drift.
 
 7. On a **later turn** with no CMD lines, send JSON only:
    `{"outcome":"success","summary":"plan and beads created; ready for plan review"}`

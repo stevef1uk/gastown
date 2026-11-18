@@ -113,11 +113,12 @@ type WorkflowInstance struct {
 	// workflow spins test_plan ↔ planning forever (e.g. the tester never writes
 	// TEST_PLAN.md). At tester.max_review_retries the orchestrator escalates to
 	// design instead of looping; reset on any success or escalation.
-	TestPlanFailures   int                       `json:"test_plan_failures,omitempty"`
-	ReviewProgress     map[string]ReviewProgress `json:"review_progress,omitempty"`
-	ReviewFailures     map[string]int            `json:"review_failures,omitempty"`
-	ReviewEscalations  map[string]int            `json:"review_escalations,omitempty"`
-	VerificationErrors map[string]int            `json:"verification_errors,omitempty"`
+	TestPlanFailures            int                       `json:"test_plan_failures,omitempty"`
+	ReviewProgress              map[string]ReviewProgress `json:"review_progress,omitempty"`
+	ReviewFailures              map[string]int            `json:"review_failures,omitempty"`
+	ReviewEscalations           map[string]int            `json:"review_escalations,omitempty"`
+	ReviewRecoveryBudgetStarted map[string]bool           `json:"review_recovery_budget_started,omitempty"`
+	VerificationErrors          map[string]int            `json:"verification_errors,omitempty"`
 }
 
 type ReviewProgress struct {

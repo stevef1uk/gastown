@@ -187,6 +187,31 @@ func TestReviewFailureBudgetIsPhaseScopedAndSuccessResets(t *testing.T) {
 	}
 }
 
+func TestReviewFailureBudgetMigratesAlreadyEscalatedWorkflow(t *testing.T) {
+	const key = "plan_review:phase-1-app"
+	inst := WorkflowInstance{
+		ReviewFailures:    map[string]int{key: 6},
+		ReviewEscalations: map[string]int{key: 1},
+	}
+
+	for attempt := 1; attempt <= 3; attempt++ {
+		action := inst.recordReviewFailure("plan_review", "phase-1-app", "failure", 3, "review_recovery")
+		if attempt < 3 {
+			if action != reviewFailureContinue || inst.ReviewFailures[key] != attempt {
+				t.Fatalf("legacy recovery retry %d: action=%v failures=%d", attempt, action, inst.ReviewFailures[key])
+			}
+			continue
+		}
+		if action != reviewFailurePause || inst.ReviewFailures[key] != 3 {
+			t.Fatalf("legacy recovery budget did not pause after three fresh failures: action=%v failures=%d", action, inst.ReviewFailures[key])
+		}
+	}
+
+	if action := inst.recordReviewFailure("plan_review", "phase-1-app", "failure", 3, "review_recovery"); action != reviewFailurePause {
+		t.Fatalf("exhausted migrated budget was reset a second time: action=%v", action)
+	}
+}
+
 func TestResetWorkflowClearsReviewFailureBudget(t *testing.T) {
 	tpl := &WorkflowTemplate{
 		ID:           "review-reset",
@@ -200,12 +225,13 @@ func TestResetWorkflowClearsReviewFailureBudget(t *testing.T) {
 	manager, id := loadTestManager(t, tpl)
 	manager.instances[id].ReviewFailures = map[string]int{"plan_review:phase-1": 3}
 	manager.instances[id].ReviewEscalations = map[string]int{"plan_review:phase-1": 1}
+	manager.instances[id].ReviewRecoveryBudgetStarted = map[string]bool{"plan_review:phase-1": true}
 	manager.instances[id].Status = "paused"
 
 	if _, err := manager.ResetWorkflow(id, "plan_review"); err != nil {
 		t.Fatal(err)
 	}
-	if manager.instances[id].ReviewFailures != nil || manager.instances[id].ReviewEscalations != nil {
-		t.Fatalf("manual workflow reset retained review budget: failures=%v escalations=%v", manager.instances[id].ReviewFailures, manager.instances[id].ReviewEscalations)
+	if manager.instances[id].ReviewFailures != nil || manager.instances[id].ReviewEscalations != nil || manager.instances[id].ReviewRecoveryBudgetStarted != nil {
+		t.Fatalf("manual workflow reset retained review budget: failures=%v escalations=%v recovery_started=%v", manager.instances[id].ReviewFailures, manager.instances[id].ReviewEscalations, manager.instances[id].ReviewRecoveryBudgetStarted)
 	}
 }

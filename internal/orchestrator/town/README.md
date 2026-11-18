@@ -28,7 +28,9 @@ is scoped to the review state and active delivery phase. At the limit the
 workflow escalates once to a Mayor diagnosis step, which inspects the evidence
 and routes targeted repair to the responsible role. The review-failure count
 resets on entry to recovery, giving the targeted repair a fresh bounded review
-budget; if it is exhausted again, the workflow pauses with the latest findings.
+budget; persisted workflows that entered recovery before this reset was deployed
+initialize the fresh budget on their first subsequent review failure. If the
+budget is exhausted again, the workflow pauses with the latest findings.
 Review success and phase changes reset the budget. The recovery step is read-only: the
 Mayor identifies the exact mismatch and hands a concrete repair instruction to
 the role that owns the artifact instead of editing another role's files.

@@ -70,6 +70,7 @@ func (inst *WorkflowInstance) recordReviewFailure(state, phase, outcome string, 
 		if strings.HasPrefix(previous, state+":") && previous != key {
 			delete(inst.ReviewFailures, previous)
 			delete(inst.ReviewEscalations, previous)
+			delete(inst.ReviewRecoveryBudgetStarted, previous)
 		}
 	}
 	if IsCheckpointOutcome(outcome) {
@@ -78,10 +79,20 @@ func (inst *WorkflowInstance) recordReviewFailure(state, phase, outcome string, 
 	if !IsCrossStateReworkOutcome(outcome) && !IsVerificationErrorOutcome(outcome) {
 		delete(inst.ReviewFailures, key)
 		delete(inst.ReviewEscalations, key)
+		delete(inst.ReviewRecoveryBudgetStarted, key)
 		return reviewFailureContinue
 	}
 	if inst.ReviewFailures == nil {
 		inst.ReviewFailures = map[string]int{}
+	}
+	if inst.ReviewEscalations[key] > 0 && !inst.ReviewRecoveryBudgetStarted[key] {
+		// Older persisted workflows may already have escalated before the
+		// recovery-budget reset was deployed. Initialize their fresh budget once.
+		inst.ReviewFailures[key] = 0
+		if inst.ReviewRecoveryBudgetStarted == nil {
+			inst.ReviewRecoveryBudgetStarted = map[string]bool{}
+		}
+		inst.ReviewRecoveryBudgetStarted[key] = true
 	}
 	inst.ReviewFailures[key]++
 	if inst.ReviewFailures[key] < limit {

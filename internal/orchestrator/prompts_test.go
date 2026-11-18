@@ -102,6 +102,7 @@ func TestRigFlowPrompts_staticURLGuidanceFromArchitecture(t *testing.T) {
 			if !strings.Contains(body, "{{qa_runtime_smoke_block}}") {
 				t.Fatalf("qa_review.md must use {{qa_runtime_smoke_block}}")
 			}
+
 			continue
 		}
 		if !strings.Contains(body, "{{static_url_contract") {
@@ -134,6 +135,18 @@ func TestRigFlowPrompts_staticURLGuidanceFromArchitecture(t *testing.T) {
 	}
 	if strings.Contains(qa, "curl -sf http://127.0.0.1:8080/app.js") {
 		t.Fatal("qa_review must not hardcode /app.js smoke example")
+	}
+}
+
+func TestRigFlowPlanningPromptsDoNotSeedProjectSpecificContracts(t *testing.T) {
+	t.Parallel()
+	for _, name := range []string{"planning.md", "plan_review.md"} {
+		body := readEmbeddedRigFlowPrompt(t, name)
+		for _, staleExample := range []string{"Link Shelf", "/api/links", "linkshelf/", "ListLinks", "CreateLink"} {
+			if strings.Contains(body, staleExample) {
+				t.Errorf("%s contains project-specific example %q", name, staleExample)
+			}
+		}
 	}
 }
 

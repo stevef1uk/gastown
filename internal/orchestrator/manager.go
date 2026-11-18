@@ -937,6 +937,7 @@ func (m *Manager) ResetWorkflow(workflowID, toState string) (string, error) {
 	inst.ReviewProgress = nil
 	inst.ReviewFailures = nil
 	inst.ReviewEscalations = nil
+	inst.ReviewRecoveryBudgetStarted = nil
 	inst.touchStateEnteredAt()
 	if err := m.persistLocked(); err != nil {
 		return "", fmt.Errorf("persist instances: %w", err)

@@ -56,13 +56,13 @@ acceptance commands that require future-phase artifacts. No build execution is
 needed for this contract review. Full-phase checks need not pass between beads.
 
 1. **HTTP routes (authoritative: SPEC.md table)**
-   - Copy the SPEC `| GET |` / `| POST |` paths (e.g. `/api/links`, not `/links`).
-   - `architecture.md` and `plan.md` must use **the same paths** — no shortened aliases (`/links` when SPEC says `/api/links`).
+   - Copy HTTP methods and paths exactly from the active phase's SPEC contract.
+   - `architecture.md` and `plan.md` must use **the same paths** — reject shortened aliases or routes not present in the SPEC.
    - When **Integration contract is required this phase** (see note above), `plan.md` **## Integration contract** must repeat the SPEC route table for the server entrypoint.
 
 2. **Store / package API (authoritative: SPEC `## Store` and ` ``` ` fences)**
-   - Use **exact** function/type names from SPEC (e.g. `List`, `Create`, `Delete`, `InitSchema`).
-   - Reject plan/architecture that invent `ListLinks`, `CreateLink`, `NewStore`, or `type Store struct` when SPEC defines package-level functions.
+   - Use only function and type names explicitly defined in SPEC or architecture.
+   - Reject invented APIs or types that do not match the authoritative contract.
 
 3. **Module names**
    - `plan.md` / architecture must not use placeholder modules (`github.com/example`, `module example`).
@@ -108,10 +108,10 @@ needed for this contract review. Full-phase checks need not pass between beads.
 6. **CRITICAL:** Do not emit JSON in the same message as `CMD:` lines. Wait for command output on the next turn before choosing outcome.
 
 Example success (after CMDs ran, no integration contract this phase):
-`{"outcome":"success","summary":"Open/in_progress beads match required_files; plan.md ≥ {{min_plan_bytes}}B; SPEC/architecture/plan agree on /api/links and List/Create/Delete store API"}`
+`{"outcome":"success","summary":"Beads match required_files; plan.md meets the size requirement; active-phase SPEC, architecture, plan, acceptance, and dependency contracts agree"}`
 
 Example success (server-setup phase with integration contract):
 `{"outcome":"success","summary":"Beads match required_files; plan.md ≥ {{min_plan_bytes}}B; SPEC routes and store API verified; integration contract present for cmd/server/main"}`
 
 Example failure:
-`{"outcome":"failure","summary":"Duplicate open beads te-xz1 and te-u4h for linkshelf/internal/api/handlers.go — Planner must bd delete the extra ID."}`
+`{"outcome":"failure","summary":"The plan declares a dependency cycle between <file A> and <file B>; remove the edge not supported by architecture.md, then recheck the complete phase dependency graph."}`
