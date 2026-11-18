@@ -26,9 +26,10 @@ Review gates can set `review_failure_limit` and `review_recovery_state` to bound
 rejections across intervening successful workflow states. The persisted budget
 is scoped to the review state and active delivery phase. At the limit the
 workflow escalates once to a Mayor diagnosis step, which inspects the evidence
-and routes targeted repair to the responsible role; if the same review still
-fails after that recovery, the workflow pauses with the latest findings. Review
-success and phase changes reset the budget. The recovery step is read-only: the
+and routes targeted repair to the responsible role. The review-failure count
+resets on entry to recovery, giving the targeted repair a fresh bounded review
+budget; if it is exhausted again, the workflow pauses with the latest findings.
+Review success and phase changes reset the budget. The recovery step is read-only: the
 Mayor identifies the exact mismatch and hands a concrete repair instruction to
 the role that owns the artifact instead of editing another role's files.
 

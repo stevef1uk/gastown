@@ -133,7 +133,7 @@ func TestReviewFailureBudgetPersistsAcrossWorkflowCycle(t *testing.T) {
 		manager.LoadTemplate(tpl)
 	}
 	progress := manager.instances[id]
-	if progress.CurrentState != "review_recovery" || progress.ReviewFailures["plan_review:unphased"] != 3 {
+	if progress.CurrentState != "review_recovery" || progress.ReviewFailures["plan_review:unphased"] != 0 {
 		t.Fatalf("recovery state/count did not survive reload: %+v", progress)
 	}
 	if progress.PendingRework == nil || !strings.Contains(progress.PendingRework.Feedback, "Mayor must diagnose") {
@@ -143,10 +143,21 @@ func TestReviewFailureBudgetPersistsAcrossWorkflowCycle(t *testing.T) {
 	if got := manager.instances[id].CurrentState; got != "planning" {
 		t.Fatalf("Mayor planner_rework routed to %q, want planning", got)
 	}
-	complete("mockrig/planner", "success")
-	reviewCycle()
+	for attempt := 1; attempt <= 3; attempt++ {
+		complete("mockrig/planner", "success")
+		complete("mockrig/qa", "failure")
+		progress = manager.instances[id]
+		if attempt < 3 {
+			if progress.Status != "running" || progress.ReviewFailures["plan_review:unphased"] != attempt {
+				t.Fatalf("review retry budget after recovery attempt %d = %+v", attempt, progress)
+			}
+			complete("mockrig/architect", "success")
+			complete("mockrig/qa", "success")
+		}
+	}
 	paused := manager.instances[id]
 	if paused.Status != "paused" || paused.CurrentState != "review_recovery" ||
+		paused.ReviewFailures["plan_review:unphased"] != 3 ||
 		!strings.Contains(paused.PauseReason, "including after Mayor diagnosis/recovery") {
 		t.Fatalf("review failure after Mayor recovery did not pause at diagnosis: %+v", paused)
 	}

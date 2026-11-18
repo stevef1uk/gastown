@@ -95,6 +95,7 @@ func (inst *WorkflowInstance) recordReviewFailure(state, phase, outcome string, 
 	}
 	if inst.ReviewEscalations[key] == 0 {
 		inst.ReviewEscalations[key]++
+		inst.ReviewFailures[key] = 0
 		return reviewFailureEscalate
 	}
 	return reviewFailurePause
