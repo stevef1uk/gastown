@@ -1,12 +1,30 @@
 package orchestrator
 
-import "fmt"
+import (
+	"fmt"
+	"path/filepath"
+	"strings"
+)
+
+const maxDeliveryPhaseFiles = 10
 
 // deliveryGraphProblems runs without LLM calls and preserves explicit milestones.
 func deliveryGraphProblems(v WorkflowValidation) []string {
 	var problems []string
 	phases := map[string]DeliveryPhase{}
 	for _, p := range v.DeliveryPhases {
+		files := make(map[string]struct{}, len(p.RequiredFiles))
+		for _, file := range p.RequiredFiles {
+			file = filepath.ToSlash(filepath.Clean(strings.TrimSpace(file)))
+			if file == "." || file == "" {
+				continue
+			}
+			file = normalizeDeliveryOwnershipPath(file, v.LayoutRoot)
+			files[file] = struct{}{}
+		}
+		if len(files) > maxDeliveryPhaseFiles {
+			problems = append(problems, fmt.Sprintf("phase %q declares %d files; maximum is %d", p.ID, len(files), maxDeliveryPhaseFiles))
+		}
 		if p.ID == "" {
 			problems = append(problems, "delivery phase has an empty ID")
 			continue

@@ -1,6 +1,7 @@
 package orchestrator
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -100,6 +101,42 @@ func TestProfileGraphRejectsCyclesAndUnknownDependencies(t *testing.T) {
 		if len(deliveryGraphProblems(WorkflowValidation{DeliveryPhases: phases})) == 0 {
 			t.Fatal("invalid graph accepted")
 		}
+	}
+}
+
+func TestProfileGraphEnforcesDeliveryPhaseFileLimit(t *testing.T) {
+	files := make([]string, maxDeliveryPhaseFiles)
+	for i := range files {
+		files[i] = fmt.Sprintf("app/file-%d.py", i)
+	}
+	if problems := deliveryGraphProblems(WorkflowValidation{
+		LayoutRoot: "app",
+		DeliveryPhases: []DeliveryPhase{{
+			ID: "within-limit", RequiredFiles: files,
+		}},
+	}); len(problems) != 0 {
+		t.Fatalf("phase with %d files rejected: %v", len(files), problems)
+	}
+
+	files = append(files, "app/file-10.py")
+	problems := deliveryGraphProblems(WorkflowValidation{
+		LayoutRoot: "app",
+		DeliveryPhases: []DeliveryPhase{{
+			ID: "over-limit", RequiredFiles: files,
+		}},
+	})
+	if len(problems) != 1 || !strings.Contains(problems[0], "declares 11 files; maximum is 10") {
+		t.Fatalf("phase over file limit not rejected correctly: %v", problems)
+	}
+
+	files = append(files, "file-0.py")
+	if problems := deliveryGraphProblems(WorkflowValidation{
+		LayoutRoot: "app",
+		DeliveryPhases: []DeliveryPhase{{
+			ID: "duplicate-path", RequiredFiles: files,
+		}},
+	}); len(problems) != 1 {
+		t.Fatalf("duplicate path counted as another file: %v", problems)
 	}
 }
 

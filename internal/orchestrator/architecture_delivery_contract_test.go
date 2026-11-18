@@ -1,6 +1,7 @@
 package orchestrator
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -57,6 +58,72 @@ func TestArchitectureDeliveryContractRoundTrip(t *testing.T) {
 	}
 }
 
+func TestArchitectureSyncPreservesCompletionWithEmptyDependencies(t *testing.T) {
+	town, rig := t.TempDir(), "sample"
+	dir := filepath.Join(town, rig, "mayor", "rig")
+	if err := os.MkdirAll(filepath.Join(dir, rigProfileDir), 0755); err != nil {
+		t.Fatal(err)
+	}
+	spec := "# App\n## Layout\n```\ndemo/\n├── server/\n│   └── main.py\n└── client/\n    └── page.tsx\n```\n"
+	arch := "# Architecture\n## Planned file layout\n- `demo/server/main.py`\n- `demo/client/page.tsx`\n## Delivery phases\n```yaml\ndelivery_phases:\n  - id: foundation\n    title: Foundation\n    required_files: [demo/server/main.py]\n    qa_verify_command: cd demo/server && pytest\n    depends_on: []\n  - id: ui\n    title: UI\n    required_files: [demo/client/page.tsx]\n    qa_verify_command: cd demo/client && npm run build\n    depends_on: [foundation]\n```\n## Requirements\n### foundation\nBuild the backend foundation.\n### ui\nBuild the client UI.\n"
+	for name, content := range map[string]string{"SPEC.md": spec, "architecture.md": arch} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	profile := rigProfileEnvelope{
+		Version: 1,
+		Validation: WorkflowValidation{
+			LayoutRoot: "demo",
+			RequiredFiles: []string{
+				"demo/server/main.py",
+				"demo/client/page.tsx",
+			},
+			ActivePhaseIDField:       "ui",
+			CompletedPhaseIDsField:   []string{"foundation"},
+			ExplicitDeliveryContract: true,
+			DeliveryPhases: []DeliveryPhase{
+				{
+					ID:              "foundation",
+					Title:           "Foundation",
+					RequiredFiles:   []string{"demo/server/main.py"},
+					QAVerifyCommand: "cd demo/server && pytest",
+					DependsOn:       nil,
+				},
+				{
+					ID:              "ui",
+					Title:           "UI",
+					RequiredFiles:   []string{"demo/client/page.tsx"},
+					QAVerifyCommand: "cd demo/client && npm run build",
+					DependsOn:       []string{"foundation"},
+				},
+			},
+		},
+	}
+	raw, err := marshalRigProfileJSON(profile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, rigProfileDir, rigProfileFile), raw, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	if changed, err := SyncRigWorkflowProfileFromArchitecture(town, rig); err != nil || !changed {
+		t.Fatalf("sync: changed=%v err=%v", changed, err)
+	}
+	got, ok, err := LoadRigWorkflowProfileFile(town, rig)
+	if err != nil || !ok {
+		t.Fatalf("load: ok=%v err=%v", ok, err)
+	}
+	if !reflect.DeepEqual(got.CompletedPhaseIDsField, []string{"foundation"}) {
+		t.Fatalf("completed_phase_ids = %v, want [foundation]", got.CompletedPhaseIDsField)
+	}
+	if got.ActivePhaseIDField != "ui" {
+		t.Fatalf("active_phase_id = %q, want ui", got.ActivePhaseIDField)
+	}
+}
+
 func TestArchitectureDeliveryContractNormalizesShellVariables(t *testing.T) {
 	doc := "## Delivery phases\n```yaml\ndelivery_phases:\n  - id: core\n    required_files: [app/main.go]\n    qa_verify_command: 'for i in $$(seq 1 2); do test " + "$$body" + " = ok; done'\n```\n"
 	phases, ok, err := architectureDeliveryContract(doc)
@@ -65,6 +132,19 @@ func TestArchitectureDeliveryContractNormalizesShellVariables(t *testing.T) {
 	}
 	if phases[0].QAVerifyCommand != "for i in $(seq 1 2); do test $body = ok; done" {
 		t.Fatalf("command = %q", phases[0].QAVerifyCommand)
+	}
+}
+
+func TestArchitectureDeliveryContractRejectsOversizedPhase(t *testing.T) {
+	var doc strings.Builder
+	doc.WriteString("## Delivery phases\n```yaml\ndelivery_phases:\n  - id: foundation\n    required_files:\n")
+	for i := 1; i <= maxDeliveryPhaseFiles+1; i++ {
+		fmt.Fprintf(&doc, "      - app/file-%02d.py\n", i)
+	}
+	doc.WriteString("    qa_verify_command: python -m pytest\n```\n")
+
+	if _, explicit, err := architectureDeliveryContract(doc.String()); !explicit || err == nil || !strings.Contains(err.Error(), "maximum is 10") {
+		t.Fatalf("expected oversized architecture phase to be rejected; explicit=%v err=%v", explicit, err)
 	}
 }
 
