@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // Review progress is template-configured, persisted, and scoped to a workflow.
@@ -42,5 +43,43 @@ func (inst *WorkflowInstance) recordReviewProgress(townRoot, rig, state, outcome
 		if inst.PendingRework != nil {
 			inst.PendingRework.Feedback += fmt.Sprintf("\n\nWorkflow paused: %s failed %d times without changing %v. Correct the effective contract, then resume the workflow; repeated unchanged failures will pause it again.", state, progress.Failures, hooks.ProgressFiles)
 		}
+	}
+}
+
+// recordReviewFailure bounds repeated failures at a review gate even when each
+// retry passes through successful intermediate states. Phase-scoped keys keep
+// independent delivery phases from sharing a retry budget.
+func (inst *WorkflowInstance) recordReviewFailure(state, phase, outcome string, limit int) {
+	if limit <= 0 {
+		return
+	}
+	phase = strings.TrimSpace(phase)
+	if phase == "" {
+		phase = "unphased"
+	}
+	key := state + ":" + phase
+	for previous := range inst.ReviewFailures {
+		if strings.HasPrefix(previous, state+":") && previous != key {
+			delete(inst.ReviewFailures, previous)
+		}
+	}
+	if IsCheckpointOutcome(outcome) {
+		return
+	}
+	if !IsCrossStateReworkOutcome(outcome) && !IsVerificationErrorOutcome(outcome) {
+		delete(inst.ReviewFailures, key)
+		return
+	}
+	if inst.ReviewFailures == nil {
+		inst.ReviewFailures = map[string]int{}
+	}
+	inst.ReviewFailures[key]++
+	if inst.ReviewFailures[key] < limit {
+		return
+	}
+	inst.Status = "paused"
+	inst.PauseReason = fmt.Sprintf("%s failed %d times in delivery phase %q; workflow paused to prevent a repeated review/rework cycle", state, inst.ReviewFailures[key], phase)
+	if inst.PendingRework != nil {
+		inst.PendingRework.Feedback += "\n\n" + inst.PauseReason + ". Review the latest findings and correct the responsible artifact before resuming."
 	}
 }

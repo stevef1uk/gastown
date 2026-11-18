@@ -8,6 +8,9 @@ type StateHooks struct {
 	// VerificationErrorLimit keeps execution/reporting failures in the review
 	// state and bounds retries independently of implementation defects.
 	VerificationErrorLimit int `yaml:"verification_error_limit,omitempty" json:"verification_error_limit,omitempty"`
+	// ReviewFailureLimit bounds failures at this review gate across intervening
+	// workflow states. The budget resets on review success and is phase-scoped.
+	ReviewFailureLimit int `yaml:"review_failure_limit,omitempty" json:"review_failure_limit,omitempty"`
 	// DependencyReview checks the full delivery contract before accepting a result.
 	// Defects use the state's dependency_blocked transition, configured in YAML.
 	DependencyReview   bool `yaml:"dependency_review,omitempty" json:"dependency_review,omitempty"`

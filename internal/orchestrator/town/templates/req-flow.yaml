@@ -4,9 +4,9 @@ initial_state: kickoff
 # State categories used by the generic stuck monitor (workflow_stuck.go) and
 # rework feedback routing (rework_feedback.go). Keep state names here, not in Go.
 stuck_guard:
-  bead_progress_states: [planning, plan_review, test_plan, test_plan_rework, project_setup, implementation, test_review, qa_review]
-  planning_or_implementation_states: [planning, plan_review, test_plan, test_plan_rework, project_setup, implementation, test_review]
-  needs_contract_states: [planning, plan_review, test_plan, test_plan_rework, project_setup, implementation, test_review]
+  bead_progress_states: [planning, plan_review, test_plan, test_plan_review, test_plan_rework, project_setup, implementation, test_review, qa_review]
+  planning_or_implementation_states: [planning, plan_review, test_plan, test_plan_review, test_plan_rework, project_setup, implementation, test_review]
+  needs_contract_states: [planning, plan_review, test_plan, test_plan_review, test_plan_rework, project_setup, implementation, test_review]
   polecat_state: implementation
 rework_feedback:
   plan_review->planning: plan_review_to_planner
@@ -15,12 +15,19 @@ rework_feedback:
   test_review->implementation: test_review_to_implementation
   test_review->design: test_review_to_design
   test_plan->planning: test_plan_to_planner
+  test_plan_review->test_plan: test_plan_review_to_tester
   implementation->test_plan_rework: test_plan_to_planner
   implementation->design: architecture_failure_to_design
   planning->design: architecture_failure_to_design
   plan_review->design: architecture_failure_to_design
   test_plan->design: architecture_failure_to_design
+  test_plan_review->design: architecture_failure_to_design
   advance_phase->planning: phase_advance_to_planning
+# AGENTS: Change agent behavior in this file (hooks, prompts, failure_hint) — NOT with if task.State in gt-agent.
+# See internal/orchestrator/prompt_context.go and town/README.md § "FSM behavior belongs in YAML".
+# Artifact guards for gt-agent. Per-rig values come from mayor/rig/.gastown/workflow-profile.json
+# (gt rig spec-index). These YAML defaults are placeholders only.
+# State behavior (guards, env, auto-verify) is configured under each state's hooks: block.
 validation:
   bead_title_contains: "Implement "
   min_architecture_bytes: 200
@@ -99,14 +106,14 @@ states:
     prompt_file: prompts/rig-flow/design.md
     instructions: |
       1. Read `{{town_root}}/{{rig}}/mayor/rig/SPEC.md`.
-      2. Create `{{town_root}}/{{rig}}/mayor/rig/architecture.md` only if absent; otherwise read the full document and amend only the reported defects (>= {{min_architecture_bytes}} bytes). Preserve unrelated design and completed-phase contracts.
-      3. CRITICAL: You MUST prefix ALL file paths (in lists, prose, tables, and code blocks) with the root directory name from the SPEC (e.g. `layout_root/cmd/server/main.go`, not `cmd/server/main.go`, and `layout_root/web/` not `web/`).
+      2. Create `{{town_root}}/{{rig}}/mayor/rig/architecture.md` only if absent; otherwise read the full document and amend only the reported defects (≥{{min_architecture_bytes}} bytes). Preserve unrelated design and completed-phase contracts.
+      3. CRITICAL: You MUST prefix ALL file paths with `{{layout_root}}/` when layout_root ≠ "." (e.g. `{{layout_root}}/cmd/server/main.go`; bare `cmd/server/main.go` when layout_root is ".").
     hooks:
       prompt_context: [design_draft_context]
       pre_run: [prune_rig_root_junk]
-      max_cmd_turns: 12
+      max_cmd_turns: 8
       cmd_guard: design
-      cmd_rewrites: [rig_placeholders, spec_md_case, unwrap_bash_lc]
+      cmd_rewrites: [rig_placeholders, spec_md_case, spec_md_after_cd, arch_md_after_cd, unwrap_bash_lc]
       track: design
       artifacts: design
       no_progress_limit: 3
@@ -114,7 +121,7 @@ states:
       retry_hint: |
         One CMD: per line. FIRST read SPEC and the full existing architecture.md. On any rework, use sed -i or patch for the named defects and directly affected references; preserve unrelated content and completed phases. Use a single-quoted heredoc only for a missing document. After wc -c meets minimum and validation passes, summarize the amendment.
       failure_hint: |
-        Read SPEC, the profile and the full existing architecture.md before editing. SPEC scope wins over an incomplete profile. Correct the single canonical delivery_phases YAML block and matching requirement headings; do not append duplicate sections. Use standard unified diffs for Unix patch and escape literal ampersands in sed replacements. Re-read the edited section and repair failed edits before success. Preserve unrelated contracts and implementation. HTTP paths/symbols must match SPEC verbatim. Prefix implement paths with {{layout_root}}.
+        Read SPEC, the profile and the full existing architecture.md before editing. SPEC scope wins over an incomplete profile. Correct the single canonical delivery_phases YAML block (required_files, qa_verify_command, depends_on) and matching requirement headings; do not append duplicate canonical sections. Use standard unified diffs for Unix patch and escape literal ampersands in sed replacements. Re-read the edited section and repair failed edits before success. Preserve unrelated contracts and implementation. HTTP paths/symbols must match SPEC verbatim. Prefix implement paths with {{layout_root}}.
     transitions:
       success:
         to: design_review
@@ -132,11 +139,18 @@ states:
     hooks:
       max_cmd_turns: 10
       cmd_guard: design_review
-      cmd_rewrites: [rig_placeholders, spec_md_case, unwrap_bash_lc]
+      cmd_rewrites: [rig_placeholders, spec_md_case, spec_md_after_cd, unwrap_bash_lc]
       track: qa
       artifacts: design_review
       no_progress_limit: 3
       progress_files: [.gastown/workflow-profile.json]
+      cmd_before_outcome_nudge: |
+        You reported an outcome without reading any files, so it is not grounded in evidence. You MUST inspect the artifacts first — one CMD: per line:
+        CMD: wc -c architecture.md
+        CMD: cat SPEC.md
+        CMD: cat architecture.md
+        CMD: cat .gastown/workflow-profile.json
+        Then report an outcome based on the actual file contents and byte count. Do NOT invent placeholders, missing sections, or frontend/backend files that the artifacts do not contain.
       retry_hint: |
         One CMD: per line. Read SPEC.md and architecture.md from {{rig}}/mayor/rig, then run `wc -c architecture.md`.
         Only success/failure outcomes are allowed.
@@ -152,7 +166,7 @@ states:
     prompt_file: prompts/rig-flow/planning.md
     instructions: |
       1. Read SPEC and architecture under `{{rig}}/mayor/rig/`.
-      2. Create implementation beads and `plan.md` (>= {{min_plan_bytes}} bytes) with a ## Bead map: real IDs from bd list, full paths, scope + acceptance per file.
+      2. Create implementation beads and `plan.md` (≥{{min_plan_bytes}} bytes) with a ## Bead map: real IDs from bd list, full paths, scope + acceptance per file.
     hooks:
       prompt_context: [planning_bead_bootstrap]
       pre_run: [sync_planning_artifacts]
@@ -161,7 +175,7 @@ states:
       max_cmd_turns: 20
       empty_response_suffix: "Reply with CMD: lines. Run: CMD: cd {{rig}}/mayor/rig && bd list --status=open && wc -c plan.md. If beads exist and plan.md >= {{min_plan_bytes}} bytes, send {\"outcome\":\"success\",\"summary\":\"beads and plan.md ready\"}. Otherwise bd create missing beads."
       cmd_guard: planning
-      cmd_rewrites: [rig_placeholders, spec_md_case, plan_md_after_cd, plan_md_wc_dir, bd_list_limit, unwrap_bash_lc]
+      cmd_rewrites: [rig_placeholders, spec_md_case, spec_md_after_cd, plan_md_after_cd, plan_md_wc_dir, bd_list_limit, unwrap_bash_lc]
       env:
         beads_dir: true
       track: planning
@@ -171,7 +185,7 @@ states:
         One CMD: per line. After `cd {{rig}}/mayor/rig`, write plan.md with a relative path (not {{rig}}/mayor/rig/plan.md).
         Heredoc must end with a line containing only EOF. Verify with `wc -c {{rig}}/mayor/rig/plan.md` (full path from town root).
       failure_hint: |
-        Read the review feedback and amend plan.md before success on rework. Preserve real bead IDs and exact required_files paths, including nested directories. If sync_planning_artifacts already created beads, bd list only — do not create duplicates. A byte-count check cannot replace the requested amendment. Run `cd {{rig}}/mayor/rig && wc -c plan.md` (>= {{min_plan_bytes}} bytes). Work from {{rig}}/mayor/rig — BEADS_DIR is already set.
+        Read the review feedback and amend plan.md before success on rework. Preserve real bead IDs and exact required_files paths, including nested directories. If sync_planning_artifacts already created beads, bd list only — do not create duplicates. A byte-count check cannot replace the requested amendment. Run `cd {{rig}}/mayor/rig && wc -c plan.md` (≥ {{min_plan_bytes}} bytes). Work from {{rig}}/mayor/rig — BEADS_DIR is already set.
     transitions:
       success:
         to: plan_review
@@ -190,10 +204,11 @@ states:
       3. Reject when SPEC.md, architecture.md, and plan.md disagree on HTTP routes, store API names, module path, or integration contract (gt-agent enforces on success).
     hooks:
       dependency_review: true
+      review_failure_limit: 3
       pre_run: [sync_planning_artifacts, enforce_implement_bead_queue]
       max_cmd_turns: 8
       cmd_guard: plan_review
-      cmd_rewrites: [rig_placeholders, spec_md_case, bd_list_limit, unwrap_bash_lc]
+      cmd_rewrites: [rig_placeholders, spec_md_case, spec_md_after_cd, bd_list_limit, unwrap_bash_lc]
       env:
         beads_dir: true
       track: plan_review
@@ -217,28 +232,57 @@ states:
     role: tester
     prompt_file: prompts/rig-flow/test_plan.md
     instructions: |
-      1. Read REQUIREMENTS.md, SPEC.md, architecture.md, and plan.md under `{{rig}}/mayor/rig/`.
+      1. Read REQUIREMENTS.md (if present), SPEC.md, architecture.md, and plan.md under `{{rig}}/mayor/rig/`.
       2. Write `{{rig}}/mayor/rig/TEST_PLAN.md` (≥{{min_test_plan_bytes}} bytes) mapping every active-phase requirement to unit/integration/UI tests with bead IDs.
-      3. Report success only when the plan covers every requirement at the right level; failure sends the planner back.
+      3. Report success only when the plan covers every requirement at the right level;       failure sends the planner back.
     hooks:
       native_edit_tools: true
-      max_cmd_turns: 10
+      max_cmd_turns: 14
       cmd_guard: test_plan
       cmd_rewrites: [rig_placeholders, unwrap_bash_lc, test_plan_md_after_cd, bd_list_limit]
       env:
         beads_dir: true
       track: test_plan
       artifacts: test_plan
+      failure_prompt_context: [test_plan_rework]
       retry_hint: |
-        One CMD: per line. Read REQUIREMENTS.md and SPEC.md from {{rig}}/mayor/rig, then `wc -c TEST_PLAN.md`.
+        One CMD: per line. Read SPEC.md and architecture.md from {{rig}}/mayor/rig, then `wc -c TEST_PLAN.md`.
         Only success/failure/architecture_failure outcomes are allowed.
       failure_hint: |
         TEST_PLAN.md must be ≥ {{min_test_plan_bytes}} bytes with a `### <req-id>` block per requirement: Level (unit/integration/ui), Test file, Bead ID, Scenarios, Assertions. Do not write tests — only plan them.
     transitions:
       success:
-        to: project_setup
+        to: test_plan_review
       failure:
         to: planning
+      architecture_failure:
+        to: design
+  test_plan_review:
+    role: qa
+    prompt_file: prompts/rig-flow/test_plan_review.md
+    instructions: |
+      1. Review `{{rig}}/mayor/rig/TEST_PLAN.md` against SPEC.md, architecture.md, and plan.md. Note that TEST_PLAN.md covers all test-carrying phases ({{test_plan_phase_ids}}), omitting setup-only phases ({{setup_only_phase_ids}}), not just active phase `{{active_phase_id}}` — never reject sections for earlier or future phases in `{{all_delivery_phase_ids}}`.
+      2. If active phase `{{active_phase_id}}` carries tests, verify a real bead ID and a declared test file or conventional companion of a required source file ({{required_files}}); companions use the source bead. Setup-only phases need no test row or architecture escalation.
+      3. Confirm test levels match the plan and active-phase Bead IDs exist in `bd list --status=open,in_progress` (completed/future phases may have blank or closed Bead IDs).
+      4. Report success only when the test plan is complete and SPEC-aligned; failure sends the tester back to rewrite TEST_PLAN.md.
+    hooks:
+      max_cmd_turns: 8
+      cmd_guard: design_review
+      cmd_rewrites: [rig_placeholders, spec_md_case, spec_md_after_cd, test_plan_md_after_cd, bd_list_limit, unwrap_bash_lc]
+      env:
+        beads_dir: true
+      track: qa
+      artifacts: test_plan_review
+      retry_hint: |
+        One CMD: per line. Read SPEC.md, architecture.md, plan.md and TEST_PLAN.md from {{rig}}/mayor/rig, then `wc -c TEST_PLAN.md` and `bd list --status=open,in_progress`.
+        Only success/failure/architecture_failure outcomes are allowed.
+      failure_hint: |
+        Do not edit any files. TEST_PLAN.md must retain sections for test-carrying phases ({{test_plan_phase_ids}}) and omit setup-only phases ({{setup_only_phase_ids}}); only active phase {{active_phase_id}} requires open/in_progress Bead IDs. If TEST_PLAN.md is missing, below {{min_test_plan_bytes}} bytes, uses phase ids outside ({{all_delivery_phase_ids}}), omits requirements, or cites nonexistent active-phase bead IDs, report failure with the exact gaps.
+    transitions:
+      success:
+        to: project_setup
+      failure:
+        to: test_plan
       architecture_failure:
         to: design
   test_plan_rework:
@@ -281,6 +325,7 @@ states:
       pre_run: [sync_planning_artifacts, enforce_implement_bead_queue, prune_rig_root_junk, ensure_test_stack_ready]
       cmd_guard: project_setup
       cmd_rewrites: [rig_placeholders, unwrap_bash_lc, bd_list_implement_scope, unittest_workdir, bd_list_limit]
+      cmd_timeout_seconds: 180
       env:
         beads_dir: true
         python_venv: create
@@ -321,15 +366,16 @@ states:
     role: polecat
     prompt_file: prompts/rig-flow/implementation.md
     instructions: |
-      Implement the **Next bead** only: in_progress -> code + unit tests tied to SPEC/plan acceptance -> verify (go test / pytest per Next bead) -> bd close. JSON success when all implement beads are closed.
+      Implement the **Next bead** only: in_progress → code + unit tests tied to SPEC/plan acceptance → verify (go test / pytest per Next bead) → bd close. JSON success when all implement beads are closed.
     hooks:
       dependency_review: true
       no_progress_limit: 5
       state_timeout_seconds: 7200
       on_timeout: [recover_implementation_stall]
       on_state_timeout: [recover_implementation_stall]
-      cmd_timeout_seconds: 300
+      cmd_timeout_seconds: 900
       max_cmd_turns: 100
+      execution_batch_size: 8
       omit_orchestrator_context: true
       system_prompt_footer: |
         **Target platform: {{target_os}}/{{target_arch}}** — use Unix paths only. Do NOT use Windows paths (C:\) or macOS-only conventions.
@@ -362,23 +408,25 @@ states:
 
         **Do NOT wrap CMD in angle brackets** — use plain `CMD: ...` not `<CMD: ...>`.
 
-        **Frontend beads (JS/CSS/HTML):** No verify step needed. Write the file, then `bd close` immediately. Do not run compileall/pytest/go test on web assets.
+        **Frontend beads:** Use the declared frontend toolchain and Next bead Verify command before closing. Run typecheck/build/component tests for bundled JavaScript or TypeScript projects; use the configured static checks for plain assets.
 
         **SQL beads (.sql):** Validate with the sqlite3 verify command shown in the Next bead line. Do NOT run pytest on .sql files.
 
-        **One bead at a time:** Update ONE bead to in_progress -> WRITE/EDIT that file -> `bd close`. Do not batch multiple beads.
+        **One bead at a time:** Update ONE bead to in_progress → WRITE/EDIT that file → `bd close`. Do not batch multiple beads.
 
         **Result (SEPARATE message, NO CMD/WRITE/EDIT lines):**
         {"outcome":"success","summary":"Implemented handlers.go and tests; go test passes"}
 
-        **When verify fails:** First READ the failing file and the dependencies it calls. Then explain the failure in ONE sentence, then apply the fix with EDIT:/WRITE:. Do not try random edits — diagnose from the error output.
+        **When verify fails:** First READ the failing file and the dependencies it calls. Then explain the failure in ONE sentence, then apply the fix with EDIT:/WRITE:. Do not try random edits — diagnose from the error output. Record reusable lessons with `LEARN: <concise one-line rule>` (<=140 chars).
 
-        **Web frontend (app.js, index.html):** Use plain JavaScript — no ES module imports/exports (browsers cannot load them without a bundler). Use `fetch()` + DOM APIs. No server-side function calls (InitSchema, DB.Exec) in frontend code. Match DOM IDs between index.html and app.js exactly.
+        **Web frontend:** Follow the SPEC and detected package toolchain. Use React/Next/Vite and module imports when declared. For unbundled static pages use browser-compatible scripts and match DOM IDs. Keep server/database functions out of browser code.
       user_prompt_wrapper: none
       failure_prompt_context: [implementation_queue, implement_bead_context, phase_test_guards, polecat_learnings]
       empty_response_suffix: "Reply with EDIT:/WRITE:/READ: or CMD: lines. Implement code and unit tests per plan.md; WRITE for new *_test.go or tests/test_*.py. Use Verify from Next bead."
       prompt_context: [missing_implement_files, implementation_queue, implement_bead_context, phase_test_guards, coding_standards, polecat_learnings]
-      pre_run: [prune_rig_root_junk, repair_project_git_ignores, ensure_dolt_auto_commit, ensure_dolt_schema_health, sync_planning_artifacts, ensure_http_implementation_config, ensure_handler_phase_prerequisites, ensure_implement_smoke_ready, ensure_go_mod_from_spec, enforce_implement_bead_queue, prune_stale_layout_files, repair_requirements, refresh_codeindex, reconcile_implement_beads, ensure_test_stack_ready, ensure_playwright_config_ready]
+      pre_run: [prune_rig_root_junk, repair_project_git_ignores, ensure_dolt_auto_commit, ensure_dolt_schema_health, sync_planning_artifacts, ensure_http_implementation_config, ensure_handler_phase_prerequisites, ensure_implement_smoke_ready, enforce_implement_bead_queue, prune_stale_layout_files, repair_requirements, refresh_codeindex, reconcile_implement_beads, ensure_test_stack_ready, ensure_playwright_config_ready]
+      # Do not run repair_planning_beads / refresh_plan_md_if_stale per turn — they create beads and
+      # rewrite plan.md mid-implementation (see pre_run sync + reconcile). Planning-only repair stays in planning state hooks.
       per_turn: [prune_stale_layout_files, repair_requirements]
       cmd_guard: implementation
       cmd_rewrites: [rig_placeholders, unwrap_bash_lc, backend_path_after_cd, bd_list_implement_scope, unittest_workdir, bd_list_limit, bd_close_auto_commit, bd_strip_beads_dir]
@@ -407,13 +455,13 @@ states:
       artifacts: implementation
       retry_hint_key: implementation
       failure_hint: |
-        One bead at a time: bd update -> **EDIT:** / **WRITE:** (include *_test.go or tests/test_*.py mapped to SPEC/plan) -> verify from Next bead (go test / pytest) -> bd close. Use CMD only for bd/verify. go run/curl only on cmd/server/main.go bead.
+        One bead at a time: bd update → **EDIT:** / **WRITE:** (include *_test.go or tests/test_*.py mapped to SPEC/plan) → verify from Next bead (go test / pytest) → bd close. Use CMD only for bd/verify. go run/curl only on cmd/server/main.go bead.
         After QA failure rework: READ the QA-cited file on disk first. If the file already exists and verify passes, bd close it — do NOT rewrite files that QA falsely claimed as missing/broken. Only make changes when QA's claim is confirmed.
     transitions:
       success:
         to: test_review
       failure:
-        to: implementation
+        to: planning
       plan_gap:
         to: test_plan_rework
       architecture_failure:
@@ -432,7 +480,7 @@ states:
       2. Confirm every active-phase test file exists, has real assertions (not stubs), and the phase verify ({{phase_qa_verify_command}}) is green.
       3. Report success only when tests cover every requirement; failure names failing beads (polecat), plan_gap when the plan is incomplete (tester rewrites TEST_PLAN.md), architecture_failure when SPEC/architecture are the blocker (architect).
     hooks:
-      max_cmd_turns: 10
+      max_cmd_turns: 20
       cmd_guard: test_review
       cmd_rewrites: [rig_placeholders, unwrap_bash_lc, test_plan_md_after_cd, bd_list_limit, bd_strip_beads_dir, unittest_workdir]
       env:
@@ -472,7 +520,7 @@ states:
       verification_error_limit: 3
       prompt_context: [missing_implement_files]
       state_timeout_seconds: 1800
-      cmd_timeout_seconds: 300
+      cmd_timeout_seconds: 900
       append_go_compile_context: true
       max_cmd_turns: 8
       pre_run: [ensure_dolt_auto_commit, ensure_dolt_schema_health, reconcile_implement_beads]
@@ -487,6 +535,10 @@ states:
       track: qa
       artifacts: qa
       bead_ids_in_summary: true
+      cmd_before_outcome_nudge: |
+        You reported an outcome without running any commands. You MUST run the verify command first and report its actual output:
+        CMD: cd {{rig}}/mayor/rig && {{qa_verify_command}}
+        Do NOT guess or assume — run the command and report what it says.
       retry_hint: |
         One CMD: per line. Review closed beads against SPEC and architecture; use allowed QA outcomes only.
       failure_hint: |

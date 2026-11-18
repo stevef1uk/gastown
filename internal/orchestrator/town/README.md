@@ -22,6 +22,13 @@ with the last error and command guidance. A successful review or a valid defect
 report resets that counter. Execution retries invalidate test/smoke milestones
 so QA must run the configured gate again.
 
+Review gates can set `review_failure_limit` to cap repeated rejections across
+intervening successful workflow states. The persisted budget is scoped to the
+review state and active delivery phase, resets when that review succeeds, and
+pauses with the latest findings at the limit. This catches cycles such as
+`plan_review → design → planning → plan_review` even when intermediate
+artifacts change on every attempt.
+
 Application/test failures use `failure` plus explicit `repair_bead_ids` and
 `evidence`. Targets must resolve to canonical active-phase implementation beads.
 Inventories and IDs mentioned in diagnostic output do not become repair targets.
@@ -152,11 +159,11 @@ intact when editing the prompts — they are behavioral contracts, not suggestio
 | **Incremental architecture rework** | `prompts/rig-flow/design.md` | Existing architecture is read in full and amended only for named defects and directly affected references. Preserve unrelated and completed-phase contracts, implementation, tests, and databases. Full-document heredocs are for initial creation only. Missing files/beads are planning-sync/implementation recovery, not a redesign. |
 | **Bead-note ledger** | `internal/formula/formulas/mol-polecat-work.formula.toml` | Polecat persists to `bd update --notes` at mandatory triggers (after writing tests, before verify, before `gt done`) so work survives context loss. |
 
-**Both workflows share these contracts.** `req-flow.yaml` reuses `prompts/rig-flow/*.md` for its
-`design`, `planning`, `plan_review`, `project_setup`, `implementation`, and `qa_review` states —
-only `kickoff`, `analysis`, and `spec_review` are req-flow-specific. Editing the shared prompt
-files above changes behavior for **both** rig-flow and req-flow. The `mol-polecat-work` formula is
-workflow-agnostic (any polecat work lifecycle).
+**Both workflows share the full delivery flow.** After its req-specific `kickoff`, `analysis`, and
+`spec_review` stages, `req-flow.yaml` uses the same states, hooks, transitions, validation, and
+rework routing as `rig-flow.yaml`, starting at `design`. Shared prompts in `prompts/rig-flow/*.md`
+therefore change behavior for **both** workflows. A test enforces this alignment. The
+`mol-polecat-work` formula is workflow-agnostic (any polecat work lifecycle).
 
 When changing a prompt, update this table if the contract it documents changes.
 

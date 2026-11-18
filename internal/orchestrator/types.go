@@ -115,6 +115,7 @@ type WorkflowInstance struct {
 	// design instead of looping; reset on any success or escalation.
 	TestPlanFailures   int                       `json:"test_plan_failures,omitempty"`
 	ReviewProgress     map[string]ReviewProgress `json:"review_progress,omitempty"`
+	ReviewFailures     map[string]int            `json:"review_failures,omitempty"`
 	VerificationErrors map[string]int            `json:"verification_errors,omitempty"`
 }
 

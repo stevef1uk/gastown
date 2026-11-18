@@ -853,6 +853,8 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summa
 	if phaseAdvance != nil {
 		inst.PendingRework = phaseAdvance
 	}
+	activePhaseID := m.workflowValidationFor(inst, tpl).ActivePhaseID()
+	inst.recordReviewFailure(fromState, activePhaseID, outcome, state.Hooks.ReviewFailureLimit)
 	inst.recordReviewProgress(m.townRoot, rig, fromState, outcome, state.Hooks)
 	inst.recordVerificationError(fromState, outcome, state.Hooks.VerificationErrorLimit)
 	log.Printf("[Manager] CompleteTask: before persist, workflow=%s next=%s inst.CurrentState=%s", workflowID, next, inst.CurrentState)
@@ -897,6 +899,7 @@ func (m *Manager) ResetWorkflow(workflowID, toState string) (string, error) {
 	inst.Status = "running"
 	inst.PauseReason = ""
 	inst.ReviewProgress = nil
+	inst.ReviewFailures = nil
 	inst.touchStateEnteredAt()
 	if err := m.persistLocked(); err != nil {
 		return "", fmt.Errorf("persist instances: %w", err)
