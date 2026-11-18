@@ -54,6 +54,10 @@ Each named profile defines a model and optional env overrides:
       "model": "deepseek/deepseek-v4-flash",
       "extra_env": { "LLM_TIMEOUT": "1200s" }
     },
+    "gt-agent-qa": {
+      "model": "deepseek/deepseek-v4-flash",
+      "extra_env": { "LLM_TIMEOUT": "1200s" }
+    },
     "gt-agent-gemini": {
       "model": "google/gemini-3.5-flash",
       "extra_env": { "LLM_TIMEOUT": "1200s" }
@@ -73,7 +77,7 @@ Maps each Gas Town role to an agent profile name:
 {
   "role_agents": {
     "polecat": "gt-agent-deepseek",
-    "qa": "gt-agent-gemini",
+    "qa": "gt-agent-qa",
     "architect": "gt-agent-architect",
     "mayor": "gt-agent-local"
   }

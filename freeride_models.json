@@ -12,6 +12,12 @@
         "LLM_TIMEOUT": "1200s"
       }
     },
+    "gt-agent-qa": {
+      "model": "deepseek/deepseek-v4-flash",
+      "extra_env": {
+        "LLM_TIMEOUT": "1200s"
+      }
+    },
     "gt-agent-deepseek": {
       "model": "openrouter/free",
       "extra_env": {
@@ -53,7 +59,7 @@
     "planner": "gt-agent-architect",
     "setup": "gt-agent-architect",
     "polecat": "gt-agent-deepseek",
-    "qa": "gt-agent-gemini",
+    "qa": "gt-agent-qa",
     "tester": "gt-agent-gemini",
     "refinery": "gt-agent-local",
     "witness": "gt-agent-local"
