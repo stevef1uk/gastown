@@ -301,6 +301,50 @@ func TestValidateRigWorkflowProfileForQA_catchesHallucinations(t *testing.T) {
 	}
 }
 
+func TestValidateRigWorkflowProfileForQA_matchesDeliveryOwnersAcrossLayoutPaths(t *testing.T) {
+	tests := []struct {
+		name          string
+		requiredFiles []string
+		phaseFiles    []string
+		wantDefect    bool
+	}{
+		{
+			name:          "profile prefixed, phase relative",
+			requiredFiles: []string{"taskboard/templates/index.html", "taskboard/tests/test_api.py"},
+			phaseFiles:    []string{"templates/index.html", "tests/test_api.py"},
+		},
+		{
+			name:          "profile relative, phase prefixed",
+			requiredFiles: []string{"templates/index.html", "tests/test_api.py"},
+			phaseFiles:    []string{"taskboard/templates/index.html", "taskboard/tests/test_api.py"},
+		},
+		{
+			name:          "unowned path remains a defect",
+			requiredFiles: []string{"taskboard/templates/index.html"},
+			phaseFiles:    []string{"taskboard/static/app.js"},
+			wantDefect:    true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			validation := WorkflowValidation{
+				LayoutRoot:               "taskboard",
+				RequiredFiles:            tt.requiredFiles,
+				ExplicitDeliveryContract: true,
+				DeliveryPhases: []DeliveryPhase{{
+					ID:              "foundation",
+					RequiredFiles:   tt.phaseFiles,
+					QAVerifyCommand: "python -m pytest",
+				}},
+			}
+			defect := ValidateRigWorkflowProfileForQA(t.TempDir(), "sample", validation)
+			if (defect != "") != tt.wantDefect {
+				t.Fatalf("defect = %q, wantDefect=%t", defect, tt.wantDefect)
+			}
+		})
+	}
+}
+
 // TestFilterValidImplementPaths confirms route stubs and wildcards are dropped.
 func TestFilterValidImplementPaths(t *testing.T) {
 	in := []string{"pingapp/main.py", "pingapp/config.py", "@app.get/post/...", "test_*.py", "http://x/y", "{placeholder}", "pingapp/test_main.py"}

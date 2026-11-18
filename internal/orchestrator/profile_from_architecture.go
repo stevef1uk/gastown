@@ -2129,11 +2129,11 @@ func ValidateRigWorkflowProfileForQA(townRoot, rig string, v WorkflowValidation)
 		owned := map[string]bool{}
 		for _, p := range v.DeliveryPhases {
 			for _, f := range p.RequiredFiles {
-				owned[f] = true
+				owned[normalizeDeliveryOwnershipPath(f, v.LayoutRoot)] = true
 			}
 		}
 		for _, f := range v.RequiredFiles {
-			if !owned[f] {
+			if !owned[normalizeDeliveryOwnershipPath(f, v.LayoutRoot)] {
 				problems = append(problems, fmt.Sprintf("declared deliverable %q has no delivery-phase owner", f))
 			}
 		}
@@ -2207,6 +2207,22 @@ func ValidateRigWorkflowProfileForQA(townRoot, rig string, v WorkflowValidation)
 		return ""
 	}
 	return "workflow profile defects:\n- " + strings.Join(problems, "\n- ")
+}
+
+func normalizeDeliveryOwnershipPath(filePath, layoutRoot string) string {
+	filePath = filepath.ToSlash(strings.TrimSpace(filePath))
+	layoutRoot = strings.Trim(filepath.ToSlash(strings.TrimSpace(layoutRoot)), "/")
+	if filePath == "" || layoutRoot == "" || layoutRoot == "." || strings.HasPrefix(filePath, "/") {
+		return filePath
+	}
+	filePath = filepath.ToSlash(filepath.Clean(filePath))
+	if filePath == ".." || strings.HasPrefix(filePath, "../") {
+		return filePath
+	}
+	if filePath == layoutRoot || strings.HasPrefix(filePath, layoutRoot+"/") {
+		return filePath
+	}
+	return layoutRoot + "/" + strings.TrimPrefix(filePath, "./")
 }
 
 // longestCommonPathPrefix returns the longest directory prefix shared by a and b,
