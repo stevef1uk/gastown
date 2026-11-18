@@ -6,6 +6,8 @@ import (
 	"strings"
 )
 
+// maxDeliveryPhaseFiles caps each implementation phase; oversized SPEC phases
+// must be decomposed into ordered delivery subphases rather than truncated.
 const maxDeliveryPhaseFiles = 10
 
 // deliveryGraphProblems runs without LLM calls and preserves explicit milestones.
