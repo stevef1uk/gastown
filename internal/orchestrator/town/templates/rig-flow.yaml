@@ -151,6 +151,7 @@ states:
     hooks:
       dependency_review: true
       review_failure_limit: 3
+      review_recovery_state: review_recovery
       pre_run: [sync_planning_artifacts, enforce_implement_bead_queue]
       max_cmd_turns: 8
       cmd_guard: plan_review
@@ -174,6 +175,32 @@ states:
         to: design
       dependency_blocked:
         to: design
+  review_recovery:
+    role: mayor
+    prompt_file: prompts/rig-flow/review_recovery.md
+    instructions: |
+      Diagnose repeated review rejection from the retained findings and authoritative rig artifacts. Select the responsible owner and send one targeted repair with concrete evidence; do not bounce the work back unchanged.
+    hooks:
+      max_cmd_turns: 12
+      cmd_guard: plan_review
+      cmd_rewrites: [rig_placeholders, spec_md_case, spec_md_after_cd, bd_list_limit, unwrap_bash_lc]
+      env:
+        beads_dir: true
+      cmd_before_outcome_nudge: |
+        Before routing, inspect the retained reviewer finding and the authoritative artifact it cites. Use read-only commands only; then choose the responsible owner from the allowed outcomes.
+      retry_hint: |
+        Read the prior review findings and compare the rejected artifact with its authoritative source before selecting one repair owner.
+    transitions:
+      planner_rework:
+        to: planning
+      architect_rework:
+        to: design
+      tester_rework:
+        to: test_plan_rework
+      implementation_rework:
+        to: implementation
+      pause:
+        to: review_recovery
   test_plan:
     role: tester
     prompt_file: prompts/rig-flow/test_plan.md

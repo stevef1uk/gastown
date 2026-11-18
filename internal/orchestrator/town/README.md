@@ -22,12 +22,15 @@ with the last error and command guidance. A successful review or a valid defect
 report resets that counter. Execution retries invalidate test/smoke milestones
 so QA must run the configured gate again.
 
-Review gates can set `review_failure_limit` to cap repeated rejections across
-intervening successful workflow states. The persisted budget is scoped to the
-review state and active delivery phase, resets when that review succeeds, and
-pauses with the latest findings at the limit. This catches cycles such as
-`plan_review → design → planning → plan_review` even when intermediate
-artifacts change on every attempt.
+Review gates can set `review_failure_limit` and `review_recovery_state` to bound
+rejections across intervening successful workflow states. The persisted budget
+is scoped to the review state and active delivery phase. At the limit the
+workflow escalates once to a Mayor diagnosis step, which inspects the evidence
+and routes targeted repair to the responsible role; if the same review still
+fails after that recovery, the workflow pauses with the latest findings. Review
+success and phase changes reset the budget. The recovery step is read-only: the
+Mayor identifies the exact mismatch and hands a concrete repair instruction to
+the role that owns the artifact instead of editing another role's files.
 
 Application/test failures use `failure` plus explicit `repair_bead_ids` and
 `evidence`. Targets must resolve to canonical active-phase implementation beads.

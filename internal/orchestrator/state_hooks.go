@@ -11,6 +11,9 @@ type StateHooks struct {
 	// ReviewFailureLimit bounds failures at this review gate across intervening
 	// workflow states. The budget resets on review success and is phase-scoped.
 	ReviewFailureLimit int `yaml:"review_failure_limit,omitempty" json:"review_failure_limit,omitempty"`
+	// ReviewRecoveryState routes a capped review failure to a Mayor diagnosis step
+	// before pausing on a subsequent rejection.
+	ReviewRecoveryState string `yaml:"review_recovery_state,omitempty" json:"review_recovery_state,omitempty"`
 	// DependencyReview checks the full delivery contract before accepting a result.
 	// Defects use the state's dependency_blocked transition, configured in YAML.
 	DependencyReview   bool `yaml:"dependency_review,omitempty" json:"dependency_review,omitempty"`

@@ -62,7 +62,8 @@ func TestReviewFailureBudgetPersistsAcrossWorkflowCycle(t *testing.T) {
 			"plan_review": {
 				Role: "qa",
 				Hooks: StateHooks{
-					ReviewFailureLimit: 3,
+					ReviewFailureLimit:  3,
+					ReviewRecoveryState: "review_recovery",
 				},
 				Transitions: map[string]Transition{
 					"failure": {To: "architecture_rework"},
@@ -80,6 +81,13 @@ func TestReviewFailureBudgetPersistsAcrossWorkflowCycle(t *testing.T) {
 			"planning": {
 				Role:        "planner",
 				Transitions: map[string]Transition{"success": {To: "plan_review"}},
+			},
+			"review_recovery": {
+				Role: "mayor",
+				Transitions: map[string]Transition{
+					"planner_rework": {To: "planning"},
+					"pause":          {To: "review_recovery"},
+				},
 			},
 			"completed": {Role: "mayor"},
 		},
@@ -101,7 +109,7 @@ func TestReviewFailureBudgetPersistsAcrossWorkflowCycle(t *testing.T) {
 	reviewCycle := func() {
 		t.Helper()
 		complete("mockrig/qa", "failure")
-		if manager.instances[id].Status == "paused" {
+		if manager.instances[id].CurrentState == "review_recovery" || manager.instances[id].Status == "paused" {
 			return
 		}
 		complete("mockrig/architect", "success")
@@ -115,43 +123,54 @@ func TestReviewFailureBudgetPersistsAcrossWorkflowCycle(t *testing.T) {
 		if attempt < 3 && progress.Status != "running" {
 			t.Fatalf("paused after %d failures: %+v", attempt, progress)
 		}
-		if attempt == 3 && (progress.Status != "paused" || !strings.Contains(progress.PauseReason, "plan_review failed 3 times")) {
-			t.Fatalf("third repeated review failure did not pause with an explanation: %+v", progress)
+		if attempt == 3 && (progress.CurrentState != "review_recovery" || progress.Status != "running") {
+			t.Fatalf("third repeated review failure did not escalate to Mayor recovery: %+v", progress)
 		}
 
-		// Reload after each cycle to prove the budget is persisted independently
-		// of the in-memory manager and intermediate successful states.
+		// Reload after each cycle to prove the budget is persisted across
+		// intermediate states and the Mayor recovery handoff.
 		manager = NewManager(townRoot)
 		manager.LoadTemplate(tpl)
 	}
-	paused := manager.instances[id]
-	if paused.Status != "paused" || paused.ReviewFailures["plan_review:unphased"] != 3 {
-		t.Fatalf("pause/count did not survive reload: %+v", paused)
+	progress := manager.instances[id]
+	if progress.CurrentState != "review_recovery" || progress.ReviewFailures["plan_review:unphased"] != 3 {
+		t.Fatalf("recovery state/count did not survive reload: %+v", progress)
 	}
-	if paused.PendingRework == nil || !strings.Contains(paused.PendingRework.Feedback, paused.PauseReason) {
-		t.Fatal("pause feedback did not retain the current review findings and pause reason")
+	if progress.PendingRework == nil || !strings.Contains(progress.PendingRework.Feedback, "Mayor must diagnose") {
+		t.Fatal("Mayor recovery handoff did not retain actionable findings")
+	}
+	complete("mayor", "planner_rework")
+	if got := manager.instances[id].CurrentState; got != "planning" {
+		t.Fatalf("Mayor planner_rework routed to %q, want planning", got)
+	}
+	complete("mockrig/planner", "success")
+	reviewCycle()
+	paused := manager.instances[id]
+	if paused.Status != "paused" || paused.CurrentState != "review_recovery" ||
+		!strings.Contains(paused.PauseReason, "including after Mayor diagnosis/recovery") {
+		t.Fatalf("review failure after Mayor recovery did not pause at diagnosis: %+v", paused)
 	}
 }
 
 func TestReviewFailureBudgetIsPhaseScopedAndSuccessResets(t *testing.T) {
 	inst := WorkflowInstance{}
-	inst.recordReviewFailure("plan_review", "phase-1", "failure", 3)
-	inst.recordReviewFailure("plan_review", "phase-2", "failure", 3)
+	inst.recordReviewFailure("plan_review", "phase-1", "failure", 3, "recovery")
+	inst.recordReviewFailure("plan_review", "phase-2", "failure", 3, "recovery")
 	if _, ok := inst.ReviewFailures["plan_review:phase-1"]; ok {
 		t.Fatal("phase change retained the previous review budget")
 	}
 	if got := inst.ReviewFailures["plan_review:phase-2"]; got != 1 {
 		t.Fatalf("other phase budget = %d, want 1", got)
 	}
-	inst.recordReviewFailure("plan_review", "phase-2", "checkpoint", 3)
+	inst.recordReviewFailure("plan_review", "phase-2", "checkpoint", 3, "recovery")
 	if got := inst.ReviewFailures["plan_review:phase-2"]; got != 1 {
 		t.Fatalf("checkpoint changed the review budget to %d, want 1", got)
 	}
-	inst.recordReviewFailure("plan_review", "phase-2", "success", 3)
+	inst.recordReviewFailure("plan_review", "phase-2", "success", 3, "recovery")
 	if len(inst.ReviewFailures) != 0 {
 		t.Fatalf("successful review retained failure budget: %v", inst.ReviewFailures)
 	}
-	inst.recordReviewFailure("plan_review", "phase-1", "failure", 3)
+	inst.recordReviewFailure("plan_review", "phase-1", "failure", 3, "recovery")
 	if got := inst.ReviewFailures["plan_review:phase-1"]; got != 1 {
 		t.Fatalf("returning to an earlier phase reused old budget: %d", got)
 	}
@@ -169,12 +188,13 @@ func TestResetWorkflowClearsReviewFailureBudget(t *testing.T) {
 	}
 	manager, id := loadTestManager(t, tpl)
 	manager.instances[id].ReviewFailures = map[string]int{"plan_review:phase-1": 3}
+	manager.instances[id].ReviewEscalations = map[string]int{"plan_review:phase-1": 1}
 	manager.instances[id].Status = "paused"
 
 	if _, err := manager.ResetWorkflow(id, "plan_review"); err != nil {
 		t.Fatal(err)
 	}
-	if manager.instances[id].ReviewFailures != nil {
-		t.Fatalf("manual workflow reset retained review budget: %v", manager.instances[id].ReviewFailures)
+	if manager.instances[id].ReviewFailures != nil || manager.instances[id].ReviewEscalations != nil {
+		t.Fatalf("manual workflow reset retained review budget: failures=%v escalations=%v", manager.instances[id].ReviewFailures, manager.instances[id].ReviewEscalations)
 	}
 }

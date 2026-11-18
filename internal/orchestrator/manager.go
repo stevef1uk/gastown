@@ -326,6 +326,12 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summa
 	}
 
 	state, _ := inst.GetCurrentTask(tpl)
+	if state.Hooks.ReviewFailureLimit > 0 && state.Hooks.ReviewRecoveryState != "" {
+		recovery, ok := tpl.States[state.Hooks.ReviewRecoveryState]
+		if !ok || recovery.Role != constants.RoleMayor {
+			return "", fmt.Errorf("review recovery state %q for %q must exist and be assigned to mayor", state.Hooks.ReviewRecoveryState, inst.CurrentState)
+		}
+	}
 	if agentID != "" && state.Role != "" && !AgentMatchesTask(agentID, state.Role, inst.Variables) {
 		return "", fmt.Errorf("agent %q cannot complete state %q (role %q)",
 			agentID, inst.CurrentState, state.Role)
@@ -729,11 +735,43 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summa
 			inst.Status = "completed"
 		}
 	}
+	activePhaseID := m.workflowValidationFor(inst, tpl).ActivePhaseID()
+	reviewAction := inst.recordReviewFailure(fromState, activePhaseID, outcome, state.Hooks.ReviewFailureLimit, state.Hooks.ReviewRecoveryState)
+	reviewRecovery := strings.TrimSpace(state.Hooks.ReviewRecoveryState)
+	recoveryPause := fromState == "review_recovery" && outcome == "pause"
+	if reviewAction == reviewFailureEscalate {
+		next = reviewRecovery
+		inst.CurrentState = next
+		inst.Status = "running"
+		inst.touchStateEnteredAt()
+	} else if reviewAction == reviewFailurePause {
+		if reviewRecovery != "" {
+			next = reviewRecovery
+			inst.CurrentState = next
+			inst.touchStateEnteredAt()
+		}
+		inst.Status = "paused"
+		key := fromState + ":" + reviewPhaseKey(activePhaseID)
+		inst.PauseReason = fmt.Sprintf("%s was rejected %d times in delivery phase %q, including after Mayor diagnosis/recovery; inspect the retained findings and fix before resuming", fromState, inst.ReviewFailures[key], activePhaseID)
+	}
+	if recoveryPause {
+		inst.Status = "paused"
+		inst.PauseReason = strings.TrimSpace(summary)
+		if inst.PauseReason == "" {
+			inst.PauseReason = "Mayor paused review recovery for human diagnosis"
+		}
+	}
 	// Timeout keeps PendingRework even on same-state transitions (planning → planning).
-	setRework := implementationRewound || (next != fromState && IsCrossStateReworkOutcome(outcome)) || IsTimeoutOutcome(outcome) || IsVerificationErrorOutcome(outcome)
+	recoveryHandoff := fromState == "review_recovery" && !recoveryPause
+	setRework := implementationRewound || recoveryHandoff || (next != fromState && IsCrossStateReworkOutcome(outcome)) || IsTimeoutOutcome(outcome) || IsVerificationErrorOutcome(outcome)
 	if setRework && next != "" {
 		v := m.workflowValidationFor(inst, tpl)
 		reworkFeedback := PrepareWorkflowReworkFeedback(fromState, next, summary, feedback, v, tpl.ReworkFeedback)
+		if reviewAction == reviewFailureEscalate {
+			reworkFeedback = reviewRecoveryFeedback(fromState, summary, feedback, v)
+		} else if reviewAction == reviewFailurePause {
+			reworkFeedback = reviewRecoveryPauseFeedback(fromState, summary, feedback)
+		}
 		if IsVerificationErrorOutcome(outcome) {
 			reworkFeedback = verificationRetryFeedback(v, feedback)
 		}
@@ -844,7 +882,7 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summa
 			Feedback:  reworkFeedback,
 			AgentID:   agentID,
 		}
-	} else if !IsCheckpointOutcome(outcome) && !IsTimeoutOutcome(outcome) && !IsFailureOutcome(outcome) && !IsArchitectureReworkOutcome(outcome) {
+	} else if !recoveryPause && !IsCheckpointOutcome(outcome) && !IsTimeoutOutcome(outcome) && !IsFailureOutcome(outcome) && !IsArchitectureReworkOutcome(outcome) {
 		// Success clears QA/plan-review rework for the next agent.
 		inst.PendingRework = nil
 		inst.TestReviewFailures = 0
@@ -853,8 +891,6 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summa
 	if phaseAdvance != nil {
 		inst.PendingRework = phaseAdvance
 	}
-	activePhaseID := m.workflowValidationFor(inst, tpl).ActivePhaseID()
-	inst.recordReviewFailure(fromState, activePhaseID, outcome, state.Hooks.ReviewFailureLimit)
 	inst.recordReviewProgress(m.townRoot, rig, fromState, outcome, state.Hooks)
 	inst.recordVerificationError(fromState, outcome, state.Hooks.VerificationErrorLimit)
 	log.Printf("[Manager] CompleteTask: before persist, workflow=%s next=%s inst.CurrentState=%s", workflowID, next, inst.CurrentState)
@@ -900,6 +936,7 @@ func (m *Manager) ResetWorkflow(workflowID, toState string) (string, error) {
 	inst.PauseReason = ""
 	inst.ReviewProgress = nil
 	inst.ReviewFailures = nil
+	inst.ReviewEscalations = nil
 	inst.touchStateEnteredAt()
 	if err := m.persistLocked(); err != nil {
 		return "", fmt.Errorf("persist instances: %w", err)

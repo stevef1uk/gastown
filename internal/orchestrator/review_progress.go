@@ -8,6 +8,14 @@ import (
 	"strings"
 )
 
+type reviewFailureAction int
+
+const (
+	reviewFailureContinue reviewFailureAction = iota
+	reviewFailureEscalate
+	reviewFailurePause
+)
+
 // Review progress is template-configured, persisted, and scoped to a workflow.
 // Cosmetic architecture amendments cannot reset a profile-based progress budget.
 func (inst *WorkflowInstance) recordReviewProgress(townRoot, rig, state, outcome string, hooks StateHooks) {
@@ -49,9 +57,9 @@ func (inst *WorkflowInstance) recordReviewProgress(townRoot, rig, state, outcome
 // recordReviewFailure bounds repeated failures at a review gate even when each
 // retry passes through successful intermediate states. Phase-scoped keys keep
 // independent delivery phases from sharing a retry budget.
-func (inst *WorkflowInstance) recordReviewFailure(state, phase, outcome string, limit int) {
+func (inst *WorkflowInstance) recordReviewFailure(state, phase, outcome string, limit int, recoveryState string) reviewFailureAction {
 	if limit <= 0 {
-		return
+		return reviewFailureContinue
 	}
 	phase = strings.TrimSpace(phase)
 	if phase == "" {
@@ -61,25 +69,65 @@ func (inst *WorkflowInstance) recordReviewFailure(state, phase, outcome string, 
 	for previous := range inst.ReviewFailures {
 		if strings.HasPrefix(previous, state+":") && previous != key {
 			delete(inst.ReviewFailures, previous)
+			delete(inst.ReviewEscalations, previous)
 		}
 	}
 	if IsCheckpointOutcome(outcome) {
-		return
+		return reviewFailureContinue
 	}
 	if !IsCrossStateReworkOutcome(outcome) && !IsVerificationErrorOutcome(outcome) {
 		delete(inst.ReviewFailures, key)
-		return
+		delete(inst.ReviewEscalations, key)
+		return reviewFailureContinue
 	}
 	if inst.ReviewFailures == nil {
 		inst.ReviewFailures = map[string]int{}
 	}
 	inst.ReviewFailures[key]++
 	if inst.ReviewFailures[key] < limit {
-		return
+		return reviewFailureContinue
 	}
-	inst.Status = "paused"
-	inst.PauseReason = fmt.Sprintf("%s failed %d times in delivery phase %q; workflow paused to prevent a repeated review/rework cycle", state, inst.ReviewFailures[key], phase)
-	if inst.PendingRework != nil {
-		inst.PendingRework.Feedback += "\n\n" + inst.PauseReason + ". Review the latest findings and correct the responsible artifact before resuming."
+	if recoveryState == "" {
+		return reviewFailurePause
 	}
+	if inst.ReviewEscalations == nil {
+		inst.ReviewEscalations = map[string]int{}
+	}
+	if inst.ReviewEscalations[key] == 0 {
+		inst.ReviewEscalations[key]++
+		return reviewFailureEscalate
+	}
+	return reviewFailurePause
+}
+
+func reviewPhaseKey(phase string) string {
+	phase = strings.TrimSpace(phase)
+	if phase == "" {
+		return "unphased"
+	}
+	return phase
+}
+
+func reviewRecoveryFeedback(state, summary, feedback string, v WorkflowValidation) string {
+	var b strings.Builder
+	b.WriteString("Repeated review failures reached the automatic retry limit. The Mayor must diagnose the evidence and route one targeted repair before another review cycle.\n\n")
+	b.WriteString("Review state: ")
+	b.WriteString(state)
+	b.WriteString("\nDelivery phase: ")
+	b.WriteString(v.ActivePhaseID())
+	if summary != "" {
+		b.WriteString("\n\nLatest reviewer finding:\n")
+		b.WriteString(summary)
+	}
+	if feedback != "" {
+		b.WriteString("\n\nReviewer evidence and prior rework:\n")
+		b.WriteString(feedback)
+	}
+	b.WriteString("\n\nInspect the authoritative source documents and the rejected artifact. Identify the exact contradiction or missing correction, then route to its owner. Do not send work back unchanged. The owner must receive the concrete evidence and the smallest correction needed. If the evidence is insufficient or the contract itself needs a human decision, choose pause.")
+	b.WriteString("\n\nOutcomes: planner_rework (correct plan.md/bead mapping), architect_rework (correct architecture/SPEC contract), tester_rework (correct TEST_PLAN.md), implementation_rework (repair owned code/tests), pause (stop and preserve this diagnosis for the user).")
+	return truncateWorkflowText(b.String(), maxWorkflowReworkFeedback)
+}
+
+func reviewRecoveryPauseFeedback(state, summary, feedback string) string {
+	return truncateWorkflowText(fmt.Sprintf("The workflow repeated the %s rejection after a Mayor diagnosis/recovery attempt and is paused. Review the latest evidence, verify the proposed owner/correction, then resume only after the underlying mismatch has been addressed.\n\nLatest finding: %s\n\nRecovery feedback: %s", state, strings.TrimSpace(summary), strings.TrimSpace(feedback)), maxWorkflowReworkFeedback)
 }
