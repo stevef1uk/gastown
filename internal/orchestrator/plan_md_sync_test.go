@@ -30,6 +30,18 @@ func TestPlanningPlanMDNeedsRefresh_missingFile(t *testing.T) {
 	}
 }
 
+func TestPlanMDReferencesUnknownBeadIDs_acceptsClosedImplementBeads(t *testing.T) {
+	v := WorkflowValidation{BeadTitleContains: "Implement "}
+	plan := "### te-done: app/main.go\n"
+	beads := []PlanBead{{ID: "te-done", Title: "Implement app/main.go per architecture"}}
+	if planMDReferencesUnknownBeadIDs(plan, v, beads) {
+		t.Fatal("closed implement bead ID should be recognized as a valid plan reference")
+	}
+	if !planMDReferencesUnknownBeadIDs("### te-missing: app/main.go\n", v, beads) {
+		t.Fatal("unknown implement bead ID should still require plan refresh")
+	}
+}
+
 func TestPlanningPlanMDNeedsRefresh_docAlignment(t *testing.T) {
 	t.Parallel()
 	town := t.TempDir()
@@ -184,7 +196,7 @@ func TestWritePlanningPlanMDWithRetry_closedPathsOnly(t *testing.T) {
 }
 
 func TestSyncPlanningArtifacts_integration(t *testing.T) {
-	requireBdIntegration(t)
+	withBdIntegration(t)
 	townRoot := t.TempDir()
 	rig := "mockrig"
 	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
@@ -194,8 +206,9 @@ func TestSyncPlanningArtifacts_integration(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if _, err := os.Stat(filepath.Join(townRoot, rig, ".git")); os.IsNotExist(err) {
-		t.Skip("skipping integration test: bd hooks require git repo")
+	gitInit := exec.Command("git", "init", "-q", filepath.Join(townRoot, rig))
+	if out, err := gitInit.CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v\n%s", err, out)
 	}
 	init := exec.Command("bd", "init")
 	init.Env = append(os.Environ(), "BEADS_DIR="+beadsDir)
@@ -251,6 +264,19 @@ func TestSyncPlanningArtifacts_integration(t *testing.T) {
 	}
 	if PlanningPlanMDNeedsRefresh(townRoot, rig, v) {
 		t.Fatal("plan.md should be fresh after sync")
+	}
+
+	for _, bead := range open {
+		if err := bdUpdateImplementBeadStatus(townRoot, rig, bead.ID, "closed"); err != nil {
+			t.Fatalf("close implement bead %s: %v", bead.ID, err)
+		}
+	}
+	authoredPlan := append(data, []byte("\nPlanner acceptance detail that sync must preserve.\n")...)
+	if err := os.WriteFile(planPath, authoredPlan, 0644); err != nil {
+		t.Fatal(err)
+	}
+	if PlanningPlanMDNeedsRefresh(townRoot, rig, v) {
+		t.Fatal("closed implement beads are valid plan references; authored plan should not be regenerated")
 	}
 }
 

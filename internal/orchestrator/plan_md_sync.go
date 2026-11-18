@@ -203,12 +203,12 @@ func ValidatePlanMDBeadPathAlignment(townRoot, rig string, v WorkflowValidation)
 	if issues := checkPlanBeadMapExactPaths(planDoc, v, rig); len(issues) > 0 {
 		return fmt.Errorf("%s", strings.Join(issues, "; "))
 	}
-	open, err := ListImplementBeadsOpenOrInProgress(townRoot, rig, v)
+	beads, err := listPlanningImplementBeads(townRoot, rig, v)
 	if err != nil {
 		return err
 	}
 	idToPath := map[string]string{}
-	for _, b := range open {
+	for _, b := range beads {
 		if !MatchesImplementBeadTitle(b.Title, v) {
 			continue
 		}
@@ -259,24 +259,40 @@ func planSectionCovers(data []byte, want, id string, v WorkflowValidation) bool 
 	return false
 }
 
-// planMDHasUnknownBeadIDs reports whether plan.md ### headers cite IDs with no open/in_progress implement bead.
+// planMDHasUnknownBeadIDs reports whether plan.md ### headers cite IDs that are not implement beads.
 func planMDHasUnknownBeadIDs(planDoc, townRoot, rig string, v WorkflowValidation) bool {
 	if !BeadsDatabaseReady(townRoot, rig) {
 		return false
 	}
-	active, err := ListImplementBeadsOpenOrInProgress(townRoot, rig, v)
+	beads, err := listPlanningImplementBeads(townRoot, rig, v)
 	if err != nil {
 		return true
 	}
-	activeIDs := map[string]bool{}
-	for _, b := range active {
+	return planMDReferencesUnknownBeadIDs(planDoc, v, beads)
+}
+
+func listPlanningImplementBeads(townRoot, rig string, v WorkflowValidation) ([]PlanBead, error) {
+	active, err := ListImplementBeadsOpenOrInProgress(townRoot, rig, v)
+	if err != nil {
+		return nil, err
+	}
+	closed, err := listImplementBeadsForGuard(townRoot, rig, v, "closed")
+	if err != nil {
+		return nil, err
+	}
+	return append(active, closed...), nil
+}
+
+func planMDReferencesUnknownBeadIDs(planDoc string, v WorkflowValidation, beads []PlanBead) bool {
+	knownIDs := map[string]bool{}
+	for _, b := range beads {
 		if MatchesImplementBeadTitle(b.Title, v) {
-			activeIDs[b.ID] = true
+			knownIDs[b.ID] = true
 		}
 	}
 	for _, m := range planBeadSectionRE.FindAllStringSubmatch(planDoc, -1) {
 		id := strings.TrimSpace(m[1])
-		if id != "" && !activeIDs[id] {
+		if id != "" && !knownIDs[id] {
 			return true
 		}
 	}
