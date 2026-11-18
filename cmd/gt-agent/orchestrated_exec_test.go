@@ -826,6 +826,22 @@ func TestRewriteUnittestToWorkdir_pythonVenvAtMayorRig(t *testing.T) {
 	}
 }
 
+func TestRewriteUnittestToWorkdir_pythonEditableInstallKeepsProjectRoot(t *testing.T) {
+	rig := "testgt4minus"
+	v := orchestrator.WorkflowValidation{
+		LayoutRoot:      "taskboard",
+		TestRunner:      "pytest",
+		RequiredFiles:   []string{"taskboard/pyproject.toml", "taskboard/tests/test_repository.py"},
+		QAVerifyCommand: "cd taskboard && python -m pip install -e '.[test]' && python -m pytest -q tests/test_repository.py",
+	}
+	cmd := "cd " + rig + "/mayor/rig && " + v.QAVerifyCommand
+	got, changed := rewriteUnittestToWorkdir(cmd, rig, v)
+	want := "cd " + rig + "/mayor/rig && cd taskboard && ../.venv/bin/python3 -m pip install -e '.[test]' && ../.venv/bin/python3 -m pytest -q tests/test_repository.py"
+	if !changed || got != want {
+		t.Fatalf("got changed=%v command=%q; want command=%q", changed, got, want)
+	}
+}
+
 func TestRewriteUnittestToWorkdir_bareLayoutCD(t *testing.T) {
 	v := orchestrator.WorkflowValidation{
 		LayoutRoot:      "tasklist",

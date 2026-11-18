@@ -442,6 +442,9 @@ func rewriteUnittestToWorkdir(cmd, rig string, v orchestrator.WorkflowValidation
 		cmd = fixed
 		changed = true
 	}
+	if fixed, ok := rewritePythonEditableInstallToLayout(cmd, rig, layout, v); ok {
+		return fixed, fixed != cmd
+	}
 	// Strip source .venv/bin/activate && — the cd rewrite below may change the
 	// working directory, so the venv path must be recomputed relative to workPath.
 	venvActivate := ""
@@ -570,6 +573,28 @@ func rewriteUnittestToWorkdir(cmd, rig string, v orchestrator.WorkflowValidation
 		changed = true
 	}
 	return cmd, changed
+}
+
+func rewritePythonEditableInstallToLayout(cmd, rig, layout string, v orchestrator.WorkflowValidation) (string, bool) {
+	lower := strings.ToLower(cmd)
+	if !orchestrator.WorkflowUsesPython(v) || layout == "" || layout == "." ||
+		strings.Contains(cmd, "<<") || !commandHasLayoutCD(cmd, layout) ||
+		!strings.Contains(lower, "pip install") ||
+		!regexp.MustCompile(`(?i)(?:^|[;&|]\s*)(?:python3?\s+-m\s+)?pip\s+install\b[^;&|]*\s(?:-e|--editable)(?:=|\s)`).MatchString(cmd) {
+		return cmd, false
+	}
+
+	venvFromLayout, err := filepath.Rel(filepath.FromSlash(layout), filepath.FromSlash(v.PythonVenvRelDir()))
+	if err != nil {
+		return cmd, false
+	}
+	venvPython := filepath.ToSlash(filepath.Join(venvFromLayout, "bin", "python3"))
+	if !commandHasMayorRigCD(cmd, rig) {
+		cmd = "cd " + rigMayorRigPath(rig) + " && " + strings.TrimSpace(cmd)
+	}
+	pythonModuleCommand := regexp.MustCompile(`(?i)(^|&&\s*)(?:\S*/)?python3?(\s+-m\s+(?:pip|pytest)\b)`)
+	cmd = pythonModuleCommand.ReplaceAllString(cmd, "${1}"+venvPython+"${2}")
+	return cmd, true
 }
 
 // findCDChainEnd returns the index after the last "&&" in a leading cd chain.
