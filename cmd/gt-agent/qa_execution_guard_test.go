@@ -35,6 +35,30 @@ func TestQAExecutionGuard_BlocksBroadCleanupBeforeExecution(t *testing.T) {
 	}
 }
 
+func TestQAExecutionGuard_BlocksPlaywrightSystemDependencyInstall(t *testing.T) {
+	for _, cmd := range []string{
+		`cd testgt3/mayor/rig && cd linkshelf && npx playwright install --with-deps chromium 2>&1 | tail -10`,
+		`npm exec playwright install --with-deps chromium`,
+		`pnpm exec playwright install --with-deps chromium`,
+		`yarn playwright install --with-deps chromium`,
+	} {
+		if err := validateQACommand(cmd, "testgt3", "", orchestrator.WorkflowValidation{}); err == nil ||
+			!strings.Contains(err.Error(), "must not run Playwright with --with-deps") {
+			t.Errorf("Playwright system dependency installation accepted: %s (%v)", cmd, err)
+		}
+	}
+
+	for _, cmd := range []string{
+		`cd testgt3/mayor/rig && cd linkshelf && npx playwright test`,
+		`npx playwright install chromium`,
+		`grep 'npx playwright install --with-deps chromium' TEST_PLAN.md`,
+	} {
+		if err := validateQACommand(cmd, "testgt3", "", orchestrator.WorkflowValidation{}); err != nil {
+			t.Errorf("safe QA command rejected: %s (%v)", cmd, err)
+		}
+	}
+}
+
 func TestQAExecutionGuard_RecognizesReadOnlySed(t *testing.T) {
 	town := t.TempDir()
 	cmd := `cd sample/mayor/rig && sed -n '1,20p' sample/main.py`

@@ -3124,6 +3124,9 @@ func validateQACommand(cmd, rig, townRoot string, v orchestrator.WorkflowValidat
 	if err := rejectBroadQAProcessCleanup(cmd); err != nil {
 		return err
 	}
+	if err := rejectPlaywrightSystemDependencyInstall(cmd); err != nil {
+		return err
+	}
 	lower := strings.ToLower(cmd)
 	if strings.Contains(lower, "[tool_calls]") {
 		return fmt.Errorf("do not emit [TOOL_CALLS] markers — use CMD: lines only")

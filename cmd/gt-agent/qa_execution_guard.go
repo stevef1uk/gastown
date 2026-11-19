@@ -35,3 +35,36 @@ func rejectBroadQAProcessCleanup(cmd string) error {
 	}
 	return nil
 }
+
+func rejectPlaywrightSystemDependencyInstall(cmd string) error {
+	for _, segment := range strings.FieldsFunc(strings.ToLower(cmd), func(r rune) bool {
+		return r == ';' || r == '\n' || r == '|'
+	}) {
+		if i := strings.LastIndex(segment, "&&"); i >= 0 {
+			segment = segment[i+2:]
+		}
+		fields := strings.Fields(segment)
+		start := 0
+		if len(fields) > 0 {
+			switch strings.Trim(fields[0], `'"`) {
+			case "npx", "yarn":
+				start = 1
+			case "npm", "pnpm":
+				if len(fields) > 1 && strings.Trim(fields[1], `'"`) == "exec" {
+					start = 2
+				}
+			}
+		}
+		if len(fields) <= start+2 ||
+			strings.Trim(fields[start], `'"`) != "playwright" ||
+			strings.Trim(fields[start+1], `'"`) != "install" {
+			continue
+		}
+		for _, field := range fields[start+2:] {
+			if strings.Trim(field, `'"`) == "--with-deps" {
+				return fmt.Errorf("QA must not run Playwright with --with-deps because it invokes OS package installation; use the configured Playwright test command without installing system dependencies")
+			}
+		}
+	}
+	return nil
+}
