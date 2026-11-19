@@ -34,6 +34,7 @@ const (
 )
 
 var jsonBlockRE = regexp.MustCompile("(?s)```(?:json)?\\s*([\\s\\S]*?)```")
+var declaredNodeVerifyCommandRE = regexp.MustCompile(`(^|&&|\|\||;)[[:space:]]*node[[:space:]]+[^;&|]+`)
 
 type orchestratedTaskResult struct {
 	RepairBeadIDs []string                      `json:"repair_bead_ids,omitempty"`
@@ -4721,8 +4722,16 @@ func validateNodeImplementationCommand(cmd string, v orchestrator.WorkflowValida
 	if orchestrator.WorkflowUsesNodeJS(v) {
 		return nil
 	}
+	// A dependency-free Node script may be the phase's explicit verifier without
+	// making the phase a Node project; allow only that declared command.
+	declaredNodeVerify := strings.TrimSpace(strings.TrimLeft(declaredNodeVerifyCommandRE.FindString(strings.ToLower(v.QAVerifyCommand)), "&|; "))
 	for _, tok := range []string{"npm ", "node ", "yarn ", "pnpm ", "npx "} {
 		if strings.Contains(lower, tok) {
+			normalizedCommand := strings.TrimSpace(lower)
+			if tok == "node " && declaredNodeVerify != "" &&
+				(normalizedCommand == declaredNodeVerify || strings.HasSuffix(normalizedCommand, " && "+declaredNodeVerify)) {
+				continue
+			}
 			return fmt.Errorf("do not run Node.js toolchain (%s) — this rig has no frontend/Node dependency", strings.TrimSpace(tok))
 		}
 	}

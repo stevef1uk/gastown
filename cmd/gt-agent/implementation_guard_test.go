@@ -65,6 +65,37 @@ func TestValidateNodeImplementationCommand_allowsPlaywrightInstallForNonDockerNo
 	}
 }
 
+func TestValidateNodeImplementationCommand_allowsDeclaredDependencyFreeNodeVerify(t *testing.T) {
+	t.Parallel()
+
+	v := orchestrator.WorkflowValidation{
+		LayoutRoot:      "linkshelf",
+		TestRunner:      "go",
+		QAVerifyCommand: "node linkshelf/tests/frontend-ui.spec.js",
+		RequiredFiles:   []string{"linkshelf/tests/frontend-ui.spec.js"},
+	}
+	if orchestrator.WorkflowUsesNodeJS(v) {
+		t.Fatal("a direct Node verification script should not require Node project setup")
+	}
+	for _, cmd := range []string{
+		"node linkshelf/tests/frontend-ui.spec.js",
+		"cd testgt3/mayor/rig && node linkshelf/tests/frontend-ui.spec.js",
+	} {
+		if err := validateNodeImplementationCommand(cmd, v); err != nil {
+			t.Errorf("declared Node verification %q should be allowed: %v", cmd, err)
+		}
+	}
+	if err := validateNodeImplementationCommand("node unrelated.js", v); err == nil {
+		t.Fatal("an undeclared Node command should remain blocked")
+	}
+	if err := validateNodeImplementationCommand("node linkshelf/tests/frontend-ui.spec.js && node unrelated.js", v); err == nil {
+		t.Fatal("additional Node commands should remain blocked")
+	}
+	if err := validateNodeImplementationCommand("npm install", v); err == nil {
+		t.Fatal("npm should remain blocked when the phase declares only a direct Node script")
+	}
+}
+
 func TestQAReworkCompletionReportsFailingGate(t *testing.T) {
 	r := &stateRunner{
 		townRoot: t.TempDir(), rig: "sample",
