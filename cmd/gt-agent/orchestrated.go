@@ -30,6 +30,7 @@ const (
 	maxOrchestratedCmdTurns         = 5
 	maxOrchestratedQACmdTurns       = 8
 	maxOrchestratedRetryFeedback    = 6000 // chars persisted for next fetch_task attempt
+	maxRepeatedCompletionRejections = 2
 )
 
 var jsonBlockRE = regexp.MustCompile("(?s)```(?:json)?\\s*([\\s\\S]*?)```")
@@ -147,7 +148,32 @@ func runOrchestrated(ctx context.Context, client *llm.Client, townRoot, role, ri
 				orchestratedPrintf("[gt-agent] spurious QA failure detected — retrying QA, not implementation\n")
 				state.OrchestratedRetry = nil
 			} else {
-				updateOrchestratedRetry(&state, task, "failure", errMsg, attemptLog)
+				rejections := recordRejectedOrchestratedCompletion(&state, task, errMsg, attemptLog)
+				if shouldEscalateRejectedCompletion(task, outcome, rejections) {
+					failureSummary := fmt.Sprintf(
+						"Polecat completion was rejected %d times with the same workflow validation error (%s); routing to Planner for repair.",
+						rejections, errMsg,
+					)
+					orchestratedPrintf("[gt-agent] repeated completion rejection limit reached — routing implementation to planning\n")
+					nextState, fallbackErr := orchestrator.CompleteTask(
+						townRoot, task.WorkflowID, "failure", agentID, failureSummary, attemptLog, task.Variables,
+					)
+					if fallbackErr != nil {
+						orchestratedFprintfStderr("[gt-agent] Planner handoff after repeated completion rejection failed: %v\n", fallbackErr)
+						if _, pauseErr := orchestrator.PauseWorkflow(
+							townRoot, task.WorkflowID,
+							fmt.Sprintf("repeated completion rejection could not be routed to Planner: %v", fallbackErr),
+						); pauseErr != nil {
+							orchestratedFprintfStderr("[gt-agent] failed to pause workflow after rejected Planner handoff: %v\n", pauseErr)
+						} else {
+							orchestratedPrintf("[gt-agent] workflow paused because Planner handoff was rejected\n")
+						}
+					} else {
+						orchestratedPrintf("[gt-agent] transition accepted: wf=%s implementation -> %s (repeated completion rejection)\n", task.WorkflowID, nextState)
+						updateOrchestratedRetryAfterComplete(&state, task, "failure", failureSummary, attemptLog, nextState)
+						clearImplementationProgressIfLeaving(townRoot, taskRig, task.WorkflowID, task.State, nextState)
+					}
+				}
 			}
 		} else {
 			orchestratedPrintf("[gt-agent] transition accepted: wf=%s %s -> %s\n", task.WorkflowID, task.State, nextState)
@@ -924,6 +950,51 @@ func updateOrchestratedRetry(state *AgentState, task *orchestrator.Task, outcome
 		Feedback:   truncateOrchestratedFeedback(feedback, maxOrchestratedRetryFeedback),
 		At:         time.Now(),
 	}
+}
+
+func recordRejectedOrchestratedCompletion(state *AgentState, task *orchestrator.Task, reason, attemptLog string) int {
+	if state == nil || task == nil {
+		return 0
+	}
+	count := 1
+	if prior := state.OrchestratedRetry; prior != nil &&
+		prior.WorkflowID == task.WorkflowID && prior.State == task.State &&
+		prior.CompletionRejectionError == reason {
+		count = prior.CompletionRejectionCount + 1
+	}
+	feedback := attemptLog
+	if feedback == "" {
+		feedback = reason
+	}
+	state.OrchestratedRetry = &OrchestratedRetry{
+		WorkflowID:               task.WorkflowID,
+		TemplateID:               task.TemplateID,
+		State:                    task.State,
+		Outcome:                  "failure",
+		Summary:                  reason,
+		Feedback:                 truncateOrchestratedFeedback(feedback, maxOrchestratedRetryFeedback),
+		CompletionRejectionError: reason,
+		CompletionRejectionCount: count,
+		At:                       time.Now(),
+	}
+	return count
+}
+
+func taskAllowsOutcome(task *orchestrator.Task, outcome string) bool {
+	if task == nil {
+		return false
+	}
+	for _, allowed := range task.AllowedOutcomes {
+		if allowed == outcome {
+			return true
+		}
+	}
+	return false
+}
+
+func shouldEscalateRejectedCompletion(task *orchestrator.Task, outcome string, rejections int) bool {
+	return task != nil && task.State == "implementation" && outcome != "failure" &&
+		rejections >= maxRepeatedCompletionRejections && taskAllowsOutcome(task, "failure")
 }
 
 // outcomeJSONTailRE strips outcome JSON glued onto the end of a CMD line.

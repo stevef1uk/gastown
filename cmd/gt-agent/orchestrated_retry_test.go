@@ -142,6 +142,51 @@ func TestUpdateOrchestratedRetry_failureThenSuccess(t *testing.T) {
 	}
 }
 
+func TestRecordRejectedOrchestratedCompletion_countsOnlyConsecutiveMatchingRejections(t *testing.T) {
+	state := AgentState{}
+	task := &orchestrator.Task{WorkflowID: "wf-1", TemplateID: "rig-flow", State: "implementation"}
+
+	if got := recordRejectedOrchestratedCompletion(&state, task, "invalid dependency report", "attempt 1"); got != 1 {
+		t.Fatalf("first rejection count = %d, want 1", got)
+	}
+	if got := recordRejectedOrchestratedCompletion(&state, task, "invalid dependency report", "attempt 2"); got != 2 {
+		t.Fatalf("repeated rejection count = %d, want 2", got)
+	}
+	if got := recordRejectedOrchestratedCompletion(&state, task, "different validation error", "attempt 3"); got != 1 {
+		t.Fatalf("changed rejection count = %d, want 1", got)
+	}
+	if got := recordRejectedOrchestratedCompletion(&state, &orchestrator.Task{
+		WorkflowID: "wf-2", TemplateID: "rig-flow", State: "implementation",
+	}, "different validation error", "attempt 4"); got != 1 {
+		t.Fatalf("different workflow rejection count = %d, want 1", got)
+	}
+}
+
+func TestShouldEscalateRejectedCompletion(t *testing.T) {
+	task := &orchestrator.Task{
+		State: "implementation", AllowedOutcomes: []string{"success", "failure", "dependency_blocked"},
+	}
+	for _, tc := range []struct {
+		name       string
+		task       *orchestrator.Task
+		outcome    string
+		rejections int
+		want       bool
+	}{
+		{name: "under threshold", task: task, outcome: "dependency_blocked", rejections: 1},
+		{name: "repeat rejected outcome", task: task, outcome: "dependency_blocked", rejections: 2, want: true},
+		{name: "failure already routes", task: task, outcome: "failure", rejections: 2},
+		{name: "not implementation", task: &orchestrator.Task{State: "planning", AllowedOutcomes: []string{"failure"}}, outcome: "success", rejections: 2},
+		{name: "failure not allowed", task: &orchestrator.Task{State: "implementation"}, outcome: "success", rejections: 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := shouldEscalateRejectedCompletion(tc.task, tc.outcome, tc.rejections); got != tc.want {
+				t.Fatalf("shouldEscalateRejectedCompletion() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestOrchestratedRetryHints_planningMentionsWorktree(t *testing.T) {
 	task := &orchestrator.Task{
 		Hooks: orchestrator.StateHooks{

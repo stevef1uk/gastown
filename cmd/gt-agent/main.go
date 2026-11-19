@@ -24,13 +24,15 @@ import (
 
 // OrchestratedRetry captures the last failed orchestrator step for cross-attempt LLM feedback.
 type OrchestratedRetry struct {
-	WorkflowID string    `json:"workflow_id"`
-	TemplateID string    `json:"template_id,omitempty"`
-	State      string    `json:"state"`
-	Outcome    string    `json:"outcome"`
-	Summary    string    `json:"summary"`
-	Feedback   string    `json:"feedback,omitempty"` // truncated shell/cmd output from the failed attempt
-	At         time.Time `json:"at"`
+	WorkflowID               string    `json:"workflow_id"`
+	TemplateID               string    `json:"template_id,omitempty"`
+	State                    string    `json:"state"`
+	Outcome                  string    `json:"outcome"`
+	Summary                  string    `json:"summary"`
+	Feedback                 string    `json:"feedback,omitempty"` // truncated shell/cmd output from the failed attempt
+	CompletionRejectionError string    `json:"completion_rejection_error,omitempty"`
+	CompletionRejectionCount int       `json:"completion_rejection_count,omitempty"`
+	At                       time.Time `json:"at"`
 }
 
 // AgentState persists across cycles so the agent doesn't lose count
