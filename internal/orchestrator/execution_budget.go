@@ -82,6 +82,12 @@ func ReserveWorkflowLLMRequestWithAvailable(townRoot, rig, workflowID string, to
 	if used.Requests < 0 || used.ReservedTokens < 0 || used.RequestLimit < 0 || used.TokenLimit < 0 || used.TokenLimitOverride < 0 {
 		return 0, fmt.Errorf("execution budget: invalid negative reservation")
 	}
+	if strings.TrimSpace(os.Getenv("GT_WORKFLOW_MAX_LLM_REQUESTS")) == "" && used.RequestLimit > 0 {
+		requests = used.RequestLimit
+	}
+	if strings.TrimSpace(os.Getenv("GT_WORKFLOW_MAX_LLM_TOKENS")) == "" && used.TokenLimit > 0 {
+		tokenLimit = used.TokenLimit
+	}
 	if used.TokenLimitOverride > 0 {
 		tokenLimit = used.TokenLimitOverride
 	}
@@ -90,7 +96,7 @@ func ReserveWorkflowLLMRequestWithAvailable(townRoot, rig, workflowID string, to
 		available = tokenLimit - used.ReservedTokens
 	}
 	if int64(used.Requests) >= requests || tokens > available {
-		return available, fmt.Errorf("execution budget exhausted for %s/%s (%d requests, %d reserved tokens; requested %d reservation units, %d available, token limit %d); review ledger and limits before resuming", rig, workflowID, used.Requests, used.ReservedTokens, tokens, available, tokenLimit)
+		return available, fmt.Errorf("execution budget exhausted for %s/%s (%d requests, request limit %d, %d reserved tokens; requested %d reservation units, %d available, token limit %d); review ledger and limits before resuming", rig, workflowID, used.Requests, requests, used.ReservedTokens, tokens, available, tokenLimit)
 	}
 	used.RequestLimit, used.TokenLimit = requests, tokenLimit
 	used.Requests++

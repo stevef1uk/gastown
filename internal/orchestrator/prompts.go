@@ -172,5 +172,20 @@ func (m *Manager) BuildTaskPayload(inst *WorkflowInstance, tpl *WorkflowTemplate
 	if inst.PendingRework != nil {
 		payload["pending_rework"] = inst.PendingRework
 	}
+	if (inst.CurrentState == "implementation" || inst.CurrentState == "test_review") && inst.ActiveTestRepair != nil {
+		payload["active_test_repair"] = inst.ActiveTestRepair
+		if inst.PendingRework == nil || inst.PendingRework.FromState != "test_review" {
+			repair := *inst.ActiveTestRepair
+			if inst.PendingRework != nil {
+				repair.Feedback = strings.TrimSpace(repair.Feedback + "\n\nMost recent intervening rework:\n" + inst.PendingRework.Summary + "\n" + inst.PendingRework.Feedback)
+			}
+			payload["pending_rework"] = &repair
+		}
+	}
+	if inst.CurrentState == "test_review" {
+		if deferred, ok := inst.DeferredTestReviews[validation.ActivePhaseID()]; ok {
+			payload["deferred_test_review"] = deferred
+		}
+	}
 	return payload, nil
 }

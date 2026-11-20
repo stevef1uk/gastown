@@ -1148,6 +1148,11 @@ func (r *stateRunner) failureHint() string {
 }
 
 func validateOutcomeForTask(task *orchestrator.Task, townRoot, rig, outcome, summary string) error {
+	if task.State == "test_review" && orchestrator.IsFailureOutcome(outcome) {
+		if err := orchestrator.ValidateTestReviewRepairSummary(rigMayorRigDir(townRoot, rig), taskValidation(townRoot, task), summary); err != nil {
+			return err
+		}
+	}
 	if !task.Hooks.BeadIDsInSummary {
 		return nil
 	}

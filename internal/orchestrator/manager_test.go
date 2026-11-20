@@ -577,13 +577,41 @@ func newTestReviewLoopManager(t *testing.T, dir string) *Manager {
 	return m
 }
 
+func prepareMockTestReview(t *testing.T, dir string, m *Manager) {
+	t.Helper()
+	rig := "mockrig"
+	rigDir := filepath.Join(dir, rig, "mayor", "rig")
+	recoveryFile(t, rigDir, "TEST_PLAN.md", "### R-1\nTest file: demo/handlers_test.go\nBead ID: te-7o7\n")
+	recoveryFile(t, rigDir, "demo/handlers_test.go", "package demo\n")
+	if err := os.MkdirAll(filepath.Join(dir, rig, ".beads"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	bin := t.TempDir()
+	recoveryFile(t, bin, "bd", "#!/bin/sh\nprintf '[]\\n'\n")
+	if err := os.Chmod(filepath.Join(bin, "bd"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	m.templates["rig-flow"].Validation = WorkflowValidation{LayoutRoot: "demo", RequiredFiles: []string{"demo/handlers_test.go"}, BeadTitleContains: "Implement "}
+	setListImplementBeadsByStatusHook(t, dir, rig, func(_, _ string, _ WorkflowValidation, status string) ([]PlanBead, error) {
+		if status == "closed" {
+			return []PlanBead{{ID: "te-7o7", Title: "Implement demo/handlers_test.go per architecture"}}, nil
+		}
+		return nil, nil
+	})
+	prev := bdUpdateImplementBeadStatusHook
+	bdUpdateImplementBeadStatusHook = func(_, _, _, _ string) error { return nil }
+	t.Cleanup(func() { bdUpdateImplementBeadStatusHook = prev })
+}
+
 func TestCompleteTask_testReviewFailureSetsReworkForPolecat(t *testing.T) {
 	dir := t.TempDir()
 	m := newTestReviewLoopManager(t, dir)
+	prepareMockTestReview(t, dir, m)
 	id, _ := m.StartWorkflow("rig-flow", map[string]string{"rig": "mockrig"})
 	m.instances[id].CurrentState = "test_review"
 
-	next, err := m.CompleteTask(id, "failure", "mockrig/tester", "handlers_test.go (bead te-7o7) is a stub", "", nil)
+	next, err := m.CompleteTask(id, "failure", "mockrig/tester", "Test repair: demo/handlers_test.go (bead te-7o7) is a stub", "", nil)
 	if err != nil || next != "implementation" {
 		t.Fatalf("next=%q err=%v", next, err)
 	}
@@ -603,12 +631,13 @@ func TestCompleteTask_testReviewFailureSetsReworkForPolecat(t *testing.T) {
 func TestCompleteTask_testReviewLoopEscalatesInsteadOfSpinning(t *testing.T) {
 	dir := t.TempDir()
 	m := newTestReviewLoopManager(t, dir)
+	prepareMockTestReview(t, dir, m)
 	id, _ := m.StartWorkflow("rig-flow", map[string]string{"rig": "mockrig"})
 	inst := m.instances[id]
 	inst.CurrentState = "test_review"
 	inst.TestReviewFailures = MaxReviewRetries(WorkflowValidation{}) - 1
 
-	next, err := m.CompleteTask(id, "failure", "mockrig/tester", "handlers_test.go still a stub (te-7o7)", "", nil)
+	next, err := m.CompleteTask(id, "failure", "mockrig/tester", "Test repair: demo/handlers_test.go still a stub (te-7o7)", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -630,6 +659,7 @@ func TestCompleteTask_testReviewLoopEscalatesInsteadOfSpinning(t *testing.T) {
 func TestCompleteTask_testReviewLoopEscalatesToDesignOnSpecContradiction(t *testing.T) {
 	dir := t.TempDir()
 	m := newTestReviewLoopManager(t, dir)
+	prepareMockTestReview(t, dir, m)
 	id, _ := m.StartWorkflow("rig-flow", map[string]string{"rig": "mockrig"})
 	inst := m.instances[id]
 	inst.CurrentState = "test_review"
@@ -667,7 +697,7 @@ func TestCompleteTask_testPlanLoopEscalatesToDesign(t *testing.T) {
 				},
 			},
 			"plan_review": {Role: "qa", Transitions: map[string]Transition{"success": {To: "test_plan"}}},
-			"design":       {Role: "architect"},
+			"design":      {Role: "architect"},
 		},
 	})
 	id, _ := m.StartWorkflow("rig-flow", map[string]string{"rig": "mockrig"})

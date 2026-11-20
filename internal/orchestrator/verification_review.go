@@ -22,6 +22,26 @@ func ParseQAFailureReport(summary string) (QAFailureReport, bool) {
 	return report, true
 }
 
+// ValidateQAFailureReportFields checks report completeness, not bead ownership.
+func ValidateQAFailureReportFields(summary string) error {
+	report, structured := ParseQAFailureReport(summary)
+	if !structured {
+		return fmt.Errorf("a failure needs a nonempty summary, explicit repair_bead_ids and evidence")
+	}
+	if len(report.RepairBeadIDs) == 0 {
+		return fmt.Errorf("repair_bead_ids must list the actual defect-owner beads")
+	}
+	for _, id := range report.RepairBeadIDs {
+		if strings.TrimSpace(id) == "" {
+			return fmt.Errorf("repair_bead_ids must not contain empty IDs")
+		}
+	}
+	if strings.TrimSpace(report.Evidence) == "" {
+		return fmt.Errorf("evidence must be a separate, nonempty field describing the observed defect")
+	}
+	return nil
+}
+
 func qaFailureSummary(summary string) string {
 	if report, ok := ParseQAFailureReport(summary); ok {
 		return report.Summary
@@ -46,8 +66,8 @@ func normalizeVerificationReviewResult(townRoot, rig string, v WorkflowValidatio
 	invalid := func(reason string) (string, string) {
 		return "verification_error", "QA repair report is incomplete: " + reason + ". Retry QA with explicit repair_bead_ids and evidence for actual defects. Original finding: " + qaFailureSummary(summary)
 	}
-	if !structured || len(report.RepairBeadIDs) == 0 || strings.TrimSpace(report.Evidence) == "" {
-		return invalid("a failure needs explicit repair targets and evidence; closed-bead listings are not repair targets")
+	if err := ValidateQAFailureReportFields(summary); err != nil {
+		return invalid(err.Error())
 	}
 	known := map[string]bool{}
 	activePhaseIndex := v.ActivePhaseIndex()

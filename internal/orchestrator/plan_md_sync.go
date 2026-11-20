@@ -391,6 +391,58 @@ func implementPathsCoveredForPlanMD(townRoot, rig string, v WorkflowValidation) 
 	return true, nil
 }
 
+// MissingRequiredFileCoverage returns active-phase required_files paths that have
+// no implement coverage: neither an open/in_progress bead nor a closed bead whose
+// artifact on disk is green (ready/available). An empty slice means coverage is
+// satisfied. Rig- and technology-independent: it uses only the beads store and the
+// shared AssessImplementationArtifact disk contract, not any stack-specific command.
+func MissingRequiredFileCoverage(townRoot, rig string, v WorkflowValidation) ([]string, error) {
+	v = v.ForActivePhase()
+	if len(v.RequiredFiles) == 0 {
+		return nil, nil
+	}
+	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
+	var missing []string
+	for _, want := range v.RequiredFiles {
+		want = filepath.ToSlash(strings.TrimSpace(want))
+		if want == "" {
+			continue
+		}
+		covered, err := openBeadCoversRequiredPath(townRoot, rig, want, v)
+		if err != nil {
+			return nil, err
+		}
+		if covered {
+			continue
+		}
+		_, ok := ClosedImplementBeadForPath(townRoot, rig, want, v)
+		if !ok {
+			missing = append(missing, want)
+			continue
+		}
+		assessment := AssessImplementationArtifact(rigDir, want, v)
+		if assessment.Status == ArtifactUnavailable {
+			return nil, assessment.Err()
+		}
+		if assessment.NeedsRepair() {
+			missing = append(missing, want)
+		}
+	}
+	return missing, nil
+}
+
+// PlanningBeadCoverageSatisfied reports whether every active-phase required_files
+// path has implement coverage: an open/in_progress bead, or a closed bead whose
+// artifact on disk is green. Closed green beads satisfy planning without reopening
+// finished work; missing or invalid artifacts do not.
+func PlanningBeadCoverageSatisfied(townRoot, rig string, v WorkflowValidation) (bool, error) {
+	missing, err := MissingRequiredFileCoverage(townRoot, rig, v)
+	if err != nil {
+		return false, err
+	}
+	return len(missing) == 0, nil
+}
+
 // WritePlanningPlanMD writes plan.md with one ### section per required_files path and real open bead IDs.
 func WritePlanningPlanMD(townRoot, rig string, v WorkflowValidation) (bool, error) {
 	v = v.ForActivePhase()

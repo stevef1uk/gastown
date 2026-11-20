@@ -2,7 +2,10 @@ package orchestrator
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestPauseWorkflow_allowsNewStartOnSameRig(t *testing.T) {
@@ -47,6 +50,147 @@ func TestResumeWorkflow(t *testing.T) {
 	task, err := m.FetchTask("mockrig/architect")
 	if err != nil || task == nil {
 		t.Fatalf("FetchTask after resume: %v", err)
+	}
+}
+
+func TestResumeWorkflowReconcilesLegacyPhaseFromDisk(t *testing.T) {
+	m, id := loadTestManager(t, designFlowTemplate())
+	rigDir := filepath.Join(m.townRoot, "mockrig", "mayor", "rig")
+	profileDir := filepath.Join(rigDir, rigProfileDir)
+	if err := os.MkdirAll(filepath.Join(rigDir, "phase-one"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(profileDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(rigDir, "phase-one", "done.go"), []byte("package phaseone\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	env := rigProfileEnvelope{Validation: WorkflowValidation{
+		ActivePhaseIDField: "phase-01",
+		DeliveryPhases: []DeliveryPhase{
+			{ID: "phase-01", RequiredFiles: []string{"phase-one/done.go"}},
+			{ID: "phase-02", RequiredFiles: []string{"phase-two/todo.go"}},
+		},
+	}}
+	raw, err := marshalRigProfileJSON(env)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(profileDir, rigProfileFile), raw, 0644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.PauseWorkflow(id); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.ResumeWorkflow(id); err != nil {
+		t.Fatal(err)
+	}
+	profile, found, err := LoadRawRigWorkflowProfile(m.townRoot, "mockrig")
+	if err != nil || !found {
+		t.Fatalf("load reconciled profile: found=%t err=%v", found, err)
+	}
+	if got := profile.ActivePhaseID(); got != "phase-02" {
+		t.Fatalf("active phase after resume = %q, want phase-02", got)
+	}
+}
+
+func TestResumeWorkflowPreservesExplicitPhaseRewind(t *testing.T) {
+	m, id := loadTestManager(t, designFlowTemplate())
+	rigDir := filepath.Join(m.townRoot, "mockrig", "mayor", "rig")
+	profileDir := filepath.Join(rigDir, rigProfileDir)
+	if err := os.MkdirAll(filepath.Join(rigDir, "phase-one"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(profileDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(rigDir, "phase-one", "done.go"), []byte("package phaseone\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	env := rigProfileEnvelope{Validation: WorkflowValidation{
+		ActivePhaseIDField:      "phase-01",
+		RewoundFromPhaseIDField: "phase-02",
+		DeliveryPhases: []DeliveryPhase{
+			{ID: "phase-01", RequiredFiles: []string{"phase-one/done.go"}},
+			{ID: "phase-02", RequiredFiles: []string{"phase-two/todo.go"}},
+		},
+	}}
+	raw, err := marshalRigProfileJSON(env)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(profileDir, rigProfileFile), raw, 0644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.PauseWorkflow(id); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.ResumeWorkflow(id); err != nil {
+		t.Fatal(err)
+	}
+	profile, found, err := LoadRawRigWorkflowProfile(m.townRoot, "mockrig")
+	if err != nil || !found {
+		t.Fatalf("load profile after resume: found=%t err=%v", found, err)
+	}
+	if got := profile.ActivePhaseID(); got != "phase-01" {
+		t.Fatalf("active phase after resume = %q, want explicit rewind phase-01", got)
+	}
+}
+
+func TestResumeWorkflowClearsPlanningTimeoutWhenPlanWasUpdated(t *testing.T) {
+	m, id := loadTestManager(t, designFlowTemplate())
+	inst := m.instances[id]
+	inst.CurrentState = "planning"
+	inst.StateEnteredAt = time.Now().Add(-time.Hour).UTC().Format(time.RFC3339)
+	inst.PendingRework = &WorkflowRework{
+		FromState: "planning",
+		Outcome:   "timeout",
+		Summary:   "Previous plan referenced stale bead IDs.",
+	}
+	planPath := filepath.Join(m.townRoot, "mockrig", "mayor", "rig", "plan.md")
+	if err := os.MkdirAll(filepath.Dir(planPath), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(planPath, []byte("current plan\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.PauseWorkflow(id); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.ResumeWorkflow(id); err != nil {
+		t.Fatal(err)
+	}
+	if got := m.instances[id].PendingRework; got != nil {
+		t.Fatalf("pending rework after updated plan resume = %+v, want nil", got)
+	}
+}
+
+func TestResumeWorkflowPreservesPlanningTimeoutWhenPlanUnchanged(t *testing.T) {
+	m, id := loadTestManager(t, designFlowTemplate())
+	inst := m.instances[id]
+	inst.CurrentState = "planning"
+	inst.StateEnteredAt = time.Now().Add(time.Hour).UTC().Format(time.RFC3339)
+	inst.PendingRework = &WorkflowRework{
+		FromState: "planning",
+		Outcome:   "timeout",
+		Summary:   "Planner timed out before finishing the current plan.",
+	}
+	planPath := filepath.Join(m.townRoot, "mockrig", "mayor", "rig", "plan.md")
+	if err := os.MkdirAll(filepath.Dir(planPath), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(planPath, []byte("current plan\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.PauseWorkflow(id); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.ResumeWorkflow(id); err != nil {
+		t.Fatal(err)
+	}
+	if got := m.instances[id].PendingRework; got == nil || got.Summary != "Planner timed out before finishing the current plan." {
+		t.Fatalf("pending rework after unchanged plan resume = %+v", got)
 	}
 }
 

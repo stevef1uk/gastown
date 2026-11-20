@@ -4,8 +4,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
+
+	"gopkg.in/yaml.v3"
 )
 
 // EmbeddedDoltDir describes a legacy per-rig .beads/dolt directory discovered
@@ -76,10 +80,22 @@ func FindLegacyEmbeddedDoltDirs(townRoot string) []EmbeddedDoltDir {
 // RemoveLegacyEmbeddedDoltDirs removes legacy embedded Dolt directories that are
 // safe to delete (stale duplicates of canonical .dolt-data databases). It
 // returns the number removed and the paths that were skipped because they may
-// hold unmigrated data.
+// hold unmigrated data or are in use by a Dolt server.
 func RemoveLegacyEmbeddedDoltDirs(townRoot string) (removed int, skipped []string, err error) {
-	for _, d := range FindLegacyEmbeddedDoltDirs(townRoot) {
+	dirs := FindLegacyEmbeddedDoltDirs(townRoot)
+	if len(dirs) == 0 {
+		return 0, nil, nil
+	}
+	processes, err := doltServerProcesses()
+	if err != nil {
+		return 0, nil, fmt.Errorf("checking Dolt processes before legacy cleanup: %w", err)
+	}
+	for _, d := range dirs {
 		if !d.SafeToRemove {
+			skipped = append(skipped, d.Path)
+			continue
+		}
+		if processUsesDirectory(processes, d.Path) {
 			skipped = append(skipped, d.Path)
 			continue
 		}
@@ -89,6 +105,103 @@ func RemoveLegacyEmbeddedDoltDirs(townRoot string) (removed int, skipped []strin
 		removed++
 	}
 	return removed, skipped, nil
+}
+
+// FindDoltProcessesUsingDirectory returns sql-server process IDs whose working
+// directory or configured data path is inside directory.
+func FindDoltProcessesUsingDirectory(directory string) ([]int, error) {
+	processes, err := doltServerProcesses()
+	if err != nil {
+		return nil, fmt.Errorf("listing Dolt server processes: %w", err)
+	}
+	var pids []int
+	for _, process := range processes {
+		if processUsesDirectory([]doltServerProcess{process}, directory) {
+			pids = append(pids, process.pid)
+		}
+	}
+	return pids, nil
+}
+
+type doltServerProcess struct {
+	pid   int
+	paths []string
+}
+
+func doltServerProcesses() ([]doltServerProcess, error) {
+	out, err := exec.Command("ps", "-eo", "pid=,args=").Output()
+	if err != nil {
+		return nil, err
+	}
+	var processes []doltServerProcess
+	for _, line := range strings.Split(string(out), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 3 || !strings.EqualFold(filepath.Base(fields[1]), "dolt") {
+			continue
+		}
+		isServer := false
+		for _, field := range fields[2:] {
+			if field == "sql-server" {
+				isServer = true
+				break
+			}
+		}
+		if !isServer {
+			continue
+		}
+		pid, err := strconv.Atoi(fields[0])
+		if err != nil {
+			continue
+		}
+		process := doltServerProcess{pid: pid}
+		if cwd := ProcessWorkingDirectory(pid); cwd != "" {
+			process.paths = append(process.paths, cwd)
+		}
+		if dataDir := GetDoltDataDirFromProcess(pid); dataDir != "" {
+			process.paths = append(process.paths, dataDir)
+		}
+		if configPath := getDoltConfigPathFromProcess(pid); configPath != "" {
+			process.paths = append(process.paths, configPath)
+			if configData, readErr := os.ReadFile(configPath); readErr == nil {
+				var config struct {
+					DataDir   string `yaml:"data_dir"`
+					ConfigDir string `yaml:"cfg_dir"`
+				}
+				if yaml.Unmarshal(configData, &config) == nil {
+					process.paths = append(process.paths, config.DataDir, config.ConfigDir)
+				}
+			}
+		}
+		processes = append(processes, process)
+	}
+	return processes, nil
+}
+
+func processUsesDirectory(processes []doltServerProcess, directory string) bool {
+	for _, process := range processes {
+		for _, path := range process.paths {
+			if pathWithinDirectory(path, directory) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func pathWithinDirectory(path, directory string) bool {
+	path = strings.TrimSuffix(strings.TrimSpace(path), " (deleted)")
+	directory = strings.TrimSuffix(strings.TrimSpace(directory), " (deleted)")
+	if path == "" || directory == "" {
+		return false
+	}
+	pathAbs, pathErr := filepath.Abs(path)
+	directoryAbs, directoryErr := filepath.Abs(directory)
+	if pathErr != nil || directoryErr != nil {
+		return false
+	}
+	pathAbs = filepath.Clean(pathAbs)
+	directoryAbs = filepath.Clean(directoryAbs)
+	return pathAbs == directoryAbs || strings.HasPrefix(pathAbs, directoryAbs+string(filepath.Separator))
 }
 
 // embeddedDoltDirCandidates lists the .beads/dolt locations that could hold a

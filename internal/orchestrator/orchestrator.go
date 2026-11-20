@@ -269,19 +269,21 @@ func StartWorkflow(townRoot string, templateID string, vars map[string]string) (
 
 // Task represents a task assigned by the orchestrator.
 type Task struct {
-	WorkflowID      string             `json:"workflow_id"`
-	TemplateID      string             `json:"template_id"`
-	State           string             `json:"state"`
-	Role            string             `json:"role"`
-	Rig             string             `json:"rig"`
-	SystemPrompt    string             `json:"system_prompt"`
-	TaskPrompt      string             `json:"task_prompt"`
-	Instructions    string             `json:"instructions"`
-	AllowedOutcomes []string           `json:"allowed_outcomes"`
-	Validation      WorkflowValidation `json:"validation"`
-	Hooks           StateHooks         `json:"hooks"`
-	PendingRework   *WorkflowRework    `json:"pending_rework,omitempty"`
-	Variables       map[string]string  `json:"variables,omitempty"` // Persisted cross-attempt state (e.g., designArchWritten)
+	WorkflowID         string             `json:"workflow_id"`
+	TemplateID         string             `json:"template_id"`
+	State              string             `json:"state"`
+	Role               string             `json:"role"`
+	Rig                string             `json:"rig"`
+	SystemPrompt       string             `json:"system_prompt"`
+	TaskPrompt         string             `json:"task_prompt"`
+	Instructions       string             `json:"instructions"`
+	AllowedOutcomes    []string           `json:"allowed_outcomes"`
+	Validation         WorkflowValidation `json:"validation"`
+	Hooks              StateHooks         `json:"hooks"`
+	PendingRework      *WorkflowRework    `json:"pending_rework,omitempty"`
+	ActiveTestRepair   *WorkflowRework    `json:"active_test_repair,omitempty"`
+	DeferredTestReview *WorkflowRework    `json:"deferred_test_review,omitempty"`
+	Variables          map[string]string  `json:"variables,omitempty"` // Persisted cross-attempt state (e.g., designArchWritten)
 }
 
 // FetchTask fetches the next task for an agent.

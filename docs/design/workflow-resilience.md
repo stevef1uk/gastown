@@ -31,7 +31,11 @@ output allowance. Reservations are conservative and are not refunded after a
 failure: the upstream may already have generated a billable response. Invalid,
 missing-identity, unreadable or corrupt accounting fails closed. Limits must be
 positive integers. Billing/authentication errors and exhausted admission budgets
-pause the workflow rather than polling the paid endpoint indefinitely.
+pause the workflow rather than polling the paid endpoint indefinitely. Admission
+limits are persisted with each workflow; when an agent restarts with an
+environment variable unset, the last recorded limit remains in force. An
+explicit environment value overrides that recorded limit. A durable per-workflow
+token override takes precedence over the environment variable.
 
 Raise a single workflow's limits without changing global defaults:
 

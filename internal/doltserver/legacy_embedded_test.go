@@ -123,6 +123,37 @@ func TestRemoveLegacyEmbeddedDoltDirs_RemovesOnlySafe(t *testing.T) {
 	}
 }
 
+func TestPathWithinDirectory(t *testing.T) {
+	tests := []struct {
+		path      string
+		directory string
+		want      bool
+	}{
+		{"/town/rig/.beads/dolt", "/town/rig/.beads/dolt", true},
+		{"/town/rig/.beads/dolt/.doltcfg (deleted)", "/town/rig/.beads/dolt", true},
+		{"/town/rig/.beads/dolt-old", "/town/rig/.beads/dolt", false},
+		{"/town/.dolt-data/testgt4", "/town/testgt4/.beads/dolt", false},
+	}
+	for _, tt := range tests {
+		if got := pathWithinDirectory(tt.path, tt.directory); got != tt.want {
+			t.Errorf("pathWithinDirectory(%q, %q) = %t, want %t", tt.path, tt.directory, got, tt.want)
+		}
+	}
+}
+
+func TestProcessUsesDirectory(t *testing.T) {
+	processes := []doltServerProcess{
+		{pid: 12, paths: []string{"/town/testgt4/.beads/dolt/.doltcfg"}},
+		{pid: 13, paths: []string{"/town/.dolt-data/testgt4"}},
+	}
+	if !processUsesDirectory(processes, "/town/testgt4/.beads/dolt") {
+		t.Fatal("expected legacy Dolt process path to be detected")
+	}
+	if processUsesDirectory(processes[1:], "/town/testgt4/.beads/dolt") {
+		t.Fatal("canonical shared Dolt path must not match a legacy directory")
+	}
+}
+
 func TestFindLegacyEmbeddedDoltDirs_NoSharedServer(t *testing.T) {
 	town := t.TempDir()
 	// No .dolt-data/config.yaml → embedded dirs are not considered stale.

@@ -162,18 +162,23 @@ func ReopenImplementationBeadsAfterQAFailure(townRoot, rig string, v WorkflowVal
 // manual bd update. It reopens both the bead IDs the tester cited and the beads that
 // own planned test files that are missing or stub.
 func ReopenImplementationBeadsAfterTestFailure(townRoot, rig string, v WorkflowValidation, summary string) ([]string, error) {
+	ids, _, _, err := reopenImplementationBeadsAfterTestFailureWithBaseline(townRoot, rig, v, summary)
+	return ids, err
+}
+
+func reopenImplementationBeadsAfterTestFailureWithBaseline(townRoot, rig string, v WorkflowValidation, summary string) ([]string, map[string]map[string]string, map[string]map[string][]string, error) {
 	if rig == "" || townRoot == "" {
-		return nil, nil
+		return nil, nil, nil, nil
 	}
 	if !BeadsDatabaseReady(townRoot, rig) {
-		return nil, nil
+		return nil, nil, nil, fmt.Errorf("cannot prepare Tester repair: beads database is not ready for %s", rig)
 	}
 	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
 	data, err := os.ReadFile(TestPlanPath(rigDir))
 	if err != nil {
-		return nil, &testReviewPlanGap{reason: fmt.Sprintf("cannot resolve Tester repair ownership: read TEST_PLAN.md: %v", err)}
+		return nil, nil, nil, &testReviewPlanGap{reason: fmt.Sprintf("cannot resolve Tester repair ownership: read TEST_PLAN.md: %v", err)}
 	}
-	return reopenTestReviewRepair(townRoot, rig, v, string(data), summary)
+	return reopenTestReviewRepairWithBaseline(townRoot, rig, v, string(data), summary)
 }
 
 // qaRuntimeFailureSummary reports QA feedback about HTTP/smoke/runtime (not unit-test-only).

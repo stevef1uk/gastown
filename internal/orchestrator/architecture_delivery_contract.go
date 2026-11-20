@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -169,7 +168,7 @@ func reconcileDeliveryContractProgress(v *WorkflowValidation, previous WorkflowV
 	for _, id := range previous.CompletedPhaseIDsField {
 		for _, p := range v.DeliveryPhases {
 			prior, ok := old[id]
-			if p.ID == id && ok && reflect.DeepEqual(prior.RequiredFiles, p.RequiredFiles) && prior.QAVerifyCommand == p.QAVerifyCommand && reflect.DeepEqual(prior.DependsOn, p.DependsOn) && reflect.DeepEqual(prior.FileDependencies, p.FileDependencies) {
+			if p.ID == id && ok && sameDeliveryPhaseContract(prior, p) {
 				completed = append(completed, id)
 			}
 		}
@@ -217,4 +216,32 @@ func reconcileDeliveryContractProgress(v *WorkflowValidation, previous WorkflowV
 			}
 		}
 	}
+}
+
+func sameDeliveryPhaseContract(a, b DeliveryPhase) bool {
+	if !sameStringList(a.RequiredFiles, b.RequiredFiles) ||
+		a.QAVerifyCommand != b.QAVerifyCommand ||
+		!sameStringList(a.DependsOn, b.DependsOn) ||
+		len(a.FileDependencies) != len(b.FileDependencies) {
+		return false
+	}
+	for path, dependencies := range a.FileDependencies {
+		otherDependencies, ok := b.FileDependencies[path]
+		if !ok || !sameStringList(dependencies, otherDependencies) {
+			return false
+		}
+	}
+	return true
+}
+
+func sameStringList(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }

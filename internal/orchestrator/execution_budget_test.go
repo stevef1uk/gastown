@@ -41,6 +41,49 @@ func TestExecutionBudgetSnapshotPersistsAdmissionLimits(t *testing.T) {
 	}
 }
 
+func TestReserveWorkflowUsesPersistedRequestLimitWhenEnvironmentIsUnset(t *testing.T) {
+	town := t.TempDir()
+	t.Setenv("GT_WORKFLOW_MAX_LLM_REQUESTS", "")
+	t.Setenv("GT_WORKFLOW_MAX_LLM_TOKENS", "")
+	path := filepath.Join(town, "orchestrator", "execution-budgets.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		t.Fatal(err)
+	}
+	ledger := map[string]ExecutionBudget{
+		`["rig","wf"]`: {
+			Requests:       1001,
+			ReservedTokens: 1000,
+			RequestLimit:   3000,
+			TokenLimit:     200000000,
+		},
+	}
+	data, err := json.Marshal(ledger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := ReserveWorkflowLLMRequest(town, "rig", "wf", 100); err != nil {
+		t.Fatalf("resume admission with persisted request limit: %v", err)
+	}
+	got, persisted, err := ReadWorkflowExecutionBudget(town, "rig", "wf")
+	if err != nil || !persisted || got.Requests != 1002 || got.RequestLimit != 3000 {
+		t.Fatalf("budget after admission: %+v persisted=%t err=%v", got, persisted, err)
+	}
+
+	t.Setenv("GT_WORKFLOW_MAX_LLM_REQUESTS", "1000")
+	if err := ReserveWorkflowLLMRequest(town, "rig", "wf", 100); err == nil {
+		t.Fatal("explicit lower request limit should override the persisted limit")
+	}
+	t.Setenv("GT_WORKFLOW_MAX_LLM_REQUESTS", "3000")
+	t.Setenv("GT_WORKFLOW_MAX_LLM_TOKENS", "1100")
+	if err := ReserveWorkflowLLMRequest(town, "rig", "wf", 100); err == nil {
+		t.Fatal("explicit lower token limit should override the persisted limit")
+	}
+}
+
 func TestWorkflowTokenLimitOverride(t *testing.T) {
 	town := t.TempDir()
 	t.Setenv("GT_WORKFLOW_MAX_LLM_REQUESTS", "12")

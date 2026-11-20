@@ -152,8 +152,12 @@ func (c *StaleDoltPortCheck) Fix(ctx *CheckContext) error {
 	}
 
 	// Remove legacy embedded Dolt directories that duplicate canonical databases.
-	if _, _, err := doltserver.RemoveLegacyEmbeddedDoltDirs(ctx.TownRoot); err != nil {
+	_, skipped, err := doltserver.RemoveLegacyEmbeddedDoltDirs(ctx.TownRoot)
+	if err != nil {
 		return err
+	}
+	if len(skipped) > 0 {
+		return fmt.Errorf("could not remove legacy embedded Dolt directories (unmigrated data or active server): %s", strings.Join(skipped, ", "))
 	}
 
 	return nil

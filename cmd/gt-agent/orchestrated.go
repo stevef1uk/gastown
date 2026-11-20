@@ -228,6 +228,26 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 		contextBlocks = append(contextBlocks, block)
 		orchestratedPrintf("[gt-agent] injecting QA/review rework context for %s/%s\n", task.WorkflowID, task.State)
 	}
+	if task.ActiveTestRepair != nil && (task.PendingRework == nil || task.PendingRework.FromState != "test_review") {
+		reviewTask := *task
+		reviewTask.PendingRework = task.ActiveTestRepair
+		if block := formatWorkflowReworkBlock(&reviewTask, townRoot, rig); block != "" {
+			contextBlocks = append(contextBlocks, block)
+		}
+	}
+	if task.DeferredTestReview != nil {
+		var b strings.Builder
+		b.WriteString("## Deferred test findings for this phase\n")
+		b.WriteString(task.DeferredTestReview.Summary + "\n")
+		b.WriteString("Check only these in-scope test files against the original findings:\n")
+		for _, paths := range task.DeferredTestReview.TestRepairFiles {
+			for path := range paths {
+				b.WriteString("- " + path + "\n")
+			}
+		}
+		b.WriteString("For each file explain the relevant coverage in test-report.md and cite a real assertion line: - Evidence: {\"file\":\"relative/path\",\"line\":1,\"excerpt\":\"exact source line\"}. If coverage is missing report failure; if the finding or plan is wrong report plan_gap with evidence.\n")
+		contextBlocks = append(contextBlocks, b.String())
+	}
 	if block := formatOrchestratedRetryBlock(priorRetry, task, rig); block != "" {
 		contextBlocks = append(contextBlocks, block)
 		orchestratedPrintf("[gt-agent] injecting prior failure context for %s/%s\n", task.WorkflowID, task.State)
@@ -249,6 +269,14 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 	// implement_bead_context sees a fresh codeindex.json and the correct queue head.
 	if err := runner.runPreRun(); err != nil {
 		return "", "", "", err
+	}
+	if task.State == "planning" {
+		rigDir := rigMayorRigDir(townRoot, rig)
+		if problems := orchestrator.DeliveryPlanDependencyProblems(rigDir, runner.v); len(problems) > 0 {
+			contextBlocks = append(contextBlocks, "The combined plan and delivery contract has dependency defects. Repair the unsupported plan.md Depends on edges before reporting success:\n- "+strings.Join(problems, "\n- "))
+		} else if problems := orchestrator.DeliveryDependencyProblems("", runner.v); len(problems) > 0 {
+			contextBlocks = append(contextBlocks, "The canonical delivery contract has dependency defects. Report architecture_failure with these findings rather than hiding them in plan.md:\n- "+strings.Join(problems, "\n- "))
+		}
 	}
 	// Never auto-complete when there's pending rework — the agent must do the work.
 	if task.PendingRework != nil {
@@ -392,6 +420,28 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 			messages = append(messages, llm.Message{Role: "user", Content: msg})
 			continue
 		}
+		if runner.hooks.VerificationErrorLimit > 0 {
+			if o, s, ok := parseOrchestratedResult(response, task.AllowedOutcomes); ok && isOrchestratedFailureOutcome(o) {
+				report, structured := orchestrator.ParseQAFailureReport(s)
+				finding := s
+				if structured {
+					finding = report.Summary
+				}
+				shellError := orchestrator.IsQAAgentShellError(finding) && (!structured || len(report.RepairBeadIDs) == 0)
+				if err := orchestrator.ValidateQAFailureReportFields(s); err != nil && !shellError {
+					pendingFailureSummary = s
+					if cmdCount > 0 || hadNative {
+						qaCmdsRan = true
+						runner.consecutiveNonTerminalJSONRejects = 0
+					}
+					msg := "QA failure report is incomplete: " + err.Error() +
+						". Reply with JSON only, including a nonempty summary, repair_bead_ids for actual defect owners, and separate evidence describing the observed defect. Do not list unrelated beads. If verification could not run, report verification_error with the actual command and error instead."
+					recordAttemptFeedback(combined.String() + "\n" + msg + "\n")
+					messages = append(messages, llm.Message{Role: "user", Content: combined.String() + "\n\n" + msg})
+					continue
+				}
+			}
+		}
 		if cmdCount > 0 || hadNative {
 			// successful tool use breaks the non-terminal JSON streak
 			runner.consecutiveNonTerminalJSONRejects = 0
@@ -429,6 +479,13 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 					recordAttemptFeedback("Failure JSON ignored on early turn. Review command output, try to fix the issue, then send failure if truly blocked.\n")
 					feedback += "\n\nFailure JSON was emitted before command results were available and was not accepted. Read the actual output above, repair any remaining blocker, and send a JSON-only verdict on a later turn."
 					pendingFailureSummary = s
+				} else if (o == "failure" || o == "fail") && turn < maxTurns && task.State == "test_review" {
+					if vErr := validateOutcomeForTask(task, townRoot, rig, o, s); vErr != nil {
+						feedback += "\n\nSummary validation failed: " + vErr.Error()
+						recordAttemptFeedback(vErr.Error() + "\n")
+					} else {
+						return o, s, lastAttemptFeedback.String(), nil
+					}
 				} else if (o == "failure" || o == "fail") && turn < maxTurns {
 					orchestratedPrintf("[gt-agent] failure JSON received (with CMD lines) — accepting failure\n")
 					return o, s, lastAttemptFeedback.String(), nil
@@ -535,7 +592,7 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 			}
 			if vErr := validateOutcomeForTask(task, townRoot, rig, o, s); vErr != nil {
 				orchestratedPrintf("[gt-agent] summary validation failed: %v\n", vErr)
-				msg := "Validation failed: " + vErr.Error() + ". Run `bd list` and copy bead IDs exactly into the summary."
+				msg := "Validation failed: " + vErr.Error() + ". Correct the summary and copy any required bead IDs exactly from `bd list`."
 				recordAttemptFeedback(msg + "\n")
 				messages = append(messages, llm.Message{Role: "user", Content: msg})
 				continue
@@ -656,7 +713,7 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 			return "timeout", summary, lastAttemptFeedback.String(), fmt.Errorf("no structured outcome after %d turns", maxTurns)
 		}
 	}
-	if task != nil && task.State == "qa_review" {
+	if task != nil && (task.State == "qa_review" || runner.hooks.VerificationErrorLimit > 0) {
 		if pendingFailureSummary != "" {
 			summary = pendingFailureSummary
 		} else {
@@ -767,10 +824,16 @@ func formatWorkflowReworkBlock(task *orchestrator.Task, townRoot, rig string) st
 		return ""
 	}
 	r := task.PendingRework
-	if r.FromState == task.State {
+	if r.FromState == task.State && !(task.State == "test_review" && len(r.TestRepairFiles) > 0) {
 		return ""
 	}
 	var b strings.Builder
+	if task.State == "test_review" && r.FromState == "test_review" && len(r.TestRepairFiles) > 0 {
+		b.WriteString("## Review the original test finding again\n")
+		b.WriteString(r.Summary + "\n")
+		b.WriteString("Read the repaired files and check the specific scenarios above; a changed file or green test run alone does not establish coverage. In test-report.md explain how each finding is covered and include one line for each repaired file in this exact format: - Evidence: {\"file\":\"relative/path\",\"line\":1,\"excerpt\":\"exact source line\"}. The excerpt must be a real assertion relevant to the finding. If coverage is still missing, report failure; if the finding or test plan is wrong, report plan_gap with evidence.\n")
+		return b.String()
+	}
 	b.WriteString("## Prior step failed — fix before completing this step\n")
 	b.WriteString(fmt.Sprintf("- Failed step: %s (workflow %s)\n", r.FromState, task.WorkflowID))
 	b.WriteString(fmt.Sprintf("- Your step now: %s\n", task.State))
@@ -794,6 +857,9 @@ func formatWorkflowReworkBlock(task *orchestrator.Task, townRoot, rig string) st
 	v := taskValidation(townRoot, task).ForActivePhase()
 	b.WriteString(workflowReworkHints(r.FromState, task.State, rig, r.Summary, v))
 	if task.State == "implementation" && (r.Outcome == "failure" || r.Outcome == "timeout") {
+		if r.FromState == "test_review" && len(r.TestRepairFiles) > 0 {
+			b.WriteString("\nThe named test repairs must change the cited test files before closing their beads. Green verification alone is not a repair. If the finding is incorrect, report plan_gap with concrete evidence instead of making a cosmetic edit.\n")
+		}
 		b.WriteString("\nUse **sed -i** or **patch** on internal packages; **cmd/…/main.go may use heredoc** when wiring is broken. Use store/handler APIs from **Dependency packages** — do not invent symbols.\n")
 	}
 	runner := newStateRunner(task, "", rig)
@@ -2558,6 +2624,9 @@ func validateBdCommandBeadID(cmd, townRoot, rig string) error {
 
 func validatePlanningArtifacts(townRoot, rig string, hadCmdFailure, beadCreateOK, beadDeleteOK bool, v orchestrator.WorkflowValidation) error {
 	rigDir := rigMayorRigDir(townRoot, rig)
+	if problems := orchestrator.DeliveryDependencyProblems(rigDir, v); len(problems) > 0 {
+		return fmt.Errorf("planning dependency validation: %s", strings.Join(problems, "; "))
+	}
 	path := filepath.Join(rigDir, "plan.md")
 	if err := validatePlanMDBeadIDs(townRoot, rig, path, v); err != nil {
 		return err
@@ -2658,69 +2727,20 @@ func validateClosedBeadFilesExist(townRoot, rig string, v orchestrator.WorkflowV
 	return nil
 }
 
-// validateRequiredFilesHaveBeads checks that every active-phase required_files entry has
-// an open or in-progress implement bead. If any active required file has no bead,
-// planning cannot succeed — the planner must create beads first. Completed-phase files are
-// deliberately NOT required here: progressive phase delivery only gates the active phase, and
-// completed-phase gaps are repaired by the QA rewind (MaybeRewindToProblemPhaseForQA).
+// validateRequiredFilesHaveBeads checks that every active-phase required_files entry
+// has implement coverage: an open/in_progress bead, or a closed bead whose artifact
+// is green on disk. Closed green beads satisfy planning without reopening finished
+// work; missing or invalid artifacts are reported so the planner can run sync-planning
+// to reopen them. Completed-phase files are deliberately NOT required here: progressive
+// phase delivery only gates the active phase, and completed-phase gaps are repaired by
+// the QA rewind (MaybeRewindToProblemPhaseForQA).
 func validateRequiredFilesHaveBeads(townRoot, rig string, v orchestrator.WorkflowValidation) error {
-	rigDir := rigMayorRigDir(townRoot, rig)
-	requiredFiles := v.ActiveRequiredFiles()
-	openBeads, err := orchestrator.ListImplementBeadsByStatusForPlanning(townRoot, rig, v, "open")
-	if err != nil {
-		return fmt.Errorf("failed to list open beads: %w", err)
-	}
-	// Also include in_progress beads (same list, bd list --status=open,in_progress)
-	openProgressBeads, err := orchestrator.ListImplementBeadsByStatusForPlanning(townRoot, rig, v, "in_progress")
-	if err != nil {
-		return fmt.Errorf("failed to list in_progress beads: %w", err)
-	}
-	allOpen := append(openBeads, openProgressBeads...)
-
-	// Build a set of bead IDs that exist
-	existingIDs := map[string]bool{}
-	for _, b := range allOpen {
-		existingIDs[b.ID] = true
-	}
-
-	if len(requiredFiles) == 0 {
+	if len(v.ActiveRequiredFiles()) == 0 {
 		return nil // nothing to validate
 	}
-
-	var missing []string
-	for _, rf := range requiredFiles {
-		// Check if any bead title/path matches this required file
-		// required_files paths are relative to rigDir (e.g. "linkshelf/internal/store/schema.go")
-		found := false
-		for _, b := range allOpen {
-			// Extract the path from the bead title
-			titlePath := orchestrator.ExtractPathFromBeadTitle(b.Title, v.BeadTitleContains)
-			// Normalize both paths for comparison
-			normTitle := orchestrator.NormalizePlannerBeadPath(titlePath, v.LayoutRoot, rig)
-			normReq := filepath.ToSlash(filepath.Clean(rf))
-			if normTitle == normReq {
-				found = true
-				break
-			}
-		}
-		if !found {
-			// Check if the bead ID appears in plan.md
-			planPath := filepath.Join(rigDir, "plan.md")
-			planData, err := os.ReadFile(planPath)
-			if err != nil {
-				return fmt.Errorf("cannot read plan.md: %w", err)
-			}
-			matched := regexp.MustCompile(`(?m)^###\s+([a-zA-Z0-9][a-zA-Z0-9_-]*):\s+`).FindStringSubmatch(string(planData))
-			if len(matched) > 0 {
-				beadID := matched[1]
-				if existingIDs[beadID] {
-					found = true
-				}
-			}
-		}
-		if !found {
-			missing = append(missing, rf)
-		}
+	missing, err := orchestrator.MissingRequiredFileCoverage(townRoot, rig, v)
+	if err != nil {
+		return fmt.Errorf("failed to check bead coverage: %w", err)
 	}
 	if len(missing) > 0 {
 		return fmt.Errorf("planning cannot succeed: required_files missing beads — run `gt rig sync-planning %s --force` to repair active-phase bead coverage, then re-read bd list and plan.md; preserve architecture.md. Missing: %s", rig, strings.Join(missing, "; "))
@@ -2730,7 +2750,10 @@ func validateRequiredFilesHaveBeads(townRoot, rig string, v orchestrator.Workflo
 
 var planBeadIDLineRE = regexp.MustCompile(`(?m)^###\s+([a-zA-Z0-9][a-zA-Z0-9_-]*):\s+`)
 
-// validatePlanMDBeadIDs rejects plan.md sections that cite bead IDs not open/in_progress in bd list.
+// validatePlanMDBeadIDs rejects plan.md sections that cite bead IDs not present
+// as open/in_progress or closed implement beads in bd list. Closed canonical
+// beads whose artifacts are green on disk satisfy planning coverage without
+// reopening finished work.
 func validatePlanMDBeadIDs(townRoot, rig, planPath string, v orchestrator.WorkflowValidation) error {
 	data, err := os.ReadFile(planPath)
 	if err != nil {
@@ -2752,28 +2775,32 @@ func validatePlanMDBeadIDs(townRoot, rig, planPath string, v orchestrator.Workfl
 		// bead/required-files checks still enforce planning constraints.
 		v = v.WithDefaults()
 	}
-	open, err := listOpenImplementationBeads(townRoot, rig)
+	open, err := orchestrator.ListImplementBeadsOpenOrInProgress(townRoot, rig, v)
 	if err != nil {
 		return err
 	}
-	orchestratedPrintf("[gt-agent] validatePlanMDBeadIDs: %d open beads from listOpenImplementationBeads", len(open))
-	openIDs := map[string]bool{}
-	for _, b := range open {
-		// For plan.md validation, accept ALL open/in_progress implement beads
-		// (plan.md may reference beads from any phase, not just active phase)
-		openIDs[b.ID] = true
+	closed, err := orchestrator.ListImplementBeadsByStatusForPlanning(townRoot, rig, v, "closed")
+	if err != nil {
+		return err
+	}
+	orchestratedPrintf("[gt-agent] validatePlanMDBeadIDs: %d open and %d closed beads for plan.md validation", len(open), len(closed))
+	knownIDs := map[string]bool{}
+	for _, b := range append(append([]orchestrator.PlanBead(nil), open...), closed...) {
+		// For plan.md validation, accept ALL open/in_progress and closed implement
+		// beads (plan.md may reference beads from any phase, not just active phase).
+		knownIDs[b.ID] = true
 		orchestratedPrintf("[gt-agent]   bead %s title=%q accepted for plan.md validation", b.ID, b.Title)
 	}
 	planIDs := planBeadIDLineRE.FindAllStringSubmatch(string(data), -1)
 	orchestratedPrintf("[gt-agent] validatePlanMDBeadIDs: %d bead IDs found in plan.md", len(planIDs))
 	for _, m := range planIDs {
 		id := strings.TrimSpace(m[1])
-		orchestratedPrintf("[gt-agent]   plan.md bead %s open=%v", id, openIDs[id])
+		orchestratedPrintf("[gt-agent]   plan.md bead %s known=%v", id, knownIDs[id])
 	}
 	var missing []string
 	for _, m := range planIDs {
 		id := strings.TrimSpace(m[1])
-		if id == "" || openIDs[id] {
+		if id == "" || knownIDs[id] {
 			continue
 		}
 		missing = append(missing, id)
@@ -2781,7 +2808,7 @@ func validatePlanMDBeadIDs(townRoot, rig, planPath string, v orchestrator.Workfl
 	if len(missing) == 0 {
 		return nil
 	}
-	return fmt.Errorf("plan.md cites bead ID(s) not open/in_progress in bd list (run bd list --status=open,in_progress, then rewrite or run gt rig sync-planning %s --force): %s", rig, strings.Join(missing, ", "))
+	return fmt.Errorf("plan.md cites bead ID(s) not present in bd list (run bd list --status=open,in_progress,closed, then rewrite or run gt rig sync-planning %s --force): %s", rig, strings.Join(missing, ", "))
 }
 
 func maybeRepairWorkflowRequirements(townRoot, rig string, v orchestrator.WorkflowValidation) {

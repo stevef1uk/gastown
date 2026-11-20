@@ -26,6 +26,10 @@ func preprocessOrchestratedResponse(response string) string {
 	response = stripChannelMarkers(response)
 	response = unwrapJSONOrchestratedCommands(response)
 	response = unwrapJSONCommandArray(response)
+	// Some LLMs emit command arrays as {"cmds": [...]} inline with prose instead
+	// of CMD: lines. Convert those so the executor can run them (e.g. the Mayor
+	// reading SPEC/architecture/plan during review recovery).
+	response = unwrapCmdsJSONArray(response)
 	response = unwrapJSONActionCommands(response)
 	response = unwrapFunctionToolCalls(response)
 	response = normalizeGluedWriteBody(response)
@@ -356,6 +360,79 @@ func unwrapJSONCommandArray(response string) string {
 		} else {
 			parts = append(parts, "CMD: "+s)
 		}
+	}
+	if len(parts) == 0 {
+		return response
+	}
+	return response + "\n" + strings.Join(parts, "\n")
+}
+
+// unwrapCmdsJSONArray converts {"cmds": [...]} command envelopes that some LLMs
+// emit inline with prose (instead of CMD: lines) into CMD: lines so the executor
+// can run them. The original JSON block is left in place as prose; only the
+// extracted commands are appended as executable CMD: lines.
+func unwrapCmdsJSONArray(response string) string {
+	if !strings.Contains(response, `"cmds"`) {
+		return response
+	}
+	runes := []rune(response)
+	var parts []string
+	for i := 0; i < len(runes); i++ {
+		if runes[i] != '{' {
+			continue
+		}
+		depth := 0
+		inStr := false
+		esc := false
+		end := -1
+		for j := i; j < len(runes); j++ {
+			c := runes[j]
+			switch {
+			case inStr:
+				if esc {
+					esc = false
+				} else if c == '\\' {
+					esc = true
+				} else if c == '"' {
+					inStr = false
+				}
+			case c == '"':
+				inStr = true
+			case c == '{':
+				depth++
+			case c == '}':
+				depth--
+				if depth == 0 {
+					end = j
+				}
+			}
+			if end != -1 {
+				break
+			}
+		}
+		if end == -1 {
+			continue
+		}
+		objText := string(runes[i : end+1])
+		if !strings.Contains(objText, `"cmds"`) {
+			i = end + 1
+			continue
+		}
+		var obj struct {
+			Cmds []string `json:"cmds"`
+		}
+		if err := json.Unmarshal([]byte(objText), &obj); err != nil {
+			i = end + 1
+			continue
+		}
+		for _, c := range obj.Cmds {
+			c = strings.TrimSpace(c)
+			if c == "" {
+				continue
+			}
+			parts = append(parts, "CMD: "+c)
+		}
+		i = end + 1
 	}
 	if len(parts) == 0 {
 		return response

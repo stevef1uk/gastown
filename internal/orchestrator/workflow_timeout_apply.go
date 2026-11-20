@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/steveyegge/gastown/internal/constants"
 	"github.com/steveyegge/gastown/internal/events"
 	"github.com/steveyegge/gastown/internal/refinery"
 )
@@ -25,6 +26,12 @@ func (m *Manager) applyStateTimeout(workflowID string) (string, error) {
 		return "", fmt.Errorf("template %q not found", inst.TemplateID)
 	}
 	state, _ := inst.GetCurrentTask(tpl)
+	if state.Hooks.ReviewFailureLimit > 0 && state.Hooks.ReviewRecoveryState != "" {
+		recovery, ok := tpl.States[state.Hooks.ReviewRecoveryState]
+		if !ok || recovery.Role != constants.RoleMayor {
+			return "", fmt.Errorf("review recovery state %q for %q must exist and be assigned to mayor", state.Hooks.ReviewRecoveryState, inst.CurrentState)
+		}
+	}
 	if !state.AcceptsOutcome("timeout") {
 		return "", fmt.Errorf("state %q does not accept timeout outcome", inst.CurrentState)
 	}
@@ -57,18 +64,39 @@ func (m *Manager) applyStateTimeout(workflowID string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	reviewAction := inst.recordReviewFailure(fromState, v.ActivePhaseID(), outcome, state.Hooks.ReviewFailureLimit, state.Hooks.ReviewRecoveryState)
+	recovery := strings.TrimSpace(state.Hooks.ReviewRecoveryState)
+	if reviewAction == reviewFailureEscalate || reviewAction == reviewFailurePause {
+		if recovery != "" {
+			next = recovery
+			inst.CurrentState = next
+		}
+		if reviewAction == reviewFailurePause {
+			inst.Status = "paused"
+			inst.PauseReason = fmt.Sprintf("%s timed out %d times in delivery phase %q, including after Mayor diagnosis/recovery; inspect the retained findings and fix before resuming", fromState, state.Hooks.ReviewFailureLimit, v.ActivePhaseID())
+		}
+	}
 	// Hard reset hooks ran; start a fresh wall-clock window (same-state transition does not touch StateEnteredAt).
 	inst.touchStateEnteredAt()
 	reworkFeedback := PrepareWorkflowReworkFeedback(fromState, next, summary, feedback, v, tpl.ReworkFeedback)
+	if reviewAction == reviewFailureEscalate {
+		reworkFeedback = reviewRecoveryFeedback(fromState, summary, feedback, v)
+	} else if reviewAction == reviewFailurePause {
+		reworkFeedback = reviewRecoveryPauseFeedback(fromState, summary, feedback)
+	}
 	if IsVerificationErrorOutcome(outcome) {
 		reworkFeedback = verificationRetryFeedback(v, feedback)
 	}
+	previousTestRepair := inst.PendingRework
 	inst.PendingRework = &WorkflowRework{
 		FromState: fromState,
 		Outcome:   outcome,
 		Summary:   truncateWorkflowText(summary, maxWorkflowReworkSummary),
 		Feedback:  reworkFeedback,
 		AgentID:   "orchestrator",
+	}
+	if next == fromState && previousTestRepair != nil && previousTestRepair.FromState == "test_review" && len(previousTestRepair.TestRepairFiles) > 0 {
+		inst.PendingRework = previousTestRepair
 	}
 	inst.recordVerificationError(fromState, outcome, state.Hooks.VerificationErrorLimit)
 	if err := m.persistLocked(); err != nil {

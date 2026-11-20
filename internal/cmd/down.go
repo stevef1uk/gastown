@@ -1271,27 +1271,17 @@ func findOrphanDoltServers(townRoot string) []int {
 			continue
 		}
 
-		// Check the process's working directory via lsof
-		cwdOut, err := exec.Command("lsof", "-p", strconv.Itoa(pid), "-Fn", "-d", "cwd").Output()
-		if err != nil {
-			continue
-		}
-		cwd := ""
-		for _, cwdLine := range strings.Split(string(cwdOut), "\n") {
-			if strings.HasPrefix(cwdLine, "n") {
-				cwd = cwdLine[1:]
-				break
-			}
-		}
+		cwd := doltserver.ProcessWorkingDirectory(pid)
 		if cwd == "" {
 			continue
 		}
+		cwd = strings.TrimSuffix(cwd, " (deleted)")
 
 		cwdAbs, _ := filepath.Abs(cwd)
 		// Only target processes rooted in our town but NOT in canonical data dir.
 		// Use path-boundary check to avoid false matches on sibling paths.
-		inTown := cwdAbs == townAbs || strings.HasPrefix(cwdAbs, townAbs+string(filepath.Separator))
-		notCanonical := !strings.HasPrefix(cwdAbs, canonicalDir)
+		inTown := pathWithinDirectory(townAbs, cwdAbs)
+		notCanonical := !pathWithinDirectory(canonicalDir, cwdAbs)
 		if inTown && notCanonical {
 			pids = append(pids, pid)
 		}
@@ -1372,6 +1362,15 @@ func findBeadsDoltDirs(townRoot string) []string {
 func removeBeadsDoltDirs(dirs []string) int {
 	var removed int
 	for _, dir := range dirs {
+		pids, err := doltserver.FindDoltProcessesUsingDirectory(dir)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: skipping %s — could not verify Dolt processes: %v\n", dir, err)
+			continue
+		}
+		if len(pids) > 0 {
+			fmt.Fprintf(os.Stderr, "Warning: skipping %s — active Dolt server process(es): %v\n", dir, pids)
+			continue
+		}
 		if !isSafeToRemoveBeadsDolt(dir) {
 			fmt.Fprintf(os.Stderr, "Warning: skipping %s — may contain unmigrated data\n", dir)
 			continue
@@ -1381,6 +1380,14 @@ func removeBeadsDoltDirs(dirs []string) int {
 		}
 	}
 	return removed
+}
+
+func pathWithinDirectory(directory, path string) bool {
+	rel, err := filepath.Rel(directory, path)
+	if err != nil || filepath.IsAbs(rel) {
+		return false
+	}
+	return rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)))
 }
 
 // isSafeToRemoveBeadsDolt checks if a .beads/dolt directory can be safely

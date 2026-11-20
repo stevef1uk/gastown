@@ -531,7 +531,7 @@ func runDoltRestart(cmd *cobra.Command, args []string) error {
 	} else if removed > 0 || len(skipped) > 0 {
 		fmt.Printf("Removed %d legacy embedded Dolt dir(s)\n", removed)
 		for _, s := range skipped {
-			fmt.Fprintf(os.Stderr, "Warning: kept %s — contains databases not in .dolt-data (run 'gt dolt migrate')\n", s)
+			fmt.Fprintf(os.Stderr, "Warning: kept %s — may contain unmigrated data or be in use by a Dolt server\n", s)
 		}
 	}
 

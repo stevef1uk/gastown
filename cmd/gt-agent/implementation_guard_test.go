@@ -1,7 +1,9 @@
 package main
 
 import (
+	"crypto/sha256"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -390,5 +392,45 @@ func TestRejectQAVerifyPassedButOutputNoise_ignoresNonQAState(t *testing.T) {
 	r.track.hadCmdFailure = false
 	if _, reject := r.rejectQAVerifyPassedButOutputNoise("failure", "npm audit found 3 vulnerabilities"); reject {
 		t.Fatal("guard is scoped to qa_review state only")
+	}
+}
+
+func TestTestRepairGuardsBlockUnchangedBeadAndCompletion(t *testing.T) {
+	town, rig := t.TempDir(), "sample"
+	rigDir := rigMayorRigDir(town, rig)
+	path := filepath.Join(rigDir, "tests", "check.py")
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		t.Fatal(err)
+	}
+	content := []byte("assert True\n")
+	if err := os.WriteFile(path, content, 0644); err != nil {
+		t.Fatal(err)
+	}
+	r := newStateRunner(&orchestrator.Task{
+		State: "implementation",
+		Hooks: orchestrator.StateHooks{CmdGuard: "implementation", Artifacts: "implementation"},
+		PendingRework: &orchestrator.WorkflowRework{
+			FromState: "test_review",
+			TestRepairFiles: map[string]map[string]string{
+				"te-repair": {"tests/check.py": fmt.Sprintf("%x", sha256.Sum256(content))},
+			},
+		},
+	}, town, rig)
+	for _, cmd := range []string{"bd close te-repair", "bd close te-other te-repair"} {
+		if err := r.validateCommand(cmd); err == nil || !strings.Contains(err.Error(), "unchanged") {
+			t.Fatalf("%q did not block unchanged repair: %v", cmd, err)
+		}
+	}
+	if err := r.validateCommand("bd close te-repair-extra"); err != nil && strings.Contains(err.Error(), "unchanged") {
+		t.Fatalf("different bead matched repair ID prefix: %v", err)
+	}
+	if err := r.validateArtifacts("success"); err == nil || !strings.Contains(err.Error(), "unchanged") {
+		t.Fatalf("explicit success did not block unchanged repair: %v", err)
+	}
+	if err := os.WriteFile(path, []byte("assert result == expected\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := orchestrator.ValidateTestRepairChanges(rigDir, r.task.PendingRework.TestRepairFiles, "te-repair"); err != nil {
+		t.Fatal(err)
 	}
 }

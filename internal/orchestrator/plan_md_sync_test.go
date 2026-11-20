@@ -392,3 +392,111 @@ func TestValidatePlanMDBeadPathAlignment_normalizesPaths(t *testing.T) {
 		t.Fatalf("expected no alignment error with normalized paths, got: %v", err)
 	}
 }
+
+func TestMissingRequiredFileCoverage_closedGreenBeadCovered(t *testing.T) {
+	town := t.TempDir()
+	rig := "mockrig"
+	rigDir := filepath.Join(town, rig, "mayor", "rig")
+	if err := os.MkdirAll(rigDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	v := WorkflowValidation{
+		LayoutRoot:        "app",
+		BeadTitleContains: "Implement ",
+		RequiredFiles:     []string{"app/store.py", "app/other.go"},
+	}
+	setListImplementBeadsByStatusHook(t, town, rig, func(townRoot, rig string, _ WorkflowValidation, status string) ([]PlanBead, error) {
+		if status == "closed" {
+			return []PlanBead{{ID: "te-done", Title: "Implement app/store.py per architecture"}}, nil
+		}
+		return nil, nil
+	})
+	t.Cleanup(func() { setListImplementBeadsByStatusHook(t, town, rig, nil) })
+
+	// Neither file on disk -> both missing.
+	missing, err := MissingRequiredFileCoverage(town, rig, v)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(missing) != 2 {
+		t.Fatalf("expected both files missing, got %v", missing)
+	}
+
+	// Write app/store.py (green artifact) -> only app/other.go remains missing.
+	if err := os.MkdirAll(filepath.Join(rigDir, "app"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(rigDir, "app/store.py"), []byte("def store_get(key):\n    return _STORE.get(key)\n\ndef store_set(key, value):\n    _STORE[key] = value\n    return True\n\n_STORE = {}"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	missing, err = MissingRequiredFileCoverage(town, rig, v)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(missing) != 1 || missing[0] != "app/other.go" {
+		t.Fatalf("expected only app/other.go missing, got %v", missing)
+	}
+
+	// A closed bead whose artifact is missing must not count as coverage.
+	os.Remove(filepath.Join(rigDir, "app/store.py"))
+	missing, err = MissingRequiredFileCoverage(town, rig, v)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(missing) != 2 {
+		t.Fatalf("expected both files missing again after removing the artifact, got %v", missing)
+	}
+}
+
+func TestPlanningBeadCoverageSatisfied_closedGreenBeadPasses(t *testing.T) {
+	town := t.TempDir()
+	rig := "mockrig"
+	rigDir := filepath.Join(town, rig, "mayor", "rig")
+	if err := os.MkdirAll(rigDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	v := WorkflowValidation{
+		LayoutRoot:        "app",
+		BeadTitleContains: "Implement ",
+		RequiredFiles:     []string{"app/store.py"},
+	}
+
+	closedBead := []PlanBead{{ID: "te-done", Title: "Implement app/store.py per architecture"}}
+	setClosed := func() {
+		setListImplementBeadsByStatusHook(t, town, rig, func(townRoot, rig string, _ WorkflowValidation, status string) ([]PlanBead, error) {
+			if status == "closed" {
+				return closedBead, nil
+			}
+			return nil, nil
+		})
+	}
+
+	// No beads at all -> not satisfied.
+	setListImplementBeadsByStatusHook(t, town, rig, func(townRoot, rig string, _ WorkflowValidation, status string) ([]PlanBead, error) {
+		return nil, nil
+	})
+	ok, err := PlanningBeadCoverageSatisfied(town, rig, v)
+	if err != nil || ok {
+		t.Fatalf("expected unsatisfied with no beads, got ok=%v err=%v", ok, err)
+	}
+
+	// Closed bead but artifact missing -> not satisfied.
+	setClosed()
+	ok, err = PlanningBeadCoverageSatisfied(town, rig, v)
+	if err != nil || ok {
+		t.Fatalf("expected unsatisfied when closed artifact missing, got ok=%v err=%v", ok, err)
+	}
+
+	// Closed bead with green artifact -> satisfied.
+	setClosed()
+	if err := os.MkdirAll(filepath.Join(rigDir, "app"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(rigDir, "app/store.py"), []byte("def store_get(key):\n    return _STORE.get(key)\n\ndef store_set(key, value):\n    _STORE[key] = value\n    return True\n\n_STORE = {}"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	ok, err = PlanningBeadCoverageSatisfied(town, rig, v)
+	if err != nil || !ok {
+		t.Fatalf("expected satisfied when closed artifact is green, got ok=%v err=%v", ok, err)
+	}
+}

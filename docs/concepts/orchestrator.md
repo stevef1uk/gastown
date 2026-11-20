@@ -38,6 +38,11 @@ such a phase is not an architecture failure. Tester and QA receive the same comp
 phase lists. Tests may be declared files or conventional companions of required
 source files; companions use the source bead. Assertions must still follow SPEC.
 
+Planning validates the combined delivery-contract and plan dependency graph.
+When only the plan introduces a defect, the workflow sends its exact diagnostic
+to the Planner; canonical contract defects go to the Architect. Repeated review
+failures remain bounded by the review-recovery policy.
+
 Update authored templates and prompts in the source tree. Deploy them through the
 normal install/config synchronization path; do not hand-edit a rig's generated
 SPEC, architecture, plan, profile, or bead records to work around workflow errors.
@@ -165,6 +170,27 @@ Only titles matching `bead_title_contains` from the rig workflow profile count f
 
 After Polecat reports `success` and Tester accepts `test_review`, the FSM moves to `qa_review`. QA runs read-only checks plus the active phase's verify command from the workflow profile (`qa_verify_command` or `python3 -m unittest <module>`).
 
+On a test-review failure, the Tester names the affected test paths and owners in
+the outcome summary. Diagnostic command output is not a repair-target list.
+When the same planned test belongs to multiple phases, a repair also owned by
+the active phase stays there; a genuinely earlier-phase-only repair may rewind.
+For each named test the summary distinguishes `Test repair: <path>` (the test
+needs repair) from `Implementation repair: <path>` (the test is correct but the
+implementation fails). Named test repairs retain a baseline across retries and
+restarts: the owner cannot close or complete with the test unchanged. If the
+finding is mistaken, Polecat can report `plan_gap` with evidence rather than
+make a cosmetic edit. Later-phase test findings are retained for that phase's
+review.
+
+On follow-up review, the Tester explains the finding and cites each repaired or
+deferred test with `- Evidence: {"file":"<path>","line":<number>,"excerpt":"<exact source line>"}`
+in `test-report.md`. The harness verifies that the line exists and matches;
+the Tester remains responsible for judging whether the assertion actually
+covers the requirement. A changed file or a passing test run is not proof of
+adequate coverage. A test-review timeout retries review rather than sending an
+unreviewed phase to implementation; repeated timeouts escalate to the Mayor and
+eventually pause for diagnosis.
+
 | Outcome | When to use |
 |---------|-------------|
 | `task_passed` | Verify command passed; **some** open implementation beads remain (more polecat work) |
@@ -190,8 +216,10 @@ own the actual defects, with supporting output or a concrete SPEC violation:
 
 Use real IDs from the rig. Only `repair_bead_ids` authorizes targeted repair;
 IDs in a closed-bead inventory, captured command output, or “do not reopen” prose
-do not become repair targets. A missing/invalid repair report stays in QA as a
-reporting error so it cannot reopen arbitrary completed work.
+do not become repair targets. The agent asks QA to correct missing report fields
+within its existing turn limit. An incomplete report after that limit, or an
+invalid repair target, stays in QA as a reporting error so it cannot reopen
+arbitrary completed work.
 
 If verification never reached the checks, report the execution problem instead:
 
@@ -646,10 +674,11 @@ requests and does not modify ledgers.
 Gastown execution limits are configured in the **agent process environment**:
 `GT_WORKFLOW_MAX_LLM_REQUESTS` (default 1000) and `GT_WORKFLOW_MAX_LLM_TOKENS`
 (default 20000000). Reserved tokens are conservative admission reservations, not
-provider-billed tokens. New admissions persist their enforcing limits in the ledger;
-older rows display the feed's local/default limits and are marked `(local limits)`.
-Recorded limits describe the last admitted request; restart agents to apply changed
-environment settings.
+provider-billed tokens. New admissions persist their enforcing limits in the ledger.
+When an agent restarts with a variable unset, it continues using that workflow's
+recorded limit; an explicit environment value overrides it. A per-workflow token
+override set by `gt mayor workflow budget --tokens` takes precedence for tokens.
+Older rows display the feed's local/default limits and are marked `(local limits)`.
 
 Freeride dollar limits belong in the **proxy process environment**:
 `FREERIDE_WORKFLOW_MAX_COST_USD` (default 5) and `FREERIDE_RIG_MAX_COST_USD`

@@ -993,6 +993,13 @@ func getProcessCWD(pid int) string {
 	return ""
 }
 
+// ProcessWorkingDirectory returns the working directory for a process.
+// On Linux this reads /proc directly, which remains reliable when lsof is
+// unavailable or the process has an unlinked working directory.
+func ProcessWorkingDirectory(pid int) string {
+	return getProcessCWD(pid)
+}
+
 func resolveProcessPath(pid int, path string) string {
 	if path == "" {
 		return ""

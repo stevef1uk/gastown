@@ -785,6 +785,44 @@ func TestValidatePlanningArtifacts(t *testing.T) {
 	}
 }
 
+func TestValidateRequiredFilesHaveBeads_closedGreenBeads(t *testing.T) {
+	town := t.TempDir()
+	rig := "mockrig"
+	rigDir := rigMayorRigDir(town, rig)
+	if err := os.MkdirAll(rigDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	v := orchestrator.WorkflowValidation{
+		LayoutRoot:        "app",
+		BeadTitleContains: "Implement ",
+		RequiredFiles:     []string{"app/store.py"},
+	}
+	prev := orchestrator.ListImplementBeadsByStatusHook
+	orchestrator.ListImplementBeadsByStatusHook = func(townRoot, rig string, v orchestrator.WorkflowValidation, status string) ([]orchestrator.PlanBead, error) {
+		if status == "closed" {
+			return []orchestrator.PlanBead{{ID: "te-done", Title: "Implement app/store.py per architecture"}}, nil
+		}
+		return nil, nil
+	}
+	defer func() { orchestrator.ListImplementBeadsByStatusHook = prev }()
+
+	// Closed bead but no artifact on disk -> missing -> error.
+	if err := validateRequiredFilesHaveBeads(town, rig, v); err == nil || !strings.Contains(err.Error(), "missing beads") {
+		t.Fatalf("expected missing-bead error without artifact, got %v", err)
+	}
+
+	// Closed bead with a green artifact -> coverage satisfied -> nil.
+	if err := os.MkdirAll(filepath.Join(rigDir, "app"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(rigDir, "app/store.py"), []byte("def store_get(key):\n    return _STORE.get(key)\n\ndef store_set(key, value):\n    _STORE[key] = value\n    return True\n\n_STORE = {}"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateRequiredFilesHaveBeads(town, rig, v); err != nil {
+		t.Fatalf("expected nil with closed green bead, got %v", err)
+	}
+}
+
 func TestValidateImplementationCommand(t *testing.T) {
 	bad := []string{
 		"gt bd list -t implementation -s open",

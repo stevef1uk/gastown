@@ -451,7 +451,7 @@ func prepareTestReviewToImplementationFeedback(summary, raw string, v WorkflowVa
 		b.WriteString(summary)
 		b.WriteString("\n")
 	}
-	if paths := extractStubPathsFromFeedback(summary, raw); len(paths) > 0 {
+	if paths := extractStubPathsFromFeedback(summary, ""); len(paths) > 0 {
 		b.WriteString("\nFiles to fix (missing or weak tests):\n")
 		for _, p := range paths {
 			b.WriteString("- ")

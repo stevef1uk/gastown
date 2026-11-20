@@ -26,7 +26,7 @@ $GT_ROOT/{{rig}}/mayor/rig/{{layout_root}}/  ← layout root (ALL files go here)
 |---------|------|
 | `success` | Beads match `required_files`; `plan.md` ≥ {{min_plan_bytes}} bytes; **SPEC / architecture / plan** agree on HTTP routes, store API names, module path, and integration wiring |
 | `failure` | Duplicates, missing paths, weak plan, or **contract drift** vs SPEC — sends **Planner** back to `planning` |
-| `architecture_failure` | A phase cannot satisfy its acceptance command without a future-phase prerequisite, or the dependency graph has a cycle — name consumer/provider paths, phases and the command; repair the delivery contract before implementation |
+| `architecture_failure` | The canonical delivery contract itself has a dependency cycle or requires a future-phase prerequisite — name the affected paths, phases and command |
 
 ## Rig context (from SPEC profile)
 
@@ -54,6 +54,9 @@ on:` fields, imports, manifests, Docker build inputs and verification fixtures.
 Every prerequisite must be in the same or an earlier phase. Reject cycles and
 acceptance commands that require future-phase artifacts. No build execution is
 needed for this contract review. Full-phase checks need not pass between beads.
+If the canonical contract is valid but `plan.md` introduces a cycle or other
+unsupported prerequisite, report `failure` with the exact plan edges for the
+Planner. Do not send plan-only defects to the Architect.
 
 1. **HTTP routes (authoritative: SPEC.md table)**
    - Copy HTTP methods and paths exactly from the active phase's SPEC contract.
@@ -78,6 +81,7 @@ needed for this contract review. Full-phase checks need not pass between beads.
     - When tests are in profile, plan acceptance bullets may name them; otherwise defer to SPEC optional tests.
     - The active phase requires `{{phase_qa_verify_command}}`. Inspect the plan's verification commands without executing them. A backend build cannot verify browser tests, static assets, or client behavior. Reject a plan that replaces the phase's required checks with an unrelated build or omits the phase verification.
     - Acceptance must describe the active phase's concrete behavior and assertions from SPEC/architecture. File existence and generic "per architecture" bullets alone do not establish behavioral coverage; return failure with the missing scenarios.
+    - Reject acceptance criteria that require later-phase behavior now, including when a later phase extends a file already owned by the active phase.
 
 6. **Integration contract (active phase only)**
    - Follow **Integration contract (this phase)** above — not `all_required_files` or later delivery phases.

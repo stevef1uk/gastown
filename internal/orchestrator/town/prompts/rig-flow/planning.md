@@ -24,7 +24,7 @@ $GT_ROOT/{{rig}}/mayor/rig/{{layout_root}}/  ← layout root (ALL files go here)
 
 **YOUR JOB IS NOT TO CREATE BEADS.** The correct implement beads ALREADY EXIST.
 1. Run `cd {{rig}}/mayor/rig && bd list --status=open && wc -c plan.md`, then read SPEC.md, architecture.md, and plan.md.
-2. Confirm the active phase's verification is `{{phase_qa_verify_command}}` and expand generic acceptance bullets into concrete behavior/assertions from SPEC and architecture. Address all QA rework before success; byte count and bead coverage alone do not establish a complete plan.
+2. Confirm the active phase's verification is `{{phase_qa_verify_command}}` and expand generic acceptance bullets into concrete behavior/assertions from SPEC and architecture. Include only work assigned to the active phase, even when the same files are extended later. Address all QA rework before success; byte count and bead coverage alone do not establish a complete plan.
 3. **DO NOT `bd create`** — the pre_run hook already created the correct beads. Creating more causes "unknown bead IDs" in plan.md validation.
 4. If validation fails with "unknown bead IDs", run `gt rig sync-planning {{rig}}` (NOT `bd create`). Never use `--force` after authoring the plan: it replaces your acceptance criteria with a scaffold. Re-read plan.md after any sync.
 
@@ -147,7 +147,7 @@ You are **not** verifying the app. Do not run the server or test suite to “che
     EOF
    ```
 
-   **Interfaces / Depends on / Consumed by** give the polecat the dependency wiring it needs without reading the whole plan: every symbol must come from **architecture.md** (never invented), and beads that depend on each other must be ordered earlier-first in the map. Use exact full project paths or real bead IDs in `Depends on:`; these fields drive deterministic queue ordering. Include build manifests, configuration and fixtures, not just source imports. Compare against the full delivery contract: if an active-phase build needs a future-phase file, report architecture_failure with the consumer, provider, owning phases and failing acceptance command. Do not silently omit the dependency or change phase ownership only in plan.md.
+   **Interfaces / Depends on / Consumed by** give the polecat the dependency wiring it needs without reading the whole plan: every symbol must come from **architecture.md** (never invented), and beads that depend on each other must be ordered earlier-first in the map. Use exact full project paths or real bead IDs in `Depends on:`; these fields drive deterministic queue ordering. List dependencies outside parenthetical explanations; use `<none>` when there are none. Include build manifests, configuration and fixtures, not just source imports. Compare against the full delivery contract: if an active-phase build needs a future-phase file, report architecture_failure with the consumer, provider, owning phases and failing acceptance command. Do not silently omit the dependency or change phase ownership only in plan.md.
 
    ## YAGNI Rule (strict)
 

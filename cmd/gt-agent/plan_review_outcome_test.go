@@ -42,6 +42,7 @@ func TestPlanningReworkCannotPassUnchangedPlan(t *testing.T) {
 	if err := os.MkdirAll(rigDir, 0755); err != nil {
 		t.Fatal(err)
 	}
+
 	path := filepath.Join(rigDir, "plan.md")
 	if err := os.WriteFile(path, []byte("# Plan\nGeneric acceptance\n"), 0644); err != nil {
 		t.Fatal(err)
@@ -81,5 +82,26 @@ func TestPlanningReworkCannotPassUnchangedPlan(t *testing.T) {
 	}
 	if err := r.validatePlanningRework(); err != nil {
 		t.Fatalf("initial planning can use a synchronized plan: %v", err)
+	}
+}
+
+func TestPlanningAutoCompleteSkipsDependencyCycle(t *testing.T) {
+	town, rig := t.TempDir(), "sample"
+	dir := rigMayorRigDir(town, rig)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	plan := "### sm-a: app/a.txt\n- Depends on: app/b.txt\n### sm-b: app/b.txt\n- Depends on: app/a.txt\n"
+	if err := os.WriteFile(filepath.Join(dir, "plan.md"), []byte(plan), 0644); err != nil {
+		t.Fatal(err)
+	}
+	v := orchestrator.WorkflowValidation{ActivePhaseIDField: "one", DeliveryPhases: []orchestrator.DeliveryPhase{{
+		ID: "one", RequiredFiles: []string{"app/a.txt", "app/b.txt"},
+	}}}
+	if !shouldSkipPlanningAutoComplete(&orchestrator.Task{State: "planning"}, town, rig, v) {
+		t.Fatal("planning auto-completed a plan with a dependency cycle")
+	}
+	if err := validatePlanningArtifacts(town, rig, false, false, false, v); err == nil || !strings.Contains(err.Error(), "file dependency cycle") || strings.Contains(err.Error(), "bd create") {
+		t.Fatalf("planning did not report the actionable dependency defect: %v", err)
 	}
 }

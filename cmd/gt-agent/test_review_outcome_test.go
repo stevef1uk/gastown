@@ -198,7 +198,11 @@ func TestTestReviewAcceptsEarlyFailureWithCommands(t *testing.T) {
 	if err := os.MkdirAll(rigMayorRigDir(town, rig), 0755); err != nil {
 		t.Fatal(err)
 	}
+
 	if err := os.WriteFile(filepath.Join(rigMayorRigDir(town, rig), "SPEC.md"), []byte("Test fixture"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(rigMayorRigDir(town, rig), "TEST_PLAN.md"), []byte("### R\nTest file: app/test_ui.js\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
 	calls := 0
@@ -221,6 +225,42 @@ func TestTestReviewAcceptsEarlyFailureWithCommands(t *testing.T) {
 	client := llm.NewClient(server.URL, "test", "tester", time.Second)
 	outcome, summary, _, err := executeOrchestratedTask(context.Background(), client, town, rig, "", task, nil)
 	if err != nil || outcome != "failure" || !strings.Contains(summary, "No tests found") || calls != 1 {
+		t.Fatalf("outcome=%q summary=%q calls=%d err=%v", outcome, summary, calls, err)
+	}
+}
+
+func TestTestReviewRequestsClassificationBeforeFailure(t *testing.T) {
+	town, rig := t.TempDir(), "mockrig"
+	rigDir := rigMayorRigDir(town, rig)
+	if err := os.MkdirAll(rigDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(rigDir, "SPEC.md"), []byte("fixture"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	plan := "### R\nTest file: app/test_ui.js\n" + strings.Repeat("Details of planned coverage.\n", 30)
+	if err := os.WriteFile(filepath.Join(rigDir, "TEST_PLAN.md"), []byte(plan), 0644); err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+		content := "CMD: cd mockrig/mayor/rig && cat SPEC.md\n" +
+			`{"outcome":"failure","summary":"app/test_ui.js lacks assertions"}`
+		if calls > 1 {
+			content = `{"outcome":"failure","summary":"Test repair: app/test_ui.js lacks assertions"}`
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"choices": []any{map[string]any{"message": map[string]string{"content": content}}}})
+	}))
+	defer server.Close()
+	task := &orchestrator.Task{
+		WorkflowID: "wf-test-review", State: "test_review", Rig: rig,
+		Validation:      orchestrator.WorkflowValidation{LayoutRoot: "app"},
+		AllowedOutcomes: []string{"success", "failure", "plan_gap", "architecture_failure"},
+	}
+	client := llm.NewClient(server.URL, "test", "tester", time.Second)
+	outcome, summary, _, err := executeOrchestratedTask(context.Background(), client, town, rig, "", task, nil)
+	if err != nil || outcome != "failure" || !strings.Contains(summary, "Test repair:") || calls != 2 {
 		t.Fatalf("outcome=%q summary=%q calls=%d err=%v", outcome, summary, calls, err)
 	}
 }

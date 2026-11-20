@@ -346,6 +346,33 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summa
 	if inst.Variables != nil {
 		rig = inst.Variables["rig"]
 	}
+	activeTestRepair := inst.ActiveTestRepair
+	if activeTestRepair == nil && inst.PendingRework != nil && inst.PendingRework.FromState == "test_review" {
+		activeTestRepair = inst.PendingRework
+	}
+	if rig != "" && outcome == "success" && activeTestRepair != nil {
+		rigDir := filepath.Join(m.townRoot, rig, "mayor", "rig")
+		if fromState == "implementation" {
+			if err := ValidateTestRepairChanges(rigDir, activeTestRepair.TestRepairFiles, ""); err != nil {
+				return "", err
+			}
+		} else if fromState == "test_review" {
+			if err := ValidateTestRepairChanges(rigDir, activeTestRepair.TestRepairFiles, ""); err != nil {
+				return "", err
+			}
+			if err := ValidateTestRepairEvidence(rigDir, activeTestRepair.TestRepairFiles); err != nil {
+				return "", err
+			}
+		}
+	}
+	if rig != "" && fromState == "test_review" && outcome == "success" {
+		phase := m.workflowValidationFor(inst, tpl).ActivePhaseID()
+		if deferred, ok := inst.DeferredTestReviews[phase]; ok {
+			if err := ValidateTestRepairEvidence(filepath.Join(m.townRoot, rig, "mayor", "rig"), deferred.TestRepairFiles); err != nil {
+				return "", fmt.Errorf("deferred test finding: %w", err)
+			}
+		}
+	}
 	if state.Hooks.VerificationErrorLimit > 0 {
 		outcome, summary = normalizeVerificationReviewResult(m.townRoot, rig, m.workflowValidationFor(inst, tpl), outcome, summary)
 		if !state.AcceptsOutcome(outcome) {
@@ -368,9 +395,15 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summa
 			if !state.AcceptsOutcome("dependency_blocked") {
 				return "", fmt.Errorf("delivery dependency validation: %s", strings.Join(problems, "; "))
 			}
-			outcome = "dependency_blocked"
-			summary = "Delivery dependency repair required: " + strings.Join(problems, "; ")
-			feedback = dependencyRepairFeedback(problems) + "\n\n" + feedback
+			if outcome != "dependency_blocked" && state.AcceptsOutcome("plan_dependency_blocked") && len(DeliveryDependencyProblems("", v)) == 0 {
+				outcome = "plan_dependency_blocked"
+				summary = "Plan dependency repair required: " + strings.Join(problems, "; ")
+				feedback = planDependencyRepairFeedback(problems) + "\n\n" + feedback
+			} else {
+				outcome = "dependency_blocked"
+				summary = "Delivery dependency repair required: " + strings.Join(problems, "; ")
+				feedback = dependencyRepairFeedback(problems) + "\n\n" + feedback
+			}
 		}
 	}
 	if IsPlanningGateSuccessOutcome(outcome) && IsPlanningGateState(fromState) && rig != "" {
@@ -481,9 +514,11 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summa
 		}
 	}
 	testerRepairPrepared := false
+	var testRepairFiles map[string]map[string]string
+	var deferredTestRepairs map[string]map[string][]string
 	if fromState == "test_review" && IsFailureOutcome(outcome) && rig != "" && state.Transitions[outcome].To == "implementation" {
 		v := m.workflowValidationFor(inst, tpl)
-		reopened, repairErr := ReopenImplementationBeadsAfterTestFailure(m.townRoot, rig, v, CombineQAReworkText(summary, feedback))
+		reopened, baseline, deferred, repairErr := reopenImplementationBeadsAfterTestFailureWithBaseline(m.townRoot, rig, v, summary)
 		var gap *testReviewPlanGap
 		if errors.As(repairErr, &gap) {
 			if _, ok := state.Transitions["plan_gap"]; !ok {
@@ -501,8 +536,18 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summa
 		} else if repairErr != nil {
 			return "", fmt.Errorf("prepare Tester repair: %w", repairErr)
 		} else if len(reopened) > 0 {
+			testRepairFiles = baseline
+			deferredTestRepairs = deferred
 			summary = strings.TrimSpace("Repair implementation beads: " + strings.Join(reopened, ", ") + "\n\n" + summary)
 			testerRepairPrepared = true
+		}
+	}
+	if outcome == "plan_gap" && rig != "" && (fromState == "test_review" || (fromState == "implementation" && activeTestRepair != nil)) {
+		if activeTestRepair != nil {
+			feedback = strings.TrimSpace(feedback + "\n\nOriginal test finding:\n" + activeTestRepair.Summary)
+		}
+		if deferred, ok := inst.DeferredTestReviews[m.workflowValidationFor(inst, tpl).ActivePhaseID()]; ok {
+			feedback = strings.TrimSpace(feedback + "\n\nOther deferred findings for this phase:\n" + deferred.Summary)
 		}
 	}
 	next, err := inst.Transition(tpl, outcome)
@@ -530,7 +575,7 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summa
 	// completed-phase file gap and, if found, rewind the active phase to the earliest problematic
 	// completed phase and route the polecat back to implementation to actually write the files.
 	implementationRewound := false
-	if fromState == "implementation" && next == "planning" && rig != "" {
+	if fromState == "implementation" && next == "planning" && outcome != "plan_dependency_blocked" && rig != "" {
 		v := m.workflowValidationFor(inst, tpl)
 		if repairLog, rerr := MaybeRewindToProblemPhaseForImplementation(m.townRoot, rig, v, feedback); rerr != nil && repairLog != "" {
 			log.Printf("[Manager] implementation failure recovery for %s (phase %s; returning to implementation): %s", rig, v.ActivePhaseID(), repairLog)
@@ -581,10 +626,13 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summa
 		// Exception: when plan_gap comes from test_review (grounded in executed test results),
 		// clear the frozen flag so the rework actually runs.
 		if next == "test_plan_rework" && IsTestPlanFrozen(m.townRoot, rig) {
-			if fromState == "test_review" && outcome == "plan_gap" {
+			if outcome == "plan_gap" && (fromState == "test_review" || (fromState == "implementation" && activeTestRepair != nil)) {
 				log.Printf("[Manager] TestPlanFrozen=true but plan_gap from test_review for %s — clearing freeze for grounded rework", rig)
 				if err := SetTestPlanFrozen(m.townRoot, rig, false); err != nil {
-					log.Printf("[Manager] Warning: failed to clear TestPlanFrozen: %v", err)
+					return "", fmt.Errorf("unfreeze test plan for rework: %w", err)
+				}
+				if err := SetTestPlanReviewed(m.townRoot, rig, false); err != nil {
+					return "", fmt.Errorf("clear test plan review for rework: %w", err)
 				}
 			} else {
 				log.Printf("[Manager] TestPlanFrozen=true for %s, skipping test_plan_rework — routing to implementation", rig)
@@ -762,8 +810,12 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summa
 		}
 	}
 	// Timeout keeps PendingRework even on same-state transitions (planning → planning).
+	var previousTestRepair *WorkflowRework
+	if activeTestRepair != nil && len(activeTestRepair.TestRepairFiles) > 0 {
+		previousTestRepair = activeTestRepair
+	}
 	recoveryHandoff := fromState == "review_recovery" && !recoveryPause
-	setRework := implementationRewound || recoveryHandoff || (next != fromState && IsCrossStateReworkOutcome(outcome)) || IsTimeoutOutcome(outcome) || IsVerificationErrorOutcome(outcome)
+	setRework := implementationRewound || recoveryHandoff || (next != fromState && IsCrossStateReworkOutcome(outcome)) || outcome == "plan_dependency_blocked" || IsTimeoutOutcome(outcome) || IsVerificationErrorOutcome(outcome)
 	if setRework && next != "" {
 		v := m.workflowValidationFor(inst, tpl)
 		reworkFeedback := PrepareWorkflowReworkFeedback(fromState, next, summary, feedback, v, tpl.ReworkFeedback)
@@ -775,7 +827,7 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summa
 		if IsVerificationErrorOutcome(outcome) {
 			reworkFeedback = verificationRetryFeedback(v, feedback)
 		}
-		if outcome == "dependency_blocked" {
+		if (outcome == "dependency_blocked" || outcome == "plan_dependency_blocked") && reviewAction == reviewFailureContinue {
 			reworkFeedback = truncateWorkflowText(feedback, maxWorkflowReworkFeedback)
 		}
 		rig := ""
@@ -808,7 +860,7 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summa
 				inst.touchStateEnteredAt()
 				inst.TestReviewFailures = 0
 			}
-		} else if !IsTimeoutOutcome(outcome) && !IsFailureOutcome(outcome) && !IsArchitectureReworkOutcome(outcome) && (fromState == "test_review" || fromState == "implementation") {
+		} else if !IsTimeoutOutcome(outcome) && !IsFailureOutcome(outcome) && !IsArchitectureReworkOutcome(outcome) && (fromState == "test_review" || (fromState == "implementation" && activeTestRepair == nil)) {
 			inst.TestReviewFailures = 0
 		}
 		// Loop safety for the tester ↔ planner cycle: if the tester keeps failing
@@ -866,7 +918,7 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summa
 		// Also reopen implement beads on ANY backward bounce that lands on
 		// design or planning — otherwise previously-closed beads stay closed
 		// and the pipeline deadlocks when planning tries to validate them.
-		if rig != "" && phaseAdvance == nil && next == "planning" &&
+		if rig != "" && phaseAdvance == nil && next == "planning" && outcome != "plan_dependency_blocked" &&
 			(fromState == "qa_review" || fromState == "test_review" || fromState == "plan_review") {
 			v := m.workflowValidationFor(inst, tpl)
 			if reopened, rerr := ReopenImplementationBeadsAfterQAFailure(m.townRoot, rig, v, summary); rerr != nil {
@@ -875,21 +927,59 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summa
 				fmt.Printf("[Manager] Reopened %d closed implement bead(s) after backward bounce to planning\n", len(reopened))
 			}
 		}
+		if fromState == "test_review" && next == "implementation" && len(deferredTestRepairs) > 0 {
+			if inst.DeferredTestReviews == nil {
+				inst.DeferredTestReviews = map[string]WorkflowRework{}
+			}
+			for phase, beads := range deferredTestRepairs {
+				deferred := inst.DeferredTestReviews[phase]
+				deferred.FromState = "test_review"
+				deferred.Outcome = "failure"
+				deferred.Summary = truncateWorkflowText(strings.TrimSpace(deferred.Summary+"\n"+summary), maxWorkflowReworkSummary)
+				if deferred.TestRepairFiles == nil {
+					deferred.TestRepairFiles = map[string]map[string]string{}
+				}
+				for id, paths := range beads {
+					if deferred.TestRepairFiles[id] == nil {
+						deferred.TestRepairFiles[id] = map[string]string{}
+					}
+					for _, path := range paths {
+						deferred.TestRepairFiles[id][path] = ""
+					}
+				}
+				inst.DeferredTestReviews[phase] = deferred
+			}
+		}
 		inst.PendingRework = &WorkflowRework{
-			FromState: fromState,
-			Outcome:   outcome,
-			Summary:   truncateWorkflowText(summary, maxWorkflowReworkSummary),
-			Feedback:  reworkFeedback,
-			AgentID:   agentID,
+			FromState:       fromState,
+			Outcome:         outcome,
+			Summary:         truncateWorkflowText(summary, maxWorkflowReworkSummary),
+			Feedback:        reworkFeedback,
+			AgentID:         agentID,
+			TestRepairFiles: testRepairFiles,
+		}
+		if fromState == "test_review" && next == "implementation" && len(testRepairFiles) > 0 {
+			inst.ActiveTestRepair = inst.PendingRework
+		}
+		if IsTimeoutOutcome(outcome) && next == fromState && previousTestRepair != nil {
+			inst.PendingRework = previousTestRepair
 		}
 	} else if !recoveryPause && !IsCheckpointOutcome(outcome) && !IsTimeoutOutcome(outcome) && !IsFailureOutcome(outcome) && !IsArchitectureReworkOutcome(outcome) {
 		// Success clears QA/plan-review rework for the next agent.
-		inst.PendingRework = nil
-		inst.TestReviewFailures = 0
+		if !(fromState == "implementation" && next == "test_review" && activeTestRepair != nil && len(activeTestRepair.TestRepairFiles) > 0) {
+			inst.PendingRework = nil
+			inst.TestReviewFailures = 0
+		}
 		inst.TestPlanFailures = 0
 	}
 	if phaseAdvance != nil {
 		inst.PendingRework = phaseAdvance
+	}
+	if (fromState == "test_review" && (outcome == "success" || outcome == "plan_gap" || IsArchitectureReworkOutcome(outcome))) || (fromState == "implementation" && (outcome == "plan_gap" || IsArchitectureReworkOutcome(outcome))) {
+		inst.ActiveTestRepair = nil
+	}
+	if (fromState == "test_review" && (outcome == "success" || outcome == "plan_gap")) || (fromState == "implementation" && outcome == "plan_gap" && previousTestRepair != nil) {
+		delete(inst.DeferredTestReviews, m.workflowValidationFor(inst, tpl).ActivePhaseID())
 	}
 	inst.recordReviewProgress(m.townRoot, rig, fromState, outcome, state.Hooks)
 	inst.recordVerificationError(fromState, outcome, state.Hooks.VerificationErrorLimit)

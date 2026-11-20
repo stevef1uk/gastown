@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/steveyegge/gastown/internal/session"
@@ -27,6 +28,26 @@ func TestRigPipelineRoles_includesArchitectQAPolecat(t *testing.T) {
 	wantArch := session.ArchitectSessionName(session.PrefixFor("testgt3"), "testgt3")
 	if roles[0].sessionID != wantArch {
 		t.Fatalf("architect session = %q want %q", roles[0].sessionID, wantArch)
+	}
+}
+
+func TestPathWithinDirectory(t *testing.T) {
+	tests := []struct {
+		directory string
+		path      string
+		want      bool
+	}{
+		{"/town", "/town", true},
+		{"/town", "/town/rig/.beads/dolt", true},
+		{"/town/.dolt-data", "/town/.dolt-data/testgt4", true},
+		{"/town/.dolt-data", "/town/.dolt-data-old/testgt4", false},
+		{"/town", "/town-old/rig", false},
+	}
+	for _, tt := range tests {
+		got := pathWithinDirectory(filepath.Clean(tt.directory), filepath.Clean(tt.path))
+		if got != tt.want {
+			t.Errorf("pathWithinDirectory(%q, %q) = %t, want %t", tt.directory, tt.path, got, tt.want)
+		}
 	}
 }
 

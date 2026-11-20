@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/steveyegge/gastown/internal/orchestrator"
@@ -15,6 +16,19 @@ type cmdGuardFn func(r *stateRunner, cmd string) error
 type trackFn func(r *stateRunner, cmd string, cmdErr error)
 type artifactValidateFn func(r *stateRunner, outcome string) error
 type artifactAutoCompleteFn func(r *stateRunner) error
+
+func taskTestRepair(task *orchestrator.Task) *orchestrator.WorkflowRework {
+	if task == nil {
+		return nil
+	}
+	if task.ActiveTestRepair != nil {
+		return task.ActiveTestRepair
+	}
+	if task.PendingRework != nil && task.PendingRework.FromState == "test_review" {
+		return task.PendingRework
+	}
+	return nil
+}
 
 var cmdGuardHandlers = map[string]cmdGuardFn{
 	"analysis": func(r *stateRunner, cmd string) error {
@@ -36,6 +50,19 @@ var cmdGuardHandlers = map[string]cmdGuardFn{
 		return validateProjectSetupCommand(cmd, r.rig, r.v)
 	},
 	"implementation": func(r *stateRunner, cmd string) error {
+		if repair := taskTestRepair(r.task); isBeadCloseCommand(cmd) && repair != nil {
+			id := extractBeadIDFromBdClose(cmd)
+			if id == "" {
+				return fmt.Errorf("test review repair requires an explicit bead ID for bd close")
+			}
+			for repairID := range repair.TestRepairFiles {
+				if regexp.MustCompile(`(^|[^[:alnum:]_-])` + regexp.QuoteMeta(repairID) + `($|[^[:alnum:]_-])`).MatchString(cmd) {
+					if err := orchestrator.ValidateTestRepairChanges(rigMayorRigDir(r.townRoot, r.rig), repair.TestRepairFiles, repairID); err != nil {
+						return err
+					}
+				}
+			}
+		}
 		if err := rejectInventedBdVerifyCommand(cmd, r.townRoot, r.rig, r.track.activeBead, r.v); err != nil {
 			return err
 		}
@@ -306,7 +333,12 @@ var artifactValidators = map[string]artifactValidateFn{
 	"project_setup": func(r *stateRunner, _ string) error {
 		return validateProjectSetupArtifacts(r.townRoot, r.rig, r.track.hadCmdFailure, r.track.verifyOK, r.v)
 	},
-	"implementation": func(r *stateRunner, _ string) error {
+	"implementation": func(r *stateRunner, outcome string) error {
+		if repair := taskTestRepair(r.task); outcome == "success" && repair != nil {
+			if err := orchestrator.ValidateTestRepairChanges(rigMayorRigDir(r.townRoot, r.rig), repair.TestRepairFiles, ""); err != nil {
+				return err
+			}
+		}
 		if false {
 			return fmt.Errorf("QA rework pending — fix runtime/smoke issues named in Prior step failed before completing implementation")
 		}
@@ -322,6 +354,20 @@ var artifactValidators = map[string]artifactValidateFn{
 		return validateTestPlanReviewArtifacts(r.townRoot, r.rig, r.v)
 	},
 	"test_review": func(r *stateRunner, outcome string) error {
+		if outcome == "success" && r.task != nil && r.task.DeferredTestReview != nil {
+			if err := orchestrator.ValidateTestRepairEvidence(rigMayorRigDir(r.townRoot, r.rig), r.task.DeferredTestReview.TestRepairFiles); err != nil {
+				return fmt.Errorf("deferred test finding: %w", err)
+			}
+		}
+		if repair := taskTestRepair(r.task); outcome == "success" && repair != nil {
+			rigDir := rigMayorRigDir(r.townRoot, r.rig)
+			if err := orchestrator.ValidateTestRepairChanges(rigDir, repair.TestRepairFiles, ""); err != nil {
+				return err
+			}
+			if err := orchestrator.ValidateTestRepairEvidence(rigDir, repair.TestRepairFiles); err != nil {
+				return err
+			}
+		}
 		return validateTestReviewArtifacts(r.townRoot, r.rig, outcome, r.track.hadCmdFailure, r.track.verifyOK, r.v)
 	},
 }
@@ -339,6 +385,9 @@ var artifactAutoCompleters = map[string]artifactAutoCompleteFn{
 	"implementation": func(r *stateRunner) error {
 		// Block auto-complete when test_review or qa_review just failed — the Polecat
 		// must actually fix the failing test or runtime issue before proceeding.
+		if taskTestRepair(r.task) != nil {
+			return fmt.Errorf("test review rework pending — must fix issues before auto-completing")
+		}
 		if r.task != nil && r.task.PendingRework != nil &&
 			(r.task.PendingRework.FromState == "test_review" || r.task.PendingRework.FromState == "qa_review") {
 			return fmt.Errorf("rework pending from %s — must fix issues before auto-completing", r.task.PendingRework.FromState)

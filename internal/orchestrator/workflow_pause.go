@@ -2,7 +2,10 @@ package orchestrator
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/steveyegge/gastown/internal/events"
 )
@@ -72,13 +75,38 @@ func (m *Manager) ResumeWorkflow(workflowID string) error {
 	if inst.Status != "paused" {
 		return fmt.Errorf("%w (status=%q)", ErrWorkflowNotPaused, inst.Status)
 	}
+	rig := rigFromInst(inst)
+	if rig != "" {
+		profile, found, err := LoadRawRigWorkflowProfile(m.townRoot, rig)
+		if err != nil {
+			return fmt.Errorf("load rig workflow profile before resume: %w", err)
+		}
+		if found && profile.HasPhasedDelivery() &&
+			len(profile.CompletedPhaseIDsField) == 0 &&
+			strings.TrimSpace(profile.RewoundFromPhaseIDField) == "" {
+			if _, err := NormalizeRigWorkflowProfile(m.townRoot, rig); err != nil {
+				return fmt.Errorf("reconcile legacy rig phase before resume: %w", err)
+			}
+		}
+	}
+	resumeSummary := ""
+	if inst.PendingRework != nil && inst.CurrentState == "planning" &&
+		inst.PendingRework.FromState == "planning" && inst.PendingRework.Outcome == "timeout" {
+		enteredAt, err := time.Parse(time.RFC3339, inst.StateEnteredAt)
+		if err == nil {
+			planPath := filepath.Join(m.townRoot, rig, "mayor", "rig", "plan.md")
+			if planInfo, statErr := os.Stat(planPath); statErr == nil && planInfo.ModTime().After(enteredAt) {
+				inst.PendingRework = nil
+				resumeSummary = "cleared superseded planning-timeout feedback because plan.md was updated while paused"
+			}
+		}
+	}
 	inst.Status = "running"
 	inst.PauseReason = ""
 	if err := m.persistLocked(); err != nil {
 		return fmt.Errorf("persist instances: %w", err)
 	}
-	rig := rigFromInst(inst)
-	m.logWorkflowFeed(events.TypeWorkflowTransition, workflowID, inst.TemplateID, inst.CurrentState, inst.CurrentState, "resumed", "", rig)
+	m.logWorkflowFeed(events.TypeWorkflowTransition, workflowID, inst.TemplateID, inst.CurrentState, inst.CurrentState, "resumed", resumeSummary, rig)
 	return nil
 }
 

@@ -62,9 +62,43 @@ func ValidateDependencyBlock(v WorkflowValidation, b DependencyBlock) error {
 
 var dependencyTokenRE = regexp.MustCompile("[A-Za-z0-9_./@+-]+")
 
+func withoutDependencyAnnotations(text string) string {
+	var result strings.Builder
+	for len(text) > 0 {
+		start := strings.IndexByte(text, '(')
+		if start < 0 {
+			result.WriteString(text)
+			break
+		}
+		result.WriteString(text[:start])
+		depth, end := 0, -1
+		for i := start; i < len(text); i++ {
+			switch text[i] {
+			case '(':
+				depth++
+			case ')':
+				depth--
+				if depth == 0 {
+					end = i
+				}
+			}
+			if end >= 0 {
+				break
+			}
+		}
+		if end < 0 {
+			result.WriteString(text[start:])
+			break
+		}
+		result.WriteByte(' ')
+		text = text[end+1:]
+	}
+	return result.String()
+}
+
 // planFileDependencies reads only explicitly labelled Depends on fields and
-// exact known paths/IDs. Prose, filenames with ambiguous basenames, and external
-// packages never invent dependency edges.
+// exact known paths/IDs. Parenthetical explanations,
+// filenames with ambiguous basenames, and external packages never invent edges.
 func planFileDependencies(doc string, files []string) map[string][]string {
 	known := map[string]bool{}
 	for _, file := range files {
@@ -99,7 +133,7 @@ func planFileDependencies(doc string, files []string) map[string][]string {
 		if consumer == "" || !ok || !strings.EqualFold(strings.Trim(label, " *"), "Depends on") {
 			continue
 		}
-		for _, token := range dependencyTokenRE.FindAllString(rest, -1) {
+		for _, token := range dependencyTokenRE.FindAllString(withoutDependencyAnnotations(rest), -1) {
 			provider := token
 			if p := ids[token]; p != "" {
 				provider = p
@@ -296,6 +330,19 @@ func DeliveryDependencyProblems(rigDir string, v WorkflowValidation) []string {
 	}
 	sort.Strings(problems)
 	return problems
+}
+
+// DeliveryPlanDependencyProblems returns problems introduced by plan.md when
+// the canonical delivery contract is independently valid.
+func DeliveryPlanDependencyProblems(rigDir string, v WorkflowValidation) []string {
+	if rigDir == "" || len(DeliveryDependencyProblems("", v)) != 0 {
+		return nil
+	}
+	return DeliveryDependencyProblems(rigDir, v)
+}
+
+func planDependencyRepairFeedback(problems []string) string {
+	return "The implementation plan has dependency defects:\n- " + strings.Join(problems, "\n- ") + "\n\nAmend the Depends on fields in plan.md to remove the unsupported edges and make the combined plan and delivery contract buildable. Preserve the canonical delivery contract, existing implementation, tests, completed phases, and real bead IDs. If a necessary prerequisite requires a delivery contract change, escalate to the architect instead of hiding it."
 }
 
 func dependencyRepairFeedback(problems []string) string {

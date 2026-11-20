@@ -13,6 +13,26 @@ import (
 
 const qaCleanupFailure = `Verify chain aborted before any HTTP probe ran — not an application failure. pkill -f "uvicorn app.main:app" hit pid 1600309 with Operation not permitted, then the whole CMD was terminated by signal before docker compose or curls. No bead reopened work is warranted: all implementation beads remain closed (b-main, b-web). Prior manual smoke passed pytest 4 passed and GET /api/health. Drop the cross-session pkill and run the configured compose build/up and curls directly.`
 
+func TestValidateQAFailureReportFields(t *testing.T) {
+	for _, tt := range []struct {
+		name, summary, missing string
+	}{
+		{"unstructured", "defect found", "summary"},
+		{"missing targets", `{"summary":"defect","evidence":"observed failure"}`, "repair_bead_ids"},
+		{"empty target", `{"summary":"defect","repair_bead_ids":[" "],"evidence":"observed failure"}`, "empty IDs"},
+		{"missing evidence", `{"summary":"evidence in prose","repair_bead_ids":["b-main"]}`, "evidence"},
+		{"whitespace evidence", `{"summary":"defect","repair_bead_ids":["b-main"],"evidence":" "}`, "evidence"},
+		{"complete", `{"summary":"defect","repair_bead_ids":["b-main"],"evidence":"observed failure"}`, ""},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateQAFailureReportFields(tt.summary)
+			if (err == nil) != (tt.missing == "") || (err != nil && !strings.Contains(err.Error(), tt.missing)) {
+				t.Fatalf("error=%v, want %q", err, tt.missing)
+			}
+		})
+	}
+}
+
 func verificationReviewFixture(t *testing.T) (*Manager, string, WorkflowValidation, string, string) {
 	t.Helper()
 	town, rig := t.TempDir(), "sample"

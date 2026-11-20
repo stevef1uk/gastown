@@ -83,11 +83,12 @@ type Transition struct {
 
 // WorkflowRework captures why a step failed so the next FSM state/agent can fix it.
 type WorkflowRework struct {
-	FromState string `json:"from_state"`
-	Outcome   string `json:"outcome"`
-	Summary   string `json:"summary"`
-	Feedback  string `json:"feedback,omitempty"`
-	AgentID   string `json:"agent_id,omitempty"`
+	FromState       string                       `json:"from_state"`
+	Outcome         string                       `json:"outcome"`
+	Summary         string                       `json:"summary"`
+	Feedback        string                       `json:"feedback,omitempty"`
+	AgentID         string                       `json:"agent_id,omitempty"`
+	TestRepairFiles map[string]map[string]string `json:"test_repair_files,omitempty"`
 }
 
 // WorkflowInstance is an active execution of a WorkflowTemplate.
@@ -100,10 +101,12 @@ type WorkflowInstance struct {
 	// Used for state_timeout_seconds. Refreshed only on cross-state transitions and
 	// after orchestrator wall-clock timeout (applyStateTimeout); same-state timeout/failure
 	// rework loops do not reset it so max_cmd_turns sessions cannot defer hard reset.
-	StateEnteredAt string            `json:"state_entered_at,omitempty"`
-	Variables      map[string]string `json:"variables"`
-	Status         string            `json:"status"` // "running", "paused", "completed", "failed"
-	PendingRework  *WorkflowRework   `json:"pending_rework,omitempty"`
+	StateEnteredAt      string                    `json:"state_entered_at,omitempty"`
+	Variables           map[string]string         `json:"variables"`
+	Status              string                    `json:"status"` // "running", "paused", "completed", "failed"
+	PendingRework       *WorkflowRework           `json:"pending_rework,omitempty"`
+	ActiveTestRepair    *WorkflowRework           `json:"active_test_repair,omitempty"`
+	DeferredTestReviews map[string]WorkflowRework `json:"deferred_test_reviews,omitempty"`
 	// TestReviewFailures counts consecutive test_review failure → implementation bounces.
 	// Reset on any success or escalation; at tester.max_review_retries the orchestrator
 	// escalates to test_plan_rework/design instead of looping (docs/design/tester-agent.md §8).
@@ -158,7 +161,7 @@ func IsPlanGapOutcome(outcome string) bool {
 
 // IsCrossStateReworkOutcome reports outcomes that should set PendingRework on a state change.
 func IsCrossStateReworkOutcome(outcome string) bool {
-	return IsFailureOutcome(outcome) || IsArchitectureReworkOutcome(outcome) || IsPlanGapOutcome(outcome) || IsTimeoutOutcome(outcome)
+	return IsFailureOutcome(outcome) || IsArchitectureReworkOutcome(outcome) || IsPlanGapOutcome(outcome) || IsTimeoutOutcome(outcome) || strings.EqualFold(strings.TrimSpace(outcome), "plan_dependency_blocked")
 }
 
 // AllowedOutcomes returns transition keys for the state (valid complete_task outcomes).

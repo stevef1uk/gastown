@@ -71,6 +71,9 @@ For server-only smoke verification, use the documented startup/probe/cleanup com
    ```
 
 3. Write the report from the observed results. Real assertions establish coverage, not a passing execution. If the runner reports failures, record FAIL and quote the failing tests; never label them PASS because the test file contains the expected assertions.
+   When a prior test-review finding is being rechecked, inspect each repaired test and explain how its assertions cover that specific finding. Include an evidence line for each repaired test file, quoting a relevant assertion exactly with its actual line number:
+   `- Evidence: {"file":"relative/path/to/test","line":12,"excerpt":"exact assertion line"}`
+   A changed file or green run alone is not proof of coverage. If the finding was mistaken or the plan is wrong, use `plan_gap` and explain the evidence rather than approving an unsupported claim.
    ```
    CMD: cd {{rig}}/mayor/rig && cat > test-report.md << 'EOF'
    # Test Review — <active phase name>
@@ -94,7 +97,8 @@ For server-only smoke verification, use the documented startup/probe/cleanup com
    CMD: cd {{rig}}/mayor/rig && bd list --status=closed
    ```
 
-5. On **failure**, name **exact** fixes: `{{layout_root}}/path/to/test_file missing assertions for <requirement>` and the verified owning bead IDs to reopen, so the Polecat can rework in one pass. Do not reject tests merely because they use a recorder rather than a live HTTP server; judge whether they exercise the required behavior and real wiring.
+5. On **failure**, name **exact** fixes in the JSON summary: `{{layout_root}}/path/to/test_file missing assertions for <requirement>` and the verified owning bead IDs to reopen, so the Polecat can rework in one pass. Do not include an unrelated closed-bead inventory in the summary; command output is diagnostic, not a repair list. Do not reject tests merely because they use a recorder rather than a live HTTP server; judge whether they exercise the required behavior and real wiring.
+   For each named test file, classify the work with exactly one of `Test repair: <test path>` (the test is missing or needs stronger assertions) or `Implementation repair: <test path>` (the test is correct but the implementation must change). Include the exact path and the concrete finding in the summary. Do not classify a passing, adequate test as needing a cosmetic edit.
 
 6. On **plan_gap**, name the requirements `TEST_PLAN.md` omits or mis-levels, so the Tester can rewrite it.
 
@@ -104,7 +108,7 @@ Example success:
 `{"outcome":"success","summary":"All TEST_PLAN.md rows covered; unit tests assert API contracts; phase verify passed."}`
 
 Example failure:
-`{"outcome":"failure","summary":"TEST_PLAN.md row R-3: test file missing assertions on key behavior — reopen bead <id>; add real assertions and re-verify."}`
+`{"outcome":"failure","summary":"Test repair: app/tests/test_feature.py — TEST_PLAN.md row R-3 lacks assertions on key behavior; reopen bead <id> and re-verify."}`
 
 Example plan_gap:
 `{"outcome":"plan_gap","summary":"TEST_PLAN.md omits requirement R-4 and mis-levels R-2 — Tester must rewrite plan."}`

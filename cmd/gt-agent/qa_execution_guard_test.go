@@ -1,11 +1,17 @@
 package main
 
 import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/steveyegge/gastown/internal/llm"
 	"github.com/steveyegge/gastown/internal/orchestrator"
 )
 
@@ -94,6 +100,110 @@ func TestQAExecutionResult_PreservesTargetsWithAndWithoutCommands(t *testing.T) 
 	}
 	if err := validateQAArtifacts("", "sample", "all_passed", true, false, false, false, false, orchestrator.WorkflowValidation{}); err == nil {
 		t.Fatal("execution error weakened approval gates")
+	}
+}
+
+func TestQAExecutionResult_RequestsMissingEvidenceBeforeSubmitting(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		withCommands bool
+		complete     bool
+	}{
+		{name: "json-only"},
+		{name: "with-commands", withCommands: true},
+		{name: "complete-with-commands", withCommands: true, complete: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			town, rig := t.TempDir(), "sample"
+			dir := rigMayorRigDir(town, rig)
+			if err := os.MkdirAll(dir, 0755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(dir, "SPEC.md"), []byte("fixture"), 0644); err != nil {
+				t.Fatal(err)
+			}
+			incomplete := `{"outcome":"failure","summary":"Evidence: main.py lacks task routes","repair_bead_ids":["b-main"]}`
+			complete := `{"outcome":"failure","summary":"Task routes missing","repair_bead_ids":["b-main"],"evidence":"main.py has no task routes"}`
+			var responses []string
+			if tc.complete {
+				responses = []string{"CMD: cat sample/mayor/rig/SPEC.md\n" + complete}
+			} else if tc.withCommands {
+				responses = []string{"CMD: cat sample/mayor/rig/SPEC.md\n" + incomplete, complete}
+			} else {
+				responses = []string{"CMD: cat sample/mayor/rig/SPEC.md", incomplete, complete}
+			}
+			calls := 0
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+				var body struct {
+					Messages []struct {
+						Content string `json:"content"`
+					} `json:"messages"`
+				}
+				if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
+					t.Errorf("decode request: %v", err)
+				}
+				if !tc.complete && calls == len(responses)-1 {
+					last := body.Messages[len(body.Messages)-1].Content
+					if !strings.Contains(last, "evidence") || !strings.Contains(last, "repair_bead_ids") {
+						t.Errorf("missing report correction guidance: %q", last)
+					}
+				}
+				if calls >= len(responses) {
+					t.Error("unexpected extra request")
+					http.Error(w, "unexpected request", http.StatusInternalServerError)
+					return
+				}
+				content := responses[calls]
+				calls++
+				_ = json.NewEncoder(w).Encode(map[string]any{
+					"choices": []any{map[string]any{"message": map[string]string{"content": content}}},
+				})
+			}))
+			defer server.Close()
+			task := &orchestrator.Task{
+				WorkflowID: "wf-qa-fields", State: "qa-fixture", Rig: rig,
+				Hooks:           orchestrator.StateHooks{Track: "qa", VerificationErrorLimit: 3, MaxCmdTurns: 4, RequireExplicitOutcome: true},
+				AllowedOutcomes: []string{"failure", "verification_error"},
+			}
+			client := llm.NewClient(server.URL, "test", "qa", time.Second)
+			outcome, summary, _, err := executeOrchestratedTask(context.Background(), client, town, rig, "", task, nil)
+			report, ok := orchestrator.ParseQAFailureReport(summary)
+			if err != nil || outcome != "failure" || !ok || report.Evidence != "main.py has no task routes" || calls != len(responses) {
+				t.Fatalf("outcome=%q report=%+v calls=%d err=%v", outcome, report, calls, err)
+			}
+		})
+	}
+}
+
+func TestQAExecutionResult_IncompleteReportExhaustsTurns(t *testing.T) {
+	town, rig := t.TempDir(), "sample"
+	dir := rigMayorRigDir(town, rig)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "SPEC.md"), []byte("fixture"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		calls++
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []any{map[string]any{"message": map[string]string{
+				"content": `{"outcome":"failure","summary":"Task routes missing","repair_bead_ids":["b-main"]}`,
+			}}},
+		})
+	}))
+	defer server.Close()
+	task := &orchestrator.Task{
+		WorkflowID: "wf-qa-fields-exhausted", State: "qa-fixture", Rig: rig,
+		Hooks:           orchestrator.StateHooks{Track: "qa", VerificationErrorLimit: 3, MaxCmdTurns: 2},
+		AllowedOutcomes: []string{"failure", "verification_error"},
+	}
+	client := llm.NewClient(server.URL, "test", "qa", time.Second)
+	outcome, summary, feedback, err := executeOrchestratedTask(context.Background(), client, town, rig, "", task, nil)
+	if err == nil || outcome != "fail" || calls != 2 || !strings.Contains(feedback, "evidence") ||
+		!strings.Contains(summary, "Task routes missing") || orchestrator.ValidateQAFailureReportFields(summary) == nil {
+		t.Fatalf("outcome=%q summary=%q feedback=%q calls=%d err=%v", outcome, summary, feedback, calls, err)
 	}
 }
 

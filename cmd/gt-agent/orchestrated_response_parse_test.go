@@ -463,6 +463,57 @@ func TestUnwrapJSONCommandArray_noCommandsKey(t *testing.T) {
 	}
 }
 
+func TestUnwrapCmdsJSONArray_convertsInlineCommandEnvelope(t *testing.T) {
+	t.Parallel()
+	in := `I need to inspect the rig documents first.
+{
+  "cmds": [
+    "cat testgt4m/mayor/rig/SPEC.md",
+    "cat testgt4m/mayor/rig/architecture.md"
+  ],
+  "max_commands": 8
+}
+Then I will decide.`
+	got := unwrapCmdsJSONArray(in)
+	if !strings.Contains(got, "CMD: cat testgt4m/mayor/rig/SPEC.md") {
+		t.Fatalf("want CMD: for first cmds entry, got %q", got)
+	}
+	if !strings.Contains(got, "CMD: cat testgt4m/mayor/rig/architecture.md") {
+		t.Fatalf("want CMD: for second cmds entry, got %q", got)
+	}
+	// Original prose preserved.
+	if !strings.Contains(got, "Then I will decide.") {
+		t.Fatalf("prose should be preserved: %q", got)
+	}
+}
+
+func TestUnwrapCmdsJSONArray_noCmdsKeyUnchanged(t *testing.T) {
+	t.Parallel()
+	in := `{"outcome":"failure","summary":"no commands here"}`
+	got := unwrapCmdsJSONArray(in)
+	if got != in {
+		t.Fatalf("no cmds key should return unchanged: %q", got)
+	}
+}
+
+func TestUnwrapCmdsJSONArray_emptyArrayUnchanged(t *testing.T) {
+	t.Parallel()
+	in := `some text {"cmds": []} more text`
+	got := unwrapCmdsJSONArray(in)
+	if got != in {
+		t.Fatalf("empty cmds array should return unchanged: %q", got)
+	}
+}
+
+func TestUnwrapCmdsJSONArray_invalidJsonSkipped(t *testing.T) {
+	t.Parallel()
+	in := `some text {"cmds": not valid json} more text`
+	got := unwrapCmdsJSONArray(in)
+	if got != in {
+		t.Fatalf("invalid json block should be skipped: %q", got)
+	}
+}
+
 func TestPreprocessOrchestratedResponse_jsonCommandArray(t *testing.T) {
 	t.Parallel()
 	in := `{"commands": [{"keystrokes": "cd testgt3/mayor/rig/linkshelf && go test -count=1 ./internal/api/..."}]}`

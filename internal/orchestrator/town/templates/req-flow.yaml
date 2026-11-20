@@ -168,6 +168,9 @@ states:
       1. Read SPEC and architecture under `{{rig}}/mayor/rig/`.
       2. Create implementation beads and `plan.md` (≥{{min_plan_bytes}} bytes) with a ## Bead map: real IDs from bd list, full paths, scope + acceptance per file.
     hooks:
+      dependency_review: true
+      review_failure_limit: 3
+      review_recovery_state: review_recovery
       prompt_context: [planning_bead_bootstrap]
       pre_run: [sync_planning_artifacts]
       state_timeout_seconds: 1800
@@ -195,6 +198,10 @@ states:
         to: planning
       architecture_failure:
         to: design
+      dependency_blocked:
+        to: design
+      plan_dependency_blocked:
+        to: planning
   plan_review:
     role: qa
     prompt_file: prompts/rig-flow/plan_review.md
@@ -229,6 +236,8 @@ states:
         to: design
       dependency_blocked:
         to: design
+      plan_dependency_blocked:
+        to: planning
   review_recovery:
     role: mayor
     prompt_file: prompts/rig-flow/review_recovery.md
@@ -389,6 +398,8 @@ states:
         to: design
       dependency_blocked:
         to: design
+      plan_dependency_blocked:
+        to: planning
   implementation:
     role: polecat
     prompt_file: prompts/rig-flow/implementation.md
@@ -495,6 +506,8 @@ states:
         to: design
       dependency_blocked:
         to: design
+      plan_dependency_blocked:
+        to: planning
       checkpoint:
         to: implementation
       timeout:
@@ -507,6 +520,8 @@ states:
       2. Confirm every active-phase test file exists, has real assertions (not stubs), and the phase verify ({{phase_qa_verify_command}}) is green.
       3. Report success only when tests cover every requirement; failure names failing beads (polecat), plan_gap when the plan is incomplete (tester rewrites TEST_PLAN.md), architecture_failure when SPEC/architecture are the blocker (architect).
     hooks:
+      review_failure_limit: 3
+      review_recovery_state: review_recovery
       max_cmd_turns: 20
       cmd_guard: test_review
       cmd_rewrites: [rig_placeholders, unwrap_bash_lc, test_plan_md_after_cd, bd_list_limit, bd_strip_beads_dir, unittest_workdir]
@@ -535,7 +550,7 @@ states:
       architecture_failure:
         to: design
       timeout:
-        to: implementation
+        to: test_review
   qa_review:
     role: qa
     prompt_file: prompts/rig-flow/qa_review.md
