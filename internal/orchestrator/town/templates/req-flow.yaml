@@ -564,6 +564,8 @@ states:
       3. Use task_passed (more work), all_passed (done), failure (evidenced code/test defects), or verification_error (command/environment could not complete verification).
     hooks:
       verification_error_limit: 3
+      review_failure_limit: 3
+      review_recovery_state: review_recovery
       prompt_context: [missing_implement_files]
       state_timeout_seconds: 1800
       cmd_timeout_seconds: 900
@@ -588,7 +590,7 @@ states:
       retry_hint: |
         One CMD: per line. Review closed beads against SPEC and architecture; use allowed QA outcomes only.
       failure_hint: |
-        Run the configured phase verification directly from {{rig}}/mayor/rig and follow qa_runtime_smoke_block for the documented app runtime. Do not infer the server lifecycle from the test language or prepend pkill, killall, or port-killing cleanup. If execution cannot reach the checks, use verification_error with the actual command/error; no repair bead IDs. For an application/test defect, use failure with summary, repair_bead_ids (only actual defect owners), and evidence. A closed-bead inventory is never a repair list.
+        Run the configured phase verification directly from {{rig}}/mayor/rig and follow qa_runtime_smoke_block for the documented app runtime. Do not infer the server lifecycle from the test language or prepend pkill, killall, or port-killing cleanup. If execution cannot reach the checks, use verification_error with the actual command/error; no repair bead IDs. For application/test defects, use failure with a summary and a findings array containing every defect, each with its own summary, repair_bead_ids (only actual defect owners), evidence, and paths when known. Do not stop after the first finding. A closed-bead inventory is never a repair list.
     transitions:
       task_passed:
         to: implementation

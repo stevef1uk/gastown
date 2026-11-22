@@ -22,6 +22,11 @@ func TestValidateQAFailureReportFields(t *testing.T) {
 		{"empty target", `{"summary":"defect","repair_bead_ids":[" "],"evidence":"observed failure"}`, "empty IDs"},
 		{"missing evidence", `{"summary":"evidence in prose","repair_bead_ids":["b-main"]}`, "evidence"},
 		{"whitespace evidence", `{"summary":"defect","repair_bead_ids":["b-main"],"evidence":" "}`, "evidence"},
+		{"finding summary", `{"summary":"two defects","findings":[{"repair_bead_ids":["b-main"],"evidence":"observed failure"}]}`, "findings[0].summary"},
+		{"finding beads", `{"summary":"two defects","findings":[{"summary":"bad route","evidence":"observed failure"}]}`, "findings[0].repair_bead_ids"},
+		{"finding evidence", `{"summary":"two defects","findings":[{"summary":"bad route","repair_bead_ids":["b-main"],"evidence":"observed route"},{"summary":"bad status","repair_bead_ids":["b-web"]}]}`, "findings[1].evidence"},
+		{"complete findings", `{"summary":"two defects","findings":[{"summary":"bad route","repair_bead_ids":["b-main"],"evidence":"observed route"},{"summary":"bad status","repair_bead_ids":["b-web"],"evidence":"observed status"}]}`, ""},
+		{"findings inherit top-level fields", `{"summary":"two defects","repair_bead_ids":["b-main"],"evidence":"observed failure","findings":[{"summary":"bad route"},{"summary":"bad status"}]}`, ""},
 		{"complete", `{"summary":"defect","repair_bead_ids":["b-main"],"evidence":"observed failure"}`, ""},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -30,6 +35,20 @@ func TestValidateQAFailureReportFields(t *testing.T) {
 				t.Fatalf("error=%v, want %q", err, tt.missing)
 			}
 		})
+	}
+}
+
+func TestQAFailureRepairBeadIDs_flattensAllFindings(t *testing.T) {
+	report := QAFailureReport{
+		Summary:       "two defects",
+		RepairBeadIDs: []string{"b-main"},
+		Findings: []QAFinding{
+			{Summary: "bad route", RepairBeadIDs: []string{"b-web"}},
+			{Summary: "bad status", RepairBeadIDs: []string{"b-main", " b-web "}},
+		},
+	}
+	if got := strings.Join(qaFailureRepairBeadIDs(report), ","); got != "b-main,b-web" {
+		t.Fatalf("repair IDs = %q", got)
 	}
 }
 
@@ -174,6 +193,45 @@ func TestVerificationReview_OnlyExplicitDefectTargetsAreReopened(t *testing.T) {
 		data, _ := json.Marshal(invalid)
 		if got, _ := normalizeVerificationReviewResult(town, rig, v, "failure", string(data)); got != "verification_error" {
 			t.Fatalf("invalid repair report accepted: %+v", invalid)
+		}
+	}
+}
+
+func TestVerificationReview_MultiFindingReportReopensAllOwners(t *testing.T) {
+	m, id, _, town, rig := verificationReviewFixture(t)
+	status := map[string]string{"b-main": "closed", "b-web": "closed"}
+	beads := []PlanBead{{ID: "b-main", Title: "Implement product/main.py per architecture"}, {ID: "b-web", Title: "Implement product/web/app.js per architecture"}}
+	setListImplementBeadsByStatusHook(t, town, rig, func(_, _ string, _ WorkflowValidation, wanted string) ([]PlanBead, error) {
+		var out []PlanBead
+		for _, bead := range beads {
+			if status[bead.ID] == wanted {
+				out = append(out, bead)
+			}
+		}
+		return out, nil
+	})
+	previous := bdUpdateImplementBeadStatusHook
+	bdUpdateImplementBeadStatusHook = func(_, _, id, value string) error { status[id] = value; return nil }
+	t.Cleanup(func() { bdUpdateImplementBeadStatusHook = previous })
+	report := QAFailureReport{Summary: "Stage 1: two active-phase defects", Findings: []QAFinding{
+		{Summary: "bad status value", RepairBeadIDs: []string{"b-main"}, Evidence: "main.py accepts in_progress"},
+		{Summary: "out-of-scope route", RepairBeadIDs: []string{"b-web"}, Evidence: "app.js calls forbidden route", Paths: []string{"product/web/app.js"}},
+	}}
+	data, _ := json.Marshal(report)
+	if next, err := m.CompleteTask(id, "failure", "", string(data), "", nil); err != nil || next != "implementation" {
+		t.Fatalf("multi-finding defect did not route to repair: %s %v", next, err)
+	}
+	if status["b-main"] != "open" || status["b-web"] != "open" {
+		t.Fatalf("not all finding owners reopened: %v", status)
+	}
+	scope := QAReworkWriteScopeFromTransition(town, rig, "qa_review", "implementation", string(data))
+	if !scope.BeadCited("b-main") || !scope.BeadCited("b-web") {
+		t.Fatalf("repair write scope dropped finding owners: %+v", scope)
+	}
+	summary := m.instances[id].PendingRework.Summary
+	for _, want := range []string{"bad status value", "out-of-scope route"} {
+		if !strings.Contains(summary, want) {
+			t.Fatalf("summary lost finding %q: %q", want, summary)
 		}
 	}
 }

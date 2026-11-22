@@ -153,6 +153,10 @@ func PlanningPlanMDNeedsRefresh(townRoot, rig string, v WorkflowValidation) bool
 	if !BeadsDatabaseReady(townRoot, rig) {
 		return false
 	}
+	return planningPlanMDBeadStateNeedsRefresh(townRoot, rig, v, data)
+}
+
+func planningPlanMDBeadStateNeedsRefresh(townRoot, rig string, v WorkflowValidation, data []byte) bool {
 	open, err := ListImplementBeadsOpenOrInProgress(townRoot, rig, v)
 	if err != nil {
 		return true
@@ -163,7 +167,12 @@ func PlanningPlanMDNeedsRefresh(townRoot, rig string, v WorkflowValidation) bool
 			return true
 		}
 	} else {
-		if err := ValidatePlanBeads(open, filepath.Join(rigDir, "architecture.md"), v, rig); err != nil {
+		covered, coverErr := PlanningBeadCoverageSatisfied(townRoot, rig, v)
+		if coverErr != nil || !covered {
+			return true
+		}
+		archPath := filepath.Join(townRoot, rig, "mayor", "rig", "architecture.md")
+		if err := ValidatePlanBeadsWithClosedCoverage(open, archPath, v, rig, covered); err != nil {
 			return true
 		}
 		if err := ValidatePlanBeadPathsExact(open, v, rig); err != nil {

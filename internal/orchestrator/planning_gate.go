@@ -92,19 +92,19 @@ func validatePlanningGateArtifacts(townRoot, rig, rigDir, fromState string, v Wo
 	// toolchain. Requiring open beads here prevents recovery when a phase was
 	// already implemented and its beads were closed.
 	if fromState != "project_setup" {
+		covered, err := PlanningBeadCoverageSatisfied(townRoot, rig, v)
+		if err != nil {
+			return fmt.Errorf("%s success blocked: %w", fromState, err)
+		}
 		if len(open) == 0 {
 			// All implement beads for the phase are closed. Coverage is satisfied
 			// only when every required_files path has a closed bead with a green
 			// artifact on disk; otherwise planning sync must reopen the missing work.
-			covered, err := PlanningBeadCoverageSatisfied(townRoot, rig, v)
-			if err != nil {
-				return fmt.Errorf("%s success blocked: %w", fromState, err)
-			}
 			if !covered {
 				return fmt.Errorf("%s success blocked: no open beads matching required_files and closed beads do not cover all required_files with green artifacts; run `gt rig sync-planning %s` to repair bead coverage", fromState, rig)
 			}
 		} else {
-			if err := ValidatePlanBeads(open, archPath, v, rig); err != nil {
+			if err := ValidatePlanBeadsWithClosedCoverage(open, archPath, v, rig, covered); err != nil {
 				return err
 			}
 		}

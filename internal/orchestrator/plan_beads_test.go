@@ -125,6 +125,27 @@ func TestValidatePlanBeads_ok(t *testing.T) {
 	}
 }
 
+func TestValidatePlanBeadsWithClosedCoverage_allowsPartialOpen(t *testing.T) {
+	v := WorkflowValidation{
+		LayoutRoot:        "finally",
+		BeadTitleContains: "Implement finally/",
+		RequiredFiles: []string{
+			"myapp/frontend/game/main.js",
+			"finally/backend/main.py",
+		},
+	}
+	beads := []PlanBead{
+		{ID: "xx-a", Title: "Implement finally/myapp/frontend/game/main.js per architecture"},
+	}
+	err := ValidatePlanBeads(beads, "", v, "finally")
+	if err == nil || !containsAll(err.Error(), "missing open bead", "backend/main.py") {
+		t.Fatalf("expected strict missing-bead error, got %v", err)
+	}
+	if err := ValidatePlanBeadsWithClosedCoverage(beads, "", v, "finally", true); err != nil {
+		t.Fatalf("expected closed coverage to allow partial open beads, got %v", err)
+	}
+}
+
 func containsAll(s string, parts ...string) bool {
 	for _, p := range parts {
 		if !stringsContainsFold(s, p) {

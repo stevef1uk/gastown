@@ -27,7 +27,7 @@ func validateImplementationBeadClose(cmd, townRoot, rig string, v orchestrator.W
 		// build that needs that very file. Name the actual work before Verify.
 		if beadPath != "" && !orchestrator.ImplementationBeadRequiresVerify(beadPath) {
 			if err := orchestrator.ValidateBeadArtifactOnDisk(rigDir, beadPath, v); err != nil {
-				return fmt.Errorf("cannot bd close %s: %w — fix the file with EDIT:/WRITE: first, then: %s", id, err, cmd)
+				return fmt.Errorf("cannot bd close %s: %w — %s. Use EDIT:/WRITE: to add substantive content (need ≥%d substantive lines) before: %s", id, err, err.Error(), orchestrator.StubCheckOptionsFromValidation(v.ForActivePhase()).MinSubstantiveLines, cmd)
 			}
 		}
 		if qc := strings.TrimSpace(v.ActivePhaseQAVerifyCommand()); qc != "" {

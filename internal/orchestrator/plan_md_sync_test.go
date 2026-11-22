@@ -195,6 +195,62 @@ func TestWritePlanningPlanMDWithRetry_closedPathsOnly(t *testing.T) {
 	}
 }
 
+func TestPlanningPlanMDBeadStateNeedsRefresh_partialOpenClosedGreen(t *testing.T) {
+	town := t.TempDir()
+	rig := "mockrig"
+	rigDir := filepath.Join(town, rig, "mayor", "rig")
+	if err := os.MkdirAll(rigDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	plan := `# Plan
+
+## Bead map
+
+### te-main: linkshelf/cmd/server/main.go
+- Scope: implement the server entrypoint per architecture.md.
+
+### te-schema: linkshelf/internal/store/schema.go
+- Scope: implement the store schema per architecture.md.
+`
+	files := map[string]string{
+		"plan.md":                            plan,
+		"linkshelf/internal/store/schema.go": "package store\n\nconst schemaReady = true\n\nfunc InitSchema() bool { return schemaReady }\n",
+	}
+	for name, body := range files {
+		path := filepath.Join(rigDir, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(body), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	v := WorkflowValidation{
+		LayoutRoot:                 "linkshelf",
+		BeadTitleContains:          "Implement linkshelf/",
+		RequiredFiles:              []string{"linkshelf/cmd/server/main.go", "linkshelf/internal/store/schema.go"},
+		MinImplementationFileBytes: 1,
+		MinSubstantiveLines:        1,
+	}
+	setListImplementBeadsByStatusHook(t, town, rig, func(_, _ string, _ WorkflowValidation, status string) ([]PlanBead, error) {
+		switch status {
+		case "open":
+			return []PlanBead{{ID: "te-main", Title: "Implement linkshelf/cmd/server/main.go per architecture"}}, nil
+		case "closed":
+			return []PlanBead{{ID: "te-schema", Title: "Implement linkshelf/internal/store/schema.go per architecture"}}, nil
+		default:
+			return nil, nil
+		}
+	})
+	data, err := os.ReadFile(filepath.Join(rigDir, "plan.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if planningPlanMDBeadStateNeedsRefresh(town, rig, v.ForActivePhase(), data) {
+		t.Fatal("expected no refresh with one open bead and one closed green bead")
+	}
+}
+
 func TestSyncPlanningArtifacts_integration(t *testing.T) {
 	withBdIntegration(t)
 	townRoot := t.TempDir()

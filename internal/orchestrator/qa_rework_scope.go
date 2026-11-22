@@ -18,7 +18,7 @@ func QAReworkWriteScopeFromTransition(townRoot, rig, fromState, toState, summary
 	}
 	var ids []string
 	if report, ok := ParseQAFailureReport(summary); ok {
-		ids = report.RepairBeadIDs
+		ids = qaFailureRepairBeadIDs(report)
 	} else {
 		if IsQAAgentShellError(summary) {
 			return ImplementWriteScope{}

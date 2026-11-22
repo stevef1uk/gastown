@@ -72,7 +72,7 @@ func QAReopenedBeadIDs(townRoot, rig string) []string {
 				return nil
 			}
 			if report, ok := ParseQAFailureReport(rw.Summary); ok {
-				return dedupeStrings(report.RepairBeadIDs)
+				return qaFailureRepairBeadIDs(report)
 			}
 		}
 		prefix, _ := RigIssuePrefix(townRoot, rig)
@@ -91,7 +91,7 @@ func ReopenImplementationBeadsAfterQAFailure(townRoot, rig string, v WorkflowVal
 	if report, ok := ParseQAFailureReport(summary); ok {
 		// No broad runtime/full-profile fallback for a structured defect report.
 		// Its explicit targets are authoritative; inventory prose is diagnostic.
-		return reopenClosedImplementBeadsForIDs(townRoot, rig, v.ForActivePhase(), dedupeStrings(report.RepairBeadIDs))
+		return reopenClosedImplementBeadsForIDs(townRoot, rig, v.ForActivePhase(), qaFailureRepairBeadIDs(report))
 	}
 	if IsQAAgentShellError(summary) {
 		return nil, nil

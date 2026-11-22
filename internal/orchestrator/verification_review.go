@@ -6,12 +6,20 @@ import (
 	"strings"
 )
 
+type QAFinding struct {
+	Summary       string   `json:"summary"`
+	RepairBeadIDs []string `json:"repair_bead_ids,omitempty"`
+	Evidence      string   `json:"evidence,omitempty"`
+	Paths         []string `json:"paths,omitempty"`
+}
+
 // QAFailureReport names repair targets explicitly. IDs appearing in command
 // output, inventories, and prose are diagnostics, not repair instructions.
 type QAFailureReport struct {
-	Summary       string   `json:"summary"`
-	RepairBeadIDs []string `json:"repair_bead_ids"`
-	Evidence      string   `json:"evidence"`
+	Summary       string      `json:"summary"`
+	RepairBeadIDs []string    `json:"repair_bead_ids,omitempty"`
+	Evidence      string      `json:"evidence,omitempty"`
+	Findings      []QAFinding `json:"findings,omitempty"`
 }
 
 func ParseQAFailureReport(summary string) (QAFailureReport, bool) {
@@ -22,31 +30,94 @@ func ParseQAFailureReport(summary string) (QAFailureReport, bool) {
 	return report, true
 }
 
+func qaFailureFindings(report QAFailureReport) []QAFinding {
+	if len(report.Findings) == 0 {
+		return nil
+	}
+	out := make([]QAFinding, 0, len(report.Findings))
+	for _, finding := range report.Findings {
+		finding.Summary = strings.TrimSpace(finding.Summary)
+		finding.Evidence = strings.TrimSpace(finding.Evidence)
+		if len(finding.RepairBeadIDs) == 0 {
+			finding.RepairBeadIDs = report.RepairBeadIDs
+		}
+		if finding.Evidence == "" {
+			finding.Evidence = report.Evidence
+		}
+		out = append(out, finding)
+	}
+	return out
+}
+
+func qaFailureRepairBeadIDs(report QAFailureReport) []string {
+	ids := append([]string(nil), report.RepairBeadIDs...)
+	for _, finding := range report.Findings {
+		ids = append(ids, finding.RepairBeadIDs...)
+	}
+	for i, id := range ids {
+		ids[i] = strings.TrimSpace(id)
+	}
+	return dedupeStrings(ids)
+}
+
+func QAFailureRepairBeadIDs(report QAFailureReport) []string {
+	return qaFailureRepairBeadIDs(report)
+}
+
 // ValidateQAFailureReportFields checks report completeness, not bead ownership.
 func ValidateQAFailureReportFields(summary string) error {
 	report, structured := ParseQAFailureReport(summary)
 	if !structured {
 		return fmt.Errorf("a failure needs a nonempty summary, explicit repair_bead_ids and evidence")
 	}
-	if len(report.RepairBeadIDs) == 0 {
-		return fmt.Errorf("repair_bead_ids must list the actual defect-owner beads")
-	}
-	for _, id := range report.RepairBeadIDs {
-		if strings.TrimSpace(id) == "" {
-			return fmt.Errorf("repair_bead_ids must not contain empty IDs")
+	findings := qaFailureFindings(report)
+	if len(findings) == 0 {
+		if len(report.RepairBeadIDs) == 0 {
+			return fmt.Errorf("repair_bead_ids must list the actual defect-owner beads")
 		}
+		for _, id := range report.RepairBeadIDs {
+			if strings.TrimSpace(id) == "" {
+				return fmt.Errorf("repair_bead_ids must not contain empty IDs")
+			}
+		}
+		if strings.TrimSpace(report.Evidence) == "" {
+			return fmt.Errorf("evidence must be a separate, nonempty field describing the observed defect")
+		}
+		return nil
 	}
-	if strings.TrimSpace(report.Evidence) == "" {
-		return fmt.Errorf("evidence must be a separate, nonempty field describing the observed defect")
+	for i, finding := range findings {
+		if finding.Summary == "" {
+			return fmt.Errorf("findings[%d].summary must describe the defect", i)
+		}
+		if len(finding.RepairBeadIDs) == 0 {
+			return fmt.Errorf("findings[%d].repair_bead_ids must list the actual defect-owner beads", i)
+		}
+		for _, id := range finding.RepairBeadIDs {
+			if strings.TrimSpace(id) == "" {
+				return fmt.Errorf("findings[%d].repair_bead_ids must not contain empty IDs", i)
+			}
+		}
+		if finding.Evidence == "" {
+			return fmt.Errorf("findings[%d].evidence must be a separate, nonempty field describing the observed defect", i)
+		}
 	}
 	return nil
 }
 
 func qaFailureSummary(summary string) string {
-	if report, ok := ParseQAFailureReport(summary); ok {
+	report, ok := ParseQAFailureReport(summary)
+	if !ok {
+		return summary
+	}
+	findings := qaFailureFindings(report)
+	if len(findings) < 2 {
 		return report.Summary
 	}
-	return summary
+	parts := make([]string, 0, len(findings))
+	for i, finding := range findings {
+		parts = append(parts, fmt.Sprintf("%d) %s", i+1, finding.Summary))
+	}
+	return report.Summary + " | " + strings.Join(parts, " | ")
 }
 
 // normalizeVerificationReviewResult supports older agents reporting shell errors
@@ -57,7 +128,7 @@ func normalizeVerificationReviewResult(townRoot, rig string, v WorkflowValidatio
 	}
 	report, structured := ParseQAFailureReport(summary)
 	if (IsFailureOutcome(outcome) || IsArchitectureReworkOutcome(outcome)) &&
-		IsQAAgentShellError(qaFailureSummary(summary)) && (!structured || len(report.RepairBeadIDs) == 0) {
+		IsQAAgentShellError(qaFailureSummary(summary)) && (!structured || len(qaFailureRepairBeadIDs(report)) == 0) {
 		return "verification_error", qaFailureSummary(summary)
 	}
 	if !IsFailureOutcome(outcome) {
@@ -88,7 +159,7 @@ func normalizeVerificationReviewResult(townRoot, rig string, v WorkflowValidatio
 			}
 		}
 	}
-	for _, id := range report.RepairBeadIDs {
+	for _, id := range qaFailureRepairBeadIDs(report) {
 		if !known[id] {
 			return invalid(fmt.Sprintf("%q is not a canonical current-or-completed-phase implementation bead", id))
 		}

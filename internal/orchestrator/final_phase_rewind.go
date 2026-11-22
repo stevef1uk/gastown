@@ -2,9 +2,28 @@ package orchestrator
 
 import (
 	"fmt"
+	"log"
 	"path/filepath"
 	"strings"
+	"sync"
 )
+
+var (
+	phaseRewindLogMu sync.RWMutex
+	phaseRewindLogf  = log.Printf
+)
+
+func logPhaseRewind(townRoot, rig, from, to, reason, details string) {
+	from = strings.TrimSpace(from)
+	to = strings.TrimSpace(to)
+	if from == "" || to == "" || from == to {
+		return
+	}
+	phaseRewindLogMu.RLock()
+	logf := phaseRewindLogf
+	phaseRewindLogMu.RUnlock()
+	logf("[PHASE-REWIND] town=%s rig=%s from=%q to=%q reason=%q details=%q", townRoot, rig, from, to, reason, details)
+}
 
 // RewindToPhaseForClosedFile returns the rig to the delivery phase that owns the given closed
 // implement file so its bead can be reopened and the file repaired. Beads can only be opened in
@@ -43,6 +62,7 @@ func RewindToPhaseForClosedFile(townRoot, rig, filePath string, v WorkflowValida
 	if err := SetRigActivePhase(townRoot, rig, targetPhase); err != nil {
 		return "", fmt.Errorf("closed file %s needs repair but could not rewind active phase to %s: %w", filePath, targetPhase, err)
 	}
+	logPhaseRewind(townRoot, rig, originalPhase, targetPhase, "closed implement file", "file="+filePath)
 
 	reloaded, _, err := LoadRigWorkflowProfileFile(townRoot, rig)
 	if err != nil {
@@ -147,6 +167,7 @@ func performRewindToPhase(townRoot, rig, targetPhase, originalPhase string, prob
 	if err := SetRigActivePhase(townRoot, rig, targetPhase); err != nil {
 		return "", fmt.Errorf("validation found issues in %s but could not rewind active phase: %w", targetPhase, err)
 	}
+	logPhaseRewind(townRoot, rig, originalPhase, targetPhase, "problem phase repair", "files="+strings.Join(problemFiles, ","))
 
 	reloaded, _, err := LoadRigWorkflowProfileFile(townRoot, rig)
 	if err != nil {

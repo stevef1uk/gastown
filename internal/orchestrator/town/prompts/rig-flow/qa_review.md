@@ -28,7 +28,7 @@ For each closed bead's source files:
 - No `TODO`/`FIXME`/`HACK` markers, debug prints, or commented-out code.
 - No placeholder/stub bodies (≥{{min_implementation_file_bytes}} bytes unless exempt).
 
-Report which stage(s) failed in the summary so the polecat knows whether to fix correctness or trim scope.
+Report every distinct defect from both stages, grouped by stage in the summary and repeated as individual entries in `findings[]`. Do not stop after the first defect.
 
 **CRITICAL: You MUST run the configured phase verify command before sending any JSON outcome.** The verify command is: `CMD: cd {{rig}}/mayor/rig && {{qa_verify_command}}`. You MUST show its output (exit code and text) before returning JSON. Sending JSON without running the verify command will be rejected. Do NOT guess or assume — run the command and report what it actually says.
 
@@ -57,15 +57,20 @@ When the rig declares Compose as its app runtime, a manual Uvicorn smoke is not
 a substitute for that Compose run. Otherwise, use the documented host/runtime
 command rather than assuming Uvicorn.
 
-For actual code/test defects, report explicit repair targets and evidence:
+For actual code/test defects, report every defect as a separate finding. One
+JSON outcome still contains the full list — do not emit one outcome per finding.
+Each finding needs its own summary, owning bead ID(s), evidence, and file paths
+when known:
 
 ```json
-{"outcome":"failure","summary":"Health endpoint returns the wrong response","repair_bead_ids":["<actual-owning-bead-id>"],"evidence":"GET /api/health returned 500; include the actual output and owning file path"}
+{"outcome":"failure","summary":"Stage 1: two active-phase contract defects","findings":[{"summary":"Health endpoint returns the wrong response","repair_bead_ids":["<actual-owning-bead-id>"],"evidence":"GET /api/health returned 500; include the actual output","paths":["product/main.py"]},{"summary":"Untested route is out of scope for this phase","repair_bead_ids":["<actual-owning-bead-id>"],"evidence":"architecture.md forbids GET /api/projects/{id}; source defines it","paths":["product/main.py"]}]}
 ```
 
-Only list beads that own evidenced defects. IDs in inventories, prior successful
-work, or “do not reopen” prose are not repair targets. If verification could not
-complete, use `verification_error` without repair IDs instead.
+Top-level `repair_bead_ids`/`evidence` are accepted for a single legacy finding,
+but `findings[]` is required when more than one defect is found. Only list beads
+that own evidenced defects. IDs in inventories, prior successful work, or “do
+not reopen” prose are not repair targets. If verification could not complete,
+use `verification_error` without repair IDs instead.
 
 ## Directory structure (CRITICAL — read before any file operations)
 
@@ -112,7 +117,7 @@ $GT_ROOT/{{rig}}/mayor/rig/{{layout_root}}/  ← layout root (ALL files go here)
 4. **Turn 3+: Two-stage review (MANDATORY)** — review closed beads in the active phase against `required_files`:
    - **Stage 1 — Spec compliance**: does each file match SPEC/architecture (routes, store API names, exported symbols verbatim)? Are files wired into entry points (not orphaned)? Do tests cover plan.md acceptance criteria (not trivial stubs)?
    - **Stage 2 — Code quality (YAGNI)**: is the code minimal? No unused features, dead code, stubs, TODO/FIXME markers, or "just in case" infrastructure beyond what SPEC requires? Correct-but-overbuilt is still a failure.
-   Report which stage(s) failed in the summary. Only return `all_passed`/`task_passed` if **both** stages pass.
+   Report which stage(s) failed in the summary. For `failure`, list every distinct defect in `findings[]` with evidence and owning beads, not just the first one. Only return `all_passed`/`task_passed` if **both** stages pass.
 5. **Final turn:** JSON only (no CMD lines). You MUST have run `{{qa_verify_command}}` before this turn or you will be rejected.
 
 ## Rules
@@ -123,7 +128,7 @@ $GT_ROOT/{{rig}}/mayor/rig/{{layout_root}}/  ← layout root (ALL files go here)
 - **Do not apply your own file-size based stub detection.** Run the phase's `qa_verify_command` and trust its result. The auto-verify validates correctly; your job is to check test/smoke output, not file sizes.
 - **Files exist under `{{rig}}/mayor/rig/{{layout_root}}/` — NEVER check `$GT_ROOT/{{layout_root}}/` directly.** The verify command runs from `{{rig}}/mayor/rig/` and finds files correctly. Do NOT do manual `ls`/`cat` checks at `$GT_ROOT/{{layout_root}}/`.
 - Do NOT emit JSON in same message as CMD lines. Wait for command output, then JSON only.
-- **Fast-fail:** If verification fails, do not repeat the same CMD unchanged. Distinguish an evidenced application/test defect (`failure` with explicit repair targets) from an execution problem (`verification_error`, no repair targets).
+- **Fast-fail commands, not findings:** If verification fails, do not repeat the same CMD unchanged, but continue reviewing the remaining active-phase files and report every defect found. Distinguish evidenced application/test defects (`failure` with `findings[]`) from execution problems (`verification_error`, no repair targets).
 - gt-agent persists completed checks in progress file and removes it on finish.
 - Verify dependencies before runtime using the phase's verify command.
 - **Verify dependency wiring in entry point**: confirm all declared resources are properly initialized and assigned before runtime, following the project's conventions.

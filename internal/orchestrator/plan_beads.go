@@ -284,6 +284,14 @@ func knownLayoutPrefix(path string) bool {
 // ValidatePlanBeads checks open implementation beads against architecture and profile.
 // rig is the Gas Town rig name (used to strip erroneous finally/… prefixes on flat worktrees).
 func ValidatePlanBeads(beads []PlanBead, archPath string, v WorkflowValidation, rig string) error {
+	return validatePlanBeads(beads, archPath, v, rig, false)
+}
+
+func ValidatePlanBeadsWithClosedCoverage(beads []PlanBead, archPath string, v WorkflowValidation, rig string, allowClosedCoverage bool) error {
+	return validatePlanBeads(beads, archPath, v, rig, allowClosedCoverage)
+}
+
+func validatePlanBeads(beads []PlanBead, archPath string, v WorkflowValidation, rig string, allowClosedCoverage bool) error {
 	v = v.ForActivePhase()
 	if len(v.RequiredFiles) == 0 {
 		return nil
@@ -317,7 +325,7 @@ func ValidatePlanBeads(beads []PlanBead, archPath string, v WorkflowValidation, 
 	if len(nonRequired) > 0 {
 		return fmt.Errorf("open implement bead(s) with non-required path(s): %s", strings.Join(dedupeStrings(nonRequired), "; "))
 	}
-	if len(impl) == 0 {
+	if len(impl) == 0 && !allowClosedCoverage {
 		return fmt.Errorf("no open beads matching %q", v.BeadTitleContains)
 	}
 
@@ -391,7 +399,7 @@ func ValidatePlanBeads(beads []PlanBead, archPath string, v WorkflowValidation, 
 		}
 	}
 
-	if len(missing) > 0 {
+	if len(missing) > 0 && !allowClosedCoverage {
 		return fmt.Errorf("missing open bead(s) for architecture path(s): %s", strings.Join(dedupeStrings(missing), ", "))
 	}
 	if len(dupes) > 0 {

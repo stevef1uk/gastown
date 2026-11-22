@@ -107,12 +107,13 @@ func selectTestReviewRepair(rigDir string, v WorkflowValidation, plan, summary s
 		broken[path] = true
 	}
 	type candidate struct {
-		phase    string
-		bead     PlanBead
-		test     string
-		named    bool
-		explicit bool
-		reported bool
+		phase          string
+		bead           PlanBead
+		test           string
+		named          bool
+		explicit       bool
+		reported       bool
+		citedInSummary bool
 	}
 	type testOwner struct{ test, beadID string }
 	var candidates []candidate
@@ -161,15 +162,29 @@ func selectTestReviewRepair(rigDir string, v WorkflowValidation, plan, summary s
 			return testReviewRepair{}, err
 		}
 		reported := strings.Contains(summary, test) || strings.Contains(summary, testPath)
-		candidates = append(candidates, candidate{phase: phase, bead: owners[0], test: testPath, named: named, explicit: explicit, reported: reported})
+		citedInSummary := cited[owners[0].ID]
+		candidates = append(candidates, candidate{phase: phase, bead: owners[0], test: testPath, named: named, explicit: explicit, reported: reported, citedInSummary: citedInSummary})
 		if named && phase == v.ActivePhaseID() {
 			activeNamedTests[testOwner{testPath, owners[0].ID}] = true
 		}
+	}
+	activeHasNamed := false
+	for _, candidate := range candidates {
+		if candidate.named && (candidate.reported || candidate.citedInSummary) && candidate.phase == v.ActivePhaseID() {
+			activeHasNamed = true
+			break
+		}
+	}
+	isDeferredCompletedTest := func(candidate candidate) bool {
+		return v.HasPhasedDelivery() && activeHasNamed && candidate.phase != v.ActivePhaseID() && v.IsPhaseCompleted(candidate.phase) && candidate.explicit
 	}
 	var selected testReviewRepair
 	targetIdx := len(v.DeliveryPhases)
 	for _, candidate := range candidates {
 		if anyNamed && !candidate.named || !anyNamed && v.HasPhasedDelivery() && candidate.phase != v.ActivePhaseID() {
+			continue
+		}
+		if isDeferredCompletedTest(candidate) {
 			continue
 		}
 		if candidate.phase != v.ActivePhaseID() && activeNamedTests[testOwner{candidate.test, candidate.bead.ID}] {
@@ -218,13 +233,17 @@ func selectTestReviewRepair(rigDir string, v WorkflowValidation, plan, summary s
 		if shared {
 			continue
 		}
+		deferredPhase := candidate.phase
+		if isDeferredCompletedTest(candidate) {
+			deferredPhase = selected.phase
+		}
 		if selected.deferred == nil {
 			selected.deferred = map[string]map[string][]string{}
 		}
-		if selected.deferred[candidate.phase] == nil {
-			selected.deferred[candidate.phase] = map[string][]string{}
+		if selected.deferred[deferredPhase] == nil {
+			selected.deferred[deferredPhase] = map[string][]string{}
 		}
-		selected.deferred[candidate.phase][candidate.bead.ID] = appendUniquePath(selected.deferred[candidate.phase][candidate.bead.ID], candidate.test)
+		selected.deferred[deferredPhase][candidate.bead.ID] = appendUniquePath(selected.deferred[deferredPhase][candidate.bead.ID], candidate.test)
 	}
 	return selected, nil
 }
@@ -264,6 +283,11 @@ func reopenTestReviewRepairWithBaseline(townRoot, rig string, v WorkflowValidati
 		if err := SetRigActivePhase(townRoot, rig, repair.phase); err != nil {
 			return nil, nil, nil, err
 		}
+		beadIDs := make([]string, 0, len(repair.beads))
+		for _, bead := range repair.beads {
+			beadIDs = append(beadIDs, bead.ID)
+		}
+		logPhaseRewind(townRoot, rig, v.ActivePhaseID(), repair.phase, "test review repair", fmt.Sprintf("beads=%s deferred_phases=%d", strings.Join(beadIDs, ","), len(repair.deferred)))
 	}
 	var ids []string
 	for _, bead := range repair.beads {

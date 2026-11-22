@@ -198,10 +198,12 @@ func TestRewindToPhaseForClosedFile_rewindsOwningPhase(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	getRewindLogs := capturePhaseRewindLogs(t)
 	logLine, rewindErr := RewindToPhaseForClosedFile(townRoot, rig, "linkshelf/internal/store/store.go", v)
 	if rewindErr != nil {
 		t.Fatalf("unexpected rewind error: %v", rewindErr)
 	}
+	assertPhaseRewindLogged(t, getRewindLogs(), townRoot, "frontend", "backend", "closed implement file")
 	if !strings.Contains(logLine, "rewound active phase frontend → backend") {
 		t.Fatalf("expected log to mention rewind frontend → backend, got: %q", logLine)
 	}
@@ -354,10 +356,12 @@ func TestMaybeRewindToProblemPhaseForQA_rewindsClosedCompletedPhase(t *testing.T
 		t.Fatal(err)
 	}
 
+	getRewindLogs := capturePhaseRewindLogs(t)
 	logLine, rewindErr := MaybeRewindToProblemPhaseForQA(townRoot, rig, v)
 	if rewindErr == nil {
 		t.Fatal("expected rewind error for missing completed-phase file")
 	}
+	assertPhaseRewindLogged(t, getRewindLogs(), townRoot, "frontend", "backend", "problem phase repair")
 	if !strings.Contains(logLine, "rewound active phase to backend") {
 		t.Fatalf("expected rewind log to mention backend, got: %q", logLine)
 	}

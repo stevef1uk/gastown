@@ -29,6 +29,12 @@ func TestReqFlowMatchesRigFlowAfterIntake(t *testing.T) {
 	if got := rig.States["plan_review"].Hooks.ReviewFailureLimit; got != 3 {
 		t.Fatalf("rig-flow plan_review limit = %d, want 3", got)
 	}
+	if got := rig.States["qa_review"].Hooks.ReviewFailureLimit; got != 3 {
+		t.Fatalf("rig-flow qa_review limit = %d, want 3", got)
+	}
+	if got := rig.States["qa_review"].Hooks.ReviewRecoveryState; got != "review_recovery" {
+		t.Fatalf("rig-flow qa_review recovery = %q, want review_recovery", got)
+	}
 	for name, state := range rig.States {
 		if name == "kickoff" {
 			continue

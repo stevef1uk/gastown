@@ -7,11 +7,10 @@
   },
   "judgeModel": "deepseek/deepseek-v4-flash",
   "defaultModel": "google/gemini-3.6-flash",
-  "defaultTimeoutSeconds": 120,
   "models": {
     "judge": "deepseek/deepseek-v4-flash",
-    "architect": "google/gemini-3.6-flash",
-    "planner": "google/gemini-3.6-flash",
+    "architect": "openai/gpt-5.6-luna",
+    "planner": "openai/gpt-5.6-luna",
     "polecat": "google/gemini-3.6-flash",
     "qa": "deepseek/deepseek-v4-flash",
     "tester": "google/gemini-3.6-flash",

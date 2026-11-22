@@ -86,7 +86,7 @@ GET /api/links only.
 					"success": {To: "project_setup"},
 				},
 			},
-			"project_setup": {Role: "setup", Transitions: map[string]Transition{"success": {To: "implementation"}}},
+			"project_setup":  {Role: "setup", Transitions: map[string]Transition{"success": {To: "implementation"}}},
 			"implementation": {Role: "polecat"},
 		},
 	})
@@ -135,14 +135,82 @@ GET /api/links
 		}
 	}
 	v := WorkflowValidation{
-		LayoutRoot:            "linkshelf",
-		MinPlanBytes:          50,
-		MinArchitectureBytes:  100,
-		RequiredFiles:         []string{"linkshelf/cmd/server/main.go"},
+		LayoutRoot:           "linkshelf",
+		MinPlanBytes:         50,
+		MinArchitectureBytes: 100,
+		RequiredFiles:        []string{"linkshelf/cmd/server/main.go"},
 	}
 	err := ValidatePlanningPhaseGate(townRoot, rig, "plan_review", v)
 	if err == nil || !strings.Contains(err.Error(), "linkshelf/main.go") {
 		t.Fatalf("expected flattened path error, got %v", err)
+	}
+}
+
+func TestValidatePlanningPhaseGate_allowsPartialOpenWithClosedGreenCoverage(t *testing.T) {
+	dir := t.TempDir()
+	townRoot := filepath.Join(dir, "gt")
+	rig := "mockrig"
+	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
+	if err := os.MkdirAll(rigDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	spec := "# Spec\nNo HTTP contract.\n"
+	arch := "# Architecture\n- linkshelf/cmd/server/main.go — server entrypoint\n- linkshelf/internal/store/schema.go — schema helper\n"
+	plan := `# Plan
+
+## Integration contract
+No HTTP contract.
+
+## Bead map
+
+### te-main: linkshelf/cmd/server/main.go
+- Scope: implement the server entrypoint per architecture.md.
+- Acceptance: file exists and is non-empty.
+
+### te-schema: linkshelf/internal/store/schema.go
+- Scope: implement the store schema per architecture.md.
+- Acceptance: file exists and is non-empty.
+`
+	files := map[string]string{
+		"SPEC.md":                            spec,
+		"architecture.md":                    arch,
+		"plan.md":                            plan,
+		"linkshelf/cmd/server/main.go":       "package main\n\nfunc main() {\n\tprintln(\"linkshelf server entrypoint\")\n}\n",
+		"linkshelf/internal/store/schema.go": "package store\n\nconst schemaReady = true\n\nfunc InitSchema() bool { return schemaReady }\n",
+	}
+	for name, body := range files {
+		path := filepath.Join(rigDir, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(body), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	v := WorkflowValidation{
+		LayoutRoot:                 "linkshelf",
+		BeadTitleContains:          "Implement linkshelf/",
+		MinPlanBytes:               50,
+		MinArchitectureBytes:       50,
+		MinImplementationFileBytes: 1,
+		MinSubstantiveLines:        1,
+		RequiredFiles: []string{
+			"linkshelf/cmd/server/main.go",
+			"linkshelf/internal/store/schema.go",
+		},
+	}
+	setListImplementBeadsByStatusHook(t, townRoot, rig, func(_, _ string, _ WorkflowValidation, status string) ([]PlanBead, error) {
+		switch status {
+		case "open":
+			return []PlanBead{{ID: "te-main", Title: "Implement linkshelf/cmd/server/main.go per architecture"}}, nil
+		case "closed":
+			return []PlanBead{{ID: "te-schema", Title: "Implement linkshelf/internal/store/schema.go per architecture"}}, nil
+		default:
+			return nil, nil
+		}
+	})
+	if err := ValidatePlanningPhaseGate(townRoot, rig, "planning", v); err != nil {
+		t.Fatalf("expected planning gate to accept one open bead plus closed green coverage, got %v", err)
 	}
 }
 
@@ -185,9 +253,9 @@ Additional context so the plan document exceeds the minimum size threshold requi
 		}
 	}
 	v := WorkflowValidation{
-		LayoutRoot:        ".",
-		BeadTitleContains: "Implement mockrig/",
-		MinPlanBytes:      50,
+		LayoutRoot:           ".",
+		BeadTitleContains:    "Implement mockrig/",
+		MinPlanBytes:         50,
 		MinArchitectureBytes: 50,
 		RequiredFiles: []string{
 			"frontend/app/page.tsx",

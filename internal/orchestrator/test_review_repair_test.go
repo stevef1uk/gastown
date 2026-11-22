@@ -3,13 +3,62 @@ package orchestrator
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
+	"sync"
 	"testing"
 )
+
+func capturePhaseRewindLogs(t *testing.T) func() []string {
+	t.Helper()
+	var mu sync.Mutex
+	var lines []string
+	phaseRewindLogMu.Lock()
+	old := phaseRewindLogf
+	phaseRewindLogf = func(format string, args ...any) {
+		mu.Lock()
+		lines = append(lines, fmt.Sprintf(format, args...))
+		mu.Unlock()
+	}
+	phaseRewindLogMu.Unlock()
+	t.Cleanup(func() {
+		phaseRewindLogMu.Lock()
+		phaseRewindLogf = old
+		phaseRewindLogMu.Unlock()
+	})
+	return func() []string {
+		mu.Lock()
+		defer mu.Unlock()
+		return append([]string(nil), lines...)
+	}
+}
+
+func phaseRewindLogsForTown(lines []string, town string) []string {
+	var result []string
+	for _, line := range lines {
+		if strings.Contains(line, "town="+town) {
+			result = append(result, line)
+		}
+	}
+	return result
+}
+
+func assertPhaseRewindLogged(t *testing.T, lines []string, town, from, to, reason string) {
+	t.Helper()
+	for _, line := range phaseRewindLogsForTown(lines, town) {
+		if strings.Contains(line, "from="+strconv.Quote(from)) &&
+			strings.Contains(line, "to="+strconv.Quote(to)) &&
+			strings.Contains(line, "reason="+strconv.Quote(reason)) {
+			return
+		}
+	}
+	t.Fatalf("missing phase rewind log from %s to %s (%s): %v", from, to, reason, phaseRewindLogsForTown(lines, town))
+}
 
 func testReviewRepairFixture(t *testing.T, source, test string) (string, string, WorkflowValidation, string, []PlanBead) {
 	t.Helper()
@@ -95,10 +144,12 @@ func TestTesterRepairResolvesGoAndPythonCompanions(t *testing.T) {
 			prev := bdUpdateImplementBeadStatusHook
 			t.Cleanup(func() { bdUpdateImplementBeadStatusHook = prev })
 			bdUpdateImplementBeadStatusHook = func(_, _, id, status string) error { statuses[id] = status; return nil }
+			getRewindLogs := capturePhaseRewindLogs(t)
 			ids, err := reopenTestReviewRepair(town, rig, v, plan, "Test repair: "+tc.test+" lacks assertions")
 			if err != nil || !slices.Equal(ids, []string{"sample-store"}) || statuses["sample-store"] != "in_progress" || statuses["sample-api"] != "open" || statuses["sample-browser"] != "closed" {
 				t.Fatalf("reopened=%v statuses=%v err=%v", ids, statuses, err)
 			}
+			assertPhaseRewindLogged(t, getRewindLogs(), town, "api", "storage", "test review repair")
 			profile, _, err := LoadRigWorkflowProfileFile(town, rig)
 			if err != nil || profile.ActivePhaseID() != "storage" || profile.RewoundFromPhaseIDField != "browser" || !slices.Equal(profile.CompletedPhaseIDs(), v.CompletedPhaseIDs()) {
 				t.Fatalf("repair lost delivery progress: %+v err=%v", profile, err)
@@ -227,6 +278,62 @@ func TestTesterRepairManagerIgnoresInventoryAndKeepsSharedTestsInActivePhase(t *
 	}
 }
 
+func TestTesterRepairManagerDefersCompletedPhaseTestFinding(t *testing.T) {
+	town, rig, v, plan, beads := testReviewRepairFixture(t, "demo/store/store.go", "demo/store/store_test.go")
+	rigDir := filepath.Join(town, rig, "mayor", "rig")
+	v.RewoundFromPhaseIDField = ""
+	data, err := json.Marshal(rigProfileEnvelope{Version: 1, Validation: v, TestPlanFrozen: true, TestPlanReviewed: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	recoveryFile(t, rigDir, ".gastown/workflow-profile.json", string(data))
+	recoveryFile(t, rigDir, "TEST_PLAN.md", plan)
+	if err := os.MkdirAll(filepath.Join(town, rig, ".beads"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	bin := t.TempDir()
+	recoveryFile(t, bin, "bd", "#!/bin/sh\nprintf '[]\\n'\n")
+	if err := os.Chmod(filepath.Join(bin, "bd"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	status := map[string]string{"sample-store": "closed", "sample-api": "closed", "sample-browser": "closed"}
+	setListImplementBeadsByStatusHook(t, town, rig, func(_, _ string, _ WorkflowValidation, want string) ([]PlanBead, error) {
+		var result []PlanBead
+		for _, bead := range beads {
+			if status[bead.ID] == want {
+				result = append(result, bead)
+			}
+		}
+		return result, nil
+	})
+	prev := bdUpdateImplementBeadStatusHook
+	bdUpdateImplementBeadStatusHook = func(_, _, id, value string) error { status[id] = value; return nil }
+	t.Cleanup(func() { bdUpdateImplementBeadStatusHook = prev })
+	getRewindLogs := capturePhaseRewindLogs(t)
+	m := newTestReviewLoopManager(t, town)
+	m.instances["wf-repair"] = &WorkflowInstance{ID: "wf-repair", TemplateID: "rig-flow", CurrentState: "test_review", Status: "running", Variables: map[string]string{"rig": rig}}
+	summary := "Test repair: demo/store/store_test.go lacks persistence assertions; Implementation repair: demo/server/main_test.go fails"
+	next, err := m.CompleteTask("wf-repair", "failure", rig+"/tester", summary, "", nil)
+	if err != nil || next != "implementation" {
+		t.Fatalf("next=%q err=%v", next, err)
+	}
+	profile, _, err := LoadRigWorkflowProfileFile(town, rig)
+	if err != nil || profile.ActivePhaseID() != "api" || profile.RewoundFromPhaseIDField != "" {
+		t.Fatalf("test-only completed-phase finding rewound delivery: %+v err=%v", profile, err)
+	}
+	if status["sample-store"] != "closed" || (status["sample-api"] != "open" && status["sample-api"] != "in_progress") {
+		t.Fatalf("wrong active repair target: %v", status)
+	}
+	inst := m.instances["wf-repair"]
+	if _, ok := inst.DeferredTestReviews["api"].TestRepairFiles["sample-store"]["demo/store/store_test.go"]; !ok {
+		t.Fatalf("completed-phase test finding was not deferred: %+v", inst.DeferredTestReviews)
+	}
+	if logs := phaseRewindLogsForTown(getRewindLogs(), town); len(logs) != 0 {
+		t.Fatalf("no rewind should have been logged: %v", logs)
+	}
+}
+
 func TestTesterRepairManagerRoutesOwnedWorkAndPlanGaps(t *testing.T) {
 	requireBdIntegration(t)
 	for _, tc := range []struct {
@@ -296,19 +403,19 @@ func TestTesterRepairManagerRoutesOwnedWorkAndPlanGaps(t *testing.T) {
 	}
 }
 
-func TestTesterRepairClassifiesWorkAndRetainsLaterPhase(t *testing.T) {
+func TestTesterRepairDefersCompletedPhaseTestFindings(t *testing.T) {
 	town, rig, v, plan, beads := testReviewRepairFixture(t, "demo/store/store.go", "demo/store/store_test.go")
 	rigDir := filepath.Join(town, rig, "mayor", "rig")
 	summary := "Test repair: demo/store/store_test.go lacks persistence assertions; Test repair: demo/server/main_test.go lacks isolation assertions"
 	repair, err := selectTestReviewRepair(rigDir, v, plan, summary, beads)
-	if err != nil || repair.phase != "storage" || !slices.Equal(repair.tests["sample-store"], []string{"demo/store/store_test.go"}) ||
-		!slices.Equal(repair.deferred["api"]["sample-api"], []string{"demo/server/main_test.go"}) {
-		t.Fatalf("phase-specific findings lost: %+v, %v", repair, err)
+	if err != nil || repair.phase != "api" || !slices.Equal(repair.tests["sample-api"], []string{"demo/server/main_test.go"}) ||
+		!slices.Equal(repair.deferred["api"]["sample-store"], []string{"demo/store/store_test.go"}) {
+		t.Fatalf("completed-phase test finding should be deferred: %+v, %v", repair, err)
 	}
 	summary = "Test repair: demo/store/store_test.go lacks assertions; Implementation repair: demo/server/main_test.go fails"
 	repair, err = selectTestReviewRepair(rigDir, v, plan, summary, beads)
-	if err != nil || !slices.Equal(repair.deferred["api"]["sample-api"], []string{"demo/server/main_test.go"}) {
-		t.Fatalf("later implementation finding lost: %+v, %v", repair, err)
+	if err != nil || repair.phase != "api" || !slices.Equal(repair.deferred["api"]["sample-store"], []string{"demo/store/store_test.go"}) {
+		t.Fatalf("completed-phase test finding should be deferred behind active implementation repair: %+v, %v", repair, err)
 	}
 	repair, err = selectTestReviewRepair(rigDir, v, plan, "Implementation repair: demo/store/store_test.go fails due to store behavior", beads)
 	if err != nil || len(repair.tests) != 0 {
@@ -448,8 +555,8 @@ func TestTesterRepairDeferredPhaseSurvivesRestart(t *testing.T) {
 	m = NewManager(town)
 	m.LoadTemplate(tpl)
 	inst := m.instances["wf-repair"]
-	if _, ok := inst.DeferredTestReviews["api"].TestRepairFiles["sample-api"]["demo/server/main_test.go"]; !ok {
-		t.Fatalf("later-phase finding was lost: %+v", inst.DeferredTestReviews)
+	if _, ok := inst.DeferredTestReviews["api"].TestRepairFiles["sample-store"]["demo/store/store_test.go"]; !ok {
+		t.Fatalf("completed-phase finding was lost: %+v", inst.DeferredTestReviews)
 	}
 	if err := SetRigActivePhase(town, rig, v.ActivePhaseID()); err != nil {
 		t.Fatal(err)
@@ -459,12 +566,12 @@ func TestTesterRepairDeferredPhaseSurvivesRestart(t *testing.T) {
 	inst.ActiveTestRepair = nil
 	payload, err := m.BuildTaskPayload(inst, tpl, review)
 	if err != nil || payload["deferred_test_review"] == nil {
-		t.Fatalf("later review missing deferred finding: %+v, %v", payload, err)
+		t.Fatalf("deferred review missing completed-phase finding: %+v, %v", payload, err)
 	}
 	if _, err := m.CompleteTask("wf-repair", "success", rig+"/tester", "covered", "", nil); err == nil {
-		t.Fatal("later finding was silently approved without evidence")
+		t.Fatal("deferred finding was silently approved without evidence")
 	}
-	recoveryFile(t, rigDir, "test-report.md", "- Evidence: {\"file\":\"demo/server/main_test.go\",\"line\":3,\"excerpt\":\"func TestStartup(t *testing.T) { if got := 1; got != 1 { t.Fatalf(\\\"got %d\\\", got) } }\"}\n")
+	recoveryFile(t, rigDir, "test-report.md", "- Evidence: {\"file\":\"demo/store/store_test.go\",\"line\":3,\"excerpt\":\"func TestRoundTrip(t *testing.T) { if got := 1; got != 1 { t.Fatalf(\\\"got %d\\\", got) } }\"}\n")
 	if _, err := m.CompleteTask("wf-repair", "success", rig+"/tester", "covered", "", nil); err != nil {
 		t.Fatal(err)
 	}

@@ -332,6 +332,21 @@ After fixes
 	}
 }
 
+func TestParseOrchestratedJSON_preservesQAFindings(t *testing.T) {
+	in := `{"outcome":"failure","summary":"two defects","findings":[{"summary":"bad route","repair_bead_ids":["xx-main"],"evidence":"route output"},{"summary":"bad status","repair_bead_ids":["xx-web"],"evidence":"status output"}]}`
+	o, s, ok := parseOrchestratedJSON(in)
+	if !ok || o != "failure" {
+		t.Fatalf("got outcome=%q ok=%v", o, ok)
+	}
+	report, ok := orchestrator.ParseQAFailureReport(s)
+	if !ok || len(report.Findings) != 2 {
+		t.Fatalf("findings lost: report=%+v ok=%v", report, ok)
+	}
+	if got := strings.Join(orchestrator.QAFailureRepairBeadIDs(report), ","); got != "xx-main,xx-web" {
+		t.Fatalf("repair IDs = %q", got)
+	}
+}
+
 func TestUpdateOrchestratedRetryAfterComplete_clearsOnStateChange(t *testing.T) {
 	state := AgentState{
 		OrchestratedRetry: &OrchestratedRetry{WorkflowID: "wf-1", State: "plan_review", Summary: "old"},

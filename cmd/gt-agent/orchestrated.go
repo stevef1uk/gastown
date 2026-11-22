@@ -39,6 +39,7 @@ var declaredNodeVerifyCommandRE = regexp.MustCompile(`(^|&&|\|\||;)[[:space:]]*n
 type orchestratedTaskResult struct {
 	RepairBeadIDs []string                      `json:"repair_bead_ids,omitempty"`
 	Evidence      string                        `json:"evidence,omitempty"`
+	Findings      []orchestrator.QAFinding      `json:"findings,omitempty"`
 	Dependency    *orchestrator.DependencyBlock `json:"dependency,omitempty"`
 	Outcome       string                        `json:"outcome"`
 	Summary       string                        `json:"summary"`
@@ -427,7 +428,7 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 				if structured {
 					finding = report.Summary
 				}
-				shellError := orchestrator.IsQAAgentShellError(finding) && (!structured || len(report.RepairBeadIDs) == 0)
+				shellError := orchestrator.IsQAAgentShellError(finding) && (!structured || len(orchestrator.QAFailureRepairBeadIDs(report)) == 0)
 				if err := orchestrator.ValidateQAFailureReportFields(s); err != nil && !shellError {
 					pendingFailureSummary = s
 					if cmdCount > 0 || hadNative {
@@ -435,7 +436,7 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 						runner.consecutiveNonTerminalJSONRejects = 0
 					}
 					msg := "QA failure report is incomplete: " + err.Error() +
-						". Reply with JSON only, including a nonempty summary, repair_bead_ids for actual defect owners, and separate evidence describing the observed defect. Do not list unrelated beads. If verification could not run, report verification_error with the actual command and error instead."
+						". Reply with JSON only, including a nonempty summary and a findings array with one entry per defect; each finding needs its own summary, repair_bead_ids for the actual defect owners, and separate evidence. Do not list unrelated beads or stop after the first finding. If verification could not run, report verification_error with the actual command and error instead."
 					recordAttemptFeedback(combined.String() + "\n" + msg + "\n")
 					messages = append(messages, llm.Message{Role: "user", Content: combined.String() + "\n\n" + msg})
 					continue
@@ -4565,8 +4566,8 @@ func parseOrchestratedJSON(response string) (outcome, summary string, ok bool) {
 		}
 		return last.Outcome, string(report), true
 	}
-	if orchestrator.IsFailureOutcome(last.Outcome) && (len(last.RepairBeadIDs) > 0 || last.Evidence != "") {
-		report, err := json.Marshal(orchestrator.QAFailureReport{Summary: last.Summary, RepairBeadIDs: last.RepairBeadIDs, Evidence: last.Evidence})
+	if orchestrator.IsFailureOutcome(last.Outcome) && (len(last.RepairBeadIDs) > 0 || last.Evidence != "" || len(last.Findings) > 0) {
+		report, err := json.Marshal(orchestrator.QAFailureReport{Summary: last.Summary, RepairBeadIDs: last.RepairBeadIDs, Evidence: last.Evidence, Findings: last.Findings})
 		if err != nil {
 			return "", "", false
 		}

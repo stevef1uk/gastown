@@ -1,6 +1,7 @@
 package orchestrator
 
 import (
+	"fmt"
 	"strings"
 )
 
@@ -147,7 +148,23 @@ func extractLastSmokeFailure(raw string) string {
 
 func prepareQAReviewToImplementationFeedback(summary, raw string, v WorkflowValidation) string {
 	if report, ok := ParseQAFailureReport(summary); ok {
-		return "Repair only the explicitly identified implementation beads: " + strings.Join(report.RepairBeadIDs, ", ") +
+		findings := qaFailureFindings(report)
+		if len(findings) > 1 {
+			var b strings.Builder
+			b.WriteString(fmt.Sprintf("Repair ALL %d QA findings below. Do not stop after the first one.\n", len(findings)))
+			for i, finding := range findings {
+				b.WriteString(fmt.Sprintf("\nFinding %d/%d\n", i+1, len(findings)))
+				b.WriteString("- Beads: " + strings.Join(finding.RepairBeadIDs, ", ") + "\n")
+				b.WriteString("- Finding: " + finding.Summary + "\n")
+				b.WriteString("- Evidence: " + finding.Evidence + "\n")
+				if len(finding.Paths) > 0 {
+					b.WriteString("- Paths: " + strings.Join(finding.Paths, ", ") + "\n")
+				}
+			}
+			b.WriteString("\nOther bead IDs in inventories or captured output are not repair targets. Preserve unaffected files and completion credit.")
+			return strings.TrimSpace(b.String())
+		}
+		return "Repair only the explicitly identified implementation beads: " + strings.Join(qaFailureRepairBeadIDs(report), ", ") +
 			"\n\nQA finding: " + report.Summary + "\nEvidence: " + report.Evidence +
 			"\n\nOther bead IDs in inventories or captured output are not repair targets. Preserve unaffected files and completion credit."
 	}
