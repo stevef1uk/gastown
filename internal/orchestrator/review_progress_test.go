@@ -8,6 +8,19 @@ import (
 	"testing"
 )
 
+func TestRecordReviewFailure_contractMismatchPausesImmediatelyAfterRepeat(t *testing.T) {
+	inst := &WorkflowInstance{}
+	for i, want := range []reviewFailureAction{reviewFailureContinue, reviewFailurePause} {
+		got := inst.recordReviewFailure("test_review", "phase-1", "contract_mismatch", 3, "review_recovery")
+		if got != want {
+			t.Fatalf("attempt %d: action=%v want=%v", i+1, got, want)
+		}
+	}
+	if got := inst.ReviewFailures["test_review:phase-1"]; got != contractMismatchReviewLimit {
+		t.Fatalf("failures=%d want=%d", got, contractMismatchReviewLimit)
+	}
+}
+
 func TestReviewNoProgressPersistsAndPauses(t *testing.T) {
 	town, rig := t.TempDir(), "example"
 	dir := filepath.Join(town, rig, "mayor", "rig", ".gastown")

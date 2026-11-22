@@ -501,6 +501,36 @@ func TestTesterRepairIncorrectFindingCanUnfreezePlan(t *testing.T) {
 	}
 }
 
+func TestValidateContractMismatchSummary_requiresTrace(t *testing.T) {
+	good := `Implementation repair: demo/server/main_test.py — SPEC: SPEC.md §API-3 '400 {"error":...}'; Assertion: demo/server/main_test.py:115 'assert detail'; Production fix: demo/server/main.py:179 return error envelope; reopen sample-api`
+	if err := ValidateContractMismatchSummary(good); err != nil {
+		t.Fatalf("valid trace rejected: %v", err)
+	}
+	for _, marker := range []string{"Implementation repair:", "SPEC:", "Assertion:", "Production fix:"} {
+		bad := strings.Replace(good, marker, "", 1)
+		if err := ValidateContractMismatchSummary(bad); err == nil {
+			t.Fatalf("missing %q was accepted", marker)
+		}
+	}
+}
+
+func TestSelectTestReviewRepair_contractMismatchDoesNotFlagTestFiles(t *testing.T) {
+	town, rig, v, plan, beads := testReviewRepairFixture(t, "demo/store/store.py", "demo/store/test_store.py")
+	rigDir := filepath.Join(town, rig, "mayor", "rig")
+	source, test := "demo/server/main.go", "demo/server/main_test.go"
+	summary := `Implementation repair: ` + test + ` — SPEC: SPEC.md §API-3 '400 {"error":...}'; Assertion: ` + test + `:115 'assert detail'; Production fix: ` + source + `:179 return error envelope; reopen sample-api`
+	repair, err := selectTestReviewRepair(rigDir, v, plan, summary, beads)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(repair.beads) != 1 || repair.beads[0].ID != "sample-api" {
+		t.Fatalf("wrong repair owner: %+v", repair.beads)
+	}
+	if len(repair.tests) != 0 {
+		t.Fatalf("contract mismatch must not flag test files for rewriting: %+v", repair.tests)
+	}
+}
+
 func TestTestReviewTimeoutRetriesAndEscalates(t *testing.T) {
 	for _, load := range []func() (*WorkflowTemplate, error){LoadRigFlowTemplate, LoadReqFlowTemplate} {
 		tpl, err := load()

@@ -142,11 +142,18 @@ func IsVerificationErrorOutcome(outcome string) bool {
 // IsFailureOutcome reports whether complete_task outcome means rework/failure.
 func IsFailureOutcome(outcome string) bool {
 	switch strings.ToLower(strings.TrimSpace(outcome)) {
-	case "fail", "failure":
+	case "fail", "failure", "contract_mismatch":
 		return true
 	default:
 		return false
 	}
+}
+
+// IsContractMismatchOutcome reports a reviewer finding that a passing test suite
+// asserts behavior contradicting the authoritative contract. The repair belongs
+// in production code, not in the tests that exposed it.
+func IsContractMismatchOutcome(outcome string) bool {
+	return strings.EqualFold(strings.TrimSpace(outcome), "contract_mismatch")
 }
 
 // IsArchitectureReworkOutcome reports QA sending the workflow back to the architect (design).

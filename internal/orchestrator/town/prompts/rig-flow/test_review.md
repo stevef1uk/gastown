@@ -24,8 +24,9 @@ $GT_ROOT/{{rig}}/mayor/rig/{{layout_root}}/  ← layout root (ALL files go here)
 |---------|------|
 | `success` | Every in-scope `TEST_PLAN.md` requirement row: test file exists, has real assertions, phase verify ({{phase_qa_verify_command}}) is green |
 | `failure` | A planned test is missing/weak or verify fails — sends **Polecat** back to `implementation` (name bead IDs + test paths) |
+| `contract_mismatch` | Tests are green but their assertions contradict a specific `SPEC.md` clause, and a production-code change can reconcile them — sends **Polecat** back to `implementation` with a SPEC/assertion/source trace |
 | `plan_gap` | `TEST_PLAN.md` itself is incomplete or wrong — sends **Tester** back to `test_plan` to rewrite the plan |
-| `architecture_failure` | Tests contradict SPEC/architecture (route/API drift the Polecat cannot fix) — sends **Architect** back to `design` |
+| `architecture_failure` | `SPEC.md` and `architecture.md` themselves conflict, or the contract is missing, so no code change can reconcile them — sends **Architect** back to `design` |
 
 ## What gt-agent checks mechanically (you must confirm the same)
 
@@ -47,7 +48,14 @@ Read SPEC.md and architecture.md before judging adequacy. SPEC is the acceptance
 - **integration**: does it drive the real API/store wiring (listed in `required_files`) rather than a mock that bypasses the API?
 - **ui**: only required when the phase ships UI files and `ui_command` is set; does it start the UI (via `ui_command`) and assert on visible behavior, not just a page load?
 
-Missing a planned test, a test that never asserts, or a verify that fails ⇒ `failure`. A plan that hand-waves ("ensure quality") or omits whole requirements ⇒ `plan_gap`. Tests that contradict the SPEC route/store contract that no code change can reconcile ⇒ `architecture_failure`.
+Missing a planned test, a test that never asserts, or a verify that fails ⇒ `failure`. A plan that hand-waves ("ensure quality") or omits whole requirements ⇒ `plan_gap`. Green tests that assert behavior contradicting a concrete SPEC clause ⇒ `contract_mismatch` when changing the named production file can satisfy SPEC; use `architecture_failure` only when SPEC/architecture themselves conflict or omit the contract.
+
+For `contract_mismatch`, the JSON summary must contain all four markers verbatim so the Polecat does not have to rediscover the diagnosis:
+- `Implementation repair: <test path>` — classify the named test so repair ownership stays with production code.
+- `SPEC: <file:section> "<exact clause>"` — quote the requirement being violated.
+- `Assertion: <test path>:<line> "<exact assertion>"` — quote the green assertion that encodes the mismatch.
+- `Production fix: <source path>:<line> <concrete change>` — name the source line to correct.
+Include the owning bead ID as for any failure. Never report `contract_mismatch` without these markers; gt-agent rejects the outcome.
 
 ## Verification execution (CRITICAL)
 
@@ -98,7 +106,7 @@ For server-only smoke verification, use the documented startup/probe/cleanup com
    ```
 
 5. On **failure**, name **exact** fixes in the JSON summary: `{{layout_root}}/path/to/test_file missing assertions for <requirement>` and the verified owning bead IDs to reopen, so the Polecat can rework in one pass. Do not include an unrelated closed-bead inventory in the summary; command output is diagnostic, not a repair list. Do not reject tests merely because they use a recorder rather than a live HTTP server; judge whether they exercise the required behavior and real wiring.
-   For each named test file, classify the work with exactly one of `Test repair: <test path>` (the test is missing or needs stronger assertions) or `Implementation repair: <test path>` (the test is correct but the implementation must change). Include the exact path and the concrete finding in the summary. Do not classify a passing, adequate test as needing a cosmetic edit.
+   For each named test file, classify the work with exactly one of `Test repair: <test path>` (the test is missing or needs stronger assertions) or `Implementation repair: <test path>` (the test is correct but the implementation must change). Use `Implementation repair:` for `contract_mismatch` and include the SPEC/assertion/source trace described above. Include the exact path and the concrete finding in the summary. Do not classify a passing, adequate test as needing a cosmetic edit.
 
 6. On **plan_gap**, name the requirements `TEST_PLAN.md` omits or mis-levels, so the Tester can rewrite it.
 
@@ -109,6 +117,9 @@ Example success:
 
 Example failure:
 `{"outcome":"failure","summary":"Test repair: app/tests/test_feature.py — TEST_PLAN.md row R-3 lacks assertions on key behavior; reopen bead <id> and re-verify."}`
+
+Example contract_mismatch:
+`{"outcome":"contract_mismatch","summary":"Implementation repair: taskboard/tests/test_api.py — SPEC: SPEC.md §API-3 'invalid enum values return 400 {\"error\":...}'; Assertion: taskboard/tests/test_api.py:115 'assert response.json() == {\"detail\": \"invalid priority\"}'; Production fix: taskboard/main.py:179 return 400 {\"error\":...} for invalid priority; reopen bead <id>. Phase verify passed, but the green assertion contradicts SPEC.md."}`
 
 Example plan_gap:
 `{"outcome":"plan_gap","summary":"TEST_PLAN.md omits requirement R-4 and mis-levels R-2 — Tester must rewrite plan."}`

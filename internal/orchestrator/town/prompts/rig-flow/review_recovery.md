@@ -27,6 +27,8 @@ and route one precise repair to the responsible workflow owner.
 | `implementation_rework` | Evidence identifies an implementation/test defect with an existing owner | Polecat |
 | `pause` | Evidence is insufficient, the source requirements conflict, or a human decision is required | User |
 
+For a `contract_mismatch` pause, first verify the retained `SPEC:`, `Assertion:`, and `Production fix:` markers. Route to `implementation_rework` only when the named source line can be changed to satisfy the quoted SPEC clause without touching the passing test. If the assertion itself is authoritative and SPEC is wrong (or the markers are missing), choose `architect_rework` or `pause`; do not send the same source repair back unchanged.
+
 Do not edit implementation code or silently change SPEC requirements. Do not
 reopen unrelated beads or send the workflow to a role that cannot make the named
 correction. If the planner created a plan for a different project, identify the

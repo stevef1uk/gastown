@@ -78,7 +78,7 @@ func (m *Manager) applyStateTimeout(workflowID string) (string, error) {
 	}
 	// Hard reset hooks ran; start a fresh wall-clock window (same-state transition does not touch StateEnteredAt).
 	inst.touchStateEnteredAt()
-	reworkFeedback := PrepareWorkflowReworkFeedback(fromState, next, summary, feedback, v, tpl.ReworkFeedback)
+	reworkFeedback := PrepareWorkflowReworkFeedback(fromState, next, summary, feedback, outcome, v, tpl.ReworkFeedback)
 	if reviewAction == reviewFailureEscalate {
 		reworkFeedback = reviewRecoveryFeedback(fromState, summary, feedback, v)
 	} else if reviewAction == reviewFailurePause {

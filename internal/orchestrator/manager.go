@@ -800,7 +800,11 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summa
 		}
 		inst.Status = "paused"
 		key := fromState + ":" + reviewPhaseKey(activePhaseID)
-		inst.PauseReason = fmt.Sprintf("%s was rejected %d times in delivery phase %q, including after Mayor diagnosis/recovery; inspect the retained findings and fix before resuming", fromState, inst.ReviewFailures[key], activePhaseID)
+		if IsContractMismatchOutcome(outcome) {
+			inst.PauseReason = fmt.Sprintf("contract_mismatch repeated %d times in delivery phase %q after a source repair; the green tests contradict SPEC.md and the named production fix did not resolve it. Inspect the SPEC quote, assertion, and source evidence before resuming", inst.ReviewFailures[key], activePhaseID)
+		} else {
+			inst.PauseReason = fmt.Sprintf("%s was rejected %d times in delivery phase %q, including after Mayor diagnosis/recovery; inspect the retained findings and fix before resuming", fromState, inst.ReviewFailures[key], activePhaseID)
+		}
 	}
 	if recoveryPause {
 		inst.Status = "paused"
@@ -818,11 +822,15 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summa
 	setRework := implementationRewound || recoveryHandoff || (next != fromState && IsCrossStateReworkOutcome(outcome)) || outcome == "plan_dependency_blocked" || IsTimeoutOutcome(outcome) || IsVerificationErrorOutcome(outcome)
 	if setRework && next != "" {
 		v := m.workflowValidationFor(inst, tpl)
-		reworkFeedback := PrepareWorkflowReworkFeedback(fromState, next, summary, feedback, v, tpl.ReworkFeedback)
+		reworkFeedback := PrepareWorkflowReworkFeedback(fromState, next, summary, feedback, outcome, v, tpl.ReworkFeedback)
 		if reviewAction == reviewFailureEscalate {
 			reworkFeedback = reviewRecoveryFeedback(fromState, summary, feedback, v)
 		} else if reviewAction == reviewFailurePause {
-			reworkFeedback = reviewRecoveryPauseFeedback(fromState, summary, feedback)
+			if IsContractMismatchOutcome(outcome) {
+				reworkFeedback = reviewContractMismatchPauseFeedback(fromState, summary, feedback)
+			} else {
+				reworkFeedback = reviewRecoveryPauseFeedback(fromState, summary, feedback)
+			}
 		}
 		if IsVerificationErrorOutcome(outcome) {
 			reworkFeedback = verificationRetryFeedback(v, feedback)
@@ -838,7 +846,7 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summa
 		// escalate to test_plan_rework (TEST_PLAN/bead mapping wrong) or design (SPEC/
 		// architecture contradiction) instead of spinning test_review ↔ implementation
 		// forever (docs/design/tester-agent.md §8 "Loop safety").
-		if fromState == "test_review" && next == "implementation" && IsFailureOutcome(outcome) {
+		if fromState == "test_review" && next == "implementation" && IsFailureOutcome(outcome) && !IsContractMismatchOutcome(outcome) {
 			inst.TestReviewFailures++
 			if inst.TestReviewFailures >= MaxReviewRetries(v) && phaseAdvance == nil {
 				escalateTo := "test_plan_rework"
@@ -860,7 +868,7 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summa
 				inst.touchStateEnteredAt()
 				inst.TestReviewFailures = 0
 			}
-		} else if !IsTimeoutOutcome(outcome) && !IsFailureOutcome(outcome) && !IsArchitectureReworkOutcome(outcome) && (fromState == "test_review" || (fromState == "implementation" && activeTestRepair == nil)) {
+		} else if !IsTimeoutOutcome(outcome) && !IsFailureOutcome(outcome) && !IsContractMismatchOutcome(outcome) && !IsArchitectureReworkOutcome(outcome) && (fromState == "test_review" || (fromState == "implementation" && activeTestRepair == nil)) {
 			inst.TestReviewFailures = 0
 		}
 		// Loop safety for the tester ↔ planner cycle: if the tester keeps failing

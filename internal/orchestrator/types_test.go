@@ -7,14 +7,14 @@ func TestTransition_failMapsToFailureNotSuccess(t *testing.T) {
 		States: map[string]State{
 			"design": {
 				Transitions: map[string]Transition{
-					"success":  {To: "planning"},
-					"failure":  {To: "design"},
+					"success": {To: "planning"},
+					"failure": {To: "design"},
 				},
 			},
 			"planning": {
 				Transitions: map[string]Transition{
-					"success":  {To: "implementation"},
-					"failure":  {To: "planning"},
+					"success": {To: "implementation"},
+					"failure": {To: "planning"},
 				},
 			},
 		},
@@ -36,6 +36,18 @@ func TestTransition_failMapsToFailureNotSuccess(t *testing.T) {
 	}
 	if next != "planning" {
 		t.Fatalf("fail on planning should stay in planning, got %q", next)
+	}
+}
+
+func TestIsFailureOutcome_contractMismatch(t *testing.T) {
+	if !IsFailureOutcome("contract_mismatch") {
+		t.Fatal("contract_mismatch must count as a failure outcome for review budgeting")
+	}
+	if !IsContractMismatchOutcome("contract_mismatch") {
+		t.Fatal("contract_mismatch must be distinguishable from generic failure")
+	}
+	if IsContractMismatchOutcome("failure") {
+		t.Fatal("generic failure must not be treated as a contract mismatch")
 	}
 }
 

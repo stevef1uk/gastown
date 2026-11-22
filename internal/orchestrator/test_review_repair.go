@@ -32,6 +32,17 @@ func classifyTestReviewFinding(summary, test, testPath string) (bool, error) {
 	return testRepair, nil
 }
 
+// ValidateContractMismatchSummary requires an auditable SPEC-to-assertion-to-source
+// trace before a tester can send implementation work back as a contract mismatch.
+func ValidateContractMismatchSummary(summary string) error {
+	for _, marker := range []string{"Implementation repair:", "SPEC:", "Assertion:", "Production fix:"} {
+		if !strings.Contains(summary, marker) {
+			return fmt.Errorf("contract_mismatch summary must include %q with the exact evidence; got %q", marker, strings.TrimSpace(summary))
+		}
+	}
+	return nil
+}
+
 // ValidateTestReviewRepairSummary lets the agent correct an ambiguous report
 // before sending it to the authoritative orchestrator.
 func ValidateTestReviewRepairSummary(rigDir string, v WorkflowValidation, summary string) error {

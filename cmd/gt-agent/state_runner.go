@@ -1152,6 +1152,11 @@ func validateOutcomeForTask(task *orchestrator.Task, townRoot, rig, outcome, sum
 		if err := orchestrator.ValidateTestReviewRepairSummary(rigMayorRigDir(townRoot, rig), taskValidation(townRoot, task), summary); err != nil {
 			return err
 		}
+		if orchestrator.IsContractMismatchOutcome(outcome) {
+			if err := orchestrator.ValidateContractMismatchSummary(summary); err != nil {
+				return err
+			}
+		}
 	}
 	if !task.Hooks.BeadIDsInSummary {
 		return nil

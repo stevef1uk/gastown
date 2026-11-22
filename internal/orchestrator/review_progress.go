@@ -16,6 +16,10 @@ const (
 	reviewFailurePause
 )
 
+// A contract mismatch means the tests are already correct and the source is not.
+// Repeating it after one repair is strong evidence that the diagnosis or owner is wrong.
+const contractMismatchReviewLimit = 2
+
 // Review progress is template-configured, persisted, and scoped to a workflow.
 // Cosmetic architecture amendments cannot reset a profile-based progress budget.
 func (inst *WorkflowInstance) recordReviewProgress(townRoot, rig, state, outcome string, hooks StateHooks) {
@@ -95,6 +99,9 @@ func (inst *WorkflowInstance) recordReviewFailure(state, phase, outcome string, 
 		inst.ReviewRecoveryBudgetStarted[key] = true
 	}
 	inst.ReviewFailures[key]++
+	if IsContractMismatchOutcome(outcome) && inst.ReviewFailures[key] >= contractMismatchReviewLimit {
+		return reviewFailurePause
+	}
 	if inst.ReviewFailures[key] < limit {
 		return reviewFailureContinue
 	}
@@ -142,4 +149,8 @@ func reviewRecoveryFeedback(state, summary, feedback string, v WorkflowValidatio
 
 func reviewRecoveryPauseFeedback(state, summary, feedback string) string {
 	return truncateWorkflowText(fmt.Sprintf("The workflow repeated the %s rejection after a Mayor diagnosis/recovery attempt and is paused. Review the latest evidence, verify the proposed owner/correction, then resume only after the underlying mismatch has been addressed.\n\nLatest finding: %s\n\nRecovery feedback: %s", state, strings.TrimSpace(summary), strings.TrimSpace(feedback)), maxWorkflowReworkFeedback)
+}
+
+func reviewContractMismatchPauseFeedback(state, summary, feedback string) string {
+	return truncateWorkflowText(fmt.Sprintf("Workflow paused: %s reported contract_mismatch again after a source repair. The tests are green but contradict SPEC.md; inspect the retained SPEC quote, assertion, and production-fix evidence before resuming. Do not rewrite passing assertions to match current behavior.\n\nLatest finding: %s\n\nPrior feedback: %s", state, strings.TrimSpace(summary), strings.TrimSpace(feedback)), maxWorkflowReworkFeedback)
 }

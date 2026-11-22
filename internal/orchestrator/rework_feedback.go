@@ -8,11 +8,21 @@ import (
 // Raw attempt logs often contain grep noise and generic hints; planners need summary + bd list.
 // Profile fields (required_files, qa_verify_command, layout_root) drive recovery text — never hardcode rig paths.
 // routes maps "from->to" to a named feedback builder declared in the workflow template YAML
-// (WorkflowTemplate.ReworkFeedback). Unknown routes fall back to generic sanitized text.
-func PrepareWorkflowReworkFeedback(fromState, nextState, summary, rawFeedback string, v WorkflowValidation, routes map[string]string) string {
+// (WorkflowTemplate.ReworkFeedback). An optional "from->to:outcome" route takes
+// precedence, so one transition can carry distinct guidance per verdict.
+// Unknown routes fall back to generic sanitized text.
+func PrepareWorkflowReworkFeedback(fromState, nextState, summary, rawFeedback, outcome string, v WorkflowValidation, routes map[string]string) string {
 	summary = strings.TrimSpace(summary)
 	rawFeedback = strings.TrimSpace(rawFeedback)
 	key := fromState + "->" + nextState
+	outcome = strings.ToLower(strings.TrimSpace(outcome))
+	if outcome != "" {
+		if name := routes[key+":"+outcome]; name != "" {
+			if builder, ok := reworkFeedbackBuilders[name]; ok {
+				return truncateWorkflowText(builder(summary, rawFeedback, v), maxWorkflowReworkFeedback)
+			}
+		}
+	}
 	if name := routes[key]; name != "" {
 		if builder, ok := reworkFeedbackBuilders[name]; ok {
 			return truncateWorkflowText(builder(summary, rawFeedback, v), maxWorkflowReworkFeedback)
@@ -45,6 +55,9 @@ var reworkFeedbackBuilders = map[string]reworkFeedbackBuilder{
 	},
 	"test_review_to_implementation": func(summary, raw string, v WorkflowValidation) string {
 		return prepareTestReviewToImplementationFeedback(summary, raw, v)
+	},
+	"test_review_contract_mismatch_to_implementation": func(summary, raw string, v WorkflowValidation) string {
+		return prepareContractMismatchToImplementationFeedback(summary, raw, v)
 	},
 	"test_review_to_design": func(summary, raw string, v WorkflowValidation) string {
 		return prepareTestReviewToDesignFeedback(summary, raw, v)
@@ -479,6 +492,36 @@ func prepareTestReviewToImplementationFeedback(summary, raw string, v WorkflowVa
 		return out
 	}
 	return sanitizeAttemptFeedback(raw)
+}
+
+func prepareContractMismatchToImplementationFeedback(summary, raw string, v WorkflowValidation) string {
+	var b strings.Builder
+	b.WriteString("Tester found a SPEC-conformance mismatch: the test suite is green, but its assertions encode behavior that contradicts SPEC.md. Fix the production code; do not edit or weaken the tests that exposed the mismatch.\n\n")
+	if summary != "" {
+		b.WriteString("Tester summary: ")
+		b.WriteString(summary)
+		b.WriteString("\n")
+	}
+	verify := strings.TrimSpace(v.UnittestCommandHint())
+	if verify == "" {
+		verify = "profile qa_verify_command"
+	}
+	layout := v.LayoutRootDir()
+	b.WriteString("\nPolecat recovery steps (contract_mismatch):\n")
+	b.WriteString("1. READ `SPEC.md` and each test file named in the tester summary. The summary must include a `SPEC:` clause quote, an `Assertion:` quote with file/line, and the `Production fix:` path; if any are missing, reply with `contract_mismatch` asking the tester for that trace instead of guessing.\n")
+	b.WriteString("2. EDIT only the production file named after `Production fix:`; use READ before EDIT. Do not change `SPEC.md`, `TEST_PLAN.md`, or the named test files for this repair.\n")
+	b.WriteString("3. Run the unchanged verification: `")
+	b.WriteString(verify)
+	b.WriteString("` from `")
+	b.WriteString(layout)
+	b.WriteString("`. Green tests are expected after the source correction; do not rewrite assertions to match current behavior.\n")
+	b.WriteString("4. Summarize the SPEC clause, the corrected production line, and the verification result, then `bd close` the reopened bead.\n")
+	if err := extractLastTestFailure(raw); err != "" {
+		b.WriteString("\nLast test output:\n")
+		b.WriteString(err)
+		b.WriteString("\n")
+	}
+	return strings.TrimSpace(b.String())
 }
 
 func prepareTestReviewToDesignFeedback(summary, raw string, v WorkflowValidation) string {

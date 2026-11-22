@@ -13,6 +13,7 @@ rework_feedback:
   qa_review->implementation: qa_review_to_implementation
   qa_review->design: qa_review_to_design
   test_review->implementation: test_review_to_implementation
+  test_review->implementation:contract_mismatch: test_review_contract_mismatch_to_implementation
   test_review->design: test_review_to_design
   test_plan->planning: test_plan_to_planner
   test_plan_review->test_plan: test_plan_review_to_tester
@@ -464,7 +465,8 @@ states:
     instructions: |
       1. Read TEST_PLAN.md, SPEC.md, and architecture.md under `{{rig}}/mayor/rig/`; compare each requirement to its planned test file.
       2. Confirm every active-phase test file exists, has real assertions (not stubs), and the phase verify ({{phase_qa_verify_command}}) is green.
-      3. Report success only when tests cover every requirement; failure names failing beads (polecat), plan_gap when the plan is incomplete (tester rewrites TEST_PLAN.md), architecture_failure when SPEC/architecture are the blocker (architect).
+      3. Report success only when tests cover every requirement; failure names failing beads (polecat) when a test is missing/weak or verify fails; plan_gap when the plan is incomplete (tester rewrites TEST_PLAN.md); contract_mismatch when green tests assert behavior that contradicts a specific SPEC clause and the fix belongs in production code; architecture_failure when SPEC/architecture themselves are the blocker (architect).
+      4. For contract_mismatch include in the JSON summary: `Implementation repair: <test path>`, `SPEC: <file:section> "<exact clause>"`, `Assertion: <test path>:<line> "<exact assertion>"`, `Production fix: <source path>:<line> <change>`, and the owning bead ID. Green tests alone are not evidence of conformance.
     hooks:
       review_failure_limit: 3
       review_recovery_state: review_recovery
@@ -483,13 +485,15 @@ states:
       bead_ids_in_summary: true
       retry_hint: |
         One CMD: per line. Read TEST_PLAN.md and the test files it names from {{rig}}/mayor/rig; run {{phase_qa_verify_command}}.
-        Allowed outcomes: success, failure, plan_gap, architecture_failure.
+        Allowed outcomes: success, failure, contract_mismatch, plan_gap, architecture_failure.
       failure_hint: |
-        Do not edit source or tests. If a test file is missing, weak, or verify fails, report failure with the bead IDs and test paths. If TEST_PLAN.md itself is incomplete, use plan_gap. If SPEC/architecture contradict the tests, use architecture_failure.
+        Do not edit source or tests. If a test file is missing, weak, or verify fails, report failure with the bead IDs and test paths. If tests are green but assert behavior that contradicts SPEC.md and a source change can fix it, report contract_mismatch with the SPEC clause quote, exact assertion with line number, production file to change, and bead ID; do not use failure. If TEST_PLAN.md itself is incomplete, use plan_gap. If SPEC/architecture themselves conflict, use architecture_failure.
     transitions:
       success:
         to: qa_review
       failure:
+        to: implementation
+      contract_mismatch:
         to: implementation
       plan_gap:
         to: test_plan_rework
