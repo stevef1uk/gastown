@@ -76,9 +76,9 @@ func PlanReviewSpuriousFailureReason(townRoot, rig, summary string, v WorkflowVa
 		return "Integration contract is not required in the active phase (no cmd/.../main.go in required_files). Do not fail for a missing ## Integration contract."
 	}
 	if planReviewSummaryClaimsMissingImplementBead(lower) {
-		covered, err := allRequiredPathsCoveredByActiveBeads(townRoot, rig, v)
+		covered, err := PlanningBeadCoverageSatisfied(townRoot, rig, v)
 		if err == nil && covered {
-			return "Implement beads exist for every active-phase required_files path (open or in_progress). Re-run `bd list --status=open,in_progress` — do not fail for a missing bead."
+			return "Implement beads exist for every active-phase required_files path (open, in_progress, or closed with green artifacts). Re-run `bd list --status=open,in_progress,closed` — do not fail for a missing bead."
 		}
 	}
 	return ""
@@ -86,9 +86,10 @@ func PlanReviewSpuriousFailureReason(townRoot, rig, summary string, v WorkflowVa
 
 func planReviewSummaryClaimsMissingImplementBead(lower string) bool {
 	return strings.Contains(lower, "missing bead") ||
-		strings.Contains(lower, "zero open") ||
-		strings.Contains(lower, "no open implement") ||
-		strings.Contains(lower, "no implement bead")
+		strings.Contains(lower, "bead coverage is missing") ||
+		strings.Contains(lower, "no 'implement") ||
+		strings.Contains(lower, "no implement bead") ||
+		strings.Contains(lower, "do not appear in this session's bd list")
 }
 
 func allRequiredPathsCoveredByActiveBeads(townRoot, rig string, v WorkflowValidation) (bool, error) {

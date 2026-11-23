@@ -436,7 +436,7 @@ var artifactFailureHints = map[string]func(*stateRunner) string{
 			minPlan, beadIDExample(r.townRoot, r.rig), work, r.rig)
 	},
 	"plan_review": func(r *stateRunner) string {
-		return fmt.Sprintf("Run `bd list --status=open` from %s; compare beads to required_files. Read SPEC.md — architecture.md and plan.md must match SPEC HTTP routes and store API names (no /links vs /api/links drift, no ListLinks). Use outcome failure to send the Planner back.", rigMayorRigPath(r.rig))
+		return fmt.Sprintf("Run `bd list --status=open,in_progress,closed` from %s; compare beads to required_files. Read SPEC.md — architecture.md and plan.md must match SPEC HTTP routes and store API names (no /links vs /api/links drift, no ListLinks). Use outcome failure to send the Planner back.", rigMayorRigPath(r.rig))
 	},
 	"implementation": func(r *stateRunner) string {
 		hint := fmt.Sprintf("One bead at a time from %s (BEADS_DIR=$GT_ROOT/%s/.beads): bd update → heredoc under %s/ → %s → bd close → JSON.",

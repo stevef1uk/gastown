@@ -169,7 +169,7 @@ func ValidateSummaryBeadIDs(summary string, known map[string]bool, rigPrefix str
 	// Primary pass: this rig's own beads, anchored on the real prefix.
 	for _, m := range buildSummaryBeadIDRE(rigPrefix).FindAllStringSubmatch(summary, -1) {
 		id := strings.ToLower(m[1])
-		if isIgnoredSummaryToken(id) || summaryMentionsAgentIdentityBead(summary, id) {
+		if isIgnoredSummaryToken(id) || summaryMentionsBeadPattern(summary, id) {
 			continue
 		}
 		if known != nil && known[id] {
@@ -182,7 +182,7 @@ func ValidateSummaryBeadIDs(summary string, known map[string]bool, rigPrefix str
 	if rigPrefix != "" {
 		for _, m := range summaryBeadIDRE.FindAllStringSubmatch(summary, -1) {
 			id := strings.ToLower(m[1])
-			if seen[id] || isIgnoredSummaryToken(id) || summaryMentionsAgentIdentityBead(summary, id) {
+			if seen[id] || isIgnoredSummaryToken(id) || summaryMentionsBeadPattern(summary, id) {
 				continue
 			}
 			if known != nil && known[id] {
@@ -221,8 +221,26 @@ func looksLikeBeadIssueID(id string) bool {
 	if len(parts[0]) < 2 || len(parts[0]) > 4 {
 		return false
 	}
+	if !strings.ContainsAny(parts[0], "abcdefghijklmnopqrstuvwxyz") {
+		return false
+	}
 	suffix := parts[1]
 	return len(suffix) >= 2 && len(suffix) <= 5
+}
+
+func summaryMentionsBeadPattern(summary, matchedID string) bool {
+	lower := strings.ToLower(summary)
+	matchedID = strings.ToLower(matchedID)
+	if summaryMentionsAgentIdentityBead(summary, matchedID) {
+		return true
+	}
+	if strings.Contains(lower, matchedID+"-*") {
+		return true
+	}
+	if strings.HasSuffix(matchedID, "-rig") && strings.Contains(lower, matchedID+"-") {
+		return true
+	}
+	return false
 }
 
 // summaryMentionsAgentIdentityBead returns true when the regex matched a prefix of a role bead (xx-<rig>-architect).

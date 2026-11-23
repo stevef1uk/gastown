@@ -70,6 +70,14 @@ func TestValidateSummaryBeadIDs_ignoresEnglishHyphenatedWords(t *testing.T) {
 	}
 }
 
+func TestValidateSummaryBeadIDs_ignoresRigIdentityAndByteTokens(t *testing.T) {
+	known := map[string]bool{"aa-5d0": true}
+	summary := "only rig and agent beads (aa-rig-testgt3, aa-testgt3-*); plan.md is 808-byte minimum."
+	if err := ValidateSummaryBeadIDs(summary, known, "aa"); err != nil {
+		t.Fatalf("rig identity and byte tokens must not be treated as bead IDs: %v", err)
+	}
+}
+
 func TestValidateSummaryBeadIDs_matchesDigitPrefixBead(t *testing.T) {
 	known := map[string]bool{"t3-t9l": true}
 	if err := ValidateSummaryBeadIDs("bead t3-t9l is closed", known, "t3"); err != nil {

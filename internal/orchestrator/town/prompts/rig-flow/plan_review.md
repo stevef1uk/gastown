@@ -72,7 +72,7 @@ Planner. Do not send plan-only defects to the Architect.
    - Module name must match SPEC / rig layout (`{{layout_root}}` when SPEC says so).
 
 4. **Beads vs profile**
-   - `bd list --status=open,in_progress`: exactly one implement bead per path in **this phase** `required_files` ({{required_files}}).
+   - `bd list --status=open,in_progress,closed`: implement bead(s) per path in **this phase** `required_files` ({{required_files}}). Closed beads with green artifacts on disk satisfy planning coverage and are considered valid; do not fail for a missing bead when only closed canonical beads exist.
    - Titles contain `{{bead_title_contains}}` and the full repo-relative path.
    - `plan.md` **## Bead map**: one `### <real-id>: <path>` per active bead; IDs from **this session's** `bd list` only.
 
