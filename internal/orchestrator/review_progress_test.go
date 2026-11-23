@@ -47,6 +47,9 @@ func TestReviewNoProgressPersistsAndPauses(t *testing.T) {
 	if inst.Status != "paused" || !strings.Contains(inst.PendingRework.Feedback, "without changing") {
 		t.Fatalf("unchanged contract kept looping: %+v", inst)
 	}
+	if !strings.Contains(inst.PauseReason, "review failed 3 times without changing") {
+		t.Fatalf("pause reason missing no-progress cause: %q", inst.PauseReason)
+	}
 	inst.Status = "running"
 	if err := os.WriteFile(profile, []byte(`{"delivery_phases":[{"id":"core"}]}`), 0644); err != nil {
 		t.Fatal(err)

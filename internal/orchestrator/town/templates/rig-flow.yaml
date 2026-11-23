@@ -56,7 +56,7 @@ states:
       2. Create `{{town_root}}/{{rig}}/mayor/rig/architecture.md` only if absent; otherwise read the full document and amend only the reported defects (≥{{min_architecture_bytes}} bytes). Preserve unrelated design and completed-phase contracts.
       3. CRITICAL: You MUST prefix ALL file paths with `{{layout_root}}/` when layout_root ≠ "." (e.g. `{{layout_root}}/cmd/server/main.go`; bare `cmd/server/main.go` when layout_root is ".").
     hooks:
-      prompt_context: [design_draft_context]
+      prompt_context: [design_draft_context, spec_runtime_commands]
       pre_run: [prune_rig_root_junk]
       max_cmd_turns: 8
       cmd_guard: design
@@ -82,8 +82,10 @@ states:
       2. Verify architecture.md is complete, SPEC-aligned, and ready for planning.
       3. Confirm all active-phase required files appear in architecture.md as planned implement paths.
       4. Confirm HTTP routes, store/API names, module path, and entrypoint wiring match SPEC exactly.
-      5. Report success only when the design doc is clean and consistent; failure if it is missing or inconsistent.
+      5. Confirm every SPEC runtime launch command appears verbatim in architecture.md, including `cd ... &&` and all arguments.
+      6. Report success only when the design doc is clean and consistent; failure if it is missing or inconsistent.
     hooks:
+      prompt_context: [spec_runtime_commands]
       max_cmd_turns: 10
       cmd_guard: design_review
       cmd_rewrites: [rig_placeholders, spec_md_case, spec_md_after_cd, unwrap_bash_lc]

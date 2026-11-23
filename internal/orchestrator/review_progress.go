@@ -52,8 +52,12 @@ func (inst *WorkflowInstance) recordReviewProgress(townRoot, rig, state, outcome
 	inst.ReviewProgress[state] = progress
 	if progress.Failures >= hooks.NoProgressLimit {
 		inst.Status = "paused"
+		pauseReason := fmt.Sprintf("%s failed %d times without changing %v; correct the effective contract and inspect the pending rework before resuming", state, progress.Failures, hooks.ProgressFiles)
+		if inst.PauseReason == "" {
+			inst.PauseReason = pauseReason
+		}
 		if inst.PendingRework != nil {
-			inst.PendingRework.Feedback += fmt.Sprintf("\n\nWorkflow paused: %s failed %d times without changing %v. Correct the effective contract, then resume the workflow; repeated unchanged failures will pause it again.", state, progress.Failures, hooks.ProgressFiles)
+			inst.PendingRework.Feedback += fmt.Sprintf("\n\nWorkflow paused: %s. Correct the effective contract, then resume the workflow; repeated unchanged failures will pause it again.", pauseReason)
 		}
 	}
 }

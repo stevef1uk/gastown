@@ -46,6 +46,7 @@ If QA escalated a genuine runtime design defect, amend the named HTTP routes, AP
    If under minimum, add the missing substantive detail to the relevant sections — do not report success until met.
 4. Architecture must reference SPEC goals and planned layout under `{{layout_root}}/`.
 5. **HTTP routes and store API names must match SPEC verbatim**. gt-agent rejects on drift.
+5a. **Runtime launch commands from SPEC must appear verbatim** in architecture.md. Preserve `cd ... &&`, the executable, flags, and arguments exactly; never reduce a command to a source path. gt-agent rejects on drift.
 5b. **`required_files` must be concrete literal paths** — no wildcards (`test_*.py`, `*_test.go`). gt-agent rejects on wildcards.
 6. **ALL file paths anywhere in architecture.md must use `{{layout_root}}/` prefix** (only when `{{layout_root}}` ≠ `"."` or empty). This includes prose, tables, code blocks, bullet lists — EVERYWHERE. When layout_root is `"."`, use bare paths (`main.go`, `handler.go`). No `./` prefix. Prose may reference packages as `store.List`.
 6b. **Only wrap actual file paths in backticks.** Do NOT wrap Go imports, URLs, MIME types, or package members. Non-file backticks get extracted as fake required paths.

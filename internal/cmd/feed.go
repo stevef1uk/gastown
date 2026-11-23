@@ -25,6 +25,7 @@ var (
 	feedWindow   bool
 	feedPlain    bool
 	feedProblems bool
+	feedConvoys  bool
 )
 
 func init() {
@@ -40,6 +41,7 @@ func init() {
 	feedCmd.Flags().BoolVarP(&feedWindow, "window", "w", false, "Open in dedicated tmux window (creates 'feed' window)")
 	feedCmd.Flags().BoolVar(&feedPlain, "plain", false, "Use plain text output (bd activity) instead of TUI")
 	feedCmd.Flags().BoolVarP(&feedProblems, "problems", "p", false, "Start in problems view (shows stuck agents)")
+	feedCmd.Flags().BoolVar(&feedConvoys, "convoys", false, "Show the convoy panel (hidden by default)")
 }
 
 var feedCmd = &cobra.Command{
@@ -49,10 +51,13 @@ var feedCmd = &cobra.Command{
 	Long: `Display a real-time feed of issue changes and agent activity.
 
 By default, launches an interactive TUI dashboard with:
-  - Agent tree (top): Shows all agents organized by role with latest activity
-  - Convoy panel (middle): Shows in-progress and recently landed convoys
+  - Agent tree (top): Shows all agents organized by role and running workflows
   - Event stream (bottom): Chronological feed you can scroll through
   - Vim-style navigation: j/k to scroll, tab to switch panels, 1/2/3 for panels, q to quit
+
+Convoy Panel (--convoys):
+  The convoy panel is hidden by default so the agent tree has room for two
+  running workflows. Pass --convoys to restore the middle convoy panel.
 
 Problems View (--problems/-p):
   A problem-first view that surfaces agents needing attention:
@@ -64,7 +69,7 @@ Problems View (--problems/-p):
 The feed combines multiple event sources:
   - GT events: Agent activity like patrol, sling, handoff (from .events.jsonl)
   - Beads activity: Issue creates, updates, completions (from bd activity, when available)
-  - Convoy status: In-progress and recently-landed convoys (refreshes every 10s)
+  - Convoy status (--convoys only): In-progress and recently-landed convoys (refreshes every 10s)
 
 Use --plain for simple text output (reads .events.jsonl directly).
 
@@ -100,6 +105,7 @@ Examples:
   gt feed                       # Launch TUI dashboard
   gt feed --problems            # Start in problems view
   gt feed -p                    # Short flag for problems view
+  gt feed --convoys             # Show the convoy panel
   gt feed --plain               # Plain text output (bd activity)
   gt feed --window              # Open in dedicated tmux window
   gt feed --since 1h            # Events from last hour
@@ -152,7 +158,7 @@ func runFeed(cmd *cobra.Command, args []string) error {
 				return fmt.Errorf("rig '%s' not found or has no .beads directory", feedRig)
 			}
 		}
-		return runFeedTUI(workDir, feedProblems)
+		return runFeedTUI(workDir, feedProblems, feedConvoys)
 	}
 
 	// Plain mode: --rig is a pure event filter via PrintOptions.Rig
@@ -230,7 +236,7 @@ func runFeedDirect(townRoot string) error {
 }
 
 // runFeedTUI runs the interactive TUI feed.
-func runFeedTUI(workDir string, problemsView bool) error {
+func runFeedTUI(workDir string, problemsView, showConvoys bool) error {
 	// Must be in a Gas Town workspace
 	townRoot, err := workspace.FindFromCwdOrError()
 	if err != nil {
@@ -277,6 +283,7 @@ func runFeedTUI(workDir string, problemsView bool) error {
 	}
 	m.SetEventChannel(multiSource.Events())
 	m.SetTownRoot(townRoot)
+	m.SetShowConvoys(showConvoys)
 
 	// Run the TUI
 	p := tea.NewProgram(m, tea.WithAltScreen())

@@ -18,14 +18,10 @@ import (
 )
 
 type WorkflowCost struct {
-	UpstreamAttempts int64    `json:"upstream_attempts"`
-	UpstreamLimit    *int64   `json:"upstream_attempt_limit"`
-	Accounted        float64  `json:"accounted_cost_usd"`
-	Limit            *float64 `json:"workflow_allowance_usd"`
-	RigAccounted     *float64 `json:"rig_accounted_cost_usd"`
-	RigLimit         *float64 `json:"rig_allowance_usd"`
-	Accounting       string   `json:"accounting"`
-	Unknown          int64    `json:"unknown_cost_requests"`
+	Accounted    float64  `json:"accounted_cost_usd"`
+	Limit        *float64 `json:"workflow_allowance_usd"`
+	RigAccounted *float64 `json:"rig_accounted_cost_usd"`
+	RigLimit     *float64 `json:"rig_allowance_usd"`
 }
 
 type WorkflowBudget struct {
@@ -98,7 +94,7 @@ func fetchWorkflowCost(ctx context.Context, client *http.Client, endpoint, rig, 
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&cost); err != nil {
 		return nil, fmt.Errorf("budget API unavailable; rebuild/restart Freeride")
 	}
-	if cost.Limit == nil || *cost.Limit <= 0 || cost.Accounted < 0 || cost.Unknown < 0 || cost.UpstreamAttempts < 0 || (cost.UpstreamLimit != nil && *cost.UpstreamLimit <= 0) || cost.Accounting == "" {
+	if cost.Limit == nil || *cost.Limit <= 0 || cost.Accounted < 0 {
 		return nil, fmt.Errorf("incomplete budget response")
 	}
 	if (cost.RigAccounted != nil && *cost.RigAccounted < 0) || (cost.RigLimit != nil && *cost.RigLimit <= 0) {
@@ -111,7 +107,6 @@ func loadWorkflowBudgets(townRoot string, byRig map[string][]RigWorkflow) {
 	endpoint, endpointErr := workflowBudgetEndpoint(townRoot)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	// Bound concurrency and the whole refresh. Never block the TUI on HTTP.
 	client := &http.Client{Timeout: 2 * time.Second, CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }}
 	defer client.CloseIdleConnections()
 	slots := make(chan struct{}, 4)
@@ -171,23 +166,15 @@ func renderWorkflowBudget(b *WorkflowBudget) string {
 		if c.RigAccounted != nil && c.RigLimit != nil {
 			fmt.Fprintf(&out, "\n    Rig accounted: $%.4f / $%.2f%s", *c.RigAccounted, *c.RigLimit, budgetWarning(*c.RigAccounted, *c.RigLimit))
 		}
-		if c.UpstreamLimit != nil {
-			fmt.Fprintf(&out, "\n    Proxy attempts: %d / %d%s", c.UpstreamAttempts, *c.UpstreamLimit, budgetWarning(float64(c.UpstreamAttempts), float64(*c.UpstreamLimit)))
-		}
-		accounting := strings.Join(strings.Fields(c.Accounting), " ")
-		if strings.HasPrefix(accounting, "legacy accounted cost") {
-			accounting = "legacy totals (coverage unavailable)"
-		}
-		fmt.Fprintf(&out, "\n    Accounting: %s\n    Unknown-cost calls: %d", accounting, c.Unknown)
 	}
 	if b.ExecutionError != "" {
 		fmt.Fprintf(&out, "\n    Execution unavailable: %s", b.ExecutionError)
-	} else {
-		e := b.Execution
-		fmt.Fprintf(&out, "\n    Requests: %d / %d%s\n    Reserved tokens: %d / %d%s", e.Requests, e.RequestLimit, budgetWarning(float64(e.Requests), float64(e.RequestLimit)), e.ReservedTokens, e.TokenLimit, budgetWarning(float64(e.ReservedTokens), float64(e.TokenLimit)))
-		if !b.PersistedLimits {
-			out.WriteString(" (local limits)")
-		}
+		return out.String()
+	}
+	e := b.Execution
+	fmt.Fprintf(&out, "\n    Reserved tokens: %d / %d%s", e.ReservedTokens, e.TokenLimit, budgetWarning(float64(e.ReservedTokens), float64(e.TokenLimit)))
+	if !b.PersistedLimits {
+		out.WriteString(" (local limits)")
 	}
 	return out.String()
 }

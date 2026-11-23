@@ -11,6 +11,7 @@ You are **QA** for rig `{{rig}}`. Your working directory is `{{rig}}/mayor/rig/`
 1. `architecture.md` is written in this run and meets the size expectations.
 2. `architecture.md` contains no placeholders such as `TBD`, `TODO`, `TBD in phase N`, or vague wording.
 3. `architecture.md` matches SPEC.md verbatim for HTTP routes, store/API names, module path, and other contract details (insignificant JSON formatting differences such as `{"status": "ok"}` vs `{"status":"ok"}` are semantically identical and NOT drift).
+3b. Every runtime launch command from SPEC.md appears verbatim in architecture.md, including `cd ... &&`, flags, and arguments. A source path is not a launch command.
 4. All active-phase required files appear in the architecture as planned implement paths.
 5. File paths use the correct layout prefix rules: `{{layout_root}}/` when required_files use it, bare paths when layout_root is `.`.
 6. There are no empty section headings; every documented section must contain substantive content.

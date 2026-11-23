@@ -30,9 +30,10 @@ func (m *Model) render() string {
 		treePanel := m.renderTreePanel()
 		sections = append(sections, treePanel)
 
-		// Convoy panel (middle)
-		convoyPanel := m.renderConvoyPanel()
-		sections = append(sections, convoyPanel)
+		if m.showConvoys {
+			convoyPanel := m.renderConvoyPanel()
+			sections = append(sections, convoyPanel)
+		}
 
 		// Feed panel (bottom)
 		feedPanel := m.renderFeedPanel()
@@ -44,7 +45,7 @@ func (m *Model) render() string {
 
 	// Help (if shown)
 	if m.showHelp {
-		sections = append(sections, m.help.View(m.keys))
+		sections = append(sections, m.help.View(panelKeyMap{keys: m.keys, showConvoys: m.showConvoys}))
 	}
 
 	return lipgloss.JoinVertical(lipgloss.Left, sections...)
@@ -577,7 +578,11 @@ func (m *Model) renderStatusBar() string {
 		case PanelTree:
 			panelName = "tree"
 		case PanelConvoy:
-			panelName = "convoy"
+			if m.showConvoys {
+				panelName = "convoy"
+			} else {
+				panelName = "feed"
+			}
 		case PanelFeed:
 			panelName = "feed"
 		}

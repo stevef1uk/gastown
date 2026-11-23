@@ -25,8 +25,7 @@ func TestStuckClockStartsAtLastProgress(t *testing.T) {
 }
 
 func TestWorkflowBudgetConcurrentAndDurable(t *testing.T) {
-	t.Setenv("GT_WORKFLOW_MAX_LLM_REQUESTS", "7")
-	t.Setenv("GT_WORKFLOW_MAX_LLM_TOKENS", "10000")
+	t.Setenv("GT_WORKFLOW_MAX_LLM_TOKENS", "70")
 	dir := t.TempDir()
 	var admitted atomic.Int32
 	var wg sync.WaitGroup

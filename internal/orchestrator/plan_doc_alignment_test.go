@@ -410,6 +410,72 @@ func TestCheckArchitectureDockerSection_ignoredForNonDocker(t *testing.T) {
 	}
 }
 
+func TestCheckRuntimeLaunchCommandAlignment(t *testing.T) {
+	spec := "# Spec\nStart with `cd linkshelf && go run ./cmd/server` and `cd finally && python -m uvicorn app.main:app --port 8000`.\n"
+	exact := "# Architecture\nUse `cd linkshelf && go run ./cmd/server` and `cd finally && python -m uvicorn app.main:app --port 8000`.\n"
+
+	if issues := checkRuntimeLaunchCommandAlignment("architecture.md", exact, spec); len(issues) > 0 {
+		t.Fatalf("exact launch commands should pass, got: %v", issues)
+	}
+	for _, tc := range []struct {
+		name string
+		doc  string
+		want string
+	}{
+		{
+			name: "path instead of command",
+			doc:  "# Architecture\nRun `linkshelf/cmd/server`.\n",
+			want: "cd linkshelf && go run ./cmd/server",
+		},
+		{
+			name: "dropped cd prefix",
+			doc:  "# Architecture\nRun `go run ./cmd/server`.\n",
+			want: "cd linkshelf && go run ./cmd/server",
+		},
+		{
+			name: "dropped flags",
+			doc:  "# Architecture\nRun `cd linkshelf && go run ./cmd/server` and `python -m uvicorn app.main:app`.\n",
+			want: "cd finally && python -m uvicorn app.main:app --port 8000",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			issues := checkRuntimeLaunchCommandAlignment("architecture.md", tc.doc, spec)
+			if len(issues) == 0 || !strings.Contains(strings.Join(issues, " "), tc.want) {
+				t.Fatalf("expected issue containing %q, got: %v", tc.want, issues)
+			}
+		})
+	}
+
+	if issues := checkRuntimeLaunchCommandAlignment("architecture.md", "# Architecture\nNothing.\n", "# Spec\nNo launch command.\n"); len(issues) > 0 {
+		t.Fatalf("no SPEC launch command should pass, got: %v", issues)
+	}
+}
+
+func TestValidateArchitectureDocAlignment_requiresSpecRuntimeCommands(t *testing.T) {
+	dir := t.TempDir()
+	spec := "# Spec\nRun with `cd linkshelf && go run ./cmd/server`.\n"
+	if err := os.WriteFile(filepath.Join(dir, "SPEC.md"), []byte(spec), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	bad := "# Architecture\nRun `linkshelf/cmd/server`.\n"
+	if err := os.WriteFile(filepath.Join(dir, "architecture.md"), []byte(bad), 0644); err != nil {
+		t.Fatal(err)
+	}
+	err := ValidateArchitectureDocAlignment(dir, WorkflowValidation{LayoutRoot: "."})
+	if err == nil || !strings.Contains(err.Error(), "cd linkshelf && go run ./cmd/server") {
+		t.Fatalf("expected runtime launch command alignment error, got: %v", err)
+	}
+
+	good := "# Architecture\nRun with `cd linkshelf && go run ./cmd/server`.\n"
+	if err := os.WriteFile(filepath.Join(dir, "architecture.md"), []byte(good), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateArchitectureDocAlignment(dir, WorkflowValidation{LayoutRoot: "."}); err != nil {
+		t.Fatalf("exact launch command should pass full validation, got: %v", err)
+	}
+}
+
 func TestCheckArchitectureIntegrationTestingSection_requiresHeadingForTestFiles(t *testing.T) {
 	arch := "# Architecture\nMinimal.\n"
 	v := WorkflowValidation{RequiredFiles: []string{"linkshelf/internal/store/store_test.go"}}

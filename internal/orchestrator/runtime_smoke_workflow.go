@@ -20,6 +20,11 @@ var (
 			`(?:[^\s()&;|"'` + "`" + `]*/)?flask\s+run` +
 			`)\s+`,
 	)
+	specInlineCodeRE  = regexp.MustCompile("`([^`\n]+)`")
+	launchFollowOnRE  = regexp.MustCompile(`(?i)\s*(?:&&|;|&)\s*(?:curl|sleep)\b`)
+	bareSpecCommandRE = regexp.MustCompile(
+		`^(?:CMD:\s*)?(?:cd\s+|exec\s+|go\s+|python3?\s+|[^\s/]*/python3?\s+|` +
+			`uvicorn\s+|gunicorn\s+|flask\s+|hypercorn\s+|npm\s+|npx\s+|yarn\s+|pnpm\s+|node\s+)`)
 )
 
 // WorkflowNeedsRuntimeSmoke reports profiles that run doc-derived HTTP smoke during implementation verify.
@@ -232,6 +237,46 @@ func ExtractPythonServerStartFromText(text string) string {
 		}
 	}
 	return ""
+}
+
+func specRuntimeLaunchCommands(specDoc string) []string {
+	var out []string
+	seen := map[string]bool{}
+	add := func(raw string) {
+		cmd := strings.TrimSpace(strings.Trim(raw, "`"))
+		cmd = strings.TrimSpace(strings.TrimPrefix(cmd, "CMD:"))
+		cmd = strings.TrimSpace(strings.TrimPrefix(cmd, "$ "))
+		if !IsDevServerSmokeCommand(cmd) {
+			return
+		}
+		if loc := launchFollowOnRE.FindStringIndex(cmd); loc != nil {
+			cmd = strings.TrimSpace(cmd[:loc[0]])
+		}
+		cmd = strings.TrimSpace(strings.TrimRight(cmd, "&; \t"))
+		if cmd == "" || seen[cmd] {
+			return
+		}
+		seen[cmd] = true
+		out = append(out, cmd)
+	}
+	for _, match := range specInlineCodeRE.FindAllStringSubmatch(specDoc, -1) {
+		if len(match) >= 2 {
+			add(match[1])
+		}
+	}
+	for _, line := range strings.Split(specDoc, "\n") {
+		if strings.Contains(line, "`") {
+			continue
+		}
+		line = strings.TrimSpace(line)
+		line = strings.TrimSpace(strings.TrimPrefix(line, "CMD:"))
+		line = strings.TrimSpace(strings.TrimPrefix(line, "$ "))
+		if !bareSpecCommandRE.MatchString(line) {
+			continue
+		}
+		add(line)
+	}
+	return out
 }
 
 // ImplementationPythonModuleOK runs profile pytest/unittest before HTTP smoke (Python rigs).

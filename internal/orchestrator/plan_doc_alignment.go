@@ -84,6 +84,7 @@ func architectureDocAlignmentIssuesForDoc(archDoc, specDoc string, v WorkflowVal
 	issues = append(issues, checkArchitectureLayoutRootPlaceholder(archDoc, v)...)
 	issues = append(issues, checkDocumentedRoutesSubsetOfSPEC("architecture.md", archDoc, specDoc, v)...)
 	issues = append(issues, checkDocLayoutPathPrefix("architecture.md", archDoc, v)...)
+	issues = append(issues, checkRuntimeLaunchCommandAlignment("architecture.md", archDoc, specDoc)...)
 	if includeContentChecks {
 		issues = append(issues, checkArchitectureDockerSection(archDoc, v)...)
 		issues = append(issues, checkArchitectureIntegrationTestingSection(archDoc, v)...)
@@ -491,6 +492,23 @@ func pathNeedsLayoutPrefixCheck(p string) bool {
 		return false
 	}
 	return strings.Contains(filepath.Base(p), ".")
+}
+
+func checkRuntimeLaunchCommandAlignment(docName, doc, specDoc string) []string {
+	commands := specRuntimeLaunchCommands(specDoc)
+	if len(commands) == 0 || strings.TrimSpace(doc) == "" {
+		return nil
+	}
+	var issues []string
+	for _, command := range commands {
+		if strings.Contains(doc, command) {
+			continue
+		}
+		issues = append(issues, fmt.Sprintf(
+			"%s must copy SPEC runtime launch command verbatim: %q; do not replace it with a path or drop `cd ... &&`",
+			docName, command))
+	}
+	return dedupeStrings(issues)
 }
 
 func checkHTTPDocAlignment(docName, doc, specDoc string, v WorkflowValidation) []string {

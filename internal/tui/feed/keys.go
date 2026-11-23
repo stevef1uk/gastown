@@ -148,3 +148,21 @@ func (k KeyMap) FullHelp() [][]key.Binding {
 		{k.Help, k.Quit},
 	}
 }
+
+type panelKeyMap struct {
+	keys        KeyMap
+	showConvoys bool
+}
+
+func (k panelKeyMap) ShortHelp() []key.Binding {
+	return k.keys.ShortHelp()
+}
+
+func (k panelKeyMap) FullHelp() [][]key.Binding {
+	groups := k.keys.FullHelp()
+	if k.showConvoys {
+		return groups
+	}
+	groups[1] = []key.Binding{k.keys.FocusTree, k.keys.FocusFeed}
+	return groups
+}

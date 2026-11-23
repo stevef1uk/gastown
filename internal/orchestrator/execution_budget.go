@@ -15,9 +15,7 @@ import (
 // ExecutionBudget is a conservative, durable admission ledger. Reservations are
 // never refunded on errors: an interrupted HTTP call may already have been billed.
 type ExecutionBudget struct {
-	Requests           int   `json:"requests"`
 	ReservedTokens     int64 `json:"reserved_tokens"`
-	RequestLimit       int64 `json:"request_limit,omitempty"`
 	TokenLimit         int64 `json:"token_limit,omitempty"`
 	TokenLimitOverride int64 `json:"token_limit_override,omitempty"`
 }
@@ -47,10 +45,6 @@ func ReserveWorkflowLLMRequestWithAvailable(townRoot, rig, workflowID string, to
 	if townRoot == "" || rig == "" || workflowID == "" || tokens <= 0 {
 		return 0, fmt.Errorf("execution budget: missing request identity or token reservation")
 	}
-	requests, err := executionLimit("GT_WORKFLOW_MAX_LLM_REQUESTS", 1000)
-	if err != nil {
-		return 0, err
-	}
 	tokenLimit, err := executionLimit("GT_WORKFLOW_MAX_LLM_TOKENS", 20000000)
 	if err != nil {
 		return 0, err
@@ -79,11 +73,8 @@ func ReserveWorkflowLLMRequestWithAvailable(townRoot, rig, workflowID string, to
 	keyBytes, _ := json.Marshal([]string{rig, workflowID})
 	key := string(keyBytes)
 	used := ledger[key]
-	if used.Requests < 0 || used.ReservedTokens < 0 || used.RequestLimit < 0 || used.TokenLimit < 0 || used.TokenLimitOverride < 0 {
+	if used.ReservedTokens < 0 || used.TokenLimit < 0 || used.TokenLimitOverride < 0 {
 		return 0, fmt.Errorf("execution budget: invalid negative reservation")
-	}
-	if strings.TrimSpace(os.Getenv("GT_WORKFLOW_MAX_LLM_REQUESTS")) == "" && used.RequestLimit > 0 {
-		requests = used.RequestLimit
 	}
 	if strings.TrimSpace(os.Getenv("GT_WORKFLOW_MAX_LLM_TOKENS")) == "" && used.TokenLimit > 0 {
 		tokenLimit = used.TokenLimit
@@ -95,11 +86,10 @@ func ReserveWorkflowLLMRequestWithAvailable(townRoot, rig, workflowID string, to
 	if used.ReservedTokens < tokenLimit {
 		available = tokenLimit - used.ReservedTokens
 	}
-	if int64(used.Requests) >= requests || tokens > available {
-		return available, fmt.Errorf("execution budget exhausted for %s/%s (%d requests, request limit %d, %d reserved tokens; requested %d reservation units, %d available, token limit %d); review ledger and limits before resuming", rig, workflowID, used.Requests, requests, used.ReservedTokens, tokens, available, tokenLimit)
+	if tokens > available {
+		return available, fmt.Errorf("execution budget exhausted for %s/%s (%d reserved tokens; requested %d reservation units, %d available, token limit %d); review ledger and limits before resuming", rig, workflowID, used.ReservedTokens, tokens, available, tokenLimit)
 	}
-	used.RequestLimit, used.TokenLimit = requests, tokenLimit
-	used.Requests++
+	used.TokenLimit = tokenLimit
 	used.ReservedTokens += tokens
 	ledger[key] = used
 	if err := writeExecutionBudgetLedger(path, ledger); err != nil {
@@ -113,10 +103,6 @@ func SetWorkflowTokenLimit(townRoot, rig, workflowID string, limit int64) error 
 	if townRoot == "" || rig == "" || workflowID == "" || limit <= 0 {
 		return fmt.Errorf("execution budget: town, rig, workflow, and a positive token limit are required")
 	}
-	requests, err := executionLimit("GT_WORKFLOW_MAX_LLM_REQUESTS", 1000)
-	if err != nil {
-		return err
-	}
 	path := filepath.Join(townRoot, "orchestrator", "execution-budgets.json")
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		return fmt.Errorf("execution budget: %w", err)
@@ -126,7 +112,6 @@ func SetWorkflowTokenLimit(townRoot, rig, workflowID string, limit int64) error 
 		return fmt.Errorf("execution budget: %w", err)
 	}
 	defer lock.Unlock()
-
 	ledger := map[string]ExecutionBudget{}
 	data, err := os.ReadFile(path)
 	if err == nil {
@@ -142,14 +127,11 @@ func SetWorkflowTokenLimit(townRoot, rig, workflowID string, limit int64) error 
 	keyBytes, _ := json.Marshal([]string{rig, workflowID})
 	key := string(keyBytes)
 	used := ledger[key]
-	if used.Requests < 0 || used.ReservedTokens < 0 || used.RequestLimit < 0 || used.TokenLimit < 0 || used.TokenLimitOverride < 0 {
+	if used.ReservedTokens < 0 || used.TokenLimit < 0 || used.TokenLimitOverride < 0 {
 		return fmt.Errorf("execution budget: invalid negative reservation")
 	}
 	if limit <= used.ReservedTokens {
 		return fmt.Errorf("execution budget: token limit must exceed the %d tokens already reserved", used.ReservedTokens)
-	}
-	if used.RequestLimit == 0 {
-		used.RequestLimit = requests
 	}
 	used.TokenLimit = limit
 	used.TokenLimitOverride = limit
@@ -267,19 +249,13 @@ func ReadWorkflowExecutionBudget(townRoot, rig, workflowID string) (ExecutionBud
 	}
 	key, _ := json.Marshal([]string{rig, workflowID})
 	used := ledger[string(key)]
-	if used.Requests < 0 || used.ReservedTokens < 0 || used.RequestLimit < 0 || used.TokenLimit < 0 || used.TokenLimitOverride < 0 {
+	if used.ReservedTokens < 0 || used.TokenLimit < 0 || used.TokenLimitOverride < 0 {
 		return used, false, fmt.Errorf("invalid negative execution budget")
 	}
 	if used.TokenLimitOverride > 0 {
 		used.TokenLimit = used.TokenLimitOverride
 	}
-	persisted := used.RequestLimit > 0 && used.TokenLimit > 0
-	if used.RequestLimit == 0 {
-		used.RequestLimit, err = executionLimit("GT_WORKFLOW_MAX_LLM_REQUESTS", 1000)
-		if err != nil {
-			return used, false, err
-		}
-	}
+	persisted := used.TokenLimit > 0
 	if used.TokenLimit == 0 {
 		used.TokenLimit, err = executionLimit("GT_WORKFLOW_MAX_LLM_TOKENS", 20000000)
 		if err != nil {

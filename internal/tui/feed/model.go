@@ -92,10 +92,11 @@ type Model struct {
 	workflowsError error
 
 	// UI state
-	keys     KeyMap
-	help     help.Model
-	showHelp bool
-	filter   string
+	keys        KeyMap
+	help        help.Model
+	showHelp    bool
+	filter      string
+	showConvoys bool
 
 	// View mode
 	viewMode ViewMode
@@ -164,13 +165,27 @@ func (m *Model) SetTownRoot(townRoot string) {
 	m.mu.Unlock()
 }
 
+func (m *Model) SetShowConvoys(show bool) {
+	m.mu.Lock()
+	m.showConvoys = show
+	if !show && m.focusedPanel == PanelConvoy {
+		m.focusedPanel = PanelFeed
+	}
+	m.mu.Unlock()
+}
+
 // Init initializes the model
 func (m *Model) Init() tea.Cmd {
 	cmds := []tea.Cmd{
 		m.listenForEvents(),
-		m.fetchConvoys(),
 		m.fetchWorkflows(),
 		tea.SetWindowTitle("GT Feed"),
+	}
+	m.mu.RLock()
+	showConvoys := m.showConvoys && m.viewMode == ViewActivity
+	m.mu.RUnlock()
+	if showConvoys {
+		cmds = append(cmds, m.fetchConvoys())
 	}
 	// If starting in problems view, fetch problems immediately
 	if m.viewMode == ViewProblems {
@@ -323,16 +338,19 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, m.listenForEvents())
 
 	case convoyUpdateMsg:
-		if msg.state != nil {
-			// Fresh data arrived - update state and schedule next tick
-			m.mu.Lock()
-			m.convoyState = msg.state
-			m.updateViewContentLocked()
-			m.mu.Unlock()
-			cmds = append(cmds, m.convoyRefreshTick())
-		} else {
-			// Tick fired - fetch new data
-			cmds = append(cmds, m.fetchConvoys())
+		m.mu.RLock()
+		showConvoys := m.showConvoys && m.viewMode == ViewActivity
+		m.mu.RUnlock()
+		if showConvoys {
+			if msg.state != nil {
+				m.mu.Lock()
+				m.convoyState = msg.state
+				m.updateViewContentLocked()
+				m.mu.Unlock()
+				cmds = append(cmds, m.convoyRefreshTick())
+			} else {
+				cmds = append(cmds, m.fetchConvoys())
+			}
 		}
 
 	case workflowUpdateMsg:
@@ -404,7 +422,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case PanelTree:
 		m.treeViewport, cmd = m.treeViewport.Update(msg)
 	case PanelConvoy:
-		m.convoyViewport, cmd = m.convoyViewport.Update(msg)
+		if m.showConvoys {
+			m.convoyViewport, cmd = m.convoyViewport.Update(msg)
+		} else {
+			m.feedViewport, cmd = m.feedViewport.Update(msg)
+		}
 	case PanelFeed:
 		m.feedViewport, cmd = m.feedViewport.Update(msg)
 	case PanelProblems:
@@ -455,7 +477,11 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.FocusConvoy):
 		if m.viewMode == ViewActivity {
 			m.mu.Lock()
-			m.focusedPanel = PanelConvoy
+			if m.showConvoys {
+				m.focusedPanel = PanelConvoy
+			} else {
+				m.focusedPanel = PanelFeed
+			}
 			m.mu.Unlock()
 		}
 		return m, nil
@@ -500,7 +526,11 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case PanelTree:
 		m.treeViewport, cmd = m.treeViewport.Update(msg)
 	case PanelConvoy:
-		m.convoyViewport, cmd = m.convoyViewport.Update(msg)
+		if m.showConvoys {
+			m.convoyViewport, cmd = m.convoyViewport.Update(msg)
+		} else {
+			m.feedViewport, cmd = m.feedViewport.Update(msg)
+		}
 	case PanelFeed:
 		m.feedViewport, cmd = m.feedViewport.Update(msg)
 	case PanelProblems:
@@ -542,7 +572,11 @@ func (m *Model) handleTabKey() (tea.Model, tea.Cmd) {
 	m.mu.Lock()
 	switch m.focusedPanel {
 	case PanelTree:
-		m.focusedPanel = PanelConvoy
+		if m.showConvoys {
+			m.focusedPanel = PanelConvoy
+		} else {
+			m.focusedPanel = PanelFeed
+		}
 	case PanelConvoy:
 		m.focusedPanel = PanelFeed
 	case PanelFeed:
@@ -739,16 +773,18 @@ func (m *Model) updateViewportSizes() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	// Reserve space: header (1) + borders (6 for 3 panels) + status bar (1) + help (1-2)
 	headerHeight := 1
 	statusHeight := 1
 	helpHeight := 1
 	if m.showHelp {
 		helpHeight = 3
 	}
-	borderHeight := 6 // top and bottom borders for 3 panels
+	borderHeight := 4
+	if m.showConvoys && m.viewMode == ViewActivity {
+		borderHeight = 6
+	}
 	if m.viewMode == ViewProblems {
-		borderHeight = 2 // single panel
+		borderHeight = 2
 	}
 
 	availableHeight := m.height - headerHeight - statusHeight - helpHeight - borderHeight
@@ -756,26 +792,27 @@ func (m *Model) updateViewportSizes() {
 		availableHeight = 6
 	}
 
-	contentWidth := m.width - 4 // borders and padding
+	contentWidth := m.width - 4
 	if contentWidth < 20 {
 		contentWidth = 20
 	}
 
 	if m.viewMode == ViewProblems {
-		// Problems view: single large panel
 		m.problemsViewport.Width = contentWidth
 		m.problemsViewport.Height = availableHeight
 	} else {
-		// Activity view: split by configured percentages
 		treeHeight := availableHeight * treePanelPercent / 100
 		convoyHeight := availableHeight * convoyPanelPercent / 100
+		if !m.showConvoys {
+			treeHeight = availableHeight * (treePanelPercent + convoyPanelPercent) / 100
+			convoyHeight = 0
+		}
 		feedHeight := availableHeight - treeHeight - convoyHeight
 
-		// Ensure minimum heights
 		if treeHeight < 3 {
 			treeHeight = 3
 		}
-		if convoyHeight < 3 {
+		if convoyHeight > 0 && convoyHeight < 3 {
 			convoyHeight = 3
 		}
 		if feedHeight < 3 {
@@ -808,7 +845,9 @@ func (m *Model) updateViewContentLocked() {
 		m.problemsViewport.SetContent(m.renderProblemsContent())
 	} else {
 		m.treeViewport.SetContent(m.renderTree())
-		m.convoyViewport.SetContent(m.renderConvoys())
+		if m.showConvoys {
+			m.convoyViewport.SetContent(m.renderConvoys())
+		}
 		m.feedViewport.SetContent(m.renderFeed())
 	}
 }

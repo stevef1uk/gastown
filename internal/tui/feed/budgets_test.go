@@ -14,7 +14,6 @@ import (
 
 func TestWorkflowBudgetsRefreshAndRender(t *testing.T) {
 	town := t.TempDir()
-	t.Setenv("GT_WORKFLOW_MAX_LLM_REQUESTS", "10")
 	t.Setenv("GT_WORKFLOW_MAX_LLM_TOKENS", "100")
 	if err := orchestrator.ReserveWorkflowLLMRequest(town, "rig name", "wf-1", 85); err != nil {
 		t.Fatal(err)
@@ -27,18 +26,21 @@ func TestWorkflowBudgetsRefreshAndRender(t *testing.T) {
 	}))
 	defer server.Close()
 	t.Setenv("GT_BUDGET_STATUS_URL", server.URL+"/api/budgets")
-	// Feed's own environment must not override recorded admission limits.
-	t.Setenv("GT_WORKFLOW_MAX_LLM_REQUESTS", "999")
 	workflows := map[string][]RigWorkflow{"rig name": {{ID: "wf-1", Status: "running"}}}
 	loadWorkflowBudgets(town, workflows)
 	b := workflows["rig name"][0].Budget
-	if b == nil || b.Cost == nil || !b.PersistedLimits || b.Execution.RequestLimit != 10 {
+	if b == nil || b.Cost == nil || !b.PersistedLimits || b.Execution.TokenLimit != 100 {
 		t.Fatalf("wrong snapshot: %+v", b)
 	}
 	rendered := (&Model{}).renderWorkflowLine(workflows["rig name"][0])
-	for _, want := range []string{"$4.5000 / $5.00", "$6.0000 / $20.00", "cost unknown", "Unknown-cost calls: 2", "Proxy attempts: 8 / 10", "1 / 10", "85 / 100", "[near limit]"} {
+	for _, want := range []string{"$4.5000 / $5.00", "$6.0000 / $20.00", "85 / 100", "[near limit]"} {
 		if !strings.Contains(rendered, want) {
 			t.Errorf("missing %q in %s", want, rendered)
+		}
+	}
+	for _, unwanted := range []string{"Proxy attempts", "Accounting", "Unknown-cost calls", "Requests:"} {
+		if strings.Contains(rendered, unwanted) {
+			t.Errorf("unexpected %q in %s", unwanted, rendered)
 		}
 	}
 }
@@ -68,7 +70,7 @@ func TestWorkflowBudgetFailuresRemainVisible(t *testing.T) {
 }
 
 func TestWorkflowCostResponseValidation(t *testing.T) {
-	for _, body := range []string{`{}`, `{"workflow_allowance_usd":-1}`, `{"accounted_cost_usd":-1,"workflow_allowance_usd":5,"accounting":"reported"}`, `invalid`} {
+	for _, body := range []string{`{}`, `{"workflow_allowance_usd":-1}`, `{"accounted_cost_usd":-1,"workflow_allowance_usd":5}`, `invalid`} {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.Write([]byte(body)) }))
 		_, err := fetchWorkflowCost(context.Background(), server.Client(), server.URL, "rig", "wf")
 		server.Close()

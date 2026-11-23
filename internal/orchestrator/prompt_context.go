@@ -48,6 +48,8 @@ func PromptContextBlock(key, townRoot, rig string, v WorkflowValidation) string 
 		return FormatMissingImplementFilesBlock(townRoot, rig, v)
 	case "design_draft_context":
 		return FormatDesignDraftContextBlock(townRoot, rig)
+	case "spec_runtime_commands":
+		return FormatSpecRuntimeCommandsBlock(townRoot, rig)
 	case "phase_test_guards":
 		return FormatPhaseTestGuards(townRoot, rig, v)
 	case "test_plan_rework":
@@ -62,6 +64,28 @@ func PromptContextBlock(key, townRoot, rig string, v WorkflowValidation) string 
 }
 
 const maxDesignDraftInjectBytes = 4096
+
+func FormatSpecRuntimeCommandsBlock(townRoot, rig string) string {
+	if rig == "" {
+		return ""
+	}
+	specPath := filepath.Join(townRoot, rig, "mayor", "rig", "SPEC.md")
+	data, err := os.ReadFile(specPath)
+	if err != nil {
+		return ""
+	}
+	commands := specRuntimeLaunchCommands(string(data))
+	if len(commands) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("## SPEC runtime launch commands — copy verbatim\n\n")
+	b.WriteString("architecture.md must include each command below exactly as written in SPEC.md. Preserve `cd ... &&`, flags, and file paths; do not replace a launch command with a source path.\n\n")
+	for _, command := range commands {
+		b.WriteString("- `" + command + "`\n")
+	}
+	return b.String()
+}
 
 // FormatDesignDraftContextBlock injects the current architecture.md content
 // into the prompt so the architect can build on prior work across turns.

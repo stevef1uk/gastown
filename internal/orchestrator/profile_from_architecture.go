@@ -2115,11 +2115,12 @@ func ValidateRigWorkflowProfileForQA(townRoot, rig string, v WorkflowValidation)
 	problems := deliveryGraphProblems(v)
 	mayorRig := filepath.Join(townRoot, rig, "mayor", "rig")
 	spec, _ := os.ReadFile(filepath.Join(mayorRig, "SPEC.md"))
+	arch, _ := os.ReadFile(filepath.Join(mayorRig, "architecture.md"))
+	problems = append(problems, checkRuntimeLaunchCommandAlignment("architecture.md", string(arch), string(spec))...)
 	for _, title := range missingDeclaredPhases(DeclaredSpecPhaseHeadings(string(spec)), v.DeliveryPhases) {
 		problems = append(problems, fmt.Sprintf("SPEC delivery phase %q is missing; preserve its scope and assign concrete deliverables", title))
 	}
 	if paths, ok, prefixes := extractSpecLayoutPaths(mayorRig); ok {
-		arch, _ := os.ReadFile(filepath.Join(mayorRig, "architecture.md"))
 		paths = mergeArchWinsOnConflict(paths, declaredArchitecturePaths(string(arch), v.LayoutRootDir()), prefixes)
 		for _, p := range paths {
 			if !containsString(v.UnionRequiredFiles(), p) {

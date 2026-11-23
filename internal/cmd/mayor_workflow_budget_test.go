@@ -11,7 +11,6 @@ import (
 )
 
 func TestRunMayorWorkflowBudgetSetsScopedOverrides(t *testing.T) {
-	t.Setenv("GT_WORKFLOW_MAX_LLM_REQUESTS", "1000")
 	t.Setenv("GT_WORKFLOW_MAX_LLM_TOKENS", "20000000")
 	town := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(town, "mayor"), 0755); err != nil {

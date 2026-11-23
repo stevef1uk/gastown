@@ -845,14 +845,17 @@ Gas Town includes built-in formulas for common workflows. See `internal/formula/
 
 ## Activity Feed
 
-`gt feed` launches an interactive terminal dashboard for monitoring all agent activity in real-time. It combines beads activity, agent events, and merge queue updates into a three-panel TUI. This is an alternative to the web-based Agent Console (`gt-agent-console` on port 8091):
+`gt feed` launches an interactive terminal dashboard for monitoring all agent activity in real-time. It combines beads activity, agent events, and merge queue updates into a TUI. This is an alternative to the web-based Agent Console (`gt-agent-console` on port 8091):
 
-- **Agent Tree** - Hierarchical view of all agents grouped by rig and role
-- **Convoy Panel** - In-progress and recently-landed convoys
+- **Agent Tree** - Hierarchical view of all agents grouped by rig and role, with running workflows
 - **Event Stream** - Chronological feed of creates, completions, slings, nudges, and more
+- **Convoy Panel** - Optional middle panel with in-progress and recently-landed convoys
+
+The convoy panel is hidden by default so the agent tree has room for two running workflows. Pass `--convoys` to restore it.
 
 ```bash
 gt feed                      # Launch TUI dashboard
+gt feed --convoys            # Show the convoy panel
 gt feed --problems           # Start in problems view
 gt feed --plain              # Plain text output (no TUI)
 gt feed --window             # Open in dedicated tmux window

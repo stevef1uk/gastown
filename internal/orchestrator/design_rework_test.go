@@ -57,6 +57,51 @@ func TestDesignEntryPreservesExistingWork(t *testing.T) {
 	}
 }
 
+func TestSpecRuntimeCommandsContext(t *testing.T) {
+	town := t.TempDir()
+	rigDir := filepath.Join(town, "example", "mayor", "rig")
+	if err := os.MkdirAll(rigDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if got := PromptContextBlock("spec_runtime_commands", town, "example", WorkflowValidation{}); got != "" {
+		t.Fatalf("missing SPEC should inject nothing: %s", got)
+	}
+	spec := "# Spec\nServe with `cd linkshelf && go run ./cmd/server`. Test with `cd linkshelf && go test ./...`.\n"
+	if err := os.WriteFile(filepath.Join(rigDir, "SPEC.md"), []byte(spec), 0644); err != nil {
+		t.Fatal(err)
+	}
+	block := PromptContextBlock("spec_runtime_commands", town, "example", WorkflowValidation{})
+	for _, want := range []string{"SPEC runtime launch commands", "cd linkshelf && go run ./cmd/server", "copy verbatim"} {
+		if !strings.Contains(block, want) {
+			t.Errorf("context block missing %q: %s", want, block)
+		}
+	}
+	if strings.Contains(block, "cd linkshelf && go test ./...") {
+		t.Fatalf("test command should not be injected: %s", block)
+	}
+}
+
+func TestDesignTemplatesInjectSpecRuntimeCommands(t *testing.T) {
+	for _, load := range []func() (*WorkflowTemplate, error){LoadRigFlowTemplate, LoadReqFlowTemplate} {
+		tpl, err := load()
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, state := range []string{"design", "design_review"} {
+			var found bool
+			for _, key := range tpl.States[state].Hooks.PromptContext {
+				if key == "spec_runtime_commands" {
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Errorf("%s %s is missing spec_runtime_commands prompt_context: %v", tpl.ID, state, tpl.States[state].Hooks.PromptContext)
+			}
+		}
+	}
+}
+
 func TestDesignDraftContextRequiresFullReadBeforeAmendment(t *testing.T) {
 	town := t.TempDir()
 	rigDir := filepath.Join(town, "example", "mayor", "rig")

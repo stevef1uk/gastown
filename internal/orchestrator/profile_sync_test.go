@@ -42,10 +42,10 @@ No extra files or abstractions.
 	profile := rigProfileEnvelope{
 		Version: 1,
 		Validation: WorkflowValidation{
-			LayoutRoot:      "pingapp",
+			LayoutRoot:        "pingapp",
 			BeadTitleContains: "Implement pingapp/",
-			RequiredFiles:   []string{"pingapp/requirements.txt", "pingapp/main.py", "pingapp/pyproject.toml", "pingapp/__init__.py", "pingapp/config.py", "@app.get/post/..."},
-			QAVerifyCommand: "cd pingapp && pytest test_main.py",
+			RequiredFiles:     []string{"pingapp/requirements.txt", "pingapp/main.py", "pingapp/pyproject.toml", "pingapp/__init__.py", "pingapp/config.py", "@app.get/post/..."},
+			QAVerifyCommand:   "cd pingapp && pytest test_main.py",
 			DeliveryPhases: []DeliveryPhase{
 				{
 					ID:              "implementation",
@@ -134,14 +134,14 @@ The backend listens on port 8000 via uvicorn. No other files exist.
 `
 	got := extractArchPaths(arch, "finally")
 	want := map[string]bool{
-		"finally/.env":                    true,
-		"finally/.gitignore":              true,
-		"finally/backend/app/main.py":     true,
-		"finally/backend/app/db/schema.py": true,
+		"finally/.env":                      true,
+		"finally/.gitignore":                true,
+		"finally/backend/app/main.py":       true,
+		"finally/backend/app/db/schema.py":  true,
 		"finally/backend/tests/test_api.py": true,
-		"finally/frontend/app/page.tsx":   true,
-		"finally/test/e2e.spec.ts":        true,
-		"finally/Dockerfile":              true,
+		"finally/frontend/app/page.tsx":     true,
+		"finally/test/e2e.spec.ts":          true,
+		"finally/Dockerfile":                true,
 	}
 	for _, p := range got {
 		if want[p] {
@@ -222,10 +222,10 @@ Uvicorn on port 8000. No other files exist.
 	profile := rigProfileEnvelope{
 		Version: 1,
 		Validation: WorkflowValidation{
-			LayoutRoot:      "finally",
+			LayoutRoot:        "finally",
 			BeadTitleContains: "Implement finally/",
-			RequiredFiles:   []string{"finally/.env", "finally/.gitignore", "finally/db/.gitkeep", "finally/Dockerfile", "finally/docker-compose.yml"},
-			QAVerifyCommand: "cd finally && pytest",
+			RequiredFiles:     []string{"finally/.env", "finally/.gitignore", "finally/db/.gitkeep", "finally/Dockerfile", "finally/docker-compose.yml"},
+			QAVerifyCommand:   "cd finally && pytest",
 		},
 	}
 	data, _ := marshalRigProfileJSON(profile)
@@ -280,10 +280,10 @@ func TestValidateRigWorkflowProfileForQA_catchesHallucinations(t *testing.T) {
 	rig := "ping_rig"
 	// Profile with hallucinated entries.
 	bad := WorkflowValidation{
-		LayoutRoot:      "pingapp",
+		LayoutRoot:        "pingapp",
 		BeadTitleContains: "Implement pingapp/",
-		RequiredFiles:   []string{"pingapp/main.py", "pingapp/config.py", "@app.get/post/..."},
-		QAVerifyCommand: "cd pingapp && pytest test_main.py",
+		RequiredFiles:     []string{"pingapp/main.py", "pingapp/config.py", "@app.get/post/..."},
+		QAVerifyCommand:   "cd pingapp && pytest test_main.py",
 	}
 	if defect := ValidateRigWorkflowProfileForQA(townRoot, rig, bad); defect == "" {
 		t.Fatal("expected QA to flag route stub and missing verify-command file")
@@ -291,13 +291,41 @@ func TestValidateRigWorkflowProfileForQA_catchesHallucinations(t *testing.T) {
 
 	// Clean profile passes.
 	good := WorkflowValidation{
-		LayoutRoot:      "pingapp",
+		LayoutRoot:        "pingapp",
 		BeadTitleContains: "Implement pingapp/",
-		RequiredFiles:   []string{"pingapp/main.py", "pingapp/test_main.py"},
-		QAVerifyCommand: "cd pingapp && pytest test_main.py",
+		RequiredFiles:     []string{"pingapp/main.py", "pingapp/test_main.py"},
+		QAVerifyCommand:   "cd pingapp && pytest test_main.py",
 	}
 	if defect := ValidateRigWorkflowProfileForQA(townRoot, rig, good); defect != "" {
 		t.Fatalf("clean profile should pass QA, got: %s", defect)
+	}
+}
+
+func TestValidateRigWorkflowProfileForQA_requiresSpecRuntimeCommand(t *testing.T) {
+	townRoot := t.TempDir()
+	rig := "linkshelf_rig"
+	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
+	if err := os.MkdirAll(rigDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	spec := "# Spec\nRun with `cd linkshelf && go run ./cmd/server`.\n"
+	if err := os.WriteFile(filepath.Join(rigDir, "SPEC.md"), []byte(spec), 0644); err != nil {
+		t.Fatal(err)
+	}
+	arch := "# Architecture\nRun `linkshelf/cmd/server`.\n"
+	if err := os.WriteFile(filepath.Join(rigDir, "architecture.md"), []byte(arch), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if defect := ValidateRigWorkflowProfileForQA(townRoot, rig, WorkflowValidation{}); !strings.Contains(defect, "cd linkshelf && go run ./cmd/server") {
+		t.Fatalf("expected launch command defect, got: %s", defect)
+	}
+
+	arch = "# Architecture\nRun with `cd linkshelf && go run ./cmd/server`.\n"
+	if err := os.WriteFile(filepath.Join(rigDir, "architecture.md"), []byte(arch), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if defect := ValidateRigWorkflowProfileForQA(townRoot, rig, WorkflowValidation{}); defect != "" {
+		t.Fatalf("exact launch command should pass QA, got: %s", defect)
 	}
 }
 
@@ -404,7 +432,7 @@ API server on 8000, no extra files.
 	profile := rigProfileEnvelope{
 		Version: 1,
 		Validation: WorkflowValidation{
-			LayoutRoot:       "pingapp",
+			LayoutRoot:        "pingapp",
 			BeadTitleContains: "Implement pingapp/",
 			RequiredFiles: []string{
 				"pingapp/go.mod",

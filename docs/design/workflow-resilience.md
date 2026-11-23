@@ -15,15 +15,14 @@ gets its own checkpoint scope. Counter repairs preserve all other checkpoint
 fields, including unknown future fields. File existence alone never creates a
 successful verification checkpoint.
 
-## Request admission
+## Token admission
 
-Every agent HTTP attempt, including a retry, reserves against
+Every agent HTTP attempt, including a retry, reserves tokens against
 `{town_root}/orchestrator/execution-budgets.json`. A cross-process lock and atomic
-rename serialize concurrent agents. Defaults:
+rename serialize concurrent agents. Default:
 
 | Setting | Default |
 | --- | --- |
-| `GT_WORKFLOW_MAX_LLM_REQUESTS` | 1000 |
 | `GT_WORKFLOW_MAX_LLM_TOKENS` | 20000000 |
 
 The token reservation is serialized input bytes plus the explicit 8192-token
@@ -32,7 +31,7 @@ failure: the upstream may already have generated a billable response. Invalid,
 missing-identity, unreadable or corrupt accounting fails closed. Limits must be
 positive integers. Billing/authentication errors and exhausted admission budgets
 pause the workflow rather than polling the paid endpoint indefinitely. Admission
-limits are persisted with each workflow; when an agent restarts with an
+limit is persisted with each workflow; when an agent restarts with the
 environment variable unset, the last recorded limit remains in force. An
 explicit environment value overrides that recorded limit. A durable per-workflow
 token override takes precedence over the environment variable.

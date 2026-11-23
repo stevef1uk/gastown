@@ -189,6 +189,74 @@ func TestPythonVerifyNoTestsOK(t *testing.T) {
 	}
 }
 
+func TestSpecRuntimeLaunchCommands(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name string
+		spec string
+		want []string
+	}{
+		{
+			name: "go command in inline code",
+			spec: "# Spec\nUse `cd linkshelf && go run ./cmd/server` to serve the UI.",
+			want: []string{"cd linkshelf && go run ./cmd/server"},
+		},
+		{
+			name: "python command with smoke follow-on",
+			spec: "# Spec\n- `cd finally && python -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8080 & curl -fsS http://127.0.0.1:8080/`\n",
+			want: []string{"cd finally && python -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8080"},
+		},
+		{
+			name: "node command in fenced block",
+			spec: "# Spec\n```bash\ncd app && npm run dev -- --host 0.0.0.0\ncd app && npm test\n```\n",
+			want: []string{"cd app && npm run dev -- --host 0.0.0.0"},
+		},
+		{
+			name: "CMD prefixed command",
+			spec: "# Spec\nCMD: uvicorn app.main:app --host 0.0.0.0 --port 8000\n",
+			want: []string{"uvicorn app.main:app --host 0.0.0.0 --port 8000"},
+		},
+		{
+			name: "shell prompt prefix",
+			spec: "# Spec\n$ cd app && npm start\n",
+			want: []string{"cd app && npm start"},
+		},
+		{
+			name: "inline command with shell prompt prefix",
+			spec: "# Spec\n`$ cd linkshelf && go run ./cmd/server`\n",
+			want: []string{"cd linkshelf && go run ./cmd/server"},
+		},
+		{
+			name: "deduplicates repeated command",
+			spec: "# Spec\n`cd linkshelf && go run ./cmd/server`\n`cd linkshelf && go run ./cmd/server`\n",
+			want: []string{"cd linkshelf && go run ./cmd/server"},
+		},
+		{
+			name: "ignores non-launch commands",
+			spec: "# Spec\n`cd linkshelf && go mod tidy && go test ./...`\n`npx playwright test`\n`pip install uvicorn`\n`docker compose up --build`\n",
+			want: nil,
+		},
+		{
+			name: "empty",
+			spec: "# Spec\nNo runtime commands.\n",
+			want: nil,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := specRuntimeLaunchCommands(tc.spec)
+			if len(got) != len(tc.want) {
+				t.Fatalf("specRuntimeLaunchCommands() = %q, want %q", got, tc.want)
+			}
+			for i := range got {
+				if got[i] != tc.want[i] {
+					t.Fatalf("specRuntimeLaunchCommands()[%d] = %q, want %q", i, got[i], tc.want[i])
+				}
+			}
+		})
+	}
+}
+
 func TestIsDevServerSmokeCommand(t *testing.T) {
 	t.Parallel()
 
