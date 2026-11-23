@@ -39,7 +39,6 @@ func TestCheckWorkflowDollarBudgetDeniesExhaustedWorkflowOrRig(t *testing.T) {
 	for _, tc := range []struct{ body, want string }{
 		{`{"accounted_cost_usd":1,"rig_accounted_cost_usd":2,"dollar_coverage_complete":true}`, "workflow dollar limit"},
 		{`{"accounted_cost_usd":0.5,"rig_accounted_cost_usd":20,"dollar_coverage_complete":true}`, "rig dollar limit"},
-		{`{"accounted_cost_usd":0.5,"rig_accounted_cost_usd":2,"dollar_coverage_complete":false,"accounting":"cost unknown"}`, "dollar accounting is incomplete"},
 	} {
 		server := budgetStatusServer(t, tc.body)
 		err := CheckWorkflowDollarBudget(town, "rig", "wf")
@@ -47,5 +46,17 @@ func TestCheckWorkflowDollarBudgetDeniesExhaustedWorkflowOrRig(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), tc.want) {
 			t.Fatalf("body=%s err=%v want=%s", tc.body, err, tc.want)
 		}
+	}
+}
+
+func TestCheckWorkflowDollarBudgetAllowsIncompleteCoverageBelowLimit(t *testing.T) {
+	town := t.TempDir()
+	if err := SetWorkflowDollarLimit(town, "rig", "wf", 5); err != nil {
+		t.Fatal(err)
+	}
+	server := budgetStatusServer(t, `{"accounted_cost_usd":0.5,"rig_accounted_cost_usd":2,"dollar_coverage_complete":false,"accounting":"cost unknown"}`)
+	defer server.Close()
+	if err := CheckWorkflowDollarBudget(town, "rig", "wf"); err != nil {
+		t.Fatal(err)
 	}
 }

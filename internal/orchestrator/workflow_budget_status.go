@@ -113,9 +113,6 @@ func CheckWorkflowDollarBudget(townRoot, rig, workflowID string) error {
 	if err != nil {
 		return err
 	}
-	if !status.DollarCoverageComplete {
-		return fmt.Errorf("execution budget: dollar accounting is incomplete for %s/%s (%s); configure workflowPricing or provider-reported usage before continuing", rig, workflowID, status.Accounting)
-	}
 	if accounted := int64(status.AccountedUSD * 1e6); accounted >= budget.DollarLimitMicros {
 		return fmt.Errorf("execution budget exhausted for %s/%s: accounted $%.6f, workflow dollar limit $%.6f; review the ledger and resume explicitly after raising the limit", rig, workflowID, status.AccountedUSD, float64(budget.DollarLimitMicros)/1e6)
 	}
