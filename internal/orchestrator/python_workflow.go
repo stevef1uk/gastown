@@ -273,6 +273,12 @@ func PythonImplementationVerifyCommandForBead(v WorkflowValidation, mayorRigDir,
 		return py + ` -c "import sqlite3; conn = sqlite3.connect(':memory:'); conn.executescript(open('` + beadPath + `').read()); print('SCHEMA_VALID'); conn.close()"`
 	}
 
+	if isBehaviorBearingWebSource(beadPath) {
+		if qaVerify := strings.TrimSpace(v.ActivePhaseQAVerifyCommand()); qaVerify != "" {
+			return qaVerify
+		}
+	}
+
 	// Non-Python artifacts (e.g. .env.example, .gitignore) just need to exist
 	// and be non-empty. Using the project-wide pytest here creates a deadlock
 	// because pytest targets files owned by other beads.
@@ -280,6 +286,15 @@ func PythonImplementationVerifyCommandForBead(v WorkflowValidation, mayorRigDir,
 		return "test -d " + beadPath + " && ls -A " + beadPath + " | head -1 > /dev/null"
 	}
 	return "test -s " + beadPath
+}
+
+func isBehaviorBearingWebSource(beadPath string) bool {
+	switch strings.ToLower(filepath.Ext(filepath.ToSlash(strings.TrimSpace(beadPath)))) {
+	case ".html", ".htm", ".js", ".jsx", ".ts", ".tsx", ".css":
+		return true
+	default:
+		return false
+	}
 }
 
 func pythonVerifyWithLayout(cmd string, v WorkflowValidation) string {

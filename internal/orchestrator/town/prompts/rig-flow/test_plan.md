@@ -75,9 +75,9 @@ Rules per Level:
 |-------|-----------------|----------------|
 | unit | required test file or conventional companion of a required source file | same package/dir as the code |
 | integration | tests that cross packages/servers, using a required test or conventional companion | the owning source package or declared test directory |
-| ui | tests against the running UI (`{{ui_command}}`) via a browser or DOM harness | a test directory listed in `required_files` |
+| ui | tests against the running UI (`{{ui_command}}`) via a browser or DOM harness; must click/submit/type into a real control and assert the resulting DOM/API state change | a test directory listed in `required_files` |
 
-Assign **unit** to pure logic/domain rules, **integration** to API/store/HTTP wiring, **ui** only to user-visible flows when the phase ships UI files. Do not inflate levels — a unit test is not a UI test.
+Assign **unit** to pure logic/domain rules, **integration** to API/store/HTTP wiring, **ui** only to user-visible flows when the phase ships UI files. Do not inflate levels — a unit test is not a UI test. A page-load or static-content-only assertion is not a UI test.
 
 ## HARD RULES
 

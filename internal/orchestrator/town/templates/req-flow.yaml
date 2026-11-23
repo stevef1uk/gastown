@@ -359,7 +359,7 @@ states:
     hooks:
       dependency_review: true
       prompt_context: [project_setup_stack]
-      pre_run: [sync_planning_artifacts, enforce_implement_bead_queue, prune_rig_root_junk, ensure_test_stack_ready]
+      pre_run: [sync_planning_artifacts, enforce_implement_bead_queue, prune_rig_root_junk, ensure_test_stack_ready, ensure_python_runtime_deps]
       cmd_guard: project_setup
       cmd_rewrites: [rig_placeholders, unwrap_bash_lc, bd_list_implement_scope, unittest_workdir, bd_list_limit]
       cmd_timeout_seconds: 180

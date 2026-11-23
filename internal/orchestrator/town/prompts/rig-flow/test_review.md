@@ -46,7 +46,7 @@ Read SPEC.md and architecture.md before judging adequacy. SPEC is the acceptance
 
 - **unit**: does the test exercise the code path behind the requirement (real input → real assert)? A test that only checks "file exists" or calls nothing is not coverage.
 - **integration**: does it drive the real API/store wiring (listed in `required_files`) rather than a mock that bypasses the API?
-- **ui**: only required when the phase ships UI files and `ui_command` is set; does it start the UI (via `ui_command`) and assert on visible behavior, not just a page load?
+- **ui**: only required when the phase ships UI files and `ui_command` is set; does it start the UI (via `ui_command`), click/submit/type into a real control, and assert the resulting DOM/API state change — not just page load or static visible text?
 
 Missing a planned test, a test that never asserts, or a verify that fails ⇒ `failure`. A plan that hand-waves ("ensure quality") or omits whole requirements ⇒ `plan_gap`. Green tests that assert behavior contradicting a concrete SPEC clause ⇒ `contract_mismatch` when changing the named production file can satisfy SPEC; use `architecture_failure` only when SPEC/architecture themselves conflict or omit the contract.
 

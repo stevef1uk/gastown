@@ -72,7 +72,16 @@ func writeLinkshelfWebFixtureArch(t *testing.T, townRoot, rig string, indexHTML 
 	if err := os.WriteFile(filepath.Join(webDir, "index.html"), []byte(indexHTML), 0644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(webDir, "app.js"), []byte("// frontend app.js\n"), 0644); err != nil {
+	interactiveJS := `const addButton = document.createElement("button");
+addButton.addEventListener("click", async () => {
+  const response = await fetch("/api/bookmarks");
+  return response.json();
+});
+document.addEventListener("DOMContentLoaded", () => {
+  document.body.appendChild(addButton);
+});
+`
+	if err := os.WriteFile(filepath.Join(webDir, "app.js"), []byte(interactiveJS), 0644); err != nil {
 		t.Fatal(err)
 	}
 	serverDir := filepath.Join(rigDir, "linkshelf", "cmd", "server")
@@ -175,6 +184,69 @@ func TestValidateWebStaticReferences_acceptsRouteDefinedInGo(t *testing.T) {
 	v := linkshelfWebProfile()
 	if err := validateWebStaticReferences(dir, rig, v); err != nil {
 		t.Fatalf("expected pass when Go defines /api/bookmarks: %v", err)
+	}
+}
+
+func TestValidateWebInteractiveUI_rejectsStaticScreen(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	rig := "mockrig"
+	writeLinkshelfWebFixture(t, dir, rig, `<!DOCTYPE html>
+<html><body><h1>Link Shelf</h1><p>Your saved links appear below.</p></body></html>
+`)
+	rigDir := filepath.Join(dir, rig, "mayor", "rig")
+	if err := os.WriteFile(filepath.Join(rigDir, "linkshelf", "web", "app.js"), []byte("// static frontend\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	v := linkshelfWebProfile()
+	err := validateWebStaticReferences(dir, rig, v)
+	if err == nil || !strings.Contains(err.Error(), "look static") {
+		t.Fatalf("expected static UI rejection, got: %v", err)
+	}
+}
+
+func TestValidateWebInteractiveUI_acceptsClientComponent(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	rig := "mockrig"
+	writeLinkshelfWebFixture(t, dir, rig, `<!DOCTYPE html>
+<html><body><div id="root"></div></body></html>
+`)
+	rigDir := filepath.Join(dir, rig, "mayor", "rig")
+	client := `"use client";
+import { useState } from "react";
+export default function Dashboard() {
+  const [count, setCount] = useState(0);
+  return <button onClick={() => setCount(count + 1)}>Add {count}</button>;
+}
+`
+	if err := os.WriteFile(filepath.Join(rigDir, "linkshelf", "web", "dashboard.tsx"), []byte(client), 0644); err != nil {
+		t.Fatal(err)
+	}
+	v := linkshelfWebProfile()
+	v.RequiredFiles = append(v.RequiredFiles, "linkshelf/web/dashboard.tsx")
+	if err := validateWebStaticReferences(dir, rig, v); err != nil {
+		t.Fatalf("expected client component to pass interactivity guard: %v", err)
+	}
+}
+
+func TestValidateWebInteractiveUI_skipsNonInteractiveDocs(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	rig := "mockrig"
+	writeLinkshelfWebFixture(t, dir, rig, `<!DOCTYPE html>
+<html><body><h1>Link Shelf docs</h1><p>Reference material.</p></body></html>
+`)
+	rigDir := filepath.Join(dir, rig, "mayor", "rig")
+	if err := os.WriteFile(filepath.Join(rigDir, "architecture.md"), []byte("# Docs\n\n| GET | / | index.html |\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(rigDir, "linkshelf", "web", "app.js"), []byte("// static docs\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	v := linkshelfWebProfile()
+	if err := validateWebStaticReferences(dir, rig, v); err != nil {
+		t.Fatalf("expected static docs to skip interactivity guard: %v", err)
 	}
 }
 

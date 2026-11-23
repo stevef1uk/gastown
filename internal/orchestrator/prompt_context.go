@@ -294,6 +294,8 @@ func RunPreRunHook(step, townRoot, rig string, v WorkflowValidation) (string, er
 		}
 	case "ensure_test_stack_ready":
 		return EnsureTestStackReadyLog(townRoot, rig, v)
+	case "ensure_python_runtime_deps":
+		return EnsurePythonRuntimeDepsLog(townRoot, rig, v)
 	case "ensure_playwright_config_ready":
 		return EnsurePlaywrightConfigReady(townRoot, rig, v)
 	case "ensure_go_mod_from_spec":

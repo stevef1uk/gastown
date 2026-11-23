@@ -195,6 +195,7 @@ Follow the **red-green-refactor** cycle for every bead that has a test path in `
   - Use **only** selectors and URLs documented in architecture.md / SPEC.md. Do not invent DOM IDs like `#chat-panel` unless they are listed in the Implement context.
   - Verify must start the app/dev-server first, or use docker-compose that starts it.
   - Do not write e2e tests that assert UI elements that do not exist in the implemented `index.html` / `app.js`.
+  - For interactive apps, click/submit/type into at least one real control and assert the resulting DOM state or API state change; page load, HTTP status, static heading, or body visibility alone is insufficient.
   - Verify the e2e test runner is available and configured per the project's test setup.
 - On Verify failure: READ the failing file and dependencies. Diagnose from error output — one sentence explanation, then fix with EDIT/WRITE.
 - If you write `package.json`, only add `overrides` for transitive dependencies not already listed. Check the npm version documentation for conflict rules.

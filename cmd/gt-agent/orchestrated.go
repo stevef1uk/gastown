@@ -4025,6 +4025,9 @@ func validateWebStaticReferences(townRoot, rig string, v orchestrator.WorkflowVa
 			}
 		}
 	}
+	if err := validateWebInteractiveUI(townRoot, rig, v); err != nil {
+		return err
+	}
 	if err := validateJSDOMReferencesMatchHTML(rigDir, v); err != nil {
 		return err
 	}
@@ -4032,6 +4035,61 @@ func validateWebStaticReferences(townRoot, rig string, v orchestrator.WorkflowVa
 		return err
 	}
 	return nil
+}
+
+var interactiveUIIntentRE = regexp.MustCompile(`(?i)\b(dashboard|kanban|watchlist|trading|chat|assistant|portfolio|task\s*board|button|click|submit|create|add|remove|delete|edit|filter|select|toggle|form|input|interactive|workstation)\b`)
+
+var webControlRE = regexp.MustCompile(`(?i)<\s*(button|input|select|textarea|form)\b|contenteditable|createElement\(\s*["'](?:button|input|select|textarea|form)["']\s*\)|\bon(?:click|change|submit|input)\s*=`)
+
+var webBehaviorRE = regexp.MustCompile(`(?i)\.addEventListener\s*\(|\baddEventListener\s*\(|\bon(?:click|change|submit|input)\s*=|\bfetch\s*\(|\bXMLHttpRequest\b|\bEventSource\b|\buseState\s*\(|\buseEffect\s*\(|\buseReducer\s*\(|\bgetElementById\s*\(|\bquerySelector(?:All)?\s*\(`)
+
+func validateWebInteractiveUI(townRoot, rig string, v orchestrator.WorkflowValidation) error {
+	rigDir := rigMayorRigDir(townRoot, rig)
+	var sourceFiles []string
+	var combined strings.Builder
+	for _, rel := range v.RequiredFilesForSmokeScope() {
+		rel = filepath.ToSlash(strings.TrimSpace(rel))
+		switch strings.ToLower(filepath.Ext(rel)) {
+		case ".html", ".htm", ".js", ".jsx", ".ts", ".tsx":
+		default:
+			continue
+		}
+		body, err := os.ReadFile(filepath.Join(rigDir, filepath.FromSlash(rel)))
+		if err != nil || len(strings.TrimSpace(string(body))) == 0 {
+			continue
+		}
+		sourceFiles = append(sourceFiles, rel)
+		combined.Write(body)
+		combined.WriteString("\n")
+	}
+	if len(sourceFiles) == 0 || !workflowDeclaresInteractiveUI(townRoot, rig) {
+		return nil
+	}
+	text := combined.String()
+	hasControls := webControlRE.MatchString(text)
+	hasBehavior := webBehaviorRE.MatchString(text)
+	if hasControls && hasBehavior {
+		return nil
+	}
+	missing := make([]string, 0, 2)
+	if !hasControls {
+		missing = append(missing, "interactive controls (button/input/form/select)")
+	}
+	if !hasBehavior {
+		missing = append(missing, "client-side behavior (addEventListener/fetch/useState/useEffect)")
+	}
+	return fmt.Errorf("web UI files %s look static; QA cannot pass an interactive screen without %s", strings.Join(sourceFiles, ", "), strings.Join(missing, " and "))
+}
+
+func workflowDeclaresInteractiveUI(townRoot, rig string) bool {
+	rigDir := rigMayorRigDir(townRoot, rig)
+	for _, name := range []string{"SPEC.md", "architecture.md"} {
+		body, err := os.ReadFile(filepath.Join(rigDir, name))
+		if err == nil && interactiveUIIntentRE.Match(body) {
+			return true
+		}
+	}
+	return false
 }
 
 var jsGlobalFuncDefRE = regexp.MustCompile(`(?m)^function\s+([A-Z][A-Za-z0-9_]*)\s*\(`)

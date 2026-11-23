@@ -53,3 +53,22 @@ func TestPlanAcceptanceBullets_storeGoUsesDefaultBullets(t *testing.T) {
 		t.Fatalf("expected store API bullet:\n%s", joined)
 	}
 }
+
+func TestPlanAcceptanceBullets_phase2Behavior(t *testing.T) {
+	t.Parallel()
+	v := WorkflowValidation{LayoutRoot: "taskboard", TestRunner: "pytest"}
+	cases := map[string]string{
+		"taskboard/templates/index.html":     "project creation input/button",
+		"taskboard/static/app.js":            "GET /api/projects",
+		"taskboard/static/style.css":         "narrow-window layout",
+		"taskboard/tests/test_api.py":        `GET /api/health`,
+		"taskboard/tests/test_repository.py": "project deletion cascades",
+		"taskboard/tests/test_ui_content.py": "TaskBoard",
+	}
+	for path, want := range cases {
+		joined := strings.Join(planAcceptanceBullets(path, v), "\n")
+		if !strings.Contains(joined, want) {
+			t.Errorf("planAcceptanceBullets(%q) missing %q:\n%s", path, want, joined)
+		}
+	}
+}

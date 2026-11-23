@@ -64,6 +64,7 @@ func FormatE2ETestBeadChecklist(rigDir, beadPath string, v WorkflowValidation) s
 	b.WriteString("\n**Rules:**\n")
 	b.WriteString("- The app/dev-server must be running on the documented URL/port before tests execute.\n")
 	b.WriteString("- Match exact button labels, `#id` selectors, text changes, and API routes (e.g. `/ping` vs `/api/ping`) from the existing app files shown above.\n")
+	b.WriteString("- Interactive apps require a browser test that clicks/submits/types into a real control and asserts the resulting DOM state or API state change; page load, HTTP status, static heading, or body visibility alone is insufficient.\n")
 	b.WriteString("- Use only selectors listed above or explicitly present in the existing frontend files.\n")
 	b.WriteString("- Verify command must match the `Verify:` line from plan.md for this bead.\n")
 

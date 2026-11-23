@@ -120,6 +120,19 @@ func TestPythonImplementationVerifyCommandForBead_envExample(t *testing.T) {
 	}
 }
 
+func TestPythonImplementationVerifyCommandForBead_uiUsesPhaseGate(t *testing.T) {
+	t.Parallel()
+	v := WorkflowValidation{
+		LayoutRoot:      "taskboard",
+		RequiredFiles:   []string{"taskboard/static/app.js"},
+		QAVerifyCommand: "cd taskboard && python -m pytest -q tests",
+	}
+	got := PythonImplementationVerifyCommandForBead(v, "/tmp/rig", "taskboard/static/app.js")
+	if got != v.QAVerifyCommand {
+		t.Fatalf("got %q, want phase gate %q", got, v.QAVerifyCommand)
+	}
+}
+
 func TestPythonVerifyCommand_noCDStillScoped(t *testing.T) {
 	t.Parallel()
 	// Bare pytest — should get scoped to layout/tests.

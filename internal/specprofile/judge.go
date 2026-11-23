@@ -16,8 +16,6 @@ import (
 	"github.com/steveyegge/gastown/internal/orchestrator"
 )
 
-
-
 // judgeSystemPrompt returns the system prompt for the QA phase reviewer.
 func judgeSystemPrompt() string {
 	return `You are a QA phase reviewer. Your job is to ensure each delivery phase in a build profile has:
@@ -67,7 +65,8 @@ For **final/integration phases** (e.g. smoke-test, deployment-and-e2e, doc-seed)
 2. Wait/retry for readiness.
 3. Perform **at least 2-3 specific functional endpoint tests with payload/JSON assertions** (e.g. test health endpoint, POST to auth/create resource endpoint, GET list endpoint).
 4. Assert root UI HTML content contains expected spec strings.
-5. Gracefully tear down / kill server process.
+5. For interactive web apps, include a real browser interaction: click/submit/type into a control from the SPEC and assert the resulting DOM state or API state change. Static HTML/content checks alone are insufficient.
+6. Gracefully tear down / kill server process.
 
 **CRITICAL: The working directory is the rig root ($GT_ROOT/<rig>/mayor/rig/). layout_root is a SUBDIRECTORY of the rig root. All paths in qa_verify_command must be relative to the rig root.**
 
@@ -92,12 +91,12 @@ Output JSON only -- no prose, no markdown fences.`
 
 // judgePhaseVerifyCommandPayload is sent to the LLM for each profile.
 type judgePhasePayload struct {
-	ID              string   `json:"id"`
-	Title           string   `json:"title"`
-	RequiredFiles   []string `json:"required_files"`
-	SpecFocus       string   `json:"spec_focus"`
-	CurrentCommand  string   `json:"current_qa_verify_command"`
-	SpecExcerpt     string   `json:"spec_excerpt,omitempty"`
+	ID             string   `json:"id"`
+	Title          string   `json:"title"`
+	RequiredFiles  []string `json:"required_files"`
+	SpecFocus      string   `json:"spec_focus"`
+	CurrentCommand string   `json:"current_qa_verify_command"`
+	SpecExcerpt    string   `json:"spec_excerpt,omitempty"`
 }
 
 // JudgePhaseVerifyCommands reviews all delivery phase verify commands in a two-stage
@@ -499,8 +498,8 @@ func validatePhaseUpdates(ctx context.Context, endpoint, model string, phases []
 
 // judgePhaseUpdate contains the proposed changes for a phase.
 type judgePhaseUpdate struct {
-	VerifyCommand  string
-	RequiredFiles  []string
+	VerifyCommand string
+	RequiredFiles []string
 }
 
 // parseJudgeResponse parses the generator LLM response into a flat phase_id→updates map.
@@ -509,8 +508,8 @@ type judgePhaseUpdate struct {
 func parseJudgeResponse(content string) map[string]judgePhaseUpdate {
 	// Try new format with verify_commands and required_files
 	var structured struct {
-		VerifyCommands map[string]string         `json:"verify_commands"`
-		RequiredFiles  map[string][]string       `json:"required_files"`
+		VerifyCommands map[string]string   `json:"verify_commands"`
+		RequiredFiles  map[string][]string `json:"required_files"`
 	}
 	if err := ExtractJSONObject(content, &structured); err == nil {
 		out := make(map[string]judgePhaseUpdate)

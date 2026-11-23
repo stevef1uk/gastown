@@ -22,7 +22,7 @@ func planAcceptanceBullets(beadPath string, v WorkflowValidation) []string {
 		"Polecat runs **Verify** from the Next bead line before `bd close`.",
 	}
 	if IsTestImplementPath(beadPath) {
-		return append([]string{
+		common = append([]string{
 			"Unit tests assert **functional requirements** from SPEC.md and this plan section (happy path, errors, edge cases named in architecture).",
 			"No trivial always-pass tests (`assert True`, empty `TestX` bodies, or tests that only import the module).",
 			"Test names and cases map to SPEC/plan acceptance bullets (reference FR IDs or behavior in comments when helpful).",
@@ -48,5 +48,65 @@ func planAcceptanceBullets(beadPath string, v WorkflowValidation) []string {
 			)
 		}
 	}
-	return common
+	if isWebSourceBeadPath(beadPath) {
+		common = append(common,
+			"Application UI files must expose real interactive controls and client-side behavior (buttons/inputs/forms plus event handlers, fetch, or React state); a static content-only screen is not acceptance.",
+			"QA must verify the rendered screen can perform at least one user action from this bead's acceptance criteria before reporting all_passed.",
+		)
+	}
+	return append(planBehaviorAcceptanceBullets(beadPath, v), common...)
+}
+
+func isWebSourceBeadPath(beadPath string) bool {
+	switch strings.ToLower(filepath.Ext(filepath.ToSlash(strings.TrimSpace(beadPath)))) {
+	case ".html", ".htm", ".js", ".jsx", ".ts", ".tsx":
+		return true
+	default:
+		return false
+	}
+}
+
+func planBehaviorAcceptanceBullets(beadPath string, v WorkflowValidation) []string {
+	path := filepath.ToSlash(strings.TrimSpace(beadPath))
+	switch filepath.Base(path) {
+	case "index.html":
+		return []string{
+			"Render the real application entry page with the canonical heading from SPEC.md, not a placeholder.",
+			"Include project creation input/button, project selector/list, task form with required title, optional description, and priority select, plus every Kanban column required by SPEC.md.",
+			"Include visible empty-state and error-state regions populated from API results.",
+			"Reference the canonical static assets under `" + strings.Trim(v.LayoutRoot, "/") + "/static/`; do not embed implementation-only scripts or styles.",
+		}
+	case "app.js":
+		return []string{
+			"On page load call `GET /api/projects` and populate the project selector; selecting a project loads its tasks from `GET /api/projects/{project_id}/tasks`.",
+			"Implement task create, edit, delete, and move-forward through the exact API routes in SPEC.md using status values `todo`, `doing`, and `done`.",
+			"Insert user-provided task titles and descriptions with `textContent`/`replaceChildren`; never build markup from user data with raw `innerHTML`.",
+			"Render visible empty/error states and disable or hide forward movement for done tasks as SPEC.md requires.",
+		}
+	case "style.css":
+		return []string{
+			"Style every Kanban column and task card from the rendered page, including narrow-window layout behavior.",
+			"Style project/task forms, project selector, empty-state region, and API error region without external UI frameworks or icon libraries.",
+		}
+	case "test_api.py":
+		return []string{
+			"Assert `GET /api/health` returns exactly `{\"status\":\"ok\"}` with HTTP 200.",
+			"Cover project create/list/delete, invalid-name 400, missing-project 404, empty `[]` lists, and 204 deletes with no body.",
+			"Cover task create/list/patch/delete with defaults, invalid-field 400, unknown status/priority 400, empty-PATCH 400, missing-task 404, and ascending ID order.",
+			"Assert UTC timestamps and exact JSON shapes from SPEC.md without asserting wall-clock time; defer status/priority filter scenarios to the phase that owns them.",
+		}
+	case "test_repository.py":
+		return []string{
+			"Cover empty schema, idempotent schema initialization, ordered project create/list, and task defaults with valid UTC timestamps.",
+			"Preserve omitted fields on PATCH and verify project deletion cascades to its tasks.",
+			"Assert SPEC negative cases explicitly (invalid status/priority, overlong title/description/project name) with concrete boundary values; defer filter scenarios to the phase that owns them.",
+		}
+	case "test_ui_content.py":
+		return []string{
+			"Assert `GET /` returns real HTML with the canonical `TaskBoard` heading, project form, task form, and all three Kanban column headings from SPEC.md.",
+			"Assert `GET /static/app.js` and `GET /static/style.css` return HTTP 200 with nonempty real content.",
+			"Assert the safe DOM contract from SPEC.md: user-provided task text is inserted with `textContent`/`replaceChildren`, not raw `innerHTML`.",
+		}
+	}
+	return nil
 }

@@ -28,7 +28,7 @@ Your SPEC.md must have ALL of these sections with substantive content:
 | **Project Layout** | **Required**: `layout_root: <directory-name>` — the top-level project folder under the rig (e.g., `helloapi`). Use `.` only if SPEC explicitly says code lives at repo root with no subdirectory. |
 | **File Layout** | Exact directory tree with every file that needs to be created, all paths relative to `layout_root` |
 | **Phases** | Ordered build phases with success criteria per phase (testable) |
-| **Testing Strategy** | Unit test locations, framework, coverage target, E2E approach |
+| **Testing Strategy** | Unit test locations, framework, coverage target, E2E approach; for interactive web apps require a browser click/submit/type plus DOM/API state-change assertion — no static-only screen may pass |
 | **Seed Data** | What the app ships with on first launch |
 | **Non-Functional Requirements** | Performance, accessibility, browser support, error handling |
 | **Not in Scope** | Explicitly list what is NOT being built (from REQUIREMENTS or your judgment) |
@@ -124,7 +124,7 @@ CMD: cat > {{rig}}/mayor/rig/SPEC.md <<'EOF'
 (Ordered phases with testable success criteria)
 
 ## Testing Strategy
-(Unit test framework, location, coverage target, E2E approach)
+(Unit test framework, location, coverage target, E2E approach. For interactive web apps, E2E must include a browser interaction test: click/submit/type into a real control, then assert the resulting DOM state or API state change. Page load, HTTP status, static heading, or body visibility assertions alone are insufficient. Static screens cannot pass QA or complete the workflow.)
 
 ## Seed Data
 (What ships on first launch)

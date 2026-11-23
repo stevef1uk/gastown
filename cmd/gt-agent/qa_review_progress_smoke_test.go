@@ -24,7 +24,7 @@ func writeLinkshelfSmokeFingerprintFixture(t *testing.T, townRoot, rig string, i
 	if err := os.MkdirAll(serverDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	indexHTML := indexBody + "\n" + strings.Repeat("<!-- qa fixture padding -->\n<div class=\"panel\"></div>\n", 30)
+	indexHTML := indexBody + "\n<button type=\"button\" id=\"refresh\">Refresh</button>\n" + strings.Repeat("<!-- qa fixture padding -->\n<div class=\"panel\"></div>\n", 30)
 	if err := os.WriteFile(filepath.Join(webDir, "index.html"), []byte(indexHTML), 0644); err != nil {
 		t.Fatal(err)
 	}

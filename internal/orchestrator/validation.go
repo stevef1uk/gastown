@@ -1488,11 +1488,17 @@ func (v WorkflowValidation) SubstituteVars(vars map[string]string) WorkflowValid
 	return v
 }
 
-// RequirementsFilePath returns the first requirements.txt or pyproject.toml from the profile, if any.
+// RequirementsFilePath returns requirements.txt when present, otherwise pyproject.toml.
 func (v WorkflowValidation) RequirementsFilePath() string {
 	for _, f := range v.RequiredFiles {
 		f = filepath.ToSlash(strings.TrimSpace(f))
-		if strings.HasSuffix(f, "requirements.txt") || strings.HasSuffix(f, "pyproject.toml") {
+		if strings.HasSuffix(f, "requirements.txt") {
+			return f
+		}
+	}
+	for _, f := range v.RequiredFiles {
+		f = filepath.ToSlash(strings.TrimSpace(f))
+		if strings.HasSuffix(f, "pyproject.toml") {
 			return f
 		}
 	}

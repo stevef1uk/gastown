@@ -212,6 +212,12 @@ func TestRigFlowQARuntimeSmokeBlock_includesE2ESmokeWhenSpecHasPlaywright(t *tes
 	if !strings.Contains(block, "exercises real UI and API") {
 		t.Fatalf("expected UI/API language, got:\n%s", block)
 	}
+	if !strings.Contains(block, "Interactive control exercised") {
+		t.Fatalf("expected browser interaction requirement, got:\n%s", block)
+	}
+	if !strings.Contains(block, "browser interaction plus content/state assertions") {
+		t.Fatalf("expected weak-gate rejection language, got:\n%s", block)
+	}
 }
 
 func TestRigFlowQARuntimeSmokeBlock_includesE2ESmokeWithDockerCompose(t *testing.T) {
@@ -239,6 +245,9 @@ func TestRigFlowQARuntimeSmokeBlock_includesE2ESmokeWithDockerCompose(t *testing
 	}
 	if !strings.Contains(block, "test/docker-compose.test.yml") {
 		t.Fatalf("expected test harness compose file, got:\n%s", block)
+	}
+	if !strings.Contains(block, "Interactive control exercised") {
+		t.Fatalf("expected browser interaction requirement, got:\n%s", block)
 	}
 }
 

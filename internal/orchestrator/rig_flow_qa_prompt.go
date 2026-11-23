@@ -293,16 +293,18 @@ func rigFlowE2ESmokeBlock(v WorkflowValidation, mayorRigDir string) string {
 		}
 		b.WriteString("| Page loads | Tests use `page.goto` / `page.locator` against the running app |\n")
 		b.WriteString("| API exercised | Tests call the real backend through the browser (fetch/XHR), not mocks |\n")
-		b.WriteString("| Real content asserted | Tests must assert concrete UI content (page heading, watchlist tickers, dollar amounts, labels) via `getByText`/`getByRole`/`toHaveText`/`toContainText`. Status-code + `toBeVisible()`-on-body checks are NOT enough — they pass when the app serves a placeholder page |\n\n")
+		b.WriteString("| Real content asserted | Tests must assert concrete UI content (page heading, watchlist tickers, dollar amounts, labels) via `getByText`/`getByRole`/`toHaveText`/`toContainText`. Status-code + `toBeVisible()`-on-body checks are NOT enough — they pass when the app serves a placeholder page |\n")
+		b.WriteString("| Interactive control exercised | For interactive web apps, a browser test must click/submit/type into a real control (button/input/form/select) and assert the resulting DOM state or API state change. `page.goto`, HTTP status, static heading, or body visibility alone is NOT sufficient |\n\n")
 	} else {
 		b.WriteString("| Check | How |\n|-------|-----|\n")
 		b.WriteString("| E2E tests pass | `cd {{rig}}/mayor/rig && npx playwright test` (or the project's configured test runner) |\n")
 		b.WriteString("| Page loads | Tests use `page.goto` / `page.locator` against the running app |\n")
 		b.WriteString("| API exercised | Tests call the real backend through the browser (fetch/XHR), not mocks |\n")
-		b.WriteString("| Real content asserted | Tests must assert concrete UI content (page heading, watchlist tickers, dollar amounts, labels) via `getByText`/`getByRole`/`toHaveText`/`toContainText`. Status-code + `toBeVisible()`-on-body checks are NOT enough — they pass when the app serves a placeholder page |\n\n")
+		b.WriteString("| Real content asserted | Tests must assert concrete UI content (page heading, watchlist tickers, dollar amounts, labels) via `getByText`/`getByRole`/`toHaveText`/`toContainText`. Status-code + `toBeVisible()`-on-body checks are NOT enough — they pass when the app serves a placeholder page |\n")
+		b.WriteString("| Interactive control exercised | For interactive web apps, a browser test must click/submit/type into a real control (button/input/form/select) and assert the resulting DOM state or API state change. `page.goto`, HTTP status, static heading, or body visibility alone is NOT sufficient |\n\n")
 	}
 	b.WriteString("If E2E tests fail, return `failure` with the test output — do not advance the phase.\n")
-	b.WriteString("If E2E tests pass but do not assert real UI content (only HTTP status/visibility), that is a **weak gate** — flag it and require content assertions before returning `all_passed`.\n")
+	b.WriteString("If E2E tests pass but do not assert real UI content (only HTTP status/visibility), or do not exercise a real control and assert its resulting state change for interactive apps, that is a **weak gate** — flag it and require browser interaction plus content/state assertions before returning `all_passed`.\n")
 	return b.String()
 }
 

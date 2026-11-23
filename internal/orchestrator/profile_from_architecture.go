@@ -1084,6 +1084,9 @@ func SyncRigWorkflowProfileFromArchitecture(townRoot, rig string) (bool, error) 
 		env.Validation.RequiredFiles = union
 	}
 	complete := dedupeStrings(authoritative)
+	if pythonWorkflowHasServerEntry(WorkflowValidation{RequiredFiles: complete, LayoutRoot: env.Validation.LayoutRoot, QAVerifyCommand: env.Validation.QAVerifyCommand, DeliveryPhases: env.Validation.DeliveryPhases}) {
+		complete = ensurePythonRequirementsFile(complete, env.Validation.LayoutRoot)
+	}
 	env.Validation = rebuildDeliveryPhasesFromAuthoritative(env.Validation, complete)
 	env.Validation.RequiredFiles = complete
 	env.Validation = updateTopLevelFromCanonicalSection(env.Validation, string(archData))
