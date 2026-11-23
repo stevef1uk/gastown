@@ -595,17 +595,16 @@ func scannersForValidation(v WorkflowValidation) []sourceScanner {
 			importRe: regexp.MustCompile(`^\s*import\s+(?:"([^"]+)"|\(([^)]+)\))`),
 			isStdlib: isGoStdlib,
 			pathToModule: func(rel, layoutRoot string) string {
-				prefix := layoutRoot + "/"
-				if strings.HasPrefix(rel, prefix) && strings.HasSuffix(rel, ".go") {
-					modPath := strings.TrimPrefix(rel, prefix)
-					modPath = strings.TrimSuffix(modPath, ".go")
-					modPath = strings.ReplaceAll(modPath, "/", ".")
-					return modPath
+				if strings.HasSuffix(rel, ".go") {
+					return strings.TrimSuffix(rel, ".go")
 				}
 				return ""
 			},
 			moduleToPath: func(mod, layoutRoot string) string {
-				return layoutRoot + "/" + strings.ReplaceAll(mod, ".", "/") + ".go"
+				if strings.HasPrefix(mod, layoutRoot+"/") {
+					return mod + ".go"
+				}
+				return layoutRoot + "/" + mod + ".go"
 			},
 		})
 	}
@@ -632,6 +631,13 @@ func scannersForValidation(v WorkflowValidation) []sourceScanner {
 		})
 	}
 	return scanners
+}
+
+func scannerModuleSeparator(sc *sourceScanner) string {
+	if sc.ext == ".go" {
+		return "/"
+	}
+	return "."
 }
 
 // scanMissingImports walks rigDir for source files and returns imports that are not
@@ -679,10 +685,16 @@ func scanMissingImports(rigDir string, v WorkflowValidation) map[string]string {
 	for _, f := range allFiles {
 		if mod := f.scanner.pathToModule(f.rel, v.LayoutRoot); mod != "" {
 			availableModules[mod] = true
-			// Add parent packages
-			parts := strings.Split(mod, ".")
+			sep := scannerModuleSeparator(f.scanner)
+			if f.scanner.ext == ".go" {
+				if i := strings.LastIndex(mod, sep); i > 0 {
+					availableModules[mod[:i]] = true
+				}
+				continue
+			}
+			parts := strings.Split(mod, sep)
 			for i := 1; i < len(parts); i++ {
-				pkg := strings.Join(parts[:i], ".")
+				pkg := strings.Join(parts[:i], sep)
 				availableModules[pkg] = true
 			}
 		}
@@ -751,10 +763,10 @@ func scanSingleImport(sc *sourceScanner, imp, rigDir string, availableModules ma
 		return // Third-party package, not a missing implementation
 	}
 	// Check parent packages
-	parts := strings.Split(imp, ".")
+	parts := strings.Split(imp, scannerModuleSeparator(sc))
 	found := false
 	for i := len(parts); i > 0; i-- {
-		pkg := strings.Join(parts[:i], ".")
+		pkg := strings.Join(parts[:i], scannerModuleSeparator(sc))
 		if availableModules[pkg] {
 			found = true
 			break
@@ -804,6 +816,7 @@ func isGoStdlib(mod string) bool {
 		"archive/zip": true, "archive/tar": true, "compress/gzip": true,
 		"image": true, "image/png": true, "image/jpeg": true,
 		"text/scanner": true, "go/ast": true, "go/parser": true,
+		"testing": true,
 	}
 	// Check common prefixes
 	prefixes := []string{"golang.org/", "github.com/", "gopkg.in/", "google.golang.org/"}

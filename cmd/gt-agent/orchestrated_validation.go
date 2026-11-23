@@ -163,6 +163,9 @@ func testReviewVerifyCommandMatches(cmd string, v orchestrator.WorkflowValidatio
 }
 
 func isImplementationVerifyCommandOK(cmd, townRoot, rig, activeBead string, v orchestrator.WorkflowValidation) bool {
+	if commandIsDeclaredNodeVerify(cmd, v) {
+		return true
+	}
 	if strings.TrimSpace(v.ActivePhaseQAVerifyCommand()) != "" && testReviewVerifyCommandMatches(cmd, v) {
 		return true
 	}

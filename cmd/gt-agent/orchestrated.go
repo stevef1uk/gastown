@@ -34,7 +34,8 @@ const (
 )
 
 var jsonBlockRE = regexp.MustCompile("(?s)```(?:json)?\\s*([\\s\\S]*?)```")
-var declaredNodeVerifyCommandRE = regexp.MustCompile(`(^|&&|\|\||;)[[:space:]]*node[[:space:]]+[^;&|]+`)
+var shellCommandOperatorRE = regexp.MustCompile(`&&|\|\||[;|&]`)
+var nodeToolchainSegmentRE = regexp.MustCompile(`^(?:npm|node|yarn|pnpm|npx)(?:\s|$)`)
 
 type orchestratedTaskResult struct {
 	RepairBeadIDs []string                      `json:"repair_bead_ids,omitempty"`
@@ -4853,21 +4854,92 @@ func validateNodeImplementationCommand(cmd string, v orchestrator.WorkflowValida
 	if orchestrator.WorkflowUsesDocker(v) && strings.Contains(lower, "playwright install") {
 		return fmt.Errorf("do not install Playwright browsers or system dependencies on the host for a Docker workflow — the Playwright image supplies them; run the configured Docker Compose verify command instead")
 	}
-	if orchestrator.WorkflowUsesNodeJS(v) {
+	if orchestrator.WorkflowUsesNodeJS(v) || commandIsDeclaredNodeVerify(cmd, v) {
 		return nil
 	}
-	// A dependency-free Node script may be the phase's explicit verifier without
-	// making the phase a Node project; allow only that declared command.
-	declaredNodeVerify := strings.TrimSpace(strings.TrimLeft(declaredNodeVerifyCommandRE.FindString(strings.ToLower(v.QAVerifyCommand)), "&|; "))
 	for _, tok := range []string{"npm ", "node ", "yarn ", "pnpm ", "npx "} {
 		if strings.Contains(lower, tok) {
-			normalizedCommand := strings.TrimSpace(lower)
-			if tok == "node " && declaredNodeVerify != "" &&
-				(normalizedCommand == declaredNodeVerify || strings.HasSuffix(normalizedCommand, " && "+declaredNodeVerify)) {
-				continue
-			}
 			return fmt.Errorf("do not run Node.js toolchain (%s) — this rig has no frontend/Node dependency", strings.TrimSpace(tok))
 		}
 	}
 	return nil
+}
+
+func commandIsDeclaredNodeVerify(cmd string, v orchestrator.WorkflowValidation) bool {
+	declared := normalizedNodeVerifySegments(v.ActivePhaseQAVerifyCommand(), v.LayoutRoot)
+	actual := normalizedNodeVerifySegments(cmd, v.LayoutRoot)
+	if len(declared) == 0 || len(actual) != len(declared) {
+		return false
+	}
+	for i := range declared {
+		if actual[i] != declared[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func normalizedNodeVerifySegments(cmd, layoutRoot string) []string {
+	layout := strings.Trim(strings.TrimSpace(layoutRoot), "/")
+	lower := strings.ToLower(strings.TrimSpace(cmd))
+	segments := shellCommandOperatorRE.Split(lower, -1)
+	operators := shellCommandOperatorRE.FindAllString(lower, -1)
+	hadLayoutCD := false
+	var normalized []string
+	for i, segment := range segments {
+		fields := strings.Fields(segment)
+		if len(fields) == 0 {
+			continue
+		}
+		if len(fields) >= 2 && fields[0] == "cd" {
+			cdPath := strings.Trim(fields[1], `"'`)
+			if layout != "" && (filepath.Base(cdPath) == layout || strings.HasSuffix(filepath.ToSlash(cdPath), "/"+layout)) {
+				hadLayoutCD = true
+			}
+			continue
+		}
+		segment = strings.Join(fields, " ")
+		if nodeToolchainSegmentRE.MatchString(segment) && hadLayoutCD {
+			segment = prefixRelativeNodeVerifyPaths(segment, layout)
+		}
+		if len(normalized) > 0 && i-1 >= 0 && i-1 < len(operators) {
+			normalized = append(normalized, operators[i-1])
+		}
+		normalized = append(normalized, segment)
+	}
+	return normalized
+}
+
+func prefixRelativeNodeVerifyPaths(segment, layout string) string {
+	if layout == "" {
+		return segment
+	}
+	fields := strings.Fields(segment)
+	for i := 1; i < len(fields); i++ {
+		token := strings.Trim(fields[i], `"'`)
+		if strings.HasPrefix(token, "-") || strings.HasPrefix(token, "/") || strings.HasPrefix(token, "../") || strings.Contains(token, "://") {
+			continue
+		}
+		if !nodeVerifyPathToken(token) || token == layout || strings.HasPrefix(token, layout+"/") {
+			continue
+		}
+		token = strings.TrimPrefix(token, "./")
+		if token == "" {
+			continue
+		}
+		fields[i] = layout + "/" + token
+	}
+	return strings.Join(fields, " ")
+}
+
+func nodeVerifyPathToken(token string) bool {
+	if strings.Contains(token, "/") {
+		return true
+	}
+	for _, ext := range []string{".js", ".mjs", ".cjs", ".ts", ".tsx", ".json"} {
+		if strings.HasSuffix(token, ext) {
+			return true
+		}
+	}
+	return false
 }

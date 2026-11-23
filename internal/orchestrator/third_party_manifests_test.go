@@ -311,14 +311,32 @@ func TestScanMissingImports_goProjectModule(t *testing.T) {
 	writeRigFile(t, rigDir, "finally/go.mod", "module finally\n\ngo 1.25\n")
 	writeRigFile(t, rigDir, "finally/cmd/server/main.go", "package main\n\nimport (\n\t\"finally/internal/api/handlers\"\n)\n")
 	v := WorkflowValidation{
-		LayoutRoot:       "finally",
-		QAVerifyCommand:  "cd finally && go test ./...",
-		RequiredFiles:    []string{"finally/cmd/server/main.go"},
+		LayoutRoot:                 "finally",
+		QAVerifyCommand:            "cd finally && go test ./...",
+		RequiredFiles:              []string{"finally/cmd/server/main.go"},
 		MinImplementationFileBytes: 1,
 	}
 	missing := scanMissingImports(rigDir, v)
 	if _, ok := missing["finally/internal/api/handlers"]; !ok {
 		t.Fatalf("project module with no bead should be flagged: %v", missing)
+	}
+}
+
+func TestScanMissingImports_goStdlibAndPresentInternalPackagesNotFlagged(t *testing.T) {
+	t.Parallel()
+	rigDir := t.TempDir()
+	writeRigFile(t, rigDir, "finally/go.mod", "module finally\n\ngo 1.25\n")
+	writeRigFile(t, rigDir, "finally/internal/store/store.go", "package store\n\nfunc Open() {}\n")
+	writeRigFile(t, rigDir, "finally/cmd/server/main.go", "package main\n\nimport (\n\t\"finally/internal/store\"\n\t\"testing\"\n)\n\nfunc main() { store.Open() }\n")
+	v := WorkflowValidation{
+		LayoutRoot:                 "finally",
+		QAVerifyCommand:            "cd finally && go test ./...",
+		RequiredFiles:              []string{"finally/internal/store/store.go", "finally/cmd/server/main.go"},
+		MinImplementationFileBytes: 1,
+	}
+	missing := scanMissingImports(rigDir, v)
+	if len(missing) != 0 {
+		t.Fatalf("stdlib and present internal packages must not be missing: %v", missing)
 	}
 }
 

@@ -98,6 +98,63 @@ func TestValidateNodeImplementationCommand_allowsDeclaredDependencyFreeNodeVerif
 	}
 }
 
+func TestValidateNodeImplementationCommand_allowsDeclaredMultiCommandNodeVerify(t *testing.T) {
+	t.Parallel()
+
+	v := orchestrator.WorkflowValidation{
+		LayoutRoot:         "linkshelf",
+		TestRunner:         "go",
+		ActivePhaseIDField: "frontend-ui",
+		QAVerifyCommand:    "node linkshelf/tests/frontend-ui.spec.js && node --check linkshelf/web/app.js",
+		RequiredFiles:      []string{"linkshelf/tests/frontend-ui.spec.js", "linkshelf/web/app.js"},
+		DeliveryPhases: []orchestrator.DeliveryPhase{{
+			ID:              "frontend-ui",
+			Title:           "frontend-ui",
+			RequiredFiles:   []string{"linkshelf/tests/frontend-ui.spec.js", "linkshelf/web/app.js"},
+			QAVerifyCommand: "node linkshelf/tests/frontend-ui.spec.js && node --check linkshelf/web/app.js",
+		}},
+	}
+	for _, cmd := range []string{
+		"node linkshelf/tests/frontend-ui.spec.js && node --check linkshelf/web/app.js",
+		"cd testgt3/mayor/rig/linkshelf && node ./tests/frontend-ui.spec.js && node --check ./web/app.js",
+	} {
+		if err := validateNodeImplementationCommand(cmd, v); err != nil {
+			t.Errorf("declared Node verification %q should be allowed: %v", cmd, err)
+		}
+	}
+	for _, cmd := range []string{
+		"node --check linkshelf/web/app.js",
+		"node linkshelf/tests/frontend-ui.spec.js && node --check linkshelf/web/app.js && node unrelated.js",
+		"npm install",
+	} {
+		if err := validateNodeImplementationCommand(cmd, v); err == nil {
+			t.Errorf("undeclared or partial Node command %q should remain blocked", cmd)
+		}
+	}
+}
+
+func TestIsImplementationVerifyCommandOK_matchesDeclaredMultiCommandNodeVerify(t *testing.T) {
+	t.Parallel()
+
+	v := orchestrator.WorkflowValidation{
+		LayoutRoot:         "linkshelf",
+		TestRunner:         "go",
+		ActivePhaseIDField: "frontend-ui",
+		QAVerifyCommand:    "node linkshelf/tests/frontend-ui.spec.js && node --check linkshelf/web/app.js",
+		RequiredFiles:      []string{"linkshelf/tests/frontend-ui.spec.js", "linkshelf/web/app.js"},
+		DeliveryPhases: []orchestrator.DeliveryPhase{{
+			ID:              "frontend-ui",
+			Title:           "frontend-ui",
+			RequiredFiles:   []string{"linkshelf/tests/frontend-ui.spec.js", "linkshelf/web/app.js"},
+			QAVerifyCommand: "node linkshelf/tests/frontend-ui.spec.js && node --check linkshelf/web/app.js",
+		}},
+	}
+	cmd := "cd testgt3/mayor/rig/linkshelf && node ./tests/frontend-ui.spec.js && node --check ./web/app.js"
+	if !isImplementationVerifyCommandOK(cmd, "", "", "", v) {
+		t.Fatal("configured relative Node verification should count as green implementation verify")
+	}
+}
+
 func TestQAReworkCompletionReportsFailingGate(t *testing.T) {
 	r := &stateRunner{
 		townRoot: t.TempDir(), rig: "sample",
